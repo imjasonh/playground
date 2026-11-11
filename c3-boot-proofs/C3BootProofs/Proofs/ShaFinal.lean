@@ -211,6 +211,94 @@ theorem zero_loop {M1 : Word → BitVec 8} {B : Word}
       exact ⟨n5, .cons d1 (.cons d2 (.cons d3 (.cons d4 c5))), u5,
         fun r h1 h2 => by rw [f5 r h1 h2, u4.regs, frame r h1 h2]⟩
 
+/-- The 4 bytes the big-endian store helper writes at `p`: `v`'s bytes, most
+significant first. -/
+def beStore (M : Word → BitVec 8) (p v : Word) : Word → BitVec 8 :=
+  memStore8 (memStore8 (memStore8 (memStore8 M p ((aluEval .srl v 0x18).extractLsb' 0 8))
+    (p + 1) ((aluEval .srl v 0x10).extractLsb' 0 8)) (p + 2) ((aluEval .srl v 8).extractLsb' 0 8))
+    (p + 3) (v.extractLsb' 0 8)
+
+set_option maxRecDepth 20000 in
+/-- A caller's `auipc t0, imm; jalr t0, o(t0)` into the outlined helper that
+stores `a1` big-endian at `s0` and adds 4 to `s0`, and the helper, run from
+offset `off` to `off + 8` of the caller. It changes `t0` and `a2` through
+`a4` besides `s0`. -/
+theorem St.callStoreBe {M : Word → BitVec 8} {base : Word} {code : List Nat} {m : Machine}
+    {off : Nat} {f : Fin 32 → Word} (s : St M base m off f)
+    (hc : CodeIn M base code) {imm o : Word}
+    (h1 : fetchRel code off = some (.auipc t0 imm, 4))
+    (h2 : fetchRel code (off + 4) = some (.jalr t0 t0 o, 4))
+    (hb : base + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 shaStoreBeAddress)
+    (hl : (base + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
+    (hh : CodeIn M (BitVec.ofNat 32 shaStoreBeAddress) shaStoreBeCode)
+    (hp : Sep (f s0) 4 (BitVec.ofNat 32 shaStoreBeAddress) shaStoreBeCode.length) :
+    ∃ m', Steps m m' ∧ St (beStore M (f s0) (f a1)) base m' (off + 8) (reg m') ∧
+      reg m' s0 = f s0 + 4 ∧
+      ∀ r, r ≠ t0 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ s0 → reg m' r = f r := by
+  let SB := BitVec.ofNat 32 shaStoreBeAddress
+  have hz := s.zero
+  obtain ⟨m1, e1, t1⟩ := s.auipc hc h1 (off' := off + 4) (ofNat_add_ofNat off 4)
+  obtain ⟨m2, e2, pc2, mem2, regs2⟩ := t1.call hc h2
+  have hL : base + BitVec.ofNat 32 (off + 4) + 4 = base + BitVec.ofNat 32 (off + 8) := by
+    rw [show (4 : Word) = BitVec.ofNat 32 4 from rfl, add_ofNat_assoc]
+  let L := base + BitVec.ofNat 32 (off + 8)
+  have r2 : ∀ r, r ≠ t0 → reg m2 r = f r := fun r h => by
+    rw [regs2]
+    by_cases h0 : r.val = 0
+    · have : r = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp [upd, h0, h]
+  have t2 : reg m2 t0 = L := by rw [regs2, hL]; simp +decide [upd]; rfl
+  have hp2 : m2.pc = SB := by
+    rw [pc2, show upd f t0 (base + BitVec.ofNat 32 off + imm) t0 = base + BitVec.ofNat 32 off + imm from
+      by simp +decide [upd], hb]
+    decide
+  have u2 : St M SB m2 0 (reg m2) := ⟨by rw [hp2]; simp, mem2, fun _ => rfl⟩
+  obtain ⟨m3, e3, u3⟩ := u2.aluImm hh sbe_at_0 (off' := 4) (by decide)
+  have K3 := u3.upd_ne u2.zero
+  have u3' : St M SB m3 4 (reg m3) := u3.self
+  obtain ⟨m4, e4, u4⟩ := u3'.aluImm hh sbe_at_4 (off' := 8) (by decide)
+  have K4 := u4.upd_ne u3'.zero
+  have u4' : St M SB m4 8 (reg m4) := u4.self
+  obtain ⟨m5, e5, u5⟩ := u4'.aluImm hh sbe_at_8 (off' := 0xC) (by decide)
+  have K5 := u5.upd_ne u4'.zero
+  have u5' : St M SB m5 0xC (reg m5) := u5.self
+  have K25 : ∀ r, r ≠ a2 → r ≠ a3 → r ≠ a4 → reg m5 r = reg m2 r := fun r q2 q3 q4 => by
+    rw [K5 r q4, K4 r q3, K3 r q2]
+  have s0_5 : reg m5 s0 = f s0 := by rw [K25 s0 (by decide) (by decide) (by decide), r2 s0 (by decide)]
+  have a1_5 : reg m5 a1 = f a1 := by rw [K25 a1 (by decide) (by decide) (by decide), r2 a1 (by decide)]
+  have a2_5 : reg m5 a2 = aluEval .srl (f a1) 0x18 := by
+    rw [K5 a2 (by decide), K4 a2 (by decide), u3.upd_eq (by decide), r2 a1 (by decide)]
+  have a3_5 : reg m5 a3 = aluEval .srl (f a1) 8 := by
+    rw [K5 a3 (by decide), u4.upd_eq (by decide), K3 a1 (by decide), r2 a1 (by decide)]
+  have a4_5 : reg m5 a4 = aluEval .srl (f a1) 0x10 := by
+    rw [u5.upd_eq (by decide), K4 a1 (by decide), K3 a1 (by decide), r2 a1 (by decide)]
+  have hpk : ∀ k, k < 4 → Sep (f s0 + BitVec.ofNat 32 k) 1 SB shaStoreBeCode.length := fun k hk =>
+    hp.sub (c := k) (l := 1) (by omega)
+  obtain ⟨m6, e6, u6⟩ := u5'.sb hh sbe_at_c (off' := 0x10) (by decide)
+  rw [s0_5, add_lit_zero, a2_5] at u6
+  have hh6 := hh.store8 (v := (aluEval .srl (f a1) 0x18).extractLsb' 0 8)
+    (by have := hpk 0 (by decide); rwa [add_ofNat_zero] at this)
+  obtain ⟨m7, e7, u7⟩ := u6.sb hh6 sbe_at_10 (off' := 0x14) (by decide)
+  rw [s0_5, a4_5] at u7
+  have hh7 := hh6.store8 (a := f s0 + 1) (v := (aluEval .srl (f a1) 0x10).extractLsb' 0 8) (hpk 1 (by decide))
+  obtain ⟨m8, e8, u8⟩ := u7.sb hh7 sbe_at_14 (off' := 0x18) (by decide)
+  rw [s0_5, a3_5] at u8
+  have hh8 := hh7.store8 (a := f s0 + 2) (v := (aluEval .srl (f a1) 8).extractLsb' 0 8) (hpk 2 (by decide))
+  obtain ⟨m9, e9, u9⟩ := u8.sb hh8 sbe_at_18 (off' := 0x1C) (by decide)
+  rw [s0_5, a1_5] at u9
+  have hh9 : CodeIn (beStore M (f s0) (f a1)) SB shaStoreBeCode := hh8.store8 (hpk 3 (by decide))
+  obtain ⟨m10, e10, u10⟩ := u9.aluImm hh9 sbe_at_1c (off' := 0x1E) (by decide)
+  have K10 := u10.upd_ne u5'.zero
+  have u10' : St (beStore M (f s0) (f a1)) SB m10 0x1E (reg m10) := u10.self
+  obtain ⟨m11, e11, pc11, mem11, regs11⟩ := u10'.jalr hh9 sbe_at_1e
+  refine ⟨m11, .cons e1 (.cons e2 (.cons e3 (.cons e4 (.cons e5 (.cons e6 (.cons e7 (.cons e8 (.cons e9
+    (.cons e10 (.single e11)))))))))), ⟨?_, mem11, fun _ => rfl⟩, ?_, fun r q5 q12 q13 q14 q8 => ?_⟩
+  · rw [pc11, K10 t0 (by decide), K25 t0 (by decide) (by decide) (by decide), t2, add_lit_zero]
+    exact even_clear _ hl
+  · rw [regs11, u10.upd_eq (by decide), s0_5]; rfl
+  · rw [regs11, K10 r q8, K25 r q12 q13 q14, r2 r q5]
+
 set_option maxHeartbeats 1000000 in
 set_option maxRecDepth 20000 in
 /-- **`hybrid_array`'s zeroing `from_fn` for 32 bytes, as compiled.** Called
