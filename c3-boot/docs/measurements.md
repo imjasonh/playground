@@ -72,9 +72,77 @@ data, and keeps its slot buffers on a 95 KiB stack.
 | --- | --- |
 | The ROM loads a bootloader image of this size into this region **(hardware)** | Assumed from the technical reference manual and ESP-IDF |
 | The ROM doesn't use memory below `0x3FCDC710` after it jumps to the bootloader **(hardware)** | Assumed from ESP-IDF's linker script |
-| Boot time for two slot checks with 16-link chains **(hardware)** | Not measured. QEMU instruction counts come first |
+| Boot time for two slot checks with 16-link chains **(hardware)** | Not measured on a board. The RV32 model counts about 135 million instructions for one full slot check; see [Boot cost on the RV32 model](#boot-cost-on-the-rv32-model) |
 | Software SHA-256 over a full 1,920 KiB slot **(hardware)** | Not measured |
 | eFuse controller lock against machine-mode writes **(hardware)** | Not tested. A release blocker |
+
+## Boot cost on the RV32 model
+
+The machine-code proofs are about the compiled image, so they don't change
+how fast it runs. A proof only makes a difference to speed when it moves
+the code to a version that is easier to prove and slower. This section
+tracks the image's size and speed so that such a trade shows up.
+
+The Lean RV32 model (`c3-boot-proofs`' `boot-sim`) runs the burns-off
+bootloader image on the scenarios that `qemu/boot-lockstep.sh` checks, and
+counts the instructions each boot runs. Measured on 2026-11-11 with the
+image pinned in `bootloader/dev-image.sha256`:
+
+| Boot | Instructions | At 160 MHz, one cycle each |
+| --- | --- | --- |
+| Slot signed by another workflow, rejected | 68,413,457 | 428 ms |
+| Slot with a stale timestamp, rejected | 134,326,927 | 840 ms |
+| Trial boot of a valid slot, then the jump | 134,646,260 | 842 ms |
+
+One cycle per instruction is a lower bound. The bootloader runs from SRAM,
+so instruction fetches don't miss a cache, but loads, taken branches,
+multiplies, and flash reads through the ROM add cycles. A board has to
+measure the real time. **(hardware)**
+
+With `BOOT_SIM_PROFILE` set, `boot-sim` writes how many instructions ran at
+each address, and `c3-boot-proofs/scripts/boot-profile.py` groups them by
+function and crate. For the trial boot, by the crate that each function's
+symbol names first:
+
+| Crate | Code (bytes) | Instructions run | Share |
+| --- | --- | --- | --- |
+| `crypto_bigint` | 9,544 | 87,062,408 | 64.7% |
+| `compiler_builtins` (`memcpy`, `memset`) | 534 | 13,636,050 | 10.1% |
+| `curve25519_dalek` | 12,804 | 11,176,686 | 8.3% |
+| `sha2` | 47,680 | 8,673,530 | 6.4% |
+| Outlined helpers | 2,366 | 4,230,372 | 3.1% |
+| `p256` | 4,790 | 3,684,725 | 2.7% |
+| `c3_bootloader` | 5,646 | 2,325,761 | 1.7% |
+| `p384` | 528 | 2,270,922 | 1.7% |
+| Everything else | 44,668 | 1,585,806 | 1.2% |
+| **Total** | **128,560** | **134,646,260** | |
+
+Findings:
+
+- **P-384 dominates.** `crypto_bigint`'s 12-word Montgomery multiplication
+  and squaring (`mul_montgomery_form::<12>`, `square_montgomery_form::<12>`)
+  run 58.5 million instructions, 43 percent of the boot, for the P-384
+  signatures of the timestamp authority. A faster P-384 field
+  multiplication is the main lever on boot time.
+- **SHA-2 is large but cheap at run time.** `sha2` is 37 percent of the
+  code and 6 percent of the instructions. SHA-512's unrolled compression
+  function alone is 35.7 KB for Ed25519's hashes.
+- **`memcpy` and `memset` run 10 percent of the instructions**, mostly
+  moving and zeroing big-number temporaries.
+
+To reproduce, build the scenarios and run the lockstep check, then profile
+one boot:
+
+```bash
+bash qemu/scenarios.sh /tmp/scen
+bash qemu/boot-lockstep.sh /tmp/scen /tmp/boot
+nm="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-nm"
+elf=target/riscv32imc-unknown-none-elf/release/c3-bootloader
+halt="$("${nm}" -C "${elf}" | awk '$3 == "c3_bootloader::halt" { print $1 }')"
+BOOT_SIM_PROFILE=/tmp/trial.prof ../c3-boot-proofs/.lake/build/bin/boot-sim \
+  /tmp/boot/trial.flash /tmp/boot/trial.efuse "${halt}" >/dev/null
+python3 ../c3-boot-proofs/scripts/boot-profile.py /tmp/trial.prof "${elf}" "${nm}"
+```
 
 ## Findings from QEMU
 
