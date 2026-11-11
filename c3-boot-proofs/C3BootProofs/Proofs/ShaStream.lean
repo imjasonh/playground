@@ -200,4 +200,18 @@ theorem padTail_long (msg : Bytes) (h : 56 ≤ msg.length % 64) :
     List.take_of_length_le (by omega), List.take_of_length_le (by omega)]
   rfl
 
+/-- `blocks` of at least `64 * k` bytes has `k` blocks. -/
+theorem blocks_length : ∀ (k : Nat) (b : Bytes), 64 * k ≤ b.length → (blocks k b).length = k
+  | 0, _, _ => rfl
+  | k + 1, b, h => by
+    have hb : b.isEmpty = false := by
+      cases b with
+      | nil => simp at h
+      | cons x xs => rfl
+    rw [blocks_succ, hb, ite_eq_right Bool.false_ne_true, List.length_cons,
+      blocks_length k (b.drop 64) (by rw [List.length_drop]; omega)]
+
+theorem fullBlocks_length (msg : Bytes) : (fullBlocks msg).length = msg.length / 64 :=
+  blocks_length _ _ (by omega)
+
 end C3

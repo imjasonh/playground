@@ -264,6 +264,17 @@ theorem shaBlocks_correct (m : Machine) {st bp sp0 retAddr : Word} {n : Nat}
     rw [memStore32_get_sep (by have := hx.sub (c := 36) (l := 4) (by omega); rwa [e36] at this),
       memStore32_get_sep (by have := hx.sub (c := 32) (l := 4) (by omega); rwa [e32] at this)]
 
+theorem memBytes_take (M : Word → BitVec 8) (p : Word) {k n : Nat} (h : k ≤ n) :
+    (memBytes M p n).take k = memBytes M p k := by
+  unfold memBytes
+  rw [← List.map_take, List.take_range, Nat.min_eq_left h]
+
+theorem memBytes_drop (M : Word → BitVec 8) (p : Word) {k n : Nat} (h : k ≤ n) :
+    (memBytes M p n).drop k = memBytes M (p + BitVec.ofNat 32 k) (n - k) := by
+  have := memBytes_split M p k (n - k)
+  rw [show k + (n - k) = n by omega] at this
+  rw [this, List.drop_left' (memBytes_length M p k)]
+
 /-- The 0x68 bytes at `S` hold the compiled hasher after it has absorbed
 `msg`: the bytes after `msg`'s full blocks in the buffer, their count in its
 last byte, the hash of the full blocks, and the 64-bit count of blocks. -/
@@ -504,5 +515,98 @@ theorem upd_tail {M : Word → BitVec 8} {m : Machine} {f : Fin 32 → Word} {G 
     · have : r = 0 := Fin.ext h0
       subst this; simp [upd]
     · simp only [upd, h0, h6', ite_false]
+
+set_option maxRecDepth 100000 in
+theorem and63_small : ∀ r, r < 64 → r &&& 63 = r := by decide
+
+theorem and63 (x : Nat) : x &&& 63 = x % 64 := by
+  have h1 : x &&& 63 ≤ 63 := Nat.and_le_right
+  have e := Nat.and_mod_two_pow (a := x) (b := 63) (n := 6)
+  rw [show (2 : Nat) ^ 6 = 64 from rfl, Nat.mod_eq_of_lt (show x &&& 63 < 64 by omega), show 63 % 64 = 63 from rfl,
+    and63_small _ (Nat.mod_lt _ (by decide))] at e
+  exact e
+
+theorem and63_val {x : Nat} (hx : x < 2 ^ 32) : aluEval .and (BitVec.ofNat 32 x) 0x3F = BitVec.ofNat 32 (x % 64) := by
+  apply BitVec.eq_of_toNat_eq
+  show (BitVec.ofNat 32 x &&& 0x3F).toNat = _
+  rw [BitVec.toNat_and, show (0x3F : Word).toNat = 63 from rfl, and63, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+    Nat.mod_eq_of_lt hx]
+  omega
+
+theorem srl6_val {x : Nat} (hx : x < 2 ^ 32) : aluEval .srl (BitVec.ofNat 32 x) 6 = BitVec.ofNat 32 (x / 64) := by
+  apply BitVec.eq_of_toNat_eq
+  show (BitVec.ofNat 32 x >>> ((6 : Word).toNat % 32)).toNat = _
+  rw [BitVec.toNat_ushiftRight, BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hx,
+    show (6 : Word).toNat % 32 = 6 from rfl, Nat.shiftRight_eq_div_pow]
+  omega
+
+theorem m64_bits : ∀ i : Fin 31, ((0x7FFFFFC0 : Word).getLsbD i.val && (0x3F : Word).getLsbD i.val) = false ∧
+    ((0x7FFFFFC0 : Word).getLsbD i.val || (0x3F : Word).getLsbD i.val) = true := by decide
+
+/-- The mask `update` uses for the bytes in whole blocks. -/
+theorem mask64_val {x : Nat} (hx : x < 2 ^ 31) :
+    aluEval .and 0x7FFFFFC0 (BitVec.ofNat 32 x) = BitVec.ofNat 32 (64 * (x / 64)) := by
+  let w := BitVec.ofNat 32 x
+  have hw31 : w.getLsbD 31 = false := by
+    show (BitVec.ofNat 32 x).getLsbD 31 = false
+    rw [BitVec.getLsbD_ofNat, Nat.testBit_lt_two_pow hx, Bool.and_false]
+  have hd : (0x7FFFFFC0 &&& w) + (0x3F &&& w) = w := by
+    rw [Sha256.add_disj]
+    · apply Sha256.bitw; intro i hi
+      simp only [BitVec.getLsbD_or, BitVec.getLsbD_and]
+      by_cases h31 : i = 31
+      · subst h31; rw [hw31]; decide
+      · have := (m64_bits ⟨i, by omega⟩).2
+        cases hb : w.getLsbD i <;> simp_all
+    · intro i hi
+      simp only [BitVec.getLsbD_and]
+      by_cases h31 : i = 31
+      · subst h31; rw [hw31]; decide
+      · have := (m64_bits ⟨i, by omega⟩).1
+        cases w.getLsbD i <;> simp_all
+  have e : (0x7FFFFFC0 : Word) &&& w = w - (0x3F &&& w) := by
+    calc (0x7FFFFFC0 : Word) &&& w = (0x7FFFFFC0 &&& w) + (0x3F &&& w) - (0x3F &&& w) :=
+          (BitVec.add_sub_cancel ..).symm
+      _ = w - (0x3F &&& w) := by rw [hd]
+  show (0x7FFFFFC0 : Word) &&& w = _
+  rw [e]
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_sub, BitVec.toNat_and, show (0x3F : Word).toNat = 63 from rfl, Nat.and_comm, and63]
+  show (2 ^ 32 - (BitVec.ofNat 32 x).toNat % 64 + (BitVec.ofNat 32 x).toNat) % 2 ^ 32 = (BitVec.ofNat 32 (64 * (x / 64))).toNat
+  rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (show x < 2 ^ 32 by omega)]
+  omega
+
+set_option maxRecDepth 20000 in
+/-- `update` from offset 0x6A, once the buffer is empty: it compresses the
+whole blocks of the `nk` input bytes left at `Dk` in place, buffers the
+rest with a tail call of `memcpy`, and returns. `pre` is the blocks
+compressed so far, and `msg'` the message with the new bytes appended. -/
+theorem upd_join {M0 Mx : Word → BitVec 8} {S D sp0 Dk : Word} {n nk : Nat} {msg' : Bytes}
+    {pre : List Bytes} (nn : Machine) {f : Fin 32 → Word} {rRa rS0 rS1 rS2 rS3 rS4 : Word}
+    (E : UpdEnv M0 S D sp0 n) (s : St Mx (BitVec.ofNat 32 shaUpdateAddress) nn 0x6A f)
+    (hagree : ∀ x, Sep (sp0 + 0xFFFFFF00) 0x100 x 1 → Sep S 0x68 x 1 → Mx x = M0 x)
+    (hnk : nk ≤ n) (hDk : Dk = D + BitVec.ofNat 32 (n - nk)) (hn : n < 2 ^ 31)
+    (fa1 : f a1 = Dk) (fs1 : f s1 = BitVec.ofNat 32 nk) (fs2 : f s2 = S + 0x40) (fs4 : f s4 = S)
+    (fsp : f sp = sp0 + 0xFFFFFFE0)
+    (hslots : ∀ My : Word → BitVec 8, (∀ k, 8 ≤ k → k < 32 →
+        My (sp0 + 0xFFFFFFE0 + BitVec.ofNat 32 k) = Mx (sp0 + 0xFFFFFFE0 + BitVec.ofNat 32 k)) →
+      memLoad32 My (sp0 + 0xFFFFFFE0 + 0x1C) = rRa ∧ memLoad32 My (sp0 + 0xFFFFFFE0 + 0x18) = rS0 ∧
+      memLoad32 My (sp0 + 0xFFFFFFE0 + 0x14) = rS1 ∧ memLoad32 My (sp0 + 0xFFFFFFE0 + 0x10) = rS2 ∧
+      memLoad32 My (sp0 + 0xFFFFFFE0 + 0x0C) = rS3 ∧ memLoad32 My (sp0 + 0xFFFFFFE0 + 8) = rS4)
+    (hret : rRa &&& ~~~1 = rRa)
+    (hhash : wordsAt Mx (S + 0x40) 8 = pre.foldl Sha256.compress Sha256.h0)
+    (hlo : memLoad32 Mx (S + 0x60) = BitVec.ofNat 32 pre.length) (hhi : memLoad32 Mx (S + 0x64) = 0)
+    (hfull : fullBlocks msg' = pre ++ Sha256.blocks (nk / 64) (memBytes M0 Dk nk))
+    (htail : tailBytes msg' = (memBytes M0 Dk nk).drop (64 * (nk / 64)))
+    (hlen : msg'.length < 2 ^ 32) :
+    ∃ m', Steps nn m' ∧ m'.pc = rRa ∧ reg m' sp = sp0 ∧ reg m' s0 = rS0 ∧ reg m' s1 = rS1 ∧
+      reg m' s2 = rS2 ∧ reg m' s3 = rS3 ∧ reg m' s4 = rS4 ∧
+      (∀ r, r ≠ ra → r ≠ sp → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ s0 → r ≠ s1 →
+        r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ s2 → r ≠ s3 →
+        r ≠ s4 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) →
+        reg m' r = f r) ∧
+      HasherAt m'.mem S msg' ∧
+      ∀ x, Sep (sp0 + 0xFFFFFF00) 0x100 x 1 → Sep S 0x68 x 1 → m'.mem x = M0 x := by
+  sorry
 
 end C3.RV32
