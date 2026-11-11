@@ -49,6 +49,9 @@ and remove the replacements:
 | `Proofs/ShaUpdate.lean` | `and63_small`, `and63` | `Nat.and_two_pow_sub_one_eq_mod` |
 | `Proofs/ShaUpdate.lean` | `mask64_val`, proved bit by bit through `m64_bits` and `Sha256.add_disj` | `Nat.and_two_pow_sub_one_eq_mod` on the value and its complement |
 | `Proofs/ShaUpdate.lean` | Branch conditions closed with `beq_eq_false_iff_ne` and `ofNat_inj` | `simp` on the condition |
+| `Proofs/MontMul12.lean`, `Proofs/UintSelect12.lean`, `Proofs/MontMul12Main.lean` | Loop indices (`idx_lt1`, `idx_succ`, `sel_lt1`, `sel_succ`) and `mm_final_arith`'s cases kept out of `omega` calls whose context holds a negated conjunction, which makes `omega` use `Classical.choice` | `omega` in the full context |
+| `Proofs/UintSelect12.lean` | `selWord_eq` through `ones_bit`, by `decide` over `Fin 32` | `BitVec.getLsbD_allOnes` |
+| `Proofs/MontMul12.lean` | `mm_outer_arith` bounds a quotient with `Nat.lt_of_not_le` and `Nat.mul_le_mul_left` | `Nat.lt_of_mul_lt_mul_left` |
 
 ## Other cleanup
 
@@ -58,6 +61,11 @@ and remove the replacements:
   (`Proofs/ImageHelpers.lean`, with `copyWords`) cover. Move their callers
   (`wideMul_correct`, `imageParse_correct`) to the general theorems and
   delete the aligned ones.
+- **Move `St.callBlock`, `St.memsetW`, and `St.memcpyW` into `Proof/`.**
+  `Proofs/UintSelect12.lean` states them for any caller's code. The callers
+  with their own copies (`wm_memset` and `wm_memcpy` in
+  `Proofs/FieldWideMulMain.lean`, `si_bsub` in `Proofs/FieldSubInner.lean`)
+  can use them instead.
 - **Move general step lemmas into `Proof/`.** `St.lh`, `St.sh`,
   `St.upd_eq`, and `St.upd_ne` (`Proofs/MemcpyAny.lean`,
   `Proofs/MemsetAny.lean`) belong in `Proof/Step.lean`, beside the other

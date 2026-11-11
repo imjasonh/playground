@@ -15,23 +15,24 @@ image and in one boot. A function counts once a correctness theorem covers
 it; the theorem's hypotheses, such as a stack layout, are still for its
 callers' proofs to discharge. The boot is the trial boot of a valid slot
 that `c3-boot/docs/measurements.md` profiles. Measured on 2026-11-11, after
-SHA-256's `update`, `finalize`, and one-shot `sha256`:
+P-384's `mul_montgomery_form::<12>` and `Uint<12>::select`:
 
 | Measure | Proved | Total | Share |
 | --- | --- | --- | --- |
-| Instructions in the image | 5,828 | 42,490 | 13.7% |
-| Instructions one boot runs | 42,571,472 | 133,867,420 | 31.8% |
+| Instructions in the image | 6,034 | 42,490 | 14.2% |
+| Instructions one boot runs | 96,964,754 | 133,867,420 | 72.4% |
 
-The unproved functions that run the most, as a share of that boot:
+`mul_montgomery_form::<12>` alone ran 36.2 percent of the boot, so proving
+its 206 instructions raised boot coverage from 31.8 to 72.4 percent. The
+unproved functions that run the most, as a share of that boot:
 
 | Function | Share of the boot |
 | --- | --- |
-| `crypto_bigint`'s `mul_montgomery_form::<12>` (P-384) | 36.2% |
 | `crypto_bigint`'s `square_montgomery_form::<12>` (P-384) | 7.1% |
-| `ConstMontyForm` operations on P-384 field elements | 6.0% |
 | `curve25519_dalek`'s field multiplication, squaring, and reduction | 7.5% |
-| `Uint<12>::select` | 2.0% |
+| `ConstMontyForm` operations on P-384 field elements | 6.0% |
 | `c3_bootloader::flash::read` | 1.7% |
+| `p384`'s `FieldElement::double` | 1.7% |
 
 To reproduce, profile the trial boot as `measurements.md` shows, then:
 
@@ -69,9 +70,10 @@ python3 ../c3-boot-proofs/scripts/coverage.py /tmp/trial.prof "${elf}" "${bin}/l
 | `field_impl::add`, `field_impl::sub`, and `FieldElement::double` | 173 | 1,489 | 8.6 | 322 | 3.6 | 50 min |
 | Complete point addition | 253 | 2,419 | 9.6 | 97 | 2.0 | 1 h 41 min |
 | `sha2::sha256::compress256` with its outlined helpers | 3,685 | 25,809 | 7.0 | 392 | 1.8 | About 12 h 20 min |
-| **Total** | **5,592** | **49,692** | **8.9** | **1,332** | **3.6** | **About 21 h 40 min** |
+| P-384's `mul_montgomery_form::<12>` with its outlined helpers and `Uint<12>::select` | 206 | 2,969 | 14.4 | 30 | 0.8 | 1 h 15 min |
+| **Total** | **5,798** | **52,661** | **9.1** | **1,362** | **3.6** | **About 22 h 55 min** |
 
-The 5,592 instructions are 13 percent of the image. The full build of the
+The 5,798 instructions are 14 percent of the image. The full build of the
 Lean project, with the specification, the RV32 model, and the audit, takes
 10 to 13 minutes on the same VM.
 
@@ -112,6 +114,13 @@ Findings:
   `fieldAdd_correct`, a single theorem over 107 instructions with one
   hypothesis per instruction, takes 249 seconds and 3.6 GB, the most of any
   file, and is the first candidate for the same split.
+- **A loop proved once serves both P-384 multiplications.** The Montgomery
+  loop body (`mmBody` in `MontMul12.lean`) is stated over its registers, so
+  `square_montgomery_form::<12>`, which compiles the same loop with other
+  registers, can reuse its run and bound lemmas. The multiplication's
+  2,969 lines are mostly calls and frames: the prologue, the final
+  subtraction, and the call to `Uint<12>::select` take 1,225 lines for 60
+  instructions, against 938 lines for the 81 instructions of both loops.
 - **About 200 to 300 instructions an hour.** One agent proved about 1,900
   instructions in about 9 hours 20 minutes of wall-clock time, about 200
   an hour. SHA-256 took about 12 hours 20 minutes for 3,685 instructions,

@@ -36,12 +36,17 @@
 > compiled `update` absorbs any input in that form. `shaFinalize_correct`
 > shows that the compiled `finalize` then writes FIPS 180-4's digest of the
 > whole message, and `sha256Fn_correct` composes them: the compiled
-> `c3_crypto::sha::sha256` returns FIPS 180-4's SHA-256 of any input. The boot simulator measures the image's speed: about 135
+> `c3_crypto::sha::sha256` returns FIPS 180-4's SHA-256 of any input. P-384's
+> field multiplication is proved as compiled: `mulMont12_correct` shows that
+> `crypto_bigint`'s `mul_montgomery_form::<12>`, with its final subtraction
+> through `borrowing_sub` and `Uint<12>::select`, returns `r < n` with
+> `r · 2^384 ≡ x · y (mod n)`. The boot simulator measures the image's speed: about 135
 > million instructions for one full slot check, about half of them P-384
 > arithmetic ([`c3-boot/docs/measurements.md`](../c3-boot/docs/measurements.md)).
-> [The throughput report](../c3-boot-proofs/docs/throughput.md) measures 8.9
-> proof lines per instruction over 13 percent of the image and projects the
-> whole image at about a tenth of the libsignal proof.
+> [The throughput report](../c3-boot-proofs/docs/throughput.md) measures 9.1
+> proof lines per instruction and projects the whole image at about a tenth
+> of the libsignal proof. Proved functions hold 14.2 percent of the image's
+> instructions and 72.4 percent of the instructions one boot runs.
 > [`c3-boot-proofs/docs/future-work.md`](../c3-boot-proofs/docs/future-work.md)
 > lists cleanup for later, including allowing `Classical.choice` in phase 8.
 > [`c3-boot/README.md`](../c3-boot/README.md) lists what isn't
