@@ -421,4 +421,11 @@ theorem mmBodyM_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0)
       subst this; simp [upd, hz]
     · simp [upd, hq, q26, q9, q13, q12, q24, q25, q14, q15, q10, q8, q11]
 
+theorem mmBodyM_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Word} {len : Nat}
+    (hn : (f (26 : Fin 32) + 0).toNat % 4 = 0) (hy : (f (9 : Fin 32) + 0).toNat % 4 = 0)
+    (ho : (f a3 + 0).toNat % 4 = 0) (hs : (f a3 + 0xFFFFFFFC).toNat % 4 = 0)
+    (hsep : Sep (f a3 + 0xFFFFFFFC) 4 base len) : BlockOk base len mmBodyM (M, f) := by
+  simp +decide only [BlockOk, BInstr.ok, BInstr.run, mmBody, upd, ↓reduceIte, true_and, and_true]
+  exact ⟨hn, hy, ho, hs, hsep⟩
+
 end C3.RV32
