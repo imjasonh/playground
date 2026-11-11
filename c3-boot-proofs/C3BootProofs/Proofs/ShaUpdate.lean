@@ -576,7 +576,7 @@ theorem mask64_val {x : Nat} (hx : x < 2 ^ 31) :
   rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (show x < 2 ^ 32 by omega)]
   omega
 
-set_option maxRecDepth 20000 in
+set_option maxRecDepth 200000 in
 /-- `update` from offset 0x6A, once the buffer is empty: it compresses the
 whole blocks of the `nk` input bytes left at `Dk` in place, buffers the
 rest with a tail call of `memcpy`, and returns. `pre` is the blocks
@@ -607,6 +607,205 @@ theorem upd_join {M0 Mx : Word → BitVec 8} {S D sp0 Dk : Word} {n nk : Nat} {m
         reg m' r = f r) ∧
       HasherAt m'.mem S msg' ∧
       ∀ x, Sep (sp0 + 0xFFFFFF00) 0x100 x 1 → Sep S 0x68 x 1 → m'.mem x = M0 x := by
+  let U := BitVec.ofNat 32 shaUpdateAddress
+  let G := sp0 + 0xFFFFFFE0
+  let R := sp0 + 0xFFFFFF00
+  let k := nk / 64
+  have hSw := E.hSw
+  have hspw := E.hspw
+  have hspl := E.hspl
+  have hDw := E.hDw
+  have hRn : R.toNat = sp0.toNat - 0x100 := by
+    show (sp0 + 0xFFFFFF00).toNat = _
+    rw [BitVec.toNat_add, show (0xFFFFFF00 : Word).toNat = 2 ^ 32 - 0x100 from rfl]; omega
+  have hGn : G.toNat = sp0.toNat - 0x20 := by
+    show (sp0 + 0xFFFFFFE0).toNat = _
+    rw [BitVec.toNat_add, show (0xFFFFFFE0 : Word).toNat = 2 ^ 32 - 0x20 from rfl]; omega
+  have hGa : G.toNat % 4 = 0 := by rw [hGn]; have := E.hsp; omega
+  have hGR : G = R + BitVec.ofNat 32 0xE0 := by
+    show sp0 + 0xFFFFFFE0 = sp0 + 0xFFFFFF00 + BitVec.ofNat 32 0xE0
+    rw [BitVec.add_assoc]; rfl
+  have hDkn : Dk.toNat = D.toNat + (n - nk) := by
+    rw [hDk, BitVec.toNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (a := n - nk) (by omega)]; omega
+  -- Code, anywhere at or above 0x40000000, is apart from the stack and the hasher.
+  have codeX : ∀ (My : Word → BitVec 8), (∀ x, Sep R 0x100 x 1 → Sep S 0x68 x 1 → My x = M0 x) →
+      ∀ (b : Word) (code : List Nat), CodeIn M0 b code → 0x40000000 ≤ b.toNat →
+      b.toNat + code.length ≤ 2 ^ 32 → CodeIn My b code := fun My h b code hc hb hbl i hi => by
+    rw [h _ ((data_code (by rw [hRn]; omega) hb hbl).subR (c := i) (l := 1) (by omega))
+      ((data_code (by omega) hb hbl).subR (c := i) (l := 1) (by omega))]
+    exact hc i hi
+  have cU := codeX Mx hagree _ _ E.cU (by decide) (by decide)
+  obtain ⟨n1, d1, u1⟩ := s.lui cU su_at_6a (off' := 0x6E) (by decide)
+  have K1 := u1.upd_ne s.zero
+  have u1' : St Mx U n1 0x6E (reg n1) := u1.self
+  obtain ⟨n2, d2, u2⟩ := u1'.aluImm cU su_at_6e (off' := 0x72) (by decide)
+  have g2 : reg n2 a0 = 0x7FFFFFC0 := by rw [u2.upd_eq (by decide), u1.upd_eq (by decide)]; rfl
+  have K2 := u2.upd_ne u1'.zero
+  have u2' : St Mx U n2 0x72 (reg n2) := u2.self
+  have s1_2 : reg n2 s1 = BitVec.ofNat 32 nk := by rw [K2 s1 (by decide), K1 s1 (by decide), fs1]
+  obtain ⟨n3, d3, u3⟩ := u2'.aluImm cU su_at_72 (off' := 0x76) (by decide)
+  have g3 : reg n3 a2 = BitVec.ofNat 32 k := by rw [u3.upd_eq (by decide), s1_2, srl6_val (by omega)]
+  have K3 := u3.upd_ne u2'.zero
+  have u3' : St Mx U n3 0x76 (reg n3) := u3.self
+  obtain ⟨n4, d4, u4⟩ := u3'.alu cU su_at_76 (off' := 0x78) (by decide)
+  have g4 : reg n4 a0 = BitVec.ofNat 32 (64 * k) := by
+    rw [u4.upd_eq (by decide), K3 a0 (by decide), g2, K3 s1 (by decide), s1_2, mask64_val (by omega)]
+  have K4 := u4.upd_ne u3'.zero
+  have u4' : St Mx U n4 0x78 (reg n4) := u4.self
+  obtain ⟨n5, d5, u5⟩ := u4'.aluImm cU su_at_78 (off' := 0x7C) (by decide)
+  have g5 : reg n5 s1 = BitVec.ofNat 32 (nk % 64) := by
+    rw [u5.upd_eq (by decide), K4 s1 (by decide), K3 s1 (by decide), s1_2, and63_val (by omega)]
+  have K5 := u5.upd_ne u4'.zero
+  have u5' : St Mx U n5 0x7C (reg n5) := u5.self
+  obtain ⟨n6, d6, u6⟩ := u5'.alu cU su_at_7c (off' := 0x80) (by decide)
+  have g6 : reg n6 s3 = Dk + BitVec.ofNat 32 (64 * k) := by
+    rw [u6.upd_eq (by decide), K5 a1 (by decide), K4 a1 (by decide), K3 a1 (by decide), K2 a1 (by decide),
+      K1 a1 (by decide), fa1, K5 a0 (by decide), g4]; rfl
+  have K6 := u6.upd_ne u5'.zero
+  have u6' : St Mx U n6 0x80 (reg n6) := u6.self
+  have K16 : ∀ r, r ≠ a0 → r ≠ a2 → r ≠ s1 → r ≠ s3 → reg n6 r = f r := fun r q0 q2 q9 q19 => by
+    rw [K6 r q19, K5 r q9, K4 r q0, K3 r q2, K2 r q0, K1 r q0]
+  have c6 : Steps nn n6 := .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.single d6)))))
+  have hkk : 64 * k ≤ nk := by show 64 * (nk / 64) ≤ nk; omega
+  have hblk : Sha256.blocks k (memBytes M0 Dk nk) = blockList Mx Dk k := by
+    rw [blocks_take, memBytes_take _ _ hkk, blocks_memBytes M0 k k Dk (Nat.le_refl k)]
+    apply blockList_congr; intro i hi
+    have hD := E.sDF.sub (c := n - nk + i) (l := 1) (by omega)
+    have hS' := E.sDS.sub (c := n - nk + i) (l := 1) (by omega)
+    rw [hDk, add_ofNat_assoc]
+    exact (hagree _ hD.symm hS'.symm).symm
+  have hfl : pre.length + k = msg'.length / 64 := by
+    rw [← fullBlocks_length, hfull, List.length_append, blocks_length _ _ (by rw [memBytes_length]; exact hkk)]
+  have RG : G + 0xFFFFFF20 = R := by
+    show sp0 + 0xFFFFFFE0 + 0xFFFFFF20 = sp0 + 0xFFFFFF00; rw [BitVec.add_assoc]; rfl
+  have e60 : S + 0x40 + 0x20 = S + BitVec.ofNat 32 0x60 := by rw [BitVec.add_assoc]; rfl
+  have e40 : S + 0x40 = S + BitVec.ofNat 32 0x40 := rfl
+  have hS40 : (S + 0x40).toNat = S.toNat + 0x40 := by
+    rw [e40, BitVec.toNat_add, BitVec.toNat_ofNat]; omega
+  have hS60 : (S + 0x40 + 0x20).toNat = S.toNat + 0x60 := by
+    rw [e60, BitVec.toNat_add, BitVec.toNat_ofNat]; omega
+  -- The whole blocks of the input, compressed in place.
+  have H8 : ∃ n8 Mc, Steps nn n8 ∧ St Mc U n8 0x8C (reg n8) ∧
+      wordsAt Mc (S + 0x40) 8 = (pre ++ Sha256.blocks k (memBytes M0 Dk nk)).foldl Sha256.compress Sha256.h0 ∧
+      memLoad32 Mc (S + 0x60) = BitVec.ofNat 32 (pre.length + k) ∧ memLoad32 Mc (S + 0x64) = 0 ∧
+      (∀ x, Sep R 0xE0 x 1 → Sep (S + 0x40) 40 x 1 → Mc x = Mx x) ∧
+      reg n8 s1 = BitVec.ofNat 32 (nk % 64) ∧ reg n8 s3 = Dk + BitVec.ofNat 32 (64 * k) ∧
+      (∀ r, r ≠ ra → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
+        r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ s1 → r ≠ s3 → r ≠ (28 : Fin 32) →
+        r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → reg n8 r = f r) := by
+    by_cases hk0 : k = 0
+    · obtain ⟨n7, d7, u7⟩ := u6'.taken cU 0x8C su_at_80 (by decide) (by
+        simp only [branchTaken]; rw [K6 a2 (by decide), K5 a2 (by decide), K4 a2 (by decide), g3, u6'.zero, hk0]
+        rfl)
+      refine ⟨n7, Mx, c6.trans (.single d7), u7.self, ?_, ?_, ?_, fun _ _ _ => rfl, ?_, ?_,
+        fun r q1 q3 q5 q6 q7 q10 q11 q12 _ _ _ _ _ q9 q19 _ _ _ _ => ?_⟩
+      · rw [hhash, hk0]; simp [Sha256.blocks]
+      · rw [hlo, hk0]; rfl
+      · exact hhi
+      · rw [u7.regs, K6 s1 (by decide), g5]
+      · rw [u7.regs, g6]
+      · rw [u7.regs, K16 r q10 q12 q9 q19]
+    · obtain ⟨n7, d7, u7⟩ := u6'.notTaken cU 0x82 su_at_80 (by decide) (by
+        simp only [branchTaken]; rw [K6 a2 (by decide), K5 a2 (by decide), K4 a2 (by decide), g3, u6'.zero]
+        rw [beq_eq_false_iff_ne]
+        intro h; exact hk0 (ofNat_inj (by omega) (by decide) h))
+      obtain ⟨n8, d8, u8⟩ := u7.alu cU su_at_82 (off' := 0x84) (by decide)
+      have g8 : reg n8 a0 = S + 0x40 := by
+        rw [u8.upd_eq (by decide), u6'.zero, K16 s2 (by decide) (by decide) (by decide) (by decide), fs2]
+        exact BitVec.zero_add _
+      have K8 := u8.upd_ne u6'.zero
+      have u8' : St Mx U n8 0x84 (reg n8) := u8.self
+      obtain ⟨n9, d9, u9⟩ := u8'.auipc cU su_at_84 (off' := 0x88) (by decide)
+      obtain ⟨n10, d10, pc10, mem10, regs10⟩ := u9.call cU su_at_88
+      have r10 : ∀ r, r ≠ ra → reg n10 r = reg n8 r := fun r h => by
+        rw [regs10]
+        by_cases h0 : r.val = 0
+        · have : r = 0 := Fin.ext h0
+          subst this; simp [upd]; exact u8'.zero.symm
+        · simp [upd, h0, h]
+      have ra10 : reg n10 ra = U + BitVec.ofNat 32 0x8C := by rw [regs10]; simp +decide [upd]; rfl
+      have pc10' : n10.pc = BitVec.ofNat 32 shaUpdateBlocksAddress := by
+        rw [pc10, show ∀ (F : Fin 32 → Word) (v : Word), upd F ra v ra = v from fun F v => by simp [upd]]
+        decide
+      have cX10 : ∀ (b : Word) (code : List Nat), CodeIn M0 b code → 0x40000000 ≤ b.toNat →
+          b.toNat + code.length ≤ 2 ^ 32 → CodeIn n10.mem b code := fun b code hc hb hbl => by
+        rw [mem10]; exact codeX Mx hagree b code hc hb hbl
+      have sR : ∀ (b : Word) (l : Nat), 0x40000000 ≤ b.toNat → b.toNat + l ≤ 2 ^ 32 → Sep R 0xE0 b l :=
+        fun b l hb hbl => data_code (by rw [hRn]; omega) hb hbl
+      have s40 : ∀ (b : Word) (l : Nat), 0x40000000 ≤ b.toNat → b.toNat + l ≤ 2 ^ 32 → Sep (S + 0x40) 32 b l :=
+        fun b l hb hbl => data_code (by rw [hS40]; omega) hb hbl
+      have s60 : ∀ (b : Word) (l : Nat), 0x40000000 ≤ b.toNat → b.toNat + l ≤ 2 ^ 32 →
+          Sep (S + 0x40 + 0x20) 8 b l := fun b l hb hbl => data_code (by rw [hS60]; omega) hb hbl
+      have kR : Sep R 0xE0 (BitVec.ofNat 32 shaKAddress) 256 := by
+        have := E.sKF.symm.sub (c := 0) (l := 0xE0) (by omega); rwa [add_ofNat_zero] at this
+      have kS : ∀ c l, c + l ≤ 0x68 → Sep (S + BitVec.ofNat 32 c) l (BitVec.ofNat 32 shaKAddress) 256 :=
+        fun c l h => E.sKS.symm.sub (c := c) (l := l) h
+      have dR : Sep Dk (64 * k) R 0xE0 := by
+        rw [hDk]; exact (E.sDF.sub (c := n - nk) (l := 64 * k) (by omega)).subR (c := 0) (l := 0xE0) (by omega)
+          |> fun h => by rwa [add_ofNat_zero] at h
+      have dS : ∀ c l, c + l ≤ 0x68 → Sep Dk (64 * k) (S + BitVec.ofNat 32 c) l := fun c l h => by
+        rw [hDk]; exact (E.sDS.sub (c := n - nk) (l := 64 * k) (by omega)).subR (c := c) (l := l) h
+      have SR : ∀ c l, c + l ≤ 0x68 → Sep (S + BitVec.ofNat 32 c) l R 0xE0 := fun c l h =>
+        (E.sSF.sub (c := c) (l := l) h).subR (c := 0) (l := 0xE0) (by omega) |> fun h' => by
+          rwa [add_ofNat_zero] at h'
+      have env : SCEnv n10.mem (BitVec.ofNat 32 sha256CompressAddress) G (S + 0x40) Dk k :=
+        { hP := by decide
+          code := cX10 _ _ E.cC (by decide) (by decide)
+          idx := cX10 _ _ E.cI (by decide) (by decide)
+          o97 := cX10 _ _ E.c97 (by decide) (by decide)
+          kdata := fun i hi => by
+            have hi' : i < 256 := by rw [show shaKData.length = 256 from rfl] at hi; exact hi
+            rw [mem10, hagree _ ((E.sKF.sub (c := i) (l := 1) (by omega)).symm)
+              ((E.sKS.sub (c := i) (l := 1) (by omega)).symm)]
+            exact E.cK i hi
+          hsp := hGa
+          hS := by rw [hGn]; omega
+          hstp := by rw [hS40]; have := E.hS; omega
+          hwbp := by rw [hDkn]; omega
+          sC := by rw [RG]; exact sR _ _ (by decide) (by decide)
+          sI := by rw [RG]; exact sR _ _ (by decide) (by decide)
+          s97 := by rw [RG]; exact sR _ _ (by decide) (by decide)
+          sK := by rw [RG]; exact kR
+          stC := s40 _ _ (by decide) (by decide)
+          stI := s40 _ _ (by decide) (by decide)
+          st97 := s40 _ _ (by decide) (by decide)
+          stK := by rw [e40]; exact kS 0x40 32 (by omega)
+          stF := by rw [RG, e40]; exact SR 0x40 32 (by omega)
+          bF := by rw [RG]; exact dR
+          bSt := by rw [e40]; exact dS 0x40 32 (by omega) }
+      have lo10 : memLoad32 n10.mem (S + 0x40 + 0x20) = BitVec.ofNat 32 pre.length := by rw [mem10, e60]; exact hlo
+      obtain ⟨n11, c11, pc11, sp11, K11, w11, lo11, hi11, fr11⟩ := shaBlocks_correct n10
+        (cX10 _ _ E.cBlk (by decide) (by decide)) pc10' env
+        (by rw [r10 a0 (by decide), g8]) (by rw [r10 a1 (by decide), K8 a1 (by decide), K16 a1 (by decide)
+          (by decide) (by decide) (by decide), fa1])
+        (by rw [r10 a2 (by decide), K8 a2 (by decide), K6 a2 (by decide), K5 a2 (by decide), K4 a2 (by decide), g3])
+        ra10 (by decide)
+        (by rw [r10 sp (by decide), K8 sp (by decide), K16 sp (by decide) (by decide) (by decide) (by decide), fsp])
+        (by rw [lo10, BitVec.toNat_ofNat]; omega)
+        (s60 _ _ (by decide) (by decide)) (s60 _ _ (by decide) (by decide)) (s60 _ _ (by decide) (by decide))
+        (by rw [e60]; exact kS 0x60 8 (by omega)) (by rw [RG, e60]; exact SR 0x60 8 (by omega))
+        (by rw [e60]; exact dS 0x60 8 (by omega)) (s60 _ _ (by decide) (by decide))
+      have k11 : ∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 →
+          r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
+          r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → reg n11 r = reg n10 r := fun r q3 q5 q6 q7 q10 q11 q12 q13
+          q14 q15 q16 q17 q28 q29 q30 q31 => K11 r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31
+      refine ⟨n11, n11.mem, c6.trans (.cons d7 (.cons d8 (.cons d9 (.cons d10 c11)))),
+        ⟨by rw [pc11], rfl, fun _ => rfl⟩, ?_, ?_, ?_, fun x hx hy => ?_, ?_, ?_,
+        fun r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q9 q19 q28 q29 q30 q31 => ?_⟩
+      · rw [w11, mem10, hhash, hblk, List.foldl_append]
+      · rw [show S + (0x60 : Word) = S + 0x40 + 0x20 from e60.symm, lo11, lo10, BitVec.ofNat_add_ofNat]
+      · rw [show S + (0x64 : Word) = S + 0x40 + 0x24 by rw [BitVec.add_assoc]; rfl, hi11, mem10,
+          show S + 0x40 + (0x24 : Word) = S + 0x64 by rw [BitVec.add_assoc]; rfl]
+        exact hhi
+      · rw [fr11 x (by rw [RG]; exact hx) hy, mem10]
+      · rw [k11 s1 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+          (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
+          r10 s1 (by decide), K8 s1 (by decide), K6 s1 (by decide), g5]
+      · rw [k11 s3 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+          (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
+          r10 s3 (by decide), K8 s3 (by decide), g6]
+      · rw [k11 r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, r10 r q1, K8 r q10,
+          K16 r q10 q12 q9 q19]
   sorry
 
 end C3.RV32
