@@ -396,4 +396,113 @@ theorem sel_iter {M : Word → BitVec 8} {S F ap bp c : Word} {n : Machine} {i :
   · obtain ⟨n3, d3, u3⟩ := u2'.notTaken hc2 0x48 us_at_46 (by decide) (by rw [hb]; exact decide_eq_false hl)
     exact ⟨n3, c1.trans (c2.trans (.single d3)), by rw [ite_eq_right hl]; exact u3.self, post n3 u3.regs⟩
 
+theorem slot37 (F : Word) : F + 4 + BitVec.ofNat 32 0x33 = F + 0x37 := by rw [BitVec.add_assoc]; rfl
+
+/-- What one limb of the loop does to memory, apart from the registers. -/
+theorem sel_mem {M MB : Word → BitVec 8} {F ap bp c : Word} {v : BitVec 8} {i : Nat} (hi : i < 12) (hw : F.toNat + 0x50 ≤ 2 ^ 32)
+    (sA : Sep (F + 4) 0x34 ap 48) (sB : Sep (F + 4) 0x34 bp 48)
+    (hfr : ∀ x, Sep (F + 4) 0x34 x 1 → M x = MB x)
+    (hwd : ∀ j, j < i → memLoad32 M (F + 4 + BitVec.ofNat 32 (4 * j)) =
+      if c = 1 then memLoad32 MB (bp + BitVec.ofNat 32 (4 * j)) else memLoad32 MB (ap + BitVec.ofNat 32 (4 * j))) :
+    (∀ x, Sep (F + 4) 0x34 x 1 → memStore32 (memStore8 M (F + 0x37) v) (F + 4 + BitVec.ofNat 32 (4 * i))
+      (if c = 1 then memLoad32 M (bp + BitVec.ofNat 32 (4 * i)) else memLoad32 M (ap + BitVec.ofNat 32 (4 * i))) x =
+        MB x) ∧
+    ∀ j, j < i + 1 → memLoad32 (memStore32 (memStore8 M (F + 0x37) v) (F + 4 + BitVec.ofNat 32 (4 * i))
+      (if c = 1 then memLoad32 M (bp + BitVec.ofNat 32 (4 * i)) else memLoad32 M (ap + BitVec.ofNat 32 (4 * i))))
+        (F + 4 + BitVec.ofNat 32 (4 * j)) =
+      if c = 1 then memLoad32 MB (bp + BitVec.ofNat 32 (4 * j)) else memLoad32 MB (ap + BitVec.ofNat 32 (4 * j)) := by
+  have hF4 : (F + 4).toNat + 0x34 ≤ 2 ^ 32 := by
+    rw [BitVec.toNat_add]; have : (4 : Word).toNat = 4 := rfl; rw [this]; omega
+  refine ⟨fun x hx => ?_, fun j hj => ?_⟩
+  · have h8 : x ≠ F + 0x37 := fun e => by
+      have := hx.point (i := 0x33) (j := 0) (by decide) (by decide)
+      rw [slot37, add_ofNat_zero] at this; exact this e.symm
+    rw [memStore32_get_sep (hx.sub (c := 4 * i) (l := 4) (by omega)), memStore8_ne h8, hfr x hx]
+  · by_cases hji : j = i
+    · subst hji
+      rw [memLoad32_store32_same, load_frame hfr (sB.subR (by omega)), load_frame hfr (sA.subR (by omega))]
+    · rw [memLoad32_store32_sep (sep_offsets (F + 4) (c := 4 * i) (n := 4) (d := 4 * j) (k := 4) (by omega)
+          (by omega) (by omega)), memLoad32_store8_sep (by
+          rw [← slot37]; exact sep_offsets (F + 4) (c := 0x33) (n := 1) (d := 4 * j) (k := 4) (.inr (by omega))
+            (by omega) (by omega)), hwd j (by omega)]
+
+theorem sel_lt {i m n : Nat} (h : i + m + 1 = n) : i < n := by omega
+
+theorem sel_succ {i m n : Nat} (h : i + (m + 1) + 1 = n) : i + 1 + m + 1 = n := by omega
+
+theorem sel_lt1 {i m n : Nat} (h : i + (m + 1) + 1 = n) : i + 1 < n := by omega
+
+/-- **The select loop**, from limb `i` to its end at 0x48: the buffer at
+`F + 4` gets limbs `i..11` of `b` or `a`. -/
+theorem sel_loop {S F ap bp c : Word} {MB : Word → BitVec 8} (hS : S.toNat % 2 = 0) (hcc : c = 0 ∨ c = 1)
+    (hap : ap.toNat % 4 = 0) (hbp : bp.toNat % 4 = 0) (hF : F.toNat % 4 = 0) (hw : F.toNat + 0x50 ≤ 2 ^ 32)
+    (sA : Sep (F + 4) 0x34 ap 48) (sB : Sep (F + 4) 0x34 bp 48)
+    (sC : Sep (F + 4) 0x34 S uintSelect12Code.length)
+    (sD : Sep (F + 4) 0x34 (S + 0xCFEE) uintSelect12StepCode.length) :
+    ∀ m i, i + m + 1 = 12 → ∀ {M : Word → BitVec 8} {n : Machine},
+      St M S n 0x30 (reg n) → CodeIn M S uintSelect12Code → CodeIn M (S + 0xCFEE) uintSelect12StepCode →
+      (∀ x, Sep (F + 4) 0x34 x 1 → M x = MB x) →
+      (∀ j, j < i → memLoad32 M (F + 4 + BitVec.ofNat 32 (4 * j)) =
+        if c = 1 then memLoad32 MB (bp + BitVec.ofNat 32 (4 * j)) else memLoad32 MB (ap + BitVec.ofNat 32 (4 * j))) →
+      reg n sp = F → reg n (9 : Fin 32) = ap + BitVec.ofNat 32 (4 * i) →
+      reg n (20 : Fin 32) = bp + BitVec.ofNat 32 (4 * i) → reg n (8 : Fin 32) = F + 4 + BitVec.ofNat 32 (4 * i) →
+      reg n a0 = BitVec.ofNat 32 (12 - i) → reg n (19 : Fin 32) = c →
+      ∃ n' M', Steps n n' ∧ St M' S n' 0x48 (reg n') ∧ CodeIn M' S uintSelect12Code ∧
+        CodeIn M' (S + 0xCFEE) uintSelect12StepCode ∧ (∀ x, Sep (F + 4) 0x34 x 1 → M' x = MB x) ∧
+        (∀ j, j < 12 → memLoad32 M' (F + 4 + BitVec.ofNat 32 (4 * j)) =
+          if c = 1 then memLoad32 MB (bp + BitVec.ofNat 32 (4 * j)) else memLoad32 MB (ap + BitVec.ofNat 32 (4 * j))) ∧
+        ∀ q, q ≠ a0 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ (9 : Fin 32) → q ≠ (20 : Fin 32) → q ≠ (8 : Fin 32) →
+          q ≠ t0 → reg n' q = reg n q := by
+  have hF4 : (F + 4).toNat + 0x34 ≤ 2 ^ 32 := by
+    rw [BitVec.toNat_add]; have : (4 : Word).toNat = 4 := rfl; rw [this]; omega
+  have hb37 : ∀ {b : Word} {len : Nat}, Sep (F + 4) 0x34 b len → Sep (F + 0x37) 1 b len := fun h => by
+    rw [← slot37]; exact h.sub (by decide)
+  have step : ∀ i, i < 12 → ∀ {M : Word → BitVec 8} {n : Machine},
+      St M S n 0x30 (reg n) → CodeIn M S uintSelect12Code → CodeIn M (S + 0xCFEE) uintSelect12StepCode →
+      (∀ x, Sep (F + 4) 0x34 x 1 → M x = MB x) →
+      (∀ j, j < i → memLoad32 M (F + 4 + BitVec.ofNat 32 (4 * j)) =
+        if c = 1 then memLoad32 MB (bp + BitVec.ofNat 32 (4 * j)) else memLoad32 MB (ap + BitVec.ofNat 32 (4 * j))) →
+      reg n sp = F → reg n (9 : Fin 32) = ap + BitVec.ofNat 32 (4 * i) →
+      reg n (20 : Fin 32) = bp + BitVec.ofNat 32 (4 * i) → reg n (8 : Fin 32) = F + 4 + BitVec.ofNat 32 (4 * i) →
+      reg n a0 = BitVec.ofNat 32 (12 - i) → reg n (19 : Fin 32) = c →
+      ∃ n' M', Steps n n' ∧ St M' S n' (if i + 1 < 12 then 0x30 else 0x48) (reg n') ∧
+        CodeIn M' S uintSelect12Code ∧ CodeIn M' (S + 0xCFEE) uintSelect12StepCode ∧
+        (∀ x, Sep (F + 4) 0x34 x 1 → M' x = MB x) ∧
+        (∀ j, j < i + 1 → memLoad32 M' (F + 4 + BitVec.ofNat 32 (4 * j)) =
+          if c = 1 then memLoad32 MB (bp + BitVec.ofNat 32 (4 * j)) else memLoad32 MB (ap + BitVec.ofNat 32 (4 * j))) ∧
+        reg n' (9 : Fin 32) = ap + BitVec.ofNat 32 (4 * (i + 1)) ∧
+        reg n' (20 : Fin 32) = bp + BitVec.ofNat 32 (4 * (i + 1)) ∧
+        reg n' (8 : Fin 32) = F + 4 + BitVec.ofNat 32 (4 * (i + 1)) ∧
+        reg n' a0 = BitVec.ofNat 32 (12 - (i + 1)) ∧
+        ∀ q, q ≠ a0 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ (9 : Fin 32) → q ≠ (20 : Fin 32) → q ≠ (8 : Fin 32) →
+          q ≠ t0 → reg n' q = reg n q := by
+    intro i hi M n s hc hcs hfr hwd rsp r9 r20 r8 ra0 r19
+    obtain ⟨n1, c1, u1, e9, e20, e8, ea0, fr⟩ := sel_iter (i := i) s hc hcs hS hi hcc hap hbp hF
+      (hb37 sB |>.subR (by omega)) (hb37 sC) (sC.sub (by omega)) (sD.sub (by omega)) (hb37 sD)
+      rsp r9 r20 r8 ra0 r19
+    obtain ⟨m1, m2⟩ := sel_mem (v := c.extractLsb' 0 8) hi hw sA sB hfr hwd
+    exact ⟨n1, _, c1, u1, CodeIn.store32 (CodeIn.store8 hc (hb37 sC)) (sC.sub (by omega)),
+      CodeIn.store32 (CodeIn.store8 hcs (hb37 sD)) (sD.sub (by omega)), m1, m2, e9, e20, e8, ea0, fr⟩
+  intro m
+  induction m with
+  | zero =>
+    intro i hi M n s hc hcs hfr hwd rsp r9 r20 r8 ra0 r19
+    have i11 : i = 11 := Nat.succ.inj hi
+    subst i11
+    obtain ⟨n1, M1, c1, u1, hc1, hcs1, hf1, hw1, _, _, _, _, fr⟩ :=
+      step 11 (by decide) s hc hcs hfr hwd rsp r9 r20 r8 ra0 r19
+    exact ⟨n1, M1, c1, u1, hc1, hcs1, hf1, hw1, fr⟩
+  | succ m ih =>
+    intro i hi M n s hc hcs hfr hwd rsp r9 r20 r8 ra0 r19
+    have hl : i + 1 < 12 := sel_lt1 hi
+    obtain ⟨n1, M1, c1, u1, hc1, hcs1, hf1, hw1, e9, e20, e8, ea0, fr⟩ :=
+      step i (Nat.lt_trans (Nat.lt_succ_self i) hl) s hc hcs hfr hwd rsp r9 r20 r8 ra0 r19
+    rw [ite_eq_left hl] at u1
+    obtain ⟨n', M', c', u', hc', hcs', hf', hw', fr'⟩ := ih (i + 1) (sel_succ hi) u1 hc1 hcs1 hf1 hw1
+      (by rw [fr _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), rsp])
+      e9 e20 e8 ea0
+      (by rw [fr _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), r19])
+    exact ⟨n', M', c1.trans c', u', hc', hcs', hf', hw', fun q q0 q2 q3 q4 q9 q20 q8 qt => by
+      rw [fr' q q0 q2 q3 q4 q9 q20 q8 qt, fr q q0 q2 q3 q4 q9 q20 q8 qt]⟩
+
 end C3.RV32
