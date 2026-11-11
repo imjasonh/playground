@@ -96,6 +96,12 @@ jobs:
           python3 scripts/gen-point-add.py
           git diff --exit-code C3BootProofs/Proofs/PointAdd.lean
 
+      - name: Check the generated SHA-256 round proofs
+        working-directory: c3-boot-proofs
+        run: |
+          python3 scripts/gen-sha256.py
+          git diff --exit-code C3BootProofs/Proofs/
+
       - name: Install Espressif QEMU
         run: |
           sudo apt-get update
