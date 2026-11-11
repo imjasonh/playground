@@ -1631,6 +1631,38 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
   have MQR : ∀ x, Sep R 0x190 x 1 → Sep S 0x68 x 1 → MQ x = M0 x := fun x hx hy => by
     show fillBytes MP _ _ _ x = _
     rw [fillBytes_sep (hy.sub (c := pos + 1) (l := 63 - pos) (by omega)) (Nat.le_refl _), MPR x hx hy]
+  -- The hasher's bytes after the padding.
+  have q1 : ∀ i, i < pos → MQ (S + BitVec.ofNat 32 i) = M0 (S + BitVec.ofNat 32 i) := fun i hi => by
+    show fillBytes MP _ _ _ _ = _
+    rw [fillBytes_sep (sep_offsets S (Or.inr (by omega)) (by omega) (by omega)) (Nat.le_refl _)]
+    show memStore8 M2 _ _ _ = _
+    rw [memStore8_ne (add_ofNat_ne S (by omega) (by omega) (by omega)), M2R _ (SR _ (by omega))]
+  have q4 : ∀ i, 64 ≤ i → i < 0x68 → MQ (S + BitVec.ofNat 32 i) = M0 (S + BitVec.ofNat 32 i) := fun i h1 h2 => by
+    show fillBytes MP _ _ _ _ = _
+    rw [fillBytes_sep (sep_offsets S (Or.inl (by omega)) (by omega) (by omega)) (Nat.le_refl _)]
+    show memStore8 M2 _ _ _ = _
+    rw [memStore8_ne (add_ofNat_ne S (by omega) (by omega) (by omega)), M2R _ (SR _ (by omega))]
+  have mq : ∀ k, pos < k → k ≤ 64 → memBytes MQ S k = tailBytes msg ++ [0x80] ++ List.replicate (k - pos - 1) 0 := by
+    intro k h1 h2
+    rw [show k = pos + (1 + (k - pos - 1)) by omega, memBytes_split, memBytes_split, show pos + (1 + (k - pos - 1)) - pos - 1 = k - pos - 1 by omega]
+    have b1 : memBytes MQ S pos = tailBytes msg := by
+      rw [← H.buf]; exact memBytes_congr fun i hi => q1 i hi
+    have b2 : memBytes MQ (S + BitVec.ofNat 32 pos) 1 = [0x80] := by
+      show [(MQ (S + BitVec.ofNat 32 pos + BitVec.ofNat 32 0)).toNat] = _
+      rw [add_ofNat_zero]
+      show [(fillBytes MP _ _ _ _).toNat] = _
+      rw [fillBytes_sep (sep_offsets S (Or.inr (by omega)) (by omega) (by omega)) (Nat.le_refl _)]
+      show [(memStore8 M2 _ _ _).toNat] = _
+      rw [memStore8_same]; rfl
+    have b3 : memBytes MQ (S + BitVec.ofNat 32 pos + BitVec.ofNat 32 1) (k - pos - 1) = List.replicate (k - pos - 1) 0 := by
+      rw [add_ofNat_assoc]
+      exact fill_memBytes MP _ _ (by omega) (by omega)
+    rw [b1, b2, b3, List.append_assoc]
+  have wQ : wordsAt MQ (S + 0x40) 8 = (fullBlocks msg).foldl Sha256.compress Sha256.h0 := by
+    rw [← H.hash]; apply wordsAt_congr; intro i hi
+    apply memLoad32_congr; intro j hj
+    rw [show S + (0x40 : Word) = S + BitVec.ofNat 32 0x40 from rfl, add_ofNat_assoc, add_ofNat_assoc]
+    exact q4 _ (by omega) (by omega)
   sorry
 
 end C3.RV32
