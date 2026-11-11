@@ -61,6 +61,19 @@ FUNCTIONS = [
     ("sha256Compress", "sha2::sha256::compress256"),
     ("shaIndex", ("sha256Compress", 0x6C)),
     ("shaSigma1Part", ("sha256Compress", 0x106C)),
+    ("shaUpdate", "<sha2::Sha256 as digest::Update>::update"),
+    ("shaUpdateSave", ("shaUpdate", 0x02)),
+    ("shaUpdateRestore", ("shaUpdate", 0x32)),
+    ("shaUpdateBlocks", ("shaUpdate", 0x5C)),
+    ("shaFinalize", "<sha2::Sha256 as digest::digest::Digest>::finalize"),
+    ("shaFinalizeSave", ("shaFinalize", 0x02)),
+    ("shaZero32", ("shaFinalize", 0x12)),
+    ("shaFinalizeBlock", ("shaFinalize", 0xAA)),
+    ("shaStoreBe", ("shaFinalize", 0xDE)),
+    ("shaFinalizeRestore", ("shaFinalize", 0x10A)),
+    ("shaFinish", "<c3_crypto::sha::Sha256>::finish"),
+    ("sha256Fn", "c3_crypto::sha::sha256"),
+    ("shaInit", ("sha256Fn", 0x0A)),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
@@ -70,6 +83,7 @@ DATA = [
     ("regionStarts", "imageParse", 0x25E, 16),
     ("curveB", "pointAdd", 0x12E, 32),
     ("shaK", "sha256Compress", 0x112, 256),
+    ("shaIV", "shaInit", 0x08, 32),
 ]
 
 
