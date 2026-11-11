@@ -759,19 +759,35 @@ theorem copyBytes_store32 {M : Word → BitVec 8} {dst src a v : Word} {n k : Na
     copyBytes_store8 (p 2 (by decide)).1 (p 2 (by decide)).2 hk,
     copyBytes_store8 (p 3 (by decide)).1 (p 3 (by decide)).2 hk]
 
-theorem signExtend_lo (a b : BitVec 8) : ((a ++ b).signExtend 32).extractLsb' 0 8 = b := by
-  apply BitVec.eq_of_getLsbD_eq; intro i hi
-  rw [BitVec.getLsbD_extractLsb', BitVec.getLsbD_signExtend, BitVec.getLsbD_append,
-    show decide (i < 8) = true from decide_eq_true hi, show decide (0 + i < 32) = true from decide_eq_true (by omega),
-    Bool.true_and, Bool.true_and, ite_eq_left (show 0 + i < 16 by omega), ite_eq_left (show 0 + i < 8 by omega),
-    Nat.zero_add]
+/-- The low 16 bits survive sign extension. The library's `signExtend`
+lemmas use `Classical.choice`, so this goes through `ofInt` and `toInt`. -/
+theorem signExtend_byte (y : BitVec 16) (k : Nat) (hk : k < 2) :
+    (y.signExtend 32).extractLsb' (8 * k) 8 = y.extractLsb' (8 * k) 8 := by
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.extractLsb'_toNat, BitVec.extractLsb'_toNat]
+  unfold BitVec.signExtend
+  rw [BitVec.toNat_ofInt]
+  unfold BitVec.toInt
+  have hy := y.isLt
+  rcases (show k = 0 ∨ k = 1 by omega) with rfl | rfl <;>
+  · simp only [Nat.shiftRight_eq_div_pow]
+    split <;> omega
 
-theorem signExtend_hi (a b : BitVec 8) : ((a ++ b).signExtend 32).extractLsb' 8 8 = a := by
+theorem ext0_append (a b : BitVec 8) : (a ++ b).extractLsb' 0 8 = b := by
   apply BitVec.eq_of_getLsbD_eq; intro i hi
-  rw [BitVec.getLsbD_extractLsb', BitVec.getLsbD_signExtend, BitVec.getLsbD_append,
-    show decide (i < 8) = true from decide_eq_true hi, show decide (8 + i < 32) = true from decide_eq_true (by omega),
-    Bool.true_and, Bool.true_and, ite_eq_left (show 8 + i < 16 by omega), ite_eq_right (show ¬ (8 + i < 8) by omega),
-    show 8 + i - 8 = i by omega]
+  rw [BitVec.getLsbD_extractLsb', BitVec.getLsbD_append, show decide (i < 8) = true from decide_eq_true hi,
+    Bool.true_and, ite_eq_left (show 0 + i < 8 by omega), Nat.zero_add]
+
+theorem ext8_append (a b : BitVec 8) : (a ++ b).extractLsb' 8 8 = a := by
+  apply BitVec.eq_of_getLsbD_eq; intro i hi
+  rw [BitVec.getLsbD_extractLsb', BitVec.getLsbD_append, show decide (i < 8) = true from decide_eq_true hi,
+    Bool.true_and, ite_eq_right (show ¬ (8 + i < 8) by omega), show 8 + i - 8 = i by omega]
+
+theorem signExtend_lo (a b : BitVec 8) : ((a ++ b).signExtend 32).extractLsb' 0 8 = b :=
+  (signExtend_byte (a ++ b) 0 (by decide)).trans (ext0_append a b)
+
+theorem signExtend_hi (a b : BitVec 8) : ((a ++ b).signExtend 32).extractLsb' 8 8 = a :=
+  (signExtend_byte (a ++ b) 1 (by decide)).trans (ext8_append a b)
 
 theorem or_small {x : Word} (hx : x.toNat % 4 = 0) {s : Nat} (hs : s < 4) :
     aluEval .or x (BitVec.ofNat 32 s) = x + BitVec.ofNat 32 s := by
