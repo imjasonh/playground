@@ -1663,6 +1663,107 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
     apply memLoad32_congr; intro j hj
     rw [show S + (0x40 : Word) = S + BitVec.ofNat 32 0x40 from rfl, add_ofNat_assoc, add_ofNat_assoc]
     exact q4 _ (by omega) (by omega)
+  have u25 : St MQ U m25 0xA0 (reg m25) := ⟨by rw [pc25], mem25, fun _ => rfl⟩
+  have k25 : ∀ r, r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → reg m25 r = reg m24 r := K25
+  have cQ := codeX MQ MQR
+  have cFQ := cQ _ _ E.cF (by decide) (by decide)
+  have K1625 : ∀ r, r ≠ ra → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 →
+      reg m25 r = reg m16 r := fun r q1 q10 q11 q12 q13 q14 q15 q16 => by
+    rw [k25 r q12 q13 q14 q15 q16, K1624 r q1 q10 q11 q12]
+  have g16 : ∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ t0 → r ≠ s3 →
+      r ≠ s5 → r ≠ s6 → reg m16 r = reg m15 r := k16
+  have s1_16 : reg m16 s1 = S + 0x40 := by
+    rw [g16 s1 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide) (by decide), s1_15]
+  obtain ⟨m26, e26, u26⟩ := u25.aluImm cFQ sf_at_a0 (off' := 0xA2) (by decide)
+  have K26 := u26.upd_ne u25.zero
+  have u26' : St MQ U m26 0xA2 (reg m26) := u26.self
+  have s3_26 : reg m26 s3 = BitVec.ofNat 32 (63 - pos) := by
+    rw [K26 s3 (by decide), K1625 s3 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide), s3_16]
+  have a0_26 : reg m26 a0 = BitVec.ofNat 32 7 := by rw [u26.upd_eq (by decide), u25.zero]; rfl
+  let B1 : List Bytes := if pos < 56 then [] else [tailBytes msg ++ [0x80] ++ List.replicate (63 - pos) 0]
+  let lastPre : Bytes := if pos < 56 then tailBytes msg ++ [0x80] ++ List.replicate (55 - pos) 0 else List.replicate 56 0
+  have C2 : ∃ (nC : Machine) (MC : Word → BitVec 8), Steps m26 nC ∧ St MC U nC 0xC2 (reg nC) ∧
+      (∀ x, Sep R 0x190 x 1 → Sep S 0x68 x 1 → MC x = M0 x) ∧
+      (∀ k, 0x40 ≤ k → k < 0x60 → MC (G + BitVec.ofNat 32 k) = MQ (G + BitVec.ofNat 32 k)) ∧
+      memBytes MC S 56 = lastPre ∧
+      wordsAt MC (S + 0x40) 8 = (fullBlocks msg ++ B1).foldl Sha256.compress Sha256.h0 ∧
+      ∀ r, r ≠ ra → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 →
+        r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
+        r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → reg nC r = reg m26 r := by
+    by_cases hsh : pos < 56
+    · obtain ⟨n27, d27, u27⟩ := u26'.taken cFQ 0xC2 sf_at_a2 (by decide) (by
+        simp only [branchTaken]; rw [a0_26, s3_26, ult_lit (by decide) (by omega)]
+        exact decide_eq_true (by omega))
+      refine ⟨n27, MQ, .single d27, u27.self, MQR, fun _ _ _ => rfl, ?_, ?_, fun r _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+        u27.regs r⟩
+      · show memBytes MQ S 56 = if pos < 56 then _ else _
+        rw [ite_eq_left_of_eq_true _ _ (eq_true hsh), mq 56 (by omega) (by omega),
+          show 56 - pos - 1 = 55 - pos by omega]
+      · show _ = (fullBlocks msg ++ (if pos < 56 then [] else _)).foldl _ _
+        rw [ite_eq_left_of_eq_true _ _ (eq_true hsh), List.append_nil, wQ]
+    · -- 56 bytes or more: compress the padded buffer, then zero 56 bytes of it.
+      obtain ⟨n27, d27, u27⟩ := u26'.notTaken cFQ 0xA6 sf_at_a2 (by decide) (by
+        simp only [branchTaken]; rw [a0_26, s3_26, ult_lit (by decide) (by omega)]
+        exact decide_eq_false (by omega))
+      have u27' : St MQ U n27 0xA6 (reg n27) := u27.self
+      obtain ⟨n28, d28, u28⟩ := u27'.alu cFQ sf_at_a6 (off' := 0xA8) (by decide)
+      have K28 := u28.upd_ne u27'.zero
+      have u28' : St MQ U n28 0xA8 (reg n28) := u28.self
+      obtain ⟨n29, d29, u29⟩ := u28'.alu cFQ sf_at_a8 (off' := 0xAA) (by decide)
+      have K29 := u29.upd_ne u28'.zero
+      have u29' : St MQ U n29 0xAA (reg n29) := u29.self
+      obtain ⟨n30, d30, u30⟩ := u29'.auipc cFQ sf_at_aa (off' := 0xAE) (by decide)
+      obtain ⟨n31, d31, pc31, mem31, regs31⟩ := u30.call cFQ sf_at_ae
+      have r31 : ∀ r, r ≠ ra → reg n31 r = reg n29 r := fun r h => by
+        rw [regs31]
+        by_cases h0 : r.val = 0
+        · have : r = 0 := Fin.ext h0
+          subst this; simp [upd]; exact u29'.zero.symm
+        · simp [upd, h0, h]
+      have K2631 : ∀ r, r ≠ ra → r ≠ a0 → r ≠ a1 → reg n31 r = reg m26 r := fun r q1 q10 q11 => by
+        rw [r31 r q1, K29 r q11, K28 r q10, u27.regs]
+      have s4_26 : reg m26 s4 = S := by
+        rw [K26 s4 (by decide), K1625 s4 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+          (by decide) (by decide), s4_16]
+      have s1_26 : reg m26 s1 = S + 0x40 := by
+        rw [K26 s1 (by decide), K1625 s1 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+          (by decide) (by decide), s1_16]
+      have sp26 : reg m26 sp = G := by
+        rw [K26 sp (by decide), K1625 sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+          (by decide) (by decide), g16 sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+          (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), sp15']
+      have eT : G + 0xFFFFFED0 = R := by rw [hGR, BitVec.add_assoc]; exact BitVec.add_zero R
+      have S40 : (S + 0x40).toNat = S.toNat + 0x40 := by
+        rw [show S + (0x40 : Word) = S + BitVec.ofNat 32 0x40 from rfl, BitVec.toNat_add, BitVec.toNat_ofNat]; omega
+      obtain ⟨n32, c32, pc32, sp32, K32, w32, fr32⟩ := shaFinBlock_correct n31 (st := S + 0x40) (bp := S) (T := G) (retAddr := U + BitVec.ofNat 32 0xB2)
+        (by rw [mem31]; exact cQ _ _ E.cBlk (by decide) (by decide))
+        (by rw [mem31]; exact cQ _ _ E.cMS (by decide) (by decide))
+        (by rw [mem31]; exact cQ _ _ E.cMB (by decide) (by decide))
+        (by rw [mem31]; exact cQ _ _ E.cC (by decide) (by decide))
+        (by rw [mem31]; exact cQ _ _ E.cI (by decide) (by decide))
+        (by rw [mem31]; exact cQ _ _ E.c97 (by decide) (by decide))
+        (fun i hi => by
+          have hi' : i < 256 := by rw [show shaKData.length = 256 from rfl] at hi; exact hi
+          rw [mem31, MQR _ (E.sKF.sub (c := i) (l := 1) (by omega)).symm (E.sKS.sub (c := i) (l := 1) (by omega)).symm]
+          exact E.cK i hi)
+        (by rw [pc31, show ∀ (F : Fin 32 → Word) (v : Word), upd F ra v ra = v from fun F v => by simp [upd]]
+            decide)
+        (by rw [r31 a0 (by decide), K29 a0 (by decide), u28.upd_eq (by decide), u27'.zero, u27.regs, s1_26]
+            exact BitVec.zero_add _)
+        (by rw [r31 a1 (by decide), u29.upd_eq (by decide), u28'.zero, K28 s4 (by decide), u27.regs, s4_26]
+            exact BitVec.zero_add _)
+        (by rw [regs31]; simp +decide [upd]; try rfl) (by decide)
+        (by rw [K2631 sp (by decide) (by decide) (by decide), sp26]) hGa (by omega) (by omega)
+        (by rw [S40]; have := E.hS; omega) (by rw [S40]; omega) (by omega)
+        (by rw [eT]; exact (E.sSF.sub (c := 0x40) (l := 32) (by omega)).subR (c := 0) (l := 0x130) (by omega)
+              |> fun h => by rwa [add_ofNat_zero] at h)
+        (by rw [eT]; have h := (E.sSF.sub (c := 0) (l := 64) (by omega)).subR (c := 0) (l := 0x130) (by omega)
+            rwa [add_ofNat_zero, add_ofNat_zero] at h)
+        (by rw [eT]; have h := E.sKF.subR (c := 0) (l := 0x130) (by omega); rwa [add_ofNat_zero] at h)
+        (E.sKS.subR (c := 0x40) (l := 32) (by omega))
+      sorry
   sorry
 
 end C3.RV32
