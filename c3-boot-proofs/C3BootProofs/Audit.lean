@@ -19,6 +19,7 @@ import C3BootProofs.Proofs.FieldArith
 import C3BootProofs.Proofs.FieldSubInnerMain
 import C3BootProofs.Proofs.FieldWideMulMain
 import C3BootProofs.Proofs.FieldMul
+import C3BootProofs.Proofs.FieldDouble
 
 /-!
 # Audit
@@ -688,6 +689,87 @@ theorem exists_fieldMul_machine :
     rfl, rfl, rfl, rfl, rfl, by decide, rfl⟩
   all_goals (unfold RV32.CodeIn; decide +kernel)
 
+/-- `witnessMemField` with the field addition, subtraction, and doubling and
+the point addition added where the image loads them. -/
+def witnessMemPoint (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.fieldAddAddress).toNat < Image.fieldAddCode.length then
+    RV32.byteAt Image.fieldAddCode (a - BitVec.ofNat 32 Image.fieldAddAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.fieldSubAddress).toNat < Image.fieldSubCode.length then
+    RV32.byteAt Image.fieldSubCode (a - BitVec.ofNat 32 Image.fieldSubAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.fieldDoubleAddress).toNat < Image.fieldDoubleCode.length then
+    RV32.byteAt Image.fieldDoubleCode (a - BitVec.ofNat 32 Image.fieldDoubleAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.pointAddAddress).toNat < Image.pointAddCode.length then
+    RV32.byteAt Image.pointAddCode (a - BitVec.ofNat 32 Image.pointAddAddress).toNat
+  else witnessMemField a
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 4000000 in
+/-- A machine that calls `field_impl::sub` with the result at `0x3FCC5000`, the
+operands at `0x3FCC6000` and `0x3FCC6100`, and the stack at `0x3FCC8000`
+meets `fieldSub_correct`'s hypotheses. -/
+theorem exists_fieldSub_machine :
+    ∃ (m : RV32.Machine) (P sp0 res ap bp retAddr : RV32.Word), RV32.FSEnv m.mem P sp0 res ap bp ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = res ∧ RV32.reg m RV32.a1 = ap ∧ RV32.reg m RV32.a2 = bp ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x3FCC6100
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.fieldSubAddress, witnessMemPoint⟩, BitVec.ofNat 32 Image.fieldSubAddress,
+    0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0x3FCC6100, 0,
+    ⟨by decide, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide)⟩,
+    rfl, rfl, rfl, rfl, rfl, by decide, rfl⟩
+  all_goals (unfold RV32.CodeIn; decide +kernel)
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 4000000 in
+/-- A machine that calls `field_impl::add` with the result at `0x3FCC5000`, the
+operands at `0x3FCC6000` and `0x3FCC6100`, and the stack at `0x3FCC8000`
+meets `fieldAdd_correct`'s hypotheses. -/
+theorem exists_fieldAdd_machine :
+    ∃ (m : RV32.Machine) (P sp0 res ap bp retAddr : RV32.Word), RV32.FAEnv m.mem P sp0 res ap bp ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = res ∧ RV32.reg m RV32.a1 = ap ∧ RV32.reg m RV32.a2 = bp ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x3FCC6100
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.fieldAddAddress, witnessMemPoint⟩, BitVec.ofNat 32 Image.fieldAddAddress,
+    0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0x3FCC6100, 0,
+    ⟨by decide, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide)⟩,
+    rfl, rfl, rfl, rfl, rfl, by decide, rfl⟩
+  all_goals (unfold RV32.CodeIn; decide +kernel)
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 4000000 in
+/-- A machine that calls `FieldElement::double` with the result at
+`0x3FCC5000`, the operand at `0x3FCC6000`, and the stack at `0x3FCC8000`
+meets `fieldDouble_correct`'s hypotheses. -/
+theorem exists_fieldDouble_machine :
+    ∃ (m : RV32.Machine) (P sp0 res ap retAddr : RV32.Word), RV32.FDEnv m.mem P sp0 res ap ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = res ∧ RV32.reg m RV32.a1 = ap ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.fieldDoubleAddress, witnessMemPoint⟩, BitVec.ofNat 32 Image.fieldDoubleAddress,
+    0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0,
+    ⟨by decide, ?_, ⟨by decide, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide)⟩⟩,
+    rfl, rfl, rfl, rfl, by decide, rfl⟩
+  all_goals (unfold RV32.CodeIn; decide +kernel)
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -920,3 +1002,21 @@ end C3
 
 /-- info: 'C3.exists_fieldMul_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_fieldMul_machine
+
+/-- info: 'C3.RV32.fieldSub_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.fieldSub_correct
+
+/-- info: 'C3.RV32.fieldAdd_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.fieldAdd_correct
+
+/-- info: 'C3.RV32.fieldDouble_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.fieldDouble_correct
+
+/-- info: 'C3.exists_fieldSub_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_fieldSub_machine
+
+/-- info: 'C3.exists_fieldAdd_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_fieldAdd_machine
+
+/-- info: 'C3.exists_fieldDouble_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_fieldDouble_machine
