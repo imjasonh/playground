@@ -254,4 +254,106 @@ theorem sub_iter {M : Word → BitVec 8} {P F acc np D b : Word} {n : Machine} {
     exact ⟨n5, n3.mem, .cons d1 (.cons d2 (c3.trans (c4.trans (.single d5)))), by rw [ite_eq_right hl]; exact u5.self,
       mem3, post n5 u5.regs⟩
 
+theorem sub_arith {A N Dv P a nn d mb mb' B : Nat} (h1 : A + P * mb = N + Dv) (h2 : d + nn + mb = a + B * mb') :
+    A + a * P + P * B * mb' = N + nn * P + (Dv + d * P) := by
+  have e : (d + nn + mb) * P = (a + B * mb') * P := by rw [h2]
+  simp only [Nat.add_mul] at e
+  simp only [Nat.mul_comm, Nat.mul_left_comm] at h1 e ⊢
+  omega
+
+theorem load_frame2 {M M0 : Word → BitVec 8} {u v b : Word} {n k : Nat}
+    (hf : ∀ x, Sep u n x 1 → Sep v k x 1 → M x = M0 x) (h1 : Sep u n b 4) (h2 : Sep v k b 4) :
+    memLoad32 M b = memLoad32 M0 b :=
+  memLoad32_congr fun q hq => hf _ (h1.subR (c := q) (l := 1) (by omega)) (h2.subR (c := q) (l := 1) (by omega))
+
+set_option exponentiation.threshold 400 in
+/-- **The final subtraction**, from round `i` to its end at 0x11C: the
+buffer at `D` gets the accumulator minus the modulus, and `a2` the borrow
+out as a mask. -/
+theorem sub_loop {P F acc np D : Word} {M0 : Word → BitVec 8} (hP : P.toNat % 2 = 0) (hF : F.toNat % 4 = 0)
+    (hacc : acc.toNat % 4 = 0) (hnp : np.toNat % 4 = 0) (hD : D.toNat % 4 = 0) (hDw : D.toNat + 48 ≤ 2 ^ 32)
+    (sFA : Sep (F + 0xFFFFFFFC) 4 acc 48) (sFN : Sep (F + 0xFFFFFFFC) 4 np 48) (sFD : Sep (F + 0xFFFFFFFC) 4 D 48)
+    (sDA : Sep D 48 acc 48) (sDN : Sep D 48 np 48)
+    (sFB : Sep (F + 0xFFFFFFFC) 4 (mmBsub P) borrowingSubCode.length)
+    (sFC : Sep (F + 0xFFFFFFFC) 4 P mulMont12Code.length)
+    (sDB : Sep D 48 (mmBsub P) borrowingSubCode.length) (sDC : Sep D 48 P mulMont12Code.length) :
+    ∀ m i, i + m + 1 = 12 → ∀ {M : Word → BitVec 8} {n : Machine} {b : Word},
+      St M P n 0xFE (reg n) → CodeIn M P mulMont12Code → CodeIn M (mmBsub P) borrowingSubCode →
+      (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Sep D 48 x 1 → M x = M0 x) → (b = 0 ∨ b = 0xFFFFFFFF) →
+      accV M0 acc i + 2 ^ (32 * i) * maskBit b = accV M0 np i + accV M D i →
+      reg n sp = F → reg n (9 : Fin 32) = acc + BitVec.ofNat 32 (4 * i) →
+      reg n (23 : Fin 32) = np + BitVec.ofNat 32 (4 * i) → reg n (19 : Fin 32) = D + BitVec.ofNat 32 (4 * i) →
+      reg n (8 : Fin 32) = BitVec.ofNat 32 (12 - i) → reg n a2 = b →
+      ∃ n' M', Steps n n' ∧ St M' P n' 0x11C (reg n') ∧ CodeIn M' P mulMont12Code ∧
+        (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Sep D 48 x 1 → M' x = M0 x) ∧
+        (reg n' a2 = 0 ∨ reg n' a2 = 0xFFFFFFFF) ∧
+        accV M0 acc 12 + 2 ^ (32 * 12) * maskBit (reg n' a2) = accV M0 np 12 + accV M' D 12 ∧
+        reg n' sp = F ∧
+        ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ ra → q ≠ (9 : Fin 32) → q ≠ (23 : Fin 32) →
+          q ≠ (19 : Fin 32) → q ≠ (8 : Fin 32) → reg n' q = reg n q := by
+  have step : ∀ i, i < 12 → ∀ {M : Word → BitVec 8} {n : Machine} {b : Word},
+      St M P n 0xFE (reg n) → CodeIn M P mulMont12Code → CodeIn M (mmBsub P) borrowingSubCode →
+      (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Sep D 48 x 1 → M x = M0 x) → (b = 0 ∨ b = 0xFFFFFFFF) →
+      accV M0 acc i + 2 ^ (32 * i) * maskBit b = accV M0 np i + accV M D i →
+      reg n sp = F → reg n (9 : Fin 32) = acc + BitVec.ofNat 32 (4 * i) →
+      reg n (23 : Fin 32) = np + BitVec.ofNat 32 (4 * i) → reg n (19 : Fin 32) = D + BitVec.ofNat 32 (4 * i) →
+      reg n (8 : Fin 32) = BitVec.ofNat 32 (12 - i) → reg n a2 = b →
+      ∃ n' M', Steps n n' ∧ St M' P n' (if i + 1 < 12 then 0xFE else 0x11C) (reg n') ∧
+        CodeIn M' P mulMont12Code ∧ CodeIn M' (mmBsub P) borrowingSubCode ∧
+        (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Sep D 48 x 1 → M' x = M0 x) ∧
+        (reg n' a2 = 0 ∨ reg n' a2 = 0xFFFFFFFF) ∧
+        accV M0 acc (i + 1) + 2 ^ (32 * (i + 1)) * maskBit (reg n' a2) = accV M0 np (i + 1) + accV M' D (i + 1) ∧
+        reg n' sp = F ∧ reg n' (9 : Fin 32) = acc + BitVec.ofNat 32 (4 * (i + 1)) ∧
+        reg n' (23 : Fin 32) = np + BitVec.ofNat 32 (4 * (i + 1)) ∧
+        reg n' (19 : Fin 32) = D + BitVec.ofNat 32 (4 * (i + 1)) ∧
+        reg n' (8 : Fin 32) = BitVec.ofNat 32 (12 - (i + 1)) ∧
+        ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ ra → q ≠ (9 : Fin 32) → q ≠ (23 : Fin 32) →
+          q ≠ (19 : Fin 32) → q ≠ (8 : Fin 32) → reg n' q = reg n q := by
+    intro i hi M n b s hc hb hfr hbm hv rsp r9 r23 r19 r8 ra2
+    obtain ⟨n1, Mb, c1, u1, hMb, e2, esp, e9, e23, e19, e8, fr⟩ := sub_iter (i := i) s hc hb hP hi hF hacc hnp hD
+      sFB sFC (sDC.sub (by omega)) rsp r9 r23 r19 r8 ra2
+    have eA : memLoad32 M (acc + BitVec.ofNat 32 (4 * i)) = memLoad32 M0 (acc + BitVec.ofNat 32 (4 * i)) :=
+      load_frame2 hfr (sFA.subR (by omega)) (sDA.subR (by omega))
+    have eN : memLoad32 M (np + BitVec.ofNat 32 (4 * i)) = memLoad32 M0 (np + BitVec.ofNat 32 (4 * i)) :=
+      load_frame2 hfr (sFN.subR (by omega)) (sDN.subR (by omega))
+    rw [eA, eN] at u1 e2
+    obtain ⟨bv, bm⟩ := bsub_val (memLoad32 M0 (acc + BitVec.ofNat 32 (4 * i))) (memLoad32 M0 (np + BitVec.ofNat 32 (4 * i)))
+      b hbm
+    have hDb : CodeIn Mb (mmBsub P) borrowingSubCode := fun j hj => by
+      rw [hMb _ (sFB.subR (c := j) (l := 1) (by omega))]; exact hb j hj
+    have hCb : CodeIn Mb P mulMont12Code := fun j hj => by
+      rw [hMb _ (sFC.subR (c := j) (l := 1) (by omega))]; exact hc j hj
+    refine ⟨n1, _, c1, u1, CodeIn.store32 hCb (sDC.sub (by omega)), CodeIn.store32 hDb (sDB.sub (by omega)),
+      fun x hx hd => ?_, by rw [e2]; exact bm, ?_, esp, e9, e23, e19, e8, fr⟩
+    · rw [memStore32_get_sep (hd.sub (c := 4 * i) (l := 4) (by omega)), hMb x hx, hfr x hx hd]
+    · have hA : accV (memStore32 Mb (D + BitVec.ofNat 32 (4 * i)) (bsubD (memLoad32 M0 (acc + BitVec.ofNat 32 (4 * i)))
+          (memLoad32 M0 (np + BitVec.ofNat 32 (4 * i))) b)) D (i + 1) = accV M D i +
+          (bsubD (memLoad32 M0 (acc + BitVec.ofNat 32 (4 * i))) (memLoad32 M0 (np + BitVec.ofNat 32 (4 * i))) b).toNat *
+            2 ^ (32 * i) := by
+        rw [accV_succ1, accV_store_above (by omega) i (Nat.le_refl i), memLoad32_store32_same]
+        congr 1
+        exact accV_congr i fun j hj => memLoad32_congr fun q hq =>
+          hMb _ ((sFD.subR (c := 4 * j) (l := 4) (by omega)).subR (c := q) (l := 1) (by omega))
+      rw [hA, accV_succ1, accV_succ1, pow32_succ, e2]
+      exact sub_arith hv bv
+  intro m
+  induction m with
+  | zero =>
+    intro i hi M n b s hc hb hfr hbm hv rsp r9 r23 r19 r8 ra2
+    have i11 : i = 11 := Nat.succ.inj hi
+    subst i11
+    obtain ⟨n1, M1, c1, u1, hc1, _, hf1, hm1, hv1, sp1, _, _, _, _, fr⟩ :=
+      step 11 (by decide) s hc hb hfr hbm hv rsp r9 r23 r19 r8 ra2
+    exact ⟨n1, M1, c1, u1, hc1, hf1, hm1, hv1, sp1, fr⟩
+  | succ m ih =>
+    intro i hi M n b s hc hb hfr hbm hv rsp r9 r23 r19 r8 ra2
+    have hl : i + 1 < 12 := sel_lt1 hi
+    obtain ⟨n1, M1, c1, u1, hc1, hb1, hf1, hm1, hv1, sp1, e9, e23, e19, e8, fr⟩ :=
+      step i (Nat.lt_trans (Nat.lt_succ_self i) hl) s hc hb hfr hbm hv rsp r9 r23 r19 r8 ra2
+    rw [ite_eq_left hl] at u1
+    obtain ⟨n', M', c', u', hc', hf', hm', hv', sp', fr'⟩ :=
+      ih (i + 1) (sel_succ hi) u1 hc1 hb1 hf1 hm1 hv1 sp1 e9 e23 e19 e8 rfl
+    exact ⟨n', M', c1.trans c', u', hc', hf', hm', hv', sp', fun q q0 q1 q2 q3 q4 qr q9 q23 q19 q8 => by
+      rw [fr' q q0 q1 q2 q3 q4 qr q9 q23 q19 q8, fr q q0 q1 q2 q3 q4 qr q9 q23 q19 q8]⟩
+
 end C3.RV32
