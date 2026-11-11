@@ -198,6 +198,35 @@ structure SIEnv (M : Word → BitVec 8) (P sp0 out lp rp : Word) : Prop where
   hwrap : out.toNat + 36 ≤ 2 ^ 32 ∧ lp.toNat + 36 ≤ 2 ^ 32 ∧ rp.toNat + 36 ≤ 2 ^ 32
   pval : wordsAt M rp 9 = pLimbs
 
+/-- `SIEnv` without the second operand's value: where `sub_inner` runs when
+that operand is any 9-limb number. -/
+structure SIEnvG (M : Word → BitVec 8) (P sp0 out lp rp : Word) : Prop where
+  hP : P.toNat % 2 = 0
+  code : CodeIn M P subInnerCode
+  bsub : CodeIn M (siBsub P) borrowingSubCode
+  save : CodeIn M (P + 0xDC34) subInnerSaveCode
+  restore : CodeIn M (P + 0xDE3E) subInnerRestoreCode
+  hsp : sp0.toNat % 4 = 0
+  hout : out.toNat % 4 = 0
+  hlp : lp.toNat % 4 = 0
+  hrp : rp.toNat % 4 = 0
+  hS : 0x34 ≤ sp0.toNat
+  sSC : Sep (sp0 + 0xFFFFFFCC) 0x34 P subInnerCode.length
+  sSB : Sep (sp0 + 0xFFFFFFCC) 0x34 (siBsub P) borrowingSubCode.length
+  sSS : Sep (sp0 + 0xFFFFFFCC) 0x34 (P + 0xDC34) subInnerSaveCode.length
+  sSR : Sep (sp0 + 0xFFFFFFCC) 0x34 (P + 0xDE3E) subInnerRestoreCode.length
+  sOC : Sep out 36 P subInnerCode.length
+  sOR : Sep out 36 (P + 0xDE3E) subInnerRestoreCode.length
+  sOS : Sep out 36 (sp0 + 0xFFFFFFCC) 0x34
+  sLS : Sep lp 36 (sp0 + 0xFFFFFFCC) 0x34
+  sRS : Sep rp 36 (sp0 + 0xFFFFFFCC) 0x34
+  hwrap : out.toNat + 36 ≤ 2 ^ 32 ∧ lp.toNat + 36 ≤ 2 ^ 32 ∧ rp.toNat + 36 ≤ 2 ^ 32
+
+theorem SIEnv.toG {M : Word → BitVec 8} {P sp0 out lp rp : Word} (e : SIEnv M P sp0 out lp rp) :
+    SIEnvG M P sp0 out lp rp :=
+  ⟨e.hP, e.code, e.bsub, e.save, e.restore, e.hsp, e.hout, e.hlp, e.hrp, e.hS, e.sSC, e.sSB, e.sSS, e.sSR,
+    e.sOC, e.sOR, e.sOS, e.sLS, e.sRS, e.hwrap⟩
+
 /-- Memory after storing the words `ws` at consecutive words from word `k`
 past `a`. -/
 def storeWords (a : Word) : (Word → BitVec 8) → Nat → List Word → Word → BitVec 8

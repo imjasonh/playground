@@ -53,6 +53,11 @@ FUNCTIONS = [
     ("wideMulSave", ("wideMul", 0x02)),
     ("wideMulRestore", ("wideMul", 0xD2)),
     ("fieldMul", "<p256::arithmetic::field::FieldElement>::multiply"),
+    ("fieldAdd", "p256::arithmetic::field::field_impl::add"),
+    ("fieldSub", "p256::arithmetic::field::field_impl::sub"),
+    ("fieldDouble", "<p256::arithmetic::field::FieldElement as ff::Field>::double"),
+    ("pointAdd", "<primeorder::point_arithmetic::EquationAIsMinusThree as "
+     "primeorder::point_arithmetic::sealed::PointArithmetic<p256::NistP256>>::add_assign"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a

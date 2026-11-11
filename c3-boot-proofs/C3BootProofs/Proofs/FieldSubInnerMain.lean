@@ -34,20 +34,21 @@ theorem memLoad32_store32_off {M : Word → BitVec 8} {b v : Word} {c d : Nat} (
 set_option exponentiation.threshold 300 in
 set_option maxHeartbeats 4000000 in
 /-- **The compiled `sub_inner`**, called with the result at `out` and the
-operands at `lp` and `rp`, where `rp` holds the P-256 modulus. It stores
-`subRes` of the 9-limb number at `lp` in the result's first eight words and
-the borrow mask, all ones exactly when that number is below `p`, in the
-ninth. It returns with `sp` and every register but `a0` through `a5` and
-`t0` as they were, and changes no memory outside the 0x34 bytes of stack
-below `sp` and the result. -/
-theorem subInner_correct (m : Machine) {P sp0 out lp rp retAddr : Word}
-    (env : SIEnv m.mem P sp0 out lp rp) (hpc : m.pc = P) (ha0 : reg m a0 = out) (ha1 : reg m a1 = lp)
+9-limb operands `L` at `lp` and `R` at `rp`. It stores `subGen L R`, which is
+`L - R` with `p` added back when it borrows, in the result's first eight
+words and the borrow mask, all ones exactly when `L < R`, in the ninth. It
+returns with `sp` and every register but `a0` through `a5` and `t0` as they
+were, and changes no memory outside the 0x34 bytes of stack below `sp` and
+the result. -/
+theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
+    (env : SIEnvG m.mem P sp0 out lp rp) (hpc : m.pc = P) (ha0 : reg m a0 = out) (ha1 : reg m a1 = lp)
     (ha2 : reg m a2 = rp) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
     (hsp : reg m sp = sp0) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
       (∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ t0 → reg m' q = reg m q) ∧
-      limbVal (wordsAt m'.mem out 8) = subRes (limbVal (wordsAt m.mem lp 9)) ∧
-      memLoad32 m'.mem (out + 32) = (if limbVal (wordsAt m.mem lp 9) < p256 then 0xFFFFFFFF else 0) ∧
+      limbVal (wordsAt m'.mem out 8) = subGen (limbVal (wordsAt m.mem lp 9)) (limbVal (wordsAt m.mem rp 9)) ∧
+      memLoad32 m'.mem (out + 32) =
+        (if limbVal (wordsAt m.mem lp 9) < limbVal (wordsAt m.mem rp 9) then 0xFFFFFFFF else 0) ∧
       ∀ x, Sep (sp0 + 0xFFFFFFCC) 0x34 x 1 → Sep out 36 x 1 → m'.mem x = m.mem x := by
   have s0 : St m.mem P m 0 (reg m) := ⟨by rw [hpc]; simp, rfl, fun _ => rfl⟩
   have hz := s0.zero
@@ -436,13 +437,14 @@ theorem subInner_correct (m : Machine) {P sp0 out lp rp retAddr : Word}
   rw [hbc] at hbv
   obtain ⟨hv, hmask0⟩ := hbv
   have hmask : reg p8 a1 = 0 ∨ reg p8 a1 = 0xFFFFFFFF := hmask0
-  rw [env.pval, pLimbs_val, limbVal9, wordsAt_length] at hv
+  rw [limbVal9, wordsAt_length] at hv
   have hab := addBack_val (reg p8 (19 : Fin 32)) (reg p8 (20 : Fin 32)) (reg p8 (21 : Fin 32))
     (reg p8 (22 : Fin 32)) (reg p8 (24 : Fin 32)) (reg p8 (23 : Fin 32)) (reg p8 (25 : Fin 32))
     (reg p8 (26 : Fin 32)) (reg p8 a1) hmask
   rw [k19, k20, k21, k22, k24, k23, k25, k26] at hab outw
-  obtain ⟨sf, sc⟩ := sub_fin (limbVal [reg n8 a0, reg p1 a0, reg p2 a0, reg p3 a0, reg p4 a0, reg p5 a0,
-      reg p6 a0, reg p7 a0]) (reg p8 a0).toNat (limbVal (wordsAt m.mem lp 9)) (maskBit (reg p8 a1))
+  obtain ⟨sf, sc⟩ := sub_fin_gen (limbVal [reg n8 a0, reg p1 a0, reg p2 a0, reg p3 a0, reg p4 a0, reg p5 a0,
+      reg p6 a0, reg p7 a0]) (reg p8 a0).toNat (limbVal (wordsAt m.mem lp 9)) (limbVal (wordsAt m.mem rp 9))
+      (maskBit (reg p8 a1))
     (limbVal_lt _) (maskBit_le1 _) (by rw [show maskBit (0 : Word) = 0 from rfl] at hv; omega) (reg p8 a0).isLt
   have hite : (if reg p8 a1 = 0 then 0 else p256) = (if maskBit (reg p8 a1) = 0 then 0 else p256) := by
     rcases hmask with h | h <;> rw [h] <;> rfl
@@ -508,5 +510,23 @@ theorem subInner_correct (m : Machine) {P sp0 out lp rp retAddr : Word}
     · rw [h, ite_eq_right (fun hl => by have := sc.mpr hl; rw [h] at this; exact absurd this (by decide))]
     · rw [h, ite_eq_left (sc.mp (by rw [h]; rfl))]
   · intro x hS hO; rw [mem15]; exact IMf x hS hO
+
+/-- **The compiled `sub_inner`** with the P-256 modulus as its second operand,
+as `FieldElement::multiply` and `field_impl::add` call it: it stores
+`subRes L`, which is `L - p` when `L` is at least `p` and `L` otherwise, and
+the borrow mask, all ones exactly when `L < p`. -/
+theorem subInner_correct (m : Machine) {P sp0 out lp rp retAddr : Word}
+    (env : SIEnv m.mem P sp0 out lp rp) (hpc : m.pc = P) (ha0 : reg m a0 = out) (ha1 : reg m a1 = lp)
+    (ha2 : reg m a2 = rp) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
+    (hsp : reg m sp = sp0) :
+    ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
+      (∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ t0 → reg m' q = reg m q) ∧
+      limbVal (wordsAt m'.mem out 8) = subRes (limbVal (wordsAt m.mem lp 9)) ∧
+      memLoad32 m'.mem (out + 32) = (if limbVal (wordsAt m.mem lp 9) < p256 then 0xFFFFFFFF else 0) ∧
+      ∀ x, Sep (sp0 + 0xFFFFFFCC) 0x34 x 1 → Sep out 36 x 1 → m'.mem x = m.mem x := by
+  obtain ⟨m', c, pc, sp, regs, val, mask, frame⟩ := subInner_gen m env.toG hpc ha0 ha1 ha2 hra hret hsp
+  rw [env.pval, pLimbs_val, subGen_p] at val
+  rw [env.pval, pLimbs_val] at mask
+  exact ⟨m', c, pc, sp, regs, val, mask, frame⟩
 
 end C3.RV32

@@ -375,4 +375,36 @@ theorem sub_fin (D8 d8 L c : Nat) (hD8 : D8 < 2 ^ 256) (hc : c ≤ 1)
     rw [ite_eq_right (by decide), ite_eq_left (by omega : L < 115792089210356248762697446949407573530086143415290314195533631308867097853951)]
     exact ⟨by omega, fun _ => by omega, fun _ => rfl⟩
 
+/-- What `sub_inner` stores for 9-limb numbers `L` and `R`: `L - R`, with `p`
+added back when it borrows, in 256 bits. -/
+def subGen (L R : Nat) : Nat := if L < R then (L + 2 ^ 288 + p256 - R) % 2 ^ 256 else (L - R) % 2 ^ 256
+
+set_option exponentiation.threshold 300 in
+theorem sub_fin_gen (D8 d8 L R c : Nat) (hD8 : D8 < 2 ^ 256) (hc : c ≤ 1)
+    (h : D8 + 2 ^ 256 * d8 + R = L + 2 ^ 288 * c) (hd8 : d8 < 2 ^ 32) :
+    (D8 + if c = 0 then 0 else p256) % 2 ^ 256 = subGen L R ∧ (c = 1 ↔ L < R) := by
+  unfold subGen
+  rw [show p256 = 115792089210356248762697446949407573530086143415290314195533631308867097853951 from rfl]
+  rw [show (2 : Nat) ^ 256 = 115792089237316195423570985008687907853269984665640564039457584007913129639936 from rfl] at hD8 h ⊢
+  rw [show (2 : Nat) ^ 288 = 497323236409786642155382248146820840100456150797347717440463976893159497012533375533056 from rfl] at h ⊢
+  rw [show (2 : Nat) ^ 32 = 4294967296 from rfl] at hd8
+  by_cases h0 : c = 0
+  · subst h0
+    rw [ite_eq_left rfl, ite_eq_right (by omega : ¬ L < R)]
+    exact ⟨by omega, fun e => absurd e (by decide), fun e => absurd e (by omega)⟩
+  · have h1 : c = 1 := by omega
+    subst h1
+    rw [ite_eq_right (by decide), ite_eq_left (by omega : L < R)]
+    exact ⟨by omega, fun _ => by omega, fun _ => rfl⟩
+
+set_option exponentiation.threshold 300 in
+theorem subGen_p (L : Nat) : subGen L p256 = subRes L := by
+  unfold subGen subRes
+  by_cases h : L < p256
+  · rw [ite_eq_left h, ite_eq_left h]
+    rw [show p256 = 115792089210356248762697446949407573530086143415290314195533631308867097853951 from rfl] at h ⊢
+    rw [show (2 : Nat) ^ 256 = 115792089237316195423570985008687907853269984665640564039457584007913129639936 from rfl, show (2 : Nat) ^ 288 = 497323236409786642155382248146820840100456150797347717440463976893159497012533375533056 from rfl]
+    omega
+  · rw [ite_eq_right h, ite_eq_right h]
+
 end C3.RV32

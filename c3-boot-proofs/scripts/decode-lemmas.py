@@ -46,7 +46,9 @@ for line in open(src):
         if len(args) == 2: o,b = mem(args[1]); ins = f'.jalr {r(args[0])} {r(b)} {w(o)}'
         elif '(' in args[0]: o,b = mem(args[0]); ins = f'.jalr ra {r(b)} {w(o)}'
         else: ins = f'.jalr ra {r(args[0])} 0x0'
-    elif op == 'jr': ins = f'.jalr x0 {r(args[0])} 0x0'
+    elif op == 'jr':
+        if '(' in args[0]: o,b = mem(args[0]); ins = f'.jalr x0 {r(b)} {w(o)}'
+        else: ins = f'.jalr x0 {r(args[0])} 0x0'
     elif op == 'ret': ins = '.jalr x0 ra 0x0'
     elif op == 'j': ins = f'.jal x0 {w(imm(args[0]) - addr)}'
     elif op in BR: ins = f'.branch .{op} {r(args[0])} {r(args[1])} {w(imm(args[2]) - addr)}'
