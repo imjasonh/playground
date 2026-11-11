@@ -2272,6 +2272,52 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
       KC16 r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31,
       g16 r q10 q11 q12 q13 q14 q15 q16 q17 q5 q19 q21 q22,
       Kp r q2 q1 q5 q6 q7 q8 q9 q18 q20 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30]
-  sorry
+  have S1 : Steps m m15 := .cons e1 (k2.trans (.cons e3 (.cons e4 (.cons e5 (.cons e6 (.cons e7 (.cons e8 (c9.trans
+    (.cons e10 (.cons e11 (.cons e12 (.cons e13 (.cons e14 c15)))))))))))))
+  have S2 : Steps m15 m26 := c16.trans (.cons e17 (.cons e18 (.cons e19 (.cons e20 (.cons e21 (.cons e22 (.cons e23
+    (.cons e24 (c25.trans (.single e26))))))))))
+  have S3 : Steps m26 n46 := cC.trans (.cons d40 (.cons d41 (.cons d42 (.cons d43 (.cons d44 (.cons d45 c46))))))
+  have S4 : Steps n46 n49 := .cons d47 (.cons d48 c49)
+  have S5 : Steps n49 n61 := .cons d50 (.cons d51 (.cons d52 (.cons d53 (.cons d54 (c55.trans (.cons d56 (.cons d57
+    (.cons d58 (.cons d59 (.cons d60 c61))))))))))
+  have S6 : Steps n61 n65 := c62.trans (.cons d63 (.cons d64 (.single d65)))
+  have outB : memBytes M6 out 32 = memBytes Mf B 32 := by
+    unfold memBytes
+    apply List.map_congr_left
+    intro i hi
+    have hi := List.mem_range.mp hi
+    show (M6 (out + BitVec.ofNat 32 i)).toNat = (Mf (B + BitVec.ofNat 32 i)).toNat
+    rw [m6 _ (sOFr.sub (c := i) (l := 1) (by omega)).symm, copyBytes_in hi (by omega),
+      m5 _ (sGF.sub (c := i) (l := 1) (by omega)).symm, copyBytes_in hi (by omega)]
+  refine ⟨n65, S1.trans (S2.trans (S3.trans (S4.trans (S5.trans S6)))), ?_, ?_,
+    fun r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_, ?_, fun x hx hy hz => ?_⟩
+  · rw [pc65, rRa, add_lit_zero, hret]
+  · rw [regs65, rSp]
+  · rw [regs65]
+    by_cases q1 : r = ra
+    · subst q1; rw [rRa, hra]
+    by_cases q2 : r = sp
+    · subst q2; rw [rSp, hsp]
+    by_cases q22 : r = s6
+    · subst q22; rw [K64 s6 (by decide), u63.upd_eq (by decide)]
+    have sv : ∀ (r : Fin 32) (c : Nat), r ≠ sp → r ≠ s6 → r ≠ t0 → 0x44 ≤ c → c + 4 ≤ 0x60 →
+        restoreRegs M6 G (upd (reg n61) t0 (U + BitVec.ofNat 32 (0x10A + 8))) finSavePs r = memLoad32 M6 (G + BitVec.ofNat 32 c) →
+        memLoad32 M1 (G + BitVec.ofNat 32 c) = g1 r → reg n64 r = reg m r := fun r c h2 h22 h5 h1 h3 hv hm => by
+      rw [K64 r h2, K63 r h22, u62.regs, hv]; exact lds r c h2 h1 h3 hm
+    by_cases q8 : r = s0
+    · subst q8; exact sv s0 0x58 (by decide) (by decide) (by decide) (by omega) (by omega) ws0 vs0
+    by_cases q9 : r = s1
+    · subst q9; exact sv s1 0x54 (by decide) (by decide) (by decide) (by omega) (by omega) ws1 vs1
+    by_cases q18 : r = s2
+    · subst q18; exact sv s2 0x50 (by decide) (by decide) (by decide) (by omega) (by omega) ws2 vs2
+    by_cases q19 : r = s3
+    · subst q19; exact sv s3 0x4C (by decide) (by decide) (by decide) (by omega) (by omega) ws3 vs3
+    by_cases q20 : r = s4
+    · subst q20; exact sv s4 0x48 (by decide) (by decide) (by decide) (by omega) (by omega) ws4 vs4
+    by_cases q21 : r = s5
+    · subst q21; exact sv s5 0x44 (by decide) (by decide) (by decide) (by omega) (by omega) ws5 vs5
+    exact chain r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q1 q2 q8 q9 q18 q19 q20 q21 q22
+  · rw [mem65, outB, hbF, sha256_stream]
+  · rw [mem65]; exact M6R x hx hy hz
 
 end C3.RV32
