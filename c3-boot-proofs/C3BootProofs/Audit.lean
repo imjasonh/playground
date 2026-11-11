@@ -18,6 +18,7 @@ import C3BootProofs.Proofs.FieldSub
 import C3BootProofs.Proofs.FieldArith
 import C3BootProofs.Proofs.FieldSubInnerMain
 import C3BootProofs.Proofs.FieldWideMulMain
+import C3BootProofs.Proofs.FieldMontRed
 
 /-!
 # Audit
@@ -884,3 +885,6 @@ end C3
 
 /-- info: 'C3.exists_wideMul_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_wideMul_machine
+
+/-- info: 'C3.RV32.fm_red' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.fm_red

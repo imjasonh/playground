@@ -84,6 +84,12 @@ jobs:
             < "${RUNNER_TEMP}/rust-decode.txt" > "${RUNNER_TEMP}/lean-decode.txt"
           diff "${RUNNER_TEMP}/rust-decode.txt" "${RUNNER_TEMP}/lean-decode.txt"
 
+      - name: Check the generated Montgomery reduction proof
+        working-directory: c3-boot-proofs
+        run: |
+          python3 scripts/gen-mont-red.py
+          git diff --exit-code C3BootProofs/Proofs/FieldMontRed.lean
+
       - name: Install Espressif QEMU
         run: |
           sudo apt-get update

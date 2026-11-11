@@ -36,6 +36,8 @@ import C3BootProofs.Proofs.FieldSubInnerMain
 import C3BootProofs.Proofs.FieldWideArith
 import C3BootProofs.Proofs.FieldWideMul
 import C3BootProofs.Proofs.FieldWideMulMain
+import C3BootProofs.Proofs.FieldMont
+import C3BootProofs.Proofs.FieldMontRed
 import C3BootProofs.Theorems.Level
 import C3BootProofs.Theorems.Boot
 import C3BootProofs.Theorems.Formats
