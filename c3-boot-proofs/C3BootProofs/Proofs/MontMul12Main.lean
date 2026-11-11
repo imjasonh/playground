@@ -356,4 +356,157 @@ theorem sub_loop {P F acc np D : Word} {M0 : Word → BitVec 8} (hP : P.toNat % 
     exact ⟨n', M', c1.trans c', u', hc', hf', hm', hv', sp', fun q q0 q1 q2 q3 q4 qr q9 q23 q19 q8 => by
       rw [fr' q q0 q1 q2 q3 q4 qr q9 q23 q19 q8, fr q q0 q1 q2 q3 q4 qr q9 q23 q19 q8]⟩
 
+/-- From 0x11C: spill the top carry, and choose the accumulator when the
+top carry is zero and the subtraction borrowed, through a byte of the
+frame; then set up the call to `borrowing_sub` whose result goes unused. -/
+def mmChoice : List BInstr :=
+  [.sw sp (22 : Fin 32) 0x6C, .aluImm .add a0 sp 0x6C, .lw a0 sp 0x6C, .aluImm .sltu (9 : Fin 32) a0 1,
+   .alu .and (9 : Fin 32) (9 : Fin 32) a2, .sb sp (9 : Fin 32) 0x6C, .aluImm .add a0 sp 0x6C, .lbu a0 sp 0x6C,
+   .aluImm .add a0 a0 0xFFFFFFFF, .alu .and a2 a2 a0, .alu .add a0 x0 (22 : Fin 32), .aluImm .add a1 x0 0]
+
+/-- From 0x142: the arguments of `Uint<12>::select`. -/
+def mmSelArgs : List BInstr :=
+  [.aluImm .add a1 sp 0x3C, .aluImm .add a2 sp 0xC, .alu .add a0 x0 (18 : Fin 32), .alu .add a3 x0 (9 : Fin 32)]
+
+/-- From 0xE2: the arguments of the `memset` that zeroes the difference
+buffer, which `s3` also points at. -/
+def mmSubPre : List BInstr :=
+  [.aluImm .add a0 sp 0x3C, .aluImm .add a2 x0 0x30, .aluImm .add a1 x0 0, .aluImm .add (19 : Fin 32) sp 0x3C]
+
+/-- From 0xF6: the borrow, the accumulator pointer, and the count. -/
+def mmSubInit : List BInstr :=
+  [.aluImm .add a2 x0 0, .aluImm .add (9 : Fin 32) sp 0xC, .aluImm .add (8 : Fin 32) x0 0xC]
+
+/-- From 0xA: keep the arguments, and set up the `memset` that zeroes the
+accumulator. -/
+def mmPro : List BInstr :=
+  [.alu .add (19 : Fin 32) x0 a4, .alu .add (23 : Fin 32) x0 a3, .alu .add (21 : Fin 32) x0 a2,
+   .alu .add (20 : Fin 32) x0 a1, .alu .add (18 : Fin 32) x0 a0, .aluImm .add a0 sp 0xC, .aluImm .add a2 x0 0x30,
+   .aluImm .add a1 x0 0]
+
+section
+set_option maxRecDepth 20000
+theorem mmChoice_end : blockEnd mulMont12Code 0x11C mmChoice = some 0x13A := by decide
+theorem mmSelArgs_end : blockEnd mulMont12Code 0x142 mmSelArgs = some 0x14A := by decide
+theorem mmSubPre_end : blockEnd mulMont12Code 0xE2 mmSubPre = some 0xEE := by decide
+theorem mmSubInit_end : blockEnd mulMont12Code 0xF6 mmSubInit = some 0xFC := by decide
+theorem mmPro_end : blockEnd mulMont12Code 0xA mmPro = some 0x1C := by decide
+end
+
+/-- The choice `mul_montgomery_form` passes to `Uint<12>::select`. -/
+theorem choice_val (mc b : Word) (hb : b = 0 ∨ b = 0xFFFFFFFF) :
+    aluEval .and (aluEval .sltu mc 1) b = if mc.toNat = 0 ∧ maskBit b = 1 then 1 else 0 := by
+  have hs : aluEval .sltu mc 1 = if mc.toNat = 0 then 1 else 0 := by
+    show (if mc.ult 1 then 1 else 0 : Word) = _
+    by_cases h : mc.toNat = 0
+    · rw [ite_eq_left h, ite_eq_left (show mc.ult 1 = true from by
+        show decide (mc.toNat < (1 : Word).toNat) = true; rw [h]; rfl)]
+    · rw [ite_eq_right h, ite_eq_right (show ¬ mc.ult 1 = true from by
+        show ¬ decide (mc.toNat < (1 : Word).toNat) = true
+        rw [show (1 : Word).toNat = 1 from rfl]
+        exact fun e => h (by have := of_decide_eq_true e; omega))]
+  rw [hs]
+  rcases hb with rfl | rfl
+  · rw [show maskBit 0 = 0 from rfl]
+    by_cases h : mc.toNat = 0
+    · rw [ite_eq_left h, ite_eq_right (by omega)]; rfl
+    · rw [ite_eq_right h, ite_eq_right (by omega)]; rfl
+  · rw [show maskBit 0xFFFFFFFF = 1 from rfl]
+    by_cases h : mc.toNat = 0
+    · rw [ite_eq_left h, ite_eq_left ⟨h, rfl⟩]; rfl
+    · rw [ite_eq_right h, ite_eq_right (fun e => h e.1)]; rfl
+
+set_option maxRecDepth 20000 in
+theorem mmChoice_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock mmChoice (M, f)).1 = memStore8 (memStore32 M (f sp + 0x6C) (f (22 : Fin 32))) (f sp + 0x6C)
+      ((aluEval .and (aluEval .sltu (f (22 : Fin 32)) 1) (f a2)).extractLsb' 0 8) ∧
+    (runBlock mmChoice (M, f)).2 (9 : Fin 32) = aluEval .and (aluEval .sltu (f (22 : Fin 32)) 1) (f a2) ∧
+    (runBlock mmChoice (M, f)).2 a0 = f (22 : Fin 32) ∧ (runBlock mmChoice (M, f)).2 a1 = 0 ∧
+    ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ (9 : Fin 32) → (runBlock mmChoice (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, mmChoice]
+  refine ⟨?_, ?_, ?_, ?_, fun q q0 q1 q2 q9 => ?_⟩
+  · simp +decide only [upd, ↓reduceIte]; rw [memLoad32_store32_same]
+  · simp +decide only [upd, ↓reduceIte]; rw [memLoad32_store32_same]
+  · simp +decide only [upd, ↓reduceIte]; exact BitVec.zero_add _
+  · simp +decide only [upd, ↓reduceIte]
+  · by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp [upd, h0, q0, q1, q2, q9]
+
+theorem mmChoice_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Word} {len : Nat}
+    (h : (f sp + 0x6C).toNat % 4 = 0) (hs : Sep (f sp + 0x6C) 4 base len) : BlockOk base len mmChoice (M, f) := by
+  simp +decide only [BlockOk, BInstr.ok, BInstr.run, mmChoice, upd, ↓reduceIte, and_true, true_and]
+  exact ⟨⟨h, hs⟩, h, hs.sub (c := 0) (l := 1) (by decide) |> fun h' => by rwa [add_ofNat_zero] at h'⟩
+
+theorem mmSelArgs_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock mmSelArgs (M, f)).1 = M ∧ (runBlock mmSelArgs (M, f)).2 a1 = f sp + 0x3C ∧
+    (runBlock mmSelArgs (M, f)).2 a2 = f sp + 0xC ∧ (runBlock mmSelArgs (M, f)).2 a0 = f (18 : Fin 32) ∧
+    (runBlock mmSelArgs (M, f)).2 a3 = f (9 : Fin 32) ∧
+    ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → (runBlock mmSelArgs (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, mmSelArgs]
+  refine ⟨trivial, ?_, ?_, ?_, ?_, fun q q0 q1 q2 q3 => ?_⟩
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]; exact BitVec.zero_add _
+  · simp +decide only [upd, ↓reduceIte]; exact BitVec.zero_add _
+  · by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp [upd, h0, q0, q1, q2, q3]
+
+theorem mmSubPre_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock mmSubPre (M, f)).1 = M ∧ (runBlock mmSubPre (M, f)).2 a0 = f sp + 0x3C ∧
+    (runBlock mmSubPre (M, f)).2 a2 = 0x30 ∧ (runBlock mmSubPre (M, f)).2 a1 = 0 ∧
+    (runBlock mmSubPre (M, f)).2 (19 : Fin 32) = f sp + 0x3C ∧
+    ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ (19 : Fin 32) → (runBlock mmSubPre (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, mmSubPre]
+  refine ⟨trivial, ?_, ?_, ?_, ?_, fun q q0 q1 q2 q3 => ?_⟩
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp [upd, h0, q0, q1, q2, q3]
+
+theorem mmSubInit_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock mmSubInit (M, f)).1 = M ∧ (runBlock mmSubInit (M, f)).2 a2 = 0 ∧
+    (runBlock mmSubInit (M, f)).2 (9 : Fin 32) = f sp + 0xC ∧
+    (runBlock mmSubInit (M, f)).2 (8 : Fin 32) = BitVec.ofNat 32 (12 - 0) ∧
+    ∀ q, q ≠ a2 → q ≠ (9 : Fin 32) → q ≠ (8 : Fin 32) → (runBlock mmSubInit (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, mmSubInit]
+  refine ⟨trivial, ?_, ?_, ?_, fun q q2 q9 q8 => ?_⟩
+  · simp +decide only [upd, ↓reduceIte, hz]
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]
+  · by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp [upd, h0, q2, q9, q8]
+
+theorem mmPro_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock mmPro (M, f)).1 = M ∧
+    (runBlock mmPro (M, f)).2 (19 : Fin 32) = f a4 ∧ (runBlock mmPro (M, f)).2 (23 : Fin 32) = f a3 ∧
+    (runBlock mmPro (M, f)).2 (21 : Fin 32) = f a2 ∧ (runBlock mmPro (M, f)).2 (20 : Fin 32) = f a1 ∧
+    (runBlock mmPro (M, f)).2 (18 : Fin 32) = f a0 ∧ (runBlock mmPro (M, f)).2 a0 = f sp + 0xC ∧
+    (runBlock mmPro (M, f)).2 a2 = 0x30 ∧ (runBlock mmPro (M, f)).2 a1 = 0 ∧
+    ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ (18 : Fin 32) → q ≠ (19 : Fin 32) → q ≠ (20 : Fin 32) →
+      q ≠ (21 : Fin 32) → q ≠ (23 : Fin 32) → (runBlock mmPro (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, mmPro]
+  refine ⟨trivial, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, fun q q0 q1 q2 q18 q19 q20 q21 q23 => ?_⟩
+  · simp +decide only [upd, ↓reduceIte, hz]; exact BitVec.zero_add _
+  · simp +decide only [upd, ↓reduceIte]; exact BitVec.zero_add _
+  · simp +decide only [upd, ↓reduceIte]; exact BitVec.zero_add _
+  · simp +decide only [upd, ↓reduceIte]; exact BitVec.zero_add _
+  · simp +decide only [upd, ↓reduceIte]; exact BitVec.zero_add _
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]
+  · by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp [upd, h0, q0, q1, q2, q18, q19, q20, q21, q23]
+
 end C3.RV32
