@@ -264,4 +264,60 @@ theorem shaBlocks_correct (m : Machine) {st bp sp0 retAddr : Word} {n : Nat}
     rw [memStore32_get_sep (by have := hx.sub (c := 36) (l := 4) (by omega); rwa [e36] at this),
       memStore32_get_sep (by have := hx.sub (c := 32) (l := 4) (by omega); rwa [e32] at this)]
 
+/-- The 0x68 bytes at `S` hold the compiled hasher after it has absorbed
+`msg`: the bytes after `msg`'s full blocks in the buffer, their count in its
+last byte, the hash of the full blocks, and the 64-bit count of blocks. -/
+structure HasherAt (M : Word → BitVec 8) (S : Word) (msg : Bytes) : Prop where
+  hlen : msg.length < 2 ^ 32
+  pos : M (S + 0x3F) = BitVec.ofNat 8 (msg.length % 64)
+  buf : memBytes M S (msg.length % 64) = tailBytes msg
+  hash : wordsAt M (S + 0x40) 8 = (fullBlocks msg).foldl Sha256.compress Sha256.h0
+  lo : memLoad32 M (S + 0x60) = BitVec.ofNat 32 (msg.length / 64)
+  hi : memLoad32 M (S + 0x64) = 0
+
+/-- Where `update` runs: the code of `update`, its helpers, `compress256`,
+and `memcpy` at their addresses in the image; the hasher at `S`, the `n`
+input bytes at `D`, and the 0x100 bytes of stack below `sp0` apart from each
+other and from the round constants; and all three at data-bus addresses,
+below every code address. -/
+structure UpdEnv (M : Word → BitVec 8) (S D sp0 : Word) (n : Nat) : Prop where
+  cU : CodeIn M (BitVec.ofNat 32 shaUpdateAddress) shaUpdateCode
+  cSave : CodeIn M (BitVec.ofNat 32 shaUpdateSaveAddress) shaUpdateSaveCode
+  cRest : CodeIn M (BitVec.ofNat 32 shaUpdateRestoreAddress) shaUpdateRestoreCode
+  cBlk : CodeIn M (BitVec.ofNat 32 shaUpdateBlocksAddress) shaUpdateBlocksCode
+  cC : CodeIn M (BitVec.ofNat 32 sha256CompressAddress) sha256CompressCode
+  cI : CodeIn M (BitVec.ofNat 32 sha256CompressAddress + 0x2B94) shaIndexCode
+  c97 : CodeIn M (BitVec.ofNat 32 sha256CompressAddress + 0xC09C) shaSigma1PartCode
+  cK : CodeIn M (BitVec.ofNat 32 shaKAddress) shaKData
+  cMS : CodeIn M (BitVec.ofNat 32 memcpyStubAddress) memcpyStubCode
+  cMB : CodeIn M (BitVec.ofNat 32 memcpyStubAddress + 8) memcpyBodyCode
+  hS : S.toNat % 4 = 0
+  hSw : S.toNat + 0x68 ≤ 0x40000000
+  hsp : sp0.toNat % 16 = 0
+  hspl : 0x100 ≤ sp0.toNat
+  hspw : sp0.toNat ≤ 0x40000000
+  hDw : D.toNat + n ≤ 0x40000000
+  sDS : Sep D n S 0x68
+  sDF : Sep D n (sp0 + 0xFFFFFF00) 0x100
+  sSF : Sep S 0x68 (sp0 + 0xFFFFFF00) 0x100
+  sKS : Sep (BitVec.ofNat 32 shaKAddress) 256 S 0x68
+  sKF : Sep (BitVec.ofNat 32 shaKAddress) 256 (sp0 + 0xFFFFFF00) 0x100
+
+/-- What `update`'s save helper stores, and where in the frame. -/
+abbrev updSavePs : List (Fin 32 × Word) := [(ra, 0x1C), (s0, 0x18), (s1, 0x14), (s2, 0x10), (s3, 0x0C)]
+
+/-- What `update`'s restore helper loads, and from where in the frame. -/
+abbrev updRestorePs : List (Fin 32 × Word) :=
+  [(ra, 0x1C), (s0, 0x18), (s1, 0x14), (s2, 0x10), (s3, 0x0C), (s4, 8)]
+
+theorem updSave_shape : SaveAt shaUpdateSaveCode 0 updSavePs := by simp only [SaveAt]; decide
+
+theorem updRestore_shape : RestoreAt shaUpdateRestoreCode 0 updRestorePs := by simp only [RestoreAt]; decide
+
+/-- Any data-bus range below 0x40000000 is apart from code at or above
+0x40000000. -/
+theorem data_code {a b : Word} {n l : Nat} (ha : a.toNat + n ≤ 0x40000000) (hb : 0x40000000 ≤ b.toNat)
+    (hbl : b.toNat + l ≤ 2 ^ 32) : Sep a n b l :=
+  sep_of_le (by omega) hbl
+
 end C3.RV32
