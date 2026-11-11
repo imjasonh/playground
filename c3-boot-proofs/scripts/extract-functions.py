@@ -74,6 +74,12 @@ FUNCTIONS = [
     ("shaFinish", "<c3_crypto::sha::Sha256>::finish"),
     ("sha256Fn", "c3_crypto::sha::sha256"),
     ("shaInit", ("sha256Fn", 0x0A)),
+    ("mulMont12", "crypto_bigint::modular::mul::mul_montgomery_form::<12>"),
+    ("mulMont12Save", ("mulMont12", 0x02)),
+    ("mulMont12Setup", ("mulMont12", 0x24)),
+    ("mulMont12Restore", ("mulMont12", 0x152)),
+    ("uintSelect12", "<crypto_bigint::uint::Uint<12>>::select"),
+    ("uintSelect12Step", ("uintSelect12", 0x3E)),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
