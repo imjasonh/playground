@@ -18,7 +18,10 @@
 > `image::parse` returns what `decodeImageHeader` returns, so
 > `mapped_pages_signed` holds for its result (`imgW_pages_signed`). Both proofs
 > assume a stack and memory layout that the proofs of their callers, not yet
-> written, have to establish. [`c3-boot/README.md`](../c3-boot/README.md) lists what isn't
+> written, have to establish. Of the P-256 field multiplication, the compiled
+> `sub_inner` (`subInner_correct`) and the Karatsuba step
+> `widening_mul_fixed::<8, 8>` (`wideMul_correct`) are proved; the Montgomery
+> reduction in `FieldElement::multiply` is next. [`c3-boot/README.md`](../c3-boot/README.md) lists what isn't
 > done, including the eFuse lock, a release blocker. The facts about
 > Sigstore, the ESP32-C3, Sail, and the AlphaProof Code repository were
 > checked on 2026-11-10 against the sources listed at the end.
