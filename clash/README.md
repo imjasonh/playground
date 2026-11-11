@@ -2,7 +2,7 @@
 
 A simultaneous-bidding card game for two to four players, played with a standard
 deck minus its four Aces. Each round a pot of cards gathers on the table and
-everyone bids for it in secret, all at once, from a small hand of five cards
+everyone bids for it in secret, all at once, from a small hand of four cards
 that refills from a face-down draw pile but spends every bid for good. You must
 bid at least one card every clash, so there is no hoarding. The rules are in
 [`rules.md`](rules.md).

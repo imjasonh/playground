@@ -22,24 +22,25 @@ type GameResult struct {
 }
 
 // dealPlan gives the starting hand, draw-pile, and ante-pile sizes for a player
-// count. The hand refills to its starting size from the draw pile after each
-// clash, so hand+draw is the whole bid budget. Each plan uses all 48 cards
-// evenly, and the hand cap is 5 at every table size.
+// count, from one even rule: deal all 48 cards into equal stacks, keep handCap
+// in hand, and split the rest of the stack into two equal piles, one draw and
+// one ante. Because every stack (24, 16, or 12) minus the hand is even, the
+// split is exact, and the ante always equals the draw. The hand refills to
+// handCap from the draw pile after each clash, so hand+draw is the whole bid
+// budget; with ante equal to draw, that budget beats the number of rounds by
+// exactly handCap at every table size.
 func dealPlan(players int) (hand, draw, rounds int, ok bool) {
-	switch players {
-	case 2:
-		return 5, 10, 9, true
-	case 3:
-		return 5, 5, 6, true
-	case 4:
-		return 5, 2, 5, true
-	default:
+	if players < 2 || players > 4 || DeckSize%players != 0 {
 		return 0, 0, 0, false
 	}
+	stack := DeckSize / players
+	rest := stack - handCap
+	ante := rest / 2
+	return handCap, rest - ante, ante, true
 }
 
 // handCap is the number of cards a seat holds and refills to each clash.
-const handCap = 5
+const handCap = 4
 
 func normalizeIdx(idx []int, n int) []int {
 	seen := make(map[int]bool, len(idx))

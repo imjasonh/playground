@@ -2,7 +2,7 @@
 
 A game of tight budgets and held nerve for two to four players. Every round a
 prize gathers on the table and everyone bids for it in secret, all at once. You
-bid from a small hand of five cards that you top back up as you go, but every
+bid from a small hand of four cards that you top back up as you go, but every
 card you bid is spent for good. Your hand and the pile behind it are your whole
 budget for the game, so the real question is never "can I win this one?" but "is
 this the one worth spending on?"
@@ -34,21 +34,17 @@ Give each player the Ace that marks their Home. Shuffle the other 48 cards and
 deal them out evenly, so everyone holds the same size stack: 24 cards at two
 players, 16 at three, 12 at four.
 
-From your stack, take five cards into your **hand**, which you look at and keep
-secret. Then count off your **ante pile** — one card for each clash the game
-will last — and set it face down. There is one number to remember:
+From your stack, take four cards into your **hand**, which you look at and keep
+secret. Split the rest of your stack into two equal piles, and set them face
+down: one is your **draw pile**, the other your **ante pile**. The halves always
+come out even, so there's nothing to count — just deal the leftovers into two
+stacks.
 
-| Players | Clashes (your ante pile) |
-| --- | --- |
-| 2 | 9 |
-| 3 | 6 |
-| 4 | 5 |
-
-Whatever is left after your hand and ante is your face-down **draw pile**, which
-tops your hand back up to five as the game goes on. Your hand and draw pile
-together are your whole budget; you get no more than those, so spend them with
-that in mind. The ante pile is separate — think of it as the game's clock, not
-part of your budget.
+Your hand and draw pile together are your whole budget: the draw pile tops your
+hand back up to four as the game goes on, and you get no more than those, so
+spend them with that in mind. The ante pile is separate — think of it as the
+game's clock. One of its cards feeds the pot each clash, so it also sets how
+many clashes you play.
 
 ## Playing a clash
 
@@ -66,7 +62,7 @@ front of you as your winnings. Here is the part that makes a budget hurt. The
 cards you bid are spent whether you win or lose. Put them aside, out of the
 game. You win the pot, never your own bid back.
 
-Then everyone draws back up to a full hand of five from their draw pile, and the
+Then everyone draws back up to a full hand of four from their draw pile, and the
 next clash begins. Once your draw pile runs out, your hand only shrinks from
 there, so play out what's left of it. When the ante piles are empty, the game is
 over.
