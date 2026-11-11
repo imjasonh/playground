@@ -26,6 +26,9 @@
 > its 46 calls to the field operations and `memcpy`, stores `ptAddSpec` of
 > its operands, the Renes, Costello, and Batina formula in the order of the
 > Rust source. That this formula is the curve's group law is not yet proved.
+> [The throughput report](../c3-boot-proofs/docs/throughput.md) measures 12.5
+> proof lines per instruction and projects the whole image at about a tenth
+> of the libsignal proof.
 > [`c3-boot/README.md`](../c3-boot/README.md) lists what isn't
 > done, including the eFuse lock, a release blocker. The facts about
 > Sigstore, the ESP32-C3, Sail, and the AlphaProof Code repository were

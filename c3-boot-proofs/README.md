@@ -111,6 +111,10 @@ ends inside the signed image.
 | `pointAdd_correct` | The compiled `primeorder` `add_assign` for P-256, called with `lhs` and `rhs` pointing at points whose six coordinates are below `p`, stores `ptAddSpec` of them over `lhs`. It makes 46 calls with 17 field elements in a 0x240-byte frame, each through its callee's theorem (`pa_mul`, `pa_add`, `pa_sub`, `pa_dbl`, `pa_cpy` in `PointEnv.lean`), and reads `b` in Montgomery form from `0x3FCC4368`, where the image's data segment puts it (`PAEnv` assumes those bytes, and the extraction checks them). It writes `lhs` only after its last read of either point, so the points may overlap. It restores every register but `a0` through `a7` and `t0` through `t6`, and changes no memory outside 0x370 bytes of stack and the 96 bytes at `lhs`. `scripts/gen-point-add.py` writes the proof, and CI checks that the committed file matches |
 | `imgW_pages_signed` | `mapped_pages_signed` for the compiled parser: when it accepts, each 64 KiB page the cache maps for a flash segment ends inside the image |
 
+[`docs/throughput.md`](docs/throughput.md) measures these proofs (lines per
+instruction, build time and memory, agent time) and projects the cost of the
+whole image.
+
 `C3BootProofs/Proofs/ReaderArray.lean` proves `readerArray4_correct` about
 the compiled `Reader::array::<4>`, the first proof that composes a call. It
 saves `ra`, `s0`, and `s1` in a 32-byte stack frame, calls `Reader::bytes`
