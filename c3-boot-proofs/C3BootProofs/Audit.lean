@@ -21,6 +21,7 @@ import C3BootProofs.Proofs.FieldWideMulMain
 import C3BootProofs.Proofs.FieldMul
 import C3BootProofs.Proofs.FieldDouble
 import C3BootProofs.Proofs.PointAdd
+import C3BootProofs.Proofs.Sha256Compress
 
 /-!
 # Audit
@@ -705,6 +706,71 @@ def witnessMemPoint (a : RV32.Word) : BitVec 8 :=
     RV32.byteAt Image.curveBData (a - BitVec.ofNat 32 Image.curveBAddress).toNat
   else witnessMemField a
 
+/-- `witnessMemPoint` with `sha2::sha256::compress256`, its helpers, and the
+round constants added where the image loads them. -/
+def witnessMemSha (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.shaIndexAddress).toNat < Image.shaIndexCode.length then
+    RV32.byteAt Image.shaIndexCode (a - BitVec.ofNat 32 Image.shaIndexAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.shaSigma1PartAddress).toNat < Image.shaSigma1PartCode.length then
+    RV32.byteAt Image.shaSigma1PartCode (a - BitVec.ofNat 32 Image.shaSigma1PartAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.shaKAddress).toNat < Image.shaKData.length then
+    RV32.byteAt Image.shaKData (a - BitVec.ofNat 32 Image.shaKAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.sha256CompressAddress).toNat < Image.sha256CompressCode.length then
+    RV32.byteAt Image.sha256CompressCode (a - BitVec.ofNat 32 Image.sha256CompressAddress).toNat
+  else witnessMemPoint a
+
+set_option maxRecDepth 200000 in
+theorem witnessMemSha_compress :
+    RV32.CodeIn witnessMemSha (BitVec.ofNat 32 Image.sha256CompressAddress) Image.sha256CompressCode := by
+  intro i hi
+  have hlen : Image.sha256CompressCode.length = 11156 := rfl
+  have hlenI : Image.shaIndexCode.length = 22 := rfl
+  have hlen97 : Image.shaSigma1PartCode.length = 26 := rfl
+  have hlenK : Image.shaKData.length = 256 := rfl
+  have ha : (BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i).toNat = 0x403b32ea + i := by
+    have : (BitVec.ofNat 32 Image.sha256CompressAddress).toNat = 0x403b32ea := rfl
+    rw [BitVec.toNat_add, this, BitVec.toNat_ofNat]; omega
+  have dI : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 Image.shaIndexAddress).toNat < Image.shaIndexCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaIndexAddress).toNat = 0x403b5e7e from rfl, hlenI]; omega
+  have d97 : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 Image.shaSigma1PartAddress).toNat < Image.shaSigma1PartCode.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaSigma1PartAddress).toNat = 0x403bf386 from rfl, hlen97]; omega
+  have dK : ¬ ((BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 Image.shaKAddress).toNat < Image.shaKData.length) := by
+    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 Image.shaKAddress).toNat = 0x3fcc4ebc from rfl, hlenK]; omega
+  have eq_i : (BitVec.ofNat 32 Image.sha256CompressAddress + BitVec.ofNat 32 i -
+      BitVec.ofNat 32 Image.sha256CompressAddress).toNat = i := by
+    rw [BitVec.add_comm, BitVec.add_sub_cancel, BitVec.toNat_ofNat]; omega
+  unfold witnessMemSha
+  rw [ite_eq_right_of_eq_false _ _ (eq_false dI), ite_eq_right_of_eq_false _ _ (eq_false d97),
+    ite_eq_right_of_eq_false _ _ (eq_false dK), eq_i, ite_eq_left_of_eq_true _ _ (eq_true hi)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 4000000 in
+/-- A machine that calls `sha2::sha256::compress256` on 2 blocks (`n = 2`) with
+the state at `0x3FCC5000`, the blocks at `0x3FCC6000`, and the stack at
+`0x3FCC8000` meets `sha256Compress_correct`'s hypotheses. -/
+theorem exists_sha256Compress_machine :
+    ∃ (m : RV32.Machine) (P sp0 stp bp retAddr : RV32.Word) (n : Nat),
+      RV32.SCEnv m.mem P sp0 stp bp n ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = stp ∧ RV32.reg m RV32.a1 = bp ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ 0 < n := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 2
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.sha256CompressAddress, witnessMemSha⟩,
+    BitVec.ofNat 32 Image.sha256CompressAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, 2,
+    ⟨by decide, witnessMemSha_compress, ?_, ?_, ?_, by decide, by decide, by decide, by decide,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      (RV32.sep_of_le (by decide) (by decide)).symm⟩,
+    rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide⟩
+  all_goals (unfold RV32.CodeIn; decide +kernel)
+
 set_option maxRecDepth 20000 in
 set_option maxHeartbeats 8000000 in
 /-- A machine that calls the point addition with `lhs` at `0x3FCC5000`, `rhs`
@@ -1056,3 +1122,12 @@ end C3
 
 /-- info: 'C3.exists_pointAdd_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_pointAdd_machine
+
+/-- info: 'C3.RV32.sha_rounds' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.sha_rounds
+
+/-- info: 'C3.RV32.sha256Compress_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.sha256Compress_correct
+
+/-- info: 'C3.exists_sha256Compress_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_sha256Compress_machine
