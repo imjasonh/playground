@@ -1790,4 +1790,224 @@ theorem mis_tail2 {M0 : Word → BitVec 8} {base dst src F : Word} {N h w : Nat}
     (.single d19)))))))))))))))))), hB3, u19.self, fun r q5 q6 q7 q28 q29 q30 qa6 q17 => ?_⟩
   rw [u19.regs, Kall r q5 q6 q7 q28 q29 q30 qa6 q17]
 
+/-- The same for a source 3 bytes past a 4-byte boundary: it loads the
+first 2 of the last 3 source bytes into registers and copies the third
+through the frame byte at `F + 6`. -/
+theorem mis_tail3 {M0 : Word → BitVec 8} {base dst src F : Word} {N h w : Nat}
+    (E : McEnv M0 base dst src F N) (n : Machine) (B : Word → BitVec 8)
+    (hB : ∀ y, Sep F 16 y 1 → B y = M0 y) (hhw : h + 4 * w ≤ N) (hw : 2 ≤ w)
+    (hal : (src + BitVec.ofNat 32 h).toNat % 4 = 3) (hald : (dst + BitVec.ofNat 32 h).toNat % 4 = 0)
+    (s0 : St (copyBytes B dst src (h + 4 * (w - 1))) base n 0xF6 (reg n))
+    (ra4 : reg n a4 = dst + BitVec.ofNat 32 (h + 4 * (w - 1)))
+    (rt1 : reg n (6 : Fin 32) = src + BitVec.ofNat 32 h - BitVec.ofNat 32 3 + BitVec.ofNat 32 (4 * (w - 1)))
+    (ra7 : ∀ i, 3 ≤ i → i < 4 → (reg n (17 : Fin 32)).extractLsb' (8 * i) 8 =
+      M0 (src + BitVec.ofNat 32 (h + 4 * (w - 1) + i - 3)))
+    (ra6 : reg n a6 = BitVec.ofNat 32 (8 * 3)) (rt0 : reg n (5 : Fin 32) = BitVec.ofNat 32 3)
+    (ra1 : reg n a1 = src + BitVec.ofNat 32 h) (rsp : reg n sp = F) :
+    ∃ n' B', Steps n n' ∧ (∀ y, Sep F 16 y 1 → B' y = M0 y) ∧
+      St (copyBytes B' dst src (h + 4 * w)) base n' 0x166 (reg n') ∧
+      ∀ r, r ≠ (5 : Fin 32) → r ≠ (6 : Fin 32) → r ≠ (7 : Fin 32) → r ≠ (28 : Fin 32) →
+        r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → r ≠ a6 → r ≠ (17 : Fin 32) → reg n' r = reg n r := by
+  let k := h + 4 * (w - 1)
+  have hkN : k + 4 ≤ N := by omega
+  have hc0 := E.codeB hB (k := k) (by omega)
+  obtain ⟨n1, d1, u1⟩ := s0.aluImm hc0 mcy_at_f6 (off' := 0xF8) (by decide)
+  have g1 : reg n1 (7 : Fin 32) = 1 := by rw [u1.upd_eq (by decide), s0.zero]; rfl
+  have K1 := u1.upd_ne s0.zero
+  have u1' : St (copyBytes B dst src k) base n1 0xF8 (reg n1) := u1.self
+  have sp1 : reg n1 sp = F := by rw [K1 sp (by decide), rsp]
+  have z1 : reg n1 x0 = 0 := u1'.zero
+  obtain ⟨n2, d2, u2⟩ := u1'.sb hc0 mcy_at_f8 (off' := 0xFC) (by decide)
+  rw [sp1, z1, show F + (8 : Word) = F + BitVec.ofNat 32 8 from rfl,
+    E.store8 (by decide) (by omega)] at u2
+  let B1 := memStore8 B (F + BitVec.ofNat 32 8) ((0 : Word).extractLsb' 0 8)
+  have hB1 : ∀ y, Sep F 16 y 1 → B1 y = M0 y := fun y hy => by
+    show memStore8 B _ _ y = _; rw [memStore8_ne (frame_out hy (by decide)), hB y hy]
+  have hc1 := E.codeB hB1 (k := k) (by omega)
+  obtain ⟨n3, d3, u3⟩ := u2.sb hc1 mcy_at_fc (off' := 0x100) (by decide)
+  rw [sp1, z1, show F + (6 : Word) = F + BitVec.ofNat 32 6 from rfl,
+    E.store8 (by decide) (by omega)] at u3
+  let B2 := memStore8 B1 (F + BitVec.ofNat 32 6) ((0 : Word).extractLsb' 0 8)
+  have hB2 : ∀ y, Sep F 16 y 1 → B2 y = M0 y := fun y hy => by
+    show memStore8 B1 _ _ y = _; rw [memStore8_ne (frame_out hy (by decide)), hB1 y hy]
+  have hc2 := E.codeB hB2 (k := k) (by omega)
+  obtain ⟨n4, d4, u4⟩ := u3.taken hc2 0x118 mcy_at_100 (by decide) (by
+    simp only [branchTaken]; rw [K1 _ (by decide), rt0, g1]; decide)
+  have t1_1 : reg n1 (6 : Fin 32) = src + BitVec.ofNat 32 h - BitVec.ofNat 32 3 + BitVec.ofNat 32 (4 * (w - 1)) := by
+    rw [K1 _ (by decide), rt1]
+  have addr : ∀ c, c < 4 → src + BitVec.ofNat 32 h - BitVec.ofNat 32 3 + BitVec.ofNat 32 (4 * (w - 1)) +
+      BitVec.ofNat 32 (4 + c) = src + BitVec.ofNat 32 (k + 4 + c - 3) := fun c _ => by
+    rw [add_ofNat_assoc, addr_shift src (by omega)]
+    congr 2; show h + (4 * (w - 1) + (4 + c)) - 3 = h + 4 * (w - 1) + 4 + c - 3; omega
+  obtain ⟨n5, d5, u5⟩ := u4.lbu hc2 mcy_at_118 (off' := 0x11C) (by decide)
+  let c0 := M0 (src + BitVec.ofNat 32 (k + 4 + 0 - 3))
+  let c1 := M0 (src + BitVec.ofNat 32 (k + 4 + 1 - 3))
+  let c2 := M0 (src + BitVec.ofNat 32 (k + 4 + 2 - 3))
+  have g5 : reg n5 (7 : Fin 32) = c0.zeroExtend 32 := by
+    rw [u5.upd_eq (by decide), t1_1, show (4 : Word) = BitVec.ofNat 32 (4 + 0) from rfl, addr 0 (by decide),
+      E.srcB hB2 (by omega) (by omega)]
+  have K5 := u5.upd_ne u1'.zero
+  have u5' : St (copyBytes B2 dst src k) base n5 0x11C (reg n5) := u5.self
+  obtain ⟨n6, d6, u6⟩ := u5'.lbu hc2 mcy_at_11c (off' := 0x120) (by decide)
+  have g6 : reg n6 (5 : Fin 32) = c1.zeroExtend 32 := by
+    rw [u6.upd_eq (by decide), K5 _ (by decide), t1_1, show (5 : Word) = BitVec.ofNat 32 (4 + 1) from rfl,
+      addr 1 (by decide), E.srcB hB2 (by omega) (by omega)]
+  have K6 := u6.upd_ne u5'.zero
+  have u6' : St (copyBytes B2 dst src k) base n6 0x120 (reg n6) := u6.self
+  obtain ⟨n7, d7, u7⟩ := u6'.sb hc2 mcy_at_120 (off' := 0x124) (by decide)
+  rw [K6 sp (by decide), K5 sp (by decide), sp1, show F + (8 : Word) = F + BitVec.ofNat 32 8 from rfl,
+    K6 _ (by decide), g5, zext_byte, E.store8 (by decide) (by omega)] at u7
+  let B3 := memStore8 B2 (F + BitVec.ofNat 32 8) c0
+  have hB3 : ∀ y, Sep F 16 y 1 → B3 y = M0 y := fun y hy => by
+    show memStore8 B2 _ _ y = _; rw [memStore8_ne (frame_out hy (by decide)), hB2 y hy]
+  have hc3 := E.codeB hB3 (k := k) (by omega)
+  obtain ⟨n8, d8, u8⟩ := u7.aluImm hc3 mcy_at_124 (off' := 0x126) (by decide)
+  have g8 : reg n8 (5 : Fin 32) = aluEval .sll (c1.zeroExtend 32) 8 := by
+    rw [u8.upd_eq (by decide), g6]
+  have K8 := u8.upd_ne u6'.zero
+  have u8' : St (copyBytes B3 dst src k) base n8 0x126 (reg n8) := u8.self
+  obtain ⟨n9, d9, u9⟩ := u8'.aluImm hc3 mcy_at_126 (off' := 0x128) (by decide)
+  have g9 : reg n9 (29 : Fin 32) = 2 := by rw [u9.upd_eq (by decide), u8'.zero]; rfl
+  have K9 := u9.upd_ne u8'.zero
+  have u9' : St (copyBytes B3 dst src k) base n9 0x128 (reg n9) := u9.self
+  obtain ⟨n10, d10, u10⟩ := u9'.aluImm hc3 mcy_at_128 (off' := 0x12C) (by decide)
+  have sp9 : reg n9 sp = F := by
+    rw [K9 sp (by decide), K8 sp (by decide), K6 sp (by decide), K5 sp (by decide), sp1]
+  have g10 : reg n10 (28 : Fin 32) = F + BitVec.ofNat 32 6 := by
+    rw [u10.upd_eq (by decide), sp9]; rfl
+  have K10 := u10.upd_ne u9'.zero
+  have u10' : St (copyBytes B3 dst src k) base n10 0x12C (reg n10) := u10.self
+  obtain ⟨n11, d11, u11⟩ := u10'.aluImm hc3 mcy_at_12c (off' := 0x130) (by decide)
+  have a1_10 : reg n10 a1 = src + BitVec.ofNat 32 h := by
+    rw [K10 a1 (by decide), K9 a1 (by decide), K8 a1 (by decide), K6 a1 (by decide), K5 a1 (by decide),
+      K1 a1 (by decide), ra1]
+  have g11 : reg n11 (30 : Fin 32) = 1 := by
+    rw [u11.upd_eq (by decide), a1_10, and1_val, show (src + BitVec.ofNat 32 h).toNat % 2 = 1 by omega]; rfl
+  have K11 := u11.upd_ne u10'.zero
+  have u11' : St (copyBytes B3 dst src k) base n11 0x130 (reg n11) := u11.self
+  obtain ⟨n12, d12, u12⟩ := u11'.notTaken hc3 0x134 mcy_at_130 (by decide) (by
+    simp only [branchTaken]; rw [g11, u11'.zero]; decide)
+  obtain ⟨n13, d13, u13⟩ := u12.alu hc3 mcy_at_134 (off' := 0x136) (by decide)
+  have g13 : reg n13 (6 : Fin 32) = src + BitVec.ofNat 32 h - BitVec.ofNat 32 3 + BitVec.ofNat 32 (4 * (w - 1)) +
+      BitVec.ofNat 32 2 := by
+    rw [u13.upd_eq (by decide), K11 _ (by decide), K10 _ (by decide), K9 _ (by decide), K8 _ (by decide),
+      K6 _ (by decide), K5 _ (by decide), t1_1, K11 _ (by decide), K10 _ (by decide), g9]; rfl
+  have K13 := u13.upd_ne u11'.zero
+  have u13' : St (copyBytes B3 dst src k) base n13 0x136 (reg n13) := u13.self
+  obtain ⟨n14, d14, u14⟩ := u13'.lbu hc3 mcy_at_136 (off' := 0x13A) (by decide)
+  have g14 : reg n14 (6 : Fin 32) = c2.zeroExtend 32 := by
+    rw [u14.upd_eq (by decide), g13, show (4 : Word) = BitVec.ofNat 32 4 from rfl, add_ofNat_assoc,
+      show 2 + 4 = 4 + 2 from rfl, addr 2 (by decide), E.srcB hB3 (by omega) (by omega)]
+  have K14 := u14.upd_ne u13'.zero
+  have u14' : St (copyBytes B3 dst src k) base n14 0x13A (reg n14) := u14.self
+  obtain ⟨n15, d15, u15⟩ := u14'.sb hc3 mcy_at_13a (off' := 0x13E) (by decide)
+  rw [K14 _ (by decide), K13 _ (by decide), K11 _ (by decide), g10, add_lit_zero, g14, zext_byte,
+    E.store8 (by decide) (by omega)] at u15
+  let B4 := memStore8 B3 (F + BitVec.ofNat 32 6) c2
+  have hB4 : ∀ y, Sep F 16 y 1 → B4 y = M0 y := fun y hy => by
+    show memStore8 B3 _ _ y = _; rw [memStore8_ne (frame_out hy (by decide)), hB3 y hy]
+  have hc4 := E.codeB hB4 (k := k) (by omega)
+  have sp14 : reg n14 sp = F := by
+    rw [K14 sp (by decide), K13 sp (by decide), K11 sp (by decide), K10 sp (by decide), sp9]
+  obtain ⟨n16, d16, u16⟩ := u15.lbu hc4 mcy_at_13e (off' := 0x142) (by decide)
+  have g16 : reg n16 (6 : Fin 32) = c2.zeroExtend 32 := by
+    rw [u16.upd_eq (by decide), sp14, show F + (6 : Word) = F + BitVec.ofNat 32 6 from rfl,
+      E.frameB (by decide) (by omega)]
+    show (memStore8 B3 _ c2 _).zeroExtend 32 = _
+    rw [memStore8_same]
+  have K16 := u16.upd_ne u14'.zero
+  have u16' : St (copyBytes B4 dst src k) base n16 0x142 (reg n16) := u16.self
+  obtain ⟨n17, d17, u17⟩ := u16'.lbu hc4 mcy_at_142 (off' := 0x146) (by decide)
+  have g17 : reg n17 (7 : Fin 32) = c0.zeroExtend 32 := by
+    rw [u17.upd_eq (by decide), K16 sp (by decide), sp14, show F + (8 : Word) = F + BitVec.ofNat 32 8 from rfl,
+      E.frameB (by decide) (by omega)]
+    show (memStore8 (memStore8 B2 _ c0) _ c2 _).zeroExtend 32 = _
+    rw [memStore8_ne (frame_ne F (by decide) (by decide) (by decide)), memStore8_same]
+  have K17 := u17.upd_ne u16'.zero
+  have u17' : St (copyBytes B4 dst src k) base n17 0x146 (reg n17) := u17.self
+  obtain ⟨n18, d18, u18⟩ := u17'.aluImm hc4 mcy_at_146 (off' := 0x148) (by decide)
+  have K18 := u18.upd_ne u17'.zero
+  have u18' : St (copyBytes B4 dst src k) base n18 0x148 (reg n18) := u18.self
+  obtain ⟨n19, d19, u19⟩ := u18'.alu hc4 mcy_at_148 (off' := 0x14C) (by decide)
+  have t0_17 : reg n17 (5 : Fin 32) = aluEval .sll (c1.zeroExtend 32) 8 := by
+    rw [K17 _ (by decide), K16 _ (by decide), K14 _ (by decide), K13 _ (by decide), K11 _ (by decide),
+      K10 _ (by decide), K9 _ (by decide), g8]
+  have g19 : reg n19 (5 : Fin 32) = aluEval .or (aluEval .sll (c2.zeroExtend 32) 16)
+      (aluEval .sll (c1.zeroExtend 32) 8) := by
+    rw [u19.upd_eq (by decide), u18.upd_eq (by decide), K17 _ (by decide), g16, K18 _ (by decide), t0_17]
+  have K19 := u19.upd_ne u18'.zero
+  have u19' : St (copyBytes B4 dst src k) base n19 0x14C (reg n19) := u19.self
+  obtain ⟨n20, d20, u20⟩ := u19'.alu hc4 mcy_at_14c (off' := 0x150) (by decide)
+  have a6_19 : reg n19 a6 = BitVec.ofNat 32 (8 * 3) := by
+    rw [K19 a6 (by decide), K18 a6 (by decide), K17 a6 (by decide), K16 a6 (by decide), K14 a6 (by decide),
+      K13 a6 (by decide), K11 a6 (by decide), K10 a6 (by decide), K9 a6 (by decide), K8 a6 (by decide),
+      K6 a6 (by decide), K5 a6 (by decide), K1 a6 (by decide), ra6]
+  have K20 := u20.upd_ne u19'.zero
+  have u20' : St (copyBytes B4 dst src k) base n20 0x150 (reg n20) := u20.self
+  obtain ⟨n21, d21, u21⟩ := u20'.alu hc4 mcy_at_150 (off' := 0x152) (by decide)
+  have g21 : reg n21 (5 : Fin 32) = aluEval .add (aluEval .or (aluEval .sll (c2.zeroExtend 32) 16)
+      (aluEval .sll (c1.zeroExtend 32) 8)) (c0.zeroExtend 32) := by
+    rw [u21.upd_eq (by decide), K20 _ (by decide), g19, K20 _ (by decide), K19 _ (by decide),
+      K18 _ (by decide), g17]
+  have K21 := u21.upd_ne u20'.zero
+  have u21' : St (copyBytes B4 dst src k) base n21 0x152 (reg n21) := u21.self
+  obtain ⟨n22, d22, u22⟩ := u21'.aluImm hc4 mcy_at_152 (off' := 0x156) (by decide)
+  have g22 : reg n22 (6 : Fin 32) = BitVec.ofNat 32 (32 - 8 * 3) := by
+    rw [u22.upd_eq (by decide), K21 _ (by decide), u20.upd_eq (by decide), u19'.zero, a6_19]; rfl
+  have K22 := u22.upd_ne u21'.zero
+  have u22' : St (copyBytes B4 dst src k) base n22 0x156 (reg n22) := u22.self
+  obtain ⟨n23, d23, u23⟩ := u22'.alu hc4 mcy_at_156 (off' := 0x15A) (by decide)
+  have a7_22 : reg n22 (17 : Fin 32) = reg n (17 : Fin 32) := by
+    rw [K22 _ (by decide), K21 _ (by decide), K20 _ (by decide), K19 _ (by decide), K18 _ (by decide),
+      K17 _ (by decide), K16 _ (by decide), K14 _ (by decide), K13 _ (by decide), K11 _ (by decide),
+      K10 _ (by decide), K9 _ (by decide), K8 _ (by decide), K6 _ (by decide), K5 _ (by decide),
+      K1 _ (by decide)]
+  have g23 : reg n23 a6 = aluEval .srl (reg n (17 : Fin 32)) (BitVec.ofNat 32 (8 * 3)) := by
+    rw [u23.upd_eq (by decide), a7_22, K22 a6 (by decide), K21 a6 (by decide), K20 a6 (by decide), a6_19]
+  have K23 := u23.upd_ne u22'.zero
+  have u23' : St (copyBytes B4 dst src k) base n23 0x15A (reg n23) := u23.self
+  obtain ⟨n24, d24, u24⟩ := u23'.alu hc4 mcy_at_15a (off' := 0x15E) (by decide)
+  have g24 : reg n24 (17 : Fin 32) = aluEval .sll (aluEval .add (aluEval .or (aluEval .sll (c2.zeroExtend 32) 16)
+      (aluEval .sll (c1.zeroExtend 32) 8)) (c0.zeroExtend 32)) (BitVec.ofNat 32 (32 - 8 * 3)) := by
+    rw [u24.upd_eq (by decide), K23 _ (by decide), K22 _ (by decide), g21, K23 _ (by decide), g22]
+  have K24 := u24.upd_ne u23'.zero
+  have u24' : St (copyBytes B4 dst src k) base n24 0x15E (reg n24) := u24.self
+  obtain ⟨n25, d25, u25⟩ := u24'.alu hc4 mcy_at_15e (off' := 0x162) (by decide)
+  have K25 := u25.upd_ne u24'.zero
+  have u25' : St (copyBytes B4 dst src k) base n25 0x162 (reg n25) := u25.self
+  have Kall : ∀ r, r ≠ (5 : Fin 32) → r ≠ (6 : Fin 32) → r ≠ (7 : Fin 32) → r ≠ (28 : Fin 32) →
+      r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → r ≠ a6 → r ≠ (17 : Fin 32) → reg n25 r = reg n r :=
+    fun r q5 q6 q7 q28 q29 q30 qa6 q17 => by
+      rw [K25 r qa6, K24 r q17, K23 r qa6, K22 r q6, K21 r q5, K20 r q6, K19 r q5, K18 r q6, K17 r q7,
+        K16 r q6, K14 r q6, K13 r q6, K11 r q30, K10 r q28, K9 r q29, K8 r q5, K6 r q5, K5 r q7, K1 r q7]
+  have a4_25 : reg n25 a4 = dst + BitVec.ofNat 32 k := by
+    rw [Kall a4 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide), ra4]
+  have ald : (dst + BitVec.ofNat 32 k).toNat % 4 = 0 := by
+    rw [← add_ofNat_assoc]; exact aligned_add hald (k := 4 * (w - 1)) (by omega)
+  obtain ⟨n26, d26, u26⟩ := u25'.sw hc4 mcy_at_162 (off' := 0x166) (by decide)
+    (by rw [a4_25, add_lit_zero]; exact ald)
+  have hq := three_bytes c0 c1 c2
+  have hw26 : ∀ i, i < 4 → (reg n25 a6).extractLsb' (8 * i) 8 = B4 (src + BitVec.ofNat 32 (k + i)) :=
+    fun i hi => by
+      rw [u25.upd_eq (by decide), g24, K24 a6 (by decide), g23, splice_byte _ _ 3 i (by decide) (by decide) hi,
+        hB4 _ (E.hsF.symm.subR (c := k + i) (l := 1) (by omega))]
+      by_cases hl : i + 3 < 4
+      · have : i = 0 := by omega
+        subst this
+        rw [ite_eq_left hl, ra7 (0 + 3) (by omega) (by omega)]
+        congr 3
+      · rw [ite_eq_right hl]
+        rcases (show i = 1 ∨ i = 2 ∨ i = 3 by omega) with rfl | rfl | rfl
+        · rw [show 8 * (1 + 3 - 4) = 0 from rfl, hq.1]; rfl
+        · rw [show 8 * (2 + 3 - 4) = 8 from rfl, hq.2.1]; rfl
+        · rw [show 8 * (3 + 3 - 4) = 16 from rfl, hq.2.2]; rfl
+  rw [a4_25, add_lit_zero, copyBytes_word (by show h + 4 * (w - 1) + 4 ≤ 2 ^ 32; have := E.hdw; omega) hw26,
+    show k + 4 = h + 4 * w from by show h + 4 * (w - 1) + 4 = h + 4 * w; omega] at u26
+  refine ⟨n26, B4, .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.cons d6 (.cons d7 (.cons d8 (.cons d9
+    (.cons d10 (.cons d11 (.cons d12 (.cons d13 (.cons d14 (.cons d15 (.cons d16 (.cons d17 (.cons d18
+    (.cons d19 (.cons d20 (.cons d21 (.cons d22 (.cons d23 (.cons d24 (.cons d25
+    (.single d26))))))))))))))))))))))))), hB4, u26.self, fun r q5 q6 q7 q28 q29 q30 qa6 q17 => ?_⟩
+  rw [u26.regs, Kall r q5 q6 q7 q28 q29 q30 qa6 q17]
+
 end C3.RV32
