@@ -1,0 +1,4 @@
+# klad bundles are generated and may hold editor edits; rebuild from the .py.
+*.klad/
+*.klad
+__pycache__/

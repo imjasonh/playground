@@ -1,0 +1,172 @@
+"""Shared drawing kit for the First Contact triptych.
+
+Each card generator imports this module, blocks its subject in as vector
+sketch shapes, and emits klad `apply` ops as JSON lines. The ops fill flat
+colour, light each shape (a multiply shade and a rim), ink the outlines, add
+glow on blend layers, and letter the card. Pipe the output into `klad apply`.
+"""
+
+import json
+import math
+
+# The key light for the whole triptych: high and a little to the left, so the
+# three figures read as lit by the same star.
+LIGHT = [-0.72, -0.62]
+
+# Each card is a tall tarot-sized panel; the triptych stands them side by side.
+CARD_W = 1024
+CARD_H = 1280
+
+# One palette across the three cards. The dusk sky and the warm skin of each
+# figure stay the same; each card keeps one accent that its glow and frame use.
+INK = "#0b0a12"
+SKY_TOP = "#0a0a1e"
+SKY_LOW = "#241041"
+STAR = "#cfe6ff"
+CYAN = "#79e7ff"
+MAGENTA = "#ff6fd0"
+AMBER = "#ffbf73"
+
+
+def linear(x1, y1, x2, y2, stops):
+    return {"linear": {"from": [x1, y1], "to": [x2, y2], "stops": stops}}
+
+
+def radial(cx, cy, r, stops):
+    return {"radial": {"center": [cx, cy], "radius": r, "stops": stops}}
+
+
+def ellipse_path(cx, cy, rx, ry):
+    """A closed ellipse as an SVG path, so ink and light treat it as an area."""
+    k = 0.5522847498
+    ox, oy = rx * k, ry * k
+    return (f"M{cx - rx} {cy} "
+            f"C {cx - rx} {cy - oy} {cx - ox} {cy - ry} {cx} {cy - ry} "
+            f"C {cx + ox} {cy - ry} {cx + rx} {cy - oy} {cx + rx} {cy} "
+            f"C {cx + rx} {cy + oy} {cx + ox} {cy + ry} {cx} {cy + ry} "
+            f"C {cx - ox} {cy + ry} {cx - rx} {cy + oy} {cx - rx} {cy} Z")
+
+
+def rrect_path(x, y, w, h, r):
+    """A rounded rectangle as a closed path."""
+    r = min(r, w / 2, h / 2)
+    x2, y2 = x + w, y + h
+    return (f"M{x + r} {y} L{x2 - r} {y} Q{x2} {y} {x2} {y + r} "
+            f"L{x2} {y2 - r} Q{x2} {y2} {x2 - r} {y2} "
+            f"L{x + r} {y2} Q{x} {y2} {x} {y2 - r} "
+            f"L{x} {y + r} Q{x} {y} {x + r} {y} Z")
+
+
+def wobble(cx, cy, r, points, jitter, seed):
+    """A closed blobby path: a ring of `points` with a seeded radial jitter."""
+    rng = _Rng(seed)
+    pts = []
+    for i in range(points):
+        a = 2 * math.pi * i / points
+        rr = r * (1 + jitter * (rng.next() - 0.5))
+        pts.append((cx + rr * math.cos(a), cy + rr * math.sin(a)))
+    d = f"M{pts[0][0]:.1f} {pts[0][1]:.1f} "
+    for i in range(points):
+        a = pts[i]
+        b = pts[(i + 1) % points]
+        mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+        d += f"Q {a[0]:.1f} {a[1]:.1f} {mx:.1f} {my:.1f} "
+    return d + "Z"
+
+
+class _Rng:
+    """A tiny deterministic generator, so a seed always draws the same card."""
+
+    def __init__(self, seed):
+        self.state = (seed * 2654435761 + 12345) & 0xFFFFFFFF
+
+    def next(self):
+        self.state = (self.state * 1103515245 + 12345) & 0x7FFFFFFF
+        return self.state / 0x7FFFFFFF
+
+
+class Card:
+    """Accumulates apply ops for one card and prints them as JSON lines."""
+
+    def __init__(self):
+        self.ops = []
+
+    def op(self, obj):
+        self.ops.append(obj)
+        return obj
+
+    def palette(self, name, color):
+        self.op({"op": "palette", "add": color, "name": name})
+
+    def layer(self, lid, kind, **extra):
+        self.op({"op": "add", "layer": {"id": lid, "kind": kind, "name": lid, **extra}})
+
+    def node(self, layer, node):
+        self.op({"op": "add", "node": node, "in": layer})
+
+    def shape(self, sid, node):
+        self.op({"op": "add", "node": {**node, "id": sid}, "in": "sketch"})
+
+    def fill(self, layer, **kw):
+        self.op({"op": "fill", "layer": layer, **kw})
+
+    def light(self, shapes, depth, soft, rim_width, shade_color, rim_color,
+              strength=0.8):
+        self.op({"op": "light", "from": shapes, "light": LIGHT,
+                 "shade": "shade", "rim": "rim", "depth": depth, "soft": soft,
+                 "shadeColor": shade_color, "rimColor": rim_color,
+                 "rimWidth": rim_width, "shadeOpacity": strength})
+
+    def hatch(self, shapes, angle, spacing, length, color, **kw):
+        self.op({"op": "hatch", "layer": "shade", "in": shapes, "angle": angle,
+                 "spacing": spacing, "length": length, "color": color, **kw})
+
+    def ink(self, weight, seed, shapes=None, path=None, color="ink"):
+        base = {"op": "ink", "layer": "lines", "light": LIGHT,
+                "weight": weight, "color": color, "seed": seed}
+        self.op({**base, "path": path} if path else {**base, "from": shapes})
+
+    def dump(self):
+        print("\n".join(json.dumps(o) for o in self.ops))
+
+
+def sky(card, accent, horizon=0.62):
+    """A deep dusk gradient with a low accent glow, plus a field of stars."""
+    card.layer("sky", "vector")
+    card.node("sky", {"type": "rect", "x": 0, "y": 0, "w": CARD_W, "h": CARD_H,
+                      "fill": linear(0, 0, 0, CARD_H,
+                                     [[0, SKY_TOP], [horizon, "#15123a"],
+                                      [1, SKY_LOW]])})
+    card.node("sky", {"type": "ellipse", "cx": CARD_W / 2, "cy": CARD_H * horizon,
+                      "rx": CARD_W, "ry": CARD_H * 0.5,
+                      "fill": radial(CARD_W / 2, CARD_H * horizon, CARD_W,
+                                     [[0, accent + "33"], [0.5, accent + "11"],
+                                      [1, accent + "00"]])})
+    rng = _Rng(97)
+    for _ in range(90):
+        x = rng.next() * CARD_W
+        y = rng.next() * CARD_H * (horizon + 0.2)
+        r = 0.6 + rng.next() * 1.9
+        a = int(90 + rng.next() * 140)
+        card.node("sky", {"type": "ellipse", "cx": x, "cy": y, "rx": r, "ry": r,
+                          "fill": STAR + f"{a:02x}"})
+
+
+def card_frame(card, number, title, accent):
+    """The caption band, the keyline border, and the two lines of type."""
+    card.layer("frame", "vector")
+    band_top = CARD_H - 150
+    card.node("frame", {"type": "rect", "x": 0, "y": band_top - 48,
+                        "w": CARD_W, "h": CARD_H - (band_top - 48),
+                        "fill": linear(0, band_top - 48, 0, CARD_H,
+                                       [[0, "#07060f00"], [0.35, "#07060fcc"],
+                                        [1, "#07060ff5"]])})
+    card.node("frame", {"type": "rect", "x": 24, "y": 24, "w": CARD_W - 48,
+                        "h": CARD_H - 48, "radius": 20, "fill": "none",
+                        "stroke": {"paint": accent + "aa", "width": 2.5}})
+    card.node("frame", {"type": "text", "text": number, "font": "Share Tech Mono",
+                        "size": 23, "x": CARD_W / 2, "y": band_top - 6,
+                        "align": "center", "tracking": 7, "fill": accent})
+    card.node("frame", {"type": "text", "text": title, "font": "Orbitron Bold",
+                        "size": 48, "x": CARD_W / 2, "y": band_top + 34,
+                        "align": "center", "tracking": 9, "fill": "#f4f0ff"})
