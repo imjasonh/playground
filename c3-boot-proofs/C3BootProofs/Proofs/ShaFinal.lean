@@ -211,6 +211,148 @@ theorem zero_loop {M1 : Word → BitVec 8} {B : Word}
       exact ⟨n5, .cons d1 (.cons d2 (.cons d3 (.cons d4 c5))), u5,
         fun r h1 h2 => by rw [f5 r h1 h2, u4.regs, frame r h1 h2]⟩
 
+/-! ## The message length in bits
+
+`finalize` computes the message's length in bits, `8 * (64 * blocks + pos)`,
+as two 32-bit words, and byte-swaps each with shifts and masks so that a
+little-endian store writes it big-endian. These lemmas prove the swaps bit
+by bit, one bit index at a time. -/
+
+theorem lt32_cases {P : Nat → Prop} (h0 : P 0) (h1 : P 1) (h2 : P 2) (h3 : P 3) (h4 : P 4) (h5 : P 5) (h6 : P 6) (h7 : P 7) (h8 : P 8) (h9 : P 9) (h10 : P 10) (h11 : P 11) (h12 : P 12) (h13 : P 13) (h14 : P 14) (h15 : P 15) (h16 : P 16) (h17 : P 17) (h18 : P 18) (h19 : P 19) (h20 : P 20) (h21 : P 21) (h22 : P 22) (h23 : P 23) (h24 : P 24) (h25 : P 25) (h26 : P 26) (h27 : P 27) (h28 : P 28) (h29 : P 29) (h30 : P 30) (h31 : P 31) : ∀ i, i < 32 → P i
+  | 0, _ => h0
+  | 1, _ => h1
+  | 2, _ => h2
+  | 3, _ => h3
+  | 4, _ => h4
+  | 5, _ => h5
+  | 6, _ => h6
+  | 7, _ => h7
+  | 8, _ => h8
+  | 9, _ => h9
+  | 10, _ => h10
+  | 11, _ => h11
+  | 12, _ => h12
+  | 13, _ => h13
+  | 14, _ => h14
+  | 15, _ => h15
+  | 16, _ => h16
+  | 17, _ => h17
+  | 18, _ => h18
+  | 19, _ => h19
+  | 20, _ => h20
+  | 21, _ => h21
+  | 22, _ => h22
+  | 23, _ => h23
+  | 24, _ => h24
+  | 25, _ => h25
+  | 26, _ => h26
+  | 27, _ => h27
+  | 28, _ => h28
+  | 29, _ => h29
+  | 30, _ => h30
+  | 31, _ => h31
+  | n + 32, h => absurd h (by omega)
+
+theorem lt8_cases {P : Nat → Prop} (h0 : P 0) (h1 : P 1) (h2 : P 2) (h3 : P 3) (h4 : P 4) (h5 : P 5) (h6 : P 6) (h7 : P 7) : ∀ i, i < 8 → P i
+  | 0, _ => h0
+  | 1, _ => h1
+  | 2, _ => h2
+  | 3, _ => h3
+  | 4, _ => h4
+  | 5, _ => h5
+  | 6, _ => h6
+  | 7, _ => h7
+  | n + 8, h => absurd h (by omega)
+
+theorem tbFF00_0 : Nat.testBit 65280 0 = false := by decide
+theorem tbFF00_1 : Nat.testBit 65280 1 = false := by decide
+theorem tbFF00_2 : Nat.testBit 65280 2 = false := by decide
+theorem tbFF00_3 : Nat.testBit 65280 3 = false := by decide
+theorem tbFF00_4 : Nat.testBit 65280 4 = false := by decide
+theorem tbFF00_5 : Nat.testBit 65280 5 = false := by decide
+theorem tbFF00_6 : Nat.testBit 65280 6 = false := by decide
+theorem tbFF00_7 : Nat.testBit 65280 7 = false := by decide
+theorem tbFF00_8 : Nat.testBit 65280 8 = true := by decide
+theorem tbFF00_9 : Nat.testBit 65280 9 = true := by decide
+theorem tbFF00_10 : Nat.testBit 65280 10 = true := by decide
+theorem tbFF00_11 : Nat.testBit 65280 11 = true := by decide
+theorem tbFF00_12 : Nat.testBit 65280 12 = true := by decide
+theorem tbFF00_13 : Nat.testBit 65280 13 = true := by decide
+theorem tbFF00_14 : Nat.testBit 65280 14 = true := by decide
+theorem tbFF00_15 : Nat.testBit 65280 15 = true := by decide
+theorem tbFF00_16 : Nat.testBit 65280 16 = false := by decide
+theorem tbFF00_17 : Nat.testBit 65280 17 = false := by decide
+theorem tbFF00_18 : Nat.testBit 65280 18 = false := by decide
+theorem tbFF00_19 : Nat.testBit 65280 19 = false := by decide
+theorem tbFF00_20 : Nat.testBit 65280 20 = false := by decide
+theorem tbFF00_21 : Nat.testBit 65280 21 = false := by decide
+theorem tbFF00_22 : Nat.testBit 65280 22 = false := by decide
+theorem tbFF00_23 : Nat.testBit 65280 23 = false := by decide
+theorem tbFF00_24 : Nat.testBit 65280 24 = false := by decide
+theorem tbFF00_25 : Nat.testBit 65280 25 = false := by decide
+theorem tbFF00_26 : Nat.testBit 65280 26 = false := by decide
+theorem tbFF00_27 : Nat.testBit 65280 27 = false := by decide
+theorem tbFF00_28 : Nat.testBit 65280 28 = false := by decide
+theorem tbFF00_29 : Nat.testBit 65280 29 = false := by decide
+theorem tbFF00_30 : Nat.testBit 65280 30 = false := by decide
+theorem tbFF00_31 : Nat.testBit 65280 31 = false := by decide
+
+/-- A word's bytes in reverse order. -/
+def bswap32 (x : Word) : Word := (x >>> 24) ||| ((x >>> 8) &&& 0xFF00) ||| ((x &&& 0xFF00) <<< 8) ||| (x <<< 24)
+
+set_option maxRecDepth 10000 in
+set_option linter.unusedSimpArgs false in
+/-- The low word of the length, as `finalize` swaps it. -/
+theorem lenLo_eq (lo pos : Word) (hp : ∀ k, 6 ≤ k → pos.getLsbD k = false) :
+    ((((lo <<< 1) &&& 0xFF00) ||| ((lo <<< 9) >>> 24)) ||| (pos <<< 27)) |||
+      ((((pos <<< 3) ||| (lo <<< 9)) &&& 0xFF00) <<< 8) = bswap32 ((lo <<< 9) ||| (pos <<< 3)) := by
+  apply BitVec.eq_of_getLsbD_eq
+  unfold bswap32
+  apply lt32_cases
+  all_goals simp +decide [BitVec.getLsbD_or, BitVec.getLsbD_and, BitVec.getLsbD_shiftLeft, BitVec.getLsbD_ushiftRight, BitVec.getLsbD_ofNat, BitVec.getLsbD_extractLsb', tbFF00_0, tbFF00_1, tbFF00_2, tbFF00_3, tbFF00_4, tbFF00_5, tbFF00_6, tbFF00_7, tbFF00_8, tbFF00_9, tbFF00_10, tbFF00_11, tbFF00_12, tbFF00_13, tbFF00_14, tbFF00_15, tbFF00_16, tbFF00_17, tbFF00_18, tbFF00_19, tbFF00_20, tbFF00_21, tbFF00_22, tbFF00_23, tbFF00_24, tbFF00_25, tbFF00_26, tbFF00_27, tbFF00_28, tbFF00_29, tbFF00_30, tbFF00_31, -BitVec.getLsbD_eq_getElem, hp]
+
+set_option maxRecDepth 10000 in
+set_option linter.unusedSimpArgs false in
+/-- The high word of the length, as `finalize` swaps it when the block
+count's high word is zero. -/
+theorem lenHi_eq (lo : Word) :
+    ((lo >>> 23) <<< 24 ||| ((((0 : Word) <<< 1) &&& 0xFF00) ||| (((0 : Word) <<< 9) >>> 24))) |||
+      (((((0 : Word) <<< 9) ||| (lo >>> 23)) &&& 0xFF00) <<< 8) = bswap32 (lo >>> 23) := by
+  apply BitVec.eq_of_getLsbD_eq
+  unfold bswap32
+  apply lt32_cases
+  all_goals simp +decide [BitVec.getLsbD_or, BitVec.getLsbD_and, BitVec.getLsbD_shiftLeft, BitVec.getLsbD_ushiftRight, BitVec.getLsbD_ofNat, BitVec.getLsbD_extractLsb', tbFF00_0, tbFF00_1, tbFF00_2, tbFF00_3, tbFF00_4, tbFF00_5, tbFF00_6, tbFF00_7, tbFF00_8, tbFF00_9, tbFF00_10, tbFF00_11, tbFF00_12, tbFF00_13, tbFF00_14, tbFF00_15, tbFF00_16, tbFF00_17, tbFF00_18, tbFF00_19, tbFF00_20, tbFF00_21, tbFF00_22, tbFF00_23, tbFF00_24, tbFF00_25, tbFF00_26, tbFF00_27, tbFF00_28, tbFF00_29, tbFF00_30, tbFF00_31, -BitVec.getLsbD_eq_getElem, BitVec.getLsbD_of_ge]
+
+set_option maxRecDepth 10000 in
+set_option linter.unusedSimpArgs false in
+theorem bswap32_byte (x : Word) : ∀ k, k < 4 → (bswap32 x).extractLsb' (8 * k) 8 = x.extractLsb' (8 * (3 - k)) 8 := by
+  intro k hk
+  apply BitVec.eq_of_getLsbD_eq
+  unfold bswap32
+  match k, hk with
+  | 0, _ => apply lt8_cases <;> simp +decide [BitVec.getLsbD_or, BitVec.getLsbD_and, BitVec.getLsbD_shiftLeft, BitVec.getLsbD_ushiftRight, BitVec.getLsbD_ofNat, BitVec.getLsbD_extractLsb', tbFF00_0, tbFF00_1, tbFF00_2, tbFF00_3, tbFF00_4, tbFF00_5, tbFF00_6, tbFF00_7, tbFF00_8, tbFF00_9, tbFF00_10, tbFF00_11, tbFF00_12, tbFF00_13, tbFF00_14, tbFF00_15, tbFF00_16, tbFF00_17, tbFF00_18, tbFF00_19, tbFF00_20, tbFF00_21, tbFF00_22, tbFF00_23, tbFF00_24, tbFF00_25, tbFF00_26, tbFF00_27, tbFF00_28, tbFF00_29, tbFF00_30, tbFF00_31, -BitVec.getLsbD_eq_getElem]
+  | 1, _ => apply lt8_cases <;> simp +decide [BitVec.getLsbD_or, BitVec.getLsbD_and, BitVec.getLsbD_shiftLeft, BitVec.getLsbD_ushiftRight, BitVec.getLsbD_ofNat, BitVec.getLsbD_extractLsb', tbFF00_0, tbFF00_1, tbFF00_2, tbFF00_3, tbFF00_4, tbFF00_5, tbFF00_6, tbFF00_7, tbFF00_8, tbFF00_9, tbFF00_10, tbFF00_11, tbFF00_12, tbFF00_13, tbFF00_14, tbFF00_15, tbFF00_16, tbFF00_17, tbFF00_18, tbFF00_19, tbFF00_20, tbFF00_21, tbFF00_22, tbFF00_23, tbFF00_24, tbFF00_25, tbFF00_26, tbFF00_27, tbFF00_28, tbFF00_29, tbFF00_30, tbFF00_31, -BitVec.getLsbD_eq_getElem]
+  | 2, _ => apply lt8_cases <;> simp +decide [BitVec.getLsbD_or, BitVec.getLsbD_and, BitVec.getLsbD_shiftLeft, BitVec.getLsbD_ushiftRight, BitVec.getLsbD_ofNat, BitVec.getLsbD_extractLsb', tbFF00_0, tbFF00_1, tbFF00_2, tbFF00_3, tbFF00_4, tbFF00_5, tbFF00_6, tbFF00_7, tbFF00_8, tbFF00_9, tbFF00_10, tbFF00_11, tbFF00_12, tbFF00_13, tbFF00_14, tbFF00_15, tbFF00_16, tbFF00_17, tbFF00_18, tbFF00_19, tbFF00_20, tbFF00_21, tbFF00_22, tbFF00_23, tbFF00_24, tbFF00_25, tbFF00_26, tbFF00_27, tbFF00_28, tbFF00_29, tbFF00_30, tbFF00_31, -BitVec.getLsbD_eq_getElem]
+  | 3, _ => apply lt8_cases <;> simp +decide [BitVec.getLsbD_or, BitVec.getLsbD_and, BitVec.getLsbD_shiftLeft, BitVec.getLsbD_ushiftRight, BitVec.getLsbD_ofNat, BitVec.getLsbD_extractLsb', tbFF00_0, tbFF00_1, tbFF00_2, tbFF00_3, tbFF00_4, tbFF00_5, tbFF00_6, tbFF00_7, tbFF00_8, tbFF00_9, tbFF00_10, tbFF00_11, tbFF00_12, tbFF00_13, tbFF00_14, tbFF00_15, tbFF00_16, tbFF00_17, tbFF00_18, tbFF00_19, tbFF00_20, tbFF00_21, tbFF00_22, tbFF00_23, tbFF00_24, tbFF00_25, tbFF00_26, tbFF00_27, tbFF00_28, tbFF00_29, tbFF00_30, tbFF00_31, -BitVec.getLsbD_eq_getElem]
+
+theorem byte_toNat (x : Word) (s : Nat) : (x.extractLsb' s 8).toNat = x.toNat / 2 ^ s % 256 := by
+  rw [BitVec.extractLsb'_toNat, Nat.shiftRight_eq_div_pow]
+
+set_option maxRecDepth 10000 in
+theorem lenLo_toNat (lo pos : Word) (hp : ∀ k, 6 ≤ k → pos.getLsbD k = false) :
+    ((lo <<< 9) ||| (pos <<< 3)).toNat = (lo.toNat * 512 + pos.toNat * 8) % 2 ^ 32 := by
+  rw [← Sha256.add_disj (by
+      apply lt32_cases
+      all_goals simp +decide [BitVec.getLsbD_shiftLeft, hp, -BitVec.getLsbD_eq_getElem]),
+    BitVec.toNat_add, BitVec.toNat_shiftLeft, BitVec.toNat_shiftLeft, Nat.shiftLeft_eq, Nat.shiftLeft_eq]
+  omega
+
+theorem lenHi_toNat (lo : Word) : (lo >>> 23).toNat = lo.toNat / 2 ^ 23 := by
+  rw [BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow]
+
+theorem low_bits_zero {pos : Word} (h : pos.toNat < 64) : ∀ k, 6 ≤ k → pos.getLsbD k = false := fun k hk =>
+  Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le h (Nat.pow_le_pow_right (by decide) hk : 2 ^ 6 ≤ 2 ^ k))
+
 /-- The 4 bytes the big-endian store helper writes at `p`: `v`'s bytes, most
 significant first. -/
 def beStore (M : Word → BitVec 8) (p v : Word) : Word → BitVec 8 :=
