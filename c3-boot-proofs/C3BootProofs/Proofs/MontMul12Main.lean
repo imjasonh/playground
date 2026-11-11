@@ -157,4 +157,101 @@ theorem subTail_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Word} {
   simp +decide only [BlockOk, BInstr.ok, BInstr.run, subTail, upd, ↓reduceIte, and_true, true_and]
   exact ⟨h, hs⟩
 
+/-- `borrowing_sub`'s offset from `mul_montgomery_form::<12>`. -/
+abbrev mmBsub (P : Word) : Word := P + 0xFFFEFF8A
+
+/-- **One round of the final subtraction**, from 0xFE: subtract limb `i` of
+the modulus and the borrow from limb `i` of the accumulator, and store the
+difference at limb `i` of the buffer at `D`. `borrowing_sub` also writes
+the word below `sp`. -/
+theorem sub_iter {M : Word → BitVec 8} {P F acc np D b : Word} {n : Machine} {i : Nat}
+    (s : St M P n 0xFE (reg n)) (hc : CodeIn M P mulMont12Code) (hb : CodeIn M (mmBsub P) borrowingSubCode)
+    (hP : P.toNat % 2 = 0) (hi : i < 12) (hF : F.toNat % 4 = 0) (hacc : acc.toNat % 4 = 0)
+    (hnp : np.toNat % 4 = 0) (hD : D.toNat % 4 = 0)
+    (sFB : Sep (F + 0xFFFFFFFC) 4 (mmBsub P) borrowingSubCode.length)
+    (sFC : Sep (F + 0xFFFFFFFC) 4 P mulMont12Code.length)
+    (sDC : Sep (D + BitVec.ofNat 32 (4 * i)) 4 P mulMont12Code.length)
+    (rsp : reg n sp = F) (r9 : reg n (9 : Fin 32) = acc + BitVec.ofNat 32 (4 * i))
+    (r23 : reg n (23 : Fin 32) = np + BitVec.ofNat 32 (4 * i)) (r19 : reg n (19 : Fin 32) = D + BitVec.ofNat 32 (4 * i))
+    (r8 : reg n (8 : Fin 32) = BitVec.ofNat 32 (12 - i)) (ra2 : reg n a2 = b) :
+    ∃ n' Mb, Steps n n' ∧
+      St (memStore32 Mb (D + BitVec.ofNat 32 (4 * i))
+          (bsubD (memLoad32 M (acc + BitVec.ofNat 32 (4 * i))) (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) b))
+        P n' (if i + 1 < 12 then 0xFE else 0x11C) (reg n') ∧
+      (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Mb x = M x) ∧
+      reg n' a2 = bsubB (memLoad32 M (acc + BitVec.ofNat 32 (4 * i))) (memLoad32 M (np + BitVec.ofNat 32 (4 * i)))
+        (bsubD (memLoad32 M (acc + BitVec.ofNat 32 (4 * i))) (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) b) ∧
+      reg n' sp = F ∧ reg n' (9 : Fin 32) = acc + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n' (23 : Fin 32) = np + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n' (19 : Fin 32) = D + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n' (8 : Fin 32) = BitVec.ofNat 32 (12 - (i + 1)) ∧
+      ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ ra → q ≠ (9 : Fin 32) → q ≠ (23 : Fin 32) →
+        q ≠ (19 : Fin 32) → q ≠ (8 : Fin 32) → reg n' q = reg n q := by
+  have hz := s.zero
+  obtain ⟨n1, d1, u1⟩ := s.lw hc mm_at_fe (off' := 0x100) (by decide)
+    (by rw [r9, add_lit_zero]; exact aligned_add hacc (by omega))
+  obtain ⟨n2, d2, u2⟩ := u1.lw hc mm_at_100 (off' := 0x104) (by decide)
+    (by rw [upd_ne (by decide) (by decide), r23, add_lit_zero]; exact aligned_add hnp (by omega))
+  rw [r9, add_lit_zero] at u2
+  have f0 : upd (upd (reg n) a0 (memLoad32 M (acc + BitVec.ofNat 32 (4 * i)))) a1
+      (memLoad32 M (upd (reg n) a0 (memLoad32 M (acc + BitVec.ofNat 32 (4 * i))) (23 : Fin 32) + 0)) a0 =
+      memLoad32 M (acc + BitVec.ofNat 32 (4 * i)) := by simp +decide [upd]
+  have f1 : upd (upd (reg n) a0 (memLoad32 M (acc + BitVec.ofNat 32 (4 * i)))) a1
+      (memLoad32 M (upd (reg n) a0 (memLoad32 M (acc + BitVec.ofNat 32 (4 * i))) (23 : Fin 32) + 0)) a1 =
+      memLoad32 M (np + BitVec.ofNat 32 (4 * i)) := by
+    simp +decide only [upd, ↓reduceIte]; rw [r23, add_lit_zero]
+  have u2' := u2.self
+  have g2a0 : reg n2 a0 = memLoad32 M (acc + BitVec.ofNat 32 (4 * i)) := by rw [u2.regs, f0]
+  have g2a1 : reg n2 a1 = memLoad32 M (np + BitVec.ofNat 32 (4 * i)) := by rw [u2.regs, f1]
+  have k2 : ∀ q, q ≠ a0 → q ≠ a1 → reg n2 q = reg n q := fun q q0 q1 => by
+    rw [u2.regs]
+    by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp [upd, h0, q0, q1]
+  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2'.bsubCall hc hb (even_at P hP 0xFFFEFF8A (by decide))
+    mm_at_104 mm_at_108 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x104 + 8) (by decide))
+    (by rw [k2 sp (by decide) (by decide), rsp]) hF sFB
+  rw [g2a0, g2a1, k2 a2 (by decide) (by decide), ra2] at a03 a13
+  have hc3 : CodeIn n3.mem P mulMont12Code := fun j hj => by
+    rw [mem3 _ (sFC.subR (c := j) (l := 1) (by omega))]; exact hc j hj
+  have k3 : ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ ra → reg n3 q = reg n q := fun q q0 q1 q2 q3 q4 qr =>
+    by rw [fr3 q q0 q1 q2 q3 q4 qr, k2 q q0 q1]
+  have e19 : reg n3 (19 : Fin 32) + 0 = D + BitVec.ofNat 32 (4 * i) := by
+    rw [k3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), r19, add_lit_zero]
+  obtain ⟨n4, c4, u4⟩ := St.block subTail u3 hc3 subTail_end
+    (subTail_ok (by rw [e19]; exact aligned_add hD (by omega)) (by rw [e19]; exact sDC))
+  obtain ⟨em4, t2, t9, t23, t19, t8, tk⟩ := subTail_run (M := n3.mem) (f := reg n3) u3.zero
+  have u4' := u4.self
+  rw [em4, e19, a03] at u4'
+  have g4 : ∀ q, reg n4 q = (runBlock subTail (n3.mem, reg n3)).2 q := u4.regs
+  have hc4 := CodeIn.store32 (v := bsubD (memLoad32 M (acc + BitVec.ofNat 32 (4 * i)))
+    (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) b) hc3 sDC
+  have e8 : reg n4 (8 : Fin 32) = BitVec.ofNat 32 (12 - (i + 1)) := by
+    rw [g4, t8, k3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), r8, cnt12_dec i hi]
+  have hb4 : branchTaken .bne (reg n4 (8 : Fin 32)) (reg n4 x0) = decide (i + 1 < 12) := by
+    rw [e8, u4'.zero]; exact cnt12_ne i hi
+  have post : ∀ n5 : Machine, (∀ q, reg n5 q = reg n4 q) →
+      reg n5 a2 = bsubB (memLoad32 M (acc + BitVec.ofNat 32 (4 * i))) (memLoad32 M (np + BitVec.ofNat 32 (4 * i)))
+        (bsubD (memLoad32 M (acc + BitVec.ofNat 32 (4 * i))) (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) b) ∧
+      reg n5 sp = F ∧ reg n5 (9 : Fin 32) = acc + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n5 (23 : Fin 32) = np + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n5 (19 : Fin 32) = D + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n5 (8 : Fin 32) = BitVec.ofNat 32 (12 - (i + 1)) ∧
+      ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ ra → q ≠ (9 : Fin 32) → q ≠ (23 : Fin 32) →
+        q ≠ (19 : Fin 32) → q ≠ (8 : Fin 32) → reg n5 q = reg n q := fun n5 h5 => by
+    refine ⟨by rw [h5, g4, t2, a13], by rw [h5, g4, tk _ (by decide) (by decide) (by decide) (by decide) (by decide), sp3],
+      ?_, ?_, ?_, by rw [h5, e8], fun q q0 q1 q2 q3 q4 qr q9 q23 q19 q8 => ?_⟩
+    · rw [h5, g4, t9, k3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), r9, ptr4]
+    · rw [h5, g4, t23, k3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), r23, ptr4]
+    · rw [h5, g4, t19, k3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), r19, ptr4]
+    · rw [h5, g4, tk q q2 q9 q23 q19 q8, k3 q q0 q1 q2 q3 q4 qr]
+  by_cases hl : i + 1 < 12
+  · obtain ⟨n5, d5, u5⟩ := u4'.taken hc4 0xFE mm_at_11a (by decide) (by rw [hb4]; exact decide_eq_true hl)
+    exact ⟨n5, n3.mem, .cons d1 (.cons d2 (c3.trans (c4.trans (.single d5)))), by rw [ite_eq_left hl]; exact u5.self,
+      mem3, post n5 u5.regs⟩
+  · obtain ⟨n5, d5, u5⟩ := u4'.notTaken hc4 0x11C mm_at_11a (by decide) (by rw [hb4]; exact decide_eq_false hl)
+    exact ⟨n5, n3.mem, .cons d1 (.cons d2 (c3.trans (c4.trans (.single d5)))), by rw [ite_eq_right hl]; exact u5.self,
+      mem3, post n5 u5.regs⟩
+
 end C3.RV32
