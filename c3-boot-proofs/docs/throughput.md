@@ -8,6 +8,38 @@ asks: proof lines per instruction, agent time per function, and Lean build
 time and memory. It then projects the cost of proving the whole image.
 Measured on 2026-11-11, with SHA-256 added the same day.
 
+## Coverage
+
+`scripts/coverage.py` counts the instructions in proved functions, in the
+image and in one boot. A function counts once a correctness theorem covers
+it; the theorem's hypotheses, such as a stack layout, are still for its
+callers' proofs to discharge. The boot is the trial boot of a valid slot
+that `c3-boot/docs/measurements.md` profiles. Measured on 2026-11-11, after
+SHA-256's `update`, `finalize`, and one-shot `sha256`:
+
+| Measure | Proved | Total | Share |
+| --- | --- | --- | --- |
+| Instructions in the image | 5,828 | 42,490 | 13.7% |
+| Instructions one boot runs | 42,571,472 | 133,867,420 | 31.8% |
+
+The unproved functions that run the most, as a share of that boot:
+
+| Function | Share of the boot |
+| --- | --- |
+| `crypto_bigint`'s `mul_montgomery_form::<12>` (P-384) | 36.2% |
+| `crypto_bigint`'s `square_montgomery_form::<12>` (P-384) | 7.1% |
+| `ConstMontyForm` operations on P-384 field elements | 6.0% |
+| `curve25519_dalek`'s field multiplication, squaring, and reduction | 7.5% |
+| `Uint<12>::select` | 2.0% |
+| `c3_bootloader::flash::read` | 1.7% |
+
+To reproduce, profile the trial boot as `measurements.md` shows, then:
+
+```bash
+bin="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin"
+python3 ../c3-boot-proofs/scripts/coverage.py /tmp/trial.prof "${elf}" "${bin}/llvm-nm" "${bin}/llvm-objdump"
+```
+
 ## Method
 
 - **Instructions** are counted by decoding each extracted function's bytes
