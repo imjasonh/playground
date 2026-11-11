@@ -1222,4 +1222,91 @@ theorem fin_loop {M0 : Word → BitVec 8} {Sst B : Word}
         fun r q10 q11 q12 q13 q14 q5 q8 q9 => by
           rw [K6 r q10 q11 q12 q13 q14 q5 q8 q9, u5.regs, K14 r q10 q11 q12 q13 q14 q5 q8 q9]⟩
 
+/-- What `finalize`'s save helper stores, and where in the frame. -/
+abbrev finSavePs : List (Fin 32 × Word) :=
+  [(ra, 0x5C), (s0, 0x58), (s1, 0x54), (s2, 0x50), (s3, 0x4C), (s4, 0x48), (s5, 0x44)]
+
+theorem finSave_shape : SaveAt shaFinalizeSaveCode 0 finSavePs := by simp only [SaveAt]; decide
+
+theorem finRestore_shape : RestoreAt shaFinalizeRestoreCode 0 finSavePs := by simp only [RestoreAt]; decide
+
+theorem saveMem_out (G : Word) (f : Fin 32 → Word) (x : Word) :
+    ∀ (ps : List (Fin 32 × Word)) (M : Word → BitVec 8), (∀ p ∈ ps, Sep (G + p.2) 4 x 1) → saveMem M G f ps x = M x
+  | [], _, _ => rfl
+  | (r, o) :: ps, M, h => by
+    simp only [saveMem]
+    rw [saveMem_out G f x ps _ (fun p hp => h p (List.mem_cons_of_mem _ hp)),
+      memStore32_get_sep (h (r, o) List.mem_cons_self)]
+
+/-- `finalize`'s frame after its prologue stores: the save helper's 7 words,
+then `s6` at offset 0x40. -/
+abbrev finSaved (M : Word → BitVec 8) (G : Word) (f : Fin 32 → Word) (v : Word) : Word → BitVec 8 :=
+  memStore32 (saveMem M G f finSavePs) (G + BitVec.ofNat 32 0x40) v
+
+theorem finSaved_slots (M : Word → BitVec 8) (G : Word) (f : Fin 32 → Word) (v : Word) :
+    memLoad32 (finSaved M G f v) (G + BitVec.ofNat 32 0x40) = v ∧
+      memLoad32 (finSaved M G f v) (G + 0x5C) = f ra ∧
+      memLoad32 (finSaved M G f v) (G + 0x58) = f s0 ∧
+      memLoad32 (finSaved M G f v) (G + 0x54) = f s1 ∧
+      memLoad32 (finSaved M G f v) (G + 0x50) = f s2 ∧
+      memLoad32 (finSaved M G f v) (G + 0x4C) = f s3 ∧
+      memLoad32 (finSaved M G f v) (G + 0x48) = f s4 ∧
+      memLoad32 (finSaved M G f v) (G + 0x44) = f s5 := by
+  have so : ∀ c d, c < 0x60 → d < 0x60 → c + 4 ≤ d ∨ d + 4 ≤ c →
+      Sep (G + BitVec.ofNat 32 c) 4 (G + BitVec.ofNat 32 d) 4 :=
+    fun c d hc hd h => sep_offsets G h (by omega) (by omega)
+  simp only [finSaved, saveMem]
+  refine ⟨memLoad32_store32_same _ _ _, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [memLoad32_store32_sep (show Sep (G + BitVec.ofNat 32 0x40) 4 (G + 0x5C) 4 from so 0x40 0x5C (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x44) 4 (G + 0x5C) 4 from so 0x44 0x5C (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x48) 4 (G + 0x5C) 4 from so 0x48 0x5C (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x4C) 4 (G + 0x5C) 4 from so 0x4C 0x5C (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x50) 4 (G + 0x5C) 4 from so 0x50 0x5C (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x54) 4 (G + 0x5C) 4 from so 0x54 0x5C (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x58) 4 (G + 0x5C) 4 from so 0x58 0x5C (by omega) (by omega) (by omega)), memLoad32_store32_same]
+  · rw [memLoad32_store32_sep (show Sep (G + BitVec.ofNat 32 0x40) 4 (G + 0x58) 4 from so 0x40 0x58 (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x44) 4 (G + 0x58) 4 from so 0x44 0x58 (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x48) 4 (G + 0x58) 4 from so 0x48 0x58 (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x4C) 4 (G + 0x58) 4 from so 0x4C 0x58 (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x50) 4 (G + 0x58) 4 from so 0x50 0x58 (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x54) 4 (G + 0x58) 4 from so 0x54 0x58 (by omega) (by omega) (by omega)), memLoad32_store32_same]
+  · rw [memLoad32_store32_sep (show Sep (G + BitVec.ofNat 32 0x40) 4 (G + 0x54) 4 from so 0x40 0x54 (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x44) 4 (G + 0x54) 4 from so 0x44 0x54 (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x48) 4 (G + 0x54) 4 from so 0x48 0x54 (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x4C) 4 (G + 0x54) 4 from so 0x4C 0x54 (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x50) 4 (G + 0x54) 4 from so 0x50 0x54 (by omega) (by omega) (by omega)), memLoad32_store32_same]
+  · rw [memLoad32_store32_sep (show Sep (G + BitVec.ofNat 32 0x40) 4 (G + 0x50) 4 from so 0x40 0x50 (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x44) 4 (G + 0x50) 4 from so 0x44 0x50 (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x48) 4 (G + 0x50) 4 from so 0x48 0x50 (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x4C) 4 (G + 0x50) 4 from so 0x4C 0x50 (by omega) (by omega) (by omega)), memLoad32_store32_same]
+  · rw [memLoad32_store32_sep (show Sep (G + BitVec.ofNat 32 0x40) 4 (G + 0x4C) 4 from so 0x40 0x4C (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x44) 4 (G + 0x4C) 4 from so 0x44 0x4C (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x48) 4 (G + 0x4C) 4 from so 0x48 0x4C (by omega) (by omega) (by omega)), memLoad32_store32_same]
+  · rw [memLoad32_store32_sep (show Sep (G + BitVec.ofNat 32 0x40) 4 (G + 0x48) 4 from so 0x40 0x48 (by omega) (by omega) (by omega)), memLoad32_store32_sep (show Sep (G + 0x44) 4 (G + 0x48) 4 from so 0x44 0x48 (by omega) (by omega) (by omega)), memLoad32_store32_same]
+  · rw [memLoad32_store32_sep (show Sep (G + BitVec.ofNat 32 0x40) 4 (G + 0x44) 4 from so 0x40 0x44 (by omega) (by omega) (by omega)), memLoad32_store32_same]
+
+theorem finSaved_out (M : Word → BitVec 8) (G : Word) (f : Fin 32 → Word) (v x : Word)
+    (h : Sep (G + BitVec.ofNat 32 0x40) 0x20 x 1) : finSaved M G f v x = M x := by
+  simp only [finSaved]
+  rw [memStore32_get_sep (h.sub (c := 0) (l := 4) (by omega) |> fun h' => by rwa [add_ofNat_zero] at h'),
+    saveMem_out G f x finSavePs M (fun p hp => by
+      simp only [finSavePs, List.mem_cons, List.not_mem_nil, or_false] at hp
+      rcases hp with rfl | rfl | rfl | rfl | rfl | rfl | rfl
+      · have := h.sub (c := 0x1C) (l := 4) (by omega); rwa [add_ofNat_assoc] at this
+      · have := h.sub (c := 0x18) (l := 4) (by omega); rwa [add_ofNat_assoc] at this
+      · have := h.sub (c := 0x14) (l := 4) (by omega); rwa [add_ofNat_assoc] at this
+      · have := h.sub (c := 0x10) (l := 4) (by omega); rwa [add_ofNat_assoc] at this
+      · have := h.sub (c := 0x0C) (l := 4) (by omega); rwa [add_ofNat_assoc] at this
+      · have := h.sub (c := 8) (l := 4) (by omega); rwa [add_ofNat_assoc] at this
+      · have := h.sub (c := 4) (l := 4) (by omega); rwa [add_ofNat_assoc] at this)]
+
+/-- Where `finalize` runs: its code and its callees', the hasher at `S`, the
+output at `out`, and 0x190 bytes of stack below `sp0`, all below
+0x40000000 and apart from each other and from the round constants. -/
+structure FinEnv (M : Word → BitVec 8) (S out sp0 : Word) : Prop where
+  cF : CodeIn M (BitVec.ofNat 32 shaFinalizeAddress) shaFinalizeCode
+  cSave : CodeIn M (BitVec.ofNat 32 shaFinalizeSaveAddress) shaFinalizeSaveCode
+  cRest : CodeIn M (BitVec.ofNat 32 shaFinalizeRestoreAddress) shaFinalizeRestoreCode
+  cZ : CodeIn M (BitVec.ofNat 32 shaZero32Address) shaZero32Code
+  cBlk : CodeIn M (BitVec.ofNat 32 shaFinalizeBlockAddress) shaFinalizeBlockCode
+  cBe : CodeIn M (BitVec.ofNat 32 shaStoreBeAddress) shaStoreBeCode
+  cMs : CodeIn M (BitVec.ofNat 32 memsetAddress) memsetCode
+  cMS : CodeIn M (BitVec.ofNat 32 memcpyStubAddress) memcpyStubCode
+  cMB : CodeIn M (BitVec.ofNat 32 memcpyStubAddress + 8) memcpyBodyCode
+  cC : CodeIn M (BitVec.ofNat 32 sha256CompressAddress) sha256CompressCode
+  cI : CodeIn M (BitVec.ofNat 32 sha256CompressAddress + 0x2B94) shaIndexCode
+  c97 : CodeIn M (BitVec.ofNat 32 sha256CompressAddress + 0xC09C) shaSigma1PartCode
+  cK : CodeIn M (BitVec.ofNat 32 shaKAddress) shaKData
+  hS : S.toNat % 4 = 0
+  hSw : S.toNat + 0x68 ≤ 0x40000000
+  hsp : sp0.toNat % 16 = 0
+  hspl : 0x190 ≤ sp0.toNat
+  hspw : sp0.toNat ≤ 0x40000000
+  hOw : out.toNat + 32 ≤ 0x40000000
+  sSF : Sep S 0x68 (sp0 + 0xFFFFFE70) 0x190
+  sOF : Sep out 32 (sp0 + 0xFFFFFE70) 0x190
+  sOS : Sep out 32 S 0x68
+  sKS : Sep (BitVec.ofNat 32 shaKAddress) 256 S 0x68
+  sKF : Sep (BitVec.ofNat 32 shaKAddress) 256 (sp0 + 0xFFFFFE70) 0x190
+
 end C3.RV32
