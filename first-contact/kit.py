@@ -10,8 +10,11 @@ import json
 import math
 
 # The key light for the whole triptych: high and a little to the left, so the
-# three figures read as lit by the same star.
+# three figures read as lit by the same star. KEY warms the lit side; SHADOW is
+# a cool lavender the shadow side turns towards, so paint never goes muddy brown.
 LIGHT = [-0.72, -0.62]
+KEY = "#fff1dc"
+SHADOW = "#5a5ea0"
 
 # Each card is a tall tarot-sized panel; the triptych stands them side by side.
 CARD_W = 1024
@@ -19,7 +22,6 @@ CARD_H = 1280
 
 # One palette across the three cards. The dusk sky and the warm skin of each
 # figure stay the same; each card keeps one accent that its glow and frame use.
-INK = "#0b0a12"
 SKY_TOP = "#0a0a1e"
 SKY_LOW = "#241041"
 STAR = "#cfe6ff"
@@ -90,10 +92,19 @@ class Card:
 
     def __init__(self):
         self.ops = []
+        self._seed = 0
+        self.paint_layers = []
+        # Line weight multiplier, so a card can dial its outlines down to let
+        # the paint carry the silhouette.
+        self.ink_scale = 0.45
 
     def op(self, obj):
         self.ops.append(obj)
         return obj
+
+    def seed(self):
+        self._seed += 1
+        return self._seed
 
     def palette(self, name, color):
         self.op({"op": "palette", "add": color, "name": name})
@@ -117,21 +128,69 @@ class Card:
                  "shadeColor": shade_color, "rimColor": rim_color,
                  "rimWidth": rim_width, "shadeOpacity": strength})
 
-    def hatch(self, shapes, angle, spacing, length, color, **kw):
-        self.op({"op": "hatch", "layer": "shade", "in": shapes, "angle": angle,
+    def paint_form(self, lid, shapes, color, relief=(4.0, 3.5), brush="oil",
+                   weight=15, decisive=0.7, **extra):
+        """Paint `shapes` as lit forms on their own layer, then light the oil.
+
+        Fills the flat colour, locks alpha so strokes stay inside the shapes,
+        paints each one as a form coloured by the key light with a cool shadow,
+        and adds a relief effect so the oil body catches the same light. This is
+        what makes the figure read as paint instead of a flat vector fill.
+        """
+        self.layer(lid, "paint")
+        self.paint_layers.append(lid)
+        for sid in shapes:
+            self.fill(lid, shape=sid, color=color)
+        self.op({"op": "set", "id": lid, "lockAlpha": True})
+        self.op({"op": "paint", "layer": lid, "in": shapes, "light": LIGHT,
+                 "key": KEY, "color": color, "brush": brush, "weight": weight,
+                 "decisive": decisive, "fillStrength": 0.3,
+                 "bounceStrength": 0.16, "shadow": SHADOW, "shadowMix": 0.68,
+                 "seed": self.seed(), **extra})
+        self.op({"op": "set", "id": lid, "lockAlpha": False})
+        if relief:
+            strength, softness = relief
+            self.op({"op": "set", "id": lid, "effects": [
+                {"relief": {"light": LIGHT, "highlight": KEY,
+                            "strength": strength, "softness": softness}}]})
+
+    def hatch(self, lid, shapes, angle, spacing, length, color, **kw):
+        self.op({"op": "hatch", "layer": lid, "in": shapes, "angle": angle,
                  "spacing": spacing, "length": length, "color": color, **kw})
 
-    def ink(self, weight, seed, shapes=None, path=None, color="ink"):
+    def ink(self, weight, seed, shapes=None, path=None, color="ink",
+            wobble=1.4, **kw):
         base = {"op": "ink", "layer": "lines", "light": LIGHT,
-                "weight": weight, "color": color, "seed": seed}
+                "weight": weight * self.ink_scale, "color": color,
+                "seed": seed, "wobble": wobble, **kw}
         self.op({**base, "path": path} if path else {**base, "from": shapes})
 
     def dump(self):
         print("\n".join(json.dumps(o) for o in self.ops))
 
+    def brushwork(self):
+        """Empty paint layer that the second-pass paint-over fills."""
+        self.layer("brushwork", "paint")
+
+    def dump_over(self, sizes, threshold=7, **kw):
+        """Print the paint-over op alone, for a second `klad apply` batch.
+
+        paint-over reads the composed drawing, so it must run after the main
+        ops land. It paints unifying strokes onto the `brushwork` layer, taking
+        colour from the figure layers below, which keeps the sky untouched.
+        """
+        print(json.dumps({"op": "paintover", "layer": "brushwork",
+                          "from": self.paint_layers, "sizes": list(sizes),
+                          "threshold": threshold, "seed": self.seed(), **kw}))
+
 
 def sky(card, accent, horizon=0.62):
-    """A deep dusk gradient with a low accent glow, plus a field of stars."""
+    """A deep dusk sky painted with soft nebula drifts, a glow, and stars.
+
+    The gradient base and glow are vector, but the nebula is scumbled on with a
+    soft brush and the stars vary in size and softness, so the background does
+    not read as a flat SVG wash behind the painted figure.
+    """
     card.layer("sky", "vector")
     card.node("sky", {"type": "rect", "x": 0, "y": 0, "w": CARD_W, "h": CARD_H,
                       "fill": linear(0, 0, 0, CARD_H,
@@ -142,14 +201,30 @@ def sky(card, accent, horizon=0.62):
                       "fill": radial(CARD_W / 2, CARD_H * horizon, CARD_W,
                                      [[0, accent + "33"], [0.5, accent + "11"],
                                       [1, accent + "00"]])})
+    # Scumbled nebula clouds painted with a soft brush over the gradient.
+    card.layer("nebula", "paint", opacity=0.6)
+    rng = _Rng(13)
+    tints = [accent, "#6a4fd0", "#3f6fd0", "#b85aa0"]
+    for i in range(14):
+        x = rng.next() * CARD_W
+        y = rng.next() * CARD_H * (horizon + 0.25)
+        size = 150 + rng.next() * 260
+        tint = tints[i % len(tints)]
+        card.op({"op": "stroke", "layer": "nebula", "brush": "soft",
+                 "size": size, "color": tint + "26", "flow": 0.5,
+                 "path": f"M{x:.0f} {y:.0f} l{rng.next() * 120 - 60:.0f} "
+                         f"{rng.next() * 80 - 40:.0f}", "seed": card.seed()})
+    # Stars: most tiny and soft, a few brighter with a faint bloom.
+    card.layer("stars", "vector", blend="screen")
     rng = _Rng(97)
-    for _ in range(90):
+    for _ in range(120):
         x = rng.next() * CARD_W
         y = rng.next() * CARD_H * (horizon + 0.2)
-        r = 0.6 + rng.next() * 1.9
-        a = int(90 + rng.next() * 140)
-        card.node("sky", {"type": "ellipse", "cx": x, "cy": y, "rx": r, "ry": r,
-                          "fill": STAR + f"{a:02x}"})
+        r = 0.5 + rng.next() * 2.0
+        a = int(70 + rng.next() * 150)
+        blur = 0.4 if rng.next() < 0.75 else 2.2
+        card.node("stars", {"type": "ellipse", "cx": x, "cy": y, "rx": r, "ry": r,
+                            "fill": STAR + f"{a:02x}", "blur": blur})
 
 
 def card_frame(card, number, title, accent):

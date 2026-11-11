@@ -5,21 +5,23 @@ magenta world below and a small waving figure - the Visitor from card 03 -
 so the middle card is the moment the two archetypes see each other.
 """
 
-from kit import (AMBER, CYAN, INK, MAGENTA, Card, card_frame, ellipse_path,
-                 linear, radial, rrect_path, sky)
+import sys
+
+from kit import (CYAN, MAGENTA, Card, card_frame, ellipse_path,
+                 radial, rrect_path, sky)
 
 ACCENT = CYAN
 
+LINE = "#1b2238"
 SUIT = "#e8ebf2"
 SUIT_DK = "#aeb6c8"
-VISOR = "#2a1430"
 GOLD = "#ffcf6e"
 TRIM = "#ff7a4d"
-SHADE = "#2c2a46"
-RIM = "#dff4ff"
 
 
 def shapes(card):
+    # The planet the astronaut floats over, painted as a round form.
+    card.shape("world", {"type": "path", "d": ellipse_path(512, 1180, 560, 440)})
     card.shape("pack", {"type": "path", "d": rrect_path(372, 452, 280, 300, 70)})
     card.shape("torso", {"type": "path", "d": rrect_path(352, 470, 320, 360, 110)})
     card.shape("belt", {"type": "path", "d": rrect_path(360, 744, 304, 70, 34)})
@@ -47,72 +49,66 @@ def shapes(card):
     card.shape("visor", {"type": "path", "d": ellipse_path(512, 360, 118, 120)})
 
 
-def flats(card):
-    for sid, color in [("pack", SUIT_DK), ("leg-l", SUIT), ("leg-r", SUIT),
-                       ("boot-l", SUIT_DK), ("boot-r", SUIT_DK), ("arm-l", SUIT),
-                       ("arm-r", SUIT), ("torso", SUIT), ("belt", TRIM),
-                       ("chest", SUIT_DK), ("glove-l", SUIT_DK),
-                       ("glove-r", SUIT_DK), ("helmet", SUIT), ("visor", VISOR)]:
-        card.fill("flats", shape=sid, color=color, expand=2)
+def paint(card):
+    # White suit painted with a warm key and a cool lavender shadow, so it
+    # models without going grey, then relief-lit to show the oil body.
+    card.paint_form("p-pack", ["pack"], SUIT_DK, weight=16, relief=(3.6, 3.2))
+    card.paint_form("p-torso", ["torso"], SUIT, weight=20, relief=(4.4, 3.8))
+    card.paint_form("p-legs", ["leg-l", "leg-r"], SUIT, weight=14,
+                    form="cylinder", axis=80, relief=(3.8, 3.2))
+    card.paint_form("p-boots", ["boot-l", "boot-r"], SUIT_DK, weight=9,
+                    brush="oil-load", relief=(3.0, 2.6))
+    card.paint_form("p-arm-l", ["arm-l"], SUIT, weight=13, form="cylinder",
+                    axis=30, relief=(3.6, 3.2))
+    card.paint_form("p-arm-r", ["arm-r"], SUIT, weight=13, form="cylinder",
+                    axis=60, relief=(3.6, 3.2))
+    card.paint_form("p-belt", ["belt"], TRIM, weight=9, brush="oil-load",
+                    relief=(3.0, 2.4))
+    card.paint_form("p-chest", ["chest"], SUIT_DK, weight=9, form="flat",
+                    facing=[0.1, -0.2, 1], relief=(2.4, 2.2))
+    card.paint_form("p-gloves", ["glove-l", "glove-r"], SUIT_DK, weight=9,
+                    relief=(3.0, 2.6))
+    card.paint_form("p-helmet", ["helmet"], SUIT, weight=18, relief=(4.2, 3.8))
+    # The gold visor is painted as a round form so the reflection sits on oil,
+    # not on a flat SVG radial.
+    card.paint_form("p-visor", ["visor"], GOLD, weight=14, relief=(2.8, 3.0),
+                    fillStrength=0.4)
 
 
 def world(card):
-    # The magenta world as a lit sphere behind the figure, with an atmosphere
-    # rim. It sits on its own layer below the flats, so the suit covers it.
-    card.node("world", {"type": "ellipse", "cx": 512, "cy": 1180, "rx": 572, "ry": 452,
-                        "fill": "none",
-                        "stroke": {"paint": "#ff9fe0aa", "width": 6}})
-    card.node("world", {"type": "ellipse", "cx": 512, "cy": 1180, "rx": 558, "ry": 438,
-                        "fill": radial(400, 1030, 620,
-                                       [[0, "#ffd6f2"], [0.25, MAGENTA],
-                                        [0.6, "#8a2f98"], [1, "#2a0f3a"]])})
-    card.node("world", {"type": "ellipse", "cx": 512, "cy": 1180, "rx": 558, "ry": 438,
-                        "fill": radial(760, 1360, 520,
-                                       [[0, "#1a0626cc"], [0.6, "#2a0f3a44"],
-                                        [1, "#2a0f3a00"]])})
+    # The magenta world painted as a sphere, with a soft atmosphere rim above
+    # the paint. The rim is vector; the sphere itself is oil.
+    card.paint_form("p-world", ["world"], MAGENTA, weight=22, relief=(3.4, 4.0),
+                    fillStrength=0.35)
+    card.node("atmosphere", {"type": "ellipse", "cx": 512, "cy": 1180,
+                             "rx": 572, "ry": 452, "fill": "none",
+                             "stroke": {"paint": "#ff9fe0aa", "width": 6}})
 
 
 def visor_reflection(card):
-    # The gold visor: a reflective dome, the world's curve, and a tiny Visitor.
-    card.node("visorfx", {"type": "ellipse", "cx": 512, "cy": 360, "rx": 118, "ry": 120,
-                          "fill": radial(470, 316, 150,
-                                         [[0, GOLD], [0.55, "#d98a2f"],
-                                          [1, "#5a2f10"]])})
-    # The world reflected as a curved band across the bottom of the visor,
-    # leaving the gold to dominate the upper two thirds.
+    # Reflection details over the painted gold: the world's curve, a tiny
+    # Visitor waving, and a soft catchlight. Clip everything to the visor so
+    # the paint's brushwork shows through around them.
+    clip = ellipse_path(512, 360, 116, 118)
     card.node("visorfx", {"type": "ellipse", "cx": 512, "cy": 452, "rx": 108, "ry": 52,
                           "fill": radial(500, 452, 110,
-                                         [[0, "#ff8fd8"], [0.6, "#b0407a"],
-                                          [1, "#6a2f5a"]]),
-                          "clip": ellipse_path(512, 360, 116, 118)})
-    # The Visitor, waving, mirrored small in the gold: a tall head, deep eyes
-    # and a raised arm, the pose it holds on card 03.
+                                         [[0, "#ff8fd8aa"], [0.6, "#b0407a88"],
+                                          [1, "#6a2f5a00"]]),
+                          "clip": clip})
     card.node("visorfx", {"type": "ellipse", "cx": 500, "cy": 392, "rx": 20, "ry": 30,
-                          "fill": "#2e4234"})
+                          "fill": "#2e4234cc", "clip": clip})
     card.node("visorfx", {"type": "ellipse", "cx": 500, "cy": 356, "rx": 19, "ry": 24,
-                          "fill": "#3a5443"})
+                          "fill": "#3a5443cc", "clip": clip})
     card.node("visorfx", {"type": "ellipse", "cx": 494, "cy": 352, "rx": 4, "ry": 6,
-                          "fill": "#0c140f"})
+                          "fill": "#0c140f", "clip": clip})
     card.node("visorfx", {"type": "ellipse", "cx": 508, "cy": 352, "rx": 4, "ry": 6,
-                          "fill": "#0c140f"})
+                          "fill": "#0c140f", "clip": clip})
     card.node("visorfx", {"type": "path", "d": "M518 372 C 540 360 552 340 548 318",
                           "fill": "none",
-                          "stroke": {"paint": "#3a5444", "width": 6, "cap": "round"}})
-    # A bright catchlight and the mirror seam.
+                          "stroke": {"paint": "#3a5444", "width": 6, "cap": "round"},
+                          "clip": clip})
     card.node("light", {"type": "ellipse", "cx": 470, "cy": 312, "rx": 30, "ry": 20,
-                        "fill": "#fff3cfdd"})
-    card.node("visorfx", {"type": "ellipse", "cx": 512, "cy": 360, "rx": 118, "ry": 120,
-                          "fill": "none",
-                          "stroke": {"paint": "#fff0c8cc", "width": 3}})
-
-
-def light(card):
-    card.light(["pack", "torso", "leg-l", "leg-r", "arm-l", "arm-r"], depth=24,
-               soft=2, rim_width=6, shade_color=SHADE, rim_color=RIM, strength=0.8)
-    card.light(["helmet"], depth=34, soft=1, rim_width=8, shade_color="#2c3a56",
-               rim_color="#ffffff", strength=0.65)
-    card.light(["glove-l", "glove-r", "boot-l", "boot-r", "chest"], depth=14,
-               soft=1, rim_width=4, shade_color=SHADE, rim_color=RIM, strength=0.9)
+                        "fill": "#fff3cfdd", "clip": clip})
 
 
 def tether(card):
@@ -148,34 +144,34 @@ def ink(card):
     card.ink(weight=6, seed=6, shapes=["visor"])
 
 
-def build():
-    card = Card()
-    for name, color in [("ink", INK), ("suit", SUIT), ("gold", GOLD),
+def build(card):
+    for name, color in [("ink", LINE), ("suit", SUIT), ("gold", GOLD),
                         ("trim", TRIM), ("glow", CYAN)]:
         card.palette(name, color)
     sky(card, ACCENT, horizon=0.52)
-    card.layer("world", "vector")
+    card.layer("atmosphere", "vector")
     card.layer("tether", "vector")
     card.layer("sketch", "vector", visible=False)
-    card.layer("flats", "paint")
-    card.layer("shade", "paint", blend="multiply", opacity=0.82, clip=True)
-    card.layer("rim", "paint", clip=True)
+    shapes(card)
+    world(card)
+    paint(card)
+    card.layer("lines", "paint", opacity=0.4)
+    ink(card)
+    card.brushwork()
     card.layer("visorfx", "vector")
     card.layer("patch", "vector")
     card.layer("glow", "vector", blend="screen")
-    card.layer("lines", "paint")
     card.layer("light", "vector", blend="add")
-    shapes(card)
-    flats(card)
-    light(card)
-    world(card)
     visor_reflection(card)
     tether(card)
     glow(card)
-    ink(card)
     card_frame(card, "02 / FIRST CONTACT", "THE ASTRONAUT", ACCENT)
-    card.dump()
 
 
 if __name__ == "__main__":
-    build()
+    card = Card()
+    build(card)
+    if "--over" in sys.argv:
+        card.dump_over(sizes=[36, 18, 9], threshold=8)
+    else:
+        card.dump()

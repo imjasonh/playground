@@ -7,19 +7,19 @@ answer.
 """
 
 import math
+import sys
 
-from kit import (CYAN, INK, MAGENTA, Card, _Rng, card_frame, ellipse_path,
-                 linear, radial, rrect_path, sky)
+from kit import (CYAN, MAGENTA, Card, _Rng, card_frame, ellipse_path,
+                 radial, rrect_path, sky)
 
 ACCENT = MAGENTA
 
+LINE = "#0e1626"
 SKIN = "#5f8f8a"
 SKIN_DK = "#2f5450"
 ROBE = "#2a2550"
 ROBE_LT = "#3b3570"
 FRILL = "#8affd6"
-SHADE = "#17243a"
-RIM = "#b8ffe9"
 GLINT = "#d8fff4"
 
 
@@ -55,21 +55,23 @@ def shapes(card):
     card.shape("eye-r", {"type": "path", "d": ellipse_path(558, 404, 42, 56)})
 
 
-def flats(card):
-    for sid, color in [("robe", ROBE), ("arm-l", ROBE_LT), ("arm-r", ROBE_LT),
-                       ("neck", SKIN_DK), ("head", SKIN), ("collar", ROBE_LT),
-                       ("hand-l", SKIN), ("hand-r", SKIN), ("finger", SKIN),
-                       ("eye-l", "#070d14"), ("eye-r", "#070d14")]:
-        card.fill("flats", shape=sid, color=color, expand=2)
-
-
-def light(card):
-    card.light(["head"], depth=30, soft=2, rim_width=7, shade_color=SHADE,
-               rim_color=RIM, strength=0.8)
-    card.light(["robe", "arm-l", "arm-r"], depth=26, soft=2, rim_width=6,
-               shade_color=SHADE, rim_color=RIM, strength=0.85)
-    card.light(["neck", "collar", "hand-l", "hand-r", "finger"], depth=14,
-               soft=1, rim_width=4, shade_color=SHADE, rim_color=RIM, strength=0.9)
+def paint(card):
+    # Robe and skin painted as forms; the deep robe keeps a cool shadow so it
+    # reads as cloth, the skin a warmer core, all relief-lit.
+    card.paint_form("p-robe", ["robe"], ROBE, weight=20, relief=(4.0, 3.6))
+    card.paint_form("p-arm-l", ["arm-l"], ROBE_LT, weight=13, form="cylinder",
+                    axis=70, relief=(3.6, 3.2))
+    card.paint_form("p-arm-r", ["arm-r"], ROBE_LT, weight=13, form="cylinder",
+                    axis=70, relief=(3.6, 3.2))
+    card.paint_form("p-neck", ["neck"], SKIN_DK, weight=9, form="cylinder",
+                    axis=90, relief=(2.8, 2.6))
+    card.paint_form("p-head", ["head"], SKIN, weight=16, relief=(4.2, 3.6))
+    card.paint_form("p-collar", ["collar"], ROBE_LT, weight=10,
+                    brush="oil-load", relief=(3.0, 2.6))
+    card.paint_form("p-hands", ["hand-l", "hand-r", "finger"], SKIN, weight=8,
+                    relief=(3.0, 2.4))
+    card.paint_form("p-eyes", ["eye-l", "eye-r"], "#070d14", weight=7,
+                    relief=None)
 
 
 def eyes(card):
@@ -148,31 +150,31 @@ def ink(card):
     card.ink(weight=5, seed=6, shapes=["eye-l", "eye-r"])
 
 
-def build():
-    card = Card()
-    for name, color in [("ink", INK), ("skin", SKIN), ("robe", ROBE),
+def build(card):
+    for name, color in [("ink", LINE), ("skin", SKIN), ("robe", ROBE),
                         ("frill", FRILL), ("glow", CYAN)]:
         card.palette(name, color)
     sky(card, ACCENT, horizon=0.44)
     card.layer("sketch", "vector", visible=False)
-    card.layer("flats", "paint")
-    card.layer("shade", "paint", blend="multiply", opacity=0.82, clip=True)
-    card.layer("rim", "paint", clip=True)
+    shapes(card)
+    paint(card)
+    card.layer("lines", "paint", opacity=0.4)
+    ink(card)
+    card.brushwork()
     card.layer("inlay", "vector")
     card.layer("glow", "vector", blend="screen")
-    card.layer("lines", "paint")
     card.layer("light", "vector", blend="add")
-    shapes(card)
-    flats(card)
-    light(card)
     eyes(card)
     freckles(card)
     collar_glow(card)
     fingertip(card)
-    ink(card)
     card_frame(card, "03 / FIRST CONTACT", "THE VISITOR", ACCENT)
-    card.dump()
 
 
 if __name__ == "__main__":
-    build()
+    card = Card()
+    build(card)
+    if "--over" in sys.argv:
+        card.dump_over(sizes=[34, 17, 8], threshold=8)
+    else:
+        card.dump()

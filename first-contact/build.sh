@@ -31,6 +31,9 @@ fi
 
 rm -rf "$out"
 "$klad" new "$out" --width 1024 --height 1280 --layers 0 >/dev/null
+# Main pass: shapes, painted forms, glows, lines, text.
 "${PYTHON:-python3}" "$here/$name.py" | "$klad" apply "$out" >/dev/null
+# Second pass: paint-over reads the composed drawing, so it runs on its own.
+"${PYTHON:-python3}" "$here/$name.py" --over | "$klad" apply "$out" >/dev/null
 "$klad" render "$out" -o "${out%.klad}.png"
 echo "built $out and ${out%.klad}.png"

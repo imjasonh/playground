@@ -5,19 +5,20 @@ dome is a vacuum-tube head; a chest porthole shows the same magenta world the
 astronaut floats over on card 02, so the three cards share one sky.
 """
 
-from kit import (AMBER, CYAN, INK, MAGENTA, Card, card_frame, ellipse_path,
+import sys
+
+from kit import (AMBER, CYAN, MAGENTA, Card, card_frame, ellipse_path,
                  linear, radial, rrect_path, sky)
 
 ACCENT = AMBER
 
+LINE = "#2a1712"
 RUST = "#b9633b"
 RUST_DK = "#843f26"
 STEEL = "#8b94a8"
 STEEL_DK = "#454c5e"
 GLASS = "#bfe9ff"
 LEAF = "#8ef06f"
-SHADE = "#352f4c"
-RIM = "#ffe0ad"
 
 
 def shapes(card):
@@ -50,30 +51,31 @@ def shapes(card):
                           "M520 870 C 560 858 580 828 566 802 C 532 818 520 844 520 870 Z"})
 
 
-def flats(card):
-    for sid, color in [("hip", RUST_DK), ("torso", RUST), ("arm-l", RUST),
-                       ("arm-r", RUST), ("panel", STEEL_DK), ("neck", STEEL_DK),
-                       ("ear-l", STEEL), ("ear-r", STEEL), ("head", RUST),
-                       ("dome", GLASS), ("eye", "#0d1a2e")]:
-        card.fill("flats", shape=sid, color=color, expand=2)
-    # The porthole world, matching the astronaut's visor and the alien's sky.
-    card.fill("flats", shape="port", color="#120820", expand=2)
-    # The sprout and its jar, front to back.
-    card.fill("flats", shape="jar-base", color=STEEL_DK, expand=2)
-    card.fill("flats", shape="leaf-l", color=LEAF, expand=2)
-    card.fill("flats", shape="leaf-r", color="#6fd655", expand=2)
-    card.fill("flats", shape="stem", color="#5fb84a", expand=2)
-
-
-def light(card):
-    card.light(["hip", "torso", "arm-l", "arm-r", "head"], depth=26, soft=2,
-               rim_width=6, shade_color=SHADE, rim_color=RIM, strength=0.85)
-    card.light(["dome"], depth=30, soft=1, rim_width=7, shade_color="#2a4866",
-               rim_color="#ffffff", strength=0.7)
-    card.light(["ear-l", "ear-r", "panel"], depth=14, soft=1, rim_width=4,
-               shade_color=SHADE, rim_color=RIM, strength=0.9)
-    card.hatch(["panel"], angle=24, spacing=20, length=[6, 12], weight=2,
-               color=SHADE, opacity=0.4, seed=7)
+def paint(card):
+    # Each form is painted on its own layer, back to front, with oil strokes
+    # that follow the form and a relief effect that lights the paint body.
+    card.paint_form("p-hip", ["hip"], RUST_DK, weight=18, relief=(4.0, 3.6))
+    card.paint_form("p-torso", ["torso"], RUST, weight=21, relief=(4.6, 3.8))
+    card.paint_form("p-arms", ["arm-l", "arm-r"], RUST, weight=13,
+                    relief=(3.8, 3.2))
+    card.paint_form("p-neck", ["neck"], STEEL_DK, weight=9, form="cylinder",
+                    axis=90, relief=(3.0, 2.6))
+    card.paint_form("p-head", ["head"], RUST, weight=16, relief=(4.3, 3.6))
+    card.paint_form("p-ears", ["ear-l", "ear-r"], STEEL, weight=8,
+                    brush="oil-load", relief=(3.0, 2.6))
+    card.paint_form("p-panel", ["panel"], STEEL_DK, weight=11, form="flat",
+                    facing=[0.1, -0.2, 1], brush="oil-load", relief=(2.6, 2.4))
+    card.hatch("p-panel", ["panel"], angle=24, spacing=22, length=[6, 12],
+               weight=2, color="#241f38", opacity=0.35, seed=7)
+    card.paint_form("p-dome", ["dome"], GLASS, weight=12, fillStrength=0.5,
+                    relief=(1.4, 3.0))
+    card.paint_form("p-eye", ["eye"], "#12223c", weight=9, relief=(1.2, 2.6))
+    card.paint_form("p-port", ["port"], "#160a26", weight=6, relief=None)
+    card.paint_form("p-jarbase", ["jar-base"], STEEL_DK, weight=7,
+                    brush="oil-load", relief=(2.2, 2.2))
+    card.paint_form("p-sprout", ["stem"], "#5fb84a", weight=6, relief=(2.4, 2.0))
+    card.paint_form("p-leaves", ["leaf-l", "leaf-r"], LEAF, weight=7,
+                    relief=(2.8, 2.2))
 
 
 def inlay(card):
@@ -114,17 +116,19 @@ def glow(card):
 def details(card):
     card.node("light", {"type": "ellipse", "cx": 486, "cy": 456, "rx": 15, "ry": 11,
                         "fill": "#fff4d8ee"})
-    # A glass bell jar over the sprout: a translucent dome and its highlight.
+    # A glass bell jar over the sprout: a soft translucent dome and highlight.
     card.node("jarglass", {"type": "path", "d":
                            "M430 940 C 430 820 594 820 594 940 Z",
                            "fill": linear(430, 820, 594, 940,
                                           [[0, "#bfe9ff22"], [0.5, "#bfe9ff11"],
                                            [1, "#bfe9ff33"]]),
-                           "stroke": {"paint": "#dff6ffbb", "width": 2.5}})
+                           "stroke": {"paint": "#dff6ff99", "width": 3},
+                           "blur": 1.5})
     card.node("jarglass", {"type": "path", "d":
                            "M452 930 C 452 850 486 824 512 822",
                            "fill": "none",
-                           "stroke": {"paint": "#ffffff66", "width": 5}})
+                           "stroke": {"paint": "#ffffff66", "width": 6},
+                           "blur": 2})
     # A little antenna bulb on the dome.
     card.ink(weight=5, seed=30, path="M512 262 L512 214")
     card.node("glow", {"type": "ellipse", "cx": 512, "cy": 204, "rx": 16, "ry": 16,
@@ -146,31 +150,32 @@ def ink(card):
     card.ink(weight=3, seed=25, path="M366 1058 L440 1034")
 
 
-def build():
-    card = Card()
-    for name, color in [("ink", INK), ("rust", RUST), ("steel", STEEL),
+def build(card):
+    for name, color in [("ink", LINE), ("rust", RUST), ("steel", STEEL),
                         ("leaf", LEAF), ("glow", CYAN)]:
         card.palette(name, color)
     sky(card, ACCENT)
     card.layer("sketch", "vector", visible=False)
-    card.layer("flats", "paint")
-    card.layer("shade", "paint", blend="multiply", opacity=0.82, clip=True)
-    card.layer("rim", "paint", clip=True)
+    shapes(card)
+    paint(card)
+    # Soft sketch lines under the brushwork, so the paint-over softens them.
+    card.layer("lines", "paint", opacity=0.45)
+    ink(card)
+    card.brushwork()
     card.layer("inlay", "vector")
     card.layer("glow", "vector", blend="screen")
     card.layer("jarglass", "vector")
-    card.layer("lines", "paint")
     card.layer("light", "vector", blend="add")
-    shapes(card)
-    flats(card)
-    light(card)
     inlay(card)
     glow(card)
-    ink(card)
     details(card)
     card_frame(card, "01 / FIRST CONTACT", "THE ROBOT", ACCENT)
-    card.dump()
 
 
 if __name__ == "__main__":
-    build()
+    card = Card()
+    build(card)
+    if "--over" in sys.argv:
+        card.dump_over(sizes=[36, 18, 9], threshold=8)
+    else:
+        card.dump()

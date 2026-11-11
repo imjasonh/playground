@@ -2,9 +2,10 @@
 
 Three sci-fi character cards drawn with [klad](https://github.com/klad-app/klad),
 the collaborative painting tool, and composed into one triptych. Each card is a
-Python generator that emits `klad apply` ops (vector sketch shapes, flat fills,
-lit shade and rim, inked outlines, glow layers, and text), so every line and
-fill stays editable data in the editor rather than baked pixels.
+Python generator that emits `klad apply` ops. The figures are painted as lit
+oil forms (one paint layer per part, with a relief effect that lights the paint
+body), then unified by a paint-over pass. Soft sketch lines sit under the
+brushwork; glow, reflections, and type stay as vectors.
 
 The three archetypes answer each other across the panels:
 
@@ -21,11 +22,11 @@ The three archetypes answer each other across the panels:
 
 ## Layout
 
-`kit.py` holds the shared pieces: the key-light direction, the palette, path
-helpers (ellipse, rounded rectangle, blobby wobble), the deep-dusk sky with
-stars, the numbered caption frame, and a `Card` class that collects ops and
-prints them as JSON lines. Each card imports it, blocks its subject in as vector
-shapes, and lets klad's `fill`, `light`, `hatch`, and `ink` ops do the shading.
+`kit.py` holds the shared pieces: the key-light direction and warm/cool key and
+shadow colours, path helpers, a scumbled dusk sky with soft stars, the numbered
+caption frame, and a `Card` class. `Card.paint_form` fills a shape, locks alpha,
+runs `klad paint` with oil brushes, and adds a relief effect. Each card then
+runs a second apply batch (`--over`) that paint-overs the figure layers.
 
 Each card is a 1024x1280 panel. The triptych stands all three on a 3248x1408
 canvas with a 40px gutter and a 48px margin.
