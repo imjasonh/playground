@@ -61,6 +61,16 @@ Findings:
   rotations, `Ch`, and `Maj` into the specification's forms before
   `ac_rfl` closes it. The earlier straight-line proofs had no such
   bookkeeping. The projection below uses the measured rate.
+- **Covering every call costs more than covering the first caller's.**
+  `memset_correct` (35 instructions, 616 lines) and `memcpy_correct`
+  (123 instructions, 2,465 lines) replace proofs that covered word-aligned
+  buffers only. They add no instructions to the table, because each
+  function was counted with its first caller, but every byte-buffer caller
+  needs them. `memcpy`'s misaligned path costs 20 lines per instruction, the
+  most of any code so far: it builds partial words in its stack frame with
+  byte and halfword stores, so the proof tracks the frame's bytes one by
+  one, and it needed its own sign-extension lemma because the library's
+  use `Classical.choice`.
 - **Build time grows faster than proof length.** The point addition's
   proof steps through its 46 calls with an invariant and one lemma per
   callee, so each step is small. Its first version closed the final
