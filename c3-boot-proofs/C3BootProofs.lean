@@ -60,6 +60,7 @@ import C3BootProofs.Proofs.Sha256Rounds5
 import C3BootProofs.Proofs.Sha256Rounds6
 import C3BootProofs.Proofs.Sha256Rounds
 import C3BootProofs.Proofs.Sha256Compress
+import C3BootProofs.Proofs.ShaStream
 import C3BootProofs.Theorems.Level
 import C3BootProofs.Theorems.Boot
 import C3BootProofs.Theorems.Formats
