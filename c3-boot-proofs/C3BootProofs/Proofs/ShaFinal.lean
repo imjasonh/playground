@@ -2018,6 +2018,138 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
     (by rw [u48.regs, K47 s1 (by decide), r46 s1 (by decide), s1C, add_ofNat_zero])
     (by rw [u48.regs, K47 s0 (by decide), r46 s0 (by decide), s0C, add_ofNat_zero])
   rw [hX] at hbF
+  -- Copy the digest out through the second array, as the code does.
+  have cBf := cB Mf hagF
+  have cFf := cBf _ _ E.cF (by decide) (by decide)
+  have k49 : ∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ t0 → r ≠ s0 → r ≠ s1 → reg n49 r = reg n48 r := K49
+  have r49 : ∀ r, r = s2 ∨ r = sp → reg n49 r = reg nC r := by
+    intro r h
+    rcases h with rfl | rfl <;>
+      rw [k49 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
+        u48.regs, K47 _ (by decide), r46 _ (by decide)]
+  have sp49 : reg n49 sp = G := by rw [r49 sp (by decide), spC]
+  obtain ⟨n50, d50, u50⟩ := u49.alu cFf sf_at_ea (off' := 0xEC) (by decide)
+  have K50 := u50.upd_ne u49.zero
+  have u50' : St Mf U n50 0xEC (reg n50) := u50.self
+  obtain ⟨n51, d51, u51⟩ := u50'.aluImm cFf sf_at_ec (off' := 0xEE) (by decide)
+  have K51 := u51.upd_ne u50'.zero
+  have u51' : St Mf U n51 0xEE (reg n51) := u51.self
+  obtain ⟨n52, d52, u52⟩ := u51'.aluImm cFf sf_at_ee (off' := 0xF2) (by decide)
+  have K52 := u52.upd_ne u51'.zero
+  have u52' : St Mf U n52 0xF2 (reg n52) := u52.self
+  obtain ⟨n53, d53, u53⟩ := u52'.auipc cFf sf_at_f2 (off' := 0xF6) (by decide)
+  obtain ⟨n54, d54, pc54, mem54, regs54⟩ := u53.call cFf sf_at_f6
+  have r54 : ∀ r, r ≠ ra → reg n54 r = reg n52 r := fun r h => by
+    rw [regs54]
+    by_cases h0 : r.val = 0
+    · have : r = 0 := Fin.ext h0
+      subst this; simp [upd]; exact u52'.zero.symm
+    · simp [upd, h0, h]
+  have sp54 : reg n54 sp = G := by
+    rw [r54 sp (by decide), K52 sp (by decide), K51 sp (by decide), K50 sp (by decide), sp49]
+  have eF : G + 0xFFFFFFF0 = R + BitVec.ofNat 32 0x120 := by rw [hGR, BitVec.add_assoc]; rfl
+  have hFn : (G + 0xFFFFFFF0).toNat = R.toNat + 0x120 := by rw [eF, hRc _ (by omega)]
+  have sGF : Sep G 32 (G + 0xFFFFFFF0) 16 := by
+    rw [eF, hGR]; exact sep_offsets R (Or.inr (by omega)) (by omega) (by omega)
+  have sBF : Sep B 32 (G + 0xFFFFFFF0) 16 := by
+    rw [eF]; show Sep (G + BitVec.ofNat 32 0x20) 32 _ 16; rw [Gc]
+    exact sep_offsets R (Or.inr (by omega)) (by omega) (by omega)
+  have sGB : Sep G 32 B 32 := by
+    have h := sep_offsets G (c := 0) (n := 32) (d := 0x20) (k := 32) (Or.inl (by omega)) (by omega) (by omega)
+    rwa [add_ofNat_zero] at h
+  have hGw : G.toNat + 0x60 ≤ 0x40000000 := by omega
+  obtain ⟨n55, c55, pc55, sp55, a055, mem55, K55⟩ := memcpy_correct n54 (BitVec.ofNat 32 memcpyStubAddress)
+    (U + BitVec.ofNat 32 0xFA) G B 32
+    (fun i hi => by show n54.mem _ = _; rw [mem54]; exact cBf _ _ E.cMS (by decide) (by decide) i hi) (by decide)
+    (by rw [pc54, show ∀ (F : Fin 32 → Word) (v : Word), upd F ra v ra = v from fun F v => by simp [upd]]; decide)
+    (by rw [r54 a0 (by decide), K52 a0 (by decide), K51 a0 (by decide), u50.upd_eq (by decide), u49.zero, sp49]
+        exact BitVec.zero_add _)
+    (by rw [r54 a1 (by decide), K52 a1 (by decide), u51.upd_eq (by decide), K50 sp (by decide), sp49]; rfl)
+    (by rw [r54 a2 (by decide), u52.upd_eq (by decide), u51'.zero]; rfl)
+    (by rw [regs54]; simp +decide [upd]; try rfl) (by decide)
+    (by
+      rw [mem54, sp54]
+      exact { code := cBf _ _ E.cMB (by decide) (by decide)
+              hDC := data_code (by omega) (by decide) (by decide)
+              hFC := data_code (by rw [hFn, hRn]; omega) (by decide) (by decide)
+              hdF := sGF
+              hsF := sBF
+              hsep := sGB
+              hF := by rw [hFn, hRn]; have := E.hsp; omega
+              hFw := by rw [hFn, hRn]; omega
+              hdw := by omega
+              hsw := by rw [hBn]; omega })
+  rw [mem54, sp54] at mem55
+  let M5 := n55.mem
+  have m5 : ∀ x, Sep (G + 0xFFFFFFF0) 16 x 1 → M5 x = copyBytes Mf G B 32 x := mem55
+  have FR : ∀ x, Sep R 0x190 x 1 → Sep (G + 0xFFFFFFF0) 16 x 1 := fun x hx => by
+    rw [eF]; exact Rx _ _ (by omega) x hx
+  have M5R : ∀ x, Sep R 0x190 x 1 → Sep S 0x68 x 1 → M5 x = M0 x := fun x hx hy => by
+    rw [m5 x (FR x hx), copyBytes_sep (by rw [hGR]; exact Rx _ _ (by omega) x hx) (Nat.le_refl 32),
+      hagF x (by show Sep (G + BitVec.ofNat 32 0x20) 32 x 1; rw [Gc]; exact Rx _ _ (by omega) x hx), MZR x hx hy]
+  have cB5 : ∀ (b : Word) (code : List Nat), CodeIn M0 b code → 0x40000000 ≤ b.toNat →
+      b.toNat + code.length ≤ 2 ^ 32 → CodeIn M5 b code := codeX M5 M5R
+  have cF5 := cB5 _ _ E.cF (by decide) (by decide)
+  have u55 : St M5 U n55 0xFA (reg n55) := ⟨by rw [pc55], rfl, fun _ => rfl⟩
+  have k55 : ∀ r, r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ t0 → r ≠ t1 →
+      r ≠ (7 : Fin 32) → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → r ≠ sp →
+      reg n55 r = reg n54 r := K55
+  have sp55' : reg n55 sp = G := by rw [sp55, sp54]
+  obtain ⟨n56, d56, u56⟩ := u55.alu cF5 sf_at_fa (off' := 0xFC) (by decide)
+  have K56 := u56.upd_ne u55.zero
+  have u56' : St M5 U n56 0xFC (reg n56) := u56.self
+  obtain ⟨n57, d57, u57⟩ := u56'.aluImm cF5 sf_at_fc (off' := 0x100) (by decide)
+  have K57 := u57.upd_ne u56'.zero
+  have u57' : St M5 U n57 0x100 (reg n57) := u57.self
+  obtain ⟨n58, d58, u58⟩ := u57'.alu cF5 sf_at_100 (off' := 0x102) (by decide)
+  have K58 := u58.upd_ne u57'.zero
+  have u58' : St M5 U n58 0x102 (reg n58) := u58.self
+  obtain ⟨n59, d59, u59⟩ := u58'.auipc cF5 sf_at_102 (off' := 0x106) (by decide)
+  obtain ⟨n60, d60, pc60, mem60, regs60⟩ := u59.call cF5 sf_at_106
+  have r60 : ∀ r, r ≠ ra → reg n60 r = reg n58 r := fun r h => by
+    rw [regs60]
+    by_cases h0 : r.val = 0
+    · have : r = 0 := Fin.ext h0
+      subst this; simp [upd]; exact u58'.zero.symm
+    · simp [upd, h0, h]
+  have K4960 : ∀ r, r ≠ ra → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 →
+      r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) →
+      r ≠ sp → reg n60 r = reg n49 r := fun r q1 q10 q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2 => by
+    rw [r60 r q1, K58 r q10, K57 r q12, K56 r q11, k55 r q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2,
+      r54 r q1, K52 r q12, K51 r q11, K50 r q10]
+  have sp60 : reg n60 sp = G := by
+    rw [r60 sp (by decide), K58 sp (by decide), K57 sp (by decide), K56 sp (by decide), sp55']
+  have sOFr : Sep out 32 (G + 0xFFFFFFF0) 16 := by
+    rw [eF]; exact E.sOF.subR (c := 0x120) (l := 16) (by omega)
+  have sOG : Sep out 32 G 32 := by rw [hGR]; exact E.sOF.subR (c := 0x130) (l := 32) (by omega)
+  obtain ⟨n61, c61, pc61, sp61, a061, mem61, K61⟩ := memcpy_correct n60 (BitVec.ofNat 32 memcpyStubAddress)
+    (U + BitVec.ofNat 32 0x10A) out G 32
+    (fun i hi => by show n60.mem _ = _; rw [mem60]; exact cB5 _ _ E.cMS (by decide) (by decide) i hi) (by decide)
+    (by rw [pc60, show ∀ (F : Fin 32 → Word) (v : Word), upd F ra v ra = v from fun F v => by simp [upd]]; decide)
+    (by rw [r60 a0 (by decide), u58.upd_eq (by decide), u57'.zero, K57 s2 (by decide), K56 s2 (by decide),
+          k55 s2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+          (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), r54 s2 (by decide),
+          K52 s2 (by decide), K51 s2 (by decide), K50 s2 (by decide), r49 s2 (by decide), s2C]
+        exact BitVec.zero_add _)
+    (by rw [r60 a1 (by decide), K58 a1 (by decide), K57 a1 (by decide), u56.upd_eq (by decide), u55.zero, sp55']
+        exact BitVec.zero_add _)
+    (by rw [r60 a2 (by decide), K58 a2 (by decide), u57.upd_eq (by decide), u56'.zero]; rfl)
+    (by rw [regs60]; simp +decide [upd]; try rfl) (by decide)
+    (by
+      rw [mem60, sp60]
+      exact { code := cB5 _ _ E.cMB (by decide) (by decide)
+              hDC := data_code (by omega) (by decide) (by decide)
+              hFC := data_code (by rw [hFn, hRn]; omega) (by decide) (by decide)
+              hdF := sOFr
+              hsF := sGF
+              hsep := sOG
+              hF := by rw [hFn, hRn]; have := E.hsp; omega
+              hFw := by rw [hFn, hRn]; omega
+              hdw := by omega
+              hsw := by omega })
+  rw [mem60, sp60] at mem61
+  let M6 := n61.mem
+  have m6 : ∀ x, Sep (G + 0xFFFFFFF0) 16 x 1 → M6 x = copyBytes M5 out G 32 x := mem61
   sorry
 
 end C3.RV32
