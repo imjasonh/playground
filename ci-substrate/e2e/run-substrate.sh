@@ -122,9 +122,20 @@ kubectl -n ci-substrate rollout status daemonset/casfs-csi --timeout=180s
 
 echo "==> Runner ActorTemplate"
 KO_DOCKER_REPO="${ACTOR_IMAGE_REPO}" ko resolve -f "${OVERLAY}/runner-template.yaml" >"${WORKDIR}/runner-template.yaml"
-# Templates are immutable, so a changed template is recreated. Existing
-# actors keep the old one until the pool replaces them.
+# Templates are immutable, so a changed template is recreated. An actor keeps
+# the volumes it was created with, so an actor from the old template cannot
+# resume against the new one; the old actors go too, with the pool stopped
+# so it does not make more against the old template. ko apply of pool.yaml
+# brings the pool back.
 if kubectl ate get actor-templates -a "${ATESPACE}" -o json | grep -q '"name": *"ci-runner"'; then
+  if kubectl -n ate-system get deployment ci-substrate-pool-tenant-a >/dev/null 2>&1; then
+    kubectl -n ate-system scale deployment ci-substrate-pool-tenant-a --replicas=0
+    kubectl -n ate-system rollout status deployment/ci-substrate-pool-tenant-a --timeout=120s
+  fi
+  for actor in $(kubectl ate get actors -a "${ATESPACE}" -o json |
+    python3 -c 'import json,sys; print(" ".join(a["metadata"]["name"] for a in json.load(sys.stdin).get("actors", []) if a.get("actorTemplate", {}).get("name") == "ci-runner"))'); do
+    kubectl ate delete actor "${actor}" -a "${ATESPACE}"
+  done
   kubectl ate delete actor-template ci-runner -a "${ATESPACE}"
 fi
 kubectl ate --preview create actor-template -f "${WORKDIR}/runner-template.yaml"

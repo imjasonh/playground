@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"testing"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -134,6 +135,30 @@ func TestLazyHydration(t *testing.T) {
 	info, err = os.Stat(filepath.Join(mnt, "run.sh"))
 	if err != nil || info.Mode()&0o111 == 0 {
 		t.Fatalf("run.sh mode %v, %v", info.Mode(), err)
+	}
+	// A sandbox kernel checks the reported mode against its own user, which
+	// is not the one serving the mount, so everything is open to everyone.
+	for name, want := range map[string]os.FileMode{"": 0o777 | os.ModeDir, "sub": 0o777 | os.ModeDir, "hello.txt": 0o666, "run.sh": 0o777} {
+		info, err := os.Stat(filepath.Join(mnt, name))
+		if err != nil || info.Mode() != want {
+			t.Errorf("%q mode %v, %v; want %v", name, info.Mode(), err, want)
+		}
+	}
+	// gVisor's gofer chowns what it creates to the sandbox user and fails
+	// the create when that fails, so a chown to the caller's own ids is
+	// accepted on every kind of entry and reported back.
+	me, mygroup := os.Getuid(), os.Getgid()
+	for _, name := range []string{"sub", "hello.txt", "link"} {
+		if err := os.Lchown(filepath.Join(mnt, name), me, mygroup); err != nil {
+			t.Errorf("chown %q: %v", name, err)
+		}
+		info, err := os.Lstat(filepath.Join(mnt, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st := info.Sys().(*syscall.Stat_t); int(st.Uid) != me || int(st.Gid) != mygroup {
+			t.Errorf("%q owner %d:%d after chown, want %d:%d", name, st.Uid, st.Gid, me, mygroup)
+		}
 	}
 	out, err := exec.Command(filepath.Join(mnt, "run.sh")).Output()
 	if err != nil || string(out) != "hi\n" {

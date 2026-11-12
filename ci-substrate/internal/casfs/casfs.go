@@ -12,6 +12,18 @@
 // through the mount: the runner reads the output paths back and uploads them
 // itself, which is where output handling decides what is worth keeping.
 //
+// Every entry reports itself as writable by everyone, and directories as
+// world-writable. A mount belongs to one action or one actor, and the
+// filesystem itself decides what each name allows, so the mode bits carry
+// only the executable bit. That matters in a sandbox whose kernel checks
+// permissions against the reported owner and mode: a gVisor sandbox runs the
+// action as whatever user its image names, while the mount is served by root
+// on the host, and a root-owned 0755 exec root would refuse that user's
+// outputs. A chmod that removes write permission is accepted and has no
+// effect. A chown is accepted and reported back, because gVisor's gofer
+// chowns every entry it creates to the sandbox user and gives up on the
+// create when that fails.
+//
 // There are two mounts. Mount serves one input root, for a runner that can
 // mount FUSE itself. MountVolume serves a volume that a host agent mounts once
 // and a sandbox uses for many actions: mkdir of a digest under its root
@@ -120,6 +132,7 @@ type volumeNode struct {
 }
 
 var (
+	_ = (fs.NodeGetattrer)((*volumeNode)(nil))
 	_ = (fs.NodeMkdirer)((*volumeNode)(nil))
 	_ = (fs.NodeRmdirer)((*volumeNode)(nil))
 	_ = (fs.NodeCreater)((*volumeNode)(nil))
@@ -127,6 +140,40 @@ var (
 	_ = (fs.NodeRenamer)((*volumeNode)(nil))
 	_ = (fs.NodeUnlinker)((*volumeNode)(nil))
 )
+
+// dirMode is what every directory reports: the volume's root, so that any
+// user in the sandbox can mkdir an exec root, and the exec roots, so that
+// the action can write its outputs. The bridge ORs in S_IFDIR.
+const dirMode = 0o777
+
+// owner is the uid and gid an entry reports. They start as the mount's
+// (root) and change when a chown sets them.
+type owner struct {
+	mu       sync.Mutex
+	uid, gid uint32
+}
+
+func (o *owner) get(out *fuse.Attr) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	out.Uid, out.Gid = o.uid, o.gid
+}
+
+func (o *owner) set(in *fuse.SetAttrIn) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if uid, ok := in.GetUID(); ok {
+		o.uid = uid
+	}
+	if gid, ok := in.GetGID(); ok {
+		o.gid = gid
+	}
+}
+
+func (v *volumeNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	out.Mode = dirMode
+	return 0
+}
 
 func (v *volumeNode) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
 	d, err := ParseExecRootName(name)
@@ -189,12 +236,15 @@ func (v *volumeNode) Unlink(context.Context, string) syscall.Errno {
 // they return success.
 type dirNode struct {
 	fs.Inode
+	owner
 	fsys   *casfs
 	digest *repb.Digest
 }
 
 var (
 	_ = (fs.NodeOnAdder)((*dirNode)(nil))
+	_ = (fs.NodeGetattrer)((*dirNode)(nil))
+	_ = (fs.NodeSetattrer)((*dirNode)(nil))
 	_ = (fs.NodeMkdirer)((*dirNode)(nil))
 	_ = (fs.NodeCreater)((*dirNode)(nil))
 	_ = (fs.NodeUnlinker)((*dirNode)(nil))
@@ -219,17 +269,30 @@ func (d *dirNode) OnAdd(ctx context.Context) {
 		d.AddChild(n.GetName(), child, true)
 	}
 	for _, n := range dir.GetFiles() {
-		mode := uint32(0o644)
+		mode := uint32(0o666)
 		if n.GetIsExecutable() {
-			mode = 0o755
+			mode = 0o777
 		}
 		child := d.NewPersistentInode(ctx, &fileNode{fsys: d.fsys, source: n.GetDigest(), mode: mode}, fs.StableAttr{Mode: syscall.S_IFREG})
 		d.AddChild(n.GetName(), child, true)
 	}
 	for _, n := range dir.GetSymlinks() {
-		child := d.NewPersistentInode(ctx, &fs.MemSymlink{Data: []byte(n.GetTarget())}, fs.StableAttr{Mode: syscall.S_IFLNK})
+		child := d.NewPersistentInode(ctx, newSymlink(n.GetTarget()), fs.StableAttr{Mode: syscall.S_IFLNK})
 		d.AddChild(n.GetName(), child, true)
 	}
+}
+
+func (d *dirNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	out.Mode = dirMode
+	d.get(&out.Attr)
+	return 0
+}
+
+// Setattr accepts a chown and ignores a chmod: directories stay open to
+// everyone.
+func (d *dirNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
+	d.set(in)
+	return d.Getattr(ctx, fh, out)
 }
 
 func (d *dirNode) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
@@ -243,7 +306,7 @@ func (d *dirNode) Create(ctx context.Context, name string, flags uint32, mode ui
 	if d.GetChild(name) != nil {
 		return nil, nil, 0, syscall.EEXIST
 	}
-	f := &fileNode{fsys: d.fsys, hydrated: true, mode: mode & 0o777}
+	f := &fileNode{fsys: d.fsys, hydrated: true, mode: fileMode(mode)}
 	return d.NewPersistentInode(ctx, f, fs.StableAttr{Mode: syscall.S_IFREG}), nil, fuse.FOPEN_KEEP_CACHE, 0
 }
 
@@ -251,7 +314,32 @@ func (d *dirNode) Symlink(ctx context.Context, target, name string, out *fuse.En
 	if d.GetChild(name) != nil {
 		return nil, syscall.EEXIST
 	}
-	return d.NewPersistentInode(ctx, &fs.MemSymlink{Data: []byte(target)}, fs.StableAttr{Mode: syscall.S_IFLNK}), 0
+	return d.NewPersistentInode(ctx, newSymlink(target), fs.StableAttr{Mode: syscall.S_IFLNK}), 0
+}
+
+// symlinkNode is a symbolic link that accepts a chown.
+type symlinkNode struct {
+	fs.MemSymlink
+	owner
+}
+
+var _ = (fs.NodeSetattrer)((*symlinkNode)(nil))
+
+func newSymlink(target string) *symlinkNode {
+	return &symlinkNode{MemSymlink: fs.MemSymlink{Data: []byte(target), Attr: fuse.Attr{Mode: 0o777}}}
+}
+
+func (l *symlinkNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	if errno := l.MemSymlink.Getattr(ctx, fh, out); errno != 0 {
+		return errno
+	}
+	l.get(&out.Attr)
+	return 0
+}
+
+func (l *symlinkNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
+	l.set(in)
+	return l.Getattr(ctx, fh, out)
 }
 
 func (d *dirNode) Unlink(ctx context.Context, name string) syscall.Errno {
@@ -295,6 +383,7 @@ func (d *dirNode) Rename(ctx context.Context, name string, newParent fs.InodeEmb
 // then written, is plain bytes in memory.
 type fileNode struct {
 	fs.Inode
+	owner
 	fsys   *casfs
 	source *repb.Digest
 	mode   uint32
@@ -313,7 +402,14 @@ var (
 	_ = (fs.NodeFlusher)((*fileNode)(nil))
 )
 
+// fileMode is the mode a file reports for the mode an action asked for:
+// readable and writable by everyone, executable when the action said so.
+func fileMode(requested uint32) uint32 {
+	return 0o666 | requested&0o111
+}
+
 func (f *fileNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
+	f.get(&out.Attr)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out.Mode = f.mode
@@ -326,10 +422,12 @@ func (f *fileNode) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.Attr
 }
 
 func (f *fileNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
+	f.set(in)
+	f.get(&out.Attr)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if m, ok := in.GetMode(); ok {
-		f.mode = m & 0o777
+		f.mode = fileMode(m)
 	}
 	if sz, ok := in.GetSize(); ok {
 		if sz == 0 {

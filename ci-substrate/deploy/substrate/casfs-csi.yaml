@@ -44,8 +44,14 @@ spec:
                 secretKeyRef: {name: tenants, key: TENANTS}
           ports:
             - {name: grpc, containerPort: 9095}
+          # The base image runs as nonroot. The driver needs root to mount
+          # FUSE with allow_other (so the sandbox's user can read the
+          # volume), to bind its socket in the kubelet plugins directory,
+          # and to detach a stale mount.
           securityContext:
             privileged: true
+            runAsUser: 0
+            runAsGroup: 0
           resources:
             requests: {cpu: 100m, memory: 256Mi}
             limits: {memory: 2Gi}
