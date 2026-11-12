@@ -85,6 +85,8 @@ import C3BootProofs.Proofs.FeSqBody
 import C3BootProofs.Proofs.FeSqInner
 import C3BootProofs.Proofs.FeSquare
 import C3BootProofs.Proofs.FlashRead
+import C3BootProofs.Proofs.SelectI64
+import C3BootProofs.Proofs.FeAdd
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
 import C3BootProofs.Theorems.Level

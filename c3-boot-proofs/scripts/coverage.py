@@ -63,6 +63,8 @@ PROVED = [
     "feSquare",
     "romFlashReadWords",
     "flashRead",
+    "feAdd",
+    "selectI64",
 ]
 
 IMAGE = os.path.join(os.path.dirname(__file__), "..", "C3BootProofs", "Image", "Bootloader.lean")
