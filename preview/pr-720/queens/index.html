@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="theme-color"
+      content="#f4f1ea"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta
+      name="theme-color"
+      content="#17161a"
+      media="(prefers-color-scheme: dark)"
+    />
+    <meta
+      name="description"
+      content="Play Queens and Two Not Touch puzzles at four levels. Every puzzle has one solution and needs no guessing, and hints explain the next step."
+    />
+    <title>Queens</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <svg class="sprite" aria-hidden="true">
+      <symbol id="queen" viewBox="0 0 24 24">
+        <path d="M4.5 17.5 3 7l5 4 4-7 4 7 5-4-1.5 10.5Z" />
+        <rect x="4.5" y="18.75" width="15" height="2.25" rx="0.75" />
+      </symbol>
+      <symbol id="star" viewBox="0 0 24 24">
+        <path
+          d="m12 2.5 2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5-4.8-4.6 6.6-.9Z"
+        />
+      </symbol>
+    </svg>
+    <div class="app">
+      <header class="masthead">
+        <h1 id="title">Queens</h1>
+        <fieldset class="segmented" id="games">
+          <legend class="visually-hidden">Game</legend>
+          <label>
+            <input type="radio" name="game" value="queens" checked />
+            <span>Queens</span>
+          </label>
+          <label>
+            <input type="radio" name="game" value="twonottouch" />
+            <span>Two Not Touch</span>
+          </label>
+        </fieldset>
+        <fieldset class="segmented" id="levels">
+          <legend class="visually-hidden">Level</legend>
+          <label>
+            <input type="radio" name="level" value="easy" checked />
+            <span>Easy</span>
+          </label>
+          <label>
+            <input type="radio" name="level" value="medium" />
+            <span>Medium</span>
+          </label>
+          <label>
+            <input type="radio" name="level" value="hard" />
+            <span>Hard</span>
+          </label>
+          <label>
+            <input type="radio" name="level" value="expert" />
+            <span>Expert</span>
+          </label>
+        </fieldset>
+      </header>
+
+      <main class="play">
+        <noscript>
+          <p class="noscript">Queens needs JavaScript to build puzzles.</p>
+        </noscript>
+        <div class="info">
+          <span id="info"></span>
+          <span id="timer" class="timer">0:00</span>
+        </div>
+        <div class="board-frame">
+          <div
+            id="board"
+            class="board"
+            role="grid"
+            aria-label="Puzzle"
+            aria-describedby="message"
+            aria-busy="true"
+          ></div>
+        </div>
+        <p id="message" class="message" role="status"></p>
+        <div class="toolbar">
+          <button type="button" id="undo" disabled>Undo</button>
+          <button type="button" id="clear" disabled>Clear</button>
+          <button type="button" id="auto" aria-pressed="true">Auto ×</button>
+          <button type="button" id="hint" disabled>Hint</button>
+          <button type="button" id="new" class="primary">New</button>
+        </div>
+        <details class="rules">
+          <summary>How to play</summary>
+          <p id="rules"></p>
+          <p id="controls"></p>
+          <p>
+            Arrow keys move between cells, and Space or Enter marks the cell.
+            Hints point out wrong marks first, then explain the next step.
+          </p>
+        </details>
+      </main>
+    </div>
+
+    <dialog id="won" aria-labelledby="won-title" closedby="any">
+      <h2 id="won-title">Solved</h2>
+      <p id="won-text"></p>
+      <form method="dialog" class="dialog-actions">
+        <button value="close">Close</button>
+        <button value="new" class="primary" autofocus>New puzzle</button>
+      </form>
+    </dialog>
+
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
