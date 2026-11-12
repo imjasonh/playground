@@ -8,46 +8,38 @@ import (
 // GameResult summarizes one finished game.
 type GameResult struct {
 	Players    int
-	Decks      int // number of 48-card decks shuffled together
-	Rounds     int
+	Clashes    int   // clashes played before a seat ran out of cards
 	Carryovers int   // clashes that tied and pushed their pot forward
-	Scores     []int // pips captured per seat
-	Winner     int   // seat with the most pips, or -1 on a tie
+	Counts     []int // cards each seat still holds at the end (hand plus pile)
+	Winner     int   // seat with the most cards, or -1 on a tie
 
-	ScoredPips     int
-	SetAsidePips   int // pips left in an unresolved final pot
-	DiscardedPips  int // pips of the cards played, which are spent
-	HandLeftPips   int // pips still in hands and draw piles at the end
+	Discarded      int // committed cards spent over the whole game
+	OnTable        int // cards left in an unresolved pot when the game ended
 	CardsAccounted int // every dealt card, found in exactly one place
 }
 
-// dealPlan gives the starting hand, draw-pile, and ante-pile sizes for a player
-// count and a number of 48-card decks, from one even rule: shuffle all the
-// cards together, deal them into equal stacks, keep handCap in hand, and split
-// the rest of the stack into two equal piles, one draw and one ante. Every
-// stack minus the hand is even (48 cards divide into even stacks for two, three,
-// and four players, and so does any whole number of decks), so the split is
-// exact and the ante always equals the draw. The ante pile is the game's clock:
-// one card feeds the pot each clash, so more decks make a longer game.
-func dealPlan(players, decks int) (hand, draw, rounds int, ok bool) {
-	if players < 2 || players > 4 || decks < 1 {
-		return 0, 0, 0, false
-	}
-	total := DeckSize * decks
-	if total%players != 0 {
-		return 0, 0, 0, false
-	}
-	stack := total / players
-	rest := stack - handCap
-	if rest < 0 || rest%2 != 0 {
-		return 0, 0, 0, false
-	}
-	ante := rest / 2
-	return handCap, rest - ante, ante, true
-}
-
-// handCap is the number of cards a seat holds and refills to each clash.
+// handCap is the number of cards a seat holds and refills toward each clash.
 const handCap = 4
+
+// safetyCap bounds the clash loop so a bug can never hang a test. A real game
+// always ends far sooner: every clash permanently discards one committed card
+// per seat, so play lasts at most DeckSize / players clashes.
+const safetyCap = 1000
+
+// deal gives the face-down pile size for a player count. The 48-card deck
+// divides evenly among two, three, or four players, and every stack is larger
+// than a starting hand, so the deal always works: take handCap cards into the
+// hand and the rest is the pile.
+func deal(players int) (pile int, ok bool) {
+	if players < 2 || players > 4 || DeckSize%players != 0 {
+		return 0, false
+	}
+	stack := DeckSize / players
+	if stack <= handCap {
+		return 0, false
+	}
+	return stack - handCap, true
+}
 
 // pickCard asks a strategy which card to play and returns a valid hand index.
 // A seat always plays exactly one card, so a strategy that returns an index out
@@ -70,16 +62,26 @@ func removeAt(hand []Card, j int) []Card {
 	return append(out, hand[j+1:]...)
 }
 
-// PlayGame runs one full game with a single 48-card deck.
-func PlayGame(rng *rand.Rand, strategies []Strategy, homes []Suit) (GameResult, error) {
-	return PlayGameDecks(rng, strategies, homes, 1)
+// refill tops a seat's hand back toward the cap from its pile, taking cards off
+// the top. The hand stays full until the pile runs dry, then shrinks as the
+// seat keeps playing.
+func refill(s *Seat) {
+	for len(s.Hand) < handCap && len(s.Pile) > 0 {
+		s.Hand = append(s.Hand, s.Pile[0])
+		s.Pile = s.Pile[1:]
+	}
 }
 
-// PlayGameDecks runs one full game shuffled from the given number of 48-card
-// decks. More decks make a longer game: the ante pile, which sets the clash
-// count, grows with the deal. strategies drive the seats and homes gives each
+// PlayGame runs one full game. strategies drive the seats and homes gives each
 // seat's Home suit; both must have 2 to 4 entries and the homes must differ.
-func PlayGameDecks(rng *rand.Rand, strategies []Strategy, homes []Suit, decks int) (GameResult, error) {
+//
+// Each seat holds one face-down pile and a hand of handCap. A clash feeds the
+// pot one card off the top of every pile, then every seat commits one card from
+// its hand. The highest bid wins the pot onto the bottom of its pile; the
+// committed cards are spent for good. A tie carries the pot into the next
+// clash. The game ends the moment a seat cannot play, and the seat holding the
+// most cards wins.
+func PlayGame(rng *rand.Rand, strategies []Strategy, homes []Suit) (GameResult, error) {
 	players := len(strategies)
 	if players < 2 || players > 4 {
 		return GameResult{}, fmt.Errorf("clash needs 2 to 4 players, got %d", players)
@@ -94,91 +96,96 @@ func PlayGameDecks(rng *rand.Rand, strategies []Strategy, homes []Suit, decks in
 		}
 		seen[h] = true
 	}
-	handSize, drawSize, rounds, ok := dealPlan(players, decks)
+	pileSize, ok := deal(players)
 	if !ok {
-		return GameResult{}, fmt.Errorf("no deal plan for %d players with %d decks", players, decks)
+		return GameResult{}, fmt.Errorf("no deal for %d players", players)
 	}
 
-	deck := make([]Card, 0, DeckSize*decks)
-	for d := 0; d < decks; d++ {
-		deck = append(deck, NewDeck()...)
-	}
+	deck := NewDeck()
 	rng.Shuffle(len(deck), func(i, j int) { deck[i], deck[j] = deck[j], deck[i] })
 	seats := make([]Seat, players)
 	pos := 0
 	for i := range seats {
 		seats[i].Home = homes[i]
-		seats[i].Hand = append([]Card(nil), deck[pos:pos+handSize]...)
-		pos += handSize
-		seats[i].Draw = append([]Card(nil), deck[pos:pos+drawSize]...)
-		pos += drawSize
-		seats[i].Ante = append([]Card(nil), deck[pos:pos+rounds]...)
-		pos += rounds
+		seats[i].Hand = append([]Card(nil), deck[pos:pos+handCap]...)
+		pos += handCap
+		seats[i].Pile = append([]Card(nil), deck[pos:pos+pileSize]...)
+		pos += pileSize
 	}
 
-	var discarded, carry []Card
-	carryovers := 0
-	for rd := 0; rd < rounds; rd++ {
-		pot := make([]Card, 0, players+len(carry))
-		for i := range seats {
-			pot = append(pot, seats[i].Ante[rd])
+	var carry []Card
+	clashes, carryovers, discarded := 0, 0, 0
+	for clashes < safetyCap {
+		if anyEmptyHand(seats) {
+			break
 		}
-		pot = append(pot, carry...)
+		clashes++
+
+		pot := append([]Card(nil), carry...)
+		for i := range seats {
+			if len(seats[i].Pile) > 0 {
+				pot = append(pot, seats[i].Pile[0])
+				seats[i].Pile = seats[i].Pile[1:]
+			}
+		}
 
 		played := make([]Card, players)
 		for i := range seats {
 			v := View{Pot: pot, Hand: seats[i].Hand, Home: seats[i].Home, Opponents: players - 1}
 			j := pickCard(strategies[i], v, rng)
-			if j < 0 {
-				continue
-			}
 			played[i] = seats[i].Hand[j]
 			seats[i].Hand = removeAt(seats[i].Hand, j)
-			discarded = append(discarded, played[i])
-			if len(seats[i].Draw) > 0 {
-				seats[i].Hand = append(seats[i].Hand, seats[i].Draw[0])
-				seats[i].Draw = seats[i].Draw[1:]
-			}
+			discarded++
 		}
 
-		out := resolveRound(seats, played, pot)
-		if out.winner >= 0 {
-			seats[out.winner].Scored = append(seats[out.winner].Scored, pot...)
+		winner := resolveRound(seats, played, pot)
+		if winner >= 0 {
+			seats[winner].Pile = append(seats[winner].Pile, pot...)
 			carry = nil
 		} else {
 			carry = pot
 			carryovers++
 		}
+		for i := range seats {
+			refill(&seats[i])
+		}
 	}
-	setAside := carry
 
 	res := GameResult{
 		Players:    players,
-		Decks:      decks,
-		Rounds:     rounds,
+		Clashes:    clashes,
 		Carryovers: carryovers,
-		Scores:     make([]int, players),
+		Counts:     make([]int, players),
 		Winner:     -1,
+		Discarded:  discarded,
+		OnTable:    len(carry),
 	}
-	cards := len(discarded) + len(setAside)
+	cards := discarded + len(carry)
 	best, ties := -1, 0
 	for i := range seats {
-		res.Scores[i] = pips(seats[i].Scored)
-		res.ScoredPips += res.Scores[i]
-		res.HandLeftPips += pips(seats[i].Hand) + pips(seats[i].Draw)
-		cards += len(seats[i].Scored) + len(seats[i].Hand) + len(seats[i].Draw)
+		res.Counts[i] = len(seats[i].Hand) + len(seats[i].Pile)
+		cards += res.Counts[i]
 		switch {
-		case res.Scores[i] > best:
-			best, ties, res.Winner = res.Scores[i], 1, i
-		case res.Scores[i] == best:
+		case res.Counts[i] > best:
+			best, ties, res.Winner = res.Counts[i], 1, i
+		case res.Counts[i] == best:
 			ties++
 		}
 	}
 	if ties != 1 {
 		res.Winner = -1
 	}
-	res.SetAsidePips = pips(setAside)
-	res.DiscardedPips = pips(discarded)
 	res.CardsAccounted = cards
 	return res, nil
+}
+
+// anyEmptyHand reports whether a seat has no card left to play, which ends the
+// game.
+func anyEmptyHand(seats []Seat) bool {
+	for i := range seats {
+		if len(seats[i].Hand) == 0 {
+			return true
+		}
+	}
+	return false
 }

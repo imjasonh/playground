@@ -46,7 +46,7 @@ func lowestIdx(hand []Card) int  { return byRankAsc(hand)[0] }
 func highestIdx(hand []Card) int { return byRankDesc(hand)[0] }
 
 // BotLowest always plays its single weakest card. It is included to show that
-// the obvious give-up-every-clash rule is far too easy to beat.
+// the obvious give-up-every-clash rule is clearly beatable.
 func BotLowest() Strategy {
 	return Strategy{"bot-lowest", func(v View, _ *rand.Rand) int {
 		return lowestIdx(v.Hand)

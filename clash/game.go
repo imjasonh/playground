@@ -2,11 +2,9 @@ package clash
 
 // Seat is one player or bot at the table.
 type Seat struct {
-	Home   Suit
-	Hand   []Card // the cards to choose one from each clash, refilled to the cap
-	Draw   []Card // face-down pile that refills the hand
-	Ante   []Card // one card fed to the pot each round
-	Scored []Card // cards won, tallied by pips at the end
+	Home Suit
+	Hand []Card // the cards to choose one from each clash, refilled from the pile
+	Pile []Card // face-down stack: feeds one card to the pot and refills the hand
 }
 
 // pips totals the ranks of a set of cards.
@@ -40,30 +38,24 @@ func bidTotal(played Card, pot []Card, home Suit) int {
 	return bid
 }
 
-// roundOutcome reports who won a clash.
-type roundOutcome struct {
-	winner  int // -1 when the top bids tie
-	potPips int
-}
-
-// resolveRound settles one clash. The pot is already assembled (this round's
-// antes plus any cards carried from an earlier tie). played holds the one card
-// each seat put down; the highest bid wins. A tie for the top leaves no winner,
-// so the caller carries the pot forward.
-func resolveRound(seats []Seat, played []Card, pot []Card) roundOutcome {
-	out := roundOutcome{winner: -1, potPips: pips(pot)}
-	best, ties := -1, 0
+// resolveRound settles one clash and returns the winning seat, or -1 when the
+// top bids tie. The pot is already assembled (this clash's antes plus any cards
+// carried from an earlier tie). played holds the one card each seat put down;
+// the highest bid wins. A tie for the top leaves no winner, so the caller
+// carries the pot forward.
+func resolveRound(seats []Seat, played []Card, pot []Card) int {
+	winner, best, ties := -1, -1, 0
 	for i := range seats {
 		b := bidTotal(played[i], pot, seats[i].Home)
 		switch {
 		case b > best:
-			best, ties, out.winner = b, 1, i
+			best, ties, winner = b, 1, i
 		case b == best:
 			ties++
 		}
 	}
 	if ties != 1 {
-		out.winner = -1
+		return -1
 	}
-	return out
+	return winner
 }

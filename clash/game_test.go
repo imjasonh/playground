@@ -36,28 +36,26 @@ func TestBidAndResolve(t *testing.T) {
 
 	// The higher card wins outright.
 	neutral := []Card{{Speed, 7}, {Speed, 4}}
-	if out := resolveRound(seats, []Card{{Speed, 6}, {Speed, 9}}, neutral); out.winner != 1 {
-		t.Errorf("higher bid should win, got winner %d", out.winner)
+	if w := resolveRound(seats, []Card{{Speed, 6}, {Speed, 9}}, neutral); w != 1 {
+		t.Errorf("higher bid should win, got winner %d", w)
 	}
 
 	// Equal cards, but only seat 0's Home (Intelligence) sits in the pot, so its
 	// bonus breaks the tie.
 	homePot := []Card{{Intelligence, 7}, {Speed, 4}}
-	if out := resolveRound(seats, []Card{{Speed, 8}, {Speed, 8}}, homePot); out.winner != 0 {
-		t.Errorf("home bonus should break the tie for seat 0, got winner %d", out.winner)
+	if w := resolveRound(seats, []Card{{Speed, 8}, {Speed, 8}}, homePot); w != 0 {
+		t.Errorf("home bonus should break the tie for seat 0, got winner %d", w)
 	}
 
 	// Equal bids with no bonus to either side: no winner, the pot carries.
-	if out := resolveRound(seats, []Card{{Speed, 8}, {Speed, 8}}, neutral); out.winner != -1 {
-		t.Errorf("tied bids should have no winner, got %d", out.winner)
+	if w := resolveRound(seats, []Card{{Speed, 8}, {Speed, 8}}, neutral); w != -1 {
+		t.Errorf("tied bids should have no winner, got %d", w)
 	}
 }
 
-// TestResolvability plays many games with assorted strategies, across one to
-// three decks, and checks that each one ends with every card accounted for and
-// every pip conserved.
+// TestResolvability plays many games with assorted strategies and checks that
+// each one ends with every card accounted for in exactly one place.
 func TestResolvability(t *testing.T) {
-	deckPips := pips(NewDeck()) // 360
 	games := 20000
 	if testing.Short() {
 		games = 2000
@@ -66,26 +64,20 @@ func TestResolvability(t *testing.T) {
 	strats := []Strategy{
 		RandomCommit(), Competent(), Hoard(), Steal(), Sniper(), Bot(),
 	}
-	for _, decks := range []int{1, 2, 3} {
-		for _, players := range []int{2, 3, 4} {
-			for g := 0; g < games; g++ {
-				table := make([]Strategy, players)
-				homes := make([]Suit, players)
-				for i := 0; i < players; i++ {
-					table[i] = strats[rng.Intn(len(strats))]
-					homes[i] = Suits[i]
-				}
-				res, err := PlayGameDecks(rng, table, homes, decks)
-				if err != nil {
-					t.Fatalf("%d players, %d decks, game %d: %v", players, decks, g, err)
-				}
-				if res.CardsAccounted != DeckSize*decks {
-					t.Fatalf("%d players, %d decks: %d cards accounted, want %d", players, decks, res.CardsAccounted, DeckSize*decks)
-				}
-				sum := res.ScoredPips + res.SetAsidePips + res.DiscardedPips + res.HandLeftPips
-				if sum != deckPips*decks {
-					t.Fatalf("%d players, %d decks: pips %d, want %d", players, decks, sum, deckPips*decks)
-				}
+	for _, players := range []int{2, 3, 4} {
+		for g := 0; g < games; g++ {
+			table := make([]Strategy, players)
+			homes := make([]Suit, players)
+			for i := 0; i < players; i++ {
+				table[i] = strats[rng.Intn(len(strats))]
+				homes[i] = Suits[i]
+			}
+			res, err := PlayGame(rng, table, homes)
+			if err != nil {
+				t.Fatalf("%d players, game %d: %v", players, g, err)
+			}
+			if res.CardsAccounted != DeckSize {
+				t.Fatalf("%d players: %d cards accounted, want %d", players, res.CardsAccounted, DeckSize)
 			}
 		}
 	}
