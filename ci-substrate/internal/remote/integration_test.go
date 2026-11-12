@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
+	"github.com/imjasonh/playground/ci-substrate/internal/actioncache"
 	"github.com/imjasonh/playground/ci-substrate/internal/blob"
 	"github.com/imjasonh/playground/ci-substrate/internal/cache"
 	"github.com/imjasonh/playground/ci-substrate/internal/digest"
@@ -42,7 +43,11 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	origin := remote.NewOrigin(originStore, tenants)
+	actions, err := actioncache.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	origin := remote.NewOrigin(originStore, actions, tenants)
 	originAddr := serve(t, func(s *grpc.Server) {
 		repb.RegisterContentAddressableStorageServer(s, origin)
 		repb.RegisterActionCacheServer(s, origin)

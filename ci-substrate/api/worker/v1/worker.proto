@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package worker.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+
+option go_package = "github.com/imjasonh/playground/ci-substrate/api/worker/v1;workerv1";
+
+// WorkerService is the lease protocol between the scheduler in cas and a runner.
+//
+// A runner authenticates with its tenant token, so the scheduler only hands
+// it jobs for instances that token may use. A tenant's actions therefore run
+// only on that tenant's runners.
+service WorkerService {
+  // Lease blocks until a job is available for one of the runner's instances
+  // or the request deadline passes. A response without a job means no work
+  // arrived in time; the runner calls again.
+  rpc Lease(LeaseRequest) returns (LeaseResponse);
+
+  // Heartbeat keeps a lease alive and reports progress. A job whose lease
+  // goes unrenewed past its duration goes back to the queue.
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+  // Complete reports the outcome of a leased job.
+  rpc Complete(CompleteRequest) returns (CompleteResponse);
+}
+
+// Digest names a blob in the CAS: lowercase hex SHA-256 and byte count.
+message Digest {
+  string hash = 1;
+  int64 size_bytes = 2;
+}
+
+// Job is one leased action.
+message Job {
+  // Scheduler-assigned id; also the long-running operation name clients
+  // wait on.
+  string id = 1;
+  // Remote Execution instance the action belongs to.
+  string instance_name = 2;
+  // Digest of the build.bazel.remote.execution.v2.Action in the CAS.
+  Digest action_digest = 3;
+  // How long the runner has before it must heartbeat or complete.
+  google.protobuf.Duration lease_duration = 4;
+}
+
+message LeaseRequest {
+  // Stable runner identity. Under Substrate this is the actor name.
+  string bot_id = 1;
+  // Instances this runner serves. The scheduler intersects them with the
+  // instances the tenant token allows.
+  repeated string instance_names = 2;
+}
+
+message LeaseResponse {
+  Job job = 1;
+}
+
+message HeartbeatRequest {
+  string bot_id = 1;
+  string job_id = 2;
+}
+
+message HeartbeatResponse {
+  // When true, the lease is gone (expired or cancelled) and the runner must
+  // stop the action.
+  bool cancelled = 1;
+}
+
+message CompleteRequest {
+  string bot_id = 1;
+  string job_id = 2;
+  // build.bazel.remote.execution.v2.ActionResult when the action ran to an
+  // exit code, including a nonzero one.
+  google.protobuf.Any action_result = 3;
+  // Set when the runner could not run the action at all.
+  string error_message = 4;
+}
+
+message CompleteResponse {}

@@ -63,6 +63,16 @@ func Outgoing(ctx context.Context, token string) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, MetadataKey, token)
 }
 
+// Instances returns a copy of the instance names the token in ctx may use. An
+// unknown or missing token has none.
+func (r *Registry) Instances(ctx context.Context) map[string]bool {
+	out := map[string]bool{}
+	for name := range r.allow[Token(ctx)] {
+		out[name] = true
+	}
+	return out
+}
+
 var errUnauthorized = errors.New("tenant not authorized for instance")
 
 // Authorize returns nil when the token in ctx may use instanceName, and a gRPC

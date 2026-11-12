@@ -3,6 +3,7 @@ module github.com/imjasonh/playground/ci-substrate
 go 1.27.0
 
 require (
+	cloud.google.com/go/longrunning v0.8.0
 	github.com/bazelbuild/remote-apis v0.0.0-20261110225606-e0c0554bfc8a
 	github.com/google/uuid v1.6.0
 	github.com/sethvargo/go-envconfig v1.4.3
@@ -13,7 +14,6 @@ require (
 )
 
 require (
-	cloud.google.com/go/longrunning v0.8.0 // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect

@@ -5,8 +5,8 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"io"
-	"sync"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/bazelbuild/remote-apis/build/bazel/semver"
@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/imjasonh/playground/ci-substrate/internal/actioncache"
 	"github.com/imjasonh/playground/ci-substrate/internal/blob"
 	"github.com/imjasonh/playground/ci-substrate/internal/digest"
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
@@ -30,19 +31,15 @@ type Origin struct {
 	repb.UnimplementedCapabilitiesServer
 	bytestream.UnimplementedByteStreamServer
 
-	store    *blob.Store
-	tenants  *tenant.Registry
-	acMu     sync.RWMutex
-	actionDB map[string]*repb.ActionResult
+	store   *blob.Store
+	actions *actioncache.Store
+	tenants *tenant.Registry
 }
 
-// NewOrigin returns an Origin backed by store and authorized by tenants.
-func NewOrigin(store *blob.Store, tenants *tenant.Registry) *Origin {
-	return &Origin{store: store, tenants: tenants, actionDB: map[string]*repb.ActionResult{}}
-}
-
-func acKey(instance string, action *repb.Digest) string {
-	return instance + "\x00" + digest.Key(action)
+// NewOrigin returns an Origin that keeps blobs in store and action results in
+// actions, authorized by tenants.
+func NewOrigin(store *blob.Store, actions *actioncache.Store, tenants *tenant.Registry) *Origin {
+	return &Origin{store: store, actions: actions, tenants: tenants}
 }
 
 // FindMissingBlobs reports which of the requested digests the CAS lacks.
@@ -133,13 +130,14 @@ func (o *Origin) GetActionResult(ctx context.Context, req *repb.GetActionResultR
 	if err := digest.Validate(req.GetActionDigest()); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	o.acMu.RLock()
-	ar, ok := o.actionDB[acKey(req.GetInstanceName(), req.GetActionDigest())]
-	o.acMu.RUnlock()
-	if !ok {
+	ar, err := o.actions.Get(req.GetInstanceName(), req.GetActionDigest())
+	if errors.Is(err, actioncache.ErrNotFound) {
 		return nil, status.Error(codes.NotFound, "action result not found")
 	}
-	return proto.Clone(ar).(*repb.ActionResult), nil
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return ar, nil
 }
 
 // UpdateActionResult records an action result in the tenant's instance.
@@ -154,15 +152,21 @@ func (o *Origin) UpdateActionResult(ctx context.Context, req *repb.UpdateActionR
 		return nil, status.Error(codes.InvalidArgument, "missing action result")
 	}
 	ar := proto.Clone(req.GetActionResult()).(*repb.ActionResult)
-	o.acMu.Lock()
-	o.actionDB[acKey(req.GetInstanceName(), req.GetActionDigest())] = ar
-	o.acMu.Unlock()
-	return proto.Clone(ar).(*repb.ActionResult), nil
+	if err := o.actions.Put(req.GetInstanceName(), req.GetActionDigest(), ar); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return ar, nil
 }
 
-// GetCapabilities advertises SHA-256 CAS with a writable action cache.
+// GetCapabilities advertises SHA-256 CAS with a writable action cache and
+// remote execution.
 func (o *Origin) GetCapabilities(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
 	return &repb.ServerCapabilities{
+		ExecutionCapabilities: &repb.ExecutionCapabilities{
+			DigestFunction:  repb.DigestFunction_SHA256,
+			DigestFunctions: []repb.DigestFunction_Value{repb.DigestFunction_SHA256},
+			ExecEnabled:     true,
+		},
 		CacheCapabilities: &repb.CacheCapabilities{
 			DigestFunctions:                 []repb.DigestFunction_Value{repb.DigestFunction_SHA256},
 			ActionCacheUpdateCapabilities:   &repb.ActionCacheUpdateCapabilities{UpdateEnabled: true},

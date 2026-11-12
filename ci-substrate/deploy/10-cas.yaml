@@ -1,10 +1,16 @@
+# cas is a StatefulSet so its blobs and action cache live on a
+# PersistentVolumeClaim and survive a pod restart (plan M1: durable control
+# plane state). It runs one replica: the scheduler's queue is in memory, and a
+# client whose operation disappears in a restart gets NotFound from
+# WaitExecution and calls Execute again.
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: cas
   namespace: ci-substrate
   labels: {app: cas}
 spec:
+  serviceName: cas
   replicas: 1
   selector:
     matchLabels: {app: cas}
@@ -12,6 +18,8 @@ spec:
     metadata:
       labels: {app: cas}
     spec:
+      securityContext:
+        fsGroup: 65532
       containers:
         - name: cas
           image: ko://github.com/imjasonh/playground/ci-substrate/cmd/cas # pasta:ignore unpinned_container_image
@@ -39,12 +47,13 @@ spec:
             grpc: {port: 8980}
           volumeMounts:
             - {name: data, mountPath: /data}
-      volumes:
-        # The demo origin keeps blobs on an emptyDir and the action cache in
-        # memory, so both reset when the pod restarts. A production origin
-        # needs durable storage and a shared action-cache database.
-        - name: data
-          emptyDir: {sizeLimit: 20Gi}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests: {storage: 20Gi}
 ---
 apiVersion: v1
 kind: Service
