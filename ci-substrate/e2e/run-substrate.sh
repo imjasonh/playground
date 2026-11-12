@@ -15,9 +15,12 @@
 #
 # It creates the tenant-a atespace, the token Secret the egress gateway
 # injects, the credential provider's grant of that Secret's namespace to the
-# atespace, the WorkerPool, the runner ActorTemplate, and the pool Deployment.
-# Then it runs cictl against cas and checks that an actor executed the action:
-# the ActionResult's worker is an actor name, not a Deployment runner.
+# atespace, the WorkerPool, the casfs CSI driver with tenant-a's
+# StorageClass, the runner ActorTemplate, and the pool Deployment. External
+# volumes are behind Substrate's ExternalVolumes preview gate, so it turns
+# that on in ate-api-server. Then it runs cictl against cas and checks that
+# an actor executed the action (the ActionResult's worker is an actor name,
+# not a Deployment runner) and read its inputs from the casfs volume.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -91,6 +94,32 @@ else
 fi
 kubectl -n ci-substrate-workers rollout status deployment/ci-runner --timeout=300s
 
+echo "==> ExternalVolumes preview gate"
+# ate-api-server takes --preview=<gate,...>. The template's external volume
+# needs ExternalVolumes on.
+preview="$(kubectl -n ate-system get deployment ate-api-server -o json |
+  python3 -c 'import json,sys; print(next((a for c in json.load(sys.stdin)["spec"]["template"]["spec"]["containers"] for a in c["args"] if a.startswith("--preview=")), ""))')"
+if [[ "${preview}" != *ExternalVolumes* ]]; then
+  if [[ -z "${preview}" || "${preview}" == "--preview=" ]]; then
+    want="--preview=ExternalVolumes"
+  else
+    want="${preview},ExternalVolumes"
+  fi
+  kubectl -n ate-system get deployment ate-api-server -o json |
+    python3 -c "import json,sys
+d=json.load(sys.stdin)
+for c in d['spec']['template']['spec']['containers']:
+    c['args']=[a for a in c['args'] if not a.startswith('--preview=')]
+    if c['name']=='ate-api-server' or len(d['spec']['template']['spec']['containers'])==1:
+        c['args'].append('${want}')
+print(json.dumps(d))" | kubectl apply -f -
+  kubectl -n ate-system rollout status deployment/ate-api-server --timeout=180s
+fi
+
+echo "==> casfs CSI driver"
+ko apply -f "${OVERLAY}/casfs-csi.yaml"
+kubectl -n ci-substrate rollout status daemonset/casfs-csi --timeout=180s
+
 echo "==> Runner ActorTemplate"
 KO_DOCKER_REPO="${ACTOR_IMAGE_REPO}" ko resolve -f "${OVERLAY}/runner-template.yaml" >"${WORKDIR}/runner-template.yaml"
 # Templates are immutable, so a changed template is recreated. Existing
@@ -98,11 +127,11 @@ KO_DOCKER_REPO="${ACTOR_IMAGE_REPO}" ko resolve -f "${OVERLAY}/runner-template.y
 if kubectl ate get actor-templates -a "${ATESPACE}" -o json | grep -q '"name": *"ci-runner"'; then
   kubectl ate delete actor-template ci-runner -a "${ATESPACE}"
 fi
-kubectl ate create actor-template -f "${WORKDIR}/runner-template.yaml"
+kubectl ate --preview create actor-template -f "${WORKDIR}/runner-template.yaml"
 
 echo "==> Pool"
 kubectl -n ate-system create configmap ci-substrate-pool-tenant-a \
-  --from-file=egress-policy.yaml="${OVERLAY}/egress-cascache.yaml" --dry-run=client -o yaml | kubectl apply -f -
+  --from-file=egress-policy.yaml="${OVERLAY}/egress-cas.yaml" --dry-run=client -o yaml | kubectl apply -f -
 ko apply -f "${OVERLAY}/pool.yaml"
 kubectl -n ate-system rollout status deployment/ci-substrate-pool-tenant-a --timeout=180s
 if kubectl -n ci-substrate get deployment "${RUNNER_DEPLOYMENT}" >/dev/null 2>&1; then
@@ -124,7 +153,7 @@ PORT_FORWARD_PIDS+=("$!")
 kubectl -n ci-substrate port-forward svc/cascache 19092:9092 >/dev/null 2>&1 &
 PORT_FORWARD_PIDS+=("$!")
 sleep 2
-go run "${ROOT}/cmd/cictl" -origin-addr=localhost:18980 -cache-addr=localhost:19092 -exec-timeout=5m -worker-prefix=ci-runner- run
+go run "${ROOT}/cmd/cictl" -origin-addr=localhost:18980 -cache-addr=localhost:19092 -exec-timeout=5m -worker-prefix=ci-runner- -expect-input-mode=volume run
 echo "==> Actors after the run"
 kubectl ate get actors -a "${ATESPACE}"
 kubectl -n ate-system logs deployment/ci-substrate-pool-tenant-a --tail=20

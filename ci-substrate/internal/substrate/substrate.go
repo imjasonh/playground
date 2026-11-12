@@ -1,8 +1,8 @@
 // Package substrate adapts Agent Substrate's control API to the actor pool.
 // It owns the actors of one atespace that come from one ActorTemplate, and
 // gives each new actor the tenant's egress policy before it first resumes, so
-// the runner inside can reach only the cascache and cas Services and the
-// gateway injects the tenant token on the way.
+// the runner inside can reach only the cas Service and the gateway injects
+// the tenant token on the way.
 package substrate
 
 import (
@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"sigs.k8s.io/yaml"
@@ -25,11 +26,18 @@ import (
 	"github.com/imjasonh/playground/ci-substrate/internal/actorpool"
 )
 
+// PreviewHeader is the gRPC metadata key with which a client tells ateapi it
+// accepts preview features the server has enabled. The runner template's
+// external volume is behind the ExternalVolumes gate, so an actor created
+// from it needs this on the call.
+const PreviewHeader = "Ate-Preview-Allowed"
+
 // Dial connects to ateapi at addr, verifying its serving certificate against
 // the PEM bundle in caFile with serverName, and sending the bearer token read
 // from tokenFile on every call. In the cluster both files are projected
 // volumes: the servicedns ClusterTrustBundle and a ServiceAccount token whose
-// audience is the API's Service name.
+// audience is the API's Service name. Every call opts in to preview
+// features.
 func Dial(addr, serverName, caFile, tokenFile string) (*grpc.ClientConn, error) {
 	pem, err := os.ReadFile(caFile)
 	if err != nil {
@@ -42,6 +50,9 @@ func Dial(addr, serverName, caFile, tokenFile string) (*grpc.ClientConn, error) 
 	return grpc.NewClient(addr,
 		grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS13, RootCAs: pool, ServerName: serverName})),
 		grpc.WithPerRPCCredentials(bearerFile(tokenFile)),
+		grpc.WithUnaryInterceptor(func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+			return invoker(metadata.AppendToOutgoingContext(ctx, PreviewHeader, "true"), method, req, reply, cc, opts...)
+		}),
 	)
 }
 

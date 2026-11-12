@@ -11,7 +11,7 @@ import (
 )
 
 func TestParsesDeployedEgressPolicy(t *testing.T) {
-	manifest, err := os.ReadFile("../../deploy/substrate/egress-cascache.yaml")
+	manifest, err := os.ReadFile("../../deploy/substrate/egress-cas.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -19,10 +19,14 @@ func TestParsesDeployedEgressPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(policy.GetRules()) != 2 {
-		t.Fatalf("rules %v, want cascache and cas", policy.GetRules())
+	// Inputs come from the node, so cas is the actor's only egress.
+	if len(policy.GetRules()) != 1 {
+		t.Fatalf("rules %v, want cas only", policy.GetRules())
 	}
 	for _, rule := range policy.GetRules() {
+		if hosts := rule.GetHttp().GetHostnames(); len(hosts) != 1 || hosts[0] != "cas.ci-substrate.svc.cluster.local" {
+			t.Errorf("rule %v is not for cas", rule)
+		}
 		headers := rule.GetHttp().GetEffects().GetReplaceHeaders()
 		if len(headers) != 1 || headers[0].GetHeader() != "x-ci-substrate-tenant" {
 			t.Errorf("rule %v does not inject the tenant header", rule)

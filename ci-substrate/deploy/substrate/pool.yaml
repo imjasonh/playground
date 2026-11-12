@@ -4,11 +4,11 @@
 # that signs the API's certificate. It reads tenant-a's queue from cas with
 # tenant-a's token, and creates, resumes, suspends, and deletes actors in the
 # tenant-a atespace from the ci-runner template, giving each actor the egress
-# policy in egress-cascache.yaml before it first resumes. The ConfigMap holds
+# policy in egress-cas.yaml before it first resumes. The ConfigMap holds
 # that file:
 #
 #   kubectl -n ate-system create configmap ci-substrate-pool-tenant-a \
-#     --from-file=egress-policy.yaml=egress-cascache.yaml
+#     --from-file=egress-policy.yaml=egress-cas.yaml
 #   ko apply -f pool.yaml
 apiVersion: v1
 kind: Secret

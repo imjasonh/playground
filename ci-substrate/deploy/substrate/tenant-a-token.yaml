@@ -1,5 +1,5 @@
 # tenant-a's cas token, in a namespace of its own, for the egress gateway to
-# inject (see egress-cascache.yaml). The value must match the tok-a entry in
+# inject (see egress-cas.yaml). The value must match the tok-a entry in
 # ../00-namespace-and-config.yaml. Grant the tenant-a atespace this namespace,
 # and only this one, in the k8s-credential-provider-namespace-policy ConfigMap.
 apiVersion: v1

@@ -1,19 +1,29 @@
 # ActorTemplate (protojson-shaped ateapi.ActorTemplate) for a CI runner actor
 # in the tenant-a atespace. The actor runs the ci-substrate runner bot: it
-# leases actions from the scheduler in cas, reads inputs through cascache,
-# and uploads outputs. Create one template per tenant atespace:
+# leases actions from the scheduler in cas, reads each action's inputs from a
+# casfs inputs volume that the node mounts for it, and uploads outputs to cas.
+# Create one template per tenant atespace:
 #
 #   ko resolve -f runner-template.yaml > /tmp/runner-template.yaml
-#   kubectl ate create actor-template -f /tmp/runner-template.yaml
+#   kubectl ate --preview create actor-template -f /tmp/runner-template.yaml
+#
+# --preview is for the external volume, which is behind Substrate's
+# ExternalVolumes preview gate (ateapi needs --preview=ExternalVolumes).
+#
+# The inputs volume is an external volume of the casfs-tenant-a StorageClass
+# (see casfs-csi.yaml). The casfs-csi driver on the actor's node mounts it,
+# fetches from that node's cascache with tenant-a's token, and the runner
+# makes each exec root on it with a mkdir, so no input byte crosses the
+# egress gateway and the sandbox holds no credential for the CAS. The
+# capacity is nominal: the volume is served from the driver's memory.
 #
 # The tenant token is not in the template. The runner sends a placeholder
-# x-ci-substrate-tenant header, and the egress gateway replaces it with the
-# tenant's token from a Kubernetes Secret (see egress-cascache.yaml), so no
-# credential is inside the sandbox.
+# x-ci-substrate-tenant header on its calls to cas, and the egress gateway
+# replaces it with the tenant's token from a Kubernetes Secret (see
+# egress-cas.yaml).
 #
 # The bot id is the actor's name, projected from actor metadata, so the pool
-# can match the scheduler's busy bots to actors. The sandbox has no /dev/fuse,
-# so the runner copies inputs (input mode auto falls back to copy).
+# can match the scheduler's busy bots to actors.
 metadata:
   atespace: tenant-a
   name: ci-runner
@@ -25,14 +35,17 @@ containers:
   image: ko://github.com/imjasonh/playground/ci-substrate/cmd/runner # pasta:ignore unpinned_container_image
   args:
   - -origin-addr=cas.ci-substrate.svc.cluster.local:8980
-  - -cache-addr=cascache.ci-substrate.svc.cluster.local:9092
   - -instances=tenant-a
   - -token=placeholder
   - -bot-id-file=/system/name
   - -work-dir=/tmp/ci-substrate
+  - -inputs-volume=/inputs
+  - -input-mode=volume
   volumeMounts:
   - name: system
     mountPath: /system
+  - name: inputs
+    mountPath: /inputs
 volumes:
 - name: system
   systemInfo:
@@ -41,6 +54,11 @@ volumes:
         items:
         - field: ACTOR_METADATA_FIELD_NAME
           path: name
+- name: inputs
+  external:
+    template:
+      capacityBytes: 1073741824 # 1Gi
+      storageClassName: casfs-tenant-a
 resources:
   limits:
     cpuMillicores: 1000

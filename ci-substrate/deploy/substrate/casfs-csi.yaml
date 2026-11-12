@@ -1,0 +1,106 @@
+# The CSI driver that gives Substrate actors their inputs from their own
+# node. One pod per worker node, beside cascache. atelet dials its Node
+# service over the unix socket in the kubelet plugins directory and ateapi
+# dials its Controller service through the Service below. When atelet starts
+# an actor whose template has an external volume of the casfs StorageClass,
+# the driver mounts a casfs inputs volume under /var/lib/ate on the host, and
+# atelet binds it into the sandbox. The runner then makes each exec root with
+# a mkdir, and the driver fetches each file from the node's cascache, with the
+# tenant's token, as the action reads it.
+#
+# The pod is privileged: it mounts FUSE filesystems on the host, and those
+# mounts have to propagate out of the pod (Bidirectional) for atelet and the
+# sandbox to see them. It holds the tenant table, as cascache does.
+#
+#   ko apply -f casfs-csi.yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: casfs-csi
+  namespace: ci-substrate
+  labels: {app: casfs-csi}
+spec:
+  selector:
+    matchLabels: {app: casfs-csi}
+  template:
+    metadata:
+      labels: {app: casfs-csi}
+    spec:
+      containers:
+        - name: driver
+          image: ko://github.com/imjasonh/playground/ci-substrate/cmd/casfs-csi # pasta:ignore unpinned_container_image
+          env:
+            - name: CSI_SOCKET
+              value: /csi/csi.sock
+            - name: CONTROLLER_ADDR
+              value: ":9095"
+            - name: CACHE_ADDR
+              value: cascache.ci-substrate.svc.cluster.local:9092
+            - name: NODE_ID
+              valueFrom:
+                fieldRef: {fieldPath: spec.nodeName}
+            - name: TENANTS
+              valueFrom:
+                secretKeyRef: {name: tenants, key: TENANTS}
+          ports:
+            - {name: grpc, containerPort: 9095}
+          securityContext:
+            privileged: true
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 2Gi}
+          readinessProbe:
+            grpc: {port: 9095}
+          volumeMounts:
+            - {name: plugin-dir, mountPath: /csi}
+            # Where atelet puts each actor's volume mount points. Bidirectional
+            # so the mounts the driver makes under it reach the host.
+            - {name: ate-base, mountPath: /var/lib/ate, mountPropagation: Bidirectional}
+      volumes:
+        - name: plugin-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins/casfs.ci-substrate.dev
+            type: DirectoryOrCreate
+        - name: ate-base
+          hostPath:
+            path: /var/lib/ate
+            type: DirectoryOrCreate
+---
+# ateapi dials the Controller service here. Volumes have nothing to
+# provision, so any pod of the DaemonSet can answer.
+apiVersion: v1
+kind: Service
+metadata:
+  name: casfs-csi
+  namespace: ci-substrate
+spec:
+  selector: {app: casfs-csi}
+  ports:
+    - {name: grpc, port: 9095, targetPort: 9095}
+---
+# Registers the driver with Substrate. ateapi dials the controller endpoint
+# and atelet the node socket. The hop from ateapi to the controller is
+# plaintext, like the rest of this demo's gRPC.
+apiVersion: ate.dev/v1
+kind: CSIDriverConfig
+metadata:
+  name: casfs.ci-substrate.dev
+spec:
+  driverName: casfs.ci-substrate.dev
+  controllerEndpoint: dns:///casfs-csi.ci-substrate.svc.cluster.local:9095
+  nodeSocketOverride: unix:///var/lib/kubelet/plugins/casfs.ci-substrate.dev/csi.sock
+---
+# One StorageClass per tenant. The instance parameter is the Remote Execution
+# instance the volume serves, which decides the token the driver fetches
+# with. An actor template for tenant-a names this class; a template that
+# named another tenant's class would get that tenant's inputs, so the class a
+# tenant's templates may use is part of the tenant's setup.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: casfs-tenant-a
+provisioner: casfs.ci-substrate.dev
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+parameters:
+  instance: tenant-a
