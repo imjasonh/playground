@@ -47,7 +47,15 @@ const (
 	// InputFUSE mounts the input root with casfs and fetches files as the
 	// action reads them.
 	InputFUSE InputMode = "fuse"
-	// InputAuto uses FUSE when /dev/fuse is present, and copies otherwise.
+	// InputVolume makes the exec root on a casfs inputs volume that the host
+	// mounted (Config.InputsVolume): a mkdir of the input root's digest
+	// materializes it there, with files fetched on the host side as the
+	// action reads them, and an rmdir drops it. The runner itself fetches
+	// no input bytes. A Substrate actor, which can't mount FUSE, gets lazy
+	// hydration from its own node this way.
+	InputVolume InputMode = "volume"
+	// InputAuto uses the inputs volume when one is configured and answers,
+	// else FUSE when /dev/fuse is present, else copies.
 	InputAuto InputMode = "auto"
 )
 
@@ -69,10 +77,13 @@ type Config struct {
 	// Cache serves reads. It is usually the node-local cascache, and may be
 	// the origin when there is none.
 	Cache tree.Fetcher
-	// WorkDir holds one exec root per job.
+	// WorkDir holds one exec root per job, in the copy and FUSE modes.
 	WorkDir string
 	// InputMode selects how the exec root is built.
 	InputMode InputMode
+	// InputsVolume is the mounted casfs inputs volume that InputVolume
+	// makes exec roots on.
+	InputsVolume string
 	// LeaseWait bounds each Lease call. Zero means the scheduler's default.
 	LeaseWait time.Duration
 }
@@ -83,19 +94,9 @@ type Bot struct {
 	cache tree.Fetcher
 }
 
-// tokenFetcher sends the tenant token with every read. casfs calls Fetch
-// with the kernel's request context, which carries no token.
-type tokenFetcher struct {
-	f     tree.Fetcher
-	token string
-}
-
-func (t tokenFetcher) Fetch(ctx context.Context, instance string, d *repb.Digest) ([]byte, error) {
-	return t.f.Fetch(tenant.Outgoing(ctx, t.token), instance, d)
-}
-
 // New returns a Bot. It fails when the configuration cannot work on this
-// host, such as InputFUSE with no /dev/fuse.
+// host, such as InputFUSE with no /dev/fuse or InputVolume with a volume
+// that does not answer.
 func New(cfg Config) (*Bot, error) {
 	if cfg.BotID == "" || cfg.Worker == nil || cfg.Origin == nil || cfg.Cache == nil || cfg.WorkDir == "" {
 		return nil, errors.New("bot: BotID, Worker, Origin, Cache, and WorkDir are required")
@@ -112,16 +113,47 @@ func New(cfg Config) (*Bot, error) {
 		if err := probeFUSE(cfg.WorkDir); err != nil {
 			return nil, fmt.Errorf("bot: input mode fuse: %w", err)
 		}
+	case InputVolume:
+		if cfg.InputsVolume == "" {
+			return nil, errors.New("bot: input mode volume needs InputsVolume")
+		}
+		if err := probeVolume(cfg.InputsVolume); err != nil {
+			return nil, fmt.Errorf("bot: input mode volume: %w", err)
+		}
 	case InputAuto, "":
-		cfg.InputMode = InputFUSE
-		if err := probeFUSE(cfg.WorkDir); err != nil {
-			slog.Info("FUSE unavailable; copying inputs", "err", err)
+		switch {
+		case cfg.InputsVolume != "" && probeVolume(cfg.InputsVolume) == nil:
+			cfg.InputMode = InputVolume
+		case probeFUSE(cfg.WorkDir) == nil:
+			cfg.InputMode = InputFUSE
+		default:
+			slog.Info("no inputs volume and no FUSE; copying inputs")
 			cfg.InputMode = InputCopy
 		}
 	default:
 		return nil, fmt.Errorf("bot: unknown input mode %q", cfg.InputMode)
 	}
-	return &Bot{cfg: cfg, cache: tokenFetcher{f: cfg.Cache, token: cfg.Token}}, nil
+	return &Bot{cfg: cfg, cache: tree.WithToken(cfg.Cache, cfg.Token)}, nil
+}
+
+// probeVolume materializes the empty input root on the volume and drops it,
+// so a volume that is not a casfs mount, or whose server is gone, is found
+// out at startup. A plain directory accepts the mkdir but would serve no
+// inputs, so the probe also checks that the volume refuses a name that is
+// not a digest.
+func probeVolume(dir string) error {
+	probe := filepath.Join(dir, casfs.ExecRootName(tree.Digest(&repb.Directory{}), "probe"))
+	if err := os.Mkdir(probe, 0o755); err != nil {
+		return err
+	}
+	if err := os.Remove(probe); err != nil {
+		return err
+	}
+	if err := os.Mkdir(filepath.Join(dir, "not-a-digest"), 0o755); err == nil {
+		os.Remove(filepath.Join(dir, "not-a-digest"))
+		return fmt.Errorf("%s is not a casfs volume", dir)
+	}
+	return nil
 }
 
 // probeFUSE mounts an empty tree under dir and unmounts it, so a host that
@@ -153,6 +185,15 @@ func (noFetcher) Fetch(context.Context, string, *repb.Digest) ([]byte, error) {
 
 // InputMode reports how the bot builds exec roots.
 func (b *Bot) InputMode() InputMode { return b.cfg.InputMode }
+
+// InputsVolume is the volume the bot makes exec roots on, or "" outside the
+// volume mode.
+func (b *Bot) InputsVolume() string {
+	if b.cfg.InputMode != InputVolume {
+		return ""
+	}
+	return b.cfg.InputsVolume
+}
 
 // Run leases and runs jobs until ctx ends. Errors from the scheduler are
 // logged and retried; the loop only returns with ctx's error. A job that is
@@ -284,44 +325,19 @@ func (b *Bot) execute(ctx context.Context, job *workerv1.Job) (*repb.ActionResul
 	if rootDigest == nil {
 		rootDigest = tree.Digest(&repb.Directory{})
 	}
-	var inputs *tree.Tree
-	if rootDigest.GetSizeBytes() == 0 {
-		inputs = &tree.Tree{Root: rootDigest, Dirs: map[string]*repb.Directory{digest.Key(rootDigest): {}}}
-	} else {
-		var err error
-		inputs, err = tree.Load(ctx, b.cache, instance, rootDigest)
-		if err != nil {
-			return nil, fmt.Errorf("input root: %w", err)
-		}
-	}
 
-	jobDir, err := os.MkdirTemp(b.cfg.WorkDir, "job-")
+	md := &repb.ExecutedActionMetadata{Worker: b.cfg.BotID, InputFetchStartTimestamp: timestamppb.Now()}
+	execRoot, cleanup, err := b.execRoot(ctx, instance, rootDigest, job.GetId())
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(jobDir)
-	execRoot := filepath.Join(jobDir, "root")
-	if err := os.MkdirAll(execRoot, 0o755); err != nil {
+	defer cleanup()
+	md.InputFetchCompletedTimestamp = timestamppb.Now()
+	runnerMD, err := anypb.New(&workerv1.RunnerMetadata{InputMode: string(b.cfg.InputMode)})
+	if err != nil {
 		return nil, err
 	}
-	md := &repb.ExecutedActionMetadata{Worker: b.cfg.BotID, InputFetchStartTimestamp: timestamppb.Now()}
-	switch b.cfg.InputMode {
-	case InputFUSE:
-		server, err := casfs.Mount(execRoot, inputs, b.cache, instance)
-		if err != nil {
-			return nil, fmt.Errorf("mounting input root: %w", err)
-		}
-		defer func() {
-			if err := server.Unmount(); err != nil {
-				slog.Warn("unmounting exec root", "dir", execRoot, "err", err)
-			}
-		}()
-	default:
-		if err := tree.Materialize(ctx, b.cache, instance, inputs, execRoot); err != nil {
-			return nil, fmt.Errorf("materializing input root: %w", err)
-		}
-	}
-	md.InputFetchCompletedTimestamp = timestamppb.Now()
+	md.AuxiliaryMetadata = []*anypb.Any{runnerMD}
 
 	workDir, err := within(execRoot, command.GetWorkingDirectory())
 	if err != nil {
@@ -374,6 +390,62 @@ func (b *Bot) execute(ctx context.Context, job *workerv1.Job) (*repb.ActionResul
 	}
 	md.OutputUploadCompletedTimestamp = timestamppb.Now()
 	return ar, nil
+}
+
+// execRoot builds the exec root for an action whose input root is root, in
+// the configured mode, and returns it with the function that tears it down.
+// In the volume mode the host loads the tree and serves the files, so the
+// runner fetches nothing but the mkdir; the other modes load the tree here.
+func (b *Bot) execRoot(ctx context.Context, instance string, root *repb.Digest, jobID string) (string, func(), error) {
+	if b.cfg.InputMode == InputVolume {
+		dir := filepath.Join(b.cfg.InputsVolume, casfs.ExecRootName(root, jobID))
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			return "", nil, fmt.Errorf("materializing input root on %s: %w", b.cfg.InputsVolume, err)
+		}
+		return dir, func() {
+			if err := os.Remove(dir); err != nil {
+				slog.Warn("dropping exec root", "dir", dir, "err", err)
+			}
+		}, nil
+	}
+
+	var inputs *tree.Tree
+	if root.GetSizeBytes() == 0 {
+		inputs = &tree.Tree{Root: root, Dirs: map[string]*repb.Directory{digest.Key(root): {}}}
+	} else {
+		var err error
+		inputs, err = tree.Load(ctx, b.cache, instance, root)
+		if err != nil {
+			return "", nil, fmt.Errorf("input root: %w", err)
+		}
+	}
+	jobDir, err := os.MkdirTemp(b.cfg.WorkDir, "job-")
+	if err != nil {
+		return "", nil, err
+	}
+	dir := filepath.Join(jobDir, "root")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		os.RemoveAll(jobDir)
+		return "", nil, err
+	}
+	if b.cfg.InputMode == InputFUSE {
+		server, err := casfs.Mount(dir, inputs, b.cache, instance)
+		if err != nil {
+			os.RemoveAll(jobDir)
+			return "", nil, fmt.Errorf("mounting input root: %w", err)
+		}
+		return dir, func() {
+			if err := server.Unmount(); err != nil {
+				slog.Warn("unmounting exec root", "dir", dir, "err", err)
+			}
+			os.RemoveAll(jobDir)
+		}, nil
+	}
+	if err := tree.Materialize(ctx, b.cache, instance, inputs, dir); err != nil {
+		os.RemoveAll(jobDir)
+		return "", nil, fmt.Errorf("materializing input root: %w", err)
+	}
+	return dir, func() { os.RemoveAll(jobDir) }, nil
 }
 
 // fetchProto reads and verifies a message from the cache.

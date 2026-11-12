@@ -193,6 +193,134 @@ func TestLazyHydration(t *testing.T) {
 	}
 }
 
+func TestVolumeMaterializesExecRoots(t *testing.T) {
+	requireFUSE(t)
+	f := newMemFetcher()
+	hello := f.put([]byte("hello from the CAS"))
+	big := f.put(make([]byte, 1<<20))
+	root := f.put(tree.Marshal(&repb.Directory{
+		Files: []*repb.FileNode{
+			{Name: "hello.txt", Digest: hello},
+			{Name: "big.bin", Digest: big},
+		},
+	}))
+
+	mnt := t.TempDir()
+	server, err := casfs.MountVolume(mnt, f, "inst")
+	if err != nil {
+		t.Fatalf("mount: %v", err)
+	}
+	t.Cleanup(func() { server.Unmount() })
+
+	// The root starts empty and takes nothing but exec roots.
+	if entries, err := os.ReadDir(mnt); err != nil || len(entries) != 0 {
+		t.Fatalf("fresh volume: %v, %v", entries, err)
+	}
+	if err := os.Mkdir(filepath.Join(mnt, "scratch"), 0o755); err == nil {
+		t.Fatal("mkdir of a non-digest name succeeded")
+	}
+	if err := os.WriteFile(filepath.Join(mnt, "file"), nil, 0o644); err == nil {
+		t.Fatal("create at the volume root succeeded")
+	}
+	missing := digest.FromBytes([]byte("not in the CAS"))
+	if err := os.Mkdir(filepath.Join(mnt, casfs.ExecRootName(missing, "")), 0o755); err == nil {
+		t.Fatal("mkdir of a digest the CAS lacks succeeded")
+	}
+
+	// mkdir of a digest loads the tree; the files hydrate on read.
+	name := casfs.ExecRootName(root, "job-1")
+	execRoot := filepath.Join(mnt, name)
+	if err := os.Mkdir(execRoot, 0o755); err != nil {
+		t.Fatalf("mkdir exec root: %v", err)
+	}
+	if f.count(root) != 1 {
+		t.Fatalf("root directory fetched %d times, want 1", f.count(root))
+	}
+	info, err := os.Stat(filepath.Join(execRoot, "big.bin"))
+	if err != nil || info.Size() != 1<<20 {
+		t.Fatalf("big.bin: %v, %v", info, err)
+	}
+	if f.count(big) != 0 {
+		t.Fatal("big.bin was fetched before anyone read it")
+	}
+	got, err := os.ReadFile(filepath.Join(execRoot, "hello.txt"))
+	if err != nil || string(got) != "hello from the CAS" {
+		t.Fatalf("hello.txt: %q, %v", got, err)
+	}
+
+	// The exec root takes outputs, and the same input root can be
+	// materialized again under another tag without touching the first.
+	if err := os.WriteFile(filepath.Join(execRoot, "out.txt"), []byte("built"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	second := filepath.Join(mnt, casfs.ExecRootName(root, "job-2"))
+	if err := os.Mkdir(second, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(second, "out.txt")); err == nil {
+		t.Fatal("second exec root sees the first one's output")
+	}
+	if err := os.Mkdir(execRoot, 0o755); !os.IsExist(err) {
+		t.Fatalf("mkdir of a live exec root: %v, want EEXIST", err)
+	}
+	if err := os.Rename(filepath.Join(execRoot, "out.txt"), filepath.Join(mnt, "out.txt")); err == nil {
+		t.Fatal("rename into the volume root succeeded")
+	}
+
+	// rmdir drops a whole exec root, outputs and all.
+	if err := os.Remove(execRoot); err != nil {
+		t.Fatalf("rmdir exec root: %v", err)
+	}
+	if _, err := os.Stat(execRoot); !os.IsNotExist(err) {
+		t.Fatalf("exec root after rmdir: %v", err)
+	}
+	entries, err := os.ReadDir(mnt)
+	if err != nil || len(entries) != 1 || entries[0].Name() != filepath.Base(second) {
+		t.Fatalf("volume after rmdir: %v, %v", entries, err)
+	}
+	if err := os.Remove(second); err != nil {
+		t.Fatal(err)
+	}
+
+	// The empty input root materializes without a fetch.
+	empty := tree.Digest(&repb.Directory{})
+	if err := os.Mkdir(filepath.Join(mnt, casfs.ExecRootName(empty, "probe")), 0o755); err != nil {
+		t.Fatalf("mkdir empty exec root: %v", err)
+	}
+	if f.count(empty) != 0 {
+		t.Fatal("the empty Directory was fetched")
+	}
+}
+
+func TestExecRootName(t *testing.T) {
+	d := digest.FromBytes([]byte("x"))
+	for _, tc := range []struct {
+		name string
+		want *repb.Digest
+	}{
+		{casfs.ExecRootName(d, ""), d},
+		{casfs.ExecRootName(d, "job-1_a"), d},
+		{casfs.ExecRootName(&repb.Digest{Hash: d.Hash, SizeBytes: 0}, "p"), &repb.Digest{Hash: d.Hash}},
+		{d.Hash, nil},
+		{d.Hash + "-01", nil},
+		{d.Hash + "-1.", nil},
+		{d.Hash + "-1.a/b", nil},
+		{"..", nil},
+		{"", nil},
+	} {
+		got, err := casfs.ParseExecRootName(tc.name)
+		if tc.want == nil {
+			if err == nil {
+				t.Errorf("%q parsed as %v", tc.name, got)
+			}
+			continue
+		}
+		if err != nil || got.GetHash() != tc.want.GetHash() || got.GetSizeBytes() != tc.want.GetSizeBytes() {
+			t.Errorf("%q: %v, %v; want %v", tc.name, got, err, tc.want)
+		}
+	}
+}
+
 func TestCorruptBlobIsNotServed(t *testing.T) {
 	requireFUSE(t)
 	f := newMemFetcher()

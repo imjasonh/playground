@@ -17,6 +17,7 @@ import (
 	"github.com/imjasonh/playground/ci-substrate/internal/actioncache"
 	"github.com/imjasonh/playground/ci-substrate/internal/blob"
 	"github.com/imjasonh/playground/ci-substrate/internal/bot"
+	"github.com/imjasonh/playground/ci-substrate/internal/casfs"
 	"github.com/imjasonh/playground/ci-substrate/internal/digest"
 	"github.com/imjasonh/playground/ci-substrate/internal/exec"
 	"github.com/imjasonh/playground/ci-substrate/internal/remote"
@@ -108,9 +109,12 @@ func (s *stack) fetch(t *testing.T, d *repb.Digest) []byte {
 	return b
 }
 
+// newBot returns a bot in mode. In the volume mode it also plays the host:
+// it mounts a casfs inputs volume, with the tenant token, for the bot to
+// make exec roots on.
 func (s *stack) newBot(t *testing.T, mode bot.InputMode) *bot.Bot {
 	t.Helper()
-	b, err := bot.New(bot.Config{
+	cfg := bot.Config{
 		BotID:     "bot-" + string(mode),
 		Token:     token,
 		Worker:    s.worker,
@@ -118,7 +122,16 @@ func (s *stack) newBot(t *testing.T, mode bot.InputMode) *bot.Bot {
 		Cache:     s.client,
 		WorkDir:   t.TempDir(),
 		InputMode: mode,
-	})
+	}
+	if mode == bot.InputVolume {
+		cfg.InputsVolume = t.TempDir()
+		server, err := casfs.MountVolume(cfg.InputsVolume, tree.WithToken(s.client, token), instance)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { server.Unmount() })
+	}
+	b, err := bot.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,11 +182,27 @@ func modes(t *testing.T) []bot.InputMode {
 	t.Helper()
 	ms := []bot.InputMode{bot.InputCopy}
 	if _, err := os.Stat("/dev/fuse"); err == nil {
-		ms = append(ms, bot.InputFUSE)
+		ms = append(ms, bot.InputFUSE, bot.InputVolume)
 	} else {
 		t.Log("/dev/fuse not available; testing copy mode only")
 	}
 	return ms
+}
+
+// inputMode is the mode the runner recorded on the result.
+func inputMode(t *testing.T, ar *repb.ActionResult) string {
+	t.Helper()
+	for _, a := range ar.GetExecutionMetadata().GetAuxiliaryMetadata() {
+		md := &workerv1.RunnerMetadata{}
+		if a.MessageIs(md) {
+			if err := a.UnmarshalTo(md); err != nil {
+				t.Fatal(err)
+			}
+			return md.GetInputMode()
+		}
+	}
+	t.Fatal("result carries no RunnerMetadata")
+	return ""
 }
 
 func TestRunsActionWithInputsAndOutputs(t *testing.T) {
@@ -232,6 +261,14 @@ func TestRunsActionWithInputsAndOutputs(t *testing.T) {
 			}
 			if ar.GetExecutionMetadata().GetWorker() != "bot-"+string(mode) {
 				t.Fatalf("worker %q", ar.GetExecutionMetadata().GetWorker())
+			}
+			if got := inputMode(t, ar); got != string(mode) {
+				t.Fatalf("result records input mode %q, want %q", got, mode)
+			}
+			if mode == bot.InputVolume {
+				if entries, err := os.ReadDir(b.InputsVolume()); err != nil || len(entries) != 0 {
+					t.Fatalf("exec root left on the volume: %v, %v", entries, err)
+				}
 			}
 
 			// A second Execute of the same action is served from the action

@@ -1,9 +1,10 @@
 // Command runner is the build runner that a worker pod or a Substrate actor
 // runs. It leases actions from the scheduler in cas with its tenant token,
-// builds each action's exec root from the node-local cascache (a lazy FUSE
-// mount when the host allows it, a copy otherwise), runs the command, and
-// uploads the outputs and an ActionResult to cas. It runs until it is
-// stopped, so a suspended actor resumes into a runner that leases again.
+// builds each action's exec root (on a host-mounted casfs inputs volume when
+// it has one, else a lazy FUSE mount when the host allows it, else a copy
+// from the node-local cascache), runs the command, and uploads the outputs
+// and an ActionResult to cas. It runs until it is stopped, so a suspended
+// actor resumes into a runner that leases again.
 package main
 
 import (
@@ -33,7 +34,8 @@ func main() {
 	botID := flag.String("bot-id", "", "runner identity reported to the scheduler; defaults to the hostname")
 	botIDFile := flag.String("bot-id-file", "", "file holding the runner identity, such as a Substrate actor_metadata name projection")
 	workDir := flag.String("work-dir", "/tmp/ci-substrate", "directory for exec roots")
-	inputMode := flag.String("input-mode", string(bot.InputAuto), "how inputs reach the exec root: fuse, copy, or auto")
+	inputMode := flag.String("input-mode", string(bot.InputAuto), "how inputs reach the exec root: volume, fuse, copy, or auto")
+	inputsVolume := flag.String("inputs-volume", "", "mounted casfs inputs volume for the volume input mode, such as a Substrate external volume")
 	leaseWait := flag.Duration("lease-wait", 20*time.Second, "how long each Lease call waits for a job")
 	flag.Parse()
 
@@ -72,15 +74,16 @@ func main() {
 		names = strings.Split(*instances, ",")
 	}
 	b, err := bot.New(bot.Config{
-		BotID:     id,
-		Token:     *token,
-		Instances: names,
-		Worker:    workerv1.NewWorkerServiceClient(originConn),
-		Origin:    origin,
-		Cache:     cache,
-		WorkDir:   *workDir,
-		InputMode: bot.InputMode(*inputMode),
-		LeaseWait: *leaseWait,
+		BotID:        id,
+		Token:        *token,
+		Instances:    names,
+		Worker:       workerv1.NewWorkerServiceClient(originConn),
+		Origin:       origin,
+		Cache:        cache,
+		WorkDir:      *workDir,
+		InputMode:    bot.InputMode(*inputMode),
+		InputsVolume: *inputsVolume,
+		LeaseWait:    *leaseWait,
 	})
 	if err != nil {
 		slog.Error("configuring runner", "err", err)

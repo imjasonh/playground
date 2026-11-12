@@ -45,6 +45,29 @@ func TestAuthorize(t *testing.T) {
 	}
 }
 
+func TestTokenFor(t *testing.T) {
+	r := NewRegistry()
+	r.Allow("tok-b", "tenant-b", "shared")
+	r.Allow("tok-a", "tenant-a", "shared")
+
+	for _, tc := range []struct {
+		instance string
+		want     string
+		found    bool
+	}{
+		{"tenant-a", "tok-a", true},
+		{"tenant-b", "tok-b", true},
+		{"shared", "tok-a", true},
+		{"tenant-c", "", false},
+		{"", "", false},
+	} {
+		got, found := r.TokenFor(tc.instance)
+		if got != tc.want || found != tc.found {
+			t.Errorf("TokenFor(%q) = %q, %v; want %q, %v", tc.instance, got, found, tc.want, tc.found)
+		}
+	}
+}
+
 func TestTokenRoundTrip(t *testing.T) {
 	ctx := ctxWith(t, "tok-a")
 	if got := Token(ctx); got != "tok-a" {

@@ -84,6 +84,16 @@ message CompleteRequest {
 
 message CompleteResponse {}
 
+// RunnerMetadata is what the runner records about how it ran an action. It
+// goes in the ActionResult's ExecutedActionMetadata.auxiliary_metadata, so a
+// client can check, from the result alone, how the inputs reached the action.
+message RunnerMetadata {
+  // How the exec root was built: "copy", "fuse", or "volume". "volume" means
+  // the host served the inputs through a casfs volume, so no input byte
+  // crossed the runner's own network path.
+  string input_mode = 1;
+}
+
 message StatusRequest {
   // Instances to report on. Empty means every instance the token allows.
   repeated string instance_names = 1;

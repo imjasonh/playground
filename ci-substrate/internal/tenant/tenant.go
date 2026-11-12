@@ -45,6 +45,22 @@ func (r *Registry) Allow(token string, instances ...string) {
 	}
 }
 
+// TokenFor returns a token that may use instanceName, for a component that
+// acts for a tenant on the tenant's behalf: the node agent that hydrates an
+// actor's inputs holds the tenant table, the way cascache does, and fetches
+// as the tenant whose volume it serves. When several tokens may use the
+// instance it returns the smallest, so the choice is stable. It reports
+// false when none may.
+func (r *Registry) TokenFor(instanceName string) (string, bool) {
+	best, found := "", false
+	for tok, set := range r.allow {
+		if set[instanceName] && (!found || tok < best) {
+			best, found = tok, true
+		}
+	}
+	return best, found
+}
+
 // Token returns the tenant token carried by ctx, or "" when none is present.
 func Token(ctx context.Context) string {
 	md, ok := metadata.FromIncomingContext(ctx)

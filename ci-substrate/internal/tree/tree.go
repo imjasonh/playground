@@ -17,12 +17,29 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/imjasonh/playground/ci-substrate/internal/digest"
+	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
 )
 
 // Fetcher reads one blob from the CAS. Both remote.Client and the node-local
 // cache client satisfy it.
 type Fetcher interface {
 	Fetch(ctx context.Context, instanceName string, d *repb.Digest) ([]byte, error)
+}
+
+// WithToken returns a Fetcher that sends the tenant token on every read of f.
+// casfs calls Fetch with the kernel's request context, which carries no
+// token, so the token travels with the fetcher instead.
+func WithToken(f Fetcher, token string) Fetcher {
+	return tokenFetcher{f: f, token: token}
+}
+
+type tokenFetcher struct {
+	f     Fetcher
+	token string
+}
+
+func (t tokenFetcher) Fetch(ctx context.Context, instance string, d *repb.Digest) ([]byte, error) {
+	return t.f.Fetch(tenant.Outgoing(ctx, t.token), instance, d)
 }
 
 // Tree is an input root and every Directory reachable from it, keyed by the

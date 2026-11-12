@@ -454,6 +454,56 @@ func (*CompleteResponse) Descriptor() ([]byte, []int) {
 	return file_worker_v1_worker_proto_rawDescGZIP(), []int{7}
 }
 
+// RunnerMetadata is what the runner records about how it ran an action. It
+// goes in the ActionResult's ExecutedActionMetadata.auxiliary_metadata, so a
+// client can check, from the result alone, how the inputs reached the action.
+type RunnerMetadata struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// How the exec root was built: "copy", "fuse", or "volume". "volume" means
+	// the host served the inputs through a casfs volume, so no input byte
+	// crossed the runner's own network path.
+	InputMode     string `protobuf:"bytes,1,opt,name=input_mode,json=inputMode,proto3" json:"input_mode,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunnerMetadata) Reset() {
+	*x = RunnerMetadata{}
+	mi := &file_worker_v1_worker_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunnerMetadata) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunnerMetadata) ProtoMessage() {}
+
+func (x *RunnerMetadata) ProtoReflect() protoreflect.Message {
+	mi := &file_worker_v1_worker_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunnerMetadata.ProtoReflect.Descriptor instead.
+func (*RunnerMetadata) Descriptor() ([]byte, []int) {
+	return file_worker_v1_worker_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *RunnerMetadata) GetInputMode() string {
+	if x != nil {
+		return x.InputMode
+	}
+	return ""
+}
+
 type StatusRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Instances to report on. Empty means every instance the token allows.
@@ -464,7 +514,7 @@ type StatusRequest struct {
 
 func (x *StatusRequest) Reset() {
 	*x = StatusRequest{}
-	mi := &file_worker_v1_worker_proto_msgTypes[8]
+	mi := &file_worker_v1_worker_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -476,7 +526,7 @@ func (x *StatusRequest) String() string {
 func (*StatusRequest) ProtoMessage() {}
 
 func (x *StatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_v1_worker_proto_msgTypes[8]
+	mi := &file_worker_v1_worker_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -489,7 +539,7 @@ func (x *StatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusRequest.ProtoReflect.Descriptor instead.
 func (*StatusRequest) Descriptor() ([]byte, []int) {
-	return file_worker_v1_worker_proto_rawDescGZIP(), []int{8}
+	return file_worker_v1_worker_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *StatusRequest) GetInstanceNames() []string {
@@ -513,7 +563,7 @@ type StatusResponse struct {
 
 func (x *StatusResponse) Reset() {
 	*x = StatusResponse{}
-	mi := &file_worker_v1_worker_proto_msgTypes[9]
+	mi := &file_worker_v1_worker_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -525,7 +575,7 @@ func (x *StatusResponse) String() string {
 func (*StatusResponse) ProtoMessage() {}
 
 func (x *StatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_worker_v1_worker_proto_msgTypes[9]
+	mi := &file_worker_v1_worker_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -538,7 +588,7 @@ func (x *StatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
 func (*StatusResponse) Descriptor() ([]byte, []int) {
-	return file_worker_v1_worker_proto_rawDescGZIP(), []int{9}
+	return file_worker_v1_worker_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *StatusResponse) GetQueued() int32 {
@@ -591,7 +641,10 @@ const file_worker_v1_worker_proto_rawDesc = "" +
 	"\x06job_id\x18\x02 \x01(\tR\x05jobId\x129\n" +
 	"\raction_result\x18\x03 \x01(\v2\x14.google.protobuf.AnyR\factionResult\x12#\n" +
 	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\"\x12\n" +
-	"\x10CompleteResponse\"6\n" +
+	"\x10CompleteResponse\"/\n" +
+	"\x0eRunnerMetadata\x12\x1d\n" +
+	"\n" +
+	"input_mode\x18\x01 \x01(\tR\tinputMode\"6\n" +
 	"\rStatusRequest\x12%\n" +
 	"\x0einstance_names\x18\x01 \x03(\tR\rinstanceNames\"h\n" +
 	"\x0eStatusResponse\x12\x16\n" +
@@ -617,7 +670,7 @@ func file_worker_v1_worker_proto_rawDescGZIP() []byte {
 	return file_worker_v1_worker_proto_rawDescData
 }
 
-var file_worker_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_worker_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_worker_v1_worker_proto_goTypes = []any{
 	(*Digest)(nil),              // 0: worker.v1.Digest
 	(*Job)(nil),                 // 1: worker.v1.Job
@@ -627,24 +680,25 @@ var file_worker_v1_worker_proto_goTypes = []any{
 	(*HeartbeatResponse)(nil),   // 5: worker.v1.HeartbeatResponse
 	(*CompleteRequest)(nil),     // 6: worker.v1.CompleteRequest
 	(*CompleteResponse)(nil),    // 7: worker.v1.CompleteResponse
-	(*StatusRequest)(nil),       // 8: worker.v1.StatusRequest
-	(*StatusResponse)(nil),      // 9: worker.v1.StatusResponse
-	(*durationpb.Duration)(nil), // 10: google.protobuf.Duration
-	(*anypb.Any)(nil),           // 11: google.protobuf.Any
+	(*RunnerMetadata)(nil),      // 8: worker.v1.RunnerMetadata
+	(*StatusRequest)(nil),       // 9: worker.v1.StatusRequest
+	(*StatusResponse)(nil),      // 10: worker.v1.StatusResponse
+	(*durationpb.Duration)(nil), // 11: google.protobuf.Duration
+	(*anypb.Any)(nil),           // 12: google.protobuf.Any
 }
 var file_worker_v1_worker_proto_depIdxs = []int32{
 	0,  // 0: worker.v1.Job.action_digest:type_name -> worker.v1.Digest
-	10, // 1: worker.v1.Job.lease_duration:type_name -> google.protobuf.Duration
+	11, // 1: worker.v1.Job.lease_duration:type_name -> google.protobuf.Duration
 	1,  // 2: worker.v1.LeaseResponse.job:type_name -> worker.v1.Job
-	11, // 3: worker.v1.CompleteRequest.action_result:type_name -> google.protobuf.Any
+	12, // 3: worker.v1.CompleteRequest.action_result:type_name -> google.protobuf.Any
 	2,  // 4: worker.v1.WorkerService.Lease:input_type -> worker.v1.LeaseRequest
 	4,  // 5: worker.v1.WorkerService.Heartbeat:input_type -> worker.v1.HeartbeatRequest
 	6,  // 6: worker.v1.WorkerService.Complete:input_type -> worker.v1.CompleteRequest
-	8,  // 7: worker.v1.WorkerService.Status:input_type -> worker.v1.StatusRequest
+	9,  // 7: worker.v1.WorkerService.Status:input_type -> worker.v1.StatusRequest
 	3,  // 8: worker.v1.WorkerService.Lease:output_type -> worker.v1.LeaseResponse
 	5,  // 9: worker.v1.WorkerService.Heartbeat:output_type -> worker.v1.HeartbeatResponse
 	7,  // 10: worker.v1.WorkerService.Complete:output_type -> worker.v1.CompleteResponse
-	9,  // 11: worker.v1.WorkerService.Status:output_type -> worker.v1.StatusResponse
+	10, // 11: worker.v1.WorkerService.Status:output_type -> worker.v1.StatusResponse
 	8,  // [8:12] is the sub-list for method output_type
 	4,  // [4:8] is the sub-list for method input_type
 	4,  // [4:4] is the sub-list for extension type_name
@@ -663,7 +717,7 @@ func file_worker_v1_worker_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_worker_v1_worker_proto_rawDesc), len(file_worker_v1_worker_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
