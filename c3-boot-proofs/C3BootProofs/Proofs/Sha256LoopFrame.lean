@@ -252,4 +252,12 @@ theorem kcCopy_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {F base : Word} 
   simp only [hsp]
   simp (disch := decide) only [fr_al hF, frm_sep hs, and_self]
 
+theorem fr_al' {F : Word} (hF : F.toNat % 4 = 0) {c : Word} (h : c.toNat % 4 = 0) : (F + c).toNat % 4 = 0 := by
+  have := aligned_add hF (k := c.toNat) h
+  rwa [ofNat_toNat_self] at this
+
+theorem frm_sep' {F b : Word} {n k : Nat} (hs : Sep F n b k) {c : Word} (h : c.toNat + 4 ≤ n) : Sep (F + c) 4 b k := by
+  have := hs.sub (c := c.toNat) (l := 4) h
+  rwa [ofNat_toNat_self] at this
+
 end C3.RV32

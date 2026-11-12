@@ -410,14 +410,6 @@ theorem kcPs_range : ∀ p ∈ kcPs, p.2.toNat % 4 = 0 ∧ 0xAC ≤ p.2.toNat �
 set_option maxRecDepth 20000 in
 theorem kcPs_sp : ∀ p ∈ kcPs, p.1 ≠ sp := by decide
 
-theorem fr_al' {F : Word} (hF : F.toNat % 4 = 0) {c : Word} (h : c.toNat % 4 = 0) : (F + c).toNat % 4 = 0 := by
-  have := aligned_add hF (k := c.toNat) h
-  rwa [ofNat_toNat_self] at this
-
-theorem frm_sep' {F b : Word} {n k : Nat} (hs : Sep F n b k) {c : Word} (h : c.toNat + 4 ≤ n) : Sep (F + c) 4 b k := by
-  have := hs.sub (c := c.toNat) (l := 4) h
-  rwa [ofNat_toNat_self] at this
-
 set_option maxRecDepth 20000 in
 set_option maxHeartbeats 8000000 in
 /-- The prologue, from 0x00 to 0x54: the frame, the register saves, and the

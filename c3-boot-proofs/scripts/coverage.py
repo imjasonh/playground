@@ -54,6 +54,7 @@ PROVED = [
     "pointAdd",
     "sha256Compress",
     "rangeFromIndex",
+    "p384Add",
 ]
 
 IMAGE = os.path.join(os.path.dirname(__file__), "..", "C3BootProofs", "Image", "Bootloader.lean")
