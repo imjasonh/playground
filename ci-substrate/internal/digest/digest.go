@@ -17,6 +17,29 @@ func FromBytes(b []byte) *repb.Digest {
 	return &repb.Digest{Hash: hex.EncodeToString(sum[:]), SizeBytes: int64(len(b))}
 }
 
+// Validate reports whether d is a well-formed SHA-256 digest: 64 lowercase hex
+// characters and a non-negative size. Stores use the hash as a file name, so
+// every digest that arrives from a client must pass this before it touches
+// disk.
+func Validate(d *repb.Digest) error {
+	if d == nil {
+		return fmt.Errorf("missing digest")
+	}
+	h := d.GetHash()
+	if len(h) != sha256.Size*2 {
+		return fmt.Errorf("invalid hash %q: want %d hex characters", h, sha256.Size*2)
+	}
+	for _, c := range h {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return fmt.Errorf("invalid hash %q: want lowercase hex", h)
+		}
+	}
+	if d.GetSizeBytes() < 0 {
+		return fmt.Errorf("invalid size %d", d.GetSizeBytes())
+	}
+	return nil
+}
+
 // Verify reports whether b matches d in both size and SHA-256 hash. It is the
 // cryptographic check every cache and store runs before trusting bytes it did
 // not produce itself, so a tampered or truncated blob never passes as its

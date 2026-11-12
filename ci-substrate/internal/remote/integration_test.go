@@ -25,6 +25,7 @@ import (
 // harness wires an origin and a node-local cache server over real loopback
 // gRPC, the same shape the cas and cascache binaries deploy.
 type harness struct {
+	originAddr  string
 	origin      *remote.Client
 	cacheClient *remote.Client
 	cache       *cache.Cache
@@ -63,7 +64,7 @@ func newHarness(t *testing.T) *harness {
 	})
 	cacheClient := remote.NewClient(dial(t, cacheAddr))
 
-	return &harness{origin: originClient, cacheClient: cacheClient, cache: rtc, cacheDir: cacheDir}
+	return &harness{originAddr: originAddr, origin: originClient, cacheClient: cacheClient, cache: rtc, cacheDir: cacheDir}
 }
 
 func serve(t *testing.T, register func(*grpc.Server)) string {
@@ -209,6 +210,103 @@ func TestActionCacheIsolation(t *testing.T) {
 	}
 	if !ok {
 		t.Error("tenant A could not read its own action result")
+	}
+}
+
+// TestRejectsMalformedDigests checks that a client-supplied hash never reaches
+// the file system as a path: a traversal hash is InvalidArgument at the origin
+// and at the cache, not a read of some other file.
+func TestRejectsMalformedDigests(t *testing.T) {
+	h := newHarness(t)
+	bad := &repb.Digest{Hash: "../../../../etc/passwd", SizeBytes: 10}
+	if _, err := h.origin.Fetch(ctxTok(t, "tok-a"), "shared", bad); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("origin read of traversal hash: code %v, want InvalidArgument", status.Code(err))
+	}
+	if _, err := h.cacheClient.Fetch(ctxTok(t, "tok-a"), "shared", bad); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("cache read of traversal hash: code %v, want InvalidArgument", status.Code(err))
+	}
+	if _, err := h.origin.FindMissing(ctxTok(t, "tok-a"), "shared", []*repb.Digest{bad}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("FindMissing of traversal hash: code %v, want InvalidArgument", status.Code(err))
+	}
+}
+
+// TestBatchBoundary round-trips a blob of exactly MaxBatchBytes, the largest
+// blob the client sends through the batch API, so the batch limit and gRPC's
+// message limit stay consistent.
+func TestBatchBoundary(t *testing.T) {
+	h := newHarness(t)
+	b := bytes.Repeat([]byte{'x'}, remote.MaxBatchBytes)
+	d, err := h.origin.Upload(ctxTok(t, "tok-a"), "shared", b)
+	if err != nil {
+		t.Fatalf("upload at the batch limit: %v", err)
+	}
+	got, err := h.cacheClient.Fetch(ctxTok(t, "tok-b"), "shared", d)
+	if err != nil {
+		t.Fatalf("read at the batch limit: %v", err)
+	}
+	if !bytes.Equal(got, b) {
+		t.Error("round trip at the batch limit returned different bytes")
+	}
+}
+
+// TestByteStreamWriteBounds checks that a write cannot exceed the size its
+// resource name declares, cannot skip offsets, and must finish.
+func TestByteStreamWriteBounds(t *testing.T) {
+	h := newHarness(t)
+	conn := dial(t, h.originAddr)
+	bs := bytestream.NewByteStreamClient(conn)
+	content := []byte("bounded upload")
+	d := digest.FromBytes(content)
+	name := remote.WriteResourceName("shared", "u1", d)
+
+	for _, tc := range []struct {
+		name string
+		reqs []*bytestream.WriteRequest
+	}{{
+		name: "oversized",
+		reqs: []*bytestream.WriteRequest{{ResourceName: name, Data: append(content, 'x'), FinishWrite: true}},
+	}, {
+		name: "offset gap",
+		reqs: []*bytestream.WriteRequest{
+			{ResourceName: name, Data: content[:4]},
+			{ResourceName: name, WriteOffset: 5, Data: content[5:], FinishWrite: true},
+		},
+	}, {
+		name: "unfinished",
+		reqs: []*bytestream.WriteRequest{{ResourceName: name, Data: content}},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			stream, err := bs.Write(ctxTok(t, "tok-a"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, r := range tc.reqs {
+				if err := stream.Send(r); err != nil {
+					break
+				}
+			}
+			if _, err := stream.CloseAndRecv(); status.Code(err) != codes.InvalidArgument {
+				t.Errorf("code %v, want InvalidArgument", status.Code(err))
+			}
+		})
+	}
+}
+
+// TestDigestIsReadCapability pins down the CAS sharing model: blobs are not
+// private to an instance. A tenant that knows a digest can read those bytes
+// through any instance it holds, which is what lets the cache serve one copy
+// to every tenant. What instances keep private is the action cache, the map
+// from an action to its output digests, so a tenant cannot learn the digests
+// of another tenant's outputs.
+func TestDigestIsReadCapability(t *testing.T) {
+	h := newHarness(t)
+	content := []byte("private to tenant A")
+	d, err := h.origin.Upload(ctxTok(t, "tok-a"), "tenant-a", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.cacheClient.Fetch(ctxTok(t, "tok-b"), "tenant-b", d); err != nil {
+		t.Fatalf("tenant B reading content it names by digest: %v", err)
 	}
 }
 

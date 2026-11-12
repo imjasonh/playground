@@ -14,6 +14,7 @@ import (
 	"context"
 	"log/slog"
 	"sync/atomic"
+	"time"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"golang.org/x/sync/singleflight"
@@ -35,6 +36,11 @@ type Stats struct {
 	OriginFetches  int64
 	PoisonRejected int64
 }
+
+// fetchTimeout bounds one origin fetch. A fetch is shared by every caller
+// waiting on the same blob, so it runs detached from the first caller's
+// cancellation and needs its own deadline.
+const fetchTimeout = 5 * time.Minute
 
 // Cache serves blobs from a local store, falling back to an origin.
 type Cache struct {
@@ -58,20 +64,25 @@ func New(local *blob.Store, origin Origin) *Cache {
 // keyed by content alone, which is what lets one cached copy serve every
 // tenant that holds the same bytes.
 //
-// Concurrent Gets for the same digest collapse into a single origin fetch, so
-// a cold blob requested by many actors at once crosses the network once.
+// Concurrent Gets for the same instance and digest collapse into a single
+// origin fetch, so a cold blob requested by many actors at once crosses the
+// network once. The instance is part of that key so a caller never receives
+// bytes from a fetch the origin authorized for a different instance; once the
+// blob is local, every instance shares it.
 func (c *Cache) Get(ctx context.Context, instanceName string, d *repb.Digest) ([]byte, error) {
 	if b, ok := c.localHit(d); ok {
 		c.hits.Add(1)
 		return b, nil
 	}
-	v, err, _ := c.group.Do(digest.Key(d), func() (any, error) {
+	v, err, _ := c.group.Do(instanceName+"\x00"+digest.Key(d), func() (any, error) {
 		// Re-check under the singleflight: a sibling call may have filled it.
 		if b, ok := c.localHit(d); ok {
 			c.hits.Add(1)
 			return b, nil
 		}
-		b, err := c.origin.Fetch(ctx, instanceName, d)
+		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fetchTimeout)
+		defer cancel()
+		b, err := c.origin.Fetch(fctx, instanceName, d)
 		if err != nil {
 			return nil, err
 		}

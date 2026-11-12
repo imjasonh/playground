@@ -6,13 +6,15 @@ import (
 	"strings"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+
+	"github.com/imjasonh/playground/ci-substrate/internal/digest"
 )
 
-// MaxBatchBytes is the largest blob the batch CAS methods accept. Larger blobs
-// must use the ByteStream API. It also decides how the runner routes an
-// upload: small blobs go through BatchUpdateBlobs, large ones through
-// ByteStream.Write.
-const MaxBatchBytes = 4 * 1024 * 1024
+// MaxBatchBytes is the largest total payload the batch CAS methods accept.
+// Larger blobs must use the ByteStream API, and the client routes uploads and
+// reads by it. It sits below gRPC's default 4 MiB message limit because that
+// limit also counts the digests and framing around the data.
+const MaxBatchBytes = 4*1024*1024 - 64*1024
 
 // parseDigest splits a "hash/size" pair from a ByteStream resource name.
 func parseDigest(hash, size string) (*repb.Digest, error) {
@@ -20,7 +22,11 @@ func parseDigest(hash, size string) (*repb.Digest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("bad size %q: %w", size, err)
 	}
-	return &repb.Digest{Hash: hash, SizeBytes: n}, nil
+	d := &repb.Digest{Hash: hash, SizeBytes: n}
+	if err := digest.Validate(d); err != nil {
+		return nil, err
+	}
+	return d, nil
 }
 
 // ParseReadResource parses a ByteStream read resource name of the form

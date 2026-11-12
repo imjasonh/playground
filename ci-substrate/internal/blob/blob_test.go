@@ -3,7 +3,10 @@ package blob
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 
 	"github.com/imjasonh/playground/ci-substrate/internal/digest"
 )
@@ -45,6 +48,54 @@ func TestPutRejectsMismatch(t *testing.T) {
 	}
 	if s.Has(d) {
 		t.Error("rejected Put left a blob behind")
+	}
+}
+
+func TestRejectsMalformedDigests(t *testing.T) {
+	root := t.TempDir()
+	secret := filepath.Join(root, "secret")
+	if err := os.WriteFile(secret, []byte("not a blob"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewStore(filepath.Join(root, "store"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []*repb.Digest{
+		{Hash: "../../secret", SizeBytes: 10},
+		{Hash: "../secret", SizeBytes: 10},
+		{Hash: "ab", SizeBytes: 0},
+		{Hash: strings.Repeat("A", 64), SizeBytes: 0},
+		{Hash: strings.Repeat("a", 64), SizeBytes: -1},
+		nil,
+	} {
+		if _, err := s.Get(d); err == nil || err == ErrNotFound {
+			t.Errorf("Get(%v) = %v, want a validation error", d, err)
+		}
+		if s.Has(d) {
+			t.Errorf("Has(%v) = true", d)
+		}
+		if err := s.Delete(d); err == nil {
+			t.Errorf("Delete(%v) succeeded", d)
+		}
+	}
+	if _, err := os.Stat(secret); err != nil {
+		t.Errorf("file outside the store was touched: %v", err)
+	}
+}
+
+func TestHasChecksSize(t *testing.T) {
+	s, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := []byte("sized")
+	d := digest.FromBytes(b)
+	if err := s.Put(d, b); err != nil {
+		t.Fatal(err)
+	}
+	if s.Has(&repb.Digest{Hash: d.GetHash(), SizeBytes: d.GetSizeBytes() + 1}) {
+		t.Error("Has matched a digest with the wrong size")
 	}
 }
 

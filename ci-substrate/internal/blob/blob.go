@@ -32,27 +32,38 @@ func NewStore(root string) (*Store, error) {
 	return &Store{root: root}, nil
 }
 
-func (s *Store) path(hash string) string {
-	if len(hash) >= 4 {
-		return filepath.Join(s.root, hash[:2], hash[2:4], hash)
+// path maps a validated digest to its file. The hash comes from the client, so
+// it is validated as hex first: anything else could name a path outside root.
+func (s *Store) path(d *repb.Digest) (string, error) {
+	if err := digest.Validate(d); err != nil {
+		return "", err
 	}
-	return filepath.Join(s.root, hash)
+	h := d.GetHash()
+	return filepath.Join(s.root, h[:2], h[2:4], h), nil
 }
 
-// Has reports whether the store holds d, by hash.
+// Has reports whether the store holds d with d's size. A malformed digest is
+// never held.
 func (s *Store) Has(d *repb.Digest) bool {
-	_, err := os.Stat(s.path(d.GetHash()))
-	return err == nil
+	p, err := s.path(d)
+	if err != nil {
+		return false
+	}
+	fi, err := os.Stat(p)
+	return err == nil && fi.Size() == d.GetSizeBytes()
 }
 
 // Put verifies b against d and writes it. The write is atomic: a reader never
 // sees a half-written blob, and a verified blob on disk always matches its
-// name. Putting a blob the store already holds is a no-op.
+// name.
 func (s *Store) Put(d *repb.Digest, b []byte) error {
+	p, err := s.path(d)
+	if err != nil {
+		return err
+	}
 	if err := digest.Verify(d, b); err != nil {
 		return err
 	}
-	p := s.path(d.GetHash())
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
@@ -76,7 +87,11 @@ func (s *Store) Put(d *repb.Digest, b []byte) error {
 // that did not write the blob themselves must verify what they read, because a
 // file on disk can still be corrupted or tampered with after it was stored.
 func (s *Store) Get(d *repb.Digest) ([]byte, error) {
-	b, err := os.ReadFile(s.path(d.GetHash()))
+	p, err := s.path(d)
+	if err != nil {
+		return nil, err
+	}
+	b, err := os.ReadFile(p)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, ErrNotFound
 	}
@@ -85,7 +100,11 @@ func (s *Store) Get(d *repb.Digest) ([]byte, error) {
 
 // Delete removes d from the store if present.
 func (s *Store) Delete(d *repb.Digest) error {
-	err := os.Remove(s.path(d.GetHash()))
+	p, err := s.path(d)
+	if err != nil {
+		return err
+	}
+	err = os.Remove(p)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}

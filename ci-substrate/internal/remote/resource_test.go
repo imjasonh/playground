@@ -3,17 +3,13 @@ package remote
 import (
 	"testing"
 
-	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	"github.com/imjasonh/playground/ci-substrate/internal/digest"
 )
-
-func fakeDigest(hash string, size int64) *repb.Digest {
-	return &repb.Digest{Hash: hash, SizeBytes: size}
-}
 
 func TestReadResourceRoundTrip(t *testing.T) {
 	cases := []string{"", "tenant-a", "shared/nested"}
 	for _, inst := range cases {
-		d := fakeDigest("abc123", 42)
+		d := digest.FromBytes([]byte("read resource"))
 		name := ReadResourceName(inst, d)
 		gotInst, gotD, err := ParseReadResource(name)
 		if err != nil {
@@ -22,14 +18,14 @@ func TestReadResourceRoundTrip(t *testing.T) {
 		if gotInst != inst {
 			t.Errorf("instance = %q, want %q", gotInst, inst)
 		}
-		if gotD.GetHash() != "abc123" || gotD.GetSizeBytes() != 42 {
+		if digest.Key(gotD) != digest.Key(d) {
 			t.Errorf("digest = %v", gotD)
 		}
 	}
 }
 
 func TestWriteResourceRoundTrip(t *testing.T) {
-	d := fakeDigest("deadbeef", 7)
+	d := digest.FromBytes([]byte("write resource"))
 	name := WriteResourceName("tenant-b", "uuid-1", d)
 	gotInst, gotD, err := ParseWriteResource(name)
 	if err != nil {
@@ -38,7 +34,7 @@ func TestWriteResourceRoundTrip(t *testing.T) {
 	if gotInst != "tenant-b" {
 		t.Errorf("instance = %q, want tenant-b", gotInst)
 	}
-	if gotD.GetHash() != "deadbeef" || gotD.GetSizeBytes() != 7 {
+	if digest.Key(gotD) != digest.Key(d) {
 		t.Errorf("digest = %v", gotD)
 	}
 }
@@ -50,7 +46,10 @@ func TestParseRejectsGarbage(t *testing.T) {
 	if _, _, err := ParseWriteResource("tenant-a/blobs/abc/1"); err == nil {
 		t.Error("ParseWriteResource accepted a read-style name")
 	}
-	if _, _, err := ParseReadResource("tenant-a/blobs/abc/notanumber"); err == nil {
+	if _, _, err := ParseReadResource("tenant-a/blobs/" + digest.FromBytes(nil).GetHash() + "/notanumber"); err == nil {
 		t.Error("ParseReadResource accepted a non-numeric size")
+	}
+	if _, _, err := ParseReadResource("tenant-a/blobs/../../etc/passwd/1"); err == nil {
+		t.Error("ParseReadResource accepted a path-traversal hash")
 	}
 }

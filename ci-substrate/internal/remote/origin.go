@@ -52,6 +52,9 @@ func (o *Origin) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlob
 	}
 	var missing []*repb.Digest
 	for _, d := range req.GetBlobDigests() {
+		if err := digest.Validate(d); err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
 		if !o.store.Has(d) {
 			missing = append(missing, d)
 		}
@@ -65,6 +68,13 @@ func (o *Origin) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlob
 func (o *Origin) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
 	if err := o.tenants.Authorize(ctx, req.GetInstanceName()); err != nil {
 		return nil, err
+	}
+	var total int64
+	for _, r := range req.GetRequests() {
+		total += int64(len(r.GetData()))
+	}
+	if total > MaxBatchBytes {
+		return nil, status.Errorf(codes.InvalidArgument, "batch of %d bytes exceeds %d; use ByteStream", total, MaxBatchBytes)
 	}
 	resp := &repb.BatchUpdateBlobsResponse{}
 	for _, r := range req.GetRequests() {
@@ -85,9 +95,21 @@ func (o *Origin) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsReq
 	if err := o.tenants.Authorize(ctx, req.GetInstanceName()); err != nil {
 		return nil, err
 	}
+	var total int64
+	for _, d := range req.GetDigests() {
+		total += d.GetSizeBytes()
+	}
+	if total > MaxBatchBytes {
+		return nil, status.Errorf(codes.InvalidArgument, "batch of %d bytes exceeds %d; use ByteStream", total, MaxBatchBytes)
+	}
 	resp := &repb.BatchReadBlobsResponse{}
 	for _, d := range req.GetDigests() {
 		r := &repb.BatchReadBlobsResponse_Response{Digest: d}
+		if err := digest.Validate(d); err != nil {
+			r.Status = status.New(codes.InvalidArgument, err.Error()).Proto()
+			resp.Responses = append(resp.Responses, r)
+			continue
+		}
 		b, err := o.store.Get(d)
 		switch {
 		case err == blob.ErrNotFound:
@@ -108,6 +130,9 @@ func (o *Origin) GetActionResult(ctx context.Context, req *repb.GetActionResultR
 	if err := o.tenants.Authorize(ctx, req.GetInstanceName()); err != nil {
 		return nil, err
 	}
+	if err := digest.Validate(req.GetActionDigest()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 	o.acMu.RLock()
 	ar, ok := o.actionDB[acKey(req.GetInstanceName(), req.GetActionDigest())]
 	o.acMu.RUnlock()
@@ -121,6 +146,9 @@ func (o *Origin) GetActionResult(ctx context.Context, req *repb.GetActionResultR
 func (o *Origin) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
 	if err := o.tenants.Authorize(ctx, req.GetInstanceName()); err != nil {
 		return nil, err
+	}
+	if err := digest.Validate(req.GetActionDigest()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	if req.GetActionResult() == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing action result")
@@ -167,16 +195,17 @@ func (o *Origin) Read(req *bytestream.ReadRequest, stream bytestream.ByteStream_
 }
 
 // Write stores a blob the client streams in (the ByteStream upload path for
-// large blobs). The assembled blob is verified against the digest in its
-// resource name before it is committed.
+// large blobs). Chunks must arrive in order, and the stream may not carry more
+// bytes than the digest in its resource name declares, so a client cannot make
+// the server buffer more than it was told to expect. The assembled blob is
+// verified against that digest before it is committed.
 func (o *Origin) Write(stream bytestream.ByteStream_WriteServer) error {
 	var (
 		buf      []byte
-		instance string
 		d        *repb.Digest
-		started  bool
+		finished bool
 	)
-	for {
+	for !finished {
 		req, err := stream.Recv()
 		if err == io.EOF {
 			break
@@ -184,7 +213,8 @@ func (o *Origin) Write(stream bytestream.ByteStream_WriteServer) error {
 		if err != nil {
 			return err
 		}
-		if !started {
+		if d == nil {
+			var instance string
 			instance, d, err = ParseWriteResource(req.GetResourceName())
 			if err != nil {
 				return status.Error(codes.InvalidArgument, err.Error())
@@ -192,15 +222,22 @@ func (o *Origin) Write(stream bytestream.ByteStream_WriteServer) error {
 			if err := o.tenants.Authorize(stream.Context(), instance); err != nil {
 				return err
 			}
-			started = true
+			buf = make([]byte, 0, d.GetSizeBytes())
+		}
+		if req.GetWriteOffset() != int64(len(buf)) {
+			return status.Errorf(codes.InvalidArgument, "write offset %d, want %d", req.GetWriteOffset(), len(buf))
+		}
+		if int64(len(buf)+len(req.GetData())) > d.GetSizeBytes() {
+			return status.Errorf(codes.InvalidArgument, "write exceeds declared size %d", d.GetSizeBytes())
 		}
 		buf = append(buf, req.GetData()...)
-		if req.GetFinishWrite() {
-			break
-		}
+		finished = req.GetFinishWrite()
 	}
-	if !started {
+	if d == nil {
 		return status.Error(codes.InvalidArgument, "empty write stream")
+	}
+	if !finished {
+		return status.Error(codes.InvalidArgument, "write stream closed before finish_write")
 	}
 	if err := o.store.Put(d, buf); err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
@@ -212,9 +249,12 @@ func (o *Origin) Write(stream bytestream.ByteStream_WriteServer) error {
 // a write atomically, so a known blob is fully committed and anything else is
 // not found.
 func (o *Origin) QueryWriteStatus(ctx context.Context, req *bytestream.QueryWriteStatusRequest) (*bytestream.QueryWriteStatusResponse, error) {
-	_, d, err := ParseWriteResource(req.GetResourceName())
+	instance, d, err := ParseWriteResource(req.GetResourceName())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if err := o.tenants.Authorize(ctx, instance); err != nil {
+		return nil, err
 	}
 	if !o.store.Has(d) {
 		return nil, status.Error(codes.NotFound, "no such upload")

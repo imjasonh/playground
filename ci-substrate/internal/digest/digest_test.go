@@ -1,6 +1,7 @@
 package digest
 
 import (
+	"strings"
 	"testing"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -39,6 +40,23 @@ func TestVerify(t *testing.T) {
 			t.Error("Verify accepted truncated bytes")
 		}
 	})
+}
+
+func TestValidate(t *testing.T) {
+	if err := Validate(FromBytes([]byte("ok"))); err != nil {
+		t.Errorf("Validate of a real digest: %v", err)
+	}
+	for _, d := range []*repb.Digest{
+		nil,
+		{Hash: "deadbeef", SizeBytes: 1},
+		{Hash: "../" + FromBytes(nil).GetHash()[3:], SizeBytes: 0},
+		{Hash: strings.ToUpper(FromBytes(nil).GetHash()), SizeBytes: 0},
+		{Hash: FromBytes(nil).GetHash(), SizeBytes: -1},
+	} {
+		if err := Validate(d); err == nil {
+			t.Errorf("Validate(%v) accepted a malformed digest", d)
+		}
+	}
 }
 
 func TestKeyIgnoresTenant(t *testing.T) {

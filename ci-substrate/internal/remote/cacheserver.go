@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/imjasonh/playground/ci-substrate/internal/cache"
+	"github.com/imjasonh/playground/ci-substrate/internal/digest"
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
 )
 
@@ -49,11 +50,20 @@ func (s *CacheServer) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlo
 	if err := s.tenants.Authorize(ctx, req.GetInstanceName()); err != nil {
 		return nil, err
 	}
+	var total int64
+	for _, d := range req.GetDigests() {
+		total += d.GetSizeBytes()
+	}
+	if total > MaxBatchBytes {
+		return nil, status.Errorf(codes.InvalidArgument, "batch of %d bytes exceeds %d; use ByteStream", total, MaxBatchBytes)
+	}
 	resp := &repb.BatchReadBlobsResponse{}
 	for _, d := range req.GetDigests() {
 		r := &repb.BatchReadBlobsResponse_Response{Digest: d}
-		if b, err := s.cache.Get(s.originCtx(ctx), req.GetInstanceName(), d); err != nil {
-			r.Status = status.New(status.Code(err), statusMessage(err)).Proto()
+		if err := digest.Validate(d); err != nil {
+			r.Status = status.New(codes.InvalidArgument, err.Error()).Proto()
+		} else if b, err := s.cache.Get(s.originCtx(ctx), req.GetInstanceName(), d); err != nil {
+			r.Status = status.Convert(err).Proto()
 		} else {
 			r.Data = b
 			r.Status = status.New(codes.OK, "").Proto()
@@ -83,11 +93,4 @@ func (s *CacheServer) Read(req *bytestream.ReadRequest, stream bytestream.ByteSt
 // on a miss, so the origin applies the same authorization.
 func (s *CacheServer) originCtx(ctx context.Context) context.Context {
 	return tenant.Outgoing(ctx, tenant.Token(ctx))
-}
-
-func statusMessage(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }
