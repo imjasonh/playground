@@ -103,6 +103,12 @@ jobs:
           python3 scripts/gen-sha256.py
           git diff --exit-code C3BootProofs/Proofs/
 
+      - name: Check the generated curve25519 field proofs
+        working-directory: c3-boot-proofs
+        run: |
+          python3 scripts/gen-fe25519.py
+          git diff --exit-code C3BootProofs/Proofs/
+
       - name: Install Espressif QEMU
         run: |
           sudo apt-get update

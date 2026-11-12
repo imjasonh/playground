@@ -12,6 +12,7 @@ import C3BootProofs.Proofs.Sha256Loop
 import C3BootProofs.Proofs.P384Add
 import C3BootProofs.Proofs.P384Double
 import C3BootProofs.Proofs.P384Sub
+import C3BootProofs.Proofs.FeReduce
 import C3BootProofs.Proofs.ImageHelpers
 import C3BootProofs.Proofs.Block
 import C3BootProofs.Proofs.ImageCalls
@@ -1417,6 +1418,33 @@ theorem exists_p384Double_machine :
     rfl, rfl, rfl, rfl, by decide, rfl⟩
   all_goals (unfold RV32.CodeIn; decide +kernel)
 
+/-- Memory with the current image's `FieldElement2625::reduce` where the image
+loads it, and zeros elsewhere. -/
+def witnessMemFeReduce (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.feReduceAddress).toNat < Image.feReduceCode.length then
+    RV32.byteAt Image.feReduceCode (a - BitVec.ofNat 32 Image.feReduceAddress).toNat
+  else 0
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 4000000 in
+/-- A machine that calls `FieldElement2625::reduce` with the result at
+`0x3FCC5000`, the limbs at `0x3FCC6000`, and the stack at `0x3FCC8000` meets
+`feReduce_correct`'s hypotheses. -/
+theorem exists_feReduce_machine :
+    ∃ (m : RV32.Machine) (P sp0 out zp retAddr : RV32.Word), RV32.FREnv m.mem P sp0 out zp ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = zp ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.feReduceAddress, witnessMemFeReduce⟩,
+    BitVec.ofNat 32 Image.feReduceAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0,
+    ⟨by decide, ?_, by decide, by decide, by decide, by decide,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩,
+    rfl, rfl, rfl, rfl, by decide, rfl⟩
+  unfold RV32.CodeIn; decide +kernel
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -1769,3 +1797,9 @@ end C3
 
 /-- info: 'C3.exists_p384Sub_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_p384Sub_machine
+
+/-- info: 'C3.RV32.feReduce_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.feReduce_correct
+
+/-- info: 'C3.exists_feReduce_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_feReduce_machine
