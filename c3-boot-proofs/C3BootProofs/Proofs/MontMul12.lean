@@ -2,7 +2,7 @@ import C3BootProofs.Proofs.FieldWideArith
 import C3BootProofs.Proofs.FieldSub
 import C3BootProofs.Proofs.MemcpyAny
 import C3BootProofs.Proofs.MemsetAny
-import C3BootProofs.Image.BootloaderV0
+import C3BootProofs.Image.Bootloader
 
 /-!
 # P-384's Montgomery multiplication, as compiled
@@ -20,133 +20,159 @@ so the loop body is stated once, over its registers (`mmBody`).
 
 namespace C3.RV32
 
-open C3.ImageV0
+open C3.Image
 
 section
 
 set_option maxRecDepth 20000
 
 theorem mm_at_0 : fetchRel mulMont12Code 0x0 = some (.aluImm .add sp sp 0xFFFFFF60, 2) := by decide
-theorem mm_at_2 : fetchRel mulMont12Code 0x2 = some (.auipc (5 : Fin 32) 0xD000, 4) := by decide
-theorem mm_at_6 : fetchRel mulMont12Code 0x6 = some (.jalr (5 : Fin 32) (5 : Fin 32) 0xFFFFFB98, 4) := by decide
-theorem mm_at_a : fetchRel mulMont12Code 0xA = some (.alu .add (19 : Fin 32) x0 a4, 2) := by decide
-theorem mm_at_c : fetchRel mulMont12Code 0xC = some (.alu .add (23 : Fin 32) x0 a3, 2) := by decide
-theorem mm_at_e : fetchRel mulMont12Code 0xE = some (.alu .add (21 : Fin 32) x0 a2, 2) := by decide
-theorem mm_at_10 : fetchRel mulMont12Code 0x10 = some (.alu .add (20 : Fin 32) x0 a1, 2) := by decide
-theorem mm_at_12 : fetchRel mulMont12Code 0x12 = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
-theorem mm_at_14 : fetchRel mulMont12Code 0x14 = some (.aluImm .add a0 sp 0xC, 2) := by decide
-theorem mm_at_16 : fetchRel mulMont12Code 0x16 = some (.aluImm .add a2 x0 0x30, 4) := by decide
-theorem mm_at_1a : fetchRel mulMont12Code 0x1A = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem mm_at_1c : fetchRel mulMont12Code 0x1C = some (.auipc ra 0xD000, 4) := by decide
-theorem mm_at_20 : fetchRel mulMont12Code 0x20 = some (.jalr ra ra 0x2D8, 4) := by decide
-theorem mm_at_24 : fetchRel mulMont12Code 0x24 = some (.auipc (5 : Fin 32) 0xD000, 4) := by decide
-theorem mm_at_28 : fetchRel mulMont12Code 0x28 = some (.jalr (5 : Fin 32) (5 : Fin 32) 0x1C, 4) := by decide
-theorem mm_at_2c : fetchRel mulMont12Code 0x2C = some (.aluImm .add (5 : Fin 32) x0 0xC, 2) := by decide
-theorem mm_at_2e : fetchRel mulMont12Code 0x2E = some (.branch .beq (5 : Fin 32) x0 0xB4, 4) := by decide
-theorem mm_at_32 : fetchRel mulMont12Code 0x32 = some (.aluImm .sll a0 (29 : Fin 32) 0x2, 4) := by decide
-theorem mm_at_36 : fetchRel mulMont12Code 0x36 = some (.alu .add a0 a0 (20 : Fin 32), 2) := by decide
-theorem mm_at_38 : fetchRel mulMont12Code 0x38 = some (.load .lw (30 : Fin 32) a0 0x0, 4) := by decide
-theorem mm_at_3c : fetchRel mulMont12Code 0x3C = some (.alu .mul a0 (6 : Fin 32) (30 : Fin 32), 4) := by decide
-theorem mm_at_40 : fetchRel mulMont12Code 0x40 = some (.load .lw a1 sp 0xC, 2) := by decide
-theorem mm_at_42 : fetchRel mulMont12Code 0x42 = some (.alu .add a1 a1 a0, 2) := by decide
-theorem mm_at_44 : fetchRel mulMont12Code 0x44 = some (.alu .mul (31 : Fin 32) (19 : Fin 32) a1, 4) := by decide
-theorem mm_at_48 : fetchRel mulMont12Code 0x48 = some (.alu .mulhu a2 (6 : Fin 32) (30 : Fin 32), 4) := by decide
-theorem mm_at_4c : fetchRel mulMont12Code 0x4C = some (.alu .mul a3 (31 : Fin 32) (7 : Fin 32), 4) := by decide
-theorem mm_at_50 : fetchRel mulMont12Code 0x50 = some (.alu .mulhu (9 : Fin 32) (31 : Fin 32) (7 : Fin 32), 4) := by decide
-theorem mm_at_54 : fetchRel mulMont12Code 0x54 = some (.alu .sltu a0 a1 a0, 4) := by decide
-theorem mm_at_58 : fetchRel mulMont12Code 0x58 = some (.alu .add a0 a0 a2, 2) := by decide
-theorem mm_at_5a : fetchRel mulMont12Code 0x5A = some (.alu .add a1 a1 a3, 2) := by decide
-theorem mm_at_5c : fetchRel mulMont12Code 0x5C = some (.alu .add a0 a0 (9 : Fin 32), 2) := by decide
-theorem mm_at_5e : fetchRel mulMont12Code 0x5E = some (.alu .sltu a2 a1 a3, 4) := by decide
-theorem mm_at_62 : fetchRel mulMont12Code 0x62 = some (.aluImm .add (25 : Fin 32) x0 0xB, 2) := by decide
-theorem mm_at_64 : fetchRel mulMont12Code 0x64 = some (.alu .add a2 a2 a0, 2) := by decide
-theorem mm_at_66 : fetchRel mulMont12Code 0x66 = some (.alu .sltu a3 a0 (9 : Fin 32), 4) := by decide
-theorem mm_at_6a : fetchRel mulMont12Code 0x6A = some (.alu .sltu a0 a2 a0, 4) := by decide
-theorem mm_at_6e : fetchRel mulMont12Code 0x6E = some (.alu .add (26 : Fin 32) x0 (17 : Fin 32), 2) := by decide
-theorem mm_at_70 : fetchRel mulMont12Code 0x70 = some (.alu .add (24 : Fin 32) a3 a0, 4) := by decide
-theorem mm_at_74 : fetchRel mulMont12Code 0x74 = some (.alu .add a3 x0 a6, 2) := by decide
-theorem mm_at_76 : fetchRel mulMont12Code 0x76 = some (.alu .add (9 : Fin 32) x0 (21 : Fin 32), 2) := by decide
-theorem mm_at_78 : fetchRel mulMont12Code 0x78 = some (.branch .beq (25 : Fin 32) x0 0x52, 4) := by decide
-theorem mm_at_7c : fetchRel mulMont12Code 0x7C = some (.load .lw a4 (26 : Fin 32) 0x0, 4) := by decide
-theorem mm_at_80 : fetchRel mulMont12Code 0x80 = some (.load .lw a5 (9 : Fin 32) 0x0, 2) := by decide
-theorem mm_at_82 : fetchRel mulMont12Code 0x82 = some (.alu .mulhu a0 a4 (31 : Fin 32), 4) := by decide
-theorem mm_at_86 : fetchRel mulMont12Code 0x86 = some (.alu .mul (8 : Fin 32) a5 (30 : Fin 32), 4) := by decide
-theorem mm_at_8a : fetchRel mulMont12Code 0x8A = some (.alu .mul a4 a4 (31 : Fin 32), 4) := by decide
-theorem mm_at_8e : fetchRel mulMont12Code 0x8E = some (.load .lw a1 a3 0x0, 2) := by decide
-theorem mm_at_90 : fetchRel mulMont12Code 0x90 = some (.alu .mulhu a5 a5 (30 : Fin 32), 4) := by decide
-theorem mm_at_94 : fetchRel mulMont12Code 0x94 = some (.alu .add a0 a0 (24 : Fin 32), 2) := by decide
-theorem mm_at_96 : fetchRel mulMont12Code 0x96 = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0x4, 2) := by decide
-theorem mm_at_98 : fetchRel mulMont12Code 0x98 = some (.alu .add a1 a1 (8 : Fin 32), 2) := by decide
-theorem mm_at_9a : fetchRel mulMont12Code 0x9A = some (.alu .add a2 a2 a4, 2) := by decide
-theorem mm_at_9c : fetchRel mulMont12Code 0x9C = some (.alu .sltu (8 : Fin 32) a1 (8 : Fin 32), 4) := by decide
-theorem mm_at_a0 : fetchRel mulMont12Code 0xA0 = some (.alu .sltu a4 a2 a4, 4) := by decide
-theorem mm_at_a4 : fetchRel mulMont12Code 0xA4 = some (.alu .add a1 a1 a2, 2) := by decide
-theorem mm_at_a6 : fetchRel mulMont12Code 0xA6 = some (.alu .add a5 a5 (8 : Fin 32), 2) := by decide
-theorem mm_at_a8 : fetchRel mulMont12Code 0xA8 = some (.alu .add a0 a0 a4, 2) := by decide
-theorem mm_at_aa : fetchRel mulMont12Code 0xAA = some (.alu .sltu a2 a1 a2, 4) := by decide
-theorem mm_at_ae : fetchRel mulMont12Code 0xAE = some (.alu .add a5 a5 a0, 2) := by decide
-theorem mm_at_b0 : fetchRel mulMont12Code 0xB0 = some (.store .sw a3 a1 0xFFFFFFFC, 4) := by decide
-theorem mm_at_b4 : fetchRel mulMont12Code 0xB4 = some (.alu .add a2 a2 a5, 2) := by decide
-theorem mm_at_b6 : fetchRel mulMont12Code 0xB6 = some (.alu .sltu (24 : Fin 32) a5 a0, 4) := by decide
-theorem mm_at_ba : fetchRel mulMont12Code 0xBA = some (.alu .sltu a0 a2 a5, 4) := by decide
-theorem mm_at_be : fetchRel mulMont12Code 0xBE = some (.aluImm .add a3 a3 0x4, 2) := by decide
-theorem mm_at_c0 : fetchRel mulMont12Code 0xC0 = some (.alu .add (24 : Fin 32) (24 : Fin 32) a0, 2) := by decide
-theorem mm_at_c2 : fetchRel mulMont12Code 0xC2 = some (.aluImm .add (26 : Fin 32) (26 : Fin 32) 0x4, 2) := by decide
-theorem mm_at_c4 : fetchRel mulMont12Code 0xC4 = some (.aluImm .add (25 : Fin 32) (25 : Fin 32) 0xFFFFFFFF, 2) := by decide
-theorem mm_at_c6 : fetchRel mulMont12Code 0xC6 = some (.branch .bne (25 : Fin 32) x0 0xFFFFFFB6, 4) := by decide
-theorem mm_at_ca : fetchRel mulMont12Code 0xCA = some (.alu .add (22 : Fin 32) (22 : Fin 32) a2, 2) := by decide
-theorem mm_at_cc : fetchRel mulMont12Code 0xCC = some (.alu .add a0 (24 : Fin 32) (28 : Fin 32), 4) := by decide
-theorem mm_at_d0 : fetchRel mulMont12Code 0xD0 = some (.alu .sltu a1 (22 : Fin 32) a2, 4) := by decide
-theorem mm_at_d4 : fetchRel mulMont12Code 0xD4 = some (.store .sw sp (22 : Fin 32) 0x38, 2) := by decide
-theorem mm_at_d6 : fetchRel mulMont12Code 0xD6 = some (.alu .add (22 : Fin 32) a0 a1, 4) := by decide
-theorem mm_at_da : fetchRel mulMont12Code 0xDA = some (.aluImm .add (29 : Fin 32) (29 : Fin 32) 0x1, 2) := by decide
-theorem mm_at_dc : fetchRel mulMont12Code 0xDC = some (.aluImm .add (28 : Fin 32) x0 0x0, 2) := by decide
-theorem mm_at_de : fetchRel mulMont12Code 0xDE = some (.branch .bne (29 : Fin 32) (5 : Fin 32) 0xFFFFFF54, 4) := by decide
-theorem mm_at_e2 : fetchRel mulMont12Code 0xE2 = some (.aluImm .add a0 sp 0x3C, 2) := by decide
-theorem mm_at_e4 : fetchRel mulMont12Code 0xE4 = some (.aluImm .add a2 x0 0x30, 4) := by decide
-theorem mm_at_e8 : fetchRel mulMont12Code 0xE8 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem mm_at_ea : fetchRel mulMont12Code 0xEA = some (.aluImm .add (19 : Fin 32) sp 0x3C, 4) := by decide
-theorem mm_at_ee : fetchRel mulMont12Code 0xEE = some (.auipc ra 0xD000, 4) := by decide
-theorem mm_at_f2 : fetchRel mulMont12Code 0xF2 = some (.jalr ra ra 0x206, 4) := by decide
-theorem mm_at_f6 : fetchRel mulMont12Code 0xF6 = some (.aluImm .add a2 x0 0x0, 2) := by decide
-theorem mm_at_f8 : fetchRel mulMont12Code 0xF8 = some (.aluImm .add (9 : Fin 32) sp 0xC, 2) := by decide
-theorem mm_at_fa : fetchRel mulMont12Code 0xFA = some (.aluImm .add (8 : Fin 32) x0 0xC, 2) := by decide
-theorem mm_at_fc : fetchRel mulMont12Code 0xFC = some (.branch .beq (8 : Fin 32) x0 0x20, 2) := by decide
-theorem mm_at_fe : fetchRel mulMont12Code 0xFE = some (.load .lw a0 (9 : Fin 32) 0x0, 2) := by decide
-theorem mm_at_100 : fetchRel mulMont12Code 0x100 = some (.load .lw a1 (23 : Fin 32) 0x0, 4) := by decide
-theorem mm_at_104 : fetchRel mulMont12Code 0x104 = some (.auipc ra 0xFFFF0000, 4) := by decide
-theorem mm_at_108 : fetchRel mulMont12Code 0x108 = some (.jalr ra ra 0xFFFFFE86, 4) := by decide
-theorem mm_at_10c : fetchRel mulMont12Code 0x10C = some (.alu .add a2 x0 a1, 2) := by decide
-theorem mm_at_10e : fetchRel mulMont12Code 0x10E = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0x4, 2) := by decide
-theorem mm_at_110 : fetchRel mulMont12Code 0x110 = some (.store .sw (19 : Fin 32) a0 0x0, 4) := by decide
-theorem mm_at_114 : fetchRel mulMont12Code 0x114 = some (.aluImm .add (23 : Fin 32) (23 : Fin 32) 0x4, 2) := by decide
-theorem mm_at_116 : fetchRel mulMont12Code 0x116 = some (.aluImm .add (19 : Fin 32) (19 : Fin 32) 0x4, 2) := by decide
-theorem mm_at_118 : fetchRel mulMont12Code 0x118 = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFFFF, 2) := by decide
-theorem mm_at_11a : fetchRel mulMont12Code 0x11A = some (.branch .bne (8 : Fin 32) x0 0xFFFFFFE4, 2) := by decide
-theorem mm_at_11c : fetchRel mulMont12Code 0x11C = some (.store .sw sp (22 : Fin 32) 0x6C, 2) := by decide
-theorem mm_at_11e : fetchRel mulMont12Code 0x11E = some (.aluImm .add a0 sp 0x6C, 2) := by decide
-theorem mm_at_120 : fetchRel mulMont12Code 0x120 = some (.load .lw a0 sp 0x6C, 2) := by decide
-theorem mm_at_122 : fetchRel mulMont12Code 0x122 = some (.aluImm .sltu (9 : Fin 32) a0 0x1, 4) := by decide
-theorem mm_at_126 : fetchRel mulMont12Code 0x126 = some (.alu .and (9 : Fin 32) (9 : Fin 32) a2, 2) := by decide
-theorem mm_at_128 : fetchRel mulMont12Code 0x128 = some (.store .sb sp (9 : Fin 32) 0x6C, 4) := by decide
-theorem mm_at_12c : fetchRel mulMont12Code 0x12C = some (.aluImm .add a0 sp 0x6C, 2) := by decide
-theorem mm_at_12e : fetchRel mulMont12Code 0x12E = some (.load .lbu a0 sp 0x6C, 4) := by decide
-theorem mm_at_132 : fetchRel mulMont12Code 0x132 = some (.aluImm .add a0 a0 0xFFFFFFFF, 2) := by decide
-theorem mm_at_134 : fetchRel mulMont12Code 0x134 = some (.alu .and a2 a2 a0, 2) := by decide
-theorem mm_at_136 : fetchRel mulMont12Code 0x136 = some (.alu .add a0 x0 (22 : Fin 32), 2) := by decide
-theorem mm_at_138 : fetchRel mulMont12Code 0x138 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem mm_at_13a : fetchRel mulMont12Code 0x13A = some (.auipc ra 0xFFFF0000, 4) := by decide
-theorem mm_at_13e : fetchRel mulMont12Code 0x13E = some (.jalr ra ra 0xFFFFFE50, 4) := by decide
-theorem mm_at_142 : fetchRel mulMont12Code 0x142 = some (.aluImm .add a1 sp 0x3C, 2) := by decide
-theorem mm_at_144 : fetchRel mulMont12Code 0x144 = some (.aluImm .add a2 sp 0xC, 2) := by decide
-theorem mm_at_146 : fetchRel mulMont12Code 0x146 = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
-theorem mm_at_148 : fetchRel mulMont12Code 0x148 = some (.alu .add a3 x0 (9 : Fin 32), 2) := by decide
-theorem mm_at_14a : fetchRel mulMont12Code 0x14A = some (.auipc ra 0x0, 4) := by decide
-theorem mm_at_14e : fetchRel mulMont12Code 0x14E = some (.jalr ra ra 0x14, 4) := by decide
-theorem mm_at_152 : fetchRel mulMont12Code 0x152 = some (.auipc (5 : Fin 32) 0xD000, 4) := by decide
-theorem mm_at_156 : fetchRel mulMont12Code 0x156 = some (.jalr (5 : Fin 32) (5 : Fin 32) 0xFFFFFA96, 4) := by decide
-theorem mm_at_15a : fetchRel mulMont12Code 0x15A = some (.aluImm .add sp sp 0xA0, 2) := by decide
-theorem mm_at_15c : fetchRel mulMont12Code 0x15C = some (.jalr x0 ra 0x0, 2) := by decide
+theorem mm_at_2 : fetchRel mulMont12Code 0x2 = some (.store .sw sp ra 0x9C, 2) := by decide
+theorem mm_at_4 : fetchRel mulMont12Code 0x4 = some (.store .sw sp (8 : Fin 32) 0x98, 2) := by decide
+theorem mm_at_6 : fetchRel mulMont12Code 0x6 = some (.store .sw sp (9 : Fin 32) 0x94, 2) := by decide
+theorem mm_at_8 : fetchRel mulMont12Code 0x8 = some (.store .sw sp (18 : Fin 32) 0x90, 2) := by decide
+theorem mm_at_a : fetchRel mulMont12Code 0xA = some (.store .sw sp (19 : Fin 32) 0x8C, 2) := by decide
+theorem mm_at_c : fetchRel mulMont12Code 0xC = some (.store .sw sp (20 : Fin 32) 0x88, 2) := by decide
+theorem mm_at_e : fetchRel mulMont12Code 0xE = some (.store .sw sp (21 : Fin 32) 0x84, 2) := by decide
+theorem mm_at_10 : fetchRel mulMont12Code 0x10 = some (.store .sw sp (22 : Fin 32) 0x80, 2) := by decide
+theorem mm_at_12 : fetchRel mulMont12Code 0x12 = some (.store .sw sp (23 : Fin 32) 0x7C, 2) := by decide
+theorem mm_at_14 : fetchRel mulMont12Code 0x14 = some (.store .sw sp (24 : Fin 32) 0x78, 2) := by decide
+theorem mm_at_16 : fetchRel mulMont12Code 0x16 = some (.store .sw sp (25 : Fin 32) 0x74, 2) := by decide
+theorem mm_at_18 : fetchRel mulMont12Code 0x18 = some (.store .sw sp (26 : Fin 32) 0x70, 2) := by decide
+theorem mm_at_1a : fetchRel mulMont12Code 0x1A = some (.alu .add (19 : Fin 32) x0 a4, 2) := by decide
+theorem mm_at_1c : fetchRel mulMont12Code 0x1C = some (.alu .add (23 : Fin 32) x0 a3, 2) := by decide
+theorem mm_at_1e : fetchRel mulMont12Code 0x1E = some (.alu .add (21 : Fin 32) x0 a2, 2) := by decide
+theorem mm_at_20 : fetchRel mulMont12Code 0x20 = some (.alu .add (20 : Fin 32) x0 a1, 2) := by decide
+theorem mm_at_22 : fetchRel mulMont12Code 0x22 = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
+theorem mm_at_24 : fetchRel mulMont12Code 0x24 = some (.aluImm .add a0 sp 0xC, 2) := by decide
+theorem mm_at_26 : fetchRel mulMont12Code 0x26 = some (.aluImm .add a2 x0 0x30, 4) := by decide
+theorem mm_at_2a : fetchRel mulMont12Code 0x2A = some (.aluImm .add a1 x0 0x0, 2) := by decide
+theorem mm_at_2c : fetchRel mulMont12Code 0x2C = some (.auipc ra 0x2000, 4) := by decide
+theorem mm_at_30 : fetchRel mulMont12Code 0x30 = some (.jalr ra ra 0xFFFFFAE0, 4) := by decide
+theorem mm_at_34 : fetchRel mulMont12Code 0x34 = some (.aluImm .add (22 : Fin 32) x0 0x0, 2) := by decide
+theorem mm_at_36 : fetchRel mulMont12Code 0x36 = some (.aluImm .add (28 : Fin 32) x0 0x0, 2) := by decide
+theorem mm_at_38 : fetchRel mulMont12Code 0x38 = some (.aluImm .add (29 : Fin 32) x0 0x0, 2) := by decide
+theorem mm_at_3a : fetchRel mulMont12Code 0x3A = some (.load .lw (6 : Fin 32) (21 : Fin 32) 0x0, 4) := by decide
+theorem mm_at_3e : fetchRel mulMont12Code 0x3E = some (.load .lw (7 : Fin 32) (23 : Fin 32) 0x0, 4) := by decide
+theorem mm_at_42 : fetchRel mulMont12Code 0x42 = some (.aluImm .add (21 : Fin 32) (21 : Fin 32) 0x4, 2) := by decide
+theorem mm_at_44 : fetchRel mulMont12Code 0x44 = some (.aluImm .add a6 sp 0x10, 4) := by decide
+theorem mm_at_48 : fetchRel mulMont12Code 0x48 = some (.aluImm .add (17 : Fin 32) (23 : Fin 32) 0x4, 4) := by decide
+theorem mm_at_4c : fetchRel mulMont12Code 0x4C = some (.aluImm .add (5 : Fin 32) x0 0xC, 2) := by decide
+theorem mm_at_4e : fetchRel mulMont12Code 0x4E = some (.branch .beq (5 : Fin 32) x0 0xB4, 4) := by decide
+theorem mm_at_52 : fetchRel mulMont12Code 0x52 = some (.aluImm .sll a0 (29 : Fin 32) 0x2, 4) := by decide
+theorem mm_at_56 : fetchRel mulMont12Code 0x56 = some (.alu .add a0 a0 (20 : Fin 32), 2) := by decide
+theorem mm_at_58 : fetchRel mulMont12Code 0x58 = some (.load .lw (30 : Fin 32) a0 0x0, 4) := by decide
+theorem mm_at_5c : fetchRel mulMont12Code 0x5C = some (.alu .mul a0 (6 : Fin 32) (30 : Fin 32), 4) := by decide
+theorem mm_at_60 : fetchRel mulMont12Code 0x60 = some (.load .lw a1 sp 0xC, 2) := by decide
+theorem mm_at_62 : fetchRel mulMont12Code 0x62 = some (.alu .add a1 a1 a0, 2) := by decide
+theorem mm_at_64 : fetchRel mulMont12Code 0x64 = some (.alu .mul (31 : Fin 32) (19 : Fin 32) a1, 4) := by decide
+theorem mm_at_68 : fetchRel mulMont12Code 0x68 = some (.alu .mulhu a2 (6 : Fin 32) (30 : Fin 32), 4) := by decide
+theorem mm_at_6c : fetchRel mulMont12Code 0x6C = some (.alu .mul a3 (31 : Fin 32) (7 : Fin 32), 4) := by decide
+theorem mm_at_70 : fetchRel mulMont12Code 0x70 = some (.alu .mulhu (9 : Fin 32) (31 : Fin 32) (7 : Fin 32), 4) := by decide
+theorem mm_at_74 : fetchRel mulMont12Code 0x74 = some (.alu .sltu a0 a1 a0, 4) := by decide
+theorem mm_at_78 : fetchRel mulMont12Code 0x78 = some (.alu .add a0 a0 a2, 2) := by decide
+theorem mm_at_7a : fetchRel mulMont12Code 0x7A = some (.alu .add a1 a1 a3, 2) := by decide
+theorem mm_at_7c : fetchRel mulMont12Code 0x7C = some (.alu .add a0 a0 (9 : Fin 32), 2) := by decide
+theorem mm_at_7e : fetchRel mulMont12Code 0x7E = some (.alu .sltu a2 a1 a3, 4) := by decide
+theorem mm_at_82 : fetchRel mulMont12Code 0x82 = some (.aluImm .add (25 : Fin 32) x0 0xB, 2) := by decide
+theorem mm_at_84 : fetchRel mulMont12Code 0x84 = some (.alu .add a2 a2 a0, 2) := by decide
+theorem mm_at_86 : fetchRel mulMont12Code 0x86 = some (.alu .sltu a3 a0 (9 : Fin 32), 4) := by decide
+theorem mm_at_8a : fetchRel mulMont12Code 0x8A = some (.alu .sltu a0 a2 a0, 4) := by decide
+theorem mm_at_8e : fetchRel mulMont12Code 0x8E = some (.alu .add (26 : Fin 32) x0 (17 : Fin 32), 2) := by decide
+theorem mm_at_90 : fetchRel mulMont12Code 0x90 = some (.alu .add (24 : Fin 32) a3 a0, 4) := by decide
+theorem mm_at_94 : fetchRel mulMont12Code 0x94 = some (.alu .add a3 x0 a6, 2) := by decide
+theorem mm_at_96 : fetchRel mulMont12Code 0x96 = some (.alu .add (9 : Fin 32) x0 (21 : Fin 32), 2) := by decide
+theorem mm_at_98 : fetchRel mulMont12Code 0x98 = some (.branch .beq (25 : Fin 32) x0 0x52, 4) := by decide
+theorem mm_at_9c : fetchRel mulMont12Code 0x9C = some (.load .lw a4 (26 : Fin 32) 0x0, 4) := by decide
+theorem mm_at_a0 : fetchRel mulMont12Code 0xA0 = some (.load .lw a5 (9 : Fin 32) 0x0, 2) := by decide
+theorem mm_at_a2 : fetchRel mulMont12Code 0xA2 = some (.alu .mulhu a0 a4 (31 : Fin 32), 4) := by decide
+theorem mm_at_a6 : fetchRel mulMont12Code 0xA6 = some (.alu .mul (8 : Fin 32) a5 (30 : Fin 32), 4) := by decide
+theorem mm_at_aa : fetchRel mulMont12Code 0xAA = some (.alu .mul a4 a4 (31 : Fin 32), 4) := by decide
+theorem mm_at_ae : fetchRel mulMont12Code 0xAE = some (.load .lw a1 a3 0x0, 2) := by decide
+theorem mm_at_b0 : fetchRel mulMont12Code 0xB0 = some (.alu .mulhu a5 a5 (30 : Fin 32), 4) := by decide
+theorem mm_at_b4 : fetchRel mulMont12Code 0xB4 = some (.alu .add a0 a0 (24 : Fin 32), 2) := by decide
+theorem mm_at_b6 : fetchRel mulMont12Code 0xB6 = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0x4, 2) := by decide
+theorem mm_at_b8 : fetchRel mulMont12Code 0xB8 = some (.alu .add a1 a1 (8 : Fin 32), 2) := by decide
+theorem mm_at_ba : fetchRel mulMont12Code 0xBA = some (.alu .add a2 a2 a4, 2) := by decide
+theorem mm_at_bc : fetchRel mulMont12Code 0xBC = some (.alu .sltu (8 : Fin 32) a1 (8 : Fin 32), 4) := by decide
+theorem mm_at_c0 : fetchRel mulMont12Code 0xC0 = some (.alu .sltu a4 a2 a4, 4) := by decide
+theorem mm_at_c4 : fetchRel mulMont12Code 0xC4 = some (.alu .add a1 a1 a2, 2) := by decide
+theorem mm_at_c6 : fetchRel mulMont12Code 0xC6 = some (.alu .add a5 a5 (8 : Fin 32), 2) := by decide
+theorem mm_at_c8 : fetchRel mulMont12Code 0xC8 = some (.alu .add a0 a0 a4, 2) := by decide
+theorem mm_at_ca : fetchRel mulMont12Code 0xCA = some (.alu .sltu a2 a1 a2, 4) := by decide
+theorem mm_at_ce : fetchRel mulMont12Code 0xCE = some (.alu .add a5 a5 a0, 2) := by decide
+theorem mm_at_d0 : fetchRel mulMont12Code 0xD0 = some (.store .sw a3 a1 0xFFFFFFFC, 4) := by decide
+theorem mm_at_d4 : fetchRel mulMont12Code 0xD4 = some (.alu .add a2 a2 a5, 2) := by decide
+theorem mm_at_d6 : fetchRel mulMont12Code 0xD6 = some (.alu .sltu (24 : Fin 32) a5 a0, 4) := by decide
+theorem mm_at_da : fetchRel mulMont12Code 0xDA = some (.alu .sltu a0 a2 a5, 4) := by decide
+theorem mm_at_de : fetchRel mulMont12Code 0xDE = some (.aluImm .add a3 a3 0x4, 2) := by decide
+theorem mm_at_e0 : fetchRel mulMont12Code 0xE0 = some (.alu .add (24 : Fin 32) (24 : Fin 32) a0, 2) := by decide
+theorem mm_at_e2 : fetchRel mulMont12Code 0xE2 = some (.aluImm .add (26 : Fin 32) (26 : Fin 32) 0x4, 2) := by decide
+theorem mm_at_e4 : fetchRel mulMont12Code 0xE4 = some (.aluImm .add (25 : Fin 32) (25 : Fin 32) 0xFFFFFFFF, 2) := by decide
+theorem mm_at_e6 : fetchRel mulMont12Code 0xE6 = some (.branch .bne (25 : Fin 32) x0 0xFFFFFFB6, 4) := by decide
+theorem mm_at_ea : fetchRel mulMont12Code 0xEA = some (.alu .add (22 : Fin 32) (22 : Fin 32) a2, 2) := by decide
+theorem mm_at_ec : fetchRel mulMont12Code 0xEC = some (.alu .add a0 (24 : Fin 32) (28 : Fin 32), 4) := by decide
+theorem mm_at_f0 : fetchRel mulMont12Code 0xF0 = some (.alu .sltu a1 (22 : Fin 32) a2, 4) := by decide
+theorem mm_at_f4 : fetchRel mulMont12Code 0xF4 = some (.store .sw sp (22 : Fin 32) 0x38, 2) := by decide
+theorem mm_at_f6 : fetchRel mulMont12Code 0xF6 = some (.alu .add (22 : Fin 32) a0 a1, 4) := by decide
+theorem mm_at_fa : fetchRel mulMont12Code 0xFA = some (.aluImm .add (29 : Fin 32) (29 : Fin 32) 0x1, 2) := by decide
+theorem mm_at_fc : fetchRel mulMont12Code 0xFC = some (.aluImm .add (28 : Fin 32) x0 0x0, 2) := by decide
+theorem mm_at_fe : fetchRel mulMont12Code 0xFE = some (.branch .bne (29 : Fin 32) (5 : Fin 32) 0xFFFFFF54, 4) := by decide
+theorem mm_at_102 : fetchRel mulMont12Code 0x102 = some (.aluImm .add a0 sp 0x3C, 2) := by decide
+theorem mm_at_104 : fetchRel mulMont12Code 0x104 = some (.aluImm .add a2 x0 0x30, 4) := by decide
+theorem mm_at_108 : fetchRel mulMont12Code 0x108 = some (.aluImm .add a1 x0 0x0, 2) := by decide
+theorem mm_at_10a : fetchRel mulMont12Code 0x10A = some (.aluImm .add (19 : Fin 32) sp 0x3C, 4) := by decide
+theorem mm_at_10e : fetchRel mulMont12Code 0x10E = some (.auipc ra 0x2000, 4) := by decide
+theorem mm_at_112 : fetchRel mulMont12Code 0x112 = some (.jalr ra ra 0xFFFFF9FE, 4) := by decide
+theorem mm_at_116 : fetchRel mulMont12Code 0x116 = some (.aluImm .add a2 x0 0x0, 2) := by decide
+theorem mm_at_118 : fetchRel mulMont12Code 0x118 = some (.aluImm .add (9 : Fin 32) sp 0xC, 2) := by decide
+theorem mm_at_11a : fetchRel mulMont12Code 0x11A = some (.aluImm .add (8 : Fin 32) x0 0xC, 2) := by decide
+theorem mm_at_11c : fetchRel mulMont12Code 0x11C = some (.branch .beq (8 : Fin 32) x0 0x20, 2) := by decide
+theorem mm_at_11e : fetchRel mulMont12Code 0x11E = some (.load .lw a0 (9 : Fin 32) 0x0, 2) := by decide
+theorem mm_at_120 : fetchRel mulMont12Code 0x120 = some (.load .lw a1 (23 : Fin 32) 0x0, 4) := by decide
+theorem mm_at_124 : fetchRel mulMont12Code 0x124 = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem mm_at_128 : fetchRel mulMont12Code 0x128 = some (.jalr ra ra 0x522, 4) := by decide
+theorem mm_at_12c : fetchRel mulMont12Code 0x12C = some (.alu .add a2 x0 a1, 2) := by decide
+theorem mm_at_12e : fetchRel mulMont12Code 0x12E = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0x4, 2) := by decide
+theorem mm_at_130 : fetchRel mulMont12Code 0x130 = some (.store .sw (19 : Fin 32) a0 0x0, 4) := by decide
+theorem mm_at_134 : fetchRel mulMont12Code 0x134 = some (.aluImm .add (23 : Fin 32) (23 : Fin 32) 0x4, 2) := by decide
+theorem mm_at_136 : fetchRel mulMont12Code 0x136 = some (.aluImm .add (19 : Fin 32) (19 : Fin 32) 0x4, 2) := by decide
+theorem mm_at_138 : fetchRel mulMont12Code 0x138 = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFFFF, 2) := by decide
+theorem mm_at_13a : fetchRel mulMont12Code 0x13A = some (.branch .bne (8 : Fin 32) x0 0xFFFFFFE4, 2) := by decide
+theorem mm_at_13c : fetchRel mulMont12Code 0x13C = some (.store .sw sp (22 : Fin 32) 0x6C, 2) := by decide
+theorem mm_at_13e : fetchRel mulMont12Code 0x13E = some (.aluImm .add a0 sp 0x6C, 2) := by decide
+theorem mm_at_140 : fetchRel mulMont12Code 0x140 = some (.load .lw a0 sp 0x6C, 2) := by decide
+theorem mm_at_142 : fetchRel mulMont12Code 0x142 = some (.aluImm .sltu (9 : Fin 32) a0 0x1, 4) := by decide
+theorem mm_at_146 : fetchRel mulMont12Code 0x146 = some (.alu .and (9 : Fin 32) (9 : Fin 32) a2, 2) := by decide
+theorem mm_at_148 : fetchRel mulMont12Code 0x148 = some (.store .sb sp (9 : Fin 32) 0x6C, 4) := by decide
+theorem mm_at_14c : fetchRel mulMont12Code 0x14C = some (.aluImm .add a0 sp 0x6C, 2) := by decide
+theorem mm_at_14e : fetchRel mulMont12Code 0x14E = some (.load .lbu a0 sp 0x6C, 4) := by decide
+theorem mm_at_152 : fetchRel mulMont12Code 0x152 = some (.aluImm .add a0 a0 0xFFFFFFFF, 2) := by decide
+theorem mm_at_154 : fetchRel mulMont12Code 0x154 = some (.alu .and a2 a2 a0, 2) := by decide
+theorem mm_at_156 : fetchRel mulMont12Code 0x156 = some (.alu .add a0 x0 (22 : Fin 32), 2) := by decide
+theorem mm_at_158 : fetchRel mulMont12Code 0x158 = some (.aluImm .add a1 x0 0x0, 2) := by decide
+theorem mm_at_15a : fetchRel mulMont12Code 0x15A = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem mm_at_15e : fetchRel mulMont12Code 0x15E = some (.jalr ra ra 0x4EC, 4) := by decide
+theorem mm_at_162 : fetchRel mulMont12Code 0x162 = some (.aluImm .add a1 sp 0x3C, 2) := by decide
+theorem mm_at_164 : fetchRel mulMont12Code 0x164 = some (.aluImm .add a2 sp 0xC, 2) := by decide
+theorem mm_at_166 : fetchRel mulMont12Code 0x166 = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
+theorem mm_at_168 : fetchRel mulMont12Code 0x168 = some (.alu .add a3 x0 (9 : Fin 32), 2) := by decide
+theorem mm_at_16a : fetchRel mulMont12Code 0x16A = some (.auipc ra 0x0, 4) := by decide
+theorem mm_at_16e : fetchRel mulMont12Code 0x16E = some (.jalr ra ra 0x24, 4) := by decide
+theorem mm_at_172 : fetchRel mulMont12Code 0x172 = some (.load .lw ra sp 0x9C, 2) := by decide
+theorem mm_at_174 : fetchRel mulMont12Code 0x174 = some (.load .lw (8 : Fin 32) sp 0x98, 2) := by decide
+theorem mm_at_176 : fetchRel mulMont12Code 0x176 = some (.load .lw (9 : Fin 32) sp 0x94, 2) := by decide
+theorem mm_at_178 : fetchRel mulMont12Code 0x178 = some (.load .lw (18 : Fin 32) sp 0x90, 2) := by decide
+theorem mm_at_17a : fetchRel mulMont12Code 0x17A = some (.load .lw (19 : Fin 32) sp 0x8C, 2) := by decide
+theorem mm_at_17c : fetchRel mulMont12Code 0x17C = some (.load .lw (20 : Fin 32) sp 0x88, 2) := by decide
+theorem mm_at_17e : fetchRel mulMont12Code 0x17E = some (.load .lw (21 : Fin 32) sp 0x84, 2) := by decide
+theorem mm_at_180 : fetchRel mulMont12Code 0x180 = some (.load .lw (22 : Fin 32) sp 0x80, 2) := by decide
+theorem mm_at_182 : fetchRel mulMont12Code 0x182 = some (.load .lw (23 : Fin 32) sp 0x7C, 2) := by decide
+theorem mm_at_184 : fetchRel mulMont12Code 0x184 = some (.load .lw (24 : Fin 32) sp 0x78, 2) := by decide
+theorem mm_at_186 : fetchRel mulMont12Code 0x186 = some (.load .lw (25 : Fin 32) sp 0x74, 2) := by decide
+theorem mm_at_188 : fetchRel mulMont12Code 0x188 = some (.load .lw (26 : Fin 32) sp 0x70, 2) := by decide
+theorem mm_at_18a : fetchRel mulMont12Code 0x18A = some (.aluImm .add sp sp 0xA0, 2) := by decide
+theorem mm_at_18c : fetchRel mulMont12Code 0x18C = some (.jalr x0 ra 0x0, 2) := by decide
 
 end
 
@@ -349,7 +375,7 @@ abbrev mmBodyM : List BInstr :=
 
 section
 set_option maxRecDepth 20000
-theorem mmBodyM_end : blockEnd mulMont12Code 0x7C mmBodyM = some 0xC6 := by decide
+theorem mmBodyM_end : blockEnd mulMont12Code 0x9C mmBodyM = some 0xE6 := by decide
 end
 
 set_option maxRecDepth 20000 in
@@ -412,10 +438,10 @@ def bodyKeep (q : Fin 32) : Bool := q.val ∉ [8, 9, 10, 11, 12, 13, 14, 15, 24,
 theorem ptr4 (b : Word) (k : Nat) : b + BitVec.ofNat 32 (4 * k) + 4 = b + BitVec.ofNat 32 (4 * (k + 1)) := by
   rw [show (4 : Word) = BitVec.ofNat 32 4 from rfl, add_ofNat_assoc]; congr 2
 
-/-- **One pass of the inner loop**, from 0x7C: column `k + 1` of a pass,
+/-- **One pass of the inner loop**, from 0x9C: column `k + 1` of a pass,
 which stores the accumulator's word `k`. -/
 theorem mm_iter {M : Word → BitVec 8} {B np yp acc U X CL CH : Word} {n : Machine} {k : Nat}
-    (s : St M B n 0x7C (reg n)) (hc : CodeIn M B mulMont12Code) (hk : k < 11)
+    (s : St M B n 0x9C (reg n)) (hc : CodeIn M B mulMont12Code) (hk : k < 11)
     (hnp : np.toNat % 4 = 0) (hyp : yp.toNat % 4 = 0) (hacc : acc.toNat % 4 = 0)
     (hS : Sep (acc + BitVec.ofNat 32 (4 * k)) 4 B mulMont12Code.length)
     (r26 : reg n (26 : Fin 32) = np + BitVec.ofNat 32 (4 * (k + 1)))
@@ -427,7 +453,7 @@ theorem mm_iter {M : Word → BitVec 8} {B np yp acc U X CL CH : Word} {n : Mach
       St (memStore32 M (acc + BitVec.ofNat 32 (4 * k))
         (mmCols (memLoad32 M (np + BitVec.ofNat 32 (4 * (k + 1)))) (memLoad32 M (yp + BitVec.ofNat 32 (4 * (k + 1))))
           (memLoad32 M (acc + BitVec.ofNat 32 (4 * (k + 1)))) U X CL CH).1)
-        B n' (if k + 1 < 11 then 0x7C else 0xCA) (reg n') ∧
+        B n' (if k + 1 < 11 then 0x9C else 0xEA) (reg n') ∧
       reg n' a2 = (mmCols (memLoad32 M (np + BitVec.ofNat 32 (4 * (k + 1))))
         (memLoad32 M (yp + BitVec.ofNat 32 (4 * (k + 1)))) (memLoad32 M (acc + BitVec.ofNat 32 (4 * (k + 1))))
         U X CL CH).2.1 ∧
@@ -481,9 +507,9 @@ theorem mm_iter {M : Word → BitVec 8} {B np yp acc U X CL CH : Word} {n : Mach
         (pkeep_ne (r := a4) hq rfl) (pkeep_ne (r := a5) hq rfl) (pkeep_ne (r := a0) hq rfl)
         (pkeep_ne (r := 8) hq rfl) (pkeep_ne (r := a1) hq rfl)
   by_cases hl : k + 1 < 11
-  · obtain ⟨n2, d2, u2⟩ := u1'.taken hc1 0x7C mm_at_c6 (by decide) (by rw [hb]; exact decide_eq_true hl)
+  · obtain ⟨n2, d2, u2⟩ := u1'.taken hc1 0x9C mm_at_e6 (by decide) (by rw [hb]; exact decide_eq_true hl)
     exact ⟨n2, c1.trans (.single d2), by rw [ite_eq_left hl]; exact u2.self, post n2 u2.regs⟩
-  · obtain ⟨n2, d2, u2⟩ := u1'.notTaken hc1 0xCA mm_at_c6 (by decide) (by rw [hb]; exact decide_eq_false hl)
+  · obtain ⟨n2, d2, u2⟩ := u1'.notTaken hc1 0xEA mm_at_e6 (by decide) (by rw [hb]; exact decide_eq_false hl)
     exact ⟨n2, c1.trans (.single d2), by rw [ite_eq_right hl]; exact u2.self, post n2 u2.regs⟩
 
 theorem mm_inner_arith {Ak lo C C' P B X U y o nn Y O N : Nat}
@@ -538,13 +564,13 @@ theorem mm_inv_step {M M0 : Word → BitVec 8} {acc yp np U X CL CH lo cl ch : W
       rw [add_ofNat_zero, ← add_ofNat_assoc]; exact e.symm), hfr a ha]
   · rw [memLoad32_store32_sep (sep_offsets acc (.inl (by omega)) (by omega) (by omega)), hab i (by omega) hi2]
 
-/-- **The inner loop**, from column `k + 1` of a pass to its end at 0xCA:
+/-- **The inner loop**, from column `k + 1` of a pass to its end at 0xEA:
 columns `k + 1..11` of the pass. -/
 theorem mm_inner {B acc yp np U X : Word} {M0 : Word → BitVec 8}
     (hnp : np.toNat % 4 = 0) (hyp : yp.toNat % 4 = 0) (hacc : acc.toNat % 4 = 0) (hw : acc.toNat + 48 ≤ 2 ^ 32)
     (hAY : Sep acc 48 yp 48) (hAN : Sep acc 48 np 48) (hAC : Sep acc 48 B mulMont12Code.length) :
     ∀ m k, k + m + 1 = 11 → ∀ {M : Word → BitVec 8} {n : Machine} {CL CH : Word},
-      St M B n 0x7C (reg n) → CodeIn M B mulMont12Code →
+      St M B n 0x9C (reg n) → CodeIn M B mulMont12Code →
       (∀ a, Sep acc 48 a 1 → M a = M0 a) →
       (∀ i, k ≤ i → i < 12 →
         memLoad32 M (acc + BitVec.ofNat 32 (4 * i)) = memLoad32 M0 (acc + BitVec.ofNat 32 (4 * i))) →
@@ -556,7 +582,7 @@ theorem mm_inner {B acc yp np U X : Word} {M0 : Word → BitVec 8}
       reg n a3 = acc + BitVec.ofNat 32 (4 * (k + 1)) →
       reg n (31 : Fin 32) = U → reg n (30 : Fin 32) = X → reg n a2 = CL → reg n (24 : Fin 32) = CH →
       reg n (25 : Fin 32) = BitVec.ofNat 32 (11 - k) →
-      ∃ n' M', Steps n n' ∧ St M' B n' 0xCA (reg n') ∧ CodeIn M' B mulMont12Code ∧
+      ∃ n' M', Steps n n' ∧ St M' B n' 0xEA (reg n') ∧ CodeIn M' B mulMont12Code ∧
         2 ^ 32 * accV M' acc 11 + ((reg n' a2).toNat + 2 ^ 32 * (reg n' (24 : Fin 32)).toNat) * 2 ^ (32 * 12) =
           X.toNat * accV M0 yp 12 + accV M0 acc 12 + U.toNat * accV M0 np 12 ∧
         (reg n' a2).toNat + 2 ^ 32 * (reg n' (24 : Fin 32)).toNat ≤ 2 * 2 ^ 32 - 2 ∧
@@ -602,7 +628,7 @@ theorem mm_inner {B acc yp np U X : Word} {M0 : Word → BitVec 8}
     exact ⟨n', M', c1.trans c', u', hc', f1, f2, f3, f4, f26, f9, f3', f25,
       fun q hq => by rw [fr' q hq, fr q hq]⟩
 
-/-- The start of a pass, from 0x32: load the first operand's limb, compute
+/-- The start of a pass, from 0x52: load the first operand's limb, compute
 the factor `u` and the first column's carry, and set up the inner loop. -/
 def mmHeadBlock : List BInstr :=
   [.aluImm .sll a0 (29 : Fin 32) 2, .alu .add a0 a0 (20 : Fin 32), .lw (30 : Fin 32) a0 0,
@@ -613,7 +639,7 @@ def mmHeadBlock : List BInstr :=
    .alu .sltu a3 a0 (9 : Fin 32), .alu .sltu a0 a2 a0, .alu .add (26 : Fin 32) x0 (17 : Fin 32),
    .alu .add (24 : Fin 32) a3 a0, .alu .add a3 x0 a6, .alu .add (9 : Fin 32) x0 (21 : Fin 32)]
 
-/-- The end of a pass, from 0xCA: add the old top carry into the last word,
+/-- The end of a pass, from 0xEA: add the old top carry into the last word,
 store it, and count the pass. -/
 def mmTailBlock : List BInstr :=
   [.alu .add (22 : Fin 32) (22 : Fin 32) a2, .alu .add a0 (24 : Fin 32) (28 : Fin 32), .alu .sltu a1 (22 : Fin 32) a2,
@@ -622,8 +648,8 @@ def mmTailBlock : List BInstr :=
 
 section
 set_option maxRecDepth 20000
-theorem mmHeadBlock_end : blockEnd mulMont12Code 0x32 mmHeadBlock = some 0x78 := by decide
-theorem mmTailBlock_end : blockEnd mulMont12Code 0xCA mmTailBlock = some 0xDE := by decide
+theorem mmHeadBlock_end : blockEnd mulMont12Code 0x52 mmHeadBlock = some 0x98 := by decide
+theorem mmTailBlock_end : blockEnd mulMont12Code 0xEA mmTailBlock = some 0xFE := by decide
 end
 
 /-- The registers the start of a pass leaves alone. -/
@@ -730,7 +756,7 @@ theorem accV_frame48 {M M0 : Word → BitVec 8} {acc b : Word} {n : Nat} (hf : �
   accV_congr n fun l hl => load_frame hf (hs.subR (by omega))
 
 set_option exponentiation.threshold 400 in
-/-- **One pass of the outer loop**, from 0x32: add limb `i` of the first
+/-- **One pass of the outer loop**, from 0x52: add limb `i` of the first
 operand times the second operand, and `u` times the modulus, to the
 accumulator and its top carry in `s6`, and shift the sum down a word. -/
 theorem mm_pass {B acc xp yp np K : Word} {M0 : Word → BitVec 8} {i : Nat} (hi : i < 12)
@@ -738,7 +764,7 @@ theorem mm_pass {B acc xp yp np K : Word} {M0 : Word → BitVec 8} {i : Nat} (hi
     (hw : acc.toNat + 48 ≤ 2 ^ 32) (hAX : Sep acc 48 xp 48) (hAY : Sep acc 48 yp 48) (hAN : Sep acc 48 np 48)
     (hAC : Sep acc 48 B mulMont12Code.length)
     (hk : (K.toNat * (memLoad32 M0 np).toNat + 1) % 2 ^ 32 = 0)
-    {M : Word → BitVec 8} {n : Machine} (s : St M B n 0x32 (reg n)) (hc : CodeIn M B mulMont12Code)
+    {M : Word → BitVec 8} {n : Machine} (s : St M B n 0x52 (reg n)) (hc : CodeIn M B mulMont12Code)
     (hfr : ∀ a, Sep acc 48 a 1 → M a = M0 a)
     (r29 : reg n (29 : Fin 32) = BitVec.ofNat 32 i) (r20 : reg n (20 : Fin 32) = xp)
     (r6 : reg n (6 : Fin 32) = memLoad32 M0 yp) (r7 : reg n (7 : Fin 32) = memLoad32 M0 np)
@@ -748,7 +774,7 @@ theorem mm_pass {B acc xp yp np K : Word} {M0 : Word → BitVec 8} {i : Nat} (hi
     (r16 : reg n a6 = acc + BitVec.ofNat 32 (4 * (0 + 1)))
     (r21 : reg n (21 : Fin 32) = yp + BitVec.ofNat 32 (4 * (0 + 1)))
     (r28 : reg n (28 : Fin 32) = 0) (r5 : reg n (5 : Fin 32) = 12) :
-    ∃ n' M', Steps n n' ∧ St M' B n' (if i + 1 < 12 then 0x32 else 0xE2) (reg n') ∧ CodeIn M' B mulMont12Code ∧
+    ∃ n' M', Steps n n' ∧ St M' B n' (if i + 1 < 12 then 0x52 else 0x102) (reg n') ∧ CodeIn M' B mulMont12Code ∧
       (∀ a, Sep acc 48 a 1 → M' a = M0 a) ∧
       (∃ u : Nat, u < 2 ^ 32 ∧ 2 ^ 32 * (accV M' acc 12 + (reg n' (22 : Fin 32)).toNat * 2 ^ (32 * 12)) =
         accV M acc 12 + (reg n (22 : Fin 32)).toNat * 2 ^ (32 * 12) +
@@ -779,7 +805,7 @@ theorem mm_pass {B acc xp yp np K : Word} {M0 : Word → BitVec 8} {i : Nat} (hi
   obtain ⟨hd, bd⟩ := hd
   have hb : branchTaken .beq (reg n1 (25 : Fin 32)) (reg n1 x0) = false := by
     rw [g1, h25, u1'.zero]; decide
-  obtain ⟨n2, d2, u2⟩ := u1'.notTaken hc 0x7C mm_at_78 (by decide) hb
+  obtain ⟨n2, d2, u2⟩ := u1'.notTaken hc 0x9C mm_at_98 (by decide) hb
   have g2 : ∀ q, reg n2 q = (runBlock mmHeadBlock (M, reg n)).2 q := fun q => by rw [u2.regs, g1]
   have eY0 : memLoad32 M (yp + BitVec.ofNat 32 (4 * 0)) = memLoad32 M0 yp := by
     rw [load_frame hfr (hAY.subR (c := 4 * 0) (l := 4) (by omega)), Nat.mul_zero, add_ofNat_zero]
@@ -849,11 +875,11 @@ theorem mm_pass {B acc xp yp np K : Word} {M0 : Word → BitVec 8} {i : Nat} (hi
     rw [memStore32_ne fun j hj e => (ha.point (i := 4 * 11 + j) (j := 0) (by omega) (by decide)) (by
       rw [add_ofNat_zero, ← add_ofNat_assoc]; exact e.symm), I3 a ha, hfr a ha]
   by_cases hl : i + 1 < 12
-  · obtain ⟨n5, d5, u5⟩ := u4'.taken hc4 0x32 mm_at_de (by decide) (by rw [hb4]; exact decide_eq_true hl)
+  · obtain ⟨n5, d5, u5⟩ := u4'.taken hc4 0x52 mm_at_fe (by decide) (by rw [hb4]; exact decide_eq_true hl)
     have g5 : ∀ q, reg n5 q = reg n4 q := u5.regs
     refine ⟨n5, _, Steps.trans c1 (.cons d2 (c3.trans (c4.trans (.single d5)))), by rw [ite_eq_left hl]; exact u5.self,
       hc4, fr4, ⟨u.toNat, u.isLt, by rw [g5]; exact arith⟩, by rw [g5, e29], by rw [g5, e28], fun q hq => by rw [g5, k4 q hq]⟩
-  · obtain ⟨n5, d5, u5⟩ := u4'.notTaken hc4 0xE2 mm_at_de (by decide) (by rw [hb4]; exact decide_eq_false hl)
+  · obtain ⟨n5, d5, u5⟩ := u4'.notTaken hc4 0x102 mm_at_fe (by decide) (by rw [hb4]; exact decide_eq_false hl)
     have g5 : ∀ q, reg n5 q = reg n4 q := u5.regs
     refine ⟨n5, _, Steps.trans c1 (.cons d2 (c3.trans (c4.trans (.single d5)))), by rw [ite_eq_right hl]; exact u5.self,
       hc4, fr4, ⟨u.toNat, u.isLt, by rw [g5]; exact arith⟩, by rw [g5, e29], by rw [g5, e28], fun q hq => by rw [g5, k4 q hq]⟩
@@ -879,7 +905,7 @@ theorem idx_lt1 {i m n : Nat} (h : i + (m + 1) + 1 = n) : i + 1 < n := by omega
 theorem idx_succ {i m n : Nat} (h : i + (m + 1) + 1 = n) : i + 1 + m + 1 = n := by omega
 
 set_option exponentiation.threshold 400 in
-/-- **The outer loop**, from pass `i` to its end at 0xE2. The accumulator
+/-- **The outer loop**, from pass `i` to its end at 0x102. The accumulator
 and its top carry hold a sum `T` with `2^(32 i) T = X_i Y + U N`, for `X_i`
 the first operand's low `i` limbs and some `U`, and `T < 2N`. -/
 theorem mm_outer {B acc xp yp np K : Word} {M0 : Word → BitVec 8}
@@ -888,7 +914,7 @@ theorem mm_outer {B acc xp yp np K : Word} {M0 : Word → BitVec 8}
     (hAC : Sep acc 48 B mulMont12Code.length)
     (hk : (K.toNat * (memLoad32 M0 np).toNat + 1) % 2 ^ 32 = 0) (hYN : accV M0 yp 12 < accV M0 np 12) :
     ∀ m i, i + m + 1 = 12 → ∀ {M : Word → BitVec 8} {n : Machine},
-      St M B n 0x32 (reg n) → CodeIn M B mulMont12Code → (∀ a, Sep acc 48 a 1 → M a = M0 a) →
+      St M B n 0x52 (reg n) → CodeIn M B mulMont12Code → (∀ a, Sep acc 48 a 1 → M a = M0 a) →
       (∃ U, 2 ^ (32 * i) * (accV M acc 12 + (reg n (22 : Fin 32)).toNat * 2 ^ (32 * 12)) =
         accV M0 xp i * accV M0 yp 12 + U * accV M0 np 12) →
       accV M acc 12 + (reg n (22 : Fin 32)).toNat * 2 ^ (32 * 12) < 2 * accV M0 np 12 →
@@ -900,7 +926,7 @@ theorem mm_outer {B acc xp yp np K : Word} {M0 : Word → BitVec 8}
       reg n a6 = acc + BitVec.ofNat 32 (4 * (0 + 1)) →
       reg n (21 : Fin 32) = yp + BitVec.ofNat 32 (4 * (0 + 1)) →
       reg n (28 : Fin 32) = 0 → reg n (5 : Fin 32) = 12 →
-      ∃ n' M', Steps n n' ∧ St M' B n' 0xE2 (reg n') ∧ CodeIn M' B mulMont12Code ∧
+      ∃ n' M', Steps n n' ∧ St M' B n' 0x102 (reg n') ∧ CodeIn M' B mulMont12Code ∧
         (∀ a, Sep acc 48 a 1 → M' a = M0 a) ∧
         (∃ U, 2 ^ (32 * 12) * (accV M' acc 12 + (reg n' (22 : Fin 32)).toNat * 2 ^ (32 * 12)) =
           accV M0 xp 12 * accV M0 yp 12 + U * accV M0 np 12) ∧

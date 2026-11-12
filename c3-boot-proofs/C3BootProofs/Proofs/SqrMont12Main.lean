@@ -1,5 +1,5 @@
 import C3BootProofs.Proofs.SqrMont12
-import C3BootProofs.Image.BootloaderV0
+import C3BootProofs.Image.Bootloader
 
 /-!
 # P-384's Montgomery squaring, end to end
@@ -12,9 +12,9 @@ registers.
 
 namespace C3.RV32
 
-open C3.ImageV0
+open C3.Image
 
-/-- The end of a subtraction round, from 0x11C: keep the borrow, store the
+/-- The end of a subtraction round, from 0x12C: keep the borrow, store the
 difference, and advance the pointers and the count. -/
 def sqSubTail : List BInstr :=
   [.alu .add a2 x0 a1, .aluImm .add (9 : Fin 32) (9 : Fin 32) 4, .sw (19 : Fin 32) a0 0,
@@ -23,7 +23,7 @@ def sqSubTail : List BInstr :=
 
 section
 set_option maxRecDepth 20000
-theorem sqSubTail_end : blockEnd sqMont12Code 0x11C sqSubTail = some 0x12A := by decide
+theorem sqSubTail_end : blockEnd sqMont12Code 0x12C sqSubTail = some 0x13A := by decide
 end
 
 set_option maxRecDepth 20000 in
@@ -56,14 +56,14 @@ theorem sqSubTail_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Word}
   exact ⟨h, hs⟩
 
 /-- `borrowing_sub`'s offset from `square_montgomery_form::<12>`. -/
-abbrev sqBsub (P : Word) : Word := P + 0xFFFEF3EA
+abbrev sqBsub (P : Word) : Word := P + 0xFFFEE998
 
-/-- **One round of the final subtraction**, from 0x10E: subtract limb `i` of
+/-- **One round of the final subtraction**, from 0x11E: subtract limb `i` of
 the modulus and the borrow from limb `i` of the accumulator, and store the
 difference at limb `i` of the buffer at `D`. `borrowing_sub` also writes
 the word below `sp`. -/
 theorem sqsub_iter {M : Word → BitVec 8} {P F acc np D b : Word} {n : Machine} {i : Nat}
-    (s : St M P n 0x10E (reg n)) (hc : CodeIn M P sqMont12Code) (hb : CodeIn M (sqBsub P) borrowingSubCode)
+    (s : St M P n 0x11E (reg n)) (hc : CodeIn M P sqMont12Code) (hb : CodeIn M (sqBsub P) borrowingSubCode)
     (hP : P.toNat % 2 = 0) (hi : i < 12) (hF : F.toNat % 4 = 0) (hacc : acc.toNat % 4 = 0)
     (hnp : np.toNat % 4 = 0) (hD : D.toNat % 4 = 0)
     (sFB : Sep (F + 0xFFFFFFFC) 4 (sqBsub P) borrowingSubCode.length)
@@ -75,7 +75,7 @@ theorem sqsub_iter {M : Word → BitVec 8} {P F acc np D b : Word} {n : Machine}
     ∃ n' Mb, Steps n n' ∧
       St (memStore32 Mb (D + BitVec.ofNat 32 (4 * i))
           (bsubD (memLoad32 M (acc + BitVec.ofNat 32 (4 * i))) (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) b))
-        P n' (if i + 1 < 12 then 0x10E else 0x12C) (reg n') ∧
+        P n' (if i + 1 < 12 then 0x11E else 0x13C) (reg n') ∧
       (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Mb x = M x) ∧
       reg n' a2 = bsubB (memLoad32 M (acc + BitVec.ofNat 32 (4 * i))) (memLoad32 M (np + BitVec.ofNat 32 (4 * i)))
         (bsubD (memLoad32 M (acc + BitVec.ofNat 32 (4 * i))) (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) b) ∧
@@ -86,9 +86,9 @@ theorem sqsub_iter {M : Word → BitVec 8} {P F acc np D b : Word} {n : Machine}
       ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ ra → q ≠ (9 : Fin 32) → q ≠ (22 : Fin 32) →
         q ≠ (19 : Fin 32) → q ≠ (8 : Fin 32) → reg n' q = reg n q := by
   have hz := s.zero
-  obtain ⟨n1, d1, u1⟩ := s.lw hc sq_at_10e (off' := 0x110) (by decide)
+  obtain ⟨n1, d1, u1⟩ := s.lw hc sq_at_11e (off' := 0x120) (by decide)
     (by rw [r9, add_lit_zero]; exact aligned_add hacc (by omega))
-  obtain ⟨n2, d2, u2⟩ := u1.lw hc sq_at_110 (off' := 0x114) (by decide)
+  obtain ⟨n2, d2, u2⟩ := u1.lw hc sq_at_120 (off' := 0x124) (by decide)
     (by rw [upd_ne (by decide) (by decide), r23, add_lit_zero]; exact aligned_add hnp (by omega))
   rw [r9, add_lit_zero] at u2
   have f0 : upd (upd (reg n) a0 (memLoad32 M (acc + BitVec.ofNat 32 (4 * i)))) a1
@@ -107,8 +107,8 @@ theorem sqsub_iter {M : Word → BitVec 8} {P F acc np D b : Word} {n : Machine}
     · have : q = 0 := Fin.ext h0
       subst this; simp [upd, hz]
     · simp [upd, h0, q0, q1]
-  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2'.bsubCall hc hb (even_at P hP 0xFFFEF3EA (by decide))
-    sq_at_114 sq_at_118 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x114 + 8) (by decide))
+  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2'.bsubCall hc hb (even_at P hP 0xFFFEE998 (by decide))
+    sq_at_124 sq_at_128 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x124 + 8) (by decide))
     (by rw [k2 sp (by decide) (by decide), rsp]) hF sFB
   rw [g2a0, g2a1, k2 a2 (by decide) (by decide), ra2] at a03 a13
   have hc3 : CodeIn n3.mem P sqMont12Code := fun j hj => by
@@ -145,15 +145,15 @@ theorem sqsub_iter {M : Word → BitVec 8} {P F acc np D b : Word} {n : Machine}
     · rw [h5, g4, t19, k3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), r19, ptr4]
     · rw [h5, g4, tk q q2 q9 q23 q19 q8, k3 q q0 q1 q2 q3 q4 qr]
   by_cases hl : i + 1 < 12
-  · obtain ⟨n5, d5, u5⟩ := u4'.taken hc4 0x10E sq_at_12a (by decide) (by rw [hb4]; exact decide_eq_true hl)
+  · obtain ⟨n5, d5, u5⟩ := u4'.taken hc4 0x11E sq_at_13a (by decide) (by rw [hb4]; exact decide_eq_true hl)
     exact ⟨n5, n3.mem, .cons d1 (.cons d2 (c3.trans (c4.trans (.single d5)))), by rw [ite_eq_left hl]; exact u5.self,
       mem3, post n5 u5.regs⟩
-  · obtain ⟨n5, d5, u5⟩ := u4'.notTaken hc4 0x12C sq_at_12a (by decide) (by rw [hb4]; exact decide_eq_false hl)
+  · obtain ⟨n5, d5, u5⟩ := u4'.notTaken hc4 0x13C sq_at_13a (by decide) (by rw [hb4]; exact decide_eq_false hl)
     exact ⟨n5, n3.mem, .cons d1 (.cons d2 (c3.trans (c4.trans (.single d5)))), by rw [ite_eq_right hl]; exact u5.self,
       mem3, post n5 u5.regs⟩
 
 set_option exponentiation.threshold 400 in
-/-- **The final subtraction**, from round `i` to its end at 0x12C: the
+/-- **The final subtraction**, from round `i` to its end at 0x13C: the
 buffer at `D` gets the accumulator minus the modulus, and `a2` the borrow
 out as a mask. -/
 theorem sqsub_loop {P F acc np D : Word} {M0 : Word → BitVec 8} (hP : P.toNat % 2 = 0) (hF : F.toNat % 4 = 0)
@@ -164,13 +164,13 @@ theorem sqsub_loop {P F acc np D : Word} {M0 : Word → BitVec 8} (hP : P.toNat 
     (sFC : Sep (F + 0xFFFFFFFC) 4 P sqMont12Code.length)
     (sDB : Sep D 48 (sqBsub P) borrowingSubCode.length) (sDC : Sep D 48 P sqMont12Code.length) :
     ∀ m i, i + m + 1 = 12 → ∀ {M : Word → BitVec 8} {n : Machine} {b : Word},
-      St M P n 0x10E (reg n) → CodeIn M P sqMont12Code → CodeIn M (sqBsub P) borrowingSubCode →
+      St M P n 0x11E (reg n) → CodeIn M P sqMont12Code → CodeIn M (sqBsub P) borrowingSubCode →
       (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Sep D 48 x 1 → M x = M0 x) → (b = 0 ∨ b = 0xFFFFFFFF) →
       accV M0 acc i + 2 ^ (32 * i) * maskBit b = accV M0 np i + accV M D i →
       reg n sp = F → reg n (9 : Fin 32) = acc + BitVec.ofNat 32 (4 * i) →
       reg n (22 : Fin 32) = np + BitVec.ofNat 32 (4 * i) → reg n (19 : Fin 32) = D + BitVec.ofNat 32 (4 * i) →
       reg n (8 : Fin 32) = BitVec.ofNat 32 (12 - i) → reg n a2 = b →
-      ∃ n' M', Steps n n' ∧ St M' P n' 0x12C (reg n') ∧ CodeIn M' P sqMont12Code ∧
+      ∃ n' M', Steps n n' ∧ St M' P n' 0x13C (reg n') ∧ CodeIn M' P sqMont12Code ∧
         (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Sep D 48 x 1 → M' x = M0 x) ∧
         (reg n' a2 = 0 ∨ reg n' a2 = 0xFFFFFFFF) ∧
         accV M0 acc 12 + 2 ^ (32 * 12) * maskBit (reg n' a2) = accV M0 np 12 + accV M' D 12 ∧
@@ -178,13 +178,13 @@ theorem sqsub_loop {P F acc np D : Word} {M0 : Word → BitVec 8} (hP : P.toNat 
         ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ ra → q ≠ (9 : Fin 32) → q ≠ (22 : Fin 32) →
           q ≠ (19 : Fin 32) → q ≠ (8 : Fin 32) → reg n' q = reg n q := by
   have step : ∀ i, i < 12 → ∀ {M : Word → BitVec 8} {n : Machine} {b : Word},
-      St M P n 0x10E (reg n) → CodeIn M P sqMont12Code → CodeIn M (sqBsub P) borrowingSubCode →
+      St M P n 0x11E (reg n) → CodeIn M P sqMont12Code → CodeIn M (sqBsub P) borrowingSubCode →
       (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Sep D 48 x 1 → M x = M0 x) → (b = 0 ∨ b = 0xFFFFFFFF) →
       accV M0 acc i + 2 ^ (32 * i) * maskBit b = accV M0 np i + accV M D i →
       reg n sp = F → reg n (9 : Fin 32) = acc + BitVec.ofNat 32 (4 * i) →
       reg n (22 : Fin 32) = np + BitVec.ofNat 32 (4 * i) → reg n (19 : Fin 32) = D + BitVec.ofNat 32 (4 * i) →
       reg n (8 : Fin 32) = BitVec.ofNat 32 (12 - i) → reg n a2 = b →
-      ∃ n' M', Steps n n' ∧ St M' P n' (if i + 1 < 12 then 0x10E else 0x12C) (reg n') ∧
+      ∃ n' M', Steps n n' ∧ St M' P n' (if i + 1 < 12 then 0x11E else 0x13C) (reg n') ∧
         CodeIn M' P sqMont12Code ∧ CodeIn M' (sqBsub P) borrowingSubCode ∧
         (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Sep D 48 x 1 → M' x = M0 x) ∧
         (reg n' a2 = 0 ∨ reg n' a2 = 0xFFFFFFFF) ∧
@@ -242,7 +242,7 @@ theorem sqsub_loop {P F acc np D : Word} {M0 : Word → BitVec 8} (hP : P.toNat 
     exact ⟨n', M', c1.trans c', u', hc', hf', hm', hv', sp', fun q q0 q1 q2 q3 q4 qr q9 q23 q19 q8 => by
       rw [fr' q q0 q1 q2 q3 q4 qr q9 q23 q19 q8, fr q q0 q1 q2 q3 q4 qr q9 q23 q19 q8]⟩
 
-/-- From 0x12C: spill the top carry, and choose the accumulator when the
+/-- From 0x13C: spill the top carry, and choose the accumulator when the
 top carry is zero and the subtraction borrowed, through a byte of the
 frame; then set up the call to `borrowing_sub` whose result goes unused. -/
 def sqChoice : List BInstr :=
@@ -250,25 +250,25 @@ def sqChoice : List BInstr :=
    .alu .and (9 : Fin 32) (9 : Fin 32) a2, .sb sp (9 : Fin 32) 0x6C, .aluImm .add a0 sp 0x6C, .lbu a0 sp 0x6C,
    .aluImm .add a0 a0 0xFFFFFFFF, .alu .and a2 a2 a0, .alu .add a0 x0 (21 : Fin 32), .aluImm .add a1 x0 0]
 
-/-- From 0x152: the arguments of `Uint<12>::select`. -/
+/-- From 0x162: the arguments of `Uint<12>::select`. -/
 def sqSelArgs : List BInstr :=
   [.aluImm .add a1 sp 0x3C, .aluImm .add a2 sp 0xC, .alu .add a0 x0 (18 : Fin 32), .alu .add a3 x0 (9 : Fin 32)]
 
-/-- From 0xF2: the arguments of the `memset` that zeroes the difference
+/-- From 0x102: the arguments of the `memset` that zeroes the difference
 buffer, which `s3` also points at. -/
 def sqSubPre : List BInstr :=
   [.aluImm .add a0 sp 0x3C, .aluImm .add a2 x0 0x30, .aluImm .add a1 x0 0, .aluImm .add (19 : Fin 32) sp 0x3C]
 
-/-- From 0x106: the borrow, the accumulator pointer, and the count. -/
+/-- From 0x116: the borrow, the accumulator pointer, and the count. -/
 def sqSubInit : List BInstr :=
   [.aluImm .add a2 x0 0, .aluImm .add (9 : Fin 32) sp 0xC, .aluImm .add (8 : Fin 32) x0 0xC]
 
 section
 set_option maxRecDepth 20000
-theorem sqChoice_end : blockEnd sqMont12Code 0x12C sqChoice = some 0x14A := by decide
-theorem sqSelArgs_end : blockEnd sqMont12Code 0x152 sqSelArgs = some 0x15A := by decide
-theorem sqSubPre_end : blockEnd sqMont12Code 0xF2 sqSubPre = some 0xFE := by decide
-theorem sqSubInit_end : blockEnd sqMont12Code 0x106 sqSubInit = some 0x10C := by decide
+theorem sqChoice_end : blockEnd sqMont12Code 0x13C sqChoice = some 0x15A := by decide
+theorem sqSelArgs_end : blockEnd sqMont12Code 0x162 sqSelArgs = some 0x16A := by decide
+theorem sqSubPre_end : blockEnd sqMont12Code 0x102 sqSubPre = some 0x10E := by decide
+theorem sqSubInit_end : blockEnd sqMont12Code 0x116 sqSubInit = some 0x11C := by decide
 end
 
 set_option maxRecDepth 20000 in
@@ -342,13 +342,13 @@ theorem sqSubInit_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 
     · simp [upd, h0, q2, q9, q8]
 
 
-/-- From 0xA: keep the arguments, and set up the `memset` that zeroes the
+/-- From 0x1A: keep the arguments, and set up the `memset` that zeroes the
 accumulator. -/
 def sqProB : List BInstr :=
   [.alu .add (19 : Fin 32) x0 a3, .alu .add (22 : Fin 32) x0 a2, .alu .add (20 : Fin 32) x0 a1,
    .alu .add (18 : Fin 32) x0 a0, .aluImm .add a0 sp 0xC, .aluImm .add a2 x0 0x30, .aluImm .add a1 x0 0]
 
-/-- From 0x22: zero the top carry and the pass count, load the low limbs of
+/-- From 0x32: zero the top carry and the pass count, load the low limbs of
 the operand and the modulus, and point at their next limbs and the
 accumulator's. -/
 def sqSetupB : List BInstr :=
@@ -358,8 +358,10 @@ def sqSetupB : List BInstr :=
 
 section
 set_option maxRecDepth 20000
-theorem sqProB_end : blockEnd sqMont12Code 0xA sqProB = some 0x1A := by decide
-theorem sqSetupB_end : blockEnd sqMont12Code 0x22 sqSetupB = some 0x3E := by decide
+theorem sqSave_end : blockEnd sqMont12Code 2 (saveBlock mmPs) = some 0x1A := by decide
+theorem sqProB_end : blockEnd sqMont12Code 0x1A sqProB = some 0x2A := by decide
+theorem sqSetupB_end : blockEnd sqMont12Code 0x32 sqSetupB = some 0x4E := by decide
+theorem sqRestore_end : blockEnd sqMont12Code 0x172 (restoreBlock mmPs) = some 0x18A := by decide
 end
 
 theorem sqProB_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
@@ -430,14 +432,11 @@ aligned and apart from what each must not touch. -/
 structure SQEnv (M : Word → BitVec 8) (P sp0 out xp np : Word) : Prop where
   hP : P.toNat % 2 = 0
   code : CodeIn M P sqMont12Code
-  save : CodeIn M (P + 0xBFFA) mulMont12SaveCode
-  restore : CodeIn M (P + 0xC048) mulMont12RestoreCode
-  mset : CodeIn M (P + 0xC754) memsetCode
+  mset : CodeIn M (P + 0xE5E) memsetCode
   bsub : CodeIn M (sqBsub P) borrowingSubCode
-  sel : CodeIn M (P + 0xFFFFF5BE) uintSelect12Code
-  stub : CodeIn M (P + 0xC7BC) memcpyStubCode
-  body : CodeIn M (P + 0xC7C4) memcpyBodyCode
-  step : CodeIn M (P + 0xC5AC) uintSelect12StepCode
+  sel : CodeIn M (P + 0xFFFFF4E0) uintSelect12Code
+  stub : CodeIn M (P + 0xEC6) memcpyStubCode
+  body : CodeIn M (P + 0xECE) memcpyBodyCode
   hsp : sp0.toNat % 4 = 0
   hS : 0xF0 ≤ sp0.toNat
   hout : out.toNat % 4 = 0
@@ -445,19 +444,15 @@ structure SQEnv (M : Word → BitVec 8) (P sp0 out xp np : Word) : Prop where
   hnp : np.toNat % 4 = 0
   hwo : out.toNat + 48 < 2 ^ 32
   sGC : Sep (sp0 + 0xFFFFFF10) 0xF0 P sqMont12Code.length
-  sGS : Sep (sp0 + 0xFFFFFF10) 0xF0 (P + 0xBFFA) mulMont12SaveCode.length
-  sGR : Sep (sp0 + 0xFFFFFF10) 0xF0 (P + 0xC048) mulMont12RestoreCode.length
-  sGM : Sep (sp0 + 0xFFFFFF10) 0xF0 (P + 0xC754) memsetCode.length
+  sGM : Sep (sp0 + 0xFFFFFF10) 0xF0 (P + 0xE5E) memsetCode.length
   sGB : Sep (sp0 + 0xFFFFFF10) 0xF0 (sqBsub P) borrowingSubCode.length
-  sGL : Sep (sp0 + 0xFFFFFF10) 0xF0 (P + 0xFFFFF5BE) uintSelect12Code.length
-  sGU : Sep (sp0 + 0xFFFFFF10) 0xF0 (P + 0xC7BC) memcpyStubCode.length
-  sGY : Sep (sp0 + 0xFFFFFF10) 0xF0 (P + 0xC7C4) memcpyBodyCode.length
-  sGP : Sep (sp0 + 0xFFFFFF10) 0xF0 (P + 0xC5AC) uintSelect12StepCode.length
+  sGL : Sep (sp0 + 0xFFFFFF10) 0xF0 (P + 0xFFFFF4E0) uintSelect12Code.length
+  sGU : Sep (sp0 + 0xFFFFFF10) 0xF0 (P + 0xEC6) memcpyStubCode.length
+  sGY : Sep (sp0 + 0xFFFFFF10) 0xF0 (P + 0xECE) memcpyBodyCode.length
   sOG : Sep out 48 (sp0 + 0xFFFFFF10) 0xF0
   sOC : Sep out 48 P sqMont12Code.length
-  sOR : Sep out 48 (P + 0xC048) mulMont12RestoreCode.length
-  sOL : Sep out 48 (P + 0xFFFFF5BE) uintSelect12Code.length
-  sOY : Sep out 48 (P + 0xC7C4) memcpyBodyCode.length
+  sOL : Sep out 48 (P + 0xFFFFF4E0) uintSelect12Code.length
+  sOY : Sep out 48 (P + 0xECE) memcpyBodyCode.length
   sXG : Sep xp 48 (sp0 + 0xFFFFFF10) 0xF0
   sNG : Sep np 48 (sp0 + 0xFFFFFF10) 0xF0
 
@@ -466,12 +461,12 @@ theorem SQEnv.frame {M : Word → BitVec 8} {P sp0 out xp np : Word} (E : SQEnv 
   rw [(frameA0 sp0 E.hS).2.1]; exact h.sub (by decide)
 
 /-- **The prologue of `square_montgomery_form::<12>`**, from 0 to the outer
-loop at 0x42: open the frame at `F`, save registers, zero the accumulator
+loop at 0x52: open the frame at `F`, save registers, zero the accumulator
 at `F + 0xC`, and set up the first pass. -/
 theorem sq_pro (m : Machine) {P sp0 out xp np K : Word} (E : SQEnv m.mem P sp0 out xp np) (hpc : m.pc = P)
     (ha0 : reg m a0 = out) (ha1 : reg m a1 = xp) (ha2 : reg m a2 = np) (ha3 : reg m a3 = K)
     (hsp : reg m sp = sp0) :
-    ∃ n M, Steps m n ∧ St M P n 0x42 (reg n) ∧
+    ∃ n M, Steps m n ∧ St M P n 0x52 (reg n) ∧
       (∀ x, Sep (sp0 + 0xFFFFFF60) 0xA0 x 1 → M x = m.mem x) ∧
       (∀ r o, (r, o) ∈ mmPs → memLoad32 M (sp0 + 0xFFFFFF60 + o) = reg m r) ∧
       accV M (sp0 + 0xFFFFFF60 + 0xC) 12 = 0 ∧
@@ -487,17 +482,16 @@ theorem sq_pro (m : Machine) {P sp0 out xp np K : Word} (E : SQEnv m.mem P sp0 o
   have s0 : St m.mem P m 0 (reg m) := ⟨by rw [hpc]; simp, rfl, fun _ => rfl⟩
   have hz := s0.zero
   have hFa : (sp0 + 0xFFFFFF60).toNat % 4 = 0 := aligned_add E.hsp (k := 0xFFFFFF60) (by decide)
-  have sFC := E.frame E.sGC; have sFS := E.frame E.sGS; have sFM := E.frame E.sGM
+  have sFC := E.frame E.sGC; have sFM := E.frame E.sGM
   obtain ⟨m1, d1, u1⟩ := s0.aluImm E.code sq_at_0 (off' := 2) (by decide)
   have sp1 : upd (reg m) sp (aluEval .add (reg m sp) 0xFFFFFF60) sp = sp0 + 0xFFFFFF60 := by
     simp +decide [upd, hsp]; rfl
-  obtain ⟨m2, c2, u2⟩ := u1.callSave E.code sq_at_2 sq_at_6 (b := P + 0xBFFA)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P E.hP 0xBFFA (by decide))
-    (even_at P E.hP 0xA (by decide)) E.save mmSave_shape (by decide) (fun q hq => by
+  obtain ⟨m2, c2, u2⟩ := St.block (saveBlock mmPs) u1 E.code sqSave_end (saveBlock_ok _ mmPs _ fun q hq => by
       rw [sp1]
       simp only [mmPs, List.mem_cons, List.mem_nil_iff, or_false] at hq
       rcases hq with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-        exact ⟨by decide, aligned_add hFa (by decide), sFS.sub (by decide)⟩)
+        exact ⟨aligned_add hFa (by decide), sFC.sub (by decide)⟩)
+  simp only [saveBlock_run] at u2
   rw [sp1] at u2
   have codeS : ∀ {M' : Word → BitVec 8} {b : Word} {code : List Nat}, CodeIn m.mem b code →
       Sep (sp0 + 0xFFFFFF60) 0xA0 b code.length →
@@ -508,13 +502,13 @@ theorem sq_pro (m : Machine) {P sp0 out xp np K : Word} (E : SQEnv m.mem P sp0 o
     fun x hx => saveMem_outside mmPs fun q hq => by
       simp only [mmPs, List.mem_cons, List.mem_nil_iff, or_false] at hq
       rcases hq with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> exact hx.sub (by decide)
-  have r2 : ∀ q, q ≠ sp → q ≠ t0 → reg m2 q = reg m q := fun q q1 q2 => by
+  have r2 : ∀ q, q ≠ sp → reg m2 q = reg m q := fun q q1 => by
     rw [u2.regs]
     by_cases h0 : q.val = 0
     · have : q = 0 := Fin.ext h0
       subst this; simp [upd, hz]
-    · simp [upd, h0, q1, q2]
-  have sp2 : reg m2 sp = sp0 + 0xFFFFFF60 := by rw [u2.regs]; simp +decide [upd]; exact sp1
+    · simp [upd, h0, q1]
+  have sp2 : reg m2 sp = sp0 + 0xFFFFFF60 := by rw [u2.regs]; exact sp1
   -- keep the arguments
   have hc2 := codeS E.code sFC I2
   obtain ⟨m3, c3, u3⟩ := St.block sqProB u2.self hc2 sqProB_end (by
@@ -526,9 +520,9 @@ theorem sq_pro (m : Machine) {P sp0 out xp np K : Word} (E : SQEnv m.mem P sp0 o
   have g3 : ∀ q, reg m3 q = (runBlock sqProB (saveMem m.mem (sp0 + 0xFFFFFF60)
       (upd (reg m) sp (aluEval .add (reg m sp) 0xFFFFFF60)) mmPs, reg m2)).2 q := u3.regs
   -- zero the accumulator
-  obtain ⟨m4, c4, u4, a04, fr4⟩ := u3.self.memsetW (B := P + 0xC754) (w := 12) (dst := sp0 + 0xFFFFFF60 + 0xC)
-    (even_at P E.hP 0xC754 (by decide)) hc2 (codeS E.mset sFM I2) sq_at_1a sq_at_1e
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P E.hP (0x1A + 8) (by decide)) (by decide)
+  obtain ⟨m4, c4, u4, a04, fr4⟩ := u3.self.memsetW (B := P + 0xE5E) (w := 12) (dst := sp0 + 0xFFFFFF60 + 0xC)
+    (even_at P E.hP 0xE5E (by decide)) hc2 (codeS E.mset sFM I2) sq_at_2a sq_at_2e
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P E.hP (0x2A + 8) (by decide)) (by decide)
     (by rw [BitVec.toNat_add]; have : (0xC : Word).toNat = 0xC := rfl; rw [this]; omega) (by decide)
     (aligned_add hFa (k := 0xC) (by decide)) (sFM.sub (c := 0xC) (l := 48) (by decide))
     (by rw [g3, pa0, sp2]) (by rw [g3, pa1]) (by rw [g3, pa2]; rfl)
@@ -540,10 +534,10 @@ theorem sq_pro (m : Machine) {P sp0 out xp np K : Word} (E : SQEnv m.mem P sp0 o
   have k4 : ∀ q, q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ ra → reg m4 q = reg m3 q := fr4
   have e20 : reg m4 (20 : Fin 32) = xp := by
     rw [k4 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g3, p20,
-      r2 _ (by decide) (by decide), ha1]
+      r2 _ (by decide), ha1]
   have e22 : reg m4 (22 : Fin 32) = np := by
     rw [k4 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g3, p22,
-      r2 _ (by decide) (by decide), ha2]
+      r2 _ (by decide), ha2]
   have sp4 : reg m4 sp = sp0 + 0xFFFFFF60 := by
     rw [k4 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g3,
       pk _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), sp2]
@@ -554,7 +548,7 @@ theorem sq_pro (m : Machine) {P sp0 out xp np K : Word} (E : SQEnv m.mem P sp0 o
   obtain ⟨em5, s21, s29, s30, s7, s28, sa6, s17, s5, s6, sk⟩ := sqSetupB_run (M := M4) (f := reg m4) u4.self.zero
   rw [em5] at u5
   have g5 : ∀ q, reg m5 q = (runBlock sqSetupB (M4, reg m4)).2 q := u5.regs
-  obtain ⟨m7, d7, u7⟩ := u5.self.notTaken hc4 0x42 sq_at_3e (by decide) (by rw [g5, s6, u5.self.zero]; decide)
+  obtain ⟨m7, d7, u7⟩ := u5.self.notTaken hc4 0x52 sq_at_4e (by decide) (by rw [g5, s6, u5.self.zero]; decide)
   have g7 : ∀ q, reg m7 q = reg m5 q := u7.regs
   have kk : ∀ q, sqSetupKeep q = true → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ ra →
       reg m7 q = (runBlock sqProB (saveMem m.mem (sp0 + 0xFFFFFF60)
@@ -598,7 +592,7 @@ theorem sq_pro (m : Machine) {P sp0 out xp np K : Word} (E : SQEnv m.mem P sp0 o
       fillWords_load_sep (dst := sp0 + 0xFFFFFF60 + 0xC) ((hnF.sub (c := 0xC) (l := 48) (by decide))),
       load_frame I2 hnF]
   · rw [kk _ rfl (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), p19,
-      r2 _ (by decide) (by decide), ha3]
+      r2 _ (by decide), ha3]
   · rw [g7, g5, s5, e22]; rfl
   · have e : (0xC : Word) + BitVec.ofNat 32 (4 * (0 + 1)) = 0x10 := by decide
     rw [g7, g5, s17, sp4, BitVec.add_assoc (sp0 + 0xFFFFFF60) 0xC, e]
@@ -606,26 +600,26 @@ theorem sq_pro (m : Machine) {P sp0 out xp np K : Word} (E : SQEnv m.mem P sp0 o
   · rw [g7, g5, s29]
   · rw [g7, g5, s6]
   · rw [kk _ rfl (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), p18,
-      r2 _ (by decide) (by decide), ha0]
+      r2 _ (by decide), ha0]
   · rw [g7, g5, sk _ rfl, e22]
   · have key : ∀ q : Fin 32, q.val ∈ [3, 4, 27] → sqSetupKeep q = true ∧ q ≠ a2 ∧ q ≠ a3 ∧
         q ≠ a4 ∧ q ≠ a5 ∧ q ≠ a6 ∧ q ≠ ra ∧ q ≠ a0 ∧ q ≠ a1 ∧ q ≠ (18 : Fin 32) ∧ q ≠ (19 : Fin 32) ∧
-        q ≠ (20 : Fin 32) ∧ q ≠ (22 : Fin 32) ∧ q ≠ sp ∧ q ≠ t0 := by decide
-    obtain ⟨hs, h2, h3, h4, h5', h6, hr, h0, h1, h18, h19, h20, h22, hsp', ht0⟩ := key q hq
-    rw [kk q hs h2 h3 h4 h5' h6 hr, pk q h0 h1 h2 h18 h19 h20 h22, r2 q hsp' ht0]
+        q ≠ (20 : Fin 32) ∧ q ≠ (22 : Fin 32) ∧ q ≠ sp := by decide
+    obtain ⟨hs, h2, h3, h4, h5', h6, hr, h0, h1, h18, h19, h20, h22, hsp'⟩ := key q hq
+    rw [kk q hs h2 h3 h4 h5' h6 hr, pk q h0 h1 h2 h18 h19 h20 h22, r2 q hsp']
 
 /-- The registers the final subtraction leaves alone. -/
 def sqMidKeep (q : Fin 32) : Bool := q.val ∉ [1, 8, 9, 10, 11, 12, 13, 14, 15, 16, 19, 22]
 
 set_option exponentiation.threshold 400 in
-/-- **The final subtraction of `square_montgomery_form::<12>`**, from 0xF2 to
-0x12C: zero the buffer at `F + 0x3C`, then subtract the modulus from the
+/-- **The final subtraction of `square_montgomery_form::<12>`**, from 0x102 to
+0x13C: zero the buffer at `F + 0x3C`, then subtract the modulus from the
 accumulator at `F + 0xC` into it. -/
 theorem sq_mid {P sp0 out xp np : Word} {M0 : Word → BitVec 8} (E : SQEnv M0 P sp0 out xp np)
-    {M : Word → BitVec 8} {n : Machine} (s : St M P n 0xF2 (reg n))
+    {M : Word → BitVec 8} {n : Machine} (s : St M P n 0x102 (reg n))
     (hfr : ∀ x, Sep (sp0 + 0xFFFFFF60) 0xA0 x 1 → M x = M0 x)
     (rsp : reg n sp = sp0 + 0xFFFFFF60) (r23 : reg n (22 : Fin 32) = np) :
-    ∃ n' M', Steps n n' ∧ St M' P n' 0x12C (reg n') ∧
+    ∃ n' M', Steps n n' ∧ St M' P n' 0x13C (reg n') ∧
       (∀ x, Sep (sp0 + 0xFFFFFF5C) 4 x 1 → Sep (sp0 + 0xFFFFFF60 + 0x3C) 48 x 1 → M' x = M x) ∧
       (reg n' a2 = 0 ∨ reg n' a2 = 0xFFFFFFFF) ∧
       accV M (sp0 + 0xFFFFFF60 + 0xC) 12 + 2 ^ (32 * 12) * maskBit (reg n' a2) =
@@ -658,9 +652,9 @@ theorem sq_mid {P sp0 out xp np : Word} {M0 : Word → BitVec 8} (E : SQEnv M0 P
   have hDa : (sp0 + 0xFFFFFF60 + 0x3C).toNat % 4 = 0 := by rw [eD]; exact aligned_add hGa (by decide)
   have hDw : (sp0 + 0xFFFFFF60 + 0x3C).toNat + 48 < 2 ^ 32 := by
     rw [eD, BitVec.toNat_add, BitVec.toNat_ofNat]; have := sp0.isLt; omega
-  obtain ⟨n2, c2, u2, a02, fr2⟩ := u1.self.memsetW (B := P + 0xC754) (w := 12) (dst := sp0 + 0xFFFFFF60 + 0x3C)
-    (even_at P E.hP 0xC754 (by decide)) hc (codeF E.mset E.sGM hfr) sq_at_fe sq_at_102
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P E.hP (0xFE + 8) (by decide)) (by decide)
+  obtain ⟨n2, c2, u2, a02, fr2⟩ := u1.self.memsetW (B := P + 0xE5E) (w := 12) (dst := sp0 + 0xFFFFFF60 + 0x3C)
+    (even_at P E.hP 0xE5E (by decide)) hc (codeF E.mset E.sGM hfr) sq_at_10e sq_at_112
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P E.hP (0x10E + 8) (by decide)) (by decide)
     (by omega) (by decide) hDa (by rw [eD]; exact E.sGM.sub (c := 0x8C) (l := 48) (by decide))
     (by rw [g1, b0]) (by rw [g1, b1]) (by rw [g1, b2]; rfl)
   obtain ⟨MS, hMS⟩ : ∃ MS, fillWords M (sp0 + 0xFFFFFF60 + 0x3C) 0 12 = MS := ⟨_, rfl⟩
@@ -674,7 +668,7 @@ theorem sq_mid {P sp0 out xp np : Word} {M0 : Word → BitVec 8} (E : SQEnv M0 P
   obtain ⟨em3, i2, i9, i8, ik⟩ := sqSubInit_run (M := MS) (f := reg n2) u2.zero
   rw [em3] at u3
   have g3 : ∀ q, reg n3 q = (runBlock sqSubInit (MS, reg n2)).2 q := u3.regs
-  obtain ⟨n4, d4, u4⟩ := u3.self.notTaken hcS 0x10E sq_at_10c (by decide) (by rw [g3, i8, u3.self.zero]; decide)
+  obtain ⟨n4, d4, u4⟩ := u3.self.notTaken hcS 0x11E sq_at_11c (by decide) (by rw [g3, i8, u3.self.zero]; decide)
   have k2 : ∀ q, q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ ra → reg n2 q = (runBlock sqSubPre (M, reg n)).2 q :=
     fun q h2 h3 h4 h5 h6 hr => by rw [fr2 q h2 h3 h4 h5 h6 hr, g1]
   have k4 : ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ ra → q ≠ (19 : Fin 32) →
@@ -718,12 +712,12 @@ theorem sq_mid {P sp0 out xp np : Word} {M0 : Word → BitVec 8} (E : SQEnv M0 P
     rw [fr5 q h0 h1 h2 h3 h4 hr h9 h23 h19 h8, k4 q h0 h1 h2 h3 h4 h5 h6 hr h19 h9 h8]
 
 set_option maxRecDepth 4000 in
-/-- **The end of `square_montgomery_form::<12>`**, from 0x12C: choose the
+/-- **The end of `square_montgomery_form::<12>`**, from 0x13C: choose the
 accumulator at `F + 0xC` when the top carry is zero and the subtraction
 borrowed, and the difference at `F + 0x3C` otherwise, write the choice to
 `out` with `Uint<12>::select`, restore registers, and return. -/
 theorem sq_epi {P sp0 out xp np b : Word} {M0 : Word → BitVec 8} {v : Fin 32 → Word}
-    (E : SQEnv M0 P sp0 out xp np) {M : Word → BitVec 8} {n : Machine} (s : St M P n 0x12C (reg n))
+    (E : SQEnv M0 P sp0 out xp np) {M : Word → BitVec 8} {n : Machine} (s : St M P n 0x13C (reg n))
     (hfr : ∀ x, Sep (sp0 + 0xFFFFFF10) 0xF0 x 1 → M x = M0 x)
     (hsl : ∀ r o, (r, o) ∈ mmPs → memLoad32 M (sp0 + 0xFFFFFF60 + o) = v r)
     (rsp : reg n sp = sp0 + 0xFFFFFF60) (r18 : reg n (18 : Fin 32) = out) (ra2 : reg n a2 = b)
@@ -776,8 +770,8 @@ theorem sq_epi {P sp0 out xp np b : Word} {M0 : Word → BitVec 8} {v : Fin 32 �
   have g1 : ∀ q, reg n1 q = (runBlock sqChoice (M, reg n)).2 q := u1.regs
   -- the unused `borrowing_sub`
   obtain ⟨n2, c2, u2, _, _, sp2, fr2, mem2⟩ := u1.self.bsubCall (codeG E.code E.sGC I1G) (codeG E.bsub E.sGB I1G)
-    (even_at P E.hP 0xFFFEF3EA (by decide)) sq_at_14a sq_at_14e (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl)
-    (even_at P E.hP (0x14A + 8) (by decide))
+    (even_at P E.hP 0xFFFEE998 (by decide)) sq_at_15a sq_at_15e (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl)
+    (even_at P E.hP (0x15A + 8) (by decide))
     (by rw [g1, hk1 _ (by decide) (by decide) (by decide) (by decide), rsp]) hFa
     (by rw [eF4]; exact E.sGB.sub (c := 0x4C) (l := 4) (by decide))
   have I2G : ∀ x, Sep (sp0 + 0xFFFFFF10) 0xF0 x 1 → n2.mem x = M0 x := fun x hx => by
@@ -794,8 +788,8 @@ theorem sq_epi {P sp0 out xp np b : Word} {M0 : Word → BitVec 8} {v : Fin 32 �
   rw [em3] at u3
   rw [sp2] at s1 s2
   have g3 : ∀ q, reg n3 q = (runBlock sqSelArgs (n2.mem, reg n2)).2 q := u3.regs
-  obtain ⟨m4, c4, pc4, mem4, regs4⟩ := u3.self.callRa hc2 sq_at_15a sq_at_15e (cb := P + 0xFFFFF5BE)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P E.hP 0xFFFFF5BE (by decide))
+  obtain ⟨m4, c4, pc4, mem4, regs4⟩ := u3.self.callRa hc2 sq_at_16a sq_at_16e (cb := P + 0xFFFFF4E0)
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P E.hP 0xFFFFF4E0 (by decide))
   have r4 := PEnv.reg1 regs4 u3.self.zero
   have sp4 : reg m4 sp = sp0 + 0xFFFFFF60 := by
     rw [r4 _ (by decide), g3, sk _ (by decide) (by decide) (by decide) (by decide), sp2]
@@ -803,23 +797,21 @@ theorem sq_epi {P sp0 out xp np b : Word} {M0 : Word → BitVec 8} {v : Fin 32 �
     rw [sp4, hFG, BitVec.add_assoc]; exact BitVec.add_zero _
   have hS50 : ∀ {b' : Word} {l : Nat}, Sep (sp0 + 0xFFFFFF10) 0xF0 b' l → Sep (sp0 + 0xFFFFFF10) 0x50 b' l :=
     fun h => (h.sub (c := 0) (l := 0x50) (by decide)) |> fun h' => by rwa [add_ofNat_zero] at h'
-  have eM : P + 0xFFFFF5BE + 0xD196 = P + 0xC754 := by rw [BitVec.add_assoc]; rfl
-  have eU : P + 0xFFFFF5BE + 0xD1FE = P + 0xC7BC := by rw [BitVec.add_assoc]; rfl
-  have eB : P + 0xFFFFF5BE + 0xD206 = P + 0xC7C4 := by rw [BitVec.add_assoc]; rfl
-  have eT : P + 0xFFFFF5BE + 0xCFEE = P + 0xC5AC := by rw [BitVec.add_assoc]; rfl
+  have eM : P + 0xFFFFF4E0 + 0x197E = P + 0xE5E := by rw [BitVec.add_assoc]; rfl
+  have eU : P + 0xFFFFF4E0 + 0x19E6 = P + 0xEC6 := by rw [BitVec.add_assoc]; rfl
+  have eB : P + 0xFFFFF4E0 + 0x19EE = P + 0xECE := by rw [BitVec.add_assoc]; rfl
   have hF50 : 0x50 ≤ (sp0 + 0xFFFFFF60).toNat := by
     rw [hFG, BitVec.toNat_add, BitVec.toNat_ofNat]; have := sp0.isLt; omega
-  have SE : SelEnv m4.mem (P + 0xFFFFF5BE) (reg m4 sp) out (sp0 + 0xFFFFFF60 + 0x3C) (sp0 + 0xFFFFFF60 + 0xC) := by
+  have SE : SelEnv m4.mem (P + 0xFFFFF4E0) (reg m4 sp) out (sp0 + 0xFFFFFF60 + 0x3C) (sp0 + 0xFFFFFF60 + 0xC) := by
     rw [mem4]
-    refine ⟨even_at P E.hP 0xFFFFF5BE (by decide), codeG E.sel E.sGL I2G, by rw [eM]; exact codeG E.mset E.sGM I2G,
+    refine ⟨even_at P E.hP 0xFFFFF4E0 (by decide), codeG E.sel E.sGL I2G, by rw [eM]; exact codeG E.mset E.sGM I2G,
       by rw [eU]; exact codeG E.stub E.sGU I2G, by rw [eB]; exact codeG E.body E.sGY I2G,
-      by rw [eT]; exact codeG E.step E.sGP I2G, by rw [sp4]; exact hFa, by rw [sp4]; exact hF50, E.hout,
-      aligned_add hFa (by decide), aligned_add hFa (by decide), E.hwo, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      by rw [sp4]; exact hFa, by rw [sp4]; exact hF50, E.hout,
+      aligned_add hFa (by decide), aligned_add hFa (by decide), E.hwo, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · rw [eSel]; exact hS50 E.sGL
     · rw [eSel, eM]; exact hS50 E.sGM
     · rw [eSel, eU]; exact hS50 E.sGU
     · rw [eSel, eB]; exact hS50 E.sGY
-    · rw [eSel, eT]; exact hS50 E.sGP
     · rw [eSel]; exact (E.sOG.subR (c := 0) (l := 0x50) (by decide)) |> fun h' => by rwa [add_ofNat_zero] at h'
     · exact E.sOL
     · rw [eB]; exact E.sOY
@@ -833,7 +825,7 @@ theorem sq_epi {P sp0 out xp np b : Word} {M0 : Word → BitVec 8} {v : Fin 32 �
     (by rw [r4 _ (by decide), g3, s0, k2 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide), r18])
     (by rw [r4 _ (by decide), g3, s1]) (by rw [r4 _ (by decide), g3, s2]) (by rw [r4 _ (by decide), g3, s3, e9])
-    hc01 (by rw [regs4]; simp +decide [upd]) (even_clear _ (even_at P E.hP (0x15A + 8) (by decide)))
+    hc01 (by rw [regs4]; simp +decide [upd]) (even_clear _ (even_at P E.hP (0x16A + 8) (by decide)))
   rw [eSel] at mem5
   rw [sp4] at sp5
   have I5 : ∀ x, Sep (sp0 + 0xFFFFFF10) 0xF0 x 1 → Sep out 48 x 1 → m5.mem x = M0 x := fun x hx ho => by
@@ -842,8 +834,8 @@ theorem sq_epi {P sp0 out xp np b : Word} {M0 : Word → BitVec 8} {v : Fin 32 �
       Sep out 48 b' code.length → CodeIn m5.mem b' code := fun hc' hs ho i hi => by
     rw [I5 _ (hs.subR (c := i) (l := 1) (by omega)) (ho.subR (c := i) (l := 1) (by omega))]; exact hc' i hi
   have hc5 := codeGO E.code E.sGC E.sOC
-  have u5 : St m5.mem P m5 0x162 (reg m5) := ⟨pc5, rfl, fun _ => rfl⟩
-  -- the frame's saved slots, and the two buffers, are as they were at 0x12C
+  have u5 : St m5.mem P m5 0x172 (reg m5) := ⟨pc5, rfl, fun _ => rfl⟩
+  -- the frame's saved slots, and the two buffers, are as they were at 0x13C
   have load5 : ∀ a, Sep (sp0 + 0xFFFFFF10) 0x50 a 4 → Sep out 48 a 4 →
       Sep (sp0 + 0xFFFFFF60 + 0xFFFFFFFC) 4 a 4 → Sep (sp0 + 0xFFFFFF60 + 0x6C) 4 a 4 →
       memLoad32 m5.mem a = memLoad32 M a := fun a h1 h2 h3 h4 => by
@@ -860,22 +852,18 @@ theorem sq_epi {P sp0 out xp np b : Word} {M0 : Word → BitVec 8} {v : Fin 32 �
       (by rw [eF4, eFo]; exact sep_offsets _ (.inl (by omega)) (by omega) (by omega))
       (by rw [e6C, eFo]; exact sep_offsets _ (.inl (by omega)) (by omega) (by omega)), hFo]
     exact hsl r o hm
-  obtain ⟨m6, c6, u6⟩ := u5.callRestore hc5 sq_at_162 sq_at_166 (b := P + 0xC048)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P E.hP 0xC048 (by decide))
-    (even_at P E.hP (0x162 + 8) (by decide)) (codeGO E.restore E.sGR E.sOR) mmRestore_shape (by decide)
-    (fun q hq => by
-      rw [sp5]
+  have hpsp : ∀ p ∈ mmPs, p.1 ≠ sp := by decide
+  obtain ⟨m6, c6, u6⟩ := St.block (restoreBlock mmPs) u5 hc5 sqRestore_end
+    (restoreBlock_ok m5.mem (sp0 + 0xFFFFFF60) mmPs (reg m5) sp5 hpsp fun q hq => by
       simp only [mmPs, List.mem_cons, List.mem_nil_iff, or_false] at hq
       rcases hq with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-        exact ⟨by decide, by decide, aligned_add hFa (by decide)⟩)
-  rw [sp5] at u6
-  have rsp6 : restoreRegs m5.mem (sp0 + 0xFFFFFF60) (upd (reg m5) t0 (P + BitVec.ofNat 32 (0x162 + 8))) mmPs sp =
-      sp0 + 0xFFFFFF60 := by
-    rw [restoreRegs_sp _ _ _ _ (by decide)]; simp +decide only [upd, ↓reduceIte]; exact sp5
-  obtain ⟨m7, d7, u7⟩ := u6.aluImm hc5 sq_at_16a (off' := 0x16C) (by decide)
-  obtain ⟨m8, d8, pc8, mem8, regs8⟩ := u7.jalr hc5 sq_at_16c
-  have rra : restoreRegs m5.mem (sp0 + 0xFFFFFF60) (upd (reg m5) t0 (P + BitVec.ofNat 32 (0x162 + 8))) mmPs ra =
-      v ra := by
+        exact aligned_add hFa (by decide))
+  simp only [restoreBlock_run m5.mem (sp0 + 0xFFFFFF60) mmPs (reg m5) sp5 hpsp] at u6
+  have rsp6 : restoreRegs m5.mem (sp0 + 0xFFFFFF60) (reg m5) mmPs sp = sp0 + 0xFFFFFF60 := by
+    rw [restoreRegs_sp _ _ _ _ hpsp]; exact sp5
+  obtain ⟨m7, d7, u7⟩ := u6.aluImm hc5 sq_at_18a (off' := 0x18C) (by decide)
+  obtain ⟨m8, d8, pc8, mem8, regs8⟩ := u7.jalr hc5 sq_at_18c
+  have rra : restoreRegs m5.mem (sp0 + 0xFFFFFF60) (reg m5) mmPs ra = v ra := by
     simp only [restoreRegs]; simp +decide only [upd, ↓reduceIte]
     exact slot ra _ (by decide) (by decide) (by decide)
   have sepF4 : ∀ c, 0x50 ≤ c → c + 4 ≤ 0xF0 →
@@ -909,8 +897,8 @@ theorem sq_epi {P sp0 out xp np b : Word} {M0 : Word → BitVec 8} {v : Fin 32 �
     · simp only [restoreRegs]; simp +decide only [upd, ↓reduceIte]
       exact slot _ _ (by decide) (by decide) (by decide)
   · have key : ∀ q : Fin 32, q.val ∈ [3, 4, 27] → selKeep q = true ∧ q ≠ ra ∧ q ≠ a0 ∧ q ≠ a1 ∧ q ≠ a2 ∧
-        q ≠ a3 ∧ q ≠ a4 ∧ q ≠ (9 : Fin 32) ∧ q ≠ sp ∧ q ≠ t0 ∧ q.val ≠ 0 ∧ (∀ p ∈ mmPs, p.1 ≠ q) := by decide
-    obtain ⟨hs, hr, h0, h1, h2, h3, h4, h9, hsp, ht, hq0, hps⟩ := key q hq
+        q ≠ a3 ∧ q ≠ a4 ∧ q ≠ (9 : Fin 32) ∧ q ≠ sp ∧ q.val ≠ 0 ∧ (∀ p ∈ mmPs, p.1 ≠ q) := by decide
+    obtain ⟨hs, hr, h0, h1, h2, h3, h4, h9, hsp, hq0, hps⟩ := key q hq
     have rr : ∀ (f : Fin 32 → Word) (ps : List (Fin 32 × Word)), (∀ p ∈ ps, p.1 ≠ q) →
         restoreRegs m5.mem (sp0 + 0xFFFFFF60) f ps q = f q := by
       intro f ps
@@ -920,7 +908,7 @@ theorem sq_epi {P sp0 out xp np b : Word} {M0 : Word → BitVec 8} {v : Fin 32 �
         intro h
         simp only [restoreRegs]
         rw [ih _ (fun p' hp' => h p' (List.mem_cons_of_mem _ hp')), upd_ne hq0 (fun e => h p List.mem_cons_self e.symm)]
-    rw [regs8, upd_ne hq0 hsp, rr _ _ hps, upd_ne hq0 ht, k5 q hs, r4 q hr, g3, sk q h0 h1 h2 h3,
+    rw [regs8, upd_ne hq0 hsp, rr _ _ hps, k5 q hs, r4 q hr, g3, sk q h0 h1 h2 h3,
       k2 q h0 h1 h2 h3 h4 hr h9]
 
 

@@ -1034,24 +1034,27 @@ theorem exists_sha256Fn_machine :
 `-1` modulo `2^32`. -/
 def montModBytes : List Nat := 3 :: List.replicate 47 0
 
-/-- `witnessMemOne` with `mul_montgomery_form::<12>`, its outlined helpers,
-and `Uint<12>::select` added where the image loads them, and the modulus at
-`0x3FCC6600`. -/
+/-- Memory with the current image's `mul_montgomery_form::<12>`,
+`square_montgomery_form::<12>`, `Uint<12>::select`, `borrowing_sub`,
+`memset`, and `memcpy` where the image loads them, the modulus at
+`0x3FCC6600`, and zeros elsewhere. -/
 def witnessMemMont (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 ImageV0.mulMont12Address).toNat < ImageV0.mulMont12Code.length then
-    RV32.byteAt ImageV0.mulMont12Code (a - BitVec.ofNat 32 ImageV0.mulMont12Address).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.mulMont12SaveAddress).toNat < ImageV0.mulMont12SaveCode.length then
-    RV32.byteAt ImageV0.mulMont12SaveCode (a - BitVec.ofNat 32 ImageV0.mulMont12SaveAddress).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.mulMont12SetupAddress).toNat < ImageV0.mulMont12SetupCode.length then
-    RV32.byteAt ImageV0.mulMont12SetupCode (a - BitVec.ofNat 32 ImageV0.mulMont12SetupAddress).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.mulMont12RestoreAddress).toNat < ImageV0.mulMont12RestoreCode.length then
-    RV32.byteAt ImageV0.mulMont12RestoreCode (a - BitVec.ofNat 32 ImageV0.mulMont12RestoreAddress).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.uintSelect12Address).toNat < ImageV0.uintSelect12Code.length then
-    RV32.byteAt ImageV0.uintSelect12Code (a - BitVec.ofNat 32 ImageV0.uintSelect12Address).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.uintSelect12StepAddress).toNat < ImageV0.uintSelect12StepCode.length then
-    RV32.byteAt ImageV0.uintSelect12StepCode (a - BitVec.ofNat 32 ImageV0.uintSelect12StepAddress).toNat
+  if (a - BitVec.ofNat 32 Image.mulMont12Address).toNat < Image.mulMont12Code.length then
+    RV32.byteAt Image.mulMont12Code (a - BitVec.ofNat 32 Image.mulMont12Address).toNat
+  else if (a - BitVec.ofNat 32 Image.sqMont12Address).toNat < Image.sqMont12Code.length then
+    RV32.byteAt Image.sqMont12Code (a - BitVec.ofNat 32 Image.sqMont12Address).toNat
+  else if (a - BitVec.ofNat 32 Image.uintSelect12Address).toNat < Image.uintSelect12Code.length then
+    RV32.byteAt Image.uintSelect12Code (a - BitVec.ofNat 32 Image.uintSelect12Address).toNat
+  else if (a - BitVec.ofNat 32 Image.borrowingSubAddress).toNat < Image.borrowingSubCode.length then
+    RV32.byteAt Image.borrowingSubCode (a - BitVec.ofNat 32 Image.borrowingSubAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memsetAddress).toNat < Image.memsetCode.length then
+    RV32.byteAt Image.memsetCode (a - BitVec.ofNat 32 Image.memsetAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat < Image.memcpyStubCode.length then
+    RV32.byteAt Image.memcpyStubCode (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat < Image.memcpyBodyCode.length then
+    RV32.byteAt Image.memcpyBodyCode (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat
   else if (a - 0x3FCC6600).toNat < 48 then RV32.byteAt montModBytes (a - 0x3FCC6600).toNat
-  else witnessMemOne a
+  else 0
 
 set_option maxRecDepth 20000 in
 set_option maxHeartbeats 8000000 in
@@ -1070,9 +1073,9 @@ theorem exists_mulMont12_machine :
     if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC6400 else if r = RV32.a2 then 0x3FCC6500
     else if r = RV32.a3 then 0x3FCC6600 else if r = RV32.a4 then 0x55555555
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.mulMont12Address, witnessMemMont⟩, BitVec.ofNat 32 ImageV0.mulMont12Address,
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.mulMont12Address, witnessMemMont⟩, BitVec.ofNat 32 Image.mulMont12Address,
     0x3FCC8000, 0x3FCC6000, 0x3FCC6400, 0x3FCC6500, 0x3FCC6600, 0x55555555, 0,
-    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide,
+    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide,
       by decide, by decide,
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
@@ -1080,20 +1083,11 @@ theorem exists_mulMont12_machine :
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩,
+      RV32.sep_of_le (by decide) (by decide)⟩,
     rfl, rfl, rfl, rfl, rfl, rfl, rfl, by decide, rfl, ?_, ?_⟩
   all_goals first
     | (unfold RV32.CodeIn; decide +kernel)
     | decide +kernel
-
-/-- `witnessMemMont` with `square_montgomery_form::<12>` added where the
-image loads it. -/
-def witnessMemSqr (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 ImageV0.sqMont12Address).toNat < ImageV0.sqMont12Code.length then
-    RV32.byteAt ImageV0.sqMont12Code (a - BitVec.ofNat 32 ImageV0.sqMont12Address).toNat
-  else witnessMemMont a
 
 set_option maxRecDepth 20000 in
 set_option maxHeartbeats 8000000 in
@@ -1111,12 +1105,10 @@ theorem exists_sqrMont12_machine :
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC6400 else if r = RV32.a2 then 0x3FCC6600
     else if r = RV32.a3 then 0x55555555 else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.sqMont12Address, witnessMemSqr⟩, BitVec.ofNat 32 ImageV0.sqMont12Address,
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.sqMont12Address, witnessMemMont⟩, BitVec.ofNat 32 Image.sqMont12Address,
     0x3FCC8000, 0x3FCC6000, 0x3FCC6400, 0x3FCC6600, 0x55555555, 0,
-    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide,
+    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide,
       by decide,
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),

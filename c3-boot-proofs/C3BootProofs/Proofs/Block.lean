@@ -129,4 +129,48 @@ theorem St.block {base : Word} {code : List Nat} :
       · cases he
     · cases he
 
+/-- Stores of each register of `ps` at its offset from `sp`, in order: a
+prologue's register saves. -/
+def saveBlock (ps : List (Fin 32 × Word)) : List BInstr := ps.map fun p => .sw sp p.1 p.2
+
+/-- Loads of each register of `ps` from its offset from `sp`, in order: an
+epilogue's register restores. -/
+def restoreBlock (ps : List (Fin 32 × Word)) : List BInstr := ps.map fun p => .lw p.1 sp p.2
+
+theorem saveBlock_run (f : Fin 32 → Word) :
+    ∀ (ps : List (Fin 32 × Word)) (M : Word → BitVec 8), runBlock (saveBlock ps) (M, f) = (saveMem M (f sp) f ps, f)
+  | [], _ => rfl
+  | (_, _) :: ps, _ => saveBlock_run f ps _
+
+theorem saveBlock_ok {base : Word} {len : Nat} (f : Fin 32 → Word) :
+    ∀ (ps : List (Fin 32 × Word)) (M : Word → BitVec 8),
+      (∀ p ∈ ps, (f sp + p.2).toNat % 4 = 0 ∧ Sep (f sp + p.2) 4 base len) → BlockOk base len (saveBlock ps) (M, f)
+  | [], _, _ => trivial
+  | (r, o) :: ps, _, h => ⟨h (r, o) List.mem_cons_self,
+      saveBlock_ok f ps _ fun q hq => h q (List.mem_cons_of_mem _ hq)⟩
+
+theorem restoreBlock_run (M : Word → BitVec 8) (G : Word) :
+    ∀ (ps : List (Fin 32 × Word)) (f : Fin 32 → Word), f sp = G → (∀ p ∈ ps, p.1 ≠ sp) →
+      runBlock (restoreBlock ps) (M, f) = (M, restoreRegs M G f ps)
+  | [], _, _, _ => rfl
+  | (r, o) :: ps, f, hG, h => by
+    have hr : r ≠ sp := h (r, o) List.mem_cons_self
+    have e : upd f r (memLoad32 M (f sp + o)) sp = G := by
+      rw [← hG]; exact upd_ne (by decide) (Ne.symm hr)
+    show runBlock (restoreBlock ps) (M, upd f r (memLoad32 M (f sp + o))) = _
+    rw [restoreBlock_run M G ps _ e fun q hq => h q (List.mem_cons_of_mem _ hq), hG]
+    rfl
+
+theorem restoreBlock_ok {base : Word} {len : Nat} (M : Word → BitVec 8) (G : Word) :
+    ∀ (ps : List (Fin 32 × Word)) (f : Fin 32 → Word), f sp = G → (∀ p ∈ ps, p.1 ≠ sp) →
+      (∀ p ∈ ps, (G + p.2).toNat % 4 = 0) → BlockOk base len (restoreBlock ps) (M, f)
+  | [], _, _, _, _ => trivial
+  | (r, o) :: ps, f, hG, h, ha => by
+    have hr : r ≠ sp := h (r, o) List.mem_cons_self
+    refine ⟨by show (f sp + o).toNat % 4 = 0; rw [hG]; exact ha (r, o) List.mem_cons_self, ?_⟩
+    refine restoreBlock_ok M G ps _ ?_ (fun q hq => h q (List.mem_cons_of_mem _ hq))
+      (fun q hq => ha q (List.mem_cons_of_mem _ hq))
+    show upd f r (memLoad32 M (f sp + o)) sp = G
+    rw [← hG]; exact upd_ne (by decide) (Ne.symm hr)
+
 end C3.RV32
