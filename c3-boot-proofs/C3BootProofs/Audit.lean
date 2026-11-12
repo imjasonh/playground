@@ -16,6 +16,7 @@ import C3BootProofs.Proofs.FeReduce
 import C3BootProofs.Proofs.FeMul
 import C3BootProofs.Proofs.FeSqInner
 import C3BootProofs.Proofs.FeSquare
+import C3BootProofs.Proofs.FlashRead
 import C3BootProofs.Proofs.ImageHelpers
 import C3BootProofs.Proofs.Block
 import C3BootProofs.Proofs.ImageCalls
@@ -1543,6 +1544,46 @@ theorem exists_feSquare_machine :
   · unfold RV32.CodeIn; decide +kernel
   · unfold RV32.CodeIn; decide +kernel
 
+def witnessMemFlashRead (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.flashReadAddress).toNat < Image.flashReadCode.length then
+    RV32.byteAt Image.flashReadCode (a - BitVec.ofNat 32 Image.flashReadAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.romFlashReadWordsAddress).toNat < Image.romFlashReadWordsCode.length then
+    RV32.byteAt Image.romFlashReadWordsCode (a - BitVec.ofNat 32 Image.romFlashReadWordsAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memsetAddress).toNat < Image.memsetCode.length then
+    RV32.byteAt Image.memsetCode (a - BitVec.ofNat 32 Image.memsetAddress).toNat
+  else if (a - 0x40000130).toNat < RV32.romStubCode.length then
+    RV32.byteAt RV32.romStubCode (a - 0x40000130).toNat
+  else 0
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 4000000 in
+/-- A machine that calls `flash::read` for 0x40 bytes of flash at 0x10000 into
+`0x3FCC5000`, with its stack at `0x3FCC7150` and the ROM stub that always
+fails at 0x40000130, meets `flashRead_correct`'s hypotheses, `RomRead`
+included. -/
+theorem exists_flashRead_machine :
+    ∃ (m : RV32.Machine) (P G addr out len retAddr : RV32.Word) (flash : Nat → BitVec 8) (R : Nat)
+      (romBase : RV32.Word) (romCode : List Nat), RV32.RomRead flash R romBase romCode ∧
+      RV32.FRdEnv m.mem P G out len R romBase romCode ∧ m.pc = P ∧ RV32.reg m RV32.a0 = addr ∧
+      RV32.reg m RV32.a1 = out ∧ RV32.reg m RV32.a2 = len ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = G + BitVec.ofNat 32 (0x150 + R) := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x10000 else if r = RV32.a1 then 0x3FCC5000 else if r = RV32.a2 then 0x40
+    else if r = RV32.sp then 0x3FCC7150 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.flashReadAddress, witnessMemFlashRead⟩,
+    BitVec.ofNat 32 Image.flashReadAddress, 0x3FCC7000, 0x10000, 0x3FCC5000, 0x40, 0, fun _ => 0, 0,
+    0x40000130, RV32.romStubCode, RV32.romStub_read _,
+    ⟨by decide, ?_, ?_, ?_, by decide, by decide, by decide, by decide,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), ?_,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩,
+    rfl, rfl, rfl, rfl, rfl, by decide, rfl⟩
+  · unfold RV32.CodeIn; decide +kernel
+  · unfold RV32.CodeIn; decide +kernel
+  · unfold RV32.CodeIn; decide +kernel
+  · unfold RV32.CodeIn; decide +kernel
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -1919,3 +1960,15 @@ end C3
 
 /-- info: 'C3.exists_feSquare_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_feSquare_machine
+
+/-- info: 'C3.RV32.romFlashReadWords_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.romFlashReadWords_correct
+
+/-- info: 'C3.RV32.flashRead_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.flashRead_correct
+
+/-- info: 'C3.RV32.romStub_read' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.romStub_read
+
+/-- info: 'C3.exists_flashRead_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_flashRead_machine

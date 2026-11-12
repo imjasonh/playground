@@ -121,13 +121,15 @@ end
 def romKeep (q : Fin 32) : Bool := q.val ∈ [0, 2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]
 
 /-- What the ROM's `esp_rom_spiflash_read` at 0x40000130 does, as the proofs
-assume it. Called with a flash address `src`, a destination `dst`, and a
-byte count `n`, all multiples of 4, with `romStack` bytes of stack below
-`sp`, it returns to `ra` with the callee-saved registers unchanged. When it
-returns 0 in `a0`, the `n` bytes at `dst` hold `flash` from `src`. Either
-way it changes no memory but those bytes and its stack. -/
-def RomRead (flash : Nat → BitVec 8) (romStack : Nat) : Prop :=
-  ∀ (m : Machine) (src dst n : Word), m.pc = 0x40000130 → reg m a0 = src → reg m a1 = dst → reg m a2 = n →
+assume it, when the ROM's code `romCode` is in memory at `romBase`. Called
+with a flash address `src`, a destination `dst`, and a byte count `n`, all
+multiples of 4, with `romStack` bytes of stack below `sp`, it returns to `ra`
+with the callee-saved registers unchanged. When it returns 0 in `a0`, the `n`
+bytes at `dst` hold `flash` from `src`. Either way it changes no memory but
+those bytes and its stack. -/
+def RomRead (flash : Nat → BitVec 8) (romStack : Nat) (romBase : Word) (romCode : List Nat) : Prop :=
+  ∀ (m : Machine) (src dst n : Word), CodeIn m.mem romBase romCode → m.pc = 0x40000130 → reg m a0 = src →
+    reg m a1 = dst → reg m a2 = n →
     src.toNat % 4 = 0 → dst.toNat % 4 = 0 → n.toNat % 4 = 0 → dst.toNat + n.toNat ≤ 2 ^ 32 →
     romStack ≤ (reg m sp).toNat →
     ∃ m', Steps m m' ∧ m'.pc = reg m ra &&& ~~~1 ∧ (∀ q, romKeep q = true → reg m' q = reg m q) ∧
@@ -174,6 +176,26 @@ theorem St.oldReg {M : Word → BitVec 8} {base : Word} {m : Machine} {off : Nat
     subst this; simp [upd]; exact hz.symm
   · simp [upd, h0, hq]
 
+/-- A ROM whose `esp_rom_spiflash_read` always fails: `li a0, 1; ret`. It
+meets `RomRead` for any flash, so `RomRead` is satisfiable; the audit uses it
+to show that `flashRead_correct`'s hypotheses are. -/
+def romStubCode : List Nat := [0x05, 0x45, 0x82, 0x80]
+
+theorem rs_at_0 : fetchRel romStubCode 0x0 = some (.aluImm .add a0 x0 0x1, 2) := by decide
+theorem rs_at_2 : fetchRel romStubCode 0x2 = some (.jalr x0 ra 0x0, 2) := by decide
+
+theorem romStub_read (flash : Nat → BitVec 8) : RomRead flash 0 0x40000130 romStubCode := by
+  intro m src dst n hc hpc _ _ _ _ _ _ _ _
+  have s0 : St m.mem 0x40000130 m 0 (reg m) := ⟨by rw [hpc]; rfl, rfl, fun _ => rfl⟩
+  obtain ⟨m1, d1, u1⟩ := s0.aluImm hc rs_at_0 (off' := 2) (by decide)
+  obtain ⟨m2, d2, pc2, mem2, regs2⟩ := u1.jalr hc rs_at_2
+  have a0v : reg m2 a0 = 1 := by rw [regs2]; simp +decide only [upd_app, ↓reduceIte, aluEval]; rw [s0.zero]; rfl
+  refine ⟨m2, .cons d1 (.single d2), ?_, fun q hq => ?_, fun h => absurd (a0v.symm.trans h) (by decide), ?_⟩
+  · rw [pc2]; simp +decide only [upd_app, ↓reduceIte]; rw [add_lit_zero]
+  · have ha : q ≠ a0 := fun e => by subst e; exact absurd hq (by decide)
+    rw [regs2, ← u1.regs, u1.oldReg s0.zero q ha]
+  · intro x _ _; rw [mem2]
+
 /-- Where `rom::flash_read_words` runs: its code at the image's address (its
 pc-relative call reaches the ROM only from there), `16 + romStack` bytes of
 stack at `G`, its own 16 at the top and the ROM's below, and the
@@ -197,10 +219,12 @@ set_option maxHeartbeats 4000000 in
 returns 1 or 0 in `a0`; when it returns 1, the `4 w` bytes at `dst` hold the
 flash's bytes from `src`. It keeps `sp` and the callee-saved registers, and
 changes no memory outside its stack region and the destination. -/
-theorem romFlashReadWords_correct {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R) (m : Machine)
+theorem romFlashReadWords_correct {flash : Nat → BitVec 8} {R : Nat} {romBase : Word} {romCode : List Nat}
+    (hROM : RomRead flash R romBase romCode) (m : Machine)
     {P G src dst w retAddr : Word} (env : RFWEnv m.mem P G dst w R) (hpc : m.pc = P) (ha0 : reg m a0 = src)
     (ha1 : reg m a1 = dst) (ha2 : reg m a2 = w) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
-    (hsp : reg m sp = G + BitVec.ofNat 32 (16 + R)) (hsrc : src.toNat % 4 = 0) :
+    (hsp : reg m sp = G + BitVec.ofNat 32 (16 + R)) (hsrc : src.toNat % 4 = 0)
+    (hrom : CodeIn m.mem romBase romCode) (sGR : Sep G (16 + R) romBase romCode.length) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = G + BitVec.ofNat 32 (16 + R) ∧
       (∀ q, romKeep q = true → reg m' q = reg m q) ∧ (reg m' a0 = 0 ∨ reg m' a0 = 1) ∧
       (reg m' a0 = 1 → ∀ i, i < 4 * w.toNat → m'.mem (dst + BitVec.ofNat 32 i) = flash (src.toNat + i)) ∧
@@ -260,7 +284,8 @@ theorem romFlashReadWords_correct {flash : Nat → BitVec 8} {R : Nat} (hROM : R
   have hRsp : R ≤ (reg m4 sp).toNat := by
     rw [sp4, ← hF, BitVec.toNat_add, BitVec.toNat_ofNat]; have := env.hGt
     rw [Nat.mod_eq_of_lt (a := R) (by omega), Nat.mod_eq_of_lt (by omega)]; omega
-  obtain ⟨m5, c5, pc5, k5, by5, fr5⟩ := hROM m4 src dst _ pc4
+  obtain ⟨m5, c5, pc5, k5, by5, fr5⟩ := hROM m4 src dst _
+    (fun i hi => by rw [mem4, fM1 _ (sGR.subR (c := i) (l := 1) (by omega))]; exact hrom i hi) pc4
     (by rw [r4a _ (by decide) (by decide), rk1 _ (by decide), ha0])
     (by rw [r4a _ (by decide) (by decide), rk1 _ (by decide), ha1]) n4 hsrc env.hdst
     (by rw [nN]; omega) (by rw [nN]; exact Nat.le_of_lt env.hw) hRsp
@@ -561,7 +586,8 @@ theorem frd_inner {M0 : Word → BitVec 8} {P F O : Word} {d sk W L : Nat} (hP :
 bytes of stack at `G` (from the top: its 0x140-byte frame,
 `flash_read_words`'s 16, and the ROM's), and the result's `len` bytes at
 `out`, apart from all of those. -/
-structure FRdEnv (M : Word → BitVec 8) (P G out len : Word) (romStack : Nat) : Prop where
+structure FRdEnv (M : Word → BitVec 8) (P G out len : Word) (romStack : Nat) (romBase : Word)
+    (romCode : List Nat) : Prop where
   hP : P = 0x403A1748
   code : CodeIn M P flashReadCode
   mset : CodeIn M (P + 0x1309E) memsetCode
@@ -576,6 +602,9 @@ structure FRdEnv (M : Word → BitVec 8) (P G out len : Word) (romStack : Nat) :
   sOC : Sep out len.toNat P flashReadCode.length
   sOW : Sep out len.toNat (P + 0xFFFFFFE8) romFlashReadWordsCode.length
   sOG : Sep out len.toNat G (0x150 + romStack)
+  rom : CodeIn M romBase romCode
+  sGR : Sep G (0x150 + romStack) romBase romCode.length
+  sOR : Sep out len.toNat romBase romCode.length
 
 theorem beq_toNat {a b : Word} (h : a.toNat ≠ b.toNat) : (a == b) = false :=
   beq_eq_false_iff_ne.mpr fun e => h (e ▸ rfl)
@@ -590,8 +619,9 @@ set_option maxHeartbeats 16000000 in
 /-- The outer loop of `flash::read`, from 0x60 with `d` bytes read: it reads
 the rest a chunk at a time and reaches 0xE4 with `d'` bytes read, all of
 them when `d' = len`. -/
-theorem frd_outer {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R) {M0 Mp : Word → BitVec 8}
-    {P G out len addr : Word} (env : FRdEnv M0 P G out len R) :
+theorem frd_outer {flash : Nat → BitVec 8} {R : Nat} {romBase : Word} {romCode : List Nat}
+    (hROM : RomRead flash R romBase romCode) {M0 Mp : Word → BitVec 8}
+    {P G out len addr : Word} (env : FRdEnv M0 P G out len R romBase romCode) :
     ∀ k d (n : Machine) (Mo : Word → BitVec 8), len.toNat - d ≤ k → d < len.toNat →
       St Mo P n 0x60 (reg n) →
       reg n (18 : Fin 32) = addr → reg n (19 : Fin 32) = out → reg n (21 : Fin 32) = len →
@@ -763,6 +793,10 @@ theorem frd_outer {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R) 
     (even_clear _ (even_at P hPe (0x88 + 8) (by decide)))
     (by rw [r12 _ (by decide), k11 _ (by decide), sp10, hF])
     (by rw [hal4]; omega)
+    (fun i hi => by
+      rw [mem12, hfr _ (env.sGR.subR (c := i) (l := 1) (by omega)) (env.sOR.subR (c := i) (l := 1) (by omega))]
+      exact env.rom i hi)
+    (by have := env.sGR.sub (c := 0) (l := 16 + R) (by omega); rwa [add_ofNat_zero] at this)
   rw [hwn] at by13 fr13
   have cst : ∀ q, romKeep q = true → q ≠ (8 : Fin 32) → q ≠ (26 : Fin 32) → reg n13 q = reg n q := by
     intro q hq h8 h26
@@ -995,5 +1029,435 @@ theorem frd_outer {flash : Nat → BitVec 8} {R : Nat} (hROM : RomRead flash R) 
     · rw [uD.regs, s5_C]
     · rw [uD.regs, cC _ (by decide) (by decide) (by decide) (by decide), hsp]
 
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 40000000 in
+/-- **The compiled `c3_bootloader::flash::read`**, called with a flash address
+`addr` and the slice `out` of `len` bytes, with the 0x140 bytes of its frame
+and `romStack` more for the ROM below `sp`: it returns 1 or 0 in `a0`, with
+`sp` and the callee-saved registers as they were. When it returns 1, `out`
+holds the `len` bytes of `flash` from `addr`. Either way it changes no memory
+outside its stack and `out`. -/
+theorem flashRead_correct {flash : Nat → BitVec 8} {R : Nat} {romBase : Word} {romCode : List Nat}
+    (hROM : RomRead flash R romBase romCode) (m : Machine)
+    {P G addr out len retAddr : Word} (env : FRdEnv m.mem P G out len R romBase romCode) (hpc : m.pc = P)
+    (ha0 : reg m a0 = addr) (ha1 : reg m a1 = out) (ha2 : reg m a2 = len) (hra : reg m ra = retAddr)
+    (hret : retAddr &&& ~~~1 = retAddr) (hsp : reg m sp = G + BitVec.ofNat 32 (0x150 + R)) :
+    ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = G + BitVec.ofNat 32 (0x150 + R) ∧
+      (∀ q, romKeep q = true → reg m' q = reg m q) ∧ (reg m' a0 = 0 ∨ reg m' a0 = 1) ∧
+      (reg m' a0 = 1 → ∀ i, i < len.toNat → m'.mem (out + BitVec.ofNat 32 i) = flash (addr.toNat + i)) ∧
+      ∀ x, Sep G (0x150 + R) x 1 → Sep out len.toNat x 1 → m'.mem x = m.mem x := by
+  obtain ⟨F, hF⟩ : ∃ F, G + BitVec.ofNat 32 (16 + R) = F := ⟨_, rfl⟩
+  have hGt := env.hGt
+  have hlen := env.hlen
+  have hPe : P.toNat % 2 = 0 := by rw [env.hP]; decide
+  have hFn : F.toNat = G.toNat + (16 + R) := by
+    rw [← hF, BitVec.toNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (a := 16 + R) (by omega), Nat.mod_eq_of_lt (by omega)]
+  have hFa : F.toNat % 4 = 0 := by rw [← hF]; exact aligned_add env.hG (k := 16 + R) (by have := env.hR; omega)
+  have fG : ∀ c, F + BitVec.ofNat 32 c = G + BitVec.ofNat 32 (16 + R + c) := fun c => by
+    rw [← hF, add_ofNat_assoc]
+  have hFsp : G + BitVec.ofNat 32 (0x150 + R) + 0xFFFFFEC0 = F := by
+    rw [← hF, BitVec.add_assoc, show (0xFFFFFEC0 : Word) = BitVec.ofNat 32 4294966976 from rfl, ofNat_add_ofNat]
+    rw [show BitVec.ofNat 32 (0x150 + R + 4294966976) = BitVec.ofNat 32 (16 + R) from
+      BitVec.eq_of_toNat_eq (by rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega)]
+  have hspF : F + 0x140 = G + BitVec.ofNat 32 (0x150 + R) := by
+    rw [show (0x140 : Word) = BitVec.ofNat 32 0x140 from rfl, fG, show 16 + R + 0x140 = 0x150 + R by omega]
+  have sFC : Sep F 0x140 P flashReadCode.length := by
+    rw [← hF]; exact env.sGC.sub (c := 16 + R) (l := 0x140) (by omega)
+  have sFM : Sep F 0x140 (P + 0x1309E) memsetCode.length := by
+    rw [← hF]; exact env.sGM.sub (c := 16 + R) (l := 0x140) (by omega)
+  have inF : ∀ x, Sep G (0x150 + R) x 1 → Sep F 0x140 x 1 := fun x hx => by
+    rw [← hF]; exact hx.sub (c := 16 + R) (l := 0x140) (by omega)
+  -- the prologue: the frame, and `ra` and `s0` through `s10` saved at its top
+  have s0 : St m.mem P m 0 (reg m) := ⟨by rw [hpc]; simp, rfl, fun _ => rfl⟩
+  have hz := s0.zero
+  obtain ⟨m1, d1, u1⟩ := s0.aluImm env.code frd_at_0 (off' := 2) (by decide)
+  obtain ⟨m2, d2, u2⟩ := u1.aluImm env.code frd_at_2 (off' := 4) (by decide)
+  have r2sp : reg m2 sp = F := by rw [u2.regs]; simp +decide only [upd_app, ↓reduceIte, aluEval]; rw [hsp, hFsp]
+  have r2a3 : reg m2 a3 = F + 0x100 := by
+    rw [u2.regs]; simp +decide only [upd_app, ↓reduceIte, aluEval]; rw [hsp, hFsp]
+  have rk2 : ∀ r, r ≠ sp → r ≠ a3 → reg m2 r = reg m r := fun r h1 h2 => by
+    rw [u2.regs]
+    by_cases h0 : r.val = 0
+    · have : r = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp [upd, h0, h1, h2]
+  obtain ⟨p0, dp0, up0⟩ := u2.self.swG env.code frd_at_4 (off' := 0x8) (by decide)
+    (by rw [r2a3, BitVec.add_assoc]; exact fr_al' hFa (by decide)) (a := F + 0x13C) (v := reg m ra)
+    (by rw [r2a3, BitVec.add_assoc]; rfl) (rk2 _ (by decide) (by decide))
+  obtain ⟨P0, hP0⟩ : ∃ M', memStore32 m.mem (F + 0x13C) (reg m ra) = M' := ⟨_, rfl⟩
+  rw [hP0] at up0
+  have hcp0 : CodeIn P0 P flashReadCode := by rw [← hP0]; exact env.code.store32 (frm_sep' sFC (by decide))
+  obtain ⟨p1, dp1, up1⟩ := up0.swG hcp0 frd_at_8 (off' := 0xA) (by decide)
+    (by rw [r2a3, BitVec.add_assoc]; exact fr_al' hFa (by decide)) (a := F + 0x138) (v := reg m (8 : Fin 32))
+    (by rw [r2a3, BitVec.add_assoc]; rfl) (rk2 _ (by decide) (by decide))
+  obtain ⟨P1, hP1⟩ : ∃ M', memStore32 P0 (F + 0x138) (reg m (8 : Fin 32)) = M' := ⟨_, rfl⟩
+  rw [hP1] at up1
+  have hcp1 : CodeIn P1 P flashReadCode := by rw [← hP1]; exact hcp0.store32 (frm_sep' sFC (by decide))
+  obtain ⟨p2, dp2, up2⟩ := up1.swG hcp1 frd_at_a (off' := 0xC) (by decide)
+    (by rw [r2a3, BitVec.add_assoc]; exact fr_al' hFa (by decide)) (a := F + 0x134) (v := reg m (9 : Fin 32))
+    (by rw [r2a3, BitVec.add_assoc]; rfl) (rk2 _ (by decide) (by decide))
+  obtain ⟨P2, hP2⟩ : ∃ M', memStore32 P1 (F + 0x134) (reg m (9 : Fin 32)) = M' := ⟨_, rfl⟩
+  rw [hP2] at up2
+  have hcp2 : CodeIn P2 P flashReadCode := by rw [← hP2]; exact hcp1.store32 (frm_sep' sFC (by decide))
+  obtain ⟨p3, dp3, up3⟩ := up2.swG hcp2 frd_at_c (off' := 0x10) (by decide)
+    (by rw [r2a3, BitVec.add_assoc]; exact fr_al' hFa (by decide)) (a := F + 0x130) (v := reg m (18 : Fin 32))
+    (by rw [r2a3, BitVec.add_assoc]; rfl) (rk2 _ (by decide) (by decide))
+  obtain ⟨P3, hP3⟩ : ∃ M', memStore32 P2 (F + 0x130) (reg m (18 : Fin 32)) = M' := ⟨_, rfl⟩
+  rw [hP3] at up3
+  have hcp3 : CodeIn P3 P flashReadCode := by rw [← hP3]; exact hcp2.store32 (frm_sep' sFC (by decide))
+  obtain ⟨p4, dp4, up4⟩ := up3.swG hcp3 frd_at_10 (off' := 0x14) (by decide)
+    (by rw [r2a3, BitVec.add_assoc]; exact fr_al' hFa (by decide)) (a := F + 0x12C) (v := reg m (19 : Fin 32))
+    (by rw [r2a3, BitVec.add_assoc]; rfl) (rk2 _ (by decide) (by decide))
+  obtain ⟨P4, hP4⟩ : ∃ M', memStore32 P3 (F + 0x12C) (reg m (19 : Fin 32)) = M' := ⟨_, rfl⟩
+  rw [hP4] at up4
+  have hcp4 : CodeIn P4 P flashReadCode := by rw [← hP4]; exact hcp3.store32 (frm_sep' sFC (by decide))
+  obtain ⟨p5, dp5, up5⟩ := up4.swG hcp4 frd_at_14 (off' := 0x18) (by decide)
+    (by rw [r2a3, BitVec.add_assoc]; exact fr_al' hFa (by decide)) (a := F + 0x128) (v := reg m (20 : Fin 32))
+    (by rw [r2a3, BitVec.add_assoc]; rfl) (rk2 _ (by decide) (by decide))
+  obtain ⟨P5, hP5⟩ : ∃ M', memStore32 P4 (F + 0x128) (reg m (20 : Fin 32)) = M' := ⟨_, rfl⟩
+  rw [hP5] at up5
+  have hcp5 : CodeIn P5 P flashReadCode := by rw [← hP5]; exact hcp4.store32 (frm_sep' sFC (by decide))
+  obtain ⟨p6, dp6, up6⟩ := up5.swG hcp5 frd_at_18 (off' := 0x1C) (by decide)
+    (by rw [r2a3, BitVec.add_assoc]; exact fr_al' hFa (by decide)) (a := F + 0x124) (v := reg m (21 : Fin 32))
+    (by rw [r2a3, BitVec.add_assoc]; rfl) (rk2 _ (by decide) (by decide))
+  obtain ⟨P6, hP6⟩ : ∃ M', memStore32 P5 (F + 0x124) (reg m (21 : Fin 32)) = M' := ⟨_, rfl⟩
+  rw [hP6] at up6
+  have hcp6 : CodeIn P6 P flashReadCode := by rw [← hP6]; exact hcp5.store32 (frm_sep' sFC (by decide))
+  obtain ⟨p7, dp7, up7⟩ := up6.swG hcp6 frd_at_1c (off' := 0x20) (by decide)
+    (by rw [r2a3, BitVec.add_assoc]; exact fr_al' hFa (by decide)) (a := F + 0x120) (v := reg m (22 : Fin 32))
+    (by rw [r2a3, BitVec.add_assoc]; rfl) (rk2 _ (by decide) (by decide))
+  obtain ⟨P7, hP7⟩ : ∃ M', memStore32 P6 (F + 0x120) (reg m (22 : Fin 32)) = M' := ⟨_, rfl⟩
+  rw [hP7] at up7
+  have hcp7 : CodeIn P7 P flashReadCode := by rw [← hP7]; exact hcp6.store32 (frm_sep' sFC (by decide))
+  obtain ⟨p8, dp8, up8⟩ := up7.swG hcp7 frd_at_20 (off' := 0x24) (by decide)
+    (by rw [r2a3, BitVec.add_assoc]; exact fr_al' hFa (by decide)) (a := F + 0x11C) (v := reg m (23 : Fin 32))
+    (by rw [r2a3, BitVec.add_assoc]; rfl) (rk2 _ (by decide) (by decide))
+  obtain ⟨P8, hP8⟩ : ∃ M', memStore32 P7 (F + 0x11C) (reg m (23 : Fin 32)) = M' := ⟨_, rfl⟩
+  rw [hP8] at up8
+  have hcp8 : CodeIn P8 P flashReadCode := by rw [← hP8]; exact hcp7.store32 (frm_sep' sFC (by decide))
+  obtain ⟨p9, dp9, up9⟩ := up8.swG hcp8 frd_at_24 (off' := 0x28) (by decide)
+    (by rw [r2a3, BitVec.add_assoc]; exact fr_al' hFa (by decide)) (a := F + 0x118) (v := reg m (24 : Fin 32))
+    (by rw [r2a3, BitVec.add_assoc]; rfl) (rk2 _ (by decide) (by decide))
+  obtain ⟨P9, hP9⟩ : ∃ M', memStore32 P8 (F + 0x118) (reg m (24 : Fin 32)) = M' := ⟨_, rfl⟩
+  rw [hP9] at up9
+  have hcp9 : CodeIn P9 P flashReadCode := by rw [← hP9]; exact hcp8.store32 (frm_sep' sFC (by decide))
+  obtain ⟨p10, dp10, up10⟩ := up9.swG hcp9 frd_at_28 (off' := 0x2C) (by decide)
+    (by rw [r2a3, BitVec.add_assoc]; exact fr_al' hFa (by decide)) (a := F + 0x114) (v := reg m (25 : Fin 32))
+    (by rw [r2a3, BitVec.add_assoc]; rfl) (rk2 _ (by decide) (by decide))
+  obtain ⟨P10, hP10⟩ : ∃ M', memStore32 P9 (F + 0x114) (reg m (25 : Fin 32)) = M' := ⟨_, rfl⟩
+  rw [hP10] at up10
+  have hcp10 : CodeIn P10 P flashReadCode := by rw [← hP10]; exact hcp9.store32 (frm_sep' sFC (by decide))
+  obtain ⟨p11, dp11, up11⟩ := up10.swG hcp10 frd_at_2c (off' := 0x30) (by decide)
+    (by rw [r2a3, BitVec.add_assoc]; exact fr_al' hFa (by decide)) (a := F + 0x110) (v := reg m (26 : Fin 32))
+    (by rw [r2a3, BitVec.add_assoc]; rfl) (rk2 _ (by decide) (by decide))
+  obtain ⟨P11, hP11⟩ : ∃ M', memStore32 P10 (F + 0x110) (reg m (26 : Fin 32)) = M' := ⟨_, rfl⟩
+  rw [hP11] at up11
+  have hcp11 : CodeIn P11 P flashReadCode := by rw [← hP11]; exact hcp10.store32 (frm_sep' sFC (by decide))
+  have fpro : ∀ x, Sep F 0x140 x 1 → P11 x = m.mem x := fun x hx => by
+    rw [← hP11, memStore32_get_sep (frm_sep' hx (by decide)), ← hP10, memStore32_get_sep (frm_sep' hx (by decide)), ← hP9, memStore32_get_sep (frm_sep' hx (by decide)), ← hP8, memStore32_get_sep (frm_sep' hx (by decide)), ← hP7, memStore32_get_sep (frm_sep' hx (by decide)), ← hP6, memStore32_get_sep (frm_sep' hx (by decide)), ← hP5, memStore32_get_sep (frm_sep' hx (by decide)), ← hP4, memStore32_get_sep (frm_sep' hx (by decide)), ← hP3, memStore32_get_sep (frm_sep' hx (by decide)), ← hP2, memStore32_get_sep (frm_sep' hx (by decide)), ← hP1, memStore32_get_sep (frm_sep' hx (by decide)), ← hP0, memStore32_get_sep (frm_sep' hx (by decide))]
+  have sv13C : memLoad32 P11 (F + 0x13C) = reg m ra := by
+    rw [← hP11, memLoad32_store32_sep (show Sep (F + 0x110) 4 (F + 0x13C) 4 from sep_offsets F (c := 0x110) (n := 4) (d := 0x13C) (k := 4) (by decide) (by decide) (by decide)), ← hP10, memLoad32_store32_sep (show Sep (F + 0x114) 4 (F + 0x13C) 4 from sep_offsets F (c := 0x114) (n := 4) (d := 0x13C) (k := 4) (by decide) (by decide) (by decide)), ← hP9, memLoad32_store32_sep (show Sep (F + 0x118) 4 (F + 0x13C) 4 from sep_offsets F (c := 0x118) (n := 4) (d := 0x13C) (k := 4) (by decide) (by decide) (by decide)), ← hP8, memLoad32_store32_sep (show Sep (F + 0x11C) 4 (F + 0x13C) 4 from sep_offsets F (c := 0x11C) (n := 4) (d := 0x13C) (k := 4) (by decide) (by decide) (by decide)), ← hP7, memLoad32_store32_sep (show Sep (F + 0x120) 4 (F + 0x13C) 4 from sep_offsets F (c := 0x120) (n := 4) (d := 0x13C) (k := 4) (by decide) (by decide) (by decide)), ← hP6, memLoad32_store32_sep (show Sep (F + 0x124) 4 (F + 0x13C) 4 from sep_offsets F (c := 0x124) (n := 4) (d := 0x13C) (k := 4) (by decide) (by decide) (by decide)), ← hP5, memLoad32_store32_sep (show Sep (F + 0x128) 4 (F + 0x13C) 4 from sep_offsets F (c := 0x128) (n := 4) (d := 0x13C) (k := 4) (by decide) (by decide) (by decide)), ← hP4, memLoad32_store32_sep (show Sep (F + 0x12C) 4 (F + 0x13C) 4 from sep_offsets F (c := 0x12C) (n := 4) (d := 0x13C) (k := 4) (by decide) (by decide) (by decide)), ← hP3, memLoad32_store32_sep (show Sep (F + 0x130) 4 (F + 0x13C) 4 from sep_offsets F (c := 0x130) (n := 4) (d := 0x13C) (k := 4) (by decide) (by decide) (by decide)), ← hP2, memLoad32_store32_sep (show Sep (F + 0x134) 4 (F + 0x13C) 4 from sep_offsets F (c := 0x134) (n := 4) (d := 0x13C) (k := 4) (by decide) (by decide) (by decide)), ← hP1, memLoad32_store32_sep (show Sep (F + 0x138) 4 (F + 0x13C) 4 from sep_offsets F (c := 0x138) (n := 4) (d := 0x13C) (k := 4) (by decide) (by decide) (by decide)), ← hP0, memLoad32_store32_same]
+  have sv138 : memLoad32 P11 (F + 0x138) = reg m (8 : Fin 32) := by
+    rw [← hP11, memLoad32_store32_sep (show Sep (F + 0x110) 4 (F + 0x138) 4 from sep_offsets F (c := 0x110) (n := 4) (d := 0x138) (k := 4) (by decide) (by decide) (by decide)), ← hP10, memLoad32_store32_sep (show Sep (F + 0x114) 4 (F + 0x138) 4 from sep_offsets F (c := 0x114) (n := 4) (d := 0x138) (k := 4) (by decide) (by decide) (by decide)), ← hP9, memLoad32_store32_sep (show Sep (F + 0x118) 4 (F + 0x138) 4 from sep_offsets F (c := 0x118) (n := 4) (d := 0x138) (k := 4) (by decide) (by decide) (by decide)), ← hP8, memLoad32_store32_sep (show Sep (F + 0x11C) 4 (F + 0x138) 4 from sep_offsets F (c := 0x11C) (n := 4) (d := 0x138) (k := 4) (by decide) (by decide) (by decide)), ← hP7, memLoad32_store32_sep (show Sep (F + 0x120) 4 (F + 0x138) 4 from sep_offsets F (c := 0x120) (n := 4) (d := 0x138) (k := 4) (by decide) (by decide) (by decide)), ← hP6, memLoad32_store32_sep (show Sep (F + 0x124) 4 (F + 0x138) 4 from sep_offsets F (c := 0x124) (n := 4) (d := 0x138) (k := 4) (by decide) (by decide) (by decide)), ← hP5, memLoad32_store32_sep (show Sep (F + 0x128) 4 (F + 0x138) 4 from sep_offsets F (c := 0x128) (n := 4) (d := 0x138) (k := 4) (by decide) (by decide) (by decide)), ← hP4, memLoad32_store32_sep (show Sep (F + 0x12C) 4 (F + 0x138) 4 from sep_offsets F (c := 0x12C) (n := 4) (d := 0x138) (k := 4) (by decide) (by decide) (by decide)), ← hP3, memLoad32_store32_sep (show Sep (F + 0x130) 4 (F + 0x138) 4 from sep_offsets F (c := 0x130) (n := 4) (d := 0x138) (k := 4) (by decide) (by decide) (by decide)), ← hP2, memLoad32_store32_sep (show Sep (F + 0x134) 4 (F + 0x138) 4 from sep_offsets F (c := 0x134) (n := 4) (d := 0x138) (k := 4) (by decide) (by decide) (by decide)), ← hP1, memLoad32_store32_same]
+  have sv134 : memLoad32 P11 (F + 0x134) = reg m (9 : Fin 32) := by
+    rw [← hP11, memLoad32_store32_sep (show Sep (F + 0x110) 4 (F + 0x134) 4 from sep_offsets F (c := 0x110) (n := 4) (d := 0x134) (k := 4) (by decide) (by decide) (by decide)), ← hP10, memLoad32_store32_sep (show Sep (F + 0x114) 4 (F + 0x134) 4 from sep_offsets F (c := 0x114) (n := 4) (d := 0x134) (k := 4) (by decide) (by decide) (by decide)), ← hP9, memLoad32_store32_sep (show Sep (F + 0x118) 4 (F + 0x134) 4 from sep_offsets F (c := 0x118) (n := 4) (d := 0x134) (k := 4) (by decide) (by decide) (by decide)), ← hP8, memLoad32_store32_sep (show Sep (F + 0x11C) 4 (F + 0x134) 4 from sep_offsets F (c := 0x11C) (n := 4) (d := 0x134) (k := 4) (by decide) (by decide) (by decide)), ← hP7, memLoad32_store32_sep (show Sep (F + 0x120) 4 (F + 0x134) 4 from sep_offsets F (c := 0x120) (n := 4) (d := 0x134) (k := 4) (by decide) (by decide) (by decide)), ← hP6, memLoad32_store32_sep (show Sep (F + 0x124) 4 (F + 0x134) 4 from sep_offsets F (c := 0x124) (n := 4) (d := 0x134) (k := 4) (by decide) (by decide) (by decide)), ← hP5, memLoad32_store32_sep (show Sep (F + 0x128) 4 (F + 0x134) 4 from sep_offsets F (c := 0x128) (n := 4) (d := 0x134) (k := 4) (by decide) (by decide) (by decide)), ← hP4, memLoad32_store32_sep (show Sep (F + 0x12C) 4 (F + 0x134) 4 from sep_offsets F (c := 0x12C) (n := 4) (d := 0x134) (k := 4) (by decide) (by decide) (by decide)), ← hP3, memLoad32_store32_sep (show Sep (F + 0x130) 4 (F + 0x134) 4 from sep_offsets F (c := 0x130) (n := 4) (d := 0x134) (k := 4) (by decide) (by decide) (by decide)), ← hP2, memLoad32_store32_same]
+  have sv130 : memLoad32 P11 (F + 0x130) = reg m (18 : Fin 32) := by
+    rw [← hP11, memLoad32_store32_sep (show Sep (F + 0x110) 4 (F + 0x130) 4 from sep_offsets F (c := 0x110) (n := 4) (d := 0x130) (k := 4) (by decide) (by decide) (by decide)), ← hP10, memLoad32_store32_sep (show Sep (F + 0x114) 4 (F + 0x130) 4 from sep_offsets F (c := 0x114) (n := 4) (d := 0x130) (k := 4) (by decide) (by decide) (by decide)), ← hP9, memLoad32_store32_sep (show Sep (F + 0x118) 4 (F + 0x130) 4 from sep_offsets F (c := 0x118) (n := 4) (d := 0x130) (k := 4) (by decide) (by decide) (by decide)), ← hP8, memLoad32_store32_sep (show Sep (F + 0x11C) 4 (F + 0x130) 4 from sep_offsets F (c := 0x11C) (n := 4) (d := 0x130) (k := 4) (by decide) (by decide) (by decide)), ← hP7, memLoad32_store32_sep (show Sep (F + 0x120) 4 (F + 0x130) 4 from sep_offsets F (c := 0x120) (n := 4) (d := 0x130) (k := 4) (by decide) (by decide) (by decide)), ← hP6, memLoad32_store32_sep (show Sep (F + 0x124) 4 (F + 0x130) 4 from sep_offsets F (c := 0x124) (n := 4) (d := 0x130) (k := 4) (by decide) (by decide) (by decide)), ← hP5, memLoad32_store32_sep (show Sep (F + 0x128) 4 (F + 0x130) 4 from sep_offsets F (c := 0x128) (n := 4) (d := 0x130) (k := 4) (by decide) (by decide) (by decide)), ← hP4, memLoad32_store32_sep (show Sep (F + 0x12C) 4 (F + 0x130) 4 from sep_offsets F (c := 0x12C) (n := 4) (d := 0x130) (k := 4) (by decide) (by decide) (by decide)), ← hP3, memLoad32_store32_same]
+  have sv12C : memLoad32 P11 (F + 0x12C) = reg m (19 : Fin 32) := by
+    rw [← hP11, memLoad32_store32_sep (show Sep (F + 0x110) 4 (F + 0x12C) 4 from sep_offsets F (c := 0x110) (n := 4) (d := 0x12C) (k := 4) (by decide) (by decide) (by decide)), ← hP10, memLoad32_store32_sep (show Sep (F + 0x114) 4 (F + 0x12C) 4 from sep_offsets F (c := 0x114) (n := 4) (d := 0x12C) (k := 4) (by decide) (by decide) (by decide)), ← hP9, memLoad32_store32_sep (show Sep (F + 0x118) 4 (F + 0x12C) 4 from sep_offsets F (c := 0x118) (n := 4) (d := 0x12C) (k := 4) (by decide) (by decide) (by decide)), ← hP8, memLoad32_store32_sep (show Sep (F + 0x11C) 4 (F + 0x12C) 4 from sep_offsets F (c := 0x11C) (n := 4) (d := 0x12C) (k := 4) (by decide) (by decide) (by decide)), ← hP7, memLoad32_store32_sep (show Sep (F + 0x120) 4 (F + 0x12C) 4 from sep_offsets F (c := 0x120) (n := 4) (d := 0x12C) (k := 4) (by decide) (by decide) (by decide)), ← hP6, memLoad32_store32_sep (show Sep (F + 0x124) 4 (F + 0x12C) 4 from sep_offsets F (c := 0x124) (n := 4) (d := 0x12C) (k := 4) (by decide) (by decide) (by decide)), ← hP5, memLoad32_store32_sep (show Sep (F + 0x128) 4 (F + 0x12C) 4 from sep_offsets F (c := 0x128) (n := 4) (d := 0x12C) (k := 4) (by decide) (by decide) (by decide)), ← hP4, memLoad32_store32_same]
+  have sv128 : memLoad32 P11 (F + 0x128) = reg m (20 : Fin 32) := by
+    rw [← hP11, memLoad32_store32_sep (show Sep (F + 0x110) 4 (F + 0x128) 4 from sep_offsets F (c := 0x110) (n := 4) (d := 0x128) (k := 4) (by decide) (by decide) (by decide)), ← hP10, memLoad32_store32_sep (show Sep (F + 0x114) 4 (F + 0x128) 4 from sep_offsets F (c := 0x114) (n := 4) (d := 0x128) (k := 4) (by decide) (by decide) (by decide)), ← hP9, memLoad32_store32_sep (show Sep (F + 0x118) 4 (F + 0x128) 4 from sep_offsets F (c := 0x118) (n := 4) (d := 0x128) (k := 4) (by decide) (by decide) (by decide)), ← hP8, memLoad32_store32_sep (show Sep (F + 0x11C) 4 (F + 0x128) 4 from sep_offsets F (c := 0x11C) (n := 4) (d := 0x128) (k := 4) (by decide) (by decide) (by decide)), ← hP7, memLoad32_store32_sep (show Sep (F + 0x120) 4 (F + 0x128) 4 from sep_offsets F (c := 0x120) (n := 4) (d := 0x128) (k := 4) (by decide) (by decide) (by decide)), ← hP6, memLoad32_store32_sep (show Sep (F + 0x124) 4 (F + 0x128) 4 from sep_offsets F (c := 0x124) (n := 4) (d := 0x128) (k := 4) (by decide) (by decide) (by decide)), ← hP5, memLoad32_store32_same]
+  have sv124 : memLoad32 P11 (F + 0x124) = reg m (21 : Fin 32) := by
+    rw [← hP11, memLoad32_store32_sep (show Sep (F + 0x110) 4 (F + 0x124) 4 from sep_offsets F (c := 0x110) (n := 4) (d := 0x124) (k := 4) (by decide) (by decide) (by decide)), ← hP10, memLoad32_store32_sep (show Sep (F + 0x114) 4 (F + 0x124) 4 from sep_offsets F (c := 0x114) (n := 4) (d := 0x124) (k := 4) (by decide) (by decide) (by decide)), ← hP9, memLoad32_store32_sep (show Sep (F + 0x118) 4 (F + 0x124) 4 from sep_offsets F (c := 0x118) (n := 4) (d := 0x124) (k := 4) (by decide) (by decide) (by decide)), ← hP8, memLoad32_store32_sep (show Sep (F + 0x11C) 4 (F + 0x124) 4 from sep_offsets F (c := 0x11C) (n := 4) (d := 0x124) (k := 4) (by decide) (by decide) (by decide)), ← hP7, memLoad32_store32_sep (show Sep (F + 0x120) 4 (F + 0x124) 4 from sep_offsets F (c := 0x120) (n := 4) (d := 0x124) (k := 4) (by decide) (by decide) (by decide)), ← hP6, memLoad32_store32_same]
+  have sv120 : memLoad32 P11 (F + 0x120) = reg m (22 : Fin 32) := by
+    rw [← hP11, memLoad32_store32_sep (show Sep (F + 0x110) 4 (F + 0x120) 4 from sep_offsets F (c := 0x110) (n := 4) (d := 0x120) (k := 4) (by decide) (by decide) (by decide)), ← hP10, memLoad32_store32_sep (show Sep (F + 0x114) 4 (F + 0x120) 4 from sep_offsets F (c := 0x114) (n := 4) (d := 0x120) (k := 4) (by decide) (by decide) (by decide)), ← hP9, memLoad32_store32_sep (show Sep (F + 0x118) 4 (F + 0x120) 4 from sep_offsets F (c := 0x118) (n := 4) (d := 0x120) (k := 4) (by decide) (by decide) (by decide)), ← hP8, memLoad32_store32_sep (show Sep (F + 0x11C) 4 (F + 0x120) 4 from sep_offsets F (c := 0x11C) (n := 4) (d := 0x120) (k := 4) (by decide) (by decide) (by decide)), ← hP7, memLoad32_store32_same]
+  have sv11C : memLoad32 P11 (F + 0x11C) = reg m (23 : Fin 32) := by
+    rw [← hP11, memLoad32_store32_sep (show Sep (F + 0x110) 4 (F + 0x11C) 4 from sep_offsets F (c := 0x110) (n := 4) (d := 0x11C) (k := 4) (by decide) (by decide) (by decide)), ← hP10, memLoad32_store32_sep (show Sep (F + 0x114) 4 (F + 0x11C) 4 from sep_offsets F (c := 0x114) (n := 4) (d := 0x11C) (k := 4) (by decide) (by decide) (by decide)), ← hP9, memLoad32_store32_sep (show Sep (F + 0x118) 4 (F + 0x11C) 4 from sep_offsets F (c := 0x118) (n := 4) (d := 0x11C) (k := 4) (by decide) (by decide) (by decide)), ← hP8, memLoad32_store32_same]
+  have sv118 : memLoad32 P11 (F + 0x118) = reg m (24 : Fin 32) := by
+    rw [← hP11, memLoad32_store32_sep (show Sep (F + 0x110) 4 (F + 0x118) 4 from sep_offsets F (c := 0x110) (n := 4) (d := 0x118) (k := 4) (by decide) (by decide) (by decide)), ← hP10, memLoad32_store32_sep (show Sep (F + 0x114) 4 (F + 0x118) 4 from sep_offsets F (c := 0x114) (n := 4) (d := 0x118) (k := 4) (by decide) (by decide) (by decide)), ← hP9, memLoad32_store32_same]
+  have sv114 : memLoad32 P11 (F + 0x114) = reg m (25 : Fin 32) := by
+    rw [← hP11, memLoad32_store32_sep (show Sep (F + 0x110) 4 (F + 0x114) 4 from sep_offsets F (c := 0x110) (n := 4) (d := 0x114) (k := 4) (by decide) (by decide) (by decide)), ← hP10, memLoad32_store32_same]
+  have sv110 : memLoad32 P11 (F + 0x110) = reg m (26 : Fin 32) := by
+    rw [← hP11, memLoad32_store32_same]
+  have cOf : ∀ {b : Word} {code : List Nat}, CodeIn m.mem b code → Sep F 0x140 b code.length →
+      CodeIn P11 b code := fun hc hs i hi => by
+    rw [fpro _ (hs.subR (c := i) (l := 1) (by omega))]; exact hc i hi
+  have hcM := cOf env.mset sFM
+  obtain ⟨n1, e1, v1⟩ := up11.alu hcp11 frd_at_30 (off' := 0x32) (by decide)
+  have k1 := v1.oldReg up11.zero
+  obtain ⟨n2, e2, v2⟩ := v1.self.alu hcp11 frd_at_32 (off' := 0x34) (by decide)
+  have k2 := v2.oldReg v1.self.zero
+  obtain ⟨n3, e3, v3⟩ := v2.self.alu hcp11 frd_at_34 (off' := 0x36) (by decide)
+  have k3 := v3.oldReg v2.self.zero
+  obtain ⟨n4, e4, v4⟩ := v3.self.aluImm hcp11 frd_at_36 (off' := 0x38) (by decide)
+  have k4 := v4.oldReg v3.self.zero
+  obtain ⟨n5, e5, v5⟩ := v4.self.aluImm hcp11 frd_at_38 (off' := 0x3A) (by decide)
+  have k5 := v5.oldReg v4.self.zero
+  obtain ⟨n6, e6, v6⟩ := v5.self.aluImm hcp11 frd_at_3a (off' := 0x3E) (by decide)
+  have k6 := v6.oldReg v5.self.zero
+  obtain ⟨n7, e7, v7⟩ := v6.self.aluImm hcp11 frd_at_3e (off' := 0x42) (by decide)
+  have k7 := v7.oldReg v6.self.zero
+  obtain ⟨n8, e8, v8⟩ := v7.self.aluImm hcp11 frd_at_42 (off' := 0x46) (by decide)
+  have k8 := v8.oldReg v7.self.zero
+  have x1 : reg n1 (21 : Fin 32) = len := by
+    rw [v1.newReg (by decide)]; show reg m2 0 + reg m2 a2 = _
+    rw [up11.zero, rk2 _ (by decide) (by decide), ha2]; exact BitVec.zero_add _
+  have x2 : reg n2 (19 : Fin 32) = out := by
+    rw [v2.newReg (by decide)]; show reg n1 0 + reg n1 a1 = _
+    rw [v1.self.zero, k1 _ (by decide), rk2 _ (by decide) (by decide), ha1]; exact BitVec.zero_add _
+  have x3 : reg n3 (18 : Fin 32) = addr := by
+    rw [v3.newReg (by decide)]; show reg n2 0 + reg n2 a0 = _
+    rw [v2.self.zero, k2 _ (by decide), k1 _ (by decide), rk2 _ (by decide) (by decide), ha0]; exact BitVec.zero_add _
+  have x4 : reg n4 a1 = 0 := by
+    rw [v4.newReg (by decide)]; show reg n3 0 + 0x0 = _; rw [v3.self.zero]; rfl
+  have x5 : reg n5 a0 = F + 0xC := by
+    rw [v5.newReg (by decide)]; show reg n4 sp + 0xC = _
+    rw [k4 _ (by decide), k3 _ (by decide), k2 _ (by decide), k1 _ (by decide), r2sp]
+  have x6 : reg n6 a2 = 0x100 := by
+    rw [v6.newReg (by decide)]; show reg n5 0 + 0x100 = _; rw [v5.self.zero]; rfl
+  have x7 : reg n7 (22 : Fin 32) = F + 0xC := by
+    rw [v7.newReg (by decide)]; show reg n6 sp + 0xC = _
+    rw [k6 _ (by decide), k5 _ (by decide), k4 _ (by decide), k3 _ (by decide), k2 _ (by decide), k1 _ (by decide), r2sp]
+  have x8 : reg n8 (20 : Fin 32) = 0x100 := by
+    rw [v8.newReg (by decide)]; show reg n7 0 + 0x100 = _; rw [v7.self.zero]; rfl
+  -- 0x46: `memset` clears the bounce buffer
+  obtain ⟨n9, c9, pc9, mem9, regs9⟩ := v8.self.callRa hcp11 frd_at_46 frd_at_4a (cb := P + 0x1309E)
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hPe 0x1309E (by decide))
+  have r9 := PEnv.reg1 regs9 v8.self.zero
+  have hFC : (F + 0xC).toNat = F.toNat + 0xC := by
+    rw [BitVec.toNat_add, show (0xC : Word).toNat = 0xC from rfl, Nat.mod_eq_of_lt (by omega)]
+  obtain ⟨n10, c10, pc10, mem10, a0_10, K10⟩ := memset_correct n9 (P + 0x1309E) (P + BitVec.ofNat 32 (0x46 + 8))
+    (F + 0xC) 0 0x100 (fun i hi => by show n9.mem _ = _; rw [mem9]; exact hcM i hi) (even_at P hPe 0x1309E (by decide))
+    pc9 (by rw [r9 _ (by decide), k8 _ (by decide), k7 _ (by decide), k6 _ (by decide), x5])
+    (by rw [r9 _ (by decide), k8 _ (by decide), k7 _ (by decide), k6 _ (by decide), k5 _ (by decide), x4])
+    (by rw [r9 _ (by decide), k8 _ (by decide), k7 _ (by decide), x6]; try rfl)
+    (by rw [regs9]; simp +decide only [upd_app, ↓reduceIte]) (even_clear _ (even_at P hPe (0x46 + 8) (by decide)))
+    (by rw [hFC]; omega) (sFM.sub (c := 0xC) (l := 0x100) (by decide))
+  rw [mem9] at mem10
+  obtain ⟨Mo, hMo⟩ : ∃ M, fillBytes P11 (F + 0xC) ((0 : Word).extractLsb' 0 8) 0x100 = M := ⟨_, rfl⟩
+  rw [hMo] at mem10
+  have bufF : ∀ x, Sep (F + 0xC) 0x100 x 1 → Mo x = P11 x := fun x hx => by rw [← hMo, fillBytes_sep hx (Nat.le_refl _)]
+  have hcMo : CodeIn Mo P flashReadCode := fun i hi => by
+    rw [bufF _ ((sFC.sub (c := 0xC) (l := 0x100) (by decide)).subR (c := i) (l := 1) (by omega))]; exact hcp11 i hi
+  have w10 : St Mo P n10 0x4E (reg n10) := ⟨by rw [pc10], mem10, fun _ => rfl⟩
+  obtain ⟨n11, e11, v11⟩ := w10.aluImm hcMo frd_at_4e (off' := 0x50) (by decide)
+  have k11 := v11.oldReg w10.zero
+  obtain ⟨n12, e12, v12⟩ := v11.self.alu hcMo frd_at_50 (off' := 0x54) (by decide)
+  have k12 := v12.oldReg v11.self.zero
+  obtain ⟨n13, e13, v13⟩ := v12.self.aluImm hcMo frd_at_54 (off' := 0x58) (by decide)
+  have k13 := v13.oldReg v12.self.zero
+  obtain ⟨n14, e14, v14⟩ := v13.self.aluImm hcMo frd_at_58 (off' := 0x5C) (by decide)
+  have k14 := v14.oldReg v13.self.zero
+  have x11 : reg n11 (23 : Fin 32) = BitVec.ofNat 32 0 := by
+    rw [v11.newReg (by decide)]; show reg n10 0 + 0x0 = _; rw [w10.zero]; rfl
+  have x12 : reg n12 (9 : Fin 32) = out + len := by
+    rw [v12.newReg (by decide)]; show reg n11 (19 : Fin 32) + reg n11 (21 : Fin 32) = _
+    rw [k11 (19 : Fin 32) (by decide), K10 (19 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide), r9 (19 : Fin 32) (by decide), k8 (19 : Fin 32) (by decide), k7 (19 : Fin 32) (by decide), k6 (19 : Fin 32) (by decide), k5 (19 : Fin 32) (by decide), k4 (19 : Fin 32) (by decide), k3 (19 : Fin 32) (by decide), x2, k11 (21 : Fin 32) (by decide), K10 (21 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide), r9 (21 : Fin 32) (by decide), k8 (21 : Fin 32) (by decide), k7 (21 : Fin 32) (by decide), k6 (21 : Fin 32) (by decide), k5 (21 : Fin 32) (by decide), k4 (21 : Fin 32) (by decide), k3 (21 : Fin 32) (by decide), k2 (21 : Fin 32) (by decide), x1]
+  have x13 : reg n13 (24 : Fin 32) = 0xFF := by
+    rw [v13.newReg (by decide)]; show reg n12 0 + 0xFF = _; rw [v12.self.zero]; rfl
+  have x14 : reg n14 (25 : Fin 32) = F + 0x10C := by
+    rw [v14.newReg (by decide)]; show reg n13 sp + 0x10C = _
+    rw [k13 sp (by decide), k12 sp (by decide), k11 sp (by decide), K10 sp (by decide) (by decide) (by decide) (by decide) (by decide), r9 sp (by decide), k8 sp (by decide), k7 sp (by decide), k6 sp (by decide), k5 sp (by decide), k4 sp (by decide), k3 sp (by decide), k2 sp (by decide), k1 sp (by decide), r2sp]
+  have y18 : reg n14 (18 : Fin 32) = addr := by rw [k14 (18 : Fin 32) (by decide), k13 (18 : Fin 32) (by decide), k12 (18 : Fin 32) (by decide), k11 (18 : Fin 32) (by decide), K10 (18 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide), r9 (18 : Fin 32) (by decide), k8 (18 : Fin 32) (by decide), k7 (18 : Fin 32) (by decide), k6 (18 : Fin 32) (by decide), k5 (18 : Fin 32) (by decide), k4 (18 : Fin 32) (by decide), x3]
+  have y19 : reg n14 (19 : Fin 32) = out := by rw [k14 (19 : Fin 32) (by decide), k13 (19 : Fin 32) (by decide), k12 (19 : Fin 32) (by decide), k11 (19 : Fin 32) (by decide), K10 (19 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide), r9 (19 : Fin 32) (by decide), k8 (19 : Fin 32) (by decide), k7 (19 : Fin 32) (by decide), k6 (19 : Fin 32) (by decide), k5 (19 : Fin 32) (by decide), k4 (19 : Fin 32) (by decide), k3 (19 : Fin 32) (by decide), x2]
+  have y21 : reg n14 (21 : Fin 32) = len := by rw [k14 (21 : Fin 32) (by decide), k13 (21 : Fin 32) (by decide), k12 (21 : Fin 32) (by decide), k11 (21 : Fin 32) (by decide), K10 (21 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide), r9 (21 : Fin 32) (by decide), k8 (21 : Fin 32) (by decide), k7 (21 : Fin 32) (by decide), k6 (21 : Fin 32) (by decide), k5 (21 : Fin 32) (by decide), k4 (21 : Fin 32) (by decide), k3 (21 : Fin 32) (by decide), k2 (21 : Fin 32) (by decide), x1]
+  have y20 : reg n14 (20 : Fin 32) = 0x100 := by rw [k14 (20 : Fin 32) (by decide), k13 (20 : Fin 32) (by decide), k12 (20 : Fin 32) (by decide), k11 (20 : Fin 32) (by decide), K10 (20 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide), r9 (20 : Fin 32) (by decide), x8]
+  have y22 : reg n14 (22 : Fin 32) = F + 0xC := by rw [k14 (22 : Fin 32) (by decide), k13 (22 : Fin 32) (by decide), k12 (22 : Fin 32) (by decide), k11 (22 : Fin 32) (by decide), K10 (22 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide), r9 (22 : Fin 32) (by decide), k8 (22 : Fin 32) (by decide), x7]
+  have y23 : reg n14 (23 : Fin 32) = BitVec.ofNat 32 0 := by rw [k14 (23 : Fin 32) (by decide), k13 (23 : Fin 32) (by decide), k12 (23 : Fin 32) (by decide), x11]
+  have y24 : reg n14 (24 : Fin 32) = 0xFF := by rw [k14 (24 : Fin 32) (by decide), x13]
+  have y9 : reg n14 (9 : Fin 32) = out + len := by rw [k14 (9 : Fin 32) (by decide), k13 (9 : Fin 32) (by decide), x12]
+  have ysp : reg n14 sp = F := by rw [k14 sp (by decide), k13 sp (by decide), k12 sp (by decide), k11 sp (by decide), K10 sp (by decide) (by decide) (by decide) (by decide) (by decide), r9 sp (by decide), k8 sp (by decide), k7 sp (by decide), k6 sp (by decide), k5 sp (by decide), k4 sp (by decide), k3 sp (by decide), k2 sp (by decide), k1 sp (by decide), r2sp]
+  have hfrMo : ∀ x, Sep G (0x150 + R) x 1 → Sep out len.toNat x 1 → Mo x = m.mem x := fun x hx _ => by
+    rw [bufF x ((inF x hx).sub (c := 0xC) (l := 0x100) (by decide)), fpro x (inF x hx)]
+  have hslMo : ∀ i, i < 0x30 → Mo (F + BitVec.ofNat 32 (0x110 + i)) = P11 (F + BitVec.ofNat 32 (0x110 + i)) :=
+    fun i hi => bufF _ (sep_offsets F (c := 0xC) (n := 0x100) (d := 0x110 + i) (k := 1) (.inl (by omega)) (by omega)
+      (by omega))
+  -- 0x5C `beqz s5`, then the loop
+  obtain ⟨nE, ME, dE, cE, uE, s7E, s5E, spE, hdE, hcpE, hfrE, hslE, rkE⟩ : ∃ n' M' d', Steps n14 n' ∧
+      St M' P n' 0xE4 (reg n') ∧ reg n' (23 : Fin 32) = BitVec.ofNat 32 d' ∧ reg n' (21 : Fin 32) = len ∧
+      reg n' sp = F ∧ d' ≤ len.toNat ∧
+      (d' = len.toNat → ∀ i, i < len.toNat → M' (out + BitVec.ofNat 32 i) = flash (addr.toNat + i)) ∧
+      (∀ x, Sep G (0x150 + R) x 1 → Sep out len.toNat x 1 → M' x = m.mem x) ∧
+      (∀ i, i < 0x30 → M' (F + BitVec.ofNat 32 (0x110 + i)) = P11 (F + BitVec.ofNat 32 (0x110 + i))) ∧
+      ∀ q, romKeep q = true → q ≠ (8 : Fin 32) → q ≠ (23 : Fin 32) → q ≠ (26 : Fin 32) → reg n' q = reg n14 q := by
+    by_cases hl0 : len.toNat = 0
+    · obtain ⟨n15, d15, u15⟩ := v14.self.taken hcMo 0xE4 frd_at_5c (by decide) (by
+        have hl : len = 0 := BitVec.eq_of_toNat_eq (by rw [hl0]; rfl)
+        simp only [branchTaken, y21, v14.self.zero]; rw [hl]; decide)
+      exact ⟨n15, Mo, 0, .single d15, u15.self, by rw [u15.regs, y23], by rw [u15.regs, y21],
+        by rw [u15.regs, ysp], Nat.zero_le _, fun _ i hi => absurd hi (by omega), hfrMo, hslMo,
+        fun q _ _ _ _ => u15.regs q⟩
+    · obtain ⟨n15, d15, u15⟩ := v14.self.notTaken hcMo 0x60 frd_at_5c (by decide) (by
+        simp only [branchTaken, y21, v14.self.zero]
+        exact beq_toNat (by rw [zero_toNat]; exact hl0))
+      obtain ⟨n', M', d', c', rest⟩ := frd_outer hROM (Mp := P11) (addr := addr) env len.toNat 0 n15 Mo
+        (by omega) (by omega) u15.self (by rw [u15.regs, y18]) (by rw [u15.regs, y19]) (by rw [u15.regs, y21])
+        (by rw [u15.regs, y20]) (by rw [u15.regs, y22, hF]) (by rw [u15.regs, y23]) (by rw [u15.regs, y24])
+        (by rw [u15.regs, x14, hF]) (by rw [u15.regs, y9]) (by rw [u15.regs, ysp, hF])
+        (fun i hi => absurd hi (Nat.not_lt_zero _)) hfrMo (by rw [hF]; exact hslMo)
+      rw [hF] at rest
+      obtain ⟨r1, r2, r3, r4, r5, r6, r7, r8, rk⟩ := rest
+      exact ⟨n', M', d', .cons d15 c', r1, r2, r3, r4, r5, r6, r7, r8,
+        fun q hq h8 h23 h26 => by rw [rk q hq h8 h23 h26, u15.regs]⟩
+  -- the result
+  have hcE : CodeIn ME P flashReadCode := fun i hi => by
+    rw [hfrE _ (env.sGC.subR (c := i) (l := 1) (by omega)) (env.sOC.subR (c := i) (l := 1) (by omega))]
+    exact env.code i hi
+  obtain ⟨f1, g1, w1⟩ := uE.alu hcE frd_at_e4 (off' := 0xE8) (by decide)
+  obtain ⟨f2, g2, w2⟩ := w1.self.aluImm hcE frd_at_e8 (off' := 0xEC) (by decide)
+  have hdE32 : dE < 2 ^ 32 := by have := len.isLt; omega
+  have ra0 : (reg f2 a0 = 1 ∧ dE = len.toNat) ∨ reg f2 a0 = 0 := by
+    have v : reg f2 a0 = (if (BitVec.ofNat 32 dE).ult len then (1 : Word) else 0) ^^^ 0x1 := by
+      rw [w2.newReg (by decide)]; show reg f1 a0 ^^^ 0x1 = _
+      rw [w1.newReg (by decide)]; show (if (reg nE (23 : Fin 32)).ult (reg nE (21 : Fin 32)) then _ else _) ^^^ _ = _
+      rw [s7E, s5E]
+    have hu : (BitVec.ofNat 32 dE).ult len = decide (dE < len.toNat) := by
+      rw [← ult_lit hdE32 len.isLt, ofNat_toNat_self]
+    rw [v, hu]
+    by_cases hlt : dE < len.toNat
+    · rw [decide_eq_true hlt]; exact .inr rfl
+    · rw [decide_eq_false hlt]; exact .inl ⟨rfl, by omega⟩
+  have kw2 := w2.oldReg w1.self.zero
+  have kw1 := w1.oldReg uE.zero
+  obtain ⟨f3, g3, w3⟩ := w2.self.aluImm hcE frd_at_ec (off' := 0xEE) (by decide)
+  have kw3 := w3.oldReg w2.self.zero
+  have a1_3 : reg f3 a1 = F + 0x100 := by
+    rw [w3.newReg (by decide)]; show reg f2 sp + 0x100 = _; rw [kw2 _ (by decide), kw1 _ (by decide), spE]
+  have rdOf : ∀ o, 0x110 ≤ o → o + 4 ≤ 0x140 →
+      memLoad32 ME (F + BitVec.ofNat 32 o) = memLoad32 P11 (F + BitVec.ofNat 32 o) := fun o h1 h2 =>
+    memLoad32_congr fun j hj => by
+      rw [add_ofNat_assoc, show o + j = 0x110 + (o - 0x110 + j) by omega]; exact hslE _ (by omega)
+  have a1_0' : reg f3 a1 = F + 0x100 := by
+    exact a1_3
+  obtain ⟨h0, dl0, l0⟩ := w3.self.lwE hcE frd_at_ee (off' := 0xF2) (by decide)
+    (by rw [a1_0', BitVec.add_assoc]; exact fr_al' hFa (by decide)) (v := reg m ra)
+    (by rw [a1_0', BitVec.add_assoc]; exact (rdOf 0x13C (by decide) (by decide)).trans sv13C)
+  have a1_1' : reg h0 a1 = F + 0x100 := by
+    rw [l0.oldReg w3.self.zero _ (by decide), a1_0']
+  obtain ⟨h1, dl1, l1⟩ := l0.self.lwE hcE frd_at_f2 (off' := 0xF4) (by decide)
+    (by rw [a1_1', BitVec.add_assoc]; exact fr_al' hFa (by decide)) (v := reg m (8 : Fin 32))
+    (by rw [a1_1', BitVec.add_assoc]; exact (rdOf 0x138 (by decide) (by decide)).trans sv138)
+  have a1_2' : reg h1 a1 = F + 0x100 := by
+    rw [l1.oldReg l0.self.zero _ (by decide), a1_1']
+  obtain ⟨h2, dl2, l2⟩ := l1.self.lwE hcE frd_at_f4 (off' := 0xF6) (by decide)
+    (by rw [a1_2', BitVec.add_assoc]; exact fr_al' hFa (by decide)) (v := reg m (9 : Fin 32))
+    (by rw [a1_2', BitVec.add_assoc]; exact (rdOf 0x134 (by decide) (by decide)).trans sv134)
+  have a1_3' : reg h2 a1 = F + 0x100 := by
+    rw [l2.oldReg l1.self.zero _ (by decide), a1_2']
+  obtain ⟨h3, dl3, l3⟩ := l2.self.lwE hcE frd_at_f6 (off' := 0xFA) (by decide)
+    (by rw [a1_3', BitVec.add_assoc]; exact fr_al' hFa (by decide)) (v := reg m (18 : Fin 32))
+    (by rw [a1_3', BitVec.add_assoc]; exact (rdOf 0x130 (by decide) (by decide)).trans sv130)
+  have a1_4' : reg h3 a1 = F + 0x100 := by
+    rw [l3.oldReg l2.self.zero _ (by decide), a1_3']
+  obtain ⟨h4, dl4, l4⟩ := l3.self.lwE hcE frd_at_fa (off' := 0xFE) (by decide)
+    (by rw [a1_4', BitVec.add_assoc]; exact fr_al' hFa (by decide)) (v := reg m (19 : Fin 32))
+    (by rw [a1_4', BitVec.add_assoc]; exact (rdOf 0x12C (by decide) (by decide)).trans sv12C)
+  have a1_5' : reg h4 a1 = F + 0x100 := by
+    rw [l4.oldReg l3.self.zero _ (by decide), a1_4']
+  obtain ⟨h5, dl5, l5⟩ := l4.self.lwE hcE frd_at_fe (off' := 0x102) (by decide)
+    (by rw [a1_5', BitVec.add_assoc]; exact fr_al' hFa (by decide)) (v := reg m (20 : Fin 32))
+    (by rw [a1_5', BitVec.add_assoc]; exact (rdOf 0x128 (by decide) (by decide)).trans sv128)
+  have a1_6' : reg h5 a1 = F + 0x100 := by
+    rw [l5.oldReg l4.self.zero _ (by decide), a1_5']
+  obtain ⟨h6, dl6, l6⟩ := l5.self.lwE hcE frd_at_102 (off' := 0x106) (by decide)
+    (by rw [a1_6', BitVec.add_assoc]; exact fr_al' hFa (by decide)) (v := reg m (21 : Fin 32))
+    (by rw [a1_6', BitVec.add_assoc]; exact (rdOf 0x124 (by decide) (by decide)).trans sv124)
+  have a1_7' : reg h6 a1 = F + 0x100 := by
+    rw [l6.oldReg l5.self.zero _ (by decide), a1_6']
+  obtain ⟨h7, dl7, l7⟩ := l6.self.lwE hcE frd_at_106 (off' := 0x10A) (by decide)
+    (by rw [a1_7', BitVec.add_assoc]; exact fr_al' hFa (by decide)) (v := reg m (22 : Fin 32))
+    (by rw [a1_7', BitVec.add_assoc]; exact (rdOf 0x120 (by decide) (by decide)).trans sv120)
+  have a1_8' : reg h7 a1 = F + 0x100 := by
+    rw [l7.oldReg l6.self.zero _ (by decide), a1_7']
+  obtain ⟨h8, dl8, l8⟩ := l7.self.lwE hcE frd_at_10a (off' := 0x10E) (by decide)
+    (by rw [a1_8', BitVec.add_assoc]; exact fr_al' hFa (by decide)) (v := reg m (23 : Fin 32))
+    (by rw [a1_8', BitVec.add_assoc]; exact (rdOf 0x11C (by decide) (by decide)).trans sv11C)
+  have a1_9' : reg h8 a1 = F + 0x100 := by
+    rw [l8.oldReg l7.self.zero _ (by decide), a1_8']
+  obtain ⟨h9, dl9, l9⟩ := l8.self.lwE hcE frd_at_10e (off' := 0x112) (by decide)
+    (by rw [a1_9', BitVec.add_assoc]; exact fr_al' hFa (by decide)) (v := reg m (24 : Fin 32))
+    (by rw [a1_9', BitVec.add_assoc]; exact (rdOf 0x118 (by decide) (by decide)).trans sv118)
+  have a1_10' : reg h9 a1 = F + 0x100 := by
+    rw [l9.oldReg l8.self.zero _ (by decide), a1_9']
+  obtain ⟨h10, dl10, l10⟩ := l9.self.lwE hcE frd_at_112 (off' := 0x116) (by decide)
+    (by rw [a1_10', BitVec.add_assoc]; exact fr_al' hFa (by decide)) (v := reg m (25 : Fin 32))
+    (by rw [a1_10', BitVec.add_assoc]; exact (rdOf 0x114 (by decide) (by decide)).trans sv114)
+  have a1_11' : reg h10 a1 = F + 0x100 := by
+    rw [l10.oldReg l9.self.zero _ (by decide), a1_10']
+  obtain ⟨h11, dl11, l11⟩ := l10.self.lwE hcE frd_at_116 (off' := 0x11A) (by decide)
+    (by rw [a1_11', BitVec.add_assoc]; exact fr_al' hFa (by decide)) (v := reg m (26 : Fin 32))
+    (by rw [a1_11', BitVec.add_assoc]; exact (rdOf 0x110 (by decide) (by decide)).trans sv110)
+  obtain ⟨f4, g4, w4⟩ := l11.self.aluImm hcE frd_at_11a (off' := 0x11C) (by decide)
+  obtain ⟨f5, g5, pc5, mem5, regs5⟩ := w4.self.jalr hcE frd_at_11c
+  have fin0 : reg h11 ra = reg m ra := by rw [l11.oldReg l10.self.zero _ (by decide), l10.oldReg l9.self.zero _ (by decide), l9.oldReg l8.self.zero _ (by decide), l8.oldReg l7.self.zero _ (by decide), l7.oldReg l6.self.zero _ (by decide), l6.oldReg l5.self.zero _ (by decide), l5.oldReg l4.self.zero _ (by decide), l4.oldReg l3.self.zero _ (by decide), l3.oldReg l2.self.zero _ (by decide), l2.oldReg l1.self.zero _ (by decide), l1.oldReg l0.self.zero _ (by decide), l0.newReg (by decide)]
+  have fin1 : reg h11 (8 : Fin 32) = reg m (8 : Fin 32) := by rw [l11.oldReg l10.self.zero _ (by decide), l10.oldReg l9.self.zero _ (by decide), l9.oldReg l8.self.zero _ (by decide), l8.oldReg l7.self.zero _ (by decide), l7.oldReg l6.self.zero _ (by decide), l6.oldReg l5.self.zero _ (by decide), l5.oldReg l4.self.zero _ (by decide), l4.oldReg l3.self.zero _ (by decide), l3.oldReg l2.self.zero _ (by decide), l2.oldReg l1.self.zero _ (by decide), l1.newReg (by decide)]
+  have fin2 : reg h11 (9 : Fin 32) = reg m (9 : Fin 32) := by rw [l11.oldReg l10.self.zero _ (by decide), l10.oldReg l9.self.zero _ (by decide), l9.oldReg l8.self.zero _ (by decide), l8.oldReg l7.self.zero _ (by decide), l7.oldReg l6.self.zero _ (by decide), l6.oldReg l5.self.zero _ (by decide), l5.oldReg l4.self.zero _ (by decide), l4.oldReg l3.self.zero _ (by decide), l3.oldReg l2.self.zero _ (by decide), l2.newReg (by decide)]
+  have fin3 : reg h11 (18 : Fin 32) = reg m (18 : Fin 32) := by rw [l11.oldReg l10.self.zero _ (by decide), l10.oldReg l9.self.zero _ (by decide), l9.oldReg l8.self.zero _ (by decide), l8.oldReg l7.self.zero _ (by decide), l7.oldReg l6.self.zero _ (by decide), l6.oldReg l5.self.zero _ (by decide), l5.oldReg l4.self.zero _ (by decide), l4.oldReg l3.self.zero _ (by decide), l3.newReg (by decide)]
+  have fin4 : reg h11 (19 : Fin 32) = reg m (19 : Fin 32) := by rw [l11.oldReg l10.self.zero _ (by decide), l10.oldReg l9.self.zero _ (by decide), l9.oldReg l8.self.zero _ (by decide), l8.oldReg l7.self.zero _ (by decide), l7.oldReg l6.self.zero _ (by decide), l6.oldReg l5.self.zero _ (by decide), l5.oldReg l4.self.zero _ (by decide), l4.newReg (by decide)]
+  have fin5 : reg h11 (20 : Fin 32) = reg m (20 : Fin 32) := by rw [l11.oldReg l10.self.zero _ (by decide), l10.oldReg l9.self.zero _ (by decide), l9.oldReg l8.self.zero _ (by decide), l8.oldReg l7.self.zero _ (by decide), l7.oldReg l6.self.zero _ (by decide), l6.oldReg l5.self.zero _ (by decide), l5.newReg (by decide)]
+  have fin6 : reg h11 (21 : Fin 32) = reg m (21 : Fin 32) := by rw [l11.oldReg l10.self.zero _ (by decide), l10.oldReg l9.self.zero _ (by decide), l9.oldReg l8.self.zero _ (by decide), l8.oldReg l7.self.zero _ (by decide), l7.oldReg l6.self.zero _ (by decide), l6.newReg (by decide)]
+  have fin7 : reg h11 (22 : Fin 32) = reg m (22 : Fin 32) := by rw [l11.oldReg l10.self.zero _ (by decide), l10.oldReg l9.self.zero _ (by decide), l9.oldReg l8.self.zero _ (by decide), l8.oldReg l7.self.zero _ (by decide), l7.newReg (by decide)]
+  have fin8 : reg h11 (23 : Fin 32) = reg m (23 : Fin 32) := by rw [l11.oldReg l10.self.zero _ (by decide), l10.oldReg l9.self.zero _ (by decide), l9.oldReg l8.self.zero _ (by decide), l8.newReg (by decide)]
+  have fin9 : reg h11 (24 : Fin 32) = reg m (24 : Fin 32) := by rw [l11.oldReg l10.self.zero _ (by decide), l10.oldReg l9.self.zero _ (by decide), l9.newReg (by decide)]
+  have fin10 : reg h11 (25 : Fin 32) = reg m (25 : Fin 32) := by rw [l11.oldReg l10.self.zero _ (by decide), l10.newReg (by decide)]
+  have fin11 : reg h11 (26 : Fin 32) = reg m (26 : Fin 32) := by rw [l11.newReg (by decide)]
+  have sp_h : reg h11 sp = F := by rw [l11.oldReg l10.self.zero _ (by decide), l10.oldReg l9.self.zero _ (by decide), l9.oldReg l8.self.zero _ (by decide), l8.oldReg l7.self.zero _ (by decide), l7.oldReg l6.self.zero _ (by decide), l6.oldReg l5.self.zero _ (by decide), l5.oldReg l4.self.zero _ (by decide), l4.oldReg l3.self.zero _ (by decide), l3.oldReg l2.self.zero _ (by decide), l2.oldReg l1.self.zero _ (by decide), l1.oldReg l0.self.zero _ (by decide), l0.oldReg w3.self.zero _ (by decide), kw3 _ (by decide), kw2 _ (by decide), kw1 _ (by decide), spE]
+  have a0_h : reg h11 a0 = reg f2 a0 := by
+    rw [l11.oldReg l10.self.zero _ (by decide), l10.oldReg l9.self.zero _ (by decide), l9.oldReg l8.self.zero _ (by decide), l8.oldReg l7.self.zero _ (by decide), l7.oldReg l6.self.zero _ (by decide), l6.oldReg l5.self.zero _ (by decide), l5.oldReg l4.self.zero _ (by decide), l4.oldReg l3.self.zero _ (by decide), l3.oldReg l2.self.zero _ (by decide), l2.oldReg l1.self.zero _ (by decide), l1.oldReg l0.self.zero _ (by decide), l0.oldReg w3.self.zero _ (by decide), kw3 _ (by decide)]
+  have pass : ∀ q : Fin 32, q = (3 : Fin 32) ∨ q = (4 : Fin 32) ∨ q = (27 : Fin 32) → reg h11 q = reg m q := by
+    intro q hq
+    have hk : romKeep q = true := by rcases hq with rfl | rfl | rfl <;> decide
+    have n8 : q ≠ (8 : Fin 32) := by rcases hq with rfl | rfl | rfl <;> decide
+    have n23 : q ≠ (23 : Fin 32) := by rcases hq with rfl | rfl | rfl <;> decide
+    have n26 : q ≠ (26 : Fin 32) := by rcases hq with rfl | rfl | rfl <;> decide
+    have nl : ∀ r : Fin 32, r.val ∈ [1, 2, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26] →
+        q ≠ r := by
+      intro r hr e; subst e; rcases hq with rfl | rfl | rfl <;> exact absurd hr (by decide)
+    rw [l11.oldReg l10.self.zero _ (nl _ (by decide)), l10.oldReg l9.self.zero _ (nl _ (by decide)), l9.oldReg l8.self.zero _ (nl _ (by decide)), l8.oldReg l7.self.zero _ (nl _ (by decide)), l7.oldReg l6.self.zero _ (nl _ (by decide)), l6.oldReg l5.self.zero _ (nl _ (by decide)), l5.oldReg l4.self.zero _ (nl _ (by decide)), l4.oldReg l3.self.zero _ (nl _ (by decide)), l3.oldReg l2.self.zero _ (nl _ (by decide)), l2.oldReg l1.self.zero _ (nl _ (by decide)), l1.oldReg l0.self.zero _ (nl _ (by decide)), l0.oldReg w3.self.zero _ (nl _ (by decide)),
+      kw3 _ (nl _ (by decide)), kw2 _ (nl _ (by decide)), kw1 _ (nl _ (by decide)), rkE q hk n8 n23 n26,
+      k14 _ (nl _ (by decide)), k13 _ (nl _ (by decide)), k12 _ (nl _ (by decide)), k11 _ (nl _ (by decide)),
+      K10 q (nl _ (by decide)) (nl _ (by decide)) (nl _ (by decide)) (nl _ (by decide)) (nl _ (by decide)),
+      r9 q (nl _ (by decide)), k8 _ (nl _ (by decide)), k7 _ (nl _ (by decide)), k6 _ (nl _ (by decide)),
+      k5 _ (nl _ (by decide)), k4 _ (nl _ (by decide)), k3 _ (nl _ (by decide)), k2 _ (nl _ (by decide)),
+      k1 _ (nl _ (by decide)), rk2 q (nl _ (by decide)) (nl _ (by decide))]
+  have hmem : ∀ q : Fin 32, romKeep q = true → q = 0 ∨ q = sp ∨ q = (3 : Fin 32) ∨ q = (4 : Fin 32) ∨
+      q = (8 : Fin 32) ∨ q = (9 : Fin 32) ∨ q = (18 : Fin 32) ∨ q = (19 : Fin 32) ∨ q = (20 : Fin 32) ∨
+      q = (21 : Fin 32) ∨ q = (22 : Fin 32) ∨ q = (23 : Fin 32) ∨ q = (24 : Fin 32) ∨ q = (25 : Fin 32) ∨
+      q = (26 : Fin 32) ∨ q = (27 : Fin 32) := by decide
+  have spf : reg f5 sp = G + BitVec.ofNat 32 (0x150 + R) := by
+    rw [regs5, w4.newReg (by decide)]; show reg h11 sp + 0x140 = _; rw [sp_h, hspF]
+  have kf5 : ∀ q, q ≠ sp → reg f5 q = reg h11 q := fun q hq => by rw [regs5, w4.oldReg l11.self.zero q hq]
+
+  refine ⟨f5, .cons d1 (.cons d2 (.cons dp0 (.cons dp1 (.cons dp2 (.cons dp3 (.cons dp4 (.cons dp5 (.cons dp6 (.cons dp7 (.cons dp8 (.cons dp9 (.cons dp10 (.cons dp11 (.cons e1 (.cons e2 (.cons e3 (.cons e4 (.cons e5 (.cons e6 (.cons e7 (.cons e8 (c9.trans (c10.trans (.cons e11 (.cons e12 (.cons e13 (.cons e14 (cE.trans (.cons g1 (.cons g2 (.cons g3 (.cons dl0 (.cons dl1 (.cons dl2 (.cons dl3 (.cons dl4 (.cons dl5 (.cons dl6 (.cons dl7 (.cons dl8 (.cons dl9 (.cons dl10 (.cons dl11 (.cons g4 (.single g5))))))))))))))))))))))))))))))))))))))))))))), ?_, spf, ?_, ?_, ?_, ?_⟩
+  · rw [pc5, w4.oldReg l11.self.zero ra (by decide), add_lit_zero, fin0, hra, hret]
+  · intro q hq
+    rcases hmem q hq with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+    · rw [regs5, w4.self.zero, hz]
+    · rw [spf, hsp]
+    · rw [kf5 _ (by decide), pass _ (.inl rfl)]
+    · rw [kf5 _ (by decide), pass _ (.inr (.inl rfl))]
+    · rw [kf5 _ (by decide), fin1]
+    · rw [kf5 _ (by decide), fin2]
+    · rw [kf5 _ (by decide), fin3]
+    · rw [kf5 _ (by decide), fin4]
+    · rw [kf5 _ (by decide), fin5]
+    · rw [kf5 _ (by decide), fin6]
+    · rw [kf5 _ (by decide), fin7]
+    · rw [kf5 _ (by decide), fin8]
+    · rw [kf5 _ (by decide), fin9]
+    · rw [kf5 _ (by decide), fin10]
+    · rw [kf5 _ (by decide), fin11]
+    · rw [kf5 _ (by decide), pass _ (.inr (.inr rfl))]
+  · rw [kf5 _ (by decide), a0_h]; rcases ra0 with h | h
+    · exact .inr h.1
+    · exact .inl h
+  · intro h1 i hi
+    rw [kf5 _ (by decide), a0_h] at h1
+    rcases ra0 with h | h
+    · rw [mem5]; exact hcpE h.2 i hi
+    · rw [h] at h1; exact absurd h1 (by decide)
+  · intro x hx ho; rw [mem5]; exact hfrE x hx ho
+
 end C3.RV32
+
 

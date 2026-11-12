@@ -71,6 +71,8 @@ FUNCTIONS = [
     ("feSquareInner", "<curve25519_dalek::backend::serial::u32::field::FieldElement2625>::square_inner"),
     ("feSquare", "<curve25519_dalek::backend::serial::u32::field::FieldElement2625>::square"),
     ("fePow2k", "<curve25519_dalek::backend::serial::u32::field::FieldElement2625>::pow2k"),
+    ("flashRead", "c3_bootloader::flash::read"),
+    ("romFlashReadWords", "c3_bootloader::rom::flash_read_words"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
