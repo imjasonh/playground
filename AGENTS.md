@@ -74,7 +74,8 @@ playground/
 ├── sundial/               # sundial clock: long shadow follows the sun
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
 ├── web-push-demo/         # static browser front-end for the web-push Worker
-└── y/                     # Rust Cloudflare Worker: one-user microblog
+├── y/                     # Rust Cloudflare Worker: one-user microblog
+└── zip/                   # generate and play Zip path puzzles (JS + Node tests)
 ```
 
 ### Browser apps
@@ -111,6 +112,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `population-rays/` | yes | Directional 5° population slices; JS modules, npm scripts, tests |
 | `sundial/` | yes | Sundial clock; JS modules, npm scripts, tests |
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
+| `zip/` | yes | Zip path puzzle generator and player; JS modules, npm scripts, tests |
 | `gitdb/` | no | Go CLI; no `index.html` |
 | `cloudrun-sqlite/` | no | Go server for Cloud Run (Litestream VFS + Terraform); no `index.html` |
 | `litestream/` | no | Fork of Litestream (`git subtree`) that `cloudrun-sqlite` builds against; no `index.html` |
@@ -937,6 +939,7 @@ bundle exec fastlane test
 | `population-rays/` | Directional 5° population slices (distance to N people) over Meta/CIESIN HRSL grids | Node test runner |
 | `sundial/` | Clock whose long shadow follows the sun; no shadow at night | Node test runner |
 | `web-push-demo/` | Browser front-end for `web-push` (subscribe/unsubscribe/notify) | none (static) |
+| `zip/` | Generate and play Zip on phones: draw one path through every cell, passing the numbers in order. Three levels set the board size, the walls, and how many numbers a puzzle keeps; every puzzle has one solution. Hints point out a wrong turn, then show the next few cells. Workers build puzzles off the main thread, and the URL seed shares a puzzle | Node test runner |
 
 > **`nypd-choppers` has an intentionally non-standard lifecycle.** Because free
 > ADS-B APIs are blocked by CORS and only serve live (current-position) data, it
