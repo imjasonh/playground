@@ -75,6 +75,7 @@ FUNCTIONS = [
     ("romFlashReadWords", "c3_bootloader::rom::flash_read_words"),
     ("feAdd", "<&curve25519_dalek::backend::serial::u32::field::FieldElement2625 as core::ops::arith::Add>::add"),
     ("selectI64", "<ctutils::choice::Choice>::select_i64 (.170)"),
+    ("feSub", "<&curve25519_dalek::backend::serial::u32::field::FieldElement2625 as core::ops::arith::Sub>::sub"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
