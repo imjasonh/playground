@@ -691,3 +691,7 @@ window.addEventListener('pagehide', save);
 window.addEventListener('popstate', showPuzzleFromUrl);
 setInterval(renderTimer, 500);
 showPuzzleFromUrl();
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
