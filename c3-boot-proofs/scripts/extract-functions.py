@@ -66,6 +66,11 @@ FUNCTIONS = [
     ("p384Sub", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<"
      "p384::arithmetic::field::FieldParams, 12>>::sub"),
     ("p384Double", "<p384::arithmetic::field::FieldElement as ff::Field>::double"),
+    ("feReduce", "<curve25519_dalek::backend::serial::u32::field::FieldElement2625>::reduce"),
+    ("feMul", "<&curve25519_dalek::backend::serial::u32::field::FieldElement2625 as core::ops::arith::Mul>::mul"),
+    ("feSquareInner", "<curve25519_dalek::backend::serial::u32::field::FieldElement2625>::square_inner"),
+    ("feSquare", "<curve25519_dalek::backend::serial::u32::field::FieldElement2625>::square"),
+    ("fePow2k", "<curve25519_dalek::backend::serial::u32::field::FieldElement2625>::pow2k"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
