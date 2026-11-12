@@ -83,6 +83,7 @@ import C3BootProofs.Proofs.FeMulBody
 import C3BootProofs.Proofs.FeMul
 import C3BootProofs.Proofs.FeSqBody
 import C3BootProofs.Proofs.FeSqInner
+import C3BootProofs.Proofs.FeSquare
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
 import C3BootProofs.Theorems.Level
