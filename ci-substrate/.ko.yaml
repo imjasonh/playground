@@ -1,0 +1,5 @@
+# ci-substrate ships only statically linked Go binaries, so every image uses
+# the distroless static base. Builds and deploys go through ko (ko build / ko
+# apply); there are no Dockerfiles and no Helm charts. ko defaults to
+# CGO_ENABLED=0, which is what these binaries want.
+defaultBaseImage: cgr.dev/chainguard/static:latest

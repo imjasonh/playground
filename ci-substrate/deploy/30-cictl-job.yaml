@@ -1,0 +1,27 @@
+# One-shot Job that drives the multi-tenant isolation + node-local cache demo
+# against the cas and cascache already in the cluster. The e2e harness waits
+# for this Job to Complete.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cictl-demo
+  namespace: ci-substrate
+  labels: {app: cictl}
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels: {app: cictl}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: cictl
+          image: ko://github.com/imjasonh/playground/ci-substrate/cmd/cictl
+          args:
+            - -origin-addr=cas.ci-substrate.svc.cluster.local:8980
+            - -cache-addr=cascache.ci-substrate.svc.cluster.local:9092
+            - -cache-metrics-url=http://cascache.ci-substrate.svc.cluster.local:9090
+            - -token-a=tok-a
+            - -token-b=tok-b
+            - -instance-a=tenant-a
+            - -shared=shared

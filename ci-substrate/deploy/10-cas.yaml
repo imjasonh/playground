@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cas
+  namespace: ci-substrate
+  labels: {app: cas}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: cas}
+  template:
+    metadata:
+      labels: {app: cas}
+    spec:
+      containers:
+        - name: cas
+          image: ko://github.com/imjasonh/playground/ci-substrate/cmd/cas
+          env:
+            - name: ADDR
+              value: ":8980"
+            - name: STORE_DIR
+              value: /data
+            - name: TENANTS
+              valueFrom:
+                configMapKeyRef: {name: tenants, key: TENANTS}
+          ports:
+            - {name: grpc, containerPort: 8980}
+          readinessProbe:
+            grpc: {port: 8980}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cas
+  namespace: ci-substrate
+spec:
+  selector: {app: cas}
+  ports:
+    - {name: grpc, port: 8980, targetPort: 8980}

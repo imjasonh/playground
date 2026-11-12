@@ -1,0 +1,62 @@
+# The node-local CAS proxy. One pod per node (DaemonSet), on the host network,
+# serving build actors on that node from a verified read-through cache backed
+# by node-local disk. Every node gets its own warm set; a blob fetched once is
+# reused by every later reader on that node.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: cascache
+  namespace: ci-substrate
+  labels: {app: cascache}
+spec:
+  selector:
+    matchLabels: {app: cascache}
+  template:
+    metadata:
+      labels: {app: cascache}
+    spec:
+      hostNetwork: true
+      # hostNetwork pods default to the host's resolv.conf; use cluster DNS so
+      # ORIGIN_ADDR=cas.ci-substrate.svc.cluster.local resolves.
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: cascache
+          image: ko://github.com/imjasonh/playground/ci-substrate/cmd/cascache
+          env:
+            - name: ADDR
+              value: ":9092"
+            - name: METRICS_ADDR
+              value: ":9090"
+            - name: STORE_DIR
+              value: /var/lib/ci-substrate-cache
+            - name: ORIGIN_ADDR
+              value: cas.ci-substrate.svc.cluster.local:8980
+            - name: TENANTS
+              valueFrom:
+                configMapKeyRef: {name: tenants, key: TENANTS}
+          ports:
+            - {name: grpc, containerPort: 9092}
+            - {name: metrics, containerPort: 9090}
+          readinessProbe:
+            grpc: {port: 9092}
+          volumeMounts:
+            - {name: cache, mountPath: /var/lib/ci-substrate-cache}
+      volumes:
+        # emptyDir keeps the warm set for the life of the node-local pod and is
+        # writable by the non-root chainguard static user. A production install
+        # would mount node-local NVMe here instead.
+        - name: cache
+          emptyDir: {}
+---
+# A ClusterIP Service so in-cluster clients and the demo can reach a cascache
+# pod. With hostNetwork pods this routes to a node's cascache on its host IP.
+apiVersion: v1
+kind: Service
+metadata:
+  name: cascache
+  namespace: ci-substrate
+spec:
+  selector: {app: cascache}
+  ports:
+    - {name: grpc, port: 9092, targetPort: 9092}
+    - {name: metrics, port: 9090, targetPort: 9090}

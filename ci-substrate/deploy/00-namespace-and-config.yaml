@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ci-substrate
+---
+# The tenant table the cas and cascache read on startup. Each token maps to the
+# Remote Execution instance names that tenant may use. "tenant-a" and
+# "tenant-b" are private; "shared" is an instance both tenants read, which is
+# where content-addressed reuse happens.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tenants
+  namespace: ci-substrate
+data:
+  TENANTS: |
+    {"tok-a":["tenant-a","shared"],"tok-b":["tenant-b","shared"]}

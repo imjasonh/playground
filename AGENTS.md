@@ -25,6 +25,7 @@ playground/
 ├── droneski/              # FPV drone filming a downhill skier (JS + three.js + Node tests)
 ├── chrome-ai/             # chat with Chrome's built-in on-device model (Prompt API; JS + Node tests)
 ├── chrome-extension/      # Chrome extension (not a Pages app)
+├── ci-substrate/          # Go: multi-tenant Bazel RBE CAS + node-local verified cache on KinD (ko apply; kind e2e)
 ├── esp-flash/             # Web Serial / WebUSB ESP32 flasher (inkbot GHCR + local .bin)
 ├── kubescheduler-the-game/ # Kubernetes scheduler + cluster-operator game (JS + Node tests)
 ├── cors-proxy/            # Rust Cloudflare Worker: SSRF-hardened CORS proxy (not a Pages app)
@@ -113,6 +114,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `sundial/` | yes | Sundial clock; JS modules, npm scripts, tests |
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
 | `zip/` | yes | Zip path puzzle generator and player; JS modules, npm scripts, tests |
+| `ci-substrate/` | no | Go: multi-tenant Bazel RBE CAS + node-local verified cache (ko apply; kind e2e); no `index.html` |
 | `gitdb/` | no | Go CLI; no `index.html` |
 | `cloudrun-sqlite/` | no | Go server for Cloud Run (Litestream VFS + Terraform); no `index.html` |
 | `litestream/` | no | Fork of Litestream (`git subtree`) that `cloudrun-sqlite` builds against; no `index.html` |
@@ -353,9 +355,10 @@ tested. The **pasta** leg builds the `pasta/` CLI, runs `pasta test` over the
 enrolled `.pasta/` analyzers, and lints the monorepo with `-fail-on=warning`
 (see `.github/scripts/test-pasta.sh`).
 
-The kind end-to-end tests of `git-k8s`, `kube`, and `sshapp` run as their own
-steps in the parallel group (`.github/scripts/test-kind-e2e.sh`), beside the
-Go unit tests, because they mostly wait for a cluster and its Pods. Their
+The kind end-to-end tests of `git-k8s`, `kube`, `sshapp`, and `ci-substrate`
+run as their own steps in the parallel group
+(`.github/scripts/test-kind-e2e.sh`), beside the Go unit tests, because they
+mostly wait for a cluster and its Pods. Their
 clusters, registries, and ports have different names, so they can share the
 runner. The Rust apps share one target directory (`CARGO_TARGET_DIR`), so
 apps that depend on the same crates compile them once and the job holds one
@@ -957,6 +960,7 @@ bundle exec fastlane test
 
 | Directory | Type | Tests |
 |-----------|------|-------|
+| `ci-substrate/` | Multi-tenant Bazel Remote Execution CAS + node-local verified read-through cache (ko apply; demo of multi-tenant isolation and optimized caching on KinD). Optional Agent Substrate actor/egress overlay under `deploy/substrate/` | `go test -race ./...`; kind e2e (`CI_SUBSTRATE_KIND_E2E=1`) when `ci-substrate/` changes |
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test -race ./...` |
 | `apko-frontend/` | BuildKit frontend for apko YAML, built with ko and published as `ghcr.io/imjasonh/playground/apko-frontend` by `apko-frontend-publish.yml`. With `# syntax=ghcr.io/imjasonh/playground/apko-frontend` at the top of an apko file, `docker build` resolves packages with apko's resolver while BuildKit fetches each index and key, and a build step for each package downloads it and checks it against the signed index, so its cache key is the checksum and a `--cache-from` build downloads no packages. A step that runs the same image with no network runs apko's build from those files, and each of apko's layers (origin `layering` included) becomes a BuildKit layer. Supports multi-arch from `archs`, `SOURCE_DATE_EPOCH`, apko lock files (`APKO_LOCK`), keyrings and repositories in the build context, repositories that need credentials (BuildKit's `HTTP_AUTH_HEADER_<host>` and `HTTP_AUTH_TOKEN_<host>` secrets), and `vcs-url` detected from a git checkout; the README lists what it doesn't support | `go test -race ./...` (generates a signed apk repository in memory and runs apko offline; no network or BuildKit) |
 | `cloudrun-sqlite/` | HTTP server whose SQLite database lives only in a Litestream replica (Cloud Storage, S3, or a directory), read page by page through the Litestream VFS. It builds against the fork in `litestream/`, because every Litestream release corrupts the database under sustained writes. Writes share transactions and upload before they return; L0 uploads are conditional so overlapping Cloud Run instances can't both publish a transaction. `/stats` and `/metrics` report durable write latency, paged-in and cold VFS page read latency, and object-storage latency, which also go to Cloud Monitoring on Cloud Run. Each click's new count is also broadcast in-process to every browser connected to that instance as a server-sent event. Terraform also deploys a read-only replica as a second service with its own URL: it opens SQLite read-only, its account can only read the bucket, and it refuses POSTs. `cmd/crsim` simulates Cloud Run's instance lifecycle, `cmd/crbench` measures cold starts and runs chaos soaks, and `terraform/` deploys to Cloud Run with a latency dashboard; `dashboard_test.go` checks the dashboard against the metrics the server emits. `deploy-gcp.yml` applies this stack from `main` and comments a Terraform plan on pull requests, once Terraform has created the Workload Identity pool and the state bucket exists | `go test -tags vfs -race ./...` (CGO; Litestream's VFS needs the `vfs` tag; includes a 25-second end-to-end run under the simulator, skipped by `-short`) |

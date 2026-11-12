@@ -1,0 +1,24 @@
+# EgressPolicy that lets a CI actor talk only to the node-local cascache and
+# the central cas origin. Applied per actor after resume:
+#
+#   kubectl ate create egress-policy <actor> -a <atespace> -f egress-cascache.yaml
+#
+# Hostname matching is the Substrate isolation boundary: an actor whose policy
+# lists only these hosts cannot reach another tenant's endpoints, even when
+# they share a WorkerPool. Pair this with a tenant token that only authorizes
+# that tenant's instance name at the cas/cascache gRPC layer.
+rules:
+  - http:
+      hostnames: ["127.0.0.1", "localhost"]
+      ports: {all: {}}
+  - https:
+      hostnames: ["cas.ci-substrate.svc.cluster.local"]
+  - http:
+      hostnames: ["cas.ci-substrate.svc.cluster.local"]
+      ports: {all: {}}
+  # Node-local cascache listens on the host network at :9092. Actors reach it
+  # through the host's IP; the DNS relay answers only names listed here.
+  - http:
+      hostnames: ["*"]
+      ports:
+        allow: [9092]

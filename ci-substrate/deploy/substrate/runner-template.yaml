@@ -1,0 +1,29 @@
+# ActorTemplate for a CI/build actor. The actor runs the ci-substrate runner
+# binary against the node-local cascache (hostNetwork port 9092) for reads and
+# the central cas for action-cache writes. Apply with:
+#
+#   kubectl ate create actor-template -a <atespace> -f runner-template.yaml
+#
+# Image is a ko reference; resolve it first (`ko resolve -f …`) or substitute
+# the published digest before creating the template.
+apiVersion: ate.agentsubstrate.dev/v1alpha1
+kind: ActorTemplate
+metadata:
+  name: ci-runner
+spec:
+  containers:
+    - name: runner
+      image: ko://github.com/imjasonh/playground/ci-substrate/cmd/runner
+      # The concrete args (cache/origin addrs, tenant token, command) are
+      # injected per job when the actor is created; the template only pins the
+      # image and resources.
+      command: ["/ko-app/runner"]
+      resources:
+        limits:
+          cpuMillicores: 1000
+          memoryBytes: 2147483648
+  snapshotConfig:
+    preferredFidelity: memory
+  workerSelector:
+    matchLabels:
+      ate.agentsubstrate.dev/sandbox-class: gvisor
