@@ -24,6 +24,10 @@ service WorkerService {
 
   // Complete reports the outcome of a leased job.
   rpc Complete(CompleteRequest) returns (CompleteResponse);
+
+  // Status reports the queue for the instances the caller's token allows.
+  // The runner pool sizes a tenant's runners from it.
+  rpc Status(StatusRequest) returns (StatusResponse);
 }
 
 // Digest names a blob in the CAS: lowercase hex SHA-256 and byte count.
@@ -79,3 +83,17 @@ message CompleteRequest {
 }
 
 message CompleteResponse {}
+
+message StatusRequest {
+  // Instances to report on. Empty means every instance the token allows.
+  repeated string instance_names = 1;
+}
+
+message StatusResponse {
+  // Jobs waiting for a runner.
+  int32 queued = 1;
+  // Jobs a runner holds a lease on.
+  int32 executing = 2;
+  // Runners that hold a lease, by bot_id.
+  repeated string busy_bot_ids = 3;
+}

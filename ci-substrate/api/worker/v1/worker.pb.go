@@ -454,6 +454,114 @@ func (*CompleteResponse) Descriptor() ([]byte, []int) {
 	return file_worker_v1_worker_proto_rawDescGZIP(), []int{7}
 }
 
+type StatusRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Instances to report on. Empty means every instance the token allows.
+	InstanceNames []string `protobuf:"bytes,1,rep,name=instance_names,json=instanceNames,proto3" json:"instance_names,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StatusRequest) Reset() {
+	*x = StatusRequest{}
+	mi := &file_worker_v1_worker_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StatusRequest) ProtoMessage() {}
+
+func (x *StatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_worker_v1_worker_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StatusRequest.ProtoReflect.Descriptor instead.
+func (*StatusRequest) Descriptor() ([]byte, []int) {
+	return file_worker_v1_worker_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *StatusRequest) GetInstanceNames() []string {
+	if x != nil {
+		return x.InstanceNames
+	}
+	return nil
+}
+
+type StatusResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Jobs waiting for a runner.
+	Queued int32 `protobuf:"varint,1,opt,name=queued,proto3" json:"queued,omitempty"`
+	// Jobs a runner holds a lease on.
+	Executing int32 `protobuf:"varint,2,opt,name=executing,proto3" json:"executing,omitempty"`
+	// Runners that hold a lease, by bot_id.
+	BusyBotIds    []string `protobuf:"bytes,3,rep,name=busy_bot_ids,json=busyBotIds,proto3" json:"busy_bot_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StatusResponse) Reset() {
+	*x = StatusResponse{}
+	mi := &file_worker_v1_worker_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StatusResponse) ProtoMessage() {}
+
+func (x *StatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_worker_v1_worker_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
+func (*StatusResponse) Descriptor() ([]byte, []int) {
+	return file_worker_v1_worker_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *StatusResponse) GetQueued() int32 {
+	if x != nil {
+		return x.Queued
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetExecuting() int32 {
+	if x != nil {
+		return x.Executing
+	}
+	return 0
+}
+
+func (x *StatusResponse) GetBusyBotIds() []string {
+	if x != nil {
+		return x.BusyBotIds
+	}
+	return nil
+}
+
 var File_worker_v1_worker_proto protoreflect.FileDescriptor
 
 const file_worker_v1_worker_proto_rawDesc = "" +
@@ -483,11 +591,19 @@ const file_worker_v1_worker_proto_rawDesc = "" +
 	"\x06job_id\x18\x02 \x01(\tR\x05jobId\x129\n" +
 	"\raction_result\x18\x03 \x01(\v2\x14.google.protobuf.AnyR\factionResult\x12#\n" +
 	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\"\x12\n" +
-	"\x10CompleteResponse2\xd8\x01\n" +
+	"\x10CompleteResponse\"6\n" +
+	"\rStatusRequest\x12%\n" +
+	"\x0einstance_names\x18\x01 \x03(\tR\rinstanceNames\"h\n" +
+	"\x0eStatusResponse\x12\x16\n" +
+	"\x06queued\x18\x01 \x01(\x05R\x06queued\x12\x1c\n" +
+	"\texecuting\x18\x02 \x01(\x05R\texecuting\x12 \n" +
+	"\fbusy_bot_ids\x18\x03 \x03(\tR\n" +
+	"busyBotIds2\x97\x02\n" +
 	"\rWorkerService\x12:\n" +
 	"\x05Lease\x12\x17.worker.v1.LeaseRequest\x1a\x18.worker.v1.LeaseResponse\x12F\n" +
 	"\tHeartbeat\x12\x1b.worker.v1.HeartbeatRequest\x1a\x1c.worker.v1.HeartbeatResponse\x12C\n" +
-	"\bComplete\x12\x1a.worker.v1.CompleteRequest\x1a\x1b.worker.v1.CompleteResponseBDZBgithub.com/imjasonh/playground/ci-substrate/api/worker/v1;workerv1b\x06proto3"
+	"\bComplete\x12\x1a.worker.v1.CompleteRequest\x1a\x1b.worker.v1.CompleteResponse\x12=\n" +
+	"\x06Status\x12\x18.worker.v1.StatusRequest\x1a\x19.worker.v1.StatusResponseBDZBgithub.com/imjasonh/playground/ci-substrate/api/worker/v1;workerv1b\x06proto3"
 
 var (
 	file_worker_v1_worker_proto_rawDescOnce sync.Once
@@ -501,7 +617,7 @@ func file_worker_v1_worker_proto_rawDescGZIP() []byte {
 	return file_worker_v1_worker_proto_rawDescData
 }
 
-var file_worker_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_worker_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_worker_v1_worker_proto_goTypes = []any{
 	(*Digest)(nil),              // 0: worker.v1.Digest
 	(*Job)(nil),                 // 1: worker.v1.Job
@@ -511,25 +627,29 @@ var file_worker_v1_worker_proto_goTypes = []any{
 	(*HeartbeatResponse)(nil),   // 5: worker.v1.HeartbeatResponse
 	(*CompleteRequest)(nil),     // 6: worker.v1.CompleteRequest
 	(*CompleteResponse)(nil),    // 7: worker.v1.CompleteResponse
-	(*durationpb.Duration)(nil), // 8: google.protobuf.Duration
-	(*anypb.Any)(nil),           // 9: google.protobuf.Any
+	(*StatusRequest)(nil),       // 8: worker.v1.StatusRequest
+	(*StatusResponse)(nil),      // 9: worker.v1.StatusResponse
+	(*durationpb.Duration)(nil), // 10: google.protobuf.Duration
+	(*anypb.Any)(nil),           // 11: google.protobuf.Any
 }
 var file_worker_v1_worker_proto_depIdxs = []int32{
-	0, // 0: worker.v1.Job.action_digest:type_name -> worker.v1.Digest
-	8, // 1: worker.v1.Job.lease_duration:type_name -> google.protobuf.Duration
-	1, // 2: worker.v1.LeaseResponse.job:type_name -> worker.v1.Job
-	9, // 3: worker.v1.CompleteRequest.action_result:type_name -> google.protobuf.Any
-	2, // 4: worker.v1.WorkerService.Lease:input_type -> worker.v1.LeaseRequest
-	4, // 5: worker.v1.WorkerService.Heartbeat:input_type -> worker.v1.HeartbeatRequest
-	6, // 6: worker.v1.WorkerService.Complete:input_type -> worker.v1.CompleteRequest
-	3, // 7: worker.v1.WorkerService.Lease:output_type -> worker.v1.LeaseResponse
-	5, // 8: worker.v1.WorkerService.Heartbeat:output_type -> worker.v1.HeartbeatResponse
-	7, // 9: worker.v1.WorkerService.Complete:output_type -> worker.v1.CompleteResponse
-	7, // [7:10] is the sub-list for method output_type
-	4, // [4:7] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	0,  // 0: worker.v1.Job.action_digest:type_name -> worker.v1.Digest
+	10, // 1: worker.v1.Job.lease_duration:type_name -> google.protobuf.Duration
+	1,  // 2: worker.v1.LeaseResponse.job:type_name -> worker.v1.Job
+	11, // 3: worker.v1.CompleteRequest.action_result:type_name -> google.protobuf.Any
+	2,  // 4: worker.v1.WorkerService.Lease:input_type -> worker.v1.LeaseRequest
+	4,  // 5: worker.v1.WorkerService.Heartbeat:input_type -> worker.v1.HeartbeatRequest
+	6,  // 6: worker.v1.WorkerService.Complete:input_type -> worker.v1.CompleteRequest
+	8,  // 7: worker.v1.WorkerService.Status:input_type -> worker.v1.StatusRequest
+	3,  // 8: worker.v1.WorkerService.Lease:output_type -> worker.v1.LeaseResponse
+	5,  // 9: worker.v1.WorkerService.Heartbeat:output_type -> worker.v1.HeartbeatResponse
+	7,  // 10: worker.v1.WorkerService.Complete:output_type -> worker.v1.CompleteResponse
+	9,  // 11: worker.v1.WorkerService.Status:output_type -> worker.v1.StatusResponse
+	8,  // [8:12] is the sub-list for method output_type
+	4,  // [4:8] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_worker_v1_worker_proto_init() }
@@ -543,7 +663,7 @@ func file_worker_v1_worker_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_worker_v1_worker_proto_rawDesc), len(file_worker_v1_worker_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

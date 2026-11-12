@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -142,18 +143,35 @@ func (s *Scheduler) expireLeases(now time.Time) {
 	}
 }
 
-// Depth reports how many jobs are queued or executing per instance. The
-// Substrate pool sizes each tenant's runners from it.
-func (s *Scheduler) Depth() map[string]int {
+// Status reports the queued and executing jobs, and the runners holding
+// leases, for the instances the caller's token allows. The runner pool sizes
+// a tenant's runners from it, and sees only that tenant's queue.
+func (s *Scheduler) Status(ctx context.Context, req *workerv1.StatusRequest) (*workerv1.StatusResponse, error) {
+	instances, err := s.leaseInstances(ctx, req.GetInstanceNames())
+	if err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	depth := map[string]int{}
+	resp := &workerv1.StatusResponse{}
+	busy := map[string]bool{}
 	for _, j := range s.jobs {
-		if j.stage == repb.ExecutionStage_QUEUED || j.stage == repb.ExecutionStage_EXECUTING {
-			depth[j.instance]++
+		if !instances[j.instance] {
+			continue
+		}
+		switch j.stage {
+		case repb.ExecutionStage_QUEUED:
+			resp.Queued++
+		case repb.ExecutionStage_EXECUTING:
+			resp.Executing++
+			if !busy[j.botID] {
+				busy[j.botID] = true
+				resp.BusyBotIds = append(resp.BusyBotIds, j.botID)
+			}
 		}
 	}
-	return depth
+	slices.Sort(resp.BusyBotIds)
+	return resp, nil
 }
 
 // Execute queues an action and streams its operation until it completes.

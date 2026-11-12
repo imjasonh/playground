@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"slices"
 	"testing"
 	"time"
 
@@ -316,8 +317,30 @@ func TestSameActionSharesOneJob(t *testing.T) {
 	if o3.GetName() == o1.GetName() {
 		t.Fatal("tenant B joined tenant A's job")
 	}
-	if depth := h.sched.Depth(); depth["tenant-a"] != 1 || depth["tenant-b"] != 1 {
-		t.Fatalf("depth %v, want one job per instance", depth)
+	// Each tenant's Status sees its own queue only.
+	for _, tok := range []string{"tok-a", "tok-b"} {
+		st, err := h.worker.Status(ctxTok(t, tok), &workerv1.StatusRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.GetQueued() != 1 || st.GetExecuting() != 0 || len(st.GetBusyBotIds()) != 0 {
+			t.Fatalf("%s status %v, want one queued job", tok, st)
+		}
+	}
+	// Once a runner leases tenant A's job, tenant A's Status names it.
+	lease, err := h.worker.Lease(ctxTok(t, "tok-a"), &workerv1.LeaseRequest{BotId: "bot-1"})
+	if err != nil || lease.GetJob() == nil {
+		t.Fatalf("lease: job=%v err=%v", lease.GetJob(), err)
+	}
+	st, err := h.worker.Status(ctxTok(t, "tok-a"), &workerv1.StatusRequest{InstanceNames: []string{"tenant-a"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.GetQueued() != 0 || st.GetExecuting() != 1 || !slices.Equal(st.GetBusyBotIds(), []string{"bot-1"}) {
+		t.Fatalf("status after lease %v", st)
+	}
+	if _, err := h.worker.Status(ctxTok(t, "tok-b"), &workerv1.StatusRequest{InstanceNames: []string{"tenant-a"}}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("tenant B reading tenant A's status: %v, want PermissionDenied", err)
 	}
 }
 

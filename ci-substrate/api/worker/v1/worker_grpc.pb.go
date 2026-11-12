@@ -22,6 +22,7 @@ const (
 	WorkerService_Lease_FullMethodName     = "/worker.v1.WorkerService/Lease"
 	WorkerService_Heartbeat_FullMethodName = "/worker.v1.WorkerService/Heartbeat"
 	WorkerService_Complete_FullMethodName  = "/worker.v1.WorkerService/Complete"
+	WorkerService_Status_FullMethodName    = "/worker.v1.WorkerService/Status"
 )
 
 // WorkerServiceClient is the client API for WorkerService service.
@@ -43,6 +44,9 @@ type WorkerServiceClient interface {
 	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
 	// Complete reports the outcome of a leased job.
 	Complete(ctx context.Context, in *CompleteRequest, opts ...grpc.CallOption) (*CompleteResponse, error)
+	// Status reports the queue for the instances the caller's token allows.
+	// The runner pool sizes a tenant's runners from it.
+	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 }
 
 type workerServiceClient struct {
@@ -83,6 +87,16 @@ func (c *workerServiceClient) Complete(ctx context.Context, in *CompleteRequest,
 	return out, nil
 }
 
+func (c *workerServiceClient) Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StatusResponse)
+	err := c.cc.Invoke(ctx, WorkerService_Status_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WorkerServiceServer is the server API for WorkerService service.
 // All implementations must embed UnimplementedWorkerServiceServer
 // for forward compatibility.
@@ -102,6 +116,9 @@ type WorkerServiceServer interface {
 	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
 	// Complete reports the outcome of a leased job.
 	Complete(context.Context, *CompleteRequest) (*CompleteResponse, error)
+	// Status reports the queue for the instances the caller's token allows.
+	// The runner pool sizes a tenant's runners from it.
+	Status(context.Context, *StatusRequest) (*StatusResponse, error)
 	mustEmbedUnimplementedWorkerServiceServer()
 }
 
@@ -120,6 +137,9 @@ func (UnimplementedWorkerServiceServer) Heartbeat(context.Context, *HeartbeatReq
 }
 func (UnimplementedWorkerServiceServer) Complete(context.Context, *CompleteRequest) (*CompleteResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Complete not implemented")
+}
+func (UnimplementedWorkerServiceServer) Status(context.Context, *StatusRequest) (*StatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Status not implemented")
 }
 func (UnimplementedWorkerServiceServer) mustEmbedUnimplementedWorkerServiceServer() {}
 func (UnimplementedWorkerServiceServer) testEmbeddedByValue()                       {}
@@ -196,6 +216,24 @@ func _WorkerService_Complete_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkerService_Status_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkerServiceServer).Status(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkerService_Status_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkerServiceServer).Status(ctx, req.(*StatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WorkerService_ServiceDesc is the grpc.ServiceDesc for WorkerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -214,6 +252,10 @@ var WorkerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Complete",
 			Handler:    _WorkerService_Complete_Handler,
+		},
+		{
+			MethodName: "Status",
+			Handler:    _WorkerService_Status_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
