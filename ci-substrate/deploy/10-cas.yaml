@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: cas
-          image: ko://github.com/imjasonh/playground/ci-substrate/cmd/cas
+          image: ko://github.com/imjasonh/playground/ci-substrate/cmd/cas # pasta:ignore unpinned_container_image
           env:
             - name: ADDR
               value: ":8980"

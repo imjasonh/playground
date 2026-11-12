@@ -89,8 +89,9 @@ func dial(t *testing.T, addr string) *grpc.ClientConn {
 	return conn
 }
 
-func ctxTok(token string) context.Context {
-	return tenant.Outgoing(context.Background(), token)
+func ctxTok(t *testing.T, token string) context.Context {
+	t.Helper()
+	return tenant.Outgoing(t.Context(), token)
 }
 
 // TestCrossTenantCacheReuse is the optimized-caching property end to end: a
@@ -99,14 +100,14 @@ func ctxTok(token string) context.Context {
 func TestCrossTenantCacheReuse(t *testing.T) {
 	h := newHarness(t)
 	content := []byte("shared base layer bytes")
-	d, err := h.origin.Upload(ctxTok("tok-a"), "shared", content)
+	d, err := h.origin.Upload(ctxTok(t, "tok-a"), "shared", content)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.cacheClient.Fetch(ctxTok("tok-a"), "shared", d); err != nil {
+	if _, err := h.cacheClient.Fetch(ctxTok(t, "tok-a"), "shared", d); err != nil {
 		t.Fatalf("tenant A cold read: %v", err)
 	}
-	got, err := h.cacheClient.Fetch(ctxTok("tok-b"), "shared", d)
+	got, err := h.cacheClient.Fetch(ctxTok(t, "tok-b"), "shared", d)
 	if err != nil {
 		t.Fatalf("tenant B warm read: %v", err)
 	}
@@ -123,18 +124,18 @@ func TestCrossTenantCacheReuse(t *testing.T) {
 func TestTenantIsolation(t *testing.T) {
 	h := newHarness(t)
 	content := []byte("tenant A private output")
-	d, err := h.origin.Upload(ctxTok("tok-a"), "tenant-a", content)
+	d, err := h.origin.Upload(ctxTok(t, "tok-a"), "tenant-a", content)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.cacheClient.Fetch(ctxTok("tok-b"), "tenant-a", d); status.Code(err) != codes.PermissionDenied {
+	if _, err := h.cacheClient.Fetch(ctxTok(t, "tok-b"), "tenant-a", d); status.Code(err) != codes.PermissionDenied {
 		t.Errorf("cache read across tenants: code %v, want PermissionDenied", status.Code(err))
 	}
-	if _, err := h.origin.Fetch(ctxTok("tok-b"), "tenant-a", d); status.Code(err) != codes.PermissionDenied {
+	if _, err := h.origin.Fetch(ctxTok(t, "tok-b"), "tenant-a", d); status.Code(err) != codes.PermissionDenied {
 		t.Errorf("origin read across tenants: code %v, want PermissionDenied", status.Code(err))
 	}
 	// Tenant A still reads its own instance.
-	if _, err := h.cacheClient.Fetch(ctxTok("tok-a"), "tenant-a", d); err != nil {
+	if _, err := h.cacheClient.Fetch(ctxTok(t, "tok-a"), "tenant-a", d); err != nil {
 		t.Errorf("tenant A reading own instance: %v", err)
 	}
 }
@@ -145,16 +146,16 @@ func TestTenantIsolation(t *testing.T) {
 func TestPoisonedCacheFallsBack(t *testing.T) {
 	h := newHarness(t)
 	content := []byte("trusted toolchain blob")
-	d, err := h.origin.Upload(ctxTok("tok-a"), "shared", content)
+	d, err := h.origin.Upload(ctxTok(t, "tok-a"), "shared", content)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.cacheClient.Fetch(ctxTok("tok-a"), "shared", d); err != nil {
+	if _, err := h.cacheClient.Fetch(ctxTok(t, "tok-a"), "shared", d); err != nil {
 		t.Fatal(err)
 	}
 	poisonOneFile(t, h.cacheDir, content)
 
-	got, err := h.cacheClient.Fetch(ctxTok("tok-a"), "shared", d)
+	got, err := h.cacheClient.Fetch(ctxTok(t, "tok-a"), "shared", d)
 	if err != nil {
 		t.Fatalf("read after poison: %v", err)
 	}
@@ -175,14 +176,14 @@ func TestByteStreamLargeBlob(t *testing.T) {
 	if len(big) <= remote.MaxBatchBytes {
 		t.Fatalf("test blob %d not larger than batch limit", len(big))
 	}
-	d, err := h.origin.Upload(ctxTok("tok-a"), "shared", big)
+	d, err := h.origin.Upload(ctxTok(t, "tok-a"), "shared", big)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := digest.FromBytes(big); want.GetHash() != d.GetHash() {
 		t.Fatalf("upload digest mismatch")
 	}
-	got, err := h.cacheClient.Fetch(ctxTok("tok-b"), "shared", d)
+	got, err := h.cacheClient.Fetch(ctxTok(t, "tok-b"), "shared", d)
 	if err != nil {
 		t.Fatalf("large blob read: %v", err)
 	}
@@ -196,13 +197,13 @@ func TestActionCacheIsolation(t *testing.T) {
 	h := newHarness(t)
 	action := digest.FromBytes([]byte("an action"))
 	ar := &repb.ActionResult{ExitCode: 0}
-	if err := h.origin.UpdateActionResult(ctxTok("tok-a"), "tenant-a", action, ar); err != nil {
+	if err := h.origin.UpdateActionResult(ctxTok(t, "tok-a"), "tenant-a", action, ar); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := h.origin.GetActionResult(ctxTok("tok-b"), "tenant-a", action); status.Code(err) != codes.PermissionDenied {
+	if _, _, err := h.origin.GetActionResult(ctxTok(t, "tok-b"), "tenant-a", action); status.Code(err) != codes.PermissionDenied {
 		t.Errorf("tenant B reading tenant A action cache: code %v, want PermissionDenied", status.Code(err))
 	}
-	_, ok, err := h.origin.GetActionResult(ctxTok("tok-a"), "tenant-a", action)
+	_, ok, err := h.origin.GetActionResult(ctxTok(t, "tok-a"), "tenant-a", action)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -16,7 +16,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: cictl
-          image: ko://github.com/imjasonh/playground/ci-substrate/cmd/cictl
+          image: ko://github.com/imjasonh/playground/ci-substrate/cmd/cictl # pasta:ignore unpinned_container_image
           args:
             - -origin-addr=cas.ci-substrate.svc.cluster.local:8980
             - -cache-addr=cascache.ci-substrate.svc.cluster.local:9092

@@ -52,8 +52,7 @@ func (s *CacheServer) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlo
 	resp := &repb.BatchReadBlobsResponse{}
 	for _, d := range req.GetDigests() {
 		r := &repb.BatchReadBlobsResponse_Response{Digest: d}
-		b, err := s.cache.Get(s.originCtx(ctx), req.GetInstanceName(), d)
-		if err != nil {
+		if b, err := s.cache.Get(s.originCtx(ctx), req.GetInstanceName(), d); err != nil {
 			r.Status = status.New(status.Code(err), statusMessage(err)).Proto()
 		} else {
 			r.Data = b

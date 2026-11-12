@@ -61,7 +61,7 @@ func TestColdThenWarm(t *testing.T) {
 	c := newCache(t, origin)
 
 	for i := 0; i < 3; i++ {
-		got, err := c.Get(context.Background(), "shared", d)
+		got, err := c.Get(t.Context(), "shared", d)
 		if err != nil {
 			t.Fatalf("Get #%d: %v", i, err)
 		}
@@ -85,10 +85,10 @@ func TestCrossTenantReuse(t *testing.T) {
 	d := origin.put([]byte("shared base layer"))
 	c := newCache(t, origin)
 
-	if _, err := c.Get(context.Background(), "shared", d); err != nil {
+	if _, err := c.Get(t.Context(), "shared", d); err != nil {
 		t.Fatalf("tenant A warm: %v", err)
 	}
-	if _, err := c.Get(context.Background(), "shared", d); err != nil {
+	if _, err := c.Get(t.Context(), "shared", d); err != nil {
 		t.Fatalf("tenant B read: %v", err)
 	}
 	if origin.fetchN != 1 {
@@ -113,7 +113,7 @@ func TestPoisonedEntryFallsBack(t *testing.T) {
 
 	// Warm the cache, then tamper with the stored copy out of band, keeping the
 	// same length so only a hash check can catch it.
-	if _, err := c.Get(context.Background(), "shared", d); err != nil {
+	if _, err := c.Get(t.Context(), "shared", d); err != nil {
 		t.Fatal(err)
 	}
 	poisoned := append([]byte(nil), content...)
@@ -122,7 +122,7 @@ func TestPoisonedEntryFallsBack(t *testing.T) {
 	// a cache-poisoning write that bypasses the store's own verification.
 	overwriteStoredFile(t, root, poisoned)
 
-	got, err := c.Get(context.Background(), "shared", d)
+	got, err := c.Get(t.Context(), "shared", d)
 	if err != nil {
 		t.Fatalf("Get after poisoning: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestOriginBytesNotCachedWhenCorrupt(t *testing.T) {
 	origin.mu.Unlock()
 
 	c := newCache(t, origin)
-	if _, err := c.Get(context.Background(), "shared", d); err == nil {
+	if _, err := c.Get(t.Context(), "shared", d); err == nil {
 		t.Error("Get accepted corrupt bytes from the origin")
 	}
 }
@@ -164,7 +164,7 @@ func TestSingleflightCollapsesFetches(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			_, errs[i] = c.Get(context.Background(), "shared", d)
+			_, errs[i] = c.Get(t.Context(), "shared", d)
 		}(i)
 	}
 	close(origin.block) // release all waiters at once

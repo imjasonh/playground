@@ -13,7 +13,7 @@ metadata:
 spec:
   containers:
     - name: runner
-      image: ko://github.com/imjasonh/playground/ci-substrate/cmd/runner
+      image: ko://github.com/imjasonh/playground/ci-substrate/cmd/runner # pasta:ignore unpinned_container_image
       # The concrete args (cache/origin addrs, tenant token, command) are
       # injected per job when the actor is created; the template only pins the
       # image and resources.

@@ -9,11 +9,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func ctxWith(token string) context.Context {
+func ctxWith(t *testing.T, token string) context.Context {
+	t.Helper()
 	if token == "" {
-		return metadata.NewIncomingContext(context.Background(), metadata.MD{})
+		return metadata.NewIncomingContext(t.Context(), metadata.MD{})
 	}
-	return metadata.NewIncomingContext(context.Background(), metadata.Pairs(MetadataKey, token))
+	return metadata.NewIncomingContext(t.Context(), metadata.Pairs(MetadataKey, token))
 }
 
 func TestAuthorize(t *testing.T) {
@@ -36,7 +37,7 @@ func TestAuthorize(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := r.Authorize(ctxWith(tc.token), tc.instance)
+			err := r.Authorize(ctxWith(t, tc.token), tc.instance)
 			if got := status.Code(err); got != tc.want {
 				t.Errorf("Authorize(%q, %q) code = %v, want %v (err %v)", tc.token, tc.instance, got, tc.want, err)
 			}
@@ -45,11 +46,11 @@ func TestAuthorize(t *testing.T) {
 }
 
 func TestTokenRoundTrip(t *testing.T) {
-	ctx := ctxWith("tok-a")
+	ctx := ctxWith(t, "tok-a")
 	if got := Token(ctx); got != "tok-a" {
 		t.Errorf("Token = %q, want tok-a", got)
 	}
-	if got := Token(context.Background()); got != "" {
+	if got := Token(t.Context()); got != "" {
 		t.Errorf("Token of bare context = %q, want empty", got)
 	}
 }

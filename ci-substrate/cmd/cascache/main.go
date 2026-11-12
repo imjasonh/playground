@@ -33,7 +33,9 @@ type config struct {
 	MetricsAddr string `env:"METRICS_ADDR, default=:9090"`
 	StoreDir    string `env:"STORE_DIR, default=/cache"`
 	OriginAddr  string `env:"ORIGIN_ADDR, required"`
-	Tenants     string `env:"TENANTS, default={\"demo\":[\"\"]}"`
+	// Tenants is a JSON object mapping tokens to instance names. Empty means
+	// the demo default of one token that may use the empty instance name.
+	Tenants string `env:"TENANTS"`
 }
 
 func main() {
@@ -46,7 +48,11 @@ func main() {
 		slog.Error("opening local cache store", "dir", c.StoreDir, "err", err)
 		os.Exit(1)
 	}
-	tenants, err := tenant.LoadJSON([]byte(c.Tenants))
+	tenantsJSON := c.Tenants
+	if tenantsJSON == "" {
+		tenantsJSON = `{"demo":[""]}`
+	}
+	tenants, err := tenant.LoadJSON([]byte(tenantsJSON))
 	if err != nil {
 		slog.Error("parsing tenants", "err", err)
 		os.Exit(1)

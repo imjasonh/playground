@@ -1,7 +1,6 @@
 package tenant
 
 import (
-	"context"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -14,7 +13,7 @@ func TestLoadJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(MetadataKey, "tok-a"))
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(MetadataKey, "tok-a"))
 	if err := r.Authorize(ctx, "tenant-a"); err != nil {
 		t.Errorf("tok-a should reach tenant-a: %v", err)
 	}

@@ -21,7 +21,7 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: cascache
-          image: ko://github.com/imjasonh/playground/ci-substrate/cmd/cascache
+          image: ko://github.com/imjasonh/playground/ci-substrate/cmd/cascache # pasta:ignore unpinned_container_image
           env:
             - name: ADDR
               value: ":9092"
