@@ -6,6 +6,7 @@ require (
 	cloud.google.com/go/longrunning v0.8.0
 	github.com/bazelbuild/remote-apis v0.0.0-20261110225606-e0c0554bfc8a
 	github.com/google/uuid v1.6.0
+	github.com/hanwen/go-fuse/v2 v2.12.1
 	github.com/sethvargo/go-envconfig v1.4.3
 	golang.org/x/sync v0.25.0
 	google.golang.org/genproto/googleapis/bytestream v0.0.0-20261110000943-09e21b237f2c
