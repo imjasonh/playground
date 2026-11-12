@@ -60,6 +60,7 @@ playground/
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── qr-quine/              # QR symbol that encodes a data URL of itself
+├── queens/                # generate and play Queens and Two Not Touch puzzles (JS + Node tests)
 ├── kube/                  # Go library: Kubernetes controller runtime on the standard library alone
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
 ├── nyt-crossword/         # NYT crossword solve times (JS + Node tests + daily scrape)
@@ -98,6 +99,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `image-diff/` | yes | Pixel-by-pixel image comparison; JS modules, npm scripts, tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
 | `qr-quine/` | yes | QR symbol whose payload is a data URL of itself; JS modules, npm scripts, tests |
+| `queens/` | yes | Queens and Two Not Touch puzzle generator and player; JS modules, npm scripts, tests |
 | `life-lab/` | yes | Game of Life sculpture lab; vendored wasm built from `life-stl/` |
 | `marptalk/` | yes | Narrated Marp deck player; JS modules, vendored Marp Core, tests |
 | `nes-player/` | yes | Play NEScript ROMs from `main` or a local `.nes` with jsnes; JS modules, vendored jsnes, tests |
@@ -923,6 +925,7 @@ bundle exec fastlane test
 | `image-diff/` | Drop two images and compare them pixel by pixel; different pixels tint red | Node test runner |
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
 | `qr-quine/` | QR symbol that encodes a `data:` URL of itself | Node test runner |
+| `queens/` | Generate and play Queens (one queen per row, column, and region) and Two Not Touch (two stars each) on phones. Four levels set the board size and the hardest solving rule a puzzle needs; every puzzle has one solution and needs no guessing. Hints point out wrong marks, then explain the next step. Workers build puzzles off the main thread, and the URL seed shares a puzzle | Node test runner |
 | `life-lab/` | Draw Life gen 0, preview the printable Z-stack in 3D, export STL / Bambu 3MF (wasm from `life-stl/`; rebuild via `life-lab/build-wasm.sh`) | Node test runner |
 | `marptalk/` | Present a Marp deck with each slide's speaker notes read aloud by browser text-to-speech, one sentence at a time, with subtitles, speed control (0.5× to 2×), and voice choice. Plays three bundled decks or an uploaded `.md`. Renders with Marp Core bundled into `vendor/` without math (`npm run vendor`). `scripts/check.js` checks a deck, and the [marptalk skill](.cursor/skills/marptalk/SKILL.md) tells agents how to write one | Node test runner (fake speech synthesizer and clock) |
 | `nes-player/` | Play the NEScript games (the ones the README shows, plus SHA-256 and Coin Cavern), fetched from `raw.githubusercontent.com` on `main`, or a dropped `.nes` file, with jsnes. Keyboard, gamepad, and touch controls for two players | Node test runner |
