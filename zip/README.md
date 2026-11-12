@@ -17,6 +17,11 @@ The URL holds the level and an eight-digit hex seed. The same URL always
 builds the same puzzle, so a link shares a puzzle. The page saves your path
 and time, so a reload picks up where you left off.
 
+After you load the page once, Zip works offline. A service worker
+(`sw.js`) caches the app, and a visit with a connection refreshes the cache
+for the next load. When you add or rename a file in `src/`, add it to the
+`SHELL` list in `sw.js`.
+
 ## Levels
 
 Every puzzle has exactly one solution.
