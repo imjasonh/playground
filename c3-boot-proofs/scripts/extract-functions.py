@@ -50,7 +50,10 @@ FUNCTIONS = [
     ("sha256Compress", "sha2::sha256::compress256"),
     ("rangeFromIndex", "<core::ops::range::RangeFrom<usize> as core::slice::index::SliceIndex<[u8]>>::index"),
     ("shaUpdate", "<sha2::Sha256 as digest::Update>::update"),
+    ("shaUpdateBlocks", ("shaUpdate", 0x62)),
     ("shaFinalize", "<sha2::Sha256 as digest::digest::Digest>::finalize"),
+    ("shaZero32", ("shaFinalize", 0x18)),
+    ("shaFinBlock", ("shaFinalize", 0xB0)),
     ("shaFinish", "<c3_crypto::sha::Sha256>::finish"),
     ("sha256Fn", "c3_crypto::sha::sha256"),
     ("sha512Compress", "sha2::sha512::compress512"),
@@ -58,6 +61,11 @@ FUNCTIONS = [
     ("mulMont12", "crypto_bigint::modular::mul::mul_montgomery_form::<12>"),
     ("uintSelect12", "<crypto_bigint::uint::Uint<12>>::select"),
     ("sqMont12", "crypto_bigint::modular::mul::square_montgomery_form::<12>"),
+    ("p384Add", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<"
+     "p384::arithmetic::field::FieldParams, 12>>::add"),
+    ("p384Sub", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<"
+     "p384::arithmetic::field::FieldParams, 12>>::sub"),
+    ("p384Double", "<p384::arithmetic::field::FieldElement as ff::Field>::double"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
@@ -65,6 +73,8 @@ FUNCTIONS = [
 DATA = [
     ("curveB", "pointAdd", 0x12E, 32),
     ("shaK", "sha256Compress", 0xB8, 256),
+    ("shaIV", "sha256Fn", 0x12, 32),
+    ("p384Modulus", "p384Add", 0x66, 48),
 ]
 
 
