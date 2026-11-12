@@ -12,7 +12,9 @@ CLUSTER_NAME="${CI_SUBSTRATE_KIND_CLUSTER:-ci-substrate-e2e}"
 WORKDIR="${TMPDIR:-/tmp}/ci-substrate-kind-e2e-$$"
 KIND_CREATED=0
 REGISTRY_NAME="${CI_SUBSTRATE_REGISTRY_NAME:-ci-substrate-registry}"
-REGISTRY_PORT="${CI_SUBSTRATE_REGISTRY_PORT:-5002}"
+# 5312 avoids the git-k8s kind e2e registry default (5002) when several kind
+# legs run in parallel on one runner.
+REGISTRY_PORT="${CI_SUBSTRATE_REGISTRY_PORT:-5312}"
 PORT_FORWARD_PIDS=()
 
 cleanup() {
@@ -163,51 +165,48 @@ echo "ko apply deploy/"
 # so a ko resolve failure does not leave a half-applied namespace alone.
 kubectl apply -f deploy/00-namespace-and-config.yaml
 ko apply -f deploy/10-cas.yaml
-ko apply -f deploy/20-cascache.yaml
 await_ready deployment cas
-kubectl -n ci-substrate rollout status daemonset/cascache --timeout=180s
 
-# Point cascache at the cas Pod IP. Some nested kind environments cannot
-# program ClusterIP iptables rules (kube-proxy iptables-restore fails without
-# the xt_statistic kernel module), so Service DNS/ClusterIP is not reliable
-# here. Pod IPs work, and that is enough to exercise multi-tenancy and the
-# node-local cache. The deploy/ manifests still use Service DNS for clusters
-# where kube-proxy is healthy; the Job in 30-cictl-job.yaml is the in-cluster
-# form of the same demo.
-CAS_POD="$(kubectl -n ci-substrate get pod -l app=cas -o jsonpath='{.items[0].metadata.name}')"
-CAS_POD_IP="$(kubectl -n ci-substrate get pod "${CAS_POD}" -o jsonpath='{.status.podIP}')"
-CACHE_POD="$(kubectl -n ci-substrate get pod -l app=cascache -o jsonpath='{.items[0].metadata.name}')"
-echo "Using cas pod ${CAS_POD}=${CAS_POD_IP}:8980 cascache pod ${CACHE_POD}"
-
+# cascache must reach cas without relying on ClusterIP/DNS inside the
+# hostNetwork pod. Point ORIGIN_ADDR at the cas Pod IP once, then roll out
+# cascache a single time so we do not replace the pod under a port-forward.
+CAS_POD_IP="$(kubectl -n ci-substrate get pod -l app=cas -o jsonpath='{.items[0].status.podIP}')"
+echo "Using cas pod IP ${CAS_POD_IP}:8980"
 ko resolve -f deploy/20-cascache.yaml \
   | sed "s#cas.ci-substrate.svc.cluster.local#${CAS_POD_IP}#g" \
   | kubectl apply -f -
-kubectl -n ci-substrate rollout status daemonset/cascache --timeout=180s
-CACHE_POD="$(kubectl -n ci-substrate get pod -l app=cascache -o jsonpath='{.items[0].metadata.name}')"
+kubectl -n ci-substrate rollout status daemonset/cascache --timeout=300s
 
-# Drive the demo from the host over port-forwards so the e2e does not depend
-# on ClusterIP routing into the Job.
+# Port-forward Services (stable targets) from the host. This avoids pinning a
+# DaemonSet pod name that a second rollout would replace, which broke CI.
 LOCAL_ORIGIN_PORT=18980
 LOCAL_CACHE_PORT=19092
 LOCAL_METRICS_PORT=19090
-kubectl -n ci-substrate port-forward "pod/${CAS_POD}" "${LOCAL_ORIGIN_PORT}:8980" >/dev/null &
+kubectl -n ci-substrate port-forward svc/cas "${LOCAL_ORIGIN_PORT}:8980" >/dev/null &
 PORT_FORWARD_PIDS+=($!)
-kubectl -n ci-substrate port-forward "pod/${CACHE_POD}" "${LOCAL_CACHE_PORT}:9092" "${LOCAL_METRICS_PORT}:9090" >/dev/null &
+kubectl -n ci-substrate port-forward svc/cascache "${LOCAL_CACHE_PORT}:9092" "${LOCAL_METRICS_PORT}:9090" >/dev/null &
 PORT_FORWARD_PIDS+=($!)
 
-# Wait for the port-forwards to accept connections.
-for port in "${LOCAL_ORIGIN_PORT}" "${LOCAL_CACHE_PORT}" "${LOCAL_METRICS_PORT}"; do
-  deadline=$((SECONDS + 30))
+await_tcp_port() {
+  local port=$1
+  local deadline=$((SECONDS + 60))
   while ((SECONDS < deadline)); do
     if (echo >/dev/tcp/127.0.0.1/"${port}") >/dev/null 2>&1; then
-      break
+      return 0
     fi
     sleep 0.5
   done
+  echo "timed out waiting for 127.0.0.1:${port}" >&2
+  return 1
+}
+
+for port in "${LOCAL_ORIGIN_PORT}" "${LOCAL_CACHE_PORT}" "${LOCAL_METRICS_PORT}"; do
+  await_tcp_port "${port}"
 done
 
 echo "Running cictl demo against port-forwards"
-go run ./cmd/cictl \
+go build -o "${WORKDIR}/cictl" ./cmd/cictl
+"${WORKDIR}/cictl" \
   -origin-addr="127.0.0.1:${LOCAL_ORIGIN_PORT}" \
   -cache-addr="127.0.0.1:${LOCAL_CACHE_PORT}" \
   -cache-metrics-url="http://127.0.0.1:${LOCAL_METRICS_PORT}" \
