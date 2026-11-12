@@ -35,7 +35,7 @@ solvable with that level's rules and not with the rules of the level below.
 
 | Level | Queens | Two Not Touch |
 | --- | --- | --- |
-| Easy | 7×7, forced | 8×8, touch |
+| Easy | 7×7, forced | 9×9, touch |
 | Medium | 8×8, touch | 10×10, touch |
 | Hard | 9×9, group | 10×10, group |
 | Expert | 10×10, forcing | 10×10, forcing |
@@ -43,6 +43,11 @@ solvable with that level's rules and not with the rules of the level below.
 Two Not Touch starts at the touch rule, because the forced rule can't place
 a star on an empty board. A region that holds two stars that can't touch
 always has more than two cells.
+
+Two Not Touch has no 8×8 level. A 2×2 block can hold only one star, and
+the 16 blocks that tile an 8×8 board must hold all 16 stars, one each. Only
+two star layouts fit, mirror images of each other, so every 8×8 board would
+have one of the same two solutions whatever its regions.
 
 ## Run locally
 
