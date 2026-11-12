@@ -10,7 +10,8 @@ execution** (a Bazel `Execute` call runs on a runner that mounts its inputs
 lazily from the node-local cache, uploads its outputs, and fills the action
 cache for the next call). With Substrate installed, the runners are gVisor
 actors that a per-tenant pool keeps warm as snapshots and resumes for queued
-work.
+work, and each actor reads its inputs from a volume that the CSI driver on
+its own node serves out of that node's cache.
 
 Images are built and applied with [ko](https://ko.build/). There are no
 Dockerfiles and no Helm charts.
@@ -21,7 +22,8 @@ Dockerfiles and no Helm charts.
 |--------|------|
 | `cas` | Authoritative multi-tenant CAS, action cache, and scheduler (StatefulSet with a PVC). Speaks the Bazel Remote Execution API (`ContentAddressableStorage`, `ActionCache`, `ByteStream`, `Capabilities`, `Execution`) over gRPC, plus the `WorkerService` that runners lease jobs from. |
 | `cascache` | Node-local, read-only CAS proxy (DaemonSet, port 9092). Verified read-through cache in front of `cas`. Its Service sets `internalTrafficPolicy: Local`, so a pod reaches the cascache on its own node. |
-| `runner` | The bot. Leases actions from `cas`, builds the exec root from `cascache` (a FUSE mount that hydrates files on first read, or a copy where there is no `/dev/fuse`), runs the command, uploads the outputs `cas` is missing, and reports the `ActionResult`. Runs as a Deployment (`deploy/40-runner.yaml`) or as a Substrate actor. |
+| `runner` | The bot. Leases actions from `cas`, builds the exec root (a `mkdir` on the inputs volume a Substrate actor gets from its node, a FUSE mount of `casfs` where the runner has `/dev/fuse`, or a copy from `cascache` otherwise), runs the command, uploads the outputs `cas` is missing, and reports the `ActionResult` with the input mode it used. Runs as a Deployment (`deploy/40-runner.yaml`) or as a Substrate actor. |
+| `casfs-csi` | CSI driver (DaemonSet, `deploy/substrate/casfs-csi.yaml`) that mounts a `casfs` inputs volume for each actor on the actor's node and serves it from that node's `cascache` with the tenant's token. The runner in the sandbox never fetches an input and never holds the token. |
 | `pool` | Per-tenant actor pool for Substrate. Reads the tenant's queue from `cas` and keeps that many actors running, warm ones suspended, and crashed ones replaced. |
 | `cictl` | Demo driver. Uploads a shared blob as tenant A, warms the cache, reads it as tenant B, asserts tenant B cannot reach tenant A's instance, action cache, or queue, then runs an action through `Execute`, checks its outputs, and shows the second `Execute` is a cache hit. |
 
@@ -60,8 +62,8 @@ flowchart TB
   end
 
   subgraph nodes["Worker nodes"]
-    n1["node 1<br/>atelet, worker pods, cascache"]
-    n2["node 2<br/>atelet, worker pods, cascache"]
+    n1["node 1<br/>atelet, worker pods, cascache, casfs-csi"]
+    n2["node 2<br/>atelet, worker pods, cascache, casfs-csi"]
   end
 
   ci -->|"Execute, upload"| cas
@@ -71,6 +73,7 @@ flowchart TB
   api --- pg
   api -->|"restore, checkpoint"| n1
   api -->|"restore, checkpoint"| n2
+  api -->|"CreateVolume"| n1
   n1 <-->|"snapshots"| snap
   n2 <-->|"snapshots"| snap
   n1 -->|"actor egress over atunnel"| egress
@@ -97,10 +100,12 @@ flowchart TB
         atunnel["atunnel<br/>ingress and egress tunnel"]
         subgraph sandbox["gVisor sandbox"]
           runner["runner actor (bot)<br/>tenant A, placeholder token"]
+          inputs["/inputs<br/>mkdir digest.job = exec root"]
         end
       end
     end
     subgraph cinode["ci-substrate"]
+      csi["casfs-csi DaemonSet pod<br/>NodePublishVolume: FUSE mount per actor"]
       cascache["cascache DaemonSet pod<br/>verify SHA-256 on every read"]
       disk[("node-local cache disk")]
     end
@@ -111,21 +116,40 @@ flowchart TB
   cas["cas"]
 
   atelet -->|"RestoreWorkload"| wp
-  runner -->|"all TCP"| atunnel
+  atelet -->|"NodePublishVolume"| csi
+  csi -->|"bind into sandbox"| inputs
+  runner --> inputs
+  csi -->|"tenant token, lazy reads"| cascache
+  runner -->|"Lease, Complete, outputs"| atunnel
   atunnel -->|"mTLS CONNECT"| egress
-  egress -->|"inject tenant token"| cascache
   egress -->|"inject tenant token"| cas
   cascache --- disk
   cascache -->|"miss: fetch, verify, store"| cas
   hostpod -->|"internalTrafficPolicy: Local"| cascache
 ```
 
-A read from the runner goes from the sandbox through `atunnel` to
+An actor's inputs never leave its node's cache path. When Substrate
+restores the actor on a node, `atelet` asks the `casfs-csi` pod on that node
+to publish the actor's inputs volume. The driver mounts an empty `casfs`
+volume under `/var/lib/ate` and `atelet` binds it into the sandbox at
+`/inputs`. For each job, the runner does `mkdir /inputs/<digest>.<job>`,
+and the driver loads that input tree's directory protos from the local
+`cascache` with the tenant's token, which it looks up from the same tenant
+table `cascache` uses. A file's bytes arrive on first read, through the
+same cache. `rmdir` drops the exec root. The driver is root on the host,
+and the sandbox's user is whoever the image names, so `casfs` reports every
+entry as open to everyone and accepts the chown gVisor's gofer does on each
+entry it creates; the filesystem itself is the authority on what a name
+allows.
+
+The rest of the actor's traffic goes from the sandbox through `atunnel` to
 `atenet-egress`, which checks the actor's egress policy, replaces the
-placeholder `x-ci-substrate-tenant` header with the tenant's token, and opens
-the connection to `cascache`. `cascache` authorizes the token for the
-instance, serves the blob from local disk after it verifies the SHA-256, and
-on a miss fetches the blob from `cas`, verifies it, and stores it.
+placeholder `x-ci-substrate-tenant` header with the tenant's token, and
+opens the connection to `cas`: leases, the `Command` and `Action` protos,
+output uploads, and the result. The policy names no other destination.
+`cascache` authorizes every token for the instance, serves the blob from
+local disk after it verifies the SHA-256, and on a miss fetches the blob
+from `cas`, verifies it, and stores it.
 
 ### An Execute call
 
@@ -137,10 +161,14 @@ on a miss fetches the blob from `cas`, verifies it, and stores it.
 2. A runner holding that tenant's token calls `Lease` and gets the job. It
    heartbeats at a third of the lease duration; a lease that expires goes
    back on the queue.
-3. The runner builds the exec root. With `/dev/fuse` it mounts the input
-   tree with `casfs` and `cascache` serves each file on its first read; a
-   file the command never opens is never fetched. Without it the runner
-   copies the tree.
+3. The runner builds the exec root. A Substrate actor does `mkdir` of the
+   input root's digest on its inputs volume, and the `casfs-csi` driver on
+   its node serves the tree from that node's `cascache`. A runner with
+   `/dev/fuse` mounts the tree itself with `casfs`. In both, `cascache`
+   serves each file on its first read, and a file the command never opens is
+   never fetched. A runner with neither copies the tree. The `ActionResult`
+   records which mode ran the action (`worker.v1.RunnerMetadata` in
+   `auxiliary_metadata`), and `cictl -expect-input-mode` checks it.
 4. The runner runs the command, collects the output paths (files as blobs,
    directories as a `Tree`), asks `cas` which blobs are missing with
    `FindMissingBlobs`, uploads those, and calls `Complete` with the
@@ -161,33 +189,33 @@ its output digests. A tenant can't learn the digests of another tenant's
 outputs, so it can't name them. `TestDigestIsReadCapability` in
 `internal/remote` pins this down.
 
-The node-local path through Substrate egress isn't node-local yet. Actor
-egress leaves the sandbox through `atenet-egress`, which runs on system infra
-nodes, so the gateway, not the actor, opens the connection to `cascache`.
-`internalTrafficPolicy: Local` then picks the cascache on the gateway's node.
-In the kind e2e, `cictl` runs outside Substrate and talks to `cascache`
-directly, so the demo doesn't hit this. Two ways to close the gap:
+Inputs are hydrated on the host side, the way `atelet` links sandbox
+binaries from its asset cache into each sandbox. Actor egress leaves the
+sandbox through `atenet-egress`, which runs on system infra nodes, so a
+runner that fetched its own inputs would have the gateway, not the actor,
+open the connection to `cascache`, and `internalTrafficPolicy: Local` would
+pick the cache on the gateway's node. The alternative, an egress gateway on
+each worker node, would fix locality but keep every input byte on the
+tunnel-to-gateway-to-cache path and add a component per node whose only job
+is to be near the actor. Instead, the `casfs-csi` DaemonSet is a CSI driver
+for Substrate's external volumes: the `ActorTemplate` declares an `inputs`
+volume of the tenant's `StorageClass`, `ate-api-server` creates it through
+the driver's controller Service, and `atelet` has the driver on the actor's
+node publish it and binds the mount into the sandbox. The inputs path has no
+gateway hop at all, the policy's one rule is `cas` for leases, outputs, and
+results, and the sandbox never holds the cache token: the driver resolves the
+`StorageClass` parameter `instance` to a token with `tenant.Registry.TokenFor`.
+Substrate's `ExternalVolumes` preview gate guards this. The `pool` sends
+`Ate-Preview-Allowed: true` on every call, and `run-substrate.sh` turns the
+gate on in `ate-api-server`.
 
-- Hydrate inputs on the host side, the way `atelet` links sandbox binaries
-  from its asset cache into each sandbox. A node agent reads from the local
-  cascache and exposes inputs to the sandbox as a filesystem. This is the FUSE
-  lazy hydration in M5.
-- Run an egress gateway on each worker node, so the gateway that dials
-  `cascache` shares a node with the actor.
-
-Of the two, host-side hydration is the one to build. It keeps the actor's
-inputs on the actor's node by construction, it removes the per-request
-gateway hop from the input path (the gateway still fronts `Lease`,
-`Complete`, and output uploads, which are few and small), and it is the
-shape Substrate already uses for its own sandbox assets. A gateway per node
-fixes locality but keeps every input byte on the tunnel-to-gateway-to-cache
-path and adds a component per node whose only job is to be near the actor.
-`casfs` is the sandbox half of host-side hydration; what remains is a node
-agent that mounts it on the host and projects the mount into the sandbox,
-which Substrate's `ActorTemplate` volume API doesn't offer yet (its volume
-sources are durable directories, external volumes, images, and system
-info). Until then a Substrate runner copies its inputs, and the Deployment
-runner shows the FUSE path.
+The volume is a control directory, not a tree: a `mkdir` of
+`<hash>-<size>[.<tag>]` materializes that input root, so one long-lived actor
+serves many jobs from one mount and two jobs with the same inputs get two
+exec roots. A name that isn't a digest fails with `EINVAL`, a digest the
+cache doesn't hold fails with `ENOENT`, and the runner's startup probe does
+one `mkdir` of the empty tree and one bad name to check it is on such a
+volume before it leases anything.
 
 The demo's other limits:
 
@@ -199,23 +227,32 @@ The demo's other limits:
   Bazel can't use it as `--remote_cache` on its own. Writes and the action
   cache go to `cas`.
 - `casfs` is read-mostly: writes go to an in-memory upper layer that the
-  runner reads outputs from, so an action's outputs must fit in memory.
+  runner reads outputs from, so an action's outputs must fit in memory. On
+  the CSI path that memory is the driver pod's, so its limit bounds the
+  outputs of every actor on the node at once.
+- The `StorageClass` is per tenant, named in the tenant's `ActorTemplate`.
+  Nothing stops a template in another atespace from naming it; the deploy
+  needs a policy on `storageClassName` per atespace for that.
+- The driver keeps its mounts in memory. A driver restart leaves the
+  published FUSE mounts stale (reads fail with `ENOTCONN`) until Substrate
+  suspends or restarts the actor, and `NodePublishVolume` detaches the stale
+  mount before it mounts again.
 - gRPC is plaintext. The egress gateway injects the token on a plain HTTP
   hop, so a real install needs mTLS or a mesh between the gateway and the
   Services.
 - The runner Deployment is privileged, because the container runtime's
   device cgroup otherwise denies `/dev/fuse`. A Substrate actor needs no
-  privilege; it copies.
+  privilege; the driver on its node does the mounting.
 
 ## Milestone map
 
 | Milestone | In this demo |
 |-----------|--------------|
 | M1 Control plane state | `cas` is a StatefulSet. Blobs, the action cache, and job records are files on its PVC (`internal/blob`, `internal/actioncache`, `internal/exec`), so a restart keeps them. Tenants come from a Secret. No Postgres or Redis; one replica owns the state. |
-| M2 Substrate lifecycle | `pool` (`internal/actorpool`, `internal/substrate`) runs per tenant: it prewarms `WARM` actors as snapshots, resumes one per queued job up to `MAX`, suspends idle ones, and replaces crashed ones. The overlay under `deploy/substrate/` has the `WorkerPool`, `ActorTemplate`, egress policy, token Secret, and pool Deployment; `e2e/run-substrate.sh` applies it and runs an action in an actor. |
+| M2 Substrate lifecycle | `pool` (`internal/actorpool`, `internal/substrate`) runs per tenant: it prewarms `WARM` actors as snapshots, resumes one per queued job up to `MAX`, suspends idle ones, and replaces crashed ones. The overlay under `deploy/substrate/` has the `WorkerPool`, `ActorTemplate` with its external inputs volume, the `casfs-csi` driver with its `CSIDriverConfig` and the tenant's `StorageClass`, the egress policy, token Secret, and pool Deployment; `e2e/run-substrate.sh` applies it, runs an action in an actor, and checks the actor read its inputs from the volume. |
 | M3 Artifact push | The runner uploads stdout, stderr, output files, and output `Tree`s after `FindMissingBlobs`, so a blob `cas` already holds is not sent again. `remote.Client.Upload` routes blobs up to `remote.MaxBatchBytes` through `BatchUpdateBlobs` and larger ones through `ByteStream.Write`. |
 | M4 Bazel RBE API | `cas` implements CAS, ActionCache, ByteStream, Capabilities, and Execution (`Execute`, `WaitExecution`) from `bazelbuild/remote-apis`, with a per-instance queue and `WorkerService` leases (`api/worker/v1`) for runners. `Status` tells the pool how deep each queue is. |
-| M5 Node-local CAS + verification | `cascache` is the node-local proxy; every served blob is SHA-256-verified in flight, a poison is dropped, and the request falls back to the origin. `casfs` (`internal/casfs`) is the lazy-hydration filesystem: a go-fuse mount of an input `Directory` tree that fetches a file's blob from `cascache` on first read. The runner uses it where `/dev/fuse` exists. |
+| M5 Node-local CAS + verification | `cascache` is the node-local proxy; every served blob is SHA-256-verified in flight, a poison is dropped, and the request falls back to the origin. `casfs` (`internal/casfs`) is the lazy-hydration filesystem: a go-fuse mount of an input `Directory` tree that fetches a file's blob from `cascache` on first read. A runner with `/dev/fuse` mounts it itself; a Substrate actor gets it as an inputs volume that `casfs-csi` (`internal/csidriver`) mounts on the actor's node, so an actor's inputs come from its own node's cache without crossing the egress gateway. |
 | M6 Output handling | `internal/bot` collects `OutputPaths`: a file becomes an `OutputFile` with its digest, a directory becomes an `OutputDirectory` with a `Tree` whose root and children are uploaded as blobs. A path that escapes the exec root is rejected. The `ActionResult` carries exit code, stdout, stderr, and the worker's id. |
 
 ## Local unit tests
@@ -300,9 +337,10 @@ export KO_DEFAULTBASEIMAGE=registry-1.docker.io/chainguard/static:latest
 ## Substrate overlay
 
 When Agent Substrate is installed in the cluster, apply the files under
-`deploy/substrate/` to run the `runner` inside gVisor actors whose egress
-policy reaches only the cascache and cas Services, with the tenant token
-injected by the egress gateway, and the `pool` that sizes them to the queue:
+`deploy/substrate/` to run the `runner` inside gVisor actors that read their
+inputs from a `casfs-csi` volume on their own node, whose egress policy
+reaches only the `cas` Service, with the tenant token injected by the egress
+gateway, and the `pool` that sizes them to the queue:
 
 ```bash
 export KO_DOCKER_REPO=<a registry pods can pull from>/ci-substrate
@@ -310,13 +348,17 @@ bash e2e/run-substrate.sh
 ```
 
 The script creates the atespace, token Secret, credential grant,
-`WorkerPool`, `ActorTemplate`, and pool for `tenant-a`, scales the runner
-Deployment to zero so actors do the work, then runs `cictl` and checks that
-the worker that ran the action is a `ci-runner-N` actor. On the test cluster
-the pool created one actor at start, an `Execute` against the empty queue
-ran 44 ms after the actor was up, the pool suspended the actor after two
-idle minutes, and the next `Execute` resumed it from its snapshot and ran in
-1.4 s end to end.
+`WorkerPool`, the `casfs-csi` driver and `tenant-a`'s `StorageClass`, the
+`ActorTemplate`, and the pool for `tenant-a`, turns on the `ExternalVolumes`
+preview gate in `ate-api-server`, scales the runner Deployment to zero so
+actors do the work, then runs `cictl` and checks that the worker that ran
+the action is a `ci-runner-N` actor and that it reported input mode
+`volume`. On the test cluster the pool created one actor at start, an
+`Execute` against the empty queue ran 40 ms after the actor was up with its
+inputs from the volume, the pool suspended the actor after two idle minutes
+(a gVisor checkpoint with the volume bound in), and the next `Execute`
+resumed it from its snapshot, had the driver publish a fresh volume, and
+ran in 1.3 s end to end.
 
 The default kind e2e does not install Substrate. Building Substrate's envoy
 dataplane from source needs open Debian apt egress; use Substrate's published
