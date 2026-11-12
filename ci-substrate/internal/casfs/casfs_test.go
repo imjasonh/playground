@@ -84,7 +84,7 @@ func TestLazyHydration(t *testing.T) {
 	fetchesAfterLoad := len(f.fetched)
 
 	mnt := t.TempDir()
-	server, err := casfs.Mount(mnt, tr, f, "inst")
+	server, err := casfs.Mount(t.Context(), mnt, tr, f, "inst")
 	if err != nil {
 		t.Fatalf("mount: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestCorruptBlobIsNotServed(t *testing.T) {
 		t.Fatal(err)
 	}
 	mnt := t.TempDir()
-	server, err := casfs.Mount(mnt, tr, f, "inst")
+	server, err := casfs.Mount(t.Context(), mnt, tr, f, "inst")
 	if err != nil {
 		t.Fatal(err)
 	}
