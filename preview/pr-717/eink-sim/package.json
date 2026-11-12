@@ -1,0 +1,14 @@
+{
+  "name": "eink-sim",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Browser simulator for real-world e-ink / e-paper displays",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx --yes serve . -p 3000"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
