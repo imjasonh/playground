@@ -104,6 +104,13 @@ for (const game of Object.keys(GAMES)) {
         });
       }
 
+      test('the board has more 2×2 blocks than stars', () => {
+        // Each block that tiles the board holds at most one star. With as
+        // many stars as blocks, every block holds one, and only a couple of
+        // layouts fit, so the regions barely matter.
+        assert.ok(stars * size < Math.ceil(size / 2) ** 2);
+      });
+
       test('the same seed builds the same puzzle', () => {
         assert.deepEqual(generatePuzzle(game, level, 42),
             generatePuzzle(game, level, 42));

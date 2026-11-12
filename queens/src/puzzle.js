@@ -15,7 +15,9 @@ export const EMPTY = 2;
 // that a puzzle needs. A puzzle at rank r is solvable with the rules up to
 // r and not with the rules below r. Two Not Touch starts at rank 1, because
 // the rank 0 rules can't place a star on an empty board: every region has
-// more open cells than stars.
+// more open cells than stars. Two Not Touch skips 8×8, where the 16 stars
+// fill all 16 of the 2×2 blocks that tile the board and only two star
+// layouts fit.
 export const GAMES = {
   queens: {
     name: 'Queens',
@@ -31,7 +33,7 @@ export const GAMES = {
     name: 'Two Not Touch',
     stars: 2,
     levels: {
-      easy: {size: 8, rank: 1},
+      easy: {size: 9, rank: 1},
       medium: {size: 10, rank: 1},
       hard: {size: 10, rank: 2},
       expert: {size: 10, rank: 3},
