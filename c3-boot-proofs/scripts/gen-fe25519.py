@@ -20,6 +20,16 @@ NAMES = {'x0': 0, 'ra': 1, 'sp': 2, 'a0': 10, 'a1': 11, 'a2': 12, 'a3': 13, 'a4'
 LEAN = {v: k for k, v in NAMES.items()}
 
 
+def addr(key):
+    """The Lean address of a slot (base, offset)."""
+    return f'{key[0]} + 0x{key[1]:X}'
+
+
+def kname(key):
+    """A slot's suffix in hypothesis names: the offset, after the base unless it is `F`."""
+    return f'{key[1]:X}' if key[0] == 'F' else f'{key[0]}{key[1]:X}'
+
+
 def rv(cur, r):
     """The Lean value of register `r` in `cur`: x0 reads as 0."""
     return '0' if r == 0 else cur.get(r)
@@ -263,25 +273,31 @@ class Gen:
         self.final, self.last, self.mem, self.hc, self.fr = cur, len(self.block) - 1, mem, hc, fr
         self.hyps = hyps
 
-    def step_seg(self, name, bases, sz, seg, keep_slots, out_slots):
+    def step_seg(self, name, bases, seg, keep_slots, out_slots):
         """Like `step_mem`, but each `seg` instructions are a theorem of their
         own, so no single proof grows long; `self.lines` chains them.
-        `keep_slots` are frame slots the block doesn't write and must report."""
+        `self.regions` lists the memory the block writes, as (base, size,
+        frame hypothesis, code separation, alignment): the stack frame `F`
+        and any output. A slot is a (base, offset) pair. `keep_slots` are
+        slots the block doesn't write and must report; `out_slots` are
+        slots whose last value it must report."""
         n = len(self.block)
-        # a dry run for the bookkeeping: operands, stores, and which store each spill load reads
+        rbase = {r[0]: r for r in self.regions}
+        # a dry run for the bookkeeping: operands, stores, and which store each slot load reads
         cur = dict(self.init)
         self.src, self.var = [], [None] * n
         self.stores, slots, inputs = [], {}, {}
         reads = {}
         for k, i in enumerate(self.block):
             if i.kind == 'store':
-                self.stores.append((k, i.imm, cur[i.rs2], f'M{k}'))
-                slots[i.imm] = len(self.stores) - 1
+                key = (cur[i.rs1], i.imm)
+                self.stores.append((k, key, cur[i.rs2], f'M{k}'))
+                slots[key] = len(self.stores) - 1
                 self.src.append([cur[i.rs2]])
                 continue
             v = f'v{k}'
-            if i.kind == 'load' and cur.get(i.rs1) == 'F':
-                si = slots[i.imm]
+            if i.kind == 'load' and cur.get(i.rs1) in rbase:
+                si = slots[(cur[i.rs1], i.imm)]
                 reads[k] = si
                 cur[i.rd] = self.stores[si][2]
                 self.src.append([])
@@ -312,23 +328,24 @@ class Gen:
         live_until = {}
         for k, si in reads.items():
             live_until[si] = max(live_until.get(si, -1), k)
-        final_slot = {o: si for si, (k, o, _, _) in enumerate(self.stores)}
-        self.final_slot = final_slot
-
+        self.final_slot = {key: si for si, (k, key, _, _) in enumerate(self.stores)}
         self.live_until, self.out_slots = live_until, out_slots
+        ftype = ' → '.join(f'Sep {b} 0x{sz:X} x 1' for b, sz, *_ in self.regions)
+        flam = ' '.join(r[2] for r in self.regions)
+        fus = ' '.join('_' for _ in self.regions)
 
         # the segments
         cur = dict(self.init)
-        slotval = {o: f'memLoad32 M0 (F + 0x{o:X})' for o in keep_slots}
-        slotsrc = {o: None for o in keep_slots}
+        slotval = {key: f'memLoad32 M0 ({addr(key)})' for key in keep_slots}
+        slotsrc = {key: None for key in keep_slots}
         seen_inputs = {}
         bounds = list(range(0, n, seg)) + [n]
         self.seg_thms = []
-        self.emit('  have fr0 : ∀ x, Sep F 0x%X x 1 → M x = M x := fun _ _ => rfl' % sz)
-        for o in keep_slots:
-            self.emit(f'  have sg0_{o:X} : memLoad32 M (F + 0x{o:X}) = memLoad32 M (F + 0x{o:X}) := rfl')
+        self.emit(f'  have fr0 : ∀ x, {ftype} → M x = M x := fun _ {fus} => rfl')
+        for key in keep_slots:
+            self.emit(f'  have sg0_{kname(key)} : memLoad32 M ({addr(key)}) = memLoad32 M ({addr(key)}) := rfl')
         mq = {r: self.init_hyp[r] for r in self.init}
-        ms = {o: f'sg0_{o:X}' for o in keep_slots}
+        ms = {key: f'sg0_{kname(key)}' for key in keep_slots}
         mstate = ('s', 'hc', 'fr0')
         csteps = []
         for j in range(len(bounds) - 1):
@@ -337,8 +354,8 @@ class Gen:
             off_b = self.block[k1].off if k1 < n else self.end
             qin = sorted(r for r in cur if r != 0 and cur[r] is not None)
             qinval = {r: cur[r] for r in qin}
-            sin = sorted(o for o, si in slotsrc.items() if self.carried(o, si, k0))
-            sinval = {o: slotval[o] for o in sin}
+            sin = sorted((key for key, si in slotsrc.items() if self.carried(key, si, k0)), key=lambda t: (t[0] != 'F', t))
+            sinval = {key: slotval[key] for key in sin}
             L = ['  have hz0 : reg n 0 = 0 := s.zero']
             mem, hc, fr, prev = 'Mi', 'hc', 'fr', 's'
             hyps = 'hz0' + ''.join(f', q{r}' for r in qin)
@@ -350,29 +367,34 @@ class Gen:
                 simp = f'simp +decide only [upd, ↓reduceIte, {hyps}]'
                 if i.kind == 'store':
                     val = cur[i.rs2]
+                    key = (cur[i.rs1], i.imm)
+                    b_, bsz, blam, bcode, bal = rbase[key[0]]
                     L.append(f'  obtain ⟨n{k}, d{k}, {u}⟩ := {prev}.swG {hc} {i.lemma} (off\' := 0x{nxt:X}) (by decide)')
-                    L.append(f'    (by {simp}; exact aligned_add hF (k := {i.imm}) (by decide)) (a := F + 0x{i.imm:X}) (v := {val})')
+                    L.append(f'    (by {simp}; exact aligned_add {bal} (k := {i.imm}) (by decide)) (a := {addr(key)}) (v := {val})')
                     L.append(f'    (by {simp}) (by {simp})')
-                    L.append(f'  obtain ⟨M{k}, hM{k}⟩ : ∃ M\', memStore32 {mem} (F + 0x{i.imm:X}) {val} = M\' := ⟨_, rfl⟩')
+                    L.append(f'  obtain ⟨M{k}, hM{k}⟩ : ∃ M\', memStore32 {mem} ({addr(key)}) {val} = M\' := ⟨_, rfl⟩')
                     L.append(f'  rw [hM{k}] at {u}')
-                    L.append(f'  have hc{k} : CodeIn M{k} B {self.code} := by rw [← hM{k}]; exact {hc}.store32 (frm_sep\' sFC (by decide))')
-                    L.append(f'  have fr{k} : ∀ x, Sep F 0x{sz:X} x 1 → M{k} x = M0 x := fun x hx => by')
-                    L.append(f'    rw [← hM{k}, memStore32_get_sep (frm_sep\' hx (by decide)), {fr} x hx]')
+                    L.append(f'  have hc{k} : CodeIn M{k} B {self.code} := by rw [← hM{k}]; exact {hc}.store32 (frm_sep\' {bcode} (by decide))')
+                    L.append(f'  have fr{k} : ∀ x, {ftype} → M{k} x = M0 x := fun x {flam} => by')
+                    L.append(f'    rw [← hM{k}, memStore32_get_sep (frm_sep\' {blam} (by decide)), {fr} x {flam}]')
                     mem, hc, fr = f'M{k}', f'hc{k}', f'fr{k}'
-                    seg_stores.append((k, i.imm, val, mem))
-                    slotsrc[i.imm] = store_at[k]
-                    slotval[i.imm] = val
-                elif i.kind == 'load' and cur.get(i.rs1) == 'F':
-                    alias = slotval[i.imm]
+                    seg_stores.append((k, key, val, mem))
+                    slotsrc[key] = store_at[k]
+                    slotval[key] = val
+                elif i.kind == 'load' and cur.get(i.rs1) in rbase:
+                    key = (cur[i.rs1], i.imm)
+                    alias = slotval[key]
+                    bal = rbase[key[0]][4]
                     L.append(f'  obtain ⟨n{k}, d{k}, {u}⟩ := {prev}.lwE {hc} {i.lemma} (off\' := 0x{nxt:X}) (by decide)')
-                    L.append(f'    (by {simp}; exact aligned_add hF (k := {i.imm}) (by decide)) (v := {alias})')
-                    L.append(f'    (by {simp}; rw [{self.seg_chain(seg_stores, i.imm)}])')
+                    L.append(f'    (by {simp}; exact aligned_add {bal} (k := {i.imm}) (by decide)) (v := {alias})')
+                    L.append(f'    (by {simp}; rw [{self.seg_chain(seg_stores, key)}])')
                     cur[i.rd] = alias
                 elif i.kind == 'load':
                     base = cur[i.rs1]
-                    al, sep = bases[base]
-                    load = (f'load_frame {fr} (show Sep F 0x{sz:X} ({base} + 0x{i.imm:X}) 4 from '
-                            f'{sep}.symm.subR (c := {i.imm}) (l := 4) (by decide))')
+                    al, seps = bases[base]
+                    shows = [f'(show Sep {rb} 0x{rsz:X} ({base} + 0x{i.imm:X}) 4 from {sp_}.symm.subR (c := {i.imm}) (l := 4) (by decide))'
+                             for (rb, rsz, *_), sp_ in zip(self.regions, seps)]
+                    load = (f'load_frame {fr} ' if len(shows) == 1 else f'load_frame2 {fr} ') + ' '.join(shows)
                     key = (base, i.imm)
                     if key in seen_inputs:
                         alias = seen_inputs[key]
@@ -413,23 +435,23 @@ class Gen:
                 prev = u
             last_k = k1 - 1
             qout = sorted(r for r in cur if r != 0 and cur[r] is not None)
-            sout = sorted(o for o, si in slotsrc.items() if self.carried(o, si, k1))
+            sout = sorted((key for key, si in slotsrc.items() if self.carried(key, si, k1)), key=lambda t: (t[0] != 'F', t))
             for r in qout:
                 L.append(f'  have qo{r} : reg n{last_k} {lreg(r)} = {cur[r]} := by rw [u{last_k}.regs]; simp +decide only [upd, ↓reduceIte, {hyps}]')
-            for o in sout:
-                L.append(f'  have so{o:X} : memLoad32 {mem} (F + 0x{o:X}) = {slotval[o]} := by')
-                L.append(f'    rw [{self.seg_chain(seg_stores, o)}]')
+            for key in sout:
+                L.append(f'  have so{kname(key)} : memLoad32 {mem} ({addr(key)}) = {slotval[key]} := by')
+                L.append(f'    rw [{self.seg_chain(seg_stores, key)}]')
             steps = ''.join(f'(.cons d{k} ' for k in range(k0, last_k)) + f'(.single d{last_k})' + ')' * (last_k - k0)
             parts = [v for v, _ in new_vars] + [steps, f'u{last_k}.self', hc, fr] + [f'qo{r}' for r in qout] + \
-                [f'so{o:X}' for o in sout] + [f'hv{v[1:]}' for v, _ in new_vars]
+                [f'so{kname(key)}' for key in sout] + [f'hv{v[1:]}' for v, _ in new_vars]
             L.append(f'  exact ⟨n{last_k}, {mem}, {", ".join(parts)}⟩')
             concl = ['Steps n n\'', f'St M\' B n\' 0x{off_b:X} (reg n\')', f'CodeIn M\' B {self.code}',
-                     f'(∀ x, Sep F 0x{sz:X} x 1 → M\' x = M0 x)']
+                     f'(∀ x, {ftype} → M\' x = M0 x)']
             concl += [f'reg n\' {lreg(r)} = {cur[r]}' for r in qout]
-            concl += [f'memLoad32 M\' (F + 0x{o:X}) = {slotval[o]}' for o in sout]
+            concl += [f'memLoad32 M\' ({addr(key)}) = {slotval[key]}' for key in sout]
             concl += [st for _, st in new_vars]
             hyps_in = [f'(q{r} : reg n {lreg(r)} = {qinval[r]})' for r in qin]
-            hyps_in += [f'(sl{o:X} : memLoad32 Mi (F + 0x{o:X}) = {sinval[o]})' for o in sin]
+            hyps_in += [f'(sl{kname(key)} : memLoad32 Mi ({addr(key)}) = {sinval[key]})' for key in sin]
             hyps_in += [f'(hv{h[1:]} : {t})' for h, t in hv_refs]
             text = ' '.join(hyps_in)
             words = sorted(set(WORD_RE.findall(text)), key=lambda w: int(w[1:]))
@@ -439,26 +461,25 @@ class Gen:
                    f'theorem {name}_g{j} {{M0 Mi : Word → BitVec 8}} {{B F {" ".join(self.basenames)} : Word}} {{n : Machine}}'
                    + (f' {{{" ".join(words)} : Word}}' if words else ''),
                    f'    (s : St Mi B n 0x{off_a:X} (reg n)) (hc : CodeIn Mi B {self.code})',
-                   f'    (fr : ∀ x, Sep F 0x{sz:X} x 1 → Mi x = M0 x) {self.global_hyps}']
+                   f'    (fr : ∀ x, {ftype} → Mi x = M0 x) {self.global_hyps}']
             for h in hyps_in:
                 thm.append(f'    {h}')
             thm.append(f'    : ∃ (n\' : Machine) (M\' : Word → BitVec 8)' + (f' ({nv} : Word)' if nv else '') + ',')
             thm.append('      ' + ' ∧\n      '.join(concl) + ' := by')
             self.seg_thms.append('\n'.join(thm + L))
-            # the block's proof: apply the segment
             s_, hc_, fr_ = mstate
-            args = [s_, hc_, fr_, self.global_args] + [mq[r] for r in qin] + [ms[o] for o in sin] + \
+            args = [s_, hc_, fr_, self.global_args] + [mq[r] for r in qin] + [ms[key] for key in sin] + \
                 [f'hv{h[1:]}' for h, _ in hv_refs]
             ex = [f'ng{j}', f'Mg{j}'] + [v for v, _ in new_vars]
             conj = [f'cg{j}', f'ug{j}', f'hcg{j}', f'frg{j}'] + \
-                [f'qg{j}_{r}' for r in qout] + [f'sg{j + 1}_{o:X}' for o in sout] + [f'hv{v[1:]}' for v, _ in new_vars]
+                [f'qg{j}_{r}' for r in qout] + [f'sg{j + 1}_{kname(key)}' for key in sout] + [f'hv{v[1:]}' for v, _ in new_vars]
             # `obtain` on a long conjunction is slow; projections are not
             self.emit(f'  obtain ⟨{", ".join(ex)}, hg{j}⟩ := {name}_g{j} {" ".join(args)}')
-            for idx, c in enumerate(conj):
+            for idx, c_ in enumerate(conj):
                 path = f'hg{j}' + '.2' * idx + ('.1' if idx < len(conj) - 1 else '')
-                self.emit(f'  have {c} := {path}')
+                self.emit(f'  have {c_} := {path}')
             mq = {r: f'qg{j}_{r}' for r in qout}
-            ms = {o: f'sg{j + 1}_{o:X}' for o in sout}
+            ms = {key: f'sg{j + 1}_{kname(key)}' for key in sout}
             mstate = (f'ug{j}', f'hcg{j}', f'frg{j}')
             csteps.append(f'cg{j}')
         self.mem_final = f'Mg{len(bounds) - 2}'
@@ -467,21 +488,25 @@ class Gen:
         self.steps_final = csteps
         self.n_final = f'ng{len(bounds) - 2}'
 
-    def carried(self, o, si, at):
-        """Whether the slot `o`, last written by store `si`, is still read at or after `at`."""
-        return si is None or self.live_until.get(si, -1) >= at or (o in self.out_slots and self.final_slot.get(o) == si)
+    def carried(self, key, si, at):
+        """Whether `key`, last written by store `si`, is still read at or after `at`."""
+        return si is None or self.live_until.get(si, -1) >= at or (key in self.out_slots and self.final_slot.get(key) == si)
 
-    def seg_chain(self, seg_stores, o):
-        """Rewrites that read slot `o` back through this segment's stores to
+    def seg_chain(self, seg_stores, key):
+        """Rewrites that read slot `key` back through this segment's stores to
         its value: the store that wrote it, or the slot fact at the start."""
+        b, o = key
         rws = []
-        for k, os, _, m in reversed(seg_stores):
-            if os == o:
+        for k, (b2, os), _, m in reversed(seg_stores):
+            if (b2, os) == key:
                 rws.append(f'← hM{k}, memLoad32_store32_same')
                 return ', '.join(rws)
-            rws.append(f'← hM{k}, memLoad32_store32_sep (show Sep (F + 0x{os:X}) 4 (F + 0x{o:X}) 4 from '
-                       f'sep_offsets F (c := {os}) (n := 4) (d := {o}) (k := 4) (by decide) (by decide) (by decide))')
-        rws.append(f'sl{o:X}')
+            if b2 == b:
+                sep = f'sep_offsets {b} (c := {os}) (n := 4) (d := {o}) (k := 4) (by decide) (by decide) (by decide)'
+            else:
+                sep = f'({self.region_sep[(b2, b)]}.sub (c := {os}) (l := 4) (by decide)).subR (c := {o}) (l := 4) (by decide)'
+            rws.append(f'← hM{k}, memLoad32_store32_sep (show Sep ({b2} + 0x{os:X}) 4 ({b} + 0x{o:X}) 4 from {sep})')
+        rws.append(f'sl{o:X}' if b == 'F' else f'sl{b}{o:X}')
         return ', '.join(rws)
 
     def chain(self, si, o):
@@ -856,7 +881,10 @@ def gen_mul():
     g.global_hyps = ('(hF : F.toNat % 4 = 0) (hx : xp.toNat % 4 = 0) (hy : yp.toNat % 4 = 0)\n'
                      '    (sFC : Sep F 0x120 B feMulCode.length) (sXF : Sep xp 40 F 0x120) (sYF : Sep yp 40 F 0x120)')
     g.global_args = 'hF hx hy sFC sXF sYF'
-    g.step_seg('fmu', {'xp': ('hx', 'sXF'), 'yp': ('hy', 'sYF')}, 0x120, 40, MUL_KEEP_SLOTS, MUL_Z_SLOTS)
+    g.regions = [('F', 0x120, 'hx', 'sFC', 'hF')]
+    g.region_sep = {}
+    g.step_seg('fmu', {'xp': ('hx', ['sXF']), 'yp': ('hy', ['sYF'])}, 40,
+               [('F', o) for o in MUL_KEEP_SLOTS], [('F', o) for o in MUL_Z_SLOTS])
     g.facts()
     rnd = random.Random(710)
     runs = []
@@ -884,44 +912,54 @@ def gen_mul():
     terms = mul_terms()
 
     def xval(i, dbl):
-        return (lambda x, y: (2 * x[i]) & M32) if dbl else (lambda x, y: x[i])
+        return (lambda inp: (2 * inp[0][i]) & M32) if dbl else (lambda inp: inp[0][i])
 
     def yval(j, w19):
-        return (lambda x, y: (19 * y[j]) & M32) if w19 else (lambda x, y: y[j])
+        return (lambda inp: (19 * inp[1][j]) & M32) if w19 else (lambda inp: inp[1][j])
 
-    # each product's two words, its low and high words, and its x-side and y-side operands
+    pterms = [[(xval(i, dbl), yval(j, w19), False) for (i, dbl, j, w19) in ts] for ts in terms]
+    pruns = [((x, y), vals) for x, y, vals in runs]
+    prods, lemmas, body, zfacts = prodsum(g, pruns, pterms, 'fmu')
+    return g, runs, prods, terms, lemmas, body, zfacts
+
+
+def prodsum(g, runs, terms, prefix):
+    """The facts for each product and each sum the block keeps whole.
+    `terms[k]` lists sum `k`'s products as (left value, right value,
+    doubled), each value a function of a run's input; the doubled ones are
+    the Rust source's `(...) * 2` group, which comes last."""
+    block = g.block
+    n = len(block)
+
+    def pval(kz, t, inp):
+        a, b_, _ = terms[kz][t]
+        return a(inp) * b_(inp)
+
     prods = {}
     for kz, ts in enumerate(terms):
-        for t, (i, dbl, j, w19) in enumerate(ts):
-            xv, yv = xval(i, dbl), yval(j, w19)
-            pv = lambda x, y, xv=xv, yv=yv: xv(x, y) * yv(x, y)
-            klo = None
+        for t in range(len(ts)):
+            klo = khi = None
             for k in range(n):
-                b = block[k]
-                if g.var[k] and b.kind == 'alu' and b.op == 'mul' and all(
-                        vals[k] == pv(x, y) & M32 for x, y, vals in runs):
+                bk = block[k]
+                if g.var[k] and bk.kind == 'alu' and bk.op == 'mul' and all(
+                        vals[k] == pval(kz, t, inp) & M32 for inp, vals in runs):
                     klo = k
                     break
-            khi = None
             for k in range(n):
-                b = block[k]
-                if g.var[k] and b.kind == 'alu' and b.op == 'mulhu' and all(
-                        vals[k] == pv(x, y) >> 32 for x, y, vals in runs):
+                bk = block[k]
+                if g.var[k] and bk.kind == 'alu' and bk.op == 'mulhu' and all(
+                        vals[k] == pval(kz, t, inp) >> 32 for inp, vals in runs):
                     khi = k
                     break
             if klo is None or khi is None:
                 raise Exception(f'no product z{kz}[{t}]')
             o0, o1 = g.src[klo]
-            k0 = g.var.index(o0) if o0 in g.var else None
 
             def val_of(o):
                 kk = g.var.index(o)
-                return [vals[kk] for _, _, vals in runs]
-            xs = [xv(x, y) for x, y, _ in runs]
-            if val_of(o0) == xs:
-                xa, yb = o0, o1
-            else:
-                xa, yb = o1, o0
+                return [vals[kk] for _, vals in runs]
+            xs = [terms[kz][t][0](inp) for inp, _ in runs]
+            xa, yb = (o0, o1) if val_of(o0) == xs else (o1, o0)
             prods[(kz, t)] = (g.var[klo], g.var[khi], xa, yb, klo, khi)
     known = {}
     hfact = {}
@@ -935,7 +973,7 @@ def gen_mul():
             o0, o1 = g.src[kk]
             if o0 != xa:
                 extra += f'\n  rw [Nat.mul_comm {o0}.toNat {o1}.toNat] at t{kk}'
-        name = f'fmu_p{kz}_{t}'
+        name = f'{prefix}_p{kz}_{t}'
         lemmas.append(lemma(name, st, {lo, hi, xa, yb}, [], hyps, extra))
         body.append(f'  have hp{kz}_{t} : {st} := {name} t{klo} t{khi}')
         hfact[lo] = hfact[hi] = (f'hp{kz}_{t}', st)
@@ -945,7 +983,6 @@ def gen_mul():
     for (kz, t), (lo, hi, *_r) in prods.items():
         pset[lo] = pset[hi] = (kz, t)
     cone = {}
-    n = len(block)
     for k in range(n):
         sset = set()
         v = g.var[k]
@@ -963,34 +1000,45 @@ def gen_mul():
             continue
         sset = cone[v]
         kzs = {a for a, _ in sset}
-        if len(sset) < 2 or len(kzs) != 1:
+        if len(sset) < 2 and not any(terms[a][b_][2] for a, b_ in sset):
+            continue
+        if len(kzs) != 1:
             continue
         kz = kzs.pop()
-        ts = sorted(b for _, b in sset)
-
-        def tot(x, y, kz=kz, ts=ts):
-            r = 0
-            for tt in ts:
-                i, dbl, j, w19 = terms[kz][tt]
-                a = (2 * x[i]) & M32 if dbl else x[i]
-                b = (19 * y[j]) & M32 if w19 else y[j]
-                r += a * b
-            return r & M64
-        key = (kz, tuple(ts))
-        if all(vals[k] == tot(x, y) & M32 for x, y, vals in runs):
-            sums.setdefault(key, {}).setdefault('lo', v)
-        elif all(vals[k] == tot(x, y) >> 32 for x, y, vals in runs):
-            sums.setdefault(key, {}).setdefault('hi', v)
-    full = [(key, d['lo'], d['hi']) for key, d in sums.items() if 'lo' in d and 'hi' in d]
+        ts = tuple(sorted(b_ for _, b_ in sset))
+        kinds = [False] + ([True] if any(terms[kz][tt][2] for tt in ts) else [])
+        for w in kinds:
+            def tot(inp, kz=kz, ts=ts, w=w):
+                return sum(pval(kz, tt, inp) * (2 if w and terms[kz][tt][2] else 1) for tt in ts) & M64
+            key = (kz, ts, w)
+            if all(vals[k] == tot(inp) & M32 for inp, vals in runs):
+                sums.setdefault(key, {}).setdefault('lo', v)
+            elif all(vals[k] == tot(inp) >> 32 for inp, vals in runs):
+                sums.setdefault(key, {}).setdefault('hi', v)
+    full = [(key, d['lo'], d['hi']) for key, d in sums.items() if 'lo' in d and 'hi' in d and
+            (len(key[1]) > 1 or key[2])]
     full.sort(key=lambda e: max(g.var.index(e[1]), g.var.index(e[2])))
+
+    def ptxt(kz, tt):
+        return f'{prods[(kz, tt)][2]}.toNat * {prods[(kz, tt)][3]}.toNat'
+
+    def sum_expr(kz, ts, w):
+        plain = [tt for tt in ts if not (w and terms[kz][tt][2])]
+        grp = [tt for tt in ts if w and terms[kz][tt][2]]
+        parts = [ptxt(kz, tt) for tt in plain]
+        if grp:
+            inner = ' + '.join(ptxt(kz, tt) for tt in grp)
+            parts.append(f'({inner}) * 2' if len(grp) > 1 or plain else f'{inner} * 2')
+        return ' + '.join(parts)
+
     zfacts = {}
-    for (kz, ts), lo, hi in full:
-        expr = ' + '.join(f'{prods[(kz, tt)][2]}.toNat * {prods[(kz, tt)][3]}.toNat' for tt in ts)
+    for (kz, ts, w), lo, hi in full:
+        expr = sum_expr(kz, ts, w)
         st = f'{lo}.toNat + 2 ^ 32 * {hi}.toNat = ({expr}) % 2 ^ 64'
         ks, stops = g.cone([lo, hi], known)
         hyps = [(f't{k}', g.stmt[k]) for k in ks]
         seen = set()
-        for sv in sorted(stops, key=lambda w: int(w[1:])):
+        for sv in sorted(stops, key=lambda x_: int(x_[1:])):
             h = hfact[sv]
             if h[0] not in seen:
                 seen.add(h[0])
@@ -998,48 +1046,202 @@ def gen_mul():
         words = set(WORD_RE.findall(st))
         for _, tt in hyps:
             words |= set(WORD_RE.findall(tt))
-        name = f'fmu_s{kz}_{"_".join(str(tt) for tt in ts)}'
-        # the low words' adds come with their carries (fmP1); drop their remainders
-        combined = set()
-        for h, tt in hyps:
-            m = re.match(r'(v\d+)\.toNat \+ 2 \^ 32 \* v\d+\.toNat = v\d+\.toNat \+ v\d+\.toNat$', tt)
-            if m and h.startswith('t'):
-                combined.add(m.group(1))
-        hyps = [(h, tt) for h, tt in hyps
-                if not (h.startswith('t') and re.match(r'(v\d+)\.toNat = \(', tt) and tt.split('.')[0] in combined)]
-        qs, extra = [], ''
-        for h, tt in hyps:
-            if re.search(r'% 2 \^ (32|64)$', tt):
-                extra += f'\n  obtain ⟨q_{h}, e_{h}⟩ := mod_q {h}; clear {h}'
-                qs.append((h, tt))
-        # check the identity the proof states on the runs
-        for x, y, vals in runs:
-            env = {f'v{k}': vals[k] for k in range(len(vals)) if vals[k] is not None}
-            def ev(e, env=env):
-                return nat_eval(e, env)
-            S = ev(expr)
-            Q = 0
-            for h, tt in qs:
-                lhs, rhs = tt.split(' = ', 1)
-                mod = 2 ** 32 if rhs.endswith('2 ^ 32') else 2 ** 64
-                inner = rhs[:rhs.rindex(' % ')]
-                Q += ev(inner) // mod
-            if env[lo] + 2 ** 32 * env[hi] + 2 ** 64 * Q != S:
-                raise Exception(f'identity fails for {name}')
-        qsum = ' + '.join(f'q_{h}' for h, _ in qs) or '0'
-        gen = ''.join(f'\n    generalize {w}.toNat = n{w[1:]} at *' for w in sorted(words, key=lambda w: int(w[1:])))
-        extra += (f'\n  have key : {lo}.toNat + 2 ^ 32 * {hi}.toNat + 2 ^ 64 * ({qsum}) = {expr} := by{gen}'
-                  f'\n    omega\n  exact mod64_of key')
-        lemmas.append(lemma(name, st, words, [], hyps, extra, bounds=False))
-        hn = f'hs{kz}_{"_".join(str(tt) for tt in ts)}'
+        tag = 'w' if w else 's'
+        name = f'{prefix}_{tag}{kz}_{"_".join(str(tt) for tt in ts)}'
+        hn = f'h{tag}{kz}_{"_".join(str(tt) for tt in ts)}'
+        if w and all(terms[kz][tt][2] for tt in ts):
+            # a doubled group: a few shifts from the group's sum, by `omega` over its bounds
+            lemmas.append(lemma(name, st, words, [], hyps))
+        else:
+            # the low words' adds come with their carries (fmP1); drop their remainders
+            combined = set()
+            for h, tt in hyps:
+                m = re.match(r'(v\d+)\.toNat \+ 2 \^ 32 \* v\d+\.toNat = v\d+\.toNat \+ v\d+\.toNat$', tt)
+                if m and h.startswith('t'):
+                    combined.add(m.group(1))
+            hyps = [(h, tt) for h, tt in hyps
+                    if not (h.startswith('t') and re.match(r'(v\d+)\.toNat = \(', tt) and tt.split('.')[0] in combined)]
+            qs, extra = [], ''
+            for h, tt in hyps:
+                if re.search(r'% 2 \^ (32|64)$', tt):
+                    extra += f'\n  obtain ⟨q_{h}, e_{h}⟩ := mod_q {h}; clear {h}'
+                    qs.append((h, tt))
+            # check the identity the proof states on the runs
+            for inp, vals in runs:
+                env = {f'v{k}': vals[k] for k in range(len(vals)) if vals[k] is not None}
+                S = nat_eval(expr, env)
+                Q = 0
+                for h, tt in qs:
+                    rhs = tt.split(' = ', 1)[1]
+                    mod = 2 ** 32 if rhs.endswith('2 ^ 32') else 2 ** 64
+                    Q += nat_eval(rhs[:rhs.rindex(' % ')], env) // mod
+                if env[lo] + 2 ** 32 * env[hi] + 2 ** 64 * Q != S:
+                    raise Exception(f'identity fails for {name}')
+            qsum = ' + '.join(f'q_{h}' for h, _ in qs) or '0'
+            gen = ''.join(f'\n    generalize {x_}.toNat = n{x_[1:]} at *' for x_ in sorted(words, key=lambda x_: int(x_[1:])))
+            extra += (f'\n  have key : {lo}.toNat + 2 ^ 32 * {hi}.toNat + 2 ^ 64 * ({qsum}) = {expr} := by{gen}'
+                      f'\n    omega\n  exact mod64_of key')
+            lemmas.append(lemma(name, st, words, [], hyps, extra, bounds=False))
         body.append(f'  have {hn} : {st} := {name} ' + ' '.join(h for h, _ in hyps))
         hfact[lo] = hfact[hi] = (hn, st)
         known[lo] = known[hi] = (kz, frozenset(ts))
-        if len(ts) == 10:
+        if len(ts) == len(terms[kz]) and (w or not any(t_[2] for t_ in terms[kz])):
             zfacts[kz] = (lo, hi, hn)
-    if len(zfacts) != 10:
+    if len(zfacts) != len(terms):
         raise Exception(f'sums found for {sorted(zfacts)}')
-    return g, runs, prods, terms, lemmas, body, zfacts
+    return prods, lemmas, body, zfacts
+
+
+SQ_TERMS = {
+    0: ([('x', 0, 'x', 0), ('x2', 2, 'x19', 8), ('x2', 4, 'x19', 6)],
+        [('x2', 1, 'x19', 9), ('x2', 3, 'x19', 7), ('x', 5, 'x19', 5)]),
+    1: ([('x2', 0, 'x', 1), ('x2', 3, 'x19', 8), ('x2', 5, 'x19', 6)], [('x', 2, 'x19', 9), ('x', 4, 'x19', 7)]),
+    2: ([('x2', 0, 'x', 2), ('x2', 1, 'x', 1), ('x2', 4, 'x19', 8), ('x', 6, 'x19', 6)],
+        [('x2', 3, 'x19', 9), ('x2', 5, 'x19', 7)]),
+    3: ([('x2', 0, 'x', 3), ('x2', 1, 'x', 2), ('x2', 5, 'x19', 8)], [('x', 4, 'x19', 9), ('x', 6, 'x19', 7)]),
+    4: ([('x2', 0, 'x', 4), ('x2', 1, 'x2', 3), ('x', 2, 'x', 2), ('x2', 6, 'x19', 8)],
+        [('x2', 5, 'x19', 9), ('x', 7, 'x19', 7)]),
+    5: ([('x2', 0, 'x', 5), ('x2', 1, 'x', 4), ('x2', 2, 'x', 3), ('x2', 7, 'x19', 8)], [('x', 6, 'x19', 9)]),
+    6: ([('x2', 0, 'x', 6), ('x2', 1, 'x2', 5), ('x2', 2, 'x', 4), ('x2', 3, 'x', 3), ('x', 8, 'x19', 8)],
+        [('x2', 7, 'x19', 9)]),
+    7: ([('x2', 0, 'x', 7), ('x2', 1, 'x', 6), ('x2', 2, 'x', 5), ('x2', 3, 'x', 4)], [('x', 8, 'x19', 9)]),
+    8: ([('x2', 0, 'x', 8), ('x2', 1, 'x2', 7), ('x2', 2, 'x', 6), ('x2', 3, 'x2', 5), ('x', 4, 'x', 4)],
+        [('x', 9, 'x19', 9)]),
+    9: ([('x2', 0, 'x', 9), ('x2', 1, 'x', 8), ('x2', 2, 'x', 7), ('x2', 3, 'x', 6), ('x2', 4, 'x', 5)], []),
+}
+SQ_KEEP_SLOTS = [0x1C + 4 * i for i in range(13)]
+
+
+def sq_val(kind, i):
+    if kind == 'x':
+        return lambda inp: inp[i]
+    if kind == 'x2':
+        return lambda inp: (2 * inp[i]) & M32
+    return lambda inp: (19 * inp[i]) & M32
+
+
+def gen_sq():
+    ins = [Ins(*t) for t in decode('fsq', 'feSquareInnerCode')]
+    block = [i for i in ins if 0x1C <= i.off < 0x4CC]
+    g = Gen(block, 'fsq', 'feSquareInnerCode', 0x1C, 0x4CC, {10: 'zo', 11: 'xp', 2: 'F', 3: 'G3', 4: 'G4'})
+    g.combine = True
+    g.init_hyp = {2: 'hsp', 10: 'ha0', 11: 'ha1', 3: 'hG3', 4: 'hG4'}
+    g.basenames = ['zo', 'xp', 'G3', 'G4']
+    g.global_hyps = ('(hF : F.toNat % 4 = 0) (hZ : zo.toNat % 4 = 0) (hx : xp.toNat % 4 = 0)\n'
+                     '    (sFC : Sep F 0x50 B feSquareInnerCode.length) (sZC : Sep zo 0x50 B feSquareInnerCode.length)\n'
+                     '    (sXF : Sep xp 40 F 0x50) (sXZ : Sep xp 40 zo 0x50) (sFZ : Sep F 0x50 zo 0x50)')
+    g.global_args = 'hF hZ hx sFC sZC sXF sXZ sFZ'
+    g.regions = [('F', 0x50, 'hxF', 'sFC', 'hF'), ('zo', 0x50, 'hxZ', 'sZC', 'hZ')]
+    g.region_sep = {('F', 'zo'): 'sFZ', ('zo', 'F'): 'sFZ.symm'}
+    g.step_seg('fsq', {'xp': ('hx', ['sXF', 'sXZ'])}, 40,
+               [('F', o) for o in SQ_KEEP_SLOTS], [('zo', 4 * i) for i in range(20)])
+    g.facts()
+    rnd = random.Random(710)
+    runs = []
+    for _ in range(64):
+        x = [rnd.getrandbits(32) for _ in range(10)]
+        regs0 = [0] * 32
+        regs0[2], regs0[10], regs0[11] = 0x10000, 0x3000, 0x2000
+        mem = {0x2000 + 4 * k: x[k] for k in range(10)}
+        vals, _ = simulate(block, regs0, mem)
+        runs.append((x, vals))
+    terms = []
+    for k in range(10):
+        plain, grp = SQ_TERMS[k]
+        terms.append([(sq_val(a, i), sq_val(b, j), False) for a, i, b, j in plain] +
+                     [(sq_val(a, i), sq_val(b, j), True) for a, i, b, j in grp])
+    prods, lemmas, body, zfacts = prodsum(g, runs, terms, 'fsq')
+    return g, runs, prods, lemmas, body, zfacts
+
+
+def write_sq():
+    g, runs, prods, lemmas, body, zfacts = gen_sq()
+    o = ['import C3BootProofs.Proofs.Fe25519Decode', '',
+         '/-! # The straight-line body of `FieldElement2625::square_inner`, as compiled', '',
+         '`scripts/gen-fe25519.py` writes this file from the decoded instructions: a',
+         'theorem for each 40 instructions, the facts for each product and sum, and',
+         '`fsq_body`, which chains them. -/', '',
+         'namespace C3.RV32', '', 'open C3.Image', '']
+    for t in g.seg_thms:
+        o += [t, '']
+    for lm in lemmas:
+        o += [lm, '']
+    keep = ' ∧\n      '.join(f'memLoad32 M\' (F + 0x{s_:X}) = memLoad32 M (F + 0x{s_:X})' for s_ in SQ_KEEP_SLOTS)
+    o += ['set_option maxHeartbeats 40000000 in', 'set_option maxRecDepth 100000 in',
+          '/-- **The body of `square_inner`**, from 0x1C to the restores at 0x4CC: the',
+          'ten `u64` sums it stores at `zo` are `feSqZ` of the operand\'s limbs, it',
+          'writes nothing outside its frame and the sums, and it leaves the frame',
+          'slots that hold the saved registers alone. -/',
+          'theorem fsq_body {M : Word → BitVec 8} {B F zo xp : Word} {n : Machine} (s : St M B n 0x1C (reg n))',
+          '    (hc : CodeIn M B feSquareInnerCode) (hsp : reg n sp = F) (ha0 : reg n a0 = zo) (ha1 : reg n a1 = xp)',
+          '    (hF : F.toNat % 4 = 0) (hZ : zo.toNat % 4 = 0) (hx : xp.toNat % 4 = 0)',
+          '    (sFC : Sep F 0x50 B feSquareInnerCode.length) (sZC : Sep zo 0x50 B feSquareInnerCode.length)',
+          '    (sXF : Sep xp 40 F 0x50) (sXZ : Sep xp 40 zo 0x50) (sFZ : Sep F 0x50 zo 0x50) :',
+          '    ∃ n\' M\', Steps n n\' ∧ St M\' B n\' 0x4CC (reg n\') ∧',
+          '      (∀ x, Sep F 0x50 x 1 → Sep zo 0x50 x 1 → M\' x = M x) ∧',
+          f'      {keep} ∧',
+          '      [u64At M\' zo 0, u64At M\' zo 1, u64At M\' zo 2, u64At M\' zo 3, u64At M\' zo 4, u64At M\' zo 5,',
+          '        u64At M\' zo 6, u64At M\' zo 7, u64At M\' zo 8, u64At M\' zo 9] =',
+          '        feSqZ (limbAt M xp 0) (limbAt M xp 1) (limbAt M xp 2) (limbAt M xp 3) (limbAt M xp 4)',
+          '          (limbAt M xp 5) (limbAt M xp 6) (limbAt M xp 7) (limbAt M xp 8) (limbAt M xp 9) ∧',
+          '      reg n\' sp = F ∧ reg n\' (3 : Fin 32) = reg n (3 : Fin 32) ∧ reg n\' (4 : Fin 32) = reg n (4 : Fin 32) := by',
+          '  obtain ⟨G3, hG3⟩ : ∃ g, reg n (3 : Fin 32) = g := ⟨_, rfl⟩',
+          '  obtain ⟨G4, hG4⟩ : ∃ g, reg n (4 : Fin 32) = g := ⟨_, rfl⟩']
+    o += g.lines
+    o += body
+    xs = [g.inputs[('xp', 4 * i)] for i in range(10)]
+    for i, w in enumerate(xs):
+        o.append(f'  obtain ⟨X{i}, eX{i}⟩ : ∃ X, limbAt M xp {i} = X := ⟨_, rfl⟩')
+        o.append(f'  have hX{i} : {w}.toNat = X{i} := by rw [← eX{i}, ← hv{w[1:]}]; rfl')
+    w2, w19 = {}, {}
+    for (kz, t), (lo, hi, xa, yb, klo, khi) in prods.items():
+        plain, grp = SQ_TERMS[kz]
+        a, i, b, j = (plain + grp)[t]
+        for kind, idx, word in ((a, i, xa), (b, j, yb)):
+            if kind == 'x2':
+                w2.setdefault(idx, set()).add(word)
+            elif kind == 'x19':
+                w19.setdefault(idx, set()).add(word)
+    eqs = []
+    for i, wsx in sorted(w2.items()):
+        if len(wsx) != 1:
+            raise Exception(f'x{i}*2 in several words {wsx}')
+        w = wsx.pop()
+        o.append(f'  have g2_{i} : 2 * {xs[i]}.toNat % 2 ^ 32 = {w}.toNat := by rw [t{w[1:]}, Nat.pow_one, Nat.mul_comm]')
+        eqs.append(f'g2_{i}')
+    for i, wsx in sorted(w19.items()):
+        if len(wsx) != 1:
+            raise Exception(f'x{i}*19 in several words {wsx}')
+        w = wsx.pop()
+        o.append(f'  have g19_{i} : 19 * {xs[i]}.toNat % 2 ^ 32 = {w}.toNat := by rw [t{w[1:]}, Nat.mul_comm]')
+        eqs.append(f'g19_{i}')
+    mlast = g.mem_final
+    for kz in range(10):
+        lo, hi, hn = zfacts[kz]
+        for off, w in ((8 * kz, lo), (8 * kz + 4, hi)):
+            si = g.final_slot[('zo', off)]
+            if g.stores[si][2] != w:
+                raise Exception(f'slot zo+{off:#x} holds {g.stores[si][2]}, not {w}')
+        o.append(f'  have uz{kz} : u64At {mlast} zo {kz} = {lo}.toNat + 2 ^ 32 * {hi}.toNat := by')
+        o.append(f'    unfold u64At')
+        o.append(f'    rw [show zo + BitVec.ofNat 32 (8 * {kz}) = zo + 0x{8 * kz:X} from rfl,')
+        o.append(f'      show zo + BitVec.ofNat 32 (8 * {kz} + 4) = zo + 0x{8 * kz + 4:X} from rfl,')
+        o.append(f'      {g.slot_facts[("zo", 8 * kz)]}, {g.slot_facts[("zo", 8 * kz + 4)]}]')
+    steps = g.steps_final
+    chain = steps[-1]
+    for c in reversed(steps[:-1]):
+        chain = f'{c}.trans ({chain})'
+    last = len(steps) - 1
+    o.append(f'  refine ⟨{g.n_final}, {mlast}, {chain}, ug{last}, frg{last}, ' +
+             ', '.join(g.slot_facts[('F', s_)] for s_ in SQ_KEEP_SLOTS) + ', ?_, ' +
+             f'{g.reg_facts[2]}, {g.reg_facts[3]}.trans hG3.symm, {g.reg_facts[4]}.trans hG4.symm⟩')
+    o.append('  rw [' + ', '.join(f'uz{k}' for k in range(10)) + ', ' + ', '.join(f'eX{i}' for i in range(10)) + ']')
+    o.append('  simp only [feSqZ]')
+    o.append('  rw [' + ', '.join(f'← hX{i}' for i in range(10)) + ']')
+    o.append('  rw [' + ', '.join(eqs) + ']')
+    o.append('  rw [' + ', '.join(zfacts[k][2] for k in range(10)) + ']')
+    o += ['', 'end C3.RV32']
+    open(os.path.join(ROOT, 'C3BootProofs/Proofs/FeSqBody.lean'), 'w').write('\n'.join(o) + '\n')
 
 
 OUT_REGS = ['a2', 'a3', 'a4', '(8 : Fin 32)', 'a5', '(5 : Fin 32)', 'a1', 'a6', '(6 : Fin 32)', '(9 : Fin 32)']
@@ -1112,21 +1314,21 @@ def write_mul():
     for kz in range(10):
         lo, hi, hn = zfacts[kz]
         for part, off, w in (('l', 0x98 + 8 * kz, lo), ('h', 0x9C + 8 * kz, hi)):
-            si = g.final_slot[off]
+            si = g.final_slot[('F', off)]
             if g.stores[si][2] != w:
                 raise Exception(f'slot {off:#x} holds {g.stores[si][2]}, not {w}')
         o.append(f'  have uz{kz} : u64At {mlast} (F + 0x98) {kz} = {lo}.toNat + 2 ^ 32 * {hi}.toNat := by')
         o.append(f'    unfold u64At')
         o.append(f'    rw [show F + 0x98 + BitVec.ofNat 32 (8 * {kz}) = F + 0x{0x98 + 8 * kz:X} by rw [BitVec.add_assoc]; rfl,')
         o.append(f'      show F + 0x98 + BitVec.ofNat 32 (8 * {kz} + 4) = F + 0x{0x9C + 8 * kz:X} by rw [BitVec.add_assoc]; rfl,')
-        o.append(f'      {g.slot_facts[0x98 + 8 * kz]}, {g.slot_facts[0x9C + 8 * kz]}]')
+        o.append(f'      {g.slot_facts[("F", 0x98 + 8 * kz)]}, {g.slot_facts[("F", 0x9C + 8 * kz)]}]')
     steps = g.steps_final
     chain = steps[-1]
     for c in reversed(steps[:-1]):
         chain = f'{c}.trans ({chain})'
     last = len(steps) - 1
     o.append(f'  refine ⟨{g.n_final}, {mlast}, {chain}, ug{last}, frg{last}, ' +
-             ', '.join(g.slot_facts[s_] for s_ in MUL_KEEP_SLOTS) + ', ?_, ' +
+             ', '.join(g.slot_facts[('F', s_)] for s_ in MUL_KEEP_SLOTS) + ', ?_, ' +
              f'{g.reg_facts[2]}, {g.reg_facts[3]}.trans hG3.symm, {g.reg_facts[4]}.trans hG4.symm⟩')
     o.append('  rw [' + ', '.join(f'uz{k}' for k in range(10)) + ', ' + ', '.join(f'eX{i}' for i in range(10)) + ', ' +
              ', '.join(f'eY{i}' for i in range(10)) + ']')
@@ -1140,6 +1342,7 @@ def write_mul():
 
 def main():
     write_mul()
+    write_sq()
     g, sp, outs, lo, body, lemmas, small = gen_reduce()
     last = g.last
     rds = sorted({i.rd for i in g.block if i.rd})

@@ -937,6 +937,421 @@ theorem fmu_at_8da : fetchRel feMulCode 0x8DA = some (.load .lw (27 : Fin 32) sp
 theorem fmu_at_8dc : fetchRel feMulCode 0x8DC = some (.aluImm .add sp sp 0x120, 2) := by decide
 theorem fmu_at_8de : fetchRel feMulCode 0x8DE = some (.jalr x0 ra 0x0, 2) := by decide
 
+
+theorem fsq_at_0 : fetchRel feSquareInnerCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFB0, 2) := by decide
+theorem fsq_at_2 : fetchRel feSquareInnerCode 0x2 = some (.store .sw sp ra 0x4C, 2) := by decide
+theorem fsq_at_4 : fetchRel feSquareInnerCode 0x4 = some (.store .sw sp (8 : Fin 32) 0x48, 2) := by decide
+theorem fsq_at_6 : fetchRel feSquareInnerCode 0x6 = some (.store .sw sp (9 : Fin 32) 0x44, 2) := by decide
+theorem fsq_at_8 : fetchRel feSquareInnerCode 0x8 = some (.store .sw sp (18 : Fin 32) 0x40, 2) := by decide
+theorem fsq_at_a : fetchRel feSquareInnerCode 0xA = some (.store .sw sp (19 : Fin 32) 0x3C, 2) := by decide
+theorem fsq_at_c : fetchRel feSquareInnerCode 0xC = some (.store .sw sp (20 : Fin 32) 0x38, 2) := by decide
+theorem fsq_at_e : fetchRel feSquareInnerCode 0xE = some (.store .sw sp (21 : Fin 32) 0x34, 2) := by decide
+theorem fsq_at_10 : fetchRel feSquareInnerCode 0x10 = some (.store .sw sp (22 : Fin 32) 0x30, 2) := by decide
+theorem fsq_at_12 : fetchRel feSquareInnerCode 0x12 = some (.store .sw sp (23 : Fin 32) 0x2C, 2) := by decide
+theorem fsq_at_14 : fetchRel feSquareInnerCode 0x14 = some (.store .sw sp (24 : Fin 32) 0x28, 2) := by decide
+theorem fsq_at_16 : fetchRel feSquareInnerCode 0x16 = some (.store .sw sp (25 : Fin 32) 0x24, 2) := by decide
+theorem fsq_at_18 : fetchRel feSquareInnerCode 0x18 = some (.store .sw sp (26 : Fin 32) 0x20, 2) := by decide
+theorem fsq_at_1a : fetchRel feSquareInnerCode 0x1A = some (.store .sw sp (27 : Fin 32) 0x1C, 2) := by decide
+theorem fsq_at_1c : fetchRel feSquareInnerCode 0x1C = some (.alu .add (6 : Fin 32) x0 a0, 2) := by decide
+theorem fsq_at_1e : fetchRel feSquareInnerCode 0x1E = some (.load .lw a0 a1 0x24, 2) := by decide
+theorem fsq_at_20 : fetchRel feSquareInnerCode 0x20 = some (.store .sw sp a0 0x18, 2) := by decide
+theorem fsq_at_22 : fetchRel feSquareInnerCode 0x22 = some (.load .lw a6 a1 0x14, 4) := by decide
+theorem fsq_at_26 : fetchRel feSquareInnerCode 0x26 = some (.load .lw a5 a1 0x1C, 2) := by decide
+theorem fsq_at_28 : fetchRel feSquareInnerCode 0x28 = some (.store .sw sp a5 0xC, 2) := by decide
+theorem fsq_at_2a : fetchRel feSquareInnerCode 0x2A = some (.load .lw (29 : Fin 32) a1 0x18, 4) := by decide
+theorem fsq_at_2e : fetchRel feSquareInnerCode 0x2E = some (.aluImm .add a3 x0 0x13, 2) := by decide
+theorem fsq_at_30 : fetchRel feSquareInnerCode 0x30 = some (.load .lw (25 : Fin 32) a1 0x4, 4) := by decide
+theorem fsq_at_34 : fetchRel feSquareInnerCode 0x34 = some (.load .lw (18 : Fin 32) a1 0xC, 4) := by decide
+theorem fsq_at_38 : fetchRel feSquareInnerCode 0x38 = some (.alu .mul (22 : Fin 32) a0 a3, 4) := by decide
+theorem fsq_at_3c : fetchRel feSquareInnerCode 0x3C = some (.alu .mul a4 a6 a3, 4) := by decide
+theorem fsq_at_40 : fetchRel feSquareInnerCode 0x40 = some (.alu .mul (26 : Fin 32) a5 a3, 4) := by decide
+theorem fsq_at_44 : fetchRel feSquareInnerCode 0x44 = some (.load .lw a0 a1 0x20, 2) := by decide
+theorem fsq_at_46 : fetchRel feSquareInnerCode 0x46 = some (.store .sw sp a0 0x14, 2) := by decide
+theorem fsq_at_48 : fetchRel feSquareInnerCode 0x48 = some (.load .lw a5 a1 0x0, 2) := by decide
+theorem fsq_at_4a : fetchRel feSquareInnerCode 0x4A = some (.load .lw (20 : Fin 32) a1 0x8, 4) := by decide
+theorem fsq_at_4e : fetchRel feSquareInnerCode 0x4E = some (.load .lw (19 : Fin 32) a1 0x10, 4) := by decide
+theorem fsq_at_52 : fetchRel feSquareInnerCode 0x52 = some (.aluImm .sll (23 : Fin 32) (25 : Fin 32) 0x1, 4) := by decide
+theorem fsq_at_56 : fetchRel feSquareInnerCode 0x56 = some (.aluImm .sll (31 : Fin 32) (18 : Fin 32) 0x1, 4) := by decide
+theorem fsq_at_5a : fetchRel feSquareInnerCode 0x5A = some (.alu .mul (27 : Fin 32) (29 : Fin 32) a3, 4) := by decide
+theorem fsq_at_5e : fetchRel feSquareInnerCode 0x5E = some (.alu .mul (24 : Fin 32) a0 a3, 4) := by decide
+theorem fsq_at_62 : fetchRel feSquareInnerCode 0x62 = some (.alu .mulhu a1 (22 : Fin 32) (23 : Fin 32), 4) := by decide
+theorem fsq_at_66 : fetchRel feSquareInnerCode 0x66 = some (.alu .mulhu a3 (26 : Fin 32) (31 : Fin 32), 4) := by decide
+theorem fsq_at_6a : fetchRel feSquareInnerCode 0x6A = some (.alu .mulhu (9 : Fin 32) a4 a6, 4) := by decide
+theorem fsq_at_6e : fetchRel feSquareInnerCode 0x6E = some (.alu .mul (8 : Fin 32) (26 : Fin 32) (31 : Fin 32), 4) := by decide
+theorem fsq_at_72 : fetchRel feSquareInnerCode 0x72 = some (.alu .mul a4 a4 a6, 4) := by decide
+theorem fsq_at_76 : fetchRel feSquareInnerCode 0x76 = some (.store .sw sp a6 0x8, 2) := by decide
+theorem fsq_at_78 : fetchRel feSquareInnerCode 0x78 = some (.aluImm .sll a0 (20 : Fin 32) 0x1, 4) := by decide
+theorem fsq_at_7c : fetchRel feSquareInnerCode 0x7C = some (.alu .mul a2 (22 : Fin 32) (23 : Fin 32), 4) := by decide
+theorem fsq_at_80 : fetchRel feSquareInnerCode 0x80 = some (.aluImm .sll (28 : Fin 32) (19 : Fin 32) 0x1, 4) := by decide
+theorem fsq_at_84 : fetchRel feSquareInnerCode 0x84 = some (.alu .mulhu (30 : Fin 32) a5 a5, 4) := by decide
+theorem fsq_at_88 : fetchRel feSquareInnerCode 0x88 = some (.alu .mul (21 : Fin 32) a5 a5, 4) := by decide
+theorem fsq_at_8c : fetchRel feSquareInnerCode 0x8C = some (.alu .mulhu ra (24 : Fin 32) a0, 4) := by decide
+theorem fsq_at_90 : fetchRel feSquareInnerCode 0x90 = some (.store .sw sp a0 0x10, 2) := by decide
+theorem fsq_at_92 : fetchRel feSquareInnerCode 0x92 = some (.alu .add a3 a3 (9 : Fin 32), 2) := by decide
+theorem fsq_at_94 : fetchRel feSquareInnerCode 0x94 = some (.alu .mulhu (9 : Fin 32) (27 : Fin 32) (28 : Fin 32), 4) := by decide
+theorem fsq_at_98 : fetchRel feSquareInnerCode 0x98 = some (.alu .add a4 a4 (8 : Fin 32), 2) := by decide
+theorem fsq_at_9a : fetchRel feSquareInnerCode 0x9A = some (.alu .add a1 a1 a3, 2) := by decide
+theorem fsq_at_9c : fetchRel feSquareInnerCode 0x9C = some (.alu .mul a3 (27 : Fin 32) (28 : Fin 32), 4) := by decide
+theorem fsq_at_a0 : fetchRel feSquareInnerCode 0xA0 = some (.alu .sltu (8 : Fin 32) a4 (8 : Fin 32), 4) := by decide
+theorem fsq_at_a4 : fetchRel feSquareInnerCode 0xA4 = some (.alu .add a2 a2 a4, 2) := by decide
+theorem fsq_at_a6 : fetchRel feSquareInnerCode 0xA6 = some (.alu .add a1 a1 (8 : Fin 32), 2) := by decide
+theorem fsq_at_a8 : fetchRel feSquareInnerCode 0xA8 = some (.alu .mul (8 : Fin 32) (24 : Fin 32) a0, 4) := by decide
+theorem fsq_at_ac : fetchRel feSquareInnerCode 0xAC = some (.alu .sltu a4 a2 a4, 4) := by decide
+theorem fsq_at_b0 : fetchRel feSquareInnerCode 0xB0 = some (.alu .add a1 a1 a4, 2) := by decide
+theorem fsq_at_b2 : fetchRel feSquareInnerCode 0xB2 = some (.aluImm .srl a4 a2 0x1F, 4) := by decide
+theorem fsq_at_b6 : fetchRel feSquareInnerCode 0xB6 = some (.aluImm .sll a1 a1 0x1, 2) := by decide
+theorem fsq_at_b8 : fetchRel feSquareInnerCode 0xB8 = some (.aluImm .sll (5 : Fin 32) a5 0x1, 4) := by decide
+theorem fsq_at_bc : fetchRel feSquareInnerCode 0xBC = some (.alu .or (7 : Fin 32) a1 a4, 4) := by decide
+theorem fsq_at_c0 : fetchRel feSquareInnerCode 0xC0 = some (.aluImm .sll a2 a2 0x1, 2) := by decide
+theorem fsq_at_c2 : fetchRel feSquareInnerCode 0xC2 = some (.alu .add (21 : Fin 32) (21 : Fin 32) a3, 2) := by decide
+theorem fsq_at_c4 : fetchRel feSquareInnerCode 0xC4 = some (.alu .sltu a3 (21 : Fin 32) a3, 4) := by decide
+theorem fsq_at_c8 : fetchRel feSquareInnerCode 0xC8 = some (.alu .add (30 : Fin 32) (30 : Fin 32) (9 : Fin 32), 2) := by decide
+theorem fsq_at_ca : fetchRel feSquareInnerCode 0xCA = some (.alu .add (8 : Fin 32) (8 : Fin 32) (21 : Fin 32), 2) := by decide
+theorem fsq_at_cc : fetchRel feSquareInnerCode 0xCC = some (.alu .add (30 : Fin 32) (30 : Fin 32) ra, 2) := by decide
+theorem fsq_at_ce : fetchRel feSquareInnerCode 0xCE = some (.alu .sltu a4 (8 : Fin 32) (21 : Fin 32), 4) := by decide
+theorem fsq_at_d2 : fetchRel feSquareInnerCode 0xD2 = some (.alu .add a3 a3 (30 : Fin 32), 2) := by decide
+theorem fsq_at_d4 : fetchRel feSquareInnerCode 0xD4 = some (.alu .add ra a3 a4, 4) := by decide
+theorem fsq_at_d8 : fetchRel feSquareInnerCode 0xD8 = some (.alu .add (21 : Fin 32) (8 : Fin 32) a2, 4) := by decide
+theorem fsq_at_dc : fetchRel feSquareInnerCode 0xDC = some (.alu .mul a2 (22 : Fin 32) (20 : Fin 32), 4) := by decide
+theorem fsq_at_e0 : fetchRel feSquareInnerCode 0xE0 = some (.alu .mul a4 (26 : Fin 32) (19 : Fin 32), 4) := by decide
+theorem fsq_at_e4 : fetchRel feSquareInnerCode 0xE4 = some (.alu .mulhu (9 : Fin 32) (22 : Fin 32) (20 : Fin 32), 4) := by decide
+theorem fsq_at_e8 : fetchRel feSquareInnerCode 0xE8 = some (.alu .mulhu a3 (26 : Fin 32) (19 : Fin 32), 4) := by decide
+theorem fsq_at_ec : fetchRel feSquareInnerCode 0xEC = some (.aluImm .sll (30 : Fin 32) a6 0x1, 4) := by decide
+theorem fsq_at_f0 : fetchRel feSquareInnerCode 0xF0 = some (.alu .sltu (8 : Fin 32) (21 : Fin 32) (8 : Fin 32), 4) := by decide
+theorem fsq_at_f4 : fetchRel feSquareInnerCode 0xF4 = some (.alu .add (8 : Fin 32) (8 : Fin 32) ra, 2) := by decide
+theorem fsq_at_f6 : fetchRel feSquareInnerCode 0xF6 = some (.alu .mul ra (5 : Fin 32) (25 : Fin 32), 4) := by decide
+theorem fsq_at_fa : fetchRel feSquareInnerCode 0xFA = some (.alu .mulhu a5 (5 : Fin 32) (25 : Fin 32), 4) := by decide
+theorem fsq_at_fe : fetchRel feSquareInnerCode 0xFE = some (.alu .mulhu a1 (27 : Fin 32) (30 : Fin 32), 4) := by decide
+theorem fsq_at_102 : fetchRel feSquareInnerCode 0x102 = some (.alu .mulhu (17 : Fin 32) (24 : Fin 32) (31 : Fin 32), 4) := by decide
+theorem fsq_at_106 : fetchRel feSquareInnerCode 0x106 = some (.alu .mul a0 (27 : Fin 32) (30 : Fin 32), 4) := by decide
+theorem fsq_at_10a : fetchRel feSquareInnerCode 0x10A = some (.alu .add a4 a4 a2, 2) := by decide
+theorem fsq_at_10c : fetchRel feSquareInnerCode 0x10C = some (.alu .mul a6 (24 : Fin 32) (31 : Fin 32), 4) := by decide
+theorem fsq_at_110 : fetchRel feSquareInnerCode 0x110 = some (.alu .add a3 a3 (9 : Fin 32), 2) := by decide
+theorem fsq_at_112 : fetchRel feSquareInnerCode 0x112 = some (.alu .sltu a2 a4 a2, 4) := by decide
+theorem fsq_at_116 : fetchRel feSquareInnerCode 0x116 = some (.alu .add (7 : Fin 32) (7 : Fin 32) (8 : Fin 32), 2) := by decide
+theorem fsq_at_118 : fetchRel feSquareInnerCode 0x118 = some (.alu .add a2 a2 a3, 2) := by decide
+theorem fsq_at_11a : fetchRel feSquareInnerCode 0x11A = some (.aluImm .sll a2 a2 0x1, 2) := by decide
+theorem fsq_at_11c : fetchRel feSquareInnerCode 0x11C = some (.aluImm .srl a3 a4 0x1F, 4) := by decide
+theorem fsq_at_120 : fetchRel feSquareInnerCode 0x120 = some (.alu .or a2 a2 a3, 2) := by decide
+theorem fsq_at_122 : fetchRel feSquareInnerCode 0x122 = some (.alu .add a1 a1 a5, 2) := by decide
+theorem fsq_at_124 : fetchRel feSquareInnerCode 0x124 = some (.alu .add a1 a1 (17 : Fin 32), 2) := by decide
+theorem fsq_at_126 : fetchRel feSquareInnerCode 0x126 = some (.alu .add ra ra a0, 2) := by decide
+theorem fsq_at_128 : fetchRel feSquareInnerCode 0x128 = some (.aluImm .sll a4 a4 0x1, 2) := by decide
+theorem fsq_at_12a : fetchRel feSquareInnerCode 0x12A = some (.alu .add a6 a6 ra, 2) := by decide
+theorem fsq_at_12c : fetchRel feSquareInnerCode 0x12C = some (.alu .sltu a0 ra a0, 4) := by decide
+theorem fsq_at_130 : fetchRel feSquareInnerCode 0x130 = some (.alu .sltu a3 a6 ra, 4) := by decide
+theorem fsq_at_134 : fetchRel feSquareInnerCode 0x134 = some (.alu .add a0 a0 a1, 2) := by decide
+theorem fsq_at_136 : fetchRel feSquareInnerCode 0x136 = some (.alu .add a4 a4 a6, 2) := by decide
+theorem fsq_at_138 : fetchRel feSquareInnerCode 0x138 = some (.alu .mul (17 : Fin 32) (23 : Fin 32) (25 : Fin 32), 4) := by decide
+theorem fsq_at_13c : fetchRel feSquareInnerCode 0x13C = some (.alu .mulhu (25 : Fin 32) (23 : Fin 32) (25 : Fin 32), 4) := by decide
+theorem fsq_at_140 : fetchRel feSquareInnerCode 0x140 = some (.alu .mul (9 : Fin 32) (20 : Fin 32) (5 : Fin 32), 4) := by decide
+theorem fsq_at_144 : fetchRel feSquareInnerCode 0x144 = some (.alu .mulhu (8 : Fin 32) (20 : Fin 32) (5 : Fin 32), 4) := by decide
+theorem fsq_at_148 : fetchRel feSquareInnerCode 0x148 = some (.alu .add a0 a0 a3, 2) := by decide
+theorem fsq_at_14a : fetchRel feSquareInnerCode 0x14A = some (.alu .sltu a3 a4 a6, 4) := by decide
+theorem fsq_at_14e : fetchRel feSquareInnerCode 0x14E = some (.alu .add a0 a0 a3, 2) := by decide
+theorem fsq_at_150 : fetchRel feSquareInnerCode 0x150 = some (.store .sw (6 : Fin 32) (21 : Fin 32) 0x0, 4) := by decide
+theorem fsq_at_154 : fetchRel feSquareInnerCode 0x154 = some (.store .sw (6 : Fin 32) (7 : Fin 32) 0x4, 4) := by decide
+theorem fsq_at_158 : fetchRel feSquareInnerCode 0x158 = some (.alu .add a0 a0 a2, 2) := by decide
+theorem fsq_at_15a : fetchRel feSquareInnerCode 0x15A = some (.alu .mul a2 (22 : Fin 32) (31 : Fin 32), 4) := by decide
+theorem fsq_at_15e : fetchRel feSquareInnerCode 0x15E = some (.alu .mul a3 (26 : Fin 32) (30 : Fin 32), 4) := by decide
+theorem fsq_at_162 : fetchRel feSquareInnerCode 0x162 = some (.alu .mulhu a1 (22 : Fin 32) (31 : Fin 32), 4) := by decide
+theorem fsq_at_166 : fetchRel feSquareInnerCode 0x166 = some (.alu .mulhu a5 (26 : Fin 32) (30 : Fin 32), 4) := by decide
+theorem fsq_at_16a : fetchRel feSquareInnerCode 0x16A = some (.alu .add (8 : Fin 32) (8 : Fin 32) (25 : Fin 32), 2) := by decide
+theorem fsq_at_16c : fetchRel feSquareInnerCode 0x16C = some (.alu .add (17 : Fin 32) (17 : Fin 32) (9 : Fin 32), 2) := by decide
+theorem fsq_at_16e : fetchRel feSquareInnerCode 0x16E = some (.alu .sltu (9 : Fin 32) (17 : Fin 32) (9 : Fin 32), 4) := by decide
+theorem fsq_at_172 : fetchRel feSquareInnerCode 0x172 = some (.store .sw (6 : Fin 32) a4 0x8, 4) := by decide
+theorem fsq_at_176 : fetchRel feSquareInnerCode 0x176 = some (.store .sw (6 : Fin 32) a0 0xC, 4) := by decide
+theorem fsq_at_17a : fetchRel feSquareInnerCode 0x17A = some (.alu .add (8 : Fin 32) (8 : Fin 32) (9 : Fin 32), 2) := by decide
+theorem fsq_at_17c : fetchRel feSquareInnerCode 0x17C = some (.alu .mulhu a0 (27 : Fin 32) (29 : Fin 32), 4) := by decide
+theorem fsq_at_180 : fetchRel feSquareInnerCode 0x180 = some (.alu .mul a4 (27 : Fin 32) (29 : Fin 32), 4) := by decide
+theorem fsq_at_184 : fetchRel feSquareInnerCode 0x184 = some (.alu .mulhu (9 : Fin 32) (24 : Fin 32) (28 : Fin 32), 4) := by decide
+theorem fsq_at_188 : fetchRel feSquareInnerCode 0x188 = some (.alu .add a3 a3 a2, 2) := by decide
+theorem fsq_at_18a : fetchRel feSquareInnerCode 0x18A = some (.alu .add a1 a1 a5, 2) := by decide
+theorem fsq_at_18c : fetchRel feSquareInnerCode 0x18C = some (.alu .sltu a2 a3 a2, 4) := by decide
+theorem fsq_at_190 : fetchRel feSquareInnerCode 0x190 = some (.alu .mul a5 (24 : Fin 32) (28 : Fin 32), 4) := by decide
+theorem fsq_at_194 : fetchRel feSquareInnerCode 0x194 = some (.alu .add (27 : Fin 32) x0 (28 : Fin 32), 2) := by decide
+theorem fsq_at_196 : fetchRel feSquareInnerCode 0x196 = some (.alu .add a1 a1 a2, 2) := by decide
+theorem fsq_at_198 : fetchRel feSquareInnerCode 0x198 = some (.aluImm .sll a1 a1 0x1, 2) := by decide
+theorem fsq_at_19a : fetchRel feSquareInnerCode 0x19A = some (.aluImm .srl a2 a3 0x1F, 4) := by decide
+theorem fsq_at_19e : fetchRel feSquareInnerCode 0x19E = some (.alu .or a6 a1 a2, 4) := by decide
+theorem fsq_at_1a2 : fetchRel feSquareInnerCode 0x1A2 = some (.aluImm .sll a2 a3 0x1, 4) := by decide
+theorem fsq_at_1a6 : fetchRel feSquareInnerCode 0x1A6 = some (.alu .add a4 a4 (17 : Fin 32), 2) := by decide
+theorem fsq_at_1a8 : fetchRel feSquareInnerCode 0x1A8 = some (.alu .add a0 a0 (8 : Fin 32), 2) := by decide
+theorem fsq_at_1aa : fetchRel feSquareInnerCode 0x1AA = some (.alu .sltu a3 a4 (17 : Fin 32), 4) := by decide
+theorem fsq_at_1ae : fetchRel feSquareInnerCode 0x1AE = some (.alu .add a0 a0 (9 : Fin 32), 2) := by decide
+theorem fsq_at_1b0 : fetchRel feSquareInnerCode 0x1B0 = some (.alu .mul (9 : Fin 32) (18 : Fin 32) (5 : Fin 32), 4) := by decide
+theorem fsq_at_1b4 : fetchRel feSquareInnerCode 0x1B4 = some (.alu .mul (8 : Fin 32) (23 : Fin 32) (20 : Fin 32), 4) := by decide
+theorem fsq_at_1b8 : fetchRel feSquareInnerCode 0x1B8 = some (.alu .add a0 a0 a3, 2) := by decide
+theorem fsq_at_1ba : fetchRel feSquareInnerCode 0x1BA = some (.alu .add a5 a5 a4, 2) := by decide
+theorem fsq_at_1bc : fetchRel feSquareInnerCode 0x1BC = some (.alu .sltu a3 a5 a4, 4) := by decide
+theorem fsq_at_1c0 : fetchRel feSquareInnerCode 0x1C0 = some (.alu .add (17 : Fin 32) a5 a2, 4) := by decide
+theorem fsq_at_1c4 : fetchRel feSquareInnerCode 0x1C4 = some (.alu .mulhu (7 : Fin 32) (18 : Fin 32) (5 : Fin 32), 4) := by decide
+theorem fsq_at_1c8 : fetchRel feSquareInnerCode 0x1C8 = some (.alu .mulhu (21 : Fin 32) (23 : Fin 32) (20 : Fin 32), 4) := by decide
+theorem fsq_at_1cc : fetchRel feSquareInnerCode 0x1CC = some (.alu .add a0 a0 a3, 2) := by decide
+theorem fsq_at_1ce : fetchRel feSquareInnerCode 0x1CE = some (.alu .sltu a3 (17 : Fin 32) a5, 4) := by decide
+theorem fsq_at_1d2 : fetchRel feSquareInnerCode 0x1D2 = some (.alu .mulhu (25 : Fin 32) (24 : Fin 32) (30 : Fin 32), 4) := by decide
+theorem fsq_at_1d6 : fetchRel feSquareInnerCode 0x1D6 = some (.alu .mul a2 (24 : Fin 32) (30 : Fin 32), 4) := by decide
+theorem fsq_at_1da : fetchRel feSquareInnerCode 0x1DA = some (.alu .add a0 a0 a3, 2) := by decide
+theorem fsq_at_1dc : fetchRel feSquareInnerCode 0x1DC = some (.alu .add (8 : Fin 32) (8 : Fin 32) (9 : Fin 32), 2) := by decide
+theorem fsq_at_1de : fetchRel feSquareInnerCode 0x1DE = some (.alu .mul a3 (22 : Fin 32) (19 : Fin 32), 4) := by decide
+theorem fsq_at_1e2 : fetchRel feSquareInnerCode 0x1E2 = some (.alu .mul a4 (26 : Fin 32) (29 : Fin 32), 4) := by decide
+theorem fsq_at_1e6 : fetchRel feSquareInnerCode 0x1E6 = some (.alu .mulhu a1 (22 : Fin 32) (19 : Fin 32), 4) := by decide
+theorem fsq_at_1ea : fetchRel feSquareInnerCode 0x1EA = some (.alu .mulhu a5 (26 : Fin 32) (29 : Fin 32), 4) := by decide
+theorem fsq_at_1ee : fetchRel feSquareInnerCode 0x1EE = some (.alu .add (7 : Fin 32) (7 : Fin 32) (21 : Fin 32), 2) := by decide
+theorem fsq_at_1f0 : fetchRel feSquareInnerCode 0x1F0 = some (.alu .sltu (9 : Fin 32) (8 : Fin 32) (9 : Fin 32), 4) := by decide
+theorem fsq_at_1f4 : fetchRel feSquareInnerCode 0x1F4 = some (.alu .add a0 a0 a6, 2) := by decide
+theorem fsq_at_1f6 : fetchRel feSquareInnerCode 0x1F6 = some (.alu .add (7 : Fin 32) (7 : Fin 32) (9 : Fin 32), 2) := by decide
+theorem fsq_at_1f8 : fetchRel feSquareInnerCode 0x1F8 = some (.alu .add a2 a2 (8 : Fin 32), 2) := by decide
+theorem fsq_at_1fa : fetchRel feSquareInnerCode 0x1FA = some (.alu .add (7 : Fin 32) (7 : Fin 32) (25 : Fin 32), 2) := by decide
+theorem fsq_at_1fc : fetchRel feSquareInnerCode 0x1FC = some (.aluImm .sll a6 (29 : Fin 32) 0x1, 4) := by decide
+theorem fsq_at_200 : fetchRel feSquareInnerCode 0x200 = some (.alu .sltu (8 : Fin 32) a2 (8 : Fin 32), 4) := by decide
+theorem fsq_at_204 : fetchRel feSquareInnerCode 0x204 = some (.alu .add (7 : Fin 32) (7 : Fin 32) (8 : Fin 32), 2) := by decide
+theorem fsq_at_206 : fetchRel feSquareInnerCode 0x206 = some (.alu .add a4 a4 a3, 2) := by decide
+theorem fsq_at_208 : fetchRel feSquareInnerCode 0x208 = some (.alu .add a1 a1 a5, 2) := by decide
+theorem fsq_at_20a : fetchRel feSquareInnerCode 0x20A = some (.alu .sltu a3 a4 a3, 4) := by decide
+theorem fsq_at_20e : fetchRel feSquareInnerCode 0x20E = some (.alu .add a1 a1 a3, 2) := by decide
+theorem fsq_at_210 : fetchRel feSquareInnerCode 0x210 = some (.aluImm .sll a3 a4 0x1, 4) := by decide
+theorem fsq_at_214 : fetchRel feSquareInnerCode 0x214 = some (.aluImm .sll a1 a1 0x1, 2) := by decide
+theorem fsq_at_216 : fetchRel feSquareInnerCode 0x216 = some (.alu .add a3 a3 a2, 2) := by decide
+theorem fsq_at_218 : fetchRel feSquareInnerCode 0x218 = some (.aluImm .srl a4 a4 0x1F, 2) := by decide
+theorem fsq_at_21a : fetchRel feSquareInnerCode 0x21A = some (.alu .sltu a2 a3 a2, 4) := by decide
+theorem fsq_at_21e : fetchRel feSquareInnerCode 0x21E = some (.alu .or a1 a1 a4, 2) := by decide
+theorem fsq_at_220 : fetchRel feSquareInnerCode 0x220 = some (.alu .add a2 a2 (7 : Fin 32), 2) := by decide
+theorem fsq_at_222 : fetchRel feSquareInnerCode 0x222 = some (.alu .add a1 a1 a2, 2) := by decide
+theorem fsq_at_224 : fetchRel feSquareInnerCode 0x224 = some (.alu .mul a2 (22 : Fin 32) (30 : Fin 32), 4) := by decide
+theorem fsq_at_228 : fetchRel feSquareInnerCode 0x228 = some (.alu .mulhu a4 (22 : Fin 32) (30 : Fin 32), 4) := by decide
+theorem fsq_at_22c : fetchRel feSquareInnerCode 0x22C = some (.load .lw (9 : Fin 32) sp 0xC, 2) := by decide
+theorem fsq_at_22e : fetchRel feSquareInnerCode 0x22E = some (.alu .mul a5 (26 : Fin 32) (9 : Fin 32), 4) := by decide
+theorem fsq_at_232 : fetchRel feSquareInnerCode 0x232 = some (.alu .mulhu (8 : Fin 32) (26 : Fin 32) (9 : Fin 32), 4) := by decide
+theorem fsq_at_236 : fetchRel feSquareInnerCode 0x236 = some (.alu .add (26 : Fin 32) x0 (9 : Fin 32), 2) := by decide
+theorem fsq_at_238 : fetchRel feSquareInnerCode 0x238 = some (.store .sw (6 : Fin 32) (17 : Fin 32) 0x10, 4) := by decide
+theorem fsq_at_23c : fetchRel feSquareInnerCode 0x23C = some (.store .sw (6 : Fin 32) a0 0x14, 4) := by decide
+theorem fsq_at_240 : fetchRel feSquareInnerCode 0x240 = some (.store .sw (6 : Fin 32) a3 0x18, 4) := by decide
+theorem fsq_at_244 : fetchRel feSquareInnerCode 0x244 = some (.store .sw (6 : Fin 32) a1 0x1C, 4) := by decide
+theorem fsq_at_248 : fetchRel feSquareInnerCode 0x248 = some (.alu .mulhu (17 : Fin 32) (19 : Fin 32) (5 : Fin 32), 4) := by decide
+theorem fsq_at_24c : fetchRel feSquareInnerCode 0x24C = some (.alu .mul (7 : Fin 32) (19 : Fin 32) (5 : Fin 32), 4) := by decide
+theorem fsq_at_250 : fetchRel feSquareInnerCode 0x250 = some (.alu .mulhu (21 : Fin 32) (31 : Fin 32) (23 : Fin 32), 4) := by decide
+theorem fsq_at_254 : fetchRel feSquareInnerCode 0x254 = some (.alu .mul (9 : Fin 32) (31 : Fin 32) (23 : Fin 32), 4) := by decide
+theorem fsq_at_258 : fetchRel feSquareInnerCode 0x258 = some (.alu .mul a0 (20 : Fin 32) (20 : Fin 32), 4) := by decide
+theorem fsq_at_25c : fetchRel feSquareInnerCode 0x25C = some (.alu .mulhu a1 (20 : Fin 32) (20 : Fin 32), 4) := by decide
+theorem fsq_at_260 : fetchRel feSquareInnerCode 0x260 = some (.alu .add a5 a5 a2, 2) := by decide
+theorem fsq_at_262 : fetchRel feSquareInnerCode 0x262 = some (.alu .add a4 a4 (8 : Fin 32), 2) := by decide
+theorem fsq_at_264 : fetchRel feSquareInnerCode 0x264 = some (.alu .sltu a2 a5 a2, 4) := by decide
+theorem fsq_at_268 : fetchRel feSquareInnerCode 0x268 = some (.alu .mul (8 : Fin 32) (24 : Fin 32) a6, 4) := by decide
+theorem fsq_at_26c : fetchRel feSquareInnerCode 0x26C = some (.alu .add a2 a2 a4, 2) := by decide
+theorem fsq_at_26e : fetchRel feSquareInnerCode 0x26E = some (.aluImm .sll a2 a2 0x1, 2) := by decide
+theorem fsq_at_270 : fetchRel feSquareInnerCode 0x270 = some (.aluImm .srl a4 a5 0x1F, 4) := by decide
+theorem fsq_at_274 : fetchRel feSquareInnerCode 0x274 = some (.alu .mulhu a3 (24 : Fin 32) a6, 4) := by decide
+theorem fsq_at_278 : fetchRel feSquareInnerCode 0x278 = some (.alu .or a6 a2 a4, 4) := by decide
+theorem fsq_at_27c : fetchRel feSquareInnerCode 0x27C = some (.aluImm .sll a2 a5 0x1, 4) := by decide
+theorem fsq_at_280 : fetchRel feSquareInnerCode 0x280 = some (.alu .add a0 a0 (9 : Fin 32), 2) := by decide
+theorem fsq_at_282 : fetchRel feSquareInnerCode 0x282 = some (.alu .sltu a5 a0 (9 : Fin 32), 4) := by decide
+theorem fsq_at_286 : fetchRel feSquareInnerCode 0x286 = some (.alu .add a1 a1 (21 : Fin 32), 2) := by decide
+theorem fsq_at_288 : fetchRel feSquareInnerCode 0x288 = some (.alu .add (7 : Fin 32) (7 : Fin 32) a0, 2) := by decide
+theorem fsq_at_28a : fetchRel feSquareInnerCode 0x28A = some (.alu .add a1 a1 (17 : Fin 32), 2) := by decide
+theorem fsq_at_28c : fetchRel feSquareInnerCode 0x28C = some (.alu .sltu a0 (7 : Fin 32) a0, 4) := by decide
+theorem fsq_at_290 : fetchRel feSquareInnerCode 0x290 = some (.alu .add a1 a1 a5, 2) := by decide
+theorem fsq_at_292 : fetchRel feSquareInnerCode 0x292 = some (.alu .add a0 a0 a1, 2) := by decide
+theorem fsq_at_294 : fetchRel feSquareInnerCode 0x294 = some (.alu .add (8 : Fin 32) (8 : Fin 32) (7 : Fin 32), 2) := by decide
+theorem fsq_at_296 : fetchRel feSquareInnerCode 0x296 = some (.alu .sltu a1 (8 : Fin 32) (7 : Fin 32), 4) := by decide
+theorem fsq_at_29a : fetchRel feSquareInnerCode 0x29A = some (.alu .add a0 a0 a3, 2) := by decide
+theorem fsq_at_29c : fetchRel feSquareInnerCode 0x29C = some (.alu .add (7 : Fin 32) a0 a1, 4) := by decide
+theorem fsq_at_2a0 : fetchRel feSquareInnerCode 0x2A0 = some (.alu .add (17 : Fin 32) (8 : Fin 32) a2, 4) := by decide
+theorem fsq_at_2a4 : fetchRel feSquareInnerCode 0x2A4 = some (.alu .sltu a1 (17 : Fin 32) (8 : Fin 32), 4) := by decide
+theorem fsq_at_2a8 : fetchRel feSquareInnerCode 0x2A8 = some (.alu .mulhu a3 (29 : Fin 32) (22 : Fin 32), 4) := by decide
+theorem fsq_at_2ac : fetchRel feSquareInnerCode 0x2AC = some (.load .lw ra sp 0x8, 2) := by decide
+theorem fsq_at_2ae : fetchRel feSquareInnerCode 0x2AE = some (.alu .mulhu (21 : Fin 32) ra (5 : Fin 32), 4) := by decide
+theorem fsq_at_2b2 : fetchRel feSquareInnerCode 0x2B2 = some (.alu .mul a5 (29 : Fin 32) (22 : Fin 32), 4) := by decide
+theorem fsq_at_2b6 : fetchRel feSquareInnerCode 0x2B6 = some (.alu .mulhu a4 (19 : Fin 32) (23 : Fin 32), 4) := by decide
+theorem fsq_at_2ba : fetchRel feSquareInnerCode 0x2BA = some (.load .lw (28 : Fin 32) sp 0x10, 2) := by decide
+theorem fsq_at_2bc : fetchRel feSquareInnerCode 0x2BC = some (.alu .mulhu a2 (28 : Fin 32) (18 : Fin 32), 4) := by decide
+theorem fsq_at_2c0 : fetchRel feSquareInnerCode 0x2C0 = some (.alu .mul (8 : Fin 32) (19 : Fin 32) (23 : Fin 32), 4) := by decide
+theorem fsq_at_2c4 : fetchRel feSquareInnerCode 0x2C4 = some (.alu .mul a0 (28 : Fin 32) (18 : Fin 32), 4) := by decide
+theorem fsq_at_2c8 : fetchRel feSquareInnerCode 0x2C8 = some (.alu .add (7 : Fin 32) (7 : Fin 32) a1, 2) := by decide
+theorem fsq_at_2ca : fetchRel feSquareInnerCode 0x2CA = some (.alu .mul a1 ra (5 : Fin 32), 4) := by decide
+theorem fsq_at_2ce : fetchRel feSquareInnerCode 0x2CE = some (.aluImm .sll (20 : Fin 32) (26 : Fin 32) 0x1, 4) := by decide
+theorem fsq_at_2d2 : fetchRel feSquareInnerCode 0x2D2 = some (.alu .add a6 a6 (7 : Fin 32), 2) := by decide
+theorem fsq_at_2d4 : fetchRel feSquareInnerCode 0x2D4 = some (.alu .mul (7 : Fin 32) (24 : Fin 32) (20 : Fin 32), 4) := by decide
+theorem fsq_at_2d8 : fetchRel feSquareInnerCode 0x2D8 = some (.aluImm .sll a3 a3 0x1, 2) := by decide
+theorem fsq_at_2da : fetchRel feSquareInnerCode 0x2DA = some (.alu .mulhu (25 : Fin 32) (24 : Fin 32) (20 : Fin 32), 4) := by decide
+theorem fsq_at_2de : fetchRel feSquareInnerCode 0x2DE = some (.aluImm .srl (9 : Fin 32) a5 0x1F, 4) := by decide
+theorem fsq_at_2e2 : fetchRel feSquareInnerCode 0x2E2 = some (.alu .or a3 a3 (9 : Fin 32), 2) := by decide
+theorem fsq_at_2e4 : fetchRel feSquareInnerCode 0x2E4 = some (.alu .add a2 a2 a4, 2) := by decide
+theorem fsq_at_2e6 : fetchRel feSquareInnerCode 0x2E6 = some (.alu .add a2 a2 (21 : Fin 32), 2) := by decide
+theorem fsq_at_2e8 : fetchRel feSquareInnerCode 0x2E8 = some (.alu .add a0 a0 (8 : Fin 32), 2) := by decide
+theorem fsq_at_2ea : fetchRel feSquareInnerCode 0x2EA = some (.alu .sltu a4 a0 (8 : Fin 32), 4) := by decide
+theorem fsq_at_2ee : fetchRel feSquareInnerCode 0x2EE = some (.alu .add a1 a1 a0, 2) := by decide
+theorem fsq_at_2f0 : fetchRel feSquareInnerCode 0x2F0 = some (.alu .add a2 a2 a4, 2) := by decide
+theorem fsq_at_2f2 : fetchRel feSquareInnerCode 0x2F2 = some (.alu .sltu a0 a1 a0, 4) := by decide
+theorem fsq_at_2f6 : fetchRel feSquareInnerCode 0x2F6 = some (.alu .add a0 a0 a2, 2) := by decide
+theorem fsq_at_2f8 : fetchRel feSquareInnerCode 0x2F8 = some (.alu .add (7 : Fin 32) (7 : Fin 32) a1, 2) := by decide
+theorem fsq_at_2fa : fetchRel feSquareInnerCode 0x2FA = some (.alu .add a0 a0 (25 : Fin 32), 2) := by decide
+theorem fsq_at_2fc : fetchRel feSquareInnerCode 0x2FC = some (.alu .sltu a1 (7 : Fin 32) a1, 4) := by decide
+theorem fsq_at_300 : fetchRel feSquareInnerCode 0x300 = some (.aluImm .sll a5 a5 0x1, 2) := by decide
+theorem fsq_at_302 : fetchRel feSquareInnerCode 0x302 = some (.alu .add a0 a0 a1, 2) := by decide
+theorem fsq_at_304 : fetchRel feSquareInnerCode 0x304 = some (.alu .add a0 a0 a3, 2) := by decide
+theorem fsq_at_306 : fetchRel feSquareInnerCode 0x306 = some (.alu .add a5 a5 (7 : Fin 32), 2) := by decide
+theorem fsq_at_308 : fetchRel feSquareInnerCode 0x308 = some (.alu .sltu a1 a5 (7 : Fin 32), 4) := by decide
+theorem fsq_at_30c : fetchRel feSquareInnerCode 0x30C = some (.alu .mul a2 (20 : Fin 32) (22 : Fin 32), 4) := by decide
+theorem fsq_at_310 : fetchRel feSquareInnerCode 0x310 = some (.alu .mulhu a3 (20 : Fin 32) (22 : Fin 32), 4) := by decide
+theorem fsq_at_314 : fetchRel feSquareInnerCode 0x314 = some (.store .sw (6 : Fin 32) (17 : Fin 32) 0x20, 4) := by decide
+theorem fsq_at_318 : fetchRel feSquareInnerCode 0x318 = some (.store .sw (6 : Fin 32) a6 0x24, 4) := by decide
+theorem fsq_at_31c : fetchRel feSquareInnerCode 0x31C = some (.alu .add a0 a0 a1, 2) := by decide
+theorem fsq_at_31e : fetchRel feSquareInnerCode 0x31E = some (.alu .mulhu a1 (19 : Fin 32) (28 : Fin 32), 4) := by decide
+theorem fsq_at_322 : fetchRel feSquareInnerCode 0x322 = some (.alu .mulhu a4 (31 : Fin 32) (18 : Fin 32), 4) := by decide
+theorem fsq_at_326 : fetchRel feSquareInnerCode 0x326 = some (.alu .mulhu (9 : Fin 32) (30 : Fin 32) (23 : Fin 32), 4) := by decide
+theorem fsq_at_32a : fetchRel feSquareInnerCode 0x32A = some (.alu .mul a6 (19 : Fin 32) (28 : Fin 32), 4) := by decide
+theorem fsq_at_32e : fetchRel feSquareInnerCode 0x32E = some (.alu .mul (8 : Fin 32) (31 : Fin 32) (18 : Fin 32), 4) := by decide
+theorem fsq_at_332 : fetchRel feSquareInnerCode 0x332 = some (.store .sw (6 : Fin 32) a5 0x28, 4) := by decide
+theorem fsq_at_336 : fetchRel feSquareInnerCode 0x336 = some (.store .sw (6 : Fin 32) a0 0x2C, 4) := by decide
+theorem fsq_at_33a : fetchRel feSquareInnerCode 0x33A = some (.alu .mul a0 (30 : Fin 32) (23 : Fin 32), 4) := by decide
+theorem fsq_at_33e : fetchRel feSquareInnerCode 0x33E = some (.aluImm .srl a5 a2 0x1F, 4) := by decide
+theorem fsq_at_342 : fetchRel feSquareInnerCode 0x342 = some (.aluImm .sll a3 a3 0x1, 2) := by decide
+theorem fsq_at_344 : fetchRel feSquareInnerCode 0x344 = some (.alu .or (17 : Fin 32) a3 a5, 4) := by decide
+theorem fsq_at_348 : fetchRel feSquareInnerCode 0x348 = some (.alu .mul (7 : Fin 32) (29 : Fin 32) (5 : Fin 32), 4) := by decide
+theorem fsq_at_34c : fetchRel feSquareInnerCode 0x34C = some (.alu .add a1 a1 a4, 2) := by decide
+theorem fsq_at_34e : fetchRel feSquareInnerCode 0x34E = some (.alu .mulhu a4 (29 : Fin 32) (5 : Fin 32), 4) := by decide
+theorem fsq_at_352 : fetchRel feSquareInnerCode 0x352 = some (.alu .add a1 a1 (9 : Fin 32), 2) := by decide
+theorem fsq_at_354 : fetchRel feSquareInnerCode 0x354 = some (.load .lw (18 : Fin 32) sp 0x14, 2) := by decide
+theorem fsq_at_356 : fetchRel feSquareInnerCode 0x356 = some (.alu .mul (9 : Fin 32) (24 : Fin 32) (18 : Fin 32), 4) := by decide
+theorem fsq_at_35a : fetchRel feSquareInnerCode 0x35A = some (.alu .mulhu a3 (24 : Fin 32) (18 : Fin 32), 4) := by decide
+theorem fsq_at_35e : fetchRel feSquareInnerCode 0x35E = some (.alu .add a6 a6 (8 : Fin 32), 2) := by decide
+theorem fsq_at_360 : fetchRel feSquareInnerCode 0x360 = some (.alu .sltu (8 : Fin 32) a6 (8 : Fin 32), 4) := by decide
+theorem fsq_at_364 : fetchRel feSquareInnerCode 0x364 = some (.alu .add a0 a0 a6, 2) := by decide
+theorem fsq_at_366 : fetchRel feSquareInnerCode 0x366 = some (.alu .sltu a5 a0 a6, 4) := by decide
+theorem fsq_at_36a : fetchRel feSquareInnerCode 0x36A = some (.alu .add a1 a1 (8 : Fin 32), 2) := by decide
+theorem fsq_at_36c : fetchRel feSquareInnerCode 0x36C = some (.alu .add a1 a1 a5, 2) := by decide
+theorem fsq_at_36e : fetchRel feSquareInnerCode 0x36E = some (.alu .add (7 : Fin 32) (7 : Fin 32) a0, 2) := by decide
+theorem fsq_at_370 : fetchRel feSquareInnerCode 0x370 = some (.alu .add a1 a1 a4, 2) := by decide
+theorem fsq_at_372 : fetchRel feSquareInnerCode 0x372 = some (.alu .sltu a0 (7 : Fin 32) a0, 4) := by decide
+theorem fsq_at_376 : fetchRel feSquareInnerCode 0x376 = some (.aluImm .sll a2 a2 0x1, 2) := by decide
+theorem fsq_at_378 : fetchRel feSquareInnerCode 0x378 = some (.alu .add a0 a0 a1, 2) := by decide
+theorem fsq_at_37a : fetchRel feSquareInnerCode 0x37A = some (.alu .add a0 a0 a3, 2) := by decide
+theorem fsq_at_37c : fetchRel feSquareInnerCode 0x37C = some (.alu .add (9 : Fin 32) (9 : Fin 32) (7 : Fin 32), 2) := by decide
+theorem fsq_at_37e : fetchRel feSquareInnerCode 0x37E = some (.alu .sltu a1 (9 : Fin 32) (7 : Fin 32), 4) := by decide
+theorem fsq_at_382 : fetchRel feSquareInnerCode 0x382 = some (.alu .mulhu a6 (29 : Fin 32) (23 : Fin 32), 4) := by decide
+theorem fsq_at_386 : fetchRel feSquareInnerCode 0x386 = some (.alu .mulhu a4 ra (28 : Fin 32), 4) := by decide
+theorem fsq_at_38a : fetchRel feSquareInnerCode 0x38A = some (.alu .mulhu a5 (31 : Fin 32) (19 : Fin 32), 4) := by decide
+theorem fsq_at_38e : fetchRel feSquareInnerCode 0x38E = some (.alu .mul (8 : Fin 32) ra (28 : Fin 32), 4) := by decide
+theorem fsq_at_392 : fetchRel feSquareInnerCode 0x392 = some (.alu .mul a3 (31 : Fin 32) (19 : Fin 32), 4) := by decide
+theorem fsq_at_396 : fetchRel feSquareInnerCode 0x396 = some (.alu .add a0 a0 a1, 2) := by decide
+theorem fsq_at_398 : fetchRel feSquareInnerCode 0x398 = some (.alu .add a2 a2 (9 : Fin 32), 2) := by decide
+theorem fsq_at_39a : fetchRel feSquareInnerCode 0x39A = some (.alu .add a0 a0 (17 : Fin 32), 2) := by decide
+theorem fsq_at_39c : fetchRel feSquareInnerCode 0x39C = some (.alu .sltu a1 a2 (9 : Fin 32), 4) := by decide
+theorem fsq_at_3a0 : fetchRel feSquareInnerCode 0x3A0 = some (.alu .mul (17 : Fin 32) (29 : Fin 32) (23 : Fin 32), 4) := by decide
+theorem fsq_at_3a4 : fetchRel feSquareInnerCode 0x3A4 = some (.alu .mul (9 : Fin 32) (18 : Fin 32) (22 : Fin 32), 4) := by decide
+theorem fsq_at_3a8 : fetchRel feSquareInnerCode 0x3A8 = some (.alu .add (7 : Fin 32) a0 a1, 4) := by decide
+theorem fsq_at_3ac : fetchRel feSquareInnerCode 0x3AC = some (.alu .mulhu a1 (18 : Fin 32) (22 : Fin 32), 4) := by decide
+theorem fsq_at_3b0 : fetchRel feSquareInnerCode 0x3B0 = some (.alu .add a4 a4 a5, 2) := by decide
+theorem fsq_at_3b2 : fetchRel feSquareInnerCode 0x3B2 = some (.alu .mul a5 (26 : Fin 32) (5 : Fin 32), 4) := by decide
+theorem fsq_at_3b6 : fetchRel feSquareInnerCode 0x3B6 = some (.alu .add a3 a3 (8 : Fin 32), 2) := by decide
+theorem fsq_at_3b8 : fetchRel feSquareInnerCode 0x3B8 = some (.alu .add a4 a4 a6, 2) := by decide
+theorem fsq_at_3ba : fetchRel feSquareInnerCode 0x3BA = some (.alu .mulhu a0 (26 : Fin 32) (5 : Fin 32), 4) := by decide
+theorem fsq_at_3be : fetchRel feSquareInnerCode 0x3BE = some (.alu .sltu (8 : Fin 32) a3 (8 : Fin 32), 4) := by decide
+theorem fsq_at_3c2 : fetchRel feSquareInnerCode 0x3C2 = some (.store .sw (6 : Fin 32) a2 0x30, 4) := by decide
+theorem fsq_at_3c6 : fetchRel feSquareInnerCode 0x3C6 = some (.alu .add a4 a4 (8 : Fin 32), 2) := by decide
+theorem fsq_at_3c8 : fetchRel feSquareInnerCode 0x3C8 = some (.aluImm .srl a2 (9 : Fin 32) 0x1F, 4) := by decide
+theorem fsq_at_3cc : fetchRel feSquareInnerCode 0x3CC = some (.alu .add (17 : Fin 32) (17 : Fin 32) a3, 2) := by decide
+theorem fsq_at_3ce : fetchRel feSquareInnerCode 0x3CE = some (.aluImm .sll a1 a1 0x1, 2) := by decide
+theorem fsq_at_3d0 : fetchRel feSquareInnerCode 0x3D0 = some (.alu .sltu a3 (17 : Fin 32) a3, 4) := by decide
+theorem fsq_at_3d4 : fetchRel feSquareInnerCode 0x3D4 = some (.alu .or a1 a1 a2, 2) := by decide
+theorem fsq_at_3d6 : fetchRel feSquareInnerCode 0x3D6 = some (.alu .add a3 a3 a4, 2) := by decide
+theorem fsq_at_3d8 : fetchRel feSquareInnerCode 0x3D8 = some (.aluImm .sll (9 : Fin 32) (9 : Fin 32) 0x1, 2) := by decide
+theorem fsq_at_3da : fetchRel feSquareInnerCode 0x3DA = some (.alu .add a5 a5 (17 : Fin 32), 2) := by decide
+theorem fsq_at_3dc : fetchRel feSquareInnerCode 0x3DC = some (.alu .add a0 a0 a3, 2) := by decide
+theorem fsq_at_3de : fetchRel feSquareInnerCode 0x3DE = some (.alu .sltu a2 a5 (17 : Fin 32), 4) := by decide
+theorem fsq_at_3e2 : fetchRel feSquareInnerCode 0x3E2 = some (.alu .add a0 a0 a2, 2) := by decide
+theorem fsq_at_3e4 : fetchRel feSquareInnerCode 0x3E4 = some (.alu .add (9 : Fin 32) (9 : Fin 32) a5, 2) := by decide
+theorem fsq_at_3e6 : fetchRel feSquareInnerCode 0x3E6 = some (.alu .mulhu a2 (29 : Fin 32) (28 : Fin 32), 4) := by decide
+theorem fsq_at_3ea : fetchRel feSquareInnerCode 0x3EA = some (.alu .mulhu a3 (19 : Fin 32) (19 : Fin 32), 4) := by decide
+theorem fsq_at_3ee : fetchRel feSquareInnerCode 0x3EE = some (.store .sw (6 : Fin 32) (7 : Fin 32) 0x34, 4) := by decide
+theorem fsq_at_3f2 : fetchRel feSquareInnerCode 0x3F2 = some (.alu .add a0 a0 a1, 2) := by decide
+theorem fsq_at_3f4 : fetchRel feSquareInnerCode 0x3F4 = some (.alu .sltu a1 (9 : Fin 32) a5, 4) := by decide
+theorem fsq_at_3f8 : fetchRel feSquareInnerCode 0x3F8 = some (.alu .mulhu a4 (30 : Fin 32) (31 : Fin 32), 4) := by decide
+theorem fsq_at_3fc : fetchRel feSquareInnerCode 0x3FC = some (.alu .mul a5 (29 : Fin 32) (28 : Fin 32), 4) := by decide
+theorem fsq_at_400 : fetchRel feSquareInnerCode 0x400 = some (.alu .mul (8 : Fin 32) (19 : Fin 32) (19 : Fin 32), 4) := by decide
+theorem fsq_at_404 : fetchRel feSquareInnerCode 0x404 = some (.alu .add a0 a0 a1, 2) := by decide
+theorem fsq_at_406 : fetchRel feSquareInnerCode 0x406 = some (.alu .mul a1 (30 : Fin 32) (31 : Fin 32), 4) := by decide
+theorem fsq_at_40a : fetchRel feSquareInnerCode 0x40A = some (.store .sw (6 : Fin 32) (9 : Fin 32) 0x38, 4) := by decide
+theorem fsq_at_40e : fetchRel feSquareInnerCode 0x40E = some (.store .sw (6 : Fin 32) a0 0x3C, 4) := by decide
+theorem fsq_at_412 : fetchRel feSquareInnerCode 0x412 = some (.alu .mul (17 : Fin 32) (20 : Fin 32) (23 : Fin 32), 4) := by decide
+theorem fsq_at_416 : fetchRel feSquareInnerCode 0x416 = some (.alu .add a2 a2 a3, 2) := by decide
+theorem fsq_at_418 : fetchRel feSquareInnerCode 0x418 = some (.alu .mulhu a3 (18 : Fin 32) (5 : Fin 32), 4) := by decide
+theorem fsq_at_41c : fetchRel feSquareInnerCode 0x41C = some (.alu .mulhu (9 : Fin 32) (20 : Fin 32) (23 : Fin 32), 4) := by decide
+theorem fsq_at_420 : fetchRel feSquareInnerCode 0x420 = some (.alu .add a4 a4 a2, 2) := by decide
+theorem fsq_at_422 : fetchRel feSquareInnerCode 0x422 = some (.load .lw (30 : Fin 32) sp 0x18, 2) := by decide
+theorem fsq_at_424 : fetchRel feSquareInnerCode 0x424 = some (.alu .mul a6 (30 : Fin 32) (22 : Fin 32), 4) := by decide
+theorem fsq_at_428 : fetchRel feSquareInnerCode 0x428 = some (.alu .mulhu a2 (30 : Fin 32) (22 : Fin 32), 4) := by decide
+theorem fsq_at_42c : fetchRel feSquareInnerCode 0x42C = some (.alu .add (8 : Fin 32) (8 : Fin 32) a5, 2) := by decide
+theorem fsq_at_42e : fetchRel feSquareInnerCode 0x42E = some (.alu .sltu a5 (8 : Fin 32) a5, 4) := by decide
+theorem fsq_at_432 : fetchRel feSquareInnerCode 0x432 = some (.alu .add a1 a1 (8 : Fin 32), 2) := by decide
+theorem fsq_at_434 : fetchRel feSquareInnerCode 0x434 = some (.alu .add a4 a4 a5, 2) := by decide
+theorem fsq_at_436 : fetchRel feSquareInnerCode 0x436 = some (.alu .sltu a5 a1 (8 : Fin 32), 4) := by decide
+theorem fsq_at_43a : fetchRel feSquareInnerCode 0x43A = some (.alu .add a4 a4 a5, 2) := by decide
+theorem fsq_at_43c : fetchRel feSquareInnerCode 0x43C = some (.alu .add a0 a1 (17 : Fin 32), 4) := by decide
+theorem fsq_at_440 : fetchRel feSquareInnerCode 0x440 = some (.alu .mul a5 (18 : Fin 32) (5 : Fin 32), 4) := by decide
+theorem fsq_at_444 : fetchRel feSquareInnerCode 0x444 = some (.alu .sltu a1 a0 a1, 4) := by decide
+theorem fsq_at_448 : fetchRel feSquareInnerCode 0x448 = some (.alu .add a4 a4 (9 : Fin 32), 2) := by decide
+theorem fsq_at_44a : fetchRel feSquareInnerCode 0x44A = some (.alu .add a1 a1 a3, 2) := by decide
+theorem fsq_at_44c : fetchRel feSquareInnerCode 0x44C = some (.aluImm .srl a3 a6 0x1F, 4) := by decide
+theorem fsq_at_450 : fetchRel feSquareInnerCode 0x450 = some (.aluImm .sll a2 a2 0x1, 2) := by decide
+theorem fsq_at_452 : fetchRel feSquareInnerCode 0x452 = some (.alu .or (17 : Fin 32) a2 a3, 4) := by decide
+theorem fsq_at_456 : fetchRel feSquareInnerCode 0x456 = some (.alu .add (7 : Fin 32) a4 a1, 4) := by decide
+theorem fsq_at_45a : fetchRel feSquareInnerCode 0x45A = some (.alu .mul a3 (29 : Fin 32) (31 : Fin 32), 4) := by decide
+theorem fsq_at_45e : fetchRel feSquareInnerCode 0x45E = some (.alu .mulhu a4 (29 : Fin 32) (31 : Fin 32), 4) := by decide
+theorem fsq_at_462 : fetchRel feSquareInnerCode 0x462 = some (.alu .mul (9 : Fin 32) (27 : Fin 32) ra, 4) := by decide
+theorem fsq_at_466 : fetchRel feSquareInnerCode 0x466 = some (.alu .mulhu (8 : Fin 32) (27 : Fin 32) ra, 4) := by decide
+theorem fsq_at_46a : fetchRel feSquareInnerCode 0x46A = some (.alu .add a5 a5 a0, 2) := by decide
+theorem fsq_at_46c : fetchRel feSquareInnerCode 0x46C = some (.alu .mulhu a2 (26 : Fin 32) (28 : Fin 32), 4) := by decide
+theorem fsq_at_470 : fetchRel feSquareInnerCode 0x470 = some (.alu .mul a1 (26 : Fin 32) (28 : Fin 32), 4) := by decide
+theorem fsq_at_474 : fetchRel feSquareInnerCode 0x474 = some (.alu .sltu a0 a5 a0, 4) := by decide
+theorem fsq_at_478 : fetchRel feSquareInnerCode 0x478 = some (.alu .add a0 a0 (7 : Fin 32), 2) := by decide
+theorem fsq_at_47a : fetchRel feSquareInnerCode 0x47A = some (.alu .mul (7 : Fin 32) (18 : Fin 32) (23 : Fin 32), 4) := by decide
+theorem fsq_at_47e : fetchRel feSquareInnerCode 0x47E = some (.alu .add (17 : Fin 32) (17 : Fin 32) a0, 2) := by decide
+theorem fsq_at_480 : fetchRel feSquareInnerCode 0x480 = some (.alu .mul (28 : Fin 32) (30 : Fin 32) (5 : Fin 32), 4) := by decide
+theorem fsq_at_484 : fetchRel feSquareInnerCode 0x484 = some (.alu .mulhu (5 : Fin 32) (30 : Fin 32) (5 : Fin 32), 4) := by decide
+theorem fsq_at_488 : fetchRel feSquareInnerCode 0x488 = some (.alu .mulhu a0 (18 : Fin 32) (23 : Fin 32), 4) := by decide
+theorem fsq_at_48c : fetchRel feSquareInnerCode 0x48C = some (.alu .add a4 a4 (8 : Fin 32), 2) := by decide
+theorem fsq_at_48e : fetchRel feSquareInnerCode 0x48E = some (.alu .add (9 : Fin 32) (9 : Fin 32) a3, 2) := by decide
+theorem fsq_at_490 : fetchRel feSquareInnerCode 0x490 = some (.alu .add a2 a2 a4, 2) := by decide
+theorem fsq_at_492 : fetchRel feSquareInnerCode 0x492 = some (.alu .sltu a3 (9 : Fin 32) a3, 4) := by decide
+theorem fsq_at_496 : fetchRel feSquareInnerCode 0x496 = some (.alu .add a2 a2 a3, 2) := by decide
+theorem fsq_at_498 : fetchRel feSquareInnerCode 0x498 = some (.alu .add a1 a1 (9 : Fin 32), 2) := by decide
+theorem fsq_at_49a : fetchRel feSquareInnerCode 0x49A = some (.alu .sltu a3 a1 (9 : Fin 32), 4) := by decide
+theorem fsq_at_49e : fetchRel feSquareInnerCode 0x49E = some (.alu .add (7 : Fin 32) (7 : Fin 32) a1, 2) := by decide
+theorem fsq_at_4a0 : fetchRel feSquareInnerCode 0x4A0 = some (.alu .add a2 a2 a3, 2) := by decide
+theorem fsq_at_4a2 : fetchRel feSquareInnerCode 0x4A2 = some (.alu .sltu a1 (7 : Fin 32) a1, 4) := by decide
+theorem fsq_at_4a6 : fetchRel feSquareInnerCode 0x4A6 = some (.alu .add a0 a0 a2, 2) := by decide
+theorem fsq_at_4a8 : fetchRel feSquareInnerCode 0x4A8 = some (.alu .add a1 a1 (5 : Fin 32), 2) := by decide
+theorem fsq_at_4aa : fetchRel feSquareInnerCode 0x4AA = some (.alu .add a0 a0 a1, 2) := by decide
+theorem fsq_at_4ac : fetchRel feSquareInnerCode 0x4AC = some (.aluImm .sll a6 a6 0x1, 2) := by decide
+theorem fsq_at_4ae : fetchRel feSquareInnerCode 0x4AE = some (.alu .add a6 a6 a5, 2) := by decide
+theorem fsq_at_4b0 : fetchRel feSquareInnerCode 0x4B0 = some (.alu .add (28 : Fin 32) (28 : Fin 32) (7 : Fin 32), 2) := by decide
+theorem fsq_at_4b2 : fetchRel feSquareInnerCode 0x4B2 = some (.alu .sltu a1 a6 a5, 4) := by decide
+theorem fsq_at_4b6 : fetchRel feSquareInnerCode 0x4B6 = some (.alu .sltu a2 (28 : Fin 32) (7 : Fin 32), 4) := by decide
+theorem fsq_at_4ba : fetchRel feSquareInnerCode 0x4BA = some (.alu .add a1 a1 (17 : Fin 32), 2) := by decide
+theorem fsq_at_4bc : fetchRel feSquareInnerCode 0x4BC = some (.alu .add a0 a0 a2, 2) := by decide
+theorem fsq_at_4be : fetchRel feSquareInnerCode 0x4BE = some (.store .sw (6 : Fin 32) a6 0x40, 4) := by decide
+theorem fsq_at_4c2 : fetchRel feSquareInnerCode 0x4C2 = some (.alu .add a2 x0 (6 : Fin 32), 2) := by decide
+theorem fsq_at_4c4 : fetchRel feSquareInnerCode 0x4C4 = some (.store .sw a2 a1 0x44, 2) := by decide
+theorem fsq_at_4c6 : fetchRel feSquareInnerCode 0x4C6 = some (.store .sw (6 : Fin 32) (28 : Fin 32) 0x48, 4) := by decide
+theorem fsq_at_4ca : fetchRel feSquareInnerCode 0x4CA = some (.store .sw a2 a0 0x4C, 2) := by decide
+theorem fsq_at_4cc : fetchRel feSquareInnerCode 0x4CC = some (.load .lw ra sp 0x4C, 2) := by decide
+theorem fsq_at_4ce : fetchRel feSquareInnerCode 0x4CE = some (.load .lw (8 : Fin 32) sp 0x48, 2) := by decide
+theorem fsq_at_4d0 : fetchRel feSquareInnerCode 0x4D0 = some (.load .lw (9 : Fin 32) sp 0x44, 2) := by decide
+theorem fsq_at_4d2 : fetchRel feSquareInnerCode 0x4D2 = some (.load .lw (18 : Fin 32) sp 0x40, 2) := by decide
+theorem fsq_at_4d4 : fetchRel feSquareInnerCode 0x4D4 = some (.load .lw (19 : Fin 32) sp 0x3C, 2) := by decide
+theorem fsq_at_4d6 : fetchRel feSquareInnerCode 0x4D6 = some (.load .lw (20 : Fin 32) sp 0x38, 2) := by decide
+theorem fsq_at_4d8 : fetchRel feSquareInnerCode 0x4D8 = some (.load .lw (21 : Fin 32) sp 0x34, 2) := by decide
+theorem fsq_at_4da : fetchRel feSquareInnerCode 0x4DA = some (.load .lw (22 : Fin 32) sp 0x30, 2) := by decide
+theorem fsq_at_4dc : fetchRel feSquareInnerCode 0x4DC = some (.load .lw (23 : Fin 32) sp 0x2C, 2) := by decide
+theorem fsq_at_4de : fetchRel feSquareInnerCode 0x4DE = some (.load .lw (24 : Fin 32) sp 0x28, 2) := by decide
+theorem fsq_at_4e0 : fetchRel feSquareInnerCode 0x4E0 = some (.load .lw (25 : Fin 32) sp 0x24, 2) := by decide
+theorem fsq_at_4e2 : fetchRel feSquareInnerCode 0x4E2 = some (.load .lw (26 : Fin 32) sp 0x20, 2) := by decide
+theorem fsq_at_4e4 : fetchRel feSquareInnerCode 0x4E4 = some (.load .lw (27 : Fin 32) sp 0x1C, 2) := by decide
+theorem fsq_at_4e6 : fetchRel feSquareInnerCode 0x4E6 = some (.aluImm .add sp sp 0x50, 2) := by decide
+theorem fsq_at_4e8 : fetchRel feSquareInnerCode 0x4E8 = some (.jalr x0 ra 0x0, 2) := by decide
+
 end
 
 end C3.RV32

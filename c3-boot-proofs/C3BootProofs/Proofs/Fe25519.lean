@@ -86,6 +86,35 @@ def feMulSpec (x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 y0 y1 y2 y3 y4 y5 y6 y7 y8 y9 : Nat
   let z := feMulZ x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 y0 y1 y2 y3 y4 y5 y6 y7 y8 y9
   feReduceSpec z[0]! z[1]! z[2]! z[3]! z[4]! z[5]! z[6]! z[7]! z[8]! z[9]!
 
+/-- The ten `u64` sums of `FieldElement2625::square_inner`, in the Rust
+source's order: `x[i]` doubled and times 19 as `u32`s (each wraps modulo
+2^32), each product of two `u32`s as a `u64`, the `(...) * 2` groups, and
+each sum modulo 2^64. -/
+def feSqZ (x0 x1 x2 x3 x4 x5 x6 x7 x8 x9 : Nat) : List Nat :=
+  let x0_2 := 2 * x0 % 2 ^ 32
+  let x1_2 := 2 * x1 % 2 ^ 32
+  let x2_2 := 2 * x2 % 2 ^ 32
+  let x3_2 := 2 * x3 % 2 ^ 32
+  let x4_2 := 2 * x4 % 2 ^ 32
+  let x5_2 := 2 * x5 % 2 ^ 32
+  let x6_2 := 2 * x6 % 2 ^ 32
+  let x7_2 := 2 * x7 % 2 ^ 32
+  let x5_19 := 19 * x5 % 2 ^ 32
+  let x6_19 := 19 * x6 % 2 ^ 32
+  let x7_19 := 19 * x7 % 2 ^ 32
+  let x8_19 := 19 * x8 % 2 ^ 32
+  let x9_19 := 19 * x9 % 2 ^ 32
+  [(x0 * x0 + x2_2 * x8_19 + x4_2 * x6_19 + (x1_2 * x9_19 + x3_2 * x7_19 + x5 * x5_19) * 2) % 2 ^ 64,
+    (x0_2 * x1 + x3_2 * x8_19 + x5_2 * x6_19 + (x2 * x9_19 + x4 * x7_19) * 2) % 2 ^ 64,
+    (x0_2 * x2 + x1_2 * x1 + x4_2 * x8_19 + x6 * x6_19 + (x3_2 * x9_19 + x5_2 * x7_19) * 2) % 2 ^ 64,
+    (x0_2 * x3 + x1_2 * x2 + x5_2 * x8_19 + (x4 * x9_19 + x6 * x7_19) * 2) % 2 ^ 64,
+    (x0_2 * x4 + x1_2 * x3_2 + x2 * x2 + x6_2 * x8_19 + (x5_2 * x9_19 + x7 * x7_19) * 2) % 2 ^ 64,
+    (x0_2 * x5 + x1_2 * x4 + x2_2 * x3 + x7_2 * x8_19 + x6 * x9_19 * 2) % 2 ^ 64,
+    (x0_2 * x6 + x1_2 * x5_2 + x2_2 * x4 + x3_2 * x3 + x8 * x8_19 + x7_2 * x9_19 * 2) % 2 ^ 64,
+    (x0_2 * x7 + x1_2 * x6 + x2_2 * x5 + x3_2 * x4 + x8 * x9_19 * 2) % 2 ^ 64,
+    (x0_2 * x8 + x1_2 * x7_2 + x2_2 * x6 + x3_2 * x5_2 + x4 * x4 + x9 * x9_19 * 2) % 2 ^ 64,
+    (x0_2 * x9 + x1_2 * x8 + x2_2 * x7 + x3_2 * x6 + x4_2 * x5) % 2 ^ 64]
+
 /-- The `u32` at limb `i` of an array at `b`. -/
 def limbAt (M : Word → BitVec 8) (b : Word) (i : Nat) : Nat := (memLoad32 M (b + BitVec.ofNat 32 (4 * i))).toNat
 
