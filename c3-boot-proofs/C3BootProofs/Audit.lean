@@ -23,6 +23,7 @@ import C3BootProofs.Proofs.FeSub
 import C3BootProofs.Proofs.WideMul12x2
 import C3BootProofs.Proofs.WideMul8x2
 import C3BootProofs.Proofs.EdDouble
+import C3BootProofs.Proofs.FePow2k
 import C3BootProofs.Proofs.ImageHelpers
 import C3BootProofs.Proofs.Block
 import C3BootProofs.Proofs.ImageCalls
@@ -1789,6 +1790,44 @@ theorem exists_edDouble_machine :
     rfl, rfl, rfl, rfl, by decide, rfl⟩
   all_goals (unfold RV32.CodeIn; decide +kernel)
 
+def witnessMemFePow2k (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.fePow2kAddress).toNat < Image.fePow2kCode.length then
+    RV32.byteAt Image.fePow2kCode (a - BitVec.ofNat 32 Image.fePow2kAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.feSquareAddress).toNat < Image.feSquareCode.length then
+    RV32.byteAt Image.feSquareCode (a - BitVec.ofNat 32 Image.feSquareAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.feSquareInnerAddress).toNat < Image.feSquareInnerCode.length then
+    RV32.byteAt Image.feSquareInnerCode (a - BitVec.ofNat 32 Image.feSquareInnerAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.feReduceAddress).toNat < Image.feReduceCode.length then
+    RV32.byteAt Image.feReduceCode (a - BitVec.ofNat 32 Image.feReduceAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat < Image.memcpyStubCode.length then
+    RV32.byteAt Image.memcpyStubCode (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat < Image.memcpyBodyCode.length then
+    RV32.byteAt Image.memcpyBodyCode (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat
+  else 0
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `FieldElement2625::pow2k` with `k = 3`, the result at
+`0x3FCC5000`, the operand at `0x3FCC6000`, and the stack at `0x3FCC7110`
+meets `fePow2k_correct`'s hypotheses. -/
+theorem exists_fePow2k_machine :
+    ∃ (m : RV32.Machine) (P G out xp retAddr : RV32.Word), RV32.FpkEnv m.mem P G out xp ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = xp ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 3 ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = G + 0x110 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 3
+    else if r = RV32.sp then 0x3FCC7110 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.fePow2kAddress, witnessMemFePow2k⟩,
+    BitVec.ofNat 32 Image.fePow2kAddress, 0x3FCC7000, 0x3FCC5000, 0x3FCC6000, 0,
+    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩,
+    rfl, rfl, rfl, rfl, rfl, by decide, rfl⟩
+  all_goals (unfold RV32.CodeIn; decide +kernel)
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -2213,3 +2252,9 @@ end C3
 
 /-- info: 'C3.exists_edDouble_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_edDouble_machine
+
+/-- info: 'C3.RV32.fePow2k_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.fePow2k_correct
+
+/-- info: 'C3.exists_fePow2k_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_fePow2k_machine
