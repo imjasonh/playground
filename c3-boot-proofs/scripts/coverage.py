@@ -58,6 +58,7 @@ PROVED = [
     "p384Double",
     "p384Sub",
     "feReduce",
+    "feMul",
 ]
 
 IMAGE = os.path.join(os.path.dirname(__file__), "..", "C3BootProofs", "Image", "Bootloader.lean")

@@ -20,6 +20,11 @@ NAMES = {'x0': 0, 'ra': 1, 'sp': 2, 'a0': 10, 'a1': 11, 'a2': 12, 'a3': 13, 'a4'
 LEAN = {v: k for k, v in NAMES.items()}
 
 
+def rv(cur, r):
+    """The Lean value of register `r` in `cur`: x0 reads as 0."""
+    return '0' if r == 0 else cur.get(r)
+
+
 def lreg(r):
     return LEAN.get(r, f'({r} : Fin 32)')
 
@@ -75,8 +80,8 @@ class Ins:
             self.op = 'lui'
         elif self.kind == 'store':
             self.op, self.rs1, self.rs2, self.imm, self.rd = 'sw', reg(t[2]), reg(t[3]), int(t[4], 16), None
-        elif self.kind == 'jalr':
-            self.op, self.rd = 'jalr', None
+        elif self.kind in ('jalr', 'auipc', 'branch'):
+            self.op, self.rd = self.kind, None
         else:
             raise Exception(text)
 
@@ -89,8 +94,13 @@ def alu(op, a, b):
 def simulate(block, regs0, mem):
     """Runs the block; returns, per instruction, the value it writes."""
     R = list(regs0)
+    mem = dict(mem)
     vals = []
     for i in block:
+        if i.kind == 'store':
+            mem[(R[i.rs1] + i.imm) & M32] = R[i.rs2]
+            vals.append(None)
+            continue
         if i.kind == 'load':
             v = mem[(R[i.rs1] + i.imm) & M32]
         elif i.kind == 'alu':
@@ -112,6 +122,7 @@ class Gen:
         self.block, self.prefix, self.code, self.start, self.end = block, prefix, code, start, end
         self.init = dict(init_names)  # register -> Lean expression at the block's start
         self.lines = []
+        self.combine = False
 
     def emit(self, s):
         self.lines.append(s)
@@ -150,12 +161,346 @@ class Gen:
         self.final = cur
         self.last = len(self.block) - 1
 
+    def step_mem(self, hyps0, bases, sz, seg=40):
+        """Steps a block that also loads from inputs and spills to the stack
+        frame at `F`. `bases` maps each input base's Lean name to its
+        alignment and separation hypotheses. Every `seg` instructions it
+        restates each register's value, so the register terms stay short."""
+        cur = dict(self.init)
+        self.src, self.var = [], []
+        prev, mem, hc, fr = 's', 'M', 'hc', 'fr0'
+        hyps = 'hz0, ' + hyps0
+        self.emit('  have hz0 : reg n 0 = 0 := s.zero')
+        self.emit('  have fr0 : ∀ x, Sep F 0x%X x 1 → M x = M x := fun _ _ => rfl' % sz)
+        self.stores = []  # (k, offset, value, memory name)
+        self.slots = {}
+        self.inputs = {}
+        for k, i in enumerate(self.block):
+            nxt = self.block[k + 1].off if k + 1 < len(self.block) else self.end
+            v, u = f'v{k}', f'u{k}'
+            simp = f'simp +decide only [upd, ↓reduceIte, {hyps}]'
+            ops = []
+            head = f'  obtain ⟨n{k}, '
+            alias = None
+            if i.kind == 'store':
+                base, val = cur[i.rs1], cur[i.rs2]
+                if base != 'F':
+                    raise Exception(i.text)
+                self.emit(f'  obtain ⟨n{k}, d{k}, {u}⟩ := {prev}.swG {hc} {i.lemma} (off\' := 0x{nxt:X}) (by decide)')
+                self.emit(f'    (by {simp}; exact aligned_add hF (k := {i.imm}) (by decide)) (a := F + 0x{i.imm:X}) (v := {val})')
+                self.emit(f'    (by {simp}) (by {simp})')
+                self.emit(f'  obtain ⟨M{k}, hM{k}⟩ : ∃ M\', memStore32 {mem} (F + 0x{i.imm:X}) {val} = M\' := ⟨_, rfl⟩')
+                self.emit(f'  rw [hM{k}] at {u}')
+                self.emit(f'  have hc{k} : CodeIn M{k} B {self.code} := by rw [← hM{k}]; exact {hc}.store32 (frm_sep\' sFC (by decide))')
+                self.emit(f'  have fr{k} : ∀ x, Sep F 0x{sz:X} x 1 → M{k} x = M x := fun x hx => by')
+                self.emit(f'    rw [← hM{k}, memStore32_get_sep (frm_sep\' hx (by decide)), {fr} x hx]')
+                mem, hc, fr = f'M{k}', f'hc{k}', f'fr{k}'
+                self.stores.append((k, i.imm, val, mem))
+                self.slots[i.imm] = len(self.stores) - 1
+                self.src.append([val])
+                self.var.append(None)
+            elif i.kind == 'load':
+                base = cur.get(i.rs1)
+                if base == 'F':
+                    si = self.slots[i.imm]
+                    alias = self.stores[si][2]
+                    self.emit(f'  obtain ⟨n{k}, d{k}, {u}⟩ := {prev}.lwE {hc} {i.lemma} (off\' := 0x{nxt:X}) (by decide)')
+                    self.emit(f'    (by {simp}; exact aligned_add hF (k := {i.imm}) (by decide)) (v := {alias})')
+                    self.emit(f'    (by {simp}; rw [{self.chain(si, i.imm)}])')
+                else:
+                    al, sep = bases[base]
+                    load = (f'load_frame {fr} (show Sep F 0x{sz:X} ({base} + 0x{i.imm:X}) 4 from '
+                            f'{sep}.symm.subR (c := {i.imm}) (l := 4) (by decide))')
+                    key = (base, i.imm)
+                    if key in self.inputs:
+                        alias = self.inputs[key]
+                        self.emit(f'  obtain ⟨n{k}, d{k}, {u}⟩ := {prev}.lwE {hc} {i.lemma} (off\' := 0x{nxt:X}) (by decide)')
+                        self.emit(f'    (by {simp}; exact aligned_add {al} (k := {i.imm}) (by decide)) (v := {alias})')
+                        self.emit(f'    (by {simp}; rw [{load}]; exact hv{alias[1:]})')
+                    else:
+                        self.emit(f'  obtain ⟨n{k}, {v}, d{k}, hv{k}, {u}⟩ := {prev}.lwG {hc} {i.lemma} (off\' := 0x{nxt:X}) (by decide)')
+                        self.emit(f'    (by {simp}; exact aligned_add {al} (k := {i.imm}) (by decide))')
+                        self.emit(f'  {simp} at hv{k}')
+                        self.emit(f'  rw [{load}] at hv{k}')
+                        self.inputs[key] = v
+                        ops = [base]
+            elif i.kind == 'alu' and i.op == 'add' and 0 in (i.rs1, i.rs2):
+                alias = cur[i.rs2 if i.rs1 == 0 else i.rs1]
+                self.emit(f'  obtain ⟨n{k}, d{k}, {u}⟩ := {prev}.aluE {hc} {i.lemma} (off\' := 0x{nxt:X}) (by decide) (v := {alias})')
+                self.emit(f'    (by {simp}; first | exact BitVec.zero_add _ | exact BitVec.add_zero _)')
+            elif i.kind == 'alu':
+                ops = [cur.get(i.rs1), cur.get(i.rs2)]
+                self.emit(f'  obtain ⟨n{k}, {v}, d{k}, hv{k}, {u}⟩ := {prev}.aluG {hc} {i.lemma} (off\' := 0x{nxt:X}) (by decide)')
+                self.emit(f'  {simp} at hv{k}')
+            elif i.kind == 'aluImm':
+                ops = [cur.get(i.rs1)]
+                self.emit(f'  obtain ⟨n{k}, {v}, d{k}, hv{k}, {u}⟩ := {prev}.aluImmG {hc} {i.lemma} (off\' := 0x{nxt:X}) (by decide)')
+                self.emit(f'  {simp} at hv{k}')
+            else:
+                self.emit(f'  obtain ⟨n{k}, {v}, d{k}, hv{k}, {u}⟩ := {prev}.luiG {hc} {i.lemma} (off\' := 0x{nxt:X}) (by decide)')
+            if i.kind != 'store':
+                if alias is not None:
+                    self.src.append([])
+                    self.var.append(None)
+                    if i.rd:
+                        cur[i.rd] = alias
+                else:
+                    self.src.append(ops)
+                    self.var.append(v)
+                    if i.rd:
+                        cur[i.rd] = v
+            prev = u
+            if (k + 1) % seg == 0 and k + 1 < len(self.block):
+                qs = []
+                for r in sorted(cur):
+                    if r == 0 or cur[r] is None:
+                        continue
+                    self.emit(f'  have q{k}_{r} : reg n{k} {lreg(r)} = {cur[r]} := by rw [{u}.regs]; {simp}')
+                    qs.append(f'q{k}_{r}')
+                self.emit(f'  have z{k} : reg n{k} 0 = 0 := {u}.self.zero')
+                hyps = ', '.join([f'z{k}'] + qs + [h for h in ('hF',) if False])
+                prev = f'{u}.self'
+        self.final, self.last, self.mem, self.hc, self.fr = cur, len(self.block) - 1, mem, hc, fr
+        self.hyps = hyps
+
+    def step_seg(self, name, bases, sz, seg, keep_slots, out_slots):
+        """Like `step_mem`, but each `seg` instructions are a theorem of their
+        own, so no single proof grows long; `self.lines` chains them.
+        `keep_slots` are frame slots the block doesn't write and must report."""
+        n = len(self.block)
+        # a dry run for the bookkeeping: operands, stores, and which store each spill load reads
+        cur = dict(self.init)
+        self.src, self.var = [], [None] * n
+        self.stores, slots, inputs = [], {}, {}
+        reads = {}
+        for k, i in enumerate(self.block):
+            if i.kind == 'store':
+                self.stores.append((k, i.imm, cur[i.rs2], f'M{k}'))
+                slots[i.imm] = len(self.stores) - 1
+                self.src.append([cur[i.rs2]])
+                continue
+            v = f'v{k}'
+            if i.kind == 'load' and cur.get(i.rs1) == 'F':
+                si = slots[i.imm]
+                reads[k] = si
+                cur[i.rd] = self.stores[si][2]
+                self.src.append([])
+                continue
+            if i.kind == 'load':
+                key = (cur[i.rs1], i.imm)
+                if key in inputs:
+                    cur[i.rd] = inputs[key]
+                    self.src.append([])
+                    continue
+                inputs[key] = v
+                self.src.append([cur[i.rs1]])
+            elif i.kind == 'alu' and i.op == 'add' and 0 in (i.rs1, i.rs2):
+                cur[i.rd] = cur[i.rs2 if i.rs1 == 0 else i.rs1]
+                self.src.append([])
+                continue
+            elif i.kind == 'alu':
+                self.src.append([cur.get(i.rs1), cur.get(i.rs2)])
+            elif i.kind == 'aluImm':
+                self.src.append([cur.get(i.rs1)])
+            else:
+                self.src.append([])
+            self.var[k] = v
+            if i.rd:
+                cur[i.rd] = v
+        self.final, self.last, self.inputs = cur, n - 1, inputs
+        store_at = {st[0]: si for si, st in enumerate(self.stores)}
+        live_until = {}
+        for k, si in reads.items():
+            live_until[si] = max(live_until.get(si, -1), k)
+        final_slot = {o: si for si, (k, o, _, _) in enumerate(self.stores)}
+        self.final_slot = final_slot
+
+        self.live_until, self.out_slots = live_until, out_slots
+
+        # the segments
+        cur = dict(self.init)
+        slotval = {o: f'memLoad32 M0 (F + 0x{o:X})' for o in keep_slots}
+        slotsrc = {o: None for o in keep_slots}
+        seen_inputs = {}
+        bounds = list(range(0, n, seg)) + [n]
+        self.seg_thms = []
+        self.emit('  have fr0 : ∀ x, Sep F 0x%X x 1 → M x = M x := fun _ _ => rfl' % sz)
+        for o in keep_slots:
+            self.emit(f'  have sg0_{o:X} : memLoad32 M (F + 0x{o:X}) = memLoad32 M (F + 0x{o:X}) := rfl')
+        mq = {r: self.init_hyp[r] for r in self.init}
+        ms = {o: f'sg0_{o:X}' for o in keep_slots}
+        mstate = ('s', 'hc', 'fr0')
+        csteps = []
+        for j in range(len(bounds) - 1):
+            k0, k1 = bounds[j], bounds[j + 1]
+            off_a = self.block[k0].off
+            off_b = self.block[k1].off if k1 < n else self.end
+            qin = sorted(r for r in cur if r != 0 and cur[r] is not None)
+            qinval = {r: cur[r] for r in qin}
+            sin = sorted(o for o, si in slotsrc.items() if self.carried(o, si, k0))
+            sinval = {o: slotval[o] for o in sin}
+            L = ['  have hz0 : reg n 0 = 0 := s.zero']
+            mem, hc, fr, prev = 'Mi', 'hc', 'fr', 's'
+            hyps = 'hz0' + ''.join(f', q{r}' for r in qin)
+            seg_stores, new_vars, hv_refs = [], [], []
+            for k in range(k0, k1):
+                i = self.block[k]
+                nxt = self.block[k + 1].off if k + 1 < n else self.end
+                v, u = f'v{k}', f'u{k}'
+                simp = f'simp +decide only [upd, ↓reduceIte, {hyps}]'
+                if i.kind == 'store':
+                    val = cur[i.rs2]
+                    L.append(f'  obtain ⟨n{k}, d{k}, {u}⟩ := {prev}.swG {hc} {i.lemma} (off\' := 0x{nxt:X}) (by decide)')
+                    L.append(f'    (by {simp}; exact aligned_add hF (k := {i.imm}) (by decide)) (a := F + 0x{i.imm:X}) (v := {val})')
+                    L.append(f'    (by {simp}) (by {simp})')
+                    L.append(f'  obtain ⟨M{k}, hM{k}⟩ : ∃ M\', memStore32 {mem} (F + 0x{i.imm:X}) {val} = M\' := ⟨_, rfl⟩')
+                    L.append(f'  rw [hM{k}] at {u}')
+                    L.append(f'  have hc{k} : CodeIn M{k} B {self.code} := by rw [← hM{k}]; exact {hc}.store32 (frm_sep\' sFC (by decide))')
+                    L.append(f'  have fr{k} : ∀ x, Sep F 0x{sz:X} x 1 → M{k} x = M0 x := fun x hx => by')
+                    L.append(f'    rw [← hM{k}, memStore32_get_sep (frm_sep\' hx (by decide)), {fr} x hx]')
+                    mem, hc, fr = f'M{k}', f'hc{k}', f'fr{k}'
+                    seg_stores.append((k, i.imm, val, mem))
+                    slotsrc[i.imm] = store_at[k]
+                    slotval[i.imm] = val
+                elif i.kind == 'load' and cur.get(i.rs1) == 'F':
+                    alias = slotval[i.imm]
+                    L.append(f'  obtain ⟨n{k}, d{k}, {u}⟩ := {prev}.lwE {hc} {i.lemma} (off\' := 0x{nxt:X}) (by decide)')
+                    L.append(f'    (by {simp}; exact aligned_add hF (k := {i.imm}) (by decide)) (v := {alias})')
+                    L.append(f'    (by {simp}; rw [{self.seg_chain(seg_stores, i.imm)}])')
+                    cur[i.rd] = alias
+                elif i.kind == 'load':
+                    base = cur[i.rs1]
+                    al, sep = bases[base]
+                    load = (f'load_frame {fr} (show Sep F 0x{sz:X} ({base} + 0x{i.imm:X}) 4 from '
+                            f'{sep}.symm.subR (c := {i.imm}) (l := 4) (by decide))')
+                    key = (base, i.imm)
+                    if key in seen_inputs:
+                        alias = seen_inputs[key]
+                        L.append(f'  obtain ⟨n{k}, d{k}, {u}⟩ := {prev}.lwE {hc} {i.lemma} (off\' := 0x{nxt:X}) (by decide)')
+                        L.append(f'    (by {simp}; exact aligned_add {al} (k := {i.imm}) (by decide)) (v := {alias})')
+                        L.append(f'    (by {simp}; rw [{load}]; exact hv{alias[1:]})')
+                        if int(alias[1:]) < k0 and alias not in [h for h, _ in hv_refs]:
+                            hv_refs.append((alias, f'memLoad32 M0 ({base} + 0x{i.imm:X}) = {alias}'))
+                        cur[i.rd] = alias
+                    else:
+                        L.append(f'  obtain ⟨n{k}, {v}, d{k}, hv{k}, {u}⟩ := {prev}.lwG {hc} {i.lemma} (off\' := 0x{nxt:X}) (by decide)')
+                        L.append(f'    (by {simp}; exact aligned_add {al} (k := {i.imm}) (by decide))')
+                        L.append(f'  {simp} at hv{k}')
+                        L.append(f'  rw [{load}] at hv{k}')
+                        seen_inputs[key] = v
+                        new_vars.append((v, f'memLoad32 M0 ({base} + 0x{i.imm:X}) = {v}'))
+                        cur[i.rd] = v
+                elif i.kind == 'alu' and i.op == 'add' and 0 in (i.rs1, i.rs2):
+                    alias = cur[i.rs2 if i.rs1 == 0 else i.rs1]
+                    L.append(f'  obtain ⟨n{k}, d{k}, {u}⟩ := {prev}.aluE {hc} {i.lemma} (off\' := 0x{nxt:X}) (by decide) (v := {alias})')
+                    L.append(f'    (by {simp}; first | exact BitVec.zero_add _ | exact BitVec.add_zero _)')
+                    cur[i.rd] = alias
+                else:
+                    if i.kind == 'alu':
+                        L.append(f'  obtain ⟨n{k}, {v}, d{k}, hv{k}, {u}⟩ := {prev}.aluG {hc} {i.lemma} (off\' := 0x{nxt:X}) (by decide)')
+                        stmt = f'aluEval .{i.op} {rv(cur, i.rs1)} {rv(cur, i.rs2)} = {v}'
+                    elif i.kind == 'aluImm':
+                        L.append(f'  obtain ⟨n{k}, {v}, d{k}, hv{k}, {u}⟩ := {prev}.aluImmG {hc} {i.lemma} (off\' := 0x{nxt:X}) (by decide)')
+                        stmt = f'aluEval .{i.op} {rv(cur, i.rs1)} 0x{i.imm:X} = {v}'
+                    else:
+                        L.append(f'  obtain ⟨n{k}, {v}, d{k}, hv{k}, {u}⟩ := {prev}.luiG {hc} {i.lemma} (off\' := 0x{nxt:X}) (by decide)')
+                        stmt = f'(0x{i.imm:X} : Word) = {v}'
+                    if i.kind != 'lui':
+                        L.append(f'  {simp} at hv{k}')
+                    new_vars.append((v, stmt))
+                    if i.rd:
+                        cur[i.rd] = v
+                prev = u
+            last_k = k1 - 1
+            qout = sorted(r for r in cur if r != 0 and cur[r] is not None)
+            sout = sorted(o for o, si in slotsrc.items() if self.carried(o, si, k1))
+            for r in qout:
+                L.append(f'  have qo{r} : reg n{last_k} {lreg(r)} = {cur[r]} := by rw [u{last_k}.regs]; simp +decide only [upd, ↓reduceIte, {hyps}]')
+            for o in sout:
+                L.append(f'  have so{o:X} : memLoad32 {mem} (F + 0x{o:X}) = {slotval[o]} := by')
+                L.append(f'    rw [{self.seg_chain(seg_stores, o)}]')
+            steps = ''.join(f'(.cons d{k} ' for k in range(k0, last_k)) + f'(.single d{last_k})' + ')' * (last_k - k0)
+            parts = [v for v, _ in new_vars] + [steps, f'u{last_k}.self', hc, fr] + [f'qo{r}' for r in qout] + \
+                [f'so{o:X}' for o in sout] + [f'hv{v[1:]}' for v, _ in new_vars]
+            L.append(f'  exact ⟨n{last_k}, {mem}, {", ".join(parts)}⟩')
+            concl = ['Steps n n\'', f'St M\' B n\' 0x{off_b:X} (reg n\')', f'CodeIn M\' B {self.code}',
+                     f'(∀ x, Sep F 0x{sz:X} x 1 → M\' x = M0 x)']
+            concl += [f'reg n\' {lreg(r)} = {cur[r]}' for r in qout]
+            concl += [f'memLoad32 M\' (F + 0x{o:X}) = {slotval[o]}' for o in sout]
+            concl += [st for _, st in new_vars]
+            hyps_in = [f'(q{r} : reg n {lreg(r)} = {qinval[r]})' for r in qin]
+            hyps_in += [f'(sl{o:X} : memLoad32 Mi (F + 0x{o:X}) = {sinval[o]})' for o in sin]
+            hyps_in += [f'(hv{h[1:]} : {t})' for h, t in hv_refs]
+            text = ' '.join(hyps_in)
+            words = sorted(set(WORD_RE.findall(text)), key=lambda w: int(w[1:]))
+            nv = ' '.join(v for v, _ in new_vars)
+            thm = [f'set_option linter.unusedSimpArgs false in', 'set_option linter.unusedVariables false in',
+                   f'set_option maxHeartbeats 40000000 in', f'set_option maxRecDepth 100000 in',
+                   f'theorem {name}_g{j} {{M0 Mi : Word → BitVec 8}} {{B F {" ".join(self.basenames)} : Word}} {{n : Machine}}'
+                   + (f' {{{" ".join(words)} : Word}}' if words else ''),
+                   f'    (s : St Mi B n 0x{off_a:X} (reg n)) (hc : CodeIn Mi B {self.code})',
+                   f'    (fr : ∀ x, Sep F 0x{sz:X} x 1 → Mi x = M0 x) {self.global_hyps}']
+            for h in hyps_in:
+                thm.append(f'    {h}')
+            thm.append(f'    : ∃ (n\' : Machine) (M\' : Word → BitVec 8)' + (f' ({nv} : Word)' if nv else '') + ',')
+            thm.append('      ' + ' ∧\n      '.join(concl) + ' := by')
+            self.seg_thms.append('\n'.join(thm + L))
+            # the block's proof: apply the segment
+            s_, hc_, fr_ = mstate
+            args = [s_, hc_, fr_, self.global_args] + [mq[r] for r in qin] + [ms[o] for o in sin] + \
+                [f'hv{h[1:]}' for h, _ in hv_refs]
+            ex = [f'ng{j}', f'Mg{j}'] + [v for v, _ in new_vars]
+            conj = [f'cg{j}', f'ug{j}', f'hcg{j}', f'frg{j}'] + \
+                [f'qg{j}_{r}' for r in qout] + [f'sg{j + 1}_{o:X}' for o in sout] + [f'hv{v[1:]}' for v, _ in new_vars]
+            # `obtain` on a long conjunction is slow; projections are not
+            self.emit(f'  obtain ⟨{", ".join(ex)}, hg{j}⟩ := {name}_g{j} {" ".join(args)}')
+            for idx, c in enumerate(conj):
+                path = f'hg{j}' + '.2' * idx + ('.1' if idx < len(conj) - 1 else '')
+                self.emit(f'  have {c} := {path}')
+            mq = {r: f'qg{j}_{r}' for r in qout}
+            ms = {o: f'sg{j + 1}_{o:X}' for o in sout}
+            mstate = (f'ug{j}', f'hcg{j}', f'frg{j}')
+            csteps.append(f'cg{j}')
+        self.mem_final = f'Mg{len(bounds) - 2}'
+        self.slot_facts = ms
+        self.reg_facts = mq
+        self.steps_final = csteps
+        self.n_final = f'ng{len(bounds) - 2}'
+
+    def carried(self, o, si, at):
+        """Whether the slot `o`, last written by store `si`, is still read at or after `at`."""
+        return si is None or self.live_until.get(si, -1) >= at or (o in self.out_slots and self.final_slot.get(o) == si)
+
+    def seg_chain(self, seg_stores, o):
+        """Rewrites that read slot `o` back through this segment's stores to
+        its value: the store that wrote it, or the slot fact at the start."""
+        rws = []
+        for k, os, _, m in reversed(seg_stores):
+            if os == o:
+                rws.append(f'← hM{k}, memLoad32_store32_same')
+                return ', '.join(rws)
+            rws.append(f'← hM{k}, memLoad32_store32_sep (show Sep (F + 0x{os:X}) 4 (F + 0x{o:X}) 4 from '
+                       f'sep_offsets F (c := {os}) (n := 4) (d := {o}) (k := 4) (by decide) (by decide) (by decide))')
+        rws.append(f'sl{o:X}')
+        return ', '.join(rws)
+
+    def chain(self, si, o):
+        """Rewrites that read slot `o` of the current memory back to store `si`."""
+        rws = []
+        for k, os, _, m in reversed(self.stores[si + 1:]):
+            rws.append(f'← hM{k}, memLoad32_store32_sep (show Sep (F + 0x{os:X}) 4 (F + 0x{o:X}) 4 from '
+                       f'sep_offsets F (c := {os}) (n := 4) (d := {o}) (k := 4) (by decide) (by decide) (by decide))')
+        rws.append(f'← hM{self.stores[si][0]}, memLoad32_store32_same')
+        return ', '.join(rws)
+
     def facts(self):
         """One natural-number fact per instruction result: `self.stmt[k]` and
         the term or tactic that proves it."""
         self.const = {}
         self.stmt = {}
         for k, i in enumerate(self.block):
+            if self.var[k] is None:
+                continue
             v = f'v{k}'
             ops = self.src[k]
             if i.kind == 'lui':
@@ -190,6 +535,13 @@ class Gen:
                 elif i.op == 'sltu':
                     st = (f'({a}.toNat < {b}.toNat ∧ {v}.toNat = 1) ∨ ({b}.toNat ≤ {a}.toNat ∧ {v}.toNat = 0)')
                     pf = f'tn_sltu hv{k}'
+                    if a in self.var and self.combine:
+                        ka = self.var.index(a)
+                        ia = self.block[ka]
+                        if ia.kind == 'alu' and ia.op == 'add' and b in self.src[ka]:
+                            p0, p1 = self.src[ka]
+                            st = f'{a}.toNat + 2 ^ 32 * {v}.toNat = {p0}.toNat + {p1}.toNat'
+                            pf = f'fmP1 hv{ka} (.{"inl" if b == p0 else "inr"} hv{k})'
                 elif i.op in ('mul', 'mulhu'):
                     tail = '% 2 ^ 32' if i.op == 'mul' else '/ 2 ^ 32'
                     lem = 'tn_mul' if i.op == 'mul' else 'tn_mulhu'
@@ -325,7 +677,55 @@ def match(gen, sp, divs, inputs_of_run, runs):
     return lo, hi
 
 
-def lemma(name, stmt, words, nats, hyps, extra=''):
+def nat_eval(expr, env):
+    """The value of a Lean natural-number expression made of `vN.toNat`,
+    numerals, `+`, `*`, `^`, `%`, `/`, and parentheses."""
+    toks = re.findall(r'v\d+\.toNat|\d+|[-+*/%^()]', expr)
+    pos = [0]
+
+    def peek():
+        return toks[pos[0]] if pos[0] < len(toks) else None
+
+    def take():
+        pos[0] += 1
+        return toks[pos[0] - 1]
+
+    def atom():
+        t = take()
+        if t == '(':
+            v = add()
+            take()
+            return v
+        if t.endswith('.toNat'):
+            return env[t[:-6]]
+        return int(t)
+
+    def power():
+        b = atom()
+        if peek() == '^':
+            take()
+            return b ** power()
+        return b
+
+    def mul():
+        v = power()
+        while peek() in ('*', '/', '%'):
+            op = take()
+            r = power()
+            v = v * r if op == '*' else v // r if op == '/' else v % r
+        return v
+
+    def add():
+        v = mul()
+        while peek() == '+':
+            take()
+            v += mul()
+        return v
+
+    return add()
+
+
+def lemma(name, stmt, words, nats, hyps, extra='', bounds=True):
     """A standalone step lemma, so each `omega` sees only its own facts."""
     ws = ' '.join(sorted(words, key=lambda w: int(w[1:])))
     ns = ' '.join(nats)
@@ -334,8 +734,13 @@ def lemma(name, stmt, words, nats, hyps, extra=''):
     out = [f'theorem {name} {{{ws} : Word}}' + (f' {{{ns} : Nat}}' if ns else '')]
     out.append(f'    {hs} :')
     out.append(f'    {stmt} := by')
-    out.append(f'  {lts}{extra}')
-    out.append('  omega')
+    ws = sorted(words, key=lambda w: int(w[1:]))
+    gen = ''.join(f'\n  generalize {w}.toNat = n{w[1:]} at *' for w in ws)
+    if bounds:
+        out.append(f'  {lts}{extra}{gen}')
+        out.append('  omega')
+    else:
+        out.append('  ' + extra.strip())
     return '\n'.join(out)
 
 
@@ -422,11 +827,319 @@ def gen_reduce():
     return g, sp, outs, lo, body, lemmas, small
 
 
+MUL_KEEP_SLOTS = [0x58] + [0xEC + 4 * i for i in range(13)]
+MUL_Z_SLOTS = [0x98 + 4 * i for i in range(20)]
+
+
+def mul_terms():
+    """For each sum `z[k]`, its ten products as (x index, doubled, y index, times 19)."""
+    out = []
+    for k in range(10):
+        t = []
+        for i in range(10):
+            j = k - i
+            wrap = j < 0
+            if wrap:
+                j += 10
+            t.append((i, bool(i % 2 and j % 2), j, wrap))
+        out.append(t)
+    return out
+
+
+def gen_mul():
+    ins = [Ins(*t) for t in decode('fmu', 'feMulCode')]
+    block = [i for i in ins if 0x2C <= i.off < 0x8A8]
+    g = Gen(block, 'fmu', 'feMulCode', 0x2C, 0x8A8, {11: 'xp', 12: 'yp', 2: 'F', 3: 'G3', 4: 'G4'})
+    g.combine = True
+    g.init_hyp = {2: 'hsp', 11: 'ha1', 12: 'ha2', 3: 'hG3', 4: 'hG4'}
+    g.basenames = ['xp', 'yp', 'G3', 'G4']
+    g.global_hyps = ('(hF : F.toNat % 4 = 0) (hx : xp.toNat % 4 = 0) (hy : yp.toNat % 4 = 0)\n'
+                     '    (sFC : Sep F 0x120 B feMulCode.length) (sXF : Sep xp 40 F 0x120) (sYF : Sep yp 40 F 0x120)')
+    g.global_args = 'hF hx hy sFC sXF sYF'
+    g.step_seg('fmu', {'xp': ('hx', 'sXF'), 'yp': ('hy', 'sYF')}, 0x120, 40, MUL_KEEP_SLOTS, MUL_Z_SLOTS)
+    g.facts()
+    rnd = random.Random(710)
+    runs = []
+    for _ in range(64):
+        x = [rnd.getrandbits(32) for _ in range(10)]
+        y = [rnd.getrandbits(32) for _ in range(10)]
+        regs0 = [0] * 32
+        regs0[2], regs0[11], regs0[12] = 0x10000, 0x2000, 0x2800
+        mem = {}
+        for k in range(10):
+            mem[0x2000 + 4 * k] = x[k]
+            mem[0x2800 + 4 * k] = y[k]
+        vals, _ = simulate(block, regs0, mem)
+        runs.append((x, y, vals))
+    n = len(block)
+
+    def find(f, ks=None):
+        for k in (ks if ks is not None else range(n)):
+            if g.var[k] is None or g.var[k] in g.const:
+                continue
+            if all(vals[k] == f(x, y) for x, y, vals in runs):
+                return k
+        return None
+
+    terms = mul_terms()
+
+    def xval(i, dbl):
+        return (lambda x, y: (2 * x[i]) & M32) if dbl else (lambda x, y: x[i])
+
+    def yval(j, w19):
+        return (lambda x, y: (19 * y[j]) & M32) if w19 else (lambda x, y: y[j])
+
+    # each product's two words, its low and high words, and its x-side and y-side operands
+    prods = {}
+    for kz, ts in enumerate(terms):
+        for t, (i, dbl, j, w19) in enumerate(ts):
+            xv, yv = xval(i, dbl), yval(j, w19)
+            pv = lambda x, y, xv=xv, yv=yv: xv(x, y) * yv(x, y)
+            klo = None
+            for k in range(n):
+                b = block[k]
+                if g.var[k] and b.kind == 'alu' and b.op == 'mul' and all(
+                        vals[k] == pv(x, y) & M32 for x, y, vals in runs):
+                    klo = k
+                    break
+            khi = None
+            for k in range(n):
+                b = block[k]
+                if g.var[k] and b.kind == 'alu' and b.op == 'mulhu' and all(
+                        vals[k] == pv(x, y) >> 32 for x, y, vals in runs):
+                    khi = k
+                    break
+            if klo is None or khi is None:
+                raise Exception(f'no product z{kz}[{t}]')
+            o0, o1 = g.src[klo]
+            k0 = g.var.index(o0) if o0 in g.var else None
+
+            def val_of(o):
+                kk = g.var.index(o)
+                return [vals[kk] for _, _, vals in runs]
+            xs = [xv(x, y) for x, y, _ in runs]
+            if val_of(o0) == xs:
+                xa, yb = o0, o1
+            else:
+                xa, yb = o1, o0
+            prods[(kz, t)] = (g.var[klo], g.var[khi], xa, yb, klo, khi)
+    known = {}
+    hfact = {}
+    lemmas, body = [], []
+    order = sorted(prods.items(), key=lambda kv: max(kv[1][4], kv[1][5]))
+    for (kz, t), (lo, hi, xa, yb, klo, khi) in order:
+        st = f'{lo}.toNat + 2 ^ 32 * {hi}.toNat = {xa}.toNat * {yb}.toNat'
+        hyps = [(f't{klo}', g.stmt[klo]), (f't{khi}', g.stmt[khi])]
+        extra = ''
+        for kk in (klo, khi):
+            o0, o1 = g.src[kk]
+            if o0 != xa:
+                extra += f'\n  rw [Nat.mul_comm {o0}.toNat {o1}.toNat] at t{kk}'
+        name = f'fmu_p{kz}_{t}'
+        lemmas.append(lemma(name, st, {lo, hi, xa, yb}, [], hyps, extra))
+        body.append(f'  have hp{kz}_{t} : {st} := {name} t{klo} t{khi}')
+        hfact[lo] = hfact[hi] = (f'hp{kz}_{t}', st)
+        known[lo] = known[hi] = (kz, frozenset([t]))
+    # partial sums: words whose cone's products all belong to one sum
+    pset = {}
+    for (kz, t), (lo, hi, *_r) in prods.items():
+        pset[lo] = pset[hi] = (kz, t)
+    cone = {}
+    n = len(block)
+    for k in range(n):
+        sset = set()
+        v = g.var[k]
+        if v in pset:
+            sset.add(pset[v])
+        for o in g.src[k]:
+            if o in cone:
+                sset |= cone[o]
+        if v is not None:
+            cone[v] = sset
+    sums = {}
+    for k in range(n):
+        v = g.var[k]
+        if v is None or v in pset or v in g.const:
+            continue
+        sset = cone[v]
+        kzs = {a for a, _ in sset}
+        if len(sset) < 2 or len(kzs) != 1:
+            continue
+        kz = kzs.pop()
+        ts = sorted(b for _, b in sset)
+
+        def tot(x, y, kz=kz, ts=ts):
+            r = 0
+            for tt in ts:
+                i, dbl, j, w19 = terms[kz][tt]
+                a = (2 * x[i]) & M32 if dbl else x[i]
+                b = (19 * y[j]) & M32 if w19 else y[j]
+                r += a * b
+            return r & M64
+        key = (kz, tuple(ts))
+        if all(vals[k] == tot(x, y) & M32 for x, y, vals in runs):
+            sums.setdefault(key, {}).setdefault('lo', v)
+        elif all(vals[k] == tot(x, y) >> 32 for x, y, vals in runs):
+            sums.setdefault(key, {}).setdefault('hi', v)
+    full = [(key, d['lo'], d['hi']) for key, d in sums.items() if 'lo' in d and 'hi' in d]
+    full.sort(key=lambda e: max(g.var.index(e[1]), g.var.index(e[2])))
+    zfacts = {}
+    for (kz, ts), lo, hi in full:
+        expr = ' + '.join(f'{prods[(kz, tt)][2]}.toNat * {prods[(kz, tt)][3]}.toNat' for tt in ts)
+        st = f'{lo}.toNat + 2 ^ 32 * {hi}.toNat = ({expr}) % 2 ^ 64'
+        ks, stops = g.cone([lo, hi], known)
+        hyps = [(f't{k}', g.stmt[k]) for k in ks]
+        seen = set()
+        for sv in sorted(stops, key=lambda w: int(w[1:])):
+            h = hfact[sv]
+            if h[0] not in seen:
+                seen.add(h[0])
+                hyps.append(h)
+        words = set(WORD_RE.findall(st))
+        for _, tt in hyps:
+            words |= set(WORD_RE.findall(tt))
+        name = f'fmu_s{kz}_{"_".join(str(tt) for tt in ts)}'
+        # the low words' adds come with their carries (fmP1); drop their remainders
+        combined = set()
+        for h, tt in hyps:
+            m = re.match(r'(v\d+)\.toNat \+ 2 \^ 32 \* v\d+\.toNat = v\d+\.toNat \+ v\d+\.toNat$', tt)
+            if m and h.startswith('t'):
+                combined.add(m.group(1))
+        hyps = [(h, tt) for h, tt in hyps
+                if not (h.startswith('t') and re.match(r'(v\d+)\.toNat = \(', tt) and tt.split('.')[0] in combined)]
+        qs, extra = [], ''
+        for h, tt in hyps:
+            if re.search(r'% 2 \^ (32|64)$', tt):
+                extra += f'\n  obtain ⟨q_{h}, e_{h}⟩ := mod_q {h}; clear {h}'
+                qs.append((h, tt))
+        # check the identity the proof states on the runs
+        for x, y, vals in runs:
+            env = {f'v{k}': vals[k] for k in range(len(vals)) if vals[k] is not None}
+            def ev(e, env=env):
+                return nat_eval(e, env)
+            S = ev(expr)
+            Q = 0
+            for h, tt in qs:
+                lhs, rhs = tt.split(' = ', 1)
+                mod = 2 ** 32 if rhs.endswith('2 ^ 32') else 2 ** 64
+                inner = rhs[:rhs.rindex(' % ')]
+                Q += ev(inner) // mod
+            if env[lo] + 2 ** 32 * env[hi] + 2 ** 64 * Q != S:
+                raise Exception(f'identity fails for {name}')
+        qsum = ' + '.join(f'q_{h}' for h, _ in qs) or '0'
+        gen = ''.join(f'\n    generalize {w}.toNat = n{w[1:]} at *' for w in sorted(words, key=lambda w: int(w[1:])))
+        extra += (f'\n  have key : {lo}.toNat + 2 ^ 32 * {hi}.toNat + 2 ^ 64 * ({qsum}) = {expr} := by{gen}'
+                  f'\n    omega\n  exact mod64_of key')
+        lemmas.append(lemma(name, st, words, [], hyps, extra, bounds=False))
+        hn = f'hs{kz}_{"_".join(str(tt) for tt in ts)}'
+        body.append(f'  have {hn} : {st} := {name} ' + ' '.join(h for h, _ in hyps))
+        hfact[lo] = hfact[hi] = (hn, st)
+        known[lo] = known[hi] = (kz, frozenset(ts))
+        if len(ts) == 10:
+            zfacts[kz] = (lo, hi, hn)
+    if len(zfacts) != 10:
+        raise Exception(f'sums found for {sorted(zfacts)}')
+    return g, runs, prods, terms, lemmas, body, zfacts
+
+
 OUT_REGS = ['a2', 'a3', 'a4', '(8 : Fin 32)', 'a5', '(5 : Fin 32)', 'a1', 'a6', '(6 : Fin 32)', '(9 : Fin 32)']
 OUT_NUMS = [12, 13, 14, 8, 15, 5, 11, 16, 6, 9]
 
 
+def write_mul():
+    g, runs, prods, terms, lemmas, body, zfacts = gen_mul()
+    o = ['import C3BootProofs.Proofs.Fe25519Decode', '',
+         '/-! # The straight-line body of `<&FieldElement2625 as Mul>::mul`, as compiled', '',
+         '`scripts/gen-fe25519.py` writes this file from the decoded instructions: a',
+         'theorem for each 40 instructions, the facts for each product and sum, and',
+         '`fmu_body`, which chains them. -/', '',
+         'namespace C3.RV32', '', 'open C3.Image', '']
+    for t in g.seg_thms:
+        o += [t, '']
+    for lm in lemmas:
+        o += [lm, '']
+    keep = ' ∧\n      '.join(f'memLoad32 M\' (F + 0x{s_:X}) = memLoad32 M (F + 0x{s_:X})' for s_ in MUL_KEEP_SLOTS)
+    o += ['set_option maxHeartbeats 40000000 in', 'set_option maxRecDepth 100000 in',
+          '/-- **The body of `mul`**, from the first load at 0x2C to the call to `reduce`',
+          'at 0x8A8: the ten `u64` sums it stores at `F + 0x98` are `feMulZ` of the',
+          'operands\' limbs, it writes nothing outside its frame, and it leaves the',
+          'frame slots that hold `out` and the saved registers alone. -/',
+          'theorem fmu_body {M : Word → BitVec 8} {B F xp yp : Word} {n : Machine} (s : St M B n 0x2C (reg n))',
+          '    (hc : CodeIn M B feMulCode) (hsp : reg n sp = F) (ha1 : reg n a1 = xp) (ha2 : reg n a2 = yp)',
+          '    (hF : F.toNat % 4 = 0) (hx : xp.toNat % 4 = 0) (hy : yp.toNat % 4 = 0)',
+          '    (sFC : Sep F 0x120 B feMulCode.length) (sXF : Sep xp 40 F 0x120) (sYF : Sep yp 40 F 0x120) :',
+          '    ∃ n\' M\', Steps n n\' ∧ St M\' B n\' 0x8A8 (reg n\') ∧ (∀ x, Sep F 0x120 x 1 → M\' x = M x) ∧',
+          f'      {keep} ∧',
+          '      [u64At M\' (F + 0x98) 0, u64At M\' (F + 0x98) 1, u64At M\' (F + 0x98) 2, u64At M\' (F + 0x98) 3,',
+          '        u64At M\' (F + 0x98) 4, u64At M\' (F + 0x98) 5, u64At M\' (F + 0x98) 6, u64At M\' (F + 0x98) 7,',
+          '        u64At M\' (F + 0x98) 8, u64At M\' (F + 0x98) 9] =',
+          '        feMulZ (limbAt M xp 0) (limbAt M xp 1) (limbAt M xp 2) (limbAt M xp 3) (limbAt M xp 4)',
+          '          (limbAt M xp 5) (limbAt M xp 6) (limbAt M xp 7) (limbAt M xp 8) (limbAt M xp 9)',
+          '          (limbAt M yp 0) (limbAt M yp 1) (limbAt M yp 2) (limbAt M yp 3) (limbAt M yp 4)',
+          '          (limbAt M yp 5) (limbAt M yp 6) (limbAt M yp 7) (limbAt M yp 8) (limbAt M yp 9) ∧',
+          '      reg n\' sp = F ∧ reg n\' (3 : Fin 32) = reg n (3 : Fin 32) ∧ reg n\' (4 : Fin 32) = reg n (4 : Fin 32) := by',
+          '  obtain ⟨G3, hG3⟩ : ∃ g, reg n (3 : Fin 32) = g := ⟨_, rfl⟩',
+          '  obtain ⟨G4, hG4⟩ : ∃ g, reg n (4 : Fin 32) = g := ⟨_, rfl⟩']
+    o += g.lines
+    o += [l for l in body]
+    xs = [g.inputs[('xp', 4 * i)] for i in range(10)]
+    ys = [g.inputs[('yp', 4 * j)] for j in range(10)]
+    for nm, ws, base in (('X', xs, 'xp'), ('Y', ys, 'yp')):
+        for i, w in enumerate(ws):
+            o.append(f'  obtain ⟨{nm}{i}, e{nm}{i}⟩ : ∃ X, limbAt M {base} {i} = X := ⟨_, rfl⟩')
+            o.append(f'  have h{nm}{i} : {w}.toNat = {nm}{i} := by rw [← e{nm}{i}, ← hv{w[1:]}]; rfl')
+    g19, g2 = {}, {}
+    for (kz, t), (lo, hi, xa, yb, klo, khi) in prods.items():
+        i, dbl, j, w19 = terms[kz][t]
+        if w19:
+            g19.setdefault(j, set()).add(yb)
+        if dbl:
+            g2.setdefault(i, set()).add(xa)
+    eqs = []
+    for j, wsx in sorted(g19.items()):
+        if len(wsx) != 1:
+            raise Exception(f'y{j}*19 in several words {wsx}')
+        w = wsx.pop()
+        o.append(f'  have g19_{j} : 19 * {ys[j]}.toNat % 2 ^ 32 = {w}.toNat := by rw [t{w[1:]}, Nat.mul_comm]')
+        eqs.append(f'g19_{j}')
+    for i, wsx in sorted(g2.items()):
+        if len(wsx) != 1:
+            raise Exception(f'x{i}*2 in several words {wsx}')
+        w = wsx.pop()
+        o.append(f'  have g2_{i} : 2 * {xs[i]}.toNat % 2 ^ 32 = {w}.toNat := by rw [t{w[1:]}, Nat.pow_one, Nat.mul_comm]')
+        eqs.append(f'g2_{i}')
+    mlast = g.mem_final
+    for kz in range(10):
+        lo, hi, hn = zfacts[kz]
+        for part, off, w in (('l', 0x98 + 8 * kz, lo), ('h', 0x9C + 8 * kz, hi)):
+            si = g.final_slot[off]
+            if g.stores[si][2] != w:
+                raise Exception(f'slot {off:#x} holds {g.stores[si][2]}, not {w}')
+        o.append(f'  have uz{kz} : u64At {mlast} (F + 0x98) {kz} = {lo}.toNat + 2 ^ 32 * {hi}.toNat := by')
+        o.append(f'    unfold u64At')
+        o.append(f'    rw [show F + 0x98 + BitVec.ofNat 32 (8 * {kz}) = F + 0x{0x98 + 8 * kz:X} by rw [BitVec.add_assoc]; rfl,')
+        o.append(f'      show F + 0x98 + BitVec.ofNat 32 (8 * {kz} + 4) = F + 0x{0x9C + 8 * kz:X} by rw [BitVec.add_assoc]; rfl,')
+        o.append(f'      {g.slot_facts[0x98 + 8 * kz]}, {g.slot_facts[0x9C + 8 * kz]}]')
+    steps = g.steps_final
+    chain = steps[-1]
+    for c in reversed(steps[:-1]):
+        chain = f'{c}.trans ({chain})'
+    last = len(steps) - 1
+    o.append(f'  refine ⟨{g.n_final}, {mlast}, {chain}, ug{last}, frg{last}, ' +
+             ', '.join(g.slot_facts[s_] for s_ in MUL_KEEP_SLOTS) + ', ?_, ' +
+             f'{g.reg_facts[2]}, {g.reg_facts[3]}.trans hG3.symm, {g.reg_facts[4]}.trans hG4.symm⟩')
+    o.append('  rw [' + ', '.join(f'uz{k}' for k in range(10)) + ', ' + ', '.join(f'eX{i}' for i in range(10)) + ', ' +
+             ', '.join(f'eY{i}' for i in range(10)) + ']')
+    o.append('  simp only [feMulZ]')
+    o.append('  rw [' + ', '.join(f'← hX{i}' for i in range(10)) + ', ' + ', '.join(f'← hY{i}' for i in range(10)) + ']')
+    o.append('  rw [' + ', '.join(eqs) + ']')
+    o.append('  rw [' + ', '.join(zfacts[k][2] for k in range(10)) + ']')
+    o += ['', 'end C3.RV32']
+    open(os.path.join(ROOT, 'C3BootProofs/Proofs/FeMulBody.lean'), 'w').write('\n'.join(o) + '\n')
+
+
 def main():
+    write_mul()
     g, sp, outs, lo, body, lemmas, small = gen_reduce()
     last = g.last
     rds = sorted({i.rd for i in g.block if i.rd})

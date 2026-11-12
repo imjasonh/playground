@@ -22,6 +22,18 @@ theorem fr_s0 {v0 v1 v3 v4 v7 v8 v9 v10 v11 v12 v15 v17 : Word} {Z0 Z1 X1 : Nat}
     (eX1 : (Z1 + Z0 / 2 ^ 26) % 2 ^ 64 = X1) :
     v12.toNat + 2 ^ 32 * v17.toNat = X1 := by
   have := v0.isLt; have := v1.isLt; have := v3.isLt; have := v4.isLt; have := v7.isLt; have := v8.isLt; have := v9.isLt; have := v10.isLt; have := v11.isLt; have := v12.isLt; have := v15.isLt; have := v17.isLt
+  generalize v0.toNat = n0 at *
+  generalize v1.toNat = n1 at *
+  generalize v3.toNat = n3 at *
+  generalize v4.toNat = n4 at *
+  generalize v7.toNat = n7 at *
+  generalize v8.toNat = n8 at *
+  generalize v9.toNat = n9 at *
+  generalize v10.toNat = n10 at *
+  generalize v11.toNat = n11 at *
+  generalize v12.toNat = n12 at *
+  generalize v15.toNat = n15 at *
+  generalize v17.toNat = n17 at *
   omega
 
 theorem fr_s1 {v0 v1 v103 : Word} {Z0 X2 : Nat}
@@ -30,6 +42,9 @@ theorem fr_s1 {v0 v1 v103 : Word} {Z0 X2 : Nat}
     (eX2 : Z0 % 2 ^ 26 = X2) :
     v103.toNat = X2 := by
   have := v0.isLt; have := v1.isLt; have := v103.isLt
+  generalize v0.toNat = n0 at *
+  generalize v1.toNat = n1 at *
+  generalize v103.toNat = n103 at *
   omega
 
 theorem fr_s2 {v5 v6 v13 v14 v16 v18 v20 v21 v22 v23 v24 v25 : Word} {Z4 Z5 X3 : Nat}
@@ -46,6 +61,18 @@ theorem fr_s2 {v5 v6 v13 v14 v16 v18 v20 v21 v22 v23 v24 v25 : Word} {Z4 Z5 X3 :
     (eX3 : (Z5 + Z4 / 2 ^ 26) % 2 ^ 64 = X3) :
     v22.toNat + 2 ^ 32 * v25.toNat = X3 := by
   have := v5.isLt; have := v6.isLt; have := v13.isLt; have := v14.isLt; have := v16.isLt; have := v18.isLt; have := v20.isLt; have := v21.isLt; have := v22.isLt; have := v23.isLt; have := v24.isLt; have := v25.isLt
+  generalize v5.toNat = n5 at *
+  generalize v6.toNat = n6 at *
+  generalize v13.toNat = n13 at *
+  generalize v14.toNat = n14 at *
+  generalize v16.toNat = n16 at *
+  generalize v18.toNat = n18 at *
+  generalize v20.toNat = n20 at *
+  generalize v21.toNat = n21 at *
+  generalize v22.toNat = n22 at *
+  generalize v23.toNat = n23 at *
+  generalize v24.toNat = n24 at *
+  generalize v25.toNat = n25 at *
   omega
 
 theorem fr_s3 {v5 v6 v26 : Word} {Z4 X4 : Nat}
@@ -54,6 +81,9 @@ theorem fr_s3 {v5 v6 v26 : Word} {Z4 X4 : Nat}
     (eX4 : Z4 % 2 ^ 26 = X4) :
     v26.toNat = X4 := by
   have := v5.isLt; have := v6.isLt; have := v26.isLt
+  generalize v5.toNat = n5 at *
+  generalize v6.toNat = n6 at *
+  generalize v26.toNat = n26 at *
   omega
 
 theorem fr_s4 {v12 v17 v27 v28 v29 v30 v31 v32 v35 v36 v41 v49 : Word} {X1 Z2 X5 : Nat}
@@ -70,6 +100,18 @@ theorem fr_s4 {v12 v17 v27 v28 v29 v30 v31 v32 v35 v36 v41 v49 : Word} {X1 Z2 X5
     (eX5 : (Z2 + X1 / 2 ^ 25) % 2 ^ 64 = X5) :
     v36.toNat + 2 ^ 32 * v49.toNat = X5 := by
   have := v12.isLt; have := v17.isLt; have := v27.isLt; have := v28.isLt; have := v29.isLt; have := v30.isLt; have := v31.isLt; have := v32.isLt; have := v35.isLt; have := v36.isLt; have := v41.isLt; have := v49.isLt
+  generalize v12.toNat = n12 at *
+  generalize v17.toNat = n17 at *
+  generalize v27.toNat = n27 at *
+  generalize v28.toNat = n28 at *
+  generalize v29.toNat = n29 at *
+  generalize v30.toNat = n30 at *
+  generalize v31.toNat = n31 at *
+  generalize v32.toNat = n32 at *
+  generalize v35.toNat = n35 at *
+  generalize v36.toNat = n36 at *
+  generalize v41.toNat = n41 at *
+  generalize v49.toNat = n49 at *
   omega
 
 theorem fr_s5 {v12 v17 v105 : Word} {X1 X6 : Nat}
@@ -78,6 +120,9 @@ theorem fr_s5 {v12 v17 v105 : Word} {X1 X6 : Nat}
     (eX6 : X1 % 2 ^ 25 = X6) :
     v105.toNat = X6 := by
   have := v12.isLt; have := v17.isLt; have := v105.isLt
+  generalize v12.toNat = n12 at *
+  generalize v17.toNat = n17 at *
+  generalize v105.toNat = n105 at *
   omega
 
 theorem fr_s6 {v22 v25 v37 v38 v39 v40 v42 v43 v46 v47 v48 v50 : Word} {X3 Z6 X7 : Nat}
@@ -94,6 +139,18 @@ theorem fr_s6 {v22 v25 v37 v38 v39 v40 v42 v43 v46 v47 v48 v50 : Word} {X3 Z6 X7
     (eX7 : (Z6 + X3 / 2 ^ 25) % 2 ^ 64 = X7) :
     v46.toNat + 2 ^ 32 * v50.toNat = X7 := by
   have := v22.isLt; have := v25.isLt; have := v37.isLt; have := v38.isLt; have := v39.isLt; have := v40.isLt; have := v42.isLt; have := v43.isLt; have := v46.isLt; have := v47.isLt; have := v48.isLt; have := v50.isLt
+  generalize v22.toNat = n22 at *
+  generalize v25.toNat = n25 at *
+  generalize v37.toNat = n37 at *
+  generalize v38.toNat = n38 at *
+  generalize v39.toNat = n39 at *
+  generalize v40.toNat = n40 at *
+  generalize v42.toNat = n42 at *
+  generalize v43.toNat = n43 at *
+  generalize v46.toNat = n46 at *
+  generalize v47.toNat = n47 at *
+  generalize v48.toNat = n48 at *
+  generalize v50.toNat = n50 at *
   omega
 
 theorem fr_s7 {v22 v25 v106 : Word} {X3 X8 : Nat}
@@ -102,6 +159,9 @@ theorem fr_s7 {v22 v25 v106 : Word} {X3 X8 : Nat}
     (eX8 : X3 % 2 ^ 25 = X8) :
     v106.toNat = X8 := by
   have := v22.isLt; have := v25.isLt; have := v106.isLt
+  generalize v22.toNat = n22 at *
+  generalize v25.toNat = n25 at *
+  generalize v106.toNat = n106 at *
   omega
 
 theorem fr_s8 {v33 v34 v36 v49 v51 v52 v53 v54 v57 v63 v69 v77 : Word} {X5 Z3 X9 : Nat}
@@ -118,6 +178,18 @@ theorem fr_s8 {v33 v34 v36 v49 v51 v52 v53 v54 v57 v63 v69 v77 : Word} {X5 Z3 X9
     (eX9 : (Z3 + X5 / 2 ^ 26) % 2 ^ 64 = X9) :
     v63.toNat + 2 ^ 32 * v77.toNat = X9 := by
   have := v33.isLt; have := v34.isLt; have := v36.isLt; have := v49.isLt; have := v51.isLt; have := v52.isLt; have := v53.isLt; have := v54.isLt; have := v57.isLt; have := v63.isLt; have := v69.isLt; have := v77.isLt
+  generalize v33.toNat = n33 at *
+  generalize v34.toNat = n34 at *
+  generalize v36.toNat = n36 at *
+  generalize v49.toNat = n49 at *
+  generalize v51.toNat = n51 at *
+  generalize v52.toNat = n52 at *
+  generalize v53.toNat = n53 at *
+  generalize v54.toNat = n54 at *
+  generalize v57.toNat = n57 at *
+  generalize v63.toNat = n63 at *
+  generalize v69.toNat = n69 at *
+  generalize v77.toNat = n77 at *
   omega
 
 theorem fr_s9 {v36 v49 v120 : Word} {X5 X10 : Nat}
@@ -126,6 +198,9 @@ theorem fr_s9 {v36 v49 v120 : Word} {X5 X10 : Nat}
     (eX10 : X5 % 2 ^ 26 = X10) :
     v120.toNat = X10 := by
   have := v36.isLt; have := v49.isLt; have := v120.isLt
+  generalize v36.toNat = n36 at *
+  generalize v49.toNat = n49 at *
+  generalize v120.toNat = n120 at *
   omega
 
 theorem fr_s10 {v44 v45 v46 v50 v55 v56 v58 v59 v60 v61 v62 v64 : Word} {X7 Z7 X11 : Nat}
@@ -142,6 +217,18 @@ theorem fr_s10 {v44 v45 v46 v50 v55 v56 v58 v59 v60 v61 v62 v64 : Word} {X7 Z7 X
     (eX11 : (Z7 + X7 / 2 ^ 26) % 2 ^ 64 = X11) :
     v60.toNat + 2 ^ 32 * v64.toNat = X11 := by
   have := v44.isLt; have := v45.isLt; have := v46.isLt; have := v50.isLt; have := v55.isLt; have := v56.isLt; have := v58.isLt; have := v59.isLt; have := v60.isLt; have := v61.isLt; have := v62.isLt; have := v64.isLt
+  generalize v44.toNat = n44 at *
+  generalize v45.toNat = n45 at *
+  generalize v46.toNat = n46 at *
+  generalize v50.toNat = n50 at *
+  generalize v55.toNat = n55 at *
+  generalize v56.toNat = n56 at *
+  generalize v58.toNat = n58 at *
+  generalize v59.toNat = n59 at *
+  generalize v60.toNat = n60 at *
+  generalize v61.toNat = n61 at *
+  generalize v62.toNat = n62 at *
+  generalize v64.toNat = n64 at *
   omega
 
 theorem fr_s11 {v46 v50 v123 : Word} {X7 X12 : Nat}
@@ -150,6 +237,9 @@ theorem fr_s11 {v46 v50 v123 : Word} {X7 X12 : Nat}
     (eX12 : X7 % 2 ^ 26 = X12) :
     v123.toNat = X12 := by
   have := v46.isLt; have := v50.isLt; have := v123.isLt
+  generalize v46.toNat = n46 at *
+  generalize v50.toNat = n50 at *
+  generalize v123.toNat = n123 at *
   omega
 
 theorem fr_s12 {v26 v63 v77 v81 v87 v91 v98 v99 v100 v101 : Word} {X4 X9 X13 : Nat}
@@ -165,6 +255,16 @@ theorem fr_s12 {v26 v63 v77 v81 v87 v91 v98 v99 v100 v101 : Word} {X4 X9 X13 : N
     (eX13 : (X4 + X9 / 2 ^ 25) % 2 ^ 64 = X13) :
     v98.toNat + 2 ^ 32 * v101.toNat = X13 := by
   have := v26.isLt; have := v63.isLt; have := v77.isLt; have := v81.isLt; have := v87.isLt; have := v91.isLt; have := v98.isLt; have := v99.isLt; have := v100.isLt; have := v101.isLt
+  generalize v26.toNat = n26 at *
+  generalize v63.toNat = n63 at *
+  generalize v77.toNat = n77 at *
+  generalize v81.toNat = n81 at *
+  generalize v87.toNat = n87 at *
+  generalize v91.toNat = n91 at *
+  generalize v98.toNat = n98 at *
+  generalize v99.toNat = n99 at *
+  generalize v100.toNat = n100 at *
+  generalize v101.toNat = n101 at *
   omega
 
 theorem fr_s13 {v63 v77 v121 : Word} {X9 X14 : Nat}
@@ -173,6 +273,9 @@ theorem fr_s13 {v63 v77 v121 : Word} {X9 X14 : Nat}
     (eX14 : X9 % 2 ^ 25 = X14) :
     v121.toNat = X14 := by
   have := v63.isLt; have := v77.isLt; have := v121.isLt
+  generalize v63.toNat = n63 at *
+  generalize v77.toNat = n77 at *
+  generalize v121.toNat = n121 at *
   omega
 
 theorem fr_s14 {v60 v64 v65 v66 v67 v68 v70 v71 v74 v75 v76 v78 : Word} {X11 Z8 X15 : Nat}
@@ -189,6 +292,18 @@ theorem fr_s14 {v60 v64 v65 v66 v67 v68 v70 v71 v74 v75 v76 v78 : Word} {X11 Z8 
     (eX15 : (Z8 + X11 / 2 ^ 25) % 2 ^ 64 = X15) :
     v74.toNat + 2 ^ 32 * v78.toNat = X15 := by
   have := v60.isLt; have := v64.isLt; have := v65.isLt; have := v66.isLt; have := v67.isLt; have := v68.isLt; have := v70.isLt; have := v71.isLt; have := v74.isLt; have := v75.isLt; have := v76.isLt; have := v78.isLt
+  generalize v60.toNat = n60 at *
+  generalize v64.toNat = n64 at *
+  generalize v65.toNat = n65 at *
+  generalize v66.toNat = n66 at *
+  generalize v67.toNat = n67 at *
+  generalize v68.toNat = n68 at *
+  generalize v70.toNat = n70 at *
+  generalize v71.toNat = n71 at *
+  generalize v74.toNat = n74 at *
+  generalize v75.toNat = n75 at *
+  generalize v76.toNat = n76 at *
+  generalize v78.toNat = n78 at *
   omega
 
 theorem fr_s15 {v60 v64 v124 : Word} {X11 X16 : Nat}
@@ -197,6 +312,9 @@ theorem fr_s15 {v60 v64 v124 : Word} {X11 X16 : Nat}
     (eX16 : X11 % 2 ^ 25 = X16) :
     v124.toNat = X16 := by
   have := v60.isLt; have := v64.isLt; have := v124.isLt
+  generalize v60.toNat = n60 at *
+  generalize v64.toNat = n64 at *
+  generalize v124.toNat = n124 at *
   omega
 
 theorem fr_s16 {v98 v101 v106 v107 v111 v115 v117 : Word} {X8 X13 X17 : Nat}
@@ -209,6 +327,13 @@ theorem fr_s16 {v98 v101 v106 v107 v111 v115 v117 : Word} {X8 X13 X17 : Nat}
     (eX17 : (X8 + X13 / 2 ^ 26) % 2 ^ 64 = X17) :
     v117.toNat = X17 % 2 ^ 32 := by
   have := v98.isLt; have := v101.isLt; have := v106.isLt; have := v107.isLt; have := v111.isLt; have := v115.isLt; have := v117.isLt
+  generalize v98.toNat = n98 at *
+  generalize v101.toNat = n101 at *
+  generalize v106.toNat = n106 at *
+  generalize v107.toNat = n107 at *
+  generalize v111.toNat = n111 at *
+  generalize v115.toNat = n115 at *
+  generalize v117.toNat = n117 at *
   omega
 
 theorem fr_s17 {v98 v101 v122 : Word} {X13 X18 : Nat}
@@ -217,6 +342,9 @@ theorem fr_s17 {v98 v101 v122 : Word} {X13 X18 : Nat}
     (eX18 : X13 % 2 ^ 26 = X18) :
     v122.toNat = X18 := by
   have := v98.isLt; have := v101.isLt; have := v122.isLt
+  generalize v98.toNat = n98 at *
+  generalize v101.toNat = n101 at *
+  generalize v122.toNat = n122 at *
   omega
 
 theorem fr_s18 {v72 v73 v74 v78 v79 v80 v82 v83 v84 v85 v86 v88 : Word} {X15 Z9 X19 : Nat}
@@ -233,6 +361,18 @@ theorem fr_s18 {v72 v73 v74 v78 v79 v80 v82 v83 v84 v85 v86 v88 : Word} {X15 Z9 
     (eX19 : (Z9 + X15 / 2 ^ 26) % 2 ^ 64 = X19) :
     v84.toNat + 2 ^ 32 * v88.toNat = X19 := by
   have := v72.isLt; have := v73.isLt; have := v74.isLt; have := v78.isLt; have := v79.isLt; have := v80.isLt; have := v82.isLt; have := v83.isLt; have := v84.isLt; have := v85.isLt; have := v86.isLt; have := v88.isLt
+  generalize v72.toNat = n72 at *
+  generalize v73.toNat = n73 at *
+  generalize v74.toNat = n74 at *
+  generalize v78.toNat = n78 at *
+  generalize v79.toNat = n79 at *
+  generalize v80.toNat = n80 at *
+  generalize v82.toNat = n82 at *
+  generalize v83.toNat = n83 at *
+  generalize v84.toNat = n84 at *
+  generalize v85.toNat = n85 at *
+  generalize v86.toNat = n86 at *
+  generalize v88.toNat = n88 at *
   omega
 
 theorem fr_s19 {v74 v78 v125 : Word} {X15 X20 : Nat}
@@ -241,6 +381,9 @@ theorem fr_s19 {v74 v78 v125 : Word} {X15 X20 : Nat}
     (eX20 : X15 % 2 ^ 26 = X20) :
     v125.toNat = X20 := by
   have := v74.isLt; have := v78.isLt; have := v125.isLt
+  generalize v74.toNat = n74 at *
+  generalize v78.toNat = n78 at *
+  generalize v125.toNat = n125 at *
   omega
 
 theorem fr_s20 {v84 v88 v89 v90 v92 v93 : Word} {X19 X21 : Nat}
@@ -252,6 +395,12 @@ theorem fr_s20 {v84 v88 v89 v90 v92 v93 : Word} {X19 X21 : Nat}
     (eX21 : X19 / 2 ^ 25 = X21) :
     v92.toNat + 2 ^ 32 * v93.toNat = X21 := by
   have := v84.isLt; have := v88.isLt; have := v89.isLt; have := v90.isLt; have := v92.isLt; have := v93.isLt
+  generalize v84.toNat = n84 at *
+  generalize v88.toNat = n88 at *
+  generalize v89.toNat = n89 at *
+  generalize v90.toNat = n90 at *
+  generalize v92.toNat = n92 at *
+  generalize v93.toNat = n93 at *
   omega
 
 theorem fr_s21 {v92 v93 v95 v96 v97 v109 : Word} {X21 X22 : Nat}
@@ -263,6 +412,12 @@ theorem fr_s21 {v92 v93 v95 v96 v97 v109 : Word} {X21 X22 : Nat}
     (eX22 : 19 * X21 % 2 ^ 64 = X22) :
     v96.toNat + 2 ^ 32 * v109.toNat = X22 := by
   have := v92.isLt; have := v93.isLt; have := v95.isLt; have := v96.isLt; have := v97.isLt; have := v109.isLt
+  generalize v92.toNat = n92 at *
+  generalize v93.toNat = n93 at *
+  generalize v95.toNat = n95 at *
+  generalize v96.toNat = n96 at *
+  generalize v97.toNat = n97 at *
+  generalize v109.toNat = n109 at *
   omega
 
 theorem fr_s22 {v96 v103 v108 v109 v110 v112 : Word} {X2 X22 X23 : Nat}
@@ -274,6 +429,12 @@ theorem fr_s22 {v96 v103 v108 v109 v110 v112 : Word} {X2 X22 X23 : Nat}
     (eX23 : (X2 + X22) % 2 ^ 64 = X23) :
     v108.toNat + 2 ^ 32 * v112.toNat = X23 := by
   have := v96.isLt; have := v103.isLt; have := v108.isLt; have := v109.isLt; have := v110.isLt; have := v112.isLt
+  generalize v96.toNat = n96 at *
+  generalize v103.toNat = n103 at *
+  generalize v108.toNat = n108 at *
+  generalize v109.toNat = n109 at *
+  generalize v110.toNat = n110 at *
+  generalize v112.toNat = n112 at *
   omega
 
 theorem fr_s23 {v84 v88 v126 : Word} {X19 X24 : Nat}
@@ -282,6 +443,9 @@ theorem fr_s23 {v84 v88 v126 : Word} {X19 X24 : Nat}
     (eX24 : X19 % 2 ^ 25 = X24) :
     v126.toNat = X24 := by
   have := v84.isLt; have := v88.isLt; have := v126.isLt
+  generalize v84.toNat = n84 at *
+  generalize v88.toNat = n88 at *
+  generalize v126.toNat = n126 at *
   omega
 
 theorem fr_s24 {v105 v108 v112 v113 v114 v116 v118 : Word} {X6 X23 X25 : Nat}
@@ -294,6 +458,13 @@ theorem fr_s24 {v105 v108 v112 v113 v114 v116 v118 : Word} {X6 X23 X25 : Nat}
     (eX25 : (X6 + X23 / 2 ^ 26) % 2 ^ 64 = X25) :
     v118.toNat = X25 % 2 ^ 32 := by
   have := v105.isLt; have := v108.isLt; have := v112.isLt; have := v113.isLt; have := v114.isLt; have := v116.isLt; have := v118.isLt
+  generalize v105.toNat = n105 at *
+  generalize v108.toNat = n108 at *
+  generalize v112.toNat = n112 at *
+  generalize v113.toNat = n113 at *
+  generalize v114.toNat = n114 at *
+  generalize v116.toNat = n116 at *
+  generalize v118.toNat = n118 at *
   omega
 
 theorem fr_s25 {v108 v112 v119 : Word} {X23 X26 : Nat}
@@ -302,6 +473,9 @@ theorem fr_s25 {v108 v112 v119 : Word} {X23 X26 : Nat}
     (eX26 : X23 % 2 ^ 26 = X26) :
     v119.toNat = X26 := by
   have := v108.isLt; have := v112.isLt; have := v119.isLt
+  generalize v108.toNat = n108 at *
+  generalize v112.toNat = n112 at *
+  generalize v119.toNat = n119 at *
   omega
 
 /-- The registers `reduce`'s body leaves alone. -/

@@ -79,6 +79,8 @@ import C3BootProofs.Proofs.Fe25519
 import C3BootProofs.Proofs.Fe25519Decode
 import C3BootProofs.Proofs.FeReduceBody
 import C3BootProofs.Proofs.FeReduce
+import C3BootProofs.Proofs.FeMulBody
+import C3BootProofs.Proofs.FeMul
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
 import C3BootProofs.Theorems.Level
