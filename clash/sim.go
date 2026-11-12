@@ -8,6 +8,7 @@ import (
 // GameResult summarizes one finished game.
 type GameResult struct {
 	Players    int
+	Decks      int // number of 48-card decks shuffled together
 	Rounds     int
 	Carryovers int   // clashes that tied and pushed their pot forward
 	Scores     []int // pips captured per seat
@@ -15,25 +16,32 @@ type GameResult struct {
 
 	ScoredPips     int
 	SetAsidePips   int // pips left in an unresolved final pot
-	DiscardedPips  int // pips of committed cards, which are spent
+	DiscardedPips  int // pips of the cards played, which are spent
 	HandLeftPips   int // pips still in hands and draw piles at the end
 	CardsAccounted int // every dealt card, found in exactly one place
 }
 
 // dealPlan gives the starting hand, draw-pile, and ante-pile sizes for a player
-// count, from one even rule: deal all 48 cards into equal stacks, keep handCap
-// in hand, and split the rest of the stack into two equal piles, one draw and
-// one ante. Because every stack (24, 16, or 12) minus the hand is even, the
-// split is exact, and the ante always equals the draw. The hand refills to
-// handCap from the draw pile after each clash, so hand+draw is the whole bid
-// budget; with ante equal to draw, that budget beats the number of rounds by
-// exactly handCap at every table size.
-func dealPlan(players int) (hand, draw, rounds int, ok bool) {
-	if players < 2 || players > 4 || DeckSize%players != 0 {
+// count and a number of 48-card decks, from one even rule: shuffle all the
+// cards together, deal them into equal stacks, keep handCap in hand, and split
+// the rest of the stack into two equal piles, one draw and one ante. Every
+// stack minus the hand is even (48 cards divide into even stacks for two, three,
+// and four players, and so does any whole number of decks), so the split is
+// exact and the ante always equals the draw. The ante pile is the game's clock:
+// one card feeds the pot each clash, so more decks make a longer game.
+func dealPlan(players, decks int) (hand, draw, rounds int, ok bool) {
+	if players < 2 || players > 4 || decks < 1 {
 		return 0, 0, 0, false
 	}
-	stack := DeckSize / players
+	total := DeckSize * decks
+	if total%players != 0 {
+		return 0, 0, 0, false
+	}
+	stack := total / players
 	rest := stack - handCap
+	if rest < 0 || rest%2 != 0 {
+		return 0, 0, 0, false
+	}
 	ante := rest / 2
 	return handCap, rest - ante, ante, true
 }
@@ -62,9 +70,16 @@ func removeAt(hand []Card, j int) []Card {
 	return append(out, hand[j+1:]...)
 }
 
-// PlayGame runs one full game. strategies drive the seats and homes gives each
-// seat's Home suit; both must have 2 to 4 entries and the homes must differ.
+// PlayGame runs one full game with a single 48-card deck.
 func PlayGame(rng *rand.Rand, strategies []Strategy, homes []Suit) (GameResult, error) {
+	return PlayGameDecks(rng, strategies, homes, 1)
+}
+
+// PlayGameDecks runs one full game shuffled from the given number of 48-card
+// decks. More decks make a longer game: the ante pile, which sets the clash
+// count, grows with the deal. strategies drive the seats and homes gives each
+// seat's Home suit; both must have 2 to 4 entries and the homes must differ.
+func PlayGameDecks(rng *rand.Rand, strategies []Strategy, homes []Suit, decks int) (GameResult, error) {
 	players := len(strategies)
 	if players < 2 || players > 4 {
 		return GameResult{}, fmt.Errorf("clash needs 2 to 4 players, got %d", players)
@@ -79,12 +94,15 @@ func PlayGame(rng *rand.Rand, strategies []Strategy, homes []Suit) (GameResult, 
 		}
 		seen[h] = true
 	}
-	handSize, drawSize, rounds, ok := dealPlan(players)
+	handSize, drawSize, rounds, ok := dealPlan(players, decks)
 	if !ok {
-		return GameResult{}, fmt.Errorf("no deal plan for %d players", players)
+		return GameResult{}, fmt.Errorf("no deal plan for %d players with %d decks", players, decks)
 	}
 
-	deck := NewDeck()
+	deck := make([]Card, 0, DeckSize*decks)
+	for d := 0; d < decks; d++ {
+		deck = append(deck, NewDeck()...)
+	}
 	rng.Shuffle(len(deck), func(i, j int) { deck[i], deck[j] = deck[j], deck[i] })
 	seats := make([]Seat, players)
 	pos := 0
@@ -136,6 +154,7 @@ func PlayGame(rng *rand.Rand, strategies []Strategy, homes []Suit) (GameResult, 
 
 	res := GameResult{
 		Players:    players,
+		Decks:      decks,
 		Rounds:     rounds,
 		Carryovers: carryovers,
 		Scores:     make([]int, players),

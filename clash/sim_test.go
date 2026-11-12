@@ -74,13 +74,46 @@ func TestHandRefill(t *testing.T) {
 	if _, err := PlayGame(rng, []Strategy{watch, Competent()}, []Suit{Intelligence, Strength}); err != nil {
 		t.Fatal(err)
 	}
-	_, _, rounds, _ := dealPlan(2)
+	_, _, rounds, _ := dealPlan(2, 1)
 	if len(sizes) != rounds {
 		t.Fatalf("saw %d clashes, want %d", len(sizes), rounds)
 	}
 	for rd, n := range sizes {
 		if n != handCap {
 			t.Errorf("clash %d: hand held %d cards, want a full %d (draw pile should refill it)", rd, n, handCap)
+		}
+	}
+}
+
+// TestDealPlan checks the even split across one to four decks: the hand is
+// always four, the draw pile always equals the ante pile, the three add up to a
+// full stack, and the clash count grows with the deal.
+func TestDealPlan(t *testing.T) {
+	wantClashes := map[int]map[int]int{ // decks -> players -> clashes
+		1: {2: 10, 3: 6, 4: 4},
+		2: {2: 22, 3: 14, 4: 10},
+		3: {2: 34, 3: 22, 4: 16},
+		4: {2: 46, 3: 30, 4: 22},
+	}
+	for decks := 1; decks <= 4; decks++ {
+		for _, players := range []int{2, 3, 4} {
+			hand, draw, rounds, ok := dealPlan(players, decks)
+			if !ok {
+				t.Errorf("%d players, %d decks: no deal plan", players, decks)
+				continue
+			}
+			if hand != handCap {
+				t.Errorf("%d players, %d decks: hand %d, want %d", players, decks, hand, handCap)
+			}
+			if draw != rounds {
+				t.Errorf("%d players, %d decks: draw %d and ante %d should be equal", players, decks, draw, rounds)
+			}
+			if stack := DeckSize * decks / players; hand+draw+rounds != stack {
+				t.Errorf("%d players, %d decks: hand+draw+ante %d, want a full stack of %d", players, decks, hand+draw+rounds, stack)
+			}
+			if rounds != wantClashes[decks][players] {
+				t.Errorf("%d players, %d decks: %d clashes, want %d", players, decks, rounds, wantClashes[decks][players])
+			}
 		}
 	}
 }

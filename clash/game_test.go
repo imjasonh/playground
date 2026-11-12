@@ -53,8 +53,9 @@ func TestBidAndResolve(t *testing.T) {
 	}
 }
 
-// TestResolvability plays many games with assorted strategies and checks that
-// each one ends with every card accounted for and every pip conserved.
+// TestResolvability plays many games with assorted strategies, across one to
+// three decks, and checks that each one ends with every card accounted for and
+// every pip conserved.
 func TestResolvability(t *testing.T) {
 	deckPips := pips(NewDeck()) // 360
 	games := 20000
@@ -65,24 +66,26 @@ func TestResolvability(t *testing.T) {
 	strats := []Strategy{
 		RandomCommit(), Competent(), Hoard(), Steal(), Sniper(), Bot(),
 	}
-	for _, players := range []int{2, 3, 4} {
-		for g := 0; g < games; g++ {
-			table := make([]Strategy, players)
-			homes := make([]Suit, players)
-			for i := 0; i < players; i++ {
-				table[i] = strats[rng.Intn(len(strats))]
-				homes[i] = Suits[i]
-			}
-			res, err := PlayGame(rng, table, homes)
-			if err != nil {
-				t.Fatalf("%d players game %d: %v", players, g, err)
-			}
-			if res.CardsAccounted != DeckSize {
-				t.Fatalf("%d players: %d cards accounted, want %d", players, res.CardsAccounted, DeckSize)
-			}
-			sum := res.ScoredPips + res.SetAsidePips + res.DiscardedPips + res.HandLeftPips
-			if sum != deckPips {
-				t.Fatalf("%d players: pips %d, want %d", players, sum, deckPips)
+	for _, decks := range []int{1, 2, 3} {
+		for _, players := range []int{2, 3, 4} {
+			for g := 0; g < games; g++ {
+				table := make([]Strategy, players)
+				homes := make([]Suit, players)
+				for i := 0; i < players; i++ {
+					table[i] = strats[rng.Intn(len(strats))]
+					homes[i] = Suits[i]
+				}
+				res, err := PlayGameDecks(rng, table, homes, decks)
+				if err != nil {
+					t.Fatalf("%d players, %d decks, game %d: %v", players, decks, g, err)
+				}
+				if res.CardsAccounted != DeckSize*decks {
+					t.Fatalf("%d players, %d decks: %d cards accounted, want %d", players, decks, res.CardsAccounted, DeckSize*decks)
+				}
+				sum := res.ScoredPips + res.SetAsidePips + res.DiscardedPips + res.HandLeftPips
+				if sum != deckPips*decks {
+					t.Fatalf("%d players, %d decks: pips %d, want %d", players, decks, sum, deckPips*decks)
+				}
 			}
 		}
 	}

@@ -86,6 +86,15 @@ the fresh antes. A clash can carry more than once, and the pot grows each time.
 When everyone's ante pile has run out, add up the numbers on the cards you won.
 The biggest total wins. If two players tie, they share the victory.
 
+## A longer game
+
+One deck gives a short game — about ten clashes at two players, down to four at
+four. For a longer one, shuffle two or more decks together before you deal.
+Set the extra Aces aside as always, keeping just one each for the Home markers,
+and deal exactly as before: equal stacks, four into your hand, split the rest in
+half. Every deck you add lengthens the ante pile, so a two-player game runs
+about twenty-two clashes with two decks and a four-player game about ten.
+
 ## Filling seats, and playing alone
 
 Clash wants two to four players, and you fill any empty chairs with Bots. You

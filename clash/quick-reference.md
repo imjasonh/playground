@@ -30,3 +30,14 @@ A simultaneous-bidding game for 2 to 4 players. Full rules in [`rules.md`](rules
 
 - The game ends when the ante piles run out: a fixed 10 / 6 / 4 clashes at 2 / 3 / 4 players.
 - Add up the values of the cards you won. The most wins; a tie shares the victory.
+
+## Longer games
+
+- Shuffle 2 or more decks together for a longer game; set the extra Aces aside and deal exactly as above.
+- Each deck adds to the ante pile, so clashes scale with it:
+
+| Players | 1 deck | 2 decks | 3 decks | 4 decks |
+| --- | --- | --- | --- | --- |
+| 2 | 10 | 22 | 34 | 46 |
+| 3 | 6 | 14 | 22 | 30 |
+| 4 | 4 | 10 | 16 | 22 |
