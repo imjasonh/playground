@@ -71,6 +71,7 @@ import C3BootProofs.Proofs.Sha256LoopBlocks
 import C3BootProofs.Proofs.Sha256LoopRounds
 import C3BootProofs.Proofs.Sha256LoopLoad
 import C3BootProofs.Proofs.Sha256LoopFrame
+import C3BootProofs.Proofs.Sha256Loop
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
 import C3BootProofs.Theorems.Level

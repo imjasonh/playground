@@ -52,6 +52,8 @@ PROVED = [
     "fieldSub",
     "fieldDouble",
     "pointAdd",
+    "sha256Compress",
+    "rangeFromIndex",
 ]
 
 IMAGE = os.path.join(os.path.dirname(__file__), "..", "C3BootProofs", "Image", "Bootloader.lean")

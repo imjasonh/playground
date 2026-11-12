@@ -8,6 +8,7 @@ import C3BootProofs.Proofs.Part
 import C3BootProofs.Proofs.Reserved
 import C3BootProofs.Proofs.Parse
 import C3BootProofs.Proofs.ParseSpec
+import C3BootProofs.Proofs.Sha256Loop
 import C3BootProofs.Proofs.ImageHelpers
 import C3BootProofs.Proofs.Block
 import C3BootProofs.Proofs.ImageCalls
@@ -1246,6 +1247,48 @@ theorem exists_fieldDouble_machine :
     rfl, rfl, rfl, rfl, by decide, rfl⟩
   all_goals (unfold RV32.CodeIn; decide +kernel)
 
+/-- Memory with the current image's compact `compress256`, `RangeFrom::index`,
+`memcpy`, and round constants where the image loads them, and zeros
+elsewhere. -/
+def witnessMemKC (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.sha256CompressAddress).toNat < Image.sha256CompressCode.length then
+    RV32.byteAt Image.sha256CompressCode (a - BitVec.ofNat 32 Image.sha256CompressAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.rangeFromIndexAddress).toNat < Image.rangeFromIndexCode.length then
+    RV32.byteAt Image.rangeFromIndexCode (a - BitVec.ofNat 32 Image.rangeFromIndexAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat < Image.memcpyStubCode.length then
+    RV32.byteAt Image.memcpyStubCode (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat < Image.memcpyBodyCode.length then
+    RV32.byteAt Image.memcpyBodyCode (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.shaKAddress).toNat < Image.shaKData.length then
+    RV32.byteAt Image.shaKData (a - BitVec.ofNat 32 Image.shaKAddress).toNat
+  else 0
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 4000000 in
+/-- A machine that calls the compact `compress256` on 2 blocks (`n = 2`) with
+the state at `0x3FCC5000`, the blocks at `0x3FCC6000`, and the stack at
+`0x3FCC8000` meets `kcCompress_correct`'s hypotheses. -/
+theorem exists_kcCompress_machine :
+    ∃ (m : RV32.Machine) (P sp0 stp bp retAddr : RV32.Word) (n : Nat),
+      RV32.KCEnv m.mem P sp0 stp bp n ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = stp ∧ RV32.reg m RV32.a1 = bp ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ 0 < n := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 2
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.sha256CompressAddress, witnessMemKC⟩,
+    BitVec.ofNat 32 Image.sha256CompressAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, 2,
+    ⟨by decide, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      (RV32.sep_of_le (by decide) (by decide)).symm,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      (RV32.sep_of_le (by decide) (by decide)).symm, RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm⟩,
+    rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide⟩
+  all_goals (unfold RV32.CodeIn; decide +kernel)
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -1571,3 +1614,9 @@ end C3
 
 /-- info: 'C3.exists_sqrMont12_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_sqrMont12_machine
+
+/-- info: 'C3.RV32.kcCompress_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.kcCompress_correct
+
+/-- info: 'C3.exists_kcCompress_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_kcCompress_machine

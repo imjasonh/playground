@@ -198,4 +198,58 @@ theorem kcSetup_run {M : Word → BitVec 8} {f : Fin 32 → Word} {F stp : Word}
   all_goals simp (disch := decide) only [ls_sep hS]
   all_goals rfl
 
+theorem fr_al {F : Word} (hF : F.toNat % 4 = 0) {c : Word} (h : decide (c.toNat % 4 = 0) = true) :
+    (F + c).toNat % 4 = 0 := by
+  simp only [decide_eq_true_eq] at h
+  have := aligned_add hF (k := c.toNat) h
+  rwa [ofNat_toNat_self] at this
+
+theorem frm_sep {F b : Word} {n k : Nat} (hs : Sep F n b k) {c : Word} (h : decide (c.toNat + 4 ≤ n) = true) :
+    Sep (F + c) 4 b k := by
+  simp only [decide_eq_true_eq] at h
+  have := hs.sub (c := c.toNat) (l := 4) h
+  rwa [ofNat_toNat_self] at this
+
+set_option maxRecDepth 20000 in
+theorem kcPre_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {F base : Word} {len : Nat} (hsp : f sp = F)
+    (hF : F.toNat % 4 = 0) (hs : Sep F 0xE0 base len) : BlockOk base len kcPre (M, f) := by
+  simp +decide only [BlockOk, BInstr.ok, BInstr.run, kcPre, upd_app, ↓reduceIte, and_true, true_and]
+  simp only [hsp]
+  simp (disch := decide) only [fr_al hF, frm_sep hs, and_self]
+
+set_option maxRecDepth 20000 in
+theorem kcFinal_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {F stp base : Word} {len : Nat} (hsp : f sp = F)
+    (h18 : f 18 = stp) (hF : F.toNat % 4 = 0) (hst : stp.toNat % 4 = 0) (hs : Sep F 0xE0 base len)
+    (hs' : Sep stp 32 base len) : BlockOk base len kcFinal (M, f) := by
+  simp +decide only [BlockOk, BInstr.ok, BInstr.run, kcFinal, upd_app, ↓reduceIte, and_true, true_and]
+  simp only [hsp, h18, ev_add, zero_lit_add]
+  simp (disch := decide) only [fr_al hF, fr_al hst, frm_sep hs, frm_sep hs', and_self]
+
+set_option maxRecDepth 20000 in
+theorem kcSetup_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {F stp base : Word} {len : Nat} (hsp : f sp = F) (ha0 : f a0 = stp) (hF : F.toNat % 4 = 0) (hst : stp.toNat % 4 = 0) (hs : Sep F 0xE0 base len) :
+    BlockOk base len kcSetup (M, f) := by
+  simp +decide only [BlockOk, BInstr.ok, BInstr.run, kcSetup, upd_app, ↓reduceIte, and_true, true_and]
+  simp only [hsp, ha0, ev_add, zero_lit_add]
+  simp (disch := decide) only [fr_al hF, fr_al hst, frm_sep hs, and_self]
+
+/-- The `memcpy` arguments, from 0xA0 to 0xAE, with the next block's address
+saved at `F + 0xC`. -/
+def kcCopy : List BInstr :=
+  [.sw sp (22 : Fin 32) 0xC, .aluImm .add a0 sp 0x2C, .aluImm .add a1 sp 0x6C, .aluImm .add a2 x0 0x40,
+   .aluImm .add (22 : Fin 32) sp 0x2C]
+
+def kcBlkA : List BInstr := [.aluImm .add (8 : Fin 32) x0 0x0, .aluImm .add (22 : Fin 32) (9 : Fin 32) 0x40]
+
+section
+set_option maxRecDepth 20000
+theorem kcCopy_end : blockEnd sha256CompressCode 0xA0 kcCopy = some 0xAE := by decide
+theorem kcBlkA_end : blockEnd sha256CompressCode 0x5A kcBlkA = some 0x60 := by decide
+end
+
+theorem kcCopy_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {F base : Word} {len : Nat} (hsp : f sp = F)
+    (hF : F.toNat % 4 = 0) (hs : Sep F 0xE0 base len) : BlockOk base len kcCopy (M, f) := by
+  simp +decide only [BlockOk, BInstr.ok, kcCopy, and_true]
+  simp only [hsp]
+  simp (disch := decide) only [fr_al hF, frm_sep hs, and_self]
+
 end C3.RV32
