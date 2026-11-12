@@ -5,6 +5,7 @@ go 1.27.0
 require (
 	cloud.google.com/go/longrunning v0.8.0
 	github.com/bazelbuild/remote-apis v0.0.0-20261110225606-e0c0554bfc8a
+	github.com/container-storage-interface/spec v1.13.0
 	github.com/google/uuid v1.6.0
 	github.com/hanwen/go-fuse/v2 v2.12.1
 	github.com/sethvargo/go-envconfig v1.4.3
