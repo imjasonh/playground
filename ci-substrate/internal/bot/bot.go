@@ -34,6 +34,7 @@ import (
 	"github.com/imjasonh/playground/ci-substrate/internal/casfs"
 	"github.com/imjasonh/playground/ci-substrate/internal/digest"
 	"github.com/imjasonh/playground/ci-substrate/internal/remote"
+	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
 	"github.com/imjasonh/playground/ci-substrate/internal/tree"
 )
 
@@ -55,6 +56,9 @@ type Config struct {
 	// BotID identifies this runner to the scheduler. Under Substrate it is
 	// the actor name.
 	BotID string
+	// Token is the tenant token sent on every call. Under Substrate it is a
+	// placeholder that the egress gateway replaces.
+	Token string
 	// Instances narrows which instances the bot leases from. Empty means
 	// every instance its token allows.
 	Instances []string
@@ -75,7 +79,19 @@ type Config struct {
 
 // Bot runs leased actions until its context ends.
 type Bot struct {
-	cfg Config
+	cfg   Config
+	cache tree.Fetcher
+}
+
+// tokenFetcher sends the tenant token with every read. casfs calls Fetch
+// with the kernel's request context, which carries no token.
+type tokenFetcher struct {
+	f     tree.Fetcher
+	token string
+}
+
+func (t tokenFetcher) Fetch(ctx context.Context, instance string, d *repb.Digest) ([]byte, error) {
+	return t.f.Fetch(tenant.Outgoing(ctx, t.token), instance, d)
 }
 
 // New returns a Bot. It fails when the configuration cannot work on this
@@ -103,7 +119,7 @@ func New(cfg Config) (*Bot, error) {
 	if err := os.MkdirAll(cfg.WorkDir, 0o755); err != nil {
 		return nil, err
 	}
-	return &Bot{cfg: cfg}, nil
+	return &Bot{cfg: cfg, cache: tokenFetcher{f: cfg.Cache, token: cfg.Token}}, nil
 }
 
 func fuseAvailable() bool {
@@ -117,6 +133,7 @@ func (b *Bot) InputMode() InputMode { return b.cfg.InputMode }
 // Run leases and runs jobs until ctx ends. Errors from the scheduler are
 // logged and retried; the loop only returns with ctx's error.
 func (b *Bot) Run(ctx context.Context) error {
+	ctx = tenant.Outgoing(ctx, b.cfg.Token)
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -143,6 +160,7 @@ func (b *Bot) Run(ctx context.Context) error {
 
 // RunOnce leases at most one job and runs it. It reports whether a job ran.
 func (b *Bot) RunOnce(ctx context.Context) (bool, error) {
+	ctx = tenant.Outgoing(ctx, b.cfg.Token)
 	job, err := b.lease(ctx)
 	if err != nil || job == nil {
 		return false, err
@@ -164,7 +182,7 @@ func (b *Bot) lease(ctx context.Context) (*workerv1.Job, error) {
 // RunJob runs one leased job and reports its outcome to the scheduler,
 // heartbeating while it runs.
 func (b *Bot) RunJob(ctx context.Context, job *workerv1.Job) {
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(tenant.Outgoing(ctx, b.cfg.Token))
 	defer cancel()
 	go b.heartbeat(ctx, cancel, job)
 
@@ -174,13 +192,10 @@ func (b *Bot) RunJob(ctx context.Context, job *workerv1.Job) {
 	if err != nil {
 		slog.Error("action failed to run", "job", job.GetId(), "err", err)
 		req.ErrorMessage = err.Error()
+	} else if anyAR, err := anypb.New(ar); err != nil {
+		req.ErrorMessage = err.Error()
 	} else {
-		anyAR, err := anypb.New(ar)
-		if err != nil {
-			req.ErrorMessage = err.Error()
-		} else {
-			req.ActionResult = anyAR
-		}
+		req.ActionResult = anyAR
 		slog.Info("action ran", "job", job.GetId(), "exitCode", ar.GetExitCode(), "took", time.Since(start))
 	}
 	// Report with a context that outlives a cancelled lease, so a result
@@ -247,7 +262,7 @@ func (b *Bot) execute(ctx context.Context, job *workerv1.Job) (*repb.ActionResul
 		inputs = &tree.Tree{Root: rootDigest, Dirs: map[string]*repb.Directory{digest.Key(rootDigest): {}}}
 	} else {
 		var err error
-		inputs, err = tree.Load(ctx, b.cfg.Cache, instance, rootDigest)
+		inputs, err = tree.Load(ctx, b.cache, instance, rootDigest)
 		if err != nil {
 			return nil, fmt.Errorf("input root: %w", err)
 		}
@@ -265,7 +280,7 @@ func (b *Bot) execute(ctx context.Context, job *workerv1.Job) (*repb.ActionResul
 	md := &repb.ExecutedActionMetadata{Worker: b.cfg.BotID, InputFetchStartTimestamp: timestamppb.Now()}
 	switch b.cfg.InputMode {
 	case InputFUSE:
-		server, err := casfs.Mount(ctx, execRoot, inputs, b.cfg.Cache, instance)
+		server, err := casfs.Mount(execRoot, inputs, b.cache, instance)
 		if err != nil {
 			return nil, fmt.Errorf("mounting input root: %w", err)
 		}
@@ -275,7 +290,7 @@ func (b *Bot) execute(ctx context.Context, job *workerv1.Job) (*repb.ActionResul
 			}
 		}()
 	default:
-		if err := tree.Materialize(ctx, b.cfg.Cache, instance, inputs, execRoot); err != nil {
+		if err := tree.Materialize(ctx, b.cache, instance, inputs, execRoot); err != nil {
 			return nil, fmt.Errorf("materializing input root: %w", err)
 		}
 	}
@@ -339,7 +354,7 @@ func (b *Bot) fetchProto(ctx context.Context, instance string, d *repb.Digest, m
 	if err := digest.Validate(d); err != nil {
 		return err
 	}
-	raw, err := b.cfg.Cache.Fetch(ctx, instance, d)
+	raw, err := b.cache.Fetch(ctx, instance, d)
 	if err != nil {
 		return err
 	}

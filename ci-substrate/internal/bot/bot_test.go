@@ -24,20 +24,23 @@ import (
 	"github.com/imjasonh/playground/ci-substrate/internal/tree"
 )
 
+const (
+	token    = "tok-a"
+	instance = "tenant-a"
+)
+
 // stack is a cas (CAS, action cache, scheduler) on loopback, plus clients
 // for a tenant and for the bot.
 type stack struct {
-	client   *remote.Client
-	execer   repb.ExecutionClient
-	worker   workerv1.WorkerServiceClient
-	ctx      context.Context
-	instance string
+	client *remote.Client
+	execer repb.ExecutionClient
+	worker workerv1.WorkerServiceClient
 }
 
 func newStack(t *testing.T) *stack {
 	t.Helper()
 	tenants := tenant.NewRegistry()
-	tenants.Allow("tok-a", "tenant-a")
+	tenants.Allow(token, instance)
 	store, err := blob.NewStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -70,17 +73,21 @@ func newStack(t *testing.T) *stack {
 	}
 	t.Cleanup(func() { conn.Close() })
 	return &stack{
-		client:   remote.NewClient(conn),
-		execer:   repb.NewExecutionClient(conn),
-		worker:   workerv1.NewWorkerServiceClient(conn),
-		ctx:      tenant.Outgoing(t.Context(), "tok-a"),
-		instance: "tenant-a",
+		client: remote.NewClient(conn),
+		execer: repb.NewExecutionClient(conn),
+		worker: workerv1.NewWorkerServiceClient(conn),
 	}
+}
+
+// ctx is a tenant call context.
+func ctx(t *testing.T) context.Context {
+	t.Helper()
+	return tenant.Outgoing(t.Context(), token)
 }
 
 func (s *stack) upload(t *testing.T, b []byte) *repb.Digest {
 	t.Helper()
-	d, err := s.client.Upload(s.ctx, s.instance, b)
+	d, err := s.client.Upload(ctx(t), instance, b)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +101,7 @@ func (s *stack) uploadProto(t *testing.T, m proto.Message) *repb.Digest {
 
 func (s *stack) fetch(t *testing.T, d *repb.Digest) []byte {
 	t.Helper()
-	b, err := s.client.Fetch(s.ctx, s.instance, d)
+	b, err := s.client.Fetch(ctx(t), instance, d)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,6 +112,7 @@ func (s *stack) newBot(t *testing.T, mode bot.InputMode) *bot.Bot {
 	t.Helper()
 	b, err := bot.New(bot.Config{
 		BotID:     "bot-" + string(mode),
+		Token:     token,
 		Worker:    s.worker,
 		Origin:    s.client,
 		Cache:     s.client,
@@ -121,13 +129,13 @@ func (s *stack) newBot(t *testing.T, mode bot.InputMode) *bot.Bot {
 // has run it in the background.
 func (s *stack) execute(t *testing.T, b *bot.Bot, action *repb.Digest) *repb.ExecuteResponse {
 	t.Helper()
-	stream, err := s.execer.Execute(s.ctx, &repb.ExecuteRequest{InstanceName: s.instance, ActionDigest: action})
+	stream, err := s.execer.Execute(ctx(t), &repb.ExecuteRequest{InstanceName: instance, ActionDigest: action})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The bot's lease ends when the operation does, so a cache hit that
 	// needs no bot does not wait out the lease.
-	botCtx, stopBot := context.WithCancel(tenant.Outgoing(context.WithoutCancel(s.ctx), "tok-a"))
+	botCtx, stopBot := context.WithCancel(t.Context())
 	defer stopBot()
 	done := make(chan error, 1)
 	go func() {
@@ -183,7 +191,7 @@ func TestRunsActionWithInputsAndOutputs(t *testing.T) {
 				},
 			})
 			command := s.uploadProto(t, &repb.Command{
-				Arguments: []string{"sh", "-c", "cat input.txt > out/copy.txt && echo built >&2 && mkdir -p out/tree/deep && echo leaf > out/tree/deep/leaf.txt && printf hello && exit 0"},
+				Arguments:   []string{"sh", "-c", "cat input.txt > out/copy.txt && echo built >&2 && mkdir -p out/tree/deep && echo leaf > out/tree/deep/leaf.txt && printf hello && exit 0"},
 				OutputPaths: []string{"out/copy.txt", "out/tree", "missing.txt"},
 			})
 			action := s.uploadProto(t, &repb.Action{CommandDigest: command, InputRootDigest: root})

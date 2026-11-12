@@ -28,17 +28,15 @@ import (
 )
 
 // Mount serves t at dir until Unmount is called on the returned server. Reads
-// use f with instance, and carry ctx's values (the tenant token) rather than
-// the kernel's request context; ctx's cancellation does not stop a fetch.
-func Mount(ctx context.Context, dir string, t *tree.Tree, f tree.Fetcher, instance string) (*fuse.Server, error) {
-	root := &dirNode{fsys: &casfs{ctx: context.WithoutCancel(ctx), tree: t, fetcher: f, instance: instance}, digest: t.Root}
+// use f with instance.
+func Mount(dir string, t *tree.Tree, f tree.Fetcher, instance string) (*fuse.Server, error) {
+	root := &dirNode{fsys: &casfs{tree: t, fetcher: f, instance: instance}, digest: t.Root}
 	return fs.Mount(dir, root, &fs.Options{
 		MountOptions: fuse.MountOptions{FsName: "casfs", Name: "casfs"},
 	})
 }
 
 type casfs struct {
-	ctx      context.Context
 	tree     *tree.Tree
 	fetcher  tree.Fetcher
 	instance string
@@ -195,7 +193,7 @@ func (f *fileNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAt
 			// is gone.
 			f.hydrated, f.data = true, nil
 		} else {
-			if errno := f.hydrateLocked(); errno != 0 {
+			if errno := f.hydrateLocked(ctx); errno != 0 {
 				return errno
 			}
 			if sz <= uint64(len(f.data)) {
@@ -231,14 +229,13 @@ func (f *fileNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint3
 // hydrateLocked fetches the file's bytes if it still has none. Callers hold
 // f.mu, so concurrent readers share one fetch, and the bytes are verified
 // against the digest before any read sees them.
-func (f *fileNode) hydrateLocked() syscall.Errno {
+func (f *fileNode) hydrateLocked(ctx context.Context) syscall.Errno {
 	if f.hydrated {
 		return 0
 	}
-	// The mount's context, not the opener's: a second reader must not find
-	// the file broken because the first one gave up, and the kernel's request
-	// context carries no tenant token.
-	b, err := f.fsys.fetcher.Fetch(f.fsys.ctx, f.fsys.instance, f.source)
+	// Detach from the opener: a second reader must not find the file
+	// broken because the first one gave up.
+	b, err := f.fsys.fetcher.Fetch(context.WithoutCancel(ctx), f.fsys.instance, f.source)
 	if err == nil {
 		err = digest.Verify(f.source, b)
 	}
@@ -253,7 +250,7 @@ func (f *fileNode) hydrateLocked() syscall.Errno {
 func (f *fileNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if errno := f.hydrateLocked(); errno != 0 {
+	if errno := f.hydrateLocked(ctx); errno != 0 {
 		return nil, errno
 	}
 	if off >= int64(len(f.data)) {
@@ -266,7 +263,7 @@ func (f *fileNode) Read(ctx context.Context, fh fs.FileHandle, dest []byte, off 
 func (f *fileNode) Write(ctx context.Context, fh fs.FileHandle, data []byte, off int64) (uint32, syscall.Errno) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if errno := f.hydrateLocked(); errno != 0 {
+	if errno := f.hydrateLocked(ctx); errno != 0 {
 		return 0, errno
 	}
 	if end := off + int64(len(data)); end > int64(len(f.data)) {
