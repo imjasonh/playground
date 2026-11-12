@@ -66,6 +66,8 @@ PROVED = [
     "feAdd",
     "selectI64",
     "feSub",
+    "wideMul12x2",
+    "wideMul8x2",
 ]
 
 IMAGE = os.path.join(os.path.dirname(__file__), "..", "C3BootProofs", "Image", "Bootloader.lean")

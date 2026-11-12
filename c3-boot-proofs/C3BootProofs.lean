@@ -88,6 +88,9 @@ import C3BootProofs.Proofs.FlashRead
 import C3BootProofs.Proofs.SelectI64
 import C3BootProofs.Proofs.FeAdd
 import C3BootProofs.Proofs.FeSub
+import C3BootProofs.Proofs.WideMulX2
+import C3BootProofs.Proofs.WideMul12x2
+import C3BootProofs.Proofs.WideMul8x2
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
 import C3BootProofs.Theorems.Level
