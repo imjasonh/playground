@@ -31,8 +31,10 @@ import (
 // use f with instance.
 func Mount(dir string, t *tree.Tree, f tree.Fetcher, instance string) (*fuse.Server, error) {
 	root := &dirNode{fsys: &casfs{tree: t, fetcher: f, instance: instance}, digest: t.Root}
+	// DirectMount calls mount(2) itself, which works as root in a container
+	// with no fusermount binary, and falls back to fusermount otherwise.
 	return fs.Mount(dir, root, &fs.Options{
-		MountOptions: fuse.MountOptions{FsName: "casfs", Name: "casfs"},
+		MountOptions: fuse.MountOptions{FsName: "casfs", Name: "casfs", DirectMount: true},
 	})
 }
 

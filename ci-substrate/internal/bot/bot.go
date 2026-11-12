@@ -100,31 +100,55 @@ func New(cfg Config) (*Bot, error) {
 	if cfg.BotID == "" || cfg.Worker == nil || cfg.Origin == nil || cfg.Cache == nil || cfg.WorkDir == "" {
 		return nil, errors.New("bot: BotID, Worker, Origin, Cache, and WorkDir are required")
 	}
-	switch cfg.InputMode {
-	case InputCopy, InputFUSE:
-	case InputAuto, "":
-		cfg.InputMode = InputCopy
-		if fuseAvailable() {
-			cfg.InputMode = InputFUSE
-		}
-	default:
-		return nil, fmt.Errorf("bot: unknown input mode %q", cfg.InputMode)
-	}
-	if cfg.InputMode == InputFUSE && !fuseAvailable() {
-		return nil, errors.New("bot: input mode fuse needs /dev/fuse")
-	}
 	if cfg.LeaseWait <= 0 {
 		cfg.LeaseWait = 20 * time.Second
 	}
 	if err := os.MkdirAll(cfg.WorkDir, 0o755); err != nil {
 		return nil, err
 	}
+	switch cfg.InputMode {
+	case InputCopy:
+	case InputFUSE:
+		if err := probeFUSE(cfg.WorkDir); err != nil {
+			return nil, fmt.Errorf("bot: input mode fuse: %w", err)
+		}
+	case InputAuto, "":
+		cfg.InputMode = InputFUSE
+		if err := probeFUSE(cfg.WorkDir); err != nil {
+			slog.Info("FUSE unavailable; copying inputs", "err", err)
+			cfg.InputMode = InputCopy
+		}
+	default:
+		return nil, fmt.Errorf("bot: unknown input mode %q", cfg.InputMode)
+	}
 	return &Bot{cfg: cfg, cache: tokenFetcher{f: cfg.Cache, token: cfg.Token}}, nil
 }
 
-func fuseAvailable() bool {
-	_, err := os.Stat("/dev/fuse")
-	return err == nil
+// probeFUSE mounts an empty tree under dir and unmounts it, so a host that
+// has /dev/fuse but not the privilege to mount is found out at startup
+// rather than on the first job.
+func probeFUSE(dir string) error {
+	if _, err := os.Stat("/dev/fuse"); err != nil {
+		return err
+	}
+	mnt, err := os.MkdirTemp(dir, "fuse-probe-")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(mnt)
+	empty := tree.Digest(&repb.Directory{})
+	server, err := casfs.Mount(mnt, &tree.Tree{Root: empty, Dirs: map[string]*repb.Directory{digest.Key(empty): {}}}, noFetcher{}, "")
+	if err != nil {
+		return err
+	}
+	return server.Unmount()
+}
+
+// noFetcher backs the probe mount, which has no files to fetch.
+type noFetcher struct{}
+
+func (noFetcher) Fetch(context.Context, string, *repb.Digest) ([]byte, error) {
+	return nil, errors.New("probe mount has no blobs")
 }
 
 // InputMode reports how the bot builds exec roots.

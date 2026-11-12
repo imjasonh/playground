@@ -1,5 +1,6 @@
-# ci-substrate ships only statically linked Go binaries, so every image uses
-# the distroless static base. Builds and deploys go through ko (ko build / ko
-# apply); there are no Dockerfiles and no Helm charts. ko defaults to
-# CGO_ENABLED=0, which is what these binaries want.
-defaultBaseImage: cgr.dev/chainguard/static:latest
+# The runner runs the actions' commands, which call sh, so its base image
+# has a shell. The other binaries stay on the static base. On a host that
+# cannot reach cgr.dev, e2e/run-kind.sh points KO_CONFIG_PATH at a copy of
+# this file that names the docker.io mirror.
+baseImageOverrides:
+  github.com/imjasonh/playground/ci-substrate/cmd/runner: cgr.dev/chainguard/busybox:latest
