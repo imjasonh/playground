@@ -2,6 +2,7 @@ package csidriver_test
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"os/exec"
@@ -100,6 +101,30 @@ func (f *fakeMount) mount(dir string, fetcher tree.Fetcher, instance string) (cs
 
 type unmountFunc func() error
 
+// actorUID and otherUID are actors' uids; the volume of an actor is named
+// substrate-<uid>-inputs, as ateapi names it.
+const (
+	actorUID = "11111111-2222-3333-4444-555555555555"
+	otherUID = "99999999-8888-7777-6666-555555555555"
+)
+
+func volumeFor(uid string) string { return "substrate-" + uid + "-inputs" }
+
+// directory is a fake ActorDirectory: the atespaces and uids it holds, or an
+// error for every question.
+type directory struct {
+	actors map[string]string // uid -> atespace
+	err    error
+}
+
+func (d directory) InAtespace(_ context.Context, atespace, uid string) (bool, error) {
+	return d.err == nil && d.actors[uid] == atespace, d.err
+}
+
+func actors() directory {
+	return directory{actors: map[string]string{actorUID: "tenant-a", otherUID: "tenant-b"}}
+}
+
 func (u unmountFunc) Unmount() error { return u() }
 
 type clients struct {
@@ -144,7 +169,7 @@ func tenants() *tenant.Registry {
 }
 
 func TestIdentity(t *testing.T) {
-	_, c := serve(t, csidriver.Config{NodeID: "node-1", Fetcher: newMemFetcher(), Tenants: tenants(), Mount: newFakeMount().mount})
+	_, c := serve(t, csidriver.Config{NodeID: "node-1", Fetcher: newMemFetcher(), Tenants: tenants(), Actors: actors(), Mount: newFakeMount().mount})
 	info, err := c.identity.GetPluginInfo(t.Context(), &csi.GetPluginInfoRequest{})
 	if err != nil || info.GetName() != csidriver.DriverName {
 		t.Fatalf("GetPluginInfo: %v, %v", info, err)
@@ -174,38 +199,46 @@ func TestIdentity(t *testing.T) {
 	}
 }
 
+func classFor(instance, atespace string) map[string]string {
+	return map[string]string{csidriver.InstanceParameter: instance, csidriver.AtespaceParameter: atespace}
+}
+
 func TestCreateVolumeNamesTheInstance(t *testing.T) {
-	_, c := serve(t, csidriver.Config{NodeID: "node-1", Fetcher: newMemFetcher(), Tenants: tenants(), Mount: newFakeMount().mount})
+	_, c := serve(t, csidriver.Config{NodeID: "node-1", Fetcher: newMemFetcher(), Tenants: tenants(), Actors: actors(), Mount: newFakeMount().mount})
 	ctx := t.Context()
+	name := volumeFor(actorUID)
 
 	resp, err := c.controller.CreateVolume(ctx, &csi.CreateVolumeRequest{
-		Name:               "actor-1-inputs",
+		Name:               name,
 		CapacityRange:      &csi.CapacityRange{RequiredBytes: 1 << 30},
 		VolumeCapabilities: []*csi.VolumeCapability{mountCap()},
-		Parameters:         map[string]string{csidriver.InstanceParameter: "tenant-a"},
+		Parameters:         classFor("tenant-a", "tenant-a"),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.GetVolume().GetVolumeId() != "actor-1-inputs" || resp.GetVolume().GetVolumeContext()[csidriver.InstanceParameter] != "tenant-a" {
+	if resp.GetVolume().GetVolumeId() != name || resp.GetVolume().GetVolumeContext()[csidriver.InstanceParameter] != "tenant-a" {
 		t.Fatalf("volume %v", resp.GetVolume())
 	}
 	// Creating it again is the same answer.
 	again, err := c.controller.CreateVolume(ctx, &csi.CreateVolumeRequest{
-		Name:               "actor-1-inputs",
+		Name:               name,
 		VolumeCapabilities: []*csi.VolumeCapability{mountCap()},
-		Parameters:         map[string]string{csidriver.InstanceParameter: "tenant-a"},
+		Parameters:         classFor("tenant-a", "tenant-a"),
 	})
-	if err != nil || again.GetVolume().GetVolumeId() != "actor-1-inputs" {
+	if err != nil || again.GetVolume().GetVolumeId() != name {
 		t.Fatalf("second CreateVolume: %v, %v", again, err)
 	}
 
+	caps := []*csi.VolumeCapability{mountCap()}
 	for name, req := range map[string]*csi.CreateVolumeRequest{
-		"no name":         {VolumeCapabilities: []*csi.VolumeCapability{mountCap()}, Parameters: map[string]string{csidriver.InstanceParameter: "tenant-a"}},
-		"no instance":     {Name: "v", VolumeCapabilities: []*csi.VolumeCapability{mountCap()}},
-		"unknown tenant":  {Name: "v", VolumeCapabilities: []*csi.VolumeCapability{mountCap()}, Parameters: map[string]string{csidriver.InstanceParameter: "tenant-z"}},
-		"no capabilities": {Name: "v", Parameters: map[string]string{csidriver.InstanceParameter: "tenant-a"}},
-		"block volume": {Name: "v", Parameters: map[string]string{csidriver.InstanceParameter: "tenant-a"}, VolumeCapabilities: []*csi.VolumeCapability{{
+		"no name":         {VolumeCapabilities: caps, Parameters: classFor("tenant-a", "tenant-a")},
+		"no instance":     {Name: volumeFor(actorUID), VolumeCapabilities: caps, Parameters: map[string]string{csidriver.AtespaceParameter: "tenant-a"}},
+		"unknown tenant":  {Name: volumeFor(actorUID), VolumeCapabilities: caps, Parameters: classFor("tenant-z", "tenant-a")},
+		"no atespace":     {Name: volumeFor(actorUID), VolumeCapabilities: caps, Parameters: map[string]string{csidriver.InstanceParameter: "tenant-a"}},
+		"not an actor's":  {Name: "actor-1-inputs", VolumeCapabilities: caps, Parameters: classFor("tenant-a", "tenant-a")},
+		"no capabilities": {Name: volumeFor(actorUID), Parameters: classFor("tenant-a", "tenant-a")},
+		"block volume": {Name: volumeFor(actorUID), Parameters: classFor("tenant-a", "tenant-a"), VolumeCapabilities: []*csi.VolumeCapability{{
 			AccessType: &csi.VolumeCapability_Block{Block: &csi.VolumeCapability_BlockVolume{}},
 		}}},
 	} {
@@ -214,7 +247,7 @@ func TestCreateVolumeNamesTheInstance(t *testing.T) {
 		}
 	}
 
-	if _, err := c.controller.DeleteVolume(ctx, &csi.DeleteVolumeRequest{VolumeId: "actor-1-inputs"}); err != nil {
+	if _, err := c.controller.DeleteVolume(ctx, &csi.DeleteVolumeRequest{VolumeId: name}); err != nil {
 		t.Fatal(err)
 	}
 	valid, err := c.controller.ValidateVolumeCapabilities(ctx, &csi.ValidateVolumeCapabilitiesRequest{VolumeId: "v", VolumeCapabilities: []*csi.VolumeCapability{mountCap()}})
@@ -223,10 +256,42 @@ func TestCreateVolumeNamesTheInstance(t *testing.T) {
 	}
 }
 
+// A StorageClass belongs to one atespace. Substrate lets any template name
+// any StorageClass, so a tenant in another atespace that names this one gets
+// no volume, and so no view of the tenant's cache.
+func TestCreateVolumeRefusesAnotherAtespace(t *testing.T) {
+	create := func(dir csidriver.ActorDirectory, uid, class string) error {
+		_, c := serve(t, csidriver.Config{NodeID: "node-1", Fetcher: newMemFetcher(), Tenants: tenants(), Actors: dir, Mount: newFakeMount().mount})
+		_, err := c.controller.CreateVolume(t.Context(), &csi.CreateVolumeRequest{
+			Name:               volumeFor(uid),
+			VolumeCapabilities: []*csi.VolumeCapability{mountCap()},
+			Parameters:         classFor("tenant-a", class),
+		})
+		return err
+	}
+	for name, tc := range map[string]struct {
+		dir   csidriver.ActorDirectory
+		uid   string
+		class string
+		want  codes.Code
+	}{
+		"actor in the class's atespace": {actors(), actorUID, "tenant-a", codes.OK},
+		"actor in another atespace":     {actors(), otherUID, "tenant-a", codes.PermissionDenied},
+		"actor nobody has heard of":     {actors(), "00000000-0000-0000-0000-000000000000", "tenant-a", codes.PermissionDenied},
+		"class names an empty atespace": {actors(), actorUID, "tenant-z", codes.PermissionDenied},
+		"directory cannot answer":       {directory{err: errors.New("down")}, actorUID, "tenant-a", codes.Unavailable},
+		"directory denies the driver":   {directory{err: status.Error(codes.PermissionDenied, "no role")}, actorUID, "tenant-a", codes.Unavailable},
+	} {
+		if err := create(tc.dir, tc.uid, tc.class); status.Code(err) != tc.want {
+			t.Errorf("%s: %v, want %v", name, err, tc.want)
+		}
+	}
+}
+
 func TestPublishMountsForTheTenant(t *testing.T) {
 	fm := newFakeMount()
 	f := newMemFetcher()
-	d, c := serve(t, csidriver.Config{NodeID: "node-1", Fetcher: f, Tenants: tenants(), Mount: fm.mount})
+	d, c := serve(t, csidriver.Config{NodeID: "node-1", Fetcher: f, Tenants: tenants(), Actors: actors(), Mount: fm.mount})
 	ctx := t.Context()
 	target := filepath.Join(t.TempDir(), "actors", "uid-1", "volumes", "inputs")
 
@@ -316,7 +381,7 @@ func TestPublishServesExecRoots(t *testing.T) {
 	f := newMemFetcher()
 	hello := f.put([]byte("from the node's cache"))
 	root := f.put(tree.Marshal(&repb.Directory{Files: []*repb.FileNode{{Name: "hello.txt", Digest: hello}}}))
-	d, c := serve(t, csidriver.Config{NodeID: "node-1", Fetcher: f, Tenants: tenants()})
+	d, c := serve(t, csidriver.Config{NodeID: "node-1", Fetcher: f, Tenants: tenants(), Actors: actors()})
 	t.Cleanup(func() { d.Close() })
 	ctx := t.Context()
 	target := filepath.Join(t.TempDir(), "inputs")

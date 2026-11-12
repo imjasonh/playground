@@ -4,8 +4,9 @@
 // in the kubelet plugins directory for atelet, and the Controller and
 // Identity services on TCP for ateapi. Each volume it publishes is a casfs
 // inputs volume for one tenant's instance, fetched from the node-local
-// cascache with that tenant's token, so an actor's inputs come from its own
-// node and the sandbox holds no credential.
+// cascache with that tenant's token. Only an actor in the atespace that the
+// StorageClass names can have one. An actor's inputs come from its own node,
+// and the sandbox holds no credential.
 package main
 
 import (
@@ -19,6 +20,7 @@ import (
 	"syscall"
 
 	"github.com/sethvargo/go-envconfig"
+	ateapi "go.ate.dev/substrate/api/ateapi/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
@@ -26,6 +28,7 @@ import (
 
 	"github.com/imjasonh/playground/ci-substrate/internal/csidriver"
 	"github.com/imjasonh/playground/ci-substrate/internal/remote"
+	"github.com/imjasonh/playground/ci-substrate/internal/substrate"
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
 )
 
@@ -45,6 +48,15 @@ type config struct {
 	// instance names. The driver fetches as the tenant whose instance a
 	// volume's StorageClass names.
 	Tenants string `env:"TENANTS, required"`
+	// AteAddr is Substrate's control API, which the driver asks which
+	// atespace an actor is in. AteServerName is the name on its serving
+	// certificate and the audience of the token in AteTokenFile. The
+	// driver's ServiceAccount needs the viewer role in each atespace whose
+	// StorageClass it serves.
+	AteAddr       string `env:"ATE_ADDR, default=api.ate-system.svc:443"`
+	AteServerName string `env:"ATE_SERVER_NAME, default=api.ate-system.svc"`
+	AteCAFile     string `env:"ATE_CA_FILE, default=/run/ate/trust-bundle.pem"`
+	AteTokenFile  string `env:"ATE_TOKEN_FILE, default=/run/ate/token"`
 }
 
 func main() {
@@ -65,7 +77,19 @@ func main() {
 	}
 	defer conn.Close()
 
-	driver, err := csidriver.New(csidriver.Config{NodeID: c.NodeID, Fetcher: remote.NewClient(conn), Tenants: tenants})
+	ateConn, err := substrate.Dial(c.AteAddr, c.AteServerName, c.AteCAFile, c.AteTokenFile)
+	if err != nil {
+		slog.Error("dialing Substrate", "addr", c.AteAddr, "err", err)
+		os.Exit(1)
+	}
+	defer ateConn.Close()
+
+	driver, err := csidriver.New(csidriver.Config{
+		NodeID:  c.NodeID,
+		Fetcher: remote.NewClient(conn),
+		Tenants: tenants,
+		Actors:  substrate.NewDirectory(ateapi.NewControlClient(ateConn)),
+	})
 	if err != nil {
 		slog.Error("configuring driver", "err", err)
 		os.Exit(1)

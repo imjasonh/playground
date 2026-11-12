@@ -97,6 +97,39 @@ func NewActors(ctx context.Context, client ateapi.ControlClient, atespace, templ
 	return &Actors{client: client, atespace: atespace, template: template, policy: policy}, nil
 }
 
+// Directory answers where actors are, for a caller that holds a viewer role
+// on the atespaces it asks about.
+type Directory struct {
+	client ateapi.ControlClient
+}
+
+// NewDirectory returns a Directory that asks client.
+func NewDirectory(client ateapi.ControlClient) *Directory {
+	return &Directory{client: client}
+}
+
+// InAtespace reports whether an actor with uid is in atespace. It lists only
+// that atespace, so the caller needs no role outside it, and a caller with
+// none gets the API's PermissionDenied as an error rather than "no".
+func (d *Directory) InAtespace(ctx context.Context, atespace, uid string) (bool, error) {
+	var token string
+	for {
+		resp, err := d.client.ListActors(ctx, &ateapi.ListActorsRequest{Atespace: atespace, Options: &ateapi.ListOptions{PageToken: token}})
+		if err != nil {
+			return false, err
+		}
+		for _, actor := range resp.GetActors() {
+			if actor.GetMetadata().GetUid() == uid {
+				return true, nil
+			}
+		}
+		token = resp.GetNextPageToken()
+		if token == "" {
+			return false, nil
+		}
+	}
+}
+
 // ParseEgressPolicy reads an EgressPolicy manifest. The metadata is set at
 // create time, so a manifest with one is rejected.
 func ParseEgressPolicy(manifest []byte) (*ateapi.EgressPolicy, error) {

@@ -13,6 +13,12 @@
 // holds the token, and no input byte crosses the sandbox's network path or
 // Substrate's egress gateway.
 //
+// A StorageClass is per tenant, and Substrate lets a template in any atespace
+// name any StorageClass, so the driver enforces who may use one. The class
+// names its atespace, and CreateVolume denies a volume for an actor that is
+// not in that atespace. That check runs where the driver can still refuse:
+// the volume is never created, so the actor never resumes with it.
+//
 // Volumes have no state to provision: a volume is the name of the actor it
 // belongs to, and its contents are whatever exec roots the runner has made.
 // So CreateVolume and DeleteVolume only validate, and there is no staging.
@@ -25,6 +31,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"syscall"
 
@@ -46,8 +53,22 @@ const (
 	// InstanceParameter is the StorageClass parameter that names the Remote
 	// Execution instance a volume serves. Its StorageClass is per tenant.
 	InstanceParameter = "instance"
+	// AtespaceParameter is the StorageClass parameter that names the one
+	// atespace whose actors may have a volume of the class.
+	AtespaceParameter = "atespace"
 	version           = "v1"
 )
+
+// volumeName is how ateapi names the volume of an actor: substrate-<actor
+// uid>-<volume name>.
+var volumeName = regexp.MustCompile(`^substrate-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+
+// ActorDirectory says where an actor is.
+type ActorDirectory interface {
+	// InAtespace reports whether the actor with that uid is in the atespace.
+	// An error means it could not tell, and is not an answer.
+	InAtespace(ctx context.Context, atespace, actorUID string) (bool, error)
+}
 
 // Unmounter is a served mount. *fuse.Server is one.
 type Unmounter interface {
@@ -63,6 +84,8 @@ type Config struct {
 	Fetcher tree.Fetcher
 	// Tenants gives the token for each volume's instance.
 	Tenants *tenant.Registry
+	// Actors checks that a volume's actor is in its StorageClass's atespace.
+	Actors ActorDirectory
 	// Mount serves an inputs volume at dir. It defaults to
 	// casfs.MountVolume; tests replace it.
 	Mount func(dir string, f tree.Fetcher, instance string) (Unmounter, error)
@@ -87,8 +110,8 @@ type mounted struct {
 
 // New returns a Driver.
 func New(cfg Config) (*Driver, error) {
-	if cfg.NodeID == "" || cfg.Fetcher == nil || cfg.Tenants == nil {
-		return nil, errors.New("csidriver: NodeID, Fetcher, and Tenants are required")
+	if cfg.NodeID == "" || cfg.Fetcher == nil || cfg.Tenants == nil || cfg.Actors == nil {
+		return nil, errors.New("csidriver: NodeID, Fetcher, Tenants, and Actors are required")
 	}
 	if cfg.Mount == nil {
 		cfg.Mount = func(dir string, f tree.Fetcher, instance string) (Unmounter, error) {
@@ -144,10 +167,12 @@ func (d *Driver) ControllerGetCapabilities(context.Context, *csi.ControllerGetCa
 	}}}, nil
 }
 
-// CreateVolume checks that the request names an instance some tenant may
-// use and returns a volume named after the request. The volume context
-// carries the instance to NodePublishVolume.
-func (d *Driver) CreateVolume(_ context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
+// CreateVolume checks that the request names an instance some tenant may use
+// and that the actor it is for is in the StorageClass's atespace, and returns
+// a volume named after the request. The volume context carries the instance
+// to NodePublishVolume. A denied volume is PermissionDenied; one the driver
+// could not check is Unavailable, which ateapi retries.
+func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 	if req.GetName() == "" {
 		return nil, status.Error(codes.InvalidArgument, "volume name is required")
 	}
@@ -156,6 +181,9 @@ func (d *Driver) CreateVolume(_ context.Context, req *csi.CreateVolumeRequest) (
 	}
 	instance, err := d.instanceOf(req.GetParameters())
 	if err != nil {
+		return nil, err
+	}
+	if err := d.checkAtespace(ctx, req.GetName(), req.GetParameters()); err != nil {
 		return nil, err
 	}
 	return &csi.CreateVolumeResponse{Volume: &csi.Volume{
@@ -183,6 +211,29 @@ func (d *Driver) ValidateVolumeCapabilities(_ context.Context, req *csi.Validate
 		VolumeCapabilities: req.GetVolumeCapabilities(),
 		VolumeContext:      req.GetVolumeContext(),
 	}}, nil
+}
+
+// checkAtespace refuses a volume for an actor outside the atespace the
+// StorageClass names. It fails closed: a class with no atespace, a name that
+// isn't an actor's volume, and a directory that can't answer all refuse.
+func (d *Driver) checkAtespace(ctx context.Context, name string, params map[string]string) error {
+	atespace := params[AtespaceParameter]
+	if atespace == "" {
+		return status.Errorf(codes.InvalidArgument, "StorageClass parameter %q is required", AtespaceParameter)
+	}
+	m := volumeName.FindStringSubmatch(name)
+	if m == nil {
+		return status.Errorf(codes.InvalidArgument, "volume name %q is not an actor's volume", name)
+	}
+	in, err := d.cfg.Actors.InAtespace(ctx, atespace, m[1])
+	if err != nil {
+		return status.Errorf(codes.Unavailable, "checking the atespace of actor %s: %v", m[1], err)
+	}
+	if !in {
+		slog.Warn("refusing a volume for an actor outside the StorageClass's atespace", "volume", name, "atespace", atespace)
+		return status.Errorf(codes.PermissionDenied, "actor %s is not in atespace %q, the only one that may use this StorageClass", m[1], atespace)
+	}
+	return nil
 }
 
 // instanceOf reads the instance a volume serves and checks that a tenant
