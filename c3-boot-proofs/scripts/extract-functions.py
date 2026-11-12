@@ -78,6 +78,7 @@ FUNCTIONS = [
     ("feSub", "<&curve25519_dalek::backend::serial::u32::field::FieldElement2625 as core::ops::arith::Sub>::sub"),
     ("wideMul12x2", "crypto_bigint::uint::mul::karatsuba::widening_mul_fixed::<12, 2>"),
     ("wideMul8x2", "crypto_bigint::uint::mul::karatsuba::widening_mul_fixed::<8, 2>"),
+    ("edDouble", "<curve25519_dalek::backend::serial::curve_models::ProjectivePoint>::double"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a

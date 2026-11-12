@@ -22,6 +22,7 @@ import C3BootProofs.Proofs.FeAdd
 import C3BootProofs.Proofs.FeSub
 import C3BootProofs.Proofs.WideMul12x2
 import C3BootProofs.Proofs.WideMul8x2
+import C3BootProofs.Proofs.EdDouble
 import C3BootProofs.Proofs.ImageHelpers
 import C3BootProofs.Proofs.Block
 import C3BootProofs.Proofs.ImageCalls
@@ -1743,6 +1744,51 @@ theorem exists_wideMul8x2_machine :
   · unfold RV32.CodeIn; decide +kernel
   · unfold RV32.CodeIn; decide +kernel
 
+def witnessMemEdDouble (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.edDoubleAddress).toNat < Image.edDoubleCode.length then
+    RV32.byteAt Image.edDoubleCode (a - BitVec.ofNat 32 Image.edDoubleAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.feSquareAddress).toNat < Image.feSquareCode.length then
+    RV32.byteAt Image.feSquareCode (a - BitVec.ofNat 32 Image.feSquareAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.feSquareInnerAddress).toNat < Image.feSquareInnerCode.length then
+    RV32.byteAt Image.feSquareInnerCode (a - BitVec.ofNat 32 Image.feSquareInnerAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.feReduceAddress).toNat < Image.feReduceCode.length then
+    RV32.byteAt Image.feReduceCode (a - BitVec.ofNat 32 Image.feReduceAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.feAddAddress).toNat < Image.feAddCode.length then
+    RV32.byteAt Image.feAddCode (a - BitVec.ofNat 32 Image.feAddAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.feSubAddress).toNat < Image.feSubCode.length then
+    RV32.byteAt Image.feSubCode (a - BitVec.ofNat 32 Image.feSubAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat < Image.memcpyStubCode.length then
+    RV32.byteAt Image.memcpyStubCode (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat < Image.memcpyBodyCode.length then
+    RV32.byteAt Image.memcpyBodyCode (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat
+  else 0
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `curve25519_dalek`'s `ProjectivePoint::double` with
+the result at `0x3FCC5000`, the point at `0x3FCC6000`, and the stack at
+`0x3FCC7210` meets `edDouble_correct`'s hypotheses. -/
+theorem exists_edDouble_machine :
+    ∃ (m : RV32.Machine) (P G out sf retAddr : RV32.Word), RV32.EdDblEnv m.mem P G out sf ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = sf ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = G + 0x210 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.sp then 0x3FCC7210 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.edDoubleAddress, witnessMemEdDouble⟩,
+    BitVec.ofNat 32 Image.edDoubleAddress, 0x3FCC7000, 0x3FCC5000, 0x3FCC6000, 0,
+    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩,
+    rfl, rfl, rfl, rfl, by decide, rfl⟩
+  all_goals (unfold RV32.CodeIn; decide +kernel)
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -2161,3 +2207,9 @@ end C3
 
 /-- info: 'C3.exists_wideMul8x2_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_wideMul8x2_machine
+
+/-- info: 'C3.RV32.edDouble_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.edDouble_correct
+
+/-- info: 'C3.exists_edDouble_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_edDouble_machine
