@@ -48,6 +48,7 @@ FUNCTIONS = [
     ("pointAdd", "<primeorder::point_arithmetic::EquationAIsMinusThree as "
      "primeorder::point_arithmetic::sealed::PointArithmetic<p256::NistP256>>::add_assign"),
     ("sha256Compress", "sha2::sha256::compress256"),
+    ("rangeFromIndex", "<core::ops::range::RangeFrom<usize> as core::slice::index::SliceIndex<[u8]>>::index"),
     ("shaUpdate", "<sha2::Sha256 as digest::Update>::update"),
     ("shaFinalize", "<sha2::Sha256 as digest::digest::Digest>::finalize"),
     ("shaFinish", "<c3_crypto::sha::Sha256>::finish"),
@@ -63,6 +64,7 @@ FUNCTIONS = [
 # `lui; addi` pair in it that forms the data's address, and the data's size.
 DATA = [
     ("curveB", "pointAdd", 0x12E, 32),
+    ("shaK", "sha256Compress", 0xB8, 256),
 ]
 
 

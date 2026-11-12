@@ -50,6 +50,7 @@ import C3BootProofs.Proofs.FieldSpec
 import C3BootProofs.Proofs.PointEnv
 import C3BootProofs.Proofs.PointAdd
 import C3BootProofs.Proofs.ShaSpec
+import C3BootProofs.Proofs.ShaTools
 import C3BootProofs.Proofs.ShaSupport
 import C3BootProofs.Proofs.Sha256Data
 import C3BootProofs.Proofs.Sha256Rounds0
@@ -65,6 +66,11 @@ import C3BootProofs.Proofs.ShaStream
 import C3BootProofs.Proofs.ShaUpdate
 import C3BootProofs.Proofs.ShaFinal
 import C3BootProofs.Proofs.ShaOneShot
+import C3BootProofs.Proofs.Sha256LoopDecode
+import C3BootProofs.Proofs.Sha256LoopBlocks
+import C3BootProofs.Proofs.Sha256LoopRounds
+import C3BootProofs.Proofs.Sha256LoopLoad
+import C3BootProofs.Proofs.Sha256LoopFrame
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
 import C3BootProofs.Theorems.Level
