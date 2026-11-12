@@ -10,10 +10,15 @@ import {
   groupingPlan,
   matchRestores,
   parseInsights,
+  parseSplit,
+  splitBySite,
+  splitPrompt,
+  splitTopic,
   tabCount,
   tabEntries,
   tabLine,
   tabSignature,
+  topicLimit,
   undoMoves,
   userPrompt,
   withoutTabs,
@@ -371,4 +376,106 @@ test("undo moves tabs back in index order within each window", () => {
     ]).map((move) => move.id),
     [4, 2, 3, 1],
   );
+});
+
+test("a topic may hold a quarter of the tabs read, and never fewer than 8", () => {
+  assert.equal(topicLimit(3), 8);
+  assert.equal(topicLimit(40), 10);
+  assert.equal(topicLimit(50), 13);
+  const { entries } = tabEntries(
+    [{ id: 1, url: "https://a.example/" }, { id: 2, url: "https://b.example/" }],
+    now,
+    own,
+  );
+  assert.match(userPrompt(entries), /^2 tabs\. Put at most 8 tabs in a topic\.\nTabs:\n1\. /);
+});
+
+test("tabs not used in a week are picks even when the model skips them", () => {
+  const day = 24 * 60 * minute;
+  const { entries } = tabEntries(
+    [
+      { id: 1, url: "https://old.example/", lastAccessed: now - 9 * day },
+      { id: 2, url: "https://older.example/", lastAccessed: now - 30 * day },
+      { id: 3, url: "https://pinned.example/", lastAccessed: now - 30 * day, pinned: true },
+      { id: 4, url: "https://recent.example/", lastAccessed: now - 6 * day },
+      { id: 5, url: "https://picked.example/", lastAccessed: now - 8 * day },
+    ],
+    now,
+    own,
+  );
+  const { close } = parseInsights(JSON.stringify({ topics: [], close: [{ tab: 5, reason: "Done" }] }), entries);
+  assert.deepEqual(
+    close.map((pick) => [pick.entry.id, pick.reason]),
+    [
+      [5, "Done"],
+      [2, "Not used in 30 days."],
+      [1, "Not used in 9 days."],
+    ],
+  );
+});
+
+function pulls(repos) {
+  return tabEntries(
+    repos.map((repo, index) => ({
+      id: index + 1,
+      title: `PR ${index + 1}`,
+      url: `https://github.com/org/${repo}/pull/${index + 1}`,
+    })),
+    now,
+    own,
+  ).entries;
+}
+
+test("splitting by site uses the shallowest level that splits, and gathers single tabs", () => {
+  const tabs = pulls(["web", "web", "web", "api", "api", "docs"]);
+  assert.deepEqual(
+    splitBySite({ name: "Development", tabs }).map((group) => [group.name, group.tabs.map((entry) => entry.id)]),
+    [
+      ["web", [1, 2, 3]],
+      ["api", [4, 5]],
+      ["Development", [6]],
+    ],
+  );
+  const same = { name: "Development", tabs: pulls(["web", "web"]) };
+  assert.deepEqual(splitBySite(same), [same]);
+});
+
+test("the split prompt numbers the topic's tabs from 1", () => {
+  const tabs = pulls(["web", "api"]).map((entry) => ({ ...entry, number: entry.number + 10 }));
+  const prompt = splitPrompt("Development", tabs, 8);
+  assert.match(prompt, /grouped as "Development"/);
+  assert.match(prompt, /at most 8 tabs/);
+  assert.match(prompt, /\n1\. PR 1 — github\.com\/org\/web\/pull\/1\n2\. PR 2/);
+});
+
+test("a split answer maps numbers to the topic's tabs, and rest holds the others", () => {
+  const tabs = pulls(["web", "api", "docs"]);
+  const { groups, rest } = parseSplit(JSON.stringify({ groups: [{ name: "Web", tabs: [1, 9] }] }), tabs);
+  assert.deepEqual(groups.map((group) => [group.name, group.tabs.map((entry) => entry.id)]), [["Web", [1]]]);
+  assert.deepEqual(rest.map((entry) => entry.id), [2, 3]);
+});
+
+test("a big topic uses the model's split, and splits by site when the model doesn't", () => {
+  const tabs = pulls(["web", "web", "web", "api", "api", "api"]);
+  const topic = { name: "Development", tabs };
+  const named = (groups) => groups.map((group) => [group.name, group.tabs.map((entry) => entry.id)]);
+  const answer = JSON.stringify({
+    groups: [
+      { name: "Frontend", tabs: [1, 2, 3] },
+      { name: "frontend", tabs: [4] },
+      { name: "Backend", tabs: [5] },
+    ],
+  });
+  assert.deepEqual(named(splitTopic(topic, answer, 4)), [
+    ["Frontend", [1, 2, 3, 4]],
+    ["Backend", [5]],
+    ["Development", [6]],
+  ]);
+  const bySite = [
+    ["web", [1, 2, 3]],
+    ["api", [4, 5, 6]],
+  ];
+  assert.deepEqual(named(splitTopic(topic, JSON.stringify({ groups: [{ name: "All", tabs: [1, 2, 3, 4, 5, 6] }] }), 4)), bySite);
+  assert.deepEqual(named(splitTopic(topic, "not json", 4)), bySite);
+  assert.deepEqual(named(splitTopic(topic, null, 4)), bySite);
 });

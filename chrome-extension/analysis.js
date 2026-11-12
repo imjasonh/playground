@@ -3,13 +3,18 @@
 // model download, which needs a click; the service worker can't.
 
 import {
+  MAX_TOPICS,
   MODEL_OPTIONS,
   RESPONSE_SCHEMA,
+  SPLIT_SCHEMA,
   SYSTEM_PROMPT,
   groupingPlan,
   parseInsights,
+  splitPrompt,
+  splitTopic,
   tabEntries,
   tabSignature,
+  topicLimit,
   userPrompt,
 } from "./tab_insights.js";
 
@@ -50,12 +55,52 @@ export async function analyzeTabs(api, session, now = Date.now()) {
     return result;
   }
   const started = Date.now();
-  const answer = await session.prompt(userPrompt(entries), {
-    responseConstraint: RESPONSE_SCHEMA,
-  });
+  // A clone taken before the first prompt holds only the system prompt, so
+  // each split starts from a clean context instead of the whole first answer.
+  const base = typeof session.clone === "function" ? await session.clone() : null;
+  try {
+    const answer = await session.prompt(userPrompt(entries), {
+      responseConstraint: RESPONSE_SCHEMA,
+    });
+    result.insights = parseInsights(answer, entries);
+    result.insights.topics = await splitTopics(base || session, result.insights.topics, topicLimit(entries.length));
+  } finally {
+    if (base) {
+      base.destroy();
+    }
+  }
   result.seconds = (Date.now() - started) / 1000;
-  result.insights = parseInsights(answer, entries);
   return result;
+}
+
+async function askSplit(base, topic, limit) {
+  const session = typeof base.clone === "function" ? await base.clone() : base;
+  try {
+    return await session.prompt(splitPrompt(topic.name, topic.tabs, limit), {
+      responseConstraint: SPLIT_SCHEMA,
+    });
+  } catch (error) {
+    console.error(error);
+    return null;
+  } finally {
+    if (session !== base) {
+      session.destroy();
+    }
+  }
+}
+
+// splitTopics asks the model to split each topic over the limit, and falls
+// back to splitting by site when its answer doesn't.
+async function splitTopics(base, topics, limit) {
+  const result = [];
+  for (const topic of topics) {
+    if (topic.tabs.length <= limit) {
+      result.push(topic);
+    } else {
+      result.push(...splitTopic(topic, await askSplit(base, topic, limit), limit));
+    }
+  }
+  return result.slice(0, MAX_TOPICS);
 }
 
 // applyGroups makes or extends the tab groups for the topics and the picks.

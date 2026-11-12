@@ -197,3 +197,46 @@ test("switching to a pick removes it from the picks and the Likely close group",
   await api.tabs.onActivated.emit({ tabId: 2, windowId: 1 });
   assert.deepEqual(state.ungrouped, [3]);
 });
+
+test("a topic over the limit is split by a second prompt on a clean clone", async () => {
+  const pulls = [];
+  for (let id = 1; id <= 12; id += 1) {
+    pulls.push({ id, title: `PR ${id}`, url: `https://github.com/org/${id <= 6 ? "web" : "api"}/pull/${id}` });
+  }
+  const { api, state } = fakeChrome(pulls);
+  const answers = [
+    { topics: [{ name: "Development", tabs: pulls.map((tab) => tab.id) }], close: [] },
+    { groups: [{ name: "Web", tabs: [1, 2, 3, 4, 5, 6] }, { name: "API", tabs: [7, 8, 9, 10, 11, 12] }] },
+  ];
+  const model = { prompts: [], live: 0 };
+  function session(history) {
+    model.live += 1;
+    return {
+      async prompt(text) {
+        history.push(text);
+        model.prompts.push({ text, history: [...history] });
+        return JSON.stringify(answers.shift());
+      },
+      async clone() {
+        return session([...history]);
+      },
+      destroy() {
+        model.live -= 1;
+      },
+    };
+  }
+  model.availability = async () => "available";
+  model.create = async () => session([]);
+  await startInsights(api, model).run();
+  assert.deepEqual(
+    state.store.insights.insights.topics.map((topic) => [topic.name, topic.tabs.length]),
+    [
+      ["Web", 6],
+      ["API", 6],
+    ],
+  );
+  assert.equal(model.prompts.length, 2);
+  assert.match(model.prompts[1].text, /grouped as "Development"/);
+  assert.equal(model.prompts[1].history.length, 1);
+  assert.equal(model.live, 0);
+});

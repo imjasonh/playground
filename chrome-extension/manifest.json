@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Close Duplicate Tabs",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Closes tabs that share a URL, plans tab groups with Chrome's on-device AI, and copies decoded base64. The badge counts duplicates.",
   "permissions": [
     "alarms",
