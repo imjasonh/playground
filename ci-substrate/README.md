@@ -209,6 +209,22 @@ Substrate's `ExternalVolumes` preview gate guards this. The `pool` sends
 `Ate-Preview-Allowed: true` on every call, and `run-substrate.sh` turns the
 gate on in `ate-api-server`.
 
+A `StorageClass` belongs to one atespace, and the driver enforces it.
+Substrate authorizes by atespace and nothing finer: any template, in any
+atespace its author can write to, may name any `StorageClass`. A Kubernetes
+admission policy can't close that, because `ActorTemplate`s live in
+`ateapi`'s database, not in the Kubernetes API. So the class carries an
+`atespace` parameter, and on `CreateVolume` the driver checks that the actor
+the volume is for (the actor's uid is in the volume name `ateapi` sends) is in
+that atespace, by listing that atespace's actors. It acts as its own
+`casfs-csi` ServiceAccount, which has the `viewer` role in the atespaces it
+serves and nothing else. A volume for any other actor fails with
+`PermissionDenied`, and the driver fails closed: a class without the
+parameter, a name that isn't an actor's volume, or a lookup that fails
+(`Unavailable`) gets no volume, so a tenant never gets another tenant's
+inputs. `run-substrate.sh` ends by creating a template in another atespace
+that names `casfs-tenant-a` and checking that its actor can't resume.
+
 The volume is a control directory, not a tree: a `mkdir` of
 `<hash>-<size>[.<tag>]` materializes that input root, so one long-lived actor
 serves many jobs from one mount and two jobs with the same inputs get two
@@ -230,9 +246,11 @@ The demo's other limits:
   runner reads outputs from, so an action's outputs must fit in memory. On
   the CSI path that memory is the driver pod's, so its limit bounds the
   outputs of every actor on the node at once.
-- The `StorageClass` is per tenant, named in the tenant's `ActorTemplate`.
-  Nothing stops a template in another atespace from naming it; the deploy
-  needs a policy on `storageClassName` per atespace for that.
+- The `StorageClass` is per tenant and is bound to the tenant's atespace by
+  its `atespace` parameter, which needs the `casfs-csi` ServiceAccount to
+  have `viewer` in that atespace. The driver checks at `CreateVolume`, once
+  per volume. It lists the atespace's actors, one page at a time, so the
+  check grows with the number of actors in the atespace.
 - The driver keeps its mounts in memory. A driver restart leaves the
   published FUSE mounts stale (reads fail with `ENOTCONN`) until Substrate
   suspends or restarts the actor, and `NodePublishVolume` detaches the stale

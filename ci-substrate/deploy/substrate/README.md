@@ -13,7 +13,7 @@ caching, and remote execution with the runner Deployment in
 |------|------------|
 | `workerpool.yaml` | A `WorkerPool` of gVisor workers labeled `workload: ci-runner`. Actors from the runner template land on these workers. |
 | `tenant-a-token.yaml` | The tenant's cas token in a namespace of its own, for the egress gateway to inject. |
-| `casfs-csi.yaml` | The `casfs-csi` DaemonSet, its controller Service, the `CSIDriverConfig` that tells Substrate where the driver listens, and the tenant's `StorageClass` (`casfs-tenant-a`, parameter `instance: tenant-a`). The driver mounts an inputs volume for each actor on the actor's node and serves it from that node's `cascache` with the tenant's token. |
+| `casfs-csi.yaml` | The `casfs-csi` DaemonSet, its controller Service, the `CSIDriverConfig` that tells Substrate where the driver listens, and the tenant's `StorageClass` (`casfs-tenant-a`, parameters `instance: tenant-a` and `atespace: tenant-a`), and the driver's ServiceAccount. The driver mounts an inputs volume for each actor on the actor's node and serves it from that node's `cascache` with the tenant's token. |
 | `egress-cas.yaml` | The egress policy every runner actor gets: plain gRPC to the `cas` Service only, with the tenant token replacing the placeholder header. Inputs don't go through egress. |
 | `runner-template.yaml` | The `ActorTemplate` for a runner actor: the `runner` bot with the tenant's instance, a placeholder token, its actor name as its bot id, and an external `inputs` volume of the tenant's `StorageClass` mounted at `/inputs`. |
 | `pool.yaml` | The `pool` Deployment for the tenant. It runs in `ate-system` as the `ate-client` ServiceAccount and sizes the tenant's actors to its queue. |
@@ -30,7 +30,23 @@ caching, and remote execution with the runner Deployment in
    `ExternalVolumes` to the `--preview=` argument of the `ate-api-server`
    Deployment in `ate-system`. External volumes are behind it in Substrate
    v1.0.0.
-5. Deploy the CSI driver and the tenant's `StorageClass`:
+5. Give the driver's ServiceAccount the `viewer` role in the atespace. The
+   driver refuses a volume for an actor that isn't in the `StorageClass`'s
+   `atespace`, and it learns that by listing the atespace's actors. Give it
+   no other role:
+
+   ```bash
+   kubectl ate create access-policy -a tenant-a -f - <<'EOF'
+   bindings:
+   - role: viewer
+     members:
+     - user:system:serviceaccount:ci-substrate:casfs-csi
+   EOF
+   ```
+
+   If the atespace already has an access policy, add the member to its
+   `viewer` binding with `kubectl ate update access-policy` instead.
+6. Deploy the CSI driver and the tenant's `StorageClass`:
 
    ```bash
    ko apply -f casfs-csi.yaml
@@ -38,9 +54,12 @@ caching, and remote execution with the runner Deployment in
    ```
 
    For another tenant, add a `StorageClass` with that tenant's instance
-   name as the `instance` parameter. The driver resolves it to a token from
-   the `tenants` Secret, so the `StorageClass` needs no secret of its own.
-6. Resolve and create the actor template, with `--preview` so the API
+   name as the `instance` parameter and its atespace as the `atespace`
+   parameter, and give the ServiceAccount `viewer` there. The driver
+   resolves the instance to a token from the `tenants` Secret, so the
+   `StorageClass` needs no secret of its own. A `StorageClass`'s parameters
+   can't change, so delete and recreate one to change them.
+7. Resolve and create the actor template, with `--preview` so the API
    accepts the external volume:
 
    ```bash
@@ -51,7 +70,7 @@ caching, and remote execution with the runner Deployment in
    An actor keeps the volumes it was created with. To change the template,
    stop the pool, delete its actors, delete the template, and create the
    new one; `run-substrate.sh` does this when the template exists.
-7. Put the egress policy in a ConfigMap and deploy the pool:
+8. Put the egress policy in a ConfigMap and deploy the pool:
 
    ```bash
    kubectl -n ate-system create configmap ci-substrate-pool-tenant-a \

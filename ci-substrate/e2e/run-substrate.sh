@@ -116,7 +116,37 @@ print(json.dumps(d))" | kubectl apply -f -
   kubectl -n ate-system rollout status deployment/ate-api-server --timeout=180s
 fi
 
+echo "==> casfs CSI driver: viewer in ${ATESPACE}"
+# The driver asks Substrate which atespace an actor is in, as its own
+# ServiceAccount, and refuses a volume for an actor outside the StorageClass's
+# atespace. It needs only the viewer role, and only here.
+driver_member="user:system:serviceaccount:ci-substrate:casfs-csi"
+if ! kubectl ate get access-policy -a "${ATESPACE}" -o json >"${WORKDIR}/access-policy.json" 2>/dev/null ||
+  ! grep -q '"bindings"' "${WORKDIR}/access-policy.json"; then
+  printf 'bindings:\n- role: viewer\n  members:\n  - %s\n' "${driver_member}" >"${WORKDIR}/access-policy-new.yaml"
+  kubectl ate create access-policy -a "${ATESPACE}" -f "${WORKDIR}/access-policy-new.yaml"
+elif ! grep -q "${driver_member}" "${WORKDIR}/access-policy.json"; then
+  python3 - "${WORKDIR}/access-policy.json" "${driver_member}" <<'PY' >"${WORKDIR}/access-policy-new.json"
+import json, sys
+policy = json.load(open(sys.argv[1]))
+bindings = policy.setdefault("bindings", [])
+viewer = next((b for b in bindings if b.get("role") == "viewer"), None)
+if viewer is None:
+    viewer = {"role": "viewer", "members": []}
+    bindings.append(viewer)
+viewer.setdefault("members", []).append(sys.argv[2])
+print(json.dumps(policy))
+PY
+  kubectl ate update access-policy -a "${ATESPACE}" -f "${WORKDIR}/access-policy-new.json"
+fi
+
 echo "==> casfs CSI driver"
+# A StorageClass's parameters are immutable, so an older class without the
+# atespace parameter is replaced.
+if kubectl get storageclass casfs-tenant-a >/dev/null 2>&1 &&
+  [[ -z "$(kubectl get storageclass casfs-tenant-a -o jsonpath='{.parameters.atespace}')" ]]; then
+  kubectl delete storageclass casfs-tenant-a
+fi
 ko apply -f "${OVERLAY}/casfs-csi.yaml"
 kubectl -n ci-substrate rollout status daemonset/casfs-csi --timeout=180s
 
@@ -168,3 +198,30 @@ go run "${ROOT}/cmd/cictl" -origin-addr=localhost:18980 -cache-addr=localhost:19
 echo "==> Actors after the run"
 kubectl ate get actors -a "${ATESPACE}"
 kubectl -n ate-system logs deployment/ci-substrate-pool-tenant-a --tail=20
+
+echo "==> Another atespace's template naming ${ATESPACE}'s StorageClass gets no volume"
+# Substrate lets any template name any StorageClass. The driver is what
+# refuses: an actor in the intruder atespace has no volume of casfs-tenant-a.
+INTRUDER=intruder
+intruder_cleanup() {
+  kubectl ate delete actor probe -a "${INTRUDER}" >/dev/null 2>&1 || true
+  kubectl ate delete actor-template ci-runner -a "${INTRUDER}" >/dev/null 2>&1 || true
+  kubectl ate delete atespace "${INTRUDER}" >/dev/null 2>&1 || true
+}
+intruder_cleanup
+kubectl ate create atespace "${INTRUDER}"
+sed "s/atespace: ${ATESPACE}$/atespace: ${INTRUDER}/" "${WORKDIR}/runner-template.yaml" >"${WORKDIR}/intruder-template.yaml"
+kubectl ate --preview create actor-template -f "${WORKDIR}/intruder-template.yaml"
+kubectl ate --preview create actor probe -a "${INTRUDER}" --template ci-runner
+if resume_out="$(kubectl ate --preview resume actor probe -a "${INTRUDER}" 2>&1)"; then
+  echo "an actor in ${INTRUDER} resumed with ${ATESPACE}'s StorageClass" >&2
+  intruder_cleanup
+  exit 1
+fi
+if ! grep -q 'PermissionDenied.*not in atespace' <<<"${resume_out}"; then
+  echo "resume failed, but not on the atespace policy: ${resume_out}" >&2
+  intruder_cleanup
+  exit 1
+fi
+echo "refused: ${resume_out##*desc = }"
+intruder_cleanup

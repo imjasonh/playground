@@ -12,7 +12,28 @@
 # mounts have to propagate out of the pod (Bidirectional) for atelet and the
 # sandbox to see them. It holds the tenant table, as cascache does.
 #
+# Substrate lets a template in any atespace name any StorageClass, so the
+# driver is what keeps a tenant's class to that tenant's atespace. Each class
+# names its atespace, and when ateapi asks for a volume the driver lists that
+# atespace's actors and refuses a volume for an actor that isn't in it. The
+# driver acts as the casfs-csi ServiceAccount, which needs the viewer role in
+# each atespace it serves, and no role anywhere else:
+#
+#   kubectl ate create access-policy -a tenant-a -f - <<EOF
+#   metadata: {name: default}
+#   bindings:
+#   - role: viewer
+#     members: ["user:system:serviceaccount:ci-substrate:casfs-csi"]
+#   EOF
+#
 #   ko apply -f casfs-csi.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: casfs-csi
+  namespace: ci-substrate
+automountServiceAccountToken: false
+---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -26,6 +47,8 @@ spec:
     metadata:
       labels: {app: casfs-csi}
     spec:
+      serviceAccountName: casfs-csi
+      automountServiceAccountToken: false
       containers:
         - name: driver
           image: ko://github.com/imjasonh/playground/ci-substrate/cmd/casfs-csi # pasta:ignore unpinned_container_image
@@ -62,7 +85,22 @@ spec:
             # Where atelet puts each actor's volume mount points. Bidirectional
             # so the mounts the driver makes under it reach the host.
             - {name: ate-base, mountPath: /var/lib/ate, mountPropagation: Bidirectional}
+            # The token and trust bundle for Substrate's API, as the pool's.
+            - {name: ate, mountPath: /run/ate, readOnly: true}
       volumes:
+        - name: ate
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: api.ate-system.svc
+                  expirationSeconds: 3600
+              - clusterTrustBundle:
+                  signerName: servicedns.podcert.ate.dev/identity
+                  labelSelector:
+                    matchLabels:
+                      podcert.ate.dev/canarying: live
+                  path: trust-bundle.pem
         - name: plugin-dir
           hostPath:
             path: /var/lib/kubelet/plugins/casfs.ci-substrate.dev
@@ -98,9 +136,10 @@ spec:
 ---
 # One StorageClass per tenant. The instance parameter is the Remote Execution
 # instance the volume serves, which decides the token the driver fetches
-# with. An actor template for tenant-a names this class; a template that
-# named another tenant's class would get that tenant's inputs, so the class a
-# tenant's templates may use is part of the tenant's setup.
+# with. The atespace parameter is the one atespace whose actors may have a
+# volume of the class: a template in another atespace may name it, but the
+# driver refuses the volume when ateapi creates it for that template's actor.
+# Both parameters are required; the driver refuses a class without them.
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
@@ -110,3 +149,4 @@ reclaimPolicy: Delete
 volumeBindingMode: Immediate
 parameters:
   instance: tenant-a
+  atespace: tenant-a
