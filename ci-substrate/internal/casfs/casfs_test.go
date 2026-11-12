@@ -140,9 +140,56 @@ func TestLazyHydration(t *testing.T) {
 		t.Fatalf("running run.sh from the mount: %q, %v", out, err)
 	}
 
-	// The mount is read-only.
-	if err := os.WriteFile(filepath.Join(mnt, "hello.txt"), []byte("x"), 0o644); err == nil {
-		t.Fatal("write to a casfs file succeeded")
+	// The mount is the exec root, so an action can write outputs into it:
+	// new files, new directories, and changes to CAS-backed files. None of
+	// that touches the CAS.
+	if err := os.MkdirAll(filepath.Join(mnt, "out/nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mnt, "out/nested/result.txt"), []byte("built"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mnt, "sub/big.bin"), []byte("replaced"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = os.ReadFile(filepath.Join(mnt, "out/nested/result.txt"))
+	if err != nil || string(got) != "built" {
+		t.Fatalf("result.txt: %q, %v", got, err)
+	}
+	got, err = os.ReadFile(filepath.Join(mnt, "sub/big.bin"))
+	if err != nil || string(got) != "replaced" {
+		t.Fatalf("big.bin after write: %d bytes, %v", len(got), err)
+	}
+	if f.count(big) != 0 {
+		t.Fatal("truncating big.bin fetched its old contents")
+	}
+	if len(f.blobs[digest.Key(big)]) != 3<<20 {
+		t.Fatal("writing through the mount changed the CAS")
+	}
+	if err := os.Rename(filepath.Join(mnt, "out/nested/result.txt"), filepath.Join(mnt, "out/final.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(mnt, "out/nested")); err != nil {
+		t.Fatal(err)
+	}
+	appendTo, err := os.OpenFile(filepath.Join(mnt, "hello.txt"), os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := appendTo.WriteString("!"); err != nil {
+		t.Fatal(err)
+	}
+	appendTo.Close()
+	got, err = os.ReadFile(filepath.Join(mnt, "hello.txt"))
+	if err != nil || string(got) != "hello from the CAS!" {
+		t.Fatalf("hello.txt after append: %q, %v", got, err)
+	}
+	out2, err := tree.FromDir(filepath.Join(mnt, "out"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out2.Tree.GetRoot().GetFiles()) != 1 || out2.Tree.GetRoot().GetFiles()[0].GetName() != "final.txt" {
+		t.Fatalf("out/ after rename and rmdir: %v", out2.Tree.GetRoot())
 	}
 }
 
