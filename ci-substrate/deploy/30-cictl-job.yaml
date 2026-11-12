@@ -1,6 +1,7 @@
 # One-shot Job that drives the multi-tenant isolation + node-local cache demo
-# against the cas and cascache already in the cluster. The e2e harness waits
-# for this Job to Complete.
+# against the cas and cascache already in the cluster, for clusters where
+# Service routing works. The kind e2e runs the same cictl from the host over
+# port-forwards instead.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -25,3 +26,10 @@ spec:
             - -token-b=tok-b
             - -instance-a=tenant-a
             - -shared=shared
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}

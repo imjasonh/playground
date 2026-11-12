@@ -1,29 +1,31 @@
-# ActorTemplate for a CI/build actor. The actor runs the ci-substrate runner
-# binary against the node-local cascache (hostNetwork port 9092) for reads and
-# the central cas for action-cache writes. Apply with:
+# ActorTemplate (protojson-shaped ateapi.ActorTemplate) for a CI build actor
+# in the tenant-a atespace. The actor runs the ci-substrate runner against the
+# cascache and cas Services. Create one template per tenant atespace:
 #
-#   kubectl ate create actor-template -a <atespace> -f runner-template.yaml
+#   ko resolve -f runner-template.yaml > /tmp/runner-template.yaml
+#   kubectl ate create actor-template -f /tmp/runner-template.yaml
 #
-# Image is a ko reference; resolve it first (`ko resolve -f …`) or substitute
-# the published digest before creating the template.
-apiVersion: ate.agentsubstrate.dev/v1alpha1
-kind: ActorTemplate
+# The tenant token is not in the template. The runner sends a placeholder
+# x-ci-substrate-tenant header, and the egress gateway replaces it with the
+# tenant's token from a Kubernetes Secret (see egress-cascache.yaml), so no
+# credential is inside the sandbox.
 metadata:
+  atespace: tenant-a
   name: ci-runner
-spec:
-  containers:
-    - name: runner
-      image: ko://github.com/imjasonh/playground/ci-substrate/cmd/runner # pasta:ignore unpinned_container_image
-      # The concrete args (cache/origin addrs, tenant token, command) are
-      # injected per job when the actor is created; the template only pins the
-      # image and resources.
-      command: ["/ko-app/runner"]
-      resources:
-        limits:
-          cpuMillicores: 1000
-          memoryBytes: 2147483648
-  snapshotConfig:
-    preferredFidelity: memory
-  workerSelector:
-    matchLabels:
-      ate.agentsubstrate.dev/sandbox-class: gvisor
+workerSelector:
+  matchLabels:
+    workload: ci-runner
+containers:
+- name: runner
+  image: ko://github.com/imjasonh/playground/ci-substrate/cmd/runner # pasta:ignore unpinned_container_image
+  args:
+  - -cache-addr=cascache.ci-substrate.svc.cluster.local:9092
+  - -origin-addr=cas.ci-substrate.svc.cluster.local:8980
+  - -instance=tenant-a
+  - -token=placeholder
+resources:
+  limits:
+    cpuMillicores: 1000
+    memoryBytes: 2147483648 # 2Gi
+snapshotConfig:
+  preferredFidelity: SNAPSHOT_FIDELITY_MEMORY

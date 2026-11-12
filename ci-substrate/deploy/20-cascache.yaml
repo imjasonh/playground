@@ -1,7 +1,8 @@
-# The node-local CAS proxy. One pod per node (DaemonSet), on the host network,
-# serving build actors on that node from a verified read-through cache backed
-# by node-local disk. Every node gets its own warm set; a blob fetched once is
-# reused by every later reader on that node.
+# The node-local CAS proxy. One pod per node (DaemonSet) serving build pods on
+# that node from a verified read-through cache backed by node-local disk.
+# Every node gets its own warm set; a blob fetched once is reused by every
+# later reader on that node. The Service below keeps traffic on the caller's
+# node, so the pod needs no host network.
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -15,10 +16,6 @@ spec:
     metadata:
       labels: {app: cascache}
     spec:
-      hostNetwork: true
-      # hostNetwork pods default to the host's resolv.conf; use cluster DNS so
-      # ORIGIN_ADDR=cas.ci-substrate.svc.cluster.local resolves.
-      dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: cascache
           image: ko://github.com/imjasonh/playground/ci-substrate/cmd/cascache # pasta:ignore unpinned_container_image
@@ -33,23 +30,35 @@ spec:
               value: cas.ci-substrate.svc.cluster.local:8980
             - name: TENANTS
               valueFrom:
-                configMapKeyRef: {name: tenants, key: TENANTS}
+                secretKeyRef: {name: tenants, key: TENANTS}
           ports:
             - {name: grpc, containerPort: 9092}
             - {name: metrics, containerPort: 9090}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
           readinessProbe:
             grpc: {port: 9092}
           volumeMounts:
             - {name: cache, mountPath: /var/lib/ci-substrate-cache}
       volumes:
         # emptyDir keeps the warm set for the life of the node-local pod and is
-        # writable by the non-root chainguard static user. A production install
-        # would mount node-local NVMe here instead.
+        # writable by the non-root static user. The cache does not evict, so
+        # the kubelet evicts the pod (and with it the warm set) when the cache
+        # passes sizeLimit. A production install would mount node-local NVMe
+        # and evict to a byte budget.
         - name: cache
-          emptyDir: {}
+          emptyDir: {sizeLimit: 10Gi}
 ---
-# A ClusterIP Service so in-cluster clients and the demo can reach a cascache
-# pod. With hostNetwork pods this routes to a node's cascache on its host IP.
+# internalTrafficPolicy: Local routes each client to the cascache pod on its
+# own node, which is what makes the cache node-local without host networking.
 apiVersion: v1
 kind: Service
 metadata:
@@ -57,6 +66,7 @@ metadata:
   namespace: ci-substrate
 spec:
   selector: {app: cascache}
+  internalTrafficPolicy: Local
   ports:
     - {name: grpc, port: 9092, targetPort: 9092}
     - {name: metrics, port: 9090, targetPort: 9090}

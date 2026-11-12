@@ -22,16 +22,29 @@ spec:
               value: /data
             - name: TENANTS
               valueFrom:
-                configMapKeyRef: {name: tenants, key: TENANTS}
+                secretKeyRef: {name: tenants, key: TENANTS}
           ports:
             - {name: grpc, containerPort: 8980}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
           readinessProbe:
             grpc: {port: 8980}
           volumeMounts:
             - {name: data, mountPath: /data}
       volumes:
+        # The demo origin keeps blobs on an emptyDir and the action cache in
+        # memory, so both reset when the pod restarts. A production origin
+        # needs durable storage and a shared action-cache database.
         - name: data
-          emptyDir: {}
+          emptyDir: {sizeLimit: 20Gi}
 ---
 apiVersion: v1
 kind: Service

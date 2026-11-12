@@ -1,24 +1,31 @@
-# EgressPolicy that lets a CI actor talk only to the node-local cascache and
-# the central cas origin. Applied per actor after resume:
+# EgressPolicy for a tenant-a CI actor. It allows plain gRPC (HTTP/2) to the
+# cascache and cas Services on their ports and nothing else. Create it per
+# actor, before the actor resumes:
 #
-#   kubectl ate create egress-policy <actor> -a <atespace> -f egress-cascache.yaml
+#   kubectl ate create egress-policy <actor> -a tenant-a -f egress-cascache.yaml
 #
-# Hostname matching is the Substrate isolation boundary: an actor whose policy
-# lists only these hosts cannot reach another tenant's endpoints, even when
-# they share a WorkerPool. Pair this with a tenant token that only authorizes
-# that tenant's instance name at the cas/cascache gRPC layer.
+# The gateway replaces the actor's placeholder x-ci-substrate-tenant header
+# with tenant-a's token from the Secret ci-substrate-tenant-a/tenant-token (key
+# "token"), so the actor never holds the token. Each tenant's token lives in
+# its own namespace, and the credential provider's namespace policy grants the
+# tenant-a atespace only ci-substrate-tenant-a, so one tenant's policy cannot
+# resolve another tenant's token. These rules are plain HTTP:
+# the token crosses the gateway-to-Service hop unencrypted, so a real install
+# needs mTLS or a mesh on that hop.
 rules:
-  - http:
-      hostnames: ["127.0.0.1", "localhost"]
-      ports: {all: {}}
-  - https:
-      hostnames: ["cas.ci-substrate.svc.cluster.local"]
-  - http:
-      hostnames: ["cas.ci-substrate.svc.cluster.local"]
-      ports: {all: {}}
-  # Node-local cascache listens on the host network at :9092. Actors reach it
-  # through the host's IP; the DNS relay answers only names listed here.
-  - http:
-      hostnames: ["*"]
-      ports:
-        allow: [9092]
+- http:
+    hostnames: ["cascache.ci-substrate.svc.cluster.local"]
+    ports:
+      numbers: [9092]
+    effects:
+      replaceHeaders:
+      - header: x-ci-substrate-tenant
+        credentialUri: ate-secret://k8s.io/default/ci-substrate-tenant-a/tenant-token/token
+- http:
+    hostnames: ["cas.ci-substrate.svc.cluster.local"]
+    ports:
+      numbers: [8980]
+    effects:
+      replaceHeaders:
+      - header: x-ci-substrate-tenant
+        credentialUri: ate-secret://k8s.io/default/ci-substrate-tenant-a/tenant-token/token

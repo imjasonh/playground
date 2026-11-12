@@ -74,8 +74,8 @@ install_kubectl() {
   if command -v kubectl >/dev/null 2>&1; then
     return
   fi
-  local ver os arch
-  ver="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
+  local ver="${KUBECTL_VERSION:-v1.32.2}"
+  local os arch
   os="$(uname -s | tr '[:upper:]' '[:lower:]')"
   arch="$(uname -m)"
   case "${arch}" in
@@ -167,9 +167,10 @@ kubectl apply -f deploy/00-namespace-and-config.yaml
 ko apply -f deploy/10-cas.yaml
 await_ready deployment cas
 
-# cascache must reach cas without relying on ClusterIP/DNS inside the
-# hostNetwork pod. Point ORIGIN_ADDR at the cas Pod IP once, then roll out
-# cascache a single time so we do not replace the pod under a port-forward.
+# Some nested kind environments cannot program ClusterIP rules (kube-proxy's
+# iptables-restore fails without the xt_statistic module), so point cascache
+# at the cas Pod IP rather than the Service. Roll cascache out once, so no
+# later rollout replaces the pod under a port-forward.
 CAS_POD_IP="$(kubectl -n ci-substrate get pod -l app=cas -o jsonpath='{.items[0].status.podIP}')"
 echo "Using cas pod IP ${CAS_POD_IP}:8980"
 ko resolve -f deploy/20-cascache.yaml \

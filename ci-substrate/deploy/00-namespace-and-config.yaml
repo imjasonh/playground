@@ -6,12 +6,15 @@ metadata:
 # The tenant table the cas and cascache read on startup. Each token maps to the
 # Remote Execution instance names that tenant may use. "tenant-a" and
 # "tenant-b" are private; "shared" is an instance both tenants read, which is
-# where content-addressed reuse happens.
+# where content-addressed reuse happens. The tokens are credentials, so they
+# live in a Secret. These demo values are public; replace them for any real
+# install.
 apiVersion: v1
-kind: ConfigMap
+kind: Secret
 metadata:
   name: tenants
   namespace: ci-substrate
-data:
+type: Opaque
+stringData:
   TENANTS: |
     {"tok-a":["tenant-a","shared"],"tok-b":["tenant-b","shared"]}
