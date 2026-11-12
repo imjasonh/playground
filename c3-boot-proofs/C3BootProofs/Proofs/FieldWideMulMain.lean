@@ -1,11 +1,11 @@
 import C3BootProofs.Proofs.FieldWideMul
-import C3BootProofs.Image.BootloaderV0
+import C3BootProofs.Image.Bootloader
 
 /-! # `widening_mul_fixed::<8, 8>`, end to end -/
 
 namespace C3.RV32
 
-open C3.ImageV0
+open C3.Image
 
 theorem fillWords_load {M : Word → BitVec 8} {dst v : Word} :
     ∀ k i, i < k → dst.toNat + 4 * k ≤ 2 ^ 32 → memLoad32 (fillWords M dst v k) (dst + BitVec.ofNat 32 (4 * i)) = v
@@ -61,16 +61,18 @@ theorem limbVal_wordsAt (M : Word → BitVec 8) (b : Word) : ∀ n, limbVal (wor
     simp only [accV]
     rw [Nat.mul_comm (2 ^ (32 * n))]
 
-/-- What `widening_mul_fixed`'s save helper stores and its restore helper
-loads. -/
+/-- The first seven registers `widening_mul_fixed` saves in its frame, at
+offsets from its `sp`; the eighth it saves and restores on its own. -/
 abbrev wmPs : List (Fin 32 × Word) :=
   [(ra, BitVec.ofNat 32 0x5C), ((8 : Fin 32), BitVec.ofNat 32 0x58), ((9 : Fin 32), BitVec.ofNat 32 0x54),
    ((18 : Fin 32), BitVec.ofNat 32 0x50), ((19 : Fin 32), BitVec.ofNat 32 0x4C),
    ((20 : Fin 32), BitVec.ofNat 32 0x48), ((21 : Fin 32), BitVec.ofNat 32 0x44)]
 
-theorem wmSave_shape : SaveAt wideMulSaveCode 0 wmPs := by simp only [SaveAt]; decide
+set_option maxRecDepth 20000 in
+theorem wmSave_end : blockEnd wideMulCode 2 (saveBlock wmPs) = some 0x10 := by decide
 
-theorem wmRestore_shape : RestoreAt wideMulRestoreCode 0 wmPs := by simp only [RestoreAt]; decide
+set_option maxRecDepth 20000 in
+theorem wmRestore_end : blockEnd wideMulCode 0xD8 (restoreBlock wmPs) = some 0xE6 := by decide
 
 theorem fillWord_zero : fillWord 0 = 0 := by decide
 
@@ -80,11 +82,9 @@ result at `out`, and the 8-word operands at `ap` and `bp`. -/
 structure WMEnv (M : Word → BitVec 8) (P sp0 out ap bp : Word) : Prop where
   hP : P.toNat % 2 = 0
   code : CodeIn M P wideMulCode
-  save : CodeIn M (P + 0x1242A) wideMulSaveCode
-  restore : CodeIn M (P + 0x1241A) wideMulRestoreCode
-  mset : CodeIn M (P + 0x129E4) memsetCode
-  stub : CodeIn M (P + 0x12A4C) memcpyStubCode
-  body : CodeIn M (P + 0x12A54) memcpyBodyCode
+  mset : CodeIn M (P + 0x7446) memsetCode
+  stub : CodeIn M (P + 0x74AE) memcpyStubCode
+  body : CodeIn M (P + 0x74B6) memcpyBodyCode
   hsp : sp0.toNat % 4 = 0
   hout : out.toNat % 4 = 0
   hap : ap.toNat % 4 = 0
@@ -92,15 +92,12 @@ structure WMEnv (M : Word → BitVec 8) (P sp0 out ap bp : Word) : Prop where
   hS : 0x60 ≤ sp0.toNat
   hwo : out.toNat + 64 < 2 ^ 32
   sSC : Sep (sp0 + 0xFFFFFFA0) 0x60 P wideMulCode.length
-  sSS : Sep (sp0 + 0xFFFFFFA0) 0x60 (P + 0x1242A) wideMulSaveCode.length
-  sSR : Sep (sp0 + 0xFFFFFFA0) 0x60 (P + 0x1241A) wideMulRestoreCode.length
-  sSM : Sep (sp0 + 0xFFFFFFA0) 0x60 (P + 0x129E4) memsetCode.length
-  sSU : Sep (sp0 + 0xFFFFFFA0) 0x60 (P + 0x12A4C) memcpyStubCode.length
-  sSB : Sep (sp0 + 0xFFFFFFA0) 0x60 (P + 0x12A54) memcpyBodyCode.length
+  sSM : Sep (sp0 + 0xFFFFFFA0) 0x60 (P + 0x7446) memsetCode.length
+  sSU : Sep (sp0 + 0xFFFFFFA0) 0x60 (P + 0x74AE) memcpyStubCode.length
+  sSB : Sep (sp0 + 0xFFFFFFA0) 0x60 (P + 0x74B6) memcpyBodyCode.length
   sOC : Sep out 64 P wideMulCode.length
-  sOR : Sep out 64 (P + 0x1241A) wideMulRestoreCode.length
-  sOU : Sep out 64 (P + 0x12A4C) memcpyStubCode.length
-  sOB : Sep out 64 (P + 0x12A54) memcpyBodyCode.length
+  sOU : Sep out 64 (P + 0x74AE) memcpyStubCode.length
+  sOB : Sep out 64 (P + 0x74B6) memcpyBodyCode.length
   sOS : Sep out 64 (sp0 + 0xFFFFFFA0) 0x60
   sAS : Sep ap 32 (sp0 + 0xFFFFFFA0) 0x60
   sBS : Sep bp 32 (sp0 + 0xFFFFFFA0) 0x60
@@ -108,19 +105,19 @@ structure WMEnv (M : Word → BitVec 8) (P sp0 out ap bp : Word) : Prop where
 /-- A call from `widening_mul_fixed` to `memset` that zeroes 32 bytes. -/
 theorem wm_memset {P : Word} {Mx : Word → BitVec 8} {m : Machine} {off : Nat} {f : Fin 32 → Word}
     {imm o dst : Word} (hP : P.toNat % 2 = 0) (s : St Mx P m off f) (hc : CodeIn Mx P wideMulCode)
-    (hms : CodeIn Mx (P + 0x129E4) memsetCode)
+    (hms : CodeIn Mx (P + 0x7446) memsetCode)
     (h1 : fetchRel wideMulCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel wideMulCode (off + 4) = some (.jalr ra ra o, 4))
-    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x129E4)
+    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x7446)
     (hl : (P + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
-    (hdst : dst.toNat % 4 = 0) (hwd : dst.toNat + 32 < 2 ^ 32) (hsep : Sep dst 32 (P + 0x129E4) memsetCode.length)
+    (hdst : dst.toNat % 4 = 0) (hwd : dst.toNat + 32 < 2 ^ 32) (hsep : Sep dst 32 (P + 0x7446) memsetCode.length)
     (ha0 : f a0 = dst) (ha1 : f a1 = 0) (ha2 : f a2 = 0x20) :
     ∃ m', Steps m m' ∧ St (fillWords Mx dst 0 8) P m' (off + 8) (reg m') ∧ reg m' a0 = dst ∧
       ∀ r, r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ ra → reg m' r = f r := by
-  have hev : (P + 0x129E4).toNat % 2 = 0 := even_at P hP 0x129E4 (by decide)
+  have hev : (P + 0x7446).toNat % 2 = 0 := even_at P hP 0x7446 (by decide)
   obtain ⟨m1, c1, pc1, mem1, regs1⟩ := s.callRa hc h1 h2 hb hev
   have r1 := PEnv.reg1 regs1 s.zero
-  obtain ⟨m2, c2, pc2, mem2, a02, fr2⟩ := memset_aligned m1 (P + 0x129E4)
+  obtain ⟨m2, c2, pc2, mem2, a02, fr2⟩ := memset_aligned m1 (P + 0x7446)
     (P + BitVec.ofNat 32 (off + 8)) dst 0 8 (fun i hi => by rw [mem1]; exact hms i hi) hev pc1
     (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1]) (by rw [r1 a2 (by decide), ha2]; rfl)
     (by rw [regs1]; simp +decide [upd]) (even_clear _ hl) (by decide) hwd (by decide) hdst hsep
@@ -131,22 +128,22 @@ theorem wm_memset {P : Word} {Mx : Word → BitVec 8} {m : Machine} {off : Nat} 
 /-- A call from `widening_mul_fixed` to `memcpy` that copies 32 bytes. -/
 theorem wm_memcpy {P : Word} {Mx : Word → BitVec 8} {m : Machine} {off : Nat} {f : Fin 32 → Word}
     {imm o dst src : Word} (hP : P.toNat % 2 = 0) (s : St Mx P m off f) (hc : CodeIn Mx P wideMulCode)
-    (hst : CodeIn Mx (P + 0x12A4C) memcpyStubCode) (hbd : CodeIn Mx (P + 0x12A54) memcpyBodyCode)
+    (hst : CodeIn Mx (P + 0x74AE) memcpyStubCode) (hbd : CodeIn Mx (P + 0x74B6) memcpyBodyCode)
     (h1 : fetchRel wideMulCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel wideMulCode (off + 4) = some (.jalr ra ra o, 4))
-    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x12A4C)
+    (hb : P + BitVec.ofNat 32 off + imm + o = P + 0x74AE)
     (hl : (P + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (hdst : dst.toNat % 4 = 0) (hsrc : src.toNat % 4 = 0) (hwd : dst.toNat + 32 < 2 ^ 32)
-    (hds : Sep dst 32 src 32) (hsep : Sep dst 32 (P + 0x12A54) memcpyBodyCode.length)
+    (hds : Sep dst 32 src 32) (hsep : Sep dst 32 (P + 0x74B6) memcpyBodyCode.length)
     (ha0 : f a0 = dst) (ha1 : f a1 = src) (ha2 : f a2 = 0x20) :
     ∃ m', Steps m m' ∧ St (copyWords Mx dst src 8) P m' (off + 8) (reg m') ∧ reg m' a0 = dst ∧
       ∀ r, r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ t0 → r ≠ t1 → r ≠ ra →
         reg m' r = f r := by
-  have hev : (P + 0x12A4C).toNat % 2 = 0 := even_at P hP 0x12A4C (by decide)
+  have hev : (P + 0x74AE).toNat % 2 = 0 := even_at P hP 0x74AE (by decide)
   obtain ⟨m1, c1, pc1, mem1, regs1⟩ := s.callRa hc h1 h2 hb hev
   have r1 := PEnv.reg1 regs1 s.zero
-  have e8 : P + 0x12A4C + 8 = P + 0x12A54 := by rw [BitVec.add_assoc]; rfl
-  obtain ⟨m2, c2, pc2, mem2, a02, fr2⟩ := memcpy_aligned m1 (P + 0x12A4C)
+  have e8 : P + 0x74AE + 8 = P + 0x74B6 := by rw [BitVec.add_assoc]; rfl
+  obtain ⟨m2, c2, pc2, mem2, a02, fr2⟩ := memcpy_aligned m1 (P + 0x74AE)
     (P + BitVec.ofNat 32 (off + 8)) dst src 8 (fun i hi => by rw [mem1]; exact hst i hi)
     (fun i hi => by rw [mem1, e8]; exact hbd i hi) hev pc1
     (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1]) (by rw [r1 a2 (by decide), ha2]; rfl)
@@ -183,7 +180,7 @@ callee-saved registers in the top of a 0x60-byte frame and zero the 16-word
 accumulator below them. -/
 theorem wm_pro (m : Machine) {P sp0 out ap bp : Word} (env : WMEnv m.mem P sp0 out ap bp) (hpc : m.pc = P)
     (ha0 : reg m a0 = out) (ha1 : reg m a1 = ap) (ha2 : reg m a2 = bp) (hsp : reg m sp = sp0) :
-    ∃ n M, Steps m n ∧ St M P n 0x42 (reg n) ∧
+    ∃ n M, Steps m n ∧ St M P n 0x48 (reg n) ∧
       (∀ x, Sep (sp0 + 0xFFFFFFA0) 0x60 x 1 → M x = m.mem x) ∧
       (∀ r o, (r, o) ∈ wmPs → memLoad32 M (sp0 + 0xFFFFFFA0 + o) = reg m r) ∧
       memLoad32 M (sp0 + 0xFFFFFFA0 + BitVec.ofNat 32 0x40) = reg m (22 : Fin 32) ∧
@@ -200,15 +197,12 @@ theorem wm_pro (m : Machine) {P sp0 out ap bp : Word} (env : WMEnv m.mem P sp0 o
   obtain ⟨m1, d1, u1⟩ := s0.aluImm env.code wm_at_0 (off' := 2) (by decide)
   have sp1 : upd (reg m) sp (aluEval .add (reg m sp) 0xFFFFFFA0) sp = sp0 + 0xFFFFFFA0 := by
     simp +decide [upd, hsp]; rfl
-  have hsv : P + BitVec.ofNat 32 2 + 0x12000 + 0x428 = P + 0x1242A := by
-    rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
-  obtain ⟨m2, c2, u2⟩ := u1.callSave env.code wm_at_2 wm_at_6 (b := P + 0x1242A) hsv
-    (even_at P env.hP 0x1242A (by decide)) (even_at P env.hP 0xA (by decide))
-    env.save wmSave_shape (by decide) (fun q hq => by
+  obtain ⟨m2, c2, u2⟩ := St.block (saveBlock wmPs) u1 env.code wmSave_end (saveBlock_ok _ wmPs _ fun q hq => by
       rw [sp1]
       simp only [wmPs, List.mem_cons, List.mem_nil_iff, or_false] at hq
       rcases hq with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-        exact ⟨by decide, aligned_add hGa (by decide), env.sSS.sub (by decide)⟩)
+        exact ⟨aligned_add hGa (by decide), env.sSC.sub (by decide)⟩)
+  simp only [saveBlock_run] at u2
   rw [sp1] at u2
   -- code stays put while every write is in the frame
   have codeS : ∀ {M' : Word → BitVec 8} {b : Word} {code : List Nat}, CodeIn m.mem b code →
@@ -223,14 +217,14 @@ theorem wm_pro (m : Machine) {P sp0 out ap bp : Word} (env : WMEnv m.mem P sp0 o
       simp only [wmPs, List.mem_cons, List.mem_nil_iff, or_false] at hq
       rcases hq with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> exact hx.sub (by decide)
   have u2' := u2.self
-  have r2 : ∀ q, q ≠ sp → q ≠ t0 → reg m2 q = reg m q := fun q q1 q2 => by
+  have r2 : ∀ q, q ≠ sp → reg m2 q = reg m q := fun q q1 => by
     rw [u2.regs]
     by_cases h0 : q.val = 0
     · have : q = 0 := Fin.ext h0
       subst this; simp [upd, hz]
-    · simp [upd, h0, q1, q2]
-  have sp2 : reg m2 sp = sp0 + 0xFFFFFFA0 := by rw [u2.regs]; simp +decide [upd]; exact sp1
-  obtain ⟨m3, d3, u3⟩ := u2'.sw (codeS env.code env.sSC I2) wm_at_a (off' := 0xC) (by decide)
+    · simp [upd, h0, q1]
+  have sp2 : reg m2 sp = sp0 + 0xFFFFFFA0 := by rw [u2.regs]; exact sp1
+  obtain ⟨m3, d3, u3⟩ := u2'.sw (codeS env.code env.sSC I2) wm_at_10 (off' := 0x12) (by decide)
     (by rw [sp2]; exact aligned_add hGa (k := 0x40) (by decide))
   rw [sp2, show (0x40 : Word) = BitVec.ofNat 32 0x40 from rfl] at u3
   obtain ⟨M3, hM3⟩ : ∃ M3, memStore32 (saveMem m.mem (sp0 + 0xFFFFFFA0)
@@ -242,13 +236,13 @@ theorem wm_pro (m : Machine) {P sp0 out ap bp : Word} (env : WMEnv m.mem P sp0 o
     rw [← hM3, memStore32_get_sep (hx.sub (c := 0x40) (l := 4) (by decide)), I2 x hx]
   have c3 := codeS env.code env.sSC I3
   have z2 : reg m2 x0 = 0 := u2'.zero
-  obtain ⟨m4, d4, u4⟩ := u3.alu c3 wm_at_c (off' := 0xE) (by decide)
-  obtain ⟨m5, d5, u5⟩ := u4.alu c3 wm_at_e (off' := 0x10) (by decide)
-  obtain ⟨m6, d6, u6⟩ := u5.alu c3 wm_at_10 (off' := 0x12) (by decide)
-  obtain ⟨m7, d7, u7⟩ := u6.alu c3 wm_at_12 (off' := 0x14) (by decide)
-  obtain ⟨m8, d8, u8⟩ := u7.aluImm c3 wm_at_14 (off' := 0x18) (by decide)
-  obtain ⟨m9, d9, u9⟩ := u8.aluImm c3 wm_at_18 (off' := 0x1A) (by decide)
-  obtain ⟨m10, d10, u10⟩ := u9.alu c3 wm_at_1a (off' := 0x1C) (by decide)
+  obtain ⟨m4, d4, u4⟩ := u3.alu c3 wm_at_12 (off' := 0x14) (by decide)
+  obtain ⟨m5, d5, u5⟩ := u4.alu c3 wm_at_14 (off' := 0x16) (by decide)
+  obtain ⟨m6, d6, u6⟩ := u5.alu c3 wm_at_16 (off' := 0x18) (by decide)
+  obtain ⟨m7, d7, u7⟩ := u6.alu c3 wm_at_18 (off' := 0x1A) (by decide)
+  obtain ⟨m8, d8, u8⟩ := u7.aluImm c3 wm_at_1a (off' := 0x1E) (by decide)
+  obtain ⟨m9, d9, u9⟩ := u8.aluImm c3 wm_at_1e (off' := 0x20) (by decide)
+  obtain ⟨m10, d10, u10⟩ := u9.alu c3 wm_at_20 (off' := 0x22) (by decide)
   have g10 : ∀ q, q ≠ (19 : Fin 32) → q ≠ (21 : Fin 32) → q ≠ (18 : Fin 32) → q ≠ a0 → q ≠ a2 → q ≠ a1 →
       q ≠ (22 : Fin 32) → reg m10 q = reg m2 q := fun q q19 q21 q18 q0 q2 q1 q22 => by
     rw [u10.regs]
@@ -262,20 +256,20 @@ theorem wm_pro (m : Machine) {P sp0 out ap bp : Word} (env : WMEnv m.mem P sp0 o
   have v2 : reg m10 a2 = 0x20 := by rw [u10.regs]; simp +decide only [upd, ↓reduceIte]
   have v19 : reg m10 (19 : Fin 32) = bp := by
     rw [u10.regs]; simp +decide only [upd, ↓reduceIte, z2]
-    rw [r2 _ (by decide) (by decide), ha2]; exact BitVec.zero_add _
+    rw [r2 _ (by decide), ha2]; exact BitVec.zero_add _
   have v21 : reg m10 (21 : Fin 32) = ap := by
     rw [u10.regs]; simp +decide only [upd, ↓reduceIte]
-    rw [r2 _ (by decide) (by decide), ha1]; exact BitVec.zero_add _
+    rw [r2 _ (by decide), ha1]; exact BitVec.zero_add _
   have v18 : reg m10 (18 : Fin 32) = out := by
     rw [u10.regs]; simp +decide only [upd, ↓reduceIte]
-    rw [r2 _ (by decide) (by decide), ha0]; exact BitVec.zero_add _
+    rw [r2 _ (by decide), ha0]; exact BitVec.zero_add _
   have v22 : reg m10 (22 : Fin 32) = sp0 + 0xFFFFFFA0 := by
     rw [u10.regs]; simp +decide only [upd, ↓reduceIte, sp2]; exact BitVec.zero_add _
   have hGw : (sp0 + 0xFFFFFFA0).toNat + 0x60 ≤ 2 ^ 32 := by have := sp0.isLt; omega
   have hG20 : (sp0 + 0xFFFFFFA0 + BitVec.ofNat 32 0x20).toNat = (sp0 + 0xFFFFFFA0).toNat + 0x20 := by
     rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
   obtain ⟨n1, e1, w1, a01, f1⟩ := wm_memset (dst := sp0 + 0xFFFFFFA0) env.hP u10.self c3 (codeS env.mset env.sSM I3)
-    wm_at_1c wm_at_20 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x24 (by decide))
+    wm_at_22 wm_at_26 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x2A (by decide))
     hGa (by omega) (env.sSM.sub (c := 0) (l := 32) (by decide) |> fun h => by rwa [add_ofNat_zero] at h)
     v0 v1 v2
   have F1 : ∀ x, Sep (sp0 + 0xFFFFFFA0) 0x60 x 1 → fillWords M3 (sp0 + 0xFFFFFFA0) 0 8 x = m.mem x :=
@@ -291,10 +285,10 @@ theorem wm_pro (m : Machine) {P sp0 out ap bp : Word} (env : WMEnv m.mem P sp0 o
     rw [q1 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide) (by decide), sp2]
   have z3 : reg n1 x0 = 0 := w1.zero
-  obtain ⟨n2, e2, w2⟩ := w1.aluImm c4 wm_at_24 (off' := 0x26) (by decide)
-  obtain ⟨n3, e3, w3⟩ := w2.aluImm c4 wm_at_26 (off' := 0x2A) (by decide)
-  obtain ⟨n4, e4, w4⟩ := w3.aluImm c4 wm_at_2a (off' := 0x2C) (by decide)
-  obtain ⟨n5, e5, w5⟩ := w4.aluImm c4 wm_at_2c (off' := 0x30) (by decide)
+  obtain ⟨n2, e2, w2⟩ := w1.aluImm c4 wm_at_2a (off' := 0x2C) (by decide)
+  obtain ⟨n3, e3, w3⟩ := w2.aluImm c4 wm_at_2c (off' := 0x30) (by decide)
+  obtain ⟨n4, e4, w4⟩ := w3.aluImm c4 wm_at_30 (off' := 0x32) (by decide)
+  obtain ⟨n5, e5, w5⟩ := w4.aluImm c4 wm_at_32 (off' := 0x36) (by decide)
   have g14 : ∀ q, q ≠ a0 → q ≠ a2 → q ≠ a1 → q ≠ (20 : Fin 32) → reg n5 q = reg n1 q :=
     fun q h0 h2 h1 h20 => by
       rw [w5.regs]
@@ -309,8 +303,8 @@ theorem wm_pro (m : Machine) {P sp0 out ap bp : Word} (env : WMEnv m.mem P sp0 o
   have y20 : reg n5 (20 : Fin 32) = sp0 + 0xFFFFFFA0 + 0x20 := by
     rw [w5.regs]; simp +decide only [upd, ↓reduceIte, sp3]; rfl
   obtain ⟨n6, e6, w6, a06, f6⟩ := wm_memset (dst := sp0 + 0xFFFFFFA0 + BitVec.ofNat 32 0x20) env.hP w5.self c4
-    (codeS env.mset env.sSM F1) wm_at_30 wm_at_34 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl)
-    (even_at P env.hP 0x38 (by decide)) (aligned_add hGa (by decide)) (by omega)
+    (codeS env.mset env.sSM F1) wm_at_36 wm_at_3a (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl)
+    (even_at P env.hP 0x3E (by decide)) (aligned_add hGa (by decide)) (by omega)
     (env.sSM.sub (c := 0x20) (l := 32) (by decide)) y0 y1 y2
   obtain ⟨M6, hM6⟩ : ∃ M6, fillWords (fillWords M3 (sp0 + 0xFFFFFFA0) 0 8)
       (sp0 + 0xFFFFFFA0 + BitVec.ofNat 32 0x20) 0 8 = M6 := ⟨_, rfl⟩
@@ -319,11 +313,11 @@ theorem wm_pro (m : Machine) {P sp0 out ap bp : Word} (env : WMEnv m.mem P sp0 o
     rw [← hM6, fillWords_outside 8 (hx.sub (c := 0x20) (l := 32) (by decide)), F1 x hx]
   have c6 := codeS env.code env.sSC F6
   have z6 : reg n6 x0 = 0 := w6.zero
-  obtain ⟨n7, e7, w7⟩ := w6.aluImm c6 wm_at_38 (off' := 0x3A) (by decide)
-  obtain ⟨n8, e8, w8⟩ := w7.alu c6 wm_at_3a (off' := 0x3C) (by decide)
-  obtain ⟨n9, e9, w9⟩ := w8.aluImm c6 wm_at_3c (off' := 0x3E) (by decide)
+  obtain ⟨n7, e7, w7⟩ := w6.aluImm c6 wm_at_3e (off' := 0x40) (by decide)
+  obtain ⟨n8, e8, w8⟩ := w7.alu c6 wm_at_40 (off' := 0x42) (by decide)
+  obtain ⟨n9, e9, w9⟩ := w8.aluImm c6 wm_at_42 (off' := 0x44) (by decide)
   have b9 : reg n9 (6 : Fin 32) = 8 := by rw [w9.regs]; simp +decide only [upd, ↓reduceIte]
-  obtain ⟨n10, e10, w10⟩ := w9.self.notTaken c6 0x42 wm_at_3e (by decide)
+  obtain ⟨n10, e10, w10⟩ := w9.self.notTaken c6 0x48 wm_at_44 (by decide)
     (by rw [b9, w9.self.zero]; decide)
   have g17 : ∀ q, q ≠ (5 : Fin 32) → q ≠ a6 → q ≠ (6 : Fin 32) → reg n10 q = reg n6 q := fun q h5 h16 h6 => by
     rw [w10.regs, w9.regs]
@@ -356,7 +350,7 @@ theorem wm_pro (m : Machine) {P sp0 out ap bp : Word} (env : WMEnv m.mem P sp0 o
       simp +decide only [upd, ↓reduceIte]
   · rw [← hM6, fillWords_load_sep (sep_offsets _ (.inl (by decide)) (by decide) (by decide)),
       fillWords_load_sep (sepG _ (by decide) (by decide)), ← hM3, memLoad32_store32_same,
-      r2 _ (by decide) (by decide)]
+      r2 _ (by decide)]
   · intro i hi
     by_cases h8 : i < 8
     · rw [← hM6, fillWords_load_sep (sep_offsets _ (.inr (by omega)) (by decide) (by omega))]
@@ -390,13 +384,13 @@ theorem wm_pro (m : Machine) {P sp0 out ap bp : Word} (env : WMEnv m.mem P sp0 o
     have k := fun r (hr : wmKeep r = false) => bkeep_ne hq hr
     rw [back q (k 5 rfl) (k a6 rfl) (k 6 rfl) (k a2 rfl) (k a3 rfl) (k a4 rfl) (k a5 rfl) (k ra rfl) (k a0 rfl)
       (k a1 rfl) (k 20 rfl), q1 q (k a2 rfl) (k a3 rfl) (k a4 rfl) (k a5 rfl) (k a6 rfl) (k ra rfl) (k 19 rfl)
-      (k 21 rfl) (k 18 rfl) (k a0 rfl) (k a1 rfl) (k 22 rfl), r2 q (k sp rfl) (k t0 rfl)]
+      (k 21 rfl) (k 18 rfl) (k a0 rfl) (k a1 rfl) (k 22 rfl), r2 q (k sp rfl)]
 
 set_option maxHeartbeats 4000000 in
-/-- `widening_mul_fixed`'s epilogue, from 0xB0: copy the accumulator's two
+/-- `widening_mul_fixed`'s epilogue, from 0xB6: copy the accumulator's two
 halves to `out`, restore the callee-saved registers, and return. -/
 theorem wm_epi {P sp0 out ap bp : Word} {M0 Mx : Word → BitVec 8} {n : Machine} {v : Fin 32 → Word}
-    (env : WMEnv M0 P sp0 out ap bp) (s : St Mx P n 0xB0 (reg n))
+    (env : WMEnv M0 P sp0 out ap bp) (s : St Mx P n 0xB6 (reg n))
     (hfr : ∀ x, Sep (sp0 + 0xFFFFFFA0) 0x60 x 1 → Mx x = M0 x)
     (hsl : ∀ r o, (r, o) ∈ wmPs → memLoad32 Mx (sp0 + 0xFFFFFFA0 + o) = v r)
     (hs6 : memLoad32 Mx (sp0 + 0xFFFFFFA0 + BitVec.ofNat 32 0x40) = v (22 : Fin 32))
@@ -417,9 +411,9 @@ theorem wm_epi {P sp0 out ap bp : Word} {M0 Mx : Word → BitVec 8} {n : Machine
       rw [hM _ (hs.subR (c := i) (l := 1) (by omega)) (ho.subR (c := i) (l := 1) (by omega))]; exact hc i hi
   have hfr' : ∀ x, Sep (sp0 + 0xFFFFFFA0) 0x60 x 1 → Sep out 64 x 1 → Mx x = M0 x := fun x h _ => hfr x h
   have cx : CodeIn Mx P wideMulCode := codeX env.code env.sSC env.sOC hfr'
-  obtain ⟨m1, d1, u1⟩ := s.alu cx wm_at_b0 (off' := 0xB2) (by decide)
-  obtain ⟨m2, d2, u2⟩ := u1.aluImm cx wm_at_b2 (off' := 0xB6) (by decide)
-  obtain ⟨m3, d3, u3⟩ := u2.alu cx wm_at_b6 (off' := 0xB8) (by decide)
+  obtain ⟨m1, d1, u1⟩ := s.alu cx wm_at_b6 (off' := 0xB8) (by decide)
+  obtain ⟨m2, d2, u2⟩ := u1.aluImm cx wm_at_b8 (off' := 0xBC) (by decide)
+  obtain ⟨m3, d3, u3⟩ := u2.alu cx wm_at_bc (off' := 0xBE) (by decide)
   have k3 : ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → reg m3 q = reg n q := fun q h0 h1 h2 => by
     rw [u3.regs]
     by_cases hq : q.val = 0
@@ -433,8 +427,8 @@ theorem wm_epi {P sp0 out ap bp : Word} {M0 Mx : Word → BitVec 8} {n : Machine
   have x2' : reg m3 a2 = 0x20 := by rw [u3.regs]; simp +decide only [upd, ↓reduceIte]
   have hOS := env.sOS
   obtain ⟨m4, c4, u4, a04, f4⟩ := wm_memcpy (dst := out) (src := sp0 + 0xFFFFFFA0) env.hP u3.self cx
-    (codeX env.stub env.sSU env.sOU hfr') (codeX env.body env.sSB env.sOB hfr') wm_at_b8 wm_at_bc
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xC0 (by decide)) env.hout hGa (by omega)
+    (codeX env.stub env.sSU env.sOU hfr') (codeX env.body env.sSB env.sOB hfr') wm_at_be wm_at_c2
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xC6 (by decide)) env.hout hGa (by omega)
     (hOS.sub (c := 0) (l := 32) (by decide) |>.subR (c := 0) (l := 32) (by decide) |> fun h => by
       rwa [add_ofNat_zero, add_ofNat_zero] at h)
     (env.sOB.sub (c := 0) (l := 32) (by decide) |> fun h => by rwa [add_ofNat_zero] at h) x0' x1' x2'
@@ -453,9 +447,9 @@ theorem wm_epi {P sp0 out ap bp : Word} {M0 Mx : Word → BitVec 8} {n : Machine
   have o4 : reg m4 (18 : Fin 32) = out := by
     rw [k4 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide), r18]
-  obtain ⟨m5, d5, u5⟩ := u4.aluImm c4' wm_at_c0 (off' := 0xC4) (by decide)
-  obtain ⟨m6, d6, u6⟩ := u5.aluImm c4' wm_at_c4 (off' := 0xC6) (by decide)
-  obtain ⟨m7, d7, u7⟩ := u6.aluImm c4' wm_at_c6 (off' := 0xCA) (by decide)
+  obtain ⟨m5, d5, u5⟩ := u4.aluImm c4' wm_at_c6 (off' := 0xCA) (by decide)
+  obtain ⟨m6, d6, u6⟩ := u5.aluImm c4' wm_at_ca (off' := 0xCC) (by decide)
+  obtain ⟨m7, d7, u7⟩ := u6.aluImm c4' wm_at_cc (off' := 0xD0) (by decide)
   have k7 : ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → reg m7 q = reg m4 q := fun q h0 h1 h2 => by
     rw [u7.regs]
     by_cases hq : q.val = 0
@@ -471,8 +465,8 @@ theorem wm_epi {P sp0 out ap bp : Word} {M0 Mx : Word → BitVec 8} {n : Machine
     rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
   obtain ⟨m8, c8, u8, a08, f8⟩ := wm_memcpy (dst := out + BitVec.ofNat 32 0x20)
     (src := sp0 + 0xFFFFFFA0 + BitVec.ofNat 32 0x20) env.hP u7.self c4'
-    (codeX env.stub env.sSU env.sOU F4) (codeX env.body env.sSB env.sOB F4) wm_at_ca wm_at_ce
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xD2 (by decide))
+    (codeX env.stub env.sSU env.sOU F4) (codeX env.body env.sSB env.sOB F4) wm_at_d0 wm_at_d4
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0xD8 (by decide))
     (aligned_add env.hout (by decide)) (aligned_add hGa (by decide)) (by omega)
     (hOS.sub (c := 0x20) (l := 32) (by decide) |>.subR (c := 0x20) (l := 32) (by decide))
     (env.sOB.sub (c := 0x20) (l := 32) (by decide)) y0' y1' y2'
@@ -492,29 +486,24 @@ theorem wm_epi {P sp0 out ap bp : Word} {M0 Mx : Word → BitVec 8} {n : Machine
   have sp8 : reg m8 sp = sp0 + 0xFFFFFFA0 := by
     rw [f8 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide), k7 _ (by decide) (by decide) (by decide), sp4]
-  obtain ⟨m9, c9, u9⟩ := u8.callRestore c8' wm_at_d2 wm_at_d6 (b := P + 0x1241A)
-    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP 0x1241A (by decide))
-    (even_at P env.hP 0xDA (by decide)) (codeX env.restore env.sSR env.sOR F8) wmRestore_shape (by decide)
-    (fun q hq => by
-      rw [sp8]
+  have hpsp : ∀ p ∈ wmPs, p.1 ≠ sp := by decide
+  obtain ⟨m9, c9, u9⟩ := St.block (restoreBlock wmPs) u8 c8' wmRestore_end
+    (restoreBlock_ok M8 (sp0 + 0xFFFFFFA0) wmPs (reg m8) sp8 hpsp fun q hq => by
       simp only [wmPs, List.mem_cons, List.mem_nil_iff, or_false] at hq
-      rcases hq with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-        exact ⟨by decide, by decide, aligned_add hGa (by decide)⟩)
-  rw [sp8] at u9
+      rcases hq with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> exact aligned_add hGa (by decide))
+  simp only [restoreBlock_run M8 (sp0 + 0xFFFFFFA0) wmPs (reg m8) sp8 hpsp] at u9
   have slot : ∀ r o, (r, o) ∈ wmPs → 0x40 ≤ o.toNat → o.toNat + 4 ≤ 0x60 →
       memLoad32 M8 (sp0 + 0xFFFFFFA0 + o) = v r := fun r o h h1 h2 => by
     have := top o.toNat h1 h2
     rw [BitVec.ofNat_toNat, BitVec.setWidth_eq] at this
     rw [this, hsl r o h]
-  have rsp9 : restoreRegs M8 (sp0 + 0xFFFFFFA0) (upd (reg m8) t0 (P + BitVec.ofNat 32 (0xCA + 8 + 8))) wmPs sp =
-      sp0 + 0xFFFFFFA0 := by
-    rw [restoreRegs_sp _ _ _ _ (by decide)]; simp +decide only [upd, ↓reduceIte]; exact sp8
-  obtain ⟨m10, d10, u10⟩ := u9.lw c8' wm_at_da (off' := 0xDC) (by decide)
+  have rsp9 : restoreRegs M8 (sp0 + 0xFFFFFFA0) (reg m8) wmPs sp = sp0 + 0xFFFFFFA0 := by
+    rw [restoreRegs_sp _ _ _ _ hpsp]; exact sp8
+  obtain ⟨m10, d10, u10⟩ := u9.lw c8' wm_at_e6 (off' := 0xE8) (by decide)
     (by rw [rsp9]; exact aligned_add hGa (k := 0x40) (by decide))
-  obtain ⟨m11, d11, u11⟩ := u10.aluImm c8' wm_at_dc (off' := 0xDE) (by decide)
-  obtain ⟨m12, d12, pc12, mem12, regs12⟩ := u11.jalr c8' wm_at_de
-  have rra : restoreRegs M8 (sp0 + 0xFFFFFFA0) (upd (reg m8) t0 (P + BitVec.ofNat 32 (0xCA + 8 + 8))) wmPs ra =
-      v ra := by
+  obtain ⟨m11, d11, u11⟩ := u10.aluImm c8' wm_at_e8 (off' := 0xEA) (by decide)
+  obtain ⟨m12, d12, pc12, mem12, regs12⟩ := u11.jalr c8' wm_at_ea
+  have rra : restoreRegs M8 (sp0 + 0xFFFFFFA0) (reg m8) wmPs ra = v ra := by
     simp only [restoreRegs]; simp +decide only [upd, ↓reduceIte]
     exact slot ra _ (by simp) (by decide) (by decide)
   refine ⟨m12, .cons d1 (.cons d2 (.cons d3 (c4.trans (.cons d5 (.cons d6 (.cons d7 (c8.trans (c9.trans
@@ -540,7 +529,7 @@ theorem wm_epi {P sp0 out ap bp : Word} {M0 Mx : Word → BitVec 8} {n : Machine
     rw [regs12]
     rcases hq0 with h0 | h0
     · simp only [restoreRegs]
-      simp [upd, h0, k ra rfl, k sp rfl, k t0 rfl, k 8 rfl, k 9 rfl, k 18 rfl, k 19 rfl, k 20 rfl, k 21 rfl,
+      simp [upd, h0, k ra rfl, k sp rfl, k 8 rfl, k 9 rfl, k 18 rfl, k 19 rfl, k 20 rfl, k 21 rfl,
         k 22 rfl]
       rw [f8 q (k a1 rfl) (k a2 rfl) (k a3 rfl) (k a4 rfl) (k a5 rfl) (k a6 rfl) (k a7 rfl) (k t0 rfl) (k t1 rfl)
         (k ra rfl), k7 q (k a0 rfl) (k a1 rfl) (k a2 rfl), k4 q (k a0 rfl) (k a1 rfl) (k a2 rfl) (k a3 rfl)

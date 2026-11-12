@@ -1,12 +1,12 @@
 import C3BootProofs.Proofs.FieldMul
 import C3BootProofs.Proofs.PointDecode
-import C3BootProofs.Image.BootloaderV0
+import C3BootProofs.Image.Bootloader
 
 /-! # `field_impl::sub`, as compiled -/
 
 namespace C3.RV32
 
-open C3.ImageV0
+open C3.Image
 
 set_option exponentiation.threshold 300 in
 /-- `field_impl::sub` modulo `p`, for operands below `p`. -/
@@ -33,10 +33,8 @@ result at `res`, and the 8-word operands at `ap` and `bp`. -/
 structure FSEnv (M : Word → BitVec 8) (P sp0 res ap bp : Word) : Prop where
   hP : P.toNat % 2 = 0
   code : CodeIn M P fieldSubCode
-  sicode : CodeIn M (P + 0xFFFFFB88) subInnerCode
-  bsub : CodeIn M (siBsub (P + 0xFFFFFB88)) borrowingSubCode
-  sisave : CodeIn M (P + 0xFFFFFB88 + 0xDC34) subInnerSaveCode
-  sirestore : CodeIn M (P + 0xFFFFFB88 + 0xDE3E) subInnerRestoreCode
+  sicode : CodeIn M (P + 0xFFFFFB24) subInnerCode
+  bsub : CodeIn M (siBsub (P + 0xFFFFFB24)) borrowingSubCode
   hsp : sp0.toNat % 4 = 0
   hres : res.toNat % 4 = 0
   hap : ap.toNat % 4 = 0
@@ -44,10 +42,8 @@ structure FSEnv (M : Word → BitVec 8) (P sp0 res ap bp : Word) : Prop where
   hS : 0xB4 ≤ sp0.toNat
   hwr : res.toNat + 32 ≤ 2 ^ 32
   sC : Sep (sp0 + 0xFFFFFF4C) 0xB4 P fieldSubCode.length
-  sI : Sep (sp0 + 0xFFFFFF4C) 0xB4 (P + 0xFFFFFB88) subInnerCode.length
-  sIb : Sep (sp0 + 0xFFFFFF4C) 0xB4 (siBsub (P + 0xFFFFFB88)) borrowingSubCode.length
-  sIs : Sep (sp0 + 0xFFFFFF4C) 0xB4 (P + 0xFFFFFB88 + 0xDC34) subInnerSaveCode.length
-  sIr : Sep (sp0 + 0xFFFFFF4C) 0xB4 (P + 0xFFFFFB88 + 0xDE3E) subInnerRestoreCode.length
+  sI : Sep (sp0 + 0xFFFFFF4C) 0xB4 (P + 0xFFFFFB24) subInnerCode.length
+  sIb : Sep (sp0 + 0xFFFFFF4C) 0xB4 (siBsub (P + 0xFFFFFB24)) borrowingSubCode.length
   sRS : Sep res 32 (sp0 + 0xFFFFFF4C) 0xB4
   sRC : Sep res 32 P fieldSubCode.length
   sAS : Sep ap 32 (sp0 + 0xFFFFFF4C) 0xB4
@@ -384,7 +380,7 @@ theorem fieldSub_correct (m : Machine) {P sp0 res ap bp retAddr : Word}
       have := env.sBS.symm.subR (c := c + j) (l := 1) (by omega); rwa [← add_ofNat_assoc] at this)
   have wB : wordsAt m.mem bp 8 = [x22, x23, x24, x25, x26, x27, x28, x29] := by
     rw [wordsAt8, (ldB (4 * 0) (by decide)).symm.trans hx22, (ldB (4 * 1) (by decide)).symm.trans hx23, (ldB (4 * 2) (by decide)).symm.trans hx24, (ldB (4 * 3) (by decide)).symm.trans hx25, (ldB (4 * 4) (by decide)).symm.trans hx26, (ldB (4 * 5) (by decide)).symm.trans hx27, (ldB (4 * 6) (by decide)).symm.trans hx28, (ldB (4 * 7) (by decide)).symm.trans hx29]
-  have hsi : (P + 0xFFFFFB88).toNat % 2 = 0 := even_at P env.hP 0xFFFFFB88 (by decide)
+  have hsi : (P + 0xFFFFFB24).toNat % 2 = 0 := even_at P env.hP 0xFFFFFB24 (by decide)
   have codeX : ∀ {M' : Word → BitVec 8} {b : Word} {code : List Nat}, CodeIn m.mem b code →
       Sep (sp0 + 0xFFFFFF4C) 0xB4 b code.length →
       (∀ x, Sep (sp0 + 0xFFFFFF4C) 0xB4 x 1 → M' x = m.mem x) → CodeIn M' b code :=
@@ -397,14 +393,13 @@ theorem fieldSub_correct (m : Machine) {P sp0 res ap bp retAddr : Word}
     rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_add]
     have : (0xFFFFFF80 : Word).toNat = 4294967168 := rfl
     have := sp0.isLt; omega
-  have senv : SIEnvG M38 (P + 0xFFFFFB88) (sp0 + 0xFFFFFF80) (sp0 + 0xFFFFFF80 + BitVec.ofNat 32 0xC) (sp0 + 0xFFFFFF80 + BitVec.ofNat 32 0x30)
+  have senv : SIEnvG M38 (P + 0xFFFFFB24) (sp0 + 0xFFFFFF80) (sp0 + 0xFFFFFF80 + BitVec.ofNat 32 0xC) (sp0 + 0xFFFFFF80 + BitVec.ofNat 32 0x30)
       (sp0 + 0xFFFFFF80 + BitVec.ofNat 32 0x54) :=
-    ⟨hsi, codeX env.sicode env.sI F38, codeX env.bsub env.sIb F38, codeX env.sisave env.sIs F38,
-      codeX env.sirestore env.sIr F38, hGa, aligned_add hGa (by decide), aligned_add hGa (by decide),
+    ⟨hsi, codeX env.sicode env.sI F38, codeX env.bsub env.sIb F38, hGa, aligned_add hGa (by decide),
+      aligned_add hGa (by decide),
       aligned_add hGa (by decide), by rw [BitVec.toNat_add]; have : (0xFFFFFF80 : Word).toNat = 4294967168 := rfl; have := sp0.isLt; omega,
       by rw [siA]; exact env.sI.sub (by decide), by rw [siA]; exact env.sIb.sub (by decide),
-      by rw [siA]; exact env.sIs.sub (by decide), by rw [siA]; exact env.sIr.sub (by decide),
-      by rw [inS]; exact env.sI.sub (by decide), by rw [inS]; exact env.sIr.sub (by decide),
+      by rw [inS]; exact env.sI.sub (by decide),
       by rw [inS, siA]; exact sep_offsets _ (.inr (by decide)) (by decide) (by decide),
       by rw [inS, siA]; exact sep_offsets _ (.inr (by decide)) (by decide) (by decide),
       by rw [inS, siA]; exact sep_offsets _ (.inr (by decide)) (by decide) (by decide),

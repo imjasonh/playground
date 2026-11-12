@@ -1,5 +1,5 @@
 import C3BootProofs.Proofs.Block
-import C3BootProofs.Image.BootloaderV0
+import C3BootProofs.Image.Bootloader
 
 /-!
 # The P-256 field multiplication's instructions, decoded from the image's bytes
@@ -10,214 +10,238 @@ checks each against the extracted bytes.
 
 namespace C3.RV32
 
-open C3.ImageV0
+open C3.Image
 
 set_option maxRecDepth 20000
 
 theorem si_at_0 : fetchRel subInnerCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFD0, 2) := by decide
-theorem si_at_2 : fetchRel subInnerCode 0x2 = some (.auipc (5 : Fin 32) 0xE000, 4) := by decide
-theorem si_at_6 : fetchRel subInnerCode 0x6 = some (.jalr (5 : Fin 32) (5 : Fin 32) 0xFFFFFC32, 4) := by decide
-theorem si_at_a : fetchRel subInnerCode 0xA = some (.store .sw sp (24 : Fin 32) 0x8, 2) := by decide
-theorem si_at_c : fetchRel subInnerCode 0xC = some (.store .sw sp (25 : Fin 32) 0x4, 2) := by decide
-theorem si_at_e : fetchRel subInnerCode 0xE = some (.store .sw sp (26 : Fin 32) 0x0, 2) := by decide
-theorem si_at_10 : fetchRel subInnerCode 0x10 = some (.alu .add (9 : Fin 32) x0 a2, 2) := by decide
-theorem si_at_12 : fetchRel subInnerCode 0x12 = some (.alu .add (8 : Fin 32) x0 a1, 2) := by decide
-theorem si_at_14 : fetchRel subInnerCode 0x14 = some (.load .lw a2 a1 0x0, 2) := by decide
-theorem si_at_16 : fetchRel subInnerCode 0x16 = some (.load .lw a1 (9 : Fin 32) 0x0, 2) := by decide
-theorem si_at_18 : fetchRel subInnerCode 0x18 = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
-theorem si_at_1a : fetchRel subInnerCode 0x1A = some (.alu .add a0 x0 a2, 2) := by decide
-theorem si_at_1c : fetchRel subInnerCode 0x1C = some (.aluImm .add a2 x0 0x0, 2) := by decide
-theorem si_at_1e : fetchRel subInnerCode 0x1E = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem si_at_22 : fetchRel subInnerCode 0x22 = some (.jalr ra ra 0x144, 4) := by decide
-theorem si_at_26 : fetchRel subInnerCode 0x26 = some (.alu .add (19 : Fin 32) x0 a0, 2) := by decide
-theorem si_at_28 : fetchRel subInnerCode 0x28 = some (.load .lw a0 (8 : Fin 32) 0x4, 2) := by decide
-theorem si_at_2a : fetchRel subInnerCode 0x2A = some (.load .lw a2 (9 : Fin 32) 0x4, 2) := by decide
-theorem si_at_2c : fetchRel subInnerCode 0x2C = some (.alu .add a3 x0 a1, 2) := by decide
-theorem si_at_2e : fetchRel subInnerCode 0x2E = some (.alu .add a1 x0 a2, 2) := by decide
-theorem si_at_30 : fetchRel subInnerCode 0x30 = some (.alu .add a2 x0 a3, 2) := by decide
-theorem si_at_32 : fetchRel subInnerCode 0x32 = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem si_at_36 : fetchRel subInnerCode 0x36 = some (.jalr ra ra 0x130, 4) := by decide
-theorem si_at_3a : fetchRel subInnerCode 0x3A = some (.alu .add (20 : Fin 32) x0 a0, 2) := by decide
-theorem si_at_3c : fetchRel subInnerCode 0x3C = some (.load .lw a0 (8 : Fin 32) 0x8, 2) := by decide
-theorem si_at_3e : fetchRel subInnerCode 0x3E = some (.load .lw a2 (9 : Fin 32) 0x8, 2) := by decide
-theorem si_at_40 : fetchRel subInnerCode 0x40 = some (.alu .add a3 x0 a1, 2) := by decide
-theorem si_at_42 : fetchRel subInnerCode 0x42 = some (.alu .add a1 x0 a2, 2) := by decide
-theorem si_at_44 : fetchRel subInnerCode 0x44 = some (.alu .add a2 x0 a3, 2) := by decide
-theorem si_at_46 : fetchRel subInnerCode 0x46 = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem si_at_4a : fetchRel subInnerCode 0x4A = some (.jalr ra ra 0x11C, 4) := by decide
-theorem si_at_4e : fetchRel subInnerCode 0x4E = some (.alu .add (21 : Fin 32) x0 a0, 2) := by decide
-theorem si_at_50 : fetchRel subInnerCode 0x50 = some (.load .lw a0 (8 : Fin 32) 0xC, 2) := by decide
-theorem si_at_52 : fetchRel subInnerCode 0x52 = some (.load .lw a2 (9 : Fin 32) 0xC, 2) := by decide
-theorem si_at_54 : fetchRel subInnerCode 0x54 = some (.alu .add a3 x0 a1, 2) := by decide
-theorem si_at_56 : fetchRel subInnerCode 0x56 = some (.alu .add a1 x0 a2, 2) := by decide
-theorem si_at_58 : fetchRel subInnerCode 0x58 = some (.alu .add a2 x0 a3, 2) := by decide
-theorem si_at_5a : fetchRel subInnerCode 0x5A = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem si_at_5e : fetchRel subInnerCode 0x5E = some (.jalr ra ra 0x108, 4) := by decide
-theorem si_at_62 : fetchRel subInnerCode 0x62 = some (.alu .add (22 : Fin 32) x0 a0, 2) := by decide
-theorem si_at_64 : fetchRel subInnerCode 0x64 = some (.load .lw a0 (8 : Fin 32) 0x10, 2) := by decide
-theorem si_at_66 : fetchRel subInnerCode 0x66 = some (.load .lw a2 (9 : Fin 32) 0x10, 2) := by decide
-theorem si_at_68 : fetchRel subInnerCode 0x68 = some (.alu .add a3 x0 a1, 2) := by decide
-theorem si_at_6a : fetchRel subInnerCode 0x6A = some (.alu .add a1 x0 a2, 2) := by decide
-theorem si_at_6c : fetchRel subInnerCode 0x6C = some (.alu .add a2 x0 a3, 2) := by decide
-theorem si_at_6e : fetchRel subInnerCode 0x6E = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem si_at_72 : fetchRel subInnerCode 0x72 = some (.jalr ra ra 0xF4, 4) := by decide
-theorem si_at_76 : fetchRel subInnerCode 0x76 = some (.alu .add (24 : Fin 32) x0 a0, 2) := by decide
-theorem si_at_78 : fetchRel subInnerCode 0x78 = some (.load .lw a0 (8 : Fin 32) 0x14, 2) := by decide
-theorem si_at_7a : fetchRel subInnerCode 0x7A = some (.load .lw a2 (9 : Fin 32) 0x14, 2) := by decide
-theorem si_at_7c : fetchRel subInnerCode 0x7C = some (.alu .add a3 x0 a1, 2) := by decide
-theorem si_at_7e : fetchRel subInnerCode 0x7E = some (.alu .add a1 x0 a2, 2) := by decide
-theorem si_at_80 : fetchRel subInnerCode 0x80 = some (.alu .add a2 x0 a3, 2) := by decide
-theorem si_at_82 : fetchRel subInnerCode 0x82 = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem si_at_86 : fetchRel subInnerCode 0x86 = some (.jalr ra ra 0xE0, 4) := by decide
-theorem si_at_8a : fetchRel subInnerCode 0x8A = some (.alu .add (23 : Fin 32) x0 a0, 2) := by decide
-theorem si_at_8c : fetchRel subInnerCode 0x8C = some (.load .lw a0 (8 : Fin 32) 0x18, 2) := by decide
-theorem si_at_8e : fetchRel subInnerCode 0x8E = some (.load .lw a2 (9 : Fin 32) 0x18, 2) := by decide
-theorem si_at_90 : fetchRel subInnerCode 0x90 = some (.alu .add a3 x0 a1, 2) := by decide
-theorem si_at_92 : fetchRel subInnerCode 0x92 = some (.alu .add a1 x0 a2, 2) := by decide
-theorem si_at_94 : fetchRel subInnerCode 0x94 = some (.alu .add a2 x0 a3, 2) := by decide
-theorem si_at_96 : fetchRel subInnerCode 0x96 = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem si_at_9a : fetchRel subInnerCode 0x9A = some (.jalr ra ra 0xCC, 4) := by decide
-theorem si_at_9e : fetchRel subInnerCode 0x9E = some (.alu .add (25 : Fin 32) x0 a0, 2) := by decide
-theorem si_at_a0 : fetchRel subInnerCode 0xA0 = some (.load .lw a0 (8 : Fin 32) 0x1C, 2) := by decide
-theorem si_at_a2 : fetchRel subInnerCode 0xA2 = some (.load .lw a2 (9 : Fin 32) 0x1C, 2) := by decide
-theorem si_at_a4 : fetchRel subInnerCode 0xA4 = some (.alu .add a3 x0 a1, 2) := by decide
-theorem si_at_a6 : fetchRel subInnerCode 0xA6 = some (.alu .add a1 x0 a2, 2) := by decide
-theorem si_at_a8 : fetchRel subInnerCode 0xA8 = some (.alu .add a2 x0 a3, 2) := by decide
-theorem si_at_aa : fetchRel subInnerCode 0xAA = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem si_at_ae : fetchRel subInnerCode 0xAE = some (.jalr ra ra 0xB8, 4) := by decide
-theorem si_at_b2 : fetchRel subInnerCode 0xB2 = some (.alu .add (26 : Fin 32) x0 a0, 2) := by decide
-theorem si_at_b4 : fetchRel subInnerCode 0xB4 = some (.load .lw a0 (8 : Fin 32) 0x20, 2) := by decide
-theorem si_at_b6 : fetchRel subInnerCode 0xB6 = some (.load .lw a2 (9 : Fin 32) 0x20, 2) := by decide
-theorem si_at_b8 : fetchRel subInnerCode 0xB8 = some (.alu .add a3 x0 a1, 2) := by decide
-theorem si_at_ba : fetchRel subInnerCode 0xBA = some (.alu .add a1 x0 a2, 2) := by decide
-theorem si_at_bc : fetchRel subInnerCode 0xBC = some (.alu .add a2 x0 a3, 2) := by decide
-theorem si_at_be : fetchRel subInnerCode 0xBE = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem si_at_c2 : fetchRel subInnerCode 0xC2 = some (.jalr ra ra 0xA4, 4) := by decide
-theorem si_at_c6 : fetchRel subInnerCode 0xC6 = some (.alu .add (19 : Fin 32) (19 : Fin 32) a1, 2) := by decide
-theorem si_at_c8 : fetchRel subInnerCode 0xC8 = some (.alu .add (20 : Fin 32) (20 : Fin 32) a1, 2) := by decide
-theorem si_at_ca : fetchRel subInnerCode 0xCA = some (.alu .sltu a0 (19 : Fin 32) a1, 4) := by decide
-theorem si_at_ce : fetchRel subInnerCode 0xCE = some (.alu .add a0 a0 (20 : Fin 32), 2) := by decide
-theorem si_at_d0 : fetchRel subInnerCode 0xD0 = some (.alu .sltu a2 (20 : Fin 32) a1, 4) := by decide
-theorem si_at_d4 : fetchRel subInnerCode 0xD4 = some (.alu .sltu a3 a0 (20 : Fin 32), 4) := by decide
-theorem si_at_d8 : fetchRel subInnerCode 0xD8 = some (.alu .add (21 : Fin 32) (21 : Fin 32) a1, 2) := by decide
-theorem si_at_da : fetchRel subInnerCode 0xDA = some (.alu .add a2 a2 a3, 2) := by decide
-theorem si_at_dc : fetchRel subInnerCode 0xDC = some (.alu .add a2 a2 (21 : Fin 32), 2) := by decide
-theorem si_at_de : fetchRel subInnerCode 0xDE = some (.alu .sltu a3 (21 : Fin 32) a1, 4) := by decide
-theorem si_at_e2 : fetchRel subInnerCode 0xE2 = some (.alu .sltu a4 a2 (21 : Fin 32), 4) := by decide
-theorem si_at_e6 : fetchRel subInnerCode 0xE6 = some (.alu .add a3 a3 a4, 2) := by decide
-theorem si_at_e8 : fetchRel subInnerCode 0xE8 = some (.alu .add (22 : Fin 32) (22 : Fin 32) a3, 2) := by decide
-theorem si_at_ea : fetchRel subInnerCode 0xEA = some (.alu .sltu a3 (22 : Fin 32) a3, 4) := by decide
-theorem si_at_ee : fetchRel subInnerCode 0xEE = some (.alu .add (24 : Fin 32) (24 : Fin 32) a3, 2) := by decide
-theorem si_at_f0 : fetchRel subInnerCode 0xF0 = some (.aluImm .and a4 a1 0x1, 4) := by decide
-theorem si_at_f4 : fetchRel subInnerCode 0xF4 = some (.alu .sltu a3 (24 : Fin 32) a3, 4) := by decide
-theorem si_at_f8 : fetchRel subInnerCode 0xF8 = some (.alu .add (26 : Fin 32) (26 : Fin 32) a1, 2) := by decide
-theorem si_at_fa : fetchRel subInnerCode 0xFA = some (.alu .add (23 : Fin 32) (23 : Fin 32) a3, 2) := by decide
-theorem si_at_fc : fetchRel subInnerCode 0xFC = some (.alu .add (25 : Fin 32) (25 : Fin 32) a4, 2) := by decide
-theorem si_at_fe : fetchRel subInnerCode 0xFE = some (.alu .sltu a3 (23 : Fin 32) a3, 4) := by decide
-theorem si_at_102 : fetchRel subInnerCode 0x102 = some (.alu .sltu a4 (25 : Fin 32) a4, 4) := by decide
-theorem si_at_106 : fetchRel subInnerCode 0x106 = some (.alu .add a3 a3 (25 : Fin 32), 2) := by decide
-theorem si_at_108 : fetchRel subInnerCode 0x108 = some (.alu .sltu a5 a3 (25 : Fin 32), 4) := by decide
-theorem si_at_10c : fetchRel subInnerCode 0x10C = some (.store .sw (18 : Fin 32) (19 : Fin 32) 0x0, 4) := by decide
-theorem si_at_110 : fetchRel subInnerCode 0x110 = some (.alu .add (8 : Fin 32) x0 (18 : Fin 32), 2) := by decide
-theorem si_at_112 : fetchRel subInnerCode 0x112 = some (.store .sw (8 : Fin 32) a0 0x4, 2) := by decide
-theorem si_at_114 : fetchRel subInnerCode 0x114 = some (.store .sw (8 : Fin 32) a2 0x8, 2) := by decide
-theorem si_at_116 : fetchRel subInnerCode 0x116 = some (.store .sw (18 : Fin 32) (22 : Fin 32) 0xC, 4) := by decide
-theorem si_at_11a : fetchRel subInnerCode 0x11A = some (.alu .add a4 a4 a5, 2) := by decide
-theorem si_at_11c : fetchRel subInnerCode 0x11C = some (.alu .add a4 a4 (26 : Fin 32), 2) := by decide
-theorem si_at_11e : fetchRel subInnerCode 0x11E = some (.store .sw (18 : Fin 32) (24 : Fin 32) 0x10, 4) := by decide
-theorem si_at_122 : fetchRel subInnerCode 0x122 = some (.store .sw (18 : Fin 32) (23 : Fin 32) 0x14, 4) := by decide
-theorem si_at_126 : fetchRel subInnerCode 0x126 = some (.store .sw (8 : Fin 32) a3 0x18, 2) := by decide
-theorem si_at_128 : fetchRel subInnerCode 0x128 = some (.store .sw (8 : Fin 32) a4 0x1C, 2) := by decide
-theorem si_at_12a : fetchRel subInnerCode 0x12A = some (.store .sw (8 : Fin 32) a1 0x20, 2) := by decide
-theorem si_at_12c : fetchRel subInnerCode 0x12C = some (.auipc (5 : Fin 32) 0xE000, 4) := by decide
-theorem si_at_130 : fetchRel subInnerCode 0x130 = some (.jalr (5 : Fin 32) (5 : Fin 32) 0xFFFFFD12, 4) := by decide
-theorem si_at_134 : fetchRel subInnerCode 0x134 = some (.load .lw (24 : Fin 32) sp 0x8, 2) := by decide
-theorem si_at_136 : fetchRel subInnerCode 0x136 = some (.load .lw (25 : Fin 32) sp 0x4, 2) := by decide
-theorem si_at_138 : fetchRel subInnerCode 0x138 = some (.load .lw (26 : Fin 32) sp 0x0, 2) := by decide
-theorem si_at_13a : fetchRel subInnerCode 0x13A = some (.aluImm .add sp sp 0x30, 2) := by decide
-theorem si_at_13c : fetchRel subInnerCode 0x13C = some (.jalr x0 ra 0x0, 2) := by decide
+theorem si_at_2 : fetchRel subInnerCode 0x2 = some (.store .sw sp ra 0x2C, 2) := by decide
+theorem si_at_4 : fetchRel subInnerCode 0x4 = some (.store .sw sp (8 : Fin 32) 0x28, 2) := by decide
+theorem si_at_6 : fetchRel subInnerCode 0x6 = some (.store .sw sp (9 : Fin 32) 0x24, 2) := by decide
+theorem si_at_8 : fetchRel subInnerCode 0x8 = some (.store .sw sp (18 : Fin 32) 0x20, 2) := by decide
+theorem si_at_a : fetchRel subInnerCode 0xA = some (.store .sw sp (19 : Fin 32) 0x1C, 2) := by decide
+theorem si_at_c : fetchRel subInnerCode 0xC = some (.store .sw sp (20 : Fin 32) 0x18, 2) := by decide
+theorem si_at_e : fetchRel subInnerCode 0xE = some (.store .sw sp (21 : Fin 32) 0x14, 2) := by decide
+theorem si_at_10 : fetchRel subInnerCode 0x10 = some (.store .sw sp (22 : Fin 32) 0x10, 2) := by decide
+theorem si_at_12 : fetchRel subInnerCode 0x12 = some (.store .sw sp (23 : Fin 32) 0xC, 2) := by decide
+theorem si_at_14 : fetchRel subInnerCode 0x14 = some (.store .sw sp (24 : Fin 32) 0x8, 2) := by decide
+theorem si_at_16 : fetchRel subInnerCode 0x16 = some (.store .sw sp (25 : Fin 32) 0x4, 2) := by decide
+theorem si_at_18 : fetchRel subInnerCode 0x18 = some (.store .sw sp (26 : Fin 32) 0x0, 2) := by decide
+theorem si_at_1a : fetchRel subInnerCode 0x1A = some (.alu .add (9 : Fin 32) x0 a2, 2) := by decide
+theorem si_at_1c : fetchRel subInnerCode 0x1C = some (.alu .add (8 : Fin 32) x0 a1, 2) := by decide
+theorem si_at_1e : fetchRel subInnerCode 0x1E = some (.load .lw a2 a1 0x0, 2) := by decide
+theorem si_at_20 : fetchRel subInnerCode 0x20 = some (.load .lw a1 (9 : Fin 32) 0x0, 2) := by decide
+theorem si_at_22 : fetchRel subInnerCode 0x22 = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
+theorem si_at_24 : fetchRel subInnerCode 0x24 = some (.alu .add a0 x0 a2, 2) := by decide
+theorem si_at_26 : fetchRel subInnerCode 0x26 = some (.aluImm .add a2 x0 0x0, 2) := by decide
+theorem si_at_28 : fetchRel subInnerCode 0x28 = some (.auipc ra 0xFFFF1000, 4) := by decide
+theorem si_at_2c : fetchRel subInnerCode 0x2C = some (.jalr ra ra 0xFFFFF890, 4) := by decide
+theorem si_at_30 : fetchRel subInnerCode 0x30 = some (.alu .add (19 : Fin 32) x0 a0, 2) := by decide
+theorem si_at_32 : fetchRel subInnerCode 0x32 = some (.load .lw a0 (8 : Fin 32) 0x4, 2) := by decide
+theorem si_at_34 : fetchRel subInnerCode 0x34 = some (.load .lw a2 (9 : Fin 32) 0x4, 2) := by decide
+theorem si_at_36 : fetchRel subInnerCode 0x36 = some (.alu .add a3 x0 a1, 2) := by decide
+theorem si_at_38 : fetchRel subInnerCode 0x38 = some (.alu .add a1 x0 a2, 2) := by decide
+theorem si_at_3a : fetchRel subInnerCode 0x3A = some (.alu .add a2 x0 a3, 2) := by decide
+theorem si_at_3c : fetchRel subInnerCode 0x3C = some (.auipc ra 0xFFFF1000, 4) := by decide
+theorem si_at_40 : fetchRel subInnerCode 0x40 = some (.jalr ra ra 0xFFFFF87C, 4) := by decide
+theorem si_at_44 : fetchRel subInnerCode 0x44 = some (.alu .add (20 : Fin 32) x0 a0, 2) := by decide
+theorem si_at_46 : fetchRel subInnerCode 0x46 = some (.load .lw a0 (8 : Fin 32) 0x8, 2) := by decide
+theorem si_at_48 : fetchRel subInnerCode 0x48 = some (.load .lw a2 (9 : Fin 32) 0x8, 2) := by decide
+theorem si_at_4a : fetchRel subInnerCode 0x4A = some (.alu .add a3 x0 a1, 2) := by decide
+theorem si_at_4c : fetchRel subInnerCode 0x4C = some (.alu .add a1 x0 a2, 2) := by decide
+theorem si_at_4e : fetchRel subInnerCode 0x4E = some (.alu .add a2 x0 a3, 2) := by decide
+theorem si_at_50 : fetchRel subInnerCode 0x50 = some (.auipc ra 0xFFFF1000, 4) := by decide
+theorem si_at_54 : fetchRel subInnerCode 0x54 = some (.jalr ra ra 0xFFFFF868, 4) := by decide
+theorem si_at_58 : fetchRel subInnerCode 0x58 = some (.alu .add (21 : Fin 32) x0 a0, 2) := by decide
+theorem si_at_5a : fetchRel subInnerCode 0x5A = some (.load .lw a0 (8 : Fin 32) 0xC, 2) := by decide
+theorem si_at_5c : fetchRel subInnerCode 0x5C = some (.load .lw a2 (9 : Fin 32) 0xC, 2) := by decide
+theorem si_at_5e : fetchRel subInnerCode 0x5E = some (.alu .add a3 x0 a1, 2) := by decide
+theorem si_at_60 : fetchRel subInnerCode 0x60 = some (.alu .add a1 x0 a2, 2) := by decide
+theorem si_at_62 : fetchRel subInnerCode 0x62 = some (.alu .add a2 x0 a3, 2) := by decide
+theorem si_at_64 : fetchRel subInnerCode 0x64 = some (.auipc ra 0xFFFF1000, 4) := by decide
+theorem si_at_68 : fetchRel subInnerCode 0x68 = some (.jalr ra ra 0xFFFFF854, 4) := by decide
+theorem si_at_6c : fetchRel subInnerCode 0x6C = some (.alu .add (22 : Fin 32) x0 a0, 2) := by decide
+theorem si_at_6e : fetchRel subInnerCode 0x6E = some (.load .lw a0 (8 : Fin 32) 0x10, 2) := by decide
+theorem si_at_70 : fetchRel subInnerCode 0x70 = some (.load .lw a2 (9 : Fin 32) 0x10, 2) := by decide
+theorem si_at_72 : fetchRel subInnerCode 0x72 = some (.alu .add a3 x0 a1, 2) := by decide
+theorem si_at_74 : fetchRel subInnerCode 0x74 = some (.alu .add a1 x0 a2, 2) := by decide
+theorem si_at_76 : fetchRel subInnerCode 0x76 = some (.alu .add a2 x0 a3, 2) := by decide
+theorem si_at_78 : fetchRel subInnerCode 0x78 = some (.auipc ra 0xFFFF1000, 4) := by decide
+theorem si_at_7c : fetchRel subInnerCode 0x7C = some (.jalr ra ra 0xFFFFF840, 4) := by decide
+theorem si_at_80 : fetchRel subInnerCode 0x80 = some (.alu .add (24 : Fin 32) x0 a0, 2) := by decide
+theorem si_at_82 : fetchRel subInnerCode 0x82 = some (.load .lw a0 (8 : Fin 32) 0x14, 2) := by decide
+theorem si_at_84 : fetchRel subInnerCode 0x84 = some (.load .lw a2 (9 : Fin 32) 0x14, 2) := by decide
+theorem si_at_86 : fetchRel subInnerCode 0x86 = some (.alu .add a3 x0 a1, 2) := by decide
+theorem si_at_88 : fetchRel subInnerCode 0x88 = some (.alu .add a1 x0 a2, 2) := by decide
+theorem si_at_8a : fetchRel subInnerCode 0x8A = some (.alu .add a2 x0 a3, 2) := by decide
+theorem si_at_8c : fetchRel subInnerCode 0x8C = some (.auipc ra 0xFFFF1000, 4) := by decide
+theorem si_at_90 : fetchRel subInnerCode 0x90 = some (.jalr ra ra 0xFFFFF82C, 4) := by decide
+theorem si_at_94 : fetchRel subInnerCode 0x94 = some (.alu .add (23 : Fin 32) x0 a0, 2) := by decide
+theorem si_at_96 : fetchRel subInnerCode 0x96 = some (.load .lw a0 (8 : Fin 32) 0x18, 2) := by decide
+theorem si_at_98 : fetchRel subInnerCode 0x98 = some (.load .lw a2 (9 : Fin 32) 0x18, 2) := by decide
+theorem si_at_9a : fetchRel subInnerCode 0x9A = some (.alu .add a3 x0 a1, 2) := by decide
+theorem si_at_9c : fetchRel subInnerCode 0x9C = some (.alu .add a1 x0 a2, 2) := by decide
+theorem si_at_9e : fetchRel subInnerCode 0x9E = some (.alu .add a2 x0 a3, 2) := by decide
+theorem si_at_a0 : fetchRel subInnerCode 0xA0 = some (.auipc ra 0xFFFF1000, 4) := by decide
+theorem si_at_a4 : fetchRel subInnerCode 0xA4 = some (.jalr ra ra 0xFFFFF818, 4) := by decide
+theorem si_at_a8 : fetchRel subInnerCode 0xA8 = some (.alu .add (25 : Fin 32) x0 a0, 2) := by decide
+theorem si_at_aa : fetchRel subInnerCode 0xAA = some (.load .lw a0 (8 : Fin 32) 0x1C, 2) := by decide
+theorem si_at_ac : fetchRel subInnerCode 0xAC = some (.load .lw a2 (9 : Fin 32) 0x1C, 2) := by decide
+theorem si_at_ae : fetchRel subInnerCode 0xAE = some (.alu .add a3 x0 a1, 2) := by decide
+theorem si_at_b0 : fetchRel subInnerCode 0xB0 = some (.alu .add a1 x0 a2, 2) := by decide
+theorem si_at_b2 : fetchRel subInnerCode 0xB2 = some (.alu .add a2 x0 a3, 2) := by decide
+theorem si_at_b4 : fetchRel subInnerCode 0xB4 = some (.auipc ra 0xFFFF1000, 4) := by decide
+theorem si_at_b8 : fetchRel subInnerCode 0xB8 = some (.jalr ra ra 0xFFFFF804, 4) := by decide
+theorem si_at_bc : fetchRel subInnerCode 0xBC = some (.alu .add (26 : Fin 32) x0 a0, 2) := by decide
+theorem si_at_be : fetchRel subInnerCode 0xBE = some (.load .lw a0 (8 : Fin 32) 0x20, 2) := by decide
+theorem si_at_c0 : fetchRel subInnerCode 0xC0 = some (.load .lw a2 (9 : Fin 32) 0x20, 2) := by decide
+theorem si_at_c2 : fetchRel subInnerCode 0xC2 = some (.alu .add a3 x0 a1, 2) := by decide
+theorem si_at_c4 : fetchRel subInnerCode 0xC4 = some (.alu .add a1 x0 a2, 2) := by decide
+theorem si_at_c6 : fetchRel subInnerCode 0xC6 = some (.alu .add a2 x0 a3, 2) := by decide
+theorem si_at_c8 : fetchRel subInnerCode 0xC8 = some (.auipc ra 0xFFFF0000, 4) := by decide
+theorem si_at_cc : fetchRel subInnerCode 0xCC = some (.jalr ra ra 0x7F0, 4) := by decide
+theorem si_at_d0 : fetchRel subInnerCode 0xD0 = some (.alu .add (19 : Fin 32) (19 : Fin 32) a1, 2) := by decide
+theorem si_at_d2 : fetchRel subInnerCode 0xD2 = some (.alu .add (20 : Fin 32) (20 : Fin 32) a1, 2) := by decide
+theorem si_at_d4 : fetchRel subInnerCode 0xD4 = some (.alu .sltu a0 (19 : Fin 32) a1, 4) := by decide
+theorem si_at_d8 : fetchRel subInnerCode 0xD8 = some (.alu .add a0 a0 (20 : Fin 32), 2) := by decide
+theorem si_at_da : fetchRel subInnerCode 0xDA = some (.alu .sltu a2 (20 : Fin 32) a1, 4) := by decide
+theorem si_at_de : fetchRel subInnerCode 0xDE = some (.alu .sltu a3 a0 (20 : Fin 32), 4) := by decide
+theorem si_at_e2 : fetchRel subInnerCode 0xE2 = some (.alu .add (21 : Fin 32) (21 : Fin 32) a1, 2) := by decide
+theorem si_at_e4 : fetchRel subInnerCode 0xE4 = some (.alu .add a2 a2 a3, 2) := by decide
+theorem si_at_e6 : fetchRel subInnerCode 0xE6 = some (.alu .add a2 a2 (21 : Fin 32), 2) := by decide
+theorem si_at_e8 : fetchRel subInnerCode 0xE8 = some (.alu .sltu a3 (21 : Fin 32) a1, 4) := by decide
+theorem si_at_ec : fetchRel subInnerCode 0xEC = some (.alu .sltu a4 a2 (21 : Fin 32), 4) := by decide
+theorem si_at_f0 : fetchRel subInnerCode 0xF0 = some (.alu .add a3 a3 a4, 2) := by decide
+theorem si_at_f2 : fetchRel subInnerCode 0xF2 = some (.alu .add (22 : Fin 32) (22 : Fin 32) a3, 2) := by decide
+theorem si_at_f4 : fetchRel subInnerCode 0xF4 = some (.alu .sltu a3 (22 : Fin 32) a3, 4) := by decide
+theorem si_at_f8 : fetchRel subInnerCode 0xF8 = some (.alu .add (24 : Fin 32) (24 : Fin 32) a3, 2) := by decide
+theorem si_at_fa : fetchRel subInnerCode 0xFA = some (.aluImm .and a4 a1 0x1, 4) := by decide
+theorem si_at_fe : fetchRel subInnerCode 0xFE = some (.alu .sltu a3 (24 : Fin 32) a3, 4) := by decide
+theorem si_at_102 : fetchRel subInnerCode 0x102 = some (.alu .add (26 : Fin 32) (26 : Fin 32) a1, 2) := by decide
+theorem si_at_104 : fetchRel subInnerCode 0x104 = some (.alu .add (23 : Fin 32) (23 : Fin 32) a3, 2) := by decide
+theorem si_at_106 : fetchRel subInnerCode 0x106 = some (.alu .add (25 : Fin 32) (25 : Fin 32) a4, 2) := by decide
+theorem si_at_108 : fetchRel subInnerCode 0x108 = some (.alu .sltu a3 (23 : Fin 32) a3, 4) := by decide
+theorem si_at_10c : fetchRel subInnerCode 0x10C = some (.alu .sltu a4 (25 : Fin 32) a4, 4) := by decide
+theorem si_at_110 : fetchRel subInnerCode 0x110 = some (.alu .add a3 a3 (25 : Fin 32), 2) := by decide
+theorem si_at_112 : fetchRel subInnerCode 0x112 = some (.alu .sltu a5 a3 (25 : Fin 32), 4) := by decide
+theorem si_at_116 : fetchRel subInnerCode 0x116 = some (.store .sw (18 : Fin 32) (19 : Fin 32) 0x0, 4) := by decide
+theorem si_at_11a : fetchRel subInnerCode 0x11A = some (.alu .add (8 : Fin 32) x0 (18 : Fin 32), 2) := by decide
+theorem si_at_11c : fetchRel subInnerCode 0x11C = some (.store .sw (8 : Fin 32) a0 0x4, 2) := by decide
+theorem si_at_11e : fetchRel subInnerCode 0x11E = some (.store .sw (8 : Fin 32) a2 0x8, 2) := by decide
+theorem si_at_120 : fetchRel subInnerCode 0x120 = some (.store .sw (18 : Fin 32) (22 : Fin 32) 0xC, 4) := by decide
+theorem si_at_124 : fetchRel subInnerCode 0x124 = some (.alu .add a4 a4 a5, 2) := by decide
+theorem si_at_126 : fetchRel subInnerCode 0x126 = some (.alu .add a4 a4 (26 : Fin 32), 2) := by decide
+theorem si_at_128 : fetchRel subInnerCode 0x128 = some (.store .sw (18 : Fin 32) (24 : Fin 32) 0x10, 4) := by decide
+theorem si_at_12c : fetchRel subInnerCode 0x12C = some (.store .sw (18 : Fin 32) (23 : Fin 32) 0x14, 4) := by decide
+theorem si_at_130 : fetchRel subInnerCode 0x130 = some (.store .sw (8 : Fin 32) a3 0x18, 2) := by decide
+theorem si_at_132 : fetchRel subInnerCode 0x132 = some (.store .sw (8 : Fin 32) a4 0x1C, 2) := by decide
+theorem si_at_134 : fetchRel subInnerCode 0x134 = some (.store .sw (8 : Fin 32) a1 0x20, 2) := by decide
+theorem si_at_136 : fetchRel subInnerCode 0x136 = some (.load .lw ra sp 0x2C, 2) := by decide
+theorem si_at_138 : fetchRel subInnerCode 0x138 = some (.load .lw (8 : Fin 32) sp 0x28, 2) := by decide
+theorem si_at_13a : fetchRel subInnerCode 0x13A = some (.load .lw (9 : Fin 32) sp 0x24, 2) := by decide
+theorem si_at_13c : fetchRel subInnerCode 0x13C = some (.load .lw (18 : Fin 32) sp 0x20, 2) := by decide
+theorem si_at_13e : fetchRel subInnerCode 0x13E = some (.load .lw (19 : Fin 32) sp 0x1C, 2) := by decide
+theorem si_at_140 : fetchRel subInnerCode 0x140 = some (.load .lw (20 : Fin 32) sp 0x18, 2) := by decide
+theorem si_at_142 : fetchRel subInnerCode 0x142 = some (.load .lw (21 : Fin 32) sp 0x14, 2) := by decide
+theorem si_at_144 : fetchRel subInnerCode 0x144 = some (.load .lw (22 : Fin 32) sp 0x10, 2) := by decide
+theorem si_at_146 : fetchRel subInnerCode 0x146 = some (.load .lw (23 : Fin 32) sp 0xC, 2) := by decide
+theorem si_at_148 : fetchRel subInnerCode 0x148 = some (.load .lw (24 : Fin 32) sp 0x8, 2) := by decide
+theorem si_at_14a : fetchRel subInnerCode 0x14A = some (.load .lw (25 : Fin 32) sp 0x4, 2) := by decide
+theorem si_at_14c : fetchRel subInnerCode 0x14C = some (.load .lw (26 : Fin 32) sp 0x0, 2) := by decide
+theorem si_at_14e : fetchRel subInnerCode 0x14E = some (.aluImm .add sp sp 0x30, 2) := by decide
+theorem si_at_150 : fetchRel subInnerCode 0x150 = some (.jalr x0 ra 0x0, 2) := by decide
 
 theorem wm_at_0 : fetchRel wideMulCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFA0, 2) := by decide
-theorem wm_at_2 : fetchRel wideMulCode 0x2 = some (.auipc (5 : Fin 32) 0x12000, 4) := by decide
-theorem wm_at_6 : fetchRel wideMulCode 0x6 = some (.jalr (5 : Fin 32) (5 : Fin 32) 0x428, 4) := by decide
-theorem wm_at_a : fetchRel wideMulCode 0xA = some (.store .sw sp (22 : Fin 32) 0x40, 2) := by decide
-theorem wm_at_c : fetchRel wideMulCode 0xC = some (.alu .add (19 : Fin 32) x0 a2, 2) := by decide
-theorem wm_at_e : fetchRel wideMulCode 0xE = some (.alu .add (21 : Fin 32) x0 a1, 2) := by decide
-theorem wm_at_10 : fetchRel wideMulCode 0x10 = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
-theorem wm_at_12 : fetchRel wideMulCode 0x12 = some (.alu .add a0 x0 sp, 2) := by decide
-theorem wm_at_14 : fetchRel wideMulCode 0x14 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem wm_at_18 : fetchRel wideMulCode 0x18 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem wm_at_1a : fetchRel wideMulCode 0x1A = some (.alu .add (22 : Fin 32) x0 sp, 2) := by decide
-theorem wm_at_1c : fetchRel wideMulCode 0x1C = some (.auipc ra 0x13000, 4) := by decide
-theorem wm_at_20 : fetchRel wideMulCode 0x20 = some (.jalr ra ra 0xFFFFF9C8, 4) := by decide
-theorem wm_at_24 : fetchRel wideMulCode 0x24 = some (.aluImm .add a0 sp 0x20, 2) := by decide
-theorem wm_at_26 : fetchRel wideMulCode 0x26 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem wm_at_2a : fetchRel wideMulCode 0x2A = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem wm_at_2c : fetchRel wideMulCode 0x2C = some (.aluImm .add (20 : Fin 32) sp 0x20, 4) := by decide
-theorem wm_at_30 : fetchRel wideMulCode 0x30 = some (.auipc ra 0x13000, 4) := by decide
-theorem wm_at_34 : fetchRel wideMulCode 0x34 = some (.jalr ra ra 0xFFFFF9B4, 4) := by decide
-theorem wm_at_38 : fetchRel wideMulCode 0x38 = some (.aluImm .add (5 : Fin 32) x0 0x0, 2) := by decide
-theorem wm_at_3a : fetchRel wideMulCode 0x3A = some (.alu .add a6 x0 sp, 2) := by decide
-theorem wm_at_3c : fetchRel wideMulCode 0x3C = some (.aluImm .add (6 : Fin 32) x0 0x8, 2) := by decide
-theorem wm_at_3e : fetchRel wideMulCode 0x3E = some (.branch .beq (6 : Fin 32) x0 0x72, 4) := by decide
-theorem wm_at_42 : fetchRel wideMulCode 0x42 = some (.aluImm .add (28 : Fin 32) x0 0x0, 2) := by decide
-theorem wm_at_44 : fetchRel wideMulCode 0x44 = some (.aluImm .sll (17 : Fin 32) (5 : Fin 32) 0x2, 4) := by decide
-theorem wm_at_48 : fetchRel wideMulCode 0x48 = some (.alu .add a0 (21 : Fin 32) (17 : Fin 32), 4) := by decide
-theorem wm_at_4c : fetchRel wideMulCode 0x4C = some (.load .lw (7 : Fin 32) a0 0x0, 4) := by decide
-theorem wm_at_50 : fetchRel wideMulCode 0x50 = some (.aluImm .add (8 : Fin 32) x0 0x8, 2) := by decide
-theorem wm_at_52 : fetchRel wideMulCode 0x52 = some (.alu .add (9 : Fin 32) x0 (19 : Fin 32), 2) := by decide
-theorem wm_at_54 : fetchRel wideMulCode 0x54 = some (.alu .add a0 x0 (5 : Fin 32), 2) := by decide
-theorem wm_at_56 : fetchRel wideMulCode 0x56 = some (.alu .add a1 x0 (22 : Fin 32), 2) := by decide
-theorem wm_at_58 : fetchRel wideMulCode 0x58 = some (.alu .add a3 x0 a6, 2) := by decide
-theorem wm_at_5a : fetchRel wideMulCode 0x5A = some (.branch .beq (8 : Fin 32) x0 0x46, 2) := by decide
-theorem wm_at_5c : fetchRel wideMulCode 0x5C = some (.load .lw a4 (9 : Fin 32) 0x0, 2) := by decide
-theorem wm_at_5e : fetchRel wideMulCode 0x5E = some (.alu .mulhu a2 a4 (7 : Fin 32), 4) := by decide
-theorem wm_at_62 : fetchRel wideMulCode 0x62 = some (.alu .mul a4 a4 (7 : Fin 32), 4) := by decide
-theorem wm_at_66 : fetchRel wideMulCode 0x66 = some (.branch .bgeu a0 (6 : Fin 32) 0x1A, 4) := by decide
-theorem wm_at_6a : fetchRel wideMulCode 0x6A = some (.load .lw a5 a1 0x0, 2) := by decide
-theorem wm_at_6c : fetchRel wideMulCode 0x6C = some (.alu .add (28 : Fin 32) (28 : Fin 32) a5, 2) := by decide
-theorem wm_at_6e : fetchRel wideMulCode 0x6E = some (.alu .sltu a5 (28 : Fin 32) a5, 4) := by decide
-theorem wm_at_72 : fetchRel wideMulCode 0x72 = some (.alu .add a4 a4 (28 : Fin 32), 2) := by decide
-theorem wm_at_74 : fetchRel wideMulCode 0x74 = some (.alu .sltu (28 : Fin 32) a4 (28 : Fin 32), 4) := by decide
-theorem wm_at_78 : fetchRel wideMulCode 0x78 = some (.alu .add a2 a2 a5, 2) := by decide
-theorem wm_at_7a : fetchRel wideMulCode 0x7A = some (.alu .add (28 : Fin 32) (28 : Fin 32) a2, 2) := by decide
-theorem wm_at_7c : fetchRel wideMulCode 0x7C = some (.store .sw a1 a4 0x0, 2) := by decide
-theorem wm_at_7e : fetchRel wideMulCode 0x7E = some (.jal x0 0x16, 2) := by decide
-theorem wm_at_80 : fetchRel wideMulCode 0x80 = some (.load .lw a5 a3 0x0, 2) := by decide
-theorem wm_at_82 : fetchRel wideMulCode 0x82 = some (.alu .add (28 : Fin 32) (28 : Fin 32) a5, 2) := by decide
-theorem wm_at_84 : fetchRel wideMulCode 0x84 = some (.alu .sltu a5 (28 : Fin 32) a5, 4) := by decide
-theorem wm_at_88 : fetchRel wideMulCode 0x88 = some (.alu .add a4 a4 (28 : Fin 32), 2) := by decide
-theorem wm_at_8a : fetchRel wideMulCode 0x8A = some (.alu .sltu (28 : Fin 32) a4 (28 : Fin 32), 4) := by decide
-theorem wm_at_8e : fetchRel wideMulCode 0x8E = some (.alu .add a2 a2 a5, 2) := by decide
-theorem wm_at_90 : fetchRel wideMulCode 0x90 = some (.alu .add (28 : Fin 32) (28 : Fin 32) a2, 2) := by decide
-theorem wm_at_92 : fetchRel wideMulCode 0x92 = some (.store .sw a3 a4 0x0, 2) := by decide
-theorem wm_at_94 : fetchRel wideMulCode 0x94 = some (.aluImm .add a3 a3 0x4, 2) := by decide
-theorem wm_at_96 : fetchRel wideMulCode 0x96 = some (.aluImm .add a1 a1 0x4, 2) := by decide
-theorem wm_at_98 : fetchRel wideMulCode 0x98 = some (.aluImm .add a0 a0 0x1, 2) := by decide
-theorem wm_at_9a : fetchRel wideMulCode 0x9A = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0x4, 2) := by decide
-theorem wm_at_9c : fetchRel wideMulCode 0x9C = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFFFF, 2) := by decide
-theorem wm_at_9e : fetchRel wideMulCode 0x9E = some (.branch .bne (8 : Fin 32) x0 0xFFFFFFBE, 2) := by decide
-theorem wm_at_a0 : fetchRel wideMulCode 0xA0 = some (.alu .add (17 : Fin 32) (17 : Fin 32) (20 : Fin 32), 2) := by decide
-theorem wm_at_a2 : fetchRel wideMulCode 0xA2 = some (.aluImm .add (5 : Fin 32) (5 : Fin 32) 0x1, 2) := by decide
-theorem wm_at_a4 : fetchRel wideMulCode 0xA4 = some (.store .sw (17 : Fin 32) (28 : Fin 32) 0x0, 4) := by decide
-theorem wm_at_a8 : fetchRel wideMulCode 0xA8 = some (.aluImm .add a6 a6 0x4, 2) := by decide
-theorem wm_at_aa : fetchRel wideMulCode 0xAA = some (.aluImm .add (22 : Fin 32) (22 : Fin 32) 0x4, 2) := by decide
-theorem wm_at_ac : fetchRel wideMulCode 0xAC = some (.branch .bne (5 : Fin 32) (6 : Fin 32) 0xFFFFFF96, 4) := by decide
-theorem wm_at_b0 : fetchRel wideMulCode 0xB0 = some (.alu .add a1 x0 sp, 2) := by decide
-theorem wm_at_b2 : fetchRel wideMulCode 0xB2 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem wm_at_b6 : fetchRel wideMulCode 0xB6 = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
-theorem wm_at_b8 : fetchRel wideMulCode 0xB8 = some (.auipc ra 0x13000, 4) := by decide
-theorem wm_at_bc : fetchRel wideMulCode 0xBC = some (.jalr ra ra 0xFFFFF994, 4) := by decide
-theorem wm_at_c0 : fetchRel wideMulCode 0xC0 = some (.aluImm .add a0 (18 : Fin 32) 0x20, 4) := by decide
-theorem wm_at_c4 : fetchRel wideMulCode 0xC4 = some (.aluImm .add a1 sp 0x20, 2) := by decide
-theorem wm_at_c6 : fetchRel wideMulCode 0xC6 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem wm_at_ca : fetchRel wideMulCode 0xCA = some (.auipc ra 0x13000, 4) := by decide
-theorem wm_at_ce : fetchRel wideMulCode 0xCE = some (.jalr ra ra 0xFFFFF982, 4) := by decide
-theorem wm_at_d2 : fetchRel wideMulCode 0xD2 = some (.auipc (5 : Fin 32) 0x12000, 4) := by decide
-theorem wm_at_d6 : fetchRel wideMulCode 0xD6 = some (.jalr (5 : Fin 32) (5 : Fin 32) 0x348, 4) := by decide
-theorem wm_at_da : fetchRel wideMulCode 0xDA = some (.load .lw (22 : Fin 32) sp 0x40, 2) := by decide
-theorem wm_at_dc : fetchRel wideMulCode 0xDC = some (.aluImm .add sp sp 0x60, 2) := by decide
-theorem wm_at_de : fetchRel wideMulCode 0xDE = some (.jalr x0 ra 0x0, 2) := by decide
+theorem wm_at_2 : fetchRel wideMulCode 0x2 = some (.store .sw sp ra 0x5C, 2) := by decide
+theorem wm_at_4 : fetchRel wideMulCode 0x4 = some (.store .sw sp (8 : Fin 32) 0x58, 2) := by decide
+theorem wm_at_6 : fetchRel wideMulCode 0x6 = some (.store .sw sp (9 : Fin 32) 0x54, 2) := by decide
+theorem wm_at_8 : fetchRel wideMulCode 0x8 = some (.store .sw sp (18 : Fin 32) 0x50, 2) := by decide
+theorem wm_at_a : fetchRel wideMulCode 0xA = some (.store .sw sp (19 : Fin 32) 0x4C, 2) := by decide
+theorem wm_at_c : fetchRel wideMulCode 0xC = some (.store .sw sp (20 : Fin 32) 0x48, 2) := by decide
+theorem wm_at_e : fetchRel wideMulCode 0xE = some (.store .sw sp (21 : Fin 32) 0x44, 2) := by decide
+theorem wm_at_10 : fetchRel wideMulCode 0x10 = some (.store .sw sp (22 : Fin 32) 0x40, 2) := by decide
+theorem wm_at_12 : fetchRel wideMulCode 0x12 = some (.alu .add (19 : Fin 32) x0 a2, 2) := by decide
+theorem wm_at_14 : fetchRel wideMulCode 0x14 = some (.alu .add (21 : Fin 32) x0 a1, 2) := by decide
+theorem wm_at_16 : fetchRel wideMulCode 0x16 = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
+theorem wm_at_18 : fetchRel wideMulCode 0x18 = some (.alu .add a0 x0 sp, 2) := by decide
+theorem wm_at_1a : fetchRel wideMulCode 0x1A = some (.aluImm .add a2 x0 0x20, 4) := by decide
+theorem wm_at_1e : fetchRel wideMulCode 0x1E = some (.aluImm .add a1 x0 0x0, 2) := by decide
+theorem wm_at_20 : fetchRel wideMulCode 0x20 = some (.alu .add (22 : Fin 32) x0 sp, 2) := by decide
+theorem wm_at_22 : fetchRel wideMulCode 0x22 = some (.auipc ra 0x7000, 4) := by decide
+theorem wm_at_26 : fetchRel wideMulCode 0x26 = some (.jalr ra ra 0x424, 4) := by decide
+theorem wm_at_2a : fetchRel wideMulCode 0x2A = some (.aluImm .add a0 sp 0x20, 2) := by decide
+theorem wm_at_2c : fetchRel wideMulCode 0x2C = some (.aluImm .add a2 x0 0x20, 4) := by decide
+theorem wm_at_30 : fetchRel wideMulCode 0x30 = some (.aluImm .add a1 x0 0x0, 2) := by decide
+theorem wm_at_32 : fetchRel wideMulCode 0x32 = some (.aluImm .add (20 : Fin 32) sp 0x20, 4) := by decide
+theorem wm_at_36 : fetchRel wideMulCode 0x36 = some (.auipc ra 0x7000, 4) := by decide
+theorem wm_at_3a : fetchRel wideMulCode 0x3A = some (.jalr ra ra 0x410, 4) := by decide
+theorem wm_at_3e : fetchRel wideMulCode 0x3E = some (.aluImm .add (5 : Fin 32) x0 0x0, 2) := by decide
+theorem wm_at_40 : fetchRel wideMulCode 0x40 = some (.alu .add a6 x0 sp, 2) := by decide
+theorem wm_at_42 : fetchRel wideMulCode 0x42 = some (.aluImm .add (6 : Fin 32) x0 0x8, 2) := by decide
+theorem wm_at_44 : fetchRel wideMulCode 0x44 = some (.branch .beq (6 : Fin 32) x0 0x72, 4) := by decide
+theorem wm_at_48 : fetchRel wideMulCode 0x48 = some (.aluImm .add (28 : Fin 32) x0 0x0, 2) := by decide
+theorem wm_at_4a : fetchRel wideMulCode 0x4A = some (.aluImm .sll (17 : Fin 32) (5 : Fin 32) 0x2, 4) := by decide
+theorem wm_at_4e : fetchRel wideMulCode 0x4E = some (.alu .add a0 (21 : Fin 32) (17 : Fin 32), 4) := by decide
+theorem wm_at_52 : fetchRel wideMulCode 0x52 = some (.load .lw (7 : Fin 32) a0 0x0, 4) := by decide
+theorem wm_at_56 : fetchRel wideMulCode 0x56 = some (.aluImm .add (8 : Fin 32) x0 0x8, 2) := by decide
+theorem wm_at_58 : fetchRel wideMulCode 0x58 = some (.alu .add (9 : Fin 32) x0 (19 : Fin 32), 2) := by decide
+theorem wm_at_5a : fetchRel wideMulCode 0x5A = some (.alu .add a0 x0 (5 : Fin 32), 2) := by decide
+theorem wm_at_5c : fetchRel wideMulCode 0x5C = some (.alu .add a1 x0 (22 : Fin 32), 2) := by decide
+theorem wm_at_5e : fetchRel wideMulCode 0x5E = some (.alu .add a3 x0 a6, 2) := by decide
+theorem wm_at_60 : fetchRel wideMulCode 0x60 = some (.branch .beq (8 : Fin 32) x0 0x46, 2) := by decide
+theorem wm_at_62 : fetchRel wideMulCode 0x62 = some (.load .lw a4 (9 : Fin 32) 0x0, 2) := by decide
+theorem wm_at_64 : fetchRel wideMulCode 0x64 = some (.alu .mulhu a2 a4 (7 : Fin 32), 4) := by decide
+theorem wm_at_68 : fetchRel wideMulCode 0x68 = some (.alu .mul a4 a4 (7 : Fin 32), 4) := by decide
+theorem wm_at_6c : fetchRel wideMulCode 0x6C = some (.branch .bgeu a0 (6 : Fin 32) 0x1A, 4) := by decide
+theorem wm_at_70 : fetchRel wideMulCode 0x70 = some (.load .lw a5 a1 0x0, 2) := by decide
+theorem wm_at_72 : fetchRel wideMulCode 0x72 = some (.alu .add (28 : Fin 32) (28 : Fin 32) a5, 2) := by decide
+theorem wm_at_74 : fetchRel wideMulCode 0x74 = some (.alu .sltu a5 (28 : Fin 32) a5, 4) := by decide
+theorem wm_at_78 : fetchRel wideMulCode 0x78 = some (.alu .add a4 a4 (28 : Fin 32), 2) := by decide
+theorem wm_at_7a : fetchRel wideMulCode 0x7A = some (.alu .sltu (28 : Fin 32) a4 (28 : Fin 32), 4) := by decide
+theorem wm_at_7e : fetchRel wideMulCode 0x7E = some (.alu .add a2 a2 a5, 2) := by decide
+theorem wm_at_80 : fetchRel wideMulCode 0x80 = some (.alu .add (28 : Fin 32) (28 : Fin 32) a2, 2) := by decide
+theorem wm_at_82 : fetchRel wideMulCode 0x82 = some (.store .sw a1 a4 0x0, 2) := by decide
+theorem wm_at_84 : fetchRel wideMulCode 0x84 = some (.jal x0 0x16, 2) := by decide
+theorem wm_at_86 : fetchRel wideMulCode 0x86 = some (.load .lw a5 a3 0x0, 2) := by decide
+theorem wm_at_88 : fetchRel wideMulCode 0x88 = some (.alu .add (28 : Fin 32) (28 : Fin 32) a5, 2) := by decide
+theorem wm_at_8a : fetchRel wideMulCode 0x8A = some (.alu .sltu a5 (28 : Fin 32) a5, 4) := by decide
+theorem wm_at_8e : fetchRel wideMulCode 0x8E = some (.alu .add a4 a4 (28 : Fin 32), 2) := by decide
+theorem wm_at_90 : fetchRel wideMulCode 0x90 = some (.alu .sltu (28 : Fin 32) a4 (28 : Fin 32), 4) := by decide
+theorem wm_at_94 : fetchRel wideMulCode 0x94 = some (.alu .add a2 a2 a5, 2) := by decide
+theorem wm_at_96 : fetchRel wideMulCode 0x96 = some (.alu .add (28 : Fin 32) (28 : Fin 32) a2, 2) := by decide
+theorem wm_at_98 : fetchRel wideMulCode 0x98 = some (.store .sw a3 a4 0x0, 2) := by decide
+theorem wm_at_9a : fetchRel wideMulCode 0x9A = some (.aluImm .add a3 a3 0x4, 2) := by decide
+theorem wm_at_9c : fetchRel wideMulCode 0x9C = some (.aluImm .add a1 a1 0x4, 2) := by decide
+theorem wm_at_9e : fetchRel wideMulCode 0x9E = some (.aluImm .add a0 a0 0x1, 2) := by decide
+theorem wm_at_a0 : fetchRel wideMulCode 0xA0 = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0x4, 2) := by decide
+theorem wm_at_a2 : fetchRel wideMulCode 0xA2 = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFFFF, 2) := by decide
+theorem wm_at_a4 : fetchRel wideMulCode 0xA4 = some (.branch .bne (8 : Fin 32) x0 0xFFFFFFBE, 2) := by decide
+theorem wm_at_a6 : fetchRel wideMulCode 0xA6 = some (.alu .add (17 : Fin 32) (17 : Fin 32) (20 : Fin 32), 2) := by decide
+theorem wm_at_a8 : fetchRel wideMulCode 0xA8 = some (.aluImm .add (5 : Fin 32) (5 : Fin 32) 0x1, 2) := by decide
+theorem wm_at_aa : fetchRel wideMulCode 0xAA = some (.store .sw (17 : Fin 32) (28 : Fin 32) 0x0, 4) := by decide
+theorem wm_at_ae : fetchRel wideMulCode 0xAE = some (.aluImm .add a6 a6 0x4, 2) := by decide
+theorem wm_at_b0 : fetchRel wideMulCode 0xB0 = some (.aluImm .add (22 : Fin 32) (22 : Fin 32) 0x4, 2) := by decide
+theorem wm_at_b2 : fetchRel wideMulCode 0xB2 = some (.branch .bne (5 : Fin 32) (6 : Fin 32) 0xFFFFFF96, 4) := by decide
+theorem wm_at_b6 : fetchRel wideMulCode 0xB6 = some (.alu .add a1 x0 sp, 2) := by decide
+theorem wm_at_b8 : fetchRel wideMulCode 0xB8 = some (.aluImm .add a2 x0 0x20, 4) := by decide
+theorem wm_at_bc : fetchRel wideMulCode 0xBC = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
+theorem wm_at_be : fetchRel wideMulCode 0xBE = some (.auipc ra 0x7000, 4) := by decide
+theorem wm_at_c2 : fetchRel wideMulCode 0xC2 = some (.jalr ra ra 0x3F0, 4) := by decide
+theorem wm_at_c6 : fetchRel wideMulCode 0xC6 = some (.aluImm .add a0 (18 : Fin 32) 0x20, 4) := by decide
+theorem wm_at_ca : fetchRel wideMulCode 0xCA = some (.aluImm .add a1 sp 0x20, 2) := by decide
+theorem wm_at_cc : fetchRel wideMulCode 0xCC = some (.aluImm .add a2 x0 0x20, 4) := by decide
+theorem wm_at_d0 : fetchRel wideMulCode 0xD0 = some (.auipc ra 0x7000, 4) := by decide
+theorem wm_at_d4 : fetchRel wideMulCode 0xD4 = some (.jalr ra ra 0x3DE, 4) := by decide
+theorem wm_at_d8 : fetchRel wideMulCode 0xD8 = some (.load .lw ra sp 0x5C, 2) := by decide
+theorem wm_at_da : fetchRel wideMulCode 0xDA = some (.load .lw (8 : Fin 32) sp 0x58, 2) := by decide
+theorem wm_at_dc : fetchRel wideMulCode 0xDC = some (.load .lw (9 : Fin 32) sp 0x54, 2) := by decide
+theorem wm_at_de : fetchRel wideMulCode 0xDE = some (.load .lw (18 : Fin 32) sp 0x50, 2) := by decide
+theorem wm_at_e0 : fetchRel wideMulCode 0xE0 = some (.load .lw (19 : Fin 32) sp 0x4C, 2) := by decide
+theorem wm_at_e2 : fetchRel wideMulCode 0xE2 = some (.load .lw (20 : Fin 32) sp 0x48, 2) := by decide
+theorem wm_at_e4 : fetchRel wideMulCode 0xE4 = some (.load .lw (21 : Fin 32) sp 0x44, 2) := by decide
+theorem wm_at_e6 : fetchRel wideMulCode 0xE6 = some (.load .lw (22 : Fin 32) sp 0x40, 2) := by decide
+theorem wm_at_e8 : fetchRel wideMulCode 0xE8 = some (.aluImm .add sp sp 0x60, 2) := by decide
+theorem wm_at_ea : fetchRel wideMulCode 0xEA = some (.jalr x0 ra 0x0, 2) := by decide
 
 theorem fm_at_0 : fetchRel fieldMulCode 0x0 = some (.aluImm .add sp sp 0xFFFFFF30, 2) := by decide
 theorem fm_at_2 : fetchRel fieldMulCode 0x2 = some (.store .sw sp ra 0xCC, 2) := by decide
@@ -232,7 +256,7 @@ theorem fm_at_12 : fetchRel fieldMulCode 0x12 = some (.store .sw sp (23 : Fin 32
 theorem fm_at_14 : fetchRel fieldMulCode 0x14 = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
 theorem fm_at_16 : fetchRel fieldMulCode 0x16 = some (.alu .add a0 x0 sp, 2) := by decide
 theorem fm_at_18 : fetchRel fieldMulCode 0x18 = some (.auipc ra 0xFFFFC000, 4) := by decide
-theorem fm_at_1c : fetchRel fieldMulCode 0x1C = some (.jalr ra ra 0xFFFFFECC, 4) := by decide
+theorem fm_at_1c : fetchRel fieldMulCode 0x1C = some (.jalr ra ra 0xFFFFFD2C, 4) := by decide
 theorem fm_at_20 : fetchRel fieldMulCode 0x20 = some (.load .lw a4 sp 0x0, 2) := by decide
 theorem fm_at_22 : fetchRel fieldMulCode 0x22 = some (.load .lw a0 sp 0xC, 2) := by decide
 theorem fm_at_24 : fetchRel fieldMulCode 0x24 = some (.load .lw a2 sp 0x4, 2) := by decide
@@ -455,7 +479,7 @@ theorem fm_at_2b2 : fetchRel fieldMulCode 0x2B2 = some (.aluImm .add a0 sp 0x40,
 theorem fm_at_2b4 : fetchRel fieldMulCode 0x2B4 = some (.aluImm .add a1 sp 0x64, 2) := by decide
 theorem fm_at_2b6 : fetchRel fieldMulCode 0x2B6 = some (.aluImm .add a2 sp 0x88, 2) := by decide
 theorem fm_at_2b8 : fetchRel fieldMulCode 0x2B8 = some (.auipc ra 0x0, 4) := by decide
-theorem fm_at_2bc : fetchRel fieldMulCode 0x2BC = some (.jalr ra ra 0x144, 4) := by decide
+theorem fm_at_2bc : fetchRel fieldMulCode 0x2BC = some (.jalr ra ra 0x154, 4) := by decide
 theorem fm_at_2c0 : fetchRel fieldMulCode 0x2C0 = some (.load .lw a0 sp 0x40, 2) := by decide
 theorem fm_at_2c2 : fetchRel fieldMulCode 0x2C2 = some (.load .lw a1 sp 0x44, 2) := by decide
 theorem fm_at_2c4 : fetchRel fieldMulCode 0x2C4 = some (.load .lw a2 sp 0x48, 2) := by decide

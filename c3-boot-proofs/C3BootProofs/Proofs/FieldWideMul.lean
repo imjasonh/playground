@@ -1,5 +1,5 @@
 import C3BootProofs.Proofs.FieldWideArith
-import C3BootProofs.Image.BootloaderV0
+import C3BootProofs.Image.Bootloader
 
 /-!
 # `widening_mul_fixed::<8, 8>`, as compiled
@@ -11,7 +11,7 @@ zeroes with `memset` first and copies out with `memcpy` last.
 
 namespace C3.RV32
 
-open C3.ImageV0
+open C3.Image
 
 /-- The inner loop's add of the accumulator word at `r` and the carry. -/
 def wmPath (r : Fin 32) : List BInstr :=
@@ -21,8 +21,8 @@ def wmPath (r : Fin 32) : List BInstr :=
 
 section
 set_option maxRecDepth 20000
-theorem wmPathA_end : blockEnd wideMulCode 0x6A (wmPath a1) = some 0x7E := by decide
-theorem wmPathB_end : blockEnd wideMulCode 0x80 (wmPath a3) = some 0x94 := by decide
+theorem wmPathA_end : blockEnd wideMulCode 0x70 (wmPath a1) = some 0x84 := by decide
+theorem wmPathB_end : blockEnd wideMulCode 0x86 (wmPath a3) = some 0x9A := by decide
 end
 
 theorem wmPath_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {B : Word} {r : Fin 32} (hr0 : r.val ≠ 0)
@@ -65,24 +65,24 @@ theorem cnt_dec : ∀ j : Nat, j < 8 → BitVec.ofNat 32 (8 - j) + 0xFFFFFFFF = 
 
 theorem cnt_ne : ∀ j : Nat, j < 8 → (BitVec.ofNat 32 (8 - (j + 1)) != 0) = decide (j + 1 < 8) := by decide
 
-/-- The end of an inner-loop pass, from 0x94: advance the pointers, the
+/-- The end of an inner-loop pass, from 0x9A: advance the pointers, the
 column, and the count, and loop while columns are left. -/
 theorem wm_tail {M : Word → BitVec 8} {B acc bp : Word} {n : Machine} {i j : Nat}
-    (s : St M B n 0x94 (reg n)) (hc : CodeIn M B wideMulCode) (hj : j < 8)
+    (s : St M B n 0x9A (reg n)) (hc : CodeIn M B wideMulCode) (hj : j < 8)
     (ra3 : reg n a3 = acc + BitVec.ofNat 32 (4 * (i + j))) (ra1 : reg n a1 = acc + BitVec.ofNat 32 (4 * (i + j)))
     (ra0 : reg n a0 = BitVec.ofNat 32 (i + j)) (r9 : reg n (9 : Fin 32) = bp + BitVec.ofNat 32 (4 * j))
     (r8 : reg n (8 : Fin 32) = BitVec.ofNat 32 (8 - j)) :
-    ∃ n', Steps n n' ∧ St M B n' (if j + 1 < 8 then 0x5C else 0xA0) (reg n') ∧
+    ∃ n', Steps n n' ∧ St M B n' (if j + 1 < 8 then 0x62 else 0xA6) (reg n') ∧
       reg n' a3 = acc + BitVec.ofNat 32 (4 * (i + (j + 1))) ∧ reg n' a1 = acc + BitVec.ofNat 32 (4 * (i + (j + 1))) ∧
       reg n' a0 = BitVec.ofNat 32 (i + (j + 1)) ∧ reg n' (9 : Fin 32) = bp + BitVec.ofNat 32 (4 * (j + 1)) ∧
       reg n' (8 : Fin 32) = BitVec.ofNat 32 (8 - (j + 1)) ∧
       ∀ q, q ≠ a3 → q ≠ a1 → q ≠ a0 → q ≠ (9 : Fin 32) → q ≠ (8 : Fin 32) → reg n' q = reg n q := by
   have hz := s.zero
-  obtain ⟨n1, d1, u1⟩ := s.aluImm hc wm_at_94 (off' := 0x96) (by decide)
-  obtain ⟨n2, d2, u2⟩ := u1.aluImm hc wm_at_96 (off' := 0x98) (by decide)
-  obtain ⟨n3, d3, u3⟩ := u2.aluImm hc wm_at_98 (off' := 0x9A) (by decide)
-  obtain ⟨n4, d4, u4⟩ := u3.aluImm hc wm_at_9a (off' := 0x9C) (by decide)
-  obtain ⟨n5, d5, u5⟩ := u4.aluImm hc wm_at_9c (off' := 0x9E) (by decide)
+  obtain ⟨n1, d1, u1⟩ := s.aluImm hc wm_at_9a (off' := 0x9C) (by decide)
+  obtain ⟨n2, d2, u2⟩ := u1.aluImm hc wm_at_9c (off' := 0x9E) (by decide)
+  obtain ⟨n3, d3, u3⟩ := u2.aluImm hc wm_at_9e (off' := 0xA0) (by decide)
+  obtain ⟨n4, d4, u4⟩ := u3.aluImm hc wm_at_a0 (off' := 0xA2) (by decide)
+  obtain ⟨n5, d5, u5⟩ := u4.aluImm hc wm_at_a2 (off' := 0xA4) (by decide)
   have e3 : reg n5 a3 = acc + BitVec.ofNat 32 (4 * (i + (j + 1))) := by
     rw [u5.regs]; simp +decide only [upd, ↓reduceIte, aluEval]; rw [ra3, ofNat_add4]; rfl
   have e1 : reg n5 a1 = acc + BitVec.ofNat 32 (4 * (i + (j + 1))) := by
@@ -100,26 +100,26 @@ theorem wm_tail {M : Word → BitVec 8} {B acc bp : Word} {n : Machine} {i j : N
       · have : q = 0 := Fin.ext h0
         subst this; simp [upd, hz]
       · simp [upd, h0, q3, q1, q0, q9, q8]
-  have u5' : St M B n5 0x9E (reg n5) := u5.self
+  have u5' : St M B n5 0xA4 (reg n5) := u5.self
   have hb : branchTaken .bne (reg n5 (8 : Fin 32)) (reg n5 x0) = decide (j + 1 < 8) := by
     rw [e8, u5'.zero]; exact cnt_ne j hj
   by_cases hl : j + 1 < 8
-  · obtain ⟨n6, d6, u6⟩ := u5'.taken hc 0x5C wm_at_9e (by decide) (by rw [hb]; exact decide_eq_true hl)
+  · obtain ⟨n6, d6, u6⟩ := u5'.taken hc 0x62 wm_at_a4 (by decide) (by rw [hb]; exact decide_eq_true hl)
     refine ⟨n6, .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.single d6))))), by rw [ite_eq_left hl]; exact u6.self,
       by rw [u6.regs]; exact e3, by rw [u6.regs]; exact e1, by rw [u6.regs]; exact e0, by rw [u6.regs]; exact e9,
       by rw [u6.regs]; exact e8, fun q q3 q1 q0 q9 q8 => by rw [u6.regs]; exact fr q q3 q1 q0 q9 q8⟩
-  · obtain ⟨n6, d6, u6⟩ := u5'.notTaken hc 0xA0 wm_at_9e (by decide) (by rw [hb]; exact decide_eq_false hl)
+  · obtain ⟨n6, d6, u6⟩ := u5'.notTaken hc 0xA6 wm_at_a4 (by decide) (by rw [hb]; exact decide_eq_false hl)
     refine ⟨n6, .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.single d6))))), by rw [ite_eq_right hl]; exact u6.self,
       by rw [u6.regs]; exact e3, by rw [u6.regs]; exact e1, by rw [u6.regs]; exact e0, by rw [u6.regs]; exact e9,
       by rw [u6.regs]; exact e8, fun q q3 q1 q0 q9 q8 => by rw [u6.regs]; exact fr q q3 q1 q0 q9 q8⟩
 
 theorem ult8 : ∀ k : Nat, k < 16 → (BitVec.ofNat 32 k).ult 8 = decide (k < 8) := by decide
 
-/-- **One pass of the inner loop**, from 0x5C: add `y * x` and the carry to
+/-- **One pass of the inner loop**, from 0x62: add `y * x` and the carry to
 the accumulator word at column `i + j`, for `y` the `j`-th word of the
 second operand and `x` the row's word of the first. -/
 theorem wm_iter {M : Word → BitVec 8} {B acc bp x t : Word} {n : Machine} {i j : Nat}
-    (s : St M B n 0x5C (reg n)) (hc : CodeIn M B wideMulCode) (hB : B.toNat % 2 = 0) (hj : j < 8)
+    (s : St M B n 0x62 (reg n)) (hc : CodeIn M B wideMulCode) (hB : B.toNat % 2 = 0) (hj : j < 8)
     (hij : i + j < 16) (hacc : acc.toNat % 4 = 0) (hbp : bp.toNat % 4 = 0)
     (hS : Sep (acc + BitVec.ofNat 32 (4 * (i + j))) 4 B wideMulCode.length)
     (r9 : reg n (9 : Fin 32) = bp + BitVec.ofNat 32 (4 * j)) (r7 : reg n (7 : Fin 32) = x)
@@ -129,7 +129,7 @@ theorem wm_iter {M : Word → BitVec 8} {B acc bp x t : Word} {n : Machine} {i j
     ∃ n', Steps n n' ∧
       St (memStore32 M (acc + BitVec.ofNat 32 (4 * (i + j)))
         (wmWord (memLoad32 M (bp + BitVec.ofNat 32 (4 * j))) x (memLoad32 M (acc + BitVec.ofNat 32 (4 * (i + j)))) t))
-        B n' (if j + 1 < 8 then 0x5C else 0xA0) (reg n') ∧
+        B n' (if j + 1 < 8 then 0x62 else 0xA6) (reg n') ∧
       reg n' (9 : Fin 32) = bp + BitVec.ofNat 32 (4 * (j + 1)) ∧ reg n' (7 : Fin 32) = x ∧
       reg n' (28 : Fin 32) = wmCarry (memLoad32 M (bp + BitVec.ofNat 32 (4 * j))) x
         (memLoad32 M (acc + BitVec.ofNat 32 (4 * (i + j)))) t ∧
@@ -140,10 +140,10 @@ theorem wm_iter {M : Word → BitVec 8} {B acc bp x t : Word} {n : Machine} {i j
         q ≠ a4 → q ≠ a5 → reg n' q = reg n q := by
   have hz := s.zero
   have hal : (acc + BitVec.ofNat 32 (4 * (i + j))).toNat % 4 = 0 := aligned_add hacc (by omega)
-  obtain ⟨n1, d1, u1⟩ := s.lw hc wm_at_5c (off' := 0x5E) (by decide)
+  obtain ⟨n1, d1, u1⟩ := s.lw hc wm_at_62 (off' := 0x64) (by decide)
     (by rw [r9, add_lit_zero]; exact aligned_add hbp (by omega))
-  obtain ⟨n2, d2, u2⟩ := u1.alu hc wm_at_5e (off' := 0x62) (by decide)
-  obtain ⟨n3, d3, u3⟩ := u2.alu hc wm_at_62 (off' := 0x66) (by decide)
+  obtain ⟨n2, d2, u2⟩ := u1.alu hc wm_at_64 (off' := 0x68) (by decide)
+  obtain ⟨n3, d3, u3⟩ := u2.alu hc wm_at_68 (off' := 0x6C) (by decide)
   rw [r9, add_lit_zero] at u3
   have u3' := u3.self
   have g4 : reg n3 a4 = aluEval .mul (memLoad32 M (bp + BitVec.ofNat 32 (4 * j))) x := by
@@ -179,10 +179,10 @@ theorem wm_iter {M : Word → BitVec 8} {B acc bp x t : Word} {n : Machine} {i j
     rw [em, hrv, add_lit_zero] at u5
     rw [hrv, add_lit_zero] at et
     refine ⟨n5, c5, u5.self, by rw [u5.regs, et], fun q q5 q28 q4 q2 => by rw [u5.regs, ek q q5 q28 q4 q2]⟩
-  -- after either path, at 0x94
-  have tail : ∀ {M' : Word → BitVec 8} {n5 : Machine}, St M' B n5 0x94 (reg n5) → CodeIn M' B wideMulCode →
+  -- after either path, at 0x9A
+  have tail : ∀ {M' : Word → BitVec 8} {n5 : Machine}, St M' B n5 0x9A (reg n5) → CodeIn M' B wideMulCode →
       (∀ q, q ≠ a5 → q ≠ (28 : Fin 32) → q ≠ a4 → q ≠ a2 → reg n5 q = reg n3 q) →
-      ∃ n', Steps n5 n' ∧ St M' B n' (if j + 1 < 8 then 0x5C else 0xA0) (reg n') ∧
+      ∃ n', Steps n5 n' ∧ St M' B n' (if j + 1 < 8 then 0x62 else 0xA6) (reg n') ∧
         reg n' (9 : Fin 32) = bp + BitVec.ofNat 32 (4 * (j + 1)) ∧ reg n' (7 : Fin 32) = x ∧
         reg n' (28 : Fin 32) = reg n5 (28 : Fin 32) ∧
         reg n' a0 = BitVec.ofNat 32 (i + (j + 1)) ∧ reg n' a1 = acc + BitVec.ofNat 32 (4 * (i + (j + 1))) ∧
@@ -206,19 +206,19 @@ theorem wm_iter {M : Word → BitVec 8} {B acc bp x t : Word} {n : Machine} {i j
     · rw [fr _ (by decide) (by decide) (by decide) (by decide) (by decide),
         p _ (by decide) (by decide) (by decide) (by decide), r6]
   by_cases hlo : i + j < 8
-  · obtain ⟨n4, d4, u4⟩ := u3'.notTaken hc 0x6A wm_at_66 (by decide) (by rw [hb]; simp [hlo])
-    obtain ⟨n5, c5, u5, e28, k5⟩ := common a1 0x6A (by decide) (by decide)
+  · obtain ⟨n4, d4, u4⟩ := u3'.notTaken hc 0x70 wm_at_6c (by decide) (by rw [hb]; simp [hlo])
+    obtain ⟨n5, c5, u5, e28, k5⟩ := common a1 0x70 (by decide) (by decide)
       (by rw [fr3 a1 (by decide) (by decide), ra1]) u4 wmPathA_end
     have hc5 := CodeIn.store32 (v := wmWord (memLoad32 M (bp + BitVec.ofNat 32 (4 * j))) x (memLoad32 M (acc + BitVec.ofNat 32 (4 * (i + j)))) t) hc hS
-    obtain ⟨n6, d6, u6⟩ := u5.jump hc5 wm_at_7e (off' := 0x94) (by decide)
-      (by rw [u5.pc, BitVec.add_assoc]; exact even_bit0 (even_at B hB 0x94 (by decide)))
+    obtain ⟨n6, d6, u6⟩ := u5.jump hc5 wm_at_84 (off' := 0x9A) (by decide)
+      (by rw [u5.pc, BitVec.add_assoc]; exact even_bit0 (even_at B hB 0x9A (by decide)))
     have k6 : ∀ q, q ≠ a5 → q ≠ (28 : Fin 32) → q ≠ a4 → q ≠ a2 → reg n6 q = reg n3 q := fun q q5 q28 q4 q2 => by
       rw [u6.regs, k5 q q5 q28 q4 q2]
     obtain ⟨n', c', u', e9, e7, e28', rest⟩ := tail u6.self hc5 k6
     refine ⟨n', (Steps.cons d1 (.cons d2 (.cons d3 (.cons d4 (c5.trans (.cons d6 c'))))) ), u', e9, e7, ?_, rest⟩
     rw [e28', u6.regs, e28]
-  · obtain ⟨n4, d4, u4⟩ := u3'.taken hc 0x80 wm_at_66 (by decide) (by rw [hb]; simp [hlo])
-    obtain ⟨n5, c5, u5, e28, k5⟩ := common a3 0x80 (by decide) (by decide)
+  · obtain ⟨n4, d4, u4⟩ := u3'.taken hc 0x86 wm_at_6c (by decide) (by rw [hb]; simp [hlo])
+    obtain ⟨n5, c5, u5, e28, k5⟩ := common a3 0x86 (by decide) (by decide)
       (by rw [fr3 a3 (by decide) (by decide), ra3]) u4 wmPathB_end
     have hc5 := CodeIn.store32 (v := wmWord (memLoad32 M (bp + BitVec.ofNat 32 (4 * j))) x (memLoad32 M (acc + BitVec.ofNat 32 (4 * (i + j)))) t) hc hS
     obtain ⟨n', c', u', e9, e7, e28', rest⟩ := tail u5 hc5 k5
@@ -258,12 +258,12 @@ theorem wm_inner {B acc bp x : Word} {i : Nat} (hB : B.toNat % 2 = 0) (hi : i < 
     (hacc : acc.toNat % 4 = 0) (hbp : bp.toNat % 4 = 0) (haw : acc.toNat + 64 ≤ 2 ^ 32)
     (hAB : Sep acc 64 bp 32) (hAC : Sep acc 64 B wideMulCode.length) :
     ∀ m j, j + m + 1 = 8 → ∀ {M : Word → BitVec 8} {n : Machine} {t : Word},
-      St M B n 0x5C (reg n) → CodeIn M B wideMulCode →
+      St M B n 0x62 (reg n) → CodeIn M B wideMulCode →
       reg n (9 : Fin 32) = bp + BitVec.ofNat 32 (4 * j) → reg n (7 : Fin 32) = x → reg n (28 : Fin 32) = t →
       reg n a0 = BitVec.ofNat 32 (i + j) → reg n a1 = acc + BitVec.ofNat 32 (4 * (i + j)) →
       reg n a3 = acc + BitVec.ofNat 32 (4 * (i + j)) → reg n (6 : Fin 32) = 8 →
       reg n (8 : Fin 32) = BitVec.ofNat 32 (8 - j) →
-      ∃ n' M', Steps n n' ∧ St M' B n' 0xA0 (reg n') ∧ CodeIn M' B wideMulCode ∧
+      ∃ n' M', Steps n n' ∧ St M' B n' 0xA6 (reg n') ∧ CodeIn M' B wideMulCode ∧
         reg n' (9 : Fin 32) = bp + BitVec.ofNat 32 (4 * 8) ∧ reg n' (7 : Fin 32) = x ∧
         reg n' a0 = BitVec.ofNat 32 (i + 8) ∧ reg n' a1 = acc + BitVec.ofNat 32 (4 * (i + 8)) ∧
         reg n' a3 = acc + BitVec.ofNat 32 (4 * (i + 8)) ∧ reg n' (6 : Fin 32) = 8 ∧
@@ -361,21 +361,21 @@ theorem accV_frame {M M0 : Word → BitVec 8} {acc b : Word} {n : Nat} (hf : ∀
     have := hs.subR (c := 4 * l + q) (l := 1) (by omega)
     rwa [← add_ofNat_assoc] at this)
 
-/-- **One row of the outer loop**, from 0x42: add `a[i]` times the second
+/-- **One row of the outer loop**, from 0x48: add `a[i]` times the second
 operand into the accumulator at word `i`, and its last carry at word `i + 8`. -/
 theorem row_ne : ∀ i : Nat, i < 8 → (BitVec.ofNat 32 (i + 1) != 8) = decide (i + 1 < 8) := by decide
 
 theorem wm_row {B acc ap bp : Word} {M0 : Word → BitVec 8} {i : Nat} (hB : B.toNat % 2 = 0) (hi : i < 8)
     (hacc : acc.toNat % 4 = 0) (hap : ap.toNat % 4 = 0) (hbp : bp.toNat % 4 = 0) (haw : acc.toNat + 64 ≤ 2 ^ 32)
     (hAA : Sep acc 64 ap 32) (hAB : Sep acc 64 bp 32) (hAC : Sep acc 64 B wideMulCode.length)
-    {M : Word → BitVec 8} {n : Machine} (s : St M B n 0x42 (reg n)) (hc : CodeIn M B wideMulCode)
+    {M : Word → BitVec 8} {n : Machine} (s : St M B n 0x48 (reg n)) (hc : CodeIn M B wideMulCode)
     (hfr : ∀ a, Sep acc 64 a 1 → M a = M0 a)
     (hz : ∀ k, i + 8 ≤ k → k < 16 → memLoad32 M (acc + BitVec.ofNat 32 (4 * k)) = 0)
     (hv : accV M acc 16 = accV M0 ap i * accV M0 bp 8)
     (r5 : reg n (5 : Fin 32) = BitVec.ofNat 32 i) (r16 : reg n a6 = acc + BitVec.ofNat 32 (4 * i))
     (r22 : reg n (22 : Fin 32) = acc + BitVec.ofNat 32 (4 * i)) (r6 : reg n (6 : Fin 32) = 8)
     (r21 : reg n (21 : Fin 32) = ap) (r19 : reg n (19 : Fin 32) = bp) (r20 : reg n (20 : Fin 32) = acc + 0x20) :
-    ∃ n' M', Steps n n' ∧ St M' B n' (if i + 1 < 8 then 0x42 else 0xB0) (reg n') ∧ CodeIn M' B wideMulCode ∧
+    ∃ n' M', Steps n n' ∧ St M' B n' (if i + 1 < 8 then 0x48 else 0xB6) (reg n') ∧ CodeIn M' B wideMulCode ∧
       (∀ a, Sep acc 64 a 1 → M' a = M0 a) ∧
       (∀ k, i + 1 + 8 ≤ k → k < 16 → memLoad32 M' (acc + BitVec.ofNat 32 (4 * k)) = 0) ∧
       accV M' acc 16 = accV M0 ap (i + 1) * accV M0 bp 8 ∧
@@ -383,18 +383,18 @@ theorem wm_row {B acc ap bp : Word} {M0 : Word → BitVec 8} {i : Nat} (hB : B.t
       reg n' (22 : Fin 32) = acc + BitVec.ofNat 32 (4 * (i + 1)) ∧
       ∀ q, rowKeep q = true → reg n' q = reg n q := by
   have hz0 := s.zero
-  obtain ⟨n1, d1, u1⟩ := s.aluImm hc wm_at_42 (off' := 0x44) (by decide)
-  obtain ⟨n2, d2, u2⟩ := u1.aluImm hc wm_at_44 (off' := 0x48) (by decide)
-  obtain ⟨n3, d3, u3⟩ := u2.alu hc wm_at_48 (off' := 0x4C) (by decide)
+  obtain ⟨n1, d1, u1⟩ := s.aluImm hc wm_at_48 (off' := 0x4A) (by decide)
+  obtain ⟨n2, d2, u2⟩ := u1.aluImm hc wm_at_4a (off' := 0x4E) (by decide)
+  obtain ⟨n3, d3, u3⟩ := u2.alu hc wm_at_4e (off' := 0x52) (by decide)
   have g3 : reg n3 a0 = ap + BitVec.ofNat 32 (4 * i) := by
     rw [u3.regs]; simp +decide only [upd, ↓reduceIte, r21, r5]; rw [sll2 i hi]; rfl
-  obtain ⟨n4, d4, u4⟩ := u3.self.lw hc wm_at_4c (off' := 0x50) (by decide)
+  obtain ⟨n4, d4, u4⟩ := u3.self.lw hc wm_at_52 (off' := 0x56) (by decide)
     (by rw [g3, add_lit_zero]; exact aligned_add hap (by omega))
-  obtain ⟨n5, d5, u5⟩ := u4.aluImm hc wm_at_50 (off' := 0x52) (by decide)
-  obtain ⟨n6, d6, u6⟩ := u5.alu hc wm_at_52 (off' := 0x54) (by decide)
-  obtain ⟨n7, d7, u7⟩ := u6.alu hc wm_at_54 (off' := 0x56) (by decide)
-  obtain ⟨n8, d8, u8⟩ := u7.alu hc wm_at_56 (off' := 0x58) (by decide)
-  obtain ⟨n9, d9, u9⟩ := u8.alu hc wm_at_58 (off' := 0x5A) (by decide)
+  obtain ⟨n5, d5, u5⟩ := u4.aluImm hc wm_at_56 (off' := 0x58) (by decide)
+  obtain ⟨n6, d6, u6⟩ := u5.alu hc wm_at_58 (off' := 0x5A) (by decide)
+  obtain ⟨n7, d7, u7⟩ := u6.alu hc wm_at_5a (off' := 0x5C) (by decide)
+  obtain ⟨n8, d8, u8⟩ := u7.alu hc wm_at_5c (off' := 0x5E) (by decide)
+  obtain ⟨n9, d9, u9⟩ := u8.alu hc wm_at_5e (off' := 0x60) (by decide)
   rw [g3, add_lit_zero] at u9
   have hx : memLoad32 M (ap + BitVec.ofNat 32 (4 * i)) = memLoad32 M0 (ap + BitVec.ofNat 32 (4 * i)) :=
     memLoad32_congr fun q hq => hfr _ (by
@@ -442,7 +442,7 @@ theorem wm_row {B acc ap bp : Word} {M0 : Word → BitVec 8} {i : Nat} (hB : B.t
   have e6 : reg n9 (6 : Fin 32) = 8 := by
     rw [p9 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
       p3 _ (by decide) (by decide) (by decide), r6]
-  obtain ⟨n10, d10, u10⟩ := u9.self.notTaken hc 0x5C wm_at_5a (by decide)
+  obtain ⟨n10, d10, u10⟩ := u9.self.notTaken hc 0x62 wm_at_60 (by decide)
     (by rw [e8, u9.self.zero]; decide)
   obtain ⟨n', M', c', u', hc', f9, f7, f0, f1, f3, f6, f8, hval, hm, hw, fr'⟩ :=
     wm_inner (x := memLoad32 M0 (ap + BitVec.ofNat 32 (4 * i))) hB hi hacc hbp haw hAB hAC 7 0 rfl
@@ -460,19 +460,19 @@ theorem wm_row {B acc ap bp : Word} {M0 : Word → BitVec 8} {i : Nat} (hB : B.t
     rw [pre _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide), r20]
   have hcar := hc'
-  obtain ⟨m1, d11, v1⟩ := u'.alu hc' wm_at_a0 (off' := 0xA2) (by decide)
-  obtain ⟨m2, d12, v2⟩ := v1.aluImm hc' wm_at_a2 (off' := 0xA4) (by decide)
+  obtain ⟨m1, d11, v1⟩ := u'.alu hc' wm_at_a6 (off' := 0xA8) (by decide)
+  obtain ⟨m2, d12, v2⟩ := v1.aluImm hc' wm_at_a8 (off' := 0xAA) (by decide)
   have ha7 : upd (upd (reg n') a7 (aluEval .add (reg n' a7) (reg n' (20 : Fin 32)))) (5 : Fin 32)
       (aluEval .add (upd (reg n') a7 (aluEval .add (reg n' a7) (reg n' (20 : Fin 32))) (5 : Fin 32)) 1) a7 + 0 =
       acc + BitVec.ofNat 32 (4 * (i + 8)) := by
     simp +decide only [upd, ↓reduceIte]; rw [g17, g20, add_lit_zero]; exact hi_addr acc i
-  obtain ⟨m3, d13, v3⟩ := v2.sw hc' wm_at_a4 (off' := 0xA8) (by decide)
+  obtain ⟨m3, d13, v3⟩ := v2.sw hc' wm_at_aa (off' := 0xAE) (by decide)
     (by rw [ha7]; exact aligned_add hacc (by omega))
   rw [ha7] at v3
   have hcf : CodeIn (memStore32 M' (acc + BitVec.ofNat 32 (4 * (i + 8))) (reg n' (28 : Fin 32))) B wideMulCode :=
     CodeIn.store32 hc' (hAC.sub (by omega))
-  obtain ⟨m4, d14, v4⟩ := v3.aluImm hcf wm_at_a8 (off' := 0xAA) (by decide)
-  obtain ⟨m5, d15, v5⟩ := v4.aluImm hcf wm_at_aa (off' := 0xAC) (by decide)
+  obtain ⟨m4, d14, v4⟩ := v3.aluImm hcf wm_at_ae (off' := 0xB0) (by decide)
+  obtain ⟨m5, d15, v5⟩ := v4.aluImm hcf wm_at_b0 (off' := 0xB2) (by decide)
   have k5 : reg m5 (5 : Fin 32) = BitVec.ofNat 32 (i + 1) := by
     rw [v5.regs]; simp +decide only [upd, ↓reduceIte]
     rw [pre _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
@@ -534,12 +534,12 @@ theorem wm_row {B acc ap bp : Word} {M0 : Word → BitVec 8} {i : Nat} (hB : B.t
     rw [hs, hval, Nat.add_zero, row_arith hv]
     rfl
   by_cases hl : i + 1 < 8
-  · obtain ⟨m6, d16, v6⟩ := v5'.taken hcf 0x42 wm_at_ac (by decide) (by rw [hb]; exact decide_eq_true hl)
+  · obtain ⟨m6, d16, v6⟩ := v5'.taken hcf 0x48 wm_at_b2 (by decide) (by rw [hb]; exact decide_eq_true hl)
     refine ⟨m6, _, .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.cons d6 (.cons d7 (.cons d8 (.cons d9
       (.cons d10 (c'.trans (.cons d11 (.cons d12 (.cons d13 (.cons d14 (.cons d15 (.single d16)))))))))))))))),
       by rw [ite_eq_left hl]; exact v6.self, hcf, hframe, hzero, hvalue,
       (v6.regs _).trans k5, (v6.regs _).trans k16, (v6.regs _).trans k22, fun q hq => (v6.regs _).trans (kk q hq)⟩
-  · obtain ⟨m6, d16, v6⟩ := v5'.notTaken hcf 0xB0 wm_at_ac (by decide) (by rw [hb]; exact decide_eq_false hl)
+  · obtain ⟨m6, d16, v6⟩ := v5'.notTaken hcf 0xB6 wm_at_b2 (by decide) (by rw [hb]; exact decide_eq_false hl)
     refine ⟨m6, _, .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.cons d6 (.cons d7 (.cons d8 (.cons d9
       (.cons d10 (c'.trans (.cons d11 (.cons d12 (.cons d13 (.cons d14 (.cons d15 (.single d16)))))))))))))))),
       by rw [ite_eq_right hl]; exact v6.self, hcf, hframe, hzero, hvalue,
@@ -549,14 +549,14 @@ theorem wm_row {B acc ap bp : Word} {M0 : Word → BitVec 8} {i : Nat} (hB : B.t
 theorem wm_rows {B acc ap bp : Word} {M0 : Word → BitVec 8} (hB : B.toNat % 2 = 0)
     (hacc : acc.toNat % 4 = 0) (hap : ap.toNat % 4 = 0) (hbp : bp.toNat % 4 = 0) (haw : acc.toNat + 64 ≤ 2 ^ 32)
     (hAA : Sep acc 64 ap 32) (hAB : Sep acc 64 bp 32) (hAC : Sep acc 64 B wideMulCode.length) :
-    ∀ m i, i + m + 1 = 8 → ∀ {M : Word → BitVec 8} {n : Machine}, St M B n 0x42 (reg n) → CodeIn M B wideMulCode →
+    ∀ m i, i + m + 1 = 8 → ∀ {M : Word → BitVec 8} {n : Machine}, St M B n 0x48 (reg n) → CodeIn M B wideMulCode →
       (∀ a, Sep acc 64 a 1 → M a = M0 a) →
       (∀ k, i + 8 ≤ k → k < 16 → memLoad32 M (acc + BitVec.ofNat 32 (4 * k)) = 0) →
       accV M acc 16 = accV M0 ap i * accV M0 bp 8 →
       reg n (5 : Fin 32) = BitVec.ofNat 32 i → reg n a6 = acc + BitVec.ofNat 32 (4 * i) →
       reg n (22 : Fin 32) = acc + BitVec.ofNat 32 (4 * i) → reg n (6 : Fin 32) = 8 →
       reg n (21 : Fin 32) = ap → reg n (19 : Fin 32) = bp → reg n (20 : Fin 32) = acc + 0x20 →
-      ∃ n' M', Steps n n' ∧ St M' B n' 0xB0 (reg n') ∧ CodeIn M' B wideMulCode ∧
+      ∃ n' M', Steps n n' ∧ St M' B n' 0xB6 (reg n') ∧ CodeIn M' B wideMulCode ∧
         (∀ a, Sep acc 64 a 1 → M' a = M0 a) ∧ accV M' acc 16 = accV M0 ap 8 * accV M0 bp 8 ∧
         ∀ q, rowKeep q = true → reg n' q = reg n q := by
   intro m

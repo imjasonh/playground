@@ -1,11 +1,11 @@
 import C3BootProofs.Proofs.FieldSubInner
-import C3BootProofs.Image.BootloaderV0
+import C3BootProofs.Image.Bootloader
 
 /-! # `sub_inner`, end to end -/
 
 namespace C3.RV32
 
-open C3.ImageV0
+open C3.Image
 
 theorem addBack_length (d0 d1 d2 d3 d4 d5 d6 d7 m : Word) : (addBack d0 d1 d2 d3 d4 d5 d6 d7 m).length = 8 := rfl
 
@@ -58,19 +58,16 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   have sp1 : upd (reg m) sp (aluEval .add (reg m sp) 0xFFFFFFD0) sp = sp0 + 0xFFFFFFD0 := by
     simp +decide [upd, hsp]; rfl
   have hF : (sp0 + 0xFFFFFFD0).toNat % 4 = 0 := aligned_add env.hsp (k := 0xFFFFFFD0) (by decide)
-  have sF : ∀ c n, c + n ≤ 0x30 → Sep (sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 c) n (P + 0xDC34) subInnerSaveCode.length :=
+  have sF : ∀ c n, c + n ≤ 0x30 → Sep (sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 c) n P subInnerCode.length :=
     fun c n h => by
       rw [F_eq, show (4 : Word) = BitVec.ofNat 32 4 from rfl, add_ofNat_assoc]
-      exact env.sSS.sub (c := 4 + c) (l := n) (by omega)
-  have hsv : P + BitVec.ofNat 32 2 + 0xE000 + 0xFFFFFC32 = P + 0xDC34 := by
-    rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
-  obtain ⟨m2, c2, u2⟩ := u1.callSave env.code si_at_2 si_at_6 (b := P + 0xDC34) hsv
-    (even_at P env.hP 0xDC34 (by decide)) (even_at P env.hP 0xA (by decide))
-    env.save siSave_shape (by decide) (fun q hq => by
+      exact env.sSC.sub (c := 4 + c) (l := n) (by omega)
+  obtain ⟨m2, c2, u2⟩ := St.block (saveBlock siPs) u1 env.code siSave_end (saveBlock_ok _ siPs _ fun q hq => by
       rw [sp1]
       simp only [siPs, List.mem_cons, List.mem_nil_iff, or_false] at hq
       rcases hq with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-        exact ⟨by decide, aligned_add hF (by decide), sF _ 4 (by decide)⟩)
+        exact ⟨aligned_add hF (by decide), sF _ 4 (by decide)⟩)
+  simp only [saveBlock_run] at u2
   rw [sp1] at u2
   -- the stack region holds every write until the add-back
   have inS : ∀ c n, c + n ≤ 0x30 → ∀ x, Sep (sp0 + 0xFFFFFFCC) 0x34 x 1 →
@@ -97,18 +94,18 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
       memStore32 M' (sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 c) v x = M' x :=
     fun c h M' v x hx => memStore32_get_sep (inS c 4 h x hx)
   have u2' := u2.self
-  have r2 : ∀ q, q ≠ sp → q ≠ t0 → reg m2 q = reg m q := fun q q1 q2 => by
+  have r2 : ∀ q, q ≠ sp → reg m2 q = reg m q := fun q q1 => by
     rw [u2.regs]
     by_cases h0 : q.val = 0
     · have : q = 0 := Fin.ext h0
       subst this; simp [upd, hz]
-    · simp [upd, h0, q1, q2]
-  have sp2 : reg m2 sp = sp0 + 0xFFFFFFD0 := by rw [u2.regs]; simp +decide [upd]; exact sp1
+    · simp [upd, h0, q1]
+  have sp2 : reg m2 sp = sp0 + 0xFFFFFFD0 := by rw [u2.regs]; exact sp1
   have I2 : ∀ x, Sep (sp0 + 0xFFFFFFCC) 0x34 x 1 →
       saveMem m.mem (sp0 + 0xFFFFFFD0) (upd (reg m) sp (aluEval .add (reg m sp) 0xFFFFFFD0)) siPs x = m.mem x :=
     M2out
   have cc2 := codeS env.code env.sSC I2
-  obtain ⟨m3, d3, u3⟩ := u2'.sw cc2 si_at_a (off' := 0xC) (by decide)
+  obtain ⟨m3, d3, u3⟩ := u2'.sw cc2 si_at_14 (off' := 0x16) (by decide)
     (by rw [sp2]; exact aligned_add hF (k := 8) (by decide))
   rw [sp2] at u3
   obtain ⟨M3, hM3⟩ : ∃ M3, memStore32 (saveMem m.mem (sp0 + 0xFFFFFFD0)
@@ -117,14 +114,14 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   rw [hM3] at u3
   have I3 : ∀ x, Sep (sp0 + 0xFFFFFFCC) 0x34 x 1 → M3 x = m.mem x := fun x hx => by
     rw [← hM3]; exact (wS 8 (by decide) _ _ x hx).trans (I2 x hx)
-  obtain ⟨m4, d4, u4⟩ := u3.sw (codeS env.code env.sSC I3) si_at_c (off' := 0xE) (by decide)
+  obtain ⟨m4, d4, u4⟩ := u3.sw (codeS env.code env.sSC I3) si_at_16 (off' := 0x18) (by decide)
     (by rw [sp2]; exact aligned_add hF (k := 4) (by decide))
   rw [sp2] at u4
   obtain ⟨M4, hM4⟩ : ∃ M4, memStore32 M3 (sp0 + 0xFFFFFFD0 + 4) (reg m2 25) = M4 := ⟨_, rfl⟩
   rw [hM4] at u4
   have I4 : ∀ x, Sep (sp0 + 0xFFFFFFCC) 0x34 x 1 → M4 x = m.mem x := fun x hx => by
     rw [← hM4]; exact (wS 4 (by decide) _ _ x hx).trans (I3 x hx)
-  obtain ⟨m5, d5, u5⟩ := u4.sw (codeS env.code env.sSC I4) si_at_e (off' := 0x10) (by decide)
+  obtain ⟨m5, d5, u5⟩ := u4.sw (codeS env.code env.sSC I4) si_at_18 (off' := 0x1A) (by decide)
     (by rw [sp2, add_lit_zero]; exact hF)
   rw [sp2] at u5
   obtain ⟨M5, hM5⟩ : ∃ M5, memStore32 M4 (sp0 + 0xFFFFFFD0 + 0) (reg m2 26) = M5 := ⟨_, rfl⟩
@@ -139,18 +136,18 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   have c5 := codeS env.code env.sSC I5
   have z2 : reg m2 0 = 0 := u2'.zero
   have z2' : reg m2 x0 = 0 := u2'.zero
-  obtain ⟨n1, e1, v1⟩ := u5.alu c5 si_at_10 (off' := 0x12) (by decide)
-  obtain ⟨n2, e2, v2⟩ := v1.alu c5 si_at_12 (off' := 0x14) (by decide)
-  have g2a1 : reg m2 a1 = lp := by rw [r2 a1 (by decide) (by decide), ha1]
-  have g2a2 : reg m2 a2 = rp := by rw [r2 a2 (by decide) (by decide), ha2]
-  have g2a0 : reg m2 a0 = out := by rw [r2 a0 (by decide) (by decide), ha0]
-  obtain ⟨n3, e3, v3⟩ := v2.lw c5 si_at_14 (off' := 0x16) (by decide)
+  obtain ⟨n1, e1, v1⟩ := u5.alu c5 si_at_1a (off' := 0x1C) (by decide)
+  obtain ⟨n2, e2, v2⟩ := v1.alu c5 si_at_1c (off' := 0x1E) (by decide)
+  have g2a1 : reg m2 a1 = lp := by rw [r2 a1 (by decide), ha1]
+  have g2a2 : reg m2 a2 = rp := by rw [r2 a2 (by decide), ha2]
+  have g2a0 : reg m2 a0 = out := by rw [r2 a0 (by decide), ha0]
+  obtain ⟨n3, e3, v3⟩ := v2.lw c5 si_at_1e (off' := 0x20) (by decide)
     (by simp +decide only [upd, ite_false]; rw [g2a1, add_lit_zero]; exact env.hlp)
-  obtain ⟨n4, e4, v4⟩ := v3.lw c5 si_at_16 (off' := 0x18) (by decide)
+  obtain ⟨n4, e4, v4⟩ := v3.lw c5 si_at_20 (off' := 0x22) (by decide)
     (by simp +decide only [upd, ite_false, ite_true, aluEval, z2]; rw [show (0 : Word) + reg m2 a2 = reg m2 a2 from BitVec.zero_add _, g2a2, add_lit_zero]; exact env.hrp)
-  obtain ⟨n5, e5, v5⟩ := v4.alu c5 si_at_18 (off' := 0x1A) (by decide)
-  obtain ⟨n6, e6, v6⟩ := v5.alu c5 si_at_1a (off' := 0x1C) (by decide)
-  obtain ⟨n7, e7, v7⟩ := v6.aluImm c5 si_at_1c (off' := 0x1E) (by decide)
+  obtain ⟨n5, e5, v5⟩ := v4.alu c5 si_at_22 (off' := 0x24) (by decide)
+  obtain ⟨n6, e6, v6⟩ := v5.alu c5 si_at_24 (off' := 0x26) (by decide)
+  obtain ⟨n7, e7, v7⟩ := v6.aluImm c5 si_at_26 (off' := 0x28) (by decide)
   have r7 : ∀ q, q ≠ (9 : Fin 32) → q ≠ (8 : Fin 32) → q ≠ a2 → q ≠ a1 → q ≠ (18 : Fin 32) → q ≠ a0 →
       reg n7 q = reg m2 q := fun q q9 q8 q2 q1 q18 q0 => by
     rw [v7.regs]
@@ -173,10 +170,10 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   have n7sp : reg n7 sp = sp0 + 0xFFFFFFD0 := by rw [r7 sp (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide), sp2]
   have b5 : CodeIn M5 (siBsub P) borrowingSubCode := codeS env.bsub env.sSB I5
-  have hcb0 : P + BitVec.ofNat 32 0x1E + 0xFFFF1000 + 0x144 = siBsub P := by
+  have hcb0 : P + BitVec.ofNat 32 0x28 + 0xFFFF1000 + 0xFFFFF890 = siBsub P := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
-  obtain ⟨n8, c8, w0, w0a0, w0a1, w0sp, fr0, mem0⟩ := si_bsub v7.self c5 b5 env.hP si_at_1e si_at_22 hcb0
-    (even_at P env.hP 0x26 (by decide)) n7sp hF hsB
+  obtain ⟨n8, c8, w0, w0a0, w0a1, w0sp, fr0, mem0⟩ := si_bsub v7.self c5 b5 env.hP si_at_28 si_at_2c hcb0
+    (even_at P env.hP 0x30 (by decide)) n7sp hF hsB
   rw [n7a0, n7a1, n7a2] at w0a0 w0a1
   have I8 : ∀ x, Sep (sp0 + 0xFFFFFFCC) 0x34 x 1 → n8.mem x = m.mem x := fun x hx => by
     rw [mem0 x (bS x hx)]; exact I5 x hx
@@ -189,12 +186,12 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
     rw [fr0 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), n7s1]
   have s2_0 : reg n8 (18 : Fin 32) = out := by
     rw [fr0 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), n7s2]
-  have hcb1 : P + BitVec.ofNat 32 0x32 + 0xFFFF1000 + 0x130 = siBsub P := by
+  have hcb1 : P + BitVec.ofNat 32 0x3C + 0xFFFF1000 + 0xFFFFF87C = siBsub P := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
   obtain ⟨p1, cp1, w1, K1, a0_1, a1_1, sp1, fr1, mem1⟩ := si_round (K := (19 : Fin 32)) (i := 1)
     w0 (codeS env.code env.sSC I8) (codeS env.bsub env.sSB I8) env.hP
-    si_at_26 si_at_28 si_at_2a si_at_2c si_at_2e si_at_30 si_at_32 si_at_36 hcb1
-    (even_at P env.hP 0x3A (by decide)) (by decide) (by decide) (by decide) (by decide) (by decide)
+    si_at_30 si_at_32 si_at_34 si_at_36 si_at_38 si_at_3a si_at_3c si_at_40 hcb1
+    (even_at P env.hP 0x44 (by decide)) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) s0_0 s1_0 w0sp hF
     (aligned_add env.hlp (by decide)) (aligned_add env.hrp (by decide)) hsB
   have Ip1 : ∀ x, Sep (sp0 + 0xFFFFFFCC) 0x34 x 1 → p1.mem x = m.mem x := fun x hx => by
@@ -202,12 +199,12 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   have s0_1 : reg p1 (8 : Fin 32) = lp := by rw [fr1 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s0_0]
   have s1_1 : reg p1 (9 : Fin 32) = rp := by rw [fr1 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s1_0]
   have s2_1 : reg p1 (18 : Fin 32) = out := by rw [fr1 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s2_0]
-  have hcb2 : P + BitVec.ofNat 32 0x46 + 0xFFFF1000 + 0x11C = siBsub P := by
+  have hcb2 : P + BitVec.ofNat 32 0x50 + 0xFFFF1000 + 0xFFFFF868 = siBsub P := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
   obtain ⟨p2, cp2, w2, K2, a0_2, a1_2, sp2, fr2, mem2⟩ := si_round (K := (20 : Fin 32)) (i := 2)
     w1 (codeS env.code env.sSC Ip1) (codeS env.bsub env.sSB Ip1) env.hP
-    si_at_3a si_at_3c si_at_3e si_at_40 si_at_42 si_at_44 si_at_46 si_at_4a hcb2
-    (even_at P env.hP 0x4E (by decide)) (by decide) (by decide) (by decide) (by decide) (by decide)
+    si_at_44 si_at_46 si_at_48 si_at_4a si_at_4c si_at_4e si_at_50 si_at_54 hcb2
+    (even_at P env.hP 0x58 (by decide)) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) s0_1 s1_1 sp1 hF
     (aligned_add env.hlp (by decide)) (aligned_add env.hrp (by decide)) hsB
   have Ip2 : ∀ x, Sep (sp0 + 0xFFFFFFCC) 0x34 x 1 → p2.mem x = m.mem x := fun x hx => by
@@ -215,12 +212,12 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   have s0_2 : reg p2 (8 : Fin 32) = lp := by rw [fr2 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s0_1]
   have s1_2 : reg p2 (9 : Fin 32) = rp := by rw [fr2 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s1_1]
   have s2_2 : reg p2 (18 : Fin 32) = out := by rw [fr2 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s2_1]
-  have hcb3 : P + BitVec.ofNat 32 0x5A + 0xFFFF1000 + 0x108 = siBsub P := by
+  have hcb3 : P + BitVec.ofNat 32 0x64 + 0xFFFF1000 + 0xFFFFF854 = siBsub P := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
   obtain ⟨p3, cp3, w3, K3, a0_3, a1_3, sp3, fr3, mem3⟩ := si_round (K := (21 : Fin 32)) (i := 3)
     w2 (codeS env.code env.sSC Ip2) (codeS env.bsub env.sSB Ip2) env.hP
-    si_at_4e si_at_50 si_at_52 si_at_54 si_at_56 si_at_58 si_at_5a si_at_5e hcb3
-    (even_at P env.hP 0x62 (by decide)) (by decide) (by decide) (by decide) (by decide) (by decide)
+    si_at_58 si_at_5a si_at_5c si_at_5e si_at_60 si_at_62 si_at_64 si_at_68 hcb3
+    (even_at P env.hP 0x6C (by decide)) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) s0_2 s1_2 sp2 hF
     (aligned_add env.hlp (by decide)) (aligned_add env.hrp (by decide)) hsB
   have Ip3 : ∀ x, Sep (sp0 + 0xFFFFFFCC) 0x34 x 1 → p3.mem x = m.mem x := fun x hx => by
@@ -228,12 +225,12 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   have s0_3 : reg p3 (8 : Fin 32) = lp := by rw [fr3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s0_2]
   have s1_3 : reg p3 (9 : Fin 32) = rp := by rw [fr3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s1_2]
   have s2_3 : reg p3 (18 : Fin 32) = out := by rw [fr3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s2_2]
-  have hcb4 : P + BitVec.ofNat 32 0x6E + 0xFFFF1000 + 0xF4 = siBsub P := by
+  have hcb4 : P + BitVec.ofNat 32 0x78 + 0xFFFF1000 + 0xFFFFF840 = siBsub P := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
   obtain ⟨p4, cp4, w4, K4, a0_4, a1_4, sp4, fr4, mem4⟩ := si_round (K := (22 : Fin 32)) (i := 4)
     w3 (codeS env.code env.sSC Ip3) (codeS env.bsub env.sSB Ip3) env.hP
-    si_at_62 si_at_64 si_at_66 si_at_68 si_at_6a si_at_6c si_at_6e si_at_72 hcb4
-    (even_at P env.hP 0x76 (by decide)) (by decide) (by decide) (by decide) (by decide) (by decide)
+    si_at_6c si_at_6e si_at_70 si_at_72 si_at_74 si_at_76 si_at_78 si_at_7c hcb4
+    (even_at P env.hP 0x80 (by decide)) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) s0_3 s1_3 sp3 hF
     (aligned_add env.hlp (by decide)) (aligned_add env.hrp (by decide)) hsB
   have Ip4 : ∀ x, Sep (sp0 + 0xFFFFFFCC) 0x34 x 1 → p4.mem x = m.mem x := fun x hx => by
@@ -241,12 +238,12 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   have s0_4 : reg p4 (8 : Fin 32) = lp := by rw [fr4 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s0_3]
   have s1_4 : reg p4 (9 : Fin 32) = rp := by rw [fr4 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s1_3]
   have s2_4 : reg p4 (18 : Fin 32) = out := by rw [fr4 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s2_3]
-  have hcb5 : P + BitVec.ofNat 32 0x82 + 0xFFFF1000 + 0xE0 = siBsub P := by
+  have hcb5 : P + BitVec.ofNat 32 0x8C + 0xFFFF1000 + 0xFFFFF82C = siBsub P := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
   obtain ⟨p5, cp5, w5, K5, a0_5, a1_5, sp5, fr5, mem5⟩ := si_round (K := (24 : Fin 32)) (i := 5)
     w4 (codeS env.code env.sSC Ip4) (codeS env.bsub env.sSB Ip4) env.hP
-    si_at_76 si_at_78 si_at_7a si_at_7c si_at_7e si_at_80 si_at_82 si_at_86 hcb5
-    (even_at P env.hP 0x8A (by decide)) (by decide) (by decide) (by decide) (by decide) (by decide)
+    si_at_80 si_at_82 si_at_84 si_at_86 si_at_88 si_at_8a si_at_8c si_at_90 hcb5
+    (even_at P env.hP 0x94 (by decide)) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) s0_4 s1_4 sp4 hF
     (aligned_add env.hlp (by decide)) (aligned_add env.hrp (by decide)) hsB
   have Ip5 : ∀ x, Sep (sp0 + 0xFFFFFFCC) 0x34 x 1 → p5.mem x = m.mem x := fun x hx => by
@@ -254,12 +251,12 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   have s0_5 : reg p5 (8 : Fin 32) = lp := by rw [fr5 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s0_4]
   have s1_5 : reg p5 (9 : Fin 32) = rp := by rw [fr5 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s1_4]
   have s2_5 : reg p5 (18 : Fin 32) = out := by rw [fr5 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s2_4]
-  have hcb6 : P + BitVec.ofNat 32 0x96 + 0xFFFF1000 + 0xCC = siBsub P := by
+  have hcb6 : P + BitVec.ofNat 32 0xA0 + 0xFFFF1000 + 0xFFFFF818 = siBsub P := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
   obtain ⟨p6, cp6, w6, K6, a0_6, a1_6, sp6, fr6, mem6⟩ := si_round (K := (23 : Fin 32)) (i := 6)
     w5 (codeS env.code env.sSC Ip5) (codeS env.bsub env.sSB Ip5) env.hP
-    si_at_8a si_at_8c si_at_8e si_at_90 si_at_92 si_at_94 si_at_96 si_at_9a hcb6
-    (even_at P env.hP 0x9E (by decide)) (by decide) (by decide) (by decide) (by decide) (by decide)
+    si_at_94 si_at_96 si_at_98 si_at_9a si_at_9c si_at_9e si_at_a0 si_at_a4 hcb6
+    (even_at P env.hP 0xA8 (by decide)) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) s0_5 s1_5 sp5 hF
     (aligned_add env.hlp (by decide)) (aligned_add env.hrp (by decide)) hsB
   have Ip6 : ∀ x, Sep (sp0 + 0xFFFFFFCC) 0x34 x 1 → p6.mem x = m.mem x := fun x hx => by
@@ -267,12 +264,12 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   have s0_6 : reg p6 (8 : Fin 32) = lp := by rw [fr6 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s0_5]
   have s1_6 : reg p6 (9 : Fin 32) = rp := by rw [fr6 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s1_5]
   have s2_6 : reg p6 (18 : Fin 32) = out := by rw [fr6 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s2_5]
-  have hcb7 : P + BitVec.ofNat 32 0xAA + 0xFFFF1000 + 0xB8 = siBsub P := by
+  have hcb7 : P + BitVec.ofNat 32 0xB4 + 0xFFFF1000 + 0xFFFFF804 = siBsub P := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
   obtain ⟨p7, cp7, w7, K7, a0_7, a1_7, sp7, fr7, mem7⟩ := si_round (K := (25 : Fin 32)) (i := 7)
     w6 (codeS env.code env.sSC Ip6) (codeS env.bsub env.sSB Ip6) env.hP
-    si_at_9e si_at_a0 si_at_a2 si_at_a4 si_at_a6 si_at_a8 si_at_aa si_at_ae hcb7
-    (even_at P env.hP 0xB2 (by decide)) (by decide) (by decide) (by decide) (by decide) (by decide)
+    si_at_a8 si_at_aa si_at_ac si_at_ae si_at_b0 si_at_b2 si_at_b4 si_at_b8 hcb7
+    (even_at P env.hP 0xBC (by decide)) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) s0_6 s1_6 sp6 hF
     (aligned_add env.hlp (by decide)) (aligned_add env.hrp (by decide)) hsB
   have Ip7 : ∀ x, Sep (sp0 + 0xFFFFFFCC) 0x34 x 1 → p7.mem x = m.mem x := fun x hx => by
@@ -280,12 +277,12 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
   have s0_7 : reg p7 (8 : Fin 32) = lp := by rw [fr7 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s0_6]
   have s1_7 : reg p7 (9 : Fin 32) = rp := by rw [fr7 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s1_6]
   have s2_7 : reg p7 (18 : Fin 32) = out := by rw [fr7 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s2_6]
-  have hcb8 : P + BitVec.ofNat 32 0xBE + 0xFFFF1000 + 0xA4 = siBsub P := by
+  have hcb8 : P + BitVec.ofNat 32 0xC8 + 0xFFFF0000 + 0x7F0 = siBsub P := by
     rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
   obtain ⟨p8, cp8, w8, K8, a0_8, a1_8, sp8, fr8, mem8⟩ := si_round (K := (26 : Fin 32)) (i := 8)
     w7 (codeS env.code env.sSC Ip7) (codeS env.bsub env.sSB Ip7) env.hP
-    si_at_b2 si_at_b4 si_at_b6 si_at_b8 si_at_ba si_at_bc si_at_be si_at_c2 hcb8
-    (even_at P env.hP 0xC6 (by decide)) (by decide) (by decide) (by decide) (by decide) (by decide)
+    si_at_bc si_at_be si_at_c0 si_at_c2 si_at_c4 si_at_c6 si_at_c8 si_at_cc hcb8
+    (even_at P env.hP 0xD0 (by decide)) (by decide) (by decide) (by decide) (by decide) (by decide)
     (by decide) (by decide) s0_7 s1_7 sp7 hF
     (aligned_add env.hlp (by decide)) (aligned_add env.hrp (by decide)) hsB
   have Ip8 : ∀ x, Sep (sp0 + 0xFFFFFFCC) 0x34 x 1 → p8.mem x = m.mem x := fun x hx => by
@@ -358,31 +355,23 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
     have h2 : Sep out 36 (_ + BitVec.ofNat 32 i) 1 := ho.subR (c := i) (l := 1) (by omega)
     rw [IMf _ h1 h2]
     exact hc i hi
-  have hrs : P + BitVec.ofNat 32 0x12C + 0xE000 + 0xFFFFFD12 = P + 0xDE3E := by
-    rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
-  obtain ⟨m10, c10, u10⟩ := u9.callRestore (codeMf env.code env.sSC env.sOC) si_at_12c si_at_130 hrs
-    (even_at P env.hP 0xDE3E (by decide)) (even_at P env.hP 0x134 (by decide))
-    (codeMf env.restore env.sSR env.sOR) siRestore_shape (by decide) (fun q hq => by
-      rw [gsp]
-      simp only [siPs, List.mem_cons, List.mem_nil_iff, or_false] at hq
-      rcases hq with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-        exact ⟨by decide, by decide, aligned_add hF (by decide)⟩)
-  rw [gsp] at u10
   have cMf := codeMf env.code env.sSC env.sOC
-  have rsp : restoreRegs Mf (sp0 + 0xFFFFFFD0) (upd gf t0 (P + BitVec.ofNat 32 (0x12C + 8))) siPs sp =
-      sp0 + 0xFFFFFFD0 := by
-    rw [restoreRegs_sp _ _ _ _ (fun q hq => by
+  have hpsp : ∀ p ∈ siPs, p.1 ≠ sp := by decide
+  obtain ⟨m10, c10, u10⟩ := St.block (restoreBlock siPs) u9 cMf siRestore_end
+    (restoreBlock_ok Mf (sp0 + 0xFFFFFFD0) siPs gf gsp hpsp fun q hq => by
       simp only [siPs, List.mem_cons, List.mem_nil_iff, or_false] at hq
-      rcases hq with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide)]
-    simp +decide [upd, gsp]
-  obtain ⟨m11, d11, u11⟩ := u10.lw cMf si_at_134 (off' := 0x136) (by decide)
+      rcases hq with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> exact aligned_add hF (by decide))
+  simp only [restoreBlock_run Mf (sp0 + 0xFFFFFFD0) siPs gf gsp hpsp] at u10
+  have rsp : restoreRegs Mf (sp0 + 0xFFFFFFD0) gf siPs sp = sp0 + 0xFFFFFFD0 := by
+    rw [restoreRegs_sp _ _ _ _ hpsp]; exact gsp
+  obtain ⟨m11, d11, u11⟩ := u10.lw cMf si_at_148 (off' := 0x14A) (by decide)
     (by rw [rsp]; exact aligned_add hF (k := 8) (by decide))
-  obtain ⟨m12, d12, u12⟩ := u11.lw cMf si_at_136 (off' := 0x138) (by decide)
+  obtain ⟨m12, d12, u12⟩ := u11.lw cMf si_at_14a (off' := 0x14C) (by decide)
     (by simp +decide only [upd, ↓reduceIte]; rw [rsp]; exact aligned_add hF (k := 4) (by decide))
-  obtain ⟨m13, d13, u13⟩ := u12.lw cMf si_at_138 (off' := 0x13A) (by decide)
+  obtain ⟨m13, d13, u13⟩ := u12.lw cMf si_at_14c (off' := 0x14E) (by decide)
     (by simp +decide only [upd, ↓reduceIte]; rw [rsp, add_lit_zero]; exact hF)
-  obtain ⟨m14, d14, u14⟩ := u13.aluImm cMf si_at_13a (off' := 0x13C) (by decide)
-  obtain ⟨m15, d15, pc15, mem15, regs15⟩ := u14.jalr cMf si_at_13c
+  obtain ⟨m14, d14, u14⟩ := u13.aluImm cMf si_at_14e (off' := 0x150) (by decide)
+  obtain ⟨m15, d15, pc15, mem15, regs15⟩ := u14.jalr cMf si_at_150
   have eM5 : M5 = memStore32 (memStore32 (memStore32 (saveMem m.mem (sp0 + 0xFFFFFFD0)
       (upd (reg m) sp (aluEval .add (reg m sp) 0xFFFFFFD0)) siPs) (sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 8)
       (reg m2 24)) (sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 4) (reg m2 25)) (sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 0)
@@ -411,7 +400,7 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
       simp (disch := decide) only [memLoad32_store32_off, memLoad32_store32_same]
       first
       | exact g1v _ (by decide)
-      | exact r2 _ (by decide) (by decide)
+      | exact r2 _ (by decide)
   have hwo : out.toNat + 36 ≤ 2 ^ 32 := env.hwrap.1
   have outw : wordsAt Mf out 8 = addBack (reg p8 (19 : Fin 32)) (reg p8 (20 : Fin 32)) (reg p8 (21 : Fin 32))
       (reg p8 (22 : Fin 32)) (reg p8 (24 : Fin 32)) (reg p8 (23 : Fin 32)) (reg p8 (25 : Fin 32))
@@ -451,12 +440,12 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
     rcases hmask with h | h <;> rw [h] <;> rfl
   -- registers kept from entry
   have keepAll : ∀ q, siWr q = false → reg p8 q = reg m q := fun q hq => by
-    obtain ⟨nra, nsp, nt0, n8', n9', na0, na1, na2, na3, na4, na5, n18, n19, n20, n21, n22, n23, n24, n25, n26⟩ :=
+    obtain ⟨nra, nsp, _, n8', n9', na0, na1, na2, na3, na4, na5, n18, n19, n20, n21, n22, n23, n24, n25, n26⟩ :=
       siWr_ne q hq
     rw [fr8 q n26 na0 na1 na2 na3 na4 nra, fr7 q n25 na0 na1 na2 na3 na4 nra, fr6 q n23 na0 na1 na2 na3 na4 nra,
       fr5 q n24 na0 na1 na2 na3 na4 nra, fr4 q n22 na0 na1 na2 na3 na4 nra, fr3 q n21 na0 na1 na2 na3 na4 nra,
       fr2 q n20 na0 na1 na2 na3 na4 nra, fr1 q n19 na0 na1 na2 na3 na4 nra, fr0 q na0 na1 na2 na3 na4 nra,
-      r7 q n9' n8' na2 na1 n18 na0, r2 q nsp nt0]
+      r7 q n9' n8' na2 na1 n18 na0, r2 q nsp]
   refine ⟨m15, .cons d1 (c2.trans (.cons d3 (.cons d4 (.cons d5 (.cons e1 (.cons e2 (.cons e3 (.cons e4 (.cons e5 (.cons e6 (.cons e7 (c8.trans (cp1.trans (cp2.trans (cp3.trans (cp4.trans (cp5.trans (cp6.trans (cp7.trans (cp8.trans (c9.trans (c10.trans (.cons d11 (.cons d12 (.cons d13 (.cons d14 (.single d15))))))))))))))))))))))))))),
     ?_, ?_, ?_, ?_, ?_, ?_⟩
   · rw [pc15]
@@ -493,7 +482,7 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
     · exact absurd h q4
     · exact absurd h q5
     · exact absurd h qt
-    · obtain ⟨nra, nsp, nt0, n8', n9', na0, na1, na2, na3, na4, na5, n18, n19, n20, n21, n22, n23, n24, n25, n26⟩ :=
+    · obtain ⟨nra, nsp, _, n8', n9', na0, na1, na2, na3, na4, na5, n18, n19, n20, n21, n22, n23, n24, n25, n26⟩ :=
         siWr_ne q h
       have q0' : q.val ≠ 0 ∨ q = 0 := by
         by_cases hq : q.val = 0
@@ -501,7 +490,7 @@ theorem subInner_gen (m : Machine) {P sp0 out lp rp retAddr : Word}
         · exact .inl hq
       rcases q0' with hq | hq
       · simp only [restoreRegs]
-        simp [upd, hq, nra, nsp, nt0, n8', n9', n18, n19, n20, n21, n22, n23, n24, n25, n26]
+        simp [upd, hq, nra, nsp, n8', n9', n18, n19, n20, n21, n22, n23, n24, n25, n26]
         rw [gk q na0 na1 na2 na3 na4 na5 n8' n19 n20 n21 n22 n23 n24 n25 n26]
         exact keepAll q h
       · subst hq; simp [upd, hz]

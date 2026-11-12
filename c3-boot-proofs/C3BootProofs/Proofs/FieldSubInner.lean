@@ -1,7 +1,7 @@
 import C3BootProofs.Proofs.FieldArith
 import C3BootProofs.Proofs.FieldDecode
 import C3BootProofs.Proofs.Parse
-import C3BootProofs.Image.BootloaderV0
+import C3BootProofs.Image.Bootloader
 
 /-!
 # `sub_inner`, as compiled
@@ -14,14 +14,14 @@ bytes; each `borrowing_sub` call also writes the word 4 bytes below it.
 
 namespace C3.RV32
 
-open C3.ImageV0
+open C3.Image
 
 theorem alu_zadd (x : Word) : aluEval .add 0#32 x = x := BitVec.zero_add x
 
 theorem alu_zadd' (x : Word) : aluEval .add 0 x = x := BitVec.zero_add x
 
 /-- `borrowing_sub`'s offset from `sub_inner`. -/
-abbrev siBsub (P : Word) : Word := P + 0xFFFF1162
+abbrev siBsub (P : Word) : Word := P + 0xFFFF08B8
 
 /-- A call from `sub_inner` to `borrowing_sub` with `sp` at `F`. -/
 theorem si_bsub {Mx : Word → BitVec 8} {P F : Word} {m : Machine} {off : Nat} {f : Fin 32 → Word}
@@ -35,7 +35,7 @@ theorem si_bsub {Mx : Word → BitVec 8} {P F : Word} {m : Machine} {off : Nat} 
       reg m' a0 = bsubD (f a0) (f a1) (f a2) ∧ reg m' a1 = bsubB (f a0) (f a1) (bsubD (f a0) (f a1) (f a2)) ∧
       reg m' sp = F ∧ (∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ ra → reg m' q = f q) ∧
       ∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → m'.mem x = Mx x := by
-  have hev : (siBsub P).toNat % 2 = 0 := even_at P hP 0xFFFF1162 (by decide)
+  have hev : (siBsub P).toNat % 2 = 0 := even_at P hP 0xFFFF08B8 (by decide)
   obtain ⟨m1, c1, pc1, mem1, regs1⟩ := s.callRa hc h1 h2 hcb hev
   have hz := s.zero
   have r1 : ∀ q, q ≠ ra → reg m1 q = f q := fun q hq => by
@@ -123,7 +123,7 @@ theorem si_round {Mx : Word → BitVec 8} {P F lp rp : Word} {m : Machine} {off 
 
 /-! ## The whole function -/
 
-/-- `sub_inner`'s add-back and stores, from offset 0xC6 to the restore call. -/
+/-- `sub_inner`'s add-back and stores, from offset 0xD0 to the register restores. -/
 def siAddBlock : List BInstr :=
   [.alu .add (19 : Fin 32) (19 : Fin 32) a1, .alu .add (20 : Fin 32) (20 : Fin 32) a1,
    .alu .sltu a0 (19 : Fin 32) a1, .alu .add a0 a0 (20 : Fin 32), .alu .sltu a2 (20 : Fin 32) a1,
@@ -140,10 +140,11 @@ def siAddBlock : List BInstr :=
    .sw (8 : Fin 32) a4 0x1C, .sw (8 : Fin 32) a1 0x20]
 
 set_option maxRecDepth 20000 in
-theorem siAddBlock_end : blockEnd subInnerCode 0xC6 siAddBlock = some 0x12C := by decide
+theorem siAddBlock_end : blockEnd subInnerCode 0xD0 siAddBlock = some 0x136 := by decide
 
 
-/-- What `sub_inner`'s save helper stores and its restore helper loads. -/
+/-- The first nine registers `sub_inner` saves in its frame, at offsets from
+its `sp`; the last three it saves and restores one at a time. -/
 abbrev siPs : List (Fin 32 × Word) :=
   [(ra, BitVec.ofNat 32 0x2C), ((8 : Fin 32), BitVec.ofNat 32 0x28), ((9 : Fin 32), BitVec.ofNat 32 0x24),
    ((18 : Fin 32), BitVec.ofNat 32 0x20), ((19 : Fin 32), BitVec.ofNat 32 0x1C),
@@ -158,9 +159,11 @@ theorem saveMem_outside {M : Word → BitVec 8} {G : Word} {f : Fin 32 → Word}
     rw [saveMem_outside ps fun q hq => h q (List.mem_cons_of_mem _ hq),
       memStore32_get_sep (h p (List.mem_cons_self ..))]
 
-theorem siSave_shape : SaveAt subInnerSaveCode 0 siPs := by simp only [SaveAt]; decide
+set_option maxRecDepth 20000 in
+theorem siSave_end : blockEnd subInnerCode 2 (saveBlock siPs) = some 0x14 := by decide
 
-theorem siRestore_shape : RestoreAt subInnerRestoreCode 0 siPs := by simp only [RestoreAt]; decide
+set_option maxRecDepth 20000 in
+theorem siRestore_end : blockEnd subInnerCode 0x136 (restoreBlock siPs) = some 0x148 := by decide
 
 /-- The P-256 modulus as `sub_inner`'s second operand holds it: eight limbs
 and a zero. -/
@@ -180,8 +183,6 @@ structure SIEnv (M : Word → BitVec 8) (P sp0 out lp rp : Word) : Prop where
   hP : P.toNat % 2 = 0
   code : CodeIn M P subInnerCode
   bsub : CodeIn M (siBsub P) borrowingSubCode
-  save : CodeIn M (P + 0xDC34) subInnerSaveCode
-  restore : CodeIn M (P + 0xDE3E) subInnerRestoreCode
   hsp : sp0.toNat % 4 = 0
   hout : out.toNat % 4 = 0
   hlp : lp.toNat % 4 = 0
@@ -189,10 +190,7 @@ structure SIEnv (M : Word → BitVec 8) (P sp0 out lp rp : Word) : Prop where
   hS : 0x34 ≤ sp0.toNat
   sSC : Sep (sp0 + 0xFFFFFFCC) 0x34 P subInnerCode.length
   sSB : Sep (sp0 + 0xFFFFFFCC) 0x34 (siBsub P) borrowingSubCode.length
-  sSS : Sep (sp0 + 0xFFFFFFCC) 0x34 (P + 0xDC34) subInnerSaveCode.length
-  sSR : Sep (sp0 + 0xFFFFFFCC) 0x34 (P + 0xDE3E) subInnerRestoreCode.length
   sOC : Sep out 36 P subInnerCode.length
-  sOR : Sep out 36 (P + 0xDE3E) subInnerRestoreCode.length
   sOS : Sep out 36 (sp0 + 0xFFFFFFCC) 0x34
   sLS : Sep lp 36 (sp0 + 0xFFFFFFCC) 0x34
   sRS : Sep rp 36 (sp0 + 0xFFFFFFCC) 0x34
@@ -205,8 +203,6 @@ structure SIEnvG (M : Word → BitVec 8) (P sp0 out lp rp : Word) : Prop where
   hP : P.toNat % 2 = 0
   code : CodeIn M P subInnerCode
   bsub : CodeIn M (siBsub P) borrowingSubCode
-  save : CodeIn M (P + 0xDC34) subInnerSaveCode
-  restore : CodeIn M (P + 0xDE3E) subInnerRestoreCode
   hsp : sp0.toNat % 4 = 0
   hout : out.toNat % 4 = 0
   hlp : lp.toNat % 4 = 0
@@ -214,10 +210,7 @@ structure SIEnvG (M : Word → BitVec 8) (P sp0 out lp rp : Word) : Prop where
   hS : 0x34 ≤ sp0.toNat
   sSC : Sep (sp0 + 0xFFFFFFCC) 0x34 P subInnerCode.length
   sSB : Sep (sp0 + 0xFFFFFFCC) 0x34 (siBsub P) borrowingSubCode.length
-  sSS : Sep (sp0 + 0xFFFFFFCC) 0x34 (P + 0xDC34) subInnerSaveCode.length
-  sSR : Sep (sp0 + 0xFFFFFFCC) 0x34 (P + 0xDE3E) subInnerRestoreCode.length
   sOC : Sep out 36 P subInnerCode.length
-  sOR : Sep out 36 (P + 0xDE3E) subInnerRestoreCode.length
   sOS : Sep out 36 (sp0 + 0xFFFFFFCC) 0x34
   sLS : Sep lp 36 (sp0 + 0xFFFFFFCC) 0x34
   sRS : Sep rp 36 (sp0 + 0xFFFFFFCC) 0x34
@@ -225,8 +218,7 @@ structure SIEnvG (M : Word → BitVec 8) (P sp0 out lp rp : Word) : Prop where
 
 theorem SIEnv.toG {M : Word → BitVec 8} {P sp0 out lp rp : Word} (e : SIEnv M P sp0 out lp rp) :
     SIEnvG M P sp0 out lp rp :=
-  ⟨e.hP, e.code, e.bsub, e.save, e.restore, e.hsp, e.hout, e.hlp, e.hrp, e.hS, e.sSC, e.sSB, e.sSS, e.sSR,
-    e.sOC, e.sOR, e.sOS, e.sLS, e.sRS, e.hwrap⟩
+  ⟨e.hP, e.code, e.bsub, e.hsp, e.hout, e.hlp, e.hrp, e.hS, e.sSC, e.sSB, e.sOC, e.sOS, e.sLS, e.sRS, e.hwrap⟩
 
 /-- Memory after storing the words `ws` at consecutive words from word `k`
 past `a`. -/

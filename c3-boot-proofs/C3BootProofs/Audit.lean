@@ -654,9 +654,36 @@ def pLimbBytes : List Nat :=
   [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
    1, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0, 0, 0, 0]
 
-/-- `witnessMemField` with the modulus at `0x3FCC6100`. -/
-def witnessMemSub (a : RV32.Word) : BitVec 8 :=
-  if (a - 0x3FCC6100).toNat < 36 then RV32.byteAt pLimbBytes (a - 0x3FCC6100).toNat else witnessMemField a
+/-- Memory with the current image's P-256 field and point functions,
+`borrowing_sub`, `memset`, `memcpy`, and the curve constant `b` where the
+image loads them, the P-256 modulus at `0x3FCC6100`, and zeros elsewhere. -/
+def witnessMemP256 (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.subInnerAddress).toNat < Image.subInnerCode.length then
+    RV32.byteAt Image.subInnerCode (a - BitVec.ofNat 32 Image.subInnerAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.borrowingSubAddress).toNat < Image.borrowingSubCode.length then
+    RV32.byteAt Image.borrowingSubCode (a - BitVec.ofNat 32 Image.borrowingSubAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.wideMulAddress).toNat < Image.wideMulCode.length then
+    RV32.byteAt Image.wideMulCode (a - BitVec.ofNat 32 Image.wideMulAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.fieldMulAddress).toNat < Image.fieldMulCode.length then
+    RV32.byteAt Image.fieldMulCode (a - BitVec.ofNat 32 Image.fieldMulAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.fieldAddAddress).toNat < Image.fieldAddCode.length then
+    RV32.byteAt Image.fieldAddCode (a - BitVec.ofNat 32 Image.fieldAddAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.fieldSubAddress).toNat < Image.fieldSubCode.length then
+    RV32.byteAt Image.fieldSubCode (a - BitVec.ofNat 32 Image.fieldSubAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.fieldDoubleAddress).toNat < Image.fieldDoubleCode.length then
+    RV32.byteAt Image.fieldDoubleCode (a - BitVec.ofNat 32 Image.fieldDoubleAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.pointAddAddress).toNat < Image.pointAddCode.length then
+    RV32.byteAt Image.pointAddCode (a - BitVec.ofNat 32 Image.pointAddAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memsetAddress).toNat < Image.memsetCode.length then
+    RV32.byteAt Image.memsetCode (a - BitVec.ofNat 32 Image.memsetAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat < Image.memcpyStubCode.length then
+    RV32.byteAt Image.memcpyStubCode (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat < Image.memcpyBodyCode.length then
+    RV32.byteAt Image.memcpyBodyCode (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.curveBAddress).toNat < Image.curveBData.length then
+    RV32.byteAt Image.curveBData (a - BitVec.ofNat 32 Image.curveBAddress).toNat
+  else if (a - 0x3FCC6100).toNat < 36 then RV32.byteAt pLimbBytes (a - 0x3FCC6100).toNat
+  else 0
 
 set_option maxRecDepth 20000 in
 set_option maxHeartbeats 2000000 in
@@ -670,14 +697,13 @@ theorem exists_subInner_machine :
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x3FCC6100
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.subInnerAddress, witnessMemSub⟩, BitVec.ofNat 32 ImageV0.subInnerAddress,
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.subInnerAddress, witnessMemP256⟩, BitVec.ofNat 32 Image.subInnerAddress,
     0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0x3FCC6100, 0,
-    ⟨by decide, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide,
+    ⟨by decide, ?_, ?_, by decide, by decide, by decide, by decide, by decide,
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
-      RV32.sep_of_le (by decide) (by decide), ⟨by decide, by decide, by decide⟩, ?_⟩,
+      ⟨by decide, by decide, by decide⟩, ?_⟩,
     rfl, rfl, rfl, rfl, rfl, by decide, rfl⟩
   all_goals first
     | (unfold RV32.CodeIn; decide +kernel)
@@ -695,16 +721,14 @@ theorem exists_wideMul_machine :
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x3FCC6100
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.wideMulAddress, witnessMemField⟩, BitVec.ofNat 32 ImageV0.wideMulAddress,
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.wideMulAddress, witnessMemP256⟩, BitVec.ofNat 32 Image.wideMulAddress,
     0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0x3FCC6100, 0,
-    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
+    ⟨by decide, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
-      RV32.sep_of_le (by decide) (by decide)⟩,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩,
     rfl, rfl, rfl, rfl, rfl, by decide, rfl⟩
   all_goals (unfold RV32.CodeIn; decide +kernel)
 
@@ -720,11 +744,9 @@ theorem exists_fieldMul_machine :
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x3FCC6100
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.fieldMulAddress, witnessMemField⟩, BitVec.ofNat 32 ImageV0.fieldMulAddress,
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.fieldMulAddress, witnessMemP256⟩, BitVec.ofNat 32 Image.fieldMulAddress,
     0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0x3FCC6100, 0,
-    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide,
-      by decide, RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
@@ -1138,11 +1160,23 @@ theorem exists_pointAdd_machine :
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.pointAddAddress, witnessMemPoint⟩, BitVec.ofNat 32 ImageV0.pointAddAddress,
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.pointAddAddress, witnessMemP256⟩, BitVec.ofNat 32 Image.pointAddAddress,
     0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0,
-    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by decide +kernel,
+    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by decide +kernel,
       by decide, by decide, by decide, by decide, by decide,
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide)⟩,
     rfl, rfl, rfl, rfl, by decide, rfl, by decide +kernel, by decide +kernel, by decide +kernel, by decide +kernel,
     by decide +kernel, by decide +kernel⟩
   all_goals (unfold RV32.CodeIn; decide +kernel)
@@ -1159,10 +1193,9 @@ theorem exists_fieldSub_machine :
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x3FCC6100
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.fieldSubAddress, witnessMemPoint⟩, BitVec.ofNat 32 ImageV0.fieldSubAddress,
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.fieldSubAddress, witnessMemP256⟩, BitVec.ofNat 32 Image.fieldSubAddress,
     0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0x3FCC6100, 0,
-    ⟨by decide, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    ⟨by decide, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
@@ -1182,10 +1215,9 @@ theorem exists_fieldAdd_machine :
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x3FCC6100
     else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.fieldAddAddress, witnessMemPoint⟩, BitVec.ofNat 32 ImageV0.fieldAddAddress,
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.fieldAddAddress, witnessMemP256⟩, BitVec.ofNat 32 Image.fieldAddAddress,
     0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0x3FCC6100, 0,
-    ⟨by decide, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    ⟨by decide, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
@@ -1204,10 +1236,9 @@ theorem exists_fieldDouble_machine :
       retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 := by
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.fieldDoubleAddress, witnessMemPoint⟩, BitVec.ofNat 32 ImageV0.fieldDoubleAddress,
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.fieldDoubleAddress, witnessMemP256⟩, BitVec.ofNat 32 Image.fieldDoubleAddress,
     0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0,
-    ⟨by decide, ?_, ⟨by decide, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    ⟨by decide, ?_, ⟨by decide, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),

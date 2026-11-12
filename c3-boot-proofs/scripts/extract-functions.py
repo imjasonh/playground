@@ -61,7 +61,9 @@ FUNCTIONS = [
 
 # Lean name, then the Lean name of an extracted function, the offset of a
 # `lui; addi` pair in it that forms the data's address, and the data's size.
-DATA = []
+DATA = [
+    ("curveB", "pointAdd", 0x12E, 32),
+]
 
 
 def call_target(code, addr, off):

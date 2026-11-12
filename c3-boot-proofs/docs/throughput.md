@@ -18,11 +18,12 @@ current image (SHA-256
 28,526 instructions. The proofs are being redone for it. Twelve functions
 have the same bytes in both images, because RISC-V code that calls nothing
 doesn't depend on where it is, so their proofs now name the current image.
-P-384's Montgomery multiplication and squaring and `Uint<12>::select` are
-redone: their loops moved by a fixed offset, and the register saves,
-restores, and setup that the outliner had moved into helpers are now
-straight-line blocks. Proofs about the current image cover 2.5 percent of
-its instructions and 63.4 percent of the instructions a boot runs. The
+P-384's Montgomery multiplication and squaring, `Uint<12>::select`, and
+the P-256 field and point functions are redone: their code moved by fixed
+offsets, the register saves and restores that the outliner had moved into
+helpers are now straight-line blocks, and calls reach their callees at new
+offsets. Proofs about the current image cover 5.7 percent of its
+instructions and 71.0 percent of the instructions a boot runs. The
 figures below are for the earlier image, before the change.
 
 `scripts/coverage.py` counts the instructions in proved functions, in the

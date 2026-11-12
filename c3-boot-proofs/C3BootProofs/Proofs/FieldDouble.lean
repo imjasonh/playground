@@ -1,18 +1,18 @@
 import C3BootProofs.Proofs.FieldAdd
-import C3BootProofs.Image.BootloaderV0
+import C3BootProofs.Image.Bootloader
 
 /-! # `FieldElement::double`, as compiled -/
 
 namespace C3.RV32
 
-open C3.ImageV0
+open C3.Image
 
 /-- Where `FieldElement::double` runs: its code at `P`, and `field_impl::add`,
 which it tail-calls with both operands at `ap`, where the image puts it. -/
 structure FDEnv (M : Word → BitVec 8) (P sp0 res ap : Word) : Prop where
   hP : P.toNat % 2 = 0
   code : CodeIn M P fieldDoubleCode
-  add : FAEnv M (P + 0xFFFFFCFA) sp0 res ap ap
+  add : FAEnv M (P + 0xFFFFFCE4) sp0 res ap ap
 
 /-- **The compiled `FieldElement::double`**, called with the result at `res`
 and the operand `A` at `ap`: it tail-calls `field_impl::add` with `A` twice,
@@ -43,9 +43,9 @@ theorem fieldDouble_correct (m : Machine) {P sp0 res ap retAddr : Word}
     rw [u2.regs, upd_ne (by decide) (by decide), u1.regs, upd_same (by decide), hz, ha1]; exact BitVec.zero_add _
   have et : reg n2 t1 = P + BitVec.ofNat 32 2 := by
     rw [u2.regs, upd_same (by decide), add_lit_zero]
-  have pcA : n3.pc = P + 0xFFFFFCFA := by
+  have pcA : n3.pc = P + 0xFFFFFCE4 := by
     rw [pc3, et, BitVec.add_assoc]
-    exact even_clear _ (even_at P env.hP 0xFFFFFCFA (by decide))
+    exact even_clear _ (even_at P env.hP 0xFFFFFCE4 (by decide))
   obtain ⟨n4, c4, pc4, sp4, regs4, val4, frame4⟩ := fieldAdd_correct n3 (by rw [mem3]; exact env.add) pcA
     (by rw [regs3, k2 _ (by decide) (by decide), ha0]) (by rw [regs3, k2 _ (by decide) (by decide), ha1])
     (by rw [regs3, e2]) (by rw [regs3, k2 _ (by decide) (by decide), hra]) hret

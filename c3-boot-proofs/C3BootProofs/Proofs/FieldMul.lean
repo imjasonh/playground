@@ -1,11 +1,11 @@
 import C3BootProofs.Proofs.FieldMontRed
-import C3BootProofs.Image.BootloaderV0
+import C3BootProofs.Image.Bootloader
 
 /-! # `FieldElement::multiply`, end to end -/
 
 namespace C3.RV32
 
-open C3.ImageV0
+open C3.Image
 
 set_option exponentiation.threshold 600 in
 /-- What `sub_inner` makes of the reduction's output: the Montgomery product,
@@ -34,16 +34,12 @@ and the 8-word operands at `ap` and `bp`. -/
 structure FMEnv (M : Word → BitVec 8) (P sp0 res ap bp : Word) : Prop where
   hP : P.toNat % 2 = 0
   code : CodeIn M P fieldMulCode
-  wmcode : CodeIn M (P + 0xFFFFBEE4) wideMulCode
-  wmsave : CodeIn M (P + 0xFFFFBEE4 + 0x1242A) wideMulSaveCode
-  wmrestore : CodeIn M (P + 0xFFFFBEE4 + 0x1241A) wideMulRestoreCode
-  mset : CodeIn M (P + 0xFFFFBEE4 + 0x129E4) memsetCode
-  stub : CodeIn M (P + 0xFFFFBEE4 + 0x12A4C) memcpyStubCode
-  body : CodeIn M (P + 0xFFFFBEE4 + 0x12A54) memcpyBodyCode
-  sicode : CodeIn M (P + 0x3FC) subInnerCode
-  bsub : CodeIn M (siBsub (P + 0x3FC)) borrowingSubCode
-  sisave : CodeIn M (P + 0x3FC + 0xDC34) subInnerSaveCode
-  sirestore : CodeIn M (P + 0x3FC + 0xDE3E) subInnerRestoreCode
+  wmcode : CodeIn M (P + 0xFFFFBD44) wideMulCode
+  mset : CodeIn M (P + 0xFFFFBD44 + 0x7446) memsetCode
+  stub : CodeIn M (P + 0xFFFFBD44 + 0x74AE) memcpyStubCode
+  body : CodeIn M (P + 0xFFFFBD44 + 0x74B6) memcpyBodyCode
+  sicode : CodeIn M (P + 0x40C) subInnerCode
+  bsub : CodeIn M (siBsub (P + 0x40C)) borrowingSubCode
   hsp : sp0.toNat % 4 = 0
   hres : res.toNat % 4 = 0
   hap : ap.toNat % 4 = 0
@@ -51,16 +47,12 @@ structure FMEnv (M : Word → BitVec 8) (P sp0 res ap bp : Word) : Prop where
   hS : 0x130 ≤ sp0.toNat
   hwr : res.toNat + 32 ≤ 2 ^ 32
   sC : Sep (sp0 + 0xFFFFFED0) 0x130 P fieldMulCode.length
-  sW : Sep (sp0 + 0xFFFFFED0) 0x130 (P + 0xFFFFBEE4) wideMulCode.length
-  sWs : Sep (sp0 + 0xFFFFFED0) 0x130 (P + 0xFFFFBEE4 + 0x1242A) wideMulSaveCode.length
-  sWr : Sep (sp0 + 0xFFFFFED0) 0x130 (P + 0xFFFFBEE4 + 0x1241A) wideMulRestoreCode.length
-  sM : Sep (sp0 + 0xFFFFFED0) 0x130 (P + 0xFFFFBEE4 + 0x129E4) memsetCode.length
-  sU : Sep (sp0 + 0xFFFFFED0) 0x130 (P + 0xFFFFBEE4 + 0x12A4C) memcpyStubCode.length
-  sB : Sep (sp0 + 0xFFFFFED0) 0x130 (P + 0xFFFFBEE4 + 0x12A54) memcpyBodyCode.length
-  sI : Sep (sp0 + 0xFFFFFED0) 0x130 (P + 0x3FC) subInnerCode.length
-  sIb : Sep (sp0 + 0xFFFFFED0) 0x130 (siBsub (P + 0x3FC)) borrowingSubCode.length
-  sIs : Sep (sp0 + 0xFFFFFED0) 0x130 (P + 0x3FC + 0xDC34) subInnerSaveCode.length
-  sIr : Sep (sp0 + 0xFFFFFED0) 0x130 (P + 0x3FC + 0xDE3E) subInnerRestoreCode.length
+  sW : Sep (sp0 + 0xFFFFFED0) 0x130 (P + 0xFFFFBD44) wideMulCode.length
+  sM : Sep (sp0 + 0xFFFFFED0) 0x130 (P + 0xFFFFBD44 + 0x7446) memsetCode.length
+  sU : Sep (sp0 + 0xFFFFFED0) 0x130 (P + 0xFFFFBD44 + 0x74AE) memcpyStubCode.length
+  sB : Sep (sp0 + 0xFFFFFED0) 0x130 (P + 0xFFFFBD44 + 0x74B6) memcpyBodyCode.length
+  sI : Sep (sp0 + 0xFFFFFED0) 0x130 (P + 0x40C) subInnerCode.length
+  sIb : Sep (sp0 + 0xFFFFFED0) 0x130 (siBsub (P + 0x40C)) borrowingSubCode.length
   sRS : Sep res 32 (sp0 + 0xFFFFFED0) 0x130
   sRC : Sep res 32 P fieldMulCode.length
   sAS : Sep ap 32 (sp0 + 0xFFFFFED0) 0x130
@@ -215,7 +207,7 @@ theorem fm_pro (m : Machine) {P sp0 res ap bp : Word} (env : FMEnv m.mem P sp0 r
     · have : q = 0 := Fin.ext hq
       subst this; simp [upd, z1]
     · simp [upd, hq, h0, h18]
-  have hev : (P + 0xFFFFBEE4).toNat % 2 = 0 := even_at P env.hP 0xFFFFBEE4 (by decide)
+  have hev : (P + 0xFFFFBD44).toNat % 2 = 0 := even_at P env.hP 0xFFFFBD44 (by decide)
   obtain ⟨m13, c13, pc13, mem13, regs13⟩ := u12.callRa cM fm_at_18 fm_at_1c
     (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) hev
   have r13 := PEnv.reg1 regs13 u12.zero
@@ -229,12 +221,12 @@ theorem fm_pro (m : Machine) {P sp0 res ap bp : Word} (env : FMEnv m.mem P sp0 r
     rw [sAlias]; exact base0 (h.sub (c := 0) (l := 0x60) (by decide))
   have outS : ∀ {b : Word} {k : Nat}, Sep (sp0 + 0xFFFFFED0) 0x130 b k → Sep (sp0 + 0xFFFFFF30) 64 b k :=
     fun h => by rw [fm_frame]; exact h.sub (c := 0x60) (l := 64) (by decide)
-  have wenv : WMEnv m13.mem (P + 0xFFFFBEE4) (sp0 + 0xFFFFFF30) (sp0 + 0xFFFFFF30) ap bp := by
+  have wenv : WMEnv m13.mem (P + 0xFFFFBD44) (sp0 + 0xFFFFFF30) (sp0 + 0xFFFFFF30) ap bp := by
     rw [mem13]
-    exact ⟨hev, codeS env.wmcode env.sW F10, codeS env.wmsave env.sWs F10, codeS env.wmrestore env.sWr F10,
+    exact ⟨hev, codeS env.wmcode env.sW F10,
       codeS env.mset env.sM F10, codeS env.stub env.sU F10, codeS env.body env.sB F10, hGa, hGa, env.hap,
-      env.hbp, by omega, by have := sp0.isLt; omega, top env.sW, top env.sWs, top env.sWr, top env.sM,
-      top env.sU, top env.sB, outS env.sW, outS env.sWr, outS env.sU, outS env.sB,
+      env.hbp, by omega, by have := sp0.isLt; omega, top env.sW, top env.sM,
+      top env.sU, top env.sB, outS env.sW, outS env.sU, outS env.sB,
       by
         rw [sAlias, fm_frame]
         exact base0r (sep_offsets (sp0 + 0xFFFFFED0) (c := 0x60) (n := 64) (d := 0) (k := 0x60)
@@ -497,15 +489,13 @@ theorem fm_epi {P sp0 res ap bp : Word} {M0 Mx : Word → BitVec 8} {n : Machine
     rw [fm_frame, add_ofNat_assoc]
   have wrapC : ∀ c, c + 36 ≤ 0xD0 → (sp0 + 0xFFFFFF30 + BitVec.ofNat 32 c).toNat + 36 ≤ 2 ^ 32 := fun c h => by
     rw [BitVec.toNat_add, BitVec.toNat_ofNat]; have := sp0.isLt; omega
-  have hsi : (P + 0x3FC).toNat % 2 = 0 := even_at P env.hP 0x3FC (by decide)
-  have senv : SIEnv N19 (P + 0x3FC) (sp0 + 0xFFFFFF30) (sp0 + 0xFFFFFF30 + BitVec.ofNat 32 0x40) (sp0 + 0xFFFFFF30 + BitVec.ofNat 32 0x64)
+  have hsi : (P + 0x40C).toNat % 2 = 0 := even_at P env.hP 0x40C (by decide)
+  have senv : SIEnv N19 (P + 0x40C) (sp0 + 0xFFFFFF30) (sp0 + 0xFFFFFF30 + BitVec.ofNat 32 0x40) (sp0 + 0xFFFFFF30 + BitVec.ofNat 32 0x64)
       (sp0 + 0xFFFFFF30 + BitVec.ofNat 32 0x88) :=
-    ⟨hsi, codeX env.sicode env.sI F19, codeX env.bsub env.sIb F19, codeX env.sisave env.sIs F19,
-      codeX env.sirestore env.sIr F19, hGa, aligned_add hGa (by decide), aligned_add hGa (by decide),
-      aligned_add hGa (by decide), by omega,
+    ⟨hsi, codeX env.sicode env.sI F19, codeX env.bsub env.sIb F19, hGa, aligned_add hGa (by decide),
+      aligned_add hGa (by decide), aligned_add hGa (by decide), by omega,
       by rw [siA]; exact env.sI.sub (by decide), by rw [siA]; exact env.sIb.sub (by decide),
-      by rw [siA]; exact env.sIs.sub (by decide), by rw [siA]; exact env.sIr.sub (by decide),
-      by rw [inS]; exact env.sI.sub (by decide), by rw [inS]; exact env.sIr.sub (by decide),
+      by rw [inS]; exact env.sI.sub (by decide),
       by rw [inS, siA]; exact sep_offsets _ (.inr (by decide)) (by decide) (by decide),
       by rw [inS, siA]; exact sep_offsets _ (.inr (by decide)) (by decide) (by decide),
       by rw [inS, siA]; exact sep_offsets _ (.inr (by decide)) (by decide) (by decide),

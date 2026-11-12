@@ -45,6 +45,13 @@ PROVED = [
     "mulMont12",
     "uintSelect12",
     "sqMont12",
+    "subInner",
+    "wideMul",
+    "fieldMul",
+    "fieldAdd",
+    "fieldSub",
+    "fieldDouble",
+    "pointAdd",
 ]
 
 IMAGE = os.path.join(os.path.dirname(__file__), "..", "C3BootProofs", "Image", "Bootloader.lean")
