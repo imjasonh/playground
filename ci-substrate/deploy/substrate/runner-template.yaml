@@ -1,6 +1,7 @@
-# ActorTemplate (protojson-shaped ateapi.ActorTemplate) for a CI build actor
-# in the tenant-a atespace. The actor runs the ci-substrate runner against the
-# cascache and cas Services. Create one template per tenant atespace:
+# ActorTemplate (protojson-shaped ateapi.ActorTemplate) for a CI runner actor
+# in the tenant-a atespace. The actor runs the ci-substrate runner bot: it
+# leases actions from the scheduler in cas, reads inputs through cascache,
+# and uploads outputs. Create one template per tenant atespace:
 #
 #   ko resolve -f runner-template.yaml > /tmp/runner-template.yaml
 #   kubectl ate create actor-template -f /tmp/runner-template.yaml
@@ -9,6 +10,10 @@
 # x-ci-substrate-tenant header, and the egress gateway replaces it with the
 # tenant's token from a Kubernetes Secret (see egress-cascache.yaml), so no
 # credential is inside the sandbox.
+#
+# The bot id is the actor's name, projected from actor metadata, so the pool
+# can match the scheduler's busy bots to actors. The sandbox has no /dev/fuse,
+# so the runner copies inputs (input mode auto falls back to copy).
 metadata:
   atespace: tenant-a
   name: ci-runner
@@ -19,13 +24,26 @@ containers:
 - name: runner
   image: ko://github.com/imjasonh/playground/ci-substrate/cmd/runner # pasta:ignore unpinned_container_image
   args:
-  - -cache-addr=cascache.ci-substrate.svc.cluster.local:9092
   - -origin-addr=cas.ci-substrate.svc.cluster.local:8980
-  - -instance=tenant-a
+  - -cache-addr=cascache.ci-substrate.svc.cluster.local:9092
+  - -instances=tenant-a
   - -token=placeholder
+  - -bot-id-file=/system/name
+  - -work-dir=/tmp/ci-substrate
+  volumeMounts:
+  - name: system
+    mountPath: /system
+volumes:
+- name: system
+  systemInfo:
+    dataSources:
+    - actorMetadata:
+        items:
+        - field: ACTOR_METADATA_FIELD_NAME
+          path: name
 resources:
   limits:
     cpuMillicores: 1000
-    memoryBytes: 2147483648 # 2Gi
+    memoryBytes: 1073741824 # 1Gi
 snapshotConfig:
   preferredFidelity: SNAPSHOT_FIDELITY_MEMORY

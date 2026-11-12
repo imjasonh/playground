@@ -241,6 +241,29 @@ func TestReportsErrorsAndKeepsGoing(t *testing.T) {
 	}
 }
 
+func TestFullWorkersDoNotCascadeIntoCreates(t *testing.T) {
+	h := newHarness(t, 1, 4)
+	h.reconcile(t)
+	h.sub.actors["ci-runner-0"] = actorpool.StateSuspended
+	h.sub.take()
+
+	// One queued job and a worker pool with no room: the pool tries the
+	// warm actor and stops. It does not create actors that would not resume
+	// either.
+	h.queue.queued = 1
+	h.sub.fail["resume"] = errors.New("no worker has room for the actor")
+	if err := h.pool.Reconcile(t.Context()); err == nil {
+		t.Fatal("resume failure not reported")
+	}
+	if got := h.sub.take(); !slices.Equal(got, []string{"resume ci-runner-0"}) {
+		t.Fatalf("calls %v", got)
+	}
+	delete(h.sub.fail, "resume")
+	if got := h.reconcile(t); !slices.Equal(got, []string{"resume ci-runner-0"}) {
+		t.Fatalf("retry %v", got)
+	}
+}
+
 func TestRejectsBadConfig(t *testing.T) {
 	for _, cfg := range []actorpool.Config{
 		{Actors: newFake(), Queue: &fakeQueue{}, Prefix: "", Max: 1},

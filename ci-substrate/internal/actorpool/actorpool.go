@@ -219,17 +219,19 @@ func (p *Pool) Reconcile(ctx context.Context) error {
 	}
 	total := len(owned) - len(crashed)
 
-	// Demand: wake suspended actors, then create new ones up to Max.
+	// Demand: wake suspended actors, then create new ones up to Max. A
+	// failed resume still counts against need: the usual cause is a full
+	// worker pool, which more actors would not fix. The next tick retries.
 	for need > 0 && len(suspended) > 0 {
 		name := suspended[0]
 		suspended = suspended[1:]
+		need--
 		slog.Info("resuming actor for queued work", "actor", name, "queued", queued)
 		if err := p.cfg.Actors.Resume(ctx, name); err != nil {
 			errs = append(errs, fmt.Errorf("resuming %s: %w", name, err))
 			continue
 		}
 		p.lastBusy[name] = now
-		need--
 	}
 	// Below Warm, create actors too: their first run leaves the snapshot
 	// that makes a later resume warm.
@@ -237,6 +239,7 @@ func (p *Pool) Reconcile(ctx context.Context) error {
 		name := p.freeName(names)
 		names[name] = true
 		total++
+		need--
 		slog.Info("creating actor", "actor", name, "queued", queued, "total", total)
 		if err := p.cfg.Actors.Create(ctx, name); err != nil {
 			errs = append(errs, fmt.Errorf("creating %s: %w", name, err))
@@ -247,7 +250,6 @@ func (p *Pool) Reconcile(ctx context.Context) error {
 			continue
 		}
 		p.lastBusy[name] = now
-		need--
 	}
 
 	// Idle: suspend runners nobody needs. Keep as many idle runners as

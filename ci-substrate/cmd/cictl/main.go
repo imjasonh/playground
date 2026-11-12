@@ -42,6 +42,7 @@ func main() {
 	instanceA := flag.String("instance-a", "tenant-a", "tenant A private instance")
 	shared := flag.String("shared", "shared", "instance both tenants may read")
 	execTimeout := flag.Duration("exec-timeout", 3*time.Minute, "how long to wait for a runner to run the demo action; 0 skips execution")
+	workerPrefix := flag.String("worker-prefix", "", "if set, the runner that ran the action must report a worker name with this prefix")
 	flag.Parse()
 
 	if *originAddr == "" || *cacheAddr == "" {
@@ -49,14 +50,14 @@ func main() {
 		os.Exit(2)
 	}
 
-	if err := run(*originAddr, *cacheAddr, *cacheMetricsURL, *tokenA, *tokenB, *instanceA, *shared, *execTimeout); err != nil {
+	if err := run(*originAddr, *cacheAddr, *cacheMetricsURL, *tokenA, *tokenB, *instanceA, *shared, *execTimeout, *workerPrefix); err != nil {
 		slog.Error("demo failed", "err", err)
 		os.Exit(1)
 	}
 	slog.Info("demo passed: multi-tenant isolation, node-local cache reuse, and remote execution verified")
 }
 
-func run(originAddr, cacheAddr, metricsURL, tokenA, tokenB, instanceA, shared string, execTimeout time.Duration) error {
+func run(originAddr, cacheAddr, metricsURL, tokenA, tokenB, instanceA, shared string, execTimeout time.Duration, workerPrefix string) error {
 	originConn, err := grpc.NewClient(originAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err
@@ -80,7 +81,7 @@ func run(originAddr, cacheAddr, metricsURL, tokenA, tokenB, instanceA, shared st
 		slog.Info("skipping remote execution (-exec-timeout=0)")
 		return nil
 	}
-	return execDemo(ctxA, ctxB, origin, cacheClient, repb.NewExecutionClient(originConn), instanceA, execTimeout)
+	return execDemo(ctxA, ctxB, origin, cacheClient, repb.NewExecutionClient(originConn), instanceA, execTimeout, workerPrefix)
 }
 
 // cacheDemo proves node-local cache reuse across tenants and isolation of a
@@ -170,8 +171,10 @@ func cacheDemo(ctxA, ctxB context.Context, origin, cacheClient *remote.Client, m
 
 // execDemo runs an action through Execute on tenant A's runner, checks the
 // outputs it uploaded, and shows the next Execute is a cache hit and that
-// tenant B cannot submit into tenant A's instance.
-func execDemo(ctxA, ctxB context.Context, origin, cacheClient *remote.Client, execer repb.ExecutionClient, instanceA string, timeout time.Duration) error {
+// tenant B cannot submit into tenant A's instance. A non-empty workerPrefix
+// checks which kind of runner did the work: Substrate actors report their
+// actor name.
+func execDemo(ctxA, ctxB context.Context, origin, cacheClient *remote.Client, execer repb.ExecutionClient, instanceA string, timeout time.Duration, workerPrefix string) error {
 	content := fmt.Sprintf("hello from tenant A at %d\n", time.Now().UnixNano())
 	input, err := origin.Upload(ctxA, instanceA, []byte(content))
 	if err != nil {
@@ -210,7 +213,11 @@ func execDemo(ctxA, ctxB context.Context, origin, cacheClient *remote.Client, ex
 	if ar.GetExitCode() != 0 {
 		return fmt.Errorf("action exited %d", ar.GetExitCode())
 	}
-	slog.Info("action ran on a runner", "worker", ar.GetExecutionMetadata().GetWorker(), "took", time.Since(start).Round(time.Millisecond))
+	worker := ar.GetExecutionMetadata().GetWorker()
+	slog.Info("action ran on a runner", "worker", worker, "took", time.Since(start).Round(time.Millisecond))
+	if !strings.HasPrefix(worker, workerPrefix) {
+		return fmt.Errorf("worker %q does not have prefix %q", worker, workerPrefix)
+	}
 	if got, err := fetchString(ctxA, cacheClient, instanceA, ar.GetStdoutDigest()); err != nil || got != "done\n" {
 		return fmt.Errorf("stdout %q, err %v; want \"done\\n\"", got, err)
 	}
