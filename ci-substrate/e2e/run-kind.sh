@@ -100,11 +100,33 @@ ensure_registry() {
     registry:2 >/dev/null
 }
 
+# kube-proxy and local-path-provisioner exit with "too many open files" when
+# the host's inotify instance limit is low (Linux defaults to 128) and another
+# kind cluster already holds most of them. Raise the limits when permitted;
+# otherwise continue, since a single cluster on a CI runner stays under them.
+# See https://kind.sigs.k8s.io/docs/user/known-issues/#pod-errors-due-to-too-many-open-files
+raise_inotify_limits() {
+  local instances watches
+  instances="$(sysctl -n fs.inotify.max_user_instances 2>/dev/null || echo 0)"
+  watches="$(sysctl -n fs.inotify.max_user_watches 2>/dev/null || echo 0)"
+  if [[ "${instances}" -ge 512 && "${watches}" -ge 524288 ]]; then
+    return
+  fi
+  local sudo=""
+  if [[ "$(id -u)" -ne 0 ]]; then
+    command -v sudo >/dev/null 2>&1 || return 0
+    sudo="sudo -n"
+  fi
+  ${sudo} sysctl -q -w fs.inotify.max_user_instances=512 fs.inotify.max_user_watches=524288 2>/dev/null ||
+    echo "could not raise inotify limits (instances=${instances}, watches=${watches}); continuing" >&2
+}
+
 create_cluster() {
   if kind get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}"; then
     echo "Reusing kind cluster ${CLUSTER_NAME}"
     return
   fi
+  raise_inotify_limits
   cat >"${WORKDIR}/kind.yaml" <<EOF
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
