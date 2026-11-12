@@ -16,7 +16,7 @@ metadata:
     workload: ci-runner
 spec:
   replicas: 1
-  workerImage: ghcr.io/agent-substrate/substrate/ateworker-gvisor:v1.0.0 # pasta:ignore unpinned_container_image
+  workerImage: ghcr.io/agent-substrate/substrate/ateworker-gvisor:v1.0.0
   sandboxClasses:
     - name: gvisor
   template:

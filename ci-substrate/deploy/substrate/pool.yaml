@@ -50,7 +50,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: pool
-          image: ko://github.com/imjasonh/playground/ci-substrate/cmd/pool
+          image: ko://github.com/imjasonh/playground/ci-substrate/cmd/pool # pasta:ignore unpinned_container_image
           env:
             - name: ATESPACE
               value: tenant-a
