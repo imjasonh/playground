@@ -16,6 +16,7 @@ package casfs
 import (
 	"context"
 	"log/slog"
+	"os"
 	"sync"
 	"syscall"
 
@@ -31,10 +32,11 @@ import (
 // use f with instance.
 func Mount(dir string, t *tree.Tree, f tree.Fetcher, instance string) (*fuse.Server, error) {
 	root := &dirNode{fsys: &casfs{tree: t, fetcher: f, instance: instance}, digest: t.Root}
-	// DirectMount calls mount(2) itself, which works as root in a container
-	// with no fusermount binary, and falls back to fusermount otherwise.
+	// As root, call mount(2) directly: a container has no fusermount binary,
+	// and the strict mode reports the mount error itself rather than a
+	// missing fusermount. Otherwise go with the fusermount helper.
 	return fs.Mount(dir, root, &fs.Options{
-		MountOptions: fuse.MountOptions{FsName: "casfs", Name: "casfs", DirectMount: true},
+		MountOptions: fuse.MountOptions{FsName: "casfs", Name: "casfs", DirectMountStrict: os.Geteuid() == 0},
 	})
 }
 

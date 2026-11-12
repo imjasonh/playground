@@ -402,10 +402,17 @@ func (s *Scheduler) Lease(ctx context.Context, req *workerv1.LeaseRequest) (*wor
 		return &workerv1.LeaseResponse{}, nil
 	case j := <-w.ch:
 		s.mu.Lock()
+		defer s.mu.Unlock()
+		if ctx.Err() != nil {
+			// The runner went away while the job was handed over, as a
+			// stopping pod does. Requeue now instead of waiting for the
+			// lease to expire.
+			j.botID = ""
+			s.enqueueLocked(j)
+			return nil, status.FromContextError(ctx.Err()).Err()
+		}
 		j.botID = req.GetBotId()
-		resp := &workerv1.LeaseResponse{Job: s.jobProto(j)}
-		s.mu.Unlock()
-		return resp, nil
+		return &workerv1.LeaseResponse{Job: s.jobProto(j)}, nil
 	}
 }
 

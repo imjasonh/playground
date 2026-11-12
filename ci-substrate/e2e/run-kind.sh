@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Spin up a KinD cluster, ko-apply the cas + cascache control plane, and run
-# cictl against them over port-forwards to prove multi-tenant isolation and
-# node-local cache reuse. Invoked by go test ./e2e when CI_SUBSTRATE_KIND_E2E=1.
+# Spin up a KinD cluster, ko-apply the cas, cascache, and runner control
+# plane, and run cictl against them over port-forwards to prove multi-tenant
+# isolation, node-local cache reuse, and remote execution. Invoked by go test
+# ./e2e when CI_SUBSTRATE_KIND_E2E=1.
 #
 # Builds and deploys go through ko only: there are no Dockerfiles and no Helm
 # charts. Images land in the kind local registry at KO_DOCKER_REPO.
@@ -129,11 +130,6 @@ EOF
   done
 }
 
-await_ready() {
-  local kind=$1 name=$2
-  kubectl -n ci-substrate wait --for=condition=Available --timeout=180s "${kind}/${name}"
-}
-
 mkdir -p "${WORKDIR}"
 need_cmd docker
 need_cmd go
@@ -150,12 +146,15 @@ create_cluster
 kubectl cluster-info --context "kind-${CLUSTER_NAME}" >/dev/null
 
 export KO_DOCKER_REPO="localhost:${REGISTRY_PORT}/ci-substrate"
-# Prefer the repo's chainguard static base; when that registry is unreachable
-# (egress-restricted VMs), fall back to the docker.io mirror of the same image.
+# Prefer the repo's chainguard bases; when that registry is unreachable
+# (egress-restricted VMs), fall back to the docker.io mirrors of the same
+# images, for the default base and for the runner's override in .ko.yaml.
 if [[ -z "${KO_DEFAULTBASEIMAGE:-}" ]]; then
   if ! curl -fsS --max-time 3 https://cgr.dev/v2/ >/dev/null 2>&1; then
     export KO_DEFAULTBASEIMAGE=registry-1.docker.io/chainguard/static:latest
-    echo "cgr.dev unreachable; using ${KO_DEFAULTBASEIMAGE}"
+    sed 's#cgr.dev/chainguard/#registry-1.docker.io/chainguard/#' "${ROOT}/.ko.yaml" >"${WORKDIR}/.ko.yaml"
+    export KO_CONFIG_PATH="${WORKDIR}/.ko.yaml"
+    echo "cgr.dev unreachable; using ${KO_DEFAULTBASEIMAGE} and ${KO_CONFIG_PATH}"
   fi
 fi
 
@@ -165,7 +164,7 @@ echo "ko apply deploy/"
 # so a ko resolve failure does not leave a half-applied namespace alone.
 kubectl apply -f deploy/00-namespace-and-config.yaml
 ko apply -f deploy/10-cas.yaml
-await_ready deployment cas
+kubectl -n ci-substrate rollout status statefulset/cas --timeout=300s
 
 # Some nested kind environments cannot program ClusterIP rules (kube-proxy's
 # iptables-restore fails without the xt_statistic module), so point cascache
@@ -177,6 +176,15 @@ ko resolve -f deploy/20-cascache.yaml \
   | sed "s#cas.ci-substrate.svc.cluster.local#${CAS_POD_IP}#g" \
   | kubectl apply -f -
 kubectl -n ci-substrate rollout status daemonset/cascache --timeout=300s
+
+# The runners dial cas and the cascache on their own node by pod IP for the
+# same reason. The cascache is a DaemonSet on a one-node cluster, so its one
+# pod is the node-local one.
+CACHE_POD_IP="$(kubectl -n ci-substrate get pod -l app=cascache -o jsonpath='{.items[0].status.podIP}')"
+ko resolve -f deploy/40-runner.yaml \
+  | sed "s#cas.ci-substrate.svc.cluster.local#${CAS_POD_IP}#g; s#cascache.ci-substrate.svc.cluster.local#${CACHE_POD_IP}#g" \
+  | kubectl apply -f -
+kubectl -n ci-substrate rollout status deployment/runner-tenant-a --timeout=300s
 
 # Port-forward Services (stable targets) from the host. This avoids pinning a
 # DaemonSet pod name that a second rollout would replace, which broke CI.
@@ -214,6 +222,10 @@ go build -o "${WORKDIR}/cictl" ./cmd/cictl
   -token-a=tok-a \
   -token-b=tok-b \
   -instance-a=tenant-a \
-  -shared=shared
+  -shared=shared \
+  -exec-timeout=3m
+
+echo "Runner logs:"
+kubectl -n ci-substrate logs -l app=runner --tail=20 --prefix
 
 echo "ci-substrate kind e2e passed"

@@ -155,7 +155,10 @@ func (noFetcher) Fetch(context.Context, string, *repb.Digest) ([]byte, error) {
 func (b *Bot) InputMode() InputMode { return b.cfg.InputMode }
 
 // Run leases and runs jobs until ctx ends. Errors from the scheduler are
-// logged and retried; the loop only returns with ctx's error.
+// logged and retried; the loop only returns with ctx's error. A job that is
+// running when ctx ends runs to completion: the action's own timeout and the
+// pod's termination grace period bound it, and its result still reaches the
+// scheduler.
 func (b *Bot) Run(ctx context.Context) error {
 	ctx = tenant.Outgoing(ctx, b.cfg.Token)
 	for {
@@ -178,7 +181,7 @@ func (b *Bot) Run(ctx context.Context) error {
 		if job == nil {
 			continue
 		}
-		b.RunJob(ctx, job)
+		b.RunJob(context.WithoutCancel(ctx), job)
 	}
 }
 

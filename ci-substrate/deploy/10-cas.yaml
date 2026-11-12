@@ -26,6 +26,8 @@ spec:
           env:
             - name: ADDR
               value: ":8980"
+            - name: LEASE_DURATION
+              value: 10s
             - name: STORE_DIR
               value: /data
             - name: TENANTS
