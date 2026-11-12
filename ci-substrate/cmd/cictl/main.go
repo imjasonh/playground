@@ -78,11 +78,26 @@ func run(originAddr, cacheAddr, metricsURL, tokenA, tokenB, instanceA, shared st
 	}
 	slog.Info("tenant A uploaded shared blob", "digest", digest.Key(d))
 
+	stats := func() (cache.Stats, error) {
+		if metricsURL == "" {
+			return cache.Stats{}, nil
+		}
+		return fetchStats(metricsURL)
+	}
+	before, err := stats()
+	if err != nil {
+		return err
+	}
+
 	// Tenant A reads it through the node-local cache (cold: one origin fetch).
 	if _, err := retry(func() ([]byte, error) {
 		return cacheClient.Fetch(ctxA, shared, d)
 	}); err != nil {
 		return fmt.Errorf("tenant A cold read: %w", err)
+	}
+	afterCold, err := stats()
+	if err != nil {
+		return err
 	}
 	// Tenant B reads the same content (warm: should be a node-local hit).
 	got, err := retry(func() ([]byte, error) {
@@ -94,21 +109,43 @@ func run(originAddr, cacheAddr, metricsURL, tokenA, tokenB, instanceA, shared st
 	if string(got) != string(content) {
 		return errors.New("tenant B read wrong bytes from cache")
 	}
-	slog.Info("tenant B served shared blob from node-local cache")
+	afterWarm, err := stats()
+	if err != nil {
+		return err
+	}
+	if metricsURL != "" {
+		// The cascache counters are cumulative across runs, so compare
+		// deltas: the cold read fetches once, the warm read only hits.
+		slog.Info("cache stats", "hits", afterWarm.Hits, "originFetches", afterWarm.OriginFetches, "poisonRejected", afterWarm.PoisonRejected)
+		if n := afterCold.OriginFetches - before.OriginFetches; n != 1 {
+			return fmt.Errorf("cold read made %d origin fetches, want 1", n)
+		}
+		if n := afterWarm.OriginFetches - afterCold.OriginFetches; n != 0 {
+			return fmt.Errorf("warm read made %d origin fetches, want 0", n)
+		}
+		if n := afterWarm.Hits - afterCold.Hits; n != 1 {
+			return fmt.Errorf("warm read made %d cache hits, want 1", n)
+		}
+	}
+	slog.Info("tenant B served shared blob from node-local cache with no origin fetch")
 
-	// Isolation: tenant B must not read tenant A's private instance.
+	// Isolation: tenant B must not read through tenant A's private instance.
 	if err := tryCrossTenant(ctxB, cacheClient, instanceA, d); err != nil {
 		return err
 	}
-	slog.Info("isolation held: tenant B denied tenant A's private instance")
-
-	// If the cache exposes metrics, confirm the warm read avoided a second
-	// origin fetch.
-	if metricsURL != "" {
-		if err := checkStats(metricsURL); err != nil {
-			return err
-		}
+	// Isolation: tenant B must not read tenant A's action cache, which is
+	// what maps tenant A's actions to its output digests.
+	action := digest.FromBytes([]byte(fmt.Sprintf("tenant A action %d", time.Now().UnixNano())))
+	if err := origin.UpdateActionResult(ctxA, instanceA, action, &repb.ActionResult{StdoutDigest: d}); err != nil {
+		return fmt.Errorf("tenant A action cache write: %w", err)
 	}
+	if _, _, err := origin.GetActionResult(ctxB, instanceA, action); status.Code(err) != codes.PermissionDenied {
+		return fmt.Errorf("tenant B reading tenant A's action cache: got %v, want PermissionDenied", err)
+	}
+	if _, ok, err := origin.GetActionResult(ctxA, instanceA, action); err != nil || !ok {
+		return fmt.Errorf("tenant A reading its own action cache: ok=%v err=%v", ok, err)
+	}
+	slog.Info("isolation held: tenant B denied tenant A's instance and action cache")
 	return nil
 }
 
@@ -141,19 +178,16 @@ func retry[T any](fn func() (T, error)) (T, error) {
 	return zero, last
 }
 
-func checkStats(metricsURL string) error {
+func fetchStats(metricsURL string) (cache.Stats, error) {
+	var s cache.Stats
 	resp, err := http.Get(metricsURL + "/stats")
 	if err != nil {
-		return err
+		return s, err
 	}
 	defer resp.Body.Close()
-	var s cache.Stats
-	if err := json.NewDecoder(resp.Body).Decode(&s); err != nil {
-		return err
+	if resp.StatusCode != http.StatusOK {
+		return s, fmt.Errorf("GET %s/stats: %s", metricsURL, resp.Status)
 	}
-	slog.Info("cache stats", "hits", s.Hits, "originFetches", s.OriginFetches, "poisonRejected", s.PoisonRejected)
-	if s.Hits < 1 {
-		return fmt.Errorf("expected at least one cache hit, stats=%+v", s)
-	}
-	return nil
+	err = json.NewDecoder(resp.Body).Decode(&s)
+	return s, err
 }

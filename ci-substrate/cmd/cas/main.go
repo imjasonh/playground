@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/signal"
+	"syscall"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/sethvargo/go-envconfig"
@@ -31,7 +33,8 @@ type config struct {
 }
 
 func main() {
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
 	var c config
 	envconfig.MustProcess(ctx, &c)
 
@@ -66,6 +69,12 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Info("cas serving", "addr", c.Addr, "store", c.StoreDir)
+	go func() {
+		<-ctx.Done()
+		slog.Info("shutting down")
+		hs.Shutdown()
+		srv.GracefulStop()
+	}()
 	if err := srv.Serve(lis); err != nil {
 		slog.Error("serve", "err", err)
 		os.Exit(1)

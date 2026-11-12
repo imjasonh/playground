@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -49,6 +50,7 @@ func main() {
 
 	// Prefetch inputs from the node-local cache, proving reads are served near
 	// the actor. Each read is verified against its digest by the cache.
+	var inputDigests []*repb.Digest
 	if *inputs != "" {
 		addr := *cacheAddr
 		if addr == "" {
@@ -73,20 +75,24 @@ func main() {
 				os.Exit(1)
 			}
 			slog.Info("prefetched input from node-local cache", "digest", in, "bytes", len(b))
+			inputDigests = append(inputDigests, d)
 		}
 	}
 
-	// Describe the action and look it up in the action cache first.
-	cmdProto := &repb.Command{Arguments: []string{"sh", "-c", *command}}
-	cmdBytes, _ := proto.Marshal(cmdProto)
-	cmdDigest, err := origin.Upload(ctx, *instance, cmdBytes)
+	// Describe the action and look it up in the action cache first. The
+	// action names its inputs through an input root, so the same command over
+	// different inputs is a different action.
+	cmdDigest, err := uploadProto(ctx, origin, *instance, &repb.Command{Arguments: []string{"sh", "-c", *command}})
 	if err != nil {
 		slog.Error("uploading command", "err", err)
 		os.Exit(1)
 	}
-	actionProto := &repb.Action{CommandDigest: cmdDigest}
-	actionBytes, _ := proto.Marshal(actionProto)
-	actionDigest, err := origin.Upload(ctx, *instance, actionBytes)
+	rootDigest, err := uploadProto(ctx, origin, *instance, inputRoot(inputDigests))
+	if err != nil {
+		slog.Error("uploading input root", "err", err)
+		os.Exit(1)
+	}
+	actionDigest, err := uploadProto(ctx, origin, *instance, &repb.Action{CommandDigest: cmdDigest, InputRootDigest: rootDigest})
 	if err != nil {
 		slog.Error("uploading action", "err", err)
 		os.Exit(1)
@@ -97,6 +103,10 @@ func main() {
 		os.Exit(1)
 	} else if ok {
 		slog.Info("action cache hit; skipping execution", "action", digest.Key(actionDigest), "exitCode", ar.GetExitCode())
+		if err := replay(ctx, origin, *instance, ar); err != nil {
+			slog.Error("replaying cached output", "err", err)
+			os.Exit(1)
+		}
 		os.Exit(int(ar.GetExitCode()))
 	}
 
@@ -136,7 +146,55 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Info("executed and cached action", "action", digest.Key(actionDigest), "exitCode", exitCode, "stdoutBytes", len(stdout))
+	os.Stdout.Write(stdout)
+	os.Stderr.Write(stderr)
 	os.Exit(int(exitCode))
+}
+
+// uploadProto stores m under its digest. Marshaling is deterministic so the
+// same message always has the same digest, which the action cache relies on.
+func uploadProto(ctx context.Context, c *remote.Client, instance string, m proto.Message) (*repb.Digest, error) {
+	b, err := proto.MarshalOptions{Deterministic: true}.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	return c.Upload(ctx, instance, b)
+}
+
+// inputRoot lists the prefetched inputs as files named by their hashes, in
+// the sorted order the Remote Execution API requires of a Directory.
+func inputRoot(inputs []*repb.Digest) *repb.Directory {
+	dir := &repb.Directory{}
+	for _, d := range inputs {
+		dir.Files = append(dir.Files, &repb.FileNode{Name: d.GetHash(), Digest: d})
+	}
+	slices.SortFunc(dir.Files, func(a, b *repb.FileNode) int { return strings.Compare(a.GetName(), b.GetName()) })
+	dir.Files = slices.CompactFunc(dir.Files, func(a, b *repb.FileNode) bool { return a.GetName() == b.GetName() })
+	return dir
+}
+
+// replay writes a cached action's stdout and stderr, so a cache hit looks the
+// same to the caller as the run that produced it.
+func replay(ctx context.Context, c *remote.Client, instance string, ar *repb.ActionResult) error {
+	for _, out := range []struct {
+		d *repb.Digest
+		w *os.File
+	}{{ar.GetStdoutDigest(), os.Stdout}, {ar.GetStderrDigest(), os.Stderr}} {
+		if out.d == nil {
+			continue
+		}
+		b, err := c.Fetch(ctx, instance, out.d)
+		if err != nil {
+			return err
+		}
+		if err := digest.Verify(out.d, b); err != nil {
+			return err
+		}
+		if _, err := out.w.Write(b); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func parseDigest(s string) (*repb.Digest, error) {

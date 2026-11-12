@@ -13,6 +13,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/sethvargo/go-envconfig"
@@ -39,7 +42,8 @@ type config struct {
 }
 
 func main() {
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
 	var c config
 	envconfig.MustProcess(ctx, &c)
 
@@ -84,6 +88,12 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Info("cascache serving", "addr", c.Addr, "origin", c.OriginAddr, "store", c.StoreDir)
+	go func() {
+		<-ctx.Done()
+		slog.Info("shutting down")
+		hs.Shutdown()
+		srv.GracefulStop()
+	}()
 	if err := srv.Serve(lis); err != nil {
 		slog.Error("serve", "err", err)
 		os.Exit(1)
@@ -100,7 +110,8 @@ func serveMetrics(addr string, c *cache.Cache) {
 			slog.Error("encoding stats", "err", err)
 		}
 	})
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	if err := srv.ListenAndServe(); err != nil {
 		slog.Error("metrics server", "err", err)
 	}
 }
