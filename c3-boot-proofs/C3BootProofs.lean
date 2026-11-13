@@ -87,6 +87,8 @@ import C3BootProofs.Proofs.P384PtEnv
 import C3BootProofs.Proofs.P384PtDouble
 import C3BootProofs.Proofs.UintSelect2
 import C3BootProofs.Proofs.CondNeg12
+import C3BootProofs.Proofs.UintSelect8
+import C3BootProofs.Proofs.CondNeg8
 import C3BootProofs.Proofs.P384Add
 import C3BootProofs.Proofs.P384Double
 import C3BootProofs.Proofs.P384Sub

@@ -27,6 +27,7 @@ import C3BootProofs.Proofs.FePow2k
 import C3BootProofs.Proofs.Sha512Compress
 import C3BootProofs.Proofs.P384PtDouble
 import C3BootProofs.Proofs.CondNeg12
+import C3BootProofs.Proofs.CondNeg8
 import C3BootProofs.Proofs.ImageHelpers
 import C3BootProofs.Proofs.Block
 import C3BootProofs.Proofs.ImageCalls
@@ -2078,6 +2079,75 @@ theorem exists_condNeg12_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+
+/-- Memory with the current image's `conditional_negate_in_place_wide::<8, 2>`,
+the functions it calls, and `Uint<2>::ZERO` and `Uint<2>::ONE` where the
+image loads them, and zeros elsewhere. -/
+def witnessMemC8 (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.condNeg8Address).toNat < Image.condNeg8Code.length then
+    RV32.byteAt Image.condNeg8Code (a - BitVec.ofNat 32 Image.condNeg8Address).toNat
+  else if (a - BitVec.ofNat 32 Image.memsetAddress).toNat < Image.memsetCode.length then
+    RV32.byteAt Image.memsetCode (a - BitVec.ofNat 32 Image.memsetAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat < Image.memcpyStubCode.length then
+    RV32.byteAt Image.memcpyStubCode (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat < Image.memcpyBodyCode.length then
+    RV32.byteAt Image.memcpyBodyCode (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.uintSelect2Address).toNat < Image.uintSelect2Code.length then
+    RV32.byteAt Image.uintSelect2Code (a - BitVec.ofNat 32 Image.uintSelect2Address).toNat
+  else if (a - BitVec.ofNat 32 Image.uintSelect8Address).toNat < Image.uintSelect8Code.length then
+    RV32.byteAt Image.uintSelect8Code (a - BitVec.ofNat 32 Image.uintSelect8Address).toNat
+  else if (a - BitVec.ofNat 32 Image.u2ZeroAddress).toNat < Image.u2ZeroData.length then
+    RV32.byteAt Image.u2ZeroData (a - BitVec.ofNat 32 Image.u2ZeroAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.u2OneAddress).toNat < Image.u2OneData.length then
+    RV32.byteAt Image.u2OneData (a - BitVec.ofNat 32 Image.u2OneAddress).toNat
+  else 0
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Uint<8>::select` with the result at `0x3FCC5000`,
+the operands at `0x3FCC6000` and `0x3FCC6100`, the choice 1, and the stack
+at `0x3FCC8000` meets `uintSelect8_correct`'s hypotheses. -/
+theorem exists_uintSelect8_machine :
+    ∃ (m : RV32.Machine) (S out ap bp c retAddr : RV32.Word),
+      RV32.Sel8Env m.mem S (RV32.reg m RV32.sp) out ap bp ∧ m.pc = S ∧ RV32.reg m RV32.a0 = out ∧
+      RV32.reg m RV32.a1 = ap ∧ RV32.reg m RV32.a2 = bp ∧ RV32.reg m RV32.a3 = c ∧ (c = 0 ∨ c = 1) ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x3FCC6100
+    else if r = RV32.a3 then 1 else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.uintSelect8Address, witnessMemC8⟩, BitVec.ofNat 32 Image.uintSelect8Address,
+    0x3FCC5000, 0x3FCC6000, 0x3FCC6100, 1, 0, ?_, rfl, rfl, rfl, rfl, rfl, .inr rfl, rfl, by decide⟩
+  constructor
+  all_goals first
+    | (unfold RV32.CodeIn; decide +kernel)
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option exponentiation.threshold 600 in
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `conditional_negate_in_place_wide::<8, 2>` with
+`lo` at `0x3FCC5000`, `hi` at `0x3FCC6000`, the flag 1, and the stack at
+`0x3FCC8000` meets `condNeg8_correct`'s hypotheses. -/
+theorem exists_condNeg8_machine :
+    ∃ (m : RV32.Machine) (P sp0 lo hi fl retAddr : RV32.Word), RV32.C8Env m.mem P sp0 lo hi ∧ m.pc = P ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = lo ∧ RV32.reg m RV32.a1 = hi ∧ RV32.reg m RV32.a2 = fl ∧
+      (fl = 0 ∨ fl = 1) ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 1
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.condNeg8Address, witnessMemC8⟩, BitVec.ofNat 32 Image.condNeg8Address,
+    0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 1, 0, ?_, rfl, rfl, rfl, rfl, rfl, .inr rfl, rfl, by decide⟩
+  constructor
+  all_goals first
+    | (unfold RV32.CodeIn; decide +kernel)
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -2544,3 +2614,15 @@ end C3
 
 /-- info: 'C3.exists_condNeg12_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_condNeg12_machine
+
+/-- info: 'C3.RV32.uintSelect8_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.uintSelect8_correct
+
+/-- info: 'C3.exists_uintSelect8_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_uintSelect8_machine
+
+/-- info: 'C3.RV32.condNeg8_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.condNeg8_correct
+
+/-- info: 'C3.exists_condNeg8_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_condNeg8_machine
