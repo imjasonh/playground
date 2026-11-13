@@ -36,7 +36,8 @@ from IndexedDB.
 
 ## Fetch flow
 
-1. Normalize the typed URL to a smart-HTTP base (`…/repo.git`).
+1. Normalize the typed URL to a smart-HTTP base (`…/repo.git`). The repo field
+   starts as `imjasonh/playground`.
 2. `GET …/info/refs?service=git-upload-pack` through the CORS proxy.
 3. Choose **Only default branch** or **All N branches**. Tags are not fetched.
    Depth defaults to 1 so the pack stays small.
