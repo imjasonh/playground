@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"testing"
 
@@ -378,6 +379,9 @@ func TestPublishServesExecRoots(t *testing.T) {
 			t.Skip("fusermount not available")
 		}
 	}
+	// The test reads a mount this process serves, which deadlocks if a
+	// garbage collection stops the world mid-read.
+	debug.SetGCPercent(-1)
 	f := newMemFetcher()
 	hello := f.put([]byte("from the node's cache"))
 	root := f.put(tree.Marshal(&repb.Directory{Files: []*repb.FileNode{{Name: "hello.txt", Digest: hello}}}))
