@@ -227,22 +227,6 @@ export function renderPaths(el, entries, { limit = 2000 } = {}) {
 
 // --- Landing --------------------------------------------------------------
 
-/** Populate the ref picker with a checkbox per branch and tag. */
-export function renderRefPicker(el, refs, head) {
-  const rows = refs.filter((r) => r.name !== "HEAD").sort((a, b) => a.name.localeCompare(b.name));
-  el.innerHTML = rows
-    .map((ref, i) => {
-      const id = `pick-${i}`;
-      const isHead = ref.oid === head;
-      return (
-        `<li><label for="${id}"><input type="checkbox" id="${id}" value="${escapeHtml(ref.oid)}"${isHead ? " checked" : ""} />` +
-        `<span class="ref-name">${escapeHtml(ref.name)}${isHead ? ` <span class="tag">HEAD</span>` : ""}</span>` +
-        `<span class="mono muted">${escapeHtml(shortOid(ref.oid))}</span></label></li>`
-      );
-    })
-    .join("");
-}
-
 export function renderSaved(el, list) {
   el.innerHTML = list
     .map(

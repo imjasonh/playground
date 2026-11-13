@@ -48,30 +48,26 @@
       </label>
     </header>
 
-    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <div id="status-wrap" class="status-wrap" hidden>
+      <div class="status-row">
+        <p id="status" role="status" aria-live="polite"></p>
+        <p id="status-detail" class="status-detail"></p>
+      </div>
+      <progress id="status-bar" aria-labelledby="status" hidden></progress>
+    </div>
 
     <main id="app" class="app">
       <div id="tray" class="tray" hidden>
-        <section id="refpicker" class="card refpicker" aria-labelledby="refpicker-title" hidden>
+        <section id="refpicker" class="card" aria-labelledby="refpicker-title" hidden>
           <div class="card-head">
-            <h2 id="refpicker-title">Choose refs to fetch</h2>
+            <h2 id="refpicker-title">Fetch pack</h2>
             <div class="card-actions">
               <label class="depth" for="picker-depth">Depth</label>
               <input id="picker-depth" type="number" min="1" max="50" value="1" />
-              <button type="button" id="picker-all">Select all</button>
-              <button type="button" id="picker-none">Clear</button>
-              <button type="button" id="picker-fetch" class="primary">Fetch selected</button>
+              <button type="button" id="picker-default" class="primary">Only default branch</button>
+              <button type="button" id="picker-branches">All branches</button>
             </div>
           </div>
-          <ul id="refpicker-list" class="refpicker-list"></ul>
-        </section>
-
-        <section id="progress" class="card progress" aria-labelledby="progress-title" hidden>
-          <div class="card-head">
-            <h2 id="progress-title">Server progress</h2>
-            <button type="button" id="progress-hide">Hide</button>
-          </div>
-          <pre id="progress-log" class="progress-log"></pre>
         </section>
       </div>
 

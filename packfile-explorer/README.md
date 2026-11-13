@@ -38,10 +38,12 @@ from IndexedDB.
 
 1. Normalize the typed URL to a smart-HTTP base (`…/repo.git`).
 2. `GET …/info/refs?service=git-upload-pack` through the CORS proxy.
-3. Pick which refs to fetch — HEAD is preselected; check more branches or tags,
-   or **Select all**. Set the depth (default 1) so the pack stays small.
-4. `POST …/git-upload-pack` with a `want` per chosen ref. Side-band progress
-   from the server streams into a live log as the pack arrives.
+3. Choose **Only default branch** or **All N branches**. Tags are not fetched.
+   Depth defaults to 1 so the pack stays small.
+4. `POST …/git-upload-pack` with a `want` per chosen branch. The status line
+   follows the server while it enumerates, counts, and compresses, then the
+   bytes received (and the rate, when the body streams), then parsing and
+   resolving. A bar fills in when the total is known.
 5. Demultiplex the side-band-64k response into raw pack bytes.
 6. Parse every entry (in a Web Worker when available, so the tab stays
    responsive), inflate zlib members (recording compressed length), resolve

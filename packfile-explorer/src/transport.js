@@ -28,10 +28,12 @@ export async function fetchRefs(proxyBase, base) {
  * Fetch a packfile for the given wants. `deepen` requests a shallow clone.
  *
  * When the response body streams, side-band progress is reported live through
- * `onProgress(text)`; otherwise the whole body is demuxed at once. `wants` must
- * be a non-empty list of oids. Returns `{ pack, progress, control }`.
+ * `onProgress(text)` and received bytes through `onBytes({ received, total })`.
+ * `total` is the Content-Length, or null when the server didn't send one.
+ * Without a stream, the whole body is demuxed at once. `wants` must be a
+ * non-empty list of oids. Returns `{ pack, progress, control }`.
  */
-export async function fetchPack(proxyBase, base, { wants, deepen = 1, onProgress = null }) {
+export async function fetchPack(proxyBase, base, { wants, deepen = 1, onProgress = null, onBytes = null }) {
   const body = buildFetchRequest({ wants, deepen });
   const url = proxied(proxyBase, uploadPackUrl(base));
   const res = await fetch(url, {
@@ -47,17 +49,25 @@ export async function fetchPack(proxyBase, base, { wants, deepen = 1, onProgress
   }
 
   let result;
+  const declared = Number(res.headers.get("Content-Length"));
+  const totalBytes = Number.isFinite(declared) && declared > 0 ? declared : null;
   if (res.body && typeof res.body.getReader === "function") {
     const reader = createUploadPackReader({ onProgress });
     const streamReader = res.body.getReader();
+    let received = 0;
     for (;;) {
       const { value, done } = await streamReader.read();
       if (done) break;
-      if (value && value.length) reader.push(value instanceof Uint8Array ? value : new Uint8Array(value));
+      if (!value || !value.length) continue;
+      const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+      received += chunk.length;
+      if (onBytes) onBytes({ received, total: totalBytes });
+      reader.push(chunk);
     }
     result = reader.finish();
   } else {
     const bytes = new Uint8Array(await res.arrayBuffer());
+    if (onBytes) onBytes({ received: bytes.length, total: totalBytes ?? bytes.length });
     const { sidebandLines } = splitUploadPackResult(bytes);
     const { pack, progress, error } = demuxSideband(sidebandLines);
     result = { pack, progress, error, control: [] };
