@@ -9,6 +9,13 @@
 # lock state and does not apply. State records OpenTofu registry
 # provider addresses, so this script runs tofu, not terraform.
 #
+# The plan account can read the state bucket and cannot create objects.
+# The GCS backend writes <prefix>/default.tfstate, and a lock beside it,
+# the first time it loads a prefix that has no state. A pull request
+# cannot do that write. When init fails on that lock, the plan runs
+# with -backend=false: an empty state, no write to the state bucket.
+# Apply on main creates the state and the resources together.
+#
 # Usage:
 #   deploy-gcp.sh --check APP
 #   deploy-gcp.sh --check-plan APP
@@ -181,10 +188,47 @@ tf_vars=(
   -var "project_id=${GCP_PROJECT_ID}"
 )
 
-run tofu -chdir="$tfdir" init \
-  -input=false \
-  -reconfigure \
+gcs_init=(
+  tofu -chdir="$tfdir" init
+  -input=false
+  -reconfigure
   -backend-config="bucket=${GCP_TF_STATE_BUCKET}"
+)
+
+# Plan against an empty state when this prefix has never been applied.
+# init's GCS backend creates the state object if it is missing, which the
+# plan account cannot do. A second pull request cannot create it either:
+# the object is not a Terraform resource, and apply runs only on main.
+plan_without_state() {
+  local log
+  log=$(mktemp)
+  if "${gcs_init[@]}" >"$log" 2>&1; then
+    cat "$log"
+    rm -f "$log"
+    return 0
+  fi
+  cat "$log" >&2
+  if ! grep -q 'default.tflock' "$log" || ! grep -q 'storage.objects.create' "$log"; then
+    rm -f "$log"
+    return 1
+  fi
+  rm -f "$log"
+  # init saved the GCS backend before the lock write failed. Drop that,
+  # or the next init loads it again and tries the same write.
+  rm -rf "${tfdir}/.terraform"
+  echo "gcp: ${app} has no state yet. Planning with -backend=false. Nothing is written to ${GCP_TF_STATE_BUCKET}." >&2
+  tofu -chdir="$tfdir" init \
+    -input=false \
+    -backend=false
+}
+
+if [[ "${DRY_RUN:-}" == "1" ]]; then
+  run "${gcs_init[@]}"
+elif [[ "$plan_mode" == true ]]; then
+  plan_without_state
+else
+  "${gcs_init[@]}"
+fi
 
 # Comment the plan on the pull request and on the job summary. The fence
 # grows until the plan text cannot close it.

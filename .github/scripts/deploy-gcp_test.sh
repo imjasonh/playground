@@ -394,6 +394,49 @@ if ! err=$(
   fail "--check without plan variables failed: $err"
 fi
 
+# A prefix with no state makes init try to create the lock. The plan
+# account cannot, so the plan uses an empty local state instead.
+cat >"$tmp/bin/tofu" <<EOF
+#!/bin/sh
+printf 'tofu' >> "$log"
+printf ' %s' "\$@" >> "$log"
+printf '\\n' >> "$log"
+case "\$*" in
+  *init*)
+    case "\$*" in
+      *-backend=false*) exit 0 ;;
+    esac
+    echo 'Error loading state: writing "gs://bucket/app/default.tflock" failed: Permission storage.objects.create denied' >&2
+    exit 1
+    ;;
+esac
+if [ "\$2" = "plan" ]; then
+  echo "Plan: 1 to add, 0 to change, 0 to destroy."
+fi
+EOF
+chmod +x "$tmp/bin/tofu"
+: >"$log"
+missing=$(
+  PATH="$tmp/bin:$PATH" \
+    GCP_DEPLOY_ROOT="$tmp" \
+    GCP_PROJECT_ID="$project" \
+    GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER="$plan_wif" \
+    GCP_PLAN_SERVICE_ACCOUNT="$plan_sa" \
+    GCP_TF_STATE_BUCKET="$bucket" \
+    GITHUB_REPOSITORY="$repo" \
+    PR_NUMBER=12 \
+    GH_TOKEN=test-token \
+    bash "$deploy" --plan example-app 2>&1
+)
+missing_calls=$(cat "$log")
+assert_contains "$missing" "Planning with -backend=false" "missing state plans without a backend"
+assert_contains "$missing" "Plan: 1 to add, 0 to change, 0 to destroy." "missing state still prints a plan"
+assert_contains "$missing_calls" "init -input=false -backend=false" "retries init with no backend"
+if grep -E '^tofu .* apply ' <<<"$missing_calls"; then
+  fail "missing-state plan must not apply"
+  echo "$missing_calls" >&2
+fi
+
 if ((failures > 0)); then
   echo "$failures test(s) failed" >&2
   exit 1
