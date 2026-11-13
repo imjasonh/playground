@@ -472,9 +472,7 @@ input[type="number"] {
   position: absolute;
   inset-inline: 0.4rem;
   inset-block-end: -1px;
-  block-size: 3px;
-  border-radius: 3px 3px 0 0;
-  background: var(--teal);
+  border-block-end: 3px solid var(--teal);
 }
 
 .nav-panel {
