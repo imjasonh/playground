@@ -75,6 +75,7 @@ playground/
 ├── sundial/               # sundial clock: long shadow follows the sun
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
 ├── web-push-demo/         # static browser front-end for the web-push Worker
+├── wehadababyitsaboy/     # Terraform: empty bucket whose usage logs count CLI and web page requests (not an app)
 ├── y/                     # Rust Cloudflare Worker: one-user microblog
 └── zip/                   # generate and play Zip path puzzles (JS + Node tests)
 ```
@@ -129,6 +130,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `apko-frontend/` | no | Go BuildKit frontend, built with ko; no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `y/` | no | Rust Cloudflare Worker (one-user microblog); no `index.html` |
+| `wehadababyitsaboy/` | no | Terraform stack (usage-tracking bucket); no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
 | `inkbot/` | no | Rust Cloudflare Worker (e-ink frame + Slack); no `index.html` |
 | `inkbot-esp32/` | no | Rust/ESP-IDF ESP32 firmware (espup); no `index.html` |
@@ -247,7 +249,7 @@ discovery scripts.
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
 | `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with the `wrangler` version pinned in `.github/wrangler/package.json`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`), creates any declared R2 buckets that don't exist, and applies remote D1 migrations for declared `[[d1_databases]]`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs`, and a `JWT_SECRET` for any Worker shipping an `examples/gensecret.rs` |
-| `deploy-gcp.yml` | push to `main`, pull requests that touch the deploy scripts or a `gcp-deploy.json`, manual | Applies Cloud Run stacks that have a `gcp-deploy.json` (`cloudrun-sqlite` today). GitHub OIDC and Workload Identity Federation authenticate `tofu apply`, so the workflow stores no long-lived GCP key. A pull request runs `tofu plan` as a separate plan service account and comments the plan. Apply runs only on `main`. |
+| `deploy-gcp.yml` | push to `main`, pull requests that touch the deploy scripts or a `gcp-deploy.json`, manual | Applies Cloud Run stacks that have a `gcp-deploy.json` (`cloudrun-sqlite` and `wehadababyitsaboy`). GitHub OIDC and Workload Identity Federation authenticate `tofu apply`, so the workflow stores no long-lived GCP key. A pull request runs `tofu plan` as a separate plan service account and comments the plan. Apply runs only on `main`. |
 | `preview.yml` | pull request opened/sync | When a browser app, the posts catalog, or the Pages home-page index changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, posts catalog, and site index, in one job |
@@ -645,10 +647,12 @@ go test ./...
 
 ## Deploying to Cloud Run
 
-`deploy-gcp.yml` applies a Go app's Terraform from `main`. The app opts
+`deploy-gcp.yml` applies an app's Terraform from `main`. The app opts
 in with `gcp-deploy.json` at its root (see `cloudrun-sqlite/`). The module
-in `<app>/terraform` needs a GCS backend and a `project_id` variable.
-The directory name and the Terraform `name` must match.
+in `<app>/terraform` needs a GCS backend, a `project_id` variable, and an
+`https://` `url` output. The directory name and the Terraform `name` must
+match. The workflow installs Go only for an app with a `go.mod`, so a
+stack that is only Terraform, such as `wehadababyitsaboy/`, works too.
 
 GitHub identity is one stack, `gcp/terraform`, for the whole project.
 It creates the Workload Identity pool and one deploy account and one
@@ -1007,6 +1011,7 @@ auto-discover them. Run their local tests when you change them.
 |-----------|------|-------|
 | `its-not-jaws/` | Cursor SDK harness for It's Not Jaws (movie shared-fact guessing); mock backend for tests; live PR game via `its-not-jaws.yml` + `CURSOR_API_KEY` secret | `cd its-not-jaws && npm test` (CI also runs a live game when the secret is set) |
 | `nethack-agent/` | Cursor SDK harness that plays NetHack from the terminal and keeps notes in `notebook/`. The fake screen is tests only and cannot write that notebook. Live play is `npm run play` against `/usr/games/nethack` using `grok-4.6`, and each run prints the token cost the SDK reported. The notebook keeps claims that survive the screen, not a turn log. CI play publishes `notebook/` to `automation/nethack-notes` so the next play can read it before that pull request merges | `cd nethack-agent && npm test` (CI also runs `bash .github/scripts/publish-nethack-notes_test.sh`; the play job runs the real binary when `CURSOR_API_KEY` is set) |
+| `wehadababyitsaboy/` | Terraform for an empty, unreadable Cloud Storage bucket whose hourly usage logs record every request, query string included. CLIs and web pages request `CLIENT/ARGS?bob=wehadababyitsaboy` in it, and `report.sh` counts those requests with a BigQuery external table over the logs. `deploy-gcp.yml` applies it | `bash -n wehadababyitsaboy/report.sh`; `tofu validate` in `terraform/` |
 | `bun-image/` | bun compile + crane image (deno-image cousin; shell scripts, not a Go packager) | `bash bun-image/test.sh` (needs bun; crane for the image half) |
 | `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker and signed GHCR OTA, or `APP=maze` for an offline maze on the same 7.5″ panel. Secrets in NVS (`make provision`). Agent guide: [`inkbot-esp32/AGENTS.md`](inkbot-esp32/AGENTS.md) | host lib tests + provision dry-run + Xtensa cross-build via `inkbot-esp32.yml`; publish + Cosign on `main` via `inkbot-esp32-publish.yml` |
 | `esp32-ble/` | Rust/ESP-IDF firmware: BLE GATT LED control for the iOS ESP32 BLE experiment. USB flash only. Agent guide: [`esp32-ble/AGENTS.md`](esp32-ble/AGENTS.md) | host protocol tests + Xtensa cross-build via `esp32-ble.yml` |

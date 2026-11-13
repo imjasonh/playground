@@ -158,10 +158,13 @@ if [[ "${DRY_RUN:-}" != "1" ]]; then
     echo "gcp: tofu is not on PATH" >&2
     exit 1
   }
-  command -v go >/dev/null 2>&1 || {
-    echo "gcp: go is not on PATH" >&2
-    exit 1
-  }
+  # The ko provider builds Go apps. A stack without Go doesn't need it.
+  if [[ -f "${root}/${app}/go.mod" ]]; then
+    command -v go >/dev/null 2>&1 || {
+      echo "gcp: go is not on PATH" >&2
+      exit 1
+    }
+  fi
   if [[ "$zig" == "true" ]]; then
     # Last line only. install-zig.sh prints the directory and nothing else,
     # and a stray stdout line would land in PATH ahead of zig.
