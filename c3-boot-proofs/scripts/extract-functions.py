@@ -84,6 +84,8 @@ FUNCTIONS = [
     ("p384PtDouble", "<primeorder::projective::ProjectivePoint<p384::NistP384> as group::Group>::double"),
     ("uintSelect2", "<crypto_bigint::uint::Uint<2>>::select"),
     ("condNeg12", "crypto_bigint::modular::safegcd::conditional_negate_in_place_wide::<12, 2>"),
+    ("uintSelect8", "<crypto_bigint::uint::Uint<8>>::select"),
+    ("condNeg8", "crypto_bigint::modular::safegcd::conditional_negate_in_place_wide::<8, 2>"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
