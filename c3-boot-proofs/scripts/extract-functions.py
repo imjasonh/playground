@@ -90,6 +90,8 @@ FUNCTIONS = [
     ("fromI64", "<crypto_bigint::int::Int<2>>::from_i64"),
     ("p384PtAdd", "<primeorder::point_arithmetic::EquationAIsMinusThree as "
      "primeorder::point_arithmetic::sealed::PointArithmetic<p384::NistP384>>::add_assign"),
+    ("fieldSquare", "<p256::arithmetic::field::FieldElement as ff::Field>::square"),
+    ("p256PtDouble", "<primeorder::projective::ProjectivePoint<p256::NistP256> as group::Group>::double"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a

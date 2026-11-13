@@ -27,6 +27,7 @@ import C3BootProofs.Proofs.FePow2k
 import C3BootProofs.Proofs.Sha512Compress
 import C3BootProofs.Proofs.P384PtDouble
 import C3BootProofs.Proofs.P384PtAdd
+import C3BootProofs.Proofs.P256PtDouble
 import C3BootProofs.Proofs.CondNeg12
 import C3BootProofs.Proofs.CondNeg8
 import C3BootProofs.Proofs.FromI64
@@ -739,6 +740,8 @@ def witnessMemP256 : RV32.Word → BitVec 8 :=
     (Image.fieldSubAddress, Image.fieldSubCode),
     (Image.fieldDoubleAddress, Image.fieldDoubleCode),
     (Image.pointAddAddress, Image.pointAddCode),
+    (Image.p256PtDoubleAddress, Image.p256PtDoubleCode),
+    (Image.fieldSquareAddress, Image.fieldSquareCode),
     (Image.memsetAddress, Image.memsetCode),
     (Image.memcpyStubAddress, Image.memcpyStubCode),
     (Image.memcpyBodyAddress, Image.memcpyBodyCode),
@@ -1325,6 +1328,57 @@ theorem exists_fieldDouble_machine :
       RV32.sep_of_le (by decide) (by decide)⟩⟩,
     rfl, rfl, rfl, rfl, by decide, rfl⟩
   all_goals code_in
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 4000000 in
+/-- A machine that calls `FieldElement::square` with the result at
+`0x3FCC5000`, the operand at `0x3FCC6000`, and the stack at `0x3FCC8000`
+meets `fieldSquare_correct`'s hypotheses. -/
+theorem exists_fieldSquare_machine :
+    ∃ (m : RV32.Machine) (P sp0 res ap retAddr : RV32.Word), RV32.FQEnv m.mem P sp0 res ap ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = res ∧ RV32.reg m RV32.a1 = ap ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.fieldSquareAddress, witnessMemP256⟩, BitVec.ofNat 32 Image.fieldSquareAddress,
+    0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, ⟨by decide, ?_, ?_⟩, rfl, rfl, rfl, rfl, by decide, rfl⟩
+  all_goals first
+    | code_in
+    | (constructor <;> first
+        | code_in
+        | decide
+        | exact RV32.sep_of_le (by decide) (by decide)
+        | exact (RV32.sep_of_le (by decide) (by decide)).symm
+        | decide +kernel)
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls P-256's point doubling with the result at
+`0x3FCC5000`, the point at `0x3FCC6000`, and the stack at `0x3FCC8000` meets
+`p256PtDouble_correct`'s hypotheses, the coordinates' bounds included. -/
+theorem exists_p256PtDouble_machine :
+    ∃ (m : RV32.Machine) (P sp0 out sf retAddr : RV32.Word), RV32.D2Env m.mem P sp0 out sf ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = sf ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
+      RV32.limbVal (RV32.wordsAt m.mem sf 8) < RV32.p256 ∧
+      RV32.limbVal (RV32.wordsAt m.mem (sf + 0x20) 8) < RV32.p256 ∧
+      RV32.limbVal (RV32.wordsAt m.mem (sf + 0x40) 8) < RV32.p256 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.p256PtDoubleAddress, witnessMemP256⟩,
+    BitVec.ofNat 32 Image.p256PtDoubleAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, rfl,
+    by decide, rfl, ?_, ?_, ?_⟩
+  case refine_1 =>
+    constructor <;> first
+      | code_in
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+      | exact (RV32.sep_of_le (by decide) (by decide)).symm
+      | decide +kernel
+  all_goals first
+    | decide
+    | decide +kernel
 
 /-- Memory with the current image's compact `compress256`, `RangeFrom::index`,
 `memcpy`, and round constants where the image loads them, and zeros
@@ -2680,6 +2734,18 @@ end C3
 
 /-- info: 'C3.exists_p384PtAdd_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_p384PtAdd_machine
+
+/-- info: 'C3.RV32.fieldSquare_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.fieldSquare_correct
+
+/-- info: 'C3.exists_fieldSquare_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_fieldSquare_machine
+
+/-- info: 'C3.RV32.p256PtDouble_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.p256PtDouble_correct
+
+/-- info: 'C3.exists_p256PtDouble_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_p256PtDouble_machine
 
 /-- info: 'C3.RV32.uintSelect2_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.uintSelect2_correct
