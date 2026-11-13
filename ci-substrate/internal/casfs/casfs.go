@@ -43,12 +43,15 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/imjasonh/playground/ci-substrate/internal/digest"
+	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 	"github.com/imjasonh/playground/ci-substrate/internal/tree"
 )
 
@@ -183,11 +186,14 @@ func (v *volumeNode) Mkdir(ctx context.Context, name string, mode uint32, out *f
 	if v.GetChild(name) != nil {
 		return nil, syscall.EEXIST
 	}
+	start := time.Now()
 	t, err := tree.Load(context.WithoutCancel(ctx), v.fetcher, v.instance, d)
+	treeLoadDuration.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(telemetry.AttrOutcome.String(outcome(err))))
 	if err != nil {
-		slog.Error("casfs: loading input root", "digest", digest.Key(d), "err", err)
+		slog.ErrorContext(ctx, "casfs: loading input root", "digest", digest.Key(d), "err", err)
 		return nil, syscall.ENOENT
 	}
+	execRoots.Add(ctx, 1)
 	root := &dirNode{fsys: &casfs{tree: t, fetcher: v.fetcher, instance: v.instance}, digest: d}
 	return v.NewPersistentInode(ctx, root, fs.StableAttr{Mode: syscall.S_IFDIR}), 0
 }
@@ -203,6 +209,7 @@ func (v *volumeNode) Rmdir(ctx context.Context, name string) syscall.Errno {
 	if !child.IsDir() {
 		return syscall.ENOTDIR
 	}
+	execRoots.Add(ctx, -1)
 	return 0
 }
 
@@ -470,14 +477,18 @@ func (f *fileNode) hydrateLocked(ctx context.Context) syscall.Errno {
 	}
 	// Detach from the opener: a second reader must not find the file
 	// broken because the first one gave up.
+	start := time.Now()
 	b, err := f.fsys.fetcher.Fetch(context.WithoutCancel(ctx), f.fsys.instance, f.source)
 	if err == nil {
 		err = digest.Verify(f.source, b)
 	}
+	hydrations.Add(ctx, 1, metric.WithAttributes(telemetry.AttrOutcome.String(outcome(err))))
 	if err != nil {
-		slog.Error("casfs: hydrating file", "digest", digest.Key(f.source), "err", err)
+		slog.ErrorContext(ctx, "casfs: hydrating file", "digest", digest.Key(f.source), "err", err)
 		return syscall.EIO
 	}
+	hydrateDuration.Record(ctx, time.Since(start).Seconds())
+	hydratedBytes.Add(ctx, int64(len(b)))
 	f.hydrated, f.data = true, b
 	return 0
 }
@@ -512,4 +523,11 @@ func (f *fileNode) Write(ctx context.Context, fh fs.FileHandle, data []byte, off
 
 func (f *fileNode) Flush(ctx context.Context, fh fs.FileHandle) syscall.Errno {
 	return 0
+}
+
+func outcome(err error) string {
+	if err != nil {
+		return "error"
+	}
+	return "ok"
 }

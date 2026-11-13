@@ -18,12 +18,14 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/chainguard-dev/clog/gcp/init"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	workerv1 "github.com/imjasonh/playground/ci-substrate/api/worker/v1"
 	"github.com/imjasonh/playground/ci-substrate/internal/bot"
 	"github.com/imjasonh/playground/ci-substrate/internal/remote"
+	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 )
 
 func main() {
@@ -50,8 +52,21 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()
+	shutdown, err := telemetry.Setup(ctx, "runner")
+	if err != nil {
+		slog.Error("setting up telemetry", "err", err)
+		os.Exit(1)
+	}
+	defer func() {
+		sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := shutdown(sctx); err != nil {
+			slog.Error("flushing telemetry", "err", err)
+		}
+	}()
+	dial := append(telemetry.DialOptions(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 
-	originConn, err := grpc.NewClient(*originAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	originConn, err := grpc.NewClient(*originAddr, dial...)
 	if err != nil {
 		slog.Error("dialing origin", "err", err)
 		os.Exit(1)
@@ -60,7 +75,7 @@ func main() {
 	origin := remote.NewClient(originConn)
 	cache := origin
 	if *cacheAddr != "" && *cacheAddr != *originAddr {
-		cacheConn, err := grpc.NewClient(*cacheAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		cacheConn, err := grpc.NewClient(*cacheAddr, dial...)
 		if err != nil {
 			slog.Error("dialing cache", "err", err)
 			os.Exit(1)

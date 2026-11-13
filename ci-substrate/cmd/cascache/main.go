@@ -18,6 +18,7 @@ import (
 	"time"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	_ "github.com/chainguard-dev/clog/gcp/init"
 	"github.com/sethvargo/go-envconfig"
 	"google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
@@ -28,6 +29,7 @@ import (
 	"github.com/imjasonh/playground/ci-substrate/internal/blob"
 	"github.com/imjasonh/playground/ci-substrate/internal/cache"
 	"github.com/imjasonh/playground/ci-substrate/internal/remote"
+	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
 )
 
@@ -46,6 +48,11 @@ func main() {
 	defer stop()
 	var c config
 	envconfig.MustProcess(ctx, &c)
+	shutdown, err := telemetry.Setup(ctx, "cascache")
+	if err != nil {
+		slog.Error("setting up telemetry", "err", err)
+		os.Exit(1)
+	}
 
 	store, err := blob.NewStore(c.StoreDir)
 	if err != nil {
@@ -62,7 +69,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	conn, err := grpc.NewClient(c.OriginAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	telemetry.ObserveDisk(c.StoreDir)
+	conn, err := grpc.NewClient(c.OriginAddr, append(telemetry.DialOptions(), grpc.WithTransportCredentials(insecure.NewCredentials()))...)
 	if err != nil {
 		slog.Error("dialing origin", "addr", c.OriginAddr, "err", err)
 		os.Exit(1)
@@ -73,7 +81,7 @@ func main() {
 	rtc := cache.New(store, originClient)
 	cs := remote.NewCacheServer(rtc, originClient, tenants)
 
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(telemetry.ServerOptions()...)
 	repb.RegisterContentAddressableStorageServer(srv, cs)
 	bytestream.RegisterByteStreamServer(srv, cs)
 	hs := health.NewServer()
@@ -98,10 +106,16 @@ func main() {
 		slog.Error("serve", "err", err)
 		os.Exit(1)
 	}
+	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := shutdown(sctx); err != nil {
+		slog.Error("flushing telemetry", "err", err)
+	}
 }
 
 // serveMetrics exposes the cache counters as JSON so a demo can prove that a
 // warm read served no origin fetch and that a poisoned entry was rejected.
+// The same counts go to the collector as cascache.requests.
 func serveMetrics(addr string, c *cache.Cache) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/stats", func(w http.ResponseWriter, r *http.Request) {

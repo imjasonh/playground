@@ -49,7 +49,7 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := exec.New(store, actions, tenants, leaseDuration)
+	s := exec.New(store, actions, tenants, leaseDuration, nil)
 	go s.Run(t.Context())
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")

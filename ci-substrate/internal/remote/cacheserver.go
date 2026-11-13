@@ -4,12 +4,15 @@ import (
 	"context"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/imjasonh/playground/ci-substrate/internal/cache"
 	"github.com/imjasonh/playground/ci-substrate/internal/digest"
+	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
 )
 
@@ -38,7 +41,7 @@ func (s *CacheServer) FindMissingBlobs(ctx context.Context, req *repb.FindMissin
 	if err := s.tenants.Authorize(ctx, req.GetInstanceName()); err != nil {
 		return nil, err
 	}
-	missing, err := s.origin.FindMissing(tenant.Outgoing(ctx, tenant.Token(ctx)), req.GetInstanceName(), req.GetBlobDigests())
+	missing, err := s.origin.FindMissing(s.originCtx(ctx), req.GetInstanceName(), req.GetBlobDigests())
 	if err != nil {
 		return nil, err
 	}
@@ -58,18 +61,33 @@ func (s *CacheServer) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlo
 		return nil, status.Errorf(codes.InvalidArgument, "batch of %d bytes exceeds %d; use ByteStream", total, MaxBatchBytes)
 	}
 	resp := &repb.BatchReadBlobsResponse{}
+	var hits, misses int
+	var hitBytes, missBytes int64
 	for _, d := range req.GetDigests() {
 		r := &repb.BatchReadBlobsResponse_Response{Digest: d}
 		if err := digest.Validate(d); err != nil {
 			r.Status = status.New(codes.InvalidArgument, err.Error()).Proto()
-		} else if b, err := s.cache.Get(s.originCtx(ctx), req.GetInstanceName(), d); err != nil {
+		} else if b, local, err := s.cache.Get(s.originCtx(ctx), req.GetInstanceName(), d); err != nil {
 			r.Status = status.Convert(err).Proto()
 		} else {
 			r.Data = b
 			r.Status = status.New(codes.OK, "").Proto()
+			if local {
+				hits++
+				hitBytes += int64(len(b))
+			} else {
+				misses++
+				missBytes += int64(len(b))
+			}
 		}
 		resp.Responses = append(resp.Responses, r)
 	}
+	trace.SpanFromContext(ctx).SetAttributes(
+		attribute.Int("ci_substrate.cache.hits", hits),
+		attribute.Int("ci_substrate.cache.misses", misses),
+		attribute.Int64("ci_substrate.cache.hit_bytes", hitBytes),
+		attribute.Int64("ci_substrate.cache.miss_bytes", missBytes),
+	)
 	return resp, nil
 }
 
@@ -82,15 +100,21 @@ func (s *CacheServer) Read(req *bytestream.ReadRequest, stream bytestream.ByteSt
 	if err := s.tenants.Authorize(stream.Context(), instance); err != nil {
 		return err
 	}
-	b, err := s.cache.Get(s.originCtx(stream.Context()), instance, d)
+	b, local, err := s.cache.Get(s.originCtx(stream.Context()), instance, d)
 	if err != nil {
 		return err
 	}
-	return streamBytes(b, req.GetReadOffset(), req.GetReadLimit(), stream)
+	trace.SpanFromContext(stream.Context()).SetAttributes(
+		attribute.Bool("ci_substrate.cache.hit", local),
+		attribute.Int64("ci_substrate.bytes", int64(len(b))),
+	)
+	_, err = streamBytes(b, req.GetReadOffset(), req.GetReadLimit(), stream)
+	return err
 }
 
 // originCtx forwards the caller's tenant token to origin calls the cache makes
-// on a miss, so the origin applies the same authorization.
+// on a miss, so the origin applies the same authorization, and its
+// RequestMetadata, so the origin accounts the fill to the same invocation.
 func (s *CacheServer) originCtx(ctx context.Context) context.Context {
-	return tenant.Outgoing(ctx, tenant.Token(ctx))
+	return telemetry.Outgoing(tenant.Outgoing(ctx, tenant.Token(ctx)), telemetry.ToolCascache)
 }

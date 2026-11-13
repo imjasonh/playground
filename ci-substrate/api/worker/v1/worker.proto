@@ -47,6 +47,13 @@ message Job {
   Digest action_digest = 3;
   // How long the runner has before it must heartbeat or complete.
   google.protobuf.Duration lease_duration = 4;
+  // W3C trace context (traceparent and tracestate) of the Execute call that
+  // queued the job, so the runner's spans join the build's trace.
+  map<string, string> trace_context = 5;
+  // The serialized build.bazel.remote.execution.v2.RequestMetadata the
+  // client sent with Execute. The runner sends it on its own calls, so cas
+  // and cascache attribute them to the same invocation and action.
+  bytes request_metadata = 6;
 }
 
 message LeaseRequest {

@@ -88,8 +88,15 @@ type Job struct {
 	ActionDigest *Digest `protobuf:"bytes,3,opt,name=action_digest,json=actionDigest,proto3" json:"action_digest,omitempty"`
 	// How long the runner has before it must heartbeat or complete.
 	LeaseDuration *durationpb.Duration `protobuf:"bytes,4,opt,name=lease_duration,json=leaseDuration,proto3" json:"lease_duration,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// W3C trace context (traceparent and tracestate) of the Execute call that
+	// queued the job, so the runner's spans join the build's trace.
+	TraceContext map[string]string `protobuf:"bytes,5,rep,name=trace_context,json=traceContext,proto3" json:"trace_context,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// The serialized build.bazel.remote.execution.v2.RequestMetadata the
+	// client sent with Execute. The runner sends it on its own calls, so cas
+	// and cascache attribute them to the same invocation and action.
+	RequestMetadata []byte `protobuf:"bytes,6,opt,name=request_metadata,json=requestMetadata,proto3" json:"request_metadata,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Job) Reset() {
@@ -146,6 +153,20 @@ func (x *Job) GetActionDigest() *Digest {
 func (x *Job) GetLeaseDuration() *durationpb.Duration {
 	if x != nil {
 		return x.LeaseDuration
+	}
+	return nil
+}
+
+func (x *Job) GetTraceContext() map[string]string {
+	if x != nil {
+		return x.TraceContext
+	}
+	return nil
+}
+
+func (x *Job) GetRequestMetadata() []byte {
+	if x != nil {
+		return x.RequestMetadata
 	}
 	return nil
 }
@@ -620,12 +641,17 @@ const file_worker_v1_worker_proto_rawDesc = "" +
 	"\x06Digest\x12\x12\n" +
 	"\x04hash\x18\x01 \x01(\tR\x04hash\x12\x1d\n" +
 	"\n" +
-	"size_bytes\x18\x02 \x01(\x03R\tsizeBytes\"\xb4\x01\n" +
+	"size_bytes\x18\x02 \x01(\x03R\tsizeBytes\"\xe7\x02\n" +
 	"\x03Job\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12#\n" +
 	"\rinstance_name\x18\x02 \x01(\tR\finstanceName\x126\n" +
 	"\raction_digest\x18\x03 \x01(\v2\x11.worker.v1.DigestR\factionDigest\x12@\n" +
-	"\x0elease_duration\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\rleaseDuration\"L\n" +
+	"\x0elease_duration\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\rleaseDuration\x12E\n" +
+	"\rtrace_context\x18\x05 \x03(\v2 .worker.v1.Job.TraceContextEntryR\ftraceContext\x12)\n" +
+	"\x10request_metadata\x18\x06 \x01(\fR\x0frequestMetadata\x1a?\n" +
+	"\x11TraceContextEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"L\n" +
 	"\fLeaseRequest\x12\x15\n" +
 	"\x06bot_id\x18\x01 \x01(\tR\x05botId\x12%\n" +
 	"\x0einstance_names\x18\x02 \x03(\tR\rinstanceNames\"1\n" +
@@ -670,7 +696,7 @@ func file_worker_v1_worker_proto_rawDescGZIP() []byte {
 	return file_worker_v1_worker_proto_rawDescData
 }
 
-var file_worker_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_worker_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_worker_v1_worker_proto_goTypes = []any{
 	(*Digest)(nil),              // 0: worker.v1.Digest
 	(*Job)(nil),                 // 1: worker.v1.Job
@@ -683,27 +709,29 @@ var file_worker_v1_worker_proto_goTypes = []any{
 	(*RunnerMetadata)(nil),      // 8: worker.v1.RunnerMetadata
 	(*StatusRequest)(nil),       // 9: worker.v1.StatusRequest
 	(*StatusResponse)(nil),      // 10: worker.v1.StatusResponse
-	(*durationpb.Duration)(nil), // 11: google.protobuf.Duration
-	(*anypb.Any)(nil),           // 12: google.protobuf.Any
+	nil,                         // 11: worker.v1.Job.TraceContextEntry
+	(*durationpb.Duration)(nil), // 12: google.protobuf.Duration
+	(*anypb.Any)(nil),           // 13: google.protobuf.Any
 }
 var file_worker_v1_worker_proto_depIdxs = []int32{
 	0,  // 0: worker.v1.Job.action_digest:type_name -> worker.v1.Digest
-	11, // 1: worker.v1.Job.lease_duration:type_name -> google.protobuf.Duration
-	1,  // 2: worker.v1.LeaseResponse.job:type_name -> worker.v1.Job
-	12, // 3: worker.v1.CompleteRequest.action_result:type_name -> google.protobuf.Any
-	2,  // 4: worker.v1.WorkerService.Lease:input_type -> worker.v1.LeaseRequest
-	4,  // 5: worker.v1.WorkerService.Heartbeat:input_type -> worker.v1.HeartbeatRequest
-	6,  // 6: worker.v1.WorkerService.Complete:input_type -> worker.v1.CompleteRequest
-	9,  // 7: worker.v1.WorkerService.Status:input_type -> worker.v1.StatusRequest
-	3,  // 8: worker.v1.WorkerService.Lease:output_type -> worker.v1.LeaseResponse
-	5,  // 9: worker.v1.WorkerService.Heartbeat:output_type -> worker.v1.HeartbeatResponse
-	7,  // 10: worker.v1.WorkerService.Complete:output_type -> worker.v1.CompleteResponse
-	10, // 11: worker.v1.WorkerService.Status:output_type -> worker.v1.StatusResponse
-	8,  // [8:12] is the sub-list for method output_type
-	4,  // [4:8] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	12, // 1: worker.v1.Job.lease_duration:type_name -> google.protobuf.Duration
+	11, // 2: worker.v1.Job.trace_context:type_name -> worker.v1.Job.TraceContextEntry
+	1,  // 3: worker.v1.LeaseResponse.job:type_name -> worker.v1.Job
+	13, // 4: worker.v1.CompleteRequest.action_result:type_name -> google.protobuf.Any
+	2,  // 5: worker.v1.WorkerService.Lease:input_type -> worker.v1.LeaseRequest
+	4,  // 6: worker.v1.WorkerService.Heartbeat:input_type -> worker.v1.HeartbeatRequest
+	6,  // 7: worker.v1.WorkerService.Complete:input_type -> worker.v1.CompleteRequest
+	9,  // 8: worker.v1.WorkerService.Status:input_type -> worker.v1.StatusRequest
+	3,  // 9: worker.v1.WorkerService.Lease:output_type -> worker.v1.LeaseResponse
+	5,  // 10: worker.v1.WorkerService.Heartbeat:output_type -> worker.v1.HeartbeatResponse
+	7,  // 11: worker.v1.WorkerService.Complete:output_type -> worker.v1.CompleteResponse
+	10, // 12: worker.v1.WorkerService.Status:output_type -> worker.v1.StatusResponse
+	9,  // [9:13] is the sub-list for method output_type
+	5,  // [5:9] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_worker_v1_worker_proto_init() }
@@ -717,7 +745,7 @@ func file_worker_v1_worker_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_worker_v1_worker_proto_rawDesc), len(file_worker_v1_worker_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

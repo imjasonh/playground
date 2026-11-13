@@ -23,6 +23,11 @@ import (
 	longrunning "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -34,6 +39,8 @@ import (
 	"github.com/imjasonh/playground/ci-substrate/internal/actioncache"
 	"github.com/imjasonh/playground/ci-substrate/internal/blob"
 	"github.com/imjasonh/playground/ci-substrate/internal/digest"
+	"github.com/imjasonh/playground/ci-substrate/internal/invocation"
+	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
 )
 
@@ -62,6 +69,8 @@ type Scheduler struct {
 	actions       *actioncache.Store
 	tenants       *tenant.Registry
 	leaseDuration time.Duration
+	invocations   *invocation.Tracker
+	metrics       metrics
 
 	mu       sync.Mutex
 	jobs     map[string]*job
@@ -77,11 +86,25 @@ type job struct {
 	doNotCache bool
 	enqueued   time.Time
 
+	// parent is the span of the Execute call that queued the job, and
+	// traceContext carries it to the runner. requestMetadata is that call's
+	// RequestMetadata, and requestMetadataBytes its encoding for the runner.
+	parent               trace.SpanContext
+	traceContext         map[string]string
+	requestMetadata      *repb.RequestMetadata
+	requestMetadataBytes []byte
+
 	stage    repb.ExecutionStage_Value
 	botID    string
 	expiry   time.Time
 	attempts int
 	response *repb.ExecuteResponse
+
+	// queuedAt is when the current attempt was queued, leasedAt when a
+	// runner last leased the job, and queued the time all attempts waited.
+	queuedAt time.Time
+	leasedAt time.Time
+	queued   time.Duration
 
 	// changed is closed and replaced on every state change, so watchers can
 	// wait on it without holding the scheduler lock.
@@ -94,20 +117,24 @@ type waiter struct {
 }
 
 // New returns a scheduler that reads Actions from store, caches results in
-// actions, and authorizes callers with tenants.
-func New(store *blob.Store, actions *actioncache.Store, tenants *tenant.Registry, leaseDuration time.Duration) *Scheduler {
+// actions, authorizes callers with tenants, and accounts each action to its
+// Bazel invocation in invocations, which may be nil.
+func New(store *blob.Store, actions *actioncache.Store, tenants *tenant.Registry, leaseDuration time.Duration, invocations *invocation.Tracker) *Scheduler {
 	if leaseDuration <= 0 {
 		leaseDuration = DefaultLeaseDuration
 	}
-	return &Scheduler{
+	s := &Scheduler{
 		store:         store,
 		actions:       actions,
 		tenants:       tenants,
 		leaseDuration: leaseDuration,
+		invocations:   invocations,
 		jobs:          map[string]*job{},
 		inflight:      map[string]*job{},
 		waiters:       map[*waiter]struct{}{},
 	}
+	s.metrics = newMetrics(s)
+	return s
 }
 
 // Run expires leases until ctx is done. Jobs whose runner stopped heartbeating
@@ -132,7 +159,8 @@ func (s *Scheduler) expireLeases(now time.Time) {
 		if j.stage != repb.ExecutionStage_EXECUTING || now.Before(j.expiry) {
 			continue
 		}
-		slog.Warn("lease expired", "job", j.id, "bot", j.botID, "attempts", j.attempts)
+		s.metrics.expirations.Add(context.Background(), 1, metric.WithAttributes(telemetry.AttrInstance.String(j.instance)))
+		slog.WarnContext(trace.ContextWithSpanContext(context.Background(), j.parent), "lease expired", "job", j.id, "bot", j.botID, "attempts", j.attempts)
 		if j.attempts >= maxAttempts {
 			s.finishLocked(j, &repb.ExecuteResponse{
 				Status: status.Newf(codes.Unavailable, "lease expired %d times", j.attempts).Proto(),
@@ -191,6 +219,7 @@ func (s *Scheduler) Execute(req *repb.ExecuteRequest, stream repb.Execution_Exec
 	if !req.GetSkipCacheLookup() && !action.GetDoNotCache() {
 		ar, err := s.actions.Get(req.GetInstanceName(), req.GetActionDigest())
 		if err == nil {
+			s.recordExecute(ctx, req.GetInstanceName(), "cached")
 			op, err := operation(uuid.NewString(), req.GetActionDigest(), repb.ExecutionStage_COMPLETED, &repb.ExecuteResponse{Result: ar, CachedResult: true})
 			if err != nil {
 				return err
@@ -201,8 +230,29 @@ func (s *Scheduler) Execute(req *repb.ExecuteRequest, stream repb.Execution_Exec
 			return status.Error(codes.Internal, err.Error())
 		}
 	}
-	j := s.submit(req.GetInstanceName(), req.GetActionDigest(), action.GetDoNotCache())
+	j, merged := s.submit(ctx, req.GetInstanceName(), req.GetActionDigest(), action.GetDoNotCache())
+	result := "queued"
+	if merged {
+		result = "merged"
+		trace.SpanFromContext(ctx).AddLink(trace.Link{SpanContext: j.parent})
+	}
+	s.recordExecute(ctx, req.GetInstanceName(), result)
+	trace.SpanFromContext(ctx).SetAttributes(attribute.String("ci_substrate.operation", j.id))
 	return s.watch(ctx, j, stream.Send)
+}
+
+// recordExecute counts an Execute call by how it was served.
+func (s *Scheduler) recordExecute(ctx context.Context, instance, result string) {
+	trace.SpanFromContext(ctx).SetAttributes(attribute.String("ci_substrate.execute.result", result))
+	s.metrics.executions.Add(ctx, 1, metric.WithAttributes(telemetry.AttrInstance.String(instance), telemetry.AttrResult.String(result)))
+	c := invocation.Counts{ExecuteRequests: 1}
+	switch result {
+	case "cached":
+		c.ExecuteCached = 1
+	case "merged":
+		c.ExecuteMerged = 1
+	}
+	s.invocations.Add(ctx, instance, c)
 }
 
 // WaitExecution resumes streaming an operation a prior Execute started.
@@ -239,33 +289,44 @@ func (s *Scheduler) loadAction(d *repb.Digest) (*repb.Action, error) {
 
 // submit queues an action, or joins the job already in flight for the same
 // action in the same instance, so two clients asking for one action get one
-// run. Jobs never merge across instances: that would let one tenant's queue
-// position reveal another tenant's actions.
-func (s *Scheduler) submit(instance string, action *repb.Digest, doNotCache bool) *job {
+// run, and reports whether it joined one. Jobs never merge across
+// instances: that would let one tenant's queue position reveal another
+// tenant's actions.
+func (s *Scheduler) submit(ctx context.Context, instance string, action *repb.Digest, doNotCache bool) (*job, bool) {
+	carrier := propagation.MapCarrier{}
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	md := telemetry.RequestMetadata(ctx)
+	mdBytes, _ := proto.Marshal(md)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	key := instance + "\x00" + digest.Key(action)
 	if j, ok := s.inflight[key]; ok && !doNotCache {
-		return j
+		return j, true
 	}
 	j := &job{
-		id:         uuid.NewString(),
-		instance:   instance,
-		action:     action,
-		doNotCache: doNotCache,
-		enqueued:   time.Now(),
-		changed:    make(chan struct{}),
+		id:                   uuid.NewString(),
+		instance:             instance,
+		action:               action,
+		doNotCache:           doNotCache,
+		enqueued:             time.Now(),
+		parent:               trace.SpanContextFromContext(ctx),
+		traceContext:         carrier,
+		requestMetadata:      md,
+		requestMetadataBytes: mdBytes,
+		changed:              make(chan struct{}),
 	}
 	s.jobs[j.id] = j
 	if !doNotCache {
 		s.inflight[key] = j
 	}
 	s.enqueueLocked(j)
-	return j
+	return j, false
 }
 
 func (s *Scheduler) enqueueLocked(j *job) {
 	j.stage = repb.ExecutionStage_QUEUED
+	j.queuedAt = time.Now()
 	s.notifyLocked(j)
 	for w := range s.waiters {
 		if w.instances[j.instance] {
@@ -285,12 +346,26 @@ func (s *Scheduler) enqueueLocked(j *job) {
 // has no bot until that Lease wakes and leases it again, and only then
 // counts as an attempt.
 func (s *Scheduler) leaseLocked(j *job, botID string) {
+	now := time.Now()
 	j.stage = repb.ExecutionStage_EXECUTING
 	j.botID = botID
 	if botID != "" {
 		j.attempts++
+		j.leasedAt = now
+		j.queued += now.Sub(j.queuedAt)
+		s.metrics.queueTime.Record(context.Background(), now.Sub(j.queuedAt).Seconds(),
+			metric.WithAttributes(telemetry.AttrInstance.String(j.instance)))
+		_, span := telemetry.Tracer().Start(trace.ContextWithSpanContext(context.Background(), j.parent), "scheduler.queue",
+			trace.WithTimestamp(j.queuedAt),
+			trace.WithAttributes(
+				attribute.String("ci_substrate.operation", j.id),
+				attribute.String("ci_substrate.instance", j.instance),
+				attribute.String("ci_substrate.bot", botID),
+				attribute.Int("ci_substrate.attempt", j.attempts),
+			))
+		span.End(trace.WithTimestamp(now))
 	}
-	j.expiry = time.Now().Add(s.leaseDuration)
+	j.expiry = now.Add(s.leaseDuration)
 	s.notifyLocked(j)
 }
 
@@ -304,6 +379,7 @@ func (s *Scheduler) finishLocked(j *job, resp *repb.ExecuteResponse) {
 	j.response = resp
 	delete(s.inflight, j.instance+"\x00"+digest.Key(j.action))
 	s.notifyLocked(j)
+	s.recordFinish(j)
 	// Keep the record for WaitExecution callers that arrive late, but not
 	// forever.
 	go func() {
@@ -312,6 +388,35 @@ func (s *Scheduler) finishLocked(j *job, resp *repb.ExecuteResponse) {
 		delete(s.jobs, j.id)
 		s.mu.Unlock()
 	}()
+}
+
+// recordFinish accounts a finished job to the metrics and its invocation.
+func (s *Scheduler) recordFinish(j *job) {
+	outcome := "ok"
+	switch {
+	case status.FromProto(j.response.GetStatus()).Code() == codes.Unavailable:
+		outcome = "lease_expired"
+	case j.response.GetStatus().GetCode() != 0:
+		outcome = "error"
+	case j.response.GetResult().GetExitCode() != 0:
+		outcome = "exit_nonzero"
+	}
+	ctx := context.Background()
+	instance := telemetry.AttrInstance.String(j.instance)
+	s.metrics.completed.Add(ctx, 1, metric.WithAttributes(instance, telemetry.AttrOutcome.String(outcome)))
+	c := invocation.Counts{QueueTime: j.queued}
+	if !j.leasedAt.IsZero() {
+		run := time.Since(j.leasedAt)
+		c.ExecutionTime = run
+		s.metrics.runTime.Record(ctx, run.Seconds(), metric.WithAttributes(instance,
+			telemetry.AttrMnemonic.String(j.requestMetadata.GetActionMnemonic())))
+	}
+	if outcome == "ok" {
+		c.ActionsRun = 1
+	} else {
+		c.ActionsFailed = 1
+	}
+	s.invocations.AddFor(j.requestMetadata, j.instance, c)
 }
 
 // watch sends the job's operation on every state change until it completes or
@@ -329,6 +434,7 @@ func (s *Scheduler) watch(ctx context.Context, j *job, send func(*longrunning.Op
 		if err := send(op); err != nil {
 			return err
 		}
+		trace.SpanFromContext(ctx).AddEvent(stage.String())
 		if stage == repb.ExecutionStage_COMPLETED {
 			return nil
 		}
@@ -441,10 +547,12 @@ func (s *Scheduler) leaseInstances(ctx context.Context, requested []string) (map
 
 func (s *Scheduler) jobProto(j *job) *workerv1.Job {
 	return &workerv1.Job{
-		Id:            j.id,
-		InstanceName:  j.instance,
-		ActionDigest:  &workerv1.Digest{Hash: j.action.GetHash(), SizeBytes: j.action.GetSizeBytes()},
-		LeaseDuration: durationpb.New(s.leaseDuration),
+		Id:              j.id,
+		InstanceName:    j.instance,
+		ActionDigest:    &workerv1.Digest{Hash: j.action.GetHash(), SizeBytes: j.action.GetSizeBytes()},
+		LeaseDuration:   durationpb.New(s.leaseDuration),
+		TraceContext:    j.traceContext,
+		RequestMetadata: j.requestMetadataBytes,
 	}
 }
 

@@ -36,12 +36,14 @@ import (
 	"syscall"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/imjasonh/playground/ci-substrate/internal/casfs"
+	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
 	"github.com/imjasonh/playground/ci-substrate/internal/tree"
 )
@@ -118,7 +120,18 @@ func New(cfg Config) (*Driver, error) {
 			return casfs.MountVolume(dir, f, instance)
 		}
 	}
-	return &Driver{cfg: cfg, mounts: map[string]mounted{}}, nil
+	d := &Driver{cfg: cfg, mounts: map[string]mounted{}}
+	m := telemetry.Meter()
+	published := telemetry.Handle(m.Int64ObservableGauge("csi.volumes.published",
+		metric.WithDescription("casfs inputs volumes this node's driver has mounted for actors.")))
+	telemetry.Handle(m.RegisterCallback(func(_ context.Context, o metric.Observer) error {
+		d.mu.Lock()
+		n := len(d.mounts)
+		d.mu.Unlock()
+		o.ObserveInt64(published, int64(n))
+		return nil
+	}, published))
+	return d, nil
 }
 
 // Register adds the three CSI services to srv.

@@ -22,7 +22,15 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 )
 
 // State is the lifecycle state of an actor, as the pool sees it.
@@ -112,6 +120,13 @@ type Pool struct {
 	// lastBusy is when each actor last held a lease, or was resumed. An
 	// actor is idle when that is more than IdleAfter ago.
 	lastBusy map[string]time.Time
+	metrics  metrics
+
+	// mu guards what the last reconcile saw, which the gauges report.
+	mu       sync.Mutex
+	byState  map[State]int
+	queued   int
+	busyBots int
 }
 
 // New returns a Pool. It fails on a configuration that cannot size anything.
@@ -131,7 +146,9 @@ func New(cfg Config) (*Pool, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	return &Pool{cfg: cfg, lastBusy: map[string]time.Time{}}, nil
+	p := &Pool{cfg: cfg, lastBusy: map[string]time.Time{}}
+	p.metrics = newMetrics(p)
+	return p, nil
 }
 
 // Run reconciles every Interval until ctx ends. A failed reconcile is logged
@@ -141,7 +158,7 @@ func (p *Pool) Run(ctx context.Context) error {
 	defer tick.Stop()
 	for {
 		if err := p.Reconcile(ctx); err != nil {
-			slog.Warn("reconcile failed", "err", err)
+			slog.WarnContext(ctx, "reconcile failed", "err", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -153,7 +170,17 @@ func (p *Pool) Run(ctx context.Context) error {
 
 // Reconcile brings the pool's actors in line with the queue once. It makes
 // at most one change to each actor and returns the first error.
-func (p *Pool) Reconcile(ctx context.Context) error {
+func (p *Pool) Reconcile(ctx context.Context) (err error) {
+	ctx, span := telemetry.Tracer().Start(ctx, "pool.reconcile")
+	start := time.Now()
+	defer func() {
+		p.metrics.reconcile.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(telemetry.AttrOutcome.String(outcome(err))))
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
 	all, err := p.cfg.Actors.List(ctx)
 	if err != nil {
 		return fmt.Errorf("listing actors: %w", err)
@@ -179,8 +206,10 @@ func (p *Pool) Reconcile(ctx context.Context) error {
 	var suspended, idle, crashed []string
 	names := map[string]bool{}
 	running := 0
+	byState := map[State]int{}
 	for _, a := range owned {
 		names[a.Name] = true
+		byState[a.State]++
 		switch a.State {
 		case StateSuspended:
 			suspended = append(suspended, a.Name)
@@ -208,11 +237,20 @@ func (p *Pool) Reconcile(ctx context.Context) error {
 	// Resuming actors count as free: they lease as soon as they are up.
 	free := running - len(busy)
 	need := queued - free
+	p.mu.Lock()
+	p.byState, p.queued, p.busyBots = byState, queued, len(busy)
+	p.mu.Unlock()
+	span.SetAttributes(
+		attribute.Int("ci_substrate.queued", queued),
+		attribute.Int("ci_substrate.actors", len(owned)),
+		attribute.Int("ci_substrate.actors_busy", len(busy)),
+		attribute.Int("ci_substrate.need", need),
+	)
 
 	var errs []error
 	for _, name := range crashed {
-		slog.Warn("deleting crashed actor", "actor", name)
-		if err := p.cfg.Actors.Delete(ctx, name); err != nil {
+		slog.WarnContext(ctx, "deleting crashed actor", "actor", name)
+		if err := p.do(ctx, "delete", name, p.cfg.Actors.Delete); err != nil {
 			errs = append(errs, fmt.Errorf("deleting %s: %w", name, err))
 		}
 	}
@@ -224,8 +262,8 @@ func (p *Pool) Reconcile(ctx context.Context) error {
 		name := suspended[0]
 		suspended = suspended[1:]
 		need--
-		slog.Info("resuming actor for queued work", "actor", name, "queued", queued)
-		if err := p.cfg.Actors.Resume(ctx, name); err != nil {
+		slog.InfoContext(ctx, "resuming actor for queued work", "actor", name, "queued", queued)
+		if err := p.do(ctx, "resume", name, p.cfg.Actors.Resume); err != nil {
 			errs = append(errs, fmt.Errorf("resuming %s: %w", name, err))
 			continue
 		}
@@ -238,12 +276,12 @@ func (p *Pool) Reconcile(ctx context.Context) error {
 		names[name] = true
 		total++
 		need--
-		slog.Info("creating actor", "actor", name, "queued", queued, "total", total)
-		if err := p.cfg.Actors.Create(ctx, name); err != nil {
+		slog.InfoContext(ctx, "creating actor", "actor", name, "queued", queued, "total", total)
+		if err := p.do(ctx, "create", name, p.cfg.Actors.Create); err != nil {
 			errs = append(errs, fmt.Errorf("creating %s: %w", name, err))
 			continue
 		}
-		if err := p.cfg.Actors.Resume(ctx, name); err != nil {
+		if err := p.do(ctx, "resume", name, p.cfg.Actors.Resume); err != nil {
 			errs = append(errs, fmt.Errorf("resuming new %s: %w", name, err))
 			continue
 		}
@@ -258,8 +296,8 @@ func (p *Pool) Reconcile(ctx context.Context) error {
 			keep--
 			continue
 		}
-		slog.Info("suspending idle actor", "actor", name, "idle", now.Sub(p.lastBusy[name]).Round(time.Second))
-		if err := p.cfg.Actors.Suspend(ctx, name); err != nil {
+		slog.InfoContext(ctx, "suspending idle actor", "actor", name, "idle", now.Sub(p.lastBusy[name]).Round(time.Second))
+		if err := p.do(ctx, "suspend", name, p.cfg.Actors.Suspend); err != nil {
 			errs = append(errs, fmt.Errorf("suspending %s: %w", name, err))
 		}
 	}
@@ -267,14 +305,37 @@ func (p *Pool) Reconcile(ctx context.Context) error {
 	for total > p.cfg.Warm && len(suspended) > 0 {
 		name := suspended[len(suspended)-1]
 		suspended = suspended[:len(suspended)-1]
-		slog.Info("deleting surplus actor", "actor", name, "total", total, "warm", p.cfg.Warm)
-		if err := p.cfg.Actors.Delete(ctx, name); err != nil {
+		slog.InfoContext(ctx, "deleting surplus actor", "actor", name, "total", total, "warm", p.cfg.Warm)
+		if err := p.do(ctx, "delete", name, p.cfg.Actors.Delete); err != nil {
 			errs = append(errs, fmt.Errorf("deleting %s: %w", name, err))
 			continue
 		}
 		total--
 	}
 	return errors.Join(errs...)
+}
+
+// do runs one change to an actor, with a span and metrics.
+func (p *Pool) do(ctx context.Context, op, name string, f func(context.Context, string) error) error {
+	ctx, span := telemetry.Tracer().Start(ctx, "pool."+op, trace.WithAttributes(attribute.String("ci_substrate.actor", name)))
+	defer span.End()
+	start := time.Now()
+	err := f(ctx, name)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	attrs := metric.WithAttributes(attribute.String("op", op), telemetry.AttrOutcome.String(outcome(err)))
+	p.metrics.operations.Add(ctx, 1, attrs)
+	p.metrics.duration.Record(ctx, time.Since(start).Seconds(), attrs)
+	return err
+}
+
+func outcome(err error) string {
+	if err != nil {
+		return "error"
+	}
+	return "ok"
 }
 
 // freeName returns the lowest-numbered name with the prefix not in names.

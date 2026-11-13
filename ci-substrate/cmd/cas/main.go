@@ -17,6 +17,7 @@ import (
 	"time"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	_ "github.com/chainguard-dev/clog/gcp/init"
 	"github.com/sethvargo/go-envconfig"
 	"google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
@@ -27,7 +28,9 @@ import (
 	"github.com/imjasonh/playground/ci-substrate/internal/actioncache"
 	"github.com/imjasonh/playground/ci-substrate/internal/blob"
 	"github.com/imjasonh/playground/ci-substrate/internal/exec"
+	"github.com/imjasonh/playground/ci-substrate/internal/invocation"
 	"github.com/imjasonh/playground/ci-substrate/internal/remote"
+	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
 )
 
@@ -40,6 +43,9 @@ type config struct {
 	// LeaseDuration is how long a runner may go without a heartbeat before
 	// its job is handed to another runner.
 	LeaseDuration time.Duration `env:"LEASE_DURATION, default=30s"`
+	// InvocationIdle is how long a Bazel invocation goes without a call
+	// before cas records it as finished.
+	InvocationIdle time.Duration `env:"INVOCATION_IDLE, default=1m"`
 }
 
 func main() {
@@ -47,6 +53,11 @@ func main() {
 	defer stop()
 	var c config
 	envconfig.MustProcess(ctx, &c)
+	shutdown, err := telemetry.Setup(ctx, "cas")
+	if err != nil {
+		slog.Error("setting up telemetry", "err", err)
+		os.Exit(1)
+	}
 
 	store, err := blob.NewStore(filepath.Join(c.StoreDir, "cas"))
 	if err != nil {
@@ -68,10 +79,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	origin := remote.NewOrigin(store, actions, tenants)
-	scheduler := exec.New(store, actions, tenants, c.LeaseDuration)
+	telemetry.ObserveDisk(c.StoreDir)
+	invocations := invocation.New(c.InvocationIdle)
+	flushed := make(chan struct{})
+	go func() {
+		invocations.Run(ctx)
+		close(flushed)
+	}()
+	origin := remote.NewOrigin(store, actions, tenants, invocations)
+	scheduler := exec.New(store, actions, tenants, c.LeaseDuration, invocations)
 	go scheduler.Run(ctx)
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(telemetry.ServerOptions()...)
 	repb.RegisterExecutionServer(srv, scheduler)
 	workerv1.RegisterWorkerServiceServer(srv, scheduler)
 	repb.RegisterContentAddressableStorageServer(srv, origin)
@@ -97,5 +115,11 @@ func main() {
 	if err := srv.Serve(lis); err != nil {
 		slog.Error("serve", "err", err)
 		os.Exit(1)
+	}
+	<-flushed
+	sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := shutdown(sctx); err != nil {
+		slog.Error("flushing telemetry", "err", err)
 	}
 }

@@ -18,7 +18,9 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
+	_ "github.com/chainguard-dev/clog/gcp/init"
 	"github.com/sethvargo/go-envconfig"
 	ateapi "go.ate.dev/substrate/api/ateapi/v1"
 	"google.golang.org/grpc"
@@ -29,6 +31,7 @@ import (
 	"github.com/imjasonh/playground/ci-substrate/internal/csidriver"
 	"github.com/imjasonh/playground/ci-substrate/internal/remote"
 	"github.com/imjasonh/playground/ci-substrate/internal/substrate"
+	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
 )
 
@@ -64,13 +67,25 @@ func main() {
 	defer stop()
 	var c config
 	envconfig.MustProcess(ctx, &c)
+	shutdown, err := telemetry.Setup(ctx, "casfs-csi")
+	if err != nil {
+		slog.Error("setting up telemetry", "err", err)
+		os.Exit(1)
+	}
+	defer func() {
+		sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := shutdown(sctx); err != nil {
+			slog.Error("flushing telemetry", "err", err)
+		}
+	}()
 
 	tenants, err := tenant.LoadJSON([]byte(c.Tenants))
 	if err != nil {
 		slog.Error("parsing tenants", "err", err)
 		os.Exit(1)
 	}
-	conn, err := grpc.NewClient(c.CacheAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(c.CacheAddr, append(telemetry.DialOptions(), grpc.WithTransportCredentials(insecure.NewCredentials()))...)
 	if err != nil {
 		slog.Error("dialing cache", "addr", c.CacheAddr, "err", err)
 		os.Exit(1)
@@ -94,7 +109,7 @@ func main() {
 		slog.Error("configuring driver", "err", err)
 		os.Exit(1)
 	}
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(telemetry.ServerOptions()...)
 	driver.Register(srv)
 	hs := health.NewServer()
 	hs.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)

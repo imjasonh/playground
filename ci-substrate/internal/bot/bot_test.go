@@ -55,8 +55,8 @@ func newStack(t *testing.T) *stack {
 	if err != nil {
 		t.Fatal(err)
 	}
-	origin := remote.NewOrigin(store, actions, tenants)
-	sched := exec.New(store, actions, tenants, 0)
+	origin := remote.NewOrigin(store, actions, tenants, nil)
+	sched := exec.New(store, actions, tenants, 0, nil)
 	go sched.Run(t.Context())
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")

@@ -6,3 +6,5 @@
 /tmp-cache/
 /bazel-*
 /user.bazelrc
+/cas
+/cascache

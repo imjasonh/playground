@@ -7,9 +7,11 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//internal/casfs",
+        "//internal/telemetry",
         "//internal/tenant",
         "//internal/tree",
         "@com_github_container_storage_interface_spec//lib/go/csi",
+        "@io_opentelemetry_go_otel_metric//:metric",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

@@ -47,7 +47,7 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	origin := remote.NewOrigin(originStore, actions, tenants)
+	origin := remote.NewOrigin(originStore, actions, tenants, nil)
 	originAddr := serve(t, func(s *grpc.Server) {
 		repb.RegisterContentAddressableStorageServer(s, origin)
 		repb.RegisterActionCacheServer(s, origin)

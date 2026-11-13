@@ -2,7 +2,10 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "exec",
-    srcs = ["scheduler.go"],
+    srcs = [
+        "metrics.go",
+        "scheduler.go",
+    ],
     importpath = "github.com/imjasonh/playground/ci-substrate/internal/exec",
     visibility = ["//:__subpackages__"],
     deps = [
@@ -10,10 +13,17 @@ go_library(
         "//internal/actioncache",
         "//internal/blob",
         "//internal/digest",
+        "//internal/invocation",
+        "//internal/telemetry",
         "//internal/tenant",
         "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
         "@com_github_google_uuid//:uuid",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//propagation",
+        "@io_opentelemetry_go_otel_metric//:metric",
+        "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",

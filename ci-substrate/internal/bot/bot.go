@@ -23,6 +23,12 @@ import (
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/chainguard-dev/clog"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	otelcodes "go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -33,6 +39,7 @@ import (
 	"github.com/imjasonh/playground/ci-substrate/internal/casfs"
 	"github.com/imjasonh/playground/ci-substrate/internal/digest"
 	"github.com/imjasonh/playground/ci-substrate/internal/remote"
+	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
 	"github.com/imjasonh/playground/ci-substrate/internal/tree"
 )
@@ -93,7 +100,8 @@ type Bot struct {
 	cache tree.Fetcher
 	// shell is the absolute path of bash. Every action starts through it, so
 	// the runner process never changes into an exec root it serves itself.
-	shell string
+	shell   string
+	metrics metrics
 }
 
 // New returns a Bot. It fails when the configuration cannot work on this
@@ -139,7 +147,7 @@ func New(cfg Config) (*Bot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("bot: finding bash: %w", err)
 	}
-	return &Bot{cfg: cfg, cache: tree.WithToken(cfg.Cache, cfg.Token), shell: shell}, nil
+	return &Bot{cfg: cfg, cache: tree.WithToken(cfg.Cache, cfg.Token), shell: shell, metrics: newMetrics()}, nil
 }
 
 // probeVolume materializes the empty input root on the volume and drops it,
@@ -254,32 +262,69 @@ func (b *Bot) lease(ctx context.Context) (*workerv1.Job, error) {
 }
 
 // RunJob runs one leased job and reports its outcome to the scheduler,
-// heartbeating while it runs.
+// heartbeating while it runs. Its spans join the trace of the Execute call
+// that queued the job, and its calls carry that call's RequestMetadata.
 func (b *Bot) RunJob(ctx context.Context, job *workerv1.Job) {
+	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(job.GetTraceContext()))
+	md := &repb.RequestMetadata{}
+	if proto.Unmarshal(job.GetRequestMetadata(), md) == nil && md.GetToolInvocationId() != "" {
+		ctx = telemetry.Outgoing(telemetry.WithRequestMetadata(ctx, md), telemetry.ToolRunner)
+	}
+	ctx, span := telemetry.Tracer().Start(ctx, "runner.execute", trace.WithAttributes(append(telemetry.Attributes(md),
+		attribute.String("ci_substrate.operation", job.GetId()),
+		attribute.String("ci_substrate.instance", job.GetInstanceName()),
+		attribute.String("ci_substrate.bot", b.cfg.BotID),
+		attribute.String("ci_substrate.input_mode", string(b.cfg.InputMode)),
+	)...))
+	defer span.End()
 	ctx = clog.WithLogger(ctx, clog.FromContext(ctx).With("job", job.GetId(), "instance", job.GetInstanceName()))
 	ctx, cancel := context.WithCancel(tenant.Outgoing(ctx, b.cfg.Token))
 	defer cancel()
 	go b.heartbeat(ctx, cancel, job)
 
 	start := time.Now()
-	ar, err := b.execute(ctx, job)
+	fetcher := newJobFetcher(ctx, b.cache)
+	ar, err := b.execute(ctx, job, fetcher)
+	b.metrics.inputBytes.Add(ctx, fetcher.bytes.Load(), metric.WithAttributes(telemetry.AttrInputMode.String(string(b.cfg.InputMode))))
+	span.SetAttributes(attribute.Int64("ci_substrate.input_bytes_fetched", fetcher.bytes.Load()))
 	req := &workerv1.CompleteRequest{BotId: b.cfg.BotID, JobId: job.GetId()}
+	outcome := "ok"
 	if err != nil {
+		outcome = "error"
 		clog.ErrorContext(ctx, "action failed to run", "err", err)
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, err.Error())
 		req.ErrorMessage = err.Error()
 	} else if anyAR, err := anypb.New(ar); err != nil {
+		outcome = "error"
 		req.ErrorMessage = err.Error()
 	} else {
 		req.ActionResult = anyAR
+		if ar.GetExitCode() != 0 {
+			outcome = "exit_nonzero"
+		}
+		span.SetAttributes(attribute.Int("ci_substrate.exit_code", int(ar.GetExitCode())))
 		clog.InfoContext(ctx, "action ran", "exitCode", ar.GetExitCode(), "took", time.Since(start))
 	}
 	// Report with a context that outlives a cancelled lease, so a result
 	// is not lost to the cancel that stopped the heartbeat.
 	reportCtx, reportCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer reportCancel()
-	if _, err := b.cfg.Worker.Complete(reportCtx, req); err != nil {
+	reportCtx, end := b.stage(reportCtx, "complete")
+	_, err = b.cfg.Worker.Complete(reportCtx, req)
+	end(err)
+	if err != nil {
 		clog.ErrorContext(ctx, "reporting result", "err", err)
 	}
+	took := time.Since(start)
+	attrs := metric.WithAttributes(
+		telemetry.AttrInputMode.String(string(b.cfg.InputMode)),
+		telemetry.AttrOutcome.String(outcome),
+		telemetry.AttrMnemonic.String(md.GetActionMnemonic()),
+	)
+	b.metrics.actions.Add(ctx, 1, attrs)
+	b.metrics.duration.Record(ctx, took.Seconds(), attrs)
+	b.metrics.busy.Add(ctx, took.Seconds())
 }
 
 // heartbeat renews the lease every third of its duration and cancels the job
@@ -313,21 +358,14 @@ func (b *Bot) heartbeat(ctx context.Context, cancel context.CancelFunc, job *wor
 	}
 }
 
-// execute builds the exec root, runs the command, and uploads the outputs.
-func (b *Bot) execute(ctx context.Context, job *workerv1.Job) (*repb.ActionResult, error) {
+// execute builds the exec root, runs the command, and uploads the outputs,
+// reading through f.
+func (b *Bot) execute(ctx context.Context, job *workerv1.Job, f tree.Fetcher) (*repb.ActionResult, error) {
 	workerStart := timestamppb.Now()
 	instance := job.GetInstanceName()
-	actionDigest := &repb.Digest{Hash: job.GetActionDigest().GetHash(), SizeBytes: job.GetActionDigest().GetSizeBytes()}
-	action := &repb.Action{}
-	if err := b.fetchProto(ctx, instance, actionDigest, action); err != nil {
-		return nil, fmt.Errorf("action: %w", err)
-	}
-	command := &repb.Command{}
-	if err := b.fetchProto(ctx, instance, action.GetCommandDigest(), command); err != nil {
-		return nil, fmt.Errorf("command: %w", err)
-	}
-	if len(command.GetArguments()) == 0 {
-		return nil, errors.New("command has no arguments")
+	action, command, err := b.fetchAction(ctx, f, instance, job.GetActionDigest())
+	if err != nil {
+		return nil, err
 	}
 	rootDigest := action.GetInputRootDigest()
 	if rootDigest == nil {
@@ -335,7 +373,9 @@ func (b *Bot) execute(ctx context.Context, job *workerv1.Job) (*repb.ActionResul
 	}
 
 	md := &repb.ExecutedActionMetadata{Worker: b.cfg.BotID, WorkerStartTimestamp: workerStart, InputFetchStartTimestamp: timestamppb.Now()}
-	execRoot, cleanup, err := b.execRoot(ctx, instance, rootDigest, job.GetId())
+	inputCtx, end := b.stage(ctx, "prepare_inputs")
+	execRoot, cleanup, err := b.execRoot(inputCtx, f, instance, rootDigest, job.GetId())
+	end(err)
 	if err != nil {
 		return nil, err
 	}
@@ -380,7 +420,9 @@ func (b *Bot) execute(ctx context.Context, job *workerv1.Job) (*repb.ActionResul
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	md.ExecutionStartTimestamp = timestamppb.Now()
+	_, end = b.stage(ctx, "run")
 	runErr := cmd.Run()
+	end(nil)
 	md.ExecutionCompletedTimestamp = timestamppb.Now()
 	ar := &repb.ActionResult{ExecutionMetadata: md}
 	var exitErr *exec.ExitError
@@ -395,7 +437,10 @@ func (b *Bot) execute(ctx context.Context, job *workerv1.Job) (*repb.ActionResul
 	}
 
 	md.OutputUploadStartTimestamp = timestamppb.Now()
-	if err := b.collectOutputs(ctx, instance, workDir, command, ar, stdout.Bytes(), stderr.Bytes()); err != nil {
+	uploadCtx, end := b.stage(ctx, "upload_outputs")
+	err = b.collectOutputs(uploadCtx, instance, workDir, command, ar, stdout.Bytes(), stderr.Bytes())
+	end(err)
+	if err != nil {
 		return nil, fmt.Errorf("uploading outputs: %w", err)
 	}
 	md.OutputUploadCompletedTimestamp = timestamppb.Now()
@@ -407,7 +452,7 @@ func (b *Bot) execute(ctx context.Context, job *workerv1.Job) (*repb.ActionResul
 // the configured mode, and returns it with the function that tears it down.
 // In the volume mode the host loads the tree and serves the files, so the
 // runner fetches nothing but the mkdir; the other modes load the tree here.
-func (b *Bot) execRoot(ctx context.Context, instance string, root *repb.Digest, jobID string) (string, func(), error) {
+func (b *Bot) execRoot(ctx context.Context, f tree.Fetcher, instance string, root *repb.Digest, jobID string) (string, func(), error) {
 	if b.cfg.InputMode == InputVolume {
 		dir := filepath.Join(b.cfg.InputsVolume, casfs.ExecRootName(root, jobID))
 		if err := os.Mkdir(dir, 0o755); err != nil {
@@ -420,7 +465,7 @@ func (b *Bot) execRoot(ctx context.Context, instance string, root *repb.Digest, 
 		}, nil
 	}
 
-	inputs, err := tree.Load(ctx, b.cache, instance, root)
+	inputs, err := tree.Load(ctx, f, instance, root)
 	if err != nil {
 		return "", nil, fmt.Errorf("input root: %w", err)
 	}
@@ -434,7 +479,7 @@ func (b *Bot) execRoot(ctx context.Context, instance string, root *repb.Digest, 
 		return "", nil, err
 	}
 	if b.cfg.InputMode == InputFUSE {
-		server, err := casfs.Mount(dir, inputs, b.cache, instance)
+		server, err := casfs.Mount(dir, inputs, f, instance)
 		if err != nil {
 			os.RemoveAll(jobDir)
 			return "", nil, fmt.Errorf("mounting input root: %w", err)
@@ -446,19 +491,37 @@ func (b *Bot) execRoot(ctx context.Context, instance string, root *repb.Digest, 
 			os.RemoveAll(jobDir)
 		}, nil
 	}
-	if err := tree.Materialize(ctx, b.cache, instance, inputs, dir); err != nil {
+	if err := tree.Materialize(ctx, f, instance, inputs, dir); err != nil {
 		os.RemoveAll(jobDir)
 		return "", nil, fmt.Errorf("materializing input root: %w", err)
 	}
 	return dir, func() { os.RemoveAll(jobDir) }, nil
 }
 
-// fetchProto reads and verifies a message from the cache.
-func (b *Bot) fetchProto(ctx context.Context, instance string, d *repb.Digest, m proto.Message) error {
+// fetchAction reads the job's Action and its Command.
+func (b *Bot) fetchAction(ctx context.Context, f tree.Fetcher, instance string, d *workerv1.Digest) (_ *repb.Action, _ *repb.Command, err error) {
+	ctx, end := b.stage(ctx, "fetch_action")
+	defer func() { end(err) }()
+	action := &repb.Action{}
+	if err := fetchProto(ctx, f, instance, &repb.Digest{Hash: d.GetHash(), SizeBytes: d.GetSizeBytes()}, action); err != nil {
+		return nil, nil, fmt.Errorf("action: %w", err)
+	}
+	command := &repb.Command{}
+	if err := fetchProto(ctx, f, instance, action.GetCommandDigest(), command); err != nil {
+		return nil, nil, fmt.Errorf("command: %w", err)
+	}
+	if len(command.GetArguments()) == 0 {
+		return nil, nil, errors.New("command has no arguments")
+	}
+	return action, command, nil
+}
+
+// fetchProto reads and verifies a message through f.
+func fetchProto(ctx context.Context, f tree.Fetcher, instance string, d *repb.Digest, m proto.Message) error {
 	if err := digest.Validate(d); err != nil {
 		return err
 	}
-	raw, err := b.cache.Fetch(ctx, instance, d)
+	raw, err := f.Fetch(ctx, instance, d)
 	if err != nil {
 		return err
 	}
@@ -569,6 +632,18 @@ func (b *Bot) upload(ctx context.Context, instance string, blobs map[string][]by
 	if err != nil {
 		return err
 	}
+	var total int64
+	for _, v := range blobs {
+		total += int64(len(v))
+	}
+	b.metrics.uploadBytes.Add(ctx, sent, metric.WithAttributes(telemetry.AttrResult.String("sent")))
+	b.metrics.uploadBytes.Add(ctx, total-sent, metric.WithAttributes(telemetry.AttrResult.String("deduplicated")))
+	trace.SpanFromContext(ctx).SetAttributes(
+		attribute.Int("ci_substrate.blobs", len(blobs)),
+		attribute.Int("ci_substrate.blobs_missing", missing),
+		attribute.Int64("ci_substrate.bytes", total),
+		attribute.Int64("ci_substrate.bytes_sent", sent),
+	)
 	if len(blobs) > 0 {
 		clog.InfoContext(ctx, "uploaded outputs", "blobs", len(blobs), "missing", missing, "bytes", sent)
 	}

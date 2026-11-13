@@ -10,6 +10,9 @@ import (
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/bazelbuild/remote-apis/build/bazel/semver"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -18,6 +21,8 @@ import (
 	"github.com/imjasonh/playground/ci-substrate/internal/actioncache"
 	"github.com/imjasonh/playground/ci-substrate/internal/blob"
 	"github.com/imjasonh/playground/ci-substrate/internal/digest"
+	"github.com/imjasonh/playground/ci-substrate/internal/invocation"
+	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
 )
 
@@ -31,15 +36,18 @@ type Origin struct {
 	repb.UnimplementedCapabilitiesServer
 	bytestream.UnimplementedByteStreamServer
 
-	store   *blob.Store
-	actions *actioncache.Store
-	tenants *tenant.Registry
+	store       *blob.Store
+	actions     *actioncache.Store
+	tenants     *tenant.Registry
+	invocations *invocation.Tracker
+	metrics     originMetrics
 }
 
 // NewOrigin returns an Origin that keeps blobs in store and action results in
-// actions, authorized by tenants.
-func NewOrigin(store *blob.Store, actions *actioncache.Store, tenants *tenant.Registry) *Origin {
-	return &Origin{store: store, actions: actions, tenants: tenants}
+// actions, authorized by tenants, and accounts each call to its Bazel
+// invocation in invocations, which may be nil.
+func NewOrigin(store *blob.Store, actions *actioncache.Store, tenants *tenant.Registry, invocations *invocation.Tracker) *Origin {
+	return &Origin{store: store, actions: actions, tenants: tenants, invocations: invocations, metrics: newOriginMetrics()}
 }
 
 // FindMissingBlobs reports which of the requested digests the CAS lacks.
@@ -56,6 +64,16 @@ func (o *Origin) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlob
 			missing = append(missing, d)
 		}
 	}
+	checked, nmissing := int64(len(req.GetBlobDigests())), int64(len(missing))
+	instance := telemetry.AttrInstance.String(req.GetInstanceName())
+	peer := telemetry.AttrPeer.String(telemetry.Peer(telemetry.RequestMetadata(ctx)))
+	o.metrics.findMissing.Add(ctx, checked-nmissing, metric.WithAttributes(instance, peer, telemetry.AttrResult.String("present")))
+	o.metrics.findMissing.Add(ctx, nmissing, metric.WithAttributes(instance, peer, telemetry.AttrResult.String("missing")))
+	trace.SpanFromContext(ctx).SetAttributes(
+		attribute.Int64("ci_substrate.digests", checked),
+		attribute.Int64("ci_substrate.digests_missing", nmissing),
+	)
+	o.invocations.Add(ctx, req.GetInstanceName(), invocation.Counts{DigestsChecked: checked, DigestsMissing: nmissing})
 	return &repb.FindMissingBlobsResponse{MissingBlobDigests: missing}, nil
 }
 
@@ -74,10 +92,14 @@ func (o *Origin) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlob
 		return nil, status.Errorf(codes.InvalidArgument, "batch of %d bytes exceeds %d; use ByteStream", total, MaxBatchBytes)
 	}
 	resp := &repb.BatchUpdateBlobsResponse{}
+	var stored []int64
+	defer func() { o.moved(ctx, req.GetInstanceName(), "write", "batch", stored...) }()
 	for _, r := range req.GetRequests() {
 		st := status.New(codes.OK, "")
 		if err := o.store.Put(r.GetDigest(), r.GetData()); err != nil {
 			st = status.New(codes.InvalidArgument, err.Error())
+		} else {
+			stored = append(stored, int64(len(r.GetData())))
 		}
 		resp.Responses = append(resp.Responses, &repb.BatchUpdateBlobsResponse_Response{
 			Digest: r.GetDigest(),
@@ -100,6 +122,8 @@ func (o *Origin) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsReq
 		return nil, status.Errorf(codes.InvalidArgument, "batch of %d bytes exceeds %d; use ByteStream", total, MaxBatchBytes)
 	}
 	resp := &repb.BatchReadBlobsResponse{}
+	var served []int64
+	defer func() { o.moved(ctx, req.GetInstanceName(), "read", "batch", served...) }()
 	for _, d := range req.GetDigests() {
 		r := &repb.BatchReadBlobsResponse_Response{Digest: d}
 		if err := digest.Validate(d); err != nil {
@@ -116,6 +140,7 @@ func (o *Origin) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsReq
 		default:
 			r.Data = b
 			r.Status = status.New(codes.OK, "").Proto()
+			served = append(served, int64(len(b)))
 		}
 		resp.Responses = append(resp.Responses, r)
 	}
@@ -132,12 +157,28 @@ func (o *Origin) GetActionResult(ctx context.Context, req *repb.GetActionResultR
 	}
 	ar, err := o.actions.Get(req.GetInstanceName(), req.GetActionDigest())
 	if errors.Is(err, actioncache.ErrNotFound) {
+		o.actionCacheLookup(ctx, req.GetInstanceName(), false)
 		return nil, status.Error(codes.NotFound, "action result not found")
 	}
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	o.actionCacheLookup(ctx, req.GetInstanceName(), true)
 	return ar, nil
+}
+
+func (o *Origin) actionCacheLookup(ctx context.Context, instance string, hit bool) {
+	result, c := "miss", invocation.Counts{ActionCacheMisses: 1}
+	if hit {
+		result, c = "hit", invocation.Counts{ActionCacheHits: 1}
+	}
+	trace.SpanFromContext(ctx).SetAttributes(attribute.String("ci_substrate.action_cache", result))
+	o.metrics.actionCache.Add(ctx, 1, metric.WithAttributes(
+		telemetry.AttrInstance.String(instance),
+		telemetry.AttrPeer.String(telemetry.Peer(telemetry.RequestMetadata(ctx))),
+		attribute.String("op", "get"),
+		telemetry.AttrResult.String(result)))
+	o.invocations.Add(ctx, instance, c)
 }
 
 // UpdateActionResult records an action result in the tenant's instance.
@@ -155,6 +196,12 @@ func (o *Origin) UpdateActionResult(ctx context.Context, req *repb.UpdateActionR
 	if err := o.actions.Put(req.GetInstanceName(), req.GetActionDigest(), ar); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	o.metrics.actionCache.Add(ctx, 1, metric.WithAttributes(
+		telemetry.AttrInstance.String(req.GetInstanceName()),
+		telemetry.AttrPeer.String(telemetry.Peer(telemetry.RequestMetadata(ctx))),
+		attribute.String("op", "update"),
+		telemetry.AttrResult.String("ok")))
+	o.invocations.Add(ctx, req.GetInstanceName(), invocation.Counts{ActionCacheWrites: 1})
 	return ar, nil
 }
 
@@ -195,7 +242,9 @@ func (o *Origin) Read(req *bytestream.ReadRequest, stream bytestream.ByteStream_
 	} else if err != nil {
 		return status.Error(codes.Internal, err.Error())
 	}
-	return streamBytes(b, req.GetReadOffset(), req.GetReadLimit(), stream)
+	n, err := streamBytes(b, req.GetReadOffset(), req.GetReadLimit(), stream)
+	o.moved(stream.Context(), instance, "read", "bytestream", n)
+	return err
 }
 
 // Write stores a blob the client streams in (the ByteStream upload path for
@@ -209,6 +258,7 @@ func (o *Origin) Write(stream bytestream.ByteStream_WriteServer) error {
 		d        *repb.Digest
 		finished bool
 	)
+	var instance string
 	for !finished {
 		req, err := stream.Recv()
 		if err == io.EOF {
@@ -218,7 +268,6 @@ func (o *Origin) Write(stream bytestream.ByteStream_WriteServer) error {
 			return err
 		}
 		if d == nil {
-			var instance string
 			instance, d, err = ParseWriteResource(req.GetResourceName())
 			if err != nil {
 				return status.Error(codes.InvalidArgument, err.Error())
@@ -246,6 +295,7 @@ func (o *Origin) Write(stream bytestream.ByteStream_WriteServer) error {
 	if err := o.store.Put(d, buf); err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
+	o.moved(stream.Context(), instance, "write", "bytestream", int64(len(buf)))
 	return stream.SendAndClose(&bytestream.WriteResponse{CommittedSize: int64(len(buf))})
 }
 
@@ -267,22 +317,24 @@ func (o *Origin) QueryWriteStatus(ctx context.Context, req *bytestream.QueryWrit
 }
 
 // streamBytes writes b to the stream honoring offset and limit, in protocol
-// sized chunks.
-func streamBytes(b []byte, offset, limit int64, stream bytestream.ByteStream_ReadServer) error {
+// sized chunks, and returns how many bytes it sent.
+func streamBytes(b []byte, offset, limit int64, stream bytestream.ByteStream_ReadServer) (int64, error) {
 	if offset < 0 || offset > int64(len(b)) {
-		return status.Errorf(codes.OutOfRange, "offset %d out of range for %d bytes", offset, len(b))
+		return 0, status.Errorf(codes.OutOfRange, "offset %d out of range for %d bytes", offset, len(b))
 	}
 	b = b[offset:]
 	if limit > 0 && limit < int64(len(b)) {
 		b = b[:limit]
 	}
 	const chunk = 1 << 20
+	var sent int64
 	for len(b) > 0 {
 		n := min(chunk, len(b))
 		if err := stream.Send(&bytestream.ReadResponse{Data: b[:n]}); err != nil {
-			return err
+			return sent, err
 		}
+		sent += int64(n)
 		b = b[n:]
 	}
-	return nil
+	return sent, nil
 }

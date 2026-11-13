@@ -7,6 +7,7 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//internal/actorpool",
+        "//internal/telemetry",
         "@dev_ate_go_substrate//api/ateapi/v1:ateapi",
         "@io_k8s_sigs_yaml//:yaml",
         "@org_golang_google_grpc//:grpc",

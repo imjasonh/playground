@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/chainguard-dev/clog/gcp/init"
 	"github.com/sethvargo/go-envconfig"
 	ateapi "go.ate.dev/substrate/api/ateapi/v1"
 	"google.golang.org/grpc"
@@ -25,6 +26,7 @@ import (
 	workerv1 "github.com/imjasonh/playground/ci-substrate/api/worker/v1"
 	"github.com/imjasonh/playground/ci-substrate/internal/actorpool"
 	"github.com/imjasonh/playground/ci-substrate/internal/substrate"
+	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
 )
 
@@ -78,6 +80,18 @@ func main() {
 	defer stop()
 	var c config
 	envconfig.MustProcess(ctx, &c)
+	shutdown, err := telemetry.Setup(ctx, "pool")
+	if err != nil {
+		slog.Error("setting up telemetry", "err", err)
+		os.Exit(1)
+	}
+	defer func() {
+		sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := shutdown(sctx); err != nil {
+			slog.Error("flushing telemetry", "err", err)
+		}
+	}()
 
 	policy, err := os.ReadFile(c.EgressPolicyFile)
 	if err != nil {
@@ -90,7 +104,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer ateConn.Close()
-	casConn, err := grpc.NewClient(c.CasAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	casConn, err := grpc.NewClient(c.CasAddr, append(telemetry.DialOptions(), grpc.WithTransportCredentials(insecure.NewCredentials()))...)
 	if err != nil {
 		slog.Error("dialing cas", "err", err)
 		os.Exit(1)

@@ -9,6 +9,8 @@ go_library(
         "//api/worker/v1:worker",
         "//internal/bot",
         "//internal/remote",
+        "//internal/telemetry",
+        "@com_github_chainguard_dev_clog//gcp/init",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//credentials/insecure",
     ],

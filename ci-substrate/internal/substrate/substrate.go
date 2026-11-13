@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/imjasonh/playground/ci-substrate/internal/actorpool"
+	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 )
 
 // PreviewHeader is the gRPC metadata key with which a client tells ateapi it
@@ -47,13 +48,13 @@ func Dial(addr, serverName, caFile, tokenFile string) (*grpc.ClientConn, error) 
 	if !pool.AppendCertsFromPEM(pem) {
 		return nil, fmt.Errorf("%s holds no certificates", caFile)
 	}
-	return grpc.NewClient(addr,
+	return grpc.NewClient(addr, append(telemetry.DialOptions(),
 		grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS13, RootCAs: pool, ServerName: serverName})),
 		grpc.WithPerRPCCredentials(bearerFile(tokenFile)),
 		grpc.WithUnaryInterceptor(func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 			return invoker(metadata.AppendToOutgoingContext(ctx, PreviewHeader, "true"), method, req, reply, cc, opts...)
 		}),
-	)
+	)...)
 }
 
 // bearerFile reads the bearer token on every call, so a rotated projected
