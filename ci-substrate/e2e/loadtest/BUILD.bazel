@@ -1,0 +1,37 @@
+# Load test targets for e2e/run-loadtest.sh. Each target exercises a
+# different path through the RBE control plane: simple actions, fan-out
+# actions, and actions with multiple input files and output directories.
+
+genrule(
+    name = "small",
+    srcs = ["salt.txt"],
+    outs = ["small.txt"],
+    cmd = "cat $< > $@ && echo small >> $@ && hostname >> $@",
+)
+
+genrule(
+    name = "medium",
+    srcs = ["salt.txt", "input1.txt", "input2.txt"],
+    outs = ["medium.txt"],
+    cmd = "cat $(SRCS) > $@ && echo medium >> $@ && hostname >> $@",
+)
+
+[genrule(
+    name = "fanout_%d" % i,
+    srcs = ["salt.txt"],
+    outs = ["fanout_%d.txt" % i],
+    cmd = "cat $< > $@ && echo %d >> $@ && hostname >> $@" % i,
+) for i in range(8)]
+
+genrule(
+    name = "tree",
+    srcs = ["salt.txt"],
+    outs = ["tree_out.txt"],
+    cmd = "cat $< > $@ && mkdir -p $$(dirname $@)/tree/deep && echo leaf > $$(dirname $@)/tree/deep/leaf.txt && hostname >> $@",
+)
+
+sh_test(
+    name = "smoke_test",
+    srcs = ["smoke_test.sh"],
+    data = [":small"],
+)
