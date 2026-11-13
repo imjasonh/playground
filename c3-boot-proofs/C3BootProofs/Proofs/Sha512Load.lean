@@ -228,14 +228,14 @@ theorem s5_load_step {P F cur : Word} {M0 Mb M : Word → BitVec 8} {g : Fin 32 
     rw [u1.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [I.r8]; rfl
   have k1' : ∀ q, q.val ≠ 0 → q ≠ a0 → reg m1 q = reg m q := fun q h0 h1 => by
     rw [u1.regs]; simp only [upd_app, h0, h1, ite_false]
-  obtain ⟨m2, d2, u2⟩ := u1.self.notTaken I.code 0x9A s5_at_98 (by decide)
+  obtain ⟨m2, d2, u2⟩ := u1.self.notTaken I.code 0x9A sh5_at_98 (by decide)
     (by rw [x10, u1.self.zero]; exact beq_ld8 hi)
   obtain ⟨m3, c3, u3⟩ := St.block s5LdB u2 I.code s5LdB_end (by simp [BlockOk, BInstr.ok, s5LdB])
   simp only [runBlock, BInstr.run, s5LdB] at u3
   have z1 : reg m1 0 = 0 := u1.self.zero
   have k3 : ∀ q, q.val ≠ 0 → q ≠ a0 → q ≠ a1 → q ≠ a2 → reg m3 q = reg m q := fun q h0 h1 h2 h3 => by
     rw [u3.regs]; simp only [upd_app, h0, h1, h2, h3, ite_false]; exact k1' q h0 h1
-  obtain ⟨m4, c4, pc4, mem4, regs4⟩ := u3.self.callRa I.code s5_at_a2 s5_at_a6
+  obtain ⟨m4, c4, pc4, mem4, regs4⟩ := u3.self.callRa I.code sh5_at_a2 sh5_at_a6
     (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P S.hP 0xFFFFFFEA (by decide))
   have r4 := PEnv.reg1 regs4 u3.self.zero
   obtain ⟨m5, c5, pc5, mem5, a05, a15, a25, k5⟩ := rangeFromIndex_okL (B := P + 0xFFFFFFEA) (cur := cur)
@@ -255,7 +255,7 @@ theorem s5_load_step {P F cur : Word} {M0 Mb M : Word → BitVec 8} {g : Fin 32 
     fun q h0 h1 h2 h3 hr => by rw [k5 q h1 h2 h3, r4 q hr, k3 q h0 h1 h2 h3]
   obtain ⟨m6, c6, u6⟩ := St.block s5LdR s5 I.code s5LdR_end (by simp [BlockOk, BInstr.ok, s5LdR])
   simp only [runBlock, BInstr.run, s5LdR] at u6
-  obtain ⟨m7, d7, u7⟩ := u6.self.notTaken I.code 0xB2 s5_at_ae (by decide) (by
+  obtain ⟨m7, d7, u7⟩ := u6.self.notTaken I.code 0xB2 sh5_at_ae (by decide) (by
     rw [u6.regs, u6.regs]; simp +decide only [upd_app, ↓reduceIte]
     rw [show reg m5 x0 = 0 from s5.zero, a15]
     simp only [show ∀ x : Word, aluEval .add 0 x = x from fun x => BitVec.zero_add x]; exact bgeu7 hi)
@@ -303,7 +303,7 @@ theorem s5_load_step {P F cur : Word} {M0 Mb M : Word → BitVec 8} {g : Fin 32 
   obtain ⟨M8, hM8⟩ : ∃ M8, memStore32 (memStore32 M (bslot F i) (lo64 (s5W M0 cur i))) (bslot F i + 4)
       (hi64 (s5W M0 cur i)) = M8 := ⟨_, rfl⟩
   rw [hM8] at u8
-  obtain ⟨m9, d9, u9⟩ := u8.jump (by rw [← hM8]; exact (I.code.store32 sC).store32 sC4) s5_at_f6 (off' := 0x94)
+  obtain ⟨m9, d9, u9⟩ := u8.jump (by rw [← hM8]; exact (I.code.store32 sC).store32 sC4) sh5_at_f6 (off' := 0x94)
     (by decide) (pc_even (off' := 0x94) S.hP u8.pc (by decide) (by decide))
   have k9 : ∀ q, s5LdKeep q = true → reg m9 q = reg m q := fun q hq => by
     rw [u9.regs, E2 q hq, k6 q (fun e => pkeep_ne hq (r := 0) rfl (Fin.ext e)) (pkeep_ne hq rfl) (pkeep_ne hq rfl),
@@ -351,7 +351,7 @@ theorem s5_load_exit {P F cur : Word} {M0 Mb M : Word → BitVec 8} {g : Fin 32 
   simp only [runBlock, BInstr.run, s5LdA] at u1
   have x10 : reg m1 a0 = BitVec.ofNat 32 (8 * 16) + 0xFFFFFF80 := by
     rw [u1.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [I.r8]; rfl
-  obtain ⟨m2, d2, u2⟩ := u1.self.taken I.code 0xF8 s5_at_98 (by decide)
+  obtain ⟨m2, d2, u2⟩ := u1.self.taken I.code 0xF8 sh5_at_98 (by decide)
     (by rw [x10, u1.self.zero]; decide)
   exact ⟨m2, c1.trans (.cons d2 (.refl _)), u2.self, fun q hq => by
     rw [u2.regs, u1.regs, upd_kp hq rfl rfl, I.keep q hq]⟩

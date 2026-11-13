@@ -137,7 +137,7 @@ theorem s5_round {P F : Word} {w : Nat → Sha512.W64} {hv : Sha512.V8} {g : Fin
     rw [u1.regs]; simp +decide only [upd_app, ↓reduceIte, z]; rw [I.eh]; exact BitVec.zero_add _
   have x27 : reg m1 27 = lo64 (Sha512.vs w hv t).e := by
     rw [u1.regs]; simp +decide only [upd_app, ↓reduceIte, z]; rw [I.el]; exact BitVec.zero_add _
-  obtain ⟨m2, d2, u2⟩ := u1.self.notTaken I.code 0x238 s5_at_234 (by decide) (by
+  obtain ⟨m2, d2, u2⟩ := u1.self.notTaken I.code 0x238 sh5_at_234 (by decide) (by
     rw [R1 29 (by decide) (by decide) (by decide) (by decide) (by decide), I.r29, u1.self.zero]
     exact beq_pos (by omega) (by omega))
   have k25 : reg m1 25 = s5K + BitVec.ofNat 32 (8 * t) := by
@@ -167,7 +167,7 @@ theorem s5_round {P F : Word} {w : Nat → Sha512.W64} {hv : Sha512.V8} {g : Fin
   obtain ⟨m3, c3, u3⟩ := St.block s5Round u2 I.code s5Round_end
     (s5Round_ok (by rw [k25]; exact s5K_al t) (by rw [k30]; exact aligned_add hF (by omega)))
   rw [show (runBlock s5Round (M, reg m1)).1 = M from rfl] at u3
-  obtain ⟨m4, d4, u4⟩ := u3.jump I.code s5_at_374 (off' := 0x22C) (by decide)
+  obtain ⟨m4, d4, u4⟩ := u3.jump I.code sh5_at_374 (off' := 0x22C) (by decide)
     (pc_even (off' := 0x22C) hP u3.pc (by decide) (by decide))
   have K4 : ∀ q, s5RKeep q = true → (runBlock s5Round (M, reg m1)).2 q = reg m q := fun q hq => by
     rw [runBlock_reg _ M _ q u1.self.zero (s5RKeep_dst q hq)]
@@ -228,7 +228,7 @@ theorem s5_rounds_exit {P F : Word} {w : Nat → Sha512.W64} {hv : Sha512.V8} {g
   simp only [runBlock, BInstr.run, s5RHead] at u1
   have R1 : ∀ q, q.val ≠ 0 → q ≠ 24 → q ≠ 31 → q ≠ 22 → q ≠ 27 → reg m1 q = reg m q := fun q h0 h1 h2 h3 h4 => by
     rw [u1.regs]; simp only [upd_app, h0, h1, h2, h3, h4, ite_false]
-  obtain ⟨m2, d2, u2⟩ := u1.self.taken I.code 0x376 s5_at_234 (by decide) (by
+  obtain ⟨m2, d2, u2⟩ := u1.self.taken I.code 0x376 sh5_at_234 (by decide) (by
     rw [R1 29 (by decide) (by decide) (by decide) (by decide) (by decide), I.r29, u1.self.zero]; decide)
   refine ⟨m2, c1.trans (.cons d2 (.refl _)), u2.self, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_⟩

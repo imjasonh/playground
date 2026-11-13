@@ -628,7 +628,7 @@ theorem s5_sch_body {P F : Word} {w : Nat → Sha512.W64} {Mb M : Word → BitVe
 theorem s5_sch_next {P F : Word} {w : Nat → Sha512.W64} {Mb M : Word → BitVec 8} {g : Fin 32 → Word} {j : Nat}
     {m : Machine} (I : S5Sch P F w Mb g j 0x1EC M m) (hj : j < 64) :
     ∃ m', Steps m m' ∧ S5Sch P F w Mb g j 0x124 M m' := by
-  obtain ⟨m1, d1, u1⟩ := I.st.taken I.code 0x124 s5_at_1ec (by decide)
+  obtain ⟨m1, d1, u1⟩ := I.st.taken I.code 0x124 sh5_at_1ec (by decide)
     (by rw [I.r16, I.st.zero]; exact bne_pos (by omega) (by omega))
   exact ⟨m1, .cons d1 (.refl _), ⟨u1.self, I.code, by rw [u1.regs]; exact I.r16, by rw [u1.regs]; exact I.r11,
     I.win, I.fr, fun q hq => by rw [u1.regs]; exact I.keep q hq⟩⟩
@@ -637,7 +637,7 @@ theorem s5_sch_next {P F : Word} {w : Nat → Sha512.W64} {Mb M : Word → BitVe
 theorem s5_sch_exit {P F : Word} {w : Nat → Sha512.W64} {Mb M : Word → BitVec 8} {g : Fin 32 → Word}
     {m : Machine} (I : S5Sch P F w Mb g 64 0x1EC M m) :
     ∃ m', Steps m m' ∧ S5Sch P F w Mb g 64 0x1F0 M m' := by
-  obtain ⟨m1, d1, u1⟩ := I.st.notTaken I.code 0x1F0 s5_at_1ec (by decide)
+  obtain ⟨m1, d1, u1⟩ := I.st.notTaken I.code 0x1F0 sh5_at_1ec (by decide)
     (by rw [I.r16, I.st.zero]; decide)
   exact ⟨m1, .cons d1 (.refl _), ⟨u1.self, I.code, by rw [u1.regs]; exact I.r16, by rw [u1.regs]; exact I.r11,
     I.win, I.fr, fun q hq => by rw [u1.regs]; exact I.keep q hq⟩⟩
@@ -667,7 +667,7 @@ theorem s5_sched {P F : Word} {w : Nat → Sha512.W64} {M : Word → BitVec 8} {
     ∃ m' M', Steps m m' ∧ S5Sch P F w M (reg m) 64 0x1F0 M' m' := by
   obtain ⟨m1, c1, u1⟩ := St.block s5SchHead st code s5SchHead_end (by simp [BlockOk, BInstr.ok, s5SchHead])
   simp only [runBlock, BInstr.run, s5SchHead] at u1
-  obtain ⟨m2, d2, u2⟩ := u1.self.notTaken code 0x124 s5_at_120 (by decide) (by
+  obtain ⟨m2, d2, u2⟩ := u1.self.notTaken code 0x124 sh5_at_120 (by decide) (by
     simp only [u1.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [show reg m x0 = 0 from st.zero]; decide)
   have I0 : S5Sch P F w M (reg m) 0 0x124 M m2 := by
     refine ⟨u2.self, code, ?_, ?_, fun s hs => win s hs, fun _ _ => rfl, fun q hq => ?_⟩

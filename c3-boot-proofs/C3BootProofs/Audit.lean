@@ -24,6 +24,7 @@ import C3BootProofs.Proofs.WideMul12x2
 import C3BootProofs.Proofs.WideMul8x2
 import C3BootProofs.Proofs.EdDouble
 import C3BootProofs.Proofs.FePow2k
+import C3BootProofs.Proofs.Sha512Compress
 import C3BootProofs.Proofs.ImageHelpers
 import C3BootProofs.Proofs.Block
 import C3BootProofs.Proofs.ImageCalls
@@ -1828,6 +1829,51 @@ theorem exists_fePow2k_machine :
     rfl, rfl, rfl, rfl, rfl, by decide, rfl⟩
   all_goals (unfold RV32.CodeIn; decide +kernel)
 
+/-- Memory with the current image's `compress512`, `RangeFrom::index`,
+`memcpy`, `memset`, and SHA-512's round constants where the image loads them,
+and zeros elsewhere. -/
+def witnessMemS5 (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.sha512CompressAddress).toNat < Image.sha512CompressCode.length then
+    RV32.byteAt Image.sha512CompressCode (a - BitVec.ofNat 32 Image.sha512CompressAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.rangeFromIndexAddress).toNat < Image.rangeFromIndexCode.length then
+    RV32.byteAt Image.rangeFromIndexCode (a - BitVec.ofNat 32 Image.rangeFromIndexAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat < Image.memcpyStubCode.length then
+    RV32.byteAt Image.memcpyStubCode (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat < Image.memcpyBodyCode.length then
+    RV32.byteAt Image.memcpyBodyCode (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memsetAddress).toNat < Image.memsetCode.length then
+    RV32.byteAt Image.memsetCode (a - BitVec.ofNat 32 Image.memsetAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.sha512KAddress).toNat < Image.sha512KData.length then
+    RV32.byteAt Image.sha512KData (a - BitVec.ofNat 32 Image.sha512KAddress).toNat
+  else 0
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 4000000 in
+/-- A machine that calls `compress512` on 2 blocks (`n = 2`) with the state at
+`0x3FCC5800`, the blocks at `0x3FCC6000`, and the stack at `0x3FCC8000` meets
+`s5Compress_correct`'s hypotheses. -/
+theorem exists_s5Compress_machine :
+    ∃ (m : RV32.Machine) (P sp0 stp bp retAddr : RV32.Word) (n : Nat),
+      RV32.S5Env m.mem P sp0 stp bp n ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = stp ∧ RV32.reg m RV32.a1 = bp ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ 0 < n := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5800 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 2
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.sha512CompressAddress, witnessMemS5⟩,
+    BitVec.ofNat 32 Image.sha512CompressAddress, 0x3FCC8000, 0x3FCC5800, 0x3FCC6000, 0, 2,
+    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      (RV32.sep_of_le (by decide) (by decide)).symm⟩,
+    rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide⟩
+  all_goals (unfold RV32.CodeIn; decide +kernel)
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -2258,3 +2304,9 @@ end C3
 
 /-- info: 'C3.exists_fePow2k_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_fePow2k_machine
+
+/-- info: 'C3.RV32.s5Compress_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.s5Compress_correct
+
+/-- info: 'C3.exists_s5Compress_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_s5Compress_machine

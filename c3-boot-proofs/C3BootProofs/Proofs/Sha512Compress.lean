@@ -148,7 +148,7 @@ theorem s5W_rec (M0 : Word → BitVec 8) (cur : Word) : S5Rec (s5W M0 cur) :=
 
 /-- A frame slot below the buffer, after the buffer, the array, and the
 `memset` writes, which all lie at or above `F + 0x58`. -/
-theorem low_load {F : Word} {M M' : Word → BitVec 8} (hFw : F.toNat + 0x390 ≤ 2 ^ 32)
+theorem low_load {F : Word} {M M' : Word → BitVec 8} (_hFw : F.toNat + 0x390 ≤ 2 ^ 32)
     (h : ∀ x, Sep (F + BitVec.ofNat 32 0x58) 0x300 x 1 → M' x = M x) {c : Nat} (hc : c + 4 ≤ 0x58) :
     memLoad32 M' (F + BitVec.ofNat 32 c) = memLoad32 M (F + BitVec.ofNat 32 c) :=
   load_congr h (frame_sep (.inr (by omega)) (by omega) (by omega))
@@ -172,7 +172,7 @@ theorem s5_block {P F stp bp : Word} {n j : Nat} {M0 Ms M : Word → BitVec 8} {
   have x25 : reg m1 25 = F + 0x58 := by rw [u1.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [O.rsp]; rfl
   have k1 : ∀ q, q.val ≠ 0 → q ≠ 25 → q ≠ a0 → reg m1 q = reg m q := fun q h0 h1 h2 => by
     rw [u1.regs]; simp only [upd_app, h0, h1, h2, ite_false]
-  obtain ⟨m2, d2, u2⟩ := u1.self.notTaken hc0 0x8C s5_at_88 (by decide) (by
+  obtain ⟨m2, d2, u2⟩ := u1.self.notTaken hc0 0x8C sh5_at_88 (by decide) (by
     rw [k1 21 (by decide) (by decide) (by decide), O.r21, u1.regs]
     simp +decide only [upd_app, ↓reduceIte]; rw [O.rsp, O.mend]; exact beq_blocks128 hj S.hwbp)
   -- 0x8C: the next block's address at `F + 0x34`
@@ -189,7 +189,7 @@ theorem s5_block {P F stp bp : Word} {n j : Nat} {M0 Ms M : Word → BitVec 8} {
   have frM1 : ∀ x, Sep F 0x390 x 1 → Sep stp 128 x 1 → M1 x = M0 x := fun x h1 h2 => by
     rw [← hM1, st_get_sep h1 (by decide), O.fr x h1 h2]
   have k3 : ∀ q, q.val ≠ 0 → q ≠ 25 → q ≠ a0 → q ≠ 8 → reg m3 q = reg m q := fun q h0 h1 h2 h3 => by
-    rw [u3.regs]; simp only [upd_app, h0, h1, h2, h3, ite_false]; exact k1 q h0 h1 h2
+    rw [u3.regs]; simp only [upd_app, h0, h2, h3, ite_false]; exact k1 q h0 h1 h2
   -- the load loop
   have sBuf : Sep (F + BitVec.ofNat 32 0x58) 0x80 cur 128 := by
     rw [hcur]; exact (S.bF.symm.sub (c := 0x58) (l := 0x80) (by decide)).subR (c := 128 * j) (l := 128) (by omega)
@@ -222,7 +222,7 @@ theorem s5_block {P F stp bp : Word} {n j : Nat} {M0 Ms M : Word → BitVec 8} {
     (dst := F + BitVec.ofNat 32 0xD8) (src := F + BitVec.ofNat 32 0x58)
     (even_at P S.hP 0x5AC (by decide)) u6 L16.code (S.cIn frMl S.stub S.sU S.stU (Nat.le_refl _))
     (by rw [e8]; exact S.cIn frMl S.body S.sB S.stB (Nat.le_refl _))
-    s5_at_100 s5_at_104 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P S.hP (0x100 + 8) (by decide))
+    sh5_at_100 sh5_at_104 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P S.hP (0x100 + 8) (by decide))
     (by decide) (by rw [frame_toNat5 hFw (by decide)]; omega) (by decide)
     (aligned_add S.hF (by decide)) (aligned_add S.hF (by decide))
     (frame_sep (.inr (by decide)) (by decide) (by decide))
@@ -245,7 +245,7 @@ theorem s5_block {P F stp bp : Word} {n j : Nat} {M0 Ms M : Word → BitVec 8} {
   have hc7 := S.cIn frMc S.code S.sC S.stC (Nat.le_refl _)
   obtain ⟨m8, c8, u8⟩ := St.block s5Zero u7 hc7 s5Zero_end (by simp [BlockOk, BInstr.ok, s5Zero])
   simp only [runBlock, BInstr.run, s5Zero] at u8
-  obtain ⟨m9, c9, pc9, mem9, regs9⟩ := u8.self.callRa hc7 s5_at_112 s5_at_116
+  obtain ⟨m9, c9, pc9, mem9, regs9⟩ := u8.self.callRa hc7 sh5_at_112 sh5_at_116
     (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P S.hP 0x544 (by decide))
   have r9 := PEnv.reg1 regs9 u8.self.zero
   have x8 : reg m8 8 = F + BitVec.ofNat 32 0x158 := by
@@ -433,7 +433,7 @@ theorem s5_block {P F stp bp : Word} {n j : Nat} {M0 Ms M : Word → BitVec 8} {
   rw [hMf] at u15
   have frMf : ∀ x, Sep F 0x390 x 1 → Sep stp 128 x 1 → Mf x = M0 x := fun x h1 h2 => by
     rw [← hMf]; unfold s5FinalMem; simp (disch := decide) only [st_get_sep h1, st_get_sep h2]; exact frMp x h1 h2
-  obtain ⟨m16, d16, u16⟩ := u15.jump (S.cIn frMf S.code S.sC S.stC (Nat.le_refl _)) s5_at_43c (off' := 0x82)
+  obtain ⟨m16, d16, u16⟩ := u15.jump (S.cIn frMf S.code S.sC S.stC (Nat.le_refl _)) sh5_at_43c (off' := 0x82)
     (by decide) (pc_even (off' := 0x82) S.hP u15.pc (by decide) (by decide))
   have kk : ∀ q, s5Keep q = true → reg m16 q = g q := fun q hq => by
     have h1 : s5FinalKeep q = true := by revert q; decide
@@ -459,9 +459,9 @@ theorem s5_block {P F stp bp : Word} {n j : Nat} {M0 Ms M : Word → BitVec 8} {
   · rw [← hMf]; unfold s5FinalMem; simp (disch := decide) only [ls_lit, ls_same, ls_sep S.stF]; rfl
   · rw [← hMf]; unfold s5FinalMem; simp (disch := decide) only [ls_lit, ls_same, ls_sep S.stF]; rfl
   · rw [← hMf]; unfold s5FinalMem; simp (disch := decide) only [ls_lit, ls_same, ls_sep S.stF]; rfl
-  · rw [← hMf]; unfold s5FinalMem; simp (disch := decide) only [ls_lit, ls_same, ls_sep S.stF]; rfl
-  · rw [← hMf]; unfold s5FinalMem; simp (disch := decide) only [ls_lit, ls_same, ls_sep S.stF]; exact mst'
-  · rw [← hMf]; unfold s5FinalMem; simp (disch := decide) only [ls_lit, ls_same, ls_sep S.stF]
+  · rw [← hMf]; unfold s5FinalMem; simp (disch := decide) only [ls_same, ls_sep S.stF]; rfl
+  · rw [← hMf]; unfold s5FinalMem; simp (disch := decide) only [ls_lit, ls_sep S.stF]; exact mst'
+  · rw [← hMf]; unfold s5FinalMem; simp (disch := decide) only [ls_lit, ls_sep S.stF]
     rw [← hMp]; unfold s5PreMem; simp (disch := decide) only [ls_lit]
     exact (slot 0x10 (by decide) (by decide)).trans O.mend
   · rw [← hMf]; unfold s5Hv s5FinalMem
@@ -477,5 +477,327 @@ theorem s5_block {P F stp bp : Word} {n j : Nat} {M0 Ms M : Word → BitVec 8} {
     rw [mid x e1, ← hM1, st_get_sep h1 (by decide), O.sv x h1 h2]
   · intro x h1 h2
     exact frMf x h1 h2
+
+/-- The `k` 128-byte blocks starting at `bp` in `M`. -/
+def blockList128 (M : Word → BitVec 8) (bp : Word) (k : Nat) : List Bytes :=
+  (List.range k).map fun j => memBytes M (bp + BitVec.ofNat 32 (128 * j)) 128
+
+theorem blockList128_succ (M : Word → BitVec 8) (bp : Word) (j : Nat) :
+    blockList128 M bp (j + 1) = blockList128 M bp j ++ [memBytes M (bp + BitVec.ofNat 32 (128 * j)) 128] := by
+  unfold blockList128
+  rw [List.range_succ, List.map_append, List.map_cons, List.map_nil]
+
+/-- The state after `j` blocks. -/
+def s5State (M0 : Word → BitVec 8) (stp bp : Word) : Nat → Sha512.V8
+  | 0 => s5Hv M0 stp
+  | j + 1 => s5Add (s5State M0 stp bp j)
+      (Sha512.vs (s5W M0 (bp + BitVec.ofNat 32 (128 * j))) (s5State M0 stp bp j) 80)
+
+theorem s5State_toList (M0 : Word → BitVec 8) (stp bp : Word) :
+    ∀ j, (s5State M0 stp bp j).toList = (blockList128 M0 bp j).foldl Sha512.compress (s5Hv M0 stp).toList
+  | 0 => rfl
+  | j + 1 => by
+    rw [blockList128_succ, List.foldl_append, ← s5State_toList M0 stp bp j, List.foldl_cons, List.foldl_nil,
+      Sha512.compress_vs]
+    rfl
+
+/-- The outer loop from block `j` to its exit. -/
+theorem s5_outer {P F stp bp : Word} {n : Nat} {M0 Ms : Word → BitVec 8} {g : Fin 32 → Word}
+    (S : S5OS P F stp bp n M0) :
+    ∀ k j (M : Word → BitVec 8) (m : Machine), j + k = n →
+      S5O P F stp bp n M0 Ms g j (s5State M0 stp bp j) M m →
+      ∃ m' M', Steps m m' ∧ S5O P F stp bp n M0 Ms g n (s5State M0 stp bp n) M' m'
+  | 0, j, M, m, h, O => ⟨m, M, .refl _, by rw [Nat.add_zero] at h; subst h; exact O⟩
+  | k + 1, j, M, m, h, O => by
+    obtain ⟨m1, M1, c1, O1⟩ := s5_block S O (by omega) rfl
+    obtain ⟨m2, M2, c2, O2⟩ := s5_outer S k (j + 1) M1 m1 (by omega) O1
+    exact ⟨m2, M2, c1.trans c2, O2⟩
+
+theorem s5_sll7 (bp : Word) (n : Nat) (hn : n < 2 ^ 25) :
+    ((BitVec.ofNat 32 n <<< 7) + bp) = bp + BitVec.ofNat 32 (128 * n) := by
+  rw [BitVec.add_comm]
+  congr 1
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_shiftLeft, BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.shiftLeft_eq]
+  have : n % 2 ^ 32 = n := Nat.mod_eq_of_lt (by omega)
+  rw [this, Nat.mul_comm n 128]
+
+set_option maxRecDepth 100000 in
+theorem s5Ps_range : ∀ p ∈ s5Ps, p.2.toNat % 4 = 0 ∧ 0x35C ≤ p.2.toNat ∧ p.2.toNat + 4 ≤ 0x390 := by decide
+
+set_option maxRecDepth 100000 in
+theorem s5Ps_sp : ∀ p ∈ s5Ps, p.1 ≠ sp := by decide
+
+theorem frame_lit {F : Word} (_hFw : F.toNat + 0x390 ≤ 2 ^ 32) {c d : Word} (hc : c.toNat + 4 ≤ 0x390)
+    (hd : d.toNat + 4 ≤ 0x390) (h : c.toNat + 4 ≤ d.toNat ∨ d.toNat + 4 ≤ c.toNat) : Sep (F + c) 4 (F + d) 4 := by
+  have := sep_offsets F (c := c.toNat) (n := 4) (d := d.toNat) (k := 4) h (by omega) (by omega)
+  rwa [ofNat_toNat_self, ofNat_toNat_self] at this
+
+theorem frame_hi {F : Word} (hFw : F.toNat + 0x390 ≤ 2 ^ 32) {c d : Word} (hc : c.toNat + 4 ≤ 0x390)
+    (hc' : 0x58 ≤ c.toNat) (hd : decide (d.toNat + 4 ≤ 0x58) = true) : Sep (F + d) 4 (F + c) 4 := by
+  simp only [decide_eq_true_eq] at hd
+  exact frame_lit hFw (by omega) hc (.inl (by omega))
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 16000000 in
+/-- The prologue, from 0x00 to 0x82: the frame, the register saves, and the
+outer loop's first state. -/
+theorem s5_pro (m : Machine) {P sp0 stp bp : Word} {n : Nat} (S : S5OS P (sp0 + 0xFFFFFC70) stp bp n m.mem)
+    (hn : n < 2 ^ 25) (hpc : m.pc = P) (ha0 : reg m a0 = stp) (ha1 : reg m a1 = bp)
+    (ha2 : reg m a2 = BitVec.ofNat 32 n) (hsp : reg m sp = sp0) :
+    ∃ m' Ms, Steps m m' ∧
+      S5O P (sp0 + 0xFFFFFC70) stp bp n m.mem Ms (reg m) 0 (s5Hv m.mem stp) Ms m' ∧
+      ∀ r o, (r, o) ∈ s5Ps → memLoad32 Ms (sp0 + 0xFFFFFC70 + o) = reg m r := by
+  have s0 : St m.mem P m 0 (reg m) := ⟨by rw [hpc]; simp, rfl, fun _ => rfl⟩
+  have hz := s0.zero
+  obtain ⟨E1, Esp, Ek⟩ := s5Pro_run (M := m.mem) (f := reg m) hz
+  rw [hsp] at E1 Esp
+  obtain ⟨m1, c1, u1⟩ := St.block s5Pro s0 S.code s5Pro_end (s5Pro_ok (by rw [hsp]) S.hF S.sC)
+  rw [E1] at u1
+  obtain ⟨Msv, hMsv⟩ : ∃ Msv, saveMem m.mem (sp0 + 0xFFFFFC70) (reg m) s5Ps = Msv := ⟨_, rfl⟩
+  rw [hMsv] at u1
+  have frSv : ∀ x, Sep (sp0 + 0xFFFFFC70) 0x390 x 1 → Msv x = m.mem x := fun x hx => by
+    rw [← hMsv]; exact saveMem_outside s5Ps fun p hp => frm_sep' hx (s5Ps_range p hp).2.2
+  have sp1 : reg m1 sp = sp0 + 0xFFFFFC70 := by rw [u1.regs, Esp]
+  have k1 : ∀ q, q ≠ sp → q ≠ a3 → reg m1 q = reg m q := fun q h1 h2 => by rw [u1.regs, Ek q h1 h2]
+  have a01 : reg m1 a0 = stp := (k1 a0 (by decide) (by decide)).trans ha0
+  have cSv : CodeIn Msv P sha512CompressCode := fun i hi => by
+    rw [frSv _ (S.sC.subR (c := i) (l := 1) (by omega))]; exact S.code i hi
+  obtain ⟨T1, T21, T23, T19, T22, T27, T24, T26, T18, T20, Tk⟩ :=
+    s5Setup_run (M := Msv) (f := reg m1) u1.self.zero sp1 a01 S.stF.symm
+  obtain ⟨m2, c2, u2⟩ := St.block s5Setup u1.self cSv s5Setup_end (s5Setup_ok sp1 a01 S.hF S.hstp S.sC)
+  rw [T1, k1 a2 (by decide) (by decide), ha2, k1 a1 (by decide) (by decide), ha1, s5_sll7 bp n hn] at u2
+  obtain ⟨Ms, hMs⟩ : ∃ Ms, s5SetupMem Msv (sp0 + 0xFFFFFC70) stp (bp + BitVec.ofNat 32 (128 * n)) = Ms :=
+    ⟨_, rfl⟩
+  rw [hMs] at u2
+  have stL : ∀ c : Nat, c + 4 ≤ 128 →
+      memLoad32 Msv (stp + BitVec.ofNat 32 c) = memLoad32 m.mem (stp + BitVec.ofNat 32 c) :=
+    fun c hc => load_congr frSv (S.stF.symm.subR (c := c) (l := 4) hc)
+  have stL' : ∀ c : Word, c.toNat + 4 ≤ 128 → memLoad32 Msv (stp + c) = memLoad32 m.mem (stp + c) := fun c hc => by
+    have := stL c.toNat hc; rwa [ofNat_toNat_self] at this
+  have k2 : ∀ q, s5SetupKeep q = true → q ≠ sp → q ≠ a3 → reg m2 q = reg m q := fun q h1 h2 h3 => by
+    rw [u2.regs, Tk q h1, k1 q h2 h3]
+  have sF := S.hFw
+  have msl : ∀ c : Word, c.toNat + 4 ≤ 0x390 → 0x58 ≤ c.toNat →
+      memLoad32 Ms (sp0 + 0xFFFFFC70 + c) = memLoad32 Msv (sp0 + 0xFFFFFC70 + c) := fun c h1 h2 => by
+    rw [← hMs]; unfold s5SetupMem
+    rw [memLoad32_store32_sep (frame_hi sF h1 h2 (by decide)),
+      memLoad32_store32_sep (frame_hi sF h1 h2 (by decide)),
+      memLoad32_store32_sep (frame_hi sF h1 h2 (by decide)),
+      memLoad32_store32_sep (frame_hi sF h1 h2 (by decide)),
+      memLoad32_store32_sep (frame_hi sF h1 h2 (by decide)),
+      memLoad32_store32_sep (frame_hi sF h1 h2 (by decide)),
+      memLoad32_store32_sep (frame_hi sF h1 h2 (by decide)),
+      memLoad32_store32_sep (frame_hi sF h1 h2 (by decide)),
+      memLoad32_store32_sep (frame_hi sF h1 h2 (by decide)),
+      memLoad32_store32_sep (frame_hi sF h1 h2 (by decide))]
+  refine ⟨m2, Ms, c1.trans c2, ⟨u2.self, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    ?_, ?_, ?_, fun _ _ _ => rfl, ?_, ?_⟩, ?_⟩
+  · rw [u2.regs, Tk sp rfl, sp1]
+  · rw [u2.regs, T21, k1 a1 (by decide) (by decide), ha1, show 128 * 0 = 0 from rfl, add_ofNat_zero]
+  · rw [u2.regs, T23]; unfold s5Hv; rw [lo64_pk]; exact stL 0 (by decide)
+  · rw [u2.regs, T19]; unfold s5Hv; rw [hi64_pk]; exact stL 4 (by decide)
+  · rw [u2.regs, T22]; unfold s5Hv; rw [lo64_pk]; exact stL 8 (by decide)
+  · rw [u2.regs, T27]; unfold s5Hv; rw [hi64_pk]; exact stL 12 (by decide)
+  · rw [u2.regs, T24]; unfold s5Hv; rw [lo64_pk]; exact stL 16 (by decide)
+  · rw [u2.regs, T26]; unfold s5Hv; rw [hi64_pk]; exact stL 20 (by decide)
+  · rw [u2.regs, T18]; unfold s5Hv; rw [lo64_pk]; exact stL 24 (by decide)
+  · rw [← hMs]; unfold s5SetupMem; simp (disch := decide) only [ls_lit, ls_same]
+    unfold s5Hv; rw [hi64_pk]; exact stL 28 (by decide)
+  · rw [u2.regs, T20]; unfold s5Hv; rw [lo64_pk]; exact stL 32 (by decide)
+  · rw [← hMs]; unfold s5SetupMem; simp (disch := decide) only [ls_lit, ls_same]
+    unfold s5Hv; rw [hi64_pk]; exact stL 36 (by decide)
+  · rw [← hMs]; unfold s5SetupMem; simp (disch := decide) only [ls_lit, ls_same]
+    unfold s5Hv; rw [lo64_pk]; exact stL 40 (by decide)
+  · rw [← hMs]; unfold s5SetupMem; simp (disch := decide) only [ls_lit, ls_same]
+    unfold s5Hv; rw [hi64_pk]; exact stL 44 (by decide)
+  · rw [← hMs]; unfold s5SetupMem; simp (disch := decide) only [ls_lit, ls_same]
+    unfold s5Hv; rw [lo64_pk]; exact stL 48 (by decide)
+  · rw [← hMs]; unfold s5SetupMem; simp (disch := decide) only [ls_lit, ls_same]
+    unfold s5Hv; rw [hi64_pk]; exact stL 52 (by decide)
+  · rw [← hMs]; unfold s5SetupMem; simp (disch := decide) only [ls_lit, ls_same]
+    unfold s5Hv; rw [lo64_pk]; exact stL 56 (by decide)
+  · rw [← hMs]; unfold s5SetupMem; simp (disch := decide) only [ls_lit, ls_same]
+    unfold s5Hv; rw [hi64_pk]; exact stL 60 (by decide)
+  · rw [← hMs]; unfold s5SetupMem; simp (disch := decide) only [ls_lit, ls_same]
+  · rw [← hMs]; unfold s5SetupMem; simp (disch := decide) only [ls_same]
+  · rw [← hMs]; unfold s5Hv s5SetupMem
+    simp (disch := decide) only [ls_sep S.stF.symm]
+    simp (disch := decide) only [stL']
+  · intro x h1 _
+    rw [← hMs]; unfold s5SetupMem
+    simp (disch := decide) only [st_get_sep h1]
+    exact frSv x h1
+  · intro q hq
+    have h3 : s5SetupKeep q = true := by revert q; decide
+    exact k2 q h3 (fun e => by subst e; exact absurd hq (by decide)) (fun e => by subst e; exact absurd hq (by decide))
+  · intro r o h
+    obtain ⟨_, h1, h2⟩ := s5Ps_range (r, o) h
+    dsimp only at h1 h2
+    rw [msl o h2 (by omega), ← hMsv]
+    simp only [s5Ps, List.mem_cons, List.mem_nil_iff, or_false, Prod.mk.injEq] at h
+    rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
+      ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+    · simp only [s5Ps, saveMem]
+      simp (disch := decide) only [ls_lit, ls_same]
+
+theorem beq_refl_w5 (a : Word) : branchTaken .beq a a = true := by
+  unfold branchTaken; exact decide_eq_true rfl
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 16000000 in
+/-- The exit, from 0x82 after the last block: restore the saved registers,
+pop the frame, and return. -/
+theorem s5_epi {P F stp bp : Word} {n : Nat} {M0 Ms M : Word → BitVec 8} {g : Fin 32 → Word} {hv : Sha512.V8}
+    {m : Machine} (S : S5OS P F stp bp n M0) (O : S5O P F stp bp n M0 Ms g n hv M m)
+    (hsl : ∀ r o, (r, o) ∈ s5Ps → memLoad32 Ms (F + o) = g r) :
+    ∃ m', Steps m m' ∧ m'.pc = g ra &&& ~~~1 ∧ m'.mem = M ∧ reg m' sp = F + 0x390 ∧
+      (∀ r o, (r, o) ∈ s5Ps → reg m' r = g r) ∧ ∀ q, s5Keep q = true → reg m' q = g q := by
+  have hc0 := S.cIn O.fr S.code S.sC S.stC (Nat.le_refl _)
+  obtain ⟨m1, c1, u1⟩ := St.block s5Top O.st hc0 s5Top_end
+    (by simp +decide only [BlockOk, BInstr.ok, BInstr.run, s5Top, upd_app, ↓reduceIte, and_true, true_and]
+        rw [O.rsp]; exact fr_al S.hF (by decide))
+  simp only [runBlock, BInstr.run, s5Top] at u1
+  have k1 : ∀ q, q.val ≠ 0 → q ≠ 25 → q ≠ a0 → reg m1 q = reg m q := fun q h0 h1 h2 => by
+    rw [u1.regs]; simp only [upd_app, h0, h1, h2, ite_false]
+  obtain ⟨m2, d2, u2⟩ := u1.self.taken hc0 0x43E sh5_at_88 (by decide) (by
+    rw [k1 21 (by decide) (by decide) (by decide), O.r21, u1.regs]
+    simp +decide only [upd_app, ↓reduceIte]; rw [O.rsp, O.mend]; exact beq_refl_w5 _)
+  have sp2 : reg m1 sp = F := by rw [k1 sp (by decide) (by decide) (by decide), O.rsp]
+  obtain ⟨E1, Esp, Eps, Ek⟩ := s5Epi_run (M := M) (f := reg m1) sp2
+  obtain ⟨m3, c3, u3⟩ := St.block s5Epi u2 hc0 s5Epi_end (s5Epi_ok sp2 S.hF)
+  rw [E1] at u3
+  obtain ⟨m4, d4, pc4, mem4, regs4⟩ := u3.jalr hc0 sh5_at_476
+  have slot : ∀ r o, (r, o) ∈ s5Ps → memLoad32 M (F + o) = g r := fun r o h => by
+    rw [← hsl r o h]
+    obtain ⟨_, h1, h2⟩ := s5Ps_range (r, o) h
+    dsimp only at h1 h2
+    refine memLoad32_congr fun j hj => O.sv _ ?_ ?_
+    · rw [← ofNat_toNat_self o, add_ofNat_assoc]
+      have := sep_offsets F (c := 0) (n := 0x35C) (d := o.toNat + j) (k := 1) (.inl (by omega)) (by decide)
+        (by have := S.hFw; omega)
+      rwa [add_ofNat_zero] at this
+    · rw [← ofNat_toNat_self o, add_ofNat_assoc]; exact S.stF.subR (by omega)
+  refine ⟨m4, c1.trans (.cons d2 (c3.trans (.cons d4 (.refl _)))), ?_, ?_, ?_, ?_, ?_⟩
+  · rw [pc4, add_lit_zero, Eps ra 0x38C (by decide), slot ra 0x38C (by decide)]
+  · rw [mem4]
+  · rw [regs4, Esp]
+  · intro r o h; rw [regs4, Eps r o h, slot r o h]
+  · intro q hq
+    have h1 : q.val ∉ [0, 1, 2, 8, 9, 10, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] := by revert q; decide
+    have h2 : q.val ≠ 0 ∧ q ≠ 25 ∧ q ≠ a0 := by revert q; decide
+    rw [regs4, Ek q h1, k1 q h2.1 h2.2.1 h2.2.2, O.keep q hq]
+
+/-- Where `sha2::sha512::compress512` runs: its code at `P`, `RangeFrom::index`,
+`memcpy`, and `memset` where the image puts them, the round constants at
+`sha512KAddress`, the 128-byte state at `stp`, `n` 128-byte blocks at `bp`
+without wrapping, and the 0x390-byte frame below `sp0`, apart from the code,
+the constants, the state, and the blocks. -/
+structure S5Env (M : Word → BitVec 8) (P sp0 stp bp : Word) (n : Nat) : Prop where
+  hP : P.toNat % 2 = 0
+  code : CodeIn M P sha512CompressCode
+  idx : CodeIn M (P + 0xFFFFFFEA) rangeFromIndexCode
+  stub : CodeIn M (P + 0x5AC) memcpyStubCode
+  body : CodeIn M (P + 0x5B4) memcpyBodyCode
+  mset : CodeIn M (P + 0x544) memsetCode
+  kdata : CodeIn M (BitVec.ofNat 32 sha512KAddress) sha512KData
+  hsp : sp0.toNat % 4 = 0
+  hS : 0x390 ≤ sp0.toNat
+  hstp : stp.toNat % 4 = 0
+  hwbp : bp.toNat + 128 * n < 2 ^ 32
+  sC : Sep (sp0 + 0xFFFFFC70) 0x390 P sha512CompressCode.length
+  sI : Sep (sp0 + 0xFFFFFC70) 0x390 (P + 0xFFFFFFEA) rangeFromIndexCode.length
+  sU : Sep (sp0 + 0xFFFFFC70) 0x390 (P + 0x5AC) memcpyStubCode.length
+  sB : Sep (sp0 + 0xFFFFFC70) 0x390 (P + 0x5B4) memcpyBodyCode.length
+  sZ : Sep (sp0 + 0xFFFFFC70) 0x390 (P + 0x544) memsetCode.length
+  sK : Sep (sp0 + 0xFFFFFC70) 0x390 (BitVec.ofNat 32 sha512KAddress) 640
+  stC : Sep stp 128 P sha512CompressCode.length
+  stI : Sep stp 128 (P + 0xFFFFFFEA) rangeFromIndexCode.length
+  stU : Sep stp 128 (P + 0x5AC) memcpyStubCode.length
+  stB : Sep stp 128 (P + 0x5B4) memcpyBodyCode.length
+  stZ : Sep stp 128 (P + 0x544) memsetCode.length
+  stK : Sep stp 128 (BitVec.ofNat 32 sha512KAddress) 640
+  stF : Sep stp 128 (sp0 + 0xFFFFFC70) 0x390
+  bF : Sep bp (128 * n) (sp0 + 0xFFFFFC70) 0x390
+  bSt : Sep bp (128 * n) stp 128
+
+theorem s5Env_static {M : Word → BitVec 8} {P sp0 stp bp : Word} {n : Nat} (env : S5Env M P sp0 stp bp n) :
+    S5OS P (sp0 + 0xFFFFFC70) stp bp n M := by
+  have hS := env.hS
+  have hFw : (sp0 + 0xFFFFFC70).toNat + 0x390 ≤ 2 ^ 32 := by
+    rw [BitVec.toNat_add, show (0xFFFFFC70 : Word).toNat = 0xFFFFFC70 from rfl]
+    have := sp0.isLt
+    omega
+  exact ⟨env.hP, aligned_add env.hsp (k := 0xFFFFFC70) (by decide), hFw, env.hstp, env.hwbp, env.code, env.idx,
+    env.stub, env.body, env.mset, env.kdata, env.sC, env.sI, env.sU, env.sB, env.sZ, env.sK, env.stC, env.stI,
+    env.stU, env.stB, env.stZ, env.stK, env.stF, env.bF, env.bSt⟩
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 16000000 in
+/-- **The compiled `sha2::sha512::compress512`**, called with the state at
+`stp` and `n` 128-byte blocks at `bp`. It stores the state that SHA-512's
+compression function computes from the eight words at `stp` and the `n`
+blocks, returns with `sp` and every register but `t0` through `t6` and `a0`
+through `a7` as they were, and changes no memory outside the 0x390 bytes of
+stack below `sp` and the state. -/
+theorem s5Compress_correct (m : Machine) {P sp0 stp bp retAddr : Word} {n : Nat}
+    (env : S5Env m.mem P sp0 stp bp n) (hpc : m.pc = P)
+    (ha0 : reg m a0 = stp) (ha1 : reg m a1 = bp) (ha2 : reg m a2 = BitVec.ofNat 32 n)
+    (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hsp : reg m sp = sp0) :
+    ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
+      (∀ q, q ≠ (5 : Fin 32) → q ≠ (6 : Fin 32) → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 →
+        q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ a7 → q ≠ (28 : Fin 32) → q ≠ (29 : Fin 32) → q ≠ (30 : Fin 32) →
+        q ≠ (31 : Fin 32) → reg m' q = reg m q) ∧
+      (s5Hv m'.mem stp).toList = (blockList128 m.mem bp n).foldl Sha512.compress (s5Hv m.mem stp).toList ∧
+      ∀ x, Sep (sp0 + 0xFFFFFC70) 0x390 x 1 → Sep stp 128 x 1 → m'.mem x = m.mem x := by
+  have S := s5Env_static env
+  have hn : n < 2 ^ 25 := by have := env.hwbp; omega
+  obtain ⟨m1, Ms, c1, O0, hsl⟩ := s5_pro m S hn hpc ha0 ha1 ha2 hsp
+  obtain ⟨m2, M2, c2, On⟩ := s5_outer S n 0 Ms m1 (Nat.zero_add n) O0
+  obtain ⟨m3, c3, pc3, mem3, sp3, regs3, keep3⟩ := s5_epi S On hsl
+  refine ⟨m3, c1.trans (c2.trans c3), by rw [pc3, hra, hret], ?_, ?_, ?_, ?_⟩
+  · rw [sp3, BitVec.add_assoc]; exact BitVec.add_zero _
+  · intro q q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31
+    have cat := (by decide : ∀ q : Fin 32, q = 0 ∨ q = sp ∨ q = ra ∨ q = (8 : Fin 32) ∨ q = (9 : Fin 32) ∨
+      q = (18 : Fin 32) ∨ q = (19 : Fin 32) ∨ q = (20 : Fin 32) ∨ q = (21 : Fin 32) ∨ q = (22 : Fin 32) ∨
+      q = (23 : Fin 32) ∨ q = (24 : Fin 32) ∨ q = (25 : Fin 32) ∨ q = (26 : Fin 32) ∨ q = (27 : Fin 32) ∨
+      s5Keep q = true ∨ q = (5 : Fin 32) ∨ q = (6 : Fin 32) ∨ q = (7 : Fin 32) ∨ q = a0 ∨ q = a1 ∨ q = a2 ∨
+      q = a3 ∨ q = a4 ∨ q = a5 ∨ q = a6 ∨ q = a7 ∨ q = (28 : Fin 32) ∨ q = (29 : Fin 32) ∨
+      q = (30 : Fin 32) ∨ q = (31 : Fin 32)) q
+    rcases cat with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h |
+      h | h | h | h | h | h | h | h
+    · subst h; rfl
+    · subst h; rw [sp3, hsp, BitVec.add_assoc]; exact BitVec.add_zero _
+    · subst h; exact regs3 _ 0x38C (by decide)
+    · subst h; exact regs3 _ 0x388 (by decide)
+    · subst h; exact regs3 _ 0x384 (by decide)
+    · subst h; exact regs3 _ 0x380 (by decide)
+    · subst h; exact regs3 _ 0x37C (by decide)
+    · subst h; exact regs3 _ 0x378 (by decide)
+    · subst h; exact regs3 _ 0x374 (by decide)
+    · subst h; exact regs3 _ 0x370 (by decide)
+    · subst h; exact regs3 _ 0x36C (by decide)
+    · subst h; exact regs3 _ 0x368 (by decide)
+    · subst h; exact regs3 _ 0x364 (by decide)
+    · subst h; exact regs3 _ 0x360 (by decide)
+    · subst h; exact regs3 _ 0x35C (by decide)
+    · exact keep3 q h
+    · exact absurd h q5
+    · exact absurd h q6
+    · exact absurd h q7
+    · exact absurd h q10
+    · exact absurd h q11
+    · exact absurd h q12
+    · exact absurd h q13
+    · exact absurd h q14
+    · exact absurd h q15
+    · exact absurd h q16
+    · exact absurd h q17
+    · exact absurd h q28
+    · exact absurd h q29
+    · exact absurd h q30
+    · exact absurd h q31
+  · rw [mem3, On.hst, s5State_toList]
+  · intro x h1 h2; rw [mem3]; exact On.fr x h1 h2
 
 end C3.RV32
