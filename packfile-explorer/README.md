@@ -36,12 +36,15 @@ from IndexedDB.
 
 ## Fetch flow
 
-1. Normalize the typed URL to a smart-HTTP base (`…/repo.git`).
+1. Normalize the typed URL to a smart-HTTP base (`…/repo.git`). The repo field
+   starts as `imjasonh/playground`.
 2. `GET …/info/refs?service=git-upload-pack` through the CORS proxy.
-3. Pick which refs to fetch — HEAD is preselected; check more branches or tags,
-   or **Select all**. Set the depth (default 1) so the pack stays small.
-4. `POST …/git-upload-pack` with a `want` per chosen ref. Side-band progress
-   from the server streams into a live log as the pack arrives.
+3. Set the depth (defaults to 1), or check **Max** for the full history, then
+   choose **Only default branch** or **All N branches**. Tags are not fetched.
+4. `POST …/git-upload-pack` with a `want` per chosen branch. The status line
+   follows the server while it enumerates, counts, and compresses, then the
+   bytes received (and the rate, when the body streams), then parsing and
+   resolving. A bar fills in when the total is known.
 5. Demultiplex the side-band-64k response into raw pack bytes.
 6. Parse every entry (in a Web Worker when available, so the tab stays
    responsive), inflate zlib members (recording compressed length), resolve
@@ -51,43 +54,51 @@ from IndexedDB.
 
 ## Explore
 
-The sidebar has four tabs.
+The window has two panes that scroll on their own: a navigator on the left and
+an inspector on the right. On a narrow screen they stack and the page scrolls.
 
-- **Objects**: filter by type / delta kind / reachability / author, sort by
-  offset / packed size / inflated size / depth, search by oid prefix.
-- **Insights**: a leaderboard of the largest objects (rank by packed size,
-  inflated size, delta savings, or depth), a per-type size breakdown, a
-  **blobs by author** pie chart and top-10 table (rank by packed size,
-  inflated size, or blob count; click an author to filter Objects), a delta
-  depth histogram, a reachability summary (with a jump to unreachable
-  objects), and the pack version / object count / verified trailer checksum.
-  Each blob is credited to the author of the commit that introduced it.
-  Blobs in trees at a shallow-fetch boundary go under
-  `(shallow boundary)`; blobs no commit points at go under `(no commit)`.
-- **Refs**: the advertised refs; click one to open the object it points at.
-- **Paths**: the HEAD tree flattened to file paths; search by substring or a
-  `*` glob and click a path to open its blob.
+The navigator has three tabs:
 
-The detail pane shows object metadata plus:
+- **Objects**: every object in the pack, labeled by its path in the HEAD tree
+  (or a commit's subject, or a tag's name). Search by oid prefix or path, filter
+  by type and storage (whole, ofs-delta, ref-delta), and sort by pack order,
+  size, depth, or type. **More filters** adds reachability and blob author. The
+  list shows the first 500 matches; narrow the filters to reach the rest.
+- **Paths**: the HEAD tree flattened to file paths. Search by substring or a
+  `*` glob, then click a path to open its blob.
+- **Refs**: the advertised refs. Click one to open the object it points at.
 
-- The **delta chain** (root base → … → this object) as jump links.
-- Hex-editor views of the raw pack entry (header, base pointer, zlib) and the
-  inflated delta stream (size headers, copy pointers, literal inserts). Hex
-  bodies are keyboard-scrollable when focused.
-- A **delta base** hex view coloring the bytes this delta reuses and greying the
-  ones it dropped, with a reuse percentage.
-- For resolved blobs, the structured commit/tree/tag view, the full blob text
-  (copied bytes colored by source copy instruction, inserts in white), or an
-  inline image preview for PNG/JPEG/GIF/WebP/BMP/SVG blobs.
-- **Download loose object** writes the selected object as a zlib loose file you
+The inspector has two views:
+
+- **Overview**: headline numbers (object count, packed and inflated size,
+  delta share, maximum delta depth), then cards for object types, the largest
+  objects (rank by packed size, inflated size, delta savings, or depth), blobs
+  by author, the delta depth histogram, reachability from the fetched refs, and
+  the pack version and trailer checksum. Click a type to list its objects, an
+  author to list their blobs, or the unreachable count to list those objects.
+  With more than one saved pack, **Compare with another saved pack** diffs two
+  packs (added, removed, and the size changes).
+- **Object**: the selected object's type, path or subject, oid, and storage
+  facts (offset, packed and inflated size, delta base, reachability). Its
+  content comes first: a commit's message, author, tree, and parents; a tree's
+  entries; a tag; or a blob as text, an image preview (PNG, JPEG, GIF, WebP,
+  BMP, or SVG), or a hex dump. A deltified blob colors each byte by the copy
+  instruction that produced it, with inserts in white. Click a copy in the
+  legend to highlight the base bytes it reads, in **Base bytes reused**. Below
+  that, the delta
+  chain (root base to this object), the delta's copy and insert totals, and
+  collapsed sections for the delta instructions, the inflated delta stream, the
+  base bytes the delta reuses, and the raw pack entry (header, base pointer,
+  zlib). **Download loose object** writes the object as a zlib loose file you
   can drop into `.git/objects/`.
 
-The detail toolbar carries **back/forward** through the objects you've viewed, a
-**jump to full oid** box, and **Copy link** for the current `?pack=#oid` URL.
-From Insights, **Compare with another pack** diffs two saved packs (added,
-removed, and the size deltas).
+Blob authorship credits each blob to the author of the commit that introduced
+it. Blobs in trees at a shallow-fetch boundary go under `(shallow boundary)`;
+blobs no commit points at go under `(no commit)`.
 
-- Tap any oid link (parent, tree entry, delta base, chain link) to jump.
+The toolbar carries **back** and **forward** through the objects you've viewed,
+a **jump to full oid** box, and **Copy link** for the current `?pack=#oid` URL.
+Any oid link (parent, tree entry, delta base, chain link) opens that object.
 
 ## Shareable links
 
@@ -141,9 +152,10 @@ the in-memory parser object-for-object, and a live `git repack` fixture when
   persisting the resolved object graph.
 - Thin packs (ref-deltas whose base isn't in the pack) show up as unresolved
   entries. A normal shallow fetch from a public host usually isn't thin.
-- Depth defaults to 1. Raise it when you want more history. A fetched pack is
-  held in memory while it is parsed; a large local pack is streamed instead (see
-  [Size limits](#size-limits)).
+- Depth defaults to 1. Raise it, or check **Max** for the full history. A Max
+  fetch of a busy repository will usually hit the CORS proxy's 25 MiB cap. A
+  fetched pack is held in memory while it is parsed; a large local pack is
+  streamed instead (see [Size limits](#size-limits)).
 - **Open .pack** handles both modest and large packs. A pack under 256 MiB is
   read whole and parsed in memory, the same path as a fetched pack. A pack of
   256 MiB or more is streamed: it's indexed by reading windows from the file,
