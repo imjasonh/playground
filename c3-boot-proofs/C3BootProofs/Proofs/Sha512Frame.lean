@@ -130,7 +130,7 @@ theorem s5K_lit : (0x3FCC5000 : Word) + 0xFFFFFFC0 = s5K := by decide
 
 set_option maxRecDepth 100000 in
 set_option maxHeartbeats 8000000 in
-theorem s5Pre_run {M : Word → BitVec 8} {f : Fin 32 → Word} {F : Word} (hz : f 0 = 0) (hsp : f sp = F) :
+theorem s5Pre_run {M : Word → BitVec 8} {f : Fin 32 → Word} {F : Word} (hsp : f sp = F) :
     (runBlock s5Pre (M, f)).1 = s5PreMem M F f ∧
     (runBlock s5Pre (M, f)).2 30 = F + 0xD8 ∧ (runBlock s5Pre (M, f)).2 29 = 0x50 ∧
     (runBlock s5Pre (M, f)).2 25 = s5K ∧
@@ -319,7 +319,7 @@ theorem s5Final_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {F stp base : W
     (hst : memLoad32 M (F + 0xC) = stp) (hF : F.toNat % 4 = 0) (hstp : stp.toNat % 4 = 0)
     (hs : Sep F 0x390 base len) (hs' : Sep stp 128 base len) : BlockOk base len s5Final (M, f) := by
   simp +decide only [BlockOk, BInstr.ok, BInstr.run, s5Final, upd_app, ↓reduceIte, and_true, true_and]
-  simp only [hsp, ev_add, zero_lit_add, hst]
+  simp only [hsp, hst]
   simp (disch := decide) only [fr_al hF, fr_al hstp, frm_sep hs, frm_sep hs', and_self]
 
 set_option maxRecDepth 100000 in
@@ -327,7 +327,7 @@ theorem s5Setup_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {F stp base : W
     (ha0 : f a0 = stp) (hF : F.toNat % 4 = 0) (hstp : stp.toNat % 4 = 0) (hs : Sep F 0x390 base len) :
     BlockOk base len s5Setup (M, f) := by
   simp +decide only [BlockOk, BInstr.ok, BInstr.run, s5Setup, upd_app, ↓reduceIte, and_true, true_and]
-  simp only [hsp, ha0, ev_add, zero_lit_add]
+  simp only [hsp, ha0]
   simp (disch := decide) only [fr_al hF, fr_al hstp, frm_sep hs, and_self]
 
 set_option maxRecDepth 100000 in
