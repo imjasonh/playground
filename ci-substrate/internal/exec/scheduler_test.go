@@ -292,6 +292,29 @@ func TestLeaseExpiryRequeues(t *testing.T) {
 	}
 }
 
+func TestRunnerErrorIsFinal(t *testing.T) {
+	h := newHarness(t)
+	action := h.putAction(t, &repb.Action{CommandDigest: digest.FromBytes([]byte("cmd"))})
+	stream, err := h.exec.Execute(ctxTok(t, "tok-a"), &repb.ExecuteRequest{InstanceName: "tenant-a", ActionDigest: action})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := h.worker.Lease(ctxTok(t, "tok-a"), &workerv1.LeaseRequest{BotId: "bot-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.worker.Complete(ctxTok(t, "tok-a"), &workerv1.CompleteRequest{BotId: "bot-1", JobId: lease.GetJob().GetId(), ErrorMessage: "bad output path"}); err != nil {
+		t.Fatal(err)
+	}
+	last, err := drain(t, stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := status.FromProto(response(t, last).GetStatus()); got.Code() != codes.Internal || got.Message() != "bad output path" {
+		t.Fatalf("status %v, want Internal with the runner's message", got)
+	}
+}
+
 func TestSameActionSharesOneJob(t *testing.T) {
 	h := newHarness(t)
 	action := h.putAction(t, &repb.Action{CommandDigest: digest.FromBytes([]byte("cmd"))})

@@ -1,13 +1,8 @@
-// Package cache is a node-local, content-addressed, verified read-through
-// cache in front of an authoritative CAS origin.
-//
-// It is the "optimized caching" layer: a blob fetched once from the origin is
-// served to every later reader from local disk, including a reader on behalf
-// of a different tenant, because a content-addressed blob is identified by its
-// bytes and is safe to share. Each served blob is verified against its digest
-// in flight, so a locally corrupted or tampered entry can never be handed out:
-// on a hash mismatch the cache drops the poisoned entry and circuit-breaks to
-// the origin, which is the cryptographic root of trust.
+// Package cache is a node-local, verified read-through cache in front of the
+// CAS origin. A blob fetched once is served from local disk to every later
+// reader, including one for another tenant: a content-addressed blob is
+// identified by its bytes. Every served blob is checked against its digest,
+// and a local entry that fails is dropped and fetched from the origin again.
 package cache
 
 import (
@@ -75,7 +70,6 @@ func (c *Cache) Get(ctx context.Context, instanceName string, d *repb.Digest) ([
 		return b, nil
 	}
 	v, err, _ := c.group.Do(instanceName+"\x00"+digest.Key(d), func() (any, error) {
-		// Re-check under the singleflight: a sibling call may have filled it.
 		if b, ok := c.localHit(d); ok {
 			c.hits.Add(1)
 			return b, nil
@@ -87,12 +81,10 @@ func (c *Cache) Get(ctx context.Context, instanceName string, d *repb.Digest) ([
 			return nil, err
 		}
 		if err := digest.Verify(d, b); err != nil {
-			// The origin itself returned bad bytes; do not cache them.
 			return nil, err
 		}
 		c.fetches.Add(1)
 		if err := c.local.Put(d, b); err != nil {
-			// Still serve the verified bytes; the next reader will refetch.
 			slog.Warn("caching blob locally", "digest", digest.Key(d), "err", err)
 		}
 		return b, nil

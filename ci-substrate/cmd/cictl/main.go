@@ -1,10 +1,7 @@
-// Command cictl is the control-plane CLI and demo driver. It drives the
-// central cas, a node-local cascache, and the runners to show the headline
-// properties on a live cluster: multi-tenant isolation (one tenant cannot read
-// another's instance, action cache, or queue), optimized caching (a blob one
-// tenant warmed is served to another tenant from the node-local cache with no
-// second origin fetch), and remote execution (an action runs on a tenant's
-// runner, its outputs land in the CAS, and the next Execute is a cache hit).
+// Command cictl checks a live cluster: one tenant cannot read another's
+// instance, action cache, or queue; a blob one tenant warmed is served to
+// another from the node-local cache with no second origin fetch; and an
+// action runs on its tenant's runner, and the next Execute is a cache hit.
 package main
 
 import (

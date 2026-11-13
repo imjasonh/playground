@@ -3,12 +3,9 @@
 // runs the command, and sends back an ActionResult whose outputs it uploaded
 // to the origin.
 //
-// Output handling follows the plan's rules: every output file, the Tree of
-// every output directory, and stdout and stderr become blobs; FindMissingBlobs
-// trims the set to what the CAS lacks; the missing small blobs share
-// BatchUpdateBlobs calls and large ones go over ByteStream. A failed action
-// still reports its outputs and exit code, so a client can show what went
-// wrong.
+// Every output file, the Tree of every output directory, and stdout and
+// stderr become blobs, uploaded in one PutBatch. A failed action still
+// reports its outputs and exit code, so a client can show what went wrong.
 package bot
 
 import (
@@ -25,6 +22,7 @@ import (
 	"time"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	"github.com/chainguard-dev/clog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -219,7 +217,7 @@ func (b *Bot) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			slog.Warn("lease failed; retrying", "err", err)
+			clog.WarnContext(ctx, "lease failed; retrying", "err", err)
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -258,6 +256,7 @@ func (b *Bot) lease(ctx context.Context) (*workerv1.Job, error) {
 // RunJob runs one leased job and reports its outcome to the scheduler,
 // heartbeating while it runs.
 func (b *Bot) RunJob(ctx context.Context, job *workerv1.Job) {
+	ctx = clog.WithLogger(ctx, clog.FromContext(ctx).With("job", job.GetId(), "instance", job.GetInstanceName()))
 	ctx, cancel := context.WithCancel(tenant.Outgoing(ctx, b.cfg.Token))
 	defer cancel()
 	go b.heartbeat(ctx, cancel, job)
@@ -266,20 +265,20 @@ func (b *Bot) RunJob(ctx context.Context, job *workerv1.Job) {
 	ar, err := b.execute(ctx, job)
 	req := &workerv1.CompleteRequest{BotId: b.cfg.BotID, JobId: job.GetId()}
 	if err != nil {
-		slog.Error("action failed to run", "job", job.GetId(), "err", err)
+		clog.ErrorContext(ctx, "action failed to run", "err", err)
 		req.ErrorMessage = err.Error()
 	} else if anyAR, err := anypb.New(ar); err != nil {
 		req.ErrorMessage = err.Error()
 	} else {
 		req.ActionResult = anyAR
-		slog.Info("action ran", "job", job.GetId(), "exitCode", ar.GetExitCode(), "took", time.Since(start))
+		clog.InfoContext(ctx, "action ran", "exitCode", ar.GetExitCode(), "took", time.Since(start))
 	}
 	// Report with a context that outlives a cancelled lease, so a result
 	// is not lost to the cancel that stopped the heartbeat.
 	reportCtx, reportCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer reportCancel()
 	if _, err := b.cfg.Worker.Complete(reportCtx, req); err != nil {
-		slog.Error("reporting result", "job", job.GetId(), "err", err)
+		clog.ErrorContext(ctx, "reporting result", "err", err)
 	}
 }
 
@@ -302,11 +301,11 @@ func (b *Bot) heartbeat(ctx context.Context, cancel context.CancelFunc, job *wor
 				if status.Code(err) == codes.Canceled {
 					return
 				}
-				slog.Warn("heartbeat failed", "job", job.GetId(), "err", err)
+				clog.WarnContext(ctx, "heartbeat failed", "err", err)
 				continue
 			}
 			if resp.GetCancelled() {
-				slog.Warn("lease cancelled; stopping action", "job", job.GetId())
+				clog.WarnContext(ctx, "lease cancelled; stopping action")
 				cancel()
 				return
 			}
@@ -416,20 +415,14 @@ func (b *Bot) execRoot(ctx context.Context, instance string, root *repb.Digest, 
 		}
 		return dir, func() {
 			if err := os.Remove(dir); err != nil {
-				slog.Warn("dropping exec root", "dir", dir, "err", err)
+				clog.WarnContext(ctx, "dropping exec root", "dir", dir, "err", err)
 			}
 		}, nil
 	}
 
-	var inputs *tree.Tree
-	if root.GetSizeBytes() == 0 {
-		inputs = &tree.Tree{Root: root, Dirs: map[string]*repb.Directory{digest.Key(root): {}}}
-	} else {
-		var err error
-		inputs, err = tree.Load(ctx, b.cache, instance, root)
-		if err != nil {
-			return "", nil, fmt.Errorf("input root: %w", err)
-		}
+	inputs, err := tree.Load(ctx, b.cache, instance, root)
+	if err != nil {
+		return "", nil, fmt.Errorf("input root: %w", err)
 	}
 	jobDir, err := os.MkdirTemp(b.cfg.WorkDir, "job-")
 	if err != nil {
@@ -448,7 +441,7 @@ func (b *Bot) execRoot(ctx context.Context, instance string, root *repb.Digest, 
 		}
 		return dir, func() {
 			if err := server.Unmount(); err != nil {
-				slog.Warn("unmounting exec root", "dir", dir, "err", err)
+				clog.WarnContext(ctx, "unmounting exec root", "dir", dir, "err", err)
 			}
 			os.RemoveAll(jobDir)
 		}, nil
@@ -577,7 +570,7 @@ func (b *Bot) upload(ctx context.Context, instance string, blobs map[string][]by
 		return err
 	}
 	if len(blobs) > 0 {
-		slog.Info("uploaded outputs", "blobs", len(blobs), "missing", missing, "bytes", sent)
+		clog.InfoContext(ctx, "uploaded outputs", "blobs", len(blobs), "missing", missing, "bytes", sent)
 	}
 	return nil
 }

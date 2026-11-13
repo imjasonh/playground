@@ -34,6 +34,25 @@ func (m *memFetcher) Fetch(_ context.Context, _ string, d *repb.Digest) ([]byte,
 	return b, nil
 }
 
+func TestLoadEmptyRoot(t *testing.T) {
+	f := newMemFetcher()
+	empty := digest.FromBytes(nil)
+	got, err := Load(t.Context(), f, "", empty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir, err := got.Dir(empty); err != nil || len(dir.GetFiles()) != 0 {
+		t.Fatalf("empty root: dir=%v err=%v", dir, err)
+	}
+	if f.fetches != 0 {
+		t.Fatalf("empty root fetched %d blobs, want 0", f.fetches)
+	}
+	forged := &repb.Digest{Hash: digest.FromBytes([]byte("x")).GetHash(), SizeBytes: 0}
+	if _, err := Load(t.Context(), f, "", forged); err == nil {
+		t.Fatal("a size-0 digest with the wrong hash loaded as the empty root")
+	}
+}
+
 func TestRoundTrip(t *testing.T) {
 	src := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(src, "sub/deeper"), 0o755); err != nil {

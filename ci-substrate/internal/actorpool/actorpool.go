@@ -1,6 +1,6 @@
 // Package actorpool keeps one tenant's Substrate runners sized to that
 // tenant's queue. It owns the actors whose names carry its prefix, and each
-// reconcile moves them along the lifecycle the plan describes:
+// reconcile moves them along this lifecycle:
 //
 //   - A new actor is created and resumed once, so that its first suspend
 //     leaves a memory snapshot. Resuming from that snapshot is the warm path.
@@ -205,8 +205,7 @@ func (p *Pool) Reconcile(ctx context.Context) error {
 		}
 	}
 
-	// Runners that will take queued work: running ones not holding a lease.
-	// Resuming actors count, since they lease as soon as they are up.
+	// Resuming actors count as free: they lease as soon as they are up.
 	free := running - len(busy)
 	need := queued - free
 
@@ -219,9 +218,8 @@ func (p *Pool) Reconcile(ctx context.Context) error {
 	}
 	total := len(owned) - len(crashed)
 
-	// Demand: wake suspended actors, then create new ones up to Max. A
-	// failed resume still counts against need: the usual cause is a full
-	// worker pool, which more actors would not fix. The next tick retries.
+	// A failed resume still counts against need: the usual cause is a full
+	// worker pool, which more actors would not fix.
 	for need > 0 && len(suspended) > 0 {
 		name := suspended[0]
 		suspended = suspended[1:]
@@ -252,8 +250,8 @@ func (p *Pool) Reconcile(ctx context.Context) error {
 		p.lastBusy[name] = now
 	}
 
-	// Idle: suspend runners nobody needs. Keep as many idle runners as
-	// there are queued jobs still waiting for one.
+	// Keep as many idle runners as there are queued jobs still waiting for
+	// one.
 	keep := max(0, queued-(free-len(idle)))
 	for _, name := range idle {
 		if keep > 0 {
@@ -266,8 +264,6 @@ func (p *Pool) Reconcile(ctx context.Context) error {
 		}
 	}
 
-	// Surplus: a suspended actor beyond Warm only costs snapshot storage,
-	// but the plan's pool has a size, so delete the extras.
 	for total > p.cfg.Warm && len(suspended) > 0 {
 		name := suspended[len(suspended)-1]
 		suspended = suspended[:len(suspended)-1]

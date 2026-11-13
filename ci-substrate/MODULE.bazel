@@ -34,4 +34,4 @@ go_deps.gazelle_override(
     directives = ["gazelle:proto disable"],
     path = "github.com/bazelbuild/remote-apis",
 )
-use_repo(go_deps, "com_github_bazelbuild_remote_apis", "com_github_container_storage_interface_spec", "com_github_google_uuid", "com_github_hanwen_go_fuse_v2", "com_github_sethvargo_go_envconfig", "com_google_cloud_go_longrunning", "dev_ate_go_substrate", "io_k8s_sigs_yaml", "org_golang_google_genproto_googleapis_bytestream", "org_golang_google_grpc", "org_golang_google_protobuf", "org_golang_x_sync")
+use_repo(go_deps, "com_github_bazelbuild_remote_apis", "com_github_chainguard_dev_clog", "com_github_container_storage_interface_spec", "com_github_google_uuid", "com_github_hanwen_go_fuse_v2", "com_github_sethvargo_go_envconfig", "com_google_cloud_go_longrunning", "dev_ate_go_substrate", "io_k8s_sigs_yaml", "org_golang_google_genproto_googleapis_bytestream", "org_golang_google_grpc", "org_golang_google_protobuf", "org_golang_x_sync")

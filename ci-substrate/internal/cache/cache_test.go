@@ -77,9 +77,6 @@ func TestColdThenWarm(t *testing.T) {
 	}
 }
 
-// TestCrossTenantReuse is the optimized-caching headline: once any tenant warms
-// a shared blob, another tenant reading the same content is served locally
-// with no second origin fetch.
 func TestCrossTenantReuse(t *testing.T) {
 	origin := newFakeOrigin()
 	d := origin.put([]byte("shared base layer"))
@@ -96,9 +93,6 @@ func TestCrossTenantReuse(t *testing.T) {
 	}
 }
 
-// TestPoisonedEntryFallsBack is the cryptographic-trust headline: a tampered
-// local entry is detected by in-flight verification, dropped, and refetched
-// from the origin so the caller still gets correct bytes.
 func TestPoisonedEntryFallsBack(t *testing.T) {
 	origin := newFakeOrigin()
 	content := []byte("trusted compiler binary")

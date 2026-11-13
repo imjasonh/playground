@@ -33,7 +33,7 @@ func NewClient(conn grpc.ClientConnInterface) *Client {
 	}
 }
 
-// Fetch implements cache.Origin by reading one blob, preferring the batch API
+// Fetch reads one blob, preferring the batch API
 // and falling back to ByteStream for blobs over the batch limit.
 func (c *Client) Fetch(ctx context.Context, instanceName string, d *repb.Digest) ([]byte, error) {
 	if d.GetSizeBytes() <= MaxBatchBytes {
@@ -87,70 +87,13 @@ func (c *Client) FindMissing(ctx context.Context, instanceName string, digests [
 	return resp.GetMissingBlobDigests(), nil
 }
 
-// Upload stores one blob, routing small blobs through BatchUpdateBlobs and
-// large ones through ByteStream.Write, as the plan's output handling requires.
+// Upload stores one blob if the CAS lacks it.
 func (c *Client) Upload(ctx context.Context, instanceName string, b []byte) (*repb.Digest, error) {
 	d := digest.FromBytes(b)
 	if _, _, err := c.PutBatch(ctx, instanceName, map[string][]byte{digest.Key(d): b}); err != nil {
 		return nil, err
 	}
 	return d, nil
-}
-
-// FetchBatch reads many blobs, grouping the ones that fit into as few
-// BatchReadBlobs calls as the size limit allows and streaming the rest.
-// The result is keyed by digest.Key.
-func (c *Client) FetchBatch(ctx context.Context, instanceName string, digests []*repb.Digest) (map[string][]byte, error) {
-	out := map[string][]byte{}
-	var batch []*repb.Digest
-	var batchSize int64
-	flush := func() error {
-		if len(batch) == 0 {
-			return nil
-		}
-		resp, err := c.cas.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
-			InstanceName: instanceName,
-			Digests:      batch,
-		})
-		if err != nil {
-			return err
-		}
-		if len(resp.GetResponses()) != len(batch) {
-			return fmt.Errorf("batch read returned %d responses for %d digests", len(resp.GetResponses()), len(batch))
-		}
-		for _, r := range resp.GetResponses() {
-			if cd := codes.Code(r.GetStatus().GetCode()); cd != codes.OK {
-				return status.Error(cd, r.GetStatus().GetMessage())
-			}
-			out[digest.Key(r.GetDigest())] = r.GetData()
-		}
-		batch, batchSize = nil, 0
-		return nil
-	}
-	for _, d := range digests {
-		if d.GetSizeBytes() > MaxBatchBytes {
-			if err := flush(); err != nil {
-				return nil, err
-			}
-			b, err := c.readStream(ctx, instanceName, d)
-			if err != nil {
-				return nil, err
-			}
-			out[digest.Key(d)] = b
-			continue
-		}
-		if len(batch) > 0 && (len(batch) >= batchSendCount || batchSize+d.GetSizeBytes() > batchSendBytes) {
-			if err := flush(); err != nil {
-				return nil, err
-			}
-		}
-		batch = append(batch, d)
-		batchSize += d.GetSizeBytes()
-	}
-	if err := flush(); err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 // PutBatch stores the blobs the CAS is missing. One FindMissingBlobs covers

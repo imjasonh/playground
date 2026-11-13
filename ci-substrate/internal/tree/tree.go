@@ -51,9 +51,14 @@ type Tree struct {
 
 // Load fetches the Directory at root and, transitively, every subdirectory,
 // verifying each against its digest. It stops at the first malformed or
-// cyclic reference.
+// cyclic reference. The empty Directory, whose encoding is no bytes, is never
+// fetched.
 func Load(ctx context.Context, f Fetcher, instance string, root *repb.Digest) (*Tree, error) {
 	t := &Tree{Root: root, Dirs: map[string]*repb.Directory{}}
+	if digest.Verify(root, nil) == nil {
+		t.Dirs[digest.Key(root)] = &repb.Directory{}
+		return t, nil
+	}
 	pending := []*repb.Digest{root}
 	for len(pending) > 0 {
 		d := pending[len(pending)-1]

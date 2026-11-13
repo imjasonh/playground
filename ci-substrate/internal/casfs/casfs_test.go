@@ -62,8 +62,7 @@ func requireFUSE(t *testing.T) {
 	}
 	// These tests read a mount this process serves. A garbage collection
 	// that stops the world while a read is waiting on that server never
-	// resumes, so the test turns collection off. CI hung here for the
-	// whole package timeout.
+	// resumes.
 	debug.SetGCPercent(-1)
 }
 

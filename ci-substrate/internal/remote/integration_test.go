@@ -332,18 +332,14 @@ func TestBatchRoundTrip(t *testing.T) {
 	if missing != 3 || sent != int64(len("one")+len("two")+len("three")) {
 		t.Fatalf("put missing=%d sent=%d", missing, sent)
 	}
-	// The second put finds them and sends nothing.
 	missing, sent, err = h.origin.PutBatch(ctx, "tenant-a", blobs)
 	if err != nil || missing != 0 || sent != 0 {
 		t.Fatalf("second put missing=%d sent=%d err=%v", missing, sent, err)
 	}
-	got, err := h.cacheClient.FetchBatch(ctx, "tenant-a", digests)
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, d := range digests {
-		if string(got[digest.Key(d)]) != string(blobs[digest.Key(d)]) {
-			t.Fatalf("batch read %s = %q", digest.Key(d), got[digest.Key(d)])
+		got, err := h.cacheClient.Fetch(ctx, "tenant-a", d)
+		if err != nil || string(got) != string(blobs[digest.Key(d)]) {
+			t.Fatalf("read %s = %q, %v", digest.Key(d), got, err)
 		}
 	}
 }

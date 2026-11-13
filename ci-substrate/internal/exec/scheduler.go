@@ -281,12 +281,15 @@ func (s *Scheduler) enqueueLocked(j *job) {
 	s.queue = append(s.queue, j)
 }
 
-// leaseLocked marks j executing. The bot id is filled in by Lease once the
-// waiter wakes, since the waiter holds it.
+// leaseLocked marks j executing by botID. A job handed to a waiting Lease
+// has no bot until that Lease wakes and leases it again, and only then
+// counts as an attempt.
 func (s *Scheduler) leaseLocked(j *job, botID string) {
 	j.stage = repb.ExecutionStage_EXECUTING
 	j.botID = botID
-	j.attempts++
+	if botID != "" {
+		j.attempts++
+	}
 	j.expiry = time.Now().Add(s.leaseDuration)
 	s.notifyLocked(j)
 }
@@ -391,7 +394,6 @@ func (s *Scheduler) Lease(ctx context.Context, req *workerv1.LeaseRequest) (*wor
 		s.mu.Lock()
 		delete(s.waiters, w)
 		s.mu.Unlock()
-		// A job may have been handed over as the deadline passed.
 		select {
 		case j := <-w.ch:
 			s.mu.Lock()
@@ -412,7 +414,7 @@ func (s *Scheduler) Lease(ctx context.Context, req *workerv1.LeaseRequest) (*wor
 			s.enqueueLocked(j)
 			return nil, status.FromContextError(ctx.Err()).Err()
 		}
-		j.botID = req.GetBotId()
+		s.leaseLocked(j, req.GetBotId())
 		return &workerv1.LeaseResponse{Job: s.jobProto(j)}, nil
 	}
 }
@@ -469,8 +471,10 @@ func (s *Scheduler) Complete(ctx context.Context, req *workerv1.CompleteRequest)
 	if err != nil {
 		return nil, err
 	}
-	if req.GetErrorMessage() != "" {
-		s.finishLocked(j, &repb.ExecuteResponse{Status: status.New(codes.Internal, req.GetErrorMessage()).Proto()})
+	// The runner can't tell a transient failure from a bad action, so an
+	// error is final; only a runner that stops heartbeating is retried.
+	if msg := req.GetErrorMessage(); msg != "" {
+		s.finishLocked(j, &repb.ExecuteResponse{Status: status.New(codes.Internal, msg).Proto()})
 		return &workerv1.CompleteResponse{}, nil
 	}
 	ar := &repb.ActionResult{}

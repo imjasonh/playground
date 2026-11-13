@@ -183,17 +183,10 @@ func (v *volumeNode) Mkdir(ctx context.Context, name string, mode uint32, out *f
 	if v.GetChild(name) != nil {
 		return nil, syscall.EEXIST
 	}
-	var t *tree.Tree
-	if d.GetSizeBytes() == 0 {
-		// The empty Directory is well known and needs no fetch.
-		t = &tree.Tree{Root: d, Dirs: map[string]*repb.Directory{digest.Key(d): {}}}
-	} else {
-		// Detach from the caller: the loaded tree outlives this mkdir.
-		t, err = tree.Load(context.WithoutCancel(ctx), v.fetcher, v.instance, d)
-		if err != nil {
-			slog.Error("casfs: loading input root", "digest", digest.Key(d), "err", err)
-			return nil, syscall.ENOENT
-		}
+	t, err := tree.Load(context.WithoutCancel(ctx), v.fetcher, v.instance, d)
+	if err != nil {
+		slog.Error("casfs: loading input root", "digest", digest.Key(d), "err", err)
+		return nil, syscall.ENOENT
 	}
 	root := &dirNode{fsys: &casfs{tree: t, fetcher: v.fetcher, instance: v.instance}, digest: d}
 	return v.NewPersistentInode(ctx, root, fs.StableAttr{Mode: syscall.S_IFDIR}), 0
