@@ -128,20 +128,23 @@ mirror_images() {
   printf '%s\n' "${out}"
 }
 
-# ready_pod_ip prints the IP of a ready pod behind a Service. A pod list can
-# still hold the pod that a rollout is replacing.
+# ready_pod_ip prints the IP of a ready pod labeled app=$1. A rollout leaves
+# the pod it is replacing in the list until it is gone, so a pod with a
+# deletion timestamp does not count. This does not use the Service: Jaeger is
+# applied before its Service exists, and some nested kind clusters never
+# program Service endpoints.
 ready_pod_ip() {
   local ip deadline=$((SECONDS + 60))
   while ((SECONDS < deadline)); do
-    ip="$(kubectl -n ci-substrate get endpointslice -l "kubernetes.io/service-name=$1" \
-      -o jsonpath='{.items[*].endpoints[?(@.conditions.ready==true)].addresses[0]}' | cut -d' ' -f1)"
+    ip="$(kubectl -n ci-substrate get pods -l "app=$1" -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{" "}{.metadata.deletionTimestamp}{" "}{.status.podIP}{"\n"}{end}' |
+      awk '$1 == "True" && $2 ~ /^[0-9.]+$/ { print $2; exit }')"
     if [[ -n "${ip}" ]]; then
       echo "${ip}"
       return 0
     fi
     sleep 1
   done
-  echo "no ready endpoint for Service $1" >&2
+  echo "no ready pod labeled app=$1" >&2
   return 1
 }
 
