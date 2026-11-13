@@ -193,6 +193,12 @@ export async function indexPack({
   const unresolved = [];
 
   let at = 12;
+  const stride = Math.max(1, Math.floor(count / 200));
+  const report = (i) => {
+    if (onProgress && (i % stride === 0 || i + 1 === count)) {
+      onProgress({ done: i + 1, count });
+    }
+  };
   for (let i = 0; i < count; i += 1) {
     const offset = at;
     const raw = await readEntryAt(reader, inflate, offset);
@@ -233,7 +239,7 @@ export async function indexPack({
         depth: -1,
       };
       unresolved.push({ index: i, offset, typeName: "ref-delta", baseOid: thinBaseOid });
-      if (onProgress && i % 4096 === 0) onProgress({ done: i + 1, count });
+      report(i);
       continue;
     }
 
@@ -267,7 +273,7 @@ export async function indexPack({
       baseOid,
       depth: resolved.depth,
     };
-    if (onProgress && i % 4096 === 0) onProgress({ done: i + 1, count });
+    report(i);
   }
 
   const trailerOffset = at;

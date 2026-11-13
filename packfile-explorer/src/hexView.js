@@ -221,10 +221,15 @@ function renderSegmentLegend(segments) {
   const chips = [];
   for (const [idx, seg] of [...copies.entries()].sort((a, b) => a[0] - b[0])) {
     const color = COPY_PALETTE[idx % COPY_PALETTE.length];
+    const base = seg.baseOid ? shortOid(seg.baseOid) : "base";
+    const end = seg.baseOffset + seg.size;
+    const oidAttr = seg.baseOid ? ` data-base-oid="${escapeHtml(seg.baseOid)}"` : "";
     chips.push(
-      `<span class="hex-legend-chip seg-copy-${idx % COPY_PALETTE.length}" style="--copy-color:${color}">` +
-        `copy #${idx} · ${seg.baseOid ? shortOid(seg.baseOid) : "base"}@${seg.baseOffset}` +
-        `</span>`,
+      `<button type="button" class="hex-legend-chip seg-copy-${idx % COPY_PALETTE.length}" style="--copy-color:${color}"` +
+        ` data-copy-start="${seg.baseOffset}" data-copy-end="${end}"${oidAttr}` +
+        ` title="Show bytes ${seg.baseOffset} to ${end - 1} of ${escapeHtml(base)}">` +
+        `copy #${idx} · ${escapeHtml(base)}@${seg.baseOffset}` +
+        `</button>`,
     );
   }
   if (hasInsert) chips.push(`<span class="hex-legend-chip hx-insert">insert (white)</span>`);
