@@ -45,31 +45,10 @@ fail() {
   exit 1
 }
 
-# install_bazel puts the pinned Bazel release in a cache directory, checked
-# against the release's checksum, and prints its path.
-install_bazel() {
-  local platform sum
-  case "$(uname -s)-$(uname -m)" in
-    Linux-x86_64) platform=linux-x86_64 sum=4dc8e99dfa802e252dac176d08201fd15c542ae78c448c8a89974b6f387c282c ;;
-    Linux-aarch64) platform=linux-arm64 sum=58e6042fc54f3bf5704452b579f575ae935817d4b842a76123f05fae6b1f9a83 ;;
-    Darwin-arm64) platform=darwin-arm64 sum=45e9388abf21d1107e146ea366ad080eb93cb6a5f3a4a3b048f78de0bc3faffa ;;
-    Darwin-x86_64) platform=darwin-x86_64 sum=ce73346274c379f77880db8bd8b9c8569885fe56f19386173760949da9078df0 ;;
-    *) fail "no pinned Bazel for $(uname -s)-$(uname -m)" ;;
-  esac
-  [[ "${BAZEL_VERSION}" == 8.4.2 ]] || fail "update the checksums in run-bazel.sh for Bazel ${BAZEL_VERSION}"
-  local dir="${CI_SUBSTRATE_BAZEL_CACHE:-${HOME}/.cache/ci-substrate}"
-  local bin="${dir}/bazel-${BAZEL_VERSION}-${platform}"
-  if [[ ! -x "${bin}" ]]; then
-    mkdir -p "${dir}"
-    curl -fsSL -o "${bin}.tmp" "https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel-${BAZEL_VERSION}-${platform}"
-    echo "${sum}  ${bin}.tmp" | sha256sum -c - >/dev/null || fail "Bazel download does not match its checksum"
-    chmod +x "${bin}.tmp"
-    mv "${bin}.tmp" "${bin}"
-  fi
-  echo "${bin}"
-}
+# shellcheck source=lib-bazel.sh
+source "${ROOT}/e2e/lib-bazel.sh"
 
-BAZEL="${CI_SUBSTRATE_BAZEL:-$(install_bazel)}"
+BAZEL="${CI_SUBSTRATE_BAZEL:-$(install_bazel "${BAZEL_VERSION}")}"
 
 cleanup() {
   local user pid

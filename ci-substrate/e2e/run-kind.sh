@@ -3,8 +3,9 @@
 # plane, and run cictl against them over port-forwards to prove multi-tenant
 # isolation, node-local cache reuse, and remote execution. Then build with
 # stock Bazel as two users in two tenants (run-bazel.sh) to prove neither can
-# see or change the other's results. Invoked by go test ./e2e when
-# CI_SUBSTRATE_KIND_E2E=1.
+# see or change the other's results. Last, build and test ci-substrate itself
+# with Bazel on the cluster (run-dogfood.sh; set CI_SUBSTRATE_DOGFOOD=0 to
+# skip). Invoked by go test ./e2e when CI_SUBSTRATE_KIND_E2E=1.
 #
 # Builds and deploys go through ko only: there are no Dockerfiles and no Helm
 # charts. Images land in the kind local registry at KO_DOCKER_REPO.
@@ -252,6 +253,11 @@ go build -o "${WORKDIR}/cictl" ./cmd/cictl
 
 echo "Building with stock Bazel as two tenants"
 bash "${ROOT}/e2e/run-bazel.sh" "127.0.0.1:${LOCAL_ORIGIN_PORT}"
+
+if [[ "${CI_SUBSTRATE_DOGFOOD:-1}" != "0" ]]; then
+  echo "Building and testing ci-substrate with Bazel on the cluster"
+  bash "${ROOT}/e2e/run-dogfood.sh" "127.0.0.1:${LOCAL_ORIGIN_PORT}"
+fi
 
 echo "Runner logs:"
 kubectl -n ci-substrate logs -l app=runner --tail=20 --prefix
