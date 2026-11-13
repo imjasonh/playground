@@ -39,8 +39,8 @@ from IndexedDB.
 1. Normalize the typed URL to a smart-HTTP base (`…/repo.git`). The repo field
    starts as `imjasonh/playground`.
 2. `GET …/info/refs?service=git-upload-pack` through the CORS proxy.
-3. Choose **Only default branch** or **All N branches**. Tags are not fetched.
-   Depth defaults to 1 so the pack stays small.
+3. Set the depth, which defaults to 1, then choose **Only default branch** or
+   **All N branches**. Tags are not fetched.
 4. `POST …/git-upload-pack` with a `want` per chosen branch. The status line
    follows the server while it enumerates, counts, and compresses, then the
    bytes received (and the rate, when the body streams), then parsing and
