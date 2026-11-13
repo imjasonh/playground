@@ -36,11 +36,15 @@ go_library(
 
 go_test(
     name = "telemetry_test",
-    srcs = ["invocation_test.go"],
+    srcs = [
+        "invocation_test.go",
+        "telemetry_test.go",
+    ],
     embed = [":telemetry"],
     deps = [
         "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
         "@io_opentelemetry_go_otel//propagation",
+        "@io_opentelemetry_go_otel//semconv/v1.43.0:v1_43_0",
         "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//proto",

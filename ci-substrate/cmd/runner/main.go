@@ -19,6 +19,7 @@ import (
 	"time"
 
 	_ "github.com/chainguard-dev/clog/gcp/init"
+	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -52,7 +53,7 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()
-	shutdown, err := telemetry.Setup(ctx, "runner")
+	shutdown, err := telemetry.Setup(ctx, "runner", semconv.ServiceInstanceID(id))
 	if err != nil {
 		slog.Error("setting up telemetry", "err", err)
 		os.Exit(1)

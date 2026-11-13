@@ -15,6 +15,7 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/metric"
@@ -48,7 +49,10 @@ func Handle[T any](instrument T, err error) T {
 }
 
 // Setup installs global providers for service and returns the function that
-// flushes and stops them.
+// flushes and stops them. The resource's service.instance.id is the
+// hostname, which is the pod name, unless OTEL_RESOURCE_ATTRIBUTES or attrs
+// set it; every process needs its own, or a backend that keeps cumulative
+// series per instance, such as Managed Service for Prometheus, merges them.
 //
 // Each signal exports over OTLP/gRPC when OTEL_EXPORTER_OTLP_ENDPOINT, or
 // that signal's OTEL_EXPORTER_OTLP_TRACES_ENDPOINT or
@@ -56,11 +60,16 @@ func Handle[T any](instrument T, err error) T {
 // The exporters, the sampler, the metric interval, and the resource read
 // the rest of the standard OTEL_* variables, so the collector address and
 // the pod's identity (OTEL_RESOURCE_ATTRIBUTES) come from the manifest.
-func Setup(ctx context.Context, service string) (func(context.Context) error, error) {
+func Setup(ctx context.Context, service string, attrs ...attribute.KeyValue) (func(context.Context) error, error) {
+	host, err := os.Hostname()
+	if err != nil {
+		return nil, fmt.Errorf("telemetry resource: %w", err)
+	}
 	res, err := resource.New(ctx,
-		resource.WithAttributes(semconv.ServiceName(service)),
+		resource.WithAttributes(semconv.ServiceName(service), semconv.ServiceInstanceID(host)),
 		resource.WithTelemetrySDK(),
 		resource.WithFromEnv(),
+		resource.WithAttributes(attrs...),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("telemetry resource: %w", err)

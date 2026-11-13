@@ -6,8 +6,9 @@ import "go.opentelemetry.io/otel/attribute"
 // can group cas, cascache, and runner series the same way.
 const (
 	// AttrInstance is the REAPI instance name, which is the tenant's
-	// namespace.
-	AttrInstance = attribute.Key("instance")
+	// namespace. Prometheus reserves "instance" for the process that
+	// reported a series, so the attribute has Bazel's flag's name.
+	AttrInstance = attribute.Key("remote_instance")
 	// AttrPeer is the kind of client that made a call; see Peer.
 	AttrPeer = attribute.Key("peer")
 	// AttrDirection is "read" or "write", from the server's side.
