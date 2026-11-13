@@ -92,6 +92,9 @@ FUNCTIONS = [
      "primeorder::point_arithmetic::sealed::PointArithmetic<p384::NistP384>>::add_assign"),
     ("fieldSquare", "<p256::arithmetic::field::FieldElement as ff::Field>::square"),
     ("p256PtDouble", "<primeorder::projective::ProjectivePoint<p256::NistP256> as group::Group>::double"),
+    ("shr12", "crypto_bigint::modular::safegcd::shr_in_place_wide::<12, 2>"),
+    ("leadMut12", ("shr12", 0x92)),
+    ("trailing12", ("shr12", 0xA4)),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
