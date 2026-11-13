@@ -36,6 +36,39 @@ export function setStatus(el, message, { error = false } = {}) {
   el.classList.toggle("error", Boolean(error));
 }
 
+// Object content, resident for small packs or prefetched for the selected
+// object in a large pack. Returns null when content is not available.
+function contentFor(session, oid) {
+  if (!oid) return null;
+  if (session.contentByOid && session.contentByOid.has(oid)) {
+    return session.contentByOid.get(oid);
+  }
+  if (session.view && session.view.content) {
+    return session.view.content.get(oid) ?? null;
+  }
+  return null;
+}
+
+// The raw pack entry for an object: the full objects array in small packs, or
+// the prefetched entry for the selected object in a large pack.
+function rawFor(session, obj) {
+  if (session.parsed && session.parsed.objects) {
+    return session.parsed.objects[obj.index] || null;
+  }
+  if (session.view && session.view.raw && session.view.raw.index === obj.index) {
+    return session.view.raw;
+  }
+  return null;
+}
+
+// Prefetched {bytes, regions} for a large pack's selected entry hex panel.
+function entryViewFor(session, index) {
+  if (session.view && session.view.entry && session.view.entry.index === index) {
+    return session.view.entry;
+  }
+  return null;
+}
+
 export function renderStats(el, stats, meta) {
   const items = [
     { label: "Objects", value: String(stats.count) },
@@ -91,7 +124,7 @@ export function renderDetail(el, obj, session, handlers = {}) {
     return;
   }
 
-  const content = obj.oid ? session.contentByOid.get(obj.oid) : null;
+  const content = contentFor(session, obj.oid);
   let deltaParsed = null;
   let deltaBaseOid = null;
   const parts = [];
@@ -164,7 +197,7 @@ export function renderDetail(el, obj, session, handlers = {}) {
   }
 
   // Delta visualization: pack entry bytes, delta instruction stream, and op list.
-  const raw = session.parsed.objects[obj.index];
+  const raw = rawFor(session, obj);
   if (raw && (raw.type === 6 || raw.type === 7)) {
     try {
       const deltaParsedResult = parseDelta(raw.data);
@@ -178,6 +211,16 @@ export function renderDetail(el, obj, session, handlers = {}) {
             renderHexEditor(entry.bytes, entry.regions, { baseOffset: raw.offset }) +
             `</div>`,
         );
+      } else {
+        const entry = entryViewFor(session, obj.index);
+        if (entry) {
+          parts.push(
+            `<div class="panel"><h3>Pack entry @${raw.offset}</h3>` +
+              `<p class="panel-note">Raw bytes in the packfile for this object: header, base pointer, zlib.</p>` +
+              renderHexEditor(entry.bytes, entry.regions, { baseOffset: raw.offset }) +
+              `</div>`,
+          );
+        }
       }
 
       parts.push(
@@ -211,7 +254,7 @@ export function renderDetail(el, obj, session, handlers = {}) {
       parts.push(`</ul></div>`);
 
       // Base vs result: color the base bytes this delta reuses; grey the rest.
-      const baseContent = baseOid ? session.contentByOid.get(baseOid) : null;
+      const baseContent = contentFor(session, baseOid);
       if (baseContent) {
         const baseSegs = buildBaseSegments(deltaParsedResult);
         const baseRegions = baseSegs.map((seg) => ({

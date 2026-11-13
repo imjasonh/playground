@@ -5,9 +5,19 @@ import { deflateSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import {
   OBJ_BLOB,
+  OBJ_COMMIT,
+  OBJ_TAG,
+  OBJ_TREE,
   OBJ_OFS_DELTA,
   OBJ_REF_DELTA,
 } from "../src/pack.js";
+
+const RAW_TYPE = {
+  blob: OBJ_BLOB,
+  tree: OBJ_TREE,
+  commit: OBJ_COMMIT,
+  tag: OBJ_TAG,
+};
 import { concatBytes } from "../src/hex.js";
 
 /** SHA-1 hex of the loose pre-image, matching git's oid. */
@@ -108,9 +118,10 @@ export function buildPack(specs) {
     let head;
     let extra = new Uint8Array(0);
     let payload;
-    if (spec.type === "blob") {
-      head = encodeEntryHeader(OBJ_BLOB, spec.content.length);
-      payload = new Uint8Array(deflateSync(Buffer.from(spec.content)));
+    if (RAW_TYPE[spec.type] !== undefined) {
+      const content = Buffer.from(spec.content);
+      head = encodeEntryHeader(RAW_TYPE[spec.type], content.length);
+      payload = new Uint8Array(deflateSync(content));
     } else if (spec.type === "ofs-delta") {
       head = encodeEntryHeader(OBJ_OFS_DELTA, spec.delta.length);
       const distance = offset - offsets[spec.baseIndex];
