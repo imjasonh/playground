@@ -25,7 +25,8 @@ export async function fetchRefs(proxyBase, base) {
 }
 
 /**
- * Fetch a packfile for the given wants. `deepen` requests a shallow clone.
+ * Fetch a packfile for the given wants. `deepen` requests a shallow clone;
+ * pass `null` for the full history (no `deepen` line).
  *
  * When the response body streams, side-band progress is reported live through
  * `onProgress(text)` and received bytes through `onBytes({ received, total })`.

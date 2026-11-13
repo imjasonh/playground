@@ -111,7 +111,8 @@ export function branchFetchChoice(refs, { head = null, headName = null } = {}) {
  * Build the body of a POST git-upload-pack request.
  *
  * `wants` is a list of oids to request. `deepen` (optional) requests a shallow
- * clone at that depth, which keeps the pack small for exploration.
+ * clone at that depth, which keeps the pack small for exploration. Omit it, or
+ * pass `null`, for the full history.
  */
 export function buildFetchRequest({ wants, deepen = null, capabilities = CLIENT_CAPABILITIES }) {
   if (!wants || wants.length === 0) {
