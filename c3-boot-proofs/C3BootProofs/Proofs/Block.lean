@@ -110,6 +110,46 @@ theorem updz {f : Fin 32 → Word} {rd r : Fin 32} {v : Word} (hz : f 0 = 0) (h 
     subst this; simp [upd, hz]
   · simp [upd, h0, h]
 
+/-- The register a block instruction writes, if any. -/
+def BInstr.dst : BInstr → Option (Fin 32)
+  | .aluImm _ rd _ _ => some rd
+  | .alu _ rd _ _ => some rd
+  | .lui rd _ => some rd
+  | .lw rd _ _ => some rd
+  | .lbu rd _ _ => some rd
+  | .sw _ _ _ => none
+  | .sb _ _ _ => none
+
+theorem runBlock_reg : ∀ (is : List BInstr) (M : Word → BitVec 8) (f : Fin 32 → Word) (q : Fin 32),
+    f 0 = 0 → q ∉ is.filterMap BInstr.dst → (runBlock is (M, f)).2 q = f q
+  | [], _, _, _, _, _ => rfl
+  | i :: is, M, f, q, hz, hq => by
+    cases i with
+    | aluImm op rd rs1 imm =>
+      have h1 : q ≠ rd := fun e => hq (by rw [e, List.filterMap_cons]; exact List.mem_cons_self)
+      have h2 : q ∉ is.filterMap BInstr.dst := fun h => hq (by rw [List.filterMap_cons]; exact List.mem_cons_of_mem _ h)
+      exact (runBlock_reg is M _ q (upd_zero _ _ _) h2).trans (updz hz h1)
+    | alu op rd rs1 rs2 =>
+      have h1 : q ≠ rd := fun e => hq (by rw [e, List.filterMap_cons]; exact List.mem_cons_self)
+      have h2 : q ∉ is.filterMap BInstr.dst := fun h => hq (by rw [List.filterMap_cons]; exact List.mem_cons_of_mem _ h)
+      exact (runBlock_reg is M _ q (upd_zero _ _ _) h2).trans (updz hz h1)
+    | lui rd imm =>
+      have h1 : q ≠ rd := fun e => hq (by rw [e, List.filterMap_cons]; exact List.mem_cons_self)
+      have h2 : q ∉ is.filterMap BInstr.dst := fun h => hq (by rw [List.filterMap_cons]; exact List.mem_cons_of_mem _ h)
+      exact (runBlock_reg is M _ q (upd_zero _ _ _) h2).trans (updz hz h1)
+    | lw rd rs1 o =>
+      have h1 : q ≠ rd := fun e => hq (by rw [e, List.filterMap_cons]; exact List.mem_cons_self)
+      have h2 : q ∉ is.filterMap BInstr.dst := fun h => hq (by rw [List.filterMap_cons]; exact List.mem_cons_of_mem _ h)
+      exact (runBlock_reg is _ _ q (upd_zero _ _ _) h2).trans (updz hz h1)
+    | lbu rd rs1 o =>
+      have h1 : q ≠ rd := fun e => hq (by rw [e, List.filterMap_cons]; exact List.mem_cons_self)
+      have h2 : q ∉ is.filterMap BInstr.dst := fun h => hq (by rw [List.filterMap_cons]; exact List.mem_cons_of_mem _ h)
+      exact (runBlock_reg is _ _ q (upd_zero _ _ _) h2).trans (updz hz h1)
+    | sw rs1 rs2 o =>
+      exact runBlock_reg is _ f q hz (fun h => hq (by rw [List.filterMap_cons]; exact h))
+    | sb rs1 rs2 o =>
+      exact runBlock_reg is _ f q hz (fun h => hq (by rw [List.filterMap_cons]; exact h))
+
 /-- **A block runs as one step.** -/
 theorem St.block {base : Word} {code : List Nat} :
     ∀ (is : List BInstr) {M : Word → BitVec 8} {m : Machine} {off off' : Nat} {f : Fin 32 → Word},

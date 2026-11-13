@@ -77,6 +77,8 @@ import C3BootProofs.Proofs.Sha512Bits
 import C3BootProofs.Proofs.Sha512Spec
 import C3BootProofs.Proofs.Sha512Decode
 import C3BootProofs.Proofs.Sha512Round
+import C3BootProofs.Proofs.Sha512Sched
+import C3BootProofs.Proofs.Sha512Rounds
 import C3BootProofs.Proofs.P384Add
 import C3BootProofs.Proofs.P384Double
 import C3BootProofs.Proofs.P384Sub

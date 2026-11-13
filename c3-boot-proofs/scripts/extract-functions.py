@@ -88,6 +88,7 @@ DATA = [
     ("shaK", "sha256Compress", 0xB8, 256),
     ("shaIV", "sha256Fn", 0x12, 32),
     ("p384Modulus", "p384Add", 0x66, 48),
+    ("sha512K", "sha512Compress", 0x1F8, 640),
 ]
 
 
