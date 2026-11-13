@@ -85,6 +85,8 @@ import C3BootProofs.Proofs.Sha512Compress
 import C3BootProofs.Proofs.P384Mont
 import C3BootProofs.Proofs.P384PtEnv
 import C3BootProofs.Proofs.P384PtDouble
+import C3BootProofs.Proofs.UintSelect2
+import C3BootProofs.Proofs.CondNeg12
 import C3BootProofs.Proofs.P384Add
 import C3BootProofs.Proofs.P384Double
 import C3BootProofs.Proofs.P384Sub
