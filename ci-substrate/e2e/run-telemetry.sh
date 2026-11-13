@@ -113,9 +113,14 @@ done
 echo "$(grep -vc '^#' "${WORKDIR}/metrics.txt") series"
 
 echo "==> Checking cas's invocation summary log"
+# The summary is logged in the same call that emits the root span, so it is
+# already written. Read a bounded chunk and count matches. A pipeline that
+# stops at the first match (grep -q) makes the producer exit on SIGPIPE, and
+# pipefail then fails the check even though the line was there.
 if command -v kubectl >/dev/null 2>&1; then
-  kubectl -n ci-substrate logs statefulset/cas --tail=500 | grep "invocation finished" | grep -q "${INVOCATION_ID}" ||
-    fail "cas logged no summary for ${INVOCATION_ID}"
+  logs="$(kubectl -n ci-substrate logs statefulset/cas --tail=4000 || true)"
+  matches="$(grep -F "invocation finished" <<<"${logs}" | grep -F -c -- "${INVOCATION_ID}" || true)"
+  [[ "${matches}" -ge 1 ]] || fail "cas logged no summary for ${INVOCATION_ID}"
 fi
 
 echo "telemetry e2e passed"
