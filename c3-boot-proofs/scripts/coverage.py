@@ -70,7 +70,7 @@ PROVED = [
     "wideMul8x2",
     "edDouble",
     "fePow2k",
-    "sha512Compress", "p384Mul", "p384Sqr", "p384PtDouble", "uintSelect2", "condNeg12", "uintSelect8", "condNeg8",
+    "sha512Compress", "p384Mul", "p384Sqr", "p384PtDouble", "uintSelect2", "condNeg12", "uintSelect8", "condNeg8", "absSign2", "fromI64",
 ]
 
 IMAGE = os.path.join(os.path.dirname(__file__), "..", "C3BootProofs", "Image", "Bootloader.lean")

@@ -86,6 +86,8 @@ FUNCTIONS = [
     ("condNeg12", "crypto_bigint::modular::safegcd::conditional_negate_in_place_wide::<12, 2>"),
     ("uintSelect8", "<crypto_bigint::uint::Uint<8>>::select"),
     ("condNeg8", "crypto_bigint::modular::safegcd::conditional_negate_in_place_wide::<8, 2>"),
+    ("absSign2", "<crypto_bigint::int::Int<2>>::abs_sign"),
+    ("fromI64", "<crypto_bigint::int::Int<2>>::from_i64"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
