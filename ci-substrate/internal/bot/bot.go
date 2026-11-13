@@ -263,7 +263,8 @@ func (b *Bot) lease(ctx context.Context) (*workerv1.Job, error) {
 
 // RunJob runs one leased job and reports its outcome to the scheduler,
 // heartbeating while it runs. Its spans join the trace of the Execute call
-// that queued the job, and its calls carry that call's RequestMetadata.
+// that queued the job, the action process gets that span as its trace
+// parent, and its calls carry that call's RequestMetadata.
 func (b *Bot) RunJob(ctx context.Context, job *workerv1.Job) {
 	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier(job.GetTraceContext()))
 	md := &repb.RequestMetadata{}
@@ -415,7 +416,7 @@ func (b *Bot) execute(ctx context.Context, job *workerv1.Job, f tree.Fetcher) (*
 	if err != nil {
 		return nil, fmt.Errorf("starting command: %w", err)
 	}
-	cmd.Env = environment(command)
+	cmd.Env = environment(runCtx, command)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -554,17 +555,36 @@ func outputPaths(c *repb.Command) []string {
 
 // environment is the command's environment. PATH gets a default when the
 // command sets none, so a bare `sh` resolves.
-func environment(c *repb.Command) []string {
+//
+// TRACEPARENT and TRACESTATE carry ctx's span, in the W3C environment
+// names, so a program the action runs can parent its spans on the build.
+// The runner adds them when it starts the command. They are not part of
+// the Command, so they do not change the action digest. A command that
+// sets TRACEPARENT keeps its own value.
+func environment(ctx context.Context, c *repb.Command) []string {
 	env := []string{}
 	hasPath := false
+	set := map[string]bool{}
 	for _, kv := range c.GetEnvironmentVariables() {
 		if kv.GetName() == "PATH" {
 			hasPath = true
 		}
+		set[kv.GetName()] = true
 		env = append(env, kv.GetName()+"="+kv.GetValue())
 	}
 	if !hasPath {
 		env = append(env, "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+	}
+	if set["TRACEPARENT"] {
+		return env
+	}
+	carrier := propagation.MapCarrier{}
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	if tp := carrier.Get("traceparent"); tp != "" {
+		env = append(env, "TRACEPARENT="+tp)
+		if ts := carrier.Get("tracestate"); ts != "" && !set["TRACESTATE"] {
+			env = append(env, "TRACESTATE="+ts)
+		}
 	}
 	return env
 }

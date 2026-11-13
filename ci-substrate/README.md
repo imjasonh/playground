@@ -495,6 +495,13 @@ name, so `cas` can tell Bazel's traffic from theirs. A build's trace holds:
 | `runner.execute` | `runner` | The action on the runner, with child spans `runner.fetch_action`, `runner.prepare_inputs`, `runner.run`, `runner.upload_outputs`, and `runner.complete` |
 | `cascache.origin_fetch` | `cascache` | A cache miss: fetching and verifying the blob from `cas` |
 
+The runner puts the `runner.execute` span into the action process as
+`TRACEPARENT` and `TRACESTATE`. A program the action runs that reads those
+W3C environment variables parents its spans on that span, in the build's
+trace. The runner adds them when it starts the command, not in the Command,
+so the action digest stays the same. A Command that sets `TRACEPARENT` keeps
+that value.
+
 `pool.reconcile` and its `pool.create`, `pool.resume`, `pool.suspend`, and
 `pool.delete` children trace the pool's changes to actors. Health checks and
 the runners' `Lease`, `Heartbeat`, and the pool's `Status` polls aren't
