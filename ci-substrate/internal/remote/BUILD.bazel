@@ -1,0 +1,56 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "remote",
+    srcs = [
+        "cacheserver.go",
+        "client.go",
+        "metrics.go",
+        "origin.go",
+        "resource.go",
+    ],
+    importpath = "github.com/imjasonh/playground/ci-substrate/internal/remote",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/actioncache",
+        "//internal/blob",
+        "//internal/cache",
+        "//internal/digest",
+        "//internal/invocation",
+        "//internal/telemetry",
+        "//internal/tenant",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+        "@com_github_bazelbuild_remote_apis//build/bazel/semver",
+        "@com_github_google_uuid//:uuid",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_metric//:metric",
+        "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "remote_test",
+    srcs = [
+        "integration_test.go",
+        "resource_test.go",
+    ],
+    embed = [":remote"],
+    deps = [
+        "//internal/actioncache",
+        "//internal/blob",
+        "//internal/cache",
+        "//internal/digest",
+        "//internal/tenant",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//status",
+    ],
+)

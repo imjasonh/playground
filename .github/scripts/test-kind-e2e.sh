@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Run the kind end-to-end test of one Go module: git-k8s, kube, or sshapp.
-# test.yml runs each as its own step, in parallel with the unit tests in
-# test-go-modules.sh, because a kind test spends most of its time waiting for
-# a cluster and its Pods. The tests' clusters, registries, and ports have
-# different names, so they can run at the same time on one runner.
+# Run the kind end-to-end test of one Go module: git-k8s, kube, sshapp, or
+# ci-substrate. test.yml runs each as its own step, in parallel with the unit
+# tests in test-go-modules.sh, because a kind test spends most of its time
+# waiting for a cluster and its Pods. The tests' clusters, registries, and
+# ports have different names, so they can run at the same time on one runner.
 set -uo pipefail
 
 module="${1:?usage: test-kind-e2e.sh MODULE}"
@@ -34,6 +34,10 @@ case "$module" in
   sshapp)
     # The mux and hello apps: scale-up, the registry menu, and scale-to-zero.
     SSHAPP_KIND_E2E=1 go test -race -v -timeout 20m ./e2e/
+    ;;
+  ci-substrate)
+    # Multi-tenant CAS + node-local verified cache, deployed with ko apply.
+    CI_SUBSTRATE_KIND_E2E=1 go test -race -v -timeout 20m ./e2e/
     ;;
   *)
     echo "::error title=kind e2e::${module} has no kind end-to-end test"

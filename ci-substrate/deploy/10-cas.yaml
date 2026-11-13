@@ -1,0 +1,78 @@
+# cas keeps its blobs and action cache on a PersistentVolumeClaim. It runs one
+# replica: the scheduler's queue is in memory, and a client whose operation
+# disappears in a restart gets NotFound from WaitExecution and calls Execute
+# again.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cas
+  namespace: ci-substrate
+  labels: {app: cas}
+spec:
+  serviceName: cas
+  replicas: 1
+  selector:
+    matchLabels: {app: cas}
+  template:
+    metadata:
+      labels: {app: cas}
+    spec:
+      securityContext:
+        fsGroup: 65532
+      containers:
+        - name: cas
+          image: ko://github.com/imjasonh/playground/ci-substrate/cmd/cas # pasta:ignore unpinned_container_image
+          envFrom:
+            # Collector settings; see 05-telemetry.yaml.
+            - configMapRef: {name: otel, optional: true}
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef: {fieldPath: metadata.name}
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef: {fieldPath: spec.nodeName}
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.instance.id=$(POD_NAME),k8s.pod.name=$(POD_NAME),k8s.node.name=$(NODE_NAME),k8s.namespace.name=ci-substrate
+            - name: ADDR
+              value: ":8980"
+            - name: LEASE_DURATION
+              value: 10s
+            - name: STORE_DIR
+              value: /data
+            - name: TENANTS
+              valueFrom:
+                secretKeyRef: {name: tenants, key: TENANTS}
+          ports:
+            - {name: grpc, containerPort: 8980}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
+          readinessProbe:
+            grpc: {port: 8980}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests: {storage: 20Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cas
+  namespace: ci-substrate
+spec:
+  selector: {app: cas}
+  ports:
+    - {name: grpc, port: 8980, targetPort: 8980}

@@ -1,0 +1,28 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "casfs-csi_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/imjasonh/playground/ci-substrate/cmd/casfs-csi",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//internal/csidriver",
+        "//internal/remote",
+        "//internal/substrate",
+        "//internal/telemetry",
+        "//internal/tenant",
+        "@com_github_chainguard_dev_clog//gcp/init",
+        "@com_github_sethvargo_go_envconfig//:go-envconfig",
+        "@dev_ate_go_substrate//api/ateapi/v1:ateapi",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+    ],
+)
+
+go_binary(
+    name = "casfs-csi",
+    embed = [":casfs-csi_lib"],
+    visibility = ["//visibility:public"],
+)

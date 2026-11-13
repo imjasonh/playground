@@ -1,0 +1,24 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "actorpool",
+    srcs = [
+        "actorpool.go",
+        "metrics.go",
+    ],
+    importpath = "github.com/imjasonh/playground/ci-substrate/internal/actorpool",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/telemetry",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_metric//:metric",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_test(
+    name = "actorpool_test",
+    srcs = ["actorpool_test.go"],
+    deps = [":actorpool"],
+)

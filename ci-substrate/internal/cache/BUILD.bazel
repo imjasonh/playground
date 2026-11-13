@@ -1,0 +1,30 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "cache",
+    srcs = ["cache.go"],
+    importpath = "github.com/imjasonh/playground/ci-substrate/internal/cache",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/blob",
+        "//internal/digest",
+        "//internal/telemetry",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_metric//:metric",
+        "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_golang_x_sync//singleflight",
+    ],
+)
+
+go_test(
+    name = "cache_test",
+    srcs = ["cache_test.go"],
+    embed = [":cache"],
+    deps = [
+        "//internal/blob",
+        "//internal/digest",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+    ],
+)

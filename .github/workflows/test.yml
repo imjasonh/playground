@@ -161,6 +161,10 @@ jobs:
             if: ${{ contains(fromJSON(steps.discover.outputs.modules), 'sshapp') }}
             run: bash .github/scripts/test-kind-e2e.sh sshapp
 
+          - name: kind e2e for ci-substrate
+            if: ${{ contains(fromJSON(steps.discover.outputs.modules), 'ci-substrate') }}
+            run: bash .github/scripts/test-kind-e2e.sh ci-substrate
+
           - name: Lint, build, and test changed Rust apps
             if: ${{ steps.discover.outputs.rust != '[]' }}
             env:

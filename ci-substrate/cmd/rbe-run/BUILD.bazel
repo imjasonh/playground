@@ -1,0 +1,23 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "rbe-run_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/imjasonh/playground/ci-substrate/cmd/rbe-run",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//internal/digest",
+        "//internal/remote",
+        "//internal/tenant",
+        "//internal/tree",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
+    ],
+)
+
+go_binary(
+    name = "rbe-run",
+    embed = [":rbe-run_lib"],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,4 @@
+exports_files(
+    ["egress-cas.yaml"],
+    visibility = ["//internal/substrate:__pkg__"],
+)

@@ -1,0 +1,147 @@
+# Telemetry for a kind cluster: an OpenTelemetry Collector that every
+# ci-substrate binary sends OTLP traces and metrics to, Jaeger to look at the
+# traces, and a Prometheus endpoint on the collector (:8889) for the metrics.
+# On GKE, apply gke/05-telemetry.yaml instead: the same collector Service,
+# exporting to Cloud Trace and Google Cloud Managed Service for Prometheus.
+#
+# The binaries find the collector through the otel ConfigMap below, which
+# their pods load with envFrom. Without OTEL_EXPORTER_OTLP_ENDPOINT they
+# export nothing.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel
+  namespace: ci-substrate
+data:
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.ci-substrate.svc.cluster.local:4317
+  OTEL_METRIC_EXPORT_INTERVAL: "10000"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector
+  namespace: ci-substrate
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc: {endpoint: 0.0.0.0:4317}
+    processors:
+      memory_limiter: {check_interval: 1s, limit_percentage: 80, spike_limit_percentage: 20}
+      batch: {}
+    exporters:
+      otlp/jaeger:
+        endpoint: jaeger.ci-substrate.svc.cluster.local:4317
+        tls: {insecure: true}
+      prometheus:
+        endpoint: 0.0.0.0:8889
+        resource_to_telemetry_conversion: {enabled: true}
+    extensions:
+      health_check: {endpoint: 0.0.0.0:13133}
+    service:
+      extensions: [health_check]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlp/jaeger]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [prometheus]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: ci-substrate
+  labels: {app: otel-collector}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: otel-collector}
+  template:
+    metadata:
+      labels: {app: otel-collector}
+    spec:
+      containers:
+        - name: collector
+          image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.165.0@sha256:e40d61f10c9a617cca1ffd1be4d7e2b3a4b0f0001798ff07e58cabe82e618cea
+          args: [--config=/etc/otelcol/config.yaml]
+          ports:
+            - {name: otlp-grpc, containerPort: 4317}
+            - {name: prometheus, containerPort: 8889}
+            - {name: health, containerPort: 13133}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 512Mi}
+          readinessProbe:
+            httpGet: {path: /, port: 13133}
+          volumeMounts:
+            - {name: config, mountPath: /etc/otelcol}
+      volumes:
+        - name: config
+          configMap: {name: otel-collector}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: ci-substrate
+spec:
+  selector: {app: otel-collector}
+  ports:
+    - {name: otlp-grpc, port: 4317, targetPort: 4317}
+    - {name: prometheus, port: 8889, targetPort: 8889}
+---
+# Jaeger all-in-one, keeping traces in memory. Its UI is on :16686:
+#
+#   kubectl -n ci-substrate port-forward svc/jaeger 16686
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger
+  namespace: ci-substrate
+  labels: {app: jaeger}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: jaeger}
+  template:
+    metadata:
+      labels: {app: jaeger}
+    spec:
+      containers:
+        - name: jaeger
+          image: jaegertracing/jaeger:2.23.0@sha256:3823829974ccfc2485d2e48b165579091f32295022ae80ca49704e2f4834116e
+          ports:
+            - {name: otlp-grpc, containerPort: 4317}
+            - {name: ui, containerPort: 16686}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
+          readinessProbe:
+            httpGet: {path: /, port: 16686}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger
+  namespace: ci-substrate
+spec:
+  selector: {app: jaeger}
+  ports:
+    - {name: otlp-grpc, port: 4317, targetPort: 4317}
+    - {name: ui, port: 16686, targetPort: 16686}

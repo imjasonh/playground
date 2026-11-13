@@ -1,0 +1,677 @@
+# ci-substrate
+
+A KinD demo of a multi-tenant CI / Bazel Remote Execution control plane in
+front of [Agent Substrate](https://github.com/agent-substrate/substrate). The
+demo proves **multi-tenant isolation** (one tenant cannot read another's
+instance, action cache, or execution queue), **optimized caching** (a
+content-addressed blob warmed by one tenant is served to another from a
+node-local verified cache, with no second origin fetch), and **remote
+execution** (a Bazel `Execute` call runs on a runner that mounts its inputs
+lazily from the node-local cache, uploads its outputs, and fills the action
+cache for the next call). With Substrate installed, the runners are gVisor
+actors that a per-tenant pool keeps warm as snapshots and resumes for queued
+work, and each actor reads its inputs from a volume that the CSI driver on
+its own node serves out of that node's cache.
+
+Images are built and applied with [ko](https://ko.build/). There are no
+Dockerfiles and no Helm charts.
+
+## What runs
+
+| Binary | Role |
+|--------|------|
+| `cas` | Authoritative multi-tenant CAS, action cache, and scheduler (StatefulSet with a PVC). Speaks the Bazel Remote Execution API (`ContentAddressableStorage`, `ActionCache`, `ByteStream`, `Capabilities`, `Execution`) over gRPC, plus the `WorkerService` that runners lease jobs from. |
+| `cascache` | Node-local, read-only CAS proxy (DaemonSet, port 9092). Verified read-through cache in front of `cas`. Its Service sets `internalTrafficPolicy: Local`, so a pod reaches the cascache on its own node. |
+| `runner` | The bot. Leases actions from `cas`, builds the exec root (a `mkdir` on the inputs volume a Substrate actor gets from its node, a FUSE mount of `casfs` where the runner has `/dev/fuse`, or a copy from `cascache` otherwise), runs the command, uploads the outputs `cas` is missing, and reports the `ActionResult` with the input mode it used. It starts each command through `bash`, because a child that enters a FUSE mount the runner serves before it calls `execve` can deadlock the runner during garbage collection. Small output blobs share one `BatchUpdateBlobs` call. Runs as a Deployment per tenant (`deploy/40-runner.yaml`) or as a Substrate actor. |
+| `casfs-csi` | CSI driver (DaemonSet, `deploy/substrate/casfs-csi.yaml`) that mounts a `casfs` inputs volume for each actor on the actor's node and serves it from that node's `cascache` with the tenant's token. The runner in the sandbox never fetches an input and never holds the token. |
+| `pool` | Per-tenant actor pool for Substrate. Reads the tenant's queue from `cas` and keeps that many actors running, warm ones suspended, and crashed ones replaced. |
+| `cictl` | Demo driver. Uploads a shared blob as tenant A, warms the cache, reads it as tenant B, asserts tenant B cannot reach tenant A's instance, action cache, or queue, then runs an action through `Execute`, checks its outputs, and shows the second `Execute` is a cache hit. |
+
+Tenant identity is a token on the `x-ci-substrate-tenant` gRPC metadata header.
+Each token is allowed a set of Remote Execution instance names. Blobs are
+content addressed and shared; action results and execution queues are
+namespaced by instance, and a runner leases only from the instances its
+token holds.
+
+## Architecture
+
+The cluster runs two control planes side by side. Agent Substrate owns actor
+lifecycle, sandboxing, and network policy. ci-substrate owns build data and
+build work: the authoritative `cas`, the per-node `cascache`, and the pool
+that asks Substrate for runners. The following diagram shows the cluster,
+with Substrate's components and ci-substrate's in separate groups:
+
+```mermaid
+flowchart TB
+  ci["CI frontend / cictl"]
+
+  subgraph substrate["Agent Substrate system infra"]
+    router["atenet-router<br/>ingress, resume on request"]
+    api["ate-api-server<br/>actors, workers, scheduler"]
+    pg[("PostgreSQL")]
+    egress["atenet-egress<br/>egress policy, credential injection"]
+    snap[("snapshot object store")]
+  end
+
+  subgraph cisub["ci-substrate control plane"]
+    cas["cas StatefulSet<br/>CAS, ActionCache, Execution, worker leases"]
+    casdisk[("PVC: blobs, action cache, jobs")]
+    pool["pool Deployment per tenant<br/>queue depth to actor count"]
+    tenants["Secret tenants<br/>token to instances"]
+    tok["Secret per tenant namespace<br/>tenant token"]
+  end
+
+  subgraph nodes["Worker nodes"]
+    n1["node 1<br/>atelet, worker pods, cascache, casfs-csi"]
+    n2["node 2<br/>atelet, worker pods, cascache, casfs-csi"]
+  end
+
+  ci -->|"Execute, upload"| cas
+  pool -->|"Status: queued, busy bots"| cas
+  pool -->|"create, resume, suspend"| api
+  router --> api
+  api --- pg
+  api -->|"restore, checkpoint"| n1
+  api -->|"restore, checkpoint"| n2
+  api -->|"CreateVolume"| n1
+  n1 <-->|"snapshots"| snap
+  n2 <-->|"snapshots"| snap
+  n1 -->|"actor egress over atunnel"| egress
+  n2 -->|"actor egress over atunnel"| egress
+  egress -->|"Lease, Complete + injected token"| cas
+  egress -.->|"reads token"| tok
+  n1 -->|"cache miss"| cas
+  n2 -->|"cache miss"| cas
+  cas --- casdisk
+  tenants -.-> cas
+```
+
+Each worker node runs Substrate's per-node pieces next to one cascache pod.
+Substrate's `atelet` keeps its own content-addressed cache of sandbox
+binaries. cascache does the same job for build inputs and outputs. The
+following diagram shows one node:
+
+```mermaid
+flowchart TB
+  subgraph node["Worker node"]
+    subgraph substrate["Agent Substrate"]
+      atelet["atelet DaemonSet<br/>restore, checkpoint, sandbox asset cache"]
+      subgraph wp["worker pod (ateworker)"]
+        atunnel["atunnel<br/>ingress and egress tunnel"]
+        subgraph sandbox["gVisor sandbox"]
+          runner["runner actor (bot)<br/>tenant A, placeholder token"]
+          inputs["/inputs<br/>mkdir digest.job = exec root"]
+        end
+      end
+    end
+    subgraph cinode["ci-substrate"]
+      csi["casfs-csi DaemonSet pod<br/>NodePublishVolume: FUSE mount per actor"]
+      cascache["cascache DaemonSet pod<br/>verify SHA-256 on every read"]
+      disk[("node-local cache disk")]
+    end
+    hostpod["runner Deployment pod<br/>FUSE exec root from cascache"]
+  end
+
+  egress["atenet-egress<br/>(system infra node)"]
+  cas["cas"]
+
+  atelet -->|"RestoreWorkload"| wp
+  atelet -->|"NodePublishVolume"| csi
+  csi -->|"bind into sandbox"| inputs
+  runner --> inputs
+  csi -->|"tenant token, lazy reads"| cascache
+  runner -->|"Lease, Complete, outputs"| atunnel
+  atunnel -->|"mTLS CONNECT"| egress
+  egress -->|"inject tenant token"| cas
+  cascache --- disk
+  cascache -->|"miss: fetch, verify, store"| cas
+  hostpod -->|"internalTrafficPolicy: Local"| cascache
+```
+
+An actor's inputs never leave its node's cache path. When Substrate
+restores the actor on a node, `atelet` asks the `casfs-csi` pod on that node
+to publish the actor's inputs volume. The driver mounts an empty `casfs`
+volume under `/var/lib/ate` and `atelet` binds it into the sandbox at
+`/inputs`. For each job, the runner does `mkdir /inputs/<digest>.<job>`,
+and the driver loads that input tree's directory protos from the local
+`cascache` with the tenant's token, which it looks up from the same tenant
+table `cascache` uses. A file's bytes arrive on first read, through the
+same cache. `rmdir` drops the exec root. The driver is root on the host,
+and the sandbox's user is whoever the image names, so `casfs` reports every
+entry as open to everyone and accepts the chown gVisor's gofer does on each
+entry it creates; the filesystem itself is the authority on what a name
+allows.
+
+The rest of the actor's traffic goes from the sandbox through `atunnel` to
+`atenet-egress`, which checks the actor's egress policy, replaces the
+placeholder `x-ci-substrate-tenant` header with the tenant's token, and
+opens the connection to `cas`: leases, the `Command` and `Action` protos,
+output uploads, and the result. The policy names no other destination.
+`cascache` authorizes every token for the instance, serves the blob from
+local disk after it verifies the SHA-256, and on a miss fetches the blob
+from `cas`, verifies it, and stores it.
+
+### An Execute call
+
+1. The client uploads the input tree, `Command`, and `Action` to `cas` and
+   calls `Execute`. `cas` checks the token for the instance, returns the
+   cached `ActionResult` if the action cache has one, and otherwise queues a
+   job in that instance's queue. The same action queued twice by the same
+   tenant becomes one job with two watchers.
+2. A runner holding that tenant's token calls `Lease` and gets the job. It
+   heartbeats at a third of the lease duration; a lease that expires goes
+   back on the queue.
+3. The runner builds the exec root. A Substrate actor does `mkdir` of the
+   input root's digest on its inputs volume, and the `casfs-csi` driver on
+   its node serves the tree from that node's `cascache`. A runner with
+   `/dev/fuse` mounts the tree itself with `casfs`. In both, `cascache`
+   serves each file on its first read, and a file the command never opens is
+   never fetched. A runner with neither copies the tree. The `ActionResult`
+   records which mode ran the action (`worker.v1.RunnerMetadata` in
+   `auxiliary_metadata`), and `cictl -expect-input-mode` checks it.
+4. The runner runs the command, collects the output paths (files as blobs,
+   directories as a `Tree`), asks `cas` which blobs are missing with
+   `FindMissingBlobs`, uploads those, and calls `Complete` with the
+   `ActionResult`. `cas` writes the action cache and finishes the
+   `Operation` every watcher is waiting on.
+5. With Substrate, the `pool` for that tenant polls `Status`, and when the
+   queue has more jobs than free runners it resumes a suspended actor (a
+   memory snapshot restore, about a second) or creates one. A runner that
+   has leased nothing for a while is suspended again.
+
+## Design notes
+
+Blobs are shared, and action results are private. A blob is named by its
+digest, and a tenant that knows a digest can read the blob through any
+instance that tenant holds. That is what lets one cached copy serve every
+tenant. An instance keeps its action cache private: the map from an action to
+its output digests. A tenant can't learn the digests of another tenant's
+outputs, so it can't name them. `TestDigestIsReadCapability` in
+`internal/remote` pins this down.
+
+Inputs are hydrated on the host side, the way `atelet` links sandbox
+binaries from its asset cache into each sandbox. Actor egress leaves the
+sandbox through `atenet-egress`, which runs on system infra nodes, so a
+runner that fetched its own inputs would have the gateway, not the actor,
+open the connection to `cascache`, and `internalTrafficPolicy: Local` would
+pick the cache on the gateway's node. The alternative, an egress gateway on
+each worker node, would fix locality but keep every input byte on the
+tunnel-to-gateway-to-cache path and add a component per node whose only job
+is to be near the actor. Instead, the `casfs-csi` DaemonSet is a CSI driver
+for Substrate's external volumes: the `ActorTemplate` declares an `inputs`
+volume of the tenant's `StorageClass`, `ate-api-server` creates it through
+the driver's controller Service, and `atelet` has the driver on the actor's
+node publish it and binds the mount into the sandbox. The inputs path has no
+gateway hop at all, the policy's one rule is `cas` for leases, outputs, and
+results, and the sandbox never holds the cache token: the driver resolves the
+`StorageClass` parameter `instance` to a token with `tenant.Registry.TokenFor`.
+Substrate's `ExternalVolumes` preview gate guards this. The `pool` sends
+`Ate-Preview-Allowed: true` on every call, and `run-substrate.sh` turns the
+gate on in `ate-api-server`.
+
+A `StorageClass` belongs to one atespace, and the driver enforces it.
+Substrate authorizes by atespace and nothing finer: any template, in any
+atespace its author can write to, may name any `StorageClass`. A Kubernetes
+admission policy can't close that, because `ActorTemplate`s live in
+`ateapi`'s database, not in the Kubernetes API. So the class carries an
+`atespace` parameter, and on `CreateVolume` the driver checks that the actor
+the volume is for (the actor's uid is in the volume name `ateapi` sends) is in
+that atespace, by listing that atespace's actors. It acts as its own
+`casfs-csi` ServiceAccount, which has the `viewer` role in the atespaces it
+serves and nothing else. A volume for any other actor fails with
+`PermissionDenied`, and the driver fails closed: a class without the
+parameter, a name that isn't an actor's volume, or a lookup that fails
+(`Unavailable`) gets no volume, so a tenant never gets another tenant's
+inputs. `run-substrate.sh` ends by creating a template in another atespace
+that names `casfs-tenant-a` and checking that its actor can't resume.
+
+The volume is a control directory, not a tree: a `mkdir` of
+`<hash>-<size>[.<tag>]` materializes that input root, so one long-lived actor
+serves many jobs from one mount and two jobs with the same inputs get two
+exec roots. A name that isn't a digest fails with `EINVAL`, a digest the
+cache doesn't hold fails with `ENOENT`, and the runner's startup probe does
+one `mkdir` of the empty tree and one bad name to check it is on such a
+volume before it leases anything.
+
+The demo's other limits:
+
+- `cas` is one replica. Its blobs, action cache, and job records are on a
+  PVC and survive a restart, but there is no replication.
+- `cascache` doesn't evict. The kubelet evicts the pod, and with it the warm
+  set, when the cache passes the `emptyDir` size limit.
+- `cascache` is read-only and serves only the CAS and ByteStream services, so
+  Bazel can't use it as `--remote_cache` on its own. Writes and the action
+  cache go to `cas`.
+- `casfs` is read-mostly: writes go to an in-memory upper layer that the
+  runner reads outputs from, so an action's outputs must fit in memory. On
+  the CSI path that memory is the driver pod's, so its limit bounds the
+  outputs of every actor on the node at once.
+- The `StorageClass` is per tenant and is bound to the tenant's atespace by
+  its `atespace` parameter, which needs the `casfs-csi` ServiceAccount to
+  have `viewer` in that atespace. The driver checks at `CreateVolume`, once
+  per volume. It lists the atespace's actors, one page at a time, so the
+  check grows with the number of actors in the atespace.
+- The driver keeps its mounts in memory. A driver restart leaves the
+  published FUSE mounts stale (reads fail with `ENOTCONN`) until Substrate
+  suspends or restarts the actor, and `NodePublishVolume` detaches the stale
+  mount before it mounts again.
+- gRPC is plaintext. The egress gateway injects the token on a plain HTTP
+  hop, so a real install needs mTLS or a mesh between the gateway and the
+  Services.
+- The runner Deployment is privileged, because the container runtime's
+  device cgroup otherwise denies `/dev/fuse`. A Substrate actor needs no
+  privilege; the driver on its node does the mounting.
+
+## Milestone map
+
+| Milestone | In this demo |
+|-----------|--------------|
+| M1 Control plane state | `cas` is a StatefulSet. Blobs, the action cache, and job records are files on its PVC (`internal/blob`, `internal/actioncache`, `internal/exec`), so a restart keeps them. Tenants come from a Secret. No Postgres or Redis; one replica owns the state. |
+| M2 Substrate lifecycle | `pool` (`internal/actorpool`, `internal/substrate`) runs per tenant: it prewarms `WARM` actors as snapshots, resumes one per queued job up to `MAX`, suspends idle ones, and replaces crashed ones. The overlay under `deploy/substrate/` has the `WorkerPool`, `ActorTemplate` with its external inputs volume, the `casfs-csi` driver with its `CSIDriverConfig` and the tenant's `StorageClass`, the egress policy, token Secret, and pool Deployment; `e2e/run-substrate.sh` applies it, runs an action in an actor, and checks the actor read its inputs from the volume. |
+| M3 Artifact push | The runner uploads stdout, stderr, output files, and output `Tree`s after `FindMissingBlobs`, so a blob `cas` already holds is not sent again. `remote.Client.Upload` routes blobs up to `remote.MaxBatchBytes` through `BatchUpdateBlobs` and larger ones through `ByteStream.Write`. |
+| M4 Bazel RBE API | `cas` implements CAS, ActionCache, ByteStream, Capabilities, and Execution (`Execute`, `WaitExecution`) from `bazelbuild/remote-apis`, with a per-instance queue and `WorkerService` leases (`api/worker/v1`) for runners. `Status` tells the pool how deep each queue is. |
+| M5 Node-local CAS + verification | `cascache` is the node-local proxy; every served blob is SHA-256-verified in flight, a poison is dropped, and the request falls back to the origin. `casfs` (`internal/casfs`) is the lazy-hydration filesystem: a go-fuse mount of an input `Directory` tree that fetches a file's blob from `cascache` on first read. A runner with `/dev/fuse` mounts it itself; a Substrate actor gets it as an inputs volume that `casfs-csi` (`internal/csidriver`) mounts on the actor's node, so an actor's inputs come from its own node's cache without crossing the egress gateway. |
+| M6 Output handling | `internal/bot` collects `OutputPaths`: a file becomes an `OutputFile` with its digest, a directory becomes an `OutputDirectory` with a `Tree` whose root and children are uploaded as blobs. A path that escapes the exec root is rejected. The `ActionResult` carries exit code, stdout, stderr, and the worker's id. |
+
+## Local unit tests
+
+```bash
+cd ci-substrate
+go test ./...
+go test -race ./...
+```
+
+`bazel test //...` runs the same tests; see [Build with Bazel](#build-with-bazel).
+
+The `internal/remote` package includes an in-process gRPC integration test that
+covers cross-tenant cache reuse, isolation, poison rejection, large-blob
+ByteStream, the batch size boundary, ByteStream write bounds, malformed and
+path-traversal digests, and action-cache isolation without needing a cluster.
+`internal/exec` tests the scheduler (queueing, leases, expiry, dedupe, and
+per-tenant `Status`), `internal/bot` runs a runner against an in-process
+`cas` in copy mode and, where `/dev/fuse` exists, FUSE mode, `internal/casfs`
+mounts real trees, and `internal/actorpool` drives the pool against a fake
+Substrate with a fixed clock.
+
+## KinD end-to-end
+
+Requires Docker. The script installs `kind`, `ko`, and `kubectl` when they are
+missing, creates a cluster with a local registry, and deploys with `ko apply`:
+
+```bash
+cd ci-substrate
+CI_SUBSTRATE_KIND_E2E=1 go test -race -v -timeout 20m ./e2e/
+```
+
+Or run the script directly:
+
+```bash
+bash e2e/run-kind.sh
+```
+
+Set `CI_SUBSTRATE_KIND_KEEP=1` to leave the cluster up afterwards.
+
+The script drives `cictl` from the host over `kubectl port-forward`, so the
+demo does not depend on ClusterIP routing (some nested kind environments
+cannot program kube-proxy iptables rules). What it asserts:
+
+1. Tenant A uploads a shared blob to `cas`.
+2. Tenant A reads it through `cascache`. The cascache `/stats` counters show
+   exactly one origin fetch for this read.
+3. Tenant B reads the same content through `cascache`. The counters show one
+   local hit and no origin fetch.
+4. Tenant B is `PermissionDenied` on tenant A's private instance.
+5. Tenant A writes an action result, and tenant B is `PermissionDenied`
+   reading it.
+6. Tenant B is `PermissionDenied` calling `Execute` in tenant A's instance.
+7. Tenant A executes an action (`tr a-z A-Z < input.txt > out/upper.txt`,
+   plus a copy into `out/tree/`). A `runner` pod leases it, mounts the input
+   with FUSE, runs it, and uploads the outputs. `cictl` reads stdout,
+   `out/upper.txt`, and the `out/tree` `Tree` back through `cascache`.
+8. The same `Execute` again returns `cached_result` without a runner.
+
+Then [`e2e/run-bazel.sh`](e2e/run-bazel.sh) builds
+[`e2e/bazel`](e2e/bazel) with stock Bazel (pinned in `.bazelversion` and
+downloaded with a checksum) as two users, one in tenant A and one in tenant
+B. They have separate workspaces and output roots, but the two workspaces
+hold the same salt, so the users send byte-identical actions. Each output
+ends with the hostname of the runner that ran it. The script fails unless:
+
+1. Tenant B's build of an action tenant A already built is not an action
+   cache hit, and runs on a tenant B runner.
+2. When both tenants build the same 24 actions at once, every output comes
+   from the builder's own runners. The scheduler never merges the two
+   tenants' identical actions into one run.
+3. After `bazel clean`, each tenant's rebuild is an action cache hit with
+   its own runner's output.
+4. A result that tenant A runs locally and uploads to its action cache
+   reaches A's remote builds, and tenant B's build of the same action still
+   runs on B's runner.
+5. Tenant A's token is `PermissionDenied` building in tenant B's instance.
+
+A shared action cache and an instance-blind in-flight merge each pass the
+`cictl` checks above. The Bazel checks fail on both. CI runs this script in
+the kind e2e, so it blocks a pull request that breaks tenant isolation. It
+runs against any cluster with runners for both tenants:
+`bash e2e/run-bazel.sh <cas host:port>`.
+
+Then [`e2e/run-telemetry.sh`](e2e/run-telemetry.sh) builds once more and
+fails unless that build's trace and metrics arrive (see
+[Observability](#observability)).
+
+Last, [`e2e/run-dogfood.sh`](e2e/run-dogfood.sh) builds and tests
+ci-substrate itself with Bazel on the cluster, as tenant A (see
+[Build with Bazel](#build-with-bazel)). Set `CI_SUBSTRATE_DOGFOOD=0` to skip
+it.
+
+`deploy/30-cictl-job.yaml` is the same demo as an in-cluster Job for clusters
+where Service DNS works.
+
+## Build with Bazel
+
+ci-substrate also builds with Bazel (pinned in `.bazelversion`), using
+rules_go and Gazelle. `go.mod` stays the source of truth for dependencies;
+Gazelle generates the `BUILD.bazel` files from the Go sources:
+
+```bash
+cd ci-substrate
+bazel run //:gazelle          # after adding a package or an import
+bazel build //...
+bazel test //...
+```
+
+Two settings keep the build runnable on this cluster's runners, which have no
+C toolchain. Every Go target builds without cgo (`.bazelrc`), and Go modules
+build from their checked-in `.pb.go` files instead of their `.proto` sources,
+so `protoc` is never compiled (`MODULE.bazel`). The FUSE tests are tagged
+`no-sandbox`, because `fusermount` cannot mount inside Bazel's sandbox.
+
+To build on a ci-substrate cluster, point Bazel at `cas`:
+
+```bash
+bazel build //... \
+  --remote_executor=grpc://127.0.0.1:18980 \
+  --remote_instance_name=tenant-a \
+  --remote_header=x-ci-substrate-tenant=tok-a \
+  --spawn_strategy=remote
+```
+
+[`e2e/run-dogfood.sh`](e2e/run-dogfood.sh) does this as a dogfooding demo:
+
+```bash
+bash e2e/run-dogfood.sh 127.0.0.1:18980
+```
+
+It copies the checkout into a fresh workspace and fails unless:
+
+1. `bazel run //:gazelle -- -mode=diff` finds the `BUILD.bazel` files up to
+   date.
+2. `bazel build //...` executes every action on the cluster's runners, none
+   on the host. It passes `--noremote_accept_cached`, so results that an
+   earlier run left in the action cache are not reused.
+3. `bazel test //...` runs every test on a runner, and they pass. The FUSE
+   mount tests skip there, because the runner image has no `fusermount`.
+4. After `bazel clean`, the rebuild is all action cache hits.
+
+On the one-node kind cluster, with two tenant A runners, the build executes
+249 actions remotely in about 46 seconds, the 15 test targets pass, and the
+rebuild after a clean takes about 2 seconds, all from the action cache. The
+host still fetches the Go SDK and modules, and runs Bazel's internal actions
+(symlinks and stamping).
+
+## Actions that can't be cached
+
+A runner runs whatever command the action names, so it can run work that is
+not hermetic or deterministic: one that reads the clock, the network, or a
+random number. The Remote Execution API marks such an action with
+`Action.do_not_cache`, and `cas` honors it in three ways. `Execute` skips the
+action cache lookup, so every call runs the action. Two calls for the same
+action at once run it twice and don't share a job. A finished run's result is
+never stored, so a later call can't be served a stale one. The result still
+goes back to the caller, and its outputs are in the CAS.
+
+Stock Bazel sends the flag for a target tagged `no-cache`, and still runs it
+remotely (the `local` tag is what keeps an action on the host):
+
+```python
+genrule(
+    name = "clock",
+    outs = ["clock.txt"],
+    cmd = "date -u > $@",
+    tags = ["no-cache"],
+)
+```
+
+Each `bazel clean` and rebuild of that target runs on a runner again, while
+an untagged target next to it is an action cache hit. `e2e/run-bazel.sh`
+checks this (step 6).
+
+Without Bazel, send the call yourself. [`cmd/rbe-run`](cmd/rbe-run) uploads a
+bash script as an action with `do_not_cache` set, runs it a few times, and
+prints each run's stdout, whether the answer came from the action cache, and
+the runner that ran it:
+
+```bash
+kubectl -n ci-substrate port-forward svc/cas 18980:8980 &
+go run ./cmd/rbe-run -addr 127.0.0.1:18980 -script 'date -u +%H:%M:%S'
+go run ./cmd/rbe-run -addr 127.0.0.1:18980 -script 'date -u +%H:%M:%S' -cacheable
+```
+
+The first command prints a new time on each run, with `cachedResult=false`.
+With `-cacheable`, the first run executes and the rest return its time from
+the action cache.
+
+Two limits stay. The runner's sandbox is the exec root and a process, not a
+network or clock isolation boundary, so a non-hermetic action sees whatever
+its runner sees: under Substrate, the actor's egress policy decides which
+hosts it can reach. And a build that depends on a non-hermetic action's
+output gets a different input digest each time, so everything downstream of
+it misses the cache too.
+
+## Deploy with ko
+
+```bash
+export KO_DOCKER_REPO=<your-registry>/ci-substrate
+kubectl apply -f deploy/00-namespace-and-config.yaml
+kubectl apply -f deploy/05-telemetry.yaml   # or deploy/gke/05-telemetry.yaml
+ko apply -f deploy/10-cas.yaml
+ko apply -f deploy/20-cascache.yaml
+ko apply -f deploy/40-runner.yaml
+ko apply -f deploy/30-cictl-job.yaml
+```
+
+`.ko.yaml` gives the runner the `chainguard/bash` base, so actions have
+`bash`, `sh`, and the usual tools: Bazel runs every test through a bash
+wrapper. The other binaries are static.
+
+On an egress-restricted host that cannot reach `cgr.dev`, point ko at the
+docker.io mirror of the same static base:
+
+```bash
+export KO_DEFAULTBASEIMAGE=registry-1.docker.io/chainguard/static:latest
+```
+
+## Observability
+
+Every binary (`cas`, `cascache`, `runner`, `pool`, `casfs-csi`) sends
+OpenTelemetry traces and metrics over OTLP gRPC to `OTEL_EXPORTER_OTLP_ENDPOINT`
+(`internal/telemetry`). Without that variable a binary exports nothing, which
+is how the unit tests run. Both deployments use the same collector Service,
+so the workloads don't change between kind and GKE; only the collector's
+exporters do:
+
+| File | Collector exports to |
+|------|----------------------|
+| `deploy/05-telemetry.yaml` | Traces to an in-memory Jaeger (UI on port 16686), and metrics on a Prometheus endpoint on the collector (port 8889) |
+| `deploy/gke/05-telemetry.yaml` | Traces to Cloud Trace, and metrics to Google Cloud Managed Service for Prometheus, with the cluster and location from the `resourcedetection` processor |
+
+Logs are JSON on stdout in the Cloud Logging format
+(`github.com/chainguard-dev/clog/gcp/init`). A log line written inside a span
+carries its trace: `logging.googleapis.com/trace` when `GOOGLE_CLOUD_PROJECT`
+is set, so Logs Explorer links to Cloud Trace, and `trace_id` and `span_id`
+otherwise.
+
+Each process reports `service.name`, and `service.instance.id` is its pod
+name or, for a runner, its bot ID (the actor name under Substrate). The
+manifests add `k8s.pod.name`, `k8s.node.name`, and `k8s.namespace.name` from
+the downward API. Managed Service for Prometheus keeps one series per
+instance, so two pods without distinct instance IDs would overwrite each
+other's counters.
+
+### One trace per Bazel invocation
+
+Bazel doesn't send W3C trace context, but it does send `RequestMetadata` on
+every call, with its invocation ID, the action's mnemonic and target, and the
+tool version. `cas` and `cascache` derive a trace ID from the invocation ID
+(the first 16 bytes of `sha256("ci-substrate/invocation/" + id)`), so every
+call that one `bazel build` makes, from any host, lands in one trace with no
+change to Bazel. Find a build's trace from its invocation ID:
+
+```bash
+printf '%s' "ci-substrate/invocation/${INVOCATION_ID}" | sha256sum | cut -c1-32
+```
+
+The scheduler carries the trace context and the `RequestMetadata` on the job,
+so the runner's spans join the build's trace, and the runner and `cascache`
+send the build's `RequestMetadata` on to `cas`, tagged with their own tool
+name, so `cas` can tell Bazel's traffic from theirs. A build's trace holds:
+
+| Span | From | What it covers |
+|------|------|----------------|
+| `bazel invocation` | `cas` | The whole build, from its first call to its last, with the counts below as attributes |
+| `build.bazel.remote.execution.v2.*` | `cas`, `cascache` | Each RPC, with `bazel.action_mnemonic`, `bazel.target_id`, `bazel.action_id`, the instance, the blob count and bytes, and action cache hit or miss |
+| `scheduler.queue` | `cas` | Time the action waited for a runner, per attempt |
+| `runner.execute` | `runner` | The action on the runner, with child spans `runner.fetch_action`, `runner.prepare_inputs`, `runner.run`, `runner.upload_outputs`, and `runner.complete` |
+| `cascache.origin_fetch` | `cascache` | A cache miss: fetching and verifying the blob from `cas` |
+
+The runner puts the `runner.execute` span into the action process as
+`TRACEPARENT` and `TRACESTATE`. A program the action runs that reads those
+W3C environment variables parents its spans on that span, in the build's
+trace. The runner adds them when it starts the command, not in the Command,
+so the action digest stays the same. A Command that sets `TRACEPARENT` keeps
+that value.
+
+`pool.reconcile` and its `pool.create`, `pool.resume`, `pool.suspend`, and
+`pool.delete` children trace the pool's changes to actors. Health checks and
+the runners' `Lease`, `Heartbeat`, and the pool's `Status` polls aren't
+traced; they are long polls or heartbeats with nothing to show.
+
+When an invocation has made no call for `INVOCATION_IDLE` (one minute by
+default), `cas` ends it: it emits the `bazel invocation` span, the
+`bazel.invocation.*` metrics, and an `invocation finished` log line with the
+counts. These include action cache hits and misses, executions that were
+cached, merged into an identical in-flight action, or run, blobs and bytes
+uploaded and downloaded, bytes the runners uploaded, and bytes `cascache`
+filled from `cas`. The cache hit ratio is the share of the build's actions
+that were served without running. A build that pauses for longer than
+`INVOCATION_IDLE` gets a second `bazel invocation` span in the same trace.
+
+### Metrics
+
+Units follow OpenTelemetry: `s` for durations and `By` for bytes.
+Prometheus names replace dots with underscores and add a unit suffix, so
+`cas.blob.bytes` is `cas_blob_bytes_total`. `remote_instance` is the REAPI
+instance, which is the tenant (Prometheus keeps `instance` for the pod that
+reported the series), and `peer` is who made a call to `cas`:
+`bazel`, `runner`, `cascache`, `other`, or `unknown`.
+
+| Metric | Attributes | What it answers |
+|--------|------------|-----------------|
+| `cas.blob.bytes`, `cas.blob.count`, `cas.blob.size` | `remote_instance`, `direction` (read or write), `api` (batch or bytestream), `peer` | Bytes leaving and entering `cas`, by who moved them. Reads by `bazel` are the bytes that leave the cluster |
+| `cas.find_missing.digests` | `remote_instance`, `result` (present or missing) | How much of each upload `cas` already held |
+| `cas.action_cache.requests` | `remote_instance`, `op`, `result` | Action cache hit rate |
+| `scheduler.executions` | `remote_instance`, `result` (cached, merged, queued) | How often `Execute` ran nothing |
+| `scheduler.jobs.completed` | `remote_instance`, `outcome` | Failed actions and expired leases |
+| `scheduler.queue.duration`, `scheduler.execution.duration` | `remote_instance` | Time waiting for a runner, and time on one |
+| `scheduler.lease.expirations` | `remote_instance` | Runners that died mid-action |
+| `scheduler.jobs`, `scheduler.runners.waiting`, `scheduler.runners.busy` | `remote_instance`, `stage` | Queue depth and runner utilization now |
+| `cascache.requests` | `remote_instance`, `result` (hit, miss, merged, error) | Node-local cache hit rate |
+| `cascache.bytes` | `remote_instance`, `source` (local or origin) | Bytes served from the node, and bytes pulled across the cluster to fill it |
+| `cascache.origin.fetch.duration`, `cascache.poisoned` | `remote_instance` (fetch duration only) | Miss latency, and blobs that failed verification |
+| `runner.actions`, `runner.action.duration`, `runner.stage.duration` | `outcome`, `stage`, `mnemonic`, `input_mode` | Where an action's time goes on the runner |
+| `runner.busy.time` | | Runner utilization over time, which sizes the fleet |
+| `runner.input.bytes`, `runner.upload.bytes` | `input_mode`, `result` (sent or deduplicated) | Bytes each action pulled and pushed |
+| `casfs.hydrations`, `casfs.hydrated.bytes`, `casfs.hydrate.duration` | `outcome` | Lazy input fetches and the time actions wait on them |
+| `casfs.exec_roots`, `casfs.tree_load.duration`, `csi.volumes.published` | | Inputs volumes on a node |
+| `pool.operations`, `pool.operation.duration`, `pool.reconcile.duration` | `op`, `outcome` | Substrate's latency to create, resume, suspend, and delete actors |
+| `pool.actors`, `pool.queued`, `pool.actors.busy` | `state` | Actors by state against the queue they serve |
+| `bazel.invocations`, `bazel.invocation.duration`, `bazel.invocation.cache_hit_ratio`, `bazel.invocation.bytes`, `bazel.invocation.actions`, `bazel.invocations.active` | `tool`, `direction` | Per-build totals, as distributions across builds |
+| `disk.usage`, `disk.capacity` | `dir` | `cas`'s and `cascache`'s volumes filling up |
+| `rpc.server.call.duration`, `rpc.client.call.duration` | `rpc.method`, `rpc.response.status_code` | Every RPC's latency and status, from `otelgrpc` |
+| `go.memory.*`, `go.goroutine.count`, `go.schedule.duration` | | Go runtime |
+
+### Viewing on kind
+
+`e2e/run-kind.sh` installs `deploy/05-telemetry.yaml`, and
+[`e2e/run-telemetry.sh`](e2e/run-telemetry.sh) builds with Bazel and fails
+unless the build's trace in Jaeger has spans from `cas`, `runner`, and
+`cascache` under its `bazel invocation` span, the collector's Prometheus
+endpoint has the build's metrics, and `cas` logged the build's summary. To
+look yourself:
+
+```bash
+kubectl -n ci-substrate port-forward svc/jaeger 16686 &        # http://localhost:16686
+kubectl -n ci-substrate port-forward svc/otel-collector 8889 & # http://localhost:8889/metrics
+```
+
+### GKE
+
+Replace `PROJECT_ID` in `deploy/gke/05-telemetry.yaml` and apply it in place
+of `deploy/05-telemetry.yaml`. The collector writes as its Kubernetes
+ServiceAccount through
+[Workload Identity Federation for GKE](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity),
+so grant that principal the two roles it needs:
+
+```bash
+PROJECT_NUMBER="$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)')"
+MEMBER="principal://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${PROJECT_ID}.svc.id.goog/subject/ns/ci-substrate/sa/otel-collector"
+for role in roles/cloudtrace.agent roles/monitoring.metricWriter; do
+  gcloud projects add-iam-policy-binding "${PROJECT_ID}" --member="${MEMBER}" --role="${role}"
+done
+```
+
+GKE ships the pods' stdout to Cloud Logging itself. The metrics are in Cloud
+Monitoring as `prometheus.googleapis.com/<name>/<kind>`, queryable with
+PromQL. For example, a tenant's action cache hit rate:
+
+```promql
+sum by (remote_instance) (rate(cas_action_cache_requests_total{op="get",result="hit"}[5m]))
+  / sum by (remote_instance) (rate(cas_action_cache_requests_total{op="get"}[5m]))
+```
+
+Every span is kept. Cloud Trace bills by span ingested, and a large build
+makes several spans per action, so a busy install would add the
+`probabilistic_sampler` processor to the traces pipeline. Because the trace
+ID is a function of the invocation ID, sampling by trace ID keeps or drops
+whole builds.
+
+## Substrate overlay
+
+When Agent Substrate is installed in the cluster, apply the files under
+`deploy/substrate/` to run the `runner` inside gVisor actors that read their
+inputs from a `casfs-csi` volume on their own node, whose egress policy
+reaches only the `cas` Service, with the tenant token injected by the egress
+gateway, and the `pool` that sizes them to the queue:
+
+```bash
+export KO_DOCKER_REPO=<a registry pods can pull from>/ci-substrate
+bash e2e/run-substrate.sh
+```
+
+The script creates the atespace, token Secret, credential grant,
+`WorkerPool`, the `casfs-csi` driver and `tenant-a`'s `StorageClass`, the
+`ActorTemplate`, and the pool for `tenant-a`, turns on the `ExternalVolumes`
+preview gate in `ate-api-server`, scales the runner Deployment to zero so
+actors do the work, then runs `cictl` and checks that the worker that ran
+the action is a `ci-runner-N` actor and that it reported input mode
+`volume`. On the test cluster the pool created one actor at start, an
+`Execute` against the empty queue ran 40 ms after the actor was up with its
+inputs from the volume, the pool suspended the actor after two idle minutes
+(a gVisor checkpoint with the volume bound in), and the next `Execute`
+resumed it from its snapshot, had the driver publish a fresh volume, and
+ran in 1.3 s end to end.
+
+The default kind e2e does not install Substrate. Building Substrate's envoy
+dataplane from source needs open Debian apt egress; use Substrate's published
+images or a machine with unrestricted egress for that install. See
+`deploy/substrate/README.md` for what the cluster needs.

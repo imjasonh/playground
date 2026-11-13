@@ -1,0 +1,24 @@
+# Warm gVisor workers for CI runners. Substrate's controller turns this into a
+# Deployment of ateworker pods; each pod hosts actors whose template selects
+# the pool by its labels (workload: ci-runner). Replace the image with the
+# ateworker-gvisor image of your Substrate install.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ci-substrate-workers
+---
+apiVersion: ate.dev/v1
+kind: WorkerPool
+metadata:
+  name: ci-runner
+  namespace: ci-substrate-workers
+  labels:
+    workload: ci-runner
+spec:
+  replicas: 1
+  workerImage: ghcr.io/agent-substrate/substrate/ateworker-gvisor:v1.0.0
+  sandboxClasses:
+    - name: gvisor
+  template:
+    resources:
+      limits: {cpu: "2", memory: 4Gi}
