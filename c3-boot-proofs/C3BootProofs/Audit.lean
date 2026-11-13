@@ -37,6 +37,8 @@ import C3BootProofs.Proofs.AsProjective
 import C3BootProofs.Proofs.AsExtended
 import C3BootProofs.Proofs.P384Neg
 import C3BootProofs.Proofs.DerOid
+import C3BootProofs.Proofs.DerNested
+import C3BootProofs.Proofs.SliceEq
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.RegionMem
 import C3BootProofs.Proofs.ImageHelpers
@@ -2677,6 +2679,110 @@ theorem exists_derOid_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `Der::nested`, `Der::sequence`, slice
+comparison, and DER reader functions where the image loads them, a reader at
+`0x3FCC6000` whose unread bytes start at `0x3FCC7000` and number zero, and
+zeros elsewhere. -/
+def witnessMemDer2 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.derTlvAddress, Image.derTlvCode),
+    (Image.derElementAddress, Image.derElementCode),
+    (Image.derNestedAddress, Image.derNestedCode),
+    (Image.derSequenceAddress, Image.derSequenceCode),
+    (Image.equalSameLengthAddress, Image.equalSameLengthCode),
+    (Image.sliceEqAddress, Image.sliceEqCode),
+    (Image.memcmpAddress, Image.memcmpCode),
+    (0x3FCC6008, [0x00, 0x70, 0xCC, 0x3F])]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Der::nested` for tag 0x30 with the result at
+`0x3FCC5000`, the reader at `0x3FCC6000`, and the stack at `0x3FCC8000`
+meets `derNested_correct`'s hypotheses. -/
+theorem exists_derNested_machine :
+    ∃ (m : RV32.Machine) (P sp0 out d retAddr : RV32.Word) (tag : Nat), RV32.NestEnv m.mem P sp0 out d ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = d ∧
+      RV32.reg m RV32.a2 = BitVec.ofNat 32 tag ∧ tag < 256 ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0x30, BitVec.ofNat 32 Image.derNestedAddress, witnessMemDer2⟩,
+    BitVec.ofNat 32 Image.derNestedAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, 0x30,
+    ⟨by decide, ?_, ?_, ?_, by decide, by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+      ?_⟩, rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Der::sequence` with the result at `0x3FCC5000`,
+the reader at `0x3FCC6000`, and the stack at `0x3FCC8000` meets
+`derSequence_correct`'s hypotheses. -/
+theorem exists_derSequence_machine :
+    ∃ (m : RV32.Machine) (Q sp0 out d retAddr : RV32.Word), Q.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem Q Image.derSequenceCode ∧ RV32.NestEnv m.mem (Q + 0x278) sp0 out d ∧ m.pc = Q ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = d ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.derSequenceAddress, witnessMemDer2⟩,
+    BitVec.ofNat 32 Image.derSequenceAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, by decide, ?_,
+    ⟨by decide, ?_, ?_, ?_, by decide, by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+      ?_⟩, rfl, rfl, rfl, rfl, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `equal_same_length` on two empty slices, with the
+stack at `0x3FCC8000`, meets `equalSameLength_correct`'s hypotheses. -/
+theorem exists_equalSameLength_machine :
+    ∃ (m : RV32.Machine) (base retAddr p q : RV32.Word) (n : Nat), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.equalSameLengthCode ∧ RV32.CodeIn m.mem (base + 0xC912) Image.memcmpCode ∧
+      m.pc = base ∧ RV32.reg m RV32.a0 = p ∧ RV32.reg m RV32.a1 = q ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
+      n < 2 ^ 32 ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 base Image.equalSameLengthCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xC912) Image.memcmpCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 p n ∧ RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 q n := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.equalSameLengthAddress,
+    witnessMemDer2⟩, BitVec.ofNat 32 Image.equalSameLengthAddress, 0, 0x3FCC5000, 0x3FCC6000, 0, by decide, ?_, ?_,
+    rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide, ?_, ?_, ?_, ?_⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that compares two empty slices with `<[u8] as PartialEq>::eq`,
+with the stack at `0x3FCC8000`, meets `sliceEq_correct`'s hypotheses. -/
+theorem exists_sliceEq_machine :
+    ∃ (m : RV32.Machine) (base retAddr p q : RV32.Word) (pl ql : Nat), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.sliceEqCode ∧ RV32.CodeIn m.mem (base + 0xFFFFF776) Image.equalSameLengthCode ∧
+      RV32.CodeIn m.mem (base + 0xC088) Image.memcmpCode ∧ m.pc = base ∧ RV32.reg m RV32.a0 = p ∧
+      RV32.reg m RV32.a1 = BitVec.ofNat 32 pl ∧ RV32.reg m RV32.a2 = q ∧ RV32.reg m RV32.a3 = BitVec.ofNat 32 ql ∧
+      pl < 2 ^ 32 ∧ ql < 2 ^ 32 ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xFFFFF776) Image.equalSameLengthCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xC088) Image.memcmpCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 p pl ∧ RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 q ql := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0 0x3FCC6000, BitVec.ofNat 32 Image.sliceEqAddress, witnessMemDer2⟩,
+    BitVec.ofNat 32 Image.sliceEqAddress, 0, 0x3FCC5000, 0x3FCC6000, 0, 0, by decide, ?_, ?_, ?_, rfl, rfl, rfl, rfl,
+    rfl, by decide, by decide, rfl, by decide, by decide, ?_, ?_, ?_, ?_⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -3275,3 +3381,27 @@ end C3
 
 /-- info: 'C3.exists_derOid_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_derOid_machine
+
+/-- info: 'C3.RV32.derNested_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.derNested_correct
+
+/-- info: 'C3.exists_derNested_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_derNested_machine
+
+/-- info: 'C3.RV32.derSequence_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.derSequence_correct
+
+/-- info: 'C3.exists_derSequence_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_derSequence_machine
+
+/-- info: 'C3.RV32.equalSameLength_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.equalSameLength_correct
+
+/-- info: 'C3.exists_equalSameLength_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_equalSameLength_machine
+
+/-- info: 'C3.RV32.sliceEq_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.sliceEq_correct
+
+/-- info: 'C3.exists_sliceEq_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_sliceEq_machine

@@ -102,6 +102,8 @@ import C3BootProofs.Proofs.AsProjective
 import C3BootProofs.Proofs.AsExtended
 import C3BootProofs.Proofs.P384Neg
 import C3BootProofs.Proofs.DerOid
+import C3BootProofs.Proofs.DerNested
+import C3BootProofs.Proofs.SliceEq
 import C3BootProofs.Proofs.AbsSign2
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.P384Add

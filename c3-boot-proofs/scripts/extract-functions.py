@@ -110,6 +110,10 @@ FUNCTIONS = [
     ("derTlv", "<c3_verify::der::Der>::tlv"),
     ("derElement", "<c3_verify::der::Der>::element"),
     ("derOid", "<c3_verify::der::Der>::oid"),
+    ("derNested", "<c3_verify::der::Der>::nested"),
+    ("derSequence", "<c3_verify::der::Der>::sequence"),
+    ("equalSameLength", "<u8 as core::slice::cmp::SlicePartialEq<u8>>::equal_same_length"),
+    ("sliceEq", "<[u8] as core::cmp::PartialEq>::eq"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
