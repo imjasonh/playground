@@ -96,6 +96,29 @@ After a pack is saved in IndexedDB, the address bar carries its id in the
 selected object's oid is in the hash (`#…`). Copy the URL to share, or refresh
 to reopen the same pack and selection in this browser.
 
+## Size limits
+
+**Fetching over the network is capped by the CORS proxy.** The public proxy
+(`https://cors.isomorphic-git.org`) relays the `git-upload-pack` response, and
+the playground proxy worker stops relaying at **25 MiB**, returning HTTP 413
+above that. A depth-1 fetch of a busy repository can already exceed it. To stay
+under the cap, lower the depth, fetch fewer refs, or point at a smaller
+repository. For anything larger, download the pack and use **Open .pack** — a
+local pack has no proxy and no size cap.
+
+**Opening a local `.pack` takes one of two paths by size:**
+
+- **Under 256 MiB**: the whole file is read into memory and parsed, the same
+  path as a fetched pack, and saved to IndexedDB so you can reopen it.
+- **256 MiB and larger**: the pack is streamed. The app indexes it by reading
+  windows from the file, keeps only each object's metadata and the
+  commit/tree/tag contents resident, and re-reads a blob's bytes from the file
+  when you open that blob. This path is not saved to IndexedDB (it's too large)
+  and skips the trailer checksum (it doesn't hash the whole file). Resident
+  memory tracks the object count rather than the pack size, so a multi-gigabyte
+  pack with a few million objects stays explorable; the content and hex views
+  for a single object over 64 MiB show its metadata only.
+
 ## Test
 
 ```bash
@@ -107,8 +130,9 @@ upload-pack request body, delta apply/parse, base/result segment mapping, delta
 chains, reachability and tree-path walking, leaderboards, per-author blob
 attribution, pack-trailer verification, two-pack diff, loose-object export,
 image sniffing, synthetic pack round-trips (ofs- and ref-delta), oid
-computation against git's known empty-blob hash, and a live `git repack`
-fixture when `git` is on `PATH`.
+computation against git's known empty-blob hash, the streaming index matching
+the in-memory parser object-for-object, and a live `git repack` fixture when
+`git` is on `PATH`.
 
 ## Notes
 
@@ -117,11 +141,12 @@ fixture when `git` is on `PATH`.
   persisting the resolved object graph.
 - Thin packs (ref-deltas whose base isn't in the pack) show up as unresolved
   entries. A normal shallow fetch from a public host usually isn't thin.
-- Depth defaults to 1. Raise it when you want more history. The pack is held
-  in memory while it is parsed.
-- **Open .pack** is for modest packs (shallow clones, single-pack repos of a
-  few hundred MiB at most). A multi-gigabyte pack will not work: the file is
-  read whole into an `ArrayBuffer`, cloned into a worker, fully inflated and
-  resolved in RAM (every object's content kept), posted back to the main
-  thread, and written into IndexedDB. Any of those steps will OOM or hit
-  browser quota long before a 15–30 GiB pack finishes.
+- Depth defaults to 1. Raise it when you want more history. A fetched pack is
+  held in memory while it is parsed; a large local pack is streamed instead (see
+  [Size limits](#size-limits)).
+- **Open .pack** handles both modest and large packs. A pack under 256 MiB is
+  read whole and parsed in memory, the same path as a fetched pack. A pack of
+  256 MiB or more is streamed: it's indexed by reading windows from the file,
+  only object metadata and commit/tree/tag content stay resident, and a blob's
+  bytes are re-read from the file when you open it, so a multi-gigabyte pack
+  stays explorable. See [Size limits](#size-limits) for what that trades off.
