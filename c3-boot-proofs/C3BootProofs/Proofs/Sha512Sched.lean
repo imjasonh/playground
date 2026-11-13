@@ -512,14 +512,14 @@ structure S5Sch (P F : Word) (w : Nat → Sha512.W64) (Mb : Word → BitVec 8) (
   fr : ∀ x, Sep (F + BitVec.ofNat 32 0x158) 0x200 x 1 → M x = Mb x
   keep : ∀ q, s5SchKeep q = true → reg m q = g q
 
-theorem wslot_sep {F : Word} (hFw : F.toNat + 0x390 ≤ 2 ^ 32) {s s' : Nat} (h : s ≠ s') (hs : s < 80) (hs' : s' < 80)
+theorem wslot_sep {F : Word} (_hFw : F.toNat + 0x390 ≤ 2 ^ 32) {s s' : Nat} (h : s ≠ s') (hs : s < 80) (hs' : s' < 80)
     {a b : Nat} (ha : a ≤ 4) (hb : b ≤ 4) :
     Sep (wslot F s + BitVec.ofNat 32 a) 4 (wslot F s' + BitVec.ofNat 32 b) 4 := by
   unfold wslot
   rw [add_ofNat_assoc, add_ofNat_assoc]
   exact sep_offsets F (by omega) (by omega) (by omega)
 
-theorem wslot_lohi {F : Word} (hFw : F.toNat + 0x390 ≤ 2 ^ 32) {s : Nat} (hs : s < 80) :
+theorem wslot_lohi {F : Word} (_hFw : F.toNat + 0x390 ≤ 2 ^ 32) {s : Nat} (hs : s < 80) :
     Sep (wslot F s) 4 (wslot F s + 4) 4 := by
   unfold wslot
   rw [show (4 : Word) = BitVec.ofNat 32 4 from rfl, add_ofNat_assoc]
