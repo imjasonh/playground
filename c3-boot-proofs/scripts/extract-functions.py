@@ -107,6 +107,9 @@ FUNCTIONS = [
     ("p384Neg", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<"
      "p384::arithmetic::field::FieldParams, 12>>::neg"),
     ("uint12IsNonzero", ("p384Neg", 0x16)),
+    ("derTlv", "<c3_verify::der::Der>::tlv"),
+    ("derElement", "<c3_verify::der::Der>::element"),
+    ("derOid", "<c3_verify::der::Der>::oid"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a

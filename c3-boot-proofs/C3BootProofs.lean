@@ -2,6 +2,7 @@ import C3BootProofs.Spec.Level
 import C3BootProofs.Spec.BootState
 import C3BootProofs.Spec.Boot
 import C3BootProofs.Spec.Formats
+import C3BootProofs.Spec.Der
 import C3BootProofs.Spec.Sha256
 import C3BootProofs.Spec.Sha512
 import C3BootProofs.Spec.Merkle
@@ -100,6 +101,7 @@ import C3BootProofs.Proofs.Leaves
 import C3BootProofs.Proofs.AsProjective
 import C3BootProofs.Proofs.AsExtended
 import C3BootProofs.Proofs.P384Neg
+import C3BootProofs.Proofs.DerOid
 import C3BootProofs.Proofs.AbsSign2
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.P384Add

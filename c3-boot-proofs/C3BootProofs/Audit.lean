@@ -36,6 +36,7 @@ import C3BootProofs.Proofs.Leaves
 import C3BootProofs.Proofs.AsProjective
 import C3BootProofs.Proofs.AsExtended
 import C3BootProofs.Proofs.P384Neg
+import C3BootProofs.Proofs.DerOid
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.RegionMem
 import C3BootProofs.Proofs.ImageHelpers
@@ -2603,6 +2604,79 @@ theorem exists_p384Neg_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's DER reader functions where the image
+loads them, a reader at `0x3FCC6000` whose unread bytes start at
+`0x3FCC7000` and number zero, and zeros elsewhere. -/
+def witnessMemDer : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.derTlvAddress, Image.derTlvCode),
+    (Image.derElementAddress, Image.derElementCode),
+    (Image.derOidAddress, Image.derOidCode),
+    (0x3FCC6008, [0x00, 0x70, 0xCC, 0x3F])]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Der::tlv` with the result at `0x3FCC5000` and the
+reader at `0x3FCC6000` meets `derTlv_correct`'s hypotheses. -/
+theorem exists_derTlv_machine :
+    ∃ (m : RV32.Machine) (base out d retAddr : RV32.Word), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.derTlvCode ∧ m.pc = base ∧ RV32.reg m RV32.a0 = out ∧
+      RV32.reg m RV32.a1 = d ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ out.toNat % 4 = 0 ∧
+      d.toNat % 4 = 0 ∧ RV32.Sep out 17 base Image.derTlvCode.length ∧
+      RV32.Sep (d + 8) 8 base Image.derTlvCode.length := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.derTlvAddress, witnessMemDer⟩,
+    BitVec.ofNat 32 Image.derTlvAddress, 0x3FCC5000, 0x3FCC6000, 0, by decide, ?_, rfl, rfl, rfl, rfl, by decide,
+    by decide, by decide, ?_, ?_⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Der::element` for tag 6 with the result at
+`0x3FCC5000` and the reader at `0x3FCC6000` meets `derElement_correct`'s
+hypotheses. -/
+theorem exists_derElement_machine :
+    ∃ (m : RV32.Machine) (base out d retAddr : RV32.Word) (tag : Nat), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.derElementCode ∧ RV32.CodeIn m.mem (base + 0x26) Image.derTlvCode ∧
+      m.pc = base ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = d ∧
+      RV32.reg m RV32.a2 = BitVec.ofNat 32 tag ∧ tag < 256 ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ out.toNat % 4 = 0 ∧ d.toNat % 4 = 0 ∧
+      RV32.Sep out 17 base Image.derElementCode.length ∧ RV32.Sep out 17 (base + 0x26) Image.derTlvCode.length ∧
+      RV32.Sep (d + 8) 8 (base + 0x26) Image.derTlvCode.length := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 6, BitVec.ofNat 32 Image.derElementAddress, witnessMemDer⟩,
+    BitVec.ofNat 32 Image.derElementAddress, 0x3FCC5000, 0x3FCC6000, 0, 6, by decide, ?_, ?_, rfl, rfl, rfl, rfl,
+    by decide, rfl, by decide, by decide, by decide, ?_, ?_, ?_⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Der::oid` with the result at `0x3FCC5000`, the
+reader at `0x3FCC6000`, and the stack at `0x3FCC8000` meets
+`derOid_correct`'s hypotheses. -/
+theorem exists_derOid_machine :
+    ∃ (m : RV32.Machine) (P sp0 out d retAddr : RV32.Word), RV32.OidEnv m.mem P sp0 out d ∧ m.pc = P ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = d ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.derOidAddress, witnessMemDer⟩,
+    BitVec.ofNat 32 Image.derOidAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0,
+    ⟨by decide, ?_, ?_, ?_, by decide, by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+      ?_, ?_⟩, rfl, rfl, rfl, rfl, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -3183,3 +3257,21 @@ end C3
 
 /-- info: 'C3.exists_p384Neg_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_p384Neg_machine
+
+/-- info: 'C3.RV32.derTlv_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.derTlv_correct
+
+/-- info: 'C3.exists_derTlv_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_derTlv_machine
+
+/-- info: 'C3.RV32.derElement_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.derElement_correct
+
+/-- info: 'C3.exists_derElement_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_derElement_machine
+
+/-- info: 'C3.RV32.derOid_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.derOid_correct
+
+/-- info: 'C3.exists_derOid_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_derOid_machine
