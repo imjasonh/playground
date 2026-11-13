@@ -1,7 +1,8 @@
 // Packfile explorer entry point.
 //
-// Flow: type a repo → fetch refs → pick refs → fetch the pack through the CORS
-// proxy → parse and resolve objects (in a worker when available) → index them
+// Flow: type a repo → list branches → fetch the default branch or every branch
+// through the CORS proxy → parse and resolve objects (in a worker when
+// available) → index them
 // for filtering, profiling, reachability, and path search → persist the raw
 // pack in IndexedDB. Shareable URLs use ?pack=<stored id> and #<object oid> so
 // refresh restores the same pack and selection.
@@ -23,6 +24,12 @@ import { verifyPackTrailer } from "./packTrailer.js";
 import { diffPacks } from "./diffPacks.js";
 import { looseObjectBytes } from "./looseObject.js";
 import { normalizeRepoUrl, DEFAULT_PROXY } from "./proxy.js";
+import { branchFetchChoice } from "./protocol.js";
+import {
+  createServerProgress,
+  describeTransfer,
+  tidyServerProgress,
+} from "./fetchActivity.js";
 import { fetchPack, fetchRefs } from "./transport.js";
 import { deleteRepo, listRepos, loadRepo, saveRepo } from "./store.js";
 import { readUrlState, packShareUrl, writeUrlState } from "./urlState.js";
@@ -34,7 +41,6 @@ import {
   renderOverview,
   renderPackTitle,
   renderPaths,
-  renderRefPicker,
   renderRefs,
   renderSaved,
   setStatus,
@@ -62,17 +68,15 @@ const els = {
   deepen: $("deepen"),
   fetchBtn: $("fetch-btn"),
   packFile: $("pack-file"),
+  statusWrap: $("status-wrap"),
   status: $("status"),
+  statusDetail: $("status-detail"),
+  statusBar: $("status-bar"),
   tray: $("tray"),
-  progress: $("progress"),
-  progressLog: $("progress-log"),
-  progressHide: $("progress-hide"),
   refpicker: $("refpicker"),
-  refpickerList: $("refpicker-list"),
   pickerDepth: $("picker-depth"),
-  pickerAll: $("picker-all"),
-  pickerNone: $("picker-none"),
-  pickerFetch: $("picker-fetch"),
+  pickerDefault: $("picker-default"),
+  pickerBranches: $("picker-branches"),
   landing: $("landing"),
   saved: $("saved"),
   savedList: $("saved-list"),
@@ -171,16 +175,98 @@ async function parseAndResolve(pack, onPhase) {
     }
   }
   const parsed = parsePack(pack, inflate);
-  const resolved = await resolveObjects(parsed, computeOid);
+  onPhase?.({ phase: "parsed", count: parsed.count });
+  let lastNote = 0;
+  const resolved = await resolveObjects(parsed, computeOid, {
+    onProgress: (p) => {
+      const now = performance.now();
+      if (p.done !== p.total && now - lastNote < 150) return;
+      lastNote = now;
+      onPhase?.({ phase: "resolve", done: p.done, total: p.total });
+    },
+  });
   return { parsed, resolved };
 }
 
 function reportError(err) {
   console.error(err);
-  setStatus(els.status, err.message || String(err), { error: true });
+  showIdle(err.message || String(err), { error: true });
 }
 
-// --- Fetch: refs then a ref-picked pack ----------------------------------
+// The in-flight download. Null whenever the status line is not tracking bytes.
+let transfer = null;
+
+function showIdle(text, { error = false } = {}) {
+  transfer = null;
+  setStatus(els.status, text, { error });
+  els.statusWrap.classList.toggle("error", Boolean(error));
+  els.statusWrap.hidden = !text;
+  els.statusDetail.textContent = "";
+  els.statusBar.hidden = true;
+}
+
+function showBusy(text, { detail = "", done = null, total = null, indeterminate = false } = {}) {
+  setStatus(els.status, text);
+  els.statusWrap.classList.remove("error");
+  els.statusWrap.hidden = !text;
+  els.statusDetail.textContent = detail;
+  const bar = els.statusBar;
+  if (total != null && done != null) {
+    bar.hidden = false;
+    bar.max = total;
+    bar.value = done;
+  } else if (indeterminate) {
+    bar.hidden = false;
+    bar.removeAttribute("value");
+  } else {
+    bar.hidden = true;
+  }
+}
+
+function startTransfer(scope) {
+  transfer = {
+    started: performance.now(),
+    bytes: 0,
+    totalBytes: null,
+    server: null,
+    scope,
+    progress: createServerProgress(),
+    queued: false,
+  };
+  showBusy(`Fetching ${scope}.`, { indeterminate: true });
+}
+
+function noteServer(text) {
+  if (!transfer) return;
+  transfer.server = transfer.progress.push(text);
+  scheduleTransferPaint();
+}
+
+function noteBytes({ received, total }) {
+  if (!transfer) return;
+  transfer.bytes = received;
+  transfer.totalBytes = total;
+  scheduleTransferPaint();
+}
+
+function scheduleTransferPaint() {
+  if (!transfer || transfer.queued) return;
+  transfer.queued = true;
+  requestAnimationFrame(() => {
+    if (!transfer) return;
+    transfer.queued = false;
+    const view = describeTransfer({
+      server: transfer.server,
+      bytes: transfer.bytes,
+      totalBytes: transfer.totalBytes,
+      elapsedMs: performance.now() - transfer.started,
+      scope: transfer.scope,
+    });
+    showBusy(view.text, view);
+  });
+}
+
+// --- Fetch: refs, then the default branch or every branch ---------------
 
 els.form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -188,21 +274,25 @@ els.form.addEventListener("submit", async (event) => {
   try {
     base = normalizeRepoUrl(els.repo.value);
   } catch (err) {
-    setStatus(els.status, err.message, { error: true });
+    showIdle(err.message, { error: true });
     return;
   }
   els.fetchBtn.disabled = true;
+  showBusy("Listing branches.", { indeterminate: true });
   try {
-    setStatus(els.status, `Fetching refs for ${base}…`);
     const refs = await fetchRefs(DEFAULT_PROXY, base);
-    pendingRefs = { base, refs: refs.refs, head: refs.head };
+    const choice = branchFetchChoice(refs.refs, { head: refs.head, headName: refs.headName });
+    pendingRefs = { base, refs: refs.refs, head: refs.head, choice };
     els.pickerDepth.value = els.deepen.value || "1";
-    renderRefPicker(els.refpickerList, refs.refs, refs.head);
-    els.refpicker.hidden = false;
+    els.pickerDefault.disabled = choice.defaultWants.length === 0;
+    els.pickerBranches.hidden = choice.branchCount === 0;
+    els.pickerBranches.textContent =
+      `All ${choice.branchCount.toLocaleString()} branch${choice.branchCount === 1 ? "" : "es"}`;
+    const nothing = choice.defaultWants.length === 0 && choice.allWants.length === 0;
+    els.refpicker.hidden = nothing;
     updateTray();
-    const branchCount = refs.refs.filter((r) => r.name !== "HEAD").length;
-    setStatus(els.status, `${branchCount} ref${branchCount === 1 ? "" : "s"} in ${base}. HEAD is selected.`);
-    els.pickerFetch.focus();
+    showIdle(branchChoiceStatus(choice), { error: nothing });
+    if (!nothing) (choice.defaultWants.length ? els.pickerDefault : els.pickerBranches).focus();
   } catch (err) {
     reportError(err);
   } finally {
@@ -210,58 +300,67 @@ els.form.addEventListener("submit", async (event) => {
   }
 });
 
-els.pickerAll.addEventListener("click", () => setAllPicks(true));
-els.pickerNone.addEventListener("click", () => setAllPicks(false));
-function setAllPicks(checked) {
-  els.refpickerList.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-    cb.checked = checked;
-  });
+function branchChoiceStatus(choice) {
+  const n = choice.branchCount;
+  const branches = `${n.toLocaleString()} branch${n === 1 ? "" : "es"}`;
+  if (choice.defaultWants.length === 0) return "This repository has no branches to fetch.";
+  if (choice.defaultName) return `${branches}. Default is ${choice.defaultName}.`;
+  if (n === 0) return "No branches advertised. HEAD can still be fetched.";
+  return `${branches}. No named default branch.`;
 }
 
-els.pickerFetch.addEventListener("click", async () => {
+els.pickerDefault.addEventListener("click", () => fetchChoice("default"));
+els.pickerBranches.addEventListener("click", () => fetchChoice("branches"));
+
+async function fetchChoice(which) {
   if (!pendingRefs) return;
-  const wants = [...els.refpickerList.querySelectorAll('input[type="checkbox"]:checked')].map(
-    (cb) => cb.value,
-  );
+  const { choice } = pendingRefs;
+  const wants = which === "branches" ? choice.allWants : choice.defaultWants;
   if (wants.length === 0) {
-    setStatus(els.status, "Select at least one ref to fetch.", { error: true });
+    showIdle("This repository has no branches to fetch.", { error: true });
     return;
   }
-  const uniqueWants = [...new Set(wants)];
   const deepen = Math.max(1, Math.min(50, Number(els.pickerDepth.value) || 1));
-  els.pickerFetch.disabled = true;
-  resetProgress();
+  const scope = which === "branches"
+    ? `all ${choice.branchCount.toLocaleString()} branch${choice.branchCount === 1 ? "" : "es"}`
+    : choice.defaultName
+      ? `the default branch (${choice.defaultName})`
+      : "the default branch";
+  els.pickerDefault.disabled = true;
+  els.pickerBranches.disabled = true;
+  startTransfer(`${scope} at depth ${deepen}`);
   try {
-    setStatus(
-      els.status,
-      `Fetching pack (depth ${deepen}, ${uniqueWants.length} want${uniqueWants.length === 1 ? "" : "s"})…`,
-    );
     const { pack, progress } = await fetchPack(DEFAULT_PROXY, pendingRefs.base, {
-      wants: uniqueWants,
+      wants,
       deepen,
-      onProgress: appendProgress,
+      onProgress: noteServer,
+      onBytes: noteBytes,
     });
+    transfer = null;
     const record = {
       base: pendingRefs.base,
       refs: pendingRefs.refs,
       head: pendingRefs.head,
-      wants: uniqueWants,
+      wants,
       pack,
-      progress,
+      progress: tidyServerProgress(progress),
     };
     await openPack(record);
     els.refpicker.hidden = true;
-    els.progress.hidden = true;
     updateTray();
+    showBusy(`Saving pack, ${formatBytes(pack.length)}.`, { indeterminate: true });
     await saveRepo(record);
     await refreshSavedCount();
-    setStatus(els.status, `Loaded ${session.objects.length.toLocaleString()} objects from ${record.base}.`);
+    showIdle(`Loaded ${session.objects.length.toLocaleString()} objects from ${record.base}.`);
   } catch (err) {
     reportError(err);
   } finally {
-    els.pickerFetch.disabled = false;
+    if (pendingRefs) {
+      els.pickerDefault.disabled = pendingRefs.choice.defaultWants.length === 0;
+      els.pickerBranches.disabled = false;
+    }
   }
-});
+}
 
 els.packFile.addEventListener("change", async (event) => {
   const file = event.target.files && event.target.files[0];
@@ -272,56 +371,46 @@ els.packFile.addEventListener("change", async (event) => {
     updateTray();
     if (file.size >= LARGE_PACK_BYTES) {
       await openLargePack(file);
-      setStatus(
-        els.status,
+      showIdle(
         `Loaded ${session.objects.length.toLocaleString()} objects from ${file.name} ` +
           `(${formatBytes(file.size)}, streamed from disk, not saved).`,
       );
       return;
     }
-    setStatus(els.status, `Reading ${file.name}…`);
+    showBusy(`Reading ${file.name}.`, { indeterminate: true });
     const pack = new Uint8Array(await file.arrayBuffer());
     const record = { base: `file://${file.name}`, refs: [], head: null, wants: [], pack, progress: "" };
     await openPack(record);
+    showBusy(`Saving pack, ${formatBytes(pack.length)}.`, { indeterminate: true });
     await saveRepo(record);
     await refreshSavedCount();
-    setStatus(els.status, `Loaded ${session.objects.length.toLocaleString()} objects from ${file.name}.`);
+    showIdle(`Loaded ${session.objects.length.toLocaleString()} objects from ${file.name}.`);
   } catch (err) {
     reportError(err);
   }
 });
 
-// --- Tray: ref picker and server progress --------------------------------
-
 function updateTray() {
-  els.tray.hidden = els.refpicker.hidden && els.progress.hidden;
+  els.tray.hidden = els.refpicker.hidden;
 }
 
-function resetProgress() {
-  els.progressLog.textContent = "";
-  els.progress.hidden = false;
-  updateTray();
+function onParsePhase(p) {
+  if (p.phase === "resolve") {
+    showBusy(`Resolving objects, ${p.done.toLocaleString()} of ${p.total.toLocaleString()}.`, {
+      done: p.done,
+      total: p.total,
+    });
+  } else if (p.phase === "parsed") {
+    showBusy(`Resolving ${p.count.toLocaleString()} objects.`, { indeterminate: true });
+  }
 }
-
-function appendProgress(text) {
-  els.progress.hidden = false;
-  updateTray();
-  els.progressLog.textContent += text;
-  els.progressLog.scrollTop = els.progressLog.scrollHeight;
-}
-
-els.progressHide.addEventListener("click", () => {
-  els.progress.hidden = true;
-  updateTray();
-});
 
 // --- Open a pack ----------------------------------------------------------
 
 async function openPack(record, { objectId = null } = {}) {
-  setStatus(els.status, `Parsing ${formatBytes(record.pack.length)} of pack data…`);
-  const { parsed, resolved } = await parseAndResolve(record.pack, (p) =>
-    setStatus(els.status, `Resolving ${p.count.toLocaleString()} objects…`),
-  );
+  transfer = null;
+  showBusy(`Parsing pack, ${formatBytes(record.pack.length)}.`, { indeterminate: true });
+  const { parsed, resolved } = await parseAndResolve(record.pack, onParsePhase);
 
   const roots = defaultRoots({ head: record.head, refs: record.refs });
   const reachable =
@@ -395,12 +484,12 @@ async function indexLargePack(file, onPhase) {
 }
 
 async function openLargePack(file) {
-  setStatus(els.status, `Indexing ${file.name} (${formatBytes(file.size)})…`);
+  showBusy(`Indexing ${file.name}, ${formatBytes(file.size)}.`, { indeterminate: true });
   const index = await indexLargePack(file, (p) => {
     if (p.phase === "index" && p.count) {
-      setStatus(
-        els.status,
-        `Indexing ${file.name}: ${p.done.toLocaleString()} of ${p.count.toLocaleString()} objects…`,
+      showBusy(
+        `Indexing ${file.name}, ${p.done.toLocaleString()} of ${p.count.toLocaleString()} objects.`,
+        { done: p.done, total: p.count },
       );
     }
   });
@@ -643,7 +732,7 @@ async function go(oid) {
   if (!session) return;
   const obj = session.byOid.get(oid);
   if (!obj) {
-    setStatus(els.status, `Object ${oid.slice(0, 8)} is not in this pack.`, { error: true });
+    showIdle(`Object ${oid.slice(0, 8)} is not in this pack.`, { error: true });
     return;
   }
   if (hist[histPos] !== oid) {
@@ -696,7 +785,7 @@ els.jumpForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const oid = els.jumpOid.value.trim().toLowerCase();
   if (!/^[0-9a-f]{40}$/.test(oid)) {
-    setStatus(els.status, "Enter a full 40-character oid.", { error: true });
+    showIdle("Enter a full 40-character oid.", { error: true });
     return;
   }
   go(oid);
@@ -712,9 +801,9 @@ els.copyLink.addEventListener("click", () => {
 async function copyText(text, done) {
   try {
     await navigator.clipboard.writeText(text);
-    setStatus(els.status, done);
+    showIdle(done);
   } catch {
-    setStatus(els.status, text);
+    showIdle(text);
   }
 }
 
@@ -819,7 +908,7 @@ async function startCompare() {
   const rows = await listRepos();
   const choices = rows.filter((r) => r.key !== session.packId);
   if (choices.length === 0) {
-    setStatus(els.status, "No other saved packs to compare against.", { error: true });
+    showIdle("No other saved packs to compare against.", { error: true });
     return;
   }
   overviewState.compare = { choices };
@@ -828,16 +917,17 @@ async function startCompare() {
 
 async function compareWith(key) {
   try {
-    setStatus(els.status, "Loading pack to compare…");
+    showBusy("Loading pack to compare.", { indeterminate: true });
     const record = await loadRepo(key);
     if (!record) throw new Error("saved pack not found");
-    const { resolved } = await parseAndResolve(record.pack);
+    showBusy(`Parsing pack, ${formatBytes(record.pack.length)}.`, { indeterminate: true });
+    const { resolved } = await parseAndResolve(record.pack, onParsePhase);
     overviewState.compare = {
       diff: diffPacks(session.objects, resolved.objects),
       meta: { aName: session.base, bName: record.base },
     };
     renderOverviewView();
-    setStatus(els.status, `Compared with ${record.base}.`);
+    showIdle(`Compared with ${record.base}.`);
   } catch (err) {
     reportError(err);
   }
@@ -858,9 +948,9 @@ async function refreshSavedCount() {
 
 async function openSaved(key) {
   try {
-    setStatus(els.status, "Loading saved pack…");
+    showBusy("Loading saved pack.", { indeterminate: true });
     await openSavedPack(key);
-    setStatus(els.status, `Opened ${session.base}.`);
+    showIdle(`Opened ${session.base}.`);
   } catch (err) {
     reportError(err);
   }
@@ -892,9 +982,9 @@ async function restoreFromUrl() {
     return;
   }
   try {
-    setStatus(els.status, "Restoring pack from link…");
+    showBusy("Restoring pack from link.", { indeterminate: true });
     await openSavedPack(packId, { objectId });
-    setStatus(els.status, `Restored ${session.objects.length.toLocaleString()} objects from ${session.base}.`);
+    showIdle(`Restored ${session.objects.length.toLocaleString()} objects from ${session.base}.`);
   } catch (err) {
     reportError(err);
     await refreshSaved();

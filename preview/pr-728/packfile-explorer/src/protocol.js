@@ -7,13 +7,16 @@
 import { concatBytes, decodeUtf8 } from "./hex.js";
 import { decodePktLines, encodePktLine, flushPkt } from "./pktline.js";
 
-/** Client capabilities requested on the first `want` line. */
+/** Client capabilities requested on the first `want` line.
+ *
+ * `no-progress` is left off so the server streams its enumerating, counting,
+ * and compressing lines while it builds the pack.
+ */
 export const CLIENT_CAPABILITIES = [
   "multi_ack_detailed",
   "side-band-64k",
   "ofs-delta",
   "thin-pack",
-  "no-progress",
   "agent=packfile-explorer",
 ];
 
@@ -22,8 +25,9 @@ const OID_RE = /^[0-9a-f]{40}$/;
 /**
  * Parse an info/refs advertisement (`service=git-upload-pack`).
  *
- * Returns `{ refs: [{ oid, name }], capabilities: [string], head }`. `head` is
- * the oid the symref `HEAD` points at, when advertised.
+ * Returns `{ refs, capabilities, head, headName, sawService }`. `head` is the
+ * oid `HEAD` points at, and `headName` is that branch (`refs/heads/name`), when
+ * the advertisement says so.
  */
 export function parseInfoRefs(bytes) {
   const lines = decodePktLines(bytes);
@@ -31,6 +35,7 @@ export function parseInfoRefs(bytes) {
   let capabilities = [];
   let sawService = false;
   let head = null;
+  let headName = null;
 
   for (const line of lines) {
     if (line.kind !== "data") continue;
@@ -56,8 +61,8 @@ export function parseInfoRefs(bytes) {
 
   for (const cap of capabilities) {
     if (cap.startsWith("symref=HEAD:")) {
-      const target = cap.slice("symref=HEAD:".length);
-      const match = refs.find((r) => r.name === target);
+      headName = cap.slice("symref=HEAD:".length);
+      const match = refs.find((r) => r.name === headName);
       if (match) head = match.oid;
     }
   }
@@ -66,7 +71,40 @@ export function parseInfoRefs(bytes) {
     if (headRef) head = headRef.oid;
   }
 
-  return { refs, capabilities, head, sawService };
+  return { refs, capabilities, head, headName, sawService };
+}
+
+/**
+ * The two fetch choices for an advertised ref list: the default branch, or
+ * every branch. Tags are left out. Wants are unique oids, default branch first.
+ */
+export function branchFetchChoice(refs, { head = null, headName = null } = {}) {
+  const branches = refs
+    .filter((r) => r.name.startsWith("refs/heads/"))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const named = headName ? branches.find((r) => r.name === headName) : null;
+  const sameOid = !named && head ? branches.find((r) => r.oid === head) : null;
+  const def = named || sameOid || null;
+  const defaultOid = def ? def.oid : head;
+
+  const seen = new Set();
+  const allWants = [];
+  if (defaultOid) {
+    seen.add(defaultOid);
+    allWants.push(defaultOid);
+  }
+  for (const branch of branches) {
+    if (seen.has(branch.oid)) continue;
+    seen.add(branch.oid);
+    allWants.push(branch.oid);
+  }
+
+  return {
+    branchCount: branches.length,
+    defaultName: def ? def.name.slice("refs/heads/".length) : null,
+    defaultWants: defaultOid ? [defaultOid] : [],
+    allWants,
+  };
 }
 
 /**

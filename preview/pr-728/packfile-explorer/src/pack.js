@@ -127,11 +127,12 @@ export function parsePack(bytes, inflate) {
  * Resolve every delta entry against its base to produce final git objects.
  *
  * `computeOid(typeName, data)` returns the object's 40-char SHA-1 (async is
- * allowed). Returns `{ objects, byOid, byOffset, contentByOid, unresolved }`.
+ * allowed). `onProgress({ done, total })` fires as objects settle.
+ * Returns `{ objects, byOid, byOffset, contentByOid, unresolved }`.
  * Each resolved object has `{ oid, type, typeName, size, offset, packedSize,
  * deltaType, baseOid, depth, index }`; content bytes live in `contentByOid`.
  */
-export async function resolveObjects(parsed, computeOid) {
+export async function resolveObjects(parsed, computeOid, { onProgress = null } = {}) {
   const byOffset = new Map();
   for (const raw of parsed.objects) byOffset.set(raw.offset, raw);
 
@@ -207,6 +208,14 @@ export async function resolveObjects(parsed, computeOid) {
   // We iterate until no further progress is made to handle ref-delta ordering.
   const pending = [...parsed.objects];
   let progress = true;
+  let settled = 0;
+  const settleTotal = parsed.objects.length;
+  const noteSettled = () => {
+    settled += 1;
+    if (onProgress && (settled === settleTotal || settled % 50 === 0)) {
+      onProgress({ done: settled, total: settleTotal });
+    }
+  };
   while (pending.length > 0 && progress) {
     progress = false;
     const stillPending = [];
@@ -225,6 +234,7 @@ export async function resolveObjects(parsed, computeOid) {
         }
         const oid = await computeOid(typeName(r.type), r.data);
         raw.oid = oid;
+        noteSettled();
         rawByOid.set(oid, raw);
         contentByOid.set(oid, r.data);
         progress = true;
@@ -245,6 +255,7 @@ export async function resolveObjects(parsed, computeOid) {
       typeName: raw.typeName,
       baseOid: raw.baseOid,
     });
+    noteSettled();
   }
 
   for (const raw of parsed.objects) {

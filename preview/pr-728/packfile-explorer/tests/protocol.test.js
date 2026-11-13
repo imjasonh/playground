@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  branchFetchChoice,
   buildFetchRequest,
   parseInfoRefs,
   splitUploadPackResult,
@@ -25,6 +26,23 @@ test("parseInfoRefs reads refs, capabilities, and HEAD symref", () => {
   assert.equal(parsed.refs.length, 3);
   assert.ok(parsed.capabilities.includes("ofs-delta"));
   assert.equal(parsed.head, OID_A);
+  assert.equal(parsed.headName, "refs/heads/main");
+});
+
+test("branchFetchChoice offers the default branch or every branch, tags excluded", () => {
+  const tag = "3".repeat(40);
+  const refs = [
+    { oid: OID_A, name: "HEAD" },
+    { oid: OID_A, name: "refs/heads/main" },
+    { oid: OID_B, name: "refs/heads/dev" },
+    { oid: OID_A, name: "refs/heads/release" },
+    { oid: tag, name: "refs/tags/v1" },
+  ];
+  const choice = branchFetchChoice(refs, { head: OID_A, headName: "refs/heads/main" });
+  assert.equal(choice.branchCount, 3);
+  assert.equal(choice.defaultName, "main");
+  assert.deepEqual(choice.defaultWants, [OID_A]);
+  assert.deepEqual(choice.allWants, [OID_A, OID_B]);
 });
 
 test("buildFetchRequest puts capabilities on the first want and ends with done", () => {

@@ -31,7 +31,15 @@ self.onmessage = async (event) => {
   try {
     const parsed = parsePack(pack, inflate);
     if (id != null) self.postMessage({ id, phase: "parsed", count: parsed.count });
-    const resolved = await resolveObjects(parsed, computeOid);
+    let lastPost = 0;
+    const resolved = await resolveObjects(parsed, computeOid, {
+      onProgress: ({ done, total }) => {
+        const now = Date.now();
+        if (done !== total && now - lastPost < 150) return;
+        lastPost = now;
+        if (id != null) self.postMessage({ id, phase: "resolve", done, total });
+      },
+    });
     self.postMessage({
       id,
       ok: true,
