@@ -248,9 +248,9 @@ class Lin:
         return (tuple(sorted(self.d.items())), self.c)
 
 
-def lin_eval(expr, mods):
+def lin_eval(expr, mods, modulus=2 ** 64):
     """`expr` (Lean over `vN.toNat`, `+ - * ^ %`, parentheses) as a Lin; each
-    `% 2 ^ 64` gives the symbol of its operand, from `mods`. `*` and `%` bind
+    `% modulus` gives the symbol of its operand, from `mods`. `*` and `%` bind
     alike and tighter than `+` and `-`, and `^` tighter still, as in Lean."""
     if '/' in expr:
         raise NonLinear()
@@ -287,7 +287,7 @@ def lin_eval(expr, mods):
         return b
 
     def modop(x, m):
-        if m.d or m.c != 2 ** 64:
+        if m.d or m.c != modulus:
             raise NonLinear()
         for name, inner in mods:
             if inner.key() == x.key():
@@ -313,10 +313,10 @@ def lin_eval(expr, mods):
     return add()
 
 
-def inner_mods(rhs):
-    """The subterms `(E) % 2 ^ 64` of `rhs`, innermost first."""
+def inner_mods(rhs, bits=64):
+    """The subterms `(E) % 2 ^ bits` of `rhs`, innermost first."""
     out = []
-    for m in re.finditer(r' % 2 \^ 64', rhs):
+    for m in re.finditer(rf' % 2 \^ {bits}\b', rhs):
         j = m.start() - 1
         if rhs[j] != ')':
             continue

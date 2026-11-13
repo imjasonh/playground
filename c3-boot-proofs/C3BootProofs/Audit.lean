@@ -45,6 +45,7 @@ import C3BootProofs.Proofs.Scalar29Sub
 import C3BootProofs.Proofs.LincombInt8
 import C3BootProofs.Proofs.MontMul8
 import C3BootProofs.Proofs.ScalarMont
+import C3BootProofs.Proofs.P256Scalar
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.RegionMem
 import C3BootProofs.Proofs.ImageHelpers
@@ -2968,6 +2969,40 @@ theorem exists_lincomb8_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's P-256 `<Scalar as Mul>::mul`,
+`widening_mul_fixed::<8, 8>` and its callees, and `borrowing_sub` where the
+image puts them, and zeros elsewhere. -/
+def witnessMemP256ScalarMul : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.p256ScalarMulAddress, Image.p256ScalarMulCode),
+    (Image.wideMulAddress, Image.wideMulCode),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.borrowingSubAddress, Image.borrowingSubCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls P-256's `<Scalar as Mul>::mul` with the result at
+`0x3FCC5000`, the operands at `0x3FCC6000` and `0x3FCC6100`, and the stack at
+`0x3FCC7100` meets `p256ScalarMul_correct`'s hypotheses. -/
+theorem exists_p256ScalarMul_machine :
+    ∃ (m : RV32.Machine) (P G out ap bp retAddr : RV32.Word), RV32.PSMEnv m.mem P G out ap bp ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = ap ∧ RV32.reg m RV32.a2 = bp ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = G + 0x100 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x3FCC6100
+    else if r = RV32.sp then 0x3FCC7100 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.p256ScalarMulAddress, witnessMemP256ScalarMul⟩,
+    BitVec.ofNat 32 Image.p256ScalarMulAddress, 0x3FCC7000, 0x3FCC5000, 0x3FCC6000, 0x3FCC6100, 0, ?_, rfl, rfl,
+    rfl, rfl, rfl, by decide, rfl⟩
+  constructor
+  all_goals first
+    | code_in
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 /-- An 8-limb modulus of 3, as bytes. -/
 def montModBytes8 : List Nat := 3 :: List.replicate 31 0
 
@@ -3663,6 +3698,12 @@ end C3
 
 /-- info: 'C3.exists_scalar29MontMul_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_scalar29MontMul_machine
+
+/-- info: 'C3.RV32.p256ScalarMul_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.p256ScalarMul_correct
+
+/-- info: 'C3.exists_p256ScalarMul_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_p256ScalarMul_machine
 
 /-- info: 'C3.RV32.lincomb8_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.lincomb8_correct

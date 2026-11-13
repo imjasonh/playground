@@ -110,6 +110,7 @@ import C3BootProofs.Proofs.Scalar29Sub
 import C3BootProofs.Proofs.LincombInt8
 import C3BootProofs.Proofs.MontMul8
 import C3BootProofs.Proofs.ScalarMont
+import C3BootProofs.Proofs.P256Scalar
 import C3BootProofs.Proofs.AbsSign2
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.P384Add
