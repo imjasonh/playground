@@ -107,6 +107,7 @@ import C3BootProofs.Proofs.SliceEq
 import C3BootProofs.Proofs.ShrWide8Main
 import C3BootProofs.Proofs.FeToBytes
 import C3BootProofs.Proofs.Scalar29Sub
+import C3BootProofs.Proofs.LincombInt8
 import C3BootProofs.Proofs.AbsSign2
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.P384Add
