@@ -82,6 +82,9 @@ import C3BootProofs.Proofs.Sha512Rounds
 import C3BootProofs.Proofs.Sha512Load
 import C3BootProofs.Proofs.Sha512Frame
 import C3BootProofs.Proofs.Sha512Compress
+import C3BootProofs.Proofs.P384Mont
+import C3BootProofs.Proofs.P384PtEnv
+import C3BootProofs.Proofs.P384PtDouble
 import C3BootProofs.Proofs.P384Add
 import C3BootProofs.Proofs.P384Double
 import C3BootProofs.Proofs.P384Sub

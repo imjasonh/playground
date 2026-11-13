@@ -25,6 +25,7 @@ import C3BootProofs.Proofs.WideMul8x2
 import C3BootProofs.Proofs.EdDouble
 import C3BootProofs.Proofs.FePow2k
 import C3BootProofs.Proofs.Sha512Compress
+import C3BootProofs.Proofs.P384PtDouble
 import C3BootProofs.Proofs.ImageHelpers
 import C3BootProofs.Proofs.Block
 import C3BootProofs.Proofs.ImageCalls
@@ -1874,6 +1875,136 @@ theorem exists_s5Compress_machine :
     rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide⟩
   all_goals (unfold RV32.CodeIn; decide +kernel)
 
+
+/-- Memory with the current image's P-384 point doubling, the field
+operations it calls, and the constants they load where the image loads them,
+and zeros elsewhere. -/
+def witnessMemP384Pt (a : RV32.Word) : BitVec 8 :=
+  if (a - BitVec.ofNat 32 Image.p384PtDoubleAddress).toNat < Image.p384PtDoubleCode.length then
+    RV32.byteAt Image.p384PtDoubleCode (a - BitVec.ofNat 32 Image.p384PtDoubleAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.p384MulAddress).toNat < Image.p384MulCode.length then
+    RV32.byteAt Image.p384MulCode (a - BitVec.ofNat 32 Image.p384MulAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.p384SqrAddress).toNat < Image.p384SqrCode.length then
+    RV32.byteAt Image.p384SqrCode (a - BitVec.ofNat 32 Image.p384SqrAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.mulMont12Address).toNat < Image.mulMont12Code.length then
+    RV32.byteAt Image.mulMont12Code (a - BitVec.ofNat 32 Image.mulMont12Address).toNat
+  else if (a - BitVec.ofNat 32 Image.sqMont12Address).toNat < Image.sqMont12Code.length then
+    RV32.byteAt Image.sqMont12Code (a - BitVec.ofNat 32 Image.sqMont12Address).toNat
+  else if (a - BitVec.ofNat 32 Image.p384AddAddress).toNat < Image.p384AddCode.length then
+    RV32.byteAt Image.p384AddCode (a - BitVec.ofNat 32 Image.p384AddAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.p384SubAddress).toNat < Image.p384SubCode.length then
+    RV32.byteAt Image.p384SubCode (a - BitVec.ofNat 32 Image.p384SubAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.p384DoubleAddress).toNat < Image.p384DoubleCode.length then
+    RV32.byteAt Image.p384DoubleCode (a - BitVec.ofNat 32 Image.p384DoubleAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memsetAddress).toNat < Image.memsetCode.length then
+    RV32.byteAt Image.memsetCode (a - BitVec.ofNat 32 Image.memsetAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.borrowingSubAddress).toNat < Image.borrowingSubCode.length then
+    RV32.byteAt Image.borrowingSubCode (a - BitVec.ofNat 32 Image.borrowingSubAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.uintSelect12Address).toNat < Image.uintSelect12Code.length then
+    RV32.byteAt Image.uintSelect12Code (a - BitVec.ofNat 32 Image.uintSelect12Address).toNat
+  else if (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat < Image.memcpyStubCode.length then
+    RV32.byteAt Image.memcpyStubCode (a - BitVec.ofNat 32 Image.memcpyStubAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat < Image.memcpyBodyCode.length then
+    RV32.byteAt Image.memcpyBodyCode (a - BitVec.ofNat 32 Image.memcpyBodyAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.p384ModulusAddress).toNat < Image.p384ModulusData.length then
+    RV32.byteAt Image.p384ModulusData (a - BitVec.ofNat 32 Image.p384ModulusAddress).toNat
+  else if (a - BitVec.ofNat 32 Image.p384BAddress).toNat < Image.p384BData.length then
+    RV32.byteAt Image.p384BData (a - BitVec.ofNat 32 Image.p384BAddress).toNat
+  else 0
+
+set_option exponentiation.threshold 600 in
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls P-384's `FieldElement::mul` with the result at
+`0x3FCC5000`, the operands at `0x3FCC6000` and `0x3FCC6100`, and the stack at
+`0x3FCC8000` meets `p384Mul_correct`'s hypotheses. -/
+theorem exists_p384Mul_machine :
+    ∃ (m : RV32.Machine) (P sp0 out xp yp retAddr : RV32.Word), RV32.P3MEnv m.mem P sp0 out xp yp ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = xp ∧ RV32.reg m RV32.a2 = yp ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
+      RV32.limbVal (RV32.wordsAt m.mem yp 12) < RV32.p384 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x3FCC6100
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.p384MulAddress, witnessMemP384Pt⟩, BitVec.ofNat 32 Image.p384MulAddress,
+    0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0x3FCC6100, 0, ⟨?_, ?_, ?_, ?_⟩, rfl, rfl, rfl, rfl, rfl, by decide, rfl, ?_⟩
+  case refine_4 =>
+    constructor <;> first
+      | (unfold RV32.CodeIn; decide +kernel)
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+      | exact (RV32.sep_of_le (by decide) (by decide)).symm
+      | decide +kernel
+  all_goals first
+    | (unfold RV32.CodeIn; decide +kernel)
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option exponentiation.threshold 600 in
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls P-384's `FieldElement::square` with the result at
+`0x3FCC5000`, the operand at `0x3FCC6000`, and the stack at `0x3FCC8000`
+meets `p384Sqr_correct`'s hypotheses. -/
+theorem exists_p384Sqr_machine :
+    ∃ (m : RV32.Machine) (P sp0 out xp retAddr : RV32.Word), RV32.P3QEnv m.mem P sp0 out xp ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = xp ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
+      RV32.limbVal (RV32.wordsAt m.mem xp 12) < RV32.p384 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.p384SqrAddress, witnessMemP384Pt⟩, BitVec.ofNat 32 Image.p384SqrAddress,
+    0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, ⟨?_, ?_, ?_, ?_⟩, rfl, rfl, rfl, rfl, by decide, rfl, ?_⟩
+  case refine_4 =>
+    constructor <;> first
+      | (unfold RV32.CodeIn; decide +kernel)
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+      | exact (RV32.sep_of_le (by decide) (by decide)).symm
+      | decide +kernel
+  all_goals first
+    | (unfold RV32.CodeIn; decide +kernel)
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option exponentiation.threshold 600 in
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls P-384's point doubling with the result at
+`0x3FCC5000`, the point at `0x3FCC6000`, and the stack at `0x3FCC8000` meets
+`p384PtDouble_correct`'s hypotheses, the coordinates' bounds included. -/
+theorem exists_p384PtDouble_machine :
+    ∃ (m : RV32.Machine) (P sp0 out sf retAddr : RV32.Word), RV32.D3Env m.mem P sp0 out sf ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = sf ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
+      RV32.limbVal (RV32.wordsAt m.mem sf 12) < RV32.p384 ∧
+      RV32.limbVal (RV32.wordsAt m.mem (sf + 0x30) 12) < RV32.p384 ∧
+      RV32.limbVal (RV32.wordsAt m.mem (sf + 0x60) 12) < RV32.p384 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.p384PtDoubleAddress, witnessMemP384Pt⟩,
+    BitVec.ofNat 32 Image.p384PtDoubleAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, rfl,
+    by decide, rfl, ?_, ?_, ?_⟩
+  case refine_1 =>
+    constructor <;> first
+      | (unfold RV32.CodeIn; decide +kernel)
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+      | exact (RV32.sep_of_le (by decide) (by decide)).symm
+      | decide +kernel
+  all_goals first
+    | (unfold RV32.CodeIn; decide +kernel)
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -2310,3 +2441,21 @@ end C3
 
 /-- info: 'C3.exists_s5Compress_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_s5Compress_machine
+
+/-- info: 'C3.RV32.p384Mul_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.p384Mul_correct
+
+/-- info: 'C3.exists_p384Mul_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_p384Mul_machine
+
+/-- info: 'C3.RV32.p384Sqr_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.p384Sqr_correct
+
+/-- info: 'C3.exists_p384Sqr_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_p384Sqr_machine
+
+/-- info: 'C3.RV32.p384PtDouble_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.p384PtDouble_correct
+
+/-- info: 'C3.exists_p384PtDouble_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_p384PtDouble_machine
