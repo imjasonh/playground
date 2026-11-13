@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "actorpool",
+    srcs = ["actorpool.go"],
+    importpath = "github.com/imjasonh/playground/ci-substrate/internal/actorpool",
+    visibility = ["//:__subpackages__"],
+)
+
+go_test(
+    name = "actorpool_test",
+    srcs = ["actorpool_test.go"],
+    deps = [":actorpool"],
+)

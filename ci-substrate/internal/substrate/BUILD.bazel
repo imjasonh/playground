@@ -1,0 +1,38 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "substrate",
+    srcs = ["substrate.go"],
+    importpath = "github.com/imjasonh/playground/ci-substrate/internal/substrate",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/actorpool",
+        "@dev_ate_go_substrate//api/ateapi/v1:ateapi",
+        "@io_k8s_sigs_yaml//:yaml",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
+    ],
+)
+
+go_test(
+    name = "substrate_test",
+    srcs = [
+        "directory_test.go",
+        "substrate_test.go",
+    ],
+    data = ["//deploy/substrate:egress-cas.yaml"],
+    deps = [
+        ":substrate",
+        "//internal/actorpool",
+        "@dev_ate_go_substrate//api/ateapi/v1:ateapi",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_grpc//test/bufconn",
+    ],
+)

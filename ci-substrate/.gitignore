@@ -4,3 +4,5 @@
 # Local blob/cache store directories a local run might create.
 /tmp-store/
 /tmp-cache/
+/bazel-*
+/user.bazelrc

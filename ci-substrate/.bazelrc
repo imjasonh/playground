@@ -1,0 +1,7 @@
+common --enable_bzlmod
+# Actions run on the cluster's runners, which have no C toolchain, so every
+# Go target builds without cgo.
+common --@rules_go//go/config:pure
+build --incompatible_strict_action_env
+test --test_output=errors
+try-import %workspace%/user.bazelrc

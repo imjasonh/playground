@@ -1,0 +1,30 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "tenant",
+    srcs = [
+        "config.go",
+        "tenant.go",
+    ],
+    importpath = "github.com/imjasonh/playground/ci-substrate/internal/tenant",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "tenant_test",
+    srcs = [
+        "config_test.go",
+        "tenant_test.go",
+    ],
+    embed = [":tenant"],
+    deps = [
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)

@@ -1,0 +1,41 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "csidriver",
+    srcs = ["driver.go"],
+    importpath = "github.com/imjasonh/playground/ci-substrate/internal/csidriver",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/casfs",
+        "//internal/tenant",
+        "//internal/tree",
+        "@com_github_container_storage_interface_spec//lib/go/csi",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/wrapperspb",
+    ],
+)
+
+go_test(
+    name = "csidriver_test",
+    srcs = ["driver_test.go"],
+    # fusermount cannot mount inside Bazel's sandbox, and the test's /dev/fuse
+    # check sees the device there and does not skip.
+    tags = ["no-sandbox"],
+    deps = [
+        ":csidriver",
+        "//internal/casfs",
+        "//internal/digest",
+        "//internal/tenant",
+        "//internal/tree",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+        "@com_github_container_storage_interface_spec//lib/go/csi",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_grpc//test/bufconn",
+    ],
+)
