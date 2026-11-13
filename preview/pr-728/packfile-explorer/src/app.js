@@ -65,7 +65,6 @@ const els = {
   app: $("app"),
   form: $("fetch-form"),
   repo: $("repo"),
-  deepen: $("deepen"),
   fetchBtn: $("fetch-btn"),
   packFile: $("pack-file"),
   statusWrap: $("status-wrap"),
@@ -283,7 +282,6 @@ els.form.addEventListener("submit", async (event) => {
     const refs = await fetchRefs(DEFAULT_PROXY, base);
     const choice = branchFetchChoice(refs.refs, { head: refs.head, headName: refs.headName });
     pendingRefs = { base, refs: refs.refs, head: refs.head, choice };
-    els.pickerDepth.value = els.deepen.value || "1";
     els.pickerDefault.disabled = choice.defaultWants.length === 0;
     els.pickerBranches.hidden = choice.branchCount === 0;
     els.pickerBranches.textContent =
