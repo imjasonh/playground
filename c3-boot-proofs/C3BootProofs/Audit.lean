@@ -30,6 +30,7 @@ import C3BootProofs.Proofs.P384PtAdd
 import C3BootProofs.Proofs.P256PtDouble
 import C3BootProofs.Proofs.CondNeg12
 import C3BootProofs.Proofs.CondNeg8
+import C3BootProofs.Proofs.ShrWide12Main
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.RegionMem
 import C3BootProofs.Proofs.ImageHelpers
@@ -2218,6 +2219,40 @@ theorem exists_condNeg8_machine :
     | decide +kernel
 
 
+/-- Memory with the current image's `shr_in_place_wide::<12, 2>` and the
+functions it calls where the image loads them, and zeros elsewhere. -/
+def witnessMemShr12 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.shr12Address, Image.shr12Code),
+    (Image.leadMut12Address, Image.leadMut12Code),
+    (Image.trailing12Address, Image.trailing12Code),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `shr_in_place_wide::<12, 2>` with `lo` at
+`0x3FCC5000`, `hi` at `0x3FCC6000`, the shift 5, and the stack at
+`0x3FCC8000` meets `shr12_correct`'s hypotheses. -/
+theorem exists_shr12_machine :
+    ∃ (m : RV32.Machine) (P sp0 lo hi retAddr : RV32.Word) (s : Nat), RV32.SHEnv m.mem P sp0 lo hi ∧ m.pc = P ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = lo ∧ RV32.reg m RV32.a1 = hi ∧
+      RV32.reg m RV32.a2 = BitVec.ofNat 32 s ∧ 1 ≤ s ∧ s ≤ 63 ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 5
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.shr12Address, witnessMemShr12⟩, BitVec.ofNat 32 Image.shr12Address,
+    0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, 5, ?_, rfl, rfl, rfl, rfl, rfl, by decide, by decide, rfl, by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 /-- Memory with the current image's `Int<2>::abs_sign` and `Int<2>::from_i64`
 where the image loads them, and zeros elsewhere. -/
 def witnessMemInt2 : RV32.Word → BitVec 8 :=
@@ -2770,6 +2805,12 @@ end C3
 
 /-- info: 'C3.exists_condNeg8_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_condNeg8_machine
+
+/-- info: 'C3.RV32.shr12_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.shr12_correct
+
+/-- info: 'C3.exists_shr12_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_shr12_machine
 
 /-- info: 'C3.RV32.absSign2_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.absSign2_correct

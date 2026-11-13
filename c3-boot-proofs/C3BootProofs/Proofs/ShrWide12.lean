@@ -19,190 +19,190 @@ open C3.Image
 
 section
 set_option maxRecDepth 20000
-theorem sh_at_0 : fetchRel shr12Code 0x0 = some (.aluImm .add sp sp 0xFFFFFF70, 2) := by decide
-theorem sh_at_2 : fetchRel shr12Code 0x2 = some (.store .sw sp ra 0x8C, 2) := by decide
-theorem sh_at_4 : fetchRel shr12Code 0x4 = some (.store .sw sp (8 : Fin 32) 0x88, 2) := by decide
-theorem sh_at_6 : fetchRel shr12Code 0x6 = some (.store .sw sp (9 : Fin 32) 0x84, 2) := by decide
-theorem sh_at_8 : fetchRel shr12Code 0x8 = some (.store .sw sp (18 : Fin 32) 0x80, 2) := by decide
-theorem sh_at_a : fetchRel shr12Code 0xA = some (.store .sw sp (19 : Fin 32) 0x7C, 2) := by decide
-theorem sh_at_c : fetchRel shr12Code 0xC = some (.store .sw sp (20 : Fin 32) 0x78, 2) := by decide
-theorem sh_at_e : fetchRel shr12Code 0xE = some (.store .sw sp (21 : Fin 32) 0x74, 2) := by decide
-theorem sh_at_10 : fetchRel shr12Code 0x10 = some (.store .sw sp (22 : Fin 32) 0x70, 2) := by decide
-theorem sh_at_12 : fetchRel shr12Code 0x12 = some (.store .sw sp (23 : Fin 32) 0x6C, 2) := by decide
-theorem sh_at_14 : fetchRel shr12Code 0x14 = some (.alu .add (21 : Fin 32) x0 a2, 2) := by decide
-theorem sh_at_16 : fetchRel shr12Code 0x16 = some (.alu .add (19 : Fin 32) x0 a1, 2) := by decide
-theorem sh_at_18 : fetchRel shr12Code 0x18 = some (.aluImm .add a2 x0 0x40, 4) := by decide
-theorem sh_at_1c : fetchRel shr12Code 0x1C = some (.alu .sub a1 a2 (21 : Fin 32), 4) := by decide
-theorem sh_at_20 : fetchRel shr12Code 0x20 = some (.branch .bgeu a1 a2 0x1BA, 4) := by decide
-theorem sh_at_24 : fetchRel shr12Code 0x24 = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
-theorem sh_at_26 : fetchRel shr12Code 0x26 = some (.store .sw sp x0 0x38, 2) := by decide
-theorem sh_at_28 : fetchRel shr12Code 0x28 = some (.store .sw sp x0 0x3C, 2) := by decide
-theorem sh_at_2a : fetchRel shr12Code 0x2A = some (.aluImm .srl a2 a1 0x5, 4) := by decide
-theorem sh_at_2e : fetchRel shr12Code 0x2E = some (.aluImm .sll a0 a2 0x2, 4) := by decide
-theorem sh_at_32 : fetchRel shr12Code 0x32 = some (.aluImm .add a3 sp 0x38, 2) := by decide
-theorem sh_at_34 : fetchRel shr12Code 0x34 = some (.alu .add a0 a0 a3, 2) := by decide
-theorem sh_at_36 : fetchRel shr12Code 0x36 = some (.aluImm .add a3 a2 0xFFFFFFFE, 4) := by decide
-theorem sh_at_3a : fetchRel shr12Code 0x3A = some (.alu .add a4 x0 a0, 2) := by decide
-theorem sh_at_3c : fetchRel shr12Code 0x3C = some (.alu .add a5 x0 (19 : Fin 32), 2) := by decide
-theorem sh_at_3e : fetchRel shr12Code 0x3E = some (.branch .beq a3 x0 0xE, 2) := by decide
-theorem sh_at_40 : fetchRel shr12Code 0x40 = some (.load .lw (9 : Fin 32) a5 0x0, 2) := by decide
-theorem sh_at_42 : fetchRel shr12Code 0x42 = some (.aluImm .add a5 a5 0x4, 2) := by decide
-theorem sh_at_44 : fetchRel shr12Code 0x44 = some (.store .sw a4 (9 : Fin 32) 0x0, 2) := by decide
-theorem sh_at_46 : fetchRel shr12Code 0x46 = some (.aluImm .add a4 a4 0x4, 2) := by decide
-theorem sh_at_48 : fetchRel shr12Code 0x48 = some (.aluImm .add a3 a3 0x1, 2) := by decide
-theorem sh_at_4a : fetchRel shr12Code 0x4A = some (.branch .bne a3 x0 0xFFFFFFF6, 2) := by decide
-theorem sh_at_4c : fetchRel shr12Code 0x4C = some (.aluImm .and a1 a1 0x1F, 2) := by decide
-theorem sh_at_4e : fetchRel shr12Code 0x4E = some (.branch .beq a1 x0 0x22, 2) := by decide
-theorem sh_at_50 : fetchRel shr12Code 0x50 = some (.aluImm .add a3 x0 0x0, 2) := by decide
-theorem sh_at_52 : fetchRel shr12Code 0x52 = some (.aluImm .add a4 x0 0x20, 4) := by decide
-theorem sh_at_56 : fetchRel shr12Code 0x56 = some (.alu .sub a4 a4 a1, 2) := by decide
-theorem sh_at_58 : fetchRel shr12Code 0x58 = some (.aluImm .add a2 a2 0xFFFFFFFE, 2) := by decide
-theorem sh_at_5a : fetchRel shr12Code 0x5A = some (.branch .beq a2 x0 0x16, 2) := by decide
-theorem sh_at_5c : fetchRel shr12Code 0x5C = some (.load .lw a5 a0 0x0, 2) := by decide
-theorem sh_at_5e : fetchRel shr12Code 0x5E = some (.alu .sll (9 : Fin 32) a5 a1, 4) := by decide
-theorem sh_at_62 : fetchRel shr12Code 0x62 = some (.alu .or (9 : Fin 32) (9 : Fin 32) a3, 2) := by decide
-theorem sh_at_64 : fetchRel shr12Code 0x64 = some (.alu .srl a3 a5 a4, 4) := by decide
-theorem sh_at_68 : fetchRel shr12Code 0x68 = some (.store .sw a0 (9 : Fin 32) 0x0, 2) := by decide
-theorem sh_at_6a : fetchRel shr12Code 0x6A = some (.aluImm .add a0 a0 0x4, 2) := by decide
-theorem sh_at_6c : fetchRel shr12Code 0x6C = some (.aluImm .add a2 a2 0x1, 2) := by decide
-theorem sh_at_6e : fetchRel shr12Code 0x6E = some (.branch .bne a2 x0 0xFFFFFFEE, 2) := by decide
-theorem sh_at_70 : fetchRel shr12Code 0x70 = some (.load .lw a0 sp 0x38, 2) := by decide
-theorem sh_at_72 : fetchRel shr12Code 0x72 = some (.load .lw (22 : Fin 32) sp 0x3C, 2) := by decide
-theorem sh_at_74 : fetchRel shr12Code 0x74 = some (.aluImm .add a1 x0 0x3F, 4) := by decide
-theorem sh_at_78 : fetchRel shr12Code 0x78 = some (.store .sw sp a0 0x0, 2) := by decide
-theorem sh_at_7a : fetchRel shr12Code 0x7A = some (.store .sw sp (22 : Fin 32) 0x4, 2) := by decide
-theorem sh_at_7c : fetchRel shr12Code 0x7C = some (.branch .bltu a1 (21 : Fin 32) 0x15E, 4) := by decide
-theorem sh_at_80 : fetchRel shr12Code 0x80 = some (.aluImm .srl (20 : Fin 32) (21 : Fin 32) 0x5, 4) := by decide
-theorem sh_at_84 : fetchRel shr12Code 0x84 = some (.aluImm .add a0 x0 0x2, 2) := by decide
-theorem sh_at_86 : fetchRel shr12Code 0x86 = some (.store .sw sp x0 0x38, 2) := by decide
-theorem sh_at_88 : fetchRel shr12Code 0x88 = some (.store .sw sp x0 0x3C, 2) := by decide
-theorem sh_at_8a : fetchRel shr12Code 0x8A = some (.alu .sub a2 a0 (20 : Fin 32), 4) := by decide
-theorem sh_at_8e : fetchRel shr12Code 0x8E = some (.aluImm .add a0 sp 0x38, 2) := by decide
-theorem sh_at_90 : fetchRel shr12Code 0x90 = some (.aluImm .add a1 x0 0x2, 2) := by decide
-theorem sh_at_92 : fetchRel shr12Code 0x92 = some (.auipc ra 0x0, 4) := by decide
-theorem sh_at_96 : fetchRel shr12Code 0x96 = some (.jalr ra ra 0x15C, 4) := by decide
-theorem sh_at_9a : fetchRel shr12Code 0x9A = some (.alu .add (23 : Fin 32) x0 a0, 2) := by decide
-theorem sh_at_9c : fetchRel shr12Code 0x9C = some (.alu .add (8 : Fin 32) x0 a1, 2) := by decide
-theorem sh_at_9e : fetchRel shr12Code 0x9E = some (.aluImm .add a1 x0 0x2, 2) := by decide
-theorem sh_at_a0 : fetchRel shr12Code 0xA0 = some (.alu .add a0 x0 (19 : Fin 32), 2) := by decide
-theorem sh_at_a2 : fetchRel shr12Code 0xA2 = some (.alu .add a2 x0 (20 : Fin 32), 2) := by decide
-theorem sh_at_a4 : fetchRel shr12Code 0xA4 = some (.auipc ra 0x0, 4) := by decide
-theorem sh_at_a8 : fetchRel shr12Code 0xA8 = some (.jalr ra ra 0x15A, 4) := by decide
-theorem sh_at_ac : fetchRel shr12Code 0xAC = some (.branch .bne (8 : Fin 32) a1 0x126, 4) := by decide
-theorem sh_at_b0 : fetchRel shr12Code 0xB0 = some (.alu .add a1 x0 (8 : Fin 32), 2) := by decide
-theorem sh_at_b2 : fetchRel shr12Code 0xB2 = some (.alu .add a2 x0 (23 : Fin 32), 2) := by decide
-theorem sh_at_b4 : fetchRel shr12Code 0xB4 = some (.branch .beq (8 : Fin 32) x0 0xE, 2) := by decide
-theorem sh_at_b6 : fetchRel shr12Code 0xB6 = some (.load .lw a3 a0 0x0, 2) := by decide
-theorem sh_at_b8 : fetchRel shr12Code 0xB8 = some (.aluImm .add a0 a0 0x4, 2) := by decide
-theorem sh_at_ba : fetchRel shr12Code 0xBA = some (.store .sw a2 a3 0x0, 2) := by decide
-theorem sh_at_bc : fetchRel shr12Code 0xBC = some (.aluImm .add a2 a2 0x4, 2) := by decide
-theorem sh_at_be : fetchRel shr12Code 0xBE = some (.aluImm .add a1 a1 0xFFFFFFFF, 2) := by decide
-theorem sh_at_c0 : fetchRel shr12Code 0xC0 = some (.branch .bne a1 x0 0xFFFFFFF6, 2) := by decide
-theorem sh_at_c2 : fetchRel shr12Code 0xC2 = some (.aluImm .and (9 : Fin 32) (21 : Fin 32) 0x1F, 4) := by decide
-theorem sh_at_c6 : fetchRel shr12Code 0xC6 = some (.branch .beq (9 : Fin 32) x0 0x28, 2) := by decide
-theorem sh_at_c8 : fetchRel shr12Code 0xC8 = some (.aluImm .add a0 x0 0x0, 2) := by decide
-theorem sh_at_ca : fetchRel shr12Code 0xCA = some (.aluImm .sll a1 (8 : Fin 32) 0x2, 4) := by decide
-theorem sh_at_ce : fetchRel shr12Code 0xCE = some (.alu .add a2 a1 (23 : Fin 32), 4) := by decide
-theorem sh_at_d2 : fetchRel shr12Code 0xD2 = some (.aluImm .add a1 x0 0x20, 4) := by decide
-theorem sh_at_d6 : fetchRel shr12Code 0xD6 = some (.alu .sub a1 a1 (9 : Fin 32), 2) := by decide
-theorem sh_at_d8 : fetchRel shr12Code 0xD8 = some (.aluImm .add a2 a2 0xFFFFFFFC, 2) := by decide
-theorem sh_at_da : fetchRel shr12Code 0xDA = some (.branch .beq (8 : Fin 32) x0 0x14, 2) := by decide
-theorem sh_at_dc : fetchRel shr12Code 0xDC = some (.load .lw a3 a2 0x0, 2) := by decide
-theorem sh_at_de : fetchRel shr12Code 0xDE = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFFFF, 2) := by decide
-theorem sh_at_e0 : fetchRel shr12Code 0xE0 = some (.alu .srl a4 a3 (9 : Fin 32), 4) := by decide
-theorem sh_at_e4 : fetchRel shr12Code 0xE4 = some (.alu .or a4 a4 a0, 2) := by decide
-theorem sh_at_e6 : fetchRel shr12Code 0xE6 = some (.alu .sll a0 a3 a1, 4) := by decide
-theorem sh_at_ea : fetchRel shr12Code 0xEA = some (.store .sw a2 a4 0x0, 2) := by decide
-theorem sh_at_ec : fetchRel shr12Code 0xEC = some (.jal x0 0xFFFFFFEC, 2) := by decide
-theorem sh_at_ee : fetchRel shr12Code 0xEE = some (.load .lw a0 sp 0x38, 2) := by decide
-theorem sh_at_f0 : fetchRel shr12Code 0xF0 = some (.load .lw a1 sp 0x3C, 2) := by decide
-theorem sh_at_f2 : fetchRel shr12Code 0xF2 = some (.alu .add a2 x0 (19 : Fin 32), 2) := by decide
-theorem sh_at_f4 : fetchRel shr12Code 0xF4 = some (.store .sw a2 a0 0x0, 2) := by decide
-theorem sh_at_f6 : fetchRel shr12Code 0xF6 = some (.store .sw a2 a1 0x4, 2) := by decide
-theorem sh_at_f8 : fetchRel shr12Code 0xF8 = some (.aluImm .add a0 sp 0x38, 2) := by decide
-theorem sh_at_fa : fetchRel shr12Code 0xFA = some (.aluImm .add a2 x0 0x30, 4) := by decide
-theorem sh_at_fe : fetchRel shr12Code 0xFE = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem sh_at_100 : fetchRel shr12Code 0x100 = some (.auipc ra 0x1000, 4) := by decide
-theorem sh_at_104 : fetchRel shr12Code 0x104 = some (.jalr ra ra 0x624, 4) := by decide
-theorem sh_at_108 : fetchRel shr12Code 0x108 = some (.aluImm .add a0 x0 0xC, 2) := by decide
-theorem sh_at_10a : fetchRel shr12Code 0x10A = some (.alu .sub a2 a0 (20 : Fin 32), 4) := by decide
-theorem sh_at_10e : fetchRel shr12Code 0x10E = some (.aluImm .add a0 sp 0x38, 2) := by decide
-theorem sh_at_110 : fetchRel shr12Code 0x110 = some (.aluImm .add a1 x0 0xC, 2) := by decide
-theorem sh_at_112 : fetchRel shr12Code 0x112 = some (.auipc ra 0x0, 4) := by decide
-theorem sh_at_116 : fetchRel shr12Code 0x116 = some (.jalr ra ra 0xDC, 4) := by decide
-theorem sh_at_11a : fetchRel shr12Code 0x11A = some (.alu .add (19 : Fin 32) x0 a0, 2) := by decide
-theorem sh_at_11c : fetchRel shr12Code 0x11C = some (.alu .add (8 : Fin 32) x0 a1, 2) := by decide
-theorem sh_at_11e : fetchRel shr12Code 0x11E = some (.aluImm .add a1 x0 0xC, 2) := by decide
-theorem sh_at_120 : fetchRel shr12Code 0x120 = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
-theorem sh_at_122 : fetchRel shr12Code 0x122 = some (.alu .add a2 x0 (20 : Fin 32), 2) := by decide
-theorem sh_at_124 : fetchRel shr12Code 0x124 = some (.auipc ra 0x0, 4) := by decide
-theorem sh_at_128 : fetchRel shr12Code 0x128 = some (.jalr ra ra 0xDA, 4) := by decide
-theorem sh_at_12c : fetchRel shr12Code 0x12C = some (.branch .bne (8 : Fin 32) a1 0xA6, 4) := by decide
-theorem sh_at_130 : fetchRel shr12Code 0x130 = some (.alu .add a1 x0 (8 : Fin 32), 2) := by decide
-theorem sh_at_132 : fetchRel shr12Code 0x132 = some (.alu .add a2 x0 (19 : Fin 32), 2) := by decide
-theorem sh_at_134 : fetchRel shr12Code 0x134 = some (.branch .beq (8 : Fin 32) x0 0xE, 2) := by decide
-theorem sh_at_136 : fetchRel shr12Code 0x136 = some (.load .lw a3 a0 0x0, 2) := by decide
-theorem sh_at_138 : fetchRel shr12Code 0x138 = some (.aluImm .add a0 a0 0x4, 2) := by decide
-theorem sh_at_13a : fetchRel shr12Code 0x13A = some (.store .sw a2 a3 0x0, 2) := by decide
-theorem sh_at_13c : fetchRel shr12Code 0x13C = some (.aluImm .add a2 a2 0x4, 2) := by decide
-theorem sh_at_13e : fetchRel shr12Code 0x13E = some (.aluImm .add a1 a1 0xFFFFFFFF, 2) := by decide
-theorem sh_at_140 : fetchRel shr12Code 0x140 = some (.branch .bne a1 x0 0xFFFFFFF6, 2) := by decide
-theorem sh_at_142 : fetchRel shr12Code 0x142 = some (.branch .beq (9 : Fin 32) x0 0x28, 2) := by decide
-theorem sh_at_144 : fetchRel shr12Code 0x144 = some (.aluImm .add a0 x0 0x0, 2) := by decide
-theorem sh_at_146 : fetchRel shr12Code 0x146 = some (.aluImm .sll a1 (8 : Fin 32) 0x2, 4) := by decide
-theorem sh_at_14a : fetchRel shr12Code 0x14A = some (.alu .add a2 a1 (19 : Fin 32), 4) := by decide
-theorem sh_at_14e : fetchRel shr12Code 0x14E = some (.aluImm .add a1 x0 0x20, 4) := by decide
-theorem sh_at_152 : fetchRel shr12Code 0x152 = some (.alu .sub a1 a1 (9 : Fin 32), 2) := by decide
-theorem sh_at_154 : fetchRel shr12Code 0x154 = some (.aluImm .add a2 a2 0xFFFFFFFC, 2) := by decide
-theorem sh_at_156 : fetchRel shr12Code 0x156 = some (.branch .beq (8 : Fin 32) x0 0x14, 2) := by decide
-theorem sh_at_158 : fetchRel shr12Code 0x158 = some (.load .lw a3 a2 0x0, 2) := by decide
-theorem sh_at_15a : fetchRel shr12Code 0x15A = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFFFF, 2) := by decide
-theorem sh_at_15c : fetchRel shr12Code 0x15C = some (.alu .srl a4 a3 (9 : Fin 32), 4) := by decide
-theorem sh_at_160 : fetchRel shr12Code 0x160 = some (.alu .or a4 a4 a0, 2) := by decide
-theorem sh_at_162 : fetchRel shr12Code 0x162 = some (.alu .sll a0 a3 a1, 4) := by decide
-theorem sh_at_166 : fetchRel shr12Code 0x166 = some (.store .sw a2 a4 0x0, 2) := by decide
-theorem sh_at_168 : fetchRel shr12Code 0x168 = some (.jal x0 0xFFFFFFEC, 2) := by decide
-theorem sh_at_16a : fetchRel shr12Code 0x16A = some (.aluImm .add a0 sp 0x8, 2) := by decide
-theorem sh_at_16c : fetchRel shr12Code 0x16C = some (.aluImm .add a1 sp 0x38, 2) := by decide
-theorem sh_at_16e : fetchRel shr12Code 0x16E = some (.aluImm .add a2 x0 0x30, 4) := by decide
-theorem sh_at_172 : fetchRel shr12Code 0x172 = some (.auipc ra 0x1000, 4) := by decide
-theorem sh_at_176 : fetchRel shr12Code 0x176 = some (.jalr ra ra 0x61A, 4) := by decide
-theorem sh_at_17a : fetchRel shr12Code 0x17A = some (.aluImm .add a1 sp 0x8, 2) := by decide
-theorem sh_at_17c : fetchRel shr12Code 0x17C = some (.aluImm .add a2 x0 0x30, 4) := by decide
-theorem sh_at_180 : fetchRel shr12Code 0x180 = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
-theorem sh_at_182 : fetchRel shr12Code 0x182 = some (.auipc ra 0x1000, 4) := by decide
-theorem sh_at_186 : fetchRel shr12Code 0x186 = some (.jalr ra ra 0x60A, 4) := by decide
-theorem sh_at_18a : fetchRel shr12Code 0x18A = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0x1F, 2) := by decide
-theorem sh_at_18c : fetchRel shr12Code 0x18C = some (.aluImm .srl (9 : Fin 32) (9 : Fin 32) 0x5, 2) := by decide
-theorem sh_at_18e : fetchRel shr12Code 0x18E = some (.alu .add (20 : Fin 32) (20 : Fin 32) (9 : Fin 32), 2) := by decide
-theorem sh_at_190 : fetchRel shr12Code 0x190 = some (.aluImm .add a0 x0 0xC, 2) := by decide
-theorem sh_at_192 : fetchRel shr12Code 0x192 = some (.alu .sub a0 a0 (20 : Fin 32), 4) := by decide
-theorem sh_at_196 : fetchRel shr12Code 0x196 = some (.branch .beq (20 : Fin 32) x0 0x4E, 4) := by decide
-theorem sh_at_19a : fetchRel shr12Code 0x19A = some (.aluImm .add a1 x0 0x2, 2) := by decide
-theorem sh_at_19c : fetchRel shr12Code 0x19C = some (.alu .sub a1 a1 (20 : Fin 32), 4) := by decide
-theorem sh_at_1a0 : fetchRel shr12Code 0x1A0 = some (.aluImm .sll a0 a0 0x2, 2) := by decide
-theorem sh_at_1a2 : fetchRel shr12Code 0x1A2 = some (.aluImm .sll a1 a1 0x2, 2) := by decide
-theorem sh_at_1a4 : fetchRel shr12Code 0x1A4 = some (.alu .add a2 x0 sp, 2) := by decide
-theorem sh_at_1a6 : fetchRel shr12Code 0x1A6 = some (.alu .add a0 a0 (18 : Fin 32), 2) := by decide
-theorem sh_at_1a8 : fetchRel shr12Code 0x1A8 = some (.alu .add a1 a1 a2, 2) := by decide
-theorem sh_at_1aa : fetchRel shr12Code 0x1AA = some (.load .lw a2 a0 0x0, 2) := by decide
-theorem sh_at_1ac : fetchRel shr12Code 0x1AC = some (.load .lw a1 a1 0x0, 2) := by decide
-theorem sh_at_1ae : fetchRel shr12Code 0x1AE = some (.alu .or a1 a1 a2, 2) := by decide
-theorem sh_at_1b0 : fetchRel shr12Code 0x1B0 = some (.aluImm .add a2 x0 0x1, 2) := by decide
-theorem sh_at_1b2 : fetchRel shr12Code 0x1B2 = some (.store .sw a0 a1 0x0, 2) := by decide
-theorem sh_at_1b4 : fetchRel shr12Code 0x1B4 = some (.branch .beq (20 : Fin 32) a2 0x8, 4) := by decide
-theorem sh_at_1b8 : fetchRel shr12Code 0x1B8 = some (.store .sw (18 : Fin 32) (22 : Fin 32) 0x2C, 4) := by decide
-theorem sh_at_1bc : fetchRel shr12Code 0x1BC = some (.load .lw ra sp 0x8C, 2) := by decide
-theorem sh_at_1be : fetchRel shr12Code 0x1BE = some (.load .lw (8 : Fin 32) sp 0x88, 2) := by decide
-theorem sh_at_1c0 : fetchRel shr12Code 0x1C0 = some (.load .lw (9 : Fin 32) sp 0x84, 2) := by decide
-theorem sh_at_1c2 : fetchRel shr12Code 0x1C2 = some (.load .lw (18 : Fin 32) sp 0x80, 2) := by decide
-theorem sh_at_1c4 : fetchRel shr12Code 0x1C4 = some (.load .lw (19 : Fin 32) sp 0x7C, 2) := by decide
-theorem sh_at_1c6 : fetchRel shr12Code 0x1C6 = some (.load .lw (20 : Fin 32) sp 0x78, 2) := by decide
-theorem sh_at_1c8 : fetchRel shr12Code 0x1C8 = some (.load .lw (21 : Fin 32) sp 0x74, 2) := by decide
-theorem sh_at_1ca : fetchRel shr12Code 0x1CA = some (.load .lw (22 : Fin 32) sp 0x70, 2) := by decide
-theorem sh_at_1cc : fetchRel shr12Code 0x1CC = some (.load .lw (23 : Fin 32) sp 0x6C, 2) := by decide
-theorem sh_at_1ce : fetchRel shr12Code 0x1CE = some (.aluImm .add sp sp 0x90, 2) := by decide
-theorem sh_at_1d0 : fetchRel shr12Code 0x1D0 = some (.jalr x0 ra 0x0, 2) := by decide
+theorem shr_at_0 : fetchRel shr12Code 0x0 = some (.aluImm .add sp sp 0xFFFFFF70, 2) := by decide
+theorem shr_at_2 : fetchRel shr12Code 0x2 = some (.store .sw sp ra 0x8C, 2) := by decide
+theorem shr_at_4 : fetchRel shr12Code 0x4 = some (.store .sw sp (8 : Fin 32) 0x88, 2) := by decide
+theorem shr_at_6 : fetchRel shr12Code 0x6 = some (.store .sw sp (9 : Fin 32) 0x84, 2) := by decide
+theorem shr_at_8 : fetchRel shr12Code 0x8 = some (.store .sw sp (18 : Fin 32) 0x80, 2) := by decide
+theorem shr_at_a : fetchRel shr12Code 0xA = some (.store .sw sp (19 : Fin 32) 0x7C, 2) := by decide
+theorem shr_at_c : fetchRel shr12Code 0xC = some (.store .sw sp (20 : Fin 32) 0x78, 2) := by decide
+theorem shr_at_e : fetchRel shr12Code 0xE = some (.store .sw sp (21 : Fin 32) 0x74, 2) := by decide
+theorem shr_at_10 : fetchRel shr12Code 0x10 = some (.store .sw sp (22 : Fin 32) 0x70, 2) := by decide
+theorem shr_at_12 : fetchRel shr12Code 0x12 = some (.store .sw sp (23 : Fin 32) 0x6C, 2) := by decide
+theorem shr_at_14 : fetchRel shr12Code 0x14 = some (.alu .add (21 : Fin 32) x0 a2, 2) := by decide
+theorem shr_at_16 : fetchRel shr12Code 0x16 = some (.alu .add (19 : Fin 32) x0 a1, 2) := by decide
+theorem shr_at_18 : fetchRel shr12Code 0x18 = some (.aluImm .add a2 x0 0x40, 4) := by decide
+theorem shr_at_1c : fetchRel shr12Code 0x1C = some (.alu .sub a1 a2 (21 : Fin 32), 4) := by decide
+theorem shr_at_20 : fetchRel shr12Code 0x20 = some (.branch .bgeu a1 a2 0x1BA, 4) := by decide
+theorem shr_at_24 : fetchRel shr12Code 0x24 = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
+theorem shr_at_26 : fetchRel shr12Code 0x26 = some (.store .sw sp x0 0x38, 2) := by decide
+theorem shr_at_28 : fetchRel shr12Code 0x28 = some (.store .sw sp x0 0x3C, 2) := by decide
+theorem shr_at_2a : fetchRel shr12Code 0x2A = some (.aluImm .srl a2 a1 0x5, 4) := by decide
+theorem shr_at_2e : fetchRel shr12Code 0x2E = some (.aluImm .sll a0 a2 0x2, 4) := by decide
+theorem shr_at_32 : fetchRel shr12Code 0x32 = some (.aluImm .add a3 sp 0x38, 2) := by decide
+theorem shr_at_34 : fetchRel shr12Code 0x34 = some (.alu .add a0 a0 a3, 2) := by decide
+theorem shr_at_36 : fetchRel shr12Code 0x36 = some (.aluImm .add a3 a2 0xFFFFFFFE, 4) := by decide
+theorem shr_at_3a : fetchRel shr12Code 0x3A = some (.alu .add a4 x0 a0, 2) := by decide
+theorem shr_at_3c : fetchRel shr12Code 0x3C = some (.alu .add a5 x0 (19 : Fin 32), 2) := by decide
+theorem shr_at_3e : fetchRel shr12Code 0x3E = some (.branch .beq a3 x0 0xE, 2) := by decide
+theorem shr_at_40 : fetchRel shr12Code 0x40 = some (.load .lw (9 : Fin 32) a5 0x0, 2) := by decide
+theorem shr_at_42 : fetchRel shr12Code 0x42 = some (.aluImm .add a5 a5 0x4, 2) := by decide
+theorem shr_at_44 : fetchRel shr12Code 0x44 = some (.store .sw a4 (9 : Fin 32) 0x0, 2) := by decide
+theorem shr_at_46 : fetchRel shr12Code 0x46 = some (.aluImm .add a4 a4 0x4, 2) := by decide
+theorem shr_at_48 : fetchRel shr12Code 0x48 = some (.aluImm .add a3 a3 0x1, 2) := by decide
+theorem shr_at_4a : fetchRel shr12Code 0x4A = some (.branch .bne a3 x0 0xFFFFFFF6, 2) := by decide
+theorem shr_at_4c : fetchRel shr12Code 0x4C = some (.aluImm .and a1 a1 0x1F, 2) := by decide
+theorem shr_at_4e : fetchRel shr12Code 0x4E = some (.branch .beq a1 x0 0x22, 2) := by decide
+theorem shr_at_50 : fetchRel shr12Code 0x50 = some (.aluImm .add a3 x0 0x0, 2) := by decide
+theorem shr_at_52 : fetchRel shr12Code 0x52 = some (.aluImm .add a4 x0 0x20, 4) := by decide
+theorem shr_at_56 : fetchRel shr12Code 0x56 = some (.alu .sub a4 a4 a1, 2) := by decide
+theorem shr_at_58 : fetchRel shr12Code 0x58 = some (.aluImm .add a2 a2 0xFFFFFFFE, 2) := by decide
+theorem shr_at_5a : fetchRel shr12Code 0x5A = some (.branch .beq a2 x0 0x16, 2) := by decide
+theorem shr_at_5c : fetchRel shr12Code 0x5C = some (.load .lw a5 a0 0x0, 2) := by decide
+theorem shr_at_5e : fetchRel shr12Code 0x5E = some (.alu .sll (9 : Fin 32) a5 a1, 4) := by decide
+theorem shr_at_62 : fetchRel shr12Code 0x62 = some (.alu .or (9 : Fin 32) (9 : Fin 32) a3, 2) := by decide
+theorem shr_at_64 : fetchRel shr12Code 0x64 = some (.alu .srl a3 a5 a4, 4) := by decide
+theorem shr_at_68 : fetchRel shr12Code 0x68 = some (.store .sw a0 (9 : Fin 32) 0x0, 2) := by decide
+theorem shr_at_6a : fetchRel shr12Code 0x6A = some (.aluImm .add a0 a0 0x4, 2) := by decide
+theorem shr_at_6c : fetchRel shr12Code 0x6C = some (.aluImm .add a2 a2 0x1, 2) := by decide
+theorem shr_at_6e : fetchRel shr12Code 0x6E = some (.branch .bne a2 x0 0xFFFFFFEE, 2) := by decide
+theorem shr_at_70 : fetchRel shr12Code 0x70 = some (.load .lw a0 sp 0x38, 2) := by decide
+theorem shr_at_72 : fetchRel shr12Code 0x72 = some (.load .lw (22 : Fin 32) sp 0x3C, 2) := by decide
+theorem shr_at_74 : fetchRel shr12Code 0x74 = some (.aluImm .add a1 x0 0x3F, 4) := by decide
+theorem shr_at_78 : fetchRel shr12Code 0x78 = some (.store .sw sp a0 0x0, 2) := by decide
+theorem shr_at_7a : fetchRel shr12Code 0x7A = some (.store .sw sp (22 : Fin 32) 0x4, 2) := by decide
+theorem shr_at_7c : fetchRel shr12Code 0x7C = some (.branch .bltu a1 (21 : Fin 32) 0x15E, 4) := by decide
+theorem shr_at_80 : fetchRel shr12Code 0x80 = some (.aluImm .srl (20 : Fin 32) (21 : Fin 32) 0x5, 4) := by decide
+theorem shr_at_84 : fetchRel shr12Code 0x84 = some (.aluImm .add a0 x0 0x2, 2) := by decide
+theorem shr_at_86 : fetchRel shr12Code 0x86 = some (.store .sw sp x0 0x38, 2) := by decide
+theorem shr_at_88 : fetchRel shr12Code 0x88 = some (.store .sw sp x0 0x3C, 2) := by decide
+theorem shr_at_8a : fetchRel shr12Code 0x8A = some (.alu .sub a2 a0 (20 : Fin 32), 4) := by decide
+theorem shr_at_8e : fetchRel shr12Code 0x8E = some (.aluImm .add a0 sp 0x38, 2) := by decide
+theorem shr_at_90 : fetchRel shr12Code 0x90 = some (.aluImm .add a1 x0 0x2, 2) := by decide
+theorem shr_at_92 : fetchRel shr12Code 0x92 = some (.auipc ra 0x0, 4) := by decide
+theorem shr_at_96 : fetchRel shr12Code 0x96 = some (.jalr ra ra 0x15C, 4) := by decide
+theorem shr_at_9a : fetchRel shr12Code 0x9A = some (.alu .add (23 : Fin 32) x0 a0, 2) := by decide
+theorem shr_at_9c : fetchRel shr12Code 0x9C = some (.alu .add (8 : Fin 32) x0 a1, 2) := by decide
+theorem shr_at_9e : fetchRel shr12Code 0x9E = some (.aluImm .add a1 x0 0x2, 2) := by decide
+theorem shr_at_a0 : fetchRel shr12Code 0xA0 = some (.alu .add a0 x0 (19 : Fin 32), 2) := by decide
+theorem shr_at_a2 : fetchRel shr12Code 0xA2 = some (.alu .add a2 x0 (20 : Fin 32), 2) := by decide
+theorem shr_at_a4 : fetchRel shr12Code 0xA4 = some (.auipc ra 0x0, 4) := by decide
+theorem shr_at_a8 : fetchRel shr12Code 0xA8 = some (.jalr ra ra 0x15A, 4) := by decide
+theorem shr_at_ac : fetchRel shr12Code 0xAC = some (.branch .bne (8 : Fin 32) a1 0x126, 4) := by decide
+theorem shr_at_b0 : fetchRel shr12Code 0xB0 = some (.alu .add a1 x0 (8 : Fin 32), 2) := by decide
+theorem shr_at_b2 : fetchRel shr12Code 0xB2 = some (.alu .add a2 x0 (23 : Fin 32), 2) := by decide
+theorem shr_at_b4 : fetchRel shr12Code 0xB4 = some (.branch .beq (8 : Fin 32) x0 0xE, 2) := by decide
+theorem shr_at_b6 : fetchRel shr12Code 0xB6 = some (.load .lw a3 a0 0x0, 2) := by decide
+theorem shr_at_b8 : fetchRel shr12Code 0xB8 = some (.aluImm .add a0 a0 0x4, 2) := by decide
+theorem shr_at_ba : fetchRel shr12Code 0xBA = some (.store .sw a2 a3 0x0, 2) := by decide
+theorem shr_at_bc : fetchRel shr12Code 0xBC = some (.aluImm .add a2 a2 0x4, 2) := by decide
+theorem shr_at_be : fetchRel shr12Code 0xBE = some (.aluImm .add a1 a1 0xFFFFFFFF, 2) := by decide
+theorem shr_at_c0 : fetchRel shr12Code 0xC0 = some (.branch .bne a1 x0 0xFFFFFFF6, 2) := by decide
+theorem shr_at_c2 : fetchRel shr12Code 0xC2 = some (.aluImm .and (9 : Fin 32) (21 : Fin 32) 0x1F, 4) := by decide
+theorem shr_at_c6 : fetchRel shr12Code 0xC6 = some (.branch .beq (9 : Fin 32) x0 0x28, 2) := by decide
+theorem shr_at_c8 : fetchRel shr12Code 0xC8 = some (.aluImm .add a0 x0 0x0, 2) := by decide
+theorem shr_at_ca : fetchRel shr12Code 0xCA = some (.aluImm .sll a1 (8 : Fin 32) 0x2, 4) := by decide
+theorem shr_at_ce : fetchRel shr12Code 0xCE = some (.alu .add a2 a1 (23 : Fin 32), 4) := by decide
+theorem shr_at_d2 : fetchRel shr12Code 0xD2 = some (.aluImm .add a1 x0 0x20, 4) := by decide
+theorem shr_at_d6 : fetchRel shr12Code 0xD6 = some (.alu .sub a1 a1 (9 : Fin 32), 2) := by decide
+theorem shr_at_d8 : fetchRel shr12Code 0xD8 = some (.aluImm .add a2 a2 0xFFFFFFFC, 2) := by decide
+theorem shr_at_da : fetchRel shr12Code 0xDA = some (.branch .beq (8 : Fin 32) x0 0x14, 2) := by decide
+theorem shr_at_dc : fetchRel shr12Code 0xDC = some (.load .lw a3 a2 0x0, 2) := by decide
+theorem shr_at_de : fetchRel shr12Code 0xDE = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFFFF, 2) := by decide
+theorem shr_at_e0 : fetchRel shr12Code 0xE0 = some (.alu .srl a4 a3 (9 : Fin 32), 4) := by decide
+theorem shr_at_e4 : fetchRel shr12Code 0xE4 = some (.alu .or a4 a4 a0, 2) := by decide
+theorem shr_at_e6 : fetchRel shr12Code 0xE6 = some (.alu .sll a0 a3 a1, 4) := by decide
+theorem shr_at_ea : fetchRel shr12Code 0xEA = some (.store .sw a2 a4 0x0, 2) := by decide
+theorem shr_at_ec : fetchRel shr12Code 0xEC = some (.jal x0 0xFFFFFFEC, 2) := by decide
+theorem shr_at_ee : fetchRel shr12Code 0xEE = some (.load .lw a0 sp 0x38, 2) := by decide
+theorem shr_at_f0 : fetchRel shr12Code 0xF0 = some (.load .lw a1 sp 0x3C, 2) := by decide
+theorem shr_at_f2 : fetchRel shr12Code 0xF2 = some (.alu .add a2 x0 (19 : Fin 32), 2) := by decide
+theorem shr_at_f4 : fetchRel shr12Code 0xF4 = some (.store .sw a2 a0 0x0, 2) := by decide
+theorem shr_at_f6 : fetchRel shr12Code 0xF6 = some (.store .sw a2 a1 0x4, 2) := by decide
+theorem shr_at_f8 : fetchRel shr12Code 0xF8 = some (.aluImm .add a0 sp 0x38, 2) := by decide
+theorem shr_at_fa : fetchRel shr12Code 0xFA = some (.aluImm .add a2 x0 0x30, 4) := by decide
+theorem shr_at_fe : fetchRel shr12Code 0xFE = some (.aluImm .add a1 x0 0x0, 2) := by decide
+theorem shr_at_100 : fetchRel shr12Code 0x100 = some (.auipc ra 0x1000, 4) := by decide
+theorem shr_at_104 : fetchRel shr12Code 0x104 = some (.jalr ra ra 0x624, 4) := by decide
+theorem shr_at_108 : fetchRel shr12Code 0x108 = some (.aluImm .add a0 x0 0xC, 2) := by decide
+theorem shr_at_10a : fetchRel shr12Code 0x10A = some (.alu .sub a2 a0 (20 : Fin 32), 4) := by decide
+theorem shr_at_10e : fetchRel shr12Code 0x10E = some (.aluImm .add a0 sp 0x38, 2) := by decide
+theorem shr_at_110 : fetchRel shr12Code 0x110 = some (.aluImm .add a1 x0 0xC, 2) := by decide
+theorem shr_at_112 : fetchRel shr12Code 0x112 = some (.auipc ra 0x0, 4) := by decide
+theorem shr_at_116 : fetchRel shr12Code 0x116 = some (.jalr ra ra 0xDC, 4) := by decide
+theorem shr_at_11a : fetchRel shr12Code 0x11A = some (.alu .add (19 : Fin 32) x0 a0, 2) := by decide
+theorem shr_at_11c : fetchRel shr12Code 0x11C = some (.alu .add (8 : Fin 32) x0 a1, 2) := by decide
+theorem shr_at_11e : fetchRel shr12Code 0x11E = some (.aluImm .add a1 x0 0xC, 2) := by decide
+theorem shr_at_120 : fetchRel shr12Code 0x120 = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
+theorem shr_at_122 : fetchRel shr12Code 0x122 = some (.alu .add a2 x0 (20 : Fin 32), 2) := by decide
+theorem shr_at_124 : fetchRel shr12Code 0x124 = some (.auipc ra 0x0, 4) := by decide
+theorem shr_at_128 : fetchRel shr12Code 0x128 = some (.jalr ra ra 0xDA, 4) := by decide
+theorem shr_at_12c : fetchRel shr12Code 0x12C = some (.branch .bne (8 : Fin 32) a1 0xA6, 4) := by decide
+theorem shr_at_130 : fetchRel shr12Code 0x130 = some (.alu .add a1 x0 (8 : Fin 32), 2) := by decide
+theorem shr_at_132 : fetchRel shr12Code 0x132 = some (.alu .add a2 x0 (19 : Fin 32), 2) := by decide
+theorem shr_at_134 : fetchRel shr12Code 0x134 = some (.branch .beq (8 : Fin 32) x0 0xE, 2) := by decide
+theorem shr_at_136 : fetchRel shr12Code 0x136 = some (.load .lw a3 a0 0x0, 2) := by decide
+theorem shr_at_138 : fetchRel shr12Code 0x138 = some (.aluImm .add a0 a0 0x4, 2) := by decide
+theorem shr_at_13a : fetchRel shr12Code 0x13A = some (.store .sw a2 a3 0x0, 2) := by decide
+theorem shr_at_13c : fetchRel shr12Code 0x13C = some (.aluImm .add a2 a2 0x4, 2) := by decide
+theorem shr_at_13e : fetchRel shr12Code 0x13E = some (.aluImm .add a1 a1 0xFFFFFFFF, 2) := by decide
+theorem shr_at_140 : fetchRel shr12Code 0x140 = some (.branch .bne a1 x0 0xFFFFFFF6, 2) := by decide
+theorem shr_at_142 : fetchRel shr12Code 0x142 = some (.branch .beq (9 : Fin 32) x0 0x28, 2) := by decide
+theorem shr_at_144 : fetchRel shr12Code 0x144 = some (.aluImm .add a0 x0 0x0, 2) := by decide
+theorem shr_at_146 : fetchRel shr12Code 0x146 = some (.aluImm .sll a1 (8 : Fin 32) 0x2, 4) := by decide
+theorem shr_at_14a : fetchRel shr12Code 0x14A = some (.alu .add a2 a1 (19 : Fin 32), 4) := by decide
+theorem shr_at_14e : fetchRel shr12Code 0x14E = some (.aluImm .add a1 x0 0x20, 4) := by decide
+theorem shr_at_152 : fetchRel shr12Code 0x152 = some (.alu .sub a1 a1 (9 : Fin 32), 2) := by decide
+theorem shr_at_154 : fetchRel shr12Code 0x154 = some (.aluImm .add a2 a2 0xFFFFFFFC, 2) := by decide
+theorem shr_at_156 : fetchRel shr12Code 0x156 = some (.branch .beq (8 : Fin 32) x0 0x14, 2) := by decide
+theorem shr_at_158 : fetchRel shr12Code 0x158 = some (.load .lw a3 a2 0x0, 2) := by decide
+theorem shr_at_15a : fetchRel shr12Code 0x15A = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFFFF, 2) := by decide
+theorem shr_at_15c : fetchRel shr12Code 0x15C = some (.alu .srl a4 a3 (9 : Fin 32), 4) := by decide
+theorem shr_at_160 : fetchRel shr12Code 0x160 = some (.alu .or a4 a4 a0, 2) := by decide
+theorem shr_at_162 : fetchRel shr12Code 0x162 = some (.alu .sll a0 a3 a1, 4) := by decide
+theorem shr_at_166 : fetchRel shr12Code 0x166 = some (.store .sw a2 a4 0x0, 2) := by decide
+theorem shr_at_168 : fetchRel shr12Code 0x168 = some (.jal x0 0xFFFFFFEC, 2) := by decide
+theorem shr_at_16a : fetchRel shr12Code 0x16A = some (.aluImm .add a0 sp 0x8, 2) := by decide
+theorem shr_at_16c : fetchRel shr12Code 0x16C = some (.aluImm .add a1 sp 0x38, 2) := by decide
+theorem shr_at_16e : fetchRel shr12Code 0x16E = some (.aluImm .add a2 x0 0x30, 4) := by decide
+theorem shr_at_172 : fetchRel shr12Code 0x172 = some (.auipc ra 0x1000, 4) := by decide
+theorem shr_at_176 : fetchRel shr12Code 0x176 = some (.jalr ra ra 0x61A, 4) := by decide
+theorem shr_at_17a : fetchRel shr12Code 0x17A = some (.aluImm .add a1 sp 0x8, 2) := by decide
+theorem shr_at_17c : fetchRel shr12Code 0x17C = some (.aluImm .add a2 x0 0x30, 4) := by decide
+theorem shr_at_180 : fetchRel shr12Code 0x180 = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
+theorem shr_at_182 : fetchRel shr12Code 0x182 = some (.auipc ra 0x1000, 4) := by decide
+theorem shr_at_186 : fetchRel shr12Code 0x186 = some (.jalr ra ra 0x60A, 4) := by decide
+theorem shr_at_18a : fetchRel shr12Code 0x18A = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0x1F, 2) := by decide
+theorem shr_at_18c : fetchRel shr12Code 0x18C = some (.aluImm .srl (9 : Fin 32) (9 : Fin 32) 0x5, 2) := by decide
+theorem shr_at_18e : fetchRel shr12Code 0x18E = some (.alu .add (20 : Fin 32) (20 : Fin 32) (9 : Fin 32), 2) := by decide
+theorem shr_at_190 : fetchRel shr12Code 0x190 = some (.aluImm .add a0 x0 0xC, 2) := by decide
+theorem shr_at_192 : fetchRel shr12Code 0x192 = some (.alu .sub a0 a0 (20 : Fin 32), 4) := by decide
+theorem shr_at_196 : fetchRel shr12Code 0x196 = some (.branch .beq (20 : Fin 32) x0 0x4E, 4) := by decide
+theorem shr_at_19a : fetchRel shr12Code 0x19A = some (.aluImm .add a1 x0 0x2, 2) := by decide
+theorem shr_at_19c : fetchRel shr12Code 0x19C = some (.alu .sub a1 a1 (20 : Fin 32), 4) := by decide
+theorem shr_at_1a0 : fetchRel shr12Code 0x1A0 = some (.aluImm .sll a0 a0 0x2, 2) := by decide
+theorem shr_at_1a2 : fetchRel shr12Code 0x1A2 = some (.aluImm .sll a1 a1 0x2, 2) := by decide
+theorem shr_at_1a4 : fetchRel shr12Code 0x1A4 = some (.alu .add a2 x0 sp, 2) := by decide
+theorem shr_at_1a6 : fetchRel shr12Code 0x1A6 = some (.alu .add a0 a0 (18 : Fin 32), 2) := by decide
+theorem shr_at_1a8 : fetchRel shr12Code 0x1A8 = some (.alu .add a1 a1 a2, 2) := by decide
+theorem shr_at_1aa : fetchRel shr12Code 0x1AA = some (.load .lw a2 a0 0x0, 2) := by decide
+theorem shr_at_1ac : fetchRel shr12Code 0x1AC = some (.load .lw a1 a1 0x0, 2) := by decide
+theorem shr_at_1ae : fetchRel shr12Code 0x1AE = some (.alu .or a1 a1 a2, 2) := by decide
+theorem shr_at_1b0 : fetchRel shr12Code 0x1B0 = some (.aluImm .add a2 x0 0x1, 2) := by decide
+theorem shr_at_1b2 : fetchRel shr12Code 0x1B2 = some (.store .sw a0 a1 0x0, 2) := by decide
+theorem shr_at_1b4 : fetchRel shr12Code 0x1B4 = some (.branch .beq (20 : Fin 32) a2 0x8, 4) := by decide
+theorem shr_at_1b8 : fetchRel shr12Code 0x1B8 = some (.store .sw (18 : Fin 32) (22 : Fin 32) 0x2C, 4) := by decide
+theorem shr_at_1bc : fetchRel shr12Code 0x1BC = some (.load .lw ra sp 0x8C, 2) := by decide
+theorem shr_at_1be : fetchRel shr12Code 0x1BE = some (.load .lw (8 : Fin 32) sp 0x88, 2) := by decide
+theorem shr_at_1c0 : fetchRel shr12Code 0x1C0 = some (.load .lw (9 : Fin 32) sp 0x84, 2) := by decide
+theorem shr_at_1c2 : fetchRel shr12Code 0x1C2 = some (.load .lw (18 : Fin 32) sp 0x80, 2) := by decide
+theorem shr_at_1c4 : fetchRel shr12Code 0x1C4 = some (.load .lw (19 : Fin 32) sp 0x7C, 2) := by decide
+theorem shr_at_1c6 : fetchRel shr12Code 0x1C6 = some (.load .lw (20 : Fin 32) sp 0x78, 2) := by decide
+theorem shr_at_1c8 : fetchRel shr12Code 0x1C8 = some (.load .lw (21 : Fin 32) sp 0x74, 2) := by decide
+theorem shr_at_1ca : fetchRel shr12Code 0x1CA = some (.load .lw (22 : Fin 32) sp 0x70, 2) := by decide
+theorem shr_at_1cc : fetchRel shr12Code 0x1CC = some (.load .lw (23 : Fin 32) sp 0x6C, 2) := by decide
+theorem shr_at_1ce : fetchRel shr12Code 0x1CE = some (.aluImm .add sp sp 0x90, 2) := by decide
+theorem shr_at_1d0 : fetchRel shr12Code 0x1D0 = some (.jalr x0 ra 0x0, 2) := by decide
 theorem lm_at_0 : fetchRel leadMut12Code 0x0 = some (.branch .bltu a1 a2 0x8, 4) := by decide
 theorem lm_at_4 : fetchRel leadMut12Code 0x4 = some (.alu .add a1 x0 a2, 2) := by decide
 theorem lm_at_6 : fetchRel leadMut12Code 0x6 = some (.jalr x0 ra 0x0, 2) := by decide
@@ -347,6 +347,7 @@ def shF2 : List BInstr :=
 
 section
 set_option maxRecDepth 20000
+theorem shRestore_end : blockEnd shr12Code 0x1BC (restoreBlock shPs) = some 0x1CE := by decide
 theorem shF1_end : blockEnd shr12Code 0x18A shF1 = some 0x196 := by decide
 theorem shF2_end : blockEnd shr12Code 0x19A shF2 = some 0x1B4 := by decide
 theorem shF3_end : blockEnd shr12Code 0x1B8 [.sw (18 : Fin 32) (22 : Fin 32) 0x2C] = some 0x1BC := by decide
@@ -457,7 +458,7 @@ theorem sh_pro (m : Machine) {P sp0 lo hi : Word} {s : Nat} (env : SHEnv m.mem P
   have hFw := shF_w env.hS
   have hFa : (shF sp0).toNat % 4 = 0 := aligned_add env.hsp (k := 0xFFFFFF70) (by decide)
   have sFC : Sep (shF sp0) 0x90 P shr12Code.length := env.sC
-  obtain ⟨m1, d1, u1⟩ := s0.aluImm env.code sh_at_0 (off' := 2) (by decide)
+  obtain ⟨m1, d1, u1⟩ := s0.aluImm env.code shr_at_0 (off' := 2) (by decide)
   have sp1 : upd (reg m) sp (aluEval .add (reg m sp) 0xFFFFFF70) sp = shF sp0 := by
     simp +decide only [upd_app, ↓reduceIte]; rw [hsp]; rfl
   obtain ⟨m2, c2, u2⟩ := St.block (saveBlock shPs) u1 env.code shSave_end (saveBlock_ok _ shPs _ fun p hp => by
@@ -491,7 +492,7 @@ theorem sh_pro (m : Machine) {P sp0 lo hi : Word} {s : Nat} (env : SHEnv m.mem P
     simp only [BitVec.toNat_sub, BitVec.toNat_add, BitVec.toNat_ofNat, z0, z64]; omega
   have e2 : reg m3 a2 = 0x40 := by
     rw [g3]; simp +decide only [upd_app, ↓reduceIte, aluEval, r2]; first | done | rfl | (rw [hz]; rfl)
-  obtain ⟨m4, d4, u4⟩ := u3.self.notTaken (cIn frSv) 0x24 sh_at_20 (by decide) (by
+  obtain ⟨m4, d4, u4⟩ := u3.self.notTaken (cIn frSv) 0x24 shr_at_20 (by decide) (by
     have hu : (BitVec.ofNat 32 (64 - s)).ult 64 = true := by
       simp only [BitVec.ult, decide_eq_true_eq]; rw [BitVec.toNat_ofNat]; show (64 - s) % 2 ^ 32 < 64; omega
     rw [e1, e2]; show (!(BitVec.ofNat 32 (64 - s)).ult 64) = false; rw [hu]; rfl)
@@ -530,7 +531,7 @@ theorem sh_pro (m : Machine) {P sp0 lo hi : Word} {s : Nat} (env : SHEnv m.mem P
   have hc5 := cIn (M' := m5.mem) f5
   rw [u5.mem] at hc5
   obtain ⟨m6, d6, u6⟩ := u5.self.notTaken hc5
-    0x40 sh_at_3e (by decide) (by
+    0x40 shr_at_3e (by decide) (by
       rw [ea3, u5.self.zero]; simp only [branchTaken]
       rcases ews with h | h <;> rw [h] <;> decide)
   have g6 : ∀ q, reg m6 q = reg m5 q := fun q => by rw [u6.regs, g5]
@@ -602,10 +603,10 @@ theorem sh_l1 {M : Word → BitVec 8} {P src dst c : Word} {n : Machine} (s : St
     have h0 : q.val ≠ 0 := fun e => absurd (show shL1Keep q = false by unfold shL1Keep; simp [e]) (by rw [hq]; decide)
     rw [h2, g1]; simp only [upd_app, h0, k 9 rfl, k a3 rfl, k a4 rfl, k a5 rfl, ite_false]
   by_cases hl : c + 1 = 0
-  · obtain ⟨n2, d2, u2⟩ := u1.self.notTaken hc1 0x4C sh_at_4a (by decide) (by
+  · obtain ⟨n2, d2, u2⟩ := u1.self.notTaken hc1 0x4C shr_at_4a (by decide) (by
       rw [e13, hl, u1.self.zero]; rfl)
     exact ⟨n2, c1.trans (.single d2), by rw [if_pos hl]; exact u2.self, post n2 u2.regs⟩
-  · obtain ⟨n2, d2, u2⟩ := u1.self.taken hc1 0x40 sh_at_4a (by decide) (by
+  · obtain ⟨n2, d2, u2⟩ := u1.self.taken hc1 0x40 shr_at_4a (by decide) (by
       rw [e13, u1.self.zero]; simp only [branchTaken, bne_iff_ne, ne_eq]; exact hl)
     exact ⟨n2, c1.trans (.single d2), by rw [if_neg hl]; exact u2.self, post n2 u2.regs⟩
 
@@ -644,10 +645,10 @@ theorem sh_l2 {M : Word → BitVec 8} {P p b r carry c : Word} {n : Machine} (s 
     have h0 : q.val ≠ 0 := fun e => absurd (show shL2Keep q = false by unfold shL2Keep; simp [e]) (by rw [hq]; decide)
     rw [h2, g1]; simp only [upd_app, h0, k 9 rfl, k a0 rfl, k a2 rfl, k a3 rfl, k a5 rfl, ite_false]
   by_cases hl : c + 1 = 0
-  · obtain ⟨n2, d2, u2⟩ := u1.self.notTaken hc1 0x70 sh_at_6e (by decide) (by
+  · obtain ⟨n2, d2, u2⟩ := u1.self.notTaken hc1 0x70 shr_at_6e (by decide) (by
       rw [e12, hl, u1.self.zero]; rfl)
     exact ⟨n2, c1.trans (.single d2), by rw [if_pos hl]; exact u2.self, post n2 u2.regs⟩
-  · obtain ⟨n2, d2, u2⟩ := u1.self.taken hc1 0x5C sh_at_6e (by decide) (by
+  · obtain ⟨n2, d2, u2⟩ := u1.self.taken hc1 0x5C shr_at_6e (by decide) (by
       rw [e12, u1.self.zero]; simp only [branchTaken, bne_iff_ne, ne_eq]; exact hl)
     exact ⟨n2, c1.trans (.single d2), by rw [if_neg hl]; exact u2.self, post n2 u2.regs⟩
 
@@ -832,10 +833,10 @@ structure SrAt (o : Nat) : Prop where
   ho : o % 2 = 0
 
 theorem srAtH : SrAt 0xD8 :=
-  ⟨shSrAH_end, sh_at_da, shSrBH_end, sh_at_ec, by decide, by decide, by decide, by decide⟩
+  ⟨shSrAH_end, shr_at_da, shSrBH_end, shr_at_ec, by decide, by decide, by decide, by decide⟩
 
 theorem srAtL : SrAt 0x154 :=
-  ⟨shSrAL_end, sh_at_156, shSrBL_end, sh_at_168, by decide, by decide, by decide, by decide⟩
+  ⟨shSrAL_end, shr_at_156, shSrBL_end, shr_at_168, by decide, by decide, by decide, by decide⟩
 
 set_option maxRecDepth 20000 in
 /-- **One pass of the right shift**, from the loop's head at `o`, for word
@@ -1138,7 +1139,7 @@ theorem sh_mid0 {M : Word → BitVec 8} {P : Word} {n : Machine} {s : Nat} (hs :
     · have : q = 0 := Fin.ext h0
       subst this; simp [upd]; exact st.zero.symm
     · exact upd_ne h0 h
-  obtain ⟨n2, d2, u2⟩ := u1.self.taken hc 0x70 sh_at_4e (by decide) (by
+  obtain ⟨n2, d2, u2⟩ := u1.self.taken hc 0x70 shr_at_4e (by decide) (by
     rw [u1.regs, upd_same (by decide), u1.self.zero, ra1, hs]; rfl)
   exact ⟨n2, c1.trans (.single d2), u2.self, fun q h => by rw [u2.regs, k1 q h]⟩
 
@@ -1166,7 +1167,7 @@ theorem sh_mid1 {M : Word → BitVec 8} {P : Word} {n : Machine} {s : Nat} (hs1 
     · have : q = 0 := Fin.ext h0
       subst this; simp [upd]; exact st.zero.symm
     · exact upd_ne h0 h
-  obtain ⟨n2, d2, u2⟩ := u1.self.notTaken hc 0x50 sh_at_4e (by decide) (by
+  obtain ⟨n2, d2, u2⟩ := u1.self.notTaken hc 0x50 shr_at_4e (by decide) (by
     rw [e1, u1.self.zero]; simp only [branchTaken, beq_eq_false_iff_ne, ne_eq]; intro h
     have := congrArg BitVec.toNat h; rw [BitVec.toNat_ofNat] at this; simp at this; omega)
   obtain ⟨n3, c3, u3⟩ := St.block shL2i u2.self hc shL2i_end (by simp [BlockOk, BInstr.ok, shL2i])
@@ -1174,7 +1175,7 @@ theorem sh_mid1 {M : Word → BitVec 8} {P : Word} {n : Machine} {s : Nat} (hs1 
   have g3 : ∀ q, reg n3 q = _ := u3.regs
   have e2 : reg n3 a2 = BitVec.ofNat 32 ((64 - s) / 32) + 0xFFFFFFFE := by
     rw [g3]; simp +decide only [upd_app, ↓reduceIte]; rw [u2.regs, k1 a2 (by decide), ra2]; rfl
-  obtain ⟨n4, d4, u4⟩ := u3.self.notTaken hc 0x5C sh_at_5a (by decide) (by
+  obtain ⟨n4, d4, u4⟩ := u3.self.notTaken hc 0x5C shr_at_5a (by decide) (by
     rw [e2, u3.self.zero]; simp only [branchTaken]
     rcases (by omega : (64 - s) / 32 = 0 ∨ (64 - s) / 32 = 1) with h | h <;> rw [h] <;> decide)
   have g4 : ∀ q, reg n4 q = reg n3 q := u4.regs
@@ -1212,7 +1213,7 @@ theorem sh_tail {M : Word → BitVec 8} {P F : Word} {n : Machine} {s : Nat} (hs
   have hc1 : CodeIn (memStore32 (memStore32 M (F + 0) (memLoad32 M (F + 0x38))) (F + 4)
       (memLoad32 M (F + 0x3C))) P shr12Code :=
     (hc.store32 (shF_in' (c := 0) (by decide) sFC)).store32 (shF_in' (c := 4) (by decide) sFC)
-  obtain ⟨n2, d2, u2⟩ := u1.self.notTaken hc1 0x80 sh_at_7c (by decide) (by
+  obtain ⟨n2, d2, u2⟩ := u1.self.notTaken hc1 0x80 shr_at_7c (by decide) (by
     simp +decide only [u1.regs, upd_app, ↓reduceIte]
     rw [r21]; apply bltu_false; rw [BitVec.toNat_ofNat]
     show s % 2 ^ 32 ≤ (0 + 0x3F : Word).toNat
@@ -1476,7 +1477,7 @@ theorem sh_H1 {M : Word → BitVec 8} {P F hi : Word} {n : Machine} {s : Nat} (h
   have e1a2 : reg n1 a2 = BitVec.ofNat 32 (2 - s / 32) := by
     rw [g1]; simp +decide only [upd_app, ↓reduceIte, zw]; rw [sh_srl5 hs2]
     rcases (by omega : s / 32 = 0 ∨ s / 32 = 1) with h | h <;> rw [h] <;> decide
-  obtain ⟨n2, c2, u2, e2a1, k2⟩ := sh_lead hP u1.self (cz hc sFC) (cz hl sFL) sh_at_92 sh_at_96
+  obtain ⟨n2, c2, u2, e2a1, k2⟩ := sh_lead hP u1.self (cz hc sFC) (cz hl sFL) shr_at_92 shr_at_96
     (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (by decide) e1a1 e1a2 (by
       rw [ofNat_tn (by omega), show (2 : Word).toNat = 2 from rfl]; omega)
   have e1a0 : reg n1 a0 = F + 0x38 := by rw [g1]; simp +decide only [upd_app, ↓reduceIte, ev_add]
@@ -1492,7 +1493,7 @@ theorem sh_H1 {M : Word → BitVec 8} {P F hi : Word} {n : Machine} {s : Nat} (h
   have e3a1 : reg n3 a1 = 2 := by rw [g3]; simp +decide only [upd_app, ↓reduceIte, show reg n2 x0 = 0 from u2.zero, zw]
   have e3a2 : reg n3 a2 = BitVec.ofNat 32 (s / 32) := by
     rw [g3]; simp +decide only [upd_app, ↓reduceIte]; rw [k2 20 (by decide) (by decide), e20]; exact zw _
-  obtain ⟨n4, c4, u4, e4a0, e4a1, k4⟩ := sh_trail hP u3.self hcz (cz ht sFT) sh_at_a4 sh_at_a8
+  obtain ⟨n4, c4, u4, e4a0, e4a1, k4⟩ := sh_trail hP u3.self hcz (cz ht sFT) shr_at_a4 shr_at_a8
     (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (by decide) e3a0 e3a1 e3a2 (by
       rw [ofNat_tn (by omega), show (2 : Word).toNat = 2 from rfl]; omega)
   have e8 : reg n4 8 = BitVec.ofNat 32 (2 - s / 32) := by
@@ -1500,7 +1501,7 @@ theorem sh_H1 {M : Word → BitVec 8} {P F hi : Word} {n : Machine} {s : Nat} (h
     rw [e2a1]; exact zw _
   have ea1' : reg n4 a1 = BitVec.ofNat 32 (2 - s / 32) := by
     rw [e4a1]; rcases (by omega : s / 32 = 0 ∨ s / 32 = 1) with h | h <;> rw [h] <;> decide
-  obtain ⟨n5, d5, u5⟩ := u4.notTaken hcz 0xB0 sh_at_ac (by decide) (by
+  obtain ⟨n5, d5, u5⟩ := u4.notTaken hcz 0xB0 shr_at_ac (by decide) (by
     rw [e8, ea1']; simp only [branchTaken, bne_self_eq_false])
   have e23 : reg n4 23 = F + 0x38 := by
     rw [k4 23 (by decide) (by decide) (by decide) (by decide), g3]; simp +decide only [upd_app, ↓reduceIte]
@@ -1508,7 +1509,7 @@ theorem sh_H1 {M : Word → BitVec 8} {P F hi : Word} {n : Machine} {s : Nat} (h
   obtain ⟨n6, c6, u6⟩ := St.block (shC3 23) u5 hcz shC3H_end (by simp [BlockOk, BInstr.ok, shC3])
   simp +decide only [runBlock, BInstr.run, shC3, upd_app, ↓reduceIte] at u6
   have g6 : ∀ q, reg n6 q = _ := u6.regs
-  obtain ⟨n7, d7, u7⟩ := u6.self.notTaken hcz 0xB6 sh_at_b4 (by decide) (by
+  obtain ⟨n7, d7, u7⟩ := u6.self.notTaken hcz 0xB6 shr_at_b4 (by decide) (by
     rw [g6]; simp +decide only [upd_app, ↓reduceIte]; rw [e8, show reg n6 x0 = 0 from u6.self.zero]
     rcases (by omega : s / 32 = 0 ∨ s / 32 = 1) with h | h <;> rw [h] <;> decide)
   have g7 : ∀ q, reg n7 q = reg n6 q := u7.regs
@@ -1591,7 +1592,7 @@ theorem sh_H {M : Word → BitVec 8} {P F hi : Word} {n : Machine} {s : Nat} (hs
       (4 * (2 - s / 32)) :=
     ((sHF.sub (c := 4 * (s / 32)) (l := 4 * (2 - s / 32)) (by omega)).subR (c := 0x38) (l := 4 * (2 - s / 32))
       (by omega)).symm
-  obtain ⟨n2, c2, u2, e2a0, e2a2, k2⟩ := sh_cpy_loop (o := 0xB6) shCpyH_end sh_at_c0 (by decide) (by decide)
+  obtain ⟨n2, c2, u2, e2a0, e2a2, k2⟩ := sh_cpy_loop (o := 0xB6) shCpyH_end shr_at_c0 (by decide) (by decide)
     (k := 2 - s / 32) (by omega) (aligned_add hhi (by omega)) hTa (by omega) hc1 sTk sTS (2 - s / 32 - 1) 0
     (by omega) u1 (by rw [e1a0]; exact (add_ofNat_zero _).symm) (by rw [e1a2]; exact (add_ofNat_zero _).symm)
     (by rw [e1a1, Nat.sub_zero])
@@ -1685,7 +1686,7 @@ theorem sh_H {M : Word → BitVec 8} {P F hi : Word} {n : Machine} {s : Nat} (hs
         show (0 : Word).toNat = 0 from rfl, Nat.zero_mul, Nat.add_zero]
       rw [show s = 32 + s % 32 by omega, div_hi h0l, show (32 + s % 32) % 32 = s % 32 by omega]
   by_cases hb : s % 32 = 0
-  · obtain ⟨n4, d4, u4⟩ := u3.self.taken hc2 0xEE sh_at_c6 (by decide) (by rw [e39, hb, u3.self.zero]; rfl)
+  · obtain ⟨n4, d4, u4⟩ := u3.self.taken hc2 0xEE shr_at_c6 (by decide) (by rw [e39, hb, u3.self.zero]; rfl)
     obtain ⟨n5, M5, c5, u5, f5, v5, k5⟩ := store u4.self (fun x hx => by
         rw [f2 x (hx.sub (c := 0) (l := 4 * (2 - s / 32)) (by omega) |> shSep0), f1 x hx])
       (by rw [u4.regs, k3 sp (by decide), k2 sp rfl, k1 sp (by decide), rsp])
@@ -1702,7 +1703,7 @@ theorem sh_H {M : Word → BitVec 8} {P F hi : Word} {n : Machine} {s : Nat} (hs
         k2 q (by simp only [shCpyKeep, decide_eq_true_eq]; intro h; apply hq
                  simp only [List.mem_cons, List.mem_nil_iff, or_false] at h ⊢; omega),
         k1 q (by intro h; apply hq; simp only [List.mem_cons, List.mem_nil_iff, or_false] at h ⊢; omega)]
-  · obtain ⟨n4, d4, u4⟩ := u3.self.notTaken hc2 0xC8 sh_at_c6 (by decide) (by
+  · obtain ⟨n4, d4, u4⟩ := u3.self.notTaken hc2 0xC8 shr_at_c6 (by decide) (by
       rw [e39, u3.self.zero]; simp only [branchTaken, beq_eq_false_iff_ne, ne_eq]; intro h
       have := congrArg BitVec.toNat h; rw [ofNat_tn (by omega)] at this; exact hb this)
     obtain ⟨n5, c5, u5⟩ := St.block (shC5 23) u4 hc2 shC5H_end (by simp [BlockOk, BInstr.ok, shC5])
@@ -1782,7 +1783,7 @@ theorem sh_L1 {M : Word → BitVec 8} {P F lo : Word} {n : Machine} {s : Nat} (h
   obtain ⟨n1, c1, u1⟩ := St.block shD1 st hc shD1_end (by simp [BlockOk, BInstr.ok, shD1])
   simp +decide only [runBlock, BInstr.run, shD1, upd_app, ↓reduceIte, rsp] at u1
   obtain ⟨n2, c2, u2, e2a0, k2⟩ := St.memsetW (B := P + 0x1724) (w := 12) (dst := F + BitVec.ofNat 32 0x38)
-    (even_at P hP 0x1724 (by decide)) u1.self hc hms sh_at_100 sh_at_104 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl)
+    (even_at P hP 0x1724 (by decide)) u1.self hc hms shr_at_100 shr_at_104 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl)
     (even_at P hP (0x100 + 8) (by decide)) (by decide) (by rw [BitVec.toNat_add, ofNat_tn (by decide)]; omega)
     (by decide) hTa (sFM.sub (c := 0x38) (l := 4 * 12) (by decide))
     (by rw [u1.regs]; simp +decide only [upd_app, ↓reduceIte, ev_add]; rfl)
@@ -1814,7 +1815,7 @@ theorem sh_L1 {M : Word → BitVec 8} {P F lo : Word} {n : Machine} {s : Nat} (h
     rw [g3]; simp +decide only [upd_app, ↓reduceIte, zw]; rw [r20', show reg n2 x0 = 0 from u2.zero]
     rcases (by omega : s / 32 = 0 ∨ s / 32 = 1) with h | h <;> rw [h] <;> decide
   have e3a0 : reg n3 a0 = F + 0x38 := by rw [g3]; simp +decide only [upd_app, ↓reduceIte, ev_add]; rw [rsp']
-  obtain ⟨n4, c4, u4, e4a1, k4⟩ := sh_lead hP u3.self hcz (cz hl sFL) sh_at_112 sh_at_116
+  obtain ⟨n4, c4, u4, e4a1, k4⟩ := sh_lead hP u3.self hcz (cz hl sFL) shr_at_112 shr_at_116
     (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (by decide) e3a1 e3a2 (by
       rw [ofNat_tn (by omega), show (0xC : Word).toNat = 12 from rfl]; omega)
   have k4a0 : reg n4 a0 = F + 0x38 := by rw [k4 a0 (by decide) (by decide), e3a0]
@@ -1830,7 +1831,7 @@ theorem sh_L1 {M : Word → BitVec 8} {P F lo : Word} {n : Machine} {s : Nat} (h
   have e5a1 : reg n5 a1 = 0xC := by rw [g5]; simp +decide only [upd_app, ↓reduceIte, zw]
   have e5a2 : reg n5 a2 = BitVec.ofNat 32 (s / 32) := by
     rw [g5]; simp +decide only [upd_app, ↓reduceIte]; rw [r20'']; exact zw _
-  obtain ⟨n6, c6, u6, e6a0, e6a1, k6⟩ := sh_trail hP u5.self hcz (cz ht sFT) sh_at_124 sh_at_128
+  obtain ⟨n6, c6, u6, e6a0, e6a1, k6⟩ := sh_trail hP u5.self hcz (cz ht sFT) shr_at_124 shr_at_128
     (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (by decide) e5a0 e5a1 e5a2 (by
       rw [ofNat_tn (by omega), show (0xC : Word).toNat = 12 from rfl]; omega)
   have e8 : reg n6 8 = BitVec.ofNat 32 (12 - s / 32) := by
@@ -1838,7 +1839,7 @@ theorem sh_L1 {M : Word → BitVec 8} {P F lo : Word} {n : Machine} {s : Nat} (h
     rw [e4a1]; exact zw _
   have ea1' : reg n6 a1 = BitVec.ofNat 32 (12 - s / 32) := by
     rw [e6a1]; rcases (by omega : s / 32 = 0 ∨ s / 32 = 1) with h | h <;> rw [h] <;> decide
-  obtain ⟨n7, d7, u7⟩ := u6.notTaken hcz 0x130 sh_at_12c (by decide) (by
+  obtain ⟨n7, d7, u7⟩ := u6.notTaken hcz 0x130 shr_at_12c (by decide) (by
     rw [e8, ea1']; simp only [branchTaken, bne_self_eq_false])
   have e19 : reg n6 19 = F + 0x38 := by
     rw [k6 19 (by decide) (by decide) (by decide) (by decide), g5]; simp +decide only [upd_app, ↓reduceIte]
@@ -1846,7 +1847,7 @@ theorem sh_L1 {M : Word → BitVec 8} {P F lo : Word} {n : Machine} {s : Nat} (h
   obtain ⟨n8, c8, u8⟩ := St.block (shC3 19) u7 hcz shC3L_end (by simp [BlockOk, BInstr.ok, shC3])
   simp +decide only [runBlock, BInstr.run, shC3, upd_app, ↓reduceIte] at u8
   have g8 : ∀ q, reg n8 q = _ := u8.regs
-  obtain ⟨n9, d9, u9⟩ := u8.self.notTaken hcz 0x136 sh_at_134 (by decide) (by
+  obtain ⟨n9, d9, u9⟩ := u8.self.notTaken hcz 0x136 shr_at_134 (by decide) (by
     rw [g8]; simp +decide only [upd_app, ↓reduceIte]; rw [e8, show reg n8 x0 = 0 from u8.self.zero]
     rcases (by omega : s / 32 = 0 ∨ s / 32 = 1) with h | h <;> rw [h] <;> decide)
   have g9 : ∀ q, reg n9 q = reg n8 q := u9.regs
@@ -1920,7 +1921,7 @@ theorem sh_L {M : Word → BitVec 8} {P F lo : Word} {n : Machine} {s : Nat} (hs
       (4 * (12 - s / 32)) :=
     ((sLF.sub (c := 4 * (s / 32)) (l := 4 * (12 - s / 32)) (by omega)).subR (c := 0x38) (l := 4 * (12 - s / 32))
       (by omega)).symm
-  obtain ⟨n2, c2, u2, e2a0, e2a2, k2⟩ := sh_cpy_loop (o := 0x136) shCpyL_end sh_at_140 (by decide) (by decide)
+  obtain ⟨n2, c2, u2, e2a0, e2a2, k2⟩ := sh_cpy_loop (o := 0x136) shCpyL_end shr_at_140 (by decide) (by decide)
     (k := 12 - s / 32) (by omega) (aligned_add hlo (by omega)) hTa (by rw [BitVec.toNat_add, ofNat_tn (by decide)]; omega)
     hcz sTk sTS (12 - s / 32 - 1) 0 (by omega) u1 (by rw [e1a0]; exact (add_ofNat_zero _).symm)
     (by rw [e1a2]; exact (add_ofNat_zero _).symm) (by rw [e1a1, Nat.sub_zero])
@@ -1967,7 +1968,7 @@ theorem sh_L {M : Word → BitVec 8} {P F lo : Word} {n : Machine} {s : Nat} (hs
                    simp only [List.mem_cons, List.mem_nil_iff, or_false] at h ⊢; omega),
         k1 q (by intro h; apply hq; simp only [List.mem_cons, List.mem_nil_iff, or_false] at h ⊢; omega)]
   by_cases hb : s % 32 = 0
-  · obtain ⟨n4, d4, u4⟩ := u2.taken hc2 0x16A sh_at_142 (by decide) (by rw [r9', hb, u2.zero]; rfl)
+  · obtain ⟨n4, d4, u4⟩ := u2.taken hc2 0x16A shr_at_142 (by decide) (by rw [r9', hb, u2.zero]; rfl)
     refine ⟨n4, M2, c1.trans (c2.trans (.single d4)), u4.self, fun x hx => ?_, ?_, fun q hq => ?_⟩
     · rw [f2 x (hx.sub (c := 0) (l := 4 * (12 - s / 32)) (by omega) |> shSep0), fz x hx]
     · exact hval (fun _ _ => rfl) (by rw [hb, Nat.pow_zero, Nat.div_one])
@@ -1975,7 +1976,7 @@ theorem sh_L {M : Word → BitVec 8} {P F lo : Word} {n : Machine} {s : Nat} (hs
       · have : q = 0 := Fin.ext h0
         subst this; rw [u4.self.zero, st.zero]
       rw [u4.regs]; exact kq q hq h0
-  · obtain ⟨n4, d4, u4⟩ := u2.notTaken hc2 0x144 sh_at_142 (by decide) (by
+  · obtain ⟨n4, d4, u4⟩ := u2.notTaken hc2 0x144 shr_at_142 (by decide) (by
       rw [r9', u2.zero]; simp only [branchTaken, beq_eq_false_iff_ne, ne_eq]; intro h
       have := congrArg BitVec.toNat h; rw [ofNat_tn (by omega)] at this; exact hb this)
     obtain ⟨n5, c5, u5⟩ := St.block (shC5 19) u4 hc2 shC5L_end (by simp [BlockOk, BInstr.ok, shC5])
@@ -2046,7 +2047,7 @@ theorem sh_E {M : Word → BitVec 8} {P F lo : Word} {n : Machine} (hP : P.toNat
   obtain ⟨n2, c2, u2, -, k2⟩ := St.memcpyW (B := P + 0x178C) (w := 12) (dst := F + BitVec.ofNat 32 8)
     (src := F + BitVec.ofNat 32 0x38)
     (even_at P hP 0x178C (by decide)) u1.self hc hst (by rw [e8]; exact hbd)
-    sh_at_172 sh_at_176 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x172 + 8) (by decide))
+    shr_at_172 shr_at_176 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x172 + 8) (by decide))
     (by decide) (by rw [BitVec.toNat_add, ofNat_tn (by decide)]; omega) (by decide) (aligned_add hFa (by decide))
     (aligned_add hFa (by decide)) s8T (by rw [e8]; exact sFB.sub (by decide))
     (by rw [u1.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [rsp]; rfl)
@@ -2074,7 +2075,7 @@ theorem sh_E {M : Word → BitVec 8} {P F lo : Word} {n : Machine} (hP : P.toNat
   obtain ⟨n4, c4, u4, -, k4⟩ := St.memcpyW (B := P + 0x178C) (w := 12) (dst := lo) (src := F + BitVec.ofNat 32 8)
     (even_at P hP 0x178C (by decide)) u3.self hc2 (m2 hst sFU)
     (by rw [e8]; exact m2 hbd sFB)
-    sh_at_182 sh_at_186 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x182 + 8) (by decide))
+    shr_at_182 shr_at_186 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x182 + 8) (by decide))
     (by decide) (by omega) (by decide) hlo (aligned_add hFa (by decide)) (sLF.subR (by decide))
     (by rw [e8]; exact sLB)
     (by rw [u3.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [r182]; exact BitVec.zero_add _)
@@ -2171,7 +2172,7 @@ theorem sh_F {M : Word → BitVec 8} {P F lo : Word} {n : Machine} {s X : Nat} (
     · have : q = 0 := Fin.ext h0
       subst this; rw [u1.self.zero, st.zero]
     rw [g1]; simp only [upd_app, h0, nq 9 (by decide), nq 10 (by decide), nq 20 (by decide), ite_false]
-  obtain ⟨n2, d2, u2⟩ := u1.self.notTaken hc 0x19A sh_at_196 (by decide) (by
+  obtain ⟨n2, d2, u2⟩ := u1.self.notTaken hc 0x19A shr_at_196 (by decide) (by
     rw [e20, u1.self.zero]; simp only [branchTaken, beq_eq_false_iff_ne, ne_eq]; intro h
     have := congrArg BitVec.toNat h; rw [ofNat_tn (by omega)] at this
     exact absurd this (by show (s + 31) / 32 ≠ 0; omega))
@@ -2236,7 +2237,7 @@ theorem sh_F {M : Word → BitVec 8} {P F lo : Word} {n : Machine} {s X : Nat} (
     subst h1
     have hs : s ≤ 32 := by omega
     obtain ⟨hF0, hF4⟩ := shCross1 hm0 hs1 hs hX
-    obtain ⟨n4, d4, u4⟩ := u3.self.taken hc3 0x1BC sh_at_1b4 (by decide) (by
+    obtain ⟨n4, d4, u4⟩ := u3.self.taken hc3 0x1BC shr_at_1b4 (by decide) (by
       rw [e320, e312]; rfl)
     have h11 : accV M lo 12 = accV M lo 11 + (memLoad32 M (lo + BitVec.ofNat 32 44)).toNat * 2 ^ 352 := accV_succ1 _ _ _
     have hw11 : (memLoad32 M (lo + BitVec.ofNat 32 44)).toNat < 2 ^ (32 - s) :=
@@ -2256,7 +2257,7 @@ theorem sh_F {M : Word → BitVec 8} {P F lo : Word} {n : Machine} {s X : Nat} (
     subst h2
     have hs : 33 ≤ s := by omega
     have hF0 := shCross2 hs hs2 hX
-    obtain ⟨n4, d4, u4⟩ := u3.self.notTaken hc3 0x1B8 sh_at_1b4 (by decide) (by
+    obtain ⟨n4, d4, u4⟩ := u3.self.notTaken hc3 0x1B8 shr_at_1b4 (by decide) (by
       rw [e320, e312]; rfl)
     have r22' : reg n3 22 = memLoad32 M (F + 4) := by rw [k3 22 (by decide), r22]
     have r18' : reg n3 18 = lo := by rw [k3 18 (by decide), r18]
@@ -2292,5 +2293,70 @@ theorem sh_F {M : Word → BitVec 8} {P F lo : Word} {n : Machine} {s X : Nat} (
       rw [Nat.mul_comm K (memLoad32 M F).toNat, Nat.zero_mul]
       omega
     · first | exact k3 q hq | (rw [u5.regs]; exact k3 q hq) | (rw [u5.regs, u4.regs]; exact k3 q hq)
+
+
+/-- The value `shr_in_place_wide` leaves: `lo` shifted, with the bits that
+leave `hi` above it, and `hi` shifted, make the 448-bit value shifted. -/
+theorem shFinal {A H s : Nat} (hs : s ≤ 63) :
+    A / 2 ^ s + 2 ^ 320 * (H * 2 ^ (64 - s) % 2 ^ 64) + 2 ^ 384 * (H / 2 ^ s) = (A + 2 ^ 384 * H) / 2 ^ s := by
+  have e1 : H * 2 ^ (64 - s) % 2 ^ 64 = 2 ^ (64 - s) * (H % 2 ^ s) := by
+    rw [← shMulMod, Nat.sub_add_cancel (by omega)]
+  have e2 : (2 : Nat) ^ 384 = 2 ^ s * (2 ^ 320 * 2 ^ (64 - s)) := by
+    rw [← Nat.pow_add, ← Nat.pow_add]; congr 1; omega
+  have e3 : 2 ^ 384 * H = 2 ^ s * (2 ^ 320 * (2 ^ (64 - s) * (H % 2 ^ s)) + 2 ^ 384 * (H / 2 ^ s)) := by
+    have hH := Nat.mod_add_div H (2 ^ s)
+    generalize H % 2 ^ s = r at hH; generalize H / 2 ^ s = q at hH
+    subst hH; rw [e2]
+    generalize (2 : Nat) ^ s = a; generalize (2 : Nat) ^ 320 = b; generalize (2 : Nat) ^ (64 - s) = c
+    simp only [Nat.mul_add, Nat.mul_assoc, Nat.mul_left_comm, Nat.mul_comm]
+  rw [e1, e3, Nat.add_mul_div_left _ _ (Nat.two_pow_pos s), Nat.add_assoc]
+
+theorem accV_two (M : Word → BitVec 8) (b : Word) :
+    accV M b 2 = (memLoad32 M b).toNat + 2 ^ 32 * (memLoad32 M (b + 4)).toNat := by
+  simp only [accV, Nat.mul_zero, Nat.pow_zero, Nat.mul_one, Nat.zero_add, add_ofNat_zero]
+  rw [Nat.mul_comm]; rfl
+
+theorem shPs_sp : ∀ p ∈ shPs, p.1 ≠ sp := by decide
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 8000000 in
+/-- The epilogue, from 0x1BC: restore the saved registers and `sp`, and
+return. -/
+theorem sh_epi {M : Word → BitVec 8} {P F : Word} {v : Fin 32 → Word} {n : Machine}
+    (st : St M P n 0x1BC (reg n)) (hc : CodeIn M P shr12Code) (hFa : F.toNat % 4 = 0) (rsp : reg n sp = F)
+    (hsl : ∀ r o, (r, o) ∈ shPs → memLoad32 M (F + o) = v r) :
+    ∃ n', Steps n n' ∧ n'.pc = v ra &&& ~~~1 ∧ reg n' sp = F + 0x90 ∧ n'.mem = M ∧
+      (∀ r o, (r, o) ∈ shPs → reg n' r = v r) ∧
+      ∀ q, q.val ∉ [1, 8, 9, 18, 19, 20, 21, 22, 23] → q ≠ sp → reg n' q = reg n q := by
+  obtain ⟨n4, c4, u4⟩ := St.block (restoreBlock shPs) st hc shRestore_end
+    (restoreBlock_ok M _ shPs (reg n) rsp shPs_sp fun p hp => fr_al' hFa (shPs_range p hp).1)
+  simp only [restoreBlock_run M _ shPs (reg n) rsp shPs_sp] at u4
+  have rsp4 : restoreRegs M F (reg n) shPs sp = F := by rw [restoreRegs_sp _ _ _ _ shPs_sp]; exact rsp
+  obtain ⟨n5, d5, u5⟩ := u4.aluImm hc shr_at_1ce (off' := 0x1D0) (by decide)
+  obtain ⟨n6, d6, pc6, mem6, regs6⟩ := u5.jalr hc shr_at_1d0
+  refine ⟨n6, c4.trans (.cons d5 (.single d6)), ?_, ?_, ?_, ?_, ?_⟩
+  · rw [pc6]; simp +decide only [upd_app, ↓reduceIte]
+    simp only [restoreRegs]; simp +decide only [upd_app, ↓reduceIte]
+    rw [add_lit_zero, hsl ra 0x8C (by decide)]
+  · rw [regs6]; simp +decide only [upd_app, ↓reduceIte, aluEval]; rw [rsp4]; try rfl
+  · exact mem6
+  · intro r o h
+    rw [regs6]
+    simp only [shPs, List.mem_cons, List.mem_nil_iff, or_false, Prod.mk.injEq] at h
+    rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
+      ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+    · simp +decide only [upd_app, ↓reduceIte]
+      simp only [restoreRegs]; simp +decide only [upd_app, ↓reduceIte]
+      exact hsl _ _ (by decide)
+  · intro q hq hs
+    have ne : ∀ w : Fin 32, w.val ∈ [1, 8, 9, 18, 19, 20, 21, 22, 23] → q ≠ w := fun w hw e => hq (e ▸ hw)
+    by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; exact (show reg n6 0 = 0 from rfl).trans (show reg n 0 = 0 from rfl).symm
+    rw [regs6]
+    simp only [upd_app, h0, hs, ite_false]
+    simp only [restoreRegs]
+    simp only [upd_app, h0, ne ra (by decide), ne 8 (by decide), ne 9 (by decide), ne 18 (by decide),
+      ne 19 (by decide), ne 20 (by decide), ne 21 (by decide), ne 22 (by decide), ne 23 (by decide), ite_false]
 
 end C3.RV32

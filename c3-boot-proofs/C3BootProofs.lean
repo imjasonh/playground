@@ -94,6 +94,7 @@ import C3BootProofs.Proofs.UintSelect2
 import C3BootProofs.Proofs.CondNeg12
 import C3BootProofs.Proofs.UintSelect8
 import C3BootProofs.Proofs.CondNeg8
+import C3BootProofs.Proofs.ShrWide12Main
 import C3BootProofs.Proofs.AbsSign2
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.P384Add
