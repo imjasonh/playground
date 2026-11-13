@@ -83,7 +83,9 @@ The inspector has two views:
   content comes first: a commit's message, author, tree, and parents; a tree's
   entries; a tag; or a blob as text, an image preview (PNG, JPEG, GIF, WebP,
   BMP, or SVG), or a hex dump. A deltified blob colors each byte by the copy
-  instruction that produced it, with inserts in white. Below that, the delta
+  instruction that produced it, with inserts in white. Click a copy in the
+  legend to highlight the base bytes it reads, in **Base bytes reused**. Below
+  that, the delta
   chain (root base to this object), the delta's copy and insert totals, and
   collapsed sections for the delta instructions, the inflated delta stream, the
   base bytes the delta reuses, and the raw pack entry (header, base pointer,

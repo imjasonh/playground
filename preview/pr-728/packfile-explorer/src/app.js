@@ -824,11 +824,13 @@ async function copyText(text, done) {
 
 els.app.addEventListener("click", (event) => {
   const target = event.target.closest(
-    "[data-oid], [data-index], [data-action], [data-author], [data-compare], [data-open], [data-delete]",
+    "[data-copy-start], [data-oid], [data-index], [data-action], [data-author], [data-compare], [data-open], [data-delete]",
   );
   if (!target) return;
   const { dataset } = target;
-  if (dataset.oid) {
+  if (dataset.copyStart != null) {
+    void showCopySource(target);
+  } else if (dataset.oid) {
     event.preventDefault();
     go(dataset.oid);
   } else if (dataset.index != null) {
@@ -846,6 +848,48 @@ els.app.addEventListener("click", (event) => {
     runAction(dataset.action, target);
   }
 });
+
+let copyJump = 0;
+
+// Highlight a copy instruction's source range in the "Base bytes reused" hex
+// dump, which renders 16 bytes per row. Without that dump, or past its
+// truncation, open the base object instead.
+async function showCopySource(chip) {
+  const start = Number(chip.dataset.copyStart);
+  const end = Number(chip.dataset.copyEnd);
+  const panel = els.detail.querySelector("details.base-bytes");
+  const rows = panel ? panel.querySelectorAll(".hex-body .hex-row") : [];
+  const firstRow = rows[Math.floor(start / 16)];
+  if (!firstRow) {
+    const baseOid = chip.dataset.baseOid;
+    if (baseOid && session?.byOid.has(baseOid)) go(baseOid);
+    return;
+  }
+  const jump = ++copyJump;
+  panel.open = true;
+  for (const el of panel.querySelectorAll(".hx-jump")) el.classList.remove("hx-jump");
+  const last = Math.min(end, rows.length * 16);
+  for (let r = Math.floor(start / 16); r * 16 < last; r += 1) {
+    const hexCells = rows[r].querySelector(".hex-bytes").children;
+    const asciiCells = rows[r].querySelector(".hex-ascii").children;
+    const from = Math.max(start, r * 16) - r * 16;
+    const to = Math.min(last, r * 16 + 16) - r * 16;
+    for (let c = from; c < to; c += 1) {
+      hexCells[c]?.classList.add("hx-jump");
+      asciiCells[c]?.classList.add("hx-jump");
+    }
+  }
+  // The hex dump scrolls inside the inspector pane. Jump the dump to the row
+  // (a smooth scroll across thousands of rows is slow), then bring the dump
+  // into view in the pane.
+  const body = panel.querySelector(".hex-body");
+  const rowTop = firstRow.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop;
+  body.scrollTop = rowTop - (body.clientHeight - firstRow.offsetHeight) / 2;
+  const behavior = matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+  await body.scrollIntoView({ block: "nearest", behavior });
+  if (jump !== copyJump) return;
+  body.focus({ preventScroll: true });
+}
 
 els.app.addEventListener("change", (event) => {
   const select = event.target.closest("select[data-metric]");
