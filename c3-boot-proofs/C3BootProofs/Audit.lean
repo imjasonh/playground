@@ -33,6 +33,9 @@ import C3BootProofs.Proofs.CondNeg8
 import C3BootProofs.Proofs.ShrWide12Main
 import C3BootProofs.Proofs.LincombInt12
 import C3BootProofs.Proofs.Leaves
+import C3BootProofs.Proofs.AsProjective
+import C3BootProofs.Proofs.AsExtended
+import C3BootProofs.Proofs.P384Neg
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.RegionMem
 import C3BootProofs.Proofs.ImageHelpers
@@ -2480,6 +2483,126 @@ theorem exists_fromI64_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `CompletedPoint::as_projective`,
+`<&FieldElement2625 as Mul>::mul`, and `reduce` where the image loads them,
+and zeros elsewhere. -/
+def witnessMemAsProjective : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.asProjectiveAddress, Image.asProjectiveCode),
+    (Image.feMulAddress, Image.feMulCode),
+    (Image.feReduceAddress, Image.feReduceCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `CompletedPoint::as_projective` with the result at
+`0x3FCC5000`, the completed point at `0x3FCC6000`, and the stack at
+`0x3FCC8000` meets `asProjective_correct`'s hypotheses. -/
+theorem exists_asProjective_machine :
+    ∃ (m : RV32.Machine) (P sp0 out cp retAddr : RV32.Word), RV32.ApEnv m.mem P sp0 out cp ∧ m.pc = P ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = cp ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.asProjectiveAddress, witnessMemAsProjective⟩,
+    BitVec.ofNat 32 Image.asProjectiveAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0,
+    ⟨by decide, ?_, ?_, ?_, by decide, by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩,
+    rfl, rfl, rfl, rfl, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+/-- Memory with the current image's `CompletedPoint::as_extended`,
+`<&FieldElement2625 as Mul>::mul`, and `reduce` where the image loads them,
+and zeros elsewhere. -/
+def witnessMemAsExtended : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.asExtendedAddress, Image.asExtendedCode),
+    (Image.feMulAddress, Image.feMulCode),
+    (Image.feReduceAddress, Image.feReduceCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `CompletedPoint::as_extended` with the result at
+`0x3FCC5000`, the completed point at `0x3FCC6000`, and the stack at
+`0x3FCC8000` meets `asExtended_correct`'s hypotheses. -/
+theorem exists_asExtended_machine :
+    ∃ (m : RV32.Machine) (P sp0 out cp retAddr : RV32.Word), RV32.AxEnv m.mem P sp0 out cp ∧ m.pc = P ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = cp ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.asExtendedAddress, witnessMemAsExtended⟩,
+    BitVec.ofNat 32 Image.asExtendedAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0,
+    ⟨by decide, ?_, ?_, ?_, by decide, by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩,
+    rfl, rfl, rfl, rfl, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+/-- Memory with the current image's `ConstMontyForm<p384>::neg`, its callees,
+and the modulus where the image loads them, and zeros elsewhere. -/
+def witnessMemP384Neg : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.p384NegAddress, Image.p384NegCode),
+    (Image.uint12IsNonzeroAddress, Image.uint12IsNonzeroCode),
+    (Image.uintRefIsNonzeroAddress, Image.uintRefIsNonzeroCode),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.borrowingSubAddress, Image.borrowingSubCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.p384ModulusAddress, Image.p384ModulusData)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Uint<12>::is_nonzero` on 12 words at `0x3FCC5000`
+with the stack at `0x3FCC8000` meets `uint12IsNonzero_correct`'s
+hypotheses. -/
+theorem exists_uint12IsNonzero_machine :
+    ∃ (m : RV32.Machine) (base retAddr ptr : RV32.Word), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.uint12IsNonzeroCode ∧
+      RV32.CodeIn m.mem (base + 0xFFFEF156) Image.uintRefIsNonzeroCode ∧ m.pc = base ∧
+      RV32.reg m RV32.a0 = ptr ∧ ptr.toNat % 4 = 0 ∧ (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xFFFEF156) Image.uintRefIsNonzeroCode.length ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0 0, BitVec.ofNat 32 Image.uint12IsNonzeroAddress, witnessMemP384Neg⟩,
+    BitVec.ofNat 32 Image.uint12IsNonzeroAddress, 0, 0x3FCC5000, by decide, ?_, ?_, rfl, rfl, by decide,
+    by decide, ?_, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `ConstMontyForm<p384::FieldParams, 12>::neg` with the
+result at `0x3FCC5000`, `x` at `0x3FCC6000`, and the stack at `0x3FCC8000`
+meets `p384Neg_correct`'s hypotheses. -/
+theorem exists_p384Neg_machine :
+    ∃ (m : RV32.Machine) (P sp0 out xp retAddr : RV32.Word), RV32.NgEnv m.mem P sp0 out xp ∧ m.pc = P ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = xp ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.p384NegAddress, witnessMemP384Neg⟩,
+    BitVec.ofNat 32 Image.p384NegAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0,
+    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide,
+      ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩,
+    rfl, rfl, rfl, rfl, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -3036,3 +3159,27 @@ end C3
 
 /-- info: 'C3.exists_fromI64_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_fromI64_machine
+
+/-- info: 'C3.RV32.asProjective_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.asProjective_correct
+
+/-- info: 'C3.exists_asProjective_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_asProjective_machine
+
+/-- info: 'C3.RV32.asExtended_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.asExtended_correct
+
+/-- info: 'C3.exists_asExtended_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_asExtended_machine
+
+/-- info: 'C3.RV32.uint12IsNonzero_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.uint12IsNonzero_correct
+
+/-- info: 'C3.exists_uint12IsNonzero_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_uint12IsNonzero_machine
+
+/-- info: 'C3.RV32.p384Neg_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.p384Neg_correct
+
+/-- info: 'C3.exists_p384Neg_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_p384Neg_machine

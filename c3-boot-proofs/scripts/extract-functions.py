@@ -102,6 +102,11 @@ FUNCTIONS = [
     ("memcmp", "memcmp"),
     ("uintRefIsNonzero", "<crypto_bigint::uint::ref_type::UintRef>::is_nonzero"),
     ("lshrdi3", "__lshrdi3"),
+    ("asProjective", "<curve25519_dalek::backend::serial::curve_models::CompletedPoint>::as_projective"),
+    ("asExtended", "<curve25519_dalek::backend::serial::curve_models::CompletedPoint>::as_extended"),
+    ("p384Neg", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<"
+     "p384::arithmetic::field::FieldParams, 12>>::neg"),
+    ("uint12IsNonzero", ("p384Neg", 0x16)),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
