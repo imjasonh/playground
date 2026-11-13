@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob:; media-src blob:; base-uri 'none'; form-action 'none'"
+    />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#f4f1ea" />
+    <meta
+      name="description"
+      content="Chat with the language model built into Chrome. Prompts and replies stay on your device."
+    />
+    <title>Chrome AI</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="masthead">
+        <h1>Chrome AI</h1>
+        <div class="actions">
+          <button type="button" class="ghost" id="chats" hidden>Chats</button>
+          <button type="button" class="ghost" id="new-chat" disabled>
+            New chat
+          </button>
+        </div>
+      </header>
+
+      <dialog
+        class="sheet"
+        id="history"
+        closedby="any"
+        aria-labelledby="history-title"
+      >
+        <header class="sheet-header">
+          <h2 id="history-title">Chats</h2>
+          <button
+            type="button"
+            class="ghost icon"
+            id="close-history"
+            aria-label="Close"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </header>
+        <p class="empty-history" id="empty-history">No saved chats</p>
+        <ul class="conversations" id="conversations"></ul>
+      </dialog>
+      <template id="trash-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"
+          />
+        </svg>
+      </template>
+
+      <main class="log" id="log">
+        <p class="empty" id="empty">Ask the on-device model anything</p>
+        <ol
+          class="messages"
+          id="messages"
+          aria-live="polite"
+          aria-busy="false"
+        ></ol>
+      </main>
+
+      <footer class="dock">
+        <div
+          class="meter"
+          id="meter"
+          role="meter"
+          tabindex="0"
+          aria-label="Context window"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-describedby="meter-tip"
+          hidden
+        >
+          <div class="meter-fill"></div>
+          <div class="meter-tip" id="meter-tip" role="tooltip"></div>
+        </div>
+        <p class="status" id="status" role="status"></p>
+        <button type="button" class="primary" id="download" hidden>
+          Download model
+        </button>
+        <ul
+          class="attachments pending"
+          id="attachments"
+          aria-label="Attachments"
+          hidden
+        ></ul>
+        <form class="composer" id="composer">
+          <button
+            type="button"
+            class="ghost icon"
+            id="attach"
+            aria-label="Attach files"
+            title="Attach files"
+            disabled
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9"
+              />
+            </svg>
+          </button>
+          <input type="file" id="file-input" multiple hidden />
+          <label class="visually-hidden" for="prompt">Message</label>
+          <textarea
+            id="prompt"
+            rows="1"
+            placeholder="Message"
+            autocomplete="off"
+            disabled
+          ></textarea>
+          <button type="submit" class="primary" id="send" disabled>Send</button>
+          <button type="button" class="primary" id="stop" hidden>Stop</button>
+        </form>
+      </footer>
+    </div>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
