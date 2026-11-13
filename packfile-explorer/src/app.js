@@ -7,8 +7,12 @@
 // refresh restores the same pack and selection.
 
 import * as pako from "../vendor/pako/pako.esm.mjs";
-import { makePakoInflate } from "./inflate.js";
+import { makePakoInflate, makePakoStreamInflate } from "./inflate.js";
 import { parsePack, resolveObjects } from "./pack.js";
+import { blobReader } from "./packReader.js";
+import { indexPack, lazyContent } from "./packStream.js";
+import { annotatePackEntrySlice } from "./packVisual.js";
+import { formatBytes } from "./format.js";
 import { subtleComputeOid, subtleSha1Hex } from "./oid.js";
 import { computeStats, queryObjects } from "./packIndex.js";
 import { indexByOffset } from "./deltaChain.js";
@@ -37,8 +41,16 @@ import {
 } from "./ui/render.js";
 
 const inflate = makePakoInflate(pako);
+const streamInflate = makePakoStreamInflate(pako);
 const computeOid = subtleComputeOid(crypto.subtle);
 const sha1Hex = subtleSha1Hex(crypto.subtle);
+
+// Packs at or above this size are opened by streaming index rather than by
+// reading the whole file into one ArrayBuffer (which browsers cap near 2 GiB).
+const LARGE_PACK_BYTES = 256 * 1024 * 1024;
+// Don't inflate a single object larger than this into memory for its detail
+// view; show its metadata only. Keeps a huge blob from exhausting the tab.
+const LARGE_CONTENT_CAP = 64 * 1024 * 1024;
 
 const els = {
   form: document.getElementById("fetch-form"),
@@ -239,10 +251,19 @@ document.getElementById("pack-file").addEventListener("change", async (event) =>
   event.target.value = "";
   if (!file) return;
   try {
+    els.refpicker.hidden = true;
+    if (file.size >= LARGE_PACK_BYTES) {
+      await openLargePack(file);
+      setStatus(
+        els.status,
+        `Loaded ${session.objects.length.toLocaleString()} objects from ${file.name} ` +
+          `(${formatBytes(file.size)}, streamed — not saved)`,
+      );
+      return;
+    }
     setStatus(els.status, `Reading ${file.name}…`);
     const pack = new Uint8Array(await file.arrayBuffer());
     const record = { base: `file://${file.name}`, refs: [], head: null, wants: [], pack, progress: "" };
-    els.refpicker.hidden = true;
     await openPack(record);
     await saveRepo(record);
     await refreshSavedQuiet();
@@ -333,6 +354,126 @@ async function openPack(record, { objectId = null } = {}) {
   renderActiveTab();
 }
 
+// --- Large packs (streamed from the File, never fully in memory) --------
+
+// Run the streaming index in the worker, falling back to the main thread.
+async function indexLargePack(file, onPhase) {
+  const w = getWorker();
+  if (w) {
+    try {
+      const id = nextJobId++;
+      const data = await new Promise((resolve, reject) => {
+        pendingJobs.set(id, { resolve, reject, onPhase });
+        w.postMessage({ file, mode: "index", id });
+      });
+      return {
+        version: data.index.version,
+        count: data.index.count,
+        objects: data.index.objects,
+        contentByOid: new Map(data.index.contentByOid),
+        unresolved: data.index.unresolved,
+        trailer: data.index.trailer,
+        trailerOffset: data.index.trailerOffset,
+      };
+    } catch {
+      workerBroken = true; // fall through to a main-thread index
+    }
+  }
+  return indexPack({
+    reader: blobReader(file),
+    inflate: streamInflate,
+    computeOid,
+    onProgress: onPhase ? (p) => onPhase({ phase: "index", ...p }) : null,
+  });
+}
+
+async function openLargePack(file) {
+  setStatus(els.status, `Indexing ${file.name} (${formatBytes(file.size)})…`);
+  const index = await indexLargePack(file, (p) => {
+    if (p.phase === "index" && p.count) {
+      setStatus(
+        els.status,
+        `Indexing ${file.name}: ${p.done.toLocaleString()} / ${p.count.toLocaleString()} objects…`,
+      );
+    }
+  });
+
+  const byOid = new Map();
+  for (const obj of index.objects) {
+    if (obj.oid) byOid.set(obj.oid, obj);
+  }
+  const stats = computeStats(index.objects);
+  const byOffset = indexByOffset(index.objects);
+
+  const lazy = lazyContent({ reader: blobReader(file), inflate: streamInflate, objects: index.objects, byOid });
+
+  session = {
+    packId: `file://${file.name}`,
+    base: `file://${file.name}`,
+    refs: [],
+    head: null,
+    packBytes: null,
+    large: true,
+    lazy,
+    parsed: { version: index.version, count: index.count, trailer: index.trailer },
+    objects: index.objects,
+    byOid,
+    contentByOid: index.contentByOid,
+    unresolved: index.unresolved,
+    byOffset,
+    stats,
+    reachable: null,
+    trailer: null,
+    pathEntries: null,
+    selectedOid: null,
+    view: null,
+  };
+
+  els.saved.hidden = true;
+  els.workspace.hidden = false;
+  renderStats(els.stats, stats, { base: session.base });
+
+  hist = [];
+  histPos = -1;
+
+  const initial =
+    index.objects.find((o) => o.typeName === "commit") || index.objects.find((o) => o.oid) || index.objects[0];
+  if (initial && initial.oid) await go(initial.oid);
+  else await showObject(initial || null, { push: false });
+  refreshList();
+  renderActiveTab();
+}
+
+// Resolve, from the File, everything the detail pane needs for `obj`: its own
+// content, its delta base content, and the annotated raw entry bytes.
+async function prefetchView(obj) {
+  const content = new Map();
+  const raw = await session.lazy.rawEntry(obj.index);
+
+  const target = session.objects[obj.index];
+  if (obj.oid && target && target.declaredSize <= LARGE_CONTENT_CAP) {
+    const data = await session.lazy.contentByOid(obj.oid);
+    if (data) content.set(obj.oid, data);
+  }
+
+  const baseOid = obj.baseOid || (raw && raw.baseOid) || null;
+  if (baseOid) {
+    const baseEntry = session.byOid.get(baseOid);
+    if (baseEntry && baseEntry.declaredSize <= LARGE_CONTENT_CAP) {
+      const baseData = await session.lazy.contentByOid(baseOid);
+      if (baseData) content.set(baseOid, baseData);
+    }
+  }
+
+  let entry = null;
+  if (raw) {
+    const slice = await session.lazy.entryBytes(raw);
+    const annotated = annotatePackEntrySlice(slice, raw);
+    entry = { index: obj.index, bytes: annotated.bytes, regions: annotated.regions };
+  }
+  return { content, raw, entry };
+}
+
 // --- Object list ---------------------------------------------------------
 
 function refreshList() {
@@ -366,7 +507,7 @@ for (const el of [
 
 // --- Navigation (in-app history + URL) ----------------------------------
 
-function go(oid) {
+async function go(oid) {
   if (!session) return;
   const obj = session.byOid.get(oid);
   if (!obj) {
@@ -378,17 +519,26 @@ function go(oid) {
     hist.push(oid);
     histPos = hist.length - 1;
   }
-  showObject(obj, { push: false });
+  await showObject(obj, { push: false });
   updateNavButtons();
 }
 
-function showObject(obj, { push = true } = {}) {
+async function showObject(obj, { push = true } = {}) {
   if (!session) return;
   if (push && obj && obj.oid) {
-    go(obj.oid);
+    await go(obj.oid);
     return;
   }
   session.selectedOid = obj?.oid || null;
+  if (session.large && obj) {
+    try {
+      session.view = await prefetchView(obj);
+    } catch {
+      session.view = null;
+    }
+  } else if (session) {
+    session.view = null;
+  }
   renderDetail(els.detail, obj, session, { onSelectOid: go, onDownload: downloadObject });
   refreshList();
   writeUrlState({ packId: session.packId, objectId: session.selectedOid });
@@ -441,7 +591,8 @@ els.copyLink.addEventListener("click", async () => {
 function downloadObject(oid) {
   if (!session) return;
   const obj = session.byOid.get(oid);
-  const content = session.contentByOid.get(oid);
+  const content =
+    session.contentByOid.get(oid) || (session.view && session.view.content && session.view.content.get(oid));
   if (!obj || !content) return;
   const bytes = looseObjectBytes(obj.typeName, content, (b) => pako.deflate(b));
   const blob = new Blob([bytes], { type: "application/octet-stream" });
