@@ -82,6 +82,8 @@ FUNCTIONS = [
     ("p384Mul", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<p384::arithmetic::field::FieldParams, 12>>::mul"),
     ("p384Sqr", "<p384::arithmetic::field::FieldElement as ff::Field>::square"),
     ("p384PtDouble", "<primeorder::projective::ProjectivePoint<p384::NistP384> as group::Group>::double"),
+    ("uintSelect2", "<crypto_bigint::uint::Uint<2>>::select"),
+    ("condNeg12", "crypto_bigint::modular::safegcd::conditional_negate_in_place_wide::<12, 2>"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
@@ -93,6 +95,8 @@ DATA = [
     ("p384Modulus", "p384Add", 0x66, 48),
     ("sha512K", "sha512Compress", 0x1F8, 640),
     ("p384B", "p384PtDouble", 0x9E, 48),
+    ("u2Zero", "condNeg12", 0x7E, 8),
+    ("u2One", "condNeg12", 0x86, 8),
 ]
 
 
