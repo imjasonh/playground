@@ -1,8 +1,7 @@
-# cas is a StatefulSet so its blobs and action cache live on a
-# PersistentVolumeClaim and survive a pod restart (plan M1: durable control
-# plane state). It runs one replica: the scheduler's queue is in memory, and a
-# client whose operation disappears in a restart gets NotFound from
-# WaitExecution and calls Execute again.
+# cas keeps its blobs and action cache on a PersistentVolumeClaim. It runs one
+# replica: the scheduler's queue is in memory, and a client whose operation
+# disappears in a restart gets NotFound from WaitExecution and calls Execute
+# again.
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

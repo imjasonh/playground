@@ -17,16 +17,7 @@
 # names its atespace, and when ateapi asks for a volume the driver lists that
 # atespace's actors and refuses a volume for an actor that isn't in it. The
 # driver acts as the casfs-csi ServiceAccount, which needs the viewer role in
-# each atespace it serves, and no role anywhere else:
-#
-#   kubectl ate create access-policy -a tenant-a -f - <<EOF
-#   metadata: {name: default}
-#   bindings:
-#   - role: viewer
-#     members: ["user:system:serviceaccount:ci-substrate:casfs-csi"]
-#   EOF
-#
-#   ko apply -f casfs-csi.yaml
+# each atespace it serves, and no role anywhere else (see README.md).
 apiVersion: v1
 kind: ServiceAccount
 metadata:

@@ -100,9 +100,6 @@ func ctxTok(t *testing.T, token string) context.Context {
 	return tenant.Outgoing(t.Context(), token)
 }
 
-// TestCrossTenantCacheReuse is the optimized-caching property end to end: a
-// blob tenant A warms through the node-local cache is served to tenant B with
-// no second origin fetch.
 func TestCrossTenantCacheReuse(t *testing.T) {
 	h := newHarness(t)
 	content := []byte("shared base layer bytes")
@@ -125,8 +122,6 @@ func TestCrossTenantCacheReuse(t *testing.T) {
 	}
 }
 
-// TestTenantIsolation is the multi-tenancy property: tenant B cannot read
-// tenant A's private instance, at either the cache or the origin.
 func TestTenantIsolation(t *testing.T) {
 	h := newHarness(t)
 	content := []byte("tenant A private output")
@@ -140,15 +135,11 @@ func TestTenantIsolation(t *testing.T) {
 	if _, err := h.origin.Fetch(ctxTok(t, "tok-b"), "tenant-a", d); status.Code(err) != codes.PermissionDenied {
 		t.Errorf("origin read across tenants: code %v, want PermissionDenied", status.Code(err))
 	}
-	// Tenant A still reads its own instance.
 	if _, err := h.cacheClient.Fetch(ctxTok(t, "tok-a"), "tenant-a", d); err != nil {
 		t.Errorf("tenant A reading own instance: %v", err)
 	}
 }
 
-// TestPoisonedCacheFallsBack is the cryptographic-trust property: a tampered
-// node-local entry is detected in flight, dropped, and refetched from the
-// origin, so the actor still receives correct bytes.
 func TestPoisonedCacheFallsBack(t *testing.T) {
 	h := newHarness(t)
 	content := []byte("trusted toolchain blob")

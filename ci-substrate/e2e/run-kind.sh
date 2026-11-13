@@ -212,8 +212,7 @@ ko resolve -f deploy/40-runner.yaml \
 kubectl -n ci-substrate rollout status deployment/runner-tenant-a --timeout=300s
 kubectl -n ci-substrate rollout status deployment/runner-tenant-b --timeout=300s
 
-# Port-forward Services (stable targets) from the host. This avoids pinning a
-# DaemonSet pod name that a second rollout would replace, which broke CI.
+# Port-forward Services, not pods: a rollout replaces DaemonSet pod names.
 LOCAL_ORIGIN_PORT=18980
 LOCAL_CACHE_PORT=19092
 LOCAL_METRICS_PORT=19090
