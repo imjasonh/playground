@@ -20,8 +20,15 @@ go_sdk.download(
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
 
+# Modules check in their generated .pb.go files. Building those instead of
+# the .proto sources keeps protoc, a C++ tool, out of the build: the cluster's
+# runners have no C toolchain.
+go_deps.gazelle_default_attributes(
+    directives = ["gazelle:proto disable"],
+)
+
 # remote-apis checks in BUILD files that load proto rules it cannot see as a
-# Go module. Its generated .pb.go files are checked in too, so build those.
+# Go module, so Gazelle replaces them.
 go_deps.gazelle_override(
     build_file_generation = "clean",
     directives = ["gazelle:proto disable"],
