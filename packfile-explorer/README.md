@@ -39,8 +39,8 @@ from IndexedDB.
 1. Normalize the typed URL to a smart-HTTP base (`…/repo.git`). The repo field
    starts as `imjasonh/playground`.
 2. `GET …/info/refs?service=git-upload-pack` through the CORS proxy.
-3. Set the depth, which defaults to 1, then choose **Only default branch** or
-   **All N branches**. Tags are not fetched.
+3. Set the depth (defaults to 1), or check **Max** for the full history, then
+   choose **Only default branch** or **All N branches**. Tags are not fetched.
 4. `POST …/git-upload-pack` with a `want` per chosen branch. The status line
    follows the server while it enumerates, counts, and compresses, then the
    bytes received (and the rate, when the body streams), then parsing and
@@ -150,9 +150,10 @@ the in-memory parser object-for-object, and a live `git repack` fixture when
   persisting the resolved object graph.
 - Thin packs (ref-deltas whose base isn't in the pack) show up as unresolved
   entries. A normal shallow fetch from a public host usually isn't thin.
-- Depth defaults to 1. Raise it when you want more history. A fetched pack is
-  held in memory while it is parsed; a large local pack is streamed instead (see
-  [Size limits](#size-limits)).
+- Depth defaults to 1. Raise it, or check **Max** for the full history. A Max
+  fetch of a busy repository will usually hit the CORS proxy's 25 MiB cap. A
+  fetched pack is held in memory while it is parsed; a large local pack is
+  streamed instead (see [Size limits](#size-limits)).
 - **Open .pack** handles both modest and large packs. A pack under 256 MiB is
   read whole and parsed in memory, the same path as a fetched pack. A pack of
   256 MiB or more is streamed: it's indexed by reading windows from the file,

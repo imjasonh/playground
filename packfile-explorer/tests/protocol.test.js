@@ -54,6 +54,13 @@ test("buildFetchRequest puts capabilities on the first want and ends with done",
   assert.match(text, /0009done\n$/);
 });
 
+test("buildFetchRequest omits deepen for a full-depth fetch", () => {
+  const body = buildFetchRequest({ wants: [OID_A], deepen: null });
+  const text = decodeUtf8(body);
+  assert.doesNotMatch(text, /deepen /);
+  assert.match(text, /0009done\n$/);
+});
+
 test("splitUploadPackResult separates control lines from side-band pack data", () => {
   const packLine = encodePktLine(concatBytes([Uint8Array.from([1]), encodeUtf8("PACK...")]));
   const result = concatBytes([

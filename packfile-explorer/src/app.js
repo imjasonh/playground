@@ -73,6 +73,7 @@ const els = {
   statusBar: $("status-bar"),
   tray: $("tray"),
   refpicker: $("refpicker"),
+  pickerMax: $("picker-max"),
   pickerDepth: $("picker-depth"),
   pickerDefault: $("picker-default"),
   pickerBranches: $("picker-branches"),
@@ -307,8 +308,17 @@ function branchChoiceStatus(choice) {
   return `${branches}. No named default branch.`;
 }
 
+els.pickerMax.addEventListener("change", () => {
+  els.pickerDepth.disabled = els.pickerMax.checked;
+});
+
 els.pickerDefault.addEventListener("click", () => fetchChoice("default"));
 els.pickerBranches.addEventListener("click", () => fetchChoice("branches"));
+
+function fetchDepth() {
+  if (els.pickerMax.checked) return null;
+  return Math.max(1, Math.min(50, Number(els.pickerDepth.value) || 1));
+}
 
 async function fetchChoice(which) {
   if (!pendingRefs) return;
@@ -318,15 +328,18 @@ async function fetchChoice(which) {
     showIdle("This repository has no branches to fetch.", { error: true });
     return;
   }
-  const deepen = Math.max(1, Math.min(50, Number(els.pickerDepth.value) || 1));
+  const deepen = fetchDepth();
   const scope = which === "branches"
     ? `all ${choice.branchCount.toLocaleString()} branch${choice.branchCount === 1 ? "" : "es"}`
     : choice.defaultName
       ? `the default branch (${choice.defaultName})`
       : "the default branch";
+  const depthLabel = deepen == null ? "at full depth" : `at depth ${deepen}`;
+  els.pickerMax.disabled = true;
+  els.pickerDepth.disabled = true;
   els.pickerDefault.disabled = true;
   els.pickerBranches.disabled = true;
-  startTransfer(`${scope} at depth ${deepen}`);
+  startTransfer(`${scope} ${depthLabel}`);
   try {
     const { pack, progress } = await fetchPack(DEFAULT_PROXY, pendingRefs.base, {
       wants,
@@ -354,6 +367,8 @@ async function fetchChoice(which) {
     reportError(err);
   } finally {
     if (pendingRefs) {
+      els.pickerMax.disabled = false;
+      els.pickerDepth.disabled = els.pickerMax.checked;
       els.pickerDefault.disabled = pendingRefs.choice.defaultWants.length === 0;
       els.pickerBranches.disabled = false;
     }
