@@ -2093,8 +2093,11 @@ theorem sh_E {M : Word → BitVec 8} {P F lo : Word} {n : Machine} (hP : P.toNat
   exact k1 q h0 (nq a0 (by decide)) (nq a1 (by decide)) (nq a2 (by decide))
 
 
+theorem shLtMul {x y c : Nat} (h : x * c < y * c) : x < y :=
+  Nat.lt_of_not_le fun hy => Nat.lt_irrefl _ (Nat.lt_of_lt_of_le h (Nat.mul_le_mul_right c hy))
+
 theorem shLtPow {x a b : Nat} (h : x * 2 ^ a < 2 ^ (a + b)) : x < 2 ^ b := by
-  rw [Nat.pow_add, Nat.mul_comm (2 ^ a)] at h; exact Nat.lt_of_mul_lt_mul_right h
+  rw [Nat.pow_add, Nat.mul_comm (2 ^ a)] at h; exact shLtMul h
 
 theorem shMulMod {X e s : Nat} : X * 2 ^ e % 2 ^ (e + s) = 2 ^ e * (X % 2 ^ s) := by
   rw [Nat.pow_add, Nat.mul_comm X, Nat.mul_mod_mul_left]
@@ -2269,7 +2272,7 @@ theorem sh_F {M : Word → BitVec 8} {P F lo : Word} {n : Machine} {s X : Nat} (
     have hpow : 2 ^ (384 - s) ≤ 2 ^ 351 := Nat.pow_le_pow_right (by decide) (by omega)
     have hw11 : (memLoad32 M (lo + BitVec.ofNat 32 44)).toNat = 0 := by
       have : (memLoad32 M (lo + BitVec.ofNat 32 44)).toNat * 2 ^ 352 < 1 * 2 ^ 352 := by omega
-      exact Nat.lt_one_iff.mp (Nat.lt_of_mul_lt_mul_right this)
+      exact Nat.lt_one_iff.mp (shLtMul this)
     have hw10 : (memLoad32 M (lo + BitVec.ofNat 32 40)).toNat < 2 ^ (64 - s) :=
       shLtPow (a := 320) (by rw [show 320 + (64 - s) = 384 - s by omega]; omega)
     refine ⟨n5, _, c1.trans (.cons d2 (c3.trans (.cons d4 c5))), u5.self, fun x hx => ?_, ?_, fun q hq => ?_⟩
