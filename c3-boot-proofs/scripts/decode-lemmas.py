@@ -38,6 +38,7 @@ for line in open(src):
     elif op == 'snez': ins = f'.alu .sltu {r(args[0])} x0 {r(args[1])}'
     elif op == 'lw': o,b = mem(args[1]); ins = f'.load .lw {r(args[0])} {r(b)} {w(o)}'
     elif op == 'lbu': o,b = mem(args[1]); ins = f'.load .lbu {r(args[0])} {r(b)} {w(o)}'
+    elif op == 'lb': o,b = mem(args[1]); ins = f'.load .lb {r(args[0])} {r(b)} {w(o)}'
     elif op == 'sw': o,b = mem(args[1]); ins = f'.store .sw {r(b)} {r(args[0])} {w(o)}'
     elif op == 'sb': o,b = mem(args[1]); ins = f'.store .sb {r(b)} {r(args[0])} {w(o)}'
     elif op == 'lui': ins = f'.lui {r(args[0])} {w(imm(args[1]) << 12)}'
@@ -53,6 +54,8 @@ for line in open(src):
     elif op == 'j': ins = f'.jal x0 {w(imm(args[0]) - addr)}'
     elif op in BR: ins = f'.branch .{op} {r(args[0])} {r(args[1])} {w(imm(args[2]) - addr)}'
     elif op in ('beqz','bnez'): ins = f'.branch .{op[:3]} {r(args[0])} x0 {w(imm(args[1]) - addr)}'
+    elif op == 'bltz': ins = f'.branch .blt {r(args[0])} x0 {w(imm(args[1]) - addr)}'
+    elif op == 'bgez': ins = f'.branch .bge {r(args[0])} x0 {w(imm(args[1]) - addr)}'
     else: sys.exit(f'unknown {op} at {addr:x}: {line}')
     out.append(f'theorem {prefix}_at_{off:x} : fetchRel {code} 0x{off:X} = some ({ins}, {ln}) := by decide')
 print('\n'.join(out))
