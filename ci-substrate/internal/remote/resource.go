@@ -16,6 +16,14 @@ import (
 // limit also counts the digests and framing around the data.
 const MaxBatchBytes = 4*1024*1024 - 64*1024
 
+// batchSendBytes and batchSendCount bound one BatchReadBlobs or
+// BatchUpdateBlobs call the client makes. The payload stays under
+// MaxBatchBytes, and the count stays small, because each blob adds a digest
+// and a status to the response and gRPC's default receive limit is 4 MiB.
+const batchSendBytes = 2 << 20
+
+const batchSendCount = 256
+
 // parseDigest splits a "hash/size" pair from a ByteStream resource name.
 func parseDigest(hash, size string) (*repb.Digest, error) {
 	n, err := strconv.ParseInt(size, 10, 64)

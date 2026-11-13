@@ -315,6 +315,39 @@ func TestDigestIsReadCapability(t *testing.T) {
 	}
 }
 
+func TestBatchRoundTrip(t *testing.T) {
+	h := newHarness(t)
+	ctx := ctxTok(t, "tok-a")
+	blobs := map[string][]byte{}
+	var digests []*repb.Digest
+	for _, b := range [][]byte{[]byte("one"), []byte("two"), []byte("three")} {
+		d := digest.FromBytes(b)
+		blobs[digest.Key(d)] = b
+		digests = append(digests, d)
+	}
+	missing, sent, err := h.origin.PutBatch(ctx, "tenant-a", blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if missing != 3 || sent != int64(len("one")+len("two")+len("three")) {
+		t.Fatalf("put missing=%d sent=%d", missing, sent)
+	}
+	// The second put finds them and sends nothing.
+	missing, sent, err = h.origin.PutBatch(ctx, "tenant-a", blobs)
+	if err != nil || missing != 0 || sent != 0 {
+		t.Fatalf("second put missing=%d sent=%d err=%v", missing, sent, err)
+	}
+	got, err := h.cacheClient.FetchBatch(ctx, "tenant-a", digests)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range digests {
+		if string(got[digest.Key(d)]) != string(blobs[digest.Key(d)]) {
+			t.Fatalf("batch read %s = %q", digest.Key(d), got[digest.Key(d)])
+		}
+	}
+}
+
 func poisonOneFile(t *testing.T, root string, orig []byte) {
 	t.Helper()
 	poisoned := append([]byte(nil), orig...)

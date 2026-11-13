@@ -5,9 +5,10 @@
 //
 // Output handling follows the plan's rules: every output file, the Tree of
 // every output directory, and stdout and stderr become blobs; FindMissingBlobs
-// trims the set to what the CAS lacks; small blobs go in batches and large
-// ones over ByteStream (the client decides per blob). A failed action still
-// reports its outputs and exit code, so a client can show what went wrong.
+// trims the set to what the CAS lacks; the missing small blobs share
+// BatchUpdateBlobs calls and large ones go over ByteStream. A failed action
+// still reports its outputs and exit code, so a client can show what went
+// wrong.
 package bot
 
 import (
@@ -90,15 +91,16 @@ type Config struct {
 
 // Bot runs leased actions until its context ends.
 type Bot struct {
-	cfg      Config
-	cache    tree.Fetcher
-	launcher string
+	cfg   Config
+	cache tree.Fetcher
+	// shell is the absolute path of bash. Every action starts through it, so
+	// the runner process never changes into an exec root it serves itself.
+	shell string
 }
 
 // New returns a Bot. It fails when the configuration cannot work on this
-// host, such as InputFUSE with no /dev/fuse or InputVolume with a volume
-// that does not answer. The program must call RunLauncher at the start of
-// main: the bot starts every action through the program's own binary.
+// host, such as InputFUSE with no /dev/fuse, InputVolume with a volume that
+// does not answer, or a host with no bash to start commands through.
 func New(cfg Config) (*Bot, error) {
 	if cfg.BotID == "" || cfg.Worker == nil || cfg.Origin == nil || cfg.Cache == nil || cfg.WorkDir == "" {
 		return nil, errors.New("bot: BotID, Worker, Origin, Cache, and WorkDir are required")
@@ -135,11 +137,11 @@ func New(cfg Config) (*Bot, error) {
 	default:
 		return nil, fmt.Errorf("bot: unknown input mode %q", cfg.InputMode)
 	}
-	launcher, err := os.Executable()
+	shell, err := exec.LookPath("bash")
 	if err != nil {
-		return nil, fmt.Errorf("bot: finding the launcher: %w", err)
+		return nil, fmt.Errorf("bot: finding bash: %w", err)
 	}
-	return &Bot{cfg: cfg, cache: tree.WithToken(cfg.Cache, cfg.Token), launcher: launcher}, nil
+	return &Bot{cfg: cfg, cache: tree.WithToken(cfg.Cache, cfg.Token), shell: shell}, nil
 }
 
 // probeVolume materializes the empty input root on the volume and drops it,
@@ -567,27 +569,15 @@ func (b *Bot) collectOutputs(ctx context.Context, instance, workDir string, comm
 	return b.upload(ctx, instance, blobs)
 }
 
-// upload sends the blobs the CAS is missing. Each blob goes through
-// remote.Client.Upload, which batches small blobs and streams large ones.
+// upload sends the blobs the CAS is missing, in as few calls as the batch
+// limit allows.
 func (b *Bot) upload(ctx context.Context, instance string, blobs map[string][]byte) error {
-	if len(blobs) == 0 {
-		return nil
-	}
-	var digests []*repb.Digest
-	for _, data := range blobs {
-		digests = append(digests, digest.FromBytes(data))
-	}
-	missing, err := b.cfg.Origin.FindMissing(ctx, instance, digests)
+	missing, sent, err := b.cfg.Origin.PutBatch(ctx, instance, blobs)
 	if err != nil {
 		return err
 	}
-	var sent int64
-	for _, d := range missing {
-		if _, err := b.cfg.Origin.Upload(ctx, instance, blobs[digest.Key(d)]); err != nil {
-			return fmt.Errorf("uploading %s: %w", digest.Key(d), err)
-		}
-		sent += d.GetSizeBytes()
+	if len(blobs) > 0 {
+		slog.Info("uploaded outputs", "blobs", len(blobs), "missing", missing, "bytes", sent)
 	}
-	slog.Info("uploaded outputs", "blobs", len(blobs), "missing", len(missing), "bytes", sent)
 	return nil
 }

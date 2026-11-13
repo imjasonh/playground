@@ -183,19 +183,14 @@ func (s *stack) execute(t *testing.T, b *bot.Bot, action *repb.Digest) *repb.Exe
 	return resp
 }
 
-func TestMain(m *testing.M) {
-	bot.RunLauncher()
-	os.Exit(m.Run())
-}
-
 // gcChildEnv marks the copy of the test binary that
 // TestActionsSurviveGarbageCollection runs the workload in.
 const gcChildEnv = "CI_SUBSTRATE_BOT_GC_CHILD"
 
-// A FUSE exec root is served by the bot's own process. Starting an action in
-// it while a garbage collection stops the world deadlocked the whole process
-// (see RunLauncher). A deadlocked runtime can't time itself out, so the
-// workload runs in a child process that this test kills at a deadline.
+// A FUSE exec root is served by the bot's own process. Starting an action so
+// that this process enters that mount deadlocks it when a garbage collection
+// stops the world (see command). A deadlocked runtime can't time itself out,
+// so the workload runs in a child process that this test kills at a deadline.
 func TestActionsSurviveGarbageCollection(t *testing.T) {
 	if _, err := os.Stat("/dev/fuse"); err != nil {
 		t.Skip("needs /dev/fuse")

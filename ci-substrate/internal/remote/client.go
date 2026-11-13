@@ -91,25 +91,134 @@ func (c *Client) FindMissing(ctx context.Context, instanceName string, digests [
 // large ones through ByteStream.Write, as the plan's output handling requires.
 func (c *Client) Upload(ctx context.Context, instanceName string, b []byte) (*repb.Digest, error) {
 	d := digest.FromBytes(b)
-	if d.SizeBytes <= MaxBatchBytes {
-		resp, err := c.cas.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+	if _, _, err := c.PutBatch(ctx, instanceName, map[string][]byte{digest.Key(d): b}); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+// FetchBatch reads many blobs, grouping the ones that fit into as few
+// BatchReadBlobs calls as the size limit allows and streaming the rest.
+// The result is keyed by digest.Key.
+func (c *Client) FetchBatch(ctx context.Context, instanceName string, digests []*repb.Digest) (map[string][]byte, error) {
+	out := map[string][]byte{}
+	var batch []*repb.Digest
+	var batchSize int64
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		resp, err := c.cas.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
 			InstanceName: instanceName,
-			Requests: []*repb.BatchUpdateBlobsRequest_Request{
-				{Digest: d, Data: b},
-			},
+			Digests:      batch,
 		})
 		if err != nil {
-			return nil, err
+			return err
 		}
-		if len(resp.GetResponses()) != 1 {
-			return nil, fmt.Errorf("batch update returned %d responses", len(resp.GetResponses()))
+		if len(resp.GetResponses()) != len(batch) {
+			return fmt.Errorf("batch read returned %d responses for %d digests", len(resp.GetResponses()), len(batch))
 		}
-		if cd := codes.Code(resp.GetResponses()[0].GetStatus().GetCode()); cd != codes.OK {
-			return nil, status.Error(cd, resp.GetResponses()[0].GetStatus().GetMessage())
+		for _, r := range resp.GetResponses() {
+			if cd := codes.Code(r.GetStatus().GetCode()); cd != codes.OK {
+				return status.Error(cd, r.GetStatus().GetMessage())
+			}
+			out[digest.Key(r.GetDigest())] = r.GetData()
 		}
-		return d, nil
+		batch, batchSize = nil, 0
+		return nil
 	}
-	return c.writeStream(ctx, instanceName, d, b)
+	for _, d := range digests {
+		if d.GetSizeBytes() > MaxBatchBytes {
+			if err := flush(); err != nil {
+				return nil, err
+			}
+			b, err := c.readStream(ctx, instanceName, d)
+			if err != nil {
+				return nil, err
+			}
+			out[digest.Key(d)] = b
+			continue
+		}
+		if len(batch) > 0 && (len(batch) >= batchSendCount || batchSize+d.GetSizeBytes() > batchSendBytes) {
+			if err := flush(); err != nil {
+				return nil, err
+			}
+		}
+		batch = append(batch, d)
+		batchSize += d.GetSizeBytes()
+	}
+	if err := flush(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// PutBatch stores the blobs the CAS is missing. One FindMissingBlobs covers
+// the whole set; the missing small blobs share BatchUpdateBlobs calls, and
+// anything over the batch limit goes by ByteStream. It returns how many
+// blobs were missing and how many bytes were sent.
+func (c *Client) PutBatch(ctx context.Context, instanceName string, blobs map[string][]byte) (int, int64, error) {
+	if len(blobs) == 0 {
+		return 0, 0, nil
+	}
+	byKey := map[string]*repb.Digest{}
+	var digests []*repb.Digest
+	for _, data := range blobs {
+		d := digest.FromBytes(data)
+		byKey[digest.Key(d)] = d
+		digests = append(digests, d)
+	}
+	missing, err := c.FindMissing(ctx, instanceName, digests)
+	if err != nil {
+		return 0, 0, err
+	}
+	var reqs []*repb.BatchUpdateBlobsRequest_Request
+	var reqSize int64
+	var sent int64
+	flush := func() error {
+		if len(reqs) == 0 {
+			return nil
+		}
+		resp, err := c.cas.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+			InstanceName: instanceName,
+			Requests:     reqs,
+		})
+		if err != nil {
+			return err
+		}
+		for _, r := range resp.GetResponses() {
+			if cd := codes.Code(r.GetStatus().GetCode()); cd != codes.OK {
+				return status.Error(cd, r.GetStatus().GetMessage())
+			}
+		}
+		reqs, reqSize = nil, 0
+		return nil
+	}
+	for _, d := range missing {
+		data := blobs[digest.Key(d)]
+		if int64(len(data)) > MaxBatchBytes {
+			if err := flush(); err != nil {
+				return 0, 0, err
+			}
+			if _, err := c.writeStream(ctx, instanceName, d, data); err != nil {
+				return 0, 0, err
+			}
+			sent += int64(len(data))
+			continue
+		}
+		if len(reqs) > 0 && (len(reqs) >= batchSendCount || reqSize+int64(len(data)) > batchSendBytes) {
+			if err := flush(); err != nil {
+				return 0, 0, err
+			}
+		}
+		reqs = append(reqs, &repb.BatchUpdateBlobsRequest_Request{Digest: byKey[digest.Key(d)], Data: data})
+		reqSize += int64(len(data))
+		sent += int64(len(data))
+	}
+	if err := flush(); err != nil {
+		return 0, 0, err
+	}
+	return len(missing), sent, nil
 }
 
 func (c *Client) writeStream(ctx context.Context, instanceName string, d *repb.Digest, b []byte) (*repb.Digest, error) {
