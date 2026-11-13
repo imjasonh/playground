@@ -98,6 +98,7 @@ FUNCTIONS = [
     ("shr8", "crypto_bigint::modular::safegcd::shr_in_place_wide::<8, 2>"),
     ("leadMut8", ("shr8", 0x92)),
     ("trailing8", ("shr8", 0xA4)),
+    ("feToBytes", "<curve25519_dalek::backend::serial::u32::field::FieldElement2625>::to_bytes"),
     ("lincomb12", "<crypto_bigint::modular::safegcd::SignedInt<12>>::lincomb_int::<2>"),
     ("blackBoxU8", "subtle::black_box::<u8>"),
     ("ctEqU8", "<u8 as subtle::ConstantTimeEq>::ct_eq"),

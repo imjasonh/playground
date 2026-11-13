@@ -125,6 +125,7 @@ jobs:
         working-directory: c3-boot-proofs
         run: |
           python3 scripts/gen-fe25519.py
+          python3 scripts/gen-tobytes.py
           git diff --exit-code C3BootProofs/Proofs/
 
       - name: Install Espressif QEMU

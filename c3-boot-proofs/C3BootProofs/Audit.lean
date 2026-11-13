@@ -40,6 +40,7 @@ import C3BootProofs.Proofs.DerOid
 import C3BootProofs.Proofs.DerNested
 import C3BootProofs.Proofs.SliceEq
 import C3BootProofs.Proofs.ShrWide8Main
+import C3BootProofs.Proofs.FeToBytes
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.RegionMem
 import C3BootProofs.Proofs.ImageHelpers
@@ -2818,6 +2819,33 @@ theorem exists_shr8_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `FieldElement2625::to_bytes` and
+`reduce` where the image loads them, and zeros elsewhere. -/
+def witnessMemFeToBytes : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.feToBytesAddress, Image.feToBytesCode),
+    (Image.feReduceAddress, Image.feReduceCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `FieldElement2625::to_bytes` with the result at
+`0x3FCC5000`, the limbs at `0x3FCC6000`, and the stack at `0x3FCC8000` meets
+`feToBytes_correct`'s hypotheses. -/
+theorem exists_feToBytes_machine :
+    ∃ (m : RV32.Machine) (P sp0 out fp retAddr : RV32.Word), RV32.TBEnv m.mem P sp0 out fp ∧ m.pc = P ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = fp ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.feToBytesAddress, witnessMemFeToBytes⟩,
+    BitVec.ofNat 32 Image.feToBytesAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, rfl, rfl,
+    by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -3446,3 +3474,9 @@ end C3
 
 /-- info: 'C3.exists_shr8_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_shr8_machine
+
+/-- info: 'C3.RV32.feToBytes_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.feToBytes_correct
+
+/-- info: 'C3.exists_feToBytes_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_feToBytes_machine
