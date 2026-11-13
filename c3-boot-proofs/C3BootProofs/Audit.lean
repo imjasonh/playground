@@ -26,6 +26,7 @@ import C3BootProofs.Proofs.EdDouble
 import C3BootProofs.Proofs.FePow2k
 import C3BootProofs.Proofs.Sha512Compress
 import C3BootProofs.Proofs.P384PtDouble
+import C3BootProofs.Proofs.P384PtAdd
 import C3BootProofs.Proofs.CondNeg12
 import C3BootProofs.Proofs.CondNeg8
 import C3BootProofs.Proofs.FromI64
@@ -1983,6 +1984,61 @@ theorem exists_p384PtDouble_machine :
     | decide +kernel
 
 
+/-- Memory with the current image's P-384 point addition, the field
+operations it calls, and the constants they load where the image loads them,
+and zeros elsewhere. -/
+def witnessMemP384Add3 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.p384PtAddAddress, Image.p384PtAddCode),
+    (Image.p384MulAddress, Image.p384MulCode),
+    (Image.mulMont12Address, Image.mulMont12Code),
+    (Image.p384AddAddress, Image.p384AddCode),
+    (Image.p384SubAddress, Image.p384SubCode),
+    (Image.p384DoubleAddress, Image.p384DoubleCode),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.borrowingSubAddress, Image.borrowingSubCode),
+    (Image.uintSelect12Address, Image.uintSelect12Code),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.p384ModulusAddress, Image.p384ModulusData),
+    (Image.p384BAddress, Image.p384BData)]
+
+set_option exponentiation.threshold 600 in
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls P-384's point addition with `lhs` at `0x3FCC5000`,
+`rhs` at `0x3FCC6000`, and the stack at `0x3FCC8000` meets
+`p384PtAdd_correct`'s hypotheses, the coordinates' bounds included. -/
+theorem exists_p384PtAdd_machine :
+    ∃ (m : RV32.Machine) (P sp0 lhs rhs retAddr : RV32.Word), RV32.A3Env m.mem P sp0 lhs rhs ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = lhs ∧ RV32.reg m RV32.a1 = rhs ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
+      RV32.limbVal (RV32.wordsAt m.mem lhs 12) < RV32.p384 ∧
+      RV32.limbVal (RV32.wordsAt m.mem (lhs + 0x30) 12) < RV32.p384 ∧
+      RV32.limbVal (RV32.wordsAt m.mem (lhs + 0x60) 12) < RV32.p384 ∧
+      RV32.limbVal (RV32.wordsAt m.mem rhs 12) < RV32.p384 ∧
+      RV32.limbVal (RV32.wordsAt m.mem (rhs + 0x30) 12) < RV32.p384 ∧
+      RV32.limbVal (RV32.wordsAt m.mem (rhs + 0x60) 12) < RV32.p384 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.p384PtAddAddress, witnessMemP384Add3⟩,
+    BitVec.ofNat 32 Image.p384PtAddAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, rfl,
+    by decide, rfl, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  case refine_1 =>
+    constructor <;> first
+      | code_in
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+      | exact (RV32.sep_of_le (by decide) (by decide)).symm
+      | decide +kernel
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 /-- Memory with the current image's `conditional_negate_in_place_wide::<12, 2>`,
 the functions it calls, and `Uint<2>::ZERO` and `Uint<2>::ONE` where the
 image loads them, and zeros elsewhere. -/
@@ -2618,6 +2674,12 @@ end C3
 
 /-- info: 'C3.exists_p384PtDouble_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_p384PtDouble_machine
+
+/-- info: 'C3.RV32.p384PtAdd_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.p384PtAdd_correct
+
+/-- info: 'C3.exists_p384PtAdd_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_p384PtAdd_machine
 
 /-- info: 'C3.RV32.uintSelect2_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.uintSelect2_correct

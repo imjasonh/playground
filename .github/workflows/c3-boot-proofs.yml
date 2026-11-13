@@ -103,6 +103,12 @@ jobs:
           python3 scripts/gen-p384-double.py
           git diff --exit-code C3BootProofs/Proofs/P384PtDouble.lean
 
+      - name: Check the generated P-384 point addition proof
+        working-directory: c3-boot-proofs
+        run: |
+          python3 scripts/gen-p384-add.py
+          git diff --exit-code C3BootProofs/Proofs/P384PtAdd.lean
+
       - name: Check the generated SHA-256 round proofs
         working-directory: c3-boot-proofs
         run: |

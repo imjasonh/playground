@@ -88,6 +88,8 @@ FUNCTIONS = [
     ("condNeg8", "crypto_bigint::modular::safegcd::conditional_negate_in_place_wide::<8, 2>"),
     ("absSign2", "<crypto_bigint::int::Int<2>>::abs_sign"),
     ("fromI64", "<crypto_bigint::int::Int<2>>::from_i64"),
+    ("p384PtAdd", "<primeorder::point_arithmetic::EquationAIsMinusThree as "
+     "primeorder::point_arithmetic::sealed::PointArithmetic<p384::NistP384>>::add_assign"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
