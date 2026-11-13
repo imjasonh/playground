@@ -1,0 +1,476 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f4f1ea;
+  --surface: #fffdf8;
+  --ink: #1d1a24;
+  --muted: #625c6b;
+  --line: rgb(29 26 36 / 0.14);
+  --wall: #1d1a24;
+  --path: oklch(0.7 0.16 45);
+  --path-tint: oklch(0.93 0.05 55);
+  --accent: #2357d1;
+  --danger: #c22f2a;
+  --target-size: 2.25rem;
+  /* The board fills the width, but no more of the height than leaves room
+     for the controls, so it fits without scrolling. */
+  --board-size: min(100%, max(18rem, 100vh - 16rem));
+
+  @media (prefers-color-scheme: dark) {
+    --bg: #17161a;
+    --surface: #232229;
+    --ink: #f1eef6;
+    --muted: #a8a1b1;
+    --line: rgb(255 255 255 / 0.1);
+    --wall: #f1eef6;
+    --path: oklch(0.72 0.15 50);
+    --path-tint: oklch(0.36 0.06 50);
+    --accent: #7ea6ff;
+    --danger: #ff6b63;
+  }
+
+  @media (pointer: coarse) {
+    --target-size: 2.75rem;
+  }
+}
+
+@supports (height: 100svh) {
+  :root {
+    --board-size: min(100%, max(18rem, 100svh - 16rem));
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  accent-color: var(--accent);
+}
+
+body {
+  margin: 0;
+  padding: max(0.75rem, env(safe-area-inset-top))
+    max(0.75rem, env(safe-area-inset-right))
+    max(1rem, env(safe-area-inset-bottom))
+    max(0.75rem, env(safe-area-inset-left));
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  font-size: 1.0625rem;
+  line-height: 1.5;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: min(100%, 34rem);
+  margin: 0 auto;
+}
+
+.masthead {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.masthead h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.segmented {
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  margin: 0;
+  padding: 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.segmented label {
+  position: relative;
+  display: grid;
+  cursor: pointer;
+}
+
+.segmented input {
+  position: absolute;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segmented span {
+  display: grid;
+  place-items: center;
+  min-block-size: var(--target-size);
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.segmented label:hover span {
+  color: var(--ink);
+}
+
+.segmented input:checked + span {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.segmented input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.play {
+  display: grid;
+  justify-items: center;
+  gap: 0.6rem;
+}
+
+.info {
+  display: flex;
+  justify-content: space-between;
+  width: var(--board-size);
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.timer {
+  font-weight: 600;
+}
+
+.board-frame {
+  width: var(--board-size);
+  container-type: inline-size;
+}
+
+.board {
+  --n: 6;
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 2px solid var(--wall);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.board:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.board[aria-busy="true"] {
+  opacity: 0.45;
+}
+
+.cells,
+.badges {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: repeat(var(--n), minmax(0, 1fr));
+}
+
+.badges,
+.row {
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+}
+
+.row {
+  display: grid;
+}
+
+.badges {
+  pointer-events: none;
+}
+
+.lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* Each cell draws a thin line on its right and bottom, and a thick line on
+   every side that has a wall, so a wall is drawn by both of its cells. */
+.cell {
+  --top: 0px;
+  --left: 0px;
+  --right: 1px;
+  --bottom: 1px;
+  --right-color: var(--line);
+  --bottom-color: var(--line);
+  position: relative;
+  box-shadow: inset 0 var(--top) var(--wall),
+    inset var(--left) 0 var(--wall),
+    inset calc(-1 * var(--right)) 0 var(--right-color),
+    inset 0 calc(-1 * var(--bottom)) var(--bottom-color);
+}
+
+.cell.wall-top {
+  --top: 2px;
+}
+
+.cell.wall-left {
+  --left: 2px;
+}
+
+.cell.wall-right {
+  --right: 2px;
+  --right-color: var(--wall);
+}
+
+.cell.wall-bottom {
+  --bottom: 2px;
+  --bottom-color: var(--wall);
+}
+
+.cell.last-col {
+  --right: 0px;
+}
+
+.cell.last-row {
+  --bottom: 0px;
+}
+
+.cell.on-path {
+  background-color: var(--path-tint);
+}
+
+.cell.wrong {
+  background-color: color-mix(in oklch, var(--danger) 28%, var(--surface));
+}
+
+.cell.hint-target::after {
+  content: "";
+  position: absolute;
+  inset: 12%;
+  border: 3px solid var(--accent);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.path-line,
+.hint-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.path-line {
+  stroke: var(--path);
+  stroke-width: 0.38;
+}
+
+.hint-line {
+  stroke: var(--accent);
+  stroke-width: 0.16;
+  stroke-dasharray: 0.01 0.24;
+}
+
+.head {
+  fill: var(--path);
+  stroke: var(--surface);
+  stroke-width: 0.06;
+}
+
+.board.won .path-line {
+  stroke: oklch(0.68 0.15 150);
+}
+
+.board.won .head {
+  fill: oklch(0.68 0.15 150);
+}
+
+.badge {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  justify-self: center;
+  width: 62%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--surface);
+  font-size: calc(100cqi / var(--n) * 0.34);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .cell.hint-target::after {
+    animation: pulse 1.2s ease-in-out infinite alternate;
+  }
+
+  .board.won .badge {
+    animation: pop 500ms ease-out both;
+    animation-delay: calc(var(--order) * 70ms);
+  }
+}
+
+@keyframes pulse {
+  from {
+    scale: 1;
+  }
+
+  to {
+    scale: 0.8;
+  }
+}
+
+@keyframes pop {
+  50% {
+    scale: 1.25;
+  }
+}
+
+.message {
+  width: var(--board-size);
+  min-block-size: 2.8em;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
+.message.hint {
+  color: var(--ink);
+}
+
+.toolbar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.4rem;
+  width: var(--board-size);
+}
+
+button {
+  appearance: none;
+  min-block-size: var(--target-size);
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+button:hover {
+  border-color: var(--ink);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button:disabled:hover {
+  border-color: var(--line);
+}
+
+button.primary {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.rules {
+  width: var(--board-size);
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.rules summary {
+  padding-block: 0.5rem;
+  color: var(--ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rules p {
+  margin: 0 0 0.6rem;
+  text-wrap: pretty;
+}
+
+dialog {
+  width: min(100% - 2rem, 20rem);
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+  color: var(--ink);
+  text-align: center;
+}
+
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: rgb(0 0 0 / 0.4);
+}
+
+dialog h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.4rem;
+}
+
+dialog p {
+  margin: 0 0 1rem;
+  color: var(--muted);
+}
+
+.dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.noscript {
+  margin: 0;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
