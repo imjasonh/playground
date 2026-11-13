@@ -79,6 +79,9 @@ FUNCTIONS = [
     ("wideMul12x2", "crypto_bigint::uint::mul::karatsuba::widening_mul_fixed::<12, 2>"),
     ("wideMul8x2", "crypto_bigint::uint::mul::karatsuba::widening_mul_fixed::<8, 2>"),
     ("edDouble", "<curve25519_dalek::backend::serial::curve_models::ProjectivePoint>::double"),
+    ("p384Mul", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<p384::arithmetic::field::FieldParams, 12>>::mul"),
+    ("p384Sqr", "<p384::arithmetic::field::FieldElement as ff::Field>::square"),
+    ("p384PtDouble", "<primeorder::projective::ProjectivePoint<p384::NistP384> as group::Group>::double"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
@@ -89,6 +92,7 @@ DATA = [
     ("shaIV", "sha256Fn", 0x12, 32),
     ("p384Modulus", "p384Add", 0x66, 48),
     ("sha512K", "sha512Compress", 0x1F8, 640),
+    ("p384B", "p384PtDouble", 0x9E, 48),
 ]
 
 
