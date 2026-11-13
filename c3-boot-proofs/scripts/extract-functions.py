@@ -123,6 +123,8 @@ FUNCTIONS = [
     ("scalar29Index", ("scalar29Sub", 0x4A)),
     ("scalar29IndexMut", ("scalar29Sub", 0x70)),
     ("scalar29MontMul", "<curve25519_dalek::backend::serial::u32::scalar::Scalar29>::montgomery_mul"),
+    ("mulMont8", "crypto_bigint::modular::mul::mul_montgomery_form::<8>"),
+    ("p256ScalarMul", "<p256::arithmetic::scalar::Scalar as core::ops::arith::Mul>::mul"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a

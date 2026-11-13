@@ -43,6 +43,7 @@ import C3BootProofs.Proofs.ShrWide8Main
 import C3BootProofs.Proofs.FeToBytes
 import C3BootProofs.Proofs.Scalar29Sub
 import C3BootProofs.Proofs.LincombInt8
+import C3BootProofs.Proofs.MontMul8
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.RegionMem
 import C3BootProofs.Proofs.ImageHelpers
@@ -2929,6 +2930,49 @@ theorem exists_lincomb8_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- An 8-limb modulus of 3, as bytes. -/
+def montModBytes8 : List Nat := 3 :: List.replicate 31 0
+
+/-- Memory with the current image's `mul_montgomery_form::<8>`,
+`Uint<8>::select`, `borrowing_sub`, `memset`, and `memcpy` where the image
+loads them, the modulus at `0x3FCC6600`, and zeros elsewhere. -/
+def witnessMemMont8 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.mulMont8Address, Image.mulMont8Code),
+    (Image.uintSelect8Address, Image.uintSelect8Code),
+    (Image.borrowingSubAddress, Image.borrowingSubCode),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (0x3FCC6600, montModBytes8)]
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `mul_montgomery_form::<8>` with the result at
+`0x3FCC6000`, the operands at `0x3FCC6400` and `0x3FCC6500`, the modulus 3
+at `0x3FCC6600`, `k = 0x55555555`, and the stack at `0x3FCC8000` meets
+`mulMont8_correct`'s hypotheses. -/
+theorem exists_mulMont8_machine :
+    ∃ (m : RV32.Machine) (P sp0 out xp yp np K retAddr : RV32.Word),
+      RV32.MMEnv8 m.mem P sp0 out xp yp np ∧ m.pc = P ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = xp ∧
+      RV32.reg m RV32.a2 = yp ∧ RV32.reg m RV32.a3 = np ∧ RV32.reg m RV32.a4 = K ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
+      (K.toNat * (RV32.memLoad32 m.mem np).toNat + 1) % 2 ^ 32 = 0 ∧
+      RV32.accV m.mem yp 8 < RV32.accV m.mem np 8 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC6400 else if r = RV32.a2 then 0x3FCC6500
+    else if r = RV32.a3 then 0x3FCC6600 else if r = RV32.a4 then 0x55555555
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.mulMont8Address, witnessMemMont8⟩, BitVec.ofNat 32 Image.mulMont8Address,
+    0x3FCC8000, 0x3FCC6000, 0x3FCC6400, 0x3FCC6500, 0x3FCC6600, 0x55555555, 0, ?_, rfl, rfl, rfl, rfl, rfl, rfl,
+    rfl, by decide, rfl, ?_, ?_⟩
+  · constructor
+    all_goals first
+      | code_in
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+  all_goals decide +kernel
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -3581,3 +3625,9 @@ end C3
 
 /-- info: 'C3.exists_lincomb8_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_lincomb8_machine
+
+/-- info: 'C3.RV32.mulMont8_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.mulMont8_correct
+
+/-- info: 'C3.exists_mulMont8_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_mulMont8_machine
