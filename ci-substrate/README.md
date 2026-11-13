@@ -281,6 +281,8 @@ go test ./...
 go test -race ./...
 ```
 
+`bazel test //...` runs the same tests; see [Build with Bazel](#build-with-bazel).
+
 The `internal/remote` package includes an in-process gRPC integration test that
 covers cross-tenant cache reuse, isolation, poison rejection, large-blob
 ByteStream, the batch size boundary, ByteStream write bounds, malformed and
@@ -353,8 +355,65 @@ the kind e2e, so it blocks a pull request that breaks tenant isolation. It
 runs against any cluster with runners for both tenants:
 `bash e2e/run-bazel.sh <cas host:port>`.
 
+Last, [`e2e/run-dogfood.sh`](e2e/run-dogfood.sh) builds and tests
+ci-substrate itself with Bazel on the cluster, as tenant A (see
+[Build with Bazel](#build-with-bazel)). Set `CI_SUBSTRATE_DOGFOOD=0` to skip
+it.
+
 `deploy/30-cictl-job.yaml` is the same demo as an in-cluster Job for clusters
 where Service DNS works.
+
+## Build with Bazel
+
+ci-substrate also builds with Bazel (pinned in `.bazelversion`), using
+rules_go and Gazelle. `go.mod` stays the source of truth for dependencies;
+Gazelle generates the `BUILD.bazel` files from the Go sources:
+
+```bash
+cd ci-substrate
+bazel run //:gazelle          # after adding a package or an import
+bazel build //...
+bazel test //...
+```
+
+Two settings keep the build runnable on this cluster's runners, which have no
+C toolchain. Every Go target builds without cgo (`.bazelrc`), and Go modules
+build from their checked-in `.pb.go` files instead of their `.proto` sources,
+so `protoc` is never compiled (`MODULE.bazel`). The FUSE tests are tagged
+`no-sandbox`, because `fusermount` cannot mount inside Bazel's sandbox.
+
+To build on a ci-substrate cluster, point Bazel at `cas`:
+
+```bash
+bazel build //... \
+  --remote_executor=grpc://127.0.0.1:18980 \
+  --remote_instance_name=tenant-a \
+  --remote_header=x-ci-substrate-tenant=tok-a \
+  --spawn_strategy=remote
+```
+
+[`e2e/run-dogfood.sh`](e2e/run-dogfood.sh) does this as a dogfooding demo:
+
+```bash
+bash e2e/run-dogfood.sh 127.0.0.1:18980
+```
+
+It copies the checkout into a fresh workspace and fails unless:
+
+1. `bazel run //:gazelle -- -mode=diff` finds the `BUILD.bazel` files up to
+   date.
+2. `bazel build //...` executes every action on the cluster's runners, none
+   on the host. It passes `--noremote_accept_cached`, so results that an
+   earlier run left in the action cache are not reused.
+3. `bazel test //...` runs every test on a runner, and they pass. The FUSE
+   mount tests skip there, because the runner image has no `fusermount`.
+4. After `bazel clean`, the rebuild is all action cache hits.
+
+On the one-node kind cluster, with two tenant A runners, the build executes
+249 actions remotely in about 46 seconds, the 15 test targets pass, and the
+rebuild after a clean takes about 2 seconds, all from the action cache. The
+host still fetches the Go SDK and modules, and runs Bazel's internal actions
+(symlinks and stamping).
 
 ## Deploy with ko
 
