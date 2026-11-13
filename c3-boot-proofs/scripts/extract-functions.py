@@ -118,6 +118,11 @@ FUNCTIONS = [
     ("derSequence", "<c3_verify::der::Der>::sequence"),
     ("equalSameLength", "<u8 as core::slice::cmp::SlicePartialEq<u8>>::equal_same_length"),
     ("sliceEq", "<[u8] as core::cmp::PartialEq>::eq"),
+    ("lincomb8", "<crypto_bigint::modular::safegcd::SignedInt<8>>::lincomb_int::<2>"),
+    ("scalar29Sub", "<curve25519_dalek::backend::serial::u32::scalar::Scalar29>::sub"),
+    ("scalar29Index", ("scalar29Sub", 0x4A)),
+    ("scalar29IndexMut", ("scalar29Sub", 0x70)),
+    ("scalar29MontMul", "<curve25519_dalek::backend::serial::u32::scalar::Scalar29>::montgomery_mul"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
@@ -131,6 +136,7 @@ DATA = [
     ("p384B", "p384PtDouble", 0x9E, 48),
     ("u2Zero", "condNeg12", 0x7E, 8),
     ("u2One", "condNeg12", 0x86, 8),
+    ("scalarL", "scalar29Sub", 0x36, 36),
 ]
 
 

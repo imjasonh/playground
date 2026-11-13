@@ -41,6 +41,7 @@ import C3BootProofs.Proofs.DerNested
 import C3BootProofs.Proofs.SliceEq
 import C3BootProofs.Proofs.ShrWide8Main
 import C3BootProofs.Proofs.FeToBytes
+import C3BootProofs.Proofs.Scalar29Sub
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.RegionMem
 import C3BootProofs.Proofs.ImageHelpers
@@ -2846,6 +2847,43 @@ theorem exists_feToBytes_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `Scalar29::sub`, its callees, and
+`constants::L` where the image loads them, and zeros elsewhere. -/
+def witnessMemScalar29Sub : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.scalar29SubAddress, Image.scalar29SubCode),
+    (Image.scalar29IndexAddress, Image.scalar29IndexCode),
+    (Image.scalar29IndexMutAddress, Image.scalar29IndexMutCode),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.blackBoxU8Address, Image.blackBoxU8Code),
+    (Image.scalarLAddress, Image.scalarLData)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Scalar29::sub(a, &L)` with the result at
+`0x3FCC5000`, `a` at `0x3FCC6000`, and the stack at `0x3FCC7060` meets
+`scalar29Sub_correct`'s hypotheses. -/
+theorem exists_scalar29Sub_machine :
+    ∃ (m : RV32.Machine) (P G out ap retAddr : RV32.Word), RV32.SSEnv m.mem P G out ap ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = ap ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = G + 0x60 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000
+    else if r = RV32.sp then 0x3FCC7060 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.scalar29SubAddress, witnessMemScalar29Sub⟩,
+    BitVec.ofNat 32 Image.scalar29SubAddress, 0x3FCC7000, 0x3FCC5000, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, rfl,
+    by decide, rfl⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -3480,3 +3518,15 @@ end C3
 
 /-- info: 'C3.exists_feToBytes_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_feToBytes_machine
+
+/-- info: 'C3.RV32.scalar29Sub_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.scalar29Sub_correct
+
+/-- info: 'C3.RV32.scalar29Index_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.scalar29Index_correct
+
+/-- info: 'C3.RV32.scalar29IndexMut_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.scalar29IndexMut_correct
+
+/-- info: 'C3.exists_scalar29Sub_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_scalar29Sub_machine
