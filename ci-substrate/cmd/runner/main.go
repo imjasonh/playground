@@ -27,6 +27,7 @@ import (
 )
 
 func main() {
+	bot.RunLauncher()
 	originAddr := flag.String("origin-addr", "", "cas address for leases, uploads, and the action cache (host:port)")
 	cacheAddr := flag.String("cache-addr", "", "node-local cascache address for reads (host:port); defaults to -origin-addr")
 	instances := flag.String("instances", "", "comma-separated instance names to lease from; empty means every instance the token allows")

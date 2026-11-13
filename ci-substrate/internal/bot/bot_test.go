@@ -2,16 +2,21 @@ package bot_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"os"
+	osexec "os/exec"
+	"runtime"
 	"testing"
+	"time"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	workerv1 "github.com/imjasonh/playground/ci-substrate/api/worker/v1"
 	"github.com/imjasonh/playground/ci-substrate/internal/actioncache"
@@ -178,6 +183,74 @@ func (s *stack) execute(t *testing.T, b *bot.Bot, action *repb.Digest) *repb.Exe
 	return resp
 }
 
+func TestMain(m *testing.M) {
+	bot.RunLauncher()
+	os.Exit(m.Run())
+}
+
+// gcChildEnv marks the copy of the test binary that
+// TestActionsSurviveGarbageCollection runs the workload in.
+const gcChildEnv = "CI_SUBSTRATE_BOT_GC_CHILD"
+
+// A FUSE exec root is served by the bot's own process. Starting an action in
+// it while a garbage collection stops the world deadlocked the whole process
+// (see RunLauncher). A deadlocked runtime can't time itself out, so the
+// workload runs in a child process that this test kills at a deadline.
+func TestActionsSurviveGarbageCollection(t *testing.T) {
+	if _, err := os.Stat("/dev/fuse"); err != nil {
+		t.Skip("needs /dev/fuse")
+	}
+	if os.Getenv(gcChildEnv) == "" {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+		defer cancel()
+		child := osexec.CommandContext(ctx, os.Args[0], "-test.run=^TestActionsSurviveGarbageCollection$", "-test.v")
+		child.Env = append(os.Environ(), gcChildEnv+"=1")
+		// A deadlocked child can't be reaped: its vfork child waits on the
+		// FUSE mount uninterruptibly. Stop waiting for it shortly after the
+		// kill.
+		child.WaitDelay = 5 * time.Second
+		out, err := child.CombinedOutput()
+		if ctx.Err() != nil {
+			t.Fatalf("actions deadlocked under garbage collection:\n%s", out)
+		}
+		if err != nil {
+			t.Fatalf("workload: %v\n%s", err, out)
+		}
+		return
+	}
+
+	for _, mode := range []bot.InputMode{bot.InputFUSE, bot.InputVolume} {
+		t.Run(string(mode), func(t *testing.T) {
+			s := newStack(t)
+			b := s.newBot(t, mode)
+			stop := make(chan struct{})
+			defer close(stop)
+			go func() {
+				for {
+					select {
+					case <-stop:
+						return
+					default:
+						runtime.GC()
+					}
+				}
+			}()
+			input := s.upload(t, []byte("alpha\n"))
+			root := s.uploadProto(t, &repb.Directory{Files: []*repb.FileNode{{Name: "input.txt", Digest: input}}})
+			for i := range 40 {
+				command := s.uploadProto(t, &repb.Command{
+					Arguments:   []string{"sh", "-c", fmt.Sprintf("cat input.txt > out.txt && echo %d >> out.txt", i)},
+					OutputPaths: []string{"out.txt"},
+				})
+				action := s.uploadProto(t, &repb.Action{CommandDigest: command, InputRootDigest: root})
+				if resp := s.execute(t, b, action); resp.GetResult().GetExitCode() != 0 || resp.GetStatus().GetCode() != 0 {
+					t.Fatalf("action %d: %v", i, resp)
+				}
+			}
+		})
+	}
+}
+
 func modes(t *testing.T) []bot.InputMode {
 	t.Helper()
 	ms := []bot.InputMode{bot.InputCopy}
@@ -261,6 +334,24 @@ func TestRunsActionWithInputsAndOutputs(t *testing.T) {
 			}
 			if ar.GetExecutionMetadata().GetWorker() != "bot-"+string(mode) {
 				t.Fatalf("worker %q", ar.GetExecutionMetadata().GetWorker())
+			}
+			// Bazel reads queue, fetch, execution, and upload times from these,
+			// so each stage starts no earlier than the one before ends.
+			md := ar.GetExecutionMetadata()
+			stages := []*timestamppb.Timestamp{
+				md.GetQueuedTimestamp(), md.GetWorkerStartTimestamp(),
+				md.GetInputFetchStartTimestamp(), md.GetInputFetchCompletedTimestamp(),
+				md.GetExecutionStartTimestamp(), md.GetExecutionCompletedTimestamp(),
+				md.GetOutputUploadStartTimestamp(), md.GetOutputUploadCompletedTimestamp(),
+				md.GetWorkerCompletedTimestamp(),
+			}
+			for i, ts := range stages {
+				if ts == nil {
+					t.Fatalf("timestamp %d of the execution metadata is unset: %v", i, md)
+				}
+				if i > 0 && ts.AsTime().Before(stages[i-1].AsTime()) {
+					t.Fatalf("timestamp %d is before timestamp %d: %v", i, i-1, md)
+				}
 			}
 			if got := inputMode(t, ar); got != string(mode) {
 				t.Fatalf("result records input mode %q, want %q", got, mode)

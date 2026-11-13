@@ -90,13 +90,15 @@ type Config struct {
 
 // Bot runs leased actions until its context ends.
 type Bot struct {
-	cfg   Config
-	cache tree.Fetcher
+	cfg      Config
+	cache    tree.Fetcher
+	launcher string
 }
 
 // New returns a Bot. It fails when the configuration cannot work on this
 // host, such as InputFUSE with no /dev/fuse or InputVolume with a volume
-// that does not answer.
+// that does not answer. The program must call RunLauncher at the start of
+// main: the bot starts every action through the program's own binary.
 func New(cfg Config) (*Bot, error) {
 	if cfg.BotID == "" || cfg.Worker == nil || cfg.Origin == nil || cfg.Cache == nil || cfg.WorkDir == "" {
 		return nil, errors.New("bot: BotID, Worker, Origin, Cache, and WorkDir are required")
@@ -133,7 +135,11 @@ func New(cfg Config) (*Bot, error) {
 	default:
 		return nil, fmt.Errorf("bot: unknown input mode %q", cfg.InputMode)
 	}
-	return &Bot{cfg: cfg, cache: tree.WithToken(cfg.Cache, cfg.Token)}, nil
+	launcher, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("bot: finding the launcher: %w", err)
+	}
+	return &Bot{cfg: cfg, cache: tree.WithToken(cfg.Cache, cfg.Token), launcher: launcher}, nil
 }
 
 // probeVolume materializes the empty input root on the volume and drops it,
@@ -308,6 +314,7 @@ func (b *Bot) heartbeat(ctx context.Context, cancel context.CancelFunc, job *wor
 
 // execute builds the exec root, runs the command, and uploads the outputs.
 func (b *Bot) execute(ctx context.Context, job *workerv1.Job) (*repb.ActionResult, error) {
+	workerStart := timestamppb.Now()
 	instance := job.GetInstanceName()
 	actionDigest := &repb.Digest{Hash: job.GetActionDigest().GetHash(), SizeBytes: job.GetActionDigest().GetSizeBytes()}
 	action := &repb.Action{}
@@ -326,7 +333,7 @@ func (b *Bot) execute(ctx context.Context, job *workerv1.Job) (*repb.ActionResul
 		rootDigest = tree.Digest(&repb.Directory{})
 	}
 
-	md := &repb.ExecutedActionMetadata{Worker: b.cfg.BotID, InputFetchStartTimestamp: timestamppb.Now()}
+	md := &repb.ExecutedActionMetadata{Worker: b.cfg.BotID, WorkerStartTimestamp: workerStart, InputFetchStartTimestamp: timestamppb.Now()}
 	execRoot, cleanup, err := b.execRoot(ctx, instance, rootDigest, job.GetId())
 	if err != nil {
 		return nil, err
@@ -363,8 +370,10 @@ func (b *Bot) execute(ctx context.Context, job *workerv1.Job) (*repb.ActionResul
 		runCtx, cancel = context.WithTimeout(ctx, timeout.AsDuration())
 		defer cancel()
 	}
-	cmd := exec.CommandContext(runCtx, command.GetArguments()[0], command.GetArguments()[1:]...)
-	cmd.Dir = workDir
+	cmd, err := b.command(runCtx, workDir, command.GetArguments())
+	if err != nil {
+		return nil, fmt.Errorf("starting command: %w", err)
+	}
 	cmd.Env = environment(command)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -389,6 +398,7 @@ func (b *Bot) execute(ctx context.Context, job *workerv1.Job) (*repb.ActionResul
 		return nil, fmt.Errorf("uploading outputs: %w", err)
 	}
 	md.OutputUploadCompletedTimestamp = timestamppb.Now()
+	md.WorkerCompletedTimestamp = md.OutputUploadCompletedTimestamp
 	return ar, nil
 }
 
