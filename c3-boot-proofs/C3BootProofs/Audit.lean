@@ -31,6 +31,7 @@ import C3BootProofs.Proofs.P256PtDouble
 import C3BootProofs.Proofs.CondNeg12
 import C3BootProofs.Proofs.CondNeg8
 import C3BootProofs.Proofs.ShrWide12Main
+import C3BootProofs.Proofs.LincombInt12
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.RegionMem
 import C3BootProofs.Proofs.ImageHelpers
@@ -2253,6 +2254,49 @@ theorem exists_shr12_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `SignedInt<12>::lincomb_int::<2>` and the
+functions and constants it reaches where the image loads them, and zeros
+elsewhere. -/
+def witnessMemLc12 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.lincomb12Address, Image.lincomb12Code),
+    (Image.absSign2Address, Image.absSign2Code),
+    (Image.wideMul12x2Address, Image.wideMul12x2Code),
+    (Image.condNeg12Address, Image.condNeg12Code),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.borrowingSubAddress, Image.borrowingSubCode),
+    (Image.uintSelect2Address, Image.uintSelect2Code),
+    (Image.uintSelect12Address, Image.uintSelect12Code),
+    (Image.u2ZeroAddress, Image.u2ZeroData),
+    (Image.u2OneAddress, Image.u2OneData)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 16000000 in
+/-- A machine that calls `SignedInt<12>::lincomb_int::<2>` with `out` at
+`0x3FCC5000`, `a`, `b`, `c`, and `d` at `0x3FCC5100` through `0x3FCC5400`,
+and the stack at `0x3FCC8000` meets `lincomb12_correct`'s hypotheses. -/
+theorem exists_lincomb12_machine :
+    ∃ (m : RV32.Machine) (P sp0 out ap bp cp dp retAddr : RV32.Word), RV32.LCEnv m.mem P sp0 out ap bp cp dp ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = ap ∧
+      RV32.reg m RV32.a2 = bp ∧ RV32.reg m RV32.a3 = cp ∧ RV32.reg m RV32.a4 = dp ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ (m.mem (ap + 0x30)).toNat ≤ 1 ∧ (m.mem (bp + 0x30)).toNat ≤ 1 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC5100 else if r = RV32.a2 then 0x3FCC5200
+    else if r = RV32.a3 then 0x3FCC5300 else if r = RV32.a4 then 0x3FCC5400
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.lincomb12Address, witnessMemLc12⟩, BitVec.ofNat 32 Image.lincomb12Address,
+    0x3FCC8000, 0x3FCC5000, 0x3FCC5100, 0x3FCC5200, 0x3FCC5300, 0x3FCC5400, 0, ?_, rfl, rfl, rfl, rfl, rfl, rfl,
+    rfl, rfl, by decide, by decide +kernel, by decide +kernel⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 /-- Memory with the current image's `Int<2>::abs_sign` and `Int<2>::from_i64`
 where the image loads them, and zeros elsewhere. -/
 def witnessMemInt2 : RV32.Word → BitVec 8 :=
@@ -2811,6 +2855,12 @@ end C3
 
 /-- info: 'C3.exists_shr12_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_shr12_machine
+
+/-- info: 'C3.RV32.lincomb12_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.lincomb12_correct
+
+/-- info: 'C3.exists_lincomb12_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_lincomb12_machine
 
 /-- info: 'C3.RV32.absSign2_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.absSign2_correct

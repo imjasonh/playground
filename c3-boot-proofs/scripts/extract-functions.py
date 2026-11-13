@@ -95,6 +95,7 @@ FUNCTIONS = [
     ("shr12", "crypto_bigint::modular::safegcd::shr_in_place_wide::<12, 2>"),
     ("leadMut12", ("shr12", 0x92)),
     ("trailing12", ("shr12", 0xA4)),
+    ("lincomb12", "<crypto_bigint::modular::safegcd::SignedInt<12>>::lincomb_int::<2>"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
