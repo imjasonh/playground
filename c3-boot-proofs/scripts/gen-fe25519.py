@@ -339,7 +339,7 @@ class Gen:
         slotval = {key: f'memLoad32 M0 ({addr(key)})' for key in keep_slots}
         slotsrc = {key: None for key in keep_slots}
         seen_inputs = {}
-        bounds = list(range(0, n, seg)) + [n]
+        bounds = self.seg_bounds(n, seg)
         self.seg_thms = []
         self.emit(f'  have fr0 : ∀ x, {ftype} → M x = M x := fun _ {fus} => rfl')
         for key in keep_slots:
@@ -487,6 +487,10 @@ class Gen:
         self.reg_facts = mq
         self.steps_final = csteps
         self.n_final = f'ng{len(bounds) - 2}'
+
+    def seg_bounds(self, n, seg):
+        """Where each segment theorem starts, and the end."""
+        return list(range(0, n, seg)) + [n]
 
     def carried(self, key, si, at):
         """Whether `key`, last written by store `si`, is still read at or after `at`."""
