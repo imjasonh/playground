@@ -96,6 +96,12 @@ FUNCTIONS = [
     ("leadMut12", ("shr12", 0x92)),
     ("trailing12", ("shr12", 0xA4)),
     ("lincomb12", "<crypto_bigint::modular::safegcd::SignedInt<12>>::lincomb_int::<2>"),
+    ("blackBoxU8", "subtle::black_box::<u8>"),
+    ("ctEqU8", "<u8 as subtle::ConstantTimeEq>::ct_eq"),
+    ("ctEqSlice", "<[u8] as subtle::ConstantTimeEq>::ct_eq"),
+    ("memcmp", "memcmp"),
+    ("uintRefIsNonzero", "<crypto_bigint::uint::ref_type::UintRef>::is_nonzero"),
+    ("lshrdi3", "__lshrdi3"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a

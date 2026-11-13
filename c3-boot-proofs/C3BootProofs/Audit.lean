@@ -32,6 +32,7 @@ import C3BootProofs.Proofs.CondNeg12
 import C3BootProofs.Proofs.CondNeg8
 import C3BootProofs.Proofs.ShrWide12Main
 import C3BootProofs.Proofs.LincombInt12
+import C3BootProofs.Proofs.Leaves
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.RegionMem
 import C3BootProofs.Proofs.ImageHelpers
@@ -2297,6 +2298,132 @@ theorem exists_lincomb12_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's small leaf functions where the image
+loads them, and zeros elsewhere. -/
+def witnessMemLeaves : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.blackBoxU8Address, Image.blackBoxU8Code),
+    (Image.ctEqU8Address, Image.ctEqU8Code),
+    (Image.ctEqSliceAddress, Image.ctEqSliceCode),
+    (Image.memcmpAddress, Image.memcmpCode),
+    (Image.uintRefIsNonzeroAddress, Image.uintRefIsNonzeroCode),
+    (Image.lshrdi3Address, Image.lshrdi3Code)]
+
+/-- The registers of the leaf witnesses: `a0` through `a2` and the stack. -/
+def leafRegs (x y z : RV32.Word) : Fin 32 → RV32.Word := fun r =>
+  if r = RV32.a0 then x else if r = RV32.a1 then y else if r = RV32.a2 then z
+  else if r = RV32.sp then 0x3FCC8000 else 0
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `black_box::<u8>` with the stack at `0x3FCC8000`
+meets `blackBoxU8_correct`'s hypotheses. -/
+theorem exists_blackBoxU8_machine :
+    ∃ (m : RV32.Machine) (base retAddr : RV32.Word), RV32.CodeIn m.mem base Image.blackBoxU8Code ∧ m.pc = base ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFF) 1 base Image.blackBoxU8Code.length := by
+  refine ⟨⟨leafRegs 7 0 0, BitVec.ofNat 32 Image.blackBoxU8Address, witnessMemLeaves⟩,
+    BitVec.ofNat 32 Image.blackBoxU8Address, 0, ?_, rfl, rfl, by decide, ?_⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `__lshrdi3` to shift `0x12345678_9ABCDEF0` right 5
+bits meets `lshrdi3_correct`'s hypotheses. -/
+theorem exists_lshrdi3_machine :
+    ∃ (m : RV32.Machine) (base retAddr lo hi : RV32.Word) (s : Nat), RV32.CodeIn m.mem base Image.lshrdi3Code ∧
+      m.pc = base ∧ RV32.reg m RV32.a0 = lo ∧ RV32.reg m RV32.a1 = hi ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 s ∧
+      s < 64 ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x9ABCDEF0 0x12345678 5, BitVec.ofNat 32 Image.lshrdi3Address, witnessMemLeaves⟩,
+    BitVec.ofNat 32 Image.lshrdi3Address, 0, 0x9ABCDEF0, 0x12345678, 5, ?_, rfl, rfl, rfl, rfl, by decide, rfl,
+    by decide⟩
+  code_in
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `memcmp` on 32 bytes at `0x3FCC5000` and
+`0x3FCC5100` meets `memcmp_correct`'s hypotheses. -/
+theorem exists_memcmp_machine :
+    ∃ (m : RV32.Machine) (base retAddr p q : RV32.Word) (n : Nat), RV32.CodeIn m.mem base Image.memcmpCode ∧
+      m.pc = base ∧ RV32.reg m RV32.a0 = p ∧ RV32.reg m RV32.a1 = q ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
+      n < 2 ^ 32 ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC5100 32, BitVec.ofNat 32 Image.memcmpAddress, witnessMemLeaves⟩,
+    BitVec.ofNat 32 Image.memcmpAddress, 0, 0x3FCC5000, 0x3FCC5100, 32, ?_, rfl, rfl, rfl, rfl, by decide, rfl,
+    by decide⟩
+  code_in
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `UintRef::is_nonzero` on 12 words at `0x3FCC5000`
+with the stack at `0x3FCC8000` meets `uintRefIsNonzero_correct`'s
+hypotheses. -/
+theorem exists_uintRefIsNonzero_machine :
+    ∃ (m : RV32.Machine) (base retAddr ptr : RV32.Word) (len : Nat),
+      RV32.CodeIn m.mem base Image.uintRefIsNonzeroCode ∧ m.pc = base ∧ RV32.reg m RV32.a0 = ptr ∧
+      RV32.reg m RV32.a1 = BitVec.ofNat 32 len ∧ len < 2 ^ 32 ∧ ptr.toNat % 4 = 0 ∧
+      (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 base Image.uintRefIsNonzeroCode.length ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 12 0, BitVec.ofNat 32 Image.uintRefIsNonzeroAddress, witnessMemLeaves⟩,
+    BitVec.ofNat 32 Image.uintRefIsNonzeroAddress, 0, 0x3FCC5000, 12, ?_, rfl, rfl, rfl, by decide, by decide,
+    by decide, ?_, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `ct_eq` for bytes on 0x41 and 0x41 with the stack at
+`0x3FCC8000` meets `ctEqU8_correct`'s hypotheses. -/
+theorem exists_ctEqU8_machine :
+    ∃ (m : RV32.Machine) (base retAddr x y : RV32.Word), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.ctEqU8Code ∧ RV32.CodeIn m.mem (base + 0xFFFFE84E) Image.blackBoxU8Code ∧
+      m.pc = base ∧ RV32.reg m RV32.a0 = x ∧ RV32.reg m RV32.a1 = y ∧ x.toNat < 256 ∧ y.toNat < 256 ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFF) 1 (base + 0xFFFFE84E) Image.blackBoxU8Code.length := by
+  refine ⟨⟨leafRegs 0x41 0x41 0, BitVec.ofNat 32 Image.ctEqU8Address, witnessMemLeaves⟩,
+    BitVec.ofNat 32 Image.ctEqU8Address, 0, 0x41, 0x41, by decide, ?_, ?_, rfl, rfl, rfl, by decide, by decide,
+    rfl, by decide, ?_⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls the 32-byte `ct_eq` on `0x3FCC5000` and
+`0x3FCC5100` with the stack at `0x3FCC8000` meets `ctEqSlice_correct`'s
+hypotheses. -/
+theorem exists_ctEqSlice_machine :
+    ∃ (m : RV32.Machine) (base retAddr p q : RV32.Word), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.ctEqSliceCode ∧ RV32.CodeIn m.mem (base + 0xFFFFFFE8) Image.ctEqU8Code ∧
+      RV32.CodeIn m.mem (base + 0xFFFFE836) Image.blackBoxU8Code ∧ m.pc = base ∧ RV32.reg m RV32.a0 = p ∧
+      RV32.reg m RV32.a1 = q ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      (RV32.reg m RV32.sp).toNat % 4 = 0 ∧ 0x21 ≤ (RV32.reg m RV32.sp).toNat ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFDF) 0x21 base Image.ctEqSliceCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFDF) 0x21 (base + 0xFFFFFFE8) Image.ctEqU8Code.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFDF) 0x21 (base + 0xFFFFE836) Image.blackBoxU8Code.length ∧
+      RV32.Sep p 32 (RV32.reg m RV32.sp + 0xFFFFFFDF) 0x21 ∧ RV32.Sep q 32 (RV32.reg m RV32.sp + 0xFFFFFFDF) 0x21 := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC5100 0, BitVec.ofNat 32 Image.ctEqSliceAddress, witnessMemLeaves⟩,
+    BitVec.ofNat 32 Image.ctEqSliceAddress, 0, 0x3FCC5000, 0x3FCC5100, by decide, ?_, ?_, ?_, rfl, rfl, rfl, rfl,
+    by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 /-- Memory with the current image's `Int<2>::abs_sign` and `Int<2>::from_i64`
 where the image loads them, and zeros elsewhere. -/
 def witnessMemInt2 : RV32.Word → BitVec 8 :=
@@ -2861,6 +2988,42 @@ end C3
 
 /-- info: 'C3.exists_lincomb12_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_lincomb12_machine
+
+/-- info: 'C3.RV32.blackBoxU8_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.blackBoxU8_correct
+
+/-- info: 'C3.exists_blackBoxU8_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_blackBoxU8_machine
+
+/-- info: 'C3.RV32.lshrdi3_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.lshrdi3_correct
+
+/-- info: 'C3.exists_lshrdi3_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_lshrdi3_machine
+
+/-- info: 'C3.RV32.memcmp_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.memcmp_correct
+
+/-- info: 'C3.exists_memcmp_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_memcmp_machine
+
+/-- info: 'C3.RV32.uintRefIsNonzero_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.uintRefIsNonzero_correct
+
+/-- info: 'C3.exists_uintRefIsNonzero_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_uintRefIsNonzero_machine
+
+/-- info: 'C3.RV32.ctEqU8_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ctEqU8_correct
+
+/-- info: 'C3.exists_ctEqU8_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_ctEqU8_machine
+
+/-- info: 'C3.RV32.ctEqSlice_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ctEqSlice_correct
+
+/-- info: 'C3.exists_ctEqSlice_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_ctEqSlice_machine
 
 /-- info: 'C3.RV32.absSign2_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.absSign2_correct
