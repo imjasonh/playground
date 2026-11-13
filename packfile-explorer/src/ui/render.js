@@ -14,6 +14,22 @@ import { decodeUtf8 } from "../hex.js";
 import { buildDeltaChain } from "../deltaChain.js";
 import { topObjects } from "../packIndex.js";
 import { imageDataUrl } from "../imagePreview.js";
+import { BOUNDARY, rankAuthors } from "../attribution.js";
+
+const AUTHOR_COLORS = [
+  "#0f6e5c",
+  "#e76f51",
+  "#457b9d",
+  "#e9c46a",
+  "#6d597a",
+  "#2a9d8f",
+  "#f4a261",
+  "#8d99ae",
+  "#b5838d",
+  "#90be6d",
+];
+const OTHER_COLOR = "#a3b1ad";
+const SPECIAL_COLORS = ["#f0d9a8", "#dde4e1"];
 
 export function setStatus(el, message, { error = false } = {}) {
   el.textContent = message || "";
@@ -343,9 +359,10 @@ export function renderSaved(el, list, { onOpen, onDelete }) {
 }
 
 /**
- * Insights tab: leaderboard, per-type and depth breakdowns, reachability, and
- * the pack trailer. `handlers` provides onSelectOid, onMetricChange,
- * onFilterUnreachable, and onCompare.
+ * Insights tab: leaderboard, per-type, per-author, and depth breakdowns,
+ * reachability, and the pack trailer. `handlers` provides onSelectOid,
+ * onMetricChange, onAuthorMetricChange, onFilterAuthor, onFilterUnreachable,
+ * and onCompare.
  */
 export function renderInsights(el, session, state, handlers = {}) {
   const parts = [];
@@ -385,6 +402,8 @@ export function renderInsights(el, session, state, handlers = {}) {
     );
   }
   parts.push(`</ul></div>`);
+
+  parts.push(authorPanel(session.attribution, state.authorMetric || "packed"));
 
   parts.push(`<div class="panel"><h3>Delta depth</h3><ul class="depth-hist">`);
   const maxCount = session.stats.depthHistogram.reduce((m, d) => Math.max(m, d.count), 1);
@@ -442,12 +461,114 @@ export function renderInsights(el, session, state, handlers = {}) {
   el.querySelector("#metric-select")?.addEventListener("change", (e) => {
     handlers.onMetricChange?.(e.target.value);
   });
+  el.querySelector("#author-metric")?.addEventListener("change", (e) => {
+    handlers.onAuthorMetricChange?.(e.target.value);
+  });
+  el.querySelectorAll("[data-author]").forEach((btn) => {
+    btn.addEventListener("click", () => handlers.onFilterAuthor?.(btn.getAttribute("data-author")));
+  });
   el.querySelector("#show-unreachable")?.addEventListener("click", () => handlers.onFilterUnreachable?.());
   el.querySelector("#compare-btn")?.addEventListener("click", () => handlers.onCompare?.());
 }
 
 function metricOption(value, label, current) {
   return `<option value="${value}"${value === current ? " selected" : ""}>${label}</option>`;
+}
+
+/** Insights panel: blob bytes credited to each commit author, as a pie and a table. */
+function authorPanel(attribution, metric) {
+  const parts = [`<div class="panel"><h3>Blobs by author</h3>`];
+  if (!attribution || attribution.totalBlobs === 0) {
+    parts.push(`<p class="panel-note">No blobs in this pack.</p></div>`);
+    return parts.join("");
+  }
+  parts.push(
+    `<label class="metric-select">Rank by ` +
+      `<select id="author-metric">` +
+      metricOption("packed", "packed size", metric) +
+      metricOption("inflated", "inflated size", metric) +
+      metricOption("blobs", "blob count", metric) +
+      `</select></label>`,
+  );
+
+  const { top, other, special, total } = rankAuthors(attribution, { metric, limit: 10 });
+  const slices = top.map(({ row, value }, i) => ({ row, value, color: AUTHOR_COLORS[i] }));
+  if (other.count > 0) {
+    slices.push({
+      row: null,
+      label: `${other.count} other author${other.count === 1 ? "" : "s"}`,
+      value: other.value,
+      color: OTHER_COLOR,
+    });
+  }
+  special.forEach(({ row, value }, i) => slices.push({ row, value, color: SPECIAL_COLORS[i] }));
+
+  const show = (value) => (metric === "blobs" ? value.toLocaleString() : formatBytes(value));
+  const share = (value) => (total > 0 ? formatPercent(value / total) : "—");
+
+  let at = 0;
+  const stops = slices.map((slice) => {
+    at += total > 0 ? (slice.value / total) * 100 : 0;
+    return `${slice.color} 0 ${at.toFixed(3)}%`;
+  });
+  parts.push(
+    `<div class="author-pie" aria-hidden="true" style="background: conic-gradient(${stops.join(", ")})"></div>`,
+  );
+
+  parts.push(
+    `<table class="author-table"><caption class="sr-only">Blob ${escapeHtml(metricLabel(metric))} by commit author</caption>` +
+      `<thead><tr><th scope="col">Author</th><th scope="col">${escapeHtml(metricLabel(metric))}</th>` +
+      `<th scope="col">Share</th></tr></thead><tbody>`,
+  );
+  for (const slice of slices) {
+    const swatch = `<span class="swatch" style="background:${slice.color}"></span>`;
+    let who;
+    if (!slice.row) {
+      who = `<span class="author-name muted">${escapeHtml(slice.label)}</span>`;
+    } else {
+      const name = slice.row.special
+        ? `<em>${escapeHtml(slice.row.key)}</em>`
+        : escapeHtml(slice.row.name);
+      const email =
+        slice.row.email && slice.row.email !== slice.row.name
+          ? `<span class="author-email">${escapeHtml(slice.row.email)}</span>`
+          : "";
+      who =
+        `<button type="button" class="author-name" data-author="${escapeHtml(slice.row.key)}" ` +
+        `title="Show ${slice.row.blobs.toLocaleString()} blobs in Objects">${name}${email}</button>`;
+    }
+    parts.push(
+      `<tr><th scope="row">${swatch}${who}</th><td>${escapeHtml(show(slice.value))}</td>` +
+        `<td>${escapeHtml(share(slice.value))}</td></tr>`,
+    );
+  }
+  parts.push(`</tbody></table>`);
+
+  if (attribution.byKey.has(BOUNDARY)) {
+    parts.push(
+      `<p class="panel-note">${escapeHtml(BOUNDARY)} is every blob in the trees of the oldest ` +
+        `fetched commits, whose parents aren't in this pack. Fetch more depth or open a full pack ` +
+        `to credit those to authors.</p>`,
+    );
+  }
+  parts.push(`</div>`);
+  return parts.join("");
+}
+
+function metricLabel(metric) {
+  if (metric === "blobs") return "Blobs";
+  if (metric === "inflated") return "Inflated";
+  return "Packed";
+}
+
+/** Fill the Objects tab's author filter with every credited author. */
+export function renderAuthorFilter(select, attribution) {
+  select.replaceChildren(new Option("All", ""));
+  for (const row of attribution ? attribution.authors : []) {
+    const label = row.special ? row.key : row.name;
+    select.append(new Option(`${label} (${row.blobs.toLocaleString()})`, row.key));
+  }
+  select.disabled = !attribution || attribution.authors.length === 0;
 }
 
 /** Refs tab: advertised refs, each opening the object it points at. */

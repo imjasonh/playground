@@ -13,6 +13,7 @@ import { subtleComputeOid, subtleSha1Hex } from "./oid.js";
 import { computeStats, queryObjects } from "./packIndex.js";
 import { indexByOffset } from "./deltaChain.js";
 import { computeReachability, defaultRoots } from "./reachability.js";
+import { attributeBlobs } from "./attribution.js";
 import { rootTreeOf, searchPaths, walkTree } from "./treeWalk.js";
 import { verifyPackTrailer } from "./packTrailer.js";
 import { diffPacks } from "./diffPacks.js";
@@ -22,6 +23,7 @@ import { fetchPack, fetchRefs } from "./transport.js";
 import { deleteRepo, listRepos, loadRepo, saveRepo } from "./store.js";
 import { readUrlState, packShareUrl, writeUrlState } from "./urlState.js";
 import {
+  renderAuthorFilter,
   renderCompare,
   renderDetail,
   renderInsights,
@@ -68,6 +70,7 @@ const els = {
   filterDelta: document.getElementById("filter-delta"),
   filterSort: document.getElementById("filter-sort"),
   filterReach: document.getElementById("filter-reach"),
+  filterAuthor: document.getElementById("filter-author"),
   filterSearch: document.getElementById("filter-search"),
   navBack: document.getElementById("nav-back"),
   navFwd: document.getElementById("nav-fwd"),
@@ -78,7 +81,7 @@ const els = {
 
 let session = null;
 let currentTab = "objects";
-const insightsState = { metric: "packed" };
+const insightsState = { metric: "packed", authorMetric: "packed" };
 let pendingRefs = null; // { base, refs, head } awaiting a ref-pick fetch
 
 // In-app navigation history of selected oids.
@@ -280,6 +283,7 @@ async function openPack(record, { objectId = null } = {}) {
     roots.length > 0
       ? computeReachability({ byOid: resolved.byOid, contentByOid: resolved.contentByOid, roots }).reachable
       : null;
+  const attribution = attributeBlobs(resolved);
 
   session = {
     packId: record.base,
@@ -295,6 +299,7 @@ async function openPack(record, { objectId = null } = {}) {
     byOffset,
     stats,
     reachable,
+    attribution,
     trailer: null,
     pathEntries: null,
     selectedOid: null,
@@ -303,6 +308,7 @@ async function openPack(record, { objectId = null } = {}) {
   els.saved.hidden = true;
   els.workspace.hidden = false;
   renderStats(els.stats, stats, { base: record.base });
+  renderAuthorFilter(els.filterAuthor, attribution);
 
   verifyPackTrailer(record.pack, parsed, sha1Hex)
     .then((trailer) => {
@@ -331,7 +337,9 @@ async function openPack(record, { objectId = null } = {}) {
 
 function refreshList() {
   if (!session) return;
+  const author = els.filterAuthor.value;
   const rows = queryObjects(session.objects, {
+    oids: author ? session.attribution.byKey.get(author)?.oids || new Set() : null,
     type: els.filterType.value || null,
     deltaType: els.filterDelta.value || null,
     search: els.filterSearch.value,
@@ -345,7 +353,14 @@ function refreshList() {
   });
 }
 
-for (const el of [els.filterType, els.filterDelta, els.filterSort, els.filterReach, els.filterSearch]) {
+for (const el of [
+  els.filterType,
+  els.filterDelta,
+  els.filterSort,
+  els.filterReach,
+  els.filterAuthor,
+  els.filterSearch,
+]) {
   el.addEventListener("input", () => refreshList());
 }
 
@@ -467,6 +482,17 @@ function renderActiveTab() {
       onMetricChange: (metric) => {
         insightsState.metric = metric;
         renderActiveTab();
+      },
+      onAuthorMetricChange: (metric) => {
+        insightsState.authorMetric = metric;
+        renderActiveTab();
+      },
+      onFilterAuthor: (key) => {
+        setTab("objects");
+        els.filterAuthor.value = key;
+        els.filterType.value = "blob";
+        els.filterSort.value = "packed";
+        refreshList();
       },
       onFilterUnreachable: () => {
         setTab("objects");
