@@ -355,6 +355,10 @@ the kind e2e, so it blocks a pull request that breaks tenant isolation. It
 runs against any cluster with runners for both tenants:
 `bash e2e/run-bazel.sh <cas host:port>`.
 
+Then [`e2e/run-telemetry.sh`](e2e/run-telemetry.sh) builds once more and
+fails unless that build's trace and metrics arrive (see
+[Observability](#observability)).
+
 Last, [`e2e/run-dogfood.sh`](e2e/run-dogfood.sh) builds and tests
 ci-substrate itself with Bazel on the cluster, as tenant A (see
 [Build with Bazel](#build-with-bazel)). Set `CI_SUBSTRATE_DOGFOOD=0` to skip
@@ -420,6 +424,7 @@ host still fetches the Go SDK and modules, and runs Bazel's internal actions
 ```bash
 export KO_DOCKER_REPO=<your-registry>/ci-substrate
 kubectl apply -f deploy/00-namespace-and-config.yaml
+kubectl apply -f deploy/05-telemetry.yaml   # or deploy/gke/05-telemetry.yaml
 ko apply -f deploy/10-cas.yaml
 ko apply -f deploy/20-cascache.yaml
 ko apply -f deploy/40-runner.yaml
@@ -436,6 +441,153 @@ docker.io mirror of the same static base:
 ```bash
 export KO_DEFAULTBASEIMAGE=registry-1.docker.io/chainguard/static:latest
 ```
+
+## Observability
+
+Every binary (`cas`, `cascache`, `runner`, `pool`, `casfs-csi`) sends
+OpenTelemetry traces and metrics over OTLP gRPC to `OTEL_EXPORTER_OTLP_ENDPOINT`
+(`internal/telemetry`). Without that variable a binary exports nothing, which
+is how the unit tests run. Both deployments use the same collector Service,
+so the workloads don't change between kind and GKE; only the collector's
+exporters do:
+
+| File | Collector exports to |
+|------|----------------------|
+| `deploy/05-telemetry.yaml` | Traces to an in-memory Jaeger (UI on port 16686), and metrics on a Prometheus endpoint on the collector (port 8889) |
+| `deploy/gke/05-telemetry.yaml` | Traces to Cloud Trace, and metrics to Google Cloud Managed Service for Prometheus, with the cluster and location from the `resourcedetection` processor |
+
+Logs are JSON on stdout in the Cloud Logging format
+(`github.com/chainguard-dev/clog/gcp/init`). A log line written inside a span
+carries its trace: `logging.googleapis.com/trace` when `GOOGLE_CLOUD_PROJECT`
+is set, so Logs Explorer links to Cloud Trace, and `trace_id` and `span_id`
+otherwise.
+
+Each process reports `service.name`, and `service.instance.id` is its pod
+name or, for a runner, its bot ID (the actor name under Substrate). The
+manifests add `k8s.pod.name`, `k8s.node.name`, and `k8s.namespace.name` from
+the downward API. Managed Service for Prometheus keeps one series per
+instance, so two pods without distinct instance IDs would overwrite each
+other's counters.
+
+### One trace per Bazel invocation
+
+Bazel doesn't send W3C trace context, but it does send `RequestMetadata` on
+every call, with its invocation ID, the action's mnemonic and target, and the
+tool version. `cas` and `cascache` derive a trace ID from the invocation ID
+(the first 16 bytes of `sha256("ci-substrate/invocation/" + id)`), so every
+call that one `bazel build` makes, from any host, lands in one trace with no
+change to Bazel. Find a build's trace from its invocation ID:
+
+```bash
+printf '%s' "ci-substrate/invocation/${INVOCATION_ID}" | sha256sum | cut -c1-32
+```
+
+The scheduler carries the trace context and the `RequestMetadata` on the job,
+so the runner's spans join the build's trace, and the runner and `cascache`
+send the build's `RequestMetadata` on to `cas`, tagged with their own tool
+name, so `cas` can tell Bazel's traffic from theirs. A build's trace holds:
+
+| Span | From | What it covers |
+|------|------|----------------|
+| `bazel invocation` | `cas` | The whole build, from its first call to its last, with the counts below as attributes |
+| `build.bazel.remote.execution.v2.*` | `cas`, `cascache` | Each RPC, with `bazel.action_mnemonic`, `bazel.target_id`, `bazel.action_id`, the instance, the blob count and bytes, and action cache hit or miss |
+| `scheduler.queue` | `cas` | Time the action waited for a runner, per attempt |
+| `runner.execute` | `runner` | The action on the runner, with child spans `runner.fetch_action`, `runner.prepare_inputs`, `runner.run`, `runner.upload_outputs`, and `runner.complete` |
+| `cascache.origin_fetch` | `cascache` | A cache miss: fetching and verifying the blob from `cas` |
+
+`pool.reconcile` and its `pool.create`, `pool.resume`, `pool.suspend`, and
+`pool.delete` children trace the pool's changes to actors. Health checks and
+the runners' `Lease`, `Heartbeat`, and the pool's `Status` polls aren't
+traced; they are long polls or heartbeats with nothing to show.
+
+When an invocation has made no call for `INVOCATION_IDLE` (one minute by
+default), `cas` ends it: it emits the `bazel invocation` span, the
+`bazel.invocation.*` metrics, and an `invocation finished` log line with the
+counts. These include action cache hits and misses, executions that were
+cached, merged into an identical in-flight action, or run, blobs and bytes
+uploaded and downloaded, bytes the runners uploaded, and bytes `cascache`
+filled from `cas`. The cache hit ratio is the share of the build's actions
+that were served without running. A build that pauses for longer than
+`INVOCATION_IDLE` gets a second `bazel invocation` span in the same trace.
+
+### Metrics
+
+Units follow OpenTelemetry: `s` for durations and `By` for bytes.
+Prometheus names replace dots with underscores and add a unit suffix, so
+`cas.blob.bytes` is `cas_blob_bytes_total`. `remote_instance` is the REAPI
+instance, which is the tenant (Prometheus keeps `instance` for the pod that
+reported the series), and `peer` is who made a call to `cas`:
+`bazel`, `runner`, `cascache`, `other`, or `unknown`.
+
+| Metric | Attributes | What it answers |
+|--------|------------|-----------------|
+| `cas.blob.bytes`, `cas.blob.count`, `cas.blob.size` | `remote_instance`, `direction` (read or write), `api` (batch or bytestream), `peer` | Bytes leaving and entering `cas`, by who moved them. Reads by `bazel` are the bytes that leave the cluster |
+| `cas.find_missing.digests` | `remote_instance`, `result` (present or missing) | How much of each upload `cas` already held |
+| `cas.action_cache.requests` | `remote_instance`, `op`, `result` | Action cache hit rate |
+| `scheduler.executions` | `remote_instance`, `result` (cached, merged, queued) | How often `Execute` ran nothing |
+| `scheduler.jobs.completed` | `remote_instance`, `outcome` | Failed actions and expired leases |
+| `scheduler.queue.duration`, `scheduler.execution.duration` | `remote_instance` | Time waiting for a runner, and time on one |
+| `scheduler.lease.expirations` | `remote_instance` | Runners that died mid-action |
+| `scheduler.jobs`, `scheduler.runners.waiting`, `scheduler.runners.busy` | `remote_instance`, `stage` | Queue depth and runner utilization now |
+| `cascache.requests` | `remote_instance`, `result` (hit, miss, merged, error) | Node-local cache hit rate |
+| `cascache.bytes` | `remote_instance`, `source` (local or origin) | Bytes served from the node, and bytes pulled across the cluster to fill it |
+| `cascache.origin.fetch.duration`, `cascache.poisoned` | `remote_instance` (fetch duration only) | Miss latency, and blobs that failed verification |
+| `runner.actions`, `runner.action.duration`, `runner.stage.duration` | `outcome`, `stage`, `mnemonic`, `input_mode` | Where an action's time goes on the runner |
+| `runner.busy.time` | | Runner utilization over time, which sizes the fleet |
+| `runner.input.bytes`, `runner.upload.bytes` | `input_mode`, `result` (sent or deduplicated) | Bytes each action pulled and pushed |
+| `casfs.hydrations`, `casfs.hydrated.bytes`, `casfs.hydrate.duration` | `outcome` | Lazy input fetches and the time actions wait on them |
+| `casfs.exec_roots`, `casfs.tree_load.duration`, `csi.volumes.published` | | Inputs volumes on a node |
+| `pool.operations`, `pool.operation.duration`, `pool.reconcile.duration` | `op`, `outcome` | Substrate's latency to create, resume, suspend, and delete actors |
+| `pool.actors`, `pool.queued`, `pool.actors.busy` | `state` | Actors by state against the queue they serve |
+| `bazel.invocations`, `bazel.invocation.duration`, `bazel.invocation.cache_hit_ratio`, `bazel.invocation.bytes`, `bazel.invocation.actions`, `bazel.invocations.active` | `tool`, `direction` | Per-build totals, as distributions across builds |
+| `disk.usage`, `disk.capacity` | `dir` | `cas`'s and `cascache`'s volumes filling up |
+| `rpc.server.call.duration`, `rpc.client.call.duration` | `rpc.method`, `rpc.response.status_code` | Every RPC's latency and status, from `otelgrpc` |
+| `go.memory.*`, `go.goroutine.count`, `go.schedule.duration` | | Go runtime |
+
+### Viewing on kind
+
+`e2e/run-kind.sh` installs `deploy/05-telemetry.yaml`, and
+[`e2e/run-telemetry.sh`](e2e/run-telemetry.sh) builds with Bazel and fails
+unless the build's trace in Jaeger has spans from `cas`, `runner`, and
+`cascache` under its `bazel invocation` span, the collector's Prometheus
+endpoint has the build's metrics, and `cas` logged the build's summary. To
+look yourself:
+
+```bash
+kubectl -n ci-substrate port-forward svc/jaeger 16686 &        # http://localhost:16686
+kubectl -n ci-substrate port-forward svc/otel-collector 8889 & # http://localhost:8889/metrics
+```
+
+### GKE
+
+Replace `PROJECT_ID` in `deploy/gke/05-telemetry.yaml` and apply it in place
+of `deploy/05-telemetry.yaml`. The collector writes as its Kubernetes
+ServiceAccount through
+[Workload Identity Federation for GKE](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity),
+so grant that principal the two roles it needs:
+
+```bash
+PROJECT_NUMBER="$(gcloud projects describe "${PROJECT_ID}" --format='value(projectNumber)')"
+MEMBER="principal://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${PROJECT_ID}.svc.id.goog/subject/ns/ci-substrate/sa/otel-collector"
+for role in roles/cloudtrace.agent roles/monitoring.metricWriter; do
+  gcloud projects add-iam-policy-binding "${PROJECT_ID}" --member="${MEMBER}" --role="${role}"
+done
+```
+
+GKE ships the pods' stdout to Cloud Logging itself. The metrics are in Cloud
+Monitoring as `prometheus.googleapis.com/<name>/<kind>`, queryable with
+PromQL. For example, a tenant's action cache hit rate:
+
+```promql
+sum by (remote_instance) (rate(cas_action_cache_requests_total{op="get",result="hit"}[5m]))
+  / sum by (remote_instance) (rate(cas_action_cache_requests_total{op="get"}[5m]))
+```
+
+Every span is kept. Cloud Trace bills by span ingested, and a large build
+makes several spans per action, so a busy install would add the
+`probabilistic_sampler` processor to the traces pipeline. Because the trace
+ID is a function of the invocation ID, sampling by trace ID keeps or drops
+whole builds.
 
 ## Substrate overlay
 

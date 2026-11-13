@@ -1,0 +1,115 @@
+# Telemetry for GKE, in place of ../05-telemetry.yaml: the same collector
+# Service, which every ci-substrate binary sends OTLP traces and metrics to,
+# exporting traces to Cloud Trace and metrics to Google Cloud Managed Service
+# for Prometheus. Logs need no collector: the binaries write Cloud Logging
+# JSON to stdout, which GKE ships, and each line that belongs to a span
+# carries that span's trace, so Logs Explorer and Trace link to each other.
+#
+# Replace PROJECT_ID below, then grant the collector's Kubernetes
+# ServiceAccount the roles it writes with, through Workload Identity
+# Federation for GKE (see README.md):
+#
+#   roles/cloudtrace.agent and roles/monitoring.metricWriter
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel
+  namespace: ci-substrate
+data:
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.ci-substrate.svc.cluster.local:4317
+  OTEL_METRIC_EXPORT_INTERVAL: "30000"
+  # The project whose Cloud Trace the log lines link to.
+  GOOGLE_CLOUD_PROJECT: PROJECT_ID
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-collector
+  namespace: ci-substrate
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector
+  namespace: ci-substrate
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc: {endpoint: 0.0.0.0:4317}
+    processors:
+      memory_limiter: {check_interval: 1s, limit_percentage: 80, spike_limit_percentage: 20}
+      # Adds the cluster, location, and project, which Managed Service for
+      # Prometheus needs to place each series and the binaries can't see.
+      resourcedetection:
+        detectors: [gcp]
+        timeout: 10s
+      # Cloud Trace takes at most 200 spans in one write.
+      batch/traces: {send_batch_size: 200, send_batch_max_size: 200}
+      batch/metrics: {}
+    exporters:
+      googlecloud: {}
+      googlemanagedprometheus: {}
+    extensions:
+      health_check: {endpoint: 0.0.0.0:13133}
+    service:
+      extensions: [health_check]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, resourcedetection, batch/traces]
+          exporters: [googlecloud]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, resourcedetection, batch/metrics]
+          exporters: [googlemanagedprometheus]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: ci-substrate
+  labels: {app: otel-collector}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: otel-collector}
+  template:
+    metadata:
+      labels: {app: otel-collector}
+    spec:
+      serviceAccountName: otel-collector
+      containers:
+        - name: collector
+          image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.165.0@sha256:e40d61f10c9a617cca1ffd1be4d7e2b3a4b0f0001798ff07e58cabe82e618cea
+          args: [--config=/etc/otelcol/config.yaml]
+          ports:
+            - {name: otlp-grpc, containerPort: 4317}
+            - {name: health, containerPort: 13133}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+          resources:
+            requests: {cpu: 200m, memory: 256Mi}
+            limits: {memory: 1Gi}
+          readinessProbe:
+            httpGet: {path: /, port: 13133}
+          volumeMounts:
+            - {name: config, mountPath: /etc/otelcol}
+      volumes:
+        - name: config
+          configMap: {name: otel-collector}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: ci-substrate
+spec:
+  selector: {app: otel-collector}
+  ports:
+    - {name: otlp-grpc, port: 4317, targetPort: 4317}

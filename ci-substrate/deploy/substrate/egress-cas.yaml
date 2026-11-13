@@ -1,6 +1,7 @@
 # EgressPolicy for a tenant-a CI actor. It allows plain gRPC (HTTP/2) to the
-# cas Service on its port and nothing else: leases, the two small protos an
-# action names, output uploads, and the result. Inputs don't go this way;
+# cas Service on its port, for leases, the two small protos an action names,
+# output uploads, and the result, and to the OpenTelemetry collector, for the
+# runner's traces and metrics, and nothing else. Inputs don't go this way;
 # they come from the node through the casfs inputs volume. Create it per
 # actor, before the actor resumes:
 #
@@ -23,3 +24,7 @@ rules:
       replaceHeaders:
       - header: x-ci-substrate-tenant
         credentialUri: ate-secret://k8s.io/default/ci-substrate-tenant-a/tenant-token/token
+- http:
+    hostnames: ["otel-collector.ci-substrate.svc.cluster.local"]
+    ports:
+      numbers: [4317]

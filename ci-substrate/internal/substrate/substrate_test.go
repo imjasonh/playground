@@ -19,18 +19,29 @@ func TestParsesDeployedEgressPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Inputs come from the node, so cas is the actor's only egress.
-	if len(policy.GetRules()) != 1 {
-		t.Fatalf("rules %v, want cas only", policy.GetRules())
-	}
+	// Inputs come from the node, so the actor reaches only cas, which gets
+	// the tenant token, and the collector, which gets no credential.
+	rules := map[string]*ateapi.HttpRule{}
 	for _, rule := range policy.GetRules() {
-		if hosts := rule.GetHttp().GetHostnames(); len(hosts) != 1 || hosts[0] != "cas.ci-substrate.svc.cluster.local" {
-			t.Errorf("rule %v is not for cas", rule)
+		hosts := rule.GetHttp().GetHostnames()
+		if len(hosts) != 1 {
+			t.Fatalf("rule %v names %d hosts, want 1", rule, len(hosts))
 		}
-		headers := rule.GetHttp().GetEffects().GetReplaceHeaders()
-		if len(headers) != 1 || headers[0].GetHeader() != "x-ci-substrate-tenant" {
-			t.Errorf("rule %v does not inject the tenant header", rule)
-		}
+		rules[hosts[0]] = rule.GetHttp()
+	}
+	if len(rules) != 2 {
+		t.Fatalf("rules %v, want cas and the collector", policy.GetRules())
+	}
+	headers := rules["cas.ci-substrate.svc.cluster.local"].GetEffects().GetReplaceHeaders()
+	if len(headers) != 1 || headers[0].GetHeader() != "x-ci-substrate-tenant" {
+		t.Errorf("cas rule %v does not inject the tenant header", rules["cas.ci-substrate.svc.cluster.local"])
+	}
+	collector, ok := rules["otel-collector.ci-substrate.svc.cluster.local"]
+	if !ok {
+		t.Fatalf("no rule for the collector in %v", policy.GetRules())
+	}
+	if collector.GetEffects() != nil {
+		t.Errorf("collector rule %v has effects; it must not carry a credential", collector)
 	}
 }
 

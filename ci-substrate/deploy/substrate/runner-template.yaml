@@ -23,7 +23,10 @@
 # egress-cas.yaml).
 #
 # The bot id is the actor's name, projected from actor metadata, so the pool
-# can match the scheduler's busy bots to actors.
+# can match the scheduler's busy bots to actors. The runner also reports its
+# traces and metrics with the bot id as service.instance.id. Template env
+# values are literal, so the collector address is spelled out here and
+# egress-cas.yaml lets the actor reach it.
 metadata:
   atespace: tenant-a
   name: ci-runner
@@ -41,6 +44,13 @@ containers:
   - -work-dir=/tmp/ci-substrate
   - -inputs-volume=/inputs
   - -input-mode=volume
+  env:
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    value: http://otel-collector.ci-substrate.svc.cluster.local:4317
+  - name: OTEL_METRIC_EXPORT_INTERVAL
+    value: "10000"
+  - name: OTEL_RESOURCE_ATTRIBUTES
+    value: ci_substrate.atespace=tenant-a
   volumeMounts:
   - name: system
     mountPath: /system
