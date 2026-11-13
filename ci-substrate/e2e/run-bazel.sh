@@ -21,6 +21,8 @@
 #      cache. A's remote build of it is a cache hit with A's local output, and
 #      B's build of the same action runs on B's runner.
 #   5. Tenant A's token cannot build in tenant B's instance.
+#   6. A target tagged no-cache, whose output depends on the clock, runs on a
+#      runner again after a clean: Bazel marks the action do_not_cache.
 #
 # Outputs end with the hostname of the machine that ran the action. The
 # runner hostnames start with CI_SUBSTRATE_BAZEL_RUNNER_A and
@@ -204,5 +206,18 @@ if bz a "${INSTANCE_B}" "${TOKEN_A}" "${WORKDIR}/5.log" build //:whoami \
   fail "tenant A's token built in ${INSTANCE_B}"
 fi
 grep -q PERMISSION_DENIED "${WORKDIR}/5.log" || { cat "${WORKDIR}/5.log" >&2; fail "build in ${INSTANCE_B} failed, but not with PERMISSION_DENIED"; }
+
+echo "--> 6. A target tagged no-cache runs on a runner every time"
+remote a "${WORKDIR}/6a.log" build //:clock
+expect_executed "${WORKDIR}/6a.log" 1
+expect_ran_on "$(bin a clock.txt)" "${RUNNER_A}"
+first="$(sed -n 2p "$(bin a clock.txt)")"
+sleep 1
+(cd "${WORKDIR}/a/ws" && "${BAZEL}" --output_user_root="${WORKDIR}/a/root" clean) >/dev/null 2>&1
+remote a "${WORKDIR}/6a2.log" build //:clock
+expect_executed "${WORKDIR}/6a2.log" 1
+expect_ran_on "$(bin a clock.txt)" "${RUNNER_A}"
+second="$(sed -n 2p "$(bin a clock.txt)")"
+[[ "${second}" > "${first}" ]] || fail "the no-cache action did not run again: ${first}, then ${second}"
 
 echo "==> Bazel tenant isolation held"

@@ -419,6 +419,55 @@ rebuild after a clean takes about 2 seconds, all from the action cache. The
 host still fetches the Go SDK and modules, and runs Bazel's internal actions
 (symlinks and stamping).
 
+## Actions that can't be cached
+
+A runner runs whatever command the action names, so it can run work that is
+not hermetic or deterministic: one that reads the clock, the network, or a
+random number. The Remote Execution API marks such an action with
+`Action.do_not_cache`, and `cas` honors it in three ways. `Execute` skips the
+action cache lookup, so every call runs the action. Two calls for the same
+action at once run it twice and don't share a job. A finished run's result is
+never stored, so a later call can't be served a stale one. The result still
+goes back to the caller, and its outputs are in the CAS.
+
+Stock Bazel sends the flag for a target tagged `no-cache`, and still runs it
+remotely (the `local` tag is what keeps an action on the host):
+
+```python
+genrule(
+    name = "clock",
+    outs = ["clock.txt"],
+    cmd = "date -u > $@",
+    tags = ["no-cache"],
+)
+```
+
+Each `bazel clean` and rebuild of that target runs on a runner again, while
+an untagged target next to it is an action cache hit. `e2e/run-bazel.sh`
+checks this (step 6).
+
+Without Bazel, send the call yourself. [`cmd/rbe-run`](cmd/rbe-run) uploads a
+bash script as an action with `do_not_cache` set, runs it a few times, and
+prints each run's stdout, whether the answer came from the action cache, and
+the runner that ran it:
+
+```bash
+kubectl -n ci-substrate port-forward svc/cas 18980:8980 &
+go run ./cmd/rbe-run -addr 127.0.0.1:18980 -script 'date -u +%H:%M:%S'
+go run ./cmd/rbe-run -addr 127.0.0.1:18980 -script 'date -u +%H:%M:%S' -cacheable
+```
+
+The first command prints a new time on each run, with `cachedResult=false`.
+With `-cacheable`, the first run executes and the rest return its time from
+the action cache.
+
+Two limits stay. The runner's sandbox is the exec root and a process, not a
+network or clock isolation boundary, so a non-hermetic action sees whatever
+its runner sees: under Substrate, the actor's egress policy decides which
+hosts it can reach. And a build that depends on a non-hermetic action's
+output gets a different input digest each time, so everything downstream of
+it misses the cache too.
+
 ## Deploy with ko
 
 ```bash

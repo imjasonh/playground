@@ -367,6 +367,66 @@ func TestSameActionSharesOneJob(t *testing.T) {
 	}
 }
 
+// An action marked do_not_cache stands for work whose result can change from
+// one run to the next, such as one that reads the clock. Every Execute runs
+// it, two requests for it at once don't share a run, and its result is never
+// stored for a later Execute to find.
+func TestDoNotCacheActionRunsEveryTime(t *testing.T) {
+	h := newHarness(t)
+	action := h.putAction(t, &repb.Action{CommandDigest: digest.FromBytes([]byte("date")), DoNotCache: true})
+	execute := func() grpc.ServerStreamingClient[longrunning.Operation] {
+		t.Helper()
+		stream, err := h.exec.Execute(ctxTok(t, "tok-a"), &repb.ExecuteRequest{InstanceName: "tenant-a", ActionDigest: action})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return stream
+	}
+
+	s1, s2 := execute(), execute()
+	o1, err := s1.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	o2, err := s2.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o1.GetName() == o2.GetName() {
+		t.Fatalf("two do_not_cache Executes shared operation %q", o1.GetName())
+	}
+
+	// The scheduler leases the two jobs in either order, so complete both
+	// before reading either stream.
+	for i := range 2 {
+		lease, err := h.worker.Lease(ctxTok(t, "tok-a"), &workerv1.LeaseRequest{BotId: "bot-1"})
+		if err != nil || lease.GetJob() == nil {
+			t.Fatalf("lease %d: job=%v err=%v", i, lease.GetJob(), err)
+		}
+		complete(t, h, "tok-a", "bot-1", lease.GetJob().GetId(), &repb.ActionResult{})
+	}
+	for i, s := range []grpc.ServerStreamingClient[longrunning.Operation]{s1, s2} {
+		last, err := drain(t, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if response(t, last).GetCachedResult() {
+			t.Fatalf("run %d was served from the action cache", i)
+		}
+	}
+	if _, err := h.actions.Get("tenant-a", action); !errors.Is(err, actioncache.ErrNotFound) {
+		t.Fatalf("do_not_cache result was stored: %v", err)
+	}
+
+	o3, err := execute().Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o3.GetDone() {
+		t.Fatal("a later Execute was answered without a run")
+	}
+}
+
 func TestExecuteRejectsUnknownAction(t *testing.T) {
 	h := newHarness(t)
 	missing := digest.FromBytes([]byte("never uploaded"))

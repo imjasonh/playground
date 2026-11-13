@@ -38,13 +38,14 @@ go_test(
     name = "bot_test",
     srcs = [
         "bot_test.go",
+        "environment_test.go",
         "trace_test.go",
     ],
+    embed = [":bot"],
     # fusermount cannot mount inside Bazel's sandbox, and the test's /dev/fuse
     # check sees the device there and does not skip.
     tags = ["no-sandbox"],
     deps = [
-        ":bot",
         "//api/worker/v1:worker",
         "//internal/actioncache",
         "//internal/blob",
@@ -64,6 +65,7 @@ go_test(
         "@io_opentelemetry_go_otel_sdk//trace/tracetest",
         "@io_opentelemetry_go_otel_sdk_metric//:metric",
         "@io_opentelemetry_go_otel_sdk_metric//metricdata",
+        "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//credentials/insecure",

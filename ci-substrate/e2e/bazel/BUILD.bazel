@@ -32,6 +32,15 @@ genrule(
     cmd = "cat $< > $@ && echo uploaded >> $@ && hostname >> $@",
 )
 
+# Its output changes on every run, so Bazel marks the action do_not_cache.
+genrule(
+    name = "clock",
+    srcs = ["salt.txt"],
+    outs = ["clock.txt"],
+    cmd = "cat $< > $@ && date +%s >> $@ && hostname >> $@",
+    tags = ["no-cache"],
+)
+
 sh_test(
     name = "whoami_test",
     srcs = ["whoami_test.sh"],
