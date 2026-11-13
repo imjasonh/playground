@@ -1223,6 +1223,22 @@ button.linkish.cell-stack {
   background: var(--code-bg);
 }
 
+button.hex-legend-chip {
+  min-block-size: 0;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  background: var(--code-bg);
+  color: var(--copy-color, var(--code-ink));
+}
+
+button.hex-legend-chip:hover {
+  border-color: var(--copy-color, var(--code-ink));
+  text-decoration: underline;
+}
+
 .hex-body {
   max-block-size: 24rem;
   padding: 0.65rem 0.75rem;
@@ -1314,6 +1330,13 @@ button.linkish.cell-stack {
 
 .content.segmented-text .seg-insert {
   color: #f8fafc;
+}
+
+/* After the copy palette so it wins over each copy's color and tint. */
+.hex-body .hx-jump {
+  color: #0a1218;
+  background: #f8fafc;
+  text-decoration: underline;
 }
 
 .noscript {

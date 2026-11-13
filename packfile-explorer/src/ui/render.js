@@ -802,7 +802,7 @@ function deltaSection(obj, session, { raw, deltaParsed, deltaBaseOid, deltaError
     const reused = baseSegs.reduce((n, s) => n + s.size, 0);
     const pct = baseContent.length > 0 ? formatPercent(reused / baseContent.length) : "0%";
     parts.push(
-      `<details class="disclosure"><summary>Base bytes reused <span class="muted">(${escapeHtml(formatBytes(reused))} of ` +
+      `<details class="disclosure base-bytes"><summary>Base bytes reused <span class="muted">(${escapeHtml(formatBytes(reused))} of ` +
         `${escapeHtml(formatBytes(baseContent.length))}, ${pct})</span></summary>` +
         `<p class="note">Colored ranges are bytes this delta copies from the base. Grey bytes were dropped.</p>` +
         renderHexEditor(baseContent, baseRegions) +
