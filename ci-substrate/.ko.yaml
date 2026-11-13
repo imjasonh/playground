@@ -1,6 +1,7 @@
-# The runner runs the actions' commands, which call sh, so its base image
-# has a shell. The other binaries stay on the static base. On a host that
+# The runner runs the actions' commands. Bazel's test wrapper
+# (test-setup.sh) and genrules call bash, so its base image has bash and the
+# usual tools. The other binaries stay on the static base. On a host that
 # cannot reach cgr.dev, e2e/run-kind.sh points KO_CONFIG_PATH at a copy of
 # this file that names the docker.io mirror.
 baseImageOverrides:
-  github.com/imjasonh/playground/ci-substrate/cmd/runner: cgr.dev/chainguard/busybox:latest
+  github.com/imjasonh/playground/ci-substrate/cmd/runner: cgr.dev/chainguard/bash:latest

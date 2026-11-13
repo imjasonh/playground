@@ -28,6 +28,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	workerv1 "github.com/imjasonh/playground/ci-substrate/api/worker/v1"
 	"github.com/imjasonh/playground/ci-substrate/internal/actioncache"
@@ -476,6 +477,10 @@ func (s *Scheduler) Complete(ctx context.Context, req *workerv1.CompleteRequest)
 	if err := req.GetActionResult().UnmarshalTo(ar); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "action_result: %v", err)
 	}
+	if ar.ExecutionMetadata == nil {
+		ar.ExecutionMetadata = &repb.ExecutedActionMetadata{}
+	}
+	ar.ExecutionMetadata.QueuedTimestamp = timestamppb.New(j.enqueued)
 	// Only a successful run is worth caching. A failed one is retried by the
 	// next Execute, and do_not_cache actions are never stored.
 	if ar.GetExitCode() == 0 && !j.doNotCache {
