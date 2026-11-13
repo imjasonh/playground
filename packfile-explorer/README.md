@@ -53,12 +53,17 @@ from IndexedDB.
 
 The sidebar has four tabs.
 
-- **Objects**: filter by type / delta kind / reachability, sort by offset /
-  packed size / inflated size / depth, search by oid prefix.
+- **Objects**: filter by type / delta kind / reachability / author, sort by
+  offset / packed size / inflated size / depth, search by oid prefix.
 - **Insights**: a leaderboard of the largest objects (rank by packed size,
-  inflated size, delta savings, or depth), a per-type size breakdown, a delta
-  depth histogram, a reachability summary (with a jump to unreachable objects),
-  and the pack version / object count / verified trailer checksum.
+  inflated size, delta savings, or depth), a per-type size breakdown, a
+  **blobs by author** pie chart and top-10 table (rank by packed size,
+  inflated size, or blob count; click an author to filter Objects), a delta
+  depth histogram, a reachability summary (with a jump to unreachable
+  objects), and the pack version / object count / verified trailer checksum.
+  Each blob is credited to the author of the commit that introduced it.
+  Blobs in trees at a shallow-fetch boundary go under
+  `(shallow boundary)`; blobs no commit points at go under `(no commit)`.
 - **Refs**: the advertised refs; click one to open the object it points at.
 - **Paths**: the HEAD tree flattened to file paths; search by substring or a
   `*` glob and click a path to open its blob.
@@ -99,10 +104,11 @@ npm test
 
 Coverage includes pkt-line framing and the streaming side-band reader, the
 upload-pack request body, delta apply/parse, base/result segment mapping, delta
-chains, reachability and tree-path walking, leaderboards, pack-trailer
-verification, two-pack diff, loose-object export, image sniffing, synthetic pack
-round-trips (ofs- and ref-delta), oid computation against git's known empty-blob
-hash, and a live `git repack` fixture when `git` is on `PATH`.
+chains, reachability and tree-path walking, leaderboards, per-author blob
+attribution, pack-trailer verification, two-pack diff, loose-object export,
+image sniffing, synthetic pack round-trips (ofs- and ref-delta), oid
+computation against git's known empty-blob hash, and a live `git repack`
+fixture when `git` is on `PATH`.
 
 ## Notes
 
@@ -113,3 +119,9 @@ hash, and a live `git repack` fixture when `git` is on `PATH`.
   entries. A normal shallow fetch from a public host usually isn't thin.
 - Depth defaults to 1. Raise it when you want more history. The pack is held
   in memory while it is parsed.
+- **Open .pack** is for modest packs (shallow clones, single-pack repos of a
+  few hundred MiB at most). A multi-gigabyte pack will not work: the file is
+  read whole into an `ArrayBuffer`, cloned into a worker, fully inflated and
+  resolved in RAM (every object's content kept), posted back to the main
+  thread, and written into IndexedDB. Any of those steps will OOM or hit
+  browser quota long before a 15–30 GiB pack finishes.
