@@ -57,6 +57,10 @@ def runBlock : List BInstr → BState → BState
   | [], s => s
   | i :: is, s => runBlock is (i.run s)
 
+theorem runBlock_append : ∀ (a b : List BInstr) (s : BState), runBlock (a ++ b) s = runBlock b (runBlock a s)
+  | [], _, _ => rfl
+  | i :: a, b, s => runBlock_append a b (i.run s)
+
 /-- What one instruction needs: aligned word accesses, and stores apart from
 the `len` bytes of code at `base`. -/
 def BInstr.ok (base : Word) (len : Nat) : BInstr → BState → Prop

@@ -3,6 +3,7 @@ import C3BootProofs.Spec.BootState
 import C3BootProofs.Spec.Boot
 import C3BootProofs.Spec.Formats
 import C3BootProofs.Spec.Sha256
+import C3BootProofs.Spec.Sha512
 import C3BootProofs.Spec.Merkle
 import C3BootProofs.Model.RV32
 import C3BootProofs.Image.Bootloader
@@ -72,6 +73,10 @@ import C3BootProofs.Proofs.Sha256LoopRounds
 import C3BootProofs.Proofs.Sha256LoopLoad
 import C3BootProofs.Proofs.Sha256LoopFrame
 import C3BootProofs.Proofs.Sha256Loop
+import C3BootProofs.Proofs.Sha512Bits
+import C3BootProofs.Proofs.Sha512Spec
+import C3BootProofs.Proofs.Sha512Decode
+import C3BootProofs.Proofs.Sha512Round
 import C3BootProofs.Proofs.P384Add
 import C3BootProofs.Proofs.P384Double
 import C3BootProofs.Proofs.P384Sub
