@@ -1,0 +1,39 @@
+# Targets for e2e/run-bazel.sh, which builds them as two users in two tenants
+# with stock Bazel. Every target reads salt.txt, which the script writes fresh
+# for each run, so both users send byte-identical actions and no run hits a
+# result from an earlier one. Each output ends with the hostname of the
+# machine that ran the action, which names the tenant's runner.
+
+FANOUT = 24
+
+genrule(
+    name = "whoami",
+    srcs = ["salt.txt"],
+    outs = ["whoami.txt"],
+    cmd = "cat $< > $@ && hostname >> $@",
+)
+
+[genrule(
+    name = "fanout_%d" % i,
+    srcs = ["salt.txt"],
+    outs = ["fanout_%d.txt" % i],
+    cmd = "cat $< > $@ && echo %d >> $@ && hostname >> $@" % i,
+) for i in range(FANOUT)]
+
+filegroup(
+    name = "fanout",
+    srcs = [":fanout_%d" % i for i in range(FANOUT)],
+)
+
+genrule(
+    name = "uploaded",
+    srcs = ["salt.txt"],
+    outs = ["uploaded.txt"],
+    cmd = "cat $< > $@ && echo uploaded >> $@ && hostname >> $@",
+)
+
+sh_test(
+    name = "whoami_test",
+    srcs = ["whoami_test.sh"],
+    data = [":whoami"],
+)

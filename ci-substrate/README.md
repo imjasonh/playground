@@ -22,7 +22,7 @@ Dockerfiles and no Helm charts.
 |--------|------|
 | `cas` | Authoritative multi-tenant CAS, action cache, and scheduler (StatefulSet with a PVC). Speaks the Bazel Remote Execution API (`ContentAddressableStorage`, `ActionCache`, `ByteStream`, `Capabilities`, `Execution`) over gRPC, plus the `WorkerService` that runners lease jobs from. |
 | `cascache` | Node-local, read-only CAS proxy (DaemonSet, port 9092). Verified read-through cache in front of `cas`. Its Service sets `internalTrafficPolicy: Local`, so a pod reaches the cascache on its own node. |
-| `runner` | The bot. Leases actions from `cas`, builds the exec root (a `mkdir` on the inputs volume a Substrate actor gets from its node, a FUSE mount of `casfs` where the runner has `/dev/fuse`, or a copy from `cascache` otherwise), runs the command, uploads the outputs `cas` is missing, and reports the `ActionResult` with the input mode it used. Runs as a Deployment (`deploy/40-runner.yaml`) or as a Substrate actor. |
+| `runner` | The bot. Leases actions from `cas`, builds the exec root (a `mkdir` on the inputs volume a Substrate actor gets from its node, a FUSE mount of `casfs` where the runner has `/dev/fuse`, or a copy from `cascache` otherwise), runs the command, uploads the outputs `cas` is missing, and reports the `ActionResult` with the input mode it used. It starts each command through a copy of its own binary that enters the exec root, because a child that enters a FUSE mount the runner serves before it calls `execve` can deadlock the runner during garbage collection. Runs as a Deployment per tenant (`deploy/40-runner.yaml`) or as a Substrate actor. |
 | `casfs-csi` | CSI driver (DaemonSet, `deploy/substrate/casfs-csi.yaml`) that mounts a `casfs` inputs volume for each actor on the actor's node and serves it from that node's `cascache` with the tenant's token. The runner in the sandbox never fetches an input and never holds the token. |
 | `pool` | Per-tenant actor pool for Substrate. Reads the tenant's queue from `cas` and keeps that many actors running, warm ones suspended, and crashed ones replaced. |
 | `cictl` | Demo driver. Uploads a shared blob as tenant A, warms the cache, reads it as tenant B, asserts tenant B cannot reach tenant A's instance, action cache, or queue, then runs an action through `Execute`, checks its outputs, and shows the second `Execute` is a cache hit. |
@@ -328,6 +328,31 @@ cannot program kube-proxy iptables rules). What it asserts:
    `out/upper.txt`, and the `out/tree` `Tree` back through `cascache`.
 8. The same `Execute` again returns `cached_result` without a runner.
 
+Then [`e2e/run-bazel.sh`](e2e/run-bazel.sh) builds
+[`e2e/bazel`](e2e/bazel) with stock Bazel (pinned in `.bazelversion` and
+downloaded with a checksum) as two users, one in tenant A and one in tenant
+B. They have separate workspaces and output roots, but the two workspaces
+hold the same salt, so the users send byte-identical actions. Each output
+ends with the hostname of the runner that ran it. The script fails unless:
+
+1. Tenant B's build of an action tenant A already built is not an action
+   cache hit, and runs on a tenant B runner.
+2. When both tenants build the same 24 actions at once, every output comes
+   from the builder's own runners. The scheduler never merges the two
+   tenants' identical actions into one run.
+3. After `bazel clean`, each tenant's rebuild is an action cache hit with
+   its own runner's output.
+4. A result that tenant A runs locally and uploads to its action cache
+   reaches A's remote builds, and tenant B's build of the same action still
+   runs on B's runner.
+5. Tenant A's token is `PermissionDenied` building in tenant B's instance.
+
+A shared action cache and an instance-blind in-flight merge each pass the
+`cictl` checks above. The Bazel checks fail on both. CI runs this script in
+the kind e2e, so it blocks a pull request that breaks tenant isolation. It
+runs against any cluster with runners for both tenants:
+`bash e2e/run-bazel.sh <cas host:port>`.
+
 `deploy/30-cictl-job.yaml` is the same demo as an in-cluster Job for clusters
 where Service DNS works.
 
@@ -342,8 +367,9 @@ ko apply -f deploy/40-runner.yaml
 ko apply -f deploy/30-cictl-job.yaml
 ```
 
-`.ko.yaml` gives the runner a busybox base, so actions have `sh` and the
-usual tools. The other binaries are static.
+`.ko.yaml` gives the runner the `chainguard/bash` base, so actions have
+`bash`, `sh`, and the usual tools: Bazel runs every test through a bash
+wrapper. The other binaries are static.
 
 On an egress-restricted host that cannot reach `cgr.dev`, point ko at the
 docker.io mirror of the same static base:

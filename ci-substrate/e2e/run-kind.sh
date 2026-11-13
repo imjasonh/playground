@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Spin up a KinD cluster, ko-apply the cas, cascache, and runner control
 # plane, and run cictl against them over port-forwards to prove multi-tenant
-# isolation, node-local cache reuse, and remote execution. Invoked by go test
-# ./e2e when CI_SUBSTRATE_KIND_E2E=1.
+# isolation, node-local cache reuse, and remote execution. Then build with
+# stock Bazel as two users in two tenants (run-bazel.sh) to prove neither can
+# see or change the other's results. Invoked by go test ./e2e when
+# CI_SUBSTRATE_KIND_E2E=1.
 #
 # Builds and deploys go through ko only: there are no Dockerfiles and no Helm
 # charts. Images land in the kind local registry at KO_DOCKER_REPO.
@@ -207,6 +209,7 @@ ko resolve -f deploy/40-runner.yaml \
   | sed "s#cas.ci-substrate.svc.cluster.local#${CAS_POD_IP}#g; s#cascache.ci-substrate.svc.cluster.local#${CACHE_POD_IP}#g" \
   | kubectl apply -f -
 kubectl -n ci-substrate rollout status deployment/runner-tenant-a --timeout=300s
+kubectl -n ci-substrate rollout status deployment/runner-tenant-b --timeout=300s
 
 # Port-forward Services (stable targets) from the host. This avoids pinning a
 # DaemonSet pod name that a second rollout would replace, which broke CI.
@@ -246,6 +249,9 @@ go build -o "${WORKDIR}/cictl" ./cmd/cictl
   -instance-a=tenant-a \
   -shared=shared \
   -exec-timeout=3m
+
+echo "Building with stock Bazel as two tenants"
+bash "${ROOT}/e2e/run-bazel.sh" "127.0.0.1:${LOCAL_ORIGIN_PORT}"
 
 echo "Runner logs:"
 kubectl -n ci-substrate logs -l app=runner --tail=20 --prefix
