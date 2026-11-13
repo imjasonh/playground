@@ -18,7 +18,7 @@ import { computeStats, queryObjects } from "./packIndex.js";
 import { indexByOffset } from "./deltaChain.js";
 import { computeReachability, defaultRoots } from "./reachability.js";
 import { attributeBlobs } from "./attribution.js";
-import { rootTreeOf, searchPaths, walkTree } from "./treeWalk.js";
+import { pathIndex, rootTreeOf, searchPaths, walkTree } from "./treeWalk.js";
 import { verifyPackTrailer } from "./packTrailer.js";
 import { diffPacks } from "./diffPacks.js";
 import { looseObjectBytes } from "./looseObject.js";
@@ -27,16 +27,16 @@ import { fetchPack, fetchRefs } from "./transport.js";
 import { deleteRepo, listRepos, loadRepo, saveRepo } from "./store.js";
 import { readUrlState, packShareUrl, writeUrlState } from "./urlState.js";
 import {
+  markSelected,
   renderAuthorFilter,
-  renderCompare,
   renderDetail,
-  renderInsights,
-  renderObjectList,
+  renderObjectRows,
+  renderOverview,
+  renderPackTitle,
   renderPaths,
   renderRefPicker,
   renderRefs,
   renderSaved,
-  renderStats,
   setStatus,
 } from "./ui/render.js";
 
@@ -51,49 +51,60 @@ const LARGE_PACK_BYTES = 256 * 1024 * 1024;
 // Don't inflate a single object larger than this into memory for its detail
 // view; show its metadata only. Keeps a huge blob from exhausting the tab.
 const LARGE_CONTENT_CAP = 64 * 1024 * 1024;
+// Rows rendered in the object list; filters narrow the rest.
+const LIST_LIMIT = 500;
 
+const $ = (id) => document.getElementById(id);
 const els = {
-  form: document.getElementById("fetch-form"),
-  repo: document.getElementById("repo"),
-  deepen: document.getElementById("deepen"),
-  fetchBtn: document.getElementById("fetch-btn"),
-  status: document.getElementById("status"),
-  progress: document.getElementById("progress"),
-  progressLog: document.getElementById("progress-log"),
-  progressHide: document.getElementById("progress-hide"),
-  refpicker: document.getElementById("refpicker"),
-  refpickerList: document.getElementById("refpicker-list"),
-  pickerDepth: document.getElementById("picker-depth"),
-  pickerAll: document.getElementById("picker-all"),
-  pickerNone: document.getElementById("picker-none"),
-  pickerFetch: document.getElementById("picker-fetch"),
-  saved: document.getElementById("saved"),
-  savedList: document.getElementById("saved-list"),
-  workspace: document.getElementById("workspace"),
-  stats: document.getElementById("stats"),
-  objectList: document.getElementById("object-list"),
-  detail: document.getElementById("detail"),
-  tabs: document.getElementById("tabs"),
-  insights: document.getElementById("insights"),
-  refsList: document.getElementById("refs-list"),
-  pathSearch: document.getElementById("path-search"),
-  pathsList: document.getElementById("paths-list"),
-  filterType: document.getElementById("filter-type"),
-  filterDelta: document.getElementById("filter-delta"),
-  filterSort: document.getElementById("filter-sort"),
-  filterReach: document.getElementById("filter-reach"),
-  filterAuthor: document.getElementById("filter-author"),
-  filterSearch: document.getElementById("filter-search"),
-  navBack: document.getElementById("nav-back"),
-  navFwd: document.getElementById("nav-fwd"),
-  jumpForm: document.getElementById("jump-form"),
-  jumpOid: document.getElementById("jump-oid"),
-  copyLink: document.getElementById("copy-link"),
+  app: $("app"),
+  form: $("fetch-form"),
+  repo: $("repo"),
+  deepen: $("deepen"),
+  fetchBtn: $("fetch-btn"),
+  packFile: $("pack-file"),
+  status: $("status"),
+  tray: $("tray"),
+  progress: $("progress"),
+  progressLog: $("progress-log"),
+  progressHide: $("progress-hide"),
+  refpicker: $("refpicker"),
+  refpickerList: $("refpicker-list"),
+  pickerDepth: $("picker-depth"),
+  pickerAll: $("picker-all"),
+  pickerNone: $("picker-none"),
+  pickerFetch: $("picker-fetch"),
+  landing: $("landing"),
+  saved: $("saved"),
+  savedList: $("saved-list"),
+  workspace: $("workspace"),
+  packTitle: $("pack-title"),
+  objectList: $("object-list"),
+  objectCount: $("object-count"),
+  filterType: $("filter-type"),
+  filterDelta: $("filter-delta"),
+  filterSort: $("filter-sort"),
+  filterReach: $("filter-reach"),
+  filterAuthor: $("filter-author"),
+  filterSearch: $("filter-search"),
+  pathSearch: $("path-search"),
+  pathsList: $("paths-list"),
+  pathsCount: $("paths-count"),
+  refsList: $("refs-list"),
+  refsCount: $("refs-count"),
+  overview: $("overview"),
+  detail: $("detail"),
+  navBack: $("nav-back"),
+  navFwd: $("nav-fwd"),
+  jumpForm: $("jump-form"),
+  jumpOid: $("jump-oid"),
+  copyLink: $("copy-link"),
 };
 
 let session = null;
-let currentTab = "objects";
-const insightsState = { metric: "packed", authorMetric: "packed" };
+let navTab = "objects";
+let view = "overview";
+const overviewState = { metric: "packed", authorMetric: "packed", compare: null };
+let savedCount = 0;
 let pendingRefs = null; // { base, refs, head } awaiting a ref-pick fetch
 
 // In-app navigation history of selected oids.
@@ -164,6 +175,11 @@ async function parseAndResolve(pack, onPhase) {
   return { parsed, resolved };
 }
 
+function reportError(err) {
+  console.error(err);
+  setStatus(els.status, err.message || String(err), { error: true });
+}
+
 // --- Fetch: refs then a ref-picked pack ----------------------------------
 
 els.form.addEventListener("submit", async (event) => {
@@ -183,12 +199,12 @@ els.form.addEventListener("submit", async (event) => {
     els.pickerDepth.value = els.deepen.value || "1";
     renderRefPicker(els.refpickerList, refs.refs, refs.head);
     els.refpicker.hidden = false;
-    els.saved.hidden = true;
+    updateTray();
     const branchCount = refs.refs.filter((r) => r.name !== "HEAD").length;
-    setStatus(els.status, `${branchCount} refs. Pick what to fetch, then Fetch selected.`);
+    setStatus(els.status, `${branchCount} ref${branchCount === 1 ? "" : "s"} in ${base}. HEAD is selected.`);
+    els.pickerFetch.focus();
   } catch (err) {
-    console.error(err);
-    setStatus(els.status, err.message || String(err), { error: true });
+    reportError(err);
   } finally {
     els.fetchBtn.disabled = false;
   }
@@ -233,31 +249,33 @@ els.pickerFetch.addEventListener("click", async () => {
       pack,
       progress,
     };
-    els.refpicker.hidden = true;
     await openPack(record);
+    els.refpicker.hidden = true;
+    els.progress.hidden = true;
+    updateTray();
     await saveRepo(record);
-    await refreshSavedQuiet();
-    setStatus(els.status, `Loaded ${session.objects.length} objects from ${pendingRefs.base}`);
+    await refreshSavedCount();
+    setStatus(els.status, `Loaded ${session.objects.length.toLocaleString()} objects from ${record.base}.`);
   } catch (err) {
-    console.error(err);
-    setStatus(els.status, err.message || String(err), { error: true });
+    reportError(err);
   } finally {
     els.pickerFetch.disabled = false;
   }
 });
 
-document.getElementById("pack-file").addEventListener("change", async (event) => {
+els.packFile.addEventListener("change", async (event) => {
   const file = event.target.files && event.target.files[0];
   event.target.value = "";
   if (!file) return;
   try {
     els.refpicker.hidden = true;
+    updateTray();
     if (file.size >= LARGE_PACK_BYTES) {
       await openLargePack(file);
       setStatus(
         els.status,
         `Loaded ${session.objects.length.toLocaleString()} objects from ${file.name} ` +
-          `(${formatBytes(file.size)}, streamed — not saved)`,
+          `(${formatBytes(file.size)}, streamed from disk, not saved).`,
       );
       return;
     }
@@ -266,95 +284,84 @@ document.getElementById("pack-file").addEventListener("change", async (event) =>
     const record = { base: `file://${file.name}`, refs: [], head: null, wants: [], pack, progress: "" };
     await openPack(record);
     await saveRepo(record);
-    await refreshSavedQuiet();
-    setStatus(els.status, `Loaded ${session.objects.length} objects from ${file.name}`);
+    await refreshSavedCount();
+    setStatus(els.status, `Loaded ${session.objects.length.toLocaleString()} objects from ${file.name}.`);
   } catch (err) {
-    console.error(err);
-    setStatus(els.status, err.message || String(err), { error: true });
+    reportError(err);
   }
 });
 
-// --- Progress log --------------------------------------------------------
+// --- Tray: ref picker and server progress --------------------------------
+
+function updateTray() {
+  els.tray.hidden = els.refpicker.hidden && els.progress.hidden;
+}
 
 function resetProgress() {
   els.progressLog.textContent = "";
   els.progress.hidden = false;
+  updateTray();
 }
+
 function appendProgress(text) {
   els.progress.hidden = false;
+  updateTray();
   els.progressLog.textContent += text;
   els.progressLog.scrollTop = els.progressLog.scrollHeight;
 }
+
 els.progressHide.addEventListener("click", () => {
   els.progress.hidden = true;
+  updateTray();
 });
 
-// --- Open and render a pack ---------------------------------------------
+// --- Open a pack ----------------------------------------------------------
 
 async function openPack(record, { objectId = null } = {}) {
-  setStatus(els.status, `Parsing ${record.pack.length.toLocaleString()} pack bytes…`);
+  setStatus(els.status, `Parsing ${formatBytes(record.pack.length)} of pack data…`);
   const { parsed, resolved } = await parseAndResolve(record.pack, (p) =>
     setStatus(els.status, `Resolving ${p.count.toLocaleString()} objects…`),
   );
-  const stats = computeStats(resolved.objects);
-  const byOffset = indexByOffset(resolved.objects);
 
   const roots = defaultRoots({ head: record.head, refs: record.refs });
   const reachable =
     roots.length > 0
       ? computeReachability({ byOid: resolved.byOid, contentByOid: resolved.contentByOid, roots }).reachable
       : null;
-  const attribution = attributeBlobs(resolved);
 
   session = {
     packId: record.base,
     base: record.base,
     refs: record.refs || [],
     head: record.head,
+    progress: record.progress || "",
     packBytes: record.pack,
     parsed,
     objects: resolved.objects,
     byOid: resolved.byOid,
     contentByOid: resolved.contentByOid,
     unresolved: resolved.unresolved,
-    byOffset,
-    stats,
+    byOffset: indexByOffset(resolved.objects),
+    stats: computeStats(resolved.objects),
     reachable,
-    attribution,
+    attribution: attributeBlobs(resolved),
     trailer: null,
-    pathEntries: null,
     selectedOid: null,
   };
+  indexPaths(session);
 
-  els.saved.hidden = true;
-  els.workspace.hidden = false;
-  renderStats(els.stats, stats, { base: record.base });
-  renderAuthorFilter(els.filterAuthor, attribution);
-
+  const opened = session;
   verifyPackTrailer(record.pack, parsed, sha1Hex)
     .then((trailer) => {
-      if (session && session.packId === record.base) {
+      if (session === opened) {
         session.trailer = trailer;
-        if (currentTab === "insights") renderActiveTab();
+        renderOverviewView();
       }
     })
     .catch(() => {});
 
-  hist = [];
-  histPos = -1;
-
-  let initial = null;
-  if (objectId && resolved.byOid.has(objectId)) initial = resolved.byOid.get(objectId);
-  else if (record.head && resolved.byOid.has(record.head)) initial = resolved.byOid.get(record.head);
-  else initial = resolved.objects.find((o) => o.typeName === "commit") || resolved.objects[0];
-
-  if (initial && initial.oid) go(initial.oid);
-  else showObject(initial || null, { push: false });
-  refreshList();
-  renderActiveTab();
+  await showPack({ objectId });
 }
-
-// --- Large packs (streamed from the File, never fully in memory) --------
 
 // Run the streaming index in the worker, falling back to the main thread.
 async function indexLargePack(file, onPhase) {
@@ -393,7 +400,7 @@ async function openLargePack(file) {
     if (p.phase === "index" && p.count) {
       setStatus(
         els.status,
-        `Indexing ${file.name}: ${p.done.toLocaleString()} / ${p.count.toLocaleString()} objects…`,
+        `Indexing ${file.name}: ${p.done.toLocaleString()} of ${p.count.toLocaleString()} objects…`,
       );
     }
   });
@@ -402,46 +409,76 @@ async function openLargePack(file) {
   for (const obj of index.objects) {
     if (obj.oid) byOid.set(obj.oid, obj);
   }
-  const stats = computeStats(index.objects);
-  const byOffset = indexByOffset(index.objects);
-
-  const lazy = lazyContent({ reader: blobReader(file), inflate: streamInflate, objects: index.objects, byOid });
 
   session = {
     packId: `file://${file.name}`,
     base: `file://${file.name}`,
     refs: [],
     head: null,
+    progress: "",
     packBytes: null,
     large: true,
-    lazy,
+    contentCap: LARGE_CONTENT_CAP,
+    lazy: lazyContent({ reader: blobReader(file), inflate: streamInflate, objects: index.objects, byOid }),
     parsed: { version: index.version, count: index.count, trailer: index.trailer },
     objects: index.objects,
     byOid,
     contentByOid: index.contentByOid,
     unresolved: index.unresolved,
-    byOffset,
-    stats,
+    byOffset: indexByOffset(index.objects),
+    stats: computeStats(index.objects),
     reachable: null,
+    attribution: attributeBlobs({ objects: index.objects, byOid, contentByOid: index.contentByOid }),
     trailer: null,
-    pathEntries: null,
     selectedOid: null,
     view: null,
   };
+  indexPaths(session);
+  await showPack({});
+}
 
-  els.saved.hidden = true;
-  els.workspace.hidden = false;
-  renderStats(els.stats, stats, { base: session.base });
+// Name objects by their path in the HEAD tree (or the first commit's tree).
+function indexPaths(s) {
+  let source = s.head && s.byOid.has(s.head) ? s.head : null;
+  if (!source) source = s.objects.find((o) => o.typeName === "commit")?.oid || null;
+  s.pathRoot = source ? rootTreeOf(source, s.byOid, s.contentByOid) : null;
+  s.pathByOid = pathIndex(s.pathRoot, s.contentByOid);
+  s.pathEntries = null;
+}
 
+// Render a freshly opened session: navigator, overview, and the requested
+// object (or the overview when none was requested).
+async function showPack({ objectId = null }) {
   hist = [];
   histPos = -1;
+  updateNavButtons();
+  overviewState.compare = null;
+  for (const el of [els.filterType, els.filterDelta, els.filterReach, els.filterSearch]) el.value = "";
+  els.filterSort.value = "offset";
+  els.pathSearch.value = "";
+  els.filterReach.disabled = !session.reachable;
+  renderAuthorFilter(els.filterAuthor, session.attribution);
 
-  const initial =
-    index.objects.find((o) => o.typeName === "commit") || index.objects.find((o) => o.oid) || index.objects[0];
-  if (initial && initial.oid) await go(initial.oid);
-  else await showObject(initial || null, { push: false });
+  els.landing.hidden = true;
+  els.workspace.hidden = false;
+  renderPackTitle(els.packTitle, session);
   refreshList();
-  renderActiveTab();
+  renderNavPanel();
+  renderOverviewView();
+
+  if (objectId && session.byOid.has(objectId)) {
+    await go(objectId);
+  } else {
+    renderDetail(els.detail, null, session);
+    setView("overview");
+    writeUrlState({ packId: session.packId, objectId: null });
+  }
+}
+
+function closePack() {
+  session = null;
+  els.workspace.hidden = true;
+  els.landing.hidden = false;
 }
 
 // Resolve, from the File, everything the detail pane needs for `obj`: its own
@@ -474,36 +511,131 @@ async function prefetchView(obj) {
   return { content, raw, entry };
 }
 
-// --- Object list ---------------------------------------------------------
+// --- Object list ----------------------------------------------------------
 
 function refreshList() {
   if (!session) return;
   const author = els.filterAuthor.value;
-  const rows = queryObjects(session.objects, {
+  const needle = els.filterSearch.value.trim().toLowerCase();
+  let objects = session.objects;
+  if (needle) {
+    objects = objects.filter((obj) => {
+      if (!obj.oid) return false;
+      if (obj.oid.startsWith(needle)) return true;
+      const path = session.pathByOid.get(obj.oid);
+      return path != null && path.toLowerCase().includes(needle);
+    });
+  }
+  const rows = queryObjects(objects, {
     oids: author ? session.attribution.byKey.get(author)?.oids || new Set() : null,
     type: els.filterType.value || null,
     deltaType: els.filterDelta.value || null,
-    search: els.filterSearch.value,
     sort: els.filterSort.value,
     reachability: els.filterReach.value || null,
     reachable: session.reachable,
   });
-  renderObjectList(els.objectList, rows, session.selectedOid, (obj) => {
-    if (obj.oid) go(obj.oid);
-    else showObject(obj, { push: false });
+  renderObjectRows(els.objectList, rows, session, { selectedOid: session.selectedOid, limit: LIST_LIMIT });
+  const total = session.objects.length;
+  let count;
+  if (rows.length === total) count = `${total.toLocaleString()} objects`;
+  else count = `${rows.length.toLocaleString()} of ${total.toLocaleString()} objects match`;
+  if (rows.length > LIST_LIMIT) count += `. Showing the first ${LIST_LIMIT}.`;
+  els.objectCount.textContent = count;
+}
+
+for (const el of [els.filterType, els.filterDelta, els.filterSort, els.filterReach, els.filterAuthor, els.filterSearch]) {
+  el.addEventListener("input", () => refreshList());
+}
+
+// --- Navigator tabs: Objects, Paths, Refs --------------------------------
+
+function setNavTab(tab) {
+  navTab = tab;
+  selectTab(document.querySelector(".nav .tablist"), "tab", tab);
+  document.querySelectorAll(".nav-panel").forEach((p) => {
+    p.hidden = p.dataset.panel !== tab;
+  });
+  renderNavPanel();
+}
+
+function renderNavPanel() {
+  if (!session) return;
+  if (navTab === "refs") {
+    renderRefs(els.refsList, session);
+    const n = session.refs.length;
+    els.refsCount.textContent = n ? `${n.toLocaleString()} refs` : "";
+  } else if (navTab === "paths") {
+    renderPathList();
+  }
+}
+
+function renderPathList() {
+  if (!session.pathEntries) {
+    session.pathEntries = session.pathRoot ? walkTree(session.pathRoot, session.byOid, session.contentByOid) : [];
+  }
+  const matches = searchPaths(session.pathEntries, els.pathSearch.value);
+  renderPaths(els.pathsList, matches);
+  const total = session.pathEntries.length;
+  els.pathsCount.textContent = total
+    ? matches.length === total
+      ? `${total.toLocaleString()} files in the HEAD tree`
+      : `${matches.length.toLocaleString()} of ${total.toLocaleString()} files match`
+    : "No commit or tree in this pack to list paths from.";
+}
+
+els.pathSearch.addEventListener("input", () => {
+  if (session) renderPathList();
+});
+
+// --- Main views: Overview and Object -------------------------------------
+
+function setView(next) {
+  view = next;
+  selectTab(document.querySelector(".view-tabs"), "view", next);
+  els.overview.hidden = next !== "overview";
+  els.detail.hidden = next !== "object";
+}
+
+function renderOverviewView() {
+  if (!session) return;
+  renderOverview(els.overview, session, { ...overviewState, savedCount });
+}
+
+// Mark one tab of a tablist selected, with a roving tabindex.
+function selectTab(list, attr, value) {
+  for (const tab of list.querySelectorAll('[role="tab"]')) {
+    const on = tab.dataset[attr] === value;
+    tab.setAttribute("aria-selected", String(on));
+    tab.tabIndex = on ? 0 : -1;
+  }
+}
+
+function wireTablist(list, attr, onSelect) {
+  list.addEventListener("click", (event) => {
+    const tab = event.target.closest('[role="tab"]');
+    if (tab) onSelect(tab.dataset[attr]);
+  });
+  list.addEventListener("keydown", (event) => {
+    const tabs = [...list.querySelectorAll('[role="tab"]')];
+    const at = tabs.indexOf(document.activeElement);
+    if (at === -1) return;
+    let next = null;
+    if (event.key === "ArrowRight") next = (at + 1) % tabs.length;
+    else if (event.key === "ArrowLeft") next = (at - 1 + tabs.length) % tabs.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = tabs.length - 1;
+    if (next == null) return;
+    event.preventDefault();
+    tabs[next].focus();
+    onSelect(tabs[next].dataset[attr]);
   });
 }
 
-for (const el of [
-  els.filterType,
-  els.filterDelta,
-  els.filterSort,
-  els.filterReach,
-  els.filterAuthor,
-  els.filterSearch,
-]) {
-  el.addEventListener("input", () => refreshList());
-}
+wireTablist(document.querySelector(".nav .tablist"), "tab", setNavTab);
+wireTablist(document.querySelector(".view-tabs"), "view", (next) => {
+  setView(next);
+  if (session) writeUrlState({ packId: session.packId, objectId: next === "object" ? session.selectedOid : null });
+});
 
 // --- Navigation (in-app history + URL) ----------------------------------
 
@@ -519,28 +651,25 @@ async function go(oid) {
     hist.push(oid);
     histPos = hist.length - 1;
   }
-  await showObject(obj, { push: false });
+  await showObject(obj);
   updateNavButtons();
 }
 
-async function showObject(obj, { push = true } = {}) {
+async function showObject(obj) {
   if (!session) return;
-  if (push && obj && obj.oid) {
-    await go(obj.oid);
-    return;
-  }
   session.selectedOid = obj?.oid || null;
+  session.view = null;
   if (session.large && obj) {
     try {
       session.view = await prefetchView(obj);
-    } catch {
-      session.view = null;
+    } catch (err) {
+      console.error(err);
     }
-  } else if (session) {
-    session.view = null;
   }
-  renderDetail(els.detail, obj, session, { onSelectOid: go, onDownload: downloadObject });
-  refreshList();
+  renderDetail(els.detail, obj, session);
+  els.detail.scrollTop = 0;
+  markSelected(els.objectList, session.selectedOid);
+  setView("object");
   writeUrlState({ packId: session.packId, objectId: session.selectedOid });
 }
 
@@ -550,18 +679,17 @@ function updateNavButtons() {
 }
 
 els.navBack.addEventListener("click", () => {
-  if (histPos > 0) {
-    histPos -= 1;
-    showObject(session.byOid.get(hist[histPos]), { push: false });
-    updateNavButtons();
-  }
+  if (!session || histPos <= 0) return;
+  histPos -= 1;
+  showObject(session.byOid.get(hist[histPos]));
+  updateNavButtons();
 });
+
 els.navFwd.addEventListener("click", () => {
-  if (histPos < hist.length - 1) {
-    histPos += 1;
-    showObject(session.byOid.get(hist[histPos]), { push: false });
-    updateNavButtons();
-  }
+  if (!session || histPos >= hist.length - 1) return;
+  histPos += 1;
+  showObject(session.byOid.get(hist[histPos]));
+  updateNavButtons();
 });
 
 els.jumpForm.addEventListener("submit", (event) => {
@@ -575,24 +703,103 @@ els.jumpForm.addEventListener("submit", (event) => {
   els.jumpOid.value = "";
 });
 
-els.copyLink.addEventListener("click", async () => {
+els.copyLink.addEventListener("click", () => {
   if (!session) return;
-  const url = packShareUrl(session.packId, session.selectedOid);
+  const objectId = view === "object" ? session.selectedOid : null;
+  copyText(packShareUrl(session.packId, objectId), "Link copied.");
+});
+
+async function copyText(text, done) {
   try {
-    await navigator.clipboard.writeText(url);
-    setStatus(els.status, "Link copied to clipboard.");
+    await navigator.clipboard.writeText(text);
+    setStatus(els.status, done);
   } catch {
-    setStatus(els.status, url);
+    setStatus(els.status, text);
+  }
+}
+
+// --- Delegated clicks and metric changes ---------------------------------
+
+els.app.addEventListener("click", (event) => {
+  const target = event.target.closest(
+    "[data-oid], [data-index], [data-action], [data-author], [data-compare], [data-open], [data-delete]",
+  );
+  if (!target) return;
+  const { dataset } = target;
+  if (dataset.oid) {
+    event.preventDefault();
+    go(dataset.oid);
+  } else if (dataset.index != null) {
+    const obj = session?.objects[Number(dataset.index)];
+    if (obj) showObject(obj);
+  } else if (dataset.author != null) {
+    filterObjects({ author: dataset.author, type: "blob", sort: "packed" });
+  } else if (dataset.compare) {
+    compareWith(dataset.compare);
+  } else if (dataset.open) {
+    openSaved(dataset.open);
+  } else if (dataset.delete) {
+    deleteSaved(dataset.delete);
+  } else if (dataset.action) {
+    runAction(dataset.action, target);
   }
 });
 
-// --- Download a loose object --------------------------------------------
+els.app.addEventListener("change", (event) => {
+  const select = event.target.closest("select[data-metric]");
+  if (!select) return;
+  overviewState[select.dataset.metric] = select.value;
+  renderOverviewView();
+  els.overview.querySelector(`select[data-metric="${select.dataset.metric}"]`)?.focus();
+});
+
+function runAction(action, target) {
+  switch (action) {
+    case "copy-oid":
+      copyText(target.dataset.value, "Object id copied.");
+      break;
+    case "download":
+      downloadObject(target.dataset.value);
+      break;
+    case "filter-type":
+      filterObjects({ type: target.dataset.type });
+      break;
+    case "show-unreachable":
+      filterObjects({ reach: "unreachable" });
+      break;
+    case "compare":
+      startCompare();
+      break;
+    case "close-compare":
+      overviewState.compare = null;
+      renderOverviewView();
+      break;
+    default:
+      break;
+  }
+}
+
+// Reset the object filters to the given ones and show the list.
+function filterObjects({ type = "", author = "", reach = "", sort = "offset" }) {
+  els.filterType.value = type;
+  els.filterDelta.value = "";
+  els.filterSearch.value = "";
+  els.filterAuthor.value = author;
+  els.filterReach.value = reach;
+  els.filterSort.value = sort;
+  if (author || reach) els.filterAuthor.closest("details").open = true;
+  setNavTab("objects");
+  refreshList();
+  els.objectList.scrollTop = 0;
+  els.objectList.querySelector("button")?.focus();
+}
+
+// --- Download a loose object ---------------------------------------------
 
 function downloadObject(oid) {
   if (!session) return;
   const obj = session.byOid.get(oid);
-  const content =
-    session.contentByOid.get(oid) || (session.view && session.view.content && session.view.content.get(oid));
+  const content = session.contentByOid.get(oid) || session.view?.content?.get(oid);
   if (!obj || !content) return;
   const bytes = looseObjectBytes(obj.typeName, content, (b) => pako.deflate(b));
   const blob = new Blob([bytes], { type: "application/octet-stream" });
@@ -606,100 +813,17 @@ function downloadObject(oid) {
   URL.revokeObjectURL(url);
 }
 
-// --- Tabs ----------------------------------------------------------------
-
-els.tabs.addEventListener("click", (event) => {
-  const btn = event.target.closest(".tab");
-  if (!btn) return;
-  setTab(btn.dataset.tab);
-});
-
-function setTab(tab) {
-  currentTab = tab;
-  els.tabs.querySelectorAll(".tab").forEach((b) => {
-    b.setAttribute("aria-selected", String(b.dataset.tab === tab));
-  });
-  document.querySelectorAll(".tab-panel").forEach((p) => {
-    p.hidden = p.dataset.panel !== tab;
-  });
-  renderActiveTab();
-}
-
-function renderActiveTab() {
-  if (!session) return;
-  if (currentTab === "insights") {
-    renderInsights(els.insights, session, { ...insightsState, savedCount: savedCount }, {
-      onSelectOid: go,
-      onMetricChange: (metric) => {
-        insightsState.metric = metric;
-        renderActiveTab();
-      },
-      onAuthorMetricChange: (metric) => {
-        insightsState.authorMetric = metric;
-        renderActiveTab();
-      },
-      onFilterAuthor: (key) => {
-        setTab("objects");
-        els.filterAuthor.value = key;
-        els.filterType.value = "blob";
-        els.filterSort.value = "packed";
-        refreshList();
-      },
-      onFilterUnreachable: () => {
-        setTab("objects");
-        els.filterReach.value = "unreachable";
-        refreshList();
-      },
-      onCompare: startCompare,
-    });
-  } else if (currentTab === "refs") {
-    renderRefs(els.refsList, session, go);
-  } else if (currentTab === "paths") {
-    ensurePathEntries();
-    renderPaths(els.pathsList, searchPaths(session.pathEntries || [], els.pathSearch.value), go);
-  }
-}
-
-els.pathSearch.addEventListener("input", () => {
-  if (!session) return;
-  ensurePathEntries();
-  renderPaths(els.pathsList, searchPaths(session.pathEntries || [], els.pathSearch.value), go);
-});
-
-function ensurePathEntries() {
-  if (!session || session.pathEntries) return;
-  let treeSource = null;
-  if (session.head && session.byOid.has(session.head)) treeSource = session.head;
-  else if (session.selectedOid) treeSource = session.selectedOid;
-  else {
-    const commit = session.objects.find((o) => o.typeName === "commit");
-    treeSource = commit ? commit.oid : null;
-  }
-  const treeOid = treeSource ? rootTreeOf(treeSource, session.byOid, session.contentByOid) : null;
-  session.pathEntries = treeOid ? walkTree(treeOid, session.byOid, session.contentByOid) : [];
-}
-
 // --- Compare -------------------------------------------------------------
 
 async function startCompare() {
   const rows = await listRepos();
-  const others = rows.filter((r) => r.key !== session.packId);
-  if (others.length === 0) {
+  const choices = rows.filter((r) => r.key !== session.packId);
+  if (choices.length === 0) {
     setStatus(els.status, "No other saved packs to compare against.", { error: true });
     return;
   }
-  const parts = [`<h2>Compare with…</h2><ul class="compare-choices">`];
-  for (const row of others) {
-    parts.push(
-      `<li><button type="button" class="quiet" data-compare="${escapeAttr(row.key)}">` +
-        `${escapeAttr(row.base)}</button></li>`,
-    );
-  }
-  parts.push(`</ul>`);
-  els.detail.innerHTML = parts.join("");
-  els.detail.querySelectorAll("[data-compare]").forEach((btn) => {
-    btn.addEventListener("click", () => compareWith(btn.getAttribute("data-compare")));
-  });
+  overviewState.compare = { choices };
+  renderOverviewView();
 }
 
 async function compareWith(key) {
@@ -708,68 +832,53 @@ async function compareWith(key) {
     const record = await loadRepo(key);
     if (!record) throw new Error("saved pack not found");
     const { resolved } = await parseAndResolve(record.pack);
-    const diff = diffPacks(session.objects, resolved.objects);
-    renderCompare(els.detail, diff, { aName: session.base, bName: record.base }, (oid) => {
-      if (session.byOid.has(oid)) go(oid);
-      else setStatus(els.status, `${oid.slice(0, 8)} is only in the other pack.`);
-    });
-    setStatus(els.status, `Compared with ${record.base}`);
+    overviewState.compare = {
+      diff: diffPacks(session.objects, resolved.objects),
+      meta: { aName: session.base, bName: record.base },
+    };
+    renderOverviewView();
+    setStatus(els.status, `Compared with ${record.base}.`);
   } catch (err) {
-    setStatus(els.status, err.message || String(err), { error: true });
+    reportError(err);
   }
-}
-
-function escapeAttr(value) {
-  return String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
 // --- Saved packs ---------------------------------------------------------
 
-let savedCount = 0;
-
 async function refreshSaved() {
   const rows = await listRepos();
   savedCount = rows.length;
-  if (rows.length === 0 || session) {
-    els.saved.hidden = true;
-    return;
-  }
-  els.saved.hidden = false;
-  renderSaved(els.savedList, rows, {
-    onOpen: async (key) => {
-      try {
-        setStatus(els.status, "Loading saved pack…");
-        await openSavedPack(key);
-        setStatus(els.status, `Opened saved pack for ${session.base}`);
-        await refreshSavedQuiet();
-      } catch (err) {
-        setStatus(els.status, err.message, { error: true });
-      }
-    },
-    onDelete: async (key) => {
-      await deleteRepo(key);
-      const { packId } = readUrlState();
-      if (packId === key) writeUrlState({ packId: null, objectId: null });
-      if (session?.packId === key) {
-        session = null;
-        els.workspace.hidden = true;
-        renderDetail(els.detail, null, session, {});
-      }
-      await refreshSaved();
-    },
-  });
+  els.saved.hidden = rows.length === 0;
+  renderSaved(els.savedList, rows);
 }
 
-// Refresh the saved-count without unhiding the list while a pack is open.
-async function refreshSavedQuiet() {
-  const rows = await listRepos();
-  savedCount = rows.length;
+async function refreshSavedCount() {
+  savedCount = (await listRepos()).length;
+}
+
+async function openSaved(key) {
+  try {
+    setStatus(els.status, "Loading saved pack…");
+    await openSavedPack(key);
+    setStatus(els.status, `Opened ${session.base}.`);
+  } catch (err) {
+    reportError(err);
+  }
+}
+
+async function deleteSaved(key) {
+  await deleteRepo(key);
+  const { packId } = readUrlState();
+  if (packId === key) writeUrlState({ packId: null, objectId: null });
+  if (session?.packId === key) closePack();
+  await refreshSaved();
 }
 
 async function openSavedPack(packId, { objectId = null } = {}) {
   const record = await loadRepo(packId);
-  if (!record) throw new Error(`No saved pack "${packId}" in this browser`);
-  els.repo.value = record.base;
+  if (!record) throw new Error(`No saved pack "${packId}" in this browser.`);
+  if (!record.base.startsWith("file://")) els.repo.value = record.base;
+  await refreshSavedCount();
   await openPack(record, { objectId });
 }
 
@@ -785,11 +894,9 @@ async function restoreFromUrl() {
   try {
     setStatus(els.status, "Restoring pack from link…");
     await openSavedPack(packId, { objectId });
-    setStatus(els.status, `Restored ${session.objects.length} objects from ${session.base}`);
-    await refreshSavedQuiet();
+    setStatus(els.status, `Restored ${session.objects.length.toLocaleString()} objects from ${session.base}.`);
   } catch (err) {
-    console.error(err);
-    setStatus(els.status, err.message || String(err), { error: true });
+    reportError(err);
     await refreshSaved();
   }
 }
@@ -804,9 +911,9 @@ window.addEventListener("popstate", () => {
 });
 
 async function boot() {
+  await refreshSaved();
   const { packId } = readUrlState();
   if (packId) await restoreFromUrl();
-  else await refreshSaved();
 }
 
 boot().catch((err) => console.error(err));

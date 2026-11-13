@@ -51,43 +51,49 @@ from IndexedDB.
 
 ## Explore
 
-The sidebar has four tabs.
+The window has two panes that scroll on their own: a navigator on the left and
+an inspector on the right. On a narrow screen they stack and the page scrolls.
 
-- **Objects**: filter by type / delta kind / reachability / author, sort by
-  offset / packed size / inflated size / depth, search by oid prefix.
-- **Insights**: a leaderboard of the largest objects (rank by packed size,
-  inflated size, delta savings, or depth), a per-type size breakdown, a
-  **blobs by author** pie chart and top-10 table (rank by packed size,
-  inflated size, or blob count; click an author to filter Objects), a delta
-  depth histogram, a reachability summary (with a jump to unreachable
-  objects), and the pack version / object count / verified trailer checksum.
-  Each blob is credited to the author of the commit that introduced it.
-  Blobs in trees at a shallow-fetch boundary go under
-  `(shallow boundary)`; blobs no commit points at go under `(no commit)`.
-- **Refs**: the advertised refs; click one to open the object it points at.
-- **Paths**: the HEAD tree flattened to file paths; search by substring or a
-  `*` glob and click a path to open its blob.
+The navigator has three tabs:
 
-The detail pane shows object metadata plus:
+- **Objects**: every object in the pack, labeled by its path in the HEAD tree
+  (or a commit's subject, or a tag's name). Search by oid prefix or path, filter
+  by type and storage (whole, ofs-delta, ref-delta), and sort by pack order,
+  size, depth, or type. **More filters** adds reachability and blob author. The
+  list shows the first 500 matches; narrow the filters to reach the rest.
+- **Paths**: the HEAD tree flattened to file paths. Search by substring or a
+  `*` glob, then click a path to open its blob.
+- **Refs**: the advertised refs. Click one to open the object it points at.
 
-- The **delta chain** (root base → … → this object) as jump links.
-- Hex-editor views of the raw pack entry (header, base pointer, zlib) and the
-  inflated delta stream (size headers, copy pointers, literal inserts). Hex
-  bodies are keyboard-scrollable when focused.
-- A **delta base** hex view coloring the bytes this delta reuses and greying the
-  ones it dropped, with a reuse percentage.
-- For resolved blobs, the structured commit/tree/tag view, the full blob text
-  (copied bytes colored by source copy instruction, inserts in white), or an
-  inline image preview for PNG/JPEG/GIF/WebP/BMP/SVG blobs.
-- **Download loose object** writes the selected object as a zlib loose file you
+The inspector has two views:
+
+- **Overview**: headline numbers (object count, packed and inflated size,
+  delta share, maximum delta depth), then cards for object types, the largest
+  objects (rank by packed size, inflated size, delta savings, or depth), blobs
+  by author, the delta depth histogram, reachability from the fetched refs, and
+  the pack version and trailer checksum. Click a type to list its objects, an
+  author to list their blobs, or the unreachable count to list those objects.
+  With more than one saved pack, **Compare with another saved pack** diffs two
+  packs (added, removed, and the size changes).
+- **Object**: the selected object's type, path or subject, oid, and storage
+  facts (offset, packed and inflated size, delta base, reachability). Its
+  content comes first: a commit's message, author, tree, and parents; a tree's
+  entries; a tag; or a blob as text, an image preview (PNG, JPEG, GIF, WebP,
+  BMP, or SVG), or a hex dump. A deltified blob colors each byte by the copy
+  instruction that produced it, with inserts in white. Below that, the delta
+  chain (root base to this object), the delta's copy and insert totals, and
+  collapsed sections for the delta instructions, the inflated delta stream, the
+  base bytes the delta reuses, and the raw pack entry (header, base pointer,
+  zlib). **Download loose object** writes the object as a zlib loose file you
   can drop into `.git/objects/`.
 
-The detail toolbar carries **back/forward** through the objects you've viewed, a
-**jump to full oid** box, and **Copy link** for the current `?pack=#oid` URL.
-From Insights, **Compare with another pack** diffs two saved packs (added,
-removed, and the size deltas).
+Blob authorship credits each blob to the author of the commit that introduced
+it. Blobs in trees at a shallow-fetch boundary go under `(shallow boundary)`;
+blobs no commit points at go under `(no commit)`.
 
-- Tap any oid link (parent, tree entry, delta base, chain link) to jump.
+The toolbar carries **back** and **forward** through the objects you've viewed,
+a **jump to full oid** box, and **Copy link** for the current `?pack=#oid` URL.
+Any oid link (parent, tree entry, delta base, chain link) opens that object.
 
 ## Shareable links
 
