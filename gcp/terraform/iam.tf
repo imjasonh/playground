@@ -155,8 +155,12 @@ resource "google_project_iam_member" "github_plan_push" {
   member  = "serviceAccount:${google_service_account.github_plan.email}"
 }
 
+# The provider reads the billing account through the Cloud Billing API and
+# returns an empty one when that API is off, so read after enabling it.
 data "google_project" "project" {
   project_id = var.project_id
+
+  depends_on = [google_project_service.services]
 }
 
 resource "google_billing_account_iam_member" "github_budgets" {
