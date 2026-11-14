@@ -68,6 +68,15 @@ proof below was written against; each theorem still holds for those bytes,
 and is being redone for the current image. `scripts/coverage.py` counts
 only proofs about the current image.
 
+Boot coverage, the share of a trial boot's instructions that run in proved
+functions, is high because the boot spends nearly all its time in field
+arithmetic. It says little about the Sigstore check: on Nov 13 it was
+99.3 percent while `c3_verify::sigstore::verify`, `p384_verify_prehash`,
+and `ed25519_verify`, which decide whether an update is accepted, had no
+proofs. So `coverage.py` also counts the instructions of every function
+that `sigstore::verify` and `boot_main` can reach through calls, proved or
+not, which weighs the deciding code as much as the hot code.
+
 `C3BootProofs/Proofs/Reader.lean` proves `readerBytes_correct` about the
 compiled `Reader::bytes`, which takes `n` bytes from a bounds-checked
 reader. It loads the reader's three words, writes its `Result` through a

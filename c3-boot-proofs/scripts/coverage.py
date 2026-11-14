@@ -8,6 +8,12 @@ It counts two things:
 - Boot coverage: the instructions a boot runs at addresses in proved
   functions, out of every instruction the boot runs, from a boot-sim
   profile (`BOOT_SIM_PROFILE`).
+- Verification coverage: the instructions in proved functions, out of the
+  instructions of every function that `c3_verify::sigstore::verify` (the
+  Sigstore check of an update) and `boot_main` can call, directly or through
+  other functions. Boot coverage weighs a function by how long it runs, so
+  the field arithmetic dominates it; this counts the code that makes the
+  decisions as much as the code that runs longest.
 
 A function counts as proved when it is in PROVED below, which names the
 functions in `C3BootProofs/Image/Bootloader.lean`, the current image, that a
@@ -107,10 +113,46 @@ def symbols(elf, nm):
     return funcs
 
 
-def image_instructions(elf, objdump):
-    out = subprocess.run([objdump, "-d", "--no-show-raw-insn", elf], check=True,
-                         capture_output=True, text=True).stdout
-    return sum(1 for line in out.splitlines() if re.match(r"\s*[0-9a-f]+:\s", line))
+def disassemble(elf, objdump):
+    return subprocess.run([objdump, "-d", "--no-show-raw-insn", "-C", elf], check=True,
+                          capture_output=True, text=True).stdout.splitlines()
+
+
+ROOTS = ["c3_verify::sigstore::verify", "boot_main"]
+
+
+def reachable(lines, syms, proved):
+    """For each root, the instructions and proved instructions of every
+    function it can reach through calls, jumps, and tail calls."""
+    starts_ = [s[0] for s in syms]
+    size, done, calls = {}, {}, {}
+    for line in lines:
+        m = re.match(r"\s*([0-9a-f]+):\s+(\S+)\s*(.*)", line)
+        if not m:
+            continue
+        a = int(m.group(1), 16)
+        i = bisect.bisect_right(starts_, a) - 1
+        if i < 0 or a >= syms[i][0] + syms[i][1]:
+            continue
+        f = syms[i][2]
+        size[f] = size.get(f, 0) + 1
+        done[f] = done.get(f, 0) + (a in proved)
+        t = re.search(r"\s<(.*)>$", m.group(3)) if m.group(2) in ("jal", "jalr", "j", "jr") else None
+        if t:
+            callee = re.sub(r"\+0x[0-9a-f]+$", "", t.group(1))
+            if callee != f:
+                calls.setdefault(f, set()).add(callee)
+    out = {}
+    for root in ROOTS:
+        seen, stack = set(), [root]
+        while stack:
+            f = stack.pop()
+            if f in seen or f not in size:
+                continue
+            seen.add(f)
+            stack.extend(calls.get(f, ()))
+        out[root] = (sum(done[f] for f in seen), sum(size[f] for f in seen), len(seen))
+    return out
 
 
 def main():
@@ -123,9 +165,11 @@ def main():
     proved = set()
     for n in PROVED:
         proved.update(starts(*funcs[n]))
-    total_image = image_instructions(elf, objdump)
+    lines = disassemble(elf, objdump)
+    total_image = sum(1 for line in lines if re.match(r"\s*[0-9a-f]+:\s", line))
 
     syms = symbols(elf, nm)
+    reach = reachable(lines, syms, proved)
     sym_starts = [s[0] for s in syms]
     boot_total = boot_proved = 0
     unproved = {}
@@ -146,6 +190,9 @@ def main():
           f"{100 * len(proved) / total_image:.1f}% |")
     print(f"| Instructions one boot runs | {boot_proved:,} | {boot_total:,} | "
           f"{100 * boot_proved / boot_total:.1f}% |")
+    for root, (done, size, n) in reach.items():
+        print(f"| Instructions in the {n} functions `{root}` reaches | {done:,} | {size:,} | "
+              f"{100 * done / size:.1f}% |")
     print()
     print("| Unproved function | Instructions run | Share of the boot |")
     print("| --- | --- | --- |")
