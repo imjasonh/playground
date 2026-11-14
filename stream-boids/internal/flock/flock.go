@@ -141,9 +141,6 @@ func New(width, height float32, params Params, workers int, seed uint32) *Flock 
 // Len returns the number of boids.
 func (f *Flock) Len() int { return len(f.X) }
 
-// Radius returns the neighbor radius for the current flock size.
-func (f *Flock) Radius() float32 { return f.radius }
-
 // Resize grows the flock to n boids, adding them at random positions with
 // random headings, or shrinks it by dropping boids from the end.
 func (f *Flock) Resize(n int) {
