@@ -1,4 +1,4 @@
-# wehadababyitsaboy
+# wehadababyitsaboy: a dead simple, dead cheap usage tracking nanoframework
 
 ### First, some background
 
@@ -16,7 +16,7 @@ https://youtu.be/j0ULftC7ndM?si=gXcg9Q5dUq8_blCk&t=1530
 
 _(skip to 25:30 if that doesn't work)_
 
-The joke is that if you're super cheap, and can convey all the important information in that short recording to convince the recipient to accept the call, you can get one over on those rapacious telecommunications vendors!
+The joke is that if you're super cheap, and can convey all the important information in that short recording to convince the recipient to accept the call, and the recipient doesn't even need to accept the call or pay anything. You can finally get one over on those rapacious telecommunications vendors!
 
 You can learn more here: https://geicocarinsurance.fandom.com/wiki/Bob_Wehadababyitsaboy -- did you know that the GEICO insurance company has a fandom.com site? And presumably, by extension, a fandom?
 
@@ -26,11 +26,11 @@ I had an idea last night to cheaply report and collect basic user tracking data 
 
 Did you know that if you configure your bucket just so, requests for missing objects can get recorded in usage logs? This is presumably useful for something like tracking 404 requests on your website or something, but in this case, it also means you can send any request you want to a bucket, anonymously, serve no data, incur almost no cost, and record that data? Now you do!
 
-I made a little demo in this repo, and it's called `wehadababyitsaboy`.
+I made a little demo in this repo, and it's called `wehadababyitsaboy`. Get it?
 
 For JS clients, you can embed [`whbiab.js`](https://raw.githubusercontent.com/imjasonh/playground/refs/heads/main/wehadababyitsaboy/web/whbiab.js) (pronounced WEE-bee-ab) and it'll collect whatever it can about the page and send a 404 request to the tracking bucket. Google will then record that 404 in CSV logs. It's embedded in all the browser apps in this repo.
 
-For Go clients, there's a [`cobra`](https://github.com/spf13/cobra)-compatible helper library to do the same. For Rust, there's a [`clap`](https://github.com/clap-rs/clap)-compatible helper module to do the same. They're also used by most of the CLIs in this repo.
+For Go clients, there's a [`cobra`](https://github.com/spf13/cobra)-compatible [helper library](https://github.com/imjasonh/playground/tree/main/wehadababyitsaboy/go) to do the same. For Rust, there's a [`clap`](https://github.com/clap-rs/clap)-compatible [helper module](https://github.com/imjasonh/playground/tree/main/wehadababyitsaboy/rust) to do the same. They're used by most of the CLIs in this repo.
 
 If you want to set this up for yourself, you're free to. Everything's [defined in Terraform](https://github.com/imjasonh/playground/tree/main/wehadababyitsaboy/terraform), all you need is a GCP project and a dream.
 
