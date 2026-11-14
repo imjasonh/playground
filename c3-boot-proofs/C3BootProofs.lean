@@ -125,6 +125,8 @@ import C3BootProofs.Proofs.P256Scalar
 import C3BootProofs.Proofs.LincombShift12
 import C3BootProofs.Proofs.LincombShift8
 import C3BootProofs.Proofs.Lowest
+import C3BootProofs.Proofs.Norm12
+import C3BootProofs.Proofs.Norm8
 import C3BootProofs.Proofs.UpdateFg12
 import C3BootProofs.Proofs.UpdateFg8
 import C3BootProofs.Proofs.AbsSign2

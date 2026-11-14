@@ -48,6 +48,8 @@ import C3BootProofs.Proofs.ScalarMont
 import C3BootProofs.Proofs.P256Scalar
 import C3BootProofs.Proofs.LincombShift8
 import C3BootProofs.Proofs.Lowest
+import C3BootProofs.Proofs.Norm12
+import C3BootProofs.Proofs.Norm8
 import C3BootProofs.Proofs.UpdateFg8
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.RegionMem
@@ -3104,6 +3106,109 @@ theorem exists_lincombShift8_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `SignedInt<12>::norm`, its callees, and
+P-384's modulus where the image loads them, and zeros elsewhere. -/
+def witnessMemNorm12 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.norm12Address, Image.norm12Code),
+    (Image.uint12IsNonzeroAddress, Image.uint12IsNonzeroCode),
+    (Image.uintRefIsNonzeroAddress, Image.uintRefIsNonzeroCode),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.borrowingSubAddress, Image.borrowingSubCode),
+    (Image.uintSelect12Address, Image.uintSelect12Code),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.p384ModulusAddress, Image.p384ModulusData)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `SignedInt<12>::norm` with the result at
+`0x3FCC5000`, a zero value at `0x3FCC6000`, `f`'s sign 0, P-384's modulus,
+and the stack at `0x3FCC8000` meets `norm12_correct`'s hypotheses. -/
+theorem exists_norm12_machine :
+    ∃ (m : RV32.Machine) (P sp0 out xp np retAddr : RV32.Word), RV32.NmEnv m.mem P sp0 out xp np ∧ m.pc = P ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = xp ∧
+      (RV32.reg m RV32.a2 = 0 ∨ RV32.reg m RV32.a2 = 1) ∧ RV32.reg m RV32.a3 = np ∧
+      (m.mem (xp + 0x30)).toNat ≤ 1 ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000
+    else if r = RV32.a3 then BitVec.ofNat 32 Image.p384ModulusAddress
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.norm12Address, witnessMemNorm12⟩,
+    BitVec.ofNat 32 Image.norm12Address, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000,
+    BitVec.ofNat 32 Image.p384ModulusAddress, 0,
+    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
+      ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩,
+    rfl, rfl, rfl, rfl, .inl rfl, rfl, by decide +kernel, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+/-- Memory with the current image's `SignedInt<8>::norm` and its callees
+where the image loads them, and zeros elsewhere. -/
+def witnessMemNorm8 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.norm8Address, Image.norm8Code),
+    (Image.uint8IsNonzeroAddress, Image.uint8IsNonzeroCode),
+    (Image.uintRefIsNonzeroAddress, Image.uintRefIsNonzeroCode),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.borrowingSubAddress, Image.borrowingSubCode),
+    (Image.uintSelect8Address, Image.uintSelect8Code),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Uint<8>::is_nonzero` on 8 words at `0x3FCC5000`
+with the stack at `0x3FCC8000` meets `uint8IsNonzero_correct`'s
+hypotheses. -/
+theorem exists_uint8IsNonzero_machine :
+    ∃ (m : RV32.Machine) (base retAddr ptr : RV32.Word), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.uint8IsNonzeroCode ∧
+      RV32.CodeIn m.mem (base + 0xFFFF120E) Image.uintRefIsNonzeroCode ∧ m.pc = base ∧
+      RV32.reg m RV32.a0 = ptr ∧ ptr.toNat % 4 = 0 ∧ (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xFFFF120E) Image.uintRefIsNonzeroCode.length ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0 0, BitVec.ofNat 32 Image.uint8IsNonzeroAddress, witnessMemNorm8⟩,
+    BitVec.ofNat 32 Image.uint8IsNonzeroAddress, 0, 0x3FCC5000, by decide, ?_, ?_, rfl, rfl, by decide,
+    by decide, ?_, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `SignedInt<8>::norm` with the result at
+`0x3FCC5000`, a zero value at `0x3FCC6000`, `f`'s sign 0, a zero modulus at
+`0x3FCC7000`, and the stack at `0x3FCC8000` meets `norm8_correct`'s
+hypotheses. -/
+theorem exists_norm8_machine :
+    ∃ (m : RV32.Machine) (P sp0 out xp np retAddr : RV32.Word), RV32.Nm8Env m.mem P sp0 out xp np ∧ m.pc = P ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = xp ∧
+      (RV32.reg m RV32.a2 = 0 ∨ RV32.reg m RV32.a2 = 1) ∧ RV32.reg m RV32.a3 = np ∧
+      (m.mem (xp + 0x20)).toNat ≤ 1 ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000
+    else if r = RV32.a3 then 0x3FCC7000
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.norm8Address, witnessMemNorm8⟩,
+    BitVec.ofNat 32 Image.norm8Address, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0x3FCC7000, 0,
+    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide, by decide, by decide,
+      ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩,
+    rfl, rfl, rfl, rfl, .inl rfl, rfl, by decide +kernel, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 /-- Memory with the current image's `SignedInt<12>::lowest` and
 `Choice::select_i64` where the image loads them, and zeros elsewhere. -/
 def witnessMemLowest12 : RV32.Word → BitVec 8 :=
@@ -4013,3 +4118,21 @@ end C3
 
 /-- info: 'C3.exists_mulMont8_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_mulMont8_machine
+
+/-- info: 'C3.RV32.norm12_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.norm12_correct
+
+/-- info: 'C3.exists_norm12_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_norm12_machine
+
+/-- info: 'C3.RV32.uint8IsNonzero_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.uint8IsNonzero_correct
+
+/-- info: 'C3.exists_uint8IsNonzero_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_uint8IsNonzero_machine
+
+/-- info: 'C3.RV32.norm8_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.norm8_correct
+
+/-- info: 'C3.exists_norm8_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_norm8_machine
