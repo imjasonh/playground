@@ -8,7 +8,7 @@ contents:
   packages:
     - wolfi-baselayout
     - ca-certificates-bundle
-    - ffmpeg-9.0
+    - ffmpeg
 
 accounts:
   groups:
