@@ -200,9 +200,38 @@ type proc struct {
 	lastProgress atomic.Int64
 }
 
-// tailLines is how many of ffmpeg's last messages are logged when it
-// exits.
-const tailLines = 12
+// progress records a line of ffmpeg's -progress output.
+func (p *proc) progress(line string) {
+	k, v, ok := strings.Cut(line, "=")
+	if !ok {
+		return
+	}
+	switch k {
+	case "frame":
+		n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		if err == nil && n > p.frames.Load() {
+			p.frames.Store(n)
+			p.lastProgress.Store(time.Now().UnixNano())
+		}
+	case "speed":
+		p.speed.Store(strings.TrimSpace(v))
+	}
+}
+
+// redactor returns a func that removes url, and its last path segment when
+// that looks like a stream key, from a string.
+func redactor(url string) func(string) string {
+	secrets := []string{url}
+	if i := strings.LastIndexByte(url, '/'); i >= 0 && len(url)-i > 8 {
+		secrets = append(secrets, url[i+1:])
+	}
+	return func(s string) string {
+		for _, sec := range secrets {
+			s = strings.ReplaceAll(s, sec, "[REDACTED]")
+		}
+		return s
+	}
+}
 
 func (e *Encoder) runOnce(ctx context.Context) error {
 	log := clog.FromContext(ctx)
@@ -210,16 +239,7 @@ func (e *Encoder) runOnce(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("getting output URL: %w", err)
 	}
-	secrets := []string{url}
-	if i := strings.LastIndexByte(url, '/'); i >= 0 && len(url)-i > 8 {
-		secrets = append(secrets, url[i+1:])
-	}
-	redact := func(s string) string {
-		for _, sec := range secrets {
-			s = strings.ReplaceAll(s, sec, "[REDACTED]")
-		}
-		return s
-	}
+	redact := redactor(url)
 
 	videoR, videoW, err := os.Pipe()
 	if err != nil {
@@ -239,45 +259,19 @@ func (e *Encoder) runOnce(ctx context.Context) error {
 	}
 	p.lastProgress.Store(p.started.UnixNano())
 
-	var tailMu sync.Mutex
-	var tail []string
-	limiter := newLogLimiter(10, time.Minute)
-	stderr := &lineWriter{fn: func(line string) {
+	var msgs messages
+	// exec.Command, not CommandContext: cancellation must close ffmpeg's
+	// input so it finishes the stream, not kill it.
+	cmd := exec.Command(e.cfg.FFmpeg, ffmpegArgs(e.cfg, url)...)
+	cmd.Stdin = videoR
+	cmd.ExtraFiles = []*os.File{audioR}
+	cmd.Stdout = &lineWriter{fn: p.progress}
+	cmd.Stderr = &lineWriter{fn: func(line string) {
 		line = redact(line)
-		tailMu.Lock()
-		tail = append(tail, line)
-		if len(tail) > tailLines {
-			tail = tail[1:]
-		}
-		tailMu.Unlock()
-		if limiter.allow() {
+		if msgs.add(line) {
 			log.Warn("ffmpeg", "message", line)
 		}
 	}}
-	stdout := &lineWriter{fn: func(line string) {
-		k, v, ok := strings.Cut(line, "=")
-		if !ok {
-			return
-		}
-		switch k {
-		case "frame":
-			n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
-			if err == nil && n > p.frames.Load() {
-				p.frames.Store(n)
-				p.lastProgress.Store(time.Now().UnixNano())
-			}
-		case "speed":
-			p.speed.Store(strings.TrimSpace(v))
-		}
-	}}
-
-	// exec.Command, not CommandContext: cancellation must close ffmpeg's
-	// input so it finishes the stream, not kill it.
-	cmd := exec.Command(e.cfg.FFmpeg, Args(e.cfg, url)...)
-	cmd.Stdin = videoR
-	cmd.ExtraFiles = []*os.File{audioR}
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
 	err = cmd.Start()
 	videoR.Close()
 	audioR.Close()
@@ -354,17 +348,14 @@ wait:
 		return exitErr
 	}
 	writers.Wait()
-	tailMu.Lock()
-	last := strings.Join(tail, "\n")
-	tailMu.Unlock()
 	if exitErr == nil {
 		exitErr = errors.New("ffmpeg exited")
 	}
-	return fmt.Errorf("%w; last messages:\n%s", exitErr, last)
+	return fmt.Errorf("%w; last messages:\n%s", exitErr, msgs.last())
 }
 
-// Args returns ffmpeg's arguments for streaming to url.
-func Args(cfg Config, url string) []string {
+// ffmpegArgs returns ffmpeg's arguments for streaming to url.
+func ffmpegArgs(cfg Config, url string) []string {
 	gop := strconv.Itoa(2 * cfg.FPS)
 	rate := strconv.Itoa(cfg.VideoBitrate)
 	return []string{
@@ -432,25 +423,39 @@ func (w *lineWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// logLimiter allows n events per period.
-type logLimiter struct {
+// messages keeps ffmpeg's last messages for the error when it exits, and
+// rate-limits logging them.
+type messages struct {
 	mu     sync.Mutex
-	n      int
-	period time.Duration
-	start  time.Time
+	tail   []string
+	window time.Time
 	count  int
 }
 
-func newLogLimiter(n int, period time.Duration) *logLimiter {
-	return &logLimiter{n: n, period: period}
+const (
+	// tailLines is how many messages the exit error includes.
+	tailLines = 12
+	// logPerMinute is how many messages are logged as they arrive.
+	logPerMinute = 10
+)
+
+// add records line and reports whether to log it.
+func (m *messages) add(line string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.tail = append(m.tail, line)
+	if len(m.tail) > tailLines {
+		m.tail = m.tail[1:]
+	}
+	if now := time.Now(); now.Sub(m.window) > time.Minute {
+		m.window, m.count = now, 0
+	}
+	m.count++
+	return m.count <= logPerMinute
 }
 
-func (l *logLimiter) allow() bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if now := time.Now(); now.Sub(l.start) > l.period {
-		l.start, l.count = now, 0
-	}
-	l.count++
-	return l.count <= l.n
+func (m *messages) last() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return strings.Join(m.tail, "\n")
 }

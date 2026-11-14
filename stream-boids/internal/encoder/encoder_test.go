@@ -333,9 +333,21 @@ func TestLineWriter(t *testing.T) {
 	}
 }
 
-func TestArgs(t *testing.T) {
+func TestRedactor(t *testing.T) {
+	for _, tc := range []struct{ url, in, want string }{
+		{"rtmps://h/live2/abcd-efgh-ijkl", "rtmps://h/live2/abcd-efgh-ijkl: 403", "[REDACTED]: 403"},
+		{"rtmps://h/live2/abcd-efgh-ijkl", "key abcd-efgh-ijkl rejected", "key [REDACTED] rejected"},
+		{"file:///tmp/out.flv", "out.flv: ok", "out.flv: ok"},
+	} {
+		if got := redactor(tc.url)(tc.in); got != tc.want {
+			t.Errorf("redactor(%q)(%q) = %q, want %q", tc.url, tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestFFmpegArgs(t *testing.T) {
 	cfg := Config{Width: 1920, Height: 1080, FPS: 60, SampleRate: 48000, VideoBitrate: 12000000, Preset: "veryfast", Format: "flv"}
-	args := Args(cfg, "rtmps://a.rtmps.youtube.com:443/live2/key")
+	args := ffmpegArgs(cfg, "rtmps://a.rtmps.youtube.com:443/live2/key")
 	joined := strings.Join(args, " ")
 	for _, want := range []string{
 		"-video_size 1920x1080 -framerate 60",
