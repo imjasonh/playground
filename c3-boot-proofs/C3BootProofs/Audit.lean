@@ -54,6 +54,7 @@ import C3BootProofs.Proofs.DerReaders
 import C3BootProofs.Proofs.DerOptional
 import C3BootProofs.Proofs.UintEq
 import C3BootProofs.Proofs.ByteCompare
+import C3BootProofs.Proofs.P384Scalar
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
@@ -2994,6 +2995,83 @@ theorem exists_inScalarRange_machine :
     rfl, rfl, by decide, by decide, rfl, by decide⟩
   code_in
 
+/-- Memory with the current image's P-384 scalar `mul` and `new`,
+`mul_montgomery_form::<12>` and its callees, the group order, and `R² mod n`
+where the image loads them, and zeros elsewhere. -/
+def witnessMemN384 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.p384ScalarMulAddress, Image.p384ScalarMulCode),
+    (Image.p384ScalarNewAddress, Image.p384ScalarNewCode),
+    (Image.mulMont12Address, Image.mulMont12Code),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.borrowingSubAddress, Image.borrowingSubCode),
+    (Image.uintSelect12Address, Image.uintSelect12Code),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.p384OrderAddress, Image.p384OrderData),
+    (Image.p384ScalarR2Address, Image.p384ScalarR2Data)]
+
+set_option exponentiation.threshold 600 in
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls P-384's scalar `mul` with the result at
+`0x3FCC5000`, the operands at `0x3FCC6000` and `0x3FCC6100`, and the stack at
+`0x3FCC8000` meets `p384ScalarMul_correct`'s hypotheses. -/
+theorem exists_p384ScalarMul_machine :
+    ∃ (m : RV32.Machine) (P sp0 out xp yp retAddr : RV32.Word), RV32.N3MEnv m.mem P sp0 out xp yp ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = xp ∧ RV32.reg m RV32.a2 = yp ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
+      RV32.accV m.mem yp 12 < RV32.n384 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 0x3FCC6100
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.p384ScalarMulAddress, witnessMemN384⟩,
+    BitVec.ofNat 32 Image.p384ScalarMulAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0x3FCC6100, 0,
+    ⟨?_, ?_, ?_, ?_⟩, rfl, rfl, rfl, rfl, rfl, by decide, rfl, ?_⟩
+  case refine_4 =>
+    constructor <;> first
+      | code_in
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+      | exact (RV32.sep_of_le (by decide) (by decide)).symm
+      | decide +kernel
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option exponentiation.threshold 600 in
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls P-384's scalar `new` with the result at
+`0x3FCC5000`, the operand at `0x3FCC6000`, and the stack at `0x3FCC8000`
+meets `p384ScalarNew_correct`'s hypotheses. -/
+theorem exists_p384ScalarNew_machine :
+    ∃ (m : RV32.Machine) (P sp0 out xp retAddr : RV32.Word), RV32.N3NEnv m.mem P sp0 out xp ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = xp ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.p384ScalarNewAddress, witnessMemN384⟩,
+    BitVec.ofNat 32 Image.p384ScalarNewAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0,
+    ⟨?_, ?_, ?_, ?_, ?_⟩, rfl, rfl, rfl, rfl, by decide, rfl⟩
+  case refine_5 =>
+    constructor <;> first
+      | code_in
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+      | exact (RV32.sep_of_le (by decide) (by decide)).symm
+      | decide +kernel
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
 /-- A machine that calls `equal_same_length` on two empty slices, with the
@@ -4719,3 +4797,15 @@ end C3
 
 /-- info: 'C3.exists_inScalarRange_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_inScalarRange_machine
+
+/-- info: 'C3.RV32.p384ScalarMul_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.p384ScalarMul_correct
+
+/-- info: 'C3.exists_p384ScalarMul_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_p384ScalarMul_machine
+
+/-- info: 'C3.RV32.p384ScalarNew_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.p384ScalarNew_correct
+
+/-- info: 'C3.exists_p384ScalarNew_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_p384ScalarNew_machine

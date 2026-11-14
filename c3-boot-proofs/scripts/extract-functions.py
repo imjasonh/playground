@@ -149,10 +149,13 @@ FUNCTIONS = [
     ("uint8Eq", "<crypto_bigint::uint::Uint<8>>::eq"),
     ("lessThanLe", "c3_crypto::less_than_le"),
     ("inScalarRange", "c3_crypto::ecdsa::in_scalar_range"),
+    ("p384ScalarMul", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<p384::arithmetic::scalar::ScalarParams, 12>>::mul"),
+    ("p384ScalarNew", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<p384::arithmetic::scalar::ScalarParams, 12>>::new"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
-# `lui; addi` pair in it that forms the data's address, and the data's size.
+# `lui; addi` pair in it that forms an address, the data's size, and,
+# optionally, the data's offset from that address.
 DATA = [
     ("curveB", "pointAdd", 0x12E, 32),
     ("u2Max", "lincombShiftMod12", 0xF0, 8),
@@ -164,6 +167,8 @@ DATA = [
     ("u2Zero", "condNeg12", 0x7E, 8),
     ("u2One", "condNeg12", 0x86, 8),
     ("scalarL", "scalar29Sub", 0x36, 36),
+    ("p384Order", "p384ScalarMul", 0x0, 48),
+    ("p384ScalarR2", "p384ScalarNew", 0x0, 48, 0x60),
 ]
 
 
@@ -283,14 +288,16 @@ def main():
             f"def {name}Code : List Nat :=",
             "  [" + ",\n".join(rows).lstrip() + "]",
         ]
-    for name, func, off, size in DATA:
+    for name, func, off, size, *rest in DATA:
         faddr, fcode = extracted[func]
-        addr = lui_addi(fcode, faddr, off)
+        base = lui_addi(fcode, faddr, off)
+        delta = rest[0] if rest else 0
+        addr = base + delta
         data = bytes_at(segs, addr, size)
+        where = f"forms at\noffset {off:#x}" if not delta else f"forms, plus {delta:#x}, at\noffset {off:#x}"
         lines += [
             "",
-            f"/-- The {size} bytes at `{addr:#x}` in the image, whose address `{func}` forms at",
-            f"offset {off:#x}. -/",
+            f"/-- The {size} bytes at `{addr:#x}` in the image, whose address `{func}` {where}. -/",
             f"def {name}Address : Nat := {addr:#x}",
             "",
             f"def {name}Data : List Nat :=",
