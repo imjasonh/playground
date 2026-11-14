@@ -29,13 +29,14 @@ type HUD struct {
 	Members      int
 }
 
-// Banner thanks one Super Chat or Super Sticker.
+// Banner thanks one viewer, as "<Name> <Text>".
 type Banner struct {
 	Name string
-	// Amount is the purchase as YouTube formats it, such as "$5.00". It is
-	// empty for a Super Sticker.
-	Amount string
-	Tier   int
+	// Text follows the name, such as "sent $5.00".
+	Text string
+	// Tier is the Super Chat tier that colors the banner. Zero draws a
+	// membership banner in gold.
+	Tier int
 }
 
 var (
@@ -250,19 +251,19 @@ func (r *Renderer) buildSprites(sc *Scene, size int) {
 	r.text(mm, x0+pad, y0+pad+vm.Rect.Dy()+gap, gold)
 
 	if bn := sc.Banner; bn != nil {
-		msg := r.small.cleanName(bn.Name) + " sent a Super Sticker"
-		if bn.Amount != "" {
-			msg = r.small.cleanName(bn.Name) + " sent " + bn.Amount
-		}
-		m := r.small.mask(msg)
+		m := r.small.mask(r.small.cleanName(bn.Name) + " " + bn.Text)
 		bw := m.Rect.Dx() + 2*pad
 		bh := m.Rect.Dy() + 2*pad
 		bx := (r.w - bw) / 2
 		by := r.h - s(72) - bh
 		r.dim(image.Rect(bx, by, bx+bw, by+bh))
 		bar := s(6)
-		r.add(sprite{r: image.Rect(bx, by+bh-bar, bx+bw, by+bh), mask: solid, ink: TierColor(bn.Tier)})
-		r.text(m, bx+pad, by+pad, TierColor(bn.Tier))
+		ink := gold
+		if bn.Tier > 0 {
+			ink = TierColor(bn.Tier)
+		}
+		r.add(sprite{r: image.Rect(bx, by+bh-bar, bx+bw, by+bh), mask: solid, ink: ink})
+		r.text(m, bx+pad, by+pad, ink)
 	}
 }
 

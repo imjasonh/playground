@@ -144,7 +144,7 @@ func newRenderer(t testing.TB, w, h, workers int) (*Renderer, *Frame) {
 
 func TestRenderIsIndependentOfWorkers(t *testing.T) {
 	sc := newScene(t, 4000, "alice", "bob", "carol")
-	sc.Banner = &Banner{Name: "dave", Amount: "$20.00", Tier: 4}
+	sc.Banner = &Banner{Name: "dave", Text: "sent $20.00", Tier: 4}
 	r1, out1 := newRenderer(t, 1280, 720, 1)
 	r8, out8 := newRenderer(t, 1280, 720, 8)
 	for f := range 30 {
@@ -223,7 +223,7 @@ func TestOverlaysLeaveNoTrail(t *testing.T) {
 	sc := newScene(t, 500)
 	ra, outA := newRenderer(t, 1280, 720, 4)
 	rb, outB := newRenderer(t, 1280, 720, 4)
-	sc.Banner = &Banner{Name: "erin", Tier: 7}
+	sc.Banner = &Banner{Name: "erin", Text: "sent a Super Sticker", Tier: 7}
 	if err := ra.Render(sc, outA); err != nil {
 		t.Fatal(err)
 	}
