@@ -139,6 +139,16 @@ func TestKickPushesAway(t *testing.T) {
 	}
 }
 
+func TestSwap(t *testing.T) {
+	f := New(800, 600, DefaultParams(), 1, 3)
+	f.Resize(3)
+	x0, vy2 := f.X[0], f.VY[2]
+	f.Swap(0, 2)
+	if f.X[2] != x0 || f.VY[0] != vy2 {
+		t.Errorf("Swap didn't exchange boids 0 and 2")
+	}
+}
+
 func TestResizeKeepsExistingBoids(t *testing.T) {
 	f := New(800, 600, DefaultParams(), 2, 9)
 	f.Resize(100)

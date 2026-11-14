@@ -173,6 +173,15 @@ func (f *Flock) Kick(x, y, radius, strength float32) {
 	f.pendingImp = append(f.pendingImp, impulse{x, y, radius, strength})
 }
 
+// Swap exchanges boids i and j.
+func (f *Flock) Swap(i, j int) {
+	f.X[i], f.X[j] = f.X[j], f.X[i]
+	f.Y[i], f.Y[j] = f.Y[j], f.Y[i]
+	f.VX[i], f.VX[j] = f.VX[j], f.VX[i]
+	f.VY[i], f.VY[j] = f.VY[j], f.VY[i]
+	f.rng[i], f.rng[j] = f.rng[j], f.rng[i]
+}
+
 func (f *Flock) nextSeed() uint32 {
 	f.seed = xorshift(f.seed)
 	return f.seed
