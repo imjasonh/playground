@@ -89,7 +89,10 @@ impl Sink for Text {
 fn conformance() -> Vec<[Vec<u8>; 3]> {
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../testdata/conformance");
     let mut out = Vec::new();
-    let mut entries: Vec<_> = std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().path()).collect();
+    let mut entries: Vec<_> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
     entries.sort();
     for path in entries {
         let Ok(text) = std::fs::read_to_string(path.join("bundle.sigstore.json")) else {
@@ -129,7 +132,11 @@ fn main() {
         let mut text = Text(Vec::new());
         c3_verify::base64::encode_to(&data, &mut text);
         writeln!(out, "b64e {} | {}", hex(&data), hex(&text.0)).unwrap();
-        let input = if rng.below(3) == 0 { text.0 } else { rng.mutate(&text.0, alphabet) };
+        let input = if rng.below(3) == 0 {
+            text.0
+        } else {
+            rng.mutate(&text.0, alphabet)
+        };
         let mut buf = [0u8; 64];
         let r = match c3_verify::base64::decode_into(&input, &mut buf) {
             Ok(n) => format!("ok {}", hex(&buf[..n])),
@@ -158,14 +165,22 @@ fn main() {
             _ => String::new(),
         };
         let gen_text = format!("{base}{frac}Z").into_bytes();
-        let gen_in = if i % 3 == 0 { rng.mutate(&gen_text, digits) } else { gen_text };
+        let gen_in = if i % 3 == 0 {
+            rng.mutate(&gen_text, digits)
+        } else {
+            gen_text
+        };
         let r = match c3_verify::time::generalized_time(&gen_in) {
             Ok(t) => format!("ok {t}"),
             Err(_) => "err".to_string(),
         };
         writeln!(out, "gen {} | {r}", hex(&gen_in)).unwrap();
         let utc_text = format!("{}Z", &base[2..]).into_bytes();
-        let utc_in = if i % 3 == 0 { rng.mutate(&utc_text, digits) } else { utc_text };
+        let utc_in = if i % 3 == 0 {
+            rng.mutate(&utc_text, digits)
+        } else {
+            utc_text
+        };
         let r = match c3_verify::time::utc_time(&utc_in) {
             Ok(t) => format!("ok {t}"),
             Err(_) => "err".to_string(),
@@ -202,10 +217,22 @@ fn main() {
             Err(_) => "err".to_string(),
         };
         writeln!(out, "bundle {} | {r}", hex(&bytes)).unwrap();
-        let d: Vec<u8> = if rng.below(2) == 0 { digest.clone() } else { rng.bytes(32) };
+        let d: Vec<u8> = if rng.below(2) == 0 {
+            digest.clone()
+        } else {
+            rng.bytes(32)
+        };
         let d: [u8; 32] = d.try_into().unwrap();
         let s = &sig[..sig.len() - rng.below(3) as usize];
         let h = c3_verify::rekor::entry_leaf_hash(&d, s, cert);
-        writeln!(out, "rekor {} {} {} | {}", hex(&d), hex(s), hex(cert), hex(&h)).unwrap();
+        writeln!(
+            out,
+            "rekor {} {} {} | {}",
+            hex(&d),
+            hex(s),
+            hex(cert),
+            hex(&h)
+        )
+        .unwrap();
     }
 }

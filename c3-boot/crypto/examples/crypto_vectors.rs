@@ -118,7 +118,13 @@ fn main() {
     for _ in 0..CASES {
         let n = rng.below(300) as usize;
         let msg = rng.bytes(n);
-        writeln!(out, "sha384 {} | {}", hex(&msg), hex(&c3_crypto::sha384(&msg))).unwrap();
+        writeln!(
+            out,
+            "sha384 {} | {}",
+            hex(&msg),
+            hex(&c3_crypto::sha384(&msg))
+        )
+        .unwrap();
     }
 
     let mut done = 0;
@@ -141,7 +147,16 @@ fn main() {
             &r[..].try_into().unwrap(),
             &s[..].try_into().unwrap(),
         );
-        writeln!(out, "p256 {} {} {} {} | {}", hex(pt), hex(d), hex(r), hex(s), u8::from(ok)).unwrap();
+        writeln!(
+            out,
+            "p256 {} {} {} {} | {}",
+            hex(pt),
+            hex(d),
+            hex(r),
+            hex(s),
+            u8::from(ok)
+        )
+        .unwrap();
         done += 1;
     }
 
@@ -165,7 +180,16 @@ fn main() {
             &r[..].try_into().unwrap(),
             &s[..].try_into().unwrap(),
         );
-        writeln!(out, "p384 {} {} {} {} | {}", hex(pt), hex(d), hex(r), hex(s), u8::from(ok)).unwrap();
+        writeln!(
+            out,
+            "p384 {} {} {} {} | {}",
+            hex(pt),
+            hex(d),
+            hex(r),
+            hex(s),
+            u8::from(ok)
+        )
+        .unwrap();
         done += 1;
     }
 
@@ -206,6 +230,14 @@ fn main() {
             &msg,
             &sig[..].try_into().unwrap(),
         );
-        writeln!(out, "ed25519 {} {} {} | {}", hex(&key), hex(&msg), hex(&sig), u8::from(ok)).unwrap();
+        writeln!(
+            out,
+            "ed25519 {} {} {} | {}",
+            hex(&key),
+            hex(&msg),
+            hex(&sig),
+            u8::from(ok)
+        )
+        .unwrap();
     }
 }

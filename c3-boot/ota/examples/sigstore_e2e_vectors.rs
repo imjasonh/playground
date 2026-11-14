@@ -87,7 +87,13 @@ fn policy() -> [String; 5] {
 
 fn root_token(root: &TrustRoot<'_>) -> String {
     let entry = |name: &[u8], key: &[u8], w: c3_verify::trustroot::Window| {
-        format!("{}.{}.{}.{}", hex(name), hex(key), w.not_before, w.not_after)
+        format!(
+            "{}.{}.{}.{}",
+            hex(name),
+            hex(key),
+            w.not_before,
+            w.not_after
+        )
     };
     let fulcio: Vec<String> = root
         .fulcio()
@@ -102,12 +108,24 @@ fn root_token(root: &TrustRoot<'_>) -> String {
         .map(|t| entry(t.signer_id, t.public_key, t.window))
         .collect();
     let p = &root.policy;
-    let policy = [p.issuer, p.build_signer_uri, p.repository_id, p.owner_id, p.trigger]
-        .iter()
-        .map(|s| hex(s))
-        .collect::<Vec<_>>()
-        .join(".");
-    format!("{}/{}/{}/{}", fulcio.join(";"), logs.join(";"), tsas.join(";"), policy)
+    let policy = [
+        p.issuer,
+        p.build_signer_uri,
+        p.repository_id,
+        p.owner_id,
+        p.trigger,
+    ]
+    .iter()
+    .map(|s| hex(s))
+    .collect::<Vec<_>>()
+    .join(".");
+    format!(
+        "{}/{}/{}/{}",
+        fulcio.join(";"),
+        logs.join(";"),
+        tsas.join(";"),
+        policy
+    )
 }
 
 /// A mutation of a checkpoint note: a changed, inserted, or removed byte,
@@ -126,7 +144,12 @@ fn mutate(rng: &mut Rng, text: &[u8]) -> Vec<u8> {
         }
         2 => {
             let i = rng.below(lines.len() as u64) as usize;
-            v = lines.iter().take(i + 1).chain(lines.iter().skip(i)).flat_map(|l| l.iter().copied()).collect();
+            v = lines
+                .iter()
+                .take(i + 1)
+                .chain(lines.iter().skip(i))
+                .flat_map(|l| l.iter().copied())
+                .collect();
         }
         3 => {
             let i = rng.below(lines.len() as u64) as usize;
@@ -197,8 +220,15 @@ fn leaf_lines(out: &mut impl Write, rng: &mut Rng, cert: &[u8], root: &TrustRoot
                     .or_else(|| root.fulcio().next())
                     .unwrap();
                 let ok = c3_verify::x509::verify_leaf(&l, f).is_ok();
-                writeln!(out, "leafsig {} {} {} | {}", hex(&c), hex(f.subject), hex(f.public_key), u8::from(ok))
-                    .unwrap();
+                writeln!(
+                    out,
+                    "leafsig {} {} {} | {}",
+                    hex(&c),
+                    hex(f.subject),
+                    hex(f.public_key),
+                    u8::from(ok)
+                )
+                .unwrap();
                 leaf_fields(&l)
             }
             Ok(l) => leaf_fields(&l),
@@ -312,7 +342,10 @@ fn main() {
     let k1 = read_signing_key(&format!("{DATA}/keys/genesis-dev-1.seed")).unwrap();
     let k2 = read_signing_key(&format!("{DATA}/keys/genesis-dev-2.seed")).unwrap();
     let base = Path::new(DATA).join("conformance");
-    let mut dirs: Vec<_> = fs::read_dir(&base).unwrap().map(|e| e.unwrap().path()).collect();
+    let mut dirs: Vec<_> = fs::read_dir(&base)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
     dirs.sort();
     for dir in dirs.iter().filter(|d| d.is_dir()) {
         let bundle_json = fs::read_to_string(dir.join("bundle.sigstore.json")).unwrap();
@@ -328,18 +361,32 @@ fn main() {
         let bundle = c3_verify::bundle::parse(&container).unwrap();
         let token = root_token(&root);
         leaf_lines(&mut out, &mut rng, bundle.leaf_certificate, &root);
-        tsr_lines(&mut out, &mut rng, bundle.timestamp, bundle.image_signature, &root);
+        tsr_lines(
+            &mut out,
+            &mut rng,
+            bundle.timestamp,
+            bundle.image_signature,
+            &root,
+        );
         let digest = c3_crypto::sha256(&fs::read(base.join("a.txt")).unwrap());
-        let verify_line = |out: &mut BufWriter<_>, container: &[u8], root: &TrustRoot<'_>, d: &[u8; 32]| {
-            let r = match c3_verify::bundle::parse(container) {
-                Ok(b) => match c3_verify::sigstore::verify(&b, root, d) {
-                    Ok(v) => format!("ok {} {}", v.signed_time, v.log_index),
+        let verify_line =
+            |out: &mut BufWriter<_>, container: &[u8], root: &TrustRoot<'_>, d: &[u8; 32]| {
+                let r = match c3_verify::bundle::parse(container) {
+                    Ok(b) => match c3_verify::sigstore::verify(&b, root, d) {
+                        Ok(v) => format!("ok {} {}", v.signed_time, v.log_index),
+                        Err(_) => "err".to_string(),
+                    },
                     Err(_) => "err".to_string(),
-                },
-                Err(_) => "err".to_string(),
+                };
+                writeln!(
+                    out,
+                    "verify {} {} {} | {r}",
+                    hex(container),
+                    root_token(root),
+                    hex(d)
+                )
+                .unwrap();
             };
-            writeln!(out, "verify {} {} {} | {r}", hex(container), root_token(root), hex(d)).unwrap();
-        };
         verify_line(&mut out, &container, &root, &digest);
         for _ in 0..VERIFY_MUTATIONS {
             match rng.below(4) {
@@ -348,7 +395,9 @@ fn main() {
                     let field: Vec<u8> = match i {
                         0 => mutate_der(&mut rng, bundle.leaf_certificate),
                         1 => mutate_der(&mut rng, bundle.image_signature),
-                        2 => (bundle.log_index ^ (1 << rng.below(4))).to_le_bytes().to_vec(),
+                        2 => (bundle.log_index ^ (1 << rng.below(4)))
+                            .to_le_bytes()
+                            .to_vec(),
                         3 => {
                             let mut p = bundle.inclusion_proof.to_vec();
                             if !p.is_empty() {
