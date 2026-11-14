@@ -412,10 +412,15 @@ case "\$*" in
     ;;
 esac
 if [ "\$2" = "plan" ]; then
+  dir=\${1#-chdir=}
+  [ -f "\$dir/../apko.yaml" ] && echo "plan sees ../apko.yaml"
+  [ -f "\$dir/cloud-init.yaml.tftpl" ] && echo "plan sees cloud-init.yaml.tftpl"
   echo "Plan: 1 to add, 0 to change, 0 to destroy."
 fi
 EOF
 chmod +x "$tmp/bin/tofu"
+: >"$tmp/example-app/apko.yaml"
+: >"$tmp/example-app/terraform/cloud-init.yaml.tftpl"
 : >"$log"
 missing=$(
   PATH="$tmp/bin:$PATH" \
@@ -433,6 +438,11 @@ missing_calls=$(cat "$log")
 assert_contains "$missing" "empty local backend" "missing state plans without the gcs backend"
 assert_contains "$missing" "Plan: 1 to add, 0 to change, 0 to destroy." "missing state still prints a plan"
 assert_contains "$missing_calls" "init -input=false" "retries init without a gcs backend"
+assert_contains "$missing" "plan sees ../apko.yaml" "missing-state plan resolves paths outside the module"
+assert_contains "$missing" "plan sees cloud-init.yaml.tftpl" "missing-state plan copies files other than .tf"
+if compgen -G "$tmp/example-app/.tofu-plan.*" >/dev/null; then
+  fail "missing-state plan left its copy of the module behind"
+fi
 if grep -E "^tofu -chdir=${tmp}/example-app/terraform plan " <<<"$missing_calls"; then
   fail "missing-state plan used the gcs module directory"
   echo "$missing_calls" >&2

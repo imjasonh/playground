@@ -206,7 +206,9 @@ gcs_init=(
 # init -backend=false does not stick: the next plan sees backend "gcs" in
 # the configuration and refuses to run. Plan from a copy with that block
 # removed, so OpenTofu uses an empty local backend and writes nothing to
-# the state bucket.
+# the state bucket. The copy holds every file in the module and sits
+# beside it, so file(), templatefile(), and abspath() calls relative to
+# path.module, such as "${path.module}/../apko.yaml", find the same files.
 plan_dir=$tfdir
 plan_without_state() {
   local log copy
@@ -225,8 +227,9 @@ plan_without_state() {
   # init saved the GCS backend before the lock write failed. Drop that,
   # or a later command in this directory loads it again.
   rm -rf "${tfdir}/.terraform"
-  copy=$(mktemp -d)
-  cp "${tfdir}/"*.tf "$copy/"
+  copy=$(mktemp -d "$(dirname "$tfdir")/.tofu-plan.XXXXXX")
+  trap "rm -rf '${copy}'" EXIT
+  cp -R "${tfdir}/." "$copy/"
   python3 - "$copy" <<'PY'
 import pathlib, sys
 
