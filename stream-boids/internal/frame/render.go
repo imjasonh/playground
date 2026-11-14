@@ -80,7 +80,6 @@ type Renderer struct {
 	big, small, label *typeface
 
 	// Per-frame scratch space.
-	bandH      int
 	bands      int
 	bandOf     []int32
 	color      []uint8
@@ -91,16 +90,25 @@ type Renderer struct {
 }
 
 // sprite is an overlay drawn on the output frame after the trail is
-// copied, so it leaves no trail. A sprite with a nil mask dims its
-// rectangle instead.
+// copied, so it leaves no trail.
 type sprite struct {
+	kind spriteKind
+	// mask is the glyph mask, with its top left corner at at. r is the
+	// part of the sprite inside the frame.
 	mask *image.Alpha
-	// at is the mask's top left corner and r is the part of the sprite
-	// inside the frame.
-	at  image.Point
-	r   image.Rectangle
-	ink YUV
+	at   image.Point
+	r    image.Rectangle
+	ink  YUV
 }
+
+// spriteKind is how a sprite draws over its rectangle.
+type spriteKind uint8
+
+const (
+	shade spriteKind = iota // darkens and desaturates
+	paint                   // paints ink
+	glyph                   // blends ink through mask
+)
 
 // NewRenderer returns a renderer for w by h frames that uses workers
 // goroutines.
@@ -137,8 +145,7 @@ func NewRenderer(w, h, workers int) (*Renderer, error) {
 	// The band height doesn't depend on the number of workers, so neither
 	// does the order overlapping boids are drawn in. At 1080p this gives 45
 	// bands, enough to balance the bands under a dense clump.
-	r.bandH = bandHeight
-	r.bands = (h + r.bandH - 1) / r.bandH
+	r.bands = (h + bandHeight - 1) / bandHeight
 	r.bandStart = make([]int32, r.bands+1)
 	r.spriteBand = make([][]int32, r.bands)
 	return r, nil
@@ -189,7 +196,7 @@ func (r *Renderer) bucket(fl *flock.Flock, shift uint8) {
 	r.bandOrder = grow(r.bandOrder, n)
 	par.For(n, r.workers, func(lo, hi int) {
 		for i := lo; i < hi; i++ {
-			r.bandOf[i] = int32(min(int(fl.Y[i])/r.bandH, r.bands-1))
+			r.bandOf[i] = int32(min(int(fl.Y[i])/bandHeight, r.bands-1))
 			a := math.Atan2(float64(fl.VY[i]), float64(fl.VX[i]))
 			r.color[i] = uint8(int((a/(2*math.Pi)+1)*256)) + shift
 		}
@@ -262,13 +269,10 @@ func (r *Renderer) buildSprites(sc *Scene, size int) {
 		if bn.Tier > 0 {
 			ink = TierColor(bn.Tier)
 		}
-		r.add(sprite{r: image.Rect(bx, by+bh-bar, bx+bw, by+bh), mask: solid, ink: ink})
+		r.add(sprite{kind: paint, r: image.Rect(bx, by+bh-bar, bx+bw, by+bh), ink: ink})
 		r.text(m, bx+pad, by+pad, ink)
 	}
 }
-
-// solid marks a sprite that fills its rectangle with its ink.
-var solid = image.NewAlpha(image.Rect(0, 0, 1, 1))
 
 func plural(n int, one, many string) string {
 	if n == 1 {
@@ -283,8 +287,8 @@ func (r *Renderer) text(m *image.Alpha, x, y int, ink YUV) {
 	}
 	off := max(int(math.Round(2*r.scale)), 1)
 	for _, sp := range []sprite{
-		{mask: m, at: image.Pt(x+off, y+off), ink: shadowInk},
-		{mask: m, at: image.Pt(x, y), ink: ink},
+		{kind: glyph, mask: m, at: image.Pt(x+off, y+off), ink: shadowInk},
+		{kind: glyph, mask: m, at: image.Pt(x, y), ink: ink},
 	} {
 		sp.r = m.Rect.Add(sp.at)
 		r.add(sp)
@@ -292,7 +296,7 @@ func (r *Renderer) text(m *image.Alpha, x, y int, ink YUV) {
 }
 
 func (r *Renderer) dim(rect image.Rectangle) {
-	r.add(sprite{r: rect})
+	r.add(sprite{kind: shade, r: rect})
 }
 
 func (r *Renderer) add(sp sprite) {
@@ -302,7 +306,7 @@ func (r *Renderer) add(sp sprite) {
 	}
 	idx := int32(len(r.sprites))
 	r.sprites = append(r.sprites, sp)
-	for b := sp.r.Min.Y / r.bandH; b <= (sp.r.Max.Y-1)/r.bandH && b < r.bands; b++ {
+	for b := sp.r.Min.Y / bandHeight; b <= (sp.r.Max.Y-1)/bandHeight && b < r.bands; b++ {
 		r.spriteBand[b] = append(r.spriteBand[b], idx)
 	}
 }
@@ -311,15 +315,15 @@ func (r *Renderer) add(sp sprite) {
 // them, copies the rows to out, and draws the band's part of each sprite.
 func (r *Renderer) drawBand(b int, fl *flock.Flock, members, size int, out *Frame) {
 	w, cw := r.w, r.w/2
-	y0 := b * r.bandH
-	y1 := min(y0+r.bandH, r.h)
+	y0 := b * bandHeight
+	y1 := min(y0+bandHeight, r.h)
 	t, bg := r.trail, r.bg
 	fade(t.Y[y0*w:y1*w], bg.Y[y0*w:y1*w])
 	fade(t.U[y0/2*cw:y1/2*cw], bg.U[y0/2*cw:y1/2*cw])
 	fade(t.V[y0/2*cw:y1/2*cw], bg.V[y0/2*cw:y1/2*cw])
 
 	// A boid can reach into the bands next to its own.
-	reach := (size + r.bandH - 1) / r.bandH
+	reach := (size + bandHeight - 1) / bandHeight
 	for nb := max(b-reach, 0); nb <= min(b+reach, r.bands-1); nb++ {
 		for k := r.bandStart[nb]; k < r.bandStart[nb+1]; k++ {
 			if i := r.bandOrder[k]; int(i) >= members {
@@ -377,7 +381,8 @@ func (r *Renderer) blit(sp *sprite, out *Frame, y0, y1 int) {
 	ya, yb := max(sp.r.Min.Y, y0), min(sp.r.Max.Y, y1)
 	xa, xb := sp.r.Min.X, sp.r.Max.X
 	w, cw := r.w, r.w/2
-	if sp.mask == nil {
+	switch sp.kind {
+	case shade:
 		for y := ya; y < yb; y++ {
 			row := out.Y[y*w:]
 			for x := xa; x < xb; x++ {
@@ -391,9 +396,7 @@ func (r *Renderer) blit(sp *sprite, out *Frame, y0, y1 int) {
 				}
 			}
 		}
-		return
-	}
-	if sp.mask == solid {
+	case paint:
 		for y := ya; y < yb; y++ {
 			row := out.Y[y*w:]
 			for x := xa; x < xb; x++ {
@@ -406,25 +409,27 @@ func (r *Renderer) blit(sp *sprite, out *Frame, y0, y1 int) {
 				}
 			}
 		}
-		return
-	}
-	m := sp.mask
-	ox, oy := sp.at.X, sp.at.Y
-	for y := ya; y < yb; y++ {
-		row := out.Y[y*w:]
-		mrow := m.Pix[(y-oy)*m.Stride:]
-		for x := xa; x < xb; x++ {
-			a := int(mrow[x-ox])
-			if a == 0 {
-				continue
-			}
-			row[x] = byte(int(row[x]) + (int(sp.ink.Y)-int(row[x]))*a/255)
-			if x%2 == 0 && y%2 == 0 {
-				u, v := &out.U[y/2*cw+x/2], &out.V[y/2*cw+x/2]
-				*u = byte(int(*u) + (int(sp.ink.U)-int(*u))*a/255)
-				*v = byte(int(*v) + (int(sp.ink.V)-int(*v))*a/255)
+	case glyph:
+		m := sp.mask
+		ox, oy := sp.at.X, sp.at.Y
+		for y := ya; y < yb; y++ {
+			row := out.Y[y*w:]
+			mrow := m.Pix[(y-oy)*m.Stride:]
+			for x := xa; x < xb; x++ {
+				a := int(mrow[x-ox])
+				if a == 0 {
+					continue
+				}
+				row[x] = byte(int(row[x]) + (int(sp.ink.Y)-int(row[x]))*a/255)
+				if x%2 == 0 && y%2 == 0 {
+					u, v := &out.U[y/2*cw+x/2], &out.V[y/2*cw+x/2]
+					*u = byte(int(*u) + (int(sp.ink.U)-int(*u))*a/255)
+					*v = byte(int(*v) + (int(sp.ink.V)-int(*v))*a/255)
+				}
 			}
 		}
+	default:
+		panic(fmt.Sprintf("unknown sprite kind %d", sp.kind))
 	}
 }
 
