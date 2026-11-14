@@ -17,7 +17,6 @@ import (
 	"context"
 	"database/sql"
 	"embed"
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -29,57 +28,77 @@ import (
 	"github.com/imjasonh/playground/gitdb/internal/gitrepo"
 	"github.com/imjasonh/playground/gitdb/internal/tables"
 	whbiab "github.com/imjasonh/playground/wehadababyitsaboy/go"
+	"github.com/spf13/cobra"
 )
 
 //go:embed queries/*.sql
 var exampleFS embed.FS
 
 func main() {
-	if err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
+	if err := whbiab.Execute(context.Background(), newRootCmd(os.Stdin, os.Stdout, os.Stderr)); err != nil {
 		log.Fatal("gitdb:", err)
 	}
 }
 
-func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) error {
-	fs := flag.NewFlagSet("gitdb", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	var (
-		query        = fs.String("query", "", "SQL to run (alias: -q)")
-		queryShort   = fs.String("q", "", "SQL to run")
-		file         = fs.String("file", "", "read SQL from a file (- for stdin)")
-		example      = fs.String("example", "", "run a built-in example query by name")
-		listExamples = fs.Bool("list-examples", false, "list the built-in example queries and exit")
-		format       = fs.String("format", "table", "output format: table, csv, tsv, json, md")
-		cacheDir     = fs.String("cache", "", "cache directory for cloned repos (default: <user cache>/gitdb)")
-		offline      = fs.Bool("offline", false, "never hit the network; require a cached clone")
-		update       = fs.Bool("update", false, "fetch new commits for a cached repo before querying")
-		noRenames    = fs.Bool("no-renames", false, "disable rename detection in commit_files (much faster on large repos)")
-		renameLimit  = fs.Uint("rename-limit", 0, "cap files compared for rename detection per commit (0 = default 200)")
-		schema       = fs.Bool("schema", false, "print the schema of every table and exit")
-		maxWidth     = fs.Int("max-width", 60, "truncate table cells to this width (0 = unlimited)")
-		quiet        = fs.Bool("quiet", false, "suppress clone/fetch progress output")
-	)
-	fs.Usage = func() {
-		fmt.Fprintf(stderr, "usage: gitdb [flags] [repo] [sql]\n\n"+
-			"repo is a local path, clone URL, or owner/repo (default \".\").\n"+
-			"With no SQL, gitdb opens an interactive prompt.\n\nflags:\n")
-		fs.PrintDefaults()
-	}
-	if err := fs.Parse(argv); err != nil {
-		return err
-	}
-	defer whbiab.Track(context.Background(), "gitdb", whbiab.Flags(fs)...)()
+// options holds the flags of the gitdb command.
+type options struct {
+	query        string
+	file         string
+	example      string
+	listExamples bool
+	format       string
+	cacheDir     string
+	offline      bool
+	update       bool
+	noRenames    bool
+	renameLimit  uint
+	schema       bool
+	maxWidth     int
+	quiet        bool
+}
 
-	if *listExamples {
+func newRootCmd(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
+	var o options
+	cmd := &cobra.Command{
+		Use:   "gitdb [flags] [repo] [sql]",
+		Short: "Query a git repository with SQL",
+		Long: "repo is a local path, clone URL, or owner/repo (default \".\").\n" +
+			"With no SQL, gitdb opens an interactive prompt.",
+		Args:          cobra.ArbitraryArgs,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return run(&o, args, stdin, stdout, stderr)
+		},
+	}
+	cmd.SetOut(stderr)
+	cmd.SetErr(stderr)
+	f := cmd.Flags()
+	f.StringVarP(&o.query, "query", "q", "", "SQL to run")
+	f.StringVar(&o.file, "file", "", "read SQL from a file (- for stdin)")
+	f.StringVar(&o.example, "example", "", "run a built-in example query by name")
+	f.BoolVar(&o.listExamples, "list-examples", false, "list the built-in example queries and exit")
+	f.StringVar(&o.format, "format", "table", "output format: table, csv, tsv, json, md")
+	f.StringVar(&o.cacheDir, "cache", "", "cache directory for cloned repos (default: <user cache>/gitdb)")
+	f.BoolVar(&o.offline, "offline", false, "never hit the network; require a cached clone")
+	f.BoolVar(&o.update, "update", false, "fetch new commits for a cached repo before querying")
+	f.BoolVar(&o.noRenames, "no-renames", false, "disable rename detection in commit_files (much faster on large repos)")
+	f.UintVar(&o.renameLimit, "rename-limit", 0, "cap files compared for rename detection per commit (0 = default 200)")
+	f.BoolVar(&o.schema, "schema", false, "print the schema of every table and exit")
+	f.IntVar(&o.maxWidth, "max-width", 60, "truncate table cells to this width (0 = unlimited)")
+	f.BoolVar(&o.quiet, "quiet", false, "suppress clone/fetch progress output")
+	return cmd
+}
+
+func run(o *options, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	if o.listExamples {
 		return printExampleList(stdout)
 	}
-	if *schema {
+	if o.schema {
 		return printSchemas(stdout)
 	}
 
-	q := firstNonEmpty(*query, *queryShort)
-
-	args := fs.Args()
+	q := o.query
 	repo := "."
 	if len(args) >= 1 {
 		repo = args[0]
@@ -88,14 +107,14 @@ func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		q = strings.Join(args[1:], " ")
 	}
 
-	if *example != "" {
-		body, err := loadExample(*example)
+	if o.example != "" {
+		body, err := loadExample(o.example)
 		if err != nil {
 			return err
 		}
 		q = body
-	} else if *file != "" {
-		body, err := readFile(*file, stdin)
+	} else if o.file != "" {
+		body, err := readFile(o.file, stdin)
 		if err != nil {
 			return err
 		}
@@ -103,16 +122,16 @@ func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	}
 
 	var progress io.Writer
-	if !*quiet {
+	if !o.quiet {
 		progress = stderr
 	}
 	mgr, err := gitrepo.NewManager(gitrepo.Options{
-		CacheDir:       *cacheDir,
-		Offline:        *offline,
-		Update:         *update,
+		CacheDir:       o.cacheDir,
+		Offline:        o.offline,
+		Update:         o.update,
 		Progress:       progress,
-		DisableRenames: *noRenames,
-		RenameLimit:    *renameLimit,
+		DisableRenames: o.noRenames,
+		RenameLimit:    o.renameLimit,
 	})
 	if err != nil {
 		return err
@@ -133,9 +152,9 @@ func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	printer := &printer{format: *format, maxWidth: *maxWidth}
+	printer := &printer{format: o.format, maxWidth: o.maxWidth}
 
-	// Non-interactive: query came from -q/-file/-example/positional or piped stdin.
+	// Non-interactive: query came from -q/--file/--example/positional or piped stdin.
 	if q == "" && !isTerminal(stdin) {
 		body, err := io.ReadAll(stdin)
 		if err != nil {
@@ -148,15 +167,6 @@ func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	}
 
 	return repl(db, repo, mgr, printer, stdin, stdout, stderr)
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 func readFile(name string, stdin io.Reader) (string, error) {

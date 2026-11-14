@@ -7,12 +7,13 @@ package main
 
 import (
 	"context"
-	"flag"
+	"fmt"
 	"log"
 	"math/rand/v2"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/spf13/cobra"
 
 	"github.com/imjasonh/playground/liquid/internal/render"
 	"github.com/imjasonh/playground/liquid/internal/sim"
@@ -21,30 +22,55 @@ import (
 )
 
 func main() {
-	var sceneNames, modeNames []string
+	if err := whbiab.Execute(context.Background(), newRoot()); err != nil {
+		log.Fatal("liquid:", err)
+	}
+}
+
+func newRoot() *cobra.Command {
+	var sceneNames, modeNames, themeNames []string
 	for _, s := range sim.Scenes {
 		sceneNames = append(sceneNames, s.Short())
 	}
 	for _, m := range render.Modes {
 		modeNames = append(modeNames, m.String())
 	}
-	var themeNames []string
 	for _, t := range render.Themes {
 		themeNames = append(themeNames, t.Name)
 	}
 
-	sceneFlag := flag.String("scene", "dam", "starting scene: "+strings.Join(sceneNames, ", "))
-	themeFlag := flag.String("theme", render.Themes[0].Name, "color theme: "+strings.Join(themeNames, ", "))
-	viewFlag := flag.String("view", render.ModeLiquid.String(), "how to draw the liquid: "+strings.Join(modeNames, ", "))
-	particles := flag.Int("particles", 2200, "about how many particles each scene starts with")
-	fps := flag.Int("fps", 60, "frames per second, from 10 to 120")
-	seed := flag.Uint64("seed", 0, "seed for the random jitter in scenes; 0 picks one at random")
-	flag.Parse()
+	var (
+		sceneFlag = "dam"
+		themeFlag = render.Themes[0].Name
+		viewFlag  = render.ModeLiquid.String()
+		particles = 2200
+		fps       = 60
+		seed      uint64
+	)
+	cmd := &cobra.Command{
+		Use:           "liquid",
+		Short:         "Simulate a tank of liquid in the terminal",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(*cobra.Command, []string) error {
+			return run(sceneFlag, themeFlag, viewFlag, particles, fps, seed, sceneNames, modeNames, themeNames)
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&sceneFlag, "scene", sceneFlag, "starting scene: "+strings.Join(sceneNames, ", "))
+	f.StringVar(&themeFlag, "theme", themeFlag, "color theme: "+strings.Join(themeNames, ", "))
+	f.StringVar(&viewFlag, "view", viewFlag, "how to draw the liquid: "+strings.Join(modeNames, ", "))
+	f.IntVar(&particles, "particles", particles, "about how many particles each scene starts with")
+	f.IntVar(&fps, "fps", fps, "frames per second, from 10 to 120")
+	f.Uint64Var(&seed, "seed", seed, "seed for the random jitter in scenes; 0 picks one at random")
+	return cmd
+}
 
+func run(sceneFlag, themeFlag, viewFlag string, particles, fps int, seed uint64, sceneNames, modeNames, themeNames []string) error {
 	opts := ui.Options{
-		Particles: min(max(*particles, 100), 20000),
-		FPS:       min(max(*fps, 10), 120),
-		Seed:      *seed,
+		Particles: min(max(particles, 100), 20000),
+		FPS:       min(max(fps, 10), 120),
+		Seed:      seed,
 	}
 	if opts.Seed == 0 {
 		opts.Seed = rand.Uint64()
@@ -52,36 +78,28 @@ func main() {
 
 	found := false
 	for _, s := range sim.Scenes {
-		if s.Short() == *sceneFlag {
+		if s.Short() == sceneFlag {
 			opts.Scene, found = s, true
 		}
 	}
 	if !found {
-		fail("unknown scene %q; want one of %s", *sceneFlag, strings.Join(sceneNames, ", "))
+		return fmt.Errorf("unknown scene %q; want one of %s", sceneFlag, strings.Join(sceneNames, ", "))
 	}
-	if opts.Theme = render.ThemeNamed(*themeFlag); opts.Theme == nil {
-		fail("unknown theme %q; want one of %s", *themeFlag, strings.Join(themeNames, ", "))
+	if opts.Theme = render.ThemeNamed(themeFlag); opts.Theme == nil {
+		return fmt.Errorf("unknown theme %q; want one of %s", themeFlag, strings.Join(themeNames, ", "))
 	}
 	found = false
 	for _, m := range render.Modes {
-		if m.String() == *viewFlag {
+		if m.String() == viewFlag {
 			opts.Mode, found = m, true
 		}
 	}
 	if !found {
-		fail("unknown view %q; want one of %s", *viewFlag, strings.Join(modeNames, ", "))
+		return fmt.Errorf("unknown view %q; want one of %s", viewFlag, strings.Join(modeNames, ", "))
 	}
 
-	wait := whbiab.Track(context.Background(), "liquid", whbiab.Flags(flag.CommandLine)...)
 	m := ui.New(opts)
 	defer m.Close()
 	_, err := tea.NewProgram(m, tea.WithFPS(opts.FPS)).Run()
-	wait()
-	if err != nil {
-		fail("%v", err)
-	}
-}
-
-func fail(format string, args ...any) {
-	log.Fatalf("liquid: "+format, args...)
+	return err
 }

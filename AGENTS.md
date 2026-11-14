@@ -856,15 +856,17 @@ bundle exec fastlane test
 - **Go usage tracking**: every Go command-line program that people run by hand
   records its use with
   [`wehadababyitsaboy/go`](wehadababyitsaboy/go/README.md) (package `whbiab`).
-  When you add a Go CLI or a subcommand, add the module with `go mod edit
-  -require=... -replace=...` as that README shows, and call
-  `defer whbiab.Track(ctx, "<program>", <subcommand and whbiab.Flags(fs)...>)()`
-  right after the program parses its flags. Pass only the subcommand and flag
-  names. Never pass a flag value, a positional argument, a path, or anything
-  else from the user. Call the function that `Track` returns before `os.Exit` or
-  `log.Fatal`. Skip servers, in-cluster controllers, and a CLI whose README tells
-  people to run `go install ...@latest`, because `go install` rejects a module
-  with a `replace` directive. A test binary sends nothing, so tests need no setup.
+  Go CLIs in this repo use [cobra](https://github.com/spf13/cobra). When you
+  add a Go CLI or a subcommand, add the module with `go mod edit -require=...
+  -replace=...` as that README shows, build the program as a cobra command, and
+  run it with `whbiab.Execute(ctx, root)`. `Execute` sends the root command's
+  name, the subcommands under it, and the names of the flags the user set. It
+  never sends a flag value, a positional argument, a path, or anything else
+  from the user. Call `os.Exit` and `log.Fatal` only after `Execute` returns,
+  because either one skips the wait. Skip servers, in-cluster controllers, and
+  a CLI whose README tells people to run `go install ...@latest`, because `go
+  install` rejects a module with a `replace` directive. A test binary sends
+  nothing, so tests need no setup.
 - **Rust apps are independent crates**: each app owns its `Cargo.toml`, `Cargo.lock`, and `rust-toolchain.toml`; avoid cross-app imports. Each crate sets `[lints.rust] unused = "deny"` so unused methods, imports, and variables fail `cargo test` / `cargo build` (CI clippy also uses `-D warnings`, which includes rustc `dead_code` and clippy unused-* lints). Do not `#[allow(dead_code)]` to keep dead methods.
 - **There is one iOS host app** (`ios/`, the "Playground" container): add
   features as **experiments** inside it (same Bundle ID, no re-bootstrap). A

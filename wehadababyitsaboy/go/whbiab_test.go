@@ -2,7 +2,7 @@ package whbiab
 
 import (
 	"context"
-	"flag"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 type recorder struct {
@@ -47,7 +49,7 @@ func newServer(t *testing.T) *recorder {
 func TestTrackSendsPing(t *testing.T) {
 	rec := newServer(t)
 
-	wait := Track(t.Context(), "My CLI", "Query", "format", "max_width", "a/b")
+	wait := track(t.Context(), "My CLI", "Query", "format", "max_width", "a/b")
 	wait()
 
 	reqs := rec.requests()
@@ -78,7 +80,7 @@ func TestTrackSendsPing(t *testing.T) {
 func TestTrackWithoutParts(t *testing.T) {
 	rec := newServer(t)
 
-	Track(t.Context(), "tool")()
+	track(t.Context(), "tool")()
 
 	reqs := rec.requests()
 	if len(reqs) != 1 {
@@ -93,7 +95,7 @@ func TestTrackMarksCI(t *testing.T) {
 	rec := newServer(t)
 	t.Setenv("CI", "true")
 
-	Track(t.Context(), "tool")()
+	track(t.Context(), "tool")()
 
 	reqs := rec.requests()
 	if len(reqs) != 1 {
@@ -119,7 +121,7 @@ func TestTrackOptOut(t *testing.T) {
 			rec := newServer(t)
 			t.Setenv(tc.key, tc.value)
 
-			Track(t.Context(), "tool", "query")()
+			track(t.Context(), "tool", "query")()
 
 			if got := len(rec.requests()); got != tc.want {
 				t.Errorf("got %d requests, want %d", got, tc.want)
@@ -131,7 +133,7 @@ func TestTrackOptOut(t *testing.T) {
 func TestTrackSkipsEmptyClient(t *testing.T) {
 	rec := newServer(t)
 
-	Track(t.Context(), " // ", "query")()
+	track(t.Context(), " // ", "query")()
 
 	if got := len(rec.requests()); got != 0 {
 		t.Errorf("got %d requests, want 0", got)
@@ -146,7 +148,7 @@ func TestTrackUnreachable(t *testing.T) {
 	t.Setenv("DO_NOT_TRACK", "")
 	t.Setenv("WHBIAB_DISABLE", "")
 
-	Track(t.Context(), "tool")()
+	track(t.Context(), "tool")()
 }
 
 func TestTrackTimesOut(t *testing.T) {
@@ -165,7 +167,7 @@ func TestTrackTimesOut(t *testing.T) {
 	t.Cleanup(func() { requestTimeout = old })
 
 	start := time.Now()
-	Track(t.Context(), "tool")()
+	track(t.Context(), "tool")()
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Errorf("wait took %v, want it bounded by the timeout", elapsed)
 	}
@@ -176,39 +178,10 @@ func TestTrackStopsWhenContextEnds(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	Track(ctx, "tool")()
+	track(ctx, "tool")()
 
 	if got := len(rec.requests()); got != 0 {
 		t.Errorf("got %d requests with a canceled context, want 0", got)
-	}
-}
-
-func TestFlags(t *testing.T) {
-	fs := flag.NewFlagSet("tool", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	fs.String("query", "", "")
-	fs.Bool("offline", false, "")
-	fs.Int("width", 60, "")
-	if err := fs.Parse([]string{"-width=80", "-query", "SELECT secret", "-offline", "positional"}); err != nil {
-		t.Fatal(err)
-	}
-
-	got := Flags(fs)
-
-	if want := []string{"offline", "query", "width"}; !slices.Equal(got, want) {
-		t.Errorf("Flags = %v, want %v", got, want)
-	}
-}
-
-func TestFlagsUnset(t *testing.T) {
-	fs := flag.NewFlagSet("tool", flag.ContinueOnError)
-	fs.String("query", "", "")
-	if err := fs.Parse(nil); err != nil {
-		t.Fatal(err)
-	}
-
-	if got := Flags(fs); len(got) != 0 {
-		t.Errorf("Flags = %v, want none", got)
 	}
 }
 
@@ -272,7 +245,7 @@ func TestTrackSkipsInTestBinaryWithoutEndpoint(t *testing.T) {
 	http.DefaultTransport = transport
 	t.Cleanup(func() { http.DefaultTransport = old })
 
-	Track(t.Context(), "tool")()
+	track(t.Context(), "tool")()
 
 	if transport.calls != 0 {
 		t.Errorf("sent %d requests to the default endpoint from a test binary, want 0", transport.calls)
@@ -286,5 +259,157 @@ func TestPingURLDefaultEndpoint(t *testing.T) {
 	}
 	if want := defaultEndpoint + "/tool/query?bob=wehadababyitsaboy&"; !strings.HasPrefix(target, want) {
 		t.Errorf("target = %q, want prefix %q", target, want)
+	}
+}
+
+// newRoot returns a program with a persistent flag, a subcommand with its own
+// persistent pre-run hook, and a command that fails.
+func newRoot(t *testing.T, ran *[]string) *cobra.Command {
+	t.Helper()
+	root := &cobra.Command{
+		Use:           "tool",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		PersistentPreRun: func(*cobra.Command, []string) {
+			*ran = append(*ran, "root pre-run")
+		},
+	}
+	root.PersistentFlags().Bool("verbose", false, "")
+	root.SetOut(io.Discard)
+	root.SetErr(io.Discard)
+
+	query := &cobra.Command{
+		Use:  "query",
+		Args: cobra.ArbitraryArgs,
+		PersistentPreRun: func(*cobra.Command, []string) {
+			*ran = append(*ran, "query pre-run")
+		},
+		Run: func(*cobra.Command, []string) { *ran = append(*ran, "query") },
+	}
+	query.Flags().StringP("format", "f", "table", "")
+	query.Flags().Int("width", 60, "")
+	root.AddCommand(query)
+
+	root.AddCommand(&cobra.Command{
+		Use:  "fail",
+		RunE: func(*cobra.Command, []string) error { return errors.New("boom") },
+	})
+	return root
+}
+
+func executeArgs(t *testing.T, args ...string) (ran []string, err error) {
+	t.Helper()
+	root := newRoot(t, &ran)
+	root.SetArgs(args)
+	err = Execute(t.Context(), root)
+	return ran, err
+}
+
+func TestExecuteSendsSubcommandAndFlagNames(t *testing.T) {
+	rec := newServer(t)
+
+	ran, err := executeArgs(t, "query", "--verbose", "-f", "json", "--width=80", "SELECT secret")
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"root pre-run", "query pre-run", "query"}; !slices.Equal(ran, want) {
+		t.Errorf("ran %v, want %v", ran, want)
+	}
+	reqs := rec.requests()
+	if len(reqs) != 1 {
+		t.Fatalf("got %d requests, want 1", len(reqs))
+	}
+	got := reqs[0].URL.Path
+	if want := "/wehadababyitsaboy/tool/query.format.verbose.width"; got != want {
+		t.Errorf("path = %q, want %q", got, want)
+	}
+	if strings.Contains(reqs[0].URL.String(), "secret") || strings.Contains(reqs[0].URL.String(), "json") {
+		t.Errorf("ping %q carries a value", reqs[0].URL)
+	}
+}
+
+func TestExecuteWithoutFlags(t *testing.T) {
+	rec := newServer(t)
+
+	if _, err := executeArgs(t, "query"); err != nil {
+		t.Fatal(err)
+	}
+
+	reqs := rec.requests()
+	if len(reqs) != 1 || reqs[0].URL.Path != "/wehadababyitsaboy/tool/query" {
+		t.Errorf("requests = %v, want one for tool/query", reqs)
+	}
+}
+
+func TestExecuteReturnsCommandError(t *testing.T) {
+	rec := newServer(t)
+
+	_, err := executeArgs(t, "fail")
+
+	if err == nil || err.Error() != "boom" {
+		t.Errorf("err = %v, want boom", err)
+	}
+	if got := len(rec.requests()); got != 1 {
+		t.Errorf("got %d requests, want 1", got)
+	}
+}
+
+func TestExecuteSendsNothingForHelpAndCompletion(t *testing.T) {
+	rec := newServer(t)
+
+	for _, args := range [][]string{
+		{"query", "--help"},
+		{"help", "query"},
+		{"completion", "bash"},
+		{cobra.ShellCompRequestCmd, "query", ""},
+	} {
+		if _, err := executeArgs(t, args...); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+	}
+
+	if got := len(rec.requests()); got != 0 {
+		t.Errorf("got %d requests, want 0", got)
+	}
+}
+
+func TestExecuteSendsNothingForBadFlag(t *testing.T) {
+	rec := newServer(t)
+
+	if _, err := executeArgs(t, "query", "--nope"); err == nil {
+		t.Error("want an error for an unknown flag")
+	}
+
+	if got := len(rec.requests()); got != 0 {
+		t.Errorf("got %d requests, want 0", got)
+	}
+}
+
+func TestExecuteKeepsRootPersistentPreRunE(t *testing.T) {
+	newServer(t)
+	var ran []string
+	root := newRoot(t, &ran)
+	root.PersistentPreRun = nil
+	root.PersistentPreRunE = func(*cobra.Command, []string) error { return errors.New("stop") }
+	root.SetArgs([]string{"query"})
+
+	err := Execute(t.Context(), root)
+
+	if err == nil || err.Error() != "stop" {
+		t.Errorf("err = %v, want stop", err)
+	}
+}
+
+func TestExecuteHonorsOptOut(t *testing.T) {
+	rec := newServer(t)
+	t.Setenv("DO_NOT_TRACK", "1")
+
+	if _, err := executeArgs(t, "query"); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := len(rec.requests()); got != 0 {
+		t.Errorf("got %d requests, want 0", got)
 	}
 }

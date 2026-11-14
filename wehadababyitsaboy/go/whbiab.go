@@ -11,13 +11,21 @@
 // never carries a flag value or a positional argument, because a value can be a
 // path, a query, or a token.
 //
+// The package works with programs built on [cobra]. Run the root command with
+// [Execute] in place of its own Execute:
+//
+//	func main() {
+//		if err := whbiab.Execute(context.Background(), rootCmd); err != nil {
+//			os.Exit(1)
+//		}
+//	}
+//
 // Set DO_NOT_TRACK=1 or WHBIAB_DISABLE=1 to turn pings off. A test binary sends
 // nothing unless WHBIAB_ENDPOINT names a server, so a CLI's tests need no setup.
 package whbiab
 
 import (
 	"context"
-	"flag"
 	"io"
 	"log/slog"
 	"net/http"
@@ -29,6 +37,8 @@ import (
 	"time"
 
 	"github.com/sethvargo/go-envconfig"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 const (
@@ -71,17 +81,77 @@ func on(v string) bool {
 	return v != "" && v != "0"
 }
 
-// Track sends a ping in the background and returns a function that waits for
-// it. Call wait before the program exits, including before os.Exit and
-// log.Fatal, or the process can end before the request leaves.
+// Execute runs root, as [cobra.Command.ExecuteContext] does, and sends a ping
+// for the command that runs. The ping starts before the command's Run function,
+// after cobra has parsed the flags, and Execute waits for it before it returns.
+// It sends nothing for help, completion, or a command that fails to parse.
 //
-// client is the program name. parts name the subcommand and the flags the user
-// set; see [Flags]. Each is lowercased, and every character outside a-z, 0-9,
-// "-", and "_" becomes "-". Never pass a flag value or a positional argument.
+// CLIENT is the root command's name. ARGS is the names of the subcommands below
+// the root and the names of the flags the user set, including flags that an
+// ancestor declares as persistent. A flag's shorthand and its name count as the
+// same flag.
 //
-// Track never fails the program. A disabled or failed ping is silent, and wait
-// returns within about two seconds.
-func Track(ctx context.Context, client string, parts ...string) (wait func()) {
+// Execute sets [cobra.EnableTraverseRunHooks], so that a PersistentPreRun on a
+// subcommand doesn't replace the one that sends the ping. The root's own
+// PersistentPreRun or PersistentPreRunE still runs, after the ping starts.
+//
+// Execute never fails the program because of a ping. A disabled or failed ping
+// is silent, and the wait is at most about two seconds.
+func Execute(ctx context.Context, root *cobra.Command) error {
+	cobra.EnableTraverseRunHooks = true
+	var wait func()
+	preRun, preRunE := root.PersistentPreRun, root.PersistentPreRunE
+	root.PersistentPreRun, root.PersistentPreRunE = nil, func(cmd *cobra.Command, args []string) error {
+		if wait == nil && !skipped(cmd) {
+			client, parts := cobraParts(cmd)
+			wait = track(ctx, client, parts...)
+		}
+		switch {
+		case preRunE != nil:
+			return preRunE(cmd, args)
+		case preRun != nil:
+			preRun(cmd, args)
+		}
+		return nil
+	}
+	err := root.ExecuteContext(ctx)
+	if wait != nil {
+		wait()
+	}
+	return err
+}
+
+// skipped reports whether cmd is one of cobra's built-in commands, which tell
+// us nothing about how people use the program.
+func skipped(cmd *cobra.Command) bool {
+	for c := cmd; c.HasParent(); c = c.Parent() {
+		switch c.Name() {
+		case cobra.ShellCompRequestCmd, cobra.ShellCompNoDescRequestCmd, "completion", "help":
+			return true
+		}
+	}
+	return false
+}
+
+// cobraParts returns the program name and the parts of the object name for the
+// command that is running: the subcommands below the root, then the names of
+// the flags that were set.
+func cobraParts(cmd *cobra.Command) (client string, parts []string) {
+	client = cmd.Root().Name()
+	if path := strings.Fields(cmd.CommandPath()); len(path) > 1 {
+		parts = append(parts, path[1:]...)
+	}
+	cmd.Flags().Visit(func(f *pflag.Flag) {
+		parts = append(parts, f.Name)
+	})
+	return client, parts
+}
+
+// track sends a ping in the background and returns a function that waits for
+// it. client is the program name. parts name the subcommand and the flags the
+// user set. Each is lowercased, and every character outside a-z, 0-9, "-", and
+// "_" becomes "-".
+func track(ctx context.Context, client string, parts ...string) (wait func()) {
 	noop := func() {}
 	var cfg config
 	if err := envconfig.Process(ctx, &cfg); err != nil {
@@ -102,16 +172,6 @@ func Track(ctx context.Context, client string, parts ...string) (wait func()) {
 		send(ctx, target, agent)
 	}()
 	return func() { <-done }
-}
-
-// Flags returns the names of the flags that fs set, in lexicographic order.
-// It leaves out their values. Pass flag.CommandLine for the default flag set.
-func Flags(fs *flag.FlagSet) []string {
-	var names []string
-	fs.Visit(func(f *flag.Flag) {
-		names = append(names, f.Name)
-	})
-	return names
 }
 
 func pingURL(cfg config, client string, parts []string) (string, bool) {
