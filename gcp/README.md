@@ -16,6 +16,13 @@ account in the project, so a new app does not need a binding for its
 runtime account. The plan account can read the state bucket and push
 images. It cannot delete images or read replica objects.
 
+The deploy account can also create and delete budgets on the project's
+billing account, and the plan account can view that account's budgets
+and costs. The usage-log stack uses this for a $1 monthly budget on its
+logs bucket. Re-apply this stack before that budget can be created. The
+principal that applies it needs permission to set the billing account's
+IAM policy.
+
 This stack also creates a third account, bound to a third provider in
 the same pool, so `chrome-extension.yml` can publish the Chrome
 extension without a hard-coded refresh token (see

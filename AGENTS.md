@@ -695,7 +695,10 @@ GitHub environment `gcp` and set `GCP_PROJECT_ID`,
 changes a path in the manifest's `watch` list runs `tofu apply`. A pull
 request that selects an app runs `tofu plan` as the plan account and
 comments the plan. The plan account can push the image the plan builds.
-It cannot apply, and it cannot read replica objects.
+It cannot apply, and it cannot read replica objects. The deploy account
+can create budgets on the project's billing account, and the plan
+account can read that account's costs, so the usage-log stack can keep
+a $1 monthly budget. Re-apply this stack when those roles change.
 
 The same stack also creates a third Workload Identity provider and
 service account, bound to neither the deploy nor the plan account's
