@@ -3535,7 +3535,7 @@ theorem lm_ph4 {M0 M : Word → BitVec 8} {P G res ap bp cp dp mp mip : Word} {n
         (if sw = 1 then (2 ^ 448 - (accV M (G + 0x1E0) 12 + 2 ^ 384 * accV M (G + 0x1E0 + 0x30) 2)) % 2 ^ 448
           else accV M (G + 0x1E0) 12 + 2 ^ 384 * accV M (G + 0x1E0 + 0x30) 2) / 2 ^ sh ∧
       reg n' sp = G + 0x1E0 ∧ reg n' 21 = G + 0x1E0 ∧
-      ∀ q : Fin 32, q.val ∈ [3, 4, 18, 19, 22, 23, 26, 27] → reg n' q = reg n q := by
+      ∀ q : Fin 32, q.val ∈ [3, 4, 18, 19, 20, 22, 23, 26, 27] → reg n' q = reg n q := by
   obtain ⟨F, hF⟩ : ∃ F, G + 0x1E0 = F := ⟨_, rfl⟩
   rw [hF] at rsp ⊢
   have hGt := env.hGt
@@ -4221,5 +4221,78 @@ theorem lm_ph5 {M0 M : Word → BitVec 8} {P G res ap bp cp dp mp mip : Word} {n
   · rw [u17.regs, spt16, rt15 _ (by decide), g14, f5k sp (by decide), sp13]
   · intro q hq
     rw [u17.regs, k16 q (mem_sub hq (by decide)), chainR q (mem_sub hq (by decide)), chain6 q (mem_sub hq (by decide))]
+
+
+/-- The arithmetic that joins the phases: phase 3's difference `R` and
+borrow `sw`, phase 4's negation and shift into `lo + 2^384 hi`, and phase
+5's reduction give `lrsm`. -/
+theorem lm_final {σ A XA R sw s lo hi M MI mf : Nat} {hw : Word} (hσ : σ ≤ 1) (hsw : sw ≤ 1)
+    (hA : A < 2 ^ 448) (hX : XA < 2 ^ 448) (hR : R < 2 ^ 448) (hlo : lo < 2 ^ 384)
+    (hmf : lrsmMf A MI s = mf) (hXA : XA = M * mf)
+    (h3 : R + XA = A + 2 ^ 448 * sw)
+    (h4 : lo + 2 ^ 384 * hi = (if sw = 1 then (2 ^ 448 - R) % 2 ^ 448 else R) / 2 ^ s)
+    (hhw : hw.toNat = hi % 2 ^ 32) :
+    lrsm σ A MI s M = (if sw = 1 then 1 - σ else σ,
+      if hw.toNat = 0 ∧ lo < M then lo else (lo + 2 ^ 384 - M) % 2 ^ 384) := by
+  have hiff : A < M * lrsmMf A MI s ↔ sw = 1 := by
+    rw [hmf, ← hXA]
+    rcases (by omega : sw = 0 ∨ sw = 1) with h | h <;> subst h
+    · exact ⟨fun h => absurd h (by omega), fun h => absurd h (by decide)⟩
+    · exact ⟨fun _ => rfl, fun _ => by omega⟩
+  have hY : (if A < M * lrsmMf A MI s then M * lrsmMf A MI s - A else A - M * lrsmMf A MI s) =
+      (if sw = 1 then (2 ^ 448 - R) % 2 ^ 448 else R) := by
+    rw [hmf, ← hXA]; rw [hmf, ← hXA] at hiff
+    rcases (by omega : sw = 0 ∨ sw = 1) with h | h <;> subst h
+    · rw [ite_eq_right (fun h => absurd (hiff.mp h) (by decide)), ite_eq_right (by decide)]; omega
+    · rw [ite_eq_left (hiff.mpr rfl), ite_eq_left rfl]
+      generalize (2 : Nat) ^ 448 = K at *
+      rw [show K - R = XA - A by omega, Nat.mod_eq_of_lt (by omega)]
+  unfold lrsm
+  simp only
+  rw [hY, ← h4]
+  have e1 : (lo + 2 ^ 384 * hi) % 2 ^ 384 = lo := by rw [Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt hlo]
+  have e2 : (lo + 2 ^ 384 * hi) / 2 ^ 384 = hi := by
+    rw [Nat.add_mul_div_left _ _ (Nat.two_pow_pos 384), Nat.div_eq_of_lt hlo, Nat.zero_add]
+  rw [e1, e2, ← hhw]
+  by_cases h : sw = 1
+  · rw [ite_eq_left (hiff.mpr h), ite_eq_left h]
+  · rw [ite_eq_right (fun h' => h (hiff.mp h')), ite_eq_right h]
+
+
+theorem acc2 (M : Word → BitVec 8) (b : Word) :
+    accV M b 2 = (memLoad32 M b).toNat + 2 ^ 32 * (memLoad32 M (b + 4)).toNat := by
+  show 0 + (memLoad32 M (b + BitVec.ofNat 32 (4 * 0))).toNat * 2 ^ (32 * 0) +
+    (memLoad32 M (b + BitVec.ofNat 32 (4 * 1))).toNat * 2 ^ (32 * 1) = _
+  rw [show 4 * 0 = 0 from rfl, add_ofNat_zero]
+  show 0 + (memLoad32 M b).toNat * 1 + (memLoad32 M (b + 4)).toNat * 2 ^ 32 = _
+  omega
+
+theorem acc_lo2 (M : Word → BitVec 8) (b : Word) (h : Nat) :
+    (accV M b 12 + 2 ^ 384 * h) % 2 ^ 64 = accV M b 2 := by
+  rw [show (12 : Nat) = 2 + 10 from rfl, accV_split, show 32 * 2 = 64 from rfl,
+    show (384 : Nat) = 64 + 320 from rfl, Nat.pow_add, Nat.add_assoc, Nat.mul_assoc, ← Nat.mul_add,
+    Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt (accV_lt M b 2)]
+
+theorem acc14_lt (M : Word → BitVec 8) (b c : Word) : accV M b 12 + 2 ^ 384 * accV M c 2 < 2 ^ 448 := by
+  have h1 := accV_lt M b 12
+  have h2 := accV_lt M c 2
+  rw [show 32 * 12 = 384 from rfl] at h1
+  rw [show 32 * 2 = 64 from rfl] at h2
+  rw [show (448 : Nat) = 384 + 64 from rfl, Nat.pow_add]
+  generalize (2 : Nat) ^ 384 = K at *
+  generalize (2 : Nat) ^ 64 = L at *
+  have : K * accV M c 2 + K ≤ K * L := by rw [← Nat.mul_succ]; exact Nat.mul_le_mul_left _ h2
+  omega
+
+theorem lmEpi_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base F : Word} {len : Nat} (hF : f sp = F)
+    (h : ∀ c : Nat, 0x124 ≤ c → c + 4 ≤ 0x150 → c % 4 = 0 → (F + BitVec.ofNat 32 c).toNat % 4 = 0) :
+    BlockOk base len lmEpi (M, f) := by
+  simp +decide only [BlockOk, BInstr.ok, BInstr.run, lmEpi, upd, ↓reduceIte, and_true, true_and, ev_add]
+  rw [hF]
+  have g2 : ∀ c : Nat, 0x24 ≤ c → c + 4 ≤ 0x50 → c % 4 = 0 → (F + 0x100 + BitVec.ofNat 32 c).toNat % 4 = 0 :=
+    fun c h1 h2 h3 => by
+      rw [show (0x100 : Word) = BitVec.ofNat 32 0x100 from rfl, add_ofNat_assoc]
+      exact h (0x100 + c) (by omega) (by omega) (by omega)
+  exact ⟨g2 0x4C (by decide) (by decide) (by decide), g2 0x48 (by decide) (by decide) (by decide), g2 0x44 (by decide) (by decide) (by decide), g2 0x40 (by decide) (by decide) (by decide), g2 0x3C (by decide) (by decide) (by decide), g2 0x38 (by decide) (by decide) (by decide), g2 0x34 (by decide) (by decide) (by decide), g2 0x30 (by decide) (by decide) (by decide), g2 0x2C (by decide) (by decide) (by decide), g2 0x28 (by decide) (by decide) (by decide), g2 0x24 (by decide) (by decide) (by decide)⟩
 
 end C3.RV32
