@@ -161,24 +161,6 @@ requests, as it does for `cloudrun-sqlite`. The stack creates:
 1. Apply `gcp/terraform` again, so the deploy and plan accounts get the
    Compute Engine and Secret Manager roles this stack needs.
 
-1. Let the GitHub deploy and plan accounts pull from `apk.cgr.dev`. apko
-   exchanges a Google ID token for a Chainguard token when
-   `CHAINGUARD_IDENTITY` is set. Create a Chainguard identity that trusts both
-   accounts' Google ID tokens:
-
-   ```bash
-   DEPLOY=$(gcloud iam service-accounts describe DEPLOY_EMAIL --format='value(uniqueId)')
-   PLAN=$(gcloud iam service-accounts describe PLAN_EMAIL --format='value(uniqueId)')
-   chainctl iam identities create github-deploy-gcp \
-     --identity-issuer=https://accounts.google.com \
-     --subject-pattern="^(${DEPLOY}|${PLAN})$" \
-     --role=registry.pull
-   ```
-
-   Set the GitHub environment `gcp` variable `CHAINGUARD_IDENTITY` to the
-   identity's ID. To apply from your own machine, run `chainctl auth login`
-   first; apko then gets a token from `chainctl`.
-
 1. On YouTube Studio, schedule a stream:
    - Choose a persistent stream key, not one that YouTube creates for this
      stream.
@@ -261,9 +243,6 @@ These parts haven't run against the real services:
 
 - A YouTube Data API key may not be enough for `liveChatMessages.list`. If
   YouTube rejects it, the program needs OAuth credentials for the channel.
-- `apk.cgr.dev` access through `CHAINGUARD_IDENTITY`, which depends on the
-  apko provider's Google client accepting the Workload Identity Federation
-  credentials that GitHub Actions uses.
 - ffmpeg 9.0 with the program's arguments. The tests ran with ffmpeg 6.1.
 - Container-Optimized OS sending the container's logs to Cloud Logging as
   `cos_containers`.

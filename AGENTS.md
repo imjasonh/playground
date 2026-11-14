@@ -705,11 +705,6 @@ VMs and networks, and create Secret Manager secrets and set who reads
 them, for `stream-boids`; neither account holds a role that reads a
 secret's value. Re-apply this stack when those roles change.
 
-A stack that builds a base image with apko from `apk.cgr.dev` reads the
-GitHub environment variable `CHAINGUARD_IDENTITY`, a Chainguard identity
-that trusts the deploy and plan accounts' Google ID tokens (see
-[`stream-boids/README.md`](stream-boids/README.md#one-time-setup)).
-
 The same stack also creates a third Workload Identity provider and
 service account, bound to neither the deploy nor the plan account's
 attribute, so `chrome-extension.yml` can publish the Chrome extension

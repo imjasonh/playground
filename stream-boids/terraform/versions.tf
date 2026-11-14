@@ -37,7 +37,4 @@ provider "ko" {
   repo = local.registry
 }
 
-# apk.cgr.dev needs a Chainguard token. apko exchanges the job's Google
-# ID token for one when CHAINGUARD_IDENTITY names a Chainguard identity
-# that trusts this account (see README.md). Locally, chainctl login works.
 provider "apko" {}

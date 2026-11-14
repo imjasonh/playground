@@ -5,8 +5,6 @@
 contents:
   repositories:
     - https://apk.cgr.dev/chainguard
-  keyring:
-    - https://apk.cgr.dev/chainguard/chainguard.rsa.pub
   packages:
     - wolfi-baselayout
     - ca-certificates-bundle
