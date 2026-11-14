@@ -799,8 +799,9 @@ bundle exec fastlane test
   that file, which the deploy and preview workflows copy with `cp -rL`; change
   the one file, never a link. The script sends the app name, the pointer, the color scheme,
   the screen class, and the language, and nothing from the page or the user.
-  It sends nothing from localhost, a PR preview, a browser that sets Do Not
-  Track, or a browser under automation.
+  It sends nothing from localhost, a browser that sets Do Not Track, or a
+  browser under automation. A PR preview on the production host is counted,
+  with `preview=pr-<N>` on the query.
 - **Prefer plain HTML + JS** for browser apps unless an app already uses a framework; match the style of neighboring code in that app directory.
 - **Go apps are independent modules**: each app owns its `go.mod` and `go.sum`; avoid cross-app imports, except of library modules such as `kube`, which an app imports with a `replace` directive.
 - **Go logging**: use `log/slog`. `slog.Info`, `slog.Warn`, `slog.Error`,

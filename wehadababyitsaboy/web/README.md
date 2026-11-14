@@ -49,9 +49,10 @@ page.
 ## When nothing is sent
 
 The script sends nothing from `localhost` or a file, so local development and
-the Playwright tests don't count. It also sends nothing from a PR preview, on
-any host other than `imjasonh.github.io`, from a browser that sets Do Not Track
-or Global Privacy Control, or from a browser under automation.
+the Playwright tests don't count. It also sends nothing from any host other
+than `imjasonh.github.io`, from a browser that sets Do Not Track or Global
+Privacy Control, or from a browser under automation. A PR preview on that host
+is counted. Its query adds `preview=pr-<N>`, for example `preview=pr-732`.
 
 ## Test
 

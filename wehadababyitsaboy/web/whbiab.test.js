@@ -29,9 +29,17 @@ test('other hosts and schemes are not tracked', () => {
   }
 });
 
-test('a PR preview is not tracked', () => {
+test('a PR preview on the production host is tracked', () => {
   const location = { protocol: 'https:', hostname: 'imjasonh.github.io', pathname: '/playground/preview/pr-12/queens/' };
-  assert.equal(shouldTrack(makeEnv({ location })), false);
+  assert.equal(shouldTrack(makeEnv({ location })), true);
+  const url = new URL(pingUrl(makeEnv({ location })));
+  assert.equal(url.searchParams.get('preview'), 'pr-12');
+  assert.equal(url.pathname, '/wehadababyitsaboy/queens/web.mouse.light.desktop');
+});
+
+test('a preview path without a PR number is still marked', () => {
+  const location = { protocol: 'https:', hostname: 'imjasonh.github.io', pathname: '/playground/preview/queens/' };
+  assert.equal(new URL(pingUrl(makeEnv({ location }))).searchParams.get('preview'), '1');
 });
 
 test('a browser that asks not to be tracked is not tracked', () => {
@@ -45,6 +53,7 @@ test('the ping names the app and the context', () => {
   const url = new URL(pingUrl(makeEnv()));
   assert.equal(url.origin + url.pathname, 'https://storage.googleapis.com/wehadababyitsaboy/queens/web.mouse.light.desktop');
   assert.equal(url.searchParams.get('lang'), 'en');
+  assert.equal(url.searchParams.has('preview'), false);
   assert.match(url.search, /^\?bob=wehadababyitsaboy(&|$)/, 'bob comes first');
 });
 
