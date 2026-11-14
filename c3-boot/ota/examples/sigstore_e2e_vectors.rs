@@ -10,7 +10,12 @@
 //! - `checkpoint TEXT ROOT | ok ORIGIN SIZE HASH` or `| err`, from
 //!   `checkpoint::verify`
 //!
-//! where `TEXT`, `ORIGIN`, and `HASH` are hex, and `ROOT` lists the parsed
+//! - `leaf CERT | ok TBS ISSUER NOT_BEFORE NOT_AFTER KEY R S ID ID ID ID ID`
+//!   or `| err`, from `x509::parse_leaf`
+//! - `leafsig CERT SUBJECT KEY | 1` or `| 0`, from `x509::verify_leaf` with
+//!   that Fulcio subject and key, for every fourth certificate that parses
+//!
+//! where `TEXT`, `ORIGIN`, `HASH`, and the certificate fields are hex, and `ROOT` lists the parsed
 //! root's keys and policy: four `/`-separated sections, each a
 //! `;`-separated list of `.`-separated fields. The Fulcio, log, and TSA
 //! sections hold `NAME.KEY.NOT_BEFORE.NOT_AFTER` entries, and the policy
@@ -33,6 +38,7 @@ use c3_verify::trustroot::TrustRoot;
 
 const DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../testdata");
 const MUTATIONS: usize = 60;
+const LEAF_MUTATIONS: usize = 150;
 
 struct Rng(u64);
 
@@ -128,6 +134,68 @@ fn mutate(rng: &mut Rng, text: &[u8]) -> Vec<u8> {
     v
 }
 
+/// A certificate with one byte replaced by a value that DER gives meaning
+/// to, or flipped.
+fn mutate_der(rng: &mut Rng, der: &[u8]) -> Vec<u8> {
+    let mut v = der.to_vec();
+    let i = rng.below(v.len() as u64) as usize;
+    v[i] = match rng.below(9) {
+        0 => 0x00,
+        1 => 0x01,
+        2 => 0x02,
+        3 => 0x30,
+        4 => 0x80,
+        5 => 0xff,
+        6 => v[i].wrapping_add(1),
+        7 => v[i].wrapping_sub(1),
+        _ => v[i] ^ (1 << rng.below(8)),
+    };
+    v
+}
+
+fn leaf_fields(l: &c3_verify::x509::Leaf<'_>) -> String {
+    format!(
+        "ok {} {} {} {} {} {} {} {} {} {} {} {}",
+        hex(l.tbs),
+        hex(l.issuer),
+        l.not_before,
+        l.not_after,
+        hex(l.public_key),
+        hex(&l.signature.0),
+        hex(&l.signature.1),
+        hex(l.issuer_v2),
+        hex(l.build_signer_uri),
+        hex(l.repository_id),
+        hex(l.owner_id),
+        hex(l.trigger)
+    )
+}
+
+fn leaf_lines(out: &mut impl Write, rng: &mut Rng, cert: &[u8], root: &TrustRoot<'_>) {
+    let mut certs = vec![cert.to_vec()];
+    for _ in 0..LEAF_MUTATIONS {
+        certs.push(mutate_der(rng, cert));
+    }
+    for (i, c) in certs.into_iter().enumerate() {
+        let r = match c3_verify::x509::parse_leaf(&c) {
+            Ok(l) if i % 4 == 0 => {
+                let f = root
+                    .fulcio()
+                    .find(|f| f.subject == l.issuer)
+                    .or_else(|| root.fulcio().next())
+                    .unwrap();
+                let ok = c3_verify::x509::verify_leaf(&l, f).is_ok();
+                writeln!(out, "leafsig {} {} {} | {}", hex(&c), hex(f.subject), hex(f.public_key), u8::from(ok))
+                    .unwrap();
+                leaf_fields(&l)
+            }
+            Ok(l) => leaf_fields(&l),
+            Err(_) => "err".to_string(),
+        };
+        writeln!(out, "leaf {} | {r}", hex(&c)).unwrap();
+    }
+}
+
 fn main() {
     let mut out = BufWriter::new(std::io::stdout().lock());
     let mut rng = Rng(0x4532_4556_4543_5452);
@@ -149,6 +217,7 @@ fn main() {
         let root = c3_verify::trustroot::parse(&blob).unwrap();
         let bundle = c3_verify::bundle::parse(&container).unwrap();
         let token = root_token(&root);
+        leaf_lines(&mut out, &mut rng, bundle.leaf_certificate, &root);
         let mut texts = vec![bundle.checkpoint.to_vec()];
         for _ in 0..MUTATIONS {
             let t = mutate(&mut rng, bundle.checkpoint);

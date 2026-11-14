@@ -25,6 +25,15 @@ def powMod (a e m : Nat) : Nat :=
 termination_by e
 decreasing_by omega
 
+/-- The inverse of `a` modulo `m`, for `a` and `m` coprime, by the extended
+Euclidean algorithm: `go` keeps two remainders and the multiples of `a`
+they are congruent to. -/
+def modInv (a m : Nat) : Nat :=
+  let rec go : Nat → Nat → Int → Int → Nat → Int
+    | r0, r1, s0, s1, fuel + 1 => if r1 = 0 then s0 else go r1 (r0 % r1) s1 (s0 - (r0 / r1 : Nat) * s1) fuel
+    | _, _, s0, _, 0 => s0
+  ((go m (a % m) 0 1 (2 * m.log2 + 4)) % (m : Int)).toNat
+
 /-- A short Weierstrass curve `y² = x³ + a x + b` over the prime field of
 order `p`, with a base point `(gx, gy)` of prime order `n`. -/
 structure Curve where
@@ -43,7 +52,7 @@ abbrev ECPoint := Option (Nat × Nat)
 namespace Curve
 
 /-- The inverse of a nonzero `x` modulo the prime `p`. -/
-def inv (c : Curve) (x : Nat) : Nat := powMod x (c.p - 2) c.p
+def inv (c : Curve) (x : Nat) : Nat := modInv x c.p
 
 /-- The sum of two points. -/
 def add (c : Curve) : ECPoint → ECPoint → ECPoint
@@ -94,7 +103,7 @@ def verify (c : Curve) (point prehash r s : Bytes) : Bool :=
     let r' := beNat r
     let s' := beNat s
     r.length == c.size && s.length == c.size && 1 ≤ r' && r' < c.n && 1 ≤ s' && s' < c.n &&
-      let w := powMod s' (c.n - 2) c.n
+      let w := modInv s' c.n
       let u1 := c.digestScalar prehash * w % c.n
       let u2 := r' * w % c.n
       match c.add (c.mul u1 (some (c.gx, c.gy))) (c.mul u2 (some q)) with

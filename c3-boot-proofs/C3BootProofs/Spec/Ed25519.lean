@@ -20,7 +20,7 @@ def p : Nat := 2 ^ 255 - 19
 /-- The order of the base point. -/
 def L : Nat := 2 ^ 252 + 27742317777372353535851937790883648493
 
-def inv (x : Nat) : Nat := powMod x (p - 2) p
+def inv (x : Nat) : Nat := modInv x p
 
 /-- `-121665 / 121666`. -/
 def d : Nat := (p - 121665) * inv 121666 % p

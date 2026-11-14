@@ -65,6 +65,13 @@ def result (tokens : List String) : Option String :=
     let root ← parseRoot r
     pure <| okOr ((verifyCheckpoint text root).map fun c =>
       s!"ok {hexStr c.log.origin} {c.size} {hexStr c.root}")
+  | ["leaf", h] => do
+    pure <| okOr ((parseLeaf (← parseHexTok h)).map fun l =>
+      s!"ok {hexStr l.tbs} {hexStr l.issuer} {l.notBefore} {l.notAfter} {hexStr l.publicKey} " ++
+        s!"{hexStr l.sigR} {hexStr l.sigS} " ++ " ".intercalate (l.identity.map hexStr))
+  | ["leafsig", h, subj, key] => do
+    let leaf ← parseLeaf (← parseHexTok h)
+    pure (if verifyLeaf leaf ⟨← parseHexTok subj, ← parseHexTok key, ⟨0, 0⟩⟩ then "1" else "0")
   | _ => none
 
 partial def loop (stdin : IO.FS.Stream) (stdout : IO.FS.Stream) : IO UInt32 := do
