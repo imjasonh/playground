@@ -1,0 +1,8 @@
+/stream-boids
+/fake-youtube
+*.flv
+*.ts
+*.yuv
+terraform/.terraform/
+terraform/*.tfstate*
+terraform/terraform.tfvars
