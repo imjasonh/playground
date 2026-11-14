@@ -98,15 +98,29 @@ Storage doesn't charge for requests that fail with `403`. A `report.sh`
 query is billed by the bytes that it reads, within the free first TB each
 month.
 
+The logs bucket is labeled `whbiab=logs`. A Cloud Billing budget of $1
+per month counts Cloud Storage charges with that label in this project,
+after credits. When those charges exceed $1, Cloud Billing emails the
+billing account administrators and users, and the project's owners. It
+checks a few times a day. Traffic from the empty bucket, including the
+403 responses, is not part of this budget. The billing account must use
+USD.
+
 ## Deploy
 
 `deploy-gcp.yml` applies `terraform/` on pushes to `main` that change this
 directory, with the shared deploy account from `gcp/terraform`. A pull
-request comments the plan. To apply by hand, run the following:
+request comments the plan. Apply `gcp/terraform` first, with a
+principal that can set the billing account's IAM policy, so the deploy
+account can create the budget and the plan account can read it. Then
+apply this stack. To apply by hand, run the following:
 
 ```bash
 cd terraform
 tofu init -backend-config="bucket=STATE_BUCKET"
+# User credentials need a quota project for the Billing Budgets API.
+# The deploy service account does not.
+export GOOGLE_BILLING_PROJECT=PROJECT_ID USER_PROJECT_OVERRIDE=true
 tofu apply -var project_id=PROJECT_ID
 ```
 

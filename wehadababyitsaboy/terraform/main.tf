@@ -24,6 +24,9 @@ resource "google_storage_bucket" "logs" {
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
 
+  # The $1 budget in budget.tf includes only charges carrying this label.
+  labels = local.logs_cost_label
+
   depends_on = [google_project_service.storage]
 }
 
