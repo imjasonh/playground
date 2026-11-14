@@ -49,6 +49,7 @@ import C3BootProofs.Proofs.P256Scalar
 import C3BootProofs.Proofs.LincombShift8
 import C3BootProofs.Proofs.LincombShiftMod12
 import C3BootProofs.Proofs.UpdateDe12
+import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
 import C3BootProofs.Proofs.Norm8
@@ -3115,6 +3116,61 @@ theorem exists_lincombShiftMod12_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `SignedInt<8>::lincomb_int_reduce_shift_mod::<2>`
+and its callees where the image loads them, and zeros elsewhere. -/
+def witnessMemLm8 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.lincombShiftMod8Address, Image.lincombShiftMod8Code),
+    (Image.lincomb8Address, Image.lincomb8Code),
+    (Image.absSign2Address, Image.absSign2Code),
+    (Image.wideMul8x2Address, Image.wideMul8x2Code),
+    (Image.condNeg8Address, Image.condNeg8Code),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.borrowingSubAddress, Image.borrowingSubCode),
+    (Image.uintSelect2Address, Image.uintSelect2Code),
+    (Image.uintSelect8Address, Image.uintSelect8Code),
+    (Image.u2ZeroAddress, Image.u2ZeroData),
+    (Image.u2OneAddress, Image.u2OneData),
+    (Image.shr8Address, Image.shr8Code),
+    (Image.leadMut8Address, Image.leadMut8Code),
+    (Image.trailing8Address, Image.trailing8Code),
+    (Image.toUintResize2Address, Image.toUintResize2Code),
+    (Image.u2MaxAddress, Image.u2MaxData)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 16000000 in
+/-- A machine that calls `SignedInt<8>::lincomb_int_reduce_shift_mod::<2>` with
+the result at `0x3FCC5000`, `a`, `b`, `c`, and `d` at `0x3FCC5100` through
+`0x3FCC5400`, the modulus at `0x3FCC5500`, `mi` at `0x3FCC5600`, a shift of
+62, and the stack at `0x3FCC8000` meets `lincombShiftMod8_correct`'s
+hypotheses. -/
+theorem exists_lincombShiftMod8_machine :
+    ∃ (m : RV32.Machine) (P G res ap bp cp dp mp mip retAddr : RV32.Word) (s : Nat),
+      RV32.LMEnv8 m.mem P G res ap bp cp dp mp mip ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = G + 0x280 ∧ RV32.reg m RV32.a0 = res ∧ RV32.reg m RV32.a1 = ap ∧
+      RV32.reg m RV32.a2 = bp ∧ RV32.reg m RV32.a3 = cp ∧ RV32.reg m RV32.a4 = dp ∧
+      RV32.reg m RV32.a5 = BitVec.ofNat 32 s ∧ RV32.reg m RV32.a6 = mp ∧ RV32.reg m 17 = mip ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      1 ≤ s ∧ s ≤ 63 ∧ (m.mem (ap + 0x20)).toNat ≤ 1 ∧ (m.mem (bp + 0x20)).toNat ≤ 1 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC5100 else if r = RV32.a2 then 0x3FCC5200
+    else if r = RV32.a3 then 0x3FCC5300 else if r = RV32.a4 then 0x3FCC5400 else if r = RV32.a5 then 62
+    else if r = RV32.a6 then 0x3FCC5500 else if r = 17 then 0x3FCC5600
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.lincombShiftMod8Address, witnessMemLm8⟩,
+    BitVec.ofNat 32 Image.lincombShiftMod8Address, 0x3FCC7D80, 0x3FCC5000, 0x3FCC5100, 0x3FCC5200, 0x3FCC5300,
+    0x3FCC5400, 0x3FCC5500, 0x3FCC5600, 0, 62, ?_, rfl, by decide, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
+    by decide, by decide, by decide, by decide +kernel, by decide +kernel⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 /-- Memory with the current image's `SignedInt<8>::lincomb_int_reduce_shift::<2>`
 and its callees where the image loads them, and zeros elsewhere. -/
 def witnessMemLs8 : RV32.Word → BitVec 8 :=
@@ -4293,3 +4349,9 @@ end C3
 
 /-- info: 'C3.exists_updateDe12_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_updateDe12_machine
+
+/-- info: 'C3.RV32.lincombShiftMod8_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.lincombShiftMod8_correct
+
+/-- info: 'C3.exists_lincombShiftMod8_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_lincombShiftMod8_machine
