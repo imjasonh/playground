@@ -49,6 +49,7 @@ import C3BootProofs.Proofs.P256Scalar
 import C3BootProofs.Proofs.LincombShift8
 import C3BootProofs.Proofs.LincombShiftMod12
 import C3BootProofs.Proofs.UpdateDe12
+import C3BootProofs.Proofs.UpdateDe8
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
@@ -3513,6 +3514,62 @@ theorem exists_updateDe12_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `safegcd::update_de::<8>`, `Int<2>::from_i64`,
+and `SignedInt<8>::lincomb_int_reduce_shift_mod::<2>` and its callees where the
+image loads them, and zeros elsewhere. -/
+def witnessMemUd8 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.updateDe8Address, Image.updateDe8Code),
+    (Image.fromI64Address, Image.fromI64Code),
+    (Image.lincombShiftMod8Address, Image.lincombShiftMod8Code),
+    (Image.lincomb8Address, Image.lincomb8Code),
+    (Image.absSign2Address, Image.absSign2Code),
+    (Image.wideMul8x2Address, Image.wideMul8x2Code),
+    (Image.condNeg8Address, Image.condNeg8Code),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.borrowingSubAddress, Image.borrowingSubCode),
+    (Image.uintSelect2Address, Image.uintSelect2Code),
+    (Image.uintSelect8Address, Image.uintSelect8Code),
+    (Image.u2ZeroAddress, Image.u2ZeroData),
+    (Image.u2OneAddress, Image.u2OneData),
+    (Image.shr8Address, Image.shr8Code),
+    (Image.leadMut8Address, Image.leadMut8Code),
+    (Image.trailing8Address, Image.trailing8Code),
+    (Image.toUintResize2Address, Image.toUintResize2Code),
+    (Image.u2MaxAddress, Image.u2MaxData)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 32000000 in
+/-- A machine that calls `safegcd::update_de::<8>` with the results at
+`0x3FCC5000`, `d` and `e` at `0x3FCC5100` and `0x3FCC5200`, the modulus at
+`0x3FCC5300`, `mi = 0`, the matrix at `0x3FCC5400`, a shift of 62, and the
+stack at `0x3FCC8000` meets `updateDe8_correct`'s hypotheses. -/
+theorem exists_updateDe8_machine :
+    ∃ (m : RV32.Machine) (P G out ap bp mp tp retAddr mlo mhi : RV32.Word) (s : Nat),
+      RV32.UD8Env m.mem P G out ap bp mp tp ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = G + 0x2D0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = ap ∧
+      RV32.reg m RV32.a2 = bp ∧ RV32.reg m RV32.a3 = mp ∧ RV32.reg m RV32.a4 = mlo ∧ RV32.reg m RV32.a5 = mhi ∧
+      RV32.reg m RV32.a6 = tp ∧ RV32.reg m 17 = BitVec.ofNat 32 s ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ 1 ≤ s ∧ s ≤ 63 ∧
+      (m.mem (ap + 0x20)).toNat ≤ 1 ∧ (m.mem (bp + 0x20)).toNat ≤ 1 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC5100 else if r = RV32.a2 then 0x3FCC5200
+    else if r = RV32.a3 then 0x3FCC5300 else if r = RV32.a6 then 0x3FCC5400 else if r = 17 then 62
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.updateDe8Address, witnessMemUd8⟩,
+    BitVec.ofNat 32 Image.updateDe8Address, 0x3FCC7D30, 0x3FCC5000, 0x3FCC5100, 0x3FCC5200, 0x3FCC5300, 0x3FCC5400,
+    0, 0, 0, 62, ?_, rfl, by decide, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, by decide, by decide, by decide,
+    by decide +kernel, by decide +kernel⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 /-- Memory with the current image's `safegcd::update_fg::<8>`, `Int<2>::from_i64`,
 and `lincomb_int_reduce_shift::<2>` and its callees where the image loads them,
 and zeros elsewhere. -/
@@ -4355,3 +4412,9 @@ end C3
 
 /-- info: 'C3.exists_lincombShiftMod8_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_lincombShiftMod8_machine
+
+/-- info: 'C3.RV32.updateDe8_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.updateDe8_correct
+
+/-- info: 'C3.exists_updateDe8_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_updateDe8_machine
