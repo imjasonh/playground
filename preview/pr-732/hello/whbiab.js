@@ -13,11 +13,12 @@
 // app, then the dot-separated context: the pointer (touch or mouse), the color
 // scheme (dark or light), standalone for an installed app, and the screen
 // class (phone, tablet, or desktop). The query holds the primary language.
-// Nothing else leaves the page, and the request sends no referrer.
+// A PR preview on the production host adds preview=pr-<N>. Nothing else
+// leaves the page, and the request sends no referrer.
 //
 // A visit is not counted for a browser that asks not to be tracked, a
-// browser under automation, a page that is not the production site, or a PR
-// preview. Tests and local servers therefore send nothing.
+// browser under automation, or a page that is not the production site.
+// Tests and local servers therefore send nothing.
 (() => {
   'use strict';
 
@@ -29,9 +30,6 @@
   function shouldTrack(env) {
     const { location, navigator } = env;
     if (location.protocol !== 'https:' || location.hostname !== PRODUCTION_HOST) {
-      return false;
-    }
-    if (/^\/[^/]+\/preview\//.test(location.pathname)) {
       return false;
     }
     if (navigator.doNotTrack === '1' || navigator.globalPrivacyControl === true) {
@@ -66,7 +64,22 @@
     if (lang) {
       query.set('lang', lang);
     }
+    const preview = previewId(env.location && env.location.pathname);
+    if (preview) {
+      query.set('preview', preview);
+    }
     return `${ENDPOINT}/${clean(env.app)}/${parts.join('.')}?${query}`;
+  }
+
+  // previewId returns pr-<N> when the page is a PR preview on this site,
+  // or "1" for any other path under /preview/. An empty string means the
+  // page is the production site.
+  function previewId(pathname) {
+    const match = /^\/[^/]+\/preview\/(pr-\d+)?/.exec(pathname || '');
+    if (!match) {
+      return '';
+    }
+    return match[1] || '1';
   }
 
   function track(env, newImage) {
