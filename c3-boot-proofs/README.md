@@ -6,6 +6,71 @@ describes. This first part needs no machine model: it specifies the
 bootloader's decision logic in Lean and proves the plan's boot-safety
 theorems about it, over traces with power loss.
 
+## What the proofs are about
+
+The machine-code proofs are about the bytes of the bootloader image that
+gets flashed, not about the Rust source and not about the compiler. Nothing
+here proves that `rustc` translates the Rust correctly, and nothing needs
+to: a theorem says that the extracted machine code, run on a Lean model of
+the CPU, does what a Lean specification says. If the compiler miscompiled
+a function, that function's proof would fail.
+
+Five links connect the Rust source to what runs on the device. Each is
+either checked mechanically or trusted, as follows:
+
+1. **Source to image: checked.** `c3-boot/bootloader/check-digest.sh`
+   builds the bootloader with the toolchain that `rust-toolchain.toml` pins
+   and the dependencies that `Cargo.lock` pins (`--locked`), converts the
+   ELF to the flashable `bootloader.bin`, and requires its SHA-256 to equal
+   `c3-boot/bootloader/dev-image.sha256`. `c3-boot.yml` runs it on every
+   push, so the build is reproducible and pinned.
+2. **Image to Lean bytes: checked.** `scripts/extract-functions.py` copies
+   each function's bytes out of that `bootloader.bin`, using the ELF only
+   for symbol addresses, into `C3BootProofs/Image/Bootloader.lean`, which
+   names the image digest. The proofs workflow rebuilds the image,
+   extracts again, and fails if the committed file differs.
+3. **Bytes to behavior: trusted, and tested.** A theorem says that if
+   memory holds exactly those bytes at that address, running them on the
+   RV32IMC model in `Model/RV32.lean` reaches the return address with the
+   result the specification gives. The model matches Espressif's QEMU on
+   3,000 random instruction sequences and on four whole boots of the image
+   (about 470 million instructions), and LLVM's decoder on every 16-bit
+   encoding and 200,000 32-bit ones. An equivalence check against the Sail
+   RISC-V model is not done.
+4. **Proofs to theorems: checked.** Lean's kernel and `leanchecker` check
+   every proof. `Audit.lean` requires that each theorem depends only on
+   `propext` and `Quot.sound` (no `sorry`, `native_decide`, or
+   `Classical.choice`), and gives a witness that each theorem's hypotheses
+   can hold together.
+5. **Specifications to intent: reviewed, and tested.** The specifications
+   follow published standards (FIPS 180-4, FIPS 186-5, RFC 8032, RFC 6962,
+   RFC 9162, RFC 3161, and RFC 5280) and check those standards' examples at
+   build time. The differential tests run the Rust code, compiled for the
+   host rather than RV32, and require the specifications to give the same
+   results. They show that a specification means what the Rust code does;
+   they say nothing about the RV32 image. For a function with a
+   machine-code proof, link 3 ties the image to the specification
+   directly. For a function without one, the image is unverified.
+
+What is not linked yet:
+
+- **Other builds.** The proofs cover the pinned test image, built with the
+  development genesis keys and without eFuse burns. Another build is
+  covered only where its function bytes are identical.
+- **Flash to memory.** The theorems assume the bytes are at their
+  addresses in memory. The ESP32-C3 ROM loader puts them there. `boot-sim`
+  loads the image the same way and matches QEMU, but on the chip the
+  loader is trusted until the plan's platform contracts state it.
+- **The SRAM alias.** The model keeps SRAM's instruction-bus and data-bus
+  addresses separate, while the chip aliases them. The proofs hold as long
+  as no store reaches code through the data-bus address, which is not yet
+  a stated obligation.
+- **The whole boot.** Each function's theorem has hypotheses, such as a
+  stack layout and argument ranges, that its caller's proof must discharge.
+  Until `boot_main` is proved, the function theorems don't add up to the
+  plan's headline theorem: from reset, the image boots only firmware that
+  passes every check.
+
 ## What's proved
 
 `C3BootProofs/Spec/` is the executable specification. Each definition
