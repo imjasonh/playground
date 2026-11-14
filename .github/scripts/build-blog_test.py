@@ -583,11 +583,6 @@ def test_catalog_loads_whbiab() -> None:
             "post tag",
         )
         check("whbiab" not in (dest / "feed.xml").read_text(), "feed has no tracker")
-        check(
-            bb.tracking_tag('a"b', "posts-x")
-            == '<script src="a&quot;b" data-app="posts-x"></script>',
-            "attribute escaping",
-        )
 
 
 def main() -> None:

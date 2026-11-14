@@ -32,7 +32,8 @@ check.
 
 ## Posts
 
-`build-blog.py` copies this file into `/posts/whbiab.js`. The index loads
+`build-blog.py` copies this file into `/posts/whbiab.js`, and the
+templates in `.github/pages/` load it. The index loads
 `whbiab.js` with `data-app="posts"`. Each post, one directory down, loads
 `../whbiab.js` with `data-app="posts-<directory>"`. `<directory>` is the
 post's parent directory, which is also the URL slug. The feed does not

@@ -670,14 +670,6 @@ def apply_shared_css(template: str) -> str:
     return template.replace("__SHARED_CSS__", SHARED_CSS_PATH.read_text())
 
 
-def tracking_tag(src: str, app: str) -> str:
-    """One whbiab.js tag. ``app`` is the client name in the usage log."""
-    return (
-        f'<script src="{html.escape(src, quote=True)}" '
-        f'data-app="{html.escape(app, quote=True)}"></script>'
-    )
-
-
 def render_post(post: Post, template: str) -> str:
     body = markdown_to_html(post.body_md)
     page_title = f"{post.title_text} · Posts"
@@ -685,9 +677,9 @@ def render_post(post: Post, template: str) -> str:
     return (
         template.replace("__TITLE__", html.escape(page_title))
         .replace("__TITLE_HTML__", post.title_html)
+        .replace("__SLUG__", html.escape(post.slug, quote=True))
         .replace("__DATES__", dates_html(post))
         .replace("__BODY__", body)
-        .replace("__WHBIAB__", tracking_tag("../whbiab.js", f"posts-{post.slug}"))
     )
 
 
@@ -849,6 +841,7 @@ def build(
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
+    shutil.copyfile(WHBIAB_JS, dest / "whbiab.js")
 
     paths = find_post_paths(source)
     slugs = assign_slugs(paths, source)
@@ -870,12 +863,8 @@ def build(
         index_html.replace("__TITLE__", "Posts · Playground")
         .replace("__HEADING__", "Posts")
         .replace("__ITEMS__", render_index_items(posts))
-        .replace("__WHBIAB__", tracking_tag("whbiab.js", "posts"))
     )
     (dest / "index.html").write_text(index_html, encoding="utf-8")
-    if not WHBIAB_JS.is_file():
-        raise BuildError(f"missing tracking script {WHBIAB_JS}")
-    shutil.copyfile(WHBIAB_JS, dest / "whbiab.js")
     (dest / "index.json").write_text(
         json.dumps(posts_to_json(posts), indent=2) + "\n", encoding="utf-8"
     )
