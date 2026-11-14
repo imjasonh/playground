@@ -75,7 +75,7 @@ playground/
 ├── sundial/               # sundial clock: long shadow follows the sun
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
 ├── web-push-demo/         # static browser front-end for the web-push Worker
-├── wehadababyitsaboy/     # Terraform: empty bucket whose usage logs count CLI and web page requests (not an app)
+├── wehadababyitsaboy/     # Terraform: empty bucket whose usage logs count CLI and web page requests (not an app); go/ is the Go client
 ├── y/                     # Rust Cloudflare Worker: one-user microblog
 └── zip/                   # generate and play Zip path puzzles (JS + Node tests)
 ```
@@ -130,7 +130,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `apko-frontend/` | no | Go BuildKit frontend, built with ko; no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `y/` | no | Rust Cloudflare Worker (one-user microblog); no `index.html` |
-| `wehadababyitsaboy/` | no | Terraform stack (usage-tracking bucket); no `index.html` |
+| `wehadababyitsaboy/` | no | Terraform stack (usage-tracking bucket) with a Go client in `go/`; no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
 | `inkbot/` | no | Rust Cloudflare Worker (e-ink frame + Slack); no `index.html` |
 | `inkbot-esp32/` | no | Rust/ESP-IDF ESP32 firmware (espup); no `index.html` |
@@ -165,6 +165,12 @@ Each Go app is an isolated module. Keep its Go sources, tests, `go.mod`, and
 as `kube`, with a `replace` directive to the library's directory
 (`replace github.com/imjasonh/playground/kube => ../kube` in `git-k8s/go.mod`),
 so that it builds against the library at head.
+
+A top-level directory that is not a Go app can hold a Go library module in its
+`go/` subdirectory. `wehadababyitsaboy/go` is one. CI discovers it by that path
+(`wehadababyitsaboy/go`), a change under `go/` selects it, and the Go apps that
+replace it with `../wehadababyitsaboy/go` are tested too. Other nested modules,
+such as `kube/bench`, stay out of CI.
 
 `litestream/` is a fork of
 [benbjohnson/litestream](https://github.com/benbjohnson/litestream), imported
@@ -431,7 +437,9 @@ directories (names starting with `.`) and changes outside any app directory
 (e.g. a lone top-level file) select nothing — so a PR that only edits CI scripts
 or the root `README.md` runs no app tests. A Go module whose `go.mod` replaces
 another top-level module with a relative path is also selected when that
-directory changes, so a change under `kube/` tests `git-k8s` too. `inkbot-esp32/` and `esp32-ble/` have
+directory changes, so a change under `kube/` tests `git-k8s` too. A change under
+`wehadababyitsaboy/go/` selects that module and every Go app that replaces it.
+`inkbot-esp32/` and `esp32-ble/` have
 a `Cargo.toml` but are excluded from Rust discovery because they need the espup
 Xtensa toolchain. `inkbot-esp32.yml` and `esp32-ble.yml` run those host lib
 tests and firmware cross-builds instead. A change under `.github/wrangler/` (the
@@ -845,6 +853,18 @@ bundle exec fastlane test
   [`pasta/analyzers/go_envconfig`](pasta/analyzers/go_envconfig/go_envconfig.cue)
   flags `strconv` and `time.ParseDuration` applied to `os.Getenv` or
   `os.LookupEnv`.
+- **Go usage tracking**: every Go command-line program that people run by hand
+  records its use with
+  [`wehadababyitsaboy/go`](wehadababyitsaboy/go/README.md) (package `whbiab`).
+  When you add a Go CLI or a subcommand, add the module with `go mod edit
+  -require=... -replace=...` as that README shows, and call
+  `defer whbiab.Track(ctx, "<program>", <subcommand and whbiab.Flags(fs)...>)()`
+  right after the program parses its flags. Pass only the subcommand and flag
+  names. Never pass a flag value, a positional argument, a path, or anything
+  else from the user. Call the function that `Track` returns before `os.Exit` or
+  `log.Fatal`. Skip servers, in-cluster controllers, and a CLI whose README tells
+  people to run `go install ...@latest`, because `go install` rejects a module
+  with a `replace` directive. A test binary sends nothing, so tests need no setup.
 - **Rust apps are independent crates**: each app owns its `Cargo.toml`, `Cargo.lock`, and `rust-toolchain.toml`; avoid cross-app imports. Each crate sets `[lints.rust] unused = "deny"` so unused methods, imports, and variables fail `cargo test` / `cargo build` (CI clippy also uses `-D warnings`, which includes rustc `dead_code` and clippy unused-* lints). Do not `#[allow(dead_code)]` to keep dead methods.
 - **There is one iOS host app** (`ios/`, the "Playground" container): add
   features as **experiments** inside it (same Bundle ID, no re-bootstrap). A
@@ -977,6 +997,7 @@ bundle exec fastlane test
 | `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md). Playground style rules are enrolled via `.pasta/examples` → `pasta/analyzers` and gated by the pasta leg of `test.yml` | `go test -race ./...` (incl. e2e shallow-clone smoke); CI also runs `pasta test` + monorepo lint |
 | `sshapp/` | Wish SSH apps on GKE Autopilot (shared mux LB; `ssh user@ssh.domain <app>`; includes `hello` + `chess`); Terraform + `ko_build` | `go test -race ./...`; KinD e2e (`SSHAPP_KIND_E2E=1`) when the module changes |
 | `testtrace/` | Library that parents OpenTelemetry spans on the span of the Go test that starts them. `Install` wraps the TracerProvider in `TestMain`. Spans started from `t.Context()` pick up that span with no further call. `Hook(t)` names the span after the test | `go test -race ./...` |
+| `wehadababyitsaboy/go/` | Library (package `whbiab`) that sends one usage ping from a Go CLI to the `wehadababyitsaboy` bucket: `Track` starts a background request for `CLIENT/ARGS?bob=wehadababyitsaboy` and returns a function that waits for it. `gitdb`, `ocidb`, `liquid`, and `node-image` use it. It sends no flag value or positional argument, honors `DO_NOT_TRACK=1` and `WHBIAB_DISABLE=1`, and sends nothing from a test binary | `go test -race ./...` (a local server stands in for the bucket) |
 
 ## Current Rust apps
 
