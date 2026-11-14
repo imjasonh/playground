@@ -563,9 +563,15 @@ discovered automatically — no workflow edits are needed.
    - Add `my-app/package.json` with `"test"` script
    - Add `my-app/README.md` with run/test instructions
    - Add `my-app/.gitignore` (at minimum `node_modules/`)
-5. Open a PR—preview deploy and CI run automatically.
+5. Record visits: run `bash .github/scripts/check-whbiab-web.sh --fix`. It
+   links `wehadababyitsaboy/web/whbiab.js` into the app as a symbolic link and adds
+   `<script src="whbiab.js" data-app="my-app"></script>` before `</body>`. If
+   the page sets a Content-Security-Policy, allow `https://storage.googleapis.com`
+   in `img-src`.
+6. Open a PR—preview deploy and CI run automatically.
 
-No workflow edits are required when a new app follows these conventions.
+No workflow edits are required when a new app follows these conventions. The
+Test job fails a browser app that doesn't record visits.
 
 ### Minimal static app
 
@@ -785,6 +791,17 @@ bundle exec fastlane test
 ## Implementation conventions
 
 - **Browser apps are client-side**: they must be static sites suitable for GitHub Pages (no server-side runtime in production).
+- **Web usage tracking**: every browser app records each page load with
+  [`wehadababyitsaboy/web/whbiab.js`](wehadababyitsaboy/web/README.md), a
+  tracking pixel that requests an object in the `wehadababyitsaboy` bucket.
+  When you add a browser app, run `bash .github/scripts/check-whbiab-web.sh
+  --fix`. Each app's `whbiab.js` is a symbolic link to
+  that file, which the deploy and preview workflows copy with `cp -rL`; change
+  the one file, never a link. The script sends the app name, the pointer, the color scheme,
+  the screen class, and the language, and nothing from the page or the user.
+  It sends nothing from localhost, a browser that sets Do Not Track, or a
+  browser under automation. A PR preview on the production host is counted,
+  with `preview=pr-<N>` on the query.
 - **Prefer plain HTML + JS** for browser apps unless an app already uses a framework; match the style of neighboring code in that app directory.
 - **Go apps are independent modules**: each app owns its `go.mod` and `go.sum`; avoid cross-app imports, except of library modules such as `kube`, which an app imports with a `replace` directive.
 - **Go logging**: use `log/slog`. `slog.Info`, `slog.Warn`, `slog.Error`,
