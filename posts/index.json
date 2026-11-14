@@ -1,5 +1,11 @@
 [
   {
+    "slug": "wehadababyitsaboy",
+    "title": "wehadababyitsaboy: a dead simple, dead cheap usage tracking nanoframework",
+    "published": "2026-11-14",
+    "updated": "2026-11-14"
+  },
+  {
     "slug": "pasta",
     "title": "pasta: a polyglot linter/fixer for monorepos",
     "published": "2026-08-19",
