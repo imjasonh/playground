@@ -9,6 +9,9 @@ BASE="${DEPENDENCY_UPDATE_BASE:-main}"
 DEP_PATHSPECS=(
   ':(glob)*/go.mod'
   ':(glob)*/go.sum'
+  # Library modules in an app's go/ directory (wehadababyitsaboy/go).
+  ':(glob)*/go/go.mod'
+  ':(glob)*/go/go.sum'
   ':(glob)*/package.json'
   ':(glob)*/package-lock.json'
   ':(glob)*/vendor/**'
