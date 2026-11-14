@@ -28,11 +28,15 @@ Did you know that if you configure your bucket just so, requests for missing obj
 
 I made a little demo in this repo, and it's called `wehadababyitsaboy`. Get it?
 
-For JS clients, you can embed [`whbiab.js`](https://raw.githubusercontent.com/imjasonh/playground/refs/heads/main/wehadababyitsaboy/web/whbiab.js) (pronounced WEE-bee-ab) and it'll collect whatever it can about the page and send a 404 request to the tracking bucket. Google will then record that 404 in CSV logs. It's embedded in all the browser apps in this repo.
+For web clients, you can embed [`whbiab.js`](https://raw.githubusercontent.com/imjasonh/playground/refs/heads/main/wehadababyitsaboy/web/whbiab.js) (pronounced WEE-bee-ab) and it'll collect whatever it can about the page and send a 404 request to the tracking bucket. Google will then record that 404 in CSV logs. It's embedded in all the browser apps in this repo, including this blog.
 
 For Go clients, there's a [`cobra`](https://github.com/spf13/cobra)-compatible [helper library](https://github.com/imjasonh/playground/tree/main/wehadababyitsaboy/go) to do the same. For Rust, there's a [`clap`](https://github.com/clap-rs/clap)-compatible [helper module](https://github.com/imjasonh/playground/tree/main/wehadababyitsaboy/rust) to do the same. They're used by most of the CLIs in this repo.
 
+It costs about $.05 per million recorded requests, or _1/80th_ of what a _single minute_ of long distance collect calling used to cost. Crazy.
+
 If you want to set this up for yourself, you're free to. Everything's [defined in Terraform](https://github.com/imjasonh/playground/tree/main/wehadababyitsaboy/terraform), all you need is a GCP project and a dream.
+
+I haven't set up any kind of thing to actually sift through the request logs yet, but maybe I'll get around to it once I have some collected. It'd be cool to see who else is here.
 
 Is tracking kinda sketchy and dubiously useful, and somewhat trivially circumvented? Yeah, sure is. If you don't want it, you can set `DO_NOT_TRACK=1` or [in your browser settings](https://support.google.com/chrome/answer/2790761?ai1hc=1). That's fine by me.
 
