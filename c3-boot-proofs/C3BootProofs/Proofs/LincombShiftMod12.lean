@@ -1758,4 +1758,74 @@ theorem lm_maskEnd {M : Word → BitVec 8} {P F : Word} {n : Machine} {sh : Nat}
   · rw [u7.regs, k10k q (nmem_of (by decide) hq), u6.regs, g5, k9k' q hq, u4.regs, g3, k9k q hq, u2.regs, g1,
       k8k q (nmem_of (by decide) hq)]
 
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 8000000 in
+/-- **The mask**, from 0xC6 to 0x17E: the two words of `mf` at `F + 0x118`
+get their value modulo `2^shift`, and `s5` points at `F + 0xB0`. -/
+theorem lm_mask {M : Word → BitVec 8} {P F : Word} {n : Machine} {sh : Nat} (hP : P.toNat % 2 = 0)
+    (s : St M P n 0xC6 (reg n)) (hc : CodeIn M P lincombShiftMod12Code)
+    (hl : CodeIn M (lmShr P + 0x1EE) leadMut12Code) (ht : CodeIn M (lmShr P + 0x1FE) trailing12Code)
+    (hmax : CodeIn M (BitVec.ofNat 32 u2MaxAddress) u2MaxData)
+    (rsp : reg n sp = F) (r19 : reg n 19 = BitVec.ofNat 32 sh) (hs1 : 1 ≤ sh) (hs2 : sh ≤ 63)
+    (hF : F.toNat % 4 = 0) (sC1 : Sep (F + 0x38) 8 P lincombShiftMod12Code.length)
+    (sC2 : Sep (F + 0x78) 8 P lincombShiftMod12Code.length) (sC3 : Sep (F + 0x118) 8 P lincombShiftMod12Code.length)
+    (sLm : Sep (F + 0x38) 8 (lmShr P + 0x1EE) leadMut12Code.length)
+    (sTr : Sep (F + 0x38) 8 (lmShr P + 0x1FE) trailing12Code.length)
+    (sMX : Sep (F + 0x38) 8 (BitVec.ofNat 32 u2MaxAddress) 8) :
+    ∃ n' M', Steps n n' ∧ St M' P n' 0x17E (reg n') ∧ CodeIn M' P lincombShiftMod12Code ∧
+      (∀ x, Sep (F + 0x38) 8 x 1 → Sep (F + 0x78) 8 x 1 → Sep (F + 0x118) 8 x 1 → M' x = M x) ∧
+      (memLoad32 M' (F + 0x118)).toNat + 2 ^ 32 * (memLoad32 M' (F + 0x11C)).toNat =
+        ((memLoad32 M (F + 0x118)).toNat + 2 ^ 32 * (memLoad32 M (F + 0x11C)).toNat) % 2 ^ sh ∧
+      reg n' 21 = F + 0xB0 ∧ reg n' sp = F ∧
+      ∀ q : Fin 32, q.val ∉ [1, 8, 10, 11, 12, 13, 14, 15, 20, 21, 24] → reg n' q = reg n q := by
+  obtain ⟨n1, c1, u1, r24, r21, r20, r8, ra0, ra1, ra2, k1⟩ :=
+    lm_maskPre hP s hc hl ht rsp r19 hs1 hs2 hF sC1 sLm sTr
+  obtain ⟨Mz, hMz⟩ : ∃ Mz, memStore32 (memStore32 M (F + 0x38) 0) (F + 0x3C) 0 = Mz := ⟨_, rfl⟩
+  rw [hMz] at u1
+  have sc : ∀ {c : Nat} {b : Word} {k : Nat}, Sep (F + BitVec.ofNat 32 c) 8 b k → Sep (F + BitVec.ofNat 32 c) 4 b k ∧
+      Sep (F + BitVec.ofNat 32 (c + 4)) 4 b k := fun {c b k} h => by
+    refine ⟨?_, ?_⟩
+    · have := h.sub (c := 0) (l := 4) (by decide); rwa [add_ofNat_zero] at this
+    · have := h.sub (c := 4) (l := 4) (by decide); rwa [add_ofNat_assoc] at this
+  have frz : ∀ x, Sep (F + 0x38) 8 x 1 → Mz x = M x := fun x hx => by
+    obtain ⟨h0, h4⟩ := sc (c := 0x38) hx
+    rw [← hMz, memStore32_get_sep (a := F + 0x3C) h4, memStore32_get_sep (a := F + 0x38) h0]
+  have cz : ∀ {b : Word} {code : List Nat}, CodeIn M b code → Sep (F + 0x38) 8 b code.length → CodeIn Mz b code :=
+    fun h hs i hi => by rw [frz _ (hs.subR (c := i) (l := 1) (by omega))]; exact h i hi
+  have hcz := cz hc sC1
+  have hmz : CodeIn Mz (BitVec.ofNat 32 u2MaxAddress) u2MaxData := cz hmax sMX
+  have z3c : memLoad32 Mz (F + 0x3C) = 0 := by rw [← hMz, memLoad32_store32_same]
+  have hF8 : (F + 0x38).toNat % 4 = 0 := aligned_add hF (by decide)
+  -- the copy and the shift, by the shape of the mask
+  obtain ⟨n2, M2, c2, u2, hc2, fr2, ok2, k2⟩ : ∃ n2 M2, Steps n1 n2 ∧ St M2 P n2 0x14A (reg n2) ∧
+      CodeIn M2 P lincombShiftMod12Code ∧ (∀ x, Sep (F + 0x38) 8 x 1 → M2 x = Mz x) ∧
+      maskOK sh (memLoad32 M2 (F + 0x38)) (memLoad32 M2 (F + 0x3C)) ∧
+      ∀ q : Fin 32, q.val ∉ [8, 10, 11, 12, 13, 14, 15] → reg n2 q = reg n1 q := by
+    rcases (by omega : 33 ≤ sh ∨ sh = 32 ∨ sh ≤ 31) with h | h | h
+    · have hq : (64 - sh) / 32 = 0 := by omega
+      rw [hq] at r8 ra0 ra1
+      exact lm_maskA hP u1 hcz hmz h hs2 r24 ra0 ra1 ra2 r8 r20 hF sC1 sMX
+    · subst h
+      exact lm_maskB u1 hcz hmz r24 ra0 ra1 ra2 hF sC1 sMX z3c
+    · have hq : (64 - sh) / 32 = 1 := by omega
+      rw [hq] at r8 ra0 ra1
+      exact lm_maskC hP u1 hcz hmz hs1 h r24 ra0 ra1 ra2 r8 r20 hF sC1 sMX z3c
+  have r2sp : reg n2 sp = F := by rw [k2 sp (by decide), k1 sp (by decide), rsp]
+  obtain ⟨n3, M3, c3, u3, hc3, fr3, v3, k3⟩ := lm_maskEnd u2 hc2 r2sp hF ok2 sC1 sC2 sC3
+  have l118 : ∀ {c : Nat}, 0x48 ≤ c → c + 4 ≤ 0x120 → memLoad32 M2 (F + BitVec.ofNat 32 c) = memLoad32 M (F + BitVec.ofNat 32 c) :=
+    fun {c} h1 h2 => memLoad32_congr fun j hj => by
+      have hx : Sep (F + 0x38) 8 (F + BitVec.ofNat 32 c + BitVec.ofNat 32 j) 1 := by
+        rw [add_ofNat_assoc]
+        exact sep_offsets F (c := 0x38) (n := 8) (d := c + j) (k := 1) (.inl (by omega)) (by decide) (by omega)
+      rw [fr2 _ hx, frz _ hx]
+  have m118 : memLoad32 M2 (F + 0x118) = memLoad32 M (F + 0x118) := l118 (c := 0x118) (by decide) (by decide)
+  have m11c : memLoad32 M2 (F + 0x11C) = memLoad32 M (F + 0x11C) := l118 (c := 0x11C) (by decide) (by decide)
+  refine ⟨n3, M3, c1.trans (c2.trans c3), u3, hc3, fun x h1 h2 h3 => ?_, ?_, ?_, ?_, fun q hq => ?_⟩
+  · rw [fr3 x h1 h2 h3, fr2 x h1, frz x h1]
+  · rw [v3, m118, m11c]
+  · rw [k3 21 (by decide), k2 21 (by decide), r21]
+  · rw [k3 sp (by decide), r2sp]
+  · rw [k3 q (nmem_of (by decide) hq), k2 q (nmem_of (by decide) hq), k1 q (nmem_of (by decide) hq)]
+
 end C3.RV32
