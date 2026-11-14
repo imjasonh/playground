@@ -30,8 +30,9 @@ tiny_http = "0.12"
 # (bytes from `git fetch` are verified by git itself).
 sha1 = "0.10"
 hex = "0.4"
-# Usage ping (see wehadababyitsaboy/rust). No clap: git-fuse parses its own flags.
-whbiab = { path = "../wehadababyitsaboy/rust", default-features = false }
+clap = { version = "4", features = ["derive"] }
+# Usage ping (see wehadababyitsaboy/rust).
+whbiab = { path = "../wehadababyitsaboy/rust" }
 
 # Hand-rolled harness (like git-server's benches): measures time-to-first-byte
 # and warm traversal against a shallow `git clone` baseline.

@@ -8,13 +8,8 @@ repository = "https://github.com/imjasonh/playground"
 readme = "README.md"
 publish = false
 
-[features]
-default = ["clap"]
-# clap_parts reads the flags a user set from clap's parsed matches.
-clap = ["dep:clap"]
-
 [dependencies]
-clap = { version = "4", default-features = false, features = ["std"], optional = true }
+clap = { version = "4", default-features = false, features = ["std"] }
 # Blocking HTTPS client (rustls), the same one git-fuse uses.
 ureq = { version = "2", default-features = false, features = ["tls"] }
 

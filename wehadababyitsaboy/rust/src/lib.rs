@@ -12,6 +12,9 @@
 //! ping never carries a flag value or a positional argument, because a value
 //! can be a path, a query, or a token.
 //!
+//! The crate works with programs built on clap. Parse the arguments with
+//! [`parse`] in place of `Parser::parse`.
+//!
 //! Set `DO_NOT_TRACK=1` or `WHBIAB_DISABLE=1` to turn pings off. A debug build
 //! sends nothing unless `WHBIAB_ENDPOINT` names a server, so `cargo run` and
 //! `cargo test` never count as usage.
@@ -20,7 +23,8 @@ use std::env;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-#[cfg(feature = "clap")]
+use clap::Parser;
+
 mod clap_parts;
 
 const DEFAULT_ENDPOINT: &str = "https://storage.googleapis.com/wehadababyitsaboy";
@@ -54,47 +58,27 @@ impl Drop for Ping {
     }
 }
 
-/// Sends a ping in the background.
+/// Parses the program's arguments, as `P::parse()` does, and sends a ping in
+/// the background for the command that runs.
 ///
-/// `client` is the program name and `version` is its version, such as
-/// `env!("CARGO_PKG_VERSION")`. `parts` name the subcommand and the flags the
-/// user set. Each part is lowercased, and every character outside `a-z`,
-/// `0-9`, `-`, and `_` becomes `-`. Never pass a flag value or a positional
-/// argument.
-///
-/// This never fails the program. A disabled or failed ping is silent.
-pub fn track(client: &str, version: &str, parts: &[&str]) -> Ping {
-    track_with(
-        &Config::from_lookup(|key| env::var(key).ok()),
-        client,
-        version,
-        parts,
-    )
-}
-
-/// Sends a ping for a program parsed with clap. The parts are the subcommands
-/// the user ran and the flags they set, found from `matches`. They leave out
-/// positional arguments and every value.
-///
-/// `cmd` must be the command that produced `matches`. With a derive parser, get
-/// both from the same call:
+/// `CLIENT` is the clap command's name. `ARGS` is the subcommands the user ran
+/// and the long names of the flags they set, sorted. `version` is the
+/// program's version, normally `env!("CARGO_PKG_VERSION")`.
 ///
 /// ```ignore
-/// let cmd = Cli::command();
-/// let matches = cmd.clone().get_matches();
-/// let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
-/// let _ping = whbiab::track_clap("my-cli", env!("CARGO_PKG_VERSION"), &cmd, &matches);
+/// let (cli, _ping) = whbiab::parse::<Cli>(env!("CARGO_PKG_VERSION"));
 /// ```
-#[cfg(feature = "clap")]
-pub fn track_clap(
-    client: &str,
-    version: &str,
-    cmd: &clap::Command,
-    matches: &clap::ArgMatches,
-) -> Ping {
-    let parts = clap_parts::clap_parts(cmd, matches);
-    let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
-    track(client, version, &parts)
+///
+/// Like `P::parse()`, this exits for `--help`, `--version`, and arguments that
+/// don't parse, and it sends nothing then. A disabled or failed ping is silent.
+pub fn parse<P: Parser>(version: &str) -> (P, Ping) {
+    let cmd = P::command();
+    let matches = cmd.clone().get_matches();
+    let parsed = P::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
+    let parts = clap_parts::clap_parts(&cmd, &matches);
+    let cfg = Config::from_lookup(|key| env::var(key).ok());
+    let ping = track_with(&cfg, cmd.get_name(), version, &parts);
+    (parsed, ping)
 }
 
 #[derive(Debug, Default)]
@@ -106,7 +90,9 @@ struct Config {
 
 impl Config {
     fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Self {
-        let on = |key: &str| get(key).is_some_and(|v| !v.is_empty() && v != "0");
+        let on = |key: &str| {
+            get(key).is_some_and(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
+        };
         Config {
             endpoint: get("WHBIAB_ENDPOINT").filter(|v| !v.is_empty()),
             ci: on("CI"),
@@ -115,7 +101,7 @@ impl Config {
     }
 }
 
-fn track_with(cfg: &Config, client: &str, version: &str, parts: &[&str]) -> Ping {
+fn track_with(cfg: &Config, client: &str, version: &str, parts: &[String]) -> Ping {
     let none = Ping { handle: None };
     if cfg.disabled || (cfg!(debug_assertions) && cfg.endpoint.is_none()) {
         return none;
@@ -141,7 +127,7 @@ fn send(url: &str, agent: &str) {
     let _ = agent.get(url).call();
 }
 
-fn ping_url(cfg: &Config, client: &str, version: &str, parts: &[&str]) -> Option<String> {
+fn ping_url(cfg: &Config, client: &str, version: &str, parts: &[String]) -> Option<String> {
     let name = clean(client);
     if name.is_empty() {
         return None;
@@ -278,7 +264,7 @@ mod tests {
             &cfg(&endpoint),
             "My CLI",
             "1.2.3",
-            &["Query", "max_width", "a/b"],
+            &["Query".into(), "max_width".into(), "a/b".into()],
         )
         .wait();
 
@@ -333,14 +319,19 @@ mod tests {
     #[test]
     fn skips_an_empty_client() {
         assert_eq!(
-            ping_url(&cfg("http://example.test/b"), " // ", "1.0.0", &["query"]),
+            ping_url(
+                &cfg("http://example.test/b"),
+                " // ",
+                "1.0.0",
+                &["query".into()]
+            ),
             None
         );
     }
 
     #[test]
     fn bounds_the_parts() {
-        let parts = vec!["flag"; 40];
+        let parts = vec!["flag".to_owned(); 40];
         let url = ping_url(&cfg("http://example.test/b"), "tool", "1.0.0", &parts).unwrap();
         let path = url.split('?').next().unwrap();
         assert_eq!(path.matches("flag").count(), MAX_PARTS, "path = {path}");
@@ -352,6 +343,7 @@ mod tests {
             (vec![("DO_NOT_TRACK", "1")], true),
             (vec![("DO_NOT_TRACK", "yes")], true),
             (vec![("DO_NOT_TRACK", "0")], false),
+            (vec![("DO_NOT_TRACK", "false")], false),
             (vec![("DO_NOT_TRACK", "")], false),
             (vec![("WHBIAB_DISABLE", "1")], true),
             (vec![("WHBIAB_DISABLE", "0")], false),

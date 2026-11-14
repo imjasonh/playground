@@ -855,14 +855,14 @@ bundle exec fastlane test
 - **Rust usage tracking**: every Rust command-line program that people run by
   hand records its use with
   [`wehadababyitsaboy/rust`](wehadababyitsaboy/rust/README.md) (crate
-  `whbiab`). When you add a Rust CLI or a subcommand, add the path dependency
-  `whbiab = { path = "../wehadababyitsaboy/rust" }`. With clap, call
-  `let _ping = whbiab::track_clap("<program>", env!("CARGO_PKG_VERSION"), &cmd,
-  &matches);` right after parsing, as `tank-commander` does. Without clap, call
-  `whbiab::track` with the subcommand and flag names. Pass only names. Never
-  pass a flag value, a positional argument, a path, or anything else from the
-  user. Call `ping.wait()` before `std::process::exit`, which skips the
-  destructor that waits. Skip Cloudflare Workers, servers, firmware, and a crate
+  `whbiab`). Rust CLIs in this repo use clap's derive API. When you add a Rust
+  CLI or a subcommand, add the path dependency
+  `whbiab = { path = "../wehadababyitsaboy/rust" }` and parse with
+  `let (cli, _ping) = whbiab::parse::<Cli>(env!("CARGO_PKG_VERSION"));` in
+  place of `Cli::parse()`, as `tank-commander` does. It sends the clap command's
+  name, the subcommands, and the names of the flags the user set, never a value
+  or a positional argument. Call `ping.wait()` before `std::process::exit`,
+  which skips the destructor that waits. Skip Cloudflare Workers, servers, firmware, and a crate
   that also builds for the browser unless the dependency is optional and only
   the CLI feature enables it (`life-stl`). A debug build sends nothing, so tests
   need no setup.
@@ -1012,7 +1012,7 @@ bundle exec fastlane test
 | `mapvelopes/` | envelope PDFs with the sender-to-recipient route as the background (requires a Google Maps key; sizes #10, #9, Monarch, #6¾, A7) | `cargo test` + clippy + wasm build |
 | `y/` | One-user microblog (D1 + R2); 260-char posts, images, RSS, passkeys | `cargo test` + clippy + wasm build |
 | `app-attest/` | App Attest handshake + assertion verifier for the Playground iOS experiment — Cloudflare Worker | `cargo test` + clippy + wasm build |
-| `wehadababyitsaboy/rust/` | Library (crate `whbiab`) that sends one usage ping from a Rust CLI to the `wehadababyitsaboy` bucket: `track` starts a background request for `CLIENT/ARGS?bob=wehadababyitsaboy` and returns a `Ping` that waits for it, and `track_clap` finds the subcommands and flags from clap's matches. `git-fuse`, `life-stl`, and `tank-commander` use it. It sends no flag value or positional argument, honors `DO_NOT_TRACK=1` and `WHBIAB_DISABLE=1`, and sends nothing from a debug build | `cargo test` + clippy (a local server stands in for the bucket) |
+| `wehadababyitsaboy/rust/` | Library (crate `whbiab`) that sends one usage ping from a Rust CLI to the `wehadababyitsaboy` bucket: `parse` parses a clap CLI, starts a background request for `CLIENT/ARGS?bob=wehadababyitsaboy` with the subcommands and flag names that ran, and returns a `Ping` that waits for it. `git-fuse`, `life-stl`, and `tank-commander` use it. It sends no flag value or positional argument, honors `DO_NOT_TRACK=1` and `WHBIAB_DISABLE=1`, and sends nothing from a debug build | `cargo test` + clippy (a local server stands in for the bucket) |
 | `nescript/` | Statically typed compiler from `.ne` source to an iNES ROM. Imported with `git subtree` from [imjasonh/nescript](https://github.com/imjasonh/nescript), so that history stays reachable | `cargo test` + clippy. `nescript.yml` also runs benches, ROM reproducibility, jsnes frame and audio goldens, and a Mesen2 `.dbg` probe, and uploads the built example ROMs as `nescript-examples`. That job always reports a status and no-ops when `nescript/` is unchanged, so it can be a required check |
 
 > **`git-server` has its own agent guide:** read

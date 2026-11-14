@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use rand::Rng;
 
 use life_stl::config::{
@@ -318,10 +318,7 @@ fn resolve_grid(cli: &GenerateArgs) -> Result<(usize, usize, usize), String> {
 }
 
 fn main() -> ExitCode {
-    let cmd = Cli::command();
-    let matches = cmd.clone().get_matches();
-    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
-    let _ping = whbiab::track_clap("life-stl", env!("CARGO_PKG_VERSION"), &cmd, &matches);
+    let (cli, _ping) = whbiab::parse::<Cli>(env!("CARGO_PKG_VERSION"));
     match cli.command {
         Some(Command::Bambu3mf(args)) => run_bambu(&args),
         Some(Command::Generate(args)) => run_generate(&args),
