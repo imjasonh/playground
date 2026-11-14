@@ -2056,4 +2056,481 @@ theorem lm_sub_loop {P F np xp D : Word} {M0 : Word → BitVec 8} (hP : P.toNat 
       rw [fr' q q0 q1 q2 q3 q4 qr qnp qxp qd qc, fr q q0 q1 q2 q3 q4 qr qnp qxp qd qc]⟩
 
 
+
+
+theorem sub_arith_z {A N Dv P a nn d mb mb' B z : Nat} (h1 : A + P * mb = N + Dv + z)
+    (h2 : d + nn + mb = a + B * mb') : A + a * P + P * B * mb' = N + nn * P + (Dv + d * P) + z := by
+  have e : (d + nn + mb) * P = (a + B * mb') * P := by rw [h2]
+  simp only [Nat.add_mul] at e
+  simp only [Nat.mul_comm, Nat.mul_left_comm] at h1 e ⊢
+  omega
+
+/-! ## The subtraction `x - m·mf`, from 0x1AC to 0x20A -/
+/-- The end of a subtraction round, from 0x1BC: keep the borrow, store the
+difference, and advance the pointers and the count. -/
+def lmS1Tail : List BInstr :=
+  [.alu .add (20 : Fin 32) x0 a1, .aluImm .add (9 : Fin 32) (9 : Fin 32) 4, .sw (25 : Fin 32) a0 0,
+   .aluImm .add (24 : Fin 32) (24 : Fin 32) 4, .aluImm .add (25 : Fin 32) (25 : Fin 32) 4,
+   .aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFFFF]
+
+section
+set_option maxRecDepth 20000
+theorem lmS1Tail_end : blockEnd lincombShiftMod12Code 0x1BC lmS1Tail = some 0x1CA := by decide
+end
+
+set_option maxRecDepth 20000 in
+theorem lmS1Tail_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock lmS1Tail (M, f)).1 = memStore32 M (f (25 : Fin 32) + 0) (f a0) ∧
+    (runBlock lmS1Tail (M, f)).2 (20 : Fin 32) = f a1 ∧
+    (runBlock lmS1Tail (M, f)).2 (9 : Fin 32) = f (9 : Fin 32) + 4 ∧
+    (runBlock lmS1Tail (M, f)).2 (24 : Fin 32) = f (24 : Fin 32) + 4 ∧
+    (runBlock lmS1Tail (M, f)).2 (25 : Fin 32) = f (25 : Fin 32) + 4 ∧
+    (runBlock lmS1Tail (M, f)).2 (8 : Fin 32) = f (8 : Fin 32) + 0xFFFFFFFF ∧
+    ∀ q, q ≠ (20 : Fin 32) → q ≠ (9 : Fin 32) → q ≠ (24 : Fin 32) → q ≠ (25 : Fin 32) → q ≠ (8 : Fin 32) →
+      (runBlock lmS1Tail (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, lmS1Tail]
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, fun q q2 qnp qxp qd qc => ?_⟩
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte, hz]; exact BitVec.zero_add _
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp [upd, h0, q2, qnp, qxp, qd, qc]
+
+theorem lmS1Tail_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Word} {len : Nat}
+    (h : (f (25 : Fin 32) + 0).toNat % 4 = 0) (hs : Sep (f (25 : Fin 32) + 0) 4 base len) :
+    BlockOk base len lmS1Tail (M, f) := by
+  simp +decide only [BlockOk, BInstr.ok, BInstr.run, lmS1Tail, upd, ↓reduceIte, and_true, true_and]
+  exact ⟨h, hs⟩
+
+/-- **One round of the subtraction**, from 0x1AC: subtract limb `i` of `x`
+and the borrow from limb `i` of the modulus at `np`, and store the
+difference at limb `i` of the buffer at `D`. `borrowing_sub` also writes
+the word below `sp`. -/
+theorem lm_s1_iter {M : Word → BitVec 8} {P F np xp D b : Word} {n : Machine} {i : Nat}
+    (s : St M P n 0x1AC (reg n)) (hc : CodeIn M P lincombShiftMod12Code) (hb : CodeIn M (lmBsub P) borrowingSubCode)
+    (hP : P.toNat % 2 = 0) (hi : i < 12) (hF : F.toNat % 4 = 0) (hnp : np.toNat % 4 = 0)
+    (hxp : xp.toNat % 4 = 0) (hD : D.toNat % 4 = 0)
+    (sFB : Sep (F + 0xFFFFFFFC) 4 (lmBsub P) borrowingSubCode.length)
+    (sFC : Sep (F + 0xFFFFFFFC) 4 P lincombShiftMod12Code.length)
+    (sDC : Sep (D + BitVec.ofNat 32 (4 * i)) 4 P lincombShiftMod12Code.length)
+    (rsp : reg n sp = F) (rnp : reg n (9 : Fin 32) = np + BitVec.ofNat 32 (4 * i))
+    (rxp : reg n (24 : Fin 32) = xp + BitVec.ofNat 32 (4 * i)) (rd : reg n (25 : Fin 32) = D + BitVec.ofNat 32 (4 * i))
+    (rc : reg n (8 : Fin 32) = BitVec.ofNat 32 (12 - i)) (rb : reg n (20 : Fin 32) = b) :
+    ∃ n' Mb, Steps n n' ∧
+      St (memStore32 Mb (D + BitVec.ofNat 32 (4 * i))
+          (bsubD (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) (memLoad32 M (xp + BitVec.ofNat 32 (4 * i))) b))
+        P n' (if i + 1 < 12 then 0x1AC else 0x1CC) (reg n') ∧
+      (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Mb x = M x) ∧
+      reg n' (20 : Fin 32) = bsubB (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) (memLoad32 M (xp + BitVec.ofNat 32 (4 * i)))
+        (bsubD (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) (memLoad32 M (xp + BitVec.ofNat 32 (4 * i))) b) ∧
+      reg n' sp = F ∧ reg n' (9 : Fin 32) = np + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n' (24 : Fin 32) = xp + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n' (25 : Fin 32) = D + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n' (8 : Fin 32) = BitVec.ofNat 32 (12 - (i + 1)) ∧
+      ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ (20 : Fin 32) → q ≠ a3 → q ≠ a4 → q ≠ ra → q ≠ (9 : Fin 32) → q ≠ (24 : Fin 32) →
+        q ≠ (25 : Fin 32) → q ≠ (8 : Fin 32) → reg n' q = reg n q := by
+  have hz := s.zero
+  obtain ⟨n1, d1, u1⟩ := s.lw hc lm12_at_1ac (off' := 0x1AE) (by decide)
+    (by rw [rnp, add_lit_zero]; exact aligned_add hnp (by omega))
+  obtain ⟨n2, d2, u2⟩ := u1.lw hc lm12_at_1ae (off' := 0x1B2) (by decide)
+    (by rw [upd_ne (by decide) (by decide), rxp, add_lit_zero]; exact aligned_add hxp (by omega))
+  rw [rnp, add_lit_zero] at u2
+  have f0 : upd (upd (reg n) a0 (memLoad32 M (np + BitVec.ofNat 32 (4 * i)))) a1
+      (memLoad32 M (upd (reg n) a0 (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) (24 : Fin 32) + 0)) a0 =
+      memLoad32 M (np + BitVec.ofNat 32 (4 * i)) := by simp +decide [upd]
+  have f1 : upd (upd (reg n) a0 (memLoad32 M (np + BitVec.ofNat 32 (4 * i)))) a1
+      (memLoad32 M (upd (reg n) a0 (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) (24 : Fin 32) + 0)) a1 =
+      memLoad32 M (xp + BitVec.ofNat 32 (4 * i)) := by
+    simp +decide only [upd, ↓reduceIte]; rw [rxp, add_lit_zero]
+  have u2' := u2.self
+  have g2a0 : reg n2 a0 = memLoad32 M (np + BitVec.ofNat 32 (4 * i)) := by rw [u2.regs, f0]
+  have g2a1 : reg n2 a1 = memLoad32 M (xp + BitVec.ofNat 32 (4 * i)) := by rw [u2.regs, f1]
+  have k2 : ∀ q, q ≠ a0 → q ≠ a1 → reg n2 q = reg n q := fun q q0 q1 => by
+    rw [u2.regs]
+    by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp [upd, h0, q0, q1]
+  obtain ⟨n2m, d2m, u2m⟩ := u2'.alu hc lm12_at_1b2 (off' := 0x1B4) (by decide)
+  have k2m : ∀ q, q ≠ a2 → reg n2m q = reg n2 q := fun q q2 => by
+    rw [u2m.regs]
+    by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, u2'.zero]
+    · simp [upd, h0, q2]
+  have r2a2 : reg n2m a2 = b := by
+    rw [u2m.regs, upd_same (by decide), u2'.zero, k2 20 (by decide) (by decide), rb]; exact BitVec.zero_add _
+  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2m.self.bsubCall hc hb (even_at P hP 0xFFFEEE06 (by decide))
+    lm12_at_1b4 lm12_at_1b8 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x1B4 + 8) (by decide))
+    (by rw [k2m sp (by decide), k2 sp (by decide) (by decide), rsp]) hF sFB
+  rw [k2m a0 (by decide), k2m a1 (by decide), r2a2, g2a0, g2a1] at a03 a13
+  have hc3 : CodeIn n3.mem P lincombShiftMod12Code := fun j hj => by
+    rw [mem3 _ (sFC.subR (c := j) (l := 1) (by omega))]; exact hc j hj
+  have k3 : ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ ra → reg n3 q = reg n q := fun q q0 q1 q2 q3 q4 qr =>
+    by rw [fr3 q q0 q1 q2 q3 q4 qr, k2m q q2, k2 q q0 q1]
+  have ed : reg n3 (25 : Fin 32) + 0 = D + BitVec.ofNat 32 (4 * i) := by
+    rw [k3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), rd, add_lit_zero]
+  obtain ⟨n4, c4, u4⟩ := St.block lmS1Tail u3 hc3 lmS1Tail_end
+    (lmS1Tail_ok (by rw [ed]; exact aligned_add hD (by omega)) (by rw [ed]; exact sDC))
+  obtain ⟨em4, t2, tnp, txp, td, tc, tk⟩ := lmS1Tail_run (M := n3.mem) (f := reg n3) u3.zero
+  have u4' := u4.self
+  rw [em4, ed, a03] at u4'
+  have g4 : ∀ q, reg n4 q = (runBlock lmS1Tail (n3.mem, reg n3)).2 q := u4.regs
+  have hc4 := CodeIn.store32 (v := bsubD (memLoad32 M (np + BitVec.ofNat 32 (4 * i)))
+    (memLoad32 M (xp + BitVec.ofNat 32 (4 * i))) b) hc3 sDC
+  have ec : reg n4 (8 : Fin 32) = BitVec.ofNat 32 (12 - (i + 1)) := by
+    rw [g4, tc, k3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), rc, cnt12_dec i hi]
+  have hb4 : branchTaken .bne (reg n4 (8 : Fin 32)) (reg n4 x0) = decide (i + 1 < 12) := by
+    rw [ec, u4'.zero]; exact cnt12_ne i hi
+  have post : ∀ n5 : Machine, (∀ q, reg n5 q = reg n4 q) →
+      reg n5 (20 : Fin 32) = bsubB (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) (memLoad32 M (xp + BitVec.ofNat 32 (4 * i)))
+        (bsubD (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) (memLoad32 M (xp + BitVec.ofNat 32 (4 * i))) b) ∧
+      reg n5 sp = F ∧ reg n5 (9 : Fin 32) = np + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n5 (24 : Fin 32) = xp + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n5 (25 : Fin 32) = D + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n5 (8 : Fin 32) = BitVec.ofNat 32 (12 - (i + 1)) ∧
+      ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ (20 : Fin 32) → q ≠ a3 → q ≠ a4 → q ≠ ra → q ≠ (9 : Fin 32) → q ≠ (24 : Fin 32) →
+        q ≠ (25 : Fin 32) → q ≠ (8 : Fin 32) → reg n5 q = reg n q := fun n5 h5 => by
+    refine ⟨by rw [h5, g4, t2, a13], by rw [h5, g4, tk _ (by decide) (by decide) (by decide) (by decide) (by decide), sp3],
+      ?_, ?_, ?_, by rw [h5, ec], fun q q0 q1 q2 q20 q3 q4 qr qnp qxp qd qc => ?_⟩
+    · rw [h5, g4, tnp, k3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), rnp, ptr4]
+    · rw [h5, g4, txp, k3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), rxp, ptr4]
+    · rw [h5, g4, td, k3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), rd, ptr4]
+    · rw [h5, g4, tk q q20 qnp qxp qd qc, k3 q q0 q1 q2 q3 q4 qr]
+  by_cases hl : i + 1 < 12
+  · obtain ⟨n5, d5, u5⟩ := u4'.taken hc4 0x1AC lm12_at_1ca (by decide) (by rw [hb4]; exact decide_eq_true hl)
+    exact ⟨n5, n3.mem, .cons d1 (.cons d2 (.cons d2m (c3.trans (c4.trans (.single d5))))), by rw [ite_eq_left hl]; exact u5.self,
+      mem3, post n5 u5.regs⟩
+  · obtain ⟨n5, d5, u5⟩ := u4'.notTaken hc4 0x1CC lm12_at_1ca (by decide) (by rw [hb4]; exact decide_eq_false hl)
+    exact ⟨n5, n3.mem, .cons d1 (.cons d2 (.cons d2m (c3.trans (c4.trans (.single d5))))), by rw [ite_eq_right hl]; exact u5.self,
+      mem3, post n5 u5.regs⟩
+
+set_option exponentiation.threshold 400 in
+/-- **The subtraction**, from round `i` to its end at 0x1CC: the buffer at
+`D` gets the modulus minus `x`, and `a2` the borrow out as a mask. -/
+theorem lm_s1_loop {P F np xp D : Word} {M0 : Word → BitVec 8} {z : Nat} (hP : P.toNat % 2 = 0) (hF : F.toNat % 4 = 0)
+    (hnp : np.toNat % 4 = 0) (hxp : xp.toNat % 4 = 0) (hD : D.toNat % 4 = 0) (hDw : D.toNat + 48 ≤ 2 ^ 32)
+    (sFN : Sep (F + 0xFFFFFFFC) 4 np 48) (sFX : Sep (F + 0xFFFFFFFC) 4 xp 48) (sFD : Sep (F + 0xFFFFFFFC) 4 D 48)
+    (sDN : Sep D 48 np 48) (sDX : Sep D 48 xp 48)
+    (sFB : Sep (F + 0xFFFFFFFC) 4 (lmBsub P) borrowingSubCode.length)
+    (sFC : Sep (F + 0xFFFFFFFC) 4 P lincombShiftMod12Code.length)
+    (sDB : Sep D 48 (lmBsub P) borrowingSubCode.length) (sDC : Sep D 48 P lincombShiftMod12Code.length) :
+    ∀ m i, i + m + 1 = 12 → ∀ {M : Word → BitVec 8} {n : Machine} {b : Word},
+      St M P n 0x1AC (reg n) → CodeIn M P lincombShiftMod12Code → CodeIn M (lmBsub P) borrowingSubCode →
+      (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Sep D 48 x 1 → M x = M0 x) → (b = 0 ∨ b = 0xFFFFFFFF) →
+      accV M0 np i + 2 ^ (32 * i) * maskBit b = accV M0 xp i + accV M D i + z →
+      reg n sp = F → reg n (9 : Fin 32) = np + BitVec.ofNat 32 (4 * i) →
+      reg n (24 : Fin 32) = xp + BitVec.ofNat 32 (4 * i) → reg n (25 : Fin 32) = D + BitVec.ofNat 32 (4 * i) →
+      reg n (8 : Fin 32) = BitVec.ofNat 32 (12 - i) → reg n (20 : Fin 32) = b →
+      ∃ n' M', Steps n n' ∧ St M' P n' 0x1CC (reg n') ∧ CodeIn M' P lincombShiftMod12Code ∧
+        (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Sep D 48 x 1 → M' x = M0 x) ∧
+        (reg n' (20 : Fin 32) = 0 ∨ reg n' (20 : Fin 32) = 0xFFFFFFFF) ∧
+        accV M0 np 12 + 2 ^ (32 * 12) * maskBit (reg n' (20 : Fin 32)) = accV M0 xp 12 + accV M' D 12 + z ∧
+        reg n' sp = F ∧
+        ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ (20 : Fin 32) → q ≠ a3 → q ≠ a4 → q ≠ ra → q ≠ (9 : Fin 32) → q ≠ (24 : Fin 32) →
+          q ≠ (25 : Fin 32) → q ≠ (8 : Fin 32) → reg n' q = reg n q := by
+  have step : ∀ i, i < 12 → ∀ {M : Word → BitVec 8} {n : Machine} {b : Word},
+      St M P n 0x1AC (reg n) → CodeIn M P lincombShiftMod12Code → CodeIn M (lmBsub P) borrowingSubCode →
+      (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Sep D 48 x 1 → M x = M0 x) → (b = 0 ∨ b = 0xFFFFFFFF) →
+      accV M0 np i + 2 ^ (32 * i) * maskBit b = accV M0 xp i + accV M D i + z →
+      reg n sp = F → reg n (9 : Fin 32) = np + BitVec.ofNat 32 (4 * i) →
+      reg n (24 : Fin 32) = xp + BitVec.ofNat 32 (4 * i) → reg n (25 : Fin 32) = D + BitVec.ofNat 32 (4 * i) →
+      reg n (8 : Fin 32) = BitVec.ofNat 32 (12 - i) → reg n (20 : Fin 32) = b →
+      ∃ n' M', Steps n n' ∧ St M' P n' (if i + 1 < 12 then 0x1AC else 0x1CC) (reg n') ∧
+        CodeIn M' P lincombShiftMod12Code ∧ CodeIn M' (lmBsub P) borrowingSubCode ∧
+        (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Sep D 48 x 1 → M' x = M0 x) ∧
+        (reg n' (20 : Fin 32) = 0 ∨ reg n' (20 : Fin 32) = 0xFFFFFFFF) ∧
+        accV M0 np (i + 1) + 2 ^ (32 * (i + 1)) * maskBit (reg n' (20 : Fin 32)) = accV M0 xp (i + 1) + accV M' D (i + 1) + z ∧
+        reg n' sp = F ∧ reg n' (9 : Fin 32) = np + BitVec.ofNat 32 (4 * (i + 1)) ∧
+        reg n' (24 : Fin 32) = xp + BitVec.ofNat 32 (4 * (i + 1)) ∧
+        reg n' (25 : Fin 32) = D + BitVec.ofNat 32 (4 * (i + 1)) ∧
+        reg n' (8 : Fin 32) = BitVec.ofNat 32 (12 - (i + 1)) ∧
+        ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ (20 : Fin 32) → q ≠ a3 → q ≠ a4 → q ≠ ra → q ≠ (9 : Fin 32) → q ≠ (24 : Fin 32) →
+          q ≠ (25 : Fin 32) → q ≠ (8 : Fin 32) → reg n' q = reg n q := by
+    intro i hi M n b s hc hb hfr hbm hv rsp rnp rxp rd rc rb
+    obtain ⟨n1, Mb, c1, u1, hMb, e2, esp, enp, exp, ed, ec, fr⟩ := lm_s1_iter (i := i) s hc hb hP hi hF hnp hxp hD
+      sFB sFC (sDC.sub (by omega)) rsp rnp rxp rd rc rb
+    have eA : memLoad32 M (np + BitVec.ofNat 32 (4 * i)) = memLoad32 M0 (np + BitVec.ofNat 32 (4 * i)) :=
+      load_frame2 hfr (sFN.subR (by omega)) (sDN.subR (by omega))
+    have eN : memLoad32 M (xp + BitVec.ofNat 32 (4 * i)) = memLoad32 M0 (xp + BitVec.ofNat 32 (4 * i)) :=
+      load_frame2 hfr (sFX.subR (by omega)) (sDX.subR (by omega))
+    rw [eA, eN] at u1 e2
+    obtain ⟨bv, bm⟩ := bsub_val (memLoad32 M0 (np + BitVec.ofNat 32 (4 * i))) (memLoad32 M0 (xp + BitVec.ofNat 32 (4 * i)))
+      b hbm
+    have hDb : CodeIn Mb (lmBsub P) borrowingSubCode := fun j hj => by
+      rw [hMb _ (sFB.subR (c := j) (l := 1) (by omega))]; exact hb j hj
+    have hCb : CodeIn Mb P lincombShiftMod12Code := fun j hj => by
+      rw [hMb _ (sFC.subR (c := j) (l := 1) (by omega))]; exact hc j hj
+    refine ⟨n1, _, c1, u1, CodeIn.store32 hCb (sDC.sub (by omega)), CodeIn.store32 hDb (sDB.sub (by omega)),
+      fun x hx hd => ?_, by rw [e2]; exact bm, ?_, esp, enp, exp, ed, ec, fr⟩
+    · rw [memStore32_get_sep (hd.sub (c := 4 * i) (l := 4) (by omega)), hMb x hx, hfr x hx hd]
+    · have hA : accV (memStore32 Mb (D + BitVec.ofNat 32 (4 * i)) (bsubD (memLoad32 M0 (np + BitVec.ofNat 32 (4 * i)))
+          (memLoad32 M0 (xp + BitVec.ofNat 32 (4 * i))) b)) D (i + 1) = accV M D i +
+          (bsubD (memLoad32 M0 (np + BitVec.ofNat 32 (4 * i))) (memLoad32 M0 (xp + BitVec.ofNat 32 (4 * i))) b).toNat *
+            2 ^ (32 * i) := by
+        rw [accV_succ1, accV_store_above (by omega) i (Nat.le_refl i), memLoad32_store32_same]
+        congr 1
+        exact accV_congr i fun j hj => memLoad32_congr fun q hq =>
+          hMb _ ((sFD.subR (c := 4 * j) (l := 4) (by omega)).subR (c := q) (l := 1) (by omega))
+      rw [hA, accV_succ1, accV_succ1, pow32_succ, e2]
+      exact sub_arith_z hv bv
+  intro m
+  induction m with
+  | zero =>
+    intro i hi M n b s hc hb hfr hbm hv rsp rnp rxp rd rc rb
+    have i11 : i = 11 := Nat.succ.inj hi
+    subst i11
+    obtain ⟨n1, M1, c1, u1, hc1, _, hf1, hm1, hv1, sp1, _, _, _, _, fr⟩ :=
+      step 11 (by decide) s hc hb hfr hbm hv rsp rnp rxp rd rc rb
+    exact ⟨n1, M1, c1, u1, hc1, hf1, hm1, hv1, sp1, fr⟩
+  | succ m ih =>
+    intro i hi M n b s hc hb hfr hbm hv rsp rnp rxp rd rc rb
+    have hl : i + 1 < 12 := sel_lt1 hi
+    obtain ⟨n1, M1, c1, u1, hc1, hb1, hf1, hm1, hv1, sp1, enp, exp, ed, ec, fr⟩ :=
+      step i (Nat.lt_trans (Nat.lt_succ_self i) hl) s hc hb hfr hbm hv rsp rnp rxp rd rc rb
+    rw [ite_eq_left hl] at u1
+    obtain ⟨n', M', c', u', hc', hf', hm', hv', sp', fr'⟩ :=
+      ih (i + 1) (sel_succ hi) u1 hc1 hb1 hf1 hm1 hv1 sp1 enp exp ed ec rfl
+    exact ⟨n', M', c1.trans c', u', hc', hf', hm', hv', sp', fun q q0 q1 q2 q20 q3 q4 qr qnp qxp qd qc => by
+      rw [fr' q q0 q1 q2 q20 q3 q4 qr qnp qxp qd qc, fr q q0 q1 q2 q20 q3 q4 qr qnp qxp qd qc]⟩
+
+/-- The end of a subtraction round, from 0x1FC: keep the borrow, store the
+difference, and advance the pointers and the count. -/
+def lmS2Tail : List BInstr :=
+  [.alu .add (20 : Fin 32) x0 a1, .aluImm .add (24 : Fin 32) (24 : Fin 32) 4, .sw (9 : Fin 32) a0 0,
+   .aluImm .add (21 : Fin 32) (21 : Fin 32) 4, .aluImm .add (9 : Fin 32) (9 : Fin 32) 4,
+   .aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFFFF]
+
+section
+set_option maxRecDepth 20000
+theorem lmS2Tail_end : blockEnd lincombShiftMod12Code 0x1FC lmS2Tail = some 0x208 := by decide
+end
+
+set_option maxRecDepth 20000 in
+theorem lmS2Tail_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock lmS2Tail (M, f)).1 = memStore32 M (f (9 : Fin 32) + 0) (f a0) ∧
+    (runBlock lmS2Tail (M, f)).2 (20 : Fin 32) = f a1 ∧
+    (runBlock lmS2Tail (M, f)).2 (24 : Fin 32) = f (24 : Fin 32) + 4 ∧
+    (runBlock lmS2Tail (M, f)).2 (21 : Fin 32) = f (21 : Fin 32) + 4 ∧
+    (runBlock lmS2Tail (M, f)).2 (9 : Fin 32) = f (9 : Fin 32) + 4 ∧
+    (runBlock lmS2Tail (M, f)).2 (8 : Fin 32) = f (8 : Fin 32) + 0xFFFFFFFF ∧
+    ∀ q, q ≠ (20 : Fin 32) → q ≠ (24 : Fin 32) → q ≠ (21 : Fin 32) → q ≠ (9 : Fin 32) → q ≠ (8 : Fin 32) →
+      (runBlock lmS2Tail (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, lmS2Tail]
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, fun q q2 qnp qxp qd qc => ?_⟩
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte, hz]; exact BitVec.zero_add _
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp [upd, h0, q2, qnp, qxp, qd, qc]
+
+theorem lmS2Tail_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Word} {len : Nat}
+    (h : (f (9 : Fin 32) + 0).toNat % 4 = 0) (hs : Sep (f (9 : Fin 32) + 0) 4 base len) :
+    BlockOk base len lmS2Tail (M, f) := by
+  simp +decide only [BlockOk, BInstr.ok, BInstr.run, lmS2Tail, upd, ↓reduceIte, and_true, true_and]
+  exact ⟨h, hs⟩
+
+/-- **One round of the subtraction**, from 0x1EA: subtract limb `i` of `x`
+and the borrow from limb `i` of the modulus at `np`, and store the
+difference at limb `i` of the buffer at `D`. `borrowing_sub` also writes
+the word below `sp`. -/
+theorem lm_s2_iter {M : Word → BitVec 8} {P F np xp D b : Word} {n : Machine} {i : Nat}
+    (s : St M P n 0x1EA (reg n)) (hc : CodeIn M P lincombShiftMod12Code) (hb : CodeIn M (lmBsub P) borrowingSubCode)
+    (hP : P.toNat % 2 = 0) (hi : i < 2) (hF : F.toNat % 4 = 0) (hnp : np.toNat % 4 = 0)
+    (hxp : xp.toNat % 4 = 0) (hD : D.toNat % 4 = 0)
+    (sFB : Sep (F + 0xFFFFFFFC) 4 (lmBsub P) borrowingSubCode.length)
+    (sFC : Sep (F + 0xFFFFFFFC) 4 P lincombShiftMod12Code.length)
+    (sDC : Sep (D + BitVec.ofNat 32 (4 * i)) 4 P lincombShiftMod12Code.length)
+    (rsp : reg n sp = F) (rnp : reg n (24 : Fin 32) = np + BitVec.ofNat 32 (4 * i))
+    (rxp : reg n (21 : Fin 32) = xp + BitVec.ofNat 32 (4 * i)) (rd : reg n (9 : Fin 32) = D + BitVec.ofNat 32 (4 * i))
+    (rc : reg n (8 : Fin 32) = BitVec.ofNat 32 (2 - i)) (rb : reg n (20 : Fin 32) = b) :
+    ∃ n' Mb, Steps n n' ∧
+      St (memStore32 Mb (D + BitVec.ofNat 32 (4 * i))
+          (bsubD (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) (memLoad32 M (xp + BitVec.ofNat 32 (4 * i))) b))
+        P n' (if i + 1 < 2 then 0x1EA else 0x20A) (reg n') ∧
+      (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Mb x = M x) ∧
+      reg n' (20 : Fin 32) = bsubB (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) (memLoad32 M (xp + BitVec.ofNat 32 (4 * i)))
+        (bsubD (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) (memLoad32 M (xp + BitVec.ofNat 32 (4 * i))) b) ∧
+      reg n' sp = F ∧ reg n' (24 : Fin 32) = np + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n' (21 : Fin 32) = xp + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n' (9 : Fin 32) = D + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n' (8 : Fin 32) = BitVec.ofNat 32 (2 - (i + 1)) ∧
+      ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ (20 : Fin 32) → q ≠ a3 → q ≠ a4 → q ≠ ra → q ≠ (24 : Fin 32) → q ≠ (21 : Fin 32) →
+        q ≠ (9 : Fin 32) → q ≠ (8 : Fin 32) → reg n' q = reg n q := by
+  have hz := s.zero
+  obtain ⟨n1, d1, u1⟩ := s.lw hc lm12_at_1ea (off' := 0x1EE) (by decide)
+    (by rw [rnp, add_lit_zero]; exact aligned_add hnp (by omega))
+  obtain ⟨n2, d2, u2⟩ := u1.lw hc lm12_at_1ee (off' := 0x1F2) (by decide)
+    (by rw [upd_ne (by decide) (by decide), rxp, add_lit_zero]; exact aligned_add hxp (by omega))
+  rw [rnp, add_lit_zero] at u2
+  have f0 : upd (upd (reg n) a0 (memLoad32 M (np + BitVec.ofNat 32 (4 * i)))) a1
+      (memLoad32 M (upd (reg n) a0 (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) (21 : Fin 32) + 0)) a0 =
+      memLoad32 M (np + BitVec.ofNat 32 (4 * i)) := by simp +decide [upd]
+  have f1 : upd (upd (reg n) a0 (memLoad32 M (np + BitVec.ofNat 32 (4 * i)))) a1
+      (memLoad32 M (upd (reg n) a0 (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) (21 : Fin 32) + 0)) a1 =
+      memLoad32 M (xp + BitVec.ofNat 32 (4 * i)) := by
+    simp +decide only [upd, ↓reduceIte]; rw [rxp, add_lit_zero]
+  have u2' := u2.self
+  have g2a0 : reg n2 a0 = memLoad32 M (np + BitVec.ofNat 32 (4 * i)) := by rw [u2.regs, f0]
+  have g2a1 : reg n2 a1 = memLoad32 M (xp + BitVec.ofNat 32 (4 * i)) := by rw [u2.regs, f1]
+  have k2 : ∀ q, q ≠ a0 → q ≠ a1 → reg n2 q = reg n q := fun q q0 q1 => by
+    rw [u2.regs]
+    by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp [upd, h0, q0, q1]
+  obtain ⟨n2m, d2m, u2m⟩ := u2'.alu hc lm12_at_1f2 (off' := 0x1F4) (by decide)
+  have k2m : ∀ q, q ≠ a2 → reg n2m q = reg n2 q := fun q q2 => by
+    rw [u2m.regs]
+    by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, u2'.zero]
+    · simp [upd, h0, q2]
+  have r2a2 : reg n2m a2 = b := by
+    rw [u2m.regs, upd_same (by decide), u2'.zero, k2 20 (by decide) (by decide), rb]; exact BitVec.zero_add _
+  obtain ⟨n3, c3, u3, a03, a13, sp3, fr3, mem3⟩ := u2m.self.bsubCall hc hb (even_at P hP 0xFFFEEE06 (by decide))
+    lm12_at_1f4 lm12_at_1f8 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P hP (0x1F4 + 8) (by decide))
+    (by rw [k2m sp (by decide), k2 sp (by decide) (by decide), rsp]) hF sFB
+  rw [k2m a0 (by decide), k2m a1 (by decide), r2a2, g2a0, g2a1] at a03 a13
+  have hc3 : CodeIn n3.mem P lincombShiftMod12Code := fun j hj => by
+    rw [mem3 _ (sFC.subR (c := j) (l := 1) (by omega))]; exact hc j hj
+  have k3 : ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ ra → reg n3 q = reg n q := fun q q0 q1 q2 q3 q4 qr =>
+    by rw [fr3 q q0 q1 q2 q3 q4 qr, k2m q q2, k2 q q0 q1]
+  have ed : reg n3 (9 : Fin 32) + 0 = D + BitVec.ofNat 32 (4 * i) := by
+    rw [k3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), rd, add_lit_zero]
+  obtain ⟨n4, c4, u4⟩ := St.block lmS2Tail u3 hc3 lmS2Tail_end
+    (lmS2Tail_ok (by rw [ed]; exact aligned_add hD (by omega)) (by rw [ed]; exact sDC))
+  obtain ⟨em4, t2, tnp, txp, td, tc, tk⟩ := lmS2Tail_run (M := n3.mem) (f := reg n3) u3.zero
+  have u4' := u4.self
+  rw [em4, ed, a03] at u4'
+  have g4 : ∀ q, reg n4 q = (runBlock lmS2Tail (n3.mem, reg n3)).2 q := u4.regs
+  have hc4 := CodeIn.store32 (v := bsubD (memLoad32 M (np + BitVec.ofNat 32 (4 * i)))
+    (memLoad32 M (xp + BitVec.ofNat 32 (4 * i))) b) hc3 sDC
+  have ec : reg n4 (8 : Fin 32) = BitVec.ofNat 32 (2 - (i + 1)) := by
+    rw [g4, tc, k3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), rc, cnt2_dec i hi]
+  have hb4 : branchTaken .bne (reg n4 (8 : Fin 32)) (reg n4 x0) = decide (i + 1 < 2) := by
+    rw [ec, u4'.zero]; exact cnt2_ne i hi
+  have post : ∀ n5 : Machine, (∀ q, reg n5 q = reg n4 q) →
+      reg n5 (20 : Fin 32) = bsubB (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) (memLoad32 M (xp + BitVec.ofNat 32 (4 * i)))
+        (bsubD (memLoad32 M (np + BitVec.ofNat 32 (4 * i))) (memLoad32 M (xp + BitVec.ofNat 32 (4 * i))) b) ∧
+      reg n5 sp = F ∧ reg n5 (24 : Fin 32) = np + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n5 (21 : Fin 32) = xp + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n5 (9 : Fin 32) = D + BitVec.ofNat 32 (4 * (i + 1)) ∧
+      reg n5 (8 : Fin 32) = BitVec.ofNat 32 (2 - (i + 1)) ∧
+      ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ (20 : Fin 32) → q ≠ a3 → q ≠ a4 → q ≠ ra → q ≠ (24 : Fin 32) → q ≠ (21 : Fin 32) →
+        q ≠ (9 : Fin 32) → q ≠ (8 : Fin 32) → reg n5 q = reg n q := fun n5 h5 => by
+    refine ⟨by rw [h5, g4, t2, a13], by rw [h5, g4, tk _ (by decide) (by decide) (by decide) (by decide) (by decide), sp3],
+      ?_, ?_, ?_, by rw [h5, ec], fun q q0 q1 q2 q20 q3 q4 qr qnp qxp qd qc => ?_⟩
+    · rw [h5, g4, tnp, k3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), rnp, ptr4]
+    · rw [h5, g4, txp, k3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), rxp, ptr4]
+    · rw [h5, g4, td, k3 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), rd, ptr4]
+    · rw [h5, g4, tk q q20 qnp qxp qd qc, k3 q q0 q1 q2 q3 q4 qr]
+  by_cases hl : i + 1 < 2
+  · obtain ⟨n5, d5, u5⟩ := u4'.taken hc4 0x1EA lm12_at_208 (by decide) (by rw [hb4]; exact decide_eq_true hl)
+    exact ⟨n5, n3.mem, .cons d1 (.cons d2 (.cons d2m (c3.trans (c4.trans (.single d5))))), by rw [ite_eq_left hl]; exact u5.self,
+      mem3, post n5 u5.regs⟩
+  · obtain ⟨n5, d5, u5⟩ := u4'.notTaken hc4 0x20A lm12_at_208 (by decide) (by rw [hb4]; exact decide_eq_false hl)
+    exact ⟨n5, n3.mem, .cons d1 (.cons d2 (.cons d2m (c3.trans (c4.trans (.single d5))))), by rw [ite_eq_right hl]; exact u5.self,
+      mem3, post n5 u5.regs⟩
+
+set_option exponentiation.threshold 400 in
+/-- **The subtraction**, from round `i` to its end at 0x20A: the buffer at
+`D` gets the modulus minus `x`, and `a2` the borrow out as a mask. -/
+theorem lm_s2_loop {P F np xp D : Word} {M0 : Word → BitVec 8} {z : Nat} (hP : P.toNat % 2 = 0) (hF : F.toNat % 4 = 0)
+    (hnp : np.toNat % 4 = 0) (hxp : xp.toNat % 4 = 0) (hD : D.toNat % 4 = 0) (hDw : D.toNat + 8 ≤ 2 ^ 32)
+    (sFN : Sep (F + 0xFFFFFFFC) 4 np 8) (sFX : Sep (F + 0xFFFFFFFC) 4 xp 8) (sFD : Sep (F + 0xFFFFFFFC) 4 D 8)
+    (sDN : Sep D 8 np 8) (sDX : Sep D 8 xp 8)
+    (sFB : Sep (F + 0xFFFFFFFC) 4 (lmBsub P) borrowingSubCode.length)
+    (sFC : Sep (F + 0xFFFFFFFC) 4 P lincombShiftMod12Code.length)
+    (sDB : Sep D 8 (lmBsub P) borrowingSubCode.length) (sDC : Sep D 8 P lincombShiftMod12Code.length) :
+    ∀ m i, i + m + 1 = 2 → ∀ {M : Word → BitVec 8} {n : Machine} {b : Word},
+      St M P n 0x1EA (reg n) → CodeIn M P lincombShiftMod12Code → CodeIn M (lmBsub P) borrowingSubCode →
+      (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Sep D 8 x 1 → M x = M0 x) → (b = 0 ∨ b = 0xFFFFFFFF) →
+      accV M0 np i + 2 ^ (32 * i) * maskBit b = accV M0 xp i + accV M D i + z →
+      reg n sp = F → reg n (24 : Fin 32) = np + BitVec.ofNat 32 (4 * i) →
+      reg n (21 : Fin 32) = xp + BitVec.ofNat 32 (4 * i) → reg n (9 : Fin 32) = D + BitVec.ofNat 32 (4 * i) →
+      reg n (8 : Fin 32) = BitVec.ofNat 32 (2 - i) → reg n (20 : Fin 32) = b →
+      ∃ n' M', Steps n n' ∧ St M' P n' 0x20A (reg n') ∧ CodeIn M' P lincombShiftMod12Code ∧
+        (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Sep D 8 x 1 → M' x = M0 x) ∧
+        (reg n' (20 : Fin 32) = 0 ∨ reg n' (20 : Fin 32) = 0xFFFFFFFF) ∧
+        accV M0 np 2 + 2 ^ (32 * 2) * maskBit (reg n' (20 : Fin 32)) = accV M0 xp 2 + accV M' D 2 + z ∧
+        reg n' sp = F ∧
+        ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ (20 : Fin 32) → q ≠ a3 → q ≠ a4 → q ≠ ra → q ≠ (24 : Fin 32) → q ≠ (21 : Fin 32) →
+          q ≠ (9 : Fin 32) → q ≠ (8 : Fin 32) → reg n' q = reg n q := by
+  have step : ∀ i, i < 2 → ∀ {M : Word → BitVec 8} {n : Machine} {b : Word},
+      St M P n 0x1EA (reg n) → CodeIn M P lincombShiftMod12Code → CodeIn M (lmBsub P) borrowingSubCode →
+      (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Sep D 8 x 1 → M x = M0 x) → (b = 0 ∨ b = 0xFFFFFFFF) →
+      accV M0 np i + 2 ^ (32 * i) * maskBit b = accV M0 xp i + accV M D i + z →
+      reg n sp = F → reg n (24 : Fin 32) = np + BitVec.ofNat 32 (4 * i) →
+      reg n (21 : Fin 32) = xp + BitVec.ofNat 32 (4 * i) → reg n (9 : Fin 32) = D + BitVec.ofNat 32 (4 * i) →
+      reg n (8 : Fin 32) = BitVec.ofNat 32 (2 - i) → reg n (20 : Fin 32) = b →
+      ∃ n' M', Steps n n' ∧ St M' P n' (if i + 1 < 2 then 0x1EA else 0x20A) (reg n') ∧
+        CodeIn M' P lincombShiftMod12Code ∧ CodeIn M' (lmBsub P) borrowingSubCode ∧
+        (∀ x, Sep (F + 0xFFFFFFFC) 4 x 1 → Sep D 8 x 1 → M' x = M0 x) ∧
+        (reg n' (20 : Fin 32) = 0 ∨ reg n' (20 : Fin 32) = 0xFFFFFFFF) ∧
+        accV M0 np (i + 1) + 2 ^ (32 * (i + 1)) * maskBit (reg n' (20 : Fin 32)) = accV M0 xp (i + 1) + accV M' D (i + 1) + z ∧
+        reg n' sp = F ∧ reg n' (24 : Fin 32) = np + BitVec.ofNat 32 (4 * (i + 1)) ∧
+        reg n' (21 : Fin 32) = xp + BitVec.ofNat 32 (4 * (i + 1)) ∧
+        reg n' (9 : Fin 32) = D + BitVec.ofNat 32 (4 * (i + 1)) ∧
+        reg n' (8 : Fin 32) = BitVec.ofNat 32 (2 - (i + 1)) ∧
+        ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ (20 : Fin 32) → q ≠ a3 → q ≠ a4 → q ≠ ra → q ≠ (24 : Fin 32) → q ≠ (21 : Fin 32) →
+          q ≠ (9 : Fin 32) → q ≠ (8 : Fin 32) → reg n' q = reg n q := by
+    intro i hi M n b s hc hb hfr hbm hv rsp rnp rxp rd rc rb
+    obtain ⟨n1, Mb, c1, u1, hMb, e2, esp, enp, exp, ed, ec, fr⟩ := lm_s2_iter (i := i) s hc hb hP hi hF hnp hxp hD
+      sFB sFC (sDC.sub (by omega)) rsp rnp rxp rd rc rb
+    have eA : memLoad32 M (np + BitVec.ofNat 32 (4 * i)) = memLoad32 M0 (np + BitVec.ofNat 32 (4 * i)) :=
+      load_frame2 hfr (sFN.subR (by omega)) (sDN.subR (by omega))
+    have eN : memLoad32 M (xp + BitVec.ofNat 32 (4 * i)) = memLoad32 M0 (xp + BitVec.ofNat 32 (4 * i)) :=
+      load_frame2 hfr (sFX.subR (by omega)) (sDX.subR (by omega))
+    rw [eA, eN] at u1 e2
+    obtain ⟨bv, bm⟩ := bsub_val (memLoad32 M0 (np + BitVec.ofNat 32 (4 * i))) (memLoad32 M0 (xp + BitVec.ofNat 32 (4 * i)))
+      b hbm
+    have hDb : CodeIn Mb (lmBsub P) borrowingSubCode := fun j hj => by
+      rw [hMb _ (sFB.subR (c := j) (l := 1) (by omega))]; exact hb j hj
+    have hCb : CodeIn Mb P lincombShiftMod12Code := fun j hj => by
+      rw [hMb _ (sFC.subR (c := j) (l := 1) (by omega))]; exact hc j hj
+    refine ⟨n1, _, c1, u1, CodeIn.store32 hCb (sDC.sub (by omega)), CodeIn.store32 hDb (sDB.sub (by omega)),
+      fun x hx hd => ?_, by rw [e2]; exact bm, ?_, esp, enp, exp, ed, ec, fr⟩
+    · rw [memStore32_get_sep (hd.sub (c := 4 * i) (l := 4) (by omega)), hMb x hx, hfr x hx hd]
+    · have hA : accV (memStore32 Mb (D + BitVec.ofNat 32 (4 * i)) (bsubD (memLoad32 M0 (np + BitVec.ofNat 32 (4 * i)))
+          (memLoad32 M0 (xp + BitVec.ofNat 32 (4 * i))) b)) D (i + 1) = accV M D i +
+          (bsubD (memLoad32 M0 (np + BitVec.ofNat 32 (4 * i))) (memLoad32 M0 (xp + BitVec.ofNat 32 (4 * i))) b).toNat *
+            2 ^ (32 * i) := by
+        rw [accV_succ1, accV_store_above (by omega) i (Nat.le_refl i), memLoad32_store32_same]
+        congr 1
+        exact accV_congr i fun j hj => memLoad32_congr fun q hq =>
+          hMb _ ((sFD.subR (c := 4 * j) (l := 4) (by omega)).subR (c := q) (l := 1) (by omega))
+      rw [hA, accV_succ1, accV_succ1, pow32_succ, e2]
+      exact sub_arith_z hv bv
+  intro m
+  induction m with
+  | zero =>
+    intro i hi M n b s hc hb hfr hbm hv rsp rnp rxp rd rc rb
+    have i11 : i = 1 := Nat.succ.inj hi
+    subst i11
+    obtain ⟨n1, M1, c1, u1, hc1, _, hf1, hm1, hv1, sp1, _, _, _, _, fr⟩ :=
+      step 1 (by decide) s hc hb hfr hbm hv rsp rnp rxp rd rc rb
+    exact ⟨n1, M1, c1, u1, hc1, hf1, hm1, hv1, sp1, fr⟩
+  | succ m ih =>
+    intro i hi M n b s hc hb hfr hbm hv rsp rnp rxp rd rc rb
+    have hl : i + 1 < 2 := sel_lt1 hi
+    obtain ⟨n1, M1, c1, u1, hc1, hb1, hf1, hm1, hv1, sp1, enp, exp, ed, ec, fr⟩ :=
+      step i (Nat.lt_trans (Nat.lt_succ_self i) hl) s hc hb hfr hbm hv rsp rnp rxp rd rc rb
+    rw [ite_eq_left hl] at u1
+    obtain ⟨n', M', c', u', hc', hf', hm', hv', sp', fr'⟩ :=
+      ih (i + 1) (sel_succ hi) u1 hc1 hb1 hf1 hm1 hv1 sp1 enp exp ed ec rfl
+    exact ⟨n', M', c1.trans c', u', hc', hf', hm', hv', sp', fun q q0 q1 q2 q20 q3 q4 qr qnp qxp qd qc => by
+      rw [fr' q q0 q1 q2 q20 q3 q4 qr qnp qxp qd qc, fr q q0 q1 q2 q20 q3 q4 qr qnp qxp qd qc]⟩
+
+
 end C3.RV32
