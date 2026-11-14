@@ -3,7 +3,7 @@ module github.com/imjasonh/playground/ci-substrate
 go 1.27.0
 
 require (
-	cloud.google.com/go/longrunning v0.8.0
+	cloud.google.com/go/longrunning v1.5.0
 	github.com/bazelbuild/remote-apis v0.0.0-20261110225606-e0c0554bfc8a
 	github.com/chainguard-dev/clog v1.8.1
 	github.com/container-storage-interface/spec v1.13.0
@@ -32,15 +32,15 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.33.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.47.0 // indirect
 	go.opentelemetry.io/otel/log v1.47.0 // indirect
-	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
-	go.yaml.in/yaml/v2 v2.4.4 // indirect
-	golang.org/x/net v0.60.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260928230214-8a89bd6388cc // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc // indirect
+	go.opentelemetry.io/proto/otlp v1.11.1 // indirect
+	go.yaml.in/yaml/v2 v2.4.5 // indirect
+	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20261110000943-09e21b237f2c // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261110000943-09e21b237f2c // indirect
 )
