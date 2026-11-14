@@ -1,0 +1,22 @@
+[package]
+name = "whbiab"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Records one use of a CLI in the wehadababyitsaboy usage-tracking bucket"
+repository = "https://github.com/imjasonh/playground"
+readme = "README.md"
+publish = false
+
+[features]
+default = ["clap"]
+# clap_parts reads the flags a user set from clap's parsed matches.
+clap = ["dep:clap"]
+
+[dependencies]
+clap = { version = "4", default-features = false, features = ["std"], optional = true }
+# Blocking HTTPS client (rustls), the same one git-fuse uses.
+ureq = { version = "2", default-features = false, features = ["tls"] }
+
+[lints.rust]
+unused = "deny"
