@@ -50,6 +50,7 @@ import C3BootProofs.Proofs.LincombShift8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
 import C3BootProofs.Proofs.Norm8
+import C3BootProofs.Proofs.ToUintResize
 import C3BootProofs.Proofs.UpdateFg8
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.RegionMem
@@ -3209,6 +3210,31 @@ theorem exists_norm8_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `UintRef::to_uint_resize::<2>` where the
+image loads it, and zeros elsewhere. -/
+def witnessMemTur : RV32.Word → BitVec 8 :=
+  RV32.regionMem [(Image.toUintResize2Address, Image.toUintResize2Code)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `UintRef::to_uint_resize::<2>` with the result at
+`0x3FCC5000` and the source at `0x3FCC6000` meets `toUintResize2_correct`'s
+hypotheses. -/
+theorem exists_toUintResize2_machine :
+    ∃ (m : RV32.Machine) (P out src retAddr : RV32.Word), RV32.CodeIn m.mem P Image.toUintResize2Code ∧
+      m.pc = P ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = src ∧ out.toNat % 4 = 0 ∧ src.toNat % 4 = 0 ∧
+      RV32.Sep out 8 src 8 ∧ RV32.Sep out 8 P Image.toUintResize2Code.length ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.toUintResize2Address, witnessMemTur⟩,
+    BitVec.ofNat 32 Image.toUintResize2Address, 0x3FCC5000, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, by decide, by decide,
+    ?_, ?_, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 /-- Memory with the current image's `SignedInt<12>::lowest` and
 `Choice::select_i64` where the image loads them, and zeros elsewhere. -/
 def witnessMemLowest12 : RV32.Word → BitVec 8 :=
@@ -4136,3 +4162,9 @@ end C3
 
 /-- info: 'C3.exists_norm8_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_norm8_machine
+
+/-- info: 'C3.RV32.toUintResize2_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.toUintResize2_correct
+
+/-- info: 'C3.exists_toUintResize2_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_toUintResize2_machine
