@@ -641,6 +641,9 @@ theorem mul64_val (x0 x1 m0 m1 : Word) :
   generalize m1.toNat * x1.toNat = P11
   omega
 
+theorem nmem_of {q : Nat} {L1 L2 : List Nat} (hs : ∀ x ∈ L2, x ∈ L1) (h : q ∉ L1) : q ∉ L2 :=
+  fun h2 => h (hs q h2)
+
 set_option maxRecDepth 20000 in
 set_option maxHeartbeats 4000000 in
 /-- **The 64-bit product**, from 0x6C to 0xC6: the two words at `F + 0x118`
@@ -835,7 +838,7 @@ theorem lm_mul {M : Word → BitVec 8} {P F mip : Word} {n : Machine} (s : St M 
   have g15 : ∀ q, reg n15 q = _ := u15.regs
   have k14 : ∀ q, reg n14 q = reg n13 q := u14.regs
   have kin2 : ∀ q : Fin 32, q.val ∉ [8, 9, 10, 11, 12, 13, 14, 15] → reg n14 q = reg n10 q := fun q hq => by
-    rw [k14, g13, m2k'' q (by simp at hq ⊢; omega), k12, g11, m1k' q (by simp at hq ⊢; omega)]
+    rw [k14, g13, m2k'' q (nmem_of (by decide) hq), k12, g11, m1k' q (nmem_of (by decide) hq)]
   have r15t1 : reg n15 6 = 2 := by rw [g15, m3t1', kin2 6 (by decide), r10t1]; rfl
   have r15a6 : reg n15 16 = 2 := by rw [g15, m3k' 16 (by decide), kin2 16 (by decide), k10, r9a6]
   obtain ⟨n16, d16, u16⟩ := u15.self.notTaken hcC 0xC6 lm12_at_c2 (by decide)
@@ -853,10 +856,8 @@ theorem lm_mul {M : Word → BitVec 8} {P F mip : Word} {n : Machine} (s : St M 
   · rw [memLoad32_store32_same, memLoad32_store32_sep s11c.symm, ← hMB, memLoad32_store32_sep s11c.symm,
       memLoad32_store32_same, hx0, hx1, hm0', m1x]
     exact mul64_val x0 x1 m0 m1
-  · have nq : ∀ w : Fin 32, w.val ∈ [5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] → q.val ∉ [w.val] :=
-      fun w hw h => hq (by simp at h; rw [h]; exact hw)
-    rw [u16.regs, g15, m3k' q (by simp at hq ⊢; omega), kin2 q (by simp at hq ⊢; omega), k10, g9,
-      m3k q (by simp at hq ⊢; omega), kin q (by simp at hq ⊢; omega), k4, g3, m1k q (by simp at hq ⊢; omega),
-      k2, k1 q (by simp at hq ⊢; omega)]
+  · rw [u16.regs, g15, m3k' q (nmem_of (by decide) hq), kin2 q (nmem_of (by decide) hq), k10, g9,
+      m3k q (nmem_of (by decide) hq), kin q (nmem_of (by decide) hq), k4, g3, m1k q (nmem_of (by decide) hq),
+      k2, k1 q (nmem_of (by decide) hq)]
 
 end C3.RV32
