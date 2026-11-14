@@ -5,7 +5,7 @@
     <link>https://imjasonh.github.io/playground/preview/pr-735/posts/</link>
     <description>Posts from Playground.</description>
     <atom:link href="https://imjasonh.github.io/playground/preview/pr-735/posts/feed.xml" rel="self" type="application/rss+xml"/>
-    <lastBuildDate>Sat, 14 Nov 2026 11:20:13 -0500</lastBuildDate>
+    <lastBuildDate>Sat, 14 Nov 2026 11:23:09 -0500</lastBuildDate>
     <item>
       <title>wehadababyitsaboy: a dead simple, dead cheap usage tracking nanoframework</title>
       <link>https://imjasonh.github.io/playground/preview/pr-735/posts/wehadababyitsaboy/</link>
@@ -29,6 +29,7 @@
 <p>For web clients, you can embed <a href="https://raw.githubusercontent.com/imjasonh/playground/refs/heads/main/wehadababyitsaboy/web/whbiab.js"><code>whbiab.js</code></a> (pronounced WEE-bee-ab) and it'll collect whatever it can about the page and send a 404 request to the tracking bucket. Google will then record that 404 in CSV logs. It's embedded in all the browser apps in this repo, including this blog.</p>
 <p>For Go clients, there's a <a href="https://github.com/spf13/cobra"><code>cobra</code></a>-compatible <a href="https://github.com/imjasonh/playground/tree/main/wehadababyitsaboy/go">helper library</a> to do the same. For Rust, there's a <a href="https://github.com/clap-rs/clap"><code>clap</code></a>-compatible <a href="https://github.com/imjasonh/playground/tree/main/wehadababyitsaboy/rust">helper module</a> to do the same. They're used by most of the CLIs in this repo.</p>
 <p>It costs about $.05 per million recorded requests, or <em>1/80th</em> of what a <em>single minute</em> of long distance collect calling used to cost. Crazy.</p>
+<p>It's also 600x cheaper than <a href="https://vercel.com/docs/analytics/limits-and-pricing">Vercel Web Analytics</a>, but they're an actual thing, and this is just a toy.</p>
 <p>If you want to set this up for yourself, you're free to. Everything's <a href="https://github.com/imjasonh/playground/tree/main/wehadababyitsaboy/terraform">defined in Terraform</a>, all you need is a GCP project and a dream.</p>
 <p>I haven't set up any kind of thing to actually sift through the request logs yet, but maybe I'll get around to it once I have some collected. It'd be cool to see who else is here.</p>
 <p>Is tracking kinda sketchy and dubiously useful, and somewhat trivially circumvented? Yeah, sure is. If you don't want it, you can set <code>DO_NOT_TRACK=1</code> or <a href="https://support.google.com/chrome/answer/2790761?ai1hc=1">in your browser settings</a>. That's fine by me.</p>
