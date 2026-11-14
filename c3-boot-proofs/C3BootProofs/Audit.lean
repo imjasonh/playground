@@ -51,6 +51,7 @@ import C3BootProofs.Proofs.LincombShiftMod12
 import C3BootProofs.Proofs.UpdateDe12
 import C3BootProofs.Proofs.UpdateDe8
 import C3BootProofs.Proofs.DerReaders
+import C3BootProofs.Proofs.DerOptional
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
@@ -2755,8 +2756,8 @@ theorem exists_derSequence_machine :
     | decide +kernel
 
 /-- Memory with the current image's `Der::set`, `Der::octet_string`,
-`Der::bit_string`, and the DER functions they call where the image loads
-them, a reader at `0x3FCC6000` whose unread bytes start at `0x3FCC7000` and
+`Der::bit_string`, `Der::integer`, `Der::boolean_true`, and `Der::optional`,
+and the functions they call, where the image loads them, a reader at `0x3FCC6000` whose unread bytes start at `0x3FCC7000` and
 number zero, and zeros elsewhere. -/
 def witnessMemDer3 : RV32.Word → BitVec 8 :=
   RV32.regionMem
@@ -2766,6 +2767,11 @@ def witnessMemDer3 : RV32.Word → BitVec 8 :=
     (Image.derSetAddress, Image.derSetCode),
     (Image.derOctetStringAddress, Image.derOctetStringCode),
     (Image.derBitStringAddress, Image.derBitStringCode),
+    (Image.derIntegerAddress, Image.derIntegerCode),
+    (Image.derBooleanTrueAddress, Image.derBooleanTrueCode),
+    (Image.derOptionalAddress, Image.derOptionalCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
     (0x3FCC6008, [0x00, 0x70, 0xCC, 0x3F])]
 
 set_option maxRecDepth 200000 in
@@ -2834,6 +2840,77 @@ theorem exists_derBitString_machine :
   · first
       | decide +kernel
       | exact RV32.sep_of_le (by decide) (by decide)
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Der::integer` with the result at `0x3FCC5000`, the
+reader at `0x3FCC6000`, and the stack at `0x3FCC8000` meets
+`derInteger_correct`'s hypotheses. -/
+theorem exists_derInteger_machine :
+    ∃ (m : RV32.Machine) (P sp0 out d retAddr : RV32.Word),
+      RV32.DerCallEnv m.mem Image.derIntegerCode P 0x5E sp0 out d 8 ∧
+      RV32.Sep (d + 8) 8 (RV32.memLoad32 m.mem (d + 8)) (RV32.memLoad32 m.mem (d + 0xC)).toNat ∧ m.pc = P ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = d ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.derIntegerAddress, witnessMemDer3⟩,
+    BitVec.ofNat 32 Image.derIntegerAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, ?_, ?_, rfl, rfl, rfl, rfl,
+    rfl, by decide⟩
+  · constructor
+    all_goals first
+      | code_in
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+      | exact (RV32.sep_of_le (by decide) (by decide)).symm
+      | decide +kernel
+  · first
+      | decide +kernel
+      | exact RV32.sep_of_le (by decide) (by decide)
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Der::boolean_true` with the reader at
+`0x3FCC6000` and the stack at `0x3FCC8000` meets `derBooleanTrue_correct`'s
+hypotheses. -/
+theorem exists_derBooleanTrue_machine :
+    ∃ (m : RV32.Machine) (P sp0 d retAddr : RV32.Word),
+      RV32.DerCallEnv m.mem Image.derBooleanTrueCode P 0xFFFFF4F2 sp0 d d 0 ∧
+      RV32.Sep (d + 8) 8 (RV32.memLoad32 m.mem (d + 8)) (RV32.memLoad32 m.mem (d + 0xC)).toNat ∧ m.pc = P ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = d ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0 0, BitVec.ofNat 32 Image.derBooleanTrueAddress, witnessMemDer3⟩,
+    BitVec.ofNat 32 Image.derBooleanTrueAddress, 0x3FCC8000, 0x3FCC6000, 0, ?_, ?_, rfl, rfl, rfl,
+    rfl, by decide⟩
+  · constructor
+    all_goals first
+      | code_in
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+      | exact (RV32.sep_of_le (by decide) (by decide)).symm
+      | decide +kernel
+  · first
+      | decide +kernel
+      | exact RV32.sep_of_le (by decide) (by decide)
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Der::optional` for tag 0x30 with the result at
+`0x3FCC5000`, the reader at `0x3FCC6000`, and the stack at `0x3FCC8000`
+meets `derOptional_correct`'s hypotheses. -/
+theorem exists_derOptional_machine :
+    ∃ (m : RV32.Machine) (P sp0 out d retAddr : RV32.Word) (tag : Nat), RV32.OptEnv m.mem P sp0 out d ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = d ∧
+      RV32.reg m RV32.a2 = BitVec.ofNat 32 tag ∧ tag < 256 ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0x30, BitVec.ofNat 32 Image.derOptionalAddress, witnessMemDer3⟩,
+    BitVec.ofNat 32 Image.derOptionalAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, 0x30, ?_, rfl, rfl, rfl, rfl,
+    rfl, by decide, rfl, by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
@@ -4518,3 +4595,21 @@ end C3
 
 /-- info: 'C3.exists_derBitString_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_derBitString_machine
+
+/-- info: 'C3.RV32.derInteger_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.derInteger_correct
+
+/-- info: 'C3.exists_derInteger_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_derInteger_machine
+
+/-- info: 'C3.RV32.derBooleanTrue_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.derBooleanTrue_correct
+
+/-- info: 'C3.exists_derBooleanTrue_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_derBooleanTrue_machine
+
+/-- info: 'C3.RV32.derOptional_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.derOptional_correct
+
+/-- info: 'C3.exists_derOptional_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_derOptional_machine
