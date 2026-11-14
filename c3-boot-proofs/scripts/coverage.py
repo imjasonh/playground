@@ -76,7 +76,7 @@ PROVED = [
     "wideMul8x2",
     "edDouble",
     "fePow2k",
-    "sha512Compress", "p384Mul", "p384Sqr", "p384PtDouble", "uintSelect2", "condNeg12", "uintSelect8", "condNeg8", "absSign2", "fromI64", "p384PtAdd", "fieldSquare", "p256PtDouble", "shr12", "leadMut12", "trailing12", "lincomb12", "blackBoxU8", "ctEqU8", "ctEqSlice", "memcmp", "uintRefIsNonzero", "lshrdi3", "asProjective", "asExtended", "p384Neg", "uint12IsNonzero", "derTlv", "derElement", "derOid", "derNested", "derSequence", "equalSameLength", "sliceEq", "shr8", "leadMut8", "trailing8", "feToBytes", "scalar29Sub", "scalar29Index", "scalar29IndexMut", "lincomb8", "mulMont8", "scalar29MontMul", "p256ScalarMul", "lincombShift12", "lincombShift8", "lowest12", "lowest8", "updateFg12", "updateFg8", "norm12", "uint8IsNonzero", "norm8", "toUintResize2",
+    "sha512Compress", "p384Mul", "p384Sqr", "p384PtDouble", "uintSelect2", "condNeg12", "uintSelect8", "condNeg8", "absSign2", "fromI64", "p384PtAdd", "fieldSquare", "p256PtDouble", "shr12", "leadMut12", "trailing12", "lincomb12", "blackBoxU8", "ctEqU8", "ctEqSlice", "memcmp", "uintRefIsNonzero", "lshrdi3", "asProjective", "asExtended", "p384Neg", "uint12IsNonzero", "derTlv", "derElement", "derOid", "derNested", "derSequence", "equalSameLength", "sliceEq", "shr8", "leadMut8", "trailing8", "feToBytes", "scalar29Sub", "scalar29Index", "scalar29IndexMut", "lincomb8", "mulMont8", "scalar29MontMul", "p256ScalarMul", "lincombShift12", "lincombShift8", "lowest12", "lowest8", "updateFg12", "updateFg8", "norm12", "uint8IsNonzero", "norm8", "toUintResize2", "lincombShiftMod12",
 ]
 
 IMAGE = os.path.join(os.path.dirname(__file__), "..", "C3BootProofs", "Image", "Bootloader.lean")
