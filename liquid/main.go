@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"math/rand/v2"
@@ -16,6 +17,7 @@ import (
 	"github.com/imjasonh/playground/liquid/internal/render"
 	"github.com/imjasonh/playground/liquid/internal/sim"
 	"github.com/imjasonh/playground/liquid/internal/ui"
+	whbiab "github.com/imjasonh/playground/wehadababyitsaboy/go"
 )
 
 func main() {
@@ -70,9 +72,12 @@ func main() {
 		fail("unknown view %q; want one of %s", *viewFlag, strings.Join(modeNames, ", "))
 	}
 
+	wait := whbiab.Track(context.Background(), "liquid", whbiab.Flags(flag.CommandLine)...)
 	m := ui.New(opts)
 	defer m.Close()
-	if _, err := tea.NewProgram(m, tea.WithFPS(opts.FPS)).Run(); err != nil {
+	_, err := tea.NewProgram(m, tea.WithFPS(opts.FPS)).Run()
+	wait()
+	if err != nil {
 		fail("%v", err)
 	}
 }

@@ -38,6 +38,7 @@ import (
 
 	"github.com/imjasonh/playground/ocidb/internal/registry"
 	"github.com/imjasonh/playground/ocidb/internal/tables"
+	whbiab "github.com/imjasonh/playground/wehadababyitsaboy/go"
 )
 
 //go:embed queries/*.sql
@@ -63,6 +64,7 @@ func run(args []string) error {
 	case "demo":
 		return cmdDemo(os.Stdout, rest)
 	case "schema", "tables":
+		defer whbiab.Track(context.Background(), "ocidb", "schema")()
 		return cmdSchema(os.Stdout, rest)
 	case "help", "-h", "--help":
 		usage(os.Stdout)
@@ -112,6 +114,12 @@ func newFlagSet(name string) *flag.FlagSet {
 	return fs
 }
 
+// track records one use of the subcommand that fs belongs to, with the names of
+// the flags the user set.
+func track(fs *flag.FlagSet) func() {
+	return whbiab.Track(context.Background(), "ocidb", append([]string{fs.Name()}, whbiab.Flags(fs)...)...)
+}
+
 func registerShared(fs *flag.FlagSet, s *sharedFlags) {
 	fs.StringVar(&s.cache, "cache", defaultCacheDir(), "cache directory")
 	fs.DurationVar(&s.ttl, "ttl", registry.DefaultTTL, "freshness window for mutable lookups")
@@ -149,6 +157,7 @@ func cmdQuery(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	defer track(fs)()
 	q := strings.TrimSpace(strings.Join(fs.Args(), " "))
 	if q == "" {
 		return errors.New("query: provide a SQL statement, e.g. ocidb query \"SELECT tag FROM tags WHERE repository='nginx'\"")
@@ -172,6 +181,7 @@ func cmdShell(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	defer track(fs)()
 	db, client, err := s.open()
 	if err != nil {
 		return err
@@ -290,6 +300,7 @@ func cmdDemo(w io.Writer, args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	defer track(fs)()
 
 	demos, err := loadQueries()
 	if err != nil {

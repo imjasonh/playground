@@ -5,6 +5,7 @@ go 1.27.0
 require (
 	github.com/chainguard-dev/clog v1.8.1
 	github.com/google/go-containerregistry v0.22.1
+	github.com/imjasonh/playground/wehadababyitsaboy/go v0.0.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -28,6 +29,7 @@ require (
 	github.com/moby/moby/client v0.6.2 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
+	github.com/sethvargo/go-envconfig v1.4.3 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0 // indirect
@@ -38,3 +40,5 @@ require (
 	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 )
+
+replace github.com/imjasonh/playground/wehadababyitsaboy/go => ../wehadababyitsaboy/go

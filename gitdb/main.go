@@ -14,6 +14,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"flag"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/imjasonh/playground/gitdb/internal/gitrepo"
 	"github.com/imjasonh/playground/gitdb/internal/tables"
+	whbiab "github.com/imjasonh/playground/wehadababyitsaboy/go"
 )
 
 //go:embed queries/*.sql
@@ -66,6 +68,7 @@ func run(argv []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if err := fs.Parse(argv); err != nil {
 		return err
 	}
+	defer whbiab.Track(context.Background(), "gitdb", whbiab.Flags(fs)...)()
 
 	if *listExamples {
 		return printExampleList(stdout)

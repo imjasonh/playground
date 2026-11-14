@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -8,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/imjasonh/playground/node-image/internal/buildcmd"
+	whbiab "github.com/imjasonh/playground/wehadababyitsaboy/go"
 )
 
 func main() {
@@ -25,7 +27,10 @@ func main() {
 		if len(os.Args) > 2 {
 			dir = os.Args[2]
 		}
-		if err := buildcmd.Diagnose(dir, os.Stderr); err != nil {
+		wait := whbiab.Track(context.Background(), "node-image", "diagnose")
+		err := buildcmd.Diagnose(dir, os.Stderr)
+		wait()
+		if err != nil {
 			os.Exit(1)
 		}
 	case "version", "-version", "--version":
@@ -61,6 +66,7 @@ func runBuild(args []string) error {
 	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
+	defer whbiab.Track(context.Background(), "node-image", append([]string{"build"}, whbiab.Flags(fs)...)...)()
 	if fs.NArg() > 0 {
 		return fmt.Errorf("unexpected arguments: %v", fs.Args())
 	}

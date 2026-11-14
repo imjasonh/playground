@@ -4,6 +4,7 @@ go 1.27.0
 
 require (
 	github.com/google/go-containerregistry v0.22.1
+	github.com/imjasonh/playground/wehadababyitsaboy/go v0.0.0
 	github.com/klauspost/compress v1.20.4
 	github.com/values-conflict/go-sqlite-fdw v0.0.0
 	github.com/values-conflict/go-sqlite-fdw/modernc v0.0.0-20260630071241-65cea68abcec
@@ -24,6 +25,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/sethvargo/go-envconfig v1.4.3 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect
 	github.com/vbatts/tar-split v0.12.3 // indirect
 	golang.org/x/sync v0.25.0 // indirect
@@ -37,3 +39,5 @@ require (
 // relies on a local `replace => ../` that only works inside its own repo.
 // Redirect that to the real tagged commit so external consumers can build.
 replace github.com/values-conflict/go-sqlite-fdw => github.com/values-conflict/go-sqlite-fdw v0.0.0-20260630071241-65cea68abcec
+
+replace github.com/imjasonh/playground/wehadababyitsaboy/go => ../wehadababyitsaboy/go
