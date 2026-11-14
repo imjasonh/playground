@@ -37,11 +37,6 @@ test('a PR preview on the production host is tracked', () => {
   assert.equal(url.pathname, '/wehadababyitsaboy/queens/web.mouse.light.desktop');
 });
 
-test('a preview path without a PR number is still marked', () => {
-  const location = { protocol: 'https:', hostname: 'imjasonh.github.io', pathname: '/playground/preview/queens/' };
-  assert.equal(new URL(pingUrl(makeEnv({ location }))).searchParams.get('preview'), '1');
-});
-
 test('a browser that asks not to be tracked is not tracked', () => {
   const base = { language: 'en-US', webdriver: false };
   assert.equal(shouldTrack(makeEnv({ navigator: { ...base, doNotTrack: '1' } })), false);

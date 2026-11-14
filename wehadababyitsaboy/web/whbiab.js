@@ -64,22 +64,11 @@
     if (lang) {
       query.set('lang', lang);
     }
-    const preview = previewId(env.location && env.location.pathname);
+    const preview = /^\/[^/]+\/preview\/(pr-\d+)\//.exec(env.location.pathname);
     if (preview) {
-      query.set('preview', preview);
+      query.set('preview', preview[1]);
     }
     return `${ENDPOINT}/${clean(env.app)}/${parts.join('.')}?${query}`;
-  }
-
-  // previewId returns pr-<N> when the page is a PR preview on this site,
-  // or "1" for any other path under /preview/. An empty string means the
-  // page is the production site.
-  function previewId(pathname) {
-    const match = /^\/[^/]+\/preview\/(pr-\d+)?/.exec(pathname || '');
-    if (!match) {
-      return '';
-    }
-    return match[1] || '1';
   }
 
   function track(env, newImage) {
