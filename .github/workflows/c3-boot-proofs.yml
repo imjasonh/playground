@@ -85,6 +85,14 @@ jobs:
             < "${RUNNER_TEMP}/rust-decode.txt" > "${RUNNER_TEMP}/lean-decode.txt"
           diff "${RUNNER_TEMP}/rust-decode.txt" "${RUNNER_TEMP}/lean-decode.txt"
 
+      - name: Compare the Sigstore specification with c3-verify
+        run: |
+          (cd c3-boot && cargo run --locked -q -p c3-verify --example sigstore_vectors) \
+            > "${RUNNER_TEMP}/rust-sigstore.txt"
+          (cd c3-boot-proofs && lake exe sigstore-check) \
+            < "${RUNNER_TEMP}/rust-sigstore.txt" > "${RUNNER_TEMP}/lean-sigstore.txt"
+          diff "${RUNNER_TEMP}/rust-sigstore.txt" "${RUNNER_TEMP}/lean-sigstore.txt"
+
       - name: Check the generated Montgomery reduction proof
         working-directory: c3-boot-proofs
         run: |

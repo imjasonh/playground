@@ -6,6 +6,10 @@ import C3BootProofs.Spec.Der
 import C3BootProofs.Spec.Sha256
 import C3BootProofs.Spec.Sha512
 import C3BootProofs.Spec.Merkle
+import C3BootProofs.Spec.Base64
+import C3BootProofs.Spec.Time
+import C3BootProofs.Spec.Bundle
+import C3BootProofs.Hex
 import C3BootProofs.Model.RV32
 import C3BootProofs.Image.Bootloader
 import C3BootProofs.Image.BootloaderV0
