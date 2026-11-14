@@ -1,0 +1,14 @@
+{
+  "name": "laya-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Fetch Laya in the browser and compile the graph to WebGPU",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx --yes serve . -p 3000"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
