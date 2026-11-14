@@ -41,7 +41,7 @@ enum Commands {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let (cli, _ping) = whbiab::parse::<Cli>(env!("CARGO_PKG_VERSION"));
     match cli.command {
         Commands::Sim {
             games,

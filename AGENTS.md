@@ -202,6 +202,12 @@ Cargo workspace. Pin the toolchain with a `rust-toolchain.toml` (channel,
 components, and any extra targets such as `wasm32-unknown-unknown`) so local
 builds and CI agree.
 
+A top-level directory that is not a Rust app can hold a Rust library crate in
+its `rust/` subdirectory. `wehadababyitsaboy/rust` is one. CI discovers it by
+that path (`wehadababyitsaboy/rust`), a change under `rust/` selects it, and the
+Rust apps that depend on it with a path dependency (`path =
+"../wehadababyitsaboy/rust"`) are tested too.
+
 ### iOS apps
 
 Unlike browser/Go/Rust apps, there is exactly **one** iOS app: the **Playground**
@@ -571,9 +577,15 @@ discovered automatically — no workflow edits are needed.
    - Add `my-app/package.json` with `"test"` script
    - Add `my-app/README.md` with run/test instructions
    - Add `my-app/.gitignore` (at minimum `node_modules/`)
-5. Open a PR—preview deploy and CI run automatically.
+5. Record visits: run `bash .github/scripts/check-whbiab-web.sh --fix`. It
+   links `wehadababyitsaboy/web/whbiab.js` into the app as a symbolic link and adds
+   `<script src="whbiab.js" data-app="my-app"></script>` before `</body>`. If
+   the page sets a Content-Security-Policy, allow `https://storage.googleapis.com`
+   in `img-src`.
+6. Open a PR—preview deploy and CI run automatically.
 
-No workflow edits are required when a new app follows these conventions.
+No workflow edits are required when a new app follows these conventions. The
+Test job fails a browser app that doesn't record visits.
 
 ### Minimal static app
 
@@ -793,6 +805,17 @@ bundle exec fastlane test
 ## Implementation conventions
 
 - **Browser apps are client-side**: they must be static sites suitable for GitHub Pages (no server-side runtime in production).
+- **Web usage tracking**: every browser app records each page load with
+  [`wehadababyitsaboy/web/whbiab.js`](wehadababyitsaboy/web/README.md), a
+  tracking pixel that requests an object in the `wehadababyitsaboy` bucket.
+  When you add a browser app, run `bash .github/scripts/check-whbiab-web.sh
+  --fix`. Each app's `whbiab.js` is a symbolic link to
+  that file, which the deploy and preview workflows copy with `cp -rL`; change
+  the one file, never a link. The script sends the app name, the pointer, the color scheme,
+  the screen class, and the language, and nothing from the page or the user.
+  It sends nothing from localhost, a browser that sets Do Not Track, or a
+  browser under automation. A PR preview on the production host is counted,
+  with `preview=pr-<N>` on the query.
 - **Prefer plain HTML + JS** for browser apps unless an app already uses a framework; match the style of neighboring code in that app directory.
 - **Go apps are independent modules**: each app owns its `go.mod` and `go.sum`; avoid cross-app imports, except of library modules such as `kube`, which an app imports with a `replace` directive.
 - **Go logging**: use `log/slog`. `slog.Info`, `slog.Warn`, `slog.Error`,
@@ -868,6 +891,20 @@ bundle exec fastlane test
   install` rejects a module with a `replace` directive. A test binary sends
   nothing, so tests need no setup.
 - **Rust apps are independent crates**: each app owns its `Cargo.toml`, `Cargo.lock`, and `rust-toolchain.toml`; avoid cross-app imports. Each crate sets `[lints.rust] unused = "deny"` so unused methods, imports, and variables fail `cargo test` / `cargo build` (CI clippy also uses `-D warnings`, which includes rustc `dead_code` and clippy unused-* lints). Do not `#[allow(dead_code)]` to keep dead methods.
+- **Rust usage tracking**: every Rust command-line program that people run by
+  hand records its use with
+  [`wehadababyitsaboy/rust`](wehadababyitsaboy/rust/README.md) (crate
+  `whbiab`). Rust CLIs in this repo use clap's derive API. When you add a Rust
+  CLI or a subcommand, add the path dependency
+  `whbiab = { path = "../wehadababyitsaboy/rust" }` and parse with
+  `let (cli, _ping) = whbiab::parse::<Cli>(env!("CARGO_PKG_VERSION"));` in
+  place of `Cli::parse()`, as `tank-commander` does. It sends the clap command's
+  name, the subcommands, and the names of the flags the user set, never a value
+  or a positional argument. Call `ping.wait()` before `std::process::exit`,
+  which skips the destructor that waits. Skip Cloudflare Workers, servers, firmware, and a crate
+  that also builds for the browser unless the dependency is optional and only
+  the CLI feature enables it (`life-stl`). A debug build sends nothing, so tests
+  need no setup.
 - **There is one iOS host app** (`ios/`, the "Playground" container): add
   features as **experiments** inside it (same Bundle ID, no re-bootstrap). A
   Custom Keyboard or other **app extension** needs a second Bundle ID (Apple
@@ -1015,6 +1052,7 @@ bundle exec fastlane test
 | `mapvelopes/` | envelope PDFs with the sender-to-recipient route as the background (requires a Google Maps key; sizes #10, #9, Monarch, #6¾, A7) | `cargo test` + clippy + wasm build |
 | `y/` | One-user microblog (D1 + R2); 260-char posts, images, RSS, passkeys | `cargo test` + clippy + wasm build |
 | `app-attest/` | App Attest handshake + assertion verifier for the Playground iOS experiment — Cloudflare Worker | `cargo test` + clippy + wasm build |
+| `wehadababyitsaboy/rust/` | Library (crate `whbiab`) that sends one usage ping from a Rust CLI to the `wehadababyitsaboy` bucket: `parse` parses a clap CLI, starts a background request for `CLIENT/ARGS?bob=wehadababyitsaboy` with the subcommands and flag names that ran, and returns a `Ping` that waits for it. `git-fuse`, `life-stl`, and `tank-commander` use it. It sends no flag value or positional argument, honors `DO_NOT_TRACK=1` and `WHBIAB_DISABLE=1`, and sends nothing from a debug build | `cargo test` + clippy (a local server stands in for the bucket) |
 | `nescript/` | Statically typed compiler from `.ne` source to an iNES ROM. Imported with `git subtree` from [imjasonh/nescript](https://github.com/imjasonh/nescript), so that history stays reachable | `cargo test` + clippy. `nescript.yml` also runs benches, ROM reproducibility, jsnes frame and audio goldens, and a Mesen2 `.dbg` probe, and uploads the built example ROMs as `nescript-examples`. That job always reports a status and no-ops when `nescript/` is unchanged, so it can be a required check |
 
 > **`git-server` has its own agent guide:** read

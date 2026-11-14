@@ -191,6 +191,7 @@ jobs:
               bash .github/scripts/prune-cargo-cache_test.sh
               bash .github/scripts/discover-rust-apps_test.sh
               bash .github/scripts/discover-go-modules_test.sh
+              bash .github/scripts/check-whbiab-web_test.sh
 
       - name: Trim the Go build cache
         id: trim-go
