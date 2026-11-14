@@ -5,12 +5,13 @@ Hex text for the differential harnesses: `decode-check` and
 
 namespace C3
 
-def hexDigit (c : Char) : Option Nat :=
-  if '0' ≤ c && c ≤ '9' then some (c.toNat - '0'.toNat)
-  else if 'a' ≤ c && c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
+/-- The value of an ASCII hex digit, `0`-`9` or `a`-`f`. -/
+def hexDigit (c : Nat) : Option Nat :=
+  if 48 ≤ c && c ≤ 57 then some (c - 48)
+  else if 97 ≤ c && c ≤ 102 then some (c - 87)
   else none
 
-def parseHex : List Char → Option (List Nat)
+def parseHex : List Nat → Option (List Nat)
   | [] => some []
   | a :: b :: rest => do
     let hi ← hexDigit a
@@ -19,7 +20,8 @@ def parseHex : List Char → Option (List Nat)
   | [_] => none
 
 /-- Hex bytes, with `-` for none. -/
-def parseHexTok (s : String) : Option (List Nat) := if s = "-" then some [] else parseHex s.toList
+def parseHexTok (s : String) : Option (List Nat) :=
+  if s = "-" then some [] else parseHex (s.toUTF8.data.toList.map UInt8.toNat)
 
 def hexStr (b : List Nat) : String :=
   if b.isEmpty then "-"
