@@ -229,12 +229,15 @@ func TestStreamsAndStopsCleanly(t *testing.T) {
 
 func TestRestartsAfterCrashWithFreshURL(t *testing.T) {
 	h := start(t, "crash:5", nil)
-	waitFor(t, "three ffmpeg runs", func() bool {
+	waitFor(t, "three restarts", func() bool {
 		h.enc.Submit(h.job())
-		return len(h.runs()) >= 3
+		return h.enc.Stats().Restarts >= 3
 	})
 	h.stop()
 	runs := h.runs()
+	if len(runs) < 3 {
+		t.Fatalf("runs = %q, want at least 3", runs)
+	}
 	for _, r := range runs[:3] {
 		if r != "crashed frames=5" {
 			t.Errorf("run = %q, want a crash after 5 frames", r)
@@ -242,9 +245,6 @@ func TestRestartsAfterCrashWithFreshURL(t *testing.T) {
 	}
 	if n := h.urls.Load(); n < 3 {
 		t.Errorf("URL fetched %d times, want once per start", n)
-	}
-	if s := h.enc.Stats(); s.Restarts < 3 {
-		t.Errorf("Restarts = %d, want at least 3", s.Restarts)
 	}
 }
 
