@@ -139,6 +139,12 @@ FUNCTIONS = [
     ("lincombShiftMod8", "<crypto_bigint::modular::safegcd::SignedInt<8>>::lincomb_int_reduce_shift_mod::<2>"),
     ("updateDe12", "crypto_bigint::modular::safegcd::update_de::<12>"),
     ("updateDe8", "crypto_bigint::modular::safegcd::update_de::<8>"),
+    ("derSet", "<c3_verify::der::Der>::set"),
+    ("derOctetString", "<c3_verify::der::Der>::octet_string"),
+    ("derBitString", "<c3_verify::der::Der>::bit_string"),
+    ("derInteger", "<c3_verify::der::Der>::integer"),
+    ("derBooleanTrue", "<c3_verify::der::Der>::boolean_true"),
+    ("derOptional", "<c3_verify::der::Der>::optional"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a

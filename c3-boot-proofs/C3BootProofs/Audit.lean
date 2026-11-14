@@ -50,6 +50,7 @@ import C3BootProofs.Proofs.LincombShift8
 import C3BootProofs.Proofs.LincombShiftMod12
 import C3BootProofs.Proofs.UpdateDe12
 import C3BootProofs.Proofs.UpdateDe8
+import C3BootProofs.Proofs.DerReaders
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
@@ -2753,6 +2754,87 @@ theorem exists_derSequence_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `Der::set`, `Der::octet_string`,
+`Der::bit_string`, and the DER functions they call where the image loads
+them, a reader at `0x3FCC6000` whose unread bytes start at `0x3FCC7000` and
+number zero, and zeros elsewhere. -/
+def witnessMemDer3 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.derTlvAddress, Image.derTlvCode),
+    (Image.derElementAddress, Image.derElementCode),
+    (Image.derNestedAddress, Image.derNestedCode),
+    (Image.derSetAddress, Image.derSetCode),
+    (Image.derOctetStringAddress, Image.derOctetStringCode),
+    (Image.derBitStringAddress, Image.derBitStringCode),
+    (0x3FCC6008, [0x00, 0x70, 0xCC, 0x3F])]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Der::set` with the result at `0x3FCC5000`, the
+reader at `0x3FCC6000`, and the stack at `0x3FCC8000` meets
+`derSet_correct`'s hypotheses. -/
+theorem exists_derSet_machine :
+    ∃ (m : RV32.Machine) (Q sp0 out d retAddr : RV32.Word), Q.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem Q Image.derSetCode ∧ RV32.NestEnv m.mem (Q + 0xFFFFF940) sp0 out d ∧ m.pc = Q ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = d ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.derSetAddress, witnessMemDer3⟩,
+    BitVec.ofNat 32 Image.derSetAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, by decide, ?_,
+    ⟨by decide, ?_, ?_, ?_, by decide, by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+      ?_⟩, rfl, rfl, rfl, rfl, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Der::octet_string` with the result at
+`0x3FCC5000`, the reader at `0x3FCC6000`, and the stack at `0x3FCC8000`
+meets `derOctetString_correct`'s hypotheses. -/
+theorem exists_derOctetString_machine :
+    ∃ (m : RV32.Machine) (P sp0 out d retAddr : RV32.Word),
+      RV32.DerCallEnv m.mem Image.derOctetStringCode P 0xFFFFF792 sp0 out d 8 ∧ m.pc = P ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = d ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.derOctetStringAddress, witnessMemDer3⟩,
+    BitVec.ofNat 32 Image.derOctetStringAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, rfl,
+    rfl, by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Der::bit_string` with the result at `0x3FCC5000`,
+the reader at `0x3FCC6000`, and the stack at `0x3FCC8000` meets
+`derBitString_correct`'s hypotheses. -/
+theorem exists_derBitString_machine :
+    ∃ (m : RV32.Machine) (P sp0 out d retAddr : RV32.Word),
+      RV32.DerCallEnv m.mem Image.derBitStringCode P 0xFFFFF1FC sp0 out d 8 ∧
+      RV32.Sep (d + 8) 8 (RV32.memLoad32 m.mem (d + 8)) (RV32.memLoad32 m.mem (d + 0xC)).toNat ∧ m.pc = P ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = d ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.derBitStringAddress, witnessMemDer3⟩,
+    BitVec.ofNat 32 Image.derBitStringAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, ?_, ?_, rfl, rfl, rfl, rfl,
+    rfl, by decide⟩
+  · constructor
+    all_goals first
+      | code_in
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+      | exact (RV32.sep_of_le (by decide) (by decide)).symm
+      | decide +kernel
+  · first
+      | decide +kernel
+      | exact RV32.sep_of_le (by decide) (by decide)
+
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
 /-- A machine that calls `equal_same_length` on two empty slices, with the
@@ -4418,3 +4500,21 @@ end C3
 
 /-- info: 'C3.exists_updateDe8_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_updateDe8_machine
+
+/-- info: 'C3.RV32.derSet_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.derSet_correct
+
+/-- info: 'C3.exists_derSet_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_derSet_machine
+
+/-- info: 'C3.RV32.derOctetString_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.derOctetString_correct
+
+/-- info: 'C3.exists_derOctetString_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_derOctetString_machine
+
+/-- info: 'C3.RV32.derBitString_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.derBitString_correct
+
+/-- info: 'C3.exists_derBitString_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_derBitString_machine
