@@ -3696,4 +3696,91 @@ theorem lm_ph4 {M0 M : Word → BitVec 8} {P G res ap bp cp dp mp mip : Word} {n
   · rw [kt4 21 (by decide), rt3 _ (by decide), g3, n1k 21 (by decide), kt2 21 (by decide), rt1 _ (by decide), g1,
       n0s5, rsp]
 
+
+/-! ## Phase 5: the final reduction, from 0x23A to 0x2D0 -/
+
+def lmF0 : List BInstr :=
+  [.lw (19 : Fin 32) sp 0x30, .aluImm .add a0 sp 0xE8, .aluImm .add a2 x0 0x30, .aluImm .add a1 x0 0,
+   .aluImm .add (8 : Fin 32) sp 0xE8]
+def lmF1 : List BInstr := [.aluImm .add a2 x0 0, .aluImm .add (9 : Fin 32) x0 0xC]
+/-- From 0x272 to the `borrowing_sub` call at 0x294: the choice bit in `s1`
+(the high word is zero and `x < m`), through `black_box` twice, and the
+result's sign `s6 ^ s4` in `s0`. -/
+def lmF2 : List BInstr :=
+  [.sw sp (19 : Fin 32) 0x38, .aluImm .add a0 sp 0x38, .lw a0 sp 0x38, .aluImm .sltu (9 : Fin 32) a0 1,
+   .alu .and (9 : Fin 32) (9 : Fin 32) a2, .sb sp (9 : Fin 32) 0x38, .aluImm .add a0 sp 0x38, .lbu a0 sp 0x38,
+   .aluImm .add a0 a0 0xFFFFFFFF, .alu .xor (8 : Fin 32) (22 : Fin 32) (20 : Fin 32), .alu .and a2 a2 a0,
+   .alu .add a0 x0 (19 : Fin 32), .aluImm .add a1 x0 0]
+def lmF3 : List BInstr := [.aluImm .add a0 sp 0x38, .aluImm .add a1 sp 0xE8, .alu .add a2 x0 sp, .alu .add a3 x0 (9 : Fin 32)]
+def lmF4 : List BInstr := [.alu .add a0 x0 sp, .aluImm .add a1 sp 0x38, .aluImm .add a2 x0 0x30]
+def lmF5 : List BInstr := [.alu .add a1 x0 sp, .aluImm .add a2 x0 0x30, .alu .add a0 x0 (18 : Fin 32)]
+
+section
+set_option maxRecDepth 20000
+theorem lmF0_end : blockEnd lincombShiftMod12Code 0x23A lmF0 = some 0x246 := by decide
+theorem lmF1_end : blockEnd lincombShiftMod12Code 0x24E lmF1 = some 0x252 := by decide
+theorem lmF2_end : blockEnd lincombShiftMod12Code 0x272 lmF2 = some 0x294 := by decide
+theorem lmF3_end : blockEnd lincombShiftMod12Code 0x29C lmF3 = some 0x2A4 := by decide
+theorem lmF4_end : blockEnd lincombShiftMod12Code 0x2AC lmF4 = some 0x2B4 := by decide
+theorem lmF5_end : blockEnd lincombShiftMod12Code 0x2BC lmF5 = some 0x2C4 := by decide
+end
+
+set_option maxRecDepth 20000 in
+theorem lmF0_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock lmF0 (M, f)).1 = M ∧ (runBlock lmF0 (M, f)).2 (19 : Fin 32) = memLoad32 M (f sp + 0x30) ∧
+    (runBlock lmF0 (M, f)).2 a0 = f sp + 0xE8 ∧ (runBlock lmF0 (M, f)).2 a2 = 0x30 ∧ (runBlock lmF0 (M, f)).2 a1 = 0 ∧
+    (runBlock lmF0 (M, f)).2 (8 : Fin 32) = f sp + 0xE8 ∧
+    ∀ q : Fin 32, q.val ∉ [8, 10, 11, 12, 19] → (runBlock lmF0 (M, f)).2 q = f q := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, fun q hq => runBlock_keepL (by decide) hz hq⟩ <;>
+    simp only [runBlock, BInstr.run, lmF0] <;> simp +decide only [upd, ↓reduceIte, ev_add, hz] <;>
+    first | rfl | exact BitVec.zero_add _ | skip
+
+set_option maxRecDepth 20000 in
+theorem lmF1_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock lmF1 (M, f)).1 = M ∧ (runBlock lmF1 (M, f)).2 a2 = 0 ∧ (runBlock lmF1 (M, f)).2 (9 : Fin 32) = 0xC ∧
+    ∀ q : Fin 32, q.val ∉ [9, 12] → (runBlock lmF1 (M, f)).2 q = f q := by
+  refine ⟨?_, ?_, ?_, fun q hq => runBlock_keepL (by decide) hz hq⟩ <;>
+    simp only [runBlock, BInstr.run, lmF1] <;> simp +decide only [upd, ↓reduceIte, ev_add, hz] <;>
+    first | rfl | exact BitVec.zero_add _ | skip
+
+set_option maxRecDepth 20000 in
+theorem lmF2_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock lmF2 (M, f)).1 = memStore8 (memStore32 M (f sp + 0x38) (f 19)) (f sp + 0x38)
+      ((aluEval .and (aluEval .sltu (memLoad32 (memStore32 M (f sp + 0x38) (f 19)) (f sp + 0x38)) 1) (f a2)).extractLsb' 0 8) ∧
+    (runBlock lmF2 (M, f)).2 (9 : Fin 32) =
+      aluEval .and (aluEval .sltu (memLoad32 (memStore32 M (f sp + 0x38) (f 19)) (f sp + 0x38)) 1) (f a2) ∧
+    (runBlock lmF2 (M, f)).2 (8 : Fin 32) = aluEval .xor (f 22) (f 20) ∧
+    (runBlock lmF2 (M, f)).2 a0 = f 19 ∧ (runBlock lmF2 (M, f)).2 a1 = 0 ∧
+    ∀ q : Fin 32, q.val ∉ [8, 9, 10, 11, 12] → (runBlock lmF2 (M, f)).2 q = f q := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, fun q hq => runBlock_keepL (by decide) hz hq⟩ <;>
+    simp only [runBlock, BInstr.run, lmF2] <;> simp +decide only [upd, ↓reduceIte, ev_add, hz] <;>
+    first | rfl | exact BitVec.zero_add _ | skip
+
+set_option maxRecDepth 20000 in
+theorem lmF3_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock lmF3 (M, f)).1 = M ∧ (runBlock lmF3 (M, f)).2 a0 = f sp + 0x38 ∧ (runBlock lmF3 (M, f)).2 a1 = f sp + 0xE8 ∧
+    (runBlock lmF3 (M, f)).2 a2 = f sp ∧ (runBlock lmF3 (M, f)).2 a3 = f 9 ∧
+    ∀ q : Fin 32, q.val ∉ [10, 11, 12, 13] → (runBlock lmF3 (M, f)).2 q = f q := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, fun q hq => runBlock_keepL (by decide) hz hq⟩ <;>
+    simp only [runBlock, BInstr.run, lmF3] <;> simp +decide only [upd, ↓reduceIte, ev_add, hz] <;>
+    first | rfl | exact BitVec.zero_add _ | skip
+
+set_option maxRecDepth 20000 in
+theorem lmF4_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock lmF4 (M, f)).1 = M ∧ (runBlock lmF4 (M, f)).2 a0 = f sp ∧ (runBlock lmF4 (M, f)).2 a1 = f sp + 0x38 ∧
+    (runBlock lmF4 (M, f)).2 a2 = 0x30 ∧
+    ∀ q : Fin 32, q.val ∉ [10, 11, 12] → (runBlock lmF4 (M, f)).2 q = f q := by
+  refine ⟨?_, ?_, ?_, ?_, fun q hq => runBlock_keepL (by decide) hz hq⟩ <;>
+    simp only [runBlock, BInstr.run, lmF4] <;> simp +decide only [upd, ↓reduceIte, ev_add, hz] <;>
+    first | rfl | exact BitVec.zero_add _ | skip
+
+set_option maxRecDepth 20000 in
+theorem lmF5_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock lmF5 (M, f)).1 = M ∧ (runBlock lmF5 (M, f)).2 a1 = f sp ∧ (runBlock lmF5 (M, f)).2 a2 = 0x30 ∧
+    (runBlock lmF5 (M, f)).2 a0 = f 18 ∧
+    ∀ q : Fin 32, q.val ∉ [10, 11, 12] → (runBlock lmF5 (M, f)).2 q = f q := by
+  refine ⟨?_, ?_, ?_, ?_, fun q hq => runBlock_keepL (by decide) hz hq⟩ <;>
+    simp only [runBlock, BInstr.run, lmF5] <;> simp +decide only [upd, ↓reduceIte, ev_add, hz] <;>
+    first | rfl | exact BitVec.zero_add _ | skip
+
 end C3.RV32
