@@ -77,8 +77,9 @@ func (c config) endpoint() string {
 	return c.Endpoint
 }
 
+// on reports whether an environment flag is set. "", "0", and "false" are off.
 func on(v string) bool {
-	return v != "" && v != "0"
+	return v != "" && v != "0" && !strings.EqualFold(v, "false")
 }
 
 // Execute runs root, as [cobra.Command.ExecuteContext] does, and sends a ping

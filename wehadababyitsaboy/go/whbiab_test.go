@@ -114,6 +114,7 @@ func TestTrackOptOut(t *testing.T) {
 		{"DO_NOT_TRACK on", "DO_NOT_TRACK", "1", 0},
 		{"DO_NOT_TRACK any value", "DO_NOT_TRACK", "yes", 0},
 		{"DO_NOT_TRACK zero", "DO_NOT_TRACK", "0", 1},
+		{"DO_NOT_TRACK false", "DO_NOT_TRACK", "false", 1},
 		{"WHBIAB_DISABLE on", "WHBIAB_DISABLE", "1", 0},
 		{"WHBIAB_DISABLE zero", "WHBIAB_DISABLE", "0", 1},
 	} {

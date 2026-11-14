@@ -66,41 +66,38 @@ Each table takes its target through HIDDEN columns constrained with '=', e.g.
 	}
 	root.SetOut(stdout)
 
-	var qs sharedFlags
+	// Only one command runs, so query, shell, and demo share one set of flags.
+	var s sharedFlags
 	query := &cobra.Command{
 		Use:     "query [flags] \"SELECT ...\"",
 		Aliases: []string{"q"},
 		Short:   "Run a single SQL query",
 		RunE: func(_ *cobra.Command, args []string) error {
-			return cmdQuery(&qs, args)
+			return cmdQuery(&s, args)
 		},
 	}
-	registerShared(query.Flags(), &qs)
-
-	var shs sharedFlags
 	shell := &cobra.Command{
 		Use:     "shell [flags]",
 		Aliases: []string{"repl"},
 		Short:   "Interactive SQL prompt (reads stdin)",
 		Args:    cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
-			return cmdShell(&shs)
+			return cmdShell(&s)
 		},
 	}
-	registerShared(shell.Flags(), &shs)
-
-	var ds sharedFlags
 	var list bool
 	demo := &cobra.Command{
 		Use:   "demo [flags]",
 		Short: "Run a tour of fun Docker Hub queries",
 		Args:  cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
-			return cmdDemo(stdout, &ds, list)
+			return cmdDemo(stdout, &s, list)
 		},
 	}
-	registerShared(demo.Flags(), &ds)
 	demo.Flags().BoolVar(&list, "list", false, "print the demo queries without running them")
+	for _, c := range []*cobra.Command{query, shell, demo} {
+		registerShared(c.Flags(), &s)
+	}
 
 	schema := &cobra.Command{
 		Use:     "schema [table]",
