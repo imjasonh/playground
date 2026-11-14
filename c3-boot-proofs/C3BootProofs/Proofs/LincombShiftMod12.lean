@@ -646,6 +646,8 @@ theorem nmem_of {q : Nat} {L1 L2 : List Nat} (hs : ∀ x ∈ L2, x ∈ L1) (h : 
 
 theorem nmem_disj {q : Nat} {L1 L2 : List Nat} (h1 : q ∈ L1) (h2 : ∀ x ∈ L1, x ∉ L2) : q ∉ L2 := h2 _ h1
 
+theorem mem_sub {q : Nat} {L1 L2 : List Nat} (h1 : q ∈ L1) (h2 : ∀ x ∈ L1, x ∈ L2) : q ∈ L2 := h2 _ h1
+
 set_option maxRecDepth 20000 in
 set_option maxHeartbeats 4000000 in
 /-- **The 64-bit product**, from 0x6C to 0xC6: the two words at `F + 0x118`
@@ -3784,6 +3786,51 @@ theorem lmF5_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
     first | rfl | exact BitVec.zero_add _ | skip
 
 
+/-- The final reduction's value: the subtraction `x - m` borrowed exactly
+when `x < m`, and the select keeps `x` exactly when the high word `s3` is
+zero and it borrowed. -/
+theorem ph5_val {x m D : Nat} {B s3 : Word} (hB : B = 0 ∨ B = 0xFFFFFFFF) (hm : m < 2 ^ 384) (hD : D < 2 ^ 384)
+    (h : x + 2 ^ (32 * 12) * maskBit B = m + D) :
+    (if aluEval .and (aluEval .sltu s3 1) B = 1 then x else D) =
+      (if s3.toNat = 0 ∧ x < m then x else (x + 2 ^ 384 - m) % 2 ^ 384) := by
+  rw [show 32 * 12 = 384 from rfl] at h
+  rcases hB with rfl | rfl
+  · rw [show aluEval .and (aluEval .sltu s3 1) 0 = 0 from BitVec.and_zero,
+      show maskBit (0 : Word) = 0 from rfl, Nat.mul_zero, Nat.add_zero] at *
+    rw [ite_eq_right (by decide), ite_eq_right (fun hc => by omega)]
+    generalize (2 : Nat) ^ 384 = K at hm hD ⊢
+    rw [show x + K - m = D + K by omega, Nat.add_mod_right, Nat.mod_eq_of_lt hD]
+  · rw [show aluEval .and (aluEval .sltu s3 1) 0xFFFFFFFF = aluEval .sltu s3 1 from ng_and_ones _,
+      show maskBit (0xFFFFFFFF : Word) = 1 from rfl, Nat.mul_one] at *
+    have hs := sltu_tn s3 1
+    generalize (2 : Nat) ^ 384 = K at hm hD h ⊢
+    have hxm : x < m := by omega
+    rw [show x + K - m = D by omega, Nat.mod_eq_of_lt hD]
+    by_cases h0 : s3.toNat = 0
+    · have : aluEval .sltu s3 1 = 1 := by
+        apply BitVec.eq_of_toNat_eq; rw [hs, ite_eq_left (by rw [h0]; exact Nat.one_pos)]; rfl
+      rw [this, ite_eq_left rfl, ite_eq_left ⟨h0, hxm⟩]
+    · have : aluEval .sltu s3 1 ≠ 1 := fun e => by
+        have := congrArg BitVec.toNat e; rw [hs] at this
+        split at this
+        · omega
+        · exact absurd this (by decide)
+      rw [ite_eq_right this, ite_eq_right (fun hc => h0 hc.1)]
+
+theorem ph5_val' {x x' m m' D : Nat} {B s3 : Word} (hB : B = 0 ∨ B = 0xFFFFFFFF) (hm : m < 2 ^ 384)
+    (hD : D < 2 ^ 384) (h : x' + 2 ^ (32 * 12) * maskBit B = m' + D) (hx : x' = x) (hm' : m' = m) :
+    (if aluEval .and (aluEval .sltu s3 1) B = 1 then x else D) =
+      (if s3.toNat = 0 ∧ x < m then x else (x + 2 ^ 384 - m) % 2 ^ 384) := by
+  subst hx hm'; exact ph5_val hB hm hD h
+
+theorem accV_ite {M M' : Word → BitVec 8} {b b1 b2 : Word} {n : Nat} {c : Prop} [Decidable c]
+    (h : ∀ i, i < n → memLoad32 M' (b + BitVec.ofNat 32 (4 * i)) =
+      if c then memLoad32 M (b1 + BitVec.ofNat 32 (4 * i)) else memLoad32 M (b2 + BitVec.ofNat 32 (4 * i))) :
+    accV M' b n = if c then accV M b1 n else accV M b2 n := by
+  by_cases hc : c
+  · rw [ite_eq_left hc]; exact accV_congr2 n fun i hi => by rw [h i hi, ite_eq_left hc]
+  · rw [ite_eq_right hc]; exact accV_congr2 n fun i hi => by rw [h i hi, ite_eq_right hc]
+
 set_option maxRecDepth 60000 in
 set_option maxHeartbeats 16000000 in
 /-- **Phase 5**, from 0x23A to 0x2D0: subtract `m` from the low 12 limbs,
@@ -4077,6 +4124,102 @@ theorem lm_ph5 {M0 M : Word → BitVec 8} {P G res ap bp cp dp mp mip : Word} {n
         hdw := hdw
         hsw := by rw [tG _ (by decide)]; omega })
   rw [rt15 _ (by decide), sp14, eS16, memt15] at memt16
-  sorry
+  have sC16 : ∀ i, i < lincombShiftMod12Code.length → Sep (G + BitVec.ofNat 32 0x1D0) 16 (P + BitVec.ofNat 32 i) 1 :=
+    fun i hi => (sub 0x1D0 16 (by decide) env.sC).subR (c := i) (l := 1) (by omega)
+  have hc16 : CodeIn t16.mem P lincombShiftMod12Code := fun i hi => by
+    rw [memt16 _ (sC16 i hi), copyBytes_sep (by
+        have := (env.rC.subR (c := i) (l := 1) (by omega)).sub (c := 0) (l := 48) (by decide)
+        rwa [add_ofNat_zero] at this) (Nat.le_refl _)]
+    exact hc13 i hi
+  have st16 : St t16.mem P t16 0x2CC (reg t16) := ⟨pct16, rfl, fun _ => rfl⟩
+  have k16 : ∀ q : Fin 32, q.val ∈ [3, 4, 8, 18, 26, 27] → reg t16 q = reg t13 q := fun q hq => by
+    have ne : ∀ w : Fin 32, w.val ∉ [3, 4, 8, 18, 26, 27] → q ≠ w := fun w hw e => hw (e ▸ hq)
+    rw [kt16 q (ne a1 (by decide)) (ne a2 (by decide)) (ne a3 (by decide)) (ne a4 (by decide)) (ne a5 (by decide))
+        (ne a6 (by decide)) (ne a7 (by decide)) (ne (5 : Fin 32) (by decide)) (ne (6 : Fin 32) (by decide))
+        (ne 7 (by decide)) (ne 28 (by decide)) (ne 29 (by decide)) (ne 30 (by decide)) (ne sp (by decide)),
+      rt15 q (ne ra (by decide)), g14, f5k q (nmem_disj hq (by decide))]
+  have r16s2 : reg t16 18 = res := by rw [k16 18 (by decide), r18]
+  obtain ⟨n17, d17, u17⟩ := st16.sb hc16 lm12_at_2cc (off' := 0x2D0) (by decide)
+  rw [r16s2] at u17
+  have xs : reg t16 8 = aluEval .xor (BitVec.ofNat 32 σ) (BitVec.ofNat 32 sw) := by
+    rw [k16 8 (by decide), chainR 8 (by decide), g6, f2s0, k5 22 (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
+      k5 20 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by decide), K8 22 (by decide), K8 20 (by decide), g1, f0k 22 (by decide), g1, f0k 20 (by decide), r22, r20]
+  obtain ⟨M', hM'⟩ : ∃ M', memStore8 t16.mem (res + 0x30) ((reg t16 8).extractLsb' 0 8) = M' := ⟨_, rfl⟩
+  rw [hM'] at u17
+  refine ⟨n17, M', c1.trans (ct1.trans (ct2.trans (c3.trans (.cons d4 (c5.trans (c6.trans (c7.trans (c8.trans (ct9.trans
+    (ct10.trans (c11.trans (ct12.trans (ct13.trans (c14.trans (ct15.trans (ct16.trans (.single d17))))))))))))))))),
+    u17.self, ?_, ?_, ?_, ?_, ?_⟩
+  · intro x h1 h2
+    have hs : ∀ c l, c + l ≤ 0x304 → Sep (G + BitVec.ofNat 32 c) l x 1 := fun c l h => h1.sub h
+    have hr : Sep res 48 x 1 := by have := h2.sub (c := 0) (l := 48) (by decide); rwa [add_ofNat_zero] at this
+    have hne : x ≠ res + 0x30 := fun e => h2 48 (by decide) 0 (by decide) (by
+      rw [add_ofNat_zero, e]; rfl)
+    rw [← hM', memStore8_ne hne, memt16 x (hs 0x1D0 16 (by decide)), copyBytes_sep hr (Nat.le_refl _),
+      memt13 x (hs 0x1D0 16 (by decide)), copyBytes_sep (by rw [e1E0]; exact hs 0x1E0 48 (by decide)) (Nat.le_refl _),
+      fr10 x (by rw [eSR]; exact hs _ _ (by decide)) (by rw [e38]; exact hs _ _ (by decide)),
+      fr7 x (by rw [eM4]; exact hs _ _ (by decide)), fr6 x (by rw [e38]; exact hs _ _ (by decide)),
+      fr5 x (by rw [eM4]; exact hs _ _ (by decide)) (by rw [eE8]; exact hs _ _ (by decide)),
+      frM2 x (by rw [eE8]; exact hs _ _ (by decide))]
+  · rw [← hM', memStore8_same, xs]
+    rcases (by omega : σ = 0 ∨ σ = 1) with h1 | h1 <;> rcases (by omega : sw = 0 ∨ sw = 1) with h2 | h2 <;>
+      subst h1 h2 <;> decide
+  · have accF : ∀ {M1 M2 : Word → BitVec 8} (c k : Nat), 0x1E0 + c + 4 * k ≤ 0x330 →
+        (∀ d, 0x1E0 + c ≤ d → d < 0x1E0 + c + 4 * k → M1 (G + BitVec.ofNat 32 d) = M2 (G + BitVec.ofNat 32 d)) →
+        accV M1 (F + BitVec.ofNat 32 c) k = accV M2 (F + BitVec.ofNat 32 c) k := fun c k hb h =>
+      accV_congr k fun i hi => memLoad32_congr fun j hj => by
+        rw [add_ofNat_assoc, add_ofNat_assoc, fG]; exact h _ (by omega) (by omega)
+    have gS : ∀ {c l d : Nat}, c + l ≤ d ∨ d + 1 ≤ c → c + l ≤ 0x330 → d < 0x330 →
+        Sep (G + BitVec.ofNat 32 c) l (G + BitVec.ofNat 32 d) 1 := fun h h1 h2 => sG h h1 (by omega)
+    have A1 : accV M' res 12 = accV t16.mem res 12 := accV_congr 12 fun i hi => memLoad32_congr fun j hj => by
+      rw [← hM']
+      apply memStore8_ne
+      intro e
+      have := sep_offsets res (c := 4 * i + j) (n := 1) (d := 0x30) (k := 1) (.inl (by omega)) (by omega) (by omega)
+      exact this 0 (by decide) 0 (by decide) (by rw [add_ofNat_zero, add_ofNat_zero, ← add_ofNat_assoc, e]; rfl)
+    have A2 : accV t16.mem res 12 = accV t13.mem F 12 := accV_congr2 12 fun i hi => by
+      have h : memLoad32 t16.mem (res + BitVec.ofNat 32 (4 * i)) =
+          memLoad32 (copyBytes t13.mem res F 48) (res + BitVec.ofNat 32 (4 * i)) :=
+        memLoad32_congr fun j hj => memt16 _ (by
+          have := (rG48 (c := 0x1D0) (l := 16) (by decide)).symm.subR (c := 4 * i + j) (l := 1) (by omega)
+          rwa [← add_ofNat_assoc] at this)
+      rw [h, cb_load (by omega) (by decide)]
+    have A3 : accV t13.mem F 12 = accV t10.mem (F + 0x38) 12 := accV_congr2 12 fun i hi => by
+      have h : memLoad32 t13.mem (F + BitVec.ofNat 32 (4 * i)) =
+          memLoad32 (copyBytes t10.mem F (F + 0x38) 48) (F + BitVec.ofNat 32 (4 * i)) :=
+        memLoad32_congr fun j hj => memt13 _ (by
+          rw [add_ofNat_assoc, fG]; exact gS (.inl (by omega)) (by decide) (by omega))
+      rw [h, cb_load (by omega) (by decide)]
+    have A4 := accV_ite (n := 12) (c := cv = 1) w10
+    have A5 : accV n7.mem F 12 = accV M F 12 := by
+      have := accF (M1 := n7.mem) (M2 := M) 0 12 (by decide) fun d h1 h2 => by
+        rw [fr7 _ (by rw [eM4]; exact gS (.inl (by omega)) (by decide) (by omega)),
+          fr6 _ (by rw [e38]; exact gS (.inr (by omega)) (by decide) (by omega)),
+          fr5 _ (by rw [eM4]; exact gS (.inl (by omega)) (by decide) (by omega))
+            (by rw [eE8]; exact gS (.inr (by omega)) (by decide) (by omega)),
+          frM2 _ (by rw [eE8]; exact gS (.inr (by omega)) (by decide) (by omega))]
+      rwa [add_ofNat_zero] at this
+    have A6 : accV n7.mem (F + 0xE8) 12 = accV M5 (F + 0xE8) 12 :=
+      accF 0xE8 12 (by decide) fun d h1 h2 => by
+        rw [fr7 _ (by rw [eM4]; exact gS (.inl (by omega)) (by decide) (by omega)),
+          fr6 _ (by rw [e38]; exact gS (.inl (by omega)) (by decide) (by omega))]
+    have Xeq : accV t2.mem F 12 = accV M F 12 := by
+      have := accF (M1 := t2.mem) (M2 := M) 0 12 (by decide) fun d h1 h2 =>
+        frM2 _ (by rw [eE8]; exact gS (.inr (by omega)) (by decide) (by omega))
+      rwa [add_ofNat_zero] at this
+    have Meq : accV t2.mem mp 12 = accV M0 mp 12 :=
+      accV_congr 12 fun i hi => memLoad32_congr fun j hj => frG2 _ (by
+        have := env.mG.symm.subR (c := 4 * i + j) (l := 1) (by omega); rwa [← add_ofNat_assoc] at this)
+    have s3e : reg n5 19 = memLoad32 M (F + 0x30) := by
+      rw [k5 19 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by decide) (by decide), K8 19 (by decide), g1, f0s3, rsp]
+    have cvE : cv = aluEval .and (aluEval .sltu (memLoad32 M (F + 0x30)) 1) (reg n5 a2) := by
+      rw [← hcv, memLoad32_store32_same, s3e]
+    rw [A1, A2, A3, A4, A5, A6, cvE]
+    exact ph5_val' bm5 (accV_lt M0 mp 12) (accV_lt M5 (F + 0xE8) 12) v5 Xeq Meq
+  · rw [u17.regs, spt16, rt15 _ (by decide), g14, f5k sp (by decide), sp13]
+  · intro q hq
+    rw [u17.regs, k16 q (mem_sub hq (by decide)), chainR q (mem_sub hq (by decide)), chain6 q (mem_sub hq (by decide))]
 
 end C3.RV32
