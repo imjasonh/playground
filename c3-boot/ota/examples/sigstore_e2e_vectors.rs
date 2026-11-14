@@ -15,7 +15,12 @@
 //! - `leafsig CERT SUBJECT KEY | 1` or `| 0`, from `x509::verify_leaf` with
 //!   that Fulcio subject and key, for every fourth certificate that parses
 //!
-//! where `TEXT`, `ORIGIN`, `HASH`, and the certificate fields are hex, and `ROOT` lists the parsed
+//! - `tsr DER | ok GEN_TIME IMPRINT TST_INFO DIGEST SID ATTRS R S` or
+//!   `| err`, from `tsa::parse_timestamp`
+//! - `tsrsig DER SID KEY SIGNATURE | 1` or `| 0`, from `tsa::verify_timestamp`
+//!   with that TSA signer ID and key, for every fourth token that parses
+//!
+//! where `TEXT`, `ORIGIN`, `HASH`, and the certificate and token fields are hex, and `ROOT` lists the parsed
 //! root's keys and policy: four `/`-separated sections, each a
 //! `;`-separated list of `.`-separated fields. The Fulcio, log, and TSA
 //! sections hold `NAME.KEY.NOT_BEFORE.NOT_AFTER` entries, and the policy
@@ -196,6 +201,50 @@ fn leaf_lines(out: &mut impl Write, rng: &mut Rng, cert: &[u8], root: &TrustRoot
     }
 }
 
+fn tsr_lines(out: &mut impl Write, rng: &mut Rng, tsr: &[u8], sig: &[u8], root: &TrustRoot<'_>) {
+    let mut tokens = vec![tsr.to_vec()];
+    for _ in 0..LEAF_MUTATIONS {
+        tokens.push(mutate_der(rng, tsr));
+    }
+    for (i, d) in tokens.into_iter().enumerate() {
+        let r = match c3_verify::tsa::parse_timestamp(&d) {
+            Ok(ts) => {
+                if i % 4 == 0 {
+                    let signer = root
+                        .tsas()
+                        .find(|t| t.signer_id == ts.signer_id)
+                        .or_else(|| root.tsas().next())
+                        .unwrap();
+                    let ok = c3_verify::tsa::verify_timestamp(&ts, signer, sig).is_ok();
+                    writeln!(
+                        out,
+                        "tsrsig {} {} {} {} | {}",
+                        hex(&d),
+                        hex(signer.signer_id),
+                        hex(signer.public_key),
+                        hex(sig),
+                        u8::from(ok)
+                    )
+                    .unwrap();
+                }
+                format!(
+                    "ok {} {} {} {} {} {} {} {}",
+                    ts.gen_time,
+                    hex(ts.message_imprint),
+                    hex(ts.tst_info),
+                    hex(ts.message_digest),
+                    hex(ts.signer_id),
+                    hex(ts.signed_attrs),
+                    hex(&ts.signature.0),
+                    hex(&ts.signature.1)
+                )
+            }
+            Err(_) => "err".to_string(),
+        };
+        writeln!(out, "tsr {} | {r}", hex(&d)).unwrap();
+    }
+}
+
 fn main() {
     let mut out = BufWriter::new(std::io::stdout().lock());
     let mut rng = Rng(0x4532_4556_4543_5452);
@@ -218,6 +267,7 @@ fn main() {
         let bundle = c3_verify::bundle::parse(&container).unwrap();
         let token = root_token(&root);
         leaf_lines(&mut out, &mut rng, bundle.leaf_certificate, &root);
+        tsr_lines(&mut out, &mut rng, bundle.timestamp, bundle.image_signature, &root);
         let mut texts = vec![bundle.checkpoint.to_vec()];
         for _ in 0..MUTATIONS {
             let t = mutate(&mut rng, bundle.checkpoint);

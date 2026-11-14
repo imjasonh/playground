@@ -14,6 +14,7 @@ import C3BootProofs.Spec.Ed25519
 import C3BootProofs.Spec.Checkpoint
 import C3BootProofs.Spec.DerRead
 import C3BootProofs.Spec.X509
+import C3BootProofs.Spec.Tsa
 import C3BootProofs.Hex
 import C3BootProofs.Model.RV32
 import C3BootProofs.Image.Bootloader

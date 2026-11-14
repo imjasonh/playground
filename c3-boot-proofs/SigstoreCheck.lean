@@ -72,6 +72,13 @@ def result (tokens : List String) : Option String :=
   | ["leafsig", h, subj, key] => do
     let leaf ← parseLeaf (← parseHexTok h)
     pure (if verifyLeaf leaf ⟨← parseHexTok subj, ← parseHexTok key, ⟨0, 0⟩⟩ then "1" else "0")
+  | ["tsr", h] => do
+    pure <| okOr ((parseTimestamp (← parseHexTok h)).map fun ts =>
+      s!"ok {ts.genTime} {hexStr ts.messageImprint} {hexStr ts.tstInfo} {hexStr ts.messageDigest} " ++
+        s!"{hexStr ts.signerId} {hexStr ts.signedAttrs} {hexStr ts.sigR} {hexStr ts.sigS}")
+  | ["tsrsig", h, sid, key, sig] => do
+    let ts ← parseTimestamp (← parseHexTok h)
+    pure (if verifyTimestamp ts ⟨← parseHexTok sid, ← parseHexTok key, ⟨0, 0⟩⟩ (← parseHexTok sig) then "1" else "0")
   | _ => none
 
 partial def loop (stdin : IO.FS.Stream) (stdout : IO.FS.Stream) : IO UInt32 := do
