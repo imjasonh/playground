@@ -124,3 +124,19 @@ func TestStreamsToFile(t *testing.T) {
 		t.Errorf("encoded %d frames, want at least 50", n)
 	}
 }
+
+func TestClock(t *testing.T) {
+	period := 10 * time.Millisecond
+	clk := clock{start: time.Now().Add(-100 * period), period: period}
+	if n, ok := clk.wait(t.Context(), 97); !ok || n != 97 {
+		t.Errorf("3 frames behind: wait = %d, %t; want 97, true", n, ok)
+	}
+	if n, ok := clk.wait(t.Context(), 10); !ok || n < 99 {
+		t.Errorf("90 frames behind: wait = %d, %t; want at least 99, true", n, ok)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, ok := clk.wait(ctx, 1000); ok {
+		t.Error("wait after cancel = true; want false")
+	}
+}

@@ -106,9 +106,9 @@ func (c config) validate() error {
 	return errors.Join(errs...)
 }
 
-// secrets returns the secret Funcs that cfg names, sharing one Secret
-// Manager client.
-func (c config) secrets() (streamKey, apiKey secret.Func) {
+// secrets returns the encoder's output URL and the YouTube API key, read
+// through one Secret Manager client. apiKey is nil when no key is set.
+func (c config) secrets() (outputURL func(context.Context) (string, error), apiKey secret.Func) {
 	sm := &secret.Manager{}
 	pick := func(name, file string) secret.Func {
 		switch {
@@ -119,18 +119,25 @@ func (c config) secrets() (streamKey, apiKey secret.Func) {
 		}
 		return nil
 	}
-	streamKey = pick(c.StreamKeySecret, c.StreamKeyFile)
+	streamKey := pick(c.StreamKeySecret, c.StreamKeyFile)
+	outputURL = func(ctx context.Context) (string, error) {
+		if c.OutputURL != "" {
+			return c.OutputURL, nil
+		}
+		key, err := streamKey(ctx)
+		if err != nil {
+			return "", fmt.Errorf("reading stream key: %w", err)
+		}
+		return strings.TrimSuffix(c.IngestURL, "/") + "/" + key, nil
+	}
 	if k := pick(c.YouTubeAPIKeySecret, c.YouTubeAPIKeyFile); k != nil {
 		apiKey = secret.Cached(k, 10*time.Minute)
 	}
-	return streamKey, apiKey
+	return outputURL, apiKey
 }
 
-// buffer is one frame's video and audio, recycled through a pool.
-type buffer struct {
-	video *frame.Frame
-	audio []byte
-}
+// queueFrames is how many frames may wait for ffmpeg.
+const queueFrames = 2
 
 func run(ctx context.Context, cfg config) error {
 	if err := cfg.validate(); err != nil {
@@ -145,62 +152,13 @@ func run(ctx context.Context, cfg config) error {
 
 	fl := flock.New(float32(cfg.Width), float32(cfg.Height), flock.DefaultParams(), workers, uint32(time.Now().UnixNano()))
 	synth := audio.New(sampleRate)
-	sh := show.New(show.Config{Cap: cfg.BoidCap, Min: cfg.MinBoids}, fl, synth)
 	rend, err := frame.NewRenderer(cfg.Width, cfg.Height, workers)
 	if err != nil {
 		return err
 	}
-
-	streamKey, apiKey := cfg.secrets()
-	url := func(ctx context.Context) (string, error) {
-		if cfg.OutputURL != "" {
-			return cfg.OutputURL, nil
-		}
-		key, err := streamKey(ctx)
-		if err != nil {
-			return "", fmt.Errorf("reading stream key: %w", err)
-		}
-		return strings.TrimSuffix(cfg.IngestURL, "/") + "/" + key, nil
-	}
-	const queue = 2
-	enc := encoder.New(encoder.Config{
-		FFmpeg: cfg.FFmpeg, Width: cfg.Width, Height: cfg.Height, FPS: cfg.FPS, SampleRate: sampleRate,
-		VideoBitrate: cfg.VideoBitrate, Preset: cfg.X264Preset, Format: cfg.OutputFormat, URL: url,
-		QueueFrames: queue,
-	})
-
-	var wg sync.WaitGroup
-	defer wg.Wait()
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	wg.Go(func() {
-		if err := enc.Run(ctx); err != nil {
-			log.Error("encoder stopped", "error", err)
-		}
-	})
-
-	var watcher *youtube.Watcher
-	var events <-chan youtube.Message
-	if cfg.VideoID != "" || cfg.ChannelID != "" {
-		watcher = youtube.NewWatcher(&youtube.Client{Base: cfg.YouTubeAPIBase, Key: apiKey}, youtube.WatcherConfig{
-			VideoID: cfg.VideoID, ChannelID: cfg.ChannelID,
-			ViewerPoll: cfg.ViewerPoll, ChatPoll: cfg.ChatPoll, SearchInterval: cfg.SearchInterval,
-			MemberWindow: cfg.MemberWindow, QuotaPause: cfg.QuotaPause,
-		})
-		events = watcher.Events()
-		wg.Go(func() {
-			if err := watcher.Run(ctx); err != nil {
-				log.Error("YouTube watcher stopped", "error", err)
-			}
-		})
-	} else {
-		log.Info("no YouTube video or channel set; showing a fixed viewer count", "viewers", cfg.StaticViewers)
-		sh.Update(youtube.State{Viewers: cfg.StaticViewers, ViewersKnown: true})
-	}
-
-	// The encoder holds up to queue frames plus one per pipe it is
+	// The encoder holds up to queueFrames frames plus one per pipe it is
 	// writing, and the loop renders one more.
-	pool := make(chan *buffer, queue+3)
+	pool := make(chan *buffer, queueFrames+3)
 	for range cap(pool) {
 		f, err := frame.New(cfg.Width, cfg.Height)
 		if err != nil {
@@ -209,78 +167,161 @@ func run(ctx context.Context, cfg config) error {
 		pool <- &buffer{video: f, audio: make([]byte, sampleRate/cfg.FPS*audio.BytesPerFrame)}
 	}
 
+	outputURL, apiKey := cfg.secrets()
+	s := &streamer{
+		cfg:   cfg,
+		flock: fl,
+		synth: synth,
+		show:  show.New(show.Config{Cap: cfg.BoidCap, Min: cfg.MinBoids}, fl, synth),
+		rend:  rend,
+		pool:  pool,
+		enc: encoder.New(encoder.Config{
+			FFmpeg: cfg.FFmpeg, Width: cfg.Width, Height: cfg.Height, FPS: cfg.FPS, SampleRate: sampleRate,
+			VideoBitrate: cfg.VideoBitrate, Preset: cfg.X264Preset, Format: cfg.OutputFormat, URL: outputURL,
+			QueueFrames: queueFrames,
+		}),
+		audience: func() youtube.State { return youtube.State{Viewers: cfg.StaticViewers, ViewersKnown: true} },
+	}
+
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	wg.Go(func() {
+		if err := s.enc.Run(ctx); err != nil {
+			log.Error("encoder stopped", "error", err)
+		}
+	})
+	if cfg.VideoID != "" || cfg.ChannelID != "" {
+		w := youtube.NewWatcher(&youtube.Client{Base: cfg.YouTubeAPIBase, Key: apiKey}, youtube.WatcherConfig{
+			VideoID: cfg.VideoID, ChannelID: cfg.ChannelID,
+			ViewerPoll: cfg.ViewerPoll, ChatPoll: cfg.ChatPoll, SearchInterval: cfg.SearchInterval,
+			MemberWindow: cfg.MemberWindow, QuotaPause: cfg.QuotaPause,
+		})
+		s.audience, s.events = w.State, w.Events()
+		wg.Go(func() {
+			if err := w.Run(ctx); err != nil {
+				log.Error("YouTube watcher stopped", "error", err)
+			}
+		})
+	} else {
+		log.Info("no YouTube video or channel set; showing a fixed viewer count", "viewers", cfg.StaticViewers)
+	}
+
 	log.Info("streaming", "size", fmt.Sprintf("%dx%d", cfg.Width, cfg.Height), "fps", cfg.FPS,
 		"boidCap", cfg.BoidCap, "workers", workers, "preset", cfg.X264Preset, "bitrate", cfg.VideoBitrate)
+	return s.run(ctx)
+}
 
-	period := time.Second / time.Duration(cfg.FPS)
-	dt := 1 / float64(cfg.FPS)
-	start := time.Now()
+// buffer is one frame's video and audio, recycled through a pool.
+type buffer struct {
+	video *frame.Frame
+	audio []byte
+}
+
+// streamer renders the show one frame at a time, in real time, and hands
+// each frame to the encoder.
+type streamer struct {
+	cfg   config
+	flock *flock.Flock
+	synth *audio.Synth
+	show  *show.Show
+	rend  *frame.Renderer
+	enc   *encoder.Encoder
+	pool  chan *buffer
+
+	// audience is read once a second. events delivers chat events, and is
+	// nil when nothing sends them.
+	audience func() youtube.State
+	events   <-chan youtube.Message
+}
+
+func (s *streamer) run(ctx context.Context) error {
+	log := clog.FromContext(ctx)
+	clk := clock{start: time.Now(), period: time.Second / time.Duration(s.cfg.FPS)}
+	dt := 1 / float64(s.cfg.FPS)
 	var m metrics
-	nextMetrics := start.Add(cfg.MetricsInterval)
+	nextMetrics := clk.start.Add(s.cfg.MetricsInterval)
 	for n := int64(0); ; n++ {
-		deadline := start.Add(time.Duration(n) * period)
-		if wait := time.Until(deadline); wait > 0 {
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-time.After(wait):
-			}
-		} else if ctx.Err() != nil {
+		due, ok := clk.wait(ctx, n)
+		if !ok {
 			return nil
-		} else if -wait > 5*period {
-			// Far behind: skip ahead rather than stream slower than real
-			// time.
-			behind := int64(-wait / period)
-			m.skipped += behind
-			n += behind
 		}
+		m.skipped += due - n
+		n = due
 
-		if watcher != nil {
-			if n%int64(cfg.FPS) == 0 {
-				sh.Update(watcher.State())
-			}
-		drain:
-			for {
-				select {
-				case ev := <-events:
-					log.Info("chat event", "type", ev.Type, "tier", ev.Tier)
-					sh.Event(ev)
-				default:
-					break drain
-				}
+		if n%int64(s.cfg.FPS) == 0 {
+			s.show.Update(s.audience())
+		}
+	drain:
+		for {
+			select {
+			case ev := <-s.events:
+				log.Info("chat event", "type", ev.Type, "tier", ev.Tier)
+				s.show.Event(ev)
+			default:
+				break drain
 			}
 		}
 
 		t0 := time.Now()
-		sc := sh.Step(dt)
-		if !enc.Stats().Running {
+		sc := s.show.Step(dt)
+		if !s.enc.Stats().Running {
 			m.idle++
 			continue
 		}
 		var b *buffer
 		select {
-		case b = <-pool:
+		case b = <-s.pool:
 		default:
 			m.skipped++
 			continue
 		}
-		if err := rend.Render(sc, b.video); err != nil {
+		if err := s.rend.Render(sc, b.video); err != nil {
 			return err
 		}
-		synth.Fill(b.audio)
+		s.synth.Fill(b.audio)
 		m.observe(time.Since(t0))
-		enc.Submit(encoder.Job{Video: b.video.Bytes(), Audio: b.audio, Release: func() { pool <- b }})
+		s.enc.Submit(encoder.Job{Video: b.video.Bytes(), Audio: b.audio, Release: func() { s.pool <- b }})
 
 		if now := time.Now(); now.After(nextMetrics) {
-			nextMetrics = now.Add(cfg.MetricsInterval)
-			s := enc.Stats()
+			nextMetrics = now.Add(s.cfg.MetricsInterval)
+			st := s.enc.Stats()
 			log.Info("metrics",
-				"boids", fl.Len(), "target", sh.Target(), "viewers", sc.HUD.Viewers, "members", sc.HUD.Members,
+				"boids", s.flock.Len(), "target", s.show.Target(), "viewers", sc.HUD.Viewers, "members", sc.HUD.Members,
 				"frameAvg", m.avg().String(), "frameMax", m.max.String(), "skipped", m.skipped, "idle", m.idle,
-				"ffmpegRunning", s.Running, "uptime", s.Uptime.Round(time.Second).String(), "restarts", s.Restarts,
-				"dropped", s.Dropped, "encoded", s.Encoded, "speed", s.Speed)
+				"ffmpegRunning", st.Running, "uptime", st.Uptime.Round(time.Second).String(), "restarts", st.Restarts,
+				"dropped", st.Dropped, "encoded", st.Encoded, "speed", st.Speed)
 			m = metrics{}
 		}
+	}
+}
+
+// clock schedules frame n at start + n*period.
+type clock struct {
+	start  time.Time
+	period time.Duration
+}
+
+// wait sleeps until frame n is due and returns the frame to render: n, or
+// a later frame when more than five frames behind, so the stream skips
+// ahead rather than run slower than real time. It returns false once ctx
+// is done.
+func (c clock) wait(ctx context.Context, n int64) (int64, bool) {
+	wait := time.Until(c.start.Add(time.Duration(n) * c.period))
+	if wait <= 0 {
+		if -wait > 5*c.period {
+			n += int64(-wait / c.period)
+		}
+		return n, ctx.Err() == nil
+	}
+	t := time.NewTimer(wait)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return n, false
+	case <-t.C:
+		return n, true
 	}
 }
 
