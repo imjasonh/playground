@@ -1,7 +1,7 @@
 // Records one visit to a browser app in the wehadababyitsaboy usage bucket.
 //
-// Copy this file, unchanged, into a browser app's directory and load it from
-// index.html:
+// Each browser app links this file into its directory as whbiab.js and loads
+// it from index.html:
 //
 //   <script src="whbiab.js" data-app="my-app"></script>
 //
