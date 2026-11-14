@@ -363,8 +363,30 @@ each case with `c3-verify`'s verdict. `lake exe trust-check` reads those
 lines and evaluates `acceptContents`, counting a signature valid exactly
 when it is uncorrupted and made by that key over that message. CI requires
 the verdicts to match; about a third of the cases are accepted. The
-Sigstore checks and the trust-root blob's byte format are outside this
-comparison; `c3-boot`'s conformance and mutation tests cover them.
+trust-root blob's byte format is outside this comparison.
+
+`Spec/Sigstore.lean` specifies the Sigstore check of an update:
+`sigstoreVerify` is the decision `c3_verify::sigstore::verify` makes, in
+the same order, from executable specifications of its parts. The parts are
+the bundle container and the Rekor entry (`Spec/Bundle.lean`), base64 and
+ASN.1 times, the Fulcio leaf certificate profile (`Spec/X509.lean`, over a
+DER reader in `Spec/DerRead.lean`), the RFC 3161 timestamp profile
+(`Spec/Tsa.lean`), the signed checkpoint (`Spec/Checkpoint.lean`), and
+Merkle inclusion. Its cryptography is specified too, on natural numbers:
+ECDSA over P-256 and P-384 with `c3-crypto`'s range and key rules
+(`Spec/Ecdsa.lean`), strict Ed25519 without the cofactor
+(`Spec/Ed25519.lean`), and SHA-384. Three examples print inputs with the
+Rust results, and `lake exe sigstore-check` must print the same lines:
+`c3-boot/verify/examples/sigstore_vectors.rs` (24,000 base64, time,
+container, and Rekor inputs, valid and mutated),
+`c3-boot/crypto/examples/crypto_vectors.rs` (signed, mutated, and
+edge-case ECDSA and Ed25519 inputs, and SHA-384), and
+`c3-boot/ota/examples/sigstore_e2e_vectors.rs`. The last runs the Sigstore
+conformance cases, with trust roots built as `ota/tests/conformance.rs`
+builds them, and byte mutations of their certificates, timestamps, and
+checkpoints through each part, and through `sigstore::verify` with
+mutations of the container, the digest, and the trust root: 32,485 lines,
+all identical.
 
 `c3-boot/verify/examples/decode_vectors.rs` builds 20,000 boot-state
 records, 5,000 pairs of records, 20,000 manifests, and 20,000 image headers.
@@ -422,6 +444,10 @@ diff /tmp/lean.txt /tmp/rust.txt
 lake exe trust-check < /tmp/rust-trust.txt | diff - /tmp/rust-trust.txt
 (cd ../c3-boot && cargo run -q -p c3-verify --example decode_vectors) > /tmp/rust-decode.txt
 lake exe decode-check < /tmp/rust-decode.txt | diff - /tmp/rust-decode.txt
+(cd ../c3-boot && cargo run -q -p c3-verify --example sigstore_vectors &&
+  cargo run -q -p c3-crypto --example crypto_vectors &&
+  cargo run -q -p c3-ota --example sigstore_e2e_vectors) > /tmp/rust-sigstore.txt
+lake exe sigstore-check < /tmp/rust-sigstore.txt | diff - /tmp/rust-sigstore.txt
 (cd ../c3-boot && QEMU=/path/to/qemu-system-riscv32 bash qemu/rv-lockstep.sh)
 python3 scripts/decode-vs-llvm.py .lake/build/bin/rv-decode \
   "$(cd ../c3-boot && rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin"

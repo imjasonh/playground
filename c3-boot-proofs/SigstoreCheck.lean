@@ -79,6 +79,13 @@ def result (tokens : List String) : Option String :=
   | ["tsrsig", h, sid, key, sig] => do
     let ts ← parseTimestamp (← parseHexTok h)
     pure (if verifyTimestamp ts ⟨← parseHexTok sid, ← parseHexTok key, ⟨0, 0⟩⟩ (← parseHexTok sig) then "1" else "0")
+  | ["verify", c, r, d] => do
+    let root ← parseRoot r
+    let digest ← parseHexTok d
+    pure <| okOr (do
+      let b ← decodeBundle (← parseHexTok c)
+      let v ← sigstoreVerify b root digest
+      pure s!"ok {v.signedTime} {v.logIndex}")
   | _ => none
 
 partial def loop (stdin : IO.FS.Stream) (stdout : IO.FS.Stream) : IO UInt32 := do

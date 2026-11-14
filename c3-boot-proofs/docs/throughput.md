@@ -86,7 +86,10 @@ proofs:
    CMS, and Rekor checkpoint parts and the checks over them, tested against
    `c3-verify` the way the manifest and image-header decoders are. Without
    it, a proof of `sigstore::verify` could say only that the machine code
-   computes what the Rust source computes.
+   computes what the Rust source computes. Done on 2026-11-13:
+   `Spec/Sigstore.lean`'s `sigstoreVerify`, with ECDSA, Ed25519, and
+   SHA-384 specified on naturals, matches `c3-verify` on the conformance
+   cases and 32,000 mutations (see the README's differential test).
 2. Proofs of the deciding functions against that specification:
    `p384_verify_prehash`, `ed25519_verify`, `sigstore::verify`, and
    `boot_main`.

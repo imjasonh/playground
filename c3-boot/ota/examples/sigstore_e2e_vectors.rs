@@ -20,7 +20,12 @@
 //! - `tsrsig DER SID KEY SIGNATURE | 1` or `| 0`, from `tsa::verify_timestamp`
 //!   with that TSA signer ID and key, for every fourth token that parses
 //!
-//! where `TEXT`, `ORIGIN`, `HASH`, and the certificate and token fields are hex, and `ROOT` lists the parsed
+//! - `verify CONTAINER ROOT DIGEST | ok TIME INDEX` or `| err`, from
+//!   `bundle::parse` and `sigstore::verify`, for each case and for
+//!   mutations of its container fields, its digest, and its trust root
+//!
+//! where `TEXT`, `ORIGIN`, `HASH`, the certificate and token fields,
+//! `CONTAINER`, and `DIGEST` are hex, and `ROOT` lists the parsed
 //! root's keys and policy: four `/`-separated sections, each a
 //! `;`-separated list of `.`-separated fields. The Fulcio, log, and TSA
 //! sections hold `NAME.KEY.NOT_BEFORE.NOT_AFTER` entries, and the policy
@@ -36,6 +41,7 @@ use std::io::Write;
 use std::path::Path;
 
 use c3_ota::blob::TrustRootSpec;
+use c3_ota::blob::Window;
 use c3_ota::blob::signed_blob;
 use c3_ota::container::from_bundle_json;
 use c3_ota::keys::read_signing_key;
@@ -44,6 +50,7 @@ use c3_verify::trustroot::TrustRoot;
 const DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../testdata");
 const MUTATIONS: usize = 60;
 const LEAF_MUTATIONS: usize = 150;
+const VERIFY_MUTATIONS: usize = 24;
 
 struct Rng(u64);
 
@@ -245,6 +252,60 @@ fn tsr_lines(out: &mut impl Write, rng: &mut Rng, tsr: &[u8], sig: &[u8], root: 
     }
 }
 
+/// The container with field `i` replaced.
+fn with_field(b: &c3_verify::bundle::Bundle<'_>, i: usize, v: &[u8]) -> Vec<u8> {
+    let index = b.log_index.to_le_bytes();
+    let mut fields: [&[u8]; 6] = [
+        b.leaf_certificate,
+        b.image_signature,
+        &index,
+        b.inclusion_proof,
+        b.checkpoint,
+        b.timestamp,
+    ];
+    fields[i] = v;
+    let mut out = b"C3BN".to_vec();
+    out.extend_from_slice(&1u16.to_le_bytes());
+    for f in fields {
+        out.extend_from_slice(&(f.len() as u32).to_le_bytes());
+        out.extend_from_slice(f);
+    }
+    out
+}
+
+/// A changed trust root: a window that ends one second earlier or starts
+/// later, a policy string or key name with a changed byte, or no change.
+fn mutate_spec(rng: &mut Rng, spec: &TrustRootSpec) -> TrustRootSpec {
+    let mut s = spec.clone();
+    let shrink = |w: &mut Window, rng: &mut Rng| {
+        if rng.below(2) == 0 {
+            *w = Window(w.0.saturating_add(1 + rng.below(1 << 40)), w.1);
+        } else {
+            *w = Window(w.0, w.1.saturating_sub(1 + rng.below(1 << 40)).max(w.0));
+        }
+    };
+    match rng.below(7) {
+        0 if !s.fulcio.is_empty() => shrink(&mut s.fulcio[0].2, rng),
+        1 if !s.logs.is_empty() => shrink(&mut s.logs[0].2, rng),
+        2 if !s.tsas.is_empty() => shrink(&mut s.tsas[0].2, rng),
+        3 => {
+            let i = rng.below(5) as usize;
+            s.policy[i].push('x');
+        }
+        4 if !s.fulcio.is_empty() => {
+            let last = s.fulcio[0].0.len() - 1;
+            s.fulcio[0].0[last] ^= 1;
+        }
+        5 if !s.tsas.is_empty() => {
+            let last = s.tsas[0].0.len() - 1;
+            s.tsas[0].0[last] ^= 1;
+        }
+        6 if !s.logs.is_empty() => s.logs[0].0.push('x'),
+        _ => {}
+    }
+    s
+}
+
 fn main() {
     let mut out = BufWriter::new(std::io::stdout().lock());
     let mut rng = Rng(0x4532_4556_4543_5452);
@@ -268,6 +329,55 @@ fn main() {
         let token = root_token(&root);
         leaf_lines(&mut out, &mut rng, bundle.leaf_certificate, &root);
         tsr_lines(&mut out, &mut rng, bundle.timestamp, bundle.image_signature, &root);
+        let digest = c3_crypto::sha256(&fs::read(base.join("a.txt")).unwrap());
+        let verify_line = |out: &mut BufWriter<_>, container: &[u8], root: &TrustRoot<'_>, d: &[u8; 32]| {
+            let r = match c3_verify::bundle::parse(container) {
+                Ok(b) => match c3_verify::sigstore::verify(&b, root, d) {
+                    Ok(v) => format!("ok {} {}", v.signed_time, v.log_index),
+                    Err(_) => "err".to_string(),
+                },
+                Err(_) => "err".to_string(),
+            };
+            writeln!(out, "verify {} {} {} | {r}", hex(container), root_token(root), hex(d)).unwrap();
+        };
+        verify_line(&mut out, &container, &root, &digest);
+        for _ in 0..VERIFY_MUTATIONS {
+            match rng.below(4) {
+                0 | 1 => {
+                    let i = rng.below(6) as usize;
+                    let field: Vec<u8> = match i {
+                        0 => mutate_der(&mut rng, bundle.leaf_certificate),
+                        1 => mutate_der(&mut rng, bundle.image_signature),
+                        2 => (bundle.log_index ^ (1 << rng.below(4))).to_le_bytes().to_vec(),
+                        3 => {
+                            let mut p = bundle.inclusion_proof.to_vec();
+                            if !p.is_empty() {
+                                let j = rng.below(p.len() as u64) as usize;
+                                p[j] ^= 1;
+                            }
+                            p
+                        }
+                        4 => mutate(&mut rng, bundle.checkpoint),
+                        _ => mutate_der(&mut rng, bundle.timestamp),
+                    };
+                    verify_line(&mut out, &with_field(&bundle, i, &field), &root, &digest);
+                }
+                2 => {
+                    let mut d = digest;
+                    d[rng.below(32) as usize] ^= 1;
+                    verify_line(&mut out, &container, &root, &d);
+                }
+                _ => {
+                    let s = mutate_spec(&mut rng, &spec);
+                    let Ok(b) = signed_blob(&s, &[(0, &k1), (1, &k2)]) else {
+                        continue;
+                    };
+                    if let Ok(r) = c3_verify::trustroot::parse(&b) {
+                        verify_line(&mut out, &container, &r, &digest);
+                    }
+                }
+            }
+        }
         let mut texts = vec![bundle.checkpoint.to_vec()];
         for _ in 0..MUTATIONS {
             let t = mutate(&mut rng, bundle.checkpoint);
