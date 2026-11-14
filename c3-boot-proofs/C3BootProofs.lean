@@ -129,6 +129,7 @@ import C3BootProofs.Proofs.Norm12
 import C3BootProofs.Proofs.Norm8
 import C3BootProofs.Proofs.ToUintResize
 import C3BootProofs.Proofs.LincombShiftMod12
+import C3BootProofs.Proofs.UpdateDe12
 import C3BootProofs.Proofs.UpdateFg12
 import C3BootProofs.Proofs.UpdateFg8
 import C3BootProofs.Proofs.AbsSign2
