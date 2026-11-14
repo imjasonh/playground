@@ -550,4 +550,313 @@ theorem mac_val (p x y c : Word) :
   rw [hs1, hs2, hh]
   split <;> split <;> omega
 
+set_option maxRecDepth 20000 in
+theorem lmM0_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock lmM0 (M, f)).1 = memStore32 (memStore32 M (f sp + 0x118) 0) (f sp + 0x11C) 0 ∧
+    (runBlock lmM0 (M, f)).2 (6 : Fin 32) = 0 ∧ (runBlock lmM0 (M, f)).2 (17 : Fin 32) = f sp + 0x118 ∧
+    (runBlock lmM0 (M, f)).2 a6 = 2 ∧ (runBlock lmM0 (M, f)).2 (5 : Fin 32) = 2 ∧
+    ∀ q : Fin 32, q.val ∉ [5, 6, 16, 17] → (runBlock lmM0 (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, lmM0]
+  refine ⟨?_, ?_, ?_, ?_, ?_, fun q hq => ?_⟩
+  · simp +decide only [upd, ↓reduceIte, hz]
+  any_goals (simp +decide only [upd, ↓reduceIte, hz, ev_add]; first | rfl | skip)
+  have nq : ∀ w : Fin 32, w.val ∈ [5, 6, 16, 17] → q ≠ w := fun w hw e => hq (e ▸ hw)
+  by_cases h0 : q.val = 0
+  · have : q = 0 := Fin.ext h0
+    subst this; simp [hz]
+  · simp only [upd, h0, nq 5 (by decide), nq 6 (by decide), nq a6 (by decide), nq 17 (by decide), ite_false]
+
+theorem lmM0_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Word} {len : Nat}
+    (h0 : (f sp + 0x118).toNat % 4 = 0) (h4 : (f sp + 0x11C).toNat % 4 = 0)
+    (s0 : Sep (f sp + 0x118) 4 base len) (s4 : Sep (f sp + 0x11C) 4 base len) :
+    BlockOk base len lmM0 (M, f) := by
+  simp +decide only [BlockOk, BInstr.ok, BInstr.run, lmM0, upd, ↓reduceIte, and_true, true_and]
+  exact ⟨⟨h0, s0⟩, h4, s4⟩
+
+set_option maxRecDepth 20000 in
+theorem lmM1_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock lmM1 (M, f)).1 = M ∧
+    (runBlock lmM1 (M, f)).2 (9 : Fin 32) = 0 ∧
+    (runBlock lmM1 (M, f)).2 a4 = memLoad32 M (aluEval .sll (f 6) 2 + f 20 + 0) ∧
+    (runBlock lmM1 (M, f)).2 a5 = f 5 ∧ (runBlock lmM1 (M, f)).2 a1 = f 17 ∧
+    (runBlock lmM1 (M, f)).2 (8 : Fin 32) = f 21 ∧
+    ∀ q : Fin 32, q.val ∉ [8, 9, 11, 14, 15] → (runBlock lmM1 (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, lmM1]
+  refine ⟨trivial, ?_, ?_, ?_, ?_, ?_, fun q hq => ?_⟩
+  any_goals (simp +decide only [upd, ↓reduceIte, hz, ev_add]; first | rfl | exact BitVec.zero_add _ | skip)
+  have nq : ∀ w : Fin 32, w.val ∈ [8, 9, 11, 14, 15] → q ≠ w := fun w hw e => hq (e ▸ hw)
+  by_cases h0 : q.val = 0
+  · have : q = 0 := Fin.ext h0
+    subst this; simp [hz]
+  · simp only [upd, h0, nq 8 (by decide), nq 9 (by decide), nq a1 (by decide), nq a4 (by decide),
+      nq a5 (by decide), ite_false]
+
+theorem lmM1_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Word} {len : Nat}
+    (h : (aluEval .sll (f 6) 2 + f 20 + 0).toNat % 4 = 0) : BlockOk base len lmM1 (M, f) := by
+  simp +decide only [BlockOk, BInstr.ok, BInstr.run, lmM1, upd, ↓reduceIte, and_true, true_and]
+  exact h
+
+theorem lmM2_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Word} {len : Nat}
+    (h8 : (f 8 + 0).toNat % 4 = 0) (h1 : (f a1 + 0).toNat % 4 = 0) (s1 : Sep (f a1 + 0) 4 base len) :
+    BlockOk base len lmM2 (M, f) := by
+  simp +decide only [BlockOk, BInstr.ok, BInstr.run, lmM2, upd, ↓reduceIte, and_true, true_and]
+  exact ⟨h8, h1, h1, s1⟩
+
+set_option maxRecDepth 20000 in
+theorem lmM3_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock lmM3 (M, f)).1 = M ∧
+    (runBlock lmM3 (M, f)).2 (6 : Fin 32) = f 6 + 1 ∧ (runBlock lmM3 (M, f)).2 (17 : Fin 32) = f 17 + 4 ∧
+    (runBlock lmM3 (M, f)).2 (5 : Fin 32) = f 5 + 0xFFFFFFFF ∧
+    ∀ q : Fin 32, q.val ∉ [5, 6, 17] → (runBlock lmM3 (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, lmM3]
+  refine ⟨trivial, ?_, ?_, ?_, fun q hq => ?_⟩
+  any_goals (simp +decide only [upd, ↓reduceIte, ev_add]; first | rfl | skip)
+  have nq : ∀ w : Fin 32, w.val ∈ [5, 6, 17] → q ≠ w := fun w hw e => hq (e ▸ hw)
+  by_cases h0 : q.val = 0
+  · have : q = 0 := Fin.ext h0
+    subst this; simp [hz]
+  · simp only [upd, h0, nq 5 (by decide), nq 6 (by decide), nq 17 (by decide), ite_false]
+
+/-- The two words a 64-bit product leaves: `x · mi` modulo 2^64, schoolbook,
+with the high-by-high product dropped. -/
+theorem mul64_val (x0 x1 m0 m1 : Word) :
+    (macLo m0 x0 0 0).toNat + 2 ^ 32 * (macLo m0 x1 (macLo m1 x0 0 (macHi m0 x0 0 0)) 0).toNat =
+      (x0.toNat + 2 ^ 32 * x1.toNat) * (m0.toNat + 2 ^ 32 * m1.toNat) % 2 ^ 64 := by
+  have v1 := mac_val m0 x0 0 0
+  have v2 := mac_val m1 x0 0 (macHi m0 x0 0 0)
+  have v3 := mac_val m0 x1 (macLo m1 x0 0 (macHi m0 x0 0 0)) 0
+  have l3 := (macLo m0 x1 (macLo m1 x0 0 (macHi m0 x0 0 0)) 0).isLt
+  have h2 := (macHi m1 x0 0 (macHi m0 x0 0 0)).isLt
+  have h3 := (macHi m0 x1 (macLo m1 x0 0 (macHi m0 x0 0 0)) 0).isLt
+  have e : (x0.toNat + 2 ^ 32 * x1.toNat) * (m0.toNat + 2 ^ 32 * m1.toNat) =
+      m0.toNat * x0.toNat + 2 ^ 32 * (m1.toNat * x0.toNat) + 2 ^ 32 * (m0.toNat * x1.toNat) +
+        2 ^ 32 * 2 ^ 32 * (m1.toNat * x1.toNat) := by
+    rw [Nat.add_mul, Nat.mul_add, Nat.mul_add]; ac_rfl
+  rw [e]
+  have z : (0 : Word).toNat = 0 := rfl
+  rw [z] at v1 v2 v3
+  generalize m0.toNat * x0.toNat = P00 at v1 ⊢
+  generalize m1.toNat * x0.toNat = P10 at v2 ⊢
+  generalize m0.toNat * x1.toNat = P01 at v3 ⊢
+  generalize m1.toNat * x1.toNat = P11
+  omega
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 4000000 in
+/-- **The 64-bit product**, from 0x6C to 0xC6: the two words at `F + 0x118`
+get `x · mi` modulo 2^64, for `x` the two words at `F + 0x38` and `mi` the
+two at `mip`. -/
+theorem lm_mul {M : Word → BitVec 8} {P F mip : Word} {n : Machine} (s : St M P n 0x6C (reg n))
+    (hc : CodeIn M P lincombShiftMod12Code) (rsp : reg n sp = F) (r20 : reg n 20 = F + 0x38)
+    (r21 : reg n 21 = mip) (hF : F.toNat % 4 = 0) (hmip : mip.toNat % 4 = 0)
+    (sC : Sep (F + 0x118) 8 P lincombShiftMod12Code.length) (sX : Sep (F + 0x118) 8 (F + 0x38) 8)
+    (sI : Sep (F + 0x118) 8 mip 8) :
+    ∃ n' M', Steps n n' ∧ St M' P n' 0xC6 (reg n') ∧ CodeIn M' P lincombShiftMod12Code ∧
+      (∀ x, Sep (F + 0x118) 8 x 1 → M' x = M x) ∧
+      (memLoad32 M' (F + 0x118)).toNat + 2 ^ 32 * (memLoad32 M' (F + 0x11C)).toNat =
+        ((memLoad32 M (F + 0x38)).toNat + 2 ^ 32 * (memLoad32 M (F + 0x3C)).toNat) *
+          ((memLoad32 M mip).toNat + 2 ^ 32 * (memLoad32 M (mip + 4)).toNat) % 2 ^ 64 ∧
+      ∀ q : Fin 32, q.val ∉ [5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] → reg n' q = reg n q := by
+  have hz := s.zero
+  have s0 : Sep (F + 0x118) 4 P lincombShiftMod12Code.length := by
+    have := sC.sub (c := 0) (l := 4) (by decide); rwa [add_ofNat_zero] at this
+  have s4 : Sep (F + 0x11C) 4 P lincombShiftMod12Code.length := by
+    have := sC.sub (c := 4) (l := 4) (by decide); rw [BitVec.add_assoc] at this; exact this
+  have a0' : (F + 0x118).toNat % 4 = 0 := aligned_add hF (by decide)
+  have a4' : (F + 0x11C).toNat % 4 = 0 := aligned_add hF (by decide)
+  -- zero the product
+  obtain ⟨n1, c1, u1⟩ := St.block lmM0 s hc lmM0_end
+    (lmM0_ok (by rw [rsp]; exact a0') (by rw [rsp]; exact a4') (by rw [rsp]; exact s0) (by rw [rsp]; exact s4))
+  obtain ⟨m0e, m0t1, m0a7, m0a6, m0t0, m0k⟩ := lmM0_run (M := M) (f := reg n) hz
+  rw [m0e, rsp] at u1
+  obtain ⟨Mz, hMz⟩ : ∃ Mz, memStore32 (memStore32 M (F + 0x118) 0) (F + 0x11C) 0 = Mz := ⟨_, rfl⟩
+  rw [hMz] at u1
+  have hcz : CodeIn Mz P lincombShiftMod12Code := by rw [← hMz]; exact (hc.store32 s0).store32 s4
+  have frz : ∀ x, Sep (F + 0x118) 8 x 1 → Mz x = M x := fun x hx => by
+    have h4 : Sep (F + 0x11C) 4 x 1 := by
+      have := hx.sub (c := 4) (l := 4) (by decide); rw [BitVec.add_assoc] at this; exact this
+    have h0 : Sep (F + 0x118) 4 x 1 := by
+      have := hx.sub (c := 0) (l := 4) (by decide); rwa [add_ofNat_zero] at this
+    rw [← hMz, memStore32_get_sep h4, memStore32_get_sep h0]
+  have ldz : ∀ {a : Word}, Sep (F + 0x118) 8 a 4 → memLoad32 Mz a = memLoad32 M a := fun h =>
+    memLoad32_congr fun j hj => frz _ (h.subR (c := j) (l := 1) (by omega))
+  have g1 : ∀ q, reg n1 q = (runBlock lmM0 (M, reg n)).2 q := u1.regs
+  have k1 : ∀ q : Fin 32, q.val ∉ [5, 6, 16, 17] → reg n1 q = reg n q := fun q hq => by rw [g1, m0k q hq]
+  obtain ⟨n2, d2, u2⟩ := u1.self.notTaken hcz 0x82 lm12_at_7e (by decide) (by rw [g1, m0a6, u1.self.zero]; decide)
+  have k2 : ∀ q, reg n2 q = reg n1 q := u2.regs
+  -- row 0
+  have sll0 : aluEval .sll (0 : Word) 2 = 0 := by decide
+  have sll1 : aluEval .sll (1 : Word) 2 = 4 := by decide
+  have e38 : (0 : Word) + (F + 0x38) + 0 = F + 0x38 := by rw [add_lit_zero]; exact BitVec.zero_add _
+  have e3c : (4 : Word) + (F + 0x38) + 0 = F + 0x3C := by
+    rw [add_lit_zero, BitVec.add_comm, BitVec.add_assoc]; rfl
+  have r2t1 : reg n2 6 = 0 := by rw [k2, g1, m0t1]
+  have r2s4 : reg n2 20 = F + 0x38 := by rw [k2, k1 20 (by decide), r20]
+  have r2s5 : reg n2 21 = mip := by rw [k2, k1 21 (by decide), r21]
+  have r2a7 : reg n2 17 = F + 0x118 := by rw [k2, g1, m0a7, rsp]
+  have r2t0 : reg n2 5 = 2 := by rw [k2, g1, m0t0]
+  have r2a6 : reg n2 16 = 2 := by rw [k2, g1, m0a6]
+  obtain ⟨n3, c3, u3⟩ := St.block lmM1 u2.self hcz lmM1_end
+    (lmM1_ok (by rw [r2t1, r2s4, sll0, e38]; exact aligned_add hF (by decide)))
+  obtain ⟨m1e, m1s1, m1a4, m1a5, m1a1, m1s0, m1k⟩ := lmM1_run (M := Mz) (f := reg n2) u2.self.zero
+  rw [m1e] at u3
+  have g3 : ∀ q, reg n3 q = (runBlock lmM1 (Mz, reg n2)).2 q := u3.regs
+  have x0e : reg n3 a4 = memLoad32 M (F + 0x38) := by
+    rw [g3, m1a4, r2t1, r2s4, sll0, e38]
+    exact ldz (by have := sX.subR (c := 0) (l := 4) (by decide); rwa [add_ofNat_zero] at this)
+  obtain ⟨n4, d4, u4⟩ := u3.self.notTaken hcz 0x96 lm12_at_92 (by decide)
+    (by rw [g3, m1k 5 (by decide), r2t0, u3.self.zero]; decide)
+  have k4 : ∀ q, reg n4 q = reg n3 q := u4.regs
+  have r4s0 : reg n4 8 = mip := by rw [k4, g3, m1s0, r2s5]
+  have r4a1 : reg n4 a1 = F + 0x118 := by rw [k4, g3, m1a1, r2a7]
+  have r4s1 : reg n4 9 = 0 := by rw [k4, g3, m1s1]
+  have hm0 : memLoad32 Mz mip = memLoad32 M mip :=
+    ldz (by have := sI.subR (c := 0) (l := 4) (by decide); rwa [add_ofNat_zero] at this)
+  have hm1 : memLoad32 Mz (mip + 4) = memLoad32 M (mip + 4) := ldz (sI.subR (c := 4) (l := 4) (by decide))
+  have z0 : memLoad32 Mz (F + 0x118) = 0 := by
+    rw [← hMz, memLoad32_store32_sep (by
+      have := sep_offsets F (c := 0x11C) (n := 4) (d := 0x118) (k := 4) (.inr (by decide)) (by decide) (by decide)
+      exact this), memLoad32_store32_same]
+  have z4 : memLoad32 Mz (F + 0x11C) = 0 := by rw [← hMz, memLoad32_store32_same]
+  -- the first multiply-accumulate step
+  obtain ⟨n5, c5, u5⟩ := St.block lmM2 u4.self hcz lmM2_end
+    (lmM2_ok (by rw [r4s0, add_lit_zero]; exact hmip) (by rw [r4a1, add_lit_zero]; exact a0')
+      (by rw [r4a1, add_lit_zero]; exact s0))
+  obtain ⟨m2e, m2s1, m2s0, m2a1, m2a5, m2k⟩ := lmM2_run (M := Mz) (f := reg n4) u4.self.zero
+  have r4a4 : reg n4 a4 = memLoad32 M (F + 0x38) := by rw [k4, x0e]
+  rw [m2e, r4s0, r4a1, add_lit_zero, add_lit_zero, hm0, z0, r4a4, r4s1] at u5
+  obtain ⟨x0, hx0⟩ : ∃ x0, memLoad32 M (F + 0x38) = x0 := ⟨_, rfl⟩
+  obtain ⟨m0, hm0'⟩ : ∃ m0, memLoad32 M mip = m0 := ⟨_, rfl⟩
+  obtain ⟨m1, hm1'⟩ : ∃ m1, memLoad32 M (mip + 4) = m1 := ⟨_, rfl⟩
+  rw [hx0, hm0'] at u5
+  have g5 : ∀ q, reg n5 q = (runBlock lmM2 (Mz, reg n4)).2 q := u5.regs
+  have e11c : F + 0x118 + 4 = F + 0x11C := by rw [BitVec.add_assoc]; rfl
+  have hcA : CodeIn (memStore32 Mz (F + 0x118) (macLo m0 x0 0 0)) P lincombShiftMod12Code := hcz.store32 s0
+  obtain ⟨n6, d6, u6⟩ := u5.self.taken hcA 0x96 lm12_at_ba (by decide)
+    (by rw [g5, m2a5, k4, g3, m1a5, r2t0, u5.self.zero]; decide)
+  have k6 : ∀ q, reg n6 q = reg n5 q := u6.regs
+  have r6s0 : reg n6 8 = mip + 4 := by rw [k6, g5, m2s0, r4s0]
+  have r6a1 : reg n6 a1 = F + 0x11C := by rw [k6, g5, m2a1, r4a1, e11c]
+  have r6s1 : reg n6 9 = macHi m0 x0 0 0 := by
+    rw [k6, g5, m2s1, r4s0, r4a1, add_lit_zero, add_lit_zero, hm0, z0, r4a4, r4s1, hx0, hm0']
+  have r6a4 : reg n6 a4 = x0 := by rw [k6, g5, m2k a4 (by decide), r4a4, hx0]
+  have r6a5 : reg n6 a5 = 1 := by rw [k6, g5, m2a5, k4, g3, m1a5, r2t0]; rfl
+  -- the second step of row 0
+  obtain ⟨n7, c7, u7⟩ := St.block lmM2 u6.self hcA lmM2_end
+    (lmM2_ok (by rw [r6s0, add_lit_zero]; exact aligned_add hmip (by decide)) (by rw [r6a1, add_lit_zero]; exact a4')
+      (by rw [r6a1, add_lit_zero]; exact s4))
+  obtain ⟨m2e', m2s1', m2s0', m2a1', m2a5', m2k'⟩ := lmM2_run (M := memStore32 Mz (F + 0x118) (macLo m0 x0 0 0))
+    (f := reg n6) u6.self.zero
+  have sIm : Sep (F + 0x118) 4 (mip + 4) 4 := by
+    have := (sI.sub (c := 0) (l := 4) (by decide)).subR (c := 4) (l := 4) (by decide)
+    rwa [add_ofNat_zero] at this
+  have s11c : Sep (F + 0x118) 4 (F + 0x11C) 4 := by
+    have := sep_offsets F (c := 0x118) (n := 4) (d := 0x11C) (k := 4) (.inl (by decide)) (by decide) (by decide)
+    exact this
+  have l1 : memLoad32 (memStore32 Mz (F + 0x118) (macLo m0 x0 0 0)) (mip + 4) = m1 := by
+    rw [memLoad32_store32_sep sIm, hm1, hm1']
+  have l2 : memLoad32 (memStore32 Mz (F + 0x118) (macLo m0 x0 0 0)) (F + 0x11C) = 0 := by
+    rw [memLoad32_store32_sep s11c, z4]
+  rw [m2e', r6s0, r6a1, add_lit_zero, add_lit_zero, l1, l2, r6a4, r6s1] at u7
+  obtain ⟨MB, hMB⟩ : ∃ MB, memStore32 (memStore32 Mz (F + 0x118) (macLo m0 x0 0 0)) (F + 0x11C)
+      (macLo m1 x0 0 (macHi m0 x0 0 0)) = MB := ⟨_, rfl⟩
+  rw [hMB] at u7
+  have hcB : CodeIn MB P lincombShiftMod12Code := by rw [← hMB]; exact hcA.store32 s4
+  have g7 : ∀ q, reg n7 q = (runBlock lmM2 (memStore32 Mz (F + 0x118) (macLo m0 x0 0 0), reg n6)).2 q := u7.regs
+  obtain ⟨n8, d8, u8⟩ := u7.self.notTaken hcB 0xBC lm12_at_ba (by decide)
+    (by rw [g7, m2a5', r6a5, u7.self.zero]; decide)
+  -- the next row
+  obtain ⟨n9, c9, u9⟩ := St.block lmM3 u8.self hcB lmM3_end (by simp [BlockOk, BInstr.ok, lmM3])
+  obtain ⟨m3e, m3t1, m3a7, m3t0, m3k⟩ := lmM3_run (M := MB) (f := reg n8) u8.self.zero
+  rw [m3e] at u9
+  have g9 : ∀ q, reg n9 q = (runBlock lmM3 (MB, reg n8)).2 q := u9.regs
+  have k8 : ∀ q, reg n8 q = reg n7 q := u8.regs
+  -- registers the inner loop leaves alone
+  have kin : ∀ q : Fin 32, q.val ∉ [8, 9, 10, 11, 12, 13, 15] → reg n8 q = reg n4 q := fun q hq => by
+    rw [k8, g7, m2k' q hq, k6, g5, m2k q hq]
+  have r9t1 : reg n9 6 = 1 := by
+    rw [g9, m3t1, kin 6 (by decide), k4, g3, m1k 6 (by decide), r2t1]; rfl
+  have r9a6 : reg n9 16 = 2 := by
+    rw [g9, m3k 16 (by decide), kin 16 (by decide), k4, g3, m1k 16 (by decide), r2a6]
+  obtain ⟨n10, d10, u10⟩ := u9.self.taken hcB 0x82 lm12_at_c2 (by decide)
+    (by rw [r9t1, r9a6]; decide)
+  have k10 : ∀ q, reg n10 q = reg n9 q := u10.regs
+  have r10t1 : reg n10 6 = 1 := by rw [k10, r9t1]
+  have r10s4 : reg n10 20 = F + 0x38 := by
+    rw [k10, g9, m3k 20 (by decide), kin 20 (by decide), k4, g3, m1k 20 (by decide), r2s4]
+  have r10s5 : reg n10 21 = mip := by
+    rw [k10, g9, m3k 21 (by decide), kin 21 (by decide), k4, g3, m1k 21 (by decide), r2s5]
+  have r10a7 : reg n10 17 = F + 0x11C := by
+    rw [k10, g9, m3a7, kin 17 (by decide), k4, g3, m1k 17 (by decide), r2a7, e11c]
+  have r10t0 : reg n10 5 = 1 := by
+    rw [k10, g9, m3t0, kin 5 (by decide), k4, g3, m1k 5 (by decide), r2t0]; rfl
+  -- row 1
+  obtain ⟨n11, c11, u11⟩ := St.block lmM1 u10.self hcB lmM1_end
+    (lmM1_ok (by rw [r10t1, r10s4, sll1, e3c]; exact aligned_add hF (by decide)))
+  obtain ⟨m1e', m1s1', m1a4', m1a5', m1a1', m1s0', m1k'⟩ := lmM1_run (M := MB) (f := reg n10) u10.self.zero
+  rw [m1e'] at u11
+  have g11 : ∀ q, reg n11 q = (runBlock lmM1 (MB, reg n10)).2 q := u11.regs
+  obtain ⟨x1, hx1⟩ : ∃ x1, memLoad32 M (F + 0x3C) = x1 := ⟨_, rfl⟩
+  have sX4 : Sep (F + 0x118) 8 (F + 0x3C) 4 := by
+    have := sX.subR (c := 4) (l := 4) (by decide); rw [BitVec.add_assoc] at this; exact this
+  have mbX : ∀ {a : Word}, Sep (F + 0x118) 8 a 4 → memLoad32 MB a = memLoad32 M a := fun {a} h => by
+    have h4 : Sep (F + 0x11C) 4 a 4 := by
+      have := h.sub (c := 4) (l := 4) (by decide); rw [BitVec.add_assoc] at this; exact this
+    have h0 : Sep (F + 0x118) 4 a 4 := by
+      have := h.sub (c := 0) (l := 4) (by decide); rwa [add_ofNat_zero] at this
+    rw [← hMB, memLoad32_store32_sep h4, memLoad32_store32_sep h0]
+    exact ldz h
+  have r11a4 : reg n11 a4 = x1 := by rw [g11, m1a4', r10t1, r10s4, sll1, e3c, mbX sX4, hx1]
+  obtain ⟨n12, d12, u12⟩ := u11.self.notTaken hcB 0x96 lm12_at_92 (by decide)
+    (by rw [g11, m1k' 5 (by decide), r10t0, u11.self.zero]; decide)
+  have k12 : ∀ q, reg n12 q = reg n11 q := u12.regs
+  have r12s0 : reg n12 8 = mip := by rw [k12, g11, m1s0', r10s5]
+  have r12a1 : reg n12 a1 = F + 0x11C := by rw [k12, g11, m1a1', r10a7]
+  have r12s1 : reg n12 9 = 0 := by rw [k12, g11, m1s1']
+  have r12a4 : reg n12 a4 = x1 := by rw [k12, r11a4]
+  have r12a5 : reg n12 a5 = 1 := by rw [k12, g11, m1a5', r10t0]
+  obtain ⟨n13, c13, u13⟩ := St.block lmM2 u12.self hcB lmM2_end
+    (lmM2_ok (by rw [r12s0, add_lit_zero]; exact hmip) (by rw [r12a1, add_lit_zero]; exact a4')
+      (by rw [r12a1, add_lit_zero]; exact s4))
+  obtain ⟨m2e'', m2s1'', m2s0'', m2a1'', m2a5'', m2k''⟩ := lmM2_run (M := MB) (f := reg n12) u12.self.zero
+  have l3 : memLoad32 MB mip = m0 := by
+    rw [mbX (by have := sI.subR (c := 0) (l := 4) (by decide); rwa [add_ofNat_zero] at this), hm0']
+  have l4 : memLoad32 MB (F + 0x11C) = macLo m1 x0 0 (macHi m0 x0 0 0) := by
+    rw [← hMB, memLoad32_store32_same]
+  rw [m2e'', r12s0, r12a1, add_lit_zero, add_lit_zero, l3, l4, r12a4, r12s1] at u13
+  have hcC := hcB.store32 (v := macLo m0 x1 (macLo m1 x0 0 (macHi m0 x0 0 0)) 0) s4
+  have g13 : ∀ q, reg n13 q = (runBlock lmM2 (MB, reg n12)).2 q := u13.regs
+  obtain ⟨n14, d14, u14⟩ := u13.self.notTaken hcC 0xBC lm12_at_ba (by decide)
+    (by rw [g13, m2a5'', r12a5, u13.self.zero]; decide)
+  obtain ⟨n15, c15, u15⟩ := St.block lmM3 u14.self hcC lmM3_end (by simp [BlockOk, BInstr.ok, lmM3])
+  obtain ⟨m3e', m3t1', m3a7', m3t0', m3k'⟩ := lmM3_run (M := memStore32 MB (F + 0x11C)
+    (macLo m0 x1 (macLo m1 x0 0 (macHi m0 x0 0 0)) 0)) (f := reg n14) u14.self.zero
+  rw [m3e'] at u15
+  have g15 : ∀ q, reg n15 q = _ := u15.regs
+  have k14 : ∀ q, reg n14 q = reg n13 q := u14.regs
+  have kin2 : ∀ q : Fin 32, q.val ∉ [8, 9, 10, 11, 12, 13, 14, 15] → reg n14 q = reg n10 q := fun q hq => by
+    rw [k14, g13, m2k'' q (by simp at hq ⊢; omega), k12, g11, m1k' q (by simp at hq ⊢; omega)]
+  have r15t1 : reg n15 6 = 2 := by rw [g15, m3t1', kin2 6 (by decide), r10t1]; rfl
+  have r15a6 : reg n15 16 = 2 := by rw [g15, m3k' 16 (by decide), kin2 16 (by decide), k10, r9a6]
+  obtain ⟨n16, d16, u16⟩ := u15.self.notTaken hcC 0xC6 lm12_at_c2 (by decide)
+    (by rw [r15t1, r15a6]; decide)
+  have m1x : memLoad32 M (mip + 4) = m1 := hm1'
+  refine ⟨n16, memStore32 MB (F + 0x11C) (macLo m0 x1 (macLo m1 x0 0 (macHi m0 x0 0 0)) 0),
+    c1.trans (.cons d2 (c3.trans (.cons d4 (c5.trans (.cons d6 (c7.trans (.cons d8 (c9.trans (.cons d10
+      (c11.trans (.cons d12 (c13.trans (.cons d14 (c15.trans (.single d16))))))))))))))),
+    u16.self, hcC, fun x hx => ?_, ?_, fun q hq => ?_⟩
+  · have h4 : Sep (F + 0x11C) 4 x 1 := by
+      have := hx.sub (c := 4) (l := 4) (by decide); rw [BitVec.add_assoc] at this; exact this
+    have h0 : Sep (F + 0x118) 4 x 1 := by
+      have := hx.sub (c := 0) (l := 4) (by decide); rwa [add_ofNat_zero] at this
+    rw [memStore32_get_sep h4, ← hMB, memStore32_get_sep h4, memStore32_get_sep h0, frz x hx]
+  · rw [memLoad32_store32_same, memLoad32_store32_sep s11c.symm, ← hMB, memLoad32_store32_sep s11c.symm,
+      memLoad32_store32_same, hx0, hx1, hm0', m1x]
+    exact mul64_val x0 x1 m0 m1
+  · have nq : ∀ w : Fin 32, w.val ∈ [5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] → q.val ∉ [w.val] :=
+      fun w hw h => hq (by simp at h; rw [h]; exact hw)
+    rw [u16.regs, g15, m3k' q (by simp at hq ⊢; omega), kin2 q (by simp at hq ⊢; omega), k10, g9,
+      m3k q (by simp at hq ⊢; omega), kin q (by simp at hq ⊢; omega), k4, g3, m1k q (by simp at hq ⊢; omega),
+      k2, k1 q (by simp at hq ⊢; omega)]
+
 end C3.RV32
