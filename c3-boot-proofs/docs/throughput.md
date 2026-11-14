@@ -51,6 +51,49 @@ as a share of that boot:
 | `c3_bootloader::flash::read` | 1.7% |
 | `p384`'s `FieldElement::double` | 1.7% |
 
+### What the coverage figures mean
+
+On 2026-11-13, for the current image:
+
+| Measure | Proved | Total | Share |
+| --- | --- | --- | --- |
+| Instructions in the image | 9,361 | 28,526 | 32.8% |
+| Instructions one boot runs | 135,846,873 | 136,797,349 | 99.3% |
+| Instructions in the 229 functions `c3_verify::sigstore::verify` reaches | 9,069 | 24,870 | 36.5% |
+| Instructions in the 263 functions `boot_main` reaches | 9,361 | 28,513 | 32.8% |
+
+The trial boot runs the whole Sigstore check of the update: 98.3 percent
+of its instructions run in `sigstore::verify` and its callees. Boot
+coverage weighs each function by how long it runs, and nearly all of that
+time is field arithmetic, so it was 99.3 percent while the functions that
+decide whether an update is accepted had no proofs: `sigstore::verify`
+(4,098 instructions), `ed25519_verify` (2,099), `p384_verify_prehash`
+(1,445), and `boot_main`'s main closure (1,531). The last 0.7 percent of
+the boot is about 950,000 instructions in 156 unproved functions, which
+hold about 17,800 instructions of code: most of the verifier's own logic.
+
+The reach rows count each function that `sigstore::verify` or `boot_main`
+can call, through any chain of calls, by its size, so the deciding code
+counts as much as the hot code. They are the figures to watch.
+
+No percentage is the goal. The goal is a theorem that the compiled
+`sigstore::verify` returns `Ok` exactly when a Lean specification of the
+Sigstore check accepts the bundle, and then the same for `boot_main` and
+the slot check around it. That needs, besides the remaining callees'
+proofs:
+
+1. The Lean specification of the Sigstore check: decoders for the X.509,
+   CMS, and Rekor checkpoint parts and the checks over them, tested against
+   `c3-verify` the way the manifest and image-header decoders are. Without
+   it, a proof of `sigstore::verify` could say only that the machine code
+   computes what the Rust source computes.
+2. Proofs of the deciding functions against that specification:
+   `p384_verify_prehash`, `ed25519_verify`, `sigstore::verify`, and
+   `boot_main`.
+3. Later, proofs that the crypto functions' specifications, which follow
+   the Rust source's arithmetic, are ECDSA and Ed25519 verification
+   (phase 7 of the plan).
+
 To reproduce, profile the trial boot as `measurements.md` shows, then:
 
 ```bash
