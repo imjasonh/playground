@@ -680,6 +680,30 @@ func TestInterleaveOlderL1EntryDoesNotReplaceNewerL0(t *testing.T) {
 	}
 }
 
+// A poll must compare a new file's commit with the replica's commit, not
+// with a page count that includes unsynced pages. Otherwise an L1 file that
+// holds only page 1 looks like a shrink, the poll replaces the page index
+// with that file's pages, and pages 2 and 3 read as zeros.
+func TestInterleaveUnsyncedGrowthIsNotAShrink(t *testing.T) {
+	h := newHarness(t, nil)
+	if err := h.do(func() {
+		h.write(1, 2, 3)
+		h.sync()
+		h.compactNow()
+		h.pollNow()
+		h.write(1)
+		h.sync()
+		h.compactNow()
+		h.write(4)
+		h.pollNow()
+		h.checkAll("after poll")
+		h.sync()
+		h.checkAll("after sync")
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // A transaction can shrink the database while writing only some of the pages
 // that remain, as auto_vacuum does. The writer, a reader that polls, and a
 // cold start must all drop the pages past the new end and keep the pages the

@@ -12,7 +12,7 @@ and make its writes cheaper. Each one is meant for upstream.
 
 | Commit | Change | Upstream |
 |---|---|---|
-| `bb5a2cdc` | Merge #1293: polls compare remote commits with the installed page index, and synced pages stay in an overlay until a poll installs them | [#1293](https://github.com/benbjohnson/litestream/pull/1293), open |
+| `bb5a2cdc` | Merge #1293: polls compare remote commits with the installed page index, and synced pages stay in an overlay until a poll installs them | [#1293](https://github.com/benbjohnson/litestream/pull/1293), closed without merging; upstream `main` still fails `TestInterleaveUnsyncedGrowthIsNotAShrink` |
 | `f59dddd2` | Compare commits by TXID when looking for a shrink | Not proposed |
 | `5d832c37` | Truncate the page index when the database shrinks | Not proposed |
 | `b4dff65e` | Interleaving tests for the VFS | Not proposed |
@@ -24,6 +24,7 @@ and make its writes cheaper. Each one is meant for upstream.
 | `341d892f` | `VFS.PageReadHook`, which reports where each page read found its page and how long it took | Not proposed |
 | `bdf161ca` | `VFSFile.SetDurableRead`, which serves the previous pages while a local commit is still uploading | Not proposed |
 | `0a2c4c89` | Each `file` replica client LTX write uses its own temporary file, so two replicas that write the same file at once can't publish a mix of both | Not proposed |
+| `82a3789d` | `TestInterleaveUnsyncedGrowthIsNotAShrink`, which reproduces on upstream `main` the race that #1293 fixes | Not proposed |
 
 To see every change against upstream, diff against the last import:
 
@@ -82,7 +83,7 @@ listing and upload happens relative to writes, syncs, and reads. Every page
 read is compared with the last version written. The race detector reports
 none of these bugs, because every access happens under the VFS mutex.
 
-- Six named tests replay the races in
+- Seven named tests replay the races in
   [What each change covers](#what-each-change-covers).
 - `TestInterleaveRandom` and `TestInterleaveRandomShrink` run 200 random
   schedules each, or 50 with `-short`; the second mixes in transactions that
@@ -112,7 +113,22 @@ released version and on `main`. Each change covers a different race:
   own files as a shrink; `pollReplicaClient` takes `pos`, the
   installed-index high-water mark, and the L1 anchor in one critical
   section; and `Lock` uses #1549's per-replica `lastSyncedTXID` without
-  moving `pos`.
+  moving `pos`. #1595, from the pull of `1068145`, discards a poll whose
+  `pos` moved while it listed; here only a poll moves `pos`.
+
+  Upstream closed #1293 on 2026-11-12, saying that #1478, which publishes
+  the page index at sync, and #1595 fix the same failure. They don't fix
+  this one: upstream's poll still compares new files with `f.commit`. After
+  the writer writes past the replica's commit and before it syncs, an L1
+  file with the replica's commit looks like a shrink, and the poll replaces
+  the page index with that file's pages.
+  `TestInterleaveUnsyncedGrowthIsNotAShrink` reads zeros on upstream `main`
+  at `e75137b`. Upstream with the TXID check passes every non-shrink
+  interleaving test once `pollReplicaClient` compares with the commit of
+  the last file it installed or uploaded, an eight-line change. To drop
+  #1293, upstream needs that change, `f9801067` goes away with the overlay,
+  and `bdf161ca` and `PageReadHook`'s `synced` source move to upstream's
+  sync.
 - The TXID check: `main` (#1478) ignores an L1 file that ends before the L0
   position, but when one poll finds two new L1 files and the database grew
   after the first, the older file's smaller commit still looked like a
@@ -149,6 +165,9 @@ released version and on `main`. Each change covers a different race:
 - The #1293 merge: `TestVFSFile_WriteModeCompactionPollKeepsNewerPage`
   expected a sync to update the page index itself, which only `main`'s sync
   does. It checks that a read returns the new page instead.
+  `TestVFSFile_PollDoesNotRegressLocalSync`, from #1595, checked that the
+  sync moved `pos`. It checks `expectedTXID` after the sync, and `pos` after
+  the next poll.
 - Shrink truncation: `TestVFSFile_PendingIndexReplacementRemovesStalePages`
   checked the `pendingReplace` flag and now checks `pendingShrink` and
   `pendingShrinkTo`. `TestVFSFile_PollReplacementEvictsSyncedByVisibleState`
