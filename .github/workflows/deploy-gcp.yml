@@ -15,6 +15,10 @@
 #   GCP_PLAN_SERVICE_ACCOUNT
 #   GCP_TF_STATE_BUCKET
 #
+# CHAINGUARD_IDENTITY is optional. apko exchanges the job's Google ID
+# token for a token as that Chainguard identity to read apk.cgr.dev
+# (stream-boids/README.md).
+#
 # A pull request that selects an app runs tofu plan as the plan
 # service account and comments the plan. It fails when the plan variables
 # are missing or the plan fails. It does not apply. Apply runs on a push
@@ -41,6 +45,8 @@ on:
       - ".github/scripts/install-zig.sh"
       - "**/gcp-deploy.json"
       - "cloudrun-sqlite/terraform/**"
+      - "stream-boids/terraform/**"
+      - "stream-boids/apko.yaml"
       - "wehadababyitsaboy/terraform/**"
   workflow_dispatch: {}
 
@@ -138,6 +144,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          CHAINGUARD_IDENTITY: ${{ vars.CHAINGUARD_IDENTITY }}
         run: bash .github/scripts/deploy-gcp.sh --plan "$APP"
 
   check:
@@ -226,6 +233,7 @@ jobs:
           GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
           GCP_TF_STATE_BUCKET: ${{ vars.GCP_TF_STATE_BUCKET }}
+          CHAINGUARD_IDENTITY: ${{ vars.CHAINGUARD_IDENTITY }}
         run: bash .github/scripts/deploy-gcp.sh "$APP"
 
   require:
