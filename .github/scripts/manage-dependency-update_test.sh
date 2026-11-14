@@ -23,8 +23,9 @@ git init -q -b main repo
 cd repo
 git config user.name test
 git config user.email test@example.com
-mkdir -p gomod jsapp worker git-k8s/agent/runner .github/wrangler
+mkdir -p gomod libapp/rust jsapp worker git-k8s/agent/runner .github/wrangler
 echo 'module gomod' > gomod/go.mod
+echo '# v1' > libapp/rust/Cargo.lock
 echo '{"devDependencies":{"wrangler":"4.0.0"}}' > .github/wrangler/package.json
 echo '{}' > jsapp/package.json
 echo '{}' > jsapp/package-lock.json
@@ -63,6 +64,11 @@ reset_tree
 echo '# v2' > worker/Cargo.lock
 expect "lockfile bump" true "$(detect)"
 expect "lockfile bump staged" "M worker/Cargo.lock" "$(staged)"
+reset_tree
+
+echo '# v2' > libapp/rust/Cargo.lock
+expect "library crate in an app's rust/ directory" true "$(detect)"
+expect "library crate in an app's rust/ directory staged" "M libapp/rust/Cargo.lock" "$(staged)"
 reset_tree
 
 echo '{"lockfileVersion":3}' > git-k8s/agent/runner/package-lock.json

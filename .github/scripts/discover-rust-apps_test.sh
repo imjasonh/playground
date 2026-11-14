@@ -30,6 +30,25 @@ assert_eq "$(discover .github/scripts/check-worker-deploy-build.sh)" "$all" "the
 assert_eq "$(discover .github/wrangler/package.json | jq -c 'index("y") != null and index("life-stl") == null')" "true" \
   "the pinned Wrangler selects Worker apps only"
 
+has() {
+  jq -c --arg a "$2" 'index($a) != null' <<<"$1"
+}
+
+assert_eq "$(has "$all" wehadababyitsaboy/rust)" "true" "--all lists a library crate in an app's rust/ directory"
+assert_eq "$(has "$all" wehadababyitsaboy)" "false" "--all leaves out a directory with no Cargo.toml"
+assert_eq "$(discover wehadababyitsaboy/terraform/main.tf wehadababyitsaboy/README.md)" '[]' \
+  "a change beside the rust/ crate selects nothing"
+
+changed=$(discover wehadababyitsaboy/rust/src/lib.rs)
+assert_eq "$(has "$changed" wehadababyitsaboy/rust)" "true" "a change in rust/ selects the library crate"
+for dependent in git-fuse life-stl tank-commander; do
+  assert_eq "$(has "$changed" "$dependent")" "true" "a change in rust/ selects $dependent, which depends on it"
+done
+assert_eq "$(has "$changed" y)" "false" "a change in rust/ leaves out apps that don't depend on it"
+
+assert_eq "$(has "$(discover .github/scripts/test-rust-apps.sh)" wehadababyitsaboy/rust)" "true" \
+  "the Rust test script selects the library crate too"
+
 if ((failures > 0)); then
   echo "$failures test(s) failed" >&2
   exit 1

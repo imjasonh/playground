@@ -38,6 +38,14 @@ bytes() {
   fi
 }
 
+# top_level prints the top-level directory that holds a lockfile. A library
+# crate in a rust/ subdirectory, such as wehadababyitsaboy/rust, belongs to
+# its parent.
+top_level() {
+  local rel=${1#"$lock_root"/}
+  printf '%s\n' "${rel%%/*}"
+}
+
 # Package names and name-versions from every Cargo.lock, minus each app's own
 # package. inkbot-esp32 and esp32-ble are built by their own workflows.
 declare -A workspace=()
@@ -46,8 +54,8 @@ declare -A keep_dep=()
 declare -A keep_crate=()
 
 shopt -s nullglob
-for lock in "$lock_root"/*/Cargo.lock; do
-  app=$(basename "$(dirname "$lock")")
+for lock in "$lock_root"/*/Cargo.lock "$lock_root"/*/rust/Cargo.lock; do
+  app=$(top_level "$lock")
   case "$app" in
     .* | inkbot-esp32 | esp32-ble) continue ;;
   esac
@@ -65,8 +73,8 @@ for lock in "$lock_root"/*/Cargo.lock; do
   fi
 done
 
-for lock in "$lock_root"/*/Cargo.lock; do
-  app=$(basename "$(dirname "$lock")")
+for lock in "$lock_root"/*/Cargo.lock "$lock_root"/*/rust/Cargo.lock; do
+  app=$(top_level "$lock")
   case "$app" in
     .* | inkbot-esp32 | esp32-ble) continue ;;
   esac
