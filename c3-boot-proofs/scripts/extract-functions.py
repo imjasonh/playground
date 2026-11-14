@@ -137,6 +137,8 @@ FUNCTIONS = [
     ("toUintResize2", "<crypto_bigint::uint::ref_type::UintRef>::to_uint_resize::<2>"),
     ("lincombShiftMod12", "<crypto_bigint::modular::safegcd::SignedInt<12>>::lincomb_int_reduce_shift_mod::<2>"),
     ("lincombShiftMod8", "<crypto_bigint::modular::safegcd::SignedInt<8>>::lincomb_int_reduce_shift_mod::<2>"),
+    ("updateDe12", "crypto_bigint::modular::safegcd::update_de::<12>"),
+    ("updateDe8", "crypto_bigint::modular::safegcd::update_de::<8>"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
