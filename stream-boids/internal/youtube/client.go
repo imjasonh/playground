@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -103,34 +104,19 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("youtube: %d %s: %s", e.Status, e.Reason, e.Message)
 }
 
-// Quota reports whether the error means the project ran out of quota.
-func (e *APIError) Quota() bool {
-	switch e.Reason {
-	case "quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded", "userRateLimitExceeded":
-		return true
-	}
-	return false
-}
-
-// ChatGone reports whether the error means the chat no longer exists.
-func (e *APIError) ChatGone() bool {
-	switch e.Reason {
-	case "liveChatEnded", "liveChatDisabled", "liveChatNotFound":
-		return true
-	}
-	return false
-}
-
 // IsQuota reports whether err is an APIError for exhausted quota.
 func IsQuota(err error) bool {
-	var ae *APIError
-	return errors.As(err, &ae) && ae.Quota()
+	return hasReason(err, "quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded", "userRateLimitExceeded")
 }
 
 // IsChatGone reports whether err is an APIError for a chat that ended.
 func IsChatGone(err error) bool {
+	return hasReason(err, "liveChatEnded", "liveChatDisabled", "liveChatNotFound")
+}
+
+func hasReason(err error, reasons ...string) bool {
 	var ae *APIError
-	return errors.As(err, &ae) && ae.ChatGone()
+	return errors.As(err, &ae) && slices.Contains(reasons, ae.Reason)
 }
 
 // Video reads a video's live state. It costs 1 quota unit.
