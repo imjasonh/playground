@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars (gitignored) and fill in values.
+project_id = "your-gcp-project"
+region     = "us-central1"
+
+# The channel to search for a live broadcast, or the broadcast itself.
+# channel_id = "UC..."
+# video_id   = "..."
+
+# Stop streaming without destroying anything.
+# running = false
+
+# State is in a Cloud Storage bucket created once for the project.
+# GitHub identity lives in gcp/terraform. Pass the bucket only to init:
+#   tofu init -backend-config="bucket=BUCKET"
+#
+# Secret values never go here. Add them with the add_secrets output.
