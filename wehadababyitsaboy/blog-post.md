@@ -34,6 +34,8 @@ For Go clients, there's a [`cobra`](https://github.com/spf13/cobra)-compatible [
 
 It costs about $.05 per million recorded requests, or _1/80th_ of what a _single minute_ of long distance collect calling used to cost. Crazy.
 
+It's also 600x cheaper than [Vercel Web Analytics](https://vercel.com/docs/analytics/limits-and-pricing), but they're an actual thing, and this is just a toy.
+
 If you want to set this up for yourself, you're free to. Everything's [defined in Terraform](https://github.com/imjasonh/playground/tree/main/wehadababyitsaboy/terraform), all you need is a GCP project and a dream.
 
 I haven't set up any kind of thing to actually sift through the request logs yet, but maybe I'll get around to it once I have some collected. It'd be cool to see who else is here.
