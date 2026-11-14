@@ -10,7 +10,7 @@ bucket answers `403`, and its usage log keeps the request.
 bash .github/scripts/check-whbiab-web.sh --fix
 ```
 
-The command copies `whbiab.js` into every browser app that lacks it and adds
+The command links `whbiab.js` into every browser app that lacks it and adds
 this tag before `</body>` in each `index.html`:
 
 ```html
@@ -21,9 +21,14 @@ this tag before `</body>` in each `index.html`:
 `Content-Security-Policy`, add `https://storage.googleapis.com` to `img-src`;
 the command reports a page that doesn't.
 
-Each app keeps its own copy because each app deploys from its own directory.
-Edit `whbiab.js` here, then run the command to copy the change to every app.
-Without `--fix`, the command only checks, and the Test job runs that check.
+There is one `whbiab.js`, this one. Each app's `whbiab.js` is a symbolic link
+to it (`../wehadababyitsaboy/web/whbiab.js`), so an edit here reaches every app.
+A link is needed because each app deploys from its own directory, and a page
+that loaded the file from outside that directory would get a 404 when served
+locally, which fails a test that watches the console. The deploy and preview
+workflows copy each app with `cp -rL`, so the published app holds the file
+itself. Without `--fix`, the command only checks, and the Test job runs that
+check.
 
 ## What a ping contains
 

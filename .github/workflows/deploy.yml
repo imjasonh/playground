@@ -30,7 +30,7 @@ jobs:
           for dir in */; do
             d="${dir%/}"
             if [ -f "$d/index.html" ]; then
-              cp -r "$d" "dist/$d"
+              cp -rL "$d" "dist/$d"
             fi
           done
 

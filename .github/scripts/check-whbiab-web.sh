@@ -3,7 +3,9 @@
 # usage bucket, or fix the apps that don't.
 #
 # A browser app is a top-level directory with an index.html. Each one needs:
-#   - whbiab.js, a byte-for-byte copy of wehadababyitsaboy/web/whbiab.js
+#   - whbiab.js, a symbolic link to wehadababyitsaboy/web/whbiab.js. The deploy
+#     and preview workflows copy each app directory with cp -L, so the
+#     published app holds the file itself.
 #   - one <script src="whbiab.js" data-app="DIR"></script> in index.html, where
 #     DIR is the app's directory name
 #   - a Content-Security-Policy, if index.html sets one, that lets the script
@@ -12,7 +14,7 @@
 # Usage:
 #   check-whbiab-web.sh [--fix] [ROOT]
 #     ROOT is the repository root. Default: the checkout this script is in.
-#     --fix copies whbiab.js into each app and adds the script tag before
+#     --fix links whbiab.js into each app and adds the script tag before
 #     </body>. It never edits a Content-Security-Policy.
 set -euo pipefail
 
@@ -24,6 +26,7 @@ fi
 
 root=${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
 canonical="$root/wehadababyitsaboy/web/whbiab.js"
+link_target="../wehadababyitsaboy/web/whbiab.js"
 if [[ ! -f "$canonical" ]]; then
   echo "missing $canonical" >&2
   exit 2
@@ -52,7 +55,7 @@ for dir in "$root"/*/; do
   tag="<script src=\"whbiab.js\" data-app=\"$app\"></script>"
 
   if $fix; then
-    cp "$canonical" "$dir/whbiab.js"
+    ln -sfn "$link_target" "$dir/whbiab.js"
     if ! grep -qF "$tag" "$index"; then
       awk -v tag="$tag" '
         !done && /<\/body>/ {
@@ -66,8 +69,8 @@ for dir in "$root"/*/; do
     fi
   fi
 
-  if ! cmp -s "$canonical" "$dir/whbiab.js" 2>/dev/null; then
-    fail "$app: whbiab.js is missing or differs from wehadababyitsaboy/web/whbiab.js"
+  if [[ ! -L "$dir/whbiab.js" || "$(readlink "$dir/whbiab.js")" != "$link_target" ]]; then
+    fail "$app: whbiab.js must be a symbolic link to $link_target"
   fi
   if [[ "$(grep -cF "$tag" "$index")" != 1 ]]; then
     fail "$app: index.html needs exactly one $tag"

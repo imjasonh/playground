@@ -44,7 +44,8 @@ HTML
 expect "an app with no copy and no tag fails" fail "$(passes "$tmp")"
 
 bash "$check" --fix "$tmp" >/dev/null 2>&1 || true
-expect "--fix copies the script" "// canonical" "$(cat "$tmp/demo/whbiab.js")"
+expect "--fix links the script" "../wehadababyitsaboy/web/whbiab.js" "$(readlink "$tmp/demo/whbiab.js")"
+expect "--fix links to a file that exists" "// canonical" "$(cat "$tmp/demo/whbiab.js")"
 expect "--fix adds the tag with the app name" 1 \
   "$(grep -c '^  <script src="whbiab.js" data-app="demo"></script>$' "$tmp/demo/index.html")"
 expect "--fix indents the tag to match </body>" 1 \
@@ -58,15 +59,22 @@ expect "a CSP that allows the image passes" pass "$(passes "$tmp")"
 bash "$check" --fix "$tmp" >/dev/null 2>&1
 expect "--fix twice adds one tag" 1 "$(grep -c 'whbiab.js' "$tmp/demo/index.html")"
 
-echo '// edited' >"$tmp/demo/whbiab.js"
-expect "a modified copy fails" fail "$(passes "$tmp")"
+rm "$tmp/demo/whbiab.js"
+echo '// copy' >"$tmp/demo/whbiab.js"
+expect "a copy instead of a link fails" fail "$(passes "$tmp")"
 bash "$check" --fix "$tmp" >/dev/null 2>&1
-expect "--fix restores a modified copy" pass "$(passes "$tmp")"
+expect "--fix replaces a copy with a link" pass "$(passes "$tmp")"
+expect "--fix leaves the canonical file alone" "// canonical" "$(cat "$tmp/wehadababyitsaboy/web/whbiab.js")"
 
 sed -i 's#data-app="other"#data-app="wrong"#' "$tmp/other/index.html"
 expect "a tag with the wrong app name fails" fail "$(passes "$tmp")"
 
 expect "the real browser apps record visits" pass "$(passes "$repo_root")"
+
+for workflow in deploy preview; do
+  expect "$workflow.yml copies apps with cp -rL" 1 \
+    "$(grep -c 'cp -rL "\$d"' "$repo_root/.github/workflows/$workflow.yml")"
+done
 
 node --test "$repo_root/wehadababyitsaboy/web/whbiab.test.js" >/dev/null ||
   {
