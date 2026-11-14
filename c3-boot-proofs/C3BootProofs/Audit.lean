@@ -47,6 +47,8 @@ import C3BootProofs.Proofs.MontMul8
 import C3BootProofs.Proofs.ScalarMont
 import C3BootProofs.Proofs.P256Scalar
 import C3BootProofs.Proofs.LincombShift8
+import C3BootProofs.Proofs.Lowest
+import C3BootProofs.Proofs.UpdateFg8
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.RegionMem
 import C3BootProofs.Proofs.ImageHelpers
@@ -3102,6 +3104,166 @@ theorem exists_lincombShift8_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `SignedInt<12>::lowest` and
+`Choice::select_i64` where the image loads them, and zeros elsewhere. -/
+def witnessMemLowest12 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.lowest12Address, Image.lowest12Code),
+    (Image.selectI64Address, Image.selectI64Code)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `SignedInt<12>::lowest` on a `SignedInt` at
+`0x3FCC5000` with the stack at `0x3FCC8000` meets `lowest12_correct`'s
+hypotheses. -/
+theorem exists_lowest12_machine :
+    ∃ (m : RV32.Machine) (P p retAddr : RV32.Word), P.toNat % 2 = 0 ∧ RV32.CodeIn m.mem P Image.lowest12Code ∧
+      RV32.CodeIn m.mem (P + 0xFFFFE0D8) Image.selectI64Code ∧ m.pc = P ∧ RV32.reg m RV32.a0 = p ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ p.toNat % 4 = 0 ∧
+      (m.mem (p + 0x30)).toNat ≤ 1 ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFF) 1 (P + 0xFFFFE0D8) Image.selectI64Code.length := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.lowest12Address, witnessMemLowest12⟩,
+    BitVec.ofNat 32 Image.lowest12Address, 0x3FCC5000, 0, by decide, ?_, ?_, rfl, rfl, rfl, by decide, by decide,
+    by decide +kernel, ?_⟩
+  all_goals first
+    | code_in
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+/-- Memory with the current image's `SignedInt<8>::lowest` and
+`Choice::select_i64` where the image loads them, and zeros elsewhere. -/
+def witnessMemLowest8 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.lowest8Address, Image.lowest8Code),
+    (Image.selectI64Address, Image.selectI64Code)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `SignedInt<8>::lowest` on a `SignedInt` at
+`0x3FCC5000` with the stack at `0x3FCC8000` meets `lowest8_correct`'s
+hypotheses. -/
+theorem exists_lowest8_machine :
+    ∃ (m : RV32.Machine) (P p retAddr : RV32.Word), P.toNat % 2 = 0 ∧ RV32.CodeIn m.mem P Image.lowest8Code ∧
+      RV32.CodeIn m.mem (P + 0x22) Image.selectI64Code ∧ m.pc = P ∧ RV32.reg m RV32.a0 = p ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ p.toNat % 4 = 0 ∧
+      (m.mem (p + 0x20)).toNat ≤ 1 ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFF) 1 (P + 0x22) Image.selectI64Code.length := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.lowest8Address, witnessMemLowest8⟩,
+    BitVec.ofNat 32 Image.lowest8Address, 0x3FCC5000, 0, by decide, ?_, ?_, rfl, rfl, rfl, by decide, by decide,
+    by decide +kernel, ?_⟩
+  all_goals first
+    | code_in
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+/-- Memory with the current image's `safegcd::update_fg::<12>`, `Int<2>::from_i64`,
+and `lincomb_int_reduce_shift::<2>` and its callees where the image loads them,
+and zeros elsewhere. -/
+def witnessMemUf12 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.updateFg12Address, Image.updateFg12Code),
+    (Image.fromI64Address, Image.fromI64Code),
+    (Image.lincombShift12Address, Image.lincombShift12Code),
+    (Image.lincomb12Address, Image.lincomb12Code),
+    (Image.absSign2Address, Image.absSign2Code),
+    (Image.wideMul12x2Address, Image.wideMul12x2Code),
+    (Image.condNeg12Address, Image.condNeg12Code),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.borrowingSubAddress, Image.borrowingSubCode),
+    (Image.uintSelect2Address, Image.uintSelect2Code),
+    (Image.uintSelect12Address, Image.uintSelect12Code),
+    (Image.u2ZeroAddress, Image.u2ZeroData),
+    (Image.u2OneAddress, Image.u2OneData),
+    (Image.shr12Address, Image.shr12Code),
+    (Image.leadMut12Address, Image.leadMut12Code),
+    (Image.trailing12Address, Image.trailing12Code)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 32000000 in
+/-- A machine that calls `safegcd::update_fg::<12>` with the results at
+`0x3FCC5000`, `f` and `g` at `0x3FCC5100` and `0x3FCC5200`, the matrix at
+`0x3FCC5300`, a shift of 62, and the stack at `0x3FCC8000` meets
+`updateFg12_correct`'s hypotheses. -/
+theorem exists_updateFg12_machine :
+    ∃ (m : RV32.Machine) (P G out ap bp tp retAddr : RV32.Word) (s : Nat), RV32.UFEnv m.mem P G out ap bp tp ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = G + 0x2B0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = ap ∧
+      RV32.reg m RV32.a2 = bp ∧ RV32.reg m RV32.a3 = tp ∧ RV32.reg m RV32.a4 = BitVec.ofNat 32 s ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ 1 ≤ s ∧ s ≤ 63 ∧
+      (m.mem (ap + 0x30)).toNat ≤ 1 ∧ (m.mem (bp + 0x30)).toNat ≤ 1 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC5100 else if r = RV32.a2 then 0x3FCC5200
+    else if r = RV32.a3 then 0x3FCC5300 else if r = RV32.a4 then 62
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.updateFg12Address, witnessMemUf12⟩,
+    BitVec.ofNat 32 Image.updateFg12Address, 0x3FCC7D50, 0x3FCC5000, 0x3FCC5100, 0x3FCC5200, 0x3FCC5300, 0, 62, ?_, rfl,
+    by decide, rfl, rfl, rfl, rfl, rfl, rfl, by decide, by decide, by decide, by decide +kernel, by decide +kernel⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+/-- Memory with the current image's `safegcd::update_fg::<8>`, `Int<2>::from_i64`,
+and `lincomb_int_reduce_shift::<2>` and its callees where the image loads them,
+and zeros elsewhere. -/
+def witnessMemUf8 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.updateFg8Address, Image.updateFg8Code),
+    (Image.fromI64Address, Image.fromI64Code),
+    (Image.lincombShift8Address, Image.lincombShift8Code),
+    (Image.lincomb8Address, Image.lincomb8Code),
+    (Image.absSign2Address, Image.absSign2Code),
+    (Image.wideMul8x2Address, Image.wideMul8x2Code),
+    (Image.condNeg8Address, Image.condNeg8Code),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.borrowingSubAddress, Image.borrowingSubCode),
+    (Image.uintSelect2Address, Image.uintSelect2Code),
+    (Image.uintSelect8Address, Image.uintSelect8Code),
+    (Image.u2ZeroAddress, Image.u2ZeroData),
+    (Image.u2OneAddress, Image.u2OneData),
+    (Image.shr8Address, Image.shr8Code),
+    (Image.leadMut8Address, Image.leadMut8Code),
+    (Image.trailing8Address, Image.trailing8Code)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 32000000 in
+/-- A machine that calls `safegcd::update_fg::<8>` with the results at
+`0x3FCC5000`, `f` and `g` at `0x3FCC5100` and `0x3FCC5200`, the matrix at
+`0x3FCC5300`, a shift of 62, and the stack at `0x3FCC8000` meets
+`updateFg8_correct`'s hypotheses. -/
+theorem exists_updateFg8_machine :
+    ∃ (m : RV32.Machine) (P G out ap bp tp retAddr : RV32.Word) (s : Nat), RV32.UFEnv8 m.mem P G out ap bp tp ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = G + 0x230 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = ap ∧
+      RV32.reg m RV32.a2 = bp ∧ RV32.reg m RV32.a3 = tp ∧ RV32.reg m RV32.a4 = BitVec.ofNat 32 s ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ 1 ≤ s ∧ s ≤ 63 ∧
+      (m.mem (ap + 0x20)).toNat ≤ 1 ∧ (m.mem (bp + 0x20)).toNat ≤ 1 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC5100 else if r = RV32.a2 then 0x3FCC5200
+    else if r = RV32.a3 then 0x3FCC5300 else if r = RV32.a4 then 62
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.updateFg8Address, witnessMemUf8⟩,
+    BitVec.ofNat 32 Image.updateFg8Address, 0x3FCC7DD0, 0x3FCC5000, 0x3FCC5100, 0x3FCC5200, 0x3FCC5300, 0, 62, ?_, rfl,
+    by decide, rfl, rfl, rfl, rfl, rfl, rfl, by decide, by decide, by decide, by decide +kernel, by decide +kernel⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 /-- An 8-limb modulus of 3, as bytes. -/
 def montModBytes8 : List Nat := 3 :: List.replicate 31 0
 
@@ -3815,6 +3977,30 @@ end C3
 
 /-- info: 'C3.exists_lincombShift8_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_lincombShift8_machine
+
+/-- info: 'C3.RV32.lowest12_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.lowest12_correct
+
+/-- info: 'C3.exists_lowest12_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_lowest12_machine
+
+/-- info: 'C3.RV32.lowest8_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.lowest8_correct
+
+/-- info: 'C3.exists_lowest8_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_lowest8_machine
+
+/-- info: 'C3.RV32.updateFg12_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.updateFg12_correct
+
+/-- info: 'C3.exists_updateFg12_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_updateFg12_machine
+
+/-- info: 'C3.RV32.updateFg8_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.updateFg8_correct
+
+/-- info: 'C3.exists_updateFg8_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_updateFg8_machine
 
 /-- info: 'C3.RV32.lincomb8_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.lincomb8_correct

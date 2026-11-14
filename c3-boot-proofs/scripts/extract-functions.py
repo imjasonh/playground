@@ -127,6 +127,11 @@ FUNCTIONS = [
     ("p256ScalarMul", "<p256::arithmetic::scalar::Scalar as core::ops::arith::Mul>::mul"),
     ("lincombShift12", "<crypto_bigint::modular::safegcd::SignedInt<12>>::lincomb_int_reduce_shift::<2>"),
     ("lincombShift8", "<crypto_bigint::modular::safegcd::SignedInt<8>>::lincomb_int_reduce_shift::<2>"),
+    ("lowest12", "<crypto_bigint::modular::safegcd::SignedInt<12>>::lowest"),
+    ("lowest8", "<crypto_bigint::modular::safegcd::SignedInt<8>>::lowest"),
+    ("updateFg12", "crypto_bigint::modular::safegcd::update_fg::<12>"),
+    ("updateFg8", "crypto_bigint::modular::safegcd::update_fg::<8>"),
+    ("norm12", "<crypto_bigint::modular::safegcd::SignedInt<12>>::norm"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a

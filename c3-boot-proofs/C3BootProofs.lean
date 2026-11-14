@@ -113,6 +113,9 @@ import C3BootProofs.Proofs.ScalarMont
 import C3BootProofs.Proofs.P256Scalar
 import C3BootProofs.Proofs.LincombShift12
 import C3BootProofs.Proofs.LincombShift8
+import C3BootProofs.Proofs.Lowest
+import C3BootProofs.Proofs.UpdateFg12
+import C3BootProofs.Proofs.UpdateFg8
 import C3BootProofs.Proofs.AbsSign2
 import C3BootProofs.Proofs.FromI64
 import C3BootProofs.Proofs.P384Add
