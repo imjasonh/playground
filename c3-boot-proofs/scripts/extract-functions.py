@@ -145,6 +145,10 @@ FUNCTIONS = [
     ("derInteger", "<c3_verify::der::Der>::integer"),
     ("derBooleanTrue", "<c3_verify::der::Der>::boolean_true"),
     ("derOptional", "<c3_verify::der::Der>::optional"),
+    ("uint12Eq", "<crypto_bigint::uint::Uint<12>>::eq"),
+    ("uint8Eq", "<crypto_bigint::uint::Uint<8>>::eq"),
+    ("lessThanLe", "c3_crypto::less_than_le"),
+    ("inScalarRange", "c3_crypto::ecdsa::in_scalar_range"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a

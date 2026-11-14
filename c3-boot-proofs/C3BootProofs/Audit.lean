@@ -52,6 +52,8 @@ import C3BootProofs.Proofs.UpdateDe12
 import C3BootProofs.Proofs.UpdateDe8
 import C3BootProofs.Proofs.DerReaders
 import C3BootProofs.Proofs.DerOptional
+import C3BootProofs.Proofs.UintEq
+import C3BootProofs.Proofs.ByteCompare
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
@@ -2912,6 +2914,86 @@ theorem exists_derOptional_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `Uint<12>::eq`, `Uint<8>::eq`,
+`less_than_le`, and `in_scalar_range` where the image loads them, and zeros
+elsewhere. -/
+def witnessMemCmp : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.uint12EqAddress, Image.uint12EqCode),
+    (Image.uint8EqAddress, Image.uint8EqCode),
+    (Image.lessThanLeAddress, Image.lessThanLeCode),
+    (Image.inScalarRangeAddress, Image.inScalarRangeCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Uint<12>::eq` on `0x3FCC5000` and `0x3FCC5100`
+with the stack at `0x3FCC8000` meets `uint12Eq_correct`'s hypotheses. -/
+theorem exists_uint12Eq_machine :
+    ∃ (m : RV32.Machine) (base retAddr p q : RV32.Word), RV32.CodeIn m.mem base Image.uint12EqCode ∧
+      m.pc = base ∧ RV32.reg m RV32.a0 = p ∧ RV32.reg m RV32.a1 = q ∧ p.toNat % 4 = 0 ∧ q.toNat % 4 = 0 ∧
+      (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 base Image.uint12EqCode.length ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC5100 0, BitVec.ofNat 32 Image.uint12EqAddress, witnessMemCmp⟩,
+    BitVec.ofNat 32 Image.uint12EqAddress, 0, 0x3FCC5000, 0x3FCC5100, ?_, rfl, rfl, rfl, by decide, by decide,
+    by decide, ?_, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Uint<8>::eq` on `0x3FCC5000` and `0x3FCC5100`
+with the stack at `0x3FCC8000` meets `uint8Eq_correct`'s hypotheses. -/
+theorem exists_uint8Eq_machine :
+    ∃ (m : RV32.Machine) (base retAddr p q : RV32.Word), RV32.CodeIn m.mem base Image.uint8EqCode ∧
+      m.pc = base ∧ RV32.reg m RV32.a0 = p ∧ RV32.reg m RV32.a1 = q ∧ p.toNat % 4 = 0 ∧ q.toNat % 4 = 0 ∧
+      (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 base Image.uint8EqCode.length ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC5100 0, BitVec.ofNat 32 Image.uint8EqAddress, witnessMemCmp⟩,
+    BitVec.ofNat 32 Image.uint8EqAddress, 0, 0x3FCC5000, 0x3FCC5100, ?_, rfl, rfl, rfl, by decide, by decide,
+    by decide, ?_, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `less_than_le` on `0x3FCC5000` and `0x3FCC5100`
+meets `lessThanLe_correct`'s hypotheses. -/
+theorem exists_lessThanLe_machine :
+    ∃ (m : RV32.Machine) (base retAddr a b : RV32.Word), RV32.CodeIn m.mem base Image.lessThanLeCode ∧
+      m.pc = base ∧ RV32.reg m RV32.a0 = a ∧ RV32.reg m RV32.a1 = b ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC5100 0, BitVec.ofNat 32 Image.lessThanLeAddress, witnessMemCmp⟩,
+    BitVec.ofNat 32 Image.lessThanLeAddress, 0, 0x3FCC5000, 0x3FCC5100, ?_, rfl, rfl, rfl, rfl, by decide⟩
+  code_in
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `in_scalar_range` on 48 bytes at `0x3FCC5000` and
+an order of 48 bytes at `0x3FCC5100` meets `inScalarRange_correct`'s
+hypotheses. -/
+theorem exists_inScalarRange_machine :
+    ∃ (m : RV32.Machine) (base retAddr x o : RV32.Word) (n n' : Nat), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.inScalarRangeCode ∧ m.pc = base ∧ RV32.reg m RV32.a0 = x ∧
+      RV32.reg m RV32.a1 = BitVec.ofNat 32 n ∧ RV32.reg m RV32.a2 = o ∧ RV32.reg m RV32.a3 = BitVec.ofNat 32 n' ∧
+      n < 2 ^ 32 ∧ n' < 2 ^ 32 ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 48 else if r = RV32.a2 then 0x3FCC5100
+    else if r = RV32.a3 then 48 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.inScalarRangeAddress, witnessMemCmp⟩,
+    BitVec.ofNat 32 Image.inScalarRangeAddress, 0, 0x3FCC5000, 0x3FCC5100, 48, 48, by decide, ?_, rfl, rfl, rfl,
+    rfl, rfl, by decide, by decide, rfl, by decide⟩
+  code_in
+
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
 /-- A machine that calls `equal_same_length` on two empty slices, with the
@@ -4613,3 +4695,27 @@ end C3
 
 /-- info: 'C3.exists_derOptional_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_derOptional_machine
+
+/-- info: 'C3.RV32.uint12Eq_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.uint12Eq_correct
+
+/-- info: 'C3.exists_uint12Eq_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_uint12Eq_machine
+
+/-- info: 'C3.RV32.uint8Eq_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.uint8Eq_correct
+
+/-- info: 'C3.exists_uint8Eq_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_uint8Eq_machine
+
+/-- info: 'C3.RV32.lessThanLe_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.lessThanLe_correct
+
+/-- info: 'C3.exists_lessThanLe_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_lessThanLe_machine
+
+/-- info: 'C3.RV32.inScalarRange_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.inScalarRange_correct
+
+/-- info: 'C3.exists_inScalarRange_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_inScalarRange_machine

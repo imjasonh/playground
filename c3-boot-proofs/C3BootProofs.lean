@@ -134,6 +134,8 @@ import C3BootProofs.Proofs.UpdateDe8
 import C3BootProofs.Proofs.DerCall
 import C3BootProofs.Proofs.DerReaders
 import C3BootProofs.Proofs.DerOptional
+import C3BootProofs.Proofs.UintEq
+import C3BootProofs.Proofs.ByteCompare
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.UpdateFg12
 import C3BootProofs.Proofs.UpdateFg8
