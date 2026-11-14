@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#f4f6f5" />
+    <meta
+      name="description"
+      content="Fetch a git repository's packfile through a CORS proxy and explore its objects, deltas, and resolved file contents in the browser."
+    />
+    <title>Packfile explorer</title>
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="appbar">
+      <a class="brand" href="./">
+        <img src="icon.svg" alt="" width="22" height="22" />
+        <span>Packfile explorer</span>
+      </a>
+      <form id="fetch-form" class="fetch" autocomplete="off">
+        <label class="sr-only" for="repo">Repository</label>
+        <input
+          id="repo"
+          name="repo"
+          type="text"
+          inputmode="url"
+          spellcheck="false"
+          value="imjasonh/playground"
+          placeholder="owner/repo or https://…"
+          required
+        />
+        <button type="submit" id="fetch-btn" class="primary">Fetch pack</button>
+      </form>
+      <label class="button file-btn">
+        Open .pack
+        <input id="pack-file" type="file" accept=".pack,application/octet-stream" hidden />
+      </label>
+    </header>
+
+    <div id="status-wrap" class="status-wrap" hidden>
+      <div class="status-row">
+        <p id="status" role="status" aria-live="polite"></p>
+        <p id="status-detail" class="status-detail"></p>
+      </div>
+      <progress id="status-bar" aria-labelledby="status" hidden></progress>
+    </div>
+
+    <main id="app" class="app">
+      <div id="tray" class="tray" hidden>
+        <section id="refpicker" class="card" aria-labelledby="refpicker-title" hidden>
+          <div class="card-head">
+            <h2 id="refpicker-title">Fetch pack</h2>
+            <div class="card-actions">
+              <div class="depth-group">
+                <label class="depth-max" for="picker-max">
+                  <input id="picker-max" name="max" type="checkbox" />
+                  Max
+                </label>
+                <label class="depth" for="picker-depth">
+                  Depth
+                  <input id="picker-depth" name="depth" type="number" inputmode="numeric" min="1" max="50" value="1" />
+                </label>
+              </div>
+              <button type="button" id="picker-default" class="primary">Only default branch</button>
+              <button type="button" id="picker-branches">All branches</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section id="landing" class="landing" aria-labelledby="landing-title">
+        <div class="landing-inner">
+          <h1 id="landing-title">No pack open</h1>
+          <p class="landing-lede">
+            Fetch a public repository through the CORS proxy (up to 25 MiB), or
+            open a <code>.pack</code> file from <code>.git/objects/pack/</code>.
+            Local packs have no size cap.
+          </p>
+          <section id="saved" class="card saved" aria-labelledby="saved-title" hidden>
+            <h2 id="saved-title">Saved packs</h2>
+            <ul id="saved-list" class="saved-list"></ul>
+          </section>
+        </div>
+      </section>
+
+      <div id="workspace" class="workspace" hidden>
+        <aside class="nav" aria-label="Pack contents">
+          <div id="pack-title" class="pack-title"></div>
+
+          <div class="tablist" role="tablist" aria-label="Browse by">
+            <button type="button" role="tab" id="tab-objects" data-tab="objects" aria-selected="true">Objects</button>
+            <button type="button" role="tab" id="tab-paths" data-tab="paths" aria-selected="false" tabindex="-1">Paths</button>
+            <button type="button" role="tab" id="tab-refs" data-tab="refs" aria-selected="false" tabindex="-1">Refs</button>
+          </div>
+
+          <div class="nav-panel" role="tabpanel" data-panel="objects" aria-labelledby="tab-objects">
+            <div class="list-controls">
+              <label class="sr-only" for="filter-search">Search objects</label>
+              <input id="filter-search" type="search" spellcheck="false" placeholder="OID prefix or path" />
+              <div class="filter-row">
+                <label>
+                  <span>Type</span>
+                  <select id="filter-type">
+                    <option value="">All</option>
+                    <option value="commit">commit</option>
+                    <option value="tree">tree</option>
+                    <option value="blob">blob</option>
+                    <option value="tag">tag</option>
+                    <option value="unresolved">unresolved</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Stored as</span>
+                  <select id="filter-delta">
+                    <option value="">All</option>
+                    <option value="none">whole</option>
+                    <option value="ofs">ofs-delta</option>
+                    <option value="ref">ref-delta</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Sort</span>
+                  <select id="filter-sort">
+                    <option value="offset">pack order</option>
+                    <option value="packed">packed size</option>
+                    <option value="inflated">inflated size</option>
+                    <option value="depth">delta depth</option>
+                    <option value="type">type</option>
+                  </select>
+                </label>
+              </div>
+              <details class="more-filters">
+                <summary>More filters</summary>
+                <div class="filter-row">
+                  <label>
+                    <span>Reachability</span>
+                    <select id="filter-reach">
+                      <option value="">All</option>
+                      <option value="reachable">reachable</option>
+                      <option value="unreachable">unreachable</option>
+                    </select>
+                  </label>
+                  <label class="wide">
+                    <span>Author</span>
+                    <select id="filter-author">
+                      <option value="">All</option>
+                    </select>
+                  </label>
+                </div>
+              </details>
+            </div>
+            <p id="object-count" class="list-count"></p>
+            <ol id="object-list" class="rows"></ol>
+          </div>
+
+          <div class="nav-panel" role="tabpanel" data-panel="paths" aria-labelledby="tab-paths" hidden>
+            <div class="list-controls">
+              <label class="sr-only" for="path-search">Search paths</label>
+              <input id="path-search" type="search" spellcheck="false" placeholder="README or *.rs" />
+            </div>
+            <p id="paths-count" class="list-count"></p>
+            <ol id="paths-list" class="rows"></ol>
+          </div>
+
+          <div class="nav-panel" role="tabpanel" data-panel="refs" aria-labelledby="tab-refs" hidden>
+            <p id="refs-count" class="list-count"></p>
+            <ol id="refs-list" class="rows"></ol>
+          </div>
+        </aside>
+
+        <section class="main" aria-label="Inspector">
+          <div class="toolbar">
+            <div class="nav-buttons">
+              <button type="button" id="nav-back" aria-label="Back" disabled>&larr;</button>
+              <button type="button" id="nav-fwd" aria-label="Forward" disabled>&rarr;</button>
+            </div>
+            <div class="tablist view-tabs" role="tablist" aria-label="View">
+              <button type="button" role="tab" id="view-overview" data-view="overview" aria-selected="true">Overview</button>
+              <button type="button" role="tab" id="view-object" data-view="object" aria-selected="false" tabindex="-1">Object</button>
+            </div>
+            <form id="jump-form" class="jump">
+              <label class="sr-only" for="jump-oid">Jump to object</label>
+              <input id="jump-oid" type="search" spellcheck="false" placeholder="Jump to full oid" />
+            </form>
+            <button type="button" id="copy-link">Copy link</button>
+          </div>
+          <div id="overview" class="view" role="tabpanel" aria-labelledby="view-overview" tabindex="0"></div>
+          <div id="detail" class="view" role="tabpanel" aria-labelledby="view-object" tabindex="0" hidden></div>
+        </section>
+      </div>
+    </main>
+
+    <noscript>
+      <p class="noscript">This app needs JavaScript to fetch and parse packfiles.</p>
+    </noscript>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
