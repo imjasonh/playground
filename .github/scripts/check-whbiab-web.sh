@@ -46,6 +46,12 @@ csp_of() {
     head -1 || true
 }
 
+# directive prints CSP $2's $1 directive, or its default-src when it has no $1,
+# which is the directive the browser applies.
+directive() {
+  grep -oE "$1[^;\"]*" <<<"$2" || grep -oE "default-src[^;\"]*" <<<"$2" || true
+}
+
 for dir in "$root"/*/; do
   app=$(basename "$dir")
   [[ "$app" == .* ]] && continue
@@ -78,11 +84,10 @@ for dir in "$root"/*/; do
 
   csp=$(csp_of "$index")
   if [[ -n "$csp" ]]; then
-    directive=$(grep -oE "(img-src|default-src)[^;\"]*" <<<"$csp" | grep img-src || true)
-    if ! grep -qE "storage\.googleapis\.com|\*|https:" <<<"$directive"; then
+    if ! grep -qE "storage\.googleapis\.com|\*|https:" <<<"$(directive img-src "$csp")"; then
       fail "$app: the Content-Security-Policy img-src must allow https://storage.googleapis.com"
     fi
-    if ! grep -qE "script-src[^;\"]*'self'" <<<"$csp"; then
+    if ! grep -qF "'self'" <<<"$(directive script-src "$csp")"; then
       fail "$app: the Content-Security-Policy script-src must allow 'self'"
     fi
   fi

@@ -66,6 +66,12 @@ bash "$check" --fix "$tmp" >/dev/null 2>&1
 expect "--fix replaces a copy with a link" pass "$(passes "$tmp")"
 expect "--fix leaves the canonical file alone" "// canonical" "$(cat "$tmp/wehadababyitsaboy/web/whbiab.js")"
 
+sed -i "s#content=\"[^\"]*\"#content=\"default-src 'self' https:\"#" "$tmp/csp/index.html"
+expect "a CSP with only default-src that allows the image passes" pass "$(passes "$tmp")"
+sed -i "s#content=\"[^\"]*\"#content=\"default-src 'self'\"#" "$tmp/csp/index.html"
+expect "a CSP with only default-src that blocks the image fails" fail "$(passes "$tmp")"
+sed -i "s#content=\"[^\"]*\"#content=\"default-src 'self' https:\"#" "$tmp/csp/index.html"
+
 sed -i 's#data-app="other"#data-app="wrong"#' "$tmp/other/index.html"
 expect "a tag with the wrong app name fails" fail "$(passes "$tmp")"
 
