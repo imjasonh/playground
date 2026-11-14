@@ -2921,4 +2921,128 @@ theorem lm_ph1 (m : Machine) {P G res ap bp cp dp mp mip : Word} (env : LMEnv m.
           rw [← e3c, w1]; exact (m38 4 (.inr rfl)).symm }
   · rw [hF, lo12, hi2]; exact valt2
 
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 8000000 in
+/-- **Phase 2**, from 0x6C to 0x17E: `mf`, the low 64 bits of `x` times
+`mi`, masked to `shift` bits, at `F + 0x118`. -/
+theorem lm_ph2 {M : Word → BitVec 8} {P F mip : Word} {n : Machine} {sh : Nat} (hP : P.toNat % 2 = 0)
+    (s : St M P n 0x6C (reg n)) (hc : CodeIn M P lincombShiftMod12Code)
+    (hl : CodeIn M (lmShr P + 0x1EE) leadMut12Code) (ht : CodeIn M (lmShr P + 0x1FE) trailing12Code)
+    (hmax : CodeIn M (BitVec.ofNat 32 u2MaxAddress) u2MaxData)
+    (rsp : reg n sp = F) (r19 : reg n 19 = BitVec.ofNat 32 sh) (r20 : reg n 20 = F + 0x38) (r21 : reg n 21 = mip)
+    (hs1 : 1 ≤ sh) (hs2 : sh ≤ 63) (hF : F.toNat % 4 = 0) (hmip : mip.toNat % 4 = 0)
+    (sC1 : Sep (F + 0x38) 8 P lincombShiftMod12Code.length)
+    (sC2 : Sep (F + 0x78) 8 P lincombShiftMod12Code.length) (sC3 : Sep (F + 0x118) 8 P lincombShiftMod12Code.length)
+    (sLm : Sep (F + 0x38) 8 (lmShr P + 0x1EE) leadMut12Code.length)
+    (sTr : Sep (F + 0x38) 8 (lmShr P + 0x1FE) trailing12Code.length)
+    (sMX : Sep (F + 0x38) 8 (BitVec.ofNat 32 u2MaxAddress) 8) (sX : Sep (F + 0x118) 8 (F + 0x38) 8)
+    (sI : Sep (F + 0x118) 8 mip 8) (sL : Sep (F + 0x118) 8 (lmShr P + 0x1EE) leadMut12Code.length)
+    (sT : Sep (F + 0x118) 8 (lmShr P + 0x1FE) trailing12Code.length)
+    (sM : Sep (F + 0x118) 8 (BitVec.ofNat 32 u2MaxAddress) 8) :
+    ∃ n' M', Steps n n' ∧ St M' P n' 0x17E (reg n') ∧ CodeIn M' P lincombShiftMod12Code ∧
+      (∀ x, Sep (F + 0x38) 8 x 1 → Sep (F + 0x78) 8 x 1 → Sep (F + 0x118) 8 x 1 → M' x = M x) ∧
+      (memLoad32 M' (F + 0x118)).toNat + 2 ^ 32 * (memLoad32 M' (F + 0x11C)).toNat =
+        ((memLoad32 M (F + 0x38)).toNat + 2 ^ 32 * (memLoad32 M (F + 0x3C)).toNat) *
+          ((memLoad32 M mip).toNat + 2 ^ 32 * (memLoad32 M (mip + 4)).toNat) % 2 ^ 64 % 2 ^ sh ∧
+      reg n' 21 = F + 0xB0 ∧ reg n' sp = F ∧
+      ∀ q : Fin 32, q.val ∉ [1, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20, 21, 24] → reg n' q = reg n q := by
+  obtain ⟨n1, M1, c1, u1, hc1, fr1, v1, k1⟩ := lm_mul s hc rsp r20 r21 hF hmip sC3 sX sI
+  have cM : ∀ {b : Word} {code : List Nat}, CodeIn M b code → Sep (F + 0x118) 8 b code.length → CodeIn M1 b code :=
+    fun h hs i hi => by rw [fr1 _ (hs.subR (c := i) (l := 1) (by omega))]; exact h i hi
+  obtain ⟨n2, M2, c2, u2, hc2, fr2, v2, r21', sp2, k2⟩ := lm_mask hP u1 hc1 (cM hl sL) (cM ht sT) (cM hmax sM)
+    (by rw [k1 sp (by decide), rsp]) (by rw [k1 19 (by decide), r19]) hs1 hs2 hF sC1 sC2 sC3 sLm sTr sMX
+  refine ⟨n2, M2, c1.trans c2, u2, hc2, fun x h1 h2 h3 => by rw [fr2 x h1 h2 h3, fr1 x h3], ?_, r21', sp2,
+    fun q hq => by rw [k2 q (nmem_of (by decide) hq), k1 q (nmem_of (by decide) hq)]⟩
+  rw [v2, v1]
+
+
+/-! ## Phase 3: `x - m·mf`, from 0x17E to 0x21C -/
+
+def lmW0 : List BInstr :=
+  [.aluImm .add a0 sp 0x80, .aluImm .add a2 sp 0x118, .alu .add a1 x0 (23 : Fin 32), .aluImm .add (24 : Fin 32) sp 0x80]
+def lmW1 : List BInstr :=
+  [.aluImm .add a0 sp 0xB8, .aluImm .add a2 x0 0x30, .aluImm .add a1 x0 0, .aluImm .add (25 : Fin 32) sp 0xB8]
+def lmW2 : List BInstr :=
+  [.aluImm .add (20 : Fin 32) x0 0, .alu .add (9 : Fin 32) x0 sp, .aluImm .add (8 : Fin 32) x0 0xC]
+def lmW3 : List BInstr := [.alu .add a0 x0 sp, .aluImm .add a1 sp 0xB8, .aluImm .add a2 x0 0x30]
+def lmW4 : List BInstr :=
+  [.sw sp x0 0x38, .sw sp x0 0x3C, .aluImm .add (24 : Fin 32) sp 0x30, .aluImm .add (9 : Fin 32) sp 0x38,
+   .aluImm .add (8 : Fin 32) x0 2]
+/-- From 0x20A to 0x21C: the high limbs of the difference to `sp + 0x30`,
+and the borrow, through `black_box`, as 0 or 1 in `s4`. -/
+def lmW5 : List BInstr :=
+  [.lw a0 sp 0x38, .lw a1 sp 0x3C, .sw sp a0 0x30, .sw sp a1 0x34, .sw sp (20 : Fin 32) 0x38, .aluImm .add a0 sp 0x38,
+   .lw a0 sp 0x38, .alu .sltu (20 : Fin 32) x0 a0]
+
+section
+set_option maxRecDepth 20000
+theorem lmW0_end : blockEnd lincombShiftMod12Code 0x17E lmW0 = some 0x188 := by decide
+theorem lmW1_end : blockEnd lincombShiftMod12Code 0x190 lmW1 = some 0x19C := by decide
+theorem lmW2_end : blockEnd lincombShiftMod12Code 0x1A4 lmW2 = some 0x1AA := by decide
+theorem lmW3_end : blockEnd lincombShiftMod12Code 0x1CC lmW3 = some 0x1D4 := by decide
+theorem lmW4_end : blockEnd lincombShiftMod12Code 0x1DC lmW4 = some 0x1E8 := by decide
+theorem lmW5_end : blockEnd lincombShiftMod12Code 0x20A lmW5 = some 0x21C := by decide
+end
+
+set_option maxRecDepth 20000 in
+theorem lmW0_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock lmW0 (M, f)).1 = M ∧ (runBlock lmW0 (M, f)).2 a0 = f sp + 0x80 ∧
+    (runBlock lmW0 (M, f)).2 a2 = f sp + 0x118 ∧ (runBlock lmW0 (M, f)).2 a1 = f 23 ∧
+    (runBlock lmW0 (M, f)).2 (24 : Fin 32) = f sp + 0x80 ∧
+    ∀ q : Fin 32, q.val ∉ [10, 11, 12, 24] → (runBlock lmW0 (M, f)).2 q = f q := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, fun q hq => runBlock_keepL (by decide) hz hq⟩ <;>
+    simp only [runBlock, BInstr.run, lmW0] <;> simp +decide only [upd, ↓reduceIte, ev_add, hz] <;>
+    first | rfl | exact BitVec.zero_add _ | skip
+
+set_option maxRecDepth 20000 in
+theorem lmW1_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock lmW1 (M, f)).1 = M ∧ (runBlock lmW1 (M, f)).2 a0 = f sp + 0xB8 ∧
+    (runBlock lmW1 (M, f)).2 a2 = 0x30 ∧ (runBlock lmW1 (M, f)).2 a1 = 0 ∧
+    (runBlock lmW1 (M, f)).2 (25 : Fin 32) = f sp + 0xB8 ∧
+    ∀ q : Fin 32, q.val ∉ [10, 11, 12, 25] → (runBlock lmW1 (M, f)).2 q = f q := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, fun q hq => runBlock_keepL (by decide) hz hq⟩ <;>
+    simp only [runBlock, BInstr.run, lmW1] <;> simp +decide only [upd, ↓reduceIte, ev_add, hz] <;>
+    first | rfl | exact BitVec.zero_add _ | skip
+
+set_option maxRecDepth 20000 in
+theorem lmW2_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock lmW2 (M, f)).1 = M ∧ (runBlock lmW2 (M, f)).2 (20 : Fin 32) = 0 ∧
+    (runBlock lmW2 (M, f)).2 (9 : Fin 32) = f sp ∧ (runBlock lmW2 (M, f)).2 (8 : Fin 32) = 0xC ∧
+    ∀ q : Fin 32, q.val ∉ [8, 9, 20] → (runBlock lmW2 (M, f)).2 q = f q := by
+  refine ⟨?_, ?_, ?_, ?_, fun q hq => runBlock_keepL (by decide) hz hq⟩ <;>
+    simp only [runBlock, BInstr.run, lmW2] <;> simp +decide only [upd, ↓reduceIte, ev_add, hz] <;>
+    first | rfl | exact BitVec.zero_add _ | skip
+
+set_option maxRecDepth 20000 in
+theorem lmW3_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock lmW3 (M, f)).1 = M ∧ (runBlock lmW3 (M, f)).2 a0 = f sp ∧
+    (runBlock lmW3 (M, f)).2 a1 = f sp + 0xB8 ∧ (runBlock lmW3 (M, f)).2 a2 = 0x30 ∧
+    ∀ q : Fin 32, q.val ∉ [10, 11, 12] → (runBlock lmW3 (M, f)).2 q = f q := by
+  refine ⟨?_, ?_, ?_, ?_, fun q hq => runBlock_keepL (by decide) hz hq⟩ <;>
+    simp only [runBlock, BInstr.run, lmW3] <;> simp +decide only [upd, ↓reduceIte, ev_add, hz] <;>
+    first | rfl | exact BitVec.zero_add _ | skip
+
+set_option maxRecDepth 20000 in
+theorem lmW4_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock lmW4 (M, f)).1 = memStore32 (memStore32 M (f sp + 0x38) 0) (f sp + 0x3C) 0 ∧
+    (runBlock lmW4 (M, f)).2 (24 : Fin 32) = f sp + 0x30 ∧ (runBlock lmW4 (M, f)).2 (9 : Fin 32) = f sp + 0x38 ∧
+    (runBlock lmW4 (M, f)).2 (8 : Fin 32) = 2 ∧
+    ∀ q : Fin 32, q.val ∉ [8, 9, 24] → (runBlock lmW4 (M, f)).2 q = f q := by
+  refine ⟨?_, ?_, ?_, ?_, fun q hq => runBlock_keepL (by decide) hz hq⟩ <;>
+    simp only [runBlock, BInstr.run, lmW4] <;> simp +decide only [upd, ↓reduceIte, ev_add, hz] <;>
+    first | rfl | exact BitVec.zero_add _ | skip
+
+set_option maxRecDepth 20000 in
+theorem lmW5_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock lmW5 (M, f)).1 = memStore32 (memStore32 (memStore32 M (f sp + 0x30) (memLoad32 M (f sp + 0x38)))
+      (f sp + 0x34) (memLoad32 M (f sp + 0x3C))) (f sp + 0x38) (f 20) ∧
+    (runBlock lmW5 (M, f)).2 (20 : Fin 32) = aluEval .sltu 0 (memLoad32 (memStore32 (memStore32 (memStore32 M
+      (f sp + 0x30) (memLoad32 M (f sp + 0x38))) (f sp + 0x34) (memLoad32 M (f sp + 0x3C))) (f sp + 0x38) (f 20))
+      (f sp + 0x38)) ∧
+    ∀ q : Fin 32, q.val ∉ [10, 11, 20] → (runBlock lmW5 (M, f)).2 q = f q := by
+  refine ⟨?_, ?_, fun q hq => runBlock_keepL (by decide) hz hq⟩ <;>
+    simp only [runBlock, BInstr.run, lmW5] <;> simp +decide only [upd, ↓reduceIte, ev_add, hz] <;>
+    first | rfl | exact BitVec.zero_add _ | skip
+
 end C3.RV32
