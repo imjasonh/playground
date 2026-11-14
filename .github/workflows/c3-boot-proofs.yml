@@ -87,7 +87,8 @@ jobs:
 
       - name: Compare the Sigstore specification with c3-verify
         run: |
-          (cd c3-boot && cargo run --locked -q -p c3-verify --example sigstore_vectors) \
+          (cd c3-boot && cargo run --locked -q -p c3-verify --example sigstore_vectors &&
+            cargo run --locked -q -p c3-crypto --example crypto_vectors) \
             > "${RUNNER_TEMP}/rust-sigstore.txt"
           (cd c3-boot-proofs && lake exe sigstore-check) \
             < "${RUNNER_TEMP}/rust-sigstore.txt" > "${RUNNER_TEMP}/lean-sigstore.txt"

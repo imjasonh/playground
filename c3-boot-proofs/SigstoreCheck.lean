@@ -1,7 +1,8 @@
 import C3BootProofs
 
 /-!
-Reads the lines that `c3-boot/verify/examples/sigstore_vectors.rs` prints,
+Reads the lines that `c3-boot/verify/examples/sigstore_vectors.rs` and
+`c3-boot/crypto/examples/crypto_vectors.rs` print,
 runs each input through the Lean specification of the Sigstore check's
 parts, and prints the line with the specification's result. CI requires the
 output to equal the Rust program's.
@@ -27,6 +28,13 @@ def result (tokens : List String) : Option String :=
         s!"{hexStr b.checkpoint} {hexStr b.timestamp}")
   | ["rekor", d, s, c] => do
     pure (hexStr (rekorLeafHash (← parseHexTok d) (← parseHexTok s) (← parseHexTok c)))
+  | ["sha384", h] => do pure (hexStr (sha384 (← parseHexTok h)))
+  | ["p256", k, d, r, s] => do
+    pure (if p256Verify (← parseHexTok k) (← parseHexTok d) (← parseHexTok r) (← parseHexTok s) then "1" else "0")
+  | ["p384", k, d, r, s] => do
+    pure (if p384Verify (← parseHexTok k) (← parseHexTok d) (← parseHexTok r) (← parseHexTok s) then "1" else "0")
+  | ["ed25519", k, m, s] => do
+    pure (if ed25519Verify (← parseHexTok k) (← parseHexTok m) (← parseHexTok s) then "1" else "0")
   | _ => none
 
 partial def loop (stdin : IO.FS.Stream) (stdout : IO.FS.Stream) : IO UInt32 := do
