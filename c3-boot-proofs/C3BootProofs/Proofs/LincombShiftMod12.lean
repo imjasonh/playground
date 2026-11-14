@@ -3783,4 +3783,300 @@ theorem lmF5_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
     simp only [runBlock, BInstr.run, lmF5] <;> simp +decide only [upd, ↓reduceIte, ev_add, hz] <;>
     first | rfl | exact BitVec.zero_add _ | skip
 
+
+set_option maxRecDepth 60000 in
+set_option maxHeartbeats 16000000 in
+/-- **Phase 5**, from 0x23A to 0x2D0: subtract `m` from the low 12 limbs,
+keep the difference unless the high word is zero and the subtraction
+borrowed, copy the result to `res`, and store the sign `σ ^ sw` after it. -/
+theorem lm_ph5 {M0 M : Word → BitVec 8} {P G res ap bp cp dp mp mip : Word} {n : Machine} {σ sw : Nat}
+    (env : LMEnv M0 P G res ap bp cp dp mp mip) (hM : ∀ x, Sep G 0x330 x 1 → M x = M0 x)
+    (hMr : ∀ x, Sep res 49 x 1 → M x = M0 x)
+    (s : St M P n 0x23A (reg n)) (rsp : reg n sp = G + 0x1E0) (r21 : reg n 21 = G + 0x1E0) (r23 : reg n 23 = mp)
+    (r22 : reg n 22 = BitVec.ofNat 32 σ) (hσ : σ ≤ 1) (r20 : reg n 20 = BitVec.ofNat 32 sw) (hsw : sw ≤ 1)
+    (r18 : reg n 18 = res) :
+    ∃ n' M', Steps n n' ∧ St M' P n' 0x2D0 (reg n') ∧ (∀ x, Sep G 0x304 x 1 → Sep res 49 x 1 → M' x = M x) ∧
+      (M' (res + 0x30)).toNat = (if sw = 1 then 1 - σ else σ) ∧
+      accV M' res 12 =
+        (if (memLoad32 M (G + 0x1E0 + 0x30)).toNat = 0 ∧ accV M (G + 0x1E0) 12 < accV M0 mp 12 then
+          accV M (G + 0x1E0) 12
+        else (accV M (G + 0x1E0) 12 + 2 ^ 384 - accV M0 mp 12) % 2 ^ 384) ∧
+      reg n' sp = G + 0x1E0 ∧ ∀ q : Fin 32, q.val ∈ [3, 4, 26, 27] → reg n' q = reg n q := by
+  obtain ⟨F, hF⟩ : ∃ F, G + 0x1E0 = F := ⟨_, rfl⟩
+  rw [hF] at rsp r21 ⊢
+  have hGt := env.hGt
+  have tG : ∀ c, c < 0x330 → (G + BitVec.ofNat 32 c).toNat = G.toNat + c := fun c hc => by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (show c < 2 ^ 32 by omega),
+      Nat.mod_eq_of_lt (show G.toNat + c < 2 ^ 32 by omega)]
+  have fG : ∀ c, F + BitVec.ofNat 32 c = G + BitVec.ofNat 32 (0x1E0 + c) := fun c => by
+    rw [← hF, show (0x1E0 : Word) = BitVec.ofNat 32 0x1E0 from rfl, add_ofNat_assoc]
+  have eF : F = G + BitVec.ofNat 32 0x1E0 := hF.symm
+  have hFn : F.toNat = G.toNat + 0x1E0 := by rw [eF, tG _ (by decide)]
+  have hFa : F.toNat % 4 = 0 := by rw [hFn]; have := env.hG; omega
+  have aG : ∀ c, c % 4 = 0 → c < 0x330 → (G + BitVec.ofNat 32 c).toNat % 4 = 0 := fun c h1 h2 => by
+    rw [tG c h2]; have := env.hG; omega
+  have sub : ∀ {b : Word} {k : Nat} (c l : Nat), c + l ≤ 0x330 → Sep G 0x330 b k → Sep (G + BitVec.ofNat 32 c) l b k :=
+    fun c l h hs => hs.sub h
+  have sG : ∀ {c n d k : Nat}, c + n ≤ d ∨ d + k ≤ c → c + n ≤ 0x330 → d + k ≤ 0x330 →
+      Sep (G + BitVec.ofNat 32 c) n (G + BitVec.ofNat 32 d) k := fun h h1 h2 =>
+    sep_offsets G h (by omega) (by omega)
+  have aF : ∀ c, c % 4 = 0 → 0x1E0 + c < 0x330 → (F + BitVec.ofNat 32 c).toNat % 4 = 0 := fun c h1 h2 => by
+    rw [fG]; exact aG _ (by omega) h2
+  have sF : ∀ {b : Word} {k : Nat} (c l : Nat), 0x1E0 + c + l ≤ 0x330 → Sep G 0x330 b k →
+      Sep (F + BitVec.ofNat 32 c) l b k := fun c l h hs => by rw [fG]; exact sub _ l h hs
+  have cOf : ∀ {M' : Word → BitVec 8}, (∀ x, Sep G 0x330 x 1 → M' x = M0 x) →
+      ∀ {b : Word} {code : List Nat}, CodeIn M0 b code → Sep G 0x330 b code.length → CodeIn M' b code :=
+    fun hM' _ _ hc hs i hi => by rw [hM' _ (hs.subR (c := i) (l := 1) (by omega))]; exact hc i hi
+  have hz := s.zero
+  have hc := cOf hM env.code env.sC
+  have e0 : F = G + BitVec.ofNat 32 0x1E0 := eF
+  have e30 : F + 0x30 = G + BitVec.ofNat 32 0x210 := fG 0x30
+  have e38 : F + 0x38 = G + BitVec.ofNat 32 0x218 := fG 0x38
+  have eE8 : F + 0xE8 = G + BitVec.ofNat 32 0x2C8 := fG 0xE8
+  have eM4 : F + 0xFFFFFFFC = G + BitVec.ofNat 32 0x1DC := by rw [eF, BitVec.add_assoc]; rfl
+  have eB : lmBsub P = lcBsub (lmLc P) := by show P + 0xFFFEEE06 = P + 0xFFFFFA24 + 0xFFFEF3E2; rw [BitVec.add_assoc]; rfl
+  have sBs : Sep G 0x330 (lmBsub P) borrowingSubCode.length := by rw [eB]; exact env.sBs
+  -- `s3` = the high word, and `memset(F + 0xE8, 0, 48)`
+  obtain ⟨n1, c1, u1⟩ := St.block lmF0 s hc lmF0_end (by
+    simp +decide only [BlockOk, BInstr.ok, BInstr.run, lmF0, upd, ↓reduceIte, and_true, true_and]
+    rw [rsp, e30]; exact aG _ (by decide) (by decide))
+  obtain ⟨f0e, f0s3, f0a0, f0a2, f0a1, f0s0, f0k⟩ := lmF0_run (M := M) (f := reg n) hz
+  rw [f0e] at u1
+  have g1 : ∀ q, reg n1 q = (runBlock lmF0 (M, reg n)).2 q := u1.regs
+  have eMs : lmLc P + 0x18A8 = P + 0x12CC := by rw [BitVec.add_assoc]; rfl
+  have hevM : (lmLc P + 0x18A8).toNat % 2 = 0 := by rw [eMs]; exact even_at P env.hP 0x12CC (by decide)
+  obtain ⟨t1, ct1, pct1, memt1, regst1⟩ := u1.self.callRa hc lm12_at_246 lm12_at_24a (cb := lmLc P + 0x18A8)
+    (by rw [eMs, BitVec.add_assoc, BitVec.add_assoc]; rfl) hevM
+  have rt1 := PEnv.reg1 regst1 u1.self.zero
+  obtain ⟨t2, ct2, pct2, memt2, -, kt2⟩ := memset_correct t1 (lmLc P + 0x18A8) (P + BitVec.ofNat 32 (0x246 + 8))
+    (F + 0xE8) 0 48 (fun i hi => by show t1.mem _ = _; rw [memt1]; exact cOf hM env.mset env.sM i hi) hevM
+    pct1 (by rw [rt1 _ (by decide), g1, f0a0, rsp]) (by rw [rt1 _ (by decide), g1, f0a1])
+    (by rw [rt1 _ (by decide), g1, f0a2]; rfl) (by rw [regst1]; simp +decide only [upd_app, ↓reduceIte])
+    (even_clear _ (even_at P env.hP (0x246 + 8) (by decide)))
+    (by rw [eE8, tG _ (by decide)]; omega) (by rw [eE8]; exact sub _ _ (by decide) env.sM)
+  rw [memt1] at memt2
+  have frM2 : ∀ x, Sep (F + 0xE8) 48 x 1 → t2.mem x = M x := fun x hx => by
+    rw [memt2]; exact fillBytes_sep hx (Nat.le_refl _)
+  have frG2 : ∀ x, Sep G 0x330 x 1 → t2.mem x = M0 x := fun x hx => by
+    rw [frM2 x (by rw [eE8]; exact sub _ _ (by decide) hx), hM x hx]
+  have hc2 := cOf frG2 env.code env.sC
+  have hb2 : CodeIn t2.mem (lmBsub P) borrowingSubCode := by rw [eB]; exact cOf frG2 env.bsub env.sBs
+  have k2 : ∀ q : Fin 32, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ ra →
+      reg t2 q = reg n1 q := fun q q0 q1 q2 q3 q4 q5 q6 qr => by rw [kt2 q q2 q3 q4 q5 q6, rt1 q qr]
+  have st2 : St t2.mem P t2 0x24E (reg t2) := ⟨pct2, rfl, fun _ => rfl⟩
+  obtain ⟨n3, c3, u3⟩ := St.block lmF1 st2 hc2 lmF1_end (by simp [BlockOk, BInstr.ok, lmF1])
+  obtain ⟨f1e, f1a2, f1s1, f1k⟩ := lmF1_run (M := t2.mem) (f := reg t2) st2.zero
+  rw [f1e] at u3
+  have g3 : ∀ q, reg n3 q = (runBlock lmF1 (t2.mem, reg t2)).2 q := u3.regs
+  obtain ⟨n4, d4, u4⟩ := u3.self.notTaken hc2 0x254 lm12_at_252 (by decide) (by rw [g3, f1s1, u3.self.zero]; decide)
+  have g4 : ∀ q, reg n4 q = reg n3 q := u4.regs
+  have K8 : ∀ q : Fin 32, q.val ∈ [3, 4, 18, 19, 20, 21, 22, 23, 26, 27] → reg n4 q = reg n1 q := fun q hq => by
+    have ne : ∀ w : Fin 32, w.val ∉ [3, 4, 18, 19, 20, 21, 22, 23, 26, 27] → q ≠ w := fun w hw e => hw (e ▸ hq)
+    rw [g4, g3, f1k q (nmem_disj hq (by decide)), k2 q (ne a0 (by decide)) (ne a1 (by decide)) (ne a2 (by decide))
+      (ne a3 (by decide)) (ne a4 (by decide)) (ne a5 (by decide)) (ne a6 (by decide)) (ne ra (by decide))]
+  have sp4 : reg n4 sp = F := by
+    rw [g4, g3, f1k sp (by decide), k2 sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide), g1, f0k sp (by decide), rsp]
+  have s0v : reg n4 8 = F + 0xE8 := by
+    rw [g4, g3, f1k 8 (by decide), k2 8 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide), g1, f0s0, rsp]
+  have z0 : ∀ b : Word, b + BitVec.ofNat 32 (4 * 0) = b := fun b => add_ofNat_zero b
+  obtain ⟨n5, M5, c5, u5, hc5, fr5, bm5, v5, sp5, k5⟩ := lm_sub_loop (np := F) (xp := mp) (D := F + 0xE8)
+    env.hP hFa hFa env.hmp (by exact aF 0xE8 rfl (by decide)) (by rw [eE8, tG _ (by decide)]; omega)
+    (by rw [eM4, e0]; exact sG (.inl (by decide)) (by decide) (by decide))
+    (by rw [eM4]; exact (sub _ _ (by decide) env.mG.symm))
+    (by rw [eM4, eE8]; exact sG (.inl (by decide)) (by decide) (by decide))
+    (by rw [eE8, e0]; exact sG (.inr (by decide)) (by decide) (by decide))
+    (by rw [eE8]; exact (sub _ _ (by decide) env.mG.symm))
+    (by rw [eM4]; exact sub _ _ (by decide) sBs) (by rw [eM4]; exact sub _ _ (by decide) env.sC)
+    (by rw [eE8]; exact sub _ _ (by decide) sBs) (by rw [eE8]; exact sub _ _ (by decide) env.sC)
+    11 0 rfl u4.self hc2 hb2 (fun _ _ _ => rfl) (.inl rfl) (by show 0 + 2 ^ (32 * 0) * maskBit 0 = 0 + 0; rfl)
+    sp4 (by rw [K8 21 (by decide), g1, f0k 21 (by decide), r21, z0])
+    (by rw [K8 23 (by decide), g1, f0k 23 (by decide), r23, z0]) (by rw [s0v, z0])
+    (by rw [g4, g3, f1s1]; rfl) (by rw [g4, g3, f1a2])
+  -- the choice bit and the sign
+  have frG5 : ∀ x, Sep G 0x330 x 1 → M5 x = M0 x := fun x hx => by
+    rw [fr5 x (by rw [eM4]; exact sub _ _ (by decide) hx) (by rw [eE8]; exact sub _ _ (by decide) hx), frG2 x hx]
+  obtain ⟨n6, c6, u6⟩ := St.block lmF2 u5 hc5 lmF2_end (by
+    simp +decide only [BlockOk, BInstr.ok, BInstr.run, lmF2, upd, ↓reduceIte, and_true, true_and]
+    rw [sp5, e38]
+    exact ⟨⟨aG _ (by decide) (by decide), sub _ _ (by decide) env.sC⟩, aG _ (by decide) (by decide),
+      sub _ _ (by decide) env.sC⟩)
+  obtain ⟨f2e, f2s1, f2s0, f2a0, f2a1, f2k⟩ := lmF2_run (M := M5) (f := reg n5) u5.zero
+  rw [f2e, sp5] at u6
+  rw [sp5] at f2s1
+  have g6 : ∀ q, reg n6 q = (runBlock lmF2 (M5, reg n5)).2 q := u6.regs
+  obtain ⟨M6, hM6⟩ : ∃ M6, memStore8 (memStore32 M5 (F + 0x38) (reg n5 19)) (F + 0x38)
+      ((aluEval .and (aluEval .sltu (memLoad32 (memStore32 M5 (F + 0x38) (reg n5 19)) (F + 0x38)) 1)
+        (reg n5 a2)).extractLsb' 0 8) = M6 := ⟨_, rfl⟩
+  rw [hM6] at u6
+  have fr6 : ∀ x, Sep (F + 0x38) 4 x 1 → M6 x = M5 x := fun x hx => by
+    rw [← hM6, memStore8_ne (fun e => hx 0 (by decide) 0 (by decide) (by rw [add_ofNat_zero, add_ofNat_zero]; exact e.symm)),
+      memStore32_get_sep hx]
+  have frG6 : ∀ x, Sep G 0x330 x 1 → M6 x = M0 x := fun x hx => by
+    rw [fr6 x (by rw [e38]; exact sub _ _ (by decide) hx), frG5 x hx]
+  have hc6 := cOf frG6 env.code env.sC
+  have hb6 : CodeIn M6 (lmBsub P) borrowingSubCode := by rw [eB]; exact cOf frG6 env.bsub env.sBs
+  have sp6 : reg n6 sp = F := by rw [g6, f2k sp (by decide), sp5]
+  obtain ⟨n7, c7, u7, -, -, sp7, k7, fr7⟩ := u6.self.bsubCall hc6 hb6 (even_at P env.hP 0xFFFEEE06 (by decide))
+    lm12_at_294 lm12_at_298 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP (0x294 + 8) (by decide))
+    sp6 hFa (by rw [eM4]; exact sub _ _ (by decide) sBs)
+  have frG7 : ∀ x, Sep G 0x330 x 1 → n7.mem x = M0 x := fun x hx => by
+    rw [fr7 x (by rw [eM4]; exact sub _ _ (by decide) hx), frG6 x hx]
+  have hc7 := cOf frG7 env.code env.sC
+  have r7 : ∀ q : Fin 32, q.val ∉ [1, 10, 11, 12, 13, 14] → reg n7 q = reg n6 q := fun q hq =>
+    k7 q (fun e => hq (by rw [e]; decide)) (fun e => hq (by rw [e]; decide)) (fun e => hq (by rw [e]; decide))
+      (fun e => hq (by rw [e]; decide)) (fun e => hq (by rw [e]; decide)) (fun e => hq (by rw [e]; decide))
+  obtain ⟨n8, c8, u8⟩ := St.block lmF3 u7 hc7 lmF3_end (by simp [BlockOk, BInstr.ok, lmF3])
+  obtain ⟨f3e, f3a0, f3a1, f3a2, f3a3, f3k⟩ := lmF3_run (M := n7.mem) (f := reg n7) u7.zero
+  rw [f3e] at u8
+  have g8 : ∀ q, reg n8 q = (runBlock lmF3 (n7.mem, reg n7)).2 q := u8.regs
+  have eSel : lmLc P + 0xFFFFFF2A = P + 0xFFFFF94E := by rw [BitVec.add_assoc]; rfl
+  have hevS : (lmLc P + 0xFFFFFF2A).toNat % 2 = 0 := by rw [eSel]; exact even_at P env.hP 0xFFFFF94E (by decide)
+  obtain ⟨t9, ct9, pct9, memt9, regst9⟩ := u8.self.callRa hc7 lm12_at_2a4 lm12_at_2a8 (cb := lmLc P + 0xFFFFFF2A)
+    (by rw [eSel, BitVec.add_assoc, BitVec.add_assoc]; rfl) hevS
+  have rt9 := PEnv.reg1 regst9 u8.self.zero
+  have sp9 : reg t9 sp = F := by rw [rt9 _ (by decide), g8, f3k sp (by decide), sp7]
+  have eSR : F + 0xFFFFFFB0 = G + BitVec.ofNat 32 0x190 := by rw [eF, BitVec.add_assoc]; rfl
+  have q1 : lmLc P + 0xFFFFFF2A + 0x197E = lmLc P + 0x18A8 := by rw [BitVec.add_assoc]; rfl
+  have q2 : lmLc P + 0xFFFFFF2A + 0x19E6 = lmLc P + 0x1910 := by rw [BitVec.add_assoc]; rfl
+  have q3 : lmLc P + 0xFFFFFF2A + 0x19EE = lmLc P + 0x1918 := by rw [BitVec.add_assoc]; rfl
+  have SE : SelEnv t9.mem (lmLc P + 0xFFFFFF2A) (reg t9 sp) (F + 0x38) (F + 0xE8) F := by
+    rw [memt9, sp9]
+    exact {
+      hS := hevS
+      code := cOf frG7 env.sel12 env.s12
+      mset := by rw [q1]; exact cOf frG7 env.mset env.sM
+      stub := by rw [q2]; exact cOf frG7 env.stub env.sU
+      body := by rw [q3]; exact cOf frG7 env.body env.sB
+      hsp := hFa
+      h50 := by omega
+      hout := by rw [e38]; exact aG _ (by decide) (by decide)
+      hap := by rw [eE8]; exact aG _ (by decide) (by decide)
+      hbp := hFa
+      hwo := by rw [e38, tG _ (by decide)]; omega
+      sFC := by rw [eSR]; exact sub _ _ (by decide) env.s12
+      sFM := by rw [eSR, q1]; exact sub _ _ (by decide) env.sM
+      sFU := by rw [eSR, q2]; exact sub _ _ (by decide) env.sU
+      sFB := by rw [eSR, q3]; exact sub _ _ (by decide) env.sB
+      sOF := by rw [eSR, e38]; exact sG (.inr (by decide)) (by decide) (by decide)
+      sOC := by rw [e38]; exact sub _ _ (by decide) env.s12
+      sOB := by rw [e38, q3]; exact sub _ _ (by decide) env.sB
+      sAF := by rw [eSR, eE8]; exact sG (.inr (by decide)) (by decide) (by decide)
+      sBF := by rw [eSR, e0]; exact sG (.inr (by decide)) (by decide) (by decide) }
+  -- the choice is 0 or 1
+  have hB : reg n5 a2 = 0 ∨ reg n5 a2 = 0xFFFFFFFF := bm5
+  obtain ⟨cv, hcv⟩ : ∃ cv, aluEval .and (aluEval .sltu (memLoad32 (memStore32 M5 (F + 0x38) (reg n5 19)) (F + 0x38)) 1)
+      (reg n5 a2) = cv := ⟨_, rfl⟩
+  rw [hcv] at f2s1
+  have hc01 : cv = 0 ∨ cv = 1 := by
+    rw [← hcv, memLoad32_store32_same]
+    have : aluEval .sltu (reg n5 19) 1 = 0 ∨ aluEval .sltu (reg n5 19) 1 = 1 := by
+      simp only [aluEval]; split <;> simp
+    rcases hB with h | h <;> rw [h]
+    · left; exact BitVec.and_zero
+    · rw [show aluEval .and (aluEval .sltu (reg n5 19) 1) 0xFFFFFFFF = aluEval .sltu (reg n5 19) 1 from ng_and_ones _]
+      exact this
+  have r9c : reg t9 a3 = cv := by
+    rw [rt9 _ (by decide), g8, f3a3, r7 9 (by decide), g6, f2s1]
+  obtain ⟨t10, ct10, pct10, spt10, w10, fr10, k10⟩ := uintSelect12_correct t9 SE pct9
+    (by rw [rt9 _ (by decide), g8, f3a0, sp7]) (by rw [rt9 _ (by decide), g8, f3a1, sp7])
+    (by rw [rt9 _ (by decide), g8, f3a2, sp7]) r9c hc01 (by rw [regst9]; simp [upd])
+    (even_clear _ (even_at P env.hP (0x2A4 + 8) (by decide)))
+  rw [memt9, sp9] at fr10
+  rw [memt9] at w10
+  have e1E0 : F = G + BitVec.ofNat 32 0x1E0 := eF
+  have eS16 : F + 0xFFFFFFF0 = G + BitVec.ofNat 32 0x1D0 := by rw [eF, BitVec.add_assoc]; rfl
+  have frG10 : ∀ x, Sep G 0x330 x 1 → t10.mem x = M0 x := fun x hx => by
+    rw [fr10 x (by rw [eSR]; exact sub _ _ (by decide) hx) (by rw [e38]; exact sub _ _ (by decide) hx), frG7 x hx]
+  have hc10 := cOf frG10 env.code env.sC
+  have st10 : St t10.mem P t10 0x2AC (reg t10) := ⟨pct10, rfl, fun _ => rfl⟩
+  have sp10 : reg t10 sp = F := by rw [spt10, sp9]
+  -- `memcpy(F, F + 0x38, 48)`
+  obtain ⟨n11, c11, u11⟩ := St.block lmF4 st10 hc10 lmF4_end (by simp [BlockOk, BInstr.ok, lmF4])
+  obtain ⟨f4e, f4a0, f4a1, f4a2, f4k⟩ := lmF4_run (M := t10.mem) (f := reg t10) st10.zero
+  rw [f4e] at u11
+  have g11 : ∀ q, reg n11 q = (runBlock lmF4 (t10.mem, reg t10)).2 q := u11.regs
+  have eU : lmLc P + 0x1910 = P + 0x1334 := by rw [BitVec.add_assoc]; rfl
+  have hevU : (lmLc P + 0x1910).toNat % 2 = 0 := by rw [eU]; exact even_at P env.hP 0x1334 (by decide)
+  obtain ⟨t12, ct12, pct12, memt12, regst12⟩ := u11.self.callRa hc10 lm12_at_2b4 lm12_at_2b8 (cb := lmLc P + 0x1910)
+    (by rw [eU, BitVec.add_assoc, BitVec.add_assoc]; rfl) hevU
+  have rt12 := PEnv.reg1 regst12 u11.self.zero
+  have sp11 : reg n11 sp = F := by rw [g11, f4k sp (by decide), sp10]
+  obtain ⟨t13, ct13, pct13, spt13, -, memt13, kt13⟩ := memcpy_correct t12 (lmLc P + 0x1910)
+    (P + BitVec.ofNat 32 (0x2B4 + 8)) F (F + 0x38) 48 (fun i hi => by rw [memt12]; exact cOf frG10 env.stub env.sU i hi)
+    hevU pct12 (by rw [rt12 _ (by decide), g11, f4a0, sp10]) (by rw [rt12 _ (by decide), g11, f4a1, sp10])
+    (by rw [rt12 _ (by decide), g11, f4a2]; rfl) (by rw [regst12]; simp [upd])
+    (even_clear _ (even_at P env.hP (0x2B4 + 8) (by decide)))
+    (by
+      rw [memt12, rt12 _ (by decide), sp11, show lmLc P + 0x1910 + 8 = lmLc P + 0x1918 by rw [BitVec.add_assoc]; rfl,
+        eS16, e38, e1E0]
+      exact {
+        code := cOf frG10 env.body env.sB
+        hDC := sub 0x1E0 48 (by decide) env.sB
+        hFC := sub 0x1D0 16 (by decide) env.sB
+        hdF := sG (.inr (by decide)) (by decide) (by decide)
+        hsF := sG (.inr (by decide)) (by decide) (by decide)
+        hsep := sG (.inl (by decide)) (by decide) (by decide)
+        hF := aG _ (by decide) (by decide)
+        hFw := by rw [tG _ (by decide)]; omega
+        hdw := by rw [tG _ (by decide)]; omega
+        hsw := by rw [tG _ (by decide)]; omega })
+  rw [rt12 _ (by decide), sp11, eS16, memt12] at memt13
+  have frG13 : ∀ x, Sep G 0x330 x 1 → t13.mem x = M0 x := fun x hx => by
+    rw [memt13 x (sub 0x1D0 16 (by decide) hx), copyBytes_sep (by rw [e1E0]; exact sub 0x1E0 48 (by decide) hx)
+      (Nat.le_refl _), frG10 x hx]
+  have hc13 := cOf frG13 env.code env.sC
+  have st13 : St t13.mem P t13 0x2BC (reg t13) := ⟨pct13, rfl, fun _ => rfl⟩
+  have sp13 : reg t13 sp = F := by rw [spt13, rt12 _ (by decide), sp11]
+  -- `memcpy(res, F, 48)`
+  obtain ⟨n14, c14, u14⟩ := St.block lmF5 st13 hc13 lmF5_end (by simp [BlockOk, BInstr.ok, lmF5])
+  obtain ⟨f5e, f5a1, f5a2, f5a0, f5k⟩ := lmF5_run (M := t13.mem) (f := reg t13) st13.zero
+  rw [f5e] at u14
+  have g14 : ∀ q, reg n14 q = (runBlock lmF5 (t13.mem, reg t13)).2 q := u14.regs
+  obtain ⟨t15, ct15, pct15, memt15, regst15⟩ := u14.self.callRa hc13 lm12_at_2c4 lm12_at_2c8 (cb := lmLc P + 0x1910)
+    (by rw [eU, BitVec.add_assoc, BitVec.add_assoc]; rfl) hevU
+  have rt15 := PEnv.reg1 regst15 u14.self.zero
+  have sp14 : reg n14 sp = F := by rw [g14, f5k sp (by decide), sp13]
+  -- `s2` is still `res`
+  have chainR : ∀ q : Fin 32, q.val ∈ [3, 4, 8, 18, 26, 27] → reg t13 q = reg n6 q := fun q hq => by
+    have ne : ∀ w : Fin 32, w.val ∉ [3, 4, 8, 18, 26, 27] → q ≠ w := fun w hw e => hw (e ▸ hq)
+    rw [kt13 q (ne a1 (by decide)) (ne a2 (by decide)) (ne a3 (by decide)) (ne a4 (by decide)) (ne a5 (by decide))
+        (ne a6 (by decide)) (ne a7 (by decide)) (ne (5 : Fin 32) (by decide)) (ne (6 : Fin 32) (by decide))
+        (ne 7 (by decide)) (ne 28 (by decide)) (ne 29 (by decide)) (ne 30 (by decide)) (ne sp (by decide)),
+      rt12 q (ne ra (by decide)), g11, f4k q (nmem_disj hq (by decide)), k10 q (by revert hq; revert q; decide),
+      rt9 q (ne ra (by decide)), g8, f3k q (nmem_disj hq (by decide)), r7 q (nmem_disj hq (by decide))]
+  have chain6 : ∀ q : Fin 32, q.val ∈ [3, 4, 18, 20, 22, 26, 27] → reg n6 q = reg n q := fun q hq => by
+    have ne : ∀ w : Fin 32, w.val ∉ [3, 4, 18, 20, 22, 26, 27] → q ≠ w := fun w hw e => hw (e ▸ hq)
+    rw [g6, f2k q (nmem_disj hq (by decide)),
+      k5 q (ne a0 (by decide)) (ne a1 (by decide)) (ne a2 (by decide)) (ne a3 (by decide)) (ne a4 (by decide))
+        (ne ra (by decide)) (ne 21 (by decide)) (ne 23 (by decide)) (ne 8 (by decide)) (ne 9 (by decide)),
+      K8 q (by revert hq; revert q; decide), g1, f0k q (nmem_disj hq (by decide))]
+  have r18 : reg t13 18 = res := by rw [chainR 18 (by decide), chain6 18 (by decide), r18]
+  have hdw : res.toNat + 48 < 2 ^ 32 := by have := env.hwr; omega
+  have rG48 : ∀ {c l : Nat}, c + l ≤ 0x330 → Sep res 48 (G + BitVec.ofNat 32 c) l := fun {c l} h => by
+    have := (env.rG.subR (c := c) (l := l) h).sub (c := 0) (l := 48) (by decide)
+    rwa [add_ofNat_zero] at this
+  obtain ⟨t16, ct16, pct16, spt16, -, memt16, kt16⟩ := memcpy_correct t15 (lmLc P + 0x1910)
+    (P + BitVec.ofNat 32 (0x2C4 + 8)) res F 48 (fun i hi => by rw [memt15]; exact cOf frG13 env.stub env.sU i hi)
+    hevU pct15 (by rw [rt15 _ (by decide), g14, f5a0, r18]) (by rw [rt15 _ (by decide), g14, f5a1, sp13])
+    (by rw [rt15 _ (by decide), g14, f5a2]; rfl) (by rw [regst15]; simp [upd])
+    (even_clear _ (even_at P env.hP (0x2C4 + 8) (by decide)))
+    (by
+      rw [memt15, rt15 _ (by decide), sp14, show lmLc P + 0x1910 + 8 = lmLc P + 0x1918 by rw [BitVec.add_assoc]; rfl,
+        eS16, e1E0]
+      exact {
+        code := cOf frG13 env.body env.sB
+        hDC := by have := env.rB.sub (c := 0) (l := 48) (by decide); rwa [add_ofNat_zero] at this
+        hFC := sub 0x1D0 16 (by decide) env.sB
+        hdF := rG48 (by decide)
+        hsF := sG (.inr (by decide)) (by decide) (by decide)
+        hsep := rG48 (by decide)
+        hF := aG _ (by decide) (by decide)
+        hFw := by rw [tG _ (by decide)]; omega
+        hdw := hdw
+        hsw := by rw [tG _ (by decide)]; omega })
+  rw [rt15 _ (by decide), sp14, eS16, memt15] at memt16
+  sorry
+
 end C3.RV32
