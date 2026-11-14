@@ -48,6 +48,7 @@ fn main() {
     let mut lazy_history = false;
     let mut verbose = false;
     let mut allow_other = false;
+    let mut flags: Vec<&str> = Vec::new();
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -56,17 +57,35 @@ fn main() {
                 return;
             }
             "--cache-dir" => match args.next() {
-                Some(v) => cache_dir = Some(PathBuf::from(v)),
+                Some(v) => {
+                    cache_dir = Some(PathBuf::from(v));
+                    flags.push("cache-dir");
+                }
                 None => fail("--cache-dir needs a value"),
             },
             "--refs-ttl" => match args.next().and_then(|v| v.parse::<f64>().ok()) {
-                Some(secs) if secs >= 0.0 => refs_ttl = Duration::from_secs_f64(secs),
+                Some(secs) if secs >= 0.0 => {
+                    refs_ttl = Duration::from_secs_f64(secs);
+                    flags.push("refs-ttl");
+                }
                 _ => fail("--refs-ttl needs a non-negative number of seconds"),
             },
-            "--no-warmup" => warmup = false,
-            "--lazy-history" => lazy_history = true,
-            "--allow-other" => allow_other = true,
-            "--verbose" => verbose = true,
+            "--no-warmup" => {
+                warmup = false;
+                flags.push("no-warmup");
+            }
+            "--lazy-history" => {
+                lazy_history = true;
+                flags.push("lazy-history");
+            }
+            "--allow-other" => {
+                allow_other = true;
+                flags.push("allow-other");
+            }
+            "--verbose" => {
+                verbose = true;
+                flags.push("verbose");
+            }
             other if other.starts_with('-') => fail(&format!("unknown option {other}")),
             _ => positional.push(arg),
         }
@@ -84,7 +103,11 @@ fn main() {
     opts.allow_other = allow_other;
 
     let mountpoint = PathBuf::from(mountpoint);
-    if let Err(e) = git_fuse::run(&mountpoint, opts, true) {
+    flags.sort_unstable();
+    let ping = whbiab::track("git-fuse", env!("CARGO_PKG_VERSION"), &flags);
+    let result = git_fuse::run(&mountpoint, opts, true);
+    ping.wait();
+    if let Err(e) = result {
         eprintln!("git-fuse: {e}");
         exit(1);
     }

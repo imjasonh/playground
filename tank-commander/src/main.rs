@@ -2,7 +2,7 @@
 
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use tank_commander::metrics::format_aggregate;
 use tank_commander::scenario::ScenarioKind;
 use tank_commander::sim::{self, SimConfig};
@@ -41,7 +41,10 @@ enum Commands {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let cmd = Cli::command();
+    let matches = cmd.clone().get_matches();
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
+    let _ping = whbiab::track_clap("tank-commander", env!("CARGO_PKG_VERSION"), &cmd, &matches);
     match cli.command {
         Commands::Sim {
             games,
