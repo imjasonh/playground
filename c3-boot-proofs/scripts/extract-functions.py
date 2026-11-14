@@ -151,6 +151,13 @@ FUNCTIONS = [
     ("inScalarRange", "c3_crypto::ecdsa::in_scalar_range"),
     ("p384ScalarMul", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<p384::arithmetic::scalar::ScalarParams, 12>>::mul"),
     ("p384ScalarNew", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<p384::arithmetic::scalar::ScalarParams, 12>>::new"),
+    ("u32Min", "crypto_bigint::primitives::u32_min (.169)"),
+    ("sliceReverse", "<[u8]>::reverse"),
+    ("uintRefIsZero", "<crypto_bigint::uint::ref_type::UintRef>::is_zero"),
+    ("choiceNot", "<subtle::Choice as core::ops::bit::Not>::not (.164)"),
+    ("splitAt12", "<crypto_bigint::uint::ref_type::UintRef>::split_at (.238)"),
+    ("limbCtEq", "<[crypto_bigint::limb::Limb] as ctutils::traits::ct_eq::CtEq>::ct_eq"),
+    ("uint12CtEq", "<crypto_bigint::uint::Uint<12> as ctutils::traits::ct_eq::CtEq>::ct_eq"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
