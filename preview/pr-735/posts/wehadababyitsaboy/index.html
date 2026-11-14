@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wehadababyitsaboy · Posts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="alternate" type="application/rss+xml" title="Posts" href="../feed.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root {
+  color-scheme: light dark;
+  --font-text: "Source Serif 4", Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+  --font-ui: "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --bg: #f7f5f0;
+  --ink: #1b1a17;
+  --muted: #5a564e;
+  --meta-updated: #8f887c;
+  --rule: #e4e0d8;
+  --link: #1d4ed8;
+  --link-hover: #1e3a8a;
+  --code-bg: #ece8e0;
+  --quote: #3f3c36;
+  --alert-bg: #efebe3;
+  --alert-border: #c9c3b6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1916;
+    --ink: #f2efe8;
+    --muted: #b7b1a6;
+    --meta-updated: #7a756c;
+    --rule: #3a3731;
+    --link: #93c5fd;
+    --link-hover: #bfdbfe;
+    --code-bg: #26231e;
+    --quote: #d8d2c6;
+    --alert-bg: #24211c;
+    --alert-border: #4a453c;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-text);
+  font-optical-sizing: auto;
+  font-size: clamp(1.125rem, 1.06rem + 0.3vw, 1.25rem);
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: normal;
+  color: var(--ink);
+  background: var(--bg);
+}
+main {
+  width: min(65ch, 100%);
+  margin: 0 auto;
+  padding: clamp(2.25rem, 7vw, 5rem) clamp(1.25rem, 5vw, 2.25rem) 5rem;
+}
+a {
+  color: var(--link);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.16em;
+}
+a:hover { color: var(--link-hover); }
+a:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 3px;
+}
+.crumbs {
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+  margin: 0 0 2.75rem;
+}
+.crumbs a { color: var(--muted); }
+.crumbs a:hover { color: var(--link); }
+h1 {
+  font-family: var(--font-text);
+  font-optical-sizing: auto;
+  font-size: clamp(2rem, 1.5rem + 2vw, 3rem);
+  font-weight: 600;
+  letter-spacing: -0.018em;
+  line-height: 1.2;
+  text-wrap: balance;
+  margin: 0 0 0.5rem;
+}
+.meta {
+  margin: 0.85rem 0 0;
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.meta .updated { color: var(--meta-updated); }
+
+  article header {
+    margin-bottom: 2.4rem;
+    padding-bottom: 1.6rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .body {
+    overflow-wrap: break-word;
+    hanging-punctuation: first;
+    hyphens: auto;
+  }
+  .body > *:first-child { margin-top: 0; }
+  .body h2, .body h3, .body h4 {
+    font-optical-sizing: auto;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    line-height: 1.25;
+    text-wrap: balance;
+    margin: 1.5em 0 0.5em;
+  }
+  .body h2 { font-size: 1.5em; }
+  .body h3 { font-size: 1.25em; }
+  .body h4 { font-size: 1.125em; }
+  .body p, .body ul, .body ol { margin: 0 0 1em; }
+  .body li { margin: 0.28em 0; }
+  .body li::marker { color: var(--muted); }
+  .body img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 1.6em auto;
+    border-radius: 2px;
+  }
+  .body code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.86em;
+    background: var(--code-bg);
+    padding: 0.12em 0.34em;
+    border-radius: 4px;
+    hyphens: none;
+  }
+  .body pre {
+    overflow: auto;
+    padding: 1em 1.1em;
+    background: var(--code-bg);
+    margin: 0 0 1.2em;
+    font-size: 0.9em;
+    line-height: 1.45;
+    border-radius: 6px;
+  }
+  .body pre code { background: none; padding: 0; }
+  .body blockquote {
+    margin: 0 0 1.15em;
+    padding: 0.15em 0 0.15em 1.05em;
+    border-left: 2px solid var(--rule);
+    color: var(--quote);
+  }
+  .body blockquote p:last-child { margin-bottom: 0; }
+  .body hr {
+    border: 0;
+    border-top: 1px solid var(--rule);
+    margin: 2.1em 0;
+  }
+  .alert {
+    margin: 0 0 1.2em;
+    padding: 1em 1.1em;
+    background: var(--alert-bg);
+    border: 1px solid var(--alert-border);
+    border-radius: 8px;
+    font-style: normal;
+    hyphens: none;
+  }
+  .alert-label {
+    margin: 0 0 0.4em;
+    font-family: var(--font-ui);
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+  }
+  .alert p:last-child { margin-bottom: 0; }
+</style>
+</head><body>
+<main>
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <a href="../../">Playground</a>
+    · <a href="../">Posts</a>
+    · <a href="../feed.xml">RSS</a>
+  </nav>
+  <article>
+    <header>
+      <h1>wehadababyitsaboy</h1>
+      <p class="meta"><span class="published">Published November 14, 2026</span></p>
+
+    </header>
+    <div class="body">
+<h3>First, some background</h3>
+<p>In the waning days of the late 1900s, it used to cost money to make a phone call to someone far away. A "phone call" was when someone talked into a wire and at their voice would come out the other end of the wire, at a friend's house. A "friend" was -- ... nevermind this is going to get old fast. You get the idea.</p>
+<p>Anyway, back in those days, calling someone nearby was easy, but the further away the recipient was, the more tired the gremlins that powered the phone call got, and they demanded more money for their effort. This was called a "long distance call".</p>
+<p>If you still wanted to communicate auditory information to someone far away and did not want to pay for that privilege, you could perform a "collect call". This meant that the <em>receiver</em> paid the bill, not the <em>caller</em>. You'd call a number like <a href="https://en.wikipedia.org/wiki/1-800-COLLECT">1-800-COLLECT</a> -- who advertised mercilessly on every television station! -- and record a brief message saying who was calling, and if the recipient liked you, they would accept the call and agree to pay for the long distance call. Sure, fine. This must have been wildly profitable for the phone company, because, again, they advertised it constantly.</p>
+<p>Eventually the long distance phone call gremlins must have got stronger, or negotiated poorly, because long distance calls are no longer A Thing. Phone companies are still wildly profitable and still advertise incessantly, don't worry.</p>
+<p>But before the practice of collect calls was crumpled up and tossed into the ash heap of history, they were responsible for one last pop culture grenade, in the form of a car insurance commercial:</p>
+<p><a href="https://youtu.be/j0ULftC7ndM?si=gXcg9Q5dUq8_blCk&amp;t=1530">https://youtu.be/j0ULftC7ndM?si=gXcg9Q5dUq8_blCk&amp;t=1530</a></p>
+<p><em>(skip to 25:30 if that doesn't work)</em></p>
+<p>The joke is that if you're super cheap, and can convey all the important information in that short recording to convince the recipient to accept the call, you can get one over on those rapacious telecommunications vendors!</p>
+<p>You can learn more here: <a href="https://geicocarinsurance.fandom.com/wiki/Bob_Wehadababyitsaboy">https://geicocarinsurance.fandom.com/wiki/Bob_Wehadababyitsaboy</a> -- did you know that the GEICO insurance company has a fandom.com site? And presumably, by extension, a fandom?</p>
+<h3>Anyway!</h3>
+<p>I had an idea last night to cheaply report and collect basic user tracking data by ~abusing~ relying on a not-well-known fact about GCS buckets (and, S3 buckets, if that's your thing).</p>
+<p>Did you know that if you configure your bucket just so, requests for missing objects can get recorded in usage logs? This is presumably useful for something like tracking 404 requests on your website or something, but in this case, it also means you can send any request you want to a bucket, anonymously, serve no data, incur almost no cost, and record that data? Now you do!</p>
+<p>I made a little demo in this repo, and it's called <code>wehadababyitsaboy</code>.</p>
+<p>For JS clients, you can embed <a href="https://raw.githubusercontent.com/imjasonh/playground/refs/heads/main/wehadababyitsaboy/web/whbiab.js"><code>whbiab.js</code></a> (pronounced WEE-bee-ab) and it'll collect whatever it can about the page and send a 404 request to the tracking bucket. Google will then record that 404 in CSV logs. It's embedded in all the browser apps in this repo.</p>
+<p>For Go clients, there's a <a href="https://github.com/spf13/cobra"><code>cobra</code></a>-compatible helper library to do the same. For Rust, there's a <a href="https://github.com/clap-rs/clap"><code>clap</code></a>-compatible helper module to do the same. They're also used by most of the CLIs in this repo.</p>
+<p>If you want to set this up for yourself, you're free to. Everything's <a href="https://github.com/imjasonh/playground/tree/main/wehadababyitsaboy/terraform">defined in Terraform</a>, all you need is a GCP project and a dream.</p>
+<p>Is tracking kinda sketchy and dubiously useful, and somewhat trivially circumvented? Yeah, sure is. If you don't want it, you can set <code>DO_NOT_TRACK=1</code> or <a href="https://support.google.com/chrome/answer/2790761?ai1hc=1">in your browser settings</a>. That's fine by me.</p>
+<p>Still, I think it's useful for CLI authors and web toy makers to see whether anybody else is actually using these things, and if so how. I trust my little GCS toy more than I trust some third party, and it was fun to make. A little nostalgia and whimsy is good for the soul.</p>
+<h3>Epilogue</h3>
+<p>That YouTube link up there (if it's still up) is just a recording of what TV was like in the early 2000s. The commercial before that GEICO one was for lightbulbs. Different time!</p>
+    </div>
+  </article>
+</main>
+</body></html>
