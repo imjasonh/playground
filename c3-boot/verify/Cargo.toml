@@ -1,0 +1,17 @@
+[package]
+name = "c3-verify"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+c3-crypto = { path = "../crypto" }
+
+[dev-dependencies]
+base64 = "0.22"
+ed25519-dalek = { version = "3.0.0", default-features = false }
+serde_json = "1"
+
+[lints]
+workspace = true

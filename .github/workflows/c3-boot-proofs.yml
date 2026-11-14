@@ -1,0 +1,196 @@
+# Checks the Lean proofs in c3-boot-proofs/, re-checks them with leanchecker,
+# audits their axioms, and compares the Lean specification with the Rust
+# code in c3-boot/verify: the decision logic on a grid of inputs, the key-set
+# chain and trust-root rules on cases with real signatures, and the record,
+# manifest, and image-header decoders on valid and mutated inputs. It also
+# runs the RV32 model in lockstep with Espressif's QEMU on random
+# instruction sequences, compares the model's decoder with LLVM's on every
+# 16-bit encoding and a sample of 32-bit ones, boots the bootloader image on
+# the model in lockstep with QEMU, and checks that the function bytes the
+# machine-code proofs are about come from the pinned bootloader image.
+
+name: c3-boot-proofs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "c3-boot-proofs/**"
+      - "c3-boot/**"
+      - ".github/workflows/c3-boot-proofs.yml"
+  pull_request:
+    paths:
+      - "c3-boot-proofs/**"
+      - "c3-boot/**"
+      - ".github/workflows/c3-boot-proofs.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: c3-boot-proofs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  proofs:
+    name: Lean proofs
+    # The apt packages that Espressif's QEMU needs have these names on Ubuntu 24.04.
+    runs-on: ubuntu-24.04
+    env:
+      QEMU_RELEASE: esp-develop-9.2.2-20261109
+      QEMU_ASSET: qemu-riscv32-softmmu-esp_develop_9.2.2_20261109-x86_64-linux-gnu.tar.xz
+      QEMU_SHA256: afa59465495295b8aa4f804768983fa30b0bbf33d0f68a047f9caa436b9164c0
+      QEMU: /tmp/qemu/bin/qemu-system-riscv32
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: leanprover/lean-action@ba3fdfe5c4476c925da13bf11a005ddb47e47aee # v1.7.1
+        with:
+          lake-package-directory: c3-boot-proofs
+          leanchecker: true
+          # Without arguments, leanchecker looks for modules named after the
+          # package, c3-boot-proofs, and finds none.
+          leanchecker-args: C3BootProofs
+          axiom-audit: true
+          axiom-audit-allow: propext,Quot.sound
+          # The audit root is a module prefix, not a namespace.
+          axiom-audit-root: C3BootProofs
+
+      - name: Compare the specification with c3-verify
+        run: |
+          (cd c3-boot-proofs && lake exe spec-vectors) > "${RUNNER_TEMP}/lean.txt"
+          (cd c3-boot && rustup show active-toolchain || rustup toolchain install)
+          (cd c3-boot && cargo run --locked --release -q -p c3-verify --example spec_vectors) \
+            > "${RUNNER_TEMP}/rust.txt"
+          wc -l "${RUNNER_TEMP}/lean.txt" "${RUNNER_TEMP}/rust.txt"
+          diff "${RUNNER_TEMP}/lean.txt" "${RUNNER_TEMP}/rust.txt"
+
+      - name: Compare the trust-root specification with c3-verify
+        run: |
+          (cd c3-boot && cargo run --locked -q -p c3-ota --example trust_vectors) \
+            > "${RUNNER_TEMP}/rust-trust.txt"
+          (cd c3-boot-proofs && lake exe trust-check) \
+            < "${RUNNER_TEMP}/rust-trust.txt" > "${RUNNER_TEMP}/lean-trust.txt"
+          awk '{print $NF}' "${RUNNER_TEMP}/rust-trust.txt" | sort | uniq -c
+          diff "${RUNNER_TEMP}/rust-trust.txt" "${RUNNER_TEMP}/lean-trust.txt"
+
+      - name: Compare the format decoders with c3-verify
+        run: |
+          (cd c3-boot && cargo run --locked -q -p c3-verify --example decode_vectors) \
+            > "${RUNNER_TEMP}/rust-decode.txt"
+          (cd c3-boot-proofs && lake exe decode-check) \
+            < "${RUNNER_TEMP}/rust-decode.txt" > "${RUNNER_TEMP}/lean-decode.txt"
+          diff "${RUNNER_TEMP}/rust-decode.txt" "${RUNNER_TEMP}/lean-decode.txt"
+
+      - name: Compare the Sigstore specification with c3-verify
+        run: |
+          (cd c3-boot && cargo run --locked -q -p c3-verify --example sigstore_vectors &&
+            cargo run --locked -q -p c3-crypto --example crypto_vectors &&
+            cargo run --locked -q -p c3-ota --example sigstore_e2e_vectors) \
+            > "${RUNNER_TEMP}/rust-sigstore.txt"
+          (cd c3-boot-proofs && lake exe sigstore-check) \
+            < "${RUNNER_TEMP}/rust-sigstore.txt" > "${RUNNER_TEMP}/lean-sigstore.txt"
+          diff "${RUNNER_TEMP}/rust-sigstore.txt" "${RUNNER_TEMP}/lean-sigstore.txt"
+
+      - name: Check the generated Montgomery reduction proof
+        working-directory: c3-boot-proofs
+        run: |
+          python3 scripts/gen-mont-red.py
+          git diff --exit-code C3BootProofs/Proofs/FieldMontRed.lean
+
+      - name: Check the generated point addition proof
+        working-directory: c3-boot-proofs
+        run: |
+          python3 scripts/gen-point-add.py
+          git diff --exit-code C3BootProofs/Proofs/PointAdd.lean
+
+      - name: Check the generated P-384 point doubling proof
+        working-directory: c3-boot-proofs
+        run: |
+          python3 scripts/gen-p384-double.py
+          git diff --exit-code C3BootProofs/Proofs/P384PtDouble.lean
+
+      - name: Check the generated P-384 point addition proof
+        working-directory: c3-boot-proofs
+        run: |
+          python3 scripts/gen-p384-add.py
+          git diff --exit-code C3BootProofs/Proofs/P384PtAdd.lean
+
+      - name: Check the generated P-256 point doubling proof
+        working-directory: c3-boot-proofs
+        run: |
+          python3 scripts/gen-p256-double.py
+          git diff --exit-code C3BootProofs/Proofs/P256PtDouble.lean
+
+      - name: Check the generated P-256 scalar multiplication proof
+        working-directory: c3-boot-proofs
+        run: |
+          python3 scripts/gen-p256-scalar.py
+          git diff --exit-code C3BootProofs/Proofs/
+
+      - name: Check the generated SHA-256 round proofs
+        working-directory: c3-boot-proofs
+        run: |
+          python3 scripts/gen-sha256.py
+          git diff --exit-code C3BootProofs/Proofs/
+
+      - name: Check the generated curve25519 field proofs
+        working-directory: c3-boot-proofs
+        run: |
+          python3 scripts/gen-fe25519.py
+          python3 scripts/gen-tobytes.py
+          python3 scripts/gen-scalar-mont.py
+          git diff --exit-code C3BootProofs/Proofs/
+
+      - name: Install Espressif QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgcrypt20 libglib2.0-0 libpixman-1-0 libsdl2-2.0-0 libslirp0
+          curl -fsSL -o /tmp/qemu.tar.xz \
+            "https://github.com/espressif/qemu/releases/download/${QEMU_RELEASE}/${QEMU_ASSET}"
+          echo "${QEMU_SHA256}  /tmp/qemu.tar.xz" | sha256sum -c -
+          mkdir -p /tmp/qemu
+          tar -xJf /tmp/qemu.tar.xz -C /tmp/qemu --strip-components=1
+
+      - name: Check the extracted bootloader functions against the pinned image
+        working-directory: c3-boot
+        run: |
+          rustup component add llvm-tools
+          bin="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin"
+          C3_GENESIS=dev C3_EFUSE_BURN=off cargo build --locked --release \
+            --target riscv32imc-unknown-none-elf -p c3-bootloader
+          elf=target/riscv32imc-unknown-none-elf/release/c3-bootloader
+          cargo run --locked -q -p c3-ota -- bootloader-image --elf "${elf}" \
+            --out "${RUNNER_TEMP}/bootloader.bin"
+          echo "$(cat bootloader/dev-image.sha256)  ${RUNNER_TEMP}/bootloader.bin" | sha256sum -c -
+          python3 ../c3-boot-proofs/scripts/extract-functions.py "${RUNNER_TEMP}/bootloader.bin" \
+            "${elf}" "${bin}/llvm-nm" "${RUNNER_TEMP}/Bootloader.lean"
+          diff ../c3-boot-proofs/C3BootProofs/Image/Bootloader.lean "${RUNNER_TEMP}/Bootloader.lean"
+
+      - name: Run the RV32 model in lockstep with QEMU
+        working-directory: c3-boot
+        run: bash qemu/rv-lockstep.sh "${RUNNER_TEMP}/rv-lockstep"
+
+      - name: Compare the RV32 decoder with LLVM's
+        run: |
+          cd c3-boot
+          rustup component add llvm-tools
+          bin="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin"
+          cd ../c3-boot-proofs
+          python3 scripts/decode-vs-llvm.py .lake/build/bin/rv-decode "${bin}"
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: c3-boot/fakestore/go.mod
+          cache-dependency-path: c3-boot/fakestore/go.sum
+
+      - name: Build the scenario slots
+        working-directory: c3-boot
+        run: bash qemu/scenarios.sh "${RUNNER_TEMP}/c3-scenarios"
+
+      - name: Boot the bootloader image on the RV32 model in lockstep with QEMU
+        working-directory: c3-boot
+        run: bash qemu/boot-lockstep.sh "${RUNNER_TEMP}/c3-scenarios" "${RUNNER_TEMP}/boot-lockstep"

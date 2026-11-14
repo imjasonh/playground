@@ -1,0 +1,150 @@
+# Builds and lints the c3-boot crates for the ESP32-C3's RISC-V target, checks
+# the bootloader image's pinned digest, tests fakestore, boots the bootloader
+# in Espressif's QEMU through the update scenarios in
+# c3-boot/qemu/scenarios.sh, and fuzzes the parsers briefly.
+#
+# test.yml's Rust leg runs c3-boot's `cargo fmt --check`, Clippy, and tests.
+# test.yml doesn't find fakestore, because its go.mod isn't at the top level.
+
+name: c3-boot
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "c3-boot/**"
+      - ".github/workflows/c3-boot.yml"
+      - ".github/scripts/update-c3-trust-root*"
+  pull_request:
+    paths:
+      - "c3-boot/**"
+      - ".github/workflows/c3-boot.yml"
+      - ".github/scripts/update-c3-trust-root*"
+  workflow_dispatch: {}
+
+concurrency:
+  group: c3-boot-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  riscv:
+    name: RISC-V no_std build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Check the bootloader image digest
+        working-directory: c3-boot
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          bash bootloader/check-digest.sh
+
+      - name: Build and lint for riscv32imc-unknown-none-elf
+        working-directory: c3-boot
+        env:
+          # CI builds check the code, not a release. Releases name the
+          # production genesis key file instead.
+          C3_GENESIS: dev
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          cargo build --locked --release --target riscv32imc-unknown-none-elf \
+            -p c3-verify -p c3-crypto -p c3-bootloader -p c3-demo-app -p c3-rvtest
+          cargo clippy --locked --release --target riscv32imc-unknown-none-elf \
+            -p c3-verify -p c3-crypto -p c3-bootloader -p c3-demo-app -p c3-rvtest -- -D warnings
+          C3_EFUSE_BURN=on cargo clippy --locked --release \
+            --target riscv32imc-unknown-none-elf -p c3-bootloader -- -D warnings
+          # A key file stands in for production keys, which must burn eFuses.
+          if C3_GENESIS="${PWD}/testdata/keys/genesis-dev.pub" cargo build --locked --release \
+            --target riscv32imc-unknown-none-elf -p c3-bootloader 2>/dev/null; then
+            echo "::error::a production-key bootloader built without C3_EFUSE_BURN=on"
+            exit 1
+          fi
+
+  qemu:
+    name: fakestore and QEMU scenarios
+    # The apt packages that Espressif's QEMU needs have these names on Ubuntu 24.04.
+    runs-on: ubuntu-24.04
+    env:
+      QEMU_RELEASE: esp-develop-9.2.2-20261109
+      QEMU_ASSET: qemu-riscv32-softmmu-esp_develop_9.2.2_20261109-x86_64-linux-gnu.tar.xz
+      QEMU_SHA256: afa59465495295b8aa4f804768983fa30b0bbf33d0f68a047f9caa436b9164c0
+      QEMU: /tmp/qemu/bin/qemu-system-riscv32
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: c3-boot/fakestore/go.mod
+          cache-dependency-path: c3-boot/fakestore/go.sum
+
+      - name: Test the trusted-root update script
+        run: bash .github/scripts/update-c3-trust-root_test.sh
+
+      - name: Test fakestore
+        working-directory: c3-boot/fakestore
+        run: |
+          bash ../../.github/scripts/check-gofmt.sh .
+          go vet ./...
+          go test -race ./...
+
+      - name: Install Espressif QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgcrypt20 libglib2.0-0 libpixman-1-0 libsdl2-2.0-0 libslirp0
+          curl -fsSL -o /tmp/qemu.tar.xz \
+            "https://github.com/espressif/qemu/releases/download/${QEMU_RELEASE}/${QEMU_ASSET}"
+          echo "${QEMU_SHA256}  /tmp/qemu.tar.xz" | sha256sum -c -
+          mkdir -p /tmp/qemu
+          tar -xJf /tmp/qemu.tar.xz -C /tmp/qemu --strip-components=1
+          "${QEMU}" --version
+
+      - name: Run scenarios
+        working-directory: c3-boot
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          bash qemu/scenarios.sh "${RUNNER_TEMP}/c3-scenarios"
+
+      - name: Upload serial logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: c3-scenarios
+          path: ${{ runner.temp }}/c3-scenarios/*.log
+          if-no-files-found: ignore
+
+  fuzz:
+    name: Fuzz the parsers
+    runs-on: ubuntu-latest
+    env:
+      FUZZ_TOOLCHAIN: nightly-2026-11-09
+      FUZZ_SECONDS: "30"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install the nightly toolchain and cargo-fuzz
+        run: |
+          rustup toolchain install "${FUZZ_TOOLCHAIN}" --profile minimal
+          cargo "+${FUZZ_TOOLCHAIN}" install cargo-fuzz --version 0.13.2 --locked
+
+      - name: Fuzz each target
+        working-directory: c3-boot
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          bash fuzz/run.sh
+
+      - name: Upload crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: c3-boot-fuzz-artifacts
+          path: c3-boot/fuzz/artifacts
+          if-no-files-found: ignore

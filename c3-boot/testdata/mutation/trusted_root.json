@@ -1,0 +1,83 @@
+{
+  "mediaType":  "application/vnd.dev.sigstore.trustedroot+json;version=0.1",
+  "tlogs":  [
+    {
+      "baseUrl":  "https://log.c3-boot.test",
+      "hashAlgorithm":  "SHA2_256",
+      "publicKey":  {
+        "rawBytes":  "MCowBQYDK2VwAyEAIDZhzw9ZQ6131j21aCMqKLapZl48Wp+32Xqpmg6AFdA=",
+        "keyDetails":  "PKIX_ED25519",
+        "validFor":  {
+          "start":  "2020-01-01T00:00:00Z",
+          "end":  "2040-12-31T23:59:59Z"
+        }
+      },
+      "logId":  {
+        "keyId":  "KaWq5e65mJOuTqry29Lh5v3UW5IAP0NOUSZMxsEDuMY="
+      }
+    }
+  ],
+  "certificateAuthorities":  [
+    {
+      "subject":  {
+        "organization":  "sigstore.dev",
+        "commonName":  "sigstore"
+      },
+      "uri":  "https://fulcio.c3-boot.test",
+      "certChain":  {
+        "certificates":  [
+          {
+            "rawBytes":  "MIICGjCCAaGgAwIBAgIUFyJz1ROshl+STfiuSdcG3EKw4KYwCgYIKoZIzj0EAwMwKjEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MREwDwYDVQQDEwhzaWdzdG9yZTAeFw0yMDAxMDEwMDAwMDBaFw00MDEyMzEyMzU5NTlaMDcxFTATBgNVBAoTDHNpZ3N0b3JlLmRldjEeMBwGA1UEAxMVc2lnc3RvcmUtaW50ZXJtZWRpYXRlMHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEaw2yoHnzQmRl99nyWkyDp6k3ucWICgoxSP0LQ2qJkrgV3srpjxRly5bsHkp8d8PqMCVcDT2YN98P+i9W2wU2K+4HZeOxi1+KW5kzqlDSxe2hh9BBHcXMRPsf6ydh6bzUo3sweTAOBgNVHQ8BAf8EBAMCAQYwEwYDVR0lBAwwCgYIKwYBBQUHAwMwEgYDVR0TAQH/BAgwBgEB/wIBADAdBgNVHQ4EFgQUM4QjKemw7/la8SZnjMyjB+g6oU8wHwYDVR0jBBgwFoAUl6hZNiABOuisJh2Ex458QF7o8CgwCgYIKoZIzj0EAwMDZwAwZAIwEVlaX83LmTQwW0GNkl0XqwFsJF/lckTetEq/zMJZ1PFXE+cEkaFuNIdFsJ2kjh6xAjBag6FgtT/kRdX4Fq3qapEqKsGdt11k/K33qJjwSBvZMDwouXfhMimZr9gIzbUQAMM="
+          },
+          {
+            "rawBytes":  "MIIB9zCCAXygAwIBAgIUUwAJRpWRIwrEs42E4kIdoWTl5VowCgYIKoZIzj0EAwMwKjEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MREwDwYDVQQDEwhzaWdzdG9yZTAeFw0yMDAxMDEwMDAwMDBaFw00MDEyMzEyMzU5NTlaMCoxFTATBgNVBAoTDHNpZ3N0b3JlLmRldjERMA8GA1UEAxMIc2lnc3RvcmUwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAAS6eQJ7Pf6Yw32issjl73cj9OR4YUNHwcqkA0cfHvnn/vNa4wtyaPXH6fC7nuaxh123TZiXebpXqTM8lzb/nCB5t76UeXUoCHwEJbvtkUuIUN5QVKkxeL/yhkOxrKprrPijYzBhMA4GA1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBSXqFk2IAE66KwmHYTHjnxAXujwKDAfBgNVHSMEGDAWgBSXqFk2IAE66KwmHYTHjnxAXujwKDAKBggqhkjOPQQDAwNpADBmAjEAv3iCmlU8uOJgKOOGbqialIcQcM3wlNMuX4gSdAd1xTA8YMjYckt78w2MCsSM7mbGAjEA4YdpDbbFRNhc/FFcrsI7lpYvlFhO9eg1P3SsUwVDOtupR1aH0ic+zhLXbHaHDXjw"
+          }
+        ]
+      },
+      "validFor":  {
+        "start":  "2020-01-01T00:00:00Z",
+        "end":  "2040-12-31T23:59:59Z"
+      }
+    }
+  ],
+  "ctlogs":  [
+    {
+      "baseUrl":  "https://ctfe.c3-boot.test/test",
+      "hashAlgorithm":  "SHA2_256",
+      "publicKey":  {
+        "rawBytes":  "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAESy2BhYtAckVHVaVg9TKqEU/rjJJWyWazFdJR2G9UGTHT8ab07yuatH4Z+g2aDhh3DPR4ZejE08wkCJzVsmPbvQ==",
+        "keyDetails":  "PKIX_ECDSA_P256_SHA_256",
+        "validFor":  {
+          "start":  "2020-01-01T00:00:00Z",
+          "end":  "2040-12-31T23:59:59Z"
+        }
+      },
+      "logId":  {
+        "keyId":  "upV7NqoiMANnrwGQa0lZ70RYB7Sw2iTvKWzZCd8TUys="
+      }
+    }
+  ],
+  "timestampAuthorities":  [
+    {
+      "subject":  {
+        "organization":  "sigstore.dev",
+        "commonName":  "sigstore-tsa-selfsigned"
+      },
+      "uri":  "https://timestamp.c3-boot.test/api/v1/timestamp",
+      "certChain":  {
+        "certificates":  [
+          {
+            "rawBytes":  "MIICEDCCAZagAwIBAgIUE9P7Ab+j6evonCMFaAhkFuAySikwCgYIKoZIzj0EAwMwOTEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MSAwHgYDVQQDExdzaWdzdG9yZS10c2Etc2VsZnNpZ25lZDAeFw0yMDAxMDEwMDAwMDBaFw00MDEyMzEyMzU5NTlaMC4xFTATBgNVBAoTDHNpZ3N0b3JlLmRldjEVMBMGA1UEAxMMc2lnc3RvcmUtdHNhMHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEbk2WlKsmShq1lK+ekKdQ75r88e/i3nWO+GdfTGb9OiL5KJRtn4xWdj4lraPTgZxxkriomji2snZiRBsvpZzguB0Kv7LrGcbRoCV0FDhrBV6zOPHuK8+2s4ewzn6ijbNPo2owaDAOBgNVHQ8BAf8EBAMCB4AwHQYDVR0OBBYEFMoXUWn0F+1fisHbwQAbvSt5pYJXMB8GA1UdIwQYMBaAFJaPmdOA1N/wh5q8/4oQVEK5ouuaMBYGA1UdJQEB/wQMMAoGCCsGAQUFBwMIMAoGCCqGSM49BAMDA2gAMGUCMQCGjsQaD8qlJydDIrMNo+6mzu8sRSKXUFVB5b4oknrJEGGQgNxNBnHU7Z/K5ug7jDcCMA4o6Vt2n163Q2OjgLQ+Ae23fFIx8CCCLxH5S5a7SFRXzHhjnPpaeKSa5/6vkXWWww=="
+          },
+          {
+            "rawBytes":  "MIIB9TCCAXygAwIBAgIUX3yS9Z7F018mhCViiPZDIGYMdgMwCgYIKoZIzj0EAwMwOTEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MSAwHgYDVQQDExdzaWdzdG9yZS10c2Etc2VsZnNpZ25lZDAeFw0yMDAxMDEwMDAwMDBaFw00MDEyMzEyMzU5NTlaMDkxFTATBgNVBAoTDHNpZ3N0b3JlLmRldjEgMB4GA1UEAxMXc2lnc3RvcmUtdHNhLXNlbGZzaWduZWQwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAASH2Wxj0RUmtTlIpsDI8QtB7utt6O5HmMwoKhktdL5OLT7t5IdBcd5MSUyArcusXTpK2M1OvaEIegEDXPeV73wiBRibP40h5bw9TLIc9zwRQ2BXhXe1x1dnqUH/ZYk91gmjRTBDMA4GA1UdDwEB/wQEAwIBBjASBgNVHRMBAf8ECDAGAQH/AgEAMB0GA1UdDgQWBBSWj5nTgNTf8IeavP+KEFRCuaLrmjAKBggqhkjOPQQDAwNnADBkAjBX6qTgoFKRz4jcCCiWDhocDkg4XgK+oo4bEydmCr1CW6B8ElSXvjk9OKRDDoO5ajICMH+jgcE+ut3o1OH5JPb5zjCMb/VDVDdIhSVwVkEUiUMvyriN5Vsp66lkI1k2Z9v+lg=="
+          }
+        ]
+      },
+      "validFor":  {
+        "start":  "2020-01-01T00:00:00Z",
+        "end":  "2040-12-31T23:59:59Z"
+      }
+    }
+  ]
+}
