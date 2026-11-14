@@ -134,12 +134,15 @@ FUNCTIONS = [
     ("norm12", "<crypto_bigint::modular::safegcd::SignedInt<12>>::norm"),
     ("uint8IsNonzero", "<crypto_bigint::uint::Uint<8>>::is_nonzero"),
     ("norm8", "<crypto_bigint::modular::safegcd::SignedInt<8>>::norm"),
+    ("toUintResize2", "<crypto_bigint::uint::ref_type::UintRef>::to_uint_resize::<2>"),
+    ("lincombShiftMod12", "<crypto_bigint::modular::safegcd::SignedInt<12>>::lincomb_int_reduce_shift_mod::<2>"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
 # `lui; addi` pair in it that forms the data's address, and the data's size.
 DATA = [
     ("curveB", "pointAdd", 0x12E, 32),
+    ("u2Max", "lincombShiftMod12", 0xF0, 8),
     ("shaK", "sha256Compress", 0xB8, 256),
     ("shaIV", "sha256Fn", 0x12, 32),
     ("p384Modulus", "p384Add", 0x66, 48),
