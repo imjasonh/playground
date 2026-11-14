@@ -1248,4 +1248,82 @@ theorem lm_maskPre {M : Word → BitVec 8} {P F : Word} {n : Machine} {sh : Nat}
       k4 q (fun e => hq (by rw [e]; decide)) (fun e => hq (by rw [e]; decide)), g3, k1k q (nmem_of (by decide) hq),
       k2, g1, k0k q (nmem_of (by decide) hq)]
 
+
+theorem tb_pow_sub_one : ∀ (n i : Nat), (2 ^ n - 1).testBit i = decide (i < n)
+  | 0, i => by
+    rw [show 2 ^ 0 - 1 = 0 from rfl, Nat.zero_testBit]; exact (decide_eq_false (Nat.not_lt_zero i)).symm
+  | n + 1, 0 => by
+    have e : 2 ^ (n + 1) - 1 = 2 * (2 ^ n - 1) + 1 := by
+      have := Nat.one_le_two_pow (n := n); rw [Nat.pow_succ]; omega
+    rw [e, Nat.testBit_zero, decide_eq_true (show (2 * (2 ^ n - 1) + 1) % 2 = 1 by omega),
+      decide_eq_true (Nat.succ_pos n)]
+  | n + 1, i + 1 => by
+    have e : 2 ^ (n + 1) - 1 = 2 * (2 ^ n - 1) + 1 := by
+      have := Nat.one_le_two_pow (n := n); rw [Nat.pow_succ]; omega
+    have h : (2 * (2 ^ n - 1) + 1) / 2 = 2 ^ n - 1 := by omega
+    rw [e, Nat.testBit_succ, h, tb_pow_sub_one n i]
+    exact decide_eq_decide.mpr Nat.succ_lt_succ_iff.symm
+
+/-- ANDing with `2^n - 1` keeps the low `n` bits. Core's
+`Nat.and_two_pow_sub_one_eq_mod` depends on `Classical.choice`. -/
+theorem and_pow_sub_one (x n : Nat) : x &&& (2 ^ n - 1) = x % 2 ^ n :=
+  Nat.eq_of_testBit_eq fun i => by
+    rw [Nat.testBit_and, tb_pow_sub_one, Nat.testBit_mod_two_pow, Bool.and_comm]
+
+theorem and_mask_word {w m : Word} {j : Nat} (hm : m.toNat = 2 ^ j - 1) : (w &&& m).toNat = w.toNat % 2 ^ j := by
+  rw [BitVec.toNat_and, hm, and_pow_sub_one]
+
+/-- What the mask words `m0` and `m1` must do: AND a 64-bit value down to
+its low `sh` bits. -/
+def maskOK (sh : Nat) (m0 m1 : Word) : Prop :=
+  ∀ w0 w1 : Word, (w0 &&& m0).toNat + 2 ^ 32 * (w1 &&& m1).toNat = (w0.toNat + 2 ^ 32 * w1.toNat) % 2 ^ sh
+
+theorem maskOK_hi {sh : Nat} {m1 : Word} (h1 : 32 < sh) (hm : m1.toNat = 2 ^ (sh - 32) - 1) :
+    maskOK sh 0xFFFFFFFF m1 := fun w0 w1 => by
+  rw [ng_and_ones, and_mask_word hm]
+  have e : 2 ^ sh = 2 ^ 32 * 2 ^ (sh - 32) := by rw [← Nat.pow_add]; congr 1; omega
+  obtain ⟨P, hP⟩ : ∃ P, 2 ^ (sh - 32) = P := ⟨_, rfl⟩
+  have hP1 : 1 ≤ P := hP ▸ Nat.one_le_two_pow
+  rw [e, hP]
+  have hw0 := w0.isLt
+  have hd := Nat.div_add_mod w1.toNat P
+  have hr := Nat.mod_lt w1.toNat (show 0 < P by omega)
+  generalize w1.toNat / P = q at hd
+  generalize w1.toNat % P = r at hd hr ⊢
+  rw [← hd, Nat.mul_add, ← Nat.mul_assoc, Nat.add_comm (2 ^ 32 * P * q), ← Nat.add_assoc,
+    Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt]
+  have : 2 ^ 32 * r ≤ 2 ^ 32 * (P - 1) := Nat.mul_le_mul_left _ (by omega)
+  have : 2 ^ 32 * (P - 1) + 2 ^ 32 = 2 ^ 32 * P := by
+    rw [← Nat.mul_succ]; congr 1; omega
+  omega
+
+theorem maskOK_32 : maskOK 32 0xFFFFFFFF 0 := fun w0 w1 => by
+  rw [ng_and_ones, show w1 &&& (0 : Word) = 0 from BitVec.and_zero]
+  have := w0.isLt
+  show w0.toNat + 2 ^ 32 * 0 = _
+  omega
+
+theorem maskOK_lo {sh : Nat} {m0 : Word} (h1 : sh ≤ 32) (hm : m0.toNat = 2 ^ sh - 1) :
+    maskOK sh m0 0 := fun w0 w1 => by
+  rw [and_mask_word hm, show w1 &&& (0 : Word) = 0 from BitVec.and_zero]
+  have e : 2 ^ 32 = 2 ^ sh * 2 ^ (32 - sh) := by rw [← Nat.pow_add]; congr 1; omega
+  show w0.toNat % 2 ^ sh + 2 ^ 32 * 0 = _
+  rw [Nat.mul_zero, Nat.add_zero, e, Nat.mul_assoc, Nat.add_mul_mod_self_left]
+
+set_option maxRecDepth 100000 in
+theorem maskA_words : ∀ k : Fin 32, 1 ≤ k.val →
+    aluEval .and (BitVec.ofNat 32 k.val) 0x1F ≠ 0 ∧
+    (aluEval .or (aluEval .srl 0xFFFFFFFF (aluEval .and (BitVec.ofNat 32 k.val) 0x1F)) 0).toNat =
+        2 ^ (32 - k.val) - 1 ∧
+      aluEval .or (aluEval .srl 0xFFFFFFFF (aluEval .and (BitVec.ofNat 32 k.val) 0x1F))
+        (aluEval .sll 0xFFFFFFFF (0x20 - aluEval .and (BitVec.ofNat 32 k.val) 0x1F)) = 0xFFFFFFFF := by
+  decide
+
+set_option maxRecDepth 100000 in
+theorem maskC_words : ∀ k : Fin 64, 33 ≤ k.val →
+    aluEval .and (BitVec.ofNat 32 k.val) 0x1F ≠ 0 ∧
+    (aluEval .or (aluEval .srl 0xFFFFFFFF (aluEval .and (BitVec.ofNat 32 k.val) 0x1F)) 0).toNat =
+        2 ^ (64 - k.val) - 1 := by
+  decide
+
 end C3.RV32
