@@ -3,7 +3,8 @@
 
 Discovers every ``blog-post.md`` in a repository source tree, converts the
 Markdown to HTML, copies local images the posts reference, and writes a
-reverse-chronological index plus an RSS 2.0 feed. Publication and update
+reverse-chronological index plus an RSS 2.0 feed. The index and each post
+load ``wehadababyitsaboy/web/whbiab.js``. Publication and update
 dates come from git author dates of commits that changed the file's
 contents: the oldest such commit, then the newest. A rename that keeps
 the contents, including a git subtree import, does not move either date.
@@ -35,6 +36,7 @@ INDEX_TEMPLATE_PATH = PAGES_DIR / "blog-index.html.tmpl"
 POST_TEMPLATE_PATH = PAGES_DIR / "blog-post.html.tmpl"
 SHARED_CSS_PATH = PAGES_DIR / "blog-shared.css"
 SOURCE_ROOT = SCRIPT_DIR.parents[1]
+WHBIAB_JS = SOURCE_ROOT / "wehadababyitsaboy" / "web" / "whbiab.js"
 
 POST_FILENAME = "blog-post.md"
 SKIP_DIR_NAMES = {
@@ -675,6 +677,7 @@ def render_post(post: Post, template: str) -> str:
     return (
         template.replace("__TITLE__", html.escape(page_title))
         .replace("__TITLE_HTML__", post.title_html)
+        .replace("__SLUG__", html.escape(post.slug, quote=True))
         .replace("__DATES__", dates_html(post))
         .replace("__BODY__", body)
     )
@@ -838,6 +841,7 @@ def build(
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
+    shutil.copyfile(WHBIAB_JS, dest / "whbiab.js")
 
     paths = find_post_paths(source)
     slugs = assign_slugs(paths, source)
