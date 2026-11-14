@@ -6,6 +6,7 @@ package show
 import (
 	"fmt"
 	"math"
+	"math/rand/v2"
 
 	"github.com/imjasonh/playground/stream-boids/internal/audio"
 	"github.com/imjasonh/playground/stream-boids/internal/flock"
@@ -34,7 +35,6 @@ type Show struct {
 	cfg   Config
 	flock *flock.Flock
 	synth *audio.Synth
-	seed  uint32
 
 	target int
 	// names[i] labels boid i. A member keeps their boid while they stay.
@@ -50,7 +50,7 @@ type Show struct {
 
 // New returns a Show that drives fl and synth.
 func New(cfg Config, fl *flock.Flock, synth *audio.Synth) *Show {
-	s := &Show{cfg: cfg, flock: fl, synth: synth, seed: 0x9e3779b9, slot: map[string]int{}}
+	s := &Show{cfg: cfg, flock: fl, synth: synth, slot: map[string]int{}}
 	s.target = s.clamp(0)
 	return s
 }
@@ -123,14 +123,14 @@ func (s *Show) Event(m youtube.Message) {
 		s.hue += 12 * float64(tier)
 		s.kick(name, 0.1+0.035*float32(tier), 250+120*float32(tier))
 		s.banner(frame.Banner{Name: name, Text: text, Tier: tier})
-	case youtube.NewSponsor:
+	case youtube.NewSponsor, youtube.MemberMilestone:
+		text := "became a member"
+		if m.Type == youtube.MemberMilestone {
+			text = "celebrated a membership milestone"
+		}
 		s.synth.Chirp()
 		s.kick(name, 0.08, 220)
-		s.banner(frame.Banner{Name: name, Text: "became a member"})
-	case youtube.MemberMilestone:
-		s.synth.Chirp()
-		s.kick(name, 0.08, 220)
-		s.banner(frame.Banner{Name: name, Text: "celebrated a membership milestone"})
+		s.banner(frame.Banner{Name: name, Text: text})
 	case youtube.MembershipGifting:
 		text := "gifted a membership"
 		if m.Gifts != 1 {
@@ -150,16 +150,9 @@ func (s *Show) kick(name string, radius, strength float32) {
 	if i, ok := s.slot[name]; ok && i < s.flock.Len() {
 		x, y = s.flock.X[i], s.flock.Y[i]
 	} else {
-		x, y = s.rand()*s.flock.Width, s.rand()*s.flock.Height
+		x, y = rand.Float32()*s.flock.Width, rand.Float32()*s.flock.Height
 	}
 	s.flock.Kick(x, y, radius*s.flock.Height, strength)
-}
-
-func (s *Show) rand() float32 {
-	s.seed ^= s.seed << 13
-	s.seed ^= s.seed >> 17
-	s.seed ^= s.seed << 5
-	return float32(s.seed>>8) / (1 << 24)
 }
 
 func (s *Show) banner(b frame.Banner) {
