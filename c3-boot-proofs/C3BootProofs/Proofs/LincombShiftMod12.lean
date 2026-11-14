@@ -3048,6 +3048,15 @@ theorem lmW5_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
     first | rfl | exact BitVec.zero_add _ | skip
 
 
+/-- Proves a range condition `d < a ∨ (b ≤ d ∧ d < c) ∨ e ≤ d`, or a two-way
+one, by choosing the branch, so `omega` only ever proves single
+inequalities: `omega` on a negated conjunction depends on `Classical.choice`. -/
+macro "dis" : tactic => `(tactic| first
+  | exact .inl (by omega)
+  | exact .inr (.inl ⟨by omega, by omega⟩)
+  | exact .inr (.inr (by omega))
+  | exact .inr (by omega))
+
 /-- The arithmetic that joins the two subtraction loops: with `K = 2^384`
 and `L = 2^64`, the low and high halves of `x - xa` and their borrows. -/
 theorem ph3_arith {a x d1 b y d2 m1 m2 K L : Nat} (v7 : a + K * m1 = x + d1) (v13 : b + L * m2 = y + d2 + m1) :
@@ -3418,7 +3427,7 @@ theorem lm_ph3 {M0 M : Word → BitVec 8} {P G res ap bp cp dp mp mip : Word} {n
   have E1 : accV M14 F 12 = accV M7 (F + 0xB8) 12 := by
     have h1 : accV M14 (F + BitVec.ofNat 32 0) 12 = accV t10.mem (F + BitVec.ofNat 32 0) 12 :=
       accF 0 12 (by decide) fun d h1 h2 => by
-        rw [b14 d (by omega) (by omega), b13 d (by omega) (by omega), b11 d (by omega) (by omega)]
+        rw [b14 d (by omega) (by dis), b13 d (by omega) (by dis), b11 d (by omega) (by dis)]
     rw [add_ofNat_zero] at h1
     rw [h1]
     apply accV_congr2 12; intro i hi
@@ -3436,22 +3445,22 @@ theorem lm_ph3 {M0 M : Word → BitVec 8} {P G res ap bp cp dp mp mip : Word} {n
       simp (disch := decide) only [ls_lit, ls_same]
   have E3 : accV t4.mem F 12 = accV M F 12 := by
     have := accF (M1 := t4.mem) (M2 := M) 0 12 (by decide) fun d h1 h2 => by
-      rw [bt4 d (by omega) (by omega), bt2 d (by omega) (by omega)]
+      rw [bt4 d (by omega) (by dis), bt2 d (by omega) (by dis)]
     rwa [add_ofNat_zero] at this
   have E4 : accV M11 (F + 0x30) 2 = accV M (F + 0x30) 2 :=
     accF 0x30 2 (by decide) fun d h1 h2 => by
-      rw [b11 d (by omega) (by omega), b10 d (by omega) (by omega), b7 d (by omega) (by omega),
-        bt4 d (by omega) (by omega), bt2 d (by omega) (by omega)]
+      rw [b11 d (by omega) (by dis), b10 d (by omega) (by dis), b7 d (by omega) (by dis),
+        bt4 d (by omega) (by dis), bt2 d (by omega) (by dis)]
   have E5 : accV t2.mem (F + 0x80) 14 = accV t4.mem (F + 0x80) 12 + 2 ^ 384 * accV M11 (F + 0xB0) 2 := by
     rw [show (14 : Nat) = 12 + 2 from rfl, accV_split,
       show F + 0x80 + BitVec.ofNat 32 (4 * 12) = F + 0xB0 by rw [BitVec.add_assoc]; rfl,
       show 32 * 12 = 384 from rfl]
     have h1 : accV t2.mem (F + 0x80) 12 = accV t4.mem (F + 0x80) 12 :=
-      accF 0x80 12 (by decide) fun d h1 h2 => (bt4 d (by omega) (by omega)).symm
+      accF 0x80 12 (by decide) fun d h1 h2 => (bt4 d (by omega) (by dis)).symm
     have h2 : accV t2.mem (F + 0xB0) 2 = accV M11 (F + 0xB0) 2 :=
       accF 0xB0 2 (by decide) fun d h1 h2 => by
-        rw [b11 d (by omega) (by omega), b10 d (by omega) (by omega), b7 d (by omega) (by omega),
-          bt4 d (by omega) (by omega)]
+        rw [b11 d (by omega) (by dis), b10 d (by omega) (by dis), b7 d (by omega) (by dis),
+          bt4 d (by omega) (by dis)]
     rw [h1, h2]
   have E7 : accV M mp 12 = accV M0 mp 12 :=
     accV_congr 12 fun i hi => memLoad32_congr fun j hj => hM _ (by
