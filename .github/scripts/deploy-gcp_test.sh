@@ -404,7 +404,8 @@ printf '\\n' >> "$log"
 case "\$*" in
   *init*)
     case "\$*" in
-      *-backend=false*) exit 0 ;;
+      *-backend-config*) ;;
+      *) exit 0 ;;
     esac
     echo 'Error loading state: writing "gs://bucket/app/default.tflock" failed: Permission storage.objects.create denied' >&2
     exit 1
@@ -429,9 +430,13 @@ missing=$(
     bash "$deploy" --plan example-app 2>&1
 )
 missing_calls=$(cat "$log")
-assert_contains "$missing" "Planning with -backend=false" "missing state plans without a backend"
+assert_contains "$missing" "empty local backend" "missing state plans without the gcs backend"
 assert_contains "$missing" "Plan: 1 to add, 0 to change, 0 to destroy." "missing state still prints a plan"
-assert_contains "$missing_calls" "init -input=false -backend=false" "retries init with no backend"
+assert_contains "$missing_calls" "init -input=false" "retries init without a gcs backend"
+if grep -E "^tofu -chdir=${tmp}/example-app/terraform plan " <<<"$missing_calls"; then
+  fail "missing-state plan used the gcs module directory"
+  echo "$missing_calls" >&2
+fi
 if grep -E '^tofu .* apply ' <<<"$missing_calls"; then
   fail "missing-state plan must not apply"
   echo "$missing_calls" >&2

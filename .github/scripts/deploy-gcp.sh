@@ -13,8 +13,11 @@
 # The GCS backend writes <prefix>/default.tfstate, and a lock beside it,
 # the first time it loads a prefix that has no state. A pull request
 # cannot do that write. When init fails on that lock, the plan runs
-# with -backend=false: an empty state, no write to the state bucket.
-# Apply on main creates the state and the resources together.
+# from a copy of the module with the backend block removed, so OpenTofu
+# uses an empty local backend and writes nothing to the state bucket.
+# init -backend=false does not work: the next plan still requires the
+# gcs backend from the configuration. Apply on main creates the state
+# and the resources together.
 #
 # Usage:
 #   deploy-gcp.sh --check APP
@@ -199,8 +202,14 @@ gcs_init=(
 # init's GCS backend creates the state object if it is missing, which the
 # plan account cannot do. A second pull request cannot create it either:
 # the object is not a Terraform resource, and apply runs only on main.
+#
+# init -backend=false does not stick: the next plan sees backend "gcs" in
+# the configuration and refuses to run. Plan from a copy with that block
+# removed, so OpenTofu uses an empty local backend and writes nothing to
+# the state bucket.
+plan_dir=$tfdir
 plan_without_state() {
-  local log
+  local log copy
   log=$(mktemp)
   if "${gcs_init[@]}" >"$log" 2>&1; then
     cat "$log"
@@ -214,12 +223,50 @@ plan_without_state() {
   fi
   rm -f "$log"
   # init saved the GCS backend before the lock write failed. Drop that,
-  # or the next init loads it again and tries the same write.
+  # or a later command in this directory loads it again.
   rm -rf "${tfdir}/.terraform"
-  echo "gcp: ${app} has no state yet. Planning with -backend=false. Nothing is written to ${GCP_TF_STATE_BUCKET}." >&2
-  tofu -chdir="$tfdir" init \
-    -input=false \
-    -backend=false
+  copy=$(mktemp -d)
+  cp "${tfdir}/"*.tf "$copy/"
+  python3 - "$copy" <<'PY'
+import pathlib, sys
+
+root = pathlib.Path(sys.argv[1])
+for path in root.glob("*.tf"):
+    text = path.read_text()
+    out = []
+    i = 0
+    while True:
+        j = text.find('backend "', i)
+        if j < 0:
+            out.append(text[i:])
+            break
+        line_start = text.rfind("\n", 0, j) + 1
+        if text[line_start:j].strip() != "":
+            out.append(text[i:j + 1])
+            i = j + 1
+            continue
+        brace = text.find("{", j)
+        if brace < 0:
+            out.append(text[i:])
+            break
+        depth = 0
+        k = brace
+        while k < len(text):
+            if text[k] == "{":
+                depth += 1
+            elif text[k] == "}":
+                depth -= 1
+                if depth == 0:
+                    k += 1
+                    break
+            k += 1
+        out.append(text[i:line_start])
+        i = k
+    path.write_text("".join(out))
+PY
+  echo "gcp: ${app} has no state yet. Planning against an empty local backend. Nothing is written to ${GCP_TF_STATE_BUCKET}." >&2
+  tofu -chdir="$copy" init -input=false
+  plan_dir=$copy
 }
 
 if [[ "${DRY_RUN:-}" == "1" ]]; then
@@ -319,7 +366,7 @@ if [[ "$mode" == "plan" ]]; then
     echo "plan <comment>"
     exit 0
   fi
-  plan_text=$(tofu -chdir="$tfdir" plan \
+  plan_text=$(tofu -chdir="$plan_dir" plan \
     -input=false \
     -no-color \
     -lock=false \
