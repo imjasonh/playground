@@ -41,6 +41,7 @@ assert_eq "$(bash "$discover" --all)" '["cloudrun-sqlite","wehadababyitsaboy"]' 
 assert_eq "$(from_changes cloudrun-sqlite/main.go)" '["cloudrun-sqlite"]' "app source"
 assert_eq "$(from_changes litestream/vfs.go)" '["cloudrun-sqlite"]' "litestream watch"
 assert_eq "$(from_changes wehadababyitsaboy/terraform/main.tf)" '["wehadababyitsaboy"]' "stack without Go"
+assert_eq "$(from_changes wehadababyitsaboy/go/whbiab.go wehadababyitsaboy/README.md)" '[]' "client libraries do not deploy"
 assert_eq "$(from_changes kanoodle/index.html)" '[]' "unrelated app"
 assert_eq "$(from_changes README.md)" '[]' "repo root file"
 assert_eq "$(from_changes .github/workflows/deploy-gcp.yml)" '["cloudrun-sqlite","wehadababyitsaboy"]' "workflow change deploys all"

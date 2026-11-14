@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # Discover top-level Go module directories and emit a JSON array.
 #
-# A Go app is a non-hidden top-level directory containing go.mod.
+# A Go app is a non-hidden top-level directory containing go.mod. A
+# top-level directory that is another kind of app can also hold a Go library
+# module in its go/ subdirectory (wehadababyitsaboy/go). That module is listed
+# by its path, such as wehadababyitsaboy/go, and a change under the go/
+# directory selects it. Other nested modules, such as kube/bench, are not
+# discovered.
 #
 # Usage:
 #   discover-go-modules.sh --all
@@ -24,6 +29,19 @@ is_go_module() {
   [[ -f "$name/go.mod" ]]
 }
 
+# module_for_path prints the module a changed path belongs to: the top-level
+# directory, or its go/ subdirectory when that holds a module and the path is
+# inside it.
+module_for_path() {
+  local path="$1" name
+  name="${path%%/*}"
+  if [[ "$path" == "$name/go/"* ]] && is_go_module "$name/go"; then
+    echo "$name/go"
+  else
+    echo "$name"
+  fi
+}
+
 emit_json() {
   local -n list=$1
   if ((${#list[@]} == 0)); then
@@ -40,12 +58,15 @@ collect_all_go_modules() {
     if is_go_module "$name"; then
       modules+=("$name")
     fi
+    if is_go_module "$name/go"; then
+      modules+=("$name/go")
+    fi
   done
   emit_json modules
 }
 
 # dependents prints the Go modules whose go.mod has a replace directive that
-# points at the top-level directory $1.
+# points at the module directory $1.
 dependents() {
   local lib="$1" dir
   for dir in */; do
@@ -73,7 +94,7 @@ collect_go_modules_from_changes() {
   for path in "${paths[@]}"; do
     [[ -z "$path" ]] && continue
     [[ "$path" != */* ]] && continue
-    name="${path%%/*}"
+    name=$(module_for_path "$path")
     if [[ -n "${seen[$name]+x}" ]]; then
       continue
     fi
