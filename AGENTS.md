@@ -627,7 +627,9 @@ A `blog-post.md` file anywhere in the source tree (except hidden and generated
 directories) is published to `/posts/<parent-dir>/`. Dates come from git
 author history. Local images referenced from the file are copied next to the
 generated HTML; a missing image fails the build. The catalog also writes
-`/posts/feed.xml` (RSS 2.0, newest first, full post HTML).
+`/posts/feed.xml` (RSS 2.0, newest first, full post HTML). The builder
+copies `whbiab.js` into `/posts/` and loads it on the index and on each
+post, so a new post is tracked without a tag in the Markdown.
 
 **Agents must not create, edit, or rewrite `blog-post.md` files.** Only a
 human author writes those.
@@ -815,7 +817,9 @@ bundle exec fastlane test
   the screen class, and the language, and nothing from the page or the user.
   It sends nothing from localhost, a browser that sets Do Not Track, or a
   browser under automation. A PR preview on the production host is counted,
-  with `preview=pr-<N>` on the query.
+  with `preview=pr-<N>` on the query. The posts catalog is generated.
+  `build-blog.py` copies the same script into `/posts/`. The index uses
+  `data-app="posts"`, and each post uses `data-app="posts-<directory>"`.
 - **Prefer plain HTML + JS** for browser apps unless an app already uses a framework; match the style of neighboring code in that app directory.
 - **Go apps are independent modules**: each app owns its `go.mod` and `go.sum`; avoid cross-app imports, except of library modules such as `kube`, which an app imports with a `replace` directive.
 - **Go logging**: use `log/slog`. `slog.Info`, `slog.Warn`, `slog.Error`,

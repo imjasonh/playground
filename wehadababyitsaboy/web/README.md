@@ -30,6 +30,14 @@ workflows copy each app with `cp -rL`, so the published app holds the file
 itself. Without `--fix`, the command only checks, and the Test job runs that
 check.
 
+## Posts
+
+`build-blog.py` copies this file into `/posts/whbiab.js`. The index loads
+`whbiab.js` with `data-app="posts"`. Each post, one directory down, loads
+`../whbiab.js` with `data-app="posts-<directory>"`. `<directory>` is the
+post's parent directory, which is also the URL slug. The feed does not
+load the script.
+
 ## What a ping contains
 
 ```

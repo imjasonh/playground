@@ -563,6 +563,33 @@ def test_real_repo_posts_build() -> None:
         check("published" in index[0], "index.json has published")
 
 
+def test_catalog_loads_whbiab() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / "pasta").mkdir()
+        (root / "pasta" / "blog-post.md").write_text("# Pasta\n\nHello.\n")
+        dest = root / "out"
+        bb.build(root, dest)
+        script = (dest / "whbiab.js").read_text()
+        check("storage.googleapis.com/wehadababyitsaboy" in script, "script copied")
+        index = (dest / "index.html").read_text()
+        check(
+            '<script src="whbiab.js" data-app="posts"></script>' in index,
+            "index tag",
+        )
+        post = (dest / "pasta" / "index.html").read_text()
+        check(
+            '<script src="../whbiab.js" data-app="posts-pasta"></script>' in post,
+            "post tag",
+        )
+        check("whbiab" not in (dest / "feed.xml").read_text(), "feed has no tracker")
+        check(
+            bb.tracking_tag('a"b', "posts-x")
+            == '<script src="a&quot;b" data-app="posts-x"></script>',
+            "attribute escaping",
+        )
+
+
 def main() -> None:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for t in tests:
