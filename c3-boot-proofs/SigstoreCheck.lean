@@ -2,7 +2,8 @@ import C3BootProofs
 
 /-!
 Reads the lines that `c3-boot/verify/examples/sigstore_vectors.rs` and
-`c3-boot/crypto/examples/crypto_vectors.rs` print,
+`c3-boot/crypto/examples/crypto_vectors.rs`, and
+`c3-boot/ota/examples/sigstore_e2e_vectors.rs` print,
 runs each input through the Lean specification of the Sigstore check's
 parts, and prints the line with the specification's result. CI requires the
 output to equal the Rust program's.
@@ -11,6 +12,30 @@ output to equal the Rust program's.
 open C3
 
 def okOr (r : Option String) : String := r.getD "err"
+
+/-- `NAME.KEY.NOT_BEFORE.NOT_AFTER` entries, `;`-separated. -/
+def parseEntries (s : String) : Option (List (Bytes × Bytes × Window)) :=
+  if s.isEmpty then some []
+  else (s.splitOn ";").mapM fun e =>
+    match e.splitOn "." with
+    | [n, k, nb, na] => do pure (← parseHexTok n, ← parseHexTok k, ⟨← nb.toNat?, ← na.toNat?⟩)
+    | _ => none
+
+/-- A trust root's Sigstore keys and policy, as the vector printers list
+them. -/
+def parseRoot (s : String) : Option SigstoreRoot :=
+  match s.splitOn "/" with
+  | [f, l, t, p] => do
+    let fulcio ← parseEntries f
+    let logs ← parseEntries l
+    let tsas ← parseEntries t
+    match p.splitOn "." with
+    | [a, b, c, d, e] =>
+      pure ⟨fulcio.map fun (n, k, w) => ⟨n, k, w⟩, logs.map fun (n, k, w) => ⟨n, k, w⟩,
+        tsas.map fun (n, k, w) => ⟨n, k, w⟩,
+        ⟨← parseHexTok a, ← parseHexTok b, ← parseHexTok c, ← parseHexTok d, ← parseHexTok e⟩⟩
+    | _ => none
+  | _ => none
 
 /-- The specification's result for one input, or `none` if the line doesn't
 parse. -/
@@ -35,6 +60,11 @@ def result (tokens : List String) : Option String :=
     pure (if p384Verify (← parseHexTok k) (← parseHexTok d) (← parseHexTok r) (← parseHexTok s) then "1" else "0")
   | ["ed25519", k, m, s] => do
     pure (if ed25519Verify (← parseHexTok k) (← parseHexTok m) (← parseHexTok s) then "1" else "0")
+  | ["checkpoint", h, r] => do
+    let text ← parseHexTok h
+    let root ← parseRoot r
+    pure <| okOr ((verifyCheckpoint text root).map fun c =>
+      s!"ok {hexStr c.log.origin} {c.size} {hexStr c.root}")
   | _ => none
 
 partial def loop (stdin : IO.FS.Stream) (stdout : IO.FS.Stream) : IO UInt32 := do

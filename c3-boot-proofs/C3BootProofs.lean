@@ -11,6 +11,7 @@ import C3BootProofs.Spec.Time
 import C3BootProofs.Spec.Bundle
 import C3BootProofs.Spec.Ecdsa
 import C3BootProofs.Spec.Ed25519
+import C3BootProofs.Spec.Checkpoint
 import C3BootProofs.Hex
 import C3BootProofs.Model.RV32
 import C3BootProofs.Image.Bootloader
