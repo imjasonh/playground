@@ -277,31 +277,55 @@ else
   "${gcs_init[@]}"
 fi
 
-# Comment the plan on the pull request and on the job summary. The fence
-# grows until the plan text cannot close it.
+# One line per resource action in a `tofu show -json` plan, prefixed with
+# the symbol tofu's plan text uses. No-op entries are left out.
+summarize_plan_json() {
+  jq -r '
+    {
+      "create": "+  ",
+      "delete": "-  ",
+      "update": "~  ",
+      "delete,create": "-/+",
+      "create,delete": "+/-",
+      "read": "<= ",
+      "forget": ".  "
+    } as $symbols
+    | .resource_changes // []
+    | .[]
+    | $symbols[.change.actions | join(",")] as $symbol
+    | select($symbol != null)
+    | "\($symbol) \(.address)\(if .deposed then " (deposed)" else "" end)"
+  '
+}
+
+# Comment the plan on the pull request and on the job summary: the
+# Plan: line, one line per resource action, and the full plan text in a
+# collapsed section. The fence grows until the plan text cannot close it.
 post_plan() {
-  local text=$1
+  local text=$1 changes=$2
   local marker="<!-- gcp-plan:${app} -->"
   local fence='```'
   local max=48000
-  local body file existing
+  local body file existing totals
+  totals=$(grep -E '^(Plan: |No changes\.)' <<<"$text" | head -n 1 || true)
   if ((${#text} > max)); then
     text="${text:0:max}"$'\n''...[truncated]'
   fi
-  while [[ "$text" == *"$fence"* ]]; do
+  while [[ "$text" == *"$fence"* || "$changes" == *"$fence"* ]]; do
     fence="${fence}\`"
   done
-  # printf does not rescan the plan text, so a $() or backtick in the
+  # Expansion does not rescan the plan text, so a $() or backtick in the
   # plan is not executed.
-  body=$(printf '%s\n' \
-    "$marker" \
-    "### ${app} Terraform plan" \
-    "" \
-    "\`tofu plan -lock=false\` as \`${identity_account}\`. This does not apply." \
-    "" \
-    "$fence" \
-    "$text" \
-    "$fence")
+  body="${marker}"$'\n'"### ${app} Terraform plan"$'\n\n'
+  body+="\`tofu plan -lock=false\` as \`${identity_account}\`. This does not apply."
+  if [[ -n "$totals" ]]; then
+    body+=$'\n\n'"**${totals}**"
+  fi
+  if [[ -n "$changes" ]]; then
+    body+=$'\n\n'"${fence}diff"$'\n'"${changes}"$'\n'"${fence}"
+  fi
+  body+=$'\n\n'"<details><summary>Full plan</summary>"$'\n\n'
+  body+="${fence}"$'\n'"${text}"$'\n'"${fence}"$'\n\n'"</details>"
   printf '%s\n' "$text"
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     printf '%s\n' "$body" >>"$GITHUB_STEP_SUMMARY"
@@ -362,20 +386,26 @@ if [[ "$mode" == "plan" ]]; then
       -input=false \
       -no-color \
       -lock=false \
+      -out=PLANFILE \
       "${tf_vars[@]}"
+    run tofu -chdir="$tfdir" show -json PLANFILE
     echo "plan <comment>"
     exit 0
   fi
+  planfile=$(mktemp)
+  trap 'rm -f "$planfile"' EXIT
   plan_text=$(tofu -chdir="$plan_dir" plan \
     -input=false \
     -no-color \
     -lock=false \
+    -out="$planfile" \
     "${tf_vars[@]}" | filter_plan_output)
   if [[ -z "$plan_text" ]]; then
     echo "gcp: tofu plan produced no output" >&2
     exit 1
   fi
-  post_plan "$plan_text"
+  plan_changes=$(tofu -chdir="$plan_dir" show -json "$planfile" | summarize_plan_json)
+  post_plan "$plan_text" "$plan_changes"
   exit 0
 fi
 
