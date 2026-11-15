@@ -79,6 +79,7 @@ import C3BootProofs.Proofs.FeIsNeg
 import C3BootProofs.Proofs.Ashldi3
 import C3BootProofs.Proofs.DerAlgorithm
 import C3BootProofs.Proofs.ListsOid
+import C3BootProofs.Proofs.LeadingZeros
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
@@ -5217,6 +5218,31 @@ theorem exists_listsOid_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `UintRef::leading_zeros` where the image
+loads it, and zeros elsewhere. -/
+def witnessMemLz : RV32.Word → BitVec 8 :=
+  RV32.regionMem [(Image.leadingZerosAddress, Image.leadingZerosCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `UintRef::leading_zeros` on no limbs at `0x3FCC6000`
+with the stack at `0x3FCC8000` meets `leadingZeros_correct`'s hypotheses. -/
+theorem exists_leadingZeros_machine :
+    ∃ (m : RV32.Machine) (P sp0 p retAddr : RV32.Word) (n : Nat), RV32.CodeIn m.mem P Image.leadingZerosCode ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = p ∧ RV32.reg m RV32.a1 = BitVec.ofNat 32 n ∧
+      n < 2 ^ 32 ∧ p.toNat % 4 = 0 ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      sp0.toNat % 4 = 0 ∧ RV32.Sep (sp0 + 0xFFFFFFE0) 0x20 P Image.leadingZerosCode.length ∧
+      RV32.Sep p (4 * n) (sp0 + 0xFFFFFFE0) 0x20 := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0 0, BitVec.ofNat 32 Image.leadingZerosAddress, witnessMemLz⟩,
+    BitVec.ofNat 32 Image.leadingZerosAddress, 0x3FCC8000, 0x3FCC6000, 0, 0, ?_, rfl, rfl, rfl, rfl, by decide,
+    by decide, rfl, by decide, by decide, ?_, ?_⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -6325,3 +6351,9 @@ end C3
 
 /-- info: 'C3.exists_listsOid_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_listsOid_machine
+
+/-- info: 'C3.RV32.leadingZeros_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.leadingZeros_correct
+
+/-- info: 'C3.exists_leadingZeros_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_leadingZeros_machine

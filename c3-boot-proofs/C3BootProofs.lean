@@ -164,6 +164,7 @@ import C3BootProofs.Proofs.FeIsNeg
 import C3BootProofs.Proofs.Ashldi3
 import C3BootProofs.Proofs.DerAlgorithm
 import C3BootProofs.Proofs.ListsOid
+import C3BootProofs.Proofs.LeadingZeros
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.UpdateFg12
 import C3BootProofs.Proofs.UpdateFg8
