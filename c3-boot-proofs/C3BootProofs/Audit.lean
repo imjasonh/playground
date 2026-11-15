@@ -89,6 +89,7 @@ import C3BootProofs.Proofs.EdNiels
 import C3BootProofs.Proofs.Pow22501
 import C3BootProofs.Proofs.FeCondAssign
 import C3BootProofs.Proofs.FeNeg
+import C3BootProofs.Proofs.Scalar29Pack
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
@@ -5532,6 +5533,33 @@ theorem exists_feNeg_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `Scalar29::pack` where the image loads it,
+and zeros elsewhere. -/
+def witnessMemScalar29Pack : RV32.Word → BitVec 8 :=
+  RV32.regionMem [(Image.scalar29PackAddress, Image.scalar29PackCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Scalar29::pack` on the limbs at `0x3FCC6000` with
+the result at `0x3FCC6100` and the stack at `0x3FCC8000` meets
+`scalar29Pack_correct`'s hypotheses. -/
+theorem exists_scalar29Pack_machine :
+    ∃ (m : RV32.Machine) (P sp0 out ap retAddr : RV32.Word), RV32.CodeIn m.mem P Image.scalar29PackCode ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = ap ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ sp0.toNat % 4 = 0 ∧ 0x20 ≤ sp0.toNat ∧
+      ap.toNat % 4 = 0 ∧ RV32.Sep (sp0 + 0xFFFFFFE0) 0x20 P Image.scalar29PackCode.length ∧
+      RV32.Sep out 32 P Image.scalar29PackCode.length ∧ RV32.Sep out 32 (sp0 + 0xFFFFFFE0) 0x20 ∧
+      RV32.Sep ap 36 (sp0 + 0xFFFFFFE0) 0x20 ∧ RV32.Sep out 32 ap 36 := by
+  refine ⟨⟨leafRegs 0x3FCC6100 0x3FCC6000 0, BitVec.ofNat 32 Image.scalar29PackAddress, witnessMemScalar29Pack⟩,
+    BitVec.ofNat 32 Image.scalar29PackAddress, 0x3FCC8000, 0x3FCC6100, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, rfl, rfl,
+    by decide, by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -6706,3 +6734,9 @@ end C3
 
 /-- info: 'C3.exists_feNeg_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_feNeg_machine
+
+/-- info: 'C3.RV32.scalar29Pack_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.scalar29Pack_correct
+
+/-- info: 'C3.exists_scalar29Pack_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_scalar29Pack_machine

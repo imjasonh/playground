@@ -174,6 +174,7 @@ import C3BootProofs.Proofs.EdNiels
 import C3BootProofs.Proofs.Pow22501
 import C3BootProofs.Proofs.FeCondAssign
 import C3BootProofs.Proofs.FeNeg
+import C3BootProofs.Proofs.Scalar29Pack
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.UpdateFg12
 import C3BootProofs.Proofs.UpdateFg8
