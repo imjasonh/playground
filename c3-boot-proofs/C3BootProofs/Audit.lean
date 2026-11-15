@@ -65,6 +65,9 @@ import C3BootProofs.Proofs.DerPositive
 import C3BootProofs.Proofs.DerScalar32
 import C3BootProofs.Proofs.EcdsaSig
 import C3BootProofs.Proofs.IntegerIs
+import C3BootProofs.Proofs.CheckpointLine
+import C3BootProofs.Proofs.Sec1Tag
+import C3BootProofs.Proofs.TimeDigits
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
@@ -3581,6 +3584,80 @@ theorem exists_derIntegerIs_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `checkpoint::line`, the `sec1::Tag`
+helpers, and `time::digits::<2>` where the image loads them, a slice reader
+at `0x3FCC6000` over 2 bytes at `0x3FCC7000`, and zeros elsewhere. -/
+def witnessMemLeaf2 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.checkpointLineAddress, Image.checkpointLineCode),
+    (Image.tagMessageLenAddress, Image.tagMessageLenCode),
+    (Image.tagFromU8Address, Image.tagFromU8Code),
+    (Image.timeDigits2Address, Image.timeDigits2Code),
+    (0x3FCC6000, [0x00, 0x70, 0xCC, 0x3F, 0x02, 0x00, 0x00, 0x00])]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `checkpoint::line` on 3 bytes meets
+`checkpointLine_correct`'s hypotheses. -/
+theorem exists_checkpointLine_machine :
+    ∃ (m : RV32.Machine) (base retAddr out p : RV32.Word) (n : Nat), RV32.CodeIn m.mem base Image.checkpointLineCode ∧
+      m.pc = base ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = p ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
+      n < 2 ^ 32 ∧ out.toNat % 4 = 0 ∧ RV32.Sep out 16 base Image.checkpointLineCode.length ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC7000 3, BitVec.ofNat 32 Image.checkpointLineAddress, witnessMemLeaf2⟩,
+    BitVec.ofNat 32 Image.checkpointLineAddress, 0, 0x3FCC5000, 0x3FCC7000, 3, ?_, rfl, rfl, rfl, rfl, by decide,
+    by decide, ?_, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Tag::message_len` meets `tagMessageLen_correct`'s
+hypotheses. -/
+theorem exists_tagMessageLen_machine :
+    ∃ (m : RV32.Machine) (base retAddr t fe : RV32.Word), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.tagMessageLenCode ∧ m.pc = base ∧ RV32.reg m RV32.a0 = t ∧
+      RV32.reg m RV32.a1 = fe ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 4 0x30 0, BitVec.ofNat 32 Image.tagMessageLenAddress, witnessMemLeaf2⟩,
+    BitVec.ofNat 32 Image.tagMessageLenAddress, 0, 4, 0x30, by decide, ?_, rfl, rfl, rfl, rfl, by decide⟩
+  code_in
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Tag::from_u8` meets `tagFromU8_correct`'s
+hypotheses. -/
+theorem exists_tagFromU8_machine :
+    ∃ (m : RV32.Machine) (base retAddr out b : RV32.Word), RV32.CodeIn m.mem base Image.tagFromU8Code ∧
+      m.pc = base ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = b ∧ out.toNat % 4 = 0 ∧
+      RV32.Sep out 8 base Image.tagFromU8Code.length ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 4 0, BitVec.ofNat 32 Image.tagFromU8Address, witnessMemLeaf2⟩,
+    BitVec.ofNat 32 Image.tagFromU8Address, 0, 0x3FCC5000, 4, ?_, rfl, rfl, rfl, by decide, ?_, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `time::digits::<2>` on a 2-byte slice meets
+`timeDigits2_correct`'s hypotheses. -/
+theorem exists_timeDigits2_machine :
+    ∃ (m : RV32.Machine) (base retAddr out d p : RV32.Word) (n : Nat), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.timeDigits2Code ∧ m.pc = base ∧ RV32.reg m RV32.a0 = out ∧
+      RV32.reg m RV32.a1 = d ∧ d.toNat % 4 = 0 ∧ out.toNat % 4 = 0 ∧ n < 2 ^ 32 ∧ RV32.memLoad32 m.mem d = p ∧
+      RV32.memLoad32 m.mem (d + 4) = BitVec.ofNat 32 n ∧ RV32.Sep out 8 base Image.timeDigits2Code.length ∧
+      RV32.Sep d 8 base Image.timeDigits2Code.length ∧ RV32.Sep d 8 p 2 ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.timeDigits2Address, witnessMemLeaf2⟩,
+    BitVec.ofNat 32 Image.timeDigits2Address, 0, 0x3FCC5000, 0x3FCC6000, 0x3FCC7000, 2, by decide, ?_, rfl, rfl, rfl,
+    by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | decide +kernel
+
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
 /-- A machine that calls `equal_same_length` on two empty slices, with the
@@ -5420,6 +5497,30 @@ end C3
 
 /-- info: 'C3.exists_derIntegerIs_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_derIntegerIs_machine
+
+/-- info: 'C3.RV32.checkpointLine_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.checkpointLine_correct
+
+/-- info: 'C3.exists_checkpointLine_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_checkpointLine_machine
+
+/-- info: 'C3.RV32.tagMessageLen_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tagMessageLen_correct
+
+/-- info: 'C3.exists_tagMessageLen_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_tagMessageLen_machine
+
+/-- info: 'C3.RV32.tagFromU8_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tagFromU8_correct
+
+/-- info: 'C3.exists_tagFromU8_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_tagFromU8_machine
+
+/-- info: 'C3.RV32.timeDigits2_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.timeDigits2_correct
+
+/-- info: 'C3.exists_timeDigits2_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_timeDigits2_machine
 
 /-- info: 'C3.RV32.derPositiveInteger_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.derPositiveInteger_correct
