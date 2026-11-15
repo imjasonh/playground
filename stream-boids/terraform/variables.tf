@@ -21,9 +21,9 @@ variable "name" {
 }
 
 variable "machine_type" {
-  description = "Spot machine type. At 10,000 boids, 1080p60, and the faster preset, the stream uses about 4 vCPUs."
+  description = "Spot machine type, Arm or x86. The image runs on both. n4a-highcpu-2 should keep up with 720p30; c3d-highcpu-4 with 1080p60 and the veryfast preset."
   type        = string
-  default     = "c3-highcpu-8"
+  default     = "n4a-highcpu-2"
 }
 
 variable "running" {
@@ -44,6 +44,24 @@ variable "video_id" {
   default     = ""
 }
 
+variable "width" {
+  description = "Frame width in pixels. Must be even."
+  type        = number
+  default     = 1280
+}
+
+variable "height" {
+  description = "Frame height in pixels. Must be even."
+  type        = number
+  default     = 720
+}
+
+variable "fps" {
+  description = "Frames per second. Must divide 48000."
+  type        = number
+  default     = 30
+}
+
 variable "boid_cap" {
   description = "Most boids on screen: one per viewer up to this many."
   type        = number
@@ -53,13 +71,13 @@ variable "boid_cap" {
 variable "x264_preset" {
   description = "x264 preset. Slower presets look better at the same bitrate and use more CPU."
   type        = string
-  default     = "faster"
+  default     = "veryfast"
 }
 
 variable "video_bitrate" {
-  description = "Video bitrate in bits per second. YouTube recommends 12 Mbps for 1080p60. Egress to YouTube is most of the cost."
+  description = "Video bitrate in bits per second. About 4.5 Mbps suits 720p30 and 12 Mbps 1080p60. Data sent to YouTube is free."
   type        = number
-  default     = 12000000
+  default     = 4500000
 }
 
 variable "log_level" {

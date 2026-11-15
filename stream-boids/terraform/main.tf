@@ -46,7 +46,7 @@ resource "ko_build" "app" {
   importpath  = "github.com/imjasonh/playground/stream-boids"
   working_dir = abspath("${path.module}/..")
   base_image  = apko_build.base.image_ref
-  platforms   = ["linux/amd64"]
+  platforms   = ["linux/amd64", "linux/arm64"]
   sbom        = "none"
 }
 
@@ -114,11 +114,22 @@ locals {
     YOUTUBE_API_KEY_SECRET = google_secret_manager_secret.secrets["youtube-api-key"].secret_id
     CHANNEL_ID             = var.channel_id
     VIDEO_ID               = var.video_id
+    WIDTH                  = tostring(var.width)
+    HEIGHT                 = tostring(var.height)
+    FPS                    = tostring(var.fps)
     BOID_CAP               = tostring(var.boid_cap)
     X264_PRESET            = var.x264_preset
     VIDEO_BITRATE          = tostring(var.video_bitrate)
     LOG_LEVEL              = var.log_level
   }
+
+  family = split("-", var.machine_type)[0]
+  # The image is built for both architectures, so the machine family picks
+  # the boot image.
+  arm = contains(["t2a", "c4a", "n4a"], local.family)
+  # Newer families boot from Hyperdisk, and some support nothing else. The
+  # rest need Persistent Disk.
+  hyperdisk = contains(["c3", "c3d", "c4", "c4a", "c4d", "n4", "n4a", "n4d"], local.family)
 }
 
 resource "google_compute_instance_template" "vm" {
@@ -136,15 +147,19 @@ resource "google_compute_instance_template" "vm" {
   disk {
     # The family resolves when each VM is created, so a new COS release
     # doesn't replace the template.
-    source_image = "cos-cloud/cos-stable"
-    disk_type    = "pd-balanced"
+    source_image = local.arm ? "cos-cloud/cos-arm64-stable" : "cos-cloud/cos-stable"
+    disk_type    = local.hyperdisk ? "hyperdisk-balanced" : "pd-balanced"
     disk_size_gb = 10
-    auto_delete  = true
-    boot         = true
+    # Hyperdisk's free baseline. More costs extra and the VM doesn't need it.
+    provisioned_iops       = local.hyperdisk ? 3000 : null
+    provisioned_throughput = local.hyperdisk ? 140 : null
+    auto_delete            = true
+    boot                   = true
   }
 
   network_interface {
     subnetwork = google_compute_subnetwork.net.id
+    nic_type   = "GVNIC"
     access_config {}
   }
 

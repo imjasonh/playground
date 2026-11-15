@@ -182,9 +182,11 @@ requests, as it does for `cloudrun-sqlite`. The stack creates:
 - An Artifact Registry repository. Terraform builds the base image with
   [apko](https://github.com/chainguard-dev/apko) from `apko.yaml`: Chainguard
   packages from `apk.cgr.dev/chainguard`, including ffmpeg 9.0. Then it
-  builds the program onto that base with [ko](https://ko.build).
+  builds the program onto that base with [ko](https://ko.build). Both images
+  are built for linux/amd64 and linux/arm64.
 - A Spot VM template that runs Container-Optimized OS, and a regional managed
-  instance group of one VM. Each VM gets an ephemeral external IP and no
+  instance group of one VM. The default machine, `n4a-highcpu-2`, streams
+  1280x720 at 30 fps; see [Performance and cost](#performance-and-cost). Each VM gets an ephemeral external IP and no
   inbound firewall rules. cloud-init starts the container under systemd.
 - The VM's service account, the two secrets, and a VPC.
 
@@ -252,25 +254,37 @@ last state it read.
 
 ## Performance and cost
 
-The budget is $0.10 a minute. On an 8-vCPU Intel Xeon VM, 10,000 boids at
-1920x1080 and 60 fps took about 2.7 ms a frame to simulate and render, and
-ffmpeg kept up with no dropped frames at 12 Mbps:
+The budget is $0.10 a minute. CPU use with 10,000 boids and the `veryfast`
+preset, measured on an Apple M-series Mac, which is Arm like N4A. The
+program and ffmpeg 9.0.2 ran in the linux/arm64 image, limited to 2 CPUs.
+All four held real time with no dropped frames:
 
-| x264 preset | ffmpeg CPU | stream-boids CPU |
+| Size | Bitrate | Cores |
 |---|---|---|
-| `veryfast` | 2.1 cores | 0.6 cores |
-| `faster` | 3.2 cores | 0.55 cores |
+| 1280x720, 30 fps | 4.5 Mbps | 0.55 |
+| 1280x720, 60 fps | 7.5 Mbps | 0.9 |
+| 1920x1080, 30 fps | 8 Mbps | 0.9 |
+| 1920x1080, 60 fps | 12 Mbps | 1.9 (outside the container) |
 
-Terraform runs `c3-highcpu-8` with `faster`, which leaves room for chat
-events and a noisy neighbor. These numbers predate `-tune zerolatency`, which
-the encoder now passes so that ffmpeg doesn't stall on machines with many
-cores. It turns off B-frames and lookahead, so ffmpeg's CPU use and the
-quality at a given bitrate may differ.
+A Google Cloud vCPU does less work than one of these cores. Terraform
+runs 1280x720 at 30 fps on `n4a-highcpu-2`, two Axion cores, which should
+leave about half the VM free. For 1920x1080 at 60 fps, set `machine_type`
+to `c3d-highcpu-4`, `width` and `height` to 1920 and 1080, `fps` to 60,
+and `video_bitrate` to 12000000. The image runs on Arm and x86, and
+Terraform picks the boot image and disk type from the machine family.
 
-At 12 Mbps, the stream sends about 5.4 GB an hour. Internet egress at about
-$0.12 a GB costs about $0.65 an hour, and the Spot VM costs less than $0.15
-an hour. Together that's about $0.013 a minute. Check current prices on the
-[Compute Engine pricing](https://cloud.google.com/compute/all-pricing) page.
+Spot prices in `us-central1`, for a month of 730 hours:
+
+| Machine | vCPUs | A month |
+|---|---|---|
+| `n4a-highcpu-2` | 2 | about $17 |
+| `c3d-highcpu-4` | 4 | about $26 |
+| `c3-highcpu-8` | 8 | about $88 |
+
+The external IP adds about $1.80 a month and the boot disk about $1.
+[Data sent to YouTube](https://cloud.google.com/vpc/network-pricing) is free.
+Spot prices change as often as daily; check the
+[Spot VM pricing](https://cloud.google.com/spot-vms/pricing) page.
 
 ## Not yet verified
 
@@ -278,7 +292,8 @@ These parts haven't run against the real services:
 
 - A YouTube Data API key may not be enough for `liveChatMessages.list`. If
   YouTube rejects it, the program needs OAuth credentials for the channel.
-- ffmpeg 9.0 on Linux. The program streamed 1080p60 at full speed with
-  ffmpeg 9.0.2 on macOS.
+- An N4A VM. The stream kept up on 2 Apple M-series cores, which are
+  faster than Axion's. Container-Optimized OS for Arm hasn't booted on N4A
+  with this template either.
 - Container-Optimized OS sending the container's logs to Cloud Logging as
   `cos_containers`.
