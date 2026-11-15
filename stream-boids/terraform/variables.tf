@@ -35,7 +35,7 @@ variable "running" {
 variable "channel_id" {
   description = "YouTube channel ID (UC...). The service searches it for the live broadcast. Empty, with video_id empty, shows a fixed viewer count."
   type        = string
-  default     = ""
+  default     = "UCH0jEHn7N5GQOE51bw1tTjg"
 }
 
 variable "video_id" {
