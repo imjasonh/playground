@@ -18,6 +18,9 @@ resource "google_project_service" "services" {
     "compute.googleapis.com",
     "logging.googleapis.com",
     "secretmanager.googleapis.com",
+    # The API key in Secret Manager calls the YouTube Data API, which must
+    # be enabled in the key's project.
+    "youtube.googleapis.com",
   ])
 
   service            = each.key
