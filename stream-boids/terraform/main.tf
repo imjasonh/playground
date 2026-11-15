@@ -1,6 +1,6 @@
 # stream-boids runs on one Spot VM in a regional managed instance group.
-# When Google preempts the VM, the group creates another one, in any zone
-# with capacity, and the new VM picks the stream up again. YouTube keeps
+# When Google preempts the VM, it stops, the group starts it again once
+# its zone has capacity, and it picks the stream up again. YouTube keeps
 # the broadcast live across the gap when the broadcast was scheduled with
 # Auto-start on and Auto-stop off.
 #
@@ -137,11 +137,12 @@ resource "google_compute_instance_template" "vm" {
   machine_type = var.machine_type
 
   scheduling {
+    # A managed instance group refuses Spot VMs that delete themselves.
+    instance_termination_action = "STOP"
     provisioning_model          = "SPOT"
     preemptible                 = true
     automatic_restart           = false
     on_host_maintenance         = "TERMINATE"
-    instance_termination_action = "DELETE"
   }
 
   disk {

@@ -8,8 +8,9 @@ show a thank-you banner. A HUD in the corner shows the viewer count and how
 many members are watching.
 
 It runs as a container on one Spot VM in Compute Engine. When Compute Engine
-preempts the VM, the managed instance group creates another one, and the
-program reconnects to the same YouTube stream key.
+preempts the VM, the VM stops, the managed instance group starts it again
+when its zone has capacity, and the program reconnects to the same YouTube
+stream key.
 
 ## How it works
 
