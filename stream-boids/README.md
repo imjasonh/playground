@@ -203,7 +203,8 @@ requests, as it does for `cloudrun-sqlite`. The stack creates:
    - Turn on live chat.
 
 1. In the [Google Cloud console](https://console.cloud.google.com/apis/credentials),
-   create an API key that can call only the YouTube Data API v3.
+   create an API key that can call only the YouTube Data API v3. Terraform
+   enables that API in the project.
 
 1. Set `video_id` to the scheduled stream's video ID, or `channel_id` to the
    channel, in `terraform/variables.tf`. `deploy-gcp.yml` passes only
