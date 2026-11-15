@@ -167,6 +167,7 @@ FUNCTIONS = [
     ("derPositiveInteger", "<c3_verify::der::Der>::positive_integer"),
     ("derScalar48", "c3_verify::der::scalar::<48>"),
     ("derScalar32", "c3_verify::der::scalar::<32>"),
+    ("ecdsaSignature48", "c3_verify::der::ecdsa_signature::<48>"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
