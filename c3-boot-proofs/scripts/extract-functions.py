@@ -168,6 +168,17 @@ FUNCTIONS = [
     ("derScalar48", "c3_verify::der::scalar::<48>"),
     ("derScalar32", "c3_verify::der::scalar::<32>"),
     ("ecdsaSignature48", "c3_verify::der::ecdsa_signature::<48>"),
+    ("derIntegerIs", "<c3_verify::der::Der>::integer_is"),
+    ("derAlgorithm", "<c3_verify::der::Der>::algorithm"),
+    ("listsOid", "c3_verify::der::lists_oid"),
+    ("checkpointLine", "c3_verify::checkpoint::line"),
+    ("timeDigits2", "c3_verify::time::digits::<2>"),
+    ("base64DecodeInto", "c3_verify::base64::decode_into"),
+    ("scalarIsZero384", "<elliptic_curve::scalar::value::ScalarValue<p384::NistP384>>::is_zero"),
+    ("scalarIsZero256", "<elliptic_curve::scalar::value::ScalarValue<p256::NistP256>>::is_zero"),
+    ("tagFromU8", "<sec1::point::Tag>::from_u8"),
+    ("tagMessageLen", "<sec1::point::Tag>::message_len"),
+    ("p256FieldNeg", "<p256::arithmetic::field::FieldElement>::neg"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
