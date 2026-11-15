@@ -72,12 +72,11 @@ func TestStreamsToFile(t *testing.T) {
 
 	out := filepath.Join(t.TempDir(), "out.flv")
 	cfg := load(t, map[string]string{
-		"WIDTH":            "320",
-		"HEIGHT":           "180",
-		"FPS":              "30",
+		"WIDTH":            "1280",
+		"HEIGHT":           "720",
+		"FPS":              "60",
 		"BOID_CAP":         "100",
 		"OUTPUT_URL":       out,
-		"X264_PRESET":      "ultrafast",
 		"VIDEO_BITRATE":    "500000",
 		"YOUTUBE_API_BASE": srv.URL + "/youtube/v3",
 		"VIDEO_ID":         fakeyt.VideoID,
@@ -116,12 +115,13 @@ func TestStreamsToFile(t *testing.T) {
 		t.Fatalf("ffprobe: %v", err)
 	}
 	fields := strings.Split(strings.TrimSpace(string(probe)), ",")
-	if len(fields) != 3 || fields[0] != "320" || fields[1] != "180" {
-		t.Fatalf("ffprobe = %q, want 320,180,<frames>", probe)
+	if len(fields) != 3 || fields[0] != "1280" || fields[1] != "720" {
+		t.Fatalf("ffprobe = %q, want 1280,720,<frames>", probe)
 	}
-	// Three seconds at 30 fps, less ffmpeg's startup.
-	if n, _ := strconv.Atoi(fields[2]); n < 50 {
-		t.Errorf("encoded %d frames, want at least 50", n)
+	// Three seconds at 60 fps, less ffmpeg's startup. A stalled pipeline
+	// encodes a few dozen.
+	if n, _ := strconv.Atoi(fields[2]); n < 120 {
+		t.Errorf("encoded %d frames, want at least 120", n)
 	}
 }
 

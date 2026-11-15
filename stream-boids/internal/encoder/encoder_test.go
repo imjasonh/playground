@@ -130,7 +130,7 @@ func start(t *testing.T, mode string, tweak func(*Config)) *harness {
 			return fmt.Sprintf("rtmp://ingest.example/live2/secret-key-%04d", n), nil
 		},
 		MinBackoff: 10 * time.Millisecond, MaxBackoff: 50 * time.Millisecond,
-		StopTimeout: 5 * time.Second, QueueFrames: 4,
+		StopTimeout: 5 * time.Second,
 	}
 	if tweak != nil {
 		tweak(&cfg)
@@ -383,7 +383,7 @@ func TestRealFFmpeg(t *testing.T) {
 		FFmpeg: ffmpeg, Width: 320, Height: 180, FPS: 30, SampleRate: 48000,
 		VideoBitrate: 500000, Preset: "ultrafast", Format: "flv",
 		URL:         func(context.Context) (string, error) { return out, nil },
-		QueueFrames: 4, StopTimeout: 20 * time.Second,
+		StopTimeout: 20 * time.Second,
 	})
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)

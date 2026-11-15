@@ -136,9 +136,6 @@ func (c config) secrets() (outputURL func(context.Context) (string, error), apiK
 	return outputURL, apiKey
 }
 
-// queueFrames is how many frames may wait for ffmpeg.
-const queueFrames = 2
-
 func run(ctx context.Context, cfg config) error {
 	if err := cfg.validate(); err != nil {
 		return err
@@ -156,9 +153,13 @@ func run(ctx context.Context, cfg config) error {
 	if err != nil {
 		return err
 	}
-	// The encoder holds up to queueFrames frames plus one per pipe it is
-	// writing, and the loop renders one more.
-	pool := make(chan *buffer, queueFrames+3)
+	outputURL, apiKey := cfg.secrets()
+	enc := encoder.New(encoder.Config{
+		FFmpeg: cfg.FFmpeg, Width: cfg.Width, Height: cfg.Height, FPS: cfg.FPS, SampleRate: sampleRate,
+		VideoBitrate: cfg.VideoBitrate, Preset: cfg.X264Preset, Format: cfg.OutputFormat, URL: outputURL,
+	})
+	// The loop renders one frame while the encoder holds the rest.
+	pool := make(chan *buffer, enc.Capacity()+1)
 	for range cap(pool) {
 		f, err := frame.New(cfg.Width, cfg.Height)
 		if err != nil {
@@ -167,19 +168,14 @@ func run(ctx context.Context, cfg config) error {
 		pool <- &buffer{video: f, audio: make([]byte, sampleRate/cfg.FPS*audio.BytesPerFrame)}
 	}
 
-	outputURL, apiKey := cfg.secrets()
 	s := &streamer{
-		cfg:   cfg,
-		flock: fl,
-		synth: synth,
-		show:  show.New(show.Config{Cap: cfg.BoidCap, Min: cfg.MinBoids}, fl, synth),
-		rend:  rend,
-		pool:  pool,
-		enc: encoder.New(encoder.Config{
-			FFmpeg: cfg.FFmpeg, Width: cfg.Width, Height: cfg.Height, FPS: cfg.FPS, SampleRate: sampleRate,
-			VideoBitrate: cfg.VideoBitrate, Preset: cfg.X264Preset, Format: cfg.OutputFormat, URL: outputURL,
-			QueueFrames: queueFrames,
-		}),
+		cfg:      cfg,
+		flock:    fl,
+		synth:    synth,
+		show:     show.New(show.Config{Cap: cfg.BoidCap, Min: cfg.MinBoids}, fl, synth),
+		rend:     rend,
+		pool:     pool,
+		enc:      enc,
 		audience: func() youtube.State { return youtube.State{Viewers: cfg.StaticViewers, ViewersKnown: true} },
 	}
 

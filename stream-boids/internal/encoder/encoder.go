@@ -56,8 +56,6 @@ type Config struct {
 	// StopTimeout is how long ffmpeg has to flush and exit after its input
 	// closes before the encoder kills it.
 	StopTimeout time.Duration
-	// QueueFrames is how many frames may wait for ffmpeg to read them.
-	QueueFrames int
 }
 
 // Job is one video frame and the audio that plays during it.
@@ -83,7 +81,8 @@ type Stats struct {
 
 // Encoder runs ffmpeg and feeds it frames.
 type Encoder struct {
-	cfg Config
+	cfg   Config
+	queue int
 
 	mu  sync.Mutex
 	cur *proc
@@ -106,14 +105,19 @@ func New(cfg Config) *Encoder {
 	if cfg.StopTimeout <= 0 {
 		cfg.StopTimeout = 10 * time.Second
 	}
-	if cfg.QueueFrames <= 0 {
-		cfg.QueueFrames = 2
-	}
 	if cfg.Format == "" {
 		cfg.Format = "flv"
 	}
-	return &Encoder{cfg: cfg}
+	// ffmpeg's raw PCM demuxer passes audio on about a tenth of a second
+	// at a time, and stops reading video until it has that much. A frame
+	// is dropped whole when either queue is full, so the queue must hold
+	// more than a tenth of a second of frames or the pipes deadlock.
+	return &Encoder{cfg: cfg, queue: (cfg.FPS+9)/10 + 2}
 }
+
+// Capacity is the most jobs the encoder holds at once: its queue, plus
+// one being written to each pipe.
+func (e *Encoder) Capacity() int { return e.queue + 2 }
 
 type job struct {
 	Job
@@ -254,8 +258,8 @@ func (e *Encoder) runOnce(ctx context.Context) error {
 
 	p := &proc{
 		started: time.Now(),
-		video:   make(chan *job, e.cfg.QueueFrames),
-		audio:   make(chan *job, e.cfg.QueueFrames),
+		video:   make(chan *job, e.queue),
+		audio:   make(chan *job, e.queue),
 	}
 	p.lastProgress.Store(p.started.UnixNano())
 
@@ -359,7 +363,7 @@ func ffmpegArgs(cfg Config, url string) []string {
 	gop := strconv.Itoa(2 * cfg.FPS)
 	rate := strconv.Itoa(cfg.VideoBitrate)
 	return []string{
-		"-hide_banner", "-loglevel", "warning", "-nostats",
+		"-hide_banner", "-loglevel", "warning", "-nostats", "-y",
 		"-progress", "pipe:1",
 		// ffmpeg opens the inputs one at a time and by default reads
 		// seconds of each before opening the next, but frames arrive on
@@ -369,6 +373,9 @@ func ffmpegArgs(cfg Config, url string) []string {
 		"-f", "rawvideo", "-pix_fmt", "yuv420p",
 		"-video_size", fmt.Sprintf("%dx%d", cfg.Width, cfg.Height),
 		"-framerate", strconv.Itoa(cfg.FPS),
+		// The renderer draws BT.709 limited range. Without these tags
+		// ffmpeg converts every frame through RGB to reach the output's.
+		"-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
 		// Each queued video packet is a whole raw frame, so keep the
 		// queue short; frames wait in the encoder's queue instead.
 		"-thread_queue_size", "8",
@@ -383,7 +390,11 @@ func ffmpegArgs(cfg Config, url string) []string {
 		"-b:v", rate, "-maxrate", rate, "-bufsize", strconv.Itoa(2 * cfg.VideoBitrate),
 		// A keyframe every two seconds, as YouTube asks, and never between.
 		"-g", gop, "-keyint_min", gop, "-sc_threshold", "0",
-		"-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
+		// x264 otherwise holds back a frame per thread, plus lookahead,
+		// before its first output. ffmpeg stops reading audio while it
+		// waits, the audio pipe fills, and frames are dropped whole, so
+		// with enough cores x264 never gets the frames it is waiting for.
+		"-tune", "zerolatency",
 		"-c:a", "aac", "-b:a", "160k", "-ar", strconv.Itoa(cfg.SampleRate),
 		"-flvflags", "no_duration_filesize",
 		// Give up on a connection that stops accepting data, in
