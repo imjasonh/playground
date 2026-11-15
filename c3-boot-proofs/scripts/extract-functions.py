@@ -163,6 +163,8 @@ FUNCTIONS = [
     ("sliceCtAssign", "<[u32] as ctutils::traits::ct_assign::CtAssign>::ct_assign"),
     ("uint12CtAssign", "<crypto_bigint::uint::Uint<12> as ctutils::traits::ct_assign::CtAssign>::ct_assign"),
     ("copyFromSliceU8", "core::slice::copy_from_slice_impl::<u8>"),
+    ("zipSkipNext", "<core::iter::adapters::zip::Zip<core::iter::adapters::skip::Skip<core::slice::iter::IterMut<u8>>, core::slice::iter::Iter<u8>> as core::iter::traits::iterator::Iterator>::next"),
+    ("derPositiveInteger", "<c3_verify::der::Der>::positive_integer"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
