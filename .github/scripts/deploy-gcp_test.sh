@@ -130,7 +130,21 @@ if [ "\$2" = "plan" ]; then
   echo 'data.google_iam_workload_identity_pool.github[0]: Reading...'
   echo 'data.google_iam_workload_identity_pool.github[0]: Read complete after 0s [id=pool]'
   echo
-  echo "Plan: 0 to add, 0 to change, 0 to destroy."
+  echo '  # google_storage_bucket.data will be created'
+  echo "Plan: 1 to add, 1 to change, 1 to destroy."
+fi
+if [ "\$2" = "show" ]; then
+  cat <<'JSON'
+{"resource_changes": [
+  {"address": "data.google_compute_zones.available", "change": {"actions": ["read"]}},
+  {"address": "google_cloud_run_v2_service.app", "change": {"actions": ["update"]}},
+  {"address": "google_project_service.run", "change": {"actions": ["no-op"]}},
+  {"address": "google_service_account.old", "change": {"actions": ["delete"]}},
+  {"address": "google_storage_bucket.data", "change": {"actions": ["create"]}},
+  {"address": "google_storage_bucket.logs", "change": {"actions": ["delete", "create"]}},
+  {"address": "google_storage_bucket.logs", "deposed": "abc", "change": {"actions": ["delete"]}}
+]}
+JSON
 fi
 EOF
 cat >"$tmp/bin/go" <<'EOF'
@@ -288,15 +302,40 @@ plan_out=$(
     bash "$deploy" --plan example-app
 )
 plan_calls=$(cat "$log")
-assert_contains "$plan_calls" "tofu -chdir=${tmp}/example-app/terraform plan -input=false -no-color -lock=false -var project_id=${project}" "tofu plan"
-assert_contains "$plan_out" "Plan: 0 to add, 0 to change, 0 to destroy." "prints the plan"
+assert_contains "$plan_calls" "tofu -chdir=${tmp}/example-app/terraform plan -input=false -no-color -lock=false -out=" "tofu plan"
+assert_contains "$plan_calls" "-var project_id=${project}" "tofu plan vars"
+assert_contains "$plan_calls" "tofu -chdir=${tmp}/example-app/terraform show -json " "tofu show reads the plan file"
+assert_contains "$plan_out" "Plan: 1 to add, 1 to change, 1 to destroy." "prints the plan"
 if [[ "$plan_out" == *"Refreshing state"* || "$plan_out" == *"Reading..."* || "$(cat "$summary")" == *"Refreshing state"* ]]; then
   fail "plan comment includes refresh lines"
   echo "$plan_out" >&2
 fi
 assert_contains "$plan_out" "commented on pull request 12" "comments on the pull request"
-assert_contains "$(cat "$summary")" "<!-- gcp-plan:example-app -->" "summary has the comment marker"
-assert_contains "$(cat "$summary")" "Plan: 0 to add, 0 to change, 0 to destroy." "summary has the plan"
+want_summary='<!-- gcp-plan:example-app -->
+### example-app Terraform plan
+
+`tofu plan -lock=false` as `'"$plan_sa"'`. This does not apply.
+
+**Plan: 1 to add, 1 to change, 1 to destroy.**
+
+```diff
+<=  data.google_compute_zones.available
+~   google_cloud_run_v2_service.app
+-   google_service_account.old
++   google_storage_bucket.data
+-/+ google_storage_bucket.logs
+-   google_storage_bucket.logs (deposed)
+```
+
+<details><summary>Full plan</summary>
+
+```
+  # google_storage_bucket.data will be created
+Plan: 1 to add, 1 to change, 1 to destroy.
+```
+
+</details>'
+assert_eq "$(cat "$summary")" "$want_summary" "summary lists changes and collapses the plan"
 assert_contains "$plan_calls" "repos/${repo}/issues/12/comments" "lists comments before posting"
 if grep -E '^tofu .* apply ' <<<"$plan_calls"; then
   fail "plan must not apply"
