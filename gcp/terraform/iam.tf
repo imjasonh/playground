@@ -27,12 +27,20 @@
 # logs bucket. The person who applies this stack needs permission to set
 # the billing account's IAM policy.
 #
+# The deploy account creates Secret Manager secrets and sets who can read
+# them, through a custom role without secretmanager.versions.access or
+# versions.add. Neither account holds a role that reads a secret's value,
+# though the deploy account could grant itself one. People add values with
+# gcloud, so values never enter Terraform state or a plan comment.
+#
 # A pull_request workflow from a fork does not receive an OIDC token.
 
 locals {
   github_deploy_roles = [
     "roles/artifactregistry.admin",
     "roles/browser",
+    "roles/compute.instanceAdmin.v1",
+    "roles/compute.networkAdmin",
     "roles/iam.roleAdmin",
     "roles/iam.serviceAccountAdmin",
     "roles/iam.serviceAccountUser",
@@ -50,12 +58,14 @@ locals {
   github_plan_roles = [
     "roles/artifactregistry.reader",
     "roles/browser",
+    "roles/compute.viewer",
     "roles/iam.roleViewer",
     "roles/iam.securityReviewer",
     "roles/iam.serviceAccountViewer",
     "roles/iam.workloadIdentityPoolViewer",
     "roles/monitoring.viewer",
     "roles/run.viewer",
+    "roles/secretmanager.viewer",
     "roles/serviceusage.serviceUsageViewer",
     "roles/storage.bucketViewer",
   ]
@@ -65,6 +75,21 @@ locals {
     "roles/billing.costsManager" = google_service_account.github_deploy.email
     "roles/billing.viewer"       = google_service_account.github_plan.email
   }
+
+  # Manage secrets without reading or adding their values.
+  github_deploy_secret_permissions = [
+    "secretmanager.locations.get",
+    "secretmanager.locations.list",
+    "secretmanager.secrets.create",
+    "secretmanager.secrets.delete",
+    "secretmanager.secrets.get",
+    "secretmanager.secrets.getIamPolicy",
+    "secretmanager.secrets.list",
+    "secretmanager.secrets.setIamPolicy",
+    "secretmanager.secrets.update",
+    "secretmanager.versions.get",
+    "secretmanager.versions.list",
+  ]
 
   # Push an image during plan. No delete permissions: a pull request
   # must not be able to remove an image Cloud Run is running.
@@ -147,6 +172,21 @@ resource "google_project_iam_custom_role" "github_plan_push" {
   description = "Push container images while planning an app stack. Cannot delete images."
   permissions = local.github_plan_push_permissions
   stage       = "GA"
+}
+
+resource "google_project_iam_custom_role" "github_deploy_secrets" {
+  project     = var.project_id
+  role_id     = "playground_deploy_secrets"
+  title       = "Playground deploy secrets"
+  description = "Create secrets and set their IAM policy. Cannot read or add secret values."
+  permissions = local.github_deploy_secret_permissions
+  stage       = "GA"
+}
+
+resource "google_project_iam_member" "github_deploy_secrets" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.github_deploy_secrets.name
+  member  = "serviceAccount:${google_service_account.github_deploy.email}"
 }
 
 resource "google_project_iam_member" "github_plan_push" {

@@ -1,0 +1,36 @@
+#cloud-config
+# Container-Optimized OS runs the image under systemd. On preemption,
+# Compute Engine gives the VM 30 seconds; docker stop sends SIGTERM and
+# waits 25 of them, so ffmpeg can flush and close the stream.
+write_files:
+  - path: /etc/stream-boids.env
+    permissions: "0644"
+    owner: root
+    content: |
+      ${indent(6, env)}
+  - path: /etc/systemd/system/stream-boids.service
+    permissions: "0644"
+    owner: root
+    content: |
+      [Unit]
+      Description=stream-boids
+      Wants=network-online.target gcr-online.target docker.service
+      After=network-online.target gcr-online.target docker.service
+
+      [Service]
+      Environment=HOME=/home/stream-boids
+      ExecStartPre=/bin/mkdir -p /home/stream-boids
+      ExecStartPre=/usr/bin/docker-credential-gcr configure-docker --registries=${registry}
+      ExecStartPre=-/usr/bin/docker rm -f stream-boids
+      ExecStart=/usr/bin/docker run --rm --name=stream-boids --network=host --env-file=/etc/stream-boids.env ${image}
+      ExecStop=/usr/bin/docker stop -t 25 stream-boids
+      TimeoutStopSec=30
+      Restart=always
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - systemctl daemon-reload
+  - systemctl start stream-boids.service

@@ -72,6 +72,7 @@ playground/
 ├── pasta/                 # CUE + tree-sitter multi-language linters/fixers (Go CLI)
 ├── population-rays/       # directional 5° population-slice map (JS + Node tests)
 ├── sshapp/                # GKE Autopilot Wish SSH apps (Go + Terraform + ko_build)
+├── stream-boids/          # Go: boids streamed to YouTube Live from a Spot VM (apko + ko + Terraform)
 ├── sundial/               # sundial clock: long shadow follows the sun
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
 ├── web-push-demo/         # static browser front-end for the web-push Worker
@@ -125,6 +126,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `pasta/` | no | Go CLI (CUE + tree-sitter linters); no `index.html` |
 | `sshapp/` | no | GKE Autopilot Wish SSH apps (Go + Terraform); no `index.html` |
+| `stream-boids/` | no | Go: boids streamed to YouTube Live from a Spot VM (Terraform); no `index.html` |
 | `testtrace/` | no | Go library (OpenTelemetry test tracing); no `index.html` |
 | `app-attest/` | no | Rust Cloudflare Worker; no `index.html` |
 | `apko-frontend/` | no | Go BuildKit frontend, built with ko; no `index.html` |
@@ -261,7 +263,7 @@ discovery scripts.
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
 | `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with the `wrangler` version pinned in `.github/wrangler/package.json`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`), creates any declared R2 buckets that don't exist, and applies remote D1 migrations for declared `[[d1_databases]]`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs`, and a `JWT_SECRET` for any Worker shipping an `examples/gensecret.rs` |
-| `deploy-gcp.yml` | push to `main`, pull requests that touch the deploy scripts or a `gcp-deploy.json`, manual | Applies Cloud Run stacks that have a `gcp-deploy.json` (`cloudrun-sqlite` and `wehadababyitsaboy`). GitHub OIDC and Workload Identity Federation authenticate `tofu apply`, so the workflow stores no long-lived GCP key. A pull request runs `tofu plan` as a separate plan service account and comments the plan. Apply runs only on `main`. |
+| `deploy-gcp.yml` | push to `main`, pull requests that touch the deploy scripts or a `gcp-deploy.json`, manual | Applies GCP stacks that have a `gcp-deploy.json` (`cloudrun-sqlite`, `stream-boids`, and `wehadababyitsaboy`). GitHub OIDC and Workload Identity Federation authenticate `tofu apply`, so the workflow stores no long-lived GCP key. A pull request runs `tofu plan` as a separate plan service account and comments the plan. Apply runs only on `main`. |
 | `preview.yml` | pull request opened/sync | When a browser app, the posts catalog, or the Pages home-page index changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, posts catalog, and site index, in one job |
@@ -698,7 +700,10 @@ comments the plan. The plan account can push the image the plan builds.
 It cannot apply, and it cannot read replica objects. The deploy account
 can create budgets on the project's billing account, and the plan
 account can read that account's costs, so the usage-log stack can keep
-a $1 monthly budget. Re-apply this stack when those roles change.
+a $1 monthly budget. The deploy account can also manage Compute Engine
+VMs and networks, and create Secret Manager secrets and set who reads
+them, for `stream-boids`; neither account holds a role that reads a
+secret's value. Re-apply this stack when those roles change.
 
 The same stack also creates a third Workload Identity provider and
 service account, bound to neither the deploy nor the plan account's
@@ -1042,6 +1047,7 @@ bundle exec fastlane test
 | `palette-swap/` | Nearest-color palette swap compiled to Wasm, also served as a Pages app. Scalar tests always run. `GOEXPERIMENT=simd` adds the portable mapper | `go test -race ./...` and `npm test` |
 | `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md). Playground style rules are enrolled via `.pasta/examples` → `pasta/analyzers` and gated by the pasta leg of `test.yml` | `go test -race ./...` (incl. e2e shallow-clone smoke); CI also runs `pasta test` + monorepo lint |
 | `sshapp/` | Wish SSH apps on GKE Autopilot (shared mux LB; `ssh user@ssh.domain <app>`; includes `hello` + `chess`); Terraform + `ko_build` | `go test -race ./...`; KinD e2e (`SSHAPP_KIND_E2E=1`) when the module changes |
+| `stream-boids/` | Renders a flock of boids on the CPU and streams it with a generated soundtrack to YouTube Live through ffmpeg. One boid per viewer up to `BOID_CAP` (10,000), a gold named boid per member who chatted in the last 30 minutes, a viewer HUD, and banners, bells, and pushes for Super Chats and memberships. ffmpeg restarts with backoff and rereads the stream key, and a YouTube stream with Auto-stop off keeps the broadcast up while a preempted Spot VM comes back. Secrets live in Secret Manager with no versions in Terraform. `cmd/fake-youtube` serves a fake YouTube Data API with a control page for running locally. `terraform/` builds an apko base with ffmpeg 9.0 from `apk.cgr.dev/chainguard`, puts the program on it with ko for linux/amd64 and linux/arm64, and runs it on a one-VM Spot managed instance group on Container-Optimized OS, by default an `n4a-highcpu-2` at 1280x720 and 30 fps; `deploy-gcp.yml` applies it | `go test -race ./...` (`TestStreamsToFile` streams to a file with real ffmpeg against the fake API, and skips without ffmpeg and ffprobe) |
 | `testtrace/` | Library that parents OpenTelemetry spans on the span of the Go test that starts them. `Install` wraps the TracerProvider in `TestMain`. Spans started from `t.Context()` pick up that span with no further call. `Hook(t)` names the span after the test | `go test -race ./...` |
 | `wehadababyitsaboy/go/` | Library (package `whbiab`) that sends one usage ping from a Go CLI to the `wehadababyitsaboy` bucket: `Execute` runs a cobra root command and sends `CLIENT/ARGS?bob=wehadababyitsaboy` for the subcommand and the flag names that ran, then waits for the request. `gitdb`, `ocidb`, `liquid`, and `node-image` use it. It sends no flag value or positional argument, honors `DO_NOT_TRACK=1` and `WHBIAB_DISABLE=1`, and sends nothing from a test binary | `go test -race ./...` (a local server stands in for the bucket) |
 

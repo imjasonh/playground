@@ -45,6 +45,11 @@
 # Identity variables live on the GitHub environment gcp.
 set -euo pipefail
 
+# Add temporary paths to cleanup rather than setting another EXIT trap,
+# which would replace this one.
+cleanup=()
+trap 'rm -rf -- ${cleanup[@]+"${cleanup[@]}"}' EXIT
+
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=SCRIPTDIR/gcp-app.sh
 source "$script_dir/gcp-app.sh"
@@ -206,7 +211,9 @@ gcs_init=(
 # init -backend=false does not stick: the next plan sees backend "gcs" in
 # the configuration and refuses to run. Plan from a copy with that block
 # removed, so OpenTofu uses an empty local backend and writes nothing to
-# the state bucket.
+# the state bucket. The copy holds every file in the module and sits
+# beside it, so file(), templatefile(), and abspath() calls relative to
+# path.module, such as "${path.module}/../apko.yaml", find the same files.
 plan_dir=$tfdir
 plan_without_state() {
   local log copy
@@ -225,8 +232,9 @@ plan_without_state() {
   # init saved the GCS backend before the lock write failed. Drop that,
   # or a later command in this directory loads it again.
   rm -rf "${tfdir}/.terraform"
-  copy=$(mktemp -d)
-  cp "${tfdir}/"*.tf "$copy/"
+  copy=$(mktemp -d "$(dirname "$tfdir")/.tofu-plan.XXXXXX")
+  cleanup+=("$copy")
+  cp -R "${tfdir}/." "$copy/"
   python3 - "$copy" <<'PY'
 import pathlib, sys
 
@@ -393,7 +401,7 @@ if [[ "$mode" == "plan" ]]; then
     exit 0
   fi
   planfile=$(mktemp)
-  trap 'rm -f "$planfile"' EXIT
+  cleanup+=("$planfile")
   plan_text=$(tofu -chdir="$plan_dir" plan \
     -input=false \
     -no-color \

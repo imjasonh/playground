@@ -41,6 +41,8 @@ on:
       - ".github/scripts/install-zig.sh"
       - "**/gcp-deploy.json"
       - "cloudrun-sqlite/terraform/**"
+      - "stream-boids/terraform/**"
+      - "stream-boids/apko.yaml"
       - "wehadababyitsaboy/terraform/**"
   workflow_dispatch: {}
 
