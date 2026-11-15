@@ -51,6 +51,9 @@ resource "ko_build" "app" {
   base_image  = apko_build.base.image_ref
   platforms   = ["linux/amd64", "linux/arm64"]
   sbom        = "none"
+  # Go otherwise stamps the commit into the binary, so every merge to main
+  # changes the digest, which replaces the template and restarts the VM.
+  env = ["GOFLAGS=-buildvcs=false"]
 }
 
 resource "google_service_account" "vm" {
