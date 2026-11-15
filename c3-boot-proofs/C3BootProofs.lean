@@ -160,6 +160,10 @@ import C3BootProofs.Proofs.TagAndThen
 import C3BootProofs.Proofs.CondSelect
 import C3BootProofs.Proofs.Uint8CtEq
 import C3BootProofs.Proofs.NonZero384
+import C3BootProofs.Proofs.FeIsNeg
+import C3BootProofs.Proofs.Ashldi3
+import C3BootProofs.Proofs.DerAlgorithm
+import C3BootProofs.Proofs.ListsOid
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.UpdateFg12
 import C3BootProofs.Proofs.UpdateFg8

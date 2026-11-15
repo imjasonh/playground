@@ -75,6 +75,10 @@ import C3BootProofs.Proofs.CtWrap
 import C3BootProofs.Proofs.TagAndThen
 import C3BootProofs.Proofs.CondSelect
 import C3BootProofs.Proofs.NonZero384
+import C3BootProofs.Proofs.FeIsNeg
+import C3BootProofs.Proofs.Ashldi3
+import C3BootProofs.Proofs.DerAlgorithm
+import C3BootProofs.Proofs.ListsOid
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
@@ -5073,6 +5077,146 @@ theorem exists_nonZero256_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `<[u8; 32] as PartialEq>::eq` in
+`c3_crypto`, `FieldElement2625::is_negative`, `__ashldi3`, and their callees
+where the image loads them, and zeros elsewhere. -/
+def witnessMemB4 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.arr32EqCryptoAddress, Image.arr32EqCryptoCode),
+    (Image.memcmpAddress, Image.memcmpCode),
+    (Image.feIsNegativeAddress, Image.feIsNegativeCode),
+    (Image.feToBytesAddress, Image.feToBytesCode),
+    (Image.feReduceAddress, Image.feReduceCode),
+    (Image.blackBoxU8Address, Image.blackBoxU8Code),
+    (Image.ashldi3Address, Image.ashldi3Code)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `<[u8; 32] as PartialEq>::eq` in `c3_crypto` on
+`0x3FCC5000` and `0x3FCC6000` with the stack at `0x3FCC8000` meets
+`arr32EqCrypto_correct`'s hypotheses. -/
+theorem exists_arr32EqCrypto_machine :
+    ∃ (m : RV32.Machine) (base retAddr p q : RV32.Word), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.arr32EqCryptoCode ∧ RV32.CodeIn m.mem (base + 0xFA86) Image.memcmpCode ∧
+      m.pc = base ∧ RV32.reg m RV32.a0 = p ∧ RV32.reg m RV32.a1 = q ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 base Image.arr32EqCryptoCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xFA86) Image.memcmpCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 p 32 ∧ RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 q 32 := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.arr32EqCryptoAddress, witnessMemB4⟩,
+    BitVec.ofNat 32 Image.arr32EqCryptoAddress, 0, 0x3FCC5000, 0x3FCC6000, by decide, ?_, ?_, rfl, rfl, rfl, rfl,
+    by decide, by decide, ?_, ?_, ?_, ?_⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `FieldElement2625::is_negative` on the limbs at
+`0x3FCC6000` with the stack at `0x3FCC8000` meets `feIsNegative_correct`'s
+hypotheses. -/
+theorem exists_feIsNegative_machine :
+    ∃ (m : RV32.Machine) (P sp0 fp retAddr : RV32.Word), RV32.FINEnv m.mem P sp0 fp ∧ m.pc = P ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = fp ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0 0, BitVec.ofNat 32 Image.feIsNegativeAddress, witnessMemB4⟩,
+    BitVec.ofNat 32 Image.feIsNegativeAddress, 0x3FCC8000, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, rfl, by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `__ashldi3` to shift `0x12345678_9ABCDEF0` left 5
+bits meets `ashldi3_correct`'s hypotheses. -/
+theorem exists_ashldi3_machine :
+    ∃ (m : RV32.Machine) (base retAddr lo hi : RV32.Word) (s : Nat), RV32.CodeIn m.mem base Image.ashldi3Code ∧
+      m.pc = base ∧ RV32.reg m RV32.a0 = lo ∧ RV32.reg m RV32.a1 = hi ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 s ∧
+      s < 64 ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x9ABCDEF0 0x12345678 5, BitVec.ofNat 32 Image.ashldi3Address, witnessMemB4⟩,
+    BitVec.ofNat 32 Image.ashldi3Address, 0, 0x9ABCDEF0, 0x12345678, 5, ?_, rfl, rfl, rfl, rfl, by decide, rfl,
+    by decide⟩
+  code_in
+
+/-- Memory with the current image's `Der::algorithm` and the functions it
+calls where the image loads them, a reader at `0x3FCC6000` whose unread
+bytes start at `0x3FCC7000` and number zero, and zeros elsewhere. -/
+def witnessMemAlg : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.derTlvAddress, Image.derTlvCode),
+    (Image.derElementAddress, Image.derElementCode),
+    (Image.derNestedAddress, Image.derNestedCode),
+    (Image.derSequenceAddress, Image.derSequenceCode),
+    (Image.derOidAddress, Image.derOidCode),
+    (Image.derAlgorithmAddress, Image.derAlgorithmCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (0x3FCC6008, [0x00, 0x70, 0xCC, 0x3F])]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Der::algorithm` with the result at `0x3FCC5000`,
+the reader at `0x3FCC6000` over no unread bytes at `0x3FCC7000`, and the
+stack at `0x3FCC8000` meets `derAlgorithm_correct`'s hypotheses. -/
+theorem exists_derAlgorithm_machine :
+    ∃ (m : RV32.Machine) (P sp0 out d p retAddr : RV32.Word) (n : Nat), RV32.AlgEnv m.mem P sp0 out d p n ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = d ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.derAlgorithmAddress, witnessMemAlg⟩,
+    BitVec.ofNat 32 Image.derAlgorithmAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0x3FCC7000, 0, 0, ?_, rfl, rfl,
+    rfl, rfl, rfl, by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+/-- Memory with the current image's `lists_oid` and the functions it calls
+where the image loads them, and zeros elsewhere. -/
+def witnessMemListsOid : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.listsOidAddress, Image.listsOidCode),
+    (Image.derSequenceAddress, Image.derSequenceCode),
+    (Image.derNestedAddress, Image.derNestedCode),
+    (Image.derElementAddress, Image.derElementCode),
+    (Image.derTlvAddress, Image.derTlvCode),
+    (Image.derOidAddress, Image.derOidCode),
+    (Image.sliceEqAddress, Image.sliceEqCode),
+    (Image.equalSameLengthAddress, Image.equalSameLengthCode),
+    (Image.memcmpAddress, Image.memcmpCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `lists_oid` on an empty list at `0x3FCC7000` and an
+empty OID at `0x3FCC7100` with the stack at `0x3FCC8000` meets
+`listsOid_correct`'s hypotheses. -/
+theorem exists_listsOid_machine :
+    ∃ (m : RV32.Machine) (P sp0 p q retAddr : RV32.Word) (n ql : Nat), RV32.LOEnv m.mem P sp0 p q n ql ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = p ∧ RV32.reg m RV32.a1 = BitVec.ofNat 32 n ∧
+      RV32.reg m RV32.a2 = q ∧ RV32.reg m RV32.a3 = BitVec.ofNat 32 ql ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC7000 0 0x3FCC7100, BitVec.ofNat 32 Image.listsOidAddress, witnessMemListsOid⟩,
+    BitVec.ofNat 32 Image.listsOidAddress, 0x3FCC8000, 0x3FCC7000, 0x3FCC7100, 0, 0, 0, ?_, rfl, rfl, rfl, rfl,
+    rfl, rfl, rfl, by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -6151,3 +6295,33 @@ end C3
 
 /-- info: 'C3.exists_nonZero256_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_nonZero256_machine
+
+/-- info: 'C3.RV32.arr32EqCrypto_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.arr32EqCrypto_correct
+
+/-- info: 'C3.exists_arr32EqCrypto_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_arr32EqCrypto_machine
+
+/-- info: 'C3.RV32.feIsNegative_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.feIsNegative_correct
+
+/-- info: 'C3.exists_feIsNegative_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_feIsNegative_machine
+
+/-- info: 'C3.RV32.ashldi3_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ashldi3_correct
+
+/-- info: 'C3.exists_ashldi3_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_ashldi3_machine
+
+/-- info: 'C3.RV32.derAlgorithm_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.derAlgorithm_correct
+
+/-- info: 'C3.exists_derAlgorithm_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_derAlgorithm_machine
+
+/-- info: 'C3.RV32.listsOid_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.listsOid_correct
+
+/-- info: 'C3.exists_listsOid_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_listsOid_machine
