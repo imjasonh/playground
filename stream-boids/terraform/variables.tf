@@ -4,7 +4,7 @@ variable "project_id" {
 }
 
 variable "region" {
-  description = "Region for the VM and Artifact Registry. The managed instance group recreates a preempted VM in any zone of this region."
+  description = "Region for the VM and Artifact Registry. The managed instance group picks the VM's zone in this region."
   type        = string
   default     = "us-central1"
 }
