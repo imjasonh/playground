@@ -203,6 +203,19 @@ FUNCTIONS = [
     ("nonZero256", "<elliptic_curve::scalar::nonzero::NonZeroScalar<p256::NistP256>>::new"),
     ("arr32EqCrypto", "_RNvXNtNtCs2opbmDwVT5n_4core5array8equalityAhj20_NtNtB6_3cmp9PartialEq2eqCspC4dVFUdfd_9c3_crypto"),
     ("feIsNegative", "<curve25519_dalek::backend::serial::u32::field::FieldElement2625>::is_negative"),
+    ("isSha256", "c3_verify::tsa::is_sha256"),
+    ("feLoad3", "<curve25519_dalek::backend::serial::u32::field::FieldElement2625>::from_bytes::load3_at"),
+    ("feLoad4", "<curve25519_dalek::backend::serial::u32::field::FieldElement2625>::from_bytes::load4_at"),
+    ("feCtEq", "<curve25519_dalek::backend::serial::u32::field::FieldElement2625 as subtle::ConstantTimeEq>::ct_eq"),
+    ("feCondAssign", "<curve25519_dalek::backend::serial::u32::field::FieldElement2625 as subtle::ConditionallySelectable>::conditional_assign"),
+    ("feNeg", "<&curve25519_dalek::backend::serial::u32::field::FieldElement2625 as core::ops::arith::Neg>::neg"),
+    ("asProjNiels", "<curve25519_dalek::edwards::EdwardsPoint>::as_projective_niels"),
+    ("edAddNiels", "<&curve25519_dalek::edwards::EdwardsPoint as core::ops::arith::Add<&curve25519_dalek::backend::serial::curve_models::ProjectiveNielsPoint>>::add"),
+    ("edSubNiels", "<&curve25519_dalek::edwards::EdwardsPoint as core::ops::arith::Sub<&curve25519_dalek::backend::serial::curve_models::ProjectiveNielsPoint>>::sub"),
+    ("scalar29Pack", "<curve25519_dalek::backend::serial::u32::scalar::Scalar29>::pack"),
+    ("pow22501", "<curve25519_dalek::backend::serial::u32::field::FieldElement2625>::pow22501"),
+    ("nonAdjacentForm", "<curve25519_dalek::scalar::Scalar>::non_adjacent_form"),
+    ("incrementLimb", "<wnaf::limb_buffer::LimbBuffer>::increment_limb"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
@@ -223,6 +236,8 @@ DATA = [
     ("p384ScalarR2", "p384ScalarNew", 0x0, 48, 0x60),
     ("p256Zero", "p256FieldNeg", 0x2, 32),
     ("scalarZero384", "nonZero384", 0xE, 48),
+    ("sha256Oid", "isSha256", 0x26, 9),
+    ("edwardsD2", "asProjNiels", 0x4A, 40),
 ]
 
 
