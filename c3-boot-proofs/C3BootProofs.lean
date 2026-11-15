@@ -157,6 +157,9 @@ import C3BootProofs.Proofs.ScalarIsZero256
 import C3BootProofs.Proofs.Arr32Eq
 import C3BootProofs.Proofs.CtWrap
 import C3BootProofs.Proofs.TagAndThen
+import C3BootProofs.Proofs.CondSelect
+import C3BootProofs.Proofs.Uint8CtEq
+import C3BootProofs.Proofs.NonZero384
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.UpdateFg12
 import C3BootProofs.Proofs.UpdateFg8
