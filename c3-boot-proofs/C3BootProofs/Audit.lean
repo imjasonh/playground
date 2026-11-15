@@ -90,6 +90,7 @@ import C3BootProofs.Proofs.Pow22501
 import C3BootProofs.Proofs.FeCondAssign
 import C3BootProofs.Proofs.FeNeg
 import C3BootProofs.Proofs.Scalar29Pack
+import C3BootProofs.Proofs.IncrementLimb
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
@@ -5559,6 +5560,36 @@ theorem exists_scalar29Pack_machine :
     | exact RV32.sep_of_le (by decide) (by decide)
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
 
+/-- Memory with a `LimbBuffer` at `0x3FCC6000` over a 3-byte slice at
+`0x3FCC6100`, and the current image's `LimbBuffer::increment_limb` and
+`memcpy` where the image loads them, and zeros elsewhere. -/
+def witnessMemIncrementLimb : RV32.Word → BitVec 8 :=
+  RV32.regionMem [(0x3FCC6000, [0x00, 0x61, 0xCC, 0x3F, 3, 0, 0, 0]),
+    (Image.incrementLimbAddress, Image.incrementLimbCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `LimbBuffer::increment_limb` on the buffer at
+`0x3FCC6000`, whose slice is 3 bytes, with the stack at `0x3FCC8000` meets
+`incrementLimb_correct`'s hypotheses. -/
+theorem exists_incrementLimb_machine :
+    ∃ (m : RV32.Machine) (P sp0 s p n retAddr : RV32.Word), RV32.ILEnv m.mem P sp0 s p n ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = s ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0 0, BitVec.ofNat 32 Image.incrementLimbAddress, witnessMemIncrementLimb⟩,
+    BitVec.ofNat 32 Image.incrementLimbAddress, 0x3FCC8000, 0x3FCC6000, 0x3FCC6100, 3, 0, ?_, rfl, rfl, rfl, rfl,
+    by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+
 
 end C3
 
@@ -6740,3 +6771,9 @@ end C3
 
 /-- info: 'C3.exists_scalar29Pack_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_scalar29Pack_machine
+
+/-- info: 'C3.RV32.incrementLimb_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.incrementLimb_correct
+
+/-- info: 'C3.exists_incrementLimb_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_incrementLimb_machine
