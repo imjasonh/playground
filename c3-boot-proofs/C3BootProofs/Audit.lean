@@ -64,6 +64,7 @@ import C3BootProofs.Proofs.ZipNext
 import C3BootProofs.Proofs.DerPositive
 import C3BootProofs.Proofs.DerScalar32
 import C3BootProofs.Proofs.EcdsaSig
+import C3BootProofs.Proofs.IntegerIs
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
@@ -3547,6 +3548,39 @@ theorem exists_ecdsaSignature48_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `Der::integer_is`, its callees, and the
+byte-slice comparison where the image loads them, a reader at `0x3FCC6000`
+whose unread bytes start at `0x3FCC7000` and number 0, and zeros
+elsewhere. -/
+def witnessMemDer7 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.derTlvAddress, Image.derTlvCode),
+    (Image.derElementAddress, Image.derElementCode),
+    (Image.derIntegerAddress, Image.derIntegerCode),
+    (Image.derIntegerIsAddress, Image.derIntegerIsCode),
+    (Image.sliceEqAddress, Image.sliceEqCode),
+    (Image.equalSameLengthAddress, Image.equalSameLengthCode),
+    (Image.memcmpAddress, Image.memcmpCode),
+    (0x3FCC6008, [0x00, 0x70, 0xCC, 0x3F])]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Der::integer_is` with the reader at `0x3FCC6000`
+and the stack at `0x3FCC8000` meets `derIntegerIs_correct`'s hypotheses. -/
+theorem exists_derIntegerIs_machine :
+    ∃ (m : RV32.Machine) (P sp0 d retAddr : RV32.Word), RV32.IIEnv m.mem P sp0 d ∧ m.pc = P ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = d ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0 0, BitVec.ofNat 32 Image.derIntegerIsAddress, witnessMemDer7⟩,
+    BitVec.ofNat 32 Image.derIntegerIsAddress, 0x3FCC8000, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, rfl, by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
 /-- A machine that calls `equal_same_length` on two empty slices, with the
@@ -5380,6 +5414,12 @@ end C3
 
 /-- info: 'C3.exists_ecdsaSignature48_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_ecdsaSignature48_machine
+
+/-- info: 'C3.RV32.derIntegerIs_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.derIntegerIs_correct
+
+/-- info: 'C3.exists_derIntegerIs_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_derIntegerIs_machine
 
 /-- info: 'C3.RV32.derPositiveInteger_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.derPositiveInteger_correct

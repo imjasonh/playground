@@ -147,6 +147,7 @@ import C3BootProofs.Proofs.DerPositive
 import C3BootProofs.Proofs.DerScalar
 import C3BootProofs.Proofs.DerScalar32
 import C3BootProofs.Proofs.EcdsaSig
+import C3BootProofs.Proofs.IntegerIs
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.UpdateFg12
 import C3BootProofs.Proofs.UpdateFg8
