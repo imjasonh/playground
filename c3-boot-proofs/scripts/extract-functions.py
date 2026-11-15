@@ -19,8 +19,9 @@ import struct
 import subprocess
 import sys
 
-# Lean name, then the demangled symbol, or the Lean name of an earlier
-# function and the offset of a call in it.
+# Lean name, then the demangled symbol, the mangled one when two functions
+# demangle alike, or the Lean name of an earlier function and the offset of a
+# call in it.
 FUNCTIONS = [
     ("crc32", "c3_verify::bootstate::crc32"),
     ("readerBytes", "<c3_verify::reader::Reader>::bytes"),
@@ -179,6 +180,16 @@ FUNCTIONS = [
     ("tagFromU8", "<sec1::point::Tag>::from_u8"),
     ("tagMessageLen", "<sec1::point::Tag>::message_len"),
     ("p256FieldNeg", "<p256::arithmetic::field::FieldElement>::neg"),
+    ("sliceNe", "<&[u8] as core::cmp::PartialEq>::ne"),
+    ("arr32Eq", "_RNvXNtNtCs2opbmDwVT5n_4core5array8equalityAhj20_NtNtB6_3cmp9PartialEq2eqCslBQrogs5cN1_9c3_verify"),
+    ("arr32Ne", "<[u8; 32] as core::cmp::PartialEq>::ne"),
+    ("choiceCtEq", "<subtle::Choice as subtle::ConstantTimeEq>::ct_eq"),
+    ("splitAt8", "<crypto_bigint::uint::ref_type::UintRef>::split_at (.165)"),
+    ("tagAndThen", "<core::result::Result<u8, sec1::error::Error>>::and_then::<sec1::point::Tag, <sec1::point::Tag>::from_u8>"),
+    ("montyScalarCtEq384", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<p384::arithmetic::scalar::ScalarParams, 12> as subtle::ConstantTimeEq>::ct_eq"),
+    ("ashldi3", "__ashldi3"),
+    ("dateTime", "c3_verify::time::date_time"),
+    ("leadingZeros", "<crypto_bigint::uint::ref_type::UintRef>::leading_zeros"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
@@ -197,6 +208,7 @@ DATA = [
     ("scalarL", "scalar29Sub", 0x36, 36),
     ("p384Order", "p384ScalarMul", 0x0, 48),
     ("p384ScalarR2", "p384ScalarNew", 0x0, 48, 0x60),
+    ("p256Zero", "p256FieldNeg", 0x2, 32),
 ]
 
 
@@ -267,6 +279,12 @@ def main():
             entry = (int(parts[0], 16), int(parts[1], 16))
             symbols.setdefault(parts[3], []).append(entry)
             at.setdefault(entry[0], []).append((parts[3], entry[1]))
+    for line in subprocess.run(
+        [nm, "-S", elf], check=True, capture_output=True, text=True
+    ).stdout.splitlines():
+        parts = line.split(None, 3)
+        if len(parts) == 4 and parts[2] in ("t", "T") and parts[3].startswith("_R"):
+            symbols.setdefault(parts[3], []).append((int(parts[0], 16), int(parts[1], 16)))
     segs = segments(image)
     lines = [
         "/-!",
