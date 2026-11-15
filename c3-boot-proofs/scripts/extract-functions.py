@@ -160,6 +160,9 @@ FUNCTIONS = [
     ("uint12CtEq", "<crypto_bigint::uint::Uint<12> as ctutils::traits::ct_eq::CtEq>::ct_eq"),
     ("montRetrieve12", "crypto_bigint::modular::reduction::montgomery_retrieve::<12>"),
     ("p384FieldRetrieve", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<p384::arithmetic::field::FieldParams, 12>>::retrieve"),
+    ("sliceCtAssign", "<[u32] as ctutils::traits::ct_assign::CtAssign>::ct_assign"),
+    ("uint12CtAssign", "<crypto_bigint::uint::Uint<12> as ctutils::traits::ct_assign::CtAssign>::ct_assign"),
+    ("copyFromSliceU8", "core::slice::copy_from_slice_impl::<u8>"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a

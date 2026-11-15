@@ -59,6 +59,7 @@ import C3BootProofs.Proofs.Prim
 import C3BootProofs.Proofs.CtEq
 import C3BootProofs.Proofs.MontRetrieve12
 import C3BootProofs.Proofs.P384Retrieve
+import C3BootProofs.Proofs.CtAssign
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
@@ -3300,6 +3301,104 @@ theorem exists_p384FieldRetrieve_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `ct_assign` functions,
+`copy_from_slice_impl::<u8>`, and `memcpy` where the image loads them, and
+zeros elsewhere. -/
+def witnessMemCtA : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.sliceCtAssignAddress, Image.sliceCtAssignCode),
+    (Image.uint12CtAssignAddress, Image.uint12CtAssignCode),
+    (Image.copyFromSliceU8Address, Image.copyFromSliceU8Code),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `<[u32] as CtAssign>::ct_assign` on 3 words at
+`0x3FCC5000` and `0x3FCC5100` with the choice 1 and the stack at
+`0x3FCC8000` meets `sliceCtAssign_correct`'s hypotheses. -/
+theorem exists_sliceCtAssign_machine :
+    ∃ (m : RV32.Machine) (B sp0 dst src c retAddr : RV32.Word) (n : Nat),
+      RV32.CodeIn m.mem B Image.sliceCtAssignCode ∧ m.pc = B ∧ RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 4 = 0 ∧
+      0x20 ≤ sp0.toNat ∧ RV32.reg m RV32.a0 = dst ∧ RV32.reg m RV32.a1 = BitVec.ofNat 32 n ∧
+      RV32.reg m RV32.a2 = src ∧ RV32.reg m RV32.a3 = BitVec.ofNat 32 n ∧ RV32.reg m RV32.a4 = c ∧
+      (c = 0 ∨ c = 1) ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ dst.toNat % 4 = 0 ∧
+      src.toNat % 4 = 0 ∧ dst.toNat + 4 * n ≤ 2 ^ 32 ∧
+      RV32.Sep (sp0 + 0xFFFFFFE0) 0x20 B Image.sliceCtAssignCode.length ∧
+      RV32.Sep dst (4 * n) B Image.sliceCtAssignCode.length ∧ RV32.Sep dst (4 * n) (sp0 + 0xFFFFFFE0) 0x20 ∧
+      RV32.Sep src (4 * n) (sp0 + 0xFFFFFFE0) 0x20 ∧ RV32.Sep dst (4 * n) src (4 * n) := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 3 else if r = RV32.a2 then 0x3FCC5100
+    else if r = RV32.a3 then 3 else if r = RV32.a4 then 1 else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.sliceCtAssignAddress, witnessMemCtA⟩, BitVec.ofNat 32 Image.sliceCtAssignAddress,
+    0x3FCC8000, 0x3FCC5000, 0x3FCC5100, 1, 0, 3, ?_, rfl, rfl, by decide, by decide, rfl, rfl, rfl, rfl, rfl,
+    .inr rfl, rfl, by decide, by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `<Uint<12> as CtAssign>::ct_assign` on
+`0x3FCC5000` and `0x3FCC5100` with the choice 1 and the stack at
+`0x3FCC8000` meets `uint12CtAssign_correct`'s hypotheses. -/
+theorem exists_uint12CtAssign_machine :
+    ∃ (m : RV32.Machine) (W sp0 dst src c retAddr : RV32.Word), W.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem W Image.uint12CtAssignCode ∧ RV32.CodeIn m.mem (W + 0xFFFF9B66) Image.sliceCtAssignCode ∧
+      m.pc = W ∧ RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 4 = 0 ∧ 0x20 ≤ sp0.toNat ∧ RV32.reg m RV32.a0 = dst ∧
+      RV32.reg m RV32.a1 = src ∧ RV32.reg m RV32.a2 = c ∧ (c = 0 ∨ c = 1) ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ dst.toNat % 4 = 0 ∧ src.toNat % 4 = 0 ∧ dst.toNat + 48 ≤ 2 ^ 32 ∧
+      RV32.Sep (sp0 + 0xFFFFFFE0) 0x20 (W + 0xFFFF9B66) Image.sliceCtAssignCode.length ∧
+      RV32.Sep dst 48 (W + 0xFFFF9B66) Image.sliceCtAssignCode.length ∧ RV32.Sep dst 48 (sp0 + 0xFFFFFFE0) 0x20 ∧
+      RV32.Sep src 48 (sp0 + 0xFFFFFFE0) 0x20 ∧ RV32.Sep dst 48 src 48 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC5100 else if r = RV32.a2 then 1
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.uint12CtAssignAddress, witnessMemCtA⟩,
+    BitVec.ofNat 32 Image.uint12CtAssignAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC5100, 1, 0, by decide, ?_, ?_, rfl,
+    rfl, by decide, by decide, rfl, rfl, rfl, .inr rfl, rfl, by decide, by decide, by decide, by decide, ?_, ?_, ?_,
+    ?_, ?_⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `copy_from_slice_impl::<u8>` on 5 bytes from
+`0x3FCC5100` to `0x3FCC5001` with the stack at `0x3FCC8000` meets
+`copyFromSliceU8_correct`'s hypotheses. -/
+theorem exists_copyFromSliceU8_machine :
+    ∃ (m : RV32.Machine) (W retAddr dst src : RV32.Word) (n : Nat), W.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem W Image.copyFromSliceU8Code ∧ RV32.CodeIn m.mem (W + 0x761E) Image.memcpyStubCode ∧
+      m.pc = W ∧ RV32.reg m RV32.a0 = dst ∧ RV32.reg m RV32.a1 = BitVec.ofNat 32 n ∧ RV32.reg m RV32.a2 = src ∧
+      RV32.reg m RV32.a3 = BitVec.ofNat 32 n ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      RV32.McEnv m.mem (W + 0x761E + 8) dst src (RV32.reg m RV32.sp + 0xFFFFFFF0) n := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5001 else if r = RV32.a1 then 5 else if r = RV32.a2 then 0x3FCC5100
+    else if r = RV32.a3 then 5 else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.copyFromSliceU8Address, witnessMemCtA⟩,
+    BitVec.ofNat 32 Image.copyFromSliceU8Address, 0, 0x3FCC5001, 0x3FCC5100, 5, by decide, ?_, ?_, rfl, rfl, rfl, rfl,
+    rfl, rfl, by decide, ?_⟩
+  case refine_3 =>
+    constructor <;> first
+      | code_in
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+      | exact (RV32.sep_of_le (by decide) (by decide)).symm
+      | decide +kernel
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
 /-- A machine that calls `equal_same_length` on two empty slices, with the
@@ -5091,3 +5190,21 @@ end C3
 
 /-- info: 'C3.exists_p384FieldRetrieve_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_p384FieldRetrieve_machine
+
+/-- info: 'C3.RV32.sliceCtAssign_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.sliceCtAssign_correct
+
+/-- info: 'C3.exists_sliceCtAssign_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_sliceCtAssign_machine
+
+/-- info: 'C3.RV32.uint12CtAssign_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.uint12CtAssign_correct
+
+/-- info: 'C3.exists_uint12CtAssign_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_uint12CtAssign_machine
+
+/-- info: 'C3.RV32.copyFromSliceU8_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.copyFromSliceU8_correct
+
+/-- info: 'C3.exists_copyFromSliceU8_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_copyFromSliceU8_machine
