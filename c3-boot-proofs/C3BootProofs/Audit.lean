@@ -86,6 +86,7 @@ import C3BootProofs.Proofs.AsProjNiels
 import C3BootProofs.Proofs.IsSha256
 import C3BootProofs.Proofs.FeCall
 import C3BootProofs.Proofs.EdNiels
+import C3BootProofs.Proofs.Pow22501
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
@@ -5442,6 +5443,42 @@ theorem exists_edSubNiels_machine :
     | (constructor <;> exact RV32.sep_of_le (by decide) (by decide))
     | decide +kernel
 
+
+/-- Memory with the current image's `FieldElement2625::pow22501` and the
+field operations it calls where the image loads them, and zeros
+elsewhere. -/
+def witnessMemPow22501 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.pow22501Address, Image.pow22501Code),
+    (Image.feSquareAddress, Image.feSquareCode),
+    (Image.feSquareInnerAddress, Image.feSquareInnerCode),
+    (Image.feReduceAddress, Image.feReduceCode),
+    (Image.feMulAddress, Image.feMulCode),
+    (Image.fePow2kAddress, Image.fePow2kCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `FieldElement2625::pow22501` on the field element at
+`0x3FCC6000` with the result pair at `0x3FCC6100` and the stack at
+`0x3FCC8000` meets `pow22501_correct`'s hypotheses. -/
+theorem exists_pow22501_machine :
+    ∃ (m : RV32.Machine) (P sp0 out xp retAddr : RV32.Word), RV32.PWEnv m.mem P sp0 out xp ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = xp ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC6100 0x3FCC6000 0, BitVec.ofNat 32 Image.pow22501Address, witnessMemPow22501⟩,
+    BitVec.ofNat 32 Image.pow22501Address, 0x3FCC8000, 0x3FCC6100, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, rfl, rfl,
+    by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | (constructor <;> exact RV32.sep_of_le (by decide) (by decide))
+    | decide +kernel
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -6598,3 +6635,9 @@ end C3
 
 /-- info: 'C3.exists_edSubNiels_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_edSubNiels_machine
+
+/-- info: 'C3.RV32.pow22501_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.pow22501_correct
+
+/-- info: 'C3.exists_pow22501_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_pow22501_machine

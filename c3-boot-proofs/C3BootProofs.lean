@@ -171,6 +171,7 @@ import C3BootProofs.Proofs.AsProjNiels
 import C3BootProofs.Proofs.IsSha256
 import C3BootProofs.Proofs.FeCall
 import C3BootProofs.Proofs.EdNiels
+import C3BootProofs.Proofs.Pow22501
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.UpdateFg12
 import C3BootProofs.Proofs.UpdateFg8
