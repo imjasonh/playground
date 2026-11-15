@@ -190,6 +190,17 @@ FUNCTIONS = [
     ("ashldi3", "__ashldi3"),
     ("dateTime", "c3_verify::time::date_time"),
     ("leadingZeros", "<crypto_bigint::uint::ref_type::UintRef>::leading_zeros"),
+    ("condSelect384", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<p384::arithmetic::field::FieldParams, 12> as subtle::ConditionallySelectable>::conditional_select"),
+    ("condSelect256", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<p256::arithmetic::field::FieldParams, 8> as subtle::ConditionallySelectable>::conditional_select"),
+    ("nonZero384", "<elliptic_curve::scalar::nonzero::NonZeroScalar<p384::NistP384>>::new"),
+    ("uint8CtEq", "<crypto_bigint::uint::Uint<8> as ctutils::traits::ct_eq::CtEq>::ct_eq"),
+    ("p256FieldRetrieve", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<p256::arithmetic::field::FieldParams, 8>>::retrieve"),
+    ("ctMap384", "<subtle::CtOption<primefield::monty::MontyFieldElement<p384::arithmetic::field::FieldParams, 12>>>::map::<p384::arithmetic::field::FieldElement, p384::arithmetic::field::FieldElement>"),
+    ("ctMap256", "<subtle::CtOption<primefield::monty::MontyFieldElement<p256::arithmetic::field::FieldParams, 8>>>::map::<p256::arithmetic::field::FieldElement, p256::arithmetic::field::FieldElement>"),
+    ("unwrapOr384", "<subtle::CtOption<primeorder::affine::AffinePoint<p384::NistP384>>>::unwrap_or"),
+    ("unwrapOr256", "<subtle::CtOption<primeorder::affine::AffinePoint<p256::NistP256>>>::unwrap_or"),
+    ("p256ScalarCtEq", "<p256::arithmetic::scalar::Scalar as subtle::ConstantTimeEq>::ct_eq"),
+    ("nonZero256", "<elliptic_curve::scalar::nonzero::NonZeroScalar<p256::NistP256>>::new"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
@@ -209,6 +220,7 @@ DATA = [
     ("p384Order", "p384ScalarMul", 0x0, 48),
     ("p384ScalarR2", "p384ScalarNew", 0x0, 48, 0x60),
     ("p256Zero", "p256FieldNeg", 0x2, 32),
+    ("scalarZero384", "nonZero384", 0xE, 48),
 ]
 
 
