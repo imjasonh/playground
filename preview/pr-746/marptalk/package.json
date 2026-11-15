@@ -1,0 +1,19 @@
+{
+  "name": "marptalk",
+  "version": "1.0.0",
+  "description": "Present narrated Marp decks with browser text-to-speech",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx --yes serve . -p 3000",
+    "vendor": "node scripts/vendor.js"
+  },
+  "devDependencies": {
+    "@marp-team/marp-core": "^4.4.0",
+    "esbuild": "^0.28.2"
+  },
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  }
+}
