@@ -59,11 +59,16 @@ Super Chats, and memberships.
    go run .
    ```
 
-   Or watch it live. Start a player that listens for RTMP, then point
-   `OUTPUT_URL` at it:
+   Or watch it live. In a third terminal, start a player that listens for
+   RTMP. Its window opens when the first frames arrive:
 
    ```bash
    ffplay -f flv -listen 1 -i rtmp://127.0.0.1:1935/live/test
+   ```
+
+   Then point `OUTPUT_URL` at it:
+
+   ```bash
    OUTPUT_URL=rtmp://127.0.0.1:1935/live/test \
    YOUTUBE_API_BASE=http://127.0.0.1:8090/youtube/v3 \
    VIDEO_ID=fakeVideo01 \
@@ -74,6 +79,33 @@ Super Chats, and memberships.
    `STATIC_VIEWERS=500`.
 
 For a smaller, cheaper stream on a laptop, add `WIDTH=1280 HEIGHT=720 FPS=30`.
+
+### Stream to YouTube from your computer
+
+Secret Manager needs a GCE VM, so locally the keys come from files. Save the
+stream key from YouTube Studio (**Go live** > **Stream**) to a file outside
+the repository:
+
+```bash
+mkdir -p ~/.config/stream-boids
+read -rs KEY && printf '%s' "$KEY" > ~/.config/stream-boids/stream-key && unset KEY
+chmod 600 ~/.config/stream-boids/stream-key
+```
+
+Then stream with a fixed viewer count, which needs no API key:
+
+```bash
+STREAM_KEY_FILE=~/.config/stream-boids/stream-key \
+STATIC_VIEWERS=200 \
+WIDTH=1280 HEIGHT=720 FPS=30 VIDEO_BITRATE=4000000 \
+go run .
+```
+
+To follow real viewers and chat, save a YouTube Data API key the same way
+and replace `STATIC_VIEWERS` with
+`YOUTUBE_API_KEY_FILE=~/.config/stream-boids/api-key` and either
+`CHANNEL_ID` or `VIDEO_ID`. The default 12 Mbps at 1080p60 needs that much
+upload bandwidth.
 
 Run the tests:
 
@@ -230,7 +262,10 @@ ffmpeg kept up with no dropped frames at 12 Mbps:
 | `faster` | 3.2 cores | 0.55 cores |
 
 Terraform runs `c3-highcpu-8` with `faster`, which leaves room for chat
-events and a noisy neighbor.
+events and a noisy neighbor. These numbers predate `-tune zerolatency`, which
+the encoder now passes so that ffmpeg doesn't stall on machines with many
+cores. It turns off B-frames and lookahead, so ffmpeg's CPU use and the
+quality at a given bitrate may differ.
 
 At 12 Mbps, the stream sends about 5.4 GB an hour. Internet egress at about
 $0.12 a GB costs about $0.65 an hour, and the Spot VM costs less than $0.15
@@ -243,6 +278,7 @@ These parts haven't run against the real services:
 
 - A YouTube Data API key may not be enough for `liveChatMessages.list`. If
   YouTube rejects it, the program needs OAuth credentials for the channel.
-- ffmpeg 9.0 with the program's arguments. The tests ran with ffmpeg 6.1.
+- ffmpeg 9.0 on Linux. The program streamed 1080p60 at full speed with
+  ffmpeg 9.0.2 on macOS.
 - Container-Optimized OS sending the container's logs to Cloud Logging as
   `cos_containers`.
