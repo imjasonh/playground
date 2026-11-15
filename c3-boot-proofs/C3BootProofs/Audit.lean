@@ -80,6 +80,12 @@ import C3BootProofs.Proofs.Ashldi3
 import C3BootProofs.Proofs.DerAlgorithm
 import C3BootProofs.Proofs.ListsOid
 import C3BootProofs.Proofs.LeadingZeros
+import C3BootProofs.Proofs.FeLoad
+import C3BootProofs.Proofs.FeCtEq
+import C3BootProofs.Proofs.AsProjNiels
+import C3BootProofs.Proofs.IsSha256
+import C3BootProofs.Proofs.FeCall
+import C3BootProofs.Proofs.EdNiels
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
@@ -5243,6 +5249,199 @@ theorem exists_leadingZeros_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+
+/-- Memory with the current image's `from_bytes::load3_at` and `load4_at`
+where the image loads them, and zeros elsewhere. -/
+def witnessMemFl : RV32.Word → BitVec 8 :=
+  RV32.regionMem [(Image.feLoad3Address, Image.feLoad3Code), (Image.feLoad4Address, Image.feLoad4Code)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `from_bytes::load3_at` on index 0 of the bytes at
+`0x3FCC6000` meets `feLoad3_correct`'s hypotheses. -/
+theorem exists_feLoad3_machine :
+    ∃ (m : RV32.Machine) (base retAddr q i : RV32.Word), RV32.CodeIn m.mem base Image.feLoad3Code ∧
+      m.pc = base ∧ RV32.reg m RV32.a0 = q ∧ RV32.reg m RV32.a1 = i ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0 0, BitVec.ofNat 32 Image.feLoad3Address, witnessMemFl⟩,
+    BitVec.ofNat 32 Image.feLoad3Address, 0, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, rfl, by decide⟩
+  code_in
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `from_bytes::load4_at` on index 0 of the bytes at
+`0x3FCC6000` meets `feLoad4_correct`'s hypotheses. -/
+theorem exists_feLoad4_machine :
+    ∃ (m : RV32.Machine) (base retAddr q i : RV32.Word), RV32.CodeIn m.mem base Image.feLoad4Code ∧
+      m.pc = base ∧ RV32.reg m RV32.a0 = q ∧ RV32.reg m RV32.a1 = i ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0 0, BitVec.ofNat 32 Image.feLoad4Address, witnessMemFl⟩,
+    BitVec.ofNat 32 Image.feLoad4Address, 0, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, rfl, by decide⟩
+  code_in
+
+/-- Memory with the current image's `FieldElement2625::ct_eq` and the
+functions it calls where the image loads them, and zeros elsewhere. -/
+def witnessMemFeCtEq : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.feCtEqAddress, Image.feCtEqCode),
+    (Image.feToBytesAddress, Image.feToBytesCode),
+    (Image.feReduceAddress, Image.feReduceCode),
+    (Image.ctEqSliceAddress, Image.ctEqSliceCode),
+    (Image.ctEqU8Address, Image.ctEqU8Code),
+    (Image.blackBoxU8Address, Image.blackBoxU8Code)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `FieldElement2625::ct_eq` on the field elements at
+`0x3FCC6000` and `0x3FCC6100` with the stack at `0x3FCC8000` meets
+`feCtEq_correct`'s hypotheses. -/
+theorem exists_feCtEq_machine :
+    ∃ (m : RV32.Machine) (P sp0 xp yp retAddr : RV32.Word), RV32.FCEEnv m.mem P sp0 xp yp ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = xp ∧ RV32.reg m RV32.a1 = yp ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0x3FCC6100 0, BitVec.ofNat 32 Image.feCtEqAddress, witnessMemFeCtEq⟩,
+    BitVec.ofNat 32 Image.feCtEqAddress, 0x3FCC8000, 0x3FCC6000, 0x3FCC6100, 0, ?_, rfl, rfl, rfl, rfl, rfl,
+    by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+/-- Memory with the current image's `EdwardsPoint::as_projective_niels`, the
+functions it calls, and `2d` where the image loads them, and zeros
+elsewhere. -/
+def witnessMemApn : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.asProjNielsAddress, Image.asProjNielsCode),
+    (Image.feAddAddress, Image.feAddCode),
+    (Image.feSubAddress, Image.feSubCode),
+    (Image.feReduceAddress, Image.feReduceCode),
+    (Image.feMulAddress, Image.feMulCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.edwardsD2Address, Image.edwardsD2Data)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `EdwardsPoint::as_projective_niels` on the point at
+`0x3FCC6000` with the result at `0x3FCC6100` and the stack at `0x3FCC8000`
+meets `asProjNiels_correct`'s hypotheses. -/
+theorem exists_asProjNiels_machine :
+    ∃ (m : RV32.Machine) (P sp0 out ip retAddr : RV32.Word), RV32.APNEnv m.mem P sp0 out ip ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = ip ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC6100 0x3FCC6000 0, BitVec.ofNat 32 Image.asProjNielsAddress, witnessMemApn⟩,
+    BitVec.ofNat 32 Image.asProjNielsAddress, 0x3FCC8000, 0x3FCC6100, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, rfl, rfl,
+    by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+/-- Memory with the current image's `tsa::is_sha256`, the functions it
+calls, and SHA-256's OID where the image loads them, a reader at
+`0x3FCC6000` whose unread bytes start at `0x3FCC7000` and number zero, and
+zeros elsewhere. -/
+def witnessMemIsSha256 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.isSha256Address, Image.isSha256Code),
+    (Image.derAlgorithmAddress, Image.derAlgorithmCode),
+    (Image.derSequenceAddress, Image.derSequenceCode),
+    (Image.derNestedAddress, Image.derNestedCode),
+    (Image.derElementAddress, Image.derElementCode),
+    (Image.derTlvAddress, Image.derTlvCode),
+    (Image.derOidAddress, Image.derOidCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.sliceEqAddress, Image.sliceEqCode),
+    (Image.equalSameLengthAddress, Image.equalSameLengthCode),
+    (Image.memcmpAddress, Image.memcmpCode),
+    (Image.sha256OidAddress, Image.sha256OidData),
+    (0x3FCC6008, [0x00, 0x70, 0xCC, 0x3F])]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `tsa::is_sha256` with the reader at `0x3FCC6000`
+over no unread bytes at `0x3FCC7000` and the stack at `0x3FCC8000` meets
+`isSha256_correct`'s hypotheses. -/
+theorem exists_isSha256_machine :
+    ∃ (m : RV32.Machine) (P sp0 d p retAddr : RV32.Word) (n : Nat), RV32.ISEnv m.mem P sp0 d p n ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = d ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0 0, BitVec.ofNat 32 Image.isSha256Address, witnessMemIsSha256⟩,
+    BitVec.ofNat 32 Image.isSha256Address, 0x3FCC8000, 0x3FCC6000, 0x3FCC7000, 0, 0, ?_, rfl, rfl, rfl, rfl,
+    by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+
+/-- Memory with the current image's `EdwardsPoint ± ProjectiveNielsPoint`
+and the field operations they call where the image loads them, and zeros
+elsewhere. -/
+def witnessMemEdNiels : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.edAddNielsAddress, Image.edAddNielsCode),
+    (Image.edSubNielsAddress, Image.edSubNielsCode),
+    (Image.feAddAddress, Image.feAddCode),
+    (Image.feSubAddress, Image.feSubCode),
+    (Image.feReduceAddress, Image.feReduceCode),
+    (Image.feMulAddress, Image.feMulCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `EdwardsPoint + ProjectiveNielsPoint` on the points
+at `0x3FCC6000` and `0x3FCC6200` with the result at `0x3FCC6100` and the
+stack at `0x3FCC8000` meets `edAddNiels_correct`'s hypotheses. -/
+theorem exists_edAddNiels_machine :
+    ∃ (m : RV32.Machine) (P sp0 out ep np retAddr : RV32.Word), RV32.EANEnv m.mem P sp0 out ep np ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = ep ∧
+      RV32.reg m RV32.a2 = np ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC6100 0x3FCC6000 0x3FCC6200, BitVec.ofNat 32 Image.edAddNielsAddress, witnessMemEdNiels⟩,
+    BitVec.ofNat 32 Image.edAddNielsAddress, 0x3FCC8000, 0x3FCC6100, 0x3FCC6000, 0x3FCC6200, 0, ?_, rfl, rfl, rfl,
+    rfl, rfl, rfl, by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | (constructor <;> exact RV32.sep_of_le (by decide) (by decide))
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `EdwardsPoint - ProjectiveNielsPoint` on the points
+at `0x3FCC6000` and `0x3FCC6200` with the result at `0x3FCC6100` and the
+stack at `0x3FCC8000` meets `edSubNiels_correct`'s hypotheses. -/
+theorem exists_edSubNiels_machine :
+    ∃ (m : RV32.Machine) (P sp0 out ep np retAddr : RV32.Word), RV32.ESNEnv m.mem P sp0 out ep np ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = ep ∧
+      RV32.reg m RV32.a2 = np ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC6100 0x3FCC6000 0x3FCC6200, BitVec.ofNat 32 Image.edSubNielsAddress, witnessMemEdNiels⟩,
+    BitVec.ofNat 32 Image.edSubNielsAddress, 0x3FCC8000, 0x3FCC6100, 0x3FCC6000, 0x3FCC6200, 0, ?_, rfl, rfl, rfl,
+    rfl, rfl, rfl, by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | (constructor <;> exact RV32.sep_of_le (by decide) (by decide))
+    | decide +kernel
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -6357,3 +6556,45 @@ end C3
 
 /-- info: 'C3.exists_leadingZeros_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_leadingZeros_machine
+
+/-- info: 'C3.RV32.feLoad3_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.feLoad3_correct
+
+/-- info: 'C3.exists_feLoad3_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_feLoad3_machine
+
+/-- info: 'C3.RV32.feLoad4_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.feLoad4_correct
+
+/-- info: 'C3.exists_feLoad4_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_feLoad4_machine
+
+/-- info: 'C3.RV32.feCtEq_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.feCtEq_correct
+
+/-- info: 'C3.exists_feCtEq_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_feCtEq_machine
+
+/-- info: 'C3.RV32.asProjNiels_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.asProjNiels_correct
+
+/-- info: 'C3.exists_asProjNiels_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_asProjNiels_machine
+
+/-- info: 'C3.RV32.isSha256_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.isSha256_correct
+
+/-- info: 'C3.exists_isSha256_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_isSha256_machine
+
+/-- info: 'C3.RV32.edAddNiels_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.edAddNiels_correct
+
+/-- info: 'C3.exists_edAddNiels_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_edAddNiels_machine
+
+/-- info: 'C3.RV32.edSubNiels_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.edSubNiels_correct
+
+/-- info: 'C3.exists_edSubNiels_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_edSubNiels_machine

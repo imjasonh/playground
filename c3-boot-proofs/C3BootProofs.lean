@@ -165,6 +165,12 @@ import C3BootProofs.Proofs.Ashldi3
 import C3BootProofs.Proofs.DerAlgorithm
 import C3BootProofs.Proofs.ListsOid
 import C3BootProofs.Proofs.LeadingZeros
+import C3BootProofs.Proofs.FeLoad
+import C3BootProofs.Proofs.FeCtEq
+import C3BootProofs.Proofs.AsProjNiels
+import C3BootProofs.Proofs.IsSha256
+import C3BootProofs.Proofs.FeCall
+import C3BootProofs.Proofs.EdNiels
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.UpdateFg12
 import C3BootProofs.Proofs.UpdateFg8
