@@ -292,7 +292,8 @@ commit source files—never commit `node_modules/` or Go/Rust build artifacts.
 
 The production home page (`index.html` at the Pages root) is generated at build
 time by `.github/scripts/render-index.py` from the shared template. The header
-links to the generated **Posts** catalog (`posts/`). The page then lists a
+links to the generated **Posts** catalog (`posts/`). Below it the template
+embeds a YouTube video from `youtube-nocookie.com`. The page then lists a
 **Browser apps** section (the deployed `index.html` directories) and a separate
 **Cloudflare Workers apps** section (directories with `wrangler.toml`). Workers
 are not served from Pages, so the renderer discovers them by scanning the repo
