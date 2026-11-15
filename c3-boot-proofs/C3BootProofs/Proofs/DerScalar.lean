@@ -370,6 +370,92 @@ theorem ds_bgeu {k : Nat} (hk : k < 2 ^ 32) :
   · rw [decide_eq_true h, decide_eq_false (by omega)]; rfl
   · rw [decide_eq_false h, decide_eq_true (by omega)]; rfl
 
+/-- From 0x42 to the call to `memset`: the padding, and `memset`'s
+arguments. -/
+def dsSetup : List BInstr :=
+  [.aluImm .add a0 x0 0x30, .alu .sub (19 : Fin 32) a0 (8 : Fin 32), .aluImm .add a0 sp 0xC, .aluImm .add a2 x0 0x30,
+   .aluImm .add a1 x0 0, .aluImm .add (20 : Fin 32) sp 0xC]
+
+/-- From 0x5E to the loop: the zip of the array's tail and the magnitude. -/
+def dsZip : List BInstr :=
+  [.aluImm .add a0 sp 0x3C, .alu .add a1 (9 : Fin 32) (8 : Fin 32), .sw sp (20 : Fin 32) 0x3C, .sw sp a0 0x40,
+   .sw sp (19 : Fin 32) 0x44, .sw sp (9 : Fin 32) 0x48, .sw sp a1 0x4C, .sw sp x0 0x50, .sw sp (8 : Fin 32) 0x54]
+
+section
+set_option maxRecDepth 20000
+theorem dsSetup_end : blockEnd derScalar48Code 0x42 dsSetup = some 0x56 := by decide
+theorem dsZip_end : blockEnd derScalar48Code 0x5E dsZip = some 0x72 := by decide
+end
+
+theorem dsSetup_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) {sN : Nat} (hs : sN ≤ 48)
+    (h8 : f 8 = BitVec.ofNat 32 sN) :
+    (runBlock dsSetup (M, f)).1 = M ∧ (runBlock dsSetup (M, f)).2 (19 : Fin 32) = BitVec.ofNat 32 (48 - sN) ∧
+    (runBlock dsSetup (M, f)).2 a0 = f sp + 0xC ∧ (runBlock dsSetup (M, f)).2 a1 = 0 ∧
+    (runBlock dsSetup (M, f)).2 a2 = BitVec.ofNat 32 (4 * 12) ∧ (runBlock dsSetup (M, f)).2 (20 : Fin 32) = f sp + 0xC ∧
+    ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ (19 : Fin 32) → q ≠ (20 : Fin 32) → (runBlock dsSetup (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, dsSetup]
+  refine ⟨trivial, ?_, ?_, ?_, ?_, ?_, fun q q0 q1 q2 q19 q20 => ?_⟩
+  · simp +decide only [upd, ↓reduceIte, hz, h8]
+    exact sub_val (x := 48) hs (by decide)
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp [upd, h0, q0, q1, q2, q19, q20]
+
+set_option maxRecDepth 20000 in
+theorem dsZip_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    memLoad32 (runBlock dsZip (M, f)).1 (f sp + 0x3C) = f 20 ∧
+    memLoad32 (runBlock dsZip (M, f)).1 (f sp + 0x44) = f 19 ∧
+    memLoad32 (runBlock dsZip (M, f)).1 (f sp + 0x48) = f 9 ∧
+    memLoad32 (runBlock dsZip (M, f)).1 (f sp + 0x50) = 0 ∧
+    memLoad32 (runBlock dsZip (M, f)).1 (f sp + 0x54) = f 8 ∧
+    (∀ x, Sep (f sp + 0x3C) 0x1C x 1 → (runBlock dsZip (M, f)).1 x = M x) ∧
+    ∀ q, q ≠ a0 → q ≠ a1 → (runBlock dsZip (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, dsZip]
+  have ss : ∀ c d : Nat, (c + 4 ≤ d ∨ d + 4 ≤ c) → c + 4 ≤ 0x58 → d + 4 ≤ 0x58 →
+      Sep (f sp + BitVec.ofNat 32 c) 4 (f sp + BitVec.ofNat 32 d) 4 := fun c d h h1 h2 =>
+    sep_offsets (f sp) h (by omega) (by omega)
+  have u1 : ∀ r : Fin 32, r ≠ a0 → r ≠ a1 → upd (upd f a0 (aluEval .add (f sp) 0x3C)) a1
+      (aluEval .add (upd f a0 (aluEval .add (f sp) 0x3C) 9) (upd f a0 (aluEval .add (f sp) 0x3C) 8)) r = f r :=
+    fun r h0 h1 => by rw [updz ((updz hz (by decide)).trans hz) h1, updz hz h0]
+  simp only [u1 sp (by decide) (by decide), u1 20 (by decide) (by decide), u1 19 (by decide) (by decide),
+    u1 9 (by decide) (by decide), u1 8 (by decide) (by decide)]
+  refine ⟨?_, ?_, ?_, ?_, ?_, fun x hx => ?_, fun q q0 q1 => u1 q q0 q1⟩
+  · rw [memLoad32_store32_sep (a := f sp + 0x54) (b := f sp + 0x3C) (ss 0x54 0x3C (by decide) (by decide) (by decide)),
+      memLoad32_store32_sep (a := f sp + 0x50) (b := f sp + 0x3C) (ss 0x50 0x3C (by decide) (by decide) (by decide)),
+      memLoad32_store32_sep (a := f sp + 0x4C) (b := f sp + 0x3C) (ss 0x4C 0x3C (by decide) (by decide) (by decide)),
+      memLoad32_store32_sep (a := f sp + 0x48) (b := f sp + 0x3C) (ss 0x48 0x3C (by decide) (by decide) (by decide)),
+      memLoad32_store32_sep (a := f sp + 0x44) (b := f sp + 0x3C) (ss 0x44 0x3C (by decide) (by decide) (by decide)),
+      memLoad32_store32_sep (a := f sp + 0x40) (b := f sp + 0x3C) (ss 0x40 0x3C (by decide) (by decide) (by decide)),
+      memLoad32_store32_same]
+  · rw [memLoad32_store32_sep (a := f sp + 0x54) (b := f sp + 0x44) (ss 0x54 0x44 (by decide) (by decide) (by decide)),
+      memLoad32_store32_sep (a := f sp + 0x50) (b := f sp + 0x44) (ss 0x50 0x44 (by decide) (by decide) (by decide)),
+      memLoad32_store32_sep (a := f sp + 0x4C) (b := f sp + 0x44) (ss 0x4C 0x44 (by decide) (by decide) (by decide)),
+      memLoad32_store32_sep (a := f sp + 0x48) (b := f sp + 0x44) (ss 0x48 0x44 (by decide) (by decide) (by decide)),
+      memLoad32_store32_same]
+  · rw [memLoad32_store32_sep (a := f sp + 0x54) (b := f sp + 0x48) (ss 0x54 0x48 (by decide) (by decide) (by decide)),
+      memLoad32_store32_sep (a := f sp + 0x50) (b := f sp + 0x48) (ss 0x50 0x48 (by decide) (by decide) (by decide)),
+      memLoad32_store32_sep (a := f sp + 0x4C) (b := f sp + 0x48) (ss 0x4C 0x48 (by decide) (by decide) (by decide)),
+      memLoad32_store32_same]
+  · rw [memLoad32_store32_sep (a := f sp + 0x54) (b := f sp + 0x50) (ss 0x54 0x50 (by decide) (by decide) (by decide)),
+      memLoad32_store32_same]
+    simp +decide only [upd, ↓reduceIte]
+  · rw [memLoad32_store32_same]
+  · have hs : ∀ c : Nat, 0x3C ≤ c → c + 4 ≤ 0x58 → Sep (f sp + BitVec.ofNat 32 c) 4 x 1 := fun c h1 h2 => by
+      have := hx.sub (c := c - 0x3C) (l := 4) (by omega)
+      rwa [show (0x3C : Word) = BitVec.ofNat 32 0x3C from rfl, add_ofNat_assoc, show 0x3C + (c - 0x3C) = c by omega] at this
+    rw [memStore32_get_sep (a := f sp + 0x54) (hs 0x54 (by decide) (by decide)),
+      memStore32_get_sep (a := f sp + 0x50) (hs 0x50 (by decide) (by decide)),
+      memStore32_get_sep (a := f sp + 0x4C) (hs 0x4C (by decide) (by decide)),
+      memStore32_get_sep (a := f sp + 0x48) (hs 0x48 (by decide) (by decide)),
+      memStore32_get_sep (a := f sp + 0x44) (hs 0x44 (by decide) (by decide)),
+      memStore32_get_sep (a := f sp + 0x40) (hs 0x40 (by decide) (by decide)),
+      memStore32_get_sep (a := f sp + 0x3C) (hs 0x3C (by decide) (by decide))]
+
 abbrev dsPs : List (Fin 32 × Word) :=
   [(ra, 0x6C), ((8 : Fin 32), 0x68), ((9 : Fin 32), 0x64), ((18 : Fin 32), 0x60), ((19 : Fin 32), 0x5C),
    ((20 : Fin 32), 0x58)]
@@ -499,6 +585,8 @@ theorem derScalar48_correct (m : Machine) {P sp0 out d retAddr : Word} (env : DS
   have eA : F + 0xC = G + BitVec.ofNat 32 0x3C := by rw [show (0xC : Word) = BitVec.ofNat 32 0xC from rfl, eFk]
   have sAP : ∀ {b : Word} {l : Nat}, Sep G 0xA0 b l → Sep (F + 0xC) 8 b l := fun h => by
     rw [eA]; exact h.sub (c := 0x3C) (l := 8) (by decide)
+  have sAP' : ∀ {b : Word} {l : Nat}, Sep G 0xA0 b l → Sep (F + 0xC) (4 * 12) b l := fun h => by
+    rw [eA]; exact h.sub (c := 0x3C) (l := 48) (by decide)
   have hPI : PIEnv m4.mem (P + 0xFFFFFD12) F (F + 0xC) d := by
     rw [mem4]
     refine ⟨even_at P env.hP 0xFFFFFD12 (by decide), cIn env.pint sGP frSv, cIn env.int sGI frSv,
@@ -819,6 +907,91 @@ theorem derScalar48_correct (m : Machine) {P sp0 out d retAddr : Word} (env : DS
     have v16s1 : reg n16 9 = src := by
       rw [u16.regs, u15.regs]; simp +decide only [upd_app, ↓reduceIte]
       simp only [u14.regs]; rw [r13_9, r13_a1, ← hsrc]; rfl
+    have k16 : ∀ q, q ≠ a0 → q ≠ a1 → q ≠ 8 → q ≠ 9 → reg n16 q = reg m5 q := fun q h0' h1 h8 h9 => by
+      rw [u16.regs, u15.regs, upd_ne' h9 u14.self.zero, u14.regs, k13 q h0' h1 h8 h9]
+    have v16s0 : reg n16 8 = BitVec.ofNat 32 sN := by
+      rw [u16.regs, u15.regs, upd_ne' (by decide) u14.self.zero, u14.regs, v13s0]
+    have sp16 : reg n16 sp = F := by rw [k16 sp (by decide) (by decide) (by decide) (by decide), sp5']
+    have s1816 : reg n16 18 = out := by rw [k16 18 (by decide) (by decide) (by decide) (by decide), s185]
+    have K16 : ∀ q, q.val ∈ [3, 4, 21, 22, 23, 24, 25, 26, 27] → reg n16 q = reg m q := fun q hq => by
+      have h : q ≠ a0 ∧ q ≠ a1 ∧ q ≠ 8 ∧ q ≠ 9 := by revert hq; revert q; decide
+      rw [k16 q h.1 h.2.1 h.2.2.1 h.2.2.2]; exact K5 q (by revert hq; revert q; decide)
+    have S16 : Steps m5 n16 := S13.trans (.cons d14 (.cons d15 (.single d16)))
+    have hs48 : sN ≤ 48 := by omega
+    -- the padding and `memset`'s arguments
+    obtain ⟨n17, c17, u17⟩ := St.block dsSetup u16.self hc5 dsSetup_end (by
+      simp only [BlockOk, BInstr.ok, dsSetup]; exact ⟨trivial, trivial, trivial, trivial, trivial, trivial, trivial⟩)
+    obtain ⟨em17, e19, ea0, ea1, ea2, e20, fr17⟩ := dsSetup_run (M := m5.mem) (f := reg n16) u16.self.zero hs48 v16s0
+    rw [em17] at u17
+    have g17 : ∀ q, reg n17 q = (runBlock dsSetup (m5.mem, reg n16)).2 q := u17.regs
+    have hA48 : (F + 0xC).toNat + 4 * 12 < 2 ^ 32 := by
+      rw [BitVec.toNat_add, show (0xC : Word).toNat = 0xC from rfl]; omega
+    have sAM : Sep (F + 0xC) (4 * 12) (P + 0xC566) memsetCode.length := by
+      rw [eA]; exact sGM.sub (c := 0x3C) (l := 48) (by decide)
+    obtain ⟨n18, c18, u18, _, fr18⟩ := u17.self.memsetW (B := P + 0xC566) (w := 12) (dst := F + 0xC)
+      (even_at P env.hP 0xC566 (by decide)) hc5 (cIn5 env.mset sGM env.sDM) ds_at_56 ds_at_5a
+      (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at P env.hP (0x56 + 8) (by decide)) (by decide)
+      hA48 (by decide) (aligned_add hFa (k := 0xC) (by decide)) sAM
+      (by rw [g17, ea0, sp16]) (by rw [g17, ea1]) (by rw [g17, ea2])
+    obtain ⟨Mset, hMset⟩ : ∃ Mset, fillWords m5.mem (F + 0xC) 0 12 = Mset := ⟨_, rfl⟩
+    rw [hMset] at u18
+    have k18 : ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ ra → q ≠ 19 → q ≠ 20 →
+        reg n18 q = reg n16 q := fun q h0' h1 h2 h3 h4 h5 h6 hr h19 h20 => by
+      rw [fr18 q h2 h3 h4 h5 h6 hr, g17, fr17 q h0' h1 h2 h19 h20]
+    have frSet : ∀ x, Sep (F + 0xC) (4 * 12) x 1 → Mset x = m5.mem x := fun x hx => by
+      rw [← hMset, fillWords_outside 12 hx]
+    have hcSet : CodeIn Mset P derScalar48Code := fun i hi => by
+      rw [frSet _ ((sAP' (b := P) sGC).subR (c := i) (l := 1) (by omega))]; exact hc5 i hi
+    have sp18 : reg n18 sp = F := by
+      rw [k18 sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by decide) (by decide), sp16]
+    have v18_20 : reg n18 20 = F + 0xC := by
+      rw [fr18 20 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g17, e20, sp16]
+    have v18_19 : reg n18 19 = BitVec.ofNat 32 (48 - sN) := by
+      rw [fr18 19 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g17, e19]
+    have v18_9 : reg n18 9 = src := by
+      rw [k18 9 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by decide) (by decide), v16s1]
+    have v18_8 : reg n18 8 = BitVec.ofNat 32 sN := by
+      rw [k18 8 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by decide) (by decide), v16s0]
+    have sZC : ∀ c, 0x3C ≤ c → c + 4 ≤ 0x58 → Sep (F + BitVec.ofNat 32 c) 4 P derScalar48Code.length := fun c h1 h2 =>
+      (inF sGC).sub (by omega)
+    obtain ⟨n19, c19, u19⟩ := St.block dsZip u18 hcSet dsZip_end (by
+      simp +decide only [BlockOk, BInstr.ok, BInstr.run, dsZip, upd, ↓reduceIte, true_and, and_true]
+      rw [sp18]
+      exact ⟨⟨aligned_add hFa (k := 0x3C) (by decide), sZC 0x3C (by decide) (by decide)⟩,
+        ⟨aligned_add hFa (k := 0x40) (by decide), sZC 0x40 (by decide) (by decide)⟩,
+        ⟨aligned_add hFa (k := 0x44) (by decide), sZC 0x44 (by decide) (by decide)⟩,
+        ⟨aligned_add hFa (k := 0x48) (by decide), sZC 0x48 (by decide) (by decide)⟩,
+        ⟨aligned_add hFa (k := 0x4C) (by decide), sZC 0x4C (by decide) (by decide)⟩,
+        ⟨aligned_add hFa (k := 0x50) (by decide), sZC 0x50 (by decide) (by decide)⟩,
+        aligned_add hFa (k := 0x54) (by decide), sZC 0x54 (by decide) (by decide)⟩)
+    obtain ⟨z3c, z44, z48, z50, z54, frZ, kZ⟩ := dsZip_run (M := Mset) (f := reg n18) u18.zero
+    rw [sp18, v18_20] at z3c; rw [sp18, v18_19] at z44; rw [sp18, v18_9] at z48; rw [sp18] at z50
+    rw [sp18, v18_8] at z54
+    rw [sp18] at frZ
+    obtain ⟨Mz, hMz⟩ : ∃ Mz, (runBlock dsZip (Mset, reg n18)).1 = Mz := ⟨_, rfl⟩
+    rw [hMz] at u19; rw [hMz] at z3c; rw [hMz] at z44; rw [hMz] at z48; rw [hMz] at z50; rw [hMz] at z54
+    rw [hMz] at frZ
+    have g19 : ∀ q, reg n19 q = (runBlock dsZip (Mset, reg n18)).2 q := u19.regs
+    have frZ' : ∀ x, Sep G 0xA0 x 1 → Mz x = m5.mem x := fun x hx => by
+      rw [frZ x (by rw [show (0x3C : Word) = BitVec.ofNat 32 0x3C from rfl]; exact (inF hx).sub (by decide)),
+        frSet x (sAP' hx)]
+    have hcZ : ∀ {b : Word} {code' : List Nat}, CodeIn m.mem b code' → Sep G 0xA0 b code'.length →
+        Sep (d + 8) 8 b code'.length → CodeIn Mz b code' := fun hcb hs hd i hi => by
+      rw [frZ' _ (hs.subR (c := i) (l := 1) (by omega))]; exact cIn5 hcb hs hd i hi
+    have hMz0 : dsMem Mz F src (48 - sN) 0 = Mz := by
+      unfold dsMem
+      rw [copyBytes_zero, show (BitVec.ofNat 32 0 : Word) = memLoad32 Mz (F + 0x50) from z50.symm, memStore32_self]
+    have sSF : Sep src sN F 0x70 := by
+      rw [← hGF, ← hsrc, add_ofNat_assoc]
+      exact (sRG.sub (c := t.header + zN) (l := sN) (by omega)).subR (c := 0x30) (l := 0x70) (by decide)
+    have hsw : src.toNat + sN ≤ 2 ^ 32 := by
+      rw [← hsrc, add_ofNat_assoc, BitVec.toNat_add, ofNat_tn (by omega)]; omega
+    obtain ⟨n20, c20, u20, k20⟩ := ds_loop (Mz := Mz) (s := sN) (pad := 48 - sN) env.hP (by omega) hFa (by omega) hsw
+      (hcZ env.cod sGC env.sDS) (hcZ env.zip sGZ env.sDZ) (inF sGC) (inF sGZ) sSF z3c z44 z48 z54 sN 0 (by omega)
+      (by rw [hMz0]; exact u19.self) (by rw [g19, kZ sp (by decide) (by decide), sp18])
     sorry
 
 end C3.RV32
