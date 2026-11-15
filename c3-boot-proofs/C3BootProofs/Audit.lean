@@ -91,6 +91,7 @@ import C3BootProofs.Proofs.FeCondAssign
 import C3BootProofs.Proofs.FeNeg
 import C3BootProofs.Proofs.Scalar29Pack
 import C3BootProofs.Proofs.IncrementLimb
+import C3BootProofs.Proofs.NonAdjacentForm
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
@@ -5589,6 +5590,36 @@ theorem exists_incrementLimb_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with a scalar at `0x3FCC6000`, and the current image's
+`Scalar::non_adjacent_form`, `memset`, `__lshrdi3`, and `__ashldi3` where the
+image loads them, and zeros elsewhere. -/
+def witnessMemNaf : RV32.Word → BitVec 8 :=
+  RV32.regionMem [(0x3FCC6000, [0x13, 0x00, 0x00, 0x00, 0xFF, 0x7F, 0x00, 0x00]),
+    (Image.nonAdjacentFormAddress, Image.nonAdjacentFormCode),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.lshrdi3Address, Image.lshrdi3Code),
+    (Image.ashldi3Address, Image.ashldi3Code)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Scalar::non_adjacent_form(5)` on the scalar at
+`0x3FCC6000` with the result at `0x3FCC6100` and the stack at `0x3FCC8000`
+meets `nonAdjacentForm_correct`'s hypotheses. -/
+theorem exists_nonAdjacentForm_machine :
+    ∃ (m : RV32.Machine) (P sp0 out s retAddr : RV32.Word), RV32.NAFEnv m.mem P sp0 out s ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = s ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC6100 0x3FCC6000 0, BitVec.ofNat 32 Image.nonAdjacentFormAddress, witnessMemNaf⟩,
+    BitVec.ofNat 32 Image.nonAdjacentFormAddress, 0x3FCC8000, 0x3FCC6100, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, rfl,
+    rfl, by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+
+
 
 
 end C3
@@ -6777,3 +6808,9 @@ end C3
 
 /-- info: 'C3.exists_incrementLimb_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_incrementLimb_machine
+
+/-- info: 'C3.RV32.nonAdjacentForm_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.nonAdjacentForm_correct
+
+/-- info: 'C3.exists_nonAdjacentForm_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_nonAdjacentForm_machine
