@@ -87,6 +87,8 @@ import C3BootProofs.Proofs.IsSha256
 import C3BootProofs.Proofs.FeCall
 import C3BootProofs.Proofs.EdNiels
 import C3BootProofs.Proofs.Pow22501
+import C3BootProofs.Proofs.FeCondAssign
+import C3BootProofs.Proofs.FeNeg
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
@@ -5479,6 +5481,57 @@ theorem exists_pow22501_machine :
     | (constructor <;> exact RV32.sep_of_le (by decide) (by decide))
     | decide +kernel
 
+
+/-- Memory with the current image's `FieldElement2625::conditional_assign`
+where the image loads it, and zeros elsewhere. -/
+def witnessMemFca : RV32.Word → BitVec 8 :=
+  RV32.regionMem [(Image.feCondAssignAddress, Image.feCondAssignCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `FieldElement2625::conditional_assign` with `self` at
+`0x3FCC6000`, `other` at `0x3FCC6100`, and `choice` 1 meets
+`feCondAssign_correct`'s hypotheses. -/
+theorem exists_feCondAssign_machine :
+    ∃ (m : RV32.Machine) (P s o c retAddr : RV32.Word), RV32.CodeIn m.mem P Image.feCondAssignCode ∧
+      m.pc = P ∧ RV32.reg m RV32.a0 = s ∧ RV32.reg m RV32.a1 = o ∧ RV32.reg m RV32.a2 = c ∧ (c = 0 ∨ c = 1) ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ s.toNat % 4 = 0 ∧ o.toNat % 4 = 0 ∧
+      s.toNat + 40 < 2 ^ 32 ∧ RV32.Sep s 40 P Image.feCondAssignCode.length ∧ RV32.Sep s 40 o 40 := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0x3FCC6100 1, BitVec.ofNat 32 Image.feCondAssignAddress, witnessMemFca⟩,
+    BitVec.ofNat 32 Image.feCondAssignAddress, 0x3FCC6000, 0x3FCC6100, 1, 0, ?_, rfl, rfl, rfl, rfl, .inr rfl, rfl,
+    by decide, by decide, by decide, by decide, ?_, ?_⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+/-- Memory with the current image's `-&FieldElement2625` and `reduce` where
+the image loads them, and zeros elsewhere. -/
+def witnessMemFeNeg : RV32.Word → BitVec 8 :=
+  RV32.regionMem [(Image.feNegAddress, Image.feNegCode), (Image.feReduceAddress, Image.feReduceCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `-&FieldElement2625` on the field element at
+`0x3FCC6000` with the result at `0x3FCC6100` and the stack at `0x3FCC8000`
+meets `feNeg_correct`'s hypotheses. -/
+theorem exists_feNeg_machine :
+    ∃ (m : RV32.Machine) (P sp0 out ip retAddr : RV32.Word), RV32.FNEnv m.mem P sp0 out ip ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = ip ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC6100 0x3FCC6000 0, BitVec.ofNat 32 Image.feNegAddress, witnessMemFeNeg⟩,
+    BitVec.ofNat 32 Image.feNegAddress, 0x3FCC8000, 0x3FCC6100, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, rfl, rfl,
+    by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -6641,3 +6694,15 @@ end C3
 
 /-- info: 'C3.exists_pow22501_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_pow22501_machine
+
+/-- info: 'C3.RV32.feCondAssign_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.feCondAssign_correct
+
+/-- info: 'C3.exists_feCondAssign_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_feCondAssign_machine
+
+/-- info: 'C3.RV32.feNeg_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.feNeg_correct
+
+/-- info: 'C3.exists_feNeg_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_feNeg_machine
