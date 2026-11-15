@@ -201,6 +201,8 @@ FUNCTIONS = [
     ("unwrapOr256", "<subtle::CtOption<primeorder::affine::AffinePoint<p256::NistP256>>>::unwrap_or"),
     ("p256ScalarCtEq", "<p256::arithmetic::scalar::Scalar as subtle::ConstantTimeEq>::ct_eq"),
     ("nonZero256", "<elliptic_curve::scalar::nonzero::NonZeroScalar<p256::NistP256>>::new"),
+    ("arr32EqCrypto", "_RNvXNtNtCs2opbmDwVT5n_4core5array8equalityAhj20_NtNtB6_3cmp9PartialEq2eqCspC4dVFUdfd_9c3_crypto"),
+    ("feIsNegative", "<curve25519_dalek::backend::serial::u32::field::FieldElement2625>::is_negative"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
