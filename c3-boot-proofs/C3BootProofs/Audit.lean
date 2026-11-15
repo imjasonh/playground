@@ -68,6 +68,11 @@ import C3BootProofs.Proofs.IntegerIs
 import C3BootProofs.Proofs.CheckpointLine
 import C3BootProofs.Proofs.Sec1Tag
 import C3BootProofs.Proofs.TimeDigits
+import C3BootProofs.Proofs.P256Neg
+import C3BootProofs.Proofs.ScalarIsZero256
+import C3BootProofs.Proofs.Arr32Eq
+import C3BootProofs.Proofs.CtWrap
+import C3BootProofs.Proofs.TagAndThen
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
@@ -4569,6 +4574,280 @@ theorem exists_mulMont8_machine :
       | exact RV32.sep_of_le (by decide) (by decide)
   all_goals decide +kernel
 
+/-- Memory with the current image's P-256 `FieldElement::neg`, the
+`field_impl::sub` it tail-calls with its callees, and the zero constant
+where the image loads them, and zeros elsewhere. -/
+def witnessMemNeg : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.p256FieldNegAddress, Image.p256FieldNegCode),
+    (Image.fieldSubAddress, Image.fieldSubCode),
+    (Image.subInnerAddress, Image.subInnerCode),
+    (Image.borrowingSubAddress, Image.borrowingSubCode),
+    (Image.p256ZeroAddress, Image.p256ZeroData)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls P-256 `FieldElement::neg` with the result at
+`0x3FCC5000`, the operand at `0x3FCC6100`, and the stack at `0x3FCC8000`
+meets `p256FieldNeg_correct`'s hypotheses. -/
+theorem exists_p256FieldNeg_machine :
+    ∃ (m : RV32.Machine) (P sp0 res bp retAddr : RV32.Word), P.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem P Image.p256FieldNegCode ∧
+      RV32.FSEnv m.mem (P + 0x12) sp0 res (BitVec.ofNat 32 Image.p256ZeroAddress) bp ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.p256ZeroAddress) Image.p256ZeroData ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = res ∧ RV32.reg m RV32.a1 = bp ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6100 0, BitVec.ofNat 32 Image.p256FieldNegAddress, witnessMemNeg⟩,
+    BitVec.ofNat 32 Image.p256FieldNegAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6100, 0, by decide, ?_, ?_, ?_, rfl,
+    rfl, rfl, rfl, by decide, rfl⟩
+  · code_in
+  · constructor
+    all_goals first
+      | code_in
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+      | exact (RV32.sep_of_le (by decide) (by decide)).symm
+      | decide +kernel
+  · code_in
+
+/-- Memory with the current image's two `ScalarValue::is_zero` instances and
+their callees where the image loads them, and zeros elsewhere. -/
+def witnessMemScalarZero : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.scalarIsZero384Address, Image.scalarIsZero384Code),
+    (Image.scalarIsZero256Address, Image.scalarIsZero256Code),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.limbCtEqAddress, Image.limbCtEqCode),
+    (Image.uintRefIsZeroAddress, Image.uintRefIsZeroCode),
+    (Image.uintRefIsNonzeroAddress, Image.uintRefIsNonzeroCode),
+    (Image.blackBoxU8Address, Image.blackBoxU8Code)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `ScalarValue<NistP384>::is_zero` on the scalar at
+`0x3FCC6000` with the stack at `0x3FCC8000` meets `scalarIsZero384_correct`'s
+hypotheses. -/
+theorem exists_scalarIsZero384_machine :
+    ∃ (m : RV32.Machine) (P sp0 x retAddr : RV32.Word), RV32.SZEnv m.mem P sp0 x ∧ m.pc = P ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = x ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0 0, BitVec.ofNat 32 Image.scalarIsZero384Address, witnessMemScalarZero⟩,
+    BitVec.ofNat 32 Image.scalarIsZero384Address, 0x3FCC8000, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, rfl, by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `ScalarValue<NistP256>::is_zero` on the scalar at
+`0x3FCC6000` with the stack at `0x3FCC8000` meets `scalarIsZero256_correct`'s
+hypotheses. -/
+theorem exists_scalarIsZero256_machine :
+    ∃ (m : RV32.Machine) (P sp0 x retAddr : RV32.Word), RV32.SYEnv m.mem P sp0 x ∧ m.pc = P ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = x ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0 0, BitVec.ofNat 32 Image.scalarIsZero256Address, witnessMemScalarZero⟩,
+    BitVec.ofNat 32 Image.scalarIsZero256Address, 0x3FCC8000, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, rfl, by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+/-- Memory with the current image's byte comparisons, constant-time
+wrappers, `split_at (.165)`, `Result::and_then(Tag::from_u8)`, and their
+callees where the image loads them, and zeros elsewhere. -/
+def witnessMemWrap : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.arr32EqAddress, Image.arr32EqCode),
+    (Image.arr32NeAddress, Image.arr32NeCode),
+    (Image.sliceNeAddress, Image.sliceNeCode),
+    (Image.sliceEqAddress, Image.sliceEqCode),
+    (Image.equalSameLengthAddress, Image.equalSameLengthCode),
+    (Image.memcmpAddress, Image.memcmpCode),
+    (Image.choiceCtEqAddress, Image.choiceCtEqCode),
+    (Image.blackBoxU8Address, Image.blackBoxU8Code),
+    (Image.montyScalarCtEq384Address, Image.montyScalarCtEq384Code),
+    (Image.uint12CtEqAddress, Image.uint12CtEqCode),
+    (Image.splitAt12Address, Image.splitAt12Code),
+    (Image.limbCtEqAddress, Image.limbCtEqCode),
+    (Image.uintRefIsZeroAddress, Image.uintRefIsZeroCode),
+    (Image.uintRefIsNonzeroAddress, Image.uintRefIsNonzeroCode),
+    (Image.splitAt8Address, Image.splitAt8Code),
+    (Image.tagAndThenAddress, Image.tagAndThenCode),
+    (Image.tagFromU8Address, Image.tagFromU8Code),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `<[u8; 32] as PartialEq>::eq` on `0x3FCC5000` and
+`0x3FCC6000` with the stack at `0x3FCC8000` meets `arr32Eq_correct`'s
+hypotheses. -/
+theorem exists_arr32Eq_machine :
+    ∃ (m : RV32.Machine) (base retAddr p q : RV32.Word), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.arr32EqCode ∧ RV32.CodeIn m.mem (base + 0xC0F0) Image.memcmpCode ∧ m.pc = base ∧
+      RV32.reg m RV32.a0 = p ∧ RV32.reg m RV32.a1 = q ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 base Image.arr32EqCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xC0F0) Image.memcmpCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 p 32 ∧ RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 q 32 := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.arr32EqAddress, witnessMemWrap⟩,
+    BitVec.ofNat 32 Image.arr32EqAddress, 0, 0x3FCC5000, 0x3FCC6000, by decide, ?_, ?_, rfl, rfl, rfl, rfl, by decide,
+    by decide, ?_, ?_, ?_, ?_⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `<[u8; 32] as PartialEq>::ne` on `0x3FCC5000` and
+`0x3FCC6000` with the stack at `0x3FCC8000` meets `arr32Ne_correct`'s
+hypotheses. -/
+theorem exists_arr32Ne_machine :
+    ∃ (m : RV32.Machine) (base retAddr p q : RV32.Word), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.arr32NeCode ∧ RV32.CodeIn m.mem (base + 0xB97A) Image.memcmpCode ∧ m.pc = base ∧
+      RV32.reg m RV32.a0 = p ∧ RV32.reg m RV32.a1 = q ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 base Image.arr32NeCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xB97A) Image.memcmpCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 p 32 ∧ RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 q 32 := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.arr32NeAddress, witnessMemWrap⟩,
+    BitVec.ofNat 32 Image.arr32NeAddress, 0, 0x3FCC5000, 0x3FCC6000, by decide, ?_, ?_, rfl, rfl, rfl, rfl, by decide,
+    by decide, ?_, ?_, ?_, ?_⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `<&[u8] as PartialEq>::ne` on two 2-byte slices with
+the stack at `0x3FCC8000` meets `sliceNe_correct`'s hypotheses. -/
+theorem exists_sliceNe_machine :
+    ∃ (m : RV32.Machine) (base retAddr p q : RV32.Word) (pl ql : Nat), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.sliceNeCode ∧ RV32.CodeIn m.mem (base + 0x16) Image.sliceEqCode ∧
+      RV32.CodeIn m.mem (base + 0xFFFFF78C) Image.equalSameLengthCode ∧
+      RV32.CodeIn m.mem (base + 0xC09E) Image.memcmpCode ∧ m.pc = base ∧ RV32.reg m RV32.a0 = p ∧
+      RV32.reg m RV32.a1 = BitVec.ofNat 32 pl ∧ RV32.reg m RV32.a2 = q ∧ RV32.reg m RV32.a3 = BitVec.ofNat 32 ql ∧
+      pl < 2 ^ 32 ∧ ql < 2 ^ 32 ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEC) 0x14 base Image.sliceNeCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEC) 0x14 (base + 0x16) Image.sliceEqCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEC) 0x14 (base + 0xFFFFF78C) Image.equalSameLengthCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEC) 0x14 (base + 0xC09E) Image.memcmpCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEC) 0x14 p pl ∧ RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEC) 0x14 q ql := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 2 else if r = RV32.a2 then 0x3FCC6000
+    else if r = RV32.a3 then 2 else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.sliceNeAddress, witnessMemWrap⟩,
+    BitVec.ofNat 32 Image.sliceNeAddress, 0, 0x3FCC5000, 0x3FCC6000, 2, 2, by decide, ?_, ?_, ?_, ?_, rfl, rfl, rfl,
+    rfl, rfl, by decide, by decide, rfl, by decide, by decide, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `<Choice as ConstantTimeEq>::ct_eq` with the stack
+at `0x3FCC8000` meets `choiceCtEq_correct`'s hypotheses. -/
+theorem exists_choiceCtEq_machine :
+    ∃ (m : RV32.Machine) (base retAddr a b : RV32.Word), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.choiceCtEqCode ∧ RV32.CodeIn m.mem (base + 0x7C6E) Image.blackBoxU8Code ∧
+      m.pc = base ∧ RV32.reg m RV32.a0 = a ∧ RV32.reg m RV32.a1 = b ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEF) 0x11 base Image.choiceCtEqCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEF) 0x11 (base + 0x7C6E) Image.blackBoxU8Code.length := by
+  refine ⟨⟨leafRegs 1 0 0, BitVec.ofNat 32 Image.choiceCtEqAddress, witnessMemWrap⟩,
+    BitVec.ofNat 32 Image.choiceCtEqAddress, 0, 1, 0, by decide, ?_, ?_, rfl, rfl, rfl, rfl, by decide, by decide,
+    ?_, ?_⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `<ConstMontyForm<p384 scalar> as ConstantTimeEq>::ct_eq`
+on `0x3FCC5000` and `0x3FCC6000` with the stack at `0x3FCC8000` meets
+`montyScalarCtEq384_correct`'s hypotheses. -/
+theorem exists_montyScalarCtEq384_machine :
+    ∃ (m : RV32.Machine) (P sp0 pa pb retAddr : RV32.Word), RV32.MSEnv m.mem P sp0 pa pb ∧ m.pc = P ∧
+      RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = pa ∧ RV32.reg m RV32.a1 = pb ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.montyScalarCtEq384Address, witnessMemWrap⟩,
+    BitVec.ofNat 32 Image.montyScalarCtEq384Address, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, ?_, rfl, rfl, rfl, rfl,
+    rfl, by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `UintRef::split_at (.165)` meets `splitAt8_correct`'s
+hypotheses. -/
+theorem exists_splitAt8_machine :
+    ∃ (m : RV32.Machine) (base retAddr out p : RV32.Word), RV32.CodeIn m.mem base Image.splitAt8Code ∧
+      m.pc = base ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = p ∧ out.toNat % 4 = 0 ∧
+      RV32.Sep out 16 base Image.splitAt8Code.length ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.splitAt8Address, witnessMemWrap⟩,
+    BitVec.ofNat 32 Image.splitAt8Address, 0, 0x3FCC5000, 0x3FCC6000, ?_, rfl, rfl, rfl, by decide, ?_, rfl,
+    by decide⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Result<u8, sec1::Error>::and_then(Tag::from_u8)`
+with the result at `0x3FCC5000`, the input at `0x3FCC6000`, and the stack at
+`0x3FCC8000` meets `tagAndThen_correct`'s hypotheses. -/
+theorem exists_tagAndThen_machine :
+    ∃ (m : RV32.Machine) (base retAddr out rp : RV32.Word), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.tagAndThenCode ∧ RV32.CodeIn m.mem (base + 0x3E) Image.tagFromU8Code ∧
+      RV32.CodeIn m.mem (base + 0x119B4) Image.memcpyStubCode ∧
+      RV32.McEnv m.mem (base + 0x119B4 + 8) out rp (RV32.reg m RV32.sp + 0xFFFFFFF0) 0x34 ∧
+      m.pc = base ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = rp ∧ out.toNat % 4 = 0 ∧ rp.toNat % 4 = 0 ∧
+      RV32.Sep out 8 (base + 0x3E) Image.tagFromU8Code.length ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.tagAndThenAddress, witnessMemWrap⟩,
+    BitVec.ofNat 32 Image.tagAndThenAddress, 0, 0x3FCC5000, 0x3FCC6000, by decide, ?_, ?_, ?_, ?_, rfl, rfl, rfl,
+    by decide, by decide, ?_, rfl, by decide⟩
+  · code_in
+  · code_in
+  · code_in
+  · constructor
+    all_goals first
+      | code_in
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+      | exact (RV32.sep_of_le (by decide) (by decide)).symm
+      | decide +kernel
+  · exact RV32.sep_of_le (by decide) (by decide)
+
 end C3
 
 /-- info: 'C3.efuse_monotone' depends on axioms: [propext, Quot.sound] -/
@@ -5527,3 +5806,63 @@ end C3
 
 /-- info: 'C3.exists_derPositiveInteger_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_derPositiveInteger_machine
+
+/-- info: 'C3.RV32.p256FieldNeg_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.p256FieldNeg_correct
+
+/-- info: 'C3.exists_p256FieldNeg_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_p256FieldNeg_machine
+
+/-- info: 'C3.RV32.scalarIsZero384_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.scalarIsZero384_correct
+
+/-- info: 'C3.exists_scalarIsZero384_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_scalarIsZero384_machine
+
+/-- info: 'C3.RV32.scalarIsZero256_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.scalarIsZero256_correct
+
+/-- info: 'C3.exists_scalarIsZero256_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_scalarIsZero256_machine
+
+/-- info: 'C3.RV32.arr32Eq_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.arr32Eq_correct
+
+/-- info: 'C3.exists_arr32Eq_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_arr32Eq_machine
+
+/-- info: 'C3.RV32.arr32Ne_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.arr32Ne_correct
+
+/-- info: 'C3.exists_arr32Ne_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_arr32Ne_machine
+
+/-- info: 'C3.RV32.sliceNe_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.sliceNe_correct
+
+/-- info: 'C3.exists_sliceNe_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_sliceNe_machine
+
+/-- info: 'C3.RV32.choiceCtEq_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.choiceCtEq_correct
+
+/-- info: 'C3.exists_choiceCtEq_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_choiceCtEq_machine
+
+/-- info: 'C3.RV32.montyScalarCtEq384_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.montyScalarCtEq384_correct
+
+/-- info: 'C3.exists_montyScalarCtEq384_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_montyScalarCtEq384_machine
+
+/-- info: 'C3.RV32.splitAt8_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.splitAt8_correct
+
+/-- info: 'C3.exists_splitAt8_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_splitAt8_machine
+
+/-- info: 'C3.RV32.tagAndThen_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tagAndThen_correct
+
+/-- info: 'C3.exists_tagAndThen_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_tagAndThen_machine

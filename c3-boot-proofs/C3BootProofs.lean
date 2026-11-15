@@ -151,6 +151,12 @@ import C3BootProofs.Proofs.IntegerIs
 import C3BootProofs.Proofs.CheckpointLine
 import C3BootProofs.Proofs.Sec1Tag
 import C3BootProofs.Proofs.TimeDigits
+import C3BootProofs.Proofs.P256Neg
+import C3BootProofs.Proofs.ScalarIsZero
+import C3BootProofs.Proofs.ScalarIsZero256
+import C3BootProofs.Proofs.Arr32Eq
+import C3BootProofs.Proofs.CtWrap
+import C3BootProofs.Proofs.TagAndThen
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.UpdateFg12
 import C3BootProofs.Proofs.UpdateFg8
