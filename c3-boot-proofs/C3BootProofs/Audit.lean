@@ -63,6 +63,7 @@ import C3BootProofs.Proofs.CtAssign
 import C3BootProofs.Proofs.ZipNext
 import C3BootProofs.Proofs.DerPositive
 import C3BootProofs.Proofs.DerScalar32
+import C3BootProofs.Proofs.EcdsaSig
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.Lowest
 import C3BootProofs.Proofs.Norm12
@@ -3508,6 +3509,44 @@ theorem exists_derScalar32_machine :
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
 
+/-- Memory with the current image's `der::ecdsa_signature::<48>`, its
+callees, `memset`, and `memcpy` where the image loads them, and zeros
+elsewhere. -/
+def witnessMemDer6 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.derSequenceAddress, Image.derSequenceCode),
+    (Image.derNestedAddress, Image.derNestedCode),
+    (Image.derTlvAddress, Image.derTlvCode),
+    (Image.derElementAddress, Image.derElementCode),
+    (Image.derIntegerAddress, Image.derIntegerCode),
+    (Image.derPositiveIntegerAddress, Image.derPositiveIntegerCode),
+    (Image.zipSkipNextAddress, Image.zipSkipNextCode),
+    (Image.ecdsaSignature48Address, Image.ecdsaSignature48Code),
+    (Image.derScalar48Address, Image.derScalar48Code),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `der::ecdsa_signature::<48>` with the result at
+`0x3FCC5000`, an empty signature at `0x3FCC7000`, and the stack at
+`0x3FCC8000` meets `ecdsaSignature48_correct`'s hypotheses. -/
+theorem exists_ecdsaSignature48_machine :
+    ∃ (m : RV32.Machine) (P sp0 out p retAddr : RV32.Word) (n : Nat), RV32.ESEnv m.mem P sp0 out p n ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = p ∧
+      RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC7000 0, BitVec.ofNat 32 Image.ecdsaSignature48Address, witnessMemDer6⟩,
+    BitVec.ofNat 32 Image.ecdsaSignature48Address, 0x3FCC8000, 0x3FCC5000, 0x3FCC7000, 0, 0, ?_, rfl, rfl, rfl, rfl,
+    rfl, rfl, by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
 /-- A machine that calls `equal_same_length` on two empty slices, with the
@@ -5335,6 +5374,12 @@ end C3
 
 /-- info: 'C3.exists_derScalar32_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_derScalar32_machine
+
+/-- info: 'C3.RV32.ecdsaSignature48_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ecdsaSignature48_correct
+
+/-- info: 'C3.exists_ecdsaSignature48_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_ecdsaSignature48_machine
 
 /-- info: 'C3.RV32.derPositiveInteger_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.derPositiveInteger_correct
