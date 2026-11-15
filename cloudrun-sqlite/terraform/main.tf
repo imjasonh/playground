@@ -64,11 +64,13 @@ resource "ko_build" "server" {
   sbom        = "none"
 
   # mattn/go-sqlite3 and the VFS shim are C, and Litestream builds its VFS
-  # only with the vfs tag.
+  # only with the vfs tag. Without -buildvcs=false, Go stamps the commit
+  # into the binary, so every merge to main changes the digest and deploys
+  # a new revision.
   env = [
     "CGO_ENABLED=1",
     "CC=${var.cgo_cc}",
-    "GOFLAGS=-tags=vfs",
+    "GOFLAGS=-tags=vfs -buildvcs=false",
   ]
 }
 
