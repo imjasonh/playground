@@ -45,6 +45,11 @@
 # Identity variables live on the GitHub environment gcp.
 set -euo pipefail
 
+# Add temporary paths to cleanup rather than setting another EXIT trap,
+# which would replace this one.
+cleanup=()
+trap 'rm -rf -- ${cleanup[@]+"${cleanup[@]}"}' EXIT
+
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=SCRIPTDIR/gcp-app.sh
 source "$script_dir/gcp-app.sh"
@@ -228,7 +233,7 @@ plan_without_state() {
   # or a later command in this directory loads it again.
   rm -rf "${tfdir}/.terraform"
   copy=$(mktemp -d "$(dirname "$tfdir")/.tofu-plan.XXXXXX")
-  trap "rm -rf '${copy}'" EXIT
+  cleanup+=("$copy")
   cp -R "${tfdir}/." "$copy/"
   python3 - "$copy" <<'PY'
 import pathlib, sys
@@ -396,7 +401,7 @@ if [[ "$mode" == "plan" ]]; then
     exit 0
   fi
   planfile=$(mktemp)
-  trap 'rm -f "$planfile"' EXIT
+  cleanup+=("$planfile")
   plan_text=$(tofu -chdir="$plan_dir" plan \
     -input=false \
     -no-color \
