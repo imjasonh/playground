@@ -67,6 +67,15 @@
   }
   header nav a:hover { text-decoration: underline; }
   section { margin-top: 2.5rem; }
+  .video iframe {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    border: 0;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+  }
   h2 {
     font-size: .82rem;
     text-transform: uppercase;
@@ -196,6 +205,9 @@
       <a href="posts/">Posts</a>
     </nav>
   </header>
+  <section class="video">
+    <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/MtBfUmVCRt8" title="Jason Hall Live Stream on YouTube" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+  </section>
   <section class="apps">
     <h2>Browser apps</h2>
     <ul class="cards">
@@ -235,8 +247,17 @@
   </section>
 
   <section class="previews">
-    <h2>Active previews <span class="count">2</span></h2>
+    <h2>Active previews <span class="count">3</span></h2>
     <div class="preview-list">
+      <div class="preview-card">
+        <span class="pr">PR #744</span>
+        <span class="title">pages: embed the YouTube live stream above the browser apps</span>
+        <span class="apps">index</span>
+        <span class="links">
+          <a class="open" href="preview/pr-744/">Open preview</a>
+          <a href="https://github.com/imjasonh/playground/pull/744">View PR</a>
+        </span>
+      </div>
       <div class="preview-card">
         <span class="pr">PR #259</span>
         <span class="title">Add introductory blog post about Inkbot and ESP32</span>
