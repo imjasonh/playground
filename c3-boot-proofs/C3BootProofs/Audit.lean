@@ -124,6 +124,8 @@ import C3BootProofs.Proofs.MerkleNode
 import C3BootProofs.Proofs.RootFromInclusion
 import C3BootProofs.Proofs.EncodedPoint
 import C3BootProofs.Proofs.Sha512Blocks
+import C3BootProofs.Proofs.CtInto
+import C3BootProofs.Proofs.ZeroArray
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
 import C3BootProofs.Image.BootloaderV0
@@ -941,7 +943,7 @@ as the image stores it, and a block count of zero. -/
 def emptyHasherBytes : List Nat := List.replicate 64 0 ++ Image.shaIVData ++ List.replicate 8 0
 
 /-- Memory with the empty hasher at `0x3FCC5000`, and the current image's
-`update`, `finalize`, `sha256`, their helpers, `node_hash`,
+`update`, `finalize`, `sha256`, their helpers, the zeroing `from_fn`s, `node_hash`,
 `root_from_inclusion`, `compress256` with its
 helpers, `memset`, `memcpy`, the initial hash value, and the round constants
 where the image loads them, and zeros elsewhere. -/
@@ -952,6 +954,8 @@ def witnessMemSha2 : RV32.Word → BitVec 8 :=
     (Image.shaUpdateBlocksAddress, Image.shaUpdateBlocksCode),
     (Image.shaFinalizeAddress, Image.shaFinalizeCode),
     (Image.shaZero32Address, Image.shaZero32Code),
+    (Image.zeroArray48Address, Image.zeroArray48Code),
+    (Image.zeroArray64Address, Image.zeroArray64Code),
     (Image.shaFinBlockAddress, Image.shaFinBlockCode),
     (Image.sha256FnAddress, Image.sha256FnCode),
     (Image.shaFinishAddress, Image.shaFinishCode),
@@ -1138,6 +1142,40 @@ theorem exists_rootFromInclusion_machine :
     | exact RV32.sep_of_le (by decide) (by decide)
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that zeroes 48 bytes at `0x3FCC6000` with the stack at
+`0x3FCC8000` meets `zeroArray48_correct`'s hypotheses. -/
+theorem exists_zeroArray48_machine :
+    ∃ (m : RV32.Machine) (d T retAddr : RV32.Word),
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.zeroArray48Address) Image.zeroArray48Code ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.memcpyStubAddress) Image.memcpyStubCode ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.memcpyStubAddress + 8) Image.memcpyBodyCode ∧
+      m.pc = BitVec.ofNat 32 Image.zeroArray48Address ∧ RV32.reg m RV32.a0 = d ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = T ∧ T.toNat % 16 = 0 ∧ 0x50 ≤ T.toNat ∧
+      T.toNat ≤ 0x40000000 ∧ d.toNat + 48 ≤ 0x40000000 ∧ RV32.Sep d 48 (T + 0xFFFFFFB0) 0x50 := by
+  refine ⟨⟨fun r => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.sp then 0x3FCC8000 else 0,
+      BitVec.ofNat 32 Image.zeroArray48Address, witnessMemSha2⟩, 0x3FCC6000, 0x3FCC8000, 0,
+    by code_in, by code_in, by code_in, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide, by decide,
+    RV32.sep_of_le (by decide) (by decide)⟩
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that zeroes 64 bytes at `0x3FCC6000` with the stack at
+`0x3FCC8000` meets `zeroArray64_correct`'s hypotheses. -/
+theorem exists_zeroArray64_machine :
+    ∃ (m : RV32.Machine) (d T retAddr : RV32.Word),
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.zeroArray64Address) Image.zeroArray64Code ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.memcpyStubAddress) Image.memcpyStubCode ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.memcpyStubAddress + 8) Image.memcpyBodyCode ∧
+      m.pc = BitVec.ofNat 32 Image.zeroArray64Address ∧ RV32.reg m RV32.a0 = d ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = T ∧ T.toNat % 16 = 0 ∧ 0x60 ≤ T.toNat ∧
+      T.toNat ≤ 0x40000000 ∧ d.toNat + 64 ≤ 0x40000000 ∧ RV32.Sep d 64 (T + 0xFFFFFFA0) 0x60 := by
+  refine ⟨⟨fun r => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.sp then 0x3FCC8000 else 0,
+      BitVec.ofNat 32 Image.zeroArray64Address, witnessMemSha2⟩, 0x3FCC6000, 0x3FCC8000, 0,
+    by code_in, by code_in, by code_in, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide, by decide,
+    RV32.sep_of_le (by decide) (by decide)⟩
 
 /-- A 12-limb modulus of 3, as bytes: its low limb times `0x55555555` is
 `-1` modulo `2^32`. -/
@@ -4864,13 +4902,15 @@ theorem exists_tagAndThen_machine :
       | decide +kernel
   · exact RV32.sep_of_le (by decide) (by decide)
 
-/-- Memory with the current image's `conditional_select`s and their callers,
-`Uint<8>::ct_eq`, `NonZeroScalar::new`, their callees, and P-384's zero scalar
+/-- Memory with the current image's `conditional_select`s and their callers
+(including the `CtOption<AffinePoint>` conversions), `Uint<8>::ct_eq`, `NonZeroScalar::new`, their callees, and P-384's zero scalar
 where the image loads them, and zeros elsewhere. -/
 def witnessMemSel : RV32.Word → BitVec 8 :=
   RV32.regionMem
     [(Image.condSelect384Address, Image.condSelect384Code),
     (Image.condSelect256Address, Image.condSelect256Code),
+    (Image.ctIntoAffine384Address, Image.ctIntoAffine384Code),
+    (Image.ctIntoAffine256Address, Image.ctIntoAffine256Code),
     (Image.unwrapOr384Address, Image.unwrapOr384Code),
     (Image.unwrapOr256Address, Image.unwrapOr256Code),
     (Image.ctMap384Address, Image.ctMap384Code),
@@ -4947,6 +4987,58 @@ theorem exists_unwrapOr384_machine :
   refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0x3FCC7000, BitVec.ofNat 32 Image.unwrapOr384Address, witnessMemSel⟩,
     BitVec.ofNat 32 Image.unwrapOr384Address, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0x3FCC7000, 0, ?_, rfl, rfl, rfl, rfl,
     rfl, .inl (by decide +kernel), rfl, by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that converts the option at `0x3FCC6000` with
+`CtOption<AffinePoint<NistP384>>::into`, with the result at `0x3FCC5000` and
+the stack at `0x3FCC8000`, meets `ctIntoAffine384_correct`'s hypotheses. -/
+theorem exists_ctIntoAffine384_machine :
+    ∃ (m : RV32.Machine) (out s sp0 retAddr : RV32.Word),
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.ctIntoAffine384Address) Image.ctIntoAffine384Code ∧
+      RV32.UOEnv m.mem (BitVec.ofNat 32 Image.unwrapOr384Address) (sp0 + 0xFFFFFFF0) out s 0x3FCC43C8 ∧
+      m.pc = BitVec.ofNat 32 Image.ctIntoAffine384Address ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧
+      RV32.reg m RV32.a1 = s ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      (m.mem (s + 0x64) = 0 ∨ m.mem (s + 0x64) = 1) ∧ 0x90 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧
+      out.toNat + 0x65 ≤ 0x40000000 ∧ RV32.Sep out 0x65 (sp0 + 0xFFFFFFF0) 16 ∧
+      RV32.Sep s 0x65 (sp0 + 0xFFFFFFF0) 16 ∧ RV32.Sep (0x3FCC43C8 : RV32.Word) 0x61 (sp0 + 0xFFFFFFF0) 16 := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.ctIntoAffine384Address, witnessMemSel⟩,
+    0x3FCC5000, 0x3FCC6000, 0x3FCC8000, 0, by code_in, ?_, rfl, rfl, rfl, rfl, rfl, by decide,
+    .inl (by decide +kernel), by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that converts the option at `0x3FCC6000` with
+`CtOption<AffinePoint<NistP256>>::into`, with the result at `0x3FCC5000` and
+the stack at `0x3FCC8000`, meets `ctIntoAffine256_correct`'s hypotheses. -/
+theorem exists_ctIntoAffine256_machine :
+    ∃ (m : RV32.Machine) (out s sp0 retAddr : RV32.Word),
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.ctIntoAffine256Address) Image.ctIntoAffine256Code ∧
+      RV32.UO2Env m.mem (BitVec.ofNat 32 Image.unwrapOr256Address) (sp0 + 0xFFFFFFF0) out s 0x3FCC442C ∧
+      m.pc = BitVec.ofNat 32 Image.ctIntoAffine256Address ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧
+      RV32.reg m RV32.a1 = s ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      (m.mem (s + 0x44) = 0 ∨ m.mem (s + 0x44) = 1) ∧ 0x80 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧
+      out.toNat + 0x45 ≤ 0x40000000 ∧ RV32.Sep out 0x45 (sp0 + 0xFFFFFFF0) 16 ∧
+      RV32.Sep s 0x45 (sp0 + 0xFFFFFFF0) 16 ∧ RV32.Sep (0x3FCC442C : RV32.Word) 0x41 (sp0 + 0xFFFFFFF0) 16 := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.ctIntoAffine256Address, witnessMemSel⟩,
+    0x3FCC5000, 0x3FCC6000, 0x3FCC8000, 0, by code_in, ?_, rfl, rfl, rfl, rfl, rfl, by decide,
+    .inl (by decide +kernel), by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩
   constructor
   all_goals first
     | code_in
@@ -6077,6 +6169,18 @@ end C3
 /-- info: 'C3.RV32.shaZero32_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.shaZero32_correct
 
+/-- info: 'C3.RV32.zeroArray48_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.zeroArray48_correct
+
+/-- info: 'C3.exists_zeroArray48_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_zeroArray48_machine
+
+/-- info: 'C3.RV32.zeroArray64_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.zeroArray64_correct
+
+/-- info: 'C3.exists_zeroArray64_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_zeroArray64_machine
+
 /-- info: 'C3.RV32.shaFinBlock_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.shaFinBlock_correct
 
@@ -6859,6 +6963,18 @@ end C3
 
 /-- info: 'C3.exists_unwrapOr384_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_unwrapOr384_machine
+
+/-- info: 'C3.RV32.ctIntoAffine384_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ctIntoAffine384_correct
+
+/-- info: 'C3.exists_ctIntoAffine384_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_ctIntoAffine384_machine
+
+/-- info: 'C3.RV32.ctIntoAffine256_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ctIntoAffine256_correct
+
+/-- info: 'C3.exists_ctIntoAffine256_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_ctIntoAffine256_machine
 
 /-- info: 'C3.RV32.unwrapOr256_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.unwrapOr256_correct

@@ -86,6 +86,8 @@ import C3BootProofs.Proofs.MerkleSpecLemmas
 import C3BootProofs.Proofs.RootFromInclusion
 import C3BootProofs.Proofs.EncodedPoint
 import C3BootProofs.Proofs.Sha512Blocks
+import C3BootProofs.Proofs.CtInto
+import C3BootProofs.Proofs.ZeroArray
 import C3BootProofs.Proofs.Sha256LoopDecode
 import C3BootProofs.Proofs.Sha256LoopBlocks
 import C3BootProofs.Proofs.Sha256LoopRounds
