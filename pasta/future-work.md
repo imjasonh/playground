@@ -324,6 +324,46 @@ and drives them via wazero (`CGO_ENABLED=0`, `go install` still
 works). Native cgo would still be ~2× faster than WASM on raw parse
 (see dvcdsys/code-index PR #81) but is not worth the toolchain
 breakage unless a profile shows parse dominating end-to-end again.
+A cold run over about 51,600 TypeScript files now shows that: the
+WASM parse is 74% of CPU, about 1.6 MB/s of TypeScript per core, and
+rule matching is about 1.3%. A native build mode is the largest
+remaining lever for big repositories.
+
+### One walk per file, and a smaller node index
+**Effort:** M.
+After the parse, each file's tree is copied out of guest memory and
+rebuilt as a Go node graph, then walked again by `defineAll`,
+`match.BuildIndex`, and `parseSuppressions`. On the TypeScript run
+above that was about 9% of CPU and 63 GB of allocation. The engine
+already skips `defineAll` when no rule emits a fact and
+`parseSuppressions` when the source has no `pasta:ignore`. What's
+left:
+- `match.BuildIndex` indexes every node type (11.9 GB on that run).
+  Indexing only the types the loaded rules reference would cut most
+  of it.
+- `Children` and `NamedChildren` allocate a new slice on each call
+  (about 16.6 GB). Returning views of the node's own slices would
+  remove that.
+- Merging the remaining walks into one pass over the rebuilt graph.
+
+### Cross-file runs hold every tree
+**Effort:** L.
+A rule with `requires`, or a fixpoint group, sends the run down the
+in-memory path, which keeps every parsed tree until the end. A
+prefilter usually narrows that to a few files, but a cross-file rule
+without one grows memory with the repository (29 GB after 50 seconds
+on the TypeScript run, still climbing). A two-pass design would bound
+it: emit facts per file and drop each tree, then re-parse, or replay
+from the cache, for the collection pass.
+
+### Prefilter coverage
+**Effort:** S per rule.
+A rule with no inferable substring keeps every file of its language,
+so one unfiltered rule disables the prefilter for that language. In
+the full JS/TS rule set 99 of 150 rules have no filter, and the
+prefilter skipped no files on the TypeScript run. Adding
+`require_substring` where a rule has a distinctive token is cheap,
+but common tokens appear in nearly every file, so the ceiling is low.
 
 ### Parallel warm-cache reads
 **Effort:** S.
