@@ -1,6 +1,7 @@
 package tswasm
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -49,6 +50,26 @@ func TestParseTimeout(t *testing.T) {
 		Timeout: time.Microsecond,
 	}); err == nil {
 		t.Skip("parse finished within 1µs")
+	}
+}
+
+// TestParseTimeoutUsesRealClock parses a large TypeScript file under the
+// default 2s budget. wazero's default clock advances 1ms per reading, which
+// times out files over about 230 KB that parse in well under a second.
+func TestParseTimeoutUsesRealClock(t *testing.T) {
+	var src []byte
+	for i := 0; len(src) < 400<<10; i++ {
+		src = fmt.Appendf(src, "export function f%d(a: number, b: string): string {\n"+
+			"  const xs: Array<number> = [a, a + 1, a * 2];\n"+
+			"  return xs.map((x) => `${b}:${x}`).join(\",\");\n}\n", i)
+	}
+	start := time.Now()
+	tree, err := Parse(t.Context(), &Language{Grammar: "typescript"}, src, "", ParseOptions{Timeout: 2 * time.Second})
+	if err != nil {
+		t.Fatalf("Parse(%d bytes) after %v: %v", len(src), time.Since(start), err)
+	}
+	if tree.RootNode().HasError() {
+		t.Fatal("unexpected syntax error")
 	}
 }
 

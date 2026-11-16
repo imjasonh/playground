@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -70,6 +71,28 @@ func TestPrewarmLeavesIdleParser(t *testing.T) {
 	gpool.mu.Unlock()
 	if idle != 1 {
 		t.Fatalf("Prewarm left %d idle parsers, want 1", idle)
+	}
+}
+
+// TestPoolKeepsConcurrentEngines checks that rounds of concurrent parses
+// reuse the engines of the first round instead of instantiating new ones.
+func TestPoolKeepsConcurrentEngines(t *testing.T) {
+	n := MaxConcurrentInstances
+	src := []byte("package p\n\nfunc F() {}\n")
+	before := gpool.created.Load()
+	for range 5 {
+		var wg sync.WaitGroup
+		for range n {
+			wg.Go(func() {
+				if _, err := Parse(t.Context(), &Language{Grammar: "go"}, src, "", ParseOptions{}); err != nil {
+					t.Error(err)
+				}
+			})
+		}
+		wg.Wait()
+	}
+	if created := gpool.created.Load() - before; created > int64(n) {
+		t.Errorf("5 rounds of %d parses created %d engines, want at most %d", n, created, n)
 	}
 }
 

@@ -180,6 +180,10 @@ type runOpts struct {
 	cache        *parsecache.Cache
 	parseTimeout time.Duration
 	timeoutSet   bool
+	// defineNames records definitions in the fact store. Lookups use
+	// definitions only to choose among facts, so it is false when no
+	// rule emits one.
+	defineNames  bool
 	memoryBudget int64 // bytes of source parsed; 0 = unlimited
 	stats        *Stats
 	// parsedBytes tracks cumulative source bytes admitted to parse.
@@ -287,6 +291,7 @@ func RunGroup(
 	if !o.timeoutSet {
 		o.parseTimeout = DefaultParseTimeout
 	}
+	o.defineNames = emitsFacts(groups)
 	if o.parsedBytes == nil {
 		o.parsedBytes = &atomic.Int64{}
 	}
@@ -321,6 +326,18 @@ func canStream(groups []ruleGroup) bool {
 		}
 	}
 	return true
+}
+
+// emitsFacts reports whether any rule in groups emits a fact.
+func emitsFacts(groups []ruleGroup) bool {
+	for _, g := range groups {
+		for _, sr := range g.rules {
+			if len(sr.rule.Emit) > 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // runStreaming processes each file independently across a worker pool
@@ -450,7 +467,7 @@ func processFile(
 		}
 		return nil
 	}
-	s, err := newFileState(ctx, f, store, o.parseTimeout)
+	s, err := newFileState(ctx, f, store, o.parseTimeout, o.defineNames)
 	if err != nil {
 		releaseParse(o, int64(len(src)))
 		if errors.Is(err, tsutil.ErrParseTimeout) || errors.Is(err, tsutil.ErrParseResourceLimit) {
@@ -503,7 +520,7 @@ func emitUnusedIgnoresOnly(ctx context.Context, f FileInput, out *Result, o *run
 	if o != nil {
 		parseTimeout = o.parseTimeout
 	}
-	s, err := newFileState(ctx, f, factstore.New(), parseTimeout)
+	s, err := newFileState(ctx, f, factstore.New(), parseTimeout, false)
 	if err != nil {
 		if errors.Is(err, tsutil.ErrParseTimeout) {
 			out.SkipReason = "too complex to analyze"
@@ -757,7 +774,7 @@ func parseInMemory(ctx context.Context, index int, f FileInput, groups []ruleGro
 		}
 		return nil, nil
 	}
-	s, err := newFileState(ctx, f, store, parseTimeout)
+	s, err := newFileState(ctx, f, store, parseTimeout, o != nil && o.defineNames)
 	if err != nil {
 		releaseParse(o, int64(len(src)))
 		if errors.Is(err, tsutil.ErrParseTimeout) || errors.Is(err, tsutil.ErrParseResourceLimit) {
@@ -874,9 +891,10 @@ func defineAll(store *factstore.Store, root tsutil.Node, definitionTypes []strin
 }
 
 // newFileState parses one file and builds its match environment +
-// suppression map. The caller owns the returned tree and must call
-// Release when done with it.
-func newFileState(ctx context.Context, f FileInput, store *factstore.Store, parseTimeout time.Duration) (fileState, error) {
+// suppression map, recording its definitions in store when defineNames
+// is true. The caller owns the returned tree and must call Release when
+// done with it.
+func newFileState(ctx context.Context, f FileInput, store *factstore.Store, parseTimeout time.Duration, defineNames bool) (fileState, error) {
 	tree, root, err := tsutil.ParseWithOptions(ctx, f.Lang.GetLanguage(), f.Src, f.FileID, tsutil.ParseOptions{
 		Timeout: parseTimeout,
 	})
@@ -887,7 +905,9 @@ func newFileState(ctx context.Context, f FileInput, store *factstore.Store, pars
 	for _, t := range f.Lang.CommentTypes {
 		commentTypes[t] = true
 	}
-	defineAll(store, root, f.Lang.DefinitionTypes)
+	if defineNames {
+		defineAll(store, root, f.Lang.DefinitionTypes)
+	}
 	env := &match.Env{
 		StmtList:     f.Lang.StmtList,
 		Predicates:   match.DefaultRegistry(),
@@ -895,13 +915,11 @@ func newFileState(ctx context.Context, f FileInput, store *factstore.Store, pars
 		CommentTypes: commentTypes,
 		Index:        match.BuildIndex(root),
 	}
-	return fileState{
-		input:    f,
-		tree:     tree,
-		root:     root,
-		env:      env,
-		suppress: parseSuppressions(root, commentTypes),
-	}, nil
+	s := fileState{input: f, tree: tree, root: root, env: env}
+	if hasPastaIgnore(f.Src) {
+		s.suppress = parseSuppressions(root, commentTypes)
+	}
+	return s, nil
 }
 
 // runGroupOnFile runs every rule in group that applies to s's language,

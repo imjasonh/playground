@@ -54,7 +54,9 @@ var (
 	// RecycleGrowthBytes closes instances that grew this far above baseline.
 	RecycleGrowthBytes uint64 = 128 << 20
 	// MaxIdleInstances bounds pooled idle engines. 0 → MaxConcurrentInstances.
-	MaxIdleInstances = 2
+	// Keeping fewer idle than run at once makes the pool close and
+	// re-instantiate engines (copying the grammar tables) between parses.
+	MaxIdleInstances = 0
 )
 
 // ---------------------------------------------------------------------------
@@ -247,8 +249,11 @@ func newEngine() (*engine, error) {
 		return nil, rtErr
 	}
 	name := fmt.Sprintf("ts-%d", instN.Add(1))
+	// tree-sitter's parse timeout reads the monotonic clock. wazero's
+	// default clock advances 1ms per reading, which would turn the timeout
+	// into a cap on how often the parser checks the clock.
 	mod, err := rt.wz.InstantiateModule(rt.ctx, rt.cm,
-		wazero.NewModuleConfig().WithName(name).WithStartFunctions("_initialize"))
+		wazero.NewModuleConfig().WithName(name).WithStartFunctions("_initialize").WithSysNanotime())
 	if err != nil {
 		return nil, fmt.Errorf("instantiate: %w", err)
 	}
