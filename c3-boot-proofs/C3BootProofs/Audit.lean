@@ -119,6 +119,7 @@ import C3BootProofs.Proofs.MemsetAny
 import C3BootProofs.Proofs.MemcpyAny
 import C3BootProofs.Proofs.Sha2OneShot
 import C3BootProofs.Proofs.Sha2Finish
+import C3BootProofs.Proofs.Sha2Parts
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
 import C3BootProofs.Image.BootloaderV0
@@ -949,6 +950,8 @@ def witnessMemSha2 : RV32.Word → BitVec 8 :=
     (Image.shaFinBlockAddress, Image.shaFinBlockCode),
     (Image.sha256FnAddress, Image.sha256FnCode),
     (Image.shaFinishAddress, Image.shaFinishCode),
+    (Image.sha256PartsAddress, Image.sha256PartsCode),
+    (0x3FCC6200, [0x00, 0x61, 0xCC, 0x3F, 3, 0, 0, 0, 0x10, 0x61, 0xCC, 0x3F, 5, 0, 0, 0]),
     (Image.sha256CompressAddress, Image.sha256CompressCode),
     (Image.rangeFromIndexAddress, Image.rangeFromIndexCode),
     (Image.memsetAddress, Image.memsetCode),
@@ -1053,6 +1056,33 @@ theorem exists_shaFinish_machine :
       | exact (RV32.sep_of_le (by decide) (by decide)).symm
       | decide +kernel
   all_goals decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `sha256_parts` on two slices, 3 bytes at
+`0x3FCC6100` and 5 bytes at `0x3FCC6110`, whose descriptors are at
+`0x3FCC6200`, with the output at `0x3FCC6000` and the stack at
+`0x3FCC8000`, meets `sha256Parts_correct`'s hypotheses. -/
+theorem exists_sha256Parts_machine :
+    ∃ (m : RV32.Machine) (out P sp0 retAddr : RV32.Word) (k : Nat),
+      RV32.PartsEnv m.mem out P sp0 k ∧ m.pc = BitVec.ofNat 32 Image.sha256PartsAddress ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = P ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 k ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 := by
+  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC6200
+      else if r = RV32.a2 then 2 else if r = RV32.sp then 0x3FCC8000 else 0),
+      BitVec.ofNat 32 Image.sha256PartsAddress, witnessMemSha2⟩,
+    0x3FCC6000, 0x3FCC6200, 0x3FCC8000, 0, 2, ?_, rfl, rfl, rfl, rfl, rfl, by decide, rfl⟩
+  constructor
+  case parts =>
+    intro i hi
+    rcases (show i = 0 ∨ i = 1 by omega) with rfl | rfl <;>
+      exact ⟨by decide +kernel, by decide +kernel, RV32.sep_of_le (by decide +kernel) (by decide +kernel)⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
 
 /-- A 12-limb modulus of 3, as bytes: its low limb times `0x55555555` is
 `-1` modulo `2^32`. -/
@@ -5916,6 +5946,15 @@ end C3
 
 /-- info: 'C3.exists_shaFinish_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_shaFinish_machine
+
+/-- info: 'C3.RV32.pt_loop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.pt_loop
+
+/-- info: 'C3.RV32.sha256Parts_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.sha256Parts_correct
+
+/-- info: 'C3.exists_sha256Parts_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_sha256Parts_machine
 
 /-- info: 'C3.RV32.mulMont12_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.mulMont12_correct

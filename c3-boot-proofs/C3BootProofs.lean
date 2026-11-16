@@ -79,6 +79,7 @@ import C3BootProofs.Proofs.Sha2Update
 import C3BootProofs.Proofs.Sha2Final
 import C3BootProofs.Proofs.Sha2OneShot
 import C3BootProofs.Proofs.Sha2Finish
+import C3BootProofs.Proofs.Sha2Parts
 import C3BootProofs.Proofs.Sha256LoopDecode
 import C3BootProofs.Proofs.Sha256LoopBlocks
 import C3BootProofs.Proofs.Sha256LoopRounds
