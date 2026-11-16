@@ -10,7 +10,7 @@
     "vendor": "node scripts/vendor.js"
   },
   "dependencies": {
-    "jsnes": "^2.1.0"
+    "jsnes": "^3.0.0"
   },
   "engines": {
     "node": ">=20"
