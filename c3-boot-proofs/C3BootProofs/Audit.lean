@@ -135,6 +135,7 @@ import C3BootProofs.Proofs.Bytes2Scalar256
 import C3BootProofs.Proofs.ScalarFromSlice256
 import C3BootProofs.Proofs.IsSmallOrder
 import C3BootProofs.Proofs.DateTime
+import C3BootProofs.Proofs.GeneralizedTime
 import C3BootProofs.Spec.Ecdsa
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
@@ -2833,6 +2834,32 @@ theorem exists_dateTime_machine :
     RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
     RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
     (RV32.sep_of_le (by decide) (by decide)).symm, RV32.sep_of_le (by decide) (by decide)⟩
+
+/-- Memory with `time::generalized_time`, `time::date_time`, and
+`time::digits::<2>` where the image loads them, and zeros elsewhere. -/
+def witnessMemGT : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.generalizedTimeAddress, Image.generalizedTimeCode), (Image.dateTimeAddress, Image.dateTimeCode),
+    (Image.timeDigits2Address, Image.timeDigits2Code)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `time::generalized_time` on 15 bytes at
+`0x3FCC7000`, with the result at `0x3FCC5000` and the stack at `0x3FCC8000`,
+meets `generalizedTime_correct`'s hypotheses. -/
+theorem exists_generalizedTime_machine :
+    ∃ (m : RV32.Machine) (sp0 out p retAddr : RV32.Word) (n : Nat),
+      RV32.CodeIn m.mem RV32.GNT Image.generalizedTimeCode ∧ RV32.CodeIn m.mem RV32.DT Image.dateTimeCode ∧
+      RV32.CodeIn m.mem RV32.TD Image.timeDigits2Code ∧ m.pc = RV32.GNT ∧ RV32.reg m RV32.a0 = out ∧
+      RV32.reg m RV32.a1 = p ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 4 = 0 ∧ 0x60 ≤ sp0.toNat ∧
+      sp0.toNat ≤ 0x40000000 ∧ out.toNat + 16 ≤ 0x40000000 ∧ out.toNat % 4 = 0 ∧ n < 2 ^ 32 ∧
+      p.toNat + n + 14 ≤ 0x40000000 ∧ 0 < p.toNat ∧ RV32.Sep out 16 (sp0 + 0xFFFFFFA0) 0x60 ∧
+      RV32.Sep p (n + 14) (sp0 + 0xFFFFFFA0) 0x60 := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC7000 15, RV32.GNT, witnessMemGT⟩, 0x3FCC8000, 0x3FCC5000, 0x3FCC7000, 0, 15,
+    by code_in, by code_in, by code_in, rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide,
+    by decide, by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide)⟩
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
@@ -7776,3 +7803,15 @@ end C3
 
 /-- info: 'C3.RV32.readDigits2_mem' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.readDigits2_mem
+
+/-- info: 'C3.RV32.generalizedTime_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.generalizedTime_correct
+
+/-- info: 'C3.RV32.gnt_year' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.gnt_year
+
+/-- info: 'C3.RV32.gnt_frac' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.gnt_frac
+
+/-- info: 'C3.RV32.gtTail_mem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.gtTail_mem

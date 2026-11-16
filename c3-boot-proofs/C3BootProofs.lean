@@ -100,6 +100,7 @@ import C3BootProofs.Proofs.ScalarFromSlice256
 import C3BootProofs.Proofs.EdCall
 import C3BootProofs.Proofs.IsSmallOrder
 import C3BootProofs.Proofs.DateTime
+import C3BootProofs.Proofs.GeneralizedTime
 import C3BootProofs.Proofs.Sha256LoopDecode
 import C3BootProofs.Proofs.Sha256LoopBlocks
 import C3BootProofs.Proofs.Sha256LoopRounds
