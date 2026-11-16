@@ -128,6 +128,8 @@ import C3BootProofs.Proofs.CtInto
 import C3BootProofs.Proofs.ZeroArray
 import C3BootProofs.Proofs.ToBeBytes
 import C3BootProofs.Proofs.P256Retrieve
+import C3BootProofs.Proofs.P384FromRepr
+import C3BootProofs.Proofs.P256FromRepr
 import C3BootProofs.Spec.Ecdsa
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
@@ -2492,6 +2494,89 @@ theorem exists_p256FieldRetrieve_machine :
     | decide
     | exact RV32.sep_of_le (by decide) (by decide)
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+/-- Memory with P-384's field `from_repr`, its callees, P-384's modulus, and
+`R² mod p` where the image loads them, and zeros elsewhere. -/
+def witnessMemP384FromRepr : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.p384FromReprAddress, Image.p384FromReprCode),
+    (Image.zeroArray48Address, Image.zeroArray48Code),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.borrowingSubAddress, Image.borrowingSubCode),
+    (Image.uintRefIsNonzeroAddress, Image.uintRefIsNonzeroCode),
+    (Image.mulMont12Address, Image.mulMont12Code),
+    (Image.uintSelect12Address, Image.uintSelect12Code),
+    (Image.blackBoxU8Address, Image.blackBoxU8Code),
+    (Image.condSelect384Address, Image.condSelect384Code),
+    (Image.uint12CtAssignAddress, Image.uint12CtAssignCode),
+    (Image.sliceCtAssignAddress, Image.sliceCtAssignCode),
+    (Image.p384ModulusAddress, Image.p384ModulusData),
+    (Image.p384R2Address, Image.p384R2Data)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that reads the 48 bytes at `0x3FCC5000` into a field element at
+`0x3FCC6000`, with the stack at `0x3FCC8000`, meets `p384FromRepr_correct`'s
+hypotheses; the modulus it reads is P-384's field prime and the constant
+0x60 bytes past it is `2^768 mod p`, so the result is `x · 2^384 mod p`. -/
+theorem exists_p384FromRepr_machine :
+    ∃ (m : RV32.Machine) (sp0 out inp retAddr : RV32.Word), RV32.FRPEnv m.mem ∧ m.pc = RV32.FRP ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = inp ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 16 = 0 ∧ 0x1A0 ≤ sp0.toNat ∧
+      sp0.toNat ≤ 0x40000000 ∧ out.toNat + 49 ≤ 0x40000000 ∧ RV32.Sep out 49 (sp0 + 0xFFFFFE60) 0x1A0 ∧
+      RV32.Sep inp 48 (sp0 + 0xFFFFFE60) 0x1A0 ∧ RV32.Sep (sp0 + 0xFFFFFE60) 0x1A0 RV32.p384Np 0x90 ∧
+      RV32.accV m.mem RV32.p384Np 12 = p384.p ∧ RV32.accV m.mem (RV32.p384Np + 0x60) 12 = 2 ^ 768 % p384.p := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0x3FCC5000 0, BitVec.ofNat 32 Image.p384FromReprAddress, witnessMemP384FromRepr⟩,
+    0x3FCC8000, 0x3FCC6000, 0x3FCC5000, 0, ?_, rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide,
+    by decide, RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    (RV32.sep_of_le (by decide) (by decide)).symm, by decide +kernel, by decide +kernel⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide +kernel
+
+/-- Memory with P-256's field `from_repr`, its callees, P-256's modulus, and
+`R² mod p` where the image loads them, and zeros elsewhere. -/
+def witnessMemP256FromRepr : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.p256FromReprAddress, Image.p256FromReprCode),
+    (Image.shaZero32Address, Image.shaZero32Code),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.borrowingSubAddress, Image.borrowingSubCode),
+    (Image.uintRefIsNonzeroAddress, Image.uintRefIsNonzeroCode),
+    (Image.mulMont8Address, Image.mulMont8Code),
+    (Image.uintSelect8Address, Image.uintSelect8Code),
+    (Image.blackBoxU8Address, Image.blackBoxU8Code),
+    (Image.condSelect256Address, Image.condSelect256Code),
+    (Image.sliceCtAssignAddress, Image.sliceCtAssignCode),
+    (Image.p256ModulusAddress, Image.p256ModulusData),
+    (Image.p256R2Address, Image.p256R2Data)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that reads the 32 bytes at `0x3FCC5000` into a field element at
+`0x3FCC6000`, with the stack at `0x3FCC8000`, meets `p256FromRepr_correct`'s
+hypotheses; the modulus it reads is P-256's field prime and the constant
+0x40 bytes past it is `2^512 mod p`, so the result is `x · 2^256 mod p`. -/
+theorem exists_p256FromRepr_machine :
+    ∃ (m : RV32.Machine) (sp0 out inp retAddr : RV32.Word), RV32.FRQEnv m.mem ∧ m.pc = RV32.FRQ ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = inp ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 16 = 0 ∧ 0x140 ≤ sp0.toNat ∧
+      sp0.toNat ≤ 0x40000000 ∧ out.toNat + 33 ≤ 0x40000000 ∧ RV32.Sep out 33 (sp0 + 0xFFFFFEC0) 0x140 ∧
+      RV32.Sep inp 32 (sp0 + 0xFFFFFEC0) 0x140 ∧ RV32.Sep (sp0 + 0xFFFFFEC0) 0x140 RV32.p256Np 0x60 ∧
+      RV32.accV m.mem RV32.p256Np 8 = p256.p ∧ RV32.accV m.mem (RV32.p256Np + 0x40) 8 = 2 ^ 512 % p256.p := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0x3FCC5000 0, BitVec.ofNat 32 Image.p256FromReprAddress, witnessMemP256FromRepr⟩,
+    0x3FCC8000, 0x3FCC6000, 0x3FCC5000, 0, ?_, rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide,
+    by decide, RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    (RV32.sep_of_le (by decide) (by decide)).symm, by decide +kernel, by decide +kernel⟩
+  constructor
+  all_goals first
+    | code_in
     | decide +kernel
 
 set_option maxRecDepth 200000 in
@@ -6278,6 +6363,18 @@ end C3
 
 /-- info: 'C3.exists_p256FieldRetrieve_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_p256FieldRetrieve_machine
+
+/-- info: 'C3.RV32.p384FromRepr_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.p384FromRepr_correct
+
+/-- info: 'C3.exists_p384FromRepr_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_p384FromRepr_machine
+
+/-- info: 'C3.RV32.p256FromRepr_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.p256FromRepr_correct
+
+/-- info: 'C3.exists_p256FromRepr_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_p256FromRepr_machine
 
 /-- info: 'C3.RV32.shaFinBlock_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.shaFinBlock_correct

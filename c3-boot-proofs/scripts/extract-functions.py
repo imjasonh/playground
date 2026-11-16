@@ -297,6 +297,8 @@ DATA = [
     ("edwardsD2", "asProjNiels", 0x4A, 40),
     ("merklePrefix", "merkleNodeHash", 0x4, 1),
     ("p256Modulus", "p256FieldRetrieve", 0x2A, 32, -4),
+    ("p384R2", "p384FromRepr", 0xB2, 48, 0x60),
+    ("p256R2", "p256FromRepr", 0xB0, 32, 0x40),
 ]
 
 
