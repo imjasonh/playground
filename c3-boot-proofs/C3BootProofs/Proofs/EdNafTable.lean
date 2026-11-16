@@ -910,4 +910,342 @@ theorem nt_loop2 (C : NtCtx M0 R) {Ap A2 : Pt} (hA2 : A2 = extL (edDoubleSpec Ap
 
 end Loops
 
+/-- The registers the prologue saves, at their offsets from `sp + 0x780`. -/
+abbrev ntPs : List (Fin 32 × Word) :=
+  [(ra, BitVec.ofNat 32 0x1C), ((8 : Fin 32), BitVec.ofNat 32 0x18), ((9 : Fin 32), BitVec.ofNat 32 0x14),
+   ((18 : Fin 32), BitVec.ofNat 32 0x10), ((19 : Fin 32), BitVec.ofNat 32 0xC)]
+
+section
+set_option maxRecDepth 20000
+theorem ntSave_end : blockEnd nafTableFromCode 0x8 (saveBlockR a2 ntPs) = some 0x18 := by decide
+theorem ntRestore_end : blockEnd nafTableFromCode 0xF4 (restoreBlockR a0 ntPs) = some 0x104 := by decide
+end
+
+theorem ntPs_restore (M : Word → BitVec 8) (G : Word) (f : Fin 32 → Word) :
+    ∀ r o, (r, o) ∈ ntPs → restoreRegs M G f ntPs r = memLoad32 M (G + o) := by
+  intro r o hm
+  simp only [ntPs, List.mem_cons, List.mem_nil_iff, or_false, Prod.mk.injEq] at hm
+  rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+    simp +decide only [restoreRegs, upd, ↓reduceIte]
+
+theorem fw_copied {M M' : Word → BitVec 8} {R : Word} {M0 : Word → BitVec 8} (C : NtCtx M0 R) {k : Nat} {src : Word}
+    (f : ∀ x, Sep (R + BitVec.ofNat 32 0x260) 16 x 1 → M' x = copyBytes M (R + BitVec.ofNat 32 k) src 0x28 x)
+    (h1 : 0x270 ≤ k) (h2 : k + 40 ≤ 0xA10) : feW M' (R + BitVec.ofNat 32 k) = feW M src := by
+  rw [← feW_copy (M := M) (dst := R + BitVec.ofNat 32 k) (src := src)]
+  exact feW_frame fun i hi => memLoad32_congr fun q hq => by
+    rw [add_ofNat_assoc, add_ofNat_assoc]; exact f _ (C.offs (Or.inl (by omega)) (by decide) (by omega))
+
+theorem fw_keep {M M' : Word → BitVec 8} {R : Word} {M0 : Word → BitVec 8} (C : NtCtx M0 R) {k N a : Nat} {src : Word}
+    (f : ∀ x, Sep (R + BitVec.ofNat 32 0x260) 16 x 1 → M' x = copyBytes M (R + BitVec.ofNat 32 k) src N x)
+    (h1 : 0x270 ≤ a) (h2 : a + 40 ≤ 0xA10) (h3 : k + N ≤ a ∨ a + 40 ≤ k) (h4 : k + N ≤ 0xA10) :
+    feW M' (R + BitVec.ofNat 32 a) = feW M (R + BitVec.ofNat 32 a) :=
+  feW_frame fun i hi => memLoad32_congr fun q hq => by
+    rw [add_ofNat_assoc, add_ofNat_assoc, f _ (C.offs (Or.inl (by omega)) (by decide) (by omega)),
+      copyBytes_sep (C.offs (by omega) h4 (by omega)) (Nat.le_refl _)]
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 32000000 in
+/-- **The compiled `NafLookupTable5::<ProjectiveNielsPoint>::from`.** For the
+point at `A`, it writes `nafTab` of it to the eight 160-byte entries at
+`out`, with `2d` as the image holds it at `apnD`. It returns with `sp` and
+the callee-saved registers restored and writes nothing outside `out`'s
+0x500 bytes and the 0xA10 bytes of stack below `sp`. -/
+theorem nafTable_correct (m : Machine) {sp0 out A retAddr : Word} (E : NtEnv m.mem) (hpc : m.pc = NTF)
+    (ha0 : reg m a0 = out) (ha1 : reg m a1 = A) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
+    (hsp : reg m sp = sp0) (hsa : sp0.toNat % 4 = 0) (hsl : 0xA10 ≤ sp0.toNat) (hsw : sp0.toNat ≤ 0x40000000)
+    (hA : A.toNat % 4 = 0) (hAw : A.toNat + 0xA0 ≤ 0x40000000) (hout : out.toNat % 4 = 0)
+    (hoW : out.toNat + 0x500 ≤ 0x40000000)
+    (sAG : Sep A 0xA0 (sp0 + 0xFFFFF5F0) 0xA10) (sOG : Sep out 0x500 (sp0 + 0xFFFFF5F0) 0xA10)
+    (sD : Sep apnD 40 (sp0 + 0xFFFFF5F0) 0xA10) :
+    ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
+      (∀ q, q.val ∈ [1, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
+      (∀ i, i < 8 → ptAt m'.mem (out + BitVec.ofNat 32 (160 * i)) = nafTab (ptAt m.mem A) (feW m.mem apnD) i) ∧
+      ∀ x, Sep (sp0 + 0xFFFFF5F0) 0xA10 x 1 → Sep out 0x500 x 1 → m'.mem x = m.mem x := by
+  obtain ⟨R, hR⟩ : ∃ R, sp0 + 0xFFFFF5F0 = R := ⟨_, rfl⟩
+  rw [hR] at sAG sOG sD ⊢
+  have hRn : R.toNat = sp0.toNat - 0xA10 := by
+    rw [← hR, BitVec.toNat_add, show (0xFFFFF5F0 : Word).toNat = 2 ^ 32 - 0xA10 from rfl]; omega
+  have C : NtCtx m.mem R := ⟨E, by omega, by omega⟩
+  have eF : sp0 + 0xFFFFF860 = R + BitVec.ofNat 32 0x270 := by rw [← hR, BitVec.add_assoc]; rfl
+  have eS : R + BitVec.ofNat 32 0xA10 = sp0 := by rw [← hR, BitVec.add_assoc]; exact BitVec.add_zero sp0
+  have hc := E.cod
+  have st0 : St m.mem NTF m 0 (reg m) := ⟨by rw [hpc, add_ofNat_zero], rfl, fun _ => rfl⟩
+  have hz := st0.zero
+  obtain ⟨m1, d1, u1⟩ := st0.aluImm hc nt_at_0 (off' := 4) (by decide)
+  have sp1 : reg m1 sp = R + BitVec.ofNat 32 0x270 := by rw [u1.upd_eq (by decide), hsp]; exact eF
+  obtain ⟨m2, d2, u2⟩ := u1.self.aluImm hc nt_at_4 (off' := 8) (by decide)
+  have a2_2 : reg m2 a2 = R + BitVec.ofNat 32 0x9F0 := by rw [u2.upd_eq (by decide), sp1]; exact add_sp R rfl
+  have r2 : ∀ q, q ≠ sp → q ≠ a2 → reg m2 q = reg m q := fun q h1 h2 => by
+    rw [u2.upd_ne u1.self.zero q h2, u1.upd_ne hz q h1]
+  obtain ⟨m3, c3, u3⟩ := St.block (saveBlockR a2 ntPs) u2.self hc ntSave_end (saveBlockR_ok a2 _ ntPs _ fun p hp => by
+    rw [a2_2]
+    simp only [ntPs, List.mem_cons, List.mem_nil_iff, or_false] at hp
+    rcases hp with rfl | rfl | rfl | rfl | rfl <;>
+      exact ⟨by rw [add_ofNat_assoc]; exact aligned_add C.hR (by decide),
+        by rw [add_ofNat_assoc]; exact C.hiSep (by decide) (by decide) (by decide)⟩)
+  rw [saveBlockR_run, a2_2] at u3
+  obtain ⟨Ms, hMs⟩ : ∃ Ms, saveMem m.mem (R + BitVec.ofNat 32 0x9F0) (reg m2) ntPs = Ms := ⟨_, rfl⟩
+  rw [hMs] at u3
+  dsimp only at u3
+  have IMs : ∀ x, Sep R 0xA10 x 1 → Ms x = m.mem x := fun x hx => by
+    rw [← hMs]
+    exact saveMem_outside ntPs fun p hp => by
+      simp only [ntPs, List.mem_cons, List.mem_nil_iff, or_false] at hp
+      rcases hp with rfl | rfl | rfl | rfl | rfl <;> (rw [add_ofNat_assoc]; exact C.inR (by decide) hx)
+  have hcS : CodeIn Ms NTF nafTableFromCode := C.code IMs hc (by decide) (by decide)
+  obtain ⟨m4, d4, u4⟩ := u3.alu hcS nt_at_18 (off' := 0x1A) (by decide)
+  obtain ⟨m5, d5, u5⟩ := u4.self.alu hcS nt_at_1a (off' := 0x1C) (by decide)
+  obtain ⟨m6, d6, u6⟩ := u5.self.aluImm hcS nt_at_1c (off' := 0x20) (by decide)
+  have r6 : ∀ q, q ≠ (19 : Fin 32) → q ≠ (18 : Fin 32) → q ≠ a0 → reg m6 q = reg m2 q := fun q h1 h2 h3 => by
+    rw [u6.upd_ne u5.self.zero q h3, u5.upd_ne u4.self.zero q h2, u4.upd_ne u2.self.zero q h1]
+  have D6 : NtSt m.mem Ms R out A (reg m) Ms m6 0x20 :=
+    ⟨u6.self, by rw [r6 _ (by decide) (by decide) (by decide), u2.upd_ne u1.self.zero _ (by decide), sp1],
+      by rw [u6.upd_ne u5.self.zero _ (by decide), u5.upd_eq (by decide), u4.self.zero, u4.upd_ne u2.self.zero _ (by decide),
+        r2 _ (by decide) (by decide), ha0]; exact BitVec.zero_add _,
+      by rw [u6.upd_ne u5.self.zero _ (by decide), u5.upd_ne u4.self.zero _ (by decide), u4.upd_eq (by decide),
+        u2.self.zero, r2 _ (by decide) (by decide), ha1]; exact BitVec.zero_add _,
+      fun q hq => by rw [r6 q (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide),
+        r2 q (by revert hq; revert q; decide) (by revert hq; revert q; decide)],
+      IMs, fun _ _ _ => rfl⟩
+  obtain ⟨n7, c7, D7, w7, k7, f7⟩ := D6.apn C nt_at_20 nt_at_24 (by decide) (by decide) (k := 0x95C) (ip := A)
+    (by decide) (by decide) (by decide)
+    (by rw [u6.upd_eq (by decide), u5.upd_ne u4.self.zero _ (by decide), u4.upd_ne u2.self.zero _ (by decide),
+        u2.upd_ne u1.self.zero _ (by decide), sp1]; exact add_sp R rfl)
+    (by rw [r6 _ (by decide) (by decide) (by decide), r2 _ (by decide) (by decide), ha1]) hA (by omega)
+    (sAG.subR (by decide)) (sAG.subR (by decide)) sD
+  have hAm : ptAt Ms A = ptAt m.mem A := ptAt_frame fun j hj => IMs _ (sAG.sub (c := j) (l := 1) hj).symm
+  rw [hAm, nt_apnD IMs sD] at w7
+  have hc7 : CodeIn n7.mem NTF nafTableFromCode := D7.code C C.E.cod (by decide) (by decide)
+  obtain ⟨n8, d8, u8⟩ := D7.st.aluImm hc7 nt_at_28 (off' := 0x2A) (by decide)
+  have D8 := D7.step u8 (by decide)
+  obtain ⟨n9, d9, u9⟩ := D8.st.aluImm hc7 nt_at_2a (off' := 0x2C) (by decide)
+  have D9 := D8.step u9 (by decide)
+  obtain ⟨n10, d10, u10⟩ := D9.st.notTaken hc7 0x2E nt_at_2c (by decide)
+    (by rw [u9.upd_eq (by decide), D8.st.zero, D9.st.zero]; decide)
+  obtain ⟨n11, c11, D11, e11, -⟩ := nt_loop1 C 8 (j := 0) rfl (by decide) (D9.jmp' u10)
+    (by rw [u10.regs, u9.upd_ne D8.st.zero _ (by decide), u8.upd_eq (by decide), D7.hsp]; exact add_sp R rfl)
+    (by rw [u10.regs, u9.upd_eq (by decide), D8.st.zero]; rfl) w7 (fun h => absurd h (by decide))
+  -- copy `A`'s `Y`, `Z`, and `X` into a `ProjectivePoint`, double it, and extend it
+  have hc11 : CodeIn n11.mem NTF nafTableFromCode := D11.code C C.E.cod (by decide) (by decide)
+  have sA : ∀ {c : Nat}, c + 40 ≤ 0xA0 → ∀ {k : Nat}, 0x270 ≤ k → k + 40 ≤ 0xA10 →
+      Sep (R + BitVec.ofNat 32 k) 0x28 (A + BitVec.ofNat 32 c) 0x28 ∧ Sep (A + BitVec.ofNat 32 c) 0x28 (R + BitVec.ofNat 32 0x260) 16 :=
+    fun {c} hc {k} hk1 hk2 => ⟨((sAG.sub (c := c) (l := 40) hc).subR (c := k) (l := 40) hk2).symm,
+      (sAG.sub (c := c) (l := 40) hc).subR (by decide)⟩
+  have s3 : ∀ {M n off}, NtSt m.mem Ms R out A (reg m) M n off → reg n (19 : Fin 32) = A := fun D => D.hs3
+  obtain ⟨n12, d12, u12⟩ := D11.st.aluImm hc11 nt_at_48 (off' := 0x4C) (by decide)
+  have D12 := D11.step u12 (by decide)
+  obtain ⟨n13, d13, u13⟩ := D12.st.aluImm hc11 nt_at_4c (off' := 0x4E) (by decide)
+  have D13 := D12.step u13 (by decide)
+  obtain ⟨n14, d14, u14⟩ := D13.st.aluImm hc11 nt_at_4e (off' := 0x52) (by decide)
+  have D14 := D13.step u14 (by decide)
+  obtain ⟨n15, c15, D15, f15, -⟩ := D14.mc C nt_at_52 nt_at_56 (by decide) (by decide) (k := 0x3E4)
+    (src := A + BitVec.ofNat 32 40) (N := 0x28) (by decide) (by decide)
+    (by rw [u14.upd_ne D13.st.zero _ (by decide), u13.upd_eq (by decide), D12.hsp]; exact add_sp R rfl)
+    (by rw [u14.upd_ne D13.st.zero _ (by decide), u13.upd_ne D12.st.zero _ (by decide), u12.upd_eq (by decide), s3 D11]; rfl)
+    (by rw [u14.upd_eq (by decide), D13.st.zero]; rfl) (sA (c := 40) (by decide) (k := 0x3E4) (by decide) (by decide)).2
+    (sA (c := 40) (by decide) (k := 0x3E4) (by decide) (by decide)).1 (by rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega)
+  have hc15 : CodeIn n15.mem NTF nafTableFromCode := D15.code C C.E.cod (by decide) (by decide)
+  obtain ⟨n16, d16, u16⟩ := D15.st.aluImm hc15 nt_at_5a (off' := 0x5E) (by decide)
+  have D16 := D15.step u16 (by decide)
+  obtain ⟨n17, d17, u17⟩ := D16.st.aluImm hc15 nt_at_5e (off' := 0x60) (by decide)
+  have D17 := D16.step u17 (by decide)
+  obtain ⟨n18, d18, u18⟩ := D17.st.aluImm hc15 nt_at_60 (off' := 0x64) (by decide)
+  have D18 := D17.step u18 (by decide)
+  obtain ⟨n19, c19, D19, f19, -⟩ := D18.mc C nt_at_64 nt_at_68 (by decide) (by decide) (k := 0x40C)
+    (src := A + BitVec.ofNat 32 80) (N := 0x28) (by decide) (by decide)
+    (by rw [u18.upd_ne D17.st.zero _ (by decide), u17.upd_eq (by decide), D16.hsp]; exact add_sp R rfl)
+    (by rw [u18.upd_ne D17.st.zero _ (by decide), u17.upd_ne D16.st.zero _ (by decide), u16.upd_eq (by decide), s3 D15]; rfl)
+    (by rw [u18.upd_eq (by decide), D17.st.zero]; rfl) (sA (c := 80) (by decide) (k := 0x40C) (by decide) (by decide)).2
+    (sA (c := 80) (by decide) (k := 0x40C) (by decide) (by decide)).1 (by rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega)
+  have hc19 : CodeIn n19.mem NTF nafTableFromCode := D19.code C C.E.cod (by decide) (by decide)
+  obtain ⟨n20, d20, u20⟩ := D19.st.aluImm hc19 nt_at_6c (off' := 0x6E) (by decide)
+  have D20 := D19.step u20 (by decide)
+  obtain ⟨n21, d21, u21⟩ := D20.st.aluImm hc19 nt_at_6e (off' := 0x72) (by decide)
+  have D21 := D20.step u21 (by decide)
+  obtain ⟨n22, d22, u22⟩ := D21.st.alu hc19 nt_at_72 (off' := 0x74) (by decide)
+  have D22 := D21.step u22 (by decide)
+  have sA0 := sA (c := 0) (by decide) (k := 0x3BC) (by decide) (by decide)
+  rw [add_ofNat_zero] at sA0
+  obtain ⟨n23, c23, D23, f23, -⟩ := D22.mc C nt_at_74 nt_at_78 (by decide) (by decide) (k := 0x3BC)
+    (src := A) (N := 0x28) (by decide) (by decide)
+    (by rw [u22.upd_ne D21.st.zero _ (by decide), u21.upd_ne D20.st.zero _ (by decide), u20.upd_eq (by decide), D19.hsp]
+        exact add_sp R rfl)
+    (by rw [u22.upd_eq (by decide), D21.st.zero, u21.upd_ne D20.st.zero _ (by decide), u20.upd_ne D19.st.zero _ (by decide),
+        s3 D19]; exact BitVec.zero_add _)
+    (by rw [u22.upd_ne D21.st.zero _ (by decide), u21.upd_eq (by decide), D20.st.zero]; rfl) sA0.2 sA0.1
+    (by omega)
+  have hAg : ∀ {M : Word → BitVec 8}, (∀ x, Sep R 0xA10 x 1 → M x = m.mem x) → ∀ {c : Nat}, c + 40 ≤ 0xA0 →
+      feW M (A + BitVec.ofNat 32 c) = feW m.mem (A + BitVec.ofNat 32 c) := fun hM c hc =>
+    feW_frame fun i hi => memLoad32_congr fun q hq => by
+      rw [add_ofNat_assoc, add_ofNat_assoc]; exact hM _ (sAG.sub (c := c + (4 * i + q)) (l := 1) (by omega)).symm
+  have fX : feW n23.mem (R + BitVec.ofNat 32 0x3BC) = (ptAt m.mem A).1 := by
+    rw [fw_copied C f23 (by decide) (by decide)]
+    have := hAg D19.agree (c := 0) (by decide); rw [add_ofNat_zero] at this; exact this
+  have fY : feW n23.mem (R + BitVec.ofNat 32 0x3E4) = (ptAt m.mem A).2.1 := by
+    rw [fw_keep C f23 (by decide) (by decide) (Or.inl (by decide)) (by decide),
+      fw_keep C f19 (by decide) (by decide) (Or.inr (by decide)) (by decide), fw_copied C f15 (by decide) (by decide)]
+    exact hAg D11.agree (by decide)
+  have fZ : feW n23.mem (R + BitVec.ofNat 32 0x40C) = (ptAt m.mem A).2.2.1 := by
+    rw [fw_keep C f23 (by decide) (by decide) (Or.inl (by decide)) (by decide), fw_copied C f19 (by decide) (by decide)]
+    exact hAg D15.agree (by decide)
+  have e0 : ptAt n23.mem (R + BitVec.ofNat 32 0x45C) = nielsL (ptAt m.mem A) (feW m.mem apnD) := by
+    rw [pt_keep C f23 (by decide) (by decide) (Or.inl (by decide)) (by decide),
+      pt_keep C f19 (by decide) (by decide) (Or.inl (by decide)) (by decide),
+      pt_keep C f15 (by decide) (by decide) (Or.inl (by decide)) (by decide), e11]
+  have hc23 : CodeIn n23.mem NTF nafTableFromCode := D23.code C C.E.cod (by decide) (by decide)
+  obtain ⟨n24, d24, u24⟩ := D23.st.aluImm hc23 nt_at_7c (off' := 0x80) (by decide)
+  have D24 := D23.step u24 (by decide)
+  obtain ⟨n25, d25, u25⟩ := D24.st.aluImm hc23 nt_at_80 (off' := 0x82) (by decide)
+  have D25 := D24.step u25 (by decide)
+  obtain ⟨n26, c26, D26, w26, -, f26⟩ := D25.dbl C nt_at_82 nt_at_86 (by decide) (by decide) (k := 0x95C) (j := 0x3BC)
+    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+    (by rw [u25.upd_ne D24.st.zero _ (by decide), u24.upd_eq (by decide), D23.hsp]; exact add_sp R rfl)
+    (by rw [u25.upd_eq (by decide), u24.upd_ne D23.st.zero _ (by decide), D23.hsp]; exact add_sp R rfl)
+  rw [show R + BitVec.ofNat 32 0x3BC + (0x28 : Word) = R + BitVec.ofNat 32 0x3E4 from add_ofNat_assoc R 0x3BC 0x28,
+    show R + BitVec.ofNat 32 0x3BC + (0x50 : Word) = R + BitVec.ofNat 32 0x40C from add_ofNat_assoc R 0x3BC 0x50,
+    fX, fY, fZ] at w26
+  have hc26 : CodeIn n26.mem NTF nafTableFromCode := D26.code C C.E.cod (by decide) (by decide)
+  obtain ⟨n27, d27, u27⟩ := D26.st.aluImm hc26 nt_at_8a (off' := 0x8C) (by decide)
+  have D27 := D26.step u27 (by decide)
+  obtain ⟨n28, d28, u28⟩ := D27.st.aluImm hc26 nt_at_8c (off' := 0x90) (by decide)
+  have D28 := D27.step u28 (by decide)
+  obtain ⟨n29, c29, D29, w29, -, f29⟩ := D28.ext C nt_at_90 nt_at_94 (by decide) (by decide) (k := 0x27C) (j := 0x95C)
+    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (Or.inl (by decide))
+    (by rw [u28.upd_ne D27.st.zero _ (by decide), u27.upd_eq (by decide), D26.hsp]; exact add_sp R rfl)
+    (by rw [u28.upd_eq (by decide), u27.upd_ne D26.st.zero _ (by decide), D26.hsp]; exact add_sp R rfl)
+  rw [w26] at w29
+  have e0' : ptAt n29.mem (R + BitVec.ofNat 32 0x45C) = nielsL (ptAt m.mem A) (feW m.mem apnD) := by
+    rw [pt_keep2 C f29 (Or.inl (by decide)) (Or.inl (by decide)) (by decide) (by decide) (by decide),
+      pt_keep2 C f26 (Or.inl (by decide)) (Or.inr (by decide)) (by decide) (by decide) (by decide), e0]
+  have hc29 : CodeIn n29.mem NTF nafTableFromCode := D29.code C C.E.cod (by decide) (by decide)
+  obtain ⟨n30, d30, u30⟩ := D29.st.aluImm hc29 nt_at_98 (off' := 0x9A) (by decide)
+  have D30 := D29.step u30 (by decide)
+  obtain ⟨n31, d31, u31⟩ := D30.st.aluImm hc29 nt_at_9a (off' := 0x9C) (by decide)
+  have D31 := D30.step u31 (by decide)
+  obtain ⟨n32, d32, u32⟩ := D31.st.notTaken hc29 0x9E nt_at_9c (by decide)
+    (by rw [u31.upd_eq (by decide), D30.st.zero, D31.st.zero]; decide)
+  obtain ⟨n33, c33, D33, e33⟩ := nt_loop2 C (Ap := ptAt m.mem A) rfl sD 7 (j := 0) rfl (by decide) (D31.jmp' u32)
+    (by rw [u32.regs, u31.upd_ne D30.st.zero _ (by decide), u30.upd_eq (by decide), D29.hsp]; exact add_sp R rfl)
+    (by rw [u32.regs, u31.upd_eq (by decide), D30.st.zero]; rfl) w29
+    (fun i hi => by
+      obtain rfl : i = 0 := by omega
+      exact e0')
+  -- copy the table out
+  have hc33 : CodeIn n33.mem NTF nafTableFromCode := D33.code C C.E.cod (by decide) (by decide)
+  obtain ⟨n34, d34, u34⟩ := D33.st.aluImm hc33 nt_at_e0 (off' := 0xE2) (by decide)
+  obtain ⟨n35, d35, u35⟩ := u34.self.aluImm hc33 nt_at_e2 (off' := 0xE6) (by decide)
+  obtain ⟨n36, d36, u36⟩ := u35.self.alu hc33 nt_at_e6 (off' := 0xE8) (by decide)
+  have r36 : ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → reg n36 q = reg n33 q := fun q h0 h1 h2 => by
+    rw [u36.upd_ne u35.self.zero q h0, u35.upd_ne u34.self.zero q h2, u34.upd_ne D33.st.zero q h1]
+  obtain ⟨n37, c37, pc37, mem37, regs37⟩ := u36.self.callRa (cb := BitVec.ofNat 32 memcpyStubAddress) hc33 nt_at_e8
+    nt_at_ec (by decide) (by decide)
+  have r37 := PEnv.reg1 regs37 u36.self.zero
+  have eFp : R + BitVec.ofNat 32 0x270 + 0xFFFFFFF0 = R + BitVec.ofNat 32 0x260 := by rw [BitVec.add_assoc]; rfl
+  have hst : (BitVec.ofNat 32 memcpyStubAddress + 8 : Word).toNat = 0x403b4856 := by decide
+  have sp37 : reg n37 sp = R + BitVec.ofNat 32 0x270 := by
+    rw [r37 _ (by decide), r36 _ (by decide) (by decide) (by decide), D33.hsp]
+  obtain ⟨n38, c38, pc38, sp38, _, f38, k38⟩ := memcpy_correct n37 (BitVec.ofNat 32 memcpyStubAddress)
+    (NTF + BitVec.ofNat 32 (0xE8 + 8)) out (R + BitVec.ofNat 32 0x45C) 0x500
+    (fun i hi => by rw [mem37]; exact D33.code C C.E.mcs (by decide) (by decide) i hi) (by decide) pc37
+    (by rw [r37 _ (by decide), u36.upd_eq (by decide), u35.self.zero, u35.upd_ne u34.self.zero _ (by decide),
+      u34.upd_ne D33.st.zero _ (by decide), D33.hs2]; exact BitVec.zero_add _)
+    (by rw [r37 _ (by decide), u36.upd_ne u35.self.zero _ (by decide), u35.upd_ne u34.self.zero _ (by decide),
+      u34.upd_eq (by decide), D33.hsp]; exact add_sp R rfl)
+    (by rw [r37 _ (by decide), u36.upd_ne u35.self.zero _ (by decide), u35.upd_eq (by decide), u34.self.zero]; rfl)
+    (by rw [regs37]; simp +decide [upd]) (even_clear _ (C.even _ (by decide)))
+    (by
+      rw [mem37, sp37, eFp]
+      exact { code := D33.code C C.E.mcb (by decide) (by decide)
+              hDC := sep_of_le (by rw [hst]; omega) (by decide)
+              hFC := C.hiSep (by decide) (by decide) (by decide)
+              hdF := sOG.subR (by decide)
+              hsF := C.offs (Or.inr (by decide)) (by decide) (by decide)
+              hsep := sOG.subR (by decide)
+              hF := aligned_add C.hR (by decide)
+              hFw := by rw [C.toNat_off (by decide)]; have := C.hRw; omega
+              hdw := by omega
+              hsw := by rw [C.toNat_off (by decide)]; have := C.hRw; omega })
+  rw [mem37, sp37, eFp] at f38
+  have I38 : ∀ x, Sep R 0xA10 x 1 → Sep out 0x500 x 1 → n38.mem x = m.mem x := fun x h1 h2 => by
+    rw [f38 x (C.inR (by decide) h1), copyBytes_sep h2 (Nat.le_refl _), D33.agree x h1]
+  have S38 : ∀ c, 0x9FC ≤ c → c < 0xA10 → n38.mem (R + BitVec.ofNat 32 c) = Ms (R + BitVec.ofNat 32 c) := fun c h1 h2 => by
+    rw [f38 _ (C.offs (Or.inl (by omega)) (by decide) (by omega)),
+      copyBytes_sep (sOG.subR (c := c) (l := 1) (by omega)) (Nat.le_refl _), D33.slots c h1 h2]
+  have hi38 : ∀ x : Word, 0x40000000 ≤ x.toNat → n38.mem x = m.mem x := fun x hx =>
+    I38 x (sep_of_le (by omega) (by have := x.isLt; omega)) (sep_of_le (by omega) (by have := x.isLt; omega))
+  have hc38 : CodeIn n38.mem NTF nafTableFromCode := hc.hi hi38 (by decide) (by decide)
+  have u38 : St n38.mem NTF n38 0xF0 (reg n38) := ⟨by rw [pc38], rfl, fun _ => rfl⟩
+  have k38' : ∀ q : Fin 32, q.val ∈ [3, 4, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n38 q = reg n33 q := fun q hq => by
+    rw [k38 q (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide), r37 q (by revert hq; revert q; decide),
+      r36 q (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)]
+  -- the epilogue
+  obtain ⟨n39, d39, u39⟩ := u38.aluImm hc38 nt_at_f0 (off' := 0xF4) (by decide)
+  have a0_39 : upd (reg n38) a0 (aluEval .add (reg n38 sp) 0x780) a0 = R + BitVec.ofNat 32 0x9F0 := by
+    simp only [upd_app, ↓reduceIte]; rw [sp38, sp37]; exact add_sp R rfl
+  have hal : ∀ p ∈ ntPs, (R + BitVec.ofNat 32 0x9F0 + p.2).toNat % 4 = 0 := by
+    intro p hp
+    simp only [ntPs, List.mem_cons, List.mem_nil_iff, or_false] at hp
+    rcases hp with rfl | rfl | rfl | rfl | rfl <;> (rw [add_ofNat_assoc]; exact aligned_add C.hR (by decide))
+  obtain ⟨n40, c40, u40⟩ := St.block (restoreBlockR a0 ntPs) u39 hc38 ntRestore_end
+    (restoreBlockR_ok _ (R + BitVec.ofNat 32 0x9F0) a0 (by decide) ntPs _ a0_39 (by decide) hal)
+  rw [restoreBlockR_run _ (R + BitVec.ofNat 32 0x9F0) a0 (by decide) ntPs _ a0_39 (by decide)] at u40
+  dsimp only at u40
+  obtain ⟨n41, d41, u41⟩ := u40.aluImm hc38 nt_at_104 (off' := 0x108) (by decide)
+  obtain ⟨n42, d42, pc42, mem42, regs42⟩ := u41.self.jalr hc38 nt_at_108
+  have slot : ∀ r o, (r, o) ∈ ntPs → memLoad32 n38.mem (R + BitVec.ofNat 32 0x9F0 + o) = reg m r := fun r o hm => by
+    have ho : ∃ c, R + BitVec.ofNat 32 0x9F0 + o = R + BitVec.ofNat 32 c ∧ 0x9FC ≤ c ∧ c + 4 ≤ 0xA10 := by
+      simp only [ntPs, List.mem_cons, List.mem_nil_iff, or_false, Prod.mk.injEq] at hm
+      rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+        exact ⟨_, add_ofNat_assoc R 0x9F0 _, by decide, by decide⟩
+    obtain ⟨c, hc', h1, h2⟩ := ho
+    have hr : r ≠ sp ∧ r ≠ a2 := by
+      simp only [ntPs, List.mem_cons, List.mem_nil_iff, or_false, Prod.mk.injEq] at hm
+      rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> decide
+    have e1 : memLoad32 n38.mem (R + BitVec.ofNat 32 c) = memLoad32 Ms (R + BitVec.ofNat 32 c) :=
+      memLoad32_congr fun j hj => by rw [add_ofNat_assoc]; exact S38 _ (by omega) (by omega)
+    rw [hc', e1, ← hc', ← hMs,
+      saveMem_slot ntPs _ hm (by
+        simp only [ntPs, List.mem_cons, List.mem_nil_iff, or_false, Prod.mk.injEq] at hm
+        rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> decide), r2 r hr.1 hr.2]
+  have oth : ∀ q : Fin 32, q.val ∈ [3, 4, 20, 21, 22, 23, 24, 25, 26, 27] → reg n42 q = reg m q := fun q hq => by
+    rw [regs42, u41.upd_ne u40.self.zero q (by revert hq; revert q; decide),
+      restoreRegs_other _ _ ntPs _ q (by revert hq; revert q; decide) (by
+        intro p hp e; simp only [ntPs, List.mem_cons, List.mem_nil_iff, or_false] at hp
+        rcases hp with rfl | rfl | rfl | rfl | rfl <;> (revert hq; rw [← e]; decide)),
+      upd_ne (by revert hq; revert q; decide) (by revert hq; revert q; decide),
+      k38' q (by revert hq; revert q; decide), D33.keep q hq]
+  have rst : ∀ r o, (r, o) ∈ ntPs → reg n42 r = reg m r := fun r o hm => by
+    have hr : r ≠ sp := by
+      simp only [ntPs, List.mem_cons, List.mem_nil_iff, or_false, Prod.mk.injEq] at hm
+      rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> decide
+    have h0 : r.val ≠ 0 := by
+      simp only [ntPs, List.mem_cons, List.mem_nil_iff, or_false, Prod.mk.injEq] at hm
+      rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> decide
+    rw [regs42, u41.upd_ne u40.self.zero r hr, ntPs_restore _ _ _ r o hm, slot r o hm]
+  refine ⟨n42, .cons d1 (.cons d2 (c3.trans (.cons d4 (.cons d5 (.cons d6 (c7.trans (.cons d8 (.cons d9 (.cons d10 (c11.trans (.cons d12 (.cons d13 (.cons d14 (c15.trans (.cons d16 (.cons d17 (.cons d18 (c19.trans (.cons d20 (.cons d21 (.cons d22 (c23.trans (.cons d24 (.cons d25 (c26.trans (.cons d27 (.cons d28 (c29.trans (.cons d30 (.cons d31 (.cons d32 (c33.trans (.cons d34 (.cons d35 (.cons d36 (c37.trans (c38.trans (.cons d39 (c40.trans (.cons d41 (.single d42))))))))))))))))))))))))))))))))))))))))), ?_, ?_, fun q hq => ?_, fun i hi => ?_, fun x h1 h2 => by rw [mem42]; exact I38 x h1 h2⟩
+  · rw [pc42, u41.upd_ne u40.self.zero _ (by decide), ntPs_restore _ _ _ ra (BitVec.ofNat 32 0x1C) (by decide),
+      slot ra _ (by decide), add_lit_zero, hra, hret]
+  · rw [regs42, u41.upd_eq (by decide), restoreRegs_other _ _ ntPs _ sp (by decide) (by decide),
+      upd_ne (by decide) (by decide), sp38, sp37, ← eS]
+    exact add_sp R rfl
+  · have hq' : q = ra ∨ q = (8 : Fin 32) ∨ q = (9 : Fin 32) ∨ q = (18 : Fin 32) ∨ q = (19 : Fin 32) ∨
+        q.val ∈ [3, 4, 20, 21, 22, 23, 24, 25, 26, 27] := by revert hq; revert q; decide
+    rcases hq' with rfl | rfl | rfl | rfl | rfl | h
+    · exact rst _ (BitVec.ofNat 32 0x1C) (by decide)
+    · exact rst _ (BitVec.ofNat 32 0x18) (by decide)
+    · exact rst _ (BitVec.ofNat 32 0x14) (by decide)
+    · exact rst _ (BitVec.ofNat 32 0x10) (by decide)
+    · exact rst _ (BitVec.ofNat 32 0xC) (by decide)
+    · exact oth q h
+  · rw [mem42, ← e33 i hi, ← spk]
+    have hcp := ptAt_copy (M := n33.mem) (d := out) (s := R + BitVec.ofNat 32 0x45C) (N := 0x500) (c := 160 * i)
+      (by omega) (by decide)
+    rw [← hcp]
+    exact ptAt_frame fun j hj => by
+      rw [spk, f38 _ ((sOG.sub (c := 160 * i + j) (l := 1) (by omega)).subR (c := 0x260) (l := 16) (by decide)).symm]
+
 end C3.RV32

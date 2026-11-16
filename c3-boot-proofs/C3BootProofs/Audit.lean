@@ -143,6 +143,7 @@ import C3BootProofs.Proofs.Sha512UpdateArr32
 import C3BootProofs.Proofs.EdDecompress
 import C3BootProofs.Proofs.EdVerifyingKey
 import C3BootProofs.Proofs.Ed25519PkOk
+import C3BootProofs.Proofs.EdNafTable
 import C3BootProofs.Spec.Ecdsa
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
@@ -2993,6 +2994,35 @@ theorem exists_pkOk_machine :
       by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
       by decide +kernel⟩,
     by code_in, by code_in, by code_in, by code_in, by code_in⟩
+
+def witnessMemNt : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.nafTableFromAddress, Image.nafTableFromCode), (Image.asProjNielsAddress, Image.asProjNielsCode),
+    (Image.edAddNielsAddress, Image.edAddNielsCode), (Image.asExtendedAddress, Image.asExtendedCode),
+    (Image.edDoubleAddress, Image.edDoubleCode), (Image.feAddAddress, Image.feAddCode),
+    (Image.feSubAddress, Image.feSubCode), (Image.feMulAddress, Image.feMulCode),
+    (Image.feReduceAddress, Image.feReduceCode), (Image.feSquareAddress, Image.feSquareCode),
+    (Image.feSquareInnerAddress, Image.feSquareInnerCode), (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that builds the table for the point at `0x3FCC6000` into
+`0x3FCC6100`, with the stack at `0x3FCC8000`, meets `nafTable_correct`'s
+hypotheses. -/
+theorem exists_nafTable_machine :
+    ∃ (m : RV32.Machine) (sp0 out A retAddr : RV32.Word), RV32.NtEnv m.mem ∧ m.pc = RV32.NTF ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = A ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 4 = 0 ∧ 0xA10 ≤ sp0.toNat ∧
+      sp0.toNat ≤ 0x40000000 ∧ A.toNat % 4 = 0 ∧ A.toNat + 0xA0 ≤ 0x40000000 ∧ out.toNat % 4 = 0 ∧
+      out.toNat + 0x500 ≤ 0x40000000 ∧ RV32.Sep A 0xA0 (sp0 + 0xFFFFF5F0) 0xA10 ∧
+      RV32.Sep out 0x500 (sp0 + 0xFFFFF5F0) 0xA10 ∧ RV32.Sep RV32.apnD 40 (sp0 + 0xFFFFF5F0) 0xA10 := by
+  refine ⟨⟨leafRegs 0x3FCC6100 0x3FCC6000 0, RV32.NTF, witnessMemNt⟩, 0x3FCC8000, 0x3FCC6100, 0x3FCC6000, 0,
+    ?_, rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide, by decide, by decide, by decide,
+    by decide, RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide)⟩
+  exact ⟨by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
+    by code_in, by code_in, by code_in, by code_in⟩
 
 /-- Memory with `time::date_time` and `time::digits::<2>` where the image
 loads them, a slice reader at `0x3FCC6000` over 10 bytes at `0x3FCC7000`,
@@ -7175,6 +7205,12 @@ end C3
 
 /-- info: 'C3.exists_pkOk_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_pkOk_machine
+
+/-- info: 'C3.RV32.nafTable_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.nafTable_correct
+
+/-- info: 'C3.exists_nafTable_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_nafTable_machine
 
 /-- info: 'C3.RV32.p384Mul_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.p384Mul_correct
