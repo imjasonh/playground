@@ -137,6 +137,7 @@ import C3BootProofs.Proofs.IsSmallOrder
 import C3BootProofs.Proofs.DateTime
 import C3BootProofs.Proofs.GeneralizedTime
 import C3BootProofs.Proofs.X509ReadTime
+import C3BootProofs.Proofs.Base64Decode
 import C3BootProofs.Spec.Ecdsa
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
@@ -2895,6 +2896,42 @@ theorem exists_x509ReadTime_machine :
     by decide, by decide, RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
     RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
     (RV32.sep_of_le (by decide) (by decide)).symm⟩
+
+/-- Memory with `base64::decode_into`, `copy_from_slice`, and `memcpy` where
+the image loads them, the text `QUJDREVG` at `0x3FCC7000`, and zeros
+elsewhere. -/
+def witnessMemBDI : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.base64DecodeIntoAddress, Image.base64DecodeIntoCode),
+    (Image.copyFromSliceU8Address, Image.copyFromSliceU8Code),
+    (Image.memcpyStubAddress, Image.memcpyStubCode), (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (0x3FCC7000, [0x51, 0x55, 0x4A, 0x44, 0x52, 0x45, 0x56, 0x47])]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `base64::decode_into` on 8 characters at
+`0x3FCC7000` into 6 bytes at `0x3FCC6000`, with the result at `0x3FCC5000`
+and the stack at `0x3FCC8000`, meets `base64DecodeInto_correct`'s
+hypotheses. -/
+theorem exists_base64DecodeInto_machine :
+    ∃ (m : RV32.Machine) (sp0 res t out retAddr : RV32.Word) (n L : Nat),
+      RV32.CodeIn m.mem RV32.BDI Image.base64DecodeIntoCode ∧ RV32.CodeIn m.mem RV32.BCW Image.copyFromSliceU8Code ∧
+      RV32.CodeIn m.mem RV32.BMS Image.memcpyStubCode ∧ RV32.CodeIn m.mem RV32.BMB Image.memcpyBodyCode ∧
+      m.pc = RV32.BDI ∧ RV32.reg m RV32.a0 = res ∧ RV32.reg m RV32.a1 = t ∧
+      RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧ RV32.reg m RV32.a3 = out ∧ RV32.reg m RV32.a4 = BitVec.ofNat 32 L ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 4 = 0 ∧
+      0x50 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧ res.toNat + 8 ≤ 0x40000000 ∧ res.toNat % 4 = 0 ∧
+      out.toNat + L ≤ 0x40000000 ∧ t.toNat + n ≤ 0x40000000 ∧ RV32.Sep out L (sp0 + 0xFFFFFFB0) 0x50 ∧
+      RV32.Sep t n (sp0 + 0xFFFFFFB0) 0x50 ∧ RV32.Sep res 8 (sp0 + 0xFFFFFFB0) 0x50 ∧ RV32.Sep t n out L ∧
+      RV32.Sep res 8 out L := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC7000 else if r = RV32.a2 then 8
+    else if r = RV32.a3 then 0x3FCC6000 else if r = RV32.a4 then 6 else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, RV32.BDI, witnessMemBDI⟩, 0x3FCC8000, 0x3FCC5000, 0x3FCC7000, 0x3FCC6000, 0, 8, 6,
+    by code_in, by code_in, by code_in, by code_in, rfl, rfl, rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide,
+    by decide, by decide, by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    (RV32.sep_of_le (by decide) (by decide)).symm, RV32.sep_of_le (by decide) (by decide)⟩
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
@@ -7859,3 +7896,36 @@ end C3
 
 /-- info: 'C3.RV32.readTime_ok' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.readTime_ok
+
+/-- info: 'C3.RV32.base64DecodeInto_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.base64DecodeInto_correct
+
+/-- info: 'C3.exists_base64DecodeInto_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_base64DecodeInto_machine
+
+/-- info: 'C3.RV32.bdi_loop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.bdi_loop
+
+/-- info: 'C3.RV32.bdi_group' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.bdi_group
+
+/-- info: 'C3.RV32.bdi_copy' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.bdi_copy
+
+/-- info: 'C3.RV32.bdi_bytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.bdi_bytes
+
+/-- info: 'C3.RV32.bdi_fold' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.bdi_fold
+
+/-- info: 'C3.RV32.bdi_pad' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.bdi_pad
+
+/-- info: 'C3.b64_cons' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.b64_cons
+
+/-- info: 'C3.b64Group_fold' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.b64Group_fold
+
+/-- info: 'C3.b64_len' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.b64_len
