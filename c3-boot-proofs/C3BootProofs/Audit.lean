@@ -142,6 +142,7 @@ import C3BootProofs.Proofs.Base64Encode
 import C3BootProofs.Proofs.Sha512UpdateArr32
 import C3BootProofs.Proofs.EdDecompress
 import C3BootProofs.Proofs.EdVerifyingKey
+import C3BootProofs.Proofs.Ed25519PkOk
 import C3BootProofs.Spec.Ecdsa
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
@@ -2953,6 +2954,45 @@ theorem exists_edVkFromBytes_machine :
   exact ⟨by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
     by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
     by code_in, by code_in, by code_in, by code_in⟩
+
+def witnessMemPkOk : RV32.Word → BitVec 8 :=
+  RV32.regionMem ((Image.ed25519PublicKeyOkAddress, Image.ed25519PublicKeyOkCode) ::
+    (Image.edVerifyingKeyFromBytesAddress, Image.edVerifyingKeyFromBytesCode) ::
+    (Image.lessThanLeAddress, Image.lessThanLeCode) :: (Image.arr32EqCryptoAddress, Image.arr32EqCryptoCode) ::
+    (Image.memcmpAddress, Image.memcmpCode) :: (Image.memsetAddress, Image.memsetCode) ::
+    (Image.edDoubleAddress, Image.edDoubleCode) :: (Image.asProjectiveAddress, Image.asProjectiveCode) ::
+    (Image.asExtendedAddress, Image.asExtendedCode) :: (Image.isSmallOrderAddress, Image.isSmallOrderCode) ::
+    witnessRegionsDec)
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that asks whether the 32 key bytes at `0x3FCC6100` are an
+acceptable Ed25519 public key, with the stack at `0x3FCC8000`, meets
+`pkOk_correct`'s hypotheses. -/
+theorem exists_pkOk_machine :
+    ∃ (m : RV32.Machine) (sp0 pk retAddr : RV32.Word), RV32.PkEnv m.mem ∧ m.pc = RV32.PKO ∧
+      RV32.reg m RV32.a0 = pk ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 4 = 0 ∧ 0x940 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧
+      pk.toNat + 32 < 2 ^ 32 ∧ RV32.Sep pk 32 (sp0 + 0xFFFFF6C0) 0x940 ∧
+      RV32.Sep (BitVec.ofNat 32 Image.edOneAddress) 40 (sp0 + 0xFFFFF6C0) 0x940 ∧
+      RV32.Sep (BitVec.ofNat 32 Image.edDAddress) 40 (sp0 + 0xFFFFF6C0) 0x940 ∧
+      RV32.Sep (BitVec.ofNat 32 Image.edSqrtM1Address) 40 (sp0 + 0xFFFFF6C0) 0x940 ∧
+      RV32.Sep (BitVec.ofNat 32 0x3FCC4328) 32 (sp0 + 0xFFFFF6C0) 0x940 ∧
+      RV32.Sep (BitVec.ofNat 32 0x3FCC42E8) 32 (sp0 + 0xFFFFF6C0) 0x940 ∧
+      RV32.Sep (BitVec.ofNat 32 0x3FCC4388) 32 (sp0 + 0xFFFFF6C0) 0x940 := by
+  refine ⟨⟨leafRegs 0x3FCC6100 0 0, RV32.PKO, witnessMemPkOk⟩, 0x3FCC8000, 0x3FCC6100, 0,
+    ?_, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide, by decide,
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide)⟩
+  exact ⟨⟨by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
+      by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
+      by code_in, by code_in, by code_in, by code_in⟩,
+    ⟨by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
+      by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
+      by decide +kernel⟩,
+    by code_in, by code_in, by code_in, by code_in, by code_in⟩
 
 /-- Memory with `time::date_time` and `time::digits::<2>` where the image
 loads them, a slice reader at `0x3FCC6000` over 10 bytes at `0x3FCC7000`,
@@ -7129,6 +7169,12 @@ end C3
 
 /-- info: 'C3.exists_edVkFromBytes_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_edVkFromBytes_machine
+
+/-- info: 'C3.RV32.pkOk_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.pkOk_correct
+
+/-- info: 'C3.exists_pkOk_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_pkOk_machine
 
 /-- info: 'C3.RV32.p384Mul_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.p384Mul_correct
