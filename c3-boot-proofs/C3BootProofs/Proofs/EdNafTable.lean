@@ -248,4 +248,405 @@ theorem St.callEan {M : Word → BitVec 8} {P : Word} {code : List Nat} {nm : Ma
     fun q hq => by rw [k2 q (by revert hq; revert q; decide), r1 q (by revert hq; revert q; decide)],
     ean_pt w, f2⟩
 
+/-! ## The frame invariant -/
+
+/-- The code `from` runs and its callees'. -/
+structure NtEnv (M : Word → BitVec 8) : Prop where
+  cod : CodeIn M NTF nafTableFromCode
+  apn : CodeIn M (BitVec.ofNat 32 asProjNielsAddress) asProjNielsCode
+  ean : CodeIn M (BitVec.ofNat 32 edAddNielsAddress) edAddNielsCode
+  ext : CodeIn M (BitVec.ofNat 32 asExtendedAddress) asExtendedCode
+  dbl : CodeIn M (BitVec.ofNat 32 edDoubleAddress) edDoubleCode
+  add : CodeIn M (BitVec.ofNat 32 feAddAddress) feAddCode
+  sub : CodeIn M (BitVec.ofNat 32 feSubAddress) feSubCode
+  mul : CodeIn M (BitVec.ofNat 32 feMulAddress) feMulCode
+  red : CodeIn M (BitVec.ofNat 32 feReduceAddress) feReduceCode
+  sq : CodeIn M (BitVec.ofNat 32 feSquareAddress) feSquareCode
+  sqi : CodeIn M (BitVec.ofNat 32 feSquareInnerAddress) feSquareInnerCode
+  mcs : CodeIn M (BitVec.ofNat 32 memcpyStubAddress) memcpyStubCode
+  mcb : CodeIn M (BitVec.ofNat 32 memcpyStubAddress + 8) memcpyBodyCode
+
+/-- `from`'s stack: 0xA10 bytes at `R`, with its own frame from `R + 0x270`. -/
+structure NtCtx (M0 : Word → BitVec 8) (R : Word) : Prop where
+  E : NtEnv M0
+  hR : R.toNat % 4 = 0
+  hRw : R.toNat + 0xA10 ≤ 0x40000000
+
+section Ctx
+variable {M0 : Word → BitVec 8} {R : Word}
+
+theorem NtCtx.toNat_off (C : NtCtx M0 R) {c : Nat} (h : c ≤ 0xA10) : (R + BitVec.ofNat 32 c).toNat = R.toNat + c := by
+  have := C.hRw
+  rw [BitVec.toNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (a := c) (by omega), Nat.mod_eq_of_lt (by omega)]
+
+theorem NtCtx.code (C : NtCtx M0 R) {M : Word → BitVec 8} (hM : ∀ x, Sep R 0xA10 x 1 → M x = M0 x) {b : Word}
+    {code : List Nat} (hc : CodeIn M0 b code) (hb : 0x40000000 ≤ b.toNat) (hbl : b.toNat + code.length ≤ 2 ^ 32) :
+    CodeIn M b code :=
+  hc.hi (fun x hx => hM x (sep_of_le (by have := C.hRw; omega) (by have := x.isLt; omega))) hb hbl
+
+theorem NtCtx.hiSep (C : NtCtx M0 R) {c l : Nat} (h : c + l ≤ 0xA10) {b : Word} {k : Nat}
+    (hb : 0x40000000 ≤ b.toNat) (hbl : b.toNat + k ≤ 2 ^ 32) : Sep (R + BitVec.ofNat 32 c) l b k :=
+  sep_of_le (by rw [C.toNat_off (by omega)]; have := C.hRw; omega) hbl
+
+theorem NtCtx.offs (_ : NtCtx M0 R) {c n d k : Nat} (h : c + n ≤ d ∨ d + k ≤ c) (hc : c + n ≤ 0xA10)
+    (hd : d + k ≤ 0xA10) : Sep (R + BitVec.ofNat 32 c) n (R + BitVec.ofNat 32 d) k :=
+  sep_offsets R h (by omega) (by omega)
+
+theorem NtCtx.inR (_ : NtCtx M0 R) {c l : Nat} (h : c + l ≤ 0xA10) {x : Word} (hx : Sep R 0xA10 x 1) :
+    Sep (R + BitVec.ofNat 32 c) l x 1 := (hx.symm.subR h).symm
+
+theorem NtCtx.even (_ : NtCtx M0 R) (k : Nat) (hk : k % 2 = 0) : (NTF + BitVec.ofNat 32 k).toNat % 2 = 0 :=
+  even_at NTF (by decide) k hk
+
+end Ctx
+
+/-- Between calls: `sp` at `R + 0x270`, `s2` and `s3` holding the table's
+and the point's addresses, the other callee-saved registers as on entry,
+memory outside the stack as on entry, and the saved registers' slots as
+after the prologue. -/
+structure NtSt (M0 Ms : Word → BitVec 8) (R out A : Word) (r0 : Fin 32 → Word) (M : Word → BitVec 8) (n : Machine)
+    (off : Nat) : Prop where
+  st : St M NTF n off (reg n)
+  hsp : reg n sp = R + BitVec.ofNat 32 0x270
+  hs2 : reg n (18 : Fin 32) = out
+  hs3 : reg n (19 : Fin 32) = A
+  keep : ∀ q : Fin 32, q.val ∈ [3, 4, 20, 21, 22, 23, 24, 25, 26, 27] → reg n q = r0 q
+  agree : ∀ x, Sep R 0xA10 x 1 → M x = M0 x
+  slots : ∀ c, 0x9FC ≤ c → c < 0xA10 → M (R + BitVec.ofNat 32 c) = Ms (R + BitVec.ofNat 32 c)
+
+section Calls
+variable {M0 Ms M : Word → BitVec 8} {R out A : Word} {r0 : Fin 32 → Word} {n : Machine}
+
+theorem NtSt.after {off : Nat} (D : NtSt M0 Ms R out A r0 M n off) {M' : Word → BitVec 8} {n' : Machine} {off' : Nat}
+    (u : St M' NTF n' off' (reg n')) (hsp : reg n' sp = reg n sp)
+    (hk : ∀ q : Fin 32, q.val ∈ [3, 4, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q)
+    {P : Word → Prop} (hfr : ∀ x, P x → M' x = M x) (h1 : ∀ x, Sep R 0xA10 x 1 → P x)
+    (h2 : ∀ c, 0x9FC ≤ c → c < 0xA10 → P (R + BitVec.ofNat 32 c)) : NtSt M0 Ms R out A r0 M' n' off' :=
+  ⟨u, by rw [hsp, D.hsp], by rw [hk _ (by decide), D.hs2], by rw [hk _ (by decide), D.hs3],
+    fun q hq => by rw [hk q (by revert hq; revert q; decide), D.keep q hq],
+    fun x hx => by rw [hfr x (h1 x hx), D.agree x hx], fun c c1 c2 => by rw [hfr _ (h2 c c1 c2), D.slots c c1 c2]⟩
+
+theorem NtSt.code {off : Nat} (C : NtCtx M0 R) (D : NtSt M0 Ms R out A r0 M n off) {b : Word} {code : List Nat}
+    (hc : CodeIn M0 b code) (hb : 0x40000000 ≤ b.toNat) (hbl : b.toNat + code.length ≤ 2 ^ 32) : CodeIn M b code :=
+  C.code D.agree hc hb hbl
+
+set_option maxRecDepth 20000 in
+/-- A `memcpy` into the frame at `R + k`. -/
+theorem NtSt.mc {off : Nat} (C : NtCtx M0 R) (D : NtSt M0 Ms R out A r0 M n off) {imm o : Word}
+    (h1 : fetchRel nafTableFromCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel nafTableFromCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : NTF + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 memcpyStubAddress) (hev : off % 2 = 0)
+    {k N : Nat} {src : Word} (hk1 : 0x270 ≤ k) (hk2 : k + N ≤ 0x9FC)
+    (ha0 : reg n a0 = R + BitVec.ofNat 32 k) (ha1 : reg n a1 = src) (ha2 : reg n a2 = BitVec.ofNat 32 N)
+    (hsF : Sep src N (R + BitVec.ofNat 32 0x260) 16) (hsep : Sep (R + BitVec.ofNat 32 k) N src N)
+    (hsw : src.toNat + N < 2 ^ 32) :
+    ∃ n', Steps n n' ∧ NtSt M0 Ms R out A r0 n'.mem n' (off + 8) ∧
+      (∀ x, Sep (R + BitVec.ofNat 32 0x260) 16 x 1 → n'.mem x = copyBytes M (R + BitVec.ofNat 32 k) src N x) ∧
+      ∀ q : Fin 32, q.val ∈ [8, 9, 18, 19] → reg n' q = reg n q := by
+  have hc : CodeIn M NTF nafTableFromCode := D.code C C.E.cod (by decide) (by decide)
+  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := D.st.callRa (cb := BitVec.ofNat 32 memcpyStubAddress) hc h1 h2 hb
+    (by decide)
+  have r1 := PEnv.reg1 regs1 D.st.zero
+  have eF : R + BitVec.ofNat 32 0x270 + 0xFFFFFFF0 = R + BitVec.ofNat 32 0x260 := by rw [BitVec.add_assoc]; rfl
+  obtain ⟨n2, c2, pc2, sp2, _, f2, k2⟩ := memcpy_correct n1 (BitVec.ofNat 32 memcpyStubAddress)
+    (NTF + BitVec.ofNat 32 (off + 8)) (R + BitVec.ofNat 32 k) src N
+    (fun i hi => by rw [mem1]; exact D.code C C.E.mcs (by decide) (by decide) i hi) (by decide) pc1
+    (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1]) (by rw [r1 a2 (by decide), ha2])
+    (by rw [regs1]; simp +decide [upd]) (even_clear _ (C.even _ (by omega)))
+    (by
+      rw [mem1, r1 sp (by decide), D.hsp, eF]
+      exact { code := D.code C C.E.mcb (by decide) (by decide)
+              hDC := C.hiSep (by omega) (by decide) (by decide)
+              hFC := C.hiSep (by decide) (by decide) (by decide)
+              hdF := C.offs (Or.inr (by omega)) (by omega) (by decide)
+              hsF := hsF
+              hsep := hsep
+              hF := aligned_add C.hR (by decide)
+              hFw := by rw [C.toNat_off (by decide)]; have := C.hRw; omega
+              hdw := by rw [C.toNat_off (by omega)]; have := C.hRw; omega
+              hsw := hsw })
+  rw [mem1, r1 sp (by decide), D.hsp, eF] at f2
+  have kq : ∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n2 q = reg n q := fun q hq => by
+    rw [k2 q (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide), r1 q (by revert hq; revert q; decide)]
+  refine ⟨n2, c1.trans c2, D.after (P := fun x => Sep (R + BitVec.ofNat 32 0x260) 16 x 1 ∧
+      Sep (R + BitVec.ofNat 32 k) N x 1) ⟨by rw [pc2], rfl, fun _ => rfl⟩
+      (by rw [sp2, r1 sp (by decide)]) (fun q hq => kq q (by revert hq; revert q; decide))
+      (fun x hx => by rw [f2 x hx.1, copyBytes_sep hx.2 (Nat.le_refl _)])
+      (fun x hx => ⟨C.inR (by decide) hx, C.inR (by omega) hx⟩)
+      (fun c c1 c2 => ⟨C.offs (Or.inl (by omega)) (by decide) (by omega), C.offs (Or.inl (by omega)) (by omega) (by omega)⟩),
+    f2, fun q hq => kq q (by revert hq; revert q; decide)⟩
+
+set_option maxRecDepth 20000 in
+/-- A call of `as_projective_niels` from `ip` into the frame at `R + k`. -/
+theorem NtSt.apn {off : Nat} (C : NtCtx M0 R) (D : NtSt M0 Ms R out A r0 M n off) {imm o : Word}
+    (h1 : fetchRel nafTableFromCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel nafTableFromCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : NTF + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 asProjNielsAddress) (hev : off % 2 = 0)
+    {k : Nat} {ip : Word} (hk : k % 4 = 0) (hk1 : 0x270 ≤ k) (hk2 : k + 0xA0 ≤ 0x9FC)
+    (ha0 : reg n a0 = R + BitVec.ofNat 32 k) (ha1 : reg n a1 = ip) (hip : ip.toNat % 4 = 0) (hiw : ip.toNat + 0xA0 < 2 ^ 32)
+    (sIG : Sep ip 0xA0 (R + BitVec.ofNat 32 0x130) 0x140) (sIO : Sep ip 0xA0 (R + BitVec.ofNat 32 k) 0xA0)
+    (sD : Sep apnD 40 R 0xA10) :
+    ∃ n', Steps n n' ∧ NtSt M0 Ms R out A r0 n'.mem n' (off + 8) ∧
+      ptAt n'.mem (R + BitVec.ofNat 32 k) = nielsL (ptAt M ip) (feW M apnD) ∧
+      (∀ q : Fin 32, q.val ∈ [8, 9, 18, 19] → reg n' q = reg n q) ∧
+      ∀ x, Sep (R + BitVec.ofNat 32 0x130) 0x140 x 1 → Sep (R + BitVec.ofNat 32 k) 0xA0 x 1 → n'.mem x = M x := by
+  have hc : CodeIn M NTF nafTableFromCode := D.code C C.E.cod (by decide) (by decide)
+  have eS : R + BitVec.ofNat 32 0x270 + 0xFFFFFEC0 = R + BitVec.ofNat 32 0x130 := by rw [BitVec.add_assoc]; rfl
+  have env : APNEnv M (BitVec.ofNat 32 asProjNielsAddress) (reg n sp) (reg n a0) (reg n a1) := by
+    rw [D.hsp, ha0, ha1]
+    exact { hP := by decide
+            cod := D.code C C.E.apn (by decide) (by decide)
+            add := by rw [show (BitVec.ofNat 32 asProjNielsAddress : Word) + 0xFFFFE57A = BitVec.ofNat 32 feAddAddress by decide]
+                      exact D.code C C.E.add (by decide) (by decide)
+            addS := by rw [show (BitVec.ofNat 32 asProjNielsAddress : Word) + 0xFFFFE57A + 0x5D88 =
+                        BitVec.ofNat 32 memcpyStubAddress by decide]; exact D.code C C.E.mcs (by decide) (by decide)
+            addB := by rw [show (BitVec.ofNat 32 asProjNielsAddress : Word) + 0xFFFFE57A + 0x5D90 =
+                        BitVec.ofNat 32 memcpyStubAddress + 8 by decide]; exact D.code C C.E.mcb (by decide) (by decide)
+            sub := by rw [show (BitVec.ofNat 32 asProjNielsAddress : Word) + 0xFFFFE5C8 = BitVec.ofNat 32 feSubAddress by decide]
+                      exact D.code C C.E.sub (by decide) (by decide)
+            subR := by rw [show (BitVec.ofNat 32 asProjNielsAddress : Word) + 0xFFFFE5C8 + 0xFFFFF72E =
+                        BitVec.ofNat 32 feReduceAddress by decide]; exact D.code C C.E.red (by decide) (by decide)
+            mcs := by rw [show (BitVec.ofNat 32 asProjNielsAddress : Word) + 0x4302 = BitVec.ofNat 32 memcpyStubAddress by decide]
+                      exact D.code C C.E.mcs (by decide) (by decide)
+            mcb := by rw [show (BitVec.ofNat 32 asProjNielsAddress : Word) + 0x430A =
+                        BitVec.ofNat 32 memcpyStubAddress + 8 by decide]; exact D.code C C.E.mcb (by decide) (by decide)
+            mul := by rw [show (BitVec.ofNat 32 asProjNielsAddress : Word) + 0xFFFFD206 = BitVec.ofNat 32 feMulAddress by decide]
+                      exact D.code C C.E.mul (by decide) (by decide)
+            mulR := by rw [show (BitVec.ofNat 32 asProjNielsAddress : Word) + 0xFFFFD206 + 0xAF0 =
+                        BitVec.ofNat 32 feReduceAddress by decide]; exact D.code C C.E.red (by decide) (by decide)
+            hsp := aligned_add C.hR (by decide)
+            hS := by rw [C.toNat_off (by decide)]; omega
+            hout := aligned_add C.hR hk
+            hip := hip
+            how := by rw [C.toNat_off (by omega)]; have := C.hRw; omega
+            hiw := hiw
+            sGC := by rw [eS]; exact C.hiSep (by decide) (by decide) (by decide)
+            sGA := by rw [eS]; exact C.hiSep (by decide) (by decide) (by decide)
+            sGAS := by rw [eS]; exact C.hiSep (by decide) (by decide) (by decide)
+            sGAB := by rw [eS]; exact C.hiSep (by decide) (by decide) (by decide)
+            sGS := by rw [eS]; exact C.hiSep (by decide) (by decide) (by decide)
+            sGSR := by rw [eS]; exact C.hiSep (by decide) (by decide) (by decide)
+            sGU := by rw [eS]; exact C.hiSep (by decide) (by decide) (by decide)
+            sGB := by rw [eS]; exact C.hiSep (by decide) (by decide) (by decide)
+            sGM := by rw [eS]; exact C.hiSep (by decide) (by decide) (by decide)
+            sGMR := by rw [eS]; exact C.hiSep (by decide) (by decide) (by decide)
+            sOC := C.hiSep (by omega) (by decide) (by decide)
+            sOA := C.hiSep (by omega) (by decide) (by decide)
+            sOAB := C.hiSep (by omega) (by decide) (by decide)
+            sOS := C.hiSep (by omega) (by decide) (by decide)
+            sOSR := C.hiSep (by omega) (by decide) (by decide)
+            sOU := C.hiSep (by omega) (by decide) (by decide)
+            sOB := C.hiSep (by omega) (by decide) (by decide)
+            sOM := C.hiSep (by omega) (by decide) (by decide)
+            sOMR := C.hiSep (by omega) (by decide) (by decide)
+            sOG := by rw [eS]; exact C.offs (Or.inr (by omega)) (by omega) (by decide)
+            sIG := by rw [eS]; exact sIG
+            sIO := sIO
+            sDG := by rw [eS]; exact sD.subR (by decide)
+            sDO := sD.subR (by omega) }
+  obtain ⟨n2, c2, u2, sp2, k2, w2, f2⟩ := D.st.callApn hc h1 h2 hb (C.even _ (by omega)) env
+  rw [ha0, ha1] at w2
+  rw [D.hsp, eS, ha0] at f2
+  refine ⟨n2, c2, D.after (P := fun x => Sep (R + BitVec.ofNat 32 0x130) 0x140 x 1 ∧
+      Sep (R + BitVec.ofNat 32 k) 0xA0 x 1) u2 sp2
+      (fun q hq => k2 q (by revert hq; revert q; decide)) (fun x hx => f2 x hx.1 hx.2)
+      (fun x hx => ⟨C.inR (by decide) hx, C.inR (by omega) hx⟩)
+      (fun c c1 c2 => ⟨C.offs (Or.inl (by omega)) (by decide) (by omega), C.offs (Or.inl (by omega)) (by omega) (by omega)⟩),
+    w2, fun q hq => k2 q (by revert hq; revert q; decide), f2⟩
+
+set_option maxRecDepth 20000 in
+theorem NtCtx.eanCode (C : NtCtx M0 R) {c l : Nat} (h : c + l ≤ 0xA10) :
+    EanCode (BitVec.ofNat 32 edAddNielsAddress) (R + BitVec.ofNat 32 c) l :=
+  ⟨C.hiSep h (by decide) (by decide), C.hiSep h (by decide) (by decide), C.hiSep h (by decide) (by decide),
+    C.hiSep h (by decide) (by decide), C.hiSep h (by decide) (by decide), C.hiSep h (by decide) (by decide),
+    C.hiSep h (by decide) (by decide), C.hiSep h (by decide) (by decide)⟩
+
+set_option maxRecDepth 20000 in
+/-- A call of `EdwardsPoint + ProjectiveNielsPoint` on frame operands. -/
+theorem NtSt.ean {off : Nat} (C : NtCtx M0 R) (D : NtSt M0 Ms R out A r0 M n off) {imm o : Word}
+    (h1 : fetchRel nafTableFromCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel nafTableFromCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : NTF + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 edAddNielsAddress) (hev : off % 2 = 0)
+    {k e p : Nat} (hk : k % 4 = 0) (he : e % 4 = 0) (hp : p % 4 = 0) (hk1 : 0x270 ≤ k) (hk2 : k + 0xA0 ≤ 0x9FC)
+    (he1 : 0x270 ≤ e) (he2 : e + 0xA0 ≤ 0x9FC) (hp1 : 0x270 ≤ p) (hp2 : p + 0xA0 ≤ 0x9FC)
+    (hke : k + 0xA0 ≤ e ∨ e + 0xA0 ≤ k) (hkp : k + 0xA0 ≤ p ∨ p + 0xA0 ≤ k)
+    (ha0 : reg n a0 = R + BitVec.ofNat 32 k) (ha1 : reg n a1 = R + BitVec.ofNat 32 e)
+    (ha2 : reg n a2 = R + BitVec.ofNat 32 p) :
+    ∃ n', Steps n n' ∧ NtSt M0 Ms R out A r0 n'.mem n' (off + 8) ∧
+      ptAt n'.mem (R + BitVec.ofNat 32 k) = addNL (ptAt M (R + BitVec.ofNat 32 e)) (ptAt M (R + BitVec.ofNat 32 p)) ∧
+      (∀ q : Fin 32, q.val ∈ [8, 9, 18, 19] → reg n' q = reg n q) ∧
+      ∀ x, Sep R 0x270 x 1 → Sep (R + BitVec.ofNat 32 k) 0xA0 x 1 → n'.mem x = M x := by
+  have hc : CodeIn M NTF nafTableFromCode := D.code C C.E.cod (by decide) (by decide)
+  have eS : R + BitVec.ofNat 32 0x270 + 0xFFFFFD90 = R := by rw [BitVec.add_assoc]; exact BitVec.add_zero R
+  have r0' : ∀ {l : Nat}, l ≤ 0xA10 → ∀ {d kk : Nat}, l ≤ d → d + kk ≤ 0xA10 → Sep R l (R + BitVec.ofNat 32 d) kk :=
+    fun {l} hl {d kk} h1 h2 => by
+      have := C.offs (c := 0) (n := l) (d := d) (k := kk) (Or.inl (by omega)) (by omega) h2; rwa [add_ofNat_zero] at this
+  have env : EANEnv M (BitVec.ofNat 32 edAddNielsAddress) (reg n sp) (reg n a0) (reg n a1) (reg n a2) := by
+    rw [D.hsp, ha0, ha1, ha2]
+    exact { hP := by decide
+            cod := D.code C C.E.ean (by decide) (by decide)
+            add := by rw [show (BitVec.ofNat 32 edAddNielsAddress : Word) + 0xFFFFE79E = BitVec.ofNat 32 feAddAddress by decide]
+                      exact D.code C C.E.add (by decide) (by decide)
+            addS := by rw [show (BitVec.ofNat 32 edAddNielsAddress : Word) + 0xFFFFE79E + 0x5D88 =
+                        BitVec.ofNat 32 memcpyStubAddress by decide]; exact D.code C C.E.mcs (by decide) (by decide)
+            addB := by rw [show (BitVec.ofNat 32 edAddNielsAddress : Word) + 0xFFFFE79E + 0x5D90 =
+                        BitVec.ofNat 32 memcpyStubAddress + 8 by decide]; exact D.code C C.E.mcb (by decide) (by decide)
+            sub := by rw [show (BitVec.ofNat 32 edAddNielsAddress : Word) + 0xFFFFE7EC = BitVec.ofNat 32 feSubAddress by decide]
+                      exact D.code C C.E.sub (by decide) (by decide)
+            subR := by rw [show (BitVec.ofNat 32 edAddNielsAddress : Word) + 0xFFFFE7EC + 0xFFFFF72E =
+                        BitVec.ofNat 32 feReduceAddress by decide]; exact D.code C C.E.red (by decide) (by decide)
+            mul := by rw [show (BitVec.ofNat 32 edAddNielsAddress : Word) + 0xFFFFD42A = BitVec.ofNat 32 feMulAddress by decide]
+                      exact D.code C C.E.mul (by decide) (by decide)
+            mulR := by rw [show (BitVec.ofNat 32 edAddNielsAddress : Word) + 0xFFFFD42A + 0xAF0 =
+                        BitVec.ofNat 32 feReduceAddress by decide]; exact D.code C C.E.red (by decide) (by decide)
+            hsp := aligned_add C.hR (by decide)
+            hS := by rw [C.toNat_off (by decide)]; omega
+            hout := aligned_add C.hR hk
+            hep := aligned_add C.hR he
+            hnp := aligned_add C.hR hp
+            how := by rw [C.toNat_off (by omega)]; have := C.hRw; omega
+            hew := by rw [C.toNat_off (by omega)]; have := C.hRw; omega
+            hnw := by rw [C.toNat_off (by omega)]; have := C.hRw; omega
+            sG := by rw [eS]; have := C.eanCode (c := 0) (l := 0x270) (by decide); rwa [add_ofNat_zero] at this
+            sO := C.eanCode (by omega)
+            sOG := by rw [eS]; exact (r0' (by decide) hk1 (by omega)).symm
+            sEG := by rw [eS]; exact (r0' (by decide) he1 (by omega)).symm
+            sNG := by rw [eS]; exact (r0' (by decide) hp1 (by omega)).symm
+            sEO := C.offs (by omega) (by omega) (by omega)
+            sNO := C.offs (by omega) (by omega) (by omega) }
+  obtain ⟨n2, c2, u2, sp2, k2, w2, f2⟩ := D.st.callEan hc h1 h2 hb (C.even _ (by omega)) env
+  rw [ha0, ha1, ha2] at w2
+  rw [D.hsp, eS, ha0] at f2
+  refine ⟨n2, c2, D.after (P := fun x => Sep R 0x270 x 1 ∧ Sep (R + BitVec.ofNat 32 k) 0xA0 x 1) u2 sp2
+      (fun q hq => k2 q (by revert hq; revert q; decide)) (fun x hx => f2 x hx.1 hx.2)
+      (fun x hx => ⟨by have := C.inR (c := 0) (l := 0x270) (by decide) hx; rwa [add_ofNat_zero] at this,
+        C.inR (by omega) hx⟩)
+      (fun c c1 c2 => ⟨r0' (by decide) (by omega) (by omega), C.offs (Or.inl (by omega)) (by omega) (by omega)⟩),
+    w2, fun q hq => k2 q (by revert hq; revert q; decide), f2⟩
+
+set_option maxRecDepth 20000 in
+/-- A call of `ProjectivePoint::double` on frame operands. -/
+theorem NtSt.dbl {off : Nat} (C : NtCtx M0 R) (D : NtSt M0 Ms R out A r0 M n off) {imm o : Word}
+    (h1 : fetchRel nafTableFromCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel nafTableFromCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : NTF + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 edDoubleAddress) (hev : off % 2 = 0)
+    {k j : Nat} (hk : k % 4 = 0) (hj : j % 4 = 0) (hk1 : 0x270 ≤ k) (hk2 : k + 0xA0 ≤ 0x9FC)
+    (hj1 : 0x270 ≤ j) (hj2 : j + 120 ≤ 0x9FC)
+    (ha0 : reg n a0 = R + BitVec.ofNat 32 k) (ha1 : reg n a1 = R + BitVec.ofNat 32 j) :
+    ∃ n', Steps n n' ∧ NtSt M0 Ms R out A r0 n'.mem n' (off + 8) ∧
+      ptAt n'.mem (R + BitVec.ofNat 32 k) = edDoubleSpec (feW M (R + BitVec.ofNat 32 j))
+        (feW M (R + BitVec.ofNat 32 j + 0x28)) (feW M (R + BitVec.ofNat 32 j + 0x50)) ∧
+      (∀ q : Fin 32, q.val ∈ [8, 9, 18, 19] → reg n' q = reg n q) ∧
+      ∀ x, Sep (R + BitVec.ofNat 32 0x60) 0x210 x 1 → Sep (R + BitVec.ofNat 32 k) 160 x 1 → n'.mem x = M x := by
+  have hc : CodeIn M NTF nafTableFromCode := D.code C C.E.cod (by decide) (by decide)
+  have eS : R + BitVec.ofNat 32 0x270 + 0xFFFFFDF0 = R + BitVec.ofNat 32 0x60 := by rw [BitVec.add_assoc]; rfl
+  have env : EdDblEnv M (BitVec.ofNat 32 edDoubleAddress) (reg n sp + 0xFFFFFDF0) (reg n a0) (reg n a1) := by
+    rw [D.hsp, ha0, ha1, eS]
+    exact { hP := by decide
+            code := D.code C C.E.dbl (by decide) (by decide)
+            sq := by rw [show (BitVec.ofNat 32 edDoubleAddress : Word) + 0xFFFFE164 = BitVec.ofNat 32 feSquareAddress by decide]
+                     exact D.code C C.E.sq (by decide) (by decide)
+            sqi := by rw [show (BitVec.ofNat 32 edDoubleAddress : Word) + 0xFFFFE18A = BitVec.ofNat 32 feSquareInnerAddress by
+                        decide]; exact D.code C C.E.sqi (by decide) (by decide)
+            red := by rw [show (BitVec.ofNat 32 edDoubleAddress : Word) + 0xFFFFDDF0 = BitVec.ofNat 32 feReduceAddress by decide]
+                      exact D.code C C.E.red (by decide) (by decide)
+            add := by rw [show (BitVec.ofNat 32 edDoubleAddress : Word) + 0xFFFFE674 = BitVec.ofNat 32 feAddAddress by decide]
+                      exact D.code C C.E.add (by decide) (by decide)
+            sub := by rw [show (BitVec.ofNat 32 edDoubleAddress : Word) + 0xFFFFE6C2 = BitVec.ofNat 32 feSubAddress by decide]
+                      exact D.code C C.E.sub (by decide) (by decide)
+            mcS := by rw [show (BitVec.ofNat 32 edDoubleAddress : Word) + 0x43FC = BitVec.ofNat 32 memcpyStubAddress by decide]
+                      exact D.code C C.E.mcs (by decide) (by decide)
+            mcB := by rw [show (BitVec.ofNat 32 edDoubleAddress : Word) + 0x4404 = BitVec.ofNat 32 memcpyStubAddress + 8 by
+                        decide]; exact D.code C C.E.mcb (by decide) (by decide)
+            hG := aligned_add C.hR (by decide)
+            hGt := by rw [C.toNat_off (by decide)]; have := C.hRw; omega
+            hout := aligned_add C.hR hk
+            hot := by rw [C.toNat_off (by omega)]; have := C.hRw; omega
+            hsf := aligned_add C.hR hj
+            hst := by rw [C.toNat_off (by omega)]; have := C.hRw; omega
+            sGC := C.hiSep (by decide) (by decide) (by decide)
+            sGQ := C.hiSep (by decide) (by decide) (by decide)
+            sGI := C.hiSep (by decide) (by decide) (by decide)
+            sGR := C.hiSep (by decide) (by decide) (by decide)
+            sGA := C.hiSep (by decide) (by decide) (by decide)
+            sGS := C.hiSep (by decide) (by decide) (by decide)
+            sGM := C.hiSep (by decide) (by decide) (by decide)
+            sGB := C.hiSep (by decide) (by decide) (by decide)
+            sOC := C.hiSep (by omega) (by decide) (by decide)
+            sOQ := C.hiSep (by omega) (by decide) (by decide)
+            sOI := C.hiSep (by omega) (by decide) (by decide)
+            sOR := C.hiSep (by omega) (by decide) (by decide)
+            sOA := C.hiSep (by omega) (by decide) (by decide)
+            sOS := C.hiSep (by omega) (by decide) (by decide)
+            sOM := C.hiSep (by omega) (by decide) (by decide)
+            sOB := C.hiSep (by omega) (by decide) (by decide)
+            sOG := C.offs (Or.inr (by omega)) (by omega) (by decide)
+            sFG := C.offs (Or.inr (by omega)) (by omega) (by decide) }
+  obtain ⟨n2, c2, u2, sp2, k2, w2, f2⟩ := D.st.callEdDouble hc h1 h2 hb (C.even _ (by omega)) env
+  rw [ha0, ha1] at w2
+  rw [D.hsp, eS, ha0] at f2
+  refine ⟨n2, c2, D.after (P := fun x => Sep (R + BitVec.ofNat 32 0x60) 0x210 x 1 ∧ Sep (R + BitVec.ofNat 32 k) 160 x 1)
+      u2 sp2 (fun q hq => k2 q (by revert hq; revert q; decide) (by revert hq; revert q; decide))
+      (fun x hx => f2 x hx.1 hx.2) (fun x hx => ⟨C.inR (by decide) hx, C.inR (by omega) hx⟩)
+      (fun c c1 c2 => ⟨C.offs (Or.inl (by omega)) (by decide) (by omega), C.offs (Or.inl (by omega)) (by omega) (by omega)⟩),
+    ?_, fun q hq => k2 q (by revert hq; revert q; decide) (by revert hq; revert q; decide), f2⟩
+  unfold ptAt; rw [w2]; rfl
+
+set_option maxRecDepth 20000 in
+/-- A call of `CompletedPoint::as_extended` on frame operands. -/
+theorem NtSt.ext {off : Nat} (C : NtCtx M0 R) (D : NtSt M0 Ms R out A r0 M n off) {imm o : Word}
+    (h1 : fetchRel nafTableFromCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel nafTableFromCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : NTF + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 asExtendedAddress) (hev : off % 2 = 0)
+    {k j : Nat} (hk : k % 4 = 0) (hj : j % 4 = 0) (hk1 : 0x270 ≤ k) (hk2 : k + 0xA0 ≤ 0x9FC)
+    (hj1 : 0x270 ≤ j) (hj2 : j + 0xA0 ≤ 0x9FC) (hkj : k + 0xA0 ≤ j ∨ j + 0xA0 ≤ k)
+    (ha0 : reg n a0 = R + BitVec.ofNat 32 k) (ha1 : reg n a1 = R + BitVec.ofNat 32 j) :
+    ∃ n', Steps n n' ∧ NtSt M0 Ms R out A r0 n'.mem n' (off + 8) ∧
+      ptAt n'.mem (R + BitVec.ofNat 32 k) = extL (ptAt M (R + BitVec.ofNat 32 j)) ∧
+      (∀ q : Fin 32, q.val ∈ [8, 9, 18, 19] → reg n' q = reg n q) ∧
+      ∀ x, Sep (R + BitVec.ofNat 32 0x110) 0x160 x 1 → Sep (R + BitVec.ofNat 32 k) 160 x 1 → n'.mem x = M x := by
+  have hc : CodeIn M NTF nafTableFromCode := D.code C C.E.cod (by decide) (by decide)
+  have eS : axR (R + BitVec.ofNat 32 0x270) = R + BitVec.ofNat 32 0x110 := by
+    unfold axR; rw [BitVec.add_assoc]; rfl
+  have env : AxEnv M (BitVec.ofNat 32 asExtendedAddress) (reg n sp) (reg n a0) (reg n a1) := by
+    rw [D.hsp, ha0, ha1]
+    exact { hP := by decide
+            code := D.code C C.E.ext (by decide) (by decide)
+            mul := by rw [show (BitVec.ofNat 32 asExtendedAddress : Word) + 0xFFFFD8E6 = BitVec.ofNat 32 feMulAddress by decide]
+                      exact D.code C C.E.mul (by decide) (by decide)
+            red := by rw [show (BitVec.ofNat 32 asExtendedAddress : Word) + 0xFFFFE3D6 = BitVec.ofNat 32 feReduceAddress by
+                        decide]; exact D.code C C.E.red (by decide) (by decide)
+            hsp := aligned_add C.hR (by decide)
+            hS := by rw [C.toNat_off (by decide)]; omega
+            hout := aligned_add C.hR hk
+            hcp := aligned_add C.hR hj
+            sC := by rw [eS]; exact C.hiSep (by decide) (by decide) (by decide)
+            sM := by rw [eS]; exact C.hiSep (by decide) (by decide) (by decide)
+            sR := by rw [eS]; exact C.hiSep (by decide) (by decide) (by decide)
+            oR := by rw [eS]; exact C.offs (Or.inr (by omega)) (by omega) (by decide)
+            cR := by rw [eS]; exact C.offs (Or.inr (by omega)) (by omega) (by decide)
+            oCp := C.offs hkj (by omega) (by omega)
+            oC := C.hiSep (by omega) (by decide) (by decide)
+            oM := C.hiSep (by omega) (by decide) (by decide)
+            oRd := C.hiSep (by omega) (by decide) (by decide) }
+  obtain ⟨n2, c2, u2, sp2, k2, w0, w1, w2, w3, f2⟩ := D.st.callAsExt hc h1 h2 hb (C.even _ (by omega)) env
+  rw [ha0, ha1] at w0 w1 w2 w3
+  rw [D.hsp, eS, ha0] at f2
+  refine ⟨n2, c2, D.after (P := fun x => Sep (R + BitVec.ofNat 32 0x110) 0x160 x 1 ∧ Sep (R + BitVec.ofNat 32 k) 160 x 1)
+      u2 sp2 (fun q hq => k2 q (by revert hq; revert q; decide) (by revert hq; revert q; decide))
+      (fun x hx => f2 x hx.1 hx.2) (fun x hx => ⟨C.inR (by decide) hx, C.inR (by omega) hx⟩)
+      (fun c c1 c2 => ⟨C.offs (Or.inl (by omega)) (by decide) (by omega), C.offs (Or.inl (by omega)) (by omega) (by omega)⟩),
+    ?_, fun q hq => k2 q (by revert hq; revert q; decide) (by revert hq; revert q; decide), f2⟩
+  unfold ptAt extL
+  rw [show R + BitVec.ofNat 32 k + BitVec.ofNat 32 40 = R + BitVec.ofNat 32 k + 0x28 from rfl,
+    show R + BitVec.ofNat 32 k + BitVec.ofNat 32 80 = R + BitVec.ofNat 32 k + 0x50 from rfl,
+    show R + BitVec.ofNat 32 k + BitVec.ofNat 32 120 = R + BitVec.ofNat 32 k + 0x78 from rfl, w0, w1, w2, w3]
+  rfl
+
+end Calls
+
 end C3.RV32
