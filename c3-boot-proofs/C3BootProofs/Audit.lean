@@ -133,6 +133,7 @@ import C3BootProofs.Proofs.P256FromRepr
 import C3BootProofs.Proofs.FromBeSliceTrunc
 import C3BootProofs.Proofs.Bytes2Scalar256
 import C3BootProofs.Proofs.ScalarFromSlice256
+import C3BootProofs.Proofs.IsSmallOrder
 import C3BootProofs.Spec.Ecdsa
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
@@ -2767,6 +2768,39 @@ theorem exists_scalarFromSlice256_machine :
     RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
     (RV32.sep_of_le (by decide) (by decide)).symm⟩
   exact ⟨by code_in, ⟨by code_in, by code_in, by code_in, by code_in, by code_in⟩, by code_in, by code_in, by code_in,
+    by decide +kernel⟩
+
+/-- `is_small_order`, its callees, and the field element `ONE`, where the
+image loads them. -/
+def witnessRegionsISO : List (Nat × List Nat) :=
+  [(Image.isSmallOrderAddress, Image.isSmallOrderCode), (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode), (Image.memsetAddress, Image.memsetCode),
+    (Image.edDoubleAddress, Image.edDoubleCode), (Image.feSquareAddress, Image.feSquareCode),
+    (Image.feSquareInnerAddress, Image.feSquareInnerCode), (Image.feReduceAddress, Image.feReduceCode),
+    (Image.feAddAddress, Image.feAddCode), (Image.feSubAddress, Image.feSubCode),
+    (Image.asProjectiveAddress, Image.asProjectiveCode), (Image.asExtendedAddress, Image.asExtendedCode),
+    (Image.feMulAddress, Image.feMulCode), (Image.feCtEqAddress, Image.feCtEqCode),
+    (Image.feToBytesAddress, Image.feToBytesCode), (Image.ctEqSliceAddress, Image.ctEqSliceCode),
+    (Image.ctEqU8Address, Image.ctEqU8Code), (Image.blackBoxU8Address, Image.blackBoxU8Code),
+    (Image.edOneAddress, Image.edOneData)]
+
+def witnessMemISO : RV32.Word → BitVec 8 := RV32.regionMem witnessRegionsISO
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that asks whether the point at `0x3FCC5000` has small order,
+with the stack at `0x3FCC8000`, meets `isSmallOrder_correct`'s hypotheses. -/
+theorem exists_isSmallOrder_machine :
+    ∃ (m : RV32.Machine) (sp0 p retAddr : RV32.Word), RV32.ISOEnv m.mem ∧ m.pc = RV32.ISO ∧
+      RV32.reg m RV32.a0 = p ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 4 = 0 ∧ 0x4D0 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧
+      p.toNat % 4 = 0 ∧ RV32.Sep p 120 (sp0 + 0xFFFFFB30) 0x4D0 ∧
+      RV32.Sep (BitVec.ofNat 32 Image.edOneAddress) 40 (sp0 + 0xFFFFFB30) 0x4D0 := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0 0, RV32.ISO, witnessMemISO⟩, 0x3FCC8000, 0x3FCC5000, 0,
+    ?_, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide, by decide,
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩
+  exact ⟨by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
+    by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
     by decide +kernel⟩
 
 set_option maxRecDepth 200000 in
@@ -7672,3 +7706,27 @@ end C3
 
 /-- info: 'C3.RV32.bg_cmp_loop' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.bg_cmp_loop
+
+/-- info: 'C3.RV32.isSmallOrder_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.isSmallOrder_correct
+
+/-- info: 'C3.exists_isSmallOrder_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_isSmallOrder_machine
+
+/-- info: 'C3.RV32.St.callEdDouble' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.St.callEdDouble
+
+/-- info: 'C3.RV32.St.callAsProj' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.St.callAsProj
+
+/-- info: 'C3.RV32.St.callAsExt' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.St.callAsExt
+
+/-- info: 'C3.RV32.St.callFeMulL' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.St.callFeMulL
+
+/-- info: 'C3.RV32.St.callFeCtEq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.St.callFeCtEq
+
+/-- info: 'C3.RV32.feBytesOf_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.feBytesOf_eq
