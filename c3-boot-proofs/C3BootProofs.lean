@@ -80,6 +80,10 @@ import C3BootProofs.Proofs.Sha2Final
 import C3BootProofs.Proofs.Sha2OneShot
 import C3BootProofs.Proofs.Sha2Finish
 import C3BootProofs.Proofs.Sha2Parts
+import C3BootProofs.Proofs.MerkleNode
+import C3BootProofs.Proofs.Pair64
+import C3BootProofs.Proofs.MerkleSpecLemmas
+import C3BootProofs.Proofs.RootFromInclusion
 import C3BootProofs.Proofs.Sha256LoopDecode
 import C3BootProofs.Proofs.Sha256LoopBlocks
 import C3BootProofs.Proofs.Sha256LoopRounds

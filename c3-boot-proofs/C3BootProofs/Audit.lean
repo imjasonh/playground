@@ -120,6 +120,8 @@ import C3BootProofs.Proofs.MemcpyAny
 import C3BootProofs.Proofs.Sha2OneShot
 import C3BootProofs.Proofs.Sha2Finish
 import C3BootProofs.Proofs.Sha2Parts
+import C3BootProofs.Proofs.MerkleNode
+import C3BootProofs.Proofs.RootFromInclusion
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
 import C3BootProofs.Image.BootloaderV0
@@ -937,7 +939,8 @@ as the image stores it, and a block count of zero. -/
 def emptyHasherBytes : List Nat := List.replicate 64 0 ++ Image.shaIVData ++ List.replicate 8 0
 
 /-- Memory with the empty hasher at `0x3FCC5000`, and the current image's
-`update`, `finalize`, `sha256`, their helpers, `compress256` with its
+`update`, `finalize`, `sha256`, their helpers, `node_hash`,
+`root_from_inclusion`, `compress256` with its
 helpers, `memset`, `memcpy`, the initial hash value, and the round constants
 where the image loads them, and zeros elsewhere. -/
 def witnessMemSha2 : RV32.Word → BitVec 8 :=
@@ -951,6 +954,9 @@ def witnessMemSha2 : RV32.Word → BitVec 8 :=
     (Image.sha256FnAddress, Image.sha256FnCode),
     (Image.shaFinishAddress, Image.shaFinishCode),
     (Image.sha256PartsAddress, Image.sha256PartsCode),
+    (Image.merkleNodeHashAddress, Image.merkleNodeHashCode),
+    (Image.rootFromInclusionAddress, Image.rootFromInclusionCode),
+    (Image.merklePrefixAddress, Image.merklePrefixData),
     (0x3FCC6200, [0x00, 0x61, 0xCC, 0x3F, 3, 0, 0, 0, 0x10, 0x61, 0xCC, 0x3F, 5, 0, 0, 0]),
     (Image.sha256CompressAddress, Image.sha256CompressCode),
     (Image.rangeFromIndexAddress, Image.rangeFromIndexCode),
@@ -1077,6 +1083,53 @@ theorem exists_sha256Parts_machine :
     intro i hi
     rcases (show i = 0 ∨ i = 1 by omega) with rfl | rfl <;>
       exact ⟨by decide +kernel, by decide +kernel, RV32.sep_of_le (by decide +kernel) (by decide +kernel)⟩
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `node_hash` with the hashes at `0x3FCC5100` and
+`0x3FCC5200`, the output at `0x3FCC6000`, and the stack at `0x3FCC8000`
+meets `merkleNodeHash_correct`'s hypotheses. -/
+theorem exists_merkleNodeHash_machine :
+    ∃ (m : RV32.Machine) (out L Rt sp0 retAddr : RV32.Word),
+      RV32.NodeEnv m.mem out L Rt sp0 ∧ m.pc = BitVec.ofNat 32 Image.merkleNodeHashAddress ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = L ∧ RV32.reg m RV32.a2 = Rt ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 := by
+  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC5100
+      else if r = RV32.a2 then 0x3FCC5200 else if r = RV32.sp then 0x3FCC8000 else 0),
+      BitVec.ofNat 32 Image.merkleNodeHashAddress, witnessMemSha2⟩,
+    0x3FCC6000, 0x3FCC5100, 0x3FCC5200, 0x3FCC8000, 0, ?_, rfl, rfl, rfl, rfl, rfl, by decide, rfl⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `root_from_inclusion` for index 0 of a 2-leaf tree,
+with the leaf hash at `0x3FCC5100`, one 32-byte proof hash at `0x3FCC5200`,
+the result at `0x3FCC6000`, and the stack at `0x3FCC8000`, meets
+`rootFromInclusion_correct`'s hypotheses. -/
+theorem exists_rootFromInclusion_machine :
+    ∃ (m : RV32.Machine) (out L Pp sp0 retAddr : RV32.Word) (n : Nat),
+      RV32.RootEnv m.mem out L Pp sp0 n ∧ m.pc = BitVec.ofNat 32 Image.rootFromInclusionAddress ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a5 = L ∧ RV32.reg m RV32.a6 = Pp ∧
+      RV32.reg m RV32.a7 = BitVec.ofNat 32 n ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      RV32.reg m RV32.sp = sp0 := by
+  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a3 then 2
+      else if r = RV32.a5 then 0x3FCC5100 else if r = RV32.a6 then 0x3FCC5200 else if r = RV32.a7 then 32
+      else if r = RV32.sp then 0x3FCC8000 else 0),
+      BitVec.ofNat 32 Image.rootFromInclusionAddress, witnessMemSha2⟩,
+    0x3FCC6000, 0x3FCC5100, 0x3FCC5200, 0x3FCC8000, 0, 32, ?_, rfl, rfl, rfl, rfl, rfl, rfl, by decide, rfl⟩
+  constructor
   all_goals first
     | code_in
     | decide
@@ -5955,6 +6008,18 @@ end C3
 
 /-- info: 'C3.exists_sha256Parts_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_sha256Parts_machine
+
+/-- info: 'C3.RV32.merkleNodeHash_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.merkleNodeHash_correct
+
+/-- info: 'C3.exists_merkleNodeHash_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_merkleNodeHash_machine
+
+/-- info: 'C3.RV32.rootFromInclusion_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.rootFromInclusion_correct
+
+/-- info: 'C3.exists_rootFromInclusion_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_rootFromInclusion_machine
 
 /-- info: 'C3.RV32.mulMont12_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.mulMont12_correct
