@@ -140,6 +140,7 @@ import C3BootProofs.Proofs.X509ReadTime
 import C3BootProofs.Proofs.Base64Decode
 import C3BootProofs.Proofs.Base64Encode
 import C3BootProofs.Proofs.Sha512UpdateArr32
+import C3BootProofs.Proofs.EdDecompress
 import C3BootProofs.Spec.Ecdsa
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
@@ -2882,6 +2883,48 @@ theorem exists_isSmallOrder_machine :
   exact ⟨by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
     by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
     by decide +kernel⟩
+
+/-- `decompress`, its callees, and the field elements `ONE`, `EDWARDS_D`,
+and `SQRT_M1`, where the image loads them. -/
+def witnessRegionsDec : List (Nat × List Nat) :=
+  [(Image.edDecompressAddress, Image.edDecompressCode), (Image.feLoad3Address, Image.feLoad3Code),
+    (Image.feLoad4Address, Image.feLoad4Code), (Image.feReduceAddress, Image.feReduceCode),
+    (Image.feSquareAddress, Image.feSquareCode), (Image.feSquareInnerAddress, Image.feSquareInnerCode),
+    (Image.feSubAddress, Image.feSubCode), (Image.feAddAddress, Image.feAddCode),
+    (Image.feMulAddress, Image.feMulCode), (Image.pow22501Address, Image.pow22501Code),
+    (Image.fePow2kAddress, Image.fePow2kCode), (Image.feCtEqAddress, Image.feCtEqCode),
+    (Image.feToBytesAddress, Image.feToBytesCode), (Image.ctEqSliceAddress, Image.ctEqSliceCode),
+    (Image.ctEqU8Address, Image.ctEqU8Code), (Image.blackBoxU8Address, Image.blackBoxU8Code),
+    (Image.feNegAddress, Image.feNegCode), (Image.feCondAssignAddress, Image.feCondAssignCode),
+    (Image.feIsNegativeAddress, Image.feIsNegativeCode), (Image.feCondNegAddress, Image.feCondNegCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode), (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.edOneAddress, Image.edOneData), (Image.edDAddress, Image.edDData),
+    (Image.edSqrtM1Address, Image.edSqrtM1Data)]
+
+def witnessMemDec : RV32.Word → BitVec 8 := RV32.regionMem witnessRegionsDec
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that decompresses the 32 bytes at `0x3FCC6100` into the slot
+at `0x3FCC6000`, with the stack at `0x3FCC8000`, meets
+`edDecompress_correct`'s hypotheses. -/
+theorem exists_edDecompress_machine :
+    ∃ (m : RV32.Machine) (sp0 out bp retAddr : RV32.Word), RV32.DecEnv m.mem ∧ m.pc = RV32.DEC ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = bp ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 4 = 0 ∧ 0x6F0 ≤ sp0.toNat ∧
+      sp0.toNat ≤ 0x40000000 ∧ out.toNat % 4 = 0 ∧ out.toNat + 0xA4 ≤ 0x40000000 ∧
+      RV32.Sep out 0xA4 (sp0 + 0xFFFFF910) 0x6F0 ∧ RV32.Sep bp 32 (sp0 + 0xFFFFF910) 0x6F0 ∧
+      RV32.Sep (BitVec.ofNat 32 Image.edOneAddress) 40 (sp0 + 0xFFFFF910) 0x6F0 ∧
+      RV32.Sep (BitVec.ofNat 32 Image.edDAddress) 40 (sp0 + 0xFFFFF910) 0x6F0 ∧
+      RV32.Sep (BitVec.ofNat 32 Image.edSqrtM1Address) 40 (sp0 + 0xFFFFF910) 0x6F0 := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0x3FCC6100 0, RV32.DEC, witnessMemDec⟩, 0x3FCC8000, 0x3FCC6000, 0x3FCC6100, 0,
+    ?_, rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide, by decide, by decide,
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide)⟩
+  exact ⟨by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
+    by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
+    by code_in, by code_in, by code_in, by code_in⟩
 
 /-- Memory with `time::date_time` and `time::digits::<2>` where the image
 loads them, a slice reader at `0x3FCC6000` over 10 bytes at `0x3FCC7000`,
@@ -7046,6 +7089,12 @@ end C3
 
 /-- info: 'C3.exists_sha512UpdateArr32_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_sha512UpdateArr32_machine
+
+/-- info: 'C3.RV32.edDecompress_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.edDecompress_correct
+
+/-- info: 'C3.exists_edDecompress_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_edDecompress_machine
 
 /-- info: 'C3.RV32.p384Mul_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.p384Mul_correct
