@@ -140,17 +140,6 @@ datasheet names and keywords is catalog work. Laya only gets a yes/no when a
 candidate misses those tokens. Construction still runs without Apple
 Intelligence or Laya.
 
-Refresh the **bundled** catalog (no remote fetch at runtime):
-
-```bash
-python3 ios/scripts/refresh-army-list-catalog.py
-```
-
-A weekly GitHub Action (`.github/workflows/army-list-catalog.yml`) runs that
-refresh on `main`, opens a PR, regenerates stress fixtures, and auto-merges
-when CI is green. Catalog versions bump as `11e-<N>`; id migrations keep saved
-lists pointed at the same named datasheets when ids would otherwise drift.
-
 Stress-test the validator by building ~50 lists in Swift (same
 `ArmyListValidator` as the app) and writing XCTest fixtures. Requires macOS:
 
