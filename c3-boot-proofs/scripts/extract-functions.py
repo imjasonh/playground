@@ -216,6 +216,8 @@ FUNCTIONS = [
     ("pow22501", "<curve25519_dalek::backend::serial::u32::field::FieldElement2625>::pow22501"),
     ("nonAdjacentForm", "<curve25519_dalek::scalar::Scalar>::non_adjacent_form"),
     ("incrementLimb", "<wnaf::limb_buffer::LimbBuffer>::increment_limb"),
+    ("feCondNeg", "<curve25519_dalek::backend::serial::u32::field::FieldElement2625 as subtle::ConditionallyNegatable>::conditional_negate"),
+    ("isSmallOrder", "<curve25519_dalek::edwards::EdwardsPoint>::is_small_order"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a

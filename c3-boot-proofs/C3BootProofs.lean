@@ -177,6 +177,7 @@ import C3BootProofs.Proofs.FeNeg
 import C3BootProofs.Proofs.Scalar29Pack
 import C3BootProofs.Proofs.IncrementLimb
 import C3BootProofs.Proofs.NonAdjacentForm
+import C3BootProofs.Proofs.FeCondNeg
 import C3BootProofs.Proofs.LincombShiftMod8
 import C3BootProofs.Proofs.UpdateFg12
 import C3BootProofs.Proofs.UpdateFg8

@@ -89,6 +89,7 @@ import C3BootProofs.Proofs.EdNiels
 import C3BootProofs.Proofs.Pow22501
 import C3BootProofs.Proofs.FeCondAssign
 import C3BootProofs.Proofs.FeNeg
+import C3BootProofs.Proofs.FeCondNeg
 import C3BootProofs.Proofs.Scalar29Pack
 import C3BootProofs.Proofs.IncrementLimb
 import C3BootProofs.Proofs.NonAdjacentForm
@@ -5619,6 +5620,33 @@ theorem exists_nonAdjacentForm_machine :
     | exact RV32.sep_of_le (by decide) (by decide)
     | exact (RV32.sep_of_le (by decide) (by decide)).symm
 
+/-- Memory with the current image's `FieldElement2625::conditional_negate`,
+`-&FieldElement2625`, `reduce`, and `conditional_assign` where the image loads
+them, and zeros elsewhere. -/
+def witnessMemFeCondNeg : RV32.Word → BitVec 8 :=
+  RV32.regionMem [(Image.feCondNegAddress, Image.feCondNegCode), (Image.feNegAddress, Image.feNegCode),
+    (Image.feReduceAddress, Image.feReduceCode), (Image.feCondAssignAddress, Image.feCondAssignCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `FieldElement2625::conditional_negate` with choice 1
+on the field element at `0x3FCC6000` and the stack at `0x3FCC8000` meets
+`feCondNeg_correct`'s hypotheses. -/
+theorem exists_feCondNeg_machine :
+    ∃ (m : RV32.Machine) (P sp0 x c retAddr : RV32.Word), RV32.FCNEnv m.mem P sp0 x ∧
+      m.pc = P ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = x ∧ RV32.reg m RV32.a1 = c ∧
+      (c = 0 ∨ c = 1) ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC6000 1 0, BitVec.ofNat 32 Image.feCondNegAddress, witnessMemFeCondNeg⟩,
+    BitVec.ofNat 32 Image.feCondNegAddress, 0x3FCC8000, 0x3FCC6000, 1, 0, ?_, rfl, rfl, rfl, rfl, .inr rfl,
+    rfl, by decide⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
 
 
 
@@ -6814,3 +6842,9 @@ end C3
 
 /-- info: 'C3.exists_nonAdjacentForm_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_nonAdjacentForm_machine
+
+/-- info: 'C3.RV32.feCondNeg_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.feCondNeg_correct
+
+/-- info: 'C3.exists_feCondNeg_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_feCondNeg_machine
