@@ -284,7 +284,7 @@ func (b *Bot) RunJob(ctx context.Context, job *workerv1.Job) {
 	go b.heartbeat(ctx, cancel, job)
 
 	start := time.Now()
-	fetcher := b.newJobFetcher(ctx, job.GetInstanceName())
+	fetcher := b.newJobFetcher(ctx)
 	ar, err := b.execute(ctx, job, fetcher)
 	b.metrics.inputBytes.Add(ctx, fetcher.inputBytes(), metric.WithAttributes(telemetry.AttrInputMode.String(string(b.cfg.InputMode))))
 	span.SetAttributes(attribute.Int64("ci_substrate.input_bytes_fetched", fetcher.inputBytes()))
