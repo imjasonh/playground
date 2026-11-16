@@ -247,8 +247,11 @@ func newEngine() (*engine, error) {
 		return nil, rtErr
 	}
 	name := fmt.Sprintf("ts-%d", instN.Add(1))
+	// tree-sitter's parse timeout reads the monotonic clock. wazero's
+	// default clock advances 1ms per reading, which would turn the timeout
+	// into a cap on how often the parser checks the clock.
 	mod, err := rt.wz.InstantiateModule(rt.ctx, rt.cm,
-		wazero.NewModuleConfig().WithName(name).WithStartFunctions("_initialize"))
+		wazero.NewModuleConfig().WithName(name).WithStartFunctions("_initialize").WithSysNanotime())
 	if err != nil {
 		return nil, fmt.Errorf("instantiate: %w", err)
 	}
