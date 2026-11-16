@@ -649,4 +649,128 @@ theorem NtSt.ext {off : Nat} (C : NtCtx M0 R) (D : NtSt M0 Ms R out A r0 M n off
 
 end Calls
 
+theorem ptAt_frame {M M' : Word → BitVec 8} {a : Word} (h : ∀ j, j < 160 → M' (a + BitVec.ofNat 32 j) = M (a + BitVec.ofNat 32 j)) :
+    ptAt M' a = ptAt M a := by
+  have fw : ∀ c, c + 40 ≤ 160 → feW M' (a + BitVec.ofNat 32 c) = feW M (a + BitVec.ofNat 32 c) := fun c hc =>
+    feW_frame fun i hi => memLoad32_congr fun q hq => by
+      rw [add_ofNat_assoc, add_ofNat_assoc]; exact h _ (by omega)
+  unfold ptAt
+  have f0 := fw 0 (by decide); rw [add_ofNat_zero] at f0
+  rw [f0, fw 40 (by decide), fw 80 (by decide), fw 120 (by decide)]
+
+theorem ptAt_copy {M : Word → BitVec 8} {d s : Word} {N c : Nat} (h : c + 160 ≤ N) (hN : N < 2 ^ 32) :
+    ptAt (copyBytes M d s N) (d + BitVec.ofNat 32 c) = ptAt M (s + BitVec.ofNat 32 c) := by
+  unfold ptAt
+  rw [spk, spk, spk, spk, spk, spk, feW_copyAt (by omega) hN, feW_copyAt (c := c + 40) (by omega) hN,
+    feW_copyAt (c := c + 80) (by omega) hN, feW_copyAt (c := c + 120) (by omega) hN]
+
+section Steps
+variable {M0 Ms M : Word → BitVec 8} {R out A : Word} {r0 : Fin 32 → Word} {n : Machine}
+
+/-- A step that writes a register `from` doesn't track. -/
+theorem NtSt.step {off : Nat} (D : NtSt M0 Ms R out A r0 M n off) {n' : Machine} {off' : Nat} {rd : Fin 32} {v : Word}
+    (u : St M NTF n' off' (upd (reg n) rd v)) (hrd : rd.val ∉ [2, 3, 4, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]) :
+    NtSt M0 Ms R out A r0 M n' off' :=
+  D.after (P := fun _ => True) u.self (u.upd_ne D.st.zero sp (fun e => hrd (by rw [← e]; decide)))
+    (fun q hq => u.upd_ne D.st.zero q (fun e => hrd (by rw [← e]; exact List.mem_cons_of_mem _ hq)))
+    (fun _ _ => rfl) (fun _ _ => trivial) (fun _ _ _ => trivial)
+
+theorem NtSt.jmp' {off : Nat} (D : NtSt M0 Ms R out A r0 M n off) {n' : Machine} {off' : Nat}
+    (u : St M NTF n' off' (reg n)) : NtSt M0 Ms R out A r0 M n' off' :=
+  D.after (P := fun _ => True) u.self (u.regs sp) (fun q _ => u.regs q) (fun _ _ => rfl) (fun _ _ => trivial)
+    (fun _ _ _ => trivial)
+
+end Steps
+
+theorem nt_bne : ∀ t : Fin 8, 0 < t.val → branchTaken .bne (BitVec.ofNat 32 t.val) 0 = true := by decide
+theorem nt_dec : ∀ t : Fin 8, aluEval .add (BitVec.ofNat 32 (t.val + 1)) 0xFFFFFFFF = BitVec.ofNat 32 t.val := by decide
+
+section Loops
+variable {M0 Ms : Word → BitVec 8} {R out A : Word} {r0 : Fin 32 → Word}
+
+/-- After a frame `memcpy`, a point that doesn't overlap the copy or the
+scratch keeps its value. -/
+theorem pt_keep {M M' : Word → BitVec 8} (C : NtCtx M0 R) {k N a : Nat} {src : Word}
+    (f : ∀ x, Sep (R + BitVec.ofNat 32 0x260) 16 x 1 → M' x = copyBytes M (R + BitVec.ofNat 32 k) src N x)
+    (h1 : 0x270 ≤ a) (h2 : a + 160 ≤ 0xA10) (h3 : k + N ≤ a ∨ a + 160 ≤ k) (h4 : k + N ≤ 0xA10) :
+    ptAt M' (R + BitVec.ofNat 32 a) = ptAt M (R + BitVec.ofNat 32 a) :=
+  ptAt_frame fun j hj => by
+    rw [spk, f _ (C.offs (Or.inl (by omega)) (by decide) (by omega)),
+      copyBytes_sep (C.offs (by omega) h4 (by omega)) (Nat.le_refl _)]
+
+/-- After a frame `memcpy` of 160 bytes from `R + s`, the copy holds the
+source point. -/
+theorem pt_copied {M M' : Word → BitVec 8} (C : NtCtx M0 R) {k s : Nat}
+    (f : ∀ x, Sep (R + BitVec.ofNat 32 0x260) 16 x 1 → M' x = copyBytes M (R + BitVec.ofNat 32 k) (R + BitVec.ofNat 32 s) 0xA0 x)
+    (h1 : 0x270 ≤ k) (h2 : k + 160 ≤ 0xA10) :
+    ptAt M' (R + BitVec.ofNat 32 k) = ptAt M (R + BitVec.ofNat 32 s) := by
+  have e := ptAt_copy (M := M) (d := R + BitVec.ofNat 32 k) (s := R + BitVec.ofNat 32 s) (N := 0xA0) (c := 0)
+    (by decide) (by decide)
+  rw [add_ofNat_zero, add_ofNat_zero] at e
+  rw [← e]
+  exact ptAt_frame fun j hj => by rw [spk, f _ (C.offs (Or.inl (by omega)) (by decide) (by omega))]
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 4000000 in
+/-- The loop at 0x2E that fills the table with copies of the Niels form of
+`A`; only entry 0 survives the second loop. -/
+theorem nt_loop1 (C : NtCtx M0 R) {N : Pt} :
+    ∀ t, ∀ {j : Nat} {M : Word → BitVec 8} {n : Machine}, j + t = 8 → 0 < t → NtSt M0 Ms R out A r0 M n 0x2E →
+      reg n (8 : Fin 32) = R + BitVec.ofNat 32 (0x45C + 160 * j) → reg n (9 : Fin 32) = BitVec.ofNat 32 t →
+      ptAt M (R + BitVec.ofNat 32 0x95C) = N → (0 < j → ptAt M (R + BitVec.ofNat 32 0x45C) = N) →
+      ∃ n', Steps n n' ∧ NtSt M0 Ms R out A r0 n'.mem n' 0x48 ∧ ptAt n'.mem (R + BitVec.ofNat 32 0x45C) = N ∧
+        ptAt n'.mem (R + BitVec.ofNat 32 0x95C) = N
+  | 0, _, _, _, _, h, _, _, _, _, _ => absurd h (by decide)
+  | t + 1, j, M, n, hjt, _, D, hs0, hs1, hN, h0 => by
+    have hc : CodeIn M NTF nafTableFromCode := D.code C C.E.cod (by decide) (by decide)
+    obtain ⟨n1, d1, u1⟩ := D.st.aluImm hc nt_at_2e (off' := 0x32) (by decide)
+    have D1 := D.step u1 (by decide)
+    obtain ⟨n2, d2, u2⟩ := D1.st.aluImm hc nt_at_32 (off' := 0x36) (by decide)
+    have D2 := D1.step u2 (by decide)
+    obtain ⟨n3, d3, u3⟩ := D2.st.alu hc nt_at_36 (off' := 0x38) (by decide)
+    have D3 := D2.step u3 (by decide)
+    have r3 : ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → reg n3 q = reg n q := fun q h0 h1 h2 => by
+      rw [u3.upd_ne D2.st.zero q h0, u2.upd_ne D1.st.zero q h2, u1.upd_ne D.st.zero q h1]
+    obtain ⟨n4, c4, D4, f4, k4⟩ := D3.mc C nt_at_38 nt_at_3c (by decide) (by decide) (k := 0x45C + 160 * j)
+      (src := R + BitVec.ofNat 32 0x95C) (N := 0xA0) (by omega) (by omega)
+      (by rw [u3.upd_eq (by decide), D2.st.zero, u2.upd_ne D1.st.zero _ (by decide), u1.upd_ne D.st.zero _ (by decide), hs0]
+          exact BitVec.zero_add _)
+      (by rw [u3.upd_ne D2.st.zero _ (by decide), u2.upd_ne D1.st.zero _ (by decide), u1.upd_eq (by decide), D.hsp]
+          exact add_sp R rfl)
+      (by rw [u3.upd_ne D2.st.zero _ (by decide), u2.upd_eq (by decide), D1.st.zero]; rfl)
+      (C.offs (Or.inr (by decide)) (by decide) (by decide)) (C.offs (Or.inl (by omega)) (by omega) (by decide))
+      (by rw [C.toNat_off (by decide)]; have := C.hRw; omega)
+    have hc4 : CodeIn n4.mem NTF nafTableFromCode := D4.code C C.E.cod (by decide) (by decide)
+    obtain ⟨n5, d5, u5⟩ := D4.st.aluImm hc4 nt_at_40 (off' := 0x44) (by decide)
+    have D5 := D4.step u5 (by decide)
+    obtain ⟨n6, d6, u6⟩ := D5.st.aluImm hc4 nt_at_44 (off' := 0x46) (by decide)
+    have D6 := D5.step u6 (by decide)
+    have s0_6 : reg n6 (8 : Fin 32) = R + BitVec.ofNat 32 (0x45C + 160 * (j + 1)) := by
+      rw [u6.upd_ne D5.st.zero _ (by decide), u5.upd_eq (by decide), k4 _ (by decide),
+        r3 _ (by decide) (by decide) (by decide), hs0]
+      exact add_sp R (b := 160) (by omega)
+    have s1_6 : reg n6 (9 : Fin 32) = BitVec.ofNat 32 t := by
+      rw [u6.upd_eq (by decide), u5.upd_ne D4.st.zero _ (by decide), k4 _ (by decide),
+        r3 _ (by decide) (by decide) (by decide), hs1]
+      exact nt_dec ⟨t, by omega⟩
+    have hN' : ptAt n4.mem (R + BitVec.ofNat 32 0x95C) = N := by
+      rw [pt_keep C f4 (by decide) (by decide) (Or.inl (by omega)) (by omega), hN]
+    have hE : ptAt n4.mem (R + BitVec.ofNat 32 (0x45C + 160 * j)) = N := by
+      rw [pt_copied C f4 (by omega) (by omega), hN]
+    have h0' : ptAt n4.mem (R + BitVec.ofNat 32 0x45C) = N := by
+      rcases Nat.eq_zero_or_pos j with rfl | hj
+      · exact hE
+      · rw [pt_keep C f4 (by decide) (by decide) (Or.inr (by omega)) (by omega), h0 hj]
+    rcases Nat.eq_zero_or_pos t with rfl | ht
+    · obtain ⟨n7, d7, u7⟩ := D6.st.notTaken hc4 0x48 nt_at_46 (by decide) (by rw [s1_6, D6.st.zero]; decide)
+      exact ⟨n7, .cons d1 (.cons d2 (.cons d3 (c4.trans (.cons d5 (.cons d6 (.single d7)))))),
+        by rw [u7.mem]; exact D6.jmp' u7, by rw [u7.mem]; exact h0', by rw [u7.mem]; exact hN'⟩
+    · obtain ⟨n7, d7, u7⟩ := D6.st.taken hc4 0x2E nt_at_46 (by decide)
+        (by rw [s1_6, D6.st.zero]; exact nt_bne ⟨t, by omega⟩ ht)
+      obtain ⟨n', c', D', e0, e1⟩ := nt_loop1 C t (j := j + 1) (by omega) ht (D6.jmp' u7)
+        (by rw [u7.regs, s0_6]) (by rw [u7.regs, s1_6]) hN' (fun _ => h0')
+      exact ⟨n', .cons d1 (.cons d2 (.cons d3 (c4.trans (.cons d5 (.cons d6 (.cons d7 c')))))), D', e0, e1⟩
+
+end Loops
+
 end C3.RV32
