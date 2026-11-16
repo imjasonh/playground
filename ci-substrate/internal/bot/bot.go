@@ -284,10 +284,11 @@ func (b *Bot) RunJob(ctx context.Context, job *workerv1.Job) {
 	go b.heartbeat(ctx, cancel, job)
 
 	start := time.Now()
-	fetcher := newJobFetcher(ctx, b.cache)
+	fetcher := b.newJobFetcher(ctx, job.GetInstanceName())
 	ar, err := b.execute(ctx, job, fetcher)
-	b.metrics.inputBytes.Add(ctx, fetcher.bytes.Load(), metric.WithAttributes(telemetry.AttrInputMode.String(string(b.cfg.InputMode))))
-	span.SetAttributes(attribute.Int64("ci_substrate.input_bytes_fetched", fetcher.bytes.Load()))
+	b.metrics.inputBytes.Add(ctx, fetcher.inputBytes(), metric.WithAttributes(telemetry.AttrInputMode.String(string(b.cfg.InputMode))))
+	span.SetAttributes(attribute.Int64("ci_substrate.input_bytes_fetched", fetcher.inputBytes()))
+	span.SetAttributes(fetcher.attributes()...)
 	req := &workerv1.CompleteRequest{BotId: b.cfg.BotID, JobId: job.GetId()}
 	outcome := "ok"
 	if err != nil {

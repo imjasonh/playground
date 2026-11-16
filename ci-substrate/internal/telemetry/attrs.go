@@ -26,6 +26,9 @@ const (
 	AttrInputMode = attribute.Key("input_mode")
 	// AttrMnemonic is the Bazel action mnemonic, such as GoCompile.
 	AttrMnemonic = attribute.Key("mnemonic")
+	// AttrPhase is when a runner read a blob: prepare, before the command
+	// started, or lazy, through a FUSE mount while the command ran.
+	AttrPhase = attribute.Key("phase")
 
 	attrDir = attribute.Key("dir")
 )
