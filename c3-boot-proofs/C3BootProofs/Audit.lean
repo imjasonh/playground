@@ -122,6 +122,7 @@ import C3BootProofs.Proofs.Sha2Finish
 import C3BootProofs.Proofs.Sha2Parts
 import C3BootProofs.Proofs.MerkleNode
 import C3BootProofs.Proofs.RootFromInclusion
+import C3BootProofs.Proofs.EncodedPoint
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
 import C3BootProofs.Image.BootloaderV0
@@ -5581,7 +5582,9 @@ def witnessRegionsPanic : List (Nat × List Nat) :=
   RV32.panicFns ++ [(Image.expectUsizeAddress, Image.expectUsizeCode), (Image.expectTagAddress, Image.expectTagCode),
     (Image.nafSelectAddress, Image.nafSelectCode), (Image.ctUnwrap384Address, Image.ctUnwrap384Code),
     (Image.ctUnwrap256Address, Image.ctUnwrap256Code), (Image.memcpyStubAddress, Image.memcpyStubCode),
-    (Image.memcpyBodyAddress, Image.memcpyBodyCode)]
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode), (Image.tagFromU8Address, Image.tagFromU8Code),
+    (Image.encodedPointTagAddress, Image.encodedPointTagCode),
+    (Image.encodedPointIsIdentityAddress, Image.encodedPointIsIdentityCode)]
 
 def witnessMemPanic : RV32.Word → BitVec 8 := RV32.regionMem witnessRegionsPanic
 
@@ -5622,6 +5625,35 @@ theorem exists_expectTag_machine :
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.Room (RV32.reg m RV32.sp) 48 :=
   ⟨⟨leafRegs 0x3FCC6000 0 0, BitVec.ofNat 32 Image.expectTagAddress, witnessMemPanic⟩, 0x3FCC6000, 0,
     witnessMemPanic_code, by code_in, rfl, rfl, by decide, rfl, by decide, ⟨by decide, by decide, by decide⟩⟩
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `EncodedPoint::tag` with the byte 4 and the stack at
+`0x3FCC8000` meets `encodedPointTag_correct`'s hypotheses. -/
+theorem exists_encodedPointTag_machine :
+    ∃ (m : RV32.Machine) (retAddr : RV32.Word) (t : BitVec 8), RV32.PanicCode m.mem ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.encodedPointTagAddress) Image.encodedPointTagCode ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.tagFromU8Address) Image.tagFromU8Code ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.expectTagAddress) Image.expectTagCode ∧
+      m.pc = BitVec.ofNat 32 Image.encodedPointTagAddress ∧ RV32.reg m RV32.a0 = t.zeroExtend 32 ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.Room (RV32.reg m RV32.sp) 112 :=
+  ⟨⟨leafRegs 4 0 0, BitVec.ofNat 32 Image.encodedPointTagAddress, witnessMemPanic⟩, 0, 4,
+    witnessMemPanic_code, by code_in, by code_in, by code_in, rfl, by decide, rfl, by decide,
+    ⟨by decide, by decide, by decide⟩⟩
+
+/-- A machine that calls `EncodedPoint::is_identity` with the byte 0 and the
+stack at `0x3FCC8000` meets `encodedPointIsIdentity_correct`'s hypotheses. -/
+theorem exists_encodedPointIsIdentity_machine :
+    ∃ (m : RV32.Machine) (retAddr : RV32.Word) (t : BitVec 8), RV32.PanicCode m.mem ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.encodedPointIsIdentityAddress) Image.encodedPointIsIdentityCode ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.encodedPointTagAddress) Image.encodedPointTagCode ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.tagFromU8Address) Image.tagFromU8Code ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.expectTagAddress) Image.expectTagCode ∧
+      m.pc = BitVec.ofNat 32 Image.encodedPointIsIdentityAddress ∧ RV32.reg m RV32.a0 = t.zeroExtend 32 ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.Room (RV32.reg m RV32.sp) 128 :=
+  ⟨⟨leafRegs 0 0 0, BitVec.ofNat 32 Image.encodedPointIsIdentityAddress, witnessMemPanic⟩, 0, 0,
+    witnessMemPanic_code, by code_in, by code_in, by code_in, by code_in, rfl, by decide, rfl, by decide,
+    ⟨by decide, by decide, by decide⟩⟩
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
@@ -6962,6 +6994,18 @@ end C3
 
 /-- info: 'C3.exists_expectTag_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_expectTag_machine
+
+/-- info: 'C3.RV32.encodedPointTag_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.encodedPointTag_correct
+
+/-- info: 'C3.exists_encodedPointTag_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_encodedPointTag_machine
+
+/-- info: 'C3.RV32.encodedPointIsIdentity_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.encodedPointIsIdentity_correct
+
+/-- info: 'C3.exists_encodedPointIsIdentity_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_encodedPointIsIdentity_machine
 
 /-- info: 'C3.RV32.nafSelect_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.nafSelect_correct
