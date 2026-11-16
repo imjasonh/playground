@@ -545,10 +545,11 @@ name, so `cas` can tell Bazel's traffic from theirs. A build's trace holds:
 | `runner.blob_read` | `runner` | One read call, of one blob or a batch, that failed or took 100 ms or longer |
 | `cascache.origin_fetch` | `cascache` | One cache miss that failed or took 100 ms or longer: fetching and verifying the blob from `cas` |
 
-Blob reads have no span each. One build of the e2e `//:fanout` target made
-about 237,000 spans, and 232,000 of them were `BatchReadBlobs` and
-`ByteStream/Read` calls in the runner, `cascache`, and `cas`, and
-`cascache.origin_fetch`. The sampler drops a read's span, and the read sends
+Blob reads have no span each. One build and test of ci-substrate itself by
+`e2e/run-dogfood.sh` made about 237,000 spans, and 232,000 of them were
+`BatchReadBlobs` and `ByteStream/Read` calls in the runner, `cascache`, and
+`cas`, and `cascache.origin_fetch`. With the sampler, the same run makes
+about 6,300 spans. The sampler drops a read's span, and the read sends
 its trace context on unsampled, so the server it calls drops its spans and
 the calls it makes in turn. `otelgrpc` still measures those calls in
 `rpc.server.call.duration` and `rpc.client.call.duration`. A read that
@@ -560,7 +561,10 @@ The runner also makes fewer read calls. It loads the input tree one level
 at a time, with one batch for all the directories on a level, and in the
 copy mode reads each directory's files in batches of up to 4 MiB. The
 client splits a batch into `BatchReadBlobs` calls of at most 256 blobs and
-2 MiB, and reads a blob over the batch limit by ByteStream.
+2 MiB, and reads a blob over the batch limit by ByteStream. In the dogfood
+build, its 375 actions read 50,595 blobs before they ran, in 6,186 calls.
+Reads through the FUSE mount happen one file at a time, as the action opens
+them, and aren't batched.
 
 In place of the read spans, `runner.execute` has these attributes for each
 phase, `prepare` (reads before the command starts, which load the Action,

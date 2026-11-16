@@ -52,7 +52,8 @@ func FetchAll(ctx context.Context, f Fetcher, instance string, ds []*repb.Digest
 	return out, nil
 }
 
-// WithToken returns a Fetcher that sends the tenant token on every read of f.
+// WithToken returns a BatchFetcher that sends the tenant token on every read
+// of f.
 // casfs calls Fetch with the kernel's request context, which carries no
 // token, so the token travels with the fetcher instead.
 func WithToken(f Fetcher, token string) BatchFetcher {
@@ -81,10 +82,10 @@ type Tree struct {
 
 // Load fetches the Directory at root and, transitively, every subdirectory,
 // verifying each against its digest. It reads one level of the tree at a
-// time, with one FetchAll for the level, so a tree costs one round trip
-// per level instead of one per directory. It stops at the first malformed
-// or cyclic reference. The empty Directory, whose encoding is no bytes, is
-// never fetched.
+// time, with one FetchAll for the level, so a BatchFetcher reads the tree
+// in a few calls per level instead of one per directory. It stops at the
+// first malformed or cyclic reference. The empty Directory, whose encoding
+// is no bytes, is never fetched.
 func Load(ctx context.Context, f Fetcher, instance string, root *repb.Digest) (*Tree, error) {
 	t := &Tree{Root: root, Dirs: map[string]*repb.Directory{}}
 	if digest.Verify(root, nil) == nil {
