@@ -302,6 +302,8 @@ DATA = [
     ("b2sOrder384", "bytes2scalar384", 0x1A, 48),
     ("b2sOrder256", "bytes2scalar256", 0x16, 32),
     ("edOne", "isSmallOrder", 0x98, 40),
+    ("edD", "edDecompress", 0x102, 40),
+    ("edSqrtM1", "edDecompress", 0x1F8, 40),
     ("b64Alphabet", "base64EncodeTo", 0x28, 64),
 ]
 
