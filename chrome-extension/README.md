@@ -1,10 +1,10 @@
 # Close Duplicate Tabs
 
-A Chrome extension that closes extra tabs with the same URL, plans tab groups with Gemini Nano, the model built into Chrome, and copies decoded base64 from the selection menu. The toolbar button closes the extra tabs. The badge on that button is the number of tabs the click will close. Chrome 150 and later also show that action on the tab menu.
+A Chrome extension that closes extra tabs with the same URL, plans tab groups with Gemini Nano, the model built into Chrome, copies the URLs of selected tabs, and copies decoded base64 from the selection menu. The toolbar button closes the extra tabs. The badge on that button is the number of tabs the click will close. Chrome 150 and later also show that action on the tab menu, next to an item that copies tab URLs.
 
 The Chrome Web Store item ID is `cfmebakopkdpedmdbpcpfibhodmppigj`. That item is already published to trusted testers. This directory has no `index.html`, so GitHub Pages does not publish it.
 
-Version `0.0.2` was a popup with no behavior, and the store rejected it because the listing did not describe a function. Version `0.1.0` is also rejected, so the store will not review that version again. Version `0.1.1` is in review. Publishing `0.1.3` failed with "Your submission does not meet the requirements to be published in the store," which the store reports when the dashboard is missing something, such as a permission justification. Version `0.1.4` adds tab insights and five permissions. Before it publishes, fill in the dashboard's privacy practices with the justifications in [Store listing](#store-listing). Version `0.1.5` splits topics that hold too many tabs and picks tabs not used in a week.
+Version `0.0.2` was a popup with no behavior, and the store rejected it because the listing did not describe a function. Version `0.1.0` is also rejected, so the store will not review that version again. Version `0.1.1` is in review. Publishing `0.1.3` failed with "Your submission does not meet the requirements to be published in the store," which the store reports when the dashboard is missing something, such as a permission justification. Version `0.1.4` adds tab insights and five permissions. Before it publishes, fill in the dashboard's privacy practices with the justifications in [Store listing](#store-listing). Version `0.1.5` splits topics that hold too many tabs and picks tabs not used in a week. Version `0.1.6` adds **Copy N tab URLs** to the tab menu.
 
 ## What a click does
 
@@ -15,6 +15,14 @@ For each URL, the click keeps one tab and closes the others. It keeps a pinned t
 The badge is that close count. It is empty when the count is 0. Counts above 999 render as `999+`. The button title is `Close N duplicate tabs`, or `No duplicate tabs` when the count is 0.
 
 Right-click a tab in Chrome 150 or later and the menu shows the same title, `Close N duplicate tabs`. That item runs the same close as the toolbar button, so the number matches the badge. The item is hidden when the count is 0. Older Chrome keeps the toolbar button and does not show the item.
+
+## Copy tab URLs
+
+In Chrome 150 or later, the tab menu also has a **Copy N tab URLs** item. Select tabs with Command-click (Ctrl-click on Windows and Linux) or Shift-click, then right-click one of them. The item copies the URL of each selected tab in that window, one per line, in tab strip order. With one tab selected, the item reads **Copy tab URL**.
+
+If you right-click a tab that isn't selected, the item copies only that tab's URL, the same tab that Chrome's own tab menu items act on. The title still counts the selection, because Chrome builds the menu from items that already exist and doesn't tell the extension which tab you right-clicked until you click. The service worker updates the count when the selection or the focused window changes.
+
+A tab that is still on `about:blank` is copied as its pending URL, the same URL the duplicate count compares. A tab with no URL is skipped. The copy goes through the same offscreen document as the decoded base64 text.
 
 ## What a selection does
 
@@ -54,7 +62,7 @@ The badge is still the duplicate count. When a plan is ready that you haven't op
 
 When you switch to a tab, it stops being a pick, and if it's in the **Likely close** group, it leaves that group.
 
-The extension uses the `tabs` permission so it can read URLs and close tabs. It uses `contextMenus` for the tab item, the selection item, and the toolbar button's **Tab insights** item. It uses `sidePanel` to show the tab insights panel, `tabGroups` to name, color, and collapse the groups that **Group tabs** makes, and `sessions` so **Undo** can restore closed tabs. It uses `alarms` to schedule the background analysis and `storage` to keep the last plan and whether the panel has shown it. The Prompt API needs no permission. The content script matches `http://*/*` and `https://*/*`. The manifest has no `host_permissions` entry. It uses `clipboardWrite` and `offscreen` to copy the decoded text. The extension does not send tab URLs, titles, or selected text anywhere.
+The extension uses the `tabs` permission so it can read URLs and close tabs. It uses `contextMenus` for the two tab items, the selection item, and the toolbar button's **Tab insights** item. It uses `sidePanel` to show the tab insights panel, `tabGroups` to name, color, and collapse the groups that **Group tabs** makes, and `sessions` so **Undo** can restore closed tabs. It uses `alarms` to schedule the background analysis and `storage` to keep the last plan and whether the panel has shown it. The Prompt API needs no permission. The content script matches `http://*/*` and `https://*/*`. The manifest has no `host_permissions` entry. It uses `clipboardWrite` and `offscreen` to copy the decoded text and tab URLs. The extension does not send tab URLs, titles, or selected text anywhere.
 
 ## Load it locally
 
@@ -62,8 +70,9 @@ The extension uses the `tabs` permission so it can read URLs and close tabs. It 
 2. Open `chrome://extensions`, turn on Developer mode, and choose **Load unpacked**.
 3. Open two tabs with the same URL. The badge shows `1`.
 4. Click the toolbar button, or right-click a tab and choose **Close 1 duplicate tab**. One of those tabs closes, and the badge clears. Chrome older than 150 has the toolbar button only.
-5. On an https page, select `aGVsbG8=`, right-click, and choose `hello`. That copies `hello`.
-6. Right-click the toolbar button and choose **Tab insights**. The panel analyzes tabs when it opens. To check the model's state, open `chrome://on-device-internals`.
+5. Shift-click a second tab, right-click either selected tab, and choose **Copy 2 tab URLs**. The clipboard holds both URLs, one per line.
+6. On an https page, select `aGVsbG8=`, right-click, and choose `hello`. That copies `hello`.
+7. Right-click the toolbar button and choose **Tab insights**. The panel analyzes tabs when it opens. To check the model's state, open `chrome://on-device-internals`.
 
 ## Tests
 
@@ -73,9 +82,9 @@ From this directory:
 npm test
 ```
 
-`npm test` runs the Node tests. They cover which tabs close, the badge and tab menu, base64 detection, the selection menu, the clipboard write, the tab insights menu item, the prompt and the parsing of the model's answer, which tabs a panel close skips, keeping one copy of a duplicated URL, stale tab picks, the topic size limit, splitting a large topic with a second prompt or by site, undo matching, the grouping plan, the undo order for grouping, the background plan with a fake model, the green badge and the toolbar title for a ready plan, the store zip layout, the permissions, and the listing image sizes. They don't call the model.
+`npm test` runs the Node tests. They cover which tabs close, the badge and tab menu, the copy item's title and the URLs it copies, base64 detection, the selection menu, the clipboard write, the tab insights menu item, the prompt and the parsing of the model's answer, which tabs a panel close skips, keeping one copy of a duplicated URL, stale tab picks, the topic size limit, splitting a large topic with a second prompt or by site, undo matching, the grouping plan, the undo order for grouping, the background plan with a fake model, the green badge and the toolbar title for a ready plan, the store zip layout, the permissions, and the listing image sizes. They don't call the model.
 
-`node chrome_smoke.js` loads this directory in headless Chrome, opens two tabs with the same URL, and checks that the badge matches the close count. It checks that the tab menu item is registered, then runs the toolbar action and checks that the badge clears. Chrome 154 or newer is required, because the script uses the DevTools `Extensions.loadUnpacked` and `Extensions.triggerAction` commands.
+`node chrome_smoke.js` loads this directory in headless Chrome, opens two tabs with the same URL, and checks that the badge matches the close count. It checks that the two tab menu items and the selection menu item are registered, then runs the toolbar action and checks that the badge clears. Chrome 154 or newer is required, because the script uses the DevTools `Extensions.loadUnpacked` and `Extensions.triggerAction` commands.
 
 Regenerate the icons with Pillow:
 
@@ -105,19 +114,19 @@ Upload `chrome-extension.zip` from `bash pack.sh chrome-extension.zip` if you ar
 | --- | --- |
 | Name | Close Duplicate Tabs |
 | Summary | Closes tabs that share a URL, plans tab groups with Chrome's on-device AI, and copies decoded base64. The badge counts duplicates. |
-| Single purpose | Help you manage open tabs: close extra tabs with the same URL, plan tab groups and tabs to close with Chrome's built-in model, and copy decoded base64 from the selection menu. |
+| Single purpose | Help you manage open tabs: close extra tabs with the same URL, plan tab groups and tabs to close with Chrome's built-in model, copy the URLs of selected tabs, and copy decoded base64 from the selection menu. |
 | Remote code | No. Every script is in the package. The model is Chrome's built-in Gemini Nano, called through the Prompt API. |
-| Data use | It does not collect or transmit user data. It reads tab URLs, titles, and highlighted text on the device to close duplicate tabs, plan tab groups, and copy decoded base64. Gemini Nano runs on the device. |
+| Data use | It does not collect or transmit user data. It reads tab URLs, titles, and highlighted text on the device to close duplicate tabs, plan tab groups, copy tab URLs, and copy decoded base64. Gemini Nano runs on the device. |
 | Visibility | Set this in the dashboard. The publish API cannot change it. |
 
 The dashboard asks for a justification for each permission and for the content script's host access:
 
 | Permission | Justification |
 | --- | --- |
-| `tabs` | Reads each tab's URL and title to count tabs that share a URL, to describe tabs to the on-device model, and to close the tabs you choose. |
-| `contextMenus` | Adds the Close N duplicate tabs item to the tab menu, the Tab insights item to the toolbar button's menu, and the decoded base64 item to the selection menu. |
-| `clipboardWrite` | Copies the decoded base64 text when you click its menu item. |
-| `offscreen` | Opens an offscreen document that writes the decoded text to the clipboard, because a service worker can't. |
+| `tabs` | Reads each tab's URL and title to count tabs that share a URL, to describe tabs to the on-device model, to copy the URLs of the tabs you select, and to close the tabs you choose. |
+| `contextMenus` | Adds the Close N duplicate tabs and Copy N tab URLs items to the tab menu, the Tab insights item to the toolbar button's menu, and the decoded base64 item to the selection menu. |
+| `clipboardWrite` | Copies the selected tabs' URLs or the decoded base64 text when you click that menu item. |
+| `offscreen` | Opens an offscreen document that writes tab URLs or decoded text to the clipboard, because a service worker can't. |
 | `sidePanel` | Shows the Tab insights panel, which lists tabs to close and the planned tab groups. |
 | `tabGroups` | Names, colors, and collapses the tab groups that Group tabs makes. |
 | `sessions` | Lets Undo restore tabs that the panel closed, with their history. |
@@ -132,12 +141,16 @@ Close Duplicate Tabs adds one toolbar button. The badge on that button shows how
 
 Click the button to close those extra tabs. In Chrome 150 or later, right-click a tab and choose Close N duplicate tabs. That item closes the same tabs as the button, and it is hidden when there is nothing to close. For each URL, one tab stays open. A pinned tab stays ahead of an unpinned tab, then the active tab, then the tab you used most recently.
 
+In Chrome 150 or later, select several tabs, right-click one of them, and choose Copy N tab URLs to copy their URLs, one per line.
+
 Right-click the toolbar button and choose Tab insights to open the side panel. Gemini Nano, the model built into Chrome, groups your open tabs by topic and lists tabs that are likely safe to close, each with a reason. Group tabs turns that plan into Chrome tab groups, with the likely-close tabs in a collapsed Likely close group. Close N tabs closes the tabs you check, and Undo reverses a close or a grouping. The extension plans in the background, and the badge turns green when a new plan is ready. It never groups or closes tabs until you click. Tab insights needs desktop Chrome 138 or later on hardware that can run Gemini Nano.
 
 Highlight base64 text on a web page and right-click. If the selection is standard base64, the menu shows the decoded text. Click that item to copy the decoded text. If the selection is not base64, the menu does not add an item.
 
 The extension reads tab URLs, titles, and the highlighted text on your device. Gemini Nano runs on your device too. The extension does not send URLs, titles, selected text, or the decoded text anywhere. The content script does not change web pages.
 ```
+
+The `0.1.6` package changes what the extension does, so update the dashboard's single purpose, permission justifications, and detailed description from these tables before that version publishes.
 
 The API cannot change Private or Public. If you change visibility, publish once in the dashboard. After this item is live, a push to `main` publishes a higher manifest version for you.
 

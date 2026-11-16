@@ -7,13 +7,16 @@ import {
   duplicateTabIds,
 } from "./duplicates.js";
 import { groupingPlan } from "./tab_insights.js";
+import { copyTitle, urlsText } from "./tab_urls.js";
 
 // Chrome 150 added the "tab" context. Older Chrome rejects it, and the
 // toolbar button still closes the same tabs. The selection item is separate.
 // It stays hidden until the highlighted text is base64. Chrome builds the
 // menu from items that already exist, so the content script reports the
-// selection before the right-click.
+// selection before the right-click, and the copy item counts the selected
+// tabs whenever the selection or the focused window changes.
 const MENU_ID = "close-duplicates";
+const COPY_ID = "copy-tab-urls";
 const DECODE_ID = "decode-base64";
 const HIDDEN_DECODE_TITLE = "Decoded";
 // The left click closes duplicates, so the side panel opens from the toolbar
@@ -43,16 +46,14 @@ function frameKey(sender) {
   return `${tabId}:${frameId}`;
 }
 
-function createMenuSync(api) {
+function createTabMenuSync(api, id) {
   let menuUnsupported = false;
-  return async function syncMenu(count) {
+  return async function syncMenu(title, visible) {
     if (!api.contextMenus || menuUnsupported) {
       return;
     }
-    const title = actionTitle(count);
-    const visible = count > 0;
     try {
-      await api.contextMenus.update(MENU_ID, { title, visible });
+      await api.contextMenus.update(id, { title, visible });
       return;
     } catch (error) {
       if (!errorText(error).includes("Cannot find menu item")) {
@@ -62,7 +63,7 @@ function createMenuSync(api) {
     }
     try {
       await api.contextMenus.create({
-        id: MENU_ID,
+        id,
         title,
         contexts: ["tab"],
         visible,
@@ -201,7 +202,7 @@ async function copyText(api, text) {
       await offscreen.createDocument({
         url: "offscreen.html",
         reasons: ["CLIPBOARD"],
-        justification: "Copy decoded base64 text to the clipboard.",
+        justification: "Copy decoded base64 text and tab URLs to the clipboard.",
       });
     } catch (error) {
       const message = errorText(error);
@@ -253,14 +254,16 @@ async function showCount(api, tabs, syncMenu) {
   await api.action.setBadgeTextColor({ color: BADGE_TEXT_COLOR });
   await api.action.setBadgeText({ text });
   await api.action.setTitle({ title: parts.join(" · ") });
-  await syncMenu(count);
+  await syncMenu(actionTitle(count), count > 0);
 }
 
 export function start(api) {
-  const syncMenu = createMenuSync(api);
+  const syncMenu = createTabMenuSync(api, MENU_ID);
+  const syncCopyMenu = createTabMenuSync(api, COPY_ID);
   const decodeMenu = createDecodeSync(api);
   let tail = Promise.resolve();
   let selectionTail = Promise.resolve();
+  let copyTail = Promise.resolve();
   let owner = null;
   let pending = null;
 
@@ -347,6 +350,39 @@ export function start(api) {
     );
   }
 
+  function refreshCopyMenu(windowQuery) {
+    const run = copyTail.then(async () => {
+      const tabs = await api.tabs.query({ highlighted: true, ...windowQuery });
+      await syncCopyMenu(copyTitle(tabs.length), true);
+    });
+    copyTail = run.then(
+      () => {},
+      (error) => {
+        console.error(error);
+      },
+    );
+    return copyTail;
+  }
+
+  async function copyUrls(tab) {
+    if (!tab) {
+      return;
+    }
+    let highlighted = [];
+    if (tab.highlighted === true) {
+      highlighted = await api.tabs.query({ highlighted: true, windowId: tab.windowId });
+    }
+    const text = urlsText(tab, highlighted);
+    if (text === "") {
+      return;
+    }
+    try {
+      await copyText(api, text);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
   function onTabUpdated(tabId, changeInfo) {
     if (typeof tabId === "number" && (changeInfo.url || changeInfo.status === "complete")) {
       return refresh();
@@ -362,6 +398,13 @@ export function start(api) {
   api.tabs.onAttached.addListener(() => refresh());
   api.tabs.onDetached.addListener(() => refresh());
   api.tabs.onUpdated.addListener(onTabUpdated);
+  api.tabs.onHighlighted.addListener(({ windowId }) => refreshCopyMenu({ windowId }));
+  api.windows.onFocusChanged.addListener((windowId) => {
+    if (windowId === api.windows.WINDOW_ID_NONE) {
+      return Promise.resolve();
+    }
+    return refreshCopyMenu({ windowId });
+  });
   api.action.onClicked.addListener(() => closeDuplicates());
   if (api.storage) {
     api.storage.onChanged.addListener((changes, area) => {
@@ -392,11 +435,18 @@ export function start(api) {
       if (info && info.menuItemId === DECODE_ID) {
         return copyDecoded(info);
       }
+      if (info && info.menuItemId === COPY_ID) {
+        return copyUrls(tab);
+      }
       if (info && info.menuItemId === INSIGHTS_ID) {
         return openInsights(api, tab);
       }
       return Promise.resolve();
     });
   }
-  return Promise.all([decodeMenu.ensureDecodeMenu(), ensureInsightsMenu(api)]).then(() => refresh());
+  return Promise.all([
+    decodeMenu.ensureDecodeMenu(),
+    ensureInsightsMenu(api),
+    refreshCopyMenu({ lastFocusedWindow: true }),
+  ]).then(() => refresh());
 }
