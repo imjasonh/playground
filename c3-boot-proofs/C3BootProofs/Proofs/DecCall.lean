@@ -819,8 +819,8 @@ theorem DecSt.condAssign (C : DecCtx M0 R) (D : DecSt M0 Ms R r0 M nm off) {imm 
   have hw : feW n2.mem (R + BitVec.ofNat 32 k) =
       (if c = 1 then feW M (R + BitVec.ofNat 32 j) else feW M (R + BitVec.ofNat 32 k)) := by
     by_cases h : c = 1
-    · rw [if_pos h]; exact feW_limbs_eq fun i hi => by rw [w2 i hi, if_pos h]
-    · rw [if_neg h]; exact feW_limbs_eq fun i hi => by rw [w2 i hi, if_neg h]
+    · simp only [h, ↓reduceIte]; exact feW_limbs_eq fun i hi => by rw [w2 i hi]; simp only [h, ↓reduceIte]
+    · simp only [h, ↓reduceIte]; exact feW_limbs_eq fun i hi => by rw [w2 i hi]; simp only [h, ↓reduceIte]
   refine ⟨n2, c1.trans c2, ⟨⟨by rw [pc2], rfl, fun _ => rfl⟩, by rw [k2 sp (by decide), r1 sp (by decide), D.hsp],
     fun q hq => ?_, D.keepAgree C (n := 40) (by omega) fr, D.keepSlots C hk2 fr⟩, hw, fun q hq => ?_, fr⟩
   · rw [k2 q (by revert hq; revert q; decide), r1 q (by revert hq; revert q; decide), D.keep q hq]
