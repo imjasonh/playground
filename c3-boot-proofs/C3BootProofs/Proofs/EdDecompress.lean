@@ -162,6 +162,91 @@ theorem DecSt.memcpyC (C : DecCtx M0 R) {off : Nat} (D : DecSt M0 Ms R r0 M nm o
   exact feW_frame fun i hi => memLoad32_congr fun q hq => by
     rw [add_ofNat_assoc, add_ofNat_assoc]; exact cp _ (C.offs0 (by omega) (by omega))
 
+/-! ## Prologue and epilogue -/
+
+/-- The registers the prologue saves, at their offsets from `sp + 0x280`. -/
+abbrev decPs : List (Fin 32 × Word) :=
+  [(ra, BitVec.ofNat 32 0x1C), ((8 : Fin 32), BitVec.ofNat 32 0x18), ((9 : Fin 32), BitVec.ofNat 32 0x14),
+   ((18 : Fin 32), BitVec.ofNat 32 0x10), ((19 : Fin 32), BitVec.ofNat 32 0xC), ((20 : Fin 32), BitVec.ofNat 32 8),
+   ((21 : Fin 32), BitVec.ofNat 32 4)]
+
+section
+set_option maxRecDepth 20000
+theorem decSave_end : blockEnd edDecompressCode 0x6 (saveBlockR a2 decPs) = some 0x1E := by decide
+theorem decRestore_end : blockEnd edDecompressCode 0x33A (restoreBlockR a0 decPs) = some 0x352 := by decide
+end
+
+theorem restoreRegs_other (M : Word → BitVec 8) (G : Word) :
+    ∀ (ps : List (Fin 32 × Word)) (f : Fin 32 → Word) (q : Fin 32), q.val ≠ 0 → (∀ p ∈ ps, p.1 ≠ q) →
+      restoreRegs M G f ps q = f q
+  | [], _, _, _, _ => rfl
+  | p :: ps, f, q, hq, h => by
+    simp only [restoreRegs]
+    rw [restoreRegs_other M G ps _ q hq (fun p' hp' => h p' (List.mem_cons_of_mem _ hp')),
+      upd_ne hq (fun e => h p List.mem_cons_self e.symm)]
+
+theorem decPs_restore (M : Word → BitVec 8) (G : Word) (f : Fin 32 → Word) :
+    ∀ r o, (r, o) ∈ decPs → restoreRegs M G f decPs r = memLoad32 M (G + o) := by
+  intro r o hm
+  simp only [decPs, List.mem_cons, List.mem_nil_iff, or_false, Prod.mk.injEq] at hm
+  rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+    simp +decide only [restoreRegs, upd, ↓reduceIte]
+
+set_option maxRecDepth 20000 in
+/-- From offset 0x334: the store of the `Option` tag `v` at `out`, the
+epilogue, and the return. -/
+theorem dec_tail {Mx : Word → BitVec 8} {nm : Machine} {R out v : Word} {rM : Fin 32 → Word}
+    (hc : CodeIn Mx DEC edDecompressCode) (s : St Mx DEC nm 0x334 (reg nm))
+    (hsp : reg nm sp = R + BitVec.ofNat 32 0x450) (hs2 : reg nm (18 : Fin 32) = out) (ha0 : reg nm a0 = v)
+    (hout : out.toNat % 4 = 0) (hR : R.toNat % 4 = 0) (sOC : Sep out 4 DEC edDecompressCode.length)
+    (hsl : ∀ r o, (r, o) ∈ decPs → memLoad32 (memStore32 Mx out v) (R + BitVec.ofNat 32 0x6D0 + o) = rM r)
+    (hret : rM ra &&& ~~~1 = rM ra) :
+    ∃ m', Steps nm m' ∧ m'.pc = rM ra ∧ reg m' sp = R + BitVec.ofNat 32 0x6F0 ∧
+      (∀ r o, (r, o) ∈ decPs → reg m' r = rM r) ∧
+      (∀ q, q.val ∈ [3, 4, 22, 23, 24, 25, 26, 27] → reg m' q = reg nm q) ∧ m'.mem = memStore32 Mx out v := by
+  obtain ⟨n1, d1, u1⟩ := s.sw hc dec_at_334 (off' := 0x338) (by decide) (by rw [hs2, add_lit_zero]; exact hout)
+  rw [hs2, add_lit_zero, ha0] at u1
+  have hc' : CodeIn (memStore32 Mx out v) DEC edDecompressCode := hc.store32 sOC
+  obtain ⟨n2, d2, u2⟩ := u1.aluImm hc' dec_at_338 (off' := 0x33A) (by decide)
+  have a0_2 : upd (reg nm) a0 (aluEval .add (reg nm sp) 0x280) a0 = R + BitVec.ofNat 32 0x6D0 := by
+    simp only [upd_app, if_pos]; rw [hsp]; exact add_sp R rfl
+  have hal : ∀ p ∈ decPs, (R + BitVec.ofNat 32 0x6D0 + p.2).toNat % 4 = 0 := by
+    intro p hp
+    simp only [decPs, List.mem_cons, List.mem_nil_iff, or_false] at hp
+    rcases hp with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+      (rw [add_ofNat_assoc]; exact aligned_add hR (by decide))
+  obtain ⟨n3, c3, u3⟩ := St.block (restoreBlockR a0 decPs) u2 hc' decRestore_end
+    (restoreBlockR_ok _ (R + BitVec.ofNat 32 0x6D0) a0 (by decide) decPs _ a0_2 (by decide) hal)
+  rw [restoreBlockR_run _ (R + BitVec.ofNat 32 0x6D0) a0 (by decide) decPs _ a0_2 (by decide)] at u3
+  dsimp only at u3
+  obtain ⟨n4, d4, u4⟩ := u3.aluImm hc' dec_at_352 (off' := 0x356) (by decide)
+  obtain ⟨n5, d5, pc5, mem5, regs5⟩ := u4.jalr hc' dec_at_356
+  have oth : ∀ q : Fin 32, q.val ∉ [0, 1, 2, 8, 9, 10, 18, 19, 20, 21] →
+      reg n5 q = reg nm q := fun q hq => by
+    have h0 : q.val ≠ 0 := fun h => hq (by simp [h])
+    have hps : ∀ p ∈ decPs, p.1 ≠ q := by
+      intro p hp e; apply hq
+      simp only [decPs, List.mem_cons, List.mem_nil_iff, or_false] at hp
+      rcases hp with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> (rw [← e]; decide)
+    have hsq : q ≠ sp := fun e => hq (by rw [e]; decide)
+    have ha0q : q ≠ a0 := fun e => hq (by rw [e]; decide)
+    rw [regs5, upd_ne h0 hsq, restoreRegs_other _ _ decPs _ q h0 hps, upd_ne h0 ha0q]
+  have spR : restoreRegs (memStore32 Mx out v) (R + BitVec.ofNat 32 0x6D0)
+      (upd (reg nm) a0 (aluEval .add (reg nm sp) 0x280)) decPs sp = R + BitVec.ofNat 32 0x450 := by
+    rw [restoreRegs_other _ _ decPs _ sp (by decide) (by decide), upd_ne (by decide) (by decide), hsp]
+  refine ⟨n5, .cons d1 (.cons d2 (c3.trans (.cons d4 (.single d5)))), ?_, ?_, fun r o hm => ?_,
+    fun q hq => oth q (by revert hq; revert q; decide), by rw [mem5]⟩
+  · rw [pc5, upd_ne (by decide) (by decide), decPs_restore _ _ _ ra (BitVec.ofNat 32 0x1C) (by decide),
+      hsl ra _ (by decide), add_lit_zero, hret]
+  · rw [regs5]; simp only [upd_app, if_pos]; rw [spR]; exact add_sp R rfl
+  · have hr : r ≠ sp := by
+      simp only [decPs, List.mem_cons, List.mem_nil_iff, or_false, Prod.mk.injEq] at hm
+      rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> decide
+    have h0 : r.val ≠ 0 := by
+      simp only [decPs, List.mem_cons, List.mem_nil_iff, or_false, Prod.mk.injEq] at hm
+      rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> decide
+    rw [regs5, upd_ne h0 hr, decPs_restore _ _ _ r o hm, hsl r o hm]
+
 section Phases
 
 variable {M0 Ms M : Word → BitVec 8} {R : Word} {r0 : Fin 32 → Word} {nm : Machine}
