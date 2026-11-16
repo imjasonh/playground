@@ -82,19 +82,19 @@ structure S5OS (P F stp bp : Word) (n : Nat) (M0 : Word → BitVec 8) : Prop whe
   sB : Sep F 0x390 (P + 0x5B4) memcpyBodyCode.length
   sZ : Sep F 0x390 (P + 0x544) memsetCode.length
   sK : Sep F 0x390 s5K 640
-  stC : Sep stp 128 P sha512CompressCode.length
-  stI : Sep stp 128 (P + 0xFFFFFFEA) rangeFromIndexCode.length
-  stU : Sep stp 128 (P + 0x5AC) memcpyStubCode.length
-  stB : Sep stp 128 (P + 0x5B4) memcpyBodyCode.length
-  stZ : Sep stp 128 (P + 0x544) memsetCode.length
-  stK : Sep stp 128 s5K 640
-  stF : Sep stp 128 F 0x390
+  stC : Sep stp 64 P sha512CompressCode.length
+  stI : Sep stp 64 (P + 0xFFFFFFEA) rangeFromIndexCode.length
+  stU : Sep stp 64 (P + 0x5AC) memcpyStubCode.length
+  stB : Sep stp 64 (P + 0x5B4) memcpyBodyCode.length
+  stZ : Sep stp 64 (P + 0x544) memsetCode.length
+  stK : Sep stp 64 s5K 640
+  stF : Sep stp 64 F 0x390
   bF : Sep bp (128 * n) F 0x390
-  bSt : Sep bp (128 * n) stp 128
+  bSt : Sep bp (128 * n) stp 64
 
 theorem S5OS.cIn {P F stp bp : Word} {n : Nat} {M0 M : Word → BitVec 8} (_ : S5OS P F stp bp n M0)
-    (fr : ∀ x, Sep F 0x390 x 1 → Sep stp 128 x 1 → M x = M0 x) {b : Word} {code : List Nat} {k : Nat}
-    (hc : CodeIn M0 b code) (h1 : Sep F 0x390 b k) (h2 : Sep stp 128 b k) (hk : code.length ≤ k) :
+    (fr : ∀ x, Sep F 0x390 x 1 → Sep stp 64 x 1 → M x = M0 x) {b : Word} {code : List Nat} {k : Nat}
+    (hc : CodeIn M0 b code) (h1 : Sep F 0x390 b k) (h2 : Sep stp 64 b k) (hk : code.length ≤ k) :
     CodeIn M b code := fun i hi => by
   rw [fr _ (h1.subR (c := i) (l := 1) (by omega)) (h2.subR (c := i) (l := 1) (by omega))]; exact hc i hi
 
@@ -128,8 +128,8 @@ structure S5O (P F stp bp : Word) (n : Nat) (M0 Ms : Word → BitVec 8) (g : Fin
   mst : memLoad32 M (F + 0xC) = stp
   mend : memLoad32 M (F + 0x10) = bp + BitVec.ofNat 32 (128 * n)
   hst : s5Hv M stp = hv
-  sv : ∀ x, Sep F 0x35C x 1 → Sep stp 128 x 1 → M x = Ms x
-  fr : ∀ x, Sep F 0x390 x 1 → Sep stp 128 x 1 → M x = M0 x
+  sv : ∀ x, Sep F 0x35C x 1 → Sep stp 64 x 1 → M x = Ms x
+  fr : ∀ x, Sep F 0x390 x 1 → Sep stp 64 x 1 → M x = M0 x
   keep : ∀ q, s5Keep q = true → reg m q = g q
 
 theorem beq_blocks128 {bp : Word} {j n : Nat} (hj : j < n) (hw : bp.toNat + 128 * n < 2 ^ 32) :
@@ -186,7 +186,7 @@ theorem s5_block {P F stp bp : Word} {n j : Nat} {M0 Ms M : Word → BitVec 8} {
     ← hcur] at u3
   obtain ⟨M1, hM1⟩ : ∃ M1, memStore32 M (F + 0x34) (aluEval .add cur 0x80) = M1 := ⟨_, rfl⟩
   rw [hM1] at u3
-  have frM1 : ∀ x, Sep F 0x390 x 1 → Sep stp 128 x 1 → M1 x = M0 x := fun x h1 h2 => by
+  have frM1 : ∀ x, Sep F 0x390 x 1 → Sep stp 64 x 1 → M1 x = M0 x := fun x h1 h2 => by
     rw [← hM1, st_get_sep h1 (by decide), O.fr x h1 h2]
   have k3 : ∀ q, q.val ≠ 0 → q ≠ 25 → q ≠ a0 → q ≠ 8 → reg m3 q = reg m q := fun q h0 h1 h2 h3 => by
     rw [u3.regs]; simp only [upd_app, h0, h2, h3, ite_false]; exact k1 q h0 h1 h2
@@ -207,7 +207,7 @@ theorem s5_block {P F stp bp : Word} {n j : Nat} {M0 Ms M : Word → BitVec 8} {
     · rw [u3.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [x25]; rfl
   obtain ⟨m4, Ml, c4, L16⟩ := s5_load_from LS 16 0 M1 m3 rfl L0
   obtain ⟨m5, c5, u5, k5⟩ := s5_load_exit L16
-  have frMl : ∀ x, Sep F 0x390 x 1 → Sep stp 128 x 1 → Ml x = M0 x := fun x h1 h2 => by
+  have frMl : ∀ x, Sep F 0x390 x 1 → Sep stp 64 x 1 → Ml x = M0 x := fun x h1 h2 => by
     rw [L16.fr x (h1.sub (c := 0x58) (l := 0x80) (by decide)), frM1 x h1 h2]
   have E5 : ∀ q, q.val ∈ [2, 3, 4, 18, 19, 20, 21, 22, 23, 24, 26, 27] → reg m5 q = reg m q := fun q hq => by
     have h1 : s5LdKeep q = true := by revert q; decide
@@ -232,7 +232,7 @@ theorem s5_block {P F stp bp : Word} {n j : Nat} {M0 Ms M : Word → BitVec 8} {
     (by simp +decide only [upd_app, ↓reduceIte])
   obtain ⟨Mc, hMc⟩ : ∃ Mc, copyWords Ml (F + BitVec.ofNat 32 0xD8) (F + BitVec.ofNat 32 0x58) 32 = Mc := ⟨_, rfl⟩
   rw [hMc] at u7
-  have frMc : ∀ x, Sep F 0x390 x 1 → Sep stp 128 x 1 → Mc x = M0 x := fun x h1 h2 => by
+  have frMc : ∀ x, Sep F 0x390 x 1 → Sep stp 64 x 1 → Mc x = M0 x := fun x h1 h2 => by
     rw [← hMc, copyWords_outside 32 (h1.sub (c := 0xD8) (l := 4 * 32) (by decide)), frMl x h1 h2]
   have E7 : ∀ q, q.val ∈ [2, 3, 4, 8, 18, 19, 20, 21, 22, 23, 24, 26, 27] → reg m7 q = reg m5 q := fun q hq => by
     have h : q ≠ a1 ∧ q ≠ a2 ∧ q ≠ a3 ∧ q ≠ a4 ∧ q ≠ a5 ∧ q ≠ a6 ∧ q ≠ a7 ∧ q ≠ t0 ∧ q ≠ t1 ∧ q ≠ ra ∧
@@ -266,7 +266,7 @@ theorem s5_block {P F stp bp : Word} {n j : Nat} {M0 Ms M : Word → BitVec 8} {
     ⟨_, rfl⟩
   rw [mem9, hMz] at mem10
   have s10 : St Mz P m10 0x11A (reg m10) := ⟨by rw [pc10], mem10, fun _ => rfl⟩
-  have frMz : ∀ x, Sep F 0x390 x 1 → Sep stp 128 x 1 → Mz x = M0 x := fun x h1 h2 => by
+  have frMz : ∀ x, Sep F 0x390 x 1 → Sep stp 64 x 1 → Mz x = M0 x := fun x h1 h2 => by
     rw [← hMz, fillBytes_sep (h1.sub (c := 0x158) (l := 0x200) (by decide)) (Nat.le_refl _), frMc x h1 h2]
   have E10 : ∀ q, q.val ∈ [2, 3, 4, 18, 19, 20, 21, 22, 23, 24, 26, 27] → reg m10 q = reg m q := fun q hq => by
     have h : q ≠ a2 ∧ q ≠ a3 ∧ q ≠ a4 ∧ q ≠ a5 ∧ q ≠ a6 ∧ q ≠ ra ∧ q.val ≠ 0 ∧ q ≠ 8 ∧ q ≠ a0 ∧ q ≠ a1 ∧
@@ -294,7 +294,7 @@ theorem s5_block {P F stp bp : Word} {n j : Nat} {M0 Ms M : Word → BitVec 8} {
     · exact (hz 1 (by omega)).trans b.2
   obtain ⟨m11, Mw, c11, I11⟩ := s5_sched (w := s5W M0 cur) ⟨S.hP, S.hF, hFw, S.sC.sub (by decide)⟩ (s5W_rec M0 cur)
     s10 (S.cIn frMz S.code S.sC S.stC (Nat.le_refl _)) x10 win
-  have frMw : ∀ x, Sep F 0x390 x 1 → Sep stp 128 x 1 → Mw x = M0 x := fun x h1 h2 => by
+  have frMw : ∀ x, Sep F 0x390 x 1 → Sep stp 64 x 1 → Mw x = M0 x := fun x h1 h2 => by
     rw [I11.fr x (h1.sub (c := 0x158) (l := 0x200) (by decide)), frMz x h1 h2]
   have E11 : ∀ q, q.val ∈ [2, 3, 4, 18, 19, 20, 21, 22, 23, 24, 26, 27] → reg m11 q = reg m q := fun q hq => by
     have h : s5SchKeep q = true := by revert q; decide
@@ -321,7 +321,7 @@ theorem s5_block {P F stp bp : Word} {n j : Nat} {M0 Ms M : Word → BitVec 8} {
   rw [hMp] at u12
   have preFr : ∀ x, Sep F 0x58 x 1 → Mp x = Mw x := fun x h1 => by
     rw [← hMp]; unfold s5PreMem; simp (disch := decide) only [st_get_sep h1]
-  have frMp : ∀ x, Sep F 0x390 x 1 → Sep stp 128 x 1 → Mp x = M0 x := fun x h1 h2 => by
+  have frMp : ∀ x, Sep F 0x390 x 1 → Sep stp 64 x 1 → Mp x = M0 x := fun x h1 h2 => by
     rw [← hMp]; unfold s5PreMem; simp (disch := decide) only [st_get_sep h1]; exact frMw x h1 h2
   have winP : ∀ s, s < 80 → WIn Mp F (s5W M0 cur) s := fun s hs => by
     have w := I11.win s hs
@@ -431,7 +431,7 @@ theorem s5_block {P F stp bp : Word} {n j : Nat} {M0 Ms M : Word → BitVec 8} {
       (lo64 (hv.e + v.e)) (hi64 (hv.e + v.e)) (lo64 (hv.f + v.f)) (hi64 (hv.f + v.f)) (lo64 (hv.g + v.g))
       (hi64 (hv.g + v.g)) (lo64 (hv.h + v.h)) (hi64 (hv.h + v.h)) = Mf := ⟨_, rfl⟩
   rw [hMf] at u15
-  have frMf : ∀ x, Sep F 0x390 x 1 → Sep stp 128 x 1 → Mf x = M0 x := fun x h1 h2 => by
+  have frMf : ∀ x, Sep F 0x390 x 1 → Sep stp 64 x 1 → Mf x = M0 x := fun x h1 h2 => by
     rw [← hMf]; unfold s5FinalMem; simp (disch := decide) only [st_get_sep h1, st_get_sep h2]; exact frMp x h1 h2
   obtain ⟨m16, d16, u16⟩ := u15.jump (S.cIn frMf S.code S.sC S.stC (Nat.le_refl _)) sh5_at_43c (off' := 0x82)
     (by decide) (pc_even (off' := 0x82) S.hP u15.pc (by decide) (by decide))
@@ -570,10 +570,10 @@ theorem s5_pro (m : Machine) {P sp0 stp bp : Word} {n : Nat} (S : S5OS P (sp0 + 
   obtain ⟨Ms, hMs⟩ : ∃ Ms, s5SetupMem Msv (sp0 + 0xFFFFFC70) stp (bp + BitVec.ofNat 32 (128 * n)) = Ms :=
     ⟨_, rfl⟩
   rw [hMs] at u2
-  have stL : ∀ c : Nat, c + 4 ≤ 128 →
+  have stL : ∀ c : Nat, c + 4 ≤ 64 →
       memLoad32 Msv (stp + BitVec.ofNat 32 c) = memLoad32 m.mem (stp + BitVec.ofNat 32 c) :=
     fun c hc => load_congr frSv (S.stF.symm.subR (c := c) (l := 4) hc)
-  have stL' : ∀ c : Word, c.toNat + 4 ≤ 128 → memLoad32 Msv (stp + c) = memLoad32 m.mem (stp + c) := fun c hc => by
+  have stL' : ∀ c : Word, c.toNat + 4 ≤ 64 → memLoad32 Msv (stp + c) = memLoad32 m.mem (stp + c) := fun c hc => by
     have := stL c.toNat hc; rwa [ofNat_toNat_self] at this
   have k2 : ∀ q, s5SetupKeep q = true → q ≠ sp → q ≠ a3 → reg m2 q = reg m q := fun q h1 h2 h3 => by
     rw [u2.regs, Tk q h1, k1 q h2 h3]
@@ -711,15 +711,15 @@ structure S5Env (M : Word → BitVec 8) (P sp0 stp bp : Word) (n : Nat) : Prop w
   sB : Sep (sp0 + 0xFFFFFC70) 0x390 (P + 0x5B4) memcpyBodyCode.length
   sZ : Sep (sp0 + 0xFFFFFC70) 0x390 (P + 0x544) memsetCode.length
   sK : Sep (sp0 + 0xFFFFFC70) 0x390 (BitVec.ofNat 32 sha512KAddress) 640
-  stC : Sep stp 128 P sha512CompressCode.length
-  stI : Sep stp 128 (P + 0xFFFFFFEA) rangeFromIndexCode.length
-  stU : Sep stp 128 (P + 0x5AC) memcpyStubCode.length
-  stB : Sep stp 128 (P + 0x5B4) memcpyBodyCode.length
-  stZ : Sep stp 128 (P + 0x544) memsetCode.length
-  stK : Sep stp 128 (BitVec.ofNat 32 sha512KAddress) 640
-  stF : Sep stp 128 (sp0 + 0xFFFFFC70) 0x390
+  stC : Sep stp 64 P sha512CompressCode.length
+  stI : Sep stp 64 (P + 0xFFFFFFEA) rangeFromIndexCode.length
+  stU : Sep stp 64 (P + 0x5AC) memcpyStubCode.length
+  stB : Sep stp 64 (P + 0x5B4) memcpyBodyCode.length
+  stZ : Sep stp 64 (P + 0x544) memsetCode.length
+  stK : Sep stp 64 (BitVec.ofNat 32 sha512KAddress) 640
+  stF : Sep stp 64 (sp0 + 0xFFFFFC70) 0x390
   bF : Sep bp (128 * n) (sp0 + 0xFFFFFC70) 0x390
-  bSt : Sep bp (128 * n) stp 128
+  bSt : Sep bp (128 * n) stp 64
 
 theorem s5Env_static {M : Word → BitVec 8} {P sp0 stp bp : Word} {n : Nat} (env : S5Env M P sp0 stp bp n) :
     S5OS P (sp0 + 0xFFFFFC70) stp bp n M := by
@@ -749,7 +749,7 @@ theorem s5Compress_correct (m : Machine) {P sp0 stp bp retAddr : Word} {n : Nat}
         q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ a7 → q ≠ (28 : Fin 32) → q ≠ (29 : Fin 32) → q ≠ (30 : Fin 32) →
         q ≠ (31 : Fin 32) → reg m' q = reg m q) ∧
       (s5Hv m'.mem stp).toList = (blockList128 m.mem bp n).foldl Sha512.compress (s5Hv m.mem stp).toList ∧
-      ∀ x, Sep (sp0 + 0xFFFFFC70) 0x390 x 1 → Sep stp 128 x 1 → m'.mem x = m.mem x := by
+      ∀ x, Sep (sp0 + 0xFFFFFC70) 0x390 x 1 → Sep stp 64 x 1 → m'.mem x = m.mem x := by
   have S := s5Env_static env
   have hn : n < 2 ^ 25 := by have := env.hwbp; omega
   obtain ⟨m1, Ms, c1, O0, hsl⟩ := s5_pro m S hn hpc ha0 ha1 ha2 hsp

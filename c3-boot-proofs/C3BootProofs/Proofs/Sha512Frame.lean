@@ -176,7 +176,7 @@ def s5FinalKeep (q : Fin 32) : Bool :=
 set_option maxRecDepth 100000 in
 set_option maxHeartbeats 16000000 in
 theorem s5Final_run {M : Word → BitVec 8} {f : Fin 32 → Word} {F stp : Word} (hsp : f sp = F)
-    (hst : memLoad32 M (F + 0xC) = stp) (hS : Sep stp 128 F 0x390) :
+    (hst : memLoad32 M (F + 0xC) = stp) (hS : Sep stp 64 F 0x390) :
     (runBlock s5Final (M, f)).1 = s5FinalMem M F stp
       (memLoad32 M (F + 0x30) + f 31)
       (f 24 + memLoad32 M (F + 0x1C) + aluEval .sltu (memLoad32 M (F + 0x30) + f 31) (f 31))
@@ -240,7 +240,7 @@ theorem ev_sll7 (x : Word) : aluEval .sll x 0x7 = x <<< 7 := rfl
 set_option maxRecDepth 100000 in
 set_option maxHeartbeats 8000000 in
 theorem s5Setup_run {M : Word → BitVec 8} {f : Fin 32 → Word} {F stp : Word} (hz : f 0 = 0) (hsp : f sp = F)
-    (ha0 : f a0 = stp) (hS : Sep F 0x390 stp 128) :
+    (ha0 : f a0 = stp) (hS : Sep F 0x390 stp 64) :
     (runBlock s5Setup (M, f)).1 = s5SetupMem M F stp ((f a2 <<< 7) + f a1) ∧
     (runBlock s5Setup (M, f)).2 21 = f a1 ∧
     (runBlock s5Setup (M, f)).2 23 = memLoad32 M (stp + 0x0) ∧
@@ -317,7 +317,7 @@ set_option maxRecDepth 100000 in
 set_option maxHeartbeats 8000000 in
 theorem s5Final_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {F stp base : Word} {len : Nat} (hsp : f sp = F)
     (hst : memLoad32 M (F + 0xC) = stp) (hF : F.toNat % 4 = 0) (hstp : stp.toNat % 4 = 0)
-    (hs : Sep F 0x390 base len) (hs' : Sep stp 128 base len) : BlockOk base len s5Final (M, f) := by
+    (hs : Sep F 0x390 base len) (hs' : Sep stp 64 base len) : BlockOk base len s5Final (M, f) := by
   simp +decide only [BlockOk, BInstr.ok, BInstr.run, s5Final, upd_app, ↓reduceIte, and_true, true_and]
   simp only [hsp, hst]
   simp (disch := decide) only [fr_al hF, fr_al hstp, frm_sep hs, frm_sep hs', and_self]
