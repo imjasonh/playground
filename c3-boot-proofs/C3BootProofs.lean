@@ -103,6 +103,7 @@ import C3BootProofs.Proofs.DateTime
 import C3BootProofs.Proofs.GeneralizedTime
 import C3BootProofs.Proofs.X509ReadTime
 import C3BootProofs.Proofs.Base64Decode
+import C3BootProofs.Proofs.Base64Encode
 import C3BootProofs.Proofs.Sha256LoopDecode
 import C3BootProofs.Proofs.Sha256LoopBlocks
 import C3BootProofs.Proofs.Sha256LoopRounds

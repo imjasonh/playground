@@ -267,7 +267,6 @@ theorem bee_r2 (a b : BitVec 8) :
     show (0x1A : Word).toNat % 32 = 26 from rfl]
   omega
 
-
 theorem bee_mb4 (M : Word → BitVec 8) (F : Word) (v1 v2 v3 v4 : BitVec 8) :
     memBytes (memStore8 (memStore8 (memStore8 (memStore8 M (F + 0x0) v1) (F + 0x1) v2) (F + 0x2) v3) (F + 0x3) v4) F 4 =
       [v1.toNat, v2.toNat, v3.toNat, v4.toNat] := by
@@ -316,7 +315,6 @@ structure BeeEnv (M0 : Word → BitVec 8) (S D sp0 : Word) (n : Nat) : Prop wher
   sKF : Sep (BitVec.ofNat 32 shaKAddress) 256 (sp0 + 0xFFFFFED0) 0x130
   sAS : Sep BAL 64 S 0x68
   sAF : Sep BAL 64 (sp0 + 0xFFFFFED0) 0x130
-
 
 set_option maxRecDepth 20000 in
 /-- Memory that agrees with `M0` outside the hasher and the stack still holds
@@ -369,7 +367,6 @@ theorem bee_upd {M0 M : Word → BitVec 8} {S D sp0 : Word} {n : Nat} (E : BeeEn
   refine ⟨U,
     hiC E.cE (by decide) (by decide), keep E.cA E.sAS sAF⟩
 
-
 set_option maxRecDepth 20000 in
 /-- A call of `update` from `encode_to` on the 4 characters at `sp + o`. -/
 theorem bee_call {M0 M : Word → BitVec 8} {S D sp0 : Word} {n : Nat} (E : BeeEnv M0 S D sp0 n)
@@ -405,8 +402,6 @@ theorem bee_call {M0 M : Word → BitVec 8} {S D sp0 : Word} {n : Nat} (E : BeeE
       (by revert hr; revert r; decide) (by revert hr; revert r; decide) (by revert hr; revert r; decide),
       r1 r (by revert hr; revert r; decide)]
 
-#print axioms bee_call
-
 theorem bee_lk {M : Word → BitVec 8} (hA : CodeIn M BAL b64AlphabetData) {k : Nat} (hk : k < 64) :
     ((M (aluEval .add (BitVec.ofNat 32 k) BAL + 0)).zeroExtend 32).extractLsb' 0 8 = BitVec.ofNat 8 (b64Char k) := by
   rw [dt_zext8, add_lit_zero, show aluEval .add (BitVec.ofNat 32 k) BAL = BAL + BitVec.ofNat 32 k from BitVec.add_comm _ _,
@@ -429,8 +424,6 @@ theorem bee_blockG (M : Word → BitVec 8) (f : Fin 32 → Word) (hz : f 0 = 0) 
   have := (M (p + 0)).isLt
   rw [bee_lk hA (by omega), bee_lk hA (Nat.mod_lt _ (by decide)), bee_lk hA (Nat.mod_lt _ (by decide)),
     bee_lk hA (Nat.mod_lt _ (by decide))]
-
-#print axioms bee_blockG
 
 theorem bee_enc3 {a b c : Nat} (ha : a < 256) (hb : b < 256) (hc : c < 256) :
     base64Encode [a, b, c] = [b64Char (a * 2 ^ 16 / 2 ^ 18), b64Char ((a * 2 ^ 16 + b * 2 ^ 8) / 2 ^ 12 % 64),
@@ -559,6 +552,564 @@ theorem bee_group {M0 M : Word → BitVec 8} {S D sp0 : Word} {n : Nat} (E : Bee
   · rw [K3 r (by revert hr; revert r; decide), K2 r (by revert hr; revert r; decide),
       K1 r (by revert hr; revert r; decide)]
 
-#print axioms bee_group
+theorem base64Encode_length3 : ∀ xs : Bytes, xs.length % 3 = 0 → (base64Encode xs).length = 4 * (xs.length / 3)
+  | [], _ => by simp only [base64Encode, List.length_nil]
+  | [_], h => absurd h (by simp only [List.length_cons, List.length_nil]; decide)
+  | [_, _], h => absurd h (by simp only [List.length_cons, List.length_nil]; decide)
+  | a :: b :: c :: xs, h => by
+    have ih := base64Encode_length3 xs (by simp only [List.length_cons] at h; omega)
+    show (_ :: _ :: _ :: _ :: base64Encode xs).length = _
+    simp only [List.length_cons] at h ⊢
+    omega
+
+theorem bee_mb3 (M : Word → BitVec 8) (D : Word) (j : Nat) :
+    memBytes M D (3 * (j + 1)) = memBytes M D (3 * j) ++
+      [(M (D + BitVec.ofNat 32 (3 * j) + 0)).toNat, (M (D + BitVec.ofNat 32 (3 * j) + 1)).toNat,
+        (M (D + BitVec.ofNat 32 (3 * j) + 2)).toNat] := by
+  rw [show 3 * (j + 1) = 3 * j + 3 by omega, memBytes_split]; rfl
+
+/-- The loop's state before a group, at 0x34: `j` of `G` groups done. -/
+structure BeeLoop (M0 Ms0 : Word → BitVec 8) (S D sp0 : Word) (msg : Bytes) (G j : Nat) (nn : Machine) : Prop where
+  fr : BeeFrame nn.mem M0 S (sp0 + 0xFFFFFED0)
+  slots : ∀ x, Sep (sp0 + 0xFFFFFED0) 0x10C x 1 → Sep S 0x68 x 1 → nn.mem x = Ms0 x
+  H : HasherAt nn.mem S (msg ++ base64Encode (memBytes M0 D (3 * j)))
+  ra0 : reg nn a0 = D + BitVec.ofNat 32 (3 * j)
+  r8 : reg nn 8 = BitVec.ofNat 32 (3 * (G - j))
+  r23 : reg nn 23 = BAL
+  r22 : reg nn 22 = S
+  rsp : reg nn sp = sp0 + 0xFFFFFFD0
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 4000000 in
+/-- The groups from the `j`th, from 0x34 to 0x98. -/
+theorem bee_loop {M0 Ms0 : Word → BitVec 8} {S D sp0 : Word} {n : Nat} (E : BeeEnv M0 S D sp0 n) {msg : Bytes}
+    {G : Nat} (hG : 3 * G ≤ n) (hlen : msg.length + 4 * G + 4 < 2 ^ 32) :
+    ∀ r j nn, G - j = r + 1 → St nn.mem BEE nn 0x34 (reg nn) → BeeLoop M0 Ms0 S D sp0 msg G j nn →
+      ∃ nn', Steps nn nn' ∧ St nn'.mem BEE nn' 0x98 (reg nn') ∧ BeeFrame nn'.mem M0 S (sp0 + 0xFFFFFED0) ∧
+        (∀ x, Sep (sp0 + 0xFFFFFED0) 0x10C x 1 → Sep S 0x68 x 1 → nn'.mem x = Ms0 x) ∧
+        HasherAt nn'.mem S (msg ++ base64Encode (memBytes M0 D (3 * G))) ∧ reg nn' sp = sp0 + 0xFFFFFFD0 ∧
+        ∀ q, q.val ∈ [4, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg nn' q = reg nn q
+  | r, j, nn, hr, st, L => by
+    have hDw := E.hDw
+    have sDS := E.sDS
+    have sDF := E.sDF
+    -- the group's bytes are the input's
+    have hdat : ∀ k, k < 3 → nn.mem (D + BitVec.ofNat 32 (3 * j) + BitVec.ofNat 32 k) =
+        M0 (D + BitVec.ofNat 32 (3 * j) + BitVec.ofNat 32 k) := fun k hk => by
+      rw [add_ofNat_assoc]
+      exact L.fr _ (sDS.sub (c := 3 * j + k) (l := 1) (by omega)).symm (sDF.sub (c := 3 * j + k) (l := 1) (by omega)).symm
+    have hl4 : (msg ++ base64Encode (memBytes M0 D (3 * j))).length + 4 < 2 ^ 32 := by
+      rw [List.length_append, base64Encode_length3 _ (by rw [memBytes_length]; omega), memBytes_length]; omega
+    obtain ⟨n1, c1, u1, fr1, frM, H1, sp1, a01, r81, K1⟩ := bee_group E L.fr st L.ra0 L.r23 L.r22 L.rsp L.H hl4
+    have eb : [(nn.mem (D + BitVec.ofNat 32 (3 * j) + 0)).toNat, (nn.mem (D + BitVec.ofNat 32 (3 * j) + 1)).toNat,
+        (nn.mem (D + BitVec.ofNat 32 (3 * j) + 2)).toNat] =
+        [(M0 (D + BitVec.ofNat 32 (3 * j) + 0)).toNat, (M0 (D + BitVec.ofNat 32 (3 * j) + 1)).toNat,
+        (M0 (D + BitVec.ofNat 32 (3 * j) + 2)).toNat] := by
+      rw [show (0 : Word) = BitVec.ofNat 32 0 from rfl, show (1 : Word) = BitVec.ofNat 32 1 from rfl,
+        show (2 : Word) = BitVec.ofNat 32 2 from rfl, hdat 0 (by decide), hdat 1 (by decide), hdat 2 (by decide)]
+    rw [eb, List.append_assoc, ← base64Encode_append _ _ (by rw [memBytes_length]; omega), ← bee_mb3] at H1
+    have hc1 := (bee_upd E fr1 (o := 0) (by decide)).2.1
+    have v8 : reg n1 8 = BitVec.ofNat 32 (3 * (G - (j + 1))) := by
+      rw [r81, L.r8]; apply BitVec.eq_of_toNat_eq
+      rw [dn_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat, show (0xFFFFFFFD : Word).toNat = 2 ^ 32 - 3 from rfl]; omega
+    have sl1 : ∀ x, Sep (sp0 + 0xFFFFFED0) 0x10C x 1 → Sep S 0x68 x 1 → n1.mem x = Ms0 x := fun x h1 h2 => by
+      rw [frM x h1 h2, L.slots x h1 h2]
+    by_cases hl : r = 0
+    · obtain ⟨n2, d2, u2⟩ := u1.notTaken hc1 0x98 bee_at_96 (by decide) (by
+        rw [v8, show G - (j + 1) = 0 by omega, u1.zero]; exact bne_self_eq_false _)
+      exact ⟨n2, c1.trans (.single d2), ⟨u2.pc, by rw [u2.mem], fun _ => rfl⟩, by rw [u2.mem]; exact fr1,
+        by rw [u2.mem]; exact sl1, by rw [u2.mem, show j + 1 = G by omega] at *; exact H1,
+        by rw [u2.regs, sp1], fun q hq => by rw [u2.regs, K1 q hq]⟩
+    · obtain ⟨n2, d2, u2⟩ := u1.taken hc1 0x34 bee_at_96 (by decide) (by
+        rw [v8, u1.zero]; apply bne_iff_ne.mpr; intro e
+        have := congrArg BitVec.toNat e
+        rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)] at this
+        exact hl (by have : (0 : Word).toNat = 0 := rfl; omega))
+      have mem2 : n2.mem = n1.mem := u2.mem
+      obtain ⟨n3, c3, u3, fr3, sl3, H3, sp3, K3⟩ := bee_loop E hG hlen (r - 1) (j + 1) n2 (by omega)
+        ⟨u2.pc, rfl, fun _ => rfl⟩
+        ⟨by rw [mem2]; exact fr1, by rw [mem2]; exact sl1, by rw [mem2]; exact H1,
+          by rw [u2.regs, a01, show (3 : Word) = BitVec.ofNat 32 3 from rfl, add_ofNat_assoc]; rfl,
+          by rw [u2.regs, v8], by rw [u2.regs, K1 23 (by decide), L.r23], by rw [u2.regs, K1 22 (by decide), L.r22],
+          by rw [u2.regs, sp1]⟩
+      exact ⟨n3, c1.trans (.cons d2 c3), u3, fr3, sl3, H3, sp3, fun q hq => by
+        rw [K3 q hq, u2.regs, K1 q hq]⟩
+
+theorem bee_mb4o (M : Word → BitVec 8) (F : Word) (v1 v2 v3 v4 : BitVec 8) {o : Nat} (ho : o ≤ 8) :
+    memBytes (memStore8 (memStore8 (memStore8 (memStore8 M (F + BitVec.ofNat 32 o) v1) (F + BitVec.ofNat 32 (o + 1)) v2)
+      (F + BitVec.ofNat 32 (o + 2)) v3) (F + BitVec.ofNat 32 (o + 3)) v4) (F + BitVec.ofNat 32 o) 4 =
+      [v1.toNat, v2.toNat, v3.toNat, v4.toNat] := by
+  have ne : ∀ c d : Nat, c < 4 → d < 4 → c ≠ d → F + BitVec.ofNat 32 (o + c) ≠ F + BitVec.ofNat 32 (o + d) :=
+    fun c d hc hd h => add_ofNat_ne F (by omega) (by omega) (by omega)
+  have e : ∀ k, F + BitVec.ofNat 32 o + BitVec.ofNat 32 k = F + BitVec.ofNat 32 (o + k) := fun k => add_ofNat_assoc _ _ _
+  generalize hM' : memStore8 (memStore8 (memStore8 (memStore8 M (F + BitVec.ofNat 32 o) v1)
+    (F + BitVec.ofNat 32 (o + 1)) v2) (F + BitVec.ofNat 32 (o + 2)) v3) (F + BitVec.ofNat 32 (o + 3)) v4 = M'
+  show [(M' (F + BitVec.ofNat 32 o + BitVec.ofNat 32 0)).toNat, (M' (F + BitVec.ofNat 32 o + BitVec.ofNat 32 1)).toNat,
+    (M' (F + BitVec.ofNat 32 o + BitVec.ofNat 32 2)).toNat, (M' (F + BitVec.ofNat 32 o + BitVec.ofNat 32 3)).toNat] = _
+  rw [e, e, e, e, ← hM', memStore8_ne (ne 0 3 (by decide) (by decide) (by decide)),
+    memStore8_ne (ne 0 2 (by decide) (by decide) (by decide)), memStore8_ne (ne 0 1 (by decide) (by decide) (by decide)),
+    Nat.add_zero, memStore8_same, memStore8_ne (ne 1 3 (by decide) (by decide) (by decide)),
+    memStore8_ne (ne 1 2 (by decide) (by decide) (by decide)), memStore8_same,
+    memStore8_ne (ne 2 3 (by decide) (by decide) (by decide)), memStore8_same, memStore8_same]
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 4000000 in
+theorem bee_blockR1 (M : Word → BitVec 8) (f : Fin 32 → Word) (hz : f 0 = 0) {q F : Word} (r18 : f 18 = q)
+    (r23 : f 23 = BAL) (rsp : f sp = F) (hA : CodeIn M BAL b64AlphabetData) :
+    (runBlock beeR1 (M, f)).1 =
+      memStore8 (memStore8 (memStore8 (memStore8 M (F + BitVec.ofNat 32 4)
+        (BitVec.ofNat 8 (b64Char ((M (q + 0)).toNat * 2 ^ 16 / 2 ^ 18)))) (F + BitVec.ofNat 32 (4 + 1))
+        (BitVec.ofNat 8 (b64Char ((M (q + 0)).toNat * 2 ^ 16 / 2 ^ 12 % 64)))) (F + BitVec.ofNat 32 (4 + 2))
+        (BitVec.ofNat 8 61)) (F + BitVec.ofNat 32 (4 + 3)) (BitVec.ofNat 8 61) ∧
+      (runBlock beeR1 (M, f)).2 a1 = F + BitVec.ofNat 32 4 := by
+  constructor
+  · simp +decide only [runBlock, BInstr.run, beeR1, upd_app, ↓reduceIte]
+    rw [r18, r23, rsp, bee_i1, bee_r1]
+    have := (M (q + 0)).isLt
+    rw [bee_lk hA (by omega), bee_lk hA (Nat.mod_lt _ (by decide))]
+    all_goals (try rw [hz]); all_goals rfl
+  · simp +decide only [runBlock, BInstr.run, beeR1, upd_app, ↓reduceIte]; rw [rsp]; rfl
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 4000000 in
+theorem bee_blockR2 (M : Word → BitVec 8) (f : Fin 32 → Word) (hz : f 0 = 0) {q F : Word} (r18 : f 18 = q)
+    (r23 : f 23 = BAL) (rsp : f sp = F) (hA : CodeIn M BAL b64AlphabetData) :
+    (runBlock beeR2 (M, f)).1 =
+      memStore8 (memStore8 (memStore8 (memStore8 M (F + BitVec.ofNat 32 8)
+        (BitVec.ofNat 8 (b64Char ((M (q + 0)).toNat * 2 ^ 16 / 2 ^ 18)))) (F + BitVec.ofNat 32 (8 + 1))
+        (BitVec.ofNat 8 (b64Char (((M (q + 0)).toNat * 2 ^ 16 + (M (q + 1)).toNat * 2 ^ 8) / 2 ^ 12 % 64))))
+        (F + BitVec.ofNat 32 (8 + 2))
+        (BitVec.ofNat 8 (b64Char (((M (q + 0)).toNat * 2 ^ 16 + (M (q + 1)).toNat * 2 ^ 8) / 2 ^ 6 % 64))))
+        (F + BitVec.ofNat 32 (8 + 3)) (BitVec.ofNat 8 61) ∧
+      (runBlock beeR2 (M, f)).2 a1 = F + BitVec.ofNat 32 8 := by
+  constructor
+  · simp +decide only [runBlock, BInstr.run, beeR2, upd_app, ↓reduceIte]
+    rw [r18, r23, rsp, bee_i1, bee_i2', bee_r2 (M (q + 0))]
+    have := (M (q + 0)).isLt
+    rw [bee_lk hA (by omega), bee_lk hA (Nat.mod_lt _ (by decide)), bee_lk hA (Nat.mod_lt _ (by decide))]
+    all_goals (try rw [hz]); all_goals rfl
+  · simp +decide only [runBlock, BInstr.run, beeR2, upd_app, ↓reduceIte]; rw [rsp]; rfl
+
+set_option maxRecDepth 20000 in
+/-- The last group's call, from 0x120 to 0x12C. -/
+theorem bee_fin {M0 M1 : Word → BitVec 8} {S D sp0 : Word} {n : Nat} (E : BeeEnv M0 S D sp0 n)
+    (fr1 : BeeFrame M1 M0 S (sp0 + 0xFFFFFED0)) {nn : Machine} {o : Nat} {X : Bytes} (ho : o ≤ 8)
+    (st : St M1 BEE nn 0x120 (reg nn)) (ra1 : reg nn a1 = sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 o)
+    (r22 : reg nn 22 = S) (rsp : reg nn sp = sp0 + 0xFFFFFFD0) (H : HasherAt M1 S X) (hl : X.length + 4 < 2 ^ 32) :
+    ∃ nn', Steps nn nn' ∧ St nn'.mem BEE nn' 0x12C (reg nn') ∧ BeeFrame nn'.mem M0 S (sp0 + 0xFFFFFED0) ∧
+      (∀ x, Sep (sp0 + 0xFFFFFED0) 0x100 x 1 → Sep S 0x68 x 1 → nn'.mem x = M1 x) ∧
+      HasherAt nn'.mem S (X ++ memBytes M1 (sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 o) 4) ∧
+      reg nn' sp = sp0 + 0xFFFFFFD0 ∧
+      ∀ q, q.val ∈ [4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg nn' q = reg nn q := by
+  have hz := st.zero
+  obtain ⟨-, hcE, -⟩ := bee_upd E fr1 (o := 0) (by decide)
+  obtain ⟨n1, c1, u1⟩ := St.block beeC st hcE beeC_end (by simp only [BlockOk, BInstr.ok, beeC, and_self])
+  have mem1 : n1.mem = M1 := by rw [u1.mem]; simp +decide only [runBlock, BInstr.run, beeC]
+  have R1 : ∀ r, reg n1 r = (runBlock beeC (M1, reg nn)).2 r := u1.regs
+  have K1 : ∀ q, q.val ∉ [10, 12] → reg n1 q = reg nn q := fun q hq => by
+    have hd : q ∉ beeC.filterMap BInstr.dst := by
+      simp only [beeC, List.filterMap_cons, List.filterMap_nil, BInstr.dst]; revert hq; revert q; decide
+    rw [R1, runBlock_reg _ _ _ q hz hd]
+  have v10 : reg n1 a0 = S := by
+    rw [R1]; simp +decide only [runBlock, BInstr.run, beeC, upd_app, ↓reduceIte]
+    all_goals (try rw [hz]); all_goals (try rw [dn_z]); rw [r22]
+  have v12 : reg n1 a2 = BitVec.ofNat 32 4 := by
+    rw [R1]; simp +decide only [runBlock, BInstr.run, beeC, upd_app, ↓reduceIte]
+    all_goals (try rw [hz]); all_goals rfl
+  have u1' : St M1 BEE n1 0x124 (reg n1) := ⟨u1.pc, mem1, fun _ => rfl⟩
+  obtain ⟨n2, c2, u2, fr2, frM, H2, sp2, K2⟩ := bee_call E fr1 (o := o) (off := 0x124) ho (by decide) u1'
+    bee_at_124 bee_at_128 (by decide) v10 (by rw [K1 a1 (by decide), ra1]) v12 (by rw [K1 sp (by decide), rsp]) H hl
+  have eRF : sp0 + 0xFFFFFFD0 + 0xFFFFFF00 = sp0 + 0xFFFFFED0 := by rw [BitVec.add_assoc]; rfl
+  exact ⟨n2, c1.trans c2, u2, fr2, fun x h1 h2 => frM x (by rw [eRF]; exact h1) h2, H2, sp2, fun q hq => by
+    rw [K2 q hq, K1 q (by revert hq; revert q; decide)]⟩
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 8000000 in
+/-- The bytes after the last whole group, from 0x98 to 0x12C. -/
+theorem bee_tail {M0 Ms0 : Word → BitVec 8} {S D sp0 : Word} {n : Nat} (E : BeeEnv M0 S D sp0 n) {msg : Bytes}
+    {G : Nat} (hG : G = n / 3) (hlen : msg.length + 4 * G + 4 < 2 ^ 32) {nn : Machine}
+    (st : St nn.mem BEE nn 0x98 (reg nn)) (fr : BeeFrame nn.mem M0 S (sp0 + 0xFFFFFED0))
+    (sl : ∀ x, Sep (sp0 + 0xFFFFFED0) 0x10C x 1 → Sep S 0x68 x 1 → nn.mem x = Ms0 x)
+    (H : HasherAt nn.mem S (msg ++ base64Encode (memBytes M0 D (3 * G))))
+    (r20 : reg nn 20 = BitVec.ofNat 32 G) (r21 : reg nn 21 = BitVec.ofNat 32 (2 * G))
+    (r19 : reg nn 19 = BitVec.ofNat 32 n) (r18 : reg nn 18 = D) (r23 : reg nn 23 = BAL) (r22 : reg nn 22 = S)
+    (rsp : reg nn sp = sp0 + 0xFFFFFFD0) :
+    ∃ nn', Steps nn nn' ∧ St nn'.mem BEE nn' 0x12C (reg nn') ∧
+      (∀ x, Sep (sp0 + 0xFFFFFED0) 0x10C x 1 → Sep S 0x68 x 1 → nn'.mem x = Ms0 x) ∧
+      HasherAt nn'.mem S (msg ++ base64Encode (memBytes M0 D n)) ∧ reg nn' sp = sp0 + 0xFFFFFFD0 ∧
+      ∀ q, q.val ∈ [4, 24, 25, 26, 27] → reg nn' q = reg nn q := by
+  have hz := st.zero
+  have hDw := E.hDw
+  obtain ⟨R, hR⟩ : ∃ R, sp0 + 0xFFFFFED0 = R := ⟨_, rfl⟩
+  have eF : sp0 + 0xFFFFFFD0 = R + BitVec.ofNat 32 0x100 := by rw [← hR, BitVec.add_assoc]; rfl
+  have hRn : R.toNat = sp0.toNat - 0x130 := by
+    rw [← hR, BitVec.toNat_add, show (0xFFFFFED0 : Word).toNat = 2 ^ 32 - 0x130 from rfl]; have := E.hspl; omega
+  have hspw := E.hspw
+  obtain ⟨-, hc, hcA⟩ := bee_upd E fr (o := 0) (by decide)
+  obtain ⟨n1, c1, u1⟩ := St.block beeT st hc beeT_end (by simp only [BlockOk, BInstr.ok, beeT, and_self])
+  have mem1 : n1.mem = nn.mem := by rw [u1.mem]; simp +decide only [runBlock, BInstr.run, beeT]
+  have R1 : ∀ r, reg n1 r = (runBlock beeT (nn.mem, reg nn)).2 r := u1.regs
+  have K1 : ∀ q, q.val ∉ [10, 11, 18, 20] → reg n1 q = reg nn q := fun q hq => by
+    have hd : q ∉ beeT.filterMap BInstr.dst := by
+      simp only [beeT, List.filterMap_cons, List.filterMap_nil, BInstr.dst]; revert hq; revert q; decide
+    rw [R1, runBlock_reg _ _ _ q hz hd]
+  have e3 : aluEval .add (BitVec.ofNat 32 G) (BitVec.ofNat 32 (2 * G)) = BitVec.ofNat 32 (3 * G) := by
+    show BitVec.ofNat 32 G + BitVec.ofNat 32 (2 * G) = _; rw [BitVec.ofNat_add_ofNat]; congr 1; omega
+  have v18 : reg n1 18 = D + BitVec.ofNat 32 (3 * G) := by
+    rw [R1]; simp +decide only [runBlock, BInstr.run, beeT, upd_app, ↓reduceIte]; rw [r18, r20, r21, e3]; rfl
+  have v10 : reg n1 a0 = BitVec.ofNat 32 (n % 3) := by
+    rw [R1]; simp +decide only [runBlock, BInstr.run, beeT, upd_app, ↓reduceIte]; rw [r19, r20, r21, e3]
+    apply BitVec.eq_of_toNat_eq
+    rw [dn_sub, BitVec.toNat_ofNat, BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega
+  have v11 : reg n1 a1 = 2 := by
+    rw [R1]; simp +decide only [runBlock, BInstr.run, beeT, upd_app, ↓reduceIte]
+    all_goals (try rw [hz]); all_goals rfl
+  have u1' : St nn.mem BEE n1 0xA2 (reg n1) := ⟨u1.pc, mem1, fun _ => rfl⟩
+  -- the bytes left over
+  obtain ⟨q, hq⟩ : ∃ q, D + BitVec.ofNat 32 (3 * G) = q := ⟨_, rfl⟩
+  have hsplit : memBytes M0 D n = memBytes M0 D (3 * G) ++ memBytes M0 q (n % 3) := by
+    have h := memBytes_split M0 D (3 * G) (n % 3); rw [show 3 * G + n % 3 = n by omega, hq] at h; exact h
+  have hspec : base64Encode (memBytes M0 D n) = base64Encode (memBytes M0 D (3 * G)) ++ base64Encode (memBytes M0 q (n % 3)) := by
+    rw [hsplit, base64Encode_append _ _ (by rw [memBytes_length]; omega)]
+  have hdat : ∀ k, k < n % 3 → nn.mem (q + BitVec.ofNat 32 k) = M0 (q + BitVec.ofNat 32 k) := fun k hk => by
+    rw [← hq, add_ofNat_assoc]
+    exact fr _ (E.sDS.sub (c := 3 * G + k) (l := 1) (by omega)).symm
+      (E.sDF.sub (c := 3 * G + k) (l := 1) (by omega)).symm
+  have sFC : ∀ k, k < 0xC → Sep (sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 k) 1 BEE base64EncodeToCode.length := fun k hk => by
+    rw [eF, add_ofNat_assoc]
+    exact data_code (by rw [BitVec.toNat_add, BitVec.toNat_ofNat, hRn]; omega) (by decide) (by decide)
+  have sSF := E.sSF
+  rw [hR] at sSF fr sl ⊢
+  have l : ∀ v, (BitVec.ofNat 8 (b64Char v)).toNat = b64Char v := fun v => by
+    rw [BitVec.toNat_ofNat]; exact Nat.mod_eq_of_lt (b64Char_lt v)
+  have hl0 : (msg ++ base64Encode (memBytes M0 D (3 * G))).length + 4 < 2 ^ 32 := by
+    rw [List.length_append, base64Encode_length3 _ (by rw [memBytes_length]; omega), memBytes_length]; omega
+  -- after the stores of a last group at `sp + o`, its call and the epilogue's view of memory
+  have finish : ∀ {nB : Machine} {MB : Word → BitVec 8} {o : Nat} {cs : Bytes}, o ≤ 8 → Steps nn nB →
+      St MB BEE nB 0x120 (reg nB) → (∀ x, (∀ k, k < 4 → x ≠ sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 (o + k)) → MB x = nn.mem x) →
+      reg nB a1 = sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 o → (∀ qq, qq.val ∈ [4, 22, 24, 25, 26, 27] → reg nB qq = reg nn qq) →
+      reg nB sp = sp0 + 0xFFFFFFD0 → memBytes MB (sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 o) 4 = cs →
+      cs = base64Encode (memBytes M0 q (n % 3)) →
+      ∃ nn', Steps nn nn' ∧ St nn'.mem BEE nn' 0x12C (reg nn') ∧
+        (∀ x, Sep R 0x10C x 1 → Sep S 0x68 x 1 → nn'.mem x = Ms0 x) ∧
+        HasherAt nn'.mem S (msg ++ base64Encode (memBytes M0 D n)) ∧ reg nn' sp = sp0 + 0xFFFFFFD0 ∧
+        ∀ qq, qq.val ∈ [4, 24, 25, 26, 27] → reg nn' qq = reg nn qq := by
+    intro nB MB o cs ho cB uB hMB a1B KB spB hmb hcs
+    have neR : ∀ {w : Nat} (x : Word), 0x10C ≤ w → w ≤ 0x130 → Sep R w x 1 →
+        ∀ k, k < 4 → x ≠ sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 (o + k) := fun {w} x h1 h2 hx k hk =>
+      bee_ne (by omega) h2 eF hx _ (by omega)
+    have frB : BeeFrame MB M0 S (sp0 + 0xFFFFFED0) := fun x hS hx => by
+      rw [hR] at hx; rw [hMB x (neR x (by decide) (by decide) hx), fr x hS hx]
+    have HB : HasherAt MB S (msg ++ base64Encode (memBytes M0 D (3 * G))) :=
+      H.copy fun i hi => hMB _ (neR _ (by decide) (by decide) (sSF.sub (c := i) (l := 1) (by omega)).symm)
+    obtain ⟨n5, c5, u5, -, fr5, H5, sp5, K5⟩ := bee_fin E frB ho uB a1B (by rw [KB 22 (by decide), r22]) spB HB hl0
+    refine ⟨n5, cB.trans c5, u5, fun x hx hS => ?_, ?_, sp5, fun qq hqq => ?_⟩
+    · rw [fr5 x (by rw [hR]; have := hx.sub (c := 0) (l := 0x100) (by decide); rwa [add_ofNat_zero] at this) hS,
+        hMB x (neR x (by decide) (by decide) hx), sl x hx hS]
+    · rw [hspec, ← List.append_assoc, ← hcs, ← hmb]; exact H5
+    · rw [K5 qq (by revert hqq; revert qq; decide), KB qq (by revert hqq; revert qq; decide)]
+  by_cases h2 : n % 3 = 2
+  · obtain ⟨n2, d2, u2⟩ := u1'.taken hc 0xDC bee_at_a2 (by decide) (by
+      rw [v10, v11, h2]; exact beq_iff_eq.mpr rfl)
+    obtain ⟨n3, c3, u3⟩ := St.block beeR2 u2.self hc beeR2_end (by
+      simp +decide only [BlockOk, BInstr.ok, BInstr.run, beeR2, upd_app, ↓reduceIte, and_true, true_and]
+      rw [u2.regs, K1 sp (by decide), rsp]
+      exact ⟨sFC 8 (by decide), sFC 9 (by decide), sFC 10 (by decide), sFC 11 (by decide)⟩)
+    obtain ⟨hM3, ha13⟩ := bee_blockR2 nn.mem (reg n2) u2.self.zero (by rw [u2.regs, v18, hq]) (by
+      rw [u2.regs, K1 23 (by decide), r23]) (by rw [u2.regs, K1 sp (by decide), rsp]) hcA
+    rw [hM3] at u3
+    have b0 := (nn.mem (q + 0)).isLt
+    have b1 := (nn.mem (q + 1)).isLt
+    refine finish (o := 8) (cs := base64Encode (memBytes M0 q (n % 3))) (by decide) (c1.trans (.cons d2 c3)) u3.self
+      ?_ ?_ ?_ ?_ ?_ rfl
+    · intro x hx
+      exact bee_st4 _ _ _ _ _ _ _ _ _ _ (by have := hx 0 (by decide); rwa [Nat.add_zero] at this) (hx 1 (by decide))
+        (hx 2 (by decide)) (hx 3 (by decide))
+    · rw [u3.regs, ha13]
+    · intro qq hqq
+      have hd : qq ∉ beeR2.filterMap BInstr.dst := by
+        simp only [beeR2, List.filterMap_cons, List.filterMap_nil, BInstr.dst]; revert hqq; revert qq; decide
+      rw [u3.regs, runBlock_reg _ _ _ qq u2.self.zero hd, u2.regs, K1 qq (by revert hqq; revert qq; decide)]
+    · have hd : sp ∉ beeR2.filterMap BInstr.dst := by
+        simp only [beeR2, List.filterMap_cons, List.filterMap_nil, BInstr.dst]; decide
+      rw [u3.regs, runBlock_reg _ _ _ sp u2.self.zero hd, u2.regs, K1 sp (by decide), rsp]
+    · rw [bee_mb4o _ _ _ _ _ _ (by decide), l, l, l, h2, show (memBytes M0 q 2) = [(M0 (q + BitVec.ofNat 32 0)).toNat, (M0 (q + BitVec.ofNat 32 1)).toNat]
+        from rfl, ← hdat 0 (by omega), ← hdat 1 (by omega)]
+      exact (bee_enc2 b0 b1).symm
+  obtain ⟨n2, d2, u2⟩ := u1'.notTaken hc 0xA6 bee_at_a2 (by decide) (by
+    rw [v10, v11]; apply beq_eq_false_iff_ne.mpr; intro e
+    have := congrArg BitVec.toNat e; rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)] at this
+    exact h2 (by have : (2 : Word).toNat = 2 := rfl; omega))
+  obtain ⟨n3, d3, u3⟩ := u2.self.aluImm hc bee_at_a6 (off' := 0xA8) (by decide)
+  have v311 : reg n3 a1 = 1 := by rw [u3.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [u2.self.zero]; rfl
+  have K3 : ∀ q', q'.val ∉ [10, 11, 18, 20] → reg n3 q' = reg nn q' := fun q' hq' => by
+    rw [u3.regs, upd_ne' (by intro e; apply hq'; rw [e]; decide) u2.self.zero, u2.regs, K1 q' hq']
+  have v310 : reg n3 a0 = BitVec.ofNat 32 (n % 3) := by
+    rw [u3.regs, upd_ne' (by decide) u2.self.zero, u2.regs, v10]
+  by_cases h1 : n % 3 = 1
+  · obtain ⟨n4, d4, u4⟩ := u3.self.notTaken hc 0xAC bee_at_a8 (by decide) (by
+      rw [v310, v311, h1]; exact bne_self_eq_false _)
+    obtain ⟨n5, c5, u5⟩ := St.block beeR1 u4.self hc beeR1_end (by
+      simp +decide only [BlockOk, BInstr.ok, BInstr.run, beeR1, upd_app, ↓reduceIte, and_true, true_and]
+      rw [u4.regs, K3 sp (by decide), rsp]
+      exact ⟨sFC 4 (by decide), sFC 5 (by decide), sFC 6 (by decide), sFC 7 (by decide)⟩)
+    have v418 : reg n4 18 = q := by
+      rw [u4.regs, u3.regs, upd_ne' (by decide) u2.self.zero, u2.regs, v18, hq]
+    obtain ⟨hM5, ha15⟩ := bee_blockR1 nn.mem (reg n4) u4.self.zero v418 (by
+      rw [u4.regs, K3 23 (by decide), r23]) (by rw [u4.regs, K3 sp (by decide), rsp]) hcA
+    rw [hM5] at u5
+    have hneq : ∀ x : Word, 0x40000000 ≤ x.toNat → ∀ k, k < 0xC → x ≠ sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 k :=
+      fun x hx k hk e => by
+        have := congrArg BitVec.toNat e
+        rw [eF, add_ofNat_assoc, BitVec.toNat_add, BitVec.toNat_ofNat, hRn] at this; omega
+    have hc5 : CodeIn (memStore8 (memStore8 (memStore8 (memStore8 nn.mem (sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 4)
+        (BitVec.ofNat 8 (b64Char ((nn.mem (q + 0)).toNat * 2 ^ 16 / 2 ^ 18))))
+        (sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 (4 + 1))
+        (BitVec.ofNat 8 (b64Char ((nn.mem (q + 0)).toNat * 2 ^ 16 / 2 ^ 12 % 64))))
+        (sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 (4 + 2)) (BitVec.ofNat 8 61))
+        (sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 (4 + 3)) (BitVec.ofNat 8 61)) BEE base64EncodeToCode :=
+      CodeIn.hi hc (fun x hx => bee_st4 _ _ _ _ _ _ _ _ _ _ (hneq x hx _ (by decide)) (hneq x hx _ (by decide))
+        (hneq x hx _ (by decide)) (hneq x hx _ (by decide))) (by decide) (by decide)
+    obtain ⟨n6, d6, u6⟩ := u5.self.jump hc5 bee_at_da (off' := 0x120) (by decide) (by rw [u5.pc]; decide)
+    have b0 := (nn.mem (q + 0)).isLt
+    refine finish (o := 4) (cs := base64Encode (memBytes M0 q (n % 3))) (by decide)
+      (c1.trans (.cons d2 (.cons d3 (.cons d4 (c5.trans (.single d6)))))) u6.self
+      (fun x hx => ?_) (by rw [u6.regs, u5.regs, ha15]) (fun qq hqq => ?_) ?_ ?_ rfl
+    · exact bee_st4 _ _ _ _ _ _ _ _ _ _ (by have := hx 0 (by decide); rwa [Nat.add_zero] at this) (hx 1 (by decide))
+        (hx 2 (by decide)) (hx 3 (by decide))
+    · have hd : qq ∉ beeR1.filterMap BInstr.dst := by
+        simp only [beeR1, List.filterMap_cons, List.filterMap_nil, BInstr.dst]; revert hqq; revert qq; decide
+      rw [u6.regs, u5.regs, runBlock_reg _ _ _ qq u4.self.zero hd, u4.regs, K3 qq (by revert hqq; revert qq; decide)]
+    · have hd : sp ∉ beeR1.filterMap BInstr.dst := by
+        simp only [beeR1, List.filterMap_cons, List.filterMap_nil, BInstr.dst]; decide
+      rw [u6.regs, u5.regs, runBlock_reg _ _ _ sp u4.self.zero hd, u4.regs, K3 sp (by decide), rsp]
+    · rw [bee_mb4o _ _ _ _ _ _ (by decide), l, l, h1,
+        show (memBytes M0 q 1) = [(M0 (q + BitVec.ofNat 32 0)).toNat] from rfl, ← hdat 0 (by omega)]
+      exact (bee_enc1 b0).symm
+  have h0 : n % 3 = 0 := by omega
+  obtain ⟨n4, d4, u4⟩ := u3.self.taken hc 0x12C bee_at_a8 (by decide) (by
+    rw [v310, v311, h0]; exact bne_iff_ne.mpr (by decide))
+  refine ⟨n4, c1.trans (.cons d2 (.cons d3 (.single d4))), ⟨u4.pc, by rw [u4.mem], fun _ => rfl⟩,
+    fun x hx hS => by rw [u4.mem]; exact sl x hx hS, ?_, by rw [u4.regs, K3 sp (by decide), rsp],
+    fun qq hqq => by rw [u4.regs, K3 qq (by revert hqq; revert qq; decide)]⟩
+  rw [u4.mem, hspec, h0, memBytes_zero, show base64Encode [] = [] by simp only [base64Encode], List.append_nil]
+  exact H
+
+abbrev beePs : List (Fin 32 × Word) :=
+  [(ra, 0x2C), ((8 : Fin 32), 0x28), ((9 : Fin 32), 0x24), ((18 : Fin 32), 0x20), ((19 : Fin 32), 0x1C),
+    ((20 : Fin 32), 0x18), ((21 : Fin 32), 0x14), ((22 : Fin 32), 0x10), ((23 : Fin 32), 0xC)]
+
+section
+set_option maxRecDepth 20000
+theorem beeSave_end : blockEnd base64EncodeToCode 2 (saveBlock beePs) = some 0x14 := by decide
+theorem beeRestore_end : blockEnd base64EncodeToCode 0x12C (restoreBlock beePs) = some 0x13E := by decide
+end
+
+theorem bee_ps_mem : ∀ q : Fin 32, q.val ∈ [1, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] →
+    q.val ∈ [4, 24, 25, 26, 27] ∨ ∃ o, (q, o) ∈ beePs := by
+  intro q hq
+  rcases (by decide : ∀ q : Fin 32, q.val ∈ [1, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] →
+      q.val ∈ [4, 24, 25, 26, 27] ∨ q = ra ∨ q = 8 ∨ q = 9 ∨ q = 18 ∨ q = 19 ∨ q = 20 ∨ q = 21 ∨ q = 22 ∨ q = 23) q hq
+    with h | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  · exact Or.inl h
+  · exact Or.inr ⟨0x2C, by decide⟩
+  · exact Or.inr ⟨0x28, by decide⟩
+  · exact Or.inr ⟨0x24, by decide⟩
+  · exact Or.inr ⟨0x20, by decide⟩
+  · exact Or.inr ⟨0x1C, by decide⟩
+  · exact Or.inr ⟨0x18, by decide⟩
+  · exact Or.inr ⟨0x14, by decide⟩
+  · exact Or.inr ⟨0x10, by decide⟩
+  · exact Or.inr ⟨0xC, by decide⟩
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 16000000 in
+/-- **The compiled `base64::encode_to::<Sha256>` is correct.** Called with
+`n` bytes at `D` and a SHA-256 hasher at `S` holding `msg`, it leaves the
+hasher holding `msg` followed by the bytes' padded base64, returns to
+`retAddr` with `sp` and the callee-saved registers restored, and changes no
+memory outside the hasher and 0x130 bytes of stack below `sp`. -/
+theorem base64EncodeTo_correct (m : Machine) {sp0 S D retAddr : Word} {n : Nat} {msg : Bytes}
+    (E : BeeEnv m.mem S D sp0 n) (hpc : m.pc = BEE) (ha0 : reg m a0 = D) (ha1 : reg m a1 = BitVec.ofNat 32 n)
+    (ha2 : reg m a2 = S) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hsp : reg m sp = sp0)
+    (H : HasherAt m.mem S msg) (hlen : msg.length + 4 * (n / 3) + 4 < 2 ^ 32) :
+    ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
+      (∀ q, q.val ∈ [1, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
+      HasherAt m'.mem S (msg ++ base64Encode (memBytes m.mem D n)) ∧
+      ∀ x, Sep (sp0 + 0xFFFFFED0) 0x130 x 1 → Sep S 0x68 x 1 → m'.mem x = m.mem x := by
+  obtain ⟨F, hF⟩ : ∃ F, sp0 + 0xFFFFFFD0 = F := ⟨_, rfl⟩
+  have hspl := E.hspl
+  have hspw := E.hspw
+  have hsp16 := E.hsp
+  have hFn : F.toNat = sp0.toNat - 0x30 := by
+    rw [← hF, BitVec.toNat_add, show (0xFFFFFFD0 : Word).toNat = 2 ^ 32 - 0x30 from rfl]; omega
+  have hFa : F.toNat % 4 = 0 := by omega
+  have hFS : F + 0x30 = sp0 := by rw [← hF, BitVec.add_assoc]; exact BitVec.add_zero sp0
+  have eRF : sp0 + 0xFFFFFED0 = F + 0xFFFFFF00 := by rw [← hF, BitVec.add_assoc]; rfl
+  have hRn : (sp0 + 0xFFFFFED0).toNat = sp0.toNat - 0x130 := by
+    rw [BitVec.toNat_add, show (0xFFFFFED0 : Word).toNat = 2 ^ 32 - 0x130 from rfl]; omega
+  have slotR : ∀ o : Word, o.toNat ≤ 0x2C → F + o = (sp0 + 0xFFFFFED0) + BitVec.ofNat 32 (0x100 + o.toNat) := fun o ho => by
+    have e : (0xFFFFFED0 : Word) + BitVec.ofNat 32 (0x100 + o.toNat) = 0xFFFFFFD0 + o := by
+      apply BitVec.eq_of_toNat_eq
+      rw [BitVec.toNat_add, BitVec.toNat_add, BitVec.toNat_ofNat, show (0xFFFFFED0 : Word).toNat = 2 ^ 32 - 0x130 from rfl,
+        show (0xFFFFFFD0 : Word).toNat = 2 ^ 32 - 0x30 from rfl]
+      have := o.isLt; omega
+    rw [BitVec.add_assoc, e, ← BitVec.add_assoc, hF]
+  have hps : ∀ p ∈ beePs, p.2.toNat ≤ 0x2C ∧ p.2.toNat % 4 = 0 ∧ 0xC ≤ p.2.toNat := by decide
+  have hps0 : ∀ p ∈ beePs, p.1 ≠ sp ∧ p.1.val ≠ 0 := by decide
+  have hdis : ∀ q ∈ beePs, ∀ p ∈ beePs, p = q ∨ ((p.2.toNat + 4 ≤ q.2.toNat ∨ q.2.toNat + 4 ≤ p.2.toNat) ∧
+      p.2.toNat + 4 ≤ 2 ^ 32 ∧ q.2.toNat + 4 ≤ 2 ^ 32) := by decide
+  have eFo : ∀ o : Word, o.toNat ≤ 0x2C → (F + o).toNat = F.toNat + o.toNat := fun o ho => by
+    rw [BitVec.toNat_add]; omega
+  -- prologue
+  have st0 : St m.mem BEE m 0 (reg m) := ⟨by rw [hpc, add_ofNat_zero], rfl, fun _ => rfl⟩
+  have hz := st0.zero
+  have hc0 := E.cE
+  obtain ⟨m1, d1, u1⟩ := st0.aluImm hc0 bee_at_0 (off' := 2) (by decide)
+  have sp1 : upd (reg m) sp (aluEval .add (reg m sp) 0xFFFFFFD0) sp = F := by
+    simp +decide only [upd, ↓reduceIte]; rw [hsp, ← hF]; rfl
+  obtain ⟨m2, c2, u2⟩ := St.block (saveBlock beePs) u1 hc0 beeSave_end (saveBlock_ok _ beePs _ fun q hq => by
+    rw [sp1]
+    obtain ⟨h1, h2, _⟩ := hps q hq
+    exact ⟨by rw [eFo _ h1]; omega, data_code (by rw [eFo _ h1]; omega) (by decide) (by decide)⟩)
+  simp only [saveBlock_run] at u2
+  rw [sp1] at u2
+  obtain ⟨Ms0, hMs0⟩ : ∃ Ms0, saveMem m.mem F (upd (reg m) sp (aluEval .add (reg m sp) 0xFFFFFFD0)) beePs = Ms0 :=
+    ⟨_, rfl⟩
+  rw [hMs0] at u2
+  have IMs : ∀ x, Sep (sp0 + 0xFFFFFED0) 0x130 x 1 → Ms0 x = m.mem x := fun x hx => by
+    rw [← hMs0]; exact saveMem_outside beePs fun q hq => by
+      rw [slotR _ (hps q hq).1]
+      exact (hx.symm.subR (c := 0x100 + q.2.toNat) (l := 4) (by have := (hps q hq).1; omega)).symm
+  have slots : ∀ r o, (r, o) ∈ beePs → memLoad32 Ms0 (F + o) = reg m r := fun r o hm => by
+    rw [← hMs0, saveMem_slot beePs _ hm (hdis _ hm), upd_ne (hps0 _ hm).2 (hps0 _ hm).1]
+  have fr0 : BeeFrame Ms0 m.mem S (sp0 + 0xFFFFFED0) := fun x _ hx => IMs x hx
+  have hc2 := (bee_upd E fr0 (o := 0) (by decide)).2.1
+  have r2 : ∀ q, q ≠ sp → reg m2 q = reg m q := fun q q1 => by rw [u2.regs]; exact updz hz q1
+  have sp2 : reg m2 sp = F := by rw [u2.regs]; exact sp1
+  have z2 := u2.self.zero
+  -- setup, 0x14 to 0x32
+  obtain ⟨m3, c3, u3⟩ := St.block beeI u2.self hc2 beeI_end (by simp only [BlockOk, BInstr.ok, beeI, and_self])
+  have R3 : ∀ r, reg m3 r = (runBlock beeI (Ms0, reg m2)).2 r := u3.regs
+  have mem3 : m3.mem = Ms0 := by rw [u3.mem]; simp +decide only [runBlock, BInstr.run, beeI]
+  have K3 : ∀ q, q.val ∉ [2, 8, 10, 18, 19, 20, 21, 22, 23] → reg m3 q = reg m q := fun q hq => by
+    have hd : q ∉ beeI.filterMap BInstr.dst := by
+      simp only [beeI, List.filterMap_cons, List.filterMap_nil, BInstr.dst]; revert hq; revert q; decide
+    rw [R3, runBlock_reg _ _ _ q z2 hd, r2 q (by intro e; apply hq; rw [e]; decide)]
+  have K3' : reg m3 sp = F := by
+    have hd : sp ∉ beeI.filterMap BInstr.dst := by
+      simp only [beeI, List.filterMap_cons, List.filterMap_nil, BInstr.dst]; decide
+    rw [R3, runBlock_reg _ _ _ sp z2 hd, sp2]
+  obtain ⟨G, hG⟩ : ∃ G, n / 3 = G := ⟨_, rfl⟩
+  have hn30 : n ≤ 2 ^ 30 := by have := E.hDw; omega
+  have vI : ∀ q v, (q, v) ∈ [((22 : Fin 32), S), (19, BitVec.ofNat 32 n), (18, D), (20, BitVec.ofNat 32 G),
+      (21, BitVec.ofNat 32 (2 * G)), (8, BitVec.ofNat 32 (3 * G)), (23, BAL), (10, D)] → reg m3 q = v := by
+    have e20 : aluEval .divu (BitVec.ofNat 32 n) 3 = BitVec.ofNat 32 G := by
+      show aluEval .divu (BitVec.ofNat 32 n) (BitVec.ofNat 32 3) = _; apply BitVec.eq_of_toNat_eq
+      rw [dn_divuL _ _ (by decide) (by decide), BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega
+    have e21 : aluEval .sll (BitVec.ofNat 32 G) 0x1 = BitVec.ofNat 32 (2 * G) := by
+      apply BitVec.eq_of_toNat_eq
+      rw [dn_sll, BitVec.toNat_ofNat, BitVec.toNat_ofNat, show (0x1 : Word).toNat % 32 = 1 from rfl]; omega
+    have e8 : aluEval .add (BitVec.ofNat 32 (2 * G)) (BitVec.ofNat 32 G) = BitVec.ofNat 32 (3 * G) := by
+      show BitVec.ofNat 32 (2 * G) + BitVec.ofNat 32 G = _; rw [BitVec.ofNat_add_ofNat, show 2 * G + G = 3 * G by omega]
+    intro q v hm
+    simp only [List.mem_cons, List.mem_nil_iff, or_false, Prod.mk.injEq] at hm
+    rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
+      ⟨rfl, rfl⟩ <;> (rw [R3]; simp +decide only [runBlock, BInstr.run, beeI, upd_app, ↓reduceIte]) <;>
+      (try rw [z2]) <;> (try simp only [dn_z]) <;>
+      (try rw [r2 a2 (by decide), ha2]) <;> (try rw [r2 a1 (by decide), ha1]) <;> (try rw [r2 a0 (by decide), ha0])
+    · exact e20
+    · rw [e20, e21]
+    · rw [e20, e21, e8]
+  have u3' : St Ms0 BEE m3 0x32 (reg m3) := ⟨u3.pc, mem3, fun _ => rfl⟩
+  have pre3 : Steps m m3 := .cons d1 (c2.trans c3)
+  have H0 : HasherAt Ms0 S msg := H.copy fun i hi => IMs _ (E.sSF.sub (c := i) (l := 1) (by omega)).symm
+  have hl' : msg.length + 4 * G + 4 < 2 ^ 32 := by rw [← hG]; exact hlen
+  -- the groups, then the rest, to 0x12C
+  have toTail : ∀ {nn : Machine}, Steps m nn → St nn.mem BEE nn 0x98 (reg nn) →
+      BeeFrame nn.mem m.mem S (sp0 + 0xFFFFFED0) →
+      (∀ x, Sep (sp0 + 0xFFFFFED0) 0x10C x 1 → Sep S 0x68 x 1 → nn.mem x = Ms0 x) →
+      HasherAt nn.mem S (msg ++ base64Encode (memBytes m.mem D (3 * G))) → reg nn sp = F →
+      (∀ q, q.val ∈ [4, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg nn q = reg m3 q) →
+      ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
+        (∀ q, q.val ∈ [1, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
+        HasherAt m'.mem S (msg ++ base64Encode (memBytes m.mem D n)) ∧
+        ∀ x, Sep (sp0 + 0xFFFFFED0) 0x130 x 1 → Sep S 0x68 x 1 → m'.mem x = m.mem x := by
+    intro nn cn st fr sl Hn rsp K
+    obtain ⟨n4, c4, u4, sl4, H4, sp4, K4⟩ := bee_tail E (Ms0 := Ms0) hG.symm hl' st fr sl Hn
+      (by rw [K 20 (by decide)]; exact vI 20 _ (by simp only [List.mem_cons, true_or, or_true]))
+      (by rw [K 21 (by decide)]; exact vI 21 _ (by simp only [List.mem_cons, true_or, or_true]))
+      (by rw [K 19 (by decide)]; exact vI 19 _ (by simp only [List.mem_cons, true_or, or_true]))
+      (by rw [K 18 (by decide)]; exact vI 18 _ (by simp only [List.mem_cons, true_or, or_true]))
+      (by rw [K 23 (by decide)]; exact vI 23 _ (by simp only [List.mem_cons, true_or, or_true]))
+      (by rw [K 22 (by decide)]; exact vI 22 _ (by simp only [List.mem_cons, true_or, or_true])) (by rw [rsp, hF])
+    rw [hF] at sp4
+    -- the epilogue
+    have fr4 : BeeFrame n4.mem m.mem S (sp0 + 0xFFFFFED0) := fun x hS hx => by
+      rw [sl4 x (by have := hx.sub (c := 0) (l := 0x10C) (by decide); rwa [add_ofNat_zero] at this) hS, IMs x hx]
+    have hc4 := (bee_upd E fr4 (o := 0) (by decide)).2.1
+    have hpsp : ∀ p ∈ beePs, p.1 ≠ sp := fun p hp => (hps0 p hp).1
+    have sl' : ∀ r o, (r, o) ∈ beePs → memLoad32 n4.mem (F + o) = reg m r := fun r o hm => by
+      rw [← slots r o hm]; apply memLoad32_congr; intro j hj
+      obtain ⟨ho1, -, ho3⟩ : o.toNat ≤ 0x2C ∧ o.toNat % 4 = 0 ∧ 0xC ≤ o.toNat := hps (r, o) hm
+      rw [slotR o ho1, add_ofNat_assoc]
+      apply sl4
+      · have := sep_offsets (sp0 + 0xFFFFFED0) (c := 0) (n := 0x10C) (d := 0x100 + o.toNat + j) (k := 1)
+          (Or.inl (by omega)) (by omega) (by omega)
+        rwa [add_ofNat_zero] at this
+      · exact E.sSF.subR (c := 0x100 + o.toNat + j) (l := 1) (by omega)
+    obtain ⟨n5, c5, u5⟩ := St.block (restoreBlock beePs) u4 hc4 beeRestore_end
+      (restoreBlock_ok n4.mem F beePs (reg n4) sp4 hpsp fun q hq => by
+        obtain ⟨h1, h2, _⟩ := hps q hq; rw [eFo _ h1]; omega)
+    simp only [restoreBlock_run n4.mem F beePs (reg n4) sp4 hpsp] at u5
+    have rsp' : restoreRegs n4.mem F (reg n4) beePs sp = F := by rw [restoreRegs_sp _ _ _ _ hpsp]; exact sp4
+    obtain ⟨n6, d6, u6⟩ := u5.aluImm hc4 bee_at_13e (off' := 0x140) (by decide)
+    obtain ⟨n7, d7, pc7, mem7, regs7⟩ := u6.jalr hc4 bee_at_140
+    have mem7' : n7.mem = n4.mem := by rw [mem7]; (try rw [u6.mem]); (try rw [u5.mem])
+    have hslot : ∀ r o, (r, o) ∈ beePs → reg n7 r = reg m r := fun r o hm => by
+      rw [regs7, upd_ne (hps0 _ hm).2 (hps0 _ hm).1, ← sl' r o hm]
+      simp only [beePs, List.mem_cons, List.mem_nil_iff, or_false, Prod.mk.injEq] at hm
+      rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
+        ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+      · simp only [restoreRegs]; simp +decide only [upd, ↓reduceIte]
+    refine ⟨n7, cn.trans (c4.trans (c5.trans (.cons d6 (.single d7)))), ?_, ?_, fun q hq => ?_, ?_, fun x hx hS => ?_⟩
+    · rw [pc7, ← regs7, hslot ra 0x2C (by decide), add_lit_zero, hra, hret]
+    · rw [regs7]; simp +decide only [upd, ↓reduceIte, aluEval]; rw [rsp', hFS]
+    · rcases bee_ps_mem q hq with h4 | ⟨o, ho⟩
+      · obtain ⟨hv, hs', hps'⟩ : q.val ≠ 0 ∧ q ≠ sp ∧ (∀ p ∈ beePs, p.1 ≠ q) := by revert h4; revert q; decide
+        rw [regs7, upd_ne hv hs', restoreRegs_ne _ _ _ _ q u4.zero hps', K4 q h4]
+        rcases (by decide : ∀ q : Fin 32, q.val ∈ [4, 24, 25, 26, 27] → q = 4 ∨ q.val ∈ [24, 25, 26, 27]) q h4 with
+          rfl | h2427
+        · rw [K 4 (by decide), K3 4 (by decide)]
+        · rw [K q (by revert h2427; revert q; decide), K3 q (by revert h2427; revert q; decide)]
+      · exact hslot q o ho
+    · rw [mem7']; exact H4
+    · rw [mem7', sl4 x (by have := hx.sub (c := 0) (l := 0x10C) (by decide); rwa [add_ofNat_zero] at this) hS,
+        IMs x hx]
+  have v8 : reg m3 8 = BitVec.ofNat 32 (3 * G) := vI 8 _ (by simp only [List.mem_cons, true_or, or_true])
+  by_cases hG0 : G = 0
+  · obtain ⟨m4, d4, u4⟩ := u3'.taken hc2 0x98 bee_at_32 (by decide) (by
+      rw [v8, hG0, u3'.zero]; exact beq_iff_eq.mpr rfl)
+    have mem4 : m4.mem = Ms0 := u4.mem
+    refine toTail (pre3.trans (.single d4)) ⟨u4.pc, rfl, fun _ => rfl⟩ (by rw [mem4]; exact fr0)
+      (fun x _ _ => by rw [mem4]) ?_ (by rw [u4.regs, K3']) fun q _ => by
+        rw [u4.regs]
+    rw [mem4, hG0, memBytes_zero, show base64Encode [] = [] by simp only [base64Encode], List.append_nil]; exact H0
+  obtain ⟨m4, d4, u4⟩ := u3'.notTaken hc2 0x34 bee_at_32 (by decide) (by
+    rw [v8, u3'.zero]; apply beq_eq_false_iff_ne.mpr; intro e
+    have := congrArg BitVec.toNat e; rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)] at this
+    exact hG0 (by have : (0 : Word).toNat = 0 := rfl; omega))
+  have mem4 : m4.mem = Ms0 := u4.mem
+  obtain ⟨n5, c5, u5, fr5, sl5, H5, sp5, K5⟩ := bee_loop E (Ms0 := Ms0) (G := G) (by omega) hl' (G - 1) 0 m4 (by omega)
+    ⟨u4.pc, rfl, fun _ => rfl⟩
+    ⟨by rw [mem4]; exact fr0, fun x _ _ => by rw [mem4], by
+        rw [mem4, show 3 * 0 = 0 from rfl, memBytes_zero, show base64Encode [] = [] by simp only [base64Encode],
+          List.append_nil]; exact H0,
+      by rw [u4.regs, show 3 * 0 = 0 from rfl, add_ofNat_zero]; exact vI 10 _ (by simp only [List.mem_cons, true_or, or_true]),
+      by rw [u4.regs, Nat.sub_zero]; exact v8,
+      by rw [u4.regs]; exact vI 23 _ (by simp only [List.mem_cons, true_or, or_true]),
+      by rw [u4.regs]; exact vI 22 _ (by simp only [List.mem_cons, true_or, or_true]),
+      by rw [u4.regs, K3', hF]⟩
+  exact toTail (pre3.trans (.cons d4 c5)) u5 fr5 sl5 H5 (by rw [sp5, hF]) fun q hq => by rw [K5 q hq, u4.regs]
 
 end C3.RV32

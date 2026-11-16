@@ -138,6 +138,7 @@ import C3BootProofs.Proofs.DateTime
 import C3BootProofs.Proofs.GeneralizedTime
 import C3BootProofs.Proofs.X509ReadTime
 import C3BootProofs.Proofs.Base64Decode
+import C3BootProofs.Proofs.Base64Encode
 import C3BootProofs.Spec.Ecdsa
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
@@ -2932,6 +2933,49 @@ theorem exists_base64DecodeInto_machine :
     by decide, by decide, by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
     RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
     (RV32.sep_of_le (by decide) (by decide)).symm, RV32.sep_of_le (by decide) (by decide)⟩
+
+/-- Memory with `base64::encode_to::<Sha256>`, the alphabet, `update` and the
+code it runs, and the round constants where the image loads them, the empty
+hasher at `0x3FCC5000`, the bytes `hello` at `0x3FCC6000`, and zeros
+elsewhere. -/
+def witnessMemBEE : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(0x3FCC5000, emptyHasherBytes),
+    (Image.base64EncodeToAddress, Image.base64EncodeToCode),
+    (Image.b64AlphabetAddress, Image.b64AlphabetData),
+    (Image.shaUpdateAddress, Image.shaUpdateCode),
+    (Image.shaUpdateBlocksAddress, Image.shaUpdateBlocksCode),
+    (Image.sha256CompressAddress, Image.sha256CompressCode),
+    (Image.rangeFromIndexAddress, Image.rangeFromIndexCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.shaKAddress, Image.shaKData),
+    (0x3FCC6000, [0x68, 0x65, 0x6C, 0x6C, 0x6F])]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `base64::encode_to::<Sha256>` with the 5 bytes at
+`0x3FCC6000`, the empty hasher at `0x3FCC5000`, and the stack at
+`0x3FCC8000` meets `base64EncodeTo_correct`'s hypotheses. -/
+theorem exists_base64EncodeTo_machine :
+    ∃ (m : RV32.Machine) (sp0 S D retAddr : RV32.Word) (n : Nat) (msg : List Nat),
+      RV32.BeeEnv m.mem S D sp0 n ∧ m.pc = RV32.BEE ∧ RV32.reg m RV32.a0 = D ∧
+      RV32.reg m RV32.a1 = BitVec.ofNat 32 n ∧ RV32.reg m RV32.a2 = S ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.HasherAt m.mem S msg ∧
+      msg.length + 4 * (n / 3) + 4 < 2 ^ 32 := by
+  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 5 else if r = RV32.a2 then 0x3FCC5000
+      else if r = RV32.sp then 0x3FCC8000 else 0), RV32.BEE, witnessMemBEE⟩,
+    0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, 5, [], ?_, rfl, rfl, rfl, rfl, rfl, by decide, rfl,
+    ⟨by decide, ?_, rfl, ?_, ?_, ?_⟩, by decide⟩
+  case refine_1 =>
+    constructor
+    all_goals first
+      | code_in
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+      | exact (RV32.sep_of_le (by decide) (by decide)).symm
+      | decide +kernel
+  all_goals decide +kernel
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
@@ -7929,3 +7973,24 @@ end C3
 
 /-- info: 'C3.b64_len' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.b64_len
+
+/-- info: 'C3.RV32.base64EncodeTo_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.base64EncodeTo_correct
+
+/-- info: 'C3.exists_base64EncodeTo_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_base64EncodeTo_machine
+
+/-- info: 'C3.RV32.bee_loop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.bee_loop
+
+/-- info: 'C3.RV32.bee_group' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.bee_group
+
+/-- info: 'C3.RV32.bee_tail' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.bee_tail
+
+/-- info: 'C3.RV32.bee_call' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.bee_call
+
+/-- info: 'C3.base64Encode_append' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.base64Encode_append
