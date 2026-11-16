@@ -26,10 +26,36 @@ type Fetcher interface {
 	Fetch(ctx context.Context, instanceName string, d *repb.Digest) ([]byte, error)
 }
 
+// BatchFetcher is a Fetcher that can also read many blobs in one call. Load
+// reads each level of a tree with one FetchBatch when its Fetcher has it.
+type BatchFetcher interface {
+	Fetcher
+	// FetchBatch returns the contents of each of ds, in the order of ds.
+	FetchBatch(ctx context.Context, instanceName string, ds []*repb.Digest) ([][]byte, error)
+}
+
+// FetchAll reads ds with f's FetchBatch when f is a BatchFetcher, and one
+// Fetch at a time when it is not. It returns the contents in the order of
+// ds.
+func FetchAll(ctx context.Context, f Fetcher, instance string, ds []*repb.Digest) ([][]byte, error) {
+	if bf, ok := f.(BatchFetcher); ok {
+		return bf.FetchBatch(ctx, instance, ds)
+	}
+	out := make([][]byte, len(ds))
+	for i, d := range ds {
+		b, err := f.Fetch(ctx, instance, d)
+		if err != nil {
+			return nil, fmt.Errorf("fetching %s: %w", digest.Key(d), err)
+		}
+		out[i] = b
+	}
+	return out, nil
+}
+
 // WithToken returns a Fetcher that sends the tenant token on every read of f.
 // casfs calls Fetch with the kernel's request context, which carries no
 // token, so the token travels with the fetcher instead.
-func WithToken(f Fetcher, token string) Fetcher {
+func WithToken(f Fetcher, token string) BatchFetcher {
 	return tokenFetcher{f: f, token: token}
 }
 
@@ -42,6 +68,10 @@ func (t tokenFetcher) Fetch(ctx context.Context, instance string, d *repb.Digest
 	return t.f.Fetch(tenant.Outgoing(ctx, t.token), instance, d)
 }
 
+func (t tokenFetcher) FetchBatch(ctx context.Context, instance string, ds []*repb.Digest) ([][]byte, error) {
+	return FetchAll(tenant.Outgoing(ctx, t.token), t.f, instance, ds)
+}
+
 // Tree is an input root and every Directory reachable from it, keyed by the
 // digest key of each Directory.
 type Tree struct {
@@ -50,42 +80,52 @@ type Tree struct {
 }
 
 // Load fetches the Directory at root and, transitively, every subdirectory,
-// verifying each against its digest. It stops at the first malformed or
-// cyclic reference. The empty Directory, whose encoding is no bytes, is never
-// fetched.
+// verifying each against its digest. It reads one level of the tree at a
+// time, with one FetchAll for the level, so a tree costs one round trip
+// per level instead of one per directory. It stops at the first malformed
+// or cyclic reference. The empty Directory, whose encoding is no bytes, is
+// never fetched.
 func Load(ctx context.Context, f Fetcher, instance string, root *repb.Digest) (*Tree, error) {
 	t := &Tree{Root: root, Dirs: map[string]*repb.Directory{}}
 	if digest.Verify(root, nil) == nil {
 		t.Dirs[digest.Key(root)] = &repb.Directory{}
 		return t, nil
 	}
-	pending := []*repb.Digest{root}
-	for len(pending) > 0 {
-		d := pending[len(pending)-1]
-		pending = pending[:len(pending)-1]
-		if _, ok := t.Dirs[digest.Key(d)]; ok {
-			continue
+	level := []*repb.Digest{root}
+	for len(level) > 0 {
+		var want []*repb.Digest
+		seen := map[string]bool{}
+		for _, d := range level {
+			k := digest.Key(d)
+			if _, ok := t.Dirs[k]; ok || seen[k] {
+				continue
+			}
+			seen[k] = true
+			want = append(want, d)
 		}
-		b, err := f.Fetch(ctx, instance, d)
-		if err != nil {
-			return nil, fmt.Errorf("fetching directory %s: %w", digest.Key(d), err)
-		}
-		if err := digest.Verify(d, b); err != nil {
-			return nil, err
-		}
-		dir := &repb.Directory{}
-		if err := proto.Unmarshal(b, dir); err != nil {
-			return nil, fmt.Errorf("directory %s: %w", digest.Key(d), err)
-		}
-		if err := validate(dir); err != nil {
-			return nil, fmt.Errorf("directory %s: %w", digest.Key(d), err)
-		}
-		t.Dirs[digest.Key(d)] = dir
-		for _, sub := range dir.GetDirectories() {
-			pending = append(pending, sub.GetDigest())
-		}
-		if len(t.Dirs) > maxDirectories {
+		if len(t.Dirs)+len(want) > maxDirectories {
 			return nil, fmt.Errorf("input root has more than %d directories", maxDirectories)
+		}
+		blobs, err := FetchAll(ctx, f, instance, want)
+		if err != nil {
+			return nil, fmt.Errorf("fetching directories: %w", err)
+		}
+		level = nil
+		for i, d := range want {
+			if err := digest.Verify(d, blobs[i]); err != nil {
+				return nil, err
+			}
+			dir := &repb.Directory{}
+			if err := proto.Unmarshal(blobs[i], dir); err != nil {
+				return nil, fmt.Errorf("directory %s: %w", digest.Key(d), err)
+			}
+			if err := validate(dir); err != nil {
+				return nil, fmt.Errorf("directory %s: %w", digest.Key(d), err)
+			}
+			t.Dirs[digest.Key(d)] = dir
+			for _, sub := range dir.GetDirectories() {
+				level = append(level, sub.GetDigest())
+			}
 		}
 	}
 	return t, nil
@@ -94,6 +134,10 @@ func Load(ctx context.Context, f Fetcher, instance string, root *repb.Digest) (*
 // maxDirectories bounds how large a tree the runner will walk, so a malicious
 // input root cannot make it allocate without end.
 const maxDirectories = 100_000
+
+// materializeBatchBytes bounds the file contents Materialize holds at once.
+// A file larger than this is fetched alone.
+const materializeBatchBytes = 4 << 20
 
 // validate rejects names that would escape the directory they are in.
 func validate(dir *repb.Directory) error {
@@ -154,20 +198,34 @@ func (t *Tree) materialize(ctx context.Context, f Fetcher, instance string, d *r
 	if err := os.MkdirAll(dest, 0o755); err != nil {
 		return err
 	}
-	for _, n := range dir.GetFiles() {
-		b, err := f.Fetch(ctx, instance, n.GetDigest())
+	files := dir.GetFiles()
+	for len(files) > 0 {
+		n, size := 1, files[0].GetDigest().GetSizeBytes()
+		for n < len(files) && size+files[n].GetDigest().GetSizeBytes() <= materializeBatchBytes {
+			size += files[n].GetDigest().GetSizeBytes()
+			n++
+		}
+		chunk := files[:n]
+		files = files[n:]
+		ds := make([]*repb.Digest, len(chunk))
+		for i, fn := range chunk {
+			ds[i] = fn.GetDigest()
+		}
+		blobs, err := FetchAll(ctx, f, instance, ds)
 		if err != nil {
-			return fmt.Errorf("fetching %s: %w", n.GetName(), err)
+			return fmt.Errorf("fetching files of %s: %w", dest, err)
 		}
-		if err := digest.Verify(n.GetDigest(), b); err != nil {
-			return err
-		}
-		mode := os.FileMode(0o644)
-		if n.GetIsExecutable() {
-			mode = 0o755
-		}
-		if err := os.WriteFile(filepath.Join(dest, n.GetName()), b, mode); err != nil {
-			return err
+		for i, fn := range chunk {
+			if err := digest.Verify(fn.GetDigest(), blobs[i]); err != nil {
+				return err
+			}
+			mode := os.FileMode(0o644)
+			if fn.GetIsExecutable() {
+				mode = 0o755
+			}
+			if err := os.WriteFile(filepath.Join(dest, fn.GetName()), blobs[i], mode); err != nil {
+				return err
+			}
 		}
 	}
 	for _, n := range dir.GetSymlinks() {

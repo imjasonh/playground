@@ -45,7 +45,7 @@ func newMetrics() metrics {
 		uploadBytes: telemetry.Handle(m.Int64Counter("runner.upload.bytes", metric.WithUnit("By"),
 			metric.WithDescription("Output bytes, by result: sent to cas, or deduplicated because cas held them."))),
 		read: telemetry.Handle(m.Float64Histogram("runner.blob.read.duration", metric.WithUnit("s"),
-			metric.WithDescription("Time to read one blob from the cache, by phase: prepare, before the command starts, or lazy, through FUSE while it runs."),
+			metric.WithDescription("Time for one call that reads from the cache, by phase: prepare, before the command starts, or lazy, through FUSE while it runs. A call reads one blob, or a batch, such as one level of the input tree."),
 			metric.WithExplicitBucketBoundaries(.0005, .001, .0025, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 30))),
 	}
 }
@@ -74,17 +74,19 @@ const (
 	phaseLazy    = "lazy"
 )
 
-// readStats sums one job's blob reads in one phase.
+// readStats sums one job's blob reads in one phase. A call reads one blob,
+// or many with FetchBatch.
 type readStats struct {
-	blobs, bytes, errors atomic.Int64
-	// total and slowest are durations in nanoseconds. Reads through a
+	calls, blobs, bytes, errors atomic.Int64
+	// total and slowest are call durations in nanoseconds. Reads through a
 	// FUSE mount can overlap, so total can exceed the phase's wall time.
 	total, slowest atomic.Int64
 }
 
-func (s *readStats) add(n int, took time.Duration, err error) {
-	s.blobs.Add(1)
-	s.bytes.Add(int64(n))
+func (s *readStats) add(blobs int, n int64, took time.Duration, err error) {
+	s.calls.Add(1)
+	s.blobs.Add(int64(blobs))
+	s.bytes.Add(n)
 	s.total.Add(int64(took))
 	if err != nil {
 		s.errors.Add(1)
@@ -100,6 +102,7 @@ func (s *readStats) add(n int, took time.Duration, err error) {
 func (s *readStats) attributes(phase string) []attribute.KeyValue {
 	p := "ci_substrate.reads." + phase + "."
 	return []attribute.KeyValue{
+		attribute.Int64(p+"calls", s.calls.Load()),
 		attribute.Int64(p+"blobs", s.blobs.Load()),
 		attribute.Int64(p+"bytes", s.bytes.Load()),
 		attribute.Int64(p+"errors", s.errors.Load()),
@@ -136,19 +139,48 @@ func (b *Bot) newJobFetcher(ctx context.Context, instance string) *jobFetcher {
 	}
 }
 
-// Fetch records each read in the runner.blob.read.duration histogram with
-// the job's span, so a slow bucket's exemplar links to the action, and
-// gives a slow or failed read a runner.blob_read span.
 func (f *jobFetcher) Fetch(ctx context.Context, instance string, d *repb.Digest) ([]byte, error) {
-	phase, stats := phasePrepare, &f.prepare
-	if !trace.SpanContextFromContext(ctx).IsValid() {
-		phase, stats = phaseLazy, &f.lazy
-		ctx = metadata.NewOutgoingContext(trace.ContextWithSpanContext(ctx, f.span), f.outgoing)
-	}
+	ctx, phase, stats := f.phase(ctx)
 	start := time.Now()
 	b, err := f.inner.Fetch(ctx, instance, d)
+	f.record(ctx, phase, stats, start, 1, int64(len(b)), err,
+		attribute.String("ci_substrate.digest", digest.Key(d)),
+		attribute.Int64("ci_substrate.bytes", d.GetSizeBytes()),
+	)
+	return b, err
+}
+
+func (f *jobFetcher) FetchBatch(ctx context.Context, instance string, ds []*repb.Digest) ([][]byte, error) {
+	ctx, phase, stats := f.phase(ctx)
+	start := time.Now()
+	blobs, err := tree.FetchAll(ctx, f.inner, instance, ds)
+	var n, size int64
+	for i, b := range blobs {
+		n += int64(len(b))
+		size += ds[i].GetSizeBytes()
+	}
+	f.record(ctx, phase, stats, start, len(ds), n, err,
+		attribute.Int("ci_substrate.blobs", len(ds)),
+		attribute.Int64("ci_substrate.bytes", size),
+	)
+	return blobs, err
+}
+
+// phase returns the phase of a read with ctx, its stats, and the context
+// to read with.
+func (f *jobFetcher) phase(ctx context.Context) (context.Context, string, *readStats) {
+	if trace.SpanContextFromContext(ctx).IsValid() {
+		return ctx, phasePrepare, &f.prepare
+	}
+	return metadata.NewOutgoingContext(trace.ContextWithSpanContext(ctx, f.span), f.outgoing), phaseLazy, &f.lazy
+}
+
+// record adds one read call to stats and to the runner.blob.read.duration
+// histogram with the job's span, so a slow bucket's exemplar links to the
+// action, and gives a slow or failed call a runner.blob_read span.
+func (f *jobFetcher) record(ctx context.Context, phase string, stats *readStats, start time.Time, blobs int, n int64, err error, attrs ...attribute.KeyValue) {
 	took := time.Since(start)
-	stats.add(len(b), took, err)
+	stats.add(blobs, n, took, err)
 	outcome := "ok"
 	if err != nil {
 		outcome = "error"
@@ -159,12 +191,7 @@ func (f *jobFetcher) Fetch(ctx context.Context, instance string, d *repb.Digest)
 		telemetry.AttrPhase.String(phase),
 		telemetry.AttrOutcome.String(outcome),
 	))
-	telemetry.RecordRead(ctx, "runner.blob_read", start, err,
-		attribute.String("ci_substrate.digest", digest.Key(d)),
-		attribute.Int64("ci_substrate.bytes", d.GetSizeBytes()),
-		attribute.String("ci_substrate.phase", phase),
-	)
-	return b, err
+	telemetry.RecordRead(ctx, "runner.blob_read", start, err, append(attrs, attribute.String("ci_substrate.phase", phase))...)
 }
 
 // inputBytes is how many bytes the job has read.

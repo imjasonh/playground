@@ -542,7 +542,7 @@ name, so `cas` can tell Bazel's traffic from theirs. A build's trace holds:
 | `build.bazel.remote.execution.v2.*` | `cas`, `cascache` | Each RPC, with `bazel.action_mnemonic`, `bazel.target_id`, `bazel.action_id`, the instance, the blob count and bytes, and action cache hit or miss |
 | `scheduler.queue` | `cas` | Time the action waited for a runner, per attempt |
 | `runner.execute` | `runner` | The action on the runner, with child spans `runner.fetch_action`, `runner.prepare_inputs`, `runner.run`, `runner.upload_outputs`, and `runner.complete`, and the action's blob reads summed as attributes (see below) |
-| `runner.blob_read` | `runner` | One blob read that failed or took 100 ms or longer |
+| `runner.blob_read` | `runner` | One read call, of one blob or a batch, that failed or took 100 ms or longer |
 | `cascache.origin_fetch` | `cascache` | One cache miss that failed or took 100 ms or longer: fetching and verifying the blob from `cas` |
 
 Blob reads have no span each. One build of the e2e `//:fanout` target made
@@ -556,6 +556,12 @@ fails or takes 100 ms or longer gets its own span, under the runner's
 stage or action span, or, in `cascache`, under the build's
 `bazel invocation` span.
 
+The runner also makes fewer read calls. It loads the input tree one level
+at a time, with one batch for all the directories on a level, and in the
+copy mode reads each directory's files in batches of up to 4 MiB. The
+client splits a batch into `BatchReadBlobs` calls of at most 256 blobs and
+2 MiB, and reads a blob over the batch limit by ByteStream.
+
 In place of the read spans, `runner.execute` has these attributes for each
 phase, `prepare` (reads before the command starts, which load the Action,
 the Command, and the input tree, and in the copy mode every input file)
@@ -563,11 +569,12 @@ and `lazy` (reads through the FUSE mount while the command runs):
 
 | Attribute | Value |
 |-----------|-------|
+| `ci_substrate.reads.<phase>.calls` | Read calls: one blob, or one batch |
 | `ci_substrate.reads.<phase>.blobs` | Blobs read |
 | `ci_substrate.reads.<phase>.bytes` | Bytes read |
-| `ci_substrate.reads.<phase>.errors` | Reads that failed |
-| `ci_substrate.reads.<phase>.seconds` | Time spent in reads, summed. Lazy reads can overlap, so this can exceed `runner.run` |
-| `ci_substrate.reads.<phase>.slowest_seconds` | The slowest read |
+| `ci_substrate.reads.<phase>.errors` | Read calls that failed |
+| `ci_substrate.reads.<phase>.seconds` | Time spent in read calls, summed. Lazy reads can overlap, so this can exceed `runner.run` |
+| `ci_substrate.reads.<phase>.slowest_seconds` | The slowest read call |
 
 The runner puts the `runner.execute` span into the action process as
 `TRACEPARENT` and `TRACESTATE`. A program the action runs that reads those
@@ -616,7 +623,7 @@ reported the series), and `peer` is who made a call to `cas`:
 | `runner.actions`, `runner.action.duration`, `runner.stage.duration` | `outcome`, `stage`, `mnemonic`, `input_mode` | Where an action's time goes on the runner |
 | `runner.busy.time` | | Runner utilization over time, which sizes the fleet |
 | `runner.input.bytes`, `runner.upload.bytes` | `input_mode`, `result` (sent or deduplicated) | Bytes each action pulled and pushed |
-| `runner.blob.read.duration` | `remote_instance`, `input_mode`, `phase` (prepare or lazy), `outcome` | Latency of each blob read, with exemplars that link a bucket to an action's trace |
+| `runner.blob.read.duration` | `remote_instance`, `input_mode`, `phase` (prepare or lazy), `outcome` | Latency of each read call, of one blob or a batch, with exemplars that link a bucket to an action's trace |
 | `casfs.hydrations`, `casfs.hydrated.bytes`, `casfs.hydrate.duration` | `outcome` | Lazy input fetches and the time actions wait on them |
 | `casfs.exec_roots`, `casfs.tree_load.duration`, `csi.volumes.published` | | Inputs volumes on a node |
 | `pool.operations`, `pool.operation.duration`, `pool.reconcile.duration` | `op`, `outcome` | Substrate's latency to create, resume, suspend, and delete actors |

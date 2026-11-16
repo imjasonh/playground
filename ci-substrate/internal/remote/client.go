@@ -56,6 +56,65 @@ func (c *Client) Fetch(ctx context.Context, instanceName string, d *repb.Digest)
 	return c.readStream(ctx, instanceName, d)
 }
 
+// FetchBatch reads ds and returns their contents in the order of ds. Small
+// blobs share BatchReadBlobs calls, and anything over the batch limit goes
+// by ByteStream.
+func (c *Client) FetchBatch(ctx context.Context, instanceName string, ds []*repb.Digest) ([][]byte, error) {
+	out := make([][]byte, len(ds))
+	var batch []int
+	var batchSize int64
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		req := &repb.BatchReadBlobsRequest{InstanceName: instanceName}
+		for _, i := range batch {
+			req.Digests = append(req.Digests, ds[i])
+		}
+		resp, err := c.cas.BatchReadBlobs(ctx, req)
+		if err != nil {
+			return err
+		}
+		byKey := map[string]*repb.BatchReadBlobsResponse_Response{}
+		for _, r := range resp.GetResponses() {
+			byKey[digest.Key(r.GetDigest())] = r
+		}
+		for _, i := range batch {
+			r, ok := byKey[digest.Key(ds[i])]
+			if !ok {
+				return fmt.Errorf("batch read returned no response for %s", digest.Key(ds[i]))
+			}
+			if cd := codes.Code(r.GetStatus().GetCode()); cd != codes.OK {
+				return status.Error(cd, r.GetStatus().GetMessage())
+			}
+			out[i] = r.GetData()
+		}
+		batch, batchSize = nil, 0
+		return nil
+	}
+	for i, d := range ds {
+		if d.GetSizeBytes() > MaxBatchBytes {
+			b, err := c.readStream(ctx, instanceName, d)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = b
+			continue
+		}
+		if len(batch) > 0 && (len(batch) >= batchSendCount || batchSize+d.GetSizeBytes() > batchSendBytes) {
+			if err := flush(); err != nil {
+				return nil, err
+			}
+		}
+		batch = append(batch, i)
+		batchSize += d.GetSizeBytes()
+	}
+	if err := flush(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *Client) readStream(ctx context.Context, instanceName string, d *repb.Digest) ([]byte, error) {
 	stream, err := c.bs.Read(ctx, &bytestream.ReadRequest{ResourceName: ReadResourceName(instanceName, d)})
 	if err != nil {

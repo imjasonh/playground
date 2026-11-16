@@ -3,9 +3,11 @@ package remote_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -332,6 +334,63 @@ func TestBatchRoundTrip(t *testing.T) {
 		if err != nil || string(got) != string(blobs[digest.Key(d)]) {
 			t.Fatalf("read %s = %q, %v", digest.Key(d), got, err)
 		}
+	}
+}
+
+// TestFetchBatch reads small blobs in shared BatchReadBlobs calls, split by
+// count and by bytes, a blob over the batch limit by ByteStream, and returns
+// every blob in the order asked for.
+func TestFetchBatch(t *testing.T) {
+	h := newHarness(t)
+	ctx := ctxTok(t, "tok-a")
+	var want [][]byte
+	for i := range 300 {
+		want = append(want, []byte(fmt.Sprintf("blob %d", i)))
+	}
+	want = append(want, bytes.Repeat([]byte{'m'}, 1<<20), bytes.Repeat([]byte{'n'}, 1<<20+1))
+	want = append(want, bytes.Repeat([]byte{'L'}, remote.MaxBatchBytes+1))
+	want = append(want, want[0])
+	var ds []*repb.Digest
+	for _, b := range want {
+		d, err := h.origin.Upload(ctx, "shared", b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ds = append(ds, d)
+	}
+
+	var batches int
+	count := func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		if strings.HasSuffix(method, "/BatchReadBlobs") {
+			batches++
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+	conn, err := grpc.NewClient(h.originAddr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithUnaryInterceptor(count))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	got, err := remote.NewClient(conn).FetchBatch(ctx, "shared", ds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range want {
+		if !bytes.Equal(got[i], want[i]) {
+			t.Fatalf("blob %d: got %d bytes, want %d", i, len(got[i]), len(want[i]))
+		}
+	}
+	// 256 small blobs, then 44 small blobs and the 1 MiB blob, then the
+	// blob over 1 MiB with the repeat of the first, since the two 1 MiB
+	// blobs together pass the 2 MiB send limit.
+	if batches != 3 {
+		t.Errorf("BatchReadBlobs calls = %d, want 3", batches)
+	}
+
+	missing := digest.FromBytes([]byte("never uploaded"))
+	if _, err := remote.NewClient(conn).FetchBatch(ctx, "shared", []*repb.Digest{ds[0], missing}); status.Code(err) != codes.NotFound {
+		t.Errorf("batch with a missing blob: code %v, want NotFound", status.Code(err))
 	}
 }
 

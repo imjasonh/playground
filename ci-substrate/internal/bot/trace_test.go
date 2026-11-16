@@ -130,8 +130,12 @@ func TestInvocationTrace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	other, err := bazelClient.Upload(bazel, instance, []byte("unused\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	root, err := bazelClient.Upload(bazel, instance, mustMarshal(t, &repb.Directory{
-		Files: []*repb.FileNode{{Name: "in.txt", Digest: input}},
+		Files: []*repb.FileNode{{Name: "in.txt", Digest: input}, {Name: "other.txt", Digest: other}},
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -182,8 +186,8 @@ func TestInvocationTrace(t *testing.T) {
 	if s.ActionCacheHits != 1 || s.ActionCacheMisses != 1 || s.ExecuteRequests != 1 || s.ActionsRun != 1 {
 		t.Errorf("counts = %+v, want one action cache hit, one miss, one Execute, one action run", s.Counts)
 	}
-	if s.BlobsUploaded != 4 || s.RunnerBytesUploaded == 0 || s.CacheFillBytes == 0 {
-		t.Errorf("counts = %+v, want 4 blobs uploaded, runner outputs, and cascache fills", s.Counts)
+	if s.BlobsUploaded != 5 || s.RunnerBytesUploaded == 0 || s.CacheFillBytes == 0 {
+		t.Errorf("counts = %+v, want 5 blobs uploaded, runner outputs, and cascache fills", s.Counts)
 	}
 	if got := s.HitRatio(); got != 0.5 {
 		t.Errorf("HitRatio = %v, want 0.5", got)
@@ -194,7 +198,7 @@ func TestInvocationTrace(t *testing.T) {
 	}
 	want := telemetry.InvocationSpanContext(invocationID).TraceID()
 	names := map[string]bool{}
-	var reads int64
+	var blobs, calls int64
 	for _, sp := range spans.Ended() {
 		if sp.SpanContext().TraceID() != want {
 			t.Errorf("span %q is in trace %s, want %s", sp.Name(), sp.SpanContext().TraceID(), want)
@@ -202,15 +206,19 @@ func TestInvocationTrace(t *testing.T) {
 		names[sp.Name()] = true
 		if sp.Name() == "runner.execute" {
 			for _, a := range sp.Attributes() {
-				if a.Key == "ci_substrate.reads.prepare.blobs" {
-					reads = a.Value.AsInt64()
+				switch a.Key {
+				case "ci_substrate.reads.prepare.blobs":
+					blobs = a.Value.AsInt64()
+				case "ci_substrate.reads.prepare.calls":
+					calls = a.Value.AsInt64()
 				}
 			}
 		}
 	}
-	// The Action, the Command, the input root, and in.txt.
-	if reads < 4 {
-		t.Errorf("runner.execute has ci_substrate.reads.prepare.blobs = %d, want at least 4", reads)
+	// The Action, the Command, the input root, and its two files, which
+	// share one call.
+	if blobs != 5 || calls != 4 {
+		t.Errorf("runner.execute read %d blobs in %d calls, want 5 in 4", blobs, calls)
 	}
 	for _, name := range []string{
 		"build.bazel.remote.execution.v2.ContentAddressableStorage/BatchReadBlobs",
