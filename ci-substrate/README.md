@@ -541,8 +541,33 @@ name, so `cas` can tell Bazel's traffic from theirs. A build's trace holds:
 | `bazel invocation` | `cas` | The whole build, from its first call to its last, with the counts below as attributes |
 | `build.bazel.remote.execution.v2.*` | `cas`, `cascache` | Each RPC, with `bazel.action_mnemonic`, `bazel.target_id`, `bazel.action_id`, the instance, the blob count and bytes, and action cache hit or miss |
 | `scheduler.queue` | `cas` | Time the action waited for a runner, per attempt |
-| `runner.execute` | `runner` | The action on the runner, with child spans `runner.fetch_action`, `runner.prepare_inputs`, `runner.run`, `runner.upload_outputs`, and `runner.complete` |
-| `cascache.origin_fetch` | `cascache` | A cache miss: fetching and verifying the blob from `cas` |
+| `runner.execute` | `runner` | The action on the runner, with child spans `runner.fetch_action`, `runner.prepare_inputs`, `runner.run`, `runner.upload_outputs`, and `runner.complete`, and the action's blob reads summed as attributes (see below) |
+| `runner.blob_read` | `runner` | One blob read that failed or took 100 ms or longer |
+| `cascache.origin_fetch` | `cascache` | One cache miss that failed or took 100 ms or longer: fetching and verifying the blob from `cas` |
+
+Blob reads have no span each. One build of the e2e `//:fanout` target made
+about 237,000 spans, and 232,000 of them were `BatchReadBlobs` and
+`ByteStream/Read` calls in the runner, `cascache`, and `cas`, and
+`cascache.origin_fetch`. The sampler drops a read's span, and the read sends
+its trace context on unsampled, so the server it calls drops its spans and
+the calls it makes in turn. `otelgrpc` still measures those calls in
+`rpc.server.call.duration` and `rpc.client.call.duration`. A read that
+fails or takes 100 ms or longer gets its own span, under the runner's
+stage or action span, or, in `cascache`, under the build's
+`bazel invocation` span.
+
+In place of the read spans, `runner.execute` has these attributes for each
+phase, `prepare` (reads before the command starts, which load the Action,
+the Command, and the input tree, and in the copy mode every input file)
+and `lazy` (reads through the FUSE mount while the command runs):
+
+| Attribute | Value |
+|-----------|-------|
+| `ci_substrate.reads.<phase>.blobs` | Blobs read |
+| `ci_substrate.reads.<phase>.bytes` | Bytes read |
+| `ci_substrate.reads.<phase>.errors` | Reads that failed |
+| `ci_substrate.reads.<phase>.seconds` | Time spent in reads, summed. Lazy reads can overlap, so this can exceed `runner.run` |
+| `ci_substrate.reads.<phase>.slowest_seconds` | The slowest read |
 
 The runner puts the `runner.execute` span into the action process as
 `TRACEPARENT` and `TRACESTATE`. A program the action runs that reads those
@@ -591,6 +616,7 @@ reported the series), and `peer` is who made a call to `cas`:
 | `runner.actions`, `runner.action.duration`, `runner.stage.duration` | `outcome`, `stage`, `mnemonic`, `input_mode` | Where an action's time goes on the runner |
 | `runner.busy.time` | | Runner utilization over time, which sizes the fleet |
 | `runner.input.bytes`, `runner.upload.bytes` | `input_mode`, `result` (sent or deduplicated) | Bytes each action pulled and pushed |
+| `runner.blob.read.duration` | `remote_instance`, `input_mode`, `phase` (prepare or lazy), `outcome` | Latency of each blob read, with exemplars that link a bucket to an action's trace |
 | `casfs.hydrations`, `casfs.hydrated.bytes`, `casfs.hydrate.duration` | `outcome` | Lazy input fetches and the time actions wait on them |
 | `casfs.exec_roots`, `casfs.tree_load.duration`, `csi.volumes.published` | | Inputs volumes on a node |
 | `pool.operations`, `pool.operation.duration`, `pool.reconcile.duration` | `op`, `outcome` | Substrate's latency to create, resume, suspend, and delete actors |
@@ -604,14 +630,21 @@ reported the series), and `peer` is who made a call to `cas`:
 
 `e2e/run-kind.sh` installs `deploy/05-telemetry.yaml`, and
 [`e2e/run-telemetry.sh`](e2e/run-telemetry.sh) builds with Bazel and fails
-unless the build's trace in Jaeger has spans from `cas`, `runner`, and
-`cascache` under its `bazel invocation` span, the collector's Prometheus
-endpoint has the build's metrics, and `cas` logged the build's summary. To
-look yourself:
+unless the build's trace in Jaeger has spans from `cas` and `runner` under
+its `bazel invocation` span, read totals on every `runner.execute` span, and
+no blob read spans, the collector's Prometheus endpoint has the build's
+metrics, and `cas` logged the build's summary. To look yourself:
 
 ```bash
 kubectl -n ci-substrate port-forward svc/jaeger 16686 &        # http://localhost:16686
 kubectl -n ci-substrate port-forward svc/otel-collector 8889 & # http://localhost:8889/metrics
+```
+
+The collector serves exemplars only in OpenMetrics, so ask for it to see
+which trace a slow read belongs to:
+
+```bash
+curl -s -H 'Accept: application/openmetrics-text' localhost:8889/metrics | grep runner_blob_read_duration_seconds_bucket
 ```
 
 ### GKE
@@ -639,8 +672,9 @@ sum by (remote_instance) (rate(cas_action_cache_requests_total{op="get",result="
   / sum by (remote_instance) (rate(cas_action_cache_requests_total{op="get"}[5m]))
 ```
 
-Every span is kept. Cloud Trace bills by span ingested, and a large build
-makes several spans per action, so a busy install would add the
+Every span but the blob reads' is kept. Cloud Trace bills by span
+ingested, and a large build makes about a dozen spans per action, so a busy
+install would add the
 `probabilistic_sampler` processor to the traces pipeline. Because the trace
 ID is a function of the invocation ID, sampling by trace ID keeps or drops
 whole builds.
