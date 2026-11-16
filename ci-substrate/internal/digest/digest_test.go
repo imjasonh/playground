@@ -1,6 +1,7 @@
 package digest
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -56,6 +57,42 @@ func TestValidate(t *testing.T) {
 		if err := Validate(d); err == nil {
 			t.Errorf("Validate(%v) accepted a malformed digest", d)
 		}
+	}
+}
+
+func TestBatches(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		sizes    []int64
+		maxCount int
+		maxBytes int64
+		want     []int
+	}{
+		{name: "empty", maxCount: 2, maxBytes: 10},
+		{name: "one run", sizes: []int64{1, 2, 3}, maxCount: 3, maxBytes: 10, want: []int{3}},
+		{name: "count", sizes: []int64{1, 1, 1, 1, 1}, maxCount: 2, maxBytes: 10, want: []int{2, 2, 1}},
+		{name: "bytes", sizes: []int64{4, 4, 4, 1}, maxCount: 10, maxBytes: 8, want: []int{2, 2}},
+		{name: "oversized alone", sizes: []int64{1, 20, 1}, maxCount: 10, maxBytes: 8, want: []int{1, 1, 1}},
+		{name: "oversized first", sizes: []int64{20, 1, 1}, maxCount: 10, maxBytes: 8, want: []int{1, 2}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var ds []*repb.Digest
+			for _, s := range tc.sizes {
+				ds = append(ds, &repb.Digest{SizeBytes: s})
+			}
+			var got []int
+			var flat []*repb.Digest
+			for _, b := range Batches(ds, tc.maxCount, tc.maxBytes) {
+				got = append(got, len(b))
+				flat = append(flat, b...)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("run lengths = %v, want %v", got, tc.want)
+			}
+			if !slices.Equal(flat, ds) {
+				t.Error("runs don't hold ds in order")
+			}
+		})
 	}
 }
 

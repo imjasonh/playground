@@ -61,3 +61,20 @@ func Verify(d *repb.Digest, b []byte) error {
 func Key(d *repb.Digest) string {
 	return fmt.Sprintf("%s/%d", d.GetHash(), d.GetSizeBytes())
 }
+
+// Batches splits ds, in order, into runs of at most maxCount digests whose
+// sizes sum to at most maxBytes. A digest larger than maxBytes gets a run of
+// its own.
+func Batches(ds []*repb.Digest, maxCount int, maxBytes int64) [][]*repb.Digest {
+	var out [][]*repb.Digest
+	var size int64
+	for i, d := range ds {
+		if i == 0 || len(out[len(out)-1]) >= maxCount || size+d.GetSizeBytes() > maxBytes {
+			out = append(out, nil)
+			size = 0
+		}
+		out[len(out)-1] = append(out[len(out)-1], d)
+		size += d.GetSizeBytes()
+	}
+	return out
+}

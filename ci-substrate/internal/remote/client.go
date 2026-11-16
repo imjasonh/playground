@@ -33,84 +33,57 @@ func NewClient(conn grpc.ClientConnInterface) *Client {
 	}
 }
 
-// Fetch reads one blob, preferring the batch API
-// and falling back to ByteStream for blobs over the batch limit.
+// Fetch reads one blob.
 func (c *Client) Fetch(ctx context.Context, instanceName string, d *repb.Digest) ([]byte, error) {
-	if d.GetSizeBytes() <= MaxBatchBytes {
-		resp, err := c.cas.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
-			InstanceName: instanceName,
-			Digests:      []*repb.Digest{d},
-		})
+	bs, err := c.FetchBatch(ctx, instanceName, []*repb.Digest{d})
+	if err != nil {
+		return nil, err
+	}
+	return bs[0], nil
+}
+
+// FetchBatch reads ds and returns their contents in the order of ds. It
+// reads each distinct blob once: small blobs share BatchReadBlobs calls, and
+// anything over the batch limit goes by ByteStream.
+func (c *Client) FetchBatch(ctx context.Context, instanceName string, ds []*repb.Digest) ([][]byte, error) {
+	data := map[string][]byte{}
+	seen := map[string]bool{}
+	var small []*repb.Digest
+	for _, d := range ds {
+		k := digest.Key(d)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		if d.GetSizeBytes() <= MaxBatchBytes {
+			small = append(small, d)
+			continue
+		}
+		b, err := c.readStream(ctx, instanceName, d)
 		if err != nil {
 			return nil, err
 		}
-		if len(resp.GetResponses()) != 1 {
-			return nil, fmt.Errorf("batch read returned %d responses", len(resp.GetResponses()))
-		}
-		r := resp.GetResponses()[0]
-		if c := codes.Code(r.GetStatus().GetCode()); c != codes.OK {
-			return nil, status.Error(c, r.GetStatus().GetMessage())
-		}
-		return r.GetData(), nil
+		data[k] = b
 	}
-	return c.readStream(ctx, instanceName, d)
-}
-
-// FetchBatch reads ds and returns their contents in the order of ds. Small
-// blobs share BatchReadBlobs calls, and anything over the batch limit goes
-// by ByteStream.
-func (c *Client) FetchBatch(ctx context.Context, instanceName string, ds []*repb.Digest) ([][]byte, error) {
-	out := make([][]byte, len(ds))
-	var batch []int
-	var batchSize int64
-	flush := func() error {
-		if len(batch) == 0 {
-			return nil
-		}
-		req := &repb.BatchReadBlobsRequest{InstanceName: instanceName}
-		for _, i := range batch {
-			req.Digests = append(req.Digests, ds[i])
-		}
-		resp, err := c.cas.BatchReadBlobs(ctx, req)
+	for _, batch := range digest.Batches(small, batchSendCount, batchSendBytes) {
+		resp, err := c.cas.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{InstanceName: instanceName, Digests: batch})
 		if err != nil {
-			return err
+			return nil, err
 		}
-		byKey := map[string]*repb.BatchReadBlobsResponse_Response{}
 		for _, r := range resp.GetResponses() {
-			byKey[digest.Key(r.GetDigest())] = r
-		}
-		for _, i := range batch {
-			r, ok := byKey[digest.Key(ds[i])]
-			if !ok {
-				return fmt.Errorf("batch read returned no response for %s", digest.Key(ds[i]))
-			}
 			if cd := codes.Code(r.GetStatus().GetCode()); cd != codes.OK {
-				return status.Error(cd, r.GetStatus().GetMessage())
+				return nil, status.Error(cd, r.GetStatus().GetMessage())
 			}
-			out[i] = r.GetData()
+			data[digest.Key(r.GetDigest())] = r.GetData()
 		}
-		batch, batchSize = nil, 0
-		return nil
 	}
+	out := make([][]byte, len(ds))
 	for i, d := range ds {
-		if d.GetSizeBytes() > MaxBatchBytes {
-			b, err := c.readStream(ctx, instanceName, d)
-			if err != nil {
-				return nil, err
-			}
-			out[i] = b
-			continue
+		b, ok := data[digest.Key(d)]
+		if !ok {
+			return nil, fmt.Errorf("batch read returned no response for %s", digest.Key(d))
 		}
-		if len(batch) > 0 && (len(batch) >= batchSendCount || batchSize+d.GetSizeBytes() > batchSendBytes) {
-			if err := flush(); err != nil {
-				return nil, err
-			}
-		}
-		batch = append(batch, i)
-		batchSize += d.GetSizeBytes()
-	}
-	if err := flush(); err != nil {
-		return nil, err
+		out[i] = b
 	}
 	return out, nil
 }
@@ -174,51 +147,33 @@ func (c *Client) PutBatch(ctx context.Context, instanceName string, blobs map[st
 	if err != nil {
 		return 0, 0, err
 	}
-	var reqs []*repb.BatchUpdateBlobsRequest_Request
-	var reqSize int64
+	var small []*repb.Digest
 	var sent int64
-	flush := func() error {
-		if len(reqs) == 0 {
-			return nil
+	for _, d := range missing {
+		data := blobs[digest.Key(d)]
+		sent += int64(len(data))
+		if int64(len(data)) <= MaxBatchBytes {
+			small = append(small, byKey[digest.Key(d)])
+			continue
 		}
-		resp, err := c.cas.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
-			InstanceName: instanceName,
-			Requests:     reqs,
-		})
+		if _, err := c.writeStream(ctx, instanceName, d, data); err != nil {
+			return 0, 0, err
+		}
+	}
+	for _, batch := range digest.Batches(small, batchSendCount, batchSendBytes) {
+		req := &repb.BatchUpdateBlobsRequest{InstanceName: instanceName}
+		for _, d := range batch {
+			req.Requests = append(req.Requests, &repb.BatchUpdateBlobsRequest_Request{Digest: d, Data: blobs[digest.Key(d)]})
+		}
+		resp, err := c.cas.BatchUpdateBlobs(ctx, req)
 		if err != nil {
-			return err
+			return 0, 0, err
 		}
 		for _, r := range resp.GetResponses() {
 			if cd := codes.Code(r.GetStatus().GetCode()); cd != codes.OK {
-				return status.Error(cd, r.GetStatus().GetMessage())
+				return 0, 0, status.Error(cd, r.GetStatus().GetMessage())
 			}
 		}
-		reqs, reqSize = nil, 0
-		return nil
-	}
-	for _, d := range missing {
-		data := blobs[digest.Key(d)]
-		if int64(len(data)) > MaxBatchBytes {
-			if err := flush(); err != nil {
-				return 0, 0, err
-			}
-			if _, err := c.writeStream(ctx, instanceName, d, data); err != nil {
-				return 0, 0, err
-			}
-			sent += int64(len(data))
-			continue
-		}
-		if len(reqs) > 0 && (len(reqs) >= batchSendCount || reqSize+int64(len(data)) > batchSendBytes) {
-			if err := flush(); err != nil {
-				return 0, 0, err
-			}
-		}
-		reqs = append(reqs, &repb.BatchUpdateBlobsRequest_Request{Digest: byKey[digest.Key(d)], Data: data})
-		reqSize += int64(len(data))
-		sent += int64(len(data))
-	}
-	if err := flush(); err != nil {
-		return 0, 0, err
 	}
 	return len(missing), sent, nil
 }

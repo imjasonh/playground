@@ -200,23 +200,16 @@ func (t *Tree) materialize(ctx context.Context, f Fetcher, instance string, d *r
 		return err
 	}
 	files := dir.GetFiles()
-	for len(files) > 0 {
-		n, size := 1, files[0].GetDigest().GetSizeBytes()
-		for n < len(files) && size+files[n].GetDigest().GetSizeBytes() <= materializeBatchBytes {
-			size += files[n].GetDigest().GetSizeBytes()
-			n++
-		}
-		chunk := files[:n]
-		files = files[n:]
-		ds := make([]*repb.Digest, len(chunk))
-		for i, fn := range chunk {
-			ds[i] = fn.GetDigest()
-		}
-		blobs, err := FetchAll(ctx, f, instance, ds)
+	ds := make([]*repb.Digest, len(files))
+	for i, fn := range files {
+		ds[i] = fn.GetDigest()
+	}
+	for _, batch := range digest.Batches(ds, len(ds), materializeBatchBytes) {
+		blobs, err := FetchAll(ctx, f, instance, batch)
 		if err != nil {
 			return fmt.Errorf("fetching files of %s: %w", dest, err)
 		}
-		for i, fn := range chunk {
+		for i, fn := range files[:len(batch)] {
 			if err := digest.Verify(fn.GetDigest(), blobs[i]); err != nil {
 				return err
 			}
@@ -228,6 +221,7 @@ func (t *Tree) materialize(ctx context.Context, f Fetcher, instance string, d *r
 				return err
 			}
 		}
+		files = files[len(batch):]
 	}
 	for _, n := range dir.GetSymlinks() {
 		if err := os.Symlink(n.GetTarget(), filepath.Join(dest, n.GetName())); err != nil {
