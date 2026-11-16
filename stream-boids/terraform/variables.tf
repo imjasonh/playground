@@ -27,9 +27,9 @@ variable "machine_type" {
 }
 
 variable "running" {
-  description = "Run the VM. Set to false to stop streaming and stop paying for the VM."
+  description = "Run the VM. Set to false to stop streaming and stop paying for the VM. Default false: the stack stays applied (image, secrets, network, service account) with no VM, so re-enabling is a one-line flip back to true."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "channel_id" {

@@ -222,8 +222,10 @@ requests, as it does for `cloudrun-sqlite`. The stack creates:
    Type or paste the value, then press Control+D. Until the stream key
    exists, the program logs that it can't read it and retries.
 
-To stop streaming without destroying the stack, set `running` to `false`.
-The `logs` output links to the container's logs in Cloud Logging.
+The VM is disabled by default: `running` defaults to `false`, so an apply
+keeps the stack (image, secrets, network, and service account) but runs no VM
+and costs nothing for compute. To start streaming, set `running` to `true` and
+apply. The `logs` output links to the container's logs in Cloud Logging.
 
 To apply from your own machine, copy `terraform/terraform.tfvars.example` to
 `terraform/terraform.tfvars`, then:
