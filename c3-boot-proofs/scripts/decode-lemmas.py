@@ -15,7 +15,7 @@ def r(n): v=REGS[n]; return NAMES.get(v, f'({v} : Fin 32)')
 def w(v): return f'0x{v & 0xFFFFFFFF:X}'
 def imm(s): return int(s,0)
 src, start, prefix, code = sys.argv[1], int(sys.argv[2],16), sys.argv[3], sys.argv[4]
-ALU = {'add':'add','sub':'sub','and':'and','or':'or','xor':'xor','sltu':'sltu','slt':'slt','mul':'mul','mulhu':'mulhu','mulh':'mulh','sll':'sll','srl':'srl','sra':'sra'}
+ALU = {'add':'add','sub':'sub','and':'and','or':'or','xor':'xor','sltu':'sltu','slt':'slt','mul':'mul','mulhu':'mulhu','mulh':'mulh','divu':'divu','remu':'remu','div':'div','rem':'rem','sll':'sll','srl':'srl','sra':'sra'}
 ALUI = {'addi':'add','andi':'and','ori':'or','xori':'xor','sltiu':'sltu','slti':'slt','slli':'sll','srli':'srl','srai':'sra'}
 BR = {'beq','bne','bltu','bgeu','blt','bge'}
 out=[]

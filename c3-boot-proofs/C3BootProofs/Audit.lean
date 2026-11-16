@@ -134,6 +134,7 @@ import C3BootProofs.Proofs.FromBeSliceTrunc
 import C3BootProofs.Proofs.Bytes2Scalar256
 import C3BootProofs.Proofs.ScalarFromSlice256
 import C3BootProofs.Proofs.IsSmallOrder
+import C3BootProofs.Proofs.DateTime
 import C3BootProofs.Spec.Ecdsa
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
@@ -2802,6 +2803,36 @@ theorem exists_isSmallOrder_machine :
   exact ⟨by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
     by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
     by decide +kernel⟩
+
+/-- Memory with `time::date_time` and `time::digits::<2>` where the image
+loads them, a slice reader at `0x3FCC6000` over 10 bytes at `0x3FCC7000`,
+and zeros elsewhere. -/
+def witnessMemDT : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.dateTimeAddress, Image.dateTimeCode), (Image.timeDigits2Address, Image.timeDigits2Code),
+    (0x3FCC6000, [0x00, 0x70, 0xCC, 0x3F, 0x0A, 0x00, 0x00, 0x00])]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `time::date_time` for the year 2000 on a reader
+at `0x3FCC6000` over 10 bytes, with the result at `0x3FCC5000` and the stack
+at `0x3FCC8000`, meets `dateTime_correct`'s hypotheses. -/
+theorem exists_dateTime_machine :
+    ∃ (m : RV32.Machine) (sp0 out d p Y retAddr : RV32.Word) (n : Nat),
+      RV32.CodeIn m.mem RV32.DT Image.dateTimeCode ∧ RV32.CodeIn m.mem RV32.TD Image.timeDigits2Code ∧
+      m.pc = RV32.DT ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = Y ∧ RV32.reg m RV32.a2 = d ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
+      sp0.toNat % 4 = 0 ∧ 0x30 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧ out.toNat + 16 ≤ 0x40000000 ∧
+      out.toNat % 4 = 0 ∧ d.toNat + 8 ≤ 0x40000000 ∧ d.toNat % 4 = 0 ∧ n < 2 ^ 32 ∧
+      RV32.memLoad32 m.mem d = p ∧ RV32.memLoad32 m.mem (d + 4) = BitVec.ofNat 32 n ∧
+      RV32.Sep out 16 (sp0 + 0xFFFFFFD0) 0x30 ∧ RV32.Sep d 8 (sp0 + 0xFFFFFFD0) 0x30 ∧ RV32.Sep out 16 d 8 ∧
+      RV32.Sep p n (sp0 + 0xFFFFFFD0) 0x30 ∧ RV32.Sep p n d 8 ∧ RV32.Sep d 8 p 10 := by
+  refine ⟨⟨leafRegs 0x3FCC5000 2000 0x3FCC6000, RV32.DT, witnessMemDT⟩, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000,
+    0x3FCC7000, 2000, 0, 10, by code_in, by code_in, rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide,
+    by decide, by decide, by decide, by decide, by decide, by decide, by decide +kernel, by decide +kernel,
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    (RV32.sep_of_le (by decide) (by decide)).symm, RV32.sep_of_le (by decide) (by decide)⟩
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
@@ -7730,3 +7761,18 @@ end C3
 
 /-- info: 'C3.RV32.feBytesOf_eq' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.feBytesOf_eq
+
+/-- info: 'C3.RV32.dateTime_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.dateTime_correct
+
+/-- info: 'C3.RV32.dt_arith' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.dt_arith
+
+/-- info: 'C3.RV32.dt_check' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.dt_check
+
+/-- info: 'C3.RV32.digits2Mem_cases' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.digits2Mem_cases
+
+/-- info: 'C3.RV32.readDigits2_mem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.readDigits2_mem
