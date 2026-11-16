@@ -132,6 +132,7 @@ import C3BootProofs.Proofs.P384FromRepr
 import C3BootProofs.Proofs.P256FromRepr
 import C3BootProofs.Proofs.FromBeSliceTrunc
 import C3BootProofs.Proofs.Bytes2Scalar256
+import C3BootProofs.Proofs.ScalarFromSlice256
 import C3BootProofs.Spec.Ecdsa
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
@@ -2672,7 +2673,10 @@ def witnessRegionsB2S : List (Nat × List Nat) :=
     (Image.sliceCtAssignAddress, Image.sliceCtAssignCode), (Image.p384ScalarNewAddress, Image.p384ScalarNewCode),
     (Image.mulMont12Address, Image.mulMont12Code), (Image.uintSelect12Address, Image.uintSelect12Code),
     (Image.p384OrderAddress, Image.p384OrderData), (Image.p384ScalarR2Address, Image.p384ScalarR2Data),
-    (Image.b2sOrder384Address, Image.b2sOrder384Data), (Image.b2sOrder256Address, Image.b2sOrder256Data)]
+    (Image.b2sOrder384Address, Image.b2sOrder384Data), (Image.b2sOrder256Address, Image.b2sOrder256Data),
+    (Image.scalarFromSlice384Address, Image.scalarFromSlice384Code),
+    (Image.scalarFromSlice256Address, Image.scalarFromSlice256Code),
+    (Image.uintRefIsNonzeroAddress, Image.uintRefIsNonzeroCode)]
 
 def witnessMemB2S : RV32.Word → BitVec 8 := RV32.regionMem witnessRegionsB2S
 
@@ -2726,6 +2730,44 @@ theorem exists_bytes2scalar256_machine :
     (RV32.sep_of_le (by decide) (by decide)).symm⟩
   refine ⟨by code_in, by code_in, witnessMemB2S_panic, by code_in, ⟨by code_in, by code_in, by code_in, by code_in,
     by code_in⟩, by code_in, by code_in, by code_in, by code_in, by decide +kernel, by decide +kernel⟩
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that reads a P-384 scalar at `0x3FCC6000` from the 48 bytes at
+`0x3FCC5000`, with the stack at `0x3FCC8000`, meets
+`scalarFromSlice384_correct`'s hypotheses. -/
+theorem exists_scalarFromSlice384_machine :
+    ∃ (m : RV32.Machine) (sp0 out b retAddr : RV32.Word), RV32.BFEnv m.mem ∧ m.pc = RV32.BF ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = b ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 4 = 0 ∧ 0xF0 ≤ sp0.toNat ∧
+      sp0.toNat ≤ 0x40000000 ∧ out.toNat + 52 ≤ 0x40000000 ∧ out.toNat % 4 = 0 ∧
+      RV32.Sep b 48 (sp0 + 0xFFFFFF10) 0xF0 ∧ RV32.Sep out 52 (sp0 + 0xFFFFFF10) 0xF0 ∧
+      RV32.Sep (sp0 + 0xFFFFFF10) 0xF0 RV32.BZO 48 := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0x3FCC5000 0, RV32.BF, witnessMemB2S⟩, 0x3FCC8000, 0x3FCC6000, 0x3FCC5000, 0,
+    ?_, rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide, by decide, by decide,
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    (RV32.sep_of_le (by decide) (by decide)).symm⟩
+  exact ⟨by code_in, ⟨by code_in, by code_in, by code_in, by code_in, by code_in⟩, by code_in, by code_in, by code_in,
+    by decide +kernel⟩
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that reads a P-256 scalar at `0x3FCC6000` from the 32 bytes at
+`0x3FCC5000`, with the stack at `0x3FCC8000`, meets
+`scalarFromSlice256_correct`'s hypotheses. -/
+theorem exists_scalarFromSlice256_machine :
+    ∃ (m : RV32.Machine) (sp0 out b retAddr : RV32.Word), RV32.BGEnv m.mem ∧ m.pc = RV32.BV ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = b ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 4 = 0 ∧ 0xC0 ≤ sp0.toNat ∧
+      sp0.toNat ≤ 0x40000000 ∧ out.toNat + 36 ≤ 0x40000000 ∧ out.toNat % 4 = 0 ∧
+      RV32.Sep b 32 (sp0 + 0xFFFFFF40) 0xC0 ∧ RV32.Sep out 36 (sp0 + 0xFFFFFF40) 0xC0 ∧
+      RV32.Sep (sp0 + 0xFFFFFF40) 0xC0 RV32.BYO 32 := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0x3FCC5000 0, RV32.BV, witnessMemB2S⟩, 0x3FCC8000, 0x3FCC6000, 0x3FCC5000, 0,
+    ?_, rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide, by decide, by decide,
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    (RV32.sep_of_le (by decide) (by decide)).symm⟩
+  exact ⟨by code_in, ⟨by code_in, by code_in, by code_in, by code_in, by code_in⟩, by code_in, by code_in, by code_in,
+    by decide +kernel⟩
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
@@ -7609,3 +7651,24 @@ end C3
 
 /-- info: 'C3.RV32.by_copy_loop' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.by_copy_loop
+
+/-- info: 'C3.RV32.scalarFromSlice384_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.scalarFromSlice384_correct
+
+/-- info: 'C3.exists_scalarFromSlice384_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_scalarFromSlice384_machine
+
+/-- info: 'C3.RV32.scalarFromSlice256_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.scalarFromSlice256_correct
+
+/-- info: 'C3.exists_scalarFromSlice256_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_scalarFromSlice256_machine
+
+/-- info: 'C3.RV32.cmp_step' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.cmp_step
+
+/-- info: 'C3.RV32.bf_cmp_loop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.bf_cmp_loop
+
+/-- info: 'C3.RV32.bg_cmp_loop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.bg_cmp_loop
