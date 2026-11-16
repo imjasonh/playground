@@ -123,6 +123,7 @@ import C3BootProofs.Proofs.Sha2Parts
 import C3BootProofs.Proofs.MerkleNode
 import C3BootProofs.Proofs.RootFromInclusion
 import C3BootProofs.Proofs.EncodedPoint
+import C3BootProofs.Proofs.Sha512Blocks
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
 import C3BootProofs.Image.BootloaderV0
@@ -1880,8 +1881,8 @@ theorem exists_fePow2k_machine :
   all_goals code_in
 
 /-- Memory with the current image's `compress512`, `RangeFrom::index`,
-`memcpy`, `memset`, and SHA-512's round constants where the image loads them,
-and zeros elsewhere. -/
+`memcpy`, `memset`, SHA-512's round constants, and the two block closures
+where the image loads them, and zeros elsewhere. -/
 def witnessMemS5 : RV32.Word → BitVec 8 :=
   RV32.regionMem
     [(Image.sha512CompressAddress, Image.sha512CompressCode),
@@ -1889,7 +1890,9 @@ def witnessMemS5 : RV32.Word → BitVec 8 :=
     (Image.memcpyStubAddress, Image.memcpyStubCode),
     (Image.memcpyBodyAddress, Image.memcpyBodyCode),
     (Image.memsetAddress, Image.memsetCode),
-    (Image.sha512KAddress, Image.sha512KData)]
+    (Image.sha512KAddress, Image.sha512KData),
+    (Image.sha512FinBlockAddress, Image.sha512FinBlockCode),
+    (Image.sha384UpdateBlocksAddress, Image.sha384UpdateBlocksCode)]
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 4000000 in
@@ -1918,6 +1921,72 @@ theorem exists_s5Compress_machine :
     rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide⟩
   all_goals code_in
 
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 4000000 in
+/-- A machine that calls the single-block finalize closure with the state at
+`0x3FCC5800`, the block at `0x3FCC6000`, and the stack at `0x3FCC8000` meets
+`sha512FinBlock_correct`'s hypotheses. -/
+theorem exists_sha512FinBlock_machine :
+    ∃ (m : RV32.Machine) (st blk sp0 retAddr : RV32.Word),
+      RV32.FB5Env m.mem st blk sp0 ∧ m.pc = BitVec.ofNat 32 Image.sha512FinBlockAddress ∧
+      RV32.reg m RV32.a0 = st ∧ RV32.reg m RV32.a1 = blk ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5800 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.sha512FinBlockAddress, witnessMemS5⟩,
+    0x3FCC5800, 0x3FCC6000, 0x3FCC8000, 0, ?_, rfl, rfl, rfl, rfl, by decide, rfl⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 4000000 in
+/-- A machine that calls `update`'s block closure on 2 blocks at `0x3FCC6000`
+with the state at `0x3FCC5800`, a zero count, and the stack at `0x3FCC8000`
+meets `sha384UpdateBlocks_correct`'s hypotheses. -/
+theorem exists_sha384UpdateBlocks_machine :
+    ∃ (m : RV32.Machine) (st bp sp0 retAddr : RV32.Word) (n : Nat),
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.sha384UpdateBlocksAddress) Image.sha384UpdateBlocksCode ∧
+      m.pc = BitVec.ofNat 32 Image.sha384UpdateBlocksAddress ∧
+      RV32.S5Env m.mem (BitVec.ofNat 32 Image.sha512CompressAddress) sp0 st bp n ∧
+      RV32.reg m RV32.a0 = st ∧ RV32.reg m RV32.a1 = bp ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
+      (RV32.memLoad32 m.mem (st + 0x40)).toNat + n < 2 ^ 32 ∧
+      RV32.Sep (st + 0x40) 16 (BitVec.ofNat 32 Image.sha512CompressAddress) Image.sha512CompressCode.length ∧
+      RV32.Sep (st + 0x40) 16 (BitVec.ofNat 32 Image.sha512CompressAddress + 0xFFFFFFEA)
+        Image.rangeFromIndexCode.length ∧
+      RV32.Sep (st + 0x40) 16 (BitVec.ofNat 32 Image.sha512CompressAddress + 0x5AC) Image.memcpyStubCode.length ∧
+      RV32.Sep (st + 0x40) 16 (BitVec.ofNat 32 Image.sha512CompressAddress + 0x5B4) Image.memcpyBodyCode.length ∧
+      RV32.Sep (st + 0x40) 16 (BitVec.ofNat 32 Image.sha512CompressAddress + 0x544) Image.memsetCode.length ∧
+      RV32.Sep (st + 0x40) 16 (BitVec.ofNat 32 Image.sha512KAddress) 640 ∧
+      RV32.Sep (st + 0x40) 16 (sp0 + 0xFFFFFC70) 0x390 ∧ RV32.Sep bp (128 * n) (st + 0x40) 16 ∧
+      RV32.Sep (st + 0x40) 16 (BitVec.ofNat 32 Image.sha384UpdateBlocksAddress)
+        Image.sha384UpdateBlocksCode.length := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5800 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 2
+    else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, BitVec.ofNat 32 Image.sha384UpdateBlocksAddress, witnessMemS5⟩,
+    0x3FCC5800, 0x3FCC6000, 0x3FCC8000, 0, 2, by code_in, rfl,
+    ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm,
+      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+      (RV32.sep_of_le (by decide) (by decide)).symm⟩,
+    rfl, rfl, rfl, rfl, by decide, rfl, by decide +kernel,
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm,
+    RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm,
+    RV32.sep_of_le (by decide) (by decide)⟩
+  all_goals code_in
 
 /-- Memory with the current image's P-384 point doubling, the field
 operations it calls, and the constants they load where the image loads them,
@@ -6178,6 +6247,18 @@ end C3
 
 /-- info: 'C3.exists_s5Compress_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_s5Compress_machine
+
+/-- info: 'C3.RV32.sha512FinBlock_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.sha512FinBlock_correct
+
+/-- info: 'C3.exists_sha512FinBlock_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_sha512FinBlock_machine
+
+/-- info: 'C3.RV32.sha384UpdateBlocks_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.sha384UpdateBlocks_correct
+
+/-- info: 'C3.exists_sha384UpdateBlocks_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_sha384UpdateBlocks_machine
 
 /-- info: 'C3.RV32.p384Mul_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.p384Mul_correct
