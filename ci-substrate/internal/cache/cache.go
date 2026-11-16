@@ -13,9 +13,7 @@ import (
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/imjasonh/playground/ci-substrate/internal/blob"
@@ -116,23 +114,22 @@ func (c *Cache) Get(ctx context.Context, instanceName string, d *repb.Digest) ([
 	return v.([]byte), local, nil
 }
 
-// fetch reads d from the origin, verifies it, and stores it locally.
+// fetch reads d from the origin, verifies it, and stores it locally. A
+// fetch that fails or is slow gets a cascache.origin_fetch span (see
+// telemetry.RecordRead).
 func (c *Cache) fetch(ctx context.Context, instanceName string, d *repb.Digest) ([]byte, error) {
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fetchTimeout)
 	defer cancel()
-	fctx, span := telemetry.Tracer().Start(fctx, "cascache.origin_fetch", trace.WithAttributes(
-		attribute.String("ci_substrate.digest", digest.Key(d)),
-		attribute.Int64("ci_substrate.bytes", d.GetSizeBytes()),
-	))
-	defer span.End()
 	start := time.Now()
 	b, err := c.origin.Fetch(fctx, instanceName, d)
 	if err == nil {
 		err = digest.Verify(d, b)
 	}
+	telemetry.RecordRead(fctx, "cascache.origin_fetch", start, err,
+		attribute.String("ci_substrate.digest", digest.Key(d)),
+		attribute.Int64("ci_substrate.bytes", d.GetSizeBytes()),
+	)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 	c.fetchDuration.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(telemetry.AttrInstance.String(instanceName)))

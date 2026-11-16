@@ -9,9 +9,14 @@ import (
 	"testing"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/imjasonh/playground/ci-substrate/internal/blob"
 	"github.com/imjasonh/playground/ci-substrate/internal/digest"
+	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 )
 
 // fakeOrigin is an in-memory authoritative CAS that counts fetches.
@@ -142,6 +147,40 @@ func TestOriginBytesNotCachedWhenCorrupt(t *testing.T) {
 	c := newCache(t, origin)
 	if _, _, err := c.Get(t.Context(), "shared", d); err == nil {
 		t.Error("Get accepted corrupt bytes from the origin")
+	}
+}
+
+// A miss the origin can't serve gets a span under the invocation, even
+// though the read that asked for it was not traced; a miss it serves
+// quickly gets none.
+func TestFailedFetchIsTraced(t *testing.T) {
+	spans := tracetest.NewSpanRecorder()
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSampler(telemetry.Sampler()), sdktrace.WithSpanProcessor(spans)))
+	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+
+	origin := newFakeOrigin()
+	found := origin.put([]byte("present"))
+	missing := digest.FromBytes([]byte("absent"))
+	c := newCache(t, origin)
+	ctx := telemetry.WithRequestMetadata(t.Context(), &repb.RequestMetadata{ToolInvocationId: "inv-1"})
+	if _, _, err := c.Get(ctx, "shared", found); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := c.Get(ctx, "shared", missing); err == nil {
+		t.Fatal("Get of a blob the origin lacks succeeded")
+	}
+
+	ended := spans.Ended()
+	if len(ended) != 1 {
+		t.Fatalf("recorded %d spans, want 1 for the failed fetch", len(ended))
+	}
+	s := ended[0]
+	if s.Name() != "cascache.origin_fetch" || s.Status().Code != codes.Error {
+		t.Errorf("span = %q with status %v, want an errored cascache.origin_fetch", s.Name(), s.Status())
+	}
+	if got, want := s.Parent().SpanID(), telemetry.InvocationSpanContext("inv-1").SpanID(); got != want {
+		t.Errorf("parent = %v, want the invocation span %v", got, want)
 	}
 }
 
