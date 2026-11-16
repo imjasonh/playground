@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
@@ -32,6 +33,72 @@ func (m *memFetcher) Fetch(_ context.Context, _ string, d *repb.Digest) ([]byte,
 		return nil, os.ErrNotExist
 	}
 	return b, nil
+}
+
+// batchFetcher serves memFetcher's blobs through FetchBatch and records
+// how many blobs each batch asked for.
+type batchFetcher struct {
+	*memFetcher
+	batches []int
+}
+
+func (b *batchFetcher) FetchBatch(ctx context.Context, instance string, ds []*repb.Digest) ([][]byte, error) {
+	b.batches = append(b.batches, len(ds))
+	out := make([][]byte, len(ds))
+	for i, d := range ds {
+		blob, err := b.Fetch(ctx, instance, d)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = blob
+	}
+	return out, nil
+}
+
+// TestBatchedReads checks that Load reads one batch per level of the tree,
+// asking for each directory once, and that Materialize reads a directory's
+// files in batches of at most materializeBatchBytes.
+func TestBatchedReads(t *testing.T) {
+	m := newMemFetcher()
+	file := &repb.FileNode{Name: "f", Digest: m.put([]byte("shared"))}
+	leaf := m.put(Marshal(&repb.Directory{Files: []*repb.FileNode{file}}))
+	var mids []*repb.DirectoryNode
+	for _, name := range []string{"a", "b", "c"} {
+		mid := &repb.Directory{
+			Files:       []*repb.FileNode{{Name: "own", Digest: m.put([]byte(name))}},
+			Directories: []*repb.DirectoryNode{{Name: "leaf", Digest: leaf}},
+		}
+		mids = append(mids, &repb.DirectoryNode{Name: name, Digest: m.put(Marshal(mid))})
+	}
+	big1 := &repb.FileNode{Name: "big1", Digest: m.put(make([]byte, 3<<20))}
+	big2 := &repb.FileNode{Name: "big2", Digest: m.put(make([]byte, 1<<20))}
+	root := m.put(Marshal(&repb.Directory{Files: []*repb.FileNode{big1, big2, file}, Directories: mids}))
+
+	f := &batchFetcher{memFetcher: m}
+	tr, err := Load(t.Context(), f, "inst", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tr.Dirs) != 5 {
+		t.Fatalf("loaded %d directories, want 5", len(tr.Dirs))
+	}
+	if want := []int{1, 3, 1}; !slices.Equal(f.batches, want) {
+		t.Errorf("Load batches = %v, want %v", f.batches, want)
+	}
+
+	f.batches = nil
+	dest := t.TempDir()
+	if err := Materialize(t.Context(), f, "inst", tr, dest); err != nil {
+		t.Fatal(err)
+	}
+	// The root's 3 MiB and 1 MiB files fill one 4 MiB batch, and its small
+	// file starts the next.
+	if want := []int{2, 1, 1, 1, 1, 1, 1, 1}; !slices.Equal(f.batches, want) {
+		t.Errorf("Materialize batches = %v, want %v", f.batches, want)
+	}
+	if b, err := os.ReadFile(filepath.Join(dest, "b/leaf/f")); err != nil || string(b) != "shared" {
+		t.Errorf("b/leaf/f: %q, %v", b, err)
+	}
 }
 
 func TestLoadEmptyRoot(t *testing.T) {

@@ -37,6 +37,9 @@ data:
       prometheus:
         endpoint: 0.0.0.0:8889
         resource_to_telemetry_conversion: {enabled: true}
+        # Exemplars, which link a histogram bucket to a trace, only exist
+        # in OpenMetrics, so a scrape must ask for it in its Accept header.
+        enable_open_metrics: true
     extensions:
       health_check: {endpoint: 0.0.0.0:13133}
     service:

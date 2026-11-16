@@ -6,11 +6,13 @@ import (
 	"time"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
+	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/imjasonh/playground/ci-substrate/internal/digest"
 	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 	"github.com/imjasonh/playground/ci-substrate/internal/tree"
 )
@@ -24,6 +26,7 @@ type metrics struct {
 	busy        metric.Float64Counter
 	inputBytes  metric.Int64Counter
 	uploadBytes metric.Int64Counter
+	read        metric.Float64Histogram
 }
 
 func newMetrics() metrics {
@@ -41,6 +44,9 @@ func newMetrics() metrics {
 			metric.WithDescription("Input bytes this runner read from the cache for its actions. Volume mode reads on the host instead."))),
 		uploadBytes: telemetry.Handle(m.Int64Counter("runner.upload.bytes", metric.WithUnit("By"),
 			metric.WithDescription("Output bytes, by result: sent to cas, or deduplicated because cas held them."))),
+		read: telemetry.Handle(m.Float64Histogram("runner.blob.read.duration", metric.WithUnit("s"),
+			metric.WithDescription("Time for one call that reads from the cache, by phase: prepare, before the command starts, or lazy, through FUSE while it runs. A call reads one blob, or a batch, such as one level of the input tree."),
+			metric.WithExplicitBucketBoundaries(.0005, .001, .0025, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 30))),
 	}
 }
 
@@ -63,27 +69,130 @@ func (b *Bot) stage(ctx context.Context, name string) (context.Context, func(err
 	}
 }
 
-// jobFetcher reads for one job and counts the bytes. A FUSE mount reads
-// with the context of the file operation, which carries neither the job's
-// span nor its RequestMetadata, so a read without a span gets the job's
-// span and outgoing metadata.
+const (
+	phasePrepare = "prepare"
+	phaseLazy    = "lazy"
+)
+
+// readStats sums one job's blob reads in one phase. A call reads one blob,
+// or many with FetchBatch.
+type readStats struct {
+	calls, blobs, bytes, errors atomic.Int64
+	// total and slowest are call durations in nanoseconds. Reads through a
+	// FUSE mount can overlap, so total can exceed the phase's wall time.
+	total, slowest atomic.Int64
+}
+
+func (s *readStats) add(blobs int, n int64, took time.Duration, err error) {
+	s.calls.Add(1)
+	s.blobs.Add(int64(blobs))
+	s.bytes.Add(n)
+	s.total.Add(int64(took))
+	if err != nil {
+		s.errors.Add(1)
+	}
+	for {
+		old := s.slowest.Load()
+		if int64(took) <= old || s.slowest.CompareAndSwap(old, int64(took)) {
+			return
+		}
+	}
+}
+
+func (s *readStats) attributes(phase string) []attribute.KeyValue {
+	p := "ci_substrate.reads." + phase + "."
+	return []attribute.KeyValue{
+		attribute.Int64(p+"calls", s.calls.Load()),
+		attribute.Int64(p+"blobs", s.blobs.Load()),
+		attribute.Int64(p+"bytes", s.bytes.Load()),
+		attribute.Int64(p+"errors", s.errors.Load()),
+		attribute.Float64(p+"seconds", time.Duration(s.total.Load()).Seconds()),
+		attribute.Float64(p+"slowest_seconds", time.Duration(s.slowest.Load()).Seconds()),
+	}
+}
+
+// jobFetcher reads for one job, measures every read, and sums them by
+// phase for the job's span. A FUSE mount reads with the context of the
+// file operation, which carries neither the job's span nor its
+// RequestMetadata, so a read without a span is a lazy read and gets the
+// job's span and outgoing metadata.
 type jobFetcher struct {
 	inner    tree.Fetcher
 	span     trace.SpanContext
 	outgoing metadata.MD
-	bytes    atomic.Int64
+	read     metric.Float64Histogram
+	mode     string
+	prepare  readStats
+	lazy     readStats
 }
 
-func newJobFetcher(ctx context.Context, inner tree.Fetcher) *jobFetcher {
+func (b *Bot) newJobFetcher(ctx context.Context) *jobFetcher {
 	md, _ := metadata.FromOutgoingContext(ctx)
-	return &jobFetcher{inner: inner, span: trace.SpanContextFromContext(ctx), outgoing: md}
+	return &jobFetcher{
+		inner:    b.cache,
+		span:     trace.SpanContextFromContext(ctx),
+		outgoing: md,
+		read:     b.metrics.read,
+		mode:     string(b.cfg.InputMode),
+	}
 }
 
 func (f *jobFetcher) Fetch(ctx context.Context, instance string, d *repb.Digest) ([]byte, error) {
+	bs, err := f.FetchBatch(ctx, instance, []*repb.Digest{d})
+	if err != nil {
+		return nil, err
+	}
+	return bs[0], nil
+}
+
+// FetchBatch reads ds and records the call: in the phase's stats, in the
+// runner.blob.read.duration histogram with the job's span, so a slow
+// bucket's exemplar links to the action, and as a runner.blob_read span when
+// the call is slow or fails.
+func (f *jobFetcher) FetchBatch(ctx context.Context, instance string, ds []*repb.Digest) ([][]byte, error) {
+	phase, stats := phasePrepare, &f.prepare
 	if !trace.SpanContextFromContext(ctx).IsValid() {
+		phase, stats = phaseLazy, &f.lazy
 		ctx = metadata.NewOutgoingContext(trace.ContextWithSpanContext(ctx, f.span), f.outgoing)
 	}
-	b, err := f.inner.Fetch(ctx, instance, d)
-	f.bytes.Add(int64(len(b)))
-	return b, err
+	start := time.Now()
+	blobs, err := tree.FetchAll(ctx, f.inner, instance, ds)
+	took := time.Since(start)
+
+	var n, size int64
+	for i, d := range ds {
+		size += d.GetSizeBytes()
+		if blobs != nil {
+			n += int64(len(blobs[i]))
+		}
+	}
+	stats.add(len(ds), n, took, err)
+	outcome := "ok"
+	if err != nil {
+		outcome = "error"
+	}
+	f.read.Record(ctx, took.Seconds(), metric.WithAttributes(
+		telemetry.AttrInstance.String(instance),
+		telemetry.AttrInputMode.String(f.mode),
+		telemetry.AttrPhase.String(phase),
+		telemetry.AttrOutcome.String(outcome),
+	))
+	attrs := []attribute.KeyValue{
+		attribute.String("ci_substrate.phase", phase),
+		attribute.Int("ci_substrate.blobs", len(ds)),
+		attribute.Int64("ci_substrate.bytes", size),
+	}
+	if len(ds) == 1 {
+		attrs = append(attrs, attribute.String("ci_substrate.digest", digest.Key(ds[0])))
+	}
+	telemetry.RecordRead(ctx, "runner.blob_read", start, err, attrs...)
+	return blobs, err
+}
+
+// inputBytes is how many bytes the job has read.
+func (f *jobFetcher) inputBytes() int64 { return f.prepare.bytes.Load() + f.lazy.bytes.Load() }
+
+// attributes describes the job's reads on its span.
+func (f *jobFetcher) attributes() []attribute.KeyValue {
+	return append(f.prepare.attributes(phasePrepare), f.lazy.attributes(phaseLazy)...)
 }

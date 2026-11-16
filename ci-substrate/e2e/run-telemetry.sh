@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Build e2e/bazel with stock Bazel and fail unless the build shows up in the
-# telemetry: one trace per Bazel invocation in Jaeger, with spans from cas,
-# the runner, and the cascache under the invocation's root span, the build's
-# metrics on the collector's Prometheus endpoint, and cas's summary log line.
+# telemetry: one trace per Bazel invocation in Jaeger, with spans from cas
+# and the runner under the invocation's root span, read totals on each
+# runner.execute span and no span per blob read, the build's metrics on the
+# collector's Prometheus endpoint, and cas's summary log line.
 # run-kind.sh runs it after run-bazel.sh, with port-forwards to cas, Jaeger's
 # query API, and the collector's Prometheus endpoint:
 #
@@ -75,9 +76,15 @@ spans = [s for t in data for s in t["spans"]]
 procs = {k: v["serviceName"] for t in data for k, v in t["processes"].items()}
 services = {procs[s["processID"]] for s in spans}
 names = {s["operationName"] for s in spans}
-missing = [f"service {s}" for s in ("cas", "runner", "cascache") if s not in services]
+missing = [f"service {s}" for s in ("cas", "runner") if s not in services]
 missing += [f"span {n!r}" for n in ("bazel invocation", "scheduler.queue", "runner.execute", "runner.run") if n not in names]
-if missing:
+executes = [s for s in spans if s["operationName"] == "runner.execute"]
+if executes and not all(any(t["key"] == "ci_substrate.reads.prepare.blobs" for t in s["tags"]) for s in executes):
+    missing.append("ci_substrate.reads.prepare.blobs on every runner.execute")
+reads = [n for n in names if n.endswith("/BatchReadBlobs") or n.endswith("/Read")]
+if reads:
+    print(f"FATAL: blob read spans {reads} were sampled")
+elif missing:
     print(", ".join(missing))
 else:
     print(f"{len(spans)} spans from {sorted(services)}", file=sys.stderr)
@@ -89,6 +96,7 @@ deadline=$((SECONDS + WAIT_SECONDS))
 while :; do
   missing="$(check_trace)"
   [[ -z "${missing}" ]] && break
+  [[ "${missing}" == FATAL:* ]] && fail "trace ${TRACE_ID}: ${missing#FATAL: }"
   ((SECONDS < deadline)) || fail "trace ${TRACE_ID} lacks ${missing}"
   sleep 5
 done
@@ -97,7 +105,8 @@ echo "==> Checking metrics on the collector"
 # The root span and the invocation metrics are emitted together, so by now
 # the next export has them or is at most one interval away.
 want=(cas_blob_bytes cas_action_cache_requests cas_find_missing_digests scheduler_executions
-  scheduler_queue_duration runner_actions runner_stage_duration cascache_requests cascache_bytes
+  scheduler_queue_duration runner_actions runner_stage_duration runner_blob_read_duration
+  cascache_requests cascache_bytes
   bazel_invocations bazel_invocation_cache_hit_ratio rpc_server_call_duration)
 deadline=$((SECONDS + 60))
 while :; do

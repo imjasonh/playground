@@ -54,10 +54,11 @@ func dial(t *testing.T, addr string, opts ...grpc.DialOption) *grpc.ClientConn {
 
 // One Bazel invocation, through cas, cascache, and a runner, makes one
 // trace whose ID is derived from the invocation ID, and one invocation
-// summary with its cache hits, actions, and bytes.
+// summary with its cache hits, actions, and bytes. The trace has no span
+// per blob read; the runner's span sums its reads instead.
 func TestInvocationTrace(t *testing.T) {
 	spans := tracetest.NewSpanRecorder()
-	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spans), sdktrace.WithIDGenerator(telemetry.IDGenerator()))
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spans), sdktrace.WithIDGenerator(telemetry.IDGenerator()), sdktrace.WithSampler(telemetry.Sampler()))
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	otel.SetTracerProvider(tp)
@@ -129,8 +130,12 @@ func TestInvocationTrace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	other, err := bazelClient.Upload(bazel, instance, []byte("unused\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	root, err := bazelClient.Upload(bazel, instance, mustMarshal(t, &repb.Directory{
-		Files: []*repb.FileNode{{Name: "in.txt", Digest: input}},
+		Files: []*repb.FileNode{{Name: "in.txt", Digest: input}, {Name: "other.txt", Digest: other}},
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -181,8 +186,8 @@ func TestInvocationTrace(t *testing.T) {
 	if s.ActionCacheHits != 1 || s.ActionCacheMisses != 1 || s.ExecuteRequests != 1 || s.ActionsRun != 1 {
 		t.Errorf("counts = %+v, want one action cache hit, one miss, one Execute, one action run", s.Counts)
 	}
-	if s.BlobsUploaded != 4 || s.RunnerBytesUploaded == 0 || s.CacheFillBytes == 0 {
-		t.Errorf("counts = %+v, want 4 blobs uploaded, runner outputs, and cascache fills", s.Counts)
+	if s.BlobsUploaded != 5 || s.RunnerBytesUploaded == 0 || s.CacheFillBytes == 0 {
+		t.Errorf("counts = %+v, want 5 blobs uploaded, runner outputs, and cascache fills", s.Counts)
 	}
 	if got := s.HitRatio(); got != 0.5 {
 		t.Errorf("HitRatio = %v, want 0.5", got)
@@ -193,16 +198,41 @@ func TestInvocationTrace(t *testing.T) {
 	}
 	want := telemetry.InvocationSpanContext(invocationID).TraceID()
 	names := map[string]bool{}
+	var blobs, calls int64
 	for _, sp := range spans.Ended() {
 		if sp.SpanContext().TraceID() != want {
 			t.Errorf("span %q is in trace %s, want %s", sp.Name(), sp.SpanContext().TraceID(), want)
 		}
 		names[sp.Name()] = true
+		if sp.Name() == "runner.execute" {
+			for _, a := range sp.Attributes() {
+				switch a.Key {
+				case "ci_substrate.reads.prepare.blobs":
+					blobs = a.Value.AsInt64()
+				case "ci_substrate.reads.prepare.calls":
+					calls = a.Value.AsInt64()
+				}
+			}
+		}
+	}
+	// The Action, the Command, the input root, and its two files, which
+	// share one call.
+	if blobs != 5 || calls != 4 {
+		t.Errorf("runner.execute read %d blobs in %d calls, want 5 in 4", blobs, calls)
+	}
+	for _, name := range []string{
+		"build.bazel.remote.execution.v2.ContentAddressableStorage/BatchReadBlobs",
+		"google.bytestream.ByteStream/Read",
+		"runner.blob_read",
+		"cascache.origin_fetch",
+	} {
+		if names[name] {
+			t.Errorf("a %q span was recorded for a fast read", name)
+		}
 	}
 	for _, name := range []string{
 		"bazel invocation",
 		"build.bazel.remote.execution.v2.Execution/Execute",
-		"build.bazel.remote.execution.v2.ContentAddressableStorage/BatchReadBlobs",
 		"scheduler.queue",
 		"runner.execute",
 		"runner.fetch_action",
@@ -210,7 +240,6 @@ func TestInvocationTrace(t *testing.T) {
 		"runner.run",
 		"runner.upload_outputs",
 		"runner.complete",
-		"cascache.origin_fetch",
 	} {
 		if !names[name] {
 			t.Errorf("no %q span; got %v", name, names)
@@ -238,6 +267,7 @@ func TestInvocationTrace(t *testing.T) {
 		"scheduler.queue.duration",
 		"runner.actions",
 		"runner.stage.duration",
+		"runner.blob.read.duration",
 		"runner.upload.bytes",
 		"bazel.invocations",
 		"bazel.invocation.cache_hit_ratio",

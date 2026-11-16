@@ -3,7 +3,8 @@
 // collector, which forwards to Jaeger and Prometheus on kind and to Cloud
 // Trace and Cloud Monitoring on GKE. ServerOptions and DialOptions trace
 // and measure every gRPC call, and tie every call of one Bazel invocation
-// into one trace (see InvocationSpanContext).
+// into one trace (see InvocationSpanContext). Sampler drops the spans of
+// blob reads, which are measured but too many to trace one by one.
 package telemetry
 
 import (
@@ -57,9 +58,10 @@ func Handle[T any](instrument T, err error) T {
 // Each signal exports over OTLP/gRPC when OTEL_EXPORTER_OTLP_ENDPOINT, or
 // that signal's OTEL_EXPORTER_OTLP_TRACES_ENDPOINT or
 // OTEL_EXPORTER_OTLP_METRICS_ENDPOINT, is set, and is dropped otherwise.
-// The exporters, the sampler, the metric interval, and the resource read
-// the rest of the standard OTEL_* variables, so the collector address and
-// the pod's identity (OTEL_RESOURCE_ATTRIBUTES) come from the manifest.
+// The exporters, the metric interval, and the resource read the rest of
+// the standard OTEL_* variables, so the collector address and the pod's
+// identity (OTEL_RESOURCE_ATTRIBUTES) come from the manifest. The sampler
+// is always Sampler, which ignores OTEL_TRACES_SAMPLER.
 func Setup(ctx context.Context, service string, attrs ...attribute.KeyValue) (func(context.Context) error, error) {
 	host, err := os.Hostname()
 	if err != nil {
@@ -85,7 +87,7 @@ func Setup(ctx context.Context, service string, attrs ...attribute.KeyValue) (fu
 		return errors.Join(errs...)
 	}
 
-	topts := []sdktrace.TracerProviderOption{sdktrace.WithResource(res), sdktrace.WithIDGenerator(IDGenerator())}
+	topts := []sdktrace.TracerProviderOption{sdktrace.WithResource(res), sdktrace.WithIDGenerator(IDGenerator()), sdktrace.WithSampler(Sampler())}
 	if exporting("TRACES") {
 		exp, err := otlptracegrpc.New(ctx)
 		if err != nil {
