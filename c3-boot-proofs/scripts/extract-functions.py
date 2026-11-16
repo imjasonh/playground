@@ -295,6 +295,7 @@ DATA = [
     ("scalarZero384", "nonZero384", 0xE, 48),
     ("sha256Oid", "isSha256", 0x26, 9),
     ("edwardsD2", "asProjNiels", 0x4A, 40),
+    ("merklePrefix", "merkleNodeHash", 0x4, 1),
 ]
 
 
