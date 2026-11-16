@@ -139,7 +139,7 @@ import C3BootProofs.Proofs.GeneralizedTime
 import C3BootProofs.Proofs.X509ReadTime
 import C3BootProofs.Proofs.Base64Decode
 import C3BootProofs.Proofs.Base64Encode
-import C3BootProofs.Proofs.Sha512Update
+import C3BootProofs.Proofs.Sha512UpdateArr32
 import C3BootProofs.Spec.Ecdsa
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
@@ -2092,13 +2092,14 @@ each little-endian. -/
 def sha512H0Bytes : List Nat :=
   (Sha512.h0.map fun w => (List.range 8).map fun j => w.toNat / 256 ^ j % 256).flatten
 
-/-- `witnessMemS5` with SHA-512's `update` and, at `0x3FCC5800`, the hasher of
+/-- `witnessMemS5` with SHA-512's `update` and its 32-byte caller and, at `0x3FCC5800`, the hasher of
 the empty message: an empty buffer, the initial hash value, and a zero block
 count. -/
 def witnessMemS5U : RV32.Word → BitVec 8 :=
   RV32.regionMem
     [(0x3FCC5800, List.replicate 128 0 ++ sha512H0Bytes ++ List.replicate 16 0),
     (Image.sha512UpdateAddress, Image.sha512UpdateCode),
+    (Image.sha512UpdateArr32Address, Image.sha512UpdateArr32Code),
     (Image.sha512CompressAddress, Image.sha512CompressCode),
     (Image.rangeFromIndexAddress, Image.rangeFromIndexCode),
     (Image.memcpyStubAddress, Image.memcpyStubCode),
@@ -2123,6 +2124,33 @@ theorem exists_sha512Update_machine :
       witnessMemS5U⟩,
     0x3FCC5800, 0x3FCC6000, 0x3FCC8000, 0, 200, [], ?_, rfl, rfl, rfl, rfl, rfl, by decide, rfl,
     ⟨by decide, ?_, rfl, ?_, ?_, ?_, ?_, ?_⟩, by decide, by decide⟩
+  case refine_1 =>
+    constructor
+    all_goals first
+      | code_in
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+      | exact (RV32.sep_of_le (by decide) (by decide)).symm
+      | decide +kernel
+  all_goals decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls SHA-512's `Digest::update` on a 32-byte array at
+`0x3FCC6000` with the empty hasher at `0x3FCC5800` and the stack at
+`0x3FCC8000` meets `sha512UpdateArr32_correct`'s hypotheses. -/
+theorem exists_sha512UpdateArr32_machine :
+    ∃ (m : RV32.Machine) (S D sp0 retAddr : RV32.Word) (msg : List Nat),
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.sha512UpdateArr32Address) Image.sha512UpdateArr32Code ∧
+      RV32.S5U.UpdEnv m.mem S D sp0 32 ∧ m.pc = BitVec.ofNat 32 Image.sha512UpdateArr32Address ∧
+      RV32.reg m RV32.a0 = S ∧ RV32.reg m RV32.a1 = D ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
+      RV32.S5U.Hasher5At m.mem S msg ∧ msg.length + 32 < 2 ^ 32 := by
+  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC5800 else if r = RV32.a1 then 0x3FCC6000
+      else if r = RV32.sp then 0x3FCC8000 else 0), BitVec.ofNat 32 Image.sha512UpdateArr32Address,
+      witnessMemS5U⟩,
+    0x3FCC5800, 0x3FCC6000, 0x3FCC8000, 0, [], by code_in, ?_, rfl, rfl, rfl, rfl, by decide, rfl,
+    ⟨by decide, ?_, rfl, ?_, ?_, ?_, ?_, ?_⟩, by decide⟩
   case refine_1 =>
     constructor
     all_goals first
@@ -7012,6 +7040,12 @@ end C3
 
 /-- info: 'C3.exists_sha512Update_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_sha512Update_machine
+
+/-- info: 'C3.RV32.S5U.sha512UpdateArr32_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.S5U.sha512UpdateArr32_correct
+
+/-- info: 'C3.exists_sha512UpdateArr32_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_sha512UpdateArr32_machine
 
 /-- info: 'C3.RV32.p384Mul_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.p384Mul_correct
