@@ -79,12 +79,12 @@ git commit -qm experiment
 assert_eq "$(bash "$detect" HEAD~1...HEAD)" "false" "experiment sources"
 
 cat >> ios/project.yml <<'EOF'
-  ArmyListStress:
+  MacTool:
     type: tool
     platform: macOS
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.army-list-stress
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.mac-tool
 EOF
 git add -A
 git commit -qm 'macos cli tool'
