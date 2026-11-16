@@ -25,8 +25,23 @@ function listener() {
   };
 }
 
+function matchesQuery(tab, filter, focusedWindow) {
+  const windowId = tab.windowId ?? 1;
+  if (filter.highlighted !== undefined && (tab.highlighted === true) !== filter.highlighted) {
+    return false;
+  }
+  if (filter.windowId !== undefined && windowId !== filter.windowId) {
+    return false;
+  }
+  if (filter.lastFocusedWindow === true && windowId !== focusedWindow) {
+    return false;
+  }
+  return true;
+}
+
 function fakeChrome(initial) {
   const state = {
+    focusedWindow: 1,
     tabs: initial.map((tab) => ({ ...tab })),
     badge: null,
     color: null,
@@ -49,10 +64,12 @@ function fakeChrome(initial) {
   });
   const api = {
     tabs: {
-      async query() {
+      async query(filter = {}) {
         state.queries += 1;
         await state.holdQuery.promise;
-        return state.tabs.map((tab) => ({ ...tab }));
+        return state.tabs
+          .filter((tab) => matchesQuery(tab, filter, state.focusedWindow))
+          .map((tab) => ({ ...tab }));
       },
       async remove(ids) {
         state.removed.push(ids);
@@ -65,6 +82,11 @@ function fakeChrome(initial) {
       onReplaced: listener(),
       onAttached: listener(),
       onDetached: listener(),
+      onHighlighted: listener(),
+    },
+    windows: {
+      WINDOW_ID_NONE: -1,
+      onFocusChanged: listener(),
     },
     action: {
       async setBadgeText({ text }) {
@@ -233,11 +255,12 @@ test("an unsupported tab menu still sets the badge", async () => {
     state.holdQuery.resolve();
     await ready;
     assert.equal(state.badge, "1");
-    assert.equal(errors.length, 3);
+    assert.equal(errors.length, 4);
     const before = state.queries;
     await api.tabs.onCreated.emit();
+    await api.tabs.onHighlighted.emit({ windowId: 1, tabIds: [1, 2] });
     assert.ok(state.queries > before);
-    assert.equal(errors.length, 3);
+    assert.equal(errors.length, 4);
   } finally {
     console.error = original;
   }
@@ -306,7 +329,7 @@ test("a base64 selection shows the decoded text and does not close tabs", async 
   assert.deepEqual(state.offscreenOptions.reasons, ["CLIPBOARD"]);
   assert.equal(
     state.offscreenOptions.justification,
-    "Copy decoded base64 text to the clipboard.",
+    "Copy decoded base64 text and tab URLs to the clipboard.",
   );
 });
 
@@ -505,4 +528,76 @@ test("a selection menu click after restart decodes the highlighted text", async 
       text: "a",
     },
   ]);
+});
+
+function copyMenu(state) {
+  return state.menus.get("copy-tab-urls");
+}
+
+function copied(state) {
+  return state.messages.map((message) => message.text);
+}
+
+test("the copy item counts the selected tabs in the focused window", async () => {
+  const { api, state } = await started([
+    { id: 1, windowId: 1, index: 0, url: "https://example.com/a", highlighted: true },
+    { id: 2, windowId: 1, index: 1, url: "https://example.com/b" },
+    { id: 3, windowId: 2, index: 0, url: "https://example.com/c", highlighted: true },
+    { id: 4, windowId: 2, index: 1, url: "https://example.com/d", highlighted: true },
+    { id: 5, windowId: 2, index: 2, url: "https://example.com/e", highlighted: true },
+  ]);
+  assert.equal(copyMenu(state).title, "Copy tab URL");
+  assert.equal(copyMenu(state).visible, true);
+  assert.deepEqual(copyMenu(state).contexts, ["tab"]);
+  state.tabs[1].highlighted = true;
+  await api.tabs.onHighlighted.emit({ windowId: 1, tabIds: [1, 2] });
+  assert.equal(copyMenu(state).title, "Copy 2 tab URLs");
+  await api.windows.onFocusChanged.emit(2);
+  assert.equal(copyMenu(state).title, "Copy 3 tab URLs");
+  state.tabs[0].highlighted = false;
+  await api.windows.onFocusChanged.emit(1);
+  assert.equal(copyMenu(state).title, "Copy tab URL");
+  await api.windows.onFocusChanged.emit(-1);
+  assert.equal(copyMenu(state).title, "Copy tab URL");
+});
+
+test("a click on a selected tab copies every selected tab in that window in tab order", async () => {
+  const { api, state } = await started([
+    { id: 1, windowId: 1, index: 2, url: "https://example.com/c", highlighted: true },
+    { id: 2, windowId: 1, index: 0, url: "https://example.com/a", highlighted: true },
+    { id: 3, windowId: 1, index: 1, url: "https://example.com/b" },
+    { id: 4, windowId: 2, index: 0, url: "https://example.com/other", highlighted: true },
+    { id: 5, windowId: 1, index: 3, url: "about:blank", pendingUrl: "https://example.com/d", highlighted: true },
+  ]);
+  await api.contextMenus.onClicked.emit(
+    { menuItemId: "copy-tab-urls" },
+    { id: 1, windowId: 1, highlighted: true, url: "https://example.com/c" },
+  );
+  assert.deepEqual(copied(state), [
+    "https://example.com/a\nhttps://example.com/c\nhttps://example.com/d",
+  ]);
+  assert.deepEqual(state.removed, []);
+});
+
+test("a click on a tab outside the selection copies only that tab", async () => {
+  const { api, state } = await started([
+    { id: 1, windowId: 1, index: 0, url: "https://example.com/a", highlighted: true },
+    { id: 2, windowId: 1, index: 1, url: "https://example.com/b", highlighted: true },
+    { id: 3, windowId: 1, index: 2, url: "https://example.com/c" },
+  ]);
+  await api.contextMenus.onClicked.emit(
+    { menuItemId: "copy-tab-urls" },
+    { id: 3, windowId: 1, highlighted: false, url: "https://example.com/c" },
+  );
+  assert.deepEqual(copied(state), ["https://example.com/c"]);
+});
+
+test("a click on a tab with no URL copies nothing", async () => {
+  const { api, state } = await started([{ id: 1, url: "" }]);
+  await api.contextMenus.onClicked.emit(
+    { menuItemId: "copy-tab-urls" },
+    { id: 1, windowId: 1, highlighted: false, url: "" },
+  );
+  await api.contextMenus.onClicked.emit({ menuItemId: "copy-tab-urls" });
+  assert.deepEqual(state.messages, []);
 });

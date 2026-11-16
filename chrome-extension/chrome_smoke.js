@@ -196,38 +196,29 @@ async function main() {
     if (!observed) {
       throw new Error(`badge did not match the open tabs\n${logs}`);
     }
-    const menuError = await evaluate(
-      workerSession,
-      `new Promise((resolve) => {
-        chrome.contextMenus.create({
-          id: "close-duplicates",
-          title: "probe",
-          contexts: ["tab"],
-        }, () => {
-          resolve(chrome.runtime.lastError ? chrome.runtime.lastError.message : "created");
-        });
-      })`,
-    );
-    if (!String(menuError).includes("duplicate")) {
-      throw new Error(`tab menu item was not registered: ${menuError}\n${logs}`);
+    const menuItems = [
+      { id: "close-duplicates", context: "tab" },
+      { id: "copy-tab-urls", context: "tab" },
+      { id: "decode-base64", context: "selection" },
+    ];
+    for (const { id, context } of menuItems) {
+      const menuError = await evaluate(
+        workerSession,
+        `new Promise((resolve) => {
+          chrome.contextMenus.create({
+            id: ${JSON.stringify(id)},
+            title: "probe",
+            contexts: [${JSON.stringify(context)}],
+          }, () => {
+            resolve(chrome.runtime.lastError ? chrome.runtime.lastError.message : "created");
+          });
+        })`,
+      );
+      if (!String(menuError).includes("duplicate")) {
+        throw new Error(`${context} menu item ${id} was not registered: ${menuError}\n${logs}`);
+      }
+      console.log(`${context} menu item ${id} is registered (${menuError})`);
     }
-    console.log(`tab menu item close-duplicates is registered (${menuError})`);
-    const decodeMenuError = await evaluate(
-      workerSession,
-      `new Promise((resolve) => {
-        chrome.contextMenus.create({
-          id: "decode-base64",
-          title: "probe",
-          contexts: ["selection"],
-        }, () => {
-          resolve(chrome.runtime.lastError ? chrome.runtime.lastError.message : "created");
-        });
-      })`,
-    );
-    if (!String(decodeMenuError).includes("duplicate")) {
-      throw new Error(`selection menu item was not registered: ${decodeMenuError}\n${logs}`);
-    }
-    console.log(`selection menu item decode-base64 is registered (${decodeMenuError})`);
     const before = observed.text;
     await browser.send("Extensions.triggerAction", { id: extensionId, targetId: tab.targetId });
     let after = null;
