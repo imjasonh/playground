@@ -3,5 +3,9 @@ common --enable_bzlmod
 # Go target builds without cgo.
 common --@rules_go//go/config:pure
 build --incompatible_strict_action_env
+# Strips the configuration from output paths of actions that support it, so
+# the exec and target configurations share one GoStdlib action instead of
+# building the standard library twice.
+build --experimental_output_paths=strip
 test --test_output=errors
 try-import %workspace%/user.bazelrc
