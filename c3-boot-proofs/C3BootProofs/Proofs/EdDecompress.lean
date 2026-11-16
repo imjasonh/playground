@@ -580,6 +580,565 @@ theorem dec_ph2 (C : DecCtx M0 R) (D : DecSt M0 Ms R r0 M nm 0xE0) {out bp : Wor
   exact ⟨n40, c1.trans (c2.trans (c3.trans (c4.trans (c5.trans (c6.trans (c7.trans (c8.trans (c9.trans (c10.trans (c11.trans (c12.trans (c13.trans (c14.trans (c15.trans (c16.trans (c17.trans (c18.trans (c19.trans (c20.trans (c21.trans (c22.trans (c23.trans (c24.trans (c25.trans (c26.trans (c27.trans (c28.trans (c29.trans (c30.trans (c31.trans (c32.trans (c33.trans (c34.trans (c35.trans (c36.trans (c37.trans (c38.trans (c39.trans (c40))))))))))))))))))))))))))))))))))))))), D40, r40_18, r40_20, m40_544, m40_594, m40_5bc, m40_634, m40_684⟩
 
 
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 32000000 in
+/-- From offset 0x174 to 0x270: the rest of `sqrt_ratio_i`. The root `r` is
+`u v³ (u v⁷)^((p-5)/8)`, `chk` is `v r²`, and the result is `|r|` or
+`|r √-1|`, with `a0` set when `u / v` is a square. -/
+theorem dec_ph3 (C : DecCtx M0 R) (D : DecSt M0 Ms R r0 M nm 0x174) {out bp : Word}
+    {Y u v uv3 uv7 rr chk sm : List Nat}
+    (hs2 : reg nm (18 : Fin 32) = out) (hs4 : reg nm (20 : Fin 32) = bp)
+    (hY : feW M (R + BitVec.ofNat 32 0x544) = Y) (hu : feW M (R + BitVec.ofNat 32 0x594) = u)
+    (hv : feW M (R + BitVec.ofNat 32 0x5BC) = v) (h3 : feW M (R + BitVec.ofNat 32 0x634) = uv3)
+    (h7 : feW M (R + BitVec.ofNat 32 0x684) = uv7)
+    (sS : Sep (BitVec.ofNat 32 edSqrtM1Address) 40 R 0x6F0) (hS : feW M0 (BitVec.ofNat 32 edSqrtM1Address) = sm)
+    (hrr : rr = mulL uv3 (mulL uv7 (sqIter 2 (pw19L uv7)))) (hchk : chk = mulL v (sqL rr)) :
+    ∃ nm', Steps nm nm' ∧ DecSt M0 Ms R r0 nm'.mem nm' 0x270 ∧ reg nm' (18 : Fin 32) = out ∧
+      reg nm' (20 : Fin 32) = bp ∧
+      reg nm' a0 = bw ((feEqL (chk) (negL (u))) || (feEqL (chk) (u))) ∧
+      feW nm'.mem (R + BitVec.ofNat 32 0x544) = Y ∧
+      feW nm'.mem (R + BitVec.ofNat 32 0x6AC) = condNegL ((if (feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u))) then mulL (sm) (rr) else rr)) (isNegL ((if (feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u))) then mulL (sm) (rr) else rr))) := by
+  obtain ⟨n1, c1, D1, v1, k1⟩ := D.aluImmS C dec_at_174 (off' := 0x176) (by decide) (by decide)
+  have r1_18 : reg n1 (18 : Fin 32) = out := by rw [k1 _ (by decide), hs2]
+  have r1_20 : reg n1 (20 : Fin 32) = bp := by rw [k1 _ (by decide), hs4]
+  have r1_10 : reg n1 a0 = R + BitVec.ofNat 32 0x4A0 := by rw [v1, D.hsp]; exact add_sp R rfl
+  obtain ⟨n2, c2, D2, v2, k2⟩ := D1.aluImmS C dec_at_176 (off' := 0x178) (by decide) (by decide)
+  have r2_18 : reg n2 (18 : Fin 32) = out := by rw [k2 _ (by decide), r1_18]
+  have r2_20 : reg n2 (20 : Fin 32) = bp := by rw [k2 _ (by decide), r1_20]
+  have r2_10 : reg n2 a0 = R + BitVec.ofNat 32 0x4A0 := by rw [k2 _ (by decide), r1_10]
+  have r2_11 : reg n2 a1 = R + BitVec.ofNat 32 0x684 := by rw [v2, D1.hsp]; exact add_sp R rfl
+  obtain ⟨n3, c3, D3, w3, k3, f3⟩ := D2.pow22501 C dec_at_178 dec_at_17c (by decide) (by decide) (k := 0x4A0) (by decide) (by decide) (by decide) r2_10 (by rw [r2_11]; exact C.opF (by decide) (by decide) (by decide)) (by rw [r2_11]; exact C.offs (by decide) (by decide) (by decide))
+  have r3_18 : reg n3 (18 : Fin 32) = out := by rw [k3 _ (by decide), r2_18]
+  have r3_20 : reg n3 (20 : Fin 32) = bp := by rw [k3 _ (by decide), r2_20]
+  have m3_544 : feW n3.mem (R + BitVec.ofNat 32 0x544) = Y := (keepW C f3 (by decide) (by decide) (by decide) (by decide)).trans hY
+  have m3_594 : feW n3.mem (R + BitVec.ofNat 32 0x594) = u := (keepW C f3 (by decide) (by decide) (by decide) (by decide)).trans hu
+  have m3_5bc : feW n3.mem (R + BitVec.ofNat 32 0x5BC) = v := (keepW C f3 (by decide) (by decide) (by decide) (by decide)).trans hv
+  have m3_634 : feW n3.mem (R + BitVec.ofNat 32 0x634) = uv3 := (keepW C f3 (by decide) (by decide) (by decide) (by decide)).trans h3
+  have m3_684 : feW n3.mem (R + BitVec.ofNat 32 0x684) = uv7 := (keepW C f3 (by decide) (by decide) (by decide) (by decide)).trans h7
+  have m3_4a0 : feW n3.mem (R + BitVec.ofNat 32 0x4A0) = pw19L (uv7) := by rw [w3, r2_11, h7]
+  obtain ⟨n4, c4, D4, v4, k4⟩ := D3.aluImmS C dec_at_180 (off' := 0x182) (by decide) (by decide)
+  have r4_18 : reg n4 (18 : Fin 32) = out := by rw [k4 _ (by decide), r3_18]
+  have r4_20 : reg n4 (20 : Fin 32) = bp := by rw [k4 _ (by decide), r3_20]
+  have r4_10 : reg n4 a0 = R + BitVec.ofNat 32 0x6AC := by rw [v4, D3.hsp]; exact add_sp R rfl
+  obtain ⟨n5, c5, D5, v5, k5⟩ := D4.aluImmS C dec_at_182 (off' := 0x184) (by decide) (by decide)
+  have r5_18 : reg n5 (18 : Fin 32) = out := by rw [k5 _ (by decide), r4_18]
+  have r5_20 : reg n5 (20 : Fin 32) = bp := by rw [k5 _ (by decide), r4_20]
+  have r5_10 : reg n5 a0 = R + BitVec.ofNat 32 0x6AC := by rw [k5 _ (by decide), r4_10]
+  have r5_11 : reg n5 a1 = R + BitVec.ofNat 32 0x4A0 := by rw [v5, D4.hsp]; exact add_sp R rfl
+  obtain ⟨n6, c6, D6, v6, k6⟩ := D5.aluImmS C dec_at_184 (off' := 0x186) (by decide) (by decide)
+  have r6_18 : reg n6 (18 : Fin 32) = out := by rw [k6 _ (by decide), r5_18]
+  have r6_20 : reg n6 (20 : Fin 32) = bp := by rw [k6 _ (by decide), r5_20]
+  have r6_10 : reg n6 a0 = R + BitVec.ofNat 32 0x6AC := by rw [k6 _ (by decide), r5_10]
+  have r6_11 : reg n6 a1 = R + BitVec.ofNat 32 0x4A0 := by rw [k6 _ (by decide), r5_11]
+  have r6_12 : reg n6 a2 = BitVec.ofNat 32 2 := by rw [v6, D5.zero]; rfl
+  obtain ⟨n7, c7, D7, w7, k7, f7⟩ := D6.pow2k C dec_at_186 dec_at_18a (by decide) (by decide) (e := 2) (by decide) (by decide) (k := 0x6AC) (by decide) (by decide) (by decide) r6_10 (by rw [r6_11]; exact C.opF (by decide) (by decide) (by decide)) r6_12
+  have r7_18 : reg n7 (18 : Fin 32) = out := by rw [k7 _ (by decide), r6_18]
+  have r7_20 : reg n7 (20 : Fin 32) = bp := by rw [k7 _ (by decide), r6_20]
+  have m7_544 : feW n7.mem (R + BitVec.ofNat 32 0x544) = Y := (keepW C f7 (by decide) (by decide) (by decide) (by decide)).trans m3_544
+  have m7_594 : feW n7.mem (R + BitVec.ofNat 32 0x594) = u := (keepW C f7 (by decide) (by decide) (by decide) (by decide)).trans m3_594
+  have m7_5bc : feW n7.mem (R + BitVec.ofNat 32 0x5BC) = v := (keepW C f7 (by decide) (by decide) (by decide) (by decide)).trans m3_5bc
+  have m7_634 : feW n7.mem (R + BitVec.ofNat 32 0x634) = uv3 := (keepW C f7 (by decide) (by decide) (by decide) (by decide)).trans m3_634
+  have m7_684 : feW n7.mem (R + BitVec.ofNat 32 0x684) = uv7 := (keepW C f7 (by decide) (by decide) (by decide) (by decide)).trans m3_684
+  have m7_4a0 : feW n7.mem (R + BitVec.ofNat 32 0x4A0) = pw19L (uv7) := (keepW C f7 (by decide) (by decide) (by decide) (by decide)).trans m3_4a0
+  have m7_6ac : feW n7.mem (R + BitVec.ofNat 32 0x6AC) = sqIter 2 (pw19L (uv7)) := by rw [w7, r6_11, m3_4a0]
+  obtain ⟨n8, c8, D8, v8, k8⟩ := D7.aluImmS C dec_at_18e (off' := 0x190) (by decide) (by decide)
+  have r8_18 : reg n8 (18 : Fin 32) = out := by rw [k8 _ (by decide), r7_18]
+  have r8_20 : reg n8 (20 : Fin 32) = bp := by rw [k8 _ (by decide), r7_20]
+  have r8_10 : reg n8 a0 = R + BitVec.ofNat 32 0x65C := by rw [v8, D7.hsp]; exact add_sp R rfl
+  obtain ⟨n9, c9, D9, v9, k9⟩ := D8.aluImmS C dec_at_190 (off' := 0x192) (by decide) (by decide)
+  have r9_18 : reg n9 (18 : Fin 32) = out := by rw [k9 _ (by decide), r8_18]
+  have r9_20 : reg n9 (20 : Fin 32) = bp := by rw [k9 _ (by decide), r8_20]
+  have r9_10 : reg n9 a0 = R + BitVec.ofNat 32 0x65C := by rw [k9 _ (by decide), r8_10]
+  have r9_11 : reg n9 a1 = R + BitVec.ofNat 32 0x684 := by rw [v9, D8.hsp]; exact add_sp R rfl
+  obtain ⟨n10, c10, D10, v10, k10⟩ := D9.aluImmS C dec_at_192 (off' := 0x194) (by decide) (by decide)
+  have r10_18 : reg n10 (18 : Fin 32) = out := by rw [k10 _ (by decide), r9_18]
+  have r10_20 : reg n10 (20 : Fin 32) = bp := by rw [k10 _ (by decide), r9_20]
+  have r10_10 : reg n10 a0 = R + BitVec.ofNat 32 0x65C := by rw [k10 _ (by decide), r9_10]
+  have r10_11 : reg n10 a1 = R + BitVec.ofNat 32 0x684 := by rw [k10 _ (by decide), r9_11]
+  have r10_12 : reg n10 a2 = R + BitVec.ofNat 32 0x6AC := by rw [v10, D9.hsp]; exact add_sp R rfl
+  obtain ⟨n11, c11, D11, w11, k11, f11⟩ := D10.mul C dec_at_194 dec_at_198 (by decide) (by decide) (k := 0x65C) (by decide) (by decide) (by decide) r10_10 (by rw [r10_11]; exact C.opF (by decide) (by decide) (by decide)) (by rw [r10_12]; exact C.opF (by decide) (by decide) (by decide))
+  have r11_18 : reg n11 (18 : Fin 32) = out := by rw [k11 _ (by decide), r10_18]
+  have r11_20 : reg n11 (20 : Fin 32) = bp := by rw [k11 _ (by decide), r10_20]
+  have m11_544 : feW n11.mem (R + BitVec.ofNat 32 0x544) = Y := (keepW C f11 (by decide) (by decide) (by decide) (by decide)).trans m7_544
+  have m11_594 : feW n11.mem (R + BitVec.ofNat 32 0x594) = u := (keepW C f11 (by decide) (by decide) (by decide) (by decide)).trans m7_594
+  have m11_5bc : feW n11.mem (R + BitVec.ofNat 32 0x5BC) = v := (keepW C f11 (by decide) (by decide) (by decide) (by decide)).trans m7_5bc
+  have m11_634 : feW n11.mem (R + BitVec.ofNat 32 0x634) = uv3 := (keepW C f11 (by decide) (by decide) (by decide) (by decide)).trans m7_634
+  have m11_684 : feW n11.mem (R + BitVec.ofNat 32 0x684) = uv7 := (keepW C f11 (by decide) (by decide) (by decide) (by decide)).trans m7_684
+  have m11_4a0 : feW n11.mem (R + BitVec.ofNat 32 0x4A0) = pw19L (uv7) := (keepW C f11 (by decide) (by decide) (by decide) (by decide)).trans m7_4a0
+  have m11_6ac : feW n11.mem (R + BitVec.ofNat 32 0x6AC) = sqIter 2 (pw19L (uv7)) := (keepW C f11 (by decide) (by decide) (by decide) (by decide)).trans m7_6ac
+  have m11_65c : feW n11.mem (R + BitVec.ofNat 32 0x65C) = mulL (uv7) (sqIter 2 (pw19L (uv7))) := by rw [w11, r10_11, r10_12, m7_684, m7_6ac]
+  obtain ⟨n12, c12, D12, v12, k12⟩ := D11.aluImmS C dec_at_19c (off' := 0x19E) (by decide) (by decide)
+  have r12_18 : reg n12 (18 : Fin 32) = out := by rw [k12 _ (by decide), r11_18]
+  have r12_20 : reg n12 (20 : Fin 32) = bp := by rw [k12 _ (by decide), r11_20]
+  have r12_10 : reg n12 a0 = R + BitVec.ofNat 32 0x6AC := by rw [v12, D11.hsp]; exact add_sp R rfl
+  obtain ⟨n13, c13, D13, v13, k13⟩ := D12.aluImmS C dec_at_19e (off' := 0x1A0) (by decide) (by decide)
+  have r13_18 : reg n13 (18 : Fin 32) = out := by rw [k13 _ (by decide), r12_18]
+  have r13_20 : reg n13 (20 : Fin 32) = bp := by rw [k13 _ (by decide), r12_20]
+  have r13_10 : reg n13 a0 = R + BitVec.ofNat 32 0x6AC := by rw [k13 _ (by decide), r12_10]
+  have r13_11 : reg n13 a1 = R + BitVec.ofNat 32 0x634 := by rw [v13, D12.hsp]; exact add_sp R rfl
+  obtain ⟨n14, c14, D14, v14, k14⟩ := D13.aluImmS C dec_at_1a0 (off' := 0x1A2) (by decide) (by decide)
+  have r14_18 : reg n14 (18 : Fin 32) = out := by rw [k14 _ (by decide), r13_18]
+  have r14_20 : reg n14 (20 : Fin 32) = bp := by rw [k14 _ (by decide), r13_20]
+  have r14_10 : reg n14 a0 = R + BitVec.ofNat 32 0x6AC := by rw [k14 _ (by decide), r13_10]
+  have r14_11 : reg n14 a1 = R + BitVec.ofNat 32 0x634 := by rw [k14 _ (by decide), r13_11]
+  have r14_12 : reg n14 a2 = R + BitVec.ofNat 32 0x65C := by rw [v14, D13.hsp]; exact add_sp R rfl
+  obtain ⟨n15, c15, D15, w15, k15, f15⟩ := D14.mul C dec_at_1a2 dec_at_1a6 (by decide) (by decide) (k := 0x6AC) (by decide) (by decide) (by decide) r14_10 (by rw [r14_11]; exact C.opF (by decide) (by decide) (by decide)) (by rw [r14_12]; exact C.opF (by decide) (by decide) (by decide))
+  have r15_18 : reg n15 (18 : Fin 32) = out := by rw [k15 _ (by decide), r14_18]
+  have r15_20 : reg n15 (20 : Fin 32) = bp := by rw [k15 _ (by decide), r14_20]
+  have m15_544 : feW n15.mem (R + BitVec.ofNat 32 0x544) = Y := (keepW C f15 (by decide) (by decide) (by decide) (by decide)).trans m11_544
+  have m15_594 : feW n15.mem (R + BitVec.ofNat 32 0x594) = u := (keepW C f15 (by decide) (by decide) (by decide) (by decide)).trans m11_594
+  have m15_5bc : feW n15.mem (R + BitVec.ofNat 32 0x5BC) = v := (keepW C f15 (by decide) (by decide) (by decide) (by decide)).trans m11_5bc
+  have m15_634 : feW n15.mem (R + BitVec.ofNat 32 0x634) = uv3 := (keepW C f15 (by decide) (by decide) (by decide) (by decide)).trans m11_634
+  have m15_684 : feW n15.mem (R + BitVec.ofNat 32 0x684) = uv7 := (keepW C f15 (by decide) (by decide) (by decide) (by decide)).trans m11_684
+  have m15_4a0 : feW n15.mem (R + BitVec.ofNat 32 0x4A0) = pw19L (uv7) := (keepW C f15 (by decide) (by decide) (by decide) (by decide)).trans m11_4a0
+  have m15_65c : feW n15.mem (R + BitVec.ofNat 32 0x65C) = mulL (uv7) (sqIter 2 (pw19L (uv7))) := (keepW C f15 (by decide) (by decide) (by decide) (by decide)).trans m11_65c
+  have m15_6ac : feW n15.mem (R + BitVec.ofNat 32 0x6AC) = rr := by rw [w15, r14_11, r14_12, m11_634, m11_65c, hrr]
+  obtain ⟨n16, c16, D16, v16, k16⟩ := D15.aluImmS C dec_at_1aa (off' := 0x1AC) (by decide) (by decide)
+  have r16_18 : reg n16 (18 : Fin 32) = out := by rw [k16 _ (by decide), r15_18]
+  have r16_20 : reg n16 (20 : Fin 32) = bp := by rw [k16 _ (by decide), r15_20]
+  have r16_10 : reg n16 a0 = R + BitVec.ofNat 32 0x4A0 := by rw [v16, D15.hsp]; exact add_sp R rfl
+  obtain ⟨n17, c17, D17, v17, k17⟩ := D16.aluImmS C dec_at_1ac (off' := 0x1AE) (by decide) (by decide)
+  have r17_18 : reg n17 (18 : Fin 32) = out := by rw [k17 _ (by decide), r16_18]
+  have r17_20 : reg n17 (20 : Fin 32) = bp := by rw [k17 _ (by decide), r16_20]
+  have r17_10 : reg n17 a0 = R + BitVec.ofNat 32 0x4A0 := by rw [k17 _ (by decide), r16_10]
+  have r17_11 : reg n17 a1 = R + BitVec.ofNat 32 0x6AC := by rw [v17, D16.hsp]; exact add_sp R rfl
+  obtain ⟨n18, c18, D18, w18, k18, f18⟩ := D17.sq C dec_at_1ae dec_at_1b2 (by decide) (by decide) (k := 0x4A0) (by decide) (by decide) (by decide) r17_10 (by rw [r17_11]; exact C.opF (by decide) (by decide) (by decide))
+  have r18_18 : reg n18 (18 : Fin 32) = out := by rw [k18 _ (by decide), r17_18]
+  have r18_20 : reg n18 (20 : Fin 32) = bp := by rw [k18 _ (by decide), r17_20]
+  have m18_544 : feW n18.mem (R + BitVec.ofNat 32 0x544) = Y := (keepW C f18 (by decide) (by decide) (by decide) (by decide)).trans m15_544
+  have m18_594 : feW n18.mem (R + BitVec.ofNat 32 0x594) = u := (keepW C f18 (by decide) (by decide) (by decide) (by decide)).trans m15_594
+  have m18_5bc : feW n18.mem (R + BitVec.ofNat 32 0x5BC) = v := (keepW C f18 (by decide) (by decide) (by decide) (by decide)).trans m15_5bc
+  have m18_634 : feW n18.mem (R + BitVec.ofNat 32 0x634) = uv3 := (keepW C f18 (by decide) (by decide) (by decide) (by decide)).trans m15_634
+  have m18_684 : feW n18.mem (R + BitVec.ofNat 32 0x684) = uv7 := (keepW C f18 (by decide) (by decide) (by decide) (by decide)).trans m15_684
+  have m18_65c : feW n18.mem (R + BitVec.ofNat 32 0x65C) = mulL (uv7) (sqIter 2 (pw19L (uv7))) := (keepW C f18 (by decide) (by decide) (by decide) (by decide)).trans m15_65c
+  have m18_6ac : feW n18.mem (R + BitVec.ofNat 32 0x6AC) = rr := (keepW C f18 (by decide) (by decide) (by decide) (by decide)).trans m15_6ac
+  have m18_4a0 : feW n18.mem (R + BitVec.ofNat 32 0x4A0) = sqL (rr) := by rw [w18, r17_11, m15_6ac]
+  obtain ⟨n19, c19, D19, v19, k19⟩ := D18.aluImmS C dec_at_1b6 (off' := 0x1B8) (by decide) (by decide)
+  have r19_18 : reg n19 (18 : Fin 32) = out := by rw [k19 _ (by decide), r18_18]
+  have r19_20 : reg n19 (20 : Fin 32) = bp := by rw [k19 _ (by decide), r18_20]
+  have r19_10 : reg n19 a0 = R + BitVec.ofNat 32 0x65C := by rw [v19, D18.hsp]; exact add_sp R rfl
+  obtain ⟨n20, c20, D20, v20, k20⟩ := D19.aluImmS C dec_at_1b8 (off' := 0x1BA) (by decide) (by decide)
+  have r20_18 : reg n20 (18 : Fin 32) = out := by rw [k20 _ (by decide), r19_18]
+  have r20_20 : reg n20 (20 : Fin 32) = bp := by rw [k20 _ (by decide), r19_20]
+  have r20_10 : reg n20 a0 = R + BitVec.ofNat 32 0x65C := by rw [k20 _ (by decide), r19_10]
+  have r20_11 : reg n20 a1 = R + BitVec.ofNat 32 0x5BC := by rw [v20, D19.hsp]; exact add_sp R rfl
+  obtain ⟨n21, c21, D21, v21, k21⟩ := D20.aluImmS C dec_at_1ba (off' := 0x1BC) (by decide) (by decide)
+  have r21_18 : reg n21 (18 : Fin 32) = out := by rw [k21 _ (by decide), r20_18]
+  have r21_20 : reg n21 (20 : Fin 32) = bp := by rw [k21 _ (by decide), r20_20]
+  have r21_10 : reg n21 a0 = R + BitVec.ofNat 32 0x65C := by rw [k21 _ (by decide), r20_10]
+  have r21_11 : reg n21 a1 = R + BitVec.ofNat 32 0x5BC := by rw [k21 _ (by decide), r20_11]
+  have r21_12 : reg n21 a2 = R + BitVec.ofNat 32 0x4A0 := by rw [v21, D20.hsp]; exact add_sp R rfl
+  obtain ⟨n22, c22, D22, w22, k22, f22⟩ := D21.mul C dec_at_1bc dec_at_1c0 (by decide) (by decide) (k := 0x65C) (by decide) (by decide) (by decide) r21_10 (by rw [r21_11]; exact C.opF (by decide) (by decide) (by decide)) (by rw [r21_12]; exact C.opF (by decide) (by decide) (by decide))
+  have r22_18 : reg n22 (18 : Fin 32) = out := by rw [k22 _ (by decide), r21_18]
+  have r22_20 : reg n22 (20 : Fin 32) = bp := by rw [k22 _ (by decide), r21_20]
+  have m22_544 : feW n22.mem (R + BitVec.ofNat 32 0x544) = Y := (keepW C f22 (by decide) (by decide) (by decide) (by decide)).trans m18_544
+  have m22_594 : feW n22.mem (R + BitVec.ofNat 32 0x594) = u := (keepW C f22 (by decide) (by decide) (by decide) (by decide)).trans m18_594
+  have m22_5bc : feW n22.mem (R + BitVec.ofNat 32 0x5BC) = v := (keepW C f22 (by decide) (by decide) (by decide) (by decide)).trans m18_5bc
+  have m22_634 : feW n22.mem (R + BitVec.ofNat 32 0x634) = uv3 := (keepW C f22 (by decide) (by decide) (by decide) (by decide)).trans m18_634
+  have m22_684 : feW n22.mem (R + BitVec.ofNat 32 0x684) = uv7 := (keepW C f22 (by decide) (by decide) (by decide) (by decide)).trans m18_684
+  have m22_6ac : feW n22.mem (R + BitVec.ofNat 32 0x6AC) = rr := (keepW C f22 (by decide) (by decide) (by decide) (by decide)).trans m18_6ac
+  have m22_4a0 : feW n22.mem (R + BitVec.ofNat 32 0x4A0) = sqL (rr) := (keepW C f22 (by decide) (by decide) (by decide) (by decide)).trans m18_4a0
+  have m22_65c : feW n22.mem (R + BitVec.ofNat 32 0x65C) = chk := by rw [w22, r21_11, r21_12, m18_5bc, m18_4a0, hchk]
+  obtain ⟨n23, c23, D23, v23, k23⟩ := D22.aluImmS C dec_at_1c4 (off' := 0x1C6) (by decide) (by decide)
+  have r23_18 : reg n23 (18 : Fin 32) = out := by rw [k23 _ (by decide), r22_18]
+  have r23_20 : reg n23 (20 : Fin 32) = bp := by rw [k23 _ (by decide), r22_20]
+  have r23_10 : reg n23 a0 = R + BitVec.ofNat 32 0x65C := by rw [v23, D22.hsp]; exact add_sp R rfl
+  obtain ⟨n24, c24, D24, v24, k24⟩ := D23.aluImmS C dec_at_1c6 (off' := 0x1C8) (by decide) (by decide)
+  have r24_18 : reg n24 (18 : Fin 32) = out := by rw [k24 _ (by decide), r23_18]
+  have r24_20 : reg n24 (20 : Fin 32) = bp := by rw [k24 _ (by decide), r23_20]
+  have r24_10 : reg n24 a0 = R + BitVec.ofNat 32 0x65C := by rw [k24 _ (by decide), r23_10]
+  have r24_11 : reg n24 a1 = R + BitVec.ofNat 32 0x594 := by rw [v24, D23.hsp]; exact add_sp R rfl
+  obtain ⟨n25, c25, D25, w25, k25, f25⟩ := D24.ctEq C dec_at_1c8 dec_at_1cc (by decide) (by decide) (by rw [r24_10]; exact C.opF (by decide) (by decide) (by decide)) (by rw [r24_11]; exact C.opF (by decide) (by decide) (by decide))
+  have r25_18 : reg n25 (18 : Fin 32) = out := by rw [k25 _ (by decide), r24_18]
+  have r25_20 : reg n25 (20 : Fin 32) = bp := by rw [k25 _ (by decide), r24_20]
+  have m25_544 : feW n25.mem (R + BitVec.ofNat 32 0x544) = Y := (keepW0 C f25 (by decide) (by decide)).trans m22_544
+  have m25_594 : feW n25.mem (R + BitVec.ofNat 32 0x594) = u := (keepW0 C f25 (by decide) (by decide)).trans m22_594
+  have m25_5bc : feW n25.mem (R + BitVec.ofNat 32 0x5BC) = v := (keepW0 C f25 (by decide) (by decide)).trans m22_5bc
+  have m25_634 : feW n25.mem (R + BitVec.ofNat 32 0x634) = uv3 := (keepW0 C f25 (by decide) (by decide)).trans m22_634
+  have m25_684 : feW n25.mem (R + BitVec.ofNat 32 0x684) = uv7 := (keepW0 C f25 (by decide) (by decide)).trans m22_684
+  have m25_6ac : feW n25.mem (R + BitVec.ofNat 32 0x6AC) = rr := (keepW0 C f25 (by decide) (by decide)).trans m22_6ac
+  have m25_4a0 : feW n25.mem (R + BitVec.ofNat 32 0x4A0) = sqL (rr) := (keepW0 C f25 (by decide) (by decide)).trans m22_4a0
+  have m25_65c : feW n25.mem (R + BitVec.ofNat 32 0x65C) = chk := (keepW0 C f25 (by decide) (by decide)).trans m22_65c
+  have r25_10 : reg n25 a0 = bw (feEqL (chk) (u)) := by rw [w25, r24_10, r24_11, m22_65c, m22_594, bw_ct]
+  obtain ⟨n26, c26, D26, v26, k26⟩ := D25.aluS C dec_at_1d0 (off' := 0x1D2) (by decide) (by decide)
+  have r26_18 : reg n26 (18 : Fin 32) = out := by rw [k26 _ (by decide), r25_18]
+  have r26_20 : reg n26 (20 : Fin 32) = bp := by rw [k26 _ (by decide), r25_20]
+  have r26_10 : reg n26 a0 = bw (feEqL (chk) (u)) := by rw [k26 _ (by decide), r25_10]
+  have r26_19 : reg n26 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [v26, D25.zero, r25_10]; exact BitVec.zero_add _
+  obtain ⟨n27, c27, D27, v27, k27⟩ := D26.aluImmS C dec_at_1d2 (off' := 0x1D4) (by decide) (by decide)
+  have r27_18 : reg n27 (18 : Fin 32) = out := by rw [k27 _ (by decide), r26_18]
+  have r27_20 : reg n27 (20 : Fin 32) = bp := by rw [k27 _ (by decide), r26_20]
+  have r27_19 : reg n27 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k27 _ (by decide), r26_19]
+  have r27_10 : reg n27 a0 = R + BitVec.ofNat 32 0x4A0 := by rw [v27, D26.hsp]; exact add_sp R rfl
+  obtain ⟨n28, c28, D28, v28, k28⟩ := D27.aluImmS C dec_at_1d4 (off' := 0x1D6) (by decide) (by decide)
+  have r28_18 : reg n28 (18 : Fin 32) = out := by rw [k28 _ (by decide), r27_18]
+  have r28_20 : reg n28 (20 : Fin 32) = bp := by rw [k28 _ (by decide), r27_20]
+  have r28_19 : reg n28 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k28 _ (by decide), r27_19]
+  have r28_10 : reg n28 a0 = R + BitVec.ofNat 32 0x4A0 := by rw [k28 _ (by decide), r27_10]
+  have r28_11 : reg n28 a1 = R + BitVec.ofNat 32 0x594 := by rw [v28, D27.hsp]; exact add_sp R rfl
+  obtain ⟨n29, c29, D29, w29, k29, f29⟩ := D28.neg C dec_at_1d6 dec_at_1da (by decide) (by decide) (k := 0x4A0) (by decide) (by decide) (by decide) r28_10 (by rw [r28_11]; exact C.opF (by decide) (by decide) (by decide))
+  have r29_18 : reg n29 (18 : Fin 32) = out := by rw [k29 _ (by decide), r28_18]
+  have r29_20 : reg n29 (20 : Fin 32) = bp := by rw [k29 _ (by decide), r28_20]
+  have r29_19 : reg n29 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k29 _ (by decide), r28_19]
+  have m29_544 : feW n29.mem (R + BitVec.ofNat 32 0x544) = Y := (keepW C f29 (by decide) (by decide) (by decide) (by decide)).trans m25_544
+  have m29_594 : feW n29.mem (R + BitVec.ofNat 32 0x594) = u := (keepW C f29 (by decide) (by decide) (by decide) (by decide)).trans m25_594
+  have m29_5bc : feW n29.mem (R + BitVec.ofNat 32 0x5BC) = v := (keepW C f29 (by decide) (by decide) (by decide) (by decide)).trans m25_5bc
+  have m29_634 : feW n29.mem (R + BitVec.ofNat 32 0x634) = uv3 := (keepW C f29 (by decide) (by decide) (by decide) (by decide)).trans m25_634
+  have m29_684 : feW n29.mem (R + BitVec.ofNat 32 0x684) = uv7 := (keepW C f29 (by decide) (by decide) (by decide) (by decide)).trans m25_684
+  have m29_6ac : feW n29.mem (R + BitVec.ofNat 32 0x6AC) = rr := (keepW C f29 (by decide) (by decide) (by decide) (by decide)).trans m25_6ac
+  have m29_65c : feW n29.mem (R + BitVec.ofNat 32 0x65C) = chk := (keepW C f29 (by decide) (by decide) (by decide) (by decide)).trans m25_65c
+  have m29_4a0 : feW n29.mem (R + BitVec.ofNat 32 0x4A0) = negL (u) := by rw [w29, r28_11, m25_594]
+  obtain ⟨n30, c30, D30, v30, k30⟩ := D29.aluImmS C dec_at_1de (off' := 0x1E0) (by decide) (by decide)
+  have r30_18 : reg n30 (18 : Fin 32) = out := by rw [k30 _ (by decide), r29_18]
+  have r30_20 : reg n30 (20 : Fin 32) = bp := by rw [k30 _ (by decide), r29_20]
+  have r30_19 : reg n30 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k30 _ (by decide), r29_19]
+  have r30_10 : reg n30 a0 = R + BitVec.ofNat 32 0x65C := by rw [v30, D29.hsp]; exact add_sp R rfl
+  obtain ⟨n31, c31, D31, v31, k31⟩ := D30.aluImmS C dec_at_1e0 (off' := 0x1E2) (by decide) (by decide)
+  have r31_18 : reg n31 (18 : Fin 32) = out := by rw [k31 _ (by decide), r30_18]
+  have r31_20 : reg n31 (20 : Fin 32) = bp := by rw [k31 _ (by decide), r30_20]
+  have r31_19 : reg n31 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k31 _ (by decide), r30_19]
+  have r31_10 : reg n31 a0 = R + BitVec.ofNat 32 0x65C := by rw [k31 _ (by decide), r30_10]
+  have r31_11 : reg n31 a1 = R + BitVec.ofNat 32 0x4A0 := by rw [v31, D30.hsp]; exact add_sp R rfl
+  obtain ⟨n32, c32, D32, w32, k32, f32⟩ := D31.ctEq C dec_at_1e2 dec_at_1e6 (by decide) (by decide) (by rw [r31_10]; exact C.opF (by decide) (by decide) (by decide)) (by rw [r31_11]; exact C.opF (by decide) (by decide) (by decide))
+  have r32_18 : reg n32 (18 : Fin 32) = out := by rw [k32 _ (by decide), r31_18]
+  have r32_20 : reg n32 (20 : Fin 32) = bp := by rw [k32 _ (by decide), r31_20]
+  have r32_19 : reg n32 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k32 _ (by decide), r31_19]
+  have m32_544 : feW n32.mem (R + BitVec.ofNat 32 0x544) = Y := (keepW0 C f32 (by decide) (by decide)).trans m29_544
+  have m32_594 : feW n32.mem (R + BitVec.ofNat 32 0x594) = u := (keepW0 C f32 (by decide) (by decide)).trans m29_594
+  have m32_5bc : feW n32.mem (R + BitVec.ofNat 32 0x5BC) = v := (keepW0 C f32 (by decide) (by decide)).trans m29_5bc
+  have m32_634 : feW n32.mem (R + BitVec.ofNat 32 0x634) = uv3 := (keepW0 C f32 (by decide) (by decide)).trans m29_634
+  have m32_684 : feW n32.mem (R + BitVec.ofNat 32 0x684) = uv7 := (keepW0 C f32 (by decide) (by decide)).trans m29_684
+  have m32_6ac : feW n32.mem (R + BitVec.ofNat 32 0x6AC) = rr := (keepW0 C f32 (by decide) (by decide)).trans m29_6ac
+  have m32_65c : feW n32.mem (R + BitVec.ofNat 32 0x65C) = chk := (keepW0 C f32 (by decide) (by decide)).trans m29_65c
+  have m32_4a0 : feW n32.mem (R + BitVec.ofNat 32 0x4A0) = negL (u) := (keepW0 C f32 (by decide) (by decide)).trans m29_4a0
+  have r32_10 : reg n32 a0 = bw (feEqL (chk) (negL (u))) := by rw [w32, r31_10, r31_11, m29_65c, m29_4a0, bw_ct]
+  obtain ⟨n33, c33, D33, v33, k33⟩ := D32.aluS C dec_at_1ea (off' := 0x1EC) (by decide) (by decide)
+  have r33_18 : reg n33 (18 : Fin 32) = out := by rw [k33 _ (by decide), r32_18]
+  have r33_20 : reg n33 (20 : Fin 32) = bp := by rw [k33 _ (by decide), r32_20]
+  have r33_19 : reg n33 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k33 _ (by decide), r32_19]
+  have r33_10 : reg n33 a0 = bw (feEqL (chk) (negL (u))) := by rw [k33 _ (by decide), r32_10]
+  have r33_8 : reg n33 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [v33, D32.zero, r32_10]; exact BitVec.zero_add _
+  obtain ⟨n34, c34, D34, v34, k34⟩ := D33.aluImmS C dec_at_1ec (off' := 0x1EE) (by decide) (by decide)
+  have r34_18 : reg n34 (18 : Fin 32) = out := by rw [k34 _ (by decide), r33_18]
+  have r34_20 : reg n34 (20 : Fin 32) = bp := by rw [k34 _ (by decide), r33_20]
+  have r34_19 : reg n34 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k34 _ (by decide), r33_19]
+  have r34_8 : reg n34 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k34 _ (by decide), r33_8]
+  have r34_10 : reg n34 a0 = R + BitVec.ofNat 32 0x4A0 := by rw [v34, D33.hsp]; exact add_sp R rfl
+  obtain ⟨n35, c35, D35, v35, k35⟩ := D34.aluImmS C dec_at_1ee (off' := 0x1F0) (by decide) (by decide)
+  have r35_18 : reg n35 (18 : Fin 32) = out := by rw [k35 _ (by decide), r34_18]
+  have r35_20 : reg n35 (20 : Fin 32) = bp := by rw [k35 _ (by decide), r34_20]
+  have r35_19 : reg n35 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k35 _ (by decide), r34_19]
+  have r35_8 : reg n35 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k35 _ (by decide), r34_8]
+  have r35_10 : reg n35 a0 = R + BitVec.ofNat 32 0x4A0 := by rw [k35 _ (by decide), r34_10]
+  have r35_11 : reg n35 a1 = R + BitVec.ofNat 32 0x594 := by rw [v35, D34.hsp]; exact add_sp R rfl
+  obtain ⟨n36, c36, D36, w36, k36, f36⟩ := D35.neg C dec_at_1f0 dec_at_1f4 (by decide) (by decide) (k := 0x4A0) (by decide) (by decide) (by decide) r35_10 (by rw [r35_11]; exact C.opF (by decide) (by decide) (by decide))
+  have r36_18 : reg n36 (18 : Fin 32) = out := by rw [k36 _ (by decide), r35_18]
+  have r36_20 : reg n36 (20 : Fin 32) = bp := by rw [k36 _ (by decide), r35_20]
+  have r36_19 : reg n36 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k36 _ (by decide), r35_19]
+  have r36_8 : reg n36 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k36 _ (by decide), r35_8]
+  have m36_544 : feW n36.mem (R + BitVec.ofNat 32 0x544) = Y := (keepW C f36 (by decide) (by decide) (by decide) (by decide)).trans m32_544
+  have m36_594 : feW n36.mem (R + BitVec.ofNat 32 0x594) = u := (keepW C f36 (by decide) (by decide) (by decide) (by decide)).trans m32_594
+  have m36_5bc : feW n36.mem (R + BitVec.ofNat 32 0x5BC) = v := (keepW C f36 (by decide) (by decide) (by decide) (by decide)).trans m32_5bc
+  have m36_634 : feW n36.mem (R + BitVec.ofNat 32 0x634) = uv3 := (keepW C f36 (by decide) (by decide) (by decide) (by decide)).trans m32_634
+  have m36_684 : feW n36.mem (R + BitVec.ofNat 32 0x684) = uv7 := (keepW C f36 (by decide) (by decide) (by decide) (by decide)).trans m32_684
+  have m36_6ac : feW n36.mem (R + BitVec.ofNat 32 0x6AC) = rr := (keepW C f36 (by decide) (by decide) (by decide) (by decide)).trans m32_6ac
+  have m36_65c : feW n36.mem (R + BitVec.ofNat 32 0x65C) = chk := (keepW C f36 (by decide) (by decide) (by decide) (by decide)).trans m32_65c
+  have m36_4a0 : feW n36.mem (R + BitVec.ofNat 32 0x4A0) = negL (u) := by rw [w36, r35_11, m32_594]
+  obtain ⟨n37, c37, D37, v37, k37⟩ := D36.luiS C dec_at_1f8 (off' := 0x1FC) (by decide) (by decide)
+  have r37_18 : reg n37 (18 : Fin 32) = out := by rw [k37 _ (by decide), r36_18]
+  have r37_20 : reg n37 (20 : Fin 32) = bp := by rw [k37 _ (by decide), r36_20]
+  have r37_19 : reg n37 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k37 _ (by decide), r36_19]
+  have r37_8 : reg n37 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k37 _ (by decide), r36_8]
+  obtain ⟨n38, c38, D38, v38, k38⟩ := D37.aluImmS C dec_at_1fc (off' := 0x200) (by decide) (by decide)
+  have r38_18 : reg n38 (18 : Fin 32) = out := by rw [k38 _ (by decide), r37_18]
+  have r38_20 : reg n38 (20 : Fin 32) = bp := by rw [k38 _ (by decide), r37_20]
+  have r38_19 : reg n38 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k38 _ (by decide), r37_19]
+  have r38_8 : reg n38 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k38 _ (by decide), r37_8]
+  have r38_21 : reg n38 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [v38, v37]; decide
+  obtain ⟨n39, c39, D39, v39, k39⟩ := D38.aluImmS C dec_at_200 (off' := 0x202) (by decide) (by decide)
+  have r39_18 : reg n39 (18 : Fin 32) = out := by rw [k39 _ (by decide), r38_18]
+  have r39_20 : reg n39 (20 : Fin 32) = bp := by rw [k39 _ (by decide), r38_20]
+  have r39_19 : reg n39 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k39 _ (by decide), r38_19]
+  have r39_8 : reg n39 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k39 _ (by decide), r38_8]
+  have r39_21 : reg n39 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k39 _ (by decide), r38_21]
+  have r39_10 : reg n39 a0 = R + BitVec.ofNat 32 0x684 := by rw [v39, D38.hsp]; exact add_sp R rfl
+  obtain ⟨n40, c40, D40, v40, k40⟩ := D39.aluImmS C dec_at_202 (off' := 0x204) (by decide) (by decide)
+  have r40_18 : reg n40 (18 : Fin 32) = out := by rw [k40 _ (by decide), r39_18]
+  have r40_20 : reg n40 (20 : Fin 32) = bp := by rw [k40 _ (by decide), r39_20]
+  have r40_19 : reg n40 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k40 _ (by decide), r39_19]
+  have r40_8 : reg n40 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k40 _ (by decide), r39_8]
+  have r40_21 : reg n40 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k40 _ (by decide), r39_21]
+  have r40_10 : reg n40 a0 = R + BitVec.ofNat 32 0x684 := by rw [k40 _ (by decide), r39_10]
+  have r40_11 : reg n40 a1 = R + BitVec.ofNat 32 0x4A0 := by rw [v40, D39.hsp]; exact add_sp R rfl
+  obtain ⟨n41, c41, D41, v41, k41⟩ := D40.aluS C dec_at_204 (off' := 0x206) (by decide) (by decide)
+  have r41_18 : reg n41 (18 : Fin 32) = out := by rw [k41 _ (by decide), r40_18]
+  have r41_20 : reg n41 (20 : Fin 32) = bp := by rw [k41 _ (by decide), r40_20]
+  have r41_19 : reg n41 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k41 _ (by decide), r40_19]
+  have r41_8 : reg n41 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k41 _ (by decide), r40_8]
+  have r41_21 : reg n41 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k41 _ (by decide), r40_21]
+  have r41_10 : reg n41 a0 = R + BitVec.ofNat 32 0x684 := by rw [k41 _ (by decide), r40_10]
+  have r41_11 : reg n41 a1 = R + BitVec.ofNat 32 0x4A0 := by rw [k41 _ (by decide), r40_11]
+  have r41_12 : reg n41 a2 = BitVec.ofNat 32 edSqrtM1Address := by rw [v41, D40.zero, r40_21]; exact BitVec.zero_add _
+  obtain ⟨n42, c42, D42, w42, k42, f42⟩ := D41.mul C dec_at_206 dec_at_20a (by decide) (by decide) (k := 0x684) (by decide) (by decide) (by decide) r41_10 (by rw [r41_11]; exact C.opF (by decide) (by decide) (by decide)) (by rw [r41_12]; exact C.opC sS (by decide))
+  have r42_18 : reg n42 (18 : Fin 32) = out := by rw [k42 _ (by decide), r41_18]
+  have r42_20 : reg n42 (20 : Fin 32) = bp := by rw [k42 _ (by decide), r41_20]
+  have r42_19 : reg n42 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k42 _ (by decide), r41_19]
+  have r42_8 : reg n42 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k42 _ (by decide), r41_8]
+  have r42_21 : reg n42 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k42 _ (by decide), r41_21]
+  have m42_544 : feW n42.mem (R + BitVec.ofNat 32 0x544) = Y := (keepW C f42 (by decide) (by decide) (by decide) (by decide)).trans m36_544
+  have m42_594 : feW n42.mem (R + BitVec.ofNat 32 0x594) = u := (keepW C f42 (by decide) (by decide) (by decide) (by decide)).trans m36_594
+  have m42_5bc : feW n42.mem (R + BitVec.ofNat 32 0x5BC) = v := (keepW C f42 (by decide) (by decide) (by decide) (by decide)).trans m36_5bc
+  have m42_634 : feW n42.mem (R + BitVec.ofNat 32 0x634) = uv3 := (keepW C f42 (by decide) (by decide) (by decide) (by decide)).trans m36_634
+  have m42_6ac : feW n42.mem (R + BitVec.ofNat 32 0x6AC) = rr := (keepW C f42 (by decide) (by decide) (by decide) (by decide)).trans m36_6ac
+  have m42_65c : feW n42.mem (R + BitVec.ofNat 32 0x65C) = chk := (keepW C f42 (by decide) (by decide) (by decide) (by decide)).trans m36_65c
+  have m42_4a0 : feW n42.mem (R + BitVec.ofNat 32 0x4A0) = negL (u) := (keepW C f42 (by decide) (by decide) (by decide) (by decide)).trans m36_4a0
+  have m42_684 : feW n42.mem (R + BitVec.ofNat 32 0x684) = mulL (negL (u)) (sm) := by rw [w42, r41_11, r41_12, m36_4a0, (D41.constW sS), hS]
+  obtain ⟨n43, c43, D43, v43, k43⟩ := D42.aluImmS C dec_at_20e (off' := 0x210) (by decide) (by decide)
+  have r43_18 : reg n43 (18 : Fin 32) = out := by rw [k43 _ (by decide), r42_18]
+  have r43_20 : reg n43 (20 : Fin 32) = bp := by rw [k43 _ (by decide), r42_20]
+  have r43_19 : reg n43 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k43 _ (by decide), r42_19]
+  have r43_8 : reg n43 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k43 _ (by decide), r42_8]
+  have r43_21 : reg n43 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k43 _ (by decide), r42_21]
+  have r43_10 : reg n43 a0 = R + BitVec.ofNat 32 0x65C := by rw [v43, D42.hsp]; exact add_sp R rfl
+  obtain ⟨n44, c44, D44, v44, k44⟩ := D43.aluImmS C dec_at_210 (off' := 0x212) (by decide) (by decide)
+  have r44_18 : reg n44 (18 : Fin 32) = out := by rw [k44 _ (by decide), r43_18]
+  have r44_20 : reg n44 (20 : Fin 32) = bp := by rw [k44 _ (by decide), r43_20]
+  have r44_19 : reg n44 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k44 _ (by decide), r43_19]
+  have r44_8 : reg n44 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k44 _ (by decide), r43_8]
+  have r44_21 : reg n44 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k44 _ (by decide), r43_21]
+  have r44_10 : reg n44 a0 = R + BitVec.ofNat 32 0x65C := by rw [k44 _ (by decide), r43_10]
+  have r44_11 : reg n44 a1 = R + BitVec.ofNat 32 0x684 := by rw [v44, D43.hsp]; exact add_sp R rfl
+  obtain ⟨n45, c45, D45, w45, k45, f45⟩ := D44.ctEq C dec_at_212 dec_at_216 (by decide) (by decide) (by rw [r44_10]; exact C.opF (by decide) (by decide) (by decide)) (by rw [r44_11]; exact C.opF (by decide) (by decide) (by decide))
+  have r45_18 : reg n45 (18 : Fin 32) = out := by rw [k45 _ (by decide), r44_18]
+  have r45_20 : reg n45 (20 : Fin 32) = bp := by rw [k45 _ (by decide), r44_20]
+  have r45_19 : reg n45 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k45 _ (by decide), r44_19]
+  have r45_8 : reg n45 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k45 _ (by decide), r44_8]
+  have r45_21 : reg n45 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k45 _ (by decide), r44_21]
+  have m45_544 : feW n45.mem (R + BitVec.ofNat 32 0x544) = Y := (keepW0 C f45 (by decide) (by decide)).trans m42_544
+  have m45_594 : feW n45.mem (R + BitVec.ofNat 32 0x594) = u := (keepW0 C f45 (by decide) (by decide)).trans m42_594
+  have m45_5bc : feW n45.mem (R + BitVec.ofNat 32 0x5BC) = v := (keepW0 C f45 (by decide) (by decide)).trans m42_5bc
+  have m45_634 : feW n45.mem (R + BitVec.ofNat 32 0x634) = uv3 := (keepW0 C f45 (by decide) (by decide)).trans m42_634
+  have m45_6ac : feW n45.mem (R + BitVec.ofNat 32 0x6AC) = rr := (keepW0 C f45 (by decide) (by decide)).trans m42_6ac
+  have m45_65c : feW n45.mem (R + BitVec.ofNat 32 0x65C) = chk := (keepW0 C f45 (by decide) (by decide)).trans m42_65c
+  have m45_4a0 : feW n45.mem (R + BitVec.ofNat 32 0x4A0) = negL (u) := (keepW0 C f45 (by decide) (by decide)).trans m42_4a0
+  have m45_684 : feW n45.mem (R + BitVec.ofNat 32 0x684) = mulL (negL (u)) (sm) := (keepW0 C f45 (by decide) (by decide)).trans m42_684
+  have r45_10 : reg n45 a0 = bw (feEqL (chk) (mulL (negL (u)) (sm))) := by rw [w45, r44_10, r44_11, m42_65c, m42_684, bw_ct]
+  obtain ⟨n46, c46, D46, v46, k46⟩ := D45.aluS C dec_at_21a (off' := 0x21C) (by decide) (by decide)
+  have r46_18 : reg n46 (18 : Fin 32) = out := by rw [k46 _ (by decide), r45_18]
+  have r46_20 : reg n46 (20 : Fin 32) = bp := by rw [k46 _ (by decide), r45_20]
+  have r46_19 : reg n46 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k46 _ (by decide), r45_19]
+  have r46_8 : reg n46 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k46 _ (by decide), r45_8]
+  have r46_21 : reg n46 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k46 _ (by decide), r45_21]
+  have r46_10 : reg n46 a0 = bw (feEqL (chk) (mulL (negL (u)) (sm))) := by rw [k46 _ (by decide), r45_10]
+  have r46_9 : reg n46 (9 : Fin 32) = bw (feEqL (chk) (mulL (negL (u)) (sm))) := by rw [v46, D45.zero, r45_10]; exact BitVec.zero_add _
+  obtain ⟨n47, c47, D47, v47, k47⟩ := D46.aluImmS C dec_at_21c (off' := 0x21E) (by decide) (by decide)
+  have r47_18 : reg n47 (18 : Fin 32) = out := by rw [k47 _ (by decide), r46_18]
+  have r47_20 : reg n47 (20 : Fin 32) = bp := by rw [k47 _ (by decide), r46_20]
+  have r47_19 : reg n47 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k47 _ (by decide), r46_19]
+  have r47_8 : reg n47 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k47 _ (by decide), r46_8]
+  have r47_21 : reg n47 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k47 _ (by decide), r46_21]
+  have r47_9 : reg n47 (9 : Fin 32) = bw (feEqL (chk) (mulL (negL (u)) (sm))) := by rw [k47 _ (by decide), r46_9]
+  have r47_10 : reg n47 a0 = R + BitVec.ofNat 32 0x684 := by rw [v47, D46.hsp]; exact add_sp R rfl
+  obtain ⟨n48, c48, D48, v48, k48⟩ := D47.aluImmS C dec_at_21e (off' := 0x220) (by decide) (by decide)
+  have r48_18 : reg n48 (18 : Fin 32) = out := by rw [k48 _ (by decide), r47_18]
+  have r48_20 : reg n48 (20 : Fin 32) = bp := by rw [k48 _ (by decide), r47_20]
+  have r48_19 : reg n48 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k48 _ (by decide), r47_19]
+  have r48_8 : reg n48 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k48 _ (by decide), r47_8]
+  have r48_21 : reg n48 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k48 _ (by decide), r47_21]
+  have r48_9 : reg n48 (9 : Fin 32) = bw (feEqL (chk) (mulL (negL (u)) (sm))) := by rw [k48 _ (by decide), r47_9]
+  have r48_10 : reg n48 a0 = R + BitVec.ofNat 32 0x684 := by rw [k48 _ (by decide), r47_10]
+  have r48_12 : reg n48 a2 = R + BitVec.ofNat 32 0x6AC := by rw [v48, D47.hsp]; exact add_sp R rfl
+  obtain ⟨n49, c49, D49, v49, k49⟩ := D48.aluS C dec_at_220 (off' := 0x222) (by decide) (by decide)
+  have r49_18 : reg n49 (18 : Fin 32) = out := by rw [k49 _ (by decide), r48_18]
+  have r49_20 : reg n49 (20 : Fin 32) = bp := by rw [k49 _ (by decide), r48_20]
+  have r49_19 : reg n49 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k49 _ (by decide), r48_19]
+  have r49_8 : reg n49 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k49 _ (by decide), r48_8]
+  have r49_21 : reg n49 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k49 _ (by decide), r48_21]
+  have r49_9 : reg n49 (9 : Fin 32) = bw (feEqL (chk) (mulL (negL (u)) (sm))) := by rw [k49 _ (by decide), r48_9]
+  have r49_10 : reg n49 a0 = R + BitVec.ofNat 32 0x684 := by rw [k49 _ (by decide), r48_10]
+  have r49_12 : reg n49 a2 = R + BitVec.ofNat 32 0x6AC := by rw [k49 _ (by decide), r48_12]
+  have r49_11 : reg n49 a1 = BitVec.ofNat 32 edSqrtM1Address := by rw [v49, D48.zero, r48_21]; exact BitVec.zero_add _
+  obtain ⟨n50, c50, D50, w50, k50, f50⟩ := D49.mul C dec_at_222 dec_at_226 (by decide) (by decide) (k := 0x684) (by decide) (by decide) (by decide) r49_10 (by rw [r49_11]; exact C.opC sS (by decide)) (by rw [r49_12]; exact C.opF (by decide) (by decide) (by decide))
+  have r50_18 : reg n50 (18 : Fin 32) = out := by rw [k50 _ (by decide), r49_18]
+  have r50_20 : reg n50 (20 : Fin 32) = bp := by rw [k50 _ (by decide), r49_20]
+  have r50_19 : reg n50 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k50 _ (by decide), r49_19]
+  have r50_8 : reg n50 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k50 _ (by decide), r49_8]
+  have r50_21 : reg n50 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k50 _ (by decide), r49_21]
+  have r50_9 : reg n50 (9 : Fin 32) = bw (feEqL (chk) (mulL (negL (u)) (sm))) := by rw [k50 _ (by decide), r49_9]
+  have m50_544 : feW n50.mem (R + BitVec.ofNat 32 0x544) = Y := (keepW C f50 (by decide) (by decide) (by decide) (by decide)).trans m45_544
+  have m50_594 : feW n50.mem (R + BitVec.ofNat 32 0x594) = u := (keepW C f50 (by decide) (by decide) (by decide) (by decide)).trans m45_594
+  have m50_5bc : feW n50.mem (R + BitVec.ofNat 32 0x5BC) = v := (keepW C f50 (by decide) (by decide) (by decide) (by decide)).trans m45_5bc
+  have m50_634 : feW n50.mem (R + BitVec.ofNat 32 0x634) = uv3 := (keepW C f50 (by decide) (by decide) (by decide) (by decide)).trans m45_634
+  have m50_6ac : feW n50.mem (R + BitVec.ofNat 32 0x6AC) = rr := (keepW C f50 (by decide) (by decide) (by decide) (by decide)).trans m45_6ac
+  have m50_65c : feW n50.mem (R + BitVec.ofNat 32 0x65C) = chk := (keepW C f50 (by decide) (by decide) (by decide) (by decide)).trans m45_65c
+  have m50_4a0 : feW n50.mem (R + BitVec.ofNat 32 0x4A0) = negL (u) := (keepW C f50 (by decide) (by decide) (by decide) (by decide)).trans m45_4a0
+  have m50_684 : feW n50.mem (R + BitVec.ofNat 32 0x684) = mulL (sm) (rr) := by rw [w50, r49_11, r49_12, (D49.constW sS), hS, m45_6ac]
+  obtain ⟨n51, c51, D51, v51, k51⟩ := D50.aluS C dec_at_22a (off' := 0x22C) (by decide) (by decide)
+  have r51_18 : reg n51 (18 : Fin 32) = out := by rw [k51 _ (by decide), r50_18]
+  have r51_20 : reg n51 (20 : Fin 32) = bp := by rw [k51 _ (by decide), r50_20]
+  have r51_19 : reg n51 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k51 _ (by decide), r50_19]
+  have r51_8 : reg n51 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k51 _ (by decide), r50_8]
+  have r51_21 : reg n51 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k51 _ (by decide), r50_21]
+  have r51_9 : reg n51 (9 : Fin 32) = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [v51, r50_9, r50_8, bw_or]
+  obtain ⟨n52, c52, D52, v52, k52⟩ := D51.aluImmS C dec_at_22c (off' := 0x230) (by decide) (by decide)
+  have r52_18 : reg n52 (18 : Fin 32) = out := by rw [k52 _ (by decide), r51_18]
+  have r52_20 : reg n52 (20 : Fin 32) = bp := by rw [k52 _ (by decide), r51_20]
+  have r52_19 : reg n52 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k52 _ (by decide), r51_19]
+  have r52_8 : reg n52 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k52 _ (by decide), r51_8]
+  have r52_21 : reg n52 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k52 _ (by decide), r51_21]
+  have r52_9 : reg n52 (9 : Fin 32) = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [k52 _ (by decide), r51_9]
+  have r52_10 : reg n52 a0 = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [v52, r51_9, bw_zext]
+  obtain ⟨n53, c53, D53, w53, k53, f53⟩ := D52.blackBox C dec_at_230 dec_at_234 (by decide) (by decide)
+  have r53_18 : reg n53 (18 : Fin 32) = out := by rw [k53 _ (by decide) (by decide), r52_18]
+  have r53_20 : reg n53 (20 : Fin 32) = bp := by rw [k53 _ (by decide) (by decide), r52_20]
+  have r53_19 : reg n53 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k53 _ (by decide) (by decide), r52_19]
+  have r53_8 : reg n53 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k53 _ (by decide) (by decide), r52_8]
+  have r53_21 : reg n53 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k53 _ (by decide) (by decide), r52_21]
+  have r53_9 : reg n53 (9 : Fin 32) = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [k53 _ (by decide) (by decide), r52_9]
+  have m53_544 : feW n53.mem (R + BitVec.ofNat 32 0x544) = Y := (keepW0 C f53 (by decide) (by decide)).trans m50_544
+  have m53_594 : feW n53.mem (R + BitVec.ofNat 32 0x594) = u := (keepW0 C f53 (by decide) (by decide)).trans m50_594
+  have m53_5bc : feW n53.mem (R + BitVec.ofNat 32 0x5BC) = v := (keepW0 C f53 (by decide) (by decide)).trans m50_5bc
+  have m53_634 : feW n53.mem (R + BitVec.ofNat 32 0x634) = uv3 := (keepW0 C f53 (by decide) (by decide)).trans m50_634
+  have m53_6ac : feW n53.mem (R + BitVec.ofNat 32 0x6AC) = rr := (keepW0 C f53 (by decide) (by decide)).trans m50_6ac
+  have m53_65c : feW n53.mem (R + BitVec.ofNat 32 0x65C) = chk := (keepW0 C f53 (by decide) (by decide)).trans m50_65c
+  have m53_4a0 : feW n53.mem (R + BitVec.ofNat 32 0x4A0) = negL (u) := (keepW0 C f53 (by decide) (by decide)).trans m50_4a0
+  have m53_684 : feW n53.mem (R + BitVec.ofNat 32 0x684) = mulL (sm) (rr) := (keepW0 C f53 (by decide) (by decide)).trans m50_684
+  have r53_10 : reg n53 a0 = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [w53, r52_10, bw_bb]
+  obtain ⟨n54, c54, D54, v54, k54⟩ := D53.aluImmS C dec_at_238 (off' := 0x23C) (by decide) (by decide)
+  have r54_18 : reg n54 (18 : Fin 32) = out := by rw [k54 _ (by decide), r53_18]
+  have r54_20 : reg n54 (20 : Fin 32) = bp := by rw [k54 _ (by decide), r53_20]
+  have r54_19 : reg n54 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k54 _ (by decide), r53_19]
+  have r54_8 : reg n54 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k54 _ (by decide), r53_8]
+  have r54_21 : reg n54 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k54 _ (by decide), r53_21]
+  have r54_9 : reg n54 (9 : Fin 32) = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [k54 _ (by decide), r53_9]
+  have r54_10 : reg n54 a0 = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [k54 _ (by decide), r53_10]
+  have r54_12 : reg n54 a2 = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [v54, r53_10, bw_zext]
+  obtain ⟨n55, c55, D55, v55, k55⟩ := D54.aluImmS C dec_at_23c (off' := 0x23E) (by decide) (by decide)
+  have r55_18 : reg n55 (18 : Fin 32) = out := by rw [k55 _ (by decide), r54_18]
+  have r55_20 : reg n55 (20 : Fin 32) = bp := by rw [k55 _ (by decide), r54_20]
+  have r55_19 : reg n55 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k55 _ (by decide), r54_19]
+  have r55_8 : reg n55 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k55 _ (by decide), r54_8]
+  have r55_21 : reg n55 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k55 _ (by decide), r54_21]
+  have r55_9 : reg n55 (9 : Fin 32) = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [k55 _ (by decide), r54_9]
+  have r55_12 : reg n55 a2 = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [k55 _ (by decide), r54_12]
+  have r55_10 : reg n55 a0 = R + BitVec.ofNat 32 0x6AC := by rw [v55, D54.hsp]; exact add_sp R rfl
+  obtain ⟨n56, c56, D56, v56, k56⟩ := D55.aluImmS C dec_at_23e (off' := 0x240) (by decide) (by decide)
+  have r56_18 : reg n56 (18 : Fin 32) = out := by rw [k56 _ (by decide), r55_18]
+  have r56_20 : reg n56 (20 : Fin 32) = bp := by rw [k56 _ (by decide), r55_20]
+  have r56_19 : reg n56 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k56 _ (by decide), r55_19]
+  have r56_8 : reg n56 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k56 _ (by decide), r55_8]
+  have r56_21 : reg n56 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k56 _ (by decide), r55_21]
+  have r56_9 : reg n56 (9 : Fin 32) = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [k56 _ (by decide), r55_9]
+  have r56_12 : reg n56 a2 = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [k56 _ (by decide), r55_12]
+  have r56_10 : reg n56 a0 = R + BitVec.ofNat 32 0x6AC := by rw [k56 _ (by decide), r55_10]
+  have r56_11 : reg n56 a1 = R + BitVec.ofNat 32 0x684 := by rw [v56, D55.hsp]; exact add_sp R rfl
+  obtain ⟨n57, c57, D57, w57, k57, f57⟩ := D56.condAssign C dec_at_240 dec_at_244 (by decide) (by decide) (k := 0x6AC) (j := 0x684) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) r56_10 r56_11 r56_12 (bw_01 _)
+  have r57_18 : reg n57 (18 : Fin 32) = out := by rw [k57 _ (by decide), r56_18]
+  have r57_20 : reg n57 (20 : Fin 32) = bp := by rw [k57 _ (by decide), r56_20]
+  have r57_19 : reg n57 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k57 _ (by decide), r56_19]
+  have r57_8 : reg n57 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k57 _ (by decide), r56_8]
+  have r57_21 : reg n57 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k57 _ (by decide), r56_21]
+  have r57_9 : reg n57 (9 : Fin 32) = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [k57 _ (by decide), r56_9]
+  have m57_544 : feW n57.mem (R + BitVec.ofNat 32 0x544) = Y := (keepW C f57 (by decide) (by decide) (by decide) (by decide)).trans m53_544
+  have m57_594 : feW n57.mem (R + BitVec.ofNat 32 0x594) = u := (keepW C f57 (by decide) (by decide) (by decide) (by decide)).trans m53_594
+  have m57_5bc : feW n57.mem (R + BitVec.ofNat 32 0x5BC) = v := (keepW C f57 (by decide) (by decide) (by decide) (by decide)).trans m53_5bc
+  have m57_634 : feW n57.mem (R + BitVec.ofNat 32 0x634) = uv3 := (keepW C f57 (by decide) (by decide) (by decide) (by decide)).trans m53_634
+  have m57_65c : feW n57.mem (R + BitVec.ofNat 32 0x65C) = chk := (keepW C f57 (by decide) (by decide) (by decide) (by decide)).trans m53_65c
+  have m57_4a0 : feW n57.mem (R + BitVec.ofNat 32 0x4A0) = negL (u) := (keepW C f57 (by decide) (by decide) (by decide) (by decide)).trans m53_4a0
+  have m57_684 : feW n57.mem (R + BitVec.ofNat 32 0x684) = mulL (sm) (rr) := (keepW C f57 (by decide) (by decide) (by decide) (by decide)).trans m53_684
+  have m57_6ac : feW n57.mem (R + BitVec.ofNat 32 0x6AC) = (if (feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u))) then mulL (sm) (rr) else rr) := by rw [w57, bw_ite, m53_684, m53_6ac]
+  obtain ⟨n58, c58, D58, v58, k58⟩ := D57.aluImmS C dec_at_248 (off' := 0x24A) (by decide) (by decide)
+  have r58_18 : reg n58 (18 : Fin 32) = out := by rw [k58 _ (by decide), r57_18]
+  have r58_20 : reg n58 (20 : Fin 32) = bp := by rw [k58 _ (by decide), r57_20]
+  have r58_19 : reg n58 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k58 _ (by decide), r57_19]
+  have r58_8 : reg n58 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k58 _ (by decide), r57_8]
+  have r58_21 : reg n58 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k58 _ (by decide), r57_21]
+  have r58_9 : reg n58 (9 : Fin 32) = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [k58 _ (by decide), r57_9]
+  have r58_10 : reg n58 a0 = R + BitVec.ofNat 32 0x6AC := by rw [v58, D57.hsp]; exact add_sp R rfl
+  obtain ⟨n59, c59, D59, w59, k59, f59⟩ := D58.isNeg C dec_at_24a dec_at_24e (by decide) (by decide) (by rw [r58_10]; exact C.opF (by decide) (by decide) (by decide))
+  have r59_18 : reg n59 (18 : Fin 32) = out := by rw [k59 _ (by decide), r58_18]
+  have r59_20 : reg n59 (20 : Fin 32) = bp := by rw [k59 _ (by decide), r58_20]
+  have r59_19 : reg n59 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k59 _ (by decide), r58_19]
+  have r59_8 : reg n59 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k59 _ (by decide), r58_8]
+  have r59_21 : reg n59 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k59 _ (by decide), r58_21]
+  have r59_9 : reg n59 (9 : Fin 32) = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [k59 _ (by decide), r58_9]
+  have m59_544 : feW n59.mem (R + BitVec.ofNat 32 0x544) = Y := (keepW0 C f59 (by decide) (by decide)).trans m57_544
+  have m59_594 : feW n59.mem (R + BitVec.ofNat 32 0x594) = u := (keepW0 C f59 (by decide) (by decide)).trans m57_594
+  have m59_5bc : feW n59.mem (R + BitVec.ofNat 32 0x5BC) = v := (keepW0 C f59 (by decide) (by decide)).trans m57_5bc
+  have m59_634 : feW n59.mem (R + BitVec.ofNat 32 0x634) = uv3 := (keepW0 C f59 (by decide) (by decide)).trans m57_634
+  have m59_65c : feW n59.mem (R + BitVec.ofNat 32 0x65C) = chk := (keepW0 C f59 (by decide) (by decide)).trans m57_65c
+  have m59_4a0 : feW n59.mem (R + BitVec.ofNat 32 0x4A0) = negL (u) := (keepW0 C f59 (by decide) (by decide)).trans m57_4a0
+  have m59_684 : feW n59.mem (R + BitVec.ofNat 32 0x684) = mulL (sm) (rr) := (keepW0 C f59 (by decide) (by decide)).trans m57_684
+  have m59_6ac : feW n59.mem (R + BitVec.ofNat 32 0x6AC) = (if (feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u))) then mulL (sm) (rr) else rr) := (keepW0 C f59 (by decide) (by decide)).trans m57_6ac
+  have r59_10 : reg n59 a0 = bw (isNegL ((if (feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u))) then mulL (sm) (rr) else rr))) := by rw [w59, r58_10, m57_6ac, bw_isNeg]
+  obtain ⟨n60, c60, D60, v60, k60⟩ := D59.aluImmS C dec_at_252 (off' := 0x256) (by decide) (by decide)
+  have r60_18 : reg n60 (18 : Fin 32) = out := by rw [k60 _ (by decide), r59_18]
+  have r60_20 : reg n60 (20 : Fin 32) = bp := by rw [k60 _ (by decide), r59_20]
+  have r60_19 : reg n60 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k60 _ (by decide), r59_19]
+  have r60_8 : reg n60 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k60 _ (by decide), r59_8]
+  have r60_21 : reg n60 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k60 _ (by decide), r59_21]
+  have r60_9 : reg n60 (9 : Fin 32) = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [k60 _ (by decide), r59_9]
+  have r60_10 : reg n60 a0 = bw (isNegL ((if (feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u))) then mulL (sm) (rr) else rr))) := by rw [k60 _ (by decide), r59_10]
+  have r60_11 : reg n60 a1 = bw (isNegL ((if (feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u))) then mulL (sm) (rr) else rr))) := by rw [v60, r59_10, bw_zext]
+  obtain ⟨n61, c61, D61, v61, k61⟩ := D60.aluImmS C dec_at_256 (off' := 0x258) (by decide) (by decide)
+  have r61_18 : reg n61 (18 : Fin 32) = out := by rw [k61 _ (by decide), r60_18]
+  have r61_20 : reg n61 (20 : Fin 32) = bp := by rw [k61 _ (by decide), r60_20]
+  have r61_19 : reg n61 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k61 _ (by decide), r60_19]
+  have r61_8 : reg n61 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k61 _ (by decide), r60_8]
+  have r61_21 : reg n61 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k61 _ (by decide), r60_21]
+  have r61_9 : reg n61 (9 : Fin 32) = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [k61 _ (by decide), r60_9]
+  have r61_11 : reg n61 a1 = bw (isNegL ((if (feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u))) then mulL (sm) (rr) else rr))) := by rw [k61 _ (by decide), r60_11]
+  have r61_10 : reg n61 a0 = R + BitVec.ofNat 32 0x6AC := by rw [v61, D60.hsp]; exact add_sp R rfl
+  obtain ⟨n62, c62, D62, w62, k62, f62⟩ := D61.condNeg C dec_at_258 dec_at_25c (by decide) (by decide) (k := 0x6AC) (by decide) (by decide) (by decide) r61_10 r61_11 (bw_01 _)
+  have r62_18 : reg n62 (18 : Fin 32) = out := by rw [k62 _ (by decide), r61_18]
+  have r62_20 : reg n62 (20 : Fin 32) = bp := by rw [k62 _ (by decide), r61_20]
+  have r62_19 : reg n62 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k62 _ (by decide), r61_19]
+  have r62_8 : reg n62 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k62 _ (by decide), r61_8]
+  have r62_21 : reg n62 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k62 _ (by decide), r61_21]
+  have r62_9 : reg n62 (9 : Fin 32) = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [k62 _ (by decide), r61_9]
+  have m62_544 : feW n62.mem (R + BitVec.ofNat 32 0x544) = Y := (keepW C f62 (by decide) (by decide) (by decide) (by decide)).trans m59_544
+  have m62_594 : feW n62.mem (R + BitVec.ofNat 32 0x594) = u := (keepW C f62 (by decide) (by decide) (by decide) (by decide)).trans m59_594
+  have m62_5bc : feW n62.mem (R + BitVec.ofNat 32 0x5BC) = v := (keepW C f62 (by decide) (by decide) (by decide) (by decide)).trans m59_5bc
+  have m62_634 : feW n62.mem (R + BitVec.ofNat 32 0x634) = uv3 := (keepW C f62 (by decide) (by decide) (by decide) (by decide)).trans m59_634
+  have m62_65c : feW n62.mem (R + BitVec.ofNat 32 0x65C) = chk := (keepW C f62 (by decide) (by decide) (by decide) (by decide)).trans m59_65c
+  have m62_4a0 : feW n62.mem (R + BitVec.ofNat 32 0x4A0) = negL (u) := (keepW C f62 (by decide) (by decide) (by decide) (by decide)).trans m59_4a0
+  have m62_684 : feW n62.mem (R + BitVec.ofNat 32 0x684) = mulL (sm) (rr) := (keepW C f62 (by decide) (by decide) (by decide) (by decide)).trans m59_684
+  have m62_6ac : feW n62.mem (R + BitVec.ofNat 32 0x6AC) = condNegL ((if (feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u))) then mulL (sm) (rr) else rr)) (isNegL ((if (feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u))) then mulL (sm) (rr) else rr))) := by rw [w62, m59_6ac, bw_beq]
+  obtain ⟨n63, c63, D63, v63, k63⟩ := D62.aluS C dec_at_260 (off' := 0x264) (by decide) (by decide)
+  have r63_18 : reg n63 (18 : Fin 32) = out := by rw [k63 _ (by decide), r62_18]
+  have r63_20 : reg n63 (20 : Fin 32) = bp := by rw [k63 _ (by decide), r62_20]
+  have r63_19 : reg n63 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k63 _ (by decide), r62_19]
+  have r63_8 : reg n63 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k63 _ (by decide), r62_8]
+  have r63_21 : reg n63 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k63 _ (by decide), r62_21]
+  have r63_9 : reg n63 (9 : Fin 32) = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [k63 _ (by decide), r62_9]
+  have r63_10 : reg n63 a0 = bw ((feEqL (chk) (negL (u))) || (feEqL (chk) (u))) := by rw [v63, r62_8, r62_19, bw_or]
+  obtain ⟨n64, c64, D64, v64, k64⟩ := D63.aluImmS C dec_at_264 (off' := 0x268) (by decide) (by decide)
+  have r64_18 : reg n64 (18 : Fin 32) = out := by rw [k64 _ (by decide), r63_18]
+  have r64_20 : reg n64 (20 : Fin 32) = bp := by rw [k64 _ (by decide), r63_20]
+  have r64_19 : reg n64 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k64 _ (by decide), r63_19]
+  have r64_8 : reg n64 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k64 _ (by decide), r63_8]
+  have r64_21 : reg n64 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k64 _ (by decide), r63_21]
+  have r64_9 : reg n64 (9 : Fin 32) = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [k64 _ (by decide), r63_9]
+  have r64_10 : reg n64 a0 = bw ((feEqL (chk) (negL (u))) || (feEqL (chk) (u))) := by rw [v64, r63_10, bw_zext]
+  obtain ⟨n65, c65, D65, w65, k65, f65⟩ := D64.blackBox C dec_at_268 dec_at_26c (by decide) (by decide)
+  have r65_18 : reg n65 (18 : Fin 32) = out := by rw [k65 _ (by decide) (by decide), r64_18]
+  have r65_20 : reg n65 (20 : Fin 32) = bp := by rw [k65 _ (by decide) (by decide), r64_20]
+  have r65_19 : reg n65 (19 : Fin 32) = bw (feEqL (chk) (u)) := by rw [k65 _ (by decide) (by decide), r64_19]
+  have r65_8 : reg n65 (8 : Fin 32) = bw (feEqL (chk) (negL (u))) := by rw [k65 _ (by decide) (by decide), r64_8]
+  have r65_21 : reg n65 (21 : Fin 32) = BitVec.ofNat 32 edSqrtM1Address := by rw [k65 _ (by decide) (by decide), r64_21]
+  have r65_9 : reg n65 (9 : Fin 32) = bw ((feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u)))) := by rw [k65 _ (by decide) (by decide), r64_9]
+  have m65_544 : feW n65.mem (R + BitVec.ofNat 32 0x544) = Y := (keepW0 C f65 (by decide) (by decide)).trans m62_544
+  have m65_594 : feW n65.mem (R + BitVec.ofNat 32 0x594) = u := (keepW0 C f65 (by decide) (by decide)).trans m62_594
+  have m65_5bc : feW n65.mem (R + BitVec.ofNat 32 0x5BC) = v := (keepW0 C f65 (by decide) (by decide)).trans m62_5bc
+  have m65_634 : feW n65.mem (R + BitVec.ofNat 32 0x634) = uv3 := (keepW0 C f65 (by decide) (by decide)).trans m62_634
+  have m65_65c : feW n65.mem (R + BitVec.ofNat 32 0x65C) = chk := (keepW0 C f65 (by decide) (by decide)).trans m62_65c
+  have m65_4a0 : feW n65.mem (R + BitVec.ofNat 32 0x4A0) = negL (u) := (keepW0 C f65 (by decide) (by decide)).trans m62_4a0
+  have m65_684 : feW n65.mem (R + BitVec.ofNat 32 0x684) = mulL (sm) (rr) := (keepW0 C f65 (by decide) (by decide)).trans m62_684
+  have m65_6ac : feW n65.mem (R + BitVec.ofNat 32 0x6AC) = condNegL ((if (feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u))) then mulL (sm) (rr) else rr)) (isNegL ((if (feEqL (chk) (mulL (negL (u)) (sm))) || (feEqL (chk) (negL (u))) then mulL (sm) (rr) else rr))) := (keepW0 C f65 (by decide) (by decide)).trans m62_6ac
+  have r65_10 : reg n65 a0 = bw ((feEqL (chk) (negL (u))) || (feEqL (chk) (u))) := by rw [w65, r64_10, bw_bb]
+  exact ⟨n65, c1.trans (c2.trans (c3.trans (c4.trans (c5.trans (c6.trans (c7.trans (c8.trans (c9.trans (c10.trans (c11.trans (c12.trans (c13.trans (c14.trans (c15.trans (c16.trans (c17.trans (c18.trans (c19.trans (c20.trans (c21.trans (c22.trans (c23.trans (c24.trans (c25.trans (c26.trans (c27.trans (c28.trans (c29.trans (c30.trans (c31.trans (c32.trans (c33.trans (c34.trans (c35.trans (c36.trans (c37.trans (c38.trans (c39.trans (c40.trans (c41.trans (c42.trans (c43.trans (c44.trans (c45.trans (c46.trans (c47.trans (c48.trans (c49.trans (c50.trans (c51.trans (c52.trans (c53.trans (c54.trans (c55.trans (c56.trans (c57.trans (c58.trans (c59.trans (c60.trans (c61.trans (c62.trans (c63.trans (c64.trans (c65)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))), D65, r65_18, r65_20, r65_10, m65_544, m65_6ac⟩
+
+
 end Phases
 
 end C3.RV32
