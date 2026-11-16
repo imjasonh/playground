@@ -126,6 +126,7 @@ import C3BootProofs.Proofs.EncodedPoint
 import C3BootProofs.Proofs.Sha512Blocks
 import C3BootProofs.Proofs.CtInto
 import C3BootProofs.Proofs.ZeroArray
+import C3BootProofs.Proofs.ToBeBytes
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
 import C3BootProofs.Image.BootloaderV0
@@ -943,7 +944,7 @@ as the image stores it, and a block count of zero. -/
 def emptyHasherBytes : List Nat := List.replicate 64 0 ++ Image.shaIVData ++ List.replicate 8 0
 
 /-- Memory with the empty hasher at `0x3FCC5000`, and the current image's
-`update`, `finalize`, `sha256`, their helpers, the zeroing `from_fn`s, `node_hash`,
+`update`, `finalize`, `sha256`, their helpers, the zeroing `from_fn`s, both `to_be_byte_array`s, `node_hash`,
 `root_from_inclusion`, `compress256` with its
 helpers, `memset`, `memcpy`, the initial hash value, and the round constants
 where the image loads them, and zeros elsewhere. -/
@@ -956,6 +957,8 @@ def witnessMemSha2 : RV32.Word → BitVec 8 :=
     (Image.shaZero32Address, Image.shaZero32Code),
     (Image.zeroArray48Address, Image.zeroArray48Code),
     (Image.zeroArray64Address, Image.zeroArray64Code),
+    (Image.toBeBytes12Address, Image.toBeBytes12Code),
+    (Image.toBeBytes8Address, Image.toBeBytes8Code),
     (Image.shaFinBlockAddress, Image.shaFinBlockCode),
     (Image.sha256FnAddress, Image.sha256FnCode),
     (Image.shaFinishAddress, Image.shaFinishCode),
@@ -1175,6 +1178,50 @@ theorem exists_zeroArray64_machine :
   refine ⟨⟨fun r => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.sp then 0x3FCC8000 else 0,
       BitVec.ofNat 32 Image.zeroArray64Address, witnessMemSha2⟩, 0x3FCC6000, 0x3FCC8000, 0,
     by code_in, by code_in, by code_in, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide, by decide,
+    RV32.sep_of_le (by decide) (by decide)⟩
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that encodes the 12 limbs at `0x3FCC5000` big-endian to
+`0x3FCC6000` with the stack at `0x3FCC8000` meets `toBeBytes12_correct`'s
+hypotheses. -/
+theorem exists_toBeBytes12_machine :
+    ∃ (m : RV32.Machine) (out s sp0 retAddr : RV32.Word),
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.toBeBytes12Address) Image.toBeBytes12Code ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.zeroArray48Address) Image.zeroArray48Code ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.memcpyStubAddress) Image.memcpyStubCode ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.memcpyStubAddress + 8) Image.memcpyBodyCode ∧
+      m.pc = BitVec.ofNat 32 Image.toBeBytes12Address ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = s ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
+      sp0.toNat % 16 = 0 ∧ 0x90 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧ s.toNat % 4 = 0 ∧
+      s.toNat + 48 ≤ 0x40000000 ∧ out.toNat + 48 ≤ 0x40000000 ∧ RV32.Sep s 48 (sp0 + 0xFFFFFF70) 0x90 ∧
+      RV32.Sep out 48 (sp0 + 0xFFFFFF70) 0x90 :=
+  ⟨⟨fun r => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC5000 else if r = RV32.sp then 0x3FCC8000
+      else 0, BitVec.ofNat 32 Image.toBeBytes12Address, witnessMemSha2⟩, 0x3FCC6000, 0x3FCC5000, 0x3FCC8000, 0,
+    by code_in, by code_in, by code_in, by code_in, rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide,
+    by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide)⟩
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that encodes the 8 limbs at `0x3FCC5000` big-endian to
+`0x3FCC6000` with the stack at `0x3FCC8000` meets `toBeBytes8_correct`'s
+hypotheses. -/
+theorem exists_toBeBytes8_machine :
+    ∃ (m : RV32.Machine) (out s sp0 retAddr : RV32.Word),
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.toBeBytes8Address) Image.toBeBytes8Code ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.shaZero32Address) Image.shaZero32Code ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.memcpyStubAddress) Image.memcpyStubCode ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.memcpyStubAddress + 8) Image.memcpyBodyCode ∧
+      m.pc = BitVec.ofNat 32 Image.toBeBytes8Address ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = s ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
+      sp0.toNat % 16 = 0 ∧ 0x70 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧ s.toNat % 4 = 0 ∧
+      s.toNat + 32 ≤ 0x40000000 ∧ out.toNat + 32 ≤ 0x40000000 ∧ RV32.Sep s 32 (sp0 + 0xFFFFFF90) 0x70 ∧
+      RV32.Sep out 32 (sp0 + 0xFFFFFF90) 0x70 :=
+  ⟨⟨fun r => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC5000 else if r = RV32.sp then 0x3FCC8000
+      else 0, BitVec.ofNat 32 Image.toBeBytes8Address, witnessMemSha2⟩, 0x3FCC6000, 0x3FCC5000, 0x3FCC8000, 0,
+    by code_in, by code_in, by code_in, by code_in, rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide,
+    by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
     RV32.sep_of_le (by decide) (by decide)⟩
 
 /-- A 12-limb modulus of 3, as bytes: its low limb times `0x55555555` is
@@ -6180,6 +6227,18 @@ end C3
 
 /-- info: 'C3.exists_zeroArray64_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_zeroArray64_machine
+
+/-- info: 'C3.RV32.toBeBytes12_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.toBeBytes12_correct
+
+/-- info: 'C3.exists_toBeBytes12_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_toBeBytes12_machine
+
+/-- info: 'C3.RV32.toBeBytes8_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.toBeBytes8_correct
+
+/-- info: 'C3.exists_toBeBytes8_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_toBeBytes8_machine
 
 /-- info: 'C3.RV32.shaFinBlock_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.shaFinBlock_correct
