@@ -2,7 +2,7 @@ import C3BootProofs.Proofs.FeCall
 import C3BootProofs.Proofs.FeLoad
 import C3BootProofs.Proofs.ParseSpec
 import C3BootProofs.Proofs.MemcpyAny
-import C3BootProofs.Proofs.ShaFinal
+import C3BootProofs.Proofs.Sha2Final
 
 /-!
 # `LimbBuffer::increment_limb`, as compiled

@@ -1,19 +1,17 @@
-import C3BootProofs.Proofs.ShaFinal
-import C3BootProofs.Image.BootloaderV0
+import C3BootProofs.Proofs.Sha2Final
 
 /-!
-# SHA-256 of a byte string
+# SHA-256 of a byte string, as compiled in the current image
 
-The compiled `c3_crypto::sha::sha256` builds a fresh hasher in its frame (an
-outlined helper loads the initial hash value's address, and `memcpy` copies
-it in), absorbs the input with `update`, moves the hasher with `memcpy`, and
-calls `finalize`. `sha256Fn_correct` runs it through those functions'
-theorems.
+The compiled `c3_crypto::sha::sha256` builds a fresh hasher in its frame
+(`memcpy` copies the initial hash value in), absorbs the input with
+`update`, moves the hasher with `memcpy`, and calls `finalize`.
+`sha256Fn_correct` runs it through those functions' theorems.
 -/
 
 namespace C3.RV32
 
-open C3.ImageV0
+open C3.Image
 
 section
 
@@ -24,41 +22,44 @@ theorem os_at_2 : fetchRel sha256FnCode 0x2 = some (.store .sw sp ra 0xDC, 2) :=
 theorem os_at_4 : fetchRel sha256FnCode 0x4 = some (.store .sw sp (8 : Fin 32) 0xD8, 2) := by decide
 theorem os_at_6 : fetchRel sha256FnCode 0x6 = some (.store .sw sp (9 : Fin 32) 0xD4, 2) := by decide
 theorem os_at_8 : fetchRel sha256FnCode 0x8 = some (.store .sw sp (18 : Fin 32) 0xD0, 2) := by decide
-theorem os_at_a : fetchRel sha256FnCode 0xA = some (.auipc (5 : Fin 32) 0x19000, 4) := by decide
-theorem os_at_e : fetchRel sha256FnCode 0xE = some (.jalr (5 : Fin 32) (5 : Fin 32) 0xFFFFFB10, 4) := by decide
-theorem os_at_12 : fetchRel sha256FnCode 0x12 = some (.auipc ra 0x19000, 4) := by decide
-theorem os_at_16 : fetchRel sha256FnCode 0x16 = some (.jalr ra ra 0xFFFFFD2E, 4) := by decide
-theorem os_at_1a : fetchRel sha256FnCode 0x1A = some (.store .sb sp x0 0x3F, 4) := by decide
-theorem os_at_1e : fetchRel sha256FnCode 0x1E = some (.store .sw sp x0 0x60, 2) := by decide
-theorem os_at_20 : fetchRel sha256FnCode 0x20 = some (.store .sw sp x0 0x64, 2) := by decide
-theorem os_at_22 : fetchRel sha256FnCode 0x22 = some (.alu .add a0 x0 sp, 2) := by decide
-theorem os_at_24 : fetchRel sha256FnCode 0x24 = some (.alu .add a1 x0 (9 : Fin 32), 2) := by decide
-theorem os_at_26 : fetchRel sha256FnCode 0x26 = some (.alu .add a2 x0 (8 : Fin 32), 2) := by decide
-theorem os_at_28 : fetchRel sha256FnCode 0x28 = some (.auipc ra 0x0, 4) := by decide
-theorem os_at_2c : fetchRel sha256FnCode 0x2C = some (.jalr ra ra 0xFFFFFEB4, 4) := by decide
-theorem os_at_30 : fetchRel sha256FnCode 0x30 = some (.aluImm .add a0 sp 0x68, 2) := by decide
-theorem os_at_32 : fetchRel sha256FnCode 0x32 = some (.alu .add a1 x0 sp, 2) := by decide
-theorem os_at_34 : fetchRel sha256FnCode 0x34 = some (.aluImm .add a2 x0 0x68, 4) := by decide
-theorem os_at_38 : fetchRel sha256FnCode 0x38 = some (.auipc ra 0x19000, 4) := by decide
-theorem os_at_3c : fetchRel sha256FnCode 0x3C = some (.jalr ra ra 0xFFFFFD08, 4) := by decide
-theorem os_at_40 : fetchRel sha256FnCode 0x40 = some (.aluImm .add a1 sp 0x68, 2) := by decide
-theorem os_at_42 : fetchRel sha256FnCode 0x42 = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
-theorem os_at_44 : fetchRel sha256FnCode 0x44 = some (.auipc ra 0x0, 4) := by decide
-theorem os_at_48 : fetchRel sha256FnCode 0x48 = some (.jalr ra ra 0xFFFFFD54, 4) := by decide
-theorem os_at_4c : fetchRel sha256FnCode 0x4C = some (.load .lw ra sp 0xDC, 2) := by decide
-theorem os_at_4e : fetchRel sha256FnCode 0x4E = some (.load .lw (8 : Fin 32) sp 0xD8, 2) := by decide
-theorem os_at_50 : fetchRel sha256FnCode 0x50 = some (.load .lw (9 : Fin 32) sp 0xD4, 2) := by decide
-theorem os_at_52 : fetchRel sha256FnCode 0x52 = some (.load .lw (18 : Fin 32) sp 0xD0, 2) := by decide
-theorem os_at_54 : fetchRel sha256FnCode 0x54 = some (.aluImm .add sp sp 0xE0, 2) := by decide
-theorem os_at_56 : fetchRel sha256FnCode 0x56 = some (.jalr x0 ra 0x0, 2) := by decide
-theorem oi_at_0 : fetchRel shaInitCode 0x0 = some (.alu .add (8 : Fin 32) x0 a2, 2) := by decide
-theorem oi_at_2 : fetchRel shaInitCode 0x2 = some (.alu .add (9 : Fin 32) x0 a1, 2) := by decide
-theorem oi_at_4 : fetchRel shaInitCode 0x4 = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
-theorem oi_at_6 : fetchRel shaInitCode 0x6 = some (.aluImm .add a0 sp 0x40, 2) := by decide
-theorem oi_at_8 : fetchRel shaInitCode 0x8 = some (.lui a1 0x3FCC4000, 4) := by decide
-theorem oi_at_c : fetchRel shaInitCode 0xC = some (.aluImm .add a1 a1 0x2A8, 4) := by decide
-theorem oi_at_10 : fetchRel shaInitCode 0x10 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem oi_at_14 : fetchRel shaInitCode 0x14 = some (.jalr x0 (5 : Fin 32) 0x0, 2) := by decide
+theorem os_at_a : fetchRel sha256FnCode 0xA = some (.alu .add (8 : Fin 32) x0 a2, 2) := by decide
+theorem os_at_c : fetchRel sha256FnCode 0xC = some (.alu .add (9 : Fin 32) x0 a1, 2) := by decide
+theorem os_at_e : fetchRel sha256FnCode 0xE = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
+theorem os_at_10 : fetchRel sha256FnCode 0x10 = some (.aluImm .add a0 sp 0x40, 2) := by decide
+theorem os_at_12 : fetchRel sha256FnCode 0x12 = some (.lui a1 0x3FCC4000, 4) := by decide
+theorem os_at_16 : fetchRel sha256FnCode 0x16 = some (.aluImm .add a1 a1 0x2A8, 4) := by decide
+theorem os_at_1a : fetchRel sha256FnCode 0x1A = some (.aluImm .add a2 x0 0x20, 4) := by decide
+theorem os_at_1e : fetchRel sha256FnCode 0x1E = some (.auipc ra 0xE000, 4) := by decide
+theorem os_at_22 : fetchRel sha256FnCode 0x22 = some (.jalr ra ra 0xFFFFFC36, 4) := by decide
+theorem os_at_26 : fetchRel sha256FnCode 0x26 = some (.store .sb sp x0 0x3F, 4) := by decide
+theorem os_at_2a : fetchRel sha256FnCode 0x2A = some (.store .sw sp x0 0x60, 2) := by decide
+theorem os_at_2c : fetchRel sha256FnCode 0x2C = some (.store .sw sp x0 0x64, 2) := by decide
+theorem os_at_2e : fetchRel sha256FnCode 0x2E = some (.alu .add a0 x0 sp, 2) := by decide
+theorem os_at_30 : fetchRel sha256FnCode 0x30 = some (.alu .add a1 x0 (9 : Fin 32), 2) := by decide
+theorem os_at_32 : fetchRel sha256FnCode 0x32 = some (.alu .add a2 x0 (8 : Fin 32), 2) := by decide
+theorem os_at_34 : fetchRel sha256FnCode 0x34 = some (.auipc ra 0x0, 4) := by decide
+theorem os_at_38 : fetchRel sha256FnCode 0x38 = some (.jalr ra ra 0xFFFFFE92, 4) := by decide
+theorem os_at_3c : fetchRel sha256FnCode 0x3C = some (.aluImm .add a0 sp 0x68, 2) := by decide
+theorem os_at_3e : fetchRel sha256FnCode 0x3E = some (.alu .add a1 x0 sp, 2) := by decide
+theorem os_at_40 : fetchRel sha256FnCode 0x40 = some (.aluImm .add a2 x0 0x68, 4) := by decide
+theorem os_at_44 : fetchRel sha256FnCode 0x44 = some (.auipc ra 0xE000, 4) := by decide
+theorem os_at_48 : fetchRel sha256FnCode 0x48 = some (.jalr ra ra 0xFFFFFC10, 4) := by decide
+theorem os_at_4c : fetchRel sha256FnCode 0x4C = some (.aluImm .add a1 sp 0x68, 2) := by decide
+theorem os_at_4e : fetchRel sha256FnCode 0x4E = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
+theorem os_at_50 : fetchRel sha256FnCode 0x50 = some (.auipc ra 0x0, 4) := by decide
+theorem os_at_54 : fetchRel sha256FnCode 0x54 = some (.jalr ra ra 0xFFFFFD10, 4) := by decide
+theorem os_at_58 : fetchRel sha256FnCode 0x58 = some (.load .lw ra sp 0xDC, 2) := by decide
+theorem os_at_5a : fetchRel sha256FnCode 0x5A = some (.load .lw (8 : Fin 32) sp 0xD8, 2) := by decide
+theorem os_at_5c : fetchRel sha256FnCode 0x5C = some (.load .lw (9 : Fin 32) sp 0xD4, 2) := by decide
+theorem os_at_5e : fetchRel sha256FnCode 0x5E = some (.load .lw (18 : Fin 32) sp 0xD0, 2) := by decide
+theorem os_at_60 : fetchRel sha256FnCode 0x60 = some (.aluImm .add sp sp 0xE0, 2) := by decide
+theorem os_at_62 : fetchRel sha256FnCode 0x62 = some (.jalr x0 ra 0x0, 2) := by decide
+
+def ssInit : List BInstr :=
+  [.alu .add (8 : Fin 32) x0 a2, .alu .add (9 : Fin 32) x0 a1, .alu .add (18 : Fin 32) x0 a0, .aluImm .add a0 sp 0x40,
+    .lui a1 0x3FCC4000, .aluImm .add a1 a1 0x2A8, .aluImm .add a2 x0 0x20]
+
+theorem ssInit_end : blockEnd sha256FnCode 0xA ssInit = some 0x1E := by decide
 
 end
 
@@ -126,82 +127,27 @@ theorem iv_words {M : Word → BitVec 8} (h : CodeIn M (BitVec.ofNat 32 shaIVAdd
   rw [e]; decide
 
 set_option maxRecDepth 20000 in
-/-- A caller's `auipc t0, imm; jalr t0, o(t0)` into the outlined helper that
-starts `sha256`: it keeps the arguments in `s0` through `s2` and sets up
-`memcpy` of the initial hash value into the frame at `sp + 0x40`. -/
-theorem St.callShaInit {M : Word → BitVec 8} {base : Word} {code : List Nat} {m : Machine}
-    {off : Nat} {f : Fin 32 → Word} (s : St M base m off f)
-    (hc : CodeIn M base code) {imm o : Word}
-    (h1 : fetchRel code off = some (.auipc t0 imm, 4))
-    (h2 : fetchRel code (off + 4) = some (.jalr t0 t0 o, 4))
-    (hb : base + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 shaInitAddress)
-    (hl : (base + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
-    (hh : CodeIn M (BitVec.ofNat 32 shaInitAddress) shaInitCode) :
-    ∃ m', Steps m m' ∧ St M base m' (off + 8) (reg m') ∧
+/-- `sha256`'s start, from offset 0xA to 0x1E: it keeps the arguments in
+`s0` through `s2` and sets up `memcpy` of the initial hash value into the
+frame at `sp + 0x40`. -/
+theorem St.shaInit {M : Word → BitVec 8} {m : Machine} {f : Fin 32 → Word}
+    (s : St M (BitVec.ofNat 32 sha256FnAddress) m 0xA f)
+    (hc : CodeIn M (BitVec.ofNat 32 sha256FnAddress) sha256FnCode) :
+    ∃ m', Steps m m' ∧ St M (BitVec.ofNat 32 sha256FnAddress) m' 0x1E (reg m') ∧
       reg m' s0 = f a2 ∧ reg m' s1 = f a1 ∧ reg m' s2 = f a0 ∧ reg m' a0 = f sp + 0x40 ∧
       reg m' a1 = BitVec.ofNat 32 shaIVAddress ∧ reg m' a2 = BitVec.ofNat 32 32 ∧
       ∀ r, r ≠ t0 → r ≠ s0 → r ≠ s1 → r ≠ s2 → r ≠ a0 → r ≠ a1 → r ≠ a2 → reg m' r = f r := by
-  let IB := BitVec.ofNat 32 shaInitAddress
   have hz := s.zero
-  obtain ⟨m1, e1, t1⟩ := s.auipc hc h1 (off' := off + 4) (ofNat_add_ofNat off 4)
-  obtain ⟨m2, e2, pc2, mem2, regs2⟩ := t1.call hc h2
-  have hL : base + BitVec.ofNat 32 (off + 4) + 4 = base + BitVec.ofNat 32 (off + 8) := by
-    rw [show (4 : Word) = BitVec.ofNat 32 4 from rfl, add_ofNat_assoc]
-  have r2 : ∀ r, r ≠ t0 → reg m2 r = f r := fun r h => by
-    rw [regs2]
-    by_cases h0 : r.val = 0
-    · have : r = 0 := Fin.ext h0
-      subst this; simp [upd, hz]
-    · simp [upd, h0, h]
-  have t2 : reg m2 t0 = base + BitVec.ofNat 32 (off + 8) := by rw [regs2, hL]; simp +decide [upd]; try rfl
-  have hp2 : m2.pc = IB := by
-    rw [pc2, show upd f t0 (base + BitVec.ofNat 32 off + imm) t0 = base + BitVec.ofNat 32 off + imm from
-      by simp +decide [upd], hb]
-    decide
-  have u2 : St M IB m2 0 (reg m2) := ⟨by rw [hp2]; simp, mem2, fun _ => rfl⟩
-  obtain ⟨m3, e3, u3⟩ := u2.alu hh oi_at_0 (off' := 2) (by decide)
-  have K3 := u3.upd_ne u2.zero
-  have u3' : St M IB m3 2 (reg m3) := u3.self
-  obtain ⟨m4, e4, u4⟩ := u3'.alu hh oi_at_2 (off' := 4) (by decide)
-  have K4 := u4.upd_ne u3'.zero
-  have u4' : St M IB m4 4 (reg m4) := u4.self
-  obtain ⟨m5, e5, u5⟩ := u4'.alu hh oi_at_4 (off' := 6) (by decide)
-  have K5 := u5.upd_ne u4'.zero
-  have u5' : St M IB m5 6 (reg m5) := u5.self
-  obtain ⟨m6, e6, u6⟩ := u5'.aluImm hh oi_at_6 (off' := 8) (by decide)
-  have K6 := u6.upd_ne u5'.zero
-  have u6' : St M IB m6 8 (reg m6) := u6.self
-  obtain ⟨m7, e7, u7⟩ := u6'.lui hh oi_at_8 (off' := 0xC) (by decide)
-  have K7 := u7.upd_ne u6'.zero
-  have u7' : St M IB m7 0xC (reg m7) := u7.self
-  obtain ⟨m8, e8, u8⟩ := u7'.aluImm hh oi_at_c (off' := 0x10) (by decide)
-  have K8 := u8.upd_ne u7'.zero
-  have u8' : St M IB m8 0x10 (reg m8) := u8.self
-  obtain ⟨m9, e9, u9⟩ := u8'.aluImm hh oi_at_10 (off' := 0x14) (by decide)
-  have K9 := u9.upd_ne u8'.zero
-  have u9' : St M IB m9 0x14 (reg m9) := u9.self
-  obtain ⟨m10, e10, pc10, mem10, regs10⟩ := u9'.jalr hh oi_at_14
-  have K29 : ∀ r, r ≠ s0 → r ≠ s1 → r ≠ s2 → r ≠ a0 → r ≠ a1 → r ≠ a2 → reg m9 r = reg m2 r :=
-    fun r q8 q9 q18 q10 q11 q12 => by
-      rw [K9 r q12, K8 r q11, K7 r q11, K6 r q10, K5 r q18, K4 r q9, K3 r q8]
-  refine ⟨m10, .cons e1 (.cons e2 (.cons e3 (.cons e4 (.cons e5 (.cons e6 (.cons e7 (.cons e8 (.cons e9
-    (.single e10))))))))), ⟨?_, mem10, fun _ => rfl⟩, ?_, ?_, ?_, ?_, ?_, ?_, fun r q5 q8 q9 q18 q10 q11 q12 => ?_⟩
-  · rw [pc10, K29 t0 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), t2, add_lit_zero]
-    exact even_clear _ hl
-  · rw [regs10, K9 s0 (by decide), K8 s0 (by decide), K7 s0 (by decide), K6 s0 (by decide), K5 s0 (by decide),
-      K4 s0 (by decide), u3.upd_eq (by decide), u2.zero, r2 a2 (by decide)]
-    exact BitVec.zero_add _
-  · rw [regs10, K9 s1 (by decide), K8 s1 (by decide), K7 s1 (by decide), K6 s1 (by decide), K5 s1 (by decide),
-      u4.upd_eq (by decide), u3'.zero, K3 a1 (by decide), r2 a1 (by decide)]
-    exact BitVec.zero_add _
-  · rw [regs10, K9 s2 (by decide), K8 s2 (by decide), K7 s2 (by decide), K6 s2 (by decide),
-      u5.upd_eq (by decide), u4'.zero, K4 a0 (by decide), K3 a0 (by decide), r2 a0 (by decide)]
-    exact BitVec.zero_add _
-  · rw [regs10, K9 a0 (by decide), K8 a0 (by decide), K7 a0 (by decide), u6.upd_eq (by decide),
-      K5 sp (by decide), K4 sp (by decide), K3 sp (by decide), r2 sp (by decide)]; rfl
-  · rw [regs10, K9 a1 (by decide), u8.upd_eq (by decide), u7.upd_eq (by decide)]; rfl
-  · rw [regs10, u9.upd_eq (by decide), u8'.zero]; rfl
-  · rw [regs10, K29 r q8 q9 q18 q10 q11 q12, r2 r q5]
+  obtain ⟨m1, c1, u1⟩ := St.block ssInit s hc ssInit_end (by simp [BlockOk, BInstr.ok, ssInit])
+  have R : ∀ r, reg m1 r = (runBlock ssInit (M, f)).2 r := u1.regs
+  refine ⟨m1, c1, ⟨u1.pc, by rw [u1.mem]; rfl, fun _ => rfl⟩, ?_, ?_, ?_, ?_, ?_, ?_,
+    fun r q5 q8 q9 q18 q10 q11 q12 => ?_⟩
+  all_goals first
+    | (rw [R]; simp only [runBlock, BInstr.run, ssInit]
+       rw [updz (by simp [upd]) q12, updz (by simp [upd]) q11, updz (by simp [upd]) q11, updz (by simp [upd]) q10,
+         updz (by simp [upd]) q18, updz (by simp [upd]) q9, updz hz q8])
+    | (rw [R]; simp +decide only [runBlock, BInstr.run, ssInit, upd_app, ↓reduceIte]
+       try (first | rfl | exact BitVec.zero_add _ | (rw [hz]; exact BitVec.zero_add _) | (rw [hz]; rfl)))
 
 /-- Where `sha256` runs: its code and its callees', the initial hash value,
 the `n` input bytes at `D`, the output at `out`, and 0x270 bytes of stack
@@ -209,24 +155,17 @@ below `sp0`, all below 0x40000000; the input, the output, the initial hash
 value, and the round constants are each apart from the stack. -/
 structure Sha256Env (M : Word → BitVec 8) (out D sp0 : Word) (n : Nat) : Prop where
   cX : CodeIn M (BitVec.ofNat 32 sha256FnAddress) sha256FnCode
-  cInit : CodeIn M (BitVec.ofNat 32 shaInitAddress) shaInitCode
   cIV : CodeIn M (BitVec.ofNat 32 shaIVAddress) shaIVData
   cU : CodeIn M (BitVec.ofNat 32 shaUpdateAddress) shaUpdateCode
-  cUSave : CodeIn M (BitVec.ofNat 32 shaUpdateSaveAddress) shaUpdateSaveCode
-  cURest : CodeIn M (BitVec.ofNat 32 shaUpdateRestoreAddress) shaUpdateRestoreCode
   cUBlk : CodeIn M (BitVec.ofNat 32 shaUpdateBlocksAddress) shaUpdateBlocksCode
   cF : CodeIn M (BitVec.ofNat 32 shaFinalizeAddress) shaFinalizeCode
-  cFSave : CodeIn M (BitVec.ofNat 32 shaFinalizeSaveAddress) shaFinalizeSaveCode
-  cFRest : CodeIn M (BitVec.ofNat 32 shaFinalizeRestoreAddress) shaFinalizeRestoreCode
   cZ : CodeIn M (BitVec.ofNat 32 shaZero32Address) shaZero32Code
-  cFBlk : CodeIn M (BitVec.ofNat 32 shaFinalizeBlockAddress) shaFinalizeBlockCode
-  cBe : CodeIn M (BitVec.ofNat 32 shaStoreBeAddress) shaStoreBeCode
+  cFBlk : CodeIn M (BitVec.ofNat 32 shaFinBlockAddress) shaFinBlockCode
   cMs : CodeIn M (BitVec.ofNat 32 memsetAddress) memsetCode
   cMS : CodeIn M (BitVec.ofNat 32 memcpyStubAddress) memcpyStubCode
   cMB : CodeIn M (BitVec.ofNat 32 memcpyStubAddress + 8) memcpyBodyCode
   cC : CodeIn M (BitVec.ofNat 32 sha256CompressAddress) sha256CompressCode
-  cI : CodeIn M (BitVec.ofNat 32 sha256CompressAddress + 0x2B94) shaIndexCode
-  c97 : CodeIn M (BitVec.ofNat 32 sha256CompressAddress + 0xC09C) shaSigma1PartCode
+  cI : CodeIn M (BitVec.ofNat 32 sha256CompressAddress + 0x25A) rangeFromIndexCode
   cK : CodeIn M (BitVec.ofNat 32 shaKAddress) shaKData
   hsp : sp0.toNat % 16 = 0
   hspl : 0x270 ≤ sp0.toNat
@@ -320,14 +259,13 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
       memStore32_get_sep (show Sep (F + 0xDC) 4 x 1 by rw [show F + (0xDC : Word) = F + BitVec.ofNat 32 0xDC from rfl, Fc]; exact Rx _ _ (by omega) x hx)]
   have cM1 := codeX M1 M1R
   have cX5 := cM1 _ _ E.cX (by decide) (by decide)
-  obtain ⟨m6, c6, u6, s0_6, s1_6, s2_6, a0_6, a1_6, a2_6, K6⟩ := u5.callShaInit cX5 os_at_a os_at_e (by decide)
-    (by decide) (cM1 _ _ E.cInit (by decide) (by decide))
+  obtain ⟨m6, c6, u6, s0_6, s1_6, s2_6, a0_6, a1_6, a2_6, K6⟩ := u5.shaInit cX5
   rw [K1 a2 (by decide), ha2] at s0_6
   rw [K1 a1 (by decide), ha1] at s1_6
   rw [K1 a0 (by decide), ha0] at s2_6
   rw [sp1] at a0_6
-  obtain ⟨m7, e7, u7⟩ := u6.auipc cX5 os_at_12 (off' := 0x16) (by decide)
-  obtain ⟨m8, e8, pc8, mem8, regs8⟩ := u7.call cX5 os_at_16
+  obtain ⟨m7, e7, u7⟩ := u6.auipc cX5 os_at_1e (off' := 0x22) (by decide)
+  obtain ⟨m8, e8, pc8, mem8, regs8⟩ := u7.call cX5 os_at_22
   have r8 : ∀ r, r ≠ ra → reg m8 r = reg m6 r := fun r h => by
     rw [regs8]
     by_cases h0 : r.val = 0
@@ -340,7 +278,7 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
   have eF16 : F + 0xFFFFFFF0 = R + BitVec.ofNat 32 0x180 := by rw [hFR, BitVec.add_assoc]; rfl
   have hF16 : (F + 0xFFFFFFF0).toNat = R.toNat + 0x180 := by rw [eF16, hRc _ (by omega)]
   obtain ⟨m9, c9, pc9, sp9, a09, mem9, K9⟩ := memcpy_correct m8 (BitVec.ofNat 32 memcpyStubAddress)
-    (Q + BitVec.ofNat 32 0x1A) (F + BitVec.ofNat 32 0x40) (BitVec.ofNat 32 shaIVAddress) 32
+    (Q + BitVec.ofNat 32 0x26) (F + BitVec.ofNat 32 0x40) (BitVec.ofNat 32 shaIVAddress) 32
     (fun i hi => by show m8.mem _ = _; rw [mem8]; exact cM1 _ _ E.cMS (by decide) (by decide) i hi) (by decide)
     (by rw [pc8, show ∀ (F : Fin 32 → Word) (v : Word), upd F ra v ra = v from fun F v => by simp [upd]]; decide)
     (by rw [r8 a0 (by decide), a0_6]; rfl) (by rw [r8 a1 (by decide), a1_6]) (by rw [r8 a2 (by decide), a2_6])
@@ -366,22 +304,22 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
       M1R x hx]
   have cMA := codeX MA MAR
   have cXA := cMA _ _ E.cX (by decide) (by decide)
-  have u9 : St MA Q m9 0x1A (reg m9) := ⟨by rw [pc9], rfl, fun _ => rfl⟩
+  have u9 : St MA Q m9 0x26 (reg m9) := ⟨by rw [pc9], rfl, fun _ => rfl⟩
   have k9 : ∀ r, r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ t0 → r ≠ t1 →
       r ≠ (7 : Fin 32) → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → r ≠ sp →
       reg m9 r = reg m8 r := K9
   have sp9' : reg m9 sp = F := by rw [sp9, sp8]
   -- A fresh hasher: the initial hash value, an empty buffer, and no blocks.
-  obtain ⟨m10, e10, u10⟩ := u9.sb cXA os_at_1a (off' := 0x1E) (by decide)
+  obtain ⟨m10, e10, u10⟩ := u9.sb cXA os_at_26 (off' := 0x2A) (by decide)
   rw [sp9', u9.zero] at u10
   have cXA1 := cXA.store8 (a := F + 0x3F) (v := (0 : Word).extractLsb' 0 8)
     (by rw [show F + (0x3F : Word) = F + BitVec.ofNat 32 0x3F from rfl, Fc]; exact Rd _ _ (by omega) _ _ (by decide) (by decide))
-  obtain ⟨m11, e11, u11⟩ := u10.sw cXA1 os_at_1e (off' := 0x20) (by decide)
+  obtain ⟨m11, e11, u11⟩ := u10.sw cXA1 os_at_2a (off' := 0x2C) (by decide)
     (by rw [sp9']; exact aligned_add hFa4 (k := 0x60) (by decide))
   rw [sp9', u9.zero] at u11
   have cXA2 := cXA1.store32 (a := F + 0x60) (v := 0)
     (by rw [show F + (0x60 : Word) = F + BitVec.ofNat 32 0x60 from rfl, Fc]; exact Rd _ _ (by omega) _ _ (by decide) (by decide))
-  obtain ⟨m12, e12, u12⟩ := u11.sw cXA2 os_at_20 (off' := 0x22) (by decide)
+  obtain ⟨m12, e12, u12⟩ := u11.sw cXA2 os_at_2c (off' := 0x2E) (by decide)
     (by rw [sp9']; exact aligned_add hFa4 (k := 0x64) (by decide))
   rw [sp9', u9.zero] at u12
   let MH := memStore32 (memStore32 (memStore8 MA (F + 0x3F) ((0 : Word).extractLsb' 0 8)) (F + 0x60) 0) (F + 0x64) 0
@@ -430,7 +368,7 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
         rw [memLoad32_store32_same] }
   have cMH := codeX MH MHR
   have cXH := cMH _ _ E.cX (by decide) (by decide)
-  have u12' : St MH Q m12 0x22 (reg m12) := u12.self
+  have u12' : St MH Q m12 0x2E (reg m12) := u12.self
   have r12 : ∀ r, reg m12 r = reg m9 r := fun r => u12.regs r
   have K69 : ∀ r, r ≠ ra → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ t0 → r ≠ t1 →
       r ≠ (7 : Fin 32) → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → r ≠ sp →
@@ -446,17 +384,17 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
     rw [K69 s2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), s2_6]
   have sp12 : reg m12 sp = F := by rw [r12, sp9']
-  obtain ⟨m13, e13, u13⟩ := u12'.alu cXH os_at_22 (off' := 0x24) (by decide)
+  obtain ⟨m13, e13, u13⟩ := u12'.alu cXH os_at_2e (off' := 0x30) (by decide)
   have K13 := u13.upd_ne u12'.zero
-  have u13' : St MH Q m13 0x24 (reg m13) := u13.self
-  obtain ⟨m14, e14, u14⟩ := u13'.alu cXH os_at_24 (off' := 0x26) (by decide)
+  have u13' : St MH Q m13 0x30 (reg m13) := u13.self
+  obtain ⟨m14, e14, u14⟩ := u13'.alu cXH os_at_30 (off' := 0x32) (by decide)
   have K14 := u14.upd_ne u13'.zero
-  have u14' : St MH Q m14 0x26 (reg m14) := u14.self
-  obtain ⟨m15, e15, u15⟩ := u14'.alu cXH os_at_26 (off' := 0x28) (by decide)
+  have u14' : St MH Q m14 0x32 (reg m14) := u14.self
+  obtain ⟨m15, e15, u15⟩ := u14'.alu cXH os_at_32 (off' := 0x34) (by decide)
   have K15 := u15.upd_ne u14'.zero
-  have u15' : St MH Q m15 0x28 (reg m15) := u15.self
-  obtain ⟨m16, e16, u16⟩ := u15'.auipc cXH os_at_28 (off' := 0x2C) (by decide)
-  obtain ⟨m17, e17, pc17, mem17, regs17⟩ := u16.call cXH os_at_2c
+  have u15' : St MH Q m15 0x34 (reg m15) := u15.self
+  obtain ⟨m16, e16, u16⟩ := u15'.auipc cXH os_at_34 (off' := 0x38) (by decide)
+  obtain ⟨m17, e17, pc17, mem17, regs17⟩ := u16.call cXH os_at_38
   have r17 : ∀ r, r ≠ ra → reg m17 r = reg m15 r := fun r h => by
     rw [regs17]
     by_cases h0 : r.val = 0
@@ -468,14 +406,11 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
   have eU : F + 0xFFFFFF00 = R + BitVec.ofNat 32 0x90 := by rw [hFR, BitVec.add_assoc]; rfl
   have hUn : (F + 0xFFFFFF00).toNat = R.toNat + 0x90 := by rw [eU, hRc _ (by omega)]
   obtain ⟨m18, c18, pc18, sp18, K18, HU, fr18⟩ := shaUpdate_correct m17 (S := F) (D := D) (sp0 := F) (n := n)
-    (msg := []) (retAddr := Q + BitVec.ofNat 32 0x30)
+    (msg := []) (retAddr := Q + BitVec.ofNat 32 0x3C)
     { cU := by rw [mem17]; exact cMH _ _ E.cU (by decide) (by decide)
-      cSave := by rw [mem17]; exact cMH _ _ E.cUSave (by decide) (by decide)
-      cRest := by rw [mem17]; exact cMH _ _ E.cURest (by decide) (by decide)
       cBlk := by rw [mem17]; exact cMH _ _ E.cUBlk (by decide) (by decide)
       cC := by rw [mem17]; exact cMH _ _ E.cC (by decide) (by decide)
       cI := by rw [mem17]; exact cMH _ _ E.cI (by decide) (by decide)
-      c97 := by rw [mem17]; exact cMH _ _ E.c97 (by decide) (by decide)
       cK := fun i hi => by
         have hi' : i < 256 := by rw [show shaKData.length = 256 from rfl] at hi; exact hi
         rw [mem17, MHR _ (E.sKF.sub (c := i) (l := 1) (by omega)).symm]; exact E.cK i hi
@@ -512,7 +447,7 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
   rw [List.nil_append, mem17, hdat] at HU
   have cMU := codeX MU MUR
   have cXU := cMU _ _ E.cX (by decide) (by decide)
-  have u18 : St MU Q m18 0x30 (reg m18) := ⟨by rw [pc18], rfl, fun _ => rfl⟩
+  have u18 : St MU Q m18 0x3C (reg m18) := ⟨by rw [pc18], rfl, fun _ => rfl⟩
   have k18 : ∀ r, r ≠ ra → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
       r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
       r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → r ≠ sp → reg m18 r = reg m17 r := K18
@@ -523,17 +458,17 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
       rw [k18 r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2, K1217 r q1 q10 q11 q12]
   have sp18' : reg m18 sp = F := sp18
   -- Move the hasher, as `finalize` takes it by value.
-  obtain ⟨m19, e19, u19⟩ := u18.aluImm cXU os_at_30 (off' := 0x32) (by decide)
+  obtain ⟨m19, e19, u19⟩ := u18.aluImm cXU os_at_3c (off' := 0x3E) (by decide)
   have K19 := u19.upd_ne u18.zero
-  have u19' : St MU Q m19 0x32 (reg m19) := u19.self
-  obtain ⟨m20, e20, u20⟩ := u19'.alu cXU os_at_32 (off' := 0x34) (by decide)
+  have u19' : St MU Q m19 0x3E (reg m19) := u19.self
+  obtain ⟨m20, e20, u20⟩ := u19'.alu cXU os_at_3e (off' := 0x40) (by decide)
   have K20 := u20.upd_ne u19'.zero
-  have u20' : St MU Q m20 0x34 (reg m20) := u20.self
-  obtain ⟨m21, e21, u21⟩ := u20'.aluImm cXU os_at_34 (off' := 0x38) (by decide)
+  have u20' : St MU Q m20 0x40 (reg m20) := u20.self
+  obtain ⟨m21, e21, u21⟩ := u20'.aluImm cXU os_at_40 (off' := 0x44) (by decide)
   have K21 := u21.upd_ne u20'.zero
-  have u21' : St MU Q m21 0x38 (reg m21) := u21.self
-  obtain ⟨m22, e22, u22⟩ := u21'.auipc cXU os_at_38 (off' := 0x3C) (by decide)
-  obtain ⟨m23, e23, pc23, mem23, regs23⟩ := u22.call cXU os_at_3c
+  have u21' : St MU Q m21 0x44 (reg m21) := u21.self
+  obtain ⟨m22, e22, u22⟩ := u21'.auipc cXU os_at_44 (off' := 0x48) (by decide)
+  obtain ⟨m23, e23, pc23, mem23, regs23⟩ := u22.call cXU os_at_48
   have r23 : ∀ r, r ≠ ra → reg m23 r = reg m21 r := fun r h => by
     rw [regs23]
     by_cases h0 : r.val = 0
@@ -544,7 +479,7 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
     rw [r23 r q1, K21 r q12, K20 r q11, K19 r q10]
   have sp23 : reg m23 sp = F := by rw [K1823 sp (by decide) (by decide) (by decide) (by decide), sp18']
   obtain ⟨m24, c24, pc24, sp24, a024, mem24, K24⟩ := memcpy_correct m23 (BitVec.ofNat 32 memcpyStubAddress)
-    (Q + BitVec.ofNat 32 0x40) (F + BitVec.ofNat 32 0x68) F 0x68
+    (Q + BitVec.ofNat 32 0x4C) (F + BitVec.ofNat 32 0x68) F 0x68
     (fun i hi => by show m23.mem _ = _; rw [mem23]; exact cMU _ _ E.cMS (by decide) (by decide) i hi) (by decide)
     (by rw [pc23, show ∀ (F : Fin 32 → Word) (v : Word), upd F ra v ra = v from fun F v => by simp [upd]]; decide)
     (by rw [r23 a0 (by decide), K21 a0 (by decide), K20 a0 (by decide), u19.upd_eq (by decide), sp18']; rfl)
@@ -581,19 +516,19 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
       copyBytes_in hi (by omega)]
   have cMC := codeX MC MCR
   have cXC := cMC _ _ E.cX (by decide) (by decide)
-  have u24 : St MC Q m24 0x40 (reg m24) := ⟨by rw [pc24], rfl, fun _ => rfl⟩
+  have u24 : St MC Q m24 0x4C (reg m24) := ⟨by rw [pc24], rfl, fun _ => rfl⟩
   have k24 : ∀ r, r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ t0 → r ≠ t1 →
       r ≠ (7 : Fin 32) → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → r ≠ sp →
       reg m24 r = reg m23 r := K24
   have sp24' : reg m24 sp = F := by rw [sp24, sp23]
-  obtain ⟨m25, e25, u25⟩ := u24.aluImm cXC os_at_40 (off' := 0x42) (by decide)
+  obtain ⟨m25, e25, u25⟩ := u24.aluImm cXC os_at_4c (off' := 0x4E) (by decide)
   have K25 := u25.upd_ne u24.zero
-  have u25' : St MC Q m25 0x42 (reg m25) := u25.self
-  obtain ⟨m26, e26, u26⟩ := u25'.alu cXC os_at_42 (off' := 0x44) (by decide)
+  have u25' : St MC Q m25 0x4E (reg m25) := u25.self
+  obtain ⟨m26, e26, u26⟩ := u25'.alu cXC os_at_4e (off' := 0x50) (by decide)
   have K26 := u26.upd_ne u25'.zero
-  have u26' : St MC Q m26 0x44 (reg m26) := u26.self
-  obtain ⟨m27, e27, u27⟩ := u26'.auipc cXC os_at_44 (off' := 0x48) (by decide)
-  obtain ⟨m28, e28, pc28, mem28, regs28⟩ := u27.call cXC os_at_48
+  have u26' : St MC Q m26 0x50 (reg m26) := u26.self
+  obtain ⟨m27, e27, u27⟩ := u26'.auipc cXC os_at_50 (off' := 0x54) (by decide)
+  obtain ⟨m28, e28, pc28, mem28, regs28⟩ := u27.call cXC os_at_54
   have r28 : ∀ r, r ≠ ra → reg m28 r = reg m26 r := fun r h => by
     rw [regs28]
     by_cases h0 : r.val = 0
@@ -609,19 +544,15 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
   have eR : F + 0xFFFFFE70 = R := by rw [hFR, BitVec.add_assoc]; exact BitVec.add_zero R
   have hS68 : (F + BitVec.ofNat 32 0x68).toNat = F.toNat + 0x68 := hFc _ (by omega)
   obtain ⟨m29, c29, pc29, sp29, K29, out29, fr29⟩ := shaFinalize_correct m28 (S := F + BitVec.ofNat 32 0x68)
-    (out := out) (sp0 := F) (retAddr := Q + BitVec.ofNat 32 0x4C) (msg := memBytes M0 D n)
+    (out := out) (sp0 := F) (retAddr := Q + BitVec.ofNat 32 0x58) (msg := memBytes M0 D n)
     { cF := by rw [mem28]; exact cMC _ _ E.cF (by decide) (by decide)
-      cSave := by rw [mem28]; exact cMC _ _ E.cFSave (by decide) (by decide)
-      cRest := by rw [mem28]; exact cMC _ _ E.cFRest (by decide) (by decide)
       cZ := by rw [mem28]; exact cMC _ _ E.cZ (by decide) (by decide)
       cBlk := by rw [mem28]; exact cMC _ _ E.cFBlk (by decide) (by decide)
-      cBe := by rw [mem28]; exact cMC _ _ E.cBe (by decide) (by decide)
       cMs := by rw [mem28]; exact cMC _ _ E.cMs (by decide) (by decide)
       cMS := by rw [mem28]; exact cMC _ _ E.cMS (by decide) (by decide)
       cMB := by rw [mem28]; exact cMC _ _ E.cMB (by decide) (by decide)
       cC := by rw [mem28]; exact cMC _ _ E.cC (by decide) (by decide)
       cI := by rw [mem28]; exact cMC _ _ E.cI (by decide) (by decide)
-      c97 := by rw [mem28]; exact cMC _ _ E.c97 (by decide) (by decide)
       cK := fun i hi => by
         have hi' : i < 256 := by rw [show shaKData.length = 256 from rfl] at hi; exact hi
         rw [mem28, MCR _ (E.sKF.sub (c := i) (l := 1) (by omega)).symm]; exact E.cK i hi
@@ -707,36 +638,36 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
         ((data_code hOw hb hbl).subR (c := i) (l := 1) (by omega)), MCR _ hx]
     exact hc i hi
   have cXF := cMF _ _ E.cX (by decide) (by decide)
-  have u29 : St MF Q m29 0x4C (reg m29) := ⟨by rw [pc29], rfl, fun _ => rfl⟩
+  have u29 : St MF Q m29 0x58 (reg m29) := ⟨by rw [pc29], rfl, fun _ => rfl⟩
   have sp29' : reg m29 sp = F := sp29
-  obtain ⟨m30, e30, u30⟩ := u29.lw cXF os_at_4c (off' := 0x4E) (by decide)
+  obtain ⟨m30, e30, u30⟩ := u29.lw cXF os_at_58 (off' := 0x5A) (by decide)
     (by rw [sp29']; exact aligned_add hFa4 (k := 0xDC) (by decide))
   rw [sp29', show memLoad32 MF (F + 0xDC) = reg m ra from (ldF 0xDC (by omega) (by omega)).trans vRa] at u30
   have K30 := u30.upd_ne u29.zero
-  have u30' : St MF Q m30 0x4E (reg m30) := u30.self
-  obtain ⟨m31, e31, u31⟩ := u30'.lw cXF os_at_4e (off' := 0x50) (by decide)
+  have u30' : St MF Q m30 0x5A (reg m30) := u30.self
+  obtain ⟨m31, e31, u31⟩ := u30'.lw cXF os_at_5a (off' := 0x5C) (by decide)
     (by rw [K30 sp (by decide), sp29']; exact aligned_add hFa4 (k := 0xD8) (by decide))
   rw [K30 sp (by decide), sp29', show memLoad32 MF (F + 0xD8) = reg m s0 from (ldF 0xD8 (by omega) (by omega)).trans vS0]
     at u31
   have K31 := u31.upd_ne u30'.zero
-  have u31' : St MF Q m31 0x50 (reg m31) := u31.self
-  obtain ⟨m32, e32, u32⟩ := u31'.lw cXF os_at_50 (off' := 0x52) (by decide)
+  have u31' : St MF Q m31 0x5C (reg m31) := u31.self
+  obtain ⟨m32, e32, u32⟩ := u31'.lw cXF os_at_5c (off' := 0x5E) (by decide)
     (by rw [K31 sp (by decide), K30 sp (by decide), sp29']; exact aligned_add hFa4 (k := 0xD4) (by decide))
   rw [K31 sp (by decide), K30 sp (by decide), sp29',
     show memLoad32 MF (F + 0xD4) = reg m s1 from (ldF 0xD4 (by omega) (by omega)).trans vS1] at u32
   have K32 := u32.upd_ne u31'.zero
-  have u32' : St MF Q m32 0x52 (reg m32) := u32.self
-  obtain ⟨m33, e33, u33⟩ := u32'.lw cXF os_at_52 (off' := 0x54) (by decide)
+  have u32' : St MF Q m32 0x5E (reg m32) := u32.self
+  obtain ⟨m33, e33, u33⟩ := u32'.lw cXF os_at_5e (off' := 0x60) (by decide)
     (by rw [K32 sp (by decide), K31 sp (by decide), K30 sp (by decide), sp29']
         exact aligned_add hFa4 (k := 0xD0) (by decide))
   rw [K32 sp (by decide), K31 sp (by decide), K30 sp (by decide), sp29',
     show memLoad32 MF (F + 0xD0) = reg m s2 from (ldF 0xD0 (by omega) (by omega)).trans vS2] at u33
   have K33 := u33.upd_ne u32'.zero
-  have u33' : St MF Q m33 0x54 (reg m33) := u33.self
-  obtain ⟨m34, e34, u34⟩ := u33'.aluImm cXF os_at_54 (off' := 0x56) (by decide)
+  have u33' : St MF Q m33 0x60 (reg m33) := u33.self
+  obtain ⟨m34, e34, u34⟩ := u33'.aluImm cXF os_at_60 (off' := 0x62) (by decide)
   have K34 := u34.upd_ne u33'.zero
-  have u34' : St MF Q m34 0x56 (reg m34) := u34.self
-  obtain ⟨m35, e35, pc35, mem35, regs35⟩ := u34'.jalr cXF os_at_56
+  have u34' : St MF Q m34 0x62 (reg m34) := u34.self
+  obtain ⟨m35, e35, pc35, mem35, regs35⟩ := u34'.jalr cXF os_at_62
   have ra34 : reg m34 ra = reg m ra := by
     rw [K34 ra (by decide), K33 ra (by decide), K32 ra (by decide), K31 ra (by decide), u30.upd_eq (by decide)]
   have sp34 : reg m34 sp = sp0 := by

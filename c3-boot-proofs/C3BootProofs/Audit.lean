@@ -115,10 +115,10 @@ import C3BootProofs.Proofs.FieldWideMulMain
 import C3BootProofs.Proofs.FieldMul
 import C3BootProofs.Proofs.FieldDouble
 import C3BootProofs.Proofs.PointAdd
-import C3BootProofs.Proofs.Sha256Compress
 import C3BootProofs.Proofs.MemsetAny
 import C3BootProofs.Proofs.MemcpyAny
-import C3BootProofs.Proofs.ShaOneShot
+import C3BootProofs.Proofs.Sha2OneShot
+import C3BootProofs.Proofs.Sha2Finish
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
 import C3BootProofs.Image.BootloaderV0
@@ -931,202 +931,57 @@ def witnessMemPoint : RV32.Word → BitVec 8 :=
     (ImageV0.readerBytesAddress, ImageV0.readerBytesCode),
     (0x3FCC5100, witnessReader)]
 
-/-- `witnessMemPoint` with `sha2::sha256::compress256`, its helpers, and the
-round constants added where the image loads them. -/
-def witnessMemSha (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 ImageV0.shaIndexAddress).toNat < ImageV0.shaIndexCode.length then
-    RV32.byteAt ImageV0.shaIndexCode (a - BitVec.ofNat 32 ImageV0.shaIndexAddress).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.shaSigma1PartAddress).toNat < ImageV0.shaSigma1PartCode.length then
-    RV32.byteAt ImageV0.shaSigma1PartCode (a - BitVec.ofNat 32 ImageV0.shaSigma1PartAddress).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.shaKAddress).toNat < ImageV0.shaKData.length then
-    RV32.byteAt ImageV0.shaKData (a - BitVec.ofNat 32 ImageV0.shaKAddress).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.sha256CompressAddress).toNat < ImageV0.sha256CompressCode.length then
-    RV32.byteAt ImageV0.sha256CompressCode (a - BitVec.ofNat 32 ImageV0.sha256CompressAddress).toNat
-  else witnessMemPoint a
-
-set_option maxRecDepth 200000 in
-theorem witnessMemSha_compress :
-    RV32.CodeIn witnessMemSha (BitVec.ofNat 32 ImageV0.sha256CompressAddress) ImageV0.sha256CompressCode := by
-  intro i hi
-  have hlen : ImageV0.sha256CompressCode.length = 11156 := rfl
-  have hlenI : ImageV0.shaIndexCode.length = 22 := rfl
-  have hlen97 : ImageV0.shaSigma1PartCode.length = 26 := rfl
-  have hlenK : ImageV0.shaKData.length = 256 := rfl
-  have ha : (BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i).toNat = 0x403b32ea + i := by
-    have : (BitVec.ofNat 32 ImageV0.sha256CompressAddress).toNat = 0x403b32ea := rfl
-    rw [BitVec.toNat_add, this, BitVec.toNat_ofNat]; omega
-  have dI : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 ImageV0.shaIndexAddress).toNat < ImageV0.shaIndexCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaIndexAddress).toNat = 0x403b5e7e from rfl, hlenI]; omega
-  have d97 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 ImageV0.shaSigma1PartAddress).toNat < ImageV0.shaSigma1PartCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaSigma1PartAddress).toNat = 0x403bf386 from rfl, hlen97]; omega
-  have dK : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 ImageV0.shaKAddress).toNat < ImageV0.shaKData.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaKAddress).toNat = 0x3fcc4ebc from rfl, hlenK]; omega
-  have eq_i : (BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 ImageV0.sha256CompressAddress).toNat = i := by
-    rw [BitVec.add_comm, BitVec.add_sub_cancel, BitVec.toNat_ofNat]; omega
-  unfold witnessMemSha
-  rw [ite_eq_right_of_eq_false _ _ (eq_false dI), ite_eq_right_of_eq_false _ _ (eq_false d97),
-    ite_eq_right_of_eq_false _ _ (eq_false dK), eq_i, ite_eq_left_of_eq_true _ _ (eq_true hi)]
-
-set_option maxRecDepth 200000 in
-set_option maxHeartbeats 4000000 in
-/-- A machine that calls `sha2::sha256::compress256` on 2 blocks (`n = 2`) with
-the state at `0x3FCC5000`, the blocks at `0x3FCC6000`, and the stack at
-`0x3FCC8000` meets `sha256Compress_correct`'s hypotheses. -/
-theorem exists_sha256Compress_machine :
-    ∃ (m : RV32.Machine) (P sp0 stp bp retAddr : RV32.Word) (n : Nat),
-      RV32.SCEnv m.mem P sp0 stp bp n ∧ m.pc = P ∧
-      RV32.reg m RV32.a0 = stp ∧ RV32.reg m RV32.a1 = bp ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
-      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ 0 < n := by
-  let regs : Fin 32 → RV32.Word := fun r =>
-    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 2
-    else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.sha256CompressAddress, witnessMemSha⟩,
-    BitVec.ofNat 32 ImageV0.sha256CompressAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, 2,
-    ⟨by decide, witnessMemSha_compress, ?_, ?_, ?_, by decide, by decide, by decide, by decide,
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
-      RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm,
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
-      RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm,
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
-      (RV32.sep_of_le (by decide) (by decide)).symm⟩,
-    rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide⟩
-  all_goals (unfold RV32.CodeIn; decide +kernel)
-
 /-- The hasher of the empty message: an empty buffer, the initial hash value
 as the image stores it, and a block count of zero. -/
-def emptyHasherBytes : List Nat := List.replicate 64 0 ++ ImageV0.shaIVData ++ List.replicate 8 0
+def emptyHasherBytes : List Nat := List.replicate 64 0 ++ Image.shaIVData ++ List.replicate 8 0
 
-/-- `witnessMemSha` with an empty hasher at `0x3FCC5000`, and `update`, its
-save and restore helpers, and its block loop added where the image loads
-them. -/
-def witnessMemUpd (a : RV32.Word) : BitVec 8 :=
-  if (a - 0x3FCC5000).toNat < 0x68 then RV32.byteAt emptyHasherBytes (a - 0x3FCC5000).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.shaUpdateAddress).toNat < ImageV0.shaUpdateCode.length then
-    RV32.byteAt ImageV0.shaUpdateCode (a - BitVec.ofNat 32 ImageV0.shaUpdateAddress).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.shaUpdateSaveAddress).toNat < ImageV0.shaUpdateSaveCode.length then
-    RV32.byteAt ImageV0.shaUpdateSaveCode (a - BitVec.ofNat 32 ImageV0.shaUpdateSaveAddress).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.shaUpdateRestoreAddress).toNat < ImageV0.shaUpdateRestoreCode.length then
-    RV32.byteAt ImageV0.shaUpdateRestoreCode (a - BitVec.ofNat 32 ImageV0.shaUpdateRestoreAddress).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.shaUpdateBlocksAddress).toNat < ImageV0.shaUpdateBlocksCode.length then
-    RV32.byteAt ImageV0.shaUpdateBlocksCode (a - BitVec.ofNat 32 ImageV0.shaUpdateBlocksAddress).toNat
-  else witnessMemSha a
-
-set_option maxRecDepth 200000 in
-theorem witnessMemUpd_compress :
-    RV32.CodeIn witnessMemUpd (BitVec.ofNat 32 ImageV0.sha256CompressAddress) ImageV0.sha256CompressCode := by
-  intro i hi
-  have hlen : ImageV0.sha256CompressCode.length = 11156 := rfl
-  have ha : (BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i).toNat = 0x403b32ea + i := by
-    have : (BitVec.ofNat 32 ImageV0.sha256CompressAddress).toNat = 0x403b32ea := rfl
-    rw [BitVec.toNat_add, this, BitVec.toNat_ofNat]; omega
-  have dH : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i - 0x3FCC5000).toNat < 0x68) := by
-    rw [BitVec.toNat_sub, ha, show (0x3FCC5000 : RV32.Word).toNat = 0x3FCC5000 from rfl]; omega
-  have dU : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 ImageV0.shaUpdateAddress).toNat < ImageV0.shaUpdateCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaUpdateAddress).toNat = 0x403a6624 from rfl,
-      show ImageV0.shaUpdateCode.length = 168 from rfl]; omega
-  have dS : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 ImageV0.shaUpdateSaveAddress).toNat < ImageV0.shaUpdateSaveCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaUpdateSaveAddress).toNat = 0x403bf24a from rfl,
-      show ImageV0.shaUpdateSaveCode.length = 12 from rfl]; omega
-  have dR : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 ImageV0.shaUpdateRestoreAddress).toNat < ImageV0.shaUpdateRestoreCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaUpdateRestoreAddress).toNat = 0x403bf088 from rfl,
-      show ImageV0.shaUpdateRestoreCode.length = 14 from rfl]; omega
-  have dB : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 ImageV0.shaUpdateBlocksAddress).toNat < ImageV0.shaUpdateBlocksCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaUpdateBlocksAddress).toNat = 0x403a66cc from rfl,
-      show ImageV0.shaUpdateBlocksCode.length = 26 from rfl]; omega
-  unfold witnessMemUpd
-  rw [ite_eq_right_of_eq_false _ _ (eq_false dH), ite_eq_right_of_eq_false _ _ (eq_false dU),
-    ite_eq_right_of_eq_false _ _ (eq_false dS), ite_eq_right_of_eq_false _ _ (eq_false dR),
-    ite_eq_right_of_eq_false _ _ (eq_false dB)]
-  exact witnessMemSha_compress i hi
+/-- Memory with the empty hasher at `0x3FCC5000`, and the current image's
+`update`, `finalize`, `sha256`, their helpers, `compress256` with its
+helpers, `memset`, `memcpy`, the initial hash value, and the round constants
+where the image loads them, and zeros elsewhere. -/
+def witnessMemSha2 : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(0x3FCC5000, emptyHasherBytes),
+    (Image.shaUpdateAddress, Image.shaUpdateCode),
+    (Image.shaUpdateBlocksAddress, Image.shaUpdateBlocksCode),
+    (Image.shaFinalizeAddress, Image.shaFinalizeCode),
+    (Image.shaZero32Address, Image.shaZero32Code),
+    (Image.shaFinBlockAddress, Image.shaFinBlockCode),
+    (Image.sha256FnAddress, Image.sha256FnCode),
+    (Image.shaFinishAddress, Image.shaFinishCode),
+    (Image.sha256CompressAddress, Image.sha256CompressCode),
+    (Image.rangeFromIndexAddress, Image.rangeFromIndexCode),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.shaIVAddress, Image.shaIVData),
+    (Image.shaKAddress, Image.shaKData)]
 
 set_option maxRecDepth 200000 in
-set_option maxHeartbeats 4000000 in
+set_option maxHeartbeats 8000000 in
 /-- A machine that calls `update` with 100 bytes at `0x3FCC6000`, the empty
 hasher at `0x3FCC5000`, and the stack at `0x3FCC8000` meets
 `shaUpdate_correct`'s hypotheses. -/
 theorem exists_shaUpdate_machine :
     ∃ (m : RV32.Machine) (S D sp0 retAddr : RV32.Word) (n : Nat) (msg : List Nat),
-      RV32.UpdEnv m.mem S D sp0 n ∧ m.pc = BitVec.ofNat 32 ImageV0.shaUpdateAddress ∧
+      RV32.UpdEnv m.mem S D sp0 n ∧ m.pc = BitVec.ofNat 32 Image.shaUpdateAddress ∧
       RV32.reg m RV32.a0 = S ∧ RV32.reg m RV32.a1 = D ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
       RV32.HasherAt m.mem S msg ∧ n < 2 ^ 31 ∧ msg.length + n < 2 ^ 32 := by
-  let regs : Fin 32 → RV32.Word := fun r =>
-    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 100
-    else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.shaUpdateAddress, witnessMemUpd⟩,
-    0x3FCC5000, 0x3FCC6000, 0x3FCC8000, 0, 100, [],
-    ⟨?_, ?_, ?_, ?_, witnessMemUpd_compress, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide,
-      by decide, by decide, (RV32.sep_of_le (by decide) (by decide)).symm,
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩,
-    rfl, rfl, rfl, rfl, rfl, by decide, rfl, ⟨by decide, ?_, rfl, ?_, ?_, ?_⟩, by decide, by decide⟩
-  all_goals first
-    | (unfold RV32.CodeIn; decide +kernel)
-    | decide +kernel
-
-/-- `witnessMemUpd` with `finalize`, its save and restore helpers, the
-zeroing `from_fn`, the block closure, and the big-endian store helper added
-where the image loads them. -/
-def witnessMemFin (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 ImageV0.shaFinalizeAddress).toNat < ImageV0.shaFinalizeCode.length then
-    RV32.byteAt ImageV0.shaFinalizeCode (a - BitVec.ofNat 32 ImageV0.shaFinalizeAddress).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.shaFinalizeSaveAddress).toNat < ImageV0.shaFinalizeSaveCode.length then
-    RV32.byteAt ImageV0.shaFinalizeSaveCode (a - BitVec.ofNat 32 ImageV0.shaFinalizeSaveAddress).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.shaFinalizeRestoreAddress).toNat < ImageV0.shaFinalizeRestoreCode.length then
-    RV32.byteAt ImageV0.shaFinalizeRestoreCode (a - BitVec.ofNat 32 ImageV0.shaFinalizeRestoreAddress).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.shaZero32Address).toNat < ImageV0.shaZero32Code.length then
-    RV32.byteAt ImageV0.shaZero32Code (a - BitVec.ofNat 32 ImageV0.shaZero32Address).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.shaFinalizeBlockAddress).toNat < ImageV0.shaFinalizeBlockCode.length then
-    RV32.byteAt ImageV0.shaFinalizeBlockCode (a - BitVec.ofNat 32 ImageV0.shaFinalizeBlockAddress).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.shaStoreBeAddress).toNat < ImageV0.shaStoreBeCode.length then
-    RV32.byteAt ImageV0.shaStoreBeCode (a - BitVec.ofNat 32 ImageV0.shaStoreBeAddress).toNat
-  else witnessMemUpd a
-
-set_option maxRecDepth 200000 in
-theorem witnessMemFin_compress :
-    RV32.CodeIn witnessMemFin (BitVec.ofNat 32 ImageV0.sha256CompressAddress) ImageV0.sha256CompressCode := by
-  intro i hi
-  have hlen : ImageV0.sha256CompressCode.length = 11156 := rfl
-  have ha : (BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i).toNat = 0x403b32ea + i := by
-    have : (BitVec.ofNat 32 ImageV0.sha256CompressAddress).toNat = 0x403b32ea := rfl
-    rw [BitVec.toNat_add, this, BitVec.toNat_ofNat]; omega
-  have d1 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 ImageV0.shaFinalizeAddress).toNat < ImageV0.shaFinalizeCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaFinalizeAddress).toNat = 0x403a64e0 from rfl,
-      show ImageV0.shaFinalizeCode.length = 280 from rfl]; omega
-  have d2 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 ImageV0.shaFinalizeSaveAddress).toNat < ImageV0.shaFinalizeSaveCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaFinalizeSaveAddress).toNat = 0x403bee66 from rfl,
-      show ImageV0.shaFinalizeSaveCode.length = 16 from rfl]; omega
-  have d3 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 ImageV0.shaFinalizeRestoreAddress).toNat < ImageV0.shaFinalizeRestoreCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaFinalizeRestoreAddress).toNat = 0x403bee56 from rfl,
-      show ImageV0.shaFinalizeRestoreCode.length = 16 from rfl]; omega
-  have d4 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 ImageV0.shaZero32Address).toNat < ImageV0.shaZero32Code.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaZero32Address).toNat = 0x403acdaa from rfl,
-      show ImageV0.shaZero32Code.length = 42 from rfl]; omega
-  have d5 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 ImageV0.shaFinalizeBlockAddress).toNat < ImageV0.shaFinalizeBlockCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaFinalizeBlockAddress).toNat = 0x403a65f8 from rfl,
-      show ImageV0.shaFinalizeBlockCode.length = 44 from rfl]; omega
-  have d6 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 ImageV0.shaStoreBeAddress).toNat < ImageV0.shaStoreBeCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaStoreBeAddress).toNat = 0x403bef56 from rfl,
-      show ImageV0.shaStoreBeCode.length = 32 from rfl]; omega
-  unfold witnessMemFin
-  rw [ite_eq_right_of_eq_false _ _ (eq_false d1), ite_eq_right_of_eq_false _ _ (eq_false d2),
-    ite_eq_right_of_eq_false _ _ (eq_false d3), ite_eq_right_of_eq_false _ _ (eq_false d4),
-    ite_eq_right_of_eq_false _ _ (eq_false d5), ite_eq_right_of_eq_false _ _ (eq_false d6)]
-  exact witnessMemUpd_compress i hi
+  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 100
+      else if r = RV32.sp then 0x3FCC8000 else 0), BitVec.ofNat 32 Image.shaUpdateAddress,
+      witnessMemSha2⟩,
+    0x3FCC5000, 0x3FCC6000, 0x3FCC8000, 0, 100, [], ?_, rfl, rfl, rfl, rfl, rfl, by decide, rfl,
+    ⟨by decide, ?_, rfl, ?_, ?_, ?_⟩, by decide, by decide⟩
+  case refine_1 =>
+    constructor
+    all_goals first
+      | code_in
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+      | exact (RV32.sep_of_le (by decide) (by decide)).symm
+      | decide +kernel
+  all_goals decide +kernel
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
@@ -1135,58 +990,23 @@ the output at `0x3FCC6000`, and the stack at `0x3FCC8000` meets
 `shaFinalize_correct`'s hypotheses. -/
 theorem exists_shaFinalize_machine :
     ∃ (m : RV32.Machine) (S out sp0 retAddr : RV32.Word) (msg : List Nat),
-      RV32.FinEnv m.mem S out sp0 ∧ m.pc = BitVec.ofNat 32 ImageV0.shaFinalizeAddress ∧
+      RV32.FinEnv m.mem S out sp0 ∧ m.pc = BitVec.ofNat 32 Image.shaFinalizeAddress ∧
       RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = S ∧ RV32.reg m RV32.ra = retAddr ∧
       retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.HasherAt m.mem S msg := by
-  let regs : Fin 32 → RV32.Word := fun r =>
-    if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC5000
-    else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.shaFinalizeAddress, witnessMemFin⟩,
-    0x3FCC5000, 0x3FCC6000, 0x3FCC8000, 0, [],
-    ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, witnessMemFin_compress, ?_, ?_, ?_, by decide, by decide, by decide,
-      by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
-      RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm,
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩,
-    rfl, rfl, rfl, rfl, by decide, rfl, ⟨by decide, ?_, rfl, ?_, ?_, ?_⟩⟩
-  all_goals first
-    | (unfold RV32.CodeIn; decide +kernel)
-    | decide +kernel
-
-/-- `witnessMemFin` with `sha256`, its outlined initializer, and the initial
-hash value added where the image loads them. -/
-def witnessMemOne (a : RV32.Word) : BitVec 8 :=
-  if (a - BitVec.ofNat 32 ImageV0.sha256FnAddress).toNat < ImageV0.sha256FnCode.length then
-    RV32.byteAt ImageV0.sha256FnCode (a - BitVec.ofNat 32 ImageV0.sha256FnAddress).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.shaInitAddress).toNat < ImageV0.shaInitCode.length then
-    RV32.byteAt ImageV0.shaInitCode (a - BitVec.ofNat 32 ImageV0.shaInitAddress).toNat
-  else if (a - BitVec.ofNat 32 ImageV0.shaIVAddress).toNat < ImageV0.shaIVData.length then
-    RV32.byteAt ImageV0.shaIVData (a - BitVec.ofNat 32 ImageV0.shaIVAddress).toNat
-  else witnessMemFin a
-
-set_option maxRecDepth 200000 in
-theorem witnessMemOne_compress :
-    RV32.CodeIn witnessMemOne (BitVec.ofNat 32 ImageV0.sha256CompressAddress) ImageV0.sha256CompressCode := by
-  intro i hi
-  have hlen : ImageV0.sha256CompressCode.length = 11156 := rfl
-  have ha : (BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i).toNat = 0x403b32ea + i := by
-    have : (BitVec.ofNat 32 ImageV0.sha256CompressAddress).toNat = 0x403b32ea := rfl
-    rw [BitVec.toNat_add, this, BitVec.toNat_ofNat]; omega
-  have d1 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 ImageV0.sha256FnAddress).toNat < ImageV0.sha256FnCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.sha256FnAddress).toNat = 0x403a6748 from rfl,
-      show ImageV0.sha256FnCode.length = 88 from rfl]; omega
-  have d2 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 ImageV0.shaInitAddress).toNat < ImageV0.shaInitCode.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaInitAddress).toNat = 0x403bf262 from rfl,
-      show ImageV0.shaInitCode.length = 22 from rfl]; omega
-  have d3 : ¬ ((BitVec.ofNat 32 ImageV0.sha256CompressAddress + BitVec.ofNat 32 i -
-      BitVec.ofNat 32 ImageV0.shaIVAddress).toNat < ImageV0.shaIVData.length) := by
-    rw [BitVec.toNat_sub, ha, show (BitVec.ofNat 32 ImageV0.shaIVAddress).toNat = 0x3fcc42a8 from rfl,
-      show ImageV0.shaIVData.length = 32 from rfl]; omega
-  unfold witnessMemOne
-  rw [ite_eq_right_of_eq_false _ _ (eq_false d1), ite_eq_right_of_eq_false _ _ (eq_false d2),
-    ite_eq_right_of_eq_false _ _ (eq_false d3)]
-  exact witnessMemFin_compress i hi
+  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC5000 else if r = RV32.a2 then 0
+      else if r = RV32.sp then 0x3FCC8000 else 0), BitVec.ofNat 32 Image.shaFinalizeAddress,
+      witnessMemSha2⟩,
+    0x3FCC5000, 0x3FCC6000, 0x3FCC8000, 0, [], ?_, rfl, rfl, rfl, rfl, by decide, rfl,
+    ⟨by decide, ?_, rfl, ?_, ?_, ?_⟩⟩
+  case refine_1 =>
+    constructor
+    all_goals first
+      | code_in
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+      | exact (RV32.sep_of_le (by decide) (by decide)).symm
+      | decide +kernel
+  all_goals decide +kernel
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
@@ -1195,22 +1015,44 @@ output at `0x3FCC6000` and the stack at `0x3FCC8000`, meets
 `sha256Fn_correct`'s hypotheses. -/
 theorem exists_sha256Fn_machine :
     ∃ (m : RV32.Machine) (out D sp0 retAddr : RV32.Word) (n : Nat),
-      RV32.Sha256Env m.mem out D sp0 n ∧ m.pc = BitVec.ofNat 32 ImageV0.sha256FnAddress ∧
+      RV32.Sha256Env m.mem out D sp0 n ∧ m.pc = BitVec.ofNat 32 Image.sha256FnAddress ∧
       RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = D ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ n < 2 ^ 31 := by
-  let regs : Fin 32 → RV32.Word := fun r =>
-    if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC6100 else if r = RV32.a2 then 3
-    else if r = RV32.sp then 0x3FCC8000 else 0
-  refine ⟨⟨regs, BitVec.ofNat 32 ImageV0.sha256FnAddress, witnessMemOne⟩,
-    0x3FCC6000, 0x3FCC6100, 0x3FCC8000, 0, 3,
-    ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, witnessMemOne_compress, ?_, ?_, ?_,
-      by decide, by decide, by decide, by decide, by decide,
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
-      RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩,
-    rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide⟩
+  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC6100 else if r = RV32.a2 then 3
+      else if r = RV32.sp then 0x3FCC8000 else 0), BitVec.ofNat 32 Image.sha256FnAddress,
+      witnessMemSha2⟩,
+    0x3FCC6000, 0x3FCC6100, 0x3FCC8000, 0, 3, ?_, rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide⟩
+  constructor
   all_goals first
-    | (unfold RV32.CodeIn; decide +kernel)
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
     | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Sha256::finish` with the empty hasher at
+`0x3FCC5000`, the output at `0x3FCC6000`, and the stack at `0x3FCC8000`
+meets `shaFinish_correct`'s hypotheses. -/
+theorem exists_shaFinish_machine :
+    ∃ (m : RV32.Machine) (S out sp0 retAddr : RV32.Word) (msg : List Nat),
+      RV32.FinishEnv m.mem S out sp0 ∧ m.pc = BitVec.ofNat 32 Image.shaFinishAddress ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = S ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.HasherAt m.mem S msg := by
+  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC5000
+      else if r = RV32.sp then 0x3FCC8000 else 0), BitVec.ofNat 32 Image.shaFinishAddress, witnessMemSha2⟩,
+    0x3FCC5000, 0x3FCC6000, 0x3FCC8000, 0, [], ?_, rfl, rfl, rfl, rfl, by decide, rfl,
+    ⟨by decide, ?_, rfl, ?_, ?_, ?_⟩⟩
+  case refine_1 =>
+    constructor
+    all_goals first
+      | code_in
+      | decide
+      | exact RV32.sep_of_le (by decide) (by decide)
+      | exact (RV32.sep_of_le (by decide) (by decide)).symm
+      | decide +kernel
+  all_goals decide +kernel
 
 /-- A 12-limb modulus of 3, as bytes: its low limb times `0x55555555` is
 `-1` modulo `2^32`. -/
@@ -6036,15 +5878,6 @@ end C3
 /-- info: 'C3.exists_pointAdd_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_pointAdd_machine
 
-/-- info: 'C3.RV32.sha_rounds' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.sha_rounds
-
-/-- info: 'C3.RV32.sha256Compress_correct' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.sha256Compress_correct
-
-/-- info: 'C3.exists_sha256Compress_machine' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.exists_sha256Compress_machine
-
 /-- info: 'C3.RV32.shaBlocks_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.shaBlocks_correct
 
@@ -6077,6 +5910,12 @@ end C3
 
 /-- info: 'C3.exists_sha256Fn_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_sha256Fn_machine
+
+/-- info: 'C3.RV32.shaFinish_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.shaFinish_correct
+
+/-- info: 'C3.exists_shaFinish_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_shaFinish_machine
 
 /-- info: 'C3.RV32.mulMont12_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.mulMont12_correct
