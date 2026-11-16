@@ -93,6 +93,8 @@ import C3BootProofs.Proofs.P256Retrieve
 import C3BootProofs.Proofs.P384FromRepr
 import C3BootProofs.Proofs.P256FromRepr
 import C3BootProofs.Proofs.FromBeSliceTrunc
+import C3BootProofs.Proofs.Bytes2Scalar384
+import C3BootProofs.Proofs.Bytes2Scalar256
 import C3BootProofs.Proofs.Sha256LoopDecode
 import C3BootProofs.Proofs.Sha256LoopBlocks
 import C3BootProofs.Proofs.Sha256LoopRounds

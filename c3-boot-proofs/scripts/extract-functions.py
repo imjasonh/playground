@@ -299,6 +299,8 @@ DATA = [
     ("p256Modulus", "p256FieldRetrieve", 0x2A, 32, -4),
     ("p384R2", "p384FromRepr", 0xB2, 48, 0x60),
     ("p256R2", "p256FromRepr", 0xB0, 32, 0x40),
+    ("b2sOrder384", "bytes2scalar384", 0x1A, 48),
+    ("b2sOrder256", "bytes2scalar256", 0x16, 32),
 ]
 
 
