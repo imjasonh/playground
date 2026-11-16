@@ -51,6 +51,7 @@ for line in open(src):
         if '(' in args[0]: o,b = mem(args[0]); ins = f'.jalr x0 {r(b)} {w(o)}'
         else: ins = f'.jalr x0 {r(args[0])} 0x0'
     elif op == 'ret': ins = '.jalr x0 ra 0x0'
+    elif op == 'pause': ins = '.fence'
     elif op == 'j': ins = f'.jal x0 {w(imm(args[0]) - addr)}'
     elif op in BR: ins = f'.branch .{op} {r(args[0])} {r(args[1])} {w(imm(args[2]) - addr)}'
     elif op in ('beqz','bnez'): ins = f'.branch .{op[:3]} {r(args[0])} x0 {w(imm(args[1]) - addr)}'

@@ -90,6 +90,7 @@ import C3BootProofs.Proofs.Pow22501
 import C3BootProofs.Proofs.FeCondAssign
 import C3BootProofs.Proofs.FeNeg
 import C3BootProofs.Proofs.FeCondNeg
+import C3BootProofs.Proofs.Select
 import C3BootProofs.Proofs.Scalar29Pack
 import C3BootProofs.Proofs.IncrementLimb
 import C3BootProofs.Proofs.NonAdjacentForm
@@ -5648,6 +5649,122 @@ theorem exists_feCondNeg_machine :
     | decide +kernel
 
 
+/-- Memory with the current image's panic code, the two `expect`s,
+`NafLookupTable5::select`, the two `CtOption::unwrap`s, and `memcpy` where
+the image loads them, and zeros elsewhere. -/
+def witnessRegionsPanic : List (Nat × List Nat) :=
+  RV32.panicFns ++ [(Image.expectUsizeAddress, Image.expectUsizeCode), (Image.expectTagAddress, Image.expectTagCode),
+    (Image.nafSelectAddress, Image.nafSelectCode), (Image.ctUnwrap384Address, Image.ctUnwrap384Code),
+    (Image.ctUnwrap256Address, Image.ctUnwrap256Code), (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode)]
+
+def witnessMemPanic : RV32.Word → BitVec 8 := RV32.regionMem witnessRegionsPanic
+
+set_option maxRecDepth 200000 in
+theorem witnessRegionsPanic_apart : RV32.regionsApart witnessRegionsPanic = true := by decide +kernel
+
+theorem witnessMemPanic_code : RV32.PanicCode witnessMemPanic :=
+  fun _ hp => RV32.regionMem_codeIn witnessRegionsPanic_apart (List.mem_append_left _ hp)
+
+theorem room_witness : RV32.Room 0x3FCC8000 64 := ⟨by decide, by decide, by decide⟩
+
+/-- For each panic entry point, a machine at it with 64 bytes of stack
+meets the `_panics` theorems' hypotheses. -/
+theorem exists_panic_machines : ∀ p ∈ RV32.panicFns, ∃ m : RV32.Machine,
+    RV32.PanicCode m.mem ∧ m.pc = BitVec.ofNat 32 p.1 ∧ RV32.Room (RV32.reg m RV32.sp) 64 :=
+  fun p _ => ⟨⟨leafRegs 0 0 0, BitVec.ofNat 32 p.1, witnessMemPanic⟩, witnessMemPanic_code, rfl, room_witness⟩
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Result<usize, _>::expect` on `0x3FCC6000` meets
+`expectUsize_correct`'s hypotheses. -/
+theorem exists_expectUsize_machine :
+    ∃ (m : RV32.Machine) (p retAddr : RV32.Word), RV32.PanicCode m.mem ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.expectUsizeAddress) Image.expectUsizeCode ∧
+      m.pc = BitVec.ofNat 32 Image.expectUsizeAddress ∧ RV32.reg m RV32.a0 = p ∧ p.toNat % 4 = 0 ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.Room (RV32.reg m RV32.sp) 48 :=
+  ⟨⟨leafRegs 0x3FCC6000 0 0, BitVec.ofNat 32 Image.expectUsizeAddress, witnessMemPanic⟩, 0x3FCC6000, 0,
+    witnessMemPanic_code, by code_in, rfl, rfl, by decide, rfl, by decide, ⟨by decide, by decide, by decide⟩⟩
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Result<Tag, _>::expect` on `0x3FCC6000` meets
+`expectTag_correct`'s hypotheses. -/
+theorem exists_expectTag_machine :
+    ∃ (m : RV32.Machine) (p retAddr : RV32.Word), RV32.PanicCode m.mem ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.expectTagAddress) Image.expectTagCode ∧
+      m.pc = BitVec.ofNat 32 Image.expectTagAddress ∧ RV32.reg m RV32.a0 = p ∧ p.toNat % 4 = 0 ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.Room (RV32.reg m RV32.sp) 48 :=
+  ⟨⟨leafRegs 0x3FCC6000 0 0, BitVec.ofNat 32 Image.expectTagAddress, witnessMemPanic⟩, 0x3FCC6000, 0,
+    witnessMemPanic_code, by code_in, rfl, rfl, by decide, rfl, by decide, ⟨by decide, by decide, by decide⟩⟩
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `NafLookupTable5::select(3)` on the table at
+`0x3FCC5000` with the result at `0x3FCC6000` meets `nafSelect_correct`'s
+hypotheses, including `memcpy`'s for the copy. -/
+theorem exists_nafSelect_machine :
+    ∃ (m : RV32.Machine) (out tbl x retAddr : RV32.Word), RV32.PanicCode m.mem ∧
+      RV32.CodeIn m.mem RV32.nslBase Image.nafSelectCode ∧ RV32.CodeIn m.mem RV32.stubBase Image.memcpyStubCode ∧
+      m.pc = RV32.nslBase ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = tbl ∧ RV32.reg m RV32.a2 = x ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ x.toNat ≤ 15 ∧
+      RV32.McEnv m.mem (RV32.stubBase + 8) out (tbl + BitVec.ofNat 32 (x.toNat / 2 * 160))
+        (RV32.reg m RV32.sp + 0xFFFFFFF0) 160 := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0x3FCC5000 3, RV32.nslBase, witnessMemPanic⟩, 0x3FCC6000, 0x3FCC5000, 3, 0,
+    witnessMemPanic_code, by code_in, by code_in, rfl, rfl, rfl, rfl, rfl, by decide, by decide, ?_⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `CtOption<NonZeroScalar<NistP384>>::unwrap` on the
+option at `0x3FCC5000` with the result at `0x3FCC6000` meets
+`ctUnwrap384_correct`'s hypotheses, including `memcpy`'s for the copy. -/
+theorem exists_ctUnwrap384_machine :
+    ∃ (m : RV32.Machine) (out s retAddr : RV32.Word), RV32.PanicCode m.mem ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.ctUnwrap384Address) Image.ctUnwrap384Code ∧
+      RV32.CodeIn m.mem RV32.stubBase Image.memcpyStubCode ∧ m.pc = BitVec.ofNat 32 Image.ctUnwrap384Address ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = s ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.Room (RV32.reg m RV32.sp) 64 ∧
+      RV32.McEnv m.mem (RV32.stubBase + 8) out s (RV32.reg m RV32.sp + 0xFFFFFFF0) 0x30 := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0x3FCC5000 0, BitVec.ofNat 32 Image.ctUnwrap384Address, witnessMemPanic⟩,
+    0x3FCC6000, 0x3FCC5000, 0, witnessMemPanic_code, by code_in, by code_in, rfl, rfl, rfl, rfl, by decide,
+    room_witness, ?_⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- The same for `CtOption<NonZeroScalar<NistP256>>::unwrap`. -/
+theorem exists_ctUnwrap256_machine :
+    ∃ (m : RV32.Machine) (out s retAddr : RV32.Word), RV32.PanicCode m.mem ∧
+      RV32.CodeIn m.mem (BitVec.ofNat 32 Image.ctUnwrap256Address) Image.ctUnwrap256Code ∧
+      RV32.CodeIn m.mem RV32.stubBase Image.memcpyStubCode ∧ m.pc = BitVec.ofNat 32 Image.ctUnwrap256Address ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = s ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.Room (RV32.reg m RV32.sp) 64 ∧
+      RV32.McEnv m.mem (RV32.stubBase + 8) out s (RV32.reg m RV32.sp + 0xFFFFFFF0) 0x20 := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0x3FCC5000 0, BitVec.ofNat 32 Image.ctUnwrap256Address, witnessMemPanic⟩,
+    0x3FCC6000, 0x3FCC5000, 0, witnessMemPanic_code, by code_in, by code_in, rfl, rfl, rfl, rfl, by decide,
+    room_witness, ?_⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
+
+
 
 
 end C3
@@ -6848,3 +6965,75 @@ end C3
 
 /-- info: 'C3.exists_feCondNeg_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_feCondNeg_machine
+
+/-- info: 'C3.RV32.haltLoop_stays' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.haltLoop_stays
+
+/-- info: 'C3.RV32.halt_panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.halt_panics
+
+/-- info: 'C3.RV32.beginUnwind_panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.beginUnwind_panics
+
+/-- info: 'C3.RV32.panicFmt_panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.panicFmt_panics
+
+/-- info: 'C3.RV32.assertFailedInner_panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.assertFailedInner_panics
+
+/-- info: 'C3.RV32.corePanic_panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.corePanic_panics
+
+/-- info: 'C3.RV32.panicBoundsCheck_panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.panicBoundsCheck_panics
+
+/-- info: 'C3.RV32.expectFailed_panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.expectFailed_panics
+
+/-- info: 'C3.RV32.unwrapFailed_panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.unwrapFailed_panics
+
+/-- info: 'C3.RV32.lenMismatchFail_panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.lenMismatchFail_panics
+
+/-- info: 'C3.RV32.sliceIndexFail_panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.sliceIndexFail_panics
+
+/-- info: 'C3.RV32.assertFailedUsize_panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.assertFailedUsize_panics
+
+/-- info: 'C3.RV32.assertFailedU8_panics' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.assertFailedU8_panics
+
+/-- info: 'C3.RV32.expectUsize_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.expectUsize_correct
+
+/-- info: 'C3.RV32.expectTag_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.expectTag_correct
+
+/-- info: 'C3.exists_panic_machines' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_panic_machines
+
+/-- info: 'C3.exists_expectUsize_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_expectUsize_machine
+
+/-- info: 'C3.exists_expectTag_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_expectTag_machine
+
+/-- info: 'C3.RV32.nafSelect_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.nafSelect_correct
+
+/-- info: 'C3.exists_nafSelect_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_nafSelect_machine
+
+/-- info: 'C3.RV32.ctUnwrap384_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ctUnwrap384_correct
+
+/-- info: 'C3.exists_ctUnwrap384_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_ctUnwrap384_machine
+
+/-- info: 'C3.RV32.ctUnwrap256_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ctUnwrap256_correct
+
+/-- info: 'C3.exists_ctUnwrap256_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_ctUnwrap256_machine
