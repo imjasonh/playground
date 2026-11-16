@@ -3,7 +3,7 @@ name: foundation-models-context
 description: >-
   Manage Apple Foundation Models LanguageModelSession context (4096-token
   window). Use when writing or changing on-device FM chat, tools, Generable
-  types, compaction, or AgentContextBudget in ios/ (Army List, Live Translate,
+  types, compaction, or AgentContextBudget in ios/ (Blather, Live Translate,
   or any new FM experiment).
 ---
 
@@ -14,7 +14,7 @@ Apply Apple's guidance from
 and
 [Managing the context window](https://developer.apple.com/documentation/foundationmodels/managing-the-context-window)
 when you add or change on-device Foundation Models code in this repo
-(`ios/Sources/Experiments/ArmyList/Chat/`, `ios/Sources/FoundationModels/`,
+(`ios/Sources/Experiments/Blather/`, `ios/Sources/FoundationModels/`,
 `ios/Sources/Experiments/LiveTranslate/`, and any future FM experiment).
 
 The default on-device model has a **4096-token** window per
@@ -61,7 +61,7 @@ the heuristic as exact.
 - Keep session instructions short. Imperative verbs. Only what this task needs.
 - Cap prompts at about three short paragraphs.
 - Chip prompts should send a short `displayText` to the UI transcript and keep
-  the long guidance for the model only (Army List already does this).
+  the long guidance for the model only.
 - Ask for less output when opinion chips are enough ("three bullets", "one
   paragraph"). Prefer that over `GenerationOptions.maximumResponseTokens`, which
   can cut mid-sentence.
@@ -74,15 +74,13 @@ the heuristic as exact.
 
 ### Tools
 
-Apple's doc: about **three to five tools** per request when you can. This repo
-ships a dense tool set for Army List; if you add more, pay for
-them by shrinking descriptions and result payloads.
+Apple's doc: about **three to five tools** per request when you can. If you
+add more, pay for them by shrinking descriptions and result payloads.
 
 - Short `name` / `description` / `@Guide` phrases.
 - Cap tool result strings before they return to the model
-  (`AgentContextBudget.truncateToChars` / `modelFacingSnapshot`).
-- Prefer one bulk mutation (`applyRosterPlan`) over loops of tiny tools
-  (`addUnit` × N).
+  (`AgentContextBudget.truncateToChars`).
+- Prefer one bulk mutation tool over a loop of small ones.
 - If the model always needs the same facts, put a snapshot in the prompt or
   instructions instead of forcing a tool round-trip every turn.
 - Never ask the user for internal IDs. Resolve names in tool code; put
@@ -106,8 +104,7 @@ treat every generic Foundation Models error as overflow.
 
 Then:
 
-1. Tell the user the context was compacted (Army List already appends a
-   system line).
+1. Tell the user the context was compacted.
 2. Start a **new** `LanguageModelSession` with the same tools.
 3. Carry only what the next turn needs.
 
@@ -151,8 +148,7 @@ and ask the user to Clear or shrink the request.
 |-------|------|
 | `AgentContextBudget` | Shared estimate, reserves, truncate helpers (`ios/Sources/FoundationModels/`) |
 | `OnDeviceContextManager` | Overflow detect, transcript rehydrate, rolling summary |
-| `ArmyListChatRuntime` | List chat session, overflow detect, chip display text |
-| Context ring in chat UI | Shows remaining fraction; yellow near compact threshold |
+| `BlatherPlanner` | Compacts Blather's narration session into a fresh one with a carry-over summary |
 
 When you change one experiment's FM path, check whether the shared budget
 helpers still match Apple's numbers (`defaultWindowTokens = 4096`).
