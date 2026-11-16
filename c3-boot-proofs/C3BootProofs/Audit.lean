@@ -136,6 +136,7 @@ import C3BootProofs.Proofs.ScalarFromSlice256
 import C3BootProofs.Proofs.IsSmallOrder
 import C3BootProofs.Proofs.DateTime
 import C3BootProofs.Proofs.GeneralizedTime
+import C3BootProofs.Proofs.X509ReadTime
 import C3BootProofs.Spec.Ecdsa
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
@@ -2860,6 +2861,40 @@ theorem exists_generalizedTime_machine :
     by code_in, by code_in, by code_in, rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide,
     by decide, by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
     RV32.sep_of_le (by decide) (by decide)⟩
+
+/-- Memory with `x509::read_time` and its callees where the image loads
+them, a DER reader at `0x3FCC6000` over 17 bytes at `0x3FCC7000`, and zeros
+elsewhere. -/
+def witnessMemXRT : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.x509ReadTimeAddress, Image.x509ReadTimeCode), (Image.derTlvAddress, Image.derTlvCode),
+    (Image.generalizedTimeAddress, Image.generalizedTimeCode), (Image.dateTimeAddress, Image.dateTimeCode),
+    (Image.timeDigits2Address, Image.timeDigits2Code),
+    (0x3FCC6008, [0x00, 0x70, 0xCC, 0x3F, 0x11, 0x00, 0x00, 0x00])]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `x509::read_time` on a DER reader at `0x3FCC6000`
+over 17 bytes, with the result at `0x3FCC5000` and the stack at
+`0x3FCC8000`, meets `x509ReadTime_correct`'s hypotheses. -/
+theorem exists_x509ReadTime_machine :
+    ∃ (m : RV32.Machine) (sp0 out d rp retAddr : RV32.Word) (rl : Nat),
+      RV32.CodeIn m.mem RV32.XRT Image.x509ReadTimeCode ∧ RV32.CodeIn m.mem RV32.TLV Image.derTlvCode ∧
+      RV32.CodeIn m.mem RV32.GNT Image.generalizedTimeCode ∧ RV32.CodeIn m.mem RV32.DT Image.dateTimeCode ∧
+      RV32.CodeIn m.mem RV32.TD Image.timeDigits2Code ∧ m.pc = RV32.XRT ∧ RV32.reg m RV32.a0 = out ∧
+      RV32.reg m RV32.a1 = d ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 4 = 0 ∧ 0x60 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧
+      out.toNat + 16 ≤ 0x40000000 ∧ out.toNat % 4 = 0 ∧ d.toNat + 16 ≤ 0x40000000 ∧ d.toNat % 4 = 0 ∧
+      RV32.memLoad32 m.mem (d + 8) = rp ∧ RV32.memLoad32 m.mem (d + 0xC) = BitVec.ofNat 32 rl ∧
+      rp.toNat + rl + 14 ≤ 0x40000000 ∧ 0 < rp.toNat ∧ RV32.Sep out 16 (sp0 + 0xFFFFFFA0) 0x60 ∧
+      RV32.Sep (d + 8) 8 (sp0 + 0xFFFFFFA0) 0x60 ∧ RV32.Sep out 16 (d + 8) 8 ∧
+      RV32.Sep rp (rl + 14) (sp0 + 0xFFFFFFA0) 0x60 ∧ RV32.Sep rp rl (d + 8) 8 := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, RV32.XRT, witnessMemXRT⟩, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000,
+    0x3FCC7000, 0, 17, by code_in, by code_in, by code_in, by code_in, by code_in, rfl, rfl, rfl, rfl, by decide, rfl,
+    by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide +kernel, by decide +kernel,
+    by decide, by decide, RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    (RV32.sep_of_le (by decide) (by decide)).symm⟩
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
@@ -7815,3 +7850,12 @@ end C3
 
 /-- info: 'C3.RV32.gtTail_mem' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.gtTail_mem
+
+/-- info: 'C3.RV32.x509ReadTime_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.x509ReadTime_correct
+
+/-- info: 'C3.RV32.derTlvMem_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.derTlvMem_ok
+
+/-- info: 'C3.RV32.readTime_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.readTime_ok

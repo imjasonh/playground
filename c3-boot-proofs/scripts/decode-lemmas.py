@@ -41,6 +41,7 @@ for line in open(src):
     elif op == 'lb': o,b = mem(args[1]); ins = f'.load .lb {r(args[0])} {r(b)} {w(o)}'
     elif op == 'sw': o,b = mem(args[1]); ins = f'.store .sw {r(b)} {r(args[0])} {w(o)}'
     elif op == 'sb': o,b = mem(args[1]); ins = f'.store .sb {r(b)} {r(args[0])} {w(o)}'
+    elif op == 'sh': o,b = mem(args[1]); ins = f'.store .sh {r(b)} {r(args[0])} {w(o)}'
     elif op == 'lui': ins = f'.lui {r(args[0])} {w(imm(args[1]) << 12)}'
     elif op == 'auipc': ins = f'.auipc {r(args[0])} {w(imm(args[1]) << 12)}'
     elif op == 'jalr':
