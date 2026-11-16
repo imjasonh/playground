@@ -23,7 +23,7 @@ is_macos_app() {
 
   [[ -f "$name/project.yml" ]] || return 1
   grep -qE '^[[:space:]]*platform:[[:space:]]*macOS[[:space:]]*$' "$name/project.yml" || return 1
-  # iOS host projects may ship a macOS *tool* target (e.g. ArmyListStress). Those
+  # iOS host projects may ship a macOS *tool* target. Those
   # stay under ios.yml — only directories without an iOS application are macOS apps.
   if grep -qE '^[[:space:]]*platform:[[:space:]]*iOS[[:space:]]*$' "$name/project.yml"; then
     return 1

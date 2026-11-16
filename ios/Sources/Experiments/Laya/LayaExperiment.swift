@@ -2,8 +2,7 @@ import SwiftUI
 
 /// Registration entry for the Laya typed-decision experiment.
 ///
-/// The download, tokenizer, and Core ML runtime live in `Shared/Laya` so
-/// Army List can load the same bundle.
+/// The download, tokenizer, and Core ML runtime live in `Shared/Laya`.
 enum LayaExperiment {
     static let experiment = Experiment(
         id: "laya",
