@@ -109,6 +109,7 @@ import C3BootProofs.Proofs.Sha512UpdateArr32
 import C3BootProofs.Proofs.DecCall
 import C3BootProofs.Proofs.EdDecompressAt
 import C3BootProofs.Proofs.EdDecompress
+import C3BootProofs.Proofs.EdVerifyingKey
 import C3BootProofs.Proofs.Sha256LoopDecode
 import C3BootProofs.Proofs.Sha256LoopBlocks
 import C3BootProofs.Proofs.Sha256LoopRounds

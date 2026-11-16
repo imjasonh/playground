@@ -141,6 +141,7 @@ import C3BootProofs.Proofs.Base64Decode
 import C3BootProofs.Proofs.Base64Encode
 import C3BootProofs.Proofs.Sha512UpdateArr32
 import C3BootProofs.Proofs.EdDecompress
+import C3BootProofs.Proofs.EdVerifyingKey
 import C3BootProofs.Spec.Ecdsa
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
@@ -2922,6 +2923,33 @@ theorem exists_edDecompress_machine :
     RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
     RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
     RV32.sep_of_le (by decide) (by decide)⟩
+  exact ⟨by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
+    by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
+    by code_in, by code_in, by code_in, by code_in⟩
+
+def witnessMemVkb : RV32.Word → BitVec 8 :=
+  RV32.regionMem ((Image.edVerifyingKeyFromBytesAddress, Image.edVerifyingKeyFromBytesCode) :: witnessRegionsDec)
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `VerifyingKey::from_bytes` on the 32 bytes at
+`0x3FCC6100` with the result at `0x3FCC6000` and the stack at `0x3FCC8000`
+meets `edVkFromBytes_correct`'s hypotheses. -/
+theorem exists_edVkFromBytes_machine :
+    ∃ (m : RV32.Machine) (sp0 out bp retAddr : RV32.Word), RV32.DecEnv m.mem ∧
+      RV32.CodeIn m.mem RV32.VKB Image.edVerifyingKeyFromBytesCode ∧ m.pc = RV32.VKB ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = bp ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 4 = 0 ∧ 0x7B0 ≤ sp0.toNat ∧
+      sp0.toNat ≤ 0x40000000 ∧ out.toNat % 4 = 0 ∧ out.toNat + 0xC4 ≤ 0x40000000 ∧ bp.toNat + 32 < 2 ^ 32 ∧
+      RV32.Sep out 0xC4 (sp0 + 0xFFFFF850) 0x7B0 ∧ RV32.Sep bp 32 (sp0 + 0xFFFFF850) 0x7B0 ∧ RV32.Sep bp 32 out 0xC4 ∧
+      RV32.Sep (BitVec.ofNat 32 Image.edOneAddress) 40 (sp0 + 0xFFFFF850) 0x7B0 ∧
+      RV32.Sep (BitVec.ofNat 32 Image.edDAddress) 40 (sp0 + 0xFFFFF850) 0x7B0 ∧
+      RV32.Sep (BitVec.ofNat 32 Image.edSqrtM1Address) 40 (sp0 + 0xFFFFF850) 0x7B0 := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0x3FCC6100 0, RV32.VKB, witnessMemVkb⟩, 0x3FCC8000, 0x3FCC6000, 0x3FCC6100, 0,
+    ?_, by code_in, rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide, by decide, by decide,
+    by decide, RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    (RV32.sep_of_le (by decide) (by decide)).symm, RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩
   exact ⟨by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
     by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
     by code_in, by code_in, by code_in, by code_in⟩
@@ -7095,6 +7123,12 @@ end C3
 
 /-- info: 'C3.exists_edDecompress_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_edDecompress_machine
+
+/-- info: 'C3.RV32.edVkFromBytes_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.edVkFromBytes_correct
+
+/-- info: 'C3.exists_edVkFromBytes_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_edVkFromBytes_machine
 
 /-- info: 'C3.RV32.p384Mul_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.p384Mul_correct
