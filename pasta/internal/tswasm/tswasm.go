@@ -54,7 +54,9 @@ var (
 	// RecycleGrowthBytes closes instances that grew this far above baseline.
 	RecycleGrowthBytes uint64 = 128 << 20
 	// MaxIdleInstances bounds pooled idle engines. 0 → MaxConcurrentInstances.
-	MaxIdleInstances = 2
+	// Keeping fewer idle than run at once makes the pool close and
+	// re-instantiate engines (copying the grammar tables) between parses.
+	MaxIdleInstances = 0
 )
 
 // ---------------------------------------------------------------------------
