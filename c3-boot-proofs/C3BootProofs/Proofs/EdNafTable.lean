@@ -771,6 +771,143 @@ theorem nt_loop1 (C : NtCtx M0 R) {N : Pt} :
         (by rw [u7.regs, s0_6]) (by rw [u7.regs, s1_6]) hN' (fun _ => h0')
       exact ⟨n', .cons d1 (.cons d2 (.cons d3 (c4.trans (.cons d5 (.cons d6 (.cons d7 c')))))), D', e0, e1⟩
 
+/-- After a call whose frame is two regions of `from`'s stack, a point apart
+from both keeps its value. -/
+theorem pt_keep2 {M M' : Word → BitVec 8} (C : NtCtx M0 R) {c1 l1 c2 l2 a : Nat}
+    (f : ∀ x, Sep (R + BitVec.ofNat 32 c1) l1 x 1 → Sep (R + BitVec.ofNat 32 c2) l2 x 1 → M' x = M x)
+    (h1 : c1 + l1 ≤ a ∨ a + 160 ≤ c1) (h2 : c2 + l2 ≤ a ∨ a + 160 ≤ c2) (h3 : a + 160 ≤ 0xA10)
+    (h4 : c1 + l1 ≤ 0xA10) (h5 : c2 + l2 ≤ 0xA10) :
+    ptAt M' (R + BitVec.ofNat 32 a) = ptAt M (R + BitVec.ofNat 32 a) :=
+  ptAt_frame fun j hj => by
+    rw [spk, f _ (C.offs (by omega) h4 (by omega)) (C.offs (by omega) h5 (by omega))]
+
+theorem nt_apnD {M : Word → BitVec 8} (hM : ∀ x, Sep R 0xA10 x 1 → M x = M0 x) (sD : Sep apnD 40 R 0xA10) :
+    feW M apnD = feW M0 apnD :=
+  feW_frame fun i hi => memLoad32_congr fun q hq => by
+    rw [add_ofNat_assoc]; exact hM _ (sD.sub (c := 4 * i + q) (l := 1) (by omega)).symm
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 8000000 in
+/-- The loop at 0x9E: entry `j + 1` is the Niels form of `2A` plus entry
+`j`, through `as_extended`. -/
+theorem nt_loop2 (C : NtCtx M0 R) {Ap A2 : Pt} (hA2 : A2 = extL (edDoubleSpec Ap.1 Ap.2.1 Ap.2.2.1))
+    (sD : Sep apnD 40 R 0xA10) :
+    ∀ t, ∀ {j : Nat} {M : Word → BitVec 8} {n : Machine}, j + t = 7 → 0 < t → NtSt M0 Ms R out A r0 M n 0x9E →
+      reg n (9 : Fin 32) = R + BitVec.ofNat 32 (0x45C + 160 * j) → reg n (8 : Fin 32) = BitVec.ofNat 32 t →
+      ptAt M (R + BitVec.ofNat 32 0x27C) = A2 →
+      (∀ i, i ≤ j → ptAt M (R + BitVec.ofNat 32 (0x45C + 160 * i)) = nafTab Ap (feW M0 apnD) i) →
+      ∃ n', Steps n n' ∧ NtSt M0 Ms R out A r0 n'.mem n' 0xE0 ∧
+        ∀ i, i < 8 → ptAt n'.mem (R + BitVec.ofNat 32 (0x45C + 160 * i)) = nafTab Ap (feW M0 apnD) i
+  | 0, _, _, _, _, h, _, _, _, _, _ => absurd h (by decide)
+  | t + 1, j, M, n, hjt, _, D, hs1, hs0, hA, hT => by
+    have hc : CodeIn M NTF nafTableFromCode := D.code C C.E.cod (by decide) (by decide)
+    obtain ⟨n1, d1, u1⟩ := D.st.aluImm hc nt_at_9e (off' := 0xA2) (by decide)
+    have D1 := D.step u1 (by decide)
+    obtain ⟨n2, d2, u2⟩ := D1.st.aluImm hc nt_at_a2 (off' := 0xA4) (by decide)
+    have D2 := D1.step u2 (by decide)
+    obtain ⟨n3, d3, u3⟩ := D2.st.alu hc nt_at_a4 (off' := 0xA6) (by decide)
+    have D3 := D2.step u3 (by decide)
+    have r3 : ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → reg n3 q = reg n q := fun q h0 h1 h2 => by
+      rw [u3.upd_ne D2.st.zero q h2, u2.upd_ne D1.st.zero q h1, u1.upd_ne D.st.zero q h0]
+    obtain ⟨n4, c4, D4, w4, k4, f4⟩ := D3.ean C nt_at_a6 nt_at_aa (by decide) (by decide) (k := 0x95C) (e := 0x27C)
+      (p := 0x45C + 160 * j) (by decide) (by decide) (by omega) (by decide) (by decide) (by decide) (by decide)
+      (by omega) (by omega) (Or.inr (by decide)) (Or.inr (by omega))
+      (by rw [u3.upd_ne D2.st.zero _ (by decide), u2.upd_ne D1.st.zero _ (by decide), u1.upd_eq (by decide), D.hsp]
+          exact add_sp R rfl)
+      (by rw [u3.upd_ne D2.st.zero _ (by decide), u2.upd_eq (by decide), u1.upd_ne D.st.zero _ (by decide), D.hsp]
+          exact add_sp R rfl)
+      (by rw [u3.upd_eq (by decide), D2.st.zero, u2.upd_ne D1.st.zero _ (by decide), u1.upd_ne D.st.zero _ (by decide), hs1]
+          exact BitVec.zero_add _)
+    rw [hA, hT j (Nat.le_refl _)] at w4
+    have hc4 : CodeIn n4.mem NTF nafTableFromCode := D4.code C C.E.cod (by decide) (by decide)
+    obtain ⟨n5, d5, u5⟩ := D4.st.aluImm hc4 nt_at_ae (off' := 0xB0) (by decide)
+    have D5 := D4.step u5 (by decide)
+    obtain ⟨n6, d6, u6⟩ := D5.st.aluImm hc4 nt_at_b0 (off' := 0xB4) (by decide)
+    have D6 := D5.step u6 (by decide)
+    obtain ⟨n7, c7, D7, w7, k7, f7⟩ := D6.ext C nt_at_b4 nt_at_b8 (by decide) (by decide) (k := 0x3BC) (j := 0x95C)
+      (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (Or.inl (by decide))
+      (by rw [u6.upd_ne D5.st.zero _ (by decide), u5.upd_eq (by decide), D4.hsp]; exact add_sp R rfl)
+      (by rw [u6.upd_eq (by decide), u5.upd_ne D4.st.zero _ (by decide), D4.hsp]; exact add_sp R rfl)
+    rw [w4] at w7
+    have hc7 : CodeIn n7.mem NTF nafTableFromCode := D7.code C C.E.cod (by decide) (by decide)
+    obtain ⟨n8, d8, u8⟩ := D7.st.aluImm hc7 nt_at_bc (off' := 0xBE) (by decide)
+    have D8 := D7.step u8 (by decide)
+    obtain ⟨n9, d9, u9⟩ := D8.st.aluImm hc7 nt_at_be (off' := 0xC0) (by decide)
+    have D9 := D8.step u9 (by decide)
+    obtain ⟨n10, c10, D10, w10, k10, f10⟩ := D9.apn C nt_at_c0 nt_at_c4 (by decide) (by decide) (k := 0x31C)
+      (ip := R + BitVec.ofNat 32 0x3BC) (by decide) (by decide) (by decide)
+      (by rw [u9.upd_ne D8.st.zero _ (by decide), u8.upd_eq (by decide), D7.hsp]; exact add_sp R rfl)
+      (by rw [u9.upd_eq (by decide), u8.upd_ne D7.st.zero _ (by decide), D7.hsp]; exact add_sp R rfl)
+      (aligned_add C.hR (by decide)) (by rw [C.toNat_off (by decide)]; have := C.hRw; omega)
+      (C.offs (Or.inr (by decide)) (by decide) (by decide)) (C.offs (Or.inr (by decide)) (by decide) (by decide)) sD
+    rw [w7, nt_apnD D7.agree sD] at w10
+    have hc10 : CodeIn n10.mem NTF nafTableFromCode := D10.code C C.E.cod (by decide) (by decide)
+    obtain ⟨n11, d11, u11⟩ := D10.st.aluImm hc10 nt_at_c8 (off' := 0xCC) (by decide)
+    have D11 := D10.step u11 (by decide)
+    obtain ⟨n12, d12, u12⟩ := D11.st.aluImm hc10 nt_at_cc (off' := 0xCE) (by decide)
+    have D12 := D11.step u12 (by decide)
+    obtain ⟨n13, d13, u13⟩ := D12.st.aluImm hc10 nt_at_ce (off' := 0xD2) (by decide)
+    have D13 := D12.step u13 (by decide)
+    obtain ⟨n14, d14, u14⟩ := D13.st.alu hc10 nt_at_d2 (off' := 0xD4) (by decide)
+    have D14 := D13.step u14 (by decide)
+    have s1_11 : reg n11 (9 : Fin 32) = R + BitVec.ofNat 32 (0x45C + 160 * (j + 1)) := by
+      rw [u11.upd_eq (by decide), k10 _ (by decide), u9.upd_ne D8.st.zero _ (by decide), u8.upd_ne D7.st.zero _ (by decide),
+        k7 _ (by decide), u6.upd_ne D5.st.zero _ (by decide), u5.upd_ne D4.st.zero _ (by decide), k4 _ (by decide),
+        r3 _ (by decide) (by decide) (by decide), hs1]
+      exact add_sp R (b := 160) (by omega)
+    obtain ⟨n15, c15, D15, f15, k15⟩ := D14.mc C nt_at_d4 nt_at_d8 (by decide) (by decide) (k := 0x45C + 160 * (j + 1))
+      (src := R + BitVec.ofNat 32 0x31C) (N := 0xA0) (by omega) (by omega)
+      (by rw [u14.upd_eq (by decide), D13.st.zero, u13.upd_ne D12.st.zero _ (by decide), u12.upd_ne D11.st.zero _ (by decide),
+          s1_11]; exact BitVec.zero_add _)
+      (by rw [u14.upd_ne D13.st.zero _ (by decide), u13.upd_ne D12.st.zero _ (by decide), u12.upd_eq (by decide),
+          u11.upd_ne D10.st.zero _ (by decide), D10.hsp]; exact add_sp R rfl)
+      (by rw [u14.upd_ne D13.st.zero _ (by decide), u13.upd_eq (by decide), D12.st.zero]; rfl)
+      (C.offs (Or.inr (by decide)) (by decide) (by decide)) (C.offs (Or.inr (by omega)) (by omega) (by decide))
+      (by rw [C.toNat_off (by decide)]; have := C.hRw; omega)
+    have hc15 : CodeIn n15.mem NTF nafTableFromCode := D15.code C C.E.cod (by decide) (by decide)
+    obtain ⟨n16, d16, u16⟩ := D15.st.aluImm hc15 nt_at_dc (off' := 0xDE) (by decide)
+    have D16 := D15.step u16 (by decide)
+    have s0_16 : reg n16 (8 : Fin 32) = BitVec.ofNat 32 t := by
+      rw [u16.upd_eq (by decide), k15 _ (by decide), u14.upd_ne D13.st.zero _ (by decide),
+        u13.upd_ne D12.st.zero _ (by decide), u12.upd_ne D11.st.zero _ (by decide), u11.upd_ne D10.st.zero _ (by decide),
+        k10 _ (by decide), u9.upd_ne D8.st.zero _ (by decide), u8.upd_ne D7.st.zero _ (by decide), k7 _ (by decide),
+        u6.upd_ne D5.st.zero _ (by decide), u5.upd_ne D4.st.zero _ (by decide), k4 _ (by decide),
+        r3 _ (by decide) (by decide) (by decide), hs0]
+      exact nt_dec ⟨t, by omega⟩
+    have s1_16 : reg n16 (9 : Fin 32) = R + BitVec.ofNat 32 (0x45C + 160 * (j + 1)) := by
+      rw [u16.upd_ne D15.st.zero _ (by decide), k15 _ (by decide), u14.upd_ne D13.st.zero _ (by decide),
+        u13.upd_ne D12.st.zero _ (by decide), u12.upd_ne D11.st.zero _ (by decide), s1_11]
+    -- the points the loop keeps
+    have keepA : ptAt n15.mem (R + BitVec.ofNat 32 0x27C) = A2 := by
+      rw [pt_keep C f15 (by decide) (by decide) (Or.inr (by omega)) (by omega),
+        pt_keep2 C f10 (Or.inl (by decide)) (Or.inr (by decide)) (by decide) (by decide) (by decide),
+        pt_keep2 C f7 (Or.inl (by decide)) (Or.inr (by decide)) (by decide) (by decide) (by decide),
+        pt_keep2 C (c1 := 0) (fun x h1 h2 => f4 x (by rwa [add_ofNat_zero] at h1) h2) (Or.inl (by decide))
+          (Or.inr (by decide)) (by decide) (by decide) (by decide), hA]
+    have keepT : ∀ i, i ≤ j → ptAt n15.mem (R + BitVec.ofNat 32 (0x45C + 160 * i)) = nafTab Ap (feW M0 apnD) i :=
+      fun i hi => by
+        rw [pt_keep C f15 (by omega) (by omega) (Or.inr (by omega)) (by omega),
+          pt_keep2 C f10 (Or.inl (by omega)) (Or.inl (by omega)) (by omega) (by decide) (by decide),
+          pt_keep2 C f7 (Or.inl (by omega)) (Or.inl (by omega)) (by omega) (by decide) (by decide),
+          pt_keep2 C (c1 := 0) (fun x h1 h2 => f4 x (by rwa [add_ofNat_zero] at h1) h2) (Or.inl (by omega))
+            (Or.inr (by omega)) (by omega) (by decide) (by decide), hT i hi]
+    have newT : ptAt n15.mem (R + BitVec.ofNat 32 (0x45C + 160 * (j + 1))) = nafTab Ap (feW M0 apnD) (j + 1) := by
+      rw [pt_copied C f15 (by omega) (by omega), w10, hA2]; rfl
+    have hT' : ∀ i, i ≤ j + 1 → ptAt n15.mem (R + BitVec.ofNat 32 (0x45C + 160 * i)) = nafTab Ap (feW M0 apnD) i :=
+      fun i hi => by
+        rcases Nat.lt_or_ge i (j + 1) with h | h
+        · exact keepT i (by omega)
+        · rw [show i = j + 1 by omega]; exact newT
+    rcases Nat.eq_zero_or_pos t with rfl | ht
+    · obtain ⟨n17, d17, u17⟩ := D16.st.notTaken hc15 0xE0 nt_at_de (by decide) (by rw [s0_16, D16.st.zero]; decide)
+      refine ⟨n17, .cons d1 (.cons d2 (.cons d3 (c4.trans (.cons d5 (.cons d6 (c7.trans (.cons d8 (.cons d9 (c10.trans (.cons d11 (.cons d12 (.cons d13 (.cons d14 (c15.trans (.cons d16 (.single d17)))))))))))))))),
+        by rw [u17.mem]; exact D16.jmp' u17, fun i hi => by rw [u17.mem]; exact hT' i (by omega)⟩
+    · obtain ⟨n17, d17, u17⟩ := D16.st.taken hc15 0x9E nt_at_de (by decide)
+        (by rw [s0_16, D16.st.zero]; exact nt_bne ⟨t, by omega⟩ ht)
+      obtain ⟨n', c', D', e⟩ := nt_loop2 C hA2 sD t (j := j + 1) (by omega) ht (D16.jmp' u17)
+        (by rw [u17.regs, s1_16]) (by rw [u17.regs, s0_16]) keepA hT'
+      exact ⟨n', .cons d1 (.cons d2 (.cons d3 (c4.trans (.cons d5 (.cons d6 (c7.trans (.cons d8 (.cons d9 (c10.trans (.cons d11 (.cons d12 (.cons d13 (.cons d14 (c15.trans (.cons d16 (.cons d17 c')))))))))))))))), D', e⟩
+
 end Loops
 
 end C3.RV32
