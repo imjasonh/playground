@@ -130,6 +130,7 @@ import C3BootProofs.Proofs.ToBeBytes
 import C3BootProofs.Proofs.P256Retrieve
 import C3BootProofs.Proofs.P384FromRepr
 import C3BootProofs.Proofs.P256FromRepr
+import C3BootProofs.Proofs.FromBeSliceTrunc
 import C3BootProofs.Spec.Ecdsa
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
@@ -2578,6 +2579,83 @@ theorem exists_p256FromRepr_machine :
   all_goals first
     | code_in
     | decide +kernel
+
+/-- Memory with `fill_limbs_from_be_slice_truncated` where the image loads
+it, and zeros elsewhere. -/
+def witnessMemFillLimbs : RV32.Word → BitVec 8 :=
+  RV32.regionMem [(Image.fillLimbsBeTruncAddress, Image.fillLimbsBeTruncCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that fills 12 limbs at `0x3FCC6000` from the 48 bytes at
+`0x3FCC5000` at a 384-bit precision, with the stack at `0x3FCC8000`, meets
+`fillLimbs_correct`'s hypotheses. -/
+theorem exists_fillLimbs_machine :
+    ∃ (m : RV32.Machine) (sp0 b Lp retAddr : RV32.Word) (n L bits mm : Nat),
+      RV32.CodeIn m.mem RV32.FL Image.fillLimbsBeTruncCode ∧ m.pc = RV32.FL ∧ RV32.reg m RV32.a0 = b ∧
+      RV32.reg m RV32.a1 = BitVec.ofNat 32 n ∧ RV32.reg m RV32.a2 = Lp ∧ RV32.reg m RV32.a3 = BitVec.ofNat 32 L ∧
+      RV32.reg m RV32.a4 = BitVec.ofNat 32 bits ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      RV32.reg m RV32.sp = sp0 ∧ bits % 32 = 0 ∧ bits ≤ 32 * L ∧ L < 2 ^ 25 ∧ mm = min n (bits / 8) ∧
+      b.toNat + n < 2 ^ 32 ∧ sp0.toNat % 4 = 0 ∧ 0x20 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧
+      Lp.toNat + 4 * L ≤ 0x40000000 ∧ Lp.toNat % 4 = 0 ∧ RV32.Sep b n (sp0 + 0xFFFFFFE0) 0x20 ∧
+      RV32.Sep b n Lp (4 * L) ∧ RV32.Sep (sp0 + 0xFFFFFFE0) 0x20 Lp (4 * L) := by
+  let regs : Fin 32 → RV32.Word := fun r =>
+    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 48 else if r = RV32.a2 then 0x3FCC6000
+    else if r = RV32.a3 then 12 else if r = RV32.a4 then 384 else if r = RV32.sp then 0x3FCC8000 else 0
+  refine ⟨⟨regs, RV32.FL, witnessMemFillLimbs⟩, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, 48, 12, 384, 48, ?_, rfl,
+    rfl, rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide, by decide, by decide, by decide,
+    by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm⟩
+  code_in
+
+/-- Memory with both `from_be_slice_truncated` instances and their callees
+where the image loads them, and zeros elsewhere. -/
+def witnessMemFromBeSlice : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.fromBeSliceTrunc12Address, Image.fromBeSliceTrunc12Code),
+    (Image.fromBeSliceTrunc8Address, Image.fromBeSliceTrunc8Code),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.fillLimbsBeTruncAddress, Image.fillLimbsBeTruncCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that reads a `Uint<12>` at `0x3FCC6000` from the 48 bytes at
+`0x3FCC5000` at a 384-bit precision, with the stack at `0x3FCC8000`, meets
+`fromBeSliceTrunc12_correct`'s hypotheses. -/
+theorem exists_fromBeSliceTrunc12_machine :
+    ∃ (m : RV32.Machine) (sp0 out b retAddr : RV32.Word) (n bits : Nat), RV32.FBEnv m.mem ∧ m.pc = RV32.FB ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = b ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
+      RV32.reg m RV32.a3 = BitVec.ofNat 32 bits ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      RV32.reg m RV32.sp = sp0 ∧ bits % 32 = 0 ∧ bits ≤ 384 ∧ b.toNat + n < 2 ^ 32 ∧ sp0.toNat % 4 = 0 ∧
+      0x70 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧ out.toNat + 48 ≤ 0x40000000 ∧ out.toNat % 4 = 0 ∧
+      RV32.Sep b n (sp0 + 0xFFFFFF90) 0x70 ∧ RV32.Sep out 48 (sp0 + 0xFFFFFF90) 0x70 := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0x3FCC5000 48 |> fun f r => if r = RV32.a3 then 384 else f r, RV32.FB,
+    witnessMemFromBeSlice⟩, 0x3FCC8000, 0x3FCC6000, 0x3FCC5000, 0, 48, 384, ?_, rfl, rfl, rfl, rfl, rfl, rfl,
+    by decide, rfl, by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide,
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩
+  constructor
+  all_goals code_in
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that reads a `Uint<8>` at `0x3FCC6000` from the 32 bytes at
+`0x3FCC5000` at a 256-bit precision, with the stack at `0x3FCC8000`, meets
+`fromBeSliceTrunc8_correct`'s hypotheses. -/
+theorem exists_fromBeSliceTrunc8_machine :
+    ∃ (m : RV32.Machine) (sp0 out b retAddr : RV32.Word) (n bits : Nat), RV32.FCEnv m.mem ∧ m.pc = RV32.FC ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = b ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
+      RV32.reg m RV32.a3 = BitVec.ofNat 32 bits ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      RV32.reg m RV32.sp = sp0 ∧ bits % 32 = 0 ∧ bits ≤ 256 ∧ b.toNat + n < 2 ^ 32 ∧ sp0.toNat % 4 = 0 ∧
+      0x60 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧ out.toNat + 32 ≤ 0x40000000 ∧ out.toNat % 4 = 0 ∧
+      RV32.Sep b n (sp0 + 0xFFFFFFA0) 0x60 ∧ RV32.Sep out 32 (sp0 + 0xFFFFFFA0) 0x60 := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0x3FCC5000 32 |> fun f r => if r = RV32.a3 then 256 else f r, RV32.FC,
+    witnessMemFromBeSlice⟩, 0x3FCC8000, 0x3FCC6000, 0x3FCC5000, 0, 32, 256, ?_, rfl, rfl, rfl, rfl, rfl, rfl,
+    by decide, rfl, by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide,
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide)⟩
+  constructor
+  all_goals code_in
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
@@ -7416,3 +7494,24 @@ end C3
 
 /-- info: 'C3.exists_ctUnwrap256_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_ctUnwrap256_machine
+
+/-- info: 'C3.RV32.fillLimbs_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.fillLimbs_correct
+
+/-- info: 'C3.exists_fillLimbs_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_fillLimbs_machine
+
+/-- info: 'C3.RV32.fl_accV' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.fl_accV
+
+/-- info: 'C3.RV32.fromBeSliceTrunc12_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.fromBeSliceTrunc12_correct
+
+/-- info: 'C3.exists_fromBeSliceTrunc12_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_fromBeSliceTrunc12_machine
+
+/-- info: 'C3.RV32.fromBeSliceTrunc8_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.fromBeSliceTrunc8_correct
+
+/-- info: 'C3.exists_fromBeSliceTrunc8_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_fromBeSliceTrunc8_machine
