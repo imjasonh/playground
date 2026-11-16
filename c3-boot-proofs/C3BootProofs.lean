@@ -89,6 +89,7 @@ import C3BootProofs.Proofs.Sha512Blocks
 import C3BootProofs.Proofs.CtInto
 import C3BootProofs.Proofs.ZeroArray
 import C3BootProofs.Proofs.ToBeBytes
+import C3BootProofs.Proofs.P256Retrieve
 import C3BootProofs.Proofs.Sha256LoopDecode
 import C3BootProofs.Proofs.Sha256LoopBlocks
 import C3BootProofs.Proofs.Sha256LoopRounds

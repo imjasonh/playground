@@ -127,6 +127,8 @@ import C3BootProofs.Proofs.Sha512Blocks
 import C3BootProofs.Proofs.CtInto
 import C3BootProofs.Proofs.ZeroArray
 import C3BootProofs.Proofs.ToBeBytes
+import C3BootProofs.Proofs.P256Retrieve
+import C3BootProofs.Spec.Ecdsa
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
 import C3BootProofs.Image.BootloaderV0
@@ -2460,6 +2462,37 @@ def witnessMemLeaves : RV32.Word → BitVec 8 :=
 def leafRegs (x y z : RV32.Word) : Fin 32 → RV32.Word := fun r =>
   if r = RV32.a0 then x else if r = RV32.a1 then y else if r = RV32.a2 then z
   else if r = RV32.sp then 0x3FCC8000 else 0
+
+/-- Memory with P-256's field `retrieve`, `memset`, `memcpy`, and the field
+modulus where the image loads them, and zeros elsewhere. -/
+def witnessMemP256Retrieve : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.p256FieldRetrieveAddress, Image.p256FieldRetrieveCode),
+    (Image.memsetAddress, Image.memsetCode),
+    (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode),
+    (Image.p256ModulusAddress, Image.p256ModulusData)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that retrieves the 8 limbs at `0x3FCC5000` from Montgomery
+form to `0x3FCC6000`, with the stack at `0x3FCC8000`, meets
+`p256FieldRetrieve_correct`'s hypotheses, and the modulus it reads is
+P-256's field prime. -/
+theorem exists_p256FieldRetrieve_machine :
+    ∃ (m : RV32.Machine) (P sp0 out xp retAddr : RV32.Word), RV32.PREnv m.mem P sp0 out xp ∧ m.pc = P ∧
+      RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = xp ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.accV m.mem RV32.p256Np 8 = p256.p := by
+  refine ⟨⟨leafRegs 0x3FCC6000 0x3FCC5000 0, BitVec.ofNat 32 Image.p256FieldRetrieveAddress, witnessMemP256Retrieve⟩,
+    BitVec.ofNat 32 Image.p256FieldRetrieveAddress, 0x3FCC8000, 0x3FCC6000, 0x3FCC5000, 0, ?_, rfl, rfl, rfl, rfl,
+    by decide, rfl, by decide +kernel⟩
+  constructor
+  all_goals first
+    | code_in
+    | decide
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | exact (RV32.sep_of_le (by decide) (by decide)).symm
+    | decide +kernel
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
@@ -6239,6 +6272,12 @@ end C3
 
 /-- info: 'C3.exists_toBeBytes8_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_toBeBytes8_machine
+
+/-- info: 'C3.RV32.p256FieldRetrieve_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.p256FieldRetrieve_correct
+
+/-- info: 'C3.exists_p256FieldRetrieve_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_p256FieldRetrieve_machine
 
 /-- info: 'C3.RV32.shaFinBlock_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.shaFinBlock_correct

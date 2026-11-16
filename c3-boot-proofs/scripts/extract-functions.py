@@ -296,6 +296,7 @@ DATA = [
     ("sha256Oid", "isSha256", 0x26, 9),
     ("edwardsD2", "asProjNiels", 0x4A, 40),
     ("merklePrefix", "merkleNodeHash", 0x4, 1),
+    ("p256Modulus", "p256FieldRetrieve", 0x2A, 32, -4),
 ]
 
 

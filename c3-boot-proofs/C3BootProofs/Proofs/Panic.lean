@@ -143,11 +143,11 @@ theorem Room.sep {S B : Word} {k l : Nat} (h : Room S k) {o : Nat} (hk : 16 ≤ 
 def haltBase : Word := BitVec.ofNat 32 haltAddress
 
 /-- The ROM's `printf`, which `halt` calls. -/
-def romPrintf : Word := 0x40000040
+def romPrintfEntry : Word := 0x40000040
 
 /-- The machine is entering the ROM's `printf` from `halt`, so that it
 returns into the loop at `halt + 0x16`, with the panic code in memory. -/
-def Halting (m : Machine) : Prop := m.pc = romPrintf ∧ reg m ra = haltBase + 0x16 ∧ PanicCode m.mem
+def Halting (m : Machine) : Prop := m.pc = romPrintfEntry ∧ reg m ra = haltBase + 0x16 ∧ PanicCode m.mem
 
 /-- From `m`, the machine reaches the ROM call in `halt`. -/
 def Panics (m : Machine) : Prop := ∃ m', Steps m m' ∧ Halting m'
@@ -225,7 +225,7 @@ theorem halt_panics (m : Machine) (hP : PanicCode m.mem) (hpc : m.pc = haltBase)
     rw [uA.mem]; simp +decide only [upd_app, ↓reduceIte]; simp only [ev_add]; rw [hS]
     exact hP.store32 (hR.slot (o := 0xC) (by decide) (by decide))
   obtain ⟨n1, c1, pc1, mem1, regs1⟩ := uA.self.callRa (by rw [← uA.mem]; exact haltCode_in hPA) hlt_at_e hlt_at_12
-    (cb := romPrintf) (by decide) (by decide)
+    (cb := romPrintfEntry) (by decide) (by decide)
   refine ⟨n1, cA.trans c1, pc1, ?_, by rw [mem1, ← uA.mem]; exact hPA⟩
   rw [regs1]; simp +decide only [upd_app, ↓reduceIte]
 
