@@ -1,6 +1,7 @@
 package casfs_test
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -369,5 +370,67 @@ func TestCorruptBlobIsNotServed(t *testing.T) {
 	t.Cleanup(func() { server.Unmount() })
 	if _, err := os.ReadFile(filepath.Join(mnt, "f")); err == nil {
 		t.Fatal("read of a blob that fails verification succeeded")
+	}
+}
+
+func TestWritesExtendFiles(t *testing.T) {
+	requireFUSE(t)
+	f := newMemFetcher()
+	root := f.put(tree.Marshal(&repb.Directory{}))
+	tr, err := tree.Load(t.Context(), f, "inst", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mnt := t.TempDir()
+	server, err := casfs.Mount(mnt, tr, f, "inst")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { server.Unmount() })
+
+	// A compiler writes its output front to back in small chunks.
+	want := make([]byte, 4<<20)
+	for i := range want {
+		want[i] = byte(i % 251)
+	}
+	path := filepath.Join(mnt, "out.a")
+	out, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for off := 0; off < len(want); off += 4 << 10 {
+		if _, err := out.Write(want[off : off+4<<10]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := out.Close(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(got, want) {
+		t.Fatalf("out.a: %d bytes, %v; want the %d written", len(got), err, len(want))
+	}
+
+	// Bytes that extend a file read as zero, even where a truncation left
+	// the old ones behind.
+	if err := os.Truncate(path, 4); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(path, 8); err != nil {
+		t.Fatal(err)
+	}
+	ext, err := os.OpenFile(path, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ext.WriteAt([]byte("end"), 12); err != nil {
+		t.Fatal(err)
+	}
+	if err := ext.Close(); err != nil {
+		t.Fatal(err)
+	}
+	got, err = os.ReadFile(path)
+	if wantExt := append(append(want[:4:4], make([]byte, 8)...), "end"...); err != nil || !bytes.Equal(got, wantExt) {
+		t.Fatalf("out.a after truncate and extend: %v, %v; want %v", got, err, wantExt)
 	}
 }

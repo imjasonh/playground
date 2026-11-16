@@ -40,6 +40,7 @@ import (
 	"log/slog"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"sync"
 	"syscall"
@@ -441,9 +442,7 @@ func (f *fileNode) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAt
 			if sz <= uint64(len(f.data)) {
 				f.data = f.data[:sz]
 			} else {
-				n := make([]byte, sz)
-				copy(n, f.data)
-				f.data = n
+				f.extendLocked(int(sz))
 			}
 		}
 	}
@@ -513,12 +512,21 @@ func (f *fileNode) Write(ctx context.Context, fh fs.FileHandle, data []byte, off
 		return 0, errno
 	}
 	if end := off + int64(len(data)); end > int64(len(f.data)) {
-		n := make([]byte, end)
-		copy(n, f.data)
-		f.data = n
+		f.extendLocked(int(end))
 	}
 	copy(f.data[off:], data)
 	return uint32(len(data)), 0
+}
+
+// extendLocked lengthens f.data to n bytes, zeroing the new ones. Capacity
+// grows geometrically: compilers write their outputs front to back in small
+// chunks, and growing to the exact end on each one copies the file once per
+// chunk. The capacity a truncation keeps still holds the old bytes, so the
+// new ones are cleared rather than trusted to be zero.
+func (f *fileNode) extendLocked(n int) {
+	old := len(f.data)
+	f.data = slices.Grow(f.data, n-old)[:n]
+	clear(f.data[old:])
 }
 
 func (f *fileNode) Flush(ctx context.Context, fh fs.FileHandle) syscall.Errno {
