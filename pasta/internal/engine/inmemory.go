@@ -21,7 +21,7 @@ import (
 // DefaultTreeBudget is the estimated heap that the in-memory path may
 // spend on parse trees it keeps between passes when the caller doesn't
 // set WithTreeBudget.
-const DefaultTreeBudget = 4 << 30
+const DefaultTreeBudget = 1 << 30
 
 // treeBytesPerNode estimates the heap one node of a retained tree
 // holds: the Go node, its slots in its parent's child slices, and its

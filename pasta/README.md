@@ -309,7 +309,7 @@ Fixpoint groups, such as taint propagation, also iterate over files in
 parallel. A fixpoint group that uses `not_has_fact` is the exception:
 its result depends on order, so it visits files in order. Pasta keeps
 the parse trees that later passes need while their estimated size
-stays under `-tree-budget` (default 4 GiB, `0` keeps every tree). It
+stays under `-tree-budget` (default 1 GiB, `0` keeps every tree). It
 releases the trees past the budget and keeps a compact encoding of
 each instead, about 6 bytes per node against about 200, within half
 the budget again. Each later pass rebuilds those trees from their
@@ -320,7 +320,8 @@ again for each later pass, which `reparsed` counts. Unless
 budget, and to at least the budget plus 2 GiB, so the collector
 doesn't let garbage double the heap. On the Go module cache (about
 30,000 files), the compact encodings took the run from 162 to 103
-seconds at the same 8.6 GB peak RSS. Rule files also load in parallel,
+seconds, and peak RSS from 8.6 GB to 3.6 GB. A 4 GiB budget ran
+no faster and peaked at 8.6 GB. Rule files also load in parallel,
 and pasta keeps wazero's compiled tree-sitter code under
 `$XDG_CACHE_HOME/pasta/wazero/` (about 7 MB), which saves about 0.6
 seconds per run.

@@ -384,7 +384,7 @@ func TestMemoryLimit(t *testing.T) {
 		gomemlimit string
 		want       int64
 	}{
-		{name: "default budget", budget: -1, want: 2 * engine.DefaultTreeBudget},
+		{name: "default budget", budget: -1, want: engine.DefaultTreeBudget + 2<<30},
 		{name: "twice a large budget", budget: 6 << 30, want: 12 << 30},
 		{name: "headroom for a small budget", budget: 256 << 20, want: 256<<20 + 2<<30},
 		{name: "keep every tree", budget: 0, want: 0},
