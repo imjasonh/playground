@@ -552,18 +552,30 @@ func appendCandidate(cands []candidate, p, root string, want map[string]bool, op
 	return append(cands, candidate{path: p, rel: rel, abs: abs, lang: langName})
 }
 
+// maxChunk caps the consecutive files one worker indexes and merges before
+// handing the result to the in-order merge.
+const maxChunk = 64
+
 // buildAll indexes cands on a worker pool and merges the per-file indexes in
 // candidate order. A file reached through two roots counts once, under the
 // first root that accepts it.
+//
+// Merging is associative over consecutive files, so each worker merges a
+// chunk of consecutive candidates and the caller merges whole chunks in
+// order. A slow file then holds back only the chunks behind it, and most of
+// the merging runs on the workers.
 func buildAll(ctx context.Context, cands []candidate, opts BuildOptions) (*Index, error) {
+	cands = dedupeCandidates(cands, opts)
 	workers := max(1, min(runtime.GOMAXPROCS(0), len(cands)))
-	results := make([]chan *Index, len(cands))
+	// Aim for 16 chunks per worker so the pool stays balanced at the end.
+	chunk := min(maxChunk, max(1, len(cands)/(16*workers)))
+	results := make([]chan *Index, (len(cands)+chunk-1)/chunk)
 	for i := range results {
 		results[i] = make(chan *Index, 1)
 	}
-	// window bounds the files that are parsing or waiting to merge, so a
+	// window bounds the chunks that are indexing or waiting to merge, so a
 	// slow file early in the walk doesn't buffer every later index.
-	window := make(chan struct{}, 4*workers)
+	window := make(chan struct{}, 16*workers)
 	var next atomic.Int64
 	var wg sync.WaitGroup
 	for range workers {
@@ -574,34 +586,50 @@ func buildAll(ctx context.Context, cands []candidate, opts BuildOptions) (*Index
 				case <-ctx.Done():
 					return
 				}
-				i := int(next.Add(1)) - 1
-				if i >= len(cands) {
+				k := int(next.Add(1)) - 1
+				if k >= len(results) {
 					<-window
 					return
 				}
-				results[i] <- indexFile(ctx, cands[i], opts)
+				idx := newIndex()
+				for _, c := range cands[k*chunk : min((k+1)*chunk, len(cands))] {
+					if f := indexFile(ctx, c, opts); f != nil {
+						idx.merge(f)
+					}
+				}
+				results[k] <- idx
 			}
 		})
 	}
 	defer wg.Wait()
 
 	idx := newIndex()
-	seen := map[string]bool{}
-	for i, c := range cands {
-		var f *Index
+	for _, r := range results {
 		select {
-		case f = <-results[i]:
+		case f := <-r:
+			idx.merge(f)
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
 		<-window
-		if f == nil || seen[c.abs] {
-			continue
-		}
-		seen[c.abs] = true
-		idx.merge(f)
 	}
 	return idx, nil
+}
+
+// dedupeCandidates keeps one candidate per file: the first whose path passes
+// the test-file filter. Size and generated-file checks read the file itself,
+// so they agree for every path to it.
+func dedupeCandidates(cands []candidate, opts BuildOptions) []candidate {
+	accepted := make(map[string]bool, len(cands))
+	out := make([]candidate, 0, len(cands))
+	for _, c := range cands {
+		if accepted[c.abs] || (!opts.IncludeTests && testpath.Is(c.rel)) {
+			continue
+		}
+		accepted[c.abs] = true
+		out = append(out, c)
+	}
+	return out
 }
 
 func relOf(p, root string) string {

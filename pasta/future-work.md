@@ -430,6 +430,15 @@ longer scans millions of them. On the Go module cache (27,500 files,
 2.4 million calls) `facts report` went from 254 s to 60 s, and peak heap
 from 2.0 GB to 1.5 GB.
 
+Merging one file at a time capped the run at about 4 of 8 cores: at most
+32 files could be ahead of the merge, so one slow file stalled every
+worker. Merging is associative over consecutive files, so each worker
+now indexes and merges a chunk of up to 64 consecutive files, and the
+in-order merge takes whole chunks, up to 16 per worker ahead. That run
+went from 58 s to 45 s with the same output, for 100 to 300 MB more
+peak heap. Parsing in the WASM runtime is now about two thirds of its
+CPU time.
+
 ### Early termination per rule
 **Effort:** S.
 For rules that only `Diagnose` (no `Emit`, no `Rewrite`), once a
