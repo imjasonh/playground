@@ -83,6 +83,7 @@ theorem nafSelect_correct (m : Machine) {out tbl x retAddr : Word} (hP : PanicCo
     (x.toNat ≤ 15 →
       McEnv m.mem (stubBase + 8) out (tbl + BitVec.ofNat 32 (x.toNat / 2 * 160)) (reg m sp + 0xFFFFFFF0) 160 →
       ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = reg m sp ∧
+        (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
         ∀ y, Sep (reg m sp + 0xFFFFFFF0) 16 y 1 →
           m'.mem y = copyBytes m.mem out (tbl + BitVec.ofNat 32 (x.toNat / 2 * 160)) 160 y) ∧
     (15 < x.toNat → Room (reg m sp) 48 → Panics m) := by
@@ -111,10 +112,21 @@ theorem nafSelect_correct (m : Machine) {out tbl x retAddr : Word} (hP : PanicCo
     have A2 : reg m6 a2 = BitVec.ofNat 32 160 := by rw [r6]; simp +decide only [upd_app, ↓reduceIte]; try rfl
     have RA : reg m6 ra = retAddr := by rw [r6]; simp +decide only [upd_app, ↓reduceIte]; exact hra
     have SP : reg m6 sp = reg m sp := by rw [r6]; simp +decide only [upd_app, ↓reduceIte]
-    obtain ⟨m7, c7, pc7, sp7, _, mem7, _⟩ := memcpy_correct m6 stubBase retAddr out _ 160
+    obtain ⟨m7, c7, pc7, sp7, _, mem7, k7⟩ := memcpy_correct m6 stubBase retAddr out _ 160
       (by intro i hi; rw [mem6]; exact hstub i hi) (by decide) pc6' A0 A1 A2 RA hret (by rw [mem6, SP]; exact E)
+    have K6 : ∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m6 q = reg m q := by
+      intro q hq
+      have hq' : q = 3 ∨ q = 4 ∨ q = 8 ∨ q = 9 ∨ q = 18 ∨ q = 19 ∨ q = 20 ∨ q = 21 ∨ q = 22 ∨ q = 23 ∨ q = 24 ∨
+          q = 25 ∨ q = 26 ∨ q = 27 := by revert hq; revert q; decide
+      rcases hq' with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+        (rw [r6]; simp +decide only [upd_app, ↓reduceIte])
     refine ⟨m7, .cons e1 (.cons e2 (.cons e3 (c4.trans (.cons e5 (.cons e6 c7))))), pc7, by rw [sp7, SP],
-      fun y hy => ?_⟩
+      fun q hq => ?_, fun y hy => ?_⟩
+    · rw [k7 q (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide) (by revert hq; revert q; decide), K6 q hq]
     rw [mem7 y (by rw [SP]; exact hy), mem6]
   · obtain ⟨m3, e3, s3⟩ := s2.taken hc 0x20 nsl_at_6 (by decide) (by rw [B, decide_eq_true hx])
     obtain ⟨m4, e4, s4⟩ := s3.aluImm hc nsl_at_20 (off' := 0x22) (by decide)

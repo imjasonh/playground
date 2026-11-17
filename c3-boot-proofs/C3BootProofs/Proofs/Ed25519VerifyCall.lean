@@ -50,6 +50,15 @@ structure EvEnv (M : Word → BitVec 8) : Prop where
   s5a : CodeIn M (BitVec.ofNat 32 sha512UpdateArr32Address) sha512UpdateArr32Code
   za64 : CodeIn M (BitVec.ofNat 32 zeroArray64Address) zeroArray64Code
   smm : CodeIn M (BitVec.ofNat 32 scalar29MontMulAddress) scalar29MontMulCode
+  naf : CodeIn M (BitVec.ofNat 32 nonAdjacentFormAddress) nonAdjacentFormCode
+  lsh : CodeIn M (BitVec.ofNat 32 lshrdi3Address) lshrdi3Code
+  ash : CodeIn M (BitVec.ofNat 32 ashldi3Address) ashldi3Code
+  ntf : CodeIn M (BitVec.ofNat 32 nafTableFromAddress) nafTableFromCode
+  apn : CodeIn M (BitVec.ofNat 32 asProjNielsAddress) asProjNielsCode
+  ean : CodeIn M (BitVec.ofNat 32 edAddNielsAddress) edAddNielsCode
+  esn : CodeIn M (BitVec.ofNat 32 edSubNielsAddress) edSubNielsCode
+  nsel : CodeIn M (BitVec.ofNat 32 nafSelectAddress) nafSelectCode
+  panic : PanicCode M
 
 /-- Where `ed25519_verify` runs: its frame at `F`, 16-aligned, with the
 0xA10 bytes below it, all below the code and apart from the read-only data
