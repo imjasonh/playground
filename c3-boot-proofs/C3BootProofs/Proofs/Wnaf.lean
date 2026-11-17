@@ -1397,7 +1397,7 @@ theorem wf_odd1 (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L r
   have S5 := S4.step u5 (by decide)
   have a1_5 : reg n5 a1 = 0 := by
     rw [u5.upd_eq (by decide), a0_4, r4 _ (by decide) (by decide), h8, wsltu (by omega) (by omega)]
-    simp only [show ¬ (carry + b < b) by omega, if_false]
+    simp only [show ¬ (carry + b < b) by omega, ↓reduceIte]
   obtain ⟨n6, d6, u6⟩ := S5.st.lw hc wf_at_e8 (off' := 0xEA) (by decide)
     (by rw [S5.hsp]; exact aligned_add hFa (k := 0xC) (by decide))
   have S6 := S5.step u6 (by decide)
@@ -1629,6 +1629,167 @@ theorem wf_tail (C : WfCtx M0 F wp cp wl cn L) {n : Machine} {M : Word → BitVe
   · rw [u6.upd_eq (by decide), u5.upd_ne u4.self.zero _ (by decide), u4.upd_ne u3.self.zero _ (by decide), u3.regs,
       u5.upd_ne u4.self.zero _ (by decide), u4.upd_ne u3.self.zero _ (by decide), u3.regs, s7_2,
       u2.upd_ne u1.zero _ (by decide), R.s2, wsub (by omega) hkL]
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 8000000 in
+/-- An odd window, from the return of `expect` at 0x11A to the loop head:
+`sk - 1` zero digits after the digit, and `pos` moved by `sk`. -/
+theorem wf_odd2 (C : WfCtx M0 F wp cp wl cn L) {n : Machine} {M : Word → BitVec 8} {c' sk : Nat}
+    (s : St M WF n 0x11A (reg n)) (R : WfR F wp wl L r0 n) (W : WfMem M0 Ms F wp cp wl cn M j (pos + 1) D)
+    (hc' : c' ≤ 1) (hsk : sk = min 5 (L - c' - pos)) (hsk1 : 1 ≤ sk) (hcL : c' < L)
+    (ha0 : reg n a0 = BitVec.ofNat 32 c') (h26 : reg n (26 : Fin 32) = BitVec.ofNat 32 c')
+    (h21 : reg n (21 : Fin 32) = BitVec.ofNat 32 (pos + 1)) (h23 : reg n (23 : Fin 32) = BitVec.ofNat 32 pos)
+    (h27 : reg n (27 : Fin 32) = BitVec.ofNat 32 (L - pos)) (hj : j ≤ (pos + sk) / 64 ∧ (pos + sk) / 64 ≤ j + 1)
+    (hspec : ∃ f, L - (pos + sk) + 1 ≤ f ∧ (D ++ List.replicate (sk - 1) 0) ++
+      wnafGo (leN (memBytes M0 cp cn)) L f (pos + sk) c' = wnafSpec (memBytes M0 cp cn) L) :
+    ∃ n' M', Steps n n' ∧ WfSt M0 Ms F wp cp wl cn L r0 M' n' 0x5E (pos + sk) c' j (D ++ List.replicate (sk - 1) 0) := by
+  have hLw := C.hLw; have hL := C.hL
+  have hc : CodeIn M WF wnafFormCode := C.code W.agree C.cod (by decide) (by decide)
+  obtain ⟨n1, d1, u1⟩ := s.aluImm hc wf_at_11a (off' := 0x11C) (by decide)
+  obtain ⟨n2, d2, u2⟩ := u1.self.alu hc wf_at_11c (off' := 0x120) (by decide)
+  obtain ⟨n3, d3, u3⟩ := u2.self.alu hc wf_at_120 (off' := 0x124) (by decide)
+  obtain ⟨n4, d4, u4⟩ := u3.self.aluImm hc wf_at_124 (off' := 0x126) (by decide)
+  obtain ⟨n5, d5, u5⟩ := u4.self.alu hc wf_at_126 (off' := 0x128) (by decide)
+  obtain ⟨n6, d6, u6⟩ := u5.self.alu hc wf_at_128 (off' := 0x12C) (by decide)
+  have K6 : ∀ q, q ≠ a1 → q ≠ a2 → q ≠ a3 → reg n6 q = reg n q := fun q h1 h2 h3 => by
+    rw [u6.upd_ne u5.self.zero q h1, u5.upd_ne u4.self.zero q h1, u4.upd_ne u3.self.zero q h3,
+      u3.upd_ne u2.self.zero q h3, u2.upd_ne u1.self.zero q h1, u1.upd_ne s.zero q h2]
+  have a1_2 : reg n2 a1 = BitVec.ofNat 32 (L - c') := by
+    rw [u2.upd_eq (by decide), u1.upd_ne s.zero _ (by decide), u1.upd_ne s.zero _ (by decide), R.s2, ha0,
+      wsub (by omega) (by omega)]
+  have a3_4 : reg n4 a3 = 0xFFFFFFFF := by
+    rw [u4.upd_eq (by decide), u3.upd_eq (by decide), u2.upd_ne u1.self.zero _ (by decide), u1.upd_ne s.zero _ (by decide),
+      R.s2, a1_2, wsltu (by omega) (by omega)]
+    simp only [show ¬ (L < L - c') by omega, ↓reduceIte]; rfl
+  have a1_6 : reg n6 a1 = BitVec.ofNat 32 (L - c' - pos) := by
+    rw [u6.upd_eq (by decide), u5.upd_eq (by decide), u4.upd_ne u3.self.zero _ (by decide),
+      u3.upd_ne u2.self.zero _ (by decide), a1_2, a3_4, u5.upd_ne u4.self.zero _ (by decide),
+      u4.upd_ne u3.self.zero _ (by decide), u3.upd_ne u2.self.zero _ (by decide), u2.upd_ne u1.self.zero _ (by decide),
+      u1.upd_ne s.zero _ (by decide), h23, show aluEval .and (BitVec.ofNat 32 (L - c')) 0xFFFFFFFF = BitVec.ofNat 32 (L - c')
+        from BitVec.and_allOnes, wsub (by omega) (by omega)]
+  have a2_6 : reg n6 a2 = 5 := by
+    rw [u6.upd_ne u5.self.zero _ (by decide), u5.upd_ne u4.self.zero _ (by decide), u4.upd_ne u3.self.zero _ (by decide),
+      u3.upd_ne u2.self.zero _ (by decide), u2.upd_ne u1.self.zero _ (by decide), u1.upd_eq (by decide), s.zero]; rfl
+  obtain ⟨n7, c7, s7, a1_7, K7⟩ := wf_min5 u6.self hc (x := L - c' - pos) (by omega) wf_at_12c wf_at_130 (by decide)
+    a1_6 a2_6
+  have s7' : St M WF n7 0x132 (reg n7) := s7
+  have a0_7 : reg n7 a0 = BitVec.ofNat 32 c' := by rw [K7 _ (by decide), K6 _ (by decide) (by decide) (by decide), ha0]
+  obtain ⟨n8, d8, u8⟩ := s7'.taken hc 0x138 wf_at_132 (by decide)
+    (by rw [a0_7, K7 _ (by decide), K6 _ (by decide) (by decide) (by decide), R.s2, wbr_bltu (by omega) (by omega)]
+        exact decide_eq_true hcL)
+  obtain ⟨n9, d9, u9⟩ := u8.self.alu hc wf_at_138 (off' := 0x13C) (by decide)
+  have a0_9 : reg n9 a0 = BitVec.ofNat 32 (L - pos - c') := by
+    rw [u9.upd_eq (by decide), u8.regs, u8.regs, a0_7, K7 _ (by decide), K6 _ (by decide) (by decide) (by decide), h27,
+      wsub (by omega) (by omega)]
+  have a2_9 : reg n9 a2 = 5 := by rw [u9.upd_ne u8.self.zero _ (by decide), u8.regs, K7 _ (by decide), a2_6]
+  obtain ⟨n10, c10, s10, a0_10, K10⟩ := wf_min5 u9.self hc (x := L - pos - c') (by omega) wf_at_13c wf_at_140 (by decide)
+    a0_9 a2_9
+  have s10' : St M WF n10 0x142 (reg n10) := s10
+  rw [show min 5 (L - pos - c') = sk by omega] at a0_10
+  obtain ⟨n11, d11, u11⟩ := s10'.aluImm hc wf_at_142 (off' := 0x146) (by decide)
+  obtain ⟨n12, d12, u12⟩ := u11.self.aluImm hc wf_at_146 (off' := 0x148) (by decide)
+  obtain ⟨n13, d13, u13⟩ := u12.self.alu hc wf_at_148 (off' := 0x14C) (by decide)
+  obtain ⟨n14, d14, u14⟩ := u13.self.aluImm hc wf_at_14c (off' := 0x14E) (by decide)
+  obtain ⟨n15, d15, u15⟩ := u14.self.alu hc wf_at_14e (off' := 0x150) (by decide)
+  have K15 : ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → reg n15 q = reg n q := fun q h0 h1 h2 h3 => by
+    rw [u15.upd_ne u14.self.zero q h0, u14.upd_ne u13.self.zero q h2, u13.upd_ne u12.self.zero q h0,
+      u12.upd_ne u11.self.zero q h3, u11.upd_ne s10'.zero q h2, K10 q h0, u9.upd_ne u8.self.zero q h0, u8.regs, K7 q h1,
+      K6 q h1 h2 h3]
+  have a1_15 : reg n15 a1 = BitVec.ofNat 32 sk := by
+    rw [u15.upd_ne u14.self.zero _ (by decide), u14.upd_ne u13.self.zero _ (by decide),
+      u13.upd_ne u12.self.zero _ (by decide), u12.upd_ne u11.self.zero _ (by decide), u11.upd_ne s10'.zero _ (by decide),
+      K10 _ (by decide), u9.upd_ne u8.self.zero _ (by decide), u8.regs, a1_7, ← hsk]
+  have a0_12 : reg n12 a0 = BitVec.ofNat 32 sk := by
+    rw [u12.upd_ne u11.self.zero _ (by decide), u11.upd_ne s10'.zero _ (by decide), a0_10]
+  have a3_12 : reg n12 a3 = 1 := by rw [u12.upd_eq (by decide), u11.self.zero]; rfl
+  have a2_13 : reg n13 a2 = if sk < 2 then 1 else 0 := by
+    rw [u13.upd_ne u12.self.zero _ (by decide), u12.upd_ne u11.self.zero _ (by decide), u11.upd_eq (by decide), a0_10,
+      show (0x2 : Word) = BitVec.ofNat 32 2 from rfl, wsltu (by omega) (by decide)]
+  have a0_15 : reg n15 a0 = if sk < 2 then 0 else BitVec.ofNat 32 (2 ^ 32 - (sk - 1)) := by
+    rw [u15.upd_eq (by decide), u14.upd_ne u13.self.zero _ (by decide), u13.upd_eq (by decide), a3_12, a0_12,
+      u14.upd_eq (by decide), a2_13]
+    exact wf_cnt ⟨sk, by omega⟩ hsk1
+  have R15 : WfR F wp wl L r0 n15 := R.keep fun q hq => K15 q (by revert hq; revert q; decide)
+    (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+  have cs15 : Steps n n15 := .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.cons d6 (c7.trans (.cons d8 (.cons d9
+    (c10.trans (.cons d11 (.cons d12 (.cons d13 (.cons d14 (.single d15))))))))))))))
+  by_cases h2 : sk < 2
+  · obtain rfl : sk = 1 := by omega
+    obtain ⟨n16, d16, u16⟩ := u15.self.taken hc 0x164 wf_at_150 (by decide)
+      (by rw [a0_15, u15.self.zero]; simp only [h2, ↓reduceIte]; rfl)
+    obtain ⟨n17, M17, c17, S17⟩ := wf_tail C (k := pos + 1) u16.self (R15.jmp u16) W
+      (by rw [u16.regs, K15 _ (by decide) (by decide) (by decide) (by decide), h21])
+      (by rw [u16.regs, K15 _ (by decide) (by decide) (by decide) (by decide), h23])
+      (by rw [u16.regs, a1_15]; congr 1; omega)
+      (by rw [u16.regs, K15 _ (by decide) (by decide) (by decide) (by decide), h26]) (by omega) (by omega) hc' hj
+      (by simpa using hspec)
+    exact ⟨n17, M17, cs15.trans (.cons d16 c17), by simpa using S17⟩
+  · obtain ⟨n16, d16, u16⟩ := u15.self.notTaken hc 0x152 wf_at_150 (by decide)
+      (by rw [a0_15, u15.self.zero]; simp only [h2, ↓reduceIte]
+          rw [show (0 : Word) = BitVec.ofNat 32 0 from rfl, wbr_beq (by omega) (by decide)]
+          exact decide_eq_false (by omega))
+    obtain ⟨n17, M17, c17, s17, R17, W17, h17, K17⟩ := wf_zl C (sk - 1) (by omega) u16.self (R15.jmp u16) W
+      (by rw [u16.regs, K15 _ (by decide) (by decide) (by decide) (by decide), h21])
+      (by rw [u16.regs, a0_15]; simp only [h2, ↓reduceIte]) (by omega)
+    rw [show pos + 1 + (sk - 1) = pos + sk by omega] at W17 h17
+    obtain ⟨n18, M18, c18, S18⟩ := wf_tail C (k := pos + sk) s17 R17 W17 h17
+      (by rw [K17 _ (by decide) (by decide) (by decide), u16.regs, K15 _ (by decide) (by decide) (by decide) (by decide),
+        h23])
+      (by rw [K17 _ (by decide) (by decide) (by decide), u16.regs, a1_15]; congr 1; omega)
+      (by rw [K17 _ (by decide) (by decide) (by decide), u16.regs, K15 _ (by decide) (by decide) (by decide) (by decide),
+        h26]) (by omega) (by omega) hc' hj hspec
+    exact ⟨n18, M18, cs15.trans (.cons d16 (c17.trans c18)), S18⟩
+
+/-- One trip around the loop from the head, with `pos < L`. -/
+theorem wf_iter (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L r0 M n 0x5E pos carry j D)
+    (hlt : pos < L) :
+    ∃ n' M' pos' carry' j' D', Steps n n' ∧ WfSt M0 Ms F wp cp wl cn L r0 M' n' 0x5E pos' carry' j' D' ∧
+      pos < pos' := by
+  obtain ⟨n1, c1, S1, hs1, hs4⟩ := wf_get C S hlt
+  obtain ⟨n2, c2, S2, h8, k20⟩ := wf_win C S1 hlt hs1
+  have h20 : reg n2 (20 : Fin 32) = wp + BitVec.ofNat 32 pos := by rw [k20 _ rfl, hs4]
+  have hcar := S.hc
+  have hN := C.hN
+  rcases Nat.mod_two_eq_zero_or_one (carry + leN (memBytes M0 cp cn) / 2 ^ pos % 32) with hev | hodd
+  · obtain ⟨n3, c3, S3⟩ := wf_even C S2 hlt h8 h20 hev
+    exact ⟨n3, _, _, _, _, _, c1.trans (c2.trans c3), S3, by omega⟩
+  · obtain ⟨n3, M1, c3, s3, R3, W3, chi3, a03, s103, s53, s63, s73, s113⟩ :=
+      wf_odd1 C S2 hlt (Nat.mod_lt _ (by decide)) h8 h20 hodd
+    have hsk1 := wskip_pos hN hcar hlt
+    have hwc : wc (carry + leN (memBytes M0 cp cn) / 2 ^ pos % 32) ≤ 1 := by unfold wc; split <;> decide
+    have hcL : wc (carry + leN (memBytes M0 cp cn) / 2 ^ pos % 32) < L := by
+      rcases Nat.lt_or_ge (wc (carry + leN (memBytes M0 cp cn) / 2 ^ pos % 32)) 1 with h | h
+      · omega
+      · have := wc_room hN hcar hlt (by omega); omega
+    have hsk5 : wskip L pos (carry + leN (memBytes M0 cp cn) / 2 ^ pos % 32) ≤ 5 := by unfold wskip; omega
+    have hskL : pos + wskip L pos (carry + leN (memBytes M0 cp cn) / 2 ^ pos % 32) ≤ L := by unfold wskip; omega
+    obtain ⟨n4, M4, c4, S4⟩ := wf_odd2 C s3 R3 W3 (sk := wskip L pos (carry + leN (memBytes M0 cp cn) / 2 ^ pos % 32)) hwc rfl hsk1 hcL a03 s103 s53 s73 s113 ⟨by omega, by omega⟩ (by
+      obtain ⟨f, hf, e⟩ := S2.spec
+      obtain ⟨f', rfl⟩ : ∃ f', f = f' + 1 := ⟨f - 1, by omega⟩
+      refine ⟨f', by omega, ?_⟩
+      rw [wnafGo_odd hlt hodd] at e; rw [← e]; simp)
+    exact ⟨n4, _, _, _, _, _, c1.trans (c2.trans (c3.trans c4)), S4, by omega⟩
+
+/-- The loop runs until `pos = L`. -/
+theorem wf_loop (C : WfCtx M0 F wp cp wl cn L) : ∀ (fuel : Nat) {n : Machine} {M : Word → BitVec 8} {pos carry j : Nat}
+    {D : List Int}, L - pos ≤ fuel → WfSt M0 Ms F wp cp wl cn L r0 M n 0x5E pos carry j D →
+    ∃ n' M' carry' j' D', Steps n n' ∧ WfSt M0 Ms F wp cp wl cn L r0 M' n' 0x5E L carry' j' D' := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro n M pos carry j D h S
+    have := S.hpos
+    obtain rfl : pos = L := by omega
+    exact ⟨n, M, carry, j, D, .refl _, S⟩
+  | succ fuel ih =>
+    intro n M pos carry j D h S
+    rcases Nat.lt_or_ge pos L with hlt | hge
+    · obtain ⟨n1, M1, pos1, c1, j1, D1, cs, S1, hp⟩ := wf_iter C S hlt
+      obtain ⟨n2, M2, c2, j2, D2, cs2, S2⟩ := ih (by omega) S1
+      exact ⟨n2, M2, c2, j2, D2, cs.trans cs2, S2⟩
+    · have := S.hpos
+      obtain rfl : pos = L := by omega
+      exact ⟨n, M, carry, j, D, .refl _, S⟩
 
 end Steps
 
