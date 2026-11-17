@@ -314,9 +314,14 @@ releases the trees past the budget and parses those files again for
 each later pass, which `reparsed` in `-stats` counts. A smaller budget
 trades time for memory: on the Go standard library, 256 MiB cut the
 peak heap from about 5.3 GB to under 1 GB and made the run about four
-times slower. Rule files also load in parallel, and pasta keeps wazero's
-compiled tree-sitter code under `$XDG_CACHE_HOME/pasta/wazero/` (about
-7 MB), which saves about 0.6 seconds per run.
+times slower. Unless `GOMEMLIMIT` is set, pasta sets Go's memory limit
+to twice the tree budget, and to at least the budget plus 2 GiB, so the
+collector doesn't let garbage double the heap. On the Go module cache,
+the default budget's peak dropped from 12.4 GB resident to 8.6 GB, and
+the run took about 8% longer. Rule files also load in parallel, and
+pasta keeps wazero's compiled tree-sitter code under
+`$XDG_CACHE_HOME/pasta/wazero/` (about 7 MB), which saves about 0.6
+seconds per run.
 
 ## Autofix guardrails
 

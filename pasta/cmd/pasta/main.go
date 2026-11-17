@@ -56,6 +56,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"time"
@@ -108,13 +109,16 @@ func runFix(args []string) int {
 	noCache := fs.Bool("nocache", false, "disable the persistent parse-result cache for this run")
 	parseTimeoutFlag := fs.Duration("parse-timeout", -1, "per-file parse budget (e.g. 2s); 0 disables. Default 2s, or parse_timeout_ms from pasta.cue")
 	memoryBudgetFlag := fs.Int64("memory-budget", -1, "cumulative parsed-source byte budget across the whole run; 0 disables. Default unlimited, or memory_budget from pasta.cue")
-	treeBudgetFlag := fs.Int64("tree-budget", -1, "estimated bytes of parse trees a cross-file run keeps between passes; files past it are parsed again for each pass. 0 keeps every tree. Default 4 GiB")
+	treeBudgetFlag := fs.Int64("tree-budget", -1, "estimated bytes of parse trees a cross-file run keeps between passes; files past it are parsed again for each pass. 0 keeps every tree. Default 4 GiB. Unless GOMEMLIMIT is set, Go's memory limit is twice this budget, and at least the budget plus 2 GiB")
 	showStats := fs.Bool("stats", false, "print walk/prefilter/parse/skip counters on stderr")
 	failOn := fs.String("fail-on", "none", "exit 1 when a diagnostic at this severity or higher is found: none, hint, info, warning, error")
 	quiet := fs.Bool("quiet", false, "print only diagnostics at or above the -fail-on severity")
 	staged := fs.Bool("staged", false, "analyze only the files staged for commit, using their staged contents; takes no source arguments")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if limit := memoryLimit(*treeBudgetFlag, os.Getenv("GOMEMLIMIT")); limit > 0 {
+		debug.SetMemoryLimit(limit)
 	}
 	failThreshold, err := parseFailOn(*failOn)
 	if err != nil {
@@ -438,6 +442,30 @@ func resolveMemoryBudget(flagVal int64, cfg *loader.Config) int64 {
 		return *cfg.MemoryBudget
 	}
 	return -1
+}
+
+// memoryHeadroom is the least room the memory limit leaves above the tree
+// budget, for what a run holds besides trees: sources, facts, and results.
+const memoryHeadroom int64 = 2 << 30
+
+// memoryLimit returns the soft memory limit for a run with the given
+// -tree-budget, or 0 to leave Go's limit alone. Without a limit the
+// collector lets the heap reach twice what is live, so a 4 GiB budget
+// peaked at 12 GB resident. Twice the budget leaves room for the rest of
+// the run and for garbage between collections; at 1.5 times the budget,
+// collections ran often enough to slow the run by a third. GOMEMLIMIT, when
+// set, wins. A budget of 0 keeps every tree, so it bounds nothing.
+func memoryLimit(treeBudget int64, gomemlimit string) int64 {
+	if gomemlimit != "" {
+		return 0
+	}
+	if treeBudget < 0 {
+		treeBudget = engine.DefaultTreeBudget
+	}
+	if treeBudget == 0 {
+		return 0
+	}
+	return treeBudget + max(treeBudget, memoryHeadroom)
 }
 
 // defaultCacheSizeBytes bounds the on-disk parse cache. Sized for a
