@@ -40,6 +40,11 @@ if [ "${#modules[@]}" -eq 0 ]; then
   fi
 fi
 
+# Each module's go line follows the minor release this update runs with, so
+# every module gets that release's language changes and GODEBUG defaults.
+# The repository root has no go.mod, so this is the installed release.
+go_line=$(go env GOVERSION | sed -E 's/^go([0-9]+\.[0-9]+).*/\1.0/')
+
 for module in "${modules[@]}"; do
   if [ "$module" = "litestream" ]; then
     # The fork keeps upstream's dependency versions, so a later pull from
@@ -55,6 +60,17 @@ for module in "${modules[@]}"; do
   goflags="${GOFLAGS:-}"
   if [ "$module" = "cloudrun-sqlite" ]; then
     goflags="${goflags:+$goflags }-tags=vfs"
+  fi
+
+  current=$(cd "$module" && go mod edit -json | jq -r .Go)
+  if [ "$(printf '%s\n%s\n' "$current" "$go_line" | sort -V | tail -n 1)" != "$current" ]; then
+    if (cd "$module" && go mod edit -go="$go_line"); then
+      echo "- ✅ \`${module}\`: go ${current} → ${go_line}" >> "$GITHUB_STEP_SUMMARY"
+    else
+      result=failure
+      echo "::error title=Go version update failed::${module}: go mod edit -go=${go_line}"
+      echo "- ❌ \`${module}\`: go version update failed" >> "$GITHUB_STEP_SUMMARY"
+    fi
   fi
 
   if (
