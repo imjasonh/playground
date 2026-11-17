@@ -5,25 +5,25 @@
 //
 //   - explicit `require_substring` on the rule
 //   - `eq` / `token_eq` where-predicates with a literal (non-@) second arg
-//   - at most one simple `matches` regex that is a literal or
-//     `|`-alternation of literals (e.g. `==|!=`)
+//   - the literals each `matches` regex requires: `^(Atoi|ParseInt)$`
+//     requires Atoi or ParseInt, and `(^|::)Command::new$` requires
+//     Command::new
 //
 // Rewrite `within` tokens are intentionally NOT inferred: diagnostics
 // can fire whenever the pattern matches even if the rewrite token is
 // absent (`applyWithin` no-ops). Inferring them as AND constraints
 // would false-negative diagnose-only hits.
 //
-// Within one rule, `eq`/`token_eq`/`require_substring` constraints are
-// AND-ed; a single simple `matches` alternation is OR-ed. Multiple
-// `matches` predicates are not inferred (would need AND-of-OR groups).
-// Across rules, a file is kept if ANY rule's filter passes — or if any
+// A rule's where-predicates all hold on a match, and the text `matches`
+// tests is a node's, which is part of the file. So within one rule every
+// constraint is AND-ed, and the literals of one alternative in a regex
+// are OR-ed. Across rules, a file is kept if ANY rule's filter passes — or if any
 // rule has no usable filter (we can't prove it won't match).
 package prefilter
 
 import (
 	"bytes"
 	"strings"
-	"unicode"
 
 	"github.com/imjasonh/playground/pasta/internal/dsl"
 )
@@ -33,9 +33,9 @@ type Filter struct {
 	// AllOf must every be present (byte substring) for the rule to
 	// possibly match. Empty means no AND constraint.
 	AllOf []string
-	// AnyOf, when non-empty, requires at least one entry to be present.
-	// Used for a single simple regex alternation from `matches`.
-	AnyOf []string
+	// AnyOf holds groups from `matches` regexes. Each group needs at
+	// least one of its entries present.
+	AnyOf [][]string
 }
 
 // Empty reports whether the filter has no constraints — the file cannot
@@ -51,10 +51,16 @@ func (f Filter) Match(src []byte) bool {
 			return false
 		}
 	}
-	if len(f.AnyOf) == 0 {
-		return true
+	for _, g := range f.AnyOf {
+		if !containsAny(src, g) {
+			return false
+		}
 	}
-	for _, s := range f.AnyOf {
+	return true
+}
+
+func containsAny(src []byte, ss []string) bool {
+	for _, s := range ss {
 		if bytes.Contains(src, []byte(s)) {
 			return true
 		}
@@ -86,10 +92,7 @@ func ForRule(rule *dsl.Rule) Filter {
 		addAll(s)
 	}
 
-	// Collect simple matches alternations separately. Only infer when
-	// there is exactly one — multiple would need AND-of-OR semantics
-	// and collapsing them into one AnyOf would loosen the filter.
-	var matchGroups [][]string
+	var anyOf [][]string
 	dsl.WalkPattern(&rule.Match, func(p *dsl.Pattern) {
 		for _, w := range p.Where {
 			switch w.Op {
@@ -99,18 +102,17 @@ func ForRule(rule *dsl.Rule) Filter {
 				}
 			case "matches":
 				if len(w.Args) >= 2 {
-					lits, ok := simpleAlternationLiterals(w.Args[1].Str)
-					if ok {
-						matchGroups = append(matchGroups, lits)
+					for _, g := range regexLiterals(w.Args[1].Str) {
+						if len(g) == 1 {
+							addAll(g[0])
+						} else {
+							anyOf = append(anyOf, g)
+						}
 					}
 				}
 			}
 		}
 	})
-	var anyOf []string
-	if len(matchGroups) == 1 {
-		anyOf = matchGroups[0]
-	}
 	return Filter{AllOf: allOf, AnyOf: anyOf}
 }
 
@@ -136,36 +138,4 @@ func ForRules(rules []*dsl.Rule) []Filter {
 		out = append(out, ForRule(r))
 	}
 	return out
-}
-
-// simpleAlternationLiterals accepts patterns like `==`, `!=`, `==|!=`,
-// `gets` — a sequence of `|`-separated literals with no regex
-// metacharacters. Returns ok=false for anything else so we don't infer
-// wrong constraints from complex regexes.
-func simpleAlternationLiterals(pat string) ([]string, bool) {
-	if pat == "" {
-		return nil, false
-	}
-	parts := strings.Split(pat, "|")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if p == "" || !isLiteralSubstring(p) {
-			return nil, false
-		}
-		out = append(out, p)
-	}
-	return out, true
-}
-
-func isLiteralSubstring(s string) bool {
-	for _, r := range s {
-		switch r {
-		case '.', '*', '+', '?', '(', ')', '[', ']', '{', '}', '^', '$', '\\':
-			return false
-		}
-		if unicode.IsControl(r) {
-			return false
-		}
-	}
-	return true
 }

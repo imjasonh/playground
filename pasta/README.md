@@ -273,9 +273,9 @@ Omitted: rules that need a scope chain, CFG, or ESLint option object (`no-undef`
 Cold runs over large trees are tuned for sparse style rules:
 
 1. **Content-sniff pre-filter** — before parsing, pasta checks cheap
-   substrings inferred from each rule (`eq` / `token_eq` / a single
-   simple `matches` alternation) plus optional `require_substring` on
-   the rule. Rewrite `within` tokens are not inferred (diagnose can
+   substrings inferred from each rule (`eq` / `token_eq` literals and
+   the literals each `matches` regex requires) plus optional
+   `require_substring` on the rule. Rewrite `within` tokens are not inferred (diagnose can
    fire without them). Files that cannot match any applicable rule
    skip the parse.
 2. **Per-file parse budget** — default 2s (`-parse-timeout`, or

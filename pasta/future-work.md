@@ -391,8 +391,8 @@ module), so this is polish, not a load-bearing item.
 
 ### Content-sniff pre-filter
 **Status:** Done. `internal/prefilter` infers substrings from
-`eq`/`token_eq` and at most one simple `matches` alternation, and
-honours explicit `require_substring` on `#Rule`. Rewrite `within`
+`eq`/`token_eq` literals and from the literals each `matches` regex
+requires (with `regexp/syntax`), and honours explicit `require_substring` on `#Rule`. Rewrite `within`
 tokens are intentionally not inferred (diagnose can fire without
 them). The streaming and in-memory engine paths skip the parse when
 no applicable rule can match.
