@@ -29,7 +29,7 @@ theorem sha512UpdateArr32_correct (m : Machine) {S D sp0 retAddr : Word} {msg : 
     (ha0 : reg m a0 = S) (ha1 : reg m a1 = D) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
     (hsp : reg m sp = sp0) (H : Hasher5At m.mem S msg) (hlen : msg.length + 32 < 2 ^ 32) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
-      (∀ r, r ≠ ra → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
+      (∀ r, r ≠ ra → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
         r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
         r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → r ≠ sp → reg m' r = reg m r) ∧
       Hasher5At m'.mem S (msg ++ memBytes m.mem D 32) ∧
@@ -52,8 +52,8 @@ theorem sha512UpdateArr32_correct (m : Machine) {S D sp0 retAddr : Word} {msg : 
     (by rw [k3 ra (by decide) (by decide), hra]) hret (by rw [k3 sp (by decide) (by decide), hsp])
     (by rw [mem3]; exact H) (by decide) hlen
   refine ⟨m', .cons d1 (.cons d2 (.cons d3 c')), pc', sp',
-    fun r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2 => ?_, ?_, fun x hx hy => ?_⟩
-  · rw [K' r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2, k3 r q6 q12]
+    fun r q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2 => ?_, ?_, fun x hx hy => ?_⟩
+  · rw [K' r q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2, k3 r q6 q12]
   · rw [mem3] at H'; exact H'
   · rw [fr' x hx hy, mem3]
 

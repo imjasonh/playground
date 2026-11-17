@@ -425,7 +425,7 @@ theorem upd_join {M0 Mx : Word → BitVec 8} {S D sp0 Dk : Word} {n nk : Nat} {m
     (hlen : msg'.length < 2 ^ 32) :
     ∃ m', Steps nn m' ∧ m'.pc = rRa ∧ reg m' sp = sp0 ∧ reg m' s0 = rS0 ∧ reg m' s1 = rS1 ∧
       reg m' s2 = rS2 ∧ reg m' s3 = rS3 ∧ reg m' s4 = rS4 ∧
-      (∀ r, r ≠ ra → r ≠ sp → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ s0 → r ≠ s1 →
+      (∀ r, r ≠ ra → r ≠ sp → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ s0 → r ≠ s1 →
         r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ s2 → r ≠ s3 →
         r ≠ s4 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) →
         reg m' r = f r) ∧
@@ -515,7 +515,7 @@ theorem upd_join {M0 Mx : Word → BitVec 8} {S D sp0 Dk : Word} {n nk : Nat} {m
       memLoad32 Mc (S + 0xC8) = 0 ∧ memLoad32 Mc (S + 0xCC) = 0 ∧
       (∀ x, Sep R 0x390 x 1 → Sep (S + 0x80) 0x50 x 1 → Mc x = Mx x) ∧
       reg n8 s1 = BitVec.ofNat 32 (nk % 128) ∧ reg n8 s3 = Dk + BitVec.ofNat 32 (128 * k) ∧
-      (∀ r, r ≠ ra → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
+      (∀ r, r ≠ ra → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
         r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ s1 → r ≠ s3 → r ≠ (28 : Fin 32) →
         r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → reg n8 r = f r) := by
     by_cases hk0 : k = 0
@@ -523,7 +523,7 @@ theorem upd_join {M0 Mx : Word → BitVec 8} {S D sp0 Dk : Word} {n nk : Nat} {m
         simp only [branchTaken]; rw [K6 a2 (by decide), K5 a2 (by decide), K4 a2 (by decide), g3, u6'.zero, hk0]
         rfl)
       refine ⟨n7, Mx, c6.trans (.single d7), u7.self, ?_, ?_, hhi, hhi2, hhi3, fun _ _ _ => rfl, ?_, ?_,
-        fun r q1 q3 q5 q6 q7 q10 q11 q12 _ _ _ _ _ q9 q19 _ _ _ _ => ?_⟩
+        fun r q1 q5 q6 q7 q10 q11 q12 _ _ _ _ _ q9 q19 _ _ _ _ => ?_⟩
       · rw [hhash, hk0]; simp [Sha512.blocks]
       · rw [hlo, hk0]; rfl
       · rw [u7.regs, K6 s1 (by decide), g5]
@@ -615,13 +615,13 @@ theorem upd_join {M0 Mx : Word → BitVec 8} {S D sp0 Dk : Word} {n nk : Nat} {m
         (sC0 _ _ (by decide) (by decide)) (sC0 _ _ (by decide) (by decide)) (sC0 _ _ (by decide) (by decide))
         (sC0 _ _ (by decide) (by decide)) (sC0 _ _ (by decide) (by decide)) (by rw [eC0]; exact kS 0xC0 16 (by omega))
         (by rw [RG, eC0]; exact SR 0xC0 16 (by omega)) (by rw [eC0]; exact dS 0xC0 16 (by omega)) (sC0 _ _ (by decide) (by decide))
-      have k11 : ∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 →
+      have k11 : ∀ r, r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 →
           r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
-          r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → reg n11 r = reg n10 r := fun r _ q5 q6 q7 q10 q11 q12 q13
+          r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → reg n11 r = reg n10 r := fun r q5 q6 q7 q10 q11 q12 q13
           q14 q15 q16 q17 q28 q29 q30 q31 => K11 r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31
       refine ⟨n11, n11.mem, c6.trans (.cons d7 (.cons d8 (.cons d9 (.cons d10 c11)))),
         ⟨by rw [pc11], rfl, fun _ => rfl⟩, ?_, ?_, ?_, ?_, ?_, fun x hx hy => ?_, ?_, ?_,
-        fun r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q9 q19 q28 q29 q30 q31 => ?_⟩
+        fun r q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q9 q19 q28 q29 q30 q31 => ?_⟩
       · rw [w11, mem10, hhash, hblk, List.foldl_append]
       · rw [show S + (0xC0 : Word) = S + 0x80 + 0x40 from eC0.symm, lo11, lo10, BitVec.ofNat_add_ofNat]
       · rw [show S + (0xC4 : Word) = S + 0x80 + 0x44 by rw [BitVec.add_assoc]; rfl, hi11, mem10,
@@ -635,12 +635,12 @@ theorem upd_join {M0 Mx : Word → BitVec 8} {S D sp0 Dk : Word} {n nk : Nat} {m
         exact hhi3
       · rw [fr11 x (by rw [RG]; exact hx) hy, mem10]
       · rw [k11 s1 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
-          (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
+          (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
           r10 s1 (by decide), K8 s1 (by decide), K6 s1 (by decide), g5]
       · rw [k11 s3 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
-          (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
+          (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
           r10 s3 (by decide), K8 s3 (by decide), g6]
-      · rw [k11 r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, r10 r q1, K8 r q10,
+      · rw [k11 r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, r10 r q1, K8 r q10,
           K16 r q10 q12 q9 q19]
   obtain ⟨n8, Mc, c8, u8, w8, lo8, hi8, hi8b, hi8c, fr8, s1_8, s3_8, K8'⟩ := H8
   have hMc : ∀ x, Sep R 0x3B0 x 1 → Sep S 0xD0 x 1 → Mc x = M0 x := fun x hx hy => by
@@ -650,11 +650,11 @@ theorem upd_join {M0 Mx : Word → BitVec 8} {S D sp0 Dk : Word} {n nk : Nat} {m
   have s4_8 : reg n8 s4 = S := by
     rw [K8' s4 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
-      (by decide) (by decide), fs4]
+      (by decide), fs4]
   have sp8 : reg n8 sp = G := by
     rw [K8' sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
-      (by decide) (by decide), fsp]
+      (by decide), fsp]
   obtain ⟨n9, d9, u9⟩ := u8.alu cU8 s5u_at_92 (off' := 0x94) (by decide)
   have K9 := u9.upd_ne u8.zero
   have u9' : St Mc U n9 0x94 (reg n9) := u9.self
@@ -815,7 +815,7 @@ theorem upd_join {M0 Mx : Word → BitVec 8} {S D sp0 Dk : Word} {n nk : Nat} {m
       r ≠ (7 : Fin 32) → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → r ≠ sp →
       reg n14 r = reg n13 r := K14
   refine ⟨n14, c8.trans (.cons d9 (.cons d10 (.cons d11 (.cons d12 (c13.trans c14))))), pc14, by rw [sp14, sp13],
-    ?_, ?_, ?_, ?_, ?_, fun r q1 q2 q3 q5 q6 q7 q8 q9 q10 q11 q12 q13 q14 q15 q16 q17 q18 q19 q20 q28 q29 q30 q31 =>
+    ?_, ?_, ?_, ?_, ?_, fun r q1 q2 q5 q6 q7 q8 q9 q10 q11 q12 q13 q14 q15 q16 q17 q18 q19 q20 q28 q29 q30 q31 =>
       ?_, H', fun x hx hy => ?_⟩
   · rw [k14 s0 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), regs13 s0 (by decide), vs0, hs0']
@@ -828,7 +828,7 @@ theorem upd_join {M0 Mx : Word → BitVec 8} {S D sp0 Dk : Word} {n nk : Nat} {m
   · rw [k14 s4 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), regs13 s4 (by decide), vs4, hs4']
   · rw [k14 r q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2, oth r q6 q1 q8 q9 q18 q19 q20 q2 q5,
-      K11 r q12, K10 r q11, K9 r q10, K8' r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q9 q19 q28 q29 q30 q31]
+      K11 r q12, K10 r q11, K9 r q10, K8' r q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q9 q19 q28 q29 q30 q31]
   · have hxF : Sep (sp0 + 0xFFFFFFF0) 16 x 1 := by
       rw [hFe]; exact hx.sub (c := 0x3A0) (l := 16) (by omega)
     rw [mem14 x hxF, copyBytes_out (fun hlt => by
@@ -850,7 +850,7 @@ theorem sha512Update_correct (m : Machine) {S D sp0 retAddr : Word} {n : Nat} {m
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hsp : reg m sp = sp0)
     (H : Hasher5At m.mem S msg) (hn : n < 2 ^ 31) (hlen : msg.length + n < 2 ^ 32) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
-      (∀ r, r ≠ ra → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
+      (∀ r, r ≠ ra → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
         r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
         r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → r ≠ sp → reg m' r = reg m r) ∧
       Hasher5At m'.mem S (msg ++ memBytes m.mem D n) ∧
@@ -982,7 +982,7 @@ theorem sha512Update_correct (m : Machine) {S D sp0 retAddr : Word} {n : Nat} {m
       (∀ k, 8 ≤ k → k < 32 → Mx (G + BitVec.ofNat 32 k) = M2 (G + BitVec.ofNat 32 k)) →
       nk ≤ n → Dk = D + BitVec.ofNat 32 (n - nk) →
       f a1 = Dk → f s1 = BitVec.ofNat 32 nk → f s2 = S + 0x80 → f s4 = S → f sp = G →
-      (∀ r, r ≠ ra → r ≠ sp → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ s0 → r ≠ s1 →
+      (∀ r, r ≠ ra → r ≠ sp → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ s0 → r ≠ s1 →
         r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ s2 → r ≠ s3 →
         r ≠ s4 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) →
         f r = reg m r) →
@@ -992,7 +992,7 @@ theorem sha512Update_correct (m : Machine) {S D sp0 retAddr : Word} {n : Nat} {m
       fullBlocks5 (msg ++ data) = pre ++ Sha512.blocks (nk / 128) (memBytes M0 Dk nk) →
       tailBytes5 (msg ++ data) = (memBytes M0 Dk nk).drop (128 * (nk / 128)) →
       ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
-        (∀ r, r ≠ ra → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
+        (∀ r, r ≠ ra → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
           r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
           r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → r ≠ sp → reg m' r = reg m r) ∧
         Hasher5At m'.mem S (msg ++ memBytes m.mem D n) ∧
@@ -1003,7 +1003,7 @@ theorem sha512Update_correct (m : Machine) {S D sp0 retAddr : Word} {n : Nat} {m
       (fun My h => slots My fun k h1 h2 => (h k h1 h2).trans (hsl k h1 h2)) (by rw [hra]; exact hret)
       hh hl hhi hhi8 hhiC hf ht (by rw [List.length_append, hdata]; exact hlen)
     refine ⟨m', cn.trans c', by rw [pc', hra], sp',
-      fun r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2 => ?_, H', fr'⟩
+      fun r q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2 => ?_, H', fr'⟩
     by_cases h8 : r = s0
     · subst h8; exact s0'
     by_cases h9 : r = s1
@@ -1014,8 +1014,8 @@ theorem sha512Update_correct (m : Machine) {S D sp0 retAddr : Word} {n : Nat} {m
     · subst h19; exact s3'
     by_cases h20 : r = s4
     · subst h20; exact s4'
-    rw [K' r q1 q2 q3 q5 q6 q7 h8 h9 q10 q11 q12 q13 q14 q15 q16 q17 h18 h19 h20 q28 q29 q30 q31,
-      fo r q1 q2 q3 q5 q6 q7 h8 h9 q10 q11 q12 q13 q14 q15 q16 q17 h18 h19 h20 q28 q29 q30 q31]
+    rw [K' r q1 q2 q5 q6 q7 h8 h9 q10 q11 q12 q13 q14 q15 q16 q17 h18 h19 h20 q28 q29 q30 q31,
+      fo r q1 q2 q5 q6 q7 h8 h9 q10 q11 q12 q13 q14 q15 q16 q17 h18 h19 h20 q28 q29 q30 q31]
   by_cases hA : n < 128 - pos
   · -- The bytes fit in the buffer: copy them in and store the new count.
     obtain ⟨n8, d8, u8⟩ := u7'.notTaken cU2 0x20 s5u_at_1c (by decide) (by
@@ -1175,7 +1175,7 @@ theorem sha512Update_correct (m : Machine) {S D sp0 retAddr : Word} {n : Nat} {m
           exact ld 0xCC (by omega) (by omega) }
     refine ⟨n16, c7.trans (.cons d8 (.cons d9 (.cons d10 (.cons d11 (.cons d12 (c13.trans
       (.cons d14 (.cons d15 c16)))))))), ?_, ?_,
-      fun r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2 => ?_, by rw [mem16]; exact H',
+      fun r q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2 => ?_, by rw [mem16]; exact H',
       fun x hx hy => by rw [mem16]; exact hMt x hx hy⟩
     · rw [pc16, hra', hra, hret]
     · rw [regs16 sp, vsp]; show sp0 + 0xFFFFFFE0 + 0x20 = sp0; rw [BitVec.add_assoc]; exact BitVec.add_zero _
@@ -1226,7 +1226,7 @@ theorem sha512Update_correct (m : Machine) {S D sp0 retAddr : Word} {n : Nat} {m
         (fun _ _ _ => rfl) (Nat.le_refl n) (by rw [Nat.sub_self, add_ofNat_zero])
         (by rw [K9 a1 (by decide), a1_7]) (by rw [K9 s1 (by decide), s1_7]) s2_9
         (by rw [K9 s4 (by decide), s4_7]) (by rw [K9 sp (by decide), sp7])
-        (fun r q1 q2 _ q5 _ _ h8 h9 _ _ q12 _ _ _ _ _ h18 _ h20 _ _ _ _ => by
+        (fun r q1 q2 q5 _ _ h8 h9 _ _ q12 _ _ _ _ _ h18 _ h20 _ _ _ _ => by
           rw [K9 r h18, K27 r q2 q5 h9 h20 h8 q12])
         hh2 hl2 hc4 hc8 hcC hf1 hf2
     · -- The buffer holds `pos` bytes: fill it from the input and compress it.
@@ -1411,9 +1411,9 @@ theorem sha512Update_correct (m : Machine) {S D sp0 retAddr : Word} {n : Nat} {m
         (sC0 _ _ (by decide) (by decide))
       let MC := n22.mem
       have u22 : St MC U n22 0x6A (reg n22) := ⟨by rw [pc22], rfl, fun _ => rfl⟩
-      have k22 : ∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 →
+      have k22 : ∀ r, r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 →
           r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
-          r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → reg n22 r = reg n21 r := fun r _ q5 q6 q7 q10 q11 q12 q13
+          r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → reg n22 r = reg n21 r := fun r q5 q6 q7 q10 q11 q12 q13
           q14 q15 q16 q17 q28 q29 q30 q31 => K22 r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31
       have fC : ∀ x, Sep (G + 0xFFFFFC70) 0x390 x 1 → Sep (S + 0x80) 0x50 x 1 → MC x = n21.mem x := fr22
       have hMC : ∀ x, Sep R 0x3B0 x 1 → Sep S 0xD0 x 1 → MC x = M0 x := fun x hx hy => by
@@ -1421,14 +1421,14 @@ theorem sha512Update_correct (m : Machine) {S D sp0 retAddr : Word} {n : Nat} {m
           (by rw [e80]; exact hy.sub (c := 0x80) (l := 0x50) (by omega)), mem21, hMB x hx hy]
       have cUC := codeX MC hMC _ _ E.cU (by decide) (by decide)
       -- From `n13` to `n22`, the registers the code keeps.
-      have K13_22 : ∀ r, r ≠ ra → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 →
+      have K13_22 : ∀ r, r ≠ ra → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 →
           r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) →
           r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → r ≠ sp → reg n22 r = reg n13 r :=
-        fun r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2 => by
-          rw [k22 r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, r21 r q1, K16_19 r q10 q11 q12,
+        fun r q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2 => by
+          rw [k22 r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, r21 r q1, K16_19 r q10 q11 q12,
             k16 r q1 q10 q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2]
       have s4_22 : reg n22 s4 = S := by
-        rw [K13_22 s4 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        rw [K13_22 s4 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
           (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
           (by decide) (by decide) (by decide), K9_13 s4 (by decide) (by decide) (by decide) (by decide), s4_7]
       obtain ⟨n23, d23, u23⟩ := u22.sb cUC s5u_at_6a (off' := 0x6E) (by decide)
@@ -1444,17 +1444,17 @@ theorem sha512Update_correct (m : Machine) {S D sp0 retAddr : Word} {n : Nat} {m
       obtain ⟨n24, d24, u24⟩ := u23.alu cUx s5u_at_6e (off' := 0x70) (by decide)
       have K24 := u24.upd_ne u22.zero
       have a1_24 : reg n24 a1 = D + BitVec.ofNat 32 rem := by
-        rw [u24.upd_eq (by decide), u22.zero, K13_22 s3 (by decide) (by decide) (by decide) (by decide)
+        rw [u24.upd_eq (by decide), u22.zero, K13_22 s3 (by decide) (by decide) (by decide)
           (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
           (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), K13 s3 (by decide),
           K12 s3 (by decide), s3_11]
         exact BitVec.zero_add _
       have s1_24 : reg n24 s1 = BitVec.ofNat 32 (n - rem) := by
-        rw [K24 s1 (by decide), K13_22 s1 (by decide) (by decide) (by decide) (by decide) (by decide)
+        rw [K24 s1 (by decide), K13_22 s1 (by decide) (by decide) (by decide) (by decide)
           (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
           (by decide) (by decide) (by decide) (by decide) (by decide), K13 s1 (by decide), s1_12]
       have s2_24 : reg n24 s2 = S + 0x80 := by
-        rw [K24 s2 (by decide), k22 s2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        rw [K24 s2 (by decide), k22 s2 (by decide) (by decide) (by decide) (by decide) (by decide)
           (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
           (by decide) (by decide), r21 s2 (by decide), K16_19 s2 (by decide) (by decide) (by decide), s2_16]
       have s4_24 : reg n24 s4 = S := by rw [K24 s4 (by decide), s4_22]
@@ -1527,8 +1527,8 @@ theorem sha512Update_correct (m : Machine) {S D sp0 retAddr : Word} {n : Nat} {m
           (c16.trans (.cons d17 (.cons d18 (.cons d19 (.cons d20 (.cons d21 (c22.trans
           (.cons d23 (.single d24)))))))))))))))))) u24.self hMx hsl (by omega)
         (by rw [show n - (n - rem) = rem by omega]) a1_24 s1_24 s2_24 s4_24 sp24
-        (fun r q1 q2 q3 q5 q6 q7 h8 h9 q10 q11 q12 q13 q14 q15 q16 q17 h18 h19 h20 q28 q29 q30 q31 => by
-          rw [K24 r q11, K13_22 r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2,
+        (fun r q1 q2 q5 q6 q7 h8 h9 q10 q11 q12 q13 q14 q15 q16 q17 h18 h19 h20 q28 q29 q30 q31 => by
+          rw [K24 r q11, K13_22 r q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2,
             K9_13 r h18 h19 h9 q10, K27 r q2 q5 h9 h20 h8 q12])
         (by rw [wx, w22, mem21, wB, List.foldl_append]; rfl)
         (by

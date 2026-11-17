@@ -1,5 +1,8 @@
 import C3BootProofs.Proofs.EdvReduceBody
 import C3BootProofs.Proofs.Ed25519PkOk
+import C3BootProofs.Proofs.Sha512UpdateArr32
+import C3BootProofs.Proofs.Sha512Blocks
+import C3BootProofs.Proofs.ZeroArray
 
 /-!
 # `c3_crypto::ed25519_verify`: frame, invariant, prologue, and epilogue
@@ -38,11 +41,20 @@ structure EvEnv (M : Word → BitVec 8) : Prop where
   s29im : CodeIn M (BitVec.ofNat 32 scalar29IndexMutAddress) scalar29IndexMutCode
   sL : CodeIn M (BitVec.ofNat 32 scalarLAddress) scalarLData
   s29p : CodeIn M (BitVec.ofNat 32 scalar29PackAddress) scalar29PackCode
+  s5u : CodeIn M (BitVec.ofNat 32 sha512UpdateAddress) sha512UpdateCode
+  s5blk : CodeIn M (BitVec.ofNat 32 sha384UpdateBlocksAddress) sha384UpdateBlocksCode
+  s5c : CodeIn M (BitVec.ofNat 32 sha512CompressAddress) sha512CompressCode
+  rfi : CodeIn M (BitVec.ofNat 32 rangeFromIndexAddress) rangeFromIndexCode
+  s5k : CodeIn M (BitVec.ofNat 32 sha512KAddress) sha512KData
+  s5fb : CodeIn M (BitVec.ofNat 32 sha512FinBlockAddress) sha512FinBlockCode
+  s5a : CodeIn M (BitVec.ofNat 32 sha512UpdateArr32Address) sha512UpdateArr32Code
+  za64 : CodeIn M (BitVec.ofNat 32 zeroArray64Address) zeroArray64Code
 
 /-- Where `ed25519_verify` runs: its frame at `F`, 16-aligned, with the
 0xA10 bytes below it, all below the code and apart from the read-only data
-at `0x3FCC4000`, and the key `pk`, the signature `sig`, and the `len`
-bytes of message at `msg`, each apart from that stack. -/
+at `0x3FCC4000`, the key `pk`, the signature `sig`, and the `len` bytes of
+message at `msg`, each apart from that stack, and SHA-512's initial hash
+value at `0x3FCC4AF8`. -/
 structure EvCtx (M0 : Word → BitVec 8) (F pk sig msg : Word) (len : Nat) : Prop where
   env : EvEnv M0
   hF : F.toNat % 16 = 0
@@ -55,6 +67,9 @@ structure EvCtx (M0 : Word → BitVec 8) (F pk sig msg : Word) (len : Nat) : Pro
   hpk : pk.toNat + 32 < 2 ^ 32
   hsig : sig.toNat + 64 < 2 ^ 32
   hmsg : msg.toNat + len ≤ 2 ^ 32
+  hmsgW : msg.toNat + len ≤ 0x40000000
+  hlen : len < 2 ^ 31
+  iv : (s5Hv M0 (BitVec.ofNat 32 0x3FCC4AF8)).toList = Sha512.h0
 
 /-- Between calls: `sp` at `F`, `gp` and `tp` as in `r0`, memory outside
 the stack as `M0`, and the saved registers' slots as `Ms`. -/
@@ -145,6 +160,14 @@ the callees' stack. -/
 theorem EvCtx.zoneIn (_ : EvCtx M0 F pk sig msg len) {x z : Word} {S : Nat} (hz : z.toNat = 2 ^ 32 - S)
     (hS : S ≤ 0xA10) (h : Sep (evG F) 0xA10 x 1) : Sep (F + z) S x 1 := by
   rw [evZ_G F z hz hS]; exact h.sub (by omega)
+
+theorem EvCtx.zS (C : EvCtx M0 F pk sig msg len) {p : Word} {k : Nat} (h : Sep p k (evG F) 0x20B0) :
+    Sep p k (evG F) 0xA10 := by
+  have := h.subR (c := 0) (l := 0xA10) (by omega); rwa [add_ofNat_zero] at this
+
+theorem EvCtx.fS (C : EvCtx M0 F pk sig msg len) {p : Word} {k c l : Nat} (h : Sep p k (evG F) 0x20B0)
+    (hc : c + l ≤ 0x16A0) : Sep (F + BitVec.ofNat 32 c) l p k := by
+  rw [evF_G]; exact (h.subR (by omega)).symm
 
 theorem EvCtx.codeF (C : EvCtx M0 F pk sig msg len) {c l : Nat} (h : c + l ≤ 0x16A0) {b : Word} {k : Nat}
     (h1 : 0x40000000 ≤ b.toNat) (h2 : b.toNat + k ≤ 2 ^ 32) : Sep (F + BitVec.ofNat 32 c) l b k :=

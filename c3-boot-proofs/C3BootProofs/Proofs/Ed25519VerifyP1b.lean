@@ -111,14 +111,6 @@ theorem cp_out (C : EvCtx M0 F pk sig msg len) {M M' : Word → BitVec 8} {s : W
   rw [fz _ (C.zF (by omega)), copyBytes_sep (C.offs (c := d) (n := N) (d := c) (k := 1) (by omega) hd (by omega))
     (Nat.le_refl _)]
 
-theorem EvCtx.zS (C : EvCtx M0 F pk sig msg len) {p : Word} {k : Nat} (h : Sep p k (evG F) 0x20B0) :
-    Sep p k (evG F) 0xA10 := by
-  have := h.subR (c := 0) (l := 0xA10) (by omega); rwa [add_ofNat_zero] at this
-
-theorem EvCtx.fS (C : EvCtx M0 F pk sig msg len) {p : Word} {k c l : Nat} (h : Sep p k (evG F) 0x20B0)
-    (hc : c + l ≤ 0x16A0) : Sep (F + BitVec.ofNat 32 c) l p k := by
-  rw [evF_G]; exact (h.subR (by omega)).symm
-
 /-- The moves at offsets 0xA2 to 0xB0. -/
 def evBA2 : List BInstr :=
   [.aluImm .add a1 sp 0x7FF, .aluImm .add a1 a1 0x6F5, .aluImm .add a0 sp 0x128, .aluImm .add a2 x0 0xC0]
