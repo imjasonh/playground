@@ -28,6 +28,7 @@ echo 'module gomod' > gomod/go.mod
 echo 'module libapp/go' > libapp/go/go.mod
 echo '# v1' > libapp/go/go.sum
 echo '# v1' > libapp/rust/Cargo.lock
+echo 'channel = "1.0.0"' > libapp/rust/rust-toolchain.toml
 echo '{"devDependencies":{"wrangler":"4.0.0"}}' > .github/wrangler/package.json
 echo '{}' > jsapp/package.json
 echo '{}' > jsapp/package-lock.json
@@ -35,6 +36,7 @@ echo '{}' > git-k8s/agent/runner/package.json
 echo '{}' > git-k8s/agent/runner/package-lock.json
 echo '[package]' > worker/Cargo.toml
 echo '# v1' > worker/Cargo.lock
+echo 'channel = "1.0.0"' > worker/rust-toolchain.toml
 echo 'package.json' > worker/.gitignore
 echo 'fn main() {}' > worker/main.rs
 git add -A
@@ -76,6 +78,12 @@ reset_tree
 echo '# v2' > libapp/rust/Cargo.lock
 expect "library crate in an app's rust/ directory" true "$(detect)"
 expect "library crate in an app's rust/ directory staged" "M libapp/rust/Cargo.lock" "$(staged)"
+reset_tree
+
+echo 'channel = "1.1.0"' > worker/rust-toolchain.toml
+echo 'channel = "1.1.0"' > libapp/rust/rust-toolchain.toml
+expect "toolchain bump" true "$(detect)"
+expect "toolchain bump staged" "M libapp/rust/rust-toolchain.toml M worker/rust-toolchain.toml" "$(staged)"
 reset_tree
 
 echo '{"lockfileVersion":3}' > git-k8s/agent/runner/package-lock.json

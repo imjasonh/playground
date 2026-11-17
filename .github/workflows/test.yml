@@ -146,9 +146,9 @@ jobs:
           restore-keys: |
             ${{ steps.pasta-key.outputs.prefix }}
 
-      # Baseline stable toolchain; an app's rust-toolchain.toml (e.g. web-push
-      # pins 1.83) overrides it per directory when cargo runs. Use the
-      # runner's preinstalled rustup instead of dtolnay/rust-toolchain.
+      # Baseline stable toolchain; an app's rust-toolchain.toml overrides it
+      # per directory when cargo runs. Use the runner's preinstalled rustup
+      # instead of dtolnay/rust-toolchain.
       - name: Install Rust stable
         if: ${{ steps.discover.outputs.rust != '[]' }}
         run: |
