@@ -1,0 +1,336 @@
+import C3BootProofs.Proofs.IncrementLimb
+import C3BootProofs.Proofs.Panic
+import C3BootProofs.Proofs.Ashldi3
+
+/-!
+# `wnaf::wnaf_form::<&[u8]>`, as compiled
+
+The image has one copy of `wnaf_form`, with the window fixed at 5. It reads
+the scalar's bytes through `LimbBuffer` as 64-bit limbs and writes the
+window-5 NAF digits of the little-endian number they encode. The
+specification, `wnafSpec`, is the Rust source's loop over that number.
+-/
+
+namespace C3.RV32
+
+open C3.Image
+
+section
+set_option maxRecDepth 20000
+theorem wf_at_0 : fetchRel wnafFormCode 0x0 = some (.aluImm .add sp sp 0xFFFFFF90, 2) := by decide
+theorem wf_at_2 : fetchRel wnafFormCode 0x2 = some (.store .sw sp ra 0x6C, 2) := by decide
+theorem wf_at_4 : fetchRel wnafFormCode 0x4 = some (.store .sw sp (8 : Fin 32) 0x68, 2) := by decide
+theorem wf_at_6 : fetchRel wnafFormCode 0x6 = some (.store .sw sp (9 : Fin 32) 0x64, 2) := by decide
+theorem wf_at_8 : fetchRel wnafFormCode 0x8 = some (.store .sw sp (18 : Fin 32) 0x60, 2) := by decide
+theorem wf_at_a : fetchRel wnafFormCode 0xA = some (.store .sw sp (19 : Fin 32) 0x5C, 2) := by decide
+theorem wf_at_c : fetchRel wnafFormCode 0xC = some (.store .sw sp (20 : Fin 32) 0x58, 2) := by decide
+theorem wf_at_e : fetchRel wnafFormCode 0xE = some (.store .sw sp (21 : Fin 32) 0x54, 2) := by decide
+theorem wf_at_10 : fetchRel wnafFormCode 0x10 = some (.store .sw sp (22 : Fin 32) 0x50, 2) := by decide
+theorem wf_at_12 : fetchRel wnafFormCode 0x12 = some (.store .sw sp (23 : Fin 32) 0x4C, 2) := by decide
+theorem wf_at_14 : fetchRel wnafFormCode 0x14 = some (.store .sw sp (24 : Fin 32) 0x48, 2) := by decide
+theorem wf_at_16 : fetchRel wnafFormCode 0x16 = some (.store .sw sp (25 : Fin 32) 0x44, 2) := by decide
+theorem wf_at_18 : fetchRel wnafFormCode 0x18 = some (.store .sw sp (26 : Fin 32) 0x40, 2) := by decide
+theorem wf_at_1a : fetchRel wnafFormCode 0x1A = some (.store .sw sp (27 : Fin 32) 0x3C, 2) := by decide
+theorem wf_at_1c : fetchRel wnafFormCode 0x1C = some (.alu .add (18 : Fin 32) x0 a4, 2) := by decide
+theorem wf_at_1e : fetchRel wnafFormCode 0x1E = some (.alu .add (19 : Fin 32) x0 a1, 2) := by decide
+theorem wf_at_20 : fetchRel wnafFormCode 0x20 = some (.alu .add (25 : Fin 32) x0 a0, 2) := by decide
+theorem wf_at_22 : fetchRel wnafFormCode 0x22 = some (.store .sw sp a2 0x10, 2) := by decide
+theorem wf_at_24 : fetchRel wnafFormCode 0x24 = some (.store .sw sp a3 0x14, 2) := by decide
+theorem wf_at_26 : fetchRel wnafFormCode 0x26 = some (.aluImm .add a0 sp 0x18, 2) := by decide
+theorem wf_at_28 : fetchRel wnafFormCode 0x28 = some (.aluImm .add a2 x0 0x14, 2) := by decide
+theorem wf_at_2a : fetchRel wnafFormCode 0x2A = some (.aluImm .add a1 x0 0x0, 2) := by decide
+theorem wf_at_2c : fetchRel wnafFormCode 0x2C = some (.auipc ra 0x12000, 4) := by decide
+theorem wf_at_30 : fetchRel wnafFormCode 0x30 = some (.jalr ra ra 0xFFFFFE76, 4) := by decide
+theorem wf_at_34 : fetchRel wnafFormCode 0x34 = some (.aluImm .add a0 sp 0x10, 2) := by decide
+theorem wf_at_36 : fetchRel wnafFormCode 0x36 = some (.auipc ra 0x12000, 4) := by decide
+theorem wf_at_3a : fetchRel wnafFormCode 0x3A = some (.jalr ra ra 0xFFFFFDAC, 4) := by decide
+theorem wf_at_3e : fetchRel wnafFormCode 0x3E = some (.aluImm .add a0 sp 0x10, 2) := by decide
+theorem wf_at_40 : fetchRel wnafFormCode 0x40 = some (.auipc ra 0x12000, 4) := by decide
+theorem wf_at_44 : fetchRel wnafFormCode 0x44 = some (.jalr ra ra 0xFFFFFDA2, 4) := by decide
+theorem wf_at_48 : fetchRel wnafFormCode 0x48 = some (.aluImm .add (26 : Fin 32) x0 0x0, 2) := by decide
+theorem wf_at_4a : fetchRel wnafFormCode 0x4A = some (.store .sw sp x0 0xC, 2) := by decide
+theorem wf_at_4c : fetchRel wnafFormCode 0x4C = some (.aluImm .add (23 : Fin 32) x0 0x0, 2) := by decide
+theorem wf_at_4e : fetchRel wnafFormCode 0x4E = some (.aluImm .add (21 : Fin 32) x0 0x0, 2) := by decide
+theorem wf_at_50 : fetchRel wnafFormCode 0x50 = some (.store .sw sp x0 0x28, 2) := by decide
+theorem wf_at_52 : fetchRel wnafFormCode 0x52 = some (.aluImm .add (24 : Fin 32) x0 0x3B, 4) := by decide
+theorem wf_at_56 : fetchRel wnafFormCode 0x56 = some (.alu .add (22 : Fin 32) x0 (21 : Fin 32), 2) := by decide
+theorem wf_at_58 : fetchRel wnafFormCode 0x58 = some (.aluImm .add (21 : Fin 32) (21 : Fin 32) 0x1, 2) := by decide
+theorem wf_at_5a : fetchRel wnafFormCode 0x5A = some (.alu .sub (27 : Fin 32) (18 : Fin 32) (23 : Fin 32), 4) := by decide
+theorem wf_at_5e : fetchRel wnafFormCode 0x5E = some (.alu .add (20 : Fin 32) (25 : Fin 32) (22 : Fin 32), 4) := by decide
+theorem wf_at_62 : fetchRel wnafFormCode 0x62 = some (.branch .bgeu (23 : Fin 32) (18 : Fin 32) 0x108, 4) := by decide
+theorem wf_at_66 : fetchRel wnafFormCode 0x66 = some (.load .lw a0 sp 0x28, 2) := by decide
+theorem wf_at_68 : fetchRel wnafFormCode 0x68 = some (.aluImm .srl a1 (23 : Fin 32) 0x6, 4) := by decide
+theorem wf_at_6c : fetchRel wnafFormCode 0x6C = some (.aluImm .and (9 : Fin 32) (23 : Fin 32) 0x3F, 4) := by decide
+theorem wf_at_70 : fetchRel wnafFormCode 0x70 = some (.aluImm .add a2 a0 0x1, 4) := by decide
+theorem wf_at_74 : fetchRel wnafFormCode 0x74 = some (.store .sw sp a0 0x34, 2) := by decide
+theorem wf_at_76 : fetchRel wnafFormCode 0x76 = some (.store .sw sp a2 0x38, 2) := by decide
+theorem wf_at_78 : fetchRel wnafFormCode 0x78 = some (.aluImm .add a2 sp 0x34, 2) := by decide
+theorem wf_at_7a : fetchRel wnafFormCode 0x7A = some (.aluImm .add a3 x0 0x8, 2) := by decide
+theorem wf_at_7c : fetchRel wnafFormCode 0x7C = some (.branch .beq a3 x0 0x122, 4) := by decide
+theorem wf_at_80 : fetchRel wnafFormCode 0x80 = some (.load .lw a4 a2 0x0, 2) := by decide
+theorem wf_at_82 : fetchRel wnafFormCode 0x82 = some (.aluImm .add a2 a2 0x4, 2) := by decide
+theorem wf_at_84 : fetchRel wnafFormCode 0x84 = some (.aluImm .add a3 a3 0xFFFFFFFC, 2) := by decide
+theorem wf_at_86 : fetchRel wnafFormCode 0x86 = some (.branch .bne a4 a1 0xFFFFFFF6, 4) := by decide
+theorem wf_at_8a : fetchRel wnafFormCode 0x8A = some (.branch .bgeu a0 a1 0xE, 4) := by decide
+theorem wf_at_8e : fetchRel wnafFormCode 0x8E = some (.aluImm .add a0 sp 0x10, 2) := by decide
+theorem wf_at_90 : fetchRel wnafFormCode 0x90 = some (.auipc ra 0x12000, 4) := by decide
+theorem wf_at_94 : fetchRel wnafFormCode 0x94 = some (.jalr ra ra 0xFFFFFD52, 4) := by decide
+theorem wf_at_98 : fetchRel wnafFormCode 0x98 = some (.load .lw a0 sp 0x18, 2) := by decide
+theorem wf_at_9a : fetchRel wnafFormCode 0x9A = some (.load .lw a1 sp 0x1C, 2) := by decide
+theorem wf_at_9c : fetchRel wnafFormCode 0x9C = some (.alu .add a2 x0 (9 : Fin 32), 2) := by decide
+theorem wf_at_9e : fetchRel wnafFormCode 0x9E = some (.auipc ra 0x12000, 4) := by decide
+theorem wf_at_a2 : fetchRel wnafFormCode 0xA2 = some (.jalr ra ra 0x1E, 4) := by decide
+theorem wf_at_a6 : fetchRel wnafFormCode 0xA6 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
+theorem wf_at_a8 : fetchRel wnafFormCode 0xA8 = some (.branch .bltu (9 : Fin 32) (24 : Fin 32) 0x1A, 4) := by decide
+theorem wf_at_ac : fetchRel wnafFormCode 0xAC = some (.load .lw a0 sp 0x20, 2) := by decide
+theorem wf_at_ae : fetchRel wnafFormCode 0xAE = some (.load .lw a1 sp 0x24, 2) := by decide
+theorem wf_at_b0 : fetchRel wnafFormCode 0xB0 = some (.alu .sub a2 x0 (23 : Fin 32), 4) := by decide
+theorem wf_at_b4 : fetchRel wnafFormCode 0xB4 = some (.aluImm .and a2 a2 0x3F, 4) := by decide
+theorem wf_at_b8 : fetchRel wnafFormCode 0xB8 = some (.auipc ra 0x12000, 4) := by decide
+theorem wf_at_bc : fetchRel wnafFormCode 0xBC = some (.jalr ra ra 0xFFFFFFE0, 4) := by decide
+theorem wf_at_c0 : fetchRel wnafFormCode 0xC0 = some (.alu .or (8 : Fin 32) (8 : Fin 32) a0, 2) := by decide
+theorem wf_at_c2 : fetchRel wnafFormCode 0xC2 = some (.aluImm .and (8 : Fin 32) (8 : Fin 32) 0x1F, 2) := by decide
+theorem wf_at_c4 : fetchRel wnafFormCode 0xC4 = some (.alu .add a0 (8 : Fin 32) (26 : Fin 32), 4) := by decide
+theorem wf_at_c8 : fetchRel wnafFormCode 0xC8 = some (.aluImm .and a1 a0 0x1, 4) := by decide
+theorem wf_at_cc : fetchRel wnafFormCode 0xCC = some (.branch .bne a1 x0 0x14, 2) := by decide
+theorem wf_at_ce : fetchRel wnafFormCode 0xCE = some (.branch .bgeu (22 : Fin 32) (19 : Fin 32) 0xD8, 4) := by decide
+theorem wf_at_d2 : fetchRel wnafFormCode 0xD2 = some (.store .sb (20 : Fin 32) x0 0x0, 4) := by decide
+theorem wf_at_d6 : fetchRel wnafFormCode 0xD6 = some (.aluImm .add (22 : Fin 32) (22 : Fin 32) 0x1, 2) := by decide
+theorem wf_at_d8 : fetchRel wnafFormCode 0xD8 = some (.aluImm .add (23 : Fin 32) (23 : Fin 32) 0x1, 2) := by decide
+theorem wf_at_da : fetchRel wnafFormCode 0xDA = some (.aluImm .add (21 : Fin 32) (21 : Fin 32) 0x1, 2) := by decide
+theorem wf_at_dc : fetchRel wnafFormCode 0xDC = some (.aluImm .add (27 : Fin 32) (27 : Fin 32) 0xFFFFFFFF, 2) := by decide
+theorem wf_at_de : fetchRel wnafFormCode 0xDE = some (.jal x0 0xFFFFFF80, 2) := by decide
+theorem wf_at_e0 : fetchRel wnafFormCode 0xE0 = some (.branch .bgeu (22 : Fin 32) (19 : Fin 32) 0xC6, 4) := by decide
+theorem wf_at_e4 : fetchRel wnafFormCode 0xE4 = some (.alu .sltu a1 a0 (8 : Fin 32), 4) := by decide
+theorem wf_at_e8 : fetchRel wnafFormCode 0xE8 = some (.load .lw a2 sp 0xC, 2) := by decide
+theorem wf_at_ea : fetchRel wnafFormCode 0xEA = some (.alu .add a1 a1 a2, 2) := by decide
+theorem wf_at_ec : fetchRel wnafFormCode 0xEC = some (.aluImm .sltu a2 a0 0x10, 4) := by decide
+theorem wf_at_f0 : fetchRel wnafFormCode 0xF0 = some (.aluImm .xor a2 a2 0x1, 4) := by decide
+theorem wf_at_f4 : fetchRel wnafFormCode 0xF4 = some (.alu .sltu a1 x0 a1, 4) := by decide
+theorem wf_at_f8 : fetchRel wnafFormCode 0xF8 = some (.alu .or (26 : Fin 32) a2 a1, 4) := by decide
+theorem wf_at_fc : fetchRel wnafFormCode 0xFC = some (.alu .sub a1 x0 (26 : Fin 32), 4) := by decide
+theorem wf_at_100 : fetchRel wnafFormCode 0x100 = some (.aluImm .and a1 a1 0xE0, 4) := by decide
+theorem wf_at_104 : fetchRel wnafFormCode 0x104 = some (.alu .add a0 a0 a1, 2) := by decide
+theorem wf_at_106 : fetchRel wnafFormCode 0x106 = some (.store .sb (20 : Fin 32) a0 0x0, 4) := by decide
+theorem wf_at_10a : fetchRel wnafFormCode 0x10A = some (.store .sb sp x0 0x34, 4) := by decide
+theorem wf_at_10e : fetchRel wnafFormCode 0x10E = some (.store .sw sp (26 : Fin 32) 0x38, 2) := by decide
+theorem wf_at_110 : fetchRel wnafFormCode 0x110 = some (.aluImm .add a0 sp 0x34, 2) := by decide
+theorem wf_at_112 : fetchRel wnafFormCode 0x112 = some (.auipc ra 0x0, 4) := by decide
+theorem wf_at_116 : fetchRel wnafFormCode 0x116 = some (.jalr ra ra 0xA4, 4) := by decide
+theorem wf_at_11a : fetchRel wnafFormCode 0x11A = some (.aluImm .add a2 x0 0x5, 2) := by decide
+theorem wf_at_11c : fetchRel wnafFormCode 0x11C = some (.alu .sub a1 (18 : Fin 32) a0, 4) := by decide
+theorem wf_at_120 : fetchRel wnafFormCode 0x120 = some (.alu .sltu a3 (18 : Fin 32) a1, 4) := by decide
+theorem wf_at_124 : fetchRel wnafFormCode 0x124 = some (.aluImm .add a3 a3 0xFFFFFFFF, 2) := by decide
+theorem wf_at_126 : fetchRel wnafFormCode 0x126 = some (.alu .and a1 a1 a3, 2) := by decide
+theorem wf_at_128 : fetchRel wnafFormCode 0x128 = some (.alu .sub a1 a1 (23 : Fin 32), 4) := by decide
+theorem wf_at_12c : fetchRel wnafFormCode 0x12C = some (.branch .bltu a1 a2 0x6, 4) := by decide
+theorem wf_at_130 : fetchRel wnafFormCode 0x130 = some (.aluImm .add a1 x0 0x5, 2) := by decide
+theorem wf_at_132 : fetchRel wnafFormCode 0x132 = some (.branch .bltu a0 (18 : Fin 32) 0x6, 4) := by decide
+theorem wf_at_136 : fetchRel wnafFormCode 0x136 = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
+theorem wf_at_138 : fetchRel wnafFormCode 0x138 = some (.alu .sub a0 (27 : Fin 32) a0, 4) := by decide
+theorem wf_at_13c : fetchRel wnafFormCode 0x13C = some (.branch .bltu a0 a2 0x6, 4) := by decide
+theorem wf_at_140 : fetchRel wnafFormCode 0x140 = some (.aluImm .add a0 x0 0x5, 2) := by decide
+theorem wf_at_142 : fetchRel wnafFormCode 0x142 = some (.aluImm .sltu a2 a0 0x2, 4) := by decide
+theorem wf_at_146 : fetchRel wnafFormCode 0x146 = some (.aluImm .add a3 x0 0x1, 2) := by decide
+theorem wf_at_148 : fetchRel wnafFormCode 0x148 = some (.alu .sub a0 a3 a0, 4) := by decide
+theorem wf_at_14c : fetchRel wnafFormCode 0x14C = some (.aluImm .add a2 a2 0xFFFFFFFF, 2) := by decide
+theorem wf_at_14e : fetchRel wnafFormCode 0x14E = some (.alu .and a0 a0 a2, 2) := by decide
+theorem wf_at_150 : fetchRel wnafFormCode 0x150 = some (.branch .beq a0 x0 0x14, 2) := by decide
+theorem wf_at_152 : fetchRel wnafFormCode 0x152 = some (.branch .beq (19 : Fin 32) (21 : Fin 32) 0x58, 4) := by decide
+theorem wf_at_156 : fetchRel wnafFormCode 0x156 = some (.alu .add a2 (25 : Fin 32) (21 : Fin 32), 4) := by decide
+theorem wf_at_15a : fetchRel wnafFormCode 0x15A = some (.aluImm .add (21 : Fin 32) (21 : Fin 32) 0x1, 2) := by decide
+theorem wf_at_15c : fetchRel wnafFormCode 0x15C = some (.store .sb a2 x0 0x0, 4) := by decide
+theorem wf_at_160 : fetchRel wnafFormCode 0x160 = some (.aluImm .add a0 a0 0x1, 2) := by decide
+theorem wf_at_162 : fetchRel wnafFormCode 0x162 = some (.branch .bne a0 x0 0xFFFFFFF0, 2) := by decide
+theorem wf_at_164 : fetchRel wnafFormCode 0x164 = some (.store .sw sp x0 0xC, 2) := by decide
+theorem wf_at_166 : fetchRel wnafFormCode 0x166 = some (.alu .add (23 : Fin 32) (23 : Fin 32) a1, 2) := by decide
+theorem wf_at_168 : fetchRel wnafFormCode 0x168 = some (.jal x0 0xFFFFFEEE, 2) := by decide
+theorem wf_at_16a : fetchRel wnafFormCode 0x16A = some (.load .lw a0 sp 0xC, 2) := by decide
+theorem wf_at_16c : fetchRel wnafFormCode 0x16C = some (.alu .or a0 (26 : Fin 32) a0, 4) := by decide
+theorem wf_at_170 : fetchRel wnafFormCode 0x170 = some (.branch .beq a0 x0 0xE, 2) := by decide
+theorem wf_at_172 : fetchRel wnafFormCode 0x172 = some (.branch .bgeu (22 : Fin 32) (19 : Fin 32) 0x34, 4) := by decide
+theorem wf_at_176 : fetchRel wnafFormCode 0x176 = some (.aluImm .add a0 x0 0x1, 2) := by decide
+theorem wf_at_178 : fetchRel wnafFormCode 0x178 = some (.aluImm .add (22 : Fin 32) (22 : Fin 32) 0x1, 2) := by decide
+theorem wf_at_17a : fetchRel wnafFormCode 0x17A = some (.store .sb (20 : Fin 32) a0 0x0, 4) := by decide
+theorem wf_at_17e : fetchRel wnafFormCode 0x17E = some (.alu .add a0 x0 (22 : Fin 32), 2) := by decide
+theorem wf_at_180 : fetchRel wnafFormCode 0x180 = some (.load .lw ra sp 0x6C, 2) := by decide
+theorem wf_at_182 : fetchRel wnafFormCode 0x182 = some (.load .lw (8 : Fin 32) sp 0x68, 2) := by decide
+theorem wf_at_184 : fetchRel wnafFormCode 0x184 = some (.load .lw (9 : Fin 32) sp 0x64, 2) := by decide
+theorem wf_at_186 : fetchRel wnafFormCode 0x186 = some (.load .lw (18 : Fin 32) sp 0x60, 2) := by decide
+theorem wf_at_188 : fetchRel wnafFormCode 0x188 = some (.load .lw (19 : Fin 32) sp 0x5C, 2) := by decide
+theorem wf_at_18a : fetchRel wnafFormCode 0x18A = some (.load .lw (20 : Fin 32) sp 0x58, 2) := by decide
+theorem wf_at_18c : fetchRel wnafFormCode 0x18C = some (.load .lw (21 : Fin 32) sp 0x54, 2) := by decide
+theorem wf_at_18e : fetchRel wnafFormCode 0x18E = some (.load .lw (22 : Fin 32) sp 0x50, 2) := by decide
+theorem wf_at_190 : fetchRel wnafFormCode 0x190 = some (.load .lw (23 : Fin 32) sp 0x4C, 2) := by decide
+theorem wf_at_192 : fetchRel wnafFormCode 0x192 = some (.load .lw (24 : Fin 32) sp 0x48, 2) := by decide
+theorem wf_at_194 : fetchRel wnafFormCode 0x194 = some (.load .lw (25 : Fin 32) sp 0x44, 2) := by decide
+theorem wf_at_196 : fetchRel wnafFormCode 0x196 = some (.load .lw (26 : Fin 32) sp 0x40, 2) := by decide
+theorem wf_at_198 : fetchRel wnafFormCode 0x198 = some (.load .lw (27 : Fin 32) sp 0x3C, 2) := by decide
+theorem wf_at_19a : fetchRel wnafFormCode 0x19A = some (.aluImm .add sp sp 0x70, 2) := by decide
+theorem wf_at_19c : fetchRel wnafFormCode 0x19C = some (.jalr x0 ra 0x0, 2) := by decide
+theorem wf_at_19e : fetchRel wnafFormCode 0x19E = some (.auipc ra 0xA000, 4) := by decide
+theorem wf_at_1a2 : fetchRel wnafFormCode 0x1A2 = some (.jalr ra ra 0x7B6, 4) := by decide
+theorem wf_at_1a6 : fetchRel wnafFormCode 0x1A6 = some (.alu .add a0 x0 (22 : Fin 32), 2) := by decide
+theorem wf_at_1a8 : fetchRel wnafFormCode 0x1A8 = some (.jal x0 0x4, 2) := by decide
+theorem wf_at_1aa : fetchRel wnafFormCode 0x1AA = some (.alu .add a0 x0 (21 : Fin 32), 2) := by decide
+theorem wf_at_1ac : fetchRel wnafFormCode 0x1AC = some (.alu .add a1 x0 (19 : Fin 32), 2) := by decide
+theorem wf_at_1ae : fetchRel wnafFormCode 0x1AE = some (.auipc ra 0xA000, 4) := by decide
+theorem wf_at_1b2 : fetchRel wnafFormCode 0x1B2 = some (.jalr ra ra 0x7B6, 4) := by decide
+end
+
+abbrev WF : Word := BitVec.ofNat 32 wnafFormAddress
+
+/-- The little-endian number of a byte list. -/
+def leN : List Nat → Nat
+  | [] => 0
+  | b :: l => b + 256 * leN l
+
+/-- The Rust loop, from bit `pos` with `carry`, on the number `N` of `L`
+bits. Each step consumes at least one bit when `N < 2 ^ L`, so `L + 1`
+steps of fuel are enough. -/
+def wnafGo (N L : Nat) : Nat → Nat → Nat → List Int
+  | 0, _, _ => []
+  | fuel + 1, pos, carry =>
+    if pos < L then
+      if (carry + N / 2 ^ pos % 32) % 2 = 0 then 0 :: wnafGo N L fuel (pos + 1) carry
+      else
+        let w := carry + N / 2 ^ pos % 32
+        let c' := if w < 16 then 0 else 1
+        let skip := min 5 (L - c' - pos)
+        ((if w < 16 then (w : Int) else (w : Int) - 32) :: List.replicate (skip - 1) 0) ++
+          wnafGo N L fuel (pos + skip) c'
+    else if carry = 0 then [] else [(carry : Int)]
+
+/-- `wnaf_form`'s digits for the bytes `c` and the bit length `L`. -/
+def wnafSpec (c : List Nat) (L : Nat) : List Int := wnafGo (leN c) L (L + 1) 0 0
+
+theorem leN_split : ∀ (l : List Nat) (s : Nat), leN l = leN (l.take s) + 256 ^ s * leN (l.drop s)
+  | [], s => by simp [leN]
+  | b :: l, 0 => by simp [leN]
+  | b :: l, s + 1 => by
+    simp only [List.take_succ_cons, List.drop_succ_cons, leN]
+    rw [leN_split l s, Nat.pow_succ, Nat.mul_add, ← Nat.add_assoc, ← Nat.mul_assoc, Nat.mul_comm 256 (256 ^ s)]
+
+theorem leN_lt : ∀ (l : List Nat), (∀ b ∈ l, b < 256) → leN l < 256 ^ l.length
+  | [], _ => by simp [leN]
+  | b :: l, h => by
+    have hb := h b List.mem_cons_self
+    have := leN_lt l fun x hx => h x (List.mem_cons_of_mem _ hx)
+    simp only [leN, List.length_cons, Nat.pow_succ]; omega
+
+/-- Limb `j` of the bytes, as `LimbBuffer` reads it: bytes `8j` to `8j + 7`,
+zero past the end. -/
+def lmb (c : List Nat) (j : Nat) : Nat := leN ((c.drop (8 * j)).take 8)
+
+theorem leN_take_lt {l : List Nat} (h : ∀ b ∈ l, b < 256) (s : Nat) : leN (l.take s) < 256 ^ s := by
+  have := leN_lt (l.take s) fun b hb => h b (List.mem_of_mem_take hb)
+  exact Nat.lt_of_lt_of_le this (Nat.pow_le_pow_right (by decide) (by rw [List.length_take]; exact Nat.min_le_left _ _))
+
+theorem leN_div {l : List Nat} (h : ∀ b ∈ l, b < 256) (s : Nat) : leN l / 256 ^ s = leN (l.drop s) := by
+  rw [leN_split l s, Nat.add_mul_div_left _ _ (Nat.pow_pos (by decide)),
+    Nat.div_eq_of_lt (leN_take_lt h s), Nat.zero_add]
+
+theorem lmb_lt {c : List Nat} (h : ∀ b ∈ c, b < 256) (j : Nat) : lmb c j < 2 ^ 64 :=
+  leN_take_lt (fun b hb => h b (List.mem_of_mem_drop hb)) 8
+
+theorem leN_drop_succ {c : List Nat} (j : Nat) :
+    leN (c.drop (8 * j)) = lmb c j + 2 ^ 64 * leN (c.drop (8 * (j + 1))) := by
+  rw [leN_split (c.drop (8 * j)) 8, List.drop_drop, show 8 * j + 8 = 8 * (j + 1) by omega]; rfl
+
+theorem leN_shift {c : List Nat} (h : ∀ b ∈ c, b < 256) (j : Nat) :
+    leN c / 2 ^ (64 * j) = leN (c.drop (8 * j)) := by
+  rw [show 2 ^ (64 * j) = 256 ^ (8 * j) by rw [Nat.pow_mul, Nat.pow_mul]]; exact leN_div h _
+
+theorem lmb_mod {c : List Nat} (h : ∀ b ∈ c, b < 256) (j : Nat) :
+    leN (c.drop (8 * j)) % 2 ^ 64 = lmb c j := by
+  rw [leN_drop_succ, Nat.add_mul_mod_self_left]; exact Nat.mod_eq_of_lt (lmb_lt h j)
+
+/-- The window at bit `64 j + b`, for `b < 59`, is in limb `j`. -/
+theorem win_lo {c : List Nat} (h : ∀ b ∈ c, b < 256) {j b : Nat} (hb : b < 59) :
+    leN c / 2 ^ (64 * j + b) % 32 = lmb c j / 2 ^ b % 32 := by
+  rw [Nat.pow_add, ← Nat.div_div_eq_div_mul, leN_shift h, leN_drop_succ,
+    show 2 ^ 64 = 2 ^ b * (32 * 2 ^ (59 - b)) by
+      rw [show (32 : Nat) = 2 ^ 5 from rfl, ← Nat.pow_add, ← Nat.pow_add]; congr 1; omega,
+    Nat.mul_assoc, Nat.add_mul_div_left _ _ (Nat.pow_pos (by decide)), Nat.mul_assoc,
+    Nat.add_mul_mod_self_left]
+
+/-- The window at bit `64 j + b`, for `59 ≤ b < 64`, spans limbs `j` and
+`j + 1`. -/
+theorem win_hi {c : List Nat} (h : ∀ b ∈ c, b < 256) {j b : Nat} (hb1 : 59 ≤ b) (hb2 : b < 64) :
+    leN c / 2 ^ (64 * j + b) % 32 = (lmb c j / 2 ^ b + lmb c (j + 1) * 2 ^ (64 - b)) % 32 := by
+  rw [Nat.pow_add, ← Nat.div_div_eq_div_mul, leN_shift h, leN_drop_succ,
+    show 2 ^ 64 = 2 ^ b * 2 ^ (64 - b) by rw [← Nat.pow_add]; congr 1; omega,
+    Nat.mul_assoc, Nat.add_mul_div_left _ _ (Nat.pow_pos (by decide)), ← lmb_mod h (j + 1)]
+  generalize leN (List.drop (8 * (j + 1)) c) = T
+  generalize lmb c j / 2 ^ b = x
+  have e : 2 ^ (64 - b) * T = 2 ^ (64 - b) * (T % 2 ^ 64) + 32 * (2 ^ (64 - b) * 2 ^ 59 * (T / 2 ^ 64)) := by
+    rw [Nat.mul_assoc (2 ^ (64 - b)), Nat.mul_left_comm 32, ← Nat.mul_assoc 32,
+      show (32 : Nat) * 2 ^ 59 = 2 ^ 64 from rfl, ← Nat.mul_add, Nat.mod_add_div]
+  rw [e, ← Nat.add_assoc, Nat.add_mul_mod_self_left, Nat.mul_comm (2 ^ (64 - b))]
+
+theorem leN_take_succ : ∀ (l : List Nat) (k : Nat), leN (l.take (k + 1)) = l.getD 0 0 + 256 * leN ((l.drop 1).take k)
+  | [], k => by simp [leN]
+  | a :: l, k => by simp [leN]
+
+theorem getD_drop1 : ∀ (l : List Nat) (i : Nat), (l.drop 1).getD i 0 = l.getD (i + 1) 0
+  | [], i => by simp
+  | a :: l, i => by simp
+
+theorem getD_dropK : ∀ (k : Nat) (l : List Nat) (i : Nat), (l.drop k).getD i 0 = l.getD (i + k) 0
+  | 0, l, i => rfl
+  | k + 1, [], i => by simp
+  | k + 1, a :: l, i => by
+    rw [List.drop_succ_cons, getD_dropK k l i, show i + (k + 1) = (i + k) + 1 by omega]; simp
+
+theorem getD_memBytes' (M : Word → BitVec 8) (p : Word) {n j : Nat} (h : j < n) :
+    (memBytes M p n).getD j 0 = (M (p + BitVec.ofNat 32 j)).toNat := by
+  unfold memBytes; rw [List.getD_eq_getElem?_getD, List.getElem?_map, List.getElem?_range h]; rfl
+
+theorem leN_take8 (l : List Nat) : leN (l.take 8) = l.getD 0 0 + 256 * (l.getD 1 0 + 256 * (l.getD 2 0 + 256 *
+    (l.getD 3 0 + 256 * (l.getD 4 0 + 256 * (l.getD 5 0 + 256 * (l.getD 6 0 + 256 * (l.getD 7 0 + 256 * 0))))))) := by
+  have t0 : ∀ l : List Nat, leN (l.take 0) = 0 := fun l => by simp [leN]
+  rw [leN_take_succ, leN_take_succ, leN_take_succ, leN_take_succ, leN_take_succ, leN_take_succ, leN_take_succ,
+    leN_take_succ, t0]
+  simp only [List.drop_drop, getD_dropK]
+
+theorem memBytes_lt (M : Word → BitVec 8) (p : Word) (n : Nat) : ∀ b ∈ memBytes M p n, b < 256 := by
+  intro b hb
+  unfold memBytes at hb
+  obtain ⟨i, -, rfl⟩ := List.mem_map.mp hb
+  exact (M _).isLt
+
+theorem ilByte_getD (M : Word → BitVec 8) (p : Word) (n k : Nat) :
+    (ilByte M p n k).toNat = (memBytes M p n).getD k 0 := by
+  unfold ilByte
+  by_cases hk : k < n
+  · simp only [hk, ↓reduceIte, getD_memBytes' M p hk]
+  · simp only [hk, ↓reduceIte]
+    unfold memBytes
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by simp; omega)]; rfl
+
+/-- The `u64` `increment_limb` reads, from its two words. -/
+theorem ilWord_leN (M : Word → BitVec 8) (p : Word) (n : Nat) :
+    (ilWord M p n 0).toNat + 2 ^ 32 * (ilWord M p n 1).toNat = leN ((memBytes M p n).take 8) := by
+  rw [ilWord_toNat, ilWord_toNat, leN_take8]
+  simp only [ilByte_getD]
+  show _ = (memBytes M p n).getD 0 0 + 256 * ((memBytes M p n).getD 1 0 + 256 * ((memBytes M p n).getD 2 0 + 256 *
+    ((memBytes M p n).getD 3 0 + 256 * ((memBytes M p n).getD 4 0 + 256 * ((memBytes M p n).getD 5 0 + 256 *
+    ((memBytes M p n).getD 6 0 + 256 * ((memBytes M p n).getD 7 0 + 256 * 0)))))))
+  unfold le32
+  simp only [Nat.reduceMul, Nat.reduceAdd]
+  omega
+
+theorem memBytes_drop8 (M : Word → BitVec 8) (p : Word) {n : Nat} (h : 8 ≤ n) :
+    memBytes M (p + 8) (n - 8) = (memBytes M p n).drop 8 := by
+  apply List.ext_getElem (by simp [memBytes_length])
+  intro i h1 h2
+  rw [memBytes_length] at h1
+  rw [List.getElem_drop]
+  simp only [memBytes, List.getElem_map, List.getElem_range]
+  rw [show p + 8 + BitVec.ofNat 32 i = p + BitVec.ofNat 32 (8 + i) from add_ofNat_assoc p 8 i]
+
+theorem memBytes_drop8_short (M : Word → BitVec 8) (p q : Word) {n : Nat} (h : n < 8) :
+    memBytes M q 0 = (memBytes M p n).drop 8 := by
+  rw [List.drop_eq_nil_of_le (by rw [memBytes_length]; omega)]; rfl
+
+end C3.RV32
