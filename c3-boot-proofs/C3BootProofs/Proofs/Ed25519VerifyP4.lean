@@ -99,7 +99,7 @@ theorem ev_h1 (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Machi
     (h19 : reg n 19 = F + 0x90F) :
     ∃ n' M', Steps n n' ∧ EvSt M0 Ms F r0 M' n' 0x10B0 ∧
       (∀ q : Fin 32, q.val ∈ evKeep → q ≠ 9 → q ≠ 24 → reg n' q = reg n q) ∧
-      reg n' 9 = F + BitVec.ofNat 32 0x30C ∧
+      reg n' 9 = F + BitVec.ofNat 32 0x30C ∧ reg n' 24 = F + BitVec.ofNat 32 0xF70 ∧
       memLoad32 M' (F + BitVec.ofNat 32 0x308) = memLoad32 M (F + BitVec.ofNat 32 0xC) ∧
       memLoad32 M' (F + BitVec.ofNat 32 0x30C) = memLoad32 M (F + BitVec.ofNat 32 0x10) ∧
       S5U.Hasher5At M' (F + BitVec.ofNat 32 0xEF0)
@@ -275,7 +275,8 @@ theorem ev_h1 (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Machi
                           exact fr _ (by omega) (Or.inl (by omega))
   refine ⟨n16, n16.mem, c1.trans (c2.trans (c3.trans (c4.trans (c5.trans (c6.trans (c7.trans ((Steps.single d8).trans
     ((Steps.single d9).trans ((Steps.single d10).trans ((Steps.single d11).trans ((Steps.single d12).trans
-    (c13.trans (c14.trans (c15.trans c16)))))))))))))), D16, fun q hq h9 h24 => ?_, ?_, ?_, ?_, H16, fun c hc h => ?_⟩
+    (c13.trans (c14.trans (c15.trans c16)))))))))))))), D16, fun q hq h9 h24 => ?_, ?_, by rw [kept 24 (by decide), k7 24 (by decide), v24],
+    ?_, ?_, H16, fun c hc h => ?_⟩
   · rw [kept q hq, k7 q hq, k6 q hq h24, k5, k4 q (by revert hq; revert q; decide), k3, k2 q (by revert hq; revert q; decide),
       k1 q h9]
   · rw [kept 9 (by decide), k7 9 (by decide), k6 9 (by decide) (by decide), k5, k4 _ (by decide), k3, k2 _ (by decide), v9]
