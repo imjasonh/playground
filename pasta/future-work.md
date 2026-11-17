@@ -346,15 +346,18 @@ left:
   remove that.
 - Merging the remaining walks into one pass over the rebuilt graph.
 
-### Cross-file runs hold every tree
-**Effort:** L.
-A rule with `requires`, or a fixpoint group, sends the run down the
-in-memory path, which keeps every parsed tree until the end. A
-prefilter usually narrows that to a few files, but a cross-file rule
-without one grows memory with the repository (29 GB after 50 seconds
-on the TypeScript run, still climbing). A two-pass design would bound
-it: emit facts per file and drop each tree, then re-parse, or replay
-from the cache, for the collection pass.
+### Cross-file runs re-parse released trees on every pass
+**Effort:** M.
+The in-memory path keeps the trees that later passes need within
+`-tree-budget`, and drops the trees of files that no later rule
+applies to. A file past the budget is parsed again for every later
+pass, and for every fixpoint iteration, so a small budget multiplies
+parse time: on the Go standard library, a 256 MiB budget parsed each
+spilled file about five more times. Two changes would cut that:
+- Write a released tree to disk in a compact encoding and decode it
+  for the next pass, in place of parsing it again in wazero.
+- Keep the trees of the files that a fixpoint group applies to ahead
+  of the others, since those passes repeat.
 
 ### Prefilter coverage
 **Effort:** S per rule.

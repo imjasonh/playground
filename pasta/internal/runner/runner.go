@@ -128,6 +128,8 @@ type runOpts struct {
 	memoryBudget    int64
 	memoryBudgetSet bool
 	memoryTracker   *engine.MemoryTracker
+	treeBudget      int64
+	treeBudgetSet   bool
 	stats           *engine.Stats
 }
 
@@ -155,6 +157,15 @@ func WithMemoryBudget(bytes int64) Option {
 	return func(o *runOpts) {
 		o.memoryBudget = bytes
 		o.memoryBudgetSet = true
+	}
+}
+
+// WithTreeBudget plumbs the cross-file tree budget through to the
+// engine; see engine.WithTreeBudget. Pass 0 to keep every tree.
+func WithTreeBudget(bytes int64) Option {
+	return func(o *runOpts) {
+		o.treeBudget = bytes
+		o.treeBudgetSet = true
 	}
 }
 
@@ -210,6 +221,9 @@ func RunGroup(ctx context.Context, specs []FileSpec, analyzers []*dsl.Analyzer, 
 		engineOpts = append(engineOpts, engine.WithMemoryTracker(o.memoryTracker))
 	} else if o.memoryBudgetSet {
 		engineOpts = append(engineOpts, engine.WithMemoryBudget(o.memoryBudget))
+	}
+	if o.treeBudgetSet {
+		engineOpts = append(engineOpts, engine.WithTreeBudget(o.treeBudget))
 	}
 	if o.stats != nil {
 		engineOpts = append(engineOpts, engine.WithStats(o.stats))
