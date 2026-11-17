@@ -27,8 +27,10 @@ either checked mechanically or trusted, as follows:
 2. **Image to Lean bytes: checked.** `scripts/extract-functions.py` copies
    each function's bytes out of that `bootloader.bin`, using the ELF only
    for symbol addresses, into `C3BootProofs/Image/Bootloader.lean`, which
-   names the image digest. The proofs workflow rebuilds the image,
-   extracts again, and fails if the committed file differs.
+   names the image digest. Data that later proofs read goes into
+   `C3BootProofs/Image/BootloaderData.lean` instead, so that adding an entry
+   rebuilds only the proofs that import it. The proofs workflow rebuilds the
+   image, extracts again, and fails if either committed file differs.
 3. **Bytes to behavior: trusted, and tested.** A theorem says that if
    memory holds exactly those bytes at that address, running them on the
    RV32IMC model in `Model/RV32.lean` reaches the return address with the
@@ -353,11 +355,12 @@ The mask lemma is proved from `Nat.testBit`, because the library's
 `imageParse_decodes` joins `imgW_rel` to `imageParse_correct`, the way
 `manifestParse_decodes` does for the manifest.
 
-The bytes come from `C3BootProofs/Image/Bootloader.lean`, which
+The bytes come from `C3BootProofs/Image/Bootloader.lean` and
+`C3BootProofs/Image/BootloaderData.lean`, which
 `scripts/extract-functions.py` generates from the bootloader image whose
-digest `c3-boot/bootloader/dev-image.sha256` pins; CI regenerates it and
+digest `c3-boot/bootloader/dev-image.sha256` pins; CI regenerates them and
 fails on any difference, and `c3-boot/bootloader/check-digest.sh --update`
-rewrites both. `C3BootProofs/Proof/Code.lean` has the proof tools: `CodeAt`
+rewrites the digest and both files. `C3BootProofs/Proof/Code.lean` has the proof tools: `CodeAt`
 (memory holds a function's bytes), `fetch_code` (a fetch decodes from those
 bytes, so the kernel computes each instruction), and `Steps`.
 `C3BootProofs/Proof/Step.lean` runs one instruction at a time on a

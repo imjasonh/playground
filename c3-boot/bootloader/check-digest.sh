@@ -33,8 +33,9 @@ if [[ "${1:-}" == "--update" ]]; then
   nm="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-nm"
   python3 "${root}/../c3-boot-proofs/scripts/extract-functions.py" "${work}/bootloader.bin" \
     target/riscv32imc-unknown-none-elf/release/c3-bootloader "${nm}" \
-    "${root}/../c3-boot-proofs/C3BootProofs/Image/Bootloader.lean"
-  echo "regenerated c3-boot-proofs/C3BootProofs/Image/Bootloader.lean"
+    "${root}/../c3-boot-proofs/C3BootProofs/Image/Bootloader.lean" \
+    "${root}/../c3-boot-proofs/C3BootProofs/Image/BootloaderData.lean"
+  echo "regenerated c3-boot-proofs/C3BootProofs/Image/Bootloader.lean and BootloaderData.lean"
   exit 0
 fi
 if [[ "${digest}" != "$(cat "${pinned}")" ]]; then
