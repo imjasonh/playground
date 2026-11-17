@@ -67,9 +67,6 @@ enum LayaComputeChoice: Int, CaseIterable, Identifiable {
 /// Downloads, verifies, compiles, and loads the ANE bundle; then answers
 /// questions. Every stage is timed and logged so a TestFlight run can be
 /// debugged from the copied report.
-///
-/// Army List and the Laya experiment share ``shared`` so a download in one
-/// place is the same graph the other uses.
 @MainActor
 final class LayaModelStore: ObservableObject {
     /// One store for the host app. Tests can still construct an isolated store.
@@ -126,21 +123,6 @@ final class LayaModelStore: ObservableObject {
 
     var isDownloaded: Bool {
         FileManager.default.fileExists(atPath: Self.verifiedMarker(baseDirectory).path)
-    }
-
-    var isReady: Bool {
-        if case .ready = phase { return true }
-        return false
-    }
-
-    /// Army List shows a setup row only for a missing download, a failure, or
-    /// a load the user already asked for. A downloaded graph that is merely
-    /// idle stays hidden so New list and List chat can be submitted immediately.
-    var showsSetupRow: Bool {
-        if isReady { return false }
-        if case .failed = phase { return true }
-        if phase.isBusy { return true }
-        return !isDownloaded
     }
 
     var maxTokens: Int? { runtime?.maxTokens }

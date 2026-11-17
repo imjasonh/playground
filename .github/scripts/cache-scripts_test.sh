@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tests for trim-go-build-cache.sh, check-cache-size.sh, and
-# delete-superseded-caches.sh.
+# Tests for trim-go-build-cache.sh, trim-pasta-cache.sh, check-cache-size.sh,
+# and delete-superseded-caches.sh.
 # Run: bash .github/scripts/cache-scripts_test.sh
 set -euo pipefail
 
@@ -58,6 +58,31 @@ assert_eq "$remaining" "./cc/cc00-d ./dd/dd00-a ./ee/ee00-d " \
 
 GOCACHE="$tmp/missing" bash "$trim" >/dev/null
 assert_eq "$?" "0" "a missing cache directory is not an error"
+
+# pasta entries restored from an older job keep that job's mtimes; entries
+# the run read or wrote are newer than the marker.
+pasta="$tmp/pasta"
+mkdir -p "$pasta/v3/rules-old" "$pasta/v3/rules-new" "$pasta/v3/trees-x" \
+  "$pasta/v2/rules" "$pasta/wazero" "$pasta/modules/m"
+for f in v3/rules-old/a.gob v3/rules-new/stale.gob v3/trees-x/stale.tree \
+  v2/rules/b.gob wazero/compiled modules/m/rule.cue; do
+  echo old >"$pasta/$f"
+  touch -d '2 days ago' "$pasta/$f"
+done
+touch -d '1 hour ago' "$tmp/pasta-start"
+echo hit >"$pasta/v3/rules-new/hit.gob"
+echo hit >"$pasta/v3/trees-x/hit.tree"
+
+PASTA_CACHE="$pasta" bash "$script_dir/trim-pasta-cache.sh" "$tmp/pasta-start" >/dev/null
+
+remaining=$(cd "$pasta" && find . -type f | sort | tr '\n' ' ')
+assert_eq "$remaining" "./modules/m/rule.cue ./v3/rules-new/hit.gob ./v3/trees-x/hit.tree ./wazero/compiled " \
+  "deletes pasta entries the run didn't use and keeps wazero/ and modules/"
+assert_eq "$(ls "$pasta" | tr '\n' ' ')" "modules v3 wazero " "an emptied schema directory goes"
+assert_eq "$(ls "$pasta/v3" | tr '\n' ' ')" "rules-new trees-x " "an emptied rule directory goes"
+
+PASTA_CACHE="$tmp/missing" bash "$script_dir/trim-pasta-cache.sh" "$tmp/pasta-start" >/dev/null
+assert_eq "$?" "0" "a missing pasta cache is not an error"
 
 mkdir -p "$tmp/sizes"
 head -c 300 /dev/zero >"$tmp/sizes/a"

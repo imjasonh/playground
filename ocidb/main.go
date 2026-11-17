@@ -20,7 +20,6 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -38,84 +37,93 @@ import (
 
 	"github.com/imjasonh/playground/ocidb/internal/registry"
 	"github.com/imjasonh/playground/ocidb/internal/tables"
+	whbiab "github.com/imjasonh/playground/wehadababyitsaboy/go"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 //go:embed queries/*.sql
 var queryFS embed.FS
 
 func main() {
-	if err := run(os.Args[1:]); err != nil {
+	if err := whbiab.Execute(context.Background(), newRootCmd(os.Stdout)); err != nil {
 		log.Fatal("ocidb:", err)
 	}
 }
 
-func run(args []string) error {
-	if len(args) == 0 {
-		usage(os.Stderr)
-		return errors.New("a subcommand is required")
-	}
-	cmd, rest := args[0], args[1:]
-	switch cmd {
-	case "query", "q":
-		return cmdQuery(rest)
-	case "shell", "repl":
-		return cmdShell(rest)
-	case "demo":
-		return cmdDemo(os.Stdout, rest)
-	case "schema", "tables":
-		return cmdSchema(os.Stdout, rest)
-	case "help", "-h", "--help":
-		usage(os.Stdout)
-		return nil
-	default:
-		usage(os.Stderr)
-		return fmt.Errorf("unknown subcommand %q", cmd)
-	}
-}
-
-func usage(w io.Writer) {
-	fmt.Fprint(w, `ocidb: explore OCI images in a registry with SQL
-
-Usage:
-  ocidb query  [flags] "SELECT ..."   run a single SQL query
-  ocidb shell  [flags]                interactive SQL prompt (reads stdin)
-  ocidb demo   [flags]                run a tour of fun Docker Hub queries
-  ocidb schema [table]                print virtual-table schema(s)
-
-Common flags:
-  --cache DIR        cache directory (default: <user-cache>/ocidb)
-  --ttl DURATION     freshness window for tag lists & tag->digest (default 6h)
-  --format FORMAT    table | csv | json (default table)
-
-Tables: `+strings.Join(tables.Names(), ", ")+`
+func newRootCmd(stdout io.Writer) *cobra.Command {
+	root := &cobra.Command{
+		Use:   "ocidb",
+		Short: "Explore OCI images in a registry with SQL",
+		Long: "Tables: " + strings.Join(tables.Names(), ", ") + `
 
 Each table takes its target through HIDDEN columns constrained with '=', e.g.
   WHERE reference = 'nginx'           (image / index reference)
   WHERE repository = 'library/nginx'  (for the tags table)
-  WHERE platform = 'linux/arm64'      (optional; default linux/amd64)
-`)
+  WHERE platform = 'linux/arm64'      (optional; default linux/amd64)`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+	}
+	root.SetOut(stdout)
+
+	// Only one command runs, so query, shell, and demo share one set of flags.
+	var s sharedFlags
+	query := &cobra.Command{
+		Use:     "query [flags] \"SELECT ...\"",
+		Aliases: []string{"q"},
+		Short:   "Run a single SQL query",
+		RunE: func(_ *cobra.Command, args []string) error {
+			return cmdQuery(&s, args)
+		},
+	}
+	shell := &cobra.Command{
+		Use:     "shell [flags]",
+		Aliases: []string{"repl"},
+		Short:   "Interactive SQL prompt (reads stdin)",
+		Args:    cobra.NoArgs,
+		RunE: func(*cobra.Command, []string) error {
+			return cmdShell(&s)
+		},
+	}
+	var list bool
+	demo := &cobra.Command{
+		Use:   "demo [flags]",
+		Short: "Run a tour of fun Docker Hub queries",
+		Args:  cobra.NoArgs,
+		RunE: func(*cobra.Command, []string) error {
+			return cmdDemo(stdout, &s, list)
+		},
+	}
+	demo.Flags().BoolVar(&list, "list", false, "print the demo queries without running them")
+	for _, c := range []*cobra.Command{query, shell, demo} {
+		registerShared(c.Flags(), &s)
+	}
+
+	schema := &cobra.Command{
+		Use:     "schema [table]",
+		Aliases: []string{"tables"},
+		Short:   "Print virtual-table schema(s)",
+		Args:    cobra.MaximumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return cmdSchema(stdout, args)
+		},
+	}
+
+	root.AddCommand(query, shell, demo, schema)
+	return root
 }
 
-// sharedFlags holds the flags common to query/shell/demo.
+// sharedFlags holds the flags common to query, shell, and demo.
 type sharedFlags struct {
 	cache  string
 	ttl    time.Duration
 	format string
 }
 
-func newFlagSet(name string) *flag.FlagSet {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: ocidb %s [flags] ...\n", name)
-		fs.PrintDefaults()
-	}
-	return fs
-}
-
-func registerShared(fs *flag.FlagSet, s *sharedFlags) {
-	fs.StringVar(&s.cache, "cache", defaultCacheDir(), "cache directory")
-	fs.DurationVar(&s.ttl, "ttl", registry.DefaultTTL, "freshness window for mutable lookups")
-	fs.StringVar(&s.format, "format", "table", "output format: table|csv|json")
+func registerShared(f *pflag.FlagSet, s *sharedFlags) {
+	f.StringVar(&s.cache, "cache", defaultCacheDir(), "cache directory")
+	f.DurationVar(&s.ttl, "ttl", registry.DefaultTTL, "freshness window for mutable lookups")
+	f.StringVar(&s.format, "format", "table", "output format: table|csv|json")
 }
 
 func (s *sharedFlags) open() (*sql.DB, *registry.Client, error) {
@@ -142,14 +150,8 @@ func (s *sharedFlags) open() (*sql.DB, *registry.Client, error) {
 	return db, client, nil
 }
 
-func cmdQuery(args []string) error {
-	var s sharedFlags
-	fs := newFlagSet("query")
-	registerShared(fs, &s)
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	q := strings.TrimSpace(strings.Join(fs.Args(), " "))
+func cmdQuery(s *sharedFlags, args []string) error {
+	q := strings.TrimSpace(strings.Join(args, " "))
 	if q == "" {
 		return errors.New("query: provide a SQL statement, e.g. ocidb query \"SELECT tag FROM tags WHERE repository='nginx'\"")
 	}
@@ -165,13 +167,7 @@ func cmdQuery(args []string) error {
 	return nil
 }
 
-func cmdShell(args []string) error {
-	var s sharedFlags
-	fs := newFlagSet("shell")
-	registerShared(fs, &s)
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
+func cmdShell(s *sharedFlags) error {
 	db, client, err := s.open()
 	if err != nil {
 		return err
@@ -281,16 +277,7 @@ func displaySchema(s string) string {
 	return strings.Join(out, "\n")
 }
 
-func cmdDemo(w io.Writer, args []string) error {
-	var s sharedFlags
-	var list bool
-	fs := newFlagSet("demo")
-	registerShared(fs, &s)
-	fs.BoolVar(&list, "list", false, "print the demo queries without running them")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
+func cmdDemo(w io.Writer, s *sharedFlags, list bool) error {
 	demos, err := loadQueries()
 	if err != nil {
 		return err

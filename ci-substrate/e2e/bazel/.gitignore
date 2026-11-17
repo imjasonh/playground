@@ -1,0 +1,3 @@
+/bazel-*
+/salt.txt
+MODULE.bazel.lock

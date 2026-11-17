@@ -1,0 +1,766 @@
+// Package treesitter parses with the official tree-sitter C runtime and
+// pasta's grammars. Every build embeds them as one wasm32-wasi module
+// (ts-core.wasm.br, from build.sh) that runs on wazero. cgo builds without
+// the purego tag also link most grammars natively (native_cgo.go) and use
+// wasm for the rest.
+//
+// Prior art: dvcdsys/code-index PR #81 (server/internal/chunker/tswasm).
+// Parse dumps the whole tree inside the guest via ts_dump_tree; the host
+// does one Memory.Read and rebuilds a Go node graph with parent/child
+// and field-name links so the rest of pasta keeps its Node API.
+//
+// Concurrency: each wazero module instance has its own linear memory and
+// is not safe for concurrent calls. Parses borrow an *engine from a pool.
+package treesitter
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	_ "embed"
+	"encoding/binary"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	goruntime "runtime"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/andybalholm/brotli"
+	"github.com/tetratelabs/wazero"
+	"github.com/tetratelabs/wazero/api"
+	"github.com/tetratelabs/wazero/experimental"
+	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
+)
+
+//go:embed ts-core.wasm.br
+var wasmBrotli []byte
+
+var buildID = sync.OnceValue(func() string {
+	sum := sha256.Sum256(wasmBrotli)
+	return hex.EncodeToString(sum[:])
+})
+
+// BuildID identifies the embedded runtime and grammars. Trees, and so
+// anything derived from them, can differ between two build IDs.
+func BuildID() string { return buildID() }
+
+// recSize must match sizeof(NodeRec) in csrc/host_extra.c (10 × uint32).
+const recSize = 40
+
+// ExportName returns the wasm export for a pasta grammar id (e.g. "go" → "tree_sitter_go").
+func ExportName(grammar string) string {
+	return "tree_sitter_" + grammar
+}
+
+var (
+	// MaxConcurrentInstances caps live engines. Each holds about 34 MB
+	// of grammar tables in its own linear memory, so the default is one
+	// per CPU but at most 8. 0 → 4.
+	MaxConcurrentInstances = min(goruntime.GOMAXPROCS(0), 8)
+	// MemLimitPages caps linear memory (64 KiB pages). 4096 = 256 MiB.
+	MemLimitPages uint32 = 4096
+	// RecycleGrowthBytes closes instances that grew this far above baseline.
+	RecycleGrowthBytes uint64 = 128 << 20
+	// MaxIdleInstances bounds pooled idle engines. 0 → MaxConcurrentInstances.
+	// Keeping fewer idle than run at once makes the pool close and
+	// re-instantiate engines (copying the grammar tables) between parses.
+	MaxIdleInstances = 0
+)
+
+// ---------------------------------------------------------------------------
+// Public tree / node types
+// ---------------------------------------------------------------------------
+
+// Language is a grammar handle. Cheap; just the export name.
+type Language struct {
+	Grammar string // pasta grammar id, e.g. "go"
+}
+
+// Tree owns a parsed node graph. The WASM engine is released as soon as
+// the graph is built (nodes live in Go), so Release is a no-op retained
+// for API parity with the old gotreesitter Tree.
+type Tree struct {
+	root   *node
+	nodes  int
+	src    []byte
+	fileID string
+	lang   *Language
+}
+
+// RootNode returns the root.
+func (t *Tree) RootNode() *Node {
+	if t == nil || t.root == nil {
+		return nil
+	}
+	return &Node{n: t.root, tree: t}
+}
+
+// Release is a no-op; kept so callers can defer tree.Release().
+func (t *Tree) Release() {}
+
+// NodeCount returns the number of nodes in the tree, named or not.
+func (t *Tree) NodeCount() int {
+	if t == nil {
+		return 0
+	}
+	return t.nodes
+}
+
+// Node is a tree-sitter node in the rebuilt Go graph.
+type Node struct {
+	n    *node
+	tree *Tree
+}
+
+type node struct {
+	kind                string
+	start, end          uint32
+	named, err, missing bool
+	extra, hasError     bool
+	fieldName           string
+	parent              *node
+	children            []*node
+	namedChildren       []*node
+}
+
+// ---------------------------------------------------------------------------
+// Runtime / pool
+// ---------------------------------------------------------------------------
+
+type runtime struct {
+	ctx context.Context // pasta:ignore go_context_field (the wasm runtime lives for the process)
+	wz  wazero.Runtime
+	cm  wazero.CompiledModule
+}
+
+var (
+	rtOnce        sync.Once
+	rt            *runtime
+	rtErr         error
+	gpool         enginePool
+	instN         atomic.Int64
+	instLim       *concLimiter
+	baselineBytes atomic.Uint64
+)
+
+type concLimiter struct {
+	mu    sync.Mutex
+	cond  *sync.Cond
+	inUse int
+	max   int
+}
+
+func newConcLimiter(max int) *concLimiter {
+	if max < 1 {
+		max = 1
+	}
+	l := &concLimiter{max: max}
+	l.cond = sync.NewCond(&l.mu)
+	return l
+}
+
+func (l *concLimiter) acquire() {
+	l.mu.Lock()
+	for l.inUse >= l.max {
+		l.cond.Wait()
+	}
+	l.inUse++
+	l.mu.Unlock()
+}
+
+func (l *concLimiter) release() {
+	l.mu.Lock()
+	l.inUse--
+	l.cond.Signal()
+	l.mu.Unlock()
+}
+
+func initRuntime() {
+	ctx := context.Background()
+	if a := linearMemoryAllocator(); a != nil {
+		ctx = experimental.WithMemoryAllocator(ctx, a)
+	}
+	n := MaxConcurrentInstances
+	if n <= 0 {
+		n = 4
+	}
+	instLim = newConcLimiter(n)
+	raw, err := io.ReadAll(brotli.NewReader(bytes.NewReader(wasmBrotli)))
+	if err != nil {
+		rtErr = fmt.Errorf("decompress ts-core.wasm.br: %w", err)
+		return
+	}
+	cacheDir := ""
+	if dir, err := os.UserCacheDir(); err == nil {
+		cacheDir = filepath.Join(dir, "pasta", "wazero")
+	}
+	rt, rtErr = loadRuntime(ctx, raw, cacheDir)
+}
+
+// loadRuntime compiles the tree-sitter module. Compiling takes most of
+// a second, so when cacheDir isn't empty loadRuntime keeps the compiled
+// code there for later processes. wazero fails the compile when a cache
+// entry is damaged or the directory can't be written, so loadRuntime
+// then removes the directory and compiles without a cache.
+func loadRuntime(ctx context.Context, raw []byte, cacheDir string) (*runtime, error) {
+	if cacheDir != "" {
+		if cache, err := wazero.NewCompilationCacheWithDir(cacheDir); err == nil {
+			if r, err := newRuntime(ctx, raw, cache); err == nil {
+				return r, nil
+			}
+			_ = os.RemoveAll(cacheDir)
+		}
+	}
+	return newRuntime(ctx, raw, nil)
+}
+
+// newRuntime returns a wazero runtime with WASI and the compiled
+// tree-sitter module, using cache for compiled code when it isn't nil.
+func newRuntime(ctx context.Context, raw []byte, cache wazero.CompilationCache) (*runtime, error) {
+	cfg := wazero.NewRuntimeConfigCompiler()
+	if MemLimitPages > 0 {
+		cfg = cfg.WithMemoryLimitPages(MemLimitPages)
+	}
+	if cache != nil {
+		cfg = cfg.WithCompilationCache(cache)
+	}
+	wz := wazero.NewRuntimeWithConfig(ctx, cfg)
+	if _, err := wasi_snapshot_preview1.Instantiate(ctx, wz); err != nil {
+		_ = wz.Close(ctx)
+		return nil, fmt.Errorf("wasi: %w", err)
+	}
+	cm, err := wz.CompileModule(ctx, raw)
+	if err != nil {
+		_ = wz.Close(ctx)
+		return nil, fmt.Errorf("compile ts-core.wasm: %w", err)
+	}
+	return &runtime{ctx: ctx, wz: wz, cm: cm}, nil
+}
+
+type engine struct {
+	ctx context.Context // pasta:ignore go_context_field (the compiled module lives for the process)
+	mod api.Module
+	mem api.Memory
+
+	malloc, free                         api.Function
+	parserNew, parserDelete, parserReset api.Function
+	setLang, parse, treeDelete           api.Function
+	dumpTree                             api.Function
+	langSymCount, langSymName            api.Function
+	langFieldCount, langFieldName        api.Function
+
+	langPtr map[string]uint32
+}
+
+func newEngine() (*engine, error) {
+	rtOnce.Do(initRuntime)
+	if rtErr != nil {
+		return nil, rtErr
+	}
+	name := fmt.Sprintf("ts-%d", instN.Add(1))
+	// pasta_parse's timeout reads the monotonic clock. wazero's
+	// default clock advances 1ms per reading, which would turn the timeout
+	// into a cap on how often the parser checks the clock.
+	mod, err := rt.wz.InstantiateModule(rt.ctx, rt.cm,
+		wazero.NewModuleConfig().WithName(name).WithStartFunctions("_initialize").WithSysNanotime())
+	if err != nil {
+		return nil, fmt.Errorf("instantiate: %w", err)
+	}
+	e := &engine{
+		ctx: rt.ctx, mod: mod, mem: mod.Memory(),
+		malloc:         mod.ExportedFunction("malloc"),
+		free:           mod.ExportedFunction("free"),
+		parserNew:      mod.ExportedFunction("ts_parser_new"),
+		parserDelete:   mod.ExportedFunction("ts_parser_delete"),
+		parserReset:    mod.ExportedFunction("ts_parser_reset"),
+		setLang:        mod.ExportedFunction("ts_parser_set_language"),
+		parse:          mod.ExportedFunction("pasta_parse"),
+		treeDelete:     mod.ExportedFunction("ts_tree_delete"),
+		dumpTree:       mod.ExportedFunction("ts_dump_tree"),
+		langSymCount:   mod.ExportedFunction("ts_language_symbol_count"),
+		langSymName:    mod.ExportedFunction("ts_language_symbol_name"),
+		langFieldCount: mod.ExportedFunction("ts_language_field_count"),
+		langFieldName:  mod.ExportedFunction("ts_language_field_name_for_id"),
+		langPtr:        map[string]uint32{},
+	}
+	if rs := e.call(mod.ExportedFunction("ts_dump_rec_size")); rs != recSize {
+		mod.Close(rt.ctx)
+		return nil, fmt.Errorf("NodeRec size mismatch: guest=%d host=%d", rs, recSize)
+	}
+	baselineBytes.CompareAndSwap(0, e.memSize())
+	return e, nil
+}
+
+func (e *engine) close()          { e.mod.Close(e.ctx) }
+func (e *engine) memSize() uint64 { return uint64(e.mem.Size()) }
+
+type enginePool struct {
+	mu       sync.Mutex
+	free     []*engine
+	created  atomic.Int64
+	closed   atomic.Int64
+	recycled atomic.Int64
+}
+
+func (p *enginePool) maxIdle() int {
+	if MaxIdleInstances > 0 {
+		return MaxIdleInstances
+	}
+	if MaxConcurrentInstances > 0 {
+		return MaxConcurrentInstances
+	}
+	return 4
+}
+
+func (p *enginePool) acquire() (*engine, error) {
+	rtOnce.Do(initRuntime)
+	if rtErr != nil {
+		return nil, rtErr
+	}
+	instLim.acquire()
+	p.mu.Lock()
+	if n := len(p.free); n > 0 {
+		e := p.free[n-1]
+		p.free[n-1] = nil
+		p.free = p.free[:n-1]
+		p.mu.Unlock()
+		return e, nil
+	}
+	p.mu.Unlock()
+	e, err := newEngine()
+	if err != nil {
+		instLim.release()
+		return nil, err
+	}
+	p.created.Add(1)
+	return e, nil
+}
+
+func (p *enginePool) release(e *engine, tainted bool) {
+	defer instLim.release()
+	switch {
+	case tainted:
+		p.discard(e)
+	case RecycleGrowthBytes > 0 && e.memSize() > baselineBytes.Load()+RecycleGrowthBytes:
+		p.recycled.Add(1)
+		p.discard(e)
+	default:
+		p.mu.Lock()
+		if len(p.free) >= p.maxIdle() {
+			p.mu.Unlock()
+			p.discard(e)
+			return
+		}
+		p.free = append(p.free, e)
+		p.mu.Unlock()
+	}
+}
+
+func (p *enginePool) discard(e *engine) {
+	e.close()
+	p.closed.Add(1)
+}
+
+// Prewarm loads the compiled module and leaves one idle parser in the
+// pool, so the first Parse doesn't wait for either. Call it in the
+// background while doing other startup work. Errors surface from the
+// next Parse instead. With the native backend it does nothing.
+func Prewarm() {
+	if native != nil {
+		return
+	}
+	if e, err := gpool.acquire(); err == nil {
+		gpool.release(e, false)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Parse
+// ---------------------------------------------------------------------------
+
+type backend interface {
+	has(grammar string) bool
+	parseDump(ctx context.Context, grammar string, src []byte, opts ParseOptions) (treeDump, error)
+}
+
+// native is nil in CGO_ENABLED=0 and purego builds.
+var native backend
+
+var wasm backend = wasmBackend{}
+
+func backendFor(grammar string) backend {
+	if native != nil && native.has(grammar) {
+		return native
+	}
+	return wasm
+}
+
+// ErrTimeout is returned when ParseOptions.Timeout elapses.
+var ErrTimeout = errors.New("parse timeout")
+
+// ErrResourceLimit is returned when the guest traps (e.g. memory cap).
+var ErrResourceLimit = errors.New("parse resource limit")
+
+// ParseOptions controls a single parse.
+type ParseOptions struct {
+	Timeout time.Duration
+}
+
+// timeoutMicros is pasta_parse's timeout argument, where 0 means none.
+func (o ParseOptions) timeoutMicros() uint64 {
+	if o.Timeout <= 0 {
+		return 0
+	}
+	return uint64(max(o.Timeout/time.Microsecond, 1))
+}
+
+// nullTreeErr explains a parse that returned no tree.
+func (o ParseOptions) nullTreeErr() error {
+	if o.Timeout > 0 {
+		return fmt.Errorf("%w: null tree", ErrTimeout)
+	}
+	return errors.New("parse returned null tree")
+}
+
+// Parse parses src with lang and returns a Tree. Caller must Release().
+func Parse(ctx context.Context, lang *Language, src []byte, fileID string, opts ParseOptions) (tree *Tree, err error) {
+	if lang == nil || lang.Grammar == "" {
+		return nil, fmt.Errorf("treesitter: nil language")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	d, err := backendFor(lang.Grammar).parseDump(ctx, lang.Grammar, src, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &Tree{root: buildGraph(d), nodes: max(int(d.n), 1), src: src, fileID: fileID, lang: lang}, nil
+}
+
+// HasGrammar reports whether either backend has the grammar.
+func HasGrammar(grammar string) bool {
+	return backendFor(grammar).has(grammar)
+}
+
+type wasmBackend struct{}
+
+func (wasmBackend) has(grammar string) bool {
+	e, err := gpool.acquire()
+	if err != nil {
+		return false
+	}
+	defer gpool.release(e, false)
+	return e.mod.ExportedFunction(ExportName(grammar)) != nil
+}
+
+// parseDump returns the engine to the pool before the caller builds the
+// Go graph, so another parse can start on it.
+func (wasmBackend) parseDump(ctx context.Context, grammar string, src []byte, opts ParseOptions) (treeDump, error) {
+	e, err := gpool.acquire()
+	if err != nil {
+		return treeDump{}, err
+	}
+	d, err := e.parseDump(ctx, grammar, src, opts)
+	gpool.release(e, err != nil)
+	return d, err
+}
+
+func (e *engine) call(f api.Function, args ...uint64) uint64 {
+	r, err := f.Call(e.ctx, args...)
+	if err != nil {
+		panic(err)
+	}
+	if len(r) == 0 {
+		return 0
+	}
+	return r[0]
+}
+
+func (e *engine) language(export string) (uint32, bool) {
+	if p, ok := e.langPtr[export]; ok {
+		return p, p != 0
+	}
+	fn := e.mod.ExportedFunction(export)
+	if fn == nil {
+		e.langPtr[export] = 0
+		return 0, false
+	}
+	p := uint32(e.call(fn))
+	e.langPtr[export] = p
+	return p, p != 0
+}
+
+// grammarNames maps a grammar's symbol ids to node kinds and its field
+// ids to field names.
+type grammarNames struct {
+	kinds, fields map[uint32]string
+}
+
+// Both backends compile the same grammar versions, so they share names.
+var (
+	namesMu        sync.Mutex
+	namesByGrammar = map[string]grammarNames{}
+)
+
+// namesFor returns grammar's names, reading them with symbol and field
+// the first time.
+func namesFor(grammar string, symbols, fields uint32, symbol, field func(id uint32) string) grammarNames {
+	namesMu.Lock()
+	defer namesMu.Unlock()
+	if n, ok := namesByGrammar[grammar]; ok {
+		return n
+	}
+	n := grammarNames{
+		kinds:  make(map[uint32]string, symbols),
+		fields: make(map[uint32]string, fields+1),
+	}
+	for id := range symbols {
+		n.kinds[id] = symbol(id)
+	}
+	// Field ids are 1-based; id 0 means "no field".
+	n.fields[0] = ""
+	for id := uint32(1); id <= fields; id++ {
+		n.fields[id] = field(id)
+	}
+	namesByGrammar[grammar] = n
+	return n
+}
+
+func (e *engine) names(grammar string, lang uint32) grammarNames {
+	return namesFor(grammar,
+		uint32(e.call(e.langSymCount, uint64(lang))),
+		uint32(e.call(e.langFieldCount, uint64(lang))),
+		func(id uint32) string { return e.readCStr(uint32(e.call(e.langSymName, uint64(lang), uint64(id)))) },
+		func(id uint32) string { return e.readCStr(uint32(e.call(e.langFieldName, uint64(lang), uint64(id)))) })
+}
+
+// treeDump is a parse tree as ts_dump_tree records plus the grammar's
+// names. An empty dump (n == 0) stands for a tree with no nodes.
+type treeDump struct {
+	raw []byte
+	n   uint32
+	grammarNames
+}
+
+func (e *engine) parseDump(ctx context.Context, grammar string, src []byte, opts ParseOptions) (d treeDump, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%w: wasm trap: %v", ErrResourceLimit, r)
+		}
+	}()
+
+	lang, ok := e.language(ExportName(grammar))
+	if !ok {
+		return d, fmt.Errorf("unknown grammar %q", grammar)
+	}
+	parser := e.call(e.parserNew)
+	defer e.call(e.parserDelete, parser)
+
+	e.call(e.setLang, parser, uint64(lang))
+
+	sp := uint32(e.call(e.malloc, uint64(len(src)+1)))
+	if sp == 0 {
+		return d, fmt.Errorf("%w: malloc source failed", ErrResourceLimit)
+	}
+	e.mem.Write(sp, src)
+	e.mem.WriteByte(sp+uint32(len(src)), 0)
+	defer e.call(e.free, uint64(sp))
+
+	// Do not write a guest cancellation flag from AfterFunc: that
+	// races with wazero Memory.Grow during parse. Bound in-flight
+	// work with opts.Timeout; if ctx is done, discard the result.
+	tree := e.call(e.parse, parser, uint64(sp), uint64(len(src)), opts.timeoutMicros(), 0)
+	if ctx.Err() != nil {
+		return d, ctx.Err()
+	}
+	if tree == 0 {
+		return d, opts.nullTreeErr()
+	}
+	defer e.call(e.treeDelete, tree)
+
+	n := uint32(e.call(e.dumpTree, tree, 0, 0))
+	if n == 0 {
+		return d, nil
+	}
+	buf := uint32(e.call(e.malloc, uint64(n)*recSize))
+	if buf == 0 {
+		return d, fmt.Errorf("%w: malloc dump failed", ErrResourceLimit)
+	}
+	defer e.call(e.free, uint64(buf))
+	got := uint32(e.call(e.dumpTree, tree, uint64(buf), uint64(n)))
+	if got != n {
+		return d, fmt.Errorf("dump count changed: %d vs %d", n, got)
+	}
+	raw, ok2 := e.mem.Read(buf, n*recSize)
+	if !ok2 {
+		return d, fmt.Errorf("read dump buffer failed")
+	}
+
+	names := e.names(grammar, lang)
+	if ctx.Err() != nil {
+		return d, ctx.Err()
+	}
+	// Read returns a view of guest memory, which the next parse on this
+	// engine overwrites.
+	return treeDump{raw: bytes.Clone(raw), n: n, grammarNames: names}, nil
+}
+
+// buildGraph rebuilds d as a Go node graph and returns its root.
+func buildGraph(d treeDump) *node {
+	n, raw := d.n, d.raw
+	if n == 0 {
+		return &node{kind: "ERROR"}
+	}
+	nodes := make([]node, n)
+	depths := make([]uint32, n)
+	for i := uint32(0); i < n; i++ {
+		o := i * recSize
+		kindID := binary.LittleEndian.Uint32(raw[o:])
+		flags := binary.LittleEndian.Uint32(raw[o+36:])
+		fieldID := binary.LittleEndian.Uint32(raw[o+32:])
+		kind := d.kinds[kindID]
+		isErr := flags&2 != 0
+		isMissing := flags&4 != 0
+		// ERROR/MISSING nodes' TSSymbol often has an empty
+		// ts_language_symbol_name; ts_node_type would return "ERROR".
+		if isErr {
+			kind = "ERROR"
+		} else if isMissing && kind == "" {
+			kind = "MISSING"
+		}
+		nodes[i] = node{
+			kind:      kind,
+			start:     binary.LittleEndian.Uint32(raw[o+4:]),
+			end:       binary.LittleEndian.Uint32(raw[o+8:]),
+			fieldName: d.fields[fieldID],
+		}
+		nodes[i].setFlags(byte(flags))
+		depths[i] = binary.LittleEndian.Uint32(raw[o+28:])
+	}
+	return link(nodes, depths)
+}
+
+// Node flags, as the guest dumps them and as Compact stores them.
+const (
+	flagNamed = 1 << iota
+	flagErr
+	flagMissing
+	flagExtra
+	flagHasError
+)
+
+func (n *node) setFlags(f byte) {
+	n.named = f&flagNamed != 0
+	n.err = f&flagErr != 0
+	n.missing = f&flagMissing != 0
+	n.extra = f&flagExtra != 0
+	n.hasError = f&flagHasError != 0
+}
+
+func (n *node) flags() byte {
+	var f byte
+	if n.named {
+		f |= flagNamed
+	}
+	if n.err {
+		f |= flagErr
+	}
+	if n.missing {
+		f |= flagMissing
+	}
+	if n.extra {
+		f |= flagExtra
+	}
+	if n.hasError {
+		f |= flagHasError
+	}
+	return f
+}
+
+// link sets the parent and child pointers of nodes, which are in
+// preorder with depths[i] the depth of nodes[i], and returns the root.
+// Each parent's child slices are carved at their exact size from two
+// shared buffers.
+func link(nodes []node, depths []uint32) *node {
+	n := uint32(len(nodes))
+	const noParent = ^uint32(0)
+	parent := make([]uint32, n)
+	childCount := make([]uint32, n)
+	namedCount := make([]uint32, n)
+	type frame struct {
+		idx   uint32
+		depth uint32
+	}
+	stack := make([]frame, 0, 64)
+	for i := uint32(0); i < n; i++ {
+		depth := depths[i]
+		for len(stack) > 0 && stack[len(stack)-1].depth >= depth {
+			stack = stack[:len(stack)-1]
+		}
+		parent[i] = noParent
+		if len(stack) > 0 {
+			p := stack[len(stack)-1].idx
+			parent[i] = p
+			childCount[p]++
+			if nodes[i].named {
+				namedCount[p]++
+			}
+		}
+		stack = append(stack, frame{idx: i, depth: depth})
+	}
+	var totalChildren, totalNamed uint32
+	for i := range n {
+		totalChildren += childCount[i]
+		totalNamed += namedCount[i]
+	}
+	childBuf := make([]*node, totalChildren)
+	namedBuf := make([]*node, totalNamed)
+	var co, no uint32
+	for i := range n {
+		if c := childCount[i]; c > 0 {
+			nodes[i].children = childBuf[co : co : co+c]
+			co += c
+		}
+		if c := namedCount[i]; c > 0 {
+			nodes[i].namedChildren = namedBuf[no : no : no+c]
+			no += c
+		}
+	}
+	for i := range n {
+		p := parent[i]
+		if p == noParent {
+			continue
+		}
+		c, pn := &nodes[i], &nodes[p]
+		c.parent = pn
+		pn.children = append(pn.children, c)
+		if c.named {
+			pn.namedChildren = append(pn.namedChildren, c)
+		}
+	}
+	return &nodes[0]
+}
+
+func (e *engine) readCStr(ptr uint32) string {
+	if ptr == 0 {
+		return ""
+	}
+	var b []byte
+	for off := ptr; ; off++ {
+		c, ok := e.mem.ReadByte(off)
+		if !ok || c == 0 {
+			break
+		}
+		b = append(b, c)
+	}
+	return string(b)
+}
+
+// DrainArenaPools is a no-op retained for API parity with the old
+// gotreesitter backend (wasm instances are pooled separately).
+func DrainArenaPools() {}

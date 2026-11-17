@@ -37,12 +37,15 @@ from_changes() {
   printf '%s\n' "$@" | bash "$discover" --from-changes
 }
 
-assert_eq "$(bash "$discover" --all)" '["cloudrun-sqlite"]' "--all"
+assert_eq "$(bash "$discover" --all)" '["cloudrun-sqlite","stream-boids","wehadababyitsaboy"]' "--all"
 assert_eq "$(from_changes cloudrun-sqlite/main.go)" '["cloudrun-sqlite"]' "app source"
 assert_eq "$(from_changes litestream/vfs.go)" '["cloudrun-sqlite"]' "litestream watch"
+assert_eq "$(from_changes wehadababyitsaboy/terraform/main.tf)" '["wehadababyitsaboy"]' "stack without Go"
+assert_eq "$(from_changes wehadababyitsaboy/go/whbiab.go wehadababyitsaboy/README.md)" '[]' "client libraries do not deploy"
+assert_eq "$(from_changes stream-boids/apko.yaml)" '["stream-boids"]' "base image config"
 assert_eq "$(from_changes kanoodle/index.html)" '[]' "unrelated app"
 assert_eq "$(from_changes README.md)" '[]' "repo root file"
-assert_eq "$(from_changes .github/workflows/deploy-gcp.yml)" '["cloudrun-sqlite"]' "workflow change deploys all"
+assert_eq "$(from_changes .github/workflows/deploy-gcp.yml)" '["cloudrun-sqlite","stream-boids","wehadababyitsaboy"]' "workflow change deploys all"
 assert_eq "$(from_changes .github/scripts/deploy-gcp_test.sh)" '[]' "test script does not deploy"
 assert_eq "$(printf '' | bash "$discover" --from-changes)" '[]' "empty diff"
 

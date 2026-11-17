@@ -49,7 +49,6 @@ ios/
 | Id | Title | Notes |
 |----|-------|-------|
 | `ride-monitor` | Ride Monitor | In-app; background motion + GPS; Live Activity + Watch companion |
-| `army-list` | Army List | Build/validate 11th Edition lists (all factions in the bundled catalog); catalog code lists legal moves and applies picks; Laya answers labeled choices and leftover yes/no; Apple Intelligence writes a theme brief, a list name, and matchup copy |
 | `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
 | `voxel-world` | Voxel Eyes | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
@@ -115,63 +114,6 @@ Past rides can be exported as JSON Lines (`.jsonl`): open a ride for a single
 export, or use **Export all** on the Past rides list to **Save ZIP…** (one
 archive of per-ride `.jsonl` files), save/share one combined JSONL, or share
 through the system share sheet.
-
-### Army List
-
-Build and validate Warhammer 40,000 **11th Edition** army lists for every
-faction in the bundled construction catalog (30 factions, faction-prefixed
-datasheet/detachment ids). The experiment ships points, Detachment Points,
-unique tags, and Leader join edges as versioned JSON, plus a deterministic
-validator, SwiftUI authoring UI, and share/export as plain text or `.army.json`.
-The editor focuses on units (drag to reorder); name, battle size, and
-detachments live on **Army settings**. **Build starter list** on the New list
-screen fills a roster from 0. Opening that screen does not load Laya. If a
-download is already on disk, the button loads the graph and then Laya picks
-among legal catalog moves. Otherwise a ranked greedy fill runs. The
-controller then assigns legal enhancements and spends leftover points.
-The construction loop farms work to three workers. Catalog code lists legal
-moves, applies picks, and answers when only one option remains. Laya answers
-when two or more options remain: detachments, units, model counts, warlord,
-attaches, enhancements, and points cuts. It also answers leftover yes/no
-questions: keep adding, pack leftover, and assign an enhancement. After the
-pass it scores the finished list against the theme. Apple Intelligence writes
-a short theme brief and a list name when it is available. Token overlap on
-datasheet names and keywords is catalog work. Laya only gets a yes/no when a
-candidate misses those tokens. Construction still runs without Apple
-Intelligence or Laya.
-
-Refresh the **bundled** catalog (no remote fetch at runtime):
-
-```bash
-python3 ios/scripts/refresh-army-list-catalog.py
-```
-
-A weekly GitHub Action (`.github/workflows/army-list-catalog.yml`) runs that
-refresh on `main`, opens a PR, regenerates stress fixtures, and auto-merges
-when CI is green. Catalog versions bump as `11e-<N>`; id migrations keep saved
-lists pointed at the same named datasheets when ids would otherwise drift.
-
-Stress-test the validator by building ~50 lists in Swift (same
-`ArmyListValidator` as the app) and writing XCTest fixtures. Requires macOS:
-
-```bash
-bash ios/scripts/stress-army-lists.sh --write-fixtures
-```
-
-**List chat** (toolbar bubble on a list) always offers Build, Fill, and Fix.
-Those chips load Laya when a download is already on disk, then run the
-construction controller over legal catalog moves. Otherwise they use the
-greedy fallback. Opening List chat does not load the graph. Optional theme
-text steers ranking. Catalog code drops off-token units when any unit hits
-the brief; Laya only classifies the leftovers. When Apple Intelligence is
-available, Build and Fill ask it for a theme brief and a list name first.
-Theme and Weaknesses still use on-device Foundation Models for matchup
-write-ups. Those tools only summarize the list or rename it. Chat still
-compacts AFM context with TN3193 first and last entries, a rolling summary,
-and a list snapshot, and retries once on overflow. Without Apple Intelligence,
-the construction chips stay available.
-
-Unofficial fan experiment. Confirm points with Games Workshop for events.
 
 ### T9 Keyboard
 
@@ -388,11 +330,9 @@ question, it returns a probability per option in one forward pass. It never
 generates tokens. The upstream runtime is Python; this experiment is a Swift
 port of its ANE path, so the same bundle runs on the phone.
 
-The download, tokenizer, and Core ML runtime live in `Shared/Laya` so Army
-List can load the same bundle (`LayaModelStore.shared`). The Laya experiment
-is the diagnostics UI on top of that store. Opening it loads a downloaded
-bundle. Army List does not: New list and List chat stay idle until Build,
-Fill, or Fix, and that request loads the graph.
+The download, tokenizer, and Core ML runtime live in `Shared/Laya`
+(`LayaModelStore.shared`). The Laya experiment is the diagnostics UI on top
+of that store. Opening it loads a downloaded bundle.
 
 The bundle is
 [`aac6fef/laya-multilingual-coreml-ane`](https://huggingface.co/aac6fef/laya-multilingual-coreml-ane)

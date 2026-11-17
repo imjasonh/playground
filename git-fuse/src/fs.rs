@@ -23,7 +23,6 @@
 //! FLUSH itself is answered inline on the session thread.
 
 use crate::source::{Entry, EntryKind, RefsSnapshot, Source};
-use crate::vlog;
 use fuser::{
     FileAttr, FileType, Filesystem, KernelConfig, ReplyAttr, ReplyData, ReplyDirectory,
     ReplyDirectoryPlus, ReplyEmpty, ReplyEntry, ReplyOpen, Request, FUSE_ROOT_ID,

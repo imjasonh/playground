@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -54,6 +53,8 @@ type Result struct {
 	SkipReason string
 }
 
+const skipParseErrors = "parse errors"
+
 // Stats counts per-file outcomes for a RunGroup. Optional — attach via
 // WithStats. All fields are safe for concurrent updates from the
 // streaming worker pool.
@@ -62,10 +63,13 @@ type Stats struct {
 	PrefilterSkipped atomic.Int64 // content-sniff rejected before parse
 	Parsed           atomic.Int64 // successfully parsed + analyzed
 	ParseErrors      atomic.Int64 // skipped: ERROR-heavy tree
-	ParseDegraded    atomic.Int64 // HasError but not heavy — analyzed, not cached
+	ParseDegraded    atomic.Int64 // HasError but not heavy — analyzed
 	TimedOut         atomic.Int64 // skipped: parse timeout
 	MemorySkipped    atomic.Int64 // skipped: memory_budget
 	CacheHits        atomic.Int64 // served from parse cache
+	Reparsed         atomic.Int64 // parsed again for a later cross-file pass
+	Rebuilt          atomic.Int64 // rebuilt from a compact tree for a later cross-file pass
+	TreeCacheHits    atomic.Int64 // first cross-file pass rebuilt the tree from the tree cache
 }
 
 // Snapshot is a plain copy of Stats counters for printing.
@@ -78,6 +82,9 @@ type Snapshot struct {
 	TimedOut         int64
 	MemorySkipped    int64
 	CacheHits        int64
+	Reparsed         int64
+	Rebuilt          int64
+	TreeCacheHits    int64
 }
 
 // Snapshot returns a consistent-enough copy of the counters.
@@ -94,6 +101,9 @@ func (s *Stats) Snapshot() Snapshot {
 		TimedOut:         s.TimedOut.Load(),
 		MemorySkipped:    s.MemorySkipped.Load(),
 		CacheHits:        s.CacheHits.Load(),
+		Reparsed:         s.Reparsed.Load(),
+		Rebuilt:          s.Rebuilt.Load(),
+		TreeCacheHits:    s.TreeCacheHits.Load(),
 	}
 }
 
@@ -121,11 +131,13 @@ type FileInput struct {
 }
 
 // scheduledRule pairs a rule with the analyzer that owns it, so we can
-// schedule rules globally across analyzers.
+// schedule rules globally across analyzers, and with the substrings a
+// file must contain for the rule to match.
 type scheduledRule struct {
 	analyzer *dsl.Analyzer
 	name     string
 	rule     dsl.Rule
+	filter   prefilter.Filter
 }
 
 // MaxFixpointIterations bounds the number of times a fixpoint group of
@@ -163,14 +175,23 @@ func Run(
 // fileState is the parsed-and-prepared state for one file in a group.
 type fileState struct {
 	input    FileInput
-	tree     releaser
+	tree     *tsutil.Tree
 	root     tsutil.Node
+	nodes    int
 	env      *match.Env
 	suppress map[int]suppression
 }
 
-// releaser is the subset of *tsutil.Tree we actually need (Release).
-type releaser interface{ Release() }
+// release frees s's tree and everything that points into it. The
+// input and suppressions stay.
+func (s *fileState) release() {
+	if s.tree != nil {
+		s.tree.Release()
+	}
+	s.tree = nil
+	s.root = tsutil.Node{}
+	s.env = nil
+}
 
 // Option configures a single RunGroup call. Options are applied in
 // order; later options win on conflict.
@@ -180,8 +201,16 @@ type runOpts struct {
 	cache        *parsecache.Cache
 	parseTimeout time.Duration
 	timeoutSet   bool
+	// defineNames records definitions in the fact store. Lookups use
+	// definitions only to choose among facts, so it is false when no
+	// rule emits one.
+	defineNames  bool
 	memoryBudget int64 // bytes of source parsed; 0 = unlimited
-	stats        *Stats
+	// treeBudget bounds the estimated bytes of trees the in-memory
+	// path keeps between passes; 0 = unlimited.
+	treeBudget    int64
+	treeBudgetSet bool
+	stats         *Stats
 	// parsedBytes tracks cumulative source bytes admitted to parse.
 	// Shared across RunGroups when supplied via WithMemoryTracker.
 	parsedBytes *atomic.Int64
@@ -194,12 +223,12 @@ type runOpts struct {
 	admitNext int
 }
 
-// WithCache enables the persistent parse-result cache for this run.
-// The cache is consulted only in the streaming path; runs that take
-// the in-memory path (cross-file `requires`, fixpoint groups) skip
-// it for correctness, since a file's diagnostics there may depend on
-// facts emitted from other files. A nil cache is treated as no
-// caching.
+// WithCache enables the persistent parse cache for this run. The
+// streaming path reads and writes each file's results. Runs that take
+// the in-memory path (cross-file `requires`, fixpoint groups) can't
+// reuse results, since a file's diagnostics there may depend on facts
+// emitted from other files, so they read and write each file's compact
+// parse tree instead. A nil cache is treated as no caching.
 func WithCache(c *parsecache.Cache) Option {
 	return func(o *runOpts) { o.cache = c }
 }
@@ -221,6 +250,22 @@ func WithParseTimeout(d time.Duration) Option {
 // Admission is decided in FileInput order for determinism.
 func WithMemoryBudget(bytes int64) Option {
 	return func(o *runOpts) { o.memoryBudget = bytes }
+}
+
+// WithTreeBudget bounds the estimated heap, in bytes, of the parse
+// trees that a cross-file run keeps between passes. A file whose tree
+// doesn't fit keeps a compact encoding of it instead, within half the
+// budget again, and its tree is rebuilt from that for each later pass.
+// Past both, the file is parsed again for each later pass. A file is
+// never skipped, so the budget trades time for memory and never changes
+// the results. Pass 0 to keep every tree. When the option is omitted,
+// DefaultTreeBudget applies. The streaming path keeps no trees and
+// ignores it.
+func WithTreeBudget(bytes int64) Option {
+	return func(o *runOpts) {
+		o.treeBudget = bytes
+		o.treeBudgetSet = true
+	}
 }
 
 // WithMemoryTracker installs a shared budget counter that persists
@@ -287,6 +332,10 @@ func RunGroup(
 	if !o.timeoutSet {
 		o.parseTimeout = DefaultParseTimeout
 	}
+	if !o.treeBudgetSet {
+		o.treeBudget = DefaultTreeBudget
+	}
+	o.defineNames = emitsFacts(groups)
 	if o.parsedBytes == nil {
 		o.parsedBytes = &atomic.Int64{}
 	}
@@ -321,6 +370,18 @@ func canStream(groups []ruleGroup) bool {
 		}
 	}
 	return true
+}
+
+// emitsFacts reports whether any rule in groups emits a fact.
+func emitsFacts(groups []ruleGroup) bool {
+	for _, g := range groups {
+		for _, sr := range g.rules {
+			if len(sr.rule.Emit) > 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // runStreaming processes each file independently across a worker pool
@@ -364,7 +425,7 @@ func runStreaming(
 		return nil, err
 	}
 	// Drain is a no-op for the WASM backend (engines are pooled in
-	// tswasm); kept so a future arena-backed host still has a hook.
+	// treesitter); kept so a future arena-backed host still has a hook.
 	tsutil.DrainArenaPools()
 	return results, nil
 }
@@ -414,8 +475,7 @@ func processFile(
 	if o.stats != nil {
 		o.stats.Walked.Add(1)
 	}
-	filters := prefilter.ForRules(applicable)
-	if !prefilter.MayMatch(src, filters) {
+	if !mayMatch(src, applicable) {
 		if hasPastaIgnore(src) {
 			// Prefilter proves no rule can match, so every ignore is
 			// unused — parse only far enough to locate the directives.
@@ -436,8 +496,15 @@ func processFile(
 		if e, ok := o.cache.Get(key); ok {
 			out.Diagnostics = append(out.Diagnostics, e.Diagnostics...)
 			out.Ops = append(out.Ops, e.Ops...)
+			out.SkipReason = e.SkipReason
 			if o.stats != nil {
 				o.stats.CacheHits.Add(1)
+				if e.SkipReason == skipParseErrors {
+					o.stats.ParseErrors.Add(1)
+				}
+				if e.Degraded {
+					o.stats.ParseDegraded.Add(1)
+				}
 			}
 			o.syncAdmit(index, 0)
 			return nil
@@ -450,7 +517,7 @@ func processFile(
 		}
 		return nil
 	}
-	s, err := newFileState(ctx, f, store, o.parseTimeout)
+	s, err := newFileState(ctx, f, store, o.parseTimeout, o.defineNames)
 	if err != nil {
 		releaseParse(o, int64(len(src)))
 		if errors.Is(err, tsutil.ErrParseTimeout) || errors.Is(err, tsutil.ErrParseResourceLimit) {
@@ -465,10 +532,11 @@ func processFile(
 	defer s.tree.Release()
 	if tsutil.ErrorHeavy(s.root) {
 		releaseParse(o, int64(len(src)))
-		out.SkipReason = "parse errors"
+		out.SkipReason = skipParseErrors
 		if o.stats != nil {
 			o.stats.ParseErrors.Add(1)
 		}
+		o.cache.Put(key, parsecache.Entry{SkipReason: skipParseErrors})
 		return nil
 	}
 	degraded := s.root.HasError()
@@ -484,12 +552,11 @@ func processFile(
 		}
 	}
 	out.Diagnostics = append(out.Diagnostics, unusedIgnoreDiagnostics(s.suppress)...)
-	// Do not cache degraded (ERROR-light) trees — recovery shapes are
-	// grammar-sensitive and older cache entries predate ERROR skips.
-	if o.cache != nil && !degraded {
+	if o.cache != nil {
 		o.cache.Put(key, parsecache.Entry{
 			Diagnostics: append([]effect.Diagnostic(nil), out.Diagnostics...),
 			Ops:         append([]effect.Op(nil), out.Ops...),
+			Degraded:    degraded,
 		})
 	}
 	return nil
@@ -503,7 +570,7 @@ func emitUnusedIgnoresOnly(ctx context.Context, f FileInput, out *Result, o *run
 	if o != nil {
 		parseTimeout = o.parseTimeout
 	}
-	s, err := newFileState(ctx, f, factstore.New(), parseTimeout)
+	s, err := newFileState(ctx, f, factstore.New(), parseTimeout, false)
 	if err != nil {
 		if errors.Is(err, tsutil.ErrParseTimeout) {
 			out.SkipReason = "too complex to analyze"
@@ -516,7 +583,7 @@ func emitUnusedIgnoresOnly(ctx context.Context, f FileInput, out *Result, o *run
 	}
 	defer s.tree.Release()
 	if tsutil.ErrorHeavy(s.root) {
-		out.SkipReason = "parse errors"
+		out.SkipReason = skipParseErrors
 		if o != nil && o.stats != nil {
 			o.stats.ParseErrors.Add(1)
 		}
@@ -588,221 +655,6 @@ func releaseParse(o *runOpts, n int64) {
 	o.parsedBytes.Add(-n)
 }
 
-// runInMemory is the path used when the schedule has cross-file or
-// fixpoint dependencies. Every file's tree is held in memory while the
-// engine runs the rule groups, so a consumer group sees facts emitted
-// by every producer group on every file.
-//
-// Files are parsed in parallel. Rule groups then run one dependency
-// level at a time (see groupLevels): a level's non-fixpoint groups run
-// across files in parallel, and its fixpoint groups iterate over every
-// file in order. Each file's diagnostics and ops are reassembled in
-// schedule order, so the output doesn't depend on goroutine timing.
-func runInMemory(
-	ctx context.Context,
-	files []FileInput,
-	groups []ruleGroup,
-	o *runOpts,
-) ([]Result, error) {
-	store := factstore.New()
-	results := make([]Result, len(files))
-	parseTimeout := time.Duration(0)
-	if o != nil {
-		parseTimeout = o.parseTimeout
-	}
-	workers := workerCount(len(files))
-
-	// parsed[i] is nil when file i needs no rule pass. The deferred
-	// release runs after every parse goroutine has returned.
-	parsed := make([]*fileState, len(files))
-	defer func() {
-		for _, s := range parsed {
-			if s != nil {
-				s.tree.Release()
-			}
-		}
-		tsutil.DrainArenaPools()
-	}()
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(workers)
-	for i := range files {
-		g.Go(func() error {
-			if err := gctx.Err(); err != nil {
-				o.syncAdmit(i, 0)
-				return err
-			}
-			s, err := parseInMemory(gctx, i, files[i], groups, store, &results[i], parseTimeout, o)
-			parsed[i] = s
-			return err
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-	var states []*fileState
-	var stateIdx []int
-	for i, s := range parsed {
-		if s != nil {
-			states = append(states, s)
-			stateIdx = append(stateIdx, i)
-		}
-	}
-
-	// outs[j] holds what each group produced for states[j] until it's
-	// reassembled in schedule order.
-	outs := make([][]groupOutput, len(states))
-	for _, level := range groupLevels(groups) {
-		lg, _ := errgroup.WithContext(ctx)
-		lg.SetLimit(workers)
-		for j, s := range states {
-			lg.Go(func() error {
-				for _, gi := range level {
-					if groups[gi].fixpoint {
-						continue
-					}
-					var r Result
-					if err := runGroupOnFile(groups[gi], *s, store, &r); err != nil {
-						return err
-					}
-					outs[j] = appendGroupOutput(outs[j], gi, r)
-				}
-				return nil
-			})
-		}
-		if err := lg.Wait(); err != nil {
-			return nil, err
-		}
-		for _, gi := range level {
-			if !groups[gi].fixpoint {
-				continue
-			}
-			// Re-run emit-only across all files until the store stops
-			// growing, then do one final collection pass on each file.
-			// Diagnostics and ops aren't collected during the emit loop
-			// to avoid duplicates.
-			for iter := 0; iter < MaxFixpointIterations; iter++ {
-				before := store.Len()
-				for _, s := range states {
-					if err := runGroupOnFile(groups[gi], *s, store, nil); err != nil {
-						return nil, err
-					}
-				}
-				if store.Len() == before {
-					break
-				}
-			}
-			for j, s := range states {
-				var r Result
-				if err := runGroupOnFile(groups[gi], *s, store, &r); err != nil {
-					return nil, err
-				}
-				outs[j] = appendGroupOutput(outs[j], gi, r)
-			}
-		}
-	}
-	for j, s := range states {
-		out := &results[stateIdx[j]]
-		sort.SliceStable(outs[j], func(a, b int) bool { return outs[j][a].group < outs[j][b].group })
-		for _, part := range outs[j] {
-			out.Diagnostics = append(out.Diagnostics, part.diagnostics...)
-			out.Ops = append(out.Ops, part.ops...)
-		}
-		out.Diagnostics = append(out.Diagnostics, unusedIgnoreDiagnostics(s.suppress)...)
-	}
-	return results, nil
-}
-
-// parseInMemory loads and parses one file for runInMemory. It returns
-// nil when the file needs no rule pass: no applicable rules, a
-// prefilter miss, or a skip recorded in out.SkipReason. Every path
-// calls o.syncAdmit exactly once, so a memory budget can't stall the
-// files after this one.
-func parseInMemory(ctx context.Context, index int, f FileInput, groups []ruleGroup, store *factstore.Store, out *Result, parseTimeout time.Duration, o *runOpts) (*fileState, error) {
-	src, err := loadSource(f)
-	if err != nil {
-		o.syncAdmit(index, 0)
-		if errors.Is(err, fs.ErrNotExist) {
-			out.SkipReason = "file not found"
-			return nil, nil
-		}
-		return nil, err
-	}
-	f.Src = src
-	out.Src = src
-	applicable := applicableRules(groups, f.Lang, fileName(f))
-	if len(applicable) == 0 {
-		o.syncAdmit(index, 0)
-		if hasPastaIgnore(src) {
-			return nil, emitUnusedIgnoresOnly(ctx, f, out, o)
-		}
-		return nil, nil
-	}
-	if o != nil && o.stats != nil {
-		o.stats.Walked.Add(1)
-	}
-	if !prefilter.MayMatch(src, prefilter.ForRules(applicable)) {
-		o.syncAdmit(index, 0)
-		if o != nil && o.stats != nil {
-			o.stats.PrefilterSkipped.Add(1)
-		}
-		if hasPastaIgnore(src) {
-			return nil, emitUnusedIgnoresOnly(ctx, f, out, o)
-		}
-		return nil, nil
-	}
-	if !o.syncAdmit(index, int64(len(src))) {
-		out.SkipReason = "memory budget exceeded"
-		if o != nil && o.stats != nil {
-			o.stats.MemorySkipped.Add(1)
-		}
-		return nil, nil
-	}
-	s, err := newFileState(ctx, f, store, parseTimeout)
-	if err != nil {
-		releaseParse(o, int64(len(src)))
-		if errors.Is(err, tsutil.ErrParseTimeout) || errors.Is(err, tsutil.ErrParseResourceLimit) {
-			out.SkipReason = "too complex to analyze"
-			if o != nil && o.stats != nil {
-				o.stats.TimedOut.Add(1)
-			}
-			return nil, nil
-		}
-		return nil, err
-	}
-	if tsutil.ErrorHeavy(s.root) {
-		releaseParse(o, int64(len(src)))
-		out.SkipReason = "parse errors"
-		if o != nil && o.stats != nil {
-			o.stats.ParseErrors.Add(1)
-		}
-		s.tree.Release()
-		return nil, nil
-	}
-	if o != nil && o.stats != nil {
-		if s.root.HasError() {
-			o.stats.ParseDegraded.Add(1)
-		}
-		o.stats.Parsed.Add(1)
-	}
-	return &s, nil
-}
-
-// groupOutput is what one rule group produced for one file.
-type groupOutput struct {
-	group       int
-	diagnostics []effect.Diagnostic
-	ops         []effect.Op
-}
-
-// appendGroupOutput appends r to outs, tagged with group, when r has
-// any diagnostics or ops.
-func appendGroupOutput(outs []groupOutput, group int, r Result) []groupOutput {
-	if len(r.Diagnostics) == 0 && len(r.Ops) == 0 {
-		return outs
-	}
-	return append(outs, groupOutput{group: group, diagnostics: r.Diagnostics, ops: r.Ops})
-}
-
 // workerCount returns the number of goroutines to use for n files.
 func workerCount(n int) int {
 	return max(1, min(runtime.GOMAXPROCS(0), n))
@@ -835,8 +687,8 @@ func fileName(f FileInput) string {
 
 // applicableRules returns the rules from groups that apply to the given
 // language and file path.
-func applicableRules(groups []ruleGroup, l lang.Language, file string) []*dsl.Rule {
-	var out []*dsl.Rule
+func applicableRules(groups []ruleGroup, l lang.Language, file string) []*scheduledRule {
+	var out []*scheduledRule
 	for _, g := range groups {
 		for i := range g.rules {
 			sr := &g.rules[i]
@@ -846,10 +698,21 @@ func applicableRules(groups []ruleGroup, l lang.Language, file string) []*dsl.Ru
 			if !ruleAppliesToFile(&sr.rule, file) {
 				continue
 			}
-			out = append(out, &sr.rule)
+			out = append(out, sr)
 		}
 	}
 	return out
+}
+
+// mayMatch reports whether src passes the prefilter of at least one of
+// rules.
+func mayMatch(src []byte, rules []*scheduledRule) bool {
+	for _, sr := range rules {
+		if sr.filter.Match(src) {
+			return true
+		}
+	}
+	return false
 }
 
 // defineAll records the name of every definition under root in store, so
@@ -874,20 +737,29 @@ func defineAll(store *factstore.Store, root tsutil.Node, definitionTypes []strin
 }
 
 // newFileState parses one file and builds its match environment +
-// suppression map. The caller owns the returned tree and must call
-// Release when done with it.
-func newFileState(ctx context.Context, f FileInput, store *factstore.Store, parseTimeout time.Duration) (fileState, error) {
+// suppression map, recording its definitions in store when defineNames
+// is true. The caller owns the returned tree and must call Release when
+// done with it.
+func newFileState(ctx context.Context, f FileInput, store *factstore.Store, parseTimeout time.Duration, defineNames bool) (fileState, error) {
 	tree, root, err := tsutil.ParseWithOptions(ctx, f.Lang.GetLanguage(), f.Src, f.FileID, tsutil.ParseOptions{
 		Timeout: parseTimeout,
 	})
 	if err != nil {
 		return fileState{}, fmt.Errorf("parse %s: %w", f.FileID, err)
 	}
+	if defineNames {
+		defineAll(store, root, f.Lang.DefinitionTypes)
+	}
+	return treeFileState(f, store, tree, root), nil
+}
+
+// treeFileState builds the match environment and suppression map for
+// f's parse tree.
+func treeFileState(f FileInput, store *factstore.Store, tree *tsutil.Tree, root tsutil.Node) fileState {
 	commentTypes := make(map[string]bool, len(f.Lang.CommentTypes))
 	for _, t := range f.Lang.CommentTypes {
 		commentTypes[t] = true
 	}
-	defineAll(store, root, f.Lang.DefinitionTypes)
 	env := &match.Env{
 		StmtList:     f.Lang.StmtList,
 		Predicates:   match.DefaultRegistry(),
@@ -895,13 +767,11 @@ func newFileState(ctx context.Context, f FileInput, store *factstore.Store, pars
 		CommentTypes: commentTypes,
 		Index:        match.BuildIndex(root),
 	}
-	return fileState{
-		input:    f,
-		tree:     tree,
-		root:     root,
-		env:      env,
-		suppress: parseSuppressions(root, commentTypes),
-	}, nil
+	s := fileState{input: f, tree: tree, root: root, nodes: tree.NodeCount(), env: env}
+	if hasPastaIgnore(f.Src) {
+		s.suppress = parseSuppressions(root, commentTypes)
+	}
+	return s
 }
 
 // runGroupOnFile runs every rule in group that applies to s's language,
@@ -914,6 +784,9 @@ func runGroupOnFile(group ruleGroup, s fileState, store *factstore.Store, collec
 			continue
 		}
 		if !ruleAppliesToFile(&sr.rule, file) {
+			continue
+		}
+		if !sr.filter.Match(s.input.Src) {
 			continue
 		}
 		if err := runRule(&sr, s.env, s.root, store, collect, s.suppress); err != nil {

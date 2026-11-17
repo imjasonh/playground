@@ -1,16 +1,16 @@
 package lang
 
-import "github.com/imjasonh/playground/pasta/internal/tswasm"
+import "github.com/imjasonh/playground/pasta/internal/treesitter"
 
 // Grammars maps grammar names (referenced from language CUE) to a
 // constructor for the WASM tree-sitter language handle. Adding a new
 // alias for a grammar already compiled into ts-core.wasm is a CUE
 // change. Adding a brand-new grammar means rebuilding the WASM module
-// (internal/tswasm/build.sh) and registering it here.
+// (internal/treesitter/build.sh) and registering it here.
 //
-// Only grammars embedded in internal/tswasm/ts-core.wasm.br are
-// available; see that package's build.sh for the pin list.
-var Grammars = map[string]func() *tswasm.Language{
+// Only grammars embedded in internal/treesitter/ts-core.wasm.br are
+// available; see that package's grammars.txt.
+var Grammars = map[string]func() *treesitter.Language{
 	"go":         lang("go"),
 	"python":     lang("python"),
 	"rust":       lang("rust"),
@@ -34,9 +34,9 @@ var Grammars = map[string]func() *tswasm.Language{
 	"hcl":        lang("hcl"),
 }
 
-func lang(grammar string) func() *tswasm.Language {
-	return func() *tswasm.Language {
-		return &tswasm.Language{Grammar: grammar}
+func lang(grammar string) func() *treesitter.Language {
+	return func() *treesitter.Language {
+		return &treesitter.Language{Grammar: grammar}
 	}
 }
 

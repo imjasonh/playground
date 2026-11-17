@@ -80,7 +80,7 @@ jobs:
           for dir in */; do
             d="${dir%/}"
             if [ -f "$d/index.html" ]; then
-              cp -r "$d" "$dest/$d"
+              cp -rL "$d" "$dest/$d"
             fi
           done
 

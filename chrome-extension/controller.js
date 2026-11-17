@@ -6,15 +6,26 @@ import {
   badgeText,
   duplicateTabIds,
 } from "./duplicates.js";
+import { groupingPlan } from "./tab_insights.js";
+import { copyTitle, urlsText } from "./tab_urls.js";
 
 // Chrome 150 added the "tab" context. Older Chrome rejects it, and the
 // toolbar button still closes the same tabs. The selection item is separate.
 // It stays hidden until the highlighted text is base64. Chrome builds the
 // menu from items that already exist, so the content script reports the
-// selection before the right-click.
+// selection before the right-click, and the copy item counts the selected
+// tabs whenever the selection or the focused window changes.
 const MENU_ID = "close-duplicates";
+const COPY_ID = "copy-tab-urls";
 const DECODE_ID = "decode-base64";
 const HIDDEN_DECODE_TITLE = "Decoded";
+// The left click closes duplicates, so the side panel opens from the toolbar
+// button's right-click menu instead of a popup.
+const INSIGHTS_ID = "tab-insights";
+// The badge is the duplicate count. A tab insights plan the panel hasn't
+// shown turns it green, and shows a dot when there are no duplicates.
+const READY_BADGE = "•";
+const READY_BADGE_COLOR = "#188038";
 
 function errorText(error) {
   if (error && typeof error.message === "string") {
@@ -35,16 +46,14 @@ function frameKey(sender) {
   return `${tabId}:${frameId}`;
 }
 
-function createMenuSync(api) {
+function createTabMenuSync(api, id) {
   let menuUnsupported = false;
-  return async function syncMenu(count) {
+  return async function syncMenu(title, visible) {
     if (!api.contextMenus || menuUnsupported) {
       return;
     }
-    const title = actionTitle(count);
-    const visible = count > 0;
     try {
-      await api.contextMenus.update(MENU_ID, { title, visible });
+      await api.contextMenus.update(id, { title, visible });
       return;
     } catch (error) {
       if (!errorText(error).includes("Cannot find menu item")) {
@@ -54,7 +63,7 @@ function createMenuSync(api) {
     }
     try {
       await api.contextMenus.create({
-        id: MENU_ID,
+        id,
         title,
         contexts: ["tab"],
         visible,
@@ -150,6 +159,35 @@ function createDecodeSync(api) {
   return { setDecodeMenu, ensureDecodeMenu };
 }
 
+async function ensureInsightsMenu(api) {
+  if (!api.contextMenus || !api.sidePanel) {
+    return;
+  }
+  try {
+    await api.contextMenus.create({
+      id: INSIGHTS_ID,
+      title: "Tab insights",
+      contexts: ["action"],
+    });
+  } catch (error) {
+    if (!errorText(error).includes("duplicate id")) {
+      console.error(error);
+    }
+  }
+}
+
+function openInsights(api, tab) {
+  if (!api.sidePanel || !tab || typeof tab.windowId !== "number") {
+    return Promise.resolve();
+  }
+  return api.sidePanel.open({ windowId: tab.windowId }).then(
+    () => {},
+    (error) => {
+      console.error(error);
+    },
+  );
+}
+
 async function copyText(api, text) {
   const offscreen = api.offscreen;
   if (!offscreen || typeof offscreen.createDocument !== "function") {
@@ -164,7 +202,7 @@ async function copyText(api, text) {
       await offscreen.createDocument({
         url: "offscreen.html",
         reasons: ["CLIPBOARD"],
-        justification: "Copy decoded base64 text to the clipboard.",
+        justification: "Copy decoded base64 text and tab URLs to the clipboard.",
       });
     } catch (error) {
       const message = errorText(error);
@@ -180,19 +218,52 @@ async function copyText(api, text) {
   });
 }
 
-async function showCount(api, count, syncMenu) {
-  await api.action.setBadgeBackgroundColor({ color: BADGE_COLOR });
+// savedPlan reads the last tab insights analysis. ready means the panel
+// hasn't shown it yet and it would still group at least one open tab.
+async function savedPlan(api, tabs) {
+  if (!api.storage) {
+    return { likely: 0, ready: false };
+  }
+  const { insights, seen } = await api.storage.local.get(["insights", "seen"]);
+  if (!insights) {
+    return { likely: 0, ready: false };
+  }
+  const open = new Set(tabs.map((tab) => tab.id));
+  const picks = insights.insights.close.map((pick) => pick.entry);
+  const likely = picks.filter((entry) => open.has(entry.id)).length;
+  const unseen = insights.at !== seen;
+  const ready = unseen && groupingPlan(insights.insights.topics, picks, tabs).length > 0;
+  return { likely, ready };
+}
+
+async function showCount(api, tabs, syncMenu) {
+  const count = duplicateTabIds(tabs).length;
+  const { likely, ready } = await savedPlan(api, tabs);
+  const parts = [actionTitle(count)];
+  if (ready) {
+    parts.push("grouping ready");
+  }
+  if (likely > 0) {
+    parts.push(`${likely} likely close`);
+  }
+  let text = badgeText(count);
+  if (ready && text === "") {
+    text = READY_BADGE;
+  }
+  await api.action.setBadgeBackgroundColor({ color: ready ? READY_BADGE_COLOR : BADGE_COLOR });
   await api.action.setBadgeTextColor({ color: BADGE_TEXT_COLOR });
-  await api.action.setBadgeText({ text: badgeText(count) });
-  await api.action.setTitle({ title: actionTitle(count) });
-  await syncMenu(count);
+  await api.action.setBadgeText({ text });
+  await api.action.setTitle({ title: parts.join(" · ") });
+  await syncMenu(actionTitle(count), count > 0);
 }
 
 export function start(api) {
-  const syncMenu = createMenuSync(api);
+  const syncMenu = createTabMenuSync(api, MENU_ID);
+  const syncCopyMenu = createTabMenuSync(api, COPY_ID);
   const decodeMenu = createDecodeSync(api);
   let tail = Promise.resolve();
   let selectionTail = Promise.resolve();
+  let copyTail = Promise.resolve();
   let owner = null;
   let pending = null;
 
@@ -223,7 +294,7 @@ export function start(api) {
   function refresh() {
     return enqueue(async () => {
       const tabs = await api.tabs.query({});
-      await showCount(api, duplicateTabIds(tabs).length, syncMenu);
+      await showCount(api, tabs, syncMenu);
     });
   }
 
@@ -235,7 +306,7 @@ export function start(api) {
         await api.tabs.remove(ids);
       }
       const after = await api.tabs.query({});
-      await showCount(api, duplicateTabIds(after).length, syncMenu);
+      await showCount(api, after, syncMenu);
       return ids;
     });
   }
@@ -279,6 +350,39 @@ export function start(api) {
     );
   }
 
+  function refreshCopyMenu(windowQuery) {
+    const run = copyTail.then(async () => {
+      const tabs = await api.tabs.query({ highlighted: true, ...windowQuery });
+      await syncCopyMenu(copyTitle(tabs.length), true);
+    });
+    copyTail = run.then(
+      () => {},
+      (error) => {
+        console.error(error);
+      },
+    );
+    return copyTail;
+  }
+
+  async function copyUrls(tab) {
+    if (!tab) {
+      return;
+    }
+    let highlighted = [];
+    if (tab.highlighted === true) {
+      highlighted = await api.tabs.query({ highlighted: true, windowId: tab.windowId });
+    }
+    const text = urlsText(tab, highlighted);
+    if (text === "") {
+      return;
+    }
+    try {
+      await copyText(api, text);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
   function onTabUpdated(tabId, changeInfo) {
     if (typeof tabId === "number" && (changeInfo.url || changeInfo.status === "complete")) {
       return refresh();
@@ -294,7 +398,22 @@ export function start(api) {
   api.tabs.onAttached.addListener(() => refresh());
   api.tabs.onDetached.addListener(() => refresh());
   api.tabs.onUpdated.addListener(onTabUpdated);
+  api.tabs.onHighlighted.addListener(({ windowId }) => refreshCopyMenu({ windowId }));
+  api.windows.onFocusChanged.addListener((windowId) => {
+    if (windowId === api.windows.WINDOW_ID_NONE) {
+      return Promise.resolve();
+    }
+    return refreshCopyMenu({ windowId });
+  });
   api.action.onClicked.addListener(() => closeDuplicates());
+  if (api.storage) {
+    api.storage.onChanged.addListener((changes, area) => {
+      if (area === "local" && (changes.insights || changes.seen)) {
+        return refresh();
+      }
+      return Promise.resolve();
+    });
+  }
   if (api.runtime.onMessage) {
     api.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (!message || message.type !== "selection" || message.target) {
@@ -309,15 +428,25 @@ export function start(api) {
     });
   }
   if (api.contextMenus) {
-    api.contextMenus.onClicked.addListener((info) => {
+    api.contextMenus.onClicked.addListener((info, tab) => {
       if (info && info.menuItemId === MENU_ID) {
         return closeDuplicates();
       }
       if (info && info.menuItemId === DECODE_ID) {
         return copyDecoded(info);
       }
+      if (info && info.menuItemId === COPY_ID) {
+        return copyUrls(tab);
+      }
+      if (info && info.menuItemId === INSIGHTS_ID) {
+        return openInsights(api, tab);
+      }
       return Promise.resolve();
     });
   }
-  return decodeMenu.ensureDecodeMenu().then(() => refresh());
+  return Promise.all([
+    decodeMenu.ensureDecodeMenu(),
+    ensureInsightsMenu(api),
+    refreshCopyMenu({ lastFocusedWindow: true }),
+  ]).then(() => refresh());
 }

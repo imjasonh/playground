@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "blob",
+    srcs = ["blob.go"],
+    importpath = "github.com/imjasonh/playground/ci-substrate/internal/blob",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/digest",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+    ],
+)
+
+go_test(
+    name = "blob_test",
+    srcs = ["blob_test.go"],
+    embed = [":blob"],
+    deps = [
+        "//internal/digest",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+    ],
+)

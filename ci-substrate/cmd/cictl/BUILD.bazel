@@ -1,0 +1,28 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "cictl_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/imjasonh/playground/ci-substrate/cmd/cictl",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//api/worker/v1:worker",
+        "//internal/cache",
+        "//internal/digest",
+        "//internal/remote",
+        "//internal/tenant",
+        "//internal/tree",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_binary(
+    name = "cictl",
+    embed = [":cictl_lib"],
+    visibility = ["//visibility:public"],
+)

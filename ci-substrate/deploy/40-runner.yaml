@@ -1,0 +1,146 @@
+# Runners for tenants A and B outside Substrate: a Deployment of bots for
+# each tenant that lease that tenant's actions from the scheduler in cas,
+# build each exec root from the cascache on their own node, run the command,
+# and upload the outputs. Under Substrate the same binary runs inside a gVisor
+# actor (see substrate/), and the pool there replaces a Deployment's replica
+# count.
+#
+# The container is privileged so the runner can open /dev/fuse and serve each
+# exec root as a lazy FUSE mount: the device cgroup of an unprivileged
+# container denies the device even when it is mounted in, and CAP_SYS_ADMIN
+# alone does not open it. Without that, the runner falls back to copying
+# inputs. That privilege is why this runner is not the isolation boundary:
+# Substrate's sandbox is.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: runner-token-tenant-a
+  namespace: ci-substrate
+type: Opaque
+stringData:
+  token: tok-a
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runner-tenant-a
+  namespace: ci-substrate
+  labels: {app: runner, tenant: tenant-a}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: runner, tenant: tenant-a}
+  template:
+    metadata:
+      labels: {app: runner, tenant: tenant-a}
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: runner
+          image: ko://github.com/imjasonh/playground/ci-substrate/cmd/runner # pasta:ignore unpinned_container_image
+          envFrom:
+            # Collector settings; see 05-telemetry.yaml.
+            - configMapRef: {name: otel, optional: true}
+          args:
+            - -origin-addr=cas.ci-substrate.svc.cluster.local:8980
+            - -cache-addr=cascache.ci-substrate.svc.cluster.local:9092
+            - -instances=tenant-a
+            - -token=$(TENANT_TOKEN)
+            - -work-dir=/work
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef: {fieldPath: metadata.name}
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef: {fieldPath: spec.nodeName}
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.instance.id=$(POD_NAME),k8s.pod.name=$(POD_NAME),k8s.node.name=$(NODE_NAME),k8s.namespace.name=ci-substrate
+            - name: TENANT_TOKEN
+              valueFrom:
+                secretKeyRef: {name: runner-token-tenant-a, key: token}
+          securityContext:
+            privileged: true
+            runAsUser: 0
+            readOnlyRootFilesystem: true
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 2Gi}
+          volumeMounts:
+            - {name: work, mountPath: /work}
+            - {name: tmp, mountPath: /tmp}
+            - {name: fuse, mountPath: /dev/fuse}
+      volumes:
+        - name: work
+          emptyDir: {sizeLimit: 10Gi}
+        - name: tmp
+          emptyDir: {}
+        - name: fuse
+          hostPath: {path: /dev/fuse, type: CharDevice}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: runner-token-tenant-b
+  namespace: ci-substrate
+type: Opaque
+stringData:
+  token: tok-b
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: runner-tenant-b
+  namespace: ci-substrate
+  labels: {app: runner, tenant: tenant-b}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: runner, tenant: tenant-b}
+  template:
+    metadata:
+      labels: {app: runner, tenant: tenant-b}
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: runner
+          image: ko://github.com/imjasonh/playground/ci-substrate/cmd/runner # pasta:ignore unpinned_container_image
+          envFrom:
+            # Collector settings; see 05-telemetry.yaml.
+            - configMapRef: {name: otel, optional: true}
+          args:
+            - -origin-addr=cas.ci-substrate.svc.cluster.local:8980
+            - -cache-addr=cascache.ci-substrate.svc.cluster.local:9092
+            - -instances=tenant-b
+            - -token=$(TENANT_TOKEN)
+            - -work-dir=/work
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef: {fieldPath: metadata.name}
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef: {fieldPath: spec.nodeName}
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.instance.id=$(POD_NAME),k8s.pod.name=$(POD_NAME),k8s.node.name=$(NODE_NAME),k8s.namespace.name=ci-substrate
+            - name: TENANT_TOKEN
+              valueFrom:
+                secretKeyRef: {name: runner-token-tenant-b, key: token}
+          securityContext:
+            privileged: true
+            runAsUser: 0
+            readOnlyRootFilesystem: true
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 2Gi}
+          volumeMounts:
+            - {name: work, mountPath: /work}
+            - {name: tmp, mountPath: /tmp}
+            - {name: fuse, mountPath: /dev/fuse}
+      volumes:
+        - name: work
+          emptyDir: {sizeLimit: 10Gi}
+        - name: tmp
+          emptyDir: {}
+        - name: fuse
+          hostPath: {path: /dev/fuse, type: CharDevice}

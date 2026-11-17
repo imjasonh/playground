@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { hexToBytes, concatBytes, encodeUtf8 } from "../src/hex.js";
 import { computeReachability, defaultRoots } from "../src/reachability.js";
-import { rootTreeOf, searchPaths, walkTree } from "../src/treeWalk.js";
+import { pathIndex, rootTreeOf, searchPaths, walkTree } from "../src/treeWalk.js";
 
 const oid = (c) => c.repeat(40);
 
@@ -94,4 +94,14 @@ test("searchPaths supports substring and glob queries", () => {
     searchPaths(entries, "*.rs").map((e) => e.path),
     ["src/main.rs", "src/lib.rs"],
   );
+});
+
+test("pathIndex names trees and blobs by their path from the root", () => {
+  const { contentByOid } = fixture();
+  const paths = pathIndex(TREE_ROOT, contentByOid);
+  assert.equal(paths.get(TREE_ROOT), "");
+  assert.equal(paths.get(BLOB_README), "README.md");
+  assert.equal(paths.get(TREE_SRC), "src");
+  assert.equal(paths.get(BLOB_MAIN), "src/main.rs");
+  assert.equal(paths.has(ORPHAN), false);
 });

@@ -5,7 +5,8 @@
 package pasta_project
 
 // Extra ./... skip dirs on top of pasta defaults (vendor, node_modules,
-// testdata, target, …).
+// testdata, target, …). The vendor default covers
+// pasta/internal/treesitter/csrc/vendor.
 skip: [
 	"bubble-man-rom", // generated / binary-ish JS
 	"cue.mod",
@@ -29,9 +30,14 @@ skip: [
 // check. js_no_eq_null is the ESLint ban on that idiom.
 //
 // jest, Playwright, and other tool configs are required to default-export.
+//
+// protoc-gen-go and protoc-gen-go-grpc write *.pb.go. Those files are
+// regenerated with buf, so style rules on them are noise.
 disabled_rules: ["js_no_eq_null"]
 disabled_on: {
 	yaml_truthy: ["**/project.yml"]
+	inline_define: ["**/*.pb.go"]
+	go_context_param: ["**/*.pb.go"]
 	js_preserve_caught_error: ["**/.cursor/skills/**"]
 	js_no_constant_condition_while: ["**/.cursor/skills/**"]
 	js_no_default_export: [

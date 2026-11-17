@@ -78,9 +78,12 @@ for module in "${modules[@]}"; do
     # -v so CI logs show each test (including Docker e2e PASS vs SKIP).
     # node-image Docker-socket e2e builds/runs several images; allow headroom.
     # pasta e2e shallow-clones real repos and cold-parses them; allow headroom.
-    # The kind end-to-end tests of git-k8s, kube, and sshapp run in parallel
-    # steps, in test-kind-e2e.sh.
-    if [ "$module" = "node-image" ] || [ "$module" = "pasta" ]; then
+    # The kind end-to-end tests of git-k8s, kube, sshapp, and ci-substrate run
+    # in parallel steps, in test-kind-e2e.sh.
+    if [ "$module" = "pasta" ]; then
+      # CGO_ENABLED=0 builds parse every grammar with the wasm backend.
+      go test -race -v -timeout 30m ./... && CGO_ENABLED=0 go test -v ./internal/treesitter/
+    elif [ "$module" = "node-image" ]; then
       go test -race -v -timeout 30m ./...
     elif [ "$module" = "kube" ]; then
       # -count=1: the end-to-end tests run examples with go run, and the test

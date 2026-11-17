@@ -35,3 +35,14 @@ test("renderSegmentedText colors insert bytes white and copy bytes by index", ()
   assert.match(html, /seg-copy seg-copy-0/);
   assert.match(html, /Z/);
 });
+
+test("segment legend copy chips are buttons that carry the base byte range", () => {
+  const base = "abc";
+  const parsed = parseDelta(buildAppendDelta(base, "Z"));
+  const oid = "c".repeat(40);
+  const html = renderSegmentedText(encodeUtf8("abcZ"), buildResolvedSegments(parsed, oid));
+  assert.match(
+    html,
+    new RegExp(`<button type="button" class="hex-legend-chip seg-copy-0"[^>]*data-copy-start="0" data-copy-end="3" data-base-oid="${oid}"`),
+  );
+});

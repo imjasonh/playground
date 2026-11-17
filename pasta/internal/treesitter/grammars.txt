@@ -1,0 +1,29 @@
+# Grammars that build.sh compiles into ts-core.wasm. Keep in sync with
+# internal/lang/grammars.go.
+#
+# A ref of go.mod compiles the grammar's Go module at the version go.mod
+# requires, which is also what the cgo backend links. Any other ref is a git
+# tag, for grammars without a usable Go module.
+#
+# id          repository                             source          ref
+go            tree-sitter/tree-sitter-go             src             go.mod
+python        tree-sitter/tree-sitter-python         src             go.mod
+rust          tree-sitter/tree-sitter-rust           src             go.mod
+javascript    tree-sitter/tree-sitter-javascript     src             go.mod
+typescript    tree-sitter/tree-sitter-typescript     typescript/src  go.mod
+tsx           tree-sitter/tree-sitter-typescript     tsx/src         go.mod
+yaml          tree-sitter-grammars/tree-sitter-yaml  src             go.mod
+bash          tree-sitter/tree-sitter-bash           src             go.mod
+json          tree-sitter/tree-sitter-json           src             go.mod
+c             tree-sitter/tree-sitter-c              src             go.mod
+cpp           tree-sitter/tree-sitter-cpp            src             go.mod
+css           tree-sitter/tree-sitter-css            src             go.mod
+dockerfile    camdencheek/tree-sitter-dockerfile     src             v0.2.0
+html          tree-sitter/tree-sitter-html           src             go.mod
+java          tree-sitter/tree-sitter-java           src             go.mod
+php           tree-sitter/tree-sitter-php            php/src         go.mod
+ruby          tree-sitter/tree-sitter-ruby           src             go.mod
+sql           DerekStride/tree-sitter-sql            src             v0.3.11
+swift         alex-pinkus/tree-sitter-swift          src             go.mod
+toml          tree-sitter-grammars/tree-sitter-toml  src             go.mod
+hcl           tree-sitter-grammars/tree-sitter-hcl   src             go.mod

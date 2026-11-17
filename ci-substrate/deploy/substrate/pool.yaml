@@ -1,0 +1,123 @@
+# The actor pool for tenant-a. It runs in Substrate's system namespace as the
+# ate-client ServiceAccount, which Substrate's API trusts: the pod gets a
+# ServiceAccount token for the API's audience and the servicedns trust bundle
+# that signs the API's certificate. It reads tenant-a's queue from cas with
+# tenant-a's token, and creates, resumes, suspends, and deletes actors in the
+# tenant-a atespace from the ci-runner template, giving each actor the egress
+# policy in egress-cas.yaml before it first resumes. The ConfigMap holds
+# that file:
+#
+#   kubectl -n ate-system create configmap ci-substrate-pool-tenant-a \
+#     --from-file=egress-policy.yaml=egress-cas.yaml
+#   ko apply -f pool.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ci-substrate-pool-tenant-a
+  namespace: ate-system
+type: Opaque
+stringData:
+  token: tok-a
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ci-substrate-pool-tenant-a
+  namespace: ate-system
+  labels:
+    app: ci-substrate-pool
+    tenant: tenant-a
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ci-substrate-pool
+      tenant: tenant-a
+  template:
+    metadata:
+      labels:
+        app: ci-substrate-pool
+        tenant: tenant-a
+    spec:
+      serviceAccountName: ate-client
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pool
+          image: ko://github.com/imjasonh/playground/ci-substrate/cmd/pool # pasta:ignore unpinned_container_image
+          env:
+            - name: ATESPACE
+              value: tenant-a
+            - name: TEMPLATE
+              value: ci-runner
+            - name: PREFIX
+              value: ci-runner-
+            - name: EGRESS_POLICY_FILE
+              value: /etc/ci-substrate/egress-policy.yaml
+            - name: CAS_ADDR
+              value: cas.ci-substrate.svc.cluster.local:8980
+            - name: INSTANCES
+              value: tenant-a
+            - name: WARM
+              value: "1"
+            - name: MAX
+              value: "4"
+            - name: IDLE_AFTER
+              value: 2m
+            - name: TENANT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: ci-substrate-pool-tenant-a
+                  key: token
+            # The otel ConfigMap is in the ci-substrate namespace, so the
+            # collector settings are repeated here.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.ci-substrate.svc.cluster.local:4317
+            - name: OTEL_METRIC_EXPORT_INTERVAL
+              value: "10000"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef: {fieldPath: metadata.name}
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef: {fieldPath: spec.nodeName}
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.instance.id=$(POD_NAME),k8s.pod.name=$(POD_NAME),k8s.node.name=$(NODE_NAME),k8s.namespace.name=ate-system,ci_substrate.atespace=tenant-a
+          volumeMounts:
+            - name: ate
+              mountPath: /run/ate
+              readOnly: true
+            - name: config
+              mountPath: /etc/ci-substrate
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+      volumes:
+        - name: config
+          configMap:
+            name: ci-substrate-pool-tenant-a
+        - name: ate
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: api.ate-system.svc
+                  expirationSeconds: 3600
+              - clusterTrustBundle:
+                  signerName: servicedns.podcert.ate.dev/identity
+                  labelSelector:
+                    matchLabels:
+                      podcert.ate.dev/canarying: live
+                  path: trust-bundle.pem

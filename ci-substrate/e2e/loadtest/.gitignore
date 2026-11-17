@@ -1,0 +1,4 @@
+/bazel-*
+/salt.txt
+/input*.txt
+MODULE.bazel.lock

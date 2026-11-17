@@ -15,12 +15,13 @@ package lang
 import (
 	"fmt"
 	"io/fs"
+	"slices"
 	"strings"
 
 	"github.com/imjasonh/playground/pasta/internal/dsl"
 	"github.com/imjasonh/playground/pasta/internal/loader"
+	"github.com/imjasonh/playground/pasta/internal/treesitter"
 	"github.com/imjasonh/playground/pasta/internal/tsutil"
-	"github.com/imjasonh/playground/pasta/internal/tswasm"
 )
 
 // Language is the runtime view of a registered language.
@@ -32,7 +33,7 @@ type Language struct {
 	// DefinitionTypes are the node types of named function and method
 	// definitions, whose `name` field holds the defined identifier.
 	DefinitionTypes []string
-	GetLanguage     func() *tswasm.Language
+	GetLanguage     func() *treesitter.Language
 }
 
 // All is the live registry, populated from the embedded github.com/imjasonh/pasta module.
@@ -125,17 +126,13 @@ func Register(d dsl.LanguageDecl) error {
 // matching: every named child of the container, with comments filtered
 // out.
 func (l Language) StmtList(container tsutil.Node) []tsutil.Node {
-	skip := make(map[string]bool, len(l.CommentTypes))
-	for _, t := range l.CommentTypes {
-		skip[t] = true
-	}
-	all := container.NamedChildren()
-	out := make([]tsutil.Node, 0, len(all))
-	for _, n := range all {
-		if skip[n.Type()] {
+	kids := container.N.NamedChildren()
+	out := make([]tsutil.Node, 0, len(kids))
+	for _, n := range kids {
+		if slices.Contains(l.CommentTypes, n.Type()) {
 			continue
 		}
-		out = append(out, n)
+		out = append(out, tsutil.Node{N: n, Src: container.Src, Lang: container.Lang, FileID: container.FileID})
 	}
 	return out
 }

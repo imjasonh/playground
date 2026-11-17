@@ -925,7 +925,7 @@ fn second_player_nudge_opposing(game: &mut Game) {
             ranked.push((id, from, best, best_score, name));
         }
     }
-    ranked.sort_by(|a, b| b.3.cmp(&a.3));
+    ranked.sort_by_key(|a| std::cmp::Reverse(a.3));
     let mut moved = 0usize;
     for (id, from, best, _, name) in ranked {
         if moved >= budget {

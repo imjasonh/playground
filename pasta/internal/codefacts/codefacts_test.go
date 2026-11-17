@@ -3,6 +3,8 @@ package codefacts
 import (
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -304,6 +306,119 @@ func TestTypeOnlyImportNotUnused(t *testing.T) {
 		if r["name"] == "context" {
 			t.Error("context used as a type was wrongly flagged unused")
 		}
+	}
+}
+
+func TestBuildMergesFilesInWalkOrder(t *testing.T) {
+	files := map[string]string{
+		"app/main.go":   "package app\n\nfunc main() { a() }\n",
+		"app/a.go":      "package app\n\nfunc a() { b() }\n",
+		"app/b.go":      "package app\n\nfunc b() {}\n",
+		"app/orphan.go": "package app\n\nfunc orphan() { leaf() }\n",
+		"app/z.go":      "package app\n\nfunc leaf() {}\n",
+	}
+	for i := range 20 {
+		files[filepath.Join("pad", string(rune('a'+i))+".go")] = "package pad\n\nfunc main() { pad() }\n\nfunc pad() {}\n"
+	}
+	dir := writeTree(t, files)
+	idx := buildT(t, dir, DefaultBuildOptions())
+
+	if got, want := len(idx.defsByID), idx.nextID; got != want {
+		t.Fatalf("defsByID has %d entries, nextID = %d", got, want)
+	}
+	for id, d := range idx.defsByID {
+		if d.ID != id {
+			t.Errorf("defsByID[%d] holds def %d (%s)", id, d.ID, d.Name)
+		}
+	}
+	// IDs follow walk order: app/ sorts before pad/, and a.go before b.go.
+	if a, b := idx.defs["a"][0].ID, idx.defs["b"][0].ID; a >= b {
+		t.Errorf("a has ID %d, b has ID %d; want walk order", a, b)
+	}
+
+	// Reachability crosses files only when caller IDs survive the merge.
+	dead := map[string]bool{}
+	for _, d := range DeadCode(idx) {
+		dead[d.Name] = true
+	}
+	for _, name := range []string{"a", "b", "pad"} {
+		if dead[name] {
+			t.Errorf("%s is reachable from main but reported dead", name)
+		}
+	}
+	for _, name := range []string{"orphan", "leaf"} {
+		if !dead[name] {
+			t.Errorf("%s is unreachable but not reported dead", name)
+		}
+	}
+	if got := len(idx.calls["pad"]); got != 20 {
+		t.Errorf("%d calls to pad, want 20", got)
+	}
+}
+
+func TestMergeChunksMatchesMergeFiles(t *testing.T) {
+	files := map[string]string{
+		"app/app.go":    goFixture,
+		"app/main.go":   "package app\n\nfunc main() { a(1); mkThing() }\n",
+		"app/a.go":      "package app\n\nfunc a(n int) { b(n) }\n",
+		"app/b.go":      "package app\n\nfunc b(n int) {\n\tif false {\n\t\tleaf()\n\t}\n}\n",
+		"app/orphan.go": "package app\n\nfunc orphan() { leaf() } // pasta:ignore unused\n",
+		"app/z.go":      "package app\n\nfunc leaf() {}\n",
+		"lib/lib.js":    "function helper(x) { return x }\nhelper(1)\nhelper(1)\n",
+	}
+	dir := writeTree(t, files)
+	var cands []candidate
+	for rel := range files {
+		p := filepath.Join(dir, rel)
+		cands = appendCandidate(cands, p, dir, nil, DefaultBuildOptions())
+	}
+	sort.Slice(cands, func(i, j int) bool { return cands[i].rel < cands[j].rel })
+
+	build := func(chunk int) *Index {
+		idx := newIndex()
+		for i := 0; i < len(cands); i += chunk {
+			c := newIndex()
+			for _, cand := range cands[i:min(i+chunk, len(cands))] {
+				c.merge(indexFile(t.Context(), cand, DefaultBuildOptions()))
+			}
+			idx.merge(c)
+		}
+		return idx
+	}
+	want := build(1)
+	for _, chunk := range []int{2, 3, len(cands)} {
+		got := build(chunk)
+		if w, g := Report(want), Report(got); !reflect.DeepEqual(w, g) {
+			t.Errorf("chunk %d: Report = %v, want %v", chunk, g, w)
+		}
+		if w, g := DeadCode(want), DeadCode(got); !reflect.DeepEqual(w, g) {
+			t.Errorf("chunk %d: DeadCode = %v, want %v", chunk, g, w)
+		}
+	}
+}
+
+func TestBuildCountsFileOnceUnderRootThatAcceptsIt(t *testing.T) {
+	// Under dir the file is in tests/, so it's a test; under tests/app it isn't.
+	dir := writeTree(t, map[string]string{"tests/app/app.go": goFixture})
+	opts := DefaultBuildOptions()
+	opts.IncludeTests = false
+	idx, err := Build(t.Context(), []string{dir, filepath.Join(dir, "tests", "app")}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if idx.files != 1 || len(idx.defs["mkThing"]) != 1 {
+		t.Errorf("files = %d, mkThing defs = %d; want 1 and 1", idx.files, len(idx.defs["mkThing"]))
+	}
+}
+
+func TestBuildCountsFileOnceAcrossRoots(t *testing.T) {
+	dir := writeTree(t, map[string]string{"app/app.go": goFixture})
+	idx, err := Build(t.Context(), []string{dir, filepath.Join(dir, "app")}, DefaultBuildOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if idx.files != 1 || len(idx.defs["mkThing"]) != 1 {
+		t.Errorf("files = %d, mkThing defs = %d; want 1 and 1", idx.files, len(idx.defs["mkThing"]))
 	}
 }
 

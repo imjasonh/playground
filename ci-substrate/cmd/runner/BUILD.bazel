@@ -1,0 +1,30 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+go_library(
+    name = "runner_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/imjasonh/playground/ci-substrate/cmd/runner",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//api/worker/v1:worker",
+        "//internal/bot",
+        "//internal/remote",
+        "//internal/telemetry",
+        "@com_github_chainguard_dev_clog//gcp/init",
+        "@io_opentelemetry_go_otel//semconv/v1.43.0:v1_43_0",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
+    ],
+)
+
+go_binary(
+    name = "runner",
+    embed = [":runner_lib"],
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "runner_test",
+    srcs = ["main_test.go"],
+    embed = [":runner_lib"],
+)

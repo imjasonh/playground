@@ -31,19 +31,17 @@ function readOffsetVarint(bytes, start) {
 
 /**
  * Return byte regions covering one pack entry: object header, base oid or ofs
- * varint, and the zlib-compressed payload.
+ * varint, and the zlib-compressed payload. `sliceBytes` holds the entry's own
+ * bytes, starting at `entry.offset`, and the returned regions are
+ * slice-relative (0-based) so they color the hex view directly.
  */
-export function annotatePackEntry(packBytes, entry) {
-  const start = entry.offset;
-  const end = start + entry.packedSize;
+export function annotatePackEntrySlice(sliceBytes, entry) {
   const regions = [];
-
-  let at = start;
-  const headerStart = at;
-  const header = readEntryHeader(packBytes, at);
+  let at = 0;
+  const header = readEntryHeader(sliceBytes, at);
   at = header.at;
   regions.push({
-    start: headerStart,
+    start: 0,
     end: at,
     role: "pack-header",
     label: `object header · ${entry.typeName} · inflated ${header.size} B`,
@@ -52,7 +50,7 @@ export function annotatePackEntry(packBytes, entry) {
   if (entry.type === OBJ_REF_DELTA) {
     const oidStart = at;
     at += 20;
-    const baseOid = bytesToHex(packBytes.subarray(oidStart, at));
+    const baseOid = bytesToHex(sliceBytes.subarray(oidStart, at));
     regions.push({
       start: oidStart,
       end: at,
@@ -62,7 +60,7 @@ export function annotatePackEntry(packBytes, entry) {
     });
   } else if (entry.type === OBJ_OFS_DELTA) {
     const ofsStart = at;
-    const ofs = readOffsetVarint(packBytes, at);
+    const ofs = readOffsetVarint(sliceBytes, at);
     at = ofs.at;
     regions.push({
       start: ofsStart,
@@ -74,8 +72,8 @@ export function annotatePackEntry(packBytes, entry) {
     });
   }
 
-  const zlibStart = entry.dataOffset;
-  const zlibEnd = entry.dataOffset + entry.compressedSize;
+  const zlibStart = entry.dataOffset - entry.offset;
+  const zlibEnd = zlibStart + entry.compressedSize;
   regions.push({
     start: zlibStart,
     end: zlibEnd,
@@ -83,10 +81,5 @@ export function annotatePackEntry(packBytes, entry) {
     label: `zlib ${zlibEnd - zlibStart} B compressed`,
   });
 
-  return {
-    start,
-    end,
-    regions,
-    bytes: packBytes.subarray(start, end),
-  };
+  return { regions, bytes: sliceBytes.subarray(0, entry.packedSize) };
 }

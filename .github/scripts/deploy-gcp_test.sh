@@ -130,7 +130,21 @@ if [ "\$2" = "plan" ]; then
   echo 'data.google_iam_workload_identity_pool.github[0]: Reading...'
   echo 'data.google_iam_workload_identity_pool.github[0]: Read complete after 0s [id=pool]'
   echo
-  echo "Plan: 0 to add, 0 to change, 0 to destroy."
+  echo '  # google_storage_bucket.data will be created'
+  echo "Plan: 1 to add, 1 to change, 1 to destroy."
+fi
+if [ "\$2" = "show" ]; then
+  cat <<'JSON'
+{"resource_changes": [
+  {"address": "data.google_compute_zones.available", "change": {"actions": ["read"]}},
+  {"address": "google_cloud_run_v2_service.app", "change": {"actions": ["update"]}},
+  {"address": "google_project_service.run", "change": {"actions": ["no-op"]}},
+  {"address": "google_service_account.old", "change": {"actions": ["delete"]}},
+  {"address": "google_storage_bucket.data", "change": {"actions": ["create"]}},
+  {"address": "google_storage_bucket.logs", "change": {"actions": ["delete", "create"]}},
+  {"address": "google_storage_bucket.logs", "deposed": "abc", "change": {"actions": ["delete"]}}
+]}
+JSON
 fi
 EOF
 cat >"$tmp/bin/go" <<'EOF'
@@ -288,15 +302,40 @@ plan_out=$(
     bash "$deploy" --plan example-app
 )
 plan_calls=$(cat "$log")
-assert_contains "$plan_calls" "tofu -chdir=${tmp}/example-app/terraform plan -input=false -no-color -lock=false -var project_id=${project}" "tofu plan"
-assert_contains "$plan_out" "Plan: 0 to add, 0 to change, 0 to destroy." "prints the plan"
+assert_contains "$plan_calls" "tofu -chdir=${tmp}/example-app/terraform plan -input=false -no-color -lock=false -out=" "tofu plan"
+assert_contains "$plan_calls" "-var project_id=${project}" "tofu plan vars"
+assert_contains "$plan_calls" "tofu -chdir=${tmp}/example-app/terraform show -json " "tofu show reads the plan file"
+assert_contains "$plan_out" "Plan: 1 to add, 1 to change, 1 to destroy." "prints the plan"
 if [[ "$plan_out" == *"Refreshing state"* || "$plan_out" == *"Reading..."* || "$(cat "$summary")" == *"Refreshing state"* ]]; then
   fail "plan comment includes refresh lines"
   echo "$plan_out" >&2
 fi
 assert_contains "$plan_out" "commented on pull request 12" "comments on the pull request"
-assert_contains "$(cat "$summary")" "<!-- gcp-plan:example-app -->" "summary has the comment marker"
-assert_contains "$(cat "$summary")" "Plan: 0 to add, 0 to change, 0 to destroy." "summary has the plan"
+want_summary='<!-- gcp-plan:example-app -->
+### example-app Terraform plan
+
+`tofu plan -lock=false` as `'"$plan_sa"'`. This does not apply.
+
+**Plan: 1 to add, 1 to change, 1 to destroy.**
+
+```diff
+<=  data.google_compute_zones.available
+~   google_cloud_run_v2_service.app
+-   google_service_account.old
++   google_storage_bucket.data
+-/+ google_storage_bucket.logs
+-   google_storage_bucket.logs (deposed)
+```
+
+<details><summary>Full plan</summary>
+
+```
+  # google_storage_bucket.data will be created
+Plan: 1 to add, 1 to change, 1 to destroy.
+```
+
+</details>'
+assert_eq "$(cat "$summary")" "$want_summary" "summary lists changes and collapses the plan"
 assert_contains "$plan_calls" "repos/${repo}/issues/12/comments" "lists comments before posting"
 if grep -E '^tofu .* apply ' <<<"$plan_calls"; then
   fail "plan must not apply"
@@ -392,6 +431,64 @@ if ! err=$(
     bash "$deploy" --check example-app 2>&1
 ); then
   fail "--check without plan variables failed: $err"
+fi
+
+# A prefix with no state makes init try to create the lock. The plan
+# account cannot, so the plan uses an empty local state instead.
+cat >"$tmp/bin/tofu" <<EOF
+#!/bin/sh
+printf 'tofu' >> "$log"
+printf ' %s' "\$@" >> "$log"
+printf '\\n' >> "$log"
+case "\$*" in
+  *init*)
+    case "\$*" in
+      *-backend-config*) ;;
+      *) exit 0 ;;
+    esac
+    echo 'Error loading state: writing "gs://bucket/app/default.tflock" failed: Permission storage.objects.create denied' >&2
+    exit 1
+    ;;
+esac
+if [ "\$2" = "plan" ]; then
+  dir=\${1#-chdir=}
+  [ -f "\$dir/../apko.yaml" ] && echo "plan sees ../apko.yaml"
+  [ -f "\$dir/cloud-init.yaml.tftpl" ] && echo "plan sees cloud-init.yaml.tftpl"
+  echo "Plan: 1 to add, 0 to change, 0 to destroy."
+fi
+EOF
+chmod +x "$tmp/bin/tofu"
+: >"$tmp/example-app/apko.yaml"
+: >"$tmp/example-app/terraform/cloud-init.yaml.tftpl"
+: >"$log"
+missing=$(
+  PATH="$tmp/bin:$PATH" \
+    GCP_DEPLOY_ROOT="$tmp" \
+    GCP_PROJECT_ID="$project" \
+    GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER="$plan_wif" \
+    GCP_PLAN_SERVICE_ACCOUNT="$plan_sa" \
+    GCP_TF_STATE_BUCKET="$bucket" \
+    GITHUB_REPOSITORY="$repo" \
+    PR_NUMBER=12 \
+    GH_TOKEN=test-token \
+    bash "$deploy" --plan example-app 2>&1
+)
+missing_calls=$(cat "$log")
+assert_contains "$missing" "empty local backend" "missing state plans without the gcs backend"
+assert_contains "$missing" "Plan: 1 to add, 0 to change, 0 to destroy." "missing state still prints a plan"
+assert_contains "$missing_calls" "init -input=false" "retries init without a gcs backend"
+assert_contains "$missing" "plan sees ../apko.yaml" "missing-state plan resolves paths outside the module"
+assert_contains "$missing" "plan sees cloud-init.yaml.tftpl" "missing-state plan copies files other than .tf"
+if compgen -G "$tmp/example-app/.tofu-plan.*" >/dev/null; then
+  fail "missing-state plan left its copy of the module behind"
+fi
+if grep -E "^tofu -chdir=${tmp}/example-app/terraform plan " <<<"$missing_calls"; then
+  fail "missing-state plan used the gcs module directory"
+  echo "$missing_calls" >&2
+fi
+if grep -E '^tofu .* apply ' <<<"$missing_calls"; then
+  fail "missing-state plan must not apply"
+  echo "$missing_calls" >&2
 fi
 
 if ((failures > 0)); then

@@ -1,0 +1,6 @@
+load("@gazelle//:def.bzl", "gazelle")
+
+# gazelle:prefix github.com/imjasonh/playground/ci-substrate
+# gazelle:proto disable_global
+# gazelle:go_naming_convention import
+gazelle(name = "gazelle")

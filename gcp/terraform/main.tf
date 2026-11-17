@@ -20,6 +20,7 @@
 
 resource "google_project_service" "services" {
   for_each = toset([
+    "cloudbilling.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",

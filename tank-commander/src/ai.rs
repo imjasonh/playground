@@ -974,7 +974,6 @@ fn aim_and_shoot_plan<R: Rng>(game: &Game, tank_id: u8, enemy: &Tank, rng: &mut 
     let hull = tank.hull_facing;
     let mut turret_off = tank.turret_offset;
     let mut loaded = tank.loaded;
-    let mut buffs = TurnBuffs::default();
     let target_id = enemy.id;
 
     let Some(need) = tank.pos.facing_toward(enemy.pos) else {
@@ -1008,15 +1007,13 @@ fn aim_and_shoot_plan<R: Rng>(game: &Game, tank_id: u8, enemy: &Tank, rng: &mut 
     }
 
     if loaded.is_some() && hull.with_turret_offset(turret_off) == need && ap > 0 {
-        if !buffs.hit_on_2
-            && tank
-                .crew
-                .iter()
-                .any(|c| c.role == CrewRole::Gunner && !c.ability_used)
+        if tank
+            .crew
+            .iter()
+            .any(|c| c.role == CrewRole::Gunner && !c.ability_used)
             && rng.gen_bool(0.5)
         {
             actions.push(Action::AbilityBringItDown);
-            buffs.hit_on_2 = true;
         }
         actions.push(Action::Fire { target: target_id });
         ap -= 1;

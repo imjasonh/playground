@@ -122,9 +122,33 @@ jobs:
           restore-keys: |
             cargo-deps-${{ runner.os }}-
 
-      # Baseline stable toolchain; an app's rust-toolchain.toml (e.g. web-push
-      # pins 1.83) overrides it per directory when cargo runs. Use the
-      # runner's preinstalled rustup instead of dtolnay/rust-toolchain.
+      # pasta: per-file results, parse trees, and the grammars wazero
+      # compiled. pasta keys an entry by the rules and the grammar build but
+      # not by its own code, so the cache key names a hash of pasta's sources
+      # and a change to pasta starts from an empty cache instead of replaying
+      # results the old code produced. The marker dates the start of the run
+      # for trim-pasta-cache.sh.
+      - name: Key the pasta cache
+        id: pasta-key
+        if: ${{ steps.discover.outputs.pasta == 'true' }}
+        env:
+          SOURCES: ${{ hashFiles('pasta/go.sum', 'pasta/**/*.go', '!pasta/**/*_test.go', 'pasta/**/*.wasm.br', 'pasta/**/cuemod/**') }}
+        run: |
+          echo "prefix=pasta-${RUNNER_OS}-${SOURCES}-" >>"$GITHUB_OUTPUT"
+          touch "$RUNNER_TEMP/pasta-cache-start"
+
+      - name: Restore the pasta cache
+        if: ${{ steps.pasta-key.outcome == 'success' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pasta
+          key: ${{ steps.pasta-key.outputs.prefix }}${{ github.sha }}
+          restore-keys: |
+            ${{ steps.pasta-key.outputs.prefix }}
+
+      # Baseline stable toolchain; an app's rust-toolchain.toml overrides it
+      # per directory when cargo runs. Use the runner's preinstalled rustup
+      # instead of dtolnay/rust-toolchain.
       - name: Install Rust stable
         if: ${{ steps.discover.outputs.rust != '[]' }}
         run: |
@@ -161,6 +185,10 @@ jobs:
             if: ${{ contains(fromJSON(steps.discover.outputs.modules), 'sshapp') }}
             run: bash .github/scripts/test-kind-e2e.sh sshapp
 
+          - name: kind e2e for ci-substrate
+            if: ${{ contains(fromJSON(steps.discover.outputs.modules), 'ci-substrate') }}
+            run: bash .github/scripts/test-kind-e2e.sh ci-substrate
+
           - name: Lint, build, and test changed Rust apps
             if: ${{ steps.discover.outputs.rust != '[]' }}
             env:
@@ -186,6 +214,8 @@ jobs:
               bash .github/scripts/cache-scripts_test.sh
               bash .github/scripts/prune-cargo-cache_test.sh
               bash .github/scripts/discover-rust-apps_test.sh
+              bash .github/scripts/discover-go-modules_test.sh
+              bash .github/scripts/check-whbiab-web_test.sh
 
       - name: Trim the Go build cache
         id: trim-go
@@ -247,4 +277,21 @@ jobs:
           # with reduced debuginfo. The cap leaves room for the other Rust
           # apps and the default debuginfo level.
           max-bytes: 6442450944
+          token: ${{ github.token }}
+
+      - name: Trim the pasta cache
+        id: trim-pasta
+        if: ${{ github.ref == 'refs/heads/main' && steps.pasta-key.outcome == 'success' }}
+        continue-on-error: true
+        run: bash .github/scripts/trim-pasta-cache.sh "$RUNNER_TEMP/pasta-cache-start"
+
+      - name: Save the pasta cache
+        if: ${{ steps.trim-pasta.outcome == 'success' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: ~/.cache/pasta
+          key: ${{ steps.pasta-key.outputs.prefix }}${{ github.sha }}
+          prefixes: pasta-${{ runner.os }}-
+          # 256 MiB. A lint of the repository leaves about 40 MB.
+          max-bytes: 268435456
           token: ${{ github.token }}

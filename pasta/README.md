@@ -6,12 +6,18 @@ Using `pasta`, you can express [AST](https://en.wikipedia.org/wiki/Abstract_synt
 
 Rules can also define an automatix fix, in which case `pasta -fix` will make the edit directly.
 
-`pasta` uses tree-sitter for parsing — the official C runtime and
-grammars, compiled to WASM and driven from pure Go via
-[wazero](https://github.com/tetratelabs/wazero) (so `go install` /
-`CGO_ENABLED=0` still work) — and [CUE](https://cuelang.org/) for
-rule schemas. It's heavily inspired by Go's
+`pasta` uses tree-sitter for parsing and [CUE](https://cuelang.org/)
+for rule schemas. It's heavily inspired by Go's
 `golang.org/x/tools/go/analysis`.
+
+pasta has two tree-sitter backends that produce the same trees. When
+cgo is available, `go build` and `go install` compile the official C
+runtime and most grammars natively, which parses about 2.5 times as
+fast. With `CGO_ENABLED=0` or `-tags purego`, pasta runs the same
+runtime and grammars compiled to WASM on
+[wazero](https://github.com/tetratelabs/wazero), from pure Go. The
+WASM module also parses the grammars that have no native build (SQL
+and Dockerfile).
 
 The intention of `pasta` is to be able to declaratively describe rules for ASTs in any supported language, and quickly and reproducibly flag and fix findings. You can hook this up to your editor and/or CI to automatically flag and potentially fix violations of the rules you've specified.
 
@@ -273,20 +279,23 @@ Omitted: rules that need a scope chain, CFG, or ESLint option object (`no-undef`
 Cold runs over large trees are tuned for sparse style rules:
 
 1. **Content-sniff pre-filter** — before parsing, pasta checks cheap
-   substrings inferred from each rule (`eq` / `token_eq` / a single
-   simple `matches` alternation) plus optional `require_substring` on
-   the rule. Rewrite `within` tokens are not inferred (diagnose can
-   fire without them). Files that cannot match any applicable rule
-   skip the parse.
+   substrings inferred from each rule (`eq` / `token_eq` literals and
+   the literals each `matches` regex requires) plus optional
+   `require_substring` on the rule. Rewrite `within` tokens are not inferred (diagnose can
+   fire without them). A rule doesn't run on a file that lacks its
+   substrings, and files that cannot match any applicable rule skip
+   the parse.
 2. **Per-file parse budget** — default 2s (`-parse-timeout`, or
    `parse_timeout_ms` in `pasta.cue`). Timed-out files are reported as
    `skipped (too complex to analyze)` instead of owning the run.
 3. **ERROR-heavy vs degraded** — densely broken trees skip as
    `skipped (parse errors)`. Light `HasError` glitches (e.g. a trailing
-   brace) still analyze (`parse_degraded` in `-stats`) and are not
-   cached. Pass `-stats` for
+   brace) still analyze (`parse_degraded` in `-stats`). The parse cache
+   keeps both outcomes, keyed by the embedded grammar build, so an
+   unchanged broken file isn't parsed again. Pass `-stats` for
    `walked` / `prefilter_skipped` / `parsed` / `parse_errors` /
-   `parse_degraded` / `timed_out` / `memory_skipped` / `cache_hits`.
+   `parse_degraded` / `timed_out` / `memory_skipped` / `cache_hits` /
+   `tree_cache_hits` / `reparsed` / `rebuilt`.
 4. **Memory budget** — optional cumulative parsed-source byte cap
    (`-memory-budget`, or `memory_budget` in `pasta.cue`) across the
    whole CLI run (including multipass `-fix`). Admission is in source
@@ -299,13 +308,47 @@ Cold runs over large trees are tuned for sparse style rules:
    files so the Go GC can reclaim them on big cold runs.
 
 Rules that read facts from other files (`go_errcheck` and the
-`*_deprecated_use` and `*_taint` rules) make pasta hold every parsed
-file in memory instead of streaming. Pasta still parses those files in
-parallel and runs each level of dependent rules across files in
-parallel. Only fixpoint groups, such as taint propagation, run one file
-at a time. Rule files also load in parallel, and pasta keeps wazero's
-compiled tree-sitter code under `$XDG_CACHE_HOME/pasta/wazero/` (about
-7 MB), which saves about 0.6 seconds per run.
+`*_deprecated_use` and `*_taint` rules) make pasta run in passes
+instead of streaming. Pasta parses every file in parallel and runs the
+rules that read no other file's facts as each file is parsed. Each
+later level of dependent rules then runs across files in parallel.
+Fixpoint groups, such as taint propagation, also iterate over files in
+parallel. After the first iteration, each one visits only the files
+that looked up a fact the previous iteration added, so a taint
+propagation on Kubernetes visits about 350 of 13,700 files in its
+second iteration and 7 in its last. A fixpoint group that uses
+`not_has_fact` is the exception:
+its result depends on order, so it visits files in order. Pasta keeps
+the parse trees that later passes need while their estimated size
+stays under `-tree-budget` (default 1 GiB, `0` keeps every tree). It
+releases the trees past the budget and keeps a compact encoding of
+each instead, about 6 bytes per node against about 200, within half
+the budget again. Each later pass rebuilds those trees from their
+encodings, which `rebuilt` in `-stats` counts and which is about 40
+times faster than parsing. Past both limits, pasta reads each tree
+back from the parse cache, or with `-nocache` parses the file again,
+which `reparsed` counts. Unless
+`GOMEMLIMIT` is set, pasta sets Go's memory limit to twice the tree
+budget, and to at least the budget plus 2 GiB, so the collector
+doesn't let garbage double the heap. On the Go module cache (about
+30,000 files), the compact encodings took the run from 162 to 103
+seconds, and peak RSS from 8.6 GB to 3.6 GB. A 4 GiB budget ran
+no faster and peaked at 8.6 GB.
+
+These runs can't reuse a file's results from the parse cache, because
+its diagnostics depend on other files. They store each file's compact
+tree there instead, keyed by its bytes, its language, and the grammar
+build, so the tree survives rule changes. The first pass rebuilds a
+cached tree instead of parsing the file, which `tree_cache_hits`
+counts. On the Go module cache (about 300 MB of source on 8 cores),
+the trees take 330 MB. Throughput rose from 2.6 MB/s with `-nocache`
+to 3.0 MB/s with an empty cache, which already hits on the many copies
+of the same files, and to 3.5 MB/s with every tree cached. A lint of
+this repository (about 19 MB) rose from 5.2 MB/s to 13.6 MB/s. Rule
+files also load in parallel,
+and when the WASM backend parses, pasta keeps wazero's compiled
+tree-sitter code under `$XDG_CACHE_HOME/pasta/wazero/` (about 7 MB),
+which saves about 0.6 seconds per run.
 
 ## Autofix guardrails
 

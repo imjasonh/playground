@@ -54,3 +54,9 @@ For reference, the PR where we made the change: https://github.com/imjasonh/play
 I'm pretty happy with this turned out. It's not perfect, nothing is, but it's pretty fast, easy to review and debug via examples, and LLM agents are pretty great at one-shotting new rules based on my vague directions. If nothing else, it was fun to build, and to write about here.
 
 If you've got a monorepo handy and this sounds like it might be useful, give it a shot. If you're an AST nerd who just wants to play, give it a shot!
+
+### Updates
+
+#### Nov 17, 2026
+
+A number of hill-climbing perf improvements, including just using cgo when it was available, led to a 2-3x speed improvement, from 3-5 MB/s to 8-10 MB/s depending on the codebase. I told an agent to run on some real large codebases (kubernetes, rust, go, react, and our own playground) and to fix what it could; and it did! It also added caching of parsed trees, which unlocked another ~5x when the cache was warm. Running `pasta` in CI on the monorepo now takes 1-2 seconds.

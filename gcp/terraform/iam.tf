@@ -21,12 +21,26 @@
 # this account's email is linked on the publisher in the Chrome Web Store
 # Developer Dashboard (Account > API access). See chrome-extension/README.md.
 #
+# The deploy account can create and delete budgets on the project's
+# billing account, and the plan account can read that account's budgets
+# and costs. wehadababyitsaboy uses this for a $1 monthly budget on its
+# logs bucket. The person who applies this stack needs permission to set
+# the billing account's IAM policy.
+#
+# The deploy account creates Secret Manager secrets and sets who can read
+# them, through a custom role without secretmanager.versions.access or
+# versions.add. Neither account holds a role that reads a secret's value,
+# though the deploy account could grant itself one. People add values with
+# gcloud, so values never enter Terraform state or a plan comment.
+#
 # A pull_request workflow from a fork does not receive an OIDC token.
 
 locals {
   github_deploy_roles = [
     "roles/artifactregistry.admin",
     "roles/browser",
+    "roles/compute.instanceAdmin.v1",
+    "roles/compute.networkAdmin",
     "roles/iam.roleAdmin",
     "roles/iam.serviceAccountAdmin",
     "roles/iam.serviceAccountUser",
@@ -44,14 +58,37 @@ locals {
   github_plan_roles = [
     "roles/artifactregistry.reader",
     "roles/browser",
+    "roles/compute.viewer",
     "roles/iam.roleViewer",
     "roles/iam.securityReviewer",
     "roles/iam.serviceAccountViewer",
     "roles/iam.workloadIdentityPoolViewer",
     "roles/monitoring.viewer",
     "roles/run.viewer",
+    "roles/secretmanager.viewer",
     "roles/serviceusage.serviceUsageViewer",
     "roles/storage.bucketViewer",
+  ]
+
+  # costsManager creates the usage-log budget. viewer lets a plan refresh it.
+  billing_budget_members = {
+    "roles/billing.costsManager" = google_service_account.github_deploy.email
+    "roles/billing.viewer"       = google_service_account.github_plan.email
+  }
+
+  # Manage secrets without reading or adding their values.
+  github_deploy_secret_permissions = [
+    "secretmanager.locations.get",
+    "secretmanager.locations.list",
+    "secretmanager.secrets.create",
+    "secretmanager.secrets.delete",
+    "secretmanager.secrets.get",
+    "secretmanager.secrets.getIamPolicy",
+    "secretmanager.secrets.list",
+    "secretmanager.secrets.setIamPolicy",
+    "secretmanager.secrets.update",
+    "secretmanager.versions.get",
+    "secretmanager.versions.list",
   ]
 
   # Push an image during plan. No delete permissions: a pull request
@@ -137,10 +174,50 @@ resource "google_project_iam_custom_role" "github_plan_push" {
   stage       = "GA"
 }
 
+resource "google_project_iam_custom_role" "github_deploy_secrets" {
+  project     = var.project_id
+  role_id     = "playground_deploy_secrets"
+  title       = "Playground deploy secrets"
+  description = "Create secrets and set their IAM policy. Cannot read or add secret values."
+  permissions = local.github_deploy_secret_permissions
+  stage       = "GA"
+}
+
+resource "google_project_iam_member" "github_deploy_secrets" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.github_deploy_secrets.name
+  member  = "serviceAccount:${google_service_account.github_deploy.email}"
+}
+
 resource "google_project_iam_member" "github_plan_push" {
   project = var.project_id
   role    = google_project_iam_custom_role.github_plan_push.name
   member  = "serviceAccount:${google_service_account.github_plan.email}"
+}
+
+# The provider reads the billing account through the Cloud Billing API and
+# returns an empty one when that API is off, so read after enabling it.
+data "google_project" "project" {
+  project_id = var.project_id
+
+  depends_on = [google_project_service.services]
+}
+
+resource "google_billing_account_iam_member" "github_budgets" {
+  for_each = local.billing_budget_members
+
+  billing_account_id = data.google_project.project.billing_account
+  role               = each.key
+  member             = "serviceAccount:${each.value}"
+
+  depends_on = [google_project_service.services]
+
+  lifecycle {
+    precondition {
+      condition     = data.google_project.project.billing_account != ""
+      error_message = "The project has no billing account, so the GitHub accounts cannot be granted budget access."
+    }
+  }
 }
 
 resource "google_storage_bucket_iam_member" "github_plan_state" {

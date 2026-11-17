@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/prefilter"
 )
 
 // ruleGroup is one strongly-connected component of the rule dependency
@@ -31,7 +32,7 @@ func scheduleGroups(analyzers []*dsl.Analyzer) ([]ruleGroup, error) {
 	var all []scheduledRule
 	for _, a := range analyzers {
 		for name, rule := range a.Rules {
-			all = append(all, scheduledRule{analyzer: a, name: name, rule: rule})
+			all = append(all, scheduledRule{analyzer: a, name: name, rule: rule, filter: prefilter.ForRule(&rule)})
 		}
 	}
 	// Deterministic ordering before building the graph.

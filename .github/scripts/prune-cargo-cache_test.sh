@@ -42,8 +42,28 @@ name = "serde"
 version = "1.0.0"
 EOF
 
+mkdir -p "$tmp/repo/demo/rust"
+cat >"$tmp/repo/demo/rust/Cargo.toml" <<'EOF'
+[package]
+name = "demo-lib"
+version = "0.1.0"
+EOF
+cat >"$tmp/repo/demo/rust/Cargo.lock" <<'EOF'
+version = 4
+
+[[package]]
+name = "demo-lib"
+version = "0.1.0"
+
+[[package]]
+name = "ureq"
+version = "2.0.0"
+EOF
+
 mkdir -p \
   "$tmp/target/debug/deps" \
+  "$tmp/target/debug/.fingerprint/ureq-eeeeeeeeeeeeeeee" \
+  "$tmp/target/debug/.fingerprint/demo-lib-ffffffffffffffff" \
   "$tmp/target/debug/.fingerprint/serde-aaaaaaaaaaaaaaaa" \
   "$tmp/target/debug/.fingerprint/aes-gcm-bbbbbbbbbbbbbbbb" \
   "$tmp/target/debug/.fingerprint/demo-app-cccccccccccccccc" \
@@ -59,6 +79,10 @@ mkdir -p \
 echo rlib >"$tmp/target/debug/deps/libserde-aaaaaaaaaaaaaaaa.rlib"
 echo rlib >"$tmp/target/debug/deps/libaes_gcm-bbbbbbbbbbbbbbbb.rlib"
 echo rlib >"$tmp/target/debug/deps/libdemo_app-cccccccccccccccc.rlib"
+echo rlib >"$tmp/target/debug/deps/libureq-eeeeeeeeeeeeeeee.rlib"
+echo rlib >"$tmp/target/debug/deps/libdemo_lib-ffffffffffffffff.rlib"
+echo fp >"$tmp/target/debug/.fingerprint/ureq-eeeeeeeeeeeeeeee/lib-ureq"
+echo fp >"$tmp/target/debug/.fingerprint/demo-lib-ffffffffffffffff/lib-demo-lib"
 echo depinfo >"$tmp/target/debug/deps/demo_app.d"
 echo bin >"$tmp/target/debug/demo_app"
 echo fp >"$tmp/target/debug/.fingerprint/serde-aaaaaaaaaaaaaaaa/lib-serde"
@@ -84,8 +108,8 @@ list() {
 }
 
 assert_eq "$(list "$tmp/target")" \
-  "./.rustc_info.json ./CACHEDIR.TAG ./debug/.fingerprint/aes-gcm-bbbbbbbbbbbbbbbb/lib-aes-gcm ./debug/.fingerprint/serde-aaaaaaaaaaaaaaaa/lib-serde ./debug/build/serde-aaaaaaaaaaaaaaaa/out ./debug/deps/libaes_gcm-bbbbbbbbbbbbbbbb.rlib ./debug/deps/libserde-aaaaaaaaaaaaaaaa.rlib ./wasm32-unknown-unknown/release/deps/libserde-dddddddddddddddd.rlib " \
-  "keeps dependency artifacts and drops the app crate, examples, and incremental"
+  "./.rustc_info.json ./CACHEDIR.TAG ./debug/.fingerprint/aes-gcm-bbbbbbbbbbbbbbbb/lib-aes-gcm ./debug/.fingerprint/serde-aaaaaaaaaaaaaaaa/lib-serde ./debug/.fingerprint/ureq-eeeeeeeeeeeeeeee/lib-ureq ./debug/build/serde-aaaaaaaaaaaaaaaa/out ./debug/deps/libaes_gcm-bbbbbbbbbbbbbbbb.rlib ./debug/deps/libserde-aaaaaaaaaaaaaaaa.rlib ./debug/deps/libureq-eeeeeeeeeeeeeeee.rlib ./wasm32-unknown-unknown/release/deps/libserde-dddddddddddddddd.rlib " \
+  "keeps dependency artifacts, including a nested library crate's, and drops the app crates, examples, and incremental"
 assert_eq "$(list "$tmp/registry")" \
   "./cache/index.crates.io-hash/serde-1.0.0.crate ./index/index.crates.io-hash/se/serde ./src/index.crates.io-hash/serde-1.0.0/lib.rs " \
   "keeps registry sources named by the lockfile and the index"

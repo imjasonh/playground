@@ -27,6 +27,7 @@ playground/
 ├── droneski/              # FPV drone filming a downhill skier (JS + three.js + Node tests)
 ├── chrome-ai/             # chat with Chrome's built-in on-device model (Prompt API; JS + Node tests)
 ├── chrome-extension/      # Chrome extension (not a Pages app)
+├── ci-substrate/          # Go: multi-tenant Bazel RBE CAS + node-local verified cache on KinD (ko apply; kind e2e)
 ├── esp-flash/             # Web Serial / WebUSB ESP32 flasher (inkbot GHCR + local .bin)
 ├── kubescheduler-the-game/ # Kubernetes scheduler + cluster-operator game (JS + Node tests)
 ├── cors-proxy/            # Rust Cloudflare Worker: SSRF-hardened CORS proxy (not a Pages app)
@@ -62,6 +63,7 @@ playground/
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── qr-quine/              # QR symbol that encodes a data URL of itself
+├── queens/                # generate and play Queens and Two Not Touch puzzles (JS + Node tests)
 ├── kube/                  # Go library: Kubernetes controller runtime on the standard library alone
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
 ├── nyt-crossword/         # NYT crossword solve times (JS + Node tests + daily scrape)
@@ -72,10 +74,13 @@ playground/
 ├── pasta/                 # CUE + tree-sitter multi-language linters/fixers (Go CLI)
 ├── population-rays/       # directional 5° population-slice map (JS + Node tests)
 ├── sshapp/                # GKE Autopilot Wish SSH apps (Go + Terraform + ko_build)
+├── stream-boids/          # Go: boids streamed to YouTube Live from a Spot VM (apko + ko + Terraform)
 ├── sundial/               # sundial clock: long shadow follows the sun
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
 ├── web-push-demo/         # static browser front-end for the web-push Worker
-└── y/                     # Rust Cloudflare Worker: one-user microblog
+├── wehadababyitsaboy/     # Terraform: empty bucket whose usage logs count CLI and web page requests (not an app); go/ is the Go client
+├── y/                     # Rust Cloudflare Worker: one-user microblog
+└── zip/                   # generate and play Zip path puzzles (JS + Node tests)
 ```
 
 ### Browser apps
@@ -100,6 +105,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `image-diff/` | yes | Pixel-by-pixel image comparison; JS modules, npm scripts, tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
 | `qr-quine/` | yes | QR symbol whose payload is a data URL of itself; JS modules, npm scripts, tests |
+| `queens/` | yes | Queens and Two Not Touch puzzle generator and player; JS modules, npm scripts, tests |
 | `life-lab/` | yes | Game of Life sculpture lab; vendored wasm built from `life-stl/` |
 | `marptalk/` | yes | Narrated Marp deck player; JS modules, vendored Marp Core, tests |
 | `nes-player/` | yes | Play NEScript ROMs from `main` or a local `.nes` with jsnes; JS modules, vendored jsnes, tests |
@@ -111,6 +117,8 @@ its root. This is the same rule used by deploy and preview workflows.
 | `population-rays/` | yes | Directional 5° population slices; JS modules, npm scripts, tests |
 | `sundial/` | yes | Sundial clock; JS modules, npm scripts, tests |
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
+| `zip/` | yes | Zip path puzzle generator and player; JS modules, npm scripts, tests |
+| `ci-substrate/` | no | Go: multi-tenant Bazel RBE CAS + node-local verified cache (ko apply; kind e2e); no `index.html` |
 | `gitdb/` | no | Go CLI; no `index.html` |
 | `cloudrun-sqlite/` | no | Go server for Cloud Run (Litestream VFS + Terraform); no `index.html` |
 | `litestream/` | no | Fork of Litestream (`git subtree`) that `cloudrun-sqlite` builds against; no `index.html` |
@@ -120,11 +128,13 @@ its root. This is the same rule used by deploy and preview workflows.
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `pasta/` | no | Go CLI (CUE + tree-sitter linters); no `index.html` |
 | `sshapp/` | no | GKE Autopilot Wish SSH apps (Go + Terraform); no `index.html` |
+| `stream-boids/` | no | Go: boids streamed to YouTube Live from a Spot VM (Terraform); no `index.html` |
 | `testtrace/` | no | Go library (OpenTelemetry test tracing); no `index.html` |
 | `app-attest/` | no | Rust Cloudflare Worker; no `index.html` |
 | `apko-frontend/` | no | Go BuildKit frontend, built with ko; no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `y/` | no | Rust Cloudflare Worker (one-user microblog); no `index.html` |
+| `wehadababyitsaboy/` | no | Terraform stack (usage-tracking bucket) with a Go client in `go/`; no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
 | `inkbot/` | no | Rust Cloudflare Worker (e-ink frame + Slack); no `index.html` |
 | `inkbot-esp32/` | no | Rust/ESP-IDF ESP32 firmware (espup); no `index.html` |
@@ -162,6 +172,12 @@ as `kube`, with a `replace` directive to the library's directory
 (`replace github.com/imjasonh/playground/kube => ../kube` in `git-k8s/go.mod`),
 so that it builds against the library at head.
 
+A top-level directory that is not a Go app can hold a Go library module in its
+`go/` subdirectory. `wehadababyitsaboy/go` is one. CI discovers it by that path
+(`wehadababyitsaboy/go`), a change under `go/` selects it, and the Go apps that
+replace it with `../wehadababyitsaboy/go` are tested too. Other nested modules,
+such as `kube/bench`, stay out of CI.
+
 `litestream/` is a fork of
 [benbjohnson/litestream](https://github.com/benbjohnson/litestream), imported
 with `git subtree`, plus the patches that `litestream/PATCHES.md` lists. It
@@ -191,6 +207,12 @@ Each Rust app is an isolated crate. Keep its sources, tests, `Cargo.toml`, and
 Cargo workspace. Pin the toolchain with a `rust-toolchain.toml` (channel,
 components, and any extra targets such as `wasm32-unknown-unknown`) so local
 builds and CI agree.
+
+A top-level directory that is not a Rust app can hold a Rust library crate in
+its `rust/` subdirectory. `wehadababyitsaboy/rust` is one. CI discovers it by
+that path (`wehadababyitsaboy/rust`), a change under `rust/` selects it, and the
+Rust apps that depend on it with a path dependency (`path =
+"../wehadababyitsaboy/rust"`) are tested too.
 
 ### iOS apps
 
@@ -245,7 +267,7 @@ discovery scripts.
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
 | `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with the `wrangler` version pinned in `.github/wrangler/package.json`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`), creates any declared R2 buckets that don't exist, and applies remote D1 migrations for declared `[[d1_databases]]`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs`, and a `JWT_SECRET` for any Worker shipping an `examples/gensecret.rs` |
-| `deploy-gcp.yml` | push to `main`, pull requests that touch the deploy scripts or a `gcp-deploy.json`, manual | Applies Cloud Run stacks that have a `gcp-deploy.json` (`cloudrun-sqlite` today). GitHub OIDC and Workload Identity Federation authenticate `tofu apply`, so the workflow stores no long-lived GCP key. A pull request runs `tofu plan` as a separate plan service account and comments the plan. Apply runs only on `main`. |
+| `deploy-gcp.yml` | push to `main`, pull requests that touch the deploy scripts or a `gcp-deploy.json`, manual | Applies GCP stacks that have a `gcp-deploy.json` (`cloudrun-sqlite`, `stream-boids`, and `wehadababyitsaboy`). GitHub OIDC and Workload Identity Federation authenticate `tofu apply`, so the workflow stores no long-lived GCP key. A pull request runs `tofu plan` as a separate plan service account and comments the plan. Apply runs only on `main`. |
 | `preview.yml` | pull request opened/sync | When a browser app, the posts catalog, or the Pages home-page index changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, posts catalog, and site index, in one job |
@@ -259,7 +281,6 @@ discovery scripts.
 | `ios-bootstrap-on-merge.yml` | pull request closed (merged) | If the PR had `needs-ios-bootstrap`, immediately re-runs signing bootstrap (races `ios.yml`; usually finishes first) |
 | `ios-signing-bootstrap.yml` | manual (`workflow_dispatch`) + reusable | Creates & stores signing cert/profile in the `match` repo; also called on labeled merges |
 | `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app, plus the Wrangler version that Worker apps deploy with; opens a PR and auto-merges passing updates to `main`, otherwise leaves a PR for review |
-| `army-list-catalog.yml` | weekly Mondays 06:00 UTC, manual | Refreshes the bundled iOS Army List construction catalog from BSData on **macOS**; bumps `11e-<N>`; writes id migrations; regenerates stress fixtures via the Swift `ArmyListValidator` CLI; opens a PR and auto-merges when CI is green |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 | `nyt-crossword-scrape.yml` | daily 01:17 UTC, manual | **App-specific:** fetches NYT crossword solve times with the `NYT_COOKIE` secret and writes `nyt-crossword/data/stats.json` on `gh-pages`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 | `its-not-jaws.yml` | pull requests touching `its-not-jaws/**`, manual | **App-specific:** requires repo secret `CURSOR_API_KEY` (fails if missing), unit-tests the harness, plays one live Cursor Agent SDK game, uploads the result artifact |
@@ -278,7 +299,7 @@ commit source files—never commit `node_modules/` or Go/Rust build artifacts.
 
 The production home page (`index.html` at the Pages root) is generated at build
 time by `.github/scripts/render-index.py` from the shared template. The header
-links to the generated **Posts** catalog (`posts/`). The page then lists a
+links to the generated **Posts** catalog (`posts/`). The page lists a
 **Browser apps** section (the deployed `index.html` directories) and a separate
 **Cloudflare Workers apps** section (directories with `wrangler.toml`). Workers
 are not served from Pages, so the renderer discovers them by scanning the repo
@@ -357,14 +378,15 @@ tested. The **pasta** leg builds the `pasta/` CLI, runs `pasta test` over the
 enrolled `.pasta/` analyzers, and lints the monorepo with `-fail-on=warning`
 (see `.github/scripts/test-pasta.sh`).
 
-The kind end-to-end tests of `git-k8s`, `kube`, and `sshapp` run as their own
-steps in the parallel group (`.github/scripts/test-kind-e2e.sh`), beside the
-Go unit tests, because they mostly wait for a cluster and its Pods. Their
+The kind end-to-end tests of `git-k8s`, `kube`, `sshapp`, and `ci-substrate`
+run as their own steps in the parallel group
+(`.github/scripts/test-kind-e2e.sh`), beside the Go unit tests, because they
+mostly wait for a cluster and its Pods. Their
 clusters, registries, and ports have different names, so they can share the
 runner. The Rust apps share one target directory (`CARGO_TARGET_DIR`), so
 apps that depend on the same crates compile them once and the job holds one
-copy of the artifacts. The job restores four caches (Go's build cache, npm's package cache, the
-`worker-build` binary, and the Rust dependency artifacts) from the newest
+copy of the artifacts. The job restores five caches (Go's build cache, npm's package cache, the
+`worker-build` binary, the Rust dependency artifacts, and pasta's cache) from the newest
 entry that a push to `main` saved, matching by prefix so that a new lockfile
 doesn't miss. A pull request that does not run an ecosystem's tests does not
 restore that ecosystem's cache. Only pushes to `main` save one, after the
@@ -410,8 +432,13 @@ size budget, measured on disk:
   artifacts only: `prune-cargo-cache.sh` removes the app crates, incremental
   files, and any dependency the current `Cargo.lock` files no longer name,
   and the registry sources go with the artifacts so build scripts stay
-  fresh. It doesn't cache Go's module cache (3 GB that `go build` downloads
-  in seconds) or npm's `_npx` directory.
+  fresh. pasta's cache (256 MiB) holds its per-file results, parse trees,
+  and compiled grammars; a lint of this repository runs at 5.8 MB/s with
+  an empty cache and 12.0 MB/s with a warm one on 8 cores.
+  `trim-pasta-cache.sh` keeps only the entries the run read or wrote, and
+  the key names a hash of pasta's sources, because pasta doesn't key its
+  results by its own code. It doesn't cache Go's module cache (3 GB that
+  `go build` downloads in seconds) or npm's `_npx` directory.
 
 The workflow needs `actions: write` to delete entries. A new cache in
 any workflow uses the same pieces. Run
@@ -430,7 +457,9 @@ directories (names starting with `.`) and changes outside any app directory
 (e.g. a lone top-level file) select nothing — so a PR that only edits CI scripts
 or the root `README.md` runs no app tests. A Go module whose `go.mod` replaces
 another top-level module with a relative path is also selected when that
-directory changes, so a change under `kube/` tests `git-k8s` too. `inkbot-esp32/` and `esp32-ble/` have
+directory changes, so a change under `kube/` tests `git-k8s` too. A change under
+`wehadababyitsaboy/go/` selects that module and every Go app that replaces it.
+`inkbot-esp32/` and `esp32-ble/` have
 a `Cargo.toml` but are excluded from Rust discovery because they need the espup
 Xtensa toolchain. `inkbot-esp32.yml` and `esp32-ble.yml` run those host lib
 tests and firmware cross-builds instead. A change under `.github/wrangler/` (the
@@ -449,9 +478,10 @@ pinned Wrangler version) selects every Cloudflare Worker app, and a change to
 Go is the only ecosystem here with a stable, first-class data-race detector (`go test -race`). Rust ThreadSanitizer is still nightly-only and cannot instrument `wasm32-unknown-unknown` Worker tests; JavaScript/Node has no equivalent flag. Those legs stay as they are.
 
 Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
-app's toolchain comes from its `rust-toolchain.toml` (defaulting to stable);
-Worker apps pin Rust 1.99, and their `[build]` command installs the
-`worker-build` release that matches the locked `worker` crate.
+app's toolchain comes from its `rust-toolchain.toml` (defaulting to stable),
+which the daily dependency update raises to the newest stable release. Worker
+apps' `[build]` command installs the `worker-build` release that matches the
+locked `worker` crate.
 
 **ESP32 firmware is tested by `inkbot-esp32.yml` and `esp32-ble.yml`, not
 `test.yml`.** Stable Linux Cargo cannot build `xtensa-esp32-espidf`. Each
@@ -518,8 +548,8 @@ test workflow gates on:
 | App type | Upgrade | Verify |
 |----------|---------|--------|
 | Browser | `npx npm-check-updates --upgrade` → `npm install` → `npm run vendor` (if defined) | `npm test` (+ `npm run test:e2e` if defined) |
-| Go | `go get -u ./...`, except `litestream`, which `update-litestream.yml` updates | `gofmt` → `go build ./...` → `go test -race ./...` |
-| Rust | `cargo update`, except `c3-boot`, whose build the `c3-boot-proofs` machine-code proofs pin | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build + `wrangler deploy --dry-run` |
+| Go | `go mod edit -go=<installed minor>.0` when the `go` line is older, then `go get -u ./...`, except `litestream`, which `update-litestream.yml` updates | `gofmt` → `go build ./...` → `go test -race ./...` |
+| Rust | raise `rust-toolchain.toml` to the newest stable release when it's older → `cargo update`, except `c3-boot`, whose build the `c3-boot-proofs` machine-code proofs pin | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build + `wrangler deploy --dry-run` |
 | Wrangler (Worker apps) | `npx npm-check-updates --upgrade` on `.github/wrangler/package.json` | `wrangler deploy --dry-run` for every Worker app, in the Rust leg |
 
 Publishing is all-or-nothing, so a green run never lands a half-broken bump:
@@ -545,7 +575,11 @@ Each ecosystem's work lives in its own script (`update-go-dependencies.sh`,
 run in parallel in one checkout and write temporary files into it, so each one
 reports only pass or fail. `update-rust-dependencies.sh` bumps the Wrangler
 pin before it verifies any app, so every Worker app's deploy check runs with
-the new version; a separate leg could race those checks. After all three exit,
+the new version; a separate leg could race those checks. A Go module with
+`scripts/update-deps.sh` runs that script in place of `go get -u ./...`.
+pasta's script runs `go get -u`, moves the vendored tree-sitter runtime and
+the grammars without a Go module to their newest releases, and rebuilds
+`ts-core.wasm.br` when any of them changed. After all three exit,
 `manage-dependency-update.sh detect-changes` decides whether there is anything
 to publish, from the same paths that the publish step commits.
 `manage-dependency-update.sh` also handles the pull request, auto-merge, and
@@ -562,9 +596,15 @@ discovered automatically — no workflow edits are needed.
    - Add `my-app/package.json` with `"test"` script
    - Add `my-app/README.md` with run/test instructions
    - Add `my-app/.gitignore` (at minimum `node_modules/`)
-5. Open a PR—preview deploy and CI run automatically.
+5. Record visits: run `bash .github/scripts/check-whbiab-web.sh --fix`. It
+   links `wehadababyitsaboy/web/whbiab.js` into the app as a symbolic link and adds
+   `<script src="whbiab.js" data-app="my-app"></script>` before `</body>`. If
+   the page sets a Content-Security-Policy, allow `https://storage.googleapis.com`
+   in `img-src`.
+6. Open a PR—preview deploy and CI run automatically.
 
-No workflow edits are required when a new app follows these conventions.
+No workflow edits are required when a new app follows these conventions. The
+Test job fails a browser app that doesn't record visits.
 
 ### Minimal static app
 
@@ -606,7 +646,10 @@ A `blog-post.md` file anywhere in the source tree (except hidden and generated
 directories) is published to `/posts/<parent-dir>/`. Dates come from git
 author history. Local images referenced from the file are copied next to the
 generated HTML; a missing image fails the build. The catalog also writes
-`/posts/feed.xml` (RSS 2.0, newest first, full post HTML).
+`/posts/feed.xml` (RSS 2.0, newest first, full post HTML). The builder
+copies `whbiab.js` into `/posts/`, and the page templates load it as
+`posts` on the index and `posts-<parent-dir>` on each post, so a new post is
+tracked without a tag in the Markdown.
 
 **Agents must not create, edit, or rewrite `blog-post.md` files.** Only a
 human author writes those.
@@ -646,10 +689,12 @@ go test ./...
 
 ## Deploying to Cloud Run
 
-`deploy-gcp.yml` applies a Go app's Terraform from `main`. The app opts
+`deploy-gcp.yml` applies an app's Terraform from `main`. The app opts
 in with `gcp-deploy.json` at its root (see `cloudrun-sqlite/`). The module
-in `<app>/terraform` needs a GCS backend and a `project_id` variable.
-The directory name and the Terraform `name` must match.
+in `<app>/terraform` needs a GCS backend, a `project_id` variable, and an
+`https://` `url` output. The directory name and the Terraform `name` must
+match. The workflow installs Go only for an app with a `go.mod`, so a
+stack that is only Terraform, such as `wehadababyitsaboy/`, works too.
 
 GitHub identity is one stack, `gcp/terraform`, for the whole project.
 It creates the Workload Identity pool and one deploy account and one
@@ -669,7 +714,13 @@ GitHub environment `gcp` and set `GCP_PROJECT_ID`,
 changes a path in the manifest's `watch` list runs `tofu apply`. A pull
 request that selects an app runs `tofu plan` as the plan account and
 comments the plan. The plan account can push the image the plan builds.
-It cannot apply, and it cannot read replica objects.
+It cannot apply, and it cannot read replica objects. The deploy account
+can create budgets on the project's billing account, and the plan
+account can read that account's costs, so the usage-log stack can keep
+a $1 monthly budget. The deploy account can also manage Compute Engine
+VMs and networks, and create Secret Manager secrets and set who reads
+them, for `stream-boids`; neither account holds a role that reads a
+secret's value. Re-apply this stack when those roles change.
 
 The same stack also creates a third Workload Identity provider and
 service account, bound to neither the deploy nor the plan account's
@@ -782,6 +833,18 @@ bundle exec fastlane test
 ## Implementation conventions
 
 - **Browser apps are client-side**: they must be static sites suitable for GitHub Pages (no server-side runtime in production).
+- **Web usage tracking**: every browser app records each page load with
+  [`wehadababyitsaboy/web/whbiab.js`](wehadababyitsaboy/web/README.md), a
+  tracking pixel that requests an object in the `wehadababyitsaboy` bucket.
+  When you add a browser app, run `bash .github/scripts/check-whbiab-web.sh
+  --fix`. Each app's `whbiab.js` is a symbolic link to
+  that file, which the deploy and preview workflows copy with `cp -rL`; change
+  the one file, never a link. The script sends the app name, the pointer, the color scheme,
+  the screen class, and the language, and nothing from the page or the user.
+  It sends nothing from localhost, a browser that sets Do Not Track, or a
+  browser under automation. A PR preview on the production host is counted,
+  with `preview=pr-<N>` on the query. The posts catalog loads it too (see
+  "Adding a project post").
 - **Prefer plain HTML + JS** for browser apps unless an app already uses a framework; match the style of neighboring code in that app directory.
 - **Go apps are independent modules**: each app owns its `go.mod` and `go.sum`; avoid cross-app imports, except of library modules such as `kube`, which an app imports with a `replace` directive.
 - **Go logging**: use `log/slog`. `slog.Info`, `slog.Warn`, `slog.Error`,
@@ -842,7 +905,35 @@ bundle exec fastlane test
   [`pasta/analyzers/go_envconfig`](pasta/analyzers/go_envconfig/go_envconfig.cue)
   flags `strconv` and `time.ParseDuration` applied to `os.Getenv` or
   `os.LookupEnv`.
+- **Go usage tracking**: every Go command-line program that people run by hand
+  records its use with
+  [`wehadababyitsaboy/go`](wehadababyitsaboy/go/README.md) (package `whbiab`).
+  Go CLIs in this repo use [cobra](https://github.com/spf13/cobra). When you
+  add a Go CLI or a subcommand, add the module with `go mod edit -require=...
+  -replace=...` as that README shows, build the program as a cobra command, and
+  run it with `whbiab.Execute(ctx, root)`. `Execute` sends the root command's
+  name, the subcommands under it, and the names of the flags the user set. It
+  never sends a flag value, a positional argument, a path, or anything else
+  from the user. Call `os.Exit` and `log.Fatal` only after `Execute` returns,
+  because either one skips the wait. Skip servers, in-cluster controllers, and
+  a CLI whose README tells people to run `go install ...@latest`, because `go
+  install` rejects a module with a `replace` directive. A test binary sends
+  nothing, so tests need no setup.
 - **Rust apps are independent crates**: each app owns its `Cargo.toml`, `Cargo.lock`, and `rust-toolchain.toml`; avoid cross-app imports. Each crate sets `[lints.rust] unused = "deny"` so unused methods, imports, and variables fail `cargo test` / `cargo build` (CI clippy also uses `-D warnings`, which includes rustc `dead_code` and clippy unused-* lints). Do not `#[allow(dead_code)]` to keep dead methods.
+- **Rust usage tracking**: every Rust command-line program that people run by
+  hand records its use with
+  [`wehadababyitsaboy/rust`](wehadababyitsaboy/rust/README.md) (crate
+  `whbiab`). Rust CLIs in this repo use clap's derive API. When you add a Rust
+  CLI or a subcommand, add the path dependency
+  `whbiab = { path = "../wehadababyitsaboy/rust" }` and parse with
+  `let (cli, _ping) = whbiab::parse::<Cli>(env!("CARGO_PKG_VERSION"));` in
+  place of `Cli::parse()`, as `tank-commander` does. It sends the clap command's
+  name, the subcommands, and the names of the flags the user set, never a value
+  or a positional argument. Call `ping.wait()` before `std::process::exit`,
+  which skips the destructor that waits. Skip Cloudflare Workers, servers, firmware, and a crate
+  that also builds for the browser unless the dependency is optional and only
+  the CLI feature enables it (`life-stl`). A debug build sends nothing, so tests
+  need no setup.
 - **There is one iOS host app** (`ios/`, the "Playground" container): add
   features as **experiments** inside it (same Bundle ID, no re-bootstrap). A
   Custom Keyboard or other **app extension** needs a second Bundle ID (Apple
@@ -866,8 +957,9 @@ bundle exec fastlane test
   Still fine: empty states (when there is nothing to show), validation and error
   messages, status lines that report current values, and text-field placeholders.
 - **Visual design and typography**: when you design or restyle HTML, CSS, or Pages templates, read [`.cursor/skills/web-typography/SKILL.md`](.cursor/skills/web-typography/SKILL.md) (Wondel's [web-typography](https://skills.wondel.ai/skills/web-typography/) skill).
+- **Modern Web Guidance**: when you write or edit HTML, CSS, or client-side JavaScript (browser apps, Worker demos, the Chrome extension's pages), read [`.cursor/skills/modern-web-guidance/SKILL.md`](.cursor/skills/modern-web-guidance/SKILL.md) and search its guides before you write the code. When you work in `chrome-extension/`, also read [`.cursor/skills/chrome-extensions/SKILL.md`](.cursor/skills/chrome-extensions/SKILL.md). Both come from [GoogleChrome/modern-web-guidance](https://github.com/GoogleChrome/modern-web-guidance) (see [`.cursor/modern-web-guidance-SOURCE`](.cursor/modern-web-guidance-SOURCE)); refresh from upstream rather than editing the copies. The CLI's telemetry stays off: the project hook in [`.cursor/hooks.json`](.cursor/hooks.json) exports `DISABLE_TELEMETRY=1` ahead of any Shell command that mentions `modern-web-guidance` (test it with `bash .cursor/hooks/disable-telemetry_test.sh`). Agents that don't run Cursor hooks must set `DISABLE_TELEMETRY=1` themselves. **Browser support:** follow each guide's fallbacks, except in `chrome-extension/` and `chrome-ai/`, which run only in Chrome and need no fallbacks for other browsers.
 - **Apple HIG**: when you design, edit, or review iOS / macOS / watchOS UI (`ios/`, `hello-macos/`, `onramp/`, `roll/`), read [`.cursor/skills/apple-hig/SKILL.md`](.cursor/skills/apple-hig/SKILL.md) and consult the linked [Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/) topics.
-- **Foundation Models context**: when you add or change on-device Foundation Models chat, tools, `@Generable` types, or compaction in `ios/` (Army List, Live Translate, or a new FM experiment), read [`.cursor/skills/foundation-models-context/SKILL.md`](.cursor/skills/foundation-models-context/SKILL.md) and follow [TN3193](https://developer.apple.com/documentation/technotes/tn3193-managing-the-on-device-foundation-model-s-context-window).
+- **Foundation Models context**: when you add or change on-device Foundation Models chat, tools, `@Generable` types, or compaction in `ios/` (Blather, Live Translate, or a new FM experiment), read [`.cursor/skills/foundation-models-context/SKILL.md`](.cursor/skills/foundation-models-context/SKILL.md) and follow [TN3193](https://developer.apple.com/documentation/technotes/tn3193-managing-the-on-device-foundation-model-s-context-window).
 - **Do not commit**: `node_modules/`, secrets, env files, browser/Go/Rust build artifacts (`target/`), `*.xcodeproj`, `*.dmg`, or Playwright/Jest output (`test-results/`, `coverage/`).
 - **Do not write `blog-post.md` files.** Those are human-authored project
   posts. Agents must not create, edit, or rewrite them. The published
@@ -930,6 +1022,7 @@ bundle exec fastlane test
 | `image-diff/` | Drop two images and compare them pixel by pixel; different pixels tint red | Node test runner |
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
 | `qr-quine/` | QR symbol that encodes a `data:` URL of itself | Node test runner |
+| `queens/` | Generate and play Queens (one queen per row, column, and region) and Two Not Touch (two stars each) on phones. Four levels set the board size and the hardest solving rule a puzzle needs; every puzzle has one solution and needs no guessing. Hints point out wrong marks, then explain the next step. Workers build puzzles off the main thread, and the URL seed shares a puzzle | Node test runner |
 | `life-lab/` | Draw Life gen 0, preview the printable Z-stack in 3D, export STL / Bambu 3MF (wasm from `life-stl/`; rebuild via `life-lab/build-wasm.sh`) | Node test runner |
 | `marptalk/` | Present a Marp deck with each slide's speaker notes read aloud by browser text-to-speech, one sentence at a time, with subtitles, speed control (0.5× to 2×), and voice choice. Plays three bundled decks or an uploaded `.md`. Renders with Marp Core bundled into `vendor/` without math (`npm run vendor`). `scripts/check.js` checks a deck, and the [marptalk skill](.cursor/skills/marptalk/SKILL.md) tells agents how to write one | Node test runner (fake speech synthesizer and clock) |
 | `nes-player/` | Play the NEScript games (the ones the README shows, plus SHA-256 and Coin Cavern), fetched from `raw.githubusercontent.com` on `main`, or a dropped `.nes` file, with jsnes. Keyboard, gamepad, and touch controls for two players | Node test runner |
@@ -941,6 +1034,7 @@ bundle exec fastlane test
 | `population-rays/` | Directional 5° population slices (distance to N people) over Meta/CIESIN HRSL grids | Node test runner |
 | `sundial/` | Clock whose long shadow follows the sun; no shadow at night | Node test runner |
 | `web-push-demo/` | Browser front-end for `web-push` (subscribe/unsubscribe/notify) | none (static) |
+| `zip/` | Generate and play Zip on phones: draw one path through every cell, passing the numbers in order. Three levels set the board size, the walls, and how many numbers a puzzle keeps; every puzzle has one solution. Hints point out a wrong turn, then show the next few cells. Workers build puzzles off the main thread, and the URL seed shares a puzzle | Node test runner |
 
 > **`nypd-choppers` has an intentionally non-standard lifecycle.** Because free
 > ADS-B APIs are blocked by CORS and only serve live (current-position) data, it
@@ -958,6 +1052,7 @@ bundle exec fastlane test
 
 | Directory | Type | Tests |
 |-----------|------|-------|
+| `ci-substrate/` | Multi-tenant Bazel Remote Execution CAS + node-local verified read-through cache (ko apply; demo of multi-tenant isolation and optimized caching on KinD). Optional Agent Substrate actor/egress overlay under `deploy/substrate/` | `go test -race ./...`; kind e2e (`CI_SUBSTRATE_KIND_E2E=1`) when `ci-substrate/` changes |
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test -race ./...` |
 | `apko-frontend/` | BuildKit frontend for apko YAML, built with ko and published as `ghcr.io/imjasonh/playground/apko-frontend` by `apko-frontend-publish.yml`. With `# syntax=ghcr.io/imjasonh/playground/apko-frontend` at the top of an apko file, `docker build` resolves packages with apko's resolver while BuildKit fetches each index and key, and a build step for each package downloads it and checks it against the signed index, so its cache key is the checksum and a `--cache-from` build downloads no packages. A step that runs the same image with no network runs apko's build from those files, and each of apko's layers (origin `layering` included) becomes a BuildKit layer. Supports multi-arch from `archs`, `SOURCE_DATE_EPOCH`, apko lock files (`APKO_LOCK`), keyrings and repositories in the build context, repositories that need credentials (BuildKit's `HTTP_AUTH_HEADER_<host>` and `HTTP_AUTH_TOKEN_<host>` secrets), and `vcs-url` detected from a git checkout; the README lists what it doesn't support | `go test -race ./...` (generates a signed apk repository in memory and runs apko offline; no network or BuildKit) |
 | `cloudrun-sqlite/` | HTTP server whose SQLite database lives only in a Litestream replica (Cloud Storage, S3, or a directory), read page by page through the Litestream VFS. It builds against the fork in `litestream/`, because every Litestream release corrupts the database under sustained writes. Writes share transactions and upload before they return; L0 uploads are conditional so overlapping Cloud Run instances can't both publish a transaction. `/stats` and `/metrics` report durable write latency, paged-in and cold VFS page read latency, and object-storage latency, which also go to Cloud Monitoring on Cloud Run. Each click's new count is also broadcast in-process to every browser connected to that instance as a server-sent event. Terraform also deploys a read-only replica as a second service with its own URL: it opens SQLite read-only, its account can only read the bucket, and it refuses POSTs. `cmd/crsim` simulates Cloud Run's instance lifecycle, `cmd/crbench` measures cold starts and runs chaos soaks, and `terraform/` deploys to Cloud Run with a latency dashboard; `dashboard_test.go` checks the dashboard against the metrics the server emits. `deploy-gcp.yml` applies this stack from `main` and comments a Terraform plan on pull requests, once Terraform has created the Workload Identity pool and the state bucket exists | `go test -tags vfs -race ./...` (CGO; Litestream's VFS needs the `vfs` tag; includes a 25-second end-to-end run under the simulator, skipped by `-short`) |
@@ -969,7 +1064,9 @@ bundle exec fastlane test
 | `palette-swap/` | Nearest-color palette swap compiled to Wasm, also served as a Pages app. Scalar tests always run. `GOEXPERIMENT=simd` adds the portable mapper | `go test -race ./...` and `npm test` |
 | `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md). Playground style rules are enrolled via `.pasta/examples` → `pasta/analyzers` and gated by the pasta leg of `test.yml` | `go test -race ./...` (incl. e2e shallow-clone smoke); CI also runs `pasta test` + monorepo lint |
 | `sshapp/` | Wish SSH apps on GKE Autopilot (shared mux LB; `ssh user@ssh.domain <app>`; includes `hello` + `chess`); Terraform + `ko_build` | `go test -race ./...`; KinD e2e (`SSHAPP_KIND_E2E=1`) when the module changes |
+| `stream-boids/` | Renders a flock of boids on the CPU and streams it with a generated soundtrack to YouTube Live through ffmpeg. One boid per viewer up to `BOID_CAP` (10,000), a gold named boid per member who chatted in the last 30 minutes, a viewer HUD, and banners, bells, and pushes for Super Chats and memberships. ffmpeg restarts with backoff and rereads the stream key, and a YouTube stream with Auto-stop off keeps the broadcast up while a preempted Spot VM comes back. Secrets live in Secret Manager with no versions in Terraform. `cmd/fake-youtube` serves a fake YouTube Data API with a control page for running locally. `terraform/` builds an apko base with ffmpeg 9.0 from `apk.cgr.dev/chainguard`, puts the program on it with ko for linux/amd64 and linux/arm64, and runs it on a one-VM Spot managed instance group on Container-Optimized OS, by default an `n4a-highcpu-2` at 1280x720 and 30 fps; `deploy-gcp.yml` applies it. The VM is disabled by default (`running = false`): the stack stays applied with no VM, so re-enabling is a one-line flip to `true` | `go test -race ./...` (`TestStreamsToFile` streams to a file with real ffmpeg against the fake API, and skips without ffmpeg and ffprobe) |
 | `testtrace/` | Library that parents OpenTelemetry spans on the span of the Go test that starts them. `Install` wraps the TracerProvider in `TestMain`. Spans started from `t.Context()` pick up that span with no further call. `Hook(t)` names the span after the test | `go test -race ./...` |
+| `wehadababyitsaboy/go/` | Library (package `whbiab`) that sends one usage ping from a Go CLI to the `wehadababyitsaboy` bucket: `Execute` runs a cobra root command and sends `CLIENT/ARGS?bob=wehadababyitsaboy` for the subcommand and the flag names that ran, then waits for the request. `gitdb`, `ocidb`, `liquid`, and `node-image` use it. It sends no flag value or positional argument, honors `DO_NOT_TRACK=1` and `WHBIAB_DISABLE=1`, and sends nothing from a test binary | `go test -race ./...` (a local server stands in for the bucket) |
 
 ## Current Rust apps
 
@@ -985,6 +1082,7 @@ bundle exec fastlane test
 | `mapvelopes/` | envelope PDFs with the sender-to-recipient route as the background (requires a Google Maps key; sizes #10, #9, Monarch, #6¾, A7) | `cargo test` + clippy + wasm build |
 | `y/` | One-user microblog (D1 + R2); 260-char posts, images, RSS, passkeys | `cargo test` + clippy + wasm build |
 | `app-attest/` | App Attest handshake + assertion verifier for the Playground iOS experiment — Cloudflare Worker | `cargo test` + clippy + wasm build |
+| `wehadababyitsaboy/rust/` | Library (crate `whbiab`) that sends one usage ping from a Rust CLI to the `wehadababyitsaboy` bucket: `parse` parses a clap CLI, starts a background request for `CLIENT/ARGS?bob=wehadababyitsaboy` with the subcommands and flag names that ran, and returns a `Ping` that waits for it. `git-fuse`, `life-stl`, and `tank-commander` use it. It sends no flag value or positional argument, honors `DO_NOT_TRACK=1` and `WHBIAB_DISABLE=1`, and sends nothing from a debug build | `cargo test` + clippy (a local server stands in for the bucket) |
 | `nescript/` | Statically typed compiler from `.ne` source to an iNES ROM. Imported with `git subtree` from [imjasonh/nescript](https://github.com/imjasonh/nescript), so that history stays reachable | `cargo test` + clippy. `nescript.yml` also runs benches, ROM reproducibility, jsnes frame and audio goldens, and a Mesen2 `.dbg` probe, and uploads the built example ROMs as `nescript-examples`. That job always reports a status and no-ops when `nescript/` is unchanged, so it can be a required check |
 | `c3-boot/` | Cargo workspace for the ESP32-C3 OTA verifier that [`docs/esp32c3-verified-ota-plan.md`](docs/esp32c3-verified-ota-plan.md) proves at the machine-code level. `verify` holds every slot check as `no_std` code with no heap or `unsafe`, `crypto` holds the signature checks, `bootloader` is the RISC-V bootloader, `ota` is the host tool, and `fakestore/` is a test-only Go Sigstore. The bootloader build requires `C3_GENESIS` (`dev` for the public development keys), and burns eFuses only with `C3_EFUSE_BURN=on`, which production keys require. Formats are in `c3-boot/docs/formats.md` | `cargo test` + clippy. `c3-boot.yml` also builds and lints the RISC-V crates, tests `fakestore`, and boots update scenarios in Espressif's QEMU (`c3-boot/qemu/scenarios.sh`). `c3-release.yml` signs the demo image with production Sigstore from a job that alone holds `id-token: write`, then checks and boots it in QEMU. `c3-trust-root.yml` keeps the pinned Sigstore files current |
 
@@ -1005,12 +1103,13 @@ auto-discover them. Run their local tests when you change them.
 |-----------|------|-------|
 | `its-not-jaws/` | Cursor SDK harness for It's Not Jaws (movie shared-fact guessing); mock backend for tests; live PR game via `its-not-jaws.yml` + `CURSOR_API_KEY` secret | `cd its-not-jaws && npm test` (CI also runs a live game when the secret is set) |
 | `nethack-agent/` | Cursor SDK harness that plays NetHack from the terminal and keeps notes in `notebook/`. The fake screen is tests only and cannot write that notebook. Live play is `npm run play` against `/usr/games/nethack` using `grok-4.6`, and each run prints the token cost the SDK reported. The notebook keeps claims that survive the screen, not a turn log. CI play publishes `notebook/` to `automation/nethack-notes` so the next play can read it before that pull request merges | `cd nethack-agent && npm test` (CI also runs `bash .github/scripts/publish-nethack-notes_test.sh`; the play job runs the real binary when `CURSOR_API_KEY` is set) |
+| `wehadababyitsaboy/` | Terraform for an empty, unreadable Cloud Storage bucket whose hourly usage logs record every request, query string included. CLIs and web pages request `CLIENT/ARGS?bob=wehadababyitsaboy` in it, and `report.sh` counts those requests with a BigQuery external table over the logs. `deploy-gcp.yml` applies it | `bash -n wehadababyitsaboy/report.sh`; `tofu validate` in `terraform/` |
 | `bun-image/` | bun compile + crane image (deno-image cousin; shell scripts, not a Go packager) | `bash bun-image/test.sh` (needs bun; crane for the image half) |
 | `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker and signed GHCR OTA, or `APP=maze` for an offline maze on the same 7.5″ panel. Secrets in NVS (`make provision`). Agent guide: [`inkbot-esp32/AGENTS.md`](inkbot-esp32/AGENTS.md) | host lib tests + provision dry-run + Xtensa cross-build via `inkbot-esp32.yml`; publish + Cosign on `main` via `inkbot-esp32-publish.yml` |
 | `esp32-ble/` | Rust/ESP-IDF firmware: BLE GATT LED control for the iOS ESP32 BLE experiment. USB flash only. Agent guide: [`esp32-ble/AGENTS.md`](esp32-ble/AGENTS.md) | host protocol tests + Xtensa cross-build via `esp32-ble.yml` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
-| `chrome-extension/` | Chrome extension. The toolbar button closes tabs that share a URL, and the badge shows how many tabs that click will close. Chrome 150 and later show the same action on the tab menu. Highlighted base64 adds a selection menu item that copies the decoded text. Not a Pages app. `chrome-extension.yml` publishes the Chrome Web Store item from `main` and keeps `chrome-extension.zip` as a workflow artifact | `cd chrome-extension && npm test` (also `python3 .github/scripts/chrome_web_store_test.py`) |
+| `chrome-extension/` | Chrome extension. The toolbar button closes tabs that share a URL, and the badge shows how many tabs that click will close. Chrome 150 and later show the same action on the tab menu, next to a Copy N tab URLs item that copies the selected tabs' URLs, one per line. Highlighted base64 adds a selection menu item that copies the decoded text. The toolbar button's right-click menu opens a Tab insights side panel, where Chrome's built-in Gemini Nano (the Prompt API) groups tabs by topic and suggests tabs to close, on the device. The panel can turn that into Chrome tab groups, with a collapsed Likely close group, and can undo closes and grouping. The service worker plans that grouping in the background, every 15 minutes and a minute after tabs change, and turns the badge green when an unseen plan is ready. It never groups tabs itself. Not a Pages app. `chrome-extension.yml` publishes the Chrome Web Store item from `main` and keeps `chrome-extension.zip` as a workflow artifact | `cd chrome-extension && npm test` (also `python3 .github/scripts/chrome_web_store_test.py`) |
 
 ## The iOS app
 
