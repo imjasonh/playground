@@ -324,6 +324,8 @@ DATA = [
     ("edD", "edDecompress", 0x102, 40),
     ("edSqrtM1", "edDecompress", 0x1F8, 40),
     ("b64Alphabet", "base64EncodeTo", 0x28, 64),
+    ("regionEnds", "imageParse", 0x250, 16),
+    ("regionStarts", "imageParse", 0x272, 16),
 ]
 
 
