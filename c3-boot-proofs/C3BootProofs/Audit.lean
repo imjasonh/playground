@@ -161,6 +161,7 @@ import C3BootProofs.Proofs.Bundle
 import C3BootProofs.Proofs.Window
 import C3BootProofs.Proofs.ReadString
 import C3BootProofs.Proofs.KeySet
+import C3BootProofs.Proofs.CheckSigs
 
 /-!
 # Audit
@@ -8718,3 +8719,6 @@ end C3
 
 /-- info: 'C3.RV32.keySetNew_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.keySetNew_correct
+
+/-- info: 'C3.RV32.checkSignatures_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.checkSignatures_correct

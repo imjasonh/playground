@@ -127,6 +127,7 @@ import C3BootProofs.Proofs.Bundle
 import C3BootProofs.Proofs.Window
 import C3BootProofs.Proofs.ReadString
 import C3BootProofs.Proofs.KeySet
+import C3BootProofs.Proofs.CheckSigs
 import C3BootProofs.Proofs.Sha256LoopDecode
 import C3BootProofs.Proofs.Sha256LoopBlocks
 import C3BootProofs.Proofs.Sha256LoopRounds
