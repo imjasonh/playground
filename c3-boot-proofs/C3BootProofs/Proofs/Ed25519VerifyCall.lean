@@ -33,6 +33,11 @@ theorem PkEnv.hi {M M' : Word → BitVec 8} (E : PkEnv M) (h : ∀ x : Word, 0x4
 structure EvEnv (M : Word → BitVec 8) : Prop where
   pk : PkEnv M
   cod : CodeIn M EV ed25519VerifyCode
+  s29s : CodeIn M (BitVec.ofNat 32 scalar29SubAddress) scalar29SubCode
+  s29i : CodeIn M (BitVec.ofNat 32 scalar29IndexAddress) scalar29IndexCode
+  s29im : CodeIn M (BitVec.ofNat 32 scalar29IndexMutAddress) scalar29IndexMutCode
+  sL : CodeIn M (BitVec.ofNat 32 scalarLAddress) scalarLData
+  s29p : CodeIn M (BitVec.ofNat 32 scalar29PackAddress) scalar29PackCode
 
 /-- Where `ed25519_verify` runs: its frame at `F`, 16-aligned, with the
 0xA10 bytes below it, all below the code and apart from the read-only data
@@ -175,6 +180,11 @@ theorem EvSt.bytesOut (D : EvSt M0 Ms F r0 M n off) {p : Word} {k : Nat} (h : Se
 theorem EvSt.code (C : EvCtx M0 F pk sig msg len) (D : EvSt M0 Ms F r0 M n off) : CodeIn M EV ed25519VerifyCode :=
   C.env.cod.hi (D.hiM C) (by decide) (by rw [ev_len]; decide)
 
+theorem EvSt.codeRo (C : EvCtx M0 F pk sig msg len) (D : EvSt M0 Ms F r0 M n off) {a : Nat} {code : List Nat}
+    (h : CodeIn M0 (BitVec.ofNat 32 a) code) (h1 : 0x3FCC4000 ≤ a) (h2 : a + code.length ≤ 0x3FCC5400) :
+    CodeIn M (BitVec.ofNat 32 a) code :=
+  fun i hi => by rw [D.roM C h1 h2 i hi]; exact h i hi
+
 theorem EvSt.pkEnv (C : EvCtx M0 F pk sig msg len) (D : EvSt M0 Ms F r0 M n off) : PkEnv M :=
   C.env.pk.hi (D.hiM C) (D.feRo C (by decide) (by decide))
 
@@ -221,6 +231,18 @@ theorem EvSt.block (C : EvCtx M0 F pk sig msg len) (D : EvSt M0 Ms F r0 M n off)
   obtain ⟨n', c, u⟩ := St.block blk D.st (D.code C) he hok
   rw [hm] at u
   exact ⟨n', c, D.regs ⟨u.pc, u.mem, fun _ => rfl⟩ (fun q hq => by rw [u.regs]; exact hk q hq), u.regs⟩
+
+/-- A word store into the frame below the slots. -/
+theorem EvSt.sw (C : EvCtx M0 F pk sig msg len) (D : EvSt M0 Ms F r0 M n off) {rs1 rs2 : Fin 32} {imm len' : Word}
+    {off' c : Nat} (hf : fetchRel ed25519VerifyCode off = some (.store .sw rs1 rs2 imm, len'))
+    (hn : BitVec.ofNat 32 off + len' = BitVec.ofNat 32 off') (ha : reg n rs1 + imm = F + BitVec.ofNat 32 c)
+    (hc4 : c % 4 = 0) (hc : c + 4 ≤ 0x166C) :
+    ∃ n1, step n = some n1 ∧ EvSt M0 Ms F r0 (memStore32 M (F + BitVec.ofNat 32 c) (reg n rs2)) n1 off' ∧
+      ∀ q, reg n1 q = reg n q := by
+  obtain ⟨n1, d1, u1⟩ := D.st.sw (D.code C) hf hn (by rw [ha]; exact C.al hc4)
+  rw [ha] at u1
+  exact ⟨n1, d1, D.store C (d := c) (k := 4) u1.self (by rw [u1.regs, D.hsp]) (by rw [u1.regs]) (by rw [u1.regs]) hc
+    (fun x hx => st32_frame hx), u1.regs⟩
 
 /-- `beqz a0` on a flag `c`: on to `off'` when it is set, to `offT` when
 it is clear. -/

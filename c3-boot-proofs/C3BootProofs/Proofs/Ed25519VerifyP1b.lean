@@ -14,11 +14,6 @@ namespace C3.RV32
 
 open C3.Image
 
-/-- `decompress` of the key bytes `b` with the constants as `M` holds them. -/
-def evDec (M : Word → BitVec 8) (b : Bytes) : Option (List Nat × List Nat × List Nat × List Nat) :=
-  decSpec (feW M (BitVec.ofNat 32 edOneAddress)) (feW M (BitVec.ofNat 32 edDAddress))
-    (feW M (BitVec.ofNat 32 edSqrtM1Address)) b
-
 section
 variable {M0 Ms : Word → BitVec 8} {F pk sig msg : Word} {len : Nat} {r0 : Fin 32 → Word}
 
