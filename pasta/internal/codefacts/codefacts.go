@@ -24,8 +24,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/imjasonh/playground/pasta/internal/testpath"
 	"github.com/imjasonh/playground/pasta/internal/tsutil"
@@ -408,6 +411,9 @@ func DefaultBuildOptions() BuildOptions {
 
 // Build walks each root, parses every file whose extension maps to a supported
 // language, and returns the index.
+//
+// Files are parsed in parallel, each into its own index, and merged in walk
+// order, so the result doesn't depend on which parse finishes first.
 func Build(ctx context.Context, roots []string, opts BuildOptions) (*Index, error) {
 	if opts.MaxFileSize == 0 {
 		opts.MaxFileSize = 2 << 20
@@ -416,17 +422,14 @@ func Build(ctx context.Context, roots []string, opts BuildOptions) (*Index, erro
 	if len(opts.Langs) > 0 {
 		want = set(opts.Langs...)
 	}
-	idx := newIndex()
-	seen := map[string]bool{}
+	var cands []candidate
 	for _, root := range roots {
 		info, err := os.Stat(root)
 		if err != nil {
 			return nil, err
 		}
 		if !info.IsDir() {
-			if err := buildFile(ctx, root, root, want, opts, idx, seen); err != nil {
-				return nil, err
-			}
+			cands = appendCandidate(cands, root, root, want, opts)
 			continue
 		}
 		err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -442,11 +445,82 @@ func Build(ctx context.Context, roots []string, opts BuildOptions) (*Index, erro
 			if d.Type()&fs.ModeSymlink != 0 {
 				return nil
 			}
-			return buildFile(ctx, p, root, want, opts, idx, seen)
+			cands = appendCandidate(cands, p, root, want, opts)
+			return nil
 		})
 		if err != nil {
 			return nil, err
 		}
+	}
+	return buildAll(ctx, cands, opts)
+}
+
+// candidate is a file the walk selected by its path, before it is read.
+type candidate struct {
+	path, rel, abs, lang string
+}
+
+func appendCandidate(cands []candidate, p, root string, want map[string]bool, opts BuildOptions) []candidate {
+	langName := extToLang[strings.ToLower(filepath.Ext(p))]
+	if langName == "" || (want != nil && !want[langName]) {
+		return cands
+	}
+	rel := relOf(p, root)
+	if matchesAny(rel, opts.Exclude) {
+		return cands
+	}
+	abs, _ := filepath.Abs(p)
+	return append(cands, candidate{path: p, rel: rel, abs: abs, lang: langName})
+}
+
+// buildAll indexes cands on a worker pool and merges the per-file indexes in
+// candidate order. A file reached through two roots counts once, under the
+// first root that accepts it.
+func buildAll(ctx context.Context, cands []candidate, opts BuildOptions) (*Index, error) {
+	workers := max(1, min(runtime.GOMAXPROCS(0), len(cands)))
+	results := make([]chan *Index, len(cands))
+	for i := range results {
+		results[i] = make(chan *Index, 1)
+	}
+	// window bounds the files that are parsing or waiting to merge, so a
+	// slow file early in the walk doesn't buffer every later index.
+	window := make(chan struct{}, 4*workers)
+	var next atomic.Int64
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Go(func() {
+			for {
+				select {
+				case window <- struct{}{}:
+				case <-ctx.Done():
+					return
+				}
+				i := int(next.Add(1)) - 1
+				if i >= len(cands) {
+					<-window
+					return
+				}
+				results[i] <- indexFile(ctx, cands[i], opts)
+			}
+		})
+	}
+	defer wg.Wait()
+
+	idx := newIndex()
+	seen := map[string]bool{}
+	for i, c := range cands {
+		var f *Index
+		select {
+		case f = <-results[i]:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		<-window
+		if f == nil || seen[c.abs] {
+			continue
+		}
+		seen[c.abs] = true
+		idx.merge(f)
 	}
 	return idx, nil
 }
@@ -458,28 +532,18 @@ func relOf(p, root string) string {
 	return filepath.ToSlash(p)
 }
 
-func buildFile(ctx context.Context, p, root string, want map[string]bool, opts BuildOptions, idx *Index, seen map[string]bool) error {
-	abs, _ := filepath.Abs(p)
-	if seen[abs] {
-		return nil
-	}
-	langName := extToLang[strings.ToLower(filepath.Ext(p))]
-	if langName == "" || (want != nil && !want[langName]) {
-		return nil
-	}
-	rel := relOf(p, root)
-	if matchesAny(rel, opts.Exclude) {
-		return nil
-	}
-	fi, err := os.Stat(p)
+// indexFile reads and walks one candidate into a fresh index. It returns nil
+// when the file is filtered out.
+func indexFile(ctx context.Context, c candidate, opts BuildOptions) *Index {
+	fi, err := os.Stat(c.path)
 	if err != nil || fi.Size() > opts.MaxFileSize {
 		return nil
 	}
-	src, err := os.ReadFile(p)
+	src, err := os.ReadFile(c.path)
 	if err != nil {
 		return nil
 	}
-	isTest := testpath.Is(rel)
+	isTest := testpath.Is(c.rel)
 	if isTest && !opts.IncludeTests {
 		return nil
 	}
@@ -487,12 +551,73 @@ func buildFile(ctx context.Context, p, root string, want map[string]bool, opts B
 	if isGen && !opts.IncludeGen {
 		return nil
 	}
-	seen[abs] = true
-	walkFile(ctx, rel, langName, src, idx, isTest, isGen)
-	idx.files++
-	idx.filesByLang[langName]++
-	idx.langs[langName] = true
-	return nil
+	idx := newIndex()
+	walkFile(ctx, c.rel, c.lang, src, idx, isTest, isGen)
+	idx.files = 1
+	idx.filesByLang[c.lang] = 1
+	idx.langs[c.lang] = true
+	return idx
+}
+
+// merge folds f, the index of one file, into idx. f's definition IDs are
+// shifted past idx's, and f must not be used afterward.
+func (idx *Index) merge(f *Index) {
+	off := idx.nextID
+	for name, ds := range f.defs {
+		for _, d := range ds {
+			d.ID += off
+			idx.defsByID[d.ID] = d
+		}
+		idx.defs[name] = append(idx.defs[name], ds...)
+	}
+	for name, cs := range f.calls {
+		for _, c := range cs {
+			if c.CallerID >= 0 {
+				c.CallerID += off
+			}
+		}
+		idx.calls[name] = append(idx.calls[name], cs...)
+	}
+	for id, names := range f.callEdges {
+		idx.callEdges[id+off] = names
+	}
+	idx.nextID += f.nextID
+	for name, n := range f.identUses {
+		idx.identUses[name] += n
+	}
+	for name, sites := range f.identSites {
+		s := idx.identSites[name]
+		if room := identSiteCap - len(s); room > 0 {
+			idx.identSites[name] = append(s, sites[:min(room, len(sites))]...)
+		}
+	}
+	unionInto(idx.toplevelCall, f.toplevelCall)
+	unionInto(idx.stringRefs, f.stringRefs)
+	unionInto(idx.ifaceMethods, f.ifaceMethods)
+	unionInto(idx.langs, f.langs)
+	for path, lines := range f.suppressed {
+		if idx.suppressed[path] == nil {
+			idx.suppressed[path] = lines
+			continue
+		}
+		unionInto(idx.suppressed[path], lines)
+	}
+	idx.dead = append(idx.dead, f.dead...)
+	idx.unreachable = append(idx.unreachable, f.unreachable...)
+	idx.unusedImports = append(idx.unusedImports, f.unusedImports...)
+	idx.redundant = append(idx.redundant, f.redundant...)
+	idx.files += f.files
+	for lang, n := range f.filesByLang {
+		idx.filesByLang[lang] += n
+	}
+}
+
+func unionInto[K comparable](dst, src map[K]bool) {
+	for k, v := range src {
+		if v {
+			dst[k] = true
+		}
+	}
 }
 
 func isGenerated(src []byte) bool {
