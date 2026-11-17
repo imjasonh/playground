@@ -350,10 +350,11 @@ left:
 **Effort:** S.
 The in-memory path keeps the trees that later passes need within
 `-tree-budget`, and compact encodings of the rest within half of it
-again. A file past both is parsed again for every later pass, and for
-every fixpoint iteration. Two changes would cut that:
-- Spill compact encodings past the budget to a temporary file instead
-  of parsing those files again.
+again. A file past both is read back from the parse cache, but with
+`-nocache` it's parsed again for every later pass, and for every
+fixpoint iteration. Two changes would cut that:
+- Spill compact encodings past the budget to a temporary file when the
+  cache is off.
 - Keep the trees of the files that a fixpoint group applies to ahead
   of the others, since those passes repeat.
 
@@ -369,13 +370,13 @@ but common tokens appear in nearly every file, so the ceiling is low.
 ### Parse cache on cross-file runs
 **Effort:** M.
 `RunGroup` takes the in-memory path for the whole rule set when any
-rule has `requires` or a fixpoint group, and that path never reads or
-writes the parse cache. The default rule set has cross-file rules
-(`go_errcheck`, the taint and deprecated-use rules), so a full lint of
-this repository parses every file on every run. Rules that no
-cross-file group depends on could stream through the cache on their
-own, and the cross-file groups could cache the facts each file emits
-for the passes that only read them.
+rule has `requires` or a fixpoint group, and that path caches only
+each file's parse tree, not its results. The default rule set has
+cross-file rules (`go_errcheck`, the taint and deprecated-use rules),
+so a full lint of this repository runs every rule on every file on
+every run. Rules that no cross-file group depends on could stream
+through the result cache on their own, and the cross-file groups could
+cache the facts each file emits for the passes that only read them.
 
 ### Parallel warm-cache reads
 **Effort:** S.

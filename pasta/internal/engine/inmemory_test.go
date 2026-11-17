@@ -10,6 +10,7 @@ import (
 	"github.com/imjasonh/playground/pasta/internal/dsl"
 	"github.com/imjasonh/playground/pasta/internal/effect"
 	"github.com/imjasonh/playground/pasta/internal/lang"
+	"github.com/imjasonh/playground/pasta/internal/parsecache"
 	"github.com/imjasonh/playground/pasta/internal/tsutil"
 )
 
@@ -179,6 +180,53 @@ func TestInMemoryTreeBudgetRebuildsCompactTrees(t *testing.T) {
 	}
 	if g, w := diagnosticsByFile(got), diagnosticsByFile(want); !reflect.DeepEqual(g, w) {
 		t.Errorf("diagnostics with compact trees = %v, want %v", g, w)
+	}
+}
+
+// TestInMemoryTreeCache runs a cross-file fixpoint with a tree budget
+// too small for any Go tree or compact encoding, and a tree cache. The
+// first run writes every tree and reads them back for later passes
+// instead of parsing again. The second run reads every tree from the
+// cache, even one whose entry doesn't decode, which it parses. Both
+// report the same diagnostics as a run that keeps every tree.
+func TestInMemoryTreeCache(t *testing.T) {
+	files := chainFiles(t, 8)
+	analyzers := []*dsl.Analyzer{chainAnalyzer(assignRule("propagate",
+		[]dsl.Predicate{{Op: "has_fact", Args: []dsl.Arg{{Str: "@rhs"}, {Str: "k"}}}},
+		[]string{"k"}, []string{"k"}))}
+	want, err := RunGroup(t.Context(), files, analyzers, WithTreeBudget(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := parsecache.Open(t.TempDir(), parsecache.HashRules(analyzers), 0)
+	run := func() *Stats {
+		t.Helper()
+		stats := new(Stats)
+		got, err := RunGroup(t.Context(), files, analyzers, WithTreeBudget(1), WithCache(cache), WithStats(stats))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if g, w := diagnosticsByFile(got), diagnosticsByFile(want); !reflect.DeepEqual(g, w) {
+			t.Errorf("diagnostics with a tree cache = %v, want %v", g, w)
+		}
+		return stats
+	}
+
+	cold := run()
+	if r := cold.Reparsed.Load(); r != 0 {
+		t.Errorf("cold run reparsed %d files, want 0", r)
+	}
+	if cold.Rebuilt.Load() == 0 {
+		t.Error("cold run rebuilt no trees")
+	}
+	if h := cold.TreeCacheHits.Load(); h != 0 {
+		t.Errorf("cold run had %d tree cache hits, want 0", h)
+	}
+
+	cache.PutTree(parsecache.HashFile(files[0].Lang.Name, files[0].Src), tsutil.Compact{0xff})
+	warm := run()
+	if h, p := warm.TreeCacheHits.Load(), warm.Parsed.Load(); h != p-1 {
+		t.Errorf("warm run had %d tree cache hits for %d files, want %d", h, p, p-1)
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 
 	"github.com/imjasonh/playground/pasta/internal/effect"
 	"github.com/imjasonh/playground/pasta/internal/factstore"
+	"github.com/imjasonh/playground/pasta/internal/parsecache"
 	"github.com/imjasonh/playground/pasta/internal/prefilter"
 	"github.com/imjasonh/playground/pasta/internal/tsutil"
 )
@@ -46,6 +47,8 @@ type memFile struct {
 	// when compact is nil too.
 	state   fileState
 	compact tsutil.Compact
+	// key is the file's key in the tree cache, or empty without one.
+	key string
 	// outs holds what each group produced for this file until it's
 	// reassembled in schedule order.
 	outs []groupOutput
@@ -145,11 +148,10 @@ func (r *memRun) parseAll(ctx context.Context, files []FileInput, results []Resu
 				r.o.syncAdmit(i, 0)
 				return err
 			}
-			s, err := parseInMemory(gctx, i, files[i], r.groups, r.store, &results[i], parseTimeout, r.o)
-			if err != nil || s == nil {
+			f, c, err := parseInMemory(gctx, i, files[i], r.groups, r.store, &results[i], parseTimeout, r.o)
+			if err != nil || f == nil {
 				return err
 			}
-			f := &memFile{index: i, state: *s}
 			parsed[i] = f
 			for _, gi := range first {
 				var res Result
@@ -165,7 +167,10 @@ func (r *memRun) parseAll(ctx context.Context, files []FileInput, results []Resu
 			if budget <= 0 || reserveBytes(&kept, budget, int64(f.state.nodes)*treeBytesPerNode) {
 				return nil
 			}
-			if c := f.state.tree.Compact(); reserveBytes(&compacted, budget/2, int64(len(c))) {
+			if c == nil {
+				c = f.state.tree.Compact()
+			}
+			if reserveBytes(&compacted, budget/2, int64(len(c))) {
 				f.compact = c
 			}
 			f.state.release()
@@ -302,7 +307,9 @@ func (r *memRun) pass(ctx context.Context, gis []int, fn func(*memFile, fileStat
 }
 
 // prepare returns f's state with a tree, rebuilding or parsing it again
-// when it was released. The release function frees a tree that prepare
+// when it was released. It rebuilds from f's compact encoding, or from
+// the tree cache, which holds every tree the first pass parsed unless
+// a write failed. The release function frees a tree that prepare
 // made. The file parsed within the parse timeout once, so the second
 // parse has none: a slow machine must not drop a file between passes.
 func (r *memRun) prepare(ctx context.Context, f *memFile) (fileState, func(), error) {
@@ -310,17 +317,28 @@ func (r *memRun) prepare(ctx context.Context, f *memFile) (fileState, func(), er
 		return f.state, func() {}, nil
 	}
 	in := f.state.input
-	if f.compact != nil {
-		tree, root, err := tsutil.FromCompact(f.compact, in.Lang.GetLanguage(), in.Src, in.FileID)
-		if err != nil {
-			return fileState{}, nil, fmt.Errorf("rebuild %s: %w", in.FileID, err)
-		}
+	rebuilt := func(tree *tsutil.Tree, root tsutil.Node) (fileState, func(), error) {
 		s := treeFileState(in, r.store, tree, root)
 		s.suppress = f.state.suppress
 		if r.o != nil && r.o.stats != nil {
 			r.o.stats.Rebuilt.Add(1)
 		}
 		return s, s.release, nil
+	}
+	if f.compact != nil {
+		tree, root, err := tsutil.FromCompact(f.compact, in.Lang.GetLanguage(), in.Src, in.FileID)
+		if err != nil {
+			return fileState{}, nil, fmt.Errorf("rebuild %s: %w", in.FileID, err)
+		}
+		return rebuilt(tree, root)
+	}
+	if f.key != "" {
+		// A cache entry that doesn't decode falls through to a parse.
+		if c, ok := r.o.cache.GetTree(f.key); ok {
+			if tree, root, err := tsutil.FromCompact(c, in.Lang.GetLanguage(), in.Src, in.FileID); err == nil {
+				return rebuilt(tree, root)
+			}
+		}
 	}
 	s, err := newFileState(ctx, in, r.store, 0, false)
 	if err != nil {
@@ -350,20 +368,21 @@ func readsAbsentFacts(g ruleGroup) bool {
 	return false
 }
 
-// parseInMemory loads and parses one file for runInMemory. It returns
-// nil when the file needs no rule pass: no applicable rules, a
-// prefilter miss, or a skip recorded in out.SkipReason. Every path
-// calls o.syncAdmit exactly once, so a memory budget can't stall the
-// files after this one.
-func parseInMemory(ctx context.Context, index int, f FileInput, groups []ruleGroup, store *factstore.Store, out *Result, parseTimeout time.Duration, o *runOpts) (*fileState, error) {
+// parseInMemory loads and parses one file for runInMemory, along with
+// the compact encoding of its tree when it has one. It returns nil when
+// the file needs no rule pass: no applicable rules, a prefilter miss,
+// or a skip recorded in out.SkipReason. Every path calls o.syncAdmit
+// exactly once, so a memory budget can't stall the files after this
+// one.
+func parseInMemory(ctx context.Context, index int, f FileInput, groups []ruleGroup, store *factstore.Store, out *Result, parseTimeout time.Duration, o *runOpts) (*memFile, tsutil.Compact, error) {
 	src, err := loadSource(f)
 	if err != nil {
 		o.syncAdmit(index, 0)
 		if errors.Is(err, fs.ErrNotExist) {
 			out.SkipReason = "file not found"
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
 	f.Src = src
 	out.Src = src
@@ -371,9 +390,9 @@ func parseInMemory(ctx context.Context, index int, f FileInput, groups []ruleGro
 	if len(applicable) == 0 {
 		o.syncAdmit(index, 0)
 		if hasPastaIgnore(src) {
-			return nil, emitUnusedIgnoresOnly(ctx, f, out, o)
+			return nil, nil, emitUnusedIgnoresOnly(ctx, f, out, o)
 		}
-		return nil, nil
+		return nil, nil, nil
 	}
 	if o != nil && o.stats != nil {
 		o.stats.Walked.Add(1)
@@ -384,18 +403,18 @@ func parseInMemory(ctx context.Context, index int, f FileInput, groups []ruleGro
 			o.stats.PrefilterSkipped.Add(1)
 		}
 		if hasPastaIgnore(src) {
-			return nil, emitUnusedIgnoresOnly(ctx, f, out, o)
+			return nil, nil, emitUnusedIgnoresOnly(ctx, f, out, o)
 		}
-		return nil, nil
+		return nil, nil, nil
 	}
 	if !o.syncAdmit(index, int64(len(src))) {
 		out.SkipReason = "memory budget exceeded"
 		if o != nil && o.stats != nil {
 			o.stats.MemorySkipped.Add(1)
 		}
-		return nil, nil
+		return nil, nil, nil
 	}
-	s, err := newFileState(ctx, f, store, parseTimeout, o != nil && o.defineNames)
+	s, c, key, err := cachedFileState(ctx, f, store, parseTimeout, o)
 	if err != nil {
 		releaseParse(o, int64(len(src)))
 		if errors.Is(err, tsutil.ErrParseTimeout) || errors.Is(err, tsutil.ErrParseResourceLimit) {
@@ -403,9 +422,9 @@ func parseInMemory(ctx context.Context, index int, f FileInput, groups []ruleGro
 			if o != nil && o.stats != nil {
 				o.stats.TimedOut.Add(1)
 			}
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
 	if tsutil.ErrorHeavy(s.root) {
 		releaseParse(o, int64(len(src)))
@@ -414,7 +433,7 @@ func parseInMemory(ctx context.Context, index int, f FileInput, groups []ruleGro
 			o.stats.ParseErrors.Add(1)
 		}
 		s.tree.Release()
-		return nil, nil
+		return nil, nil, nil
 	}
 	if o != nil && o.stats != nil {
 		if s.root.HasError() {
@@ -422,7 +441,37 @@ func parseInMemory(ctx context.Context, index int, f FileInput, groups []ruleGro
 		}
 		o.stats.Parsed.Add(1)
 	}
-	return &s, nil
+	return &memFile{index: index, state: s, key: key}, c, nil
+}
+
+// cachedFileState builds f's state from its tree in o's tree cache, or
+// parses f and stores its tree there. With a cache, it also returns the
+// tree's compact encoding and f's key in the cache.
+func cachedFileState(ctx context.Context, f FileInput, store *factstore.Store, parseTimeout time.Duration, o *runOpts) (fileState, tsutil.Compact, string, error) {
+	defineNames := o != nil && o.defineNames
+	if o == nil || o.cache == nil {
+		s, err := newFileState(ctx, f, store, parseTimeout, defineNames)
+		return s, nil, "", err
+	}
+	key := parsecache.HashFile(f.Lang.Name, f.Src)
+	if c, ok := o.cache.GetTree(key); ok {
+		if tree, root, err := tsutil.FromCompact(c, f.Lang.GetLanguage(), f.Src, f.FileID); err == nil {
+			if defineNames {
+				defineAll(store, root, f.Lang.DefinitionTypes)
+			}
+			if o.stats != nil {
+				o.stats.TreeCacheHits.Add(1)
+			}
+			return treeFileState(f, store, tree, root), c, key, nil
+		}
+	}
+	s, err := newFileState(ctx, f, store, parseTimeout, defineNames)
+	if err != nil {
+		return fileState{}, nil, "", err
+	}
+	c := s.tree.Compact()
+	o.cache.PutTree(key, c)
+	return s, c, key, nil
 }
 
 // groupOutput is what one rule group produced for one file.

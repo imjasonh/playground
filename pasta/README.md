@@ -288,7 +288,7 @@ Cold runs over large trees are tuned for sparse style rules:
    unchanged broken file isn't parsed again. Pass `-stats` for
    `walked` / `prefilter_skipped` / `parsed` / `parse_errors` /
    `parse_degraded` / `timed_out` / `memory_skipped` / `cache_hits` /
-   `reparsed` / `rebuilt`.
+   `tree_cache_hits` / `reparsed` / `rebuilt`.
 4. **Memory budget** — optional cumulative parsed-source byte cap
    (`-memory-budget`, or `memory_budget` in `pasta.cue`) across the
    whole CLI run (including multipass `-fix`). Admission is in source
@@ -314,14 +314,26 @@ releases the trees past the budget and keeps a compact encoding of
 each instead, about 6 bytes per node against about 200, within half
 the budget again. Each later pass rebuilds those trees from their
 encodings, which `rebuilt` in `-stats` counts and which is about 40
-times faster than parsing. Past both limits, pasta parses the files
-again for each later pass, which `reparsed` counts. Unless
+times faster than parsing. Past both limits, pasta reads each tree
+back from the parse cache, or with `-nocache` parses the file again,
+which `reparsed` counts. Unless
 `GOMEMLIMIT` is set, pasta sets Go's memory limit to twice the tree
 budget, and to at least the budget plus 2 GiB, so the collector
 doesn't let garbage double the heap. On the Go module cache (about
 30,000 files), the compact encodings took the run from 162 to 103
 seconds, and peak RSS from 8.6 GB to 3.6 GB. A 4 GiB budget ran
-no faster and peaked at 8.6 GB. Rule files also load in parallel,
+no faster and peaked at 8.6 GB.
+
+These runs can't reuse a file's results from the parse cache, because
+its diagnostics depend on other files. They store each file's compact
+tree there instead, keyed by its bytes, its language, and the grammar
+build, so the tree survives rule changes. The first pass rebuilds a
+cached tree instead of parsing the file, which `tree_cache_hits`
+counts. On the Go module cache, the trees take 330 MB, and a run with
+every tree cached took 88 seconds against 115 with `-nocache`. The
+cold run took 100 seconds, because the module cache holds many copies
+of the same files. A lint of this repository took 1.6 seconds against
+3.6. Rule files also load in parallel,
 and pasta keeps wazero's compiled tree-sitter code under
 `$XDG_CACHE_HOME/pasta/wazero/` (about 7 MB), which saves about 0.6
 seconds per run.
