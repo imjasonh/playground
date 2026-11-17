@@ -536,5 +536,33 @@ theorem cs_loop {F keys buf : Word} {mlen nkeys : Nat} {M1 : Word → BitVec 8}
       · rw [u18.regs, updz hz15 (by decide), g15 3 (by decide)]; exact w143
       · rw [u18.regs, updz hz15 (by decide), g15 4 (by decide)]; exact w144
 
-end C3.RV32
+theorem csLoop_congr {M M' : Word → BitVec 8} {keys buf : Word} {mlen nkeys : Nat} (hro : RoAgree M M')
+    (hk : ∀ i, i < 32 * nkeys → M (keys + BitVec.ofNat 32 i) = M' (keys + BitVec.ofNat 32 i))
+    (hb : ∀ i, i < mlen → M (buf + BitVec.ofNat 32 i) = M' (buf + BitVec.ofNat 32 i)) :
+    ∀ (k : Nat) (s : Word) (last : Nat), (∀ i, i < 65 * k → M (s + BitVec.ofNat 32 i) = M' (s + BitVec.ofNat 32 i)) →
+      csLoop M keys buf mlen nkeys s k last = csLoop M' keys buf mlen nkeys s k last
+  | 0, _, _, _ => rfl
+  | k + 1, s, last, hs => by
+    have h0 : M s = M' s := by have := hs 0 (by omega); rwa [add_ofNat_zero] at this
+    show (if (M s).toNat < last ∨ nkeys ≤ (M s).toNat then (0xF : BitVec 8)
+        else if evSpec M (keys + BitVec.ofNat 32 (32 * (M s).toNat)) (s + 1) buf mlen then
+          csLoop M keys buf mlen nkeys (s + 0x41) k ((M s).toNat + 1) else 0x10) =
+      (if (M' s).toNat < last ∨ nkeys ≤ (M' s).toNat then (0xF : BitVec 8)
+        else if evSpec M' (keys + BitVec.ofNat 32 (32 * (M' s).toNat)) (s + 1) buf mlen then
+          csLoop M' keys buf mlen nkeys (s + 0x41) k ((M' s).toNat + 1) else 0x10)
+    rw [h0]
+    by_cases hc : (M' s).toNat < last ∨ nkeys ≤ (M' s).toNat
+    · rw [ite_eq_left hc, ite_eq_left hc]
+    rw [ite_eq_right hc, ite_eq_right hc]
+    have hidx : (M' s).toNat < nkeys := by
+      rcases Nat.lt_or_ge (M' s).toNat nkeys with h | h
+      · exact h
+      · exact absurd (Or.inr h) hc
+    rw [evSpec_congr hro (fun i hi => by rw [add_ofNat_assoc]; exact hk _ (by omega))
+      (fun i hi => by rw [show s + 1 + BitVec.ofNat 32 i = s + BitVec.ofNat 32 (1 + i) by
+        rw [show (s + 1 : Word) = s + BitVec.ofNat 32 1 from rfl, add_ofNat_assoc]]; exact hs _ (by omega)) hb,
+      csLoop_congr hro hk hb k (s + 0x41) ((M' s).toNat + 1) fun i hi => by
+        rw [show s + 0x41 + BitVec.ofNat 32 i = s + BitVec.ofNat 32 (65 + i) by
+          rw [show (s + 0x41 : Word) = s + BitVec.ofNat 32 65 from rfl, add_ofNat_assoc]]; exact hs _ (by omega)]
 
+end C3.RV32
