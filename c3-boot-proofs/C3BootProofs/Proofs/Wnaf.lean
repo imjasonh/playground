@@ -1,6 +1,7 @@
 import C3BootProofs.Proofs.IncrementLimb
 import C3BootProofs.Proofs.Panic
 import C3BootProofs.Proofs.Ashldi3
+import C3BootProofs.Proofs.CtInto
 
 /-!
 # `wnaf::wnaf_form::<&[u8]>`, as compiled
@@ -332,5 +333,233 @@ theorem memBytes_drop8 (M : Word → BitVec 8) (p : Word) {n : Nat} (h : 8 ≤ n
 theorem memBytes_drop8_short (M : Word → BitVec 8) (p q : Word) {n : Nat} (h : n < 8) :
     memBytes M q 0 = (memBytes M p n).drop 8 := by
   rw [List.drop_eq_nil_of_le (by rw [memBytes_length]; omega)]; rfl
+
+theorem PanicCode.hi {M M' : Word → BitVec 8} (h : PanicCode M) (hx : ∀ x : Word, dramEnd ≤ x.toNat → M' x = M x) :
+    PanicCode M' := fun p hp i hi => by
+  have hb := panicFns_hi p hp
+  rw [hx _ (by rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (a := p.1) (by omega),
+    Nat.mod_eq_of_lt (a := i) (by omega), Nat.mod_eq_of_lt (by omega)]; omega)]
+  exact h p hp i hi
+
+/-- The byte `wnaf_form` stores for a digit. -/
+def digB (d : Int) : Nat := (d % 256).toNat
+
+/-- Where `wnaf_form` runs: the code it and its callees run, its stack frame
+`F` with `increment_limb`'s 0x20 bytes below it, the `wl`-byte digit buffer
+at `wp`, and the `cn` scalar bytes at `cp`. -/
+structure WfCtx (M0 : Word → BitVec 8) (F wp cp : Word) (wl cn L : Nat) : Prop where
+  cod : CodeIn M0 WF wnafFormCode
+  mset : CodeIn M0 (BitVec.ofNat 32 memsetAddress) memsetCode
+  il : CodeIn M0 (BitVec.ofNat 32 incrementLimbAddress) incrementLimbCode
+  mcs : CodeIn M0 (BitVec.ofNat 32 memcpyStubAddress) memcpyStubCode
+  mcb : CodeIn M0 (BitVec.ofNat 32 memcpyStubAddress + 8) memcpyBodyCode
+  lsh : CodeIn M0 (BitVec.ofNat 32 lshrdi3Address) lshrdi3Code
+  ash : CodeIn M0 (BitVec.ofNat 32 ashldi3Address) ashldi3Code
+  exu : CodeIn M0 (BitVec.ofNat 32 expectUsizeAddress) expectUsizeCode
+  pan : PanicCode M0
+  room : Room F 48
+  hFd : F.toNat + 0x70 ≤ dramEnd
+  hL : L < wl
+  hLw : wl < 2 ^ 31
+  hwl : wp.toNat + wl ≤ dramEnd
+  sWR : Sep wp wl (F + 0xFFFFFFE0) 0x90
+  hcw : cp.toNat + cn < 2 ^ 32
+  sCR : Sep cp cn (F + 0xFFFFFFE0) 0x90
+  sCW : Sep cp cn wp wl
+  hN : leN (memBytes M0 cp cn) < 2 ^ L
+
+/-- The slice `LimbBuffer` has left after reading limbs up to `k - 1`:
+empty once the bytes run out, else the bytes from `8 k`. -/
+def RestAt (M : Word → BitVec 8) (s cp : Word) (cn k : Nat) : Prop :=
+  (memLoad32 M (s + 4) = 0 ∧ cn ≤ 8 * k) ∨
+    (memLoad32 M s = cp + BitVec.ofNat 32 (8 * k) ∧ (memLoad32 M (s + 4)).toNat = cn - 8 * k ∧ 8 * k < cn)
+
+/-- `wnaf_form` at the loop head, offset 0x5E, after `pos` bits with
+`carry`, the digits `D` written, and `LimbBuffer` at limb `j`. -/
+structure WfSt (M0 Ms : Word → BitVec 8) (F wp cp : Word) (wl cn L : Nat) (r0 : Fin 32 → Word)
+    (M : Word → BitVec 8) (n : Machine) (pos carry j : Nat) (D : List Int) : Prop where
+  st : St M WF n 0x5E (reg n)
+  hsp : reg n sp = F
+  s2 : reg n (18 : Fin 32) = BitVec.ofNat 32 L
+  s3 : reg n (19 : Fin 32) = BitVec.ofNat 32 wl
+  s9 : reg n (25 : Fin 32) = wp
+  s8 : reg n (24 : Fin 32) = BitVec.ofNat 32 59
+  s5 : reg n (21 : Fin 32) = BitVec.ofNat 32 (pos + 1)
+  s6 : reg n (22 : Fin 32) = BitVec.ofNat 32 pos
+  s7 : reg n (23 : Fin 32) = BitVec.ofNat 32 pos
+  s11 : reg n (27 : Fin 32) = BitVec.ofNat 32 (L - pos)
+  s10 : reg n (26 : Fin 32) = BitVec.ofNat 32 carry
+  gp : reg n (3 : Fin 32) = r0 3
+  tp : reg n (4 : Fin 32) = r0 4
+  hpos : pos ≤ L
+  hc : carry ≤ 1
+  chi : memLoad32 M (F + BitVec.ofNat 32 0xC) = 0
+  idx : memLoad32 M (F + BitVec.ofNat 32 0x28) = BitVec.ofNat 32 j
+  hj : j ≤ pos / 64 ∧ pos / 64 ≤ j + 1
+  cur : (memLoad32 M (F + BitVec.ofNat 32 0x18)).toNat + 2 ^ 32 * (memLoad32 M (F + BitVec.ofNat 32 0x1C)).toNat =
+    lmb (memBytes M0 cp cn) j
+  nxt : (memLoad32 M (F + BitVec.ofNat 32 0x20)).toNat + 2 ^ 32 * (memLoad32 M (F + BitVec.ofNat 32 0x24)).toNat =
+    lmb (memBytes M0 cp cn) (j + 1)
+  rest : RestAt M (F + BitVec.ofNat 32 0x10) cp cn (j + 2)
+  len : D.length = pos
+  out : ∀ i, i < pos → M (wp + BitVec.ofNat 32 i) = BitVec.ofNat 8 (digB (D.getD i 0))
+  spec : ∃ f, L - pos + 1 ≤ f ∧ D ++ wnafGo (leN (memBytes M0 cp cn)) L f pos carry = wnafSpec (memBytes M0 cp cn) L
+  agree : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Sep wp wl x 1 → M x = M0 x
+  slots : ∀ k, 0x3C ≤ k → k < 0x70 → M (F + BitVec.ofNat 32 k) = Ms (F + BitVec.ofNat 32 k)
+
+theorem memBytes_dropK (M : Word → BitVec 8) (p : Word) {n k : Nat} (h : k ≤ n) :
+    memBytes M (p + BitVec.ofNat 32 k) (n - k) = (memBytes M p n).drop k := by
+  apply List.ext_getElem (by simp [memBytes_length])
+  intro i h1 h2
+  rw [memBytes_length] at h1
+  rw [List.getElem_drop]
+  simp only [memBytes, List.getElem_map, List.getElem_range]
+  rw [add_ofNat_assoc]
+
+section Calls
+variable {M0 Ms M : Word → BitVec 8} {F wp cp : Word} {wl cn L : Nat}
+
+theorem WfCtx.hi (C : WfCtx M0 F wp cp wl cn L) {M : Word → BitVec 8}
+    (hag : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Sep wp wl x 1 → M x = M0 x) :
+    ∀ x : Word, dramEnd ≤ x.toNat → M x = M0 x := fun x hx => by
+  have hF := C.hFd; have hR := C.room.2.1; have hw := C.hwl; unfold dramEnd at *
+  apply hag x
+  · exact sep_of_le (by rw [BitVec.toNat_add, show (0xFFFFFFE0 : Word).toNat = 2 ^ 32 - 0x20 from rfl]; omega)
+      (by have := x.isLt; omega)
+  · exact sep_of_le (by omega) (by have := x.isLt; omega)
+
+theorem WfCtx.code (C : WfCtx M0 F wp cp wl cn L) {M : Word → BitVec 8}
+    (hag : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Sep wp wl x 1 → M x = M0 x) {b : Word} {code : List Nat}
+    (hc : CodeIn M0 b code) (hb : 0x40000000 ≤ b.toNat) (hbl : b.toNat + code.length ≤ 2 ^ 32) : CodeIn M b code :=
+  CodeIn.hi hc (fun x hx => C.hi hag x (by unfold dramEnd; omega)) hb hbl
+
+theorem WfCtx.cbytes (C : WfCtx M0 F wp cp wl cn L) {M : Word → BitVec 8}
+    (hag : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Sep wp wl x 1 → M x = M0 x) :
+    ∀ i, i < cn → M (cp + BitVec.ofNat 32 i) = M0 (cp + BitVec.ofNat 32 i) := fun i hi =>
+  hag _ (C.sCR.sub (c := i) (l := 1) hi).symm (C.sCW.sub (c := i) (l := 1) hi).symm
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 4000000 in
+/-- A call of `increment_limb` on the `LimbBuffer` at `F + 0x10`, when its
+slice is the bytes from `8 k`: the old next limb becomes the current one,
+and the next one is limb `k`. -/
+theorem wf_inc (C : WfCtx M0 F wp cp wl cn L) {n : Machine} {off : Nat} (s : St M WF n off (reg n)) {imm o : Word}
+    (hag : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Sep wp wl x 1 → M x = M0 x)
+    (h1 : fetchRel wnafFormCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel wnafFormCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : WF + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 incrementLimbAddress) (hev : off % 2 = 0)
+    (hsp : reg n sp = F) (ha0 : reg n a0 = F + BitVec.ofNat 32 0x10) {k : Nat} (hR : RestAt M (F + BitVec.ofNat 32 0x10) cp cn k) :
+    ∃ n', Steps n n' ∧ St n'.mem WF n' (off + 8) (reg n') ∧ reg n' sp = F ∧
+      (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧
+      memLoad32 n'.mem (F + BitVec.ofNat 32 0x18) = memLoad32 M (F + BitVec.ofNat 32 0x20) ∧
+      memLoad32 n'.mem (F + BitVec.ofNat 32 0x1C) = memLoad32 M (F + BitVec.ofNat 32 0x24) ∧
+      memLoad32 n'.mem (F + BitVec.ofNat 32 0x28) = memLoad32 M (F + BitVec.ofNat 32 0x28) + 1 ∧
+      (memLoad32 n'.mem (F + BitVec.ofNat 32 0x20)).toNat + 2 ^ 32 * (memLoad32 n'.mem (F + BitVec.ofNat 32 0x24)).toNat =
+        lmb (memBytes M0 cp cn) k ∧
+      RestAt n'.mem (F + BitVec.ofNat 32 0x10) cp cn (k + 1) ∧
+      ∀ x, Sep (F + 0xFFFFFFE0) 0x20 x 1 → Sep (F + BitVec.ofNat 32 0x10) 28 x 1 → n'.mem x = M x := by
+  have hc : CodeIn M WF wnafFormCode := C.code hag C.cod (by decide) (by decide)
+  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := s.callRa (cb := BitVec.ofNat 32 incrementLimbAddress) hc h1 h2 hb (by decide)
+  have r1 := PEnv.reg1 regs1 s.zero
+  have room := C.room; have hFd := C.hFd
+  obtain ⟨hFa, hF1, hF2⟩ := room
+  unfold dramEnd at hFd hF2
+  have hFc : ∀ c, c ≤ 0x70 → (F + BitVec.ofNat 32 c).toNat = F.toNat + c := fun c hc' => by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
+  have hG : (F + 0xFFFFFFE0 : Word).toNat = F.toNat - 0x20 := by
+    rw [BitVec.toNat_add, show (0xFFFFFFE0 : Word).toNat = 2 ^ 32 - 0x20 from rfl]; omega
+  have hiF : ∀ {a : Word} {l : Nat} {b : Word} {k : Nat}, a.toNat + l ≤ 0x3FCE0000 → 0x40000000 ≤ b.toNat →
+      b.toNat + k ≤ 2 ^ 32 → Sep a l b k := fun h1 h2 h3 => sep_of_le (by omega) h3
+  -- the slice `increment_limb` reads
+  obtain ⟨P, hP⟩ : ∃ P, memLoad32 M (F + BitVec.ofNat 32 0x10) = P := ⟨_, rfl⟩
+  obtain ⟨N, hN⟩ : ∃ N, memLoad32 M (F + BitVec.ofNat 32 0x10 + 4) = N := ⟨_, rfl⟩
+  have hmin : N.toNat = 0 ∨ (P = cp + BitVec.ofNat 32 (8 * k) ∧ N.toNat = cn - 8 * k ∧ 8 * k < cn) := by
+    rcases hR with ⟨h0, -⟩ | ⟨h0, h1, h2⟩
+    · left; rw [← hN, h0]; rfl
+    · right; exact ⟨hP ▸ h0, hN ▸ h1, h2⟩
+  have sPX : ∀ {b : Word} {l : Nat}, Sep cp cn b l → Sep P (min N.toNat 8) b l := fun {b l} h => by
+    rcases hmin with h0 | ⟨rfl, h1, h2⟩
+    · rw [h0]; intro i hi; omega
+    · exact (h.sub (c := 8 * k) (l := min N.toNat 8) (by omega))
+  have sCR := C.sCR
+  have env : ILEnv n1.mem (BitVec.ofNat 32 incrementLimbAddress) (reg n1 sp) (reg n1 a0) P N := by
+    rw [mem1, r1 sp (by decide), r1 a0 (by decide), hsp, ha0]
+    exact { hP := by decide
+            cod := C.code hag C.il (by decide) (by decide)
+            mcS := by rw [show (BitVec.ofNat 32 incrementLimbAddress : Word) + 0x128 = BitVec.ofNat 32 memcpyStubAddress by decide]
+                      exact C.code hag C.mcs (by decide) (by decide)
+            mcB := by rw [show (BitVec.ofNat 32 incrementLimbAddress : Word) + 0x128 + 8 =
+                        BitVec.ofNat 32 memcpyStubAddress + 8 by decide]; exact C.code hag C.mcb (by decide) (by decide)
+            hp := hP
+            hn := hN
+            hsa := hFa
+            hS := by omega
+            hs := aligned_add hFa (by decide)
+            sGC := hiF (by rw [hG]; omega) (by decide) (by decide)
+            sGS := hiF (by rw [hG]; omega) (by decide) (by decide)
+            sGB := hiF (by rw [hG]; omega) (by decide) (by decide)
+            sSC := hiF (by rw [hFc _ (by decide)]; omega) (by decide) (by decide)
+            sSS := hiF (by rw [hFc _ (by decide)]; omega) (by decide) (by decide)
+            sSB := hiF (by rw [hFc _ (by decide)]; omega) (by decide) (by decide)
+            sSG := by
+              have := sep_offsets (F + 0xFFFFFFE0) (c := 0x30) (n := 28) (d := 0) (k := 0x20) (Or.inr (by decide))
+                (by decide) (by decide)
+              rwa [add_ofNat_zero, show F + 0xFFFFFFE0 + BitVec.ofNat 32 0x30 = F + BitVec.ofNat 32 0x10 by
+                rw [BitVec.add_assoc]; rfl] at this
+            sPG := sPX (sCR.subR (c := 0) (l := 0x20) (by decide) |> fun h => by rwa [add_ofNat_zero] at h)
+            sPS := sPX (by
+              have := sCR.subR (c := 0x30) (l := 28) (by decide)
+              rwa [show F + 0xFFFFFFE0 + BitVec.ofNat 32 0x30 = F + BitVec.ofNat 32 0x10 by
+                rw [BitVec.add_assoc]; rfl] at this)
+            hpw := by
+              rcases hmin with h0 | ⟨rfl, h1, h2⟩
+              · rw [h0, Nat.min_eq_left (by decide), Nat.add_zero]; exact P.isLt
+              · rw [BitVec.toNat_add, BitVec.toNat_ofNat]; have := C.hcw; omega }
+  obtain ⟨n2, c2, pc2, sp2, k2, e8, eC, e18, e10, e14, e0, e4, f2⟩ := incrementLimb_correct n1 env pc1 rfl rfl
+    (by rw [regs1]; simp +decide [upd]) (even_clear _ (even_at WF (by decide) (off + 8) (by omega)))
+  rw [mem1, r1 a0 (by decide), ha0] at e8 eC e18 e10 e14
+  rw [r1 a0 (by decide), ha0] at e0 e4
+  rw [mem1, r1 sp (by decide), r1 a0 (by decide), hsp, ha0] at f2
+  rw [mem1] at env
+  have A : ∀ k : Nat, F + BitVec.ofNat 32 0x10 + BitVec.ofNat 32 k = F + BitVec.ofNat 32 (0x10 + k) :=
+    fun k => add_ofNat_assoc ..
+  rw [show F + BitVec.ofNat 32 0x10 + (8 : Word) = F + BitVec.ofNat 32 0x18 from A 8,
+    show F + BitVec.ofNat 32 0x10 + (0x10 : Word) = F + BitVec.ofNat 32 0x20 from A 0x10] at e8
+  rw [show F + BitVec.ofNat 32 0x10 + (0xC : Word) = F + BitVec.ofNat 32 0x1C from A 0xC,
+    show F + BitVec.ofNat 32 0x10 + (0x14 : Word) = F + BitVec.ofNat 32 0x24 from A 0x14] at eC
+  rw [show F + BitVec.ofNat 32 0x10 + (0x18 : Word) = F + BitVec.ofNat 32 0x28 from A 0x18] at e18
+  rw [show F + BitVec.ofNat 32 0x10 + (0x10 : Word) = F + BitVec.ofNat 32 0x20 from A 0x10] at e10
+  rw [show F + BitVec.ofNat 32 0x10 + (0x14 : Word) = F + BitVec.ofNat 32 0x24 from A 0x14] at e14
+  rw [add_lit_zero] at e0
+  have hbytes : memBytes M P N.toNat = (memBytes M0 cp cn).drop (8 * k) := by
+    rcases hR with ⟨h0, h1⟩ | ⟨h0, h1, h2⟩
+    · rw [List.drop_eq_nil_of_le (by rw [memBytes_length]; exact h1),
+        show N.toNat = 0 by rw [← hN, h0]; rfl]; rfl
+    · rw [← hP, h0, ← hN, h1, ← memBytes_dropK M0 cp (Nat.le_of_lt h2)]
+      exact memBytes_congr fun i hi => by rw [add_ofNat_assoc]; exact C.cbytes hag _ (by omega)
+  refine ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, by rw [sp2, r1 sp (by decide), hsp],
+    fun q hq => by rw [k2 q (by revert hq; revert q; decide), r1 q (by revert hq; revert q; decide)],
+    e8, eC, e18, ?_, ?_, fun x h1 h2 => f2 x h1 h2⟩
+  · rw [e10, e14, ilWord_leN, hbytes]; rfl
+  · have e4' : memLoad32 n2.mem (F + BitVec.ofNat 32 0x10 + 4) = if N.toNat < 8 then 0 else N - 8 := e4
+    rcases hR with ⟨h0, h1⟩ | ⟨h0, h1, h2⟩
+    · have hN0 : N.toNat = 0 := by rw [← hN, h0]; rfl
+      left; exact ⟨by rw [e4', if_pos (by omega)], by omega⟩
+    · have hNv : N.toNat = cn - 8 * k := hN ▸ h1
+      by_cases h8 : N.toNat < 8
+      · left; exact ⟨by rw [e4', if_pos h8], by omega⟩
+      · by_cases hz : cn - 8 * k = 8
+        · left
+          refine ⟨by rw [e4', if_neg h8]; exact BitVec.eq_of_toNat_eq (by
+            rw [BitVec.toNat_sub, hNv, hz]; rfl), by omega⟩
+        · right
+          have hN0 : ¬ N = 0 := fun e => by rw [e] at hNv; simp at hNv; omega
+          have := N.isLt
+          refine ⟨by rw [e0, if_neg hN0, if_neg h8, ← hP, h0,
+              show cp + BitVec.ofNat 32 (8 * k) + (8 : Word) = cp + BitVec.ofNat 32 (8 * k + 8) from add_ofNat_assoc ..,
+              show 8 * k + 8 = 8 * (k + 1) by omega],
+            by rw [e4', if_neg h8, BitVec.toNat_sub, show (8 : Word).toNat = 8 from rfl]; omega, by omega⟩
+
+end Calls
 
 end C3.RV32
