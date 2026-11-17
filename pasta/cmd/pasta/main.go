@@ -308,8 +308,8 @@ func runFix(args []string) int {
 	fmt.Fprintln(os.Stderr, formatCompletionReport(reportFiles, rulesApplied, reportBytes, reportDur))
 	if *showStats {
 		s := stats.Snapshot()
-		fmt.Fprintf(os.Stderr, "stats: walked=%d prefilter_skipped=%d parsed=%d parse_errors=%d parse_degraded=%d timed_out=%d memory_skipped=%d cache_hits=%d reparsed=%d\n",
-			s.Walked, s.PrefilterSkipped, s.Parsed, s.ParseErrors, s.ParseDegraded, s.TimedOut, s.MemorySkipped, s.CacheHits, s.Reparsed)
+		fmt.Fprintf(os.Stderr, "stats: walked=%d prefilter_skipped=%d parsed=%d parse_errors=%d parse_degraded=%d timed_out=%d memory_skipped=%d cache_hits=%d reparsed=%d rebuilt=%d\n",
+			s.Walked, s.PrefilterSkipped, s.Parsed, s.ParseErrors, s.ParseDegraded, s.TimedOut, s.MemorySkipped, s.CacheHits, s.Reparsed, s.Rebuilt)
 	}
 	if cache != nil {
 		if os.Getenv("PASTA_CACHE_STATS") != "" {

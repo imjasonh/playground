@@ -346,16 +346,14 @@ left:
   remove that.
 - Merging the remaining walks into one pass over the rebuilt graph.
 
-### Cross-file runs re-parse released trees on every pass
-**Effort:** M.
+### Cross-file runs re-parse trees past the compact budget
+**Effort:** S.
 The in-memory path keeps the trees that later passes need within
-`-tree-budget`, and drops the trees of files that no later rule
-applies to. A file past the budget is parsed again for every later
-pass, and for every fixpoint iteration, so a small budget multiplies
-parse time: on the Go standard library, a 256 MiB budget parsed each
-spilled file about five more times. Two changes would cut that:
-- Write a released tree to disk in a compact encoding and decode it
-  for the next pass, in place of parsing it again in wazero.
+`-tree-budget`, and compact encodings of the rest within half of it
+again. A file past both is parsed again for every later pass, and for
+every fixpoint iteration. Two changes would cut that:
+- Spill compact encodings past the budget to a temporary file instead
+  of parsing those files again.
 - Keep the trees of the files that a fixpoint group applies to ahead
   of the others, since those passes repeat.
 
