@@ -158,6 +158,7 @@ import C3BootProofs.Proofs.ReadPart
 import C3BootProofs.Proofs.ReaderU64
 import C3BootProofs.Proofs.Keys
 import C3BootProofs.Proofs.Bundle
+import C3BootProofs.Proofs.Window
 
 /-!
 # Audit
@@ -8706,3 +8707,6 @@ end C3
 
 /-- info: 'C3.RV32.bundleField_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.bundleField_correct
+
+/-- info: 'C3.RV32.readWindow_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.readWindow_correct

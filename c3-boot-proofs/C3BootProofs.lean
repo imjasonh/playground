@@ -124,6 +124,7 @@ import C3BootProofs.Proofs.ReadPart
 import C3BootProofs.Proofs.ReaderU64
 import C3BootProofs.Proofs.Keys
 import C3BootProofs.Proofs.Bundle
+import C3BootProofs.Proofs.Window
 import C3BootProofs.Proofs.Sha256LoopDecode
 import C3BootProofs.Proofs.Sha256LoopBlocks
 import C3BootProofs.Proofs.Sha256LoopRounds
