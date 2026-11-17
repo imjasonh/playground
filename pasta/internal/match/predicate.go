@@ -142,16 +142,16 @@ func DefaultRegistry() PredicateRegistry {
 // env has no CommentTypes set (e.g. unit tests) it falls through to
 // raw NamedChildren.
 func nonCommentNamedChildren(n tsutil.Node, env *Env) []tsutil.Node {
-	all := n.NamedChildren()
 	if env == nil || env.CommentTypes == nil {
-		return all
+		return n.NamedChildren()
 	}
-	out := make([]tsutil.Node, 0, len(all))
-	for _, c := range all {
+	kids := n.N.NamedChildren()
+	out := make([]tsutil.Node, 0, len(kids))
+	for _, c := range kids {
 		if env.CommentTypes[c.Type()] {
 			continue
 		}
-		out = append(out, c)
+		out = append(out, tsutil.Node{N: c, Src: n.Src, Lang: n.Lang, FileID: n.FileID})
 	}
 	return out
 }
@@ -564,21 +564,10 @@ func predPrevSiblingMatches(args []dsl.Arg, env *Env, caps Captures) bool {
 	if !ok {
 		return false
 	}
-	parent := n.Parent()
-	if !parent.IsValid() {
-		return false
-	}
 	// Note: this predicate intentionally does NOT skip comments. Its
 	// primary use is finding doc comments preceding a declaration
 	// (see analyzers/go_deprecated_use), so comments ARE the target.
-	siblings := parent.NamedChildren()
-	prev := tsutil.Node{}
-	for _, s := range siblings {
-		if s.StartByte() == n.StartByte() && s.EndByte() == n.EndByte() {
-			break
-		}
-		prev = s
-	}
+	prev := n.PrevNamedSibling()
 	if !prev.IsValid() {
 		return false
 	}

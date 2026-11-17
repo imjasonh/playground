@@ -5,6 +5,7 @@ package match
 import (
 	"github.com/imjasonh/playground/pasta/internal/dsl"
 	"github.com/imjasonh/playground/pasta/internal/tsutil"
+	"github.com/imjasonh/playground/pasta/internal/tswasm"
 )
 
 // Captures is a map from capture name to the matched node.
@@ -42,15 +43,23 @@ type Env struct {
 // NodeIndex is a per-parse-tree map from node type to every named node
 // of that type. Built in O(N) at parse time; turns FindAll's per-rule
 // cost from O(tree) to O(target-type-count).
+//
+// It keeps bare tswasm nodes, which are an eighth the size of a
+// tsutil.Node, and the file's source, language, and ID once in file.
 type NodeIndex struct {
-	ByType map[string][]tsutil.Node
+	file   tsutil.Node
+	byType map[string][]*tswasm.Node
 }
 
 // BuildIndex walks root once and indexes every named node by type.
 func BuildIndex(root tsutil.Node) *NodeIndex {
-	idx := &NodeIndex{ByType: map[string][]tsutil.Node{}}
+	idx := &NodeIndex{
+		file:   tsutil.Node{Src: root.Src, Lang: root.Lang, FileID: root.FileID},
+		byType: map[string][]*tswasm.Node{},
+	}
 	tsutil.Walk(root, func(n tsutil.Node) bool {
-		idx.ByType[n.Type()] = append(idx.ByType[n.Type()], n)
+		t := n.Type()
+		idx.byType[t] = append(idx.byType[t], n.N)
 		return true
 	})
 	return idx
@@ -92,14 +101,21 @@ func FindAll(p *dsl.Pattern, root tsutil.Node, env *Env) []Match {
 	}
 
 	if env.Index != nil && len(p.Node) > 0 {
-		seen := map[[2]uint32]bool{}
+		var seen map[[2]uint32]bool
+		if len(p.Node) > 1 {
+			seen = map[[2]uint32]bool{}
+		}
+		n := env.Index.file
 		for _, t := range p.Node {
-			for _, n := range env.Index.ByType[t] {
-				key := [2]uint32{n.StartByte(), n.EndByte()}
-				if seen[key] {
-					continue
+			for _, tn := range env.Index.byType[t] {
+				n.N = tn
+				if seen != nil {
+					key := [2]uint32{n.StartByte(), n.EndByte()}
+					if seen[key] {
+						continue
+					}
+					seen[key] = true
 				}
-				seen[key] = true
 				try(n)
 			}
 		}

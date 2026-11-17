@@ -33,11 +33,7 @@ func (n *Node) NamedChildren() []*Node {
 	if !n.IsValid() {
 		return nil
 	}
-	out := make([]*Node, len(n.n.namedChildren))
-	for i, c := range n.n.namedChildren {
-		out[i] = &Node{n: c, tree: n.tree}
-	}
-	return out
+	return n.handles(n.n.namedChildren)
 }
 
 // Children returns every child including anonymous ones.
@@ -45,11 +41,38 @@ func (n *Node) Children() []*Node {
 	if !n.IsValid() {
 		return nil
 	}
-	out := make([]*Node, len(n.n.children))
-	for i, c := range n.n.children {
-		out[i] = &Node{n: c, tree: n.tree}
+	return n.handles(n.n.children)
+}
+
+// handles returns a Node for each of kids, allocated together.
+func (n *Node) handles(kids []*node) []*Node {
+	hs := make([]Node, len(kids))
+	out := make([]*Node, len(kids))
+	for i, c := range kids {
+		hs[i] = Node{n: c, tree: n.tree}
+		out[i] = &hs[i]
 	}
 	return out
+}
+
+// PrevNamedSibling returns the named sibling before n, or nil when n is
+// its parent's first named child or the root. When n is anonymous, it
+// returns the parent's last named child.
+func (n *Node) PrevNamedSibling() *Node {
+	if !n.IsValid() || n.n.parent == nil {
+		return nil
+	}
+	var prev *node
+	for _, s := range n.n.parent.namedChildren {
+		if s == n.n {
+			break
+		}
+		prev = s
+	}
+	if prev == nil {
+		return nil
+	}
+	return &Node{n: prev, tree: n.tree}
 }
 
 // ChildByFieldName returns the first child bound to fieldName, or nil.
