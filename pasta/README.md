@@ -283,8 +283,9 @@ Cold runs over large trees are tuned for sparse style rules:
    `skipped (too complex to analyze)` instead of owning the run.
 3. **ERROR-heavy vs degraded** — densely broken trees skip as
    `skipped (parse errors)`. Light `HasError` glitches (e.g. a trailing
-   brace) still analyze (`parse_degraded` in `-stats`) and are not
-   cached. Pass `-stats` for
+   brace) still analyze (`parse_degraded` in `-stats`). The parse cache
+   keeps both outcomes, keyed by the embedded grammar build, so an
+   unchanged broken file isn't parsed again. Pass `-stats` for
    `walked` / `prefilter_skipped` / `parsed` / `parse_errors` /
    `parse_degraded` / `timed_out` / `memory_skipped` / `cache_hits` /
    `reparsed`.

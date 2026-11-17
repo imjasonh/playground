@@ -385,7 +385,7 @@ func parseInMemory(ctx context.Context, index int, f FileInput, groups []ruleGro
 	}
 	if tsutil.ErrorHeavy(s.root) {
 		releaseParse(o, int64(len(src)))
-		out.SkipReason = "parse errors"
+		out.SkipReason = skipParseErrors
 		if o != nil && o.stats != nil {
 			o.stats.ParseErrors.Add(1)
 		}

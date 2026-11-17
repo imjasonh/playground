@@ -14,8 +14,10 @@ package tswasm
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	_ "embed"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -35,6 +37,15 @@ import (
 
 //go:embed ts-core.wasm.br
 var wasmBrotli []byte
+
+var buildID = sync.OnceValue(func() string {
+	sum := sha256.Sum256(wasmBrotli)
+	return hex.EncodeToString(sum[:])
+})
+
+// BuildID identifies the embedded runtime and grammars. Trees, and so
+// anything derived from them, can differ between two build IDs.
+func BuildID() string { return buildID() }
 
 // recSize must match sizeof(NodeRec) in csrc/host_extra.c (10 × uint32).
 const recSize = 40

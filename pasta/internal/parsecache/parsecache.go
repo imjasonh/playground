@@ -2,8 +2,8 @@
 //
 // The cache is content-addressed: a file's key is the SHA-256 of its
 // source bytes combined with its language name, and the entire rule
-// set is hashed once per run to scope entries by the rules that
-// produced them. A cache HIT lets pasta skip parsing AND rule
+// set is hashed once per run, with the embedded grammar build, to scope
+// entries by the rules and parser that produced them. A cache HIT lets pasta skip parsing AND rule
 // matching for files that haven't changed since the last run — the
 // stored diagnostics and edit ops are returned directly.
 //
@@ -40,6 +40,7 @@ import (
 
 	"github.com/imjasonh/playground/pasta/internal/dsl"
 	"github.com/imjasonh/playground/pasta/internal/effect"
+	"github.com/imjasonh/playground/pasta/internal/tswasm"
 )
 
 // schemaVersion segregates entries written by different pasta
@@ -47,12 +48,18 @@ import (
 // engine semantics shift in a way that invalidates prior runs.
 // v2: engine skips ERROR-heavy trees and no longer caches them; prior
 // v1 entries may still hold diagnostics/ops for those files.
-const schemaVersion = "v2"
+// v3: entries record parse-error skips and degraded trees.
+const schemaVersion = "v3"
 
 // Entry is the cached output for one (rule-set, file) pair.
 type Entry struct {
 	Diagnostics []effect.Diagnostic
 	Ops         []effect.Op
+	// SkipReason is the engine's reason for not analyzing the file, or
+	// empty when it was analyzed.
+	SkipReason string
+	// Degraded is true when the tree had parse errors but was analyzed.
+	Degraded bool
 }
 
 // Cache reads and writes per-file results from a directory on disk.
@@ -120,9 +127,9 @@ func HashFile(lang string, src []byte) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// HashRules returns a stable hash of the loaded analyzer set. Analyzers
-// are sorted by name before encoding so iteration order in the caller
-// doesn't matter. Predicate functions and other non-serializable
+// HashRules returns a stable hash of the loaded analyzer set and the
+// embedded grammar build. Analyzers are sorted by name before encoding
+// so iteration order in the caller doesn't matter. Predicate functions and other non-serializable
 // fields are out of scope here — the rule's JSON shape is the
 // canonical input to the matcher, so it's a sufficient identity for
 // cache correctness.
@@ -139,6 +146,7 @@ func HashRules(analyzers []*dsl.Analyzer) string {
 
 	h := sha256.New()
 	h.Write([]byte(schemaVersion))
+	h.Write([]byte(tswasm.BuildID()))
 	for _, n := range ns {
 		if err := json.MarshalWrite(h, n.A, json.Deterministic(true)); err != nil {
 			return ""

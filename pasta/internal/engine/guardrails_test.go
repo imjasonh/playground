@@ -29,24 +29,34 @@ func TestStreamingParseErrorsSkipHeavy(t *testing.T) {
 			},
 		},
 	}
-	var stats Stats
-	results, err := RunGroup(t.Context(), []FileInput{
-		{FileID: "bad.js", Src: src, Lang: js},
-	}, []*dsl.Analyzer{a}, WithStats(&stats), WithParseTimeout(2*time.Second))
-	if err != nil {
-		t.Fatal(err)
+	cache := parsecache.Open(t.TempDir(), parsecache.HashRules([]*dsl.Analyzer{a}), 0)
+	// The second run reads the skip from the cache instead of parsing.
+	for run := range 2 {
+		var stats Stats
+		results, err := RunGroup(t.Context(), []FileInput{
+			{FileID: "bad.js", Src: src, Lang: js},
+		}, []*dsl.Analyzer{a}, WithStats(&stats), WithParseTimeout(2*time.Second), WithCache(cache))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if results[0].SkipReason != "parse errors" {
+			t.Fatalf("run %d: SkipReason=%q, want parse errors", run, results[0].SkipReason)
+		}
+		if len(results[0].Diagnostics) != 0 {
+			t.Fatalf("run %d: ERROR-heavy skip must not diagnose, got %v", run, results[0].Diagnostics)
+		}
+		if stats.ParseErrors.Load() != 1 {
+			t.Fatalf("run %d: ParseErrors=%d, want 1", run, stats.ParseErrors.Load())
+		}
+		if stats.Parsed.Load() != 0 {
+			t.Fatalf("run %d: Parsed=%d, want 0", run, stats.Parsed.Load())
+		}
+		if got := stats.CacheHits.Load(); got != int64(run) {
+			t.Fatalf("run %d: CacheHits=%d, want %d", run, got, run)
+		}
 	}
-	if results[0].SkipReason != "parse errors" {
-		t.Fatalf("SkipReason=%q, want parse errors", results[0].SkipReason)
-	}
-	if len(results[0].Diagnostics) != 0 {
-		t.Fatalf("ERROR-heavy skip must not diagnose, got %v", results[0].Diagnostics)
-	}
-	if stats.ParseErrors.Load() != 1 {
-		t.Fatalf("ParseErrors=%d, want 1", stats.ParseErrors.Load())
-	}
-	if stats.Parsed.Load() != 0 {
-		t.Fatalf("Parsed=%d, want 0", stats.Parsed.Load())
+	if s := cache.Stats(); s.Writes != 1 {
+		t.Fatalf("writes=%d, want 1", s.Writes)
 	}
 }
 
@@ -69,25 +79,30 @@ func TestStreamingParseDegradedStillAnalyzes(t *testing.T) {
 			},
 		},
 	}
-	var stats Stats
 	cache := parsecache.Open(t.TempDir(), parsecache.HashRules([]*dsl.Analyzer{a}), 0)
-	results, err := RunGroup(t.Context(), []FileInput{
-		{FileID: "light.js", Src: src, Lang: js},
-	}, []*dsl.Analyzer{a}, WithStats(&stats), WithCache(cache))
-	if err != nil {
-		t.Fatal(err)
+	for run := range 2 {
+		var stats Stats
+		results, err := RunGroup(t.Context(), []FileInput{
+			{FileID: "light.js", Src: src, Lang: js},
+		}, []*dsl.Analyzer{a}, WithStats(&stats), WithCache(cache))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if results[0].SkipReason != "" {
+			t.Fatalf("run %d: light ERROR should not skip, got %q", run, results[0].SkipReason)
+		}
+		if len(results[0].Diagnostics) != 1 {
+			t.Fatalf("run %d: want diagnose on degraded tree, got %v", run, results[0].Diagnostics)
+		}
+		if stats.ParseDegraded.Load() != 1 {
+			t.Fatalf("run %d: ParseDegraded=%d, want 1", run, stats.ParseDegraded.Load())
+		}
+		if got := stats.CacheHits.Load(); got != int64(run) {
+			t.Fatalf("run %d: CacheHits=%d, want %d", run, got, run)
+		}
 	}
-	if results[0].SkipReason != "" {
-		t.Fatalf("light ERROR should not skip, got %q", results[0].SkipReason)
-	}
-	if len(results[0].Diagnostics) != 1 {
-		t.Fatalf("want diagnose on degraded tree, got %v", results[0].Diagnostics)
-	}
-	if stats.ParseDegraded.Load() != 1 {
-		t.Fatalf("ParseDegraded=%d, want 1", stats.ParseDegraded.Load())
-	}
-	if s := cache.Stats(); s.Writes != 0 {
-		t.Fatalf("degraded trees must not be cached, writes=%d", s.Writes)
+	if s := cache.Stats(); s.Writes != 1 {
+		t.Fatalf("writes=%d, want 1", s.Writes)
 	}
 }
 
