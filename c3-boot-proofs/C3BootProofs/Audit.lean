@@ -153,6 +153,7 @@ import C3BootProofs.Proofs.Ed25519VerifyWitness
 import C3BootProofs.Proofs.MagicCur
 import C3BootProofs.Proofs.PartCur
 import C3BootProofs.Proofs.SmallFns
+import C3BootProofs.Proofs.TrustRoot
 
 /-!
 # Audit
@@ -8686,3 +8687,6 @@ end C3
 
 /-- info: 'C3.RV32.fulcioIterNth_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.fulcioIterNth_correct
+
+/-- info: 'C3.RV32.readCount_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.readCount_correct
