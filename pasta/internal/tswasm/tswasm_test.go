@@ -56,12 +56,18 @@ func TestParseTimeout(t *testing.T) {
 // TestParseTimeoutUsesRealClock parses a large TypeScript file under the
 // default 2s budget. wazero's default clock advances 1ms per reading, which
 // times out files over about 230 KB that parse in well under a second.
+// The first parse on a new engine grows its memory, which takes about 1.7s
+// under -race, so an untimed parse warms the engine first. The fake clock
+// counts readings, not time, so it still times out the warm parse.
 func TestParseTimeoutUsesRealClock(t *testing.T) {
 	var src []byte
 	for i := 0; len(src) < 400<<10; i++ {
 		src = fmt.Appendf(src, "export function f%d(a: number, b: string): string {\n"+
 			"  const xs: Array<number> = [a, a + 1, a * 2];\n"+
 			"  return xs.map((x) => `${b}:${x}`).join(\",\");\n}\n", i)
+	}
+	if _, err := Parse(t.Context(), &Language{Grammar: "typescript"}, src, "", ParseOptions{}); err != nil {
+		t.Fatalf("untimed Parse: %v", err)
 	}
 	start := time.Now()
 	tree, err := Parse(t.Context(), &Language{Grammar: "typescript"}, src, "", ParseOptions{Timeout: 2 * time.Second})
