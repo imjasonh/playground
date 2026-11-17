@@ -338,6 +338,15 @@ func TestReportsErrorsAndKeepsGoing(t *testing.T) {
 	if got := h.sub.take(); !slices.Equal(got, []string{"create ci-runner-0", "create ci-runner-1", "resume ci-runner-0", "resume ci-runner-1"}) {
 		t.Fatalf("calls %v", got)
 	}
+	// With no queued work, the pool still resumes them, because neither has
+	// the snapshot a warm actor needs.
+	delete(h.sub.fail, "resume")
+	if got := h.reconcile(t); !slices.Equal(got, []string{"resume ci-runner-0", "resume ci-runner-1"}) {
+		t.Fatalf("retry %v", got)
+	}
+	if got := h.reconcile(t); len(got) != 0 {
+		t.Fatalf("steady state %v", got)
+	}
 }
 
 func TestFullWorkersDoNotCascadeIntoCreates(t *testing.T) {
@@ -413,6 +422,38 @@ func TestScalesWorkersForWorkBeyondBaseThenToZero(t *testing.T) {
 		t.Fatalf("drain %v", got)
 	}
 	if got := h.reconcile(t); !slices.Equal(got, []string{"delete ci-runner-1", "delete ci-runner-2", "scale 0"}) {
+		t.Fatalf("scale down %v", got)
+	}
+	if got := h.reconcile(t); len(got) != 0 {
+		t.Fatalf("steady state %v", got)
+	}
+}
+
+func TestKeepsWorkersForWarmActorsThatHaveNotRun(t *testing.T) {
+	h := newScalingHarness(t, 2, 4, 1, 1, 2)
+	// Two warm actors: one fits on the base worker, and the other waits for
+	// a burst worker.
+	if got := h.reconcileErr(t); !slices.Equal(got, []string{"create ci-runner-0", "create ci-runner-1", "resume ci-runner-0", "resume ci-runner-1", "scale 1"}) {
+		t.Fatalf("prewarm %v", got)
+	}
+	// Nothing is queued, but ci-runner-1 has no snapshot yet. The pool keeps
+	// its worker and resumes it until the worker is up.
+	if got := h.reconcileErr(t); !slices.Equal(got, []string{"resume ci-runner-1"}) {
+		t.Fatalf("starting worker %v", got)
+	}
+	h.workers.ready = 1
+	if got := h.reconcile(t); !slices.Equal(got, []string{"resume ci-runner-1"}) {
+		t.Fatalf("worker ready %v", got)
+	}
+	if got := h.sub.placed["ci-runner-1"]; got != burstPool {
+		t.Fatalf("resumed on %q, want the burst pool", got)
+	}
+	// Both idle out, leaving two snapshots and no burst worker.
+	h.now = h.now.Add(2 * time.Minute)
+	if got := h.reconcile(t); !slices.Equal(got, []string{"suspend ci-runner-0", "suspend ci-runner-1"}) {
+		t.Fatalf("idle %v", got)
+	}
+	if got := h.reconcile(t); !slices.Equal(got, []string{"scale 0"}) {
 		t.Fatalf("scale down %v", got)
 	}
 	if got := h.reconcile(t); len(got) != 0 {

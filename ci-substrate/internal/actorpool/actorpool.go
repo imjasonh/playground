@@ -2,8 +2,9 @@
 // tenant's queue. It owns the actors whose names carry its prefix, and each
 // reconcile moves them along this lifecycle:
 //
-//   - A new actor is created and resumed once, so that its first suspend
-//     leaves a memory snapshot. Resuming from that snapshot is the warm path.
+//   - A new actor is created and resumed, so that its first suspend leaves a
+//     memory snapshot. Resuming from that snapshot is the warm path. A first
+//     resume that fails is tried again on each reconcile until one succeeds.
 //   - A queued job with no idle runner resumes a suspended actor, or creates
 //     one when none is suspended and the pool is under its maximum.
 //   - A running actor that has held no lease for IdleAfter is suspended.
@@ -152,6 +153,9 @@ type Pool struct {
 	// lastBusy is when each actor last held a lease, or was resumed. An
 	// actor is idle when that is more than IdleAfter ago.
 	lastBusy map[string]time.Time
+	// unprimed holds the actors created without a successful first resume.
+	// They have no snapshot yet, so the queue alone would not wake them.
+	unprimed map[string]bool
 	metrics  metrics
 
 	// mu guards what the last reconcile saw, which the gauges report.
@@ -183,7 +187,7 @@ func New(cfg Config) (*Pool, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	p := &Pool{cfg: cfg, lastBusy: map[string]time.Time{}}
+	p := &Pool{cfg: cfg, lastBusy: map[string]time.Time{}, unprimed: map[string]bool{}}
 	p.metrics = newMetrics(p)
 	return p, nil
 }
@@ -240,16 +244,23 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 	}
 	slices.SortFunc(owned, func(a, b Actor) int { return strings.Compare(a.Name, b.Name) })
 
-	var suspended, idle, crashed []string
+	var suspended, unprimed, idle, crashed []string
 	names := map[string]bool{}
 	running := 0
 	byState := map[State]int{}
 	for _, a := range owned {
 		names[a.Name] = true
 		byState[a.State]++
+		if a.State != StateSuspended {
+			delete(p.unprimed, a.Name)
+		}
 		switch a.State {
 		case StateSuspended:
-			suspended = append(suspended, a.Name)
+			if p.unprimed[a.Name] {
+				unprimed = append(unprimed, a.Name)
+			} else {
+				suspended = append(suspended, a.Name)
+			}
 		case StateCrashed:
 			crashed = append(crashed, a.Name)
 		case StateRunning, StateResuming:
@@ -268,6 +279,11 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 	for name := range p.lastBusy {
 		if !names[name] {
 			delete(p.lastBusy, name)
+		}
+	}
+	for name := range p.unprimed {
+		if !names[name] {
+			delete(p.unprimed, name)
 		}
 	}
 
@@ -295,6 +311,7 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 
 	// A failed resume still counts against need: the usual cause is a full
 	// worker pool, which more actors would not fix.
+	need -= len(unprimed)
 	resumes := suspended[:min(max(need, 0), len(suspended))]
 	suspended = suspended[len(resumes):]
 	need -= len(resumes)
@@ -304,10 +321,19 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 	for (need-creates > 0 || total+creates < p.cfg.Warm) && total+creates < p.cfg.Max {
 		creates++
 	}
-	if err := p.scaleWorkers(ctx, owned, running+byState[StateSuspending], len(resumes)+creates); err != nil {
+	if err := p.scaleWorkers(ctx, owned, running+byState[StateSuspending], len(unprimed)+len(resumes)+creates); err != nil {
 		errs = append(errs, err)
 	}
 
+	for _, name := range unprimed {
+		slog.InfoContext(ctx, "resuming new actor again", "actor", name)
+		if err := p.do(ctx, "resume", name, p.cfg.Actors.Resume); err != nil {
+			errs = append(errs, fmt.Errorf("resuming new %s: %w", name, err))
+			continue
+		}
+		delete(p.unprimed, name)
+		p.lastBusy[name] = now
+	}
 	for _, name := range resumes {
 		slog.InfoContext(ctx, "resuming actor for queued work", "actor", name, "queued", queued)
 		if err := p.do(ctx, "resume", name, p.cfg.Actors.Resume); err != nil {
@@ -326,6 +352,7 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 			continue
 		}
 		if err := p.do(ctx, "resume", name, p.cfg.Actors.Resume); err != nil {
+			p.unprimed[name] = true
 			errs = append(errs, fmt.Errorf("resuming new %s: %w", name, err))
 			continue
 		}
