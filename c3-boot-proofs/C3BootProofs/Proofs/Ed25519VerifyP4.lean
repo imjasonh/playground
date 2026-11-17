@@ -302,6 +302,8 @@ theorem ev_h2 (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Machi
       (∀ q : Fin 32, q.val ∈ evKeep → q ≠ 8 → q ≠ 9 → q ≠ 18 → reg n' q = reg n q) ∧
       reg n' 18 = F + BitVec.ofNat 32 0x450 ∧
       S5U.Hasher5At M' (F + BitVec.ofNat 32 0x450) (h ++ memBytes M0 msg len) ∧
+      (∀ j, j < 0xC0 → M' (F + BitVec.ofNat 32 (0x350 + j)) = M (F + BitVec.ofNat 32 (0x128 + j))) ∧
+      (∀ j, j < 0x40 → M' (F + BitVec.ofNat 32 (0x410 + j)) = M (F + BitVec.ofNat 32 (0x228 + j))) ∧
       ∀ c, c < 0x16A0 → (c < 0x350 ∨ 0x520 ≤ c) → M' (F + BitVec.ofNat 32 c) = M (F + BitVec.ofNat 32 c) := by
   obtain ⟨n1, c1, D1, hr1⟩ := D.block C (off' := 0x10C2)
     [.aluImm .add (18 : Fin 32) sp 0x450, .aluImm .add a1 sp 0x7FF, .aluImm .add a1 a1 0x6F1, .aluImm .add a2 x0 0xD0,
@@ -424,9 +426,13 @@ theorem ev_h2 (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Machi
       r7 q h8]
   refine ⟨n13, n11.mem, c1.trans (c2.trans (c3.trans (c4.trans (c5.trans (c6.trans (c7.trans ((Steps.single d8).trans
     (c9.trans (c10.trans (c11.trans (c12.trans (Steps.single d13)))))))))))), D13, fun q hq h8 h9 h18 => ?_, ?_, H11,
-    fun c hc h => ?_⟩
+    fun j hj => ?_, fun j hj => ?_, fun c hc h => ?_⟩
   · rw [back q hq h8 h9, kp6 q hq h18]
   · rw [back 18 (by decide) (by decide) (by decide), v18']
+  · rw [upd_out C fr11 (by decide) (by omega) (by omega), cp_out C fz6 (by decide) (by omega) (by omega),
+      cp_at C fz4 (j := j) (by decide) hj, add_ofNat_assoc, cp_out C fz2 (by decide) (by omega) (by omega)]
+  · rw [upd_out C fr11 (by decide) (by omega) (by omega), cp_at C fz6 (j := j) (by decide) hj, add_ofNat_assoc,
+      cp_out C fz4 (by decide) (by omega) (by omega), cp_out C fz2 (by decide) (by omega) (by omega)]
   · rw [upd_out C fr11 (by decide) hc (by omega), fr6 c hc h]
 
 /-- A frame byte a `zero64` call did not write. -/
@@ -449,6 +455,7 @@ theorem ev_h3 (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Machi
       (∀ q : Fin 32, q.val ∈ evKeep → q ≠ 9 → q ≠ 26 → reg n' q = reg n q) ∧
       reg n' 26 = F + BitVec.ofNat 32 0xEF0 ∧ reg n' 9 = F + BitVec.ofNat 32 0x9F0 ∧
       S5U.Hasher5At M' (F + BitVec.ofNat 32 0xEF0) h ∧
+      (∀ j, j < 0x1D0 → M' (F + BitVec.ofNat 32 (0x5E0 + j)) = M (F + BitVec.ofNat 32 (0x350 + j))) ∧
       ∀ c, c < 0x16A0 → (c < 0x5E0 ∨ (0x7F0 ≤ c ∧ c < 0x9F0) ∨ (0xA30 ≤ c ∧ c < 0xEF0) ∨ 0xFC0 ≤ c) →
         M' (F + BitVec.ofNat 32 c) = M (F + BitVec.ofNat 32 c) := by
   obtain ⟨n1, c1, D1, hr1⟩ := D.block C (off' := 0x1110)
@@ -503,7 +510,7 @@ theorem ev_h3 (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Machi
       zf_out C fz6 (by decide) (by omega) (Or.inr (by omega)), cp_at C fz4 (by decide) hj, add_ofNat_assoc,
       cp_out C fz2 (by decide) (by omega) (Or.inl (by omega))]
   refine ⟨n8, n8.mem, c1.trans (c2.trans (c3.trans (c4.trans (c5.trans (c6.trans (c7.trans c8)))))), D8,
-    fun q hq h9 h26 => ?_, ?_, ?_, H8, fun c hc hh => ?_⟩
+    fun q hq h9 h26 => ?_, ?_, ?_, H8, fun j hj => ?_, fun c hc hh => ?_⟩
   · rw [k8 q hq, hr7, evb_reg q D6.st.zero (by revert h9; revert hq; revert q; decide), k6 q hq, hr5,
       evb_reg q D4.st.zero (by revert hq; revert q; decide), k4 q hq, hr3,
       evb_reg q D2.st.zero (by revert h26; revert hq; revert q; decide), k2 q hq, hr1,
@@ -511,6 +518,8 @@ theorem ev_h3 (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Machi
   · rw [k8 26 (by decide), hr7, evb_reg 26 D6.st.zero (by decide), k6 26 (by decide), hr5,
       evb_reg 26 D4.st.zero (by decide), k4 26 (by decide), v26]
   · rw [k8 9 (by decide), v9]
+  · rw [zf_out C fz8 (by decide) (by omega) (by omega), zf_out C fz6 (by decide) (by omega) (by omega),
+      cp_out C fz4 (by decide) (by omega) (by omega), cp_at C fz2 (j := j) (by decide) hj, add_ofNat_assoc]
   · rcases hh with hh | hh | hh | hh <;>
       rw [zf_out C fz8 (by decide) hc (by omega), zf_out C fz6 (by decide) hc (by omega),
         cp_out C fz4 (by decide) hc (by omega), cp_out C fz2 (by decide) hc (by omega)]

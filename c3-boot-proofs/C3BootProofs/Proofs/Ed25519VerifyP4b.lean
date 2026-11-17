@@ -735,21 +735,27 @@ theorem ev_hash (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Mac
       (∀ q : Fin 32, q.val ∈ evKeep → q.val ∉ [8, 9, 18, 20, 21, 22, 23, 24, 25, 26] → reg n' q = reg n q) ∧
       reg n' 23 = F + BitVec.ofNat 32 0x1508 ∧ memBytes M' (F + BitVec.ofNat 32 0x9F0) 64 = sha512 (memBytes M (F + BitVec.ofNat 32 0x228) 32 ++
         memBytes M (F + BitVec.ofNat 32 0x128) 32 ++ memBytes M0 msg len) ∧
+      (∀ j, j < 0xC0 → M' (F + BitVec.ofNat 32 (0x5E0 + j)) = M (F + BitVec.ofNat 32 (0x128 + j))) ∧
+      (∀ j, j < 0x40 → M' (F + BitVec.ofNat 32 (0x6A0 + j)) = M (F + BitVec.ofNat 32 (0x228 + j))) ∧
       ∀ c, c < 0x16A0 → (c < 0x308 ∨ (0x310 ≤ c ∧ c < 0x350) ∨ (0x520 ≤ c ∧ c < 0x5E0) ∨ (0x7F0 ≤ c ∧ c < 0x9F0) ∨
         (0xA30 ≤ c ∧ c < 0xEF0) ∨ 0xFC0 ≤ c) → M' (F + BitVec.ofNat 32 c) = M (F + BitVec.ofNat 32 c) := by
   obtain ⟨n1, M1, c1, D1, k1, v9, v24, l308, l30C, H1, fr1⟩ := ev_h1 C D h19
-  obtain ⟨n2, M2, c2, D2, k2, v18, H2, fr2⟩ := ev_h2 C D1 v9 (l308.trans hm) (l30C.trans hk) H1
+  obtain ⟨n2, M2, c2, D2, k2, v18, H2, cpA, cpB, fr2⟩ := ev_h2 C D1 v9 (l308.trans hm) (l30C.trans hk) H1
     (by simp only [List.length_append, memBytes_length]; have := C.hlen; omega)
-  obtain ⟨n3, M3, c3, D3, k3, v26, v9', H3, fr3⟩ := ev_h3 C D2 v18 H2
+  obtain ⟨n3, M3, c3, D3, k3, v26, v9', H3, cp3, fr3⟩ := ev_h3 C D2 v18 H2
   obtain ⟨n4, M4, c4, D4, k4, v23, E4, fr4⟩ := ev_final C D3
     (by rw [k3 19 (by decide) (by decide) (by decide), k2 19 (by decide) (by decide) (by decide) (by decide),
       k1 19 (by decide) (by decide) (by decide), h19])
     v26 (by rw [k3 24 (by decide) (by decide) (by decide), k2 24 (by decide) (by decide) (by decide) (by decide), v24])
     v9' H3
-  refine ⟨n4, M4, c1.trans (c2.trans (c3.trans c4)), D4, fun q hq hn => ?_, v23, E4, fun c hc hh => ?_⟩
+  refine ⟨n4, M4, c1.trans (c2.trans (c3.trans c4)), D4, fun q hq hn => ?_, v23, E4, fun j hj => ?_, fun j hj => ?_,
+    fun c hc hh => ?_⟩
   · rw [k4 q hq (by revert hn; revert q; decide), k3 q hq (by revert hn; revert q; decide) (by revert hn; revert q; decide),
       k2 q hq (by revert hn; revert q; decide) (by revert hn; revert q; decide) (by revert hn; revert q; decide),
       k1 q hq (by revert hn; revert q; decide) (by revert hn; revert q; decide)]
+  · rw [fr4 _ (by omega) (Or.inl (by omega)), cp3 j (by omega), cpA j hj, fr1 _ (by omega) (Or.inl (by omega))]
+  · rw [fr4 _ (by omega) (Or.inl (by omega)), show 0x6A0 + j = 0x5E0 + (0xC0 + j) by omega, cp3 _ (by omega),
+      show 0x350 + (0xC0 + j) = 0x410 + j by omega, cpB j hj, fr1 _ (by omega) (Or.inl (by omega))]
   · rcases hh with h | h | h | h | h | h
     · rw [fr4 c hc (Or.inl (by omega)), fr3 c hc (Or.inl (by omega)), fr2 c hc (Or.inl (by omega)), fr1 c hc (Or.inl h)]
     · rw [fr4 c hc (Or.inl (by omega)), fr3 c hc (Or.inl (by omega)), fr2 c hc (Or.inl (by omega)),
