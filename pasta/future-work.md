@@ -352,7 +352,7 @@ The in-memory path keeps the trees that later passes need within
 `-tree-budget`, and compact encodings of the rest within half of it
 again. A file past both is read back from the parse cache, but with
 `-nocache` it's parsed again for every later pass, and for every
-fixpoint iteration. Two changes would cut that:
+fixpoint iteration that visits it. Two changes would cut that:
 - Spill compact encodings past the budget to a temporary file when the
   cache is off.
 - Keep the trees of the files that a fixpoint group applies to ahead
@@ -361,7 +361,8 @@ fixpoint iteration. Two changes would cut that:
 ### Prefilter coverage
 **Effort:** S per rule.
 A rule with no inferable substring keeps every file of its language,
-so one unfiltered rule disables the prefilter for that language. In
+so one unfiltered rule disables the parse skip for that language,
+though each filtered rule still skips the files it can't match. In
 the full JS/TS rule set 99 of 150 rules have no filter, and the
 prefilter skipped no files on the TypeScript run. Adding
 `require_substring` where a rule has a distinctive token is cheap,
@@ -391,11 +392,12 @@ module), so this is polish, not a load-bearing item.
 
 ### Content-sniff pre-filter
 **Status:** Done. `internal/prefilter` infers substrings from
-`eq`/`token_eq` and at most one simple `matches` alternation, and
-honours explicit `require_substring` on `#Rule`. Rewrite `within`
+`eq`/`token_eq` literals and from the literals each `matches` regex
+requires (with `regexp/syntax`), and honours explicit `require_substring` on `#Rule`. Rewrite `within`
 tokens are intentionally not inferred (diagnose can fire without
-them). The streaming and in-memory engine paths skip the parse when
-no applicable rule can match.
+them). The streaming and in-memory engine paths skip a rule on a file
+its filter rejects, and skip the parse when no applicable rule can
+match.
 
 ### Tighter cache encoding than `gob`
 **Effort:** S.

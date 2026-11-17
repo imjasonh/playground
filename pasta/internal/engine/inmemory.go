@@ -15,7 +15,6 @@ import (
 	"github.com/imjasonh/playground/pasta/internal/effect"
 	"github.com/imjasonh/playground/pasta/internal/factstore"
 	"github.com/imjasonh/playground/pasta/internal/parsecache"
-	"github.com/imjasonh/playground/pasta/internal/prefilter"
 	"github.com/imjasonh/playground/pasta/internal/tsutil"
 )
 
@@ -52,6 +51,9 @@ type memFile struct {
 	// outs holds what each group produced for this file until it's
 	// reassembled in schedule order.
 	outs []groupOutput
+	// lookups holds the facts the file's last run of a fixpoint level
+	// looked up.
+	lookups *factstore.Lookups
 }
 
 // runInMemory is the path used when the schedule has cross-file or
@@ -196,8 +198,10 @@ func (r *memRun) parseAll(ctx context.Context, files []FileInput, results []Resu
 // reaches the same facts in any order, because a new fact can only
 // make has_fact true and payloads are never read back, so its
 // iterations run over files in parallel and collect results as they
-// go. Once an iteration adds no fact, every file in it saw the final
-// facts, and its results stand.
+// go. Each iteration after the first runs only the files that looked up
+// a fact the previous iteration added; every other file would see the
+// same facts it saw last time. Once an iteration adds no fact, every
+// file saw the final facts, and its results stand.
 func (r *memRun) runLevel(ctx context.Context, level []int, first bool) error {
 	var plain, fix, ordered []int
 	for _, gi := range level {
@@ -213,21 +217,28 @@ func (r *memRun) runLevel(ctx context.Context, level []int, first bool) error {
 		}
 	}
 	gis := append(plain, fix...)
+	files := r.files
+	record := len(fix) > 0
 	for iter := 0; len(gis) > 0; iter++ {
-		before := r.store.Len()
-		if err := r.collect(ctx, gis); err != nil {
+		mark := r.store.Mark()
+		if err := r.collect(ctx, gis, files, record); err != nil {
 			return err
 		}
-		if r.store.Len() == before || len(fix) == 0 {
+		added := r.store.Added(mark)
+		if added.Empty() || len(fix) == 0 {
 			break
 		}
+		files = r.lookedUp(added)
 		if iter+1 >= MaxFixpointIterations {
-			if err := r.collect(ctx, fix); err != nil {
+			if err := r.collect(ctx, fix, files, false); err != nil {
 				return err
 			}
 			break
 		}
 		gis = fix
+	}
+	for _, f := range r.files {
+		f.lookups = nil
 	}
 	for _, gi := range ordered {
 		if err := r.runOrdered(ctx, gi); err != nil {
@@ -237,10 +248,28 @@ func (r *memRun) runLevel(ctx context.Context, level []int, first bool) error {
 	return nil
 }
 
-// collect runs gis on every file they apply to, in parallel, and
-// replaces each file's results for those groups.
-func (r *memRun) collect(ctx context.Context, gis []int) error {
-	return r.pass(ctx, gis, func(f *memFile, s fileState) error {
+// lookedUp returns the files whose last run looked up an entry in added.
+func (r *memRun) lookedUp(added *factstore.Lookups) []*memFile {
+	var out []*memFile
+	for _, f := range r.files {
+		if f.lookups.Overlaps(added) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// collect runs gis on each of files they apply to, in parallel, and
+// replaces each file's results for those groups. When record is true,
+// it also replaces each file's lookups.
+func (r *memRun) collect(ctx context.Context, gis []int, files []*memFile, record bool) error {
+	return r.pass(ctx, gis, files, func(f *memFile, s fileState) error {
+		if record {
+			f.lookups = &factstore.Lookups{}
+			env := *s.env
+			env.FactStore = factstore.Recorder{Store: r.store, Lookups: f.lookups}
+			s.env = &env
+		}
 		for _, gi := range gis {
 			var res Result
 			if err := runGroupOnFile(r.groups[gi], s, r.store, &res); err != nil {
@@ -278,19 +307,19 @@ func (r *memRun) runOrdered(ctx context.Context, gi int) error {
 			break
 		}
 	}
-	return r.collect(ctx, []int{gi})
+	return r.collect(ctx, []int{gi}, r.files, false)
 }
 
-// pass calls fn, in parallel, for every file that one of gis applies
+// pass calls fn, in parallel, for each of files that one of gis applies
 // to, with that file's prepared state.
-func (r *memRun) pass(ctx context.Context, gis []int, fn func(*memFile, fileState) error) error {
+func (r *memRun) pass(ctx context.Context, gis []int, files []*memFile, fn func(*memFile, fileState) error) error {
 	groups := make([]ruleGroup, len(gis))
 	for i, gi := range gis {
 		groups[i] = r.groups[gi]
 	}
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(r.workers)
-	for _, f := range r.files {
+	for _, f := range files {
 		if !needsPass(groups, f.state.input) {
 			continue
 		}
@@ -355,7 +384,7 @@ func (r *memRun) prepare(ctx context.Context, f *memFile) (fileState, func(), er
 // match its source.
 func needsPass(groups []ruleGroup, f FileInput) bool {
 	rules := applicableRules(groups, f.Lang, fileName(f))
-	return len(rules) > 0 && prefilter.MayMatch(f.Src, prefilter.ForRules(rules))
+	return mayMatch(f.Src, rules)
 }
 
 // readsAbsentFacts reports whether a rule in g uses not_has_fact.
@@ -397,7 +426,7 @@ func parseInMemory(ctx context.Context, index int, f FileInput, groups []ruleGro
 	if o != nil && o.stats != nil {
 		o.stats.Walked.Add(1)
 	}
-	if !prefilter.MayMatch(src, prefilter.ForRules(applicable)) {
+	if !mayMatch(src, applicable) {
 		o.syncAdmit(index, 0)
 		if o != nil && o.stats != nil {
 			o.stats.PrefilterSkipped.Add(1)

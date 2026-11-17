@@ -225,7 +225,14 @@ need_cmd kubectl
 
 ensure_registry
 create_cluster
-kubectl cluster-info --context "kind-${CLUSTER_NAME}" >/dev/null
+# CI runs the other modules' kind tests beside this one, and each
+# `kind create cluster` sets the current context in ~/.kube/config. Give this
+# script, ko, and the scripts it runs their own kubeconfig, whose current
+# context nothing else changes. ~/.kube/config keeps the cluster for
+# run-substrate.sh and run-loadtest.sh.
+kind get kubeconfig --name "${CLUSTER_NAME}" >"${WORKDIR}/kubeconfig"
+export KUBECONFIG="${WORKDIR}/kubeconfig"
+kubectl cluster-info >/dev/null
 
 export KO_DOCKER_REPO="localhost:${REGISTRY_PORT}/ci-substrate"
 # Prefer the repo's chainguard bases; when that registry is unreachable

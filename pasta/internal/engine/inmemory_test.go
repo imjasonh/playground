@@ -134,6 +134,47 @@ func TestInMemoryTreeBudgetReparses(t *testing.T) {
 	}
 }
 
+// TestInMemoryFixpointRevisitsOnlyAffectedFiles adds files the chain's
+// facts never reach. With no tree kept, every visit to a file parses
+// it again, so Reparsed counts visits. Each unrelated file is visited
+// by the first fixpoint iteration and by the sink pass, and by no
+// later iteration.
+func TestInMemoryFixpointRevisitsOnlyAffectedFiles(t *testing.T) {
+	const n, unrelated = 4, 40
+	files := chainFiles(t, n)
+	for i := range unrelated {
+		src := fmt.Sprintf("package p\n\nfunc g%d() {\n\ty%d = z%d\n\tsink(y%d)\n}\n", i, i, i, i)
+		files = append(files, FileInput{FileID: fmt.Sprintf("g%d.go", i), Src: []byte(src), Lang: files[0].Lang})
+	}
+	a := chainAnalyzer(assignRule("propagate",
+		[]dsl.Predicate{{Op: "has_fact", Args: []dsl.Arg{{Str: "@rhs"}, {Str: "k"}}}},
+		[]string{"k"}, []string{"k"}))
+
+	var stats Stats
+	results, err := RunGroup(t.Context(), files, []*dsl.Analyzer{a}, WithTreeBudget(1), WithStats(&stats))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := diagnosticsByFile(results)
+	for i := range n {
+		want := []string{fmt.Sprintf("sink: x%d reaches sink", i)}
+		if !reflect.DeepEqual(got[i], want) {
+			t.Errorf("file %d diagnostics = %v, want %v", i, got[i], want)
+		}
+	}
+	for i := n; i < len(files); i++ {
+		if got[i] != nil {
+			t.Errorf("file %d diagnostics = %v, want none", i, got[i])
+		}
+	}
+	// Each chain file is visited at most by the first iteration, once
+	// for each fact it looks up as the facts arrive, by the iteration
+	// that converges, and by the sink pass.
+	if r, most := stats.Reparsed.Load(), int64(2*unrelated+4*n); r > most {
+		t.Errorf("reparsed %d times, want at most %d", r, most)
+	}
+}
+
 // TestInMemoryTreeBudgetRebuildsCompactTrees pads the chain's files
 // and gives it a tree budget too small for any Go tree, but whose second half holds every
 // compact tree. Later passes must rebuild trees from those instead of

@@ -273,11 +273,12 @@ Omitted: rules that need a scope chain, CFG, or ESLint option object (`no-undef`
 Cold runs over large trees are tuned for sparse style rules:
 
 1. **Content-sniff pre-filter** — before parsing, pasta checks cheap
-   substrings inferred from each rule (`eq` / `token_eq` / a single
-   simple `matches` alternation) plus optional `require_substring` on
-   the rule. Rewrite `within` tokens are not inferred (diagnose can
-   fire without them). Files that cannot match any applicable rule
-   skip the parse.
+   substrings inferred from each rule (`eq` / `token_eq` literals and
+   the literals each `matches` regex requires) plus optional
+   `require_substring` on the rule. Rewrite `within` tokens are not inferred (diagnose can
+   fire without them). A rule doesn't run on a file that lacks its
+   substrings, and files that cannot match any applicable rule skip
+   the parse.
 2. **Per-file parse budget** — default 2s (`-parse-timeout`, or
    `parse_timeout_ms` in `pasta.cue`). Timed-out files are reported as
    `skipped (too complex to analyze)` instead of owning the run.
@@ -306,7 +307,11 @@ instead of streaming. Pasta parses every file in parallel and runs the
 rules that read no other file's facts as each file is parsed. Each
 later level of dependent rules then runs across files in parallel.
 Fixpoint groups, such as taint propagation, also iterate over files in
-parallel. A fixpoint group that uses `not_has_fact` is the exception:
+parallel. After the first iteration, each one visits only the files
+that looked up a fact the previous iteration added, so a taint
+propagation on Kubernetes visits about 350 of 13,700 files in its
+second iteration and 7 in its last. A fixpoint group that uses
+`not_has_fact` is the exception:
 its result depends on order, so it visits files in order. Pasta keeps
 the parse trees that later passes need while their estimated size
 stays under `-tree-budget` (default 1 GiB, `0` keeps every tree). It
