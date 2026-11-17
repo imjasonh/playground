@@ -76,7 +76,7 @@ theorem eqArr97_correct (m : Machine) {base retAddr p q : Word} (hc : CodeIn m.m
       (base + BitVec.ofNat 32 (8 + 8)) r := regs4
   obtain ⟨m5, c5, pc5, a05, k5, mem5⟩ := memcmp_correct m4 (p := p) (q := q) (n := 97)
     (by rw [mem4]; exact hm2) pc4 (by rw [r4]; simp +decide [upd, ha0]) (by rw [r4]; simp +decide [upd, ha1])
-    (by rw [r4]; simp +decide [upd, hz]) (by decide) (by rw [r4]; simp +decide [upd])
+    (by rw [r4]; simp +decide [upd]) (by decide) (by rw [r4]; simp +decide [upd])
     (even_clear _ (even_at base hbase 0x10 (by decide)))
   have t5 : St (memStore32 m.mem (G + 0xC) (reg m ra)) base m5 0x10 (reg m5) :=
     ⟨by rw [pc5], by rw [mem5, mem4], fun _ => rfl⟩
@@ -141,7 +141,7 @@ theorem fn_at_1e : fetchRel fulcioIterNextCode 0x1E = some (.jalr x0 ra 0x0, 2) 
 theorem bt_beq_self (a : Word) : branchTaken .beq a a = true := by
   show (a == a) = true; exact decide_eq_true rfl
 
-theorem ones_and (p : Word) : (0xFFFFFFFF : Word) &&& p = p := by
+theorem ones_and_left (p : Word) : (0xFFFFFFFF : Word) &&& p = p := by
   apply BitVec.eq_of_getLsbD_eq; intro i hi; simp only [BitVec.getLsbD_and]
   rw [show (0xFFFFFFFF : Word).getLsbD i = true from by revert i; decide]; rfl
 
@@ -152,7 +152,7 @@ theorem fn_mask (t p : Word) :
   rw [seqz_eq]
   by_cases h : t = 0
   · simp only [h, ↓reduceIte]; exact BitVec.zero_and
-  · simp only [h, ↓reduceIte]; exact ones_and p
+  · simp only [h, ↓reduceIte]; exact ones_and_left p
 
 /-- **`next` of the `map_while(Option::as_ref)` iterator, as compiled**: for
 the iterator at `it`, a pointer to the next element and the end of the
@@ -224,7 +224,7 @@ theorem fulcioIterNext_correct (m : Machine) {base retAddr it : Word} (hc : Code
     obtain ⟨m10, e10, pc10, mem10, regs10⟩ := t9.jalr hc8 fn_at_1a
     refine ⟨m10, .cons e1 (.cons e2 (.cons e3 (.cons e4 (.cons e5 (.cons e6 (.cons e7 (.cons e8 (.cons e9
       (.single e10))))))))), ?_, ?_, fun r h0 h1 h2 h3 => ?_, ?_⟩
-    · rw [pc10, add_lit_zero]; simp +decide only [upd, ite_true, ite_false]
+    · rw [pc10, add_lit_zero]; simp +decide only [upd, ite_false]
       rw [k7 ra (by decide) (by decide) (by decide) (by decide), hra, hret]
     · rw [regs10, ite_eq_right_of_eq_false _ _ (eq_false he)]; simp +decide only [upd, ite_false]
       rw [q7a2, q7a1, fn_mask]; rfl
@@ -330,7 +330,7 @@ theorem fulcioEnumNext_correct (m : Machine) {base retAddr it : Word} (hc : Code
   obtain ⟨m5, c5, pc5, mem5, regs5⟩ := t4.callRa (cb := base + 0x1C8) hc3 fe_at_8 fe_at_c
     (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hbase 0x1C8 (by decide))
   obtain ⟨m6, c6, pc6, a06, k6, mem6⟩ := fulcioIterNext_correct m5 (it := it) (retAddr := base + BitVec.ofNat 32 0x10)
-    (by rw [mem5]; exact hn3) pc5 (by rw [regs5]; simp +decide [upd, ha0, hz])
+    (by rw [mem5]; exact hn3) pc5 (by rw [regs5]; simp +decide [upd, ha0])
     (by rw [regs5]; simp +decide [upd]) (even_clear _ (even_at base hbase 0x10 (by decide))) hit
     (by rw [mem5, l0]; exact hptr) (hIn.sub (c := 0) (l := 4) (by omega) |> fun h => by rwa [add_ofNat_zero] at h)
   rw [mem5] at a06 mem6
@@ -463,7 +463,7 @@ theorem fulcioEnumNext_correct (m : Machine) {base retAddr it : Word} (hc : Code
     refine ⟨n13, .cons e1 (.cons e2 (.cons e3 (.cons e4 (c5.trans (c6.trans (.cons e7 (.cons d8 (.cons d9
       (.cons d10 (.cons d11 (.cons d12 c13))))))))))), pc13, sp13, ?_, ?_, fun r h0 h1 h2 h3 => ?_, fun x hx => ?_⟩
     · rw [k13 a1 (by decide) (by decide) (by decide), u12.regs]; simp +decide [upd]; exact r7a1
-    · rw [k13 a0 (by decide) (by decide) (by decide), u12.regs, if_neg hr0]; simp +decide [upd]
+    · rw [k13 a0 (by decide) (by decide) (by decide), u12.regs, ite_eq_right hr0]; simp +decide [upd]
     · by_cases e1' : r = sp
       · subst e1'; exact sp13
       by_cases e2' : r = ra
@@ -474,9 +474,9 @@ theorem fulcioEnumNext_correct (m : Machine) {base retAddr it : Word} (hc : Code
       refine keep n12 (fun r h0 _ h2 _ _ _ => ?_) r h0 h1 h2 h3 e1' e2' e3'
       rw [u12.regs]; simp [upd, h0, h2]
       by_cases hr : r = 0
-      · subst hr; rw [if_pos rfl]; exact t7.self.zero.symm
+      · subst hr; rw [ite_eq_left rfl]; exact t7.self.zero.symm
       · simp only [hr, ↓reduceIte]
-    · rw [mem13, if_neg hr0]; exact memStore32_congr (fmOut x hx)
+    · rw [mem13, ite_eq_right hr0]; exact memStore32_congr (fmOut x hx)
 
 /-- Where `nth`'s skipping loop stops for `k` items from the element at `p`
 of a slice ending at `endp`, and whether it skipped them all: it stops at the
@@ -588,8 +588,8 @@ theorem fulcioIterNth_correct (m : Machine) {base retAddr it : Word} {n L : Nat}
       obtain ⟨n3, d3, t3⟩ := t2.aluImm (codeP p).1 fh_at_20 (off' := 0x22) (by decide)
       obtain ⟨n4, d4, pc4, mem4, regs4⟩ := t3.jalr (codeP p).1 fh_at_22
       refine ⟨n4, .cons d2 (.cons d3 (.single d4)), ?_, ?_, fun r h0' h1' h2 h3 h6 => ?_, ?_⟩
-      · rw [pc4, add_lit_zero]; simp +decide only [upd, ite_true, ite_false]; rw [hr, hret]
-      · rw [regs4]; simp +decide only [upd, ite_true, hk0, ↓reduceIte]; rw [t.zero]; rfl
+      · rw [pc4, add_lit_zero]; simp +decide only [upd, ite_false]; rw [hr, hret]
+      · rw [regs4]; simp +decide only [upd, hk0, ↓reduceIte]; rw [t.zero]; rfl
       · rw [regs4]; exact updz t.zero h0'
       · rw [mem4]; simp only [hk0, ↓reduceIte]
   have ow : ∀ (a b : Word), memStore32 (memStore32 m.mem it a) it b = memStore32 m.mem it b := fun a b => by
@@ -642,9 +642,9 @@ theorem fulcioIterNth_correct (m : Machine) {base retAddr it : Word} {n L : Nat}
       rw [add_ofNat_assoc]
       exact congrArg (fun x => p0 + BitVec.ofNat 32 x) (by omega)
     obtain ⟨n5, d5, t5⟩ := t4.sw cp fh_at_10 (off' := 0x12) (by decide)
-      (by simp +decide only [upd, ite_true, ite_false]; rw [h0, add_lit_zero]; exact hit)
+      (by simp +decide only [upd, ite_false]; rw [h0, add_lit_zero]; exact hit)
     rw [show upd (upd (reg n1) a4 (memLoad32 m.mem p)) a3 (aluEval .add (upd (reg n1) a4 (memLoad32 m.mem p) a3) 0x20)
-      a0 + 0 = it by simp +decide only [upd, ite_true, ite_false]; rw [h0, add_lit_zero], q4a3, ow] at t5
+      a0 + 0 = it by simp +decide only [upd, ite_false]; rw [h0, add_lit_zero], q4a3, ow] at t5
     have cp' := (codeP (p0 + BitVec.ofNat 32 (32 * (j + 1)))).1
     obtain ⟨n6, d6, t6⟩ := t5.aluImm cp' fh_at_12 (off' := 0x16) (by decide)
     have z1 := t.zero
@@ -661,7 +661,7 @@ theorem fulcioIterNth_correct (m : Machine) {base retAddr it : Word} {n L : Nat}
       omega
     have q6a3 : reg n6 a3 = p0 + BitVec.ofNat 32 (32 * (j + 1)) := by rw [q6]; simp +decide only [upd, ite_false]; exact q4a3
     have q6o : ∀ r, r ≠ a3 → r ≠ a4 → r ≠ a5 → reg n6 r = reg n1 r := fun r h3' h4 h5 => by
-      rw [q6, updz (by simp +decide [upd, z1]) h5, updz (by simp +decide [upd, z1]) h3', updz z1 h4]
+      rw [q6, updz (by simp +decide [upd]) h5, updz (by simp +decide [upd]) h3', updz z1 h4]
     have hp' : (p0 + BitVec.ofNat 32 (32 * (j + 1))).toNat % 4 = 0 := alj (j + 1)
     have hstep : p + 0x20 = p0 + BitVec.ofNat 32 (32 * (j + 1)) := by
       rw [← hpd]; show p0 + BitVec.ofNat 32 (32 * j) + BitVec.ofNat 32 32 = _
@@ -763,7 +763,7 @@ theorem fulcioIterNth_correct (m : Machine) {base retAddr it : Word} {n L : Nat}
       (by rw [t4.regs]; simp +decide [upd, hra])
     rw [add_ofNat_zero] at a0' mem'
     refine ⟨m', .cons d2 (.cons d3 (.cons d4 c')), pc', a0', fun r h0 h1 h2 h3 h4 h5 h6 => ?_, mem'⟩
-    rw [k' r h0 h1 h2 h3 h4 h5 h6, t4.regs, updz (by simp +decide [upd, hz]) h2, updz hz h3]
+    rw [k' r h0 h1 h2 h3 h4 h5 h6, t4.regs, updz (by simp +decide [upd]) h2, updz hz h3]
 
 end C3.RV32
 

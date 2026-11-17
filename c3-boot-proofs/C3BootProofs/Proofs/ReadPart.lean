@@ -294,7 +294,7 @@ theorem readPart_correct {flash : Nat → BitVec 8} {R : Nat} {romBase : Word} {
   · rcases a013 with h0 | h1
     · left; rw [fa0, h0]; show (0 : Word) &&& buf = 0; exact BitVec.zero_and
     · right
-      refine ⟨by rw [fa0, h1]; show (0xFFFFFFFF : Word) &&& buf = buf; exact ones_and buf, hle, hsum, fun i hi => ?_⟩
+      refine ⟨by rw [fa0, h1]; show (0xFFFFFFFF : Word) &&& buf = buf; exact ones_and_left buf, hle, hsum, fun i hi => ?_⟩
       rw [mem', by13 h1 i hi, haddr]
   · rw [mem', mem13 x (shrG x hx) (shr hb), mem12]; exact M3out x (inF x hx)
 

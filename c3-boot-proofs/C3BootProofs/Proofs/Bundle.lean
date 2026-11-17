@@ -45,46 +45,46 @@ theorem u32MemCur_some {M : Word → BitVec 8} {out self p e : Word}
       rwa [add_ofNat_zero] at this), memLoad32_store32_same]
   · rw [memStore8_ne h1, memStore32_get_sep h2]
 
-theorem bf_at_0 : fetchRel bundleFieldCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFE0, 2) := by decide
-theorem bf_at_2 : fetchRel bundleFieldCode 0x2 = some (.store .sw sp ra 0x1C, 2) := by decide
-theorem bf_at_4 : fetchRel bundleFieldCode 0x4 = some (.store .sw sp (8 : Fin 32) 0x18, 2) := by decide
-theorem bf_at_6 : fetchRel bundleFieldCode 0x6 = some (.store .sw sp (9 : Fin 32) 0x14, 2) := by decide
-theorem bf_at_8 : fetchRel bundleFieldCode 0x8 = some (.store .sw sp (18 : Fin 32) 0x10, 2) := by decide
-theorem bf_at_a : fetchRel bundleFieldCode 0xA = some (.store .sw sp (19 : Fin 32) 0xC, 2) := by decide
-theorem bf_at_c : fetchRel bundleFieldCode 0xC = some (.alu .add (18 : Fin 32) x0 a3, 2) := by decide
-theorem bf_at_e : fetchRel bundleFieldCode 0xE = some (.alu .add (19 : Fin 32) x0 a2, 2) := by decide
-theorem bf_at_10 : fetchRel bundleFieldCode 0x10 = some (.alu .add (9 : Fin 32) x0 a1, 2) := by decide
-theorem bf_at_12 : fetchRel bundleFieldCode 0x12 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
-theorem bf_at_14 : fetchRel bundleFieldCode 0x14 = some (.aluImm .add a0 sp 0x4, 2) := by decide
-theorem bf_at_16 : fetchRel bundleFieldCode 0x16 = some (.auipc ra 0xFFFFD000, 4) := by decide
-theorem bf_at_1a : fetchRel bundleFieldCode 0x1A = some (.jalr ra ra 0xFFFFFB42, 4) := by decide
-theorem bf_at_1e : fetchRel bundleFieldCode 0x1E = some (.load .lbu a0 sp 0x4, 4) := by decide
-theorem bf_at_22 : fetchRel bundleFieldCode 0x22 = some (.branch .beq a0 x0 0x8, 2) := by decide
-theorem bf_at_24 : fetchRel bundleFieldCode 0x24 = some (.load .lbu a0 sp 0x5, 4) := by decide
-theorem bf_at_28 : fetchRel bundleFieldCode 0x28 = some (.jal x0 0x26, 2) := by decide
-theorem bf_at_2a : fetchRel bundleFieldCode 0x2A = some (.load .lw a2 sp 0x8, 2) := by decide
-theorem bf_at_2c : fetchRel bundleFieldCode 0x2C = some (.branch .bltu a2 (19 : Fin 32) 0x20, 4) := by decide
-theorem bf_at_30 : fetchRel bundleFieldCode 0x30 = some (.branch .bltu (18 : Fin 32) a2 0x1C, 4) := by decide
-theorem bf_at_34 : fetchRel bundleFieldCode 0x34 = some (.alu .add a0 x0 (8 : Fin 32), 2) := by decide
-theorem bf_at_36 : fetchRel bundleFieldCode 0x36 = some (.alu .add a1 x0 (9 : Fin 32), 2) := by decide
-theorem bf_at_38 : fetchRel bundleFieldCode 0x38 = some (.load .lw ra sp 0x1C, 2) := by decide
-theorem bf_at_3a : fetchRel bundleFieldCode 0x3A = some (.load .lw (8 : Fin 32) sp 0x18, 2) := by decide
-theorem bf_at_3c : fetchRel bundleFieldCode 0x3C = some (.load .lw (9 : Fin 32) sp 0x14, 2) := by decide
-theorem bf_at_3e : fetchRel bundleFieldCode 0x3E = some (.load .lw (18 : Fin 32) sp 0x10, 2) := by decide
-theorem bf_at_40 : fetchRel bundleFieldCode 0x40 = some (.load .lw (19 : Fin 32) sp 0xC, 2) := by decide
-theorem bf_at_42 : fetchRel bundleFieldCode 0x42 = some (.aluImm .add sp sp 0x20, 2) := by decide
-theorem bf_at_44 : fetchRel bundleFieldCode 0x44 = some (.auipc (6 : Fin 32) 0xFFFFC000, 4) := by decide
-theorem bf_at_48 : fetchRel bundleFieldCode 0x48 = some (.jalr x0 (6 : Fin 32) 0x560, 4) := by decide
-theorem bf_at_4c : fetchRel bundleFieldCode 0x4C = some (.aluImm .add a0 x0 0x5, 2) := by decide
-theorem bf_at_4e : fetchRel bundleFieldCode 0x4E = some (.store .sw (8 : Fin 32) x0 0x0, 4) := by decide
-theorem bf_at_52 : fetchRel bundleFieldCode 0x52 = some (.store .sb (8 : Fin 32) a0 0x4, 4) := by decide
-theorem bf_at_56 : fetchRel bundleFieldCode 0x56 = some (.load .lw ra sp 0x1C, 2) := by decide
-theorem bf_at_58 : fetchRel bundleFieldCode 0x58 = some (.load .lw (8 : Fin 32) sp 0x18, 2) := by decide
-theorem bf_at_5a : fetchRel bundleFieldCode 0x5A = some (.load .lw (9 : Fin 32) sp 0x14, 2) := by decide
-theorem bf_at_5c : fetchRel bundleFieldCode 0x5C = some (.load .lw (18 : Fin 32) sp 0x10, 2) := by decide
-theorem bf_at_5e : fetchRel bundleFieldCode 0x5E = some (.load .lw (19 : Fin 32) sp 0xC, 2) := by decide
-theorem bf_at_60 : fetchRel bundleFieldCode 0x60 = some (.aluImm .add sp sp 0x20, 2) := by decide
-theorem bf_at_62 : fetchRel bundleFieldCode 0x62 = some (.jalr x0 ra 0x0, 2) := by decide
+theorem bfl_at_0 : fetchRel bundleFieldCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFE0, 2) := by decide
+theorem bfl_at_2 : fetchRel bundleFieldCode 0x2 = some (.store .sw sp ra 0x1C, 2) := by decide
+theorem bfl_at_4 : fetchRel bundleFieldCode 0x4 = some (.store .sw sp (8 : Fin 32) 0x18, 2) := by decide
+theorem bfl_at_6 : fetchRel bundleFieldCode 0x6 = some (.store .sw sp (9 : Fin 32) 0x14, 2) := by decide
+theorem bfl_at_8 : fetchRel bundleFieldCode 0x8 = some (.store .sw sp (18 : Fin 32) 0x10, 2) := by decide
+theorem bfl_at_a : fetchRel bundleFieldCode 0xA = some (.store .sw sp (19 : Fin 32) 0xC, 2) := by decide
+theorem bfl_at_c : fetchRel bundleFieldCode 0xC = some (.alu .add (18 : Fin 32) x0 a3, 2) := by decide
+theorem bfl_at_e : fetchRel bundleFieldCode 0xE = some (.alu .add (19 : Fin 32) x0 a2, 2) := by decide
+theorem bfl_at_10 : fetchRel bundleFieldCode 0x10 = some (.alu .add (9 : Fin 32) x0 a1, 2) := by decide
+theorem bfl_at_12 : fetchRel bundleFieldCode 0x12 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
+theorem bfl_at_14 : fetchRel bundleFieldCode 0x14 = some (.aluImm .add a0 sp 0x4, 2) := by decide
+theorem bfl_at_16 : fetchRel bundleFieldCode 0x16 = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem bfl_at_1a : fetchRel bundleFieldCode 0x1A = some (.jalr ra ra 0xFFFFFB42, 4) := by decide
+theorem bfl_at_1e : fetchRel bundleFieldCode 0x1E = some (.load .lbu a0 sp 0x4, 4) := by decide
+theorem bfl_at_22 : fetchRel bundleFieldCode 0x22 = some (.branch .beq a0 x0 0x8, 2) := by decide
+theorem bfl_at_24 : fetchRel bundleFieldCode 0x24 = some (.load .lbu a0 sp 0x5, 4) := by decide
+theorem bfl_at_28 : fetchRel bundleFieldCode 0x28 = some (.jal x0 0x26, 2) := by decide
+theorem bfl_at_2a : fetchRel bundleFieldCode 0x2A = some (.load .lw a2 sp 0x8, 2) := by decide
+theorem bfl_at_2c : fetchRel bundleFieldCode 0x2C = some (.branch .bltu a2 (19 : Fin 32) 0x20, 4) := by decide
+theorem bfl_at_30 : fetchRel bundleFieldCode 0x30 = some (.branch .bltu (18 : Fin 32) a2 0x1C, 4) := by decide
+theorem bfl_at_34 : fetchRel bundleFieldCode 0x34 = some (.alu .add a0 x0 (8 : Fin 32), 2) := by decide
+theorem bfl_at_36 : fetchRel bundleFieldCode 0x36 = some (.alu .add a1 x0 (9 : Fin 32), 2) := by decide
+theorem bfl_at_38 : fetchRel bundleFieldCode 0x38 = some (.load .lw ra sp 0x1C, 2) := by decide
+theorem bfl_at_3a : fetchRel bundleFieldCode 0x3A = some (.load .lw (8 : Fin 32) sp 0x18, 2) := by decide
+theorem bfl_at_3c : fetchRel bundleFieldCode 0x3C = some (.load .lw (9 : Fin 32) sp 0x14, 2) := by decide
+theorem bfl_at_3e : fetchRel bundleFieldCode 0x3E = some (.load .lw (18 : Fin 32) sp 0x10, 2) := by decide
+theorem bfl_at_40 : fetchRel bundleFieldCode 0x40 = some (.load .lw (19 : Fin 32) sp 0xC, 2) := by decide
+theorem bfl_at_42 : fetchRel bundleFieldCode 0x42 = some (.aluImm .add sp sp 0x20, 2) := by decide
+theorem bfl_at_44 : fetchRel bundleFieldCode 0x44 = some (.auipc (6 : Fin 32) 0xFFFFC000, 4) := by decide
+theorem bfl_at_48 : fetchRel bundleFieldCode 0x48 = some (.jalr x0 (6 : Fin 32) 0x560, 4) := by decide
+theorem bfl_at_4c : fetchRel bundleFieldCode 0x4C = some (.aluImm .add a0 x0 0x5, 2) := by decide
+theorem bfl_at_4e : fetchRel bundleFieldCode 0x4E = some (.store .sw (8 : Fin 32) x0 0x0, 4) := by decide
+theorem bfl_at_52 : fetchRel bundleFieldCode 0x52 = some (.store .sb (8 : Fin 32) a0 0x4, 4) := by decide
+theorem bfl_at_56 : fetchRel bundleFieldCode 0x56 = some (.load .lw ra sp 0x1C, 2) := by decide
+theorem bfl_at_58 : fetchRel bundleFieldCode 0x58 = some (.load .lw (8 : Fin 32) sp 0x18, 2) := by decide
+theorem bfl_at_5a : fetchRel bundleFieldCode 0x5A = some (.load .lw (9 : Fin 32) sp 0x14, 2) := by decide
+theorem bfl_at_5c : fetchRel bundleFieldCode 0x5C = some (.load .lw (18 : Fin 32) sp 0x10, 2) := by decide
+theorem bfl_at_5e : fetchRel bundleFieldCode 0x5E = some (.load .lw (19 : Fin 32) sp 0xC, 2) := by decide
+theorem bfl_at_60 : fetchRel bundleFieldCode 0x60 = some (.aluImm .add sp sp 0x20, 2) := by decide
+theorem bfl_at_62 : fetchRel bundleFieldCode 0x62 = some (.jalr x0 ra 0x0, 2) := by decide
 
 set_option maxRecDepth 20000 in
 set_option maxHeartbeats 8000000 in
@@ -143,23 +143,23 @@ theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
     rwa [add_ofNat_zero] at this
   have s0 : St m.mem base m 0 (reg m) := ⟨by rw [hpc]; simp, rfl, fun _ => rfl⟩
   have hz := s0.zero
-  obtain ⟨m1, e1, t1⟩ := s0.aluImm hc bf_at_0 (off' := 2) (by decide)
+  obtain ⟨m1, e1, t1⟩ := s0.aluImm hc bfl_at_0 (off' := 2) (by decide)
   rw [show aluEval .add (reg m sp) 0xFFFFFFE0 = G from hGd] at t1
   have u1sp : upd (reg m) sp G sp = G := by simp +decide [upd]
   have f1 : ∀ r, r ≠ sp → upd (reg m) sp G r = reg m r := fun r h => updz hz h
-  obtain ⟨m2, e2, t2⟩ := t1.sw hc bf_at_2 (off' := 4) (by decide) (by rw [u1sp]; exact aligned_add hGa (k := 0x1C) (by decide))
+  obtain ⟨m2, e2, t2⟩ := t1.sw hc bfl_at_2 (off' := 4) (by decide) (by rw [u1sp]; exact aligned_add hGa (k := 0x1C) (by decide))
   rw [u1sp, f1 ra (by decide)] at t2
   have hc2 := hc.store32 (v := reg m ra) (fr 0x1C 4 (by omega) _ _ hSc)
-  obtain ⟨m3, e3, t3⟩ := t2.sw hc2 bf_at_4 (off' := 6) (by decide) (by rw [u1sp]; exact aligned_add hGa (k := 0x18) (by decide))
+  obtain ⟨m3, e3, t3⟩ := t2.sw hc2 bfl_at_4 (off' := 6) (by decide) (by rw [u1sp]; exact aligned_add hGa (k := 0x18) (by decide))
   rw [u1sp, f1 8 (by decide)] at t3
   have hc3 := hc2.store32 (v := reg m 8) (fr 0x18 4 (by omega) _ _ hSc)
-  obtain ⟨m4, e4, t4⟩ := t3.sw hc3 bf_at_6 (off' := 8) (by decide) (by rw [u1sp]; exact aligned_add hGa (k := 0x14) (by decide))
+  obtain ⟨m4, e4, t4⟩ := t3.sw hc3 bfl_at_6 (off' := 8) (by decide) (by rw [u1sp]; exact aligned_add hGa (k := 0x14) (by decide))
   rw [u1sp, f1 9 (by decide)] at t4
   have hc4 := hc3.store32 (v := reg m 9) (fr 0x14 4 (by omega) _ _ hSc)
-  obtain ⟨m5, e5, t5⟩ := t4.sw hc4 bf_at_8 (off' := 0xA) (by decide) (by rw [u1sp]; exact aligned_add hGa (k := 0x10) (by decide))
+  obtain ⟨m5, e5, t5⟩ := t4.sw hc4 bfl_at_8 (off' := 0xA) (by decide) (by rw [u1sp]; exact aligned_add hGa (k := 0x10) (by decide))
   rw [u1sp, f1 18 (by decide)] at t5
   have hc5 := hc4.store32 (v := reg m 18) (fr 0x10 4 (by omega) _ _ hSc)
-  obtain ⟨m6, e6, t6⟩ := t5.sw hc5 bf_at_a (off' := 0xC) (by decide) (by rw [u1sp]; exact aligned_add hGa (k := 0xC) (by decide))
+  obtain ⟨m6, e6, t6⟩ := t5.sw hc5 bfl_at_a (off' := 0xC) (by decide) (by rw [u1sp]; exact aligned_add hGa (k := 0xC) (by decide))
   rw [u1sp, f1 19 (by decide)] at t6
   obtain ⟨M5, hM5⟩ : ∃ M5, memStore32 (memStore32 (memStore32 (memStore32 (memStore32 m.mem (G + 0x1C) (reg m ra))
       (G + 0x18) (reg m 8)) (G + 0x14) (reg m 9)) (G + 0x10) (reg m 18)) (G + 0xC) (reg m 19) = M5 := ⟨_, rfl⟩
@@ -201,12 +201,12 @@ theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
     refine (memLoad32_store32_sep (sep_offsets G (c := 0xC) (n := 4) (d := 0x10) (k := 4) (Or.inl (by omega)) (by omega) (by omega))).trans ?_
     exact memLoad32_store32_same _ _ _
   have fE : memLoad32 M5 (G + 0xC) = reg m 19 := by rw [← hM5]; exact memLoad32_store32_same _ _ _
-  obtain ⟨m7, e7, t7⟩ := t6.alu hc6 bf_at_c (off' := 0xE) (by decide)
-  obtain ⟨m8, e8, t8⟩ := t7.alu hc6 bf_at_e (off' := 0x10) (by decide)
-  obtain ⟨m9, e9, t9⟩ := t8.alu hc6 bf_at_10 (off' := 0x12) (by decide)
-  obtain ⟨m10, e10, t10⟩ := t9.alu hc6 bf_at_12 (off' := 0x14) (by decide)
-  obtain ⟨m11, e11, t11⟩ := t10.aluImm hc6 bf_at_14 (off' := 0x16) (by decide)
-  obtain ⟨m12, c12, pc12, mem12, regs12⟩ := t11.callRa (cb := base + 0xFFFFCB58) hc6 bf_at_16 bf_at_1a
+  obtain ⟨m7, e7, t7⟩ := t6.alu hc6 bfl_at_c (off' := 0xE) (by decide)
+  obtain ⟨m8, e8, t8⟩ := t7.alu hc6 bfl_at_e (off' := 0x10) (by decide)
+  obtain ⟨m9, e9, t9⟩ := t8.alu hc6 bfl_at_10 (off' := 0x12) (by decide)
+  obtain ⟨m10, e10, t10⟩ := t9.alu hc6 bfl_at_12 (off' := 0x14) (by decide)
+  obtain ⟨m11, e11, t11⟩ := t10.aluImm hc6 bfl_at_14 (off' := 0x16) (by decide)
+  obtain ⟨m12, c12, pc12, mem12, regs12⟩ := t11.callRa (cb := base + 0xFFFFCB58) hc6 bfl_at_16 bfl_at_1a
     (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hbase 0xFFFFCB58 (by decide))
   have sp12 : reg m12 sp = G := by rw [regs12]; simp +decide [upd]
   have a012 : reg m12 a0 = G + 4 := by rw [regs12]; simp +decide [upd, aluEval]
@@ -323,32 +323,32 @@ theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
         m'.mem = memStore8 (memStore32 m13.mem out 0) (out + 0x4) ((fx a0).extractLsb' 0 8) := by
     intro mx fx c s h8 hs hk
     have hzx := s.zero
-    obtain ⟨n1, d1, u1⟩ := s.sw hc13 bf_at_4e (off' := 0x52) (by decide)
+    obtain ⟨n1, d1, u1⟩ := s.sw hc13 bfl_at_4e (off' := 0x52) (by decide)
       (by rw [h8, show out + (0x0 : Word) = out from BitVec.add_zero out]; exact hout)
     rw [h8, show out + (0x0 : Word) = out from BitVec.add_zero out, show fx x0 = 0 from hzx] at u1
     have hc1 := hc13.store32 (v := 0) (a := out) hcO
-    obtain ⟨n2, d2, u2⟩ := u1.sb hc1 bf_at_52 (off' := 0x56) (by decide)
+    obtain ⟨n2, d2, u2⟩ := u1.sb hc1 bfl_at_52 (off' := 0x56) (by decide)
     rw [h8] at u2
     have hc2 := hc1.store8 (v := (fx a0).extractLsb' 0 8) (a := out + 0x4) (hOc.sub (c := 4) (l := 1) (by omega))
-    obtain ⟨n3, d3, u3⟩ := u2.lw hc2 bf_at_56 (off' := 0x58) (by decide)
+    obtain ⟨n3, d3, u3⟩ := u2.lw hc2 bfl_at_56 (off' := 0x58) (by decide)
       (by rw [hs]; exact aligned_add hGa (k := 0x1C) (by decide))
     rw [hs, eA] at u3
-    obtain ⟨n4, d4, u4⟩ := u3.lw hc2 bf_at_58 (off' := 0x5A) (by decide)
+    obtain ⟨n4, d4, u4⟩ := u3.lw hc2 bfl_at_58 (off' := 0x5A) (by decide)
       (by simp +decide only [upd]; rw [hs]; exact aligned_add hGa (k := 0x18) (by decide))
     rw [show upd fx ra (reg m ra) sp = G by simp +decide only [upd]; exact hs, eB] at u4
-    obtain ⟨n5, d5, u5⟩ := u4.lw hc2 bf_at_5a (off' := 0x5C) (by decide)
+    obtain ⟨n5, d5, u5⟩ := u4.lw hc2 bfl_at_5a (off' := 0x5C) (by decide)
       (by simp +decide only [upd]; rw [hs]; exact aligned_add hGa (k := 0x14) (by decide))
     rw [show upd (upd fx ra (reg m ra)) 8 (reg m 8) sp = G by simp +decide only [upd]; exact hs, eC] at u5
-    obtain ⟨n6, d6, u6⟩ := u5.lw hc2 bf_at_5c (off' := 0x5E) (by decide)
+    obtain ⟨n6, d6, u6⟩ := u5.lw hc2 bfl_at_5c (off' := 0x5E) (by decide)
       (by simp +decide only [upd]; rw [hs]; exact aligned_add hGa (k := 0x10) (by decide))
     rw [show upd (upd (upd fx ra (reg m ra)) 8 (reg m 8)) 9 (reg m 9) sp = G by simp +decide only [upd]; exact hs,
       eD] at u6
-    obtain ⟨n7, d7, u7⟩ := u6.lw hc2 bf_at_5e (off' := 0x60) (by decide)
+    obtain ⟨n7, d7, u7⟩ := u6.lw hc2 bfl_at_5e (off' := 0x60) (by decide)
       (by simp +decide only [upd]; rw [hs]; exact aligned_add hGa (k := 0xC) (by decide))
     rw [show upd (upd (upd (upd fx ra (reg m ra)) 8 (reg m 8)) 9 (reg m 9)) 18 (reg m 18) sp = G by
       simp +decide only [upd]; exact hs, eE] at u7
-    obtain ⟨n8, d8, u8⟩ := u7.aluImm hc2 bf_at_60 (off' := 0x62) (by decide)
-    obtain ⟨n9, d9, pc9, mem9, regs9⟩ := u8.jalr hc2 bf_at_62
+    obtain ⟨n8, d8, u8⟩ := u7.aluImm hc2 bfl_at_60 (off' := 0x62) (by decide)
+    obtain ⟨n9, d9, pc9, mem9, regs9⟩ := u8.jalr hc2 bfl_at_62
     refine ⟨n9, pre (c.trans (.cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.cons d6 (.cons d7 (.cons d8
       (.single d9)))))))))), ?_, ?_, fun r h0 h1 h2 h3 h4 h5 _ => ?_, by rw [mem9]⟩
     · rw [pc9, add_lit_zero]; simp +decide only [upd, ite_true, ite_false]; rw [hra, hret]
@@ -375,19 +375,19 @@ theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
   have hz13 : reg m13 0 = 0 := t13.zero
   have us : ∀ (g : Fin 32 → Word) (r : Fin 32) (v : Word), r.val ≠ 0 → upd g r v r = v := fun g r v h => by
     simp only [upd, h, ↓reduceIte]
-  obtain ⟨n14, e14, t14⟩ := t13.lbu hc13 bf_at_1e (off' := 0x22) (by decide)
+  obtain ⟨n14, e14, t14⟩ := t13.lbu hc13 bfl_at_1e (off' := 0x22) (by decide)
   rw [sp13] at t14
   have tag : m13.mem (G + 0x4) = Cur.u32Mem M5 (G + 4) self (G + 4) := mem13 _ (inG 4 (by omega))
   rcases hbr : bytesResult ptr len (memLoad32 m.mem (self + 8)) 4 with _ | ⟨p, e⟩
   · obtain ⟨u0, u1', -⟩ := u32MemCur_none (out := G + 4) (hR.trans hbr)
     rw [tag, u0] at t14
-    obtain ⟨n15, e15, t15⟩ := t14.notTaken hc13 0x24 bf_at_22 (by decide)
+    obtain ⟨n15, e15, t15⟩ := t14.notTaken hc13 0x24 bfl_at_22 (by decide)
       (by rw [us _ a0 _ (by decide)]; exact (by decide : branchTaken .beq ((1 : BitVec 8).zeroExtend 32) 0 = false))
-    obtain ⟨n16, e16, t16⟩ := t15.lbu hc13 bf_at_24 (off' := 0x28) (by decide)
+    obtain ⟨n16, e16, t16⟩ := t15.lbu hc13 bfl_at_24 (off' := 0x28) (by decide)
     rw [updz hz13 (show sp ≠ a0 by decide), sp13, show G + (0x5 : Word) = G + 4 + 1 by rw [BitVec.add_assoc]; rfl,
       mem13 _ (by have := inG 5 (by omega); rwa [show G + BitVec.ofNat 32 5 = G + 4 + 1 by rw [BitVec.add_assoc]; rfl] at this),
       u1'] at t16
-    obtain ⟨n17, e17, t17⟩ := t16.jump hc13 bf_at_28 (off' := 0x4E) (by decide)
+    obtain ⟨n17, e17, t17⟩ := t16.jump hc13 bfl_at_28 (off' := 0x4E) (by decide)
       (by rw [t16.pc, BitVec.add_assoc]; exact even_bit0 (even_at base hbase 0x4E (by decide)))
     obtain ⟨m', c', pc', sp', k', mem'⟩ := err _ _ (.cons e14 (.cons e15 (.cons e16 (.single e17)))) t17
       (by rw [updz t14.zero (by decide), updz hz13 (by decide)]; exact s013)
@@ -410,9 +410,9 @@ theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
         rw [← hp1, ← add_ofNat_assoc, Cur.ofNat_toNat_self]
       rw [addr]; exact M5out _ (hBS.sub (c := (memLoad32 m.mem (self + 8)).toNat + j) (l := 1) (by omega)).symm
     rw [tag, u0] at t14
-    obtain ⟨n15, e15, t15⟩ := t14.taken hc13 0x2A bf_at_22 (by decide)
+    obtain ⟨n15, e15, t15⟩ := t14.taken hc13 0x2A bfl_at_22 (by decide)
       (by rw [us _ a0 _ (by decide)]; exact (by decide : branchTaken .beq ((0 : BitVec 8).zeroExtend 32) 0 = true))
-    obtain ⟨n16, e16, t16⟩ := t15.lw hc13 bf_at_2a (off' := 0x2C) (by decide)
+    obtain ⟨n16, e16, t16⟩ := t15.lw hc13 bfl_at_2a (off' := 0x2C) (by decide)
       (by rw [updz hz13 (show sp ≠ a0 by decide), sp13]; exact aligned_add hGa (k := 8) (by decide))
     have val : memLoad32 m13.mem (G + 0x8) = memLoad32 m.mem p := by
       rw [show G + (0x8 : Word) = G + 4 + 4 by rw [BitVec.add_assoc]; rfl, ← hM5p, ← uv]
@@ -435,7 +435,7 @@ theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
           (∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ 6 → reg m' r = reg m r) ∧
           ∀ x, Sep S 80 x 1 → m'.mem x = fieldMem m.mem out self lo hi x := by
       intro mx c s hn
-      obtain ⟨n1, d1, u1⟩ := s.aluImm hc13 bf_at_4c (off' := 0x4E) (by decide)
+      obtain ⟨n1, d1, u1⟩ := s.aluImm hc13 bfl_at_4c (off' := 0x4E) (by decide)
       obtain ⟨m', c', pc', sp', k', mem'⟩ := err _ _ (c.trans (.single d1)) u1
         (by rw [updz s.zero (by decide), g16 8 (by decide) (by decide)]; exact s013)
         (by rw [updz s.zero (by decide), g16 sp (by decide) (by decide)]; exact sp13)
@@ -447,7 +447,7 @@ theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
       exact memStore8_congr (memStore32_congr mx)
     have pre16 : Steps m13 n16 := .cons e14 (.cons e15 (.single e16))
     by_cases hlo : (memLoad32 m.mem p).ult lo = true
-    · obtain ⟨n17, e17, t17⟩ := t16.taken hc13 0x4C bf_at_2c (by decide)
+    · obtain ⟨n17, e17, t17⟩ := t16.taken hc13 0x4C bfl_at_2c (by decide)
         (by rw [n2, g16 19 (by decide) (by decide), s313]; exact hlo)
       exact toErr n17 (pre16.trans (.single e17)) t17 fun h => by
         have : (memLoad32 m.mem p).toNat < lo.toNat := of_decide_eq_true hlo
@@ -455,7 +455,7 @@ theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
     have hlo' : lo.toNat ≤ (memLoad32 m.mem p).toNat := by
       have : ¬ (memLoad32 m.mem p).toNat < lo.toNat := fun h => hlo (decide_eq_true h)
       omega
-    obtain ⟨n17, e17, t17⟩ := t16.notTaken hc13 0x30 bf_at_2c (by decide)
+    obtain ⟨n17, e17, t17⟩ := t16.notTaken hc13 0x30 bfl_at_2c (by decide)
       (by
         rw [n2, g16 19 (by decide) (by decide), s313]
         show (memLoad32 m.mem p).ult lo = false
@@ -463,7 +463,7 @@ theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
         · rfl
         · exact absurd h hlo)
     by_cases hhi : hi.ult (memLoad32 m.mem p) = true
-    · obtain ⟨n18, e18, t18⟩ := t17.taken hc13 0x4C bf_at_30 (by decide)
+    · obtain ⟨n18, e18, t18⟩ := t17.taken hc13 0x4C bfl_at_30 (by decide)
         (by rw [n2, g16 18 (by decide) (by decide), s213]; exact hhi)
       exact toErr n18 (pre16.trans (.cons e17 (.single e18))) t18 fun h => by
         have : hi.toNat < (memLoad32 m.mem p).toNat := of_decide_eq_true hhi
@@ -471,15 +471,15 @@ theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
     have hhi' : (memLoad32 m.mem p).toNat ≤ hi.toNat := by
       have : ¬ hi.toNat < (memLoad32 m.mem p).toNat := fun h => hhi (decide_eq_true h)
       omega
-    obtain ⟨n18, e18, t18⟩ := t17.notTaken hc13 0x34 bf_at_30 (by decide)
+    obtain ⟨n18, e18, t18⟩ := t17.notTaken hc13 0x34 bfl_at_30 (by decide)
       (by
         rw [n2, g16 18 (by decide) (by decide), s213]
         show hi.ult (memLoad32 m.mem p) = false
         cases h : hi.ult (memLoad32 m.mem p)
         · rfl
         · exact absurd h hhi)
-    obtain ⟨n19, e19, t19⟩ := t18.alu hc13 bf_at_34 (off' := 0x36) (by decide)
-    obtain ⟨n20, e20, t20⟩ := t19.alu hc13 bf_at_36 (off' := 0x38) (by decide)
+    obtain ⟨n19, e19, t19⟩ := t18.alu hc13 bfl_at_34 (off' := 0x36) (by decide)
+    obtain ⟨n20, e20, t20⟩ := t19.alu hc13 bfl_at_36 (off' := 0x38) (by decide)
     have q20 : ∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → reg n20 r = reg m13 r := fun r h0 h1 h2 => by
       by_cases hr : r.val = 0
       · have : r = 0 := Fin.ext hr
@@ -492,26 +492,26 @@ theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
     have q20a2 : reg n20 a2 = memLoad32 m.mem p := by rw [t20.regs]; simp +decide only [upd, ite_true, ite_false]
     have q20sp : reg n20 sp = G := (q20 sp (by decide) (by decide) (by decide)).trans sp13
     have u20 := t20.self
-    obtain ⟨n21, e21, t21⟩ := u20.lw hc13 bf_at_38 (off' := 0x3A) (by decide)
+    obtain ⟨n21, e21, t21⟩ := u20.lw hc13 bfl_at_38 (off' := 0x3A) (by decide)
       (by rw [q20sp]; exact aligned_add hGa (k := 0x1C) (by decide))
     rw [q20sp, fA13] at t21
-    obtain ⟨n22, e22, t22⟩ := t21.lw hc13 bf_at_3a (off' := 0x3C) (by decide)
+    obtain ⟨n22, e22, t22⟩ := t21.lw hc13 bfl_at_3a (off' := 0x3C) (by decide)
       (by simp +decide only [upd]; rw [q20sp]; exact aligned_add hGa (k := 0x18) (by decide))
     rw [show upd (reg n20) ra (reg m ra) sp = G by simp +decide only [upd]; exact q20sp, fB13] at t22
-    obtain ⟨n23, e23, t23⟩ := t22.lw hc13 bf_at_3c (off' := 0x3E) (by decide)
+    obtain ⟨n23, e23, t23⟩ := t22.lw hc13 bfl_at_3c (off' := 0x3E) (by decide)
       (by simp +decide only [upd]; rw [q20sp]; exact aligned_add hGa (k := 0x14) (by decide))
     rw [show upd (upd (reg n20) ra (reg m ra)) 8 (reg m 8) sp = G by simp +decide only [upd]; exact q20sp, fC13] at t23
-    obtain ⟨n24, e24, t24⟩ := t23.lw hc13 bf_at_3e (off' := 0x40) (by decide)
+    obtain ⟨n24, e24, t24⟩ := t23.lw hc13 bfl_at_3e (off' := 0x40) (by decide)
       (by simp +decide only [upd]; rw [q20sp]; exact aligned_add hGa (k := 0x10) (by decide))
     rw [show upd (upd (upd (reg n20) ra (reg m ra)) 8 (reg m 8)) 9 (reg m 9) sp = G by
       simp +decide only [upd]; exact q20sp, fD13] at t24
-    obtain ⟨n25, e25, t25⟩ := t24.lw hc13 bf_at_40 (off' := 0x42) (by decide)
+    obtain ⟨n25, e25, t25⟩ := t24.lw hc13 bfl_at_40 (off' := 0x42) (by decide)
       (by simp +decide only [upd]; rw [q20sp]; exact aligned_add hGa (k := 0xC) (by decide))
     rw [show upd (upd (upd (upd (reg n20) ra (reg m ra)) 8 (reg m 8)) 9 (reg m 9)) 18 (reg m 18) sp = G by
       simp +decide only [upd]; exact q20sp, fE13] at t25
-    obtain ⟨n26, e26, t26⟩ := t25.aluImm hc13 bf_at_42 (off' := 0x44) (by decide)
-    obtain ⟨n27, e27, t27⟩ := t26.auipc hc13 bf_at_44 (off' := 0x48) (by decide)
-    obtain ⟨n28, e28, pc28, mem28, regs28⟩ := t27.jalr hc13 bf_at_48
+    obtain ⟨n26, e26, t26⟩ := t25.aluImm hc13 bfl_at_42 (off' := 0x44) (by decide)
+    obtain ⟨n27, e27, t27⟩ := t26.auipc hc13 bfl_at_44 (off' := 0x48) (by decide)
+    obtain ⟨n28, e28, pc28, mem28, regs28⟩ := t27.jalr hc13 bfl_at_48
     have p28 : n28.pc = base + 0xFFFFC5A4 := by
       rw [pc28]; simp +decide only [upd, ite_true, ite_false]
       rw [show base + BitVec.ofNat 32 0x44 + 0xFFFFC000 + 0x560 = base + 0xFFFFC5A4 by
@@ -539,9 +539,9 @@ theorem bundleField_correct (m : Machine) {base retAddr out self lo hi : Word}
         rw [q20 r h0 h1 h2]; exact k13' r h0 h1 h2 h3 h4 h5 hra' hsp' h8' h9' h18 h19
     obtain ⟨m', c', pc', mem', fr'⟩ := readerBytes_correct n28 (base + 0xFFFFC5A4) retAddr out self
       (memLoad32 m.mem p) (by show CodeIn n28.mem _ _; rw [mem28]; exact hb13) p28
-      (by rw [regs28]; simp +decide only [upd, ite_true, ite_false]; exact q20a0)
-      (by rw [regs28]; simp +decide only [upd, ite_true, ite_false]; exact q20a1)
-      (by rw [regs28]; simp +decide only [upd, ite_true, ite_false]; exact q20a2)
+      (by rw [regs28]; simp +decide only [upd, ite_false]; exact q20a0)
+      (by rw [regs28]; simp +decide only [upd, ite_false]; exact q20a1)
+      (by rw [regs28]; simp +decide only [upd, ite_false]; exact q20a2)
       (by rw [r28 ra (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)]; exact hra)
       hret hout hself hOb hEb
     refine ⟨m', pre (pre16.trans (.cons e17 (.cons e18 (.cons e19 (.cons e20 (.cons e21 (.cons e22 (.cons e23
