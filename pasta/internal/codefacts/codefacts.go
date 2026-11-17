@@ -260,45 +260,90 @@ func canonValue(text string) string {
 	return text
 }
 
-func classifyArg(n tsutil.Node) string {
+func classifyArg(n tsutil.Node) argKind {
 	t := n.Type()
 	if literalWords[t] {
-		return "literal"
+		return argLiteral
 	}
 	for _, s := range literalSubstr {
 		if strings.Contains(t, s) {
-			return "literal"
+			return argLiteral
 		}
 	}
 	if identTypes[t] {
 		txt := n.Text()
 		if literalWords[txt] {
-			return "literal"
+			return argLiteral
 		}
 		if txt != "" && (isUpper(txt[0]) || txt == strings.ToUpper(txt)) {
-			return "const"
+			return argConst
 		}
-		return "ident"
+		return argIdent
 	}
 	if qualifiedTypes[t] {
-		return "const"
+		return argConst
 	}
-	return "expr"
+	return argExpr
 }
 
 func isUpper(b byte) bool { return b >= 'A' && b <= 'Z' }
 
-// Call is one call site, bound by callee name + optional qualifier.
-type Call struct {
-	Name      string
-	Qualifier string
-	Form      string // free | qualified
-	Args      []string
-	Kinds     []string
-	Path      string
-	Line      int
-	Lang      string
-	CallerID  int // -1 at file top level
+// call is one call site, bound by callee name (its key in Index.calls) and an
+// optional qualifier. A large tree has millions of them, so a call holds no
+// pointers and the garbage collector never scans them: strings live in
+// Index.strs, arguments in Index.args, and the file in Index.srcFiles.
+type call struct {
+	qualifier strID
+	file      uint32 // index into Index.srcFiles
+	line      int32
+	callerID  int32  // -1 at file top level
+	args      uint32 // offset of the first argument in Index.args
+	nargs     uint32
+}
+
+// form reports whether the call names its callee alone or through a
+// qualifier.
+func (c call) form() string {
+	if c.qualifier != 0 {
+		return "qualified"
+	}
+	return "free"
+}
+
+// strID indexes Index.strs. The zero ID is the empty string.
+type strID uint32
+
+// callArg is one argument of a call: its normalized text and its kind.
+type callArg struct {
+	value strID
+	kind  argKind
+}
+
+type argKind uint8
+
+const (
+	argExpr argKind = iota
+	argLiteral
+	argConst
+	argIdent
+)
+
+func (k argKind) String() string {
+	switch k {
+	case argLiteral:
+		return "literal"
+	case argConst:
+		return "const"
+	case argIdent:
+		return "ident"
+	default:
+		return "expr"
+	}
+}
+
+// srcFile is a file that contributed calls to the index.
+type srcFile struct {
+	path, dir, lang string
 }
 
 // Def is one function/method definition.
@@ -358,7 +403,11 @@ type redundant struct {
 
 // Index is the indexed view of a source tree.
 type Index struct {
-	calls         map[string][]*Call
+	calls         map[string][]call
+	strs          []string
+	strIDs        map[string]strID
+	args          []callArg
+	srcFiles      []srcFile
 	defs          map[string][]*Def
 	defsByID      map[int]*Def
 	identUses     map[string]int
@@ -387,13 +436,43 @@ const identSiteCap = 400
 
 func newIndex() *Index {
 	return &Index{
-		calls: map[string][]*Call{}, defs: map[string][]*Def{}, defsByID: map[int]*Def{},
+		calls: map[string][]call{}, strs: []string{""}, strIDs: map[string]strID{"": 0},
+		defs: map[string][]*Def{}, defsByID: map[int]*Def{},
 		identUses: map[string]int{}, identSites: map[string][]site{},
 		callEdges: map[int]map[string]bool{}, toplevelCall: map[string]bool{},
 		suppressed: map[string]map[int]bool{}, stringRefs: map[string]bool{},
 		ifaceMethods: map[string]bool{}, filesByLang: map[string]int{}, langs: map[string]bool{},
 	}
 }
+
+// intern returns the ID of s in idx.strs, adding s if it is new.
+func (idx *Index) intern(s string) strID {
+	if id, ok := idx.strIDs[s]; ok {
+		return id
+	}
+	id := strID(len(idx.strs))
+	idx.strs = append(idx.strs, s)
+	idx.strIDs[s] = id
+	return id
+}
+
+func (idx *Index) str(id strID) string { return idx.strs[id] }
+
+func (idx *Index) callArgs(c call) []callArg { return idx.args[c.args : c.args+c.nargs] }
+
+// argValues returns the text of c's arguments, or nil when it has none.
+func (idx *Index) argValues(c call) []string {
+	if c.nargs == 0 {
+		return nil
+	}
+	out := make([]string, c.nargs)
+	for i, a := range idx.callArgs(c) {
+		out[i] = idx.str(a.value)
+	}
+	return out
+}
+
+func (idx *Index) callFile(c call) *srcFile { return &idx.srcFiles[c.file] }
 
 // BuildOptions scopes a Build.
 type BuildOptions struct {
@@ -570,10 +649,24 @@ func (idx *Index) merge(f *Index) {
 		}
 		idx.defs[name] = append(idx.defs[name], ds...)
 	}
+	strMap := make([]strID, len(f.strs))
+	for i, s := range f.strs {
+		strMap[i] = idx.intern(s)
+	}
+	fileOff := uint32(len(idx.srcFiles))
+	idx.srcFiles = append(idx.srcFiles, f.srcFiles...)
+	argOff := uint32(len(idx.args))
+	for _, a := range f.args {
+		idx.args = append(idx.args, callArg{value: strMap[a.value], kind: a.kind})
+	}
 	for name, cs := range f.calls {
-		for _, c := range cs {
-			if c.CallerID >= 0 {
-				c.CallerID += off
+		for i := range cs {
+			c := &cs[i]
+			c.qualifier = strMap[c.qualifier]
+			c.file += fileOff
+			c.args += argOff
+			if c.callerID >= 0 {
+				c.callerID += int32(off)
 			}
 		}
 		idx.calls[name] = append(idx.calls[name], cs...)
@@ -716,7 +809,7 @@ func valueRefs(idx *Index, name string) int {
 func sameDirCalls(idx *Index, name, dir string) int {
 	n := 0
 	for _, c := range idx.calls[name] {
-		if filepath.ToSlash(filepath.Dir(c.Path)) == dir {
+		if idx.callFile(c).dir == dir {
 			n++
 		}
 	}
