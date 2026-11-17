@@ -36,6 +36,8 @@ for line in open(src):
     elif op == 'zext.b': ins = f'.aluImm .and {r(args[0])} {r(args[1])} 0xFF'
     elif op == 'seqz': ins = f'.aluImm .sltu {r(args[0])} {r(args[1])} 0x1'
     elif op == 'snez': ins = f'.alu .sltu {r(args[0])} x0 {r(args[1])}'
+    elif op == 'sgtz': ins = f'.alu .slt {r(args[0])} x0 {r(args[1])}'
+    elif op == 'sltz': ins = f'.alu .slt {r(args[0])} {r(args[1])} x0'
     elif op == 'lw': o,b = mem(args[1]); ins = f'.load .lw {r(args[0])} {r(b)} {w(o)}'
     elif op == 'lbu': o,b = mem(args[1]); ins = f'.load .lbu {r(args[0])} {r(b)} {w(o)}'
     elif op == 'lb': o,b = mem(args[1]); ins = f'.load .lb {r(args[0])} {r(b)} {w(o)}'

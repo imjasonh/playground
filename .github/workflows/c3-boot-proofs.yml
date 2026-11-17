@@ -143,6 +143,7 @@ jobs:
           python3 scripts/gen-fe25519.py
           python3 scripts/gen-tobytes.py
           python3 scripts/gen-scalar-mont.py
+          python3 scripts/gen-ev-reduce.py
           git diff --exit-code C3BootProofs/Proofs/
 
       - name: Install Espressif QEMU
