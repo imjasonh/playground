@@ -1791,6 +1791,83 @@ theorem wf_loop (C : WfCtx M0 F wp cp wl cn L) : ∀ (fuel : Nat) {n : Machine} 
       obtain rfl : pos = L := by omega
       exact ⟨n, M, carry, j, D, .refl _, S⟩
 
+theorem wnafGo_end {N L f carry : Nat} (hc : carry ≤ 1) :
+    wnafGo N L (f + 1) L carry = if carry = 0 then [] else [(1 : Int)] := by
+  simp only [wnafGo, Nat.lt_irrefl, ↓reduceIte]
+  by_cases h : carry = 0
+  · simp [h]
+  · obtain rfl : carry = 1 := by omega
+    simp
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 8000000 in
+/-- From the loop head with `pos = L` to 0x180: the last carry, if any, as a
+digit, and the digit count in `a0`. -/
+theorem wf_exit (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L r0 M n 0x5E L carry j D) :
+    ∃ n' M', Steps n n' ∧ St M' WF n' 0x180 (reg n') ∧ WfR F wp wl L r0 n' ∧
+      WfMem M0 Ms F wp cp wl cn M' j (wnafSpec (memBytes M0 cp cn) L).length (wnafSpec (memBytes M0 cp cn) L) ∧
+      reg n' a0 = BitVec.ofNat 32 (wnafSpec (memBytes M0 cp cn) L).length := by
+  have hLw := C.hLw; have hL := C.hL; have hFa := C.room.1; have hcar := S.hc
+  have hc : CodeIn M WF wnafFormCode := C.code S.agree C.cod (by decide) (by decide)
+  have hE : wnafSpec (memBytes M0 cp cn) L = D ++ (if carry = 0 then [] else [(1 : Int)]) := by
+    obtain ⟨f, hf, e⟩ := S.spec
+    obtain ⟨f', rfl⟩ : ∃ f', f = f' + 1 := ⟨f - 1, by omega⟩
+    rw [← e, wnafGo_end hcar]
+  rw [hE]
+  have hlen := S.len
+  obtain ⟨n1, d1, u1⟩ := S.st.alu hc wf_at_5e (off' := 0x62) (by decide)
+  have S1 := S.step u1 (by decide)
+  have s4 : reg n1 (20 : Fin 32) = wp + BitVec.ofNat 32 L := by rw [u1.upd_eq (by decide), S.s9, S.s6]; rfl
+  obtain ⟨n2, d2, u2⟩ := S1.st.taken hc 0x16A wf_at_62 (by decide)
+    (by rw [S1.s7, S1.s2, wbr_bgeu (by omega) (by omega)]; exact decide_eq_true (Nat.le_refl _))
+  have S2 := S1.jmp u2
+  obtain ⟨n3, d3, u3⟩ := S2.st.lw hc wf_at_16a (off' := 0x16C) (by decide)
+    (by rw [S2.hsp]; exact aligned_add hFa (k := 0xC) (by decide))
+  have S3 := S2.step u3 (by decide)
+  obtain ⟨n4, d4, u4⟩ := S3.st.alu hc wf_at_16c (off' := 0x170) (by decide)
+  have S4 := S3.step u4 (by decide)
+  have a0_4 : reg n4 a0 = BitVec.ofNat 32 carry := by
+    rw [u4.upd_eq (by decide), u3.upd_eq (by decide), S2.hsp, S3.s10]
+    rw [show memLoad32 M (F + 0xC) = 0 from S.chi]; exact BitVec.or_zero
+  have R4 := S4.r
+  have r4 : reg n4 (20 : Fin 32) = wp + BitVec.ofNat 32 L := by
+    rw [u4.upd_ne S3.st.zero _ (by decide), u3.upd_ne S2.st.zero _ (by decide), u2.regs, s4]
+  by_cases h0 : carry = 0
+  · subst h0
+    obtain ⟨n5, d5, u5⟩ := S4.st.taken hc 0x17E wf_at_170 (by decide) (by rw [a0_4, S4.st.zero]; rfl)
+    obtain ⟨n6, d6, u6⟩ := u5.self.alu hc wf_at_17e (off' := 0x180) (by decide)
+    refine ⟨n6, M, .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.single d6))))), u6.self,
+      (R4.jmp u5).upd u6 u5.self.zero (by decide), ?_, ?_⟩
+    · simp only [↓reduceIte, List.append_nil]; rw [hlen]; exact S.mem
+    · simp only [↓reduceIte, List.append_nil]
+      rw [u6.upd_eq (by decide), u5.self.zero, u5.regs, S4.s6, hlen]; exact BitVec.zero_add _
+  · obtain rfl : carry = 1 := by omega
+    obtain ⟨n5, d5, u5⟩ := S4.st.notTaken hc 0x172 wf_at_170 (by decide) (by rw [a0_4, S4.st.zero]; rfl)
+    have S5 := S4.jmp u5
+    obtain ⟨n6, d6, u6⟩ := S5.st.notTaken hc 0x176 wf_at_172 (by decide)
+      (by rw [S5.s6, S5.s3, wbr_bgeu (by omega) (by omega)]; exact decide_eq_false (by omega))
+    have S6 := S5.jmp u6
+    obtain ⟨n7, d7, u7⟩ := S6.st.aluImm hc wf_at_176 (off' := 0x178) (by decide)
+    have S7 := S6.step u7 (by decide)
+    obtain ⟨n8, d8, u8⟩ := S7.st.aluImm hc wf_at_178 (off' := 0x17A) (by decide)
+    obtain ⟨n9, d9, u9⟩ := u8.self.sb hc wf_at_17a (off' := 0x17E) (by decide)
+    have r8 : ∀ q, q ≠ (22 : Fin 32) → q ≠ a0 → reg n8 q = reg n4 q := fun q h22 h0 => by
+      rw [u8.upd_ne S7.st.zero q h22, u7.upd_ne S6.st.zero q h0, u6.regs, u5.regs]
+    rw [r8 _ (by decide) (by decide), r4, add_lit_zero, u8.upd_ne S7.st.zero _ (by decide), u7.upd_eq (by decide),
+      S6.st.zero, show memStore8 M (wp + BitVec.ofNat 32 L) ((aluEval .add 0 1).extractLsb' 0 8) = wput M wp L 1 from rfl]
+      at u9
+    have P := S.mem.put C (by omega) 1
+    have hc9 := C.code P.1.agree C.cod (by decide) (by decide)
+    obtain ⟨n10, d10, u10⟩ := u9.alu hc9 wf_at_17e (off' := 0x180) (by decide)
+    have s6_8 : reg n8 (22 : Fin 32) = BitVec.ofNat 32 (L + 1) := by
+      rw [u8.upd_eq (by decide), S7.s6, wadd1]
+    refine ⟨n10, _, .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.cons d6 (.cons d7 (.cons d8 (.cons d9
+      (.single d10))))))))), u10.self, ?_, ?_, ?_⟩
+    · exact (S7.r.upd u8 S7.st.zero (by decide)).upd u10 u9.zero (by decide)
+    · simp only [Nat.one_ne_zero, ↓reduceIte, List.length_append, List.length_singleton]; rw [hlen]; exact P.1
+    · simp only [Nat.one_ne_zero, ↓reduceIte, List.length_append, List.length_singleton]
+      rw [u10.upd_eq (by decide), u9.zero, s6_8, hlen]; exact BitVec.zero_add _
+
 end Steps
 
 end C3.RV32
