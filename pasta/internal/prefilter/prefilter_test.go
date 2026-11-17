@@ -43,11 +43,11 @@ func TestForRule_withinTokenNotRequired(t *testing.T) {
 		}},
 	}
 	f := ForRule(rule)
-	if !f.Empty() {
+	if len(f.AllOf) != 0 || len(f.AnyOf) != 0 {
 		t.Fatalf("within-only rewrite must leave filter empty, got %+v", f)
 	}
-	if !MayMatch([]byte("const x = 1"), []Filter{f}) {
-		t.Fatal("diagnose-capable rule without substring constraints must MayMatch")
+	if !f.Match([]byte("const x = 1")) {
+		t.Fatal("diagnose-capable rule without substring constraints must match")
 	}
 }
 
@@ -145,26 +145,13 @@ func TestRegexLiteralsSound(t *testing.T) {
 	}
 }
 
-func TestMayMatch(t *testing.T) {
-	filters := []Filter{
-		{AllOf: []string{"Array"}},
-		{AllOf: []string{"Object", "assign"}},
+func TestFilterMatch_allOf(t *testing.T) {
+	f := Filter{AllOf: []string{"Object", "assign"}}
+	if f.Match([]byte("Object.keys(x)")) {
+		t.Fatal("expected miss without assign")
 	}
-	if MayMatch([]byte("const x: number[] = []"), filters) {
-		t.Fatal("expected no match without Array/Object.assign")
-	}
-	if !MayMatch([]byte("type T = Array<number>"), filters) {
-		t.Fatal("expected match for Array")
-	}
-	if !MayMatch([]byte("Object.assign({}, x)"), filters) {
-		t.Fatal("expected match for Object.assign")
-	}
-	// Unfilterable rule forces a parse.
-	if !MayMatch([]byte("anything"), []Filter{{}, {AllOf: []string{"zzz"}}}) {
-		t.Fatal("empty filter must force MayMatch=true")
-	}
-	if MayMatch([]byte("x"), nil) {
-		t.Fatal("no filters → false")
+	if !f.Match([]byte("Object.assign({}, x)")) {
+		t.Fatal("expected hit for Object.assign")
 	}
 }
 

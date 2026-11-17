@@ -15,7 +15,6 @@ import (
 	"github.com/imjasonh/playground/pasta/internal/effect"
 	"github.com/imjasonh/playground/pasta/internal/factstore"
 	"github.com/imjasonh/playground/pasta/internal/parsecache"
-	"github.com/imjasonh/playground/pasta/internal/prefilter"
 	"github.com/imjasonh/playground/pasta/internal/tsutil"
 )
 
@@ -385,7 +384,7 @@ func (r *memRun) prepare(ctx context.Context, f *memFile) (fileState, func(), er
 // match its source.
 func needsPass(groups []ruleGroup, f FileInput) bool {
 	rules := applicableRules(groups, f.Lang, fileName(f))
-	return len(rules) > 0 && prefilter.MayMatch(f.Src, prefilter.ForRules(rules))
+	return mayMatch(f.Src, rules)
 }
 
 // readsAbsentFacts reports whether a rule in g uses not_has_fact.
@@ -427,7 +426,7 @@ func parseInMemory(ctx context.Context, index int, f FileInput, groups []ruleGro
 	if o != nil && o.stats != nil {
 		o.stats.Walked.Add(1)
 	}
-	if !prefilter.MayMatch(src, prefilter.ForRules(applicable)) {
+	if !mayMatch(src, applicable) {
 		o.syncAdmit(index, 0)
 		if o != nil && o.stats != nil {
 			o.stats.PrefilterSkipped.Add(1)

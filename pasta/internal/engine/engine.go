@@ -131,11 +131,13 @@ type FileInput struct {
 }
 
 // scheduledRule pairs a rule with the analyzer that owns it, so we can
-// schedule rules globally across analyzers.
+// schedule rules globally across analyzers, and with the substrings a
+// file must contain for the rule to match.
 type scheduledRule struct {
 	analyzer *dsl.Analyzer
 	name     string
 	rule     dsl.Rule
+	filter   prefilter.Filter
 }
 
 // MaxFixpointIterations bounds the number of times a fixpoint group of
@@ -473,8 +475,7 @@ func processFile(
 	if o.stats != nil {
 		o.stats.Walked.Add(1)
 	}
-	filters := prefilter.ForRules(applicable)
-	if !prefilter.MayMatch(src, filters) {
+	if !mayMatch(src, applicable) {
 		if hasPastaIgnore(src) {
 			// Prefilter proves no rule can match, so every ignore is
 			// unused — parse only far enough to locate the directives.
@@ -686,8 +687,8 @@ func fileName(f FileInput) string {
 
 // applicableRules returns the rules from groups that apply to the given
 // language and file path.
-func applicableRules(groups []ruleGroup, l lang.Language, file string) []*dsl.Rule {
-	var out []*dsl.Rule
+func applicableRules(groups []ruleGroup, l lang.Language, file string) []*scheduledRule {
+	var out []*scheduledRule
 	for _, g := range groups {
 		for i := range g.rules {
 			sr := &g.rules[i]
@@ -697,10 +698,21 @@ func applicableRules(groups []ruleGroup, l lang.Language, file string) []*dsl.Ru
 			if !ruleAppliesToFile(&sr.rule, file) {
 				continue
 			}
-			out = append(out, &sr.rule)
+			out = append(out, sr)
 		}
 	}
 	return out
+}
+
+// mayMatch reports whether src passes the prefilter of at least one of
+// rules.
+func mayMatch(src []byte, rules []*scheduledRule) bool {
+	for _, sr := range rules {
+		if sr.filter.Match(src) {
+			return true
+		}
+	}
+	return false
 }
 
 // defineAll records the name of every definition under root in store, so
@@ -772,6 +784,9 @@ func runGroupOnFile(group ruleGroup, s fileState, store *factstore.Store, collec
 			continue
 		}
 		if !ruleAppliesToFile(&sr.rule, file) {
+			continue
+		}
+		if !sr.filter.Match(s.input.Src) {
 			continue
 		}
 		if err := runRule(&sr, s.env, s.root, store, collect, s.suppress); err != nil {
