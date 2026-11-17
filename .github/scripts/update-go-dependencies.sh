@@ -77,6 +77,10 @@ for module in "${modules[@]}"; do
     cd "$module"
     export GOFLAGS="$goflags"
     go get -u ./...
+    # pasta's cgo grammars must match the ones in its wasm module.
+    if [ "$module" = "pasta" ]; then
+      bash scripts/pin-grammars.sh
+    fi
   ); then
     echo "- ✅ \`${module}\`: dependencies updated" >> "$GITHUB_STEP_SUMMARY"
   else

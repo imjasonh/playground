@@ -1,6 +1,10 @@
-// Package tswasm is pasta's pure-Go tree-sitter backend: the official
-// tree-sitter C runtime + grammars, compiled to one wasm32-wasi module
-// (ts-core.wasm via build.sh) and driven through wazero — no cgo.
+// Package tswasm parses with the official tree-sitter C runtime and
+// pasta's grammars. Every build embeds them compiled to one wasm32-wasi
+// module (ts-core.wasm via build.sh), driven through wazero, so a
+// CGO_ENABLED=0 build still parses. A cgo build also compiles the
+// runtime and most grammars natively (native_cgo.go), which parses
+// about 2.5 times faster, and uses wasm only for the rest. The purego
+// build tag turns the native backend off.
 //
 // Prior art: dvcdsys/code-index PR #81 (server/internal/chunker/tswasm).
 // Parse dumps the whole tree inside the guest via ts_dump_tree; the host
@@ -39,8 +43,12 @@ import (
 var wasmBrotli []byte
 
 var buildID = sync.OnceValue(func() string {
-	sum := sha256.Sum256(wasmBrotli)
-	return hex.EncodeToString(sum[:])
+	h := sha256.New()
+	h.Write(wasmBrotli)
+	if native != nil {
+		h.Write([]byte(native.id()))
+	}
+	return hex.EncodeToString(h.Sum(nil))
 })
 
 // BuildID identifies the embedded runtime and grammars. Trees, and so
@@ -376,8 +384,12 @@ func (p *enginePool) discard(e *engine) {
 // Prewarm loads the compiled module and leaves one idle parser in the
 // pool, so the first Parse doesn't wait for either. Call it in the
 // background while doing other startup work. Errors surface from the
-// next Parse instead.
+// next Parse instead. With the native backend it does nothing, and the
+// few grammars only wasm has load the module on first use.
 func Prewarm() {
+	if native != nil {
+		return
+	}
 	if e, err := gpool.acquire(); err == nil {
 		gpool.release(e, false)
 	}
@@ -386,6 +398,15 @@ func Prewarm() {
 // ---------------------------------------------------------------------------
 // Parse
 // ---------------------------------------------------------------------------
+
+// native parses with tree-sitter compiled into the binary. It is nil
+// unless the package is built with cgo.
+var native interface {
+	has(grammar string) bool
+	parseDump(ctx context.Context, grammar string, src []byte, opts ParseOptions) (treeDump, error)
+	// id identifies the native grammars for BuildID.
+	id() string
+}
 
 // ErrTimeout is returned when the per-parse budget elapses or ctx cancels.
 var ErrTimeout = errors.New("parse timeout")
@@ -406,6 +427,13 @@ func Parse(ctx context.Context, lang *Language, src []byte, fileID string, opts 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if native != nil && native.has(lang.Grammar) {
+		d, err := native.parseDump(ctx, lang.Grammar, src, opts)
+		if err != nil {
+			return nil, err
+		}
+		return &Tree{root: buildGraph(d), nodes: max(int(d.n), 1), src: src, fileID: fileID, lang: lang}, nil
+	}
 	e, err := gpool.acquire()
 	if err != nil {
 		return nil, err
@@ -420,8 +448,11 @@ func Parse(ctx context.Context, lang *Language, src []byte, fileID string, opts 
 	return &Tree{root: buildGraph(d), nodes: max(int(d.n), 1), src: src, fileID: fileID, lang: lang}, nil
 }
 
-// HasGrammar reports whether the embedded module exports the grammar.
+// HasGrammar reports whether either backend has the grammar.
 func HasGrammar(grammar string) bool {
+	if native != nil && native.has(grammar) {
+		return true
+	}
 	e, err := gpool.acquire()
 	if err != nil {
 		return false

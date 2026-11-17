@@ -6,6 +6,13 @@ import (
 	"time"
 )
 
+// wasmOnly turns the native backend off until t ends.
+func wasmOnly(t *testing.T) {
+	saved := native
+	native = nil
+	t.Cleanup(func() { native = saved })
+}
+
 func TestParseGo(t *testing.T) {
 	src := []byte("package p\n\nfunc F() {}\n")
 	tree, err := Parse(t.Context(), &Language{Grammar: "go"}, src, "", ParseOptions{})
@@ -60,6 +67,7 @@ func TestParseTimeout(t *testing.T) {
 // under -race, so an untimed parse warms the engine first. The fake clock
 // counts readings, not time, so it still times out the warm parse.
 func TestParseTimeoutUsesRealClock(t *testing.T) {
+	wasmOnly(t)
 	var src []byte
 	for i := 0; len(src) < 400<<10; i++ {
 		src = fmt.Appendf(src, "export function f%d(a: number, b: string): string {\n"+
