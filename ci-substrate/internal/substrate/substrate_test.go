@@ -1,7 +1,9 @@
 package substrate_test
 
 import (
+	"context"
 	"os"
+	"slices"
 	"testing"
 
 	ateapi "go.ate.dev/substrate/api/ateapi/v1"
@@ -72,5 +74,52 @@ func TestStateMapping(t *testing.T) {
 		if got := substrate.State(in); got != want {
 			t.Errorf("State(%v) = %v, want %v", in, got, want)
 		}
+	}
+}
+
+// actorControl serves one template and a fixed list of actors.
+type actorControl struct {
+	ateapi.UnimplementedControlServer
+	actors []*ateapi.Actor
+}
+
+func (c *actorControl) GetActorTemplate(context.Context, *ateapi.GetActorTemplateRequest) (*ateapi.ActorTemplate, error) {
+	return &ateapi.ActorTemplate{}, nil
+}
+
+func (c *actorControl) ListActors(context.Context, *ateapi.ListActorsRequest) (*ateapi.ListActorsResponse, error) {
+	return &ateapi.ListActorsResponse{Actors: c.actors}, nil
+}
+
+func TestListReportsWorkerPool(t *testing.T) {
+	client := serve(t, &actorControl{actors: []*ateapi.Actor{{
+		Metadata: &ateapi.ResourceMetadata{Name: "ci-runner-0"},
+		Status: &ateapi.ActorStatus{
+			State:            ateapi.ActorState_ACTOR_STATE_RUNNING,
+			WorkerAssignment: &ateapi.WorkerAssignment{WorkerNamespace: "ci-substrate-workers", WorkerPool: "ci-runner"},
+		},
+	}, {
+		Metadata: &ateapi.ResourceMetadata{Name: "ci-runner-1"},
+		Status:   &ateapi.ActorStatus{State: ateapi.ActorState_ACTOR_STATE_SUSPENDED, AssignedNode: "node-a"},
+	}}})
+	manifest, err := os.ReadFile("../../deploy/substrate/egress-cas.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	actors, err := substrate.NewActors(t.Context(), client, "tenant-a", "ci-runner", manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := actors.List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A suspended actor pinned to a node holds no worker.
+	want := []actorpool.Actor{
+		{Name: "ci-runner-0", State: actorpool.StateRunning, WorkerPool: "ci-substrate-workers/ci-runner"},
+		{Name: "ci-runner-1", State: actorpool.StateSuspended},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("List() = %v, want %v", got, want)
 	}
 }

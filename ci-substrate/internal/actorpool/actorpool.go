@@ -10,6 +10,13 @@
 //   - A suspended actor beyond Warm is deleted, and a crashed one is deleted
 //     so the next reconcile replaces it.
 //
+// With Workers set, the pool also sizes a WorkerPool: enough workers for the
+// actors that are awake or waking beyond BaseSlots, which fit on workers the
+// pool does not size. It grows the WorkerPool before resuming actors that need
+// it, and shrinks it, down to zero, once none of its actors is on one of
+// those workers. A resume that finds no room fails and is tried again on the
+// next reconcile, by which time the new worker may be up.
+//
 // The pool learns which actors are busy from the scheduler's Status, keyed by
 // bot id, so the runner inside each actor reports the actor's name as its bot
 // id. The pool never reads jobs or blobs: it sees counts and names.
@@ -74,6 +81,9 @@ func (s State) String() string {
 type Actor struct {
 	Name  string
 	State State
+	// WorkerPool is the namespace/name of the WorkerPool whose worker hosts
+	// the actor, or empty when no worker does.
+	WorkerPool string
 }
 
 // Actors is the part of Substrate's control API the pool uses. Create makes
@@ -91,6 +101,13 @@ type Actors interface {
 // the bot ids holding leases.
 type Queue interface {
 	Status(ctx context.Context) (queued int, busy []string, err error)
+}
+
+// Workers is the WorkerPool the pool sizes: its desired number of workers,
+// which Kubernetes then starts or stops.
+type Workers interface {
+	Replicas(ctx context.Context) (int, error)
+	Scale(ctx context.Context, replicas int) error
 }
 
 // Config sizes a Pool.
@@ -112,6 +129,21 @@ type Config struct {
 	Interval time.Duration
 	// Now returns the current time. Tests set it.
 	Now func() time.Time
+
+	// Workers, when set, is the WorkerPool the pool sizes for its actors.
+	// No other pool may size it, and no other tenant's actors may run on
+	// it: the pool shrinks it when none of its own actors is there.
+	Workers Workers
+	// WorkerPool names Workers as namespace/name, the way Actor.WorkerPool
+	// does.
+	WorkerPool string
+	// BaseSlots is how many of the pool's actors fit on workers that the
+	// pool does not size, such as a WorkerPool on an always-on node.
+	BaseSlots int
+	// ActorsPerWorker is how many actors fit on one of Workers' workers.
+	ActorsPerWorker int
+	// MaxWorkers bounds Workers' replicas.
+	MaxWorkers int
 }
 
 // Pool reconciles a tenant's actors against its queue.
@@ -127,6 +159,7 @@ type Pool struct {
 	byState  map[State]int
 	queued   int
 	busyBots int
+	workers  int
 }
 
 // New returns a Pool. It fails on a configuration that cannot size anything.
@@ -136,6 +169,10 @@ func New(cfg Config) (*Pool, error) {
 	}
 	if cfg.Warm < 0 || cfg.Max < 1 || cfg.Warm > cfg.Max {
 		return nil, fmt.Errorf("actorpool: need 0 <= Warm (%d) <= Max (%d) and Max >= 1", cfg.Warm, cfg.Max)
+	}
+	if cfg.Workers != nil && (cfg.WorkerPool == "" || cfg.BaseSlots < 0 || cfg.ActorsPerWorker < 1 || cfg.MaxWorkers < 1) {
+		return nil, fmt.Errorf("actorpool: Workers needs WorkerPool, BaseSlots (%d) >= 0, ActorsPerWorker (%d) >= 1, and MaxWorkers (%d) >= 1",
+			cfg.BaseSlots, cfg.ActorsPerWorker, cfg.MaxWorkers)
 	}
 	if cfg.IdleAfter <= 0 {
 		cfg.IdleAfter = time.Minute
@@ -258,10 +295,20 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 
 	// A failed resume still counts against need: the usual cause is a full
 	// worker pool, which more actors would not fix.
-	for need > 0 && len(suspended) > 0 {
-		name := suspended[0]
-		suspended = suspended[1:]
-		need--
+	resumes := suspended[:min(max(need, 0), len(suspended))]
+	suspended = suspended[len(resumes):]
+	need -= len(resumes)
+	// Below Warm, create actors too: their first run leaves the snapshot
+	// that makes a later resume warm.
+	creates := 0
+	for (need-creates > 0 || total+creates < p.cfg.Warm) && total+creates < p.cfg.Max {
+		creates++
+	}
+	if err := p.scaleWorkers(ctx, owned, running+byState[StateSuspending], len(resumes)+creates); err != nil {
+		errs = append(errs, err)
+	}
+
+	for _, name := range resumes {
 		slog.InfoContext(ctx, "resuming actor for queued work", "actor", name, "queued", queued)
 		if err := p.do(ctx, "resume", name, p.cfg.Actors.Resume); err != nil {
 			errs = append(errs, fmt.Errorf("resuming %s: %w", name, err))
@@ -269,13 +316,10 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 		}
 		p.lastBusy[name] = now
 	}
-	// Below Warm, create actors too: their first run leaves the snapshot
-	// that makes a later resume warm.
-	for (need > 0 || total < p.cfg.Warm) && total < p.cfg.Max {
+	for range creates {
 		name := p.freeName(names)
 		names[name] = true
 		total++
-		need--
 		slog.InfoContext(ctx, "creating actor", "actor", name, "queued", queued, "total", total)
 		if err := p.do(ctx, "create", name, p.cfg.Actors.Create); err != nil {
 			errs = append(errs, fmt.Errorf("creating %s: %w", name, err))
@@ -315,12 +359,59 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 	return errors.Join(errs...)
 }
 
+// scaleWorkers sizes Workers for awake actors plus waking ones, which this
+// reconcile resumes or creates next. It grows Workers first so those resumes
+// find room. It shrinks Workers only when nothing is waking and none of the
+// pool's actors is on one of its workers, because Kubernetes picks which
+// worker to stop and Substrate crashes the actor on it.
+func (p *Pool) scaleWorkers(ctx context.Context, owned []Actor, awake, waking int) error {
+	if p.cfg.Workers == nil {
+		return nil
+	}
+	have, err := p.cfg.Workers.Replicas(ctx)
+	if err != nil {
+		return fmt.Errorf("reading %s replicas: %w", p.cfg.WorkerPool, err)
+	}
+	p.setWorkers(have)
+	want := min(p.cfg.MaxWorkers, ceilDiv(max(0, awake+waking-p.cfg.BaseSlots), p.cfg.ActorsPerWorker))
+	occupied := slices.ContainsFunc(owned, func(a Actor) bool { return a.WorkerPool == p.cfg.WorkerPool })
+	if want == have || (want < have && (waking > 0 || occupied)) {
+		return nil
+	}
+	slog.InfoContext(ctx, "scaling workers", "workerpool", p.cfg.WorkerPool, "from", have, "to", want, "awake", awake, "waking", waking)
+	err = p.observe(ctx, "scale", attribute.String("ci_substrate.workerpool", p.cfg.WorkerPool), func(ctx context.Context) error {
+		return p.cfg.Workers.Scale(ctx, want)
+	})
+	if err != nil {
+		return fmt.Errorf("scaling %s to %d: %w", p.cfg.WorkerPool, want, err)
+	}
+	p.setWorkers(want)
+	return nil
+}
+
+func (p *Pool) setWorkers(n int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.workers = n
+}
+
+func ceilDiv(a, b int) int {
+	return (a + b - 1) / b
+}
+
 // do runs one change to an actor, with a span and metrics.
 func (p *Pool) do(ctx context.Context, op, name string, f func(context.Context, string) error) error {
-	ctx, span := telemetry.Tracer().Start(ctx, "pool."+op, trace.WithAttributes(attribute.String("ci_substrate.actor", name)))
+	return p.observe(ctx, op, attribute.String("ci_substrate.actor", name), func(ctx context.Context) error {
+		return f(ctx, name)
+	})
+}
+
+// observe runs one change, with a span and metrics.
+func (p *Pool) observe(ctx context.Context, op string, target attribute.KeyValue, f func(context.Context) error) error {
+	ctx, span := telemetry.Tracer().Start(ctx, "pool."+op, trace.WithAttributes(target))
 	defer span.End()
 	start := time.Now()
-	err := f(ctx, name)
+	err := f(ctx)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
