@@ -298,7 +298,7 @@ theorem leN_take8 (l : List Nat) : leN (l.take 8) = l.getD 0 0 + 256 * (l.getD 1
     leN_take_succ, t0]
   simp only [List.drop_drop, getD_dropK]
 
-theorem memBytes_lt (M : Word → BitVec 8) (p : Word) (n : Nat) : ∀ b ∈ memBytes M p n, b < 256 := by
+theorem wfBytes_lt (M : Word → BitVec 8) (p : Word) (n : Nat) : ∀ b ∈ memBytes M p n, b < 256 := by
   intro b hb
   unfold memBytes at hb
   obtain ⟨i, -, rfl⟩ := List.mem_map.mp hb
@@ -747,7 +747,11 @@ theorem WfSt.inc (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L 
       · exact sep_of_le (by rw [hFc _ (by decide)]; omega) (by omega)
       · exact (sep_of_le (by rw [hFc _ (by decide)]; omega) (by rw [hFc _ (by decide)]; omega)).symm
   have KF : ∀ c, (c + 1 ≤ 0x10 ∨ 0x2C ≤ c) → c ≤ 0x70 → n'.mem (F + BitVec.ofNat 32 c) = M (F + BitVec.ofNat 32 c) :=
-    fun c h1 h2 => K _ (by rw [hFc _ h2]; omega)
+    fun c h1 h2 => K _ (by
+      rw [hFc _ h2]
+      rcases h1 with h1 | h1
+      · exact Or.inr (Or.inr ⟨by omega, by omega⟩)
+      · exact Or.inr (Or.inl (by omega)))
   have hw := C.hwl; have sWR := C.sWR
   have KW : ∀ i, i < wl → n'.mem (wp + BitVec.ofNat 32 i) = M (wp + BitVec.ofNat 32 i) := fun i hi =>
     fr _ (((sWR.sub (c := i) (l := 1) hi).subR (c := 0) (l := 0x20) (by decide)) |> fun h => by
@@ -771,7 +775,10 @@ theorem WfSt.inc (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L 
     fun x h1 h2 => ?_, fun c c1 c2 => by rw [KF c (Or.inr (by omega)) (by omega), S.slots c c1 c2]⟩
   have hb := sep1_out h1 (by rw [hG]; have := room.2.1; omega)
   rw [hG] at hb
-  rw [K x (by omega), S.agree x h1 h2]
+  have hFx := room.2.1
+  rcases hb with hb | hb
+  · rw [K x (Or.inl (by omega)), S.agree x h1 h2]
+  · rw [K x (Or.inr (Or.inl (by omega))), S.agree x h1 h2]
 
 set_option maxRecDepth 20000 in
 set_option maxHeartbeats 8000000 in
@@ -948,7 +955,7 @@ theorem wf_win (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L r0
   have hLw := C.hLw; have hL := C.hL
   have hc : CodeIn M WF wnafFormCode := C.code S.agree C.cod (by decide) (by decide)
   have hFa := C.room.1
-  have hcb := memBytes_lt M0 cp cn
+  have hcb := wfBytes_lt M0 cp cn
   have hpos : pos = 64 * (pos / 64) + pos % 64 := by omega
   obtain ⟨n1, d1, u1⟩ := S.st.lw hc wf_at_98 (off' := 0x9A) (by decide) (by rw [S.hsp]; exact aligned_add hFa (k := 0x18) (by decide))
   have S1 := S.step u1 (by decide)
@@ -1265,6 +1272,7 @@ theorem wf_even (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L r
     obtain ⟨f', rfl⟩ : ∃ f', f = f' + 1 := ⟨f - 1, by omega⟩
     refine ⟨f', by omega, ?_⟩
     rw [wnafGo_even hlt hev] at e; rw [← e]; simp
+  obtain ⟨fs, hfs, es⟩ := spec
   refine ⟨n10, .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.cons d6 (.cons d7 (.cons d8 (.cons d9
     (.single d10))))))))), ⟨u10.self, by rw [K _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), S.hsp],
     by rw [K _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), S.s2],
@@ -1275,7 +1283,7 @@ theorem wf_even (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L r
     by rw [K _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), S.gp],
     by rw [K _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), S.tp], by omega, hcar,
     by rw [(S.mem.put C (by omega) 0).2 _ (by decide), S.chi], W.idx, ⟨by omega, by omega⟩, W.cur, W.nxt, W.rest,
-    W.len, W.out, spec, W.agree, W.slots⟩⟩
+    W.len, W.out, ⟨fs, hfs, es⟩, W.agree, W.slots⟩⟩
   · rw [u10.regs, u9.upd_ne u8.self.zero _ (by decide), u8.upd_eq (by decide), u7.upd_ne u6.self.zero _ (by decide),
       u6.upd_ne u5.zero _ (by decide), r4 _ (by decide) (by decide), S.s5, wadd1]
   · rw [u10.regs, u9.upd_ne u8.self.zero _ (by decide), u8.upd_ne u7.self.zero _ (by decide),
@@ -1598,6 +1606,7 @@ theorem wf_tail (C : WfCtx M0 F wp cp wl cn L) {n : Machine} {M : Word → BitVe
     (hk : pos ≤ k) (hkL : k ≤ L) (hc' : c' ≤ 1) (hj : j ≤ k / 64 ∧ k / 64 ≤ j + 1)
     (hspec : ∃ f, L - k + 1 ≤ f ∧ D ++ wnafGo (leN (memBytes M0 cp cn)) L f k c' = wnafSpec (memBytes M0 cp cn) L) :
     ∃ n' M', Steps n n' ∧ WfSt M0 Ms F wp cp wl cn L r0 M' n' 0x5E k c' j D := by
+  obtain ⟨fs, hfs, es⟩ := hspec
   have hLw := C.hLw; have hL := C.hL; have hFa := C.room.1
   have hc : CodeIn M WF wnafFormCode := C.code W.agree C.cod (by decide) (by decide)
   obtain ⟨n1, d1, u1⟩ := s.sw hc wf_at_164 (off' := 0x166) (by decide)
@@ -1623,7 +1632,7 @@ theorem wf_tail (C : WfCtx M0 F wp cp wl cn L) {n : Machine} {M : Word → BitVe
     rw [u3.regs, u2.upd_ne u1.zero _ (by decide), h21]
   refine ⟨n6, _, .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.single d6))))), ⟨u6.self, R6.hsp, R6.s2, R6.s3,
     R6.s9, R6.s8, ?_, ?_, ?_, ?_, by rw [K6 _ (by decide) (by decide) (by decide) (by decide), h26], R6.gp, R6.tp,
-    hkL, hc', memLoad32_store32_same _ _ _, W1.idx, hj, W1.cur, W1.nxt, W1.rest, W1.len, W1.out, hspec, W1.agree,
+    hkL, hc', memLoad32_store32_same _ _ _, W1.idx, hj, W1.cur, W1.nxt, W1.rest, W1.len, W1.out, ⟨fs, hfs, es⟩, W1.agree,
     W1.slots⟩⟩
   · rw [u6.upd_ne u5.self.zero _ (by decide), u5.upd_eq (by decide), u4.upd_ne u3.self.zero _ (by decide), s5_3, wadd1]
   · rw [u6.upd_ne u5.self.zero _ (by decide), u5.upd_ne u4.self.zero _ (by decide), u4.upd_eq (by decide), u3.self.zero,
@@ -1647,6 +1656,7 @@ theorem wf_odd2 (C : WfCtx M0 F wp cp wl cn L) {n : Machine} {M : Word → BitVe
     (hspec : ∃ f, L - (pos + sk) + 1 ≤ f ∧ (D ++ List.replicate (sk - 1) 0) ++
       wnafGo (leN (memBytes M0 cp cn)) L f (pos + sk) c' = wnafSpec (memBytes M0 cp cn) L) :
     ∃ n' M', Steps n n' ∧ WfSt M0 Ms F wp cp wl cn L r0 M' n' 0x5E (pos + sk) c' j (D ++ List.replicate (sk - 1) 0) := by
+  obtain ⟨fs, hfs, es⟩ := hspec
   have hLw := C.hLw; have hL := C.hL
   have hc : CodeIn M WF wnafFormCode := C.code W.agree C.cod (by decide) (by decide)
   obtain ⟨n1, d1, u1⟩ := s.aluImm hc wf_at_11a (off' := 0x11C) (by decide)
@@ -1670,7 +1680,9 @@ theorem wf_odd2 (C : WfCtx M0 F wp cp wl cn L) {n : Machine} {M : Word → BitVe
       u3.upd_ne u2.self.zero _ (by decide), a1_2, a3_4, u5.upd_ne u4.self.zero _ (by decide),
       u4.upd_ne u3.self.zero _ (by decide), u3.upd_ne u2.self.zero _ (by decide), u2.upd_ne u1.self.zero _ (by decide),
       u1.upd_ne s.zero _ (by decide), h23, show aluEval .and (BitVec.ofNat 32 (L - c')) 0xFFFFFFFF = BitVec.ofNat 32 (L - c')
-        from BitVec.and_allOnes, wsub (by omega) (by omega)]
+        from BitVec.eq_of_toNat_eq (by
+          rw [show (0xFFFFFFFF : Word) = BitVec.ofNat 32 (2 ^ 32 - 1) from rfl, wv_and _ 32 (by decide)]
+          exact Nat.mod_eq_of_lt (BitVec.isLt _)), wsub (by omega) (by omega)]
   have a2_6 : reg n6 a2 = 5 := by
     rw [u6.upd_ne u5.self.zero _ (by decide), u5.upd_ne u4.self.zero _ (by decide), u4.upd_ne u3.self.zero _ (by decide),
       u3.upd_ne u2.self.zero _ (by decide), u2.upd_ne u1.self.zero _ (by decide), u1.upd_eq (by decide), s.zero]; rfl
@@ -1726,7 +1738,7 @@ theorem wf_odd2 (C : WfCtx M0 F wp cp wl cn L) {n : Machine} {M : Word → BitVe
       (by rw [u16.regs, K15 _ (by decide) (by decide) (by decide) (by decide), h23])
       (by rw [u16.regs, a1_15]; congr 1; omega)
       (by rw [u16.regs, K15 _ (by decide) (by decide) (by decide) (by decide), h26]) (by omega) (by omega) hc' hj
-      (by simpa using hspec)
+      ⟨fs, hfs, by simpa using es⟩
     exact ⟨n17, M17, cs15.trans (.cons d16 c17), by simpa using S17⟩
   · obtain ⟨n16, d16, u16⟩ := u15.self.notTaken hc 0x152 wf_at_150 (by decide)
       (by rw [a0_15, u15.self.zero]; simp only [h2, ↓reduceIte]
@@ -1741,7 +1753,7 @@ theorem wf_odd2 (C : WfCtx M0 F wp cp wl cn L) {n : Machine} {M : Word → BitVe
         h23])
       (by rw [K17 _ (by decide) (by decide) (by decide), u16.regs, a1_15]; congr 1; omega)
       (by rw [K17 _ (by decide) (by decide) (by decide), u16.regs, K15 _ (by decide) (by decide) (by decide) (by decide),
-        h26]) (by omega) (by omega) hc' hj hspec
+        h26]) (by omega) (by omega) hc' hj ⟨fs, hfs, es⟩
     exact ⟨n18, M18, cs15.trans (.cons d16 (c17.trans c18)), S18⟩
 
 /-- One trip around the loop from the head, with `pos < L`. -/
