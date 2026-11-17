@@ -60,7 +60,7 @@ than `go test`.
 | `internal/loader/cuemod/`     | The embedded built-in CUE module: `schema/`, `lang/<name>/`, `patterns/<name>/`. |
 | `internal/remote/`            | Remote rule imports: `pasta.cue` manifest + `pasta.lock` lockfile, git-based fetcher, on-disk cache under `$XDG_CACHE_HOME/pasta/modules/`. Flat deps only — a remote module declaring its own remote imports is rejected. |
 | `internal/lang/`              | Runtime language registry. `grammars.go` maps grammar name → WASM tree-sitter language handle. |
-| `internal/tswasm/`            | Official C tree-sitter + grammars. With cgo (and without `-tags purego`), `native_cgo.go` compiles the runtime vendored in `csrc/vendor/tree-sitter` and the grammars' Go modules; other builds, and grammars without a native build, use the embedded `ts-core.wasm.br` on wazero. Rebuild the WASM module with `internal/tswasm/build.sh`, then run `scripts/pin-grammars.sh` so `go.mod` pins the same grammar versions; `TestNativeMatchesWasm` checks that both backends produce the same trees. `scripts/update-tree-sitter.sh`, which the daily dependency update runs, moves the runtime and the grammar refs to their newest releases and rebuilds the module. Don't edit or restyle the vendored runtime; pasta's default `vendor` skip keeps the monorepo lint and the pre-commit hook off it. Compiled WASM code is cached under `os.UserCacheDir()/pasta/wazero/`; a damaged cache is removed and the module recompiled. |
+| `internal/tswasm/`            | Official C tree-sitter + grammars. With cgo (and without `-tags purego`), `native_cgo.go` compiles the runtime vendored in `csrc/vendor/tree-sitter` and the grammars' Go modules; other builds, and grammars without a native build, use the embedded `ts-core.wasm.br` on wazero. `internal/tswasm/grammars.txt` lists the grammars that `build.sh` compiles into the WASM module; most come from the Go module version that `go.mod` requires, so both backends compile the same grammars. Rebuild the module with `build.sh` after changing `grammars.txt` or a grammar's version in `go.mod`; `TestNativeMatchesWasm` fails when the backends produce different trees. `scripts/update-deps.sh`, which the daily dependency update runs, updates `go.mod`, the runtime, and the other grammars to their newest releases and rebuilds the module. Don't edit or restyle the vendored runtime; pasta's default `vendor` skip keeps the monorepo lint and the pre-commit hook off it. Compiled WASM code is cached under `os.UserCacheDir()/pasta/wazero/`; a damaged cache is removed and the module recompiled. |
 | `internal/tsutil/`            | Tree-sitter `Node` wrapper that carries source bytes + language + file-id, so callers don't have to thread them. |
 | `internal/match/`             | Pattern matcher: node unions, fields, adjacent windows, preceding, predicates (positional), checks (named). |
 | `internal/factstore/`         | Per-run fact store with dual indexing — by (kind, file-id, byte-range) and by (kind, identifier-text). The by-name index is file-agnostic so facts propagate across files in a multi-file group, and lookups bind to the nearest definition of a name. |
@@ -128,7 +128,7 @@ Two cases:
 
 2. **The grammar isn't linked in yet.** Rebuild
    `internal/tswasm/ts-core.wasm.br` with the new grammar in
-   `build.sh`, add an entry to `internal/lang/grammars.go`, then do
+   `grammars.txt`, add an entry to `internal/lang/grammars.go`, then do
    (1). `lang/hcl` plus the `lang/terraform` alias (`.tf` and `.tfvars`
    on the same grammar) is the current example.
 
