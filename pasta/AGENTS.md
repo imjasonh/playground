@@ -22,6 +22,15 @@ from the pasta module root. Run it before sending a PR:
 Pass `go test -short ./...` to skip the e2e shallow-clone smoke tests
 during a tight local loop; CI runs the full suite with `-race`.
 
+## Performance pull requests
+
+State a performance win as pasta's throughput in MB/s, before and
+after. Every run prints it on its last line, `scanned N files, R rules,
+X MB/s`, as bytes scanned over wall time in decimal megabytes. Name the
+corpus and its size, the core count, and the cache state (`-nocache`,
+cold, or warm), because each one changes the rate. Wall time, CPU time,
+and peak RSS can follow as supporting numbers.
+
 ## Running everything
 
 ```

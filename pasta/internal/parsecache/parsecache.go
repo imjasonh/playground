@@ -12,9 +12,14 @@
 // bytes. The engine consults canStream before consulting the cache;
 // rules with cross-file `requires` or fixpoint groups bypass it.
 //
+// Those runs use the tree half of the cache instead: a file's compact
+// parse tree, which depends only on its bytes, its language, and the
+// grammar build, so it survives rule changes.
+//
 // Storage layout:
 //
 //	<dir>/<schema_version>/<rule_hash>/<file_hash>.gob
+//	<dir>/<schema_version>/trees-<build_id>/<file_hash>.tree
 //
 // Schema version is bumped when the on-disk Entry format changes.
 // The rule_hash subdirectory keeps different rule sets from
@@ -31,6 +36,7 @@ import (
 	"encoding/gob"
 	"encoding/hex"
 	"encoding/json/v2"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -73,12 +79,17 @@ type Cache struct {
 	hits   atomic.Int64
 	misses atomic.Int64
 	writes atomic.Int64
+
+	treeHits   atomic.Int64
+	treeMisses atomic.Int64
+	treeWrites atomic.Int64
 }
 
 // Stats reports how the cache performed during a run. Returned by
 // the engine for the CLI to print or log.
 type Stats struct {
-	Hits, Misses, Writes int64
+	Hits, Misses, Writes             int64
+	TreeHits, TreeMisses, TreeWrites int64
 }
 
 // Open prepares dir/<schemaVersion>/<ruleHash>/ for use. sizeLimit
@@ -90,11 +101,13 @@ func Open(dir string, ruleHash string, sizeLimit int64) *Cache {
 	if dir == "" || ruleHash == "" {
 		return nil
 	}
-	full := filepath.Join(dir, schemaVersion, ruleHash)
-	if err := os.MkdirAll(full, 0o755); err != nil {
-		return nil
+	c := &Cache{dir: dir, ruleHash: ruleHash, sizeLimit: sizeLimit}
+	for _, d := range []string{filepath.Join(dir, schemaVersion, ruleHash), c.treeDir()} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			return nil
+		}
 	}
-	return &Cache{dir: dir, ruleHash: ruleHash, sizeLimit: sizeLimit}
+	return c
 }
 
 // Dir returns the root cache directory.
@@ -111,9 +124,12 @@ func (c *Cache) Stats() Stats {
 		return Stats{}
 	}
 	return Stats{
-		Hits:   c.hits.Load(),
-		Misses: c.misses.Load(),
-		Writes: c.writes.Load(),
+		Hits:       c.hits.Load(),
+		Misses:     c.misses.Load(),
+		Writes:     c.writes.Load(),
+		TreeHits:   c.treeHits.Load(),
+		TreeMisses: c.treeMisses.Load(),
+		TreeWrites: c.treeWrites.Load(),
 	}
 }
 
@@ -196,26 +212,69 @@ func (c *Cache) Put(fileHash string, e Entry) {
 	if c == nil {
 		return
 	}
-	path := c.entryPath(fileHash)
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	if writeFile(c.entryPath(fileHash), func(w io.Writer) error { return gob.NewEncoder(w).Encode(e) }) {
+		c.writes.Add(1)
+	}
+}
+
+// treeDir returns the directory of the trees of this grammar build.
+func (c *Cache) treeDir() string {
+	return filepath.Join(c.dir, schemaVersion, "trees-"+tswasm.BuildID())
+}
+
+// GetTree reads the compact parse tree stored under fileHash. Returns
+// (nil, false) on miss or IO error. The caller decodes the tree and
+// parses the file when that fails, so a corrupt entry costs one parse.
+// On hit, touches the file's mtime so the next Prune keeps it.
+func (c *Cache) GetTree(fileHash string) (tswasm.Compact, bool) {
+	if c == nil {
+		return nil, false
+	}
+	path := filepath.Join(c.treeDir(), fileHash+".tree")
+	b, err := os.ReadFile(path)
 	if err != nil {
+		c.treeMisses.Add(1)
+		return nil, false
+	}
+	now := time.Now()
+	_ = os.Chtimes(path, now, now)
+	c.treeHits.Add(1)
+	return b, true
+}
+
+// PutTree stores t under fileHash. Failures are swallowed, like Put's.
+func (c *Cache) PutTree(fileHash string, t tswasm.Compact) {
+	if c == nil {
 		return
 	}
-	if err := gob.NewEncoder(tmp).Encode(e); err != nil {
+	path := filepath.Join(c.treeDir(), fileHash+".tree")
+	if writeFile(path, func(w io.Writer) error { _, err := w.Write(t); return err }) {
+		c.treeWrites.Add(1)
+	}
+}
+
+// writeFile writes path through a temporary file in its directory and
+// renames it into place, so readers never see a partial file. It
+// reports whether the file was written.
+func writeFile(path string, write func(io.Writer) error) bool {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	if err != nil {
+		return false
+	}
+	if err := write(tmp); err != nil {
 		tmp.Close()
 		os.Remove(tmp.Name())
-		return
+		return false
 	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmp.Name())
-		return
+		return false
 	}
-	// Atomic publish: rename overwrites any existing entry.
 	if err := os.Rename(tmp.Name(), path); err != nil {
 		os.Remove(tmp.Name())
-		return
+		return false
 	}
-	c.writes.Add(1)
+	return true
 }
 
 // Prune walks the cache root and deletes oldest-mtime entries until
