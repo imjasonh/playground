@@ -14,7 +14,6 @@
 
 use crate::cache::{parse_tree, LocalCache, RawTreeEntry};
 use crate::remote::Remote;
-use crate::vlog;
 use sha1::{Digest, Sha1};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Condvar, Mutex, Weak};

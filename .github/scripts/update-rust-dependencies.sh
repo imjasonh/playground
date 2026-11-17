@@ -59,8 +59,25 @@ else
 fi
 echo "::endgroup::"
 
+# Each app's rust-toolchain.toml follows the stable release that deps.yaml
+# installs, so the checks below run with the newest compiler and lints.
+stable=$(rustc +stable --version | awk '{print $2}')
+if [ -z "$stable" ]; then
+  result=failure
+  echo "::error title=Rust version lookup failed::rustc +stable --version"
+  echo "- ❌ Could not read the stable Rust version." >> "$GITHUB_STEP_SUMMARY"
+fi
+
 for app in "${apps[@]}"; do
   echo "::group::Update and verify ${app}"
+
+  toolchain="$app/rust-toolchain.toml"
+  channel=$(sed -n 's/^channel = "\([0-9.]*\)"$/\1/p' "$toolchain" 2>/dev/null)
+  if [ -n "$stable" ] && [ -n "$channel" ] &&
+    [ "$(printf '%s\n%s\n' "$channel" "$stable" | sort -V | tail -n 1)" != "$channel" ]; then
+    sed -i "s/^channel = \"${channel}\"$/channel = \"${stable}\"/" "$toolchain"
+    echo "- ✅ \`${app}\`: Rust ${channel} → ${stable}" >> "$GITHUB_STEP_SUMMARY"
+  fi
 
   if (
     cd "$app"
