@@ -114,7 +114,7 @@ import C3BootProofs.Proofs.Ed25519PkOk
 import C3BootProofs.Proofs.EdNafTable
 import C3BootProofs.Proofs.Wnaf
 import C3BootProofs.Proofs.EdvReduceBody
-import C3BootProofs.Proofs.Ed25519VerifyP1b
+import C3BootProofs.Proofs.Ed25519VerifyP3b
 import C3BootProofs.Proofs.Sha256LoopDecode
 import C3BootProofs.Proofs.Sha256LoopBlocks
 import C3BootProofs.Proofs.Sha256LoopRounds
