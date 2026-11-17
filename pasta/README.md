@@ -286,7 +286,8 @@ Cold runs over large trees are tuned for sparse style rules:
    brace) still analyze (`parse_degraded` in `-stats`) and are not
    cached. Pass `-stats` for
    `walked` / `prefilter_skipped` / `parsed` / `parse_errors` /
-   `parse_degraded` / `timed_out` / `memory_skipped` / `cache_hits`.
+   `parse_degraded` / `timed_out` / `memory_skipped` / `cache_hits` /
+   `reparsed`.
 4. **Memory budget** — optional cumulative parsed-source byte cap
    (`-memory-budget`, or `memory_budget` in `pasta.cue`) across the
    whole CLI run (including multipass `-fix`). Admission is in source
@@ -299,11 +300,20 @@ Cold runs over large trees are tuned for sparse style rules:
    files so the Go GC can reclaim them on big cold runs.
 
 Rules that read facts from other files (`go_errcheck` and the
-`*_deprecated_use` and `*_taint` rules) make pasta hold every parsed
-file in memory instead of streaming. Pasta still parses those files in
-parallel and runs each level of dependent rules across files in
-parallel. Only fixpoint groups, such as taint propagation, run one file
-at a time. Rule files also load in parallel, and pasta keeps wazero's
+`*_deprecated_use` and `*_taint` rules) make pasta run in passes
+instead of streaming. Pasta parses every file in parallel and runs the
+rules that read no other file's facts as each file is parsed. Each
+later level of dependent rules then runs across files in parallel.
+Fixpoint groups, such as taint propagation, also iterate over files in
+parallel. A fixpoint group that uses `not_has_fact` is the exception:
+its result depends on order, so it visits files in order. Pasta keeps
+the parse trees that later passes need while their estimated size
+stays under `-tree-budget` (default 4 GiB, `0` keeps every tree). It
+releases the trees past the budget and parses those files again for
+each later pass, which `reparsed` in `-stats` counts. A smaller budget
+trades time for memory: on the Go standard library, 256 MiB cut the
+peak heap from about 5.3 GB to under 1 GB and made the run about four
+times slower. Rule files also load in parallel, and pasta keeps wazero's
 compiled tree-sitter code under `$XDG_CACHE_HOME/pasta/wazero/` (about
 7 MB), which saves about 0.6 seconds per run.
 

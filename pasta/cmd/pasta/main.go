@@ -108,6 +108,7 @@ func runFix(args []string) int {
 	noCache := fs.Bool("nocache", false, "disable the persistent parse-result cache for this run")
 	parseTimeoutFlag := fs.Duration("parse-timeout", -1, "per-file parse budget (e.g. 2s); 0 disables. Default 2s, or parse_timeout_ms from pasta.cue")
 	memoryBudgetFlag := fs.Int64("memory-budget", -1, "cumulative parsed-source byte budget across the whole run; 0 disables. Default unlimited, or memory_budget from pasta.cue")
+	treeBudgetFlag := fs.Int64("tree-budget", -1, "estimated bytes of parse trees a cross-file run keeps between passes; files past it are parsed again for each pass. 0 keeps every tree. Default 4 GiB")
 	showStats := fs.Bool("stats", false, "print walk/prefilter/parse/skip counters on stderr")
 	failOn := fs.String("fail-on", "none", "exit 1 when a diagnostic at this severity or higher is found: none, hint, info, warning, error")
 	quiet := fs.Bool("quiet", false, "print only diagnostics at or above the -fail-on severity")
@@ -217,6 +218,9 @@ func runFix(args []string) int {
 		if memTracker != nil {
 			runOpts = append(runOpts, runner.WithMemoryTracker(memTracker))
 		}
+		if *treeBudgetFlag >= 0 {
+			runOpts = append(runOpts, runner.WithTreeBudget(*treeBudgetFlag))
+		}
 		if *showStats {
 			runOpts = append(runOpts, runner.WithStats(&stats))
 		}
@@ -304,8 +308,8 @@ func runFix(args []string) int {
 	fmt.Fprintln(os.Stderr, formatCompletionReport(reportFiles, rulesApplied, reportBytes, reportDur))
 	if *showStats {
 		s := stats.Snapshot()
-		fmt.Fprintf(os.Stderr, "stats: walked=%d prefilter_skipped=%d parsed=%d parse_errors=%d parse_degraded=%d timed_out=%d memory_skipped=%d cache_hits=%d\n",
-			s.Walked, s.PrefilterSkipped, s.Parsed, s.ParseErrors, s.ParseDegraded, s.TimedOut, s.MemorySkipped, s.CacheHits)
+		fmt.Fprintf(os.Stderr, "stats: walked=%d prefilter_skipped=%d parsed=%d parse_errors=%d parse_degraded=%d timed_out=%d memory_skipped=%d cache_hits=%d reparsed=%d\n",
+			s.Walked, s.PrefilterSkipped, s.Parsed, s.ParseErrors, s.ParseDegraded, s.TimedOut, s.MemorySkipped, s.CacheHits, s.Reparsed)
 	}
 	if cache != nil {
 		if os.Getenv("PASTA_CACHE_STATS") != "" {

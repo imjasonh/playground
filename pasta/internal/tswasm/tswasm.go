@@ -73,6 +73,7 @@ type Language struct {
 // for API parity with the old gotreesitter Tree.
 type Tree struct {
 	root   *node
+	nodes  int
 	src    []byte
 	fileID string
 	lang   *Language
@@ -88,6 +89,14 @@ func (t *Tree) RootNode() *Node {
 
 // Release is a no-op; kept so callers can defer tree.Release().
 func (t *Tree) Release() {}
+
+// NodeCount returns the number of nodes in the tree, named or not.
+func (t *Tree) NodeCount() int {
+	if t == nil {
+		return 0
+	}
+	return t.nodes
+}
 
 // Node is a tree-sitter node in the rebuilt Go graph.
 type Node struct {
@@ -397,7 +406,7 @@ func Parse(ctx context.Context, lang *Language, src []byte, fileID string, opts 
 	if perr != nil {
 		return nil, perr
 	}
-	return &Tree{root: buildGraph(d), src: src, fileID: fileID, lang: lang}, nil
+	return &Tree{root: buildGraph(d), nodes: max(int(d.n), 1), src: src, fileID: fileID, lang: lang}, nil
 }
 
 // HasGrammar reports whether the embedded module exports the grammar.

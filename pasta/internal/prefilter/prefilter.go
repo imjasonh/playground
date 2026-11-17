@@ -90,7 +90,7 @@ func ForRule(rule *dsl.Rule) Filter {
 	// there is exactly one — multiple would need AND-of-OR semantics
 	// and collapsing them into one AnyOf would loosen the filter.
 	var matchGroups [][]string
-	walkPattern(&rule.Match, func(p *dsl.Pattern) {
+	dsl.WalkPattern(&rule.Match, func(p *dsl.Pattern) {
 		for _, w := range p.Where {
 			switch w.Op {
 			case "eq", "token_eq":
@@ -136,41 +136,6 @@ func ForRules(rules []*dsl.Rule) []Filter {
 		out = append(out, ForRule(r))
 	}
 	return out
-}
-
-func walkPattern(p *dsl.Pattern, fn func(*dsl.Pattern)) {
-	if p == nil {
-		return
-	}
-	fn(p)
-	for _, c := range p.Fields {
-		walkChild(&c, fn)
-	}
-	for i := range p.Children {
-		walkChild(&p.Children[i], fn)
-	}
-	for i := range p.Adjacent {
-		walkChild(&p.Adjacent[i], fn)
-	}
-	if p.Preceding != nil {
-		walkChild(p.Preceding, fn)
-	}
-}
-
-func walkChild(c *dsl.Child, fn func(*dsl.Pattern)) {
-	if c == nil {
-		return
-	}
-	if c.Pattern != nil {
-		walkPattern(c.Pattern, fn)
-	}
-	// Inline pattern-form fields on the child.
-	if sub := c.AsPattern(); sub != nil && sub != c.Pattern {
-		walkPattern(sub, fn)
-	}
-	if c.Preceding != nil {
-		walkChild(c.Preceding, fn)
-	}
 }
 
 // simpleAlternationLiterals accepts patterns like `==`, `!=`, `==|!=`,
