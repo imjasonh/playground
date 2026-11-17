@@ -68,6 +68,7 @@ type Stats struct {
 	MemorySkipped    atomic.Int64 // skipped: memory_budget
 	CacheHits        atomic.Int64 // served from parse cache
 	Reparsed         atomic.Int64 // parsed again for a later cross-file pass
+	Rebuilt          atomic.Int64 // rebuilt from a compact tree for a later cross-file pass
 }
 
 // Snapshot is a plain copy of Stats counters for printing.
@@ -81,6 +82,7 @@ type Snapshot struct {
 	MemorySkipped    int64
 	CacheHits        int64
 	Reparsed         int64
+	Rebuilt          int64
 }
 
 // Snapshot returns a consistent-enough copy of the counters.
@@ -98,6 +100,7 @@ func (s *Stats) Snapshot() Snapshot {
 		MemorySkipped:    s.MemorySkipped.Load(),
 		CacheHits:        s.CacheHits.Load(),
 		Reparsed:         s.Reparsed.Load(),
+		Rebuilt:          s.Rebuilt.Load(),
 	}
 }
 
@@ -167,7 +170,7 @@ func Run(
 // fileState is the parsed-and-prepared state for one file in a group.
 type fileState struct {
 	input    FileInput
-	tree     releaser
+	tree     *tsutil.Tree
 	root     tsutil.Node
 	nodes    int
 	env      *match.Env
@@ -184,9 +187,6 @@ func (s *fileState) release() {
 	s.root = tsutil.Node{}
 	s.env = nil
 }
-
-// releaser is the subset of *tsutil.Tree we actually need (Release).
-type releaser interface{ Release() }
 
 // Option configures a single RunGroup call. Options are applied in
 // order; later options win on conflict.
@@ -249,8 +249,10 @@ func WithMemoryBudget(bytes int64) Option {
 
 // WithTreeBudget bounds the estimated heap, in bytes, of the parse
 // trees that a cross-file run keeps between passes. A file whose tree
-// doesn't fit is parsed again for each later pass instead of being
-// skipped, so the budget trades parse time for memory and never changes
+// doesn't fit keeps a compact encoding of it instead, within half the
+// budget again, and its tree is rebuilt from that for each later pass.
+// Past both, the file is parsed again for each later pass. A file is
+// never skipped, so the budget trades time for memory and never changes
 // the results. Pass 0 to keep every tree. When the option is omitted,
 // DefaultTreeBudget applies. The streaming path keeps no trees and
 // ignores it.
@@ -730,12 +732,18 @@ func newFileState(ctx context.Context, f FileInput, store *factstore.Store, pars
 	if err != nil {
 		return fileState{}, fmt.Errorf("parse %s: %w", f.FileID, err)
 	}
+	if defineNames {
+		defineAll(store, root, f.Lang.DefinitionTypes)
+	}
+	return treeFileState(f, store, tree, root), nil
+}
+
+// treeFileState builds the match environment and suppression map for
+// f's parse tree.
+func treeFileState(f FileInput, store *factstore.Store, tree *tsutil.Tree, root tsutil.Node) fileState {
 	commentTypes := make(map[string]bool, len(f.Lang.CommentTypes))
 	for _, t := range f.Lang.CommentTypes {
 		commentTypes[t] = true
-	}
-	if defineNames {
-		defineAll(store, root, f.Lang.DefinitionTypes)
 	}
 	env := &match.Env{
 		StmtList:     f.Lang.StmtList,
@@ -748,7 +756,7 @@ func newFileState(ctx context.Context, f FileInput, store *factstore.Store, pars
 	if hasPastaIgnore(f.Src) {
 		s.suppress = parseSuppressions(root, commentTypes)
 	}
-	return s, nil
+	return s
 }
 
 // runGroupOnFile runs every rule in group that applies to s's language,

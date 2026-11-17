@@ -220,6 +220,19 @@ func ParseWithOptions(ctx context.Context, lang *Language, src []byte, fileID st
 	return tree, root, nil
 }
 
+// Compact is a parse tree in a few bytes per node; see tswasm.Compact.
+type Compact = tswasm.Compact
+
+// FromCompact rebuilds the tree that c encodes and returns it with its
+// root Node. src, fileID, and lang must be those of the encoded tree.
+func FromCompact(c Compact, lang *Language, src []byte, fileID string) (*Tree, Node, error) {
+	tree, err := c.Tree(lang, src, fileID)
+	if err != nil {
+		return nil, Node{}, err
+	}
+	return tree, Node{N: tree.RootNode(), Src: src, Lang: lang, FileID: fileID}, nil
+}
+
 // DrainArenaPools is retained for API parity; the WASM backend pools
 // engines instead of gotreesitter arenas.
 func DrainArenaPools() {

@@ -2,12 +2,15 @@ package engine
 
 import (
 	"fmt"
+	"math"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/imjasonh/playground/pasta/internal/dsl"
 	"github.com/imjasonh/playground/pasta/internal/effect"
 	"github.com/imjasonh/playground/pasta/internal/lang"
+	"github.com/imjasonh/playground/pasta/internal/tsutil"
 )
 
 // chainFiles returns n Go files where file i assigns x{i+1} to x{i}
@@ -127,6 +130,55 @@ func TestInMemoryTreeBudgetReparses(t *testing.T) {
 	}
 	if s := diagnosticsByFile(spilled); !reflect.DeepEqual(s, got) {
 		t.Errorf("diagnostics with released trees = %v, want %v", s, got)
+	}
+}
+
+// TestInMemoryTreeBudgetRebuildsCompactTrees pads the chain's files
+// and gives it a tree budget too small for any Go tree, but whose second half holds every
+// compact tree. Later passes must rebuild trees from those instead of
+// parsing the files again, and report the same diagnostics.
+func TestInMemoryTreeBudgetRebuildsCompactTrees(t *testing.T) {
+	const n = 8
+	files := chainFiles(t, n)
+	a := chainAnalyzer(assignRule("propagate",
+		[]dsl.Predicate{{Op: "has_fact", Args: []dsl.Arg{{Str: "@rhs"}, {Str: "k"}}}},
+		[]string{"k"}, []string{"k"}))
+
+	pad := "\nfunc g() {\n" + strings.Repeat("\tg(1, 2)\n", 50) + "}\n"
+	var compactBytes int64
+	minNodes := math.MaxInt
+	for i := range files {
+		f := &files[i]
+		f.Src = append(f.Src, pad...)
+		tree, _, err := tsutil.Parse(t.Context(), f.Lang.GetLanguage(), f.Src, f.FileID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		compactBytes += int64(len(tree.Compact()))
+		minNodes = min(minNodes, tree.NodeCount())
+	}
+	budget := 2 * compactBytes
+	if budget >= int64(minNodes)*treeBytesPerNode {
+		t.Fatalf("budget %d holds a Go tree of %d nodes", budget, minNodes)
+	}
+
+	want, err := RunGroup(t.Context(), files, []*dsl.Analyzer{a}, WithTreeBudget(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stats Stats
+	got, err := RunGroup(t.Context(), files, []*dsl.Analyzer{a}, WithTreeBudget(budget), WithStats(&stats))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := stats.Reparsed.Load(); r != 0 {
+		t.Errorf("reparsed %d files, want 0", r)
+	}
+	if stats.Rebuilt.Load() == 0 {
+		t.Error("rebuilt no trees")
+	}
+	if g, w := diagnosticsByFile(got), diagnosticsByFile(want); !reflect.DeepEqual(g, w) {
+		t.Errorf("diagnostics with compact trees = %v, want %v", g, w)
 	}
 }
 

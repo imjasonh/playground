@@ -109,7 +109,7 @@ func runFix(args []string) int {
 	noCache := fs.Bool("nocache", false, "disable the persistent parse-result cache for this run")
 	parseTimeoutFlag := fs.Duration("parse-timeout", -1, "per-file parse budget (e.g. 2s); 0 disables. Default 2s, or parse_timeout_ms from pasta.cue")
 	memoryBudgetFlag := fs.Int64("memory-budget", -1, "cumulative parsed-source byte budget across the whole run; 0 disables. Default unlimited, or memory_budget from pasta.cue")
-	treeBudgetFlag := fs.Int64("tree-budget", -1, "estimated bytes of parse trees a cross-file run keeps between passes; files past it are parsed again for each pass. 0 keeps every tree. Default 4 GiB. Unless GOMEMLIMIT is set, Go's memory limit is twice this budget, and at least the budget plus 2 GiB")
+	treeBudgetFlag := fs.Int64("tree-budget", -1, "estimated bytes of parse trees a cross-file run keeps between passes; trees past it are rebuilt from compact encodings kept within half the budget again, or parsed again past that. 0 keeps every tree. Default 1 GiB. Unless GOMEMLIMIT is set, Go's memory limit is twice this budget, and at least the budget plus 2 GiB")
 	showStats := fs.Bool("stats", false, "print walk/prefilter/parse/skip counters on stderr")
 	failOn := fs.String("fail-on", "none", "exit 1 when a diagnostic at this severity or higher is found: none, hint, info, warning, error")
 	quiet := fs.Bool("quiet", false, "print only diagnostics at or above the -fail-on severity")
@@ -312,8 +312,8 @@ func runFix(args []string) int {
 	fmt.Fprintln(os.Stderr, formatCompletionReport(reportFiles, rulesApplied, reportBytes, reportDur))
 	if *showStats {
 		s := stats.Snapshot()
-		fmt.Fprintf(os.Stderr, "stats: walked=%d prefilter_skipped=%d parsed=%d parse_errors=%d parse_degraded=%d timed_out=%d memory_skipped=%d cache_hits=%d reparsed=%d\n",
-			s.Walked, s.PrefilterSkipped, s.Parsed, s.ParseErrors, s.ParseDegraded, s.TimedOut, s.MemorySkipped, s.CacheHits, s.Reparsed)
+		fmt.Fprintf(os.Stderr, "stats: walked=%d prefilter_skipped=%d parsed=%d parse_errors=%d parse_degraded=%d timed_out=%d memory_skipped=%d cache_hits=%d reparsed=%d rebuilt=%d\n",
+			s.Walked, s.PrefilterSkipped, s.Parsed, s.ParseErrors, s.ParseDegraded, s.TimedOut, s.MemorySkipped, s.CacheHits, s.Reparsed, s.Rebuilt)
 	}
 	if cache != nil {
 		if os.Getenv("PASTA_CACHE_STATS") != "" {
@@ -450,8 +450,8 @@ const memoryHeadroom int64 = 2 << 30
 
 // memoryLimit returns the soft memory limit for a run with the given
 // -tree-budget, or 0 to leave Go's limit alone. Without a limit the
-// collector lets the heap reach twice what is live, so a 4 GiB budget
-// peaked at 12 GB resident. Twice the budget leaves room for the rest of
+// collector lets the heap reach twice what is live, so a 4 GiB tree
+// budget peaked at 12 GB resident. Twice the budget leaves room for the rest of
 // the run and for garbage between collections; at 1.5 times the budget,
 // collections ran often enough to slow the run by a third. GOMEMLIMIT, when
 // set, wins. A budget of 0 keeps every tree, so it bounds nothing.

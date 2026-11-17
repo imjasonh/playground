@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"slices"
 	"sort"
@@ -20,7 +21,7 @@ import (
 // DefaultTreeBudget is the estimated heap that the in-memory path may
 // spend on parse trees it keeps between passes when the caller doesn't
 // set WithTreeBudget.
-const DefaultTreeBudget = 4 << 30
+const DefaultTreeBudget = 1 << 30
 
 // treeBytesPerNode estimates the heap one node of a retained tree
 // holds: the Go node, its slots in its parent's child slices, and its
@@ -41,8 +42,10 @@ type memRun struct {
 type memFile struct {
 	index int
 	// state.tree is nil when the tree was released after the first
-	// pass; prepare parses the file again for a later pass.
-	state fileState
+	// pass; prepare rebuilds it from compact, or parses the file again
+	// when compact is nil too.
+	state   fileState
+	compact tsutil.Compact
 	// outs holds what each group produced for this file until it's
 	// reassembled in schedule order.
 	outs []groupOutput
@@ -56,8 +59,9 @@ type memFile struct {
 // groupLevels) runs on each file as soon as it's parsed. Later levels
 // run one pass at a time over the files they apply to. A tree that a
 // later pass needs is kept while the estimated size of every kept tree
-// stays within the tree budget; past it, the tree is released and the
-// file is parsed again for each later pass. Fixpoint groups iterate
+// stays within the tree budget. Past it, the tree is released, and each
+// later pass rebuilds it from a compact encoding kept within half the
+// budget again, or past that parses the file again. Fixpoint groups iterate
 // over files in parallel, except a group that reads not_has_fact,
 // which iterates over files in order. Each file's diagnostics and ops
 // are reassembled in schedule order, so the output doesn't depend on
@@ -109,7 +113,7 @@ func runInMemory(
 // non-fixpoint groups of the first level on it. Those groups require
 // no fact that another group provides, so they don't need every file's
 // definitions first. It keeps the trees that later passes need, within
-// the tree budget.
+// the tree budget, and compact encodings of the rest within half of it.
 func (r *memRun) parseAll(ctx context.Context, files []FileInput, results []Result, levels [][]int) error {
 	var first []int
 	if len(levels) > 0 {
@@ -131,7 +135,7 @@ func (r *memRun) parseAll(ctx context.Context, files []FileInput, results []Resu
 		parseTimeout = r.o.parseTimeout
 		budget = r.o.treeBudget
 	}
-	var kept atomic.Int64
+	var kept, compacted atomic.Int64
 	parsed := make([]*memFile, len(files))
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(r.workers)
@@ -154,8 +158,15 @@ func (r *memRun) parseAll(ctx context.Context, files []FileInput, results []Resu
 				}
 				f.outs = appendGroupOutput(f.outs, gi, res)
 			}
-			if needsPass(later, f.state.input) && (budget <= 0 || reserveBytes(&kept, budget, int64(f.state.nodes)*treeBytesPerNode)) {
+			if !needsPass(later, f.state.input) {
+				f.state.release()
 				return nil
+			}
+			if budget <= 0 || reserveBytes(&kept, budget, int64(f.state.nodes)*treeBytesPerNode) {
+				return nil
+			}
+			if c := f.state.tree.Compact(); reserveBytes(&compacted, budget/2, int64(len(c))) {
+				f.compact = c
 			}
 			f.state.release()
 			return nil
@@ -290,15 +301,28 @@ func (r *memRun) pass(ctx context.Context, gis []int, fn func(*memFile, fileStat
 	return g.Wait()
 }
 
-// prepare returns f's state with a tree, parsing f again when its tree
-// was released. The release function frees a tree that prepare parsed.
-// The file parsed within the parse timeout once, so the second parse
-// has none: a slow machine must not drop a file between passes.
+// prepare returns f's state with a tree, rebuilding or parsing it again
+// when it was released. The release function frees a tree that prepare
+// made. The file parsed within the parse timeout once, so the second
+// parse has none: a slow machine must not drop a file between passes.
 func (r *memRun) prepare(ctx context.Context, f *memFile) (fileState, func(), error) {
 	if f.state.tree != nil {
 		return f.state, func() {}, nil
 	}
-	s, err := newFileState(ctx, f.state.input, r.store, 0, false)
+	in := f.state.input
+	if f.compact != nil {
+		tree, root, err := tsutil.FromCompact(f.compact, in.Lang.GetLanguage(), in.Src, in.FileID)
+		if err != nil {
+			return fileState{}, nil, fmt.Errorf("rebuild %s: %w", in.FileID, err)
+		}
+		s := treeFileState(in, r.store, tree, root)
+		s.suppress = f.state.suppress
+		if r.o != nil && r.o.stats != nil {
+			r.o.stats.Rebuilt.Add(1)
+		}
+		return s, s.release, nil
+	}
+	s, err := newFileState(ctx, in, r.store, 0, false)
 	if err != nil {
 		return fileState{}, nil, err
 	}

@@ -288,7 +288,7 @@ Cold runs over large trees are tuned for sparse style rules:
    unchanged broken file isn't parsed again. Pass `-stats` for
    `walked` / `prefilter_skipped` / `parsed` / `parse_errors` /
    `parse_degraded` / `timed_out` / `memory_skipped` / `cache_hits` /
-   `reparsed`.
+   `reparsed` / `rebuilt`.
 4. **Memory budget** — optional cumulative parsed-source byte cap
    (`-memory-budget`, or `memory_budget` in `pasta.cue`) across the
    whole CLI run (including multipass `-fix`). Admission is in source
@@ -309,17 +309,20 @@ Fixpoint groups, such as taint propagation, also iterate over files in
 parallel. A fixpoint group that uses `not_has_fact` is the exception:
 its result depends on order, so it visits files in order. Pasta keeps
 the parse trees that later passes need while their estimated size
-stays under `-tree-budget` (default 4 GiB, `0` keeps every tree). It
-releases the trees past the budget and parses those files again for
-each later pass, which `reparsed` in `-stats` counts. A smaller budget
-trades time for memory: on the Go standard library, 256 MiB cut the
-peak heap from about 5.3 GB to under 1 GB and made the run about four
-times slower. Unless `GOMEMLIMIT` is set, pasta sets Go's memory limit
-to twice the tree budget, and to at least the budget plus 2 GiB, so the
-collector doesn't let garbage double the heap. On the Go module cache,
-the default budget's peak dropped from 12.4 GB resident to 8.6 GB, and
-the run took about 8% longer. Rule files also load in parallel, and
-pasta keeps wazero's compiled tree-sitter code under
+stays under `-tree-budget` (default 1 GiB, `0` keeps every tree). It
+releases the trees past the budget and keeps a compact encoding of
+each instead, about 6 bytes per node against about 200, within half
+the budget again. Each later pass rebuilds those trees from their
+encodings, which `rebuilt` in `-stats` counts and which is about 40
+times faster than parsing. Past both limits, pasta parses the files
+again for each later pass, which `reparsed` counts. Unless
+`GOMEMLIMIT` is set, pasta sets Go's memory limit to twice the tree
+budget, and to at least the budget plus 2 GiB, so the collector
+doesn't let garbage double the heap. On the Go module cache (about
+30,000 files), the compact encodings took the run from 162 to 103
+seconds, and peak RSS from 8.6 GB to 3.6 GB. A 4 GiB budget ran
+no faster and peaked at 8.6 GB. Rule files also load in parallel,
+and pasta keeps wazero's compiled tree-sitter code under
 `$XDG_CACHE_HOME/pasta/wazero/` (about 7 MB), which saves about 0.6
 seconds per run.
 
