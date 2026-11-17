@@ -97,6 +97,8 @@ type Store struct {
 	isDef map[site]bool
 	// isTest caches testpath.Is by file ID.
 	isTest sync.Map
+	// added logs the entries each new fact added, in order.
+	added []addition
 }
 
 // New returns an empty store.
@@ -160,6 +162,12 @@ func (s *Store) Emit(kind string, node tsutil.Node, payload map[string]any) bool
 	defer s.mu.Unlock()
 	_, exists := s.byRange[k]
 	s.byRange[k] = fact
+	add := addition{key: k, name: nameKey, newRange: !exists}
+	if !exists && !isIdent && s.isDef[fact.site()] {
+		// A lookup by name reads the fact at the nearest definition by
+		// its range, whatever the type of the node it's attached to.
+		add.name, add.named = NameKey{Name: node.Text(), Kind: kind}, true
+	}
 	if isIdent {
 		facts := s.byName[nameKey]
 		replaced := false
@@ -172,7 +180,11 @@ func (s *Store) Emit(kind string, node tsutil.Node, payload map[string]any) bool
 		}
 		if !replaced {
 			s.byName[nameKey] = append(facts, fact)
+			add.named = true
 		}
+	}
+	if add.newRange || add.named {
+		s.added = append(s.added, add)
 	}
 	return !exists
 }
