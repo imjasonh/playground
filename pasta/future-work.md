@@ -365,6 +365,17 @@ prefilter skipped no files on the TypeScript run. Adding
 `require_substring` where a rule has a distinctive token is cheap,
 but common tokens appear in nearly every file, so the ceiling is low.
 
+### Parse cache on cross-file runs
+**Effort:** M.
+`RunGroup` takes the in-memory path for the whole rule set when any
+rule has `requires` or a fixpoint group, and that path never reads or
+writes the parse cache. The default rule set has cross-file rules
+(`go_errcheck`, the taint and deprecated-use rules), so a full lint of
+this repository parses every file on every run. Rules that no
+cross-file group depends on could stream through the cache on their
+own, and the cross-file groups could cache the facts each file emits
+for the passes that only read them.
+
 ### Parallel warm-cache reads
 **Effort:** S.
 The streaming worker pool already runs N goroutines, and on a warm
