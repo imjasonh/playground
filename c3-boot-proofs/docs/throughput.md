@@ -53,14 +53,14 @@ as a share of that boot:
 
 ### What the coverage figures mean
 
-On 2026-11-13, for the current image:
+On 2026-11-17, for the current image, after `ed25519_verify`:
 
 | Measure | Proved | Total | Share |
 | --- | --- | --- | --- |
-| Instructions in the image | 9,361 | 28,526 | 32.8% |
-| Instructions one boot runs | 135,846,873 | 136,797,349 | 99.3% |
-| Instructions in the 229 functions `c3_verify::sigstore::verify` reaches | 9,069 | 24,870 | 36.5% |
-| Instructions in the 263 functions `boot_main` reaches | 9,361 | 28,513 | 32.8% |
+| Instructions in the image | 17,671 | 28,526 | 61.9% |
+| Instructions one boot runs | 136,249,574 | 136,797,349 | 99.6% |
+| Instructions in the 229 functions `c3_verify::sigstore::verify` reaches | 17,379 | 24,870 | 69.9% |
+| Instructions in the 263 functions `boot_main` reaches | 17,671 | 28,513 | 62.0% |
 
 The trial boot runs the whole Sigstore check of the update: 98.3 percent
 of its instructions run in `sigstore::verify` and its callees. Boot
@@ -92,7 +92,10 @@ proofs:
    cases and 32,000 mutations (see the README's differential test).
 2. Proofs of the deciding functions against that specification:
    `p384_verify_prehash`, `ed25519_verify`, `sigstore::verify`, and
-   `boot_main`.
+   `boot_main`. `ed25519Verify_correct` covers `ed25519_verify` from its
+   entry to its return. Its specification, `evSpec`, follows the Rust
+   source's arithmetic, so relating it to `Spec/Sigstore.lean`'s Ed25519
+   is part of item 3.
 3. Later, proofs that the crypto functions' specifications, which follow
    the Rust source's arithmetic, are ECDSA and Ed25519 verification
    (phase 7 of the plan).
