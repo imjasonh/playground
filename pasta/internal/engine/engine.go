@@ -69,6 +69,7 @@ type Stats struct {
 	CacheHits        atomic.Int64 // served from parse cache
 	Reparsed         atomic.Int64 // parsed again for a later cross-file pass
 	Rebuilt          atomic.Int64 // rebuilt from a compact tree for a later cross-file pass
+	TreeCacheHits    atomic.Int64 // first cross-file pass rebuilt the tree from the tree cache
 }
 
 // Snapshot is a plain copy of Stats counters for printing.
@@ -83,6 +84,7 @@ type Snapshot struct {
 	CacheHits        int64
 	Reparsed         int64
 	Rebuilt          int64
+	TreeCacheHits    int64
 }
 
 // Snapshot returns a consistent-enough copy of the counters.
@@ -101,6 +103,7 @@ func (s *Stats) Snapshot() Snapshot {
 		CacheHits:        s.CacheHits.Load(),
 		Reparsed:         s.Reparsed.Load(),
 		Rebuilt:          s.Rebuilt.Load(),
+		TreeCacheHits:    s.TreeCacheHits.Load(),
 	}
 }
 
@@ -218,12 +221,12 @@ type runOpts struct {
 	admitNext int
 }
 
-// WithCache enables the persistent parse-result cache for this run.
-// The cache is consulted only in the streaming path; runs that take
-// the in-memory path (cross-file `requires`, fixpoint groups) skip
-// it for correctness, since a file's diagnostics there may depend on
-// facts emitted from other files. A nil cache is treated as no
-// caching.
+// WithCache enables the persistent parse cache for this run. The
+// streaming path reads and writes each file's results. Runs that take
+// the in-memory path (cross-file `requires`, fixpoint groups) can't
+// reuse results, since a file's diagnostics there may depend on facts
+// emitted from other files, so they read and write each file's compact
+// parse tree instead. A nil cache is treated as no caching.
 func WithCache(c *parsecache.Cache) Option {
 	return func(o *runOpts) { o.cache = c }
 }

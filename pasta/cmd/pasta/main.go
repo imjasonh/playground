@@ -106,7 +106,7 @@ func runFix(args []string) int {
 	fixUntilClean := fs.Bool("fix-until-clean", false, "with -fix: repeat analyze→apply until no file changes (safety cap 8, or -fix-passes if higher)")
 	skip := fs.String("skip", "", "comma-separated directory basenames to skip during ./... expansion (in addition to defaults: vendor, node_modules, venv, …)")
 	rulesDir := fs.String("rules", "", "directory of CUE rule files to load (default: ./"+DefaultRulesDir+")")
-	noCache := fs.Bool("nocache", false, "disable the persistent parse-result cache for this run")
+	noCache := fs.Bool("nocache", false, "disable the persistent parse cache, of results and of cross-file parse trees, for this run")
 	parseTimeoutFlag := fs.Duration("parse-timeout", -1, "per-file parse budget (e.g. 2s); 0 disables. Default 2s, or parse_timeout_ms from pasta.cue")
 	memoryBudgetFlag := fs.Int64("memory-budget", -1, "cumulative parsed-source byte budget across the whole run; 0 disables. Default unlimited, or memory_budget from pasta.cue")
 	treeBudgetFlag := fs.Int64("tree-budget", -1, "estimated bytes of parse trees a cross-file run keeps between passes; trees past it are rebuilt from compact encodings kept within half the budget again, or parsed again past that. 0 keeps every tree. Default 1 GiB. Unless GOMEMLIMIT is set, Go's memory limit is twice this budget, and at least the budget plus 2 GiB")
@@ -312,13 +312,13 @@ func runFix(args []string) int {
 	fmt.Fprintln(os.Stderr, formatCompletionReport(reportFiles, rulesApplied, reportBytes, reportDur))
 	if *showStats {
 		s := stats.Snapshot()
-		fmt.Fprintf(os.Stderr, "stats: walked=%d prefilter_skipped=%d parsed=%d parse_errors=%d parse_degraded=%d timed_out=%d memory_skipped=%d cache_hits=%d reparsed=%d rebuilt=%d\n",
-			s.Walked, s.PrefilterSkipped, s.Parsed, s.ParseErrors, s.ParseDegraded, s.TimedOut, s.MemorySkipped, s.CacheHits, s.Reparsed, s.Rebuilt)
+		fmt.Fprintf(os.Stderr, "stats: walked=%d prefilter_skipped=%d parsed=%d parse_errors=%d parse_degraded=%d timed_out=%d memory_skipped=%d cache_hits=%d tree_cache_hits=%d reparsed=%d rebuilt=%d\n",
+			s.Walked, s.PrefilterSkipped, s.Parsed, s.ParseErrors, s.ParseDegraded, s.TimedOut, s.MemorySkipped, s.CacheHits, s.TreeCacheHits, s.Reparsed, s.Rebuilt)
 	}
 	if cache != nil {
 		if os.Getenv("PASTA_CACHE_STATS") != "" {
 			s := cache.Stats()
-			fmt.Fprintf(os.Stderr, "cache: %d hits, %d misses, %d writes\n", s.Hits, s.Misses, s.Writes)
+			fmt.Fprintf(os.Stderr, "cache: %d hits, %d misses, %d writes; trees: %d hits, %d misses, %d writes\n", s.Hits, s.Misses, s.Writes, s.TreeHits, s.TreeMisses, s.TreeWrites)
 		}
 		// Best-effort prune at the end of the run. Failures are
 		// silent — the cache works fine even slightly over budget.
