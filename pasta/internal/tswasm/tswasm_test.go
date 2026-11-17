@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// wasmOnly turns the native backend off until t ends.
 func wasmOnly(t *testing.T) {
 	saved := native
 	native = nil

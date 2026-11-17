@@ -1,7 +1,7 @@
-// host_extra.c — what both backends need beyond the tree-sitter API:
-// pasta_parse, a parse with a time budget, and a batched tree dump (adapted
-// from dvcdsys/code-index tswasm) that walks the whole tree and writes a
-// flat pre-order []NodeRec, so the wasm host does one Memory.Read.
+// What both backends need beyond the tree-sitter API: pasta_parse, a parse
+// with a time budget, and ts_dump_tree (adapted from dvcdsys/code-index
+// tswasm), which writes the whole tree as a flat pre-order []NodeRec so the
+// wasm host reads it with one Memory.Read.
 #include "tree_sitter/api.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -29,14 +29,14 @@ static uint64_t pasta_now_nanos(void) {
 }
 
 typedef struct {
-  uint64_t deadline; // monotonic nanoseconds; 0 means none
+  uint64_t deadline_nanos; // 0 means none
   const int32_t *cancel;
 } pasta_budget;
 
 static bool pasta_progress(TSParseState *state) {
   pasta_budget *b = state->payload;
   if (b->cancel != NULL && __atomic_load_n(b->cancel, __ATOMIC_RELAXED)) return true;
-  return b->deadline != 0 && pasta_now_nanos() > b->deadline;
+  return b->deadline_nanos != 0 && pasta_now_nanos() > b->deadline_nanos;
 }
 
 // pasta_parse returns NULL when timeout_micros elapses or *cancel becomes
@@ -46,7 +46,7 @@ TSTree *pasta_parse(TSParser *p, const char *src, uint32_t len, uint64_t timeout
   TSInput in = {&s, pasta_read, TSInputEncodingUTF8, NULL};
   pasta_budget b = {0, cancel};
   TSParseOptions opts = {0};
-  if (timeout_micros > 0) b.deadline = pasta_now_nanos() + timeout_micros * 1000u;
+  if (timeout_micros > 0) b.deadline_nanos = pasta_now_nanos() + timeout_micros * 1000u;
   if (timeout_micros > 0 || cancel != NULL) {
     opts.payload = &b;
     opts.progress_callback = pasta_progress;

@@ -48,9 +48,23 @@ var nativeExts = map[string]string{
 	".swift": "swift", ".toml": "toml", ".tf": "hcl", ".hcl": "hcl",
 }
 
-// TestNativeMatchesWasm checks that the native grammars build the same
-// trees as the embedded wasm module. They differ when a grammar module
-// drifts from the version build.sh compiles.
+func TestNativeGrammarsMatchBuild(t *testing.T) {
+	data, err := os.ReadFile("grammars.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fromGoMod []string
+	for line := range strings.Lines(string(data)) {
+		if f := strings.Fields(line); len(f) == 4 && !strings.HasPrefix(line, "#") && f[3] == "go.mod" {
+			fromGoMod = append(fromGoMod, f[0])
+		}
+	}
+	slices.Sort(fromGoMod)
+	if linked := slices.Sorted(maps.Keys(native.(*cgoBackend).langs)); !slices.Equal(fromGoMod, linked) {
+		t.Errorf("grammars.txt takes %v from go.mod; native_cgo.go links %v", fromGoMod, linked)
+	}
+}
+
 func TestNativeMatchesWasm(t *testing.T) {
 	if native == nil {
 		t.Fatal("native backend not registered")
@@ -99,30 +113,16 @@ func TestNativeMatchesWasm(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s input %d: native: %v", g, i, err)
 			}
-			want := wasmDump(t, g, src)
-			if i == 0 && (!maps.Equal(got.kinds, want.kinds) || !maps.Equal(got.fields, want.fields)) {
-				t.Errorf("%s: native symbol or field names differ from wasm", g)
+			want, err := wasm.parseDump(t.Context(), g, src, ParseOptions{})
+			if err != nil {
+				t.Fatalf("%s input %d: wasm: %v", g, i, err)
 			}
 			if got.n != want.n || !bytes.Equal(got.raw, want.raw) {
-				t.Errorf("%s input %d (%d bytes): native tree has %d nodes, wasm %d; trees differ",
+				t.Errorf("%s input %d (%d bytes): native tree has %d nodes, wasm %d; trees differ (run build.sh?)",
 					g, i, len(src), got.n, want.n)
 			}
 		}
 	}
-}
-
-func wasmDump(t *testing.T, grammar string, src []byte) treeDump {
-	t.Helper()
-	e, err := gpool.acquire()
-	if err != nil {
-		t.Fatal(err)
-	}
-	d, err := e.parseDump(t.Context(), ExportName(grammar), src, ParseOptions{})
-	gpool.release(e, err != nil)
-	if err != nil {
-		t.Fatalf("%s: wasm: %v", grammar, err)
-	}
-	return d
 }
 
 func TestNativeFallsBackToWasm(t *testing.T) {
@@ -148,8 +148,6 @@ func TestNativeParseEmpty(t *testing.T) {
 	}
 }
 
-// TestNativeParseCancel cancels a parse that takes far longer than the
-// context allows. Unlike wasm, the native parser stops when ctx ends.
 func TestNativeParseCancel(t *testing.T) {
 	var src []byte
 	for len(src) < 8<<20 {

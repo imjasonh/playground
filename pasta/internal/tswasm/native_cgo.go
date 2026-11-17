@@ -12,11 +12,7 @@ import "C"
 import (
 	"context"
 	"fmt"
-	"runtime/debug"
-	"strings"
-	"sync"
 	"sync/atomic"
-	"time"
 	"unsafe"
 
 	tsswift "github.com/alex-pinkus/tree-sitter-swift/bindings/go"
@@ -39,10 +35,7 @@ import (
 	tstypescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
 )
 
-// Each grammar module must stay at the version build.sh compiles into
-// the wasm module, so both backends build the same trees;
-// scripts/pin-grammars.sh sets them. sql and dockerfile publish no
-// usable Go module, so they parse with wasm.
+// sql and dockerfile have no usable Go module, so they parse with wasm.
 func init() {
 	native = &cgoBackend{langs: map[string]*C.TSLanguage{
 		"go":         language(tsgo.Language()),
@@ -69,52 +62,19 @@ func init() {
 
 func language(p unsafe.Pointer) *C.TSLanguage { return (*C.TSLanguage)(p) }
 
-// cgoBackend parses with tree-sitter and the grammars compiled into the
-// binary.
 type cgoBackend struct {
 	langs map[string]*C.TSLanguage
-	names sync.Map // grammar → [2]map[uint32]string{kinds, fields}
 }
 
 func (b *cgoBackend) has(grammar string) bool { return b.langs[grammar] != nil }
 
-// id names the grammar module versions, so trees cached by a binary
-// with other grammars aren't reused.
-func (b *cgoBackend) id() string {
-	var sb strings.Builder
-	sb.WriteString("cgo\n")
-	if bi, ok := debug.ReadBuildInfo(); ok {
-		for _, m := range bi.Deps {
-			if strings.Contains(m.Path, "/tree-sitter-") {
-				fmt.Fprintf(&sb, "%s %s\n", m.Path, m.Version)
-			}
-		}
-	}
-	return sb.String()
+func names(grammar string, l *C.TSLanguage) grammarNames {
+	return namesFor(grammar,
+		uint32(C.ts_language_symbol_count(l)),
+		uint32(C.ts_language_field_count(l)),
+		func(id uint32) string { return C.GoString(C.ts_language_symbol_name(l, C.TSSymbol(id))) },
+		func(id uint32) string { return C.GoString(C.ts_language_field_name_for_id(l, C.TSFieldId(id))) })
 }
-
-func (b *cgoBackend) nameMaps(grammar string, l *C.TSLanguage) (kinds, fields map[uint32]string) {
-	if v, ok := b.names.Load(grammar); ok {
-		m := v.([2]map[uint32]string)
-		return m[0], m[1]
-	}
-	count := uint32(C.ts_language_symbol_count(l))
-	kinds = make(map[uint32]string, count)
-	for id := range count {
-		kinds[id] = C.GoString(C.ts_language_symbol_name(l, C.TSSymbol(id)))
-	}
-	// Field ids are 1-based; id 0 means "no field".
-	nf := uint32(C.ts_language_field_count(l))
-	fields = make(map[uint32]string, nf+1)
-	fields[0] = ""
-	for id := uint32(1); id <= nf; id++ {
-		fields[id] = C.GoString(C.ts_language_field_name_for_id(l, C.TSFieldId(id)))
-	}
-	b.names.Store(grammar, [2]map[uint32]string{kinds, fields})
-	return kinds, fields
-}
-
-var emptySrc = []byte{0}
 
 func (b *cgoBackend) parseDump(ctx context.Context, grammar string, src []byte, opts ParseOptions) (treeDump, error) {
 	l := b.langs[grammar]
@@ -134,15 +94,8 @@ func (b *cgoBackend) parseDump(ctx context.Context, grammar string, src []byte, 
 		stop := context.AfterFunc(ctx, func() { atomic.StoreInt32(&flag, 1) })
 		defer stop()
 	}
-	var micros C.uint64_t
-	if opts.Timeout > 0 {
-		micros = C.uint64_t(max(opts.Timeout/time.Microsecond, 1))
-	}
-	s := src
-	if len(s) == 0 {
-		s = emptySrc
-	}
-	tree := C.pasta_parse(p, (*C.char)(unsafe.Pointer(&s[0])), C.uint32_t(len(src)), micros, cancel)
+	csrc := (*C.char)(unsafe.Pointer(unsafe.SliceData(src)))
+	tree := C.pasta_parse(p, csrc, C.uint32_t(len(src)), C.uint64_t(opts.timeoutMicros()), cancel)
 	if err := ctx.Err(); err != nil {
 		if tree != nil {
 			C.ts_tree_delete(tree)
@@ -150,21 +103,18 @@ func (b *cgoBackend) parseDump(ctx context.Context, grammar string, src []byte, 
 		return treeDump{}, err
 	}
 	if tree == nil {
-		if opts.Timeout > 0 {
-			return treeDump{}, fmt.Errorf("%w: null tree", ErrTimeout)
-		}
-		return treeDump{}, fmt.Errorf("parse returned null tree")
+		return treeDump{}, opts.nullTreeErr()
 	}
 	defer C.ts_tree_delete(tree)
 
-	kinds, fields := b.nameMaps(grammar, l)
-	n := uint32(C.ts_dump_tree(tree, nil, 0))
-	if n == 0 {
-		return treeDump{kinds: kinds, fields: fields}, nil
+	d := treeDump{grammarNames: names(grammar, l)}
+	d.n = uint32(C.ts_dump_tree(tree, nil, 0))
+	if d.n == 0 {
+		return d, nil
 	}
-	raw := make([]byte, int(n)*recSize)
-	if got := uint32(C.ts_dump_tree(tree, (*C.NodeRec)(unsafe.Pointer(&raw[0])), C.uint32_t(n))); got != n {
-		return treeDump{}, fmt.Errorf("dump count changed: %d vs %d", n, got)
+	d.raw = make([]byte, int(d.n)*recSize)
+	if got := uint32(C.ts_dump_tree(tree, (*C.NodeRec)(unsafe.Pointer(&d.raw[0])), C.uint32_t(d.n))); got != d.n {
+		return treeDump{}, fmt.Errorf("dump count changed: %d vs %d", d.n, got)
 	}
-	return treeDump{raw: raw, n: n, kinds: kinds, fields: fields}, nil
+	return d, nil
 }
