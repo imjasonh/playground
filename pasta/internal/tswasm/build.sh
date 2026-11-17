@@ -2,13 +2,17 @@
 # Builds ts-core.wasm: official tree-sitter C runtime + pasta's grammars +
 # csrc/host_extra.c (batched ts_dump_tree), as one wasm32-wasi reactor via zig cc.
 #
-# The runtime is the copy in csrc/vendor/tree-sitter (lib/ of tree-sitter
-# v0.25.10, without lib/src/wasm), which cgo builds compile too. To update
-# it, replace that directory and rebuild.
+# The runtime is the copy in csrc/vendor/tree-sitter (lib/ of the release
+# in its VERSION file, without the wasm store's sources), which cgo builds
+# compile too.
 #
 # cgo builds compile most grammars from their Go modules instead. After
 # changing a ref below, run ../../scripts/pin-grammars.sh so go.mod
 # matches; TestNativeMatchesWasm fails when the two disagree.
+#
+# ../../scripts/update-tree-sitter.sh moves the runtime and the refs below
+# to their newest releases and reruns this script. The daily dependency
+# update runs it.
 #
 # Prior art: dvcdsys/code-index server/internal/chunker/tswasm/build.sh
 #

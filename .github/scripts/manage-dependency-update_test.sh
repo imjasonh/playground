@@ -23,6 +23,11 @@ git init -q -b main repo
 cd repo
 git config user.name test
 git config user.email test@example.com
+mkdir -p pasta/internal/tswasm/csrc/vendor/tree-sitter
+echo 'internal/tswasm/ts-core.wasm' > pasta/.gitignore
+echo 'v0.1.0' > pasta/internal/tswasm/csrc/vendor/tree-sitter/VERSION
+echo 'GRAMMARS=()' > pasta/internal/tswasm/build.sh
+echo 'v1' > pasta/internal/tswasm/ts-core.wasm.br
 mkdir -p gomod libapp/go libapp/rust jsapp worker git-k8s/agent/runner .github/wrangler
 echo 'module gomod' > gomod/go.mod
 echo 'module libapp/go' > libapp/go/go.mod
@@ -94,6 +99,17 @@ reset_tree
 echo '{"devDependencies":{"wrangler":"4.1.0"}}' > .github/wrangler/package.json
 expect "wrangler bump" true "$(detect)"
 expect "wrangler bump staged" "M .github/wrangler/package.json" "$(staged)"
+reset_tree
+
+# The uncompressed wasm module that build.sh leaves behind is ignored.
+tswasm=pasta/internal/tswasm
+echo 'v0.2.0' > "$tswasm/csrc/vendor/tree-sitter/VERSION"
+echo 'int x;' > "$tswasm/csrc/vendor/tree-sitter/lib.c"
+echo 'GRAMMARS=(go)' > "$tswasm/build.sh"
+echo 'v2' > "$tswasm/ts-core.wasm.br"
+echo 'v2' > "$tswasm/ts-core.wasm"
+expect "tree-sitter update" true "$(detect)"
+expect "tree-sitter update staged" "M $tswasm/build.sh M $tswasm/csrc/vendor/tree-sitter/VERSION A $tswasm/csrc/vendor/tree-sitter/lib.c M $tswasm/ts-core.wasm.br" "$(staged)"
 reset_tree
 
 mkdir newmod

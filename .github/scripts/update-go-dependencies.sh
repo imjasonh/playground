@@ -76,8 +76,12 @@ for module in "${modules[@]}"; do
   if (
     cd "$module"
     export GOFLAGS="$goflags"
+    # pasta's cgo grammars must match the ones in its wasm module, so the
+    # wasm module moves first and go.mod follows it.
+    if [ "$module" = "pasta" ]; then
+      bash scripts/update-tree-sitter.sh
+    fi
     go get -u ./...
-    # pasta's cgo grammars must match the ones in its wasm module.
     if [ "$module" = "pasta" ]; then
       bash scripts/pin-grammars.sh
     fi

@@ -27,6 +27,11 @@ DEP_PATHSPECS=(
   'git-k8s/agent/runner/package-lock.json'
   # The Wrangler pin that update-rust-dependencies.sh updates.
   '.github/wrangler/package.json'
+  # The tree-sitter runtime, grammar refs, and wasm module that
+  # pasta/scripts/update-tree-sitter.sh updates.
+  'pasta/internal/tswasm/build.sh'
+  'pasta/internal/tswasm/ts-core.wasm.br'
+  ':(glob)pasta/internal/tswasm/csrc/vendor/**'
 )
 
 _git_identity() {

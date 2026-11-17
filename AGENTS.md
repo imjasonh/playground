@@ -567,7 +567,12 @@ Each ecosystem's work lives in its own script (`update-go-dependencies.sh`,
 run in parallel in one checkout and write temporary files into it, so each one
 reports only pass or fail. `update-rust-dependencies.sh` bumps the Wrangler
 pin before it verifies any app, so every Worker app's deploy check runs with
-the new version; a separate leg could race those checks. After all three exit,
+the new version; a separate leg could race those checks. For `pasta`,
+`update-go-dependencies.sh` first runs `pasta/scripts/update-tree-sitter.sh`,
+which moves the vendored tree-sitter runtime and the grammar refs in
+`pasta/internal/tswasm/build.sh` to their newest releases and rebuilds
+`ts-core.wasm.br`. After `go get -u`, `pasta/scripts/pin-grammars.sh` sets
+`go.mod` to the same grammar refs. After all three exit,
 `manage-dependency-update.sh detect-changes` decides whether there is anything
 to publish, from the same paths that the publish step commits.
 `manage-dependency-update.sh` also handles the pull request, auto-merge, and
