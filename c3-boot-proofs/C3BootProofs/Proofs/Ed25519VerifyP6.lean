@@ -20,6 +20,14 @@ def nafTop (a b : Nat → BitVec 8) : Nat → Nat
   | 0 => 0
   | k + 1 => if (a k != 0 || b k != 0) = true then k else nafTop a b k
 
+theorem nafTop_congr {a b a' b' : Nat → BitVec 8} :
+    ∀ k, (∀ j, j < k → a j = a' j ∧ b j = b' j) → nafTop a b k = nafTop a' b' k
+  | 0, _ => rfl
+  | k + 1, h => by
+    show (if (a k != 0 || b k != 0) = true then k else nafTop a b k) =
+      (if (a' k != 0 || b' k != 0) = true then k else nafTop a' b' k)
+    rw [(h k (by omega)).1, (h k (by omega)).2, nafTop_congr k fun j hj => h j (by omega)]
+
 theorem nafTop_le (a b : Nat → BitVec 8) : ∀ k, nafTop a b k ≤ k - 1
   | 0 => Nat.zero_le _
   | k + 1 => by
@@ -498,9 +506,64 @@ theorem ev_p6c (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Mach
     · rw [g10 c hc (Or.inl (by omega)), g86 c hc (Or.inl (by omega)), g4 c hc (Or.inl (by omega)), g2 c hc (Or.inl hh)]
     · rw [g10 c hc (Or.inr hh), g86 c hc (Or.inr (by omega)), g4 c hc (Or.inr (by omega)), g2 c hc (Or.inr (by omega))]
 
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 16000000 in
+/-- **The setup of the double-base multiplication**, from offset 0x158E. -/
+theorem ev_p6 (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Machine} (D : EvSt M0 Ms F r0 M n 0x158E)
+    (h18 : reg n 18 = F + BitVec.ofNat 32 0x7F0) :
+    ∃ n' M', Steps n n' ∧ EvSt M0 Ms F r0 M' n' 0x16CC ∧
+      (∀ q : Fin 32, q.val ∈ evKeep → q.val ∉ [8, 9, 18, 19, 20, 21, 22] → reg n' q = reg n q) ∧
+      reg n' 9 = F + BitVec.ofNat 32 (0x7F0 + nafTop (nafSpec (nafScalar M (F + BitVec.ofNat 32 0x520)))
+        (nafSpec (nafScalar M (F + BitVec.ofNat 32 0x6C0))) 256) ∧
+      reg n' 21 = F + BitVec.ofNat 32 (0x8F0 + nafTop (nafSpec (nafScalar M (F + BitVec.ofNat 32 0x520)))
+        (nafSpec (nafScalar M (F + BitVec.ofNat 32 0x6C0))) 256) ∧
+      reg n' 20 = 0 - BitVec.ofNat 32 (nafTop (nafSpec (nafScalar M (F + BitVec.ofNat 32 0x520)))
+        (nafSpec (nafScalar M (F + BitVec.ofNat 32 0x6C0))) 256) ∧ reg n' 22 = 1 ∧
+      (∀ k, k < 256 → M' (F + BitVec.ofNat 32 (0x7F0 + k)) = nafSpec (nafScalar M (F + BitVec.ofNat 32 0x520)) k) ∧
+      (∀ k, k < 256 → M' (F + BitVec.ofNat 32 (0x8F0 + k)) = nafSpec (nafScalar M (F + BitVec.ofNat 32 0x6C0)) k) ∧
+      (∀ j, j < 8 → ptAt M' (F + BitVec.ofNat 32 (0x9F0 + 160 * j)) =
+        nafTab (negL (feW M (F + BitVec.ofNat 32 0x600)), feW M (F + BitVec.ofNat 32 0x628),
+          feW M (F + BitVec.ofNat 32 0x650), negL (feW M (F + BitVec.ofNat 32 0x678))) (feW M0 apnD) j) ∧
+      (∀ j, j < 8 → ptAt M' (F + BitVec.ofNat 32 (0xEF0 + 160 * j)) =
+        nafTab (ptAt M0 (BitVec.ofNat 32 0x3FCC4A54)) (feW M0 apnD) j) ∧
+      (∀ j, j < 40 → M' (F + BitVec.ofNat 32 (0x13F0 + j)) = 0) ∧
+      feW M' (F + BitVec.ofNat 32 0x1418) = feW M0 (BitVec.ofNat 32 0x3FCC4948) ∧
+      feW M' (F + BitVec.ofNat 32 0x1440) = feW M0 (BitVec.ofNat 32 0x3FCC4948) ∧
+      ∀ c, c < 0x16A0 → (c < 0x540 ∨ (0x5E0 ≤ c ∧ c < 0x7F0) ∨ 0x1468 ≤ c) →
+        M' (F + BitVec.ofNat 32 c) = M (F + BitVec.ofNat 32 c) := by
+  obtain ⟨n1, M1, c1, D1, k1, v8, hA, ha, hb, fr1⟩ := ev_p6a C D
+  obtain ⟨n2, c2, D2, hr2⟩ := D1.block C (off' := 0x1612)
+    [.aluImm .add a0 x0 0x100, .aluImm .add a3 x0 0xFF, .aluImm .add a1 x0 0xFFFFFFFF, .aluImm .add a2 x0 0xFF]
+    (blockEnd_cons' ev_at_1604 rfl (blockEnd_cons' ev_at_1608 rfl (blockEnd_cons' ev_at_160c rfl
+      (blockEnd_cons' ev_at_160e rfl rfl)))) ⟨trivial, trivial, trivial, trivial, trivial⟩ rfl
+    (fun q hq => by rcases hq with rfl | rfl | rfl <;> simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
+  obtain ⟨n3, c3, D3, v9, k3⟩ := ev_srch C 256 (by decide) D2
+    (by rw [hr2]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte, D1.st.zero]; try rfl)
+    (by rw [hr2]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte, D1.st.zero]; try rfl)
+    (by rw [hr2]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte, D1.st.zero]; try rfl)
+    (by rw [hr2]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte, D1.st.zero]; try rfl)
+    (by rw [hr2, evb_reg 18 D1.st.zero (by decide), k1 18 (by decide) (by decide) (by decide), h18])
+    (by rw [hr2, evb_reg 8 D1.st.zero (by decide), v8])
+  rw [nafTop_congr 256 fun j hj => ⟨ha j hj, hb j hj⟩] at v9
+  have hi := nafTop_le (nafSpec (nafScalar M (F + BitVec.ofNat 32 0x520))) (nafSpec (nafScalar M (F + BitVec.ofNat 32 0x6C0))) 256
+  obtain ⟨n4, M4, c4, D4, k4, r9, r21, r20, r22, tA, tB, z0, o1, o2, fr4⟩ := ev_p6c C D3 (by omega) v9
+  have back : ∀ q : Fin 32, q.val ∈ evKeep → q.val ∉ [8, 9, 18, 19, 20, 21, 22] → reg n4 q = reg n q := fun q hq hn => by
+    rw [k4 q hq hn, k3 q hq (by revert hn; revert q; decide), hr2, evb_reg q D1.st.zero (by revert hq; revert q; decide),
+      k1 q hq (by revert hn; revert q; decide) (by revert hn; revert q; decide)]
+  refine ⟨n4, M4, c1.trans (c2.trans (c3.trans c4)), D4, back, r9, r21, r20, r22, fun k hk => ?_, fun k hk => ?_,
+    fun j hj => ?_, tB, z0, o1, o2, fun c hc hh => ?_⟩
+  · rw [fr4 _ (by omega) (Or.inl (by omega)), ha k hk]
+  · rw [fr4 _ (by omega) (Or.inl (by omega)), hb k hk]
+  · rw [tA j hj, hA]
+  · rcases hh with hh | hh | hh
+    · rw [fr4 c hc (Or.inl (by omega)), fr1 c hc (Or.inl hh)]
+    · rw [fr4 c hc (Or.inl (by omega)), fr1 c hc (Or.inr (Or.inl hh))]
+    · rw [fr4 c hc (Or.inr hh), fr1 c hc (Or.inr (Or.inr (by omega)))]
+
 end
 
 end C3.RV32
+
 
 
 
