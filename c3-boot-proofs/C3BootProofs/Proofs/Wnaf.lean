@@ -751,6 +751,159 @@ theorem WfSt.inc (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L 
   rw [hG] at hb
   rw [K x (by omega), S.agree x h1 h2]
 
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 8000000 in
+/-- From the loop head, with `pos < L`, to offset 0x98: `LimbBuffer::get`
+leaves limb `pos / 64` current, `s1` holds `pos % 64`, and `s4` the digit's
+address. -/
+theorem wf_get (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L r0 M n 0x5E pos carry j D) (hlt : pos < L) :
+    ∃ n', Steps n n' ∧ WfSt M0 Ms F wp cp wl cn L r0 n'.mem n' 0x98 pos carry (pos / 64) D ∧
+      reg n' (9 : Fin 32) = BitVec.ofNat 32 (pos % 64) ∧ reg n' (20 : Fin 32) = wp + BitVec.ofNat 32 pos := by
+  have hLw := C.hLw; have hL := C.hL; have hjj := S.hj
+  have hc : CodeIn M WF wnafFormCode := C.code S.agree C.cod (by decide) (by decide)
+  have hFa := C.room.1
+  obtain ⟨n1, d1, u1⟩ := S.st.alu hc wf_at_5e (off' := 0x62) (by decide)
+  have S1 := S.step u1 (by decide)
+  have s4 : reg n1 (20 : Fin 32) = wp + BitVec.ofNat 32 pos := by rw [u1.upd_eq (by decide), S.s9, S.s6]; rfl
+  obtain ⟨n2, d2, u2⟩ := S1.st.notTaken hc 0x66 wf_at_62 (by decide)
+    (by rw [S1.s7, S1.s2, wbr_bgeu (by omega) (by omega)]; exact decide_eq_false (by omega))
+  have S2 := S1.jmp u2
+  obtain ⟨n3, d3, u3⟩ := S2.st.lw hc wf_at_66 (off' := 0x68) (by decide)
+    (by rw [S2.hsp]; exact aligned_add hFa (k := 0x28) (by decide))
+  have S3 := S2.step u3 (by decide)
+  have a0_3 : reg n3 a0 = BitVec.ofNat 32 j := by rw [u3.upd_eq (by decide), S2.hsp]; exact S.idx
+  obtain ⟨n4, d4, u4⟩ := S3.st.aluImm hc wf_at_68 (off' := 0x6C) (by decide)
+  have S4 := S3.step u4 (by decide)
+  have a1_4 : reg n4 a1 = BitVec.ofNat 32 (pos / 64) := by
+    rw [u4.upd_eq (by decide), S3.s7]; apply BitVec.eq_of_toNat_eq
+    rw [show (6 : Word) = BitVec.ofNat 32 6 from rfl, wv_srl _ 6 (by decide), BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+    omega
+  obtain ⟨n5, d5, u5⟩ := S4.st.aluImm hc wf_at_6c (off' := 0x70) (by decide)
+  have S5 := S4.step u5 (by decide)
+  have s1_5 : reg n5 (9 : Fin 32) = BitVec.ofNat 32 (pos % 64) := by
+    rw [u5.upd_eq (by decide), u4.upd_ne S3.st.zero _ (by decide), S3.s7]; apply BitVec.eq_of_toNat_eq
+    rw [show (0x3F : Word) = BitVec.ofNat 32 (2 ^ 6 - 1) from rfl, wv_and _ 6 (by decide), BitVec.toNat_ofNat,
+      BitVec.toNat_ofNat]
+    omega
+  obtain ⟨n6, d6, u6⟩ := S5.st.aluImm hc wf_at_70 (off' := 0x74) (by decide)
+  have S6 := S5.step u6 (by decide)
+  have a2_6 : reg n6 a2 = BitVec.ofNat 32 (j + 1) := by
+    rw [u6.upd_eq (by decide), u5.upd_ne S4.st.zero _ (by decide), u4.upd_ne S3.st.zero _ (by decide), a0_3]
+    apply BitVec.eq_of_toNat_eq
+    rw [show aluEval .add (BitVec.ofNat 32 j) 1 = BitVec.ofNat 32 j + 1 from rfl, BitVec.toNat_add, BitVec.toNat_ofNat,
+      BitVec.toNat_ofNat, show (1 : Word).toNat = 1 from rfl]; omega
+  have a0_6 : reg n6 a0 = BitVec.ofNat 32 j := by
+    rw [u6.upd_ne S5.st.zero _ (by decide), u5.upd_ne S4.st.zero _ (by decide), u4.upd_ne S3.st.zero _ (by decide), a0_3]
+  have a1_6 : reg n6 a1 = BitVec.ofNat 32 (pos / 64) := by
+    rw [u6.upd_ne S5.st.zero _ (by decide), u5.upd_ne S4.st.zero _ (by decide), a1_4]
+  obtain ⟨n7, d7, u7⟩ := S6.st.sw hc wf_at_74 (off' := 0x76) (by decide)
+    (by rw [S6.hsp]; exact aligned_add hFa (k := 0x34) (by decide))
+  rw [S6.hsp, a0_6] at u7
+  have S7 := S6.scratch C (k := 0x34) (Or.inl rfl) u7
+  obtain ⟨n8, d8, u8⟩ := S7.st.sw (C.code S7.agree C.cod (by decide) (by decide)) wf_at_76 (off' := 0x78) (by decide)
+    (by rw [S7.hsp]; exact aligned_add hFa (k := 0x38) (by decide))
+  rw [S7.hsp, u7.regs, a2_6] at u8
+  have S8 := S7.scratch C (k := 0x38) (Or.inr rfl) u8
+  obtain ⟨M2, hM2⟩ : ∃ M2, memStore32 (memStore32 M (F + BitVec.ofNat 32 0x34) (BitVec.ofNat 32 j)) (F + BitVec.ofNat 32 0x38)
+      (BitVec.ofNat 32 (j + 1)) = M2 := ⟨_, rfl⟩
+  rw [hM2] at S8
+  have hc2 : CodeIn M2 WF wnafFormCode := C.code S8.agree C.cod (by decide) (by decide)
+  have m34 : memLoad32 M2 (F + BitVec.ofNat 32 0x34 + 0) = BitVec.ofNat 32 j := by
+    rw [add_lit_zero, ← hM2, memLoad32_store32_sep (sep_offsets F (Or.inr (by decide)) (by decide) (by decide)),
+      memLoad32_store32_same]
+  have m38 : memLoad32 M2 (F + BitVec.ofNat 32 0x38 + 0) = BitVec.ofNat 32 (j + 1) := by
+    rw [add_lit_zero, ← hM2, memLoad32_store32_same]
+  obtain ⟨n9, d9, u9⟩ := S8.st.aluImm hc2 wf_at_78 (off' := 0x7A) (by decide)
+  have S9 := S8.step u9 (by decide)
+  obtain ⟨n10, d10, u10⟩ := S9.st.aluImm hc2 wf_at_7a (off' := 0x7C) (by decide)
+  have S10 := S9.step u10 (by decide)
+  have r10 : ∀ q, q ≠ a2 → q ≠ a3 → reg n10 q = reg n8 q := fun q h2 h3 => by
+    rw [u10.upd_ne S9.st.zero q h3, u9.upd_ne S8.st.zero q h2, u8.regs, u7.regs]
+  obtain ⟨n11, d11, u11⟩ := S10.st.notTaken hc2 0x80 wf_at_7c (by decide)
+    (by rw [u10.upd_eq (by decide), S9.st.zero, S10.st.zero]; decide)
+  have S11 := S10.jmp u11
+  obtain ⟨n12, d12, u12⟩ := S11.st.lw hc2 wf_at_80 (off' := 0x82) (by decide)
+    (by rw [u11.regs, u10.upd_ne S9.st.zero _ (by decide), u9.upd_eq (by decide), u8.regs, u7.regs, S6.hsp, add_lit_zero]
+        exact aligned_add hFa (k := 0x34) (by decide))
+  have S12 := S11.step u12 (by decide)
+  have a2_10 : reg n10 a2 = F + BitVec.ofNat 32 0x34 := by
+    rw [u10.upd_ne S9.st.zero _ (by decide), u9.upd_eq (by decide), u8.regs, u7.regs, S6.hsp]; rfl
+  have a4_12 : reg n12 a4 = BitVec.ofNat 32 j := by rw [u12.upd_eq (by decide), u11.regs, a2_10]; exact m34
+  obtain ⟨n13, d13, u13⟩ := S12.st.aluImm hc2 wf_at_82 (off' := 0x84) (by decide)
+  have S13 := S12.step u13 (by decide)
+  obtain ⟨n14, d14, u14⟩ := S13.st.aluImm hc2 wf_at_84 (off' := 0x86) (by decide)
+  have S14 := S13.step u14 (by decide)
+  have r14 : ∀ q, q ≠ a2 → q ≠ a3 → q ≠ a4 → reg n14 q = reg n8 q := fun q h2 h3 h4 => by
+    rw [u14.upd_ne S13.st.zero q h3, u13.upd_ne S12.st.zero q h2, u12.upd_ne S11.st.zero q h4, u11.regs, r10 q h2 h3]
+  have a1_8 : reg n8 a1 = BitVec.ofNat 32 (pos / 64) := by rw [u8.regs, u7.regs, a1_6]
+  have a0_8 : reg n8 a0 = BitVec.ofNat 32 j := by rw [u8.regs, u7.regs, a0_6]
+  have s1_8 : reg n8 (9 : Fin 32) = BitVec.ofNat 32 (pos % 64) := by rw [u8.regs, u7.regs,
+    u6.upd_ne S5.st.zero _ (by decide), s1_5]
+  have s4_8 : reg n8 (20 : Fin 32) = wp + BitVec.ofNat 32 pos := by
+    rw [u8.regs, u7.regs, u6.upd_ne S5.st.zero _ (by decide), u5.upd_ne S4.st.zero _ (by decide),
+      u4.upd_ne S3.st.zero _ (by decide), u3.upd_ne S2.st.zero _ (by decide), u2.regs, s4]
+  by_cases hjp : j = pos / 64
+  · -- `pos / 64` is the current limb
+    obtain ⟨n15, d15, u15⟩ := S14.st.notTaken hc2 0x8A wf_at_86 (by decide)
+      (by rw [u14.upd_ne S13.st.zero _ (by decide), u13.upd_ne S12.st.zero _ (by decide), a4_12, r14 _ (by decide)
+          (by decide) (by decide), a1_8, wbr_bne (by omega) (by omega), decide_eq_true hjp]; rfl)
+    have S15 := S14.jmp u15
+    obtain ⟨n16, d16, u16⟩ := S15.st.taken hc2 0x98 wf_at_8a (by decide)
+      (by rw [u15.regs, u15.regs, r14 _ (by decide) (by decide) (by decide), r14 _ (by decide) (by decide) (by decide), a0_8, a1_8,
+          wbr_bgeu (by omega) (by omega)]; exact decide_eq_true (by omega))
+    refine ⟨n16, .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.cons d6 (.cons d7 (.cons d8 (.cons d9 (.cons d10
+      (.cons d11 (.cons d12 (.cons d13 (.cons d14 (.cons d15 (.single d16))))))))))))))), ?_, ?_, ?_⟩
+    · rw [u16.mem, ← hjp]; exact S15.jmp u16
+    · rw [u16.regs, u15.regs, r14 _ (by decide) (by decide) (by decide), s1_8]
+    · rw [u16.regs, u15.regs, r14 _ (by decide) (by decide) (by decide), s4_8]
+  · -- `pos / 64` is the next limb
+    have hj1 : pos / 64 = j + 1 := by omega
+    obtain ⟨n15, d15, u15⟩ := S14.st.taken hc2 0x7C wf_at_86 (by decide)
+      (by rw [u14.upd_ne S13.st.zero _ (by decide), u13.upd_ne S12.st.zero _ (by decide), a4_12, r14 _ (by decide)
+          (by decide) (by decide), a1_8, wbr_bne (by omega) (by omega), decide_eq_false hjp]; rfl)
+    have S15 := S14.jmp u15
+    have a3_14 : reg n14 a3 = 4 := by
+      rw [u14.upd_eq (by decide), u13.upd_ne S12.st.zero _ (by decide), u12.upd_ne S11.st.zero _ (by decide), u11.regs,
+        u10.upd_eq (by decide), S9.st.zero]; rfl
+    have a2_14 : reg n14 a2 = F + BitVec.ofNat 32 0x38 := by
+      rw [u14.upd_ne S13.st.zero _ (by decide), u13.upd_eq (by decide), u12.upd_ne S11.st.zero _ (by decide), u11.regs,
+        a2_10]; exact add_ofNat_assoc F 0x34 4
+    obtain ⟨n16, d16, u16⟩ := S15.st.notTaken hc2 0x80 wf_at_7c (by decide)
+      (by rw [u15.regs, u15.regs, a3_14, S14.st.zero]; decide)
+    have S16 := S15.jmp u16
+    obtain ⟨n17, d17, u17⟩ := S16.st.lw hc2 wf_at_80 (off' := 0x82) (by decide)
+      (by rw [u16.regs, u15.regs, a2_14, add_lit_zero]; exact aligned_add hFa (k := 0x38) (by decide))
+    have S17 := S16.step u17 (by decide)
+    have a4_17 : reg n17 a4 = BitVec.ofNat 32 (j + 1) := by rw [u17.upd_eq (by decide), u16.regs, u15.regs, a2_14]; exact m38
+    obtain ⟨n18, d18, u18⟩ := S17.st.aluImm hc2 wf_at_82 (off' := 0x84) (by decide)
+    have S18 := S17.step u18 (by decide)
+    obtain ⟨n19, d19, u19⟩ := S18.st.aluImm hc2 wf_at_84 (off' := 0x86) (by decide)
+    have S19 := S18.step u19 (by decide)
+    have r19 : ∀ q, q ≠ a2 → q ≠ a3 → q ≠ a4 → reg n19 q = reg n8 q := fun q h2 h3 h4 => by
+      rw [u19.upd_ne S18.st.zero q h3, u18.upd_ne S17.st.zero q h2, u17.upd_ne S16.st.zero q h4, u16.regs, u15.regs,
+        r14 q h2 h3 h4]
+    obtain ⟨n20, d20, u20⟩ := S19.st.notTaken hc2 0x8A wf_at_86 (by decide)
+      (by rw [u19.upd_ne S18.st.zero _ (by decide), u18.upd_ne S17.st.zero _ (by decide), a4_17,
+          r19 _ (by decide) (by decide) (by decide), a1_8, wbr_bne (by omega) (by omega), decide_eq_true hj1.symm]; rfl)
+    have S20 := S19.jmp u20
+    obtain ⟨n21, d21, u21⟩ := S20.st.notTaken hc2 0x8E wf_at_8a (by decide)
+      (by rw [u20.regs, u20.regs, r19 _ (by decide) (by decide) (by decide), r19 _ (by decide) (by decide) (by decide),
+          a0_8, a1_8, wbr_bgeu (by omega) (by omega)]; exact decide_eq_false (by omega))
+    have S21 := S20.jmp u21
+    obtain ⟨n22, d22, u22⟩ := S21.st.aluImm hc2 wf_at_8e (off' := 0x90) (by decide)
+    have S22 := S21.step u22 (by decide)
+    obtain ⟨n23, c23, u23, sp23, k23, e18, e1C, e28, enx, er, fr⟩ := wf_inc C S22.st S22.agree wf_at_90 wf_at_94
+      (by decide) (by decide) S22.hsp (by rw [u22.upd_eq (by decide), u21.regs, u20.regs, r19 _ (by decide) (by decide)
+        (by decide), u8.regs, u7.regs, S6.hsp]; rfl) (k := j + 2) S22.rest
+    have S23 := S22.inc C (by omega) u23 sp23 k23 e18 e1C e28 enx er fr
+    refine ⟨n23, .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.cons d6 (.cons d7 (.cons d8 (.cons d9 (.cons d10
+      (.cons d11 (.cons d12 (.cons d13 (.cons d14 (.cons d15 (.cons d16 (.cons d17 (.cons d18 (.cons d19 (.cons d20
+      (.cons d21 (.cons d22 c23))))))))))))))))))))), by rw [hj1]; exact S23, ?_, ?_⟩
+    · rw [k23 _ (by decide), u22.upd_ne S21.st.zero _ (by decide), u21.regs, u20.regs,
+        r19 _ (by decide) (by decide) (by decide), s1_8]
+    · rw [k23 _ (by decide), u22.upd_ne S21.st.zero _ (by decide), u21.regs, u20.regs,
+        r19 _ (by decide) (by decide) (by decide), s4_8]
+
 end Steps
 
 end C3.RV32
