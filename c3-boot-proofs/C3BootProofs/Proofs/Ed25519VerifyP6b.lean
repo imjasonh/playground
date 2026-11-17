@@ -58,6 +58,13 @@ theorem ev_digA (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Mac
     ∃ n' M', Steps n n' ∧ EvSt M0 Ms F r0 M' n' 0x17AE ∧ (∀ q : Fin 32, q.val ∈ evKeep → q ≠ 8 → reg n' q = reg n q) ∧
       ptAt M' (F + BitVec.ofNat 32 0x1468) = digStep T b (ptAt M (F + BitVec.ofNat 32 0x1468)) ∧
       ∀ c, c < 0x16A0 → (c < 0x1468 ∨ 0x1648 ≤ c) → M' (F + BitVec.ofNat 32 c) = M (F + BitVec.ofNat 32 c) := by
+  have hcase : b.toNat = 0 ∨ (1 ≤ b.toNat ∧ b.toNat ≤ 15) ∨ 241 ≤ b.toNat := by
+    rcases Nat.eq_zero_or_pos b.toNat with h | h
+    · exact Or.inl h
+    · rcases hbr with h' | h'
+      · exact Or.inr (Or.inl ⟨h, h'⟩)
+      · exact Or.inr (Or.inr h')
+  clear hbr
   have z0 := D.st.zero
   obtain ⟨n1, d1, u1⟩ := D.st.lb (D.code C) ev_at_16e4 (off' := 0x16E8) rfl
   have D1 := D.regs u1.self (fun q hq => by
@@ -73,7 +80,7 @@ theorem ev_digA (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Mac
     rw [hr2]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [v8, D1.st.zero]; exact digFlag_eq b
   have kk : ∀ q : Fin 32, q.val ∈ evKeep → q ≠ 8 → reg n2 q = reg n q := fun q hq h8 => by
     rw [k2 q (by revert hq; revert q; decide) (by revert hq; revert q; decide), k1 q h8]
-  rcases (show b.toNat = 0 ∨ (1 ≤ b.toNat ∧ b.toNat ≤ 15) ∨ 241 ≤ b.toNat by omega) with h0 | hpos | hneg
+  rcases hcase with h0 | hpos | hneg
   · -- zero digit
     have hb0 : b = 0 := BitVec.eq_of_toNat_eq h0
     obtain ⟨n3, d3, u3⟩ := D2.st.taken (D2.code C) 0x17AE ev_at_16f6 rfl (by rw [vf, D2.st.zero, hb0]; decide)
@@ -193,6 +200,13 @@ theorem ev_digB (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Mac
     ∃ n' M', Steps n n' ∧ EvSt M0 Ms F r0 M' n' 0x1878 ∧ (∀ q : Fin 32, q.val ∈ evKeep → q ≠ 8 → reg n' q = reg n q) ∧
       ptAt M' (F + BitVec.ofNat 32 0x1468) = digStep T b (ptAt M (F + BitVec.ofNat 32 0x1468)) ∧
       ∀ c, c < 0x16A0 → (c < 0x1468 ∨ 0x1648 ≤ c) → M' (F + BitVec.ofNat 32 c) = M (F + BitVec.ofNat 32 c) := by
+  have hcase : b.toNat = 0 ∨ (1 ≤ b.toNat ∧ b.toNat ≤ 15) ∨ 241 ≤ b.toNat := by
+    rcases Nat.eq_zero_or_pos b.toNat with h | h
+    · exact Or.inl h
+    · rcases hbr with h' | h'
+      · exact Or.inr (Or.inl ⟨h, h'⟩)
+      · exact Or.inr (Or.inr h')
+  clear hbr
   have z0 := D.st.zero
   obtain ⟨n1, d1, u1⟩ := D.st.lb (D.code C) ev_at_17ae (off' := 0x17B2) rfl
   have D1 := D.regs u1.self (fun q hq => by
@@ -208,7 +222,7 @@ theorem ev_digB (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Mac
     rw [hr2]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [v8, D1.st.zero]; exact digFlag_eq b
   have kk : ∀ q : Fin 32, q.val ∈ evKeep → q ≠ 8 → reg n2 q = reg n q := fun q hq h8 => by
     rw [k2 q (by revert hq; revert q; decide) (by revert hq; revert q; decide), k1 q h8]
-  rcases (show b.toNat = 0 ∨ (1 ≤ b.toNat ∧ b.toNat ≤ 15) ∨ 241 ≤ b.toNat by omega) with h0 | hpos | hneg
+  rcases hcase with h0 | hpos | hneg
   · -- zero digit
     have hb0 : b = 0 := BitVec.eq_of_toNat_eq h0
     obtain ⟨n3, d3, u3⟩ := D2.st.taken (D2.code C) 0x1878 ev_at_17c0 rfl (by rw [vf, D2.st.zero, hb0]; decide)
