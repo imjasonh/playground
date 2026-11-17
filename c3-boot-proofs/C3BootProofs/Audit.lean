@@ -156,6 +156,7 @@ import C3BootProofs.Proofs.SmallFns
 import C3BootProofs.Proofs.TrustRoot
 import C3BootProofs.Proofs.ReadPart
 import C3BootProofs.Proofs.ReaderU64
+import C3BootProofs.Proofs.Keys
 
 /-!
 # Audit
@@ -8698,3 +8699,6 @@ end C3
 
 /-- info: 'C3.RV32.readerU64_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.readerU64_correct
+
+/-- info: 'C3.RV32.readSignatures_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.readSignatures_correct
