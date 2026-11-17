@@ -300,7 +300,8 @@ theorem cs_loop {F keys buf : Word} {mlen nkeys : Nat} {M1 : Word → BitVec 8}
       ∃ mx', Steps mx mx' ∧ St mx'.mem CSG mx' 0xB8 (reg mx') ∧
         reg mx' a0 = (csLoop M1 keys buf mlen nkeys s k last).zeroExtend 32 ∧
         (∀ x, Sep (evG F) 0x20B0 x 1 → mx'.mem x = M1 x) ∧ reg mx' sp = F + BitVec.ofNat 32 0x16A0 ∧
-        reg mx' 3 = reg mx 3 ∧ reg mx' 4 = reg mx 4 := by
+        reg mx' 3 = reg mx 3 ∧ reg mx' 4 = reg mx 4 ∧ reg mx' 25 = reg mx 25 ∧ reg mx' 26 = reg mx 26 ∧
+        reg mx' 27 = reg mx 27 := by
   have hGn : (evG F).toNat = F.toNat - 0xA10 := by
     unfold evG; rw [BitVec.toNat_add, show (0xFFFFF5F0 : Word).toNat = 2 ^ 32 - 0xA10 from rfl]; omega
   have hiR : ∀ x : Word, 0x40000000 ≤ x.toNat → Sep (evG F) 0x20B0 x 1 := fun x hx =>
@@ -321,7 +322,8 @@ theorem cs_loop {F keys buf : Word} {mlen nkeys : Nat} {M1 : Word → BitVec 8}
     obtain ⟨n2, d2, u2⟩ := u1.aluImm (codeX _ hR) csg_at_b4 (off' := 0xB8) (by decide)
     refine ⟨n2, .cons d1 (.single d2), by rw [u2.mem]; exact u2.self, ?_, fun x hx => by rw [u2.mem]; exact hR x hx,
       by rw [u2.regs, updz st.zero (by decide)]; exact hsp, by rw [u2.regs, updz st.zero (by decide)],
-      by rw [u2.regs, updz st.zero (by decide)]⟩
+      by rw [u2.regs, updz st.zero (by decide)], by rw [u2.regs, updz st.zero (by decide)],
+      by rw [u2.regs, updz st.zero (by decide)], by rw [u2.regs, updz st.zero (by decide)]⟩
     rw [u2.regs]; simp +decide only [upd, ite_true, ite_false]; rw [show reg mx x0 = 0 from st.zero]; rfl
   | succ k ih =>
     intro mx s last hsS hsw st hR hsp h24 h9 ha1 hlast h18 h19 h20 h23
@@ -351,15 +353,17 @@ theorem cs_loop {F keys buf : Word} {mlen nkeys : Nat} {M1 : Word → BitVec 8}
       rw [updz u2.zero (by decide)]; simp +decide only [upd, ite_true, ite_false]
     have hb256 := b.isLt
     have err : ∀ (mz : Machine) (fz : Fin 32 → Word), Steps mx mz → St mx.mem CSG mz 0xB8 fz → fz a0 = 0xF →
-        fz sp = F + BitVec.ofNat 32 0x16A0 → fz 3 = reg mx 3 → fz 4 = reg mx 4 →
-        (b.toNat < last ∨ nkeys ≤ b.toNat) →
+        fz sp = F + BitVec.ofNat 32 0x16A0 → fz 3 = reg mx 3 → fz 4 = reg mx 4 → fz 25 = reg mx 25 →
+        fz 26 = reg mx 26 → fz 27 = reg mx 27 → (b.toNat < last ∨ nkeys ≤ b.toNat) →
         ∃ mx', Steps mx mx' ∧ St mx'.mem CSG mx' 0xB8 (reg mx') ∧
           reg mx' a0 = (csLoop M1 keys buf mlen nkeys s (k + 1) last).zeroExtend 32 ∧
           (∀ x, Sep (evG F) 0x20B0 x 1 → mx'.mem x = M1 x) ∧ reg mx' sp = F + BitVec.ofNat 32 0x16A0 ∧
-          reg mx' 3 = reg mx 3 ∧ reg mx' 4 = reg mx 4 := by
-      intro mz fz c sz ha0 hsp' h3 h4 hc
+          reg mx' 3 = reg mx 3 ∧ reg mx' 4 = reg mx 4 ∧ reg mx' 25 = reg mx 25 ∧ reg mx' 26 = reg mx 26 ∧
+          reg mx' 27 = reg mx 27 := by
+      intro mz fz c sz ha0 hsp' h3 h4 h25 h26 h27 hc
       refine ⟨mz, c, by rw [sz.mem]; exact sz.self, ?_, fun x hx => by rw [sz.mem]; exact hR x hx,
-        by rw [sz.regs]; exact hsp', by rw [sz.regs]; exact h3, by rw [sz.regs]; exact h4⟩
+        by rw [sz.regs]; exact hsp', by rw [sz.regs]; exact h3, by rw [sz.regs]; exact h4, by rw [sz.regs]; exact h25,
+        by rw [sz.regs]; exact h26, by rw [sz.regs]; exact h27⟩
       rw [sz.regs, ha0]
       show _ = (if (M1 s).toNat < last ∨ nkeys ≤ (M1 s).toNat then (0xF : BitVec 8)
         else if evSpec M1 (keys + BitVec.ofNat 32 (32 * (M1 s).toNat)) (s + 1) buf mlen then
@@ -374,7 +378,8 @@ theorem cs_loop {F keys buf : Word} {mlen nkeys : Nat} {M1 : Word → BitVec 8}
       exact err n4 _ (.cons d1 (.cons d2 (.cons d3 (.single d4)))) u4
         (by simp +decide only [upd, ite_true, ite_false])
         (by rw [g3 sp (by decide) (by decide)]; exact hsp) (by rw [g3 3 (by decide) (by decide)])
-        (by rw [g3 4 (by decide) (by decide)]) (Or.inl hl)
+        (by rw [g3 4 (by decide) (by decide)]) (by rw [g3 25 (by decide) (by decide)])
+        (by rw [g3 26 (by decide) (by decide)]) (by rw [g3 27 (by decide) (by decide)]) (Or.inl hl)
     obtain ⟨n4, d4, u4⟩ := u3.notTaken hcx 0x88 csg_at_84 (by decide)
       (by
         rw [f38, g3 a1 (by decide) (by decide), ha1]
@@ -390,7 +395,8 @@ theorem cs_loop {F keys buf : Word} {mlen nkeys : Nat} {M1 : Word → BitVec 8}
       exact err n5 _ (.cons d1 (.cons d2 (.cons d3 (.cons d4 (.single d5))))) u5
         (by simp +decide only [upd, ite_true, ite_false])
         (by rw [g3 sp (by decide) (by decide)]; exact hsp) (by rw [g3 3 (by decide) (by decide)])
-        (by rw [g3 4 (by decide) (by decide)]) (Or.inr hn)
+        (by rw [g3 4 (by decide) (by decide)]) (by rw [g3 25 (by decide) (by decide)])
+        (by rw [g3 26 (by decide) (by decide)]) (by rw [g3 27 (by decide) (by decide)]) (Or.inr hn)
     obtain ⟨n5, d5, u5⟩ := u4.notTaken hcx 0x8C csg_at_88 (by decide)
       (by
         rw [f38, g3 20 (by decide) (by decide), h20]
@@ -474,6 +480,15 @@ theorem cs_loop {F keys buf : Word} {mlen nkeys : Nat} {M1 : Word → BitVec 8}
       rw [gp14, r13 3 (by decide), g12 3 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)]
     have w144 : reg m14 4 = reg mx 4 := by
       rw [tp14, r13 4 (by decide), g12 4 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)]
+    have w1425 : reg m14 25 = reg mx 25 := by
+      rw [kev 25 0x44 (by decide) (by decide), g12 25 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by decide)]
+    have w1426 : reg m14 26 = reg mx 26 := by
+      rw [kev 26 0x40 (by decide) (by decide), g12 26 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by decide)]
+    have w1427 : reg m14 27 = reg mx 27 := by
+      rw [kev 27 0x3C (by decide) (by decide), g12 27 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        (by decide)]
     obtain ⟨n15, d15, u15⟩ := t14.aluImm hc14 csg_at_aa (off' := 0xAE) (by decide)
     have g15 : ∀ r, r ≠ a1 → upd (reg m14) a1 (aluEval .add (reg m14 8) 1) r = reg m14 r := fun r h => updz t14.zero h
     have hnot : ¬ ((M1 s).toNat < last ∨ nkeys ≤ (M1 s).toNat) := by
@@ -488,7 +503,7 @@ theorem cs_loop {F keys buf : Word} {mlen nkeys : Nat} {M1 : Word → BitVec 8}
         (by rw [g15 a0 (by decide), a014, upd_zero_cs]; decide)
       have t16 : St n16.mem CSG n16 0x7A (reg n16) := by rw [u16.mem]; exact u16.self
       have r16 : ∀ r, reg n16 r = upd (reg m14) a1 (aluEval .add (reg m14 8) 1) r := u16.regs
-      obtain ⟨mx', cx, sx, ax, hRx, spx, gx, tx⟩ := ih n16 (s + 0x41) (b.toNat + 1)
+      obtain ⟨mx', cx, sx, ax, hRx, spx, gx, tx, x25, x26, x27⟩ := ih n16 (s + 0x41) (b.toNat + 1)
         (fun j hj => by
           have := hsS (j + 1) (by omega)
           rwa [show s + BitVec.ofNat 32 (65 * (j + 1)) = s + 0x41 + BitVec.ofNat 32 (65 * j) by
@@ -512,7 +527,9 @@ theorem cs_loop {F keys buf : Word} {mlen nkeys : Nat} {M1 : Word → BitVec 8}
         (by rw [r16, g15 23 (by decide), kev 23 0x4C (by decide) (by decide),
           g12 23 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)]; exact h23)
       refine ⟨mx', pre14.trans (.cons d15 (.cons d16 cx)), sx, ?_, hRx, spx,
-        by rw [gx, r16, g15 3 (by decide)]; exact w143, by rw [tx, r16, g15 4 (by decide)]; exact w144⟩
+        by rw [gx, r16, g15 3 (by decide)]; exact w143, by rw [tx, r16, g15 4 (by decide)]; exact w144,
+        by rw [x25, r16, g15 25 (by decide)]; exact w1425, by rw [x26, r16, g15 26 (by decide)]; exact w1426,
+        by rw [x27, r16, g15 27 (by decide)]; exact w1427⟩
       rw [ax]
       show _ = (if (M1 s).toNat < last ∨ nkeys ≤ (M1 s).toNat then (0xF : BitVec 8)
         else if evSpec M1 (keys + BitVec.ofNat 32 (32 * (M1 s).toNat)) (s + 1) buf mlen then
@@ -525,7 +542,7 @@ theorem cs_loop {F keys buf : Word} {mlen nkeys : Nat} {M1 : Word → BitVec 8}
       obtain ⟨n18, d18, u18⟩ := u17.jump hc14 csg_at_b2 (off' := 0xB8) (by decide) (by rw [u17.pc]; decide)
       have hz15 := u15.zero
       refine ⟨n18, pre14.trans (.cons d15 (.cons d16 (.cons d17 (.single d18)))), by rw [u18.mem]; exact u18.self, ?_,
-        fun x hx => by rw [u18.mem]; exact hR14 x hx, ?_, ?_, ?_⟩
+        fun x hx => by rw [u18.mem]; exact hR14 x hx, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · rw [u18.regs]
         show _ = (if (M1 s).toNat < last ∨ nkeys ≤ (M1 s).toNat then (0xF : BitVec 8)
           else if evSpec M1 (keys + BitVec.ofNat 32 (32 * (M1 s).toNat)) (s + 1) buf mlen then
@@ -535,6 +552,9 @@ theorem cs_loop {F keys buf : Word} {mlen nkeys : Nat} {M1 : Word → BitVec 8}
       · rw [u18.regs, updz hz15 (by decide), g15 sp (by decide)]; exact w14sp
       · rw [u18.regs, updz hz15 (by decide), g15 3 (by decide)]; exact w143
       · rw [u18.regs, updz hz15 (by decide), g15 4 (by decide)]; exact w144
+      · rw [u18.regs, updz hz15 (by decide), g15 25 (by decide)]; exact w1425
+      · rw [u18.regs, updz hz15 (by decide), g15 26 (by decide)]; exact w1426
+      · rw [u18.regs, updz hz15 (by decide), g15 27 (by decide)]; exact w1427
 
 theorem csLoop_congr {M M' : Word → BitVec 8} {keys buf : Word} {mlen nkeys : Nat} (hro : RoAgree M M')
     (hk : ∀ i, i < 32 * nkeys → M (keys + BitVec.ofNat 32 i) = M' (keys + BitVec.ofNat 32 i))
@@ -566,3 +586,4 @@ theorem csLoop_congr {M M' : Word → BitVec 8} {keys buf : Word} {mlen nkeys : 
           rw [show (s + 0x41 : Word) = s + BitVec.ofNat 32 65 from rfl, add_ofNat_assoc]]; exact hs _ (by omega)]
 
 end C3.RV32
+
