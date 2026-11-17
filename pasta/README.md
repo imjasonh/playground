@@ -315,13 +315,15 @@ each instead, about 6 bytes per node against about 200, within half
 the budget again. Each later pass rebuilds those trees from their
 encodings, which `rebuilt` in `-stats` counts and which is about 40
 times faster than parsing. Past both limits, pasta parses the files
-again for each later pass, which `reparsed` counts. On the Go module
-cache (about 30,000 files), the compact encodings took the run from
-146 to 90 seconds, and a 1 GiB budget ran it in 86 seconds at 6.5 GB
-peak RSS against 12 GB. A budget too small to hold the encodings
-trades time for memory: 256 MiB took 147 seconds at 3.4 GB. Rule files also load in parallel, and pasta keeps wazero's
-compiled tree-sitter code under `$XDG_CACHE_HOME/pasta/wazero/` (about
-7 MB), which saves about 0.6 seconds per run.
+again for each later pass, which `reparsed` counts. Unless
+`GOMEMLIMIT` is set, pasta sets Go's memory limit to twice the tree
+budget, and to at least the budget plus 2 GiB, so the collector
+doesn't let garbage double the heap. On the Go module cache (about
+30,000 files), the compact encodings took the run from 162 to 103
+seconds at the same 8.6 GB peak RSS. Rule files also load in parallel,
+and pasta keeps wazero's compiled tree-sitter code under
+`$XDG_CACHE_HOME/pasta/wazero/` (about 7 MB), which saves about 0.6
+seconds per run.
 
 ## Autofix guardrails
 
