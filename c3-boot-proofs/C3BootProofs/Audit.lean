@@ -151,6 +151,7 @@ import C3BootProofs.Proofs.SqrMont12Main
 import C3BootProofs.Image.BootloaderV0
 import C3BootProofs.Proofs.Ed25519VerifyWitness
 import C3BootProofs.Proofs.MagicCur
+import C3BootProofs.Proofs.PartCur
 
 /-!
 # Audit
@@ -8669,3 +8670,6 @@ end C3
 
 /-- info: 'C3.RV32.Cur.readerMagic_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.readerMagic_correct
+
+/-- info: 'C3.RV32.Cur.manifestPart_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.manifestPart_correct

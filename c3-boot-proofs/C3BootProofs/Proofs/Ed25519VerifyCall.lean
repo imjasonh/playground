@@ -299,11 +299,6 @@ end St
 
 /-! ## Prologue and epilogue -/
 
-theorem blockEnd_cons' {code : List Nat} {off off' : Nat} {i : BInstr} {is : List BInstr} {l : Word}
-    {r : Option Nat} (h : fetchRel code off = some (i.toInstr, l)) (hn : off + l.toNat = off')
-    (hr : blockEnd code off' is = r) : blockEnd code off (i :: is) = r := by
-  subst hn; unfold blockEnd; rw [h]; exact (ite_eq_left rfl).trans hr
-
 /-- The registers the prologue saves, at their offsets from `F + 0x1630`. -/
 abbrev evPs : List (Fin 32 × Word) :=
   [(ra, BitVec.ofNat 32 0x6C), ((8 : Fin 32), BitVec.ofNat 32 0x68), ((9 : Fin 32), BitVec.ofNat 32 0x64), ((18 : Fin 32), BitVec.ofNat 32 0x60), ((19 : Fin 32), BitVec.ofNat 32 0x5C), ((20 : Fin 32), BitVec.ofNat 32 0x58), ((21 : Fin 32), BitVec.ofNat 32 0x54), ((22 : Fin 32), BitVec.ofNat 32 0x50), ((23 : Fin 32), BitVec.ofNat 32 0x4C), ((24 : Fin 32), BitVec.ofNat 32 0x48), ((25 : Fin 32), BitVec.ofNat 32 0x44), ((26 : Fin 32), BitVec.ofNat 32 0x40), ((27 : Fin 32), BitVec.ofNat 32 0x3C)]

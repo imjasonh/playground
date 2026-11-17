@@ -81,6 +81,11 @@ def blockEnd (code : List Nat) : Nat → List BInstr → Option Nat
     | some (j, l) => if j = i.toInstr then blockEnd code (off + l.toNat) is else none
     | none => none
 
+theorem blockEnd_cons' {code : List Nat} {off off' : Nat} {i : BInstr} {is : List BInstr} {l : Word}
+    {r : Option Nat} (h : fetchRel code off = some (i.toInstr, l)) (hn : off + l.toNat = off')
+    (hr : blockEnd code off' is = r) : blockEnd code off (i :: is) = r := by
+  subst hn; unfold blockEnd; rw [h]; exact (ite_eq_left rfl).trans hr
+
 theorem CodeIn.run {M : Word → BitVec 8} {base : Word} {code : List Nat} {f : Fin 32 → Word}
     (i : BInstr) (hc : CodeIn M base code) (hok : i.ok base code.length (M, f)) :
     CodeIn (i.run (M, f)).1 base code := by
