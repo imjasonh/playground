@@ -374,11 +374,11 @@ def RestAt (M : Word → BitVec 8) (s cp : Word) (cn k : Nat) : Prop :=
   (memLoad32 M (s + 4) = 0 ∧ cn ≤ 8 * k) ∨
     (memLoad32 M s = cp + BitVec.ofNat 32 (8 * k) ∧ (memLoad32 M (s + 4)).toNat = cn - 8 * k ∧ 8 * k < cn)
 
-/-- `wnaf_form` at the loop head, offset 0x5E, after `pos` bits with
+/-- `wnaf_form` at `off` in the loop (0x5E is the head), after `pos` bits with
 `carry`, the digits `D` written, and `LimbBuffer` at limb `j`. -/
 structure WfSt (M0 Ms : Word → BitVec 8) (F wp cp : Word) (wl cn L : Nat) (r0 : Fin 32 → Word)
-    (M : Word → BitVec 8) (n : Machine) (pos carry j : Nat) (D : List Int) : Prop where
-  st : St M WF n 0x5E (reg n)
+    (M : Word → BitVec 8) (n : Machine) (off pos carry j : Nat) (D : List Int) : Prop where
+  st : St M WF n off (reg n)
   hsp : reg n sp = F
   s2 : reg n (18 : Fin 32) = BitVec.ofNat 32 L
   s3 : reg n (19 : Fin 32) = BitVec.ofNat 32 wl
@@ -415,6 +415,80 @@ theorem memBytes_dropK (M : Word → BitVec 8) (p : Word) {n k : Nat} (h : k ≤
   rw [List.getElem_drop]
   simp only [memBytes, List.getElem_map, List.getElem_range]
   rw [add_ofNat_assoc]
+
+theorem ofNat_inj32 {a b : Nat} (ha : a < 2 ^ 32) (hb : b < 2 ^ 32) (h : BitVec.ofNat 32 a = BitVec.ofNat 32 b) : a = b := by
+  have := congrArg BitVec.toNat h
+  rwa [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt ha, Nat.mod_eq_of_lt hb] at this
+
+theorem wbr_beq {a b : Nat} (ha : a < 2 ^ 32) (hb : b < 2 ^ 32) :
+    branchTaken .beq (BitVec.ofNat 32 a) (BitVec.ofNat 32 b) = decide (a = b) := by
+  show (BitVec.ofNat 32 a == BitVec.ofNat 32 b) = _
+  by_cases h : a = b
+  · subst h; rw [decide_eq_true rfl]; exact decide_eq_true rfl
+  · rw [decide_eq_false h]; exact decide_eq_false (fun e => h (ofNat_inj32 ha hb e))
+
+theorem wbr_bne {a b : Nat} (ha : a < 2 ^ 32) (hb : b < 2 ^ 32) :
+    branchTaken .bne (BitVec.ofNat 32 a) (BitVec.ofNat 32 b) = !decide (a = b) := by
+  rw [← wbr_beq ha hb]; rfl
+
+theorem wbr_bltu {a b : Nat} (ha : a < 2 ^ 32) (hb : b < 2 ^ 32) :
+    branchTaken .bltu (BitVec.ofNat 32 a) (BitVec.ofNat 32 b) = decide (a < b) := by
+  show decide ((BitVec.ofNat 32 a).toNat < (BitVec.ofNat 32 b).toNat) = _
+  rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt ha, Nat.mod_eq_of_lt hb]
+
+theorem wbr_bgeu {a b : Nat} (ha : a < 2 ^ 32) (hb : b < 2 ^ 32) :
+    branchTaken .bgeu (BitVec.ofNat 32 a) (BitVec.ofNat 32 b) = decide (b ≤ a) := by
+  show (!decide ((BitVec.ofNat 32 a).toNat < (BitVec.ofNat 32 b).toNat)) = _
+  rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt ha, Nat.mod_eq_of_lt hb]
+  by_cases h : a < b
+  · rw [decide_eq_true h, decide_eq_false (by omega)]; rfl
+  · rw [decide_eq_false h, decide_eq_true (by omega)]; rfl
+
+theorem wf_tb_pow : ∀ (n i : Nat), (2 ^ n - 1).testBit i = decide (i < n)
+  | 0, i => by
+    rw [show 2 ^ 0 - 1 = 0 from rfl, Nat.zero_testBit]; exact (decide_eq_false (Nat.not_lt_zero i)).symm
+  | n + 1, 0 => by
+    have e : 2 ^ (n + 1) - 1 = 2 * (2 ^ n - 1) + 1 := by
+      have := Nat.one_le_two_pow (n := n); rw [Nat.pow_succ]; omega
+    rw [e, Nat.testBit_zero, decide_eq_true (show (2 * (2 ^ n - 1) + 1) % 2 = 1 by omega),
+      decide_eq_true (Nat.succ_pos n)]
+  | n + 1, i + 1 => by
+    have e : 2 ^ (n + 1) - 1 = 2 * (2 ^ n - 1) + 1 := by
+      have := Nat.one_le_two_pow (n := n); rw [Nat.pow_succ]; omega
+    have h : (2 * (2 ^ n - 1) + 1) / 2 = 2 ^ n - 1 := by omega
+    rw [e, Nat.testBit_succ, h, wf_tb_pow n i]
+    exact decide_eq_decide.mpr Nat.succ_lt_succ_iff.symm
+
+/-- ANDing with `2^n - 1` keeps the low `n` bits. Core's
+`Nat.and_two_pow_sub_one_eq_mod` depends on `Classical.choice`. -/
+theorem wf_and_pow (x n : Nat) : x &&& (2 ^ n - 1) = x % 2 ^ n :=
+  Nat.eq_of_testBit_eq fun i => by
+    rw [Nat.testBit_and, wf_tb_pow, Nat.testBit_mod_two_pow, Bool.and_comm]
+
+theorem wv_and (x : Word) (k : Nat) (hk : k ≤ 32) :
+    (aluEval .and x (BitVec.ofNat 32 (2 ^ k - 1))).toNat = x.toNat % 2 ^ k := by
+  show (x &&& BitVec.ofNat 32 (2 ^ k - 1)).toNat = _
+  rw [BitVec.toNat_and, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by have := Nat.pow_le_pow_right (n := 2) (by decide) hk; omega),
+    wf_and_pow]
+
+theorem wv_srl (x : Word) (k : Nat) (hk : k < 32) : (aluEval .srl x (BitVec.ofNat 32 k)).toNat = x.toNat / 2 ^ k := by
+  show (x >>> ((BitVec.ofNat 32 k).toNat % 32)).toNat = _
+  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (show k < 2 ^ 32 by omega), Nat.mod_eq_of_lt hk, BitVec.toNat_ushiftRight,
+    Nat.shiftRight_eq_div_pow]
+
+theorem sep1_out {a x : Word} {n : Nat} (h : Sep a n x 1) (hw : a.toNat + n ≤ 2 ^ 32) :
+    x.toNat < a.toNat ∨ a.toNat + n ≤ x.toNat := by
+  rcases Nat.lt_or_ge x.toNat a.toNat with h1 | h1
+  · exact Or.inl h1
+  · rcases Nat.lt_or_ge x.toNat (a.toNat + n) with h2 | h2
+    · exfalso
+      refine h (x.toNat - a.toNat) (by omega) 0 (by decide) ?_
+      apply BitVec.eq_of_toNat_eq
+      rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_add, BitVec.toNat_ofNat]
+      have := x.isLt; have := a.isLt
+      rw [Nat.mod_eq_of_lt (a := x.toNat - a.toNat) (by omega), Nat.mod_eq_of_lt (a := 0) (by decide),
+        Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by omega)]; omega
+    · exact Or.inr h2
 
 section Calls
 variable {M0 Ms M : Word → BitVec 8} {F wp cp : Word} {wl cn L : Nat}
@@ -561,5 +635,122 @@ theorem wf_inc (C : WfCtx M0 F wp cp wl cn L) {n : Machine} {off : Nat} (s : St 
             by rw [e4', if_neg h8, BitVec.toNat_sub, show (8 : Word).toNat = 8 from rfl]; omega, by omega⟩
 
 end Calls
+
+section Steps
+variable {M0 Ms M : Word → BitVec 8} {F wp cp : Word} {wl cn L : Nat} {r0 : Fin 32 → Word} {n : Machine}
+  {off pos carry j : Nat} {D : List Int}
+
+theorem WfSt.step (S : WfSt M0 Ms F wp cp wl cn L r0 M n off pos carry j D) {n' : Machine} {off' : Nat} {rd : Fin 32}
+    {v : Word} (u : St M WF n' off' (upd (reg n) rd v))
+    (hrd : rd.val ∉ [2, 3, 4, 18, 19, 21, 22, 23, 24, 25, 26, 27]) :
+    WfSt M0 Ms F wp cp wl cn L r0 M n' off' pos carry j D := by
+  have k : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 18, 19, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q := fun q hq =>
+    u.upd_ne S.st.zero q (fun e => hrd (by rw [← e]; exact hq))
+  exact ⟨u.self, by rw [k sp (by decide), S.hsp], by rw [k _ (by decide), S.s2], by rw [k _ (by decide), S.s3],
+    by rw [k _ (by decide), S.s9], by rw [k _ (by decide), S.s8], by rw [k _ (by decide), S.s5],
+    by rw [k _ (by decide), S.s6], by rw [k _ (by decide), S.s7], by rw [k _ (by decide), S.s11],
+    by rw [k _ (by decide), S.s10], by rw [k _ (by decide), S.gp], by rw [k _ (by decide), S.tp], S.hpos, S.hc,
+    S.chi, S.idx, S.hj, S.cur, S.nxt, S.rest, S.len, S.out, S.spec, S.agree, S.slots⟩
+
+theorem WfSt.jmp (S : WfSt M0 Ms F wp cp wl cn L r0 M n off pos carry j D) {n' : Machine} {off' : Nat}
+    (u : St M WF n' off' (reg n)) : WfSt M0 Ms F wp cp wl cn L r0 M n' off' pos carry j D :=
+  ⟨u.self, by rw [u.regs, S.hsp], by rw [u.regs, S.s2], by rw [u.regs, S.s3], by rw [u.regs, S.s9],
+    by rw [u.regs, S.s8], by rw [u.regs, S.s5], by rw [u.regs, S.s6], by rw [u.regs, S.s7], by rw [u.regs, S.s11],
+    by rw [u.regs, S.s10], by rw [u.regs, S.gp], by rw [u.regs, S.tp], S.hpos, S.hc, S.chi, S.idx, S.hj, S.cur, S.nxt,
+    S.rest, S.len, S.out, S.spec, S.agree, S.slots⟩
+
+/-- A word stored in the scratch words at `F + 0x34` or `F + 0x38` keeps
+the invariant. -/
+theorem WfSt.scratch (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L r0 M n off pos carry j D)
+    {n' : Machine} {off' k : Nat} {v : Word} (hk : k = 0x34 ∨ k = 0x38)
+    (u : St (memStore32 M (F + BitVec.ofNat 32 k) v) WF n' off' (reg n)) :
+    WfSt M0 Ms F wp cp wl cn L r0 (memStore32 M (F + BitVec.ofNat 32 k) v) n' off' pos carry j D := by
+  have hk4 : k + 4 ≤ 0x3C ∧ 0x34 ≤ k := by rcases hk with rfl | rfl <;> decide
+  have sO : ∀ c l, c + l ≤ 0x34 ∨ 0x3C ≤ c → c + l ≤ 0x70 → Sep (F + BitVec.ofNat 32 k) 4 (F + BitVec.ofNat 32 c) l :=
+    fun c l h h2 => sep_offsets F (by omega) (by omega) (by omega)
+  have L0 : ∀ c, c + 4 ≤ 0x34 → memLoad32 (memStore32 M (F + BitVec.ofNat 32 k) v) (F + BitVec.ofNat 32 c) =
+      memLoad32 M (F + BitVec.ofNat 32 c) := fun c h => memLoad32_store32_sep (sO c 4 (Or.inl h) (by omega))
+  have room := C.room; have hFd := C.hFd; unfold dramEnd at hFd
+  have sR : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Sep (F + BitVec.ofNat 32 k) 4 x 1 := fun x hx => by
+    have := hx.symm.subR (c := 0x20 + k) (l := 4) (by omega)
+    rw [show F + 0xFFFFFFE0 + BitVec.ofNat 32 (0x20 + k) = F + BitVec.ofNat 32 k by
+      rw [BitVec.add_assoc]; congr 1; apply BitVec.eq_of_toNat_eq; simp; omega] at this
+    exact this.symm
+  have sW : ∀ i, i < wl → Sep (F + BitVec.ofNat 32 k) 4 (wp + BitVec.ofNat 32 i) 1 := fun i hi =>
+    sR _ (C.sWR.sub (c := i) (l := 1) hi).symm
+  have hRest : RestAt (memStore32 M (F + BitVec.ofNat 32 k) v) (F + BitVec.ofNat 32 0x10) cp cn (j + 2) := by
+    have e4 : F + BitVec.ofNat 32 0x10 + 4 = F + BitVec.ofNat 32 0x14 := add_ofNat_assoc F 0x10 4
+    have hr := S.rest
+    unfold RestAt at hr ⊢
+    rw [e4, L0 0x10 (by decide), L0 0x14 (by decide)]; rw [e4] at hr; exact hr
+  exact ⟨u.self, by rw [u.regs, S.hsp], by rw [u.regs, S.s2], by rw [u.regs, S.s3], by rw [u.regs, S.s9],
+    by rw [u.regs, S.s8], by rw [u.regs, S.s5], by rw [u.regs, S.s6], by rw [u.regs, S.s7], by rw [u.regs, S.s11],
+    by rw [u.regs, S.s10], by rw [u.regs, S.gp], by rw [u.regs, S.tp], S.hpos, S.hc,
+    by rw [L0 _ (by decide), S.chi], by rw [L0 _ (by decide), S.idx], S.hj,
+    by rw [L0 _ (by decide), L0 _ (by decide), S.cur], by rw [L0 _ (by decide), L0 _ (by decide), S.nxt], hRest, S.len,
+    fun i hi => by rw [memStore32_get_sep (sW i (by have := C.hL; have := S.hpos; omega)), S.out i hi], S.spec,
+    fun x h1 h2 => by rw [memStore32_get_sep (sR x h1), S.agree x h1 h2],
+    fun c c1 c2 => by rw [memStore32_get_sep (sO c 1 (Or.inr c1) (by omega)), S.slots c c1 c2]⟩
+
+/-- The invariant after `increment_limb`, which moves `LimbBuffer` from limb
+`j` to `j + 1`. -/
+theorem WfSt.inc (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L r0 M n off pos carry j D)
+    {n' : Machine} {off' : Nat} (hj1 : j + 1 ≤ pos / 64) (u : St n'.mem WF n' off' (reg n')) (hsp : reg n' sp = F)
+    (hk : ∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q)
+    (e18 : memLoad32 n'.mem (F + BitVec.ofNat 32 0x18) = memLoad32 M (F + BitVec.ofNat 32 0x20))
+    (e1C : memLoad32 n'.mem (F + BitVec.ofNat 32 0x1C) = memLoad32 M (F + BitVec.ofNat 32 0x24))
+    (e28 : memLoad32 n'.mem (F + BitVec.ofNat 32 0x28) = memLoad32 M (F + BitVec.ofNat 32 0x28) + 1)
+    (enx : (memLoad32 n'.mem (F + BitVec.ofNat 32 0x20)).toNat + 2 ^ 32 * (memLoad32 n'.mem (F + BitVec.ofNat 32 0x24)).toNat =
+      lmb (memBytes M0 cp cn) (j + 2))
+    (er : RestAt n'.mem (F + BitVec.ofNat 32 0x10) cp cn (j + 2 + 1))
+    (fr : ∀ x, Sep (F + 0xFFFFFFE0) 0x20 x 1 → Sep (F + BitVec.ofNat 32 0x10) 28 x 1 → n'.mem x = M x) :
+    WfSt M0 Ms F wp cp wl cn L r0 n'.mem n' off' pos carry (j + 1) D := by
+  have room := C.room; have hFd := C.hFd; unfold dramEnd at hFd
+  have hG : (F + 0xFFFFFFE0 : Word).toNat = F.toNat - 0x20 := by
+    rw [BitVec.toNat_add, show (0xFFFFFFE0 : Word).toNat = 2 ^ 32 - 0x20 from rfl]; have := room.2.1; omega
+  have hFc : ∀ c, c ≤ 0x70 → (F + BitVec.ofNat 32 c).toNat = F.toNat + c := fun c hc' => by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
+  -- every byte apart from `increment_limb`'s frame and the buffer struct keeps its value
+  have K : ∀ x : Word, (x.toNat + 1 ≤ F.toNat - 0x20 ∨ F.toNat + 0x2C ≤ x.toNat ∨ (F.toNat ≤ x.toNat ∧ x.toNat + 1 ≤ F.toNat + 0x10)) →
+      n'.mem x = M x := fun x hx => by
+    have := x.isLt
+    have hGF : F.toNat - 0x20 + 0x20 = F.toNat := by have := room.2.1; omega
+    apply fr x
+    · rcases hx with h | h | h
+      · exact (sep_of_le (by rw [hG]; omega) (by rw [hG]; omega)).symm
+      · exact sep_of_le (by rw [hG]; omega) (by omega)
+      · exact sep_of_le (by rw [hG]; omega) (by omega)
+    · rcases hx with h | h | h
+      · exact (sep_of_le (by rw [hFc _ (by decide)]; omega) (by rw [hFc _ (by decide)]; omega)).symm
+      · exact sep_of_le (by rw [hFc _ (by decide)]; omega) (by omega)
+      · exact (sep_of_le (by rw [hFc _ (by decide)]; omega) (by rw [hFc _ (by decide)]; omega)).symm
+  have KF : ∀ c, (c + 1 ≤ 0x10 ∨ 0x2C ≤ c) → c ≤ 0x70 → n'.mem (F + BitVec.ofNat 32 c) = M (F + BitVec.ofNat 32 c) :=
+    fun c h1 h2 => K _ (by rw [hFc _ h2]; omega)
+  have hw := C.hwl; have sWR := C.sWR
+  have KW : ∀ i, i < wl → n'.mem (wp + BitVec.ofNat 32 i) = M (wp + BitVec.ofNat 32 i) := fun i hi =>
+    fr _ (((sWR.sub (c := i) (l := 1) hi).subR (c := 0) (l := 0x20) (by decide)) |> fun h => by
+      rw [add_ofNat_zero] at h; exact h.symm)
+      ((sWR.sub (c := i) (l := 1) hi).subR (c := 0x30) (l := 28) (by decide) |> fun h => by
+        rw [show F + 0xFFFFFFE0 + BitVec.ofNat 32 0x30 = F + BitVec.ofNat 32 0x10 by
+          rw [BitVec.add_assoc]; rfl] at h; exact h.symm)
+  have hjj := S.hj
+  have eC : memLoad32 n'.mem (F + BitVec.ofNat 32 0xC) = memLoad32 M (F + BitVec.ofNat 32 0xC) :=
+    memLoad32_congr fun q hq => by rw [add_ofNat_assoc]; exact KF _ (by omega) (by omega)
+  have eI : memLoad32 n'.mem (F + BitVec.ofNat 32 0x28) = BitVec.ofNat 32 (j + 1) := by
+    rw [e28, S.idx]; apply BitVec.eq_of_toNat_eq
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat, show (1 : Word).toNat = 1 from rfl]; omega
+  refine ⟨u, hsp, by rw [hk _ (by decide), S.s2], by rw [hk _ (by decide), S.s3], by rw [hk _ (by decide), S.s9],
+    by rw [hk _ (by decide), S.s8], by rw [hk _ (by decide), S.s5], by rw [hk _ (by decide), S.s6],
+    by rw [hk _ (by decide), S.s7], by rw [hk _ (by decide), S.s11], by rw [hk _ (by decide), S.s10],
+    by rw [hk _ (by decide), S.gp], by rw [hk _ (by decide), S.tp], S.hpos, S.hc,
+    by rw [eC, S.chi], eI, ⟨by omega, by omega⟩,
+    by rw [e18, e1C, S.nxt], by rw [show j + 1 + 1 = j + 2 by omega]; exact enx, by rw [show j + 1 + 2 = j + 2 + 1 by omega]; exact er,
+    S.len, fun i hi => by rw [KW i (by have := C.hL; have := S.hpos; omega), S.out i hi], S.spec,
+    fun x h1 h2 => ?_, fun c c1 c2 => by rw [KF c (Or.inr (by omega)) (by omega), S.slots c c1 c2]⟩
+  have hb := sep1_out h1 (by rw [hG]; have := room.2.1; omega)
+  rw [hG] at hb
+  rw [K x (by omega), S.agree x h1 h2]
+
+end Steps
 
 end C3.RV32
