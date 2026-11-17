@@ -329,11 +329,12 @@ its diagnostics depend on other files. They store each file's compact
 tree there instead, keyed by its bytes, its language, and the grammar
 build, so the tree survives rule changes. The first pass rebuilds a
 cached tree instead of parsing the file, which `tree_cache_hits`
-counts. On the Go module cache, the trees take 330 MB, and a run with
-every tree cached took 88 seconds against 115 with `-nocache`. The
-cold run took 100 seconds, because the module cache holds many copies
-of the same files. A lint of this repository took 1.6 seconds against
-3.6. Rule files also load in parallel,
+counts. On the Go module cache (about 300 MB of source on 8 cores),
+the trees take 330 MB. Throughput rose from 2.6 MB/s with `-nocache`
+to 3.0 MB/s with an empty cache, which already hits on the many copies
+of the same files, and to 3.5 MB/s with every tree cached. A lint of
+this repository (about 19 MB) rose from 5.2 MB/s to 13.6 MB/s. Rule
+files also load in parallel,
 and pasta keeps wazero's compiled tree-sitter code under
 `$XDG_CACHE_HOME/pasta/wazero/` (about 7 MB), which saves about 0.6
 seconds per run.
