@@ -1,9 +1,6 @@
 package codefacts
 
-import (
-	"path/filepath"
-	"sort"
-)
+import "sort"
 
 // confRank orders confidence tiers; lower is stronger.
 func confRank(c string) int {
@@ -78,9 +75,7 @@ func ConstantArguments(idx *Index, minCalls int) []Candidate {
 	for name, calls := range idx.calls {
 		maxArity := 0
 		for _, c := range calls {
-			if len(c.Args) > maxArity {
-				maxArity = len(c.Args)
-			}
+			maxArity = max(maxArity, int(c.nargs))
 		}
 		defs := idx.defs[name]
 		var exported *bool
@@ -91,42 +86,43 @@ func ConstantArguments(idx *Index, minCalls int) []Candidate {
 		}
 		vu := valueRefs(idx, name)
 		for i := 0; i < maxArity; i++ {
-			var supplying []*Call
+			var supplying []callArg
+			var first call
 			for _, c := range calls {
-				if len(c.Args) > i {
-					supplying = append(supplying, c)
+				if args := idx.callArgs(c); len(args) > i {
+					if len(supplying) == 0 {
+						first = c
+					}
+					supplying = append(supplying, args[i])
 				}
 			}
 			if len(supplying) < minCalls {
 				continue
 			}
 			values := map[string]bool{}
-			for _, c := range supplying {
-				values[canonValue(c.Args[i])] = true
+			for _, a := range supplying {
+				values[canonValue(idx.str(a.value))] = true
 			}
 			if len(values) != 1 {
 				continue
 			}
-			d0 := supplying[0]
-			if suppressedAt(idx, d0.Path, d0.Line) {
+			if suppressedAt(idx, idx.callFile(first).path, int(first.line)) {
 				continue
 			}
-			kinds := map[string]bool{}
-			for _, c := range supplying {
-				if i < len(c.Kinds) {
-					kinds[c.Kinds[i]] = true
-				}
+			kinds := map[argKind]bool{}
+			for _, a := range supplying {
+				kinds[a.kind] = true
 			}
 			valueKind := "expr"
 			if len(kinds) == 1 {
 				for k := range kinds {
-					valueKind = k
+					valueKind = k.String()
 				}
 			}
-			quals := map[string]bool{}
-			for _, c := range supplying {
-				if c.Qualifier != "" {
-					quals[c.Qualifier] = true
+			quals := map[strID]bool{}
+			for _, c := range calls {
+				if c.qualifier != 0 && int(c.nargs) > i {
+					quals[c.qualifier] = true
 				}
 			}
 			param := ""
@@ -137,7 +133,7 @@ func ConstantArguments(idx *Index, minCalls int) []Candidate {
 				}
 			}
 			out = append(out, Candidate{
-				Name: name, Index: i, Param: param, Value: supplying[0].Args[i],
+				Name: name, Index: i, Param: param, Value: idx.str(supplying[0].value),
 				ValueKind: valueKind, CallCount: len(supplying), DistinctQuals: len(quals),
 				Exported: exported, DefCount: len(defs), HasDef: len(defs) > 0, ValueUsed: vu,
 				Confidence: confConst(exported, len(defs), len(defs) > 0, vu, len(supplying)),
@@ -500,13 +496,16 @@ func UnexportCandidates(idx *Index) []map[string]any {
 		if len(calls) == 0 {
 			continue
 		}
+		var callerDirs map[string]bool
 		for _, d := range defs {
 			if d.Exported == nil || !*d.Exported || suppressedAt(idx, d.Path, d.Line) {
 				continue
 			}
-			callerDirs := map[string]bool{}
-			for _, c := range calls {
-				callerDirs[filepath.ToSlash(filepath.Dir(c.Path))] = true
+			if callerDirs == nil {
+				callerDirs = map[string]bool{}
+				for _, c := range calls {
+					callerDirs[idx.callFile(c).dir] = true
+				}
 			}
 			onlyHere := true
 			for dir := range callerDirs {

@@ -307,6 +307,64 @@ func TestTypeOnlyImportNotUnused(t *testing.T) {
 	}
 }
 
+func TestBuildMergesFilesInWalkOrder(t *testing.T) {
+	files := map[string]string{
+		"app/main.go":   "package app\n\nfunc main() { a() }\n",
+		"app/a.go":      "package app\n\nfunc a() { b() }\n",
+		"app/b.go":      "package app\n\nfunc b() {}\n",
+		"app/orphan.go": "package app\n\nfunc orphan() { leaf() }\n",
+		"app/z.go":      "package app\n\nfunc leaf() {}\n",
+	}
+	for i := range 20 {
+		files[filepath.Join("pad", string(rune('a'+i))+".go")] = "package pad\n\nfunc main() { pad() }\n\nfunc pad() {}\n"
+	}
+	dir := writeTree(t, files)
+	idx := buildT(t, dir, DefaultBuildOptions())
+
+	if got, want := len(idx.defsByID), idx.nextID; got != want {
+		t.Fatalf("defsByID has %d entries, nextID = %d", got, want)
+	}
+	for id, d := range idx.defsByID {
+		if d.ID != id {
+			t.Errorf("defsByID[%d] holds def %d (%s)", id, d.ID, d.Name)
+		}
+	}
+	// IDs follow walk order: app/ sorts before pad/, and a.go before b.go.
+	if a, b := idx.defs["a"][0].ID, idx.defs["b"][0].ID; a >= b {
+		t.Errorf("a has ID %d, b has ID %d; want walk order", a, b)
+	}
+
+	// Reachability crosses files only when caller IDs survive the merge.
+	dead := map[string]bool{}
+	for _, d := range DeadCode(idx) {
+		dead[d.Name] = true
+	}
+	for _, name := range []string{"a", "b", "pad"} {
+		if dead[name] {
+			t.Errorf("%s is reachable from main but reported dead", name)
+		}
+	}
+	for _, name := range []string{"orphan", "leaf"} {
+		if !dead[name] {
+			t.Errorf("%s is unreachable but not reported dead", name)
+		}
+	}
+	if got := len(idx.calls["pad"]); got != 20 {
+		t.Errorf("%d calls to pad, want 20", got)
+	}
+}
+
+func TestBuildCountsFileOnceAcrossRoots(t *testing.T) {
+	dir := writeTree(t, map[string]string{"app/app.go": goFixture})
+	idx, err := Build(t.Context(), []string{dir, filepath.Join(dir, "app")}, DefaultBuildOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if idx.files != 1 || len(idx.defs["mkThing"]) != 1 {
+		t.Errorf("files = %d, mkThing defs = %d; want 1 and 1", idx.files, len(idx.defs["mkThing"]))
+	}
+}
+
 func TestFindNodes(t *testing.T) {
 	dir := writeTree(t, map[string]string{"app/app.go": goFixture})
 	res, err := FindNodes(t.Context(), []string{dir}, "go", "if_statement", "", 50)

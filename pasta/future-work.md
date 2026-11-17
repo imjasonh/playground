@@ -346,15 +346,18 @@ left:
   remove that.
 - Merging the remaining walks into one pass over the rebuilt graph.
 
-### Cross-file runs hold every tree
-**Effort:** L.
-A rule with `requires`, or a fixpoint group, sends the run down the
-in-memory path, which keeps every parsed tree until the end. A
-prefilter usually narrows that to a few files, but a cross-file rule
-without one grows memory with the repository (29 GB after 50 seconds
-on the TypeScript run, still climbing). A two-pass design would bound
-it: emit facts per file and drop each tree, then re-parse, or replay
-from the cache, for the collection pass.
+### Cross-file runs re-parse released trees on every pass
+**Effort:** M.
+The in-memory path keeps the trees that later passes need within
+`-tree-budget`, and drops the trees of files that no later rule
+applies to. A file past the budget is parsed again for every later
+pass, and for every fixpoint iteration, so a small budget multiplies
+parse time: on the Go standard library, a 256 MiB budget parsed each
+spilled file about five more times. Two changes would cut that:
+- Write a released tree to disk in a compact encoding and decode it
+  for the next pass, in place of parsing it again in wazero.
+- Keep the trees of the files that a fixpoint group applies to ahead
+  of the others, since those passes repeat.
 
 ### Prefilter coverage
 **Effort:** S per rule.
@@ -416,6 +419,16 @@ gain on cold runs (a few percent), zero impact on warm runs.
 **Status:** Done. The streaming path calls `tsutil.DrainArenaPools()`
 every 100 completed files (and once at the end of the run). The
 in-memory path drains on exit.
+
+### Parallel facts index
+**Status:** Done. `pasta facts` used to parse one file at a time from
+the directory walk. `codefacts.Build` now parses files on a worker per
+core and merges each file's index in walk order, so definition IDs and
+output don't depend on scheduling. Call records hold no pointers
+(strings are interned, arguments share one slice), so the collector no
+longer scans millions of them. On the Go module cache (27,500 files,
+2.4 million calls) `facts report` went from 254 s to 60 s, and peak heap
+from 2.0 GB to 1.5 GB.
 
 ### Early termination per rule
 **Effort:** S.

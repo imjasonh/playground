@@ -2,6 +2,7 @@ package codefacts
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 
 	"github.com/imjasonh/playground/pasta/internal/tsutil"
@@ -27,8 +28,10 @@ func walkFile(ctx context.Context, path, langName string, src []byte, idx *Index
 	w := &fileWalk{
 		idx: idx, spec: spec, path: path, lang: langName, src: src, lm: lm,
 		dir: slashDir(path), isTest: isTest, isGen: isGen,
+		file:       uint32(len(idx.srcFiles)),
 		fileIdents: map[string]bool{},
 	}
+	idx.srcFiles = append(idx.srcFiles, srcFile{path: path, dir: filepath.ToSlash(filepath.Dir(path)), lang: langName})
 
 	if strings.Contains(string(src), "pasta:ignore") {
 		for i, ln := range strings.Split(string(src), "\n") {
@@ -64,6 +67,7 @@ type fileWalk struct {
 	src           []byte
 	lm            lineMap
 	dir           string
+	file          uint32 // index into idx.srcFiles
 	isTest, isGen bool
 	fileIdents    map[string]bool
 	fileImports   []unusedImport
@@ -297,7 +301,7 @@ func (w *fileWalk) recordCall(n tsutil.Node, callerID int) {
 	if name == "" {
 		return
 	}
-	var args, kinds []string
+	first := uint32(len(w.idx.args))
 	if cont := n.ChildByFieldName(spec.argsField); cont.IsValid() {
 		for _, c := range cont.NamedChildren() {
 			if c.Type() == "comment" {
@@ -306,17 +310,12 @@ func (w *fileWalk) recordCall(n tsutil.Node, callerID int) {
 			if spec.stopArgTypes[c.Type()] {
 				break
 			}
-			args = append(args, norm(c.Text()))
-			kinds = append(kinds, classifyArg(c))
+			w.idx.args = append(w.idx.args, callArg{value: w.idx.intern(norm(c.Text())), kind: classifyArg(c)})
 		}
 	}
-	form := "free"
-	if qualifier != "" {
-		form = "qualified"
-	}
-	w.idx.calls[name] = append(w.idx.calls[name], &Call{
-		Name: name, Qualifier: qualifier, Form: form, Args: args, Kinds: kinds,
-		Path: w.path, Line: w.line(n), Lang: w.lang, CallerID: callerID,
+	w.idx.calls[name] = append(w.idx.calls[name], call{
+		qualifier: w.idx.intern(qualifier), file: w.file, line: int32(w.line(n)),
+		callerID: int32(callerID), args: first, nargs: uint32(len(w.idx.args)) - first,
 	})
 	if callerID < 0 {
 		w.idx.toplevelCall[name] = true
@@ -626,7 +625,7 @@ func analyzeBody(body tsutil.Node) bodyFacts {
 				val = val.NamedChildren()[0]
 			}
 			if val.IsValid() {
-				returns = append(returns, retVal{norm(val.Text()), classifyArg(val) == "literal"})
+				returns = append(returns, retVal{norm(val.Text()), classifyArg(val) == argLiteral})
 			} else {
 				returns = append(returns, retVal{"", false})
 			}
