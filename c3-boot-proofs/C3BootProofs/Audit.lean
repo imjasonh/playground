@@ -163,6 +163,7 @@ import C3BootProofs.Proofs.ReadString
 import C3BootProofs.Proofs.KeySet
 import C3BootProofs.Proofs.CheckSigs
 import C3BootProofs.Proofs.ParseCur
+import C3BootProofs.Proofs.BsDecode
 
 /-!
 # Audit
@@ -8726,3 +8727,6 @@ end C3
 
 /-- info: 'C3.RV32.Cur.manifestParse_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.manifestParse_correct
+
+/-- info: 'C3.RV32.Cur.bootstateDecode_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bootstateDecode_correct
