@@ -1497,6 +1497,139 @@ theorem wf_odd1 (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L r
   · rw [a0_20, show F + BitVec.ofNat 32 0x34 + 4 = F + BitVec.ofNat 32 0x38 from add_ofNat_assoc F 0x34 4,
       memLoad32_store32_same]
 
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 8000000 in
+/-- The loop at 0x152 that writes `r` zero digits from index `k`; `a0` counts
+up from `-r`. -/
+theorem wf_zl (C : WfCtx M0 F wp cp wl cn L) : ∀ (r : Nat) {n : Machine} {M : Word → BitVec 8} {k : Nat} {D' : List Int},
+    1 ≤ r → St M WF n 0x152 (reg n) → WfR F wp wl L r0 n → WfMem M0 Ms F wp cp wl cn M j k D' →
+    reg n (21 : Fin 32) = BitVec.ofNat 32 k → reg n a0 = BitVec.ofNat 32 (2 ^ 32 - r) → k + r ≤ L →
+    ∃ n' M', Steps n n' ∧ St M' WF n' 0x164 (reg n') ∧ WfR F wp wl L r0 n' ∧
+      WfMem M0 Ms F wp cp wl cn M' j (k + r) (D' ++ List.replicate r 0) ∧
+      reg n' (21 : Fin 32) = BitVec.ofNat 32 (k + r) ∧
+      ∀ q, q ≠ a0 → q ≠ a2 → q ≠ (21 : Fin 32) → reg n' q = reg n q := by
+  intro r
+  induction r with
+  | zero => intro _ _ _ _ h; exact absurd h (by decide)
+  | succ r ih =>
+    intro n M k D' _ s R W h21 ha0 hkr
+    have hLw := C.hLw; have hL := C.hL
+    have hc : CodeIn M WF wnafFormCode := C.code W.agree C.cod (by decide) (by decide)
+    obtain ⟨n1, d1, u1⟩ := s.notTaken hc 0x156 wf_at_152 (by decide)
+      (by rw [R.s3, h21, wbr_beq (by omega) (by omega)]; exact decide_eq_false (by omega))
+    obtain ⟨n2, d2, u2⟩ := u1.alu hc wf_at_156 (off' := 0x15A) (by decide)
+    obtain ⟨n3, d3, u3⟩ := u2.self.aluImm hc wf_at_15a (off' := 0x15C) (by decide)
+    obtain ⟨n4, d4, u4⟩ := u3.self.sb hc wf_at_15c (off' := 0x160) (by decide)
+    have a2_3 : reg n3 a2 = wp + BitVec.ofNat 32 k := by
+      rw [u3.upd_ne u2.self.zero _ (by decide), u2.upd_eq (by decide), R.s9, h21]; rfl
+    rw [a2_3, add_lit_zero, u3.self.zero, show memStore8 M (wp + BitVec.ofNat 32 k) ((0 : Word).extractLsb' 0 8) =
+      wput M wp k 0 from rfl] at u4
+    have W' := (W.put C (by omega) 0).1
+    have hc4 : CodeIn (wput M wp k 0) WF wnafFormCode := C.code W'.agree C.cod (by decide) (by decide)
+    obtain ⟨n5, d5, u5⟩ := u4.aluImm hc4 wf_at_160 (off' := 0x162) (by decide)
+    have K5 : ∀ q, q ≠ a0 → q ≠ a2 → q ≠ (21 : Fin 32) → reg n5 q = reg n q := fun q h0 h2 h21 => by
+      rw [u5.upd_ne u3.self.zero q h0, u3.upd_ne u2.self.zero q h21, u2.upd_ne u1.zero q h2]
+    have R5 : WfR F wp wl L r0 n5 := R.keep fun q hq => K5 q (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+    have s5_5 : reg n5 (21 : Fin 32) = BitVec.ofNat 32 (k + 1) := by
+      rw [u5.upd_ne u3.self.zero _ (by decide), u3.upd_eq (by decide), u2.upd_ne u1.zero _ (by decide), h21,
+        wadd1]
+    have a0_5 : reg n5 a0 = BitVec.ofNat 32 (2 ^ 32 - r) := by
+      rw [u5.upd_eq (by decide), u3.upd_ne u2.self.zero _ (by decide), u2.upd_ne u1.zero _ (by decide), ha0,
+        wadd1]; congr 1; omega
+    rcases Nat.eq_zero_or_pos r with rfl | hr
+    · obtain ⟨n6, d6, u6⟩ := u5.self.notTaken hc4 0x164 wf_at_162 (by decide)
+        (by rw [a0_5, u5.self.zero]; decide)
+      refine ⟨n6, _, .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.single d6))))), u6.self, R5.jmp u6, W',
+        by rw [u6.regs, s5_5], fun q h0 h2 h21 => by rw [u6.regs, K5 q h0 h2 h21]⟩
+    · obtain ⟨n6, d6, u6⟩ := u5.self.taken hc4 0x152 wf_at_162 (by decide)
+        (by rw [a0_5, u5.self.zero, show (0 : Word) = BitVec.ofNat 32 0 from rfl, wbr_bne (by omega) (by decide)]
+            simp only [Bool.not_eq_true']; exact decide_eq_false (by omega))
+      obtain ⟨n7, M7, c7, s7, R7, W7, h7, K7⟩ := ih (n := n6) (k := k + 1) (D' := D' ++ [0]) hr u6.self (R5.jmp u6) W'
+        (by rw [u6.regs, s5_5]) (by rw [u6.regs, a0_5]) (by omega)
+      refine ⟨n7, M7, .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.cons d6 c7))))), s7, R7, ?_, ?_,
+        fun q h0 h2 h21 => by rw [K7 q h0 h2 h21, u6.regs, K5 q h0 h2 h21]⟩
+      · have e : D' ++ List.replicate (r + 1) 0 = D' ++ [0] ++ List.replicate r 0 := by simp [List.replicate_succ]
+        rw [show k + (r + 1) = k + 1 + r by omega, e]; exact W7
+      · rw [h7]; congr 1; omega
+
+theorem wsub {a b : Nat} (ha : a < 2 ^ 32) (hb : b ≤ a) :
+    aluEval .sub (BitVec.ofNat 32 a) (BitVec.ofNat 32 b) = BitVec.ofNat 32 (a - b) := by
+  show BitVec.ofNat 32 a - BitVec.ofNat 32 b = _
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_sub, BitVec.toNat_ofNat, BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega
+
+/-- `if rd < 5 skip; rd = 5`, at 0x12C and 0x13C. -/
+theorem wf_min5 {M : Word → BitVec 8} {n : Machine} {off : Nat} {rd : Fin 32} (s : St M WF n off (reg n))
+    (hc : CodeIn M WF wnafFormCode) {x : Nat} (hx : x < 2 ^ 32)
+    (hb : fetchRel wnafFormCode off = some (.branch .bltu rd a2 0x6, 4))
+    (hi : fetchRel wnafFormCode (off + 4) = some (.aluImm .add rd x0 0x5, 2))
+    (hrd : rd.val ≠ 0) (h1 : reg n rd = BitVec.ofNat 32 x) (h2 : reg n a2 = 5) :
+    ∃ n', Steps n n' ∧ St M WF n' (off + 6) (reg n') ∧ reg n' rd = BitVec.ofNat 32 (min 5 x) ∧
+      ∀ q, q ≠ rd → reg n' q = reg n q := by
+  by_cases h : x < 5
+  · obtain ⟨n1, d1, u1⟩ := s.taken hc (off + 6) hb
+      (by rw [show (0x6 : Word) = BitVec.ofNat 32 6 from rfl, BitVec.ofNat_add_ofNat])
+      (by rw [h1, h2, show (5 : Word) = BitVec.ofNat 32 5 from rfl, wbr_bltu hx (by decide)]; exact decide_eq_true h)
+    exact ⟨n1, .single d1, u1.self, by rw [u1.regs, h1, Nat.min_eq_right (by omega)], fun q _ => u1.regs q⟩
+  · obtain ⟨n1, d1, u1⟩ := s.notTaken hc (off + 4) hb
+      (by rw [show (4 : Word) = BitVec.ofNat 32 4 from rfl, BitVec.ofNat_add_ofNat])
+      (by rw [h1, h2, show (5 : Word) = BitVec.ofNat 32 5 from rfl, wbr_bltu hx (by decide)]; exact decide_eq_false h)
+    obtain ⟨n2, d2, u2⟩ := u1.aluImm hc hi (off' := off + 6)
+      (by rw [show (2 : Word) = BitVec.ofNat 32 2 from rfl, BitVec.ofNat_add_ofNat])
+    refine ⟨n2, .cons d1 (.single d2), u2.self, ?_, fun q hq => by rw [u2.upd_ne u1.zero q hq]⟩
+    rw [u2.upd_eq hrd, u1.zero, Nat.min_eq_left (by omega)]; rfl
+
+theorem wf_cnt : ∀ s : Fin 6, 1 ≤ s.val →
+    aluEval .and (aluEval .sub 1 (BitVec.ofNat 32 s.val)) (aluEval .add (if s.val < 2 then 1 else 0) 0xFFFFFFFF) =
+      if s.val < 2 then 0 else BitVec.ofNat 32 (2 ^ 32 - (s.val - 1)) := by decide
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 8000000 in
+/-- From 0x164 back to the loop head, `pos` moved to `k`. -/
+theorem wf_tail (C : WfCtx M0 F wp cp wl cn L) {n : Machine} {M : Word → BitVec 8} {k c' : Nat}
+    (s : St M WF n 0x164 (reg n)) (R : WfR F wp wl L r0 n) (W : WfMem M0 Ms F wp cp wl cn M j k D)
+    (h21 : reg n (21 : Fin 32) = BitVec.ofNat 32 k) (h23 : reg n (23 : Fin 32) = BitVec.ofNat 32 pos)
+    (ha1 : reg n a1 = BitVec.ofNat 32 (k - pos)) (h26 : reg n (26 : Fin 32) = BitVec.ofNat 32 c')
+    (hk : pos ≤ k) (hkL : k ≤ L) (hc' : c' ≤ 1) (hj : j ≤ k / 64 ∧ k / 64 ≤ j + 1)
+    (hspec : ∃ f, L - k + 1 ≤ f ∧ D ++ wnafGo (leN (memBytes M0 cp cn)) L f k c' = wnafSpec (memBytes M0 cp cn) L) :
+    ∃ n' M', Steps n n' ∧ WfSt M0 Ms F wp cp wl cn L r0 M' n' 0x5E k c' j D := by
+  have hLw := C.hLw; have hL := C.hL; have hFa := C.room.1
+  have hc : CodeIn M WF wnafFormCode := C.code W.agree C.cod (by decide) (by decide)
+  obtain ⟨n1, d1, u1⟩ := s.sw hc wf_at_164 (off' := 0x166) (by decide)
+    (by rw [R.hsp]; exact aligned_add hFa (k := 0xC) (by decide))
+  rw [R.hsp, s.zero, show (F + 0xC : Word) = F + BitVec.ofNat 32 0xC from rfl] at u1
+  have W1 := W.st32 C (by omega) (c := 0xC) (Or.inl (by decide)) 0
+  have hc1 := C.code W1.agree C.cod (by decide) (by decide)
+  obtain ⟨n2, d2, u2⟩ := u1.alu hc1 wf_at_166 (off' := 0x168) (by decide)
+  obtain ⟨n3, d3, u3⟩ := u2.self.jump hc1 wf_at_168 (off' := 0x56) (by decide) (by rw [u2.self.pc]; decide)
+  obtain ⟨n4, d4, u4⟩ := u3.self.alu hc1 wf_at_56 (off' := 0x58) (by decide)
+  obtain ⟨n5, d5, u5⟩ := u4.self.aluImm hc1 wf_at_58 (off' := 0x5A) (by decide)
+  obtain ⟨n6, d6, u6⟩ := u5.self.alu hc1 wf_at_5a (off' := 0x5E) (by decide)
+  have K6 : ∀ q, q ≠ (21 : Fin 32) → q ≠ (22 : Fin 32) → q ≠ (23 : Fin 32) → q ≠ (27 : Fin 32) →
+      reg n6 q = reg n q := fun q h21 h22 h23 h27 => by
+    rw [u6.upd_ne u5.self.zero q h27, u5.upd_ne u4.self.zero q h21, u4.upd_ne u3.self.zero q h22, u3.regs,
+      u2.upd_ne u1.zero q h23]
+  have R6 : WfR F wp wl L r0 n6 := R.keep fun q hq => K6 q (by revert hq; revert q; decide)
+    (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+  have s7_2 : reg n2 (23 : Fin 32) = BitVec.ofNat 32 k := by
+    rw [u2.upd_eq (by decide), h23, ha1]
+    show BitVec.ofNat 32 pos + BitVec.ofNat 32 (k - pos) = _; rw [BitVec.ofNat_add_ofNat]; congr 1; omega
+  have s5_3 : reg n3 (21 : Fin 32) = BitVec.ofNat 32 k := by
+    rw [u3.regs, u2.upd_ne u1.zero _ (by decide), h21]
+  refine ⟨n6, _, .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.single d6))))), ⟨u6.self, R6.hsp, R6.s2, R6.s3,
+    R6.s9, R6.s8, ?_, ?_, ?_, ?_, by rw [K6 _ (by decide) (by decide) (by decide) (by decide), h26], R6.gp, R6.tp,
+    hkL, hc', memLoad32_store32_same _ _ _, W1.idx, hj, W1.cur, W1.nxt, W1.rest, W1.len, W1.out, hspec, W1.agree,
+    W1.slots⟩⟩
+  · rw [u6.upd_ne u5.self.zero _ (by decide), u5.upd_eq (by decide), u4.upd_ne u3.self.zero _ (by decide), s5_3, wadd1]
+  · rw [u6.upd_ne u5.self.zero _ (by decide), u5.upd_ne u4.self.zero _ (by decide), u4.upd_eq (by decide), u3.self.zero,
+      s5_3]; exact BitVec.zero_add _
+  · rw [u6.upd_ne u5.self.zero _ (by decide), u5.upd_ne u4.self.zero _ (by decide),
+      u4.upd_ne u3.self.zero _ (by decide), u3.regs, s7_2]
+  · rw [u6.upd_eq (by decide), u5.upd_ne u4.self.zero _ (by decide), u4.upd_ne u3.self.zero _ (by decide), u3.regs,
+      u5.upd_ne u4.self.zero _ (by decide), u4.upd_ne u3.self.zero _ (by decide), u3.regs, s7_2,
+      u2.upd_ne u1.zero _ (by decide), R.s2, wsub (by omega) hkL]
+
 end Steps
 
 end C3.RV32
