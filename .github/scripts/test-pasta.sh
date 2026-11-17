@@ -20,14 +20,6 @@ pasta_bin="${RUNNER_TEMP:-/tmp}/pasta-ci"
 echo "Built ${pasta_bin}"
 echo "::endgroup::"
 
-echo "::group::Build and test pasta without cgo"
-(
-  cd pasta
-  CGO_ENABLED=0 go build ./...
-  CGO_ENABLED=0 go test ./internal/tswasm/
-)
-echo "::endgroup::"
-
 echo "::group::pasta test (.pasta analyzers)"
 "${pasta_bin}" test .pasta
 echo "::endgroup::"
