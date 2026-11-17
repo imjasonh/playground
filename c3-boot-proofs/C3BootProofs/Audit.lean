@@ -165,6 +165,7 @@ import C3BootProofs.Proofs.CheckSigs
 import C3BootProofs.Proofs.ParseCur
 import C3BootProofs.Proofs.BsDecode
 import C3BootProofs.Proofs.ImageTopCur
+import C3BootProofs.Proofs.BootWrite
 
 /-!
 # Audit
@@ -8734,3 +8735,6 @@ end C3
 
 /-- info: 'C3.RV32.Cur.imageParse_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.imageParse_correct
+
+/-- info: 'C3.RV32.Cur.bootWrite_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.bootWrite_correct
