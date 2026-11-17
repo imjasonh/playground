@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"sort"
@@ -144,7 +145,7 @@ func muxMiddleware(catalog registry.Catalog, pool *scaler.Pool, signer gossh.Sig
 				return
 			}
 
-			code, err := proxySSHSession(sess, addr, signer, target)
+			code, err := proxySSHSession(warmCtx, sess, addr, signer, target)
 			if err != nil {
 				slog.Error("proxy session", "app", target.App, "error", err)
 				_ = sess.Exit(1)
@@ -155,82 +156,75 @@ func muxMiddleware(catalog registry.Catalog, pool *scaler.Pool, signer gossh.Sig
 	}
 }
 
-func proxySSHSession(clientSess ssh.Session, addr string, signer gossh.Signer, target route.Target) (int, error) {
-	cfg := &gossh.ClientConfig{
-		User: clientSess.User(),
-		Auth: []gossh.AuthMethod{
-			gossh.PublicKeys(signer),
-		},
-		HostKeyCallback: gossh.InsecureIgnoreHostKey(), // backends are cluster-internal
-		Timeout:         10 * time.Second,
-	}
-	conn, err := gossh.Dial("tcp", addr, cfg)
-	if err != nil {
-		return 1, err
-	}
-	defer conn.Close()
+// backendAttempt bounds one try at a backend session, from the TCP dial
+// through the shell or exec request. x/crypto/ssh times out only the dial, so
+// a backend that accepts the connection and then stalls would otherwise hold
+// the client with no output and no error.
+var backendAttempt = 5 * time.Second
 
-	bs, err := conn.NewSession()
-	if err != nil {
-		return 1, err
-	}
-	defer bs.Close()
-
+// proxySSHSession retries the backend session setup until ctx ends. The
+// client's input isn't read until a backend session starts, so a retry loses
+// nothing.
+func proxySSHSession(ctx context.Context, clientSess ssh.Session, addr string, signer gossh.Signer, target route.Target) (int, error) {
 	pty, winCh, isPty := clientSess.Pty()
+	term := ""
 	if isPty {
-		term, width, height := sshpty.Normalize(pty.Term, pty.Window.Width, pty.Window.Height)
-		if err := bs.RequestPty(term, height, width, nil); err != nil {
+		term, _, _ = sshpty.Normalize(pty.Term, pty.Window.Width, pty.Window.Height)
+	}
+
+	var b *backendSession
+	for attempt := 1; ; attempt++ {
+		var err error
+		b, err = startBackendSession(ctx, clientSess.User(), addr, signer, target, pty, isPty)
+		if err == nil {
+			break
+		}
+		if ctx.Err() != nil {
 			return 1, err
 		}
+		slog.Warn("backend session setup failed; retrying",
+			"app", target.App, "addr", addr, "attempt", attempt, "error", err)
+		select {
+		case <-ctx.Done():
+			return 1, err
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+	defer b.conn.Close()
+	defer b.sess.Close()
+
+	if isPty {
 		go func() {
 			for win := range winCh {
 				_, w, h := sshpty.Normalize(term, win.Width, win.Height)
-				_ = bs.WindowChange(h, w)
+				_ = b.sess.WindowChange(h, w)
 			}
 		}()
 	}
 
-	stdout, err := bs.StdoutPipe()
-	if err != nil {
-		return 1, err
-	}
-	stderr, err := bs.StderrPipe()
-	if err != nil {
-		return 1, err
-	}
-	stdin, err := bs.StdinPipe()
-	if err != nil {
-		return 1, err
-	}
-
 	copyDone := make(chan struct{}, 2)
 	go func() {
-		_, _ = io.Copy(clientSess, stdout)
+		_, _ = io.Copy(clientSess, b.stdout)
 		copyDone <- struct{}{}
 	}()
 	go func() {
-		_, _ = io.Copy(clientSess.Stderr(), stderr)
+		_, _ = io.Copy(clientSess.Stderr(), b.stderr)
 		copyDone <- struct{}{}
 	}()
 	go func() {
-		_, _ = io.Copy(stdin, clientSess)
-		_ = stdin.Close()
+		_, _ = io.Copy(b.stdin, clientSess)
+		_ = b.stdin.Close()
 	}()
 	// Close the backend when the client leaves so long-lived apps Release.
 	go func() {
 		<-clientSess.Context().Done()
-		_ = bs.Close()
-		_ = conn.Close()
+		_ = b.sess.Close()
+		_ = b.conn.Close()
 	}()
 
-	if len(target.Args) > 0 {
-		err = bs.Run(strings.Join(target.Args, " "))
-	} else if err = bs.Shell(); err == nil {
-		// Shell returns once the backend accepts the request. Wait until
-		// that session exits so an interactive app stays up for the whole
-		// connection. Run waits on its own.
-		err = bs.Wait()
-	}
+	// Wait until the backend session exits so an interactive app stays up
+	// for the whole connection.
+	err := b.sess.Wait()
 	// Copy the last stdout and stderr bytes after the backend exits.
 	drain := time.NewTimer(shellDrain)
 	defer drain.Stop()
@@ -260,6 +254,81 @@ func proxySSHSession(clientSess ssh.Session, addr string, signer gossh.Signer, t
 
 // shellDrain bounds the stdout and stderr copy after the backend session ends.
 var shellDrain = 2 * time.Second
+
+// backendSession is a started shell or exec session on a backend.
+type backendSession struct {
+	conn   *gossh.Client
+	sess   *gossh.Session
+	stdout io.Reader
+	stderr io.Reader
+	stdin  io.WriteCloser
+}
+
+func startBackendSession(ctx context.Context, user, addr string, signer gossh.Signer, target route.Target, pty ssh.Pty, isPty bool) (*backendSession, error) {
+	ctx, cancel := context.WithTimeout(ctx, backendAttempt)
+	defer cancel()
+	var d net.Dialer
+	nc, err := d.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	deadline, _ := ctx.Deadline()
+	if err := nc.SetDeadline(deadline); err != nil {
+		_ = nc.Close()
+		return nil, err
+	}
+	cc, chans, reqs, err := gossh.NewClientConn(nc, addr, &gossh.ClientConfig{
+		User:            user,
+		Auth:            []gossh.AuthMethod{gossh.PublicKeys(signer)},
+		HostKeyCallback: gossh.InsecureIgnoreHostKey(), // backends are cluster-internal
+	})
+	if err != nil {
+		_ = nc.Close()
+		return nil, err
+	}
+	conn := gossh.NewClient(cc, chans, reqs)
+	b, err := openBackendSession(conn, target, pty, isPty)
+	if err == nil {
+		err = nc.SetDeadline(time.Time{})
+	}
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return b, nil
+}
+
+func openBackendSession(conn *gossh.Client, target route.Target, pty ssh.Pty, isPty bool) (*backendSession, error) {
+	sess, err := conn.NewSession()
+	if err != nil {
+		return nil, err
+	}
+	if isPty {
+		term, width, height := sshpty.Normalize(pty.Term, pty.Window.Width, pty.Window.Height)
+		if err := sess.RequestPty(term, height, width, nil); err != nil {
+			return nil, err
+		}
+	}
+	b := &backendSession{conn: conn, sess: sess}
+	if b.stdout, err = sess.StdoutPipe(); err != nil {
+		return nil, err
+	}
+	if b.stderr, err = sess.StderrPipe(); err != nil {
+		return nil, err
+	}
+	if b.stdin, err = sess.StdinPipe(); err != nil {
+		return nil, err
+	}
+	if len(target.Args) > 0 {
+		err = sess.Start(strings.Join(target.Args, " "))
+	} else {
+		err = sess.Shell()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
 
 func newEphemeralSigner() (gossh.Signer, error) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
