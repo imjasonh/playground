@@ -149,7 +149,7 @@ import C3BootProofs.Spec.Ecdsa
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
 import C3BootProofs.Image.BootloaderV0
-import C3BootProofs.Proofs.Ed25519VerifyP8
+import C3BootProofs.Proofs.Ed25519VerifyWitness
 
 /-!
 # Audit
@@ -8623,3 +8623,42 @@ end C3
 
 /-- info: 'C3.RV32.EvSt.isNeg' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.EvSt.isNeg
+
+/-- info: 'C3.RV32.ev_stageA' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ev_stageA
+
+/-- info: 'C3.RV32.ev_stageB' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ev_stageB
+
+/-- info: 'C3.RV32.ev_stageC' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ev_stageC
+
+/-- info: 'C3.RV32.ed25519Verify_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ed25519Verify_correct
+
+/-- info: 'C3.RV32.exists_ed25519Verify_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.exists_ed25519Verify_machine
+
+/-- info: 'C3.RV32.nafScalar_leL' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.nafScalar_leL
+
+/-- info: 'C3.RV32.evPackS_congr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.evPackS_congr
+
+/-- info: 'C3.RV32.leAcc_leL' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.leAcc_leL
+
+/-- info: 'C3.RV32.s29AddC_congr' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.s29AddC_congr
+
+/-- info: 'C3.RV32.lo9_of' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.lo9_of
+
+/-- info: 'C3.RV32.hi9_of' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.hi9_of
+
+/-- info: 'C3.RV32.memBytes_ext' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.memBytes_ext
+
+/-- info: 'C3.RV32.witnessRegionsEv_apart' does not depend on any axioms -/
+#guard_msgs in #print axioms C3.RV32.witnessRegionsEv_apart
