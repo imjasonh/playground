@@ -8680,3 +8680,6 @@ end C3
 
 /-- info: 'C3.RV32.fulcioIterNext_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.fulcioIterNext_correct
+
+/-- info: 'C3.RV32.fulcioEnumNext_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.fulcioEnumNext_correct

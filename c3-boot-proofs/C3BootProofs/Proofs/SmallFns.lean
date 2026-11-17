@@ -233,7 +233,262 @@ theorem fulcioIterNext_correct (m : Machine) {base retAddr it : Word} (hc : Code
       · simp [upd, hr, h0]; exact k7 r h0 h1 h2 h3
     · rw [mem10, ite_eq_right_of_eq_false _ _ (eq_false he)]
 
+/-- What `next` returns for the iterator at `it`. -/
+def fnRes (M : Word → BitVec 8) (it : Word) : Word :=
+  if memLoad32 M it = memLoad32 M (it + 4) then 0
+  else if memLoad32 M (memLoad32 M it) = 0 then 0 else memLoad32 M it
+
+/-- Memory after `next` for the iterator at `it`. -/
+def fnMem (M : Word → BitVec 8) (it : Word) : Word → BitVec 8 :=
+  if memLoad32 M it = memLoad32 M (it + 4) then M else memStore32 M it (memLoad32 M it + 0x20)
+
+theorem fe_at_0 : fetchRel fulcioEnumNextCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFF0, 2) := by decide
+theorem fe_at_2 : fetchRel fulcioEnumNextCode 0x2 = some (.store .sw sp ra 0xC, 2) := by decide
+theorem fe_at_4 : fetchRel fulcioEnumNextCode 0x4 = some (.store .sw sp (8 : Fin 32) 0x8, 2) := by decide
+theorem fe_at_6 : fetchRel fulcioEnumNextCode 0x6 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
+theorem fe_at_8 : fetchRel fulcioEnumNextCode 0x8 = some (.auipc ra 0x0, 4) := by decide
+theorem fe_at_c : fetchRel fulcioEnumNextCode 0xC = some (.jalr ra ra 0x1C0, 4) := by decide
+theorem fe_at_10 : fetchRel fulcioEnumNextCode 0x10 = some (.alu .add a1 x0 a0, 2) := by decide
+theorem fe_at_12 : fetchRel fulcioEnumNextCode 0x12 = some (.branch .beq a0 x0 0xC, 2) := by decide
+theorem fe_at_14 : fetchRel fulcioEnumNextCode 0x14 = some (.load .lw a0 (8 : Fin 32) 0x8, 2) := by decide
+theorem fe_at_16 : fetchRel fulcioEnumNextCode 0x16 = some (.aluImm .add a2 a0 0x1, 4) := by decide
+theorem fe_at_1a : fetchRel fulcioEnumNextCode 0x1A = some (.store .sw (8 : Fin 32) a2 0x8, 2) := by decide
+theorem fe_at_1c : fetchRel fulcioEnumNextCode 0x1C = some (.jal x0 0x2, 2) := by decide
+theorem fe_at_1e : fetchRel fulcioEnumNextCode 0x1E = some (.load .lw ra sp 0xC, 2) := by decide
+theorem fe_at_20 : fetchRel fulcioEnumNextCode 0x20 = some (.load .lw (8 : Fin 32) sp 0x8, 2) := by decide
+theorem fe_at_22 : fetchRel fulcioEnumNextCode 0x22 = some (.aluImm .add sp sp 0x10, 2) := by decide
+theorem fe_at_24 : fetchRel fulcioEnumNextCode 0x24 = some (.jalr x0 ra 0x0, 2) := by decide
+
+theorem fnRes_congr {M M' : Word → BitVec 8} {it : Word}
+    (h0 : memLoad32 M' it = memLoad32 M it) (h4 : memLoad32 M' (it + 4) = memLoad32 M (it + 4))
+    (hp : memLoad32 M' (memLoad32 M it) = memLoad32 M (memLoad32 M it)) : fnRes M' it = fnRes M it := by
+  unfold fnRes; rw [h0, h4, hp]
+
+set_option maxRecDepth 20000 in
+/-- **`next` of `Enumerate` over that iterator, as compiled**: for the
+`Enumerate` at `it`, the iterator in its first 8 bytes and the count at
+`it + 8`, with `next` where the image puts it, it returns the iterator's next
+item in `a1` and in `a0` the count before it, and counts the item. When the
+iterator yields nothing it returns 0 in both and leaves the count alone. -/
+theorem fulcioEnumNext_correct (m : Machine) {base retAddr it : Word} (hc : CodeIn m.mem base fulcioEnumNextCode)
+    (hn : CodeIn m.mem (base + 0x1C8) fulcioIterNextCode) (hbase : base.toNat % 2 = 0) (hpc : m.pc = base)
+    (ha0 : reg m a0 = it) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
+    (hsp : (reg m sp).toNat % 4 = 0) (hit : it.toNat % 4 = 0) (hptr : (memLoad32 m.mem it).toNat % 4 = 0)
+    (hS : Sep (reg m sp + 0xFFFFFFF0) 16 base fulcioEnumNextCode.length)
+    (hSn : Sep (reg m sp + 0xFFFFFFF0) 16 (base + 0x1C8) fulcioIterNextCode.length)
+    (hI : Sep it 12 (reg m sp + 0xFFFFFFF0) 16) (hIc : Sep it 12 base fulcioEnumNextCode.length)
+    (hIn : Sep it 12 (base + 0x1C8) fulcioIterNextCode.length)
+    (hP : Sep (memLoad32 m.mem it) 4 (reg m sp + 0xFFFFFFF0) 16) :
+    ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = reg m sp ∧ reg m' a1 = fnRes m.mem it ∧
+      reg m' a0 = (if fnRes m.mem it = 0 then 0 else memLoad32 m.mem (it + 8)) ∧
+      (∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → reg m' r = reg m r) ∧
+      ∀ x, Sep (reg m sp + 0xFFFFFFF0) 16 x 1 → m'.mem x = (if fnRes m.mem it = 0 then fnMem m.mem it
+        else memStore32 (fnMem m.mem it) (it + 8) (memLoad32 m.mem (it + 8) + 1)) x := by
+  obtain ⟨G, hG⟩ : ∃ G, reg m sp + 0xFFFFFFF0 = G := ⟨_, rfl⟩
+  rw [hG] at hS hSn hI hP ⊢
+  have hGa : G.toNat % 4 = 0 := hG ▸ aligned_add hsp (k := 0xFFFFFFF0) (by decide)
+  have hspG : G + 0x10 = reg m sp := by rw [← hG, BitVec.add_assoc]; exact BitVec.add_zero _
+  have s0 : St m.mem base m 0 (reg m) := ⟨by rw [hpc]; simp, rfl, fun _ => rfl⟩
+  have hz := s0.zero
+  -- the frame
+  obtain ⟨m1, e1, t1⟩ := s0.aluImm hc fe_at_0 (off' := 2) (by decide)
+  rw [show aluEval .add (reg m sp) 0xFFFFFFF0 = G from hG] at t1
+  have u1sp : upd (reg m) sp G sp = G := by simp +decide [upd]
+  obtain ⟨m2, e2, t2⟩ := t1.sw hc fe_at_2 (off' := 4) (by decide)
+    (by rw [u1sp]; exact aligned_add hGa (k := 0xC) (by decide))
+  rw [u1sp, show upd (reg m) sp G ra = reg m ra by simp +decide [upd]] at t2
+  have hc2 := hc.store32 (v := reg m ra) (hS.sub (c := 0xC) (l := 4) (by decide))
+  obtain ⟨m3, e3, t3⟩ := t2.sw hc2 fe_at_4 (off' := 6) (by decide)
+    (by rw [u1sp]; exact aligned_add hGa (k := 8) (by decide))
+  rw [u1sp, show upd (reg m) sp G 8 = reg m 8 by simp +decide [upd]] at t3
+  obtain ⟨M2, hM2⟩ : ∃ M2, memStore32 (memStore32 m.mem (G + 0xC) (reg m ra)) (G + 8) (reg m 8) = M2 := ⟨_, rfl⟩
+  rw [hM2] at t3
+  have M2out : ∀ x, Sep G 16 x 1 → M2 x = m.mem x := fun x hx => by
+    rw [← hM2]
+    exact (memStore32_get_sep (hx.sub (c := 8) (l := 4) (by decide))).trans
+      (memStore32_get_sep (hx.sub (c := 0xC) (l := 4) (by decide)))
+  have codeOut : ∀ {b : Word} {code : List Nat}, Sep G 16 b code.length → CodeIn m.mem b code → CodeIn M2 b code :=
+    fun h hc' i hi => by rw [M2out _ (h.subR (c := i) (l := 1) (by omega))]; exact hc' i hi
+  have hc3 := codeOut hS hc
+  have hn3 := codeOut hSn hn
+  have ldOut : ∀ (a : Word), (∀ j, j < 4 → Sep G 16 (a + BitVec.ofNat 32 j) 1) → memLoad32 M2 a = memLoad32 m.mem a :=
+    fun a h => memLoad32_congr fun j hj => M2out _ (h j hj)
+  have l0 : memLoad32 M2 it = memLoad32 m.mem it := ldOut it fun j hj => (hI.sub (c := j) (l := 1) (by omega)).symm
+  have l4 : memLoad32 M2 (it + 4) = memLoad32 m.mem (it + 4) := ldOut _ fun j hj => by
+    rw [show it + 4 = it + BitVec.ofNat 32 4 from rfl, add_ofNat_assoc]
+    exact (hI.sub (c := 4 + j) (l := 1) (by omega)).symm
+  have l8 : memLoad32 M2 (it + 8) = memLoad32 m.mem (it + 8) := ldOut _ fun j hj => by
+    rw [show it + 8 = it + BitVec.ofNat 32 8 from rfl, add_ofNat_assoc]
+    exact (hI.sub (c := 8 + j) (l := 1) (by omega)).symm
+  have lp : memLoad32 M2 (memLoad32 m.mem it) = memLoad32 m.mem (memLoad32 m.mem it) :=
+    ldOut _ fun j hj => (hP.sub (c := j) (l := 1) (by omega)).symm
+  have eR : fnRes M2 it = fnRes m.mem it := fnRes_congr l0 l4 lp
+  -- the call to `next`
+  obtain ⟨m4, e4, t4⟩ := t3.alu hc3 fe_at_6 (off' := 8) (by decide)
+  obtain ⟨m5, c5, pc5, mem5, regs5⟩ := t4.callRa (cb := base + 0x1C8) hc3 fe_at_8 fe_at_c
+    (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hbase 0x1C8 (by decide))
+  obtain ⟨m6, c6, pc6, a06, k6, mem6⟩ := fulcioIterNext_correct m5 (it := it) (retAddr := base + BitVec.ofNat 32 0x10)
+    (by rw [mem5]; exact hn3) pc5 (by rw [regs5]; simp +decide [upd, ha0, hz])
+    (by rw [regs5]; simp +decide [upd]) (even_clear _ (even_at base hbase 0x10 (by decide))) hit
+    (by rw [mem5, l0]; exact hptr) (hIn.sub (c := 0) (l := 4) (by omega) |> fun h => by rwa [add_ofNat_zero] at h)
+  rw [mem5] at a06 mem6
+  have r6 : ∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ ra → r ≠ 8 → r ≠ sp → reg m6 r = reg m r :=
+    fun r h0 h1 h2 h3 h4 h5 h6 => by
+      rw [k6 r h0 h1 h2 h3, regs5]
+      by_cases hr : r.val = 0
+      · have : r = 0 := Fin.ext hr
+        subst this; simp [upd, hz]
+      · simp [upd, hr, h4, h5, h6]
+  have r6s0 : reg m6 8 = it := by
+    rw [k6 8 (by decide) (by decide) (by decide) (by decide), regs5]; simp +decide only [upd, ite_true, ite_false]
+    rw [ha0]; exact BitVec.zero_add _
+  have r6sp : reg m6 sp = G := by
+    rw [k6 sp (by decide) (by decide) (by decide) (by decide), regs5]; simp +decide [upd]
+  have r6ra : reg m6 ra = base + BitVec.ofNat 32 0x10 := by
+    rw [k6 ra (by decide) (by decide) (by decide) (by decide), regs5]; simp +decide [upd]
+  -- after the call
+  have fm : ∀ x, Sep it 4 x 1 → fnMem M2 it x = M2 x := fun x hx => by
+    unfold fnMem
+    by_cases h : memLoad32 M2 it = memLoad32 M2 (it + 4)
+    · simp only [h, ↓reduceIte]
+    · simp only [h, ↓reduceIte]; exact memStore32_get_sep hx
+  have i4 : ∀ (b : Word) (n : Nat), Sep it 12 b n → Sep it 4 b n := fun b n h => by
+    have := h.sub (c := 0) (l := 4) (by omega); rwa [add_ofNat_zero] at this
+  have hc6 : CodeIn (fnMem M2 it) base fulcioEnumNextCode := fun i hi => by
+    rw [fm _ ((i4 _ _ hIc).subR (c := i) (l := 1) (by omega))]; exact hc3 i hi
+  have t6 : St (fnMem M2 it) base m6 0x10 (reg m6) := ⟨by rw [pc6], mem6, fun _ => rfl⟩
+  have v6 : reg m6 a0 = fnRes m.mem it := a06.trans eR
+  obtain ⟨m7, e7, t7⟩ := t6.alu hc6 fe_at_10 (off' := 0x12) (by decide)
+  have r7a1 : reg m7 a1 = fnRes m.mem it := by
+    rw [t7.regs]; simp +decide only [upd, ite_true, ite_false]; rw [v6]; exact BitVec.zero_add _
+  have r7 : ∀ r, r ≠ a1 → reg m7 r = reg m6 r := fun r h => by rw [t7.regs]; exact updz t6.zero h
+  -- loads from the frame after the call
+  have so : Sep (G + 8) 4 (G + 0xC) 4 := sep_offsets G (c := 8) (n := 4) (d := 0xC) (k := 4) (by omega) (by omega) (by omega)
+  have slotRa : ∀ Mx : Word → BitVec 8,
+      (∀ j, j < 4 → Mx (G + 0xC + BitVec.ofNat 32 j) = M2 (G + 0xC + BitVec.ofNat 32 j)) →
+      memLoad32 Mx (G + 0xC) = reg m ra := fun Mx h => by
+    rw [memLoad32_congr h, ← hM2, memLoad32_store32_sep so, memLoad32_store32_same]
+  have slotS0 : ∀ Mx : Word → BitVec 8,
+      (∀ j, j < 4 → Mx (G + 8 + BitVec.ofNat 32 j) = M2 (G + 8 + BitVec.ofNat 32 j)) →
+      memLoad32 Mx (G + 8) = reg m 8 := fun Mx h => by
+    rw [memLoad32_congr h, ← hM2, memLoad32_store32_same]
+  have frIt : ∀ c j, c + j < 16 → Sep it 4 (G + BitVec.ofNat 32 c + BitVec.ofNat 32 j) 1 := fun c j h => by
+    rw [add_ofNat_assoc]; exact (i4 _ _ hI).subR (c := c + j) (l := 1) (by omega)
+  -- the epilogue
+  have epi : ∀ (Mx : Word → BitVec 8) (n : Machine), St Mx base n 0x1E (reg n) → reg n sp = G →
+      CodeIn Mx base fulcioEnumNextCode → memLoad32 Mx (G + 0xC) = reg m ra → memLoad32 Mx (G + 8) = reg m 8 →
+      ∃ n', Steps n n' ∧ n'.pc = retAddr ∧ n'.mem = Mx ∧ reg n' sp = reg m sp ∧ reg n' ra = reg m ra ∧
+        reg n' 8 = reg m 8 ∧ ∀ r, r ≠ sp → r ≠ ra → r ≠ 8 → reg n' r = reg n r := by
+    intro Mx n t hf hcx h1 h2
+    obtain ⟨n1, d1, u1⟩ := t.lw hcx fe_at_1e (off' := 0x20) (by decide) (by rw [hf]; exact aligned_add hGa (k := 0xC) (by decide))
+    rw [hf, h1] at u1
+    obtain ⟨n2, d2, u2⟩ := u1.self.lw hcx fe_at_20 (off' := 0x22) (by decide)
+      (by rw [u1.regs, updz t.zero (by decide), hf]; exact aligned_add hGa (k := 8) (by decide))
+    rw [u1.regs, updz t.zero (by decide), hf, h2] at u2
+    obtain ⟨n3, d3, u3⟩ := u2.self.aluImm hcx fe_at_22 (off' := 0x24) (by decide)
+    obtain ⟨n4, d4, pc4, mem4, regs4⟩ := u3.self.jalr hcx fe_at_24
+    have q2ra : reg n2 ra = reg m ra := by rw [u2.regs, updz u1.self.zero (by decide), u1.regs]; simp +decide [upd]
+    have q2sp : reg n2 sp = G := by rw [u2.regs, updz u1.self.zero (by decide), u1.regs, updz t.zero (by decide), hf]
+    refine ⟨n4, .cons d1 (.cons d2 (.cons d3 (.single d4))), ?_, mem4, ?_, ?_, ?_, fun r h1 h2 h3 => ?_⟩
+    · rw [pc4, add_lit_zero, u3.regs, updz u2.self.zero (by decide), q2ra, hra, hret]
+    · rw [regs4, u3.regs]; simp +decide only [upd, ite_true]
+      rw [q2sp]; exact hspG
+    · rw [regs4, u3.regs, updz u2.self.zero (by decide), q2ra]
+    · rw [regs4, u3.regs, updz u2.self.zero (by decide), u2.regs]; simp +decide [upd]
+    · rw [regs4, u3.regs, updz u2.self.zero h1, u2.regs, updz u1.self.zero h3, u1.regs, updz t.zero h2]
+  have fmOut : ∀ x, Sep G 16 x 1 → fnMem M2 it x = fnMem m.mem it x := fun x hx => by
+    unfold fnMem
+    rw [l0, l4]
+    by_cases h : memLoad32 m.mem it = memLoad32 m.mem (it + 4)
+    · simp only [h, ↓reduceIte]; exact M2out x hx
+    · simp only [h, ↓reduceIte]; exact memStore32_congr (M2out x hx)
+  have keep : ∀ (n : Machine), (∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ sp → r ≠ ra → r ≠ 8 → reg n r = reg m7 r) →
+      ∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ sp → r ≠ ra → r ≠ 8 → reg n r = reg m r :=
+    fun n h r h0 h1 h2 h3 h4 h5 h6 => by rw [h r h0 h1 h2 h4 h5 h6, r7 r h1, r6 r h0 h1 h2 h3 h5 h6 h4]
+  have i8 : ∀ (b : Word) (n : Nat), Sep it 12 b n → Sep (it + 8) 4 b n := fun b n h => h.sub (c := 8) (l := 4) (by omega)
+  by_cases hr0 : fnRes m.mem it = 0
+  · -- the iterator yields nothing
+    obtain ⟨n8, d8, u8⟩ := t7.self.taken hc6 0x1E fe_at_12 (by decide)
+      (by rw [r7 a0 (by decide), v6, hr0, t7.self.zero]; exact bt_beq_self _)
+    obtain ⟨n9, c9, pc9, mem9, sp9, ra9, s09, k9⟩ := epi (fnMem M2 it) n8 ⟨u8.pc, u8.mem, fun _ => rfl⟩
+      (by rw [u8.regs, r7 sp (by decide), r6sp]) hc6 (slotRa _ fun j hj => fm _ (frIt 0xC j (by omega)))
+      (slotS0 _ fun j hj => fm _ (frIt 8 j (by omega)))
+    refine ⟨n9, .cons e1 (.cons e2 (.cons e3 (.cons e4 (c5.trans (c6.trans (.cons e7 (.cons d8 c9))))))), pc9, sp9,
+      ?_, ?_, fun r h0 h1 h2 h3 => ?_, fun x hx => ?_⟩
+    · rw [k9 a1 (by decide) (by decide) (by decide), u8.regs, r7a1]
+    · rw [k9 a0 (by decide) (by decide) (by decide), u8.regs, r7 a0 (by decide), v6, hr0]; rfl
+    · by_cases e1' : r = sp
+      · subst e1'; exact sp9
+      by_cases e2' : r = ra
+      · subst e2'; exact ra9
+      by_cases e3' : r = 8
+      · subst e3'; exact s09
+      rw [k9 r e1' e2' e3']
+      exact keep n8 (fun r _ _ _ _ _ _ => u8.regs r) r h0 h1 h2 h3 e1' e2' e3'
+    · rw [mem9, fmOut x hx, hr0]; rfl
+  · -- the iterator yields an item
+    obtain ⟨n8, d8, u8⟩ := t7.self.notTaken hc6 0x14 fe_at_12 (by decide)
+      (by rw [r7 a0 (by decide), v6, t7.self.zero]; exact beq_eq_false_iff_ne.mpr hr0)
+    have q8s0 : reg m7 8 = it := by rw [r7 8 (by decide), r6s0]
+    obtain ⟨n9, d9, u9⟩ := u8.lw hc6 fe_at_14 (off' := 0x16) (by decide)
+      (by rw [q8s0]; exact aligned_add hit (k := 8) (by decide))
+    have l8' : memLoad32 (fnMem M2 it) (it + 8) = memLoad32 m.mem (it + 8) := by
+      rw [← l8]
+      exact memLoad32_congr fun j hj => fm _ (by
+        rw [show it + 8 = it + BitVec.ofNat 32 8 from rfl, add_ofNat_assoc]
+        exact sep_offsets it (c := 0) (n := 4) (d := 8 + j) (k := 1) (by omega) (by omega) (by omega) |>
+          fun h => by rwa [add_ofNat_zero] at h)
+    rw [q8s0, l8'] at u9
+    obtain ⟨n10, d10, u10⟩ := u9.aluImm hc6 fe_at_16 (off' := 0x1A) (by decide)
+    obtain ⟨n11, d11, u11⟩ := u10.sw hc6 fe_at_1a (off' := 0x1C) (by decide)
+      (by simp +decide only [upd]; rw [q8s0]; exact aligned_add hit (k := 8) (by decide))
+    have hc11 := hc6.store32 (a := it + 8) (v := memLoad32 m.mem (it + 8) + 1) (i8 _ _ hIc)
+    rw [show upd (upd (reg m7) a0 (memLoad32 m.mem (it + 8))) a2 (aluEval .add
+        (upd (reg m7) a0 (memLoad32 m.mem (it + 8)) a0) 1) 8 + 8 = it + 8 by simp +decide [upd, q8s0],
+      show upd (upd (reg m7) a0 (memLoad32 m.mem (it + 8))) a2 (aluEval .add
+        (upd (reg m7) a0 (memLoad32 m.mem (it + 8)) a0) 1) a2 = memLoad32 m.mem (it + 8) + 1 by
+          simp +decide [upd]; rfl] at u11
+    obtain ⟨n12, d12, u12⟩ := u11.jump hc11 fe_at_1c (off' := 0x1E) (by decide)
+      (by rw [u11.pc, BitVec.add_assoc]; exact even_bit0 (even_at base hbase 0x1E (by decide)))
+    have fo8 : ∀ c j, c + j < 16 → memStore32 (fnMem M2 it) (it + 8) (memLoad32 m.mem (it + 8) + 1)
+        (G + BitVec.ofNat 32 c + BitVec.ofNat 32 j) = M2 (G + BitVec.ofNat 32 c + BitVec.ofNat 32 j) :=
+      fun c j h => by
+        rw [memStore32_get_sep (by rw [add_ofNat_assoc]; exact (i8 _ _ hI).subR (c := c + j) (l := 1) (by omega)),
+          fm _ (frIt c j h)]
+    obtain ⟨n13, c13, pc13, mem13, sp13, ra13, s013, k13⟩ := epi _ n12 u12.self
+      (by rw [u12.regs]; simp +decide [upd]; rw [r7 sp (by decide), r6sp]) hc11
+      (slotRa _ fun j hj => fo8 0xC j (by omega)) (slotS0 _ fun j hj => fo8 8 j (by omega))
+    refine ⟨n13, .cons e1 (.cons e2 (.cons e3 (.cons e4 (c5.trans (c6.trans (.cons e7 (.cons d8 (.cons d9
+      (.cons d10 (.cons d11 (.cons d12 c13))))))))))), pc13, sp13, ?_, ?_, fun r h0 h1 h2 h3 => ?_, fun x hx => ?_⟩
+    · rw [k13 a1 (by decide) (by decide) (by decide), u12.regs]; simp +decide [upd]; exact r7a1
+    · rw [k13 a0 (by decide) (by decide) (by decide), u12.regs, if_neg hr0]; simp +decide [upd]
+    · by_cases e1' : r = sp
+      · subst e1'; exact sp13
+      by_cases e2' : r = ra
+      · subst e2'; exact ra13
+      by_cases e3' : r = 8
+      · subst e3'; exact s013
+      rw [k13 r e1' e2' e3']
+      refine keep n12 (fun r h0 _ h2 _ _ _ => ?_) r h0 h1 h2 h3 e1' e2' e3'
+      rw [u12.regs]; simp [upd, h0, h2]
+      by_cases hr : r = 0
+      · subst hr; rw [if_pos rfl]; exact t7.self.zero.symm
+      · simp only [hr, ↓reduceIte]
+    · rw [mem13, if_neg hr0]; exact memStore32_congr (fmOut x hx)
+
 end C3.RV32
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
