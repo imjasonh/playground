@@ -377,8 +377,8 @@ mostly wait for a cluster and its Pods. Their
 clusters, registries, and ports have different names, so they can share the
 runner. The Rust apps share one target directory (`CARGO_TARGET_DIR`), so
 apps that depend on the same crates compile them once and the job holds one
-copy of the artifacts. The job restores four caches (Go's build cache, npm's package cache, the
-`worker-build` binary, and the Rust dependency artifacts) from the newest
+copy of the artifacts. The job restores five caches (Go's build cache, npm's package cache, the
+`worker-build` binary, the Rust dependency artifacts, and pasta's cache) from the newest
 entry that a push to `main` saved, matching by prefix so that a new lockfile
 doesn't miss. A pull request that does not run an ecosystem's tests does not
 restore that ecosystem's cache. Only pushes to `main` save one, after the
@@ -424,8 +424,13 @@ size budget, measured on disk:
   artifacts only: `prune-cargo-cache.sh` removes the app crates, incremental
   files, and any dependency the current `Cargo.lock` files no longer name,
   and the registry sources go with the artifacts so build scripts stay
-  fresh. It doesn't cache Go's module cache (3 GB that `go build` downloads
-  in seconds) or npm's `_npx` directory.
+  fresh. pasta's cache (256 MiB) holds its per-file results, parse trees,
+  and compiled grammars; a lint of this repository runs at 5.8 MB/s with
+  an empty cache and 12.0 MB/s with a warm one on 8 cores.
+  `trim-pasta-cache.sh` keeps only the entries the run read or wrote, and
+  the key names a hash of pasta's sources, because pasta doesn't key its
+  results by its own code. It doesn't cache Go's module cache (3 GB that
+  `go build` downloads in seconds) or npm's `_npx` directory.
 
 The workflow needs `actions: write` to delete entries. A new cache in
 any workflow uses the same pieces. Run
