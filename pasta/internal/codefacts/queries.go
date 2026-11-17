@@ -158,7 +158,7 @@ func Coverage(idx *Index) map[string]any {
 	callsByLang := map[string]int{}
 	for _, calls := range idx.calls {
 		for _, c := range calls {
-			callsByLang[c.Lang]++
+			callsByLang[idx.callFile(c).lang]++
 		}
 	}
 	langs := sortedKeys(idx.langs)
@@ -213,12 +213,10 @@ func ArgumentValues(idx *Index, name string, index int) map[string]any {
 	dist := map[string]int{}
 	kinds := map[string]string{}
 	for _, c := range calls {
-		if len(c.Args) > index {
-			v := c.Args[index]
+		if args := idx.callArgs(c); len(args) > index {
+			v := idx.str(args[index].value)
 			dist[v]++
-			if index < len(c.Kinds) {
-				kinds[v] = c.Kinds[index]
-			}
+			kinds[v] = args[index].kind.String()
 		}
 	}
 	type kv struct {
@@ -257,7 +255,8 @@ func CallSites(idx *Index, name string, limit int) []map[string]any {
 	out := make([]map[string]any, 0, len(calls))
 	for _, c := range calls {
 		out = append(out, map[string]any{
-			"path": c.Path, "line": c.Line, "qualifier": c.Qualifier, "form": c.Form, "args": c.Args,
+			"path": idx.callFile(c).path, "line": int(c.line), "qualifier": idx.str(c.qualifier),
+			"form": c.form(), "args": idx.argValues(c),
 		})
 	}
 	return out
@@ -268,8 +267,8 @@ func SymbolInfo(idx *Index, name string) map[string]any {
 	calls := idx.calls[name]
 	quals := map[string]bool{}
 	for _, c := range calls {
-		if c.Qualifier != "" {
-			quals[c.Qualifier] = true
+		if c.qualifier != 0 {
+			quals[idx.str(c.qualifier)] = true
 		}
 	}
 	qs := sortedKeys(quals)

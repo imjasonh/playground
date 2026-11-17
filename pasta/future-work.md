@@ -409,6 +409,16 @@ gain on cold runs (a few percent), zero impact on warm runs.
 every 100 completed files (and once at the end of the run). The
 in-memory path drains on exit.
 
+### Parallel facts index
+**Status:** Done. `pasta facts` used to parse one file at a time from
+the directory walk. `codefacts.Build` now parses files on a worker per
+core and merges each file's index in walk order, so definition IDs and
+output don't depend on scheduling. Call records hold no pointers
+(strings are interned, arguments share one slice), so the collector no
+longer scans millions of them. On the Go module cache (27,500 files,
+2.4 million calls) `facts report` went from 254 s to 60 s, and peak heap
+from 2.0 GB to 1.5 GB.
+
 ### Early termination per rule
 **Effort:** S.
 For rules that only `Diagnose` (no `Emit`, no `Rewrite`), once a
