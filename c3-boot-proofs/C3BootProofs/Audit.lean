@@ -152,6 +152,7 @@ import C3BootProofs.Image.BootloaderV0
 import C3BootProofs.Proofs.Ed25519VerifyWitness
 import C3BootProofs.Proofs.MagicCur
 import C3BootProofs.Proofs.PartCur
+import C3BootProofs.Proofs.SmallFns
 
 /-!
 # Audit
@@ -8673,3 +8674,9 @@ end C3
 
 /-- info: 'C3.RV32.Cur.manifestPart_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.manifestPart_correct
+
+/-- info: 'C3.RV32.eqArr97_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.eqArr97_correct
+
+/-- info: 'C3.RV32.fulcioIterNext_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.fulcioIterNext_correct
