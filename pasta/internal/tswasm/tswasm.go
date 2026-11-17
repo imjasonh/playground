@@ -1,6 +1,8 @@
-// Package tswasm is pasta's pure-Go tree-sitter backend: the official
-// tree-sitter C runtime + grammars, compiled to one wasm32-wasi module
-// (ts-core.wasm via build.sh) and driven through wazero — no cgo.
+// Package tswasm parses with the official tree-sitter C runtime and
+// pasta's grammars. Every build embeds them as one wasm32-wasi module
+// (ts-core.wasm.br, from build.sh) that runs on wazero. cgo builds without
+// the purego tag also link most grammars natively (native_cgo.go) and use
+// wasm for the rest.
 //
 // Prior art: dvcdsys/code-index PR #81 (server/internal/chunker/tswasm).
 // Parse dumps the whole tree inside the guest via ts_dump_tree; the host
@@ -248,7 +250,6 @@ type engine struct {
 	malloc, free                         api.Function
 	parserNew, parserDelete, parserReset api.Function
 	setLang, parse, treeDelete           api.Function
-	setTimeout                           api.Function
 	dumpTree                             api.Function
 	langSymCount, langSymName            api.Function
 	langFieldCount, langFieldName        api.Function
@@ -256,20 +257,13 @@ type engine struct {
 	langPtr map[string]uint32
 }
 
-var (
-	symNameMu      sync.Mutex
-	symNameCache   = map[string]map[uint32]string{}
-	fieldNameMu    sync.Mutex
-	fieldNameCache = map[string]map[uint32]string{}
-)
-
 func newEngine() (*engine, error) {
 	rtOnce.Do(initRuntime)
 	if rtErr != nil {
 		return nil, rtErr
 	}
 	name := fmt.Sprintf("ts-%d", instN.Add(1))
-	// tree-sitter's parse timeout reads the monotonic clock. wazero's
+	// pasta_parse's timeout reads the monotonic clock. wazero's
 	// default clock advances 1ms per reading, which would turn the timeout
 	// into a cap on how often the parser checks the clock.
 	mod, err := rt.wz.InstantiateModule(rt.ctx, rt.cm,
@@ -285,9 +279,8 @@ func newEngine() (*engine, error) {
 		parserDelete:   mod.ExportedFunction("ts_parser_delete"),
 		parserReset:    mod.ExportedFunction("ts_parser_reset"),
 		setLang:        mod.ExportedFunction("ts_parser_set_language"),
-		parse:          mod.ExportedFunction("ts_parser_parse_string"),
+		parse:          mod.ExportedFunction("pasta_parse"),
 		treeDelete:     mod.ExportedFunction("ts_tree_delete"),
-		setTimeout:     mod.ExportedFunction("ts_parser_set_timeout_micros"),
 		dumpTree:       mod.ExportedFunction("ts_dump_tree"),
 		langSymCount:   mod.ExportedFunction("ts_language_symbol_count"),
 		langSymName:    mod.ExportedFunction("ts_language_symbol_name"),
@@ -376,8 +369,11 @@ func (p *enginePool) discard(e *engine) {
 // Prewarm loads the compiled module and leaves one idle parser in the
 // pool, so the first Parse doesn't wait for either. Call it in the
 // background while doing other startup work. Errors surface from the
-// next Parse instead.
+// next Parse instead. With the native backend it does nothing.
 func Prewarm() {
+	if native != nil {
+		return
+	}
 	if e, err := gpool.acquire(); err == nil {
 		gpool.release(e, false)
 	}
@@ -387,7 +383,24 @@ func Prewarm() {
 // Parse
 // ---------------------------------------------------------------------------
 
-// ErrTimeout is returned when the per-parse budget elapses or ctx cancels.
+type backend interface {
+	has(grammar string) bool
+	parseDump(ctx context.Context, grammar string, src []byte, opts ParseOptions) (treeDump, error)
+}
+
+// native is nil in CGO_ENABLED=0 and purego builds.
+var native backend
+
+var wasm backend = wasmBackend{}
+
+func backendFor(grammar string) backend {
+	if native != nil && native.has(grammar) {
+		return native
+	}
+	return wasm
+}
+
+// ErrTimeout is returned when ParseOptions.Timeout elapses.
 var ErrTimeout = errors.New("parse timeout")
 
 // ErrResourceLimit is returned when the guest traps (e.g. memory cap).
@@ -398,6 +411,22 @@ type ParseOptions struct {
 	Timeout time.Duration
 }
 
+// timeoutMicros is pasta_parse's timeout argument, where 0 means none.
+func (o ParseOptions) timeoutMicros() uint64 {
+	if o.Timeout <= 0 {
+		return 0
+	}
+	return uint64(max(o.Timeout/time.Microsecond, 1))
+}
+
+// nullTreeErr explains a parse that returned no tree.
+func (o ParseOptions) nullTreeErr() error {
+	if o.Timeout > 0 {
+		return fmt.Errorf("%w: null tree", ErrTimeout)
+	}
+	return errors.New("parse returned null tree")
+}
+
 // Parse parses src with lang and returns a Tree. Caller must Release().
 func Parse(ctx context.Context, lang *Language, src []byte, fileID string, opts ParseOptions) (tree *Tree, err error) {
 	if lang == nil || lang.Grammar == "" {
@@ -406,28 +435,39 @@ func Parse(ctx context.Context, lang *Language, src []byte, fileID string, opts 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	e, err := gpool.acquire()
+	d, err := backendFor(lang.Grammar).parseDump(ctx, lang.Grammar, src, opts)
 	if err != nil {
 		return nil, err
-	}
-	d, perr := e.parseDump(ctx, ExportName(lang.Grammar), src, opts)
-	// The dump is a copy, so the engine goes back to the pool before the
-	// Go graph is built and another parse can start on it.
-	gpool.release(e, perr != nil)
-	if perr != nil {
-		return nil, perr
 	}
 	return &Tree{root: buildGraph(d), nodes: max(int(d.n), 1), src: src, fileID: fileID, lang: lang}, nil
 }
 
-// HasGrammar reports whether the embedded module exports the grammar.
+// HasGrammar reports whether either backend has the grammar.
 func HasGrammar(grammar string) bool {
+	return backendFor(grammar).has(grammar)
+}
+
+type wasmBackend struct{}
+
+func (wasmBackend) has(grammar string) bool {
 	e, err := gpool.acquire()
 	if err != nil {
 		return false
 	}
 	defer gpool.release(e, false)
 	return e.mod.ExportedFunction(ExportName(grammar)) != nil
+}
+
+// parseDump returns the engine to the pool before the caller builds the
+// Go graph, so another parse can start on it.
+func (wasmBackend) parseDump(ctx context.Context, grammar string, src []byte, opts ParseOptions) (treeDump, error) {
+	e, err := gpool.acquire()
+	if err != nil {
+		return treeDump{}, err
+	}
+	d, err := e.parseDump(ctx, grammar, src, opts)
+	gpool.release(e, err != nil)
+	return d, err
 }
 
 func (e *engine) call(f api.Function, args ...uint64) uint64 {
@@ -455,78 +495,73 @@ func (e *engine) language(export string) (uint32, bool) {
 	return p, p != 0
 }
 
-func (e *engine) symbolNames(export string, lang uint32) map[uint32]string {
-	symNameMu.Lock()
-	m, ok := symNameCache[export]
-	symNameMu.Unlock()
-	if ok {
-		return m
-	}
-	count := uint32(e.call(e.langSymCount, uint64(lang)))
-	m = make(map[uint32]string, count)
-	for id := range count {
-		ptr := uint32(e.call(e.langSymName, uint64(lang), uint64(id)))
-		m[id] = e.readCStr(ptr)
-	}
-	symNameMu.Lock()
-	symNameCache[export] = m
-	symNameMu.Unlock()
-	return m
-}
-
-func (e *engine) fieldNames(export string, lang uint32) map[uint32]string {
-	fieldNameMu.Lock()
-	m, ok := fieldNameCache[export]
-	fieldNameMu.Unlock()
-	if ok {
-		return m
-	}
-	// Field ids are 1-based; id 0 means "no field".
-	count := uint32(e.call(e.langFieldCount, uint64(lang)))
-	m = make(map[uint32]string, count+1)
-	m[0] = ""
-	for id := uint32(1); id <= count; id++ {
-		ptr := uint32(e.call(e.langFieldName, uint64(lang), uint64(id)))
-		m[id] = e.readCStr(ptr)
-	}
-	fieldNameMu.Lock()
-	fieldNameCache[export] = m
-	fieldNameMu.Unlock()
-	return m
-}
-
-// treeDump is a parse tree as ts_dump_tree records, copied out of guest
-// memory, plus the grammar's symbol and field names.
-type treeDump struct {
-	raw           []byte
-	n             uint32
+// grammarNames maps a grammar's symbol ids to node kinds and its field
+// ids to field names.
+type grammarNames struct {
 	kinds, fields map[uint32]string
 }
 
-// parseDump parses src and returns the tree's records. An empty dump
-// (n == 0) stands for a tree with no nodes.
-func (e *engine) parseDump(ctx context.Context, langExport string, src []byte, opts ParseOptions) (d treeDump, err error) {
+// Both backends compile the same grammar versions, so they share names.
+var (
+	namesMu        sync.Mutex
+	namesByGrammar = map[string]grammarNames{}
+)
+
+// namesFor returns grammar's names, reading them with symbol and field
+// the first time.
+func namesFor(grammar string, symbols, fields uint32, symbol, field func(id uint32) string) grammarNames {
+	namesMu.Lock()
+	defer namesMu.Unlock()
+	if n, ok := namesByGrammar[grammar]; ok {
+		return n
+	}
+	n := grammarNames{
+		kinds:  make(map[uint32]string, symbols),
+		fields: make(map[uint32]string, fields+1),
+	}
+	for id := range symbols {
+		n.kinds[id] = symbol(id)
+	}
+	// Field ids are 1-based; id 0 means "no field".
+	n.fields[0] = ""
+	for id := uint32(1); id <= fields; id++ {
+		n.fields[id] = field(id)
+	}
+	namesByGrammar[grammar] = n
+	return n
+}
+
+func (e *engine) names(grammar string, lang uint32) grammarNames {
+	return namesFor(grammar,
+		uint32(e.call(e.langSymCount, uint64(lang))),
+		uint32(e.call(e.langFieldCount, uint64(lang))),
+		func(id uint32) string { return e.readCStr(uint32(e.call(e.langSymName, uint64(lang), uint64(id)))) },
+		func(id uint32) string { return e.readCStr(uint32(e.call(e.langFieldName, uint64(lang), uint64(id)))) })
+}
+
+// treeDump is a parse tree as ts_dump_tree records plus the grammar's
+// names. An empty dump (n == 0) stands for a tree with no nodes.
+type treeDump struct {
+	raw []byte
+	n   uint32
+	grammarNames
+}
+
+func (e *engine) parseDump(ctx context.Context, grammar string, src []byte, opts ParseOptions) (d treeDump, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("%w: wasm trap: %v", ErrResourceLimit, r)
 		}
 	}()
 
-	lang, ok := e.language(langExport)
+	lang, ok := e.language(ExportName(grammar))
 	if !ok {
-		return d, fmt.Errorf("unknown grammar export %q", langExport)
+		return d, fmt.Errorf("unknown grammar %q", grammar)
 	}
 	parser := e.call(e.parserNew)
 	defer e.call(e.parserDelete, parser)
 
 	e.call(e.setLang, parser, uint64(lang))
-	if opts.Timeout > 0 {
-		micros := opts.Timeout / time.Microsecond
-		if micros < 1 {
-			micros = 1
-		}
-		e.call(e.setTimeout, parser, uint64(micros))
-	}
 
 	sp := uint32(e.call(e.malloc, uint64(len(src)+1)))
 	if sp == 0 {
@@ -539,15 +574,12 @@ func (e *engine) parseDump(ctx context.Context, langExport string, src []byte, o
 	// Do not write a guest cancellation flag from AfterFunc: that
 	// races with wazero Memory.Grow during parse. Bound in-flight
 	// work with opts.Timeout; if ctx is done, discard the result.
-	tree := e.call(e.parse, parser, 0, uint64(sp), uint64(len(src)))
+	tree := e.call(e.parse, parser, uint64(sp), uint64(len(src)), opts.timeoutMicros(), 0)
 	if ctx.Err() != nil {
 		return d, ctx.Err()
 	}
 	if tree == 0 {
-		if opts.Timeout > 0 {
-			return d, fmt.Errorf("%w: null tree", ErrTimeout)
-		}
-		return d, fmt.Errorf("parse returned null tree")
+		return d, opts.nullTreeErr()
 	}
 	defer e.call(e.treeDelete, tree)
 
@@ -569,14 +601,13 @@ func (e *engine) parseDump(ctx context.Context, langExport string, src []byte, o
 		return d, fmt.Errorf("read dump buffer failed")
 	}
 
-	kinds := e.symbolNames(langExport, lang)
-	fields := e.fieldNames(langExport, lang)
+	names := e.names(grammar, lang)
 	if ctx.Err() != nil {
 		return d, ctx.Err()
 	}
 	// Read returns a view of guest memory, which the next parse on this
 	// engine overwrites.
-	return treeDump{raw: bytes.Clone(raw), n: n, kinds: kinds, fields: fields}, nil
+	return treeDump{raw: bytes.Clone(raw), n: n, grammarNames: names}, nil
 }
 
 // buildGraph rebuilds d as a Go node graph and returns its root.

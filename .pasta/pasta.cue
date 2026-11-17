@@ -5,7 +5,8 @@
 package pasta_project
 
 // Extra ./... skip dirs on top of pasta defaults (vendor, node_modules,
-// testdata, target, …).
+// testdata, target, …). The vendor default covers
+// pasta/internal/tswasm/csrc/vendor.
 skip: [
 	"bubble-man-rom", // generated / binary-ish JS
 	"cue.mod",

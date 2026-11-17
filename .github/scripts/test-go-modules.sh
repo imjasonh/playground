@@ -80,7 +80,10 @@ for module in "${modules[@]}"; do
     # pasta e2e shallow-clones real repos and cold-parses them; allow headroom.
     # The kind end-to-end tests of git-k8s, kube, sshapp, and ci-substrate run
     # in parallel steps, in test-kind-e2e.sh.
-    if [ "$module" = "node-image" ] || [ "$module" = "pasta" ]; then
+    if [ "$module" = "pasta" ]; then
+      # CGO_ENABLED=0 builds parse every grammar with the wasm backend.
+      go test -race -v -timeout 30m ./... && CGO_ENABLED=0 go test -v ./internal/tswasm/
+    elif [ "$module" = "node-image" ]; then
       go test -race -v -timeout 30m ./...
     elif [ "$module" = "kube" ]; then
       # -count=1: the end-to-end tests run examples with go run, and the test

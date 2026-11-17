@@ -6,12 +6,18 @@ Using `pasta`, you can express [AST](https://en.wikipedia.org/wiki/Abstract_synt
 
 Rules can also define an automatix fix, in which case `pasta -fix` will make the edit directly.
 
-`pasta` uses tree-sitter for parsing — the official C runtime and
-grammars, compiled to WASM and driven from pure Go via
-[wazero](https://github.com/tetratelabs/wazero) (so `go install` /
-`CGO_ENABLED=0` still work) — and [CUE](https://cuelang.org/) for
-rule schemas. It's heavily inspired by Go's
+`pasta` uses tree-sitter for parsing and [CUE](https://cuelang.org/)
+for rule schemas. It's heavily inspired by Go's
 `golang.org/x/tools/go/analysis`.
+
+pasta has two tree-sitter backends that produce the same trees. When
+cgo is available, `go build` and `go install` compile the official C
+runtime and most grammars natively, which parses about 2.5 times as
+fast. With `CGO_ENABLED=0` or `-tags purego`, pasta runs the same
+runtime and grammars compiled to WASM on
+[wazero](https://github.com/tetratelabs/wazero), from pure Go. The
+WASM module also parses the grammars that have no native build (SQL
+and Dockerfile).
 
 The intention of `pasta` is to be able to declaratively describe rules for ASTs in any supported language, and quickly and reproducibly flag and fix findings. You can hook this up to your editor and/or CI to automatically flag and potentially fix violations of the rules you've specified.
 
@@ -340,9 +346,9 @@ to 3.0 MB/s with an empty cache, which already hits on the many copies
 of the same files, and to 3.5 MB/s with every tree cached. A lint of
 this repository (about 19 MB) rose from 5.2 MB/s to 13.6 MB/s. Rule
 files also load in parallel,
-and pasta keeps wazero's compiled tree-sitter code under
-`$XDG_CACHE_HOME/pasta/wazero/` (about 7 MB), which saves about 0.6
-seconds per run.
+and when the WASM backend parses, pasta keeps wazero's compiled
+tree-sitter code under `$XDG_CACHE_HOME/pasta/wazero/` (about 7 MB),
+which saves about 0.6 seconds per run.
 
 ## Autofix guardrails
 
