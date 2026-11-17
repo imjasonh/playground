@@ -112,10 +112,8 @@ zig cc --target=wasm32-wasi-musl -mexec-model=reactor \
   -o "$OUT" -Oz -fPIC -Wl,--no-entry -Wl,--strip-debug \
   -Wl,--export=malloc -Wl,--export=free \
   -Wl,--export=ts_parser_new -Wl,--export=ts_parser_delete \
-  -Wl,--export=ts_parser_set_language -Wl,--export=ts_parser_parse_string \
+  -Wl,--export=ts_parser_set_language -Wl,--export=pasta_parse \
   -Wl,--export=ts_parser_reset \
-  -Wl,--export=ts_parser_set_timeout_micros \
-  -Wl,--export=ts_parser_set_cancellation_flag \
   -Wl,--export=ts_tree_delete -Wl,--export=ts_tree_root_node \
   -Wl,--export=ts_dump_tree -Wl,--export=ts_dump_rec_size \
   -Wl,--export=ts_language_symbol_count -Wl,--export=ts_language_symbol_name \

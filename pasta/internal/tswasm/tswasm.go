@@ -256,7 +256,6 @@ type engine struct {
 	malloc, free                         api.Function
 	parserNew, parserDelete, parserReset api.Function
 	setLang, parse, treeDelete           api.Function
-	setTimeout                           api.Function
 	dumpTree                             api.Function
 	langSymCount, langSymName            api.Function
 	langFieldCount, langFieldName        api.Function
@@ -277,7 +276,7 @@ func newEngine() (*engine, error) {
 		return nil, rtErr
 	}
 	name := fmt.Sprintf("ts-%d", instN.Add(1))
-	// tree-sitter's parse timeout reads the monotonic clock. wazero's
+	// pasta_parse's timeout reads the monotonic clock. wazero's
 	// default clock advances 1ms per reading, which would turn the timeout
 	// into a cap on how often the parser checks the clock.
 	mod, err := rt.wz.InstantiateModule(rt.ctx, rt.cm,
@@ -293,9 +292,8 @@ func newEngine() (*engine, error) {
 		parserDelete:   mod.ExportedFunction("ts_parser_delete"),
 		parserReset:    mod.ExportedFunction("ts_parser_reset"),
 		setLang:        mod.ExportedFunction("ts_parser_set_language"),
-		parse:          mod.ExportedFunction("ts_parser_parse_string"),
+		parse:          mod.ExportedFunction("pasta_parse"),
 		treeDelete:     mod.ExportedFunction("ts_tree_delete"),
-		setTimeout:     mod.ExportedFunction("ts_parser_set_timeout_micros"),
 		dumpTree:       mod.ExportedFunction("ts_dump_tree"),
 		langSymCount:   mod.ExportedFunction("ts_language_symbol_count"),
 		langSymName:    mod.ExportedFunction("ts_language_symbol_name"),
@@ -551,12 +549,9 @@ func (e *engine) parseDump(ctx context.Context, langExport string, src []byte, o
 	defer e.call(e.parserDelete, parser)
 
 	e.call(e.setLang, parser, uint64(lang))
+	var micros uint64
 	if opts.Timeout > 0 {
-		micros := opts.Timeout / time.Microsecond
-		if micros < 1 {
-			micros = 1
-		}
-		e.call(e.setTimeout, parser, uint64(micros))
+		micros = uint64(max(opts.Timeout/time.Microsecond, 1))
 	}
 
 	sp := uint32(e.call(e.malloc, uint64(len(src)+1)))
@@ -570,7 +565,7 @@ func (e *engine) parseDump(ctx context.Context, langExport string, src []byte, o
 	// Do not write a guest cancellation flag from AfterFunc: that
 	// races with wazero Memory.Grow during parse. Bound in-flight
 	// work with opts.Timeout; if ctx is done, discard the result.
-	tree := e.call(e.parse, parser, 0, uint64(sp), uint64(len(src)))
+	tree := e.call(e.parse, parser, uint64(sp), uint64(len(src)), micros, 0)
 	if ctx.Err() != nil {
 		return d, ctx.Err()
 	}

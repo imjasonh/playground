@@ -6,47 +6,6 @@ package tswasm
 #cgo CFLAGS: -I${SRCDIR}/csrc -I${SRCDIR}/csrc/vendor/tree-sitter/lib/include -I${SRCDIR}/csrc/vendor/tree-sitter/lib/src
 #include "lib.c"
 #include "host_extra.c"
-
-typedef struct {
-  const char *src;
-  uint32_t len;
-} pasta_string;
-
-static const char *pasta_read(void *payload, uint32_t byte, TSPoint point, uint32_t *n) {
-  pasta_string *s = payload;
-  if (byte >= s->len) {
-    *n = 0;
-    return "";
-  }
-  *n = s->len - byte;
-  return s->src + byte;
-}
-
-typedef struct {
-  TSClock deadline;
-  const int32_t *cancel;
-} pasta_budget;
-
-static bool pasta_progress(TSParseState *state) {
-  pasta_budget *b = state->payload;
-  if (b->cancel != NULL && __atomic_load_n(b->cancel, __ATOMIC_RELAXED)) return true;
-  return !clock_is_null(b->deadline) && clock_is_gt(clock_now(), b->deadline);
-}
-
-// pasta_parse returns NULL when timeout_micros elapses or *cancel becomes
-// nonzero. The tree doesn't reference src after it returns.
-static TSTree *pasta_parse(TSParser *p, const char *src, uint32_t len, uint64_t timeout_micros, const int32_t *cancel) {
-  pasta_string s = {src, len};
-  TSInput in = {&s, pasta_read, TSInputEncodingUTF8, NULL};
-  pasta_budget b = {clock_null(), cancel};
-  TSParseOptions opts = {0};
-  if (timeout_micros > 0) b.deadline = clock_after(clock_now(), duration_from_micros(timeout_micros));
-  if (timeout_micros > 0 || cancel != NULL) {
-    opts.payload = &b;
-    opts.progress_callback = pasta_progress;
-  }
-  return ts_parser_parse_with_options(p, NULL, in, opts);
-}
 */
 import "C"
 
