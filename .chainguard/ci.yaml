@@ -1,0 +1,14 @@
+# Chainguard Checks runs each check in its own microVM on every pull request.
+# A check has no network access unless it lists hosts under network.egress.
+version: 1
+environment:
+  packages: [go]
+checks:
+  clash-vet:
+    cmd: go -C clash vet ./...
+  clash-test:
+    cmd: go -C clash test ./...
+  testtrace-test:
+    cmd: go -C testtrace test ./...
+    network:
+      egress: [proxy.golang.org, sum.golang.org]
