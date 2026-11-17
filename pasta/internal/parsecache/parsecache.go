@@ -46,7 +46,7 @@ import (
 
 	"github.com/imjasonh/playground/pasta/internal/dsl"
 	"github.com/imjasonh/playground/pasta/internal/effect"
-	"github.com/imjasonh/playground/pasta/internal/tswasm"
+	"github.com/imjasonh/playground/pasta/internal/treesitter"
 )
 
 // schemaVersion segregates entries written by different pasta
@@ -162,7 +162,7 @@ func HashRules(analyzers []*dsl.Analyzer) string {
 
 	h := sha256.New()
 	h.Write([]byte(schemaVersion))
-	h.Write([]byte(tswasm.BuildID()))
+	h.Write([]byte(treesitter.BuildID()))
 	for _, n := range ns {
 		if err := json.MarshalWrite(h, n.A, json.Deterministic(true)); err != nil {
 			return ""
@@ -219,14 +219,14 @@ func (c *Cache) Put(fileHash string, e Entry) {
 
 // treeDir returns the directory of the trees of this grammar build.
 func (c *Cache) treeDir() string {
-	return filepath.Join(c.dir, schemaVersion, "trees-"+tswasm.BuildID())
+	return filepath.Join(c.dir, schemaVersion, "trees-"+treesitter.BuildID())
 }
 
 // GetTree reads the compact parse tree stored under fileHash. Returns
 // (nil, false) on miss or IO error. The caller decodes the tree and
 // parses the file when that fails, so a corrupt entry costs one parse.
 // On hit, touches the file's mtime so the next Prune keeps it.
-func (c *Cache) GetTree(fileHash string) (tswasm.Compact, bool) {
+func (c *Cache) GetTree(fileHash string) (treesitter.Compact, bool) {
 	if c == nil {
 		return nil, false
 	}
@@ -243,7 +243,7 @@ func (c *Cache) GetTree(fileHash string) (tswasm.Compact, bool) {
 }
 
 // PutTree stores t under fileHash. Failures are swallowed, like Put's.
-func (c *Cache) PutTree(fileHash string, t tswasm.Compact) {
+func (c *Cache) PutTree(fileHash string, t treesitter.Compact) {
 	if c == nil {
 		return
 	}

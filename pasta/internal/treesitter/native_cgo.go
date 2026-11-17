@@ -1,6 +1,6 @@
 //go:build cgo && !purego
 
-package tswasm
+package treesitter
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/csrc -I${SRCDIR}/csrc/vendor/tree-sitter/lib/include -I${SRCDIR}/csrc/vendor/tree-sitter/lib/src

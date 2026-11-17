@@ -3,7 +3,7 @@ package tsutil
 import (
 	"testing"
 
-	"github.com/imjasonh/playground/pasta/internal/tswasm"
+	"github.com/imjasonh/playground/pasta/internal/treesitter"
 )
 
 func TestErrorHeavy(t *testing.T) {
@@ -24,7 +24,7 @@ func TestErrorHeavy(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			tree, root, err := Parse(t.Context(), &tswasm.Language{Grammar: "javascript"}, []byte(tc.src), "")
+			tree, root, err := Parse(t.Context(), &treesitter.Language{Grammar: "javascript"}, []byte(tc.src), "")
 			if err != nil {
 				t.Fatal(err)
 			}

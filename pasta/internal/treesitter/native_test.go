@@ -1,6 +1,6 @@
 //go:build cgo && !purego
 
-package tswasm
+package treesitter
 
 import (
 	"bytes"

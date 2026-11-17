@@ -23,11 +23,11 @@ git init -q -b main repo
 cd repo
 git config user.name test
 git config user.email test@example.com
-mkdir -p pasta/internal/tswasm/csrc/vendor/tree-sitter
-echo 'internal/tswasm/ts-core.wasm' > pasta/.gitignore
-echo 'v0.1.0' > pasta/internal/tswasm/csrc/vendor/tree-sitter/VERSION
-echo 'sql x src v0.3.0' > pasta/internal/tswasm/grammars.txt
-echo 'v1' > pasta/internal/tswasm/ts-core.wasm.br
+mkdir -p pasta/internal/treesitter/csrc/vendor/tree-sitter
+echo 'internal/treesitter/ts-core.wasm' > pasta/.gitignore
+echo 'v0.1.0' > pasta/internal/treesitter/csrc/vendor/tree-sitter/VERSION
+echo 'sql x src v0.3.0' > pasta/internal/treesitter/grammars.txt
+echo 'v1' > pasta/internal/treesitter/ts-core.wasm.br
 mkdir -p gomod libapp/go libapp/rust jsapp worker git-k8s/agent/runner .github/wrangler
 echo 'module gomod' > gomod/go.mod
 echo 'module libapp/go' > libapp/go/go.mod
@@ -102,14 +102,14 @@ expect "wrangler bump staged" "M .github/wrangler/package.json" "$(staged)"
 reset_tree
 
 # The uncompressed wasm module that build.sh leaves behind is ignored.
-tswasm=pasta/internal/tswasm
-echo 'v0.2.0' > "$tswasm/csrc/vendor/tree-sitter/VERSION"
-echo 'int x;' > "$tswasm/csrc/vendor/tree-sitter/lib.c"
-echo 'sql x src v0.4.0' > "$tswasm/grammars.txt"
-echo 'v2' > "$tswasm/ts-core.wasm.br"
-echo 'v2' > "$tswasm/ts-core.wasm"
+ts=pasta/internal/treesitter
+echo 'v0.2.0' > "$ts/csrc/vendor/tree-sitter/VERSION"
+echo 'int x;' > "$ts/csrc/vendor/tree-sitter/lib.c"
+echo 'sql x src v0.4.0' > "$ts/grammars.txt"
+echo 'v2' > "$ts/ts-core.wasm.br"
+echo 'v2' > "$ts/ts-core.wasm"
 expect "tree-sitter update" true "$(detect)"
-expect "tree-sitter update staged" "M $tswasm/csrc/vendor/tree-sitter/VERSION A $tswasm/csrc/vendor/tree-sitter/lib.c M $tswasm/grammars.txt M $tswasm/ts-core.wasm.br" "$(staged)"
+expect "tree-sitter update staged" "M $ts/csrc/vendor/tree-sitter/VERSION A $ts/csrc/vendor/tree-sitter/lib.c M $ts/grammars.txt M $ts/ts-core.wasm.br" "$(staged)"
 reset_tree
 
 mkdir newmod

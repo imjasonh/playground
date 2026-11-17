@@ -1,7 +1,7 @@
 // Package tsutil wraps the tree-sitter Node abstraction with source
 // bytes + language + file-id. The parse backend is the official C
 // tree-sitter runtime compiled to WASM and driven via wazero
-// (internal/tswasm) — pure Go, CGO_ENABLED=0, go install friendly.
+// (internal/treesitter) — pure Go, CGO_ENABLED=0, go install friendly.
 package tsutil
 
 import (
@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/imjasonh/playground/pasta/internal/tswasm"
+	"github.com/imjasonh/playground/pasta/internal/treesitter"
 )
 
 // Node is a thin wrapper around a tree-sitter node that carries the
@@ -23,9 +23,9 @@ import (
 // single store (multi-file analysis groups). Single-file callers can
 // leave it empty.
 type Node struct {
-	N      *tswasm.Node
+	N      *treesitter.Node
 	Src    []byte
-	Lang   *tswasm.Language
+	Lang   *treesitter.Language
 	FileID string
 }
 
@@ -188,10 +188,10 @@ type ParseOptions struct {
 }
 
 // Tree is the parse result; caller must Release() when done.
-type Tree = tswasm.Tree
+type Tree = treesitter.Tree
 
 // Language is a grammar handle for Parse.
-type Language = tswasm.Language
+type Language = treesitter.Language
 
 // Parse parses src with the given language and returns the tree and
 // root Node. The caller must call tree.Release() when done.
@@ -207,15 +207,15 @@ func ParseWithOptions(ctx context.Context, lang *Language, src []byte, fileID st
 	if err := ctx.Err(); err != nil {
 		return nil, Node{}, err
 	}
-	tree, err := tswasm.Parse(ctx, lang, src, fileID, tswasm.ParseOptions{Timeout: opts.Timeout})
+	tree, err := treesitter.Parse(ctx, lang, src, fileID, treesitter.ParseOptions{Timeout: opts.Timeout})
 	if err != nil {
 		switch {
-		case errors.Is(err, tswasm.ErrTimeout), errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		case errors.Is(err, treesitter.ErrTimeout), errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 			if ctx.Err() != nil {
 				return nil, Node{}, ctx.Err()
 			}
 			return nil, Node{}, fmt.Errorf("%w: %v", ErrParseTimeout, err)
-		case errors.Is(err, tswasm.ErrResourceLimit):
+		case errors.Is(err, treesitter.ErrResourceLimit):
 			return nil, Node{}, fmt.Errorf("%w: %v", ErrParseResourceLimit, err)
 		default:
 			return nil, Node{}, err
@@ -226,8 +226,8 @@ func ParseWithOptions(ctx context.Context, lang *Language, src []byte, fileID st
 	return tree, root, nil
 }
 
-// Compact is a parse tree in a few bytes per node; see tswasm.Compact.
-type Compact = tswasm.Compact
+// Compact is a parse tree in a few bytes per node; see treesitter.Compact.
+type Compact = treesitter.Compact
 
 // FromCompact rebuilds the tree that c encodes and returns it with its
 // root Node. src, fileID, and lang must be those of the encoded tree.
@@ -242,13 +242,13 @@ func FromCompact(c Compact, lang *Language, src []byte, fileID string) (*Tree, N
 // DrainArenaPools is retained for API parity; the WASM backend pools
 // engines instead of gotreesitter arenas.
 func DrainArenaPools() {
-	tswasm.DrainArenaPools()
+	treesitter.DrainArenaPools()
 }
 
 // Prewarm loads the parser runtime ahead of the first parse; see
-// tswasm.Prewarm.
+// treesitter.Prewarm.
 func Prewarm() {
-	tswasm.Prewarm()
+	treesitter.Prewarm()
 }
 
 // Walk invokes fn pre-order on every named descendant of n, including n.

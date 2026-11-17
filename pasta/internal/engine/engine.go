@@ -425,7 +425,7 @@ func runStreaming(
 		return nil, err
 	}
 	// Drain is a no-op for the WASM backend (engines are pooled in
-	// tswasm); kept so a future arena-backed host still has a hook.
+	// treesitter); kept so a future arena-backed host still has a hook.
 	tsutil.DrainArenaPools()
 	return results, nil
 }

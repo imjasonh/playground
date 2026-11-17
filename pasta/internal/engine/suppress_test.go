@@ -5,15 +5,15 @@ import (
 	"testing"
 
 	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/treesitter"
 	"github.com/imjasonh/playground/pasta/internal/tsutil"
-	"github.com/imjasonh/playground/pasta/internal/tswasm"
 )
 
 // parseGo parses src as Go and returns the root + a default comment-
 // types map. The grammar emits comment nodes as type "comment".
 func parseGo(t *testing.T, src string) (tsutil.Node, func()) {
 	t.Helper()
-	tree, root, err := tsutil.Parse(t.Context(), &tswasm.Language{Grammar: "go"}, []byte(src), "test.go")
+	tree, root, err := tsutil.Parse(t.Context(), &treesitter.Language{Grammar: "go"}, []byte(src), "test.go")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}

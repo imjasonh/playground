@@ -82,7 +82,7 @@ for module in "${modules[@]}"; do
     # in parallel steps, in test-kind-e2e.sh.
     if [ "$module" = "pasta" ]; then
       # CGO_ENABLED=0 builds parse every grammar with the wasm backend.
-      go test -race -v -timeout 30m ./... && CGO_ENABLED=0 go test -v ./internal/tswasm/
+      go test -race -v -timeout 30m ./... && CGO_ENABLED=0 go test -v ./internal/treesitter/
     elif [ "$module" = "node-image" ]; then
       go test -race -v -timeout 30m ./...
     elif [ "$module" = "kube" ]; then

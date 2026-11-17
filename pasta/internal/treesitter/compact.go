@@ -1,4 +1,4 @@
-package tswasm
+package treesitter
 
 import (
 	"encoding/binary"

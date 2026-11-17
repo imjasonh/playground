@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/imjasonh/playground/pasta/internal/treesitter"
 	"github.com/imjasonh/playground/pasta/internal/tsutil"
-	"github.com/imjasonh/playground/pasta/internal/tswasm"
 )
 
 func Definitions(idx *Index, lang string, exported *bool) []map[string]any {
@@ -319,7 +319,7 @@ func FindNodes(ctx context.Context, roots []string, langName, nodeType, textRe s
 		}
 		re = r
 	}
-	lang := &tswasm.Language{Grammar: spec.grammar}
+	lang := &treesitter.Language{Grammar: spec.grammar}
 	var matches []map[string]any
 	truncated := false
 	for _, root := range roots {

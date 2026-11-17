@@ -124,7 +124,7 @@ for module in "${modules[@]}"; do
     export GOFLAGS="$goflags"
     # Match test-go-modules.sh: always race-detect. Heavy modules get more time.
     if [ "$module" = "pasta" ]; then
-      go test -race -timeout 30m ./... && CGO_ENABLED=0 go test ./internal/tswasm/
+      go test -race -timeout 30m ./... && CGO_ENABLED=0 go test ./internal/treesitter/
     elif [ "$module" = "node-image" ]; then
       go test -race -timeout 30m ./...
     else

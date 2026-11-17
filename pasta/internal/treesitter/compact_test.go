@@ -1,4 +1,4 @@
-package tswasm
+package treesitter
 
 import (
 	"os"
@@ -44,7 +44,7 @@ func TestCompactRoundTrip(t *testing.T) {
 }
 
 func TestCompactSize(t *testing.T) {
-	src, err := os.ReadFile("tswasm.go")
+	src, err := os.ReadFile("treesitter.go")
 	if err != nil {
 		t.Fatal(err)
 	}
