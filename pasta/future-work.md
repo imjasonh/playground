@@ -352,7 +352,7 @@ The in-memory path keeps the trees that later passes need within
 `-tree-budget`, and compact encodings of the rest within half of it
 again. A file past both is read back from the parse cache, but with
 `-nocache` it's parsed again for every later pass, and for every
-fixpoint iteration. Two changes would cut that:
+fixpoint iteration that visits it. Two changes would cut that:
 - Spill compact encodings past the budget to a temporary file when the
   cache is off.
 - Keep the trees of the files that a fixpoint group applies to ahead

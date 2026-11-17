@@ -306,7 +306,11 @@ instead of streaming. Pasta parses every file in parallel and runs the
 rules that read no other file's facts as each file is parsed. Each
 later level of dependent rules then runs across files in parallel.
 Fixpoint groups, such as taint propagation, also iterate over files in
-parallel. A fixpoint group that uses `not_has_fact` is the exception:
+parallel. After the first iteration, each one visits only the files
+that looked up a fact the previous iteration added, so a taint
+propagation on Kubernetes visits about 350 of 13,700 files in its
+second iteration and 7 in its last. A fixpoint group that uses
+`not_has_fact` is the exception:
 its result depends on order, so it visits files in order. Pasta keeps
 the parse trees that later passes need while their estimated size
 stays under `-tree-budget` (default 1 GiB, `0` keeps every tree). It
