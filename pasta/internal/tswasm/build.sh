@@ -2,6 +2,14 @@
 # Builds ts-core.wasm: official tree-sitter C runtime + pasta's grammars +
 # csrc/host_extra.c (batched ts_dump_tree), as one wasm32-wasi reactor via zig cc.
 #
+# The runtime is the copy in csrc/vendor/tree-sitter (lib/ of tree-sitter
+# v0.25.10, without lib/src/wasm), which cgo builds compile too. To update
+# it, replace that directory and rebuild.
+#
+# cgo builds compile most grammars from their Go modules instead. After
+# changing a ref below, run ../../scripts/pin-grammars.sh so go.mod
+# matches; TestNativeMatchesWasm fails when the two disagree.
+#
 # Prior art: dvcdsys/code-index server/internal/chunker/tswasm/build.sh
 #
 # Requires: zig, git. Optional: tree-sitter CLI for grammars that need generate.
@@ -10,7 +18,6 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-TS_VERSION="${TS_VERSION:-v0.25.10}"
 OUT="${OUT:-ts-core.wasm}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -48,11 +55,9 @@ clone() {
   git -C "$dest" checkout "$ref" >/dev/null 2>&1
 }
 
-echo "→ tree-sitter runtime $TS_VERSION"
-git clone --depth 1 --branch "$TS_VERSION" https://github.com/tree-sitter/tree-sitter "$WORK/tree-sitter" 2>/dev/null
-
-SRCS=( "$WORK/tree-sitter/lib/src/lib.c" "csrc/host_extra.c" )
-INCS=( -I "$WORK/tree-sitter/lib/include" -I "$WORK/tree-sitter/lib/src" )
+TS="csrc/vendor/tree-sitter"
+SRCS=( "$TS/lib/src/lib.c" "csrc/host_extra.c" )
+INCS=( -I "$TS/lib/include" -I "$TS/lib/src" )
 EXPORTS=()
 BUILT=()
 FAILED=()
@@ -113,7 +118,7 @@ zig cc --target=wasm32-wasi-musl -mexec-model=reactor \
   -Wl,--export=ts_language_field_count -Wl,--export=ts_language_field_name_for_id \
   "${EXPORTS[@]}"
 
-echo "built $OUT ($(du -h "$OUT" | cut -f1)) — runtime $TS_VERSION, ${#BUILT[@]} grammars"
+echo "built $OUT ($(du -h "$OUT" | cut -f1)) — ${#BUILT[@]} grammars"
 [ ${#FAILED[@]} -gt 0 ] && echo "FAILED: ${FAILED[*]}" && exit 1
 echo "grammars: ${BUILT[*]}"
 
