@@ -534,7 +534,16 @@ def test_real_repo_posts_build() -> None:
             "pasta is newer than its-not-jaws",
         )
         check("Published August 19, 2026" in pasta_html, "pasta published date")
-        check("Updated August 20, 2026" in pasta_html, "pasta updated date")
+        # The author keeps editing the pasta post, so don't pin its updated date.
+        pasta_last = subprocess.run(
+            ["git", "log", "-1", "--format=%aI", "--", "pasta/blog-post.md"],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        pasta_updated = bb.format_date(datetime.fromisoformat(pasta_last))
+        check(f"Updated {pasta_updated}" in pasta_html, f"pasta updated {pasta_updated}")
         nescript_html = (dest / "nescript" / "index.html").read_text()
         check("Introducing NEScript" in nescript_html, "nescript title")
         check("Published April 24, 2026" in nescript_html, "nescript keeps the original publish day")
