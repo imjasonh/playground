@@ -53,14 +53,15 @@ as a share of that boot:
 
 ### What the coverage figures mean
 
-On 2026-11-17, for the current image, after `ed25519_verify`:
+On 2026-11-17, for the current image, after `ed25519_verify` and the
+trust-root, key-set, and bundle readers:
 
 | Measure | Proved | Total | Share |
 | --- | --- | --- | --- |
-| Instructions in the image | 17,671 | 28,526 | 61.9% |
-| Instructions one boot runs | 136,249,574 | 136,797,349 | 99.6% |
+| Instructions in the image | 18,007 | 28,526 | 63.1% |
+| Instructions one boot runs | 136,251,562 | 136,797,349 | 99.6% |
 | Instructions in the 229 functions `c3_verify::sigstore::verify` reaches | 17,379 | 24,870 | 69.9% |
-| Instructions in the 263 functions `boot_main` reaches | 17,671 | 28,513 | 62.0% |
+| Instructions in the 263 functions `boot_main` reaches | 18,007 | 28,513 | 63.2% |
 
 The trial boot runs the whole Sigstore check of the update: 98.3 percent
 of its instructions run in `sigstore::verify` and its callees. Boot
