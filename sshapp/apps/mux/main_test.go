@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -81,7 +82,7 @@ func TestProxySSHSessionHoldsShellOpen(t *testing.T) {
 			returned <- err
 			return
 		}
-		code, err := proxySSHSession(sess, backend, signer, route.Target{App: "hold"})
+		code, err := proxySSHSession(sess.Context(), sess, backend, signer, route.Target{App: "hold"})
 		if err != nil {
 			returned <- err
 			return
@@ -129,7 +130,7 @@ func TestProxySSHSessionEndsWhenClientLeaves(t *testing.T) {
 			returned <- err
 			return
 		}
-		code, err := proxySSHSession(sess, backend, signer, route.Target{App: "hold"})
+		code, err := proxySSHSession(sess.Context(), sess, backend, signer, route.Target{App: "hold"})
 		if err != nil {
 			returned <- err
 			return
@@ -172,7 +173,7 @@ func TestProxySSHSessionCopiesShortShell(t *testing.T) {
 			returned <- err
 			return
 		}
-		code, err := proxySSHSession(sess, backend, signer, route.Target{App: "hi"})
+		code, err := proxySSHSession(sess.Context(), sess, backend, signer, route.Target{App: "hi"})
 		if err != nil {
 			returned <- err
 			return
@@ -198,12 +199,107 @@ func TestProxySSHSessionCopiesShortShell(t *testing.T) {
 	}
 }
 
+func TestProxySSHSessionRetriesStalledBackend(t *testing.T) {
+	prev := backendAttempt
+	backendAttempt = 200 * time.Millisecond
+	t.Cleanup(func() { backendAttempt = prev })
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stalled := &stallFirstListener{Listener: ln}
+	backend := startProxyBackendOn(t, stalled, func(sess ssh.Session) {
+		_, _ = io.WriteString(sess, "hi\n")
+	})
+	returned := make(chan error, 1)
+	front := startProxyBackend(t, func(sess ssh.Session) {
+		signer, err := newEphemeralSigner()
+		if err != nil {
+			returned <- err
+			return
+		}
+		code, err := proxySSHSession(sess.Context(), sess, backend, signer, route.Target{App: "hi"})
+		if err != nil {
+			returned <- err
+			return
+		}
+		if code != 0 {
+			returned <- fmt.Errorf("exit %d", code)
+			return
+		}
+		returned <- nil
+	})
+
+	_, stdout := dialShell(t, front)
+	if got := readSome(t, stdout); got != "hi\n" {
+		t.Fatalf("stdout = %q", got)
+	}
+	select {
+	case err := <-returned:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("proxy did not return after the backend exited")
+	}
+	if !stalled.stalled() {
+		t.Fatal("the first connection never reached the stalled listener")
+	}
+}
+
+// stallFirstListener holds its first connection open without serving it, like
+// a backend that accepts TCP and never answers the SSH handshake.
+type stallFirstListener struct {
+	net.Listener
+	mu   sync.Mutex
+	held net.Conn
+}
+
+func (l *stallFirstListener) Accept() (net.Conn, error) {
+	for {
+		c, err := l.Listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		l.mu.Lock()
+		first := l.held == nil
+		if first {
+			l.held = c
+		}
+		l.mu.Unlock()
+		if !first {
+			return c, nil
+		}
+	}
+}
+
+func (l *stallFirstListener) Close() error {
+	l.mu.Lock()
+	if l.held != nil {
+		_ = l.held.Close()
+	}
+	l.mu.Unlock()
+	return l.Listener.Close()
+}
+
+func (l *stallFirstListener) stalled() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.held != nil
+}
+
 func startProxyBackend(t *testing.T, handler ssh.Handler) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
+	return startProxyBackendOn(t, ln, handler)
+}
+
+func startProxyBackendOn(t *testing.T, ln net.Listener, handler ssh.Handler) string {
+	t.Helper()
 	srv, err := wish.NewServer(
 		wish.WithHostKeyPEM(testHostPEM(t)),
 		wish.WithPublicKeyAuth(func(ssh.Context, ssh.PublicKey) bool { return true }),

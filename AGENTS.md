@@ -539,7 +539,7 @@ test workflow gates on:
 | App type | Upgrade | Verify |
 |----------|---------|--------|
 | Browser | `npx npm-check-updates --upgrade` → `npm install` → `npm run vendor` (if defined) | `npm test` (+ `npm run test:e2e` if defined) |
-| Go | `go get -u ./...`, except `litestream`, which `update-litestream.yml` updates | `gofmt` → `go build ./...` → `go test -race ./...` |
+| Go | `go mod edit -go=<installed minor>.0` when the `go` line is older, then `go get -u ./...`, except `litestream`, which `update-litestream.yml` updates | `gofmt` → `go build ./...` → `go test -race ./...` |
 | Rust | `cargo update` | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build + `wrangler deploy --dry-run` |
 | Wrangler (Worker apps) | `npx npm-check-updates --upgrade` on `.github/wrangler/package.json` | `wrangler deploy --dry-run` for every Worker app, in the Rust leg |
 

@@ -118,4 +118,4 @@ echo "built $OUT ($(du -h "$OUT" | cut -f1)) — runtime $TS_VERSION, ${#BUILT[@
 echo "grammars: ${BUILT[*]}"
 
 echo "→ brotli-compressing → ${OUT}.br"
-GOTOOLCHAIN="${GOTOOLCHAIN:-go1.25.0}" go run compress.go
+go run compress.go
