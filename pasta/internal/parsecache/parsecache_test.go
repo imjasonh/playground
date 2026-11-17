@@ -1,6 +1,9 @@
 package parsecache
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -75,6 +78,27 @@ func TestPutGet_Roundtrip(t *testing.T) {
 	}
 	if len(got.Ops) != 1 || got.Ops[0].Start != want.Ops[0].Start || got.Ops[0].Text != want.Ops[0].Text {
 		t.Errorf("Ops mismatch: got %+v want %+v", got.Ops, want.Ops)
+	}
+
+	c.Put("file2", Entry{SkipReason: "parse errors", Degraded: true})
+	got, ok = c.Get("file2")
+	if !ok || got.SkipReason != "parse errors" || !got.Degraded {
+		t.Errorf("Get(file2) = %+v, %v; want SkipReason and Degraded kept", got, ok)
+	}
+}
+
+func TestHashRules_IncludesGrammarBuild(t *testing.T) {
+	a := &dsl.Analyzer{Name: "a", Rules: map[string]dsl.Rule{"r": {Name: "r"}}}
+	got := HashRules([]*dsl.Analyzer{a})
+
+	h := sha256.New()
+	h.Write([]byte(schemaVersion))
+	if err := json.MarshalWrite(h, a, json.Deterministic(true)); err != nil {
+		t.Fatal(err)
+	}
+	h.Write([]byte("\n"))
+	if got == hex.EncodeToString(h.Sum(nil)) {
+		t.Fatal("HashRules ignores the grammar build")
 	}
 }
 

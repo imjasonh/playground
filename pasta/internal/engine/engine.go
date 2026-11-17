@@ -54,6 +54,8 @@ type Result struct {
 	SkipReason string
 }
 
+const skipParseErrors = "parse errors"
+
 // Stats counts per-file outcomes for a RunGroup. Optional — attach via
 // WithStats. All fields are safe for concurrent updates from the
 // streaming worker pool.
@@ -62,7 +64,7 @@ type Stats struct {
 	PrefilterSkipped atomic.Int64 // content-sniff rejected before parse
 	Parsed           atomic.Int64 // successfully parsed + analyzed
 	ParseErrors      atomic.Int64 // skipped: ERROR-heavy tree
-	ParseDegraded    atomic.Int64 // HasError but not heavy — analyzed, not cached
+	ParseDegraded    atomic.Int64 // HasError but not heavy — analyzed
 	TimedOut         atomic.Int64 // skipped: parse timeout
 	MemorySkipped    atomic.Int64 // skipped: memory_budget
 	CacheHits        atomic.Int64 // served from parse cache
@@ -453,8 +455,15 @@ func processFile(
 		if e, ok := o.cache.Get(key); ok {
 			out.Diagnostics = append(out.Diagnostics, e.Diagnostics...)
 			out.Ops = append(out.Ops, e.Ops...)
+			out.SkipReason = e.SkipReason
 			if o.stats != nil {
 				o.stats.CacheHits.Add(1)
+				if e.SkipReason == skipParseErrors {
+					o.stats.ParseErrors.Add(1)
+				}
+				if e.Degraded {
+					o.stats.ParseDegraded.Add(1)
+				}
 			}
 			o.syncAdmit(index, 0)
 			return nil
@@ -482,10 +491,11 @@ func processFile(
 	defer s.tree.Release()
 	if tsutil.ErrorHeavy(s.root) {
 		releaseParse(o, int64(len(src)))
-		out.SkipReason = "parse errors"
+		out.SkipReason = skipParseErrors
 		if o.stats != nil {
 			o.stats.ParseErrors.Add(1)
 		}
+		o.cache.Put(key, parsecache.Entry{SkipReason: skipParseErrors})
 		return nil
 	}
 	degraded := s.root.HasError()
@@ -501,12 +511,11 @@ func processFile(
 		}
 	}
 	out.Diagnostics = append(out.Diagnostics, unusedIgnoreDiagnostics(s.suppress)...)
-	// Do not cache degraded (ERROR-light) trees — recovery shapes are
-	// grammar-sensitive and older cache entries predate ERROR skips.
-	if o.cache != nil && !degraded {
+	if o.cache != nil {
 		o.cache.Put(key, parsecache.Entry{
 			Diagnostics: append([]effect.Diagnostic(nil), out.Diagnostics...),
 			Ops:         append([]effect.Op(nil), out.Ops...),
+			Degraded:    degraded,
 		})
 	}
 	return nil
@@ -533,7 +542,7 @@ func emitUnusedIgnoresOnly(ctx context.Context, f FileInput, out *Result, o *run
 	}
 	defer s.tree.Release()
 	if tsutil.ErrorHeavy(s.root) {
-		out.SkipReason = "parse errors"
+		out.SkipReason = skipParseErrors
 		if o != nil && o.stats != nil {
 			o.stats.ParseErrors.Add(1)
 		}
@@ -788,7 +797,7 @@ func parseInMemory(ctx context.Context, index int, f FileInput, groups []ruleGro
 	}
 	if tsutil.ErrorHeavy(s.root) {
 		releaseParse(o, int64(len(src)))
-		out.SkipReason = "parse errors"
+		out.SkipReason = skipParseErrors
 		if o != nil && o.stats != nil {
 			o.stats.ParseErrors.Add(1)
 		}
