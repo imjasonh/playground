@@ -123,6 +123,12 @@ func (n Node) Parent() Node {
 	return Node{N: p, Src: n.Src, Lang: n.Lang, FileID: n.FileID}
 }
 
+// PrevNamedSibling returns the named sibling before n, or an invalid Node
+// when there is none.
+func (n Node) PrevNamedSibling() Node {
+	return Node{N: n.N.PrevNamedSibling(), Src: n.Src, Lang: n.Lang, FileID: n.FileID}
+}
+
 // HasError reports whether the subtree contains a parse error.
 func (n Node) HasError() bool { return n.N != nil && n.N.HasError() }
 
@@ -251,8 +257,8 @@ func Walk(n Node, fn func(Node) bool) {
 	if !fn(n) {
 		return
 	}
-	for _, c := range n.NamedChildren() {
-		Walk(c, fn)
+	for _, c := range n.N.NamedChildren() {
+		Walk(Node{N: c, Src: n.Src, Lang: n.Lang, FileID: n.FileID}, fn)
 	}
 }
 
