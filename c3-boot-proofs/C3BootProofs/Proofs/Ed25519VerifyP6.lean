@@ -363,6 +363,7 @@ theorem ev_p6c (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Mach
       (∀ q : Fin 32, q.val ∈ evKeep → q.val ∉ [8, 9, 18, 19, 20, 21, 22] → reg n' q = reg n q) ∧
       reg n' 9 = F + BitVec.ofNat 32 (0x7F0 + i) ∧ reg n' 21 = F + BitVec.ofNat 32 (0x8F0 + i) ∧
       reg n' 20 = 0 - BitVec.ofNat 32 i ∧ reg n' 22 = 1 ∧
+      reg n' 18 = F + BitVec.ofNat 32 0x1418 ∧ reg n' 19 = F + BitVec.ofNat 32 0x1440 ∧
       (∀ j, j < 8 → ptAt M' (F + BitVec.ofNat 32 (0x9F0 + 160 * j)) =
         nafTab (ptAt M (F + BitVec.ofNat 32 0x540)) (feW M0 apnD) j) ∧
       (∀ j, j < 8 → ptAt M' (F + BitVec.ofNat 32 (0xEF0 + 160 * j)) =
@@ -472,7 +473,7 @@ theorem ev_p6c (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Mach
   have g64 : ∀ c, c < 0x16A0 → c < 0x13F0 → n10.mem (F + BitVec.ofNat 32 c) = n4.mem (F + BitVec.ofNat 32 c) :=
     fun c hc hh => by rw [g10 c hc (Or.inl (by omega)), g86 c hc (Or.inl hh)]
   refine ⟨n11, n10.mem, c1.trans (c2.trans (c3.trans (c4.trans (c5.trans (c6.trans (c7.trans (c8.trans (c9.trans
-    (c10.trans c11))))))))), D11, fun q hq hn => ?_, ?_, ?_, ?_, ?_, fun j hj => ?_, fun j hj => ?_, fun j hj => ?_, ?_, ?_,
+    (c10.trans c11))))))))), D11, fun q hq hn => ?_, ?_, ?_, ?_, ?_, ?_, ?_, fun j hj => ?_, fun j hj => ?_, fun j hj => ?_, ?_, ?_,
     fun c hc hh => ?_⟩
   · rw [hr11, evb_reg q D10.st.zero (by revert hn; revert q; decide), back q hq (by revert hn; revert q; decide)
       (by revert hn; revert q; decide)]
@@ -484,6 +485,11 @@ theorem ev_p6c (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Mach
     rw [add_ofNat_assoc, add_ofNat_assoc]; exact congrArg (fun x => F + BitVec.ofNat 32 x) (by omega)
   · rw [hr11]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [r9, D10.st.zero]; rfl
   · rw [hr11]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; (try rw [D10.st.zero]); try rfl
+  · rw [hr11, evb_reg 18 D10.st.zero (by decide), k10 18 (by decide), hr9, evb_reg 18 D8.st.zero (by decide),
+      k8 18 (by decide), hr7]
+    simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D6.hsp]; try rfl
+  · rw [hr11, evb_reg 19 D10.st.zero (by decide), k10 19 (by decide), hr9]
+    simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D8.hsp]; try rfl
   · rw [ptB (M := n2.mem) (c := 0x9F0 + 160 * j) (e := 0x9F0 + 160 * j) fun b hb => by
         rw [g64 _ (by omega) (by omega), g4 _ (by omega) (Or.inl (by omega))],
       ← add_ofNat_assoc, w2 j hj]
@@ -519,6 +525,7 @@ theorem ev_p6 (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Machi
         (nafSpec (nafScalar M (F + BitVec.ofNat 32 0x6C0))) 256) ∧
       reg n' 20 = 0 - BitVec.ofNat 32 (nafTop (nafSpec (nafScalar M (F + BitVec.ofNat 32 0x520)))
         (nafSpec (nafScalar M (F + BitVec.ofNat 32 0x6C0))) 256) ∧ reg n' 22 = 1 ∧
+      reg n' 18 = F + BitVec.ofNat 32 0x1418 ∧ reg n' 19 = F + BitVec.ofNat 32 0x1440 ∧
       (∀ k, k < 256 → M' (F + BitVec.ofNat 32 (0x7F0 + k)) = nafSpec (nafScalar M (F + BitVec.ofNat 32 0x520)) k) ∧
       (∀ k, k < 256 → M' (F + BitVec.ofNat 32 (0x8F0 + k)) = nafSpec (nafScalar M (F + BitVec.ofNat 32 0x6C0)) k) ∧
       (∀ j, j < 8 → ptAt M' (F + BitVec.ofNat 32 (0x9F0 + 160 * j)) =
@@ -546,11 +553,11 @@ theorem ev_p6 (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Machi
     (by rw [hr2, evb_reg 8 D1.st.zero (by decide), v8])
   rw [nafTop_congr 256 fun j hj => ⟨ha j hj, hb j hj⟩] at v9
   have hi := nafTop_le (nafSpec (nafScalar M (F + BitVec.ofNat 32 0x520))) (nafSpec (nafScalar M (F + BitVec.ofNat 32 0x6C0))) 256
-  obtain ⟨n4, M4, c4, D4, k4, r9, r21, r20, r22, tA, tB, z0, o1, o2, fr4⟩ := ev_p6c C D3 (by omega) v9
+  obtain ⟨n4, M4, c4, D4, k4, r9, r21, r20, r22, r18, r19, tA, tB, z0, o1, o2, fr4⟩ := ev_p6c C D3 (by omega) v9
   have back : ∀ q : Fin 32, q.val ∈ evKeep → q.val ∉ [8, 9, 18, 19, 20, 21, 22] → reg n4 q = reg n q := fun q hq hn => by
     rw [k4 q hq hn, k3 q hq (by revert hn; revert q; decide), hr2, evb_reg q D1.st.zero (by revert hq; revert q; decide),
       k1 q hq (by revert hn; revert q; decide) (by revert hn; revert q; decide)]
-  refine ⟨n4, M4, c1.trans (c2.trans (c3.trans c4)), D4, back, r9, r21, r20, r22, fun k hk => ?_, fun k hk => ?_,
+  refine ⟨n4, M4, c1.trans (c2.trans (c3.trans c4)), D4, back, r9, r21, r20, r22, r18, r19, fun k hk => ?_, fun k hk => ?_,
     fun j hj => ?_, tB, z0, o1, o2, fun c hc hh => ?_⟩
   · rw [fr4 _ (by omega) (Or.inl (by omega)), ha k hk]
   · rw [fr4 _ (by omega) (Or.inl (by omega)), hb k hk]
