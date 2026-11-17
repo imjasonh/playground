@@ -300,7 +300,7 @@ missing, creates a cluster with a local registry, and deploys with `ko apply`:
 
 ```bash
 cd ci-substrate
-CI_SUBSTRATE_KIND_E2E=1 go test -race -v -timeout 20m ./e2e/
+CI_SUBSTRATE_KIND_E2E=1 go test -race -v -timeout 40m ./e2e/
 ```
 
 Or run the script directly:

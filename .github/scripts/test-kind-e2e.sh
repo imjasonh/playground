@@ -37,7 +37,9 @@ case "$module" in
     ;;
   ci-substrate)
     # Multi-tenant CAS + node-local verified cache, deployed with ko apply.
-    CI_SUBSTRATE_KIND_E2E=1 go test -race -v -timeout 20m ./e2e/
+    # It also builds with Bazel and dogfoods ci-substrate on the cluster,
+    # which takes over 20 minutes when every module's tests share the runner.
+    CI_SUBSTRATE_KIND_E2E=1 go test -race -v -timeout 40m ./e2e/
     ;;
   *)
     echo "::error title=kind e2e::${module} has no kind end-to-end test"
