@@ -701,4 +701,329 @@ theorem bt_map (hbt : BT.toNat + bootFnCode.length ≤ 0x600C4000) {M0 Mi : Word
         exact ⟨n', .cons d1 (c2.trans (.cons d3 (c4.trans (c5.trans (.cons d6 (c7.trans (.cons d8 (c9.trans c')))))))),
           s', k'⟩
 
+/-- The stack `boot` and its callees use: its own 0x30 bytes, then
+`flash_read_words`' 16 and the ROM's `R` below them, and `romStack` for the
+other ROM routines. -/
+def btK (R romStack : Nat) : Nat := 0x30 + 16 + R + romStack
+
+/-- `M` matches `M0` from the start of the ROM to the MMU registers, where
+the code `boot` runs and calls is. -/
+def BtHi (M0 M : Word → BitVec 8) : Prop := ∀ x : Word, 0x40000000 ≤ x.toNat → x.toNat < 0x600C4000 → M x = M0 x
+
+/-- What `boot` needs of its arguments and memory: the stack in data RAM,
+the accepted header below the ROM and apart from the stack, segment kinds
+0 to 3, and each RAM segment word-aligned, below the ROM, and apart from
+the header and the stack. -/
+structure BtCtx (M0 : Word → BitVec 8) (top acc imgf : Word) (R romStack : Nat) (romBase : Word)
+    (romCode : List Nat) : Prop where
+  code : CodeIn M0 BT bootFnCode
+  rfw : CodeIn M0 (BitVec.ofNat 32 romFlashReadWordsAddress) romFlashReadWordsCode
+  panic : PanicCode M0
+  rom : CodeIn M0 romBase romCode
+  hrb : 0x40000000 ≤ romBase.toNat
+  hrl : romBase.toNat + romCode.length ≤ 0x600C4000
+  hsp : top.toNat % 16 = 0
+  hspl : 0x3FC80000 + 0x40 + btK R romStack ≤ top.toNat
+  hsph : top.toNat ≤ dramEnd
+  hR : R % 4 = 0
+  hacc : acc.toNat % 4 = 0
+  haccl : acc.toNat + 0x10C ≤ 0x40000000
+  sAS : Sep acc 0x10C (top - BitVec.ofNat 32 (btK R romStack)) (btK R romStack)
+  kind : ∀ j, j < sgCount M0 acc → (sgKind M0 acc j).toNat ≤ 3
+  ram : ∀ j, j < sgCount M0 acc → 2 ≤ (sgKind M0 acc j).toNat →
+    (sgDest M0 acc j).toNat % 4 = 0 ∧ (sgDest M0 acc j).toNat + sgBytes M0 acc j ≤ 0x40000000 ∧
+    Sep (sgDest M0 acc j) (sgBytes M0 acc j) acc 0x10C ∧
+    Sep (sgDest M0 acc j) (sgBytes M0 acc j) (top - BitVec.ofNat 32 (btK R romStack)) (btK R romStack) ∧
+    (sgSrc M0 acc imgf j).toNat % 4 = 0
+
+theorem sgCount_le (M : Word → BitVec 8) (acc : Word) : sgCount M acc ≤ 16 := by
+  unfold sgCount; split <;> omega
+
+theorem copyIn_out {M : Word → BitVec 8} {dst x : Word} {n : Nat} {b : Nat → BitVec 8} (h : Sep dst n x 1) :
+    copyIn M dst n b x = M x := by
+  unfold copyIn
+  rw [ite_eq_right fun hl => h _ hl 0 (by decide) (by
+    rw [add_ofNat_zero, BitVec.ofNat_toNat, BitVec.setWidth_eq, BitVec.add_comm, BitVec.sub_add_cancel])]
+
+theorem ramLoad_out {flash : Nat → BitVec 8} {M0 : Word → BitVec 8} {acc imgf : Word} (x : Word) :
+    ∀ j, (∀ i, i < j → 2 ≤ (sgKind M0 acc i).toNat → Sep (sgDest M0 acc i) (sgBytes M0 acc i) x 1) →
+      ramLoad flash M0 acc imgf j x = M0 x
+  | 0, _ => rfl
+  | j + 1, h => by
+    rw [ramLoad]
+    by_cases hk : 2 ≤ (sgKind M0 acc j).toNat
+    · rw [ite_eq_left hk, copyIn_out (h j (by omega) hk), ramLoad_out x j fun i hi => h i (by omega)]
+    · rw [ite_eq_right hk, ramLoad_out x j fun i hi => h i (by omega)]
+
+theorem sep_hi {a x : Word} {n : Nat} (h : a.toNat + n ≤ 0x40000000) (hx : 0x40000000 ≤ x.toNat) : Sep a n x 1 :=
+  sep_of_le (by omega) (by have := x.isLt; omega)
+
+theorem panicFns_mid : ∀ p ∈ panicFns, 0x40000000 ≤ p.1 ∧ p.1 + p.2.length ≤ 0x600C4000 := by decide
+
+theorem panicKeep {M0 M : Word → BitVec 8} (hP : PanicCode M0) (h : BtHi M0 M) : PanicCode M := fun p hp i hi => by
+  have := panicFns_mid p hp
+  rw [h _ (by rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega)
+    (by rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega)]
+  exact hP p hp i hi
+
+theorem hiKeep {M0 M : Word → BitVec 8} {b : Word} {code : List Nat} (hc : CodeIn M0 b code) (h : BtHi M0 M)
+    (hb : 0x40000000 ≤ b.toNat) (hl : b.toNat + code.length ≤ 0x600C4000) : CodeIn M b code := fun i hi => by
+  rw [h _ (by rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega) (by rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega)]
+  exact hc i hi
+
+def btCopyB : List BInstr := [.lw a0 (9 : Fin 32) 0x4, .lw a2 (9 : Fin 32) 0x8, .alu .add a0 a0 (21 : Fin 32), .aluImm .srl a2 a2 0x2]
+
+theorem btCopyB_end : blockEnd bootFnCode 0x70 btCopyB = some 0x78 :=
+  (blockEnd_cons' (off' := 0x72) bt_at_70 rfl (blockEnd_cons' (off' := 0x74) bt_at_72 rfl (blockEnd_cons' (off' := 0x76) bt_at_74 rfl (blockEnd_cons' (off' := 0x78) bt_at_76 rfl rfl))))
+
+def btNextB : List BInstr := [.aluImm .add (9 : Fin 32) (9 : Fin 32) 0x10, .aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFFF0]
+
+theorem btNextB_end : blockEnd bootFnCode 0x82 btNextB = some 0x86 :=
+  (blockEnd_cons' (off' := 0x84) bt_at_82 rfl (blockEnd_cons' (off' := 0x86) bt_at_84 rfl rfl))
+
+section Copy
+variable {flash : Nat → BitVec 8} {M0 : Word → BitVec 8} {top acc imgf romBase : Word} {R romStack : Nat}
+  {romCode : List Nat}
+
+set_option maxHeartbeats 16000000 in
+set_option maxRecDepth 20000 in
+/-- The loop that copies each RAM segment from flash, from the head of
+pass `j` at 0x5C to its exit at 0x88, or to `halt` when a read fails. -/
+theorem bt_copy (C : BtCtx M0 top acc imgf R romStack romBase romCode) (hROM : RomRead flash R romBase romCode) :
+    ∀ d j {n : Machine}, j + d = sgCount M0 acc → j < sgCount M0 acc → St n.mem BT n 0x5C (reg n) →
+      BtHi M0 n.mem →
+      (∀ x, Sep (top - BitVec.ofNat 32 (btK R romStack)) (btK R romStack) x 1 →
+        n.mem x = ramLoad flash M0 acc imgf j x) →
+      reg n sp = top + 0xFFFFFFD0 → reg n 9 = sgPtr acc j → reg n 8 = BitVec.ofNat 32 (16 * (sgCount M0 acc - j)) →
+      reg n 19 = 2 → reg n 23 = 0xFF900000 → reg n 21 = imgf →
+      (∃ n', Steps n n' ∧ St n'.mem BT n' 0x88 (reg n') ∧ BtHi M0 n'.mem ∧
+        (∀ x, Sep (top - BitVec.ofNat 32 (btK R romStack)) (btK R romStack) x 1 →
+          n'.mem x = ramLoad flash M0 acc imgf (sgCount M0 acc) x) ∧
+        ∀ r, romKeep r = true → r ≠ 8 → r ≠ 9 → reg n' r = reg n r) ∨ Panics n
+  | 0, j, _, hj, hjN, _, _, _, _, _, _, _, _, _ => absurd hj (by omega)
+  | d + 1, j, n, hj, hjN, s, hH, hM, hsp, h9, h8, h19, h23, h21 => by
+    have hN16 := sgCount_le M0 acc
+    have hc : CodeIn n.mem BT bootFnCode := hiKeep C.code hH (by decide) (by decide)
+    have hKv : btK R romStack = 0x30 + 16 + R + romStack := rfl
+    have hspl := C.hspl; have hsph := C.hsph; have htop := C.hsp; have hR4 := C.hR
+    rw [hKv] at hspl; unfold dramEnd at hsph
+    have hSn : (top - BitVec.ofNat 32 (btK R romStack)).toNat = top.toNat - btK R romStack := by
+      rw [BitVec.toNat_sub, BitVec.toNat_ofNat, hKv]; omega
+    have tb : ∀ i, i < 0x10C → n.mem (acc + BitVec.ofNat 32 i) = M0 (acc + BitVec.ofNat 32 i) := fun i hi => by
+      rw [hM _ (C.sAS.sub (c := i) (l := 1) (by omega)).symm]
+      exact ramLoad_out _ j fun i' hi' hk => ((C.ram i' (by omega) hk).2.2.1.symm.sub (c := i) (l := 1) (by omega)).symm
+    have hF : ∀ c, c < 16 → n.mem (sgPtr acc j + BitVec.ofNat 32 c) = M0 (sgPtr acc j + BitVec.ofNat 32 c) :=
+      fun c hc' => by unfold sgPtr; rw [add_ofNat_assoc]; exact tb _ (by omega)
+    have hL : ∀ c, c ≤ 12 → memLoad32 n.mem (sgPtr acc j + BitVec.ofNat 32 c) = memLoad32 M0 (sgPtr acc j + BitVec.ofNat 32 c) :=
+      fun c hc' => memLoad32_congr fun i hi => by rw [add_ofNat_assoc]; exact hF _ (by omega)
+    have hp : (sgPtr acc j).toNat = acc.toNat + 16 * j := by
+      unfold sgPtr; rw [BitVec.toNat_add, BitVec.toNat_ofNat]; have := C.haccl; omega
+    have hacc := C.hacc
+    -- the rest of the loop once this segment is done
+    have tail : ∀ {n' : Machine}, Steps n n' → St n'.mem BT n' 0x82 (reg n') → BtHi M0 n'.mem →
+        (∀ x, Sep (top - BitVec.ofNat 32 (btK R romStack)) (btK R romStack) x 1 →
+          n'.mem x = ramLoad flash M0 acc imgf (j + 1) x) → (∀ r, romKeep r = true → reg n' r = reg n r) →
+        (∃ n'', Steps n n'' ∧ St n''.mem BT n'' 0x88 (reg n'') ∧ BtHi M0 n''.mem ∧
+          (∀ x, Sep (top - BitVec.ofNat 32 (btK R romStack)) (btK R romStack) x 1 →
+            n''.mem x = ramLoad flash M0 acc imgf (sgCount M0 acc) x) ∧
+          ∀ r, romKeep r = true → r ≠ 8 → r ≠ 9 → reg n'' r = reg n r) ∨ Panics n := by
+      intro n' c' s' hH' hM' k'
+      have hc' : CodeIn n'.mem BT bootFnCode := hiKeep C.code hH' (by decide) (by decide)
+      obtain ⟨n2, c2, u2⟩ := s'.block btNextB hc' btNextB_end ⟨trivial, trivial, trivial⟩
+      have r2 : ∀ r, reg n2 r = (runBlock btNextB (n'.mem, reg n')).2 r := fun r => by rw [u2.regs]
+      have v9 : reg n2 9 = sgPtr acc (j + 1) := by
+        rw [r2]; simp +decide only [runBlock, BInstr.run, btNextB, upd, ↓reduceIte]
+        rw [k' 9 (by decide), h9]; unfold sgPtr
+        show acc + BitVec.ofNat 32 (16 * j) + BitVec.ofNat 32 16 = _
+        rw [add_ofNat_assoc, show 16 * j + 16 = 16 * (j + 1) by omega]
+      have v8 : reg n2 8 = BitVec.ofNat 32 (16 * (sgCount M0 acc - (j + 1))) := by
+        rw [r2]; simp +decide only [runBlock, BInstr.run, btNextB, upd, ↓reduceIte]
+        rw [k' 8 (by decide), h8]; apply BitVec.eq_of_toNat_eq
+        show (BitVec.ofNat 32 (16 * (sgCount M0 acc - j)) + 0xFFFFFFF0).toNat = _
+        rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat, show (0xFFFFFFF0 : Word).toNat = 2 ^ 32 - 16 from rfl]
+        omega
+      have k2 : ∀ r, r ≠ 8 → r ≠ 9 → reg n2 r = reg n' r := fun r h8' h9' => by
+        rw [r2, runBlock_reg _ _ _ r s'.zero (by simp only [btNextB]; revert h8' h9'; revert r; decide)]
+      have t2 : St n'.mem BT n2 0x86 (reg n2) := ⟨u2.pc, u2.mem, fun _ => rfl⟩
+      by_cases hl : j + 1 < sgCount M0 acc
+      · obtain ⟨n3, d3, u3⟩ := t2.taken hc' 0x5C bt_at_86 (by decide) (by
+          show (reg n2 8 != reg n2 x0) = true
+          rw [v8, t2.zero]
+          exact bne_iff_ne.mpr fun e => by
+            have := congrArg BitVec.toNat e
+            rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)] at this
+            exact absurd this (by show 16 * (sgCount M0 acc - (j + 1)) ≠ 0; omega))
+        have kk : ∀ r, romKeep r = true → r ≠ 8 → r ≠ 9 → reg n3 r = reg n r := fun r hr h8' h9' => by
+          rw [u3.regs, k2 r h8' h9', k' r hr]
+        rcases bt_copy C hROM d (j + 1) (by omega) hl (⟨u3.pc, by rw [u3.mem], fun _ => rfl⟩ :
+            St n3.mem BT n3 0x5C (reg n3)) (by rw [u3.mem]; exact hH')
+            (fun x hx => by rw [u3.mem]; exact hM' x hx)
+            (by rw [kk sp (by decide) (by decide) (by decide)]; exact hsp) (by rw [u3.regs]; exact v9)
+            (by rw [u3.regs]; exact v8) (by rw [kk 19 (by decide) (by decide) (by decide)]; exact h19)
+            (by rw [kk 23 (by decide) (by decide) (by decide)]; exact h23)
+            (by rw [kk 21 (by decide) (by decide) (by decide)]; exact h21) with ⟨n'', c'', s'', hH'', hM'', k''⟩ | hp'
+        · exact Or.inl ⟨n'', c'.trans (c2.trans (.cons d3 c'')), s'', hH'', hM'', fun r hr h8' h9' => by
+            rw [k'' r hr h8' h9', kk r hr h8' h9']⟩
+        · exact Or.inr (Panics.of_steps (c'.trans (c2.trans (.single d3))) hp')
+      · have e : j + 1 = sgCount M0 acc := by omega
+        obtain ⟨n3, d3, u3⟩ := t2.notTaken hc' 0x88 bt_at_86 (by decide) (by
+          show (reg n2 8 != reg n2 x0) = false
+          rw [v8, t2.zero, ← e, Nat.sub_self]; rfl)
+        rw [e] at hM'
+        exact Or.inl ⟨n3, c'.trans (c2.trans (.single d3)), ⟨u3.pc, rfl, fun _ => rfl⟩,
+          by rw [u3.mem]; exact hH', fun x hx => by rw [u3.mem]; exact hM' x hx,
+          fun r hr h8' h9' => by rw [u3.regs, k2 r h8' h9', k' r hr]⟩
+    -- the kind
+    obtain ⟨n1, d1, u1⟩ := s.lbu hc bt_at_5c (off' := 0x60) (by decide)
+    have t1 := u1.self
+    have v0 : reg n1 a0 = (sgKind M0 acc j).zeroExtend 32 := by
+      rw [u1.regs]; simp +decide only [upd, ↓reduceIte]; rw [h9]; exact congrArg (·.zeroExtend 32) (hF 12 (by decide))
+    have k1 : ∀ r, r ≠ a0 → reg n1 r = reg n r := fun r h => by rw [u1.regs]; exact updz s.zero h
+    have hk3 := C.kind j hjN
+    by_cases hram : 2 ≤ (sgKind M0 acc j).toNat
+    · obtain ⟨hda, hdl, sDA, sDS, hsa⟩ := C.ram j hjN hram
+      obtain ⟨n2, d2, u2⟩ := t1.notTaken hc 0x64 bt_at_60 (by decide) (by
+        show (reg n1 a0).ult (reg n1 19) = false
+        rw [v0, k1 19 (by decide), h19]
+        rcases kind4 _ hk3 with e | e | e | e <;> rw [e] at hram ⊢ <;> first | exact absurd hram (by decide) | rfl)
+      have t2 : St n.mem BT n2 0x64 (reg n2) := ⟨u2.pc, u2.mem, fun _ => rfl⟩
+      have a9 : ∀ {f : Fin 32 → Word}, (∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ ra → f r = reg n r) → f 9 = sgPtr acc j :=
+        fun h => by rw [h 9 (by decide) (by decide) (by decide) (by decide)]; exact h9
+      -- the destination, at 0x70
+      obtain ⟨n5, c5, t5, v1, k5⟩ : ∃ n5, Steps n2 n5 ∧ St n.mem BT n5 0x70 (reg n5) ∧
+          reg n5 a1 = sgDest M0 acc j ∧ ∀ r, r ≠ a1 → reg n5 r = reg n2 r := by
+        have ld : memLoad32 n.mem (reg n2 9 + 0x0) = sgAddr M0 acc j := by
+          rw [u2.regs, k1 9 (by decide), h9]; exact hL 0 (by decide)
+        rcases kind4 _ hk3 with e | e | e | e
+        · rw [e] at hram; exact absurd hram (by decide)
+        · rw [e] at hram; exact absurd hram (by decide)
+        · obtain ⟨n3, d3, u3⟩ := t2.notTaken hc 0x68 bt_at_64 (by decide) (by
+            show (reg n2 a0 != reg n2 19) = false
+            rw [u2.regs, u2.regs, v0, k1 19 (by decide), h19, e]; rfl)
+          have t3 : St n.mem BT n3 0x68 (reg n3) := ⟨u3.pc, u3.mem, fun _ => rfl⟩
+          obtain ⟨n4, d4, u4⟩ := t3.lw hc bt_at_68 (off' := 0x6A) (by decide)
+            (by rw [u3.regs, u2.regs, k1 9 (by decide), h9, add_lit_zero, hp]; omega)
+          have t4 := u4.self
+          obtain ⟨n5, d5, u5⟩ := t4.alu hc bt_at_6a (off' := 0x6C) (by decide)
+          have t5 := u5.self
+          obtain ⟨n6, d6, u6⟩ := t5.jump hc bt_at_6c (off' := 0x70) (by decide) (by rw [t5.pc]; decide)
+          refine ⟨n6, .cons d3 (.cons d4 (.cons d5 (.single d6))), ⟨u6.pc, u6.mem, fun _ => rfl⟩, ?_, fun r h => ?_⟩
+          · have r23 : reg n4 23 = 0xFF900000 := by
+              rw [u4.regs, updz t3.zero (by decide), u3.regs, u2.regs, k1 23 (by decide), h23]
+            have r1 : reg n4 a1 = sgAddr M0 acc j := by
+              rw [u4.regs]; simp +decide only [upd, ↓reduceIte]; rw [u3.regs, ld]
+            rw [u6.regs, u5.regs]; simp +decide only [upd, ↓reduceIte]
+            rw [r1, r23]; unfold sgDest; rw [ite_eq_left e]; rfl
+          · rw [u6.regs, u5.regs, updz t4.zero h, u4.regs, updz t3.zero h, u3.regs]
+        · obtain ⟨n3, d3, u3⟩ := t2.taken hc 0x6E bt_at_64 (by decide) (by
+            show (reg n2 a0 != reg n2 19) = true
+            rw [u2.regs, u2.regs, v0, k1 19 (by decide), h19, e]; rfl)
+          have t3 : St n.mem BT n3 0x6E (reg n3) := ⟨u3.pc, u3.mem, fun _ => rfl⟩
+          obtain ⟨n4, d4, u4⟩ := t3.lw hc bt_at_6e (off' := 0x70) (by decide)
+            (by rw [u3.regs, u2.regs, k1 9 (by decide), h9, add_lit_zero, hp]; omega)
+          refine ⟨n4, .cons d3 (.single d4), ⟨u4.pc, u4.mem, fun _ => rfl⟩, ?_, fun r h => ?_⟩
+          · rw [u4.regs]; simp +decide only [upd, ↓reduceIte]
+            rw [u3.regs, ld]; unfold sgDest; rw [ite_eq_right (by rw [e]; decide)]
+          · rw [u4.regs, updz t3.zero h, u3.regs]
+      have k25 : ∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ ra → reg n5 r = reg n r := fun r h0 h1 _ _ => by
+        rw [k5 r h1, u2.regs, k1 r h0]
+      -- the source and the word count, then the call
+      obtain ⟨n6, c6, u6⟩ := t5.block btCopyB hc btCopyB_end (by
+        simp only [BlockOk, BInstr.ok, BInstr.run, btCopyB]
+        simp +decide only [upd, ↓reduceIte, true_and, and_true]
+        rw [a9 k25]
+        refine ⟨?_, ?_⟩ <;> rw [BitVec.toNat_add, hp] <;> simp <;> omega)
+      have r6 : ∀ r, reg n6 r = (runBlock btCopyB (n.mem, reg n5)).2 r := fun r => by rw [u6.regs]
+      have t6 : St n.mem BT n6 0x78 (reg n6) := ⟨u6.pc, u6.mem, fun _ => rfl⟩
+      have w0 : reg n6 a0 = sgSrc M0 acc imgf j := by
+        rw [r6]; simp +decide only [runBlock, BInstr.run, btCopyB, upd, ↓reduceIte]
+        rw [a9 k25, show memLoad32 n.mem (sgPtr acc j + 4) = memLoad32 M0 (sgPtr acc j + 4) from hL 4 (by decide), k25 21 (by decide) (by decide) (by decide) (by decide), h21]; rfl
+      have w2 : reg n6 a2 = sgLen M0 acc j >>> 2 := by
+        rw [r6]; simp +decide only [runBlock, BInstr.run, btCopyB, upd, ↓reduceIte]
+        rw [a9 k25, show memLoad32 n.mem (sgPtr acc j + 8) = memLoad32 M0 (sgPtr acc j + 8) from hL 8 (by decide)]; rfl
+      have w1 : reg n6 a1 = sgDest M0 acc j := by
+        rw [r6, runBlock_reg _ _ _ a1 t5.zero (by decide)]; exact v1
+      have k6 : ∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ ra → reg n6 r = reg n r := fun r h0 h1 h2 hr => by
+        rw [r6, runBlock_reg _ _ _ r t5.zero (by simp only [btCopyB]; revert h0 h2; revert r; decide)]
+        exact k25 r h0 h1 h2 hr
+      obtain ⟨n7, c7, pc7, mem7, regs7⟩ := t6.callRa (cb := BitVec.ofNat 32 romFlashReadWordsAddress) hc
+        bt_at_78 bt_at_7c (by decide) (by decide)
+      have k7 : ∀ r, r ≠ ra → reg n7 r = reg n6 r := fun r h => by rw [regs7]; exact updz t6.zero h
+      obtain ⟨G, hG⟩ : ∃ G, top - BitVec.ofNat 32 (0x30 + 16 + R) = G := ⟨_, rfl⟩
+      have hGn : G.toNat = top.toNat - (0x30 + 16 + R) := by
+        rw [← hG, BitVec.toNat_sub, BitVec.toNat_ofNat]; omega
+      have hGsp : G + BitVec.ofNat 32 (16 + R) = top + 0xFFFFFFD0 := BitVec.eq_of_toNat_eq (by
+        rw [BitVec.toNat_add, BitVec.toNat_add, BitVec.toNat_ofNat, hGn, show (0xFFFFFFD0 : Word).toNat = 2 ^ 32 - 0x30 from rfl]
+        omega)
+      have hGS : (top - BitVec.ofNat 32 (btK R romStack)) + BitVec.ofNat 32 romStack = G := BitVec.eq_of_toNat_eq (by
+        rw [BitVec.toNat_add, hSn, BitVec.toNat_ofNat, hGn, hKv]; omega)
+      have sGx : ∀ x, Sep (top - BitVec.ofNat 32 (btK R romStack)) (btK R romStack) x 1 → Sep G (16 + R) x 1 :=
+        fun x hx => by have := hx.sub (c := romStack) (l := 16 + R) (by rw [hKv]; omega); rwa [hGS] at this
+      have hdn := hdl; unfold sgBytes at hdn
+      obtain ⟨n8, c8, pc8, sp8, keep8, a08, cp8, fr8⟩ := romFlashReadWords_correct hROM n7
+        (P := BitVec.ofNat 32 romFlashReadWordsAddress) (G := G) (dst := sgDest M0 acc j)
+        (w := sgLen M0 acc j >>> 2) (src := sgSrc M0 acc imgf j) (retAddr := BT + BitVec.ofNat 32 (0x78 + 8))
+        ⟨rfl, by rw [mem7]; exact hiKeep C.rfw hH (by decide) (by decide), by rw [hGn]; omega, hR4,
+          by rw [hGn]; omega, hda, by omega,
+          sep_of_le (by rw [hGn, show (BitVec.ofNat 32 romFlashReadWordsAddress).toNat = 0x403A1730 from rfl]; omega) (by decide),
+          sep_of_le (by show _ ≤ (BitVec.ofNat 32 romFlashReadWordsAddress).toNat; rw [show (BitVec.ofNat 32 romFlashReadWordsAddress).toNat = 0x403A1730 from rfl]; omega) (by decide),
+          sDS.subR (c := romStack) (l := 16 + R) (by rw [hKv]; omega) |> fun h => by rwa [hGS] at h⟩
+        pc7 (by rw [k7 a0 (by decide)]; exact w0) (by rw [k7 a1 (by decide)]; exact w1)
+        (by rw [k7 a2 (by decide)]; exact w2) (by rw [regs7]; simp +decide only [upd, ↓reduceIte])
+        (even_clear _ (by decide))
+        (by rw [k7 sp (by decide), k6 sp (by decide) (by decide) (by decide) (by decide), hsp, hGsp]) hsa
+        (by rw [mem7]; exact hiKeep C.rom hH C.hrb C.hrl)
+        (sep_of_le (by rw [hGn]; have := C.hrb; omega) (by have := C.hrl; omega))
+      have k8 : ∀ r, romKeep r = true → reg n8 r = reg n r := fun r hr => by
+        have h0 : r ≠ a0 := by rintro rfl; exact absurd hr (by decide)
+        have h1 : r ≠ a1 := by rintro rfl; exact absurd hr (by decide)
+        have h2 : r ≠ a2 := by rintro rfl; exact absurd hr (by decide)
+        have hra : r ≠ ra := by rintro rfl; exact absurd hr (by decide)
+        rw [keep8 r hr, k7 r hra, k6 r h0 h1 h2 hra]
+      have hH8 : BtHi M0 n8.mem := fun x h1 h2 => by
+        rw [fr8 x (sep_of_le (by rw [hGn]; omega) (by have := x.isLt; omega)) (sep_hi hdn h1), mem7]; exact hH x h1 h2
+      have hc8 : CodeIn n8.mem BT bootFnCode := hiKeep C.code hH8 (by decide) (by decide)
+      have t8 : St n8.mem BT n8 0x80 (reg n8) := ⟨by rw [pc8], rfl, fun _ => rfl⟩
+      rcases a08 with a0z | a0o
+      · -- the read failed: halt(0xE2)
+        obtain ⟨n9, d9, u9⟩ := t8.taken hc8 0x136 bt_at_80 (by decide) (by
+          show (reg n8 a0 == reg n8 x0) = true; rw [a0z, t8.zero]; rfl)
+        have t9 : St n8.mem BT n9 0x136 (reg n9) := ⟨u9.pc, u9.mem, fun _ => rfl⟩
+        obtain ⟨n10, d10, u10⟩ := t9.aluImm hc8 bt_at_136 (off' := 0x13A) (by decide)
+        obtain ⟨n11, c11, pc11, mem11, regs11⟩ := u10.self.callRa (cb := haltBase) hc8 bt_at_13a bt_at_13e
+          (by decide) (by decide)
+        have sp11 : reg n11 sp = top + 0xFFFFFFD0 := by
+          rw [regs11, updz u10.self.zero (by decide), u10.regs, updz t9.zero (by decide), u9.regs,
+            k8 sp (by decide), hsp]
+        have hspn : (top + 0xFFFFFFD0).toNat = top.toNat - 0x30 := by
+          rw [BitVec.toNat_add, show (0xFFFFFFD0 : Word).toNat = 2 ^ 32 - 0x30 from rfl]; omega
+        refine Or.inr (Panics.of_steps (.cons d1 (.cons d2 (c5.trans (c6.trans (c7.trans (c8.trans
+          (.cons d9 (.cons d10 c11)))))))) (halt_panics n11 (by rw [mem11]; exact panicKeep C.panic hH8) pc11 ?_))
+        rw [sp11]; refine ⟨by rw [hspn]; omega, by rw [hspn]; omega, by rw [hspn]; unfold dramEnd; omega⟩
+      · obtain ⟨n9, d9, u9⟩ := t8.notTaken hc8 0x82 bt_at_80 (by decide) (by
+          show (reg n8 a0 == reg n8 x0) = false; rw [a0o, t8.zero]; rfl)
+        refine tail (.cons d1 (.cons d2 (c5.trans (c6.trans (c7.trans (c8.trans (.single d9)))))))
+          ⟨u9.pc, rfl, fun _ => rfl⟩ (by rw [u9.mem]; exact hH8) (fun x hx => ?_) (fun r hr => by rw [u9.regs, k8 r hr])
+        rw [u9.mem, ramLoad, ite_eq_left hram]
+        unfold copyIn
+        by_cases hin : (x - sgDest M0 acc j).toNat < sgBytes M0 acc j
+        · rw [ite_eq_left hin]
+          have hx : x = sgDest M0 acc j + BitVec.ofNat 32 (x - sgDest M0 acc j).toNat := by
+            rw [BitVec.ofNat_toNat, BitVec.setWidth_eq, BitVec.add_comm, BitVec.sub_add_cancel]
+          conv => lhs; rw [hx]
+          exact cp8 a0o _ hin
+        · rw [ite_eq_right hin, fr8 x (sGx x hx) (fun i hi j' hj' e => hin (by
+            rw [show j' = 0 by omega, add_ofNat_zero] at e; rw [← e, BitVec.add_comm, BitVec.add_sub_cancel, BitVec.toNat_ofNat]; unfold sgBytes; omega)),
+            mem7, hM x hx]
+    · obtain ⟨n2, d2, u2⟩ := t1.taken hc 0x82 bt_at_60 (by decide) (by
+        show (reg n1 a0).ult (reg n1 19) = true
+        rw [v0, k1 19 (by decide), h19]
+        rcases kind4 _ hk3 with e | e | e | e <;> rw [e] at hram ⊢ <;> first | exact absurd hram (by decide) | rfl)
+      exact tail (.cons d1 (.single d2)) ⟨u2.pc, by rw [u2.mem], fun _ => rfl⟩
+        (by rw [u2.mem]; exact hH)
+        (fun x hx => by rw [u2.mem, hM x hx, ramLoad, ite_eq_right hram])
+        (fun r hr => by rw [u2.regs, k1 r (by rintro rfl; exact absurd hr (by decide))])
+
+end Copy
+
 end C3.RV32.Cur
