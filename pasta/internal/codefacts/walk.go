@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/imjasonh/playground/pasta/internal/treesitter"
 	"github.com/imjasonh/playground/pasta/internal/tsutil"
-	"github.com/imjasonh/playground/pasta/internal/tswasm"
 )
 
 // walkFile parses one file and folds its facts into idx.
@@ -15,7 +15,7 @@ func walkFile(ctx context.Context, path, langName string, src []byte, idx *Index
 	if spec == nil {
 		return
 	}
-	lang := &tswasm.Language{Grammar: spec.grammar}
+	lang := &treesitter.Language{Grammar: spec.grammar}
 	tree, root, err := tsutil.Parse(ctx, lang, src, path)
 	if err != nil || !root.IsValid() {
 		return

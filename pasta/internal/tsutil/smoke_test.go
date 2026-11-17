@@ -3,7 +3,7 @@ package tsutil
 import (
 	"testing"
 
-	"github.com/imjasonh/playground/pasta/internal/tswasm"
+	"github.com/imjasonh/playground/pasta/internal/treesitter"
 )
 
 func TestSmokeParseGo(t *testing.T) {
@@ -18,7 +18,7 @@ func f() error {
 }
 `)
 
-	tree, root, err := Parse(t.Context(), &tswasm.Language{Grammar: "go"}, src, "")
+	tree, root, err := Parse(t.Context(), &treesitter.Language{Grammar: "go"}, src, "")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}

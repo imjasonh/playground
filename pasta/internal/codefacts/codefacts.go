@@ -13,7 +13,7 @@
 // imprecision is reported, never hidden — findings carry export status,
 // call-graph reachability, name collisions, and a confidence tier so a caller
 // judges rather than trusts. The engine reuses pasta's wazero-hosted tree-sitter
-// runtime (internal/tswasm), so it is pure Go and CGO-free.
+// runtime (internal/treesitter), so it is pure Go and CGO-free.
 package codefacts
 
 import (

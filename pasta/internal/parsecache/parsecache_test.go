@@ -13,7 +13,7 @@ import (
 
 	"github.com/imjasonh/playground/pasta/internal/dsl"
 	"github.com/imjasonh/playground/pasta/internal/effect"
-	"github.com/imjasonh/playground/pasta/internal/tswasm"
+	"github.com/imjasonh/playground/pasta/internal/treesitter"
 )
 
 func TestHashFile_StableAndLanguageScoped(t *testing.T) {
@@ -164,7 +164,7 @@ func TestPutGetTree_SurvivesRuleChange(t *testing.T) {
 	if _, ok := c.GetTree("k"); ok {
 		t.Fatal("GetTree hit on empty cache")
 	}
-	want := tswasm.Compact{1, 2, 3}
+	want := treesitter.Compact{1, 2, 3}
 	c.PutTree("k", want)
 
 	other := Open(dir, "rules-b", 0)
@@ -172,7 +172,7 @@ func TestPutGetTree_SurvivesRuleChange(t *testing.T) {
 	if !ok || !bytes.Equal(got, want) {
 		t.Fatalf("GetTree after a rule change = (%v, %v), want (%v, true)", got, ok, want)
 	}
-	if _, err := os.Stat(filepath.Join(dir, schemaVersion, "trees-"+tswasm.BuildID(), "k.tree")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, schemaVersion, "trees-"+treesitter.BuildID(), "k.tree")); err != nil {
 		t.Errorf("tree is not scoped by grammar build: %v", err)
 	}
 	if s := c.Stats(); s.TreeMisses != 1 || s.TreeWrites != 1 {
@@ -194,7 +194,7 @@ func TestNilCache_IsNoOp(t *testing.T) {
 	if got, ok := c.GetTree("key"); ok || got != nil {
 		t.Errorf("nil GetTree returned (%v, %v)", got, ok)
 	}
-	c.PutTree("key", tswasm.Compact{1})
+	c.PutTree("key", treesitter.Compact{1})
 	if err := c.Prune(); err != nil {
 		t.Errorf("nil Prune: %v", err)
 	}

@@ -1,4 +1,4 @@
-// Package tswasm parses with the official tree-sitter C runtime and
+// Package treesitter parses with the official tree-sitter C runtime and
 // pasta's grammars. Every build embeds them as one wasm32-wasi module
 // (ts-core.wasm.br, from build.sh) that runs on wazero. cgo builds without
 // the purego tag also link most grammars natively (native_cgo.go) and use
@@ -11,7 +11,7 @@
 //
 // Concurrency: each wazero module instance has its own linear memory and
 // is not safe for concurrent calls. Parses borrow an *engine from a pool.
-package tswasm
+package treesitter
 
 import (
 	"bytes"
@@ -430,7 +430,7 @@ func (o ParseOptions) nullTreeErr() error {
 // Parse parses src with lang and returns a Tree. Caller must Release().
 func Parse(ctx context.Context, lang *Language, src []byte, fileID string, opts ParseOptions) (tree *Tree, err error) {
 	if lang == nil || lang.Grammar == "" {
-		return nil, fmt.Errorf("tswasm: nil language")
+		return nil, fmt.Errorf("treesitter: nil language")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

@@ -1,4 +1,4 @@
-package tswasm
+package treesitter
 
 // IsValid reports whether the node is non-nil.
 func (n *Node) IsValid() bool { return n != nil && n.n != nil }

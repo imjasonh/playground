@@ -20,8 +20,8 @@ import (
 
 	"github.com/imjasonh/playground/pasta/internal/dsl"
 	"github.com/imjasonh/playground/pasta/internal/loader"
+	"github.com/imjasonh/playground/pasta/internal/treesitter"
 	"github.com/imjasonh/playground/pasta/internal/tsutil"
-	"github.com/imjasonh/playground/pasta/internal/tswasm"
 )
 
 // Language is the runtime view of a registered language.
@@ -33,7 +33,7 @@ type Language struct {
 	// DefinitionTypes are the node types of named function and method
 	// definitions, whose `name` field holds the defined identifier.
 	DefinitionTypes []string
-	GetLanguage     func() *tswasm.Language
+	GetLanguage     func() *treesitter.Language
 }
 
 // All is the live registry, populated from the embedded github.com/imjasonh/pasta module.

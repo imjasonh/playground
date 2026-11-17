@@ -1,6 +1,6 @@
 //go:build !unix
 
-package tswasm
+package treesitter
 
 import "github.com/tetratelabs/wazero/experimental"
 

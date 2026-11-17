@@ -4,8 +4,8 @@ package match
 
 import (
 	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/treesitter"
 	"github.com/imjasonh/playground/pasta/internal/tsutil"
-	"github.com/imjasonh/playground/pasta/internal/tswasm"
 )
 
 // Captures is a map from capture name to the matched node.
@@ -44,18 +44,18 @@ type Env struct {
 // of that type. Built in O(N) at parse time; turns FindAll's per-rule
 // cost from O(tree) to O(target-type-count).
 //
-// It keeps bare tswasm nodes, which are an eighth the size of a
+// It keeps bare treesitter nodes, which are an eighth the size of a
 // tsutil.Node, and the file's source, language, and ID once in file.
 type NodeIndex struct {
 	file   tsutil.Node
-	byType map[string][]*tswasm.Node
+	byType map[string][]*treesitter.Node
 }
 
 // BuildIndex walks root once and indexes every named node by type.
 func BuildIndex(root tsutil.Node) *NodeIndex {
 	idx := &NodeIndex{
 		file:   tsutil.Node{Src: root.Src, Lang: root.Lang, FileID: root.FileID},
-		byType: map[string][]*tswasm.Node{},
+		byType: map[string][]*treesitter.Node{},
 	}
 	tsutil.Walk(root, func(n tsutil.Node) bool {
 		t := n.Type()

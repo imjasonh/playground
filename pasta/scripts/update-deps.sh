@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Updates pasta's Go modules, the vendored tree-sitter runtime, and the git
-# grammars in internal/tswasm/grammars.txt, then rebuilds ts-core.wasm.br if
+# grammars in internal/treesitter/grammars.txt, then rebuilds ts-core.wasm.br if
 # the runtime or any grammar moved. update-go-dependencies.sh runs it in
 # place of `go get -u ./...`.
 #
@@ -8,9 +8,9 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-TSWASM=internal/tswasm
-VENDOR=$TSWASM/csrc/vendor/tree-sitter
-GRAMMARS=$TSWASM/grammars.txt
+TREESITTER=internal/treesitter
+VENDOR=$TREESITTER/csrc/vendor/tree-sitter
+GRAMMARS=$TREESITTER/grammars.txt
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -71,5 +71,5 @@ while read -r id repo ref; do
 done < <(awk '!/^#/ && NF && $4 != "go.mod" { print $1, $2, $4 }' "$GRAMMARS")
 
 if [ "$changed" = 1 ]; then
-  bash "$TSWASM/build.sh"
+  bash "$TREESITTER/build.sh"
 fi
