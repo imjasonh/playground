@@ -70,3 +70,47 @@ func TestStreamingPrefilterAllowsHit(t *testing.T) {
 		t.Fatalf("want 1 diagnostic, got %v", results[0].Diagnostics)
 	}
 }
+
+// TestPrefilterSkipsRule runs a file that one rule's filter rejects and
+// another rule matches, on the streaming path and, with a rule that
+// requires a fact, on the in-memory path. Only the unfiltered rule
+// fires.
+func TestPrefilterSkipsRule(t *testing.T) {
+	goLang, ok := lang.ByExt(".go")
+	if !ok {
+		t.Fatal("go language not registered")
+	}
+	for name, requires := range map[string][]string{"streaming": nil, "in-memory": {"f"}} {
+		t.Run(name, func(t *testing.T) {
+			a := &dsl.Analyzer{
+				Name: "t",
+				Rules: map[string]dsl.Rule{
+					"filtered": {
+						Name:             "filtered",
+						Languages:        []string{goLang.Name},
+						RequireSubstring: []string{"UNIQ_TOKEN_ZZZ"},
+						Match:            dsl.Pattern{Node: []string{"source_file"}},
+						Diagnose:         &dsl.Diagnostic{Message: "should not fire"},
+					},
+					"unfiltered": {
+						Name:      "unfiltered",
+						Languages: []string{goLang.Name},
+						Requires:  requires,
+						Match:     dsl.Pattern{Node: []string{"source_file"}},
+						Diagnose:  &dsl.Diagnostic{Message: "hit"},
+					},
+				},
+			}
+			results, err := RunGroup(t.Context(), []FileInput{
+				{FileID: "a.go", Src: []byte("package p\n"), Lang: goLang},
+			}, []*dsl.Analyzer{a})
+			if err != nil {
+				t.Fatal(err)
+			}
+			d := results[0].Diagnostics
+			if len(d) != 1 || d[0].Rule != "unfiltered" {
+				t.Fatalf("want one diagnostic from unfiltered, got %+v", d)
+			}
+		})
+	}
+}

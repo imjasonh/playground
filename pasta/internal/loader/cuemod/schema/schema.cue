@@ -139,11 +139,11 @@ package schema
 	// file the language filter accepts".
 	file_match?: [...string]
 
-	// Optional content-sniff filter. When set, the engine skips the
-	// tree-sitter parse for files that lack every listed substring.
-	// Prefer relying on inference from `eq`/`token_eq` and a single
-	// simple `matches` alternation when those already name the sparse
-	// tokens; rewrite `within` tokens are not inferred. Use this for
+	// Optional content-sniff filter. When set, the engine doesn't run
+	// the rule on a file that lacks any listed substring, and skips the
+	// tree-sitter parse when no applicable rule can match the file.
+	// Prefer relying on inference from `eq`/`token_eq` literals and
+	// `matches` regexes when those already name the sparse tokens; rewrite `within` tokens are not inferred. Use this for
 	// cases inference can't see (e.g. comments-only rules).
 	require_substring?: [...string]
 
