@@ -579,25 +579,14 @@ func (e *engine) parseDump(ctx context.Context, langExport string, src []byte, o
 	return treeDump{raw: bytes.Clone(raw), n: n, kinds: kinds, fields: fields}, nil
 }
 
-// buildGraph rebuilds d as a Go node graph and returns its root. All
-// nodes share one slice, and each parent's child slices are carved at
-// their exact size from two shared buffers.
+// buildGraph rebuilds d as a Go node graph and returns its root.
 func buildGraph(d treeDump) *node {
 	n, raw := d.n, d.raw
 	if n == 0 {
 		return &node{kind: "ERROR"}
 	}
-	const noParent = ^uint32(0)
 	nodes := make([]node, n)
-	parent := make([]uint32, n)
-	childCount := make([]uint32, n)
-	namedCount := make([]uint32, n)
-	// Reconstruct parent/child from pre-order depths.
-	type frame struct {
-		idx   uint32
-		depth uint32
-	}
-	stack := make([]frame, 0, 64)
+	depths := make([]uint32, n)
 	for i := uint32(0); i < n; i++ {
 		o := i * recSize
 		kindID := binary.LittleEndian.Uint32(raw[o:])
@@ -618,13 +607,67 @@ func buildGraph(d treeDump) *node {
 			start:     binary.LittleEndian.Uint32(raw[o+4:]),
 			end:       binary.LittleEndian.Uint32(raw[o+8:]),
 			fieldName: d.fields[fieldID],
-			named:     flags&1 != 0,
-			err:       isErr,
-			missing:   isMissing,
-			extra:     flags&8 != 0,
-			hasError:  flags&16 != 0,
 		}
-		depth := binary.LittleEndian.Uint32(raw[o+28:])
+		nodes[i].setFlags(byte(flags))
+		depths[i] = binary.LittleEndian.Uint32(raw[o+28:])
+	}
+	return link(nodes, depths)
+}
+
+// Node flags, as the guest dumps them and as Compact stores them.
+const (
+	flagNamed = 1 << iota
+	flagErr
+	flagMissing
+	flagExtra
+	flagHasError
+)
+
+func (n *node) setFlags(f byte) {
+	n.named = f&flagNamed != 0
+	n.err = f&flagErr != 0
+	n.missing = f&flagMissing != 0
+	n.extra = f&flagExtra != 0
+	n.hasError = f&flagHasError != 0
+}
+
+func (n *node) flags() byte {
+	var f byte
+	if n.named {
+		f |= flagNamed
+	}
+	if n.err {
+		f |= flagErr
+	}
+	if n.missing {
+		f |= flagMissing
+	}
+	if n.extra {
+		f |= flagExtra
+	}
+	if n.hasError {
+		f |= flagHasError
+	}
+	return f
+}
+
+// link sets the parent and child pointers of nodes, which are in
+// preorder with depths[i] the depth of nodes[i], and returns the root.
+// Each parent's child slices are carved at their exact size from two
+// shared buffers.
+func link(nodes []node, depths []uint32) *node {
+	n := uint32(len(nodes))
+	const noParent = ^uint32(0)
+	parent := make([]uint32, n)
+	childCount := make([]uint32, n)
+	namedCount := make([]uint32, n)
+	type frame struct {
+		idx   uint32
+		depth uint32
+	}
+	stack := make([]frame, 0, 64)
+	for i := uint32(0); i < n; i++ {
+		depth := depths[i]
 		for len(stack) > 0 && stack[len(stack)-1].depth >= depth {
 			stack = stack[:len(stack)-1]
 		}
