@@ -144,6 +144,7 @@ import C3BootProofs.Proofs.EdDecompress
 import C3BootProofs.Proofs.EdVerifyingKey
 import C3BootProofs.Proofs.Ed25519PkOk
 import C3BootProofs.Proofs.EdNafTable
+import C3BootProofs.Proofs.Wnaf
 import C3BootProofs.Spec.Ecdsa
 import C3BootProofs.Proofs.MontMul12Main
 import C3BootProofs.Proofs.SqrMont12Main
@@ -3023,6 +3024,42 @@ theorem exists_nafTable_machine :
     RV32.sep_of_le (by decide) (by decide)⟩
   exact ⟨by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
     by code_in, by code_in, by code_in, by code_in⟩
+
+/-- `wnaf_form`, its callees, and the panic code where the image loads them,
+the four scalar bytes `0x13 0 0 0` at `0x3FCC6000`, and zeros elsewhere. -/
+def witnessRegionsWf : List (Nat × List Nat) :=
+  RV32.panicFns ++ [(Image.wnafFormAddress, Image.wnafFormCode), (Image.memsetAddress, Image.memsetCode),
+    (Image.incrementLimbAddress, Image.incrementLimbCode), (Image.memcpyStubAddress, Image.memcpyStubCode),
+    (Image.memcpyBodyAddress, Image.memcpyBodyCode), (Image.lshrdi3Address, Image.lshrdi3Code),
+    (Image.ashldi3Address, Image.ashldi3Code), (Image.expectUsizeAddress, Image.expectUsizeCode),
+    (0x3FCC6000, [0x13, 0x00, 0x00, 0x00])]
+
+def witnessMemWf : RV32.Word → BitVec 8 := RV32.regionMem witnessRegionsWf
+
+set_option maxRecDepth 200000 in
+theorem witnessRegionsWf_apart : RV32.regionsApart witnessRegionsWf = true := by decide +kernel
+
+theorem witnessMemWf_panic : RV32.PanicCode witnessMemWf :=
+  fun _ hp => RV32.regionMem_codeIn witnessRegionsWf_apart (List.mem_append_left _ hp)
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `wnaf_form` on the 4 bytes at `0x3FCC6000` with
+`L = 32`, a 40-byte digit buffer at `0x3FCC6100`, and the stack at
+`0x3FCC8000` meets `wnafForm_correct`'s hypotheses. -/
+theorem exists_wnafForm_machine :
+    ∃ (m : RV32.Machine) (sp0 wp cp retAddr : RV32.Word) (wl cn L : Nat),
+      RV32.WfCtx m.mem (sp0 + 0xFFFFFF90) wp cp wl cn L ∧ m.pc = RV32.WF ∧ RV32.reg m RV32.a0 = wp ∧
+      RV32.reg m RV32.a1 = BitVec.ofNat 32 wl ∧ RV32.reg m RV32.a2 = cp ∧ RV32.reg m RV32.a3 = BitVec.ofNat 32 cn ∧
+      RV32.reg m RV32.a4 = BitVec.ofNat 32 L ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      RV32.reg m RV32.sp = sp0 := by
+  refine ⟨⟨leafRegs 0x3FCC6100 40 0x3FCC6000 |> fun f r => if r = RV32.a3 then 4 else if r = RV32.a4 then 32 else f r,
+    RV32.WF, witnessMemWf⟩, 0x3FCC8000, 0x3FCC6100, 0x3FCC6000, 0, 40, 4, 32, ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
+    by decide, rfl⟩
+  refine ⟨by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in,
+    witnessMemWf_panic, ⟨by decide, by decide, by decide⟩, by decide, by decide, by decide, by decide,
+    RV32.sep_of_le (by decide) (by decide), by decide, RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide), by decide +kernel⟩
 
 /-- Memory with `time::date_time` and `time::digits::<2>` where the image
 loads them, a slice reader at `0x3FCC6000` over 10 bytes at `0x3FCC7000`,
@@ -7211,6 +7248,12 @@ end C3
 
 /-- info: 'C3.exists_nafTable_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_nafTable_machine
+
+/-- info: 'C3.RV32.wnafForm_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.wnafForm_correct
+
+/-- info: 'C3.exists_wnafForm_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_wnafForm_machine
 
 /-- info: 'C3.RV32.p384Mul_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.p384Mul_correct

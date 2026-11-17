@@ -640,21 +640,21 @@ theorem wf_inc (C : WfCtx M0 F wp cp wl cn L) {n : Machine} {off : Nat} (s : St 
   · have e4' : memLoad32 n2.mem (F + BitVec.ofNat 32 0x10 + 4) = if N.toNat < 8 then 0 else N - 8 := e4
     rcases hR with ⟨h0, h1⟩ | ⟨h0, h1, h2⟩
     · have hN0 : N.toNat = 0 := by rw [← hN, h0]; rfl
-      left; exact ⟨by rw [e4', if_pos (by omega)], by omega⟩
+      left; exact ⟨by rw [e4', ite_eq_left (by omega)], by omega⟩
     · have hNv : N.toNat = cn - 8 * k := hN ▸ h1
       by_cases h8 : N.toNat < 8
-      · left; exact ⟨by rw [e4', if_pos h8], by omega⟩
+      · left; exact ⟨by rw [e4', ite_eq_left h8], by omega⟩
       · by_cases hz : cn - 8 * k = 8
         · left
-          refine ⟨by rw [e4', if_neg h8]; exact BitVec.eq_of_toNat_eq (by
+          refine ⟨by rw [e4', ite_eq_right h8]; exact BitVec.eq_of_toNat_eq (by
             rw [BitVec.toNat_sub, hNv, hz]; rfl), by omega⟩
         · right
           have hN0 : ¬ N = 0 := fun e => by rw [e] at hNv; simp at hNv; omega
           have := N.isLt
-          refine ⟨by rw [e0, if_neg hN0, if_neg h8, ← hP, h0,
+          refine ⟨by rw [e0, ite_eq_right hN0, ite_eq_right h8, ← hP, h0,
               show cp + BitVec.ofNat 32 (8 * k) + (8 : Word) = cp + BitVec.ofNat 32 (8 * k + 8) from add_ofNat_assoc ..,
               show 8 * k + 8 = 8 * (k + 1) by omega],
-            by rw [e4', if_neg h8, BitVec.toNat_sub, show (8 : Word).toNat = 8 from rfl]; omega, by omega⟩
+            by rw [e4', ite_eq_right h8, BitVec.toNat_sub, show (8 : Word).toNat = 8 from rfl]; omega, by omega⟩
 
 end Calls
 
@@ -1206,7 +1206,7 @@ theorem wsub1 {k : Nat} (hk : 1 ≤ k) (hk2 : k < 2 ^ 32) :
 
 theorem wnafGo_even {N L f pos carry : Nat} (hlt : pos < L) (h : (carry + N / 2 ^ pos % 32) % 2 = 0) :
     wnafGo N L (f + 1) pos carry = 0 :: wnafGo N L f (pos + 1) carry := by
-  simp only [wnafGo, if_pos hlt, if_pos h]
+  simp only [wnafGo, hlt, h, ↓reduceIte]
 
 /-- The window `carry + bits` as the value of `a0` at 0xC8. -/
 theorem wf_a0 {s0 s10 : Word} {w c : Nat} (h0 : s0 = BitVec.ofNat 32 w) (h1 : s10 = BitVec.ofNat 32 c) :
@@ -1299,7 +1299,7 @@ theorem wnafGo_odd {N L f pos carry : Nat} (hlt : pos < L) (h : (carry + N / 2 ^
     wnafGo N L (f + 1) pos carry =
       (wd (carry + N / 2 ^ pos % 32) :: List.replicate (wskip L pos (carry + N / 2 ^ pos % 32) - 1) 0) ++
         wnafGo N L f (pos + wskip L pos (carry + N / 2 ^ pos % 32)) (wc (carry + N / 2 ^ pos % 32)) := by
-  simp only [wnafGo, if_pos hlt, h, wd, wc, wskip]; rfl
+  simp only [wnafGo, hlt, h, wd, wc, wskip, ↓reduceIte]; rfl
 
 /-- A carry out leaves at least four bits above `pos`, so an odd window always
 moves `pos`. -/
@@ -2139,5 +2139,88 @@ theorem wf_pro (m : Machine) {F wp cp : Word} {wl cn L : Nat} (C : WfCtx m.mem F
       fr' _ (hcfr k k2) (sep_offsets F (c := 0x10) (n := 28) (d := k) (k := 1) (Or.inl (by omega)) (by omega) (by omega)),
       fr _ (hcfr k k2) (sep_offsets F (c := 0x10) (n := 28) (d := k) (k := 1) (Or.inl (by omega)) (by omega) (by omega)),
       ← hMz, fillBytes_sep (F18.2.2 k k2 (by omega)) (Nat.le_refl _), sl7 k k1 k2]
+
+theorem wfPs_restore (M : Word → BitVec 8) (G : Word) (f : Fin 32 → Word) :
+    ∀ r o, (r, o) ∈ wfPs → restoreRegs M G f wfPs r = memLoad32 M (G + o) := by
+  intro r o hm
+  simp only [wfPs, List.mem_cons, List.mem_nil_iff, or_false, Prod.mk.injEq] at hm
+  rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+    simp +decide only [restoreRegs, upd, ↓reduceIte]
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 16000000 in
+/-- **The compiled `wnaf_form`**, called with the digit buffer at `wp` of
+`wl` bytes, the scalar's `cn` bytes at `cp`, and the bit count `L`, where the
+little-endian number in those bytes is below `2 ^ L` and `L < wl`: it writes
+the digits of `wnafSpec` as bytes from `wp`, returns their count, keeps `sp`
+and the callee-saved registers, and changes no memory outside its stack and
+the digit buffer. -/
+theorem wnafForm_correct (m : Machine) {sp0 wp cp retAddr : Word} {wl cn L : Nat}
+    (C : WfCtx m.mem (sp0 + 0xFFFFFF90) wp cp wl cn L) (hpc : m.pc = WF)
+    (ha0 : reg m a0 = wp) (ha1 : reg m a1 = BitVec.ofNat 32 wl) (ha2 : reg m a2 = cp)
+    (ha3 : reg m a3 = BitVec.ofNat 32 cn) (ha4 : reg m a4 = BitVec.ofNat 32 L) (hra : reg m ra = retAddr)
+    (hret : retAddr &&& ~~~1 = retAddr) (hsp : reg m sp = sp0) :
+    ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
+      (∀ q : Fin 32, q.val ∈ [1, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
+      reg m' a0 = BitVec.ofNat 32 (wnafSpec (memBytes m.mem cp cn) L).length ∧
+      (∀ i, i < (wnafSpec (memBytes m.mem cp cn) L).length →
+        m'.mem (wp + BitVec.ofNat 32 i) = BitVec.ofNat 8 (digB ((wnafSpec (memBytes m.mem cp cn) L).getD i 0))) ∧
+      ∀ x, Sep (sp0 + 0xFFFFFF70) 0x90 x 1 → Sep wp wl x 1 → m'.mem x = m.mem x := by
+  obtain ⟨F, hF⟩ : ∃ F, sp0 + 0xFFFFFF90 = F := ⟨_, rfl⟩
+  rw [hF] at C
+  have hG : sp0 + 0xFFFFFF70 = F + 0xFFFFFFE0 := by rw [← hF, BitVec.add_assoc]; rfl
+  rw [hG]
+  obtain ⟨n1, Ms, M1, c1, S1, slot⟩ := wf_pro m C hpc ha0 ha1 ha2 ha3 ha4 (by rw [hsp, hF])
+  obtain ⟨n2, M2, car, j2, D2, c2, S2⟩ := wf_loop C (L + 1) (by omega) S1
+  obtain ⟨n3, M3, c3, s3, R3, W3, a03⟩ := wf_exit C S2
+  have hc3 := C.code W3.agree C.cod (by decide) (by decide)
+  have hFa := C.room.1
+  obtain ⟨n4, c4, u4⟩ := St.block (restoreBlock wfPs) s3 hc3 wfRestore_end
+    (restoreBlock_ok M3 F wfPs (reg n3) R3.hsp wfPs_sp fun p hp => fr_al' hFa (wfPs_range p hp).1)
+  simp only [restoreBlock_run M3 F wfPs (reg n3) R3.hsp wfPs_sp] at u4
+  have rsp4 : restoreRegs M3 F (reg n3) wfPs sp = F := by rw [restoreRegs_sp _ _ _ _ wfPs_sp]; exact R3.hsp
+  obtain ⟨n5, d5, u5⟩ := u4.aluImm hc3 wf_at_19a (off' := 0x19C) (by decide)
+  obtain ⟨n6, d6, pc6, mem6, regs6⟩ := u5.jalr hc3 wf_at_19c
+  have slotM : ∀ r o, (r, o) ∈ wfPs → memLoad32 M3 (F + o) = reg m r := fun r o h => by
+    have hr := wfPs_range _ h
+    rw [← slot r o h, ← ofNat_toNat_self o]
+    exact memLoad32_congr fun q hq => by
+      rw [add_ofNat_assoc]; exact W3.slots _ (by simp at hr; omega) (by simp at hr; omega)
+  have kq : ∀ q, q ≠ sp → reg n6 q = restoreRegs M3 F (reg n3) wfPs q := fun q hq => by
+    rw [regs6]
+    by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; rw [upd_zero, u4.zero]
+    · exact upd_ne h0 hq
+  refine ⟨n6, c1.trans (c2.trans (c3.trans (c4.trans (.cons d5 (.single d6))))), ?_, ?_, fun q hq => ?_, ?_, ?_, ?_⟩
+  · rw [pc6, upd_ne (by decide) (by decide), wfPs_restore _ _ _ ra 0x6C (by decide), add_lit_zero,
+      slotM ra _ (by decide), hra, hret]
+  · rw [regs6]; simp +decide only [upd_app, ↓reduceIte, aluEval]; rw [rsp4, ← hF, BitVec.add_assoc]
+    exact BitVec.add_zero _
+  · have hsq : q ≠ sp := by revert hq; revert q; decide
+    rw [kq q hsq]
+    have hq' : q = ra ∨ q = (8 : Fin 32) ∨ q = (9 : Fin 32) ∨ q = (18 : Fin 32) ∨ q = (19 : Fin 32) ∨
+        q = (20 : Fin 32) ∨ q = (21 : Fin 32) ∨ q = (22 : Fin 32) ∨ q = (23 : Fin 32) ∨ q = (24 : Fin 32) ∨
+        q = (25 : Fin 32) ∨ q = (26 : Fin 32) ∨ q = (27 : Fin 32) ∨ q = (3 : Fin 32) ∨ q = (4 : Fin 32) := by
+      revert hq; revert q; decide
+    rcases hq' with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+    all_goals first
+      | (rw [restoreRegs_other _ _ wfPs _ _ (by decide) (by decide)]; first | exact R3.gp | exact R3.tp)
+      | (rw [wfPs_restore _ _ _ _ 0x6C (by decide)]; exact slotM _ 0x6C (by decide))
+      | (rw [wfPs_restore _ _ _ _ 0x68 (by decide)]; exact slotM _ 0x68 (by decide))
+      | (rw [wfPs_restore _ _ _ _ 0x64 (by decide)]; exact slotM _ 0x64 (by decide))
+      | (rw [wfPs_restore _ _ _ _ 0x60 (by decide)]; exact slotM _ 0x60 (by decide))
+      | (rw [wfPs_restore _ _ _ _ 0x5C (by decide)]; exact slotM _ 0x5C (by decide))
+      | (rw [wfPs_restore _ _ _ _ 0x58 (by decide)]; exact slotM _ 0x58 (by decide))
+      | (rw [wfPs_restore _ _ _ _ 0x54 (by decide)]; exact slotM _ 0x54 (by decide))
+      | (rw [wfPs_restore _ _ _ _ 0x50 (by decide)]; exact slotM _ 0x50 (by decide))
+      | (rw [wfPs_restore _ _ _ _ 0x4C (by decide)]; exact slotM _ 0x4C (by decide))
+      | (rw [wfPs_restore _ _ _ _ 0x48 (by decide)]; exact slotM _ 0x48 (by decide))
+      | (rw [wfPs_restore _ _ _ _ 0x44 (by decide)]; exact slotM _ 0x44 (by decide))
+      | (rw [wfPs_restore _ _ _ _ 0x40 (by decide)]; exact slotM _ 0x40 (by decide))
+      | (rw [wfPs_restore _ _ _ _ 0x3C (by decide)]; exact slotM _ 0x3C (by decide))
+  · rw [kq a0 (by decide), restoreRegs_other _ _ wfPs _ _ (by decide) (by decide), a03]
+  · intro i hi; rw [mem6]; exact W3.out i hi
+  · intro x h1 h2; rw [mem6]; exact W3.agree x h1 h2
 
 end C3.RV32
