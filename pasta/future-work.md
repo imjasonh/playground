@@ -317,17 +317,13 @@ cap shipped together (PR #7). Follow-ups that have also landed:
 
 The remaining ceiling on cold-cache runs is still the parser itself.
 
-### Switch to cgo tree-sitter
-**Status:** Superseded by WASM. pasta now embeds the official C
-tree-sitter runtime + grammars as `internal/tswasm/ts-core.wasm.br`
-and drives them via wazero (`CGO_ENABLED=0`, `go install` still
-works). Native cgo would still be ~2× faster than WASM on raw parse
-(see dvcdsys/code-index PR #81) but is not worth the toolchain
-breakage unless a profile shows parse dominating end-to-end again.
-A cold run over about 51,600 TypeScript files now shows that: the
-WASM parse is 74% of CPU, about 1.6 MB/s of TypeScript per core, and
-rule matching is about 1.3%. A native build mode is the largest
-remaining lever for big repositories.
+### Native SQL and Dockerfile grammars
+**Effort:** S.
+cgo builds parse 19 grammars natively and fall back to WASM for two:
+the SQL grammar's repository doesn't commit `parser.c`, and the
+Dockerfile grammar's Go module path doesn't match its repository.
+Vendoring the generated sources of both in `csrc/` would move them to
+the native backend too.
 
 ### One walk per file, and a smaller node index
 **Effort:** M.
