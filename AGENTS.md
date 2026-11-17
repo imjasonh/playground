@@ -470,9 +470,10 @@ pinned Wrangler version) selects every Cloudflare Worker app, and a change to
 Go is the only ecosystem here with a stable, first-class data-race detector (`go test -race`). Rust ThreadSanitizer is still nightly-only and cannot instrument `wasm32-unknown-unknown` Worker tests; JavaScript/Node has no equivalent flag. Those legs stay as they are.
 
 Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
-app's toolchain comes from its `rust-toolchain.toml` (defaulting to stable);
-Worker apps pin Rust 1.99, and their `[build]` command installs the
-`worker-build` release that matches the locked `worker` crate.
+app's toolchain comes from its `rust-toolchain.toml` (defaulting to stable),
+which the daily dependency update raises to the newest stable release. Worker
+apps' `[build]` command installs the `worker-build` release that matches the
+locked `worker` crate.
 
 **ESP32 firmware is tested by `inkbot-esp32.yml` and `esp32-ble.yml`, not
 `test.yml`.** Stable Linux Cargo cannot build `xtensa-esp32-espidf`. Each
@@ -540,7 +541,7 @@ test workflow gates on:
 |----------|---------|--------|
 | Browser | `npx npm-check-updates --upgrade` → `npm install` → `npm run vendor` (if defined) | `npm test` (+ `npm run test:e2e` if defined) |
 | Go | `go mod edit -go=<installed minor>.0` when the `go` line is older, then `go get -u ./...`, except `litestream`, which `update-litestream.yml` updates | `gofmt` → `go build ./...` → `go test -race ./...` |
-| Rust | `cargo update` | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build + `wrangler deploy --dry-run` |
+| Rust | raise `rust-toolchain.toml` to the newest stable release when it's older → `cargo update` | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build + `wrangler deploy --dry-run` |
 | Wrangler (Worker apps) | `npx npm-check-updates --upgrade` on `.github/wrangler/package.json` | `wrangler deploy --dry-run` for every Worker app, in the Rust leg |
 
 Publishing is all-or-nothing, so a green run never lands a half-broken bump:
@@ -566,7 +567,11 @@ Each ecosystem's work lives in its own script (`update-go-dependencies.sh`,
 run in parallel in one checkout and write temporary files into it, so each one
 reports only pass or fail. `update-rust-dependencies.sh` bumps the Wrangler
 pin before it verifies any app, so every Worker app's deploy check runs with
-the new version; a separate leg could race those checks. After all three exit,
+the new version; a separate leg could race those checks. A Go module with
+`scripts/update-deps.sh` runs that script in place of `go get -u ./...`.
+pasta's script runs `go get -u`, moves the vendored tree-sitter runtime and
+the grammars without a Go module to their newest releases, and rebuilds
+`ts-core.wasm.br` when any of them changed. After all three exit,
 `manage-dependency-update.sh detect-changes` decides whether there is anything
 to publish, from the same paths that the publish step commits.
 `manage-dependency-update.sh` also handles the pull request, auto-merge, and

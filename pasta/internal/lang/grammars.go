@@ -9,7 +9,7 @@ import "github.com/imjasonh/playground/pasta/internal/tswasm"
 // (internal/tswasm/build.sh) and registering it here.
 //
 // Only grammars embedded in internal/tswasm/ts-core.wasm.br are
-// available; see that package's build.sh for the pin list.
+// available; see that package's grammars.txt.
 var Grammars = map[string]func() *tswasm.Language{
 	"go":         lang("go"),
 	"python":     lang("python"),

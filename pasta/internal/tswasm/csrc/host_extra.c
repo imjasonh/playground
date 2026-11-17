@@ -1,8 +1,58 @@
-// host_extra.c — batched tree dump for wazero host (adapted from
-// dvcdsys/code-index tswasm). Walks the whole tree inside the guest and
-// writes a flat pre-order []NodeRec so the host does one Memory.Read.
+// What both backends need beyond the tree-sitter API: pasta_parse, a parse
+// with a time budget, and ts_dump_tree (adapted from dvcdsys/code-index
+// tswasm), which writes the whole tree as a flat pre-order []NodeRec so the
+// wasm host reads it with one Memory.Read.
 #include "tree_sitter/api.h"
+#include <stdbool.h>
 #include <stdint.h>
+#include <time.h>
+
+typedef struct {
+  const char *src;
+  uint32_t len;
+} pasta_string;
+
+static const char *pasta_read(void *payload, uint32_t byte, TSPoint point, uint32_t *n) {
+  pasta_string *s = payload;
+  if (byte >= s->len) {
+    *n = 0;
+    return "";
+  }
+  *n = s->len - byte;
+  return s->src + byte;
+}
+
+static uint64_t pasta_now_nanos(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (uint64_t)ts.tv_sec * 1000000000u + (uint64_t)ts.tv_nsec;
+}
+
+typedef struct {
+  uint64_t deadline_nanos; // 0 means none
+  const int32_t *cancel;
+} pasta_budget;
+
+static bool pasta_progress(TSParseState *state) {
+  pasta_budget *b = state->payload;
+  if (b->cancel != NULL && __atomic_load_n(b->cancel, __ATOMIC_RELAXED)) return true;
+  return b->deadline_nanos != 0 && pasta_now_nanos() > b->deadline_nanos;
+}
+
+// pasta_parse returns NULL when timeout_micros elapses or *cancel becomes
+// nonzero. The tree doesn't reference src after it returns.
+TSTree *pasta_parse(TSParser *p, const char *src, uint32_t len, uint64_t timeout_micros, const int32_t *cancel) {
+  pasta_string s = {src, len};
+  TSInput in = {&s, pasta_read, TSInputEncodingUTF8, NULL};
+  pasta_budget b = {0, cancel};
+  TSParseOptions opts = {0};
+  if (timeout_micros > 0) b.deadline_nanos = pasta_now_nanos() + timeout_micros * 1000u;
+  if (timeout_micros > 0 || cancel != NULL) {
+    opts.payload = &b;
+    opts.progress_callback = pasta_progress;
+  }
+  return ts_parser_parse_with_options(p, NULL, in, opts);
+}
 
 // 10 × uint32 = 40 bytes. field_id is the field of this node on its parent
 // (0 = none). flags: bit0 named, bit1 error, bit2 missing, bit3 extra,

@@ -23,11 +23,17 @@ git init -q -b main repo
 cd repo
 git config user.name test
 git config user.email test@example.com
+mkdir -p pasta/internal/tswasm/csrc/vendor/tree-sitter
+echo 'internal/tswasm/ts-core.wasm' > pasta/.gitignore
+echo 'v0.1.0' > pasta/internal/tswasm/csrc/vendor/tree-sitter/VERSION
+echo 'sql x src v0.3.0' > pasta/internal/tswasm/grammars.txt
+echo 'v1' > pasta/internal/tswasm/ts-core.wasm.br
 mkdir -p gomod libapp/go libapp/rust jsapp worker git-k8s/agent/runner .github/wrangler
 echo 'module gomod' > gomod/go.mod
 echo 'module libapp/go' > libapp/go/go.mod
 echo '# v1' > libapp/go/go.sum
 echo '# v1' > libapp/rust/Cargo.lock
+echo 'channel = "1.0.0"' > libapp/rust/rust-toolchain.toml
 echo '{"devDependencies":{"wrangler":"4.0.0"}}' > .github/wrangler/package.json
 echo '{}' > jsapp/package.json
 echo '{}' > jsapp/package-lock.json
@@ -35,6 +41,7 @@ echo '{}' > git-k8s/agent/runner/package.json
 echo '{}' > git-k8s/agent/runner/package-lock.json
 echo '[package]' > worker/Cargo.toml
 echo '# v1' > worker/Cargo.lock
+echo 'channel = "1.0.0"' > worker/rust-toolchain.toml
 echo 'package.json' > worker/.gitignore
 echo 'fn main() {}' > worker/main.rs
 git add -A
@@ -78,6 +85,12 @@ expect "library crate in an app's rust/ directory" true "$(detect)"
 expect "library crate in an app's rust/ directory staged" "M libapp/rust/Cargo.lock" "$(staged)"
 reset_tree
 
+echo 'channel = "1.1.0"' > worker/rust-toolchain.toml
+echo 'channel = "1.1.0"' > libapp/rust/rust-toolchain.toml
+expect "toolchain bump" true "$(detect)"
+expect "toolchain bump staged" "M libapp/rust/rust-toolchain.toml M worker/rust-toolchain.toml" "$(staged)"
+reset_tree
+
 echo '{"lockfileVersion":3}' > git-k8s/agent/runner/package-lock.json
 expect "nested npm package" true "$(detect)"
 expect "nested npm package staged" "M git-k8s/agent/runner/package-lock.json" "$(staged)"
@@ -86,6 +99,17 @@ reset_tree
 echo '{"devDependencies":{"wrangler":"4.1.0"}}' > .github/wrangler/package.json
 expect "wrangler bump" true "$(detect)"
 expect "wrangler bump staged" "M .github/wrangler/package.json" "$(staged)"
+reset_tree
+
+# The uncompressed wasm module that build.sh leaves behind is ignored.
+tswasm=pasta/internal/tswasm
+echo 'v0.2.0' > "$tswasm/csrc/vendor/tree-sitter/VERSION"
+echo 'int x;' > "$tswasm/csrc/vendor/tree-sitter/lib.c"
+echo 'sql x src v0.4.0' > "$tswasm/grammars.txt"
+echo 'v2' > "$tswasm/ts-core.wasm.br"
+echo 'v2' > "$tswasm/ts-core.wasm"
+expect "tree-sitter update" true "$(detect)"
+expect "tree-sitter update staged" "M $tswasm/csrc/vendor/tree-sitter/VERSION A $tswasm/csrc/vendor/tree-sitter/lib.c M $tswasm/grammars.txt M $tswasm/ts-core.wasm.br" "$(staged)"
 reset_tree
 
 mkdir newmod

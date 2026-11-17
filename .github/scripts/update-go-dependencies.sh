@@ -73,15 +73,20 @@ for module in "${modules[@]}"; do
     fi
   fi
 
+  # A module with scripts/update-deps.sh updates its own dependencies.
+  update="go get -u ./..."
+  if [ -f "$module/scripts/update-deps.sh" ]; then
+    update="bash scripts/update-deps.sh"
+  fi
   if (
     cd "$module"
     export GOFLAGS="$goflags"
-    go get -u ./...
+    $update
   ); then
     echo "- ✅ \`${module}\`: dependencies updated" >> "$GITHUB_STEP_SUMMARY"
   else
     result=failure
-    echo "::error title=Dependency update failed::${module}: go get -u ./..."
+    echo "::error title=Dependency update failed::${module}: ${update}"
     echo "- ❌ \`${module}\`: dependency update failed" >> "$GITHUB_STEP_SUMMARY"
   fi
 
@@ -118,7 +123,9 @@ for module in "${modules[@]}"; do
     cd "$module"
     export GOFLAGS="$goflags"
     # Match test-go-modules.sh: always race-detect. Heavy modules get more time.
-    if [ "$module" = "node-image" ] || [ "$module" = "pasta" ]; then
+    if [ "$module" = "pasta" ]; then
+      go test -race -timeout 30m ./... && CGO_ENABLED=0 go test ./internal/tswasm/
+    elif [ "$module" = "node-image" ]; then
       go test -race -timeout 30m ./...
     else
       go test -race ./...

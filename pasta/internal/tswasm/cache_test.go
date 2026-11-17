@@ -58,6 +58,7 @@ func TestLoadRuntime_compilationCache(t *testing.T) {
 }
 
 func TestPrewarmLeavesIdleParser(t *testing.T) {
+	wasmOnly(t)
 	gpool.mu.Lock()
 	for _, e := range gpool.free {
 		e.close()
@@ -77,6 +78,7 @@ func TestPrewarmLeavesIdleParser(t *testing.T) {
 // TestPoolKeepsConcurrentEngines checks that rounds of concurrent parses
 // reuse the engines of the first round instead of instantiating new ones.
 func TestPoolKeepsConcurrentEngines(t *testing.T) {
+	wasmOnly(t)
 	n := MaxConcurrentInstances
 	src := []byte("package p\n\nfunc F() {}\n")
 	before := gpool.created.Load()
