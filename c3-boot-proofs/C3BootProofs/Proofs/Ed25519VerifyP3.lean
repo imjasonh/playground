@@ -75,7 +75,7 @@ theorem s29PackByte_congr {l l' : Nat → Word} (h : ∀ i, i < 9 → l i = l' i
 def evPackS (L : Nat → Nat) : Bytes :=
   (List.range 32).map fun j => (s29PackByte (fun i => BitVec.ofNat 32 (s29Out L i)) j).toNat
 
-theorem flag_and : ∀ b1 b2 : Bool, aluEval .and (aluEval .and (if b1 then (1 : Word) else 0) (if b2 then 1 else 0)) 0xFF =
+theorem ev_flag_and : ∀ b1 b2 : Bool, aluEval .and (aluEval .and (if b1 then (1 : Word) else 0) (if b2 then 1 else 0)) 0xFF =
     if (b1 && b2) then 1 else 0 := by decide
 
 theorem flag_bb : ∀ b : Bool, ((if b then (1 : Word) else 0).extractLsb' 0 8).zeroExtend 32 = if b then 1 else 0 := by
@@ -343,7 +343,7 @@ theorem ev_canon (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Ma
         rw [D6.hsp, show F + (0xD0 : Word) = F + BitVec.ofNat 32 0xD0 from rfl]; exact C.al (by decide),
       trivial, trivial, trivial⟩ rfl (fun q hq => by rcases hq with rfl | rfl | rfl <;> simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
   have va7 : reg n7 a0 = if (P && b) then 1 else 0 := by
-    rw [hr7]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D6.hsp, hD6, a06', flag_and]
+    rw [hr7]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D6.hsp, hD6, a06', ev_flag_and]
   obtain ⟨n8, c8, D8, k8, a08, f8⟩ := D7.blackBox C ev_at_f5e ev_at_f62 (by decide) (by decide)
   rw [va7, flag_bb] at a08
   obtain ⟨n9, c9, D9, hr9⟩ := D8.block C (off' := 0xF6C) [.aluImm .add a1 x0 1, .aluImm .and a0 a0 0xFF]
