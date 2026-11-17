@@ -162,6 +162,7 @@ import C3BootProofs.Proofs.Window
 import C3BootProofs.Proofs.ReadString
 import C3BootProofs.Proofs.KeySet
 import C3BootProofs.Proofs.CheckSigs
+import C3BootProofs.Proofs.ParseCur
 
 /-!
 # Audit
@@ -8722,3 +8723,6 @@ end C3
 
 /-- info: 'C3.RV32.checkSignatures_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.checkSignatures_correct
+
+/-- info: 'C3.RV32.Cur.manifestParse_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.manifestParse_correct
