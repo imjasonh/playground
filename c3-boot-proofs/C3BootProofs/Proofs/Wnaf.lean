@@ -1076,6 +1076,54 @@ theorem wf_win (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L r0
     rw [Nat.add_mod, Nat.mod_mod_of_dvd _ (by decide : 32 ∣ 2 ^ 32), Nat.mod_mod_of_dvd _ (by decide : 32 ∣ 2 ^ 64),
       ← Nat.add_mod]
 
+theorem wst8 {M : Word → BitVec 8} {a x : Word} {v : BitVec 8} (h : Sep a 1 x 1) : memStore8 M a v x = M x := by
+  have ne : ¬ x = a := fun e => h 0 (by decide) 0 (by decide) (by rw [add_ofNat_zero, add_ofNat_zero, e])
+  simp only [memStore8, ne, ↓reduceIte]
+
+theorem wst8_same {M : Word → BitVec 8} {a : Word} {v : BitVec 8} : memStore8 M a v a = v := by
+  simp only [memStore8, ↓reduceIte]
+
+theorem getD_app_l {l₁ l₂ : List Int} {i : Nat} (h : i < l₁.length) : (l₁ ++ l₂).getD i 0 = l₁.getD i 0 := by
+  simp [List.getD_eq_getElem?_getD, List.getElem?_append_left h]
+
+theorem getD_app_r {l₁ l₂ : List Int} {i : Nat} (h : l₁.length ≤ i) :
+    (l₁ ++ l₂).getD i 0 = l₂.getD (i - l₁.length) 0 := by
+  simp [List.getD_eq_getElem?_getD, List.getElem?_append_right h]
+
+/-- `M` with digit `d` stored at index `pos` of the digit buffer. -/
+abbrev wput (M : Word → BitVec 8) (wp : Word) (pos : Nat) (d : Int) : Word → BitVec 8 :=
+  memStore8 M (wp + BitVec.ofNat 32 pos) (BitVec.ofNat 8 (digB d))
+
+/-- The invariant's memory facts survive a byte store into the digit buffer
+at index `pos`, which records digit `d`. -/
+theorem WfSt.putMem (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L r0 M n off pos carry j D)
+    (hp : pos < wl) (d : Int) :
+    memLoad32 (wput M wp pos d) (F + BitVec.ofNat 32 0xC) = memLoad32 M (F + BitVec.ofNat 32 0xC) ∧
+    (∀ c, c + 4 ≤ 0x70 → memLoad32 (wput M wp pos d) (F + BitVec.ofNat 32 c) = memLoad32 M (F + BitVec.ofNat 32 c)) ∧
+    (∀ i, i < pos + 1 → wput M wp pos d (wp + BitVec.ofNat 32 i) = BitVec.ofNat 8 (digB ((D ++ [d]).getD i 0))) ∧
+    (∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Sep wp wl x 1 → wput M wp pos d x = M0 x) ∧
+    (∀ k, 0x3C ≤ k → k < 0x70 → wput M wp pos d (F + BitVec.ofNat 32 k) = Ms (F + BitVec.ofNat 32 k)) := by
+  unfold wput
+  have room := C.room; have hFd := C.hFd; unfold dramEnd at hFd
+  have sWR := C.sWR
+  have sPF : ∀ c, c < 0x70 → Sep (wp + BitVec.ofNat 32 pos) 1 (F + BitVec.ofNat 32 c) 1 := fun c hc' => by
+    have := (sWR.sub (c := pos) (l := 1) hp).subR (c := 0x20 + c) (l := 1) (by omega)
+    rwa [show F + 0xFFFFFFE0 + BitVec.ofNat 32 (0x20 + c) = F + BitVec.ofNat 32 c by
+      rw [BitVec.add_assoc]; congr 1; apply BitVec.eq_of_toNat_eq; simp; omega] at this
+  have LF : ∀ c, c + 4 ≤ 0x70 → memLoad32 (memStore8 M (wp + BitVec.ofNat 32 pos) (BitVec.ofNat 8 (digB d)))
+      (F + BitVec.ofNat 32 c) = memLoad32 M (F + BitVec.ofNat 32 c) := fun c hc' =>
+    memLoad32_congr fun q hq => by rw [add_ofNat_assoc]; exact wst8 (sPF _ (by omega))
+  have hlen := S.len
+  have hLw := C.hLw
+  refine ⟨LF _ (by decide), LF, fun i hi => ?_, fun x h1 h2 => ?_, fun k k1 k2 => ?_⟩
+  · rcases Nat.lt_or_ge i pos with h | h
+    · rw [wst8 (sep_offsets wp (c := pos) (n := 1) (d := i) (k := 1) (Or.inr (by omega)) (by omega) (by omega)),
+        S.out i h, getD_app_l (by omega)]
+    · obtain rfl : i = pos := by omega
+      rw [wst8_same, getD_app_r (by omega), hlen, Nat.sub_self]; rfl
+  · rw [wst8 ((h2.symm.subR (c := pos) (l := 1) hp).symm), S.agree x h1 h2]
+  · rw [wst8 (sPF k (by omega)), S.slots k k1 k2]
+
 end Steps
 
 end C3.RV32
