@@ -407,6 +407,7 @@ structure WfSt (M0 Ms : Word → BitVec 8) (F wp cp : Word) (wl cn L : Nat) (r0 
   rest : RestAt M (F + BitVec.ofNat 32 0x10) cp cn (j + 2)
   len : D.length = pos
   out : ∀ i, i < pos → M (wp + BitVec.ofNat 32 i) = BitVec.ofNat 8 (digB (D.getD i 0))
+  tail : ∀ i, pos ≤ i → i < wl → M (wp + BitVec.ofNat 32 i) = M0 (wp + BitVec.ofNat 32 i)
   spec : ∃ f, L - pos + 1 ≤ f ∧ D ++ wnafGo (leN (memBytes M0 cp cn)) L f pos carry = wnafSpec (memBytes M0 cp cn) L
   agree : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Sep wp wl x 1 → M x = M0 x
   slots : ∀ k, 0x3C ≤ k → k < 0x70 → M (F + BitVec.ofNat 32 k) = Ms (F + BitVec.ofNat 32 k)
@@ -672,14 +673,14 @@ theorem WfSt.step (S : WfSt M0 Ms F wp cp wl cn L r0 M n off pos carry j D) {n' 
     by rw [k _ (by decide), S.s9], by rw [k _ (by decide), S.s8], by rw [k _ (by decide), S.s5],
     by rw [k _ (by decide), S.s6], by rw [k _ (by decide), S.s7], by rw [k _ (by decide), S.s11],
     by rw [k _ (by decide), S.s10], by rw [k _ (by decide), S.gp], by rw [k _ (by decide), S.tp], S.hpos, S.hc,
-    S.chi, S.idx, S.hj, S.cur, S.nxt, S.rest, S.len, S.out, S.spec, S.agree, S.slots⟩
+    S.chi, S.idx, S.hj, S.cur, S.nxt, S.rest, S.len, S.out, S.tail, S.spec, S.agree, S.slots⟩
 
 theorem WfSt.jmp (S : WfSt M0 Ms F wp cp wl cn L r0 M n off pos carry j D) {n' : Machine} {off' : Nat}
     (u : St M WF n' off' (reg n)) : WfSt M0 Ms F wp cp wl cn L r0 M n' off' pos carry j D :=
   ⟨u.self, by rw [u.regs, S.hsp], by rw [u.regs, S.s2], by rw [u.regs, S.s3], by rw [u.regs, S.s9],
     by rw [u.regs, S.s8], by rw [u.regs, S.s5], by rw [u.regs, S.s6], by rw [u.regs, S.s7], by rw [u.regs, S.s11],
     by rw [u.regs, S.s10], by rw [u.regs, S.gp], by rw [u.regs, S.tp], S.hpos, S.hc, S.chi, S.idx, S.hj, S.cur, S.nxt,
-    S.rest, S.len, S.out, S.spec, S.agree, S.slots⟩
+    S.rest, S.len, S.out, S.tail, S.spec, S.agree, S.slots⟩
 
 /-- A word stored in the scratch words at `F + 0x34` or `F + 0x38` keeps
 the invariant. -/
@@ -710,7 +711,8 @@ theorem WfSt.scratch (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl c
     by rw [u.regs, S.s10], by rw [u.regs, S.gp], by rw [u.regs, S.tp], S.hpos, S.hc,
     by rw [L0 _ (by decide), S.chi], by rw [L0 _ (by decide), S.idx], S.hj,
     by rw [L0 _ (by decide), L0 _ (by decide), S.cur], by rw [L0 _ (by decide), L0 _ (by decide), S.nxt], hRest, S.len,
-    fun i hi => by rw [memStore32_get_sep (sW i (by have := C.hL; have := S.hpos; omega)), S.out i hi], S.spec,
+    fun i hi => by rw [memStore32_get_sep (sW i (by have := C.hL; have := S.hpos; omega)), S.out i hi],
+    fun i h1 h2 => by rw [memStore32_get_sep (sW i h2), S.tail i h1 h2], S.spec,
     fun x h1 h2 => by rw [memStore32_get_sep (sR x h1), S.agree x h1 h2],
     fun c c1 c2 => by rw [memStore32_get_sep (sO c 1 (Or.inr c1) (by omega)), S.slots c c1 c2]⟩
 
@@ -771,7 +773,8 @@ theorem WfSt.inc (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L 
     by rw [hk _ (by decide), S.gp], by rw [hk _ (by decide), S.tp], S.hpos, S.hc,
     by rw [eC, S.chi], eI, ⟨by omega, by omega⟩,
     by rw [e18, e1C, S.nxt], by rw [show j + 1 + 1 = j + 2 by omega]; exact enx, by rw [show j + 1 + 2 = j + 2 + 1 by omega]; exact er,
-    S.len, fun i hi => by rw [KW i (by have := C.hL; have := S.hpos; omega), S.out i hi], S.spec,
+    S.len, fun i hi => by rw [KW i (by have := C.hL; have := S.hpos; omega), S.out i hi],
+    fun i h1 h2 => by rw [KW i h2, S.tail i h1 h2], S.spec,
     fun x h1 h2 => ?_, fun c c1 c2 => by rw [KF c (Or.inr (by omega)) (by omega), S.slots c c1 c2]⟩
   have hb := sep1_out h1 (by rw [hG]; have := room.2.1; omega)
   rw [hG] at hb
@@ -941,7 +944,7 @@ theorem WfSt.keep (S : WfSt M0 Ms F wp cp wl cn L r0 M n off pos carry j D) {n' 
     by rw [hk _ (by decide), S.s9], by rw [hk _ (by decide), S.s8], by rw [hk _ (by decide), S.s5],
     by rw [hk _ (by decide), S.s6], by rw [hk _ (by decide), S.s7], by rw [hk _ (by decide), S.s11],
     by rw [hk _ (by decide), S.s10], by rw [hk _ (by decide), S.gp], by rw [hk _ (by decide), S.tp], S.hpos, S.hc,
-    S.chi, S.idx, S.hj, S.cur, S.nxt, S.rest, S.len, S.out, S.spec, S.agree, S.slots⟩
+    S.chi, S.idx, S.hj, S.cur, S.nxt, S.rest, S.len, S.out, S.tail, S.spec, S.agree, S.slots⟩
 
 set_option maxRecDepth 20000 in
 set_option maxHeartbeats 8000000 in
@@ -1116,11 +1119,12 @@ structure WfMem (M0 Ms : Word → BitVec 8) (F wp cp : Word) (wl cn : Nat) (M : 
   rest : RestAt M (F + BitVec.ofNat 32 0x10) cp cn (j + 2)
   len : D.length = k
   out : ∀ i, i < k → M (wp + BitVec.ofNat 32 i) = BitVec.ofNat 8 (digB (D.getD i 0))
+  tail : ∀ i, k ≤ i → i < wl → M (wp + BitVec.ofNat 32 i) = M0 (wp + BitVec.ofNat 32 i)
   agree : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Sep wp wl x 1 → M x = M0 x
   slots : ∀ k, 0x3C ≤ k → k < 0x70 → M (F + BitVec.ofNat 32 k) = Ms (F + BitVec.ofNat 32 k)
 
 theorem WfSt.mem (S : WfSt M0 Ms F wp cp wl cn L r0 M n off pos carry j D) : WfMem M0 Ms F wp cp wl cn M j pos D :=
-  ⟨S.idx, S.cur, S.nxt, S.rest, S.len, S.out, S.agree, S.slots⟩
+  ⟨S.idx, S.cur, S.nxt, S.rest, S.len, S.out, S.tail, S.agree, S.slots⟩
 
 /-- Ranges apart from a store at `F + c` of `l` bytes inside the frame. -/
 theorem WfCtx.fsep (C : WfCtx M0 F wp cp wl cn L) {c l : Nat} (hc : c + l ≤ 0x70) :
@@ -1152,7 +1156,8 @@ theorem WfMem.frame (W : WfMem M0 Ms F wp cp wl cn M j k D) {M' : Word → BitVe
   exact ⟨by rw [L _ (by decide) (by decide), W.idx],
     by rw [L _ (by decide) (by decide), L _ (by decide) (by decide), W.cur],
     by rw [L _ (by decide) (by decide), L _ (by decide) (by decide), W.nxt], hRest, W.len,
-    fun i hi => by rw [hW i (by omega), W.out i hi], fun x h1 h2 => by rw [hA x h1, W.agree x h1 h2],
+    fun i hi => by rw [hW i (by omega), W.out i hi], fun i h1 h2 => by rw [hW i h2, W.tail i h1 h2],
+    fun x h1 h2 => by rw [hA x h1, W.agree x h1 h2],
     fun c c1 c2 => by rw [hS c c1 c2, W.slots c c1 c2]⟩
 
 theorem WfMem.st32 (C : WfCtx M0 F wp cp wl cn L) (W : WfMem M0 Ms F wp cp wl cn M j k D) (hk : k ≤ wl) {c : Nat}
@@ -1193,13 +1198,15 @@ theorem WfMem.put (C : WfCtx M0 F wp cp wl cn L) (W : WfMem M0 Ms F wp cp wl cn 
     unfold RestAt at hr ⊢
     rw [e4, LF 0x10 (by decide), LF 0x14 (by decide)]; rw [e4] at hr; exact hr
   refine ⟨⟨by rw [LF _ (by decide), W.idx], by rw [LF _ (by decide), LF _ (by decide), W.cur],
-    by rw [LF _ (by decide), LF _ (by decide), W.nxt], hRest, by simp [hlen], fun i hi => ?_, fun x h1 h2 => ?_,
-    fun c c1 c2 => ?_⟩, LF⟩
+    by rw [LF _ (by decide), LF _ (by decide), W.nxt], hRest, by simp [hlen], fun i hi => ?_, fun i h1 h2 => ?_,
+    fun x h1 h2 => ?_, fun c c1 c2 => ?_⟩, LF⟩
   · rcases Nat.lt_or_ge i k with h | h
     · rw [wst8 (sep_offsets wp (c := k) (n := 1) (d := i) (k := 1) (Or.inr (by omega)) (by omega) (by omega)),
         W.out i h, getD_app_l (by omega)]
     · obtain rfl : i = k := by omega
       rw [wst8_same, getD_app_r (by omega), hlen, Nat.sub_self]; rfl
+  · rw [wst8 (sep_offsets wp (c := k) (n := 1) (d := i) (k := 1) (Or.inl (by omega)) (by omega) (by omega)),
+      W.tail i (by omega) h2]
   · rw [wst8 ((h2.symm.subR (c := k) (l := 1) hp).symm), W.agree x h1 h2]
   · rw [wst8 (sPF c (by omega)), W.slots c c1 c2]
 
@@ -1283,7 +1290,7 @@ theorem wf_even (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L r
     by rw [K _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), S.gp],
     by rw [K _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), S.tp], by omega, hcar,
     by rw [(S.mem.put C (by omega) 0).2 _ (by decide), S.chi], W.idx, ⟨by omega, by omega⟩, W.cur, W.nxt, W.rest,
-    W.len, W.out, ⟨fs, hfs, es⟩, W.agree, W.slots⟩⟩
+    W.len, W.out, W.tail, ⟨fs, hfs, es⟩, W.agree, W.slots⟩⟩
   · rw [u10.regs, u9.upd_ne u8.self.zero _ (by decide), u8.upd_eq (by decide), u7.upd_ne u6.self.zero _ (by decide),
       u6.upd_ne u5.zero _ (by decide), r4 _ (by decide) (by decide), S.s5, wadd1]
   · rw [u10.regs, u9.upd_ne u8.self.zero _ (by decide), u8.upd_ne u7.self.zero _ (by decide),
@@ -1632,7 +1639,7 @@ theorem wf_tail (C : WfCtx M0 F wp cp wl cn L) {n : Machine} {M : Word → BitVe
     rw [u3.regs, u2.upd_ne u1.zero _ (by decide), h21]
   refine ⟨n6, _, .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.single d6))))), ⟨u6.self, R6.hsp, R6.s2, R6.s3,
     R6.s9, R6.s8, ?_, ?_, ?_, ?_, by rw [K6 _ (by decide) (by decide) (by decide) (by decide), h26], R6.gp, R6.tp,
-    hkL, hc', memLoad32_store32_same _ _ _, W1.idx, hj, W1.cur, W1.nxt, W1.rest, W1.len, W1.out, ⟨fs, hfs, es⟩, W1.agree,
+    hkL, hc', memLoad32_store32_same _ _ _, W1.idx, hj, W1.cur, W1.nxt, W1.rest, W1.len, W1.out, W1.tail, ⟨fs, hfs, es⟩, W1.agree,
     W1.slots⟩⟩
   · rw [u6.upd_ne u5.self.zero _ (by decide), u5.upd_eq (by decide), u4.upd_ne u3.self.zero _ (by decide), s5_3, wadd1]
   · rw [u6.upd_ne u5.self.zero _ (by decide), u5.upd_ne u4.self.zero _ (by decide), u4.upd_eq (by decide), u3.self.zero,
@@ -1938,9 +1945,9 @@ theorem wf_pro (m : Machine) {F wp cp : Word} {wl cn L : Nat} (C : WfCtx m.mem F
     exact this.symm
   have frSv : ∀ x, Sep F 0x70 x 1 → Ms x = m.mem x := fun x hx => by
     rw [← hMs]; exact saveMem_outside wfPs fun p hp => frm_sep' hx (by have := wfPs_range p hp; omega)
-  have ag2 : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Sep wp wl x 1 → Ms x = m.mem x := fun x h1 _ =>
+  have ag2 : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Ms x = m.mem x := fun x h1 =>
     frSv x (hframe x h1)
-  have hcS := C.code ag2 C.cod (by decide) (by decide)
+  have hcS := C.code (fun x h1 _ => ag2 x h1) C.cod (by decide) (by decide)
   have k2 : ∀ q, q ≠ sp → reg m2 q = reg m q := fun q hq => by
     rw [u2.regs]
     by_cases h0 : q.val = 0
@@ -1979,9 +1986,9 @@ theorem wf_pro (m : Machine) {F wp cp : Word} {wl cn L : Nat} (C : WfCtx m.mem F
   have F18 := C.fsep (c := 0x18) (l := 0x14) (by decide)
   have FC := C.fsep (c := 0xC) (l := 4) (by decide)
   have F28 := C.fsep (c := 0x28) (l := 4) (by decide)
-  have ag6 : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Sep wp wl x 1 → memStore32 Ms (F + BitVec.ofNat 32 0x10) cp x =
-      m.mem x := fun x h1 h2 => by rw [memStore32_get_sep (F10.1 x h1)]; exact ag2 x h1 h2
-  have hc6 := C.code ag6 C.cod (by decide) (by decide)
+  have ag6 : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → memStore32 Ms (F + BitVec.ofNat 32 0x10) cp x =
+      m.mem x := fun x h1 => by rw [memStore32_get_sep (F10.1 x h1)]; exact ag2 x h1
+  have hc6 := C.code (fun x h1 _ => ag6 x h1) C.cod (by decide) (by decide)
   obtain ⟨m7, d7, u7⟩ := u6.sw hc6 wf_at_24 (off' := 0x26) (by decide)
     (by rw [sp5]; exact aligned_add hFa (k := 0x14) (by decide))
   rw [sp5, r5 _ (by decide) (by decide) (by decide), k2 _ (by decide), ha3,
@@ -1989,11 +1996,11 @@ theorem wf_pro (m : Machine) {F wp cp : Word} {wl cn L : Nat} (C : WfCtx m.mem F
   obtain ⟨M7, hM7⟩ : ∃ M7, memStore32 (memStore32 Ms (F + BitVec.ofNat 32 0x10) cp) (F + BitVec.ofNat 32 0x14)
       (BitVec.ofNat 32 cn) = M7 := ⟨_, rfl⟩
   rw [hM7] at u7
-  have ag7 : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Sep wp wl x 1 → M7 x = m.mem x := fun x h1 h2 => by
-    rw [← hM7, memStore32_get_sep (F14.1 x h1)]; exact ag6 x h1 h2
+  have ag7 : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → M7 x = m.mem x := fun x h1 => by
+    rw [← hM7, memStore32_get_sep (F14.1 x h1)]; exact ag6 x h1
   have sl7 : ∀ k, 0x3C ≤ k → k < 0x70 → M7 (F + BitVec.ofNat 32 k) = Ms (F + BitVec.ofNat 32 k) := fun k k1 k2 => by
     rw [← hM7, memStore32_get_sep (F14.2.2 k k2 (by omega)), memStore32_get_sep (F10.2.2 k k2 (by omega))]
-  have hc7 := C.code ag7 C.cod (by decide) (by decide)
+  have hc7 := C.code (fun x h1 _ => ag7 x h1) C.cod (by decide) (by decide)
   obtain ⟨m8, d8, u8⟩ := u7.aluImm hc7 wf_at_26 (off' := 0x28) (by decide)
   obtain ⟨m9, d9, u9⟩ := u8.self.aluImm hc7 wf_at_28 (off' := 0x2A) (by decide)
   obtain ⟨m10, d10, u10⟩ := u9.self.aluImm hc7 wf_at_2a (off' := 0x2C) (by decide)
@@ -2002,7 +2009,7 @@ theorem wf_pro (m : Machine) {F wp cp : Word} {wl cn L : Nat} (C : WfCtx m.mem F
   obtain ⟨n11, c11, pc11, mem11, regs11⟩ := u10.self.callRa (cb := BitVec.ofNat 32 memsetAddress) hc7 wf_at_2c wf_at_30
     (by decide) (by decide)
   have r11 := PEnv.reg1 regs11 u10.self.zero
-  have hcm := C.code ag7 C.mset (by decide) (by decide)
+  have hcm := C.code (fun x h1 _ => ag7 x h1) C.mset (by decide) (by decide)
   obtain ⟨n12, c12, pc12, mem12, a0_12, K12⟩ := memset_correct n11 (BitVec.ofNat 32 memsetAddress)
     (WF + BitVec.ofNat 32 (0x2C + 8)) (F + BitVec.ofNat 32 0x18) 0 0x14
     (fun i hi => by rw [mem11]; exact hcm i hi) (by decide) pc11
@@ -2015,9 +2022,9 @@ theorem wf_pro (m : Machine) {F wp cp : Word} {wl cn L : Nat} (C : WfCtx m.mem F
   rw [mem11] at mem12
   obtain ⟨Mz, hMz⟩ : ∃ Mz, fillBytes M7 (F + BitVec.ofNat 32 0x18) ((0 : Word).extractLsb' 0 8) 0x14 = Mz := ⟨_, rfl⟩
   rw [hMz] at mem12
-  have agz : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Sep wp wl x 1 → Mz x = m.mem x := fun x h1 h2 => by
-    rw [← hMz, fillBytes_sep (F18.1 x h1) (Nat.le_refl _)]; exact ag7 x h1 h2
-  have hcz := C.code agz C.cod (by decide) (by decide)
+  have agz : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Mz x = m.mem x := fun x h1 => by
+    rw [← hMz, fillBytes_sep (F18.1 x h1) (Nat.le_refl _)]; exact ag7 x h1
+  have hcz := C.code (fun x h1 _ => agz x h1) C.cod (by decide) (by decide)
   have s12 : St Mz WF n12 0x34 (reg n12) := ⟨by rw [pc12], mem12, fun _ => rfl⟩
   have k12 : ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ ra → reg n12 q = reg m5 q :=
     fun q h0 h1 h2 h3 h4 h5 h6 hr => by rw [K12 q h2 h3 h4 h5 h6, r11 q hr, r10 q h0 h1 h2]
@@ -2040,22 +2047,22 @@ theorem wf_pro (m : Machine) {F wp cp : Word} {wl cn L : Nat} (C : WfCtx m.mem F
     by_cases h : cn = 0
     · exact Or.inl ⟨by rw [h]; rfl, by omega⟩
     · exact Or.inr ⟨(BitVec.add_zero cp).symm, by rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]; omega, by omega⟩
-  obtain ⟨n14, c14, s14, sp14, k14, e18, e1C, e28, enx, er, fr⟩ := wf_inc C u13.self agz wf_at_36 wf_at_3a (by decide)
+  obtain ⟨n14, c14, s14, sp14, k14, e18, e1C, e28, enx, er, fr⟩ := wf_inc C u13.self (fun x h1 _ => agz x h1) wf_at_36 wf_at_3a (by decide)
     (by decide) (by rw [u13.upd_ne s12.zero _ (by decide), sp12])
     (by rw [u13.upd_eq (by decide), sp12]; rfl) hR0
   have fsub : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Sep (F + 0xFFFFFFE0) 0x20 x 1 := fun x h1 => by
     have := h1.sub (c := 0) (l := 0x20) (by decide); rwa [add_ofNat_zero] at this
-  have ag14 : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Sep wp wl x 1 → n14.mem x = m.mem x := fun x h1 h2 => by
-    rw [fr x (fsub x h1) ((C.fsep (c := 0x10) (l := 28) (by decide)).1 x h1)]; exact agz x h1 h2
-  have hc14 := C.code ag14 C.cod (by decide) (by decide)
+  have ag14 : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → n14.mem x = m.mem x := fun x h1 => by
+    rw [fr x (fsub x h1) ((C.fsep (c := 0x10) (l := 28) (by decide)).1 x h1)]; exact agz x h1
+  have hc14 := C.code (fun x h1 _ => ag14 x h1) C.cod (by decide) (by decide)
   have s14' : St n14.mem WF n14 0x3E (reg n14) := s14
   obtain ⟨n15, d15, u15⟩ := s14'.aluImm hc14 wf_at_3e (off' := 0x40) (by decide)
-  obtain ⟨n16, c16, s16, sp16, k16, e18', e1C', e28', enx', er', fr'⟩ := wf_inc C u15.self ag14 wf_at_40 wf_at_44
+  obtain ⟨n16, c16, s16, sp16, k16, e18', e1C', e28', enx', er', fr'⟩ := wf_inc C u15.self (fun x h1 _ => ag14 x h1) wf_at_40 wf_at_44
     (by decide) (by decide) (by rw [u15.upd_ne s14'.zero _ (by decide), sp14])
     (by rw [u15.upd_eq (by decide), sp14]; rfl) er
-  have ag16 : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Sep wp wl x 1 → n16.mem x = m.mem x := fun x h1 h2 => by
-    rw [fr' x (fsub x h1) ((C.fsep (c := 0x10) (l := 28) (by decide)).1 x h1)]; exact ag14 x h1 h2
-  have hc16 := C.code ag16 C.cod (by decide) (by decide)
+  have ag16 : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → n16.mem x = m.mem x := fun x h1 => by
+    rw [fr' x (fsub x h1) ((C.fsep (c := 0x10) (l := 28) (by decide)).1 x h1)]; exact ag14 x h1
+  have hc16 := C.code (fun x h1 _ => ag16 x h1) C.cod (by decide) (by decide)
   have s16' : St n16.mem WF n16 0x48 (reg n16) := s16
   have K16 : ∀ q : Fin 32, q.val ∈ [3, 4, 18, 19, 25] → reg n16 q = reg m5 q := fun q hq => by
     rw [k16 q (by revert hq; revert q; decide), u15.upd_ne s14'.zero q (by revert hq; revert q; decide),
@@ -2069,7 +2076,7 @@ theorem wf_pro (m : Machine) {F wp cp : Word} {wl cn L : Nat} (C : WfCtx m.mem F
   rw [u17.upd_ne s16'.zero _ (by decide), sp16, u17.self.zero, show (F + 0xC : Word) = F + BitVec.ofNat 32 0xC from rfl]
     at u18
   have hc18 := C.code (M := memStore32 n16.mem (F + BitVec.ofNat 32 0xC) 0) (fun x h1 h2 => by
-    rw [memStore32_get_sep (FC.1 x h1)]; exact ag16 x h1 h2) C.cod (by decide) (by decide)
+    rw [memStore32_get_sep (FC.1 x h1)]; exact ag16 x h1) C.cod (by decide) (by decide)
   obtain ⟨n19, d19, u19⟩ := u18.aluImm hc18 wf_at_4c (off' := 0x4E) (by decide)
   obtain ⟨n20, d20, u20⟩ := u19.self.aluImm hc18 wf_at_4e (off' := 0x50) (by decide)
   have sp20 : reg n20 sp = F := by
@@ -2081,9 +2088,9 @@ theorem wf_pro (m : Machine) {F wp cp : Word} {wl cn L : Nat} (C : WfCtx m.mem F
   obtain ⟨Mf, hMf⟩ : ∃ Mf, memStore32 (memStore32 n16.mem (F + BitVec.ofNat 32 0xC) 0) (F + BitVec.ofNat 32 0x28) 0 =
     Mf := ⟨_, rfl⟩
   rw [hMf] at u21
-  have agf : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Sep wp wl x 1 → Mf x = m.mem x := fun x h1 h2 => by
-    rw [← hMf, memStore32_get_sep (F28.1 x h1), memStore32_get_sep (FC.1 x h1)]; exact ag16 x h1 h2
-  have hcf := C.code agf C.cod (by decide) (by decide)
+  have agf : ∀ x, Sep (F + 0xFFFFFFE0) 0x90 x 1 → Mf x = m.mem x := fun x h1 => by
+    rw [← hMf, memStore32_get_sep (F28.1 x h1), memStore32_get_sep (FC.1 x h1)]; exact ag16 x h1
+  have hcf := C.code (fun x h1 _ => agf x h1) C.cod (by decide) (by decide)
   obtain ⟨n22, d22, u22⟩ := u21.aluImm hcf wf_at_52 (off' := 0x56) (by decide)
   obtain ⟨n23, d23, u23⟩ := u22.self.alu hcf wf_at_56 (off' := 0x58) (by decide)
   obtain ⟨n24, d24, u24⟩ := u23.self.aluImm hcf wf_at_58 (off' := 0x5A) (by decide)
@@ -2113,7 +2120,8 @@ theorem wf_pro (m : Machine) {F wp cp : Word} {wl cn L : Nat} (C : WfCtx m.mem F
     (.cons d20 (.cons d21 (.cons d22 (.cons d23 (.cons d24 (.single d25)))))))))))))))))))))))),
     ⟨u25.self, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by rw [KK _ (by decide)], by rw [KK _ (by decide)],
       Nat.zero_le _, by decide, ?_, ?_, ⟨Nat.le_refl _, by decide⟩, ?_, ?_, ?_, rfl, fun i hi => absurd hi (Nat.not_lt_zero _),
-      ⟨L + 1, by omega, by simp [wnafSpec]⟩, agf, ?_⟩, slot⟩
+      fun i _ hi => agf _ (C.sWR.sub (c := i) (l := 1) hi).symm,
+      ⟨L + 1, by omega, by simp [wnafSpec]⟩, fun x h1 _ => agf x h1, ?_⟩, slot⟩
   · rw [K25 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), sp16]
   · rw [K25 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), K16 _ (by decide), s2_5]
   · rw [K25 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), K16 _ (by decide), s3_5]
@@ -2177,6 +2185,8 @@ theorem wnafForm_correct (m : Machine) {sp0 wp cp retAddr : Word} {wl cn L : Nat
       reg m' a0 = BitVec.ofNat 32 (wnafSpec (memBytes m.mem cp cn) L).length ∧
       (∀ i, i < (wnafSpec (memBytes m.mem cp cn) L).length →
         m'.mem (wp + BitVec.ofNat 32 i) = BitVec.ofNat 8 (digB ((wnafSpec (memBytes m.mem cp cn) L).getD i 0))) ∧
+      (∀ i, (wnafSpec (memBytes m.mem cp cn) L).length ≤ i → i < wl →
+        m'.mem (wp + BitVec.ofNat 32 i) = m.mem (wp + BitVec.ofNat 32 i)) ∧
       ∀ x, Sep (sp0 + 0xFFFFFF70) 0x90 x 1 → Sep wp wl x 1 → m'.mem x = m.mem x := by
   obtain ⟨F, hF⟩ : ∃ F, sp0 + 0xFFFFFF90 = F := ⟨_, rfl⟩
   rw [hF] at C
@@ -2204,7 +2214,7 @@ theorem wnafForm_correct (m : Machine) {sp0 wp cp retAddr : Word} {wl cn L : Nat
     · have : q = 0 := Fin.ext h0
       subst this; rw [upd_zero, u4.zero]
     · exact upd_ne h0 hq
-  refine ⟨n6, c1.trans (c2.trans (c3.trans (c4.trans (.cons d5 (.single d6))))), ?_, ?_, fun q hq => ?_, ?_, ?_, ?_⟩
+  refine ⟨n6, c1.trans (c2.trans (c3.trans (c4.trans (.cons d5 (.single d6))))), ?_, ?_, fun q hq => ?_, ?_, ?_, ?_, ?_⟩
   · rw [pc6, upd_ne (by decide) (by decide), wfPs_restore _ _ _ ra 0x6C (by decide), add_lit_zero,
       slotM ra _ (by decide), hra, hret]
   · rw [regs6]; simp +decide only [upd_app, ↓reduceIte, aluEval]; rw [rsp4, ← hF, BitVec.add_assoc]
@@ -2233,6 +2243,7 @@ theorem wnafForm_correct (m : Machine) {sp0 wp cp retAddr : Word} {wl cn L : Nat
       | (rw [wfPs_restore _ _ _ _ 0x3C (by decide)]; exact slotM _ 0x3C (by decide))
   · rw [kq a0 (by decide), restoreRegs_other _ _ wfPs _ _ (by decide) (by decide), a03]
   · intro i hi; rw [mem6]; exact W3.out i hi
+  · intro i h1 h2; rw [mem6]; exact W3.tail i h1 h2
   · intro x h1 h2; rw [mem6]; exact W3.agree x h1 h2
 
 end C3.RV32

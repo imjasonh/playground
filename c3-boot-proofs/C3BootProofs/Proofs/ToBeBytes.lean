@@ -248,7 +248,7 @@ theorem toBeBytes12_correct (m : Machine) {out s sp0 retAddr : Word}
     (hsa : s.toNat % 4 = 0) (hsw : s.toNat + 48 ≤ 0x40000000) (how : out.toNat + 48 ≤ 0x40000000)
     (sSF : Sep s 48 (sp0 + 0xFFFFFF70) 0x90) (sOF : Sep out 48 (sp0 + 0xFFFFFF70) 0x90) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
-      (∀ q, q ≠ (3 : Fin 32) → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 →
+      (∀ q, q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 →
         q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ a7 → q ≠ (28 : Fin 32) → q ≠ (29 : Fin 32) → q ≠ (30 : Fin 32) →
         q ≠ (31 : Fin 32) → reg m' q = reg m q) ∧
       memBytes m'.mem out 48 = beLimbs m.mem s 11 12 ∧
@@ -520,7 +520,7 @@ theorem toBeBytes12_correct (m : Machine) {out s sp0 retAddr : Word}
     simp [h1, h8, h9, h18, h2]
   refine ⟨n11, c1.trans (c2.trans (c3.trans (c4.trans (.cons d5 (c6.trans (c7.trans (c8.trans (c9.trans
     (c10.trans (.single d11)))))))))), ?_, by rw [regs11, sp10],
-    fun q q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_, ?_, fun x hx hy => ?_⟩
+    fun q q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_, ?_, fun x hx hy => ?_⟩
   · rw [pc11, ra10, add_lit_zero, hret]
   · rw [regs11]
     by_cases qr : q = ra
@@ -676,7 +676,7 @@ theorem toBeBytes8_correct (m : Machine) {out s sp0 retAddr : Word}
     (hsa : s.toNat % 4 = 0) (hsw : s.toNat + 32 ≤ 0x40000000) (how : out.toNat + 32 ≤ 0x40000000)
     (sSF : Sep s 32 (sp0 + 0xFFFFFF90) 0x70) (sOF : Sep out 32 (sp0 + 0xFFFFFF90) 0x70) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
-      (∀ q, q ≠ (3 : Fin 32) → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 →
+      (∀ q, q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 →
         q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ a7 → q ≠ (28 : Fin 32) → q ≠ (29 : Fin 32) → q ≠ (30 : Fin 32) →
         q ≠ (31 : Fin 32) → reg m' q = reg m q) ∧
       memBytes m'.mem out 32 = beLimbs m.mem s 7 8 ∧
@@ -948,7 +948,7 @@ theorem toBeBytes8_correct (m : Machine) {out s sp0 retAddr : Word}
     simp [h1, h8, h9, h18, h2]
   refine ⟨n11, c1.trans (c2.trans (c3.trans (c4.trans (.cons d5 (c6.trans (c7.trans (c8.trans (c9.trans
     (c10.trans (.single d11)))))))))), ?_, by rw [regs11, sp10],
-    fun q q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_, ?_, fun x hx hy => ?_⟩
+    fun q q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_, ?_, fun x hx hy => ?_⟩
   · rw [pc11, ra10, add_lit_zero, hret]
   · rw [regs11]
     by_cases qr : q = ra

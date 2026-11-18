@@ -297,4 +297,29 @@ theorem accV_KD {M M' : Word → BitVec 8} {S K : Word} {c d : Nat} :
     simp only [add_ofNat_assoc, Nat.add_assoc]
     rw [h _ (by omega), h _ (by omega), h _ (by omega), h _ (by omega)]
 
+/-- A point in projective coordinates, each in Montgomery form. -/
+abbrev Pt := Nat × Nat × Nat
+
+/-- The compiled point addition, on points. -/
+def ptAddT (P Q : Pt) : Pt := p3Add p3B P.1 P.2.1 P.2.2 Q.1 Q.2.1 Q.2.2
+
+/-- The compiled point doubling, on points. -/
+def ptDblT (P : Pt) : Pt := p3Dbl p3B P.1 P.2.1 P.2.2
+
+/-- The table of odd multiples: entry `j` is `P + j·(2P)`, as the compiled
+code adds. -/
+def tblPt (P : Pt) : Nat → Pt
+  | 0 => P
+  | j + 1 => ptAddT (tblPt P j) (ptDblT P)
+
+theorem ptAddT_lt (P Q : Pt) : PtLt (ptAddT P Q) := by
+  unfold ptAddT p3Add; exact ⟨p3fs_lt _ _, p3fa_lt _ _, p3fa_lt _ _⟩
+
+theorem ptDblT_lt (P : Pt) : PtLt (ptDblT P) := by
+  unfold ptDblT p3Dbl; exact ⟨p3fs_lt _ _, p3fa_lt _ _, p3fd_lt _⟩
+
+theorem tblPt_lt {P : Pt} (h : PtLt P) : ∀ j, PtLt (tblPt P j)
+  | 0 => h
+  | j + 1 => ptAddT_lt _ _
+
 end C3.RV32.Pv
