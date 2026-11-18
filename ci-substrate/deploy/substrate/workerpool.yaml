@@ -1,7 +1,17 @@
-# Warm gVisor workers for CI runners. Substrate's controller turns this into a
-# Deployment of ateworker pods; each pod hosts actors whose template selects
-# the pool by its labels (workload: ci-runner). Replace the image with the
-# ateworker-gvisor image of your Substrate install.
+# gVisor workers for CI runners. Substrate's controller turns each WorkerPool
+# into a Deployment of ateworker pods; each pod hosts actors whose template
+# selects the pool by its labels (workload: ci-runner), so actors land on
+# either pool. Replace the image with the ateworker-gvisor image of your
+# Substrate install.
+#
+# ci-runner-base runs on the always-on node, labeled and tainted
+# ci-substrate.dev/always-on=true, so the first actors start without waiting
+# for a node. ci-runner runs on nodes labeled ci-substrate.dev/burst=true,
+# which the cluster autoscaler adds and removes. The pool Deployment
+# (pool.yaml) sets ci-runner's replicas, to 0 when every actor fits on
+# ci-runner-base or is suspended. The API requires the field, so this file
+# starts it at 0; kubectl apply leaves a field alone while the file's value
+# doesn't change, so applying it again doesn't reset what the pool set.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -10,7 +20,7 @@ metadata:
 apiVersion: ate.dev/v1
 kind: WorkerPool
 metadata:
-  name: ci-runner
+  name: ci-runner-base
   namespace: ci-substrate-workers
   labels:
     workload: ci-runner
@@ -20,5 +30,29 @@ spec:
   sandboxClasses:
     - name: gvisor
   template:
+    nodeSelector:
+      ci-substrate.dev/always-on: "true"
+    tolerations:
+      - key: ci-substrate.dev/always-on
+        operator: Exists
+        effect: NoSchedule
+    resources:
+      limits: {cpu: "2", memory: 4Gi}
+---
+apiVersion: ate.dev/v1
+kind: WorkerPool
+metadata:
+  name: ci-runner
+  namespace: ci-substrate-workers
+  labels:
+    workload: ci-runner
+spec:
+  replicas: 0
+  workerImage: ghcr.io/agent-substrate/substrate/ateworker-gvisor:v1.0.0
+  sandboxClasses:
+    - name: gvisor
+  template:
+    nodeSelector:
+      ci-substrate.dev/burst: "true"
     resources:
       limits: {cpu: "2", memory: 4Gi}

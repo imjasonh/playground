@@ -17,6 +17,17 @@ spec:
     metadata:
       labels: {app: cas}
     spec:
+      tolerations:
+        - key: ci-substrate.dev/always-on
+          operator: Exists
+          effect: NoSchedule
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - {key: ci-substrate.dev/always-on, operator: In, values: ["true"]}
       securityContext:
         fsGroup: 65532
       containers:

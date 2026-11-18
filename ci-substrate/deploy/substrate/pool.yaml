@@ -10,6 +10,10 @@
 #   kubectl -n ate-system create configmap ci-substrate-pool-tenant-a \
 #     --from-file=egress-policy.yaml=egress-cas.yaml
 #   ko apply -f pool.yaml
+#
+# It also sets the replicas of the ci-runner WorkerPool in workerpool.yaml,
+# through its scale subresource, with a Kubernetes API token for ate-client
+# that the Role below lets do only that.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -43,6 +47,12 @@ spec:
     spec:
       serviceAccountName: ate-client
       automountServiceAccountToken: false
+      nodeSelector:
+        ci-substrate.dev/always-on: "true"
+      tolerations:
+        - key: ci-substrate.dev/always-on
+          operator: Exists
+          effect: NoSchedule
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -70,6 +80,15 @@ spec:
               value: "4"
             - name: IDLE_AFTER
               value: 2m
+            - name: WORKER_POOL
+              value: ci-substrate-workers/ci-runner
+            # ci-runner-base has one worker, and a worker hosts one actor.
+            - name: BASE_SLOTS
+              value: "1"
+            - name: ACTORS_PER_WORKER
+              value: "1"
+            - name: MAX_WORKERS
+              value: "4"
             - name: TENANT_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -96,6 +115,9 @@ spec:
             - name: config
               mountPath: /etc/ci-substrate
               readOnly: true
+            - name: kube-api
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -121,3 +143,39 @@ spec:
                     matchLabels:
                       podcert.ate.dev/canarying: live
                   path: trust-bundle.pem
+        - name: kube-api
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ci-substrate-pool
+  namespace: ci-substrate-workers
+rules:
+  - apiGroups: ["ate.dev"]
+    resources: ["workerpools/scale"]
+    resourceNames: ["ci-runner"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-substrate-pool
+  namespace: ci-substrate-workers
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ci-substrate-pool
+subjects:
+  - kind: ServiceAccount
+    name: ate-client
+    namespace: ate-system

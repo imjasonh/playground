@@ -38,6 +38,10 @@ spec:
     metadata:
       labels: {app: casfs-csi}
     spec:
+      tolerations:
+        - key: ci-substrate.dev/always-on
+          operator: Exists
+          effect: NoSchedule
       serviceAccountName: casfs-csi
       automountServiceAccountToken: false
       containers:

@@ -16,6 +16,10 @@ spec:
     metadata:
       labels: {app: cascache}
     spec:
+      tolerations:
+        - key: ci-substrate.dev/always-on
+          operator: Exists
+          effect: NoSchedule
       containers:
         - name: cascache
           image: ko://github.com/imjasonh/playground/ci-substrate/cmd/cascache # pasta:ignore unpinned_container_image
