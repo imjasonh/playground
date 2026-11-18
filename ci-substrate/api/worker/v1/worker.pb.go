@@ -677,12 +677,13 @@ const file_worker_v1_worker_proto_rawDesc = "" +
 	"\x06queued\x18\x01 \x01(\x05R\x06queued\x12\x1c\n" +
 	"\texecuting\x18\x02 \x01(\x05R\texecuting\x12 \n" +
 	"\fbusy_bot_ids\x18\x03 \x03(\tR\n" +
-	"busyBotIds2\x97\x02\n" +
+	"busyBotIds2\xdd\x02\n" +
 	"\rWorkerService\x12:\n" +
 	"\x05Lease\x12\x17.worker.v1.LeaseRequest\x1a\x18.worker.v1.LeaseResponse\x12F\n" +
 	"\tHeartbeat\x12\x1b.worker.v1.HeartbeatRequest\x1a\x1c.worker.v1.HeartbeatResponse\x12C\n" +
 	"\bComplete\x12\x1a.worker.v1.CompleteRequest\x1a\x1b.worker.v1.CompleteResponse\x12=\n" +
-	"\x06Status\x12\x18.worker.v1.StatusRequest\x1a\x19.worker.v1.StatusResponseBDZBgithub.com/imjasonh/playground/ci-substrate/api/worker/v1;workerv1b\x06proto3"
+	"\x06Status\x12\x18.worker.v1.StatusRequest\x1a\x19.worker.v1.StatusResponse\x12D\n" +
+	"\vWatchStatus\x12\x18.worker.v1.StatusRequest\x1a\x19.worker.v1.StatusResponse0\x01BDZBgithub.com/imjasonh/playground/ci-substrate/api/worker/v1;workerv1b\x06proto3"
 
 var (
 	file_worker_v1_worker_proto_rawDescOnce sync.Once
@@ -723,12 +724,14 @@ var file_worker_v1_worker_proto_depIdxs = []int32{
 	4,  // 6: worker.v1.WorkerService.Heartbeat:input_type -> worker.v1.HeartbeatRequest
 	6,  // 7: worker.v1.WorkerService.Complete:input_type -> worker.v1.CompleteRequest
 	9,  // 8: worker.v1.WorkerService.Status:input_type -> worker.v1.StatusRequest
-	3,  // 9: worker.v1.WorkerService.Lease:output_type -> worker.v1.LeaseResponse
-	5,  // 10: worker.v1.WorkerService.Heartbeat:output_type -> worker.v1.HeartbeatResponse
-	7,  // 11: worker.v1.WorkerService.Complete:output_type -> worker.v1.CompleteResponse
-	10, // 12: worker.v1.WorkerService.Status:output_type -> worker.v1.StatusResponse
-	9,  // [9:13] is the sub-list for method output_type
-	5,  // [5:9] is the sub-list for method input_type
+	9,  // 9: worker.v1.WorkerService.WatchStatus:input_type -> worker.v1.StatusRequest
+	3,  // 10: worker.v1.WorkerService.Lease:output_type -> worker.v1.LeaseResponse
+	5,  // 11: worker.v1.WorkerService.Heartbeat:output_type -> worker.v1.HeartbeatResponse
+	7,  // 12: worker.v1.WorkerService.Complete:output_type -> worker.v1.CompleteResponse
+	10, // 13: worker.v1.WorkerService.Status:output_type -> worker.v1.StatusResponse
+	10, // 14: worker.v1.WorkerService.WatchStatus:output_type -> worker.v1.StatusResponse
+	10, // [10:15] is the sub-list for method output_type
+	5,  // [5:10] is the sub-list for method input_type
 	5,  // [5:5] is the sub-list for extension type_name
 	5,  // [5:5] is the sub-list for extension extendee
 	0,  // [0:5] is the sub-list for field type_name

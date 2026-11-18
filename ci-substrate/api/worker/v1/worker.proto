@@ -28,6 +28,11 @@ service WorkerService {
   // Status reports the queue for the instances the caller's token allows.
   // The runner pool sizes a tenant's runners from it.
   rpc Status(StatusRequest) returns (StatusResponse);
+
+  // WatchStatus sends the same report as Status, then a new one each time it
+  // changes, until the caller cancels. The runner pool reconciles on each one
+  // instead of waiting for its next poll.
+  rpc WatchStatus(StatusRequest) returns (stream StatusResponse);
 }
 
 // Digest names a blob in the CAS: lowercase hex SHA-256 and byte count.
