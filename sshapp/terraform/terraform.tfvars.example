@@ -16,7 +16,9 @@ domain     = "example.com"
 # ]
 
 # Create GitHub Actions WIF once you are ready to deploy from CI:
-# github_repository = "imjasonh/playground"
+# github_repository          = "imjasonh/playground"
+# github_repository_id       = "1282282910" # gh api repos/imjasonh/playground --jq .id
+# github_repository_owner_id = "210737"     # gh api repos/imjasonh/playground --jq .owner.id
 
 # Add more Wish apps by extending this map (and adding apps/<name>/ under sshapp/).
 # apps = {

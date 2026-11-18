@@ -1,6 +1,8 @@
 # GitHub Actions Workload Identity Federation scaffolding.
 # Leave github_repository empty until you are ready to deploy from GHA.
-# Then set it to OWNER/REPO and grant the deploy SA in your workflow with:
+# Then set it to OWNER/REPO, set github_repository_id and
+# github_repository_owner_id to its numeric IDs, and grant the deploy SA
+# in your workflow with:
 #
 #   permissions:
 #     id-token: write
@@ -30,16 +32,30 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   description                        = "GitHub OIDC for ${var.github_repository}."
 
   attribute_mapping = {
-    "google.subject"       = "assertion.sub"
-    "attribute.actor"      = "assertion.actor"
-    "attribute.repository" = "assertion.repository"
-    "attribute.ref"        = "assertion.ref"
+    "google.subject"          = "assertion.sub"
+    "attribute.actor"         = "assertion.actor"
+    "attribute.repository"    = "assertion.repository"
+    "attribute.repository_id" = "assertion.repository_id"
+    "attribute.ref"           = "assertion.ref"
   }
 
-  attribute_condition = "assertion.repository == \"${var.github_repository}\""
+  # Names can be registered again after a rename or deletion, so the
+  # numeric IDs are what pin the repository.
+  attribute_condition = join(" && ", [
+    "assertion.repository_owner_id == \"${var.github_repository_owner_id}\"",
+    "assertion.repository_id == \"${var.github_repository_id}\"",
+    "assertion.repository == \"${var.github_repository}\"",
+  ])
 
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
+  }
+
+  lifecycle {
+    precondition {
+      condition     = var.github_repository_id != "" && var.github_repository_owner_id != ""
+      error_message = "Set github_repository_id and github_repository_owner_id with github_repository."
+    }
   }
 }
 
@@ -56,7 +72,7 @@ resource "google_service_account_iam_member" "github_wif" {
 
   service_account_id = google_service_account.github_deploy[0].name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github[0].name}/attribute.repository/${var.github_repository}"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github[0].name}/attribute.repository_id/${var.github_repository_id}"
 }
 
 resource "google_project_iam_member" "github_deploy_roles" {

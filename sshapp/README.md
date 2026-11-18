@@ -192,7 +192,12 @@ add forwarding rules.
 ## GitHub Actions (later)
 
 Set `github_repository = "OWNER/REPO"` and re-apply when you want WIF outputs
-for `google-github-actions/auth`.
+for `google-github-actions/auth`. Also set `github_repository_id` and
+`github_repository_owner_id` to the numeric IDs that
+`gh api repos/OWNER/REPO --jq '.id, .owner.id'` prints. The provider only
+accepts tokens whose repository and owner IDs match, and the deploy service
+account is bound to the repository ID. A repository name alone isn't enough,
+because anyone can register a name after its owner renames or deletes it.
 
 ## Destroy
 
