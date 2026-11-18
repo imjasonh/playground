@@ -289,4 +289,12 @@ theorem pv_pa {B : Word} {m : Machine} {off : Nat} {imm o : Word} {cl cr : Nat} 
       (by revert hq h; revert q; decide) (by revert hq h; revert q; decide) (by revert hq h; revert q; decide),
       r1 q (by revert hq; revert q; decide)]
 
+theorem accV_KD {M M' : Word → BitVec 8} {S K : Word} {c d : Nat} :
+    ∀ k, (∀ q, q < 4 * k → M' (S + BitVec.ofNat 32 (c + q)) = M (K + BitVec.ofNat 32 (d + q))) →
+    accV M' (S + BitVec.ofNat 32 c) k = accV M (K + BitVec.ofNat 32 d) k :=
+  fun k h => accV_congr2 k fun i hi => by
+    rw [ld_ofNat, ld_ofNat]
+    simp only [add_ofNat_assoc, Nat.add_assoc]
+    rw [h _ (by omega), h _ (by omega), h _ (by omega), h _ (by omega)]
+
 end C3.RV32.Pv

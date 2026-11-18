@@ -83,13 +83,20 @@ def lean_val(v):
 
 
 ENV3_WRAPPERS = {"pv_umin", "pv_low", "pv_ufg", "pv_ude", "pv_norm", "pv_eq"}
+ENV4_WRAPPERS = {"pv_smul", "pv_pd", "pv_pa"}
+ENV_SUFFIX = {(4, 4): "", (4, 3): ".E", (4, 1): ".E.E", (3, 3): "", (3, 1): ".E", (1, 1): ""}
+
+
+def wrapper_level(w):
+    return 4 if w in ENV4_WRAPPERS else 3 if w in ENV3_WRAPPERS else 1
 
 
 class Gen:
-    def __init__(self, name, env3=False):
+    def __init__(self, name, env3=False, env4=False):
         self.name = name
-        self.env3 = env3
-        self.envt = "PvEnv3" if env3 else "PvEnv"
+        self.lvl = 4 if env4 else 3 if env3 else 1
+        self.env3 = self.lvl >= 3
+        self.envt = {1: "PvEnv", 3: "PvEnv3", 4: "PvEnv4"}[self.lvl]
         self.k = 0
         self.out = []
         self.blocks = []
@@ -104,7 +111,7 @@ class Gen:
 
     def env(self, k):
         """The `PvEnv` of state k."""
-        return f"E{k}.E" if self.env3 else f"E{k}"
+        return f"E{k}{ENV_SUFFIX[(self.lvl, 1)]}"
 
     def end_step(self):
         """Clears the facts of the step before the one just finished, so that tactics
@@ -286,7 +293,7 @@ class Gen:
         self.emit(f"  -- 0x{off:X}: {wrapper}")
         for line in pre or []:
             self.emit(f"  {line}")
-        ev = f"E{k-1}" if (wrapper in ENV3_WRAPPERS or not self.env3) else f"E{k-1}.E"
+        ev = f"E{k-1}{ENV_SUFFIX[(self.lvl, wrapper_level(wrapper))]}"
         self.emit(f"  obtain ⟨n{k}, P{k}, K{k}, V{k}⟩ := {wrapper} F {ev} s{k-1} pv_at_{off:x} pv_at_{off+4:x} (by decide) (by decide)")
         self.emit(f"    {args}")
         self.emit(f"  have s{k} := P{k}.st")
@@ -412,12 +419,32 @@ class Ops:
 
     def mcK(self, off, dst, K, N, data):
         g = self.g
-        acc = {dst: (f"dataVal {data} 0 12", [
-            f"rw [show BitVec.ofNat 32 0x{K:X} = BitVec.ofNat 32 0x{K:X} + BitVec.ofNat 32 0 from (add_ofNat_zero _).symm] at V{g.k + 1}",
-            f"rw [accV_K 12 fun q hq => V{g.k + 1} q (by omega)]",
-            f"exact code_accV (d := {data}) {g.env(g.k)}.D2.{DATA_FIELD[data]} 0 12 (by decide)",
-        ])}
-        g.call("pv_mcK", off, f"g{g.k}_2 g{g.k}_10 g{g.k}_11 g{g.k}_12 (by decide) (by decide) (by decide)", dst, N, acc)
+        k = g.k
+        acc = {}
+        for o in range(0, N - 47, 0x30):
+            if o == 0:
+                acc[dst] = (f"dataVal {data} 0 12", [
+                    f"rw [show BitVec.ofNat 32 0x{K:X} = BitVec.ofNat 32 0x{K:X} + BitVec.ofNat 32 0 from (add_ofNat_zero _).symm] at V{k + 1}",
+                    f"rw [accV_K 12 fun q hq => V{k + 1} q (by omega)]",
+                    f"exact code_accV (d := {data}) {g.env(k)}.D2.{DATA_FIELD[data]} 0 12 (by decide)",
+                ])
+            else:
+                acc[dst + o] = (f"dataVal {data} 0x{o:X} 12", [
+                    f"rw [accV_KD (M := n{k}.mem) (K := BitVec.ofNat 32 0x{K:X}) (d := 0x{o:X}) 12 fun q hq => by",
+                    f"  have := V{k + 1} (0x{o:X} + q) (by omega)",
+                    f"  rwa [show 0x{dst:X} + (0x{o:X} + q) = 0x{dst + o:X} + q by omega] at this]",
+                    f"exact code_accV (d := {data}) {g.env(k)}.D2.{DATA_FIELD[data]} 0x{o:X} 12 (by decide)",
+                ])
+        g.call("pv_mcK", off, f"g{k}_2 g{k}_10 g{k}_11 g{k}_12 (by decide) (by decide) (by decide)", dst, N, acc)
+
+    def smul(self, off, co, cx, cy, hB):
+        """`ConstMontyForm::mul` of the limbs at `cx` and `cy`, with `hB` bounding the second."""
+        g = self.g
+        k = g.k
+        val = f"n3fm ({g.acc[cx]}) ({g.acc[cy]})"
+        acc = {co: (val, [f"rw [V{k + 1}, a{k}_{cx:x}, a{k}_{cy:x}]"])}
+        g.call("pv_smul", off, f"g{k}_2 g{k}_10 g{k}_11 g{k}_12 (by decide) (by decide) (by decide) (by decide) (by decide)\n"
+               f"    (by decide) (by rw [a{k}_{cy:x}]; exact {hB})", co, 48, acc)
 
     def csel(self, off, dst, a, b):
         """Select with a choice of 0, so the limbs at offset `a`; `b` is a constant."""
@@ -815,6 +842,38 @@ def stage_c2b(ok):
     return g, info
 
 
+def stage_d():
+    g = Gen("D", env4=True)
+    g.regs = {2: S(0), 18: S(0x17A4)}
+    for r in (3, 4):
+        g.regs[r] = ("U", f"reg n0 ({r} : Fin 32)")
+    g.acc = {0x120: "QX", 0x150: "QY", 0x180: "QZ", 0x1B0: "RM", 0x1E0: "SM", 0x210: "ZM", 0xE10: "W"}
+    params = params_of(g, 0x730)
+    o = Ops(g)
+    g.block(0x730, 0x73E); o.mc(0x73E, 0x240, 0xE10, 0x30)
+    g.block(0x746, 0x752); o.smul(0x752, 0xEA0, 0x210, 0x240, "hW")
+    g.block(0x75A, 0x766); o.smul(0x766, 0x1324, 0x1B0, 0x240, "hW")
+    g.block(0x76E, 0x784); o.mcK(0x784, 0xE10, 0x3FCC4600, 0x90, "p384GData")
+    g.block(0x78C, 0x79A); o.mc(0x79A, 0x1294, 0x120, 0x90)
+    g.block(0x7A2, 0x7B0); o.mc(0x7B0, 0x270, 0xE10, 0xC0)
+    g.block(0x7B8, 0x7C6); o.mc(0x7C6, 0x330, 0x1294, 0xC0)
+    g.block(0x7CE, 0x7DC); o.mc(0x7DC, 0x17A4, 0x270, 0x180)
+    info = {
+        "end": 0x7E4, "name": "pv_stD", "title": "`u₁` and `u₂`, and the pairs of the linear combination",
+        "doc": "From 0x730 to 0x7E4: `u₁ = z·w` and `u₂ = r·w` in Montgomery form, and the pairs `(G, u₁)` and "
+               "`(Q, u₂)` at 0x17A4.",
+        "thmdoc": "**`u₁`, `u₂`, and the pairs**, from 0x730 to 0x7E4.",
+        "params": "{B : Word} {QX QY QZ RM SM ZM W : Nat} " + params + " (hW : W < n384)",
+        "intro": ["have t0 : Steps n0 n0 := .refl n0", "have fR0 : ∀ x, PvR B x → n0.mem x = n0.mem x := fun _ _ => rfl"]
+                 + [f"have g0_{r} : reg n0 ({r} : Fin 32) = reg n0 ({r} : Fin 32) := rfl" for r in (3, 4)],
+        "import": "C3BootProofs.Proofs.Pv384Lib3",
+        "only": {"regs": {2, 3, 4, 18, 23},
+                 "acc": {0x120, 0x150, 0x180, 0x1B0, 0x1E0, 0x210, 0x17A4, 0x17D4, 0x1804, 0x1834, 0x1864, 0x1894,
+                         0x18C4, 0x18F4}},
+    }
+    return g, info
+
+
 def stage_cb():
     g = Gen("CB", env3=True)
     g.regs = {2: S(0), 19: ("U", "dhi"), 21: ("U", "dlo"), 23: ("U", "BitVec.ofNat 32 rem"), 26: C(0xB),
@@ -933,7 +992,7 @@ set_option linter.unusedSimpArgs false
 def main():
     stage = sys.argv[1]
     g, info = {"B": stage_b, "C0": stage_c0, "CA": stage_ca, "CB": stage_cb, "C2a": stage_c2a,
-               "C2b1": lambda: stage_c2b(1), "C2b0": lambda: stage_c2b(0)}[stage]()
+               "C2b1": lambda: stage_c2b(1), "C2b0": lambda: stage_c2b(0), "D": stage_d}[stage]()
     stmt, proof = g.conclusion(info["end"], info.get("extra", ()), info.get("only"))
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.Pv384Lib"), title=info["title"], stage=stage,
                         doc=info["doc"]))
