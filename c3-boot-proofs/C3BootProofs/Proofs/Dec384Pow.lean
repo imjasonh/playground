@@ -434,8 +434,8 @@ theorem dqDig_le (i w : Nat) (limb : Word) : (dqDig i w limb).toNat ≤ 15 := by
   rw [BitVec.toNat_and]
   refine Nat.le_trans Nat.and_le_left ?_
   by_cases h : i = 11 ∧ w = 7
-  · rw [if_pos h]; decide
-  · rw [if_neg h]; decide
+  · rw [ite_eq_left h]; decide
+  · rw [ite_eq_right h]; decide
 
 theorem top_test : ∀ i : Nat, i < 12 → ∀ w : Nat, w < 8 →
     branchTaken .beq (aluEval .or (aluEval .xor 7 (BitVec.ofNat 32 w)) (aluEval .xor 11 (BitVec.ofNat 32 i))) 0 =
