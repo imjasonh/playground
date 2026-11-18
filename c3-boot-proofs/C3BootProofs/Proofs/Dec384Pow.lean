@@ -738,17 +738,21 @@ theorem WinFrame.word {S : Word} {M' M : Word → BitVec 8} (F : DqFrame S) (h :
 theorem DqWin.frame {M M' : Word → BitVec 8} {S : Word} {A i : Nat} (F : DqFrame S) (W : DqWin M S A i)
     (h : WinFrame S M' M) : DqWin M' S A i := by
   have wd := fun d hd => WinFrame.word (d := d) F h hd
+  have lo : ∀ d, 0x24 ≤ d → d + 4 ≤ 0x3C → memLoad32 M' (S + BitVec.ofNat 32 d) = memLoad32 M (S + BitVec.ofNat 32 d) :=
+    fun d h1 h2 => wd d (.inl ⟨h1, h2⟩)
+  have mid : ∀ d, 0x40 ≤ d → d + 4 ≤ 0x62C → memLoad32 M' (S + BitVec.ofNat 32 d) = memLoad32 M (S + BitVec.ofNat 32 d) :=
+    fun d h1 h2 => wd d (.inr (.inl ⟨h1, h2⟩))
   refine ⟨?_, ?_, fun k hk => ?_, fun j hj => ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · rw [wd 0x134 (by omega)]; exact W.N0
-  · rw [← W.N]; exact accV_congr2 12 fun j hj => by rw [add_ofNat_assoc, wd _ (by omega)]
-  · rw [← W.pw k hk]; exact accV_congr2 12 fun j hj => by rw [add_ofNat_assoc, wd _ (by omega)]
-  · rw [wd _ (by omega)]; exact W.ex j hj
-  · rw [wd 0x2C (by omega)]; exact W.s2C
-  · rw [wd 0x34 (by omega)]; exact W.s34
-  · rw [wd 0x38 (by omega)]; exact W.s38
-  · rw [wd 0x30 (by omega)]; exact W.s30
-  · rw [wd 0x24 (by omega)]; exact W.s24
-  · rw [wd 0x28 (by omega)]; exact W.s28
+  · rw [mid 0x134 (by decide) (by decide)]; exact W.N0
+  · rw [← W.N]; exact accV_congr2 12 fun j hj => by rw [add_ofNat_assoc, mid _ (by omega) (by omega)]
+  · rw [← W.pw k hk]; exact accV_congr2 12 fun j hj => by rw [add_ofNat_assoc, mid _ (by omega) (by omega)]
+  · rw [mid _ (by omega) (by omega)]; exact W.ex j hj
+  · rw [lo 0x2C (by decide) (by decide)]; exact W.s2C
+  · rw [lo 0x34 (by decide) (by decide)]; exact W.s34
+  · rw [lo 0x38 (by decide) (by decide)]; exact W.s38
+  · rw [lo 0x30 (by decide) (by decide)]; exact W.s30
+  · rw [lo 0x24 (by decide) (by decide)]; exact W.s24
+  · rw [lo 0x28 (by decide) (by decide)]; exact W.s28
 
 theorem win_ne0 : ∀ c : Nat, c < 8 → (BitVec.ofNat 32 (c + 1) == (0 : Word)) = false := by decide
 theorem win_dec : ∀ c : Nat, c < 8 → BitVec.ofNat 32 (c + 1) + 0xFFFFFFFF = BitVec.ofNat 32 c := by decide
