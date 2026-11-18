@@ -49,13 +49,14 @@ typedef struct {
 // the pointer or the inline struct.
 typedef struct SubtreeInlineData SubtreeInlineData;
 
-#define SUBTREE_BITS    \
-  bool visible : 1;     \
-  bool named : 1;       \
-  bool extra : 1;       \
-  bool has_changes : 1; \
-  bool is_missing : 1;  \
-  bool is_keyword : 1;
+#define SUBTREE_BITS           \
+  bool visible : 1;            \
+  bool named : 1;              \
+  bool extra : 1;              \
+  bool has_changes : 1;        \
+  bool is_missing : 1;         \
+  bool is_keyword : 1;         \
+  bool depends_on_column : 1;
 
 #define SUBTREE_SIZE           \
   uint8_t padding_columns;     \
@@ -71,7 +72,6 @@ struct SubtreeInlineData {
   uint16_t parse_state;
   uint8_t symbol;
   SUBTREE_BITS
-  bool unused : 1;
   bool is_inline : 1;
   SUBTREE_SIZE
 };
@@ -83,7 +83,6 @@ struct SubtreeInlineData {
   uint16_t parse_state;
   uint8_t symbol;
   SUBTREE_BITS
-  bool unused : 1;
   bool is_inline : 1;
 };
 
@@ -211,6 +210,7 @@ Subtree ts_subtree_new_error_node(
 Subtree ts_subtree_new_missing_leaf(
   SubtreePool *pool,
   TSSymbol symbol,
+  TSStateId state,
   Length padding,
   uint32_t lookahead_bytes,
   const TSLanguage *language
@@ -252,7 +252,7 @@ static inline size_t ts_subtree_alloc_size(uint32_t child_count) {
 // Get a subtree's children, which are allocated immediately before the
 // tree's own heap data.
 #define ts_subtree_children(self) \
-  ((self).data.is_inline ? NULL : (Subtree *)((self).ptr) - (self).ptr->child_count)
+  ((self).data.is_inline ? (Subtree *)NULL : (Subtree *)((self).ptr) - (self).ptr->child_count)
 
 static inline void ts_subtree_set_extra(MutableSubtree *self, bool is_extra) {
   if (self->data.is_inline) {
@@ -365,7 +365,7 @@ static inline bool ts_subtree_has_external_scanner_state_change(Subtree self) {
 }
 
 static inline bool ts_subtree_depends_on_column(Subtree self) {
-  return self.data.is_inline ? false : self.ptr->depends_on_column;
+  return self.data.is_inline ? self.data.depends_on_column : self.ptr->depends_on_column;
 }
 
 static inline bool ts_subtree_is_fragile(Subtree self) {

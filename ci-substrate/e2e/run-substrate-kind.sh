@@ -15,8 +15,11 @@
 # to zero. A kind node cannot be removed and re-added the way a node pool
 # scales, so the burst node stays up; what the test checks is the WorkerPool.
 #
-# Needs docker, go, git, kind (tested with v0.33.0), kubectl, kubectl-ate, ko,
-# crane, and python3. Set CI_SUBSTRATE_SUBSTRATE_SRC to a checkout of
+# Needs docker, go, git, curl, and python3; it installs kind, ko, kubectl,
+# and crane when they are missing, and builds kubectl-ate from the Substrate
+# release. go test ./e2e runs it when CI_SUBSTRATE_KIND_E2E=1. Set
+# CI_SUBSTRATE_DOGFOOD=0 to skip run-kind.sh's dogfood build. Set
+# CI_SUBSTRATE_SUBSTRATE_SRC to a checkout of
 # agent-substrate/substrate at SUBSTRATE_VERSION (by default the
 # go.ate.dev/substrate version in go.mod); otherwise it clones one. Set
 # CI_SUBSTRATE_KIND_KEEP=1 to keep the cluster and registry it creates.
@@ -49,22 +52,24 @@ cleanup() {
 }
 trap cleanup EXIT
 
-need_cmd() {
-  command -v "$1" >/dev/null 2>&1 || {
-    echo "missing required command: $1" >&2
-    exit 1
-  }
-}
-
-for cmd in docker go git kind kubectl kubectl-ate ko crane python3; do
+# shellcheck source=lib-tools.sh
+source "${ROOT}/e2e/lib-tools.sh"
+for cmd in docker go git curl python3; do
   need_cmd "${cmd}"
 done
 mkdir -p "${WORKDIR}"
+install_kind "${WORKDIR}/bin"
+install_ko "${WORKDIR}/bin"
+install_kubectl "${WORKDIR}/bin"
+install_crane "${WORKDIR}/bin"
 
 if [[ -z "${SUBSTRATE_SRC}" ]]; then
   SUBSTRATE_SRC="${WORKDIR}/substrate"
   git clone -q --depth 1 --branch "${SUBSTRATE_VERSION}" https://github.com/agent-substrate/substrate "${SUBSTRATE_SRC}"
 fi
+# kubectl-ate comes from the release it drives.
+(cd "${SUBSTRATE_SRC}" && GOBIN="${WORKDIR}/bin" go install ./cmd/kubectl-ate)
+export PATH="${WORKDIR}/bin:${PATH}"
 
 echo "==> Registry ${REGISTRY_NAME} on 127.0.0.1:${REGISTRY_PORT}"
 if ! docker inspect -f '{{.State.Running}}' "${REGISTRY_NAME}" 2>/dev/null | grep -q true; then
@@ -77,6 +82,7 @@ echo "==> kind cluster ${CLUSTER_NAME}"
 if kind get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}"; then
   echo "Reusing kind cluster ${CLUSTER_NAME}"
 else
+  raise_inotify_limits
   # Substrate's pod certificates need these feature gates and runtime config.
   # kube-proxy's nftables mode works on kernels without the iptables
   # statistic match, which iptables mode needs for Services with more than
@@ -145,8 +151,19 @@ if ! kubectl -n ate-system get deployment ate-api-server >/dev/null 2>&1; then
       --ingress-allowed-spiffe-ids=spiffe://cluster.local/ns/ate-system/sa/atenet-client \
       --image-repo ghcr.io/agent-substrate/substrate \
       --image-tag "${SUBSTRATE_VERSION}" \
-      --sandbox-classes=gvisor
-  )
+      --sandbox-classes=gvisor \
+      --rollout-timeout=10m
+  ) || {
+    for ns in "${SUBSTRATE_NAMESPACES[@]}"; do
+      kubectl -n "${ns}" get pods -o wide || true
+      kubectl -n "${ns}" get events --sort-by=.lastTimestamp | tail -30 || true
+    done
+    for pod in $(kubectl -n ate-system get pods --no-headers | awk '{split($2, r, "/"); if (r[1] != r[2]) print $1}'); do
+      kubectl -n ate-system describe pod "${pod}" | tail -40 || true
+      kubectl -n ate-system logs "${pod}" --all-containers --tail=50 || true
+    done
+    exit 1
+  }
 fi
 kubectl taint node "${WORKER}" ci-substrate.imjasonh.com/installing- 2>/dev/null || true
 kubectl taint node "${CONTROL_PLANE}" "${ALWAYS_ON}=true:NoSchedule" --overwrite
@@ -209,7 +226,6 @@ CI_SUBSTRATE_KIND_CLUSTER="${CLUSTER_NAME}" \
   CI_SUBSTRATE_REGISTRY_NAME="${REGISTRY_NAME}" \
   CI_SUBSTRATE_REGISTRY_PORT="${REGISTRY_PORT}" \
   CI_SUBSTRATE_KIND_KEEP=1 \
-  CI_SUBSTRATE_DOGFOOD="${CI_SUBSTRATE_DOGFOOD:-0}" \
   bash "${ROOT}/e2e/run-kind.sh"
 
 for app in cas otel-collector jaeger; do
@@ -221,6 +237,12 @@ for app in cas otel-collector jaeger; do
 done
 
 echo "==> Substrate actors"
-KO_DOCKER_REPO="localhost:${REGISTRY_PORT}/ci-substrate" bash "${ROOT}/e2e/run-substrate.sh"
+# Both kind nodes report all of the host's CPUs and share them, and a 4-CPU
+# CI runner's always-on node has less than 2 CPUs unrequested once Substrate
+# and cas run there. Small requests let the workers schedule, and their
+# limits, which Substrate books actors against, stay as deployed.
+KO_DOCKER_REPO="localhost:${REGISTRY_PORT}/ci-substrate" \
+  CI_SUBSTRATE_WORKER_REQUESTS="${CI_SUBSTRATE_WORKER_REQUESTS:-{cpu: 100m, memory: 512Mi\}}" \
+  bash "${ROOT}/e2e/run-substrate.sh"
 
 echo "ci-substrate Substrate kind e2e passed"
