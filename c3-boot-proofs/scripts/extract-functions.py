@@ -333,6 +333,8 @@ DATA = [
 DATA_EXTRA = [
     ("bsMagic", "bootMainClosure1", 0x56, 4),
     ("bsVersion", "bootMainClosure1", 0x78, 2),
+    ("p384Params", "p384Decompress", 0xD6, 0x9C),
+    ("p384SqrtExp", "p384Decompress", 0x166, 48),
 ]
 
 
