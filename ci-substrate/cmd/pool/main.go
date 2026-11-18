@@ -153,8 +153,13 @@ func main() {
 			slog.Error("configuring WorkerPool scaling", "err", err)
 			os.Exit(1)
 		}
-		cfg.Workers, cfg.WorkerPool = workers, c.WorkerPool
-		cfg.BaseSlots, cfg.ActorsPerWorker, cfg.MaxWorkers = c.BaseSlots, c.ActorsPerWorker, c.MaxWorkers
+		cfg.Burst = &actorpool.Burst{
+			Workers:         workers,
+			Name:            c.WorkerPool,
+			BaseSlots:       c.BaseSlots,
+			ActorsPerWorker: c.ActorsPerWorker,
+			MaxWorkers:      c.MaxWorkers,
+		}
 	}
 	pool, err := actorpool.New(cfg)
 	if err != nil {

@@ -45,8 +45,8 @@ func newMetrics(p *Pool) metrics {
 		}
 		o.ObserveInt64(queued, int64(p.queued))
 		o.ObserveInt64(busy, int64(p.busyBots))
-		if p.cfg.Workers != nil {
-			o.ObserveInt64(workers, int64(p.workers), metric.WithAttributes(attribute.String("workerpool", p.cfg.WorkerPool)))
+		if b := p.cfg.Burst; b != nil {
+			o.ObserveInt64(workers, int64(p.workers), metric.WithAttributes(attribute.String("workerpool", b.Name)))
 		}
 		return nil
 	}, actors, queued, busy, workers))

@@ -11,7 +11,7 @@
 //   - A suspended actor beyond Warm is deleted, and a crashed one is deleted
 //     so the next reconcile replaces it.
 //
-// With Workers set, the pool also sizes a WorkerPool: enough workers for the
+// With Burst set, the pool also sizes a WorkerPool: enough workers for the
 // actors that are awake or waking beyond BaseSlots, which fit on workers the
 // pool does not size. It grows the WorkerPool before resuming actors that need
 // it, and shrinks it, down to zero, once none of its actors is on one of
@@ -130,14 +130,16 @@ type Config struct {
 	Interval time.Duration
 	// Now returns the current time. Tests set it.
 	Now func() time.Time
+	// Burst, when set, is a WorkerPool the pool sizes for its actors.
+	Burst *Burst
+}
 
-	// Workers, when set, is the WorkerPool the pool sizes for its actors.
-	// No other pool may size it, and no other tenant's actors may run on
-	// it: the pool shrinks it when none of its own actors is there.
+// Burst is a WorkerPool that only the pool sizes and only the pool's actors
+// use: the pool empties it when none of them is there.
+type Burst struct {
 	Workers Workers
-	// WorkerPool names Workers as namespace/name, the way Actor.WorkerPool
-	// does.
-	WorkerPool string
+	// Name is Workers' namespace/name, the way Actor.WorkerPool names it.
+	Name string
 	// BaseSlots is how many of the pool's actors fit on workers that the
 	// pool does not size, such as a WorkerPool on an always-on node.
 	BaseSlots int
@@ -174,9 +176,9 @@ func New(cfg Config) (*Pool, error) {
 	if cfg.Warm < 0 || cfg.Max < 1 || cfg.Warm > cfg.Max {
 		return nil, fmt.Errorf("actorpool: need 0 <= Warm (%d) <= Max (%d) and Max >= 1", cfg.Warm, cfg.Max)
 	}
-	if cfg.Workers != nil && (cfg.WorkerPool == "" || cfg.BaseSlots < 0 || cfg.ActorsPerWorker < 1 || cfg.MaxWorkers < 1) {
-		return nil, fmt.Errorf("actorpool: Workers needs WorkerPool, BaseSlots (%d) >= 0, ActorsPerWorker (%d) >= 1, and MaxWorkers (%d) >= 1",
-			cfg.BaseSlots, cfg.ActorsPerWorker, cfg.MaxWorkers)
+	if b := cfg.Burst; b != nil && (b.Workers == nil || b.Name == "" || b.BaseSlots < 0 || b.ActorsPerWorker < 1 || b.MaxWorkers < 1) {
+		return nil, fmt.Errorf("actorpool: Burst needs Workers, Name, BaseSlots (%d) >= 0, ActorsPerWorker (%d) >= 1, and MaxWorkers (%d) >= 1",
+			b.BaseSlots, b.ActorsPerWorker, b.MaxWorkers)
 	}
 	if cfg.IdleAfter <= 0 {
 		cfg.IdleAfter = time.Minute
@@ -386,31 +388,32 @@ func (p *Pool) Reconcile(ctx context.Context) (err error) {
 	return errors.Join(errs...)
 }
 
-// scaleWorkers sizes Workers for awake actors plus waking ones, which this
-// reconcile resumes or creates next. It grows Workers first so those resumes
-// find room. It shrinks Workers only when nothing is waking and none of the
-// pool's actors is on one of its workers, because Kubernetes picks which
+// scaleWorkers sizes the burst WorkerPool for awake actors plus waking ones,
+// which this reconcile resumes or creates next. It grows the pool first so
+// those resumes find room. It shrinks the pool only when nothing is waking
+// and none of the pool's actors is on it, because Kubernetes picks which
 // worker to stop and Substrate crashes the actor on it.
 func (p *Pool) scaleWorkers(ctx context.Context, owned []Actor, awake, waking int) error {
-	if p.cfg.Workers == nil {
+	b := p.cfg.Burst
+	if b == nil {
 		return nil
 	}
-	have, err := p.cfg.Workers.Replicas(ctx)
+	have, err := b.Workers.Replicas(ctx)
 	if err != nil {
-		return fmt.Errorf("reading %s replicas: %w", p.cfg.WorkerPool, err)
+		return fmt.Errorf("reading %s replicas: %w", b.Name, err)
 	}
 	p.setWorkers(have)
-	want := min(p.cfg.MaxWorkers, ceilDiv(max(0, awake+waking-p.cfg.BaseSlots), p.cfg.ActorsPerWorker))
-	occupied := slices.ContainsFunc(owned, func(a Actor) bool { return a.WorkerPool == p.cfg.WorkerPool })
+	want := min(b.MaxWorkers, ceilDiv(max(0, awake+waking-b.BaseSlots), b.ActorsPerWorker))
+	occupied := slices.ContainsFunc(owned, func(a Actor) bool { return a.WorkerPool == b.Name })
 	if want == have || (want < have && (waking > 0 || occupied)) {
 		return nil
 	}
-	slog.InfoContext(ctx, "scaling workers", "workerpool", p.cfg.WorkerPool, "from", have, "to", want, "awake", awake, "waking", waking)
-	err = p.observe(ctx, "scale", attribute.String("ci_substrate.workerpool", p.cfg.WorkerPool), func(ctx context.Context) error {
-		return p.cfg.Workers.Scale(ctx, want)
+	slog.InfoContext(ctx, "scaling workers", "workerpool", b.Name, "from", have, "to", want, "awake", awake, "waking", waking)
+	err = p.observe(ctx, "scale", attribute.String("ci_substrate.workerpool", b.Name), func(ctx context.Context) error {
+		return b.Workers.Scale(ctx, want)
 	})
 	if err != nil {
-		return fmt.Errorf("scaling %s to %d: %w", p.cfg.WorkerPool, want, err)
+		return fmt.Errorf("scaling %s to %d: %w", b.Name, want, err)
 	}
 	p.setWorkers(want)
 	return nil

@@ -172,18 +172,20 @@ func newScalingHarness(t *testing.T, warm, maxActors, baseSlots, perWorker, maxW
 	h.workers = &fakeWorkers{sub: h.sub, baseSlots: baseSlots, perWorker: perWorker, fail: map[string]error{}}
 	h.sub.workers = h.workers
 	p, err := actorpool.New(actorpool.Config{
-		Actors:          h.sub,
-		Queue:           h.queue,
-		Prefix:          "ci-runner-",
-		Warm:            warm,
-		Max:             maxActors,
-		IdleAfter:       time.Minute,
-		Now:             func() time.Time { return h.now },
-		Workers:         h.workers,
-		WorkerPool:      burstPool,
-		BaseSlots:       baseSlots,
-		ActorsPerWorker: perWorker,
-		MaxWorkers:      maxWorkers,
+		Actors:    h.sub,
+		Queue:     h.queue,
+		Prefix:    "ci-runner-",
+		Warm:      warm,
+		Max:       maxActors,
+		IdleAfter: time.Minute,
+		Now:       func() time.Time { return h.now },
+		Burst: &actorpool.Burst{
+			Workers:         h.workers,
+			Name:            burstPool,
+			BaseSlots:       baseSlots,
+			ActorsPerWorker: perWorker,
+			MaxWorkers:      maxWorkers,
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -378,10 +380,11 @@ func TestRejectsBadConfig(t *testing.T) {
 		{Actors: newFake(), Queue: &fakeQueue{}, Prefix: "p-", Warm: 2, Max: 1},
 		{Actors: newFake(), Queue: &fakeQueue{}, Prefix: "p-", Max: 0},
 		{Queue: &fakeQueue{}, Prefix: "p-", Max: 1},
-		{Actors: newFake(), Queue: &fakeQueue{}, Prefix: "p-", Max: 1, Workers: &fakeWorkers{}, ActorsPerWorker: 1, MaxWorkers: 1},
-		{Actors: newFake(), Queue: &fakeQueue{}, Prefix: "p-", Max: 1, Workers: &fakeWorkers{}, WorkerPool: burstPool, MaxWorkers: 1},
-		{Actors: newFake(), Queue: &fakeQueue{}, Prefix: "p-", Max: 1, Workers: &fakeWorkers{}, WorkerPool: burstPool, ActorsPerWorker: 1},
-		{Actors: newFake(), Queue: &fakeQueue{}, Prefix: "p-", Max: 1, Workers: &fakeWorkers{}, WorkerPool: burstPool, ActorsPerWorker: 1, MaxWorkers: 1, BaseSlots: -1},
+		{Actors: newFake(), Queue: &fakeQueue{}, Prefix: "p-", Max: 1, Burst: &actorpool.Burst{Name: burstPool, ActorsPerWorker: 1, MaxWorkers: 1}},
+		{Actors: newFake(), Queue: &fakeQueue{}, Prefix: "p-", Max: 1, Burst: &actorpool.Burst{Workers: &fakeWorkers{}, ActorsPerWorker: 1, MaxWorkers: 1}},
+		{Actors: newFake(), Queue: &fakeQueue{}, Prefix: "p-", Max: 1, Burst: &actorpool.Burst{Workers: &fakeWorkers{}, Name: burstPool, MaxWorkers: 1}},
+		{Actors: newFake(), Queue: &fakeQueue{}, Prefix: "p-", Max: 1, Burst: &actorpool.Burst{Workers: &fakeWorkers{}, Name: burstPool, ActorsPerWorker: 1}},
+		{Actors: newFake(), Queue: &fakeQueue{}, Prefix: "p-", Max: 1, Burst: &actorpool.Burst{Workers: &fakeWorkers{}, Name: burstPool, ActorsPerWorker: 1, MaxWorkers: 1, BaseSlots: -1}},
 	} {
 		if _, err := actorpool.New(cfg); err == nil {
 			t.Errorf("New(%+v) succeeded", cfg)
@@ -499,6 +502,24 @@ func TestKeepsWorkersWhileTheyHostActors(t *testing.T) {
 	h.queue.queued, h.queue.busy = 0, []string{"ci-runner-0"}
 	if got := h.reconcile(t); !slices.Equal(got, []string{"scale 0"}) {
 		t.Fatalf("empty burst %v", got)
+	}
+}
+
+func TestDoesNotFlapWhenBaseHoldsMoreThanBaseSlots(t *testing.T) {
+	h := newScalingHarness(t, 0, 4, 1, 1, 2)
+	h.workers.baseSlots = 2
+	h.workers.replicas, h.workers.ready = 1, 1
+	for _, name := range []string{"ci-runner-0", "ci-runner-1"} {
+		h.sub.actors[name] = actorpool.StateRunning
+		h.sub.placed[name] = basePool
+	}
+	h.queue.busy = []string{"ci-runner-0", "ci-runner-1"}
+	// The burst worker hosts nothing, but BaseSlots says the second actor
+	// needs it. Scaling it to zero would scale it back up next time.
+	for range 3 {
+		if got := h.reconcile(t); len(got) != 0 {
+			t.Fatalf("calls %v", got)
+		}
 	}
 }
 
