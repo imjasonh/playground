@@ -16,6 +16,14 @@ theorem ite01_ff (c : Prop) [Decidable c] : ((if c then 0 else 1 : Word) &&& 0xF
   · rw [if_pos h]; rfl
   · rw [if_neg h]; rfl
 
+theorem umin_ne0 {rem : Nat} (h : rem ≠ 0) : BitVec.ofNat 32 (min rem 62) ≠ 0 := fun h' => by
+  have := congrArg BitVec.toNat h'
+  rw [BitVec.toNat_ofNat, show (0 : Word).toNat = 0 from rfl] at this; omega
+
+theorem umin_ne0' {k : Nat} (h0 : 0 < k) (h1 : k < 2 ^ 32) : BitVec.ofNat 32 k ≠ 0 := fun h' => by
+  have := congrArg BitVec.toNat h'
+  rw [BitVec.toNat_ofNat, show (0 : Word).toNat = 0 from rfl] at this; omega
+
 theorem w64_lt (lo hi : Word) : W64 lo hi < 2 ^ 64 := by
   have := lo.isLt; have := hi.isLt; simp only [W64]; omega
 
@@ -127,5 +135,42 @@ theorem ct_body {B : Word} {m : Machine} {n : Nat} {s : Ds}
   · rw [v2, A5]
   · rw [q2, A6]
   · rw [rr2, A7]
+
+theorem CtRegs.of {B : Word} {M M' : Word → BitVec 8} {f f' : Fin 32 → Word} {s : Ds} (h : CtRegs B M f s)
+    (hm : M' = M) (hf : ∀ q, f' q = f q) : CtRegs B M' f' s := by
+  subst hm; obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := h
+  exact ⟨by rw [hf]; exact h1, h2, h3, by rw [hf, hf]; exact h4, by rw [hf, hf]; exact h5,
+    by rw [hf]; exact h6, by rw [hf, hf]; exact h7⟩
+
+/-- The constant-time divstep loop: `k + 1` divsteps from 0xD36, then on to
+0xF02. -/
+theorem ct_loop {B : Word} (F : Fr B 0x21A0) :
+    ∀ k {m : Machine} {s : Ds}, PvEnv3 m.mem → St m.mem PV m 0xD36 (reg m) → reg m sp = B + 0x420 →
+      reg m (8 : Fin 32) = B + 0x420 + 0xD80 → reg m a4 = BitVec.ofNat 32 (k + 1) → k + 1 < 2 ^ 32 →
+      CtRegs B m.mem (reg m) s →
+      ∃ m', Steps m m' ∧ PvEnv3 m'.mem ∧ (∀ x, PvR B x → m'.mem x = m.mem x) ∧
+        (∀ e, e + 1 ≤ 0x1D4C → (e < 0x1C ∨ 0x58 ≤ e) → e ≠ 0x1294 →
+          m'.mem (B + 0x420 + BitVec.ofNat 32 e) = m.mem (B + 0x420 + BitVec.ofNat 32 e)) ∧
+        St m'.mem PV m' 0xF02 (reg m') ∧ reg m' sp = B + 0x420 ∧ reg m' (8 : Fin 32) = B + 0x420 + 0xD80 ∧
+        reg m' (3 : Fin 32) = reg m (3 : Fin 32) ∧ reg m' (4 : Fin 32) = reg m (4 : Fin 32) ∧
+        CtRegs B m'.mem (reg m') (dsIter (k + 1) s)
+  | 0, m, s, E, st, hsp, h8, hcnt, hk, hc => by
+    obtain ⟨n1, c1, E1, fr1, fk1, s1, sp1, r1_8, r1_a4, r1_3, r1_4, C1⟩ := ct_body F E st hsp h8 hcnt hc
+    · obtain ⟨n2, d2, u2⟩ := s1.notTaken E1.E.C.self 0xF02 pv_at_efe (by decide)
+        (by rw [r1_a4, s1.zero]; rfl)
+      refine ⟨n2, c1.trans (.single d2), by rw [u2.mem]; exact E1, fun x hx => by rw [u2.mem, fr1 x hx],
+        fun e he h1 h2 => by rw [u2.mem, fk1 e he h1 h2], ⟨u2.pc, rfl, fun _ => rfl⟩, by rw [u2.regs, sp1],
+        by rw [u2.regs, r1_8], by rw [u2.regs, r1_3], by rw [u2.regs, r1_4], C1.of u2.mem u2.regs⟩
+  | k + 1, m, s, E, st, hsp, h8, hcnt, hk, hc => by
+    obtain ⟨n1, c1, E1, fr1, fk1, s1, sp1, r1_8, r1_a4, r1_3, r1_4, C1⟩ := ct_body F E st hsp h8 hcnt hc
+    · obtain ⟨n2, d2, u2⟩ := s1.taken E1.E.C.self 0xD36 pv_at_efe (by decide)
+        (by rw [r1_a4, s1.zero]; exact bne_iff_ne.mpr (umin_ne0' (by omega) (by omega)))
+      have s2 : St n2.mem PV n2 0xD36 (reg n2) := ⟨u2.pc, rfl, fun _ => rfl⟩
+      obtain ⟨n3, c3, E3, fr3, fk3, s3, sp3, r3_8, r3_3, r3_4, C3⟩ :=
+        ct_loop F k (s := dsStep s) (by rw [u2.mem]; exact E1) s2 (by rw [u2.regs, sp1])
+          (by rw [u2.regs, r1_8]) (by rw [u2.regs, r1_a4]) (by omega) (C1.of u2.mem u2.regs)
+      refine ⟨n3, c1.trans (.cons d2 c3), E3, fun x hx => by rw [fr3 x hx, u2.mem, fr1 x hx],
+        fun e he h1 h2 => by rw [fk3 e he h1 h2, u2.mem, fk1 e he h1 h2], s3, sp3, r3_8,
+        by rw [r3_3, u2.regs, r1_3], by rw [r3_4, u2.regs, r1_4], C3⟩
 
 end C3.RV32.Pv

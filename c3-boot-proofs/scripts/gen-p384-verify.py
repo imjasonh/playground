@@ -788,8 +788,29 @@ class Ops:
     def sw(self, off, base, imm, src, c):
         g = self.g
         k = g.k
+        val = (C(0), [f"rw [V{k + 1}, s{k}.zero]; rfl"]) if src == 0 else (g.regs[src], [f"rw [V{k + 1}, g{k}_{src}]"])
         g.store("pv_sw", off, INSTR[off][1], f"(by rw [g{k}_{base}]; pv_addr) (by decide) (by decide)", c, 4,
-                written_words={c: (g.regs[src], [f"rw [V{k + 1}, g{k}_{src}]"])})
+                written_words={c: val})
+
+    def branch_nz(self, off, r, hnz):
+        """`beqz r` not taken, with `hnz` proving the register's value nonzero."""
+        g = self.g
+        text, ln = INSTR[off]
+        tgt = off + ln
+        k = g.k = g.k + 1
+        g.emit(f"  -- 0x{off:X}: branch, not taken")
+        g.emit(f"  obtain ⟨n{k}, d{k}, u{k}⟩ := s{k-1}.notTaken {g.env(k-1)}.C.self 0x{tgt:X} pv_at_{off:x}")
+        g.emit(f"    (by decide) (by rw [g{k-1}_{r}, s{k-1}.zero]; exact beq_eq_false_iff_ne.mpr {hnz})")
+        g.emit(f"  have s{k} : St n{k}.mem PV n{k} 0x{tgt:X} (reg n{k}) := ⟨u{k}.pc, rfl, fun _ => rfl⟩")
+        g.emit(f"  have m{k} : n{k}.mem = n{k-1}.mem := u{k}.mem")
+        g.emit(f"  have E{k} : {g.envt} n{k}.mem := by rw [m{k}]; exact E{k-1}")
+        g.emit(f"  have fr{k} : ∀ x, PvR B x → n{k}.mem x = n{k-1}.mem x := fun x _ => by rw [m{k}]")
+        g.emit(f"  have K{k} : PvKeep B n{k-1}.mem n{k}.mem 0 0 := fun e _ _ => by rw [m{k}]")
+        g.common(k, f"(.single d{k})")
+        for r_, v in sorted(g.regs.items()):
+            g.emit(f"  have g{k}_{r_} : reg n{k} {rname(r_)} = {lean_val(v)} := by rw [u{k}.regs, g{k-1}_{r_}]")
+        g.mem_facts(k, 0, 0)
+        g.end_step()
 
     def tq(self, ct):
         """Facts giving the matrix at `ct` from the words the stores left, before a call."""
@@ -1302,6 +1323,48 @@ def stage_hs():
     return g, info
 
 
+def stage_ha():
+    g = Gen("HA", env3=True)
+    g.regs = {2: S(0), 10: ("U", "BitVec.ofNat 32 rem"), 19: S(0xD80), 24: ("U", "dh")}
+    for r in (3, 4):
+        g.regs[r] = ("U", f"reg n0 ({r} : Fin 32)")
+    g.acc = {0x1B0: "RM", 0xE10: "dataVal p384ParamsData 0x0 12", 0x1C88: "PX", 0x1CB8: "PY"}
+    g.words = {0x10: ("U", "zf"), 0x40: ("U", "dl"), 0xE70: C(0xFFFFFFFF), 0xE74: C(0xFFFFFFFE)}
+    g.sv = {0x1714: "Fv", 0xD50: "Gv", 0x270: "Dv", 0x17A4: "Ev"}
+    params = params_of(g, 0xCE8)
+    o = Ops(g)
+    o.sw(0xCE8, 2, 0x18, 10, 0x18)
+    o.umin(0xCEA)
+    g.block(0xCF2, 0xCFC); kf = o.low(0xCFC, 0x1714)
+    o.sw(0xD04, 2, 0x50, 10, 0x50)
+    o.sw(0xD06, 2, 0x48, 11, 0x48)
+    g.block(0xD08, 0xD10); kg = o.low(0xD10, 0xD50)
+    o.sw(0xD18, 2, 0x44, 10, 0x44)
+    o.sw(0xD1A, 2, 0x4C, 11, 0x4C)
+    g.block(0xD1C, 0xD1E)
+    o.sw(0xD1E, 2, 0x54, 0, 0x54)
+    g.block(0xD20, 0xD2C)
+    o.sw(0xD2C, 2, 0x14, 8, 0x14)
+    g.block(0xD2E, 0xD32)
+    o.branch_nz(0xD32, 14, "(umin_ne0 h0)")
+    info = {
+        "end": 0xD36, "name": "pv_stHA", "title": "the start of a batch of the inversion of `Z`",
+        "doc": "From 0xCE8 to 0xD36: the batch's length, the low words of `f` and `g`, and the identity\nmatrix, in the frame slots and registers the constant-time divsteps use.",
+        "thmdoc": "**The start of a batch of stage H**, from 0xCE8 to 0xD36.",
+        "params": "{B : Word} {zf dl dh : Word} {rem RM PX PY : Nat} {Fv Gv Dv Ev : Int} "
+                  + params + " (hrem : rem < 2 ^ 32) (h0 : rem ≠ 0)",
+        "intro": ["have t0 : Steps n0 n0 := .refl n0", "have fR0 : ∀ x, PvR B x → n0.mem x = n0.mem x := fun _ _ => rfl"]
+                 + [f"have g0_{r} : reg n0 ({r} : Fin 32) = reg n0 ({r} : Fin 32) := rfl" for r in (3, 4)],
+        "import": "C3BootProofs.Proofs.Pv384HS",
+        "extra": [("W64 (memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0x50)) (memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0x48)) = lowestI Fv",
+                   f"(by rw [w{{k}}_50, w{{k}}_48]; exact keep_low{kf})"),
+                  ("W64 (memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0x44)) (memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0x4C)) = lowestI Gv",
+                   f"(by rw [w{{k}}_44, w{{k}}_4c]; exact keep_low{kg})")],
+        "only": {"words": {0x10, 0x14, 0x18, 0x40, 0x54, 0xE70, 0xE74}},
+    }
+    return g, info
+
+
 def stage_b():
     g = Gen("B")
     g.regs = {2: S(0), 8: S(0xD80), 18: C(0), 19: ("U", "BitVec.ofNat 32 len"), 20: ("U", "ph")}
@@ -1380,7 +1443,7 @@ def main():
     g, info = {"B": stage_b, "C0": stage_c0, "CA": stage_ca, "CB": stage_cb, "C2a": stage_c2a,
                "C2b1": lambda: stage_c2b(1), "C2b0": lambda: stage_c2b(0), "D": stage_d,
                "E0": lambda: stage_e(0), "E1": lambda: stage_e(1), "F0": lambda: stage_f(0),
-               "F1": lambda: stage_f(1), "HS": stage_hs}[stage]()
+               "F1": lambda: stage_f(1), "HS": stage_hs, "HA": stage_ha}[stage]()
     stmt, proof = g.conclusion(info["end"], info.get("extra", ()), info.get("only"))
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.Pv384Lib"), title=info["title"], stage=stage,
                         doc=info["doc"]))
