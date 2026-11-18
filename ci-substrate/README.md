@@ -295,15 +295,21 @@ Substrate with a fixed clock.
 
 ## KinD end-to-end
 
-Requires Docker. The script installs `kind`, `ko`, and `kubectl` when they are
-missing, creates a cluster with a local registry, and deploys with `ko apply`:
+Requires Docker. The test runs
+[`e2e/run-substrate-kind.sh`](#substrate-overlay), which installs
+the Agent Substrate release that `go.mod` requires and then runs
+`e2e/run-kind.sh` and `e2e/run-substrate.sh` on that cluster. CI runs it for
+every change to `ci-substrate/`, including a dependency update that moves
+Substrate. The scripts install `kind`, `ko`, `kubectl`, and `crane` when they
+are missing, build `kubectl-ate` from the Substrate release, create a cluster
+with a local registry, and deploy with `ko apply`:
 
 ```bash
 cd ci-substrate
-CI_SUBSTRATE_KIND_E2E=1 go test -race -v -timeout 40m ./e2e/
+CI_SUBSTRATE_KIND_E2E=1 go test -race -v -timeout 60m ./e2e/
 ```
 
-Or run the script directly:
+To test the control plane without Substrate, run the first script on its own:
 
 ```bash
 bash e2e/run-kind.sh
@@ -717,9 +723,8 @@ inputs from the volume, the pool suspended the actor after two idle minutes
 resumed it from its snapshot, had the driver publish a fresh volume, and
 ran in 1.3 s end to end.
 
-The default kind e2e does not install Substrate. Building Substrate's envoy
-dataplane from source needs open Debian apt egress; use Substrate's published
-images or a machine with unrestricted egress for that install. See
+Building Substrate's envoy dataplane from source needs open Debian apt
+egress, so the kind e2e installs Substrate's published images. See
 `deploy/substrate/README.md` for what the cluster needs.
 
 `e2e/run-substrate-kind.sh` does the whole thing on a two-node kind cluster:
@@ -729,7 +734,7 @@ Substrate's control plane to the always-on node, then runs `run-kind.sh` and
 `run-substrate.sh`. `run-substrate.sh` also checks that the pool scales the
 burst `WorkerPool` from zero to one when the base worker's two actors are
 not enough, that the third actor runs on the burst node, and that the pool scales it back to zero once
-the actor suspends. CI does not run it.
+the actor suspends. `go test ./e2e` runs it, so CI does too.
 
 ```bash
 bash e2e/run-substrate-kind.sh

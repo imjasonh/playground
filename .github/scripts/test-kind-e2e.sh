@@ -36,10 +36,12 @@ case "$module" in
     SSHAPP_KIND_E2E=1 go test -race -v -timeout 20m ./e2e/
     ;;
   ci-substrate)
-    # Multi-tenant CAS + node-local verified cache, deployed with ko apply.
-    # It also builds with Bazel and dogfoods ci-substrate on the cluster,
-    # which takes over 20 minutes when every module's tests share the runner.
-    CI_SUBSTRATE_KIND_E2E=1 go test -race -v -timeout 40m ./e2e/
+    # Installs the Agent Substrate release in go.mod on a two-node cluster,
+    # then the multi-tenant CAS and node-local verified cache with ko apply.
+    # It builds with Bazel, dogfoods ci-substrate on the cluster, and runs
+    # the Substrate overlay, which takes over 20 minutes when every module's
+    # tests share the runner.
+    CI_SUBSTRATE_KIND_E2E=1 go test -race -v -timeout 60m ./e2e/
     ;;
   *)
     echo "::error title=kind e2e::${module} has no kind end-to-end test"
