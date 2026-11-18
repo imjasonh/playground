@@ -170,6 +170,7 @@ theorem ctUnwrap_gen (m : Machine) {B out s retAddr k imm1 o1 imm2 o2 : Word} {c
     (hT2 : B + BitVec.ofNat 32 0x22 + imm2 + o2 = BitVec.ofNat 32 assertFailedU8Address) :
     (m.mem (s + k) = 1 → McEnv m.mem (stubBase + 8) out s (reg m sp + 0xFFFFFFF0) N →
       ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = reg m sp ∧
+        (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
         ∀ y, Sep (reg m sp + 0xFFFFFFF0) 16 y 1 → m'.mem y = copyBytes m.mem out s N y) ∧
     (m.mem (s + k) ≠ 1 → Panics m) := by
   have st0 : St m.mem B m 0 (reg m) := ⟨by rw [hpc]; simp, rfl, fun _ => rfl⟩
@@ -225,10 +226,18 @@ theorem ctUnwrap_gen (m : Machine) {B out s retAddr k imm1 o1 imm2 o2 : Word} {c
                     omega) (by decide)
     have fr : ∀ y, Sep F 16 y 1 → M1 y = m.mem y := fun y hy => by
       rw [← hM1]; exact memStore8_ne (frame_out hy (a := 0xF) (by decide))
-    obtain ⟨m7, c7, pc7, sp7, _, mem7, _⟩ := memcpy_correct m6 stubBase retAddr out s N
+    obtain ⟨m7, c7, pc7, sp7, _, mem7, k7⟩ := memcpy_correct m6 stubBase retAddr out s N
       (by intro i hi; rw [mem6, ← hM1]; exact hstub.store8 hsS i hi) (by decide) pc6' B0 B1 B2 BR hret
       (by rw [mem6, S6, hF, ← hM1]; exact E.store8_frame (by decide))
-    refine ⟨m7, cA.trans (.cons e3 (c4.trans (.cons e5 (.cons e6 c7)))), pc7, by rw [sp7, S6], fun y hy => ?_⟩
+    refine ⟨m7, cA.trans (.cons e3 (c4.trans (.cons e5 (.cons e6 c7)))), pc7, by rw [sp7, S6], fun q hq => ?_,
+      fun y hy => ?_⟩
+    · rw [k7 q (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide) (by revert hq; revert q; decide), r6, upd_ne (by revert hq; revert q; decide) (by revert hq; revert q; decide),
+        runBlock_reg _ _ _ q (by rw [RA]; rfl) (by simp only [cuB, List.filterMap_cons, List.filterMap_nil, BInstr.dst]; revert hq; revert q; decide), RA,
+        runBlock_reg _ _ _ q hz (by simp only [cuA, List.filterMap_cons, List.filterMap_nil, BInstr.dst]; revert hq; revert q; decide)]
     rw [hF] at hy
     rw [mem7 y (by rw [S6, hF]; exact hy), mem6]
     exact copyBytes_congr fr E.hsF.symm hy
@@ -251,6 +260,7 @@ theorem ctUnwrap384_correct (m : Machine) {out s retAddr : Word} (hP : PanicCode
     (hR : Room (reg m sp) 64) :
     (m.mem (s + 0x30) = 1 → McEnv m.mem (stubBase + 8) out s (reg m sp + 0xFFFFFFF0) 0x30 →
       ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = reg m sp ∧
+        (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
         ∀ y, Sep (reg m sp + 0xFFFFFFF0) 16 y 1 → m'.mem y = copyBytes m.mem out s 0x30 y) ∧
     (m.mem (s + 0x30) ≠ 1 → Panics m) :=
   ctUnwrap_gen m hP hc hstub (by decide) (by decide) hpc ha0 ha1 hra hret hR cu4A_end cu4B_end cu4_at_c cu4_at_16
@@ -266,6 +276,7 @@ theorem ctUnwrap256_correct (m : Machine) {out s retAddr : Word} (hP : PanicCode
     (hR : Room (reg m sp) 64) :
     (m.mem (s + 0x20) = 1 → McEnv m.mem (stubBase + 8) out s (reg m sp + 0xFFFFFFF0) 0x20 →
       ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = reg m sp ∧
+        (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
         ∀ y, Sep (reg m sp + 0xFFFFFFF0) 16 y 1 → m'.mem y = copyBytes m.mem out s 0x20 y) ∧
     (m.mem (s + 0x20) ≠ 1 → Panics m) :=
   ctUnwrap_gen m hP hc hstub (by decide) (by decide) hpc ha0 ha1 hra hret hR cu2A_end cu2B_end cu2_at_c cu2_at_16
