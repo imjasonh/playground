@@ -274,4 +274,10 @@ theorem ct_c1 (dl dh : Word) :
     · exact Nat.zero_and _
     · exact Nat.and_zero _
 
+theorem w64_add' (x xh y yh : Word) :
+    W64 (x + y) ((yh + xh) + (if (x + y).ult y then 1 else 0)) = (W64 x xh + W64 y yh) % 2 ^ 64 := by
+  have := x.isLt; have := y.isLt; have := xh.isLt; have := yh.isLt
+  simp only [W64, BitVec.toNat_add, BitVec.ult, BitVec.toNat_add]
+  split <;> simp_all [BitVec.toNat_add] <;> omega
+
 end C3.RV32.Pv
