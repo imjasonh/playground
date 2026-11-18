@@ -79,6 +79,17 @@ spec:
     metadata:
       labels: {app: otel-collector}
     spec:
+      tolerations:
+        - key: ci-substrate.imjasonh.com/always-on
+          operator: Exists
+          effect: NoSchedule
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - {key: ci-substrate.imjasonh.com/always-on, operator: In, values: ["true"]}
       serviceAccountName: otel-collector
       containers:
         - name: collector

@@ -3,9 +3,14 @@
 // token, and creates, resumes, suspends, and deletes actors in the tenant's
 // atespace through Substrate's control API. One pool runs per tenant.
 //
+// With WORKER_POOL set, it also sizes that WorkerPool through the Kubernetes
+// API: workers for the actors that do not fit in BASE_SLOTS, down to zero
+// when none needs one.
+//
 // It runs in Substrate's system namespace as the ate-client ServiceAccount,
 // with the API's trust bundle and a ServiceAccount token projected into the
-// pod; see deploy/substrate/pool.yaml.
+// pod, and a second token for the Kubernetes API when it sizes a WorkerPool;
+// see deploy/substrate/pool.yaml.
 package main
 
 import (
@@ -28,6 +33,7 @@ import (
 	"github.com/imjasonh/playground/ci-substrate/internal/substrate"
 	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
+	"github.com/imjasonh/playground/ci-substrate/internal/workerpool"
 )
 
 type config struct {
@@ -59,6 +65,19 @@ type config struct {
 	// MinInterval the least time between reconciles that queue changes start.
 	Interval    time.Duration `env:"INTERVAL, default=5s"`
 	MinInterval time.Duration `env:"MIN_INTERVAL, default=250ms"`
+
+	// WorkerPool is the namespace/name of the WorkerPool the pool sizes, or
+	// empty for none. The other fields fill actorpool.Burst.
+	WorkerPool      string `env:"WORKER_POOL"`
+	BaseSlots       int    `env:"BASE_SLOTS, default=1"`
+	ActorsPerWorker int    `env:"ACTORS_PER_WORKER, default=1"`
+	MaxWorkers      int    `env:"MAX_WORKERS, default=4"`
+
+	// Kubernetes sets the API server's address in every pod.
+	KubeHost      string `env:"KUBERNETES_SERVICE_HOST"`
+	KubePort      string `env:"KUBERNETES_SERVICE_PORT"`
+	KubeCAFile    string `env:"KUBE_CA_FILE, default=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"`
+	KubeTokenFile string `env:"KUBE_TOKEN_FILE, default=/var/run/secrets/kubernetes.io/serviceaccount/token"`
 }
 
 // queue reads the tenant's queue from the scheduler.
@@ -132,7 +151,7 @@ func main() {
 		slog.Error("configuring Substrate actors", "err", err)
 		os.Exit(1)
 	}
-	pool, err := actorpool.New(actorpool.Config{
+	cfg := actorpool.Config{
 		Actors:      actors,
 		Queue:       &queue{client: workerv1.NewWorkerServiceClient(casConn), token: c.Token, instances: c.Instances},
 		Prefix:      c.Prefix,
@@ -141,12 +160,28 @@ func main() {
 		IdleAfter:   c.IdleAfter,
 		Interval:    c.Interval,
 		MinInterval: c.MinInterval,
-	})
+	}
+	if c.WorkerPool != "" {
+		workers, err := workerpool.New(c.KubeHost, c.KubePort, c.KubeCAFile, c.KubeTokenFile, c.WorkerPool)
+		if err != nil {
+			slog.Error("configuring WorkerPool scaling", "err", err)
+			os.Exit(1)
+		}
+		cfg.Burst = &actorpool.Burst{
+			Workers:         workers,
+			Name:            c.WorkerPool,
+			BaseSlots:       c.BaseSlots,
+			ActorsPerWorker: c.ActorsPerWorker,
+			MaxWorkers:      c.MaxWorkers,
+		}
+	}
+	pool, err := actorpool.New(cfg)
 	if err != nil {
 		slog.Error("configuring pool", "err", err)
 		os.Exit(1)
 	}
-	slog.Info("pool running", "atespace", c.Atespace, "template", c.Template, "warm", c.Warm, "max", c.Max, "idleAfter", c.IdleAfter)
+	slog.Info("pool running", "atespace", c.Atespace, "template", c.Template, "warm", c.Warm, "max", c.Max, "idleAfter", c.IdleAfter,
+		"workerPool", c.WorkerPool, "baseSlots", c.BaseSlots, "actorsPerWorker", c.ActorsPerWorker, "maxWorkers", c.MaxWorkers)
 	if err := pool.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("pool stopped", "err", err)
 		os.Exit(1)

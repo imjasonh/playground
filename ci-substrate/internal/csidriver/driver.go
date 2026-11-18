@@ -51,7 +51,7 @@ import (
 const (
 	// DriverName is the CSI driver name: the StorageClass provisioner and
 	// the CSIDriverConfig name.
-	DriverName = "casfs.ci-substrate.dev"
+	DriverName = "casfs.ci-substrate.imjasonh.com"
 	// InstanceParameter is the StorageClass parameter that names the Remote
 	// Execution instance a volume serves. Its StorageClass is per tenant.
 	InstanceParameter = "instance"

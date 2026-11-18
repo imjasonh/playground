@@ -156,7 +156,7 @@ func (a *Actors) ref(name string) *ateapi.ObjectRef {
 }
 
 // List returns every actor in the atespace with the pool's view of its
-// state. The pool filters by name.
+// state and the WorkerPool hosting it. The pool filters by name.
 func (a *Actors) List(ctx context.Context) ([]actorpool.Actor, error) {
 	var out []actorpool.Actor
 	var token string
@@ -166,7 +166,11 @@ func (a *Actors) List(ctx context.Context) ([]actorpool.Actor, error) {
 			return nil, err
 		}
 		for _, actor := range resp.GetActors() {
-			out = append(out, actorpool.Actor{Name: actor.GetMetadata().GetName(), State: State(actor.GetStatus().GetState())})
+			a := actorpool.Actor{Name: actor.GetMetadata().GetName(), State: State(actor.GetStatus().GetState())}
+			if w := actor.GetStatus().GetWorkerAssignment(); w != nil {
+				a.WorkerPool = w.GetWorkerNamespace() + "/" + w.GetWorkerPool()
+			}
+			out = append(out, a)
 		}
 		token = resp.GetNextPageToken()
 		if token == "" {

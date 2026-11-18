@@ -11,21 +11,24 @@ caching, and remote execution with the runner Deployment in
 
 | File | What it is |
 |------|------------|
-| `workerpool.yaml` | A `WorkerPool` of gVisor workers labeled `workload: ci-runner`. Actors from the runner template land on these workers. |
+| `workerpool.yaml` | Two `WorkerPool`s of gVisor workers labeled `workload: ci-runner`: `ci-runner-base`, one worker on the always-on node, and `ci-runner`, the burst pool on autoscaled nodes, whose replicas the pool sets. Actors from the runner template land on either. |
 | `tenant-a-token.yaml` | The tenant's cas token in a namespace of its own, for the egress gateway to inject. |
 | `casfs-csi.yaml` | The `casfs-csi` DaemonSet, its controller Service, the `CSIDriverConfig` that tells Substrate where the driver listens, and the tenant's `StorageClass` (`casfs-tenant-a`, parameters `instance: tenant-a` and `atespace: tenant-a`), and the driver's ServiceAccount. The driver mounts an inputs volume for each actor on the actor's node and serves it from that node's `cascache` with the tenant's token. |
 | `egress-cas.yaml` | The egress policy every runner actor gets: plain gRPC to the `cas` Service only, with the tenant token replacing the placeholder header. Inputs don't go through egress. |
 | `runner-template.yaml` | The `ActorTemplate` for a runner actor: the `runner` bot with the tenant's instance, a placeholder token, its actor name as its bot id, and an external `inputs` volume of the tenant's `StorageClass` mounted at `/inputs`. |
-| `pool.yaml` | The `pool` Deployment for the tenant. It runs in `ate-system` as the `ate-client` ServiceAccount and sizes the tenant's actors to its queue. |
+| `pool.yaml` | The `pool` Deployment for the tenant. It runs in `ate-system` as the `ate-client` ServiceAccount, sizes the tenant's actors to its queue, and sizes the burst `WorkerPool` to its actors. A Role lets `ate-client` change only that `WorkerPool`'s scale. |
 
 `../../e2e/run-substrate.sh` applies all of it for `tenant-a` and runs
-`cictl` against the result. By hand, for each CI tenant:
+`cictl` against the result. `../../e2e/run-substrate-kind.sh` builds a
+two-node kind cluster with the [node pools](#node-pools) below, installs
+Substrate, and runs it there. By hand, for each CI tenant:
 
 1. Create the atespace `tenant-a`.
 2. Apply `tenant-a-token.yaml` to put the tenant's token in its own
    namespace, and grant the `tenant-a` atespace that namespace in the
    `k8s-credential-provider-namespace-policy` ConfigMap.
-3. Apply `workerpool.yaml`.
+3. Apply `workerpool.yaml`. It needs the node labels and taint in
+   [Node pools](#node-pools).
 4. Turn on Substrate's `ExternalVolumes` preview gate: add
    `ExternalVolumes` to the `--preview=` argument of the `ate-api-server`
    Deployment in `ate-system`. External volumes are behind it in Substrate
@@ -87,7 +90,28 @@ egress policy before its first resume, and then:
   free to take, and creates more up to `MAX` (default 4);
 - suspends an actor that has run nothing for `IDLE_AFTER` (default 2m), and
   deletes suspended actors beyond `WARM`;
-- deletes crashed actors and replaces them under a new name.
+- deletes crashed actors and replaces them under a new name;
+- retries the first resume of an actor it created, each reconcile, until it
+  succeeds.
+
+When `WORKER_POOL` names a `WorkerPool` (`namespace/name`), the pool also
+sets that pool's replicas through its scale subresource. `BASE_SLOTS` is how
+many actors fit on workers the pool doesn't size, here `ci-runner-base`'s
+one worker; `ACTORS_PER_WORKER` is how many actors one burst worker hosts;
+and `MAX_WORKERS` caps the burst pool. Substrate fits actors on a worker by
+the `WorkerPool`'s `limits` and the template's `resources`, so update
+`BASE_SLOTS` and `ACTORS_PER_WORKER` when you change either: a 2-CPU worker
+holds two 1-CPU actors. Each reconcile, it wants enough burst
+workers for the actors that are running or about to resume beyond
+`BASE_SLOTS`, and grows the `WorkerPool` before it resumes them. Until the
+new worker is ready, a resume fails with "no worker has room for the
+actor", and the pool tries again on its next reconcile. It shrinks the
+`WorkerPool` only when no actor is resuming and none of its actors is on a
+burst worker, since a scale-down can stop any worker and Substrate crashes
+the actor on it. When every actor is suspended, that is zero, and the
+cluster autoscaler removes the burst nodes. The pool calls the Kubernetes
+API with a projected token for `ate-client`, which the `ci-substrate-pool` Role allows to get and patch
+only `workerpools/scale` for `ci-runner`.
 
 It reads the queue from the scheduler in `cas` with `WorkerService.Status`,
 which reports queued actions and the bot ids holding leases. The runner's
@@ -114,14 +138,48 @@ How a volume reaches the sandbox: when Substrate assigns the actor to a
 worker, `ate-api-server` calls the driver's `CreateVolume` through the
 `casfs-csi` Service (the `CSIDriverConfig` names it) and records the volume
 id. `atelet` on the worker's node then calls `NodePublishVolume` on the
-driver's socket under `/var/lib/kubelet/plugins/casfs.ci-substrate.dev/`,
-the driver mounts `casfs` with `allow_other` at the target under
+driver's socket under
+`/var/lib/kubelet/plugins/casfs.ci-substrate.imjasonh.com/`, the driver
+mounts `casfs` with `allow_other` at the target under
 `/var/lib/ate`, and `atelet` binds that path into the gVisor sandbox. The
 DaemonSet mounts `/var/lib/ate` with `Bidirectional` propagation so the
 mount is visible to `atelet` and the worker pod. On suspend, `atelet`
 unpublishes and the mount goes away; a resume publishes a fresh, empty
 volume. The driver runs as root and privileged: FUSE `allow_other`, the
 kubelet plugins directory, and detaching a stale mount need it.
+
+## Node pools
+
+Agent Substrate runs on GKE Standard. Give the cluster two node pools:
+
+- An always-on pool of one node, labeled and tainted
+  `ci-substrate.imjasonh.com/always-on=true` (the taint's effect is
+  `NoSchedule`). It runs Substrate's control plane, `cas`, telemetry, the
+  pool, and `ci-runner-base`, so a build's first action starts without
+  waiting for a node. Size it for those plus `ci-runner-base`'s worker.
+- A burst pool labeled `ci-substrate.imjasonh.com/burst=true`, with no taint
+  and autoscaling from a minimum of 0. The `ci-runner` workers run there.
+
+```bash
+gcloud container node-pools create always-on --cluster=CLUSTER \
+  --num-nodes=1 --machine-type=e2-standard-8 \
+  --node-labels=ci-substrate.imjasonh.com/always-on=true \
+  --node-taints=ci-substrate.imjasonh.com/always-on=true:NoSchedule
+gcloud container node-pools create burst --cluster=CLUSTER \
+  --enable-autoscaling --min-nodes=0 --max-nodes=4 \
+  --machine-type=e2-standard-4 --spot \
+  --node-labels=ci-substrate.imjasonh.com/burst=true
+```
+
+The manifests in `../` and here tolerate the taint: `cas` and telemetry
+prefer the always-on node, and the `cascache` and `casfs-csi` DaemonSets run
+on both. Substrate's own Deployments and StatefulSets in `ate-system` do
+not, so add the toleration and a
+`ci-substrate.imjasonh.com/always-on: "true"` `nodeSelector` to each, and the toleration to its DaemonSets, such as
+`atelet`; `run-substrate-kind.sh` shows one way. A pod without the
+toleration lands on a burst node and keeps that node from scaling to zero.
+GKE's own system pods also need a node; check where they run before you
+count on the burst pool emptying.
 
 ## Cluster requirements
 
