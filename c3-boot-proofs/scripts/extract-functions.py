@@ -349,6 +349,7 @@ DATA_EXTRA2 = [
     ("p384Identity", "p384VerifyPrehash", 0x222, 0x90),
     ("p384G", "p384VerifyPrehash", 0x76E, 0x90),
     ("u12One", "p384VerifyPrehash", 0x650, 48),
+    ("p384AffineIdentity", "p384VerifyPrehash", 0x1136, 0x61),
 ]
 
 

@@ -82,23 +82,26 @@ def lean_val(v):
     return v[1]
 
 
+ENV7_WRAPPERS = {"pv_rt", "pv_cmap", "pv_uo"}
 ENV3_WRAPPERS = {"pv_umin", "pv_low", "pv_ufg", "pv_ude", "pv_norm", "pv_eq"}
 ENV4_WRAPPERS = {"pv_smul", "pv_pd", "pv_pa"}
 ENV5_WRAPPERS = {"pv_za", "pv_mr", "pv_tbb", "pv_rev", "pv_wf"}
-ENV_SUFFIX = {(5, 5): "", (5, 4): ".E", (5, 3): ".E.E", (5, 1): ".E.E.E",
+ENV_SUFFIX = {(7, 7): "", (7, 5): ".E.E", (7, 4): ".E.E.E", (7, 3): ".E.E.E.E", (7, 1): ".E.E.E.E.E",
+              (5, 5): "", (5, 4): ".E", (5, 3): ".E.E", (5, 1): ".E.E.E",
               (4, 4): "", (4, 3): ".E", (4, 1): ".E.E", (3, 3): "", (3, 1): ".E", (1, 1): ""}
 
 
 def wrapper_level(w):
-    return 5 if w in ENV5_WRAPPERS else 4 if w in ENV4_WRAPPERS else 3 if w in ENV3_WRAPPERS else 1
+    return (7 if w in ENV7_WRAPPERS else 5 if w in ENV5_WRAPPERS else 4 if w in ENV4_WRAPPERS
+            else 3 if w in ENV3_WRAPPERS else 1)
 
 
 class Gen:
-    def __init__(self, name, env3=False, env4=False):
+    def __init__(self, name, env3=False, env4=False, lvl=None):
         self.name = name
-        self.lvl = 4 if env4 else 3 if env3 else 1
+        self.lvl = lvl or (4 if env4 else 3 if env3 else 1)
         self.env3 = self.lvl >= 3
-        self.envt = {1: "PvEnv", 3: "PvEnv3", 4: "PvEnv4"}[self.lvl]
+        self.envt = {1: "PvEnv", 3: "PvEnv3", 4: "PvEnv4", 5: "PvEnv5", 7: "PvEnv7"}[self.lvl]
         self.k = 0
         self.out = []
         self.blocks = []
@@ -547,7 +550,7 @@ class Ops:
         k = g.k
         g.store("pv_sb", off, INSTR[off][1], f"(by rw [g{k}_{base}]; pv_addr) (by decide)", c, 1)
 
-    def lbu(self, off, rd, base, e, val):
+    def lbu(self, off, rd, base, e, val, imm=0, fin=None):
         """`lbu rd, 0(base)` of the byte at offset `e` of the frame, whose value is `val`."""
         g = self.g
         k = g.k = g.k + 1
@@ -568,7 +571,7 @@ class Ops:
             new[r] = v
         g.emit(f"  have g{k}_{rd} : reg n{k} {rname(rd)} = {lean_val(val)} := by")
         g.emit(f"    rw [u{k}.regs]; simp +decide only [upd, ↓reduceIte]")
-        g.emit(f"    rw [g{k-1}_{base}, show {lean_val(g.regs[base])} + 0x0 = B + 0x420 + BitVec.ofNat 32 0x{e:X} by pv_addr, b{k-1}_{e:x}]")
+        g.emit(f"    rw [g{k-1}_{base}, show {lean_val(g.regs[base])} + 0x{imm:X} = B + 0x420 + BitVec.ofNat 32 0x{e:X} by pv_addr, b{k-1}_{e:x}]" + (f"; {fin}" if fin else ""))
         new[rd] = val
         g.regs = new
         g.mem_facts(k, 0, 0)
@@ -784,6 +787,65 @@ class Ops:
         g.emit(f"    · rw [ite_eq_left h, ite_eq_left ((accV_eq_zero_iff 12).1 (keep_z{k}.trans h))]")
         g.emit(f"    · rw [ite_eq_right h, ite_eq_right (fun h' => h (keep_z{k}.symm.trans ((accV_eq_zero_iff 12).2 h')))]")
         g.regs[10] = ("U", f"(if {X} = 0 then 0 else 1)")
+
+    def sbc(self, off, base, src, c):
+        """`sb` of a register whose value is a constant."""
+        g = self.g
+        k = g.k
+        v = g.regs[src][1]
+        g.store("pv_sb", off, INSTR[off][1], f"(by rw [g{k}_{base}]; pv_addr) (by decide)", c, 1,
+                written_bytes={c: (str(v), [f"rw [V{k + 1}, g{k}_{src}]; rfl"])})
+
+    def fmul(self, off, co, cx, cy, hB):
+        g = self.g
+        k = g.k
+        val = f"p3fm ({g.acc[cx]}) ({g.acc[cy]})"
+        acc = {co: (val, [f"rw [V{k + 1}, a{k}_{cx:x}, a{k}_{cy:x}]"])}
+        g.call("pv_fmul", off, f"g{k}_2 g{k}_10 g{k}_11 g{k}_12 (by decide) (by decide) (by decide) (by decide) (by decide)\n"
+               f"    (by decide) (by rw [a{k}_{cy:x}]; exact {hB})", co, 48, acc)
+
+    def rt(self, off, co, cx, hX):
+        g = self.g
+        k = g.k
+        acc = {co: (f"p3fm ({g.acc[cx]}) 1", [f"rw [V{k + 1}, a{k}_{cx:x}]"])}
+        g.call("pv_rt", off, f"g{k}_2 g{k}_10 g{k}_11 (by decide) (by decide) (by decide) (by decide)\n"
+               f"    (by rw [a{k}_{cx:x}]; exact {hX})", co, 48, acc)
+
+    def cmap(self, off, co, cx, ok):
+        g = self.g
+        k = g.k
+        lemma = "ite_eq_left (by decide)" if ok == 1 else "ite_eq_right (by decide)"
+        val = g.acc[cx] if ok == 1 else "0"
+        cb = f"show (0x{cx:X} + 0x30 : Nat) = 0x{cx + 0x30:X} from rfl, b{k}_{cx + 0x30:x}"
+        acc = {co: (val, [f"rw [V{k + 1}.1, {cb}, {lemma}" + (f", a{k}_{cx:x}]" if ok == 1 else "]")])}
+        byt = {co + 0x30: (str(ok), [f"rw [show (0x{co + 0x30:X} : Nat) = 0x{co:X} + 0x30 from rfl, V{k + 1}.2, {cb}]"])}
+        g.call("pv_cmap", off, f"g{k}_2 g{k}_10 g{k}_11 (by decide) (by decide) (by decide)\n"
+               f"    (by rw [{cb}]; decide)", co, 0x31, acc, byt)
+
+    def uo(self, off, co, cs, ok):
+        g = self.g
+        k = g.k
+        lemma = "ite_eq_left (by decide)" if ok == 1 else "ite_eq_right (by decide)"
+        val = g.acc[cs] if ok == 1 else "0"
+        cb = f"show (0x{cs:X} + 0x64 : Nat) = 0x{cs + 0x64:X} from rfl, b{k}_{cs + 0x64:x}"
+        acc = {co: (val, [f"rw [V{k + 1}, {cb}, {lemma}" + (f", a{k}_{cs:x}]" if ok == 1 else "]")])}
+        g.call("pv_uo", off, f"g{k}_2 g{k}_10 g{k}_11 g{k}_12 (by decide) (by decide) (by decide) (by decide)\n"
+               f"    (by rw [{cb}]; decide)", co, 0x61, acc)
+
+    def b2sF(self, off, co, cb):
+        g = self.g
+        k = g.k
+        N, kind, v = g.mbf[cb]
+        assert kind == "leNr" and N == 48
+        acc = {co: (f"({v}) * 2 ^ 384 % n384", [f"rw [V{k + 1}, show min 0x30 48 = 0x30 from rfl, beNat_eq_leN, mb{k}_{cb:x}]"])}
+        g.call("pv_b2sF", off, f"g{k}_2 g{k}_10 g{k}_11 g{k}_12 (by decide) (by decide) (by decide)", co, 48, acc)
+
+    def mseq(self, off, ca, cb):
+        g = self.g
+        k = g.k
+        g.call("pv_mseq", off, f"g{k}_2 g{k}_10 g{k}_11 (by decide) (by decide) (by decide) (by decide)", 0, 0,
+               extra_regs={10: (("U", f"(if {g.acc[ca]} = {g.acc[cb]} then 1 else 0)"),
+                                f"rw [V{k + 1}, a{k}_{ca:x}, a{k}_{cb:x}]")})
 
     def sw(self, off, base, imm, src, c):
         g = self.g
@@ -1414,6 +1476,84 @@ def stage_hb():
     return g, info
 
 
+def stage_hp():
+    g = Gen("HP", env3=True)
+    g.regs = {2: S(0), 19: S(0xD80)}
+    for r in (3, 4):
+        g.regs[r] = ("U", f"reg n0 ({r} : Fin 32)")
+    g.acc = {0x270: "Ad", 0x1714: "Af", 0xE10: "dataVal p384ParamsData 0x0 12", 0x1B0: "RM", 0x1C88: "PX",
+             0x1CB8: "PY"}
+    g.bytes = {0x2A0: "sd", 0x1744: "sf"}
+    g.words = {0x10: ("U", "zf")}
+    params = params_of(g, 0xFFC)
+    o = Ops(g)
+    g.block(0xFFC, 0x1006)
+    o.lbu(0x1006, 12, 9, 0x1744, ("U", "sf.zeroExtend 32"))
+    g.block(0x100A, 0x101C)
+    o.norm(0x101C, 0x1C34, 0x270, 0xE10, "sd", "sf.zeroExtend 32", "Ad", "dataVal p384ParamsData 0x0 12")
+    g.block(0x1024, 0x1034); o.eq(0x1034, 0x1714)
+    g.block(0x103C, 0x1040, {10: ("P", "(if Af = 1 then 1 else 0)", "rw [keep_eq]; exact ite10_ff _")})
+    o.lw(0x1040, 11, 2, 0x10, 0x10)
+    g.block(0x1042, 0x1044, {10: ("P", "((if Af = 1 then 1 else 0) &&& zf)", "rw [g{p}_10, g{p}_11]")})
+    o.bb(0x1044, ("U", "(if Af = 1 ∧ zf = 1 then 1 else 0)"), "rw [V{k}, g{p}_10]; exact okb _ hz")
+    info = {
+        "end": 0x104C, "name": "pv_stHP", "title": "the end of the inversion of `Z`",
+        "doc": "From 0xFFC to 0x104C: `d` normalized by `f`'s sign, and whether `f` is 1 and `Z` was\nnonzero.",
+        "thmdoc": "**After the loop of stage H**, from 0xFFC to 0x104C.",
+        "params": "{B : Word} {sd sf : BitVec 8} {zf : Word} {Ad Af RM PX PY : Nat} "
+                  + params + " (hsd : sd.toNat ≤ 1) (hsf : sf.toNat ≤ 1) (hz : zf = 0 ∨ zf = 1)",
+        "intro": ["have t0 : Steps n0 n0 := .refl n0", "have fR0 : ∀ x, PvR B x → n0.mem x = n0.mem x := fun _ _ => rfl",
+                  "have hsx := hsd"]
+                 + [f"have g0_{r} : reg n0 ({r} : Fin 32) = reg n0 ({r} : Fin 32) := rfl" for r in (3, 4)],
+        "import": "C3BootProofs.Proofs.Pv384Lib6",
+        "only": {"regs": {2, 3, 4, 9, 10, 19}, "acc": {0x1B0, 0x1C34, 0x1C88, 0x1CB8}},
+    }
+    return g, info
+
+
+def stage_i(ok):
+    g = Gen(f"I{ok}", lvl=7)
+    g.regs = {2: S(0), 9: S(0x1744), 10: C(ok), 19: S(0xD80)}
+    for r in (3, 4):
+        g.regs[r] = ("U", f"reg n0 ({r} : Fin 32)")
+    g.acc = {0x1B0: "RM", 0x1C34: "INV", 0x1C88: "PX", 0x1CB8: "PY"}
+    params = params_of(g, 0x104C)
+    hlt = "hINV" if ok else "p384_pos"
+    o = Ops(g)
+    g.block(0x104C, 0x1062); o.mc(0x1062, 0x1294, 0x1C34, 0x30)
+    o.sbc(0x106A, 19, 8, 0x12C4)
+    g.block(0x106E, 0x107C); o.ms0(0x107C, 0x17A4, 0x30)
+    g.block(0x1084, 0x10A0); o.cselS(0x10A0, 0xE10, 0x17A4, 0x1294, ok)
+    o.sbc(0x10A8, 19, 8, 0xE40)
+    g.block(0x10AC, 0x10BC); o.cmap(0x10BC, 0x17A4, 0xE10, ok)
+    g.block(0x10C4, 0x10D2); o.ms0(0x10D2, 0xE10, 0x30)
+    o.lbu(0x10DA, 8, 9, 0x17D4, C(ok), imm=0x90, fin="try rfl")
+    g.block(0x10DE, 0x10F2); o.cselS(0x10F2, 0x270, 0xE10, 0x17A4, ok)
+    g.block(0x10FA, 0x110C); o.fmul(0x110C, 0x1294, 0x1C88, 0x270, hlt)
+    g.block(0x1114, 0x1126); o.fmul(0x1126, 0x12C4, 0x1CB8, 0x270, hlt)
+    o.sb0(0x112E, 19, 0x12F4)
+    o.sbc(0x1132, 19, 8, 0x12F8)
+    g.block(0x1136, 0x114E); o.uo(0x114E, 0xE10, 0x1294, ok)
+    g.block(0x1156, 0x115E); o.za(0x115E, 0x1D18)
+    g.block(0x1166, 0x1176); o.rt(0x1176, 0x1294, 0xE10, "(p3fm_lt _ _)" if ok else "p384_pos")
+    g.block(0x117E, 0x118E); o.tbb(0x118E, 0x1D18, 0x1294)
+    g.block(0x1196, 0x11AA); o.b2sF(0x11AA, 0x1294, 0x1D18)
+    g.block(0x11B2, 0x11BC); o.mseq(0x11BC, 0x1B0, 0x1294)
+    eqv = lean_val(g.regs[10])
+    g.block(0x11C4, 0x11CC, {10: ("P", eqv, "rw [g{p}_10]; exact ite10_snez _")})
+    info = {
+        "end": 0x11CC, "name": f"pv_stI{ok}", "title": f"the comparison with `r`, when the sum {'is' if ok else 'is not'} finite",
+        "doc": f"From 0x104C to 0x11CC, when the inversion {'succeeded' if ok else 'failed'}: the affine `x` of the sum, reduced\nmodulo `n`, compared with `r`.",
+        "thmdoc": f"**Stage I**, from 0x104C to 0x11CC, with the inversion's flag {ok}.",
+        "params": "{B : Word} {RM INV PX PY : Nat} " + params + (" (hINV : INV < p384)" if ok else ""),
+        "intro": ["have t0 : Steps n0 n0 := .refl n0", "have fR0 : ∀ x, PvR B x → n0.mem x = n0.mem x := fun _ _ => rfl"]
+                 + [f"have g0_{r} : reg n0 ({r} : Fin 32) = reg n0 ({r} : Fin 32) := rfl" for r in (3, 4)],
+        "import": "C3BootProofs.Proofs.Pv384Lib6",
+        "only": {"regs": {2, 3, 4, 10}, "acc": set()},
+    }
+    return g, info
+
+
 def stage_b():
     g = Gen("B")
     g.regs = {2: S(0), 8: S(0xD80), 18: C(0), 19: ("U", "BitVec.ofNat 32 len"), 20: ("U", "ph")}
@@ -1492,7 +1632,8 @@ def main():
     g, info = {"B": stage_b, "C0": stage_c0, "CA": stage_ca, "CB": stage_cb, "C2a": stage_c2a,
                "C2b1": lambda: stage_c2b(1), "C2b0": lambda: stage_c2b(0), "D": stage_d,
                "E0": lambda: stage_e(0), "E1": lambda: stage_e(1), "F0": lambda: stage_f(0),
-               "F1": lambda: stage_f(1), "HS": stage_hs, "HA": stage_ha, "HB": stage_hb}[stage]()
+               "F1": lambda: stage_f(1), "HS": stage_hs, "HA": stage_ha, "HB": stage_hb, "HP": stage_hp, "I1": lambda: stage_i(1),
+               "I0": lambda: stage_i(0)}[stage]()
     stmt, proof = g.conclusion(info["end"], info.get("extra", ()), info.get("only"))
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.Pv384Lib"), title=info["title"], stage=stage,
                         doc=info["doc"]))
