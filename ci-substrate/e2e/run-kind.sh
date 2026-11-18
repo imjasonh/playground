@@ -41,67 +41,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-need_cmd() {
-  command -v "$1" >/dev/null 2>&1 || {
-    echo "missing required command: $1" >&2
-    exit 1
-  }
-}
-
-install_kind() {
-  if command -v kind >/dev/null 2>&1; then
-    return
-  fi
-  local ver="${KIND_VERSION:-v0.27.0}"
-  local os arch url
-  os="$(uname -s | tr '[:upper:]' '[:lower:]')"
-  arch="$(uname -m)"
-  case "${arch}" in
-    x86_64) arch=amd64 ;;
-    aarch64 | arm64) arch=arm64 ;;
-  esac
-  url="https://kind.sigs.k8s.io/dl/${ver}/kind-${os}-${arch}"
-  echo "Installing kind ${ver}"
-  curl -fsSL -o "${WORKDIR}/kind" "${url}"
-  chmod +x "${WORKDIR}/kind"
-  export PATH="${WORKDIR}:${PATH}"
-}
-
-install_ko() {
-  if command -v ko >/dev/null 2>&1; then
-    return
-  fi
-  echo "Installing ko"
-  GOBIN="${WORKDIR}" go install github.com/google/ko@v0.17.1
-  export PATH="${WORKDIR}:${PATH}"
-}
-
-install_kubectl() {
-  if command -v kubectl >/dev/null 2>&1; then
-    return
-  fi
-  local ver="${KUBECTL_VERSION:-v1.32.2}"
-  local os arch
-  os="$(uname -s | tr '[:upper:]' '[:lower:]')"
-  arch="$(uname -m)"
-  case "${arch}" in
-    x86_64) arch=amd64 ;;
-    aarch64 | arm64) arch=arm64 ;;
-  esac
-  echo "Installing kubectl ${ver}"
-  curl -fsSL -o "${WORKDIR}/kubectl" "https://dl.k8s.io/release/${ver}/bin/${os}/${arch}/kubectl"
-  chmod +x "${WORKDIR}/kubectl"
-  export PATH="${WORKDIR}:${PATH}"
-}
-
-install_crane() {
-  if command -v crane >/dev/null 2>&1; then
-    return
-  fi
-  echo "Installing crane"
-  GOBIN="${WORKDIR}" go install github.com/google/go-containerregistry/cmd/crane@v0.22.1
-  export PATH="${WORKDIR}:${PATH}"
-}
+# shellcheck source=lib-tools.sh
+source "${ROOT}/e2e/lib-tools.sh"
 
 # mirror_images copies each third-party image a manifest names into the local
 # registry, keeping its digest, and prints the manifest with the copies'
@@ -159,27 +100,6 @@ ensure_registry() {
     registry:2 >/dev/null
 }
 
-# kube-proxy and local-path-provisioner exit with "too many open files" when
-# the host's inotify instance limit is low (Linux defaults to 128) and another
-# kind cluster already holds most of them. Raise the limits when permitted;
-# otherwise continue, since a single cluster on a CI runner stays under them.
-# See https://kind.sigs.k8s.io/docs/user/known-issues/#pod-errors-due-to-too-many-open-files
-raise_inotify_limits() {
-  local instances watches
-  instances="$(sysctl -n fs.inotify.max_user_instances 2>/dev/null || echo 0)"
-  watches="$(sysctl -n fs.inotify.max_user_watches 2>/dev/null || echo 0)"
-  if [[ "${instances}" -ge 512 && "${watches}" -ge 524288 ]]; then
-    return
-  fi
-  local sudo=""
-  if [[ "$(id -u)" -ne 0 ]]; then
-    command -v sudo >/dev/null 2>&1 || return 0
-    sudo="sudo -n"
-  fi
-  ${sudo} sysctl -q -w fs.inotify.max_user_instances=512 fs.inotify.max_user_watches=524288 2>/dev/null ||
-    echo "could not raise inotify limits (instances=${instances}, watches=${watches}); continuing" >&2
-}
-
 create_cluster() {
   if kind get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}"; then
     echo "Reusing kind cluster ${CLUSTER_NAME}"
@@ -215,10 +135,10 @@ mkdir -p "${WORKDIR}"
 need_cmd docker
 need_cmd go
 need_cmd curl
-install_kind
-install_ko
-install_kubectl
-install_crane
+install_kind "${WORKDIR}"
+install_ko "${WORKDIR}"
+install_kubectl "${WORKDIR}"
+install_crane "${WORKDIR}"
 need_cmd kind
 need_cmd ko
 need_cmd kubectl
