@@ -60,6 +60,9 @@ for line in open(src):
     elif op == 'j': ins = f'.jal x0 {w(imm(args[0]) - addr)}'
     elif op in BR: ins = f'.branch .{op} {r(args[0])} {r(args[1])} {w(imm(args[2]) - addr)}'
     elif op in ('beqz','bnez'): ins = f'.branch .{op[:3]} {r(args[0])} x0 {w(imm(args[1]) - addr)}'
+    elif op in ('bgez','bltz'): ins = f'.branch .{op[:3]} {r(args[0])} x0 {w(imm(args[1]) - addr)}'
+    elif op == 'blez': ins = f'.branch .bge x0 {r(args[0])} {w(imm(args[1]) - addr)}'
+    elif op == 'bgtz': ins = f'.branch .blt x0 {r(args[0])} {w(imm(args[1]) - addr)}'
     elif op == 'bltz': ins = f'.branch .blt {r(args[0])} x0 {w(imm(args[1]) - addr)}'
     elif op == 'bgez': ins = f'.branch .bge {r(args[0])} x0 {w(imm(args[1]) - addr)}'
     else: sys.exit(f'unknown {op} at {addr:x}: {line}')
