@@ -12,10 +12,16 @@ the `github-plan` provider. `deploy-gcp.yml` selects the GitHub
 environment `gcp`, and these accounts accept only that environment. A
 plan token cannot apply.
 
-The deploy account can change app stacks and can act as any service
-account in the project, so a new app does not need a binding for its
-runtime account. The plan account can read the state bucket and push
-images. It cannot delete images or read replica objects.
+This stack creates each app's runtime service account, listed in
+`app_service_accounts`, and the deploy account can act as those accounts
+and no others. To add an app, add its account there and apply this
+stack before the app's first deploy. The app reads the account with a
+`google_service_account` data source. The deploy account cannot create
+service accounts, set IAM on one, or change custom roles. It can grant
+and revoke only the project roles in `app_project_roles`, so it can't
+grant itself Owner or take over another account. The plan account can
+read the state bucket and push images. It cannot delete images or read
+replica objects.
 
 The deploy account can also create and delete budgets on the project's
 billing account, and the plan account can view that account's budgets

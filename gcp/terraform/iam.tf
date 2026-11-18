@@ -2,11 +2,13 @@
 # deploy-gcp.yml selects the GitHub environment var.github_environment.
 # A token for any other environment cannot impersonate these accounts.
 #
-# The deploy account can change app stacks, including project IAM, and it
-# can act as any service account in the project. That is what lets it
-# deploy a new app's Cloud Run runtime account without a per-app binding.
-# It can already grant itself roles. Pool admin stays with the credentials
-# that apply this stack.
+# The deploy account can change app stacks, but it cannot take over the
+# project. This stack creates each app's runtime account
+# (var.app_service_accounts), and the deploy account can act as those
+# accounts and no others. It cannot create service accounts, set IAM on
+# one, or change custom roles. It can grant and revoke project roles, but
+# only the roles in var.app_project_roles. Pool admin stays with the
+# credentials that apply this stack.
 #
 # The plan account can refresh an app stack and read the state bucket. It
 # cannot change Cloud Run, IAM, or objects outside that bucket. ko rebuilds
@@ -41,12 +43,9 @@ locals {
     "roles/browser",
     "roles/compute.instanceAdmin.v1",
     "roles/compute.networkAdmin",
-    "roles/iam.roleAdmin",
-    "roles/iam.serviceAccountAdmin",
-    "roles/iam.serviceAccountUser",
+    "roles/iam.serviceAccountViewer",
     "roles/iam.workloadIdentityPoolViewer",
     "roles/monitoring.dashboardEditor",
-    "roles/resourcemanager.projectIamAdmin",
     "roles/run.admin",
     "roles/serviceusage.serviceUsageAdmin",
     "roles/storage.admin",
@@ -155,6 +154,34 @@ resource "google_project_iam_member" "github_deploy" {
   project = var.project_id
   role    = each.value
   member  = "serviceAccount:${google_service_account.github_deploy.email}"
+}
+
+resource "google_project_iam_member" "github_deploy_app_roles" {
+  project = var.project_id
+  role    = "roles/resourcemanager.projectIamAdmin"
+  member  = "serviceAccount:${google_service_account.github_deploy.email}"
+
+  condition {
+    title       = "app-project-roles"
+    description = "Grant and revoke only the project roles in app_project_roles."
+    expression  = "api.getAttribute('iam.googleapis.com/modifiedGrantsByRole', []).hasOnly(${jsonencode(var.app_project_roles)})"
+  }
+}
+
+resource "google_service_account" "app" {
+  for_each = var.app_service_accounts
+
+  project      = var.project_id
+  account_id   = each.key
+  display_name = each.value
+}
+
+resource "google_service_account_iam_member" "github_deploy_act_as" {
+  for_each = google_service_account.app
+
+  service_account_id = each.value.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.github_deploy.email}"
 }
 
 resource "google_project_iam_member" "github_plan" {
