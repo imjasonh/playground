@@ -129,8 +129,9 @@ How a volume reaches the sandbox: when Substrate assigns the actor to a
 worker, `ate-api-server` calls the driver's `CreateVolume` through the
 `casfs-csi` Service (the `CSIDriverConfig` names it) and records the volume
 id. `atelet` on the worker's node then calls `NodePublishVolume` on the
-driver's socket under `/var/lib/kubelet/plugins/casfs.ci-substrate.dev/`,
-the driver mounts `casfs` with `allow_other` at the target under
+driver's socket under
+`/var/lib/kubelet/plugins/casfs.ci-substrate.imjasonh.com/`, the driver
+mounts `casfs` with `allow_other` at the target under
 `/var/lib/ate`, and `atelet` binds that path into the gVisor sandbox. The
 DaemonSet mounts `/var/lib/ate` with `Bidirectional` propagation so the
 mount is visible to `atelet` and the worker pod. On suspend, `atelet`

@@ -109,7 +109,7 @@ spec:
                   path: trust-bundle.pem
         - name: plugin-dir
           hostPath:
-            path: /var/lib/kubelet/plugins/casfs.ci-substrate.dev
+            path: /var/lib/kubelet/plugins/casfs.ci-substrate.imjasonh.com
             type: DirectoryOrCreate
         - name: ate-base
           hostPath:
@@ -134,11 +134,11 @@ spec:
 apiVersion: ate.dev/v1
 kind: CSIDriverConfig
 metadata:
-  name: casfs.ci-substrate.dev
+  name: casfs.ci-substrate.imjasonh.com
 spec:
-  driverName: casfs.ci-substrate.dev
+  driverName: casfs.ci-substrate.imjasonh.com
   controllerEndpoint: dns:///casfs-csi.ci-substrate.svc.cluster.local:9095
-  nodeSocketOverride: unix:///var/lib/kubelet/plugins/casfs.ci-substrate.dev/csi.sock
+  nodeSocketOverride: unix:///var/lib/kubelet/plugins/casfs.ci-substrate.imjasonh.com/csi.sock
 ---
 # One StorageClass per tenant. The instance parameter is the Remote Execution
 # instance the volume serves, which decides the token the driver fetches
@@ -150,7 +150,7 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: casfs-tenant-a
-provisioner: casfs.ci-substrate.dev
+provisioner: casfs.ci-substrate.imjasonh.com
 reclaimPolicy: Delete
 volumeBindingMode: Immediate
 parameters:
