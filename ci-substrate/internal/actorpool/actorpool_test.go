@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ const (
 // fakeSubstrate records the pool's calls and moves actors between states
 // the way Substrate would, one step per call.
 type fakeSubstrate struct {
+	mu      sync.Mutex
 	actors  map[string]actorpool.State
 	placed  map[string]string
 	calls   []string
@@ -32,6 +34,8 @@ func newFake() *fakeSubstrate {
 }
 
 func (f *fakeSubstrate) List(context.Context) ([]actorpool.Actor, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	var out []actorpool.Actor
 	for name, st := range f.actors {
 		out = append(out, actorpool.Actor{Name: name, State: st, WorkerPool: f.placed[name]})
@@ -40,6 +44,8 @@ func (f *fakeSubstrate) List(context.Context) ([]actorpool.Actor, error) {
 }
 
 func (f *fakeSubstrate) op(verb, name string, to actorpool.State) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.calls = append(f.calls, verb+" "+name)
 	if err := f.fail[verb]; err != nil {
 		return err
@@ -118,19 +124,120 @@ func (f *fakeSubstrate) Delete(_ context.Context, name string) error {
 }
 
 func (f *fakeSubstrate) take() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	calls := f.calls
 	f.calls = nil
 	slices.Sort(calls)
 	return calls
 }
 
+// fakeQueue reports queued and busy. Its Watch calls changed once for each
+// value sent on changes, and fails instead while watchErr is set.
 type fakeQueue struct {
-	queued int
-	busy   []string
+	mu       sync.Mutex
+	queued   int
+	busy     []string
+	statuses int
+	watches  int
+	watchErr error
+	changes  chan struct{}
 }
 
 func (q *fakeQueue) Status(context.Context) (int, []string, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.statuses++
 	return q.queued, q.busy, nil
+}
+
+func (q *fakeQueue) Watch(ctx context.Context, changed func()) error {
+	q.mu.Lock()
+	q.watches++
+	err := q.watchErr
+	q.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-q.changes:
+			changed()
+		}
+	}
+}
+
+// eventually fails t unless cond becomes true within a few seconds.
+func eventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); !cond(); {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// runPool runs p until the test ends.
+func runPool(t *testing.T, p *actorpool.Pool) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error)
+	go func() { done <- p.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; !errors.Is(err, context.Canceled) {
+			t.Errorf("Run returned %v", err)
+		}
+	})
+}
+
+// A queued job wakes an actor as soon as the scheduler reports it, long
+// before Run's next tick.
+func TestRunReconcilesWhenQueueChanges(t *testing.T) {
+	sub := newFake()
+	sub.actors["ci-runner-0"] = actorpool.StateSuspended
+	queue := &fakeQueue{changes: make(chan struct{})}
+	p, err := actorpool.New(actorpool.Config{Actors: sub, Queue: queue, Prefix: "ci-runner-", Warm: 1, Max: 1, Interval: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runPool(t, p)
+	eventually(t, "the first reconcile", func() bool {
+		queue.mu.Lock()
+		defer queue.mu.Unlock()
+		return queue.statuses == 1
+	})
+	if got := sub.take(); len(got) != 0 {
+		t.Fatalf("first reconcile %v", got)
+	}
+
+	queue.mu.Lock()
+	queue.queued = 1
+	queue.mu.Unlock()
+	queue.changes <- struct{}{}
+	eventually(t, "the resume", func() bool {
+		sub.mu.Lock()
+		defer sub.mu.Unlock()
+		return slices.Equal(sub.calls, []string{"resume ci-runner-0"})
+	})
+}
+
+// A watch that fails is opened again, and Run keeps reconciling meanwhile.
+func TestRunReopensBrokenWatch(t *testing.T) {
+	queue := &fakeQueue{watchErr: errors.New("cas restarting")}
+	p, err := actorpool.New(actorpool.Config{Actors: newFake(), Queue: queue, Prefix: "ci-runner-", Max: 1, Interval: 10 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runPool(t, p)
+	eventually(t, "a second watch and reconciles on the ticker", func() bool {
+		queue.mu.Lock()
+		defer queue.mu.Unlock()
+		return queue.watches >= 2 && queue.statuses >= 2
+	})
 }
 
 type harness struct {

@@ -99,9 +99,11 @@ type Actors interface {
 }
 
 // Queue is the scheduler's view of the tenant: jobs waiting for a runner and
-// the bot ids holding leases.
+// the bot ids holding leases. Watch calls changed each time that view
+// changes, until ctx ends or the watch breaks, and returns why it stopped.
 type Queue interface {
 	Status(ctx context.Context) (queued int, busy []string, err error)
+	Watch(ctx context.Context, changed func()) error
 }
 
 // Workers is the WorkerPool the pool sizes: its desired number of workers,
@@ -126,8 +128,14 @@ type Config struct {
 	// IdleAfter is how long a running actor goes without a lease before the
 	// pool suspends it.
 	IdleAfter time.Duration
-	// Interval is how often Run reconciles.
+	// Interval is how often Run reconciles when the queue has not changed,
+	// to see what only Substrate knows: crashes, finished resumes, a worker
+	// with room for a resume that failed, and actors gone idle. Scale-up
+	// waits on some of those, so keep it short.
 	Interval time.Duration
+	// MinInterval is the least time between two reconciles that queue
+	// changes start, so a busy build costs a few reconciles a second.
+	MinInterval time.Duration
 	// Now returns the current time. Tests set it.
 	Now func() time.Time
 	// Burst, when set, is a WorkerPool the pool sizes for its actors.
@@ -186,6 +194,9 @@ func New(cfg Config) (*Pool, error) {
 	if cfg.Interval <= 0 {
 		cfg.Interval = 5 * time.Second
 	}
+	if cfg.MinInterval <= 0 {
+		cfg.MinInterval = 250 * time.Millisecond
+	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
@@ -194,12 +205,15 @@ func New(cfg Config) (*Pool, error) {
 	return p, nil
 }
 
-// Run reconciles every Interval until ctx ends. A failed reconcile is logged
-// and tried again next time.
+// Run reconciles when the queue changes, and every Interval, until ctx ends.
+// A failed reconcile is logged and tried again next time.
 func (p *Pool) Run(ctx context.Context) error {
+	changed := make(chan struct{}, 1)
+	go p.watch(ctx, changed)
 	tick := time.NewTicker(p.cfg.Interval)
 	defer tick.Stop()
 	for {
+		last := time.Now()
 		if err := p.Reconcile(ctx); err != nil {
 			slog.WarnContext(ctx, "reconcile failed", "err", err)
 		}
@@ -207,6 +221,35 @@ func (p *Pool) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-tick.C:
+		case <-changed:
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Until(last.Add(p.cfg.MinInterval))):
+			}
+		}
+	}
+}
+
+// watch signals changed, without blocking, each time the queue changes. It
+// opens a broken watch again after Interval; Run's ticker covers the gap.
+func (p *Pool) watch(ctx context.Context, changed chan<- struct{}) {
+	signal := func() {
+		select {
+		case changed <- struct{}{}:
+		default:
+		}
+	}
+	for {
+		err := p.cfg.Queue.Watch(ctx, signal)
+		if ctx.Err() != nil {
+			return
+		}
+		slog.WarnContext(ctx, "queue watch stopped", "err", err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(p.cfg.Interval):
 		}
 	}
 }

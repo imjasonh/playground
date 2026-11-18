@@ -11,14 +11,16 @@ import (
 )
 
 // untraced selects the calls that get neither spans nor RPC metrics: health
-// probes, and the runner's long polls and heartbeats, which would put a
-// span a second per idle runner in the trace backend. The scheduler's own
-// metrics cover them.
+// probes, the runner's long polls and heartbeats, which would put a span a
+// second per idle runner in the trace backend, and the pool's queue watch,
+// which lasts as long as the pool runs. The scheduler's own metrics cover
+// them.
 var untraced = filters.None(
 	filters.HealthCheck(),
 	filters.MethodName("Lease"),
 	filters.MethodName("Heartbeat"),
 	filters.MethodName("Status"),
+	filters.MethodName("WatchStatus"),
 )
 
 // ServerOptions trace and measure every call a server handles (the
