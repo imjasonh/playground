@@ -64,34 +64,6 @@ variable "deletion_protection" {
   default     = true
 }
 
-variable "github_repository" {
-  description = "GitHub repository (OWNER/REPO) for Workload Identity Federation. Leave empty to skip WIF resources."
-  type        = string
-  default     = ""
-}
-
-variable "github_repository_id" {
-  description = "Numeric ID of github_repository (gh api repos/OWNER/REPO --jq .id). Required when github_repository is set."
-  type        = string
-  default     = ""
-
-  validation {
-    condition     = var.github_repository_id == "" || can(regex("^[0-9]+$", var.github_repository_id))
-    error_message = "github_repository_id must be a numeric GitHub repository ID."
-  }
-}
-
-variable "github_repository_owner_id" {
-  description = "Numeric ID of github_repository's owner (gh api repos/OWNER/REPO --jq .owner.id). Required when github_repository is set."
-  type        = string
-  default     = ""
-
-  validation {
-    condition     = var.github_repository_owner_id == "" || can(regex("^[0-9]+$", var.github_repository_owner_id))
-    error_message = "github_repository_owner_id must be a numeric GitHub account ID."
-  }
-}
-
 variable "apps" {
   description = "SSH apps to build with ko and deploy. Key is the mux route name (ssh user@ssh.domain <key>)."
   type = map(object({
