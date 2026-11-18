@@ -3,6 +3,7 @@ import C3BootProofs.Proofs.NonZero384
 import C3BootProofs.Proofs.Select
 import C3BootProofs.Proofs.Bytes2Scalar384
 import C3BootProofs.Proofs.P384Neg
+import C3BootProofs.Image.BootloaderData2
 
 /-!
 # `p384_verify_prehash`: calls in the caller's terms
@@ -25,6 +26,9 @@ macro "pv_addr" : tactic =>
   `(tactic| (apply BitVec.eq_of_toNat_eq
              simp only [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.ofNat_eq_ofNat, Nat.reducePow, Nat.reduceMod]
                <;> omega))
+
+/-- Proves that a register holds a value: by `rfl`, `decide`, or as a sum. -/
+macro "pv_val" : tactic => `(tactic| first | pv_addr | decide | rfl)
 
 /-- `x` is outside the 0x230C bytes that `p384_verify_prehash` and its
 callees may write. -/
@@ -69,11 +73,17 @@ structure PvData2 (M : Word → BitVec 8) : Prop where
   zero : CodeIn M (BitVec.ofNat 32 scalarZero384Address) scalarZero384Data
   nmod : CodeIn M n3M p384OrderData
   r2 : CodeIn M n3R2A p384ScalarR2Data
+  one : CodeIn M (BitVec.ofNat 32 p384MontOneAddress) p384MontOneData
+  idp : CodeIn M (BitVec.ofNat 32 p384IdentityAddress) p384IdentityData
+  g : CodeIn M (BitVec.ofNat 32 p384GAddress) p384GData
+  u1 : CodeIn M (BitVec.ofNat 32 u12OneAddress) u12OneData
 
 theorem PvData2.of {M M' : Word → BitVec 8} {S : Word} {N : Nat} (F : Fr S N) (D : PvData2 M)
     (h : ∀ x, Sep (S + 0xFFFFFE60) (N + 0x1A0) x 1 → M' x = M x) : PvData2 M' :=
   ⟨F.dataIn h D.zero (by decide) (by decide), F.dataIn h D.nmod (by decide) (by decide),
-    F.dataIn h D.r2 (by decide) (by decide)⟩
+    F.dataIn h D.r2 (by decide) (by decide), F.dataIn h D.one (by decide) (by decide),
+    F.dataIn h D.idp (by decide) (by decide), F.dataIn h D.g (by decide) (by decide),
+    F.dataIn h D.u1 (by decide) (by decide)⟩
 
 /-- The code and constants `p384_verify_prehash` needs. -/
 structure PvEnv (M : Word → BitVec 8) : Prop where
@@ -520,5 +530,69 @@ theorem pv_b2s {B : Word} {m : Machine} {off : Nat} {imm o b : Word} {co n : Nat
   by_cases h : q = sp
   · subst h; rw [sp2, hsp]
   · rw [k2 q (by revert hq h; revert q; decide), r1 q (by revert hq; revert q; decide)]
+
+theorem sep1_ne {a x : Word} (h : Sep a 1 x 1) : x ≠ a := fun e =>
+  h 0 (by decide) 0 (by decide) (by rw [add_ofNat_zero, add_ofNat_zero]; exact e.symm)
+
+/-- A word store to offset `c` of the frame. -/
+theorem pv_sw {B : Word} {m : Machine} {off off' : Nat} {rs1 rs2 : Fin 32} {o len : Word} {c : Nat}
+    (F : Fr B 0x21A0) (E : PvEnv m.mem) (s : St m.mem PV m off (reg m))
+    (hf : fetchRel p384VerifyPrehashCode off = some (.store .sw rs1 rs2 o, len))
+    (hn : BitVec.ofNat 32 off + len = BitVec.ofNat 32 off') (ha : reg m rs1 + o = B + 0x420 + BitVec.ofNat 32 c)
+    (hc : c + 4 ≤ 0x1D4C) (ac : c % 4 = 0) :
+    ∃ m', Steps m m' ∧ St m'.mem PV m' off' (reg m') ∧ PvEnv m'.mem ∧ (∀ x, PvR B x → m'.mem x = m.mem x) ∧
+      PvKeep B m.mem m'.mem c 4 ∧ memLoad32 m'.mem (B + 0x420 + BitVec.ofNat 32 c) = reg m rs2 ∧
+      ∀ q, reg m' q = reg m q := by
+  have FS : Fr (B + 0x420) 0x1D80 := F.sub (c := 0x420) (by decide) (by decide)
+  have hFa := FS.al
+  obtain ⟨m1, d1, u1⟩ := s.sw E.C.self hf hn (by rw [ha, FS.at _ (by omega)]; omega)
+  rw [ha] at u1
+  have fr : ∀ x, PvR B x → m1.mem x = m.mem x := fun x hx => by
+    rw [u1.mem]; exact memStore32_get_sep (pvR_hi hx hc)
+  exact ⟨m1, .single d1, ⟨u1.pc, rfl, fun _ => rfl⟩, E.fr F fr, fr,
+    fun e he1 he2 => by
+      rw [u1.mem]; exact memStore32_get_sep (sepS (B + 0x420) (by omega) (by omega) (by omega)),
+    by rw [u1.mem, memLoad32_store32_same], fun q => u1.regs q⟩
+
+/-- A byte store to offset `c` of the frame. -/
+theorem pv_sb {B : Word} {m : Machine} {off off' : Nat} {rs1 rs2 : Fin 32} {o len : Word} {c : Nat}
+    (F : Fr B 0x21A0) (E : PvEnv m.mem) (s : St m.mem PV m off (reg m))
+    (hf : fetchRel p384VerifyPrehashCode off = some (.store .sb rs1 rs2 o, len))
+    (hn : BitVec.ofNat 32 off + len = BitVec.ofNat 32 off') (ha : reg m rs1 + o = B + 0x420 + BitVec.ofNat 32 c)
+    (hc : c + 1 ≤ 0x1D4C) :
+    ∃ m', Steps m m' ∧ St m'.mem PV m' off' (reg m') ∧ PvEnv m'.mem ∧ (∀ x, PvR B x → m'.mem x = m.mem x) ∧
+      PvKeep B m.mem m'.mem c 1 ∧ m'.mem (B + 0x420 + BitVec.ofNat 32 c) = (reg m rs2).extractLsb' 0 8 ∧
+      ∀ q, reg m' q = reg m q := by
+  obtain ⟨m1, d1, u1⟩ := s.sb E.C.self hf hn
+  rw [ha] at u1
+  have fr : ∀ x, PvR B x → m1.mem x = m.mem x := fun x hx => by
+    rw [u1.mem]; exact memStore8_ne (sep1_ne (pvR_hi (l := 1) hx hc))
+  exact ⟨m1, .single d1, ⟨u1.pc, rfl, fun _ => rfl⟩, E.fr F fr, fr,
+    fun e he1 he2 => by
+      rw [u1.mem]; exact memStore8_ne (sep1_ne (sepS (B + 0x420) (by omega) (by omega) (by omega))),
+    by rw [u1.mem, memStore8_same], fun q => u1.regs q⟩
+
+theorem pv_at {B : Word} (F : Fr B 0x21A0) (c : Nat) (hc : c ≤ 0x1D80) :
+    (B + 0x420 + BitVec.ofNat 32 c).toNat = B.toNat + 0x420 + c := by
+  have := F.at (0x420 + c) (by omega); rw [← add_ofNat_assoc] at this; exact this.trans (by omega)
+
+/-- The limbs a copy from the constant at `K` left at offset `c` of the frame. -/
+theorem accV_K {M M' : Word → BitVec 8} {S K : Word} {c : Nat} :
+    ∀ k, (∀ q, q < 4 * k → M' (S + BitVec.ofNat 32 (c + q)) = M (K + BitVec.ofNat 32 q)) →
+    accV M' (S + BitVec.ofNat 32 c) k = accV M (K + BitVec.ofNat 32 0) k :=
+  fun k h => accV_congr2 k fun i hi => by
+    rw [ld_ofNat, ld_ofNat]
+    simp only [add_ofNat_assoc, Nat.add_assoc, Nat.zero_add]
+    rw [h _ (by omega), h _ (by omega), h _ (by omega), h _ (by omega)]
+
+set_option exponentiation.threshold 800 in
+/-- A nonzero scalar below the order stays nonzero in Montgomery form. -/
+theorem n3_mont_ne {R : Nat} (h0 : R ≠ 0) (hR : R < n384) : R * 2 ^ 384 % n384 ≠ 0 := by
+  intro h
+  have hinv : (2 ^ 384 * n3RInv) % n384 = 1 := by unfold n384 n3RInv; decide
+  have e : R * 2 ^ 384 % n384 * n3RInv % n384 = R := by
+    rw [Nat.mod_mul_mod, Nat.mul_assoc, Nat.mul_mod, hinv, Nat.mul_one, Nat.mod_mod, Nat.mod_eq_of_lt hR]
+  rw [h, Nat.zero_mul, Nat.zero_mod] at e
+  exact h0 e.symm
 
 end C3.RV32.Pv

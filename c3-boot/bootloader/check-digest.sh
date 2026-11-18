@@ -34,8 +34,9 @@ if [[ "${1:-}" == "--update" ]]; then
   python3 "${root}/../c3-boot-proofs/scripts/extract-functions.py" "${work}/bootloader.bin" \
     target/riscv32imc-unknown-none-elf/release/c3-bootloader "${nm}" \
     "${root}/../c3-boot-proofs/C3BootProofs/Image/Bootloader.lean" \
-    "${root}/../c3-boot-proofs/C3BootProofs/Image/BootloaderData.lean"
-  echo "regenerated c3-boot-proofs/C3BootProofs/Image/Bootloader.lean and BootloaderData.lean"
+    "${root}/../c3-boot-proofs/C3BootProofs/Image/BootloaderData.lean" \
+    "${root}/../c3-boot-proofs/C3BootProofs/Image/BootloaderData2.lean"
+  echo "regenerated c3-boot-proofs/C3BootProofs/Image/Bootloader.lean, BootloaderData.lean, and BootloaderData2.lean"
   exit 0
 fi
 if [[ "${digest}" != "$(cat "${pinned}")" ]]; then
