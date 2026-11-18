@@ -5,7 +5,9 @@
 # toolchain; test.yml cross-builds them in a separate job.
 #
 # The crate's rust-toolchain.toml pins the host toolchain, which this script
-# installs.
+# installs. Every build goes to APP/target, the directory the Makefile builds
+# the tools in, so the crate and its tools share their dependencies and
+# test.yml caches one directory.
 #
 # Usage:
 #   test-esp32-host.sh APP
@@ -14,6 +16,7 @@ set -euo pipefail
 app="${1:?usage: test-esp32-host.sh APP}"
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$repo_root/$app"
+export CARGO_TARGET_DIR="$PWD/target"
 
 rustup toolchain install --no-self-update
 
