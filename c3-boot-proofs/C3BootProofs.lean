@@ -136,6 +136,7 @@ import C3BootProofs.Proofs.BootWrite
 import C3BootProofs.Proofs.Boot
 import C3BootProofs.Proofs.Dec384End
 import C3BootProofs.Proofs.Fs384Main
+import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Sha256LoopDecode
 import C3BootProofs.Proofs.Sha256LoopBlocks
 import C3BootProofs.Proofs.Sha256LoopRounds
