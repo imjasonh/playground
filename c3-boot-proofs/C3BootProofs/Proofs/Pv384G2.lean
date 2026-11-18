@@ -268,4 +268,204 @@ theorem ml_loop {B r3 r4 : Word} {T0 T1 : Nat → Pt} {D0 D1 : List Nat} {RM : N
         obtain ⟨E2, fr2, rest⟩ := rest
         exact ⟨E2, fun x hx => by rw [fr2 x hx, fr1 x hx], rest⟩
 
+/-- The identity point, as the image keeps it, in Montgomery form. -/
+def idPt : Pt := (dataVal p384IdentityData 0 12, dataVal p384IdentityData 0x30 12, dataVal p384IdentityData 0x60 12)
+
+set_option exponentiation.threshold 600 in
+theorem idPt_lt : PtLt idPt := by unfold idPt PtLt p384; decide
+
+def pvGa76 : List BInstr := [.lui a0 0x1000, .aluImm .add a0 a0 0x744, .alu .add a0 a0 sp]
+theorem pvGa76_end : blockEnd p384VerifyPrehashCode 0xA76 pvGa76 = some 0xA7E := by decide
+def pvGa86 : List BInstr := [.aluImm .add a1 x0 0x0, .aluImm .and a1 a1 0x1]
+theorem pvGa86_end : blockEnd p384VerifyPrehashCode 0xA86 pvGa86 = some 0xA8A := by decide
+def pvGa90 : List BInstr := [.alu .add (9 : Fin 32) x0 a0]
+theorem pvGa90_end : blockEnd p384VerifyPrehashCode 0xA90 pvGa90 = some 0xA92 := by decide
+def pvGa92 : List BInstr := [.aluImm .add a1 x0 0x1]
+theorem pvGa92_end : blockEnd p384VerifyPrehashCode 0xA92 pvGa92 = some 0xA94 := by decide
+def pvGa88 : List BInstr := [.aluImm .and a1 a1 0x1]
+theorem pvGa88_end : blockEnd p384VerifyPrehashCode 0xA88 pvGa88 = some 0xA8A := by decide
+def pvGa96 : List BInstr := [.lui a1 0x3FCC4000, .aluImm .add a1 a1 0x4D0, .aluImm .add a0 sp 0x7FF,
+  .aluImm .add a0 a0 0x611, .aluImm .add a2 x0 0x90, .aluImm .add (20 : Fin 32) x0 0x90]
+theorem pvGa96_end : blockEnd p384VerifyPrehashCode 0xA96 pvGa96 = some 0xAAE := by decide
+def pvGab6 : List BInstr := [.aluImm .add (21 : Fin 32) x0 0x0, .lui a0 0x2000, .aluImm .add a0 a0 0xFFFFF924,
+  .alu .add a0 a0 sp, .alu .add a0 a0 (9 : Fin 32), .aluImm .add (23 : Fin 32) a0 0x3,
+  .aluImm .add (22 : Fin 32) x0 0x188, .aluImm .add (8 : Fin 32) x0 0x2, .aluImm .add (24 : Fin 32) x0 0x181,
+  .aluImm .add (25 : Fin 32) x0 0x480, .aluImm .add (26 : Fin 32) sp 0x450, .aluImm .add (27 : Fin 32) x0 0x10]
+theorem pvGab6_end : blockEnd p384VerifyPrehashCode 0xAB6 pvGab6 = some 0xADA := by decide
+
+theorem s7_val (S : Word) (x : Nat) (hx : 1 ≤ x) :
+    (8192 : Word) + 4294965540 + S + BitVec.ofNat 32 x + 3 = S + BitVec.ofNat 32 (6440 + (x - 1)) := by
+  pv_addr
+
+set_option maxHeartbeats 32000000 in
+/-- **The setup of the main loop**, from 0xA76: the longer digit count, the
+identity in the accumulator, and the loop's registers; then the loop head,
+or the exit when both counts are zero. -/
+theorem ml_pre {B : Word} {T0 T1 : Nat → Pt} {D0 D1 : List Nat} {RM L0 L1 : Nat} {m : Machine}
+    (F : Fr B 0x21A0) (E : PvEnv6 m.mem) (s : St m.mem PV m 0xA76 (reg m)) (hsp : reg m sp = B + 0x420)
+    (w0 : memLoad32 m.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 L0)
+    (w1 : memLoad32 m.mem (B + 0x420 + BitVec.ofNat 32 0x1AAC) = BitVec.ofNat 32 L1)
+    (hL0 : L0 ≤ 0x181) (hL1 : L1 ≤ 0x181) (M : GM B m.mem T0 T1 D0 D1 RM) :
+    ∃ m', Steps m m' ∧ PvEnv6 m'.mem ∧ (∀ x, PvR B x → m'.mem x = m.mem x) ∧
+      St m'.mem PV m' (if max L0 L1 = 0 then 0xBEE else 0xADE) (reg m') ∧
+      (max L0 L1 ≠ 0 → GH B m' (reg m (3 : Fin 32)) (reg m (4 : Fin 32)) (max L0 L1 - 1)) ∧
+      reg m' sp = B + 0x420 ∧ reg m' (3 : Fin 32) = reg m (3 : Fin 32) ∧ reg m' (4 : Fin 32) = reg m (4 : Fin 32) ∧
+      reg m' (21 : Fin 32) = 0 ∧ GM B m'.mem T0 T1 D0 D1 RM ∧ ptV m'.mem B 0xE10 = idPt := by
+  have FS : Fr (B + 0x420) 0x1D80 := F.sub (c := 0x420) (by decide) (by decide)
+  have C := E.E.E.E.E.C.self
+  obtain ⟨n1, c1, u1⟩ := s.block pvGa76 C pvGa76_end ⟨trivial, trivial, trivial, trivial⟩
+  have s1 : St m.mem PV n1 0xA7E (reg n1) := ⟨u1.pc, u1.mem, fun _ => rfl⟩
+  have k1 : ∀ q : Fin 32, q ≠ a0 → reg n1 q = reg m q := fun q h => by
+    rw [u1.regs, runBlock_reg _ _ _ q s.zero (by simp [pvGa76, BInstr.dst, h])]
+  have a01 : reg n1 a0 = B + 0x420 + BitVec.ofNat 32 0x1744 := by
+    rw [u1.regs]; simp +decide only [runBlock, BInstr.run, pvGa76, upd, ↓reduceIte, aluEval]; rw [hsp]
+    rw [BitVec.add_comm]; rfl
+  obtain ⟨n2, d2, u2⟩ := s1.lw C pv_at_a7e (off' := 0xA82) (by decide)
+    (by rw [a01, show (0x1E0 : Word) = BitVec.ofNat 32 0x1E0 from rfl, add_ofNat_assoc]
+        exact pv_al F (by decide) (by decide))
+  rw [a01, show (0x1E0 : Word) = BitVec.ofNat 32 0x1E0 from rfl, add_ofNat_assoc, w0] at u2
+  obtain ⟨n3, d3, u3⟩ := u2.lw C pv_at_a82 (off' := 0xA86) (by decide)
+    (by rw [upd_ne (by decide) (by decide), a01, show (0x368 : Word) = BitVec.ofNat 32 0x368 from rfl, add_ofNat_assoc]
+        exact pv_al F (by decide) (by decide))
+  rw [upd_ne (by decide) (by decide), a01, show (0x368 : Word) = BitVec.ofNat 32 0x368 from rfl, add_ofNat_assoc,
+    w1] at u3
+  have s3 : St m.mem PV n3 0xA86 (reg n3) := ⟨u3.pc, u3.mem, fun _ => rfl⟩
+  have r93 : reg n3 (9 : Fin 32) = BitVec.ofNat 32 L0 := by rw [u3.regs, upd_ne (by decide) (by decide), upd_same (by decide)]
+  have a03 : reg n3 a0 = BitVec.ofNat 32 L1 := by rw [u3.regs, upd_same (by decide)]
+  have k3 : ∀ q : Fin 32, q ≠ a0 → q ≠ (9 : Fin 32) → reg n3 q = reg m q := fun q h0 h9 => by
+    rw [u3.regs, updz (by rw [updz s1.zero (by decide)]; exact s1.zero) h0, updz s1.zero h9, k1 q h0]
+  obtain ⟨n4, c4, u4⟩ := s3.block pvGa86 C pvGa86_end ⟨trivial, trivial, trivial⟩
+  have s4 : St m.mem PV n4 0xA8A (reg n4) := ⟨u4.pc, u4.mem, fun _ => rfl⟩
+  have k4 : ∀ q : Fin 32, q ≠ a1 → reg n4 q = reg n3 q := fun q h => by
+    rw [u4.regs, runBlock_reg _ _ _ q s3.zero (by simp [pvGa86, BInstr.dst, h])]
+  have a14 : reg n4 a1 = 0 := by
+    rw [u4.regs]; simp +decide only [runBlock, BInstr.run, pvGa86, upd, ↓reduceIte, aluEval]; rw [s3.zero]; rfl
+  obtain ⟨n5, d5, u5⟩ := s4.notTaken C 0xA8C pv_at_a8a (by decide) (by rw [a14, s4.zero]; rfl)
+  have s5 : St m.mem PV n5 0xA8C (reg n5) := ⟨u5.pc, u5.mem, fun _ => rfl⟩
+  have e5 : reg n5 = reg n4 := funext u5.regs
+  -- the longer count in s1, then back to 0xA88 and out at 0xA96
+  have hmax : ∃ n6, Steps n5 n6 ∧ St m.mem PV n6 0xA92 (reg n6) ∧
+      reg n6 (9 : Fin 32) = BitVec.ofNat 32 (max L0 L1) ∧ ∀ q : Fin 32, q ≠ (9 : Fin 32) → reg n6 q = reg n5 q := by
+    by_cases hlt : L1 < L0
+    · obtain ⟨n6, d6, u6⟩ := s5.taken C 0xA92 pv_at_a8c (by decide)
+        (by rw [e5, k4 _ (by decide), a03, k4 _ (by decide), r93]; simp only [branchTaken]
+            rw [ult_ofNat (by omega) (by omega)]; simp [hlt])
+      exact ⟨n6, .single d6, ⟨u6.pc, u6.mem, fun _ => rfl⟩,
+        by rw [u6.regs, e5, k4 _ (by decide), r93, Nat.max_eq_left (by omega)], fun q _ => u6.regs q⟩
+    · obtain ⟨n6, d6, u6⟩ := s5.notTaken C 0xA90 pv_at_a8c (by decide)
+        (by rw [e5, k4 _ (by decide), a03, k4 _ (by decide), r93]; simp only [branchTaken]
+            rw [ult_ofNat (by omega) (by omega)]; simp [hlt])
+      have s6 : St m.mem PV n6 0xA90 (reg n6) := ⟨u6.pc, u6.mem, fun _ => rfl⟩
+      obtain ⟨n7, c7, u7⟩ := s6.block pvGa90 C pvGa90_end ⟨trivial, trivial⟩
+      refine ⟨n7, .cons d6 c7, ⟨u7.pc, u7.mem, fun _ => rfl⟩, ?_, fun q h => ?_⟩
+      · rw [u7.regs]; simp +decide only [runBlock, BInstr.run, pvGa90, upd, ↓reduceIte, aluEval]
+        rw [s6.zero, u6.regs, e5, k4 _ (by decide), a03, Nat.max_eq_right (by omega)]; exact BitVec.zero_add _
+      · rw [u7.regs, runBlock_reg _ _ _ q s6.zero (by simp [pvGa90, BInstr.dst, h]), u6.regs]
+  obtain ⟨n6, c6, s6, r96, k6⟩ := hmax
+  obtain ⟨n7, c7, u7⟩ := s6.block pvGa92 C pvGa92_end ⟨trivial, trivial⟩
+  have s7 : St m.mem PV n7 0xA94 (reg n7) := ⟨u7.pc, u7.mem, fun _ => rfl⟩
+  obtain ⟨n8, d8, u8⟩ := s7.jump C pv_at_a94 (off' := 0xA88) (by decide) (by rw [s7.pc]; decide)
+  have s8 : St m.mem PV n8 0xA88 (reg n8) := ⟨u8.pc, u8.mem, fun _ => rfl⟩
+  obtain ⟨n9, c9, u9⟩ := s8.block pvGa88 C pvGa88_end ⟨trivial, trivial⟩
+  have s9 : St m.mem PV n9 0xA8A (reg n9) := ⟨u9.pc, u9.mem, fun _ => rfl⟩
+  have a19 : reg n9 a1 = 1 := by
+    rw [u9.regs]; simp +decide only [runBlock, BInstr.run, pvGa88, upd, ↓reduceIte, aluEval]
+    rw [u8.regs, u7.regs]; simp +decide only [runBlock, BInstr.run, pvGa92, upd, ↓reduceIte, aluEval]
+    rw [s6.zero]; rfl
+  have k9 : ∀ q : Fin 32, q ≠ a1 → reg n9 q = reg n6 q := fun q h => by
+    rw [u9.regs, runBlock_reg _ _ _ q s8.zero (by simp [pvGa88, BInstr.dst, h]), u8.regs, u7.regs,
+      runBlock_reg _ _ _ q s6.zero (by simp [pvGa92, BInstr.dst, h])]
+  obtain ⟨n10, d10, u10⟩ := s9.taken C 0xA96 pv_at_a8a (by decide) (by rw [a19, s9.zero]; decide)
+  have s10 : St m.mem PV n10 0xA96 (reg n10) := ⟨u10.pc, u10.mem, fun _ => rfl⟩
+  have k10 : ∀ q : Fin 32, q ≠ a1 → q ≠ a0 → q ≠ (9 : Fin 32) → reg n10 q = reg m q := fun q h1 h0 h9 => by
+    rw [u10.regs, k9 q h1, k6 q h9, e5, k4 q h1, k3 q h0 h9]
+  have r910 : reg n10 (9 : Fin 32) = BitVec.ofNat 32 (max L0 L1) := by rw [u10.regs, k9 _ (by decide), r96]
+  obtain ⟨n11, c11, u11⟩ := s10.block pvGa96 C pvGa96_end ⟨trivial, trivial, trivial, trivial, trivial, trivial, trivial⟩
+  have s11 : St n11.mem PV n11 0xAAE (reg n11) := ⟨u11.pc, rfl, fun _ => rfl⟩
+  have m11 : n11.mem = m.mem := s10.mem ▸ u11.mem
+  have k11 : ∀ q : Fin 32, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ (20 : Fin 32) → reg n11 q = reg n10 q :=
+    fun q h0 h1 h2 h20 => by rw [u11.regs, runBlock_reg _ _ _ q s10.zero (by simp [pvGa96, BInstr.dst, h0, h1, h2, h20])]
+  have E11 : PvEnv6 n11.mem := by rw [m11]; exact E
+  have sp10 : reg n10 sp = B + 0x420 := by rw [k10 _ (by decide) (by decide) (by decide), hsp]
+  have a011 : reg n11 a0 = B + 0x420 + BitVec.ofNat 32 0xE10 := by
+    rw [u11.regs]; simp +decide only [runBlock, BInstr.run, pvGa96, upd, ↓reduceIte, aluEval, sp10, sp_e10]
+  have a111 : reg n11 a1 = BitVec.ofNat 32 p384IdentityAddress := by
+    rw [u11.regs]; simp +decide only [runBlock, BInstr.run, pvGa96, upd, ↓reduceIte, aluEval]
+  have a211 : reg n11 a2 = BitVec.ofNat 32 0x90 := by
+    rw [u11.regs]; simp +decide only [runBlock, BInstr.run, pvGa96, upd, ↓reduceIte, aluEval]
+  obtain ⟨n12, P12, K12, V12⟩ := pv_mcK F E11.E.E.E.E s11 pv_at_aae pv_at_ab2 (by decide) (by decide)
+    (by rw [k11 _ (by decide) (by decide) (by decide) (by decide), sp10]) a011 a111 a211
+    (by decide) (by decide) (by decide)
+  have E12 : PvEnv6 n12.mem := E11.fr F P12.fr
+  have hidp := E11.E.E.E.E.D2.idp
+  have hA : ptV n12.mem B 0xE10 = idPt := by
+    unfold ptV idPt
+    rw [accV_KD (M := n11.mem) (K := BitVec.ofNat 32 p384IdentityAddress) (d := 0) 12 fun q hq => by
+        have := V12 q (by omega); rwa [Nat.zero_add],
+      code_accV hidp 0 12 (by decide),
+      accV_KD (M := n11.mem) (K := BitVec.ofNat 32 p384IdentityAddress) (d := 0x30) 12 fun q hq => by
+        have := V12 (0x30 + q) (by omega)
+        rwa [show 0xE10 + (0x30 + q) = 0xE10 + 0x30 + q by omega] at this,
+      code_accV hidp 0x30 12 (by decide),
+      accV_KD (M := n11.mem) (K := BitVec.ofNat 32 p384IdentityAddress) (d := 0x60) 12 fun q hq => by
+        have := V12 (0x60 + q) (by omega)
+        rwa [show 0xE10 + (0x60 + q) = 0xE10 + 0x60 + q by omega] at this,
+      code_accV hidp 0x60 12 (by decide)]
+  have M12 : GM B n12.mem T0 T1 D0 D1 RM :=
+    (M.keep (M' := n11.mem) (c := 0x1294) (w := 0) (fun e _ _ => by rw [m11]) (.inl ⟨by decide, by decide⟩)).keep K12
+      (.inr ⟨by decide, by decide⟩)
+  obtain ⟨n13, c13, u13⟩ := P12.st.block pvGab6 E12.E.E.E.E.C.self pvGab6_end
+    ⟨trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial⟩
+  have s13 : St n12.mem PV n13 0xADA (reg n13) := ⟨u13.pc, u13.mem, fun _ => rfl⟩
+  have r9_12 : reg n12 (9 : Fin 32) = BitVec.ofNat 32 (max L0 L1) := by
+    rw [P12.regs _ (by decide), k11 _ (by decide) (by decide) (by decide) (by decide), r910]
+  have sp12 : reg n12 sp = B + 0x420 := by
+    rw [P12.regs _ (by decide), k11 _ (by decide) (by decide) (by decide) (by decide), sp10]
+  have k13 : ∀ q : Fin 32, q.val ∈ [2, 3, 4] → reg n13 q = reg m q := fun q hq => by
+    rw [u13.regs, runBlock_reg _ _ _ q P12.st.zero (by revert hq; revert q; decide), P12.regs q (by revert hq; revert q; decide),
+      k11 q (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide), k10 q (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide)]
+  have r913 : reg n13 (9 : Fin 32) = BitVec.ofNat 32 (max L0 L1) := by
+    rw [u13.regs, runBlock_reg _ _ _ _ P12.st.zero (by decide), r9_12]
+  have r21 : reg n13 (21 : Fin 32) = 0 := by
+    rw [u13.regs]; simp +decide only [runBlock, BInstr.run, pvGab6, upd, ↓reduceIte, aluEval]; rw [P12.st.zero]; rfl
+  have fr : ∀ x, PvR B x → n13.mem x = m.mem x := fun x hx => by rw [s13.mem, P12.fr x hx, m11]
+  have st : Steps m n13 := c1.trans (.cons d2 (.cons d3 (c4.trans (.cons d5 (c6.trans (c7.trans (.cons d8 (c9.trans
+    (.cons d10 (c11.trans (P12.steps.trans c13)))))))))))
+  have E13 : PvEnv6 n13.mem := by rw [s13.mem]; exact E12
+  have M13 : GM B n13.mem T0 T1 D0 D1 RM := by rw [s13.mem]; exact M12
+  have A13 : ptV n13.mem B 0xE10 = idPt := by rw [s13.mem]; exact hA
+  by_cases h0 : max L0 L1 = 0
+  · obtain ⟨n14, d14, u14⟩ := s13.taken E12.E.E.E.E.C.self 0xBEE pv_at_ada (by decide)
+      (by rw [r913, h0, s13.zero]; rfl)
+    rw [ite_eq_left h0]
+    exact ⟨n14, st.trans (.single d14), by rw [u14.mem, ← s13.mem]; exact E13, fun x hx => by rw [u14.mem, ← s13.mem, fr x hx],
+      ⟨u14.pc, rfl, fun _ => rfl⟩, fun h => absurd h0 h, by rw [u14.regs, k13 sp (by decide), hsp],
+      by rw [u14.regs, k13 _ (by decide)], by rw [u14.regs, k13 _ (by decide)], by rw [u14.regs, r21],
+      by rw [u14.mem, ← s13.mem]; exact M13, by rw [u14.mem, ← s13.mem]; exact A13⟩
+  · obtain ⟨n14, d14, u14⟩ := s13.notTaken E12.E.E.E.E.C.self 0xADE pv_at_ada (by decide)
+      (by rw [r913, s13.zero]; simp only [branchTaken]
+          exact beq_eq_false_iff_ne.2 (ofNat_ne0 (by omega) (by omega)))
+    rw [ite_eq_right h0]
+    have hv : ∀ q : Fin 32, reg n14 q = (runBlock pvGab6 (n12.mem, reg n12)).2 q := fun q => by rw [u14.regs, u13.regs]
+    refine ⟨n14, st.trans (.single d14), by rw [u14.mem, ← s13.mem]; exact E13,
+      fun x hx => by rw [u14.mem, ← s13.mem, fr x hx], ⟨u14.pc, rfl, fun _ => rfl⟩, fun _ => ?_,
+      by rw [u14.regs, k13 sp (by decide), hsp], by rw [u14.regs, k13 _ (by decide)], by rw [u14.regs, k13 _ (by decide)],
+      by rw [u14.regs, r21], by rw [u14.mem, ← s13.mem]; exact M13, by rw [u14.mem, ← s13.mem]; exact A13⟩
+    have z12 := P12.st.zero
+    have r20 : reg n12 (20 : Fin 32) = 0x90 := by
+      rw [P12.regs _ (by decide), u11.regs]; simp +decide only [runBlock, BInstr.run, pvGa96, upd, ↓reduceIte, aluEval]
+    refine ⟨by rw [u14.regs, k13 sp (by decide), hsp], by rw [u14.regs, k13 _ (by decide)],
+      by rw [u14.regs, k13 _ (by decide)], ?_, by rw [u14.regs, r913, show max L0 L1 - 1 + 1 = max L0 L1 by omega],
+      by rw [hv, runBlock_reg _ _ _ _ z12 (by decide), r20], ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · rw [hv]; simp +decide only [runBlock, BInstr.run, pvGab6, upd, ↓reduceIte, aluEval]
+    · rw [hv]; simp +decide only [runBlock, BInstr.run, pvGab6, upd, ↓reduceIte, aluEval]
+    · rw [hv]; simp +decide only [runBlock, BInstr.run, pvGab6, upd, ↓reduceIte, aluEval]
+      rw [sp12, r9_12]; exact s7_val _ _ (by omega)
+    · rw [hv]; simp +decide only [runBlock, BInstr.run, pvGab6, upd, ↓reduceIte, aluEval]
+    · rw [hv]; simp +decide only [runBlock, BInstr.run, pvGab6, upd, ↓reduceIte, aluEval]
+    · rw [hv]; simp +decide only [runBlock, BInstr.run, pvGab6, upd, ↓reduceIte, aluEval, sp12]; rfl
+    · rw [hv]; simp +decide only [runBlock, BInstr.run, pvGab6, upd, ↓reduceIte, aluEval]
+
 end C3.RV32.Pv
