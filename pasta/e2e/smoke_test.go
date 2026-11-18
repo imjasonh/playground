@@ -78,6 +78,7 @@ var diagnoseOnlyRules = []string{
 	"yaml_empty_value",
 	"gha_security",
 	"terraform_security",
+	"terraform_github_oidc",
 	"html_deprecated_tags",
 	"html_img_alt",
 	"html_lang",

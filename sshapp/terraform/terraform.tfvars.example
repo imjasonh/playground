@@ -15,9 +15,6 @@ domain     = "example.com"
 #   { cidr_block = "203.0.113.0/24", display_name = "office" },
 # ]
 
-# Create GitHub Actions WIF once you are ready to deploy from CI:
-# github_repository = "imjasonh/playground"
-
 # Add more Wish apps by extending this map (and adding apps/<name>/ under sshapp/).
 # apps = {
 #   hello = {

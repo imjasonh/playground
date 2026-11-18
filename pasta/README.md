@@ -256,6 +256,7 @@ Omitted: rules that need a scope chain, CFG, or ESLint option object (`no-undef`
 | Path | What it does |
 |---|---|
 | [terraform_security](./analyzers/terraform_security/terraform_security.cue) | Terraform and OpenTofu security checks inspired by [Checkov](https://github.com/bridgecrewio/checkov): unpinned modules, public RDS, S3, and security groups, missing encryption, IMDSv2, and IAM `*:*` |
+| [terraform_github_oidc](./analyzers/terraform_github_oidc/terraform_github_oidc.cue) | GitHub Actions OIDC trust that's too broad: GCP Workload Identity providers with no repository check, IAM members on a whole pool or a repository name, AWS trust policies without a `sub` condition or with a wildcard owner, and repositories matched by name instead of `repository_id` |
 
 **HTML**
 
