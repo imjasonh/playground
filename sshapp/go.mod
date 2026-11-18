@@ -3,7 +3,7 @@ module github.com/imjasonh/playground/sshapp
 go 1.27.0
 
 require (
-	charm.land/bubbletea/v2 v2.1.1
+	charm.land/bubbletea/v2 v2.1.2
 	charm.land/ssh v0.4.3
 	charm.land/wish/v2 v2.0.5
 	cloud.google.com/go/storage v1.71.0
@@ -32,7 +32,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/keygen v0.5.4 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20261023060817-a45b7c86333f // indirect
-	github.com/charmbracelet/x/ansi v0.11.9 // indirect
+	github.com/charmbracelet/x/ansi v0.11.10 // indirect
 	github.com/charmbracelet/x/conpty v0.2.0 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
