@@ -740,4 +740,121 @@ theorem dq_sq_post {M : Word → BitVec 8} {S : Word} {n : Machine} (C : DqCode 
       k3 q (ne 8 rfl) (ne 9 rfl) (ne 18 rfl) (ne 20 rfl),
       k2' q (ne a0 rfl) (ne a1 rfl) (ne a2 rfl) (ne a3 rfl) (ne a4 rfl) (ne a5 rfl) (ne a6 rfl) (ne ra rfl) (ne 24 rfl)]
 
+theorem accV_zero {M : Word → BitVec 8} {b : Word} :
+    ∀ n, (∀ i, i < n → memLoad32 M (b + BitVec.ofNat 32 (4 * i)) = 0) → accV M b n = 0
+  | 0, _ => rfl
+  | n + 1, h => by
+    rw [accV_succ1, accV_zero n fun i hi => h i (by omega), h n (by omega), show (0 : Word).toNat = 0 from rfl,
+      Nat.zero_mul]
+
+/-- The registers a squaring leaves alone. -/
+def sqKeep (q : Fin 32) : Bool := q.val ∈ [2, 3, 4, 19, 21, 22, 23, 25, 26]
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 16000000 in
+/-- **One squaring in Montgomery form**, from 0x34E to the loop's head at
+0x348: for the working value `W < N` at `S + 0x98C` and the modulus `N`
+at `S + 0x134`, it leaves `R < N` at `S + 0x98C` with
+`R · 2³⁸⁴ ≡ W · W (mod N)`, and counts the pass in `a1`. -/
+theorem dq_sq {M : Word → BitVec 8} {S : Word} {n : Machine} {j : Nat} (C : DqCode M) (F : DqFrame S)
+    (s : St M DP n 0x34E (reg n)) (rsp : reg n sp = S) (ra1 : reg n a1 = BitVec.ofNat 32 j)
+    (r25 : reg n (25 : Fin 32) = S + BitVec.ofNat 32 0x98C) (r22 : reg n (22 : Fin 32) = 12)
+    (r19 : reg n (19 : Fin 32) = S + BitVec.ofNat 32 0x9BC) (r23 : reg n (23 : Fin 32) = 0xFFFFFFFF)
+    (r21 : reg n (21 : Fin 32) = S + BitVec.ofNat 32 0x138) (r26 : reg n (26 : Fin 32) = S + BitVec.ofNat 32 0x990)
+    (r18 : reg n (18 : Fin 32) = S + BitVec.ofNat 32 0x9C0)
+    (hN0 : memLoad32 M (S + BitVec.ofNat 32 0x134) = 0xFFFFFFFF)
+    (hW : accV M (S + BitVec.ofNat 32 0x98C) 12 < accV M (S + BitVec.ofNat 32 0x134) 12) :
+    ∃ n', Steps n n' ∧ St n'.mem DP n' 0x348 (reg n') ∧ DqCode n'.mem ∧
+      accV n'.mem (S + BitVec.ofNat 32 0x98C) 12 < accV M (S + BitVec.ofNat 32 0x134) 12 ∧
+      accV n'.mem (S + BitVec.ofNat 32 0x98C) 12 * 2 ^ 384 % accV M (S + BitVec.ofNat 32 0x134) 12 =
+        accV M (S + BitVec.ofNat 32 0x98C) 12 * accV M (S + BitVec.ofNat 32 0x98C) 12 %
+          accV M (S + BitVec.ofNat 32 0x134) 12 ∧
+      reg n' a1 = BitVec.ofNat 32 j + 1 ∧ reg n' (18 : Fin 32) = S + BitVec.ofNat 32 0x9C0 ∧
+      (∀ x, Sep (S + 0xFFFFFFB0) 0x50 x 1 → Sep (S + BitVec.ofNat 32 0x3C) 4 x 1 →
+        Sep (S + BitVec.ofNat 32 0x62C) 48 x 1 → Sep (S + BitVec.ofNat 32 0x98C) 0x90 x 1 → n'.mem x = M x) ∧
+      ∀ q, sqKeep q = true → reg n' q = reg n q := by
+  have hSl := F.lo; have hSh := F.hi; have hSa := F.al
+  obtain ⟨n1, c1, u1, C1, wcopy, wzero, w3C, fr1, e27, e17, e16, e5, k1⟩ :=
+    dq_sq_pre (j := j) C F s rsp ra1 r25 r22
+  have k1' : ∀ q, sqKeep q = true → reg n1 q = reg n q := fun q hq => k1 q (by revert hq; revert q; decide)
+  have sep98 : ∀ d, d + 4 ≤ 0xA50 → (0x98C + 0x60 ≤ d ∨ d + 4 ≤ 0x98C) →
+      Sep (S + BitVec.ofNat 32 0x98C) 0x60 (S + BitVec.ofNat 32 d) 4 :=
+    fun d h1 h2 => sepS S h2 (by decide) (by omega)
+  have hb16 : (S + BitVec.ofNat 32 (2 ^ 32 - 16)).toNat = S.toNat - 16 := F.below 16 (by decide) (by decide)
+  have lo16 : ∀ d, d + 4 ≤ 0xA50 → Sep (S + BitVec.ofNat 32 (2 ^ 32 - 16)) 16 (S + BitVec.ofNat 32 d) 4 := fun d hd =>
+    sep_of_le (by rw [hb16, F.at d (by omega)]; omega) (by rw [F.at d (by omega)]; omega)
+  have nfr : ∀ i, i < 12 → memLoad32 n1.mem (S + BitVec.ofNat 32 (0x134 + 4 * i)) =
+      memLoad32 M (S + BitVec.ofNat 32 (0x134 + 4 * i)) := fun i hi =>
+    memLoad32_congr fun q hq => fr1 _ ((lo16 _ (by omega)).subR (c := q) (l := 1) (by omega))
+      ((sepS S (c := 0x3C) (n := 4) (d := 0x134 + 4 * i) (k := 4) (.inl (by omega)) (by decide) (by omega)).subR
+        (c := q) (l := 1) (by omega))
+      ((sep98 _ (by omega) (.inr (by omega))).subR (c := q) (l := 1) (by omega))
+  have eN : accV n1.mem (S + BitVec.ofNat 32 0x134) 12 = accV M (S + BitVec.ofNat 32 0x134) 12 :=
+    accV_congr2 12 fun i hi => by rw [add_ofNat_assoc, nfr i hi]
+  have eX : accV n1.mem (S + BitVec.ofNat 32 0x9BC) 12 = accV M (S + BitVec.ofNat 32 0x98C) 12 :=
+    accV_congr2 12 fun i hi => by rw [add_ofNat_assoc, add_ofNat_assoc, wcopy i hi]
+  have eA0 : accV n1.mem (S + BitVec.ofNat 32 0x98C) 12 = 0 :=
+    accV_zero 12 fun i hi => by rw [add_ofNat_assoc]; exact wzero i hi
+  have eN0 : memLoad32 n1.mem (S + BitVec.ofNat 32 0x134) = 0xFFFFFFFF := by
+    have := nfr 0 (by decide); simp only [Nat.mul_zero, Nat.add_zero] at this; rw [this, hN0]
+  have hNpos : 0 < accV M (S + BitVec.ofNat 32 0x134) 12 := by omega
+  -- the loop
+  obtain ⟨n2, M2, c2, u2, hc2, hf2, ⟨U, hU⟩, hbd2, k2⟩ := dq_outer (B := DP) (acc := S + BitVec.ofNat 32 0x98C)
+    (xp := S + BitVec.ofNat 32 0x9BC) (np := S + BitVec.ofNat 32 0x134) (M0 := n1.mem)
+    (by rw [F.at _ (by decide)]; omega) (by rw [F.at _ (by decide)]; omega) (by rw [F.at _ (by decide)]; omega)
+    (by rw [F.at _ (by decide)]; omega) (sepS S (.inl (by decide)) (by decide) (by decide))
+    (sepS S (.inr (by decide)) (by decide) (by decide)) (F.sepHi (by decide) (by decide) (by decide)) eN0
+    (by rw [eX, eN]; exact hW) 11 0 (by decide) u1 C1.self (fun _ _ => rfl)
+    ⟨0, by rw [eA0, e27, show (0 : Word).toNat = 0 from rfl, Nat.zero_mul, Nat.add_zero, Nat.mul_zero, Nat.zero_mul,
+      Nat.add_zero, show accV n1.mem (S + BitVec.ofNat 32 0x9BC) 0 = 0 from rfl, Nat.zero_mul]⟩
+    (by rw [eA0, e27, eN, show (0 : Word).toNat = 0 from rfl, Nat.zero_mul, Nat.add_zero]; omega)
+    (by rw [e5]; rfl) (by rw [k1' 19 rfl]; exact r19)
+    (by rw [e16]; have := wcopy 0 (by decide); simp only [Nat.mul_zero, Nat.add_zero] at this; exact this.symm)
+    (by rw [k1' 23 rfl]; exact r23) (by rw [k1' 25 rfl]; exact r25)
+    (by rw [k1' 21 rfl, r21, add_ofNat_assoc])
+    (by rw [k1' 26 rfl, r26, add_ofNat_assoc]) (by rw [k1 18 (by decide), r18, add_ofNat_assoc]) e17 (by rw [k1' 22 rfl]; exact r22)
+  have h2hi : ∀ x : Word, 0x40000000 ≤ x.toNat → M2 x = M x := fun x hx => by
+    rw [hf2 x (F.hiOut (c := 0x98C) (n := 48) (by decide) hx)]
+    exact fr1 x (F.hiOutB (c := 16) (by decide) (by decide) hx) (F.hiOut (c := 0x3C) (n := 4) (by decide) hx)
+      (F.hiOut (c := 0x98C) (n := 0x60) (by decide) hx)
+  have C2 := C.hi h2hi
+  have sp2 : reg n2 sp = S := by rw [k2 sp rfl, k1' sp rfl]; exact rsp
+  obtain ⟨n3, Dv, b, c3, u3, C3, hb, hDv, hsub, hres, ha13, h183, fr3, k3⟩ := dq_sq_post C2 F u2 sp2
+  -- the arithmetic
+  have eN2 : accV M2 (S + BitVec.ofNat 32 0x134) 12 = accV M (S + BitVec.ofNat 32 0x134) 12 := by
+    rw [← eN]
+    exact accV_congr2 12 fun i hi => memLoad32_congr fun q hq => hf2 _ (by
+      rw [add_ofNat_assoc, add_ofNat_assoc]
+      exact sepS S (c := 0x98C) (n := 48) (d := 0x134 + (4 * i + q)) (k := 1) (.inr (by omega)) (by decide) (by omega))
+  rw [eN2] at hsub
+  obtain ⟨A, hA⟩ : ∃ A, accV M2 (S + BitVec.ofNat 32 0x98C) 12 = A := ⟨_, rfl⟩
+  obtain ⟨N, hN⟩ : ∃ N, accV M (S + BitVec.ofNat 32 0x134) 12 = N := ⟨_, rfl⟩
+  obtain ⟨mc, hmc⟩ : ∃ mc, (reg n2 (27 : Fin 32)).toNat = mc := ⟨_, rfl⟩
+  rw [hA, hN] at hsub
+  rw [hA, hmc] at hres
+  rw [hA, hmc, show (2 : Nat) ^ (32 * 12) = 2 ^ 384 from rfl, eN, hN, eX] at hU
+  rw [hA, hmc, show (2 : Nat) ^ (32 * 12) = 2 ^ 384 from rfl, eN, hN] at hbd2
+  have hNl : N < 2 ^ 384 := by rw [← hN]; exact accV_lt M _ 12
+  have fin := mm_final_arith hDv hNl hbd2 hsub (mb_le1 b)
+  rw [hN] at hNpos
+  have hR : accV n3.mem (S + BitVec.ofNat 32 0x98C) 12 = (A + mc * 2 ^ 384) % N := by rw [hres, fin]
+  refine ⟨n3, c1.trans (c2.trans c3), u3, C3, by rw [hN, hR]; exact Nat.mod_lt _ hNpos,
+    by rw [hN, hR]; exact mont_congr rfl hU, ?_, h183, fun x h50 h3C h62 h98 => ?_, fun q hq => ?_⟩
+  · rw [ha13, show memLoad32 M2 (S + BitVec.ofNat 32 0x3C) = memLoad32 n1.mem (S + BitVec.ofNat 32 0x3C) from
+      memLoad32_congr fun q hq => hf2 _ (by
+        rw [add_ofNat_assoc]
+        exact sepS S (c := 0x98C) (n := 48) (d := 0x3C + q) (k := 1) (.inr (by omega)) (by decide) (by omega)), w3C]
+  · have hA48 : Sep (S + BitVec.ofNat 32 0x98C) 48 x 1 := by
+      have := h98.sub (c := 0) (l := 48) (by decide); rwa [add_ofNat_zero] at this
+    have hE48 : Sep (S + BitVec.ofNat 32 0x9EC) 48 x 1 := by
+      have := h98.sub (c := 0x60) (l := 48) (by decide); rwa [add_ofNat_assoc] at this
+    have h60 : Sep (S + BitVec.ofNat 32 0x98C) 0x60 x 1 := by
+      have := h98.sub (c := 0) (l := 0x60) (by decide); rwa [add_ofNat_zero] at this
+    have h16 : Sep (S + BitVec.ofNat 32 (2 ^ 32 - 16)) 16 x 1 := by
+      have := h50.sub (c := 0x40) (l := 16) (by decide)
+      rwa [show S + 0xFFFFFFB0 + BitVec.ofNat 32 0x40 = S + BitVec.ofNat 32 (2 ^ 32 - 16) by rw [BitVec.add_assoc]; rfl]
+        at this
+    rw [fr3 x h50 h62 hA48 hE48, hf2 x hA48, fr1 x h16 h3C h60]
+  · rw [k3 q (by revert hq; revert q; decide), k2 q (by revert hq; revert q; decide), k1' q hq]
+
 end C3.RV32.Dq
