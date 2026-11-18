@@ -86,8 +86,8 @@ cargo fmt --check
 cargo clippy --lib --locked -- -D warnings
 ```
 
-CI: `.github/workflows/esp32-ble.yml` runs those host checks and a firmware
-cross-build when this directory changes.
+CI: the ESP32 jobs in `.github/workflows/test.yml` run those host checks and a
+firmware cross-build when this directory changes.
 
 ```
 esp32-ble/

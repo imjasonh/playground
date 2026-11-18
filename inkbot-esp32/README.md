@@ -249,10 +249,10 @@ make test
 # cargo test --lib, then provision --dry-run on provisioning.toml.example
 ```
 
-CI: `.github/workflows/inkbot-esp32.yml` always runs on PRs (so it can be a
-required check), then no-ops unless `inkbot-esp32/` changed; when it has work
-it runs host checks plus an Xtensa `make build` of both apps (the shared
-`test.yml` Rust job skips this crate — it needs espup). Pushes to `main` also
+CI: when `inkbot-esp32/` changes, the ESP32 jobs in `.github/workflows/test.yml`
+run host checks (`.github/scripts/test-esp32-host.sh`) plus an Xtensa
+`make build` of both apps (the shared Rust job skips this crate — it needs
+espup). Pushes to `main` also
 run `inkbot-esp32-publish.yml` to push and sign both GHCR images.
 
 ## Layout

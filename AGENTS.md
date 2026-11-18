@@ -224,7 +224,7 @@ The generated `*.xcodeproj` is git-ignored and regenerated in CI.
 The iOS app is **not** a browser app: it has no `index.html`. It is built and
 tested on a macOS runner and, on push to `main`, delivered to **TestFlight**; it
 is not copied to GitHub Pages and (today) does not receive PR preview installs —
-the `ios.yml` workflow tests it on PRs but only ships from `main`.
+`test.yml` tests it on PRs and on `main`, and `ios.yml` ships it from `main`.
 
 The app owns its `project.yml`, `fastlane/`, and single bundle identifier
 (`io.github.imjasonh.playground`); do not add a repo-root Xcode workspace. Do not
@@ -247,8 +247,8 @@ distinguish the two by that line. Unlike iOS (exactly one Playground host),
 own Bundle ID. Do **not** add macOS apps under `ios/`, and do **not** add
 `index.html` (they are not Pages browser apps).
 
-macOS apps are built and tested by `macos.yml` on a macOS runner. On push to
-`main` with Developer ID / Sparkle secrets present, CI notarizes and publishes
+macOS apps are built and tested by `test.yml` on a macOS runner. On push to
+`main` with Developer ID / Sparkle secrets present, `macos.yml` notarizes and publishes
 a Sparkle appcast (see [`docs/macos-sparkle-design.md`](docs/macos-sparkle-design.md)
 and [`docs/macos-sparkle-setup.md`](docs/macos-sparkle-setup.md)); without those
 secrets, CI still runs tests and skips the release. Do not commit `*.xcodeproj`,
@@ -266,24 +266,21 @@ discovery scripts.
 | `deploy-gcp.yml` | push to `main`, pull requests that touch the deploy scripts or a `gcp-deploy.json`, manual | Applies GCP stacks that have a `gcp-deploy.json` (`cloudrun-sqlite`, `stream-boids`, and `wehadababyitsaboy`). GitHub OIDC and Workload Identity Federation authenticate `tofu apply`, so the workflow stores no long-lived GCP key. A pull request runs `tofu plan` as a separate plan service account and comments the plan. Apply runs only on `main`. |
 | `preview.yml` | pull request opened/sync | When a browser app, the posts catalog, or the Pages home-page index changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
-| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, posts catalog, and site index, in one job |
-| `inkbot-esp32.yml` | push to `main`, pull requests, manual | Always runs discover + host/firmware jobs (so they can be required checks); host/firmware no-op when `inkbot-esp32/` (or this workflow) is unchanged (excluded from `test.yml`) |
+| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, Rust, iOS, and macOS apps and ESP32 firmware, the kind end-to-end tests, nescript's example ROMs, the pasta style check, the posts catalog, and the site index, each in its own job. The `test` job fans in their results and is the required check |
 | `inkbot-esp32-publish.yml` | push to `main` touching `inkbot-esp32/**` (or this workflow), manual | Cross-builds inkbot firmware, pushes `ghcr.io/<owner>/playground/inkbot-esp32`, and Cosign-signs the digest (devices poll this for OTA) |
 | `apko-frontend-publish.yml` | push to `main` touching `apko-frontend/**` (or this workflow), manual | Tests `apko-frontend`, builds it with ko for `linux/amd64` and `linux/arm64`, pushes `ghcr.io/<owner>/playground/apko-frontend` tagged with the commit and `latest`, and Cosign-signs the digest. apko configurations name the image in `# syntax=` |
-| `esp32-ble.yml` | push to `main`, pull requests, manual | Always runs discover + host/firmware jobs (so they can be required checks); host/firmware no-op when `esp32-ble/` (or this workflow) is unchanged (excluded from `test.yml`) |
-| `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
-| `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
+| `ios.yml` | push to `main` | Delivers changed iOS apps to TestFlight when the signing secrets are present. `test.yml` tests them |
+| `macos.yml` | push to `main` | Ships notarized Sparkle updates of changed macOS apps when the secrets are present. `test.yml` tests them |
 | `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |
 | `ios-bootstrap-on-merge.yml` | pull request closed (merged) | If the PR had `needs-ios-bootstrap`, immediately re-runs signing bootstrap (races `ios.yml`; usually finishes first) |
 | `ios-signing-bootstrap.yml` | manual (`workflow_dispatch`) + reusable | Creates & stores signing cert/profile in the `match` repo; also called on labeled merges |
-| `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app, plus the Wrangler version that Worker apps deploy with; opens a PR and auto-merges passing updates to `main`, otherwise leaves a PR for review |
+| `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app, the ESP32 firmware crates' host toolchain, and the Wrangler version that Worker apps deploy with; opens a PR and auto-merges passing updates to `main`, otherwise leaves a PR for review |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 | `nyt-crossword-scrape.yml` | daily 01:17 UTC, manual | **App-specific:** fetches NYT crossword solve times with the `NYT_COOKIE` secret and writes `nyt-crossword/data/stats.json` on `gh-pages`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 | `its-not-jaws.yml` | pull requests touching `its-not-jaws/**`, manual | **App-specific:** requires repo secret `CURSOR_API_KEY` (fails if missing), unit-tests the harness, plays one live Cursor Agent SDK game, uploads the result artifact |
 | `nethack-agent.yml` | pull requests touching `nethack-agent/**` or the notes publish scripts, manual | **App-specific:** unit-tests the harness on a fake screen (no notebook writes). The play job installs `nethack-console` and runs the Cursor agent against `/usr/games/nethack` with `grok-4.6`. It writes the SDK token cost to the job summary, seeds `nethack-agent/notebook/` from `automation/nethack-notes`, then publishes that directory back to that branch and opens a pull request to `main` (no auto-merge). It does not commit notes onto the triggering pull request. Requires `CURSOR_API_KEY`. Skips play when the head is `automation/nethack-notes` |
 | `update-litestream.yml` | daily at 00:30 UTC, manual | Pulls upstream Litestream into the `litestream/` subtree with `git subtree merge --squash` (`.github/scripts/update-litestream.sh`). A clean merge runs `go mod tidy` in each module that replaces Litestream with `../litestream`, then opens a pull request from `automation/litestream-update` with auto-merge, so it lands when CI passes. On conflicts, it commits the merge with the conflict markers, opens the pull request without auto-merge, and fails the run. It leaves the branch alone once someone else pushes to it. Uses the `litestream-update` Octo STS identity. Test the script with `bash .github/scripts/update-litestream_test.sh` |
 | `chrome-extension.yml` | pull requests and pushes to `main` touching `chrome-extension/**` or the publish script, manual | **App-specific:** tests the Chrome extension, packs the store zip, and uploads `chrome-extension.zip` as a workflow artifact. The download is the store package. On `main`, uploads that zip to the existing Chrome Web Store item and publishes it when the Chrome Web Store secrets are set. Without those secrets, tests still run and publish is skipped |
-| `nescript.yml` | push to `main`, pull requests, manual | **App-specific:** always runs, so the ROM job can be a required check. The benches, ROM diff, jsnes goldens, GIF check, and Mesen probe no-op when `nescript/` and this workflow are unchanged. `test.yml` still runs fmt, Clippy, and `cargo test` for the compiler. The ROM job uploads the ROMs it built as the `nescript-examples` artifact |
 
 Deploy workflows copy browser app directories as-is (they do **not** run
 `npm install` or build). Go and Rust app directories are not deployed. Only
@@ -358,31 +355,42 @@ neither a deploy nor a comment.
 
 ## Testing (`test.yml`)
 
-Every push to `main` and every pull request runs a single `test` job. It first
-discovers which apps changed
-(`.github/scripts/discover-changed-apps.sh`), then tests **only the changed apps
-of each type**, installing each toolchain (Node, Go, Rust) only when that type
-has work to do and running the browser / Go / Rust / pasta / posts / site-index test legs concurrently via
-an Actions `parallel:` step group (same pattern as `deps.yaml`). When a type has
-no changes its steps are skipped, so the run is one `test` check with no empty
-or skipped legs. On the first push to `main` (no prior commit), every app is
-tested. The **pasta** leg builds the `pasta/` CLI, runs `pasta test` over the
-enrolled `.pasta/` analyzers, and lints the monorepo with `-fail-on=warning`
-(see `.github/scripts/test-pasta.sh`).
+Every push to `main` and every pull request runs a `discover` job that finds
+which apps changed (`.github/scripts/discover-changed-apps.sh`). Then each
+ecosystem runs as its own job on its own runner and tests **only the changed
+apps of that type**: browser apps, Go, Rust, iOS, macOS, ESP32 firmware,
+nescript's example ROMs, pasta, the posts catalog, the site index, and the cache and discovery
+scripts. A job-level `if` skips an
+ecosystem with no changes, so it never starts a runner. On the first push to
+`main` (no prior commit), every app is tested. The **pasta** job builds the
+`pasta/` CLI, runs `pasta test` over the enrolled `.pasta/` analyzers, and
+lints the monorepo with `-fail-on=warning` (see `.github/scripts/test-pasta.sh`).
+
+The last job, `test`, needs every other job and runs even when one fails or is
+skipped. It passes when each job passed or was skipped, and fails otherwise.
+It is the one check that branch protection requires, so a new job in
+`test.yml` must be added to its `needs` list.
 
 The kind end-to-end tests of `git-k8s`, `kube`, `sshapp`, and `ci-substrate`
-run as their own steps in the parallel group
-(`.github/scripts/test-kind-e2e.sh`), beside the Go unit tests, because they
-mostly wait for a cluster and its Pods. Their
-clusters, registries, and ports have different names, so they can share the
-runner. The Rust apps share one target directory (`CARGO_TARGET_DIR`), so
-apps that depend on the same crates compile them once and the job holds one
-copy of the artifacts. The job restores five caches (Go's build cache, npm's package cache, the
-`worker-build` binary, the Rust dependency artifacts, and pasta's cache) from the newest
-entry that a push to `main` saved, matching by prefix so that a new lockfile
-doesn't miss. A pull request that does not run an ecosystem's tests does not
-restore that ecosystem's cache. Only pushes to `main` save one, after the
-tests.
+run in a `kind` matrix job, one runner for each changed module, beside the Go
+unit tests (`.github/scripts/test-kind-e2e.sh`; `--list` prints the modules
+that have one). The iOS, macOS, and ESP32 jobs are matrix jobs too, one
+runner for each changed app. The Go job runs every changed module's unit
+tests, one module after another. The Rust apps share one target directory (`CARGO_TARGET_DIR`),
+so apps that depend on the same crates compile them once and the job holds
+one copy of the artifacts.
+
+Each job restores the caches it uses from the newest entry that a push to
+`main` saved, matching by prefix so that a new lockfile doesn't miss: the
+browser job restores npm's package cache, the Go, kind, and pasta jobs
+restore Go's build cache, the pasta job also restores pasta's cache, and the
+Rust job restores the `worker-build` binary, the Rust dependency artifacts,
+and npm's cache of Wrangler. The ESP32 host and firmware jobs and the nescript
+job each keep their own Cargo cache for their crate, and the nescript job also
+caches its Mesen2 download. Only pushes to `main` save, after the tests, and
+two jobs never save the same cache. Only the Go job saves Go's build cache.
+The setup that the Go-using jobs share is the `.github/actions/setup-go-cache`
+action.
 
 ### Cache sizes
 
@@ -404,7 +412,7 @@ size budget, measured on disk:
 - Key it with the commit SHA and restore it by prefix. Each save is a new
   entry, so nothing depends on an exact match.
 - Bound it before the save. Either remove what the current lockfiles don't
-  name (`Swatinem/rust-cache`, which the ESP32 workflows use, does) or trim
+  name (`prune-cargo-cache.sh` does) or trim
   to a budget, least recently used first
   (`trim-go-build-cache.sh` uses the mtime that the go command sets when it
   uses an entry).
@@ -416,9 +424,17 @@ size budget, measured on disk:
   on error, so a cache problem never fails the job.
 - Cache what costs more to compute than to restore. `test.yml` caches
   Go's build cache (3 GiB budget; a cold compile of every module takes about
-  3 minutes and a warm one 35 seconds), npm's `_cacache` (1.5 GiB), the
+  3 minutes and a warm one 35 seconds), npm's `_cacache` (1.5 GiB for the
+  browser apps, and 512 MiB for Wrangler in the Rust job), the
   `worker-build` binary (256 MiB; it takes 36 seconds to build), and the
-  Rust dependency artifacts (6 GiB). A cold compile of one Worker is about
+  Rust dependency artifacts (6 GiB). Each ESP32 crate has a host cache
+  (2 GiB; inkbot-esp32's crate and tools were 1.2 GB after a prune) and a
+  firmware cache (4 GiB, most of it esp-idf-sys's ESP-IDF build tree), and
+  nescript has one for its benches and release compiler (1 GiB). The
+  firmware prune also keeps what the esp toolchain's standard library
+  lockfile names, because `-Z build-std` compiles std into the target
+  directory. ESP-IDF itself, which embuild installs in each crate's
+  `.embuild/`, isn't cached. A cold compile of one Worker is about
   half a minute, and a warm one recompiles that app's own crate (about a
   second) and reuses the dependencies. The saved `target/` is the dependency
   artifacts only: `prune-cargo-cache.sh` removes the app crates, incremental
@@ -453,15 +469,19 @@ directory changes, so a change under `kube/` tests `git-k8s` too. A change under
 `wehadababyitsaboy/go/` selects that module and every Go app that replaces it.
 `inkbot-esp32/` and `esp32-ble/` have
 a `Cargo.toml` but are excluded from Rust discovery because they need the espup
-Xtensa toolchain. `inkbot-esp32.yml` and `esp32-ble.yml` run those host lib
-tests and firmware cross-builds instead. A change under `.github/wrangler/` (the
+Xtensa toolchain. `discover-esp32-apps.sh` finds them by the
+`[target.xtensa-*-espidf]` table in their `.cargo/config.toml`. The ESP32 jobs
+run their host lib tests and firmware cross-builds instead. A change to
+`test-esp32-host.sh` selects every ESP32 crate, and a change to
+`.github/workflows/<crate>-publish.yml` selects that crate. A change under
+`nescript/` also runs the nescript job. A change under `.github/wrangler/` (the
 pinned Wrangler version) selects every Cloudflare Worker app, and a change to
 `test-rust-apps.sh` or `check-worker-deploy-build.sh` selects every Rust app.
 
 | App type | Selected when its dir has | CI runs, per changed app |
 |----------|---------------------------|--------------------------|
 | Browser | `index.html` **and** `package.json` with a `test` script | `npm ci` → `npm test` → `npm run test:e2e` (if defined; installs Playwright Chromium first) |
-| Go | `go.mod` | `gofmt` (`.github/scripts/check-gofmt.sh` fails the Test job when `gofmt` would change a `.go` file outside `vendor` and `testdata`) → `go build ./...` → `go test -race ./...`. `cloudrun-sqlite` builds and tests with `GOFLAGS=-tags=vfs`, and `litestream` runs the packages that upstream's CI unit-tests, with `-tags vfs` for the root package |
+| Go | `go.mod` | `gofmt` (`.github/scripts/check-gofmt.sh` fails the Go job when `gofmt` would change a `.go` file outside `vendor` and `testdata`) → `go build ./...` → `go test -race ./...`. `cloudrun-sqlite` builds and tests with `GOFLAGS=-tags=vfs`, and `litestream` runs the packages that upstream's CI unit-tests, with `-tags vfs` for the root package |
 | Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then `wrangler deploy --dry-run` with the Wrangler version pinned in `.github/wrangler/package.json` (`.github/scripts/check-worker-deploy-build.sh`, with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path. It fails when that Wrangler doesn't recognize a `wrangler.toml` key. Crates set `[lints.rust] unused = "deny"` so unused methods fail even without clippy. |
 | pasta | `pasta/` / `.pasta/` / lintable sources (`.go`, `.js`, `.ts`, `.tsx`, `.jsx`, `.rs`, `.swift`, `.sh`, `.yml`, `.yaml`, `.html`, `.css`, `.toml`, `.tf`, `.tfvars`, `.hcl`, …) via `discover-pasta.sh` | `go build ./pasta/cmd/pasta` → `pasta test .pasta` → `pasta -fail-on=warning ./...` |
 | posts | any `blog-post.md`, or `.github/scripts/build-blog*` / `test-blog.sh` / `discover-blog.sh` / the blog page templates, via `discover-blog.sh` | `python3 .github/scripts/build-blog_test.py` |
@@ -475,23 +495,31 @@ which the daily dependency update raises to the newest stable release. Worker
 apps' `[build]` command installs the `worker-build` release that matches the
 locked `worker` crate.
 
-**ESP32 firmware is tested by `inkbot-esp32.yml` and `esp32-ble.yml`, not
-`test.yml`.** Stable Linux Cargo cannot build `xtensa-esp32-espidf`. Each
-dedicated workflow installs the esp-rs Xtensa toolchain, runs host
-`cargo test --lib` / clippy, and `make build`s the device image when that
-directory changes. `inkbot-esp32.yml` also runs a provision dry-run and builds
-both the inkbot and maze images. Signed inkbot OTA images are published by
+**ESP32 firmware has two jobs in `test.yml`.** Stable Linux Cargo cannot
+build `xtensa-esp32-espidf`, so the Rust job leaves it out. When a firmware
+directory changes, the `ESP32 host` job runs `test-esp32-host.sh`: `cargo fmt`
+and Clippy on the library and each crate under `tools/`, then `make test`
+(for inkbot-esp32, also a provision dry-run), on the host toolchain that the
+crate's `rust-toolchain.toml` pins. In parallel, the `ESP32 firmware` job
+installs the esp-rs Xtensa toolchain and runs `make build` (for inkbot-esp32,
+both the inkbot and maze images). Signed inkbot OTA images are published by
 `inkbot-esp32-publish.yml` on `main` (see [`inkbot-esp32/docs/ota.md`](inkbot-esp32/docs/ota.md)).
 `esp32-ble` is USB-flash only.
 
-**The iOS app is tested by a separate workflow (`ios.yml`), not `test.yml`,**
-because it needs a macOS runner. A cheap Linux `discover` job reuses the same
-`discover-changed-apps.sh` logic (it emits an `ios` list) and only then
-spins up a `macos-latest` job — so browser/Go/Rust-only PRs never pay for macOS
-minutes. When `ios/` changed, CI runs XcodeGen → `bundle exec fastlane test`
+**The nescript job checks the compiler's output.** The Rust job formats,
+lints, and tests `nescript/` like any Rust app. When `nescript/` changes, the
+`nescript ROMs` job also runs the compile benches, rebuilds every example and
+compares it with the committed ROM, checks that each ROM is loadable iNES,
+diffs every example against its jsnes frame and audio golden, rerecords the
+README GIFs, and has Mesen2 load a `.dbg` file. It uploads the ROMs it built
+as the `nescript-examples` artifact.
+
+**The iOS job runs on a macOS runner** (the `xcode-27` image), and only when
+discovery's `ios` list is not empty, so browser/Go/Rust-only PRs never pay for
+macOS minutes. It runs `ios-ci.sh test`: XcodeGen → `bundle exec fastlane test`
 (unit + UI tests on a Simulator; no signing needed). On push to `main` with
-Apple signing secrets present, it additionally runs `fastlane beta` to upload to
-TestFlight. PRs that need refreshed signing assets get a `needs-ios-bootstrap`
+Apple signing secrets present, `ios.yml` runs `ios-ci.sh ship`, which runs
+`fastlane beta` to upload to TestFlight, at the same time as `test.yml`. PRs that need refreshed signing assets get a `needs-ios-bootstrap`
 label; on merge, a separate workflow re-runs `signing_bootstrap` in parallel
 (usually finishing before the build). Run discovery locally with:
 
@@ -500,11 +528,12 @@ bash .github/scripts/discover-ios-apps.sh --all
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-ios-apps.sh --from-changes
 ```
 
-**macOS apps use the same pattern via `macos.yml`:** Linux discovery emits a
-`macos` list (dirs whose `project.yml` has `platform: macOS`), then a
-`macos-latest` job runs XcodeGen → `fastlane test`. On `main` with Developer ID
-/ Sparkle secrets, it will run `fastlane beta` (notarize + appcast); without
-secrets, tests still run and ship is skipped. Discovery:
+**macOS apps use the same pattern:** discovery emits a `macos` list (dirs whose
+`project.yml` has `platform: macOS`), and the macOS job runs `macos-ci.sh test`
+(XcodeGen → `fastlane test`) on `macos-latest`, one runner for each app. On
+`main` with Developer ID / Sparkle secrets, `macos.yml` runs `macos-ci.sh ship`
+(`fastlane beta`, then notarize + appcast); without secrets, it skips the
+release. Discovery:
 
 ```bash
 bash .github/scripts/discover-macos-apps.sh --all
@@ -519,12 +548,16 @@ Run the per-type discovery helpers locally to see what CI would select:
 bash .github/scripts/discover-testable-apps.sh --all   # browser
 bash .github/scripts/discover-go-modules.sh --all      # Go
 bash .github/scripts/discover-rust-apps.sh --all       # Rust
+bash .github/scripts/discover-esp32-apps.sh --all      # ESP32 firmware
+bash .github/scripts/discover-nescript.sh --all        # nescript ROMs
 bash .github/scripts/discover-pasta.sh --all           # pasta style leg
 bash .github/scripts/discover-blog.sh --all            # posts catalog
 bash .github/scripts/discover-index.sh --all           # Pages home-page index
 
 # Only what a diff touched (what CI uses on a PR)
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-rust-apps.sh --from-changes
+git diff --name-only origin/main...HEAD | bash .github/scripts/discover-esp32-apps.sh --from-changes
+git diff --name-only origin/main...HEAD | bash .github/scripts/discover-nescript.sh --from-changes
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-pasta.sh --from-changes
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-blog.sh --from-changes
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-index.sh --from-changes
@@ -543,6 +576,7 @@ test workflow gates on:
 | Go | `go mod edit -go=<installed minor>.0` when the `go` line is older, then `go get -u ./...`, except `litestream`, which `update-litestream.yml` updates | `gofmt` → `go build ./...` → `go test -race ./...` |
 | Rust | raise `rust-toolchain.toml` to the newest stable release when it's older → `cargo update` | `cargo clippy -D warnings` → `cargo test`; Worker apps also wasm clippy + a release `wasm32-unknown-unknown` build + `wrangler deploy --dry-run` |
 | Wrangler (Worker apps) | `npx npm-check-updates --upgrade` on `.github/wrangler/package.json` | `wrangler deploy --dry-run` for every Worker app, in the Rust leg |
+| ESP32 firmware | raise `rust-toolchain.toml` (the host toolchain) to the newest stable release when it's older; no `cargo update`, because the firmware build needs the Xtensa toolchain | `test-esp32-host.sh`: `cargo fmt --check`, host clippy, and `make test`, in the Rust leg. The pull request's `test` check cross-builds the firmware |
 
 Publishing is all-or-nothing, so a green run never lands a half-broken bump:
 
@@ -596,7 +630,7 @@ discovered automatically — no workflow edits are needed.
 6. Open a PR—preview deploy and CI run automatically.
 
 No workflow edits are required when a new app follows these conventions. The
-Test job fails a browser app that doesn't record visits.
+`test` check fails a browser app that doesn't record visits.
 
 ### Minimal static app
 
@@ -809,7 +843,7 @@ bundle exec fastlane test
 5. Do **not** add `index.html`; macOS apps are not Pages browser apps.
 6. Do **not** put the app under `ios/` — macOS apps are separate top-level apps.
 
-No workflow edits are required for the test path. `macos.yml` discovers the app
+No workflow edits are required for the test path. `test.yml` discovers the app
 from `platform: macOS`. Sparkle release on `main` needs Developer ID / notarization
 secrets (see [`docs/macos-sparkle-design.md`](docs/macos-sparkle-design.md)).
 
@@ -1075,7 +1109,7 @@ bundle exec fastlane test
 | `y/` | One-user microblog (D1 + R2); 260-char posts, images, RSS, passkeys | `cargo test` + clippy + wasm build |
 | `app-attest/` | App Attest handshake + assertion verifier for the Playground iOS experiment — Cloudflare Worker | `cargo test` + clippy + wasm build |
 | `wehadababyitsaboy/rust/` | Library (crate `whbiab`) that sends one usage ping from a Rust CLI to the `wehadababyitsaboy` bucket: `parse` parses a clap CLI, starts a background request for `CLIENT/ARGS?bob=wehadababyitsaboy` with the subcommands and flag names that ran, and returns a `Ping` that waits for it. `git-fuse`, `life-stl`, and `tank-commander` use it. It sends no flag value or positional argument, honors `DO_NOT_TRACK=1` and `WHBIAB_DISABLE=1`, and sends nothing from a debug build | `cargo test` + clippy (a local server stands in for the bucket) |
-| `nescript/` | Statically typed compiler from `.ne` source to an iNES ROM. Imported with `git subtree` from [imjasonh/nescript](https://github.com/imjasonh/nescript), so that history stays reachable | `cargo test` + clippy. `nescript.yml` also runs benches, ROM reproducibility, jsnes frame and audio goldens, and a Mesen2 `.dbg` probe, and uploads the built example ROMs as `nescript-examples`. That job always reports a status and no-ops when `nescript/` is unchanged, so it can be a required check |
+| `nescript/` | Statically typed compiler from `.ne` source to an iNES ROM. Imported with `git subtree` from [imjasonh/nescript](https://github.com/imjasonh/nescript), so that history stays reachable | `cargo test` + clippy. The nescript job in `test.yml` also runs benches, ROM reproducibility, jsnes frame and audio goldens, and a Mesen2 `.dbg` probe, and uploads the built example ROMs as `nescript-examples` |
 
 > **`git-server` has its own agent guide:** read
 > [`git-server/AGENTS.md`](git-server/AGENTS.md) before working in that
@@ -1096,8 +1130,8 @@ auto-discover them. Run their local tests when you change them.
 | `nethack-agent/` | Cursor SDK harness that plays NetHack from the terminal and keeps notes in `notebook/`. The fake screen is tests only and cannot write that notebook. Live play is `npm run play` against `/usr/games/nethack` using `grok-4.6`, and each run prints the token cost the SDK reported. The notebook keeps claims that survive the screen, not a turn log. CI play publishes `notebook/` to `automation/nethack-notes` so the next play can read it before that pull request merges | `cd nethack-agent && npm test` (CI also runs `bash .github/scripts/publish-nethack-notes_test.sh`; the play job runs the real binary when `CURSOR_API_KEY` is set) |
 | `wehadababyitsaboy/` | Terraform for an empty, unreadable Cloud Storage bucket whose hourly usage logs record every request, query string included. CLIs and web pages request `CLIENT/ARGS?bob=wehadababyitsaboy` in it, and `report.sh` counts those requests with a BigQuery external table over the logs. `deploy-gcp.yml` applies it | `bash -n wehadababyitsaboy/report.sh`; `tofu validate` in `terraform/` |
 | `bun-image/` | bun compile + crane image (deno-image cousin; shell scripts, not a Go packager) | `bash bun-image/test.sh` (needs bun; crane for the image half) |
-| `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker and signed GHCR OTA, or `APP=maze` for an offline maze on the same 7.5″ panel. Secrets in NVS (`make provision`). Agent guide: [`inkbot-esp32/AGENTS.md`](inkbot-esp32/AGENTS.md) | host lib tests + provision dry-run + Xtensa cross-build via `inkbot-esp32.yml`; publish + Cosign on `main` via `inkbot-esp32-publish.yml` |
-| `esp32-ble/` | Rust/ESP-IDF firmware: BLE GATT LED control for the iOS ESP32 BLE experiment. USB flash only. Agent guide: [`esp32-ble/AGENTS.md`](esp32-ble/AGENTS.md) | host protocol tests + Xtensa cross-build via `esp32-ble.yml` |
+| `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker and signed GHCR OTA, or `APP=maze` for an offline maze on the same 7.5″ panel. Secrets in NVS (`make provision`). Agent guide: [`inkbot-esp32/AGENTS.md`](inkbot-esp32/AGENTS.md) | host lib tests + provision dry-run + Xtensa cross-build via the ESP32 jobs in `test.yml`; publish + Cosign on `main` via `inkbot-esp32-publish.yml` |
+| `esp32-ble/` | Rust/ESP-IDF firmware: BLE GATT LED control for the iOS ESP32 BLE experiment. USB flash only. Agent guide: [`esp32-ble/AGENTS.md`](esp32-ble/AGENTS.md) | host protocol tests + Xtensa cross-build via the ESP32 jobs in `test.yml` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
 | `chrome-extension/` | Chrome extension. The toolbar button closes tabs that share a URL, and the badge shows how many tabs that click will close. Chrome 150 and later show the same action on the tab menu, next to a Copy N tab URLs item that copies the selected tabs' URLs, one per line. Highlighted base64 adds a selection menu item that copies the decoded text. The toolbar button's right-click menu opens a Tab insights side panel, where Chrome's built-in Gemini Nano (the Prompt API) groups tabs by topic and suggests tabs to close, on the device. The panel can turn that into Chrome tab groups, with a collapsed Likely close group, and can undo closes and grouping. The service worker plans that grouping in the background, every 15 minutes and a minute after tabs change, and turns the badge green when an unseen plan is ready. It never groups tabs itself. Not a Pages app. `chrome-extension.yml` publishes the Chrome Web Store item from `main` and keeps `chrome-extension.zip` as a workflow artifact | `cd chrome-extension && npm test` (also `python3 .github/scripts/chrome_web_store_test.py`) |

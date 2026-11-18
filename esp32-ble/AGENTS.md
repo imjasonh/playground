@@ -12,9 +12,9 @@ Read [`README.md`](README.md) for the flash loop and the on-wire format.
   `cargo clippy --lib` compile `src/protocol.rs` only. Device code lives in
   `src/main.rs` behind the `firmware` feature and `required-features` on the
   `esp32-ble` binary.
-- **Do not add this crate to `test.yml`.** Stable Linux Cargo cannot build
-  `xtensa-esp32-espidf`. `esp32-ble.yml` owns host tests and the Xtensa
-  cross-build, same split as `inkbot-esp32`.
+- **Do not add this crate to the Rust job.** Stable Linux Cargo cannot build
+  `xtensa-esp32-espidf`. The ESP32 jobs in `test.yml` run host tests and the
+  Xtensa cross-build, same as `inkbot-esp32`.
 - **GATT UUIDs and the text protocol are shared with iOS.** Keep
   `src/protocol.rs` and `ios/Sources/Experiments/ESP32BLE/ESP32BLEProtocol.swift`
   in lockstep. Bump `FIRMWARE_ID` when the on-wire contract changes.
@@ -23,8 +23,8 @@ Read [`README.md`](README.md) for the flash loop and the on-wire format.
 - **LED is GPIO 2.** On the Inland / Keyestudio ESP32 core board, D1 is the
   power LED and cannot be toggled. D2 is GPIO 2 and is often unpopulated.
   Commands still drive that pad so an external LED works.
-- **CI:** `esp32-ble.yml` always runs discover + host/firmware jobs (so they
-  can be required checks) and no-ops when `esp32-ble/` is unchanged.
+- **CI:** the `ESP32 host` and `ESP32 firmware` jobs in `test.yml` run when
+  `esp32-ble/` changes.
 
 ## Local commands
 

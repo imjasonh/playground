@@ -35,7 +35,11 @@ impl ByteRect {
         if self.x >= PANEL_WIDTH || self.y >= PANEL_HEIGHT {
             return None;
         }
-        if self.x % 8 != 0 || self.width % 8 != 0 || self.width == 0 || self.height == 0 {
+        if !self.x.is_multiple_of(8)
+            || !self.width.is_multiple_of(8)
+            || self.width == 0
+            || self.height == 0
+        {
             return None;
         }
         let width = (self.width.min(PANEL_WIDTH - self.x) / 8) * 8;

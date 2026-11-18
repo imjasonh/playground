@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Format-check, build, and test the Go modules listed in MODULES as JSON.
 #
-# gofmt failure fails this script, and test.yml runs it in the Test job,
+# gofmt failure fails this script, and test.yml runs it in the Go job,
 # so an unformatted module fails the pull request check.
 set -uo pipefail
 
@@ -79,7 +79,7 @@ for module in "${modules[@]}"; do
     # node-image Docker-socket e2e builds/runs several images; allow headroom.
     # pasta e2e shallow-clones real repos and cold-parses them; allow headroom.
     # The kind end-to-end tests of git-k8s, kube, sshapp, and ci-substrate run
-    # in parallel steps, in test-kind-e2e.sh.
+    # in their own jobs, in test-kind-e2e.sh.
     if [ "$module" = "pasta" ]; then
       # CGO_ENABLED=0 builds parse every grammar with the wasm backend.
       go test -race -v -timeout 30m ./... && CGO_ENABLED=0 go test -v ./internal/treesitter/

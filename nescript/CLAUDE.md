@@ -73,12 +73,12 @@ cargo clippy --all-targets -- -D warnings   # mandatory; fix or #[allow]
 ./target/release/nescript verify examples/*.nes            # structural ROM check
 ```
 
-**Always pass `--all-targets` to `cargo test`.** The playground `test`
+**Always pass `--all-targets` to `cargo test`.** The playground Rust
 job runs `cargo test --locked` and does not build benches. The
-`nescript` workflow runs `cargo test --locked --benches`, which
+`nescript` job runs `cargo test --locked --benches`, which
 smoke-runs `benches/compile.rs`. A plain `cargo test` skips that bench.
-A bench that does not compile can pass the shared job and fail
-`nescript.yml`. That happened once before this directory moved
+A bench that does not compile can pass the Rust job and fail
+the `nescript` job. That happened once before this directory moved
 (commit `889074a`).
 
 `scripts/pre-commit` runs `cargo fmt --check`, Clippy, `cargo test
@@ -208,13 +208,13 @@ failing CI — that defeats the entire purpose of the harness.
 
 ### CI integration
 
-The `nescript` workflow at the repository root
-(`.github/workflows/nescript.yml`) builds all examples, then runs the
+The `nescript` job in the repository's test workflow
+(`.github/workflows/test.yml`) builds all examples, then runs the
 harness in Node. It does not install Chrome. The ROMs from that build
 are uploaded as `nescript-examples`, including when the committed copy
 is stale. On failure it also uploads the `actual/` directory and
 `report.json` as an artifact named `nescript-emulator-diff`. The
-workflow does not pass `UPDATE_GOLDENS`. If a golden changes, update it
+job does not pass `UPDATE_GOLDENS`. If a golden changes, update it
 in the same commit and review the diff.
 
 ## Conventions worth knowing

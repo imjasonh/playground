@@ -1,14 +1,24 @@
 #!/usr/bin/env bash
-# Generate and test the macOS apps listed in MACOS_APPS as a JSON array.
-# Runs on macOS with Xcode available.
+# Test or ship the macOS apps listed in MACOS_APPS as a JSON array. Runs on
+# macOS with Xcode available. test.yml runs `macos-ci.sh test`, and macos.yml
+# runs `macos-ci.sh ship` on main.
 #
 # For each app:
 #   1. xcodegen generate          (build the .xcodeproj from project.yml)
 #   2. bundle install             (fastlane, pinned by the app's Gemfile)
-#   3. bundle exec fastlane test  (unit tests on macOS)
-#   4. bundle exec fastlane beta  (only when DEPLOY=true → notarize + Sparkle zip)
-#   5. publish-macos-sparkle.sh   (GitHub Release + gh-pages appcast)
+#   3. bundle exec fastlane test  (test: unit tests on macOS)
+#      bundle exec fastlane beta  (ship: notarize + Sparkle zip), then
+#      publish-macos-sparkle.sh   (GitHub Release + gh-pages appcast)
 set -uo pipefail
+
+mode="${1:?usage: macos-ci.sh test|ship}"
+case "$mode" in
+  test | ship) ;;
+  *)
+    echo "usage: macos-ci.sh test|ship" >&2
+    exit 2
+    ;;
+esac
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$repo_root"
@@ -27,33 +37,29 @@ fi
 export FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT="${FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT:-120}"
 export FASTLANE_XCODEBUILD_SETTINGS_RETRIES="${FASTLANE_XCODEBUILD_SETTINGS_RETRIES:-10}"
 
-deploy="${DEPLOY:-false}"
 result=0
 
 for app in "${apps[@]}"; do
-  echo "::group::Generate + test ${app}"
-
-  if (
-    set -euo pipefail
-    cd "$app"
-    xcodegen generate
-    bundle install
-    bundle exec fastlane test
-  ); then
-    echo "${app}: tests passed"
-  else
-    echo "::error title=macOS tests failed::${app}: fastlane test"
-    result=1
-    echo "::endgroup::"
-    continue
-  fi
-  echo "::endgroup::"
-
-  if [ "$deploy" = "true" ]; then
-    echo "::group::Ship ${app} (Developer ID + Sparkle)"
+  echo "::group::${mode} ${app}"
+  if [ "$mode" = "test" ]; then
     if (
       set -euo pipefail
       cd "$app"
+      xcodegen generate
+      bundle install
+      bundle exec fastlane test
+    ); then
+      echo "${app}: tests passed"
+    else
+      echo "::error title=macOS tests failed::${app}: fastlane test"
+      result=1
+    fi
+  else
+    if (
+      set -euo pipefail
+      cd "$app"
+      xcodegen generate
+      bundle install
       bundle exec fastlane beta
       meta="$repo_root/$app/fastlane/release/sparkle-metadata.json"
       if [[ ! -f "$meta" ]]; then
@@ -70,8 +76,8 @@ for app in "${apps[@]}"; do
       echo "::error title=macOS release failed::${app}: fastlane beta / publish"
       result=1
     fi
-    echo "::endgroup::"
   fi
+  echo "::endgroup::"
 done
 
 exit "$result"

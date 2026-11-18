@@ -34,19 +34,9 @@ assert_eq \
   "an example among unrelated files"
 
 assert_eq \
-  "$(from_changes '.github/workflows/nescript.yml')" \
-  "true" \
-  "the workflow"
-
-assert_eq \
-  "$(from_changes '.github/scripts/discover-nescript.sh')" \
-  "true" \
-  "the discover script"
-
-assert_eq \
-  "$(from_changes '.github/scripts/discover-nescript_test.sh')" \
-  "true" \
-  "the discover tests"
+  "$(from_changes '.github/scripts/discover-nescript.sh' '.github/workflows/test.yml')" \
+  "false" \
+  "CI files"
 
 assert_eq \
   "$(from_changes 'README.md' 'kanoodle/index.html' '.github/workflows/test.yml')" \

@@ -1,17 +1,22 @@
-name: iOS
+name: iOS release
+
+# Ships changed iOS apps to TestFlight on pushes to main. test.yml tests them
+# on pull requests and on main.
 
 on:
   push:
     branches: [main]
-  pull_request: {}
 
 concurrency:
   group: ios-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   # Cheap Linux job: figure out whether any iOS app changed before paying for a
-  # macOS runner. Mirrors the discovery used by the Linux test workflow.
+  # macOS runner.
   discover:
     runs-on: ubuntu-latest
     outputs:
@@ -26,24 +31,37 @@ jobs:
         id: discover
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: bash .github/scripts/discover-changed-apps.sh
 
-  ios:
+  ship:
     needs: discover
     if: ${{ needs.discover.outputs.ios != '[]' }}
     # The app targets iOS 27, whose SDK is on GitHub's Xcode 27 image.
     runs-on: xcode-27
     steps:
+      - name: Check for signing secrets
+        id: secrets
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: |
+          if [ -n "$ASC_KEY_ID" ]; then
+            echo "ship=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ship=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=TestFlight upload skipped::iOS signing secrets are not configured. See docs/ios-testflight-design.md."
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: ${{ steps.secrets.outputs.ship == 'true' }}
         with:
           persist-credentials: false
 
       # Bundler cache needs the committed ios/Gemfile.lock. Cuts ~30-40s of cold
       # gem resolve + native extension builds on every run.
       - name: Set up Ruby
+        if: ${{ steps.secrets.outputs.ship == 'true' }}
         uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
           ruby-version: "3.3"
@@ -51,28 +69,13 @@ jobs:
           working-directory: ios
 
       - name: Install XcodeGen
+        if: ${{ steps.secrets.outputs.ship == 'true' }}
         run: brew install xcodegen
 
-      # A push to main with signing secrets configured is the only case that
-      # ships to TestFlight; everything else just builds and tests.
-      - name: Determine mode
-        id: mode
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-        run: |
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ] && [ -n "$ASC_KEY_ID" ]; then
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-          fi
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ] && [ -z "$ASC_KEY_ID" ]; then
-            echo "::warning title=TestFlight upload skipped::iOS signing secrets are not configured; ran tests only. See docs/ios-testflight-design.md."
-          fi
-
-      - name: Test and (on main) ship changed iOS apps
+      - name: Ship changed iOS apps to TestFlight
+        if: ${{ steps.secrets.outputs.ship == 'true' }}
         env:
           IOS_APPS: ${{ needs.discover.outputs.ios }}
-          DEPLOY: ${{ steps.mode.outputs.deploy }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
@@ -80,4 +83,4 @@ jobs:
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
-        run: bash .github/scripts/ios-ci.sh
+        run: bash .github/scripts/ios-ci.sh ship

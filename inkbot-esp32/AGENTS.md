@@ -73,8 +73,8 @@ loop, and [`docs/ota.md`](docs/ota.md) for NVS, OTA, and GCP.
   (separate crates, not the firmware package). `make test` runs
   `cargo test --lib` plus `provision --dry-run` against
   `provisioning.toml.example`.
-- **CI:** `inkbot-esp32.yml` hosts tests + Xtensa `make build` (both
-  apps, separate IDF trees). `inkbot-esp32-publish.yml` (push to `main`,
+- **CI:** the ESP32 jobs in `test.yml` run host tests + Xtensa
+  `make build` (both apps, separate IDF trees). `inkbot-esp32-publish.yml` (push to `main`,
   or dispatch from `main`) pushes and Cosign-signs
   `ghcr.io/imjasonh/playground/inkbot-esp32` and
   `ghcr.io/imjasonh/playground/maze-esp32`, then `make pull-verify`. The
