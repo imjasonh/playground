@@ -1,6 +1,6 @@
 module github.com/imjasonh/playground/testtrace
 
-go 1.27.0
+go 1.26.0
 
 require (
 	go.opentelemetry.io/otel v1.47.0

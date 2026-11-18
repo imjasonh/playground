@@ -23,7 +23,7 @@ html          tree-sitter/tree-sitter-html           src             go.mod
 java          tree-sitter/tree-sitter-java           src             go.mod
 php           tree-sitter/tree-sitter-php            php/src         go.mod
 ruby          tree-sitter/tree-sitter-ruby           src             go.mod
-sql           DerekStride/tree-sitter-sql            src             v0.3.13
+sql           DerekStride/tree-sitter-sql            src             v0.3.11
 swift         alex-pinkus/tree-sitter-swift          src             go.mod
 toml          tree-sitter-grammars/tree-sitter-toml  src             go.mod
 hcl           tree-sitter-grammars/tree-sitter-hcl   src             go.mod

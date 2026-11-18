@@ -3,11 +3,6 @@
 #include "./language.h"
 #include "./tree.h"
 
-_Static_assert(
-  sizeof(TreeCursor) <= sizeof(TSTreeCursor),
-  "TreeCursor must fit within TSTreeCursor"
-);
-
 typedef struct {
   Subtree parent;
   const TSTree *tree;
@@ -124,14 +119,13 @@ static inline bool ts_tree_cursor_child_iterator_previous(
 ) {
   // this is mostly a reverse `ts_tree_cursor_child_iterator_next` taking into
   // account unsigned underflow
-  if (!self->parent.ptr || self->child_index == UINT32_MAX) return false;
+  if (!self->parent.ptr || (int8_t)self->child_index == -1) return false;
   const Subtree *child = &ts_subtree_children(self->parent)[self->child_index];
   *result = (TreeCursorEntry) {
     .subtree = child,
     .position = self->position,
     .child_index = self->child_index,
     .structural_child_index = self->structural_child_index,
-    .descendant_index = self->descendant_index,
   };
   *visible = ts_subtree_visible(*child);
   bool extra = ts_subtree_extra(*child);
@@ -149,14 +143,6 @@ static inline bool ts_tree_cursor_child_iterator_previous(
   // unsigned can underflow so compare it to child_count
   if (self->child_index < self->parent.ptr->child_count) {
     Subtree previous_child = ts_subtree_children(self->parent)[self->child_index];
-    bool previous_visible = ts_subtree_visible(previous_child);
-    if (!ts_subtree_extra(previous_child) && self->alias_sequence) {
-      previous_visible |= self->alias_sequence[self->structural_child_index];
-    }
-    self->descendant_index -= ts_subtree_visible_descendant_count(previous_child);
-    if (previous_visible) {
-      self->descendant_index--;
-    }
     Length size = ts_subtree_size(previous_child);
     self->position = length_backtrack(self->position, size);
   }
@@ -167,10 +153,8 @@ static inline bool ts_tree_cursor_child_iterator_previous(
 // TSTreeCursor - lifecycle
 
 TSTreeCursor ts_tree_cursor_new(TSNode node) {
-  TreeCursor cursor = {0};
-  ts_tree_cursor_init(&cursor, node);
-  TSTreeCursor self = {0};
-  memcpy(&self, &cursor, sizeof(cursor));
+  TSTreeCursor self = {NULL, NULL, {0, 0, 0}};
+  ts_tree_cursor_init((TreeCursor *)&self, node);
   return self;
 }
 
@@ -566,10 +550,8 @@ void ts_tree_cursor_current_status(
       (*supertype_count)++;
     }
 
-    // Determine if the current node has later siblings. A later *anonymous*
-    // sibling settles `has_later_siblings` but says nothing about later *named*
-    // siblings.
-    if (!*has_later_named_siblings) {
+    // Determine if the current node has later siblings.
+    if (!*has_later_siblings) {
       unsigned sibling_count = parent_entry->subtree->ptr->child_count;
       unsigned structural_child_index = entry->structural_child_index;
       if (!ts_subtree_extra(*entry->subtree)) structural_child_index++;
@@ -581,12 +563,14 @@ void ts_tree_cursor_current_status(
         );
         if (sibling_metadata.visible) {
           *has_later_siblings = true;
+          if (*has_later_named_siblings) break;
           if (sibling_metadata.named) {
             *has_later_named_siblings = true;
             break;
           }
         } else if (ts_subtree_visible_child_count(sibling) > 0) {
           *has_later_siblings = true;
+          if (*has_later_named_siblings) break;
           if (sibling.ptr->named_child_count > 0) {
             *has_later_named_siblings = true;
             break;
@@ -713,13 +697,12 @@ const char *ts_tree_cursor_current_field_name(const TSTreeCursor *_self) {
 
 TSTreeCursor ts_tree_cursor_copy(const TSTreeCursor *_cursor) {
   const TreeCursor *cursor = (const TreeCursor *)_cursor;
-  TreeCursor copy = {0};
-  copy.tree = cursor->tree;
-  copy.root_alias_symbol = cursor->root_alias_symbol;
-  array_init(&copy.stack);
-  array_push_all(&copy.stack, &cursor->stack);
-  TSTreeCursor res = {0};
-  memcpy(&res, &copy, sizeof(copy));
+  TSTreeCursor res = {NULL, NULL, {0, 0}};
+  TreeCursor *copy = (TreeCursor *)&res;
+  copy->tree = cursor->tree;
+  copy->root_alias_symbol = cursor->root_alias_symbol;
+  array_init(&copy->stack);
+  array_push_all(&copy->stack, &cursor->stack);
   return res;
 }
 
