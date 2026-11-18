@@ -159,6 +159,12 @@ class Gen:
             for r, v in sorted(writes.items()):
                 if v is None:
                     continue
+                if v[0] == "P":
+                    self.emit(f"  have g{k}_{r} : reg n{k} {rname(r)} = {v[1]} := by")
+                    self.emit(f"    rw [rb{k}]; simp +decide only [runBlock, BInstr.run, {blk}, upd, ↓reduceIte, aluEval]")
+                    self.emit(f"    {v[2].format(k=k, p=k - 1)}")
+                    new[r] = ("U", v[1])
+                    continue
                 self.emit(f"  have g{k}_{r} : reg n{k} {rname(r)} = {lean_val(v)} := by")
                 self.emit(f"    rw [rb{k}]; simp +decide only [runBlock, BInstr.run, {blk}, upd, ↓reduceIte, aluEval] <;>")
                 self.emit(f"    (try simp only [{prev}]) <;> pv_val")
@@ -424,6 +430,8 @@ def copy_facts(g, dst, src, N, vref):
     return acc
 
 
+DATA_PATH = {"p384ParamsData": ("D.D.params", "PARAMS")}
+
 DATA_FIELD = {"p384MontOneData": "one", "p384OrderData": "nmod", "p384ScalarR2Data": "r2",
               "p384IdentityData": "idp", "p384GData": "g", "u12OneData": "u1"}
 
@@ -472,10 +480,19 @@ class Ops:
         g.call("pv_mc", off, f"g{k}_2 g{k}_10 g{k}_11 g{k}_12 (by decide) (by decide) (by decide)", dst, N,
                copy_facts(g, dst, src, N, f"V{k + 1}"), written_sv=svs, written_mbf=mbs, written_words=words)
 
-    def mcK(self, off, dst, K, N, data):
+    def mcK(self, off, dst, K, N, data, doff=None):
         g = self.g
         k = g.k
         acc = {}
+        if doff is not None:
+            path, base = DATA_PATH[data]
+            acc[dst] = (f"dataVal {data} 0x{doff:X} 12", [
+                f"rw [accV_K 12 fun q hq => V{k + 1} q (by omega)]",
+                f"rw [show BitVec.ofNat 32 0x{K:X} + BitVec.ofNat 32 0 = {base} + BitVec.ofNat 32 0x{doff:X} by decide]",
+                f"exact code_accV (d := {data}) {g.env(k)}.{path} 0x{doff:X} 12 (by decide)",
+            ])
+            g.call("pv_mcK", off, f"g{k}_2 g{k}_10 g{k}_11 g{k}_12 (by decide) (by decide) (by decide)", dst, N, acc)
+            return
         for o in range(0, N - 47, 0x30):
             if o == 0:
                 acc[dst] = (f"dataVal {data} 0 12", [
@@ -752,6 +769,21 @@ class Ops:
                f"  fun h => n3_mont_ne {h0} {hn} (by rw [← a{k}_{x:x}]; exact (accV_eq_zero_iff 12).2 h)"]
         g.call("pv_inz", off, f"g{k}_2 g{k}_10 (by decide) (by decide)", 0, 0,
                extra_regs={10: (C(1), f"rw [V{k + 1}, ite_eq_right hnz{k + 1}]; rfl")}, pre=pre)
+
+    def inzf(self, off, x):
+        """`Uint<12>::is_nonzero` of the limbs at `x`, as a flag."""
+        g = self.g
+        k = g.k
+        X = g.acc[x]
+        g.call("pv_inz", off, f"g{k}_2 g{k}_10 (by decide) (by decide)", 0, 0,
+               pre=[f"have keep_z{k + 1} := a{k}_{x:x}"])
+        k = g.k
+        g.emit(f"  have g{k}_10 : reg n{k} a0 = (if {X} = 0 then 0 else 1) := by")
+        g.emit(f"    rw [V{k}]")
+        g.emit(f"    by_cases h : {X} = 0")
+        g.emit(f"    · rw [if_pos h, if_pos ((accV_eq_zero_iff 12).1 (keep_z{k}.trans h))]")
+        g.emit(f"    · rw [if_neg h, if_neg (fun h' => h (keep_z{k}.symm.trans ((accV_eq_zero_iff 12).2 h')))]")
+        g.regs[10] = ("U", f"(if {X} = 0 then 0 else 1)")
 
     def sw(self, off, base, imm, src, c):
         g = self.g
@@ -1232,6 +1264,44 @@ def stage_cb():
     return g, info
 
 
+def stage_hs():
+    g = Gen("HS", env3=True)
+    g.regs = {2: S(0)}
+    for r in (3, 4):
+        g.regs[r] = ("U", f"reg n0 ({r} : Fin 32)")
+    g.acc = {0xE10: "PX", 0xE40: "PY", 0xE70: "PZ", 0x1B0: "RM"}
+    params = params_of(g, 0xBEE)
+    o = Ops(g)
+    g.block(0xBEE, 0xC02); o.mc(0xC02, 0x1C88, 0xE10, 0x90)
+    g.block(0xC0A, 0xC2A); o.mcK(0xC2A, 0xE10, 0x3FCC4C8C, 0x30, "p384ParamsData", 0)
+    g.block(0xC32, 0xC3E)
+    o.sw(0xC3E, 24, 0xF0, 10, 0xE70)
+    o.sw(0xC42, 24, 0xF4, 11, 0xE74)
+    g.block(0xC46, 0xC58); o.mcK(0xC58, 0xE40, 0x3FCC4CEC, 0x30, "p384ParamsData", 0x60)
+    g.block(0xC60, 0xC62); o.inzf(0xC62, 0x1CE8)
+    g.block(0xC6A, 0xC6E, {10: ("P", "(if PZ = 0 then 0 else 1)", "rw [g{p}_10]; exact ite01_ff _")})
+    o.sw(0xC6E, 2, 0x10, 10, 0x10)
+    g.block(0xC70, 0xC7E); o.mcK(0xC7E, 0x1714, 0x3FCC4C8C, 0x30, "p384ParamsData", 0)
+    g.block(0xC86, 0xC90); o.sb0(0xC90, 9, 0x1744)
+    g.block(0xC94, 0xCA2); o.mc(0xCA2, 0xD50, 0x1CE8, 0x30)
+    g.block(0xCAA, 0xCAC); o.sb0(0xCAC, 24, 0xD80)
+    g.block(0xCB0, 0xCB8); o.ms0(0xCB8, 0x270, 0x34)
+    g.block(0xCC0, 0xCCE); o.mcK(0xCCE, 0x17A4, 0x3FCC4CEC, 0x30, "p384ParamsData", 0x60)
+    g.block(0xCD6, 0xCD8); o.sb0(0xCD8, 9, 0x17D4)
+    g.block(0xCDC, 0xCDE); o.sw(0xCDE, 2, 0x40, 10, 0x40)
+    g.block(0xCE0, 0xCE4); o.branch(0xCE4)
+    info = {
+        "end": 0xCE8, "name": "pv_stHS", "title": "the start of the inversion of `Z`",
+        "doc": "From 0xBEE to 0xCE8: the sum copied out, whether `Z` is nonzero, and the inversion's\n`f = p`, `g = Z`, `d = 0`, `e = R²`, and `δ = 1`.",
+        "thmdoc": "**Stage H's start**, from 0xBEE to 0xCE8: copy the sum, and set up the inversion of `Z`.",
+        "params": "{B : Word} {PX PY PZ RM : Nat} " + params,
+        "intro": ["have t0 : Steps n0 n0 := .refl n0", "have fR0 : ∀ x, PvR B x → n0.mem x = n0.mem x := fun _ _ => rfl"]
+                 + [f"have g0_{r} : reg n0 ({r} : Fin 32) = reg n0 ({r} : Fin 32) := rfl" for r in (3, 4)],
+        "import": "C3BootProofs.Proofs.Pv384HDs4",
+    }
+    return g, info
+
+
 def stage_b():
     g = Gen("B")
     g.regs = {2: S(0), 8: S(0xD80), 18: C(0), 19: ("U", "BitVec.ofNat 32 len"), 20: ("U", "ph")}
@@ -1310,7 +1380,7 @@ def main():
     g, info = {"B": stage_b, "C0": stage_c0, "CA": stage_ca, "CB": stage_cb, "C2a": stage_c2a,
                "C2b1": lambda: stage_c2b(1), "C2b0": lambda: stage_c2b(0), "D": stage_d,
                "E0": lambda: stage_e(0), "E1": lambda: stage_e(1), "F0": lambda: stage_f(0),
-               "F1": lambda: stage_f(1)}[stage]()
+               "F1": lambda: stage_f(1), "HS": stage_hs}[stage]()
     stmt, proof = g.conclusion(info["end"], info.get("extra", ()), info.get("only"))
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.Pv384Lib"), title=info["title"], stage=stage,
                         doc=info["doc"]))

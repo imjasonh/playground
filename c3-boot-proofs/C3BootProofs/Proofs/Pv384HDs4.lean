@@ -11,6 +11,11 @@ namespace C3.RV32.Pv
 
 open C3.Image C3.RV32.P3 C3.RV32.Dq
 
+theorem ite01_ff (c : Prop) [Decidable c] : ((if c then 0 else 1 : Word) &&& 0xFF) = if c then 0 else 1 := by
+  by_cases h : c
+  · rw [if_pos h]; rfl
+  · rw [if_neg h]; rfl
+
 theorem w64_lt (lo hi : Word) : W64 lo hi < 2 ^ 64 := by
   have := lo.isLt; have := hi.isLt; simp only [W64]; omega
 
