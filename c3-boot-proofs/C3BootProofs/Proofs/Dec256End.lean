@@ -774,4 +774,111 @@ theorem gd_stI {M : Word → BitVec 8} {n : Machine} {S out par c ok : Word} {X 
     rw [mem11']
     exact fin x (below hb60 (by decide) (by decide) hx) (inFrame (by decide) hx) ho
 
+/-! ## The whole function -/
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 64000000 in
+/-- **The compiled `<AffinePoint<NistP256> as DecompressPoint>::decompress`.**
+With the 32 big-endian bytes of `x` at `inp` and the requested parity of `y`
+in `a2`, it writes to `out` the `CtOption<AffinePoint>` that the RustCrypto
+code returns: `x` in Montgomery form (0 when `x ≥ p`), the square root of
+`α = x³ + ax + b` with the requested parity (or its negation, from 0 when `α`
+has no root), the identity flag 0, and as the choice 1 exactly when `x < p` and
+the root squares to `α`. It returns with the saved registers restored and
+changes no memory outside its frame and `out`. -/
+theorem p256Decompress_correct (m : Machine) {S inp out retAddr : Word} (C : GdCode m.mem) (D : GdData m.mem)
+    (F : Fr S 0x710) (hpc : m.pc = GD) (hsp : reg m sp = S + 0x710) (ha0 : reg m a0 = out) (ha1 : reg m a1 = inp)
+    (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
+    (sI : Sep inp 32 (S + 0xFFFFFE60) 0x8B0) (sO : Sep out 0x45 (S + 0xFFFFFE60) 0x8B0)
+    (hO : out.toNat + 0x45 ≤ 0x40000000) :
+    ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = S + 0x710 ∧
+      (∀ k, k < 13 → reg m' (savedReg k) = reg m (savedReg k)) ∧
+      reg m' (3 : Fin 32) = reg m (3 : Fin 32) ∧ reg m' (4 : Fin 32) = reg m (4 : Fin 32) ∧
+      (∃ ok X, XOk2 (beNat (memBytes m.mem inp 32)) ok X ∧ accV m'.mem out 8 = X ∧
+        accV m'.mem (out + BitVec.ofNat 32 0x20) 8 = gdY (gsAlpha X) (reg m a2) ∧
+        (∀ k, k < 4 → m'.mem (out + BitVec.ofNat 32 (0x40 + k)) = BitVec.ofNat 8 0) ∧
+        m'.mem (out + BitVec.ofNat 32 0x44) =
+          (if p2fm (gdSqrt (gsAlpha X)) (gdSqrt (gsAlpha X)) = gsAlpha X ∧ ok = 1 then 1 else 0)) ∧
+      ∀ x, Sep (S + 0xFFFFFE60) 0x8B0 x 1 → Sep out 0x45 x 1 → m'.mem x = m.mem x := by
+  have hSl := F.lo; have hSh := F.hi; have hSa := F.al
+  have hb16 : (S + 0xFFFFFFF0).toNat = S.toNat - 16 := F.below 16 (by decide) (by decide)
+  have hb40 : (S + 0xFFFFFFC0).toNat = S.toNat - 0x40 := F.below 0x40 (by decide) (by decide)
+  have hbA : (S + 0xFFFFFF4C).toNat = S.toNat - 0xB4 := F.below 0xB4 (by decide) (by decide)
+  have sq : ∀ c l d, c + l ≤ 0x710 → d + 1 ≤ 0x710 → (c + l ≤ d ∨ d + 1 ≤ c) →
+      Sep (S + BitVec.ofNat 32 c) l (S + BitVec.ofNat 32 d) 1 := fun c l d h1 h2 h3 => sepS S h3 (by omega) (by omega)
+  have below : ∀ {k : Nat} {B' : Word} {x : Word}, B'.toNat = S.toNat - k → 0 < k → k ≤ 0x1A0 →
+      Sep (S + 0xFFFFFE60) 0x8B0 x 1 → Sep B' k x 1 := fun {k B' x} hB' hk hk' hx => by
+    have hb1A : (S + 0xFFFFFE60).toNat = S.toNat - 0x1A0 := F.below 0x1A0 (by decide) (by decide)
+    have := hx.sub (c := 0x1A0 - k) (l := k) (by omega)
+    rwa [show S + 0xFFFFFE60 + BitVec.ofNat 32 (0x1A0 - k) = B' by
+      apply BitVec.eq_of_toNat_eq; rw [BitVec.toNat_add, BitVec.toNat_ofNat, hb1A, hB']; omega] at this
+  have s0 : St m.mem GD m 0 (reg m) := ⟨by rw [hpc, add_ofNat_zero], rfl, fun _ => rfl⟩
+  obtain ⟨n1, c1, u1, C1, D1, hXo, hA1, hB1, h10, h18, hS1, R1, e13, e14, fr1⟩ := gd_toLoop C D F s0 hsp ha1 sI
+  obtain ⟨ok, hok⟩ : ∃ ok, memLoad32 n1.mem (S + BitVec.ofNat 32 0x14) = ok := ⟨_, rfl⟩
+  obtain ⟨X, hX⟩ : ∃ X, accV n1.mem (S + BitVec.ofNat 32 0x84) 8 = X := ⟨_, rfl⟩
+  rw [hok, hX] at hXo; rw [hX] at hA1 hB1
+  have hok01 : ok = 0 ∨ ok = 1 := by
+    rcases Nat.lt_or_ge (beNat (memBytes m.mem inp 32)) p256 with h | h
+    · exact .inr (hXo.1 h).1
+    · exact .inl (hXo.2 h).1
+  -- the final squaring
+  obtain ⟨n2, c2, u2, C2, D2, hsq2, hb2, e225, e226, e227, sp2, fr2, e23, e24⟩ :=
+    gf_sq C1 D1 F u1 R1.sp (by rw [hB1]; exact mpow2_lt _ _)
+  have keepS : ∀ d, d + 1 ≤ 0x710 → (d + 1 ≤ 0x150 ∨ 0x23C ≤ d) → (d + 1 ≤ 0x43C ∨ 0x45C ≤ d) →
+      n2.mem (S + BitVec.ofNat 32 d) = n1.mem (S + BitVec.ofNat 32 d) :=
+    fun d h1 h2 h3 => fr2 _ (F.lowB hb40 (by decide) h1) (sq _ _ _ (by decide) h1 h2.symm) (sq _ _ _ (by decide) h1 h3.symm)
+  have hA2 : accV n2.mem (S + BitVec.ofNat 32 0xC4) 8 = gsAlpha X := by
+    rw [← hA1]; exact accV_keep8 fun q hq => keepS _ (by omega) (.inl (by omega)) (.inl (by omega))
+  rw [hB1] at hsq2 hb2
+  -- the check, the root, and the point
+  obtain ⟨n3, c3, u3, C3, D3, hb3, e38, sp3, hZ3, fr3, K3⟩ := gd_stG C2 D2 F u2 sp2 hsq2 hb2 hA2
+  obtain ⟨n4, c4, u4, C4, D4, hY4, hN4, ea4, e48, sp4, K4, fr4⟩ :=
+    gd_stH C3 D3 F u3 sp3 e38 (ite01 _) hb3 (mpow2_lt _ _)
+  have keepH : ∀ d, d + 1 ≤ 0x710 → (d + 1 ≤ 0xA4 ∨ 0xE4 ≤ d) → (d + 1 ≤ 0x1DC ∨ 0x23D ≤ d) →
+      (d + 1 ≤ 0x43C ∨ 0x45D ≤ d) → n4.mem (S + BitVec.ofNat 32 d) = n3.mem (S + BitVec.ofNat 32 d) :=
+    fun d h1 h2 h3 h4 => fr4 _ (F.lowB hbA (by decide) h1) (sq _ _ _ (by decide) h1 h2.symm) (sq _ _ _ (by decide) h1 h3.symm)
+      (sq _ _ _ (by decide) h1 h4.symm)
+  have keepG : ∀ d, d + 1 ≤ 0x710 → (d + 1 ≤ 0x43C ∨ 0x4C8 ≤ d) →
+      n3.mem (S + BitVec.ofNat 32 d) = n2.mem (S + BitVec.ofNat 32 d) :=
+    fun d h1 h2 => fr3 _ (F.lowB hb16 (by decide) h1) (sq _ _ _ (by decide) h1 h2.symm)
+  have hX4 : accV n4.mem (S + BitVec.ofNat 32 0x84) 8 = X := by
+    rw [← hX]; exact accV_keep8 fun q hq => by
+      rw [keepH _ (by omega) (.inl (by omega)) (.inl (by omega)) (.inl (by omega)),
+        keepG _ (by omega) (.inl (by omega)), keepS _ (by omega) (.inl (by omega)) (.inl (by omega))]
+  have hS4 : ∀ k, k < 13 → memLoad32 n4.mem (S + BitVec.ofNat 32 (0x70C - 4 * k)) = reg m (savedReg k) := fun k hk => by
+    rw [← hS1 k hk]
+    exact memLoad32_congr fun j hj => by
+      rw [add_ofNat_assoc, keepH _ (by omega) (.inr (by omega)) (.inr (by omega)) (.inr (by omega)),
+        keepG _ (by omega) (.inr (by omega)), keepS _ (by omega) (.inr (by omega)) (.inr (by omega))]
+  have hZ4 : ∀ k, k < 3 → n4.mem (S + BitVec.ofNat 32 (0x47D + k)) = BitVec.ofNat 8 0 := fun k hk => by
+    rw [keepH _ (by omega) (.inr (by omega)) (.inr (by omega)) (.inr (by omega))]; exact hZ3 k hk
+  obtain ⟨n5, c5, pc5, sp5, sv5, hx5, hy5, hz5, hc5, e53, e54, fr5⟩ :=
+    gd_stI (v := fun k => reg m (savedReg k)) C4 D4 F u4 sp4 ea4 (ite01 _) e48 (ite01 _)
+      (by rw [K4 25 (by decide), K3 25 (by decide), e225, h18, ha0])
+      (by rw [K4 26 (by decide), K3 26 (by decide), e226, hok]) hok01 sO hO hX4 hY4 hN4 hZ4 hS4
+      (by show reg m ra &&& ~~~1 = reg m ra; rw [hra]; exact hret)
+  have hY0 : (if (if p2fm (mpow2 (gsAlpha X) sqrtExp2) (mpow2 (gsAlpha X) sqrtExp2) = gsAlpha X then (1 : Word) else 0) = 1
+      then mpow2 (gsAlpha X) sqrtExp2 else 0) = gdY0 (gsAlpha X) := by
+    unfold gdY0 gdSqrt
+    by_cases h : p2fm (mpow2 (gsAlpha X) sqrtExp2) (mpow2 (gsAlpha X) sqrtExp2) = gsAlpha X
+    · rw [ite_eq_left ((ite01_iff _).2 h), ite_eq_left h]
+    · rw [ite_eq_right (fun e => h ((ite01_iff _).1 e)), ite_eq_right h]
+  have y27 : reg n3 (27 : Fin 32) = reg m a2 := by rw [K3 27 (by decide), e227, h10]
+  refine ⟨n5, c1.trans (c2.trans (c3.trans (c4.trans c5))), by rw [pc5]; exact hra, sp5, sv5,
+    by rw [e53, K4 3 (by decide), K3 3 (by decide), e23, e13], by rw [e54, K4 4 (by decide), K3 4 (by decide), e24, e14],
+    ⟨ok, X, hXo, hx5, ?_, hz5, ?_⟩, fun x hx ho => ?_⟩
+  · rw [hy5, hY0, y27]
+    unfold gdY
+    by_cases h : p2fm (gdY0 (gsAlpha X)) 1 % 2 = (reg m a2).toNat % 2
+    · rw [ite_eq_left ((ite01_iff _).2 h), ite_eq_left h]
+    · rw [ite_eq_right (fun e => h ((ite01_iff _).1 e)), ite_eq_right h]
+  · rw [hc5]
+    unfold gdSqrt
+    by_cases h : p2fm (mpow2 (gsAlpha X) sqrtExp2) (mpow2 (gsAlpha X) sqrtExp2) = gsAlpha X ∧ ok = 1
+    · rw [ite_eq_left ⟨(ite01_iff _).2 h.1, h.2⟩, ite_eq_left h]
+    · rw [ite_eq_right (fun e => h ⟨(ite01_iff _).1 e.1, e.2⟩), ite_eq_right h]
+  · rw [fr5 x hx ho, fr4 x (below hbA (by decide) (by decide) hx) (fr_inFrame (by decide) hx) (fr_inFrame (by decide) hx)
+      (fr_inFrame (by decide) hx), fr3 x (below hb16 (by decide) (by decide) hx) (fr_inFrame (by decide) hx),
+      fr2 x (below hb40 (by decide) (by decide) hx) (fr_inFrame (by decide) hx) (fr_inFrame (by decide) hx), fr1 x hx]
+
 end C3.RV32.Gd
