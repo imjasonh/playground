@@ -107,4 +107,58 @@ theorem dq_sqr4 {S : Word} (F : DqFrame S) :
     refine ⟨n4, .cons d1 (.cons d2 (c3.trans c4)), u4, C4, by rw [hv4, hv, iter]; rfl, h184,
       fun x h50 h3C h62 h98 => by rw [fr4 x h50 h3C h62 h98, fr3 x h50 h3C h62 h98],
       fun q hq => by rw [k4 q hq, k3 q hq, g2 q (pkeep_ne (r := a0) hq rfl)]⟩
+/-! ## Montgomery powers -/
+
+/-- The Montgomery form of 1. -/
+def p3one : Nat := 2 ^ 384 % p384
+
+/-- A Montgomery multiplication by `A`. -/
+def mmul (A z : Nat) : Nat := p3fm z A
+
+/-- `A` to the `n` in Montgomery form, as repeated multiplication from 1. -/
+def mpow (A n : Nat) : Nat := iter (mmul A) n p3one
+
+set_option exponentiation.threshold 600 in
+theorem p3one_lt : p3one < p384 := by unfold p3one p384; decide
+
+set_option exponentiation.threshold 600 in
+theorem p3one_inv : p3one * p3RInv % p384 = 1 := by unfold p3one p384 p3RInv; decide
+
+theorem iter_mmul (A n : Nat) : ∀ z, z < p384 → iter (mmul A) n z = z * (A * p3RInv) ^ n % p384 := by
+  induction n with
+  | zero => intro z h; rw [iter, Nat.pow_zero, Nat.mul_one, Nat.mod_eq_of_lt h]
+  | succ n ih =>
+    intro z _
+    rw [iter, ih _ (show mmul A z < p384 from p3fm_lt z A)]
+    unfold mmul p3fm
+    rw [Nat.mod_mul_mod, Nat.pow_succ]
+    congr 1
+    ac_rfl
+
+theorem mpow_val (A n : Nat) : mpow A n = p3one * (A * p3RInv) ^ n % p384 := iter_mmul A n _ p3one_lt
+
+theorem mpow_lt (A n : Nat) : mpow A n < p384 := by rw [mpow_val]; exact Nat.mod_lt _ p384_pos
+
+theorem mod3 (X Y R p : Nat) : X % p * (Y % p) * R % p = X * Y * R % p := by
+  rw [Nat.mul_mod, Nat.mul_mod (X * Y), Nat.mul_mod X Y]
+
+theorem mpow_add (A a b : Nat) : p3fm (mpow A a) (mpow A b) = mpow A (a + b) := by
+  rw [mpow_val, mpow_val, mpow_val]
+  unfold p3fm
+  rw [mod3, show p3one * (A * p3RInv) ^ a * (p3one * (A * p3RInv) ^ b) * p3RInv =
+      (p3one * p3RInv) * (p3one * (A * p3RInv) ^ (a + b)) by rw [Nat.pow_add]; ac_rfl,
+    Nat.mul_mod, p3one_inv, Nat.one_mul, Nat.mod_mod]
+
+theorem mpow_one (A : Nat) (h : A < p384) : mpow A 1 = A := by
+  rw [mpow_val, Nat.pow_one, show p3one * (A * p3RInv) = A * (p3one * p3RInv) by ac_rfl, Nat.mul_mod, p3one_inv,
+    Nat.mul_one, Nat.mod_mod, Nat.mod_eq_of_lt h]
+
+theorem iter_msq_mpow (A k : Nat) : ∀ a, iter msq k (mpow A a) = mpow A (2 ^ k * a) := by
+  induction k with
+  | zero => intro a; rw [iter, Nat.pow_zero, Nat.one_mul]
+  | succ k ih =>
+    intro a
+    have h2 : msq (mpow A a) = mpow A (2 * a) := by unfold msq; rw [mpow_add, Nat.two_mul]
+    rw [iter, h2, ih, Nat.pow_succ, Nat.mul_assoc]
+
 end C3.RV32.Dq
