@@ -133,6 +133,7 @@ import C3BootProofs.Proofs.ParseCur
 import C3BootProofs.Proofs.BsDecode
 import C3BootProofs.Proofs.ImageTopCur
 import C3BootProofs.Proofs.BootWrite
+import C3BootProofs.Proofs.Boot
 import C3BootProofs.Proofs.Sha256LoopDecode
 import C3BootProofs.Proofs.Sha256LoopBlocks
 import C3BootProofs.Proofs.Sha256LoopRounds

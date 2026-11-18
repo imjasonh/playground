@@ -1026,4 +1026,47 @@ theorem bt_copy (C : BtCtx M0 top acc imgf R romStack romBase romCode) (hROM : R
 
 end Copy
 
+section Agree
+variable {O : Word → Prop} {X Y : Word → BitVec 8}
+
+theorem mmuInv_agree (h : ∀ x, O x → X x = Y x) (k : Nat) : ∀ x, O x → mmuInv X k x = mmuInv Y k x :=
+  fun x hx => by unfold mmuInv; rw [h x hx]
+
+theorem st32_agree (h : ∀ x, O x → X x = Y x) (a v : Word) : ∀ x, O x → memStore32 X a v x = memStore32 Y a v x :=
+  fun x hx => by rw [st32_read, st32_read, h x hx]
+
+theorem mapSeg_agree : ∀ (k : Nat) {X Y : Word → BitVec 8} (e v : Word), (∀ x, O x → X x = Y x) →
+    ∀ x, O x → mapSeg X e v k x = mapSeg Y e v k x
+  | 0, _, _, _, _, h => h
+  | k + 1, X, Y, e, v, h => by
+    simp only [mapSeg]
+    refine mapSeg_agree k (e + 1) (v + 1) fun x hx => ?_
+    by_cases he : e.toNat ≤ 127
+    · rw [ite_eq_left he, ite_eq_left he]; exact st32_agree h _ _ x hx
+    · rw [ite_eq_right he, ite_eq_right he]; exact h x hx
+
+theorem mmuMap_agree {M0 : Word → BitVec 8} {acc imgf : Word} (h : ∀ x, O x → X x = Y x) :
+    ∀ j, ∀ x, O x → mmuMap M0 acc imgf X j x = mmuMap M0 acc imgf Y j x
+  | 0 => h
+  | j + 1 => by
+    simp only [mmuMap]
+    by_cases hk : (sgKind M0 acc j).toNat < 2
+    · rw [ite_eq_left hk, ite_eq_left hk]; exact mapSeg_agree _ _ _ (mmuMap_agree h j)
+    · rw [ite_eq_right hk, ite_eq_right hk]; exact mmuMap_agree h j
+
+theorem busOn_agree (h : ∀ x, O x → X x = Y x) (hc : ∀ i, i < 4 → O (icacheCtrl1 + BitVec.ofNat 32 i)) :
+    ∀ x, O x → busOn X x = busOn Y x := fun x hx => by
+  unfold busOn
+  rw [memLoad32_congr (M := Y) (M' := X) fun i hi => h _ (hc i hi)]
+  exact st32_agree h _ _ x hx
+
+end Agree
+
+theorem saveMem_sep {M : Word → BitVec 8} {G : Word} {f : Fin 32 → Word} {x : Word} :
+    ∀ ps : List (Fin 32 × Word), (∀ p ∈ ps, Sep (G + p.2) 4 x 1) → saveMem M G f ps x = M x
+  | [], _ => rfl
+  | p :: ps, h => by
+    simp only [saveMem]
+    rw [saveMem_sep ps fun q hq => h q (List.mem_cons_of_mem _ hq), memStore32_get_sep (h p (List.mem_cons_self ..))]
+
 end C3.RV32.Cur
