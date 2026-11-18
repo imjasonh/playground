@@ -363,27 +363,46 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: List the Cargo workspaces
-        id: workspaces
-        env:
-          APP: ${{ matrix.app }}
-        run: |
-          {
-            echo "list<<EOF"
-            echo "$APP"
-            for manifest in "$APP"/tools/*/Cargo.toml; do
-              [ -f "$manifest" ] && dirname "$manifest"
-            done
-            echo "EOF"
-          } >>"$GITHUB_OUTPUT"
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      # The crate and its tools build into APP/target. Like the Rust job's
+      # cache, the registry travels with the target directory.
+      - name: Restore the Cargo cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          workspaces: ${{ steps.workspaces.outputs.list }}
-          shared-key: ${{ matrix.app }}-host
+          path: |
+            ${{ matrix.app }}/target
+            ~/.cargo/registry
+          key: cargo-esp32-host-${{ matrix.app }}-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            cargo-esp32-host-${{ matrix.app }}-${{ runner.os }}-
 
       - name: Format, lint, and test ${{ matrix.app }}
         run: bash .github/scripts/test-esp32-host.sh "${{ matrix.app }}"
+
+      - name: Prune the Cargo cache
+        id: prune-cargo
+        if: ${{ github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        env:
+          APP: ${{ matrix.app }}
+        run: |
+          locks=(-l "$APP/Cargo.lock")
+          for lock in "$APP"/tools/*/Cargo.lock; do
+            [ -f "$lock" ] && locks+=(-l "$lock")
+          done
+          bash .github/scripts/prune-cargo-cache.sh "${locks[@]}" "$APP/target" "$HOME/.cargo/registry"
+
+      - name: Save the Cargo cache
+        if: ${{ steps.prune-cargo.outcome == 'success' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: |
+            ${{ matrix.app }}/target
+            ~/.cargo/registry
+          key: cargo-esp32-host-${{ matrix.app }}-${{ runner.os }}-${{ github.sha }}
+          prefixes: cargo-esp32-host-${{ matrix.app }}-${{ runner.os }}-
+          # 2 GiB. inkbot-esp32's crate and tools were 1.2 GB after a prune.
+          max-bytes: 2147483648
+          token: ${{ github.token }}
 
   esp32-firmware:
     name: ESP32 firmware
@@ -416,14 +435,49 @@ jobs:
           buildtargets: esp32
           ldproxy: true
 
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      # Each image builds into its own directory under APP/target. ESP-IDF
+      # itself, which embuild installs in APP/.embuild, isn't cached.
+      - name: Restore the Cargo cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          workspaces: ${{ matrix.app }}
-          shared-key: ${{ matrix.app }}-firmware
+          path: |
+            ${{ matrix.app }}/target
+            ~/.cargo/registry
+          key: cargo-esp32-firmware-${{ matrix.app }}-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            cargo-esp32-firmware-${{ matrix.app }}-${{ runner.os }}-
 
       - name: Cross-build ${{ matrix.app }}
         working-directory: ${{ matrix.app }}
         run: make build
+
+      # `-Z build-std` compiles the standard library and its dependencies
+      # into the target directory, so the prune keeps what the esp
+      # toolchain's library lockfile names too.
+      - name: Prune the Cargo cache
+        id: prune-cargo
+        if: ${{ github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        env:
+          APP: ${{ matrix.app }}
+        run: |
+          std_lock="$(rustc +esp --print sysroot)/lib/rustlib/src/rust/library/Cargo.lock"
+          bash .github/scripts/prune-cargo-cache.sh -l "$APP/Cargo.lock" -l "$std_lock" \
+            "$APP/target" "$HOME/.cargo/registry"
+
+      - name: Save the Cargo cache
+        if: ${{ steps.prune-cargo.outcome == 'success' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: |
+            ${{ matrix.app }}/target
+            ~/.cargo/registry
+          key: cargo-esp32-firmware-${{ matrix.app }}-${{ runner.os }}-${{ github.sha }}
+          prefixes: cargo-esp32-firmware-${{ matrix.app }}-${{ runner.os }}-
+          # 4 GiB. esp-idf-sys's ESP-IDF build tree is most of it, and
+          # inkbot-esp32 builds two images.
+          max-bytes: 4294967296
+          token: ${{ github.token }}
 
   pasta:
     name: pasta

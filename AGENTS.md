@@ -386,7 +386,8 @@ Each job restores the caches it uses from the newest entry that a push to
 browser job restores npm's package cache, the Go, kind, and pasta jobs
 restore Go's build cache, the pasta job also restores pasta's cache, and the
 Rust job restores the `worker-build` binary, the Rust dependency artifacts,
-and npm's cache of Wrangler. Only pushes to `main` save, after the tests, and
+and npm's cache of Wrangler. The ESP32 host and firmware jobs each keep their
+own Cargo cache for their crate. Only pushes to `main` save, after the tests, and
 two jobs never save the same cache. Only the Go job saves Go's build cache.
 The setup that the Go-using jobs share is the `.github/actions/setup-go-cache`
 action.
@@ -411,7 +412,7 @@ size budget, measured on disk:
 - Key it with the commit SHA and restore it by prefix. Each save is a new
   entry, so nothing depends on an exact match.
 - Bound it before the save. Either remove what the current lockfiles don't
-  name (`Swatinem/rust-cache`, which the ESP32 jobs use, does) or trim
+  name (`prune-cargo-cache.sh` does) or trim
   to a budget, least recently used first
   (`trim-go-build-cache.sh` uses the mtime that the go command sets when it
   uses an entry).
@@ -426,7 +427,13 @@ size budget, measured on disk:
   3 minutes and a warm one 35 seconds), npm's `_cacache` (1.5 GiB for the
   browser apps, and 512 MiB for Wrangler in the Rust job), the
   `worker-build` binary (256 MiB; it takes 36 seconds to build), and the
-  Rust dependency artifacts (6 GiB). A cold compile of one Worker is about
+  Rust dependency artifacts (6 GiB). Each ESP32 crate has a host cache
+  (2 GiB; inkbot-esp32's crate and tools were 1.2 GB after a prune) and a
+  firmware cache (4 GiB, most of it esp-idf-sys's ESP-IDF build tree). The
+  firmware prune also keeps what the esp toolchain's standard library
+  lockfile names, because `-Z build-std` compiles std into the target
+  directory. ESP-IDF itself, which embuild installs in each crate's
+  `.embuild/`, isn't cached. A cold compile of one Worker is about
   half a minute, and a warm one recompiles that app's own crate (about a
   second) and reuses the dependencies. The saved `target/` is the dependency
   artifacts only: `prune-cargo-cache.sh` removes the app crates, incremental
@@ -461,8 +468,11 @@ directory changes, so a change under `kube/` tests `git-k8s` too. A change under
 `wehadababyitsaboy/go/` selects that module and every Go app that replaces it.
 `inkbot-esp32/` and `esp32-ble/` have
 a `Cargo.toml` but are excluded from Rust discovery because they need the espup
-Xtensa toolchain. The ESP32 jobs run their host lib tests and firmware
-cross-builds instead, and a change to `test-esp32-host.sh` selects both. A change under `.github/wrangler/` (the
+Xtensa toolchain. `discover-esp32-apps.sh` finds them by the
+`[target.xtensa-*-espidf]` table in their `.cargo/config.toml`. The ESP32 jobs
+run their host lib tests and firmware cross-builds instead. A change to
+`test-esp32-host.sh` selects every ESP32 crate, and a change to
+`.github/workflows/<crate>-publish.yml` selects that crate. A change under `.github/wrangler/` (the
 pinned Wrangler version) selects every Cloudflare Worker app, and a change to
 `test-rust-apps.sh` or `check-worker-deploy-build.sh` selects every Rust app.
 
@@ -528,12 +538,14 @@ Run the per-type discovery helpers locally to see what CI would select:
 bash .github/scripts/discover-testable-apps.sh --all   # browser
 bash .github/scripts/discover-go-modules.sh --all      # Go
 bash .github/scripts/discover-rust-apps.sh --all       # Rust
+bash .github/scripts/discover-esp32-apps.sh --all      # ESP32 firmware
 bash .github/scripts/discover-pasta.sh --all           # pasta style leg
 bash .github/scripts/discover-blog.sh --all            # posts catalog
 bash .github/scripts/discover-index.sh --all           # Pages home-page index
 
 # Only what a diff touched (what CI uses on a PR)
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-rust-apps.sh --from-changes
+git diff --name-only origin/main...HEAD | bash .github/scripts/discover-esp32-apps.sh --from-changes
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-pasta.sh --from-changes
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-blog.sh --from-changes
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-index.sh --from-changes
