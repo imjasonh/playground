@@ -1,8 +1,8 @@
 # gVisor workers for CI runners. Substrate's controller turns each WorkerPool
 # into a Deployment of ateworker pods; each pod hosts actors whose template
 # selects the pool by its labels (workload: ci-runner), so actors land on
-# either pool. Replace the image with the ateworker-gvisor image of your
-# Substrate install.
+# either pool. The images' tag is the go.ate.dev/substrate version in go.mod;
+# scripts/update-deps.sh moves them together.
 #
 # ci-runner-base runs on the always-on node so the first actors start without
 # waiting for a node. The pool Deployment (pool.yaml) sets ci-runner's

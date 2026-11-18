@@ -28,7 +28,9 @@ echo 'internal/treesitter/ts-core.wasm' > pasta/.gitignore
 echo 'v0.1.0' > pasta/internal/treesitter/csrc/vendor/tree-sitter/VERSION
 echo 'sql x src v0.3.0' > pasta/internal/treesitter/grammars.txt
 echo 'v1' > pasta/internal/treesitter/ts-core.wasm.br
-mkdir -p gomod libapp/go libapp/rust jsapp worker git-k8s/agent/runner .github/wrangler
+mkdir -p gomod libapp/go libapp/rust jsapp worker git-k8s/agent/runner .github/wrangler ci-substrate/deploy/substrate
+echo 'workerImage: ateworker-gvisor:v1.0.0' > ci-substrate/deploy/substrate/workerpool.yaml
+echo 'kind: Deployment' > ci-substrate/deploy/substrate/pool.yaml
 echo 'module gomod' > gomod/go.mod
 echo 'module libapp/go' > libapp/go/go.mod
 echo '# v1' > libapp/go/go.sum
@@ -110,6 +112,12 @@ echo 'v2' > "$ts/ts-core.wasm.br"
 echo 'v2' > "$ts/ts-core.wasm"
 expect "tree-sitter update" true "$(detect)"
 expect "tree-sitter update staged" "M $ts/csrc/vendor/tree-sitter/VERSION A $ts/csrc/vendor/tree-sitter/lib.c M $ts/grammars.txt M $ts/ts-core.wasm.br" "$(staged)"
+reset_tree
+
+echo 'workerImage: ateworker-gvisor:v1.1.0' > ci-substrate/deploy/substrate/workerpool.yaml
+echo 'kind: ActorTemplate' > ci-substrate/deploy/substrate/pool.yaml
+expect "ateworker image bump" true "$(detect)"
+expect "ateworker image bump staged" "M ci-substrate/deploy/substrate/workerpool.yaml" "$(staged)"
 reset_tree
 
 mkdir newmod

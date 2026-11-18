@@ -96,7 +96,7 @@ fi
 
 echo "==> WorkerPool"
 if [[ -n "${WORKER_IMAGE}" ]]; then
-  sed "s#ghcr.io/agent-substrate/substrate/ateworker-gvisor:v1.0.0#${WORKER_IMAGE}#" "${OVERLAY}/workerpool.yaml" | kubectl apply -f -
+  sed "s#ghcr.io/agent-substrate/substrate/ateworker-gvisor:[^[:space:]]*#${WORKER_IMAGE}#" "${OVERLAY}/workerpool.yaml" | kubectl apply -f -
 else
   kubectl apply -f "${OVERLAY}/workerpool.yaml"
 fi

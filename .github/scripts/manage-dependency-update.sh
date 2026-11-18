@@ -32,6 +32,9 @@ DEP_PATHSPECS=(
   'pasta/internal/treesitter/grammars.txt'
   'pasta/internal/treesitter/ts-core.wasm.br'
   ':(glob)pasta/internal/treesitter/csrc/vendor/**'
+  # The ateworker image that ci-substrate/scripts/update-deps.sh moves with
+  # go.ate.dev/substrate.
+  'ci-substrate/deploy/substrate/workerpool.yaml'
 )
 
 _git_identity() {

@@ -17,14 +17,15 @@
 #
 # Needs docker, go, git, kind (tested with v0.33.0), kubectl, kubectl-ate, ko,
 # crane, and python3. Set CI_SUBSTRATE_SUBSTRATE_SRC to a checkout of
-# agent-substrate/substrate at SUBSTRATE_VERSION; otherwise it clones one. Set
+# agent-substrate/substrate at SUBSTRATE_VERSION (by default the
+# go.ate.dev/substrate version in go.mod); otherwise it clones one. Set
 # CI_SUBSTRATE_KIND_KEEP=1 to keep the cluster and registry it creates.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLUSTER_NAME="${CI_SUBSTRATE_KIND_CLUSTER:-ci-substrate-substrate}"
 WORKDIR="${TMPDIR:-/tmp}/ci-substrate-substrate-kind-$$"
-SUBSTRATE_VERSION="${SUBSTRATE_VERSION:-v1.0.0}"
+SUBSTRATE_VERSION="${SUBSTRATE_VERSION:-$(cd "${ROOT}" && go list -m -f '{{.Version}}' go.ate.dev/substrate)}"
 SUBSTRATE_SRC="${CI_SUBSTRATE_SUBSTRATE_SRC:-}"
 # Substrate's kind install points atelet at kind-registry:5000 for every
 # localhost image, so the registry container has that name.
