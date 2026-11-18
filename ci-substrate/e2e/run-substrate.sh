@@ -210,13 +210,28 @@ if kubectl -n ci-substrate get deployment "${RUNNER_DEPLOYMENT}" >/dev/null 2>&1
   kubectl -n ci-substrate scale deployment "${RUNNER_DEPLOYMENT}" --replicas=0
 fi
 
+pool_diagnostics() {
+  kubectl ate get actors -a "${ATESPACE}" >&2 || true
+  kubectl -n ate-system get pods -l app=ci-substrate-pool -o wide >&2 || true
+  kubectl -n ate-system logs deployment/ci-substrate-pool-tenant-a --tail=60 >&2 || true
+  kubectl -n ci-substrate-workers get pods -o wide >&2 || true
+  kubectl -n ci-substrate-workers logs deployment/ci-runner-base --all-containers --tail=40 >&2 || true
+}
+
 echo "==> Waiting for a warm actor"
+warm=""
 for _ in $(seq 1 60); do
   if kubectl ate get actors -a "${ATESPACE}" 2>/dev/null | grep -q 'ci-runner-'; then
+    warm=1
     break
   fi
   sleep 2
 done
+if [[ -z "${warm}" ]]; then
+  echo "the pool made no actor in 120s" >&2
+  pool_diagnostics
+  exit 1
+fi
 kubectl ate get actors -a "${ATESPACE}"
 
 echo "==> Executing an action through the pool"
@@ -225,7 +240,10 @@ PORT_FORWARD_PIDS+=("$!")
 kubectl -n ci-substrate port-forward svc/cascache 19092:9092 >/dev/null 2>&1 &
 PORT_FORWARD_PIDS+=("$!")
 sleep 2
-go run "${ROOT}/cmd/cictl" -origin-addr=localhost:18980 -cache-addr=localhost:19092 -exec-timeout=5m -worker-prefix=ci-runner- -expect-input-mode=volume run
+go run "${ROOT}/cmd/cictl" -origin-addr=localhost:18980 -cache-addr=localhost:19092 -exec-timeout=5m -worker-prefix=ci-runner- -expect-input-mode=volume run || {
+  pool_diagnostics
+  exit 1
+}
 echo "==> Actors after the run"
 kubectl ate get actors -a "${ATESPACE}"
 kubectl -n ate-system logs deployment/ci-substrate-pool-tenant-a --tail=20
