@@ -126,7 +126,7 @@ theorem gdSaves_out {M : Word → BitVec 8} {S : Word} {n : Machine} {x : Word}
   rw [memStore32_get_sep (hs 0x708 (by decide) (by decide))]
   rw [memStore32_get_sep (hs 0x70c (by decide) (by decide))]
 
-/-- What `decompress` leaves after `from_repr`: `s4` holds whether the input
+/-- What `decompress` leaves after `from_repr`: `s10` holds whether the input
 `x` is below `p`, and `S + 0x84` holds `x` in Montgomery form, or zero. -/
 def XOk2 (x : Nat) (ok : Word) (X : Nat) : Prop :=
   (x < p256 → ok = 1 ∧ X = x * 2 ^ 256 % p256) ∧ (p256 ≤ x → ok = 0 ∧ X = 0)

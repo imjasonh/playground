@@ -221,7 +221,7 @@ set_option maxRecDepth 100000 in
 set_option maxHeartbeats 64000000 in
 /-- **Choosing the root**, from 0x710 to 0x778: `y₀ = β` when `c = 1`
 (else 0) at `S + 0xA4`, `-y₀` at `S + 0xC4`, and in `a0` whether `y₀`'s
-value has the parity `s5` asks for. -/
+value has the parity `s11` asks for. -/
 theorem gd_stH {M : Word → BitVec 8} {n : Machine} {S c : Word} {B : Nat} (C : GdCode M) (D : GdData M)
     (F : Fr S 0x710) (s : St M GD n 0x710 (reg n)) (rsp : reg n sp = S) (r8 : reg n (8 : Fin 32) = c)
     (hc : c = 0 ∨ c = 1) (hB : accV M (S + BitVec.ofNat 32 0x43C) 8 = B) (hBp : B < p256) :
@@ -461,13 +461,13 @@ theorem gdI4b_end : blockEnd p256DecompressCode 0x7C8 gdI4b = some 0x804 := by d
 
 set_option maxRecDepth 100000 in
 set_option maxHeartbeats 64000000 in
-/-- **Writing the point**, from 0x696 to the return: `y` is `y₀` or `-y₀`
+/-- **Writing the point**, from 0x778 to the return: `y` is `y₀` or `-y₀`
 by the parity test, and `decompress` writes `x`, `y`, the identity flag 0,
 and `c ∧ ok` as the choice to `out`, then restores the saved registers. -/
 theorem gd_stI {M : Word → BitVec 8} {n : Machine} {S out par c ok : Word} {X Y0 N0 : Nat} {v : Nat → Word}
     (C : GdCode M) (D : GdData M) (F : Fr S 0x710) (s : St M GD n 0x778 (reg n)) (rsp : reg n sp = S)
     (ra0 : reg n a0 = par) (hpar : par = 0 ∨ par = 1) (r8 : reg n (8 : Fin 32) = c) (hc : c = 0 ∨ c = 1)
-    (r19 : reg n (25 : Fin 32) = out) (r20 : reg n (26 : Fin 32) = ok) (hok : ok = 0 ∨ ok = 1)
+    (r25 : reg n (25 : Fin 32) = out) (r26 : reg n (26 : Fin 32) = ok) (hok : ok = 0 ∨ ok = 1)
     (sO : Sep out 0x45 (S + 0xFFFFFE60) 0x8B0) (hO : out.toNat + 0x45 ≤ 0x40000000)
     (hX : accV M (S + BitVec.ofNat 32 0x84) 8 = X) (hY : accV M (S + BitVec.ofNat 32 0xA4) 8 = Y0)
     (hN : accV M (S + BitVec.ofNat 32 0xC4) 8 = N0)
@@ -571,7 +571,7 @@ theorem gd_stI {M : Word → BitVec 8} {n : Machine} {S out par c ok : Word} {X 
   have r5 : ∀ q, reg n5 q = (runBlock gdI2 (n4.mem, reg n4)).2 q := fun q => by rw [u5.regs]
   obtain ⟨M5, hM5⟩ : ∃ M5, memStore8 n4.mem (S + BitVec.ofNat 32 0x47C) ((0 : Word).extractLsb' 0 8) = M5 := ⟨_, rfl⟩
   have m5 : n5.mem = M5 := by
-    rw [u5.mem, ← hM5]; simp +decide only [runBlock, BInstr.run, gdI2, upd, ↓reduceIte]; rw [sp4, u4.zero]; rfl
+    rw [u5.mem, ← hM5]; simp +decide only [runBlock, BInstr.run, gdI2]; rw [sp4, u4.zero]; rfl
   have h5 : ∀ x, Sep (S + BitVec.ofNat 32 0x47C) 1 x 1 → M5 x = n4.mem x := fun x hx => by rw [← hM5]; exact dq_st8 hx
   have C5 := C4.hi fun x hx => h5 x (F.hiOut (by decide) hx)
   have sp5 : reg n5 sp = S := by rw [r5, runBlock_reg _ _ _ sp u4.zero (by decide)]; exact sp4
@@ -589,7 +589,7 @@ theorem gd_stI {M : Word → BitVec 8} {n : Machine} {S out par c ok : Word} {X 
     rw [r7]; simp +decide only [runBlock, BInstr.run, gdI3, upd, ↓reduceIte]
     rw [e6, r5]; simp +decide only [runBlock, BInstr.run, gdI2, upd, ↓reduceIte]
     rw [k4' 8 (by decide), r3, runBlock_reg _ _ _ 8 u2.zero (by decide), K2 8 (by decide), r8,
-      k4' 26 (by decide), r3, runBlock_reg _ _ _ 26 u2.zero (by decide), K2 26 (by decide), r20]
+      k4' 26 (by decide), r3, runBlock_reg _ _ _ 26 u2.zero (by decide), K2 26 (by decide), r26]
     exact BitVec.zero_add _
   have hMC : Sep out 0x44 (MCS + 8) memcpyBodyCode.length := by
     have : 0x40000000 ≤ (MCS + 8 : Word).toNat := by decide
@@ -597,7 +597,7 @@ theorem gd_stI {M : Word → BitVec 8} {n : Machine} {S out par c ok : Word} {X 
   obtain ⟨n8, c8, u8, fr8, k8⟩ := c_memcpy (dst := out) (src := S + BitVec.ofNat 32 0x43C) (S := S) (N := 0x44)
     (⟨u7.pc, u7.mem, fun _ => rfl⟩ : St n6.mem GD n7 0x7BC (reg n7)) C6.self C6.K.K gd_at_7bc gd_at_7c0 (by decide) (by decide)
     (by rw [r7, runBlock_reg _ _ _ sp u6.zero (by decide)]; exact sp6)
-    (by rw [r7]; simp +decide only [runBlock, BInstr.run, gdI3, upd, ↓reduceIte]; rw [K6 25 (by decide), r19]
+    (by rw [r7]; simp +decide only [runBlock, BInstr.run, gdI3, upd, ↓reduceIte]; rw [K6 25 (by decide), r25]
         exact BitVec.zero_add _)
     (by rw [r7]; simp +decide only [runBlock, BInstr.run, gdI3, upd, ↓reduceIte]; rw [sp6]; rfl)
     (by rw [r7]; simp +decide only [runBlock, BInstr.run, gdI3, upd, ↓reduceIte]; (try rw [u6.zero]); try rfl)
@@ -617,12 +617,12 @@ theorem gd_stI {M : Word → BitVec 8} {n : Machine} {S out par c ok : Word} {X 
       (by decide)
   obtain ⟨n9, c9, u9⟩ := u8.block gdI4a C8.self gdI4a_end (by
     simp only [BlockOk, BInstr.ok, gdI4a]; simp +decide only [and_true]
-    rw [K8 25 (by decide), r19]; exact hO64)
+    rw [K8 25 (by decide), r25]; exact hO64)
   obtain ⟨M9, hM9⟩ : ∃ M9, memStore8 n8.mem (out + BitVec.ofNat 32 0x44)
       ((((c &&& ok).extractLsb' 0 8).zeroExtend 32 : Word).extractLsb' 0 8) = M9 := ⟨_, rfl⟩
   have m9 : n9.mem = M9 := by
-    rw [u9.mem, ← hM9]; simp +decide only [runBlock, BInstr.run, gdI4a, upd, ↓reduceIte]
-    rw [K8 25 (by decide), r19, k8' 8 (by decide), e78]; rfl
+    rw [u9.mem, ← hM9]; simp +decide only [runBlock, BInstr.run, gdI4a]
+    rw [K8 25 (by decide), r25, k8' 8 (by decide), e78]; rfl
   have h9 : ∀ x, Sep (out + BitVec.ofNat 32 0x44) 1 x 1 → M9 x = n8.mem x := fun x hx => by rw [← hM9]; exact dq_st8 hx
   have C9 := C8.hi fun x hx => h9 x ((oHi hx).sub (c := 0x44) (l := 1) (by decide))
   have r9 : ∀ q, reg n9 q = reg n8 q := fun q => by rw [u9.regs]; rfl
@@ -761,7 +761,7 @@ theorem gd_stI {M : Word → BitVec 8} {n : Machine} {S out par c ok : Word} {X 
     rcases Nat.lt_or_ge k 1 with h | h
     · obtain rfl : k = 0 := by omega
       rw [fr6 _ (F.lowB hb1 (by decide) (by decide)), ← m5, u5.mem]
-      simp +decide only [runBlock, BInstr.run, gdI2, upd, ↓reduceIte]
+      simp +decide only [runBlock, BInstr.run, gdI2]
       rw [sp4, u4.zero]; exact memStore8_same _ _ _
     · rw [show 0x43C + (0x40 + k) = 0x47D + (k - 1) by omega, back6 _ (by omega) (.inr (by omega)) (.inr (by omega)),
         fr2 _ (F.lowB hb60 (by decide) (by omega)) (sq _ _ _ (by decide) (by omega) (.inl (by omega)))]

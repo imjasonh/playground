@@ -677,7 +677,7 @@ theorem gf_sub_iter {M : Word → BitVec 8} {F acc np D b : Word} {n : Machine} 
 
 set_option exponentiation.threshold 400 in
 /-- **The final subtraction**, from round `i` to its end at 0x68A: the
-buffer at `D` gets the accumulator minus the modulus, and `s4` the borrow
+buffer at `D` gets the accumulator minus the modulus, and `a2` the borrow
 out as a mask. -/
 theorem gf_sub_loop {F acc np D : Word} {M0 : Word → BitVec 8} (hF : F.toNat % 4 = 0)
     (hacc : acc.toNat % 4 = 0) (hnp : np.toNat % 4 = 0) (hD : D.toNat % 4 = 0) (hDw : D.toNat + 32 ≤ 2 ^ 32)
@@ -1104,7 +1104,7 @@ theorem gf_sq_pre {M : Word → BitVec 8} {S : Word} {n : Machine} (C : GdCode M
   have sp2 : reg n2 sp = S := by rw [g1 sp (by decide)]; exact rsp
   -- reload s9..s11, and copy the parameters
   obtain ⟨n3, c3, u3⟩ := u2.block gfQ2 C2.self gfQ2_end (by
-    simp only [BlockOk, BInstr.ok, BInstr.run, gfQ2]; simp +decide only [upd, ↓reduceIte, true_and, and_true]
+    simp only [BlockOk, BInstr.ok, BInstr.run, gfQ2]; simp +decide only [upd, ↓reduceIte, and_true]
     rw [sp2]; exact ⟨al 0x18 (by decide) (by decide), al 0x14 (by decide) (by decide), al 0x10 (by decide) (by decide)⟩)
   have r3 : ∀ q, reg n3 q = (runBlock gfQ2 (n2.mem, reg n2)).2 q := fun q => by rw [u3.regs]
   have e320 : reg n3 (20 : Fin 32) = S + BitVec.ofNat 32 0x170 := by
@@ -1132,7 +1132,7 @@ theorem gf_sq_pre {M : Word → BitVec 8} {S : Word} {n : Machine} (C : GdCode M
     rw [load_frame fr4 (l16 _ (by omega)), ← add_ofNat_assoc, cp_word (by omega) (by decide)]
   -- the Montgomery constant, and clear the accumulator
   obtain ⟨n5, c5, u5⟩ := u4.block gfQ3 C4.self gfQ3_end (by
-    simp only [BlockOk, BInstr.ok, BInstr.run, gfQ3]; simp +decide only [upd, ↓reduceIte, true_and, and_true]
+    simp only [BlockOk, BInstr.ok, gfQ3]; simp +decide only [and_true]
     rw [sp4]; exact al 0x1D0 (by decide) (by decide))
   have r5 : ∀ q, reg n5 q = (runBlock gfQ3 (n4.mem, reg n4)).2 q := fun q => by rw [u5.regs]
   obtain ⟨n6, c6, u6, mem6, k6⟩ := c_memset (dst := S + BitVec.ofNat 32 0x1DC) (b := 0) (N := 32)
