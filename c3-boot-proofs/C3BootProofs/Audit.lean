@@ -167,6 +167,7 @@ import C3BootProofs.Proofs.BsDecode
 import C3BootProofs.Proofs.ImageTopCur
 import C3BootProofs.Proofs.BootWrite
 import C3BootProofs.Proofs.Boot
+import C3BootProofs.Proofs.Dec384End
 
 /-!
 # Audit
@@ -8742,3 +8743,6 @@ end C3
 
 /-- info: 'C3.RV32.Cur.boot_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.boot_correct
+
+/-- info: 'C3.RV32.Dq.p384Decompress_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Dq.p384Decompress_correct
