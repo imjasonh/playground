@@ -5,7 +5,8 @@ accounts that GitHub Actions uses for every app in this project. It is
 not an app. Apply it once, before the first app. An app stack does not
 create a pool or a GitHub account.
 
-The pool trusts `.github/workflows/deploy-gcp.yml` in one repository.
+The pool trusts `.github/workflows/deploy-gcp.yml` in one repository,
+matched by name and by the numeric IDs of the repository and its owner.
 Apply from `main` uses the `github` provider. A pull request plan uses
 the `github-plan` provider. `deploy-gcp.yml` selects the GitHub
 environment `gcp`, and these accounts accept only that environment. A
@@ -37,7 +38,7 @@ gcloud storage buckets create gs://BUCKET --location=us-central1 --uniform-bucke
 gcloud storage buckets update gs://BUCKET --versioning
 
 cd terraform
-cp terraform.tfvars.example terraform.tfvars   # set project_id, github_repository, and state_bucket
+cp terraform.tfvars.example terraform.tfvars   # set project_id, the github_repository values, and state_bucket
 tofu init -backend-config="bucket=BUCKET"
 tofu apply
 ```
