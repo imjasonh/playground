@@ -43,13 +43,11 @@ func (f *fakeControl) ListActors(_ context.Context, req *ateapi.ListActorsReques
 	return page, nil
 }
 
-func TestDirectoryInAtespace(t *testing.T) {
+func serve(t *testing.T, control ateapi.ControlServer) ateapi.ControlClient {
+	t.Helper()
 	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
-	ateapi.RegisterControlServer(srv, &fakeControl{
-		actors: map[string][]string{"tenant-a": {"a1", "a2", "a3", "a4"}, "tenant-b": {"b1"}},
-		denied: map[string]bool{"tenant-c": true},
-	})
+	ateapi.RegisterControlServer(srv, control)
 	go srv.Serve(lis)
 	t.Cleanup(srv.Stop)
 	conn, err := grpc.NewClient("passthrough:///bufconn",
@@ -59,7 +57,14 @@ func TestDirectoryInAtespace(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	dir := substrate.NewDirectory(ateapi.NewControlClient(conn))
+	return ateapi.NewControlClient(conn)
+}
+
+func TestDirectoryInAtespace(t *testing.T) {
+	dir := substrate.NewDirectory(serve(t, &fakeControl{
+		actors: map[string][]string{"tenant-a": {"a1", "a2", "a3", "a4"}, "tenant-b": {"b1"}},
+		denied: map[string]bool{"tenant-c": true},
+	}))
 
 	for _, tc := range []struct {
 		atespace, uid string

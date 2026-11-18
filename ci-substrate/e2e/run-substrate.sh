@@ -13,14 +13,22 @@
 # CI_SUBSTRATE_ATEWORKER_IMAGE to a mirror of the ateworker-gvisor image when
 # the cluster cannot pull from ghcr.io.
 #
+# The WorkerPools in workerpool.yaml need a node labeled
+# ci-substrate.imjasonh.com/always-on=true (it may carry the matching taint)
+# and a node labeled ci-substrate.imjasonh.com/burst=true;
+# run-substrate-kind.sh makes a kind cluster with both.
+#
 # It creates the tenant-a atespace, the token Secret the egress gateway
 # injects, the credential provider's grant of that Secret's namespace to the
-# atespace, the WorkerPool, the casfs CSI driver with tenant-a's
+# atespace, the WorkerPools, the casfs CSI driver with tenant-a's
 # StorageClass, the runner ActorTemplate, and the pool Deployment. External
 # volumes are behind Substrate's ExternalVolumes preview gate, so it turns
 # that on in ate-api-server. Then it runs cictl against cas and checks that
 # an actor executed the action (the ActionResult's worker is an actor name,
-# not a Deployment runner) and read its inputs from the casfs volume.
+# not a Deployment runner) and read its inputs from the casfs volume. Last,
+# it checks that the pool sizes the burst WorkerPool: zero workers while the
+# base worker has room, one when a third actor needs it, and zero again once
+# that actor is suspended.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -92,7 +100,7 @@ if [[ -n "${WORKER_IMAGE}" ]]; then
 else
   kubectl apply -f "${OVERLAY}/workerpool.yaml"
 fi
-kubectl -n ci-substrate-workers rollout status deployment/ci-runner --timeout=300s
+kubectl -n ci-substrate-workers rollout status deployment/ci-runner-base --timeout=300s
 
 echo "==> ExternalVolumes preview gate"
 # ate-api-server takes --preview=<gate,...>. The template's external volume
@@ -225,3 +233,74 @@ if ! grep -q 'PermissionDenied.*not in atespace' <<<"${resume_out}"; then
 fi
 echo "refused: ${resume_out##*desc = }"
 intruder_cleanup
+
+echo "==> The pool sizes the burst WorkerPool"
+burst_replicas() {
+  kubectl -n ci-substrate-workers get workerpool ci-runner -o jsonpath='{.spec.replicas}'
+}
+await_burst() {
+  local want=$1 timeout=$2 got deadline
+  deadline=$((SECONDS + timeout))
+  while ((SECONDS < deadline)); do
+    got="$(burst_replicas)"
+    if [[ "${got}" == "${want}" ]]; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "the burst WorkerPool has ${got} replicas after ${timeout}s, want ${want}" >&2
+  kubectl ate get actors -a "${ATESPACE}" >&2 || true
+  kubectl -n ate-system logs deployment/ci-substrate-pool-tenant-a --tail=40 >&2
+  return 1
+}
+# actor_placement prints "<state> <workerPool> <node>" for actor $1.
+actor_placement() {
+  kubectl ate get actors -a "${ATESPACE}" -o json | python3 -c '
+import json, sys
+for a in json.load(sys.stdin).get("actors", []):
+    if a["metadata"]["name"] == sys.argv[1]:
+        s = a.get("status", {})
+        w = s.get("workerAssignment", {})
+        print(s.get("state", "-"), w.get("workerPool", "-"), s.get("assignedNode", "-"))
+' "$1"
+}
+if [[ "$(burst_replicas)" != 0 ]]; then
+  echo "the burst WorkerPool has $(burst_replicas) replicas for one actor, want 0" >&2
+  exit 1
+fi
+# The base worker holds two actors, so a third warm actor needs a burst
+# worker. A short idle timeout lets all three suspend soon after.
+kubectl -n ate-system set env deployment/ci-substrate-pool-tenant-a WARM=3 IDLE_AFTER=20s
+kubectl -n ate-system rollout status deployment/ci-substrate-pool-tenant-a --timeout=180s
+await_burst 1 120
+echo "burst WorkerPool scaled to 1"
+placement=""
+deadline=$((SECONDS + 600))
+while ((SECONDS < deadline)); do
+  placement="$(actor_placement ci-runner-2)"
+  if [[ "${placement}" == *" ci-runner "* ]]; then
+    break
+  fi
+  if [[ "${placement}" == ACTOR_STATE_RUNNING* ]]; then
+    break
+  fi
+  sleep 5
+done
+if [[ "${placement}" != *" ci-runner "* ]]; then
+  echo "ci-runner-2 did not run on the burst WorkerPool: ${placement}" >&2
+  kubectl ate get actors -a "${ATESPACE}" >&2 || true
+  kubectl -n ci-substrate-workers get pods -o wide >&2
+  kubectl -n ate-system logs deployment/ci-substrate-pool-tenant-a --tail=40 >&2
+  exit 1
+fi
+node="${placement##* }"
+if [[ "$(kubectl get node "${node}" -o jsonpath='{.metadata.labels.ci-substrate\.imjasonh\.com/burst}')" != "true" ]]; then
+  echo "ci-runner-2 ran on ${node}, which is not a burst node" >&2
+  exit 1
+fi
+echo "ci-runner-2 ran on burst node ${node}"
+await_burst 0 300
+echo "burst WorkerPool scaled to 0"
+kubectl ate get actors -a "${ATESPACE}"
+kubectl -n ate-system set env deployment/ci-substrate-pool-tenant-a WARM=1 IDLE_AFTER=2m
+kubectl -n ate-system rollout status deployment/ci-substrate-pool-tenant-a --timeout=180s

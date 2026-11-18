@@ -267,7 +267,7 @@ The demo's other limits:
 | Milestone | In this demo |
 |-----------|--------------|
 | M1 Control plane state | `cas` is a StatefulSet. Blobs, the action cache, and job records are files on its PVC (`internal/blob`, `internal/actioncache`, `internal/exec`), so a restart keeps them. Tenants come from a Secret. No Postgres or Redis; one replica owns the state. |
-| M2 Substrate lifecycle | `pool` (`internal/actorpool`, `internal/substrate`) runs per tenant: it prewarms `WARM` actors as snapshots, resumes one per queued job up to `MAX`, suspends idle ones, and replaces crashed ones. The overlay under `deploy/substrate/` has the `WorkerPool`, `ActorTemplate` with its external inputs volume, the `casfs-csi` driver with its `CSIDriverConfig` and the tenant's `StorageClass`, the egress policy, token Secret, and pool Deployment; `e2e/run-substrate.sh` applies it, runs an action in an actor, and checks the actor read its inputs from the volume. |
+| M2 Substrate lifecycle | `pool` (`internal/actorpool`, `internal/substrate`) runs per tenant: it prewarms `WARM` actors as snapshots, resumes one per queued job up to `MAX`, suspends idle ones, and replaces crashed ones. It sizes a burst `WorkerPool` to the actors that don't fit on the always-on node's workers, down to zero when they're all suspended. The overlay under `deploy/substrate/` has the `WorkerPool`, `ActorTemplate` with its external inputs volume, the `casfs-csi` driver with its `CSIDriverConfig` and the tenant's `StorageClass`, the egress policy, token Secret, and pool Deployment; `e2e/run-substrate.sh` applies it, runs an action in an actor, and checks the actor read its inputs from the volume. |
 | M3 Artifact push | The runner uploads stdout, stderr, output files, and output `Tree`s after `FindMissingBlobs`, so a blob `cas` already holds is not sent again. `remote.Client.Upload` routes blobs up to `remote.MaxBatchBytes` through `BatchUpdateBlobs` and larger ones through `ByteStream.Write`. |
 | M4 Bazel RBE API | `cas` implements CAS, ActionCache, ByteStream, Capabilities, and Execution (`Execute`, `WaitExecution`) from `bazelbuild/remote-apis`, with a per-instance queue and `WorkerService` leases (`api/worker/v1`) for runners. `Status` tells the pool how deep each queue is. |
 | M5 Node-local CAS + verification | `cascache` is the node-local proxy; every served blob is SHA-256-verified in flight, a poison is dropped, and the request falls back to the origin. `casfs` (`internal/casfs`) is the lazy-hydration filesystem: a go-fuse mount of an input `Directory` tree that fetches a file's blob from `cascache` on first read. A runner with `/dev/fuse` mounts it itself; a Substrate actor gets it as an inputs volume that `casfs-csi` (`internal/csidriver`) mounts on the actor's node, so an actor's inputs come from its own node's cache without crossing the egress gateway. |
@@ -632,6 +632,7 @@ reported the series), and `peer` is who made a call to `cas`:
 | `casfs.exec_roots`, `casfs.tree_load.duration`, `csi.volumes.published` | | Inputs volumes on a node |
 | `pool.operations`, `pool.operation.duration`, `pool.reconcile.duration` | `op`, `outcome` | Substrate's latency to create, resume, suspend, and delete actors |
 | `pool.actors`, `pool.queued`, `pool.actors.busy` | `state` | Actors by state against the queue they serve |
+| `pool.workers` | | Replicas of the burst `WorkerPool` the pool sizes |
 | `bazel.invocations`, `bazel.invocation.duration`, `bazel.invocation.cache_hit_ratio`, `bazel.invocation.bytes`, `bazel.invocation.actions`, `bazel.invocations.active` | `tool`, `direction` | Per-build totals, as distributions across builds |
 | `disk.usage`, `disk.capacity` | `dir` | `cas`'s and `cascache`'s volumes filling up |
 | `rpc.server.call.duration`, `rpc.client.call.duration` | `rpc.method`, `rpc.response.status_code` | Every RPC's latency and status, from `otelgrpc` |
@@ -720,3 +721,16 @@ The default kind e2e does not install Substrate. Building Substrate's envoy
 dataplane from source needs open Debian apt egress; use Substrate's published
 images or a machine with unrestricted egress for that install. See
 `deploy/substrate/README.md` for what the cluster needs.
+
+`e2e/run-substrate-kind.sh` does the whole thing on a two-node kind cluster:
+it taints the control-plane node as the always-on node and labels the other
+as the burst node, installs Substrate from its published images, pins
+Substrate's control plane to the always-on node, then runs `run-kind.sh` and
+`run-substrate.sh`. `run-substrate.sh` also checks that the pool scales the
+burst `WorkerPool` from zero to one when the base worker's two actors are
+not enough, that the third actor runs on the burst node, and that the pool scales it back to zero once
+the actor suspends. CI does not run it.
+
+```bash
+bash e2e/run-substrate-kind.sh
+```
