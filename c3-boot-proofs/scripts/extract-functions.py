@@ -336,7 +336,8 @@ DATA_EXTRA = [
     ("p384CurveA", "p384Decompress", 0x9A, 48),
     ("p384Params", "p384Decompress", 0xD6, 0x9C),
     ("p384SqrtExp", "p384Decompress", 0x166, 48),
-    ("p256Params", "p256FromRepr", 0xB0, 0x60),
+    ("p256Params", "p256Decompress", 0xCE, 0x6C),
+    ("p256SqrtExp", "p256Decompress", 0x15E, 32),
     ("p256CurveA", "p256FromSec1", 0x39E, 32),
     ("p256B", "p256FromSec1", 0x3C0, 32),
 ]
