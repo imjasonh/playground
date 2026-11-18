@@ -316,7 +316,7 @@ class Gen:
         return k
 
     def call(self, wrapper, off, args, c, w, written_acc=None, written_bytes=None, extra_regs=None, pre=None,
-             written_sv=None, written_mbf=None, written_words=None):
+             written_sv=None, written_mbf=None, written_words=None, post=None):
         k = self.k = self.k + 1
         self.emit(f"  -- 0x{off:X}: {wrapper}")
         for line in pre or []:
@@ -326,6 +326,8 @@ class Gen:
         self.emit(f"    {args}")
         self.emit(f"  have s{k} := P{k}.st")
         self.emit(f"  have fr{k} := P{k}.fr")
+        for line in post or []:
+            self.emit(f"  {line}")
         self.emit(f"  have E{k} : {self.envt} n{k}.mem := E{k-1}.fr F fr{k}")
         self.common(k, f"P{k}.steps")
         self.reg_facts(k, "call")
@@ -706,10 +708,11 @@ class Ops:
         k = g.k
         X = g.mbf[cc][2]
         ds = f"wnafGo ({X}) 0x180 0x181 0 0"
-        mbs = {cw: (0x181, "list", f"wnafBytes ({ds}) 0x181", [f"exact V{k + 1}.2"])}
+        mbs = {cw: (0x181, "list", f"wnafBytes ({ds}) 0x181", [f"exact V{k + 1}.2.1"])}
         g.call("pv_wf", off, f"g{k}_2 g{k}_10 g{k}_11 g{k}_12 g{k}_13 g{k}_14 (by decide) (by decide) (by decide)\n"
                f"    mb{k}_{cc:x} mb{k}_{cw:x}", cw, 0x181, written_mbf=mbs,
-               extra_regs={10: (("U", f"BitVec.ofNat 32 ({ds}).length"), f"exact V{k + 1}.1")})
+               extra_regs={10: (("U", f"BitVec.ofNat 32 ({ds}).length"), f"exact V{k + 1}.1")},
+               post=[f"have keep_len : ({ds}).length ≤ 0x181 := V{k + 1}.2.2"])
 
     def sn(self, off, dst, x):
         g = self.g
@@ -1182,6 +1185,7 @@ def stage_f(i):
                  + [f"have g0_{r} : reg n0 ({r} : Fin 32) = reg n0 ({r} : Fin 32) := rfl" for r in (3, 4)],
         "import": "C3BootProofs.Proofs.Pv384Lib4",
         "only": {"regs": {2, 3, 4, 9, 18, 19, 20, 21, 22, 23, 24, 25}, "acc": keep},
+        "extra": [(f"(wnafGo (n3fm U{i + 1} 1) 0x180 0x181 0 0).length ≤ 0x181", "keep_len")],
     }
     return g, info
 

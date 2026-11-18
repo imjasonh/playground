@@ -1829,7 +1829,8 @@ digit, and the digit count in `a0`. -/
 theorem wf_exit (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L r0 M n 0x5E L carry j D) :
     ∃ n' M', Steps n n' ∧ St M' WF n' 0x180 (reg n') ∧ WfR F wp wl L r0 n' ∧
       WfMem M0 Ms F wp cp wl cn M' j (wnafSpec (memBytes M0 cp cn) L).length (wnafSpec (memBytes M0 cp cn) L) ∧
-      reg n' a0 = BitVec.ofNat 32 (wnafSpec (memBytes M0 cp cn) L).length := by
+      reg n' a0 = BitVec.ofNat 32 (wnafSpec (memBytes M0 cp cn) L).length ∧
+      (wnafSpec (memBytes M0 cp cn) L).length ≤ L + 1 := by
   have hLw := C.hLw; have hL := C.hL; have hFa := C.room.1; have hcar := S.hc
   have hc : CodeIn M WF wnafFormCode := C.code S.agree C.cod (by decide) (by decide)
   have hE : wnafSpec (memBytes M0 cp cn) L = D ++ (if carry = 0 then [] else [(1 : Int)]) := by
@@ -1860,10 +1861,11 @@ theorem wf_exit (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L r
     obtain ⟨n5, d5, u5⟩ := S4.st.taken hc 0x17E wf_at_170 (by decide) (by rw [a0_4, S4.st.zero]; rfl)
     obtain ⟨n6, d6, u6⟩ := u5.self.alu hc wf_at_17e (off' := 0x180) (by decide)
     refine ⟨n6, M, .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.single d6))))), u6.self,
-      (R4.jmp u5).upd u6 u5.self.zero (by decide), ?_, ?_⟩
+      (R4.jmp u5).upd u6 u5.self.zero (by decide), ?_, ?_, ?_⟩
     · simp only [↓reduceIte, List.append_nil]; rw [hlen]; exact S.mem
     · simp only [↓reduceIte, List.append_nil]
       rw [u6.upd_eq (by decide), u5.self.zero, u5.regs, S4.s6, hlen]; exact BitVec.zero_add _
+    · simp only [↓reduceIte, List.append_nil]; omega
   · obtain rfl : carry = 1 := by omega
     obtain ⟨n5, d5, u5⟩ := S4.st.notTaken hc 0x172 wf_at_170 (by decide) (by rw [a0_4, S4.st.zero]; rfl)
     have S5 := S4.jmp u5
@@ -1885,11 +1887,12 @@ theorem wf_exit (C : WfCtx M0 F wp cp wl cn L) (S : WfSt M0 Ms F wp cp wl cn L r
     have s6_8 : reg n8 (22 : Fin 32) = BitVec.ofNat 32 (L + 1) := by
       rw [u8.upd_eq (by decide), S7.s6, wadd1]
     refine ⟨n10, _, .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.cons d6 (.cons d7 (.cons d8 (.cons d9
-      (.single d10))))))))), u10.self, ?_, ?_, ?_⟩
+      (.single d10))))))))), u10.self, ?_, ?_, ?_, ?_⟩
     · exact (S7.r.upd u8 S7.st.zero (by decide)).upd u10 u9.zero (by decide)
     · simp only [Nat.one_ne_zero, ↓reduceIte, List.length_append, List.length_singleton]; rw [hlen]; exact P.1
     · simp only [Nat.one_ne_zero, ↓reduceIte, List.length_append, List.length_singleton]
       rw [u10.upd_eq (by decide), u9.zero, s6_8, hlen]; exact BitVec.zero_add _
+    · simp only [Nat.one_ne_zero, ↓reduceIte, List.length_append, List.length_singleton]; omega
 
 end Steps
 
@@ -2187,6 +2190,7 @@ theorem wnafForm_correct (m : Machine) {sp0 wp cp retAddr : Word} {wl cn L : Nat
         m'.mem (wp + BitVec.ofNat 32 i) = BitVec.ofNat 8 (digB ((wnafSpec (memBytes m.mem cp cn) L).getD i 0))) ∧
       (∀ i, (wnafSpec (memBytes m.mem cp cn) L).length ≤ i → i < wl →
         m'.mem (wp + BitVec.ofNat 32 i) = m.mem (wp + BitVec.ofNat 32 i)) ∧
+      (wnafSpec (memBytes m.mem cp cn) L).length ≤ L + 1 ∧
       ∀ x, Sep (sp0 + 0xFFFFFF70) 0x90 x 1 → Sep wp wl x 1 → m'.mem x = m.mem x := by
   obtain ⟨F, hF⟩ : ∃ F, sp0 + 0xFFFFFF90 = F := ⟨_, rfl⟩
   rw [hF] at C
@@ -2194,7 +2198,7 @@ theorem wnafForm_correct (m : Machine) {sp0 wp cp retAddr : Word} {wl cn L : Nat
   rw [hG]
   obtain ⟨n1, Ms, M1, c1, S1, slot⟩ := wf_pro m C hpc ha0 ha1 ha2 ha3 ha4 (by rw [hsp, hF])
   obtain ⟨n2, M2, car, j2, D2, c2, S2⟩ := wf_loop C (L + 1) (by omega) S1
-  obtain ⟨n3, M3, c3, s3, R3, W3, a03⟩ := wf_exit C S2
+  obtain ⟨n3, M3, c3, s3, R3, W3, a03, hl3⟩ := wf_exit C S2
   have hc3 := C.code W3.agree C.cod (by decide) (by decide)
   have hFa := C.room.1
   obtain ⟨n4, c4, u4⟩ := St.block (restoreBlock wfPs) s3 hc3 wfRestore_end
@@ -2214,7 +2218,7 @@ theorem wnafForm_correct (m : Machine) {sp0 wp cp retAddr : Word} {wl cn L : Nat
     · have : q = 0 := Fin.ext h0
       subst this; rw [upd_zero, u4.zero]
     · exact upd_ne h0 hq
-  refine ⟨n6, c1.trans (c2.trans (c3.trans (c4.trans (.cons d5 (.single d6))))), ?_, ?_, fun q hq => ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨n6, c1.trans (c2.trans (c3.trans (c4.trans (.cons d5 (.single d6))))), ?_, ?_, fun q hq => ?_, ?_, ?_, ?_, hl3, ?_⟩
   · rw [pc6, upd_ne (by decide) (by decide), wfPs_restore _ _ _ ra 0x6C (by decide), add_lit_zero,
       slotM ra _ (by decide), hra, hret]
   · rw [regs6]; simp +decide only [upd_app, ↓reduceIte, aluEval]; rw [rsp4, ← hF, BitVec.add_assoc]

@@ -55,6 +55,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
     (g0_3 : reg n0 (3 : Fin 32) = reg n0 (3 : Fin 32))
     (g0_4 : reg n0 (4 : Fin 32) = reg n0 (4 : Fin 32))
     (g0_18 : reg n0 (18 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x17A4)
+    (g0_25 : reg n0 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80)
     (a0_120 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX)
     (a0_150 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x150) 12 = QY)
     (a0_180 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x180) 12 = QZ)
@@ -71,12 +72,21 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
       reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧
       reg n' (18 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x17A4 ∧
       reg n' (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4600 ∧
+      reg n' (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 ∧
       accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX ∧
       accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x150) 12 = QY ∧
       accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x180) 12 = QZ ∧
       accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x1B0) 12 = RM ∧
       accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x1E0) 12 = SM ∧
       accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x210) 12 = ZM ∧
+      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x270) 12 = dataVal p384GData 0 12 ∧
+      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x2A0) 12 = dataVal p384GData 0x30 12 ∧
+      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x2D0) 12 = dataVal p384GData 0x60 12 ∧
+      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x300) 12 = n3fm (ZM) (W) ∧
+      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x330) 12 = QX ∧
+      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x360) 12 = QY ∧
+      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x390) 12 = QZ ∧
+      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = n3fm (RM) (W) ∧
       accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = dataVal p384GData 0 12 ∧
       accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = dataVal p384GData 0x30 12 ∧
       accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x1804) 12 = dataVal p384GData 0x60 12 ∧
@@ -108,15 +118,17 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
     rw [rb1, runBlock_reg _ _ _ (4 : Fin 32) s0.zero (by decide), g0_4]
   have g1_18 : reg n1 (18 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x17A4 := by
     rw [rb1, runBlock_reg _ _ _ (18 : Fin 32) s0.zero (by decide), g0_18]
+  have g1_25 : reg n1 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by
+    rw [rb1, runBlock_reg _ _ _ (25 : Fin 32) s0.zero (by decide), g0_25]
   have g1_10 : reg n1 a0 = B + 0x420 + BitVec.ofNat 32 0x240 := by
     rw [rb1]; simp +decide only [runBlock, BInstr.run, pvD730, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g0_2, g0_3, g0_4, g0_18, s0.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g0_2, g0_3, g0_4, g0_18, g0_25, s0.zero, BitVec.zero_add]) <;> pv_val
   have g1_11 : reg n1 a1 = B + 0x420 + BitVec.ofNat 32 0xE10 := by
     rw [rb1]; simp +decide only [runBlock, BInstr.run, pvD730, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g0_2, g0_3, g0_4, g0_18, s0.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g0_2, g0_3, g0_4, g0_18, g0_25, s0.zero, BitVec.zero_add]) <;> pv_val
   have g1_12 : reg n1 a2 = BitVec.ofNat 32 0x30 := by
     rw [rb1]; simp +decide only [runBlock, BInstr.run, pvD730, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g0_2, g0_3, g0_4, g0_18, s0.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g0_2, g0_3, g0_4, g0_18, g0_25, s0.zero, BitVec.zero_add]) <;> pv_val
   have a1_120 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
     (K1.acc (by decide) (by decide)).trans a0_120
   have a1_150 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x150) 12 = QY :=
@@ -143,6 +155,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
   have g2_3 : reg n2 (3 : Fin 32) = reg n0 (3 : Fin 32) := by rw [P2.regs (3 : Fin 32) (by decide), g1_3]
   have g2_4 : reg n2 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P2.regs (4 : Fin 32) (by decide), g1_4]
   have g2_18 : reg n2 (18 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x17A4 := by rw [P2.regs (18 : Fin 32) (by decide), g1_18]
+  have g2_25 : reg n2 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P2.regs (25 : Fin 32) (by decide), g1_25]
   have a2_120 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
     (K2.acc (by decide) (by decide)).trans a1_120
   have a2_150 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x150) 12 = QY :=
@@ -163,7 +176,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
       have := V2 (0x0 + q) (by omega)
       rwa [show 0x240 + (0x0 + q) = 0x240 + q by omega,
         show 0xE10 + (0x0 + q) = 0xE10 + q by omega] at this
-  clear a1_e10 a1_210 a1_1e0 a1_1b0 a1_180 a1_150 a1_120 g1_12 g1_11 g1_10 g1_18 g1_4 g1_3 g1_2 fR1 t1 K1 fr1 rb1 E1 s1 m1 u1 c1
+  clear a1_e10 a1_210 a1_1e0 a1_1b0 a1_180 a1_150 a1_120 g1_12 g1_11 g1_10 g1_25 g1_18 g1_4 g1_3 g1_2 fR1 t1 K1 fr1 rb1 E1 s1 m1 u1 c1
   -- 0x746
   obtain ⟨n3, c3, u3⟩ := s2.block pvD746 E2.E.E.C.self pvD746_end
     ⟨trivial, trivial, trivial, trivial, trivial⟩
@@ -183,15 +196,17 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
     rw [rb3, runBlock_reg _ _ _ (4 : Fin 32) s2.zero (by decide), g2_4]
   have g3_18 : reg n3 (18 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x17A4 := by
     rw [rb3, runBlock_reg _ _ _ (18 : Fin 32) s2.zero (by decide), g2_18]
+  have g3_25 : reg n3 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by
+    rw [rb3, runBlock_reg _ _ _ (25 : Fin 32) s2.zero (by decide), g2_25]
   have g3_10 : reg n3 a0 = B + 0x420 + BitVec.ofNat 32 0xEA0 := by
     rw [rb3]; simp +decide only [runBlock, BInstr.run, pvD746, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g2_2, g2_3, g2_4, g2_18, s2.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g2_2, g2_3, g2_4, g2_18, g2_25, s2.zero, BitVec.zero_add]) <;> pv_val
   have g3_11 : reg n3 a1 = B + 0x420 + BitVec.ofNat 32 0x210 := by
     rw [rb3]; simp +decide only [runBlock, BInstr.run, pvD746, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g2_2, g2_3, g2_4, g2_18, s2.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g2_2, g2_3, g2_4, g2_18, g2_25, s2.zero, BitVec.zero_add]) <;> pv_val
   have g3_12 : reg n3 a2 = B + 0x420 + BitVec.ofNat 32 0x240 := by
     rw [rb3]; simp +decide only [runBlock, BInstr.run, pvD746, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g2_2, g2_3, g2_4, g2_18, s2.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g2_2, g2_3, g2_4, g2_18, g2_25, s2.zero, BitVec.zero_add]) <;> pv_val
   have a3_120 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
     (K3.acc (by decide) (by decide)).trans a2_120
   have a3_150 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x150) 12 = QY :=
@@ -208,7 +223,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
     (K3.acc (by decide) (by decide)).trans a2_240
   have a3_e10 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0xE10) 12 = W :=
     (K3.acc (by decide) (by decide)).trans a2_e10
-  clear a2_240 a2_e10 a2_210 a2_1e0 a2_1b0 a2_180 a2_150 a2_120 g2_18 g2_4 g2_3 g2_2 fR2 t2 E2 fr2 s2 V2 K2 P2
+  clear a2_240 a2_e10 a2_210 a2_1e0 a2_1b0 a2_180 a2_150 a2_120 g2_25 g2_18 g2_4 g2_3 g2_2 fR2 t2 E2 fr2 s2 V2 K2 P2
   -- 0x752: pv_smul
   obtain ⟨n4, P4, K4, V4⟩ := pv_smul F E3 s3 pv_at_752 pv_at_756 (by decide) (by decide)
     g3_2 g3_10 g3_11 g3_12 (by decide) (by decide) (by decide) (by decide) (by decide)
@@ -222,6 +237,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
   have g4_3 : reg n4 (3 : Fin 32) = reg n0 (3 : Fin 32) := by rw [P4.regs (3 : Fin 32) (by decide), g3_3]
   have g4_4 : reg n4 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P4.regs (4 : Fin 32) (by decide), g3_4]
   have g4_18 : reg n4 (18 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x17A4 := by rw [P4.regs (18 : Fin 32) (by decide), g3_18]
+  have g4_25 : reg n4 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P4.regs (25 : Fin 32) (by decide), g3_25]
   have a4_120 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
     (K4.acc (by decide) (by decide)).trans a3_120
   have a4_150 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x150) 12 = QY :=
@@ -240,7 +256,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
     (K4.acc (by decide) (by decide)).trans a3_e10
   have a4_ea0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0xEA0) 12 = n3fm (ZM) (W) := by
     rw [V4, a3_210, a3_240]
-  clear a3_e10 a3_240 a3_210 a3_1e0 a3_1b0 a3_180 a3_150 a3_120 g3_12 g3_11 g3_10 g3_18 g3_4 g3_3 g3_2 fR3 t3 K3 fr3 rb3 E3 s3 m3 u3 c3
+  clear a3_e10 a3_240 a3_210 a3_1e0 a3_1b0 a3_180 a3_150 a3_120 g3_12 g3_11 g3_10 g3_25 g3_18 g3_4 g3_3 g3_2 fR3 t3 K3 fr3 rb3 E3 s3 m3 u3 c3
   -- 0x75A
   obtain ⟨n5, c5, u5⟩ := s4.block pvD75a E4.E.E.C.self pvD75a_end
     ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩
@@ -260,15 +276,17 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
     rw [rb5, runBlock_reg _ _ _ (4 : Fin 32) s4.zero (by decide), g4_4]
   have g5_18 : reg n5 (18 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x17A4 := by
     rw [rb5, runBlock_reg _ _ _ (18 : Fin 32) s4.zero (by decide), g4_18]
+  have g5_25 : reg n5 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by
+    rw [rb5, runBlock_reg _ _ _ (25 : Fin 32) s4.zero (by decide), g4_25]
   have g5_10 : reg n5 a0 = B + 0x420 + BitVec.ofNat 32 0x1324 := by
     rw [rb5]; simp +decide only [runBlock, BInstr.run, pvD75a, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g4_2, g4_3, g4_4, g4_18, s4.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g4_2, g4_3, g4_4, g4_18, g4_25, s4.zero, BitVec.zero_add]) <;> pv_val
   have g5_11 : reg n5 a1 = B + 0x420 + BitVec.ofNat 32 0x1B0 := by
     rw [rb5]; simp +decide only [runBlock, BInstr.run, pvD75a, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g4_2, g4_3, g4_4, g4_18, s4.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g4_2, g4_3, g4_4, g4_18, g4_25, s4.zero, BitVec.zero_add]) <;> pv_val
   have g5_12 : reg n5 a2 = B + 0x420 + BitVec.ofNat 32 0x240 := by
     rw [rb5]; simp +decide only [runBlock, BInstr.run, pvD75a, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g4_2, g4_3, g4_4, g4_18, s4.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g4_2, g4_3, g4_4, g4_18, g4_25, s4.zero, BitVec.zero_add]) <;> pv_val
   have a5_120 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
     (K5.acc (by decide) (by decide)).trans a4_120
   have a5_150 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x150) 12 = QY :=
@@ -287,7 +305,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
     (K5.acc (by decide) (by decide)).trans a4_e10
   have a5_ea0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xEA0) 12 = n3fm (ZM) (W) :=
     (K5.acc (by decide) (by decide)).trans a4_ea0
-  clear a4_ea0 a4_e10 a4_240 a4_210 a4_1e0 a4_1b0 a4_180 a4_150 a4_120 g4_18 g4_4 g4_3 g4_2 fR4 t4 E4 fr4 s4 V4 K4 P4
+  clear a4_ea0 a4_e10 a4_240 a4_210 a4_1e0 a4_1b0 a4_180 a4_150 a4_120 g4_25 g4_18 g4_4 g4_3 g4_2 fR4 t4 E4 fr4 s4 V4 K4 P4
   -- 0x766: pv_smul
   obtain ⟨n6, P6, K6, V6⟩ := pv_smul F E5 s5 pv_at_766 pv_at_76a (by decide) (by decide)
     g5_2 g5_10 g5_11 g5_12 (by decide) (by decide) (by decide) (by decide) (by decide)
@@ -301,6 +319,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
   have g6_3 : reg n6 (3 : Fin 32) = reg n0 (3 : Fin 32) := by rw [P6.regs (3 : Fin 32) (by decide), g5_3]
   have g6_4 : reg n6 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P6.regs (4 : Fin 32) (by decide), g5_4]
   have g6_18 : reg n6 (18 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x17A4 := by rw [P6.regs (18 : Fin 32) (by decide), g5_18]
+  have g6_25 : reg n6 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P6.regs (25 : Fin 32) (by decide), g5_25]
   have a6_120 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
     (K6.acc (by decide) (by decide)).trans a5_120
   have a6_150 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x150) 12 = QY :=
@@ -321,7 +340,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
     (K6.acc (by decide) (by decide)).trans a5_ea0
   have a6_1324 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x1324) 12 = n3fm (RM) (W) := by
     rw [V6, a5_1b0, a5_240]
-  clear a5_ea0 a5_e10 a5_240 a5_210 a5_1e0 a5_1b0 a5_180 a5_150 a5_120 g5_12 g5_11 g5_10 g5_18 g5_4 g5_3 g5_2 fR5 t5 K5 fr5 rb5 E5 s5 m5 u5 c5
+  clear a5_ea0 a5_e10 a5_240 a5_210 a5_1e0 a5_1b0 a5_180 a5_150 a5_120 g5_12 g5_11 g5_10 g5_25 g5_18 g5_4 g5_3 g5_2 fR5 t5 K5 fr5 rb5 E5 s5 m5 u5 c5
   -- 0x76E
   obtain ⟨n7, c7, u7⟩ := s6.block pvD76e E6.E.E.C.self pvD76e_end
     ⟨trivial, trivial, trivial, trivial, trivial, trivial, trivial⟩
@@ -341,18 +360,20 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
     rw [rb7, runBlock_reg _ _ _ (4 : Fin 32) s6.zero (by decide), g6_4]
   have g7_18 : reg n7 (18 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x17A4 := by
     rw [rb7, runBlock_reg _ _ _ (18 : Fin 32) s6.zero (by decide), g6_18]
+  have g7_25 : reg n7 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by
+    rw [rb7, runBlock_reg _ _ _ (25 : Fin 32) s6.zero (by decide), g6_25]
   have g7_10 : reg n7 a0 = B + 0x420 + BitVec.ofNat 32 0xE10 := by
     rw [rb7]; simp +decide only [runBlock, BInstr.run, pvD76e, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g6_2, g6_3, g6_4, g6_18, s6.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g6_2, g6_3, g6_4, g6_18, g6_25, s6.zero, BitVec.zero_add]) <;> pv_val
   have g7_11 : reg n7 a1 = BitVec.ofNat 32 0x3FCC4600 := by
     rw [rb7]; simp +decide only [runBlock, BInstr.run, pvD76e, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g6_2, g6_3, g6_4, g6_18, s6.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g6_2, g6_3, g6_4, g6_18, g6_25, s6.zero, BitVec.zero_add]) <;> pv_val
   have g7_12 : reg n7 a2 = BitVec.ofNat 32 0x90 := by
     rw [rb7]; simp +decide only [runBlock, BInstr.run, pvD76e, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g6_2, g6_3, g6_4, g6_18, s6.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g6_2, g6_3, g6_4, g6_18, g6_25, s6.zero, BitVec.zero_add]) <;> pv_val
   have g7_23 : reg n7 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4600 := by
     rw [rb7]; simp +decide only [runBlock, BInstr.run, pvD76e, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g6_2, g6_3, g6_4, g6_18, s6.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g6_2, g6_3, g6_4, g6_18, g6_25, s6.zero, BitVec.zero_add]) <;> pv_val
   have a7_120 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
     (K7.acc (by decide) (by decide)).trans a6_120
   have a7_150 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x150) 12 = QY :=
@@ -373,7 +394,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
     (K7.acc (by decide) (by decide)).trans a6_ea0
   have a7_1324 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x1324) 12 = n3fm (RM) (W) :=
     (K7.acc (by decide) (by decide)).trans a6_1324
-  clear a6_1324 a6_ea0 a6_e10 a6_240 a6_210 a6_1e0 a6_1b0 a6_180 a6_150 a6_120 g6_18 g6_4 g6_3 g6_2 fR6 t6 E6 fr6 s6 V6 K6 P6
+  clear a6_1324 a6_ea0 a6_e10 a6_240 a6_210 a6_1e0 a6_1b0 a6_180 a6_150 a6_120 g6_25 g6_18 g6_4 g6_3 g6_2 fR6 t6 E6 fr6 s6 V6 K6 P6
   -- 0x784: pv_mcK
   obtain ⟨n8, P8, K8, V8⟩ := pv_mcK F E7.E.E s7 pv_at_784 pv_at_788 (by decide) (by decide)
     g7_2 g7_10 g7_11 g7_12 (by decide) (by decide) (by decide)
@@ -387,6 +408,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
   have g8_4 : reg n8 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P8.regs (4 : Fin 32) (by decide), g7_4]
   have g8_18 : reg n8 (18 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x17A4 := by rw [P8.regs (18 : Fin 32) (by decide), g7_18]
   have g8_23 : reg n8 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4600 := by rw [P8.regs (23 : Fin 32) (by decide), g7_23]
+  have g8_25 : reg n8 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P8.regs (25 : Fin 32) (by decide), g7_25]
   have a8_120 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
     (K8.acc (by decide) (by decide)).trans a7_120
   have a8_150 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x150) 12 = QY :=
@@ -419,7 +441,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
       have := V8 (0x60 + q) (by omega)
       rwa [show 0xE10 + (0x60 + q) = 0xE70 + q by omega] at this]
     exact code_accV (d := p384GData) E7.E.E.D2.g 0x60 12 (by decide)
-  clear a7_1324 a7_ea0 a7_e10 a7_240 a7_210 a7_1e0 a7_1b0 a7_180 a7_150 a7_120 g7_23 g7_12 g7_11 g7_10 g7_18 g7_4 g7_3 g7_2 fR7 t7 K7 fr7 rb7 E7 s7 m7 u7 c7
+  clear a7_1324 a7_ea0 a7_e10 a7_240 a7_210 a7_1e0 a7_1b0 a7_180 a7_150 a7_120 g7_23 g7_12 g7_11 g7_10 g7_25 g7_18 g7_4 g7_3 g7_2 fR7 t7 K7 fr7 rb7 E7 s7 m7 u7 c7
   -- 0x78C
   obtain ⟨n9, c9, u9⟩ := s8.block pvD78c E8.E.E.C.self pvD78c_end
     ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩
@@ -441,15 +463,17 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
     rw [rb9, runBlock_reg _ _ _ (18 : Fin 32) s8.zero (by decide), g8_18]
   have g9_23 : reg n9 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4600 := by
     rw [rb9, runBlock_reg _ _ _ (23 : Fin 32) s8.zero (by decide), g8_23]
+  have g9_25 : reg n9 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by
+    rw [rb9, runBlock_reg _ _ _ (25 : Fin 32) s8.zero (by decide), g8_25]
   have g9_10 : reg n9 a0 = B + 0x420 + BitVec.ofNat 32 0x1294 := by
     rw [rb9]; simp +decide only [runBlock, BInstr.run, pvD78c, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g8_2, g8_3, g8_4, g8_18, g8_23, s8.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g8_2, g8_3, g8_4, g8_18, g8_23, g8_25, s8.zero, BitVec.zero_add]) <;> pv_val
   have g9_11 : reg n9 a1 = B + 0x420 + BitVec.ofNat 32 0x120 := by
     rw [rb9]; simp +decide only [runBlock, BInstr.run, pvD78c, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g8_2, g8_3, g8_4, g8_18, g8_23, s8.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g8_2, g8_3, g8_4, g8_18, g8_23, g8_25, s8.zero, BitVec.zero_add]) <;> pv_val
   have g9_12 : reg n9 a2 = BitVec.ofNat 32 0x90 := by
     rw [rb9]; simp +decide only [runBlock, BInstr.run, pvD78c, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g8_2, g8_3, g8_4, g8_18, g8_23, s8.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g8_2, g8_3, g8_4, g8_18, g8_23, g8_25, s8.zero, BitVec.zero_add]) <;> pv_val
   have a9_120 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
     (K9.acc (by decide) (by decide)).trans a8_120
   have a9_150 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x150) 12 = QY :=
@@ -474,7 +498,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
     (K9.acc (by decide) (by decide)).trans a8_ea0
   have a9_1324 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x1324) 12 = n3fm (RM) (W) :=
     (K9.acc (by decide) (by decide)).trans a8_1324
-  clear a8_e70 a8_e40 a8_e10 a8_1324 a8_ea0 a8_240 a8_210 a8_1e0 a8_1b0 a8_180 a8_150 a8_120 g8_23 g8_18 g8_4 g8_3 g8_2 fR8 t8 E8 fr8 s8 V8 K8 P8
+  clear a8_e70 a8_e40 a8_e10 a8_1324 a8_ea0 a8_240 a8_210 a8_1e0 a8_1b0 a8_180 a8_150 a8_120 g8_25 g8_23 g8_18 g8_4 g8_3 g8_2 fR8 t8 E8 fr8 s8 V8 K8 P8
   -- 0x79A: pv_mc
   obtain ⟨n10, P10, K10, V10⟩ := pv_mc F E9.E.E s9 pv_at_79a pv_at_79e (by decide) (by decide)
     g9_2 g9_10 g9_11 g9_12 (by decide) (by decide) (by decide)
@@ -488,6 +512,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
   have g10_4 : reg n10 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P10.regs (4 : Fin 32) (by decide), g9_4]
   have g10_18 : reg n10 (18 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x17A4 := by rw [P10.regs (18 : Fin 32) (by decide), g9_18]
   have g10_23 : reg n10 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4600 := by rw [P10.regs (23 : Fin 32) (by decide), g9_23]
+  have g10_25 : reg n10 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P10.regs (25 : Fin 32) (by decide), g9_25]
   have a10_120 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
     (K10.acc (by decide) (by decide)).trans a9_120
   have a10_150 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x150) 12 = QY :=
@@ -530,7 +555,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
       have := V10 (0x60 + q) (by omega)
       rwa [show 0x1294 + (0x60 + q) = 0x12F4 + q by omega,
         show 0x120 + (0x60 + q) = 0x180 + q by omega] at this
-  clear a9_1324 a9_ea0 a9_e70 a9_e40 a9_e10 a9_240 a9_210 a9_1e0 a9_1b0 a9_180 a9_150 a9_120 g9_12 g9_11 g9_10 g9_23 g9_18 g9_4 g9_3 g9_2 fR9 t9 K9 fr9 rb9 E9 s9 m9 u9 c9
+  clear a9_1324 a9_ea0 a9_e70 a9_e40 a9_e10 a9_240 a9_210 a9_1e0 a9_1b0 a9_180 a9_150 a9_120 g9_12 g9_11 g9_10 g9_25 g9_23 g9_18 g9_4 g9_3 g9_2 fR9 t9 K9 fr9 rb9 E9 s9 m9 u9 c9
   -- 0x7A2
   obtain ⟨n11, c11, u11⟩ := s10.block pvD7a2 E10.E.E.C.self pvD7a2_end
     ⟨trivial, trivial, trivial, trivial, trivial⟩
@@ -552,15 +577,17 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
     rw [rb11, runBlock_reg _ _ _ (18 : Fin 32) s10.zero (by decide), g10_18]
   have g11_23 : reg n11 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4600 := by
     rw [rb11, runBlock_reg _ _ _ (23 : Fin 32) s10.zero (by decide), g10_23]
+  have g11_25 : reg n11 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by
+    rw [rb11, runBlock_reg _ _ _ (25 : Fin 32) s10.zero (by decide), g10_25]
   have g11_10 : reg n11 a0 = B + 0x420 + BitVec.ofNat 32 0x270 := by
     rw [rb11]; simp +decide only [runBlock, BInstr.run, pvD7a2, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g10_2, g10_3, g10_4, g10_18, g10_23, s10.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g10_2, g10_3, g10_4, g10_18, g10_23, g10_25, s10.zero, BitVec.zero_add]) <;> pv_val
   have g11_11 : reg n11 a1 = B + 0x420 + BitVec.ofNat 32 0xE10 := by
     rw [rb11]; simp +decide only [runBlock, BInstr.run, pvD7a2, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g10_2, g10_3, g10_4, g10_18, g10_23, s10.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g10_2, g10_3, g10_4, g10_18, g10_23, g10_25, s10.zero, BitVec.zero_add]) <;> pv_val
   have g11_12 : reg n11 a2 = BitVec.ofNat 32 0xC0 := by
     rw [rb11]; simp +decide only [runBlock, BInstr.run, pvD7a2, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g10_2, g10_3, g10_4, g10_18, g10_23, s10.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g10_2, g10_3, g10_4, g10_18, g10_23, g10_25, s10.zero, BitVec.zero_add]) <;> pv_val
   have a11_120 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
     (K11.acc (by decide) (by decide)).trans a10_120
   have a11_150 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x150) 12 = QY :=
@@ -591,7 +618,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
     (K11.acc (by decide) (by decide)).trans a10_12f4
   have a11_1324 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x1324) 12 = n3fm (RM) (W) :=
     (K11.acc (by decide) (by decide)).trans a10_1324
-  clear a10_12f4 a10_12c4 a10_1294 a10_1324 a10_ea0 a10_e70 a10_e40 a10_e10 a10_240 a10_210 a10_1e0 a10_1b0 a10_180 a10_150 a10_120 g10_23 g10_18 g10_4 g10_3 g10_2 fR10 t10 E10 fr10 s10 V10 K10 P10
+  clear a10_12f4 a10_12c4 a10_1294 a10_1324 a10_ea0 a10_e70 a10_e40 a10_e10 a10_240 a10_210 a10_1e0 a10_1b0 a10_180 a10_150 a10_120 g10_25 g10_23 g10_18 g10_4 g10_3 g10_2 fR10 t10 E10 fr10 s10 V10 K10 P10
   -- 0x7B0: pv_mc
   obtain ⟨n12, P12, K12, V12⟩ := pv_mc F E11.E.E s11 pv_at_7b0 pv_at_7b4 (by decide) (by decide)
     g11_2 g11_10 g11_11 g11_12 (by decide) (by decide) (by decide)
@@ -605,6 +632,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
   have g12_4 : reg n12 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P12.regs (4 : Fin 32) (by decide), g11_4]
   have g12_18 : reg n12 (18 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x17A4 := by rw [P12.regs (18 : Fin 32) (by decide), g11_18]
   have g12_23 : reg n12 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4600 := by rw [P12.regs (23 : Fin 32) (by decide), g11_23]
+  have g12_25 : reg n12 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P12.regs (25 : Fin 32) (by decide), g11_25]
   have a12_120 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
     (K12.acc (by decide) (by decide)).trans a11_120
   have a12_150 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x150) 12 = QY :=
@@ -659,7 +687,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
       have := V12 (0x90 + q) (by omega)
       rwa [show 0x270 + (0x90 + q) = 0x300 + q by omega,
         show 0xE10 + (0x90 + q) = 0xEA0 + q by omega] at this
-  clear a11_1324 a11_12f4 a11_12c4 a11_1294 a11_ea0 a11_e70 a11_e40 a11_e10 a11_240 a11_210 a11_1e0 a11_1b0 a11_180 a11_150 a11_120 g11_12 g11_11 g11_10 g11_23 g11_18 g11_4 g11_3 g11_2 fR11 t11 K11 fr11 rb11 E11 s11 m11 u11 c11
+  clear a11_1324 a11_12f4 a11_12c4 a11_1294 a11_ea0 a11_e70 a11_e40 a11_e10 a11_240 a11_210 a11_1e0 a11_1b0 a11_180 a11_150 a11_120 g11_12 g11_11 g11_10 g11_25 g11_23 g11_18 g11_4 g11_3 g11_2 fR11 t11 K11 fr11 rb11 E11 s11 m11 u11 c11
   -- 0x7B8
   obtain ⟨n13, c13, u13⟩ := s12.block pvD7b8 E12.E.E.C.self pvD7b8_end
     ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩
@@ -681,15 +709,17 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
     rw [rb13, runBlock_reg _ _ _ (18 : Fin 32) s12.zero (by decide), g12_18]
   have g13_23 : reg n13 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4600 := by
     rw [rb13, runBlock_reg _ _ _ (23 : Fin 32) s12.zero (by decide), g12_23]
+  have g13_25 : reg n13 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by
+    rw [rb13, runBlock_reg _ _ _ (25 : Fin 32) s12.zero (by decide), g12_25]
   have g13_10 : reg n13 a0 = B + 0x420 + BitVec.ofNat 32 0x330 := by
     rw [rb13]; simp +decide only [runBlock, BInstr.run, pvD7b8, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g12_2, g12_3, g12_4, g12_18, g12_23, s12.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g12_2, g12_3, g12_4, g12_18, g12_23, g12_25, s12.zero, BitVec.zero_add]) <;> pv_val
   have g13_11 : reg n13 a1 = B + 0x420 + BitVec.ofNat 32 0x1294 := by
     rw [rb13]; simp +decide only [runBlock, BInstr.run, pvD7b8, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g12_2, g12_3, g12_4, g12_18, g12_23, s12.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g12_2, g12_3, g12_4, g12_18, g12_23, g12_25, s12.zero, BitVec.zero_add]) <;> pv_val
   have g13_12 : reg n13 a2 = BitVec.ofNat 32 0xC0 := by
     rw [rb13]; simp +decide only [runBlock, BInstr.run, pvD7b8, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g12_2, g12_3, g12_4, g12_18, g12_23, s12.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g12_2, g12_3, g12_4, g12_18, g12_23, g12_25, s12.zero, BitVec.zero_add]) <;> pv_val
   have a13_120 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
     (K13.acc (by decide) (by decide)).trans a12_120
   have a13_150 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x150) 12 = QY :=
@@ -728,7 +758,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
     (K13.acc (by decide) (by decide)).trans a12_12f4
   have a13_1324 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x1324) 12 = n3fm (RM) (W) :=
     (K13.acc (by decide) (by decide)).trans a12_1324
-  clear a12_300 a12_2d0 a12_2a0 a12_270 a12_1324 a12_12f4 a12_12c4 a12_1294 a12_ea0 a12_e70 a12_e40 a12_e10 a12_240 a12_210 a12_1e0 a12_1b0 a12_180 a12_150 a12_120 g12_23 g12_18 g12_4 g12_3 g12_2 fR12 t12 E12 fr12 s12 V12 K12 P12
+  clear a12_300 a12_2d0 a12_2a0 a12_270 a12_1324 a12_12f4 a12_12c4 a12_1294 a12_ea0 a12_e70 a12_e40 a12_e10 a12_240 a12_210 a12_1e0 a12_1b0 a12_180 a12_150 a12_120 g12_25 g12_23 g12_18 g12_4 g12_3 g12_2 fR12 t12 E12 fr12 s12 V12 K12 P12
   -- 0x7C6: pv_mc
   obtain ⟨n14, P14, K14, V14⟩ := pv_mc F E13.E.E s13 pv_at_7c6 pv_at_7ca (by decide) (by decide)
     g13_2 g13_10 g13_11 g13_12 (by decide) (by decide) (by decide)
@@ -742,6 +772,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
   have g14_4 : reg n14 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P14.regs (4 : Fin 32) (by decide), g13_4]
   have g14_18 : reg n14 (18 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x17A4 := by rw [P14.regs (18 : Fin 32) (by decide), g13_18]
   have g14_23 : reg n14 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4600 := by rw [P14.regs (23 : Fin 32) (by decide), g13_23]
+  have g14_25 : reg n14 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P14.regs (25 : Fin 32) (by decide), g13_25]
   have a14_120 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
     (K14.acc (by decide) (by decide)).trans a13_120
   have a14_150 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x150) 12 = QY :=
@@ -804,7 +835,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
       have := V14 (0x90 + q) (by omega)
       rwa [show 0x330 + (0x90 + q) = 0x3C0 + q by omega,
         show 0x1294 + (0x90 + q) = 0x1324 + q by omega] at this
-  clear a13_1324 a13_12f4 a13_12c4 a13_1294 a13_ea0 a13_e70 a13_e40 a13_e10 a13_300 a13_2d0 a13_2a0 a13_270 a13_240 a13_210 a13_1e0 a13_1b0 a13_180 a13_150 a13_120 g13_12 g13_11 g13_10 g13_23 g13_18 g13_4 g13_3 g13_2 fR13 t13 K13 fr13 rb13 E13 s13 m13 u13 c13
+  clear a13_1324 a13_12f4 a13_12c4 a13_1294 a13_ea0 a13_e70 a13_e40 a13_e10 a13_300 a13_2d0 a13_2a0 a13_270 a13_240 a13_210 a13_1e0 a13_1b0 a13_180 a13_150 a13_120 g13_12 g13_11 g13_10 g13_25 g13_23 g13_18 g13_4 g13_3 g13_2 fR13 t13 K13 fr13 rb13 E13 s13 m13 u13 c13
   -- 0x7CE
   obtain ⟨n15, c15, u15⟩ := s14.block pvD7ce E14.E.E.C.self pvD7ce_end
     ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩
@@ -826,15 +857,17 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
     rw [rb15, runBlock_reg _ _ _ (18 : Fin 32) s14.zero (by decide), g14_18]
   have g15_23 : reg n15 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4600 := by
     rw [rb15, runBlock_reg _ _ _ (23 : Fin 32) s14.zero (by decide), g14_23]
+  have g15_25 : reg n15 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by
+    rw [rb15, runBlock_reg _ _ _ (25 : Fin 32) s14.zero (by decide), g14_25]
   have g15_10 : reg n15 a0 = B + 0x420 + BitVec.ofNat 32 0x17A4 := by
     rw [rb15]; simp +decide only [runBlock, BInstr.run, pvD7ce, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g14_2, g14_3, g14_4, g14_18, g14_23, s14.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g14_2, g14_3, g14_4, g14_18, g14_23, g14_25, s14.zero, BitVec.zero_add]) <;> pv_val
   have g15_11 : reg n15 a1 = B + 0x420 + BitVec.ofNat 32 0x270 := by
     rw [rb15]; simp +decide only [runBlock, BInstr.run, pvD7ce, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g14_2, g14_3, g14_4, g14_18, g14_23, s14.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g14_2, g14_3, g14_4, g14_18, g14_23, g14_25, s14.zero, BitVec.zero_add]) <;> pv_val
   have g15_12 : reg n15 a2 = BitVec.ofNat 32 0x180 := by
     rw [rb15]; simp +decide only [runBlock, BInstr.run, pvD7ce, upd, ↓reduceIte, aluEval] <;>
-    (try simp only [g14_2, g14_3, g14_4, g14_18, g14_23, s14.zero, BitVec.zero_add]) <;> pv_val
+    (try simp only [g14_2, g14_3, g14_4, g14_18, g14_23, g14_25, s14.zero, BitVec.zero_add]) <;> pv_val
   have a15_120 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
     (K15.acc (by decide) (by decide)).trans a14_120
   have a15_150 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x150) 12 = QY :=
@@ -881,7 +914,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
     (K15.acc (by decide) (by decide)).trans a14_12f4
   have a15_1324 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x1324) 12 = n3fm (RM) (W) :=
     (K15.acc (by decide) (by decide)).trans a14_1324
-  clear a14_3c0 a14_390 a14_360 a14_330 a14_1324 a14_12f4 a14_12c4 a14_1294 a14_ea0 a14_e70 a14_e40 a14_e10 a14_300 a14_2d0 a14_2a0 a14_270 a14_240 a14_210 a14_1e0 a14_1b0 a14_180 a14_150 a14_120 g14_23 g14_18 g14_4 g14_3 g14_2 fR14 t14 E14 fr14 s14 V14 K14 P14
+  clear a14_3c0 a14_390 a14_360 a14_330 a14_1324 a14_12f4 a14_12c4 a14_1294 a14_ea0 a14_e70 a14_e40 a14_e10 a14_300 a14_2d0 a14_2a0 a14_270 a14_240 a14_210 a14_1e0 a14_1b0 a14_180 a14_150 a14_120 g14_25 g14_23 g14_18 g14_4 g14_3 g14_2 fR14 t14 E14 fr14 s14 V14 K14 P14
   -- 0x7DC: pv_mc
   obtain ⟨n16, P16, K16, V16⟩ := pv_mc F E15.E.E s15 pv_at_7dc pv_at_7e0 (by decide) (by decide)
     g15_2 g15_10 g15_11 g15_12 (by decide) (by decide) (by decide)
@@ -895,6 +928,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
   have g16_4 : reg n16 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P16.regs (4 : Fin 32) (by decide), g15_4]
   have g16_18 : reg n16 (18 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x17A4 := by rw [P16.regs (18 : Fin 32) (by decide), g15_18]
   have g16_23 : reg n16 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4600 := by rw [P16.regs (23 : Fin 32) (by decide), g15_23]
+  have g16_25 : reg n16 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P16.regs (25 : Fin 32) (by decide), g15_25]
   have a16_120 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
     (K16.acc (by decide) (by decide)).trans a15_120
   have a16_150 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x150) 12 = QY :=
@@ -989,7 +1023,7 @@ theorem pv_stD {B : Word} {QX QY QZ RM SM ZM W : Nat} {n0 : Machine}
       have := V16 (0x150 + q) (by omega)
       rwa [show 0x17A4 + (0x150 + q) = 0x18F4 + q by omega,
         show 0x270 + (0x150 + q) = 0x3C0 + q by omega] at this
-  clear a15_1324 a15_12f4 a15_12c4 a15_1294 a15_ea0 a15_e70 a15_e40 a15_e10 a15_3c0 a15_390 a15_360 a15_330 a15_300 a15_2d0 a15_2a0 a15_270 a15_240 a15_210 a15_1e0 a15_1b0 a15_180 a15_150 a15_120 g15_12 g15_11 g15_10 g15_23 g15_18 g15_4 g15_3 g15_2 fR15 t15 K15 fr15 rb15 E15 s15 m15 u15 c15
-  exact ⟨n16, t16, s16, E16, fR16, g16_2, g16_3, g16_4, g16_18, g16_23, a16_120, a16_150, a16_180, a16_1b0, a16_1e0, a16_210, a16_17a4, a16_17d4, a16_1804, a16_1834, a16_1864, a16_1894, a16_18c4, a16_18f4⟩
+  clear a15_1324 a15_12f4 a15_12c4 a15_1294 a15_ea0 a15_e70 a15_e40 a15_e10 a15_3c0 a15_390 a15_360 a15_330 a15_300 a15_2d0 a15_2a0 a15_270 a15_240 a15_210 a15_1e0 a15_1b0 a15_180 a15_150 a15_120 g15_12 g15_11 g15_10 g15_25 g15_23 g15_18 g15_4 g15_3 g15_2 fR15 t15 K15 fr15 rb15 E15 s15 m15 u15 c15
+  exact ⟨n16, t16, s16, E16, fR16, g16_2, g16_3, g16_4, g16_18, g16_23, g16_25, a16_120, a16_150, a16_180, a16_1b0, a16_1e0, a16_210, a16_270, a16_2a0, a16_2d0, a16_300, a16_330, a16_360, a16_390, a16_3c0, a16_17a4, a16_17d4, a16_1804, a16_1834, a16_1864, a16_1894, a16_18c4, a16_18f4⟩
 
 end C3.RV32.Pv

@@ -345,7 +345,8 @@ theorem pv_wf {B : Word} {m : Machine} {off : Nat} {imm o : Word} {cw cc X : Nat
     (hZ : memBytes m.mem (B + 0x420 + BitVec.ofNat 32 cw) 0x181 = List.replicate 0x181 0) :
     ∃ m', PvPost B m m' (off + 8) ∧ PvKeep B m.mem m'.mem cw 0x181 ∧
       reg m' a0 = BitVec.ofNat 32 (wnafGo X 0x180 0x181 0 0).length ∧
-      memBytes m'.mem (B + 0x420 + BitVec.ofNat 32 cw) 0x181 = wnafBytes (wnafGo X 0x180 0x181 0 0) 0x181 := by
+      memBytes m'.mem (B + 0x420 + BitVec.ofNat 32 cw) 0x181 = wnafBytes (wnafGo X 0x180 0x181 0 0) 0x181 ∧
+      (wnafGo X 0x180 0x181 0 0).length ≤ 0x181 := by
   have FS : Fr (B + 0x420) 0x1D80 := F.sub (c := 0x420) (by decide) (by decide)
   have hFa := FS.al; have hFl := FS.lo; have hFh := FS.hi
   have h70 : (B + 0x420 + 0xFFFFFF90).toNat = (B + 0x420).toNat - 0x70 := FS.below 0x70 (by decide) (by decide)
@@ -371,21 +372,21 @@ theorem pv_wf {B : Word} {m : Machine} {off : Nat} {imm o : Word} {cw cc X : Nat
     have := leN_lt _ hbytes
     rw [memBytes_length] at this
     exact this
-  obtain ⟨n2, c2, pc2, sp2, k2, a02, dg2, tl2, fr2⟩ := wnafForm_correct n1 C pc1
+  obtain ⟨n2, c2, pc2, sp2, k2, a02, dg2, tl2, hl2, fr2⟩ := wnafForm_correct n1 C pc1
     (by rw [r1 a0 (by decide)]; exact ha0) (by rw [r1 a1 (by decide)]; exact ha1)
     (by rw [r1 a2 (by decide)]; exact ha2) (by rw [r1 a3 (by decide)]; exact ha3)
     (by rw [r1 a4 (by decide)]; exact ha4) (by rw [regs1]; simp +decide [upd]) (even_clear _ he8)
     (by rw [r1 sp (by decide)]; exact hsp)
-  rw [mem1] at a02 dg2 tl2 fr2
+  rw [mem1] at a02 dg2 tl2 hl2 fr2
   have eS : wnafSpec (memBytes m.mem (B + 0x420 + BitVec.ofNat 32 cc) 0x30) 0x180 = wnafGo X 0x180 0x181 0 0 := by
     unfold wnafSpec; rw [hX]
-  rw [eS] at a02 dg2 tl2
+  rw [eS] at a02 dg2 tl2 hl2
   have lo : ∀ x, PvR B x → Sep (B + 0x420 + 0xFFFFFF70) 0x90 x 1 := fun x hx => by
     have := pvR_lo (k := 0x90) hx (by decide) (by decide); exact this
   refine ⟨n2, ⟨c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, fun x hx => fr2 x (lo x hx) (pvR_hi hx hcw),
       pv_regs_call r1 (fun q hq => k2 q (by revert hq; revert q; decide)) sp2 hsp⟩,
     fun e he1 he2 => fr2 _ (pv_lowB F (k := 0x90) (by decide) (by decide) (by omega))
-      (sepS (B + 0x420) (by omega) (by omega) (by omega)), a02, ?_⟩
+      (sepS (B + 0x420) (by omega) (by omega) (by omega)), a02, ?_, hl2⟩
   apply List.ext_getElem (by simp [memBytes_length, wnafBytes])
   intro i h1' h2'
   rw [memBytes_length] at h1'
