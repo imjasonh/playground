@@ -1096,3 +1096,383 @@ theorem gs_stC {M : Word → BitVec 8} {n : Machine} {S inp : Word} (C : GsCode 
       fr7' x h16 h160,
       h2 x (by have := sub (c := 2) (l := 1) _ _ h264 (by decide); rwa [add_ofNat_assoc] at this),
       h1 x (by have := sub (c := 0) (l := 2) _ _ h264 (by decide); rwa [add_ofNat_zero] at this)]
+def gsT1 : List BInstr := [.lbu (22 : Fin 32) sp 0x2, .alu .add a0 x0 (22 : Fin 32)]
+def gsT2 : List BInstr := [.aluImm .add (19 : Fin 32) sp 0x3, .alu .add a0 x0 (22 : Fin 32)]
+def gsT3 : List BInstr := [.aluImm .and (8 : Fin 32) a0 0xFE, .alu .add a0 x0 (22 : Fin 32)]
+def gsT4 : List BInstr := [.aluImm .add a1 x0 0x2, .aluImm .and a0 a0 0xFF]
+def gsT5 : List BInstr := [.aluImm .add a1 x0 0x5]
+theorem gsT1_end : blockEnd p256FromSec1Code 0x160 gsT1 = some 0x166 := by decide
+theorem gsT2_end : blockEnd p256FromSec1Code 0x18E gsT2 = some 0x194 := by decide
+theorem gsT3_end : blockEnd p256FromSec1Code 0x19C gsT3 = some 0x1A2 := by decide
+theorem gsT4_end : blockEnd p256FromSec1Code 0x1AA gsT4 = some 0x1B0 := by decide
+theorem gsT5_end : blockEnd p256FromSec1Code 0x1D0 gsT5 = some 0x1D2 := by decide
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 64000000 in
+/-- **The tag dispatch**, from 0x160 to the uncompressed branch at 0x312,
+for the tag 4 at `S + 0x2`: `is_identity` is false, and `tag` is neither
+compressed nor compact. -/
+theorem gs_stD {M : Word → BitVec 8} {n : Machine} {S : Word} (C : GsCode M) (F : Fr S 0x2D0)
+    (s : St M GP n 0x160 (reg n)) (rsp : reg n sp = S) (ht : M (S + BitVec.ofNat 32 0x2) = 4) :
+    ∃ n', Steps n n' ∧ St n'.mem GP n' 0x312 (reg n') ∧ GsCode n'.mem ∧
+      (∀ x, Sep (S + 0xFFFFFFB0) 0x50 x 1 → n'.mem x = M x) ∧ reg n' sp = S ∧
+      reg n' (19 : Fin 32) = S + BitVec.ofNat 32 0x3 ∧ reg n' (22 : Fin 32) = (4 : BitVec 8).zeroExtend 32 ∧
+      ∀ q : Fin 32, q.val ∈ [3, 4, 24, 26, 27] → reg n' q = reg n q := by
+  have hz := s.zero
+  have hSl := F.lo; have hSh := F.hi; have hSa := F.al
+  have hbA : (S + 0xFFFFFFB0).toNat = S.toNat - 0x50 := F.below 0x50 (by decide) (by decide)
+  have hb4 : (S + 0xFFFFFFC0).toNat = S.toNat - 0x40 := F.below 0x40 (by decide) (by decide)
+  have loA : ∀ x : Word, 0x40000000 ≤ x.toNat → Sep (S + 0xFFFFFFB0) 0x50 x 1 := fun x hx =>
+    sep_of_le (by rw [hbA]; omega) (by have := x.isLt; omega)
+  have sub40 : ∀ {x : Word}, Sep (S + 0xFFFFFFB0) 0x50 x 1 → Sep (S + 0xFFFFFFC0) 0x40 x 1 := fun {x} hx => by
+    have := hx.sub (c := 0x10) (l := 0x40) (by decide)
+    rwa [show S + 0xFFFFFFB0 + BitVec.ofNat 32 0x10 = S + 0xFFFFFFC0 by rw [BitVec.add_assoc]; rfl] at this
+  have ok4 : Sec1TagOk (4 : BitVec 8) := by decide
+  obtain ⟨n1, c1, u1⟩ := s.block gsT1 C.self gsT1_end ⟨trivial, trivial, trivial⟩
+  have r1 : ∀ q, reg n1 q = (runBlock gsT1 (M, reg n)).2 q := fun q => by rw [u1.regs]
+  have e22 : reg n1 (22 : Fin 32) = (4 : BitVec 8).zeroExtend 32 := by
+    rw [r1]; simp +decide only [runBlock, BInstr.run, gsT1, upd, ↓reduceIte]; rw [rsp]
+    show (M (S + BitVec.ofNat 32 0x2)).zeroExtend 32 = _; rw [ht]
+  obtain ⟨n2, c2, u2, a2, sp2, k2, fr2⟩ := c_isid (t := 4) (⟨u1.pc, u1.mem, fun _ => rfl⟩ : St M GP n1 0x166 (reg n1))
+    C.self C.K.K F gs_at_166 gs_at_16a (by decide) (by decide) (by rw [r1, runBlock_reg _ _ _ sp hz (by decide)]; exact rsp)
+    (by rw [r1]; simp +decide only [runBlock, BInstr.run, gsT1, upd, ↓reduceIte]; rw [← e22, r1]
+        simp +decide only [runBlock, BInstr.run, gsT1, upd, ↓reduceIte]; exact BitVec.zero_add _) ok4
+  have C2 := C.hi fun x hx => fr2 x (loA x hx)
+  obtain ⟨n3, d3, u3⟩ := u2.taken C2.self 0x18E gs_at_16e (by decide) (by
+    show branchTaken .beq (reg n2 a0) 0 = true; rw [a2]; decide)
+  have K2 : ∀ q : Fin 32, q.val ∈ [3, 4, 24, 26, 27] → reg n3 q = reg n q := fun q hq => by
+    rw [u3.regs, k2 q (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide), r1,
+      runBlock_reg _ _ _ q hz (by simp only [gsT1]; revert hq; revert q; decide)]
+  have e322 : reg n3 (22 : Fin 32) = (4 : BitVec 8).zeroExtend 32 := by
+    rw [u3.regs, k2 22 (by decide) (by decide) (by decide) (by decide) (by decide)]; exact e22
+  have sp3 : reg n3 sp = S := by rw [u3.regs]; exact sp2
+  obtain ⟨n4, c4, u4⟩ := u3.self.block gsT2 C2.self gsT2_end ⟨trivial, trivial, trivial⟩
+  have r4 : ∀ q, reg n4 q = (runBlock gsT2 (n2.mem, reg n3)).2 q := fun q => by rw [u4.regs]
+  obtain ⟨n5, c5, u5, a5, sp5, k5, fr5⟩ := c_tag (t := 4) (⟨u4.pc, u4.mem, fun _ => rfl⟩ : St n2.mem GP n4 0x194 (reg n4))
+    C2.self C2.K.K F gs_at_194 gs_at_198 (by decide) (by decide)
+    (by rw [r4, runBlock_reg _ _ _ sp u3.self.zero (by decide)]; exact sp3)
+    (by rw [r4]; simp +decide only [runBlock, BInstr.run, gsT2, upd, ↓reduceIte]; rw [e322]; exact BitVec.zero_add _) ok4
+  have C5 := C2.hi fun x hx => fr5 x (sub40 (loA x hx))
+  obtain ⟨n6, c6, u6⟩ := u5.block gsT3 C5.self gsT3_end ⟨trivial, trivial, trivial⟩
+  have r6 : ∀ q, reg n6 q = (runBlock gsT3 (n5.mem, reg n5)).2 q := fun q => by rw [u6.regs]
+  have K5 : ∀ q : Fin 32, q.val ∈ [3, 4, 22, 24, 26, 27] → reg n5 q = reg n3 q := fun q hq => by
+    rw [k5 q (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide), r4,
+      runBlock_reg _ _ _ q u3.self.zero (by simp only [gsT2]; revert hq; revert q; decide)]
+  obtain ⟨n7, c7, u7, a7, sp7, k7, fr7⟩ := c_tag (t := 4) (⟨u6.pc, u6.mem, fun _ => rfl⟩ : St n5.mem GP n6 0x1A2 (reg n6))
+    C5.self C5.K.K F gs_at_1a2 gs_at_1a6 (by decide) (by decide)
+    (by rw [r6, runBlock_reg _ _ _ sp u5.zero (by decide)]; exact sp5)
+    (by rw [r6]; simp +decide only [runBlock, BInstr.run, gsT3, upd, ↓reduceIte]; rw [K5 22 (by decide), e322]
+        exact BitVec.zero_add _) ok4
+  have C7 := C5.hi fun x hx => fr7 x (sub40 (loA x hx))
+  have e78 : reg n7 (8 : Fin 32) = aluEval .and ((4 : BitVec 8).zeroExtend 32) 0xFE := by
+    rw [k7 8 (by decide) (by decide) (by decide) (by decide) (by decide), r6]
+    simp +decide only [runBlock, BInstr.run, gsT3, upd, ↓reduceIte]; rw [a5]
+  obtain ⟨n8, c8, u8⟩ := u7.block gsT4 C7.self gsT4_end ⟨trivial, trivial, trivial⟩
+  have r8 : ∀ q, reg n8 q = (runBlock gsT4 (n7.mem, reg n7)).2 q := fun q => by rw [u8.regs]
+  obtain ⟨n9, d9, u9⟩ := (⟨u8.pc, u8.mem, fun _ => rfl⟩ : St n7.mem GP n8 0x1B0 (reg n8)).taken C7.self 0x1D0 gs_at_1b0
+    (by decide) (by
+      show branchTaken .bne (reg n8 (8 : Fin 32)) (reg n8 a1) = true
+      rw [r8, r8]; simp +decide only [runBlock, BInstr.run, gsT4, upd, ↓reduceIte]; rw [e78, u7.zero]; decide)
+  obtain ⟨n10, c10, u10⟩ := u9.self.block gsT5 C7.self gsT5_end ⟨trivial, trivial⟩
+  have r10 : ∀ q, reg n10 q = (runBlock gsT5 (n7.mem, reg n9)).2 q := fun q => by rw [u10.regs]
+  obtain ⟨n11, d11, u11⟩ := (⟨u10.pc, u10.mem, fun _ => rfl⟩ : St n7.mem GP n10 0x1D2 (reg n10)).taken C7.self 0x312
+    gs_at_1d2 (by decide) (by
+      show branchTaken .bne (reg n10 a0) (reg n10 a1) = true
+      rw [r10, r10]; simp +decide only [runBlock, BInstr.run, gsT5, upd, ↓reduceIte]; rw [u9.regs, r8]
+      simp +decide only [runBlock, BInstr.run, gsT4, upd, ↓reduceIte]; rw [a7, u9.self.zero]; decide)
+  have KK : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 19, 22, 24, 26, 27] → reg n11 q = reg n7 q := fun q hq => by
+    rw [u11.regs, r10, runBlock_reg _ _ _ q u9.self.zero (by simp only [gsT5]; revert hq; revert q; decide), u9.regs, r8,
+      runBlock_reg _ _ _ q u7.zero (by simp only [gsT4]; revert hq; revert q; decide)]
+  have K7 : ∀ q : Fin 32, q.val ∈ [3, 4, 19, 22, 24, 26, 27] → reg n7 q = reg n5 q := fun q hq => by
+    rw [k7 q (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide), r6,
+      runBlock_reg _ _ _ q u5.zero (by simp only [gsT3]; revert hq; revert q; decide)]
+  refine ⟨n11, c1.trans (c2.trans (.cons d3 (c4.trans (c5.trans (c6.trans (c7.trans (c8.trans (.cons d9 (c10.trans
+    (.single d11)))))))))), ⟨u11.pc, by rw [u11.mem], fun _ => rfl⟩, by rw [u11.mem]; exact C7,
+    fun x hx => by rw [u11.mem, fr7 x (sub40 hx), fr5 x (sub40 hx), fr2 x hx], ?_, ?_, ?_, fun q hq => ?_⟩
+  · rw [KK sp (by decide)]; exact sp7
+  · rw [KK 19 (by decide), K7 19 (by decide), k5 19 (by decide) (by decide) (by decide) (by decide) (by decide), r4]
+    simp +decide only [runBlock, BInstr.run, gsT2, upd, ↓reduceIte]; rw [sp3]; rfl
+  · rw [KK 22 (by decide), K7 22 (by decide), K5 22 (by decide)]; exact e322
+  · rw [KK q (by revert hq; revert q; decide), K7 q (by revert hq; revert q; decide), K5 q (by revert hq; revert q; decide),
+      K2 q (by revert hq; revert q; decide)]
+
+/-- `v` in Montgomery form when it is below `p`, else 0: what `from_repr`
+and the select after it leave. -/
+def gsMont (v : Nat) : Nat := if v < p256 then v * 2 ^ 256 % p256 else 0
+
+/-- Whether `v` is below `p`, as `from_repr`'s choice. -/
+def gsOk (v : Nat) : Word := if v < p256 then 1 else 0
+
+set_option maxRecDepth 100000 in
+set_option exponentiation.threshold 600 in
+theorem r2_mont2 : dataVal p256ParamsData 0x40 8 * p2RInv % p256 = 2 ^ 256 % p256 := by unfold p256 p2RInv; decide
+
+def gsY1 : List BInstr := [.aluImm .add a1 sp 0x23, .aluImm .add a0 sp 0x160]
+def gsY2 : List BInstr := [.aluImm .add a0 sp 0x1E4, .aluImm .add a2 x0 0x20, .aluImm .add a1 x0 0x0]
+def gsY3 : List BInstr :=
+  [.lbu (18 : Fin 32) sp 0x180, .aluImm .add a0 sp 0x244, .aluImm .add a1 sp 0x1E4, .aluImm .add a2 sp 0x160,
+   .alu .add a3 x0 (18 : Fin 32)]
+def gsX1 : List BInstr := [.aluImm .add a0 sp 0xD4, .alu .add a1 x0 (19 : Fin 32)]
+def gsX2 : List BInstr := [.aluImm .add a0 sp 0x204, .aluImm .add a2 x0 0x20, .aluImm .add a1 x0 0x0]
+def gsX3 : List BInstr :=
+  [.lbu (19 : Fin 32) sp 0xF4, .aluImm .add a0 sp 0x284, .aluImm .add a1 sp 0x204, .aluImm .add a2 sp 0xD4,
+   .alu .add a3 x0 (19 : Fin 32)]
+theorem frp2_val {X x : Nat} (hX : X < p256) (h : X * 2 ^ 256 % p256 = x * dataVal p256ParamsData 0x40 8 % p256) :
+    X = x * 2 ^ 256 % p256 := by
+  rw [p2_mont hX h]; unfold p2fm
+  rw [Nat.mul_assoc, Nat.mul_mod, r2_mont2, ← Nat.mul_mod]
+
+theorem gsY1_end : blockEnd p256FromSec1Code 0x312 gsY1 = some 0x318 := by decide
+theorem gsY2_end : blockEnd p256FromSec1Code 0x320 gsY2 = some 0x328 := by decide
+theorem gsY3_end : blockEnd p256FromSec1Code 0x330 gsY3 = some 0x33C := by decide
+theorem gsX1_end : blockEnd p256FromSec1Code 0x344 gsX1 = some 0x348 := by decide
+theorem gsX2_end : blockEnd p256FromSec1Code 0x350 gsX2 = some 0x358 := by decide
+theorem gsX3_end : blockEnd p256FromSec1Code 0x360 gsX3 = some 0x36C := by decide
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 64000000 in
+/-- **Decoding `y`**, from 0x312 to 0x344: `from_repr` on the 32 bytes at
+`S + 0x23`, then the select of its result or zero into `S + 0x244`; `s2`
+holds the choice. -/
+theorem gs_decY {M : Word → BitVec 8} {n : Machine} {S : Word} (C : GsCode M) (D : P2Data M) (F : Fr S 0x2D0)
+    (s : St M GP n 0x312 (reg n)) (rsp : reg n sp = S) :
+    ∃ n', Steps n n' ∧ St n'.mem GP n' 0x344 (reg n') ∧ GsCode n'.mem ∧ P2Data n'.mem ∧
+      accV n'.mem (S + BitVec.ofNat 32 0x244) 8 = gsMont (beNat (memBytes M (S + BitVec.ofNat 32 0x23) 32)) ∧
+      reg n' (18 : Fin 32) = gsOk (beNat (memBytes M (S + BitVec.ofNat 32 0x23) 32)) ∧
+      (∀ x, Sep (S + 0xFFFFFEC0) 0x140 x 1 → Sep (S + BitVec.ofNat 32 0x160) 0x21 x 1 →
+        Sep (S + BitVec.ofNat 32 0x1E4) 0x20 x 1 → Sep (S + BitVec.ofNat 32 0x244) 0x20 x 1 → n'.mem x = M x) ∧
+      reg n' sp = S ∧ ∀ q : Fin 32, q.val ∈ [3, 4, 19, 22, 24, 26, 27] → reg n' q = reg n q := by
+  have hz := s.zero
+  have hSl := F.lo; have hSh := F.hi; have hSa := F.al
+  have hbF : (S + 0xFFFFFEC0).toNat = S.toNat - 0x140 := F.below 0x140 (by decide) (by decide)
+  have hb50 : (S + 0xFFFFFFB0).toNat = S.toNat - 0x50 := F.below 0x50 (by decide) (by decide)
+  obtain ⟨n1, c1, u1⟩ := s.block gsY1 C.self gsY1_end ⟨trivial, trivial, trivial⟩
+  have r1 : ∀ q, reg n1 q = (runBlock gsY1 (M, reg n)).2 q := fun q => by rw [u1.regs]
+  obtain ⟨n2, c2, u2, ok2, bad2, fr2, sp2, k2⟩ := c2_frp (out := S + BitVec.ofNat 32 0x160)
+    (inp := S + BitVec.ofNat 32 0x23) (⟨u1.pc, u1.mem, fun _ => rfl⟩ : St M GP n1 0x318 (reg n1)) C.self C.K D F
+    gs_at_318 gs_at_31c (by decide) (by decide) (by rw [r1, runBlock_reg _ _ _ sp hz (by decide)]; exact rsp)
+    (by rw [r1]; simp +decide only [runBlock, BInstr.run, gsY1, upd, ↓reduceIte]; rw [rsp]; rfl)
+    (by rw [r1]; simp +decide only [runBlock, BInstr.run, gsY1, upd, ↓reduceIte]; rw [rsp]; rfl)
+    (co := 0x160) (by decide) rfl
+    ((sep_of_le (by rw [hbF, F.at _ (by decide)]; omega) (by rw [F.at _ (by decide)]; omega)).symm)
+  have hv2 : accV n2.mem (S + BitVec.ofNat 32 0x160) 8 = gsMont (beNat (memBytes M (S + BitVec.ofNat 32 0x23) 32)) ∧
+      n2.mem (S + BitVec.ofNat 32 0x160 + 0x20) = (if beNat (memBytes M (S + BitVec.ofNat 32 0x23) 32) < p256 then 1 else 0) := by
+    unfold gsMont
+    by_cases hx : beNat (memBytes M (S + BitVec.ofNat 32 0x23) 32) < p256
+    · obtain ⟨o1, olt, ocg⟩ := ok2 hx
+      rw [ite_eq_left hx, ite_eq_left hx]
+      exact ⟨frp2_val olt ocg, o1⟩
+    · obtain ⟨o0, a0'⟩ := bad2 (Nat.le_of_not_lt hx)
+      rw [ite_eq_right hx, ite_eq_right hx]; exact ⟨a0', o0⟩
+  clear ok2 bad2
+  have h2hi : ∀ x : Word, 0x40000000 ≤ x.toNat → n2.mem x = M x := fun x hx =>
+    fr2 x (sep_of_le (by rw [hbF]; omega) (by have := x.isLt; omega)) (F.hiOut (by decide) hx)
+  have C2 := C.hi h2hi
+  have D2 : P2Data n2.mem := D.of F fun x hx => fr2 x (hx.sub (c := 0x60) (l := 0x140) (by decide) |> fun h => by
+    rwa [show S + 0xFFFFFE60 + BitVec.ofNat 32 0x60 = S + 0xFFFFFEC0 by rw [BitVec.add_assoc]; rfl] at h) (fr_inFrame (by decide) hx)
+  obtain ⟨n3, c3, u3⟩ := u2.block gsY2 C2.self gsY2_end ⟨trivial, trivial, trivial, trivial⟩
+  have r3 : ∀ q, reg n3 q = (runBlock gsY2 (n2.mem, reg n2)).2 q := fun q => by rw [u3.regs]
+  obtain ⟨n4, c4, u4, mem4, k4⟩ := c_memset (dst := S + BitVec.ofNat 32 0x1E4) (b := 0) (N := 32)
+    (⟨u3.pc, u3.mem, fun _ => rfl⟩ : St n2.mem GP n3 0x328 (reg n3)) C2.self C2.K.K gs_at_328 gs_at_32c (by decide) (by decide)
+    (by rw [r3]; simp +decide only [runBlock, BInstr.run, gsY2, upd, ↓reduceIte]; rw [sp2]; rfl)
+    (by rw [r3]; simp +decide only [runBlock, BInstr.run, gsY2, upd, ↓reduceIte]; (try rw [u2.zero]); try rfl)
+    (by rw [r3]; simp +decide only [runBlock, BInstr.run, gsY2, upd, ↓reduceIte]; (try rw [u2.zero]); try rfl)
+    (by rw [F.at _ (by decide)]; omega) (F.sepHi (by decide) (by decide) (by decide))
+  have h4 : ∀ x, Sep (S + BitVec.ofNat 32 0x1E4) 32 x 1 → n4.mem x = n2.mem x := fun x hx => by
+    rw [mem4, fillBytes_sep hx (Nat.le_refl _)]
+  have C4 := C2.hi fun x hx => h4 x (F.hiOut (by decide) hx)
+  have k4' : ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ ra → reg n4 q = reg n2 q :=
+    fun q h0 h1 h2 h3 h4 h5 h6 hr => by
+      rw [k4 q h0 h2 h3 h4 h5 h6 hr, r3, runBlock_reg _ _ _ q u2.zero (by simp only [gsY2]; revert h0 h1 h2; revert q; decide)]
+  have sp4 : reg n4 sp = S := by
+    rw [k4' sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)]; exact sp2
+  have a70 : n4.mem (S + BitVec.ofNat 32 0x160 + 0x20) = n2.mem (S + BitVec.ofNat 32 0x160 + 0x20) :=
+    h4 _ (sepS S (c := 0x1E4) (n := 32) (d := 0x180) (k := 1) (.inr (by decide)) (by decide) (by decide) |> fun h => by
+      rwa [show S + BitVec.ofNat 32 0x180 = S + BitVec.ofNat 32 0x160 + 0x20 from by rw [BitVec.add_assoc]; rfl] at h)
+  obtain ⟨n5, c5, u5⟩ := u4.block gsY3 C4.self gsY3_end ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩
+  have r5 : ∀ q, reg n5 q = (runBlock gsY3 (n4.mem, reg n4)).2 q := fun q => by rw [u5.regs]
+  have e18 : reg n5 (18 : Fin 32) = (n2.mem (S + BitVec.ofNat 32 0x160 + 0x20)).zeroExtend 32 := by
+    rw [r5]; simp +decide only [runBlock, BInstr.run, gsY3, upd, ↓reduceIte]; rw [sp4, ← a70]
+    rw [show S + BitVec.ofNat 32 0x160 + 0x20 = S + 0x180 from by rw [BitVec.add_assoc]; rfl]
+  have hc01 : (n2.mem (S + BitVec.ofNat 32 0x160 + 0x20)).zeroExtend 32 = (0 : Word) ∨
+      (n2.mem (S + BitVec.ofNat 32 0x160 + 0x20)).zeroExtend 32 = (1 : Word) := by
+    by_cases hx : beNat (memBytes M (S + BitVec.ofNat 32 0x23) 32) < p256
+    · rw [hv2.2, ite_eq_left hx]; exact .inr rfl
+    · rw [hv2.2, ite_eq_right hx]; exact .inl rfl
+  obtain ⟨n6, c6, u6, vals6, fr6, sp6, k6⟩ := c2_csel (out := S + BitVec.ofNat 32 0x244) (a := S + BitVec.ofNat 32 0x1E4)
+    (b := S + BitVec.ofNat 32 0x160) (c := (n2.mem (S + BitVec.ofNat 32 0x160 + 0x20)).zeroExtend 32)
+    (⟨u5.pc, u5.mem, fun _ => rfl⟩ : St n4.mem GP n5 0x33C (reg n5)) C4.self C4.K F gs_at_33c gs_at_340 (by decide) (by decide)
+    (by rw [r5, runBlock_reg _ _ _ sp u4.zero (by decide)]; exact sp4)
+    (by rw [r5]; simp +decide only [runBlock, BInstr.run, gsY3, upd, ↓reduceIte]; rw [sp4]; rfl)
+    (by rw [r5]; simp +decide only [runBlock, BInstr.run, gsY3, upd, ↓reduceIte]; rw [sp4]; rfl)
+    (by rw [r5]; simp +decide only [runBlock, BInstr.run, gsY3, upd, ↓reduceIte]; rw [sp4]; rfl)
+    (by rw [r5]; simp +decide only [runBlock, BInstr.run, gsY3, upd, ↓reduceIte]; rw [sp4]
+        show aluEval .add 0 ((n4.mem (S + 0x180)).zeroExtend 32) = _
+        rw [show (S + 0x180 : Word) = S + BitVec.ofNat 32 0x160 + 0x20 from by rw [BitVec.add_assoc]; rfl, a70]
+        exact BitVec.zero_add _)
+    hc01 (co := 0x244) (ca := 0x1E4) (cb := 0x160) (by decide) (by decide) (by decide) rfl rfl rfl (by decide)
+  have h6hi : ∀ x : Word, 0x40000000 ≤ x.toNat → n6.mem x = M x := fun x hx => by
+    rw [fr6 x (sep_of_le (by rw [hb50]; omega) (by have := x.isLt; omega)) (F.hiOut (c := 0x244) (n := 32) (by decide) hx),
+      h4 x (F.hiOut (by decide) hx), h2hi x hx]
+  have frame : ∀ x, Sep (S + 0xFFFFFEC0) 0x140 x 1 → Sep (S + BitVec.ofNat 32 0x160) 0x21 x 1 →
+      Sep (S + BitVec.ofNat 32 0x1E4) 0x20 x 1 → Sep (S + BitVec.ofNat 32 0x244) 0x20 x 1 → n6.mem x = M x := by
+    intro x hF h210 h2D4 h364
+    have h50 : Sep (S + 0xFFFFFFB0) 0x50 x 1 := by
+      have := hF.sub (c := 0xF0) (l := 0x50) (by decide)
+      rwa [show S + 0xFFFFFEC0 + BitVec.ofNat 32 0xF0 = S + 0xFFFFFFB0 by rw [BitVec.add_assoc]; rfl] at this
+    rw [fr6 x h50 h364, h4 x h2D4, fr2 x hF h210]
+  have D6 : P2Data n6.mem := D.of F fun x hx => frame x (hx.sub (c := 0x60) (l := 0x140) (by decide) |> fun h => by
+      rwa [show S + 0xFFFFFE60 + BitVec.ofNat 32 0x60 = S + 0xFFFFFEC0 by rw [BitVec.add_assoc]; rfl] at h) (fr_inFrame (by decide) hx) (fr_inFrame (by decide) hx) (fr_inFrame (by decide) hx)
+  have e618 : reg n6 (18 : Fin 32) = (n2.mem (S + BitVec.ofNat 32 0x160 + 0x20)).zeroExtend 32 := by
+    rw [k6 18 (by decide), e18]
+  refine ⟨n6, c1.trans (c2.trans (c3.trans (c4.trans (c5.trans c6)))), u6, C.hi h6hi, D6, ?_, ?_, frame, sp6, fun q hq => ?_⟩
+  · by_cases hx : beNat (memBytes M (S + BitVec.ofNat 32 0x23) 32) < p256
+    · have hc1 : (n2.mem (S + BitVec.ofNat 32 0x160 + 0x20)).zeroExtend 32 = (1 : Word) := by
+        rw [hv2.2, ite_eq_left hx]; rfl
+      rw [← hv2.1]
+      exact accV_congr2 8 fun i hi => by
+        rw [vals6 i hi, ite_eq_left hc1]
+        exact memLoad32_congr fun q hq => by
+          rw [add_ofNat_assoc, add_ofNat_assoc]
+          exact h4 _ (sepS S (.inr (by omega)) (by decide) (by omega))
+    · have hc0 : (n2.mem (S + BitVec.ofNat 32 0x160 + 0x20)).zeroExtend 32 = (0 : Word) := by
+        rw [hv2.2, ite_eq_right hx]; rfl
+      unfold gsMont; rw [ite_eq_right hx]
+      exact accV_zero 8 fun i hi => by
+        rw [vals6 i hi, ite_eq_right (by rw [hc0]; decide), mem4]
+        exact fill_word0 (by omega) (by decide)
+  · rw [e618, hv2.2]; unfold gsOk
+    by_cases hx : beNat (memBytes M (S + BitVec.ofNat 32 0x23) 32) < p256
+    · rw [ite_eq_left hx, ite_eq_left hx]; rfl
+    · rw [ite_eq_right hx, ite_eq_right hx]; rfl
+  · rw [k6 q (by revert hq; revert q; decide), r5, runBlock_reg _ _ _ q u4.zero (by simp only [gsY3]; revert hq; revert q; decide),
+      k4' q (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide), k2 q (by revert hq; revert q; decide), r1,
+      runBlock_reg _ _ _ q hz (by simp only [gsY1]; revert hq; revert q; decide)]
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 64000000 in
+/-- **Decoding `x`**, from 0x344 to 0x374: `from_repr` on the 32 bytes at
+`S + 0x3`, then the select of its result or zero into `S + 0x284`; `s3`
+holds the choice. -/
+theorem gs_decX {M : Word → BitVec 8} {n : Machine} {S : Word} (C : GsCode M) (D : P2Data M) (F : Fr S 0x2D0)
+    (s : St M GP n 0x344 (reg n)) (rsp : reg n sp = S) (r19 : reg n (19 : Fin 32) = S + BitVec.ofNat 32 0x3) :
+    ∃ n', Steps n n' ∧ St n'.mem GP n' 0x374 (reg n') ∧ GsCode n'.mem ∧ P2Data n'.mem ∧
+      accV n'.mem (S + BitVec.ofNat 32 0x284) 8 = gsMont (beNat (memBytes M (S + BitVec.ofNat 32 0x3) 32)) ∧
+      reg n' (19 : Fin 32) = gsOk (beNat (memBytes M (S + BitVec.ofNat 32 0x3) 32)) ∧
+      (∀ x, Sep (S + 0xFFFFFEC0) 0x140 x 1 → Sep (S + BitVec.ofNat 32 0xD4) 0x21 x 1 →
+        Sep (S + BitVec.ofNat 32 0x204) 0x20 x 1 → Sep (S + BitVec.ofNat 32 0x284) 0x20 x 1 → n'.mem x = M x) ∧
+      reg n' sp = S ∧ ∀ q : Fin 32, q.val ∈ [3, 4, 18, 22, 24, 26, 27] → reg n' q = reg n q := by
+  have hz := s.zero
+  have hSl := F.lo; have hSh := F.hi; have hSa := F.al
+  have hbF : (S + 0xFFFFFEC0).toNat = S.toNat - 0x140 := F.below 0x140 (by decide) (by decide)
+  have hb50 : (S + 0xFFFFFFB0).toNat = S.toNat - 0x50 := F.below 0x50 (by decide) (by decide)
+  obtain ⟨n1, c1, u1⟩ := s.block gsX1 C.self gsX1_end ⟨trivial, trivial, trivial⟩
+  have r1 : ∀ q, reg n1 q = (runBlock gsX1 (M, reg n)).2 q := fun q => by rw [u1.regs]
+  obtain ⟨n2, c2, u2, ok2, bad2, fr2, sp2, k2⟩ := c2_frp (out := S + BitVec.ofNat 32 0xD4)
+    (inp := S + BitVec.ofNat 32 0x3) (⟨u1.pc, u1.mem, fun _ => rfl⟩ : St M GP n1 0x348 (reg n1)) C.self C.K D F
+    gs_at_348 gs_at_34c (by decide) (by decide) (by rw [r1, runBlock_reg _ _ _ sp hz (by decide)]; exact rsp)
+    (by rw [r1]; simp +decide only [runBlock, BInstr.run, gsX1, upd, ↓reduceIte]; rw [rsp]; rfl)
+    (by rw [r1]; simp +decide only [runBlock, BInstr.run, gsX1, upd, ↓reduceIte]; rw [r19]; exact BitVec.zero_add _)
+    (co := 0xD4) (by decide) rfl
+    ((sep_of_le (by rw [hbF, F.at _ (by decide)]; omega) (by rw [F.at _ (by decide)]; omega)).symm)
+  have hv2 : accV n2.mem (S + BitVec.ofNat 32 0xD4) 8 = gsMont (beNat (memBytes M (S + BitVec.ofNat 32 0x3) 32)) ∧
+      n2.mem (S + BitVec.ofNat 32 0xD4 + 0x20) = (if beNat (memBytes M (S + BitVec.ofNat 32 0x3) 32) < p256 then 1 else 0) := by
+    unfold gsMont
+    by_cases hx : beNat (memBytes M (S + BitVec.ofNat 32 0x3) 32) < p256
+    · obtain ⟨o1, olt, ocg⟩ := ok2 hx
+      rw [ite_eq_left hx, ite_eq_left hx]
+      exact ⟨frp2_val olt ocg, o1⟩
+    · obtain ⟨o0, a0'⟩ := bad2 (Nat.le_of_not_lt hx)
+      rw [ite_eq_right hx, ite_eq_right hx]; exact ⟨a0', o0⟩
+  clear ok2 bad2
+  have h2hi : ∀ x : Word, 0x40000000 ≤ x.toNat → n2.mem x = M x := fun x hx =>
+    fr2 x (sep_of_le (by rw [hbF]; omega) (by have := x.isLt; omega)) (F.hiOut (by decide) hx)
+  have C2 := C.hi h2hi
+  have D2 : P2Data n2.mem := D.of F fun x hx => fr2 x (hx.sub (c := 0x60) (l := 0x140) (by decide) |> fun h => by
+    rwa [show S + 0xFFFFFE60 + BitVec.ofNat 32 0x60 = S + 0xFFFFFEC0 by rw [BitVec.add_assoc]; rfl] at h) (fr_inFrame (by decide) hx)
+  obtain ⟨n3, c3, u3⟩ := u2.block gsX2 C2.self gsX2_end ⟨trivial, trivial, trivial, trivial⟩
+  have r3 : ∀ q, reg n3 q = (runBlock gsX2 (n2.mem, reg n2)).2 q := fun q => by rw [u3.regs]
+  obtain ⟨n4, c4, u4, mem4, k4⟩ := c_memset (dst := S + BitVec.ofNat 32 0x204) (b := 0) (N := 32)
+    (⟨u3.pc, u3.mem, fun _ => rfl⟩ : St n2.mem GP n3 0x358 (reg n3)) C2.self C2.K.K gs_at_358 gs_at_35c (by decide) (by decide)
+    (by rw [r3]; simp +decide only [runBlock, BInstr.run, gsX2, upd, ↓reduceIte]; rw [sp2]; rfl)
+    (by rw [r3]; simp +decide only [runBlock, BInstr.run, gsX2, upd, ↓reduceIte]; (try rw [u2.zero]); try rfl)
+    (by rw [r3]; simp +decide only [runBlock, BInstr.run, gsX2, upd, ↓reduceIte]; (try rw [u2.zero]); try rfl)
+    (by rw [F.at _ (by decide)]; omega) (F.sepHi (by decide) (by decide) (by decide))
+  have h4 : ∀ x, Sep (S + BitVec.ofNat 32 0x204) 32 x 1 → n4.mem x = n2.mem x := fun x hx => by
+    rw [mem4, fillBytes_sep hx (Nat.le_refl _)]
+  have C4 := C2.hi fun x hx => h4 x (F.hiOut (by decide) hx)
+  have k4' : ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ ra → reg n4 q = reg n2 q :=
+    fun q h0 h1 h2 h3 h4 h5 h6 hr => by
+      rw [k4 q h0 h2 h3 h4 h5 h6 hr, r3, runBlock_reg _ _ _ q u2.zero (by simp only [gsX2]; revert h0 h1 h2; revert q; decide)]
+  have sp4 : reg n4 sp = S := by
+    rw [k4' sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)]; exact sp2
+  have a70 : n4.mem (S + BitVec.ofNat 32 0xD4 + 0x20) = n2.mem (S + BitVec.ofNat 32 0xD4 + 0x20) :=
+    h4 _ (sepS S (c := 0x204) (n := 32) (d := 0xF4) (k := 1) (.inr (by decide)) (by decide) (by decide) |> fun h => by
+      rwa [show S + BitVec.ofNat 32 0xF4 = S + BitVec.ofNat 32 0xD4 + 0x20 from by rw [BitVec.add_assoc]; rfl] at h)
+  obtain ⟨n5, c5, u5⟩ := u4.block gsX3 C4.self gsX3_end ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩
+  have r5 : ∀ q, reg n5 q = (runBlock gsX3 (n4.mem, reg n4)).2 q := fun q => by rw [u5.regs]
+  have e19x : reg n5 (19 : Fin 32) = (n2.mem (S + BitVec.ofNat 32 0xD4 + 0x20)).zeroExtend 32 := by
+    rw [r5]; simp +decide only [runBlock, BInstr.run, gsX3, upd, ↓reduceIte]; rw [sp4, ← a70]
+    rw [show S + BitVec.ofNat 32 0xD4 + 0x20 = S + 0xF4 from by rw [BitVec.add_assoc]; rfl]
+  have hc01 : (n2.mem (S + BitVec.ofNat 32 0xD4 + 0x20)).zeroExtend 32 = (0 : Word) ∨
+      (n2.mem (S + BitVec.ofNat 32 0xD4 + 0x20)).zeroExtend 32 = (1 : Word) := by
+    by_cases hx : beNat (memBytes M (S + BitVec.ofNat 32 0x3) 32) < p256
+    · rw [hv2.2, ite_eq_left hx]; exact .inr rfl
+    · rw [hv2.2, ite_eq_right hx]; exact .inl rfl
+  obtain ⟨n6, c6, u6, vals6, fr6, sp6, k6⟩ := c2_csel (out := S + BitVec.ofNat 32 0x284) (a := S + BitVec.ofNat 32 0x204)
+    (b := S + BitVec.ofNat 32 0xD4) (c := (n2.mem (S + BitVec.ofNat 32 0xD4 + 0x20)).zeroExtend 32)
+    (⟨u5.pc, u5.mem, fun _ => rfl⟩ : St n4.mem GP n5 0x36C (reg n5)) C4.self C4.K F gs_at_36c gs_at_370 (by decide) (by decide)
+    (by rw [r5, runBlock_reg _ _ _ sp u4.zero (by decide)]; exact sp4)
+    (by rw [r5]; simp +decide only [runBlock, BInstr.run, gsX3, upd, ↓reduceIte]; rw [sp4]; rfl)
+    (by rw [r5]; simp +decide only [runBlock, BInstr.run, gsX3, upd, ↓reduceIte]; rw [sp4]; rfl)
+    (by rw [r5]; simp +decide only [runBlock, BInstr.run, gsX3, upd, ↓reduceIte]; rw [sp4]; rfl)
+    (by rw [r5]; simp +decide only [runBlock, BInstr.run, gsX3, upd, ↓reduceIte]; rw [sp4]
+        show aluEval .add 0 ((n4.mem (S + 0xF4)).zeroExtend 32) = _
+        rw [show (S + 0xF4 : Word) = S + BitVec.ofNat 32 0xD4 + 0x20 from by rw [BitVec.add_assoc]; rfl, a70]
+        exact BitVec.zero_add _)
+    hc01 (co := 0x284) (ca := 0x204) (cb := 0xD4) (by decide) (by decide) (by decide) rfl rfl rfl (by decide)
+  have h6hi : ∀ x : Word, 0x40000000 ≤ x.toNat → n6.mem x = M x := fun x hx => by
+    rw [fr6 x (sep_of_le (by rw [hb50]; omega) (by have := x.isLt; omega)) (F.hiOut (c := 0x284) (n := 32) (by decide) hx),
+      h4 x (F.hiOut (by decide) hx), h2hi x hx]
+  have frame : ∀ x, Sep (S + 0xFFFFFEC0) 0x140 x 1 → Sep (S + BitVec.ofNat 32 0xD4) 0x21 x 1 →
+      Sep (S + BitVec.ofNat 32 0x204) 0x20 x 1 → Sep (S + BitVec.ofNat 32 0x284) 0x20 x 1 → n6.mem x = M x := by
+    intro x hF h210 h2D4 h364
+    have h50 : Sep (S + 0xFFFFFFB0) 0x50 x 1 := by
+      have := hF.sub (c := 0xF0) (l := 0x50) (by decide)
+      rwa [show S + 0xFFFFFEC0 + BitVec.ofNat 32 0xF0 = S + 0xFFFFFFB0 by rw [BitVec.add_assoc]; rfl] at this
+    rw [fr6 x h50 h364, h4 x h2D4, fr2 x hF h210]
+  have D6 : P2Data n6.mem := D.of F fun x hx => frame x (hx.sub (c := 0x60) (l := 0x140) (by decide) |> fun h => by
+      rwa [show S + 0xFFFFFE60 + BitVec.ofNat 32 0x60 = S + 0xFFFFFEC0 by rw [BitVec.add_assoc]; rfl] at h) (fr_inFrame (by decide) hx) (fr_inFrame (by decide) hx) (fr_inFrame (by decide) hx)
+  have e619 : reg n6 (19 : Fin 32) = (n2.mem (S + BitVec.ofNat 32 0xD4 + 0x20)).zeroExtend 32 := by
+    rw [k6 19 (by decide), e19x]
+  refine ⟨n6, c1.trans (c2.trans (c3.trans (c4.trans (c5.trans c6)))), u6, C.hi h6hi, D6, ?_, ?_, frame, sp6, fun q hq => ?_⟩
+  · by_cases hx : beNat (memBytes M (S + BitVec.ofNat 32 0x3) 32) < p256
+    · have hc1 : (n2.mem (S + BitVec.ofNat 32 0xD4 + 0x20)).zeroExtend 32 = (1 : Word) := by
+        rw [hv2.2, ite_eq_left hx]; rfl
+      rw [← hv2.1]
+      exact accV_congr2 8 fun i hi => by
+        rw [vals6 i hi, ite_eq_left hc1]
+        exact memLoad32_congr fun q hq => by
+          rw [add_ofNat_assoc, add_ofNat_assoc]
+          exact h4 _ (sepS S (.inr (by omega)) (by decide) (by omega))
+    · have hc0 : (n2.mem (S + BitVec.ofNat 32 0xD4 + 0x20)).zeroExtend 32 = (0 : Word) := by
+        rw [hv2.2, ite_eq_right hx]; rfl
+      unfold gsMont; rw [ite_eq_right hx]
+      exact accV_zero 8 fun i hi => by
+        rw [vals6 i hi, ite_eq_right (by rw [hc0]; decide), mem4]
+        exact fill_word0 (by omega) (by decide)
+  · rw [e619, hv2.2]; unfold gsOk
+    by_cases hx : beNat (memBytes M (S + BitVec.ofNat 32 0x3) 32) < p256
+    · rw [ite_eq_left hx, ite_eq_left hx]; rfl
+    · rw [ite_eq_right hx, ite_eq_right hx]; rfl
+  · rw [k6 q (by revert hq; revert q; decide), r5, runBlock_reg _ _ _ q u4.zero (by simp only [gsX3]; revert hq; revert q; decide),
+      k4' q (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide), k2 q (by revert hq; revert q; decide), r1,
+      runBlock_reg _ _ _ q hz (by simp only [gsX1]; revert hq; revert q; decide)]
+
