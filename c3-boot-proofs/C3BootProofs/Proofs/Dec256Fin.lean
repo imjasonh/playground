@@ -174,4 +174,192 @@ theorem gf_iter {M : Word → BitVec 8} {B yp acc U X CL CH : Word} {n : Machine
   · obtain ⟨n2, d2, u2⟩ := u1'.notTaken hc1 0x636 gd_at_632 (by decide) (by rw [hb]; exact decide_eq_false hl)
     exact ⟨n2, c1.trans (.single d2), by rw [ite_eq_right hl]; exact u2.self, post n2 u2.regs⟩
 
+/-- **The inner loop**, from column `k + 1` of a pass to its end at 0x636:
+columns `k + 1..7` of the pass. -/
+theorem gf_inner {B acc yp U X : Word} {M0 : Word → BitVec 8}
+    (hyp : yp.toNat % 4 = 0) (hacc : acc.toNat % 4 = 0) (hw : acc.toNat + 32 ≤ 2 ^ 32)
+    (hAY : Sep acc 32 yp 32) (hAN : Sep acc 32 (yp + 0x20) 32) (hAC : Sep acc 32 B p256DecompressCode.length) :
+    ∀ m k, k + m + 1 = 7 → ∀ {M : Word → BitVec 8} {n : Machine} {CL CH : Word},
+      St M B n 0x5EA (reg n) → CodeIn M B p256DecompressCode →
+      (∀ a, Sep acc 32 a 1 → M a = M0 a) →
+      (∀ i, k ≤ i → i < 8 →
+        memLoad32 M (acc + BitVec.ofNat 32 (4 * i)) = memLoad32 M0 (acc + BitVec.ofNat 32 (4 * i))) →
+      2 ^ 32 * accV M acc k + (CL.toNat + 2 ^ 32 * CH.toNat) * 2 ^ (32 * (k + 1)) =
+        X.toNat * accV M0 yp (k + 1) + accV M0 acc (k + 1) + U.toNat * accV M0 (yp + 0x20) (k + 1) →
+      CL.toNat + 2 ^ 32 * CH.toNat ≤ 2 * 2 ^ 32 - 2 →
+      reg n (8 : Fin 32) = yp + 0x20 + BitVec.ofNat 32 (4 * (k + 1)) →
+      reg n a1 = acc + BitVec.ofNat 32 (4 * (k + 1)) →
+      reg n (21 : Fin 32) = U → reg n (31 : Fin 32) = X → reg n a2 = CL → reg n (22 : Fin 32) = CH →
+      reg n (23 : Fin 32) = BitVec.ofNat 32 (7 - k) →
+      ∃ n' M', Steps n n' ∧ St M' B n' 0x636 (reg n') ∧ CodeIn M' B p256DecompressCode ∧
+        2 ^ 32 * accV M' acc 7 + ((reg n' a2).toNat + 2 ^ 32 * (reg n' (22 : Fin 32)).toNat) * 2 ^ (32 * 8) =
+          X.toNat * accV M0 yp 8 + accV M0 acc 8 + U.toNat * accV M0 (yp + 0x20) 8 ∧
+        (reg n' a2).toNat + 2 ^ 32 * (reg n' (22 : Fin 32)).toNat ≤ 2 * 2 ^ 32 - 2 ∧
+        (∀ a, Sep acc 32 a 1 → M' a = M0 a) ∧
+        memLoad32 M' (acc + BitVec.ofNat 32 (4 * 7)) = memLoad32 M0 (acc + BitVec.ofNat 32 (4 * 7)) ∧
+        reg n' (8 : Fin 32) = yp + 0x20 + BitVec.ofNat 32 (4 * 8) ∧
+        reg n' a1 = acc + BitVec.ofNat 32 (4 * 8) ∧
+        reg n' (23 : Fin 32) = 0 ∧
+        ∀ q, gfBodyKeep q = true → reg n' q = reg n q := by
+  intro m
+  induction m with
+  | zero =>
+    intro k hk M n CL CH s hc hfr hab hinv hbd r8 r11 r21 r31 r12 r22 r23
+    have k10 : k = 6 := by omega
+    subst k10
+    obtain ⟨lo, cl, ch, hcol⟩ : ∃ lo cl ch, mmCols (memLoad32 M (yp + 0x20 + BitVec.ofNat 32 (4 * (6 + 1))))
+        (memLoad32 M (yp + BitVec.ofNat 32 (4 * (6 + 1)))) (memLoad32 M (acc + BitVec.ofNat 32 (4 * (6 + 1))))
+        U X CL CH = (lo, cl, ch) := ⟨_, _, _, rfl⟩
+    obtain ⟨n1, c1, u1, e12, e22, e8, e11, e23, fr⟩ := gf_iter (k := 6) s hc (by decide) hyp hacc
+      (hAC.sub (by omega)) r8 r11 r21 r31 r12 r22 r23
+    rw [hcol] at u1 e12 e22
+    obtain ⟨i1, i2, i3, i4⟩ := mm_inv_step8 (k := 6) (by decide) hw hAY hAN hfr hab hinv hbd hcol
+    refine ⟨n1, _, c1, u1, CodeIn.store32 hc (hAC.sub (by omega)), ?_, ?_, i3, i4 7 (by decide) (by decide),
+      e8, e11, e23, fr⟩
+    · rw [e12, e22, show (8 : Nat) = 6 + 2 from rfl]; exact i1
+    · rw [e12, e22]; exact i2
+  | succ m ih =>
+    intro k hk M n CL CH s hc hfr hab hinv hbd r8 r11 r21 r31 r12 r22 r23
+    have hl : k + 1 < 7 := by omega
+    obtain ⟨lo, cl, ch, hcol⟩ : ∃ lo cl ch, mmCols (memLoad32 M (yp + 0x20 + BitVec.ofNat 32 (4 * (k + 1))))
+        (memLoad32 M (yp + BitVec.ofNat 32 (4 * (k + 1)))) (memLoad32 M (acc + BitVec.ofNat 32 (4 * (k + 1))))
+        U X CL CH = (lo, cl, ch) := ⟨_, _, _, rfl⟩
+    obtain ⟨n1, c1, u1, e12, e22, e8, e11, e23, fr⟩ := gf_iter (k := k) s hc (by omega) hyp hacc
+      (hAC.sub (by omega)) r8 r11 r21 r31 r12 r22 r23
+    rw [hcol] at u1 e12 e22
+    rw [ite_eq_left hl] at u1
+    obtain ⟨i1, i2, i3, i4⟩ := mm_inv_step8 (k := k) (by omega) hw hAY hAN hfr hab hinv hbd hcol
+    have k7 : reg n1 (21 : Fin 32) = U := by rw [fr _ rfl, r21]
+    have k6 : reg n1 (31 : Fin 32) = X := by rw [fr _ rfl, r31]
+    obtain ⟨n', M', c', u', hc', f1, f2, f3, f4, f8, f11, f23, fr'⟩ :=
+      ih (k + 1) (by omega) u1 (CodeIn.store32 hc (hAC.sub (by omega))) i3 i4 i1 i2 e8 e11 k7 k6 e12 e22 e23
+    exact ⟨n', M', c1.trans c', u', hc', f1, f2, f3, f4, f8, f11, f23,
+      fun q hq => by rw [fr' q hq, fr q hq]⟩
+
+theorem neg_m1_mul (a : Word) : aluEval .sub 0 (aluEval .mul 0xFFFFFFFF a) = aluEval .mul 1 a := by
+  show 0 - 0xFFFFFFFF * a = 1 * a
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_sub, BitVec.toNat_mul, BitVec.toNat_mul, show (0xFFFFFFFF : Word).toNat = 2 ^ 32 - 1 from rfl,
+    show (0 : Word).toNat = 0 from rfl, show (1 : Word).toNat = 1 from rfl]
+  have := a.isLt; omega
+
+/-- The first column of a pass as the final squaring computes it: the factor
+`u = -(k · t)` from the Montgomery constant `k` it reads, then the two-word
+carry out. -/
+def gfHead (Y0 X O0 K N0 : Word) : Word × Word × Word :=
+  let a0 := aluEval .mul Y0 X
+  let a1 := aluEval .add O0 a0
+  let u := aluEval .sub 0 (aluEval .mul K a1)
+  let a2 := aluEval .mulhu Y0 X
+  let a3 := aluEval .mul u N0
+  let s1 := aluEval .mulhu u N0
+  let c1 := aluEval .sltu a1 a0
+  let h1 := aluEval .add c1 a2
+  let lo := aluEval .add a1 a3
+  let h2 := aluEval .add h1 s1
+  let c2 := aluEval .sltu lo a3
+  let cl := aluEval .add c2 h2
+  let o1 := aluEval .sltu h2 s1
+  let o2 := aluEval .sltu cl h2
+  (u, cl, aluEval .add o1 o2)
+
+theorem gfHead_eq (Y0 X O0 N0 : Word) : gfHead Y0 X O0 0xFFFFFFFF N0 = mmHead Y0 X O0 1 N0 := by
+  simp only [gfHead, mmHead, neg_m1_mul]
+
+def gfHeadBlock : List BInstr :=
+  [.aluImm .sll a1 (30 : Fin 32) 0x2, .alu .add a1 a1 (5 : Fin 32), .lw (31 : Fin 32) a1 0x0,
+   .alu .mul a1 (7 : Fin 32) (31 : Fin 32), .lw a2 sp 0x1DC, .alu .add a2 a2 a1, .alu .mul a4 (18 : Fin 32) a2,
+   .alu .sub (21 : Fin 32) x0 a4, .alu .mulhu a4 (7 : Fin 32) (31 : Fin 32), .alu .mul (9 : Fin 32) (21 : Fin 32) (28 : Fin 32),
+   .alu .mulhu (8 : Fin 32) (21 : Fin 32) (28 : Fin 32), .alu .sltu a1 a2 a1, .alu .add a1 a1 a4,
+   .alu .add a2 a2 (9 : Fin 32), .alu .add a1 a1 (8 : Fin 32), .alu .sltu a2 a2 (9 : Fin 32), .alu .add a2 a2 a1,
+   .alu .sltu a4 a1 (8 : Fin 32), .alu .sltu a1 a2 a1, .aluImm .add (23 : Fin 32) x0 0x7, .alu .add (22 : Fin 32) a4 a1,
+   .alu .add a1 x0 (17 : Fin 32), .alu .add (8 : Fin 32) x0 (16 : Fin 32)]
+
+def gfTailBlock : List BInstr :=
+  [.alu .add (19 : Fin 32) (19 : Fin 32) a2, .alu .add a4 (22 : Fin 32) (29 : Fin 32), .alu .sltu a1 (19 : Fin 32) a2,
+   .sw sp (19 : Fin 32) 0x1F8, .alu .add (19 : Fin 32) a4 a1, .aluImm .add (30 : Fin 32) (30 : Fin 32) 0x1,
+   .aluImm .add (29 : Fin 32) x0 0x0]
+
+theorem gfHeadBlock_end : blockEnd p256DecompressCode 0x59C gfHeadBlock = some 0x5E6 := by decide
+theorem gfTailBlock_end : blockEnd p256DecompressCode 0x636 gfTailBlock = some 0x64C := by decide
+
+/-- The registers the start of a pass leaves alone. -/
+def gfHeadKeep (q : Fin 32) : Bool := q.val ∉ [8, 9, 11, 12, 14, 21, 22, 23, 31]
+
+set_option maxRecDepth 20000 in
+theorem gfHeadBlock_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock gfHeadBlock (M, f)).1 = M ∧
+    (runBlock gfHeadBlock (M, f)).2 (31 : Fin 32) =
+      memLoad32 M (aluEval .add (aluEval .sll (f (30 : Fin 32)) 2) (f (5 : Fin 32)) + 0) ∧
+    (runBlock gfHeadBlock (M, f)).2 (21 : Fin 32) = (gfHead (f (7 : Fin 32))
+      (memLoad32 M (aluEval .add (aluEval .sll (f (30 : Fin 32)) 2) (f (5 : Fin 32)) + 0))
+      (memLoad32 M (f sp + 0x1DC)) (f (18 : Fin 32)) (f (28 : Fin 32))).1 ∧
+    (runBlock gfHeadBlock (M, f)).2 a2 = (gfHead (f (7 : Fin 32))
+      (memLoad32 M (aluEval .add (aluEval .sll (f (30 : Fin 32)) 2) (f (5 : Fin 32)) + 0))
+      (memLoad32 M (f sp + 0x1DC)) (f (18 : Fin 32)) (f (28 : Fin 32))).2.1 ∧
+    (runBlock gfHeadBlock (M, f)).2 (22 : Fin 32) = (gfHead (f (7 : Fin 32))
+      (memLoad32 M (aluEval .add (aluEval .sll (f (30 : Fin 32)) 2) (f (5 : Fin 32)) + 0))
+      (memLoad32 M (f sp + 0x1DC)) (f (18 : Fin 32)) (f (28 : Fin 32))).2.2 ∧
+    (runBlock gfHeadBlock (M, f)).2 (23 : Fin 32) = BitVec.ofNat 32 (7 - 0) ∧
+    (runBlock gfHeadBlock (M, f)).2 a1 = f (17 : Fin 32) ∧
+    (runBlock gfHeadBlock (M, f)).2 (8 : Fin 32) = f (16 : Fin 32) ∧
+    ∀ q, gfHeadKeep q = true → (runBlock gfHeadBlock (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, gfHeadBlock]
+  refine ⟨trivial, ?_, ?_, ?_, ?_, ?_, ?_, ?_, fun q hq => ?_⟩
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]; exact BitVec.zero_add _
+  · simp +decide only [upd, ↓reduceIte]; exact BitVec.zero_add _
+  · by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp only [upd, h0, ite_false, pkeep_ne (r := 8) hq rfl, pkeep_ne (r := 9) hq rfl, pkeep_ne (r := a1) hq rfl,
+        pkeep_ne (r := a2) hq rfl, pkeep_ne (r := a4) hq rfl, pkeep_ne (r := 21) hq rfl, pkeep_ne (r := 22) hq rfl,
+        pkeep_ne (r := 23) hq rfl, pkeep_ne (r := 31) hq rfl]
+
+theorem gfHeadBlock_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Word} {len : Nat}
+    (hx : (aluEval .add (aluEval .sll (f (30 : Fin 32)) 2) (f (5 : Fin 32)) + 0).toNat % 4 = 0)
+    (hs : (f sp + 0x1DC).toNat % 4 = 0) : BlockOk base len gfHeadBlock (M, f) := by
+  simp +decide only [BlockOk, BInstr.ok, BInstr.run, gfHeadBlock, upd, ↓reduceIte, true_and, and_true]
+  exact ⟨hx, hs⟩
+
+/-- The registers the end of a pass leaves alone. -/
+def gfTailKeep (q : Fin 32) : Bool := q.val ∉ [11, 14, 19, 29, 30]
+
+set_option maxRecDepth 20000 in
+theorem gfTailBlock_run {M : Word → BitVec 8} {f : Fin 32 → Word} (hz : f 0 = 0) :
+    (runBlock gfTailBlock (M, f)).1 = memStore32 M (f sp + 0x1F8) (aluEval .add (f (19 : Fin 32)) (f a2)) ∧
+    (runBlock gfTailBlock (M, f)).2 (19 : Fin 32) = aluEval .add (aluEval .add (f (22 : Fin 32)) (f (29 : Fin 32)))
+      (aluEval .sltu (aluEval .add (f (19 : Fin 32)) (f a2)) (f a2)) ∧
+    (runBlock gfTailBlock (M, f)).2 (30 : Fin 32) = f (30 : Fin 32) + 1 ∧
+    (runBlock gfTailBlock (M, f)).2 (29 : Fin 32) = 0 ∧
+    ∀ q, gfTailKeep q = true → (runBlock gfTailBlock (M, f)).2 q = f q := by
+  simp only [runBlock, BInstr.run, gfTailBlock]
+  refine ⟨?_, ?_, ?_, ?_, fun q hq => ?_⟩
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]
+  · simp +decide only [upd, ↓reduceIte]; rfl
+  · simp +decide only [upd, ↓reduceIte]
+  · by_cases h0 : q.val = 0
+    · have : q = 0 := Fin.ext h0
+      subst this; simp [upd, hz]
+    · simp only [upd, h0, ite_false, pkeep_ne (r := a1) hq rfl, pkeep_ne (r := a4) hq rfl,
+        pkeep_ne (r := 19) hq rfl, pkeep_ne (r := 29) hq rfl, pkeep_ne (r := 30) hq rfl]
+
+theorem gfTailBlock_ok {M : Word → BitVec 8} {f : Fin 32 → Word} {base : Word} {len : Nat}
+    (hs : (f sp + 0x1F8).toNat % 4 = 0) (hsep : Sep (f sp + 0x1F8) 4 base len) :
+    BlockOk base len gfTailBlock (M, f) := by
+  simp +decide only [BlockOk, BInstr.ok, BInstr.run, gfTailBlock, upd, ↓reduceIte, true_and, and_true]
+  exact ⟨hs, hsep⟩
+
+/-- The registers a pass leaves alone. -/
+def gfPassKeep (q : Fin 32) : Bool := q.val ∉ [8, 9, 10, 11, 12, 13, 14, 15, 19, 21, 22, 23, 29, 30, 31]
+
+theorem gfPassKeep_head : ∀ q, gfPassKeep q = true → gfHeadKeep q = true := by decide
+theorem gfPassKeep_body : ∀ q, gfPassKeep q = true → gfBodyKeep q = true := by decide
+theorem gfPassKeep_tail : ∀ q, gfPassKeep q = true → gfTailKeep q = true := by decide
+
 end C3.RV32.Gd
