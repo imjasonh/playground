@@ -421,4 +421,112 @@ theorem dq_mm {Mx : Word → BitVec 8} {n : Machine} {off : Nat} {g : Fin 32 →
   exact ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, p3_mont hlt hcg, fr2,
     fun q hq => by rw [k2 q (by revert hq; revert q; decide), r1 q (by revert hq; revert q; decide)]⟩
 
+/-! ## A window's digit -/
+
+/-- The digit `decompress` reads for window `w` of limb `i`: two bits for
+the top window, four otherwise. -/
+def dqDig (i w : Nat) (limb : Word) : Word :=
+  aluEval .and (if i = 11 ∧ w = 7 then 3 else 15) (aluEval .srl limb (aluEval .sll (BitVec.ofNat 32 w) 2))
+
+theorem dqDig_le (i w : Nat) (limb : Word) : (dqDig i w limb).toNat ≤ 15 := by
+  unfold dqDig
+  show ((if i = 11 ∧ w = 7 then (3 : Word) else 15) &&& _).toNat ≤ 15
+  rw [BitVec.toNat_and]
+  refine Nat.le_trans Nat.and_le_left ?_
+  by_cases h : i = 11 ∧ w = 7
+  · rw [if_pos h]; decide
+  · rw [if_neg h]; decide
+
+theorem top_test : ∀ i : Nat, i < 12 → ∀ w : Nat, w < 8 →
+    branchTaken .beq (aluEval .or (aluEval .xor 7 (BitVec.ofNat 32 w)) (aluEval .xor 11 (BitVec.ofNat 32 i))) 0 =
+      decide (i = 11 ∧ w = 7) := by decide
+
+theorem bnd13 : ∀ i : Nat, i < 12 → branchTaken .bgeu (BitVec.ofNat 32 (i + 1)) 13 = false := by decide
+
+def dqD1 : List BInstr := [.lw a0 sp 0x2C, .aluImm .add a1 x0 0xD]
+def dqD2 : List BInstr :=
+  [.lw a0 sp 0x34, .lw a1 sp 0x38, .alu .xor a0 a0 a1, .lw a1 sp 0x30, .alu .xor a1 a1 a3, .alu .or a1 a1 a0,
+   .lw a0 sp 0x24]
+def dqD3 : List BInstr := [.lw a1 sp 0x28, .lw a1 a1 0x0, .aluImm .sll a2 a3 0x2, .alu .srl a1 a1 a2, .alu .and a0 a0 a1]
+
+theorem dqD1_end : blockEnd p384DecompressCode 0x52C dqD1 = some 0x530 := by decide
+theorem dqD2_end : blockEnd p384DecompressCode 0x534 dqD2 = some 0x542 := by decide
+theorem dqD3_end : blockEnd p384DecompressCode 0x546 dqD3 = some 0x554 := by decide
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 4000000 in
+/-- **A window's digit**, from 0x52C to the test at 0x554: `a0` gets digit
+`w` of limb `i` of the exponent, which `S + 0x28` points to. -/
+theorem dq_digit {M : Word → BitVec 8} {S : Word} {n : Machine} {i w : Nat} (C : DqCode M) (F : DqFrame S)
+    (s : St M DP n 0x52C (reg n)) (rsp : reg n sp = S) (ra3 : reg n a3 = BitVec.ofNat 32 w) (hi : i < 12) (hw : w < 8)
+    (s2C : memLoad32 M (S + BitVec.ofNat 32 0x2C) = BitVec.ofNat 32 (i + 1))
+    (s34 : memLoad32 M (S + BitVec.ofNat 32 0x34) = 11) (s38 : memLoad32 M (S + BitVec.ofNat 32 0x38) = BitVec.ofNat 32 i)
+    (s30 : memLoad32 M (S + BitVec.ofNat 32 0x30) = 7) (s24 : memLoad32 M (S + BitVec.ofNat 32 0x24) = 3)
+    (s28 : memLoad32 M (S + BitVec.ofNat 32 0x28) = S + BitVec.ofNat 32 (0x5FC + 4 * i)) :
+    ∃ n', Steps n n' ∧ St M DP n' 0x554 (reg n') ∧
+      reg n' a0 = dqDig i w (memLoad32 M (S + BitVec.ofNat 32 (0x5FC + 4 * i))) ∧
+      ∀ q, q ≠ a0 → q ≠ a1 → q ≠ a2 → reg n' q = reg n q := by
+  have hz := s.zero
+  have hSl := F.lo; have hSh := F.hi; have hSa := F.al
+  have al : ∀ c, c + 4 ≤ 0xA50 → c % 4 = 0 → (S + BitVec.ofNat 32 c).toNat % 4 = 0 := fun c h1 h2 => by
+    rw [F.at c (by omega)]; omega
+  obtain ⟨n1, c1, u1⟩ := s.block dqD1 C.self dqD1_end (by
+    simp only [BlockOk, BInstr.ok, BInstr.run, dqD1]; simp +decide only [upd, ↓reduceIte, true_and, and_true]
+    rw [rsp]; exact al 0x2C (by decide) (by decide))
+  have r1 : ∀ q, reg n1 q = (runBlock dqD1 (M, reg n)).2 q := fun q => by rw [u1.regs]
+  have t1 : St M DP n1 0x530 (reg n1) := ⟨u1.pc, u1.mem, fun _ => rfl⟩
+  obtain ⟨n2, d2, u2⟩ := t1.notTaken C.self 0x534 dp_at_530 (by decide) (by
+    rw [r1, r1]; simp +decide only [runBlock, BInstr.run, dqD1, upd, ↓reduceIte]; rw [rsp]
+    show branchTaken .bgeu (memLoad32 M (S + BitVec.ofNat 32 0x2C)) 13 = false
+    rw [s2C]; exact bnd13 i hi)
+  have g2 : ∀ q, reg n2 q = reg n1 q := fun q => by rw [u2.regs]
+  have sp2 : reg n2 sp = S := by rw [g2, r1, runBlock_reg _ _ _ sp hz (by decide)]; exact rsp
+  have a32 : reg n2 a3 = BitVec.ofNat 32 w := by rw [g2, r1, runBlock_reg _ _ _ a3 hz (by decide)]; exact ra3
+  have t2 : St M DP n2 0x534 (reg n2) := ⟨u2.pc, u2.mem, fun _ => rfl⟩
+  obtain ⟨n3, c3, u3⟩ := t2.block dqD2 C.self dqD2_end (by
+    simp only [BlockOk, BInstr.ok, BInstr.run, dqD2]; simp +decide only [upd, ↓reduceIte, true_and, and_true]
+    rw [sp2]; exact ⟨al 0x34 (by decide) (by decide), al 0x38 (by decide) (by decide), al 0x30 (by decide) (by decide),
+      al 0x24 (by decide) (by decide)⟩)
+  have r3 : ∀ q, reg n3 q = (runBlock dqD2 (M, reg n2)).2 q := fun q => by rw [u3.regs]
+  have e31 : reg n3 a1 = aluEval .or (aluEval .xor 7 (BitVec.ofNat 32 w)) (aluEval .xor 11 (BitVec.ofNat 32 i)) := by
+    rw [r3]; simp +decide only [runBlock, BInstr.run, dqD2, upd, ↓reduceIte]; rw [sp2, a32]
+    show aluEval .or (aluEval .xor (memLoad32 M (S + BitVec.ofNat 32 0x30)) _)
+      (aluEval .xor (memLoad32 M (S + BitVec.ofNat 32 0x34)) (memLoad32 M (S + BitVec.ofNat 32 0x38))) = _
+    rw [s30, s34, s38]
+  have e30 : reg n3 a0 = 3 := by
+    rw [r3]; simp +decide only [runBlock, BInstr.run, dqD2, upd, ↓reduceIte]; rw [sp2]
+    show memLoad32 M (S + BitVec.ofNat 32 0x24) = 3; exact s24
+  have k3 : ∀ q, q ≠ a0 → q ≠ a1 → reg n3 q = reg n2 q := fun q h0 h1 => by
+    rw [r3, runBlock_reg _ _ _ q t2.zero (by simp only [dqD2]; revert h0 h1; revert q; decide)]
+  have t3 : St M DP n3 0x542 (reg n3) := ⟨u3.pc, u3.mem, fun _ => rfl⟩
+  -- the mask, along either path to 0x546
+  obtain ⟨n4, c4, t4, e40, k4⟩ : ∃ n4, Steps n3 n4 ∧ St M DP n4 0x546 (reg n4) ∧
+      reg n4 a0 = (if i = 11 ∧ w = 7 then 3 else 15) ∧ ∀ q, q ≠ a0 → reg n4 q = reg n3 q := by
+    have hb := top_test i hi w hw
+    rw [← e31, ← t3.zero] at hb
+    by_cases ht : i = 11 ∧ w = 7
+    · obtain ⟨n4, d4, u4⟩ := t3.taken C.self 0x546 dp_at_542 (by decide) (by rw [hb]; exact decide_eq_true ht)
+      exact ⟨n4, .single d4, ⟨u4.pc, u4.mem, fun _ => rfl⟩, by rw [u4.regs, e30, ite_eq_left ht],
+        fun q _ => by rw [u4.regs]⟩
+    · obtain ⟨n4, d4, u4⟩ := t3.notTaken C.self 0x544 dp_at_542 (by decide) (by rw [hb]; exact decide_eq_false ht)
+      obtain ⟨n5, d5, u5⟩ := u4.self.aluImm C.self dp_at_544 (off' := 0x546) (by decide)
+      refine ⟨n5, .cons d4 (.single d5), ⟨u5.pc, u5.mem, fun _ => rfl⟩, ?_, fun q h => ?_⟩
+      · rw [u5.regs, ite_eq_right ht]; simp +decide only [upd, ↓reduceIte]; rw [u4.self.zero]; rfl
+      · rw [u5.regs, updz u4.self.zero h, u4.regs]
+  have sp4 : reg n4 sp = S := by rw [k4 sp (by decide), k3 sp (by decide) (by decide), sp2]
+  have a34 : reg n4 a3 = BitVec.ofNat 32 w := by rw [k4 a3 (by decide), k3 a3 (by decide) (by decide), a32]
+  obtain ⟨n5, c5, u5⟩ := t4.block dqD3 C.self dqD3_end (by
+    simp only [BlockOk, BInstr.ok, BInstr.run, dqD3]; simp +decide only [upd, ↓reduceIte, true_and, and_true]
+    rw [sp4]
+    refine ⟨al 0x28 (by decide) (by decide), ?_⟩
+    show (memLoad32 M (S + BitVec.ofNat 32 0x28) + 0).toNat % 4 = 0
+    rw [s28, add_lit_zero]; exact al _ (by omega) (by omega))
+  refine ⟨n5, c1.trans (.cons d2 (c3.trans (c4.trans c5))), ⟨u5.pc, u5.mem, fun _ => rfl⟩, ?_, fun q h0 h1 h2 => ?_⟩
+  · rw [u5.regs]; simp +decide only [runBlock, BInstr.run, dqD3, upd, ↓reduceIte]
+    rw [sp4, a34, e40]
+    show aluEval .and _ (aluEval .srl (memLoad32 M (memLoad32 M (S + BitVec.ofNat 32 0x28) + 0)) _) = _
+    rw [s28, add_lit_zero]; rfl
+  · rw [u5.regs, runBlock_reg _ _ _ q t4.zero (by simp only [dqD3]; revert h0 h1 h2; revert q; decide), k4 q h0,
+      k3 q h0 h1, g2, r1, runBlock_reg _ _ _ q hz (by simp only [dqD1]; revert h0 h1; revert q; decide)]
+
 end C3.RV32.Dq
