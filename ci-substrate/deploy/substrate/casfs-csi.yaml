@@ -128,6 +128,27 @@ spec:
   ports:
     - {name: grpc, port: 9095, targetPort: 9095}
 ---
+# Substrate denies ingress to ate-system's pods by default and admits only its
+# own components to ate-api-server. NetworkPolicies add up, so this admits the
+# driver as well, to list a volume's atespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: casfs-csi
+  namespace: ate-system
+spec:
+  podSelector:
+    matchLabels: {app: ate-api-server}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ci-substrate}
+          podSelector:
+            matchLabels: {app: casfs-csi}
+      ports:
+        - {protocol: TCP, port: 443}
+---
 # Registers the driver with Substrate. ateapi dials the controller endpoint
 # and atelet the node socket. The hop from ateapi to the controller is
 # plaintext, like the rest of this demo's gRPC.
