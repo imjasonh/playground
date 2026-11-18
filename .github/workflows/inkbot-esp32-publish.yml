@@ -38,11 +38,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Rust 1.88
-        run: |
-          rustup toolchain install 1.88.0 --profile minimal --no-self-update \
-            --component rustfmt
-          rustup default 1.88.0
+      # rust-toolchain.toml pins the host toolchain for this directory.
+      - name: Install Rust
+        working-directory: inkbot-esp32
+        run: rustup toolchain install --no-self-update
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
@@ -81,9 +80,12 @@ jobs:
         uses: sigstore/cosign-installer@fb28c2b6339dcd94da6e4cbcbc5e888961f6f8c3 # v3.9.0
 
       - name: Install espflash
-        # Pin 4.5.0 to match the host that flashes this board. Use 1.88;
-        # the Xtensa step above makes `esp` the default rustc.
-        run: cargo +1.88.0 install espflash --locked --version 4.5.0
+        # Pin 4.5.0 to match the host that flashes this board. The Xtensa
+        # step above makes `esp` the default rustc, so build espflash in
+        # inkbot-esp32/, where rust-toolchain.toml selects the host
+        # toolchain.
+        working-directory: inkbot-esp32
+        run: cargo install espflash --locked --version 4.5.0
 
       - name: Publish signed image
         working-directory: inkbot-esp32

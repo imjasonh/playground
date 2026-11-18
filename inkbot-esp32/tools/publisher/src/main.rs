@@ -282,7 +282,7 @@ async fn push(args: PushArgs) -> Result<()> {
         let resp = client
             .push(
                 &reference,
-                &[layer.clone()],
+                std::slice::from_ref(&layer),
                 config.clone(),
                 &auth,
                 Some(manifest.clone()),
