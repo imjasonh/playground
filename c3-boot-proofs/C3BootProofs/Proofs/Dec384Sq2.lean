@@ -42,17 +42,17 @@ theorem DqCode.hi {M M' : Word → BitVec 8} (C : DqCode M) (h : ∀ x : Word, 0
     codeHi C.bsub (by decide) (by decide) h, codeHi C.sel (by decide) (by decide) h,
     codeHi C.mm (by decide) (by decide) h⟩
 
-/-- `decompress`'s frame at `S`, with room below for its callees, all below
-the code. -/
+/-- `decompress`'s frame at `S`, with 0x1A0 bytes below for its callees, all
+below the code. -/
 structure DqFrame (S : Word) : Prop where
   al : S.toNat % 16 = 0
-  lo : 0x100 ≤ S.toNat
+  lo : 0x1A0 ≤ S.toNat
   hi : S.toNat + 0xA50 ≤ 0x40000000
 
 theorem DqFrame.at {S : Word} (F : DqFrame S) (c : Nat) (hc : c ≤ 0xA50) : (S + BitVec.ofNat 32 c).toNat = S.toNat + c := by
   have := F.hi; rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
 
-theorem DqFrame.below {S : Word} (F : DqFrame S) (c : Nat) (hc : 0 < c) (hc' : c ≤ 0x100) :
+theorem DqFrame.below {S : Word} (F : DqFrame S) (c : Nat) (hc : 0 < c) (hc' : c ≤ 0x1A0) :
     (S + BitVec.ofNat 32 (2 ^ 32 - c)).toNat = S.toNat - c := by
   have := F.lo; have := S.isLt; rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
 
@@ -61,14 +61,14 @@ theorem DqFrame.sepHi {S : Word} (F : DqFrame S) {c n : Nat} (h : c + n ≤ 0xA5
     (hb : 0x40000000 ≤ b.toNat) (hl : b.toNat + len ≤ 2 ^ 32) : Sep (S + BitVec.ofNat 32 c) n b len :=
   sep_of_le (by rw [F.at c (by omega)]; have := F.hi; omega) hl
 
-theorem DqFrame.sepHiB {S : Word} (F : DqFrame S) {c : Nat} (hc : 0 < c) (hc' : c ≤ 0x100) {b : Word} {len : Nat}
+theorem DqFrame.sepHiB {S : Word} (F : DqFrame S) {c : Nat} (hc : 0 < c) (hc' : c ≤ 0x1A0) {b : Word} {len : Nat}
     (hb : 0x40000000 ≤ b.toNat) (hl : b.toNat + len ≤ 2 ^ 32) : Sep (S + BitVec.ofNat 32 (2 ^ 32 - c)) c b len :=
   sep_of_le (by rw [F.below c hc hc']; have := F.hi; omega) hl
 
 theorem DqFrame.hiOut {S : Word} (F : DqFrame S) {c n : Nat} (h : c + n ≤ 0xA50) {x : Word} (hx : 0x40000000 ≤ x.toNat) :
     Sep (S + BitVec.ofNat 32 c) n x 1 := F.sepHi h hx (by have := x.isLt; omega)
 
-theorem DqFrame.hiOutB {S : Word} (F : DqFrame S) {c : Nat} (hc : 0 < c) (hc' : c ≤ 0x100) {x : Word}
+theorem DqFrame.hiOutB {S : Word} (F : DqFrame S) {c : Nat} (hc : 0 < c) (hc' : c ≤ 0x1A0) {x : Word}
     (hx : 0x40000000 ≤ x.toNat) : Sep (S + BitVec.ofNat 32 (2 ^ 32 - c)) c x 1 :=
   F.sepHiB hc hc' hx (by have := x.isLt; omega)
 
