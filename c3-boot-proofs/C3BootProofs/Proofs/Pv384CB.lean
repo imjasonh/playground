@@ -96,8 +96,6 @@ theorem pv_stCB {B : Word} {dlo dhi ulo uhi vlo vhi qlo qhi rlo rhi : Word} {rem
       reg n' sp = B + 0x420 ∧
       reg n' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧
       reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧
-      reg n' (9 : Fin 32) = ulo ∧
-      reg n' (18 : Fin 32) = BitVec.ofNat 32 n ∧
       reg n' (19 : Fin 32) = dhi ∧
       reg n' (20 : Fin 32) = BitVec.ofNat 32 0x177023BB ∧
       reg n' (21 : Fin 32) = dlo ∧
@@ -113,25 +111,12 @@ theorem pv_stCB {B : Word} {dlo dhi ulo uhi vlo vhi qlo qhi rlo rhi : Word} {rem
       accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x210) 12 = ZM ∧
       accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xE10) 12 = dataVal p384OrderData 0 12 ∧
       accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xE40) 12 = dataVal p384ScalarR2Data 0 12 ∧
-      memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0x54) = BitVec.ofNat 32 0x1 ∧
       memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0xE70) = BitVec.ofNat 32 0x177023BB ∧
       memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0xE74) = BitVec.ofNat 32 0x912B9F76 ∧
-      memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0x1C68) = ulo ∧
-      memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0x1C6C) = uhi ∧
-      memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0x1C70) = vlo ∧
-      memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0x1C74) = vhi ∧
-      memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0x1C78) = qlo ∧
-      memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0x1C7C) = qhi ∧
-      memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0x1C80) = rlo ∧
-      memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0x1C84) = rhi ∧
       sgnVal (n'.mem (B + 0x420 + BitVec.ofNat 32 (0x270 + 0x30))).toNat (accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x270) 12) = deUpd (Dv) (Ev) (i64Val (W64 (ulo) (uhi))) (i64Val (W64 (vlo) (vhi))) ((BitVec.ofNat 32 0x177023BB).toNat + 2 ^ 32 * (BitVec.ofNat 32 0x912B9F76).toNat) n (dataVal p384OrderData 0 12) ∧
       (n'.mem (B + 0x420 + BitVec.ofNat 32 (0x270 + 0x30))).toNat ≤ 1 ∧
       sgnVal (n'.mem (B + 0x420 + BitVec.ofNat 32 (0xD50 + 0x30))).toNat (accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 12) = fgUpd (Fv) (Gv) (i64Val (W64 (qlo) (qhi))) (i64Val (W64 (rlo) (rhi))) n ∧
       (n'.mem (B + 0x420 + BitVec.ofNat 32 (0xD50 + 0x30))).toNat ≤ 1 ∧
-      sgnVal (n'.mem (B + 0x420 + BitVec.ofNat 32 (0x1294 + 0x30))).toNat (accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x1294) 12) = deUpd (Dv) (Ev) (i64Val (W64 (ulo) (uhi))) (i64Val (W64 (vlo) (vhi))) ((BitVec.ofNat 32 0x177023BB).toNat + 2 ^ 32 * (BitVec.ofNat 32 0x912B9F76).toNat) n (dataVal p384OrderData 0 12) ∧
-      (n'.mem (B + 0x420 + BitVec.ofNat 32 (0x1294 + 0x30))).toNat ≤ 1 ∧
-      sgnVal (n'.mem (B + 0x420 + BitVec.ofNat 32 (0x12C8 + 0x30))).toNat (accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x12C8) 12) = deUpd (Dv) (Ev) (i64Val (W64 (qlo) (qhi))) (i64Val (W64 (rlo) (rhi))) ((BitVec.ofNat 32 0x177023BB).toNat + 2 ^ 32 * (BitVec.ofNat 32 0x912B9F76).toNat) n (dataVal p384OrderData 0 12) ∧
-      (n'.mem (B + 0x420 + BitVec.ofNat 32 (0x12C8 + 0x30))).toNat ≤ 1 ∧
       sgnVal (n'.mem (B + 0x420 + BitVec.ofNat 32 (0x1714 + 0x30))).toNat (accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x1714) 12) = fgUpd (Fv) (Gv) (i64Val (W64 (ulo) (uhi))) (i64Val (W64 (vlo) (vhi))) n ∧
       (n'.mem (B + 0x420 + BitVec.ofNat 32 (0x1714 + 0x30))).toNat ≤ 1 ∧
       sgnVal (n'.mem (B + 0x420 + BitVec.ofNat 32 (0x17A4 + 0x30))).toNat (accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12) = deUpd (Dv) (Ev) (i64Val (W64 (qlo) (qhi))) (i64Val (W64 (rlo) (rhi))) ((BitVec.ofNat 32 0x177023BB).toNat + 2 ^ 32 * (BitVec.ofNat 32 0x912B9F76).toNat) n (dataVal p384OrderData 0 12) ∧
@@ -2567,6 +2552,6 @@ theorem pv_stCB {B : Word} {dlo dhi ulo uhi vlo vhi qlo qhi rlo rhi : Word} {rem
     rw [← w22_1c84]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K23 _ (by omega) (by omega)
   clear w22_1c84 w22_1c80 w22_1c7c w22_1c78 w22_1c74 w22_1c70 w22_1c6c w22_1c68 w22_e74 w22_e70 w22_54 a22_e40 a22_e10 a22_210 a22_1e0 a22_1b0 a22_180 a22_150 a22_120 l22_17a4 v22_17a4 l22_1714 v22_1714 l22_12c8 v22_12c8 l22_1294 v22_1294 l22_d50 v22_d50 l22_270 v22_270 g22_23 g22_26 g22_24 g22_22 g22_21 g22_20 g22_19 g22_18 g22_9 g22_4 g22_3 g22_2 fR22 t22 K22 fr22 rb22 E22 s22 m22 u22 c22
-  exact ⟨n23, t23, s23, E23, fR23, g23_2, g23_3, g23_4, g23_9, g23_18, g23_19, g23_20, g23_21, g23_22, g23_23, g23_24, g23_26, a23_120, a23_150, a23_180, a23_1b0, a23_1e0, a23_210, a23_e10, a23_e40, w23_54, w23_e70, w23_e74, w23_1c68, w23_1c6c, w23_1c70, w23_1c74, w23_1c78, w23_1c7c, w23_1c80, w23_1c84, v23_270, l23_270, v23_d50, l23_d50, v23_1294, l23_1294, v23_12c8, l23_12c8, v23_1714, l23_1714, v23_17a4, l23_17a4⟩
+  exact ⟨n23, t23, s23, E23, fR23, g23_2, g23_3, g23_4, g23_19, g23_20, g23_21, g23_22, g23_23, g23_24, g23_26, a23_120, a23_150, a23_180, a23_1b0, a23_1e0, a23_210, a23_e10, a23_e40, w23_e70, w23_e74, v23_270, l23_270, v23_d50, l23_d50, v23_1714, l23_1714, v23_17a4, l23_17a4⟩
 
 end C3.RV32.Pv

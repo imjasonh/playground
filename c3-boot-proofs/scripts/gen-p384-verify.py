@@ -307,25 +307,34 @@ class Gen:
         self.end_step()
         return k
 
-    def conclusion(self, off, extra=()):
-        """The facts at the end, as a conjunction, and the term that proves it."""
+    def conclusion(self, off, extra=(), only=None):
+        """The facts at the end, as a conjunction, and the term that proves it. `only`
+        optionally names, per kind, the facts to keep."""
+        only = only or {}
+        keep = lambda kind, key: kind not in only or key in only[kind]
         k = self.k
         conj = [f"Steps n0 n'", f"St n'.mem PV n' 0x{off:X} (reg n')", f"{self.envt} n'.mem",
                 "(∀ x, PvR B x → n'.mem x = n0.mem x)"]
         terms = [f"t{k}", f"s{k}", f"E{k}", f"fR{k}"]
         for r, v in sorted(self.regs.items()):
-            if re.search(r"reg n[1-9]", lean_val(v)):
+            if re.search(r"reg n[1-9]", lean_val(v)) or not keep("regs", r):
                 continue
             conj.append(f"reg n' {rname(r)} = {lean_val(v)}"); terms.append(f"g{k}_{r}")
         for stmt, term in extra:
             conj.append(stmt); terms.append(term.format(k=k))
         for d, v in sorted(self.acc.items()):
+            if not keep("acc", d):
+                continue
             conj.append(f"accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x{d:X}) 12 = {v}"); terms.append(f"a{k}_{d:x}")
         for e, v in sorted(self.bytes.items()):
             conj.append(f"n'.mem (B + 0x420 + BitVec.ofNat 32 0x{e:X}) = {v}"); terms.append(f"b{k}_{e:x}")
         for e, v in sorted(self.words.items()):
+            if not keep("words", e):
+                continue
             conj.append(f"memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0x{e:X}) = {lean_val(v)}"); terms.append(f"w{k}_{e:x}")
         for d, v in sorted(self.sv.items()):
+            if not keep("sv", d):
+                continue
             conj.append(f"sgnVal (n'.mem (B + 0x420 + BitVec.ofNat 32 (0x{d:X} + 0x30))).toNat "
                         f"(accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x{d:X}) 12) = {v}"); terms.append(f"v{k}_{d:x}")
             conj.append(f"(n'.mem (B + 0x420 + BitVec.ofNat 32 (0x{d:X} + 0x30))).toNat ≤ 1"); terms.append(f"l{k}_{d:x}")
@@ -697,6 +706,8 @@ def stage_cb():
         "intro": ["have t0 : Steps n0 n0 := .refl n0", "have fR0 : ∀ x, PvR B x → n0.mem x = n0.mem x := fun _ _ => rfl"]
                  + [f"have g0_{r} : reg n0 ({r} : Fin 32) = reg n0 ({r} : Fin 32) := rfl" for r in (3, 4)],
         "import": "C3BootProofs.Proofs.Pv384Lib2",
+        "only": {"regs": {2, 3, 4, 19, 20, 21, 22, 23, 24, 26}, "words": {0xE70, 0xE74},
+                 "sv": {0x270, 0xD50, 0x1714, 0x17A4}},
     }
     return g, info
 
@@ -777,7 +788,7 @@ set_option linter.unusedSimpArgs false
 def main():
     stage = sys.argv[1]
     g, info = {"B": stage_b, "C0": stage_c0, "CA": stage_ca, "CB": stage_cb}[stage]()
-    stmt, proof = g.conclusion(info["end"], info.get("extra", ()))
+    stmt, proof = g.conclusion(info["end"], info.get("extra", ()), info.get("only"))
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.Pv384Lib"), title=info["title"], stage=stage,
                         doc=info["doc"]))
     print("\n".join(g.block_defs()))

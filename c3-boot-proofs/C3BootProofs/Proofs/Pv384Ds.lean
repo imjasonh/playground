@@ -79,11 +79,13 @@ theorem toNat_or_shl1 (a b : Word) : (a <<< 1 ||| b >>> 31).toNat = a.toNat * 2 
 
 theorem toNat_sra1 (a : Word) : (a.sshiftRight 1).toNat = a.toNat / 2 + (if 2 ^ 31 ≤ a.toNat then 2 ^ 31 else 0) := by
   have := a.isLt
-  rw [BitVec.toNat_sshiftRight, BitVec.msb_eq_decide]
-  simp only [Nat.shiftRight_eq_div_pow, Nat.pow_one, show (32 - 1 : Nat) = 31 from rfl]
-  by_cases h : 2 ^ 31 ≤ a.toNat
-  · rw [decide_eq_true h, ite_eq_left rfl, ite_eq_left h]; omega
-  · rw [decide_eq_false h, ite_eq_right (by decide), ite_eq_right h]; omega
+  unfold BitVec.sshiftRight
+  rw [BitVec.toNat_ofInt, Int.shiftRight_eq_div_pow, BitVec.toInt_eq_toNat_cond]
+  by_cases h : 2 * a.toNat < 2 ^ 32
+  · rw [ite_eq_left h, ite_eq_right (by omega)]
+    omega
+  · rw [ite_eq_right h, ite_eq_left (by omega)]
+    omega
 
 def dsA : List BInstr :=
   [.aluImm .and a3 a0 0x1]
