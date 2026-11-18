@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Trim the Go build cache to a byte budget before test.yml saves it.
 #
-# The Test job restores the newest saved archive by key prefix, so without a
+# The Go job restores the newest saved archive by key prefix, so without a
 # bound each save holds everything earlier jobs compiled. Go trims its build
 # cache by age only (entries unused for five days), which doesn't bound the
 # size of one archive.

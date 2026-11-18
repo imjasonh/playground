@@ -266,7 +266,7 @@ discovery scripts.
 | `deploy-gcp.yml` | push to `main`, pull requests that touch the deploy scripts or a `gcp-deploy.json`, manual | Applies GCP stacks that have a `gcp-deploy.json` (`cloudrun-sqlite`, `stream-boids`, and `wehadababyitsaboy`). GitHub OIDC and Workload Identity Federation authenticate `tofu apply`, so the workflow stores no long-lived GCP key. A pull request runs `tofu plan` as a separate plan service account and comments the plan. Apply runs only on `main`. |
 | `preview.yml` | pull request opened/sync | When a browser app, the posts catalog, or the Pages home-page index changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
-| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, posts catalog, and site index, in one job |
+| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, the kind end-to-end tests, the pasta style check, the posts catalog, and the site index, each in its own job. The `test` job fans in their results and is the required check |
 | `inkbot-esp32.yml` | push to `main`, pull requests, manual | Always runs discover + host/firmware jobs (so they can be required checks); host/firmware no-op when `inkbot-esp32/` (or this workflow) is unchanged (excluded from `test.yml`) |
 | `inkbot-esp32-publish.yml` | push to `main` touching `inkbot-esp32/**` (or this workflow), manual | Cross-builds inkbot firmware, pushes `ghcr.io/<owner>/playground/inkbot-esp32`, and Cosign-signs the digest (devices poll this for OTA) |
 | `apko-frontend-publish.yml` | push to `main` touching `apko-frontend/**` (or this workflow), manual | Tests `apko-frontend`, builds it with ko for `linux/amd64` and `linux/arm64`, pushes `ghcr.io/<owner>/playground/apko-frontend` tagged with the commit and `latest`, and Cosign-signs the digest. apko configurations name the image in `# syntax=` |
@@ -358,31 +358,38 @@ neither a deploy nor a comment.
 
 ## Testing (`test.yml`)
 
-Every push to `main` and every pull request runs a single `test` job. It first
-discovers which apps changed
-(`.github/scripts/discover-changed-apps.sh`), then tests **only the changed apps
-of each type**, installing each toolchain (Node, Go, Rust) only when that type
-has work to do and running the browser / Go / Rust / pasta / posts / site-index test legs concurrently via
-an Actions `parallel:` step group (same pattern as `deps.yaml`). When a type has
-no changes its steps are skipped, so the run is one `test` check with no empty
-or skipped legs. On the first push to `main` (no prior commit), every app is
-tested. The **pasta** leg builds the `pasta/` CLI, runs `pasta test` over the
-enrolled `.pasta/` analyzers, and lints the monorepo with `-fail-on=warning`
-(see `.github/scripts/test-pasta.sh`).
+Every push to `main` and every pull request runs a `discover` job that finds
+which apps changed (`.github/scripts/discover-changed-apps.sh`). Then each
+ecosystem runs as its own job on its own runner and tests **only the changed
+apps of that type**: browser apps, Go, Rust, pasta, the posts catalog, the
+site index, and the cache and discovery scripts. A job-level `if` skips an
+ecosystem with no changes, so it never starts a runner. On the first push to
+`main` (no prior commit), every app is tested. The **pasta** job builds the
+`pasta/` CLI, runs `pasta test` over the enrolled `.pasta/` analyzers, and
+lints the monorepo with `-fail-on=warning` (see `.github/scripts/test-pasta.sh`).
+
+The last job, `test`, needs every other job and runs even when one fails or is
+skipped. It passes when each job passed or was skipped, and fails otherwise.
+It is the one check that branch protection requires, so a new job in
+`test.yml` must be added to its `needs` list.
 
 The kind end-to-end tests of `git-k8s`, `kube`, `sshapp`, and `ci-substrate`
-run as their own steps in the parallel group
-(`.github/scripts/test-kind-e2e.sh`), beside the Go unit tests, because they
-mostly wait for a cluster and its Pods. Their
-clusters, registries, and ports have different names, so they can share the
-runner. The Rust apps share one target directory (`CARGO_TARGET_DIR`), so
-apps that depend on the same crates compile them once and the job holds one
-copy of the artifacts. The job restores five caches (Go's build cache, npm's package cache, the
-`worker-build` binary, the Rust dependency artifacts, and pasta's cache) from the newest
-entry that a push to `main` saved, matching by prefix so that a new lockfile
-doesn't miss. A pull request that does not run an ecosystem's tests does not
-restore that ecosystem's cache. Only pushes to `main` save one, after the
-tests.
+run in a `kind` matrix job, one runner for each changed module, beside the Go
+unit tests (`.github/scripts/test-kind-e2e.sh`; `--list` prints the modules
+that have one). The Go job runs every changed module's unit tests, one module
+after another. The Rust apps share one target directory (`CARGO_TARGET_DIR`),
+so apps that depend on the same crates compile them once and the job holds
+one copy of the artifacts.
+
+Each job restores the caches it uses from the newest entry that a push to
+`main` saved, matching by prefix so that a new lockfile doesn't miss: the
+browser job restores npm's package cache, the Go, kind, and pasta jobs
+restore Go's build cache, the pasta job also restores pasta's cache, and the
+Rust job restores the `worker-build` binary, the Rust dependency artifacts,
+and npm's cache of Wrangler. Only pushes to `main` save, after the tests, and
+two jobs never save the same cache. Only the Go job saves Go's build cache.
+The setup that the Go-using jobs share is the `.github/actions/setup-go-cache`
+action.
 
 ### Cache sizes
 
@@ -416,7 +423,8 @@ size budget, measured on disk:
   on error, so a cache problem never fails the job.
 - Cache what costs more to compute than to restore. `test.yml` caches
   Go's build cache (3 GiB budget; a cold compile of every module takes about
-  3 minutes and a warm one 35 seconds), npm's `_cacache` (1.5 GiB), the
+  3 minutes and a warm one 35 seconds), npm's `_cacache` (1.5 GiB for the
+  browser apps, and 512 MiB for Wrangler in the Rust job), the
   `worker-build` binary (256 MiB; it takes 36 seconds to build), and the
   Rust dependency artifacts (6 GiB). A cold compile of one Worker is about
   half a minute, and a warm one recompiles that app's own crate (about a
@@ -461,7 +469,7 @@ pinned Wrangler version) selects every Cloudflare Worker app, and a change to
 | App type | Selected when its dir has | CI runs, per changed app |
 |----------|---------------------------|--------------------------|
 | Browser | `index.html` **and** `package.json` with a `test` script | `npm ci` → `npm test` → `npm run test:e2e` (if defined; installs Playwright Chromium first) |
-| Go | `go.mod` | `gofmt` (`.github/scripts/check-gofmt.sh` fails the Test job when `gofmt` would change a `.go` file outside `vendor` and `testdata`) → `go build ./...` → `go test -race ./...`. `cloudrun-sqlite` builds and tests with `GOFLAGS=-tags=vfs`, and `litestream` runs the packages that upstream's CI unit-tests, with `-tags vfs` for the root package |
+| Go | `go.mod` | `gofmt` (`.github/scripts/check-gofmt.sh` fails the Go job when `gofmt` would change a `.go` file outside `vendor` and `testdata`) → `go build ./...` → `go test -race ./...`. `cloudrun-sqlite` builds and tests with `GOFLAGS=-tags=vfs`, and `litestream` runs the packages that upstream's CI unit-tests, with `-tags vfs` for the root package |
 | Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then `wrangler deploy --dry-run` with the Wrangler version pinned in `.github/wrangler/package.json` (`.github/scripts/check-worker-deploy-build.sh`, with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path. It fails when that Wrangler doesn't recognize a `wrangler.toml` key. Crates set `[lints.rust] unused = "deny"` so unused methods fail even without clippy. |
 | pasta | `pasta/` / `.pasta/` / lintable sources (`.go`, `.js`, `.ts`, `.tsx`, `.jsx`, `.rs`, `.swift`, `.sh`, `.yml`, `.yaml`, `.html`, `.css`, `.toml`, `.tf`, `.tfvars`, `.hcl`, …) via `discover-pasta.sh` | `go build ./pasta/cmd/pasta` → `pasta test .pasta` → `pasta -fail-on=warning ./...` |
 | posts | any `blog-post.md`, or `.github/scripts/build-blog*` / `test-blog.sh` / `discover-blog.sh` / the blog page templates, via `discover-blog.sh` | `python3 .github/scripts/build-blog_test.py` |
@@ -596,7 +604,7 @@ discovered automatically — no workflow edits are needed.
 6. Open a PR—preview deploy and CI run automatically.
 
 No workflow edits are required when a new app follows these conventions. The
-Test job fails a browser app that doesn't record visits.
+`test` check fails a browser app that doesn't record visits.
 
 ### Minimal static app
 

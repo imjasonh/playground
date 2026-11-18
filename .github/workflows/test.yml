@@ -14,16 +14,42 @@ permissions:
   contents: read
   actions: write
 
+# Each ecosystem is its own job on its own runner, and a job-level `if` skips
+# the ecosystems a change doesn't touch. The `test` job at the end fans in
+# every result, so it is the one check that branch protection requires.
+#
+# Caches. Each one is restored by key prefix, because the daily dependency
+# update changes every lockfile hash and an exact match would almost never
+# hit. Only pushes to main save, after the tests, so a pull request doesn't
+# spend time uploading a cache that no other run can read.
+#
+# A restore by prefix plus a save of everything on disk grows without bound:
+# every save held all that earlier jobs had added, and the Go archive passed
+# 4 GB and filled a runner's disk while it extracted. So a saved cache is a
+# function of the current commit and a size budget, measured on disk because
+# that is what an extraction has to fit. The key names the commit, a trim or
+# a size check bounds the contents, and the save action deletes the entry it
+# replaces, which leaves one entry per cache and keeps the repository under
+# its quota. Two jobs never save the same family.
 jobs:
-  test:
+  discover:
+    name: Discover changed apps
     runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.discover.outputs.apps }}
+      modules: ${{ steps.discover.outputs.modules }}
+      kind: ${{ steps.kind.outputs.kind }}
+      rust: ${{ steps.discover.outputs.rust }}
+      pasta: ${{ steps.discover.outputs.pasta }}
+      blog: ${{ steps.discover.outputs.blog }}
+      index: ${{ steps.discover.outputs.index }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Discover changed browser and Go apps
+      - name: Discover changed apps
         id: discover
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -32,72 +58,151 @@ jobs:
           HEAD_SHA: ${{ github.sha }}
         run: bash .github/scripts/discover-changed-apps.sh
 
-      # Install toolchains sequentially so PATH is ready before the parallel
-      # test group. Each setup stays conditional so unchanged ecosystems pay
-      # nothing. setup-node also runs when Go's node-image module changed
-      # (its conformance tests need node/pnpm on PATH).
+      - name: Select the kind tests
+        id: kind
+        env:
+          MODULES: ${{ steps.discover.outputs.modules }}
+        run: |
+          kind=$(jq -c --argjson kind "$(bash .github/scripts/test-kind-e2e.sh --list)" \
+            '[.[] | select(IN($kind[]))]' <<<"$MODULES")
+          echo "kind=${kind}" >>"$GITHUB_OUTPUT"
+          echo "kind e2e: ${kind}"
+
+  browser:
+    name: Browser apps
+    needs: discover
+    if: ${{ needs.discover.outputs.apps != '[]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        if: ${{ steps.discover.outputs.apps != '[]' || contains(steps.discover.outputs.modules, 'node-image') }}
         with:
           node-version: '24'
 
-      # Go toolchain for Go modules and/or the pasta style leg (pasta is a
-      # Go module; the pasta leg builds the CLI even when no other Go app
-      # changed).
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        id: setup-go
-        if: ${{ steps.discover.outputs.modules != '[]' || steps.discover.outputs.pasta == 'true' }}
-        with:
-          go-version: 'stable'
-          check-latest: true
-          cache: false
-
-      # Caches. Each one is restored by key prefix, because the daily
-      # dependency update changes every lockfile hash and an exact match
-      # would almost never hit. Only pushes to main save, after the tests, so
-      # a pull request doesn't spend time uploading a cache that no other
-      # run can read.
-      #
-      # A restore by prefix plus a save of everything on disk grows without
-      # bound: every save held all that earlier jobs had added, and the Go
-      # archive passed 4 GB and filled a runner's disk while it extracted.
-      # So a saved cache is a function of the current commit and a size
-      # budget, measured on disk because that is what an extraction has to
-      # fit. The key names the commit, a trim or a size check bounds the
-      # contents, and the save action deletes the entry it replaces, which
-      # leaves one entry per cache and keeps the repository under its quota.
-      #
-      # Go: only the build cache. The module cache is 3 GB of zip files and
-      # sources that `go build` downloads in seconds, and the build cache
-      # hits without it.
-      - name: Restore the Go build cache
-        id: go-cache
-        if: ${{ steps.setup-go.outcome == 'success' }}
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/go-build
-          key: go-build-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-${{ github.sha }}
-          restore-keys: |
-            go-build-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-
-
-      # npm: the content-addressed package cache, which `npm ci` reads for
-      # the browser apps and `npx` reads for the pinned Wrangler. The
-      # extracted _npx directory is not cached, because it is larger than
-      # the packages it comes from.
+      # npm's content-addressed package cache, which `npm ci` reads. The
+      # second restore key reads the family that this job and the Rust job
+      # shared before they split.
       - name: Restore the npm cache
-        if: ${{ steps.discover.outputs.apps != '[]' || steps.discover.outputs.rust != '[]' }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.npm/_cacache
-          key: npm-cacache-${{ runner.os }}-${{ github.sha }}
+          key: npm-browser-${{ runner.os }}-${{ github.sha }}
           restore-keys: |
+            npm-browser-${{ runner.os }}-
+            npm-cacache-${{ runner.os }}-
+
+      - name: Run tests for changed apps
+        env:
+          APPS: ${{ needs.discover.outputs.apps }}
+        run: bash .github/scripts/test-browser-apps.sh
+
+      # An npm cache over its budget is deleted, not saved, because the
+      # packages that older lockfiles needed stay in it. The next run on main
+      # saves a fresh one.
+      - name: Save the npm cache
+        if: ${{ github.ref == 'refs/heads/main' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: ~/.npm/_cacache
+          key: npm-browser-${{ runner.os }}-${{ github.sha }}
+          prefixes: |
+            npm-browser-${{ runner.os }}-
+            npm-cacache-${{ runner.os }}-
+          max-bytes: 1610612736
+          token: ${{ github.token }}
+
+  go:
+    name: Go
+    needs: discover
+    if: ${{ needs.discover.outputs.modules != '[]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # node-image's conformance tests need node and pnpm on PATH.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        if: ${{ contains(fromJSON(needs.discover.outputs.modules), 'node-image') }}
+        with:
+          node-version: '24'
+
+      - uses: ./.github/actions/setup-go-cache
+        id: go
+
+      - name: Format, build, and test changed Go apps
+        env:
+          MODULES: ${{ needs.discover.outputs.modules }}
+        run: bash .github/scripts/test-go-modules.sh
+
+      # This is the only job that saves the Go build cache. The kind and
+      # pasta jobs restore it and don't save.
+      - name: Trim the Go build cache
+        id: trim-go
+        if: ${{ github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        run: bash .github/scripts/trim-go-build-cache.sh
+
+      - name: Save the Go build cache
+        if: ${{ steps.trim-go.outcome == 'success' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ steps.go.outputs.go-version }}-${{ github.sha }}
+          prefixes: |
+            go-build-${{ runner.os }}-
+            go-${{ runner.os }}-
+          max-bytes: 3221225472
+          token: ${{ github.token }}
+
+  kind:
+    name: kind e2e (${{ matrix.module }})
+    needs: discover
+    if: ${{ needs.discover.outputs.kind != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.discover.outputs.kind) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-go-cache
+
+      - name: kind e2e for ${{ matrix.module }}
+        run: bash .github/scripts/test-kind-e2e.sh "${{ matrix.module }}"
+
+  rust:
+    name: Rust
+    needs: discover
+    if: ${{ needs.discover.outputs.rust != '[]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # npm's package cache, which `npx` reads for the pinned Wrangler. The
+      # extracted _npx directory is not cached, because it is larger than the
+      # packages it comes from.
+      - name: Restore the npm cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm/_cacache
+          key: npm-wrangler-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            npm-wrangler-${{ runner.os }}-
             npm-cacache-${{ runner.os }}-
 
       # Rust tools: the binaries each Worker's wrangler.toml installs with
       # `cargo install`. worker-build takes about half a minute to compile
       # and the install is a few megabytes.
       - name: Restore the Rust tools
-        if: ${{ steps.discover.outputs.rust != '[]' }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/cargo-tools
@@ -112,7 +217,6 @@ jobs:
       # removes the app crates and any dependency the current lockfiles no
       # longer name before the save.
       - name: Restore the Rust dependency cache
-        if: ${{ steps.discover.outputs.rust != '[]' }}
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -122,134 +226,35 @@ jobs:
           restore-keys: |
             cargo-deps-${{ runner.os }}-
 
-      # pasta: per-file results, parse trees, and the grammars wazero
-      # compiled. pasta keys an entry by the rules and the grammar build but
-      # not by its own code, so the cache key names a hash of pasta's sources
-      # and a change to pasta starts from an empty cache instead of replaying
-      # results the old code produced. The marker dates the start of the run
-      # for trim-pasta-cache.sh.
-      - name: Key the pasta cache
-        id: pasta-key
-        if: ${{ steps.discover.outputs.pasta == 'true' }}
-        env:
-          SOURCES: ${{ hashFiles('pasta/go.sum', 'pasta/**/*.go', '!pasta/**/*_test.go', 'pasta/**/*.wasm.br', 'pasta/**/cuemod/**') }}
-        run: |
-          echo "prefix=pasta-${RUNNER_OS}-${SOURCES}-" >>"$GITHUB_OUTPUT"
-          touch "$RUNNER_TEMP/pasta-cache-start"
-
-      - name: Restore the pasta cache
-        if: ${{ steps.pasta-key.outcome == 'success' }}
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/pasta
-          key: ${{ steps.pasta-key.outputs.prefix }}${{ github.sha }}
-          restore-keys: |
-            ${{ steps.pasta-key.outputs.prefix }}
-
       # Baseline stable toolchain; an app's rust-toolchain.toml overrides it
       # per directory when cargo runs. Use the runner's preinstalled rustup
       # instead of dtolnay/rust-toolchain.
       - name: Install Rust stable
-        if: ${{ steps.discover.outputs.rust != '[]' }}
         run: |
           rustup toolchain install stable --profile minimal --no-self-update \
             --component clippy --component rustfmt \
             --target wasm32-unknown-unknown
           rustup default stable
 
-      # Ecosystems are independent; overlap their wall time like deps.yaml.
-      - parallel:
-          - name: Run tests for changed apps
-            if: ${{ steps.discover.outputs.apps != '[]' }}
-            env:
-              APPS: ${{ steps.discover.outputs.apps }}
-            run: bash .github/scripts/test-browser-apps.sh
+      - name: Lint, build, and test changed Rust apps
+        env:
+          RUST_APPS: ${{ needs.discover.outputs.rust }}
+          CARGO_INSTALL_ROOT: ${{ runner.temp }}/cargo-tools
+        run: bash .github/scripts/test-rust-apps.sh
 
-          - name: Format, build, and test changed Go apps
-            if: ${{ steps.discover.outputs.modules != '[]' }}
-            env:
-              MODULES: ${{ steps.discover.outputs.modules }}
-            run: bash .github/scripts/test-go-modules.sh
-
-          # A kind test mostly waits for a cluster and its Pods, so each runs
-          # beside the unit tests instead of after them.
-          - name: kind e2e for git-k8s
-            if: ${{ contains(fromJSON(steps.discover.outputs.modules), 'git-k8s') }}
-            run: bash .github/scripts/test-kind-e2e.sh git-k8s
-
-          - name: kind e2e for kube
-            if: ${{ contains(fromJSON(steps.discover.outputs.modules), 'kube') }}
-            run: bash .github/scripts/test-kind-e2e.sh kube
-
-          - name: kind e2e for sshapp
-            if: ${{ contains(fromJSON(steps.discover.outputs.modules), 'sshapp') }}
-            run: bash .github/scripts/test-kind-e2e.sh sshapp
-
-          - name: kind e2e for ci-substrate
-            if: ${{ contains(fromJSON(steps.discover.outputs.modules), 'ci-substrate') }}
-            run: bash .github/scripts/test-kind-e2e.sh ci-substrate
-
-          - name: Lint, build, and test changed Rust apps
-            if: ${{ steps.discover.outputs.rust != '[]' }}
-            env:
-              RUST_APPS: ${{ steps.discover.outputs.rust }}
-              CARGO_INSTALL_ROOT: ${{ runner.temp }}/cargo-tools
-            run: bash .github/scripts/test-rust-apps.sh
-
-          - name: pasta test and lint
-            if: ${{ steps.discover.outputs.pasta == 'true' }}
-            run: bash .github/scripts/test-pasta.sh
-
-          - name: Test posts catalog
-            if: ${{ steps.discover.outputs.blog == 'true' }}
-            run: bash .github/scripts/test-blog.sh
-
-          - name: Test site index
-            if: ${{ steps.discover.outputs.index == 'true' }}
-            run: bash .github/scripts/test-index.sh
-
-          - name: Test the cache and discovery scripts
-            if: ${{ steps.discover.outputs.pasta == 'true' }}
-            run: |
-              bash .github/scripts/cache-scripts_test.sh
-              bash .github/scripts/prune-cargo-cache_test.sh
-              bash .github/scripts/discover-rust-apps_test.sh
-              bash .github/scripts/discover-go-modules_test.sh
-              bash .github/scripts/check-whbiab-web_test.sh
-
-      - name: Trim the Go build cache
-        id: trim-go
-        if: ${{ github.ref == 'refs/heads/main' && steps.setup-go.outcome == 'success' }}
-        continue-on-error: true
-        run: bash .github/scripts/trim-go-build-cache.sh
-
-      - name: Save the Go build cache
-        if: ${{ steps.trim-go.outcome == 'success' }}
-        uses: ./.github/actions/save-cache
-        with:
-          path: ~/.cache/go-build
-          key: go-build-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-${{ github.sha }}
-          prefixes: |
-            go-build-${{ runner.os }}-
-            go-${{ runner.os }}-
-          max-bytes: 3221225472
-          token: ${{ github.token }}
-
-      # An npm cache over its budget is deleted, not saved, because the
-      # packages that older lockfiles and Wrangler versions needed stay in it.
-      # The next run on main saves a fresh one.
+      # 512 MiB. Wrangler and the workerd binary it installs.
       - name: Save the npm cache
-        if: ${{ github.ref == 'refs/heads/main' && (steps.discover.outputs.apps != '[]' || steps.discover.outputs.rust != '[]') }}
+        if: ${{ github.ref == 'refs/heads/main' }}
         uses: ./.github/actions/save-cache
         with:
           path: ~/.npm/_cacache
-          key: npm-cacache-${{ runner.os }}-${{ github.sha }}
-          prefixes: npm-cacache-${{ runner.os }}-
-          max-bytes: 1610612736
+          key: npm-wrangler-${{ runner.os }}-${{ github.sha }}
+          prefixes: npm-wrangler-${{ runner.os }}-
+          max-bytes: 536870912
           token: ${{ github.token }}
 
       - name: Save the Rust tools
-        if: ${{ github.ref == 'refs/heads/main' && steps.discover.outputs.rust != '[]' }}
+        if: ${{ github.ref == 'refs/heads/main' }}
         uses: ./.github/actions/save-cache
         with:
           path: ${{ runner.temp }}/cargo-tools
@@ -260,7 +265,7 @@ jobs:
 
       - name: Prune the Rust dependency cache
         id: prune-cargo
-        if: ${{ github.ref == 'refs/heads/main' && steps.discover.outputs.rust != '[]' }}
+        if: ${{ github.ref == 'refs/heads/main' }}
         continue-on-error: true
         run: bash .github/scripts/prune-cargo-cache.sh "$RUNNER_TEMP/cargo-target" "$HOME/.cargo/registry"
 
@@ -279,9 +284,46 @@ jobs:
           max-bytes: 6442450944
           token: ${{ github.token }}
 
+  pasta:
+    name: pasta
+    needs: discover
+    if: ${{ needs.discover.outputs.pasta == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-go-cache
+
+      # pasta: per-file results, parse trees, and the grammars wazero
+      # compiled. pasta keys an entry by the rules and the grammar build but
+      # not by its own code, so the cache key names a hash of pasta's sources
+      # and a change to pasta starts from an empty cache instead of replaying
+      # results the old code produced. The marker dates the start of the run
+      # for trim-pasta-cache.sh.
+      - name: Key the pasta cache
+        id: pasta-key
+        env:
+          SOURCES: ${{ hashFiles('pasta/go.sum', 'pasta/**/*.go', '!pasta/**/*_test.go', 'pasta/**/*.wasm.br', 'pasta/**/cuemod/**') }}
+        run: |
+          echo "prefix=pasta-${RUNNER_OS}-${SOURCES}-" >>"$GITHUB_OUTPUT"
+          touch "$RUNNER_TEMP/pasta-cache-start"
+
+      - name: Restore the pasta cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pasta
+          key: ${{ steps.pasta-key.outputs.prefix }}${{ github.sha }}
+          restore-keys: |
+            ${{ steps.pasta-key.outputs.prefix }}
+
+      - name: pasta test and lint
+        run: bash .github/scripts/test-pasta.sh
+
       - name: Trim the pasta cache
         id: trim-pasta
-        if: ${{ github.ref == 'refs/heads/main' && steps.pasta-key.outcome == 'success' }}
+        if: ${{ github.ref == 'refs/heads/main' }}
         continue-on-error: true
         run: bash .github/scripts/trim-pasta-cache.sh "$RUNNER_TEMP/pasta-cache-start"
 
@@ -295,3 +337,69 @@ jobs:
           # 256 MiB. A lint of the repository leaves about 40 MB.
           max-bytes: 268435456
           token: ${{ github.token }}
+
+  blog:
+    name: Posts catalog
+    needs: discover
+    if: ${{ needs.discover.outputs.blog == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          # build-blog_test.py dates posts from git history.
+          fetch-depth: 0
+
+      - name: Test posts catalog
+        run: bash .github/scripts/test-blog.sh
+
+  index:
+    name: Site index
+    needs: discover
+    if: ${{ needs.discover.outputs.index == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Test site index
+        run: bash .github/scripts/test-index.sh
+
+  scripts:
+    name: Cache and discovery scripts
+    needs: discover
+    if: ${{ needs.discover.outputs.pasta == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Test the cache and discovery scripts
+        run: |
+          bash .github/scripts/cache-scripts_test.sh
+          bash .github/scripts/prune-cargo-cache_test.sh
+          bash .github/scripts/discover-rust-apps_test.sh
+          bash .github/scripts/discover-go-modules_test.sh
+          bash .github/scripts/check-whbiab-web_test.sh
+
+  # The required check. It runs even when a job it needs failed or was
+  # skipped, passes when every job passed or was skipped, and fails
+  # otherwise. Keep the job id `test`: branch protection and the dependency
+  # update's auto-merge wait for a check with that name.
+  test:
+    needs: [discover, browser, go, kind, rust, pasta, blog, index, scripts]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check every job's result
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"$RESULTS"
+          failed=$(jq -r '[to_entries[] | select(.value.result != "success" and .value.result != "skipped") | .key] | join(", ")' <<<"$RESULTS")
+          if [ -n "$failed" ]; then
+            echo "::error title=Test failed::${failed}"
+            exit 1
+          fi

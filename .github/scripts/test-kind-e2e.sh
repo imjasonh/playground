@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
 # Run the kind end-to-end test of one Go module: git-k8s, kube, sshapp, or
-# ci-substrate. test.yml runs each as its own step, in parallel with the unit
-# tests in test-go-modules.sh, because a kind test spends most of its time
-# waiting for a cluster and its Pods. The tests' clusters, registries, and
-# ports have different names, so they can run at the same time on one runner.
+# ci-substrate. test.yml runs each in its own job, beside the Go unit tests,
+# because a kind test spends most of its time waiting for a cluster and its
+# Pods.
+#
+# Usage:
+#   test-kind-e2e.sh MODULE
+#   test-kind-e2e.sh --list    print the modules that have a kind test, as JSON
 set -uo pipefail
 
-module="${1:?usage: test-kind-e2e.sh MODULE}"
+kind_modules=(git-k8s kube sshapp ci-substrate)
+
+module="${1:?usage: test-kind-e2e.sh MODULE | --list}"
+if [ "$module" = "--list" ]; then
+  printf '%s\n' "${kind_modules[@]}" | jq -R . | jq -cs .
+  exit 0
+fi
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$repo_root/$module" || exit 1
@@ -38,7 +47,7 @@ case "$module" in
   ci-substrate)
     # Multi-tenant CAS + node-local verified cache, deployed with ko apply.
     # It also builds with Bazel and dogfoods ci-substrate on the cluster,
-    # which takes over 20 minutes when every module's tests share the runner.
+    # which took over 20 minutes when it shared a runner with the other tests.
     CI_SUBSTRATE_KIND_E2E=1 go test -race -v -timeout 40m ./e2e/
     ;;
   *)

@@ -1,0 +1,31 @@
+name: Set up Go with the build cache
+description: >-
+  Install the newest stable Go and restore the Go build cache that the Go job
+  in test.yml last saved on main. Only the Go job saves it; the other jobs
+  that compile Go read it.
+
+outputs:
+  go-version:
+    description: The installed Go version, which the cache key names.
+    value: ${{ steps.setup-go.outputs.go-version }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      id: setup-go
+      with:
+        go-version: 'stable'
+        check-latest: true
+        cache: false
+
+    # Only the build cache. The module cache is 3 GB of zip files and sources
+    # that `go build` downloads in seconds, and the build cache hits without
+    # it.
+    - name: Restore the Go build cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/go-build
+        key: go-build-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-${{ github.sha }}
+        restore-keys: |
+          go-build-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-
