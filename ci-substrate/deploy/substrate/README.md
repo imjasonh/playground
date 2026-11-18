@@ -4,7 +4,11 @@ These files run a tenant's CI runners as Agent Substrate actors. They are
 applied **after** Agent Substrate
 ([agent-substrate/substrate](https://github.com/agent-substrate/substrate)) is
 installed into the cluster with the `k8s.io` credential provider, and after
-the `cas`/`cascache` control plane from `../` is already running. They are not
+the `cas`/`cascache` control plane from `../` is already running. Install the
+Substrate release that `../../go.mod` requires as `go.ate.dev/substrate`; the
+pool's client is built against it, and `workerpool.yaml` runs its
+`ateworker-gvisor` image. The daily dependency update moves all three to each
+new release. They are not
 part of the default kind e2e: that e2e proves multi-tenancy, node-local
 caching, and remote execution with the runner Deployment in
 `../40-runner.yaml`, and it is what CI gates on.
@@ -31,8 +35,7 @@ Substrate, and runs it there. By hand, for each CI tenant:
    [Node pools](#node-pools).
 4. Turn on Substrate's `ExternalVolumes` preview gate: add
    `ExternalVolumes` to the `--preview=` argument of the `ate-api-server`
-   Deployment in `ate-system`. External volumes are behind it in Substrate
-   v1.0.0.
+   Deployment in `ate-system`. Substrate keeps external volumes behind it.
 5. Give the driver's ServiceAccount the `viewer` role in the atespace. The
    driver refuses a volume for an actor that isn't in the `StorageClass`'s
    `atespace`, and it learns that by listing the atespace's actors. Give it

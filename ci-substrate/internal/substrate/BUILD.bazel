@@ -23,9 +23,14 @@ go_test(
     name = "substrate_test",
     srcs = [
         "directory_test.go",
+        "release_test.go",
         "substrate_test.go",
     ],
-    data = ["//deploy/substrate:egress-cas.yaml"],
+    data = [
+        "//:go.mod",
+        "//deploy/substrate:egress-cas.yaml",
+        "//deploy/substrate:workerpool.yaml",
+    ],
     deps = [
         ":substrate",
         "//internal/actorpool",
