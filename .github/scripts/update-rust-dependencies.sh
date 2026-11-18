@@ -4,7 +4,10 @@
 #
 # Runs `cargo update` (the lockfile-level analog of `go get -u`) then verifies
 # the app the same way the test workflow gates it, so an update is only pushed
-# when it still passes. Writes a "result" step output.
+# when it still passes. ESP32 firmware crates get the newest stable host
+# toolchain and their host checks, but no `cargo update`: their firmware
+# builds need the Xtensa toolchain and ESP-IDF, which this job doesn't
+# install. Writes a "result" step output.
 set -uo pipefail
 
 : "${GITHUB_OUTPUT:?GITHUB_OUTPUT must be set}"
@@ -68,16 +71,22 @@ if [ -z "$stable" ]; then
   echo "- ❌ Could not read the stable Rust version." >> "$GITHUB_STEP_SUMMARY"
 fi
 
-for app in "${apps[@]}"; do
-  echo "::group::Update and verify ${app}"
-
-  toolchain="$app/rust-toolchain.toml"
+# bump_toolchain raises the channel in $1/rust-toolchain.toml to $stable when
+# it is older.
+bump_toolchain() {
+  local app="$1" toolchain="$1/rust-toolchain.toml" channel
   channel=$(sed -n 's/^channel = "\([0-9.]*\)"$/\1/p' "$toolchain" 2>/dev/null)
   if [ -n "$stable" ] && [ -n "$channel" ] &&
     [ "$(printf '%s\n%s\n' "$channel" "$stable" | sort -V | tail -n 1)" != "$channel" ]; then
     sed -i "s/^channel = \"${channel}\"$/channel = \"${stable}\"/" "$toolchain"
     echo "- ✅ \`${app}\`: Rust ${channel} → ${stable}" >> "$GITHUB_STEP_SUMMARY"
   fi
+}
+
+for app in "${apps[@]}"; do
+  echo "::group::Update and verify ${app}"
+
+  bump_toolchain "$app"
 
   if (
     cd "$app"
@@ -139,5 +148,26 @@ for app in "${apps[@]}"; do
 
   echo "::endgroup::"
 done
+
+if esp32_json=$(bash .github/scripts/discover-esp32-apps.sh --all) &&
+  esp32_lines=$(printf '%s' "$esp32_json" | jq -r '.[]'); then
+  while IFS= read -r app; do
+    [ -n "$app" ] || continue
+    echo "::group::Verify ${app} on the host"
+    bump_toolchain "$app"
+    if bash .github/scripts/test-esp32-host.sh "$app"; then
+      echo "- ✅ \`${app}\`: host checks passed" >> "$GITHUB_STEP_SUMMARY"
+    else
+      result=failure
+      echo "::error title=ESP32 host checks failed::${app}: test-esp32-host.sh"
+      echo "- ❌ \`${app}\`: host checks failed" >> "$GITHUB_STEP_SUMMARY"
+    fi
+    echo "::endgroup::"
+  done <<< "$esp32_lines"
+else
+  result=failure
+  echo "::error title=ESP32 discovery failed::Could not discover ESP32 firmware crates."
+  echo "- ❌ Could not discover ESP32 firmware crates." >> "$GITHUB_STEP_SUMMARY"
+fi
 
 echo "result=${result}" >> "$GITHUB_OUTPUT"
