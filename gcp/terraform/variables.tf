@@ -118,6 +118,17 @@ variable "app_project_roles" {
   }
 }
 
+variable "monthly_budget_usd" {
+  description = "Monthly budget for every charge in the project, in US dollars. Billing account administrators get an email at 50% and 90% of actual spend and at 100% of forecast spend."
+  type        = number
+  default     = 25
+
+  validation {
+    condition     = var.monthly_budget_usd > 0 && floor(var.monthly_budget_usd) == var.monthly_budget_usd
+    error_message = "monthly_budget_usd must be a positive whole number of dollars."
+  }
+}
+
 variable "state_bucket" {
   description = "Cloud Storage bucket that holds Terraform state for this stack and for app stacks. The plan account can read objects in this bucket only. Pass the same name to tofu init -backend-config."
   type        = string

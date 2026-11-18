@@ -23,6 +23,12 @@ grant itself Owner or take over another account. The plan account can
 read the state bucket and push images. It cannot delete images or read
 replica objects.
 
+The stack also sets a monthly budget on the project, $25 by default
+(`monthly_budget_usd`). Billing account administrators get an email at
+50% and 90% of actual spend and when the month's forecast reaches 100%.
+Spend reaches a budget hours after the usage, so treat an alert as a
+backstop.
+
 The deploy account can also create and delete budgets on the project's
 billing account, and the plan account can view that account's budgets
 and costs. The usage-log stack uses this for a $1 monthly budget on its
