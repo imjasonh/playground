@@ -169,6 +169,18 @@ if kubectl ate get actor-templates -a "${ATESPACE}" -o json | grep -q '"name": *
   kubectl ate delete actor-template ci-runner -a "${ATESPACE}"
 fi
 kubectl ate --preview create actor-template -f "${WORKDIR}/runner-template.yaml"
+# The cictl run below starts before a golden snapshot would be ready, so it
+# can't see an actor restored from one reporting the golden actor's name.
+golden="$(kubectl ate get actor-templates -a "${ATESPACE}" -o json | python3 -c '
+import json, sys
+for t in json.load(sys.stdin).get("actorTemplates", []):
+    if t["metadata"]["name"] == "ci-runner":
+        print(t.get("snapshotConfig", {}).get("goldenSnapshotConfig", {}).get("mode", "-"))
+')"
+if [[ "${golden}" != GOLDEN_SNAPSHOT_MODE_DISABLED ]]; then
+  echo "the runner template's golden snapshot mode is ${golden}, want GOLDEN_SNAPSHOT_MODE_DISABLED" >&2
+  exit 1
+fi
 
 echo "==> Pool"
 kubectl -n ate-system create configmap ci-substrate-pool-tenant-a \
