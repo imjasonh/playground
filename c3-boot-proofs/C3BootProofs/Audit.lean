@@ -170,6 +170,7 @@ import C3BootProofs.Proofs.Boot
 import C3BootProofs.Proofs.Dec384End
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
+import C3BootProofs.Proofs.Fs256Main
 
 /-!
 # Audit
@@ -8754,3 +8755,6 @@ end C3
 
 /-- info: 'C3.RV32.Rp.readP384Point_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Rp.readP384Point_correct
+
+/-- info: 'C3.RV32.Gs.p256FromSec1_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Gs.p256FromSec1_correct
