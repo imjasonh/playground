@@ -138,7 +138,7 @@ theorem sel8_stub : SEL8 + 0x3B82 = MCS := by decide
 theorem sel8_body : SEL8 + 0x3B8A = MCS + 8 := by decide
 
 /-- The registers `Uint<8>::select` leaves alone. -/
-def sel8Keep (q : Fin 32) : Bool := q.val ∈ [1, 2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]
+def sel8Keep (q : Fin 32) : Bool := q.val ∉ [5, 6, 10, 11, 12, 13, 14, 15, 16, 17]
 
 set_option maxRecDepth 100000 in
 /-- A call to `Uint<8>::select` with all three operands in the caller's frame. -/
