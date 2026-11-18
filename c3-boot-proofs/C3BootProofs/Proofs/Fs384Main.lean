@@ -951,4 +951,107 @@ theorem fs_stC {M : Word → BitVec 8} {n : Machine} {S inp : Word} (C : FsCode 
       h2 x (by have := sub (c := 2) (l := 1) _ _ h394 (by decide); rwa [add_ofNat_assoc] at this),
       h1 x (by have := sub (c := 0) (l := 2) _ _ h394 (by decide); rwa [add_ofNat_zero] at this)]
 
+def fsT1 : List BInstr := [.lbu (22 : Fin 32) sp 0x12, .alu .add a0 x0 (22 : Fin 32)]
+def fsT2 : List BInstr := [.aluImm .add (19 : Fin 32) sp 0x13, .alu .add a0 x0 (22 : Fin 32)]
+def fsT3 : List BInstr := [.aluImm .and (8 : Fin 32) a0 0xFE, .alu .add a0 x0 (22 : Fin 32)]
+def fsT4 : List BInstr := [.aluImm .add a1 x0 0x2, .aluImm .and a0 a0 0xFF]
+def fsT5 : List BInstr := [.aluImm .add a1 x0 0x5]
+theorem fsT1_end : blockEnd p384FromSec1Code 0x12A fsT1 = some 0x130 := by decide
+theorem fsT2_end : blockEnd p384FromSec1Code 0x158 fsT2 = some 0x15E := by decide
+theorem fsT3_end : blockEnd p384FromSec1Code 0x166 fsT3 = some 0x16C := by decide
+theorem fsT4_end : blockEnd p384FromSec1Code 0x174 fsT4 = some 0x17A := by decide
+theorem fsT5_end : blockEnd p384FromSec1Code 0x19A fsT5 = some 0x19C := by decide
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 64000000 in
+/-- **The tag dispatch**, from 0x12A to the uncompressed branch at 0x2DC,
+for the tag 4 at `S + 0x12`: `is_identity` is false, and `tag` is neither
+compressed nor compact. -/
+theorem fs_stD {M : Word → BitVec 8} {n : Machine} {S : Word} (C : FsCode M) (F : Fr S 0x420)
+    (s : St M FP n 0x12A (reg n)) (rsp : reg n sp = S) (ht : M (S + BitVec.ofNat 32 0x12) = 4) :
+    ∃ n', Steps n n' ∧ St n'.mem FP n' 0x2DC (reg n') ∧ FsCode n'.mem ∧
+      (∀ x, Sep (S + 0xFFFFFFB0) 0x50 x 1 → n'.mem x = M x) ∧ reg n' sp = S ∧
+      reg n' (19 : Fin 32) = S + BitVec.ofNat 32 0x13 ∧ reg n' (22 : Fin 32) = (4 : BitVec 8).zeroExtend 32 ∧
+      ∀ q : Fin 32, q.val ∈ [3, 4, 24, 26, 27] → reg n' q = reg n q := by
+  have hz := s.zero
+  have hSl := F.lo; have hSh := F.hi; have hSa := F.al
+  have hbA : (S + 0xFFFFFFB0).toNat = S.toNat - 0x50 := F.below 0x50 (by decide) (by decide)
+  have hb4 : (S + 0xFFFFFFC0).toNat = S.toNat - 0x40 := F.below 0x40 (by decide) (by decide)
+  have loA : ∀ x : Word, 0x40000000 ≤ x.toNat → Sep (S + 0xFFFFFFB0) 0x50 x 1 := fun x hx =>
+    sep_of_le (by rw [hbA]; omega) (by have := x.isLt; omega)
+  have sub40 : ∀ {x : Word}, Sep (S + 0xFFFFFFB0) 0x50 x 1 → Sep (S + 0xFFFFFFC0) 0x40 x 1 := fun {x} hx => by
+    have := hx.sub (c := 0x10) (l := 0x40) (by decide)
+    rwa [show S + 0xFFFFFFB0 + BitVec.ofNat 32 0x10 = S + 0xFFFFFFC0 by rw [BitVec.add_assoc]; rfl] at this
+  have ok4 : Sec1TagOk (4 : BitVec 8) := by decide
+  obtain ⟨n1, c1, u1⟩ := s.block fsT1 C.self fsT1_end ⟨trivial, trivial, trivial⟩
+  have r1 : ∀ q, reg n1 q = (runBlock fsT1 (M, reg n)).2 q := fun q => by rw [u1.regs]
+  have e22 : reg n1 (22 : Fin 32) = (4 : BitVec 8).zeroExtend 32 := by
+    rw [r1]; simp +decide only [runBlock, BInstr.run, fsT1, upd, ↓reduceIte]; rw [rsp]
+    show (M (S + BitVec.ofNat 32 0x12)).zeroExtend 32 = _; rw [ht]
+  obtain ⟨n2, c2, u2, a2, sp2, k2, fr2⟩ := c_isid (t := 4) (⟨u1.pc, u1.mem, fun _ => rfl⟩ : St M FP n1 0x130 (reg n1))
+    C.self C.K F fs_at_130 fs_at_134 (by decide) (by decide) (by rw [r1, runBlock_reg _ _ _ sp hz (by decide)]; exact rsp)
+    (by rw [r1]; simp +decide only [runBlock, BInstr.run, fsT1, upd, ↓reduceIte]; rw [← e22, r1]
+        simp +decide only [runBlock, BInstr.run, fsT1, upd, ↓reduceIte]; exact BitVec.zero_add _) ok4
+  have C2 := C.hi fun x hx => fr2 x (loA x hx)
+  obtain ⟨n3, d3, u3⟩ := u2.taken C2.self 0x158 fs_at_138 (by decide) (by
+    show branchTaken .beq (reg n2 a0) 0 = true; rw [a2]; decide)
+  have K2 : ∀ q : Fin 32, q.val ∈ [3, 4, 24, 26, 27] → reg n3 q = reg n q := fun q hq => by
+    rw [u3.regs, k2 q (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide), r1,
+      runBlock_reg _ _ _ q hz (by simp only [fsT1]; revert hq; revert q; decide)]
+  have e322 : reg n3 (22 : Fin 32) = (4 : BitVec 8).zeroExtend 32 := by
+    rw [u3.regs, k2 22 (by decide) (by decide) (by decide) (by decide) (by decide)]; exact e22
+  have sp3 : reg n3 sp = S := by rw [u3.regs]; exact sp2
+  obtain ⟨n4, c4, u4⟩ := u3.self.block fsT2 C2.self fsT2_end ⟨trivial, trivial, trivial⟩
+  have r4 : ∀ q, reg n4 q = (runBlock fsT2 (n2.mem, reg n3)).2 q := fun q => by rw [u4.regs]
+  obtain ⟨n5, c5, u5, a5, sp5, k5, fr5⟩ := c_tag (t := 4) (⟨u4.pc, u4.mem, fun _ => rfl⟩ : St n2.mem FP n4 0x15E (reg n4))
+    C2.self C2.K F fs_at_15e fs_at_162 (by decide) (by decide)
+    (by rw [r4, runBlock_reg _ _ _ sp u3.self.zero (by decide)]; exact sp3)
+    (by rw [r4]; simp +decide only [runBlock, BInstr.run, fsT2, upd, ↓reduceIte]; rw [e322]; exact BitVec.zero_add _) ok4
+  have C5 := C2.hi fun x hx => fr5 x (sub40 (loA x hx))
+  obtain ⟨n6, c6, u6⟩ := u5.block fsT3 C5.self fsT3_end ⟨trivial, trivial, trivial⟩
+  have r6 : ∀ q, reg n6 q = (runBlock fsT3 (n5.mem, reg n5)).2 q := fun q => by rw [u6.regs]
+  have K5 : ∀ q : Fin 32, q.val ∈ [3, 4, 22, 24, 26, 27] → reg n5 q = reg n3 q := fun q hq => by
+    rw [k5 q (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide), r4,
+      runBlock_reg _ _ _ q u3.self.zero (by simp only [fsT2]; revert hq; revert q; decide)]
+  obtain ⟨n7, c7, u7, a7, sp7, k7, fr7⟩ := c_tag (t := 4) (⟨u6.pc, u6.mem, fun _ => rfl⟩ : St n5.mem FP n6 0x16C (reg n6))
+    C5.self C5.K F fs_at_16c fs_at_170 (by decide) (by decide)
+    (by rw [r6, runBlock_reg _ _ _ sp u5.zero (by decide)]; exact sp5)
+    (by rw [r6]; simp +decide only [runBlock, BInstr.run, fsT3, upd, ↓reduceIte]; rw [K5 22 (by decide), e322]
+        exact BitVec.zero_add _) ok4
+  have C7 := C5.hi fun x hx => fr7 x (sub40 (loA x hx))
+  have e78 : reg n7 (8 : Fin 32) = aluEval .and ((4 : BitVec 8).zeroExtend 32) 0xFE := by
+    rw [k7 8 (by decide) (by decide) (by decide) (by decide) (by decide), r6]
+    simp +decide only [runBlock, BInstr.run, fsT3, upd, ↓reduceIte]; rw [a5]
+  obtain ⟨n8, c8, u8⟩ := u7.block fsT4 C7.self fsT4_end ⟨trivial, trivial, trivial⟩
+  have r8 : ∀ q, reg n8 q = (runBlock fsT4 (n7.mem, reg n7)).2 q := fun q => by rw [u8.regs]
+  obtain ⟨n9, d9, u9⟩ := (⟨u8.pc, u8.mem, fun _ => rfl⟩ : St n7.mem FP n8 0x17A (reg n8)).taken C7.self 0x19A fs_at_17a
+    (by decide) (by
+      show branchTaken .bne (reg n8 (8 : Fin 32)) (reg n8 a1) = true
+      rw [r8, r8]; simp +decide only [runBlock, BInstr.run, fsT4, upd, ↓reduceIte]; rw [e78, u7.zero]; decide)
+  obtain ⟨n10, c10, u10⟩ := u9.self.block fsT5 C7.self fsT5_end ⟨trivial, trivial⟩
+  have r10 : ∀ q, reg n10 q = (runBlock fsT5 (n7.mem, reg n9)).2 q := fun q => by rw [u10.regs]
+  obtain ⟨n11, d11, u11⟩ := (⟨u10.pc, u10.mem, fun _ => rfl⟩ : St n7.mem FP n10 0x19C (reg n10)).taken C7.self 0x2DC
+    fs_at_19c (by decide) (by
+      show branchTaken .bne (reg n10 a0) (reg n10 a1) = true
+      rw [r10, r10]; simp +decide only [runBlock, BInstr.run, fsT5, upd, ↓reduceIte]; rw [u9.regs, r8]
+      simp +decide only [runBlock, BInstr.run, fsT4, upd, ↓reduceIte]; rw [a7, u9.self.zero]; decide)
+  have KK : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 19, 22, 24, 26, 27] → reg n11 q = reg n7 q := fun q hq => by
+    rw [u11.regs, r10, runBlock_reg _ _ _ q u9.self.zero (by simp only [fsT5]; revert hq; revert q; decide), u9.regs, r8,
+      runBlock_reg _ _ _ q u7.zero (by simp only [fsT4]; revert hq; revert q; decide)]
+  have K7 : ∀ q : Fin 32, q.val ∈ [3, 4, 19, 22, 24, 26, 27] → reg n7 q = reg n5 q := fun q hq => by
+    rw [k7 q (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+      (by revert hq; revert q; decide) (by revert hq; revert q; decide), r6,
+      runBlock_reg _ _ _ q u5.zero (by simp only [fsT3]; revert hq; revert q; decide)]
+  refine ⟨n11, c1.trans (c2.trans (.cons d3 (c4.trans (c5.trans (c6.trans (c7.trans (c8.trans (.cons d9 (c10.trans
+    (.single d11)))))))))), ⟨u11.pc, by rw [u11.mem], fun _ => rfl⟩, by rw [u11.mem]; exact C7,
+    fun x hx => by rw [u11.mem, fr7 x (sub40 hx), fr5 x (sub40 hx), fr2 x hx], ?_, ?_, ?_, fun q hq => ?_⟩
+  · rw [KK sp (by decide)]; exact sp7
+  · rw [KK 19 (by decide), K7 19 (by decide), k5 19 (by decide) (by decide) (by decide) (by decide) (by decide), r4]
+    simp +decide only [runBlock, BInstr.run, fsT2, upd, ↓reduceIte]; rw [sp3]; rfl
+  · rw [KK 22 (by decide), K7 22 (by decide), K5 22 (by decide)]; exact e322
+  · rw [KK q (by revert hq; revert q; decide), K7 q (by revert hq; revert q; decide), K5 q (by revert hq; revert q; decide),
+      K2 q (by revert hq; revert q; decide)]
+
 end C3.RV32.Fs
