@@ -159,7 +159,7 @@ jobs:
           token: ${{ github.token }}
 
   kind:
-    name: kind e2e (${{ matrix.module }})
+    name: kind e2e
     needs: discover
     if: ${{ needs.discover.outputs.kind != '[]' }}
     runs-on: ubuntu-latest
