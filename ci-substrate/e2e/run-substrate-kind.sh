@@ -151,8 +151,19 @@ if ! kubectl -n ate-system get deployment ate-api-server >/dev/null 2>&1; then
       --ingress-allowed-spiffe-ids=spiffe://cluster.local/ns/ate-system/sa/atenet-client \
       --image-repo ghcr.io/agent-substrate/substrate \
       --image-tag "${SUBSTRATE_VERSION}" \
-      --sandbox-classes=gvisor
-  )
+      --sandbox-classes=gvisor \
+      --rollout-timeout=10m
+  ) || {
+    for ns in "${SUBSTRATE_NAMESPACES[@]}"; do
+      kubectl -n "${ns}" get pods -o wide || true
+      kubectl -n "${ns}" get events --sort-by=.lastTimestamp | tail -30 || true
+    done
+    for pod in $(kubectl -n ate-system get pods --no-headers | awk '{split($2, r, "/"); if (r[1] != r[2]) print $1}'); do
+      kubectl -n ate-system describe pod "${pod}" | tail -40 || true
+      kubectl -n ate-system logs "${pod}" --all-containers --tail=50 || true
+    done
+    exit 1
+  }
 fi
 kubectl taint node "${WORKER}" ci-substrate.imjasonh.com/installing- 2>/dev/null || true
 kubectl taint node "${CONTROL_PLANE}" "${ALWAYS_ON}=true:NoSchedule" --overwrite
