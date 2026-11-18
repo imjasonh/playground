@@ -3,11 +3,11 @@
 # the GKE Standard layout in deploy/substrate/README.md:
 #
 #   - The control-plane node is the always-on node. It is labeled and tainted
-#     ci-substrate.dev/always-on=true, and runs Substrate, cas, the pool, and
-#     the base WorkerPool.
-#   - The worker node is the burst node, labeled ci-substrate.dev/burst=true.
-#     The burst WorkerPool's workers run there, and so does anything that
-#     does not tolerate the always-on taint.
+#     ci-substrate.imjasonh.com/always-on=true, and runs Substrate, cas, the
+#     pool, and the base WorkerPool.
+#   - The worker node is the burst node, labeled
+#     ci-substrate.imjasonh.com/burst=true. The burst WorkerPool's workers run
+#     there, and so does anything that does not tolerate the always-on taint.
 #
 # It installs Agent Substrate from its published images with ate-setup,
 # then runs run-kind.sh for the control plane and run-substrate.sh for the
@@ -32,8 +32,8 @@ SUBSTRATE_SRC="${CI_SUBSTRATE_SUBSTRATE_SRC:-}"
 # localhost image, so the registry container has that name.
 REGISTRY_NAME=kind-registry
 REGISTRY_PORT="${CI_SUBSTRATE_REGISTRY_PORT:-5312}"
-ALWAYS_ON=ci-substrate.dev/always-on
-BURST=ci-substrate.dev/burst
+ALWAYS_ON=ci-substrate.imjasonh.com/always-on
+BURST=ci-substrate.imjasonh.com/burst
 KIND_CREATED=0
 REGISTRY_CREATED=0
 
@@ -138,7 +138,7 @@ kubectl label node "${WORKER}" "${BURST}=true" --overwrite
 SUBSTRATE_NAMESPACES=(ate-system otel-system podcertificate-controller-system)
 echo "==> Agent Substrate ${SUBSTRATE_VERSION}"
 if ! kubectl -n ate-system get deployment ate-api-server >/dev/null 2>&1; then
-  kubectl taint node "${WORKER}" ci-substrate.dev/installing=true:NoSchedule --overwrite
+  kubectl taint node "${WORKER}" ci-substrate.imjasonh.com/installing=true:NoSchedule --overwrite
   (
     cd "${SUBSTRATE_SRC}"
     ATE_INSTALL_KIND=true KIND_CLUSTER_NAME="${CLUSTER_NAME}" KUBECONFIG="${KUBECONFIG}" \
@@ -150,7 +150,7 @@ if ! kubectl -n ate-system get deployment ate-api-server >/dev/null 2>&1; then
       --sandbox-classes=gvisor
   )
 fi
-kubectl taint node "${WORKER}" ci-substrate.dev/installing- 2>/dev/null || true
+kubectl taint node "${WORKER}" ci-substrate.imjasonh.com/installing- 2>/dev/null || true
 kubectl taint node "${CONTROL_PLANE}" "${ALWAYS_ON}=true:NoSchedule" --overwrite
 
 echo "==> Substrate's control plane on ${CONTROL_PLANE}"

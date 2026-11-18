@@ -17,7 +17,7 @@ spec:
       labels: {app: cascache}
     spec:
       tolerations:
-        - key: ci-substrate.dev/always-on
+        - key: ci-substrate.imjasonh.com/always-on
           operator: Exists
           effect: NoSchedule
       containers:

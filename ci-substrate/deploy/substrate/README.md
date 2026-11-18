@@ -143,29 +143,29 @@ kubelet plugins directory, and detaching a stale mount need it.
 Agent Substrate runs on GKE Standard. Give the cluster two node pools:
 
 - An always-on pool of one node, labeled and tainted
-  `ci-substrate.dev/always-on=true` (the taint's effect is `NoSchedule`).
-  It runs Substrate's control plane, `cas`, telemetry, the pool, and
-  `ci-runner-base`, so a build's first action starts without waiting for a
-  node. Size it for those plus `ci-runner-base`'s worker.
-- A burst pool labeled `ci-substrate.dev/burst=true`, with no taint and
-  autoscaling from a minimum of 0. The `ci-runner` workers run there.
+  `ci-substrate.imjasonh.com/always-on=true` (the taint's effect is
+  `NoSchedule`). It runs Substrate's control plane, `cas`, telemetry, the
+  pool, and `ci-runner-base`, so a build's first action starts without
+  waiting for a node. Size it for those plus `ci-runner-base`'s worker.
+- A burst pool labeled `ci-substrate.imjasonh.com/burst=true`, with no taint
+  and autoscaling from a minimum of 0. The `ci-runner` workers run there.
 
 ```bash
 gcloud container node-pools create always-on --cluster=CLUSTER \
   --num-nodes=1 --machine-type=e2-standard-8 \
-  --node-labels=ci-substrate.dev/always-on=true \
-  --node-taints=ci-substrate.dev/always-on=true:NoSchedule
+  --node-labels=ci-substrate.imjasonh.com/always-on=true \
+  --node-taints=ci-substrate.imjasonh.com/always-on=true:NoSchedule
 gcloud container node-pools create burst --cluster=CLUSTER \
   --enable-autoscaling --min-nodes=0 --max-nodes=4 \
   --machine-type=e2-standard-4 --spot \
-  --node-labels=ci-substrate.dev/burst=true
+  --node-labels=ci-substrate.imjasonh.com/burst=true
 ```
 
 The manifests in `../` and here tolerate the taint: `cas` and telemetry
 prefer the always-on node, and the `cascache` and `casfs-csi` DaemonSets run
 on both. Substrate's own Deployments and StatefulSets in `ate-system` do
-not, so add the toleration and a `ci-substrate.dev/always-on: "true"`
-`nodeSelector` to each, and the toleration to its DaemonSets, such as
+not, so add the toleration and a
+`ci-substrate.imjasonh.com/always-on: "true"` `nodeSelector` to each, and the toleration to its DaemonSets, such as
 `atelet`; `run-substrate-kind.sh` shows one way. A pod without the
 toleration lands on a burst node and keeps that node from scaling to zero.
 GKE's own system pods also need a node; check where they run before you

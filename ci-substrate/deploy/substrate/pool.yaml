@@ -48,9 +48,9 @@ spec:
       serviceAccountName: ate-client
       automountServiceAccountToken: false
       nodeSelector:
-        ci-substrate.dev/always-on: "true"
+        ci-substrate.imjasonh.com/always-on: "true"
       tolerations:
-        - key: ci-substrate.dev/always-on
+        - key: ci-substrate.imjasonh.com/always-on
           operator: Exists
           effect: NoSchedule
       securityContext:

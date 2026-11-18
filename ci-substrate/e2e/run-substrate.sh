@@ -14,9 +14,9 @@
 # the cluster cannot pull from ghcr.io.
 #
 # The WorkerPools in workerpool.yaml need a node labeled
-# ci-substrate.dev/always-on=true (it may carry the matching taint) and a
-# node labeled ci-substrate.dev/burst=true; run-substrate-kind.sh makes a
-# kind cluster with both.
+# ci-substrate.imjasonh.com/always-on=true (it may carry the matching taint)
+# and a node labeled ci-substrate.imjasonh.com/burst=true;
+# run-substrate-kind.sh makes a kind cluster with both.
 #
 # It creates the tenant-a atespace, the token Secret the egress gateway
 # injects, the credential provider's grant of that Secret's namespace to the

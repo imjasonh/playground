@@ -5,9 +5,10 @@
 # Substrate install.
 #
 # ci-runner-base runs on the always-on node, labeled and tainted
-# ci-substrate.dev/always-on=true, so the first actors start without waiting
-# for a node. ci-runner runs on nodes labeled ci-substrate.dev/burst=true,
-# which the cluster autoscaler adds and removes. The pool Deployment
+# ci-substrate.imjasonh.com/always-on=true, so the first actors start
+# without waiting for a node. ci-runner runs on nodes labeled
+# ci-substrate.imjasonh.com/burst=true, which the cluster autoscaler adds and
+# removes. The pool Deployment
 # (pool.yaml) sets ci-runner's replicas, to 0 when every actor fits on
 # ci-runner-base or is suspended. The API requires the field, so this file
 # starts it at 0; kubectl apply leaves a field alone while the file's value
@@ -31,9 +32,9 @@ spec:
     - name: gvisor
   template:
     nodeSelector:
-      ci-substrate.dev/always-on: "true"
+      ci-substrate.imjasonh.com/always-on: "true"
     tolerations:
-      - key: ci-substrate.dev/always-on
+      - key: ci-substrate.imjasonh.com/always-on
         operator: Exists
         effect: NoSchedule
     resources:
@@ -53,6 +54,6 @@ spec:
     - name: gvisor
   template:
     nodeSelector:
-      ci-substrate.dev/burst: "true"
+      ci-substrate.imjasonh.com/burst: "true"
     resources:
       limits: {cpu: "2", memory: 4Gi}
