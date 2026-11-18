@@ -1104,6 +1104,19 @@ theorem fs_decY {M : Word → BitVec 8} {n : Machine} {S : Word} (C : FsCode M) 
     (by rw [r1]; simp +decide only [runBlock, BInstr.run, fsY1, upd, ↓reduceIte]; rw [rsp]; rfl)
     (co := 0x210) (by decide) rfl
     ((sep_of_le (by rw [hbF, F.at _ (by decide)]; omega) (by rw [F.at _ (by decide)]; omega)).symm)
+  have hv2 : accV n2.mem (S + BitVec.ofNat 32 0x210) 12 = fsMont (beNat (memBytes M (S + BitVec.ofNat 32 0x43) 48)) ∧
+      n2.mem (S + BitVec.ofNat 32 0x210 + 0x30) = (if beNat (memBytes M (S + BitVec.ofNat 32 0x43) 48) < p384 then 1 else 0) := by
+    unfold fsMont
+    by_cases hx : beNat (memBytes M (S + BitVec.ofNat 32 0x43) 48) < p384
+    · obtain ⟨o1, olt, ocg⟩ := ok2 hx
+      rw [ite_eq_left hx, ite_eq_left hx]
+      have hR : accV M (PARAMS + BitVec.ofNat 32 0x60) 12 = dataVal p384ParamsData 0x60 12 :=
+        code_accV D.params 0x60 12 (by decide)
+      rw [hR] at ocg
+      exact ⟨frp_val olt ocg, o1⟩
+    · obtain ⟨o0, a0'⟩ := bad2 (Nat.le_of_not_lt hx)
+      rw [ite_eq_right hx, ite_eq_right hx]; exact ⟨a0', o0⟩
+  clear ok2 bad2
   have h2hi : ∀ x : Word, 0x40000000 ≤ x.toNat → n2.mem x = M x := fun x hx =>
     fr2 x (sep_of_le (by rw [hbF]; omega) (by have := x.isLt; omega)) (F.hiOut (by decide) hx)
   have C2 := C.hi h2hi
@@ -1136,8 +1149,8 @@ theorem fs_decY {M : Word → BitVec 8} {n : Machine} {S : Word} (C : FsCode M) 
   have hc01 : (n2.mem (S + BitVec.ofNat 32 0x210 + 0x30)).zeroExtend 32 = (0 : Word) ∨
       (n2.mem (S + BitVec.ofNat 32 0x210 + 0x30)).zeroExtend 32 = (1 : Word) := by
     by_cases hx : beNat (memBytes M (S + BitVec.ofNat 32 0x43) 48) < p384
-    · rw [(ok2 hx).1]; exact .inr rfl
-    · rw [(bad2 (by omega)).1]; exact .inl rfl
+    · rw [hv2.2, ite_eq_left hx]; exact .inr rfl
+    · rw [hv2.2, ite_eq_right hx]; exact .inl rfl
   obtain ⟨n6, c6, u6, vals6, fr6, sp6, k6⟩ := c_csel (out := S + BitVec.ofNat 32 0x364) (a := S + BitVec.ofNat 32 0x2D4)
     (b := S + BitVec.ofNat 32 0x210) (c := (n2.mem (S + BitVec.ofNat 32 0x210 + 0x30)).zeroExtend 32)
     (⟨u5.pc, u5.mem, fun _ => rfl⟩ : St n4.mem FP n5 0x306 (reg n5)) C4.self C4.K F fs_at_306 fs_at_30a (by decide) (by decide)
@@ -1165,32 +1178,25 @@ theorem fs_decY {M : Word → BitVec 8} {n : Machine} {S : Word} (C : FsCode M) 
   have e618 : reg n6 (18 : Fin 32) = (n2.mem (S + BitVec.ofNat 32 0x210 + 0x30)).zeroExtend 32 := by
     rw [k6 18 (by decide), e18]
   refine ⟨n6, c1.trans (c2.trans (c3.trans (c4.trans (c5.trans c6)))), u6, C.hi h6hi, D6, ?_, ?_, frame, sp6, fun q hq => ?_⟩
-  · unfold fsMont
-    by_cases hx : beNat (memBytes M (S + BitVec.ofNat 32 0x43) 48) < p384
-    · obtain ⟨o1, olt, ocg⟩ := ok2 hx
-      have hc1 : (n2.mem (S + BitVec.ofNat 32 0x210 + 0x30)).zeroExtend 32 = (1 : Word) := by rw [o1]; rfl
-      rw [ite_eq_left hx]
-      have eA : accV n6.mem (S + BitVec.ofNat 32 0x364) 12 = accV n2.mem (S + BitVec.ofNat 32 0x210) 12 :=
-        accV_congr2 12 fun i hi => by
-          rw [vals6 i hi, ite_eq_left hc1]
-          exact memLoad32_congr fun q hq => by
-            rw [add_ofNat_assoc, add_ofNat_assoc]
-            exact h4 _ (sepS S (.inr (by omega)) (by decide) (by omega))
-      rw [eA]
-      have hR : accV M (PARAMS + BitVec.ofNat 32 0x60) 12 = dataVal p384ParamsData 0x60 12 :=
-        code_accV D.params 0x60 12 (by decide)
-      rw [hR] at ocg
-      exact frp_val olt ocg
-    · obtain ⟨o0, _⟩ := bad2 (by omega)
-      have hc0 : (n2.mem (S + BitVec.ofNat 32 0x210 + 0x30)).zeroExtend 32 = (0 : Word) := by rw [o0]; rfl
-      rw [ite_eq_right hx]
+  · by_cases hx : beNat (memBytes M (S + BitVec.ofNat 32 0x43) 48) < p384
+    · have hc1 : (n2.mem (S + BitVec.ofNat 32 0x210 + 0x30)).zeroExtend 32 = (1 : Word) := by
+        rw [hv2.2, ite_eq_left hx]; rfl
+      rw [← hv2.1]
+      exact accV_congr2 12 fun i hi => by
+        rw [vals6 i hi, ite_eq_left hc1]
+        exact memLoad32_congr fun q hq => by
+          rw [add_ofNat_assoc, add_ofNat_assoc]
+          exact h4 _ (sepS S (.inr (by omega)) (by decide) (by omega))
+    · have hc0 : (n2.mem (S + BitVec.ofNat 32 0x210 + 0x30)).zeroExtend 32 = (0 : Word) := by
+        rw [hv2.2, ite_eq_right hx]; rfl
+      unfold fsMont; rw [ite_eq_right hx]
       exact accV_zero 12 fun i hi => by
         rw [vals6 i hi, ite_eq_right (by rw [hc0]; decide), mem4]
         exact fill_word0 (by omega) (by decide)
-  · rw [e618]; unfold fsOk
+  · rw [e618, hv2.2]; unfold fsOk
     by_cases hx : beNat (memBytes M (S + BitVec.ofNat 32 0x43) 48) < p384
-    · rw [(ok2 hx).1, ite_eq_left hx]; rfl
-    · rw [(bad2 (by omega)).1, ite_eq_right hx]; rfl
+    · rw [ite_eq_left hx, ite_eq_left hx]; rfl
+    · rw [ite_eq_right hx, ite_eq_right hx]; rfl
   · rw [k6 q (by revert hq; revert q; decide), r5, runBlock_reg _ _ _ q u4.zero (by simp only [fsY3]; revert hq; revert q; decide),
       k4' q (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
       (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
@@ -1223,6 +1229,19 @@ theorem fs_decX {M : Word → BitVec 8} {n : Machine} {S : Word} (C : FsCode M) 
     (by rw [r1]; simp +decide only [runBlock, BInstr.run, fsX1, upd, ↓reduceIte]; rw [r19]; exact BitVec.zero_add _)
     (co := 0x144) (by decide) rfl
     ((sep_of_le (by rw [hbF, F.at _ (by decide)]; omega) (by rw [F.at _ (by decide)]; omega)).symm)
+  have hv2 : accV n2.mem (S + BitVec.ofNat 32 0x144) 12 = fsMont (beNat (memBytes M (S + BitVec.ofNat 32 0x13) 48)) ∧
+      n2.mem (S + BitVec.ofNat 32 0x144 + 0x30) = (if beNat (memBytes M (S + BitVec.ofNat 32 0x13) 48) < p384 then 1 else 0) := by
+    unfold fsMont
+    by_cases hx : beNat (memBytes M (S + BitVec.ofNat 32 0x13) 48) < p384
+    · obtain ⟨o1, olt, ocg⟩ := ok2 hx
+      rw [ite_eq_left hx, ite_eq_left hx]
+      have hR : accV M (PARAMS + BitVec.ofNat 32 0x60) 12 = dataVal p384ParamsData 0x60 12 :=
+        code_accV D.params 0x60 12 (by decide)
+      rw [hR] at ocg
+      exact ⟨frp_val olt ocg, o1⟩
+    · obtain ⟨o0, a0'⟩ := bad2 (Nat.le_of_not_lt hx)
+      rw [ite_eq_right hx, ite_eq_right hx]; exact ⟨a0', o0⟩
+  clear ok2 bad2
   have h2hi : ∀ x : Word, 0x40000000 ≤ x.toNat → n2.mem x = M x := fun x hx =>
     fr2 x (sep_of_le (by rw [hbF]; omega) (by have := x.isLt; omega)) (F.hiOut (by decide) hx)
   have C2 := C.hi h2hi
@@ -1255,8 +1274,8 @@ theorem fs_decX {M : Word → BitVec 8} {n : Machine} {S : Word} (C : FsCode M) 
   have hc01 : (n2.mem (S + BitVec.ofNat 32 0x144 + 0x30)).zeroExtend 32 = (0 : Word) ∨
       (n2.mem (S + BitVec.ofNat 32 0x144 + 0x30)).zeroExtend 32 = (1 : Word) := by
     by_cases hx : beNat (memBytes M (S + BitVec.ofNat 32 0x13) 48) < p384
-    · rw [(ok2 hx).1]; exact .inr rfl
-    · rw [(bad2 (by omega)).1]; exact .inl rfl
+    · rw [hv2.2, ite_eq_left hx]; exact .inr rfl
+    · rw [hv2.2, ite_eq_right hx]; exact .inl rfl
   obtain ⟨n6, c6, u6, vals6, fr6, sp6, k6⟩ := c_csel (out := S + BitVec.ofNat 32 0x3C4) (a := S + BitVec.ofNat 32 0x304)
     (b := S + BitVec.ofNat 32 0x144) (c := (n2.mem (S + BitVec.ofNat 32 0x144 + 0x30)).zeroExtend 32)
     (⟨u5.pc, u5.mem, fun _ => rfl⟩ : St n4.mem FP n5 0x336 (reg n5)) C4.self C4.K F fs_at_336 fs_at_33a (by decide) (by decide)
@@ -1284,32 +1303,25 @@ theorem fs_decX {M : Word → BitVec 8} {n : Machine} {S : Word} (C : FsCode M) 
   have e619 : reg n6 (19 : Fin 32) = (n2.mem (S + BitVec.ofNat 32 0x144 + 0x30)).zeroExtend 32 := by
     rw [k6 19 (by decide), e19x]
   refine ⟨n6, c1.trans (c2.trans (c3.trans (c4.trans (c5.trans c6)))), u6, C.hi h6hi, D6, ?_, ?_, frame, sp6, fun q hq => ?_⟩
-  · unfold fsMont
-    by_cases hx : beNat (memBytes M (S + BitVec.ofNat 32 0x13) 48) < p384
-    · obtain ⟨o1, olt, ocg⟩ := ok2 hx
-      have hc1 : (n2.mem (S + BitVec.ofNat 32 0x144 + 0x30)).zeroExtend 32 = (1 : Word) := by rw [o1]; rfl
-      rw [ite_eq_left hx]
-      have eA : accV n6.mem (S + BitVec.ofNat 32 0x3C4) 12 = accV n2.mem (S + BitVec.ofNat 32 0x144) 12 :=
-        accV_congr2 12 fun i hi => by
-          rw [vals6 i hi, ite_eq_left hc1]
-          exact memLoad32_congr fun q hq => by
-            rw [add_ofNat_assoc, add_ofNat_assoc]
-            exact h4 _ (sepS S (.inr (by omega)) (by decide) (by omega))
-      rw [eA]
-      have hR : accV M (PARAMS + BitVec.ofNat 32 0x60) 12 = dataVal p384ParamsData 0x60 12 :=
-        code_accV D.params 0x60 12 (by decide)
-      rw [hR] at ocg
-      exact frp_val olt ocg
-    · obtain ⟨o0, _⟩ := bad2 (by omega)
-      have hc0 : (n2.mem (S + BitVec.ofNat 32 0x144 + 0x30)).zeroExtend 32 = (0 : Word) := by rw [o0]; rfl
-      rw [ite_eq_right hx]
+  · by_cases hx : beNat (memBytes M (S + BitVec.ofNat 32 0x13) 48) < p384
+    · have hc1 : (n2.mem (S + BitVec.ofNat 32 0x144 + 0x30)).zeroExtend 32 = (1 : Word) := by
+        rw [hv2.2, ite_eq_left hx]; rfl
+      rw [← hv2.1]
+      exact accV_congr2 12 fun i hi => by
+        rw [vals6 i hi, ite_eq_left hc1]
+        exact memLoad32_congr fun q hq => by
+          rw [add_ofNat_assoc, add_ofNat_assoc]
+          exact h4 _ (sepS S (.inr (by omega)) (by decide) (by omega))
+    · have hc0 : (n2.mem (S + BitVec.ofNat 32 0x144 + 0x30)).zeroExtend 32 = (0 : Word) := by
+        rw [hv2.2, ite_eq_right hx]; rfl
+      unfold fsMont; rw [ite_eq_right hx]
       exact accV_zero 12 fun i hi => by
         rw [vals6 i hi, ite_eq_right (by rw [hc0]; decide), mem4]
         exact fill_word0 (by omega) (by decide)
-  · rw [e619]; unfold fsOk
+  · rw [e619, hv2.2]; unfold fsOk
     by_cases hx : beNat (memBytes M (S + BitVec.ofNat 32 0x13) 48) < p384
-    · rw [(ok2 hx).1, ite_eq_left hx]; rfl
-    · rw [(bad2 (by omega)).1, ite_eq_right hx]; rfl
+    · rw [ite_eq_left hx, ite_eq_left hx]; rfl
+    · rw [ite_eq_right hx, ite_eq_right hx]; rfl
   · rw [k6 q (by revert hq; revert q; decide), r5, runBlock_reg _ _ _ q u4.zero (by simp only [fsX3]; revert hq; revert q; decide),
       k4' q (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
       (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
