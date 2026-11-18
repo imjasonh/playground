@@ -98,7 +98,10 @@ When `WORKER_POOL` names a `WorkerPool` (`namespace/name`), the pool also
 sets that pool's replicas through its scale subresource. `BASE_SLOTS` is how
 many actors fit on workers the pool doesn't size, here `ci-runner-base`'s
 one worker; `ACTORS_PER_WORKER` is how many actors one burst worker hosts;
-and `MAX_WORKERS` caps the burst pool. Each reconcile, it wants enough burst
+and `MAX_WORKERS` caps the burst pool. Substrate fits actors on a worker by
+the `WorkerPool`'s `limits` and the template's `resources`, so update
+`BASE_SLOTS` and `ACTORS_PER_WORKER` when you change either: a 2-CPU worker
+holds two 1-CPU actors. Each reconcile, it wants enough burst
 workers for the actors that are running or about to resume beyond
 `BASE_SLOTS`, and grows the `WorkerPool` before it resumes them. Until the
 new worker is ready, a resume fails with "no worker has room for the

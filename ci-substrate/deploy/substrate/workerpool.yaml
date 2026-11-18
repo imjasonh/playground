@@ -10,7 +10,9 @@
 # ci-substrate.imjasonh.com/burst=true, which the cluster autoscaler adds and
 # removes. The pool Deployment
 # (pool.yaml) sets ci-runner's replicas, to 0 when every actor fits on
-# ci-runner-base or is suspended. The API requires the field, so this file
+# ci-runner-base or is suspended. Substrate books each actor's resources
+# (runner-template.yaml) against a worker's limits; pool.yaml's BASE_SLOTS
+# and ACTORS_PER_WORKER count the actors that fit. The API requires the field, so this file
 # starts it at 0; kubectl apply leaves a field alone while the file's value
 # doesn't change, so applying it again doesn't reset what the pool set.
 apiVersion: v1

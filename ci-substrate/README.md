@@ -727,8 +727,8 @@ it taints the control-plane node as the always-on node and labels the other
 as the burst node, installs Substrate from its published images, pins
 Substrate's control plane to the always-on node, then runs `run-kind.sh` and
 `run-substrate.sh`. `run-substrate.sh` also checks that the pool scales the
-burst `WorkerPool` from zero to one when it needs a second actor, that the
-actor runs on the burst node, and that the pool scales it back to zero once
+burst `WorkerPool` from zero to one when the base worker's two actors are
+not enough, that the third actor runs on the burst node, and that the pool scales it back to zero once
 the actor suspends. CI does not run it.
 
 ```bash

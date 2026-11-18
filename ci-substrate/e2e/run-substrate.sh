@@ -27,8 +27,8 @@
 # an actor executed the action (the ActionResult's worker is an actor name,
 # not a Deployment runner) and read its inputs from the casfs volume. Last,
 # it checks that the pool sizes the burst WorkerPool: zero workers while the
-# base worker has room, one when a second actor needs it, and zero again
-# once that actor is suspended.
+# base worker has room, one when a third actor needs it, and zero again once
+# that actor is suspended.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -269,34 +269,38 @@ if [[ "$(burst_replicas)" != 0 ]]; then
   echo "the burst WorkerPool has $(burst_replicas) replicas for one actor, want 0" >&2
   exit 1
 fi
-# A second warm actor needs a burst worker. A short idle timeout lets both
-# suspend soon after.
-kubectl -n ate-system set env deployment/ci-substrate-pool-tenant-a WARM=2 IDLE_AFTER=20s
+# The base worker holds two actors, so a third warm actor needs a burst
+# worker. A short idle timeout lets all three suspend soon after.
+kubectl -n ate-system set env deployment/ci-substrate-pool-tenant-a WARM=3 IDLE_AFTER=20s
 kubectl -n ate-system rollout status deployment/ci-substrate-pool-tenant-a --timeout=180s
 await_burst 1 120
 echo "burst WorkerPool scaled to 1"
 placement=""
 deadline=$((SECONDS + 600))
 while ((SECONDS < deadline)); do
-  placement="$(actor_placement ci-runner-1)"
+  placement="$(actor_placement ci-runner-2)"
   if [[ "${placement}" == *" ci-runner "* ]]; then
+    break
+  fi
+  if [[ "${placement}" == ACTOR_STATE_RUNNING* ]]; then
     break
   fi
   sleep 5
 done
 if [[ "${placement}" != *" ci-runner "* ]]; then
-  echo "ci-runner-1 never ran on the burst WorkerPool: ${placement}" >&2
+  echo "ci-runner-2 did not run on the burst WorkerPool: ${placement}" >&2
+  kubectl ate get actors -a "${ATESPACE}" >&2 || true
   kubectl -n ci-substrate-workers get pods -o wide >&2
   kubectl -n ate-system logs deployment/ci-substrate-pool-tenant-a --tail=40 >&2
   exit 1
 fi
 node="${placement##* }"
-if [[ "$(kubectl get node "${node}" -o jsonpath='{.metadata.labels.ci-substrate\.dev/burst}')" != "true" ]]; then
-  echo "ci-runner-1 ran on ${node}, which is not a burst node" >&2
+if [[ "$(kubectl get node "${node}" -o jsonpath='{.metadata.labels.ci-substrate\.imjasonh\.com/burst}')" != "true" ]]; then
+  echo "ci-runner-2 ran on ${node}, which is not a burst node" >&2
   exit 1
 fi
-echo "ci-runner-1 ran on burst node ${node}"
-# Both actors idle out and suspend. With none on a burst worker, the pool
+echo "ci-runner-2 ran on burst node ${node}"
+# The actors idle out and suspend. With none on a burst worker, the pool
 # scales the burst WorkerPool to zero.
 await_burst 0 300
 echo "burst WorkerPool scaled to 0"

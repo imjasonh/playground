@@ -82,11 +82,12 @@ spec:
               value: 2m
             - name: WORKER_POOL
               value: ci-substrate-workers/ci-runner
-            # ci-runner-base has one worker, and a worker hosts one actor.
+            # ci-runner-base has one worker. A worker's 2 CPUs
+            # (workerpool.yaml) hold two of the template's 1-CPU actors.
             - name: BASE_SLOTS
-              value: "1"
+              value: "2"
             - name: ACTORS_PER_WORKER
-              value: "1"
+              value: "2"
             - name: MAX_WORKERS
               value: "4"
             - name: TENANT_TOKEN
