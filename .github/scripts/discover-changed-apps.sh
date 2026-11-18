@@ -2,7 +2,7 @@
 # Discover changed testable browser apps, Go modules, Rust apps, iOS apps,
 # macOS apps, ESP32 firmware crates, whether the pasta style leg should run,
 # whether the posts catalog builder should run, whether the Pages home-page
-# index renderer should run, and whether nescript.yml should run its ROM,
+# index renderer should run, and whether the nescript job should run its ROM,
 # jsnes, and Mesen checks.
 set -euo pipefail
 

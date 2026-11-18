@@ -43,6 +43,7 @@ jobs:
       ios: ${{ steps.discover.outputs.ios }}
       macos: ${{ steps.discover.outputs.macos }}
       esp32: ${{ steps.discover.outputs.esp32 }}
+      nescript: ${{ steps.discover.outputs.nescript }}
       pasta: ${{ steps.discover.outputs.pasta }}
       blog: ${{ steps.discover.outputs.blog }}
       index: ${{ steps.discover.outputs.index }}
@@ -479,6 +480,221 @@ jobs:
           max-bytes: 4294967296
           token: ${{ github.token }}
 
+  # The Rust job formats, lints, and tests the compiler. This job checks what
+  # it compiles: the committed ROMs, the jsnes frame and audio goldens, the
+  # README GIFs, and Mesen2's reading of the .dbg file. It uploads the ROMs
+  # it built as the nescript-examples artifact.
+  nescript:
+    name: nescript ROMs
+    needs: discover
+    if: ${{ needs.discover.outputs.nescript == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RUSTFLAGS: "-D warnings"
+      MESEN_VERSION: "2.1.1"
+    defaults:
+      run:
+        working-directory: nescript
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Restore the Cargo cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            nescript/target
+            ~/.cargo/registry
+          key: cargo-nescript-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            cargo-nescript-${{ runner.os }}-
+
+      - name: Install Rust
+        run: rustup toolchain install --no-self-update
+
+      - name: Run compile benches
+        run: cargo test --locked --benches
+
+      - name: Build the release compiler
+        run: cargo build --locked --release
+
+      - name: Verify committed ROMs match their sources
+        id: verify-roms
+        run: |
+          mkdir -p /tmp/reprotest "$RUNNER_TEMP/nescript-examples"
+          fail=0
+          for f in examples/*.ne; do
+            name=$(basename "$f" .ne)
+            ./target/release/nescript build "$f" --output "/tmp/reprotest/$name.nes"
+            cp "/tmp/reprotest/$name.nes" "$RUNNER_TEMP/nescript-examples/$name.nes"
+            if ! cmp -s "examples/$name.nes" "/tmp/reprotest/$name.nes"; then
+              echo "::error file=nescript/examples/$name.ne::committed nescript/examples/$name.nes is stale; rerun \`cargo run --release -- build examples/$name.ne\` from nescript/ and commit the new ROM"
+              fail=1
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            exit 1
+          fi
+
+      # always() so a stale committed ROM still leaves the compiler's
+      # output on the run. The outcome check skips this when the
+      # compiler never ran.
+      - name: Upload example ROMs
+        id: example-roms
+        if: ${{ always() && (steps.verify-roms.outcome == 'success' || steps.verify-roms.outcome == 'failure') }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: nescript-examples
+          path: ${{ runner.temp }}/nescript-examples
+          if-no-files-found: error
+
+      - name: Link the example ROMs
+        if: ${{ always() && steps.example-roms.outcome == 'success' }}
+        env:
+          URL: ${{ steps.example-roms.outputs.artifact-url }}
+        run: |
+          echo "Example ROMs: $URL" >>"$GITHUB_STEP_SUMMARY"
+
+      # Structural validation, not just the magic bytes: the header
+      # has to account for every byte, PRG and CHR bank counts have
+      # to be powers of two (FCEUX rounds the PRG window up, which
+      # would otherwise move the bank the mapper wires to
+      # $E000-$FFFF), the mapper has to be one the compiler emits,
+      # and the reset vector has to point into ROM.
+      - name: Verify ROMs are loadable iNES
+        run: ./target/release/nescript verify examples/*.nes
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+
+      - name: Compile examples with this compiler
+        run: |
+          for f in examples/*.ne; do
+            echo "==> Compiling $f"
+            ./target/release/nescript build "$f"
+          done
+
+      - name: Install emulator dependencies
+        working-directory: nescript/tests/emulator
+        run: npm ci
+
+      - name: Diff each ROM against its golden
+        working-directory: nescript/tests/emulator
+        run: node run_examples.mjs
+
+      - name: Drive the DVD screensaver with both controllers
+        working-directory: nescript/tests/emulator
+        run: node dvd_screensaver_input.mjs
+
+      # Each row is a GIF's ROM name, frame count, stride, and warmup
+      # frames, the arguments record_gif.mjs takes around the output path.
+      - name: Verify the README GIFs are up to date
+        working-directory: nescript/tests/emulator
+        run: |
+          fail=0
+          while read -r name frames stride warmup; do
+            node record_gif.mjs "$name" "$frames" "$stride" "/tmp/$name.gif" "$warmup"
+            if ! cmp -s "../../docs/$name.gif" "/tmp/$name.gif"; then
+              echo "::error file=nescript/docs/$name.gif::committed GIF is stale; rerun \`node tests/emulator/record_gif.mjs $name $frames $stride docs/$name.gif $warmup\` from nescript/ and commit it"
+              fail=1
+            fi
+          done <<'EOF'
+          platformer 360 2 30
+          war 360 2 4
+          pong 360 2 4
+          subway 360 2 30
+          rampart 720 2 16
+          dvd_screensaver 720 2 6402
+          EOF
+          exit "$fail"
+
+      - name: Install Mesen runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libsdl2-2.0-0 xvfb
+
+      # Mesen is a release download, so its version is the whole key.
+      - name: Restore Mesen2
+        id: mesen-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/mesen2
+          key: mesen2-${{ env.MESEN_VERSION }}-linux-x64
+
+      - name: Download Mesen2
+        if: ${{ steps.mesen-cache.outputs.cache-hit != 'true' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/mesen2"
+          cd "$RUNNER_TEMP/mesen2"
+          curl -sSfL -o Mesen.zip \
+            "https://github.com/SourMesen/Mesen2/releases/download/${MESEN_VERSION}/Mesen_${MESEN_VERSION}_Linux_x64.zip"
+          unzip -q Mesen.zip
+          chmod +x Mesen
+          rm Mesen.zip
+
+      - name: Build a ROM with debug info
+        run: |
+          ./target/release/nescript build examples/hello_sprite.ne \
+            --dbg /tmp/hello.dbg \
+            --output /tmp/hello.nes
+
+      - name: Validate .dbg with Mesen2
+        run: |
+          # Mesen opens its first-run wizard before --testRunner when
+          # settings.json is missing. An empty file selects the defaults.
+          touch "$RUNNER_TEMP/mesen2/settings.json"
+          # Invariant globalization keeps Mesen from loading system libstdc++
+          # over the copy bundled in MesenCore.so. xvfb satisfies the X11
+          # connection Avalonia opens before the test runner starts.
+          DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
+            xvfb-run -a "$RUNNER_TEMP/mesen2/Mesen" \
+              --testRunner /tmp/hello.nes tests/mesen/probe.lua \
+              --timeout=15
+
+      - name: Upload screenshot diffs on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: nescript-emulator-diff
+          path: |
+            nescript/tests/emulator/actual/
+            nescript/tests/emulator/goldens/
+            nescript/tests/emulator/report.json
+          if-no-files-found: ignore
+
+      - name: Save Mesen2
+        if: ${{ github.ref == 'refs/heads/main' && steps.mesen-cache.outputs.cache-hit != 'true' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: ${{ runner.temp }}/mesen2
+          key: mesen2-${{ env.MESEN_VERSION }}-linux-x64
+          prefixes: mesen2-
+          max-bytes: 536870912
+          token: ${{ github.token }}
+
+      - name: Prune the Cargo cache
+        id: prune-cargo
+        if: ${{ github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        run: bash ../.github/scripts/prune-cargo-cache.sh -l Cargo.lock target "$HOME/.cargo/registry"
+
+      - name: Save the Cargo cache
+        if: ${{ steps.prune-cargo.outcome == 'success' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: |
+            nescript/target
+            ~/.cargo/registry
+          key: cargo-nescript-${{ runner.os }}-${{ github.sha }}
+          prefixes: cargo-nescript-${{ runner.os }}-
+          # 1 GiB. The benches and the release compiler were 520 MB after
+          # a prune.
+          max-bytes: 1073741824
+          token: ${{ github.token }}
+
   pasta:
     name: pasta
     needs: discover
@@ -577,6 +793,7 @@ jobs:
           bash .github/scripts/prune-cargo-cache_test.sh
           bash .github/scripts/discover-rust-apps_test.sh
           bash .github/scripts/discover-esp32-apps_test.sh
+          bash .github/scripts/discover-nescript_test.sh
           bash .github/scripts/discover-go-modules_test.sh
           bash .github/scripts/check-whbiab-web_test.sh
 
@@ -585,7 +802,7 @@ jobs:
   # otherwise. Keep the job id `test`: branch protection and the dependency
   # update's auto-merge wait for a check with that name.
   test:
-    needs: [discover, browser, go, kind, rust, ios, macos, esp32-host, esp32-firmware, pasta, blog, index, scripts]
+    needs: [discover, browser, go, kind, rust, ios, macos, esp32-host, esp32-firmware, nescript, pasta, blog, index, scripts]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:

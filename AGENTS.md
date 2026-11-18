@@ -266,7 +266,7 @@ discovery scripts.
 | `deploy-gcp.yml` | push to `main`, pull requests that touch the deploy scripts or a `gcp-deploy.json`, manual | Applies GCP stacks that have a `gcp-deploy.json` (`cloudrun-sqlite`, `stream-boids`, and `wehadababyitsaboy`). GitHub OIDC and Workload Identity Federation authenticate `tofu apply`, so the workflow stores no long-lived GCP key. A pull request runs `tofu plan` as a separate plan service account and comments the plan. Apply runs only on `main`. |
 | `preview.yml` | pull request opened/sync | When a browser app, the posts catalog, or the Pages home-page index changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
-| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, Rust, iOS, and macOS apps and ESP32 firmware, the kind end-to-end tests, the pasta style check, the posts catalog, and the site index, each in its own job. The `test` job fans in their results and is the required check |
+| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, Rust, iOS, and macOS apps and ESP32 firmware, the kind end-to-end tests, nescript's example ROMs, the pasta style check, the posts catalog, and the site index, each in its own job. The `test` job fans in their results and is the required check |
 | `inkbot-esp32-publish.yml` | push to `main` touching `inkbot-esp32/**` (or this workflow), manual | Cross-builds inkbot firmware, pushes `ghcr.io/<owner>/playground/inkbot-esp32`, and Cosign-signs the digest (devices poll this for OTA) |
 | `apko-frontend-publish.yml` | push to `main` touching `apko-frontend/**` (or this workflow), manual | Tests `apko-frontend`, builds it with ko for `linux/amd64` and `linux/arm64`, pushes `ghcr.io/<owner>/playground/apko-frontend` tagged with the commit and `latest`, and Cosign-signs the digest. apko configurations name the image in `# syntax=` |
 | `ios.yml` | push to `main` | Delivers changed iOS apps to TestFlight when the signing secrets are present. `test.yml` tests them |
@@ -281,7 +281,6 @@ discovery scripts.
 | `nethack-agent.yml` | pull requests touching `nethack-agent/**` or the notes publish scripts, manual | **App-specific:** unit-tests the harness on a fake screen (no notebook writes). The play job installs `nethack-console` and runs the Cursor agent against `/usr/games/nethack` with `grok-4.6`. It writes the SDK token cost to the job summary, seeds `nethack-agent/notebook/` from `automation/nethack-notes`, then publishes that directory back to that branch and opens a pull request to `main` (no auto-merge). It does not commit notes onto the triggering pull request. Requires `CURSOR_API_KEY`. Skips play when the head is `automation/nethack-notes` |
 | `update-litestream.yml` | daily at 00:30 UTC, manual | Pulls upstream Litestream into the `litestream/` subtree with `git subtree merge --squash` (`.github/scripts/update-litestream.sh`). A clean merge runs `go mod tidy` in each module that replaces Litestream with `../litestream`, then opens a pull request from `automation/litestream-update` with auto-merge, so it lands when CI passes. On conflicts, it commits the merge with the conflict markers, opens the pull request without auto-merge, and fails the run. It leaves the branch alone once someone else pushes to it. Uses the `litestream-update` Octo STS identity. Test the script with `bash .github/scripts/update-litestream_test.sh` |
 | `chrome-extension.yml` | pull requests and pushes to `main` touching `chrome-extension/**` or the publish script, manual | **App-specific:** tests the Chrome extension, packs the store zip, and uploads `chrome-extension.zip` as a workflow artifact. The download is the store package. On `main`, uploads that zip to the existing Chrome Web Store item and publishes it when the Chrome Web Store secrets are set. Without those secrets, tests still run and publish is skipped |
-| `nescript.yml` | push to `main`, pull requests, manual | **App-specific:** always runs, so the ROM job can be a required check. The benches, ROM diff, jsnes goldens, GIF check, and Mesen probe no-op when `nescript/` and this workflow are unchanged. `test.yml` still runs fmt, Clippy, and `cargo test` for the compiler. The ROM job uploads the ROMs it built as the `nescript-examples` artifact |
 
 Deploy workflows copy browser app directories as-is (they do **not** run
 `npm install` or build). Go and Rust app directories are not deployed. Only
@@ -360,7 +359,7 @@ Every push to `main` and every pull request runs a `discover` job that finds
 which apps changed (`.github/scripts/discover-changed-apps.sh`). Then each
 ecosystem runs as its own job on its own runner and tests **only the changed
 apps of that type**: browser apps, Go, Rust, iOS, macOS, ESP32 firmware,
-pasta, the posts catalog, the site index, and the cache and discovery
+nescript's example ROMs, pasta, the posts catalog, the site index, and the cache and discovery
 scripts. A job-level `if` skips an
 ecosystem with no changes, so it never starts a runner. On the first push to
 `main` (no prior commit), every app is tested. The **pasta** job builds the
@@ -386,8 +385,9 @@ Each job restores the caches it uses from the newest entry that a push to
 browser job restores npm's package cache, the Go, kind, and pasta jobs
 restore Go's build cache, the pasta job also restores pasta's cache, and the
 Rust job restores the `worker-build` binary, the Rust dependency artifacts,
-and npm's cache of Wrangler. The ESP32 host and firmware jobs each keep their
-own Cargo cache for their crate. Only pushes to `main` save, after the tests, and
+and npm's cache of Wrangler. The ESP32 host and firmware jobs and the nescript
+job each keep their own Cargo cache for their crate, and the nescript job also
+caches its Mesen2 download. Only pushes to `main` save, after the tests, and
 two jobs never save the same cache. Only the Go job saves Go's build cache.
 The setup that the Go-using jobs share is the `.github/actions/setup-go-cache`
 action.
@@ -429,7 +429,8 @@ size budget, measured on disk:
   `worker-build` binary (256 MiB; it takes 36 seconds to build), and the
   Rust dependency artifacts (6 GiB). Each ESP32 crate has a host cache
   (2 GiB; inkbot-esp32's crate and tools were 1.2 GB after a prune) and a
-  firmware cache (4 GiB, most of it esp-idf-sys's ESP-IDF build tree). The
+  firmware cache (4 GiB, most of it esp-idf-sys's ESP-IDF build tree), and
+  nescript has one for its benches and release compiler (1 GiB). The
   firmware prune also keeps what the esp toolchain's standard library
   lockfile names, because `-Z build-std` compiles std into the target
   directory. ESP-IDF itself, which embuild installs in each crate's
@@ -472,7 +473,8 @@ Xtensa toolchain. `discover-esp32-apps.sh` finds them by the
 `[target.xtensa-*-espidf]` table in their `.cargo/config.toml`. The ESP32 jobs
 run their host lib tests and firmware cross-builds instead. A change to
 `test-esp32-host.sh` selects every ESP32 crate, and a change to
-`.github/workflows/<crate>-publish.yml` selects that crate. A change under `.github/wrangler/` (the
+`.github/workflows/<crate>-publish.yml` selects that crate. A change under
+`nescript/` also runs the nescript job. A change under `.github/wrangler/` (the
 pinned Wrangler version) selects every Cloudflare Worker app, and a change to
 `test-rust-apps.sh` or `check-worker-deploy-build.sh` selects every Rust app.
 
@@ -503,6 +505,14 @@ installs the esp-rs Xtensa toolchain and runs `make build` (for inkbot-esp32,
 both the inkbot and maze images). Signed inkbot OTA images are published by
 `inkbot-esp32-publish.yml` on `main` (see [`inkbot-esp32/docs/ota.md`](inkbot-esp32/docs/ota.md)).
 `esp32-ble` is USB-flash only.
+
+**The nescript job checks the compiler's output.** The Rust job formats,
+lints, and tests `nescript/` like any Rust app. When `nescript/` changes, the
+`nescript ROMs` job also runs the compile benches, rebuilds every example and
+compares it with the committed ROM, checks that each ROM is loadable iNES,
+diffs every example against its jsnes frame and audio golden, rerecords the
+README GIFs, and has Mesen2 load a `.dbg` file. It uploads the ROMs it built
+as the `nescript-examples` artifact.
 
 **The iOS job runs on a macOS runner** (the `xcode-27` image), and only when
 discovery's `ios` list is not empty, so browser/Go/Rust-only PRs never pay for
@@ -539,6 +549,7 @@ bash .github/scripts/discover-testable-apps.sh --all   # browser
 bash .github/scripts/discover-go-modules.sh --all      # Go
 bash .github/scripts/discover-rust-apps.sh --all       # Rust
 bash .github/scripts/discover-esp32-apps.sh --all      # ESP32 firmware
+bash .github/scripts/discover-nescript.sh --all        # nescript ROMs
 bash .github/scripts/discover-pasta.sh --all           # pasta style leg
 bash .github/scripts/discover-blog.sh --all            # posts catalog
 bash .github/scripts/discover-index.sh --all           # Pages home-page index
@@ -546,6 +557,7 @@ bash .github/scripts/discover-index.sh --all           # Pages home-page index
 # Only what a diff touched (what CI uses on a PR)
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-rust-apps.sh --from-changes
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-esp32-apps.sh --from-changes
+git diff --name-only origin/main...HEAD | bash .github/scripts/discover-nescript.sh --from-changes
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-pasta.sh --from-changes
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-blog.sh --from-changes
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-index.sh --from-changes
@@ -1097,7 +1109,7 @@ bundle exec fastlane test
 | `y/` | One-user microblog (D1 + R2); 260-char posts, images, RSS, passkeys | `cargo test` + clippy + wasm build |
 | `app-attest/` | App Attest handshake + assertion verifier for the Playground iOS experiment — Cloudflare Worker | `cargo test` + clippy + wasm build |
 | `wehadababyitsaboy/rust/` | Library (crate `whbiab`) that sends one usage ping from a Rust CLI to the `wehadababyitsaboy` bucket: `parse` parses a clap CLI, starts a background request for `CLIENT/ARGS?bob=wehadababyitsaboy` with the subcommands and flag names that ran, and returns a `Ping` that waits for it. `git-fuse`, `life-stl`, and `tank-commander` use it. It sends no flag value or positional argument, honors `DO_NOT_TRACK=1` and `WHBIAB_DISABLE=1`, and sends nothing from a debug build | `cargo test` + clippy (a local server stands in for the bucket) |
-| `nescript/` | Statically typed compiler from `.ne` source to an iNES ROM. Imported with `git subtree` from [imjasonh/nescript](https://github.com/imjasonh/nescript), so that history stays reachable | `cargo test` + clippy. `nescript.yml` also runs benches, ROM reproducibility, jsnes frame and audio goldens, and a Mesen2 `.dbg` probe, and uploads the built example ROMs as `nescript-examples`. That job always reports a status and no-ops when `nescript/` is unchanged, so it can be a required check |
+| `nescript/` | Statically typed compiler from `.ne` source to an iNES ROM. Imported with `git subtree` from [imjasonh/nescript](https://github.com/imjasonh/nescript), so that history stays reachable | `cargo test` + clippy. The nescript job in `test.yml` also runs benches, ROM reproducibility, jsnes frame and audio goldens, and a Mesen2 `.dbg` probe, and uploads the built example ROMs as `nescript-examples` |
 
 > **`git-server` has its own agent guide:** read
 > [`git-server/AGENTS.md`](git-server/AGENTS.md) before working in that
