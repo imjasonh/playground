@@ -118,6 +118,7 @@ class Gen:
             mm = re.match(r"  obtain ⟨([^⟩]*)⟩", line)
             if mm:
                 names += [x.strip() for x in mm.group(1).split(",") if not re.fullmatch(r"n\d+", x.strip())]
+        names = [x for x in names if not x.startswith("keep_")]
         prev = getattr(self, "prev_names", [])
         if prev:
             self.out.append("  clear " + " ".join(reversed(prev)))
@@ -306,14 +307,18 @@ class Gen:
         self.end_step()
         return k
 
-    def conclusion(self, off):
+    def conclusion(self, off, extra=()):
         """The facts at the end, as a conjunction, and the term that proves it."""
         k = self.k
         conj = [f"Steps n0 n'", f"St n'.mem PV n' 0x{off:X} (reg n')", f"{self.envt} n'.mem",
                 "(∀ x, PvR B x → n'.mem x = n0.mem x)"]
         terms = [f"t{k}", f"s{k}", f"E{k}", f"fR{k}"]
         for r, v in sorted(self.regs.items()):
+            if re.search(r"reg n[1-9]", lean_val(v)):
+                continue
             conj.append(f"reg n' {rname(r)} = {lean_val(v)}"); terms.append(f"g{k}_{r}")
+        for stmt, term in extra:
+            conj.append(stmt); terms.append(term.format(k=k))
         for d, v in sorted(self.acc.items()):
             conj.append(f"accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x{d:X}) 12 = {v}"); terms.append(f"a{k}_{d:x}")
         for e, v in sorted(self.bytes.items()):
@@ -540,6 +545,26 @@ class Ops:
         g.end_step()
         return k
 
+    def umin(self, off):
+        g = self.g
+        g.call("pv_umin", off, f"g{g.k}_2", 0, 0,
+               extra_regs={10: (("U", "BitVec.ofNat 32 (min rem 62)"), f"rw [V{g.k + 1}, g{g.k}_10, umin_ofNat hrem]")})
+
+    def low(self, off, c):
+        g = self.g
+        k = g.k
+        g.call("pv_low", off, f"g{k}_2 g{k}_10 (by decide) (by decide) l{k}_{c:x}", 0, 0,
+               pre=[f"have keep_l{k + 1} := l{k}_{c:x}", f"have keep_v{k + 1} := v{k}_{c:x}"])
+        k = g.k
+        g.emit(f"  have keep_low{k} : W64 (reg n{k} a0) (reg n{k} a1) = lowestI ({g.sv[c]}) :=")
+        g.emit(f"    V{k}.trans (lowest_sv keep_l{k} keep_v{k})")
+        # the registers now hold the call's results
+        g.emit(f"  have g{k}_10 : reg n{k} a0 = reg n{k} a0 := rfl")
+        g.emit(f"  have g{k}_11 : reg n{k} a1 = reg n{k} a1 := rfl")
+        g.regs[10] = ("U", f"reg n{k} a0")
+        g.regs[11] = ("U", f"reg n{k} a1")
+        return k
+
     def ms0(self, off, dst, N):
         """`memset` of `N` zero bytes at `dst`: zero limbs, and zero sign bytes."""
         g = self.g
@@ -599,6 +624,39 @@ def stage_c0():
         "params": "{B ph : Word} {len X Y R Sg : Nat} " + params,
         "intro": ["have t0 : Steps n0 n0 := .refl n0", "have fR0 : ∀ x, PvR B x → n0.mem x = n0.mem x := fun _ _ => rfl"],
         "import": "C3BootProofs.Proofs.Pv384Lib2",
+    }
+    return g, info
+
+
+def stage_ca():
+    g = Gen("CA", env3=True)
+    g.regs = {2: S(0), 19: ("U", "dhi"), 21: ("U", "dlo"), 23: ("U", "BitVec.ofNat 32 rem"), 26: C(0xB),
+              20: C(0x177023BB), 22: C(0x912B9F76), 24: C(1)}
+    for r in (3, 4):
+        g.regs[r] = ("U", f"reg n0 ({r} : Fin 32)")
+    g.acc = {0x120: "QX", 0x150: "QY", 0x180: "QZ", 0x1B0: "RM", 0x1E0: "SM", 0x210: "ZM",
+             0xE10: "dataVal p384OrderData 0 12", 0xE40: "dataVal p384ScalarR2Data 0 12"}
+    g.words = {0xE70: C(0x177023BB), 0xE74: C(0x912B9F76)}
+    g.sv = {0x1714: "Fv", 0xD50: "Gv", 0x270: "Dv", 0x17A4: "Ev"}
+    params = params_of(g, 0x406)
+    o = Ops(g)
+    o.sw(0x406, 2, 0x54, 24, 0x54)
+    g.block(0x408, 0x40A); o.umin(0x40A)
+    g.block(0x412, 0x41C); kf = o.low(0x41C, 0x1714)
+    g.block(0x424, 0x430); kg = o.low(0x430, 0xD50)
+    g.block(0x438, 0x44A)
+    info = {
+        "end": 0x44A, "name": "pv_stCA", "title": "the start of a batch of the inversion of `s`",
+        "doc": "From 0x406 to 0x44A: the batch's length, the low words of `f` and `g`, and the identity\nmatrix.",
+        "thmdoc": "**The start of a batch**, from 0x406 to 0x44A.",
+        "params": "{B : Word} {dlo dhi : Word} {rem QX QY QZ RM SM ZM : Nat} {Fv Gv Dv Ev : Int} "
+                  + params + " (hrem : rem < 2 ^ 32)",
+        "intro": ["have t0 : Steps n0 n0 := .refl n0", "have fR0 : ∀ x, PvR B x → n0.mem x = n0.mem x := fun _ _ => rfl"]
+                 + [f"have g0_{r} : reg n0 ({r} : Fin 32) = reg n0 ({r} : Fin 32) := rfl" for r in (3, 4)],
+        "import": "C3BootProofs.Proofs.Pv384Lib2",
+        "extra": [("W64 (reg n' (27 : Fin 32)) (reg n' (25 : Fin 32)) = lowestI Fv",
+                   f"(by rw [g{{k}}_27, g{{k}}_25]; exact keep_low{kf})"),
+                  ("W64 (reg n' a0) (reg n' a1) = lowestI Gv", f"(by rw [g{{k}}_10, g{{k}}_11]; exact keep_low{kg})")],
     }
     return g, info
 
@@ -718,8 +776,8 @@ set_option linter.unusedSimpArgs false
 
 def main():
     stage = sys.argv[1]
-    g, info = {"B": stage_b, "C0": stage_c0, "CB": stage_cb}[stage]()
-    stmt, proof = g.conclusion(info["end"])
+    g, info = {"B": stage_b, "C0": stage_c0, "CA": stage_ca, "CB": stage_cb}[stage]()
+    stmt, proof = g.conclusion(info["end"], info.get("extra", ()))
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.Pv384Lib"), title=info["title"], stage=stage,
                         doc=info["doc"]))
     print("\n".join(g.block_defs()))

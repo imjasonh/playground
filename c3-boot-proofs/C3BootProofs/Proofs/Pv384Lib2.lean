@@ -563,4 +563,36 @@ theorem accV2_S (M : Word → BitVec 8) (S : Word) (c : Nat) :
 set_option exponentiation.threshold 600 in
 theorem ord_val : dataVal p384OrderData 0 12 = n384 := by unfold n384; decide
 
+/-- `lowest`'s word for an integer: the low 63 bits of its magnitude, negated
+modulo `2^64` when it is negative. -/
+def lowestI (X : Int) : Nat := lowestVal (if X < 0 then 1 else 0) (X.natAbs % 2 ^ 64)
+
+theorem accV_mod64 (M : Word → BitVec 8) (p : Word) : ∀ k, accV M p (k + 2) % 2 ^ 64 = accV M p 2
+  | 0 => Nat.mod_eq_of_lt (accV_lt M p 2)
+  | k + 1 => by
+    rw [show k + 1 + 2 = (k + 2) + 1 from rfl, accV_succ1, show 32 * (k + 2) = 64 + 32 * k by omega, Nat.pow_add,
+      Nat.mul_comm (2 ^ 64), ← Nat.mul_assoc, Nat.add_mul_mod_self_right]
+    exact accV_mod64 M p k
+
+theorem lowestI_of {σ A : Nat} {X : Int} (hσ : σ ≤ 1) (h : sgnVal σ A = X) :
+    lowestVal σ (A % 2 ^ 64) = lowestI X := by
+  obtain ⟨n1, n2, n3⟩ := sgnVal_rep hσ h
+  unfold lowestI
+  rcases Int.lt_trichotomy X 0 with h0 | h0 | h0
+  · obtain ⟨e1, e2⟩ := n1 h0; rw [ite_eq_left h0, e1, e2]
+  · rw [n3 h0, h0]; unfold lowestVal; split <;> simp
+  · obtain ⟨e1, e2⟩ := n2 h0; rw [ite_eq_right (by omega), e1, e2]
+
+/-- `lowest`'s result for a value held as a sign byte and 12 limbs. -/
+theorem lowest_sv {M : Word → BitVec 8} {p a : Word} {X : Int} (hσ : (M a).toNat ≤ 1)
+    (h : sgnVal (M a).toNat (accV M p 12) = X) : lowestVal (M a).toNat (accV M p 2) = lowestI X := by
+  rw [← accV_mod64 M p 10]; exact lowestI_of hσ h
+
+theorem umin_ofNat {r : Nat} (h : r < 2 ^ 32) :
+    (if (BitVec.ofNat 32 r).toNat < 62 then BitVec.ofNat 32 r else 62) = BitVec.ofNat 32 (min r 62) := by
+  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt h]
+  by_cases hr : r < 62
+  · rw [ite_eq_left hr, Nat.min_eq_left (by omega)]
+  · rw [ite_eq_right hr, Nat.min_eq_right (by omega)]; rfl
+
 end C3.RV32.Pv
