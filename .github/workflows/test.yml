@@ -522,6 +522,7 @@ jobs:
           bash .github/scripts/cache-scripts_test.sh
           bash .github/scripts/prune-cargo-cache_test.sh
           bash .github/scripts/discover-rust-apps_test.sh
+          bash .github/scripts/discover-esp32-apps_test.sh
           bash .github/scripts/discover-go-modules_test.sh
           bash .github/scripts/check-whbiab-web_test.sh
 

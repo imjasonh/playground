@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Discover changed testable browser apps, Go modules, Rust apps, iOS apps,
-# macOS apps, ESP32 firmware (inkbot-esp32, esp32-ble), whether the pasta style
-# leg should run, whether the posts catalog builder should run, whether the
-# Pages home-page index renderer should run, and whether nescript.yml should
-# run its ROM, jsnes, and Mesen checks.
+# macOS apps, ESP32 firmware crates, whether the pasta style leg should run,
+# whether the posts catalog builder should run, whether the Pages home-page
+# index renderer should run, and whether nescript.yml should run its ROM,
+# jsnes, and Mesen checks.
 set -euo pipefail
 
 : "${EVENT_NAME:?EVENT_NAME must be set}"
@@ -11,20 +11,6 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$repo_root"
-
-# ESP32 firmware crates are excluded from discover-rust-apps.sh because they
-# need the espup Xtensa toolchain. A change to the host test script selects
-# every firmware crate, and a change to the publish workflow selects
-# inkbot-esp32.
-esp32_from_changes() {
-  printf '%s\n' "$1" | while IFS= read -r path; do
-    case "$path" in
-      inkbot-esp32/* | .github/workflows/inkbot-esp32-publish.yml) echo inkbot-esp32 ;;
-      esp32-ble/*) echo esp32-ble ;;
-      .github/scripts/test-esp32-host.sh) printf '%s\n' inkbot-esp32 esp32-ble ;;
-    esac
-  done | jq -R . | jq -cs 'unique'
-}
 
 pasta_from_changes() {
   # discover-pasta.sh prints `pasta=true|false`; strip the key.
@@ -60,7 +46,7 @@ else
     rust=$(bash .github/scripts/discover-rust-apps.sh --all)
     ios=$(bash .github/scripts/discover-ios-apps.sh --all)
     macos=$(bash .github/scripts/discover-macos-apps.sh --all)
-    esp32='["esp32-ble","inkbot-esp32"]'
+    esp32=$(bash .github/scripts/discover-esp32-apps.sh --all)
     pasta=true
     blog=true
     index=true
@@ -110,7 +96,7 @@ else
   rust=$(printf '%s\n' "$changed" | bash .github/scripts/discover-rust-apps.sh --from-changes)
   ios=$(printf '%s\n' "$changed" | bash .github/scripts/discover-ios-apps.sh --from-changes)
   macos=$(printf '%s\n' "$changed" | bash .github/scripts/discover-macos-apps.sh --from-changes)
-  esp32=$(esp32_from_changes "$changed")
+  esp32=$(printf '%s\n' "$changed" | bash .github/scripts/discover-esp32-apps.sh --from-changes)
   pasta=$(pasta_from_changes "$changed")
   blog=$(blog_from_changes "$changed")
   index=$(index_from_changes "$changed")
