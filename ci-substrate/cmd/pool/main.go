@@ -55,7 +55,10 @@ type config struct {
 	Warm      int           `env:"WARM, default=1"`
 	Max       int           `env:"MAX, default=4"`
 	IdleAfter time.Duration `env:"IDLE_AFTER, default=2m"`
-	Interval  time.Duration `env:"INTERVAL, default=5s"`
+	// Interval is how often the pool reconciles with no queue change, and
+	// MinInterval the least time between reconciles that queue changes start.
+	Interval    time.Duration `env:"INTERVAL, default=30s"`
+	MinInterval time.Duration `env:"MIN_INTERVAL, default=250ms"`
 }
 
 // queue reads the tenant's queue from the scheduler.
@@ -73,6 +76,19 @@ func (q *queue) Status(ctx context.Context) (int, []string, error) {
 		return 0, nil, err
 	}
 	return int(resp.GetQueued()), resp.GetBusyBotIds(), nil
+}
+
+func (q *queue) Watch(ctx context.Context, changed func()) error {
+	stream, err := q.client.WatchStatus(tenant.Outgoing(ctx, q.token), &workerv1.StatusRequest{InstanceNames: q.instances})
+	if err != nil {
+		return err
+	}
+	for {
+		if _, err := stream.Recv(); err != nil {
+			return err
+		}
+		changed()
+	}
 }
 
 func main() {
@@ -117,13 +133,14 @@ func main() {
 		os.Exit(1)
 	}
 	pool, err := actorpool.New(actorpool.Config{
-		Actors:    actors,
-		Queue:     &queue{client: workerv1.NewWorkerServiceClient(casConn), token: c.Token, instances: c.Instances},
-		Prefix:    c.Prefix,
-		Warm:      c.Warm,
-		Max:       c.Max,
-		IdleAfter: c.IdleAfter,
-		Interval:  c.Interval,
+		Actors:      actors,
+		Queue:       &queue{client: workerv1.NewWorkerServiceClient(casConn), token: c.Token, instances: c.Instances},
+		Prefix:      c.Prefix,
+		Warm:        c.Warm,
+		Max:         c.Max,
+		IdleAfter:   c.IdleAfter,
+		Interval:    c.Interval,
+		MinInterval: c.MinInterval,
 	})
 	if err != nil {
 		slog.Error("configuring pool", "err", err)

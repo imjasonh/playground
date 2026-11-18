@@ -93,7 +93,11 @@ It reads the queue from the scheduler in `cas` with `WorkerService.Status`,
 which reports queued actions and the bot ids holding leases. The runner's
 bot id is its actor name (projected from actor metadata into
 `/system/name`), so the pool knows which actors are busy without asking
-them.
+them. The pool also holds a `WorkerService.WatchStatus` stream open, which
+sends a new report each time the queue changes, so a queued action wakes an
+actor within `MIN_INTERVAL` (default 250ms) rather than on the next poll.
+Without a change it reconciles every `INTERVAL` (default 30s) to see what only
+Substrate knows: crashed actors, finished resumes, and idle runners.
 
 The runner in the actor sends a placeholder tenant header. The egress gateway
 replaces it with the tenant's token, so the sandbox holds no credential. The

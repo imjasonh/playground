@@ -67,7 +67,7 @@ flowchart TB
   end
 
   ci -->|"Execute, upload"| cas
-  pool -->|"Status: queued, busy bots"| cas
+  pool -->|"WatchStatus: queued, busy bots"| cas
   pool -->|"create, resume, suspend"| api
   router --> api
   api --- pg
@@ -174,8 +174,8 @@ from `cas`, verifies it, and stores it.
    `FindMissingBlobs`, uploads those, and calls `Complete` with the
    `ActionResult`. `cas` writes the action cache and finishes the
    `Operation` every watcher is waiting on.
-5. With Substrate, the `pool` for that tenant polls `Status`, and when the
-   queue has more jobs than free runners it resumes a suspended actor (a
+5. With Substrate, the `pool` for that tenant watches `WatchStatus`, and when
+   the queue has more jobs than free runners it resumes a suspended actor (a
    memory snapshot restore, about a second) or creates one. A runner that
    has leased nothing for a while is suspended again.
 
@@ -589,8 +589,9 @@ that value.
 
 `pool.reconcile` and its `pool.create`, `pool.resume`, `pool.suspend`, and
 `pool.delete` children trace the pool's changes to actors. Health checks and
-the runners' `Lease`, `Heartbeat`, and the pool's `Status` polls aren't
-traced; they are long polls or heartbeats with nothing to show.
+the runners' `Lease`, `Heartbeat`, and the pool's `Status` and `WatchStatus`
+calls aren't traced; they are long polls, heartbeats, or a stream that lasts
+as long as the pool, with nothing to show.
 
 When an invocation has made no call for `INVOCATION_IDLE` (one minute by
 default), `cas` ends it: it emits the `bazel invocation` span, the
