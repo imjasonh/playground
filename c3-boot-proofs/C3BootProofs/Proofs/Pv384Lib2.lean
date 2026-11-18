@@ -595,4 +595,44 @@ theorem umin_ofNat {r : Nat} (h : r < 2 ^ 32) :
   · rw [ite_eq_left hr, Nat.min_eq_left (by omega)]
   · rw [ite_eq_right hr, Nat.min_eq_right (by omega)]; rfl
 
+/-- Equal values of `k` limbs have equal limbs. -/
+theorem accV_inj {M M' : Word → BitVec 8} {x y : Word} :
+    ∀ k, accV M x k = accV M' y k → ∀ i, i < k → memLoad32 M (x + BitVec.ofNat 32 (4 * i)) =
+      memLoad32 M' (y + BitVec.ofNat 32 (4 * i))
+  | 0, _, i, hi => absurd hi (Nat.not_lt_zero _)
+  | k + 1, h, i, hi => by
+    rw [accV_succ1, accV_succ1] at h
+    have h1 := accV_lt M x k; have h2 := accV_lt M' y k
+    have hp : 0 < 2 ^ (32 * k) := Nat.two_pow_pos _
+    have hd := congrArg (· / 2 ^ (32 * k)) h
+    have hm := congrArg (· % 2 ^ (32 * k)) h
+    rw [Nat.add_mul_div_right _ _ hp, Nat.add_mul_div_right _ _ hp, Nat.div_eq_of_lt h1, Nat.div_eq_of_lt h2]
+      at hd
+    rw [Nat.add_mul_mod_self_right, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt h1, Nat.mod_eq_of_lt h2] at hm
+    rcases Nat.lt_or_ge i k with hik | hik
+    · exact accV_inj k hm i hik
+    · obtain rfl : i = k := by omega
+      exact BitVec.eq_of_toNat_eq (by omega)
+
+theorem u12One_val : dataVal u12OneData 0 12 = 1 := by decide
+
+/-- `Uint<12>::eq` against 1 tests that the value is 1. -/
+theorem pv_eq_one {M : Word → BitVec 8} {x K : Word} (hK : CodeIn M K u12OneData) :
+    (∀ i : Nat, i < 12 → memLoad32 M (x + BitVec.ofNat 32 (4 * i)) =
+      memLoad32 M (K + BitVec.ofNat 32 (4 * i))) ↔ accV M x 12 = 1 := by
+  have hv : accV M K 12 = 1 := by
+    rw [show K = K + BitVec.ofNat 32 0 from (add_ofNat_zero _).symm, code_accV hK 0 12 (by decide), u12One_val]
+  constructor
+  · intro h; rw [← hv]; exact accV_congr2 12 fun i hi => h i hi
+  · intro h; rw [← hv] at h; exact accV_inj 12 h
+
+theorem zext_01 {b : BitVec 8} (h : b.toNat ≤ 1) : (b.zeroExtend 32 : Word) = 0 ∨ (b.zeroExtend 32 : Word) = 1 := by
+  have : b = 0 ∨ b = 1 := by
+    rcases Nat.lt_or_ge b.toNat 1 with h1 | h1
+    · exact .inl (BitVec.eq_of_toNat_eq (by rw [show (0 : BitVec 8).toNat = 0 from rfl]; omega))
+    · exact .inr (BitVec.eq_of_toNat_eq (by rw [show (1 : BitVec 8).toNat = 1 from rfl]; omega))
+  rcases this with rfl | rfl
+  · exact .inl rfl
+  · exact .inr rfl
+
 end C3.RV32.Pv

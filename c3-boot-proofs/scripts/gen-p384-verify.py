@@ -247,6 +247,12 @@ class Gen:
                 rd = reg_of(tk[2]); v = add(vals.get(reg_of(tk[3])), ("C", int(tk[4], 16)))
             elif tk[0] == ".alu" and tk[1] == ".add":
                 rd = reg_of(tk[2]); v = add(vals.get(reg_of(tk[3])), vals.get(reg_of(tk[4])))
+            elif tk[0] == ".aluImm" and tk[1] == ".and":
+                rd = reg_of(tk[2]); x = vals.get(reg_of(tk[3]))
+                v = ("C", x[1] & int(tk[4], 16)) if x is not None and x[0] == "C" else None
+            elif tk[0] == ".alu" and tk[1] == ".and":
+                rd = reg_of(tk[2]); x = vals.get(reg_of(tk[3])); y = vals.get(reg_of(tk[4]))
+                v = ("C", x[1] & y[1]) if x is not None and y is not None and x[0] == "C" and y[0] == "C" else None
             elif tk[0] in (".aluImm", ".alu"):
                 rd = reg_of(tk[2]); v = None
             else:
@@ -422,6 +428,83 @@ class Ops:
                f"    (pv_lowS F (k := 0x60) (by decide) (by decide) (by decide))\n"
                f"    (pv_lowK F (n := 48) (k := 0x60) (by decide) (by decide) (by decide)) (by decide)\n"
                f"    (by rw [pv_at F 0x{a:X} (by decide)]; have := F.hi; omega)", dst, 48, acc)
+
+    def cselS(self, off, dst, a, b, c):
+        """Select between the limbs at offsets `a` and `b` of the frame with the choice `c`."""
+        g = self.g
+        k = g.k
+        src = b if c == 1 else a
+        lemma = "ite_eq_left (by decide)" if c == 1 else "ite_eq_right (by decide)"
+        acc = {dst: (g.acc[src], [f"rw [V{k + 1}, {lemma}, a{k}_{src:x}]"])} if src in g.acc else {}
+        g.call("pv_csel", off,
+               f"g{k}_2 g{k}_10 g{k}_11 g{k}_12 g{k}_13 (by decide) (by decide)\n"
+               f"    (pv_lowS F (k := 0x60) (by decide) (by decide) (by decide))\n"
+               f"    (pv_lowS F (k := 0x60) (by decide) (by decide) (by decide)) (pv_al F (by decide) (by decide))\n"
+               f"    (by rw [pv_at F 0x{a:X} (by decide)]; have := F.hi; omega)", dst, 48, acc)
+
+    def sbr(self, off, base, imm, c):
+        """A byte store from a register to offset `c` of the frame, tracking no value."""
+        g = self.g
+        k = g.k
+        g.store("pv_sb", off, INSTR[off][1], f"(by rw [g{k}_{base}]; pv_addr) (by decide)", c, 1)
+
+    def lbu(self, off, rd, base, e, val):
+        """`lbu rd, 0(base)` of the byte at offset `e` of the frame, whose value is `val`."""
+        g = self.g
+        k = g.k = g.k + 1
+        ln = INSTR[off][1]
+        g.emit(f"  -- 0x{off:X}: lbu")
+        g.emit(f"  obtain ⟨n{k}, d{k}, u{k}⟩ := s{k-1}.lbu {g.env(k-1)}.C.self pv_at_{off:x} (off' := 0x{off + ln:X}) (by decide)")
+        g.emit(f"  have s{k} : St n{k}.mem PV n{k} 0x{off + ln:X} (reg n{k}) := ⟨u{k}.pc, rfl, fun _ => rfl⟩")
+        g.emit(f"  have m{k} : n{k}.mem = n{k-1}.mem := u{k}.mem")
+        g.emit(f"  have E{k} : {g.envt} n{k}.mem := by rw [m{k}]; exact E{k-1}")
+        g.emit(f"  have fr{k} : ∀ x, PvR B x → n{k}.mem x = n{k-1}.mem x := fun x _ => by rw [m{k}]")
+        g.emit(f"  have K{k} : PvKeep B n{k-1}.mem n{k}.mem 0 0 := fun e _ _ => by rw [m{k}]")
+        g.common(k, f"(.single d{k})")
+        new = {}
+        for r, v in sorted(g.regs.items()):
+            if r == rd:
+                continue
+            g.emit(f"  have g{k}_{r} : reg n{k} {rname(r)} = {lean_val(v)} := by rw [u{k}.regs, upd_ne (by decide) (by decide), g{k-1}_{r}]")
+            new[r] = v
+        g.emit(f"  have g{k}_{rd} : reg n{k} {rname(rd)} = {lean_val(val)} := by")
+        g.emit(f"    rw [u{k}.regs]; simp +decide only [upd, ↓reduceIte]")
+        g.emit(f"    rw [g{k-1}_{base}, show {lean_val(g.regs[base])} + 0x0 = B + 0x420 + BitVec.ofNat 32 0x{e:X} by pv_addr, b{k-1}_{e:x}]")
+        new[rd] = val
+        g.regs = new
+        g.mem_facts(k, 0, 0)
+        g.end_step()
+        return k
+
+    def norm(self, off, co, cx, cn, sx, fs, X, N):
+        """`norm` of the value at `cx` (sign byte `sx`, magnitude `X`) with `f`'s sign `fs`."""
+        g = self.g
+        k = g.k
+        val = f"normVal ({sx}).toNat ({fs}).toNat ({X}) ({N})"
+        acc = {co: (val, [f"rw [V{k + 1}]",
+                          f"show normVal (n{k}.mem (B + 0x420 + BitVec.ofNat 32 0x{cx + 0x30:X})).toNat _ _ _ = _",
+                          f"rw [b{k}_{cx + 0x30:x}, g{k}_12, a{k}_{cx:x}, a{k}_{cn:x}]"])}
+        g.call("pv_norm", off, f"g{k}_2 g{k}_10 g{k}_11 hfs g{k}_13 (by decide) (by decide) (by decide)\n"
+               f"    (by decide) (by decide) (by decide)\n"
+               f"    (by show (n{k}.mem (B + 0x420 + BitVec.ofNat 32 0x{cx + 0x30:X})).toNat ≤ 1; rw [b{k}_{cx + 0x30:x}]; exact hsx)",
+               co, 48, acc,
+               pre=[f"have hfs : reg n{k} a2 = 0 ∨ reg n{k} a2 = 1 := by rw [g{k}_12]; exact zext_01 hsf"])
+
+    def eq(self, off, c):
+        """`Uint<12>::eq` of the limbs at offset `c` against 1."""
+        g = self.g
+        k = g.k
+        A = g.acc[c]
+        g.regs_at_call_a1 = g.regs[11]
+        g.call("pv_eq", off, f"g{k}_2 g{k}_10 g{k}_11 (by decide) (by decide) (by decide)", 0, 0,
+               pre=[f"have keep_a{k + 1} := a{k}_{c:x}", f"have keep_u{k + 1} := {g.env(k)}.D2.u1"])
+        k = g.k
+        g.emit(f"  have keep_eq : reg n{k} a0 = (if {A} = 1 then 1 else 0) := by")
+        g.emit(f"    rw [V{k}]")
+        g.emit(f"    by_cases h : {A} = 1")
+        Kv = lean_val(g.regs_at_call_a1)
+        g.emit(f"    · rw [ite_eq_left h, ite_eq_left ((pv_eq_one (K := {Kv}) keep_u{k}).2 (by rw [keep_a{k}]; exact h))]")
+        g.emit(f"    · rw [ite_eq_right h, ite_eq_right (fun h' => h (by rw [← keep_a{k}]; exact (pv_eq_one (K := {Kv}) keep_u{k}).1 h'))]")
 
     def sn(self, off, dst, x):
         g = self.g
@@ -670,6 +753,68 @@ def stage_ca():
     return g, info
 
 
+def stage_c2a():
+    g = Gen("C2a", env3=True)
+    g.regs = {2: S(0), 24: C(1)}
+    for r in (3, 4):
+        g.regs[r] = ("U", f"reg n0 ({r} : Fin 32)")
+    g.acc = {0x120: "QX", 0x150: "QY", 0x180: "QZ", 0x1B0: "RM", 0x1E0: "SM", 0x210: "ZM",
+             0xE10: "dataVal p384OrderData 0 12", 0x270: "Ad", 0x1714: "Af"}
+    g.bytes = {0x2A0: "sd", 0x1744: "sf"}
+    params = params_of(g, 0x628)
+    o = Ops(g)
+    g.block(0x628, 0x632)
+    o.lbu(0x632, 12, 9, 0x1744, ("U", "sf.zeroExtend 32"))
+    g.block(0x636, 0x648)
+    o.norm(0x648, 0x1294, 0x270, 0xE10, "sd", "sf.zeroExtend 32", "Ad", "dataVal p384OrderData 0 12")
+    g.block(0x650, 0x660)
+    o.eq(0x660, 0x1714)
+    info = {
+        "end": 0x668, "name": "pv_stC2a", "title": "the end of the inversion of `s`",
+        "doc": "From 0x628 to 0x668: `d` normalized by `f`'s sign, and whether `f` is 1.",
+        "thmdoc": "**After the loop**, from 0x628 to 0x668.",
+        "params": "{B : Word} {sd sf : BitVec 8} {QX QY QZ RM SM ZM Ad Af : Nat} "
+                  + params + " (hsd : sd.toNat ≤ 1) (hsf : sf.toNat ≤ 1)",
+        "intro": ["have t0 : Steps n0 n0 := .refl n0", "have fR0 : ∀ x, PvR B x → n0.mem x = n0.mem x := fun _ _ => rfl",
+                  "have hsx := hsd"]
+                 + [f"have g0_{r} : reg n0 ({r} : Fin 32) = reg n0 ({r} : Fin 32) := rfl" for r in (3, 4)],
+        "import": "C3BootProofs.Proofs.Pv384Lib2",
+        "extra": [("reg n' a0 = (if Af = 1 then 1 else 0)", "keep_eq")],
+        "only": {"regs": {2, 3, 4, 9, 24}, "acc": {0x120, 0x150, 0x180, 0x1B0, 0x1E0, 0x210, 0x1294}},
+    }
+    return g, info
+
+
+def stage_c2b(ok):
+    g = Gen(f"C2b{ok}", env3=True)
+    g.regs = {2: S(0), 24: C(1), 10: C(ok), 9: S(0x1744)}
+    for r in (3, 4):
+        g.regs[r] = ("U", f"reg n0 ({r} : Fin 32)")
+    g.acc = {0x120: "QX", 0x150: "QY", 0x180: "QZ", 0x1B0: "RM", 0x1E0: "SM", 0x210: "ZM", 0x1294: "INV"}
+    params = params_of(g, 0x668)
+    o = Ops(g)
+    g.block(0x668, 0x684); o.mc(0x684, 0x17A4, 0x1294, 0x30)
+    g.block(0x68C, 0x68E); o.bb(0x68E, C(ok), "rw [V{k}, g{p}_10]; rfl")
+    g.block(0x696, 0x698); o.sbr(0x698, 9, 0x90, 0x17D4)
+    g.block(0x69C, 0x6AA); o.ms0(0x6AA, 0xE10, 0x30)
+    g.block(0x6B2, 0x6D0); o.cselS(0x6D0, 0x1294, 0xE10, 0x17A4, ok)
+    g.block(0x6D8, 0x6E0); o.sbr(0x6E0, 25, 0x544, 0x12C4)
+    g.block(0x6E4, 0x6FC); o.ms0(0x6FC, 0x17A4, 0x30)
+    g.block(0x704, 0x71E); o.cselS(0x71E, 0xE10, 0x17A4, 0x1294, ok)
+    g.block(0x726, 0x728); o.sbr(0x728, 25, 0x514, 0x1294)
+    info = {
+        "end": 0x72C, "name": f"pv_stC2b{ok}", "title": f"the inverse of `s` {'chosen' if ok else 'refused'}",
+        "doc": f"From 0x668 to 0x72C, when `f` {'is' if ok else 'is not'} 1: the inverse of `s`, or zero, at 0xE10.",
+        "thmdoc": f"**The inverse {'chosen' if ok else 'refused'}**, from 0x668 to 0x72C.",
+        "params": "{B : Word} {QX QY QZ RM SM ZM INV : Nat} " + params,
+        "intro": ["have t0 : Steps n0 n0 := .refl n0", "have fR0 : ∀ x, PvR B x → n0.mem x = n0.mem x := fun _ _ => rfl"]
+                 + [f"have g0_{r} : reg n0 ({r} : Fin 32) = reg n0 ({r} : Fin 32) := rfl" for r in (3, 4)],
+        "import": "C3BootProofs.Proofs.Pv384Lib2",
+        "only": {"regs": {2, 3, 4, 9, 10, 18, 25}, "acc": {0x120, 0x150, 0x180, 0x1B0, 0x1E0, 0x210, 0xE10}},
+    }
+    return g, info
+
+
 def stage_cb():
     g = Gen("CB", env3=True)
     g.regs = {2: S(0), 19: ("U", "dhi"), 21: ("U", "dlo"), 23: ("U", "BitVec.ofNat 32 rem"), 26: C(0xB),
@@ -787,7 +932,8 @@ set_option linter.unusedSimpArgs false
 
 def main():
     stage = sys.argv[1]
-    g, info = {"B": stage_b, "C0": stage_c0, "CA": stage_ca, "CB": stage_cb}[stage]()
+    g, info = {"B": stage_b, "C0": stage_c0, "CA": stage_ca, "CB": stage_cb, "C2a": stage_c2a,
+               "C2b1": lambda: stage_c2b(1), "C2b0": lambda: stage_c2b(0)}[stage]()
     stmt, proof = g.conclusion(info["end"], info.get("extra", ()), info.get("only"))
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.Pv384Lib"), title=info["title"], stage=stage,
                         doc=info["doc"]))
