@@ -553,4 +553,14 @@ theorem accV_zero_S {M : Word → BitVec 8} {S : Word} {c : Nat} (k : Nat)
     rw [h _ (by omega), h _ (by omega), h _ (by omega), h _ (by omega)]
     decide
 
+/-- Two limbs as a 64-bit word. -/
+theorem accV2_S (M : Word → BitVec 8) (S : Word) (c : Nat) :
+    accV M (S + BitVec.ofNat 32 c) 2 = W64 (memLoad32 M (S + BitVec.ofNat 32 c)) (memLoad32 M (S + BitVec.ofNat 32 (c + 4))) := by
+  simp only [accV, W64, Nat.mul_zero, Nat.pow_zero, Nat.mul_one, Nat.zero_add, add_ofNat_zero,
+    show 4 * 1 = 4 from rfl, add_ofNat_assoc, show 32 * 1 = 32 from rfl]
+  omega
+
+set_option exponentiation.threshold 600 in
+theorem ord_val : dataVal p384OrderData 0 12 = n384 := by unfold n384; decide
+
 end C3.RV32.Pv

@@ -73,6 +73,8 @@ def add(a, b):
 
 
 def lean_val(v):
+    if isinstance(v, str):
+        return v
     if v[0] == "S":
         return "B + 0x420" if v[1] == 0 else f"B + 0x420 + BitVec.ofNat 32 0x{v[1]:X}"
     if v[0] == "C":
@@ -95,6 +97,7 @@ class Gen:
         self.acc = {}
         self.bytes = {}
         self.words = {}
+        self.sv = {}
 
     def emit(self, s):
         self.out.append(s)
@@ -150,8 +153,30 @@ class Gen:
                 new[r] = v
         self.regs = new
 
-    def mem_facts(self, k, c, w, written_acc=None, written_bytes=None, written_words=None):
+    def mem_facts(self, k, c, w, written_acc=None, written_bytes=None, written_words=None, written_sv=None):
         """Facts after a step that wrote the `w` bytes at offset `c`."""
+        written_sv = written_sv or {}
+        newsv = {}
+        for d, v in sorted(self.sv.items()):
+            if d in written_sv:
+                continue
+            if d + 49 <= c or c + w <= d:
+                self.emit(f"  have v{k}_{d:x} : sgnVal (n{k}.mem (B + 0x420 + BitVec.ofNat 32 (0x{d:X} + 0x30))).toNat")
+                self.emit(f"      (accV n{k}.mem (B + 0x420 + BitVec.ofNat 32 0x{d:X}) 12) = {v} := by")
+                self.emit(f"    rw [K{k} _ (by decide) (by decide), K{k}.acc (by decide) (by decide)]; exact v{k-1}_{d:x}")
+                self.emit(f"  have l{k}_{d:x} : (n{k}.mem (B + 0x420 + BitVec.ofNat 32 (0x{d:X} + 0x30))).toNat ≤ 1 := by")
+                self.emit(f"    rw [K{k} _ (by decide) (by decide)]; exact l{k-1}_{d:x}")
+                newsv[d] = v
+        for d, (v, proof, lproof) in sorted(written_sv.items()):
+            self.emit(f"  have v{k}_{d:x} : sgnVal (n{k}.mem (B + 0x420 + BitVec.ofNat 32 (0x{d:X} + 0x30))).toNat")
+            self.emit(f"      (accV n{k}.mem (B + 0x420 + BitVec.ofNat 32 0x{d:X}) 12) = {v} := by")
+            for line in proof:
+                self.emit(f"    {line}")
+            self.emit(f"  have l{k}_{d:x} : (n{k}.mem (B + 0x420 + BitVec.ofNat 32 (0x{d:X} + 0x30))).toNat ≤ 1 := by")
+            for line in lproof:
+                self.emit(f"    {line}")
+            newsv[d] = v
+        self.sv = newsv
         written_acc = written_acc or {}
         written_bytes = written_bytes or {}
         written_words = written_words or {}
@@ -188,12 +213,12 @@ class Gen:
             if e in written_words:
                 continue
             if e + 4 <= c or c + w <= e:
-                self.emit(f"  have w{k}_{e:x} : memLoad32 n{k}.mem (B + 0x420 + BitVec.ofNat 32 0x{e:X}) = {v} := by")
+                self.emit(f"  have w{k}_{e:x} : memLoad32 n{k}.mem (B + 0x420 + BitVec.ofNat 32 0x{e:X}) = {lean_val(v)} := by")
                 self.emit(f"    rw [← w{k-1}_{e:x}]; exact memLoad32_congr fun j hj => by")
                 self.emit(f"      rw [add_ofNat_assoc]; exact K{k} _ (by omega) (by omega)")
                 neww[e] = v
         for e, (v, proof) in sorted(written_words.items()):
-            self.emit(f"  have w{k}_{e:x} : memLoad32 n{k}.mem (B + 0x420 + BitVec.ofNat 32 0x{e:X}) = {v} := by")
+            self.emit(f"  have w{k}_{e:x} : memLoad32 n{k}.mem (B + 0x420 + BitVec.ofNat 32 0x{e:X}) = {lean_val(v)} := by")
             for line in proof:
                 self.emit(f"    {line}")
             neww[e] = v
@@ -221,7 +246,7 @@ class Gen:
                 rd = reg_of(tk[2]); v = add(vals.get(reg_of(tk[3])), ("C", int(tk[4], 16)))
             elif tk[0] == ".alu" and tk[1] == ".add":
                 rd = reg_of(tk[2]); v = add(vals.get(reg_of(tk[3])), vals.get(reg_of(tk[4])))
-            elif tk[0] == ".aluImm":
+            elif tk[0] in (".aluImm", ".alu"):
                 rd = reg_of(tk[2]); v = None
             else:
                 raise ValueError(text)
@@ -248,7 +273,8 @@ class Gen:
         self.end_step()
         return k
 
-    def call(self, wrapper, off, args, c, w, written_acc=None, written_bytes=None, extra_regs=None, pre=None):
+    def call(self, wrapper, off, args, c, w, written_acc=None, written_bytes=None, extra_regs=None, pre=None,
+             written_sv=None):
         k = self.k = self.k + 1
         self.emit(f"  -- 0x{off:X}: {wrapper}")
         for line in pre or []:
@@ -264,7 +290,7 @@ class Gen:
         for r, (v, proof) in (extra_regs or {}).items():
             self.emit(f"  have g{k}_{r} : reg n{k} {rname(r)} = {lean_val(v)} := by {proof}")
             self.regs[r] = v
-        self.mem_facts(k, c, w, written_acc, written_bytes)
+        self.mem_facts(k, c, w, written_acc, written_bytes, written_sv=written_sv)
         self.end_step()
         return k
 
@@ -293,7 +319,11 @@ class Gen:
         for e, v in sorted(self.bytes.items()):
             conj.append(f"n'.mem (B + 0x420 + BitVec.ofNat 32 0x{e:X}) = {v}"); terms.append(f"b{k}_{e:x}")
         for e, v in sorted(self.words.items()):
-            conj.append(f"memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0x{e:X}) = {v}"); terms.append(f"w{k}_{e:x}")
+            conj.append(f"memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0x{e:X}) = {lean_val(v)}"); terms.append(f"w{k}_{e:x}")
+        for d, v in sorted(self.sv.items()):
+            conj.append(f"sgnVal (n'.mem (B + 0x420 + BitVec.ofNat 32 (0x{d:X} + 0x30))).toNat "
+                        f"(accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x{d:X}) 12) = {v}"); terms.append(f"v{k}_{d:x}")
+            conj.append(f"(n'.mem (B + 0x420 + BitVec.ofNat 32 (0x{d:X} + 0x30))).toNat ≤ 1"); terms.append(f"l{k}_{d:x}")
         stmt = "∃ n', " + " ∧\n      ".join(conj)
         proof = f"  exact ⟨n{k}, " + ", ".join(terms) + "⟩"
         return stmt, proof
@@ -342,8 +372,23 @@ class Ops:
 
     def mc(self, off, dst, src, N):
         g = self.g
-        g.call("pv_mc", off, f"g{g.k}_2 g{g.k}_10 g{g.k}_11 g{g.k}_12 (by decide) (by decide) (by decide)", dst, N,
-               copy_facts(g, dst, src, N, f"V{g.k + 1}"))
+        k = g.k
+        svs = {}
+        for d, v in g.sv.items():
+            if src <= d and d + 49 <= src + N:
+                nd = dst + (d - src)
+                o_ = d - src
+                hb = [f"have hb := V{k + 1} (0x{o_:X} + 0x30) (by omega)",
+                      f"rw [show 0x{dst:X} + (0x{o_:X} + 0x30) = 0x{nd:X} + 0x30 by omega,",
+                      f"  show 0x{src:X} + (0x{o_:X} + 0x30) = 0x{d:X} + 0x30 by omega] at hb"]
+                svs[nd] = (v, hb + [
+                    f"rw [hb, accV_S (M := n{k}.mem) (d := 0x{d:X}) 12 fun q hq => by",
+                    f"  have := V{k + 1} (0x{o_:X} + q) (by omega)",
+                    f"  rwa [show 0x{dst:X} + (0x{o_:X} + q) = 0x{nd:X} + q by omega,",
+                    f"    show 0x{src:X} + (0x{o_:X} + q) = 0x{d:X} + q by omega] at this]",
+                    f"exact v{k}_{d:x}"], hb + [f"rw [hb]; exact l{k}_{d:x}"])
+        g.call("pv_mc", off, f"g{k}_2 g{k}_10 g{k}_11 g{k}_12 (by decide) (by decide) (by decide)", dst, N,
+               copy_facts(g, dst, src, N, f"V{k + 1}"), written_sv=svs)
 
     def mcK(self, off, dst, K, N, data):
         g = self.g
@@ -407,7 +452,93 @@ class Ops:
         g = self.g
         k = g.k
         g.store("pv_sw", off, INSTR[off][1], f"(by rw [g{k}_{base}]; pv_addr) (by decide) (by decide)", c, 4,
-                written_words={c: (lean_val(g.regs[src]), [f"rw [V{k + 1}, g{k}_{src}]"])})
+                written_words={c: (g.regs[src], [f"rw [V{k + 1}, g{k}_{src}]"])})
+
+    def tq(self, ct):
+        """Facts giving the matrix at `ct` from the words the stores left, before a call."""
+        g = self.g
+        k = g.k
+        lines, vals = [], []
+        for i, o_ in enumerate([0, 8, 0x10, 0x18]):
+            addr = f"0x{ct:X}" if o_ == 0 else f"(0x{ct:X} + 0x{o_:X})"
+            lo, hi = lean_val(g.words[ct + o_]), lean_val(g.words[ct + o_ + 4])
+            vals.append(f"(i64Val (W64 ({lo}) ({hi})))")
+            lines.append(f"have tq{k + 1}_{i} : accV n{k}.mem (B + 0x420 + BitVec.ofNat 32 {addr}) 2 = W64 ({lo}) ({hi}) := by")
+            lines.append(f"  rw [accV2_S, show ({addr} + 4 : Nat) = 0x{ct + o_ + 4:X} from rfl" +
+                         ("" if o_ == 0 else f", show ({addr} : Nat) = 0x{ct + o_:X} from rfl") +
+                         f", w{k}_{ct + o_:x}, w{k}_{ct + o_ + 4:x}]")
+        return lines, vals
+
+    def ufg(self, off, co, ca, cb, ct, n):
+        g = self.g
+        k = g.k
+        pre, (u, v, q, r) = self.tq(ct)
+        F, G = g.sv[ca], g.sv[cb]
+        val1 = f"fgUpd ({F}) ({G}) {u} {v} {n}"
+        val2 = f"fgUpd ({F}) ({G}) {q} {r} {n}"
+        dest = f"obtain ⟨h1, h2, h3, h4⟩ := V{k + 1}"
+        rws = f"v{k}_{ca:x}, v{k}_{cb:x}, tq{k + 1}_0, tq{k + 1}_1, tq{k + 1}_2, tq{k + 1}_3"
+        svs = {co: (val1, [dest, f"simp only [{rws}] at h1", "exact h1"], [dest, "exact h2"]),
+               co + 0x34: (val2, [dest, f"simp only [{rws}] at h3",
+                                  f"rw [show (0x{co:X} + 0x64 : Nat) = 0x{co + 0x34:X} + 0x30 from rfl,",
+                                  f"  show (0x{co:X} + 0x34 : Nat) = 0x{co + 0x34:X} from rfl] at h3", "exact h3"],
+                           [dest, f"rw [show (0x{co:X} + 0x64 : Nat) = 0x{co + 0x34:X} + 0x30 from rfl] at h4",
+                            "exact h4"])}
+        g.call("pv_ufg", off,
+               f"g{k}_2 g{k}_10 g{k}_11 g{k}_12 g{k}_13 g{k}_14 hn1 (by omega)\n"
+               f"    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)\n"
+               f"    (by decide) (by decide) (by decide) l{k}_{ca:x} l{k}_{cb:x}", co, 0x65, pre=pre, written_sv=svs)
+
+    def ude(self, off, co, ca, cb, cm, ct, n, MI, Mv):
+        g = self.g
+        k = g.k
+        pre, (u, v, q, r) = self.tq(ct)
+        D, E = g.sv[ca], g.sv[cb]
+        val1 = f"deUpd ({D}) ({E}) {u} {v} ({MI}) {n} ({Mv})"
+        val2 = f"deUpd ({D}) ({E}) {q} {r} ({MI}) {n} ({Mv})"
+        dest = f"obtain ⟨h1, h2, h3, h4⟩ := V{k + 1}"
+        rws = f"v{k}_{ca:x}, v{k}_{cb:x}, tq{k + 1}_0, tq{k + 1}_1, tq{k + 1}_2, tq{k + 1}_3, a{k}_{cm:x}"
+        svs = {co: (val1, [dest, f"simp only [{rws}] at h1", "exact h1"], [dest, "exact h2"]),
+               co + 0x34: (val2, [dest, f"simp only [{rws}] at h3",
+                                  f"rw [show (0x{co:X} + 0x64 : Nat) = 0x{co + 0x34:X} + 0x30 from rfl,",
+                                  f"  show (0x{co:X} + 0x34 : Nat) = 0x{co + 0x34:X} from rfl] at h3", "exact h3"],
+                           [dest, f"rw [show (0x{co:X} + 0x64 : Nat) = 0x{co + 0x34:X} + 0x30 from rfl] at h4",
+                            "exact h4"])}
+        g.call("pv_ude", off,
+               f"g{k}_2 g{k}_10 g{k}_11 g{k}_12 g{k}_13 g{k}_14 g{k}_15 g{k}_16 g{k}_17 hn1 (by omega)\n"
+               f"    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)\n"
+               f"    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) l{k}_{ca:x} l{k}_{cb:x}\n"
+               f"    (by rw [a{k}_{cm:x}, ord_val]; decide)", co, 0x65, pre=pre, written_sv=svs)
+
+    def lw(self, off, rd, base, imm, c):
+        """`lw rd, imm(base)` reading the word at offset `c` of the frame."""
+        g = self.g
+        k = g.k = g.k + 1
+        ln = INSTR[off][1]
+        g.emit(f"  -- 0x{off:X}: lw")
+        g.emit(f"  obtain ⟨n{k}, d{k}, u{k}⟩ := s{k-1}.lw {g.env(k-1)}.C.self pv_at_{off:x} (off' := 0x{off + ln:X}) (by decide)")
+        g.emit(f"    (by rw [g{k-1}_{base}]; exact pv_al F (c := 0x{c:X}) (by decide) (by decide))")
+        g.emit(f"  have s{k} : St n{k}.mem PV n{k} 0x{off + ln:X} (reg n{k}) := ⟨u{k}.pc, rfl, fun _ => rfl⟩")
+        g.emit(f"  have m{k} : n{k}.mem = n{k-1}.mem := u{k}.mem")
+        g.emit(f"  have E{k} : {g.envt} n{k}.mem := by rw [m{k}]; exact E{k-1}")
+        g.emit(f"  have fr{k} : ∀ x, PvR B x → n{k}.mem x = n{k-1}.mem x := fun x _ => by rw [m{k}]")
+        g.emit(f"  have K{k} : PvKeep B n{k-1}.mem n{k}.mem 0 0 := fun e _ _ => by rw [m{k}]")
+        g.common(k, f"(.single d{k})")
+        new = {}
+        for r, v in sorted(g.regs.items()):
+            if r == rd:
+                continue
+            g.emit(f"  have g{k}_{r} : reg n{k} {rname(r)} = {lean_val(v)} := by rw [u{k}.regs, upd_ne (by decide) (by decide), g{k-1}_{r}]")
+            new[r] = v
+        val = g.words[c]
+        g.emit(f"  have g{k}_{rd} : reg n{k} {rname(rd)} = {lean_val(val)} := by")
+        g.emit(f"    rw [u{k}.regs]; simp +decide only [upd, ↓reduceIte]")
+        g.emit(f"    rw [g{k-1}_{base}, show {lean_val(g.regs[base])} + 0x{imm:X} = B + 0x420 + BitVec.ofNat 32 0x{c:X} by pv_addr, w{k-1}_{c:x}]")
+        new[rd] = val
+        g.regs = new
+        g.mem_facts(k, 0, 0)
+        g.end_step()
+        return k
 
     def ms0(self, off, dst, N):
         """`memset` of `N` zero bytes at `dst`: zero limbs, and zero sign bytes."""
@@ -436,7 +567,11 @@ def params_of(g, off, extra=""):
     for e, v in sorted(g.bytes.items()):
         ps.append(f"(b0_{e:x} : n0.mem (B + 0x420 + BitVec.ofNat 32 0x{e:X}) = {v})")
     for e, v in sorted(g.words.items()):
-        ps.append(f"(w0_{e:x} : memLoad32 n0.mem (B + 0x420 + BitVec.ofNat 32 0x{e:X}) = {v})")
+        ps.append(f"(w0_{e:x} : memLoad32 n0.mem (B + 0x420 + BitVec.ofNat 32 0x{e:X}) = {lean_val(v)})")
+    for d, v in sorted(g.sv.items()):
+        ps.append(f"(v0_{d:x} : sgnVal (n0.mem (B + 0x420 + BitVec.ofNat 32 (0x{d:X} + 0x30))).toNat "
+                  f"(accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x{d:X}) 12) = {v})")
+        ps.append(f"(l0_{d:x} : (n0.mem (B + 0x420 + BitVec.ofNat 32 (0x{d:X} + 0x30))).toNat ≤ 1)")
     return "\n    ".join(ps) + extra
 
 
@@ -463,6 +598,46 @@ def stage_c0():
         "thmdoc": "**Stage C0**, from 0x3B0 to 0x3E8: the start of the inversion of `s`.",
         "params": "{B ph : Word} {len X Y R Sg : Nat} " + params,
         "intro": ["have t0 : Steps n0 n0 := .refl n0", "have fR0 : ∀ x, PvR B x → n0.mem x = n0.mem x := fun _ _ => rfl"],
+        "import": "C3BootProofs.Proofs.Pv384Lib2",
+    }
+    return g, info
+
+
+def stage_cb():
+    g = Gen("CB", env3=True)
+    g.regs = {2: S(0), 19: ("U", "dhi"), 21: ("U", "dlo"), 23: ("U", "BitVec.ofNat 32 rem"), 26: C(0xB),
+              20: C(0x177023BB), 22: C(0x912B9F76), 18: ("U", "BitVec.ofNat 32 n"),
+              9: ("U", "ulo"), 17: ("U", "uhi"), 12: ("U", "vlo"), 16: ("U", "vhi"), 24: ("U", "qlo"),
+              7: ("U", "qhi"), 30: ("U", "rlo"), 6: ("U", "rhi")}
+    for r in (3, 4):
+        g.regs[r] = ("U", f"reg n0 ({r} : Fin 32)")
+    g.acc = {0x120: "QX", 0x150: "QY", 0x180: "QZ", 0x1B0: "RM", 0x1E0: "SM", 0x210: "ZM",
+             0xE10: "dataVal p384OrderData 0 12", 0xE40: "dataVal p384ScalarR2Data 0 12"}
+    g.words = {0x54: C(1), 0xE70: C(0x177023BB), 0xE74: C(0x912B9F76)}
+    g.sv = {0x1714: "Fv", 0xD50: "Gv", 0x270: "Dv", 0x17A4: "Ev"}
+    params = params_of(g, 0x530)
+    o = Ops(g)
+    g.block(0x530, 0x538)
+    for i, (off, src) in enumerate([(0x538, 9), (0x53C, 17), (0x540, 12), (0x544, 16), (0x548, 24), (0x54C, 7),
+                                    (0x550, 30), (0x554, 6)]):
+        o.sw(off, 10, 0x524 + 4 * i, src, 0x1C68 + 4 * i)
+    g.block(0x558, 0x57A); o.ufg(0x57A, 0x1294, 0x1714, 0xD50, 0x1C68, "n")
+    g.block(0x582, 0x596); o.mc(0x596, 0x1714, 0x1294, 0x34)
+    g.block(0x59E, 0x5B2); o.mc(0x5B2, 0xD50, 0x12C8, 0x34)
+    MI = "(BitVec.ofNat 32 0x177023BB).toNat + 2 ^ 32 * (BitVec.ofNat 32 0x912B9F76).toNat"
+    g.block(0x5BA, 0x5E4); o.ude(0x5E4, 0x1294, 0x270, 0x17A4, 0xE10, 0x1C68, "n", MI, "dataVal p384OrderData 0 12")
+    g.block(0x5EC, 0x5FA); o.mc(0x5FA, 0x270, 0x1294, 0x34)
+    g.block(0x602, 0x616); o.mc(0x616, 0x17A4, 0x12C8, 0x34)
+    g.block(0x61E, 0x622, {23: ("U", "BitVec.ofNat 32 rem - BitVec.ofNat 32 n")})
+    o.lw(0x622, 24, 2, 0x54, 0x54)
+    info = {
+        "end": 0x624, "name": "pv_stCB", "title": "the end of a batch of the inversion of `s`",
+        "doc": "From 0x530 to 0x624: store the batch's matrix, apply it to `f`, `g`, `d`, and `e`,\nand count down the steps left.",
+        "thmdoc": "**The end of a batch**, from 0x530 to 0x624.",
+        "params": "{B : Word} {dlo dhi ulo uhi vlo vhi qlo qhi rlo rhi : Word} {rem n QX QY QZ RM SM ZM : Nat} {Fv Gv Dv Ev : Int} "
+                  + params + " (hn1 : 1 ≤ n) (hn2 : n ≤ 62)",
+        "intro": ["have t0 : Steps n0 n0 := .refl n0", "have fR0 : ∀ x, PvR B x → n0.mem x = n0.mem x := fun _ _ => rfl"]
+                 + [f"have g0_{r} : reg n0 ({r} : Fin 32) = reg n0 ({r} : Fin 32) := rfl" for r in (3, 4)],
         "import": "C3BootProofs.Proofs.Pv384Lib2",
     }
     return g, info
@@ -543,7 +718,7 @@ set_option linter.unusedSimpArgs false
 
 def main():
     stage = sys.argv[1]
-    g, info = {"B": stage_b, "C0": stage_c0}[stage]()
+    g, info = {"B": stage_b, "C0": stage_c0, "CB": stage_cb}[stage]()
     stmt, proof = g.conclusion(info["end"])
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.Pv384Lib"), title=info["title"], stage=stage,
                         doc=info["doc"]))
