@@ -354,4 +354,71 @@ theorem dq_win_sq {M : Word → BitVec 8} {S : Word} {n : Machine} {w : Word} (C
       (pkeep_ne (r := 29) hq rfl) (pkeep_ne (r := 30) hq rfl) (pkeep_ne (r := ra) hq rfl), k5 q hq,
       g4 q (pkeep_ne (r := a1) hq rfl), kk q (by revert hq; revert q; decide)]
 
+/-! ## Multiplications -/
+
+theorem mm_mset : MM + 0x1B0C = MSET := by decide
+theorem mm_bsub : mmBsub MM = BSUB := by decide
+theorem mm_sel : MM + 0x18E = SEL := by decide
+theorem mm_stub : MM + 0x1B74 = MCS := by decide
+theorem mm_body : MM + 0x1B7C = MCS + 8 := by decide
+
+set_option maxRecDepth 100000 in
+/-- A call to `mul_montgomery_form::<12>` from `decompress` with the modulus
+at `S + 0x134` and factor 1: the 12 words at `out` become the Montgomery
+product of the words at `xp` and `yp`. -/
+theorem dq_mm {Mx : Word → BitVec 8} {n : Machine} {off : Nat} {g : Fin 32 → Word} {imm o out xp yp S : Word}
+    (s : St Mx DP n off g) (C : DqCode Mx) (F : DqFrame S)
+    (h1 : fetchRel p384DecompressCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel p384DecompressCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : DP + BitVec.ofNat 32 off + imm + o = MM) (he8 : (DP + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
+    (hsp : g sp = S) (ha0 : g a0 = out) (ha1 : g a1 = xp) (ha2 : g a2 = yp)
+    (ha3 : g a3 = S + BitVec.ofNat 32 0x134) (ha4 : g a4 = 1)
+    {co cx cy : Nat} (hco : co + 48 ≤ 0xA50) (hcx : cx + 48 ≤ 0xA50) (hcy : cy + 48 ≤ 0xA50)
+    (eo : out = S + BitVec.ofNat 32 co) (ex : xp = S + BitVec.ofNat 32 cx) (ey : yp = S + BitVec.ofNat 32 cy)
+    (aco : co % 4 = 0) (acx : cx % 4 = 0) (acy : cy % 4 = 0)
+    (hN0 : memLoad32 Mx (S + BitVec.ofNat 32 0x134) = 0xFFFFFFFF) (hN : accV Mx (S + BitVec.ofNat 32 0x134) 12 = p384)
+    (hY : accV Mx yp 12 < p384) :
+    ∃ n', Steps n n' ∧ St n'.mem DP n' (off + 8) (reg n') ∧
+      accV n'.mem out 12 = p3fm (accV Mx xp 12) (accV Mx yp 12) ∧
+      (∀ x, Sep (S + 0xFFFFFF10) 0xF0 x 1 → Sep out 48 x 1 → n'.mem x = Mx x) ∧
+      ∀ q, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = g q := by
+  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := s.callRa C.self h1 h2 hb (by decide)
+  have r1 : ∀ r, r ≠ ra → reg n1 r = g r := fun r h => by rw [regs1]; exact updz s.zero h
+  have sp1 : reg n1 sp = S := by rw [r1 sp (by decide)]; exact hsp
+  have hbF : (S + 0xFFFFFF10).toNat = S.toNat - 0xF0 := F.below 0xF0 (by decide) (by decide)
+  have hSa := F.al; have hSl := F.lo; have hSh := F.hi
+  have frS : ∀ (cz : Nat), cz + 48 ≤ 0xA50 → Sep (S + BitVec.ofNat 32 cz) 48 (S + 0xFFFFFF10) 0xF0 := fun cz h =>
+    (sep_of_le (by rw [hbF, F.at cz (by omega)]; omega) (by rw [F.at cz (by omega)]; omega)).symm
+  have frC : ∀ (b : Word) (len : Nat), 0x40000000 ≤ b.toNat → b.toNat + len ≤ 2 ^ 32 → Sep (S + 0xFFFFFF10) 0xF0 b len :=
+    fun b len hb hl => sep_of_le (by rw [hbF]; omega) hl
+  have E : MMEnv n1.mem MM (reg n1 sp) out xp yp (S + BitVec.ofNat 32 0x134) := by
+    rw [sp1, mem1]
+    refine ⟨by decide, C.mm, by rw [mm_mset]; exact C.mset, by rw [mm_bsub]; exact C.bsub, by rw [mm_sel]; exact C.sel,
+      by rw [mm_stub]; exact C.stub, by rw [mm_body]; exact C.body, by omega, by omega, ?_, ?_, ?_, ?_, ?_,
+      frC _ _ (by decide) (by decide), frC _ _ (by rw [mm_mset]; decide) (by rw [mm_mset]; decide),
+      frC _ _ (by rw [mm_bsub]; decide) (by rw [mm_bsub]; decide), frC _ _ (by rw [mm_sel]; decide) (by rw [mm_sel]; decide),
+      frC _ _ (by rw [mm_stub]; decide) (by rw [mm_stub]; decide), frC _ _ (by rw [mm_body]; decide)
+        (by rw [mm_body]; decide), ?_, ?_, ?_, ?_, ?_, ?_, frS _ (by decide)⟩
+    · rw [eo, F.at co (by omega)]; omega
+    · rw [ex, F.at cx (by omega)]; omega
+    · rw [ey, F.at cy (by omega)]; omega
+    · rw [F.at 0x134 (by decide)]; omega
+    · rw [eo, F.at co (by omega)]; omega
+    · rw [eo]; exact frS co hco
+    · rw [eo]; exact F.sepHi hco (by decide) (by decide)
+    · rw [eo, mm_sel]; exact F.sepHi hco (by decide) (by decide)
+    · rw [eo, mm_body]; exact F.sepHi hco (by decide) (by decide)
+    · rw [ex]; exact frS cx hcx
+    · rw [ey]; exact frS cy hcy
+  obtain ⟨n2, c2, pc2, sp2, hlt, hcg, fr2, k2⟩ := mulMont12_correct (K := 1) n1 E pc1
+    (by rw [r1 a0 (by decide)]; exact ha0)
+    (by rw [r1 a1 (by decide)]; exact ha1) (by rw [r1 a2 (by decide)]; exact ha2) (by rw [r1 a3 (by decide)]; exact ha3)
+    (by rw [r1 a4 (by decide)]; exact ha4) (by rw [regs1]; simp +decide [upd]) (even_clear _ he8) rfl
+    (by rw [mem1, hN0]; decide) (by rw [mem1, hN]; exact hY)
+  rw [mem1, hN] at hlt hcg
+  rw [mem1] at fr2
+  rw [sp1] at fr2
+  exact ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, p3_mont hlt hcg, fr2,
+    fun q hq => by rw [k2 q (by revert hq; revert q; decide), r1 q (by revert hq; revert q; decide)]⟩
+
 end C3.RV32.Dq

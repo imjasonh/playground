@@ -18,6 +18,7 @@ set_option maxRecDepth 20000
 abbrev MCS : Word := BitVec.ofNat 32 memcpyStubAddress
 abbrev MSET : Word := BitVec.ofNat 32 memsetAddress
 abbrev SEL : Word := BitVec.ofNat 32 uintSelect12Address
+abbrev MM : Word := BitVec.ofNat 32 mulMont12Address
 
 /-- The code `decompress` runs and calls, at its addresses in the image. -/
 structure DqCode (M : Word → BitVec 8) : Prop where
@@ -27,6 +28,7 @@ structure DqCode (M : Word → BitVec 8) : Prop where
   mset : CodeIn M MSET memsetCode
   bsub : CodeIn M BSUB borrowingSubCode
   sel : CodeIn M SEL uintSelect12Code
+  mm : CodeIn M MM mulMont12Code
 
 theorem codeHi {M M' : Word → BitVec 8} {b : Word} {code : List Nat} (hc : CodeIn M b code)
     (hb : 0x40000000 ≤ b.toNat) (hl : b.toNat + code.length ≤ 2 ^ 32)
@@ -37,7 +39,8 @@ theorem DqCode.hi {M M' : Word → BitVec 8} (C : DqCode M) (h : ∀ x : Word, 0
     DqCode M' :=
   ⟨codeHi C.self (by decide) (by decide) h, codeHi C.stub (by decide) (by decide) h,
     codeHi C.body (by decide) (by decide) h, codeHi C.mset (by decide) (by decide) h,
-    codeHi C.bsub (by decide) (by decide) h, codeHi C.sel (by decide) (by decide) h⟩
+    codeHi C.bsub (by decide) (by decide) h, codeHi C.sel (by decide) (by decide) h,
+    codeHi C.mm (by decide) (by decide) h⟩
 
 /-- `decompress`'s frame at `S`, with room below for its callees, all below
 the code. -/
