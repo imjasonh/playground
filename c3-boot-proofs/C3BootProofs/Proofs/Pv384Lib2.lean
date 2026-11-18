@@ -341,4 +341,207 @@ theorem pv_ufg {B : Word} {m : Machine} {off : Nat} {imm o : Word} {co ca cb ct 
     obtain ⟨f2, l2⟩ := fgUpd_of hσ2 e2 b2 v2
     exact ⟨f1, l1, f2, l2⟩
 
+set_option maxHeartbeats 16000000 in
+/-- A call to `update_de` with the result at offset `co`, `d` at `ca`, `e` at
+`cb`, the modulus at `cm`, the matrix at `ct`, `-M⁻¹ mod 2^64` in
+`a5:a4`, and the shift `s`: the two new values, as integers. -/
+theorem pv_ude {B : Word} {m : Machine} {off : Nat} {imm o mlo mhi : Word} {co ca cb cm ct s : Nat}
+    (F : Fr B 0x21A0) (E : PvEnv3 m.mem) (st : St m.mem PV m off (reg m))
+    (h1 : fetchRel p384VerifyPrehashCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel p384VerifyPrehashCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : PV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 updateDe12Address)
+    (he8 : (PV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0) (hsp : reg m sp = B + 0x420)
+    (ha0 : reg m a0 = B + 0x420 + BitVec.ofNat 32 co) (ha1 : reg m a1 = B + 0x420 + BitVec.ofNat 32 ca)
+    (ha2 : reg m a2 = B + 0x420 + BitVec.ofNat 32 cb) (ha3 : reg m a3 = B + 0x420 + BitVec.ofNat 32 cm)
+    (ha4 : reg m a4 = mlo) (ha5 : reg m a5 = mhi) (ha6 : reg m a6 = B + 0x420 + BitVec.ofNat 32 ct)
+    (ha7 : reg m (17 : Fin 32) = BitVec.ofNat 32 s) (hs1 : 1 ≤ s) (hs2 : s ≤ 63)
+    (hco : co + 0x65 ≤ 0x1D4C) (hca : ca + 49 ≤ 0x1D4C) (hcb : cb + 49 ≤ 0x1D4C) (hcm : cm + 48 ≤ 0x1D4C)
+    (hct : ct + 32 ≤ 0x1D4C) (aco : co % 4 = 0) (aca : ca % 4 = 0) (acb : cb % 4 = 0) (acm : cm % 4 = 0)
+    (act : ct % 4 = 0)
+    (sa : ca + 49 ≤ co ∨ co + 0x65 ≤ ca) (sb : cb + 49 ≤ co ∨ co + 0x65 ≤ cb) (sm : cm + 48 ≤ co ∨ co + 0x65 ≤ cm)
+    (stt : ct + 32 ≤ co ∨ co + 0x65 ≤ ct)
+    (hσa : (m.mem (B + 0x420 + BitVec.ofNat 32 (ca + 0x30))).toNat ≤ 1)
+    (hσb : (m.mem (B + 0x420 + BitVec.ofNat 32 (cb + 0x30))).toNat ≤ 1)
+    (hM : 0 < accV m.mem (B + 0x420 + BitVec.ofNat 32 cm) 12) :
+    ∃ m', PvPost B m m' (off + 8) ∧ PvKeep B m.mem m'.mem co 0x65 ∧
+      (let Da := sgnVal (m.mem (B + 0x420 + BitVec.ofNat 32 (ca + 0x30))).toNat
+          (accV m.mem (B + 0x420 + BitVec.ofNat 32 ca) 12)
+       let Eb := sgnVal (m.mem (B + 0x420 + BitVec.ofNat 32 (cb + 0x30))).toNat
+          (accV m.mem (B + 0x420 + BitVec.ofNat 32 cb) 12)
+       let MI := mlo.toNat + 2 ^ 32 * mhi.toNat
+       let Mv := accV m.mem (B + 0x420 + BitVec.ofNat 32 cm) 12
+       sgnVal (m'.mem (B + 0x420 + BitVec.ofNat 32 (co + 0x30))).toNat
+          (accV m'.mem (B + 0x420 + BitVec.ofNat 32 co) 12) =
+         deUpd Da Eb (i64Val (accV m.mem (B + 0x420 + BitVec.ofNat 32 ct) 2))
+           (i64Val (accV m.mem (B + 0x420 + BitVec.ofNat 32 (ct + 8)) 2)) MI s Mv ∧
+       (m'.mem (B + 0x420 + BitVec.ofNat 32 (co + 0x30))).toNat ≤ 1 ∧
+       sgnVal (m'.mem (B + 0x420 + BitVec.ofNat 32 (co + 0x64))).toNat
+          (accV m'.mem (B + 0x420 + BitVec.ofNat 32 (co + 0x34)) 12) =
+         deUpd Da Eb (i64Val (accV m.mem (B + 0x420 + BitVec.ofNat 32 (ct + 0x10)) 2))
+           (i64Val (accV m.mem (B + 0x420 + BitVec.ofNat 32 (ct + 0x18)) 2)) MI s Mv ∧
+       (m'.mem (B + 0x420 + BitVec.ofNat 32 (co + 0x64))).toNat ≤ 1) := by
+  have FS : Fr (B + 0x420) 0x1D80 := F.sub (c := 0x420) (by decide) (by decide)
+  have hFa := FS.al; have hFl := FS.lo; have hFh := FS.hi
+  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := st.callRa E.E.C.self h1 h2 hb (by decide)
+  have r1 : ∀ r, r ≠ ra → reg n1 r = reg m r := fun r h => by rw [regs1]; exact updz st.zero h
+  have lh : ∀ (b : Word) (l : Nat), 0x40000000 ≤ b.toNat → b.toNat + l ≤ 2 ^ 32 →
+      Sep (B + 0x420 + 0xFFFFFC80) 0x380 b l := fun b l hb hl => pv_lowHi F (k := 0x380) (by decide) (by decide) hb hl
+  have hG : (B + 0x420 + 0xFFFFFC80).toNat = B.toNat + 0x420 - 0x380 := pv_below F (k := 0x380) (by decide) (by decide)
+  have hBa := F.al; have hBl := F.lo; have hBh := F.hi
+  have EN : UDEnv n1.mem (BitVec.ofNat 32 updateDe12Address) (B + 0x420 + 0xFFFFFC80)
+      (B + 0x420 + BitVec.ofNat 32 co) (B + 0x420 + BitVec.ofNat 32 ca) (B + 0x420 + BitVec.ofNat 32 cb)
+      (B + 0x420 + BitVec.ofNat 32 cm) (B + 0x420 + BitVec.ofNat 32 ct) := by
+    rw [mem1]
+    refine ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, E.D3.zero2, E.D3.one2, ?_, ?_, ?_, ?_, E.D3.max2,
+      E.C3.ude, ?_,
+      lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide), (pv_lowK F (n := 8) (k := 0x380) (by decide) (by decide) (by decide)).symm, (pv_lowK F (n := 8) (k := 0x380) (by decide) (by decide) (by decide)).symm, lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide), (pv_lowK F (n := 8) (k := 0x380) (by decide) (by decide) (by decide)).symm, lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide),
+      FS.sepHi (by omega) (by decide) (by decide), FS.sepHi (by omega) (by decide) (by decide), FS.sepHi (by omega) (by decide) (by decide), FS.sepHi (by omega) (by decide) (by decide), FS.sepHi (by omega) (by decide) (by decide), FS.sepHi (by omega) (by decide) (by decide), FS.sepHi (by omega) (by decide) (by decide), FS.sepHi (by omega) (by decide) (by decide), FS.sepHi (by omega) (by decide) (by decide), FS.sepHi (by omega) (by decide) (by decide), FS.sepHi (by omega) (by decide) (by decide), FS.bufData (by omega) (by decide) (by decide), FS.bufData (by omega) (by decide) (by decide), FS.sepHi (by omega) (by decide) (by decide), FS.sepHi (by omega) (by decide) (by decide), FS.sepHi (by omega) (by decide) (by decide), FS.sepHi (by omega) (by decide) (by decide), FS.bufData (by omega) (by decide) (by decide), FS.sepHi (by omega) (by decide) (by decide), FS.sepHi (by omega) (by decide) (by decide),
+      by rw [hG]; omega, by rw [hG]; omega, pv_al F (by omega) aco, pv_al F (by omega) aca, pv_al F (by omega) acb,
+      pv_al F (by omega) acm, pv_al F (by omega) act, pv_wr F (by omega), pv_wr F (by omega), pv_wr F (by omega),
+      pv_lowS F (k := 0x380) (by omega) (by decide) (by decide), pv_lowS F (k := 0x380) (by omega) (by decide) (by decide), pv_lowS F (k := 0x380) (by omega) (by decide) (by decide), pv_lowS F (k := 0x380) (by omega) (by decide) (by decide), pv_lowS F (k := 0x380) (by omega) (by decide) (by decide),
+      sepS (B + 0x420) sa (by omega) (by omega), sepS (B + 0x420) sb (by omega) (by omega),
+      sepS (B + 0x420) sm (by omega) (by omega), sepS (B + 0x420) stt (by omega) (by omega)⟩
+    · rw [show udL (BitVec.ofNat 32 updateDe12Address) = BitVec.ofNat 32 lincombShiftMod12Address by decide]
+      exact E.C3.lmc
+    · rw [show lmLc (udL (BitVec.ofNat 32 updateDe12Address)) = BitVec.ofNat 32 lincomb12Address by decide]
+      exact E.C3.lc
+    · rw [show lmLc (udL (BitVec.ofNat 32 updateDe12Address)) + 0xFFFFA54E = BitVec.ofNat 32 absSign2Address by
+        decide]; exact E.C3.abs
+    · rw [show lmLc (udL (BitVec.ofNat 32 updateDe12Address)) + 0x398 = BitVec.ofNat 32 wideMul12x2Address by
+        decide]; exact E.C3.wide
+    · rw [show lmLc (udL (BitVec.ofNat 32 updateDe12Address)) + 0x482 = BitVec.ofNat 32 condNeg12Address by
+        decide]; exact E.C3.neg
+    · rw [show lmLc (udL (BitVec.ofNat 32 updateDe12Address)) + 0x18A8 = MSET by decide]; exact E.E.C.K.mset
+    · rw [show lmLc (udL (BitVec.ofNat 32 updateDe12Address)) + 0x1910 = MCS by decide]; exact E.E.C.K.stub
+    · rw [show lmLc (udL (BitVec.ofNat 32 updateDe12Address)) + 0x1918 = MCS + 8 by decide]; exact E.E.C.K.body
+    · rw [show lcBsub (lmLc (udL (BitVec.ofNat 32 updateDe12Address))) = BSUB by decide]; exact E.E.C.K.bsub
+    · rw [show lmLc (udL (BitVec.ofNat 32 updateDe12Address)) + 0x592 = BitVec.ofNat 32 uintSelect2Address by
+        decide]; exact E.C3.sel2
+    · rw [show lmLc (udL (BitVec.ofNat 32 updateDe12Address)) + 0xFFFFFF2A = SEL by decide]; exact E.E.C.K.sel
+    · rw [show lmShr (udL (BitVec.ofNat 32 updateDe12Address)) = BitVec.ofNat 32 shr12Address by decide]
+      exact E.C3.shr
+    · rw [show lmShr (udL (BitVec.ofNat 32 updateDe12Address)) + 0x1EE = BitVec.ofNat 32 leadMut12Address by
+        decide]; exact E.C3.lm
+    · rw [show lmShr (udL (BitVec.ofNat 32 updateDe12Address)) + 0x1FE = BitVec.ofNat 32 trailing12Address by
+        decide]; exact E.C3.tr
+    · rw [show udL (BitVec.ofNat 32 updateDe12Address) + 0xFFFF9DCE = BitVec.ofNat 32 toUintResize2Address by
+        decide]; exact E.C3.tur
+    · rw [show BitVec.ofNat 32 updateDe12Address + 0xB2 = BitVec.ofNat 32 fromI64Address by decide]; exact E.C3.fi
+  obtain ⟨n2, c2, pc2, sp2, k2, ⟨σ1, A1, hσ1, e1, b1, v1⟩, ⟨σ2, A2, hσ2, e2, b2, v2⟩, fr2⟩ :=
+    updateDe12_correct n1 (s := s) (mlo := mlo) (mhi := mhi) EN pc1
+      (by rw [r1 sp (by decide), hsp, BitVec.add_assoc, show (0xFFFFFC80 : Word) + 0x380 = 0 from rfl]
+          exact (BitVec.add_zero _).symm)
+      (by rw [r1 a0 (by decide)]; exact ha0) (by rw [r1 a1 (by decide)]; exact ha1)
+      (by rw [r1 a2 (by decide)]; exact ha2) (by rw [r1 a3 (by decide)]; exact ha3)
+      (by rw [r1 a4 (by decide)]; exact ha4) (by rw [r1 a5 (by decide)]; exact ha5)
+      (by rw [r1 a6 (by decide)]; exact ha6) (by rw [r1 17 (by decide)]; exact ha7)
+      (by rw [regs1]; simp +decide [upd]) (even_clear _ he8) hs1 hs2
+      (by rw [mem1, add_lit30]; exact hσa) (by rw [mem1, add_lit30]; exact hσb)
+  rw [mem1] at e1 e2 fr2 b1 b2 v1 v2
+  rw [add_lit30, add_lit30, add_lit8] at e1
+  rw [add_lit30, add_lit30, add_lit10, add_lit18] at e2
+  rw [add_lit30] at b1
+  rw [add_lit34, add_lit30, show co + 0x34 + 0x30 = co + 0x64 by omega] at b2
+  rw [add_lit34] at v2
+  refine ⟨n2, ⟨c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, fun x hx => fr2 x
+      (pvR_lo (k := 0x380) hx (by decide) (by decide)) (pvR_hi hx hco), fun q hq => ?_⟩,
+    fun e he1 he2 => fr2 _ (pv_lowB F (k := 0x380) (by decide) (by decide) (by omega))
+      (sepS (B + 0x420) (by omega) (by omega) (by omega)), ?_⟩
+  · by_cases h : q = sp
+    · subst h; rw [sp2, hsp, BitVec.add_assoc, show (0xFFFFFC80 : Word) + 0x380 = 0 from rfl]
+      exact BitVec.add_zero _
+    · rw [k2 q (by revert hq h; revert q; decide), r1 q (by revert hq; revert q; decide)]
+  · obtain ⟨f1, l1⟩ := deUpd_of hσ1 hM e1 b1 v1
+    obtain ⟨f2, l2⟩ := deUpd_of hσ2 hM e2 b2 v2
+    exact ⟨f1, l1, f2, l2⟩
+
+set_option maxHeartbeats 8000000 in
+/-- A call to `SignedInt<12>::norm` with the result at offset `co`, the value
+at `cx`, `f`'s sign in `a2`, and the modulus at `cn`. -/
+theorem pv_norm {B : Word} {m : Machine} {off : Nat} {imm o : Word} {co cx cn : Nat} (F : Fr B 0x21A0)
+    (E : PvEnv3 m.mem) (st : St m.mem PV m off (reg m))
+    (h1 : fetchRel p384VerifyPrehashCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel p384VerifyPrehashCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : PV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 norm12Address)
+    (he8 : (PV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0) (hsp : reg m sp = B + 0x420)
+    (ha0 : reg m a0 = B + 0x420 + BitVec.ofNat 32 co) (ha1 : reg m a1 = B + 0x420 + BitVec.ofNat 32 cx)
+    (ha2 : reg m a2 = 0 ∨ reg m a2 = 1) (ha3 : reg m a3 = B + 0x420 + BitVec.ofNat 32 cn)
+    (hco : co + 48 ≤ 0x1D4C) (hcx : cx + 49 ≤ 0x1D4C) (hcn : cn + 48 ≤ 0x1D4C)
+    (aco : co % 4 = 0) (acx : cx % 4 = 0) (acn : cn % 4 = 0)
+    (hσ : (m.mem (B + 0x420 + BitVec.ofNat 32 (cx + 0x30))).toNat ≤ 1) :
+    ∃ m', PvPost B m m' (off + 8) ∧ PvKeep B m.mem m'.mem co 48 ∧
+      accV m'.mem (B + 0x420 + BitVec.ofNat 32 co) 12 =
+        normVal (m.mem (B + 0x420 + BitVec.ofNat 32 (cx + 0x30))).toNat (reg m a2).toNat
+          (accV m.mem (B + 0x420 + BitVec.ofNat 32 cx) 12) (accV m.mem (B + 0x420 + BitVec.ofNat 32 cn) 12) := by
+  have FS : Fr (B + 0x420) 0x1D80 := F.sub (c := 0x420) (by decide) (by decide)
+  have hFa := FS.al; have hFl := FS.lo; have hFh := FS.hi
+  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := st.callRa E.E.C.self h1 h2 hb (by decide)
+  have r1 : ∀ r, r ≠ ra → reg n1 r = reg m r := fun r h => by rw [regs1]; exact updz st.zero h
+  have lh : ∀ (b : Word) (l : Nat), 0x40000000 ≤ b.toNat → b.toNat + l ≤ 2 ^ 32 →
+      Sep (nmR (B + 0x420)) 0xB0 b l := fun b l hb hl => pv_lowHi F (k := 0xB0) (by decide) (by decide) hb hl
+  have EN : NmEnv n1.mem (BitVec.ofNat 32 norm12Address) (B + 0x420) (B + 0x420 + BitVec.ofNat 32 co)
+      (B + 0x420 + BitVec.ofNat 32 cx) (B + 0x420 + BitVec.ofNat 32 cn) := by
+    rw [mem1]
+    refine ⟨by decide, E.C3.nm, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by omega, by have := pv_S F; have := F.lo; omega,
+      pv_al F (by omega) aco, pv_al F (by omega) acx, pv_al F (by omega) acn, pv_wr F (by omega),
+      lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide),
+      lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide),
+      lh _ _ (by decide) (by decide), lh _ _ (by decide) (by decide),
+      FS.sepHi (by omega) (by decide) (by decide), FS.sepHi (by omega) (by decide) (by decide),
+      FS.sepHi (by omega) (by decide) (by decide),
+      pv_lowS F (k := 0xB0) (by omega) (by decide) (by decide), pv_lowS F (k := 0xB0) (by omega) (by decide) (by decide),
+      pv_lowS F (k := 0xB0) (by omega) (by decide) (by decide)⟩
+    · rw [show BitVec.ofNat 32 norm12Address + 0xFFFFFFE6 = BitVec.ofNat 32 uint12IsNonzeroAddress by decide]
+      exact E.E.C2.unz
+    · rw [show BitVec.ofNat 32 norm12Address + 0xFFFEF13C = BitVec.ofNat 32 uintRefIsNonzeroAddress by decide]
+      exact E.E.C.K.refnz
+    · rw [show BitVec.ofNat 32 norm12Address + 0xCB6 = MSET by decide]; exact E.E.C.K.mset
+    · rw [show nmBsub (BitVec.ofNat 32 norm12Address) = BSUB by decide]; exact E.E.C.K.bsub
+    · rw [show BitVec.ofNat 32 norm12Address + 0xFFFFF338 = SEL by decide]; exact E.E.C.K.sel
+    · rw [show BitVec.ofNat 32 norm12Address + 0xD1E = MCS by decide]; exact E.E.C.K.stub
+    · rw [show BitVec.ofNat 32 norm12Address + 0xD26 = MCS + 8 by decide]; exact E.E.C.K.body
+  obtain ⟨n2, c2, pc2, sp2, k2, v2, fr2⟩ := norm12_correct n1 EN pc1 (by rw [r1 sp (by decide)]; exact hsp)
+    (by rw [r1 a0 (by decide)]; exact ha0) (by rw [r1 a1 (by decide)]; exact ha1)
+    (by rw [r1 a2 (by decide)]; exact ha2) (by rw [r1 a3 (by decide)]; exact ha3)
+    (by rw [mem1, add_lit30]; exact hσ) (by rw [regs1]; simp +decide [upd]) (even_clear _ he8)
+  rw [mem1, add_lit30, r1 a2 (by decide)] at v2
+  rw [mem1] at fr2
+  refine ⟨n2, ⟨c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, fun x hx => fr2 x
+      (pvR_lo (k := 0xB0) hx (by decide) (by decide)) (pvR_hi hx hco), fun q hq => ?_⟩,
+    fun e he1 he2 => fr2 _ (pv_lowB F (k := 0xB0) (by decide) (by decide) (by omega))
+      (sepS (B + 0x420) (by omega) (by omega) (by omega)), v2⟩
+  by_cases h : q = sp
+  · subst h; rw [sp2, hsp]
+  · rw [k2 q (by revert hq h; revert q; decide), r1 q (by revert hq; revert q; decide)]
+
+/-- A call to `Uint<12>::eq` on the 12 limbs at offset `c` of the frame and
+those at the constant `K`. -/
+theorem pv_eq {B K : Word} {m : Machine} {off : Nat} {imm o : Word} {c : Nat} (F : Fr B 0x21A0)
+    (E : PvEnv3 m.mem) (st : St m.mem PV m off (reg m))
+    (h1 : fetchRel p384VerifyPrehashCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel p384VerifyPrehashCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : PV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 uint12EqAddress)
+    (he8 : (PV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0) (hsp : reg m sp = B + 0x420)
+    (ha0 : reg m a0 = B + 0x420 + BitVec.ofNat 32 c) (ha1 : reg m a1 = K) (hc : c + 48 ≤ 0x1D4C)
+    (ac : c % 4 = 0) (aK : K.toNat % 4 = 0) :
+    ∃ m', PvPost B m m' (off + 8) ∧ PvKeep B m.mem m'.mem 0 0 ∧
+      reg m' a0 = (if ∀ i : Nat, i < 12 → memLoad32 m.mem (B + 0x420 + BitVec.ofNat 32 c + BitVec.ofNat 32 (4 * i)) =
+        memLoad32 m.mem (K + BitVec.ofNat 32 (4 * i)) then 1 else 0) := by
+  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := st.callRa E.E.C.self h1 h2 hb (by decide)
+  have r1 : ∀ r, r ≠ ra → reg n1 r = reg m r := fun r h => by rw [regs1]; exact updz st.zero h
+  have sp1 : reg n1 sp = B + 0x420 := by rw [r1 sp (by decide)]; exact hsp
+  have hFa := F.al
+  obtain ⟨n2, c2, pc2, a02, k2, fr2⟩ := uint12Eq_correct n1 (by rw [mem1]; exact E.C3.ueq) pc1
+    (by rw [r1 a0 (by decide)]; exact ha0) (by rw [r1 a1 (by decide)]; exact ha1) (pv_al F (by omega) ac) aK
+    (by rw [sp1, pv_S F]; omega) (by rw [sp1]; exact pv_lowHi F (k := 4) (by decide) (by decide) (by decide) (by decide))
+    (by rw [regs1]; simp +decide [upd]) (even_clear _ he8)
+  rw [mem1] at a02 fr2
+  rw [sp1] at fr2
+  refine ⟨n2, ⟨c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, fun x hx => fr2 x (pvR_lo (k := 4) hx (by decide)
+      (by decide)), fun q hq => ?_⟩, fun e he1 he2 => fr2 _ (pv_lowB F (k := 4) (by decide) (by decide) (by omega)),
+      a02⟩
+  rw [k2 q (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+    (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide),
+    r1 q (by revert hq; revert q; decide)]
+
 end C3.RV32.Pv
