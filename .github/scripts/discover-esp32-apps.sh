@@ -17,10 +17,9 @@
 #     List the crates touched by the given paths (or stdin when no args). A
 #     change to test-esp32-host.sh selects every crate, and a change to
 #     .github/workflows/<crate>-publish.yml selects that crate.
+#
+# Paths are relative to the working directory, the repository root in CI.
 set -euo pipefail
-
-repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-cd "$repo_root"
 
 is_esp32_app() {
   local name="$1"

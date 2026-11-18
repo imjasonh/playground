@@ -13,22 +13,64 @@
 # and reuses the dependencies.
 #
 # Usage:
-#   prune-cargo-cache.sh TARGET_DIR [REGISTRY_DIR]
+#   prune-cargo-cache.sh [-l LOCKFILE]... TARGET_DIR [REGISTRY_DIR]
 #
-# CARGO_LOCK_ROOT overrides the repository root the lockfiles are read from,
-# which lets tests point the script at a fixture.
+# By default the script keeps what the Rust apps' Cargo.lock files name: one
+# in each top-level directory and in each one's rust/ subdirectory, except the
+# ESP32 firmware crates, whose test.yml jobs keep their own caches. Each -l
+# names a lockfile to read instead. Those jobs pass their crate's lockfiles
+# and, for a firmware build, the Rust standard library's, because
+# `-Z build-std` compiles std and its dependencies into the target directory.
+#
+# CARGO_LOCK_ROOT overrides the repository root the default lockfiles are
+# read from, which lets tests point the script at a fixture.
 set -euo pipefail
 
-if (($# < 1 || $# > 2)); then
-  echo "Usage: $0 TARGET_DIR [REGISTRY_DIR]" >&2
+usage() {
+  echo "Usage: $0 [-l LOCKFILE]... TARGET_DIR [REGISTRY_DIR]" >&2
   exit 2
+}
+
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+lock_root=${CARGO_LOCK_ROOT:-$(cd "$script_dir/../.." && pwd)}
+
+locks=()
+while getopts "l:" opt; do
+  case "$opt" in
+    l) locks+=("$OPTARG") ;;
+    *) usage ;;
+  esac
+done
+shift $((OPTIND - 1))
+
+if (($# < 1 || $# > 2)); then
+  usage
 fi
 
 target=$1
 registry=${2:-}
 
-repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-lock_root=${CARGO_LOCK_ROOT:-$repo_root}
+if ((${#locks[@]} == 0)); then
+  declare -A esp32=()
+  while IFS= read -r name; do
+    esp32["$name"]=1
+  done < <(cd "$lock_root" && bash "$script_dir/discover-esp32-apps.sh" --all | jq -r '.[]')
+  shopt -s nullglob
+  for lock in "$lock_root"/*/Cargo.lock "$lock_root"/*/rust/Cargo.lock; do
+    rel=${lock#"$lock_root"/}
+    app=${rel%%/*}
+    [[ "$app" == .* || -n "${esp32[$app]+x}" ]] && continue
+    locks+=("$lock")
+  done
+  shopt -u nullglob
+fi
+
+for lock in "${locks[@]}"; do
+  if [[ ! -f "$lock" ]]; then
+    echo "prune-cargo-cache.sh: no lockfile at $lock" >&2
+    exit 1
+  fi
+done
 
 bytes() {
   if [[ -e "$1" ]]; then
@@ -38,27 +80,14 @@ bytes() {
   fi
 }
 
-# top_level prints the top-level directory that holds a lockfile. A library
-# crate in a rust/ subdirectory, such as wehadababyitsaboy/rust, belongs to
-# its parent.
-top_level() {
-  local rel=${1#"$lock_root"/}
-  printf '%s\n' "${rel%%/*}"
-}
-
-# Package names and name-versions from every Cargo.lock, minus each app's own
-# package. inkbot-esp32 and esp32-ble are built by their own workflows.
+# Package names and name-versions from every lockfile, minus each crate's own
+# package.
 declare -A workspace=()
 declare -A keep_pkg=()
 declare -A keep_dep=()
 declare -A keep_crate=()
 
-shopt -s nullglob
-for lock in "$lock_root"/*/Cargo.lock "$lock_root"/*/rust/Cargo.lock; do
-  app=$(top_level "$lock")
-  case "$app" in
-    .* | inkbot-esp32 | esp32-ble) continue ;;
-  esac
+for lock in "${locks[@]}"; do
   manifest="$(dirname "$lock")/Cargo.toml"
   if [[ -f "$manifest" ]]; then
     name=$(awk '
@@ -73,11 +102,7 @@ for lock in "$lock_root"/*/Cargo.lock "$lock_root"/*/rust/Cargo.lock; do
   fi
 done
 
-for lock in "$lock_root"/*/Cargo.lock "$lock_root"/*/rust/Cargo.lock; do
-  app=$(top_level "$lock")
-  case "$app" in
-    .* | inkbot-esp32 | esp32-ble) continue ;;
-  esac
+for lock in "${locks[@]}"; do
   while IFS=$'\t' read -r name version; do
     [[ -z "$name" || -n "${workspace[$name]+x}" ]] && continue
     keep_pkg["$name"]=1
@@ -99,11 +124,17 @@ for lock in "$lock_root"/*/Cargo.lock "$lock_root"/*/rust/Cargo.lock; do
   ' "$lock")
 done
 
-# unit_key strips Cargo's trailing hash. aes-gcm-0123abcd becomes aes-gcm,
-# and libserde-0123abcd.rlib becomes libserde.
+# unit_key strips Cargo's trailing hash. aes-gcm-0123456789abcdef becomes
+# aes-gcm, and libserde-0123456789abcdef.rlib becomes libserde. Cargo 1.100
+# and later lay out build/ as build/PACKAGE/HASH/, so a name without a hash
+# is already the package name.
 unit_key() {
   local base=$1
-  printf '%s\n' "${base%-*}"
+  if [[ "$base" =~ ^(.+)-[0-9a-f]{16}(\..*)?$ ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+  else
+    printf '%s\n' "$base"
+  fi
 }
 
 prune_units() {
@@ -130,7 +161,11 @@ prune_units() {
 
 if [[ -d "$target" ]]; then
   echo "cargo target before: $(bytes "$target") bytes"
-  find "$target" -type d \( -name incremental -o -name examples -o -name tmp \) -prune -exec rm -rf {} +
+  # Build script output keeps its own tmp and examples directories, such as
+  # the CMake tree that esp-idf-sys builds ESP-IDF in, so leave build/ (and
+  # deps/ and .fingerprint/) alone here.
+  find "$target" \( -path "$target/*/build/*" -o -path "$target/*/deps/*" -o -path "$target/*/.fingerprint/*" \) -prune -o \
+    -type d \( -name incremental -o -name examples -o -name tmp \) -prune -exec rm -rf {} +
   find "$target" -type f \
     ! -path '*/deps/*' ! -path '*/build/*' ! -path '*/.fingerprint/*' \
     ! -name '.rustc_info.json' ! -name 'CACHEDIR.TAG' \
