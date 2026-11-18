@@ -53,4 +53,4 @@ xcodegen generate
 bundle exec fastlane test
 ```
 
-CI runs macOS tests via `.github/workflows/macos.yml` when `onramp/` changes.
+CI runs macOS tests via `.github/workflows/test.yml` when `onramp/` changes.

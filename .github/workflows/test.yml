@@ -40,6 +40,9 @@ jobs:
       modules: ${{ steps.discover.outputs.modules }}
       kind: ${{ steps.kind.outputs.kind }}
       rust: ${{ steps.discover.outputs.rust }}
+      ios: ${{ steps.discover.outputs.ios }}
+      macos: ${{ steps.discover.outputs.macos }}
+      esp32: ${{ steps.discover.outputs.esp32 }}
       pasta: ${{ steps.discover.outputs.pasta }}
       blog: ${{ steps.discover.outputs.blog }}
       index: ${{ steps.discover.outputs.index }}
@@ -284,6 +287,144 @@ jobs:
           max-bytes: 6442450944
           token: ${{ github.token }}
 
+  ios:
+    name: iOS
+    needs: discover
+    if: ${{ needs.discover.outputs.ios != '[]' }}
+    # The app targets iOS 27, whose SDK is on GitHub's Xcode 27 image.
+    runs-on: xcode-27
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.discover.outputs.ios) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Bundler cache needs the app's committed Gemfile.lock. Cuts ~30-40s of
+      # cold gem resolve + native extension builds on every run.
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: ${{ matrix.app }}
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Test ${{ matrix.app }}
+        env:
+          IOS_APPS: '["${{ matrix.app }}"]'
+        run: bash .github/scripts/ios-ci.sh test
+
+  macos:
+    name: macOS
+    needs: discover
+    if: ${{ needs.discover.outputs.macos != '[]' }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.discover.outputs.macos) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Test ${{ matrix.app }}
+        env:
+          MACOS_APPS: '["${{ matrix.app }}"]'
+        run: bash .github/scripts/macos-ci.sh test
+
+  # ESP32 firmware needs the espup Xtensa toolchain, so the Rust job leaves it
+  # out. Host tests and the cross-build run in parallel, because the
+  # cross-build takes far longer.
+  esp32-host:
+    name: ESP32 host
+    needs: discover
+    if: ${{ needs.discover.outputs.esp32 != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.discover.outputs.esp32) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: List the Cargo workspaces
+        id: workspaces
+        env:
+          APP: ${{ matrix.app }}
+        run: |
+          {
+            echo "list<<EOF"
+            echo "$APP"
+            for manifest in "$APP"/tools/*/Cargo.toml; do
+              [ -f "$manifest" ] && dirname "$manifest"
+            done
+            echo "EOF"
+          } >>"$GITHUB_OUTPUT"
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: ${{ steps.workspaces.outputs.list }}
+          shared-key: ${{ matrix.app }}-host
+
+      - name: Format, lint, and test ${{ matrix.app }}
+        run: bash .github/scripts/test-esp32-host.sh "${{ matrix.app }}"
+
+  esp32-firmware:
+    name: ESP32 firmware
+    needs: discover
+    if: ${{ needs.discover.outputs.esp32 != '[]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.discover.outputs.esp32) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install native build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10
+
+      - name: Setup Xtensa toolchain
+        uses: esp-rs/xtensa-toolchain@ec6d36527049a7f4fb2cb0c1a644668c1bb8a2a4 # v1.7
+        env:
+          # espup hits api.github.com; unauthenticated runners 403.
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          default: true
+          buildtargets: esp32
+          ldproxy: true
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: ${{ matrix.app }}
+          shared-key: ${{ matrix.app }}-firmware
+
+      - name: Cross-build ${{ matrix.app }}
+        working-directory: ${{ matrix.app }}
+        run: make build
+
   pasta:
     name: pasta
     needs: discover
@@ -389,7 +530,7 @@ jobs:
   # otherwise. Keep the job id `test`: branch protection and the dependency
   # update's auto-merge wait for a check with that name.
   test:
-    needs: [discover, browser, go, kind, rust, pasta, blog, index, scripts]
+    needs: [discover, browser, go, kind, rust, ios, macos, esp32-host, esp32-firmware, pasta, blog, index, scripts]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:

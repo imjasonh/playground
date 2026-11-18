@@ -224,7 +224,7 @@ The generated `*.xcodeproj` is git-ignored and regenerated in CI.
 The iOS app is **not** a browser app: it has no `index.html`. It is built and
 tested on a macOS runner and, on push to `main`, delivered to **TestFlight**; it
 is not copied to GitHub Pages and (today) does not receive PR preview installs —
-the `ios.yml` workflow tests it on PRs but only ships from `main`.
+`test.yml` tests it on PRs and on `main`, and `ios.yml` ships it from `main`.
 
 The app owns its `project.yml`, `fastlane/`, and single bundle identifier
 (`io.github.imjasonh.playground`); do not add a repo-root Xcode workspace. Do not
@@ -247,8 +247,8 @@ distinguish the two by that line. Unlike iOS (exactly one Playground host),
 own Bundle ID. Do **not** add macOS apps under `ios/`, and do **not** add
 `index.html` (they are not Pages browser apps).
 
-macOS apps are built and tested by `macos.yml` on a macOS runner. On push to
-`main` with Developer ID / Sparkle secrets present, CI notarizes and publishes
+macOS apps are built and tested by `test.yml` on a macOS runner. On push to
+`main` with Developer ID / Sparkle secrets present, `macos.yml` notarizes and publishes
 a Sparkle appcast (see [`docs/macos-sparkle-design.md`](docs/macos-sparkle-design.md)
 and [`docs/macos-sparkle-setup.md`](docs/macos-sparkle-setup.md)); without those
 secrets, CI still runs tests and skips the release. Do not commit `*.xcodeproj`,
@@ -266,13 +266,11 @@ discovery scripts.
 | `deploy-gcp.yml` | push to `main`, pull requests that touch the deploy scripts or a `gcp-deploy.json`, manual | Applies GCP stacks that have a `gcp-deploy.json` (`cloudrun-sqlite`, `stream-boids`, and `wehadababyitsaboy`). GitHub OIDC and Workload Identity Federation authenticate `tofu apply`, so the workflow stores no long-lived GCP key. A pull request runs `tofu plan` as a separate plan service account and comments the plan. Apply runs only on `main`. |
 | `preview.yml` | pull request opened/sync | When a browser app, the posts catalog, or the Pages home-page index changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
-| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, the kind end-to-end tests, the pasta style check, the posts catalog, and the site index, each in its own job. The `test` job fans in their results and is the required check |
-| `inkbot-esp32.yml` | push to `main`, pull requests, manual | Always runs discover + host/firmware jobs (so they can be required checks); host/firmware no-op when `inkbot-esp32/` (or this workflow) is unchanged (excluded from `test.yml`) |
+| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, Rust, iOS, and macOS apps and ESP32 firmware, the kind end-to-end tests, the pasta style check, the posts catalog, and the site index, each in its own job. The `test` job fans in their results and is the required check |
 | `inkbot-esp32-publish.yml` | push to `main` touching `inkbot-esp32/**` (or this workflow), manual | Cross-builds inkbot firmware, pushes `ghcr.io/<owner>/playground/inkbot-esp32`, and Cosign-signs the digest (devices poll this for OTA) |
 | `apko-frontend-publish.yml` | push to `main` touching `apko-frontend/**` (or this workflow), manual | Tests `apko-frontend`, builds it with ko for `linux/amd64` and `linux/arm64`, pushes `ghcr.io/<owner>/playground/apko-frontend` tagged with the commit and `latest`, and Cosign-signs the digest. apko configurations name the image in `# syntax=` |
-| `esp32-ble.yml` | push to `main`, pull requests, manual | Always runs discover + host/firmware jobs (so they can be required checks); host/firmware no-op when `esp32-ble/` (or this workflow) is unchanged (excluded from `test.yml`) |
-| `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
-| `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
+| `ios.yml` | push to `main` | Delivers changed iOS apps to TestFlight when the signing secrets are present. `test.yml` tests them |
+| `macos.yml` | push to `main` | Ships notarized Sparkle updates of changed macOS apps when the secrets are present. `test.yml` tests them |
 | `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |
 | `ios-bootstrap-on-merge.yml` | pull request closed (merged) | If the PR had `needs-ios-bootstrap`, immediately re-runs signing bootstrap (races `ios.yml`; usually finishes first) |
 | `ios-signing-bootstrap.yml` | manual (`workflow_dispatch`) + reusable | Creates & stores signing cert/profile in the `match` repo; also called on labeled merges |
@@ -361,8 +359,9 @@ neither a deploy nor a comment.
 Every push to `main` and every pull request runs a `discover` job that finds
 which apps changed (`.github/scripts/discover-changed-apps.sh`). Then each
 ecosystem runs as its own job on its own runner and tests **only the changed
-apps of that type**: browser apps, Go, Rust, pasta, the posts catalog, the
-site index, and the cache and discovery scripts. A job-level `if` skips an
+apps of that type**: browser apps, Go, Rust, iOS, macOS, ESP32 firmware,
+pasta, the posts catalog, the site index, and the cache and discovery
+scripts. A job-level `if` skips an
 ecosystem with no changes, so it never starts a runner. On the first push to
 `main` (no prior commit), every app is tested. The **pasta** job builds the
 `pasta/` CLI, runs `pasta test` over the enrolled `.pasta/` analyzers, and
@@ -376,8 +375,9 @@ It is the one check that branch protection requires, so a new job in
 The kind end-to-end tests of `git-k8s`, `kube`, `sshapp`, and `ci-substrate`
 run in a `kind` matrix job, one runner for each changed module, beside the Go
 unit tests (`.github/scripts/test-kind-e2e.sh`; `--list` prints the modules
-that have one). The Go job runs every changed module's unit tests, one module
-after another. The Rust apps share one target directory (`CARGO_TARGET_DIR`),
+that have one). The iOS, macOS, and ESP32 jobs are matrix jobs too, one
+runner for each changed app. The Go job runs every changed module's unit
+tests, one module after another. The Rust apps share one target directory (`CARGO_TARGET_DIR`),
 so apps that depend on the same crates compile them once and the job holds
 one copy of the artifacts.
 
@@ -411,7 +411,7 @@ size budget, measured on disk:
 - Key it with the commit SHA and restore it by prefix. Each save is a new
   entry, so nothing depends on an exact match.
 - Bound it before the save. Either remove what the current lockfiles don't
-  name (`Swatinem/rust-cache`, which the ESP32 workflows use, does) or trim
+  name (`Swatinem/rust-cache`, which the ESP32 jobs use, does) or trim
   to a budget, least recently used first
   (`trim-go-build-cache.sh` uses the mtime that the go command sets when it
   uses an entry).
@@ -461,8 +461,8 @@ directory changes, so a change under `kube/` tests `git-k8s` too. A change under
 `wehadababyitsaboy/go/` selects that module and every Go app that replaces it.
 `inkbot-esp32/` and `esp32-ble/` have
 a `Cargo.toml` but are excluded from Rust discovery because they need the espup
-Xtensa toolchain. `inkbot-esp32.yml` and `esp32-ble.yml` run those host lib
-tests and firmware cross-builds instead. A change under `.github/wrangler/` (the
+Xtensa toolchain. The ESP32 jobs run their host lib tests and firmware
+cross-builds instead, and a change to `test-esp32-host.sh` selects both. A change under `.github/wrangler/` (the
 pinned Wrangler version) selects every Cloudflare Worker app, and a change to
 `test-rust-apps.sh` or `check-worker-deploy-build.sh` selects every Rust app.
 
@@ -483,23 +483,23 @@ which the daily dependency update raises to the newest stable release. Worker
 apps' `[build]` command installs the `worker-build` release that matches the
 locked `worker` crate.
 
-**ESP32 firmware is tested by `inkbot-esp32.yml` and `esp32-ble.yml`, not
-`test.yml`.** Stable Linux Cargo cannot build `xtensa-esp32-espidf`. Each
-dedicated workflow installs the esp-rs Xtensa toolchain, runs host
-`cargo test --lib` / clippy, and `make build`s the device image when that
-directory changes. `inkbot-esp32.yml` also runs a provision dry-run and builds
-both the inkbot and maze images. Signed inkbot OTA images are published by
+**ESP32 firmware has two jobs in `test.yml`.** Stable Linux Cargo cannot
+build `xtensa-esp32-espidf`, so the Rust job leaves it out. When a firmware
+directory changes, the `ESP32 host` job runs `test-esp32-host.sh`: `cargo fmt`
+and Clippy on the library and each crate under `tools/`, then `make test`
+(for inkbot-esp32, also a provision dry-run), on the host toolchain that the
+crate's `rust-toolchain.toml` pins. In parallel, the `ESP32 firmware` job
+installs the esp-rs Xtensa toolchain and runs `make build` (for inkbot-esp32,
+both the inkbot and maze images). Signed inkbot OTA images are published by
 `inkbot-esp32-publish.yml` on `main` (see [`inkbot-esp32/docs/ota.md`](inkbot-esp32/docs/ota.md)).
 `esp32-ble` is USB-flash only.
 
-**The iOS app is tested by a separate workflow (`ios.yml`), not `test.yml`,**
-because it needs a macOS runner. A cheap Linux `discover` job reuses the same
-`discover-changed-apps.sh` logic (it emits an `ios` list) and only then
-spins up a `macos-latest` job — so browser/Go/Rust-only PRs never pay for macOS
-minutes. When `ios/` changed, CI runs XcodeGen → `bundle exec fastlane test`
+**The iOS job runs on a macOS runner** (the `xcode-27` image), and only when
+discovery's `ios` list is not empty, so browser/Go/Rust-only PRs never pay for
+macOS minutes. It runs `ios-ci.sh test`: XcodeGen → `bundle exec fastlane test`
 (unit + UI tests on a Simulator; no signing needed). On push to `main` with
-Apple signing secrets present, it additionally runs `fastlane beta` to upload to
-TestFlight. PRs that need refreshed signing assets get a `needs-ios-bootstrap`
+Apple signing secrets present, `ios.yml` runs `ios-ci.sh ship`, which runs
+`fastlane beta` to upload to TestFlight, at the same time as `test.yml`. PRs that need refreshed signing assets get a `needs-ios-bootstrap`
 label; on merge, a separate workflow re-runs `signing_bootstrap` in parallel
 (usually finishing before the build). Run discovery locally with:
 
@@ -508,11 +508,12 @@ bash .github/scripts/discover-ios-apps.sh --all
 git diff --name-only origin/main...HEAD | bash .github/scripts/discover-ios-apps.sh --from-changes
 ```
 
-**macOS apps use the same pattern via `macos.yml`:** Linux discovery emits a
-`macos` list (dirs whose `project.yml` has `platform: macOS`), then a
-`macos-latest` job runs XcodeGen → `fastlane test`. On `main` with Developer ID
-/ Sparkle secrets, it will run `fastlane beta` (notarize + appcast); without
-secrets, tests still run and ship is skipped. Discovery:
+**macOS apps use the same pattern:** discovery emits a `macos` list (dirs whose
+`project.yml` has `platform: macOS`), and the macOS job runs `macos-ci.sh test`
+(XcodeGen → `fastlane test`) on `macos-latest`, one runner for each app. On
+`main` with Developer ID / Sparkle secrets, `macos.yml` runs `macos-ci.sh ship`
+(`fastlane beta`, then notarize + appcast); without secrets, it skips the
+release. Discovery:
 
 ```bash
 bash .github/scripts/discover-macos-apps.sh --all
@@ -817,7 +818,7 @@ bundle exec fastlane test
 5. Do **not** add `index.html`; macOS apps are not Pages browser apps.
 6. Do **not** put the app under `ios/` — macOS apps are separate top-level apps.
 
-No workflow edits are required for the test path. `macos.yml` discovers the app
+No workflow edits are required for the test path. `test.yml` discovers the app
 from `platform: macOS`. Sparkle release on `main` needs Developer ID / notarization
 secrets (see [`docs/macos-sparkle-design.md`](docs/macos-sparkle-design.md)).
 
@@ -1104,8 +1105,8 @@ auto-discover them. Run their local tests when you change them.
 | `nethack-agent/` | Cursor SDK harness that plays NetHack from the terminal and keeps notes in `notebook/`. The fake screen is tests only and cannot write that notebook. Live play is `npm run play` against `/usr/games/nethack` using `grok-4.6`, and each run prints the token cost the SDK reported. The notebook keeps claims that survive the screen, not a turn log. CI play publishes `notebook/` to `automation/nethack-notes` so the next play can read it before that pull request merges | `cd nethack-agent && npm test` (CI also runs `bash .github/scripts/publish-nethack-notes_test.sh`; the play job runs the real binary when `CURSOR_API_KEY` is set) |
 | `wehadababyitsaboy/` | Terraform for an empty, unreadable Cloud Storage bucket whose hourly usage logs record every request, query string included. CLIs and web pages request `CLIENT/ARGS?bob=wehadababyitsaboy` in it, and `report.sh` counts those requests with a BigQuery external table over the logs. `deploy-gcp.yml` applies it | `bash -n wehadababyitsaboy/report.sh`; `tofu validate` in `terraform/` |
 | `bun-image/` | bun compile + crane image (deno-image cousin; shell scripts, not a Go packager) | `bash bun-image/test.sh` (needs bun; crane for the image half) |
-| `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker and signed GHCR OTA, or `APP=maze` for an offline maze on the same 7.5″ panel. Secrets in NVS (`make provision`). Agent guide: [`inkbot-esp32/AGENTS.md`](inkbot-esp32/AGENTS.md) | host lib tests + provision dry-run + Xtensa cross-build via `inkbot-esp32.yml`; publish + Cosign on `main` via `inkbot-esp32-publish.yml` |
-| `esp32-ble/` | Rust/ESP-IDF firmware: BLE GATT LED control for the iOS ESP32 BLE experiment. USB flash only. Agent guide: [`esp32-ble/AGENTS.md`](esp32-ble/AGENTS.md) | host protocol tests + Xtensa cross-build via `esp32-ble.yml` |
+| `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker and signed GHCR OTA, or `APP=maze` for an offline maze on the same 7.5″ panel. Secrets in NVS (`make provision`). Agent guide: [`inkbot-esp32/AGENTS.md`](inkbot-esp32/AGENTS.md) | host lib tests + provision dry-run + Xtensa cross-build via the ESP32 jobs in `test.yml`; publish + Cosign on `main` via `inkbot-esp32-publish.yml` |
+| `esp32-ble/` | Rust/ESP-IDF firmware: BLE GATT LED control for the iOS ESP32 BLE experiment. USB flash only. Agent guide: [`esp32-ble/AGENTS.md`](esp32-ble/AGENTS.md) | host protocol tests + Xtensa cross-build via the ESP32 jobs in `test.yml` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
 | `chrome-extension/` | Chrome extension. The toolbar button closes tabs that share a URL, and the badge shows how many tabs that click will close. Chrome 150 and later show the same action on the tab menu, next to a Copy N tab URLs item that copies the selected tabs' URLs, one per line. Highlighted base64 adds a selection menu item that copies the decoded text. The toolbar button's right-click menu opens a Tab insights side panel, where Chrome's built-in Gemini Nano (the Prompt API) groups tabs by topic and suggests tabs to close, on the device. The panel can turn that into Chrome tab groups, with a collapsed Likely close group, and can undo closes and grouping. The service worker plans that grouping in the background, every 15 minutes and a minute after tabs change, and turns the badge green when an unseen plan is ready. It never groups tabs itself. Not a Pages app. `chrome-extension.yml` publishes the Chrome Web Store item from `main` and keeps `chrome-extension.zip` as a workflow artifact | `cd chrome-extension && npm test` (also `python3 .github/scripts/chrome_web_store_test.py`) |
