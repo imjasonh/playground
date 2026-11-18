@@ -1,13 +1,24 @@
 #!/usr/bin/env bash
-# Generate, test, and (when DEPLOY=true) ship the iOS apps listed in IOS_APPS
-# as a JSON array. Runs on macOS with Xcode available.
+# Test or ship the iOS apps listed in IOS_APPS as a JSON array. Runs on macOS
+# with Xcode available. test.yml runs `ios-ci.sh test`, and ios.yml runs
+# `ios-ci.sh ship` on main.
 #
 # For each app:
 #   1. xcodegen generate          (build the .xcodeproj from project.yml)
 #   2. bundle install             (fastlane, pinned by the app's Gemfile.lock)
-#   3. bundle exec fastlane test  (unit + UI tests on a simulator)
-#   4. bundle exec fastlane beta  (only when DEPLOY=true → upload to TestFlight)
+#   3. bundle exec fastlane test  (test: unit + UI tests on a simulator)
+#      bundle exec fastlane beta  (ship: upload to TestFlight)
 set -uo pipefail
+
+mode="${1:?usage: ios-ci.sh test|ship}"
+case "$mode" in
+  test) lane=test ;;
+  ship) lane=beta ;;
+  *)
+    echo "usage: ios-ci.sh test|ship" >&2
+    exit 2
+    ;;
+esac
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$repo_root"
@@ -42,43 +53,24 @@ if [ -z "${IOS_SIM_DEVICE:-}" ]; then
 fi
 echo "Using simulator device: ${IOS_SIM_DEVICE:-<none found>}"
 
-deploy="${DEPLOY:-false}"
 result=0
 
 for app in "${apps[@]}"; do
-  echo "::group::Generate + test ${app}"
-
+  echo "::group::${mode} ${app}"
   if (
     set -euo pipefail
     cd "$app"
     xcodegen generate
     # setup-ruby already ran bundle install with the lockfile; skip when warm.
     bundle check >/dev/null 2>&1 || bundle install
-    bundle exec fastlane test
+    bundle exec fastlane "$lane"
   ); then
-    echo "${app}: tests passed"
+    echo "${app}: fastlane ${lane} passed"
   else
-    echo "::error title=iOS tests failed::${app}: fastlane test"
+    echo "::error title=iOS ${mode} failed::${app}: fastlane ${lane}"
     result=1
-    echo "::endgroup::"
-    continue
   fi
   echo "::endgroup::"
-
-  if [ "$deploy" = "true" ]; then
-    echo "::group::Ship ${app} to TestFlight"
-    if (
-      set -euo pipefail
-      cd "$app"
-      bundle exec fastlane beta
-    ); then
-      echo "${app}: uploaded to TestFlight"
-    else
-      echo "::error title=TestFlight upload failed::${app}: fastlane beta"
-      result=1
-    fi
-    echo "::endgroup::"
-  fi
 done
 
 exit "$result"

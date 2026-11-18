@@ -19,17 +19,18 @@
 #     A change to the scripts that test Rust apps selects every Rust app.
 set -euo pipefail
 
+# ESP32 firmware uses the espup Xtensa toolchain and ESP-IDF, so it cannot run
+# through the generic stable-Rust job. test.yml's ESP32 jobs run their host lib
+# tests and Xtensa cross-builds instead.
+declare -A esp32=()
+while IFS= read -r name; do
+  esp32["$name"]=1
+done < <(bash "$(dirname "${BASH_SOURCE[0]}")/discover-esp32-apps.sh" --all | jq -r '.[]')
+
 is_rust_app() {
   local name="$1"
 
-  if [[ "$name" == .* ]]; then
-    return 1
-  fi
-
-  # ESP32 firmware uses the espup Xtensa toolchain and ESP-IDF, so it cannot
-  # run through the generic stable-Rust job. inkbot-esp32.yml / esp32-ble.yml
-  # own those host lib tests and Xtensa cross-builds instead.
-  if [[ "$name" == "inkbot-esp32" || "$name" == "esp32-ble" ]]; then
+  if [[ "$name" == .* || -n "${esp32[$name]+x}" ]]; then
     return 1
   fi
 

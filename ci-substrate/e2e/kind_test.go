@@ -1,4 +1,5 @@
-// Package e2e runs a KinD end-to-end check of the ci-substrate control plane.
+// Package e2e runs a KinD end-to-end check of the ci-substrate control plane
+// on Agent Substrate, at the go.ate.dev/substrate release in go.mod.
 //
 // Opt in with CI_SUBSTRATE_KIND_E2E=1 (CI sets this when the ci-substrate
 // module changes). Requires Docker, and installs kind/ko/kubectl when missing.
@@ -21,7 +22,7 @@ func TestKindMultiTenantCache(t *testing.T) {
 		t.Skip("docker not available")
 	}
 
-	script, err := filepath.Abs("run-kind.sh")
+	script, err := filepath.Abs("run-substrate-kind.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,6 +31,6 @@ func TestKindMultiTenantCache(t *testing.T) {
 	cmd.Stderr = os.Stderr
 	cmd.Env = append(os.Environ(), "CI_SUBSTRATE_KIND_E2E=1")
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("run-kind.sh: %v", err)
+		t.Fatalf("run-substrate-kind.sh: %v", err)
 	}
 }

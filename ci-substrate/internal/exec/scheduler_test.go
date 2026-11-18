@@ -367,6 +367,57 @@ func TestSameActionSharesOneJob(t *testing.T) {
 	}
 }
 
+func TestWatchStatusSendsEachChange(t *testing.T) {
+	h := newHarness(t)
+	watch, err := h.worker.WatchStatus(ctxTok(t, "tok-a"), &workerv1.StatusRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := func(queued, executing int32, busy ...string) {
+		t.Helper()
+		st, err := watch.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.GetQueued() != queued || st.GetExecuting() != executing || !slices.Equal(st.GetBusyBotIds(), busy) {
+			t.Fatalf("status %v, want queued=%d executing=%d busy=%v", st, queued, executing, busy)
+		}
+	}
+	next(0, 0)
+
+	// Tenant B's job leaves tenant A's report unchanged, so A's next report
+	// is its own job.
+	action := h.putAction(t, &repb.Action{CommandDigest: digest.FromBytes([]byte("cmd"))})
+	if _, err := h.exec.Execute(ctxTok(t, "tok-b"), &repb.ExecuteRequest{InstanceName: "tenant-b", ActionDigest: action}); err != nil {
+		t.Fatal(err)
+	}
+	stream, err := h.exec.Execute(ctxTok(t, "tok-a"), &repb.ExecuteRequest{InstanceName: "tenant-a", ActionDigest: action})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Recv(); err != nil {
+		t.Fatal(err)
+	}
+	next(1, 0)
+
+	lease, err := h.worker.Lease(ctxTok(t, "tok-a"), &workerv1.LeaseRequest{BotId: "bot-1", InstanceNames: []string{"tenant-a"}})
+	if err != nil || lease.GetJob() == nil {
+		t.Fatalf("lease: job=%v err=%v", lease.GetJob(), err)
+	}
+	next(0, 1, "bot-1")
+
+	complete(t, h, "tok-a", "bot-1", lease.GetJob().GetId(), &repb.ActionResult{})
+	next(0, 0)
+
+	denied, err := h.worker.WatchStatus(ctxTok(t, "tok-b"), &workerv1.StatusRequest{InstanceNames: []string{"tenant-a"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := denied.Recv(); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("tenant B watching tenant A's status: %v, want PermissionDenied", err)
+	}
+}
+
 // An action marked do_not_cache stands for work whose result can change from
 // one run to the next, such as one that reads the clock. Every Execute runs
 // it, two requests for it at once don't share a run, and its result is never

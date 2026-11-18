@@ -77,6 +77,9 @@ type Scheduler struct {
 	inflight map[string]*job
 	queue    []*job
 	waiters  map[*waiter]struct{}
+	// changed is closed and replaced whenever any job changes stage or
+	// runner, so WatchStatus can wait on it without holding the lock.
+	changed chan struct{}
 }
 
 type job struct {
@@ -132,6 +135,7 @@ func New(store *blob.Store, actions *actioncache.Store, tenants *tenant.Registry
 		jobs:          map[string]*job{},
 		inflight:      map[string]*job{},
 		waiters:       map[*waiter]struct{}{},
+		changed:       make(chan struct{}),
 	}
 	s.metrics = newMetrics(s)
 	return s
@@ -182,6 +186,37 @@ func (s *Scheduler) Status(ctx context.Context, req *workerv1.StatusRequest) (*w
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.statusLocked(instances), nil
+}
+
+// WatchStatus streams Status for the caller's instances: the current report,
+// then each report that differs from the last one sent.
+func (s *Scheduler) WatchStatus(req *workerv1.StatusRequest, stream workerv1.WorkerService_WatchStatusServer) error {
+	ctx := stream.Context()
+	instances, err := s.leaseInstances(ctx, req.GetInstanceNames())
+	if err != nil {
+		return err
+	}
+	var last *workerv1.StatusResponse
+	for {
+		s.mu.Lock()
+		resp, changed := s.statusLocked(instances), s.changed
+		s.mu.Unlock()
+		if last == nil || !proto.Equal(resp, last) {
+			if err := stream.Send(resp); err != nil {
+				return err
+			}
+			last = resp
+		}
+		select {
+		case <-ctx.Done():
+			return status.FromContextError(ctx.Err()).Err()
+		case <-changed:
+		}
+	}
+}
+
+func (s *Scheduler) statusLocked(instances map[string]bool) *workerv1.StatusResponse {
 	resp := &workerv1.StatusResponse{}
 	busy := map[string]bool{}
 	for _, j := range s.jobs {
@@ -200,7 +235,7 @@ func (s *Scheduler) Status(ctx context.Context, req *workerv1.StatusRequest) (*w
 		}
 	}
 	slices.Sort(resp.BusyBotIds)
-	return resp, nil
+	return resp
 }
 
 // Execute queues an action and streams its operation until it completes.
@@ -372,6 +407,8 @@ func (s *Scheduler) leaseLocked(j *job, botID string) {
 func (s *Scheduler) notifyLocked(j *job) {
 	close(j.changed)
 	j.changed = make(chan struct{})
+	close(s.changed)
+	s.changed = make(chan struct{})
 }
 
 func (s *Scheduler) finishLocked(j *job, resp *repb.ExecuteResponse) {

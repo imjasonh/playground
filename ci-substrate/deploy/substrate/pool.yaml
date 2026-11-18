@@ -43,6 +43,12 @@ spec:
     spec:
       serviceAccountName: ate-client
       automountServiceAccountToken: false
+      nodeSelector:
+        ci-substrate.imjasonh.com/always-on: "true"
+      tolerations:
+        - key: ci-substrate.imjasonh.com/always-on
+          operator: Exists
+          effect: NoSchedule
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -70,6 +76,17 @@ spec:
               value: "4"
             - name: IDLE_AFTER
               value: 2m
+            - name: WORKER_POOL
+              value: ci-substrate-workers/ci-runner
+            # Match workerpool.yaml's limits and runner-template.yaml's
+            # resources: ci-runner-base's one 2-CPU worker, like each burst
+            # worker, holds two 1-CPU actors.
+            - name: BASE_SLOTS
+              value: "2"
+            - name: ACTORS_PER_WORKER
+              value: "2"
+            - name: MAX_WORKERS
+              value: "4"
             - name: TENANT_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -96,6 +113,9 @@ spec:
             - name: config
               mountPath: /etc/ci-substrate
               readOnly: true
+            - name: kube-api
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -121,3 +141,58 @@ spec:
                     matchLabels:
                       podcert.ate.dev/canarying: live
                   path: trust-bundle.pem
+        - name: kube-api
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ci-substrate-pool
+  namespace: ci-substrate-workers
+rules:
+  - apiGroups: ["ate.dev"]
+    resources: ["workerpools/scale"]
+    resourceNames: ["ci-runner"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-substrate-pool
+  namespace: ci-substrate-workers
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ci-substrate-pool
+subjects:
+  - kind: ServiceAccount
+    name: ate-client
+    namespace: ate-system
+---
+# Substrate denies ingress to ate-system's pods by default and admits only its
+# own components to ate-api-server. NetworkPolicies add up, so this admits the
+# pool as well.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ci-substrate-pool
+  namespace: ate-system
+spec:
+  podSelector:
+    matchLabels: {app: ate-api-server}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: ci-substrate-pool}
+      ports:
+        - {protocol: TCP, port: 443}

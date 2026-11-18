@@ -11,6 +11,7 @@ go_library(
         "//internal/substrate",
         "//internal/telemetry",
         "//internal/tenant",
+        "//internal/workerpool",
         "@com_github_chainguard_dev_clog//gcp/init",
         "@com_github_sethvargo_go_envconfig//:go-envconfig",
         "@dev_ate_go_substrate//api/ateapi/v1:ateapi",

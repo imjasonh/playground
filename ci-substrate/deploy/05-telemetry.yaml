@@ -68,6 +68,17 @@ spec:
     metadata:
       labels: {app: otel-collector}
     spec:
+      tolerations:
+        - key: ci-substrate.imjasonh.com/always-on
+          operator: Exists
+          effect: NoSchedule
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - {key: ci-substrate.imjasonh.com/always-on, operator: In, values: ["true"]}
       containers:
         - name: collector
           image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.165.0@sha256:e40d61f10c9a617cca1ffd1be4d7e2b3a4b0f0001798ff07e58cabe82e618cea
@@ -121,6 +132,17 @@ spec:
     metadata:
       labels: {app: jaeger}
     spec:
+      tolerations:
+        - key: ci-substrate.imjasonh.com/always-on
+          operator: Exists
+          effect: NoSchedule
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - {key: ci-substrate.imjasonh.com/always-on, operator: In, values: ["true"]}
       containers:
         - name: jaeger
           image: jaegertracing/jaeger:2.23.0@sha256:3823829974ccfc2485d2e48b165579091f32295022ae80ca49704e2f4834116e

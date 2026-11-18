@@ -4,3 +4,8 @@ load("@gazelle//:def.bzl", "gazelle")
 # gazelle:proto disable_global
 # gazelle:go_naming_convention import
 gazelle(name = "gazelle")
+
+exports_files(
+    ["go.mod"],
+    visibility = ["//internal/substrate:__pkg__"],
+)

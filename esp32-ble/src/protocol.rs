@@ -94,7 +94,7 @@ impl DeviceState {
         match self.blink_period_ms {
             Some(period) if period >= 2 => {
                 let half = u64::from(period) / 2;
-                (elapsed_ms / half) % 2 == 0
+                (elapsed_ms / half).is_multiple_of(2)
             }
             _ => self.led_on,
         }

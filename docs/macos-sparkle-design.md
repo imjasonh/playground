@@ -81,7 +81,7 @@ https://imjasonh.github.io/playground/macos/hello-macos/appcast.xml
 | `SPARKLE_EDDSA_PRIVATE_KEY` | Sparkle Ed25519 **new-format seed** (base64 of 32 bytes); required for release |
 | Existing `ASC_*` / `APPLE_TEAM_ID` | Notarization via App Store Connect API key |
 
-Without `MACOS_DEVELOPER_ID_P12`, `macos.yml` tests and prints the skip warning.
+Without `MACOS_DEVELOPER_ID_P12`, `macos.yml` prints the skip warning; `test.yml` still tests the app.
 With Developer ID but without `SPARKLE_EDDSA_PRIVATE_KEY`, `fastlane beta` fails
 (the app rejects unsigned enclosures once `SUPublicEDKey` is set).
 
@@ -107,7 +107,7 @@ continuous updates from `main` only.
 2. Add `fastlane test` and `beta` (copy from `hello-macos/` as a starting point).
 3. Embed Sparkle + generate an EdDSA keypair (or reuse the repo secret if you
    intentionally share one key across apps — usually one key per app is clearer).
-4. Open a PR — `macos.yml` picks it up automatically once discovery sees
+4. Open a PR — `test.yml` picks it up automatically once discovery sees
    `platform: macOS`. No workflow edits required for the test path.
 
 Reference implementation: [`hello-macos/`](../hello-macos/).

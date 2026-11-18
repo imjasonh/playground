@@ -36,9 +36,9 @@ bundle exec fastlane test
 
 ## CI / releases
 
-`.github/workflows/macos.yml` discovers changed macOS apps (top-level dirs whose
-`project.yml` declares `platform: macOS`), runs `xcodegen` + `fastlane test` on
-`macos-latest`, and on `main` with Developer ID + Sparkle secrets runs
+`.github/workflows/test.yml` discovers changed macOS apps (top-level dirs whose
+`project.yml` declares `platform: macOS`) and runs `xcodegen` + `fastlane test` on
+`macos-latest`. On `main` with Developer ID + Sparkle secrets, `macos.yml` runs
 `fastlane beta` (notarize + EdDSA-sign the ZIP) then publishes a GitHub Release
 + Sparkle appcast on `gh-pages`.
 

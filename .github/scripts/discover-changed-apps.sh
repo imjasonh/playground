@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Discover changed testable browser apps, Go modules, Rust apps, iOS apps,
-# macOS apps, ESP32 firmware (inkbot-esp32, esp32-ble), whether the pasta style
-# leg should run, whether the posts catalog builder should run, whether the
-# Pages home-page index renderer should run, and whether nescript.yml should
-# run its ROM, jsnes, and Mesen checks.
+# macOS apps, ESP32 firmware crates, whether the pasta style leg should run,
+# whether the posts catalog builder should run, whether the Pages home-page
+# index renderer should run, and whether the nescript job should run its ROM,
+# jsnes, and Mesen checks.
 set -euo pipefail
 
 : "${EVENT_NAME:?EVENT_NAME must be set}"
@@ -11,39 +11,6 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$repo_root"
-
-# ESP32 firmware crates are excluded from discover-rust-apps.sh (need espup).
-# Emit JSON arrays so inkbot-esp32.yml / esp32-ble.yml can gate host/firmware
-# jobs like ios/macos.
-inkbot_esp32_from_changes() {
-  local path
-  while IFS= read -r path; do
-    case "$path" in
-      inkbot-esp32/* | .github/workflows/inkbot-esp32.yml | .github/workflows/inkbot-esp32-publish.yml)
-        echo '["inkbot-esp32"]'
-        return 0
-        ;;
-    esac
-  done <<EOF
-$1
-EOF
-  echo '[]'
-}
-
-esp32_ble_from_changes() {
-  local path
-  while IFS= read -r path; do
-    case "$path" in
-      esp32-ble/* | .github/workflows/esp32-ble.yml)
-        echo '["esp32-ble"]'
-        return 0
-        ;;
-    esac
-  done <<EOF
-$1
-EOF
-  echo '[]'
-}
 
 pasta_from_changes() {
   # discover-pasta.sh prints `pasta=true|false`; strip the key.
@@ -79,8 +46,7 @@ else
     rust=$(bash .github/scripts/discover-rust-apps.sh --all)
     ios=$(bash .github/scripts/discover-ios-apps.sh --all)
     macos=$(bash .github/scripts/discover-macos-apps.sh --all)
-    inkbot_esp32='["inkbot-esp32"]'
-    esp32_ble='["esp32-ble"]'
+    esp32=$(bash .github/scripts/discover-esp32-apps.sh --all)
     pasta=true
     blog=true
     index=true
@@ -91,8 +57,7 @@ else
       echo "rust=${rust}"
       echo "ios=${ios}"
       echo "macos=${macos}"
-      echo "inkbot_esp32=${inkbot_esp32}"
-      echo "esp32_ble=${esp32_ble}"
+      echo "esp32=${esp32}"
       echo "pasta=${pasta}"
       echo "blog=${blog}"
       echo "index=${index}"
@@ -103,8 +68,7 @@ else
     echo "Rust apps: ${rust}"
     echo "iOS apps: ${ios}"
     echo "macOS apps: ${macos}"
-    echo "inkbot-esp32: ${inkbot_esp32}"
-    echo "esp32-ble: ${esp32_ble}"
+    echo "ESP32 firmware: ${esp32}"
     echo "pasta: ${pasta}"
     echo "blog: ${blog}"
     echo "index: ${index}"
@@ -121,8 +85,7 @@ if [ -z "$changed" ]; then
   rust='[]'
   ios='[]'
   macos='[]'
-  inkbot_esp32='[]'
-  esp32_ble='[]'
+  esp32='[]'
   pasta=false
   blog=false
   index=false
@@ -133,8 +96,7 @@ else
   rust=$(printf '%s\n' "$changed" | bash .github/scripts/discover-rust-apps.sh --from-changes)
   ios=$(printf '%s\n' "$changed" | bash .github/scripts/discover-ios-apps.sh --from-changes)
   macos=$(printf '%s\n' "$changed" | bash .github/scripts/discover-macos-apps.sh --from-changes)
-  inkbot_esp32=$(inkbot_esp32_from_changes "$changed")
-  esp32_ble=$(esp32_ble_from_changes "$changed")
+  esp32=$(printf '%s\n' "$changed" | bash .github/scripts/discover-esp32-apps.sh --from-changes)
   pasta=$(pasta_from_changes "$changed")
   blog=$(blog_from_changes "$changed")
   index=$(index_from_changes "$changed")
@@ -147,8 +109,7 @@ fi
   echo "rust=${rust}"
   echo "ios=${ios}"
   echo "macos=${macos}"
-  echo "inkbot_esp32=${inkbot_esp32}"
-  echo "esp32_ble=${esp32_ble}"
+  echo "esp32=${esp32}"
   echo "pasta=${pasta}"
   echo "blog=${blog}"
   echo "index=${index}"
@@ -162,8 +123,7 @@ echo "Go apps: ${modules}"
 echo "Rust apps: ${rust}"
 echo "iOS apps: ${ios}"
 echo "macOS apps: ${macos}"
-echo "inkbot-esp32: ${inkbot_esp32}"
-echo "esp32-ble: ${esp32_ble}"
+echo "ESP32 firmware: ${esp32}"
 echo "pasta: ${pasta}"
 echo "blog: ${blog}"
 echo "index: ${index}"

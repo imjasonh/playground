@@ -19,10 +19,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	WorkerService_Lease_FullMethodName     = "/worker.v1.WorkerService/Lease"
-	WorkerService_Heartbeat_FullMethodName = "/worker.v1.WorkerService/Heartbeat"
-	WorkerService_Complete_FullMethodName  = "/worker.v1.WorkerService/Complete"
-	WorkerService_Status_FullMethodName    = "/worker.v1.WorkerService/Status"
+	WorkerService_Lease_FullMethodName       = "/worker.v1.WorkerService/Lease"
+	WorkerService_Heartbeat_FullMethodName   = "/worker.v1.WorkerService/Heartbeat"
+	WorkerService_Complete_FullMethodName    = "/worker.v1.WorkerService/Complete"
+	WorkerService_Status_FullMethodName      = "/worker.v1.WorkerService/Status"
+	WorkerService_WatchStatus_FullMethodName = "/worker.v1.WorkerService/WatchStatus"
 )
 
 // WorkerServiceClient is the client API for WorkerService service.
@@ -47,6 +48,10 @@ type WorkerServiceClient interface {
 	// Status reports the queue for the instances the caller's token allows.
 	// The runner pool sizes a tenant's runners from it.
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
+	// WatchStatus sends the same report as Status, then a new one each time it
+	// changes, until the caller cancels. The runner pool reconciles on each one
+	// instead of waiting for its next poll.
+	WatchStatus(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StatusResponse], error)
 }
 
 type workerServiceClient struct {
@@ -97,6 +102,25 @@ func (c *workerServiceClient) Status(ctx context.Context, in *StatusRequest, opt
 	return out, nil
 }
 
+func (c *workerServiceClient) WatchStatus(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StatusResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &WorkerService_ServiceDesc.Streams[0], WorkerService_WatchStatus_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StatusRequest, StatusResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type WorkerService_WatchStatusClient = grpc.ServerStreamingClient[StatusResponse]
+
 // WorkerServiceServer is the server API for WorkerService service.
 // All implementations must embed UnimplementedWorkerServiceServer
 // for forward compatibility.
@@ -119,6 +143,10 @@ type WorkerServiceServer interface {
 	// Status reports the queue for the instances the caller's token allows.
 	// The runner pool sizes a tenant's runners from it.
 	Status(context.Context, *StatusRequest) (*StatusResponse, error)
+	// WatchStatus sends the same report as Status, then a new one each time it
+	// changes, until the caller cancels. The runner pool reconciles on each one
+	// instead of waiting for its next poll.
+	WatchStatus(*StatusRequest, grpc.ServerStreamingServer[StatusResponse]) error
 	mustEmbedUnimplementedWorkerServiceServer()
 }
 
@@ -140,6 +168,9 @@ func (UnimplementedWorkerServiceServer) Complete(context.Context, *CompleteReque
 }
 func (UnimplementedWorkerServiceServer) Status(context.Context, *StatusRequest) (*StatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Status not implemented")
+}
+func (UnimplementedWorkerServiceServer) WatchStatus(*StatusRequest, grpc.ServerStreamingServer[StatusResponse]) error {
+	return status.Error(codes.Unimplemented, "method WatchStatus not implemented")
 }
 func (UnimplementedWorkerServiceServer) mustEmbedUnimplementedWorkerServiceServer() {}
 func (UnimplementedWorkerServiceServer) testEmbeddedByValue()                       {}
@@ -234,6 +265,17 @@ func _WorkerService_Status_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkerService_WatchStatus_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StatusRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(WorkerServiceServer).WatchStatus(m, &grpc.GenericServerStream[StatusRequest, StatusResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type WorkerService_WatchStatusServer = grpc.ServerStreamingServer[StatusResponse]
+
 // WorkerService_ServiceDesc is the grpc.ServiceDesc for WorkerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -258,6 +300,12 @@ var WorkerService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _WorkerService_Status_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "WatchStatus",
+			Handler:       _WorkerService_WatchStatus_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "worker/v1/worker.proto",
 }

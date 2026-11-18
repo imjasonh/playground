@@ -160,5 +160,6 @@ xcodegen generate
 bundle exec fastlane test
 ```
 
-CI: `.github/workflows/ios.yml`. Setup:
+CI: `.github/workflows/test.yml` tests the app, and `.github/workflows/ios.yml`
+ships it to TestFlight from `main`. Setup:
 [`docs/ios-testflight-setup.md`](../docs/ios-testflight-setup.md).
