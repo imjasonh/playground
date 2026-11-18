@@ -80,9 +80,14 @@ def lean_val(v):
     return v[1]
 
 
+ENV3_WRAPPERS = {"pv_umin", "pv_low", "pv_ufg", "pv_ude", "pv_norm", "pv_eq"}
+
+
 class Gen:
-    def __init__(self, name):
+    def __init__(self, name, env3=False):
         self.name = name
+        self.env3 = env3
+        self.envt = "PvEnv3" if env3 else "PvEnv"
         self.k = 0
         self.out = []
         self.blocks = []
@@ -93,6 +98,10 @@ class Gen:
 
     def emit(self, s):
         self.out.append(s)
+
+    def env(self, k):
+        """The `PvEnv` of state k."""
+        return f"E{k}.E" if self.env3 else f"E{k}"
 
     def end_step(self):
         """Clears the facts of the step before the one just finished, so that tactics
@@ -225,11 +234,11 @@ class Gen:
         self.blocks.append((blk, start, end, ins))
         n = len(ins)
         self.emit(f"  -- 0x{start:X}")
-        self.emit(f"  obtain ⟨n{k}, c{k}, u{k}⟩ := s{k-1}.block {blk} E{k-1}.C.self {blk}_end")
+        self.emit(f"  obtain ⟨n{k}, c{k}, u{k}⟩ := s{k-1}.block {blk} {self.env(k-1)}.C.self {blk}_end")
         self.emit(f"    ⟨{', '.join(['trivial'] * (n + 1))}⟩")
         self.emit(f"  have m{k} : n{k}.mem = n{k-1}.mem := u{k}.mem")
         self.emit(f"  have s{k} : St n{k}.mem PV n{k} 0x{end:X} (reg n{k}) := ⟨u{k}.pc, rfl, fun _ => rfl⟩")
-        self.emit(f"  have E{k} : PvEnv n{k}.mem := by rw [m{k}]; exact E{k-1}")
+        self.emit(f"  have E{k} : {self.envt} n{k}.mem := by rw [m{k}]; exact E{k-1}")
         self.emit(f"  have rb{k} : ∀ q, reg n{k} q = (runBlock {blk} (n{k-1}.mem, reg n{k-1})).2 q := fun q => by rw [u{k}.regs]")
         self.emit(f"  have fr{k} : ∀ x, PvR B x → n{k}.mem x = n{k-1}.mem x := fun x _ => by rw [m{k}]")
         self.emit(f"  have K{k} : PvKeep B n{k-1}.mem n{k}.mem 0 0 := fun e _ _ => by rw [m{k}]")
@@ -244,11 +253,12 @@ class Gen:
         self.emit(f"  -- 0x{off:X}: {wrapper}")
         for line in pre or []:
             self.emit(f"  {line}")
-        self.emit(f"  obtain ⟨n{k}, P{k}, K{k}, V{k}⟩ := {wrapper} F E{k-1} s{k-1} pv_at_{off:x} pv_at_{off+4:x} (by decide) (by decide)")
+        ev = f"E{k-1}" if (wrapper in ENV3_WRAPPERS or not self.env3) else f"E{k-1}.E"
+        self.emit(f"  obtain ⟨n{k}, P{k}, K{k}, V{k}⟩ := {wrapper} F {ev} s{k-1} pv_at_{off:x} pv_at_{off+4:x} (by decide) (by decide)")
         self.emit(f"    {args}")
         self.emit(f"  have s{k} := P{k}.st")
         self.emit(f"  have fr{k} := P{k}.fr")
-        self.emit(f"  have E{k} : PvEnv n{k}.mem := E{k-1}.fr F fr{k}")
+        self.emit(f"  have E{k} : {self.envt} n{k}.mem := E{k-1}.fr F fr{k}")
         self.common(k, f"P{k}.steps")
         self.reg_facts(k, "call")
         for r, (v, proof) in (extra_regs or {}).items():
@@ -261,8 +271,9 @@ class Gen:
     def store(self, wrapper, off, ln, args, c, w, written_bytes=None, written_words=None):
         k = self.k = self.k + 1
         self.emit(f"  -- 0x{off:X}: {wrapper}")
-        self.emit(f"  obtain ⟨n{k}, d{k}, s{k}, E{k}, fr{k}, K{k}, V{k}, rg{k}⟩ := {wrapper} F E{k-1} s{k-1} pv_at_{off:x} (off' := 0x{off+ln:X}) (c := 0x{c:X}) (by decide)")
+        self.emit(f"  obtain ⟨n{k}, d{k}, s{k}, _E{k}, fr{k}, K{k}, V{k}, rg{k}⟩ := {wrapper} F {self.env(k-1)} s{k-1} pv_at_{off:x} (off' := 0x{off+ln:X}) (c := 0x{c:X}) (by decide)")
         self.emit(f"    {args}")
+        self.emit(f"  have E{k} : {self.envt} n{k}.mem := E{k-1}.fr F fr{k}")
         self.common(k, f"d{k}")
         self.reg_facts(k, "same")
         self.mem_facts(k, c, w, written_bytes=written_bytes, written_words=written_words)
@@ -272,7 +283,7 @@ class Gen:
     def conclusion(self, off):
         """The facts at the end, as a conjunction, and the term that proves it."""
         k = self.k
-        conj = [f"Steps n0 n'", f"St n'.mem PV n' 0x{off:X} (reg n')", "PvEnv n'.mem",
+        conj = [f"Steps n0 n'", f"St n'.mem PV n' 0x{off:X} (reg n')", f"{self.envt} n'.mem",
                 "(∀ x, PvR B x → n'.mem x = n0.mem x)"]
         terms = [f"t{k}", f"s{k}", f"E{k}", f"fR{k}"]
         for r, v in sorted(self.regs.items()):
@@ -339,7 +350,7 @@ class Ops:
         acc = {dst: (f"dataVal {data} 0 12", [
             f"rw [show BitVec.ofNat 32 0x{K:X} = BitVec.ofNat 32 0x{K:X} + BitVec.ofNat 32 0 from (add_ofNat_zero _).symm] at V{g.k + 1}",
             f"rw [accV_K 12 fun q hq => V{g.k + 1} q (by omega)]",
-            f"exact code_accV (d := {data}) E{g.k}.D2.{DATA_FIELD[data]} 0 12 (by decide)",
+            f"exact code_accV (d := {data}) {g.env(g.k)}.D2.{DATA_FIELD[data]} 0 12 (by decide)",
         ])}
         g.call("pv_mcK", off, f"g{g.k}_2 g{g.k}_10 g{g.k}_11 g{g.k}_12 (by decide) (by decide) (by decide)", dst, N, acc)
 
@@ -398,11 +409,63 @@ class Ops:
         g.store("pv_sw", off, INSTR[off][1], f"(by rw [g{k}_{base}]; pv_addr) (by decide) (by decide)", c, 4,
                 written_words={c: (lean_val(g.regs[src]), [f"rw [V{k + 1}, g{k}_{src}]"])})
 
+    def ms0(self, off, dst, N):
+        """`memset` of `N` zero bytes at `dst`: zero limbs, and zero sign bytes."""
+        g = self.g
+        k = g.k
+        acc = {dst: ("0", [f"exact accV_zero_S 12 fun q hq => V{k + 1} q (by omega)"])}
+        byt = {}
+        if dst + 0x30 < dst + N:
+            byt[dst + 0x30] = ("0", [f"exact V{k + 1} 0x30 (by decide)"])
+        g.call("pv_ms", off, f"g{k}_2 g{k}_10 g{k}_11 g{k}_12 (by decide)", dst, N, acc, byt)
+
     def sb0(self, off, base, c):
         g = self.g
         k = g.k
         g.store("pv_sb", off, INSTR[off][1], f"(by rw [g{k}_{base}]; pv_addr) (by decide)", c, 1,
                 written_bytes={c: ("0", [f"rw [V{k + 1}, s{k}.zero]; rfl"])})
+
+
+def params_of(g, off, extra=""):
+    """Hypotheses for state 0 from the facts a generator starts with."""
+    ps = ["{n0 : Machine}", "(F : Fr B 0x21A0)", f"(E0 : {g.envt} n0.mem)", f"(s0 : St n0.mem PV n0 0x{off:X} (reg n0))"]
+    for r, v in sorted(g.regs.items()):
+        ps.append(f"(g0_{r} : reg n0 {rname(r)} = {lean_val(v)})")
+    for d, v in sorted(g.acc.items()):
+        ps.append(f"(a0_{d:x} : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x{d:X}) 12 = {v})")
+    for e, v in sorted(g.bytes.items()):
+        ps.append(f"(b0_{e:x} : n0.mem (B + 0x420 + BitVec.ofNat 32 0x{e:X}) = {v})")
+    for e, v in sorted(g.words.items()):
+        ps.append(f"(w0_{e:x} : memLoad32 n0.mem (B + 0x420 + BitVec.ofNat 32 0x{e:X}) = {v})")
+    return "\n    ".join(ps) + extra
+
+
+def stage_c0():
+    gb, _ = stage_b()
+    g = Gen("C0", env3=True)
+    g.regs = dict(gb.regs)
+    for r in (3, 4, 25, 26, 27):
+        g.regs[r] = ("U", f"reg n0 ({r} : Fin 32)")
+    g.acc = {d: v for d, v in gb.acc.items() if d in (0x120, 0x150, 0x180, 0x1B0, 0x1E0, 0x210, 0xD50, 0xE10, 0xE40, 0x1714)}
+    g.bytes = dict(gb.bytes)
+    g.words = dict(gb.words)
+    params = params_of(g, 0x3B0)
+    o = Ops(g)
+    o.sb0(0x3B0, 8, 0xD80)
+    g.block(0x3B4, 0x3BC); o.ms0(0x3BC, 0x270, 0x34)
+    g.block(0x3C4, 0x3D2); o.mcK(0x3D2, 0x17A4, 0x3FCC4D88, 0x30, "p384ScalarR2Data")
+    g.block(0x3DA, 0x3DC)
+    o.sb0(0x3DC, 23, 0x17D4)
+    g.block(0x3E0, 0x3E8)
+    info = {
+        "end": 0x3E8, "name": "pv_stC0", "title": "the inversion's start",
+        "doc": "From 0x3B0 to 0x3E8: `g`'s and `e`'s sign bytes, `d` zeroed, `e` set to `2^768 mod n`,\nand the loop's `δ`, step budget, and bound.",
+        "thmdoc": "**Stage C0**, from 0x3B0 to 0x3E8: the start of the inversion of `s`.",
+        "params": "{B ph : Word} {len X Y R Sg : Nat} " + params,
+        "intro": ["have t0 : Steps n0 n0 := .refl n0", "have fR0 : ∀ x, PvR B x → n0.mem x = n0.mem x := fun _ _ => rfl"],
+        "import": "C3BootProofs.Proofs.Pv384Lib2",
+    }
+    return g, info
 
 
 def stage_b():
@@ -461,7 +524,7 @@ def stage_b():
     return g, info
 
 
-HEADER = """import C3BootProofs.Proofs.Pv384Lib
+HEADER = """import {imp}
 
 /-!
 # `p384_verify_prehash`: {title}
@@ -480,9 +543,10 @@ set_option linter.unusedSimpArgs false
 
 def main():
     stage = sys.argv[1]
-    g, info = {"B": stage_b}[stage]()
+    g, info = {"B": stage_b, "C0": stage_c0}[stage]()
     stmt, proof = g.conclusion(info["end"])
-    print(HEADER.format(title=info["title"], stage=stage, doc=info["doc"]))
+    print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.Pv384Lib"), title=info["title"], stage=stage,
+                        doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
     print(f"/-- {info['thmdoc']} -/")

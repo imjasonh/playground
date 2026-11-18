@@ -544,4 +544,13 @@ theorem pv_eq {B K : Word} {m : Machine} {off : Nat} {imm o : Word} {c : Nat} (F
     (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide),
     r1 q (by revert hq; revert q; decide)]
 
+/-- Limbs whose bytes are all zero. -/
+theorem accV_zero_S {M : Word → BitVec 8} {S : Word} {c : Nat} (k : Nat)
+    (h : ∀ q, q < 4 * k → M (S + BitVec.ofNat 32 (c + q)) = 0) : accV M (S + BitVec.ofNat 32 c) k = 0 :=
+  (accV_eq_zero_iff k).2 fun i hi => by
+    rw [ld_ofNat]
+    simp only [add_ofNat_assoc, Nat.add_assoc]
+    rw [h _ (by omega), h _ (by omega), h _ (by omega), h _ (by omega)]
+    decide
+
 end C3.RV32.Pv
