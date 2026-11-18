@@ -17,7 +17,7 @@ theorem add_7ff (S : Word) : S + 0x7FF + 0x581 = S + 0xD80 := by rw [BitVec.add_
 
 theorem add_d94 (S : Word) : S + 0xD80 + 0x514 = S + 0x1294 := by rw [BitVec.add_assoc]; rfl
 
-theorem dec_ofNat (r : Nat) : BitVec.ofNat 32 (r + 1) + 0xFFFFFFFF = BitVec.ofNat 32 r := by
+theorem ct_cnt_dec (r : Nat) : BitVec.ofNat 32 (r + 1) + 0xFFFFFFFF = BitVec.ofNat 32 r := by
   apply BitVec.eq_of_toNat_eq
   rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat, show (0xFFFFFFFF : Word).toNat = 0xFFFFFFFF from rfl]
   omega
@@ -297,7 +297,7 @@ theorem ct_partB {B : Word} {m : Machine} {n : Nat} {dl dh gl ul uh vl vh ql qh 
   · rw [t15 sp (by decide), r11k sp (by decide), sp10]
   · rw [b15]; simp +decide only [runBlock, BInstr.run, ctS8, upd, ↓reduceIte, aluEval, sp14, z14, r14_24, add_d94]; exact BitVec.zero_add _
   · rw [b15]; simp +decide only [runBlock, BInstr.run, ctS8, upd, ↓reduceIte, aluEval, sp14, z14, r14_24, add_d94]
-    rw [kld K14 (by decide), w3c_13, w3c_11, w3c]; exact dec_ofNat n
+    rw [kld K14 (by decide), w3c_13, w3c_11, w3c]; exact ct_cnt_dec n
   · rw [t15 _ (by decide), r11k _ (by decide), r10 _ (by decide)]
   · rw [t15 _ (by decide), r11k _ (by decide), r10 _ (by decide)]
   · rw [b15]; simp +decide only [runBlock, BInstr.run, ctS8, upd, ↓reduceIte, aluEval, sp14, z14, r14_24, add_d94]
