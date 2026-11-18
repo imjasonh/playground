@@ -158,7 +158,7 @@ terraform_github_oidc: schema.#Analyzer & {
 				{op: "not_matches", args: ["@_root", _idClaim]},
 			]
 			_message:  "Workload Identity provider matches the GitHub repository or owner by name; a renamed or deleted name can be registered by anyone, so also match assertion.repository_id and assertion.repository_owner_id"
-			_severity: "warning"
+			_severity: "error"
 			_name:     "gcp_github_provider_name_only"
 			_doc:      "Flag GitHub Workload Identity pool providers that check repository, repository_owner, or sub without a numeric ID claim"
 		}).out
