@@ -13,8 +13,8 @@ open C3.Image C3.RV32.P3 C3.RV32.Dq
 
 theorem ite01_ff (c : Prop) [Decidable c] : ((if c then 0 else 1 : Word) &&& 0xFF) = if c then 0 else 1 := by
   by_cases h : c
-  · rw [if_pos h]; rfl
-  · rw [if_neg h]; rfl
+  · rw [ite_eq_left h]; rfl
+  · rw [ite_eq_right h]; rfl
 
 theorem umin_ne0 {rem : Nat} (h : rem ≠ 0) : BitVec.ofNat 32 (min rem 62) ≠ 0 := fun h' => by
   have := congrArg BitVec.toNat h'
@@ -39,13 +39,13 @@ theorem ctC3_eq (gl dl dh : Word) :
   rw [ctC1_eq]
   rcases gb01 gl with h | h <;> rw [h]
   · have : ¬((0 : Word) = 1 ∧ dsPos (W64 dl dh)) := fun h' => absurd h'.1 (by decide)
-    rw [if_neg this]
+    rw [ite_eq_right this]
     by_cases hp : dsPos (W64 dl dh)
-    · rw [if_pos hp]; rfl
-    · rw [if_neg hp]; rfl
+    · rw [ite_eq_left hp]; rfl
+    · rw [ite_eq_right hp]; rfl
   · by_cases hp : dsPos (W64 dl dh)
-    · rw [if_pos hp, if_pos ⟨rfl, hp⟩]; rfl
-    · rw [if_neg hp, if_neg fun h' => hp h'.2]; rfl
+    · rw [ite_eq_left hp, ite_eq_left ⟨rfl, hp⟩]; rfl
+    · rw [ite_eq_right hp, ite_eq_right fun h' => hp h'.2]; rfl
 
 /-- The constant-time body's arithmetic is `dsStep`. -/
 theorem ct_arith (dl dh fl fh gl gh ul uh vl vh ql qh rl rh : Word) :
@@ -68,30 +68,30 @@ theorem ct_arith (dl dh fl fh gl gh ul uh vl vh ql qh rl rh : Word) :
   by_cases ho : gl &&& 1 = 1
   · have ho' : ¬(W64 gl gh % 2 = 0) := by rw [w64_odd.mp ho]; decide
     by_cases hp : dsPos (W64 dl dh)
-    · have hc3 : ctC3 gl dl dh = 1 := by rw [ctC3_eq, if_pos ⟨ho, hp⟩]
-      have hc1 : ctC1 dl dh = 1 := by rw [ctC1_eq, if_pos hp]
+    · have hc3 : ctC3 gl dl dh = 1 := by rw [ctC3_eq, ite_eq_left ⟨ho, hp⟩]
+      have hc1 : ctC1 dl dh = 1 := by rw [ctC1_eq, ite_eq_left hp]
       have e : dsStep s = ⟨(2 + 2 ^ 64 - W64 dl dh) % 2 ^ 64, W64 gl gh,
           asr64 ((W64 gl gh + 2 ^ 64 - W64 fl fh) % 2 ^ 64), 2 * W64 ql qh % 2 ^ 64, 2 * W64 rl rh % 2 ^ 64,
           (W64 ql qh + 2 ^ 64 - W64 ul uh) % 2 ^ 64, (W64 rl rh + 2 ^ 64 - W64 vl vh) % 2 ^ 64⟩ := by
-        simp only [dsStep, s]; rw [if_neg ho', if_pos hp]
+        simp only [dsStep, s]; rw [ite_eq_right ho', ite_eq_left hp]
       simp +decide only [e, hc3, hc1, ho, ↓reduceIte, and_true, true_and]
       constructor <;> omega
-    · have hc3 : ctC3 gl dl dh = 0 := by rw [ctC3_eq, if_neg fun h => hp h.2]
-      have hc1 : ctC1 dl dh = 0 := by rw [ctC1_eq, if_neg hp]
+    · have hc3 : ctC3 gl dl dh = 0 := by rw [ctC3_eq, ite_eq_right fun h => hp h.2]
+      have hc1 : ctC1 dl dh = 0 := by rw [ctC1_eq, ite_eq_right hp]
       have e : dsStep s = ⟨(W64 dl dh + 2) % 2 ^ 64, W64 fl fh, asr64 ((W64 gl gh + W64 fl fh) % 2 ^ 64),
           2 * W64 ul uh % 2 ^ 64, 2 * W64 vl vh % 2 ^ 64, (W64 ql qh + W64 ul uh) % 2 ^ 64,
           (W64 rl rh + W64 vl vh) % 2 ^ 64⟩ := by
-        simp only [dsStep, s]; rw [if_neg ho', if_neg hp]
+        simp only [dsStep, s]; rw [ite_eq_right ho', ite_eq_right hp]
       simp +decide only [e, hc3, hc1, ho, ↓reduceIte, and_true, true_and]
       rw [Nat.add_comm (W64 fl fh)]
   · have he : W64 gl gh % 2 = 0 := by
       rcases Nat.mod_two_eq_zero_or_one (W64 gl gh) with h | h
       · exact h
       · exact absurd (w64_odd.mpr h) ho
-    have hc3 : ctC3 gl dl dh = 0 := by rw [ctC3_eq, if_neg fun h => ho h.1]
+    have hc3 : ctC3 gl dl dh = 0 := by rw [ctC3_eq, ite_eq_right fun h => ho h.1]
     have e : dsStep s = ⟨(W64 dl dh + 2) % 2 ^ 64, W64 fl fh, asr64 (W64 gl gh), 2 * W64 ul uh % 2 ^ 64,
         2 * W64 vl vh % 2 ^ 64, W64 ql qh, W64 rl rh⟩ := by
-      simp only [dsStep, s]; rw [if_pos he]
+      simp only [dsStep, s]; rw [ite_eq_left he]
     simp +decide only [e, hc3, ho, ↓reduceIte, and_true, true_and]
     refine ⟨?_, ?_, ?_⟩
     · rw [Nat.zero_add, Nat.mod_eq_of_lt (w64_lt gl gh)]

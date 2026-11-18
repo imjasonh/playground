@@ -552,8 +552,8 @@ theorem pv_stHS {B : Word} {PX PY PZ RM : Nat} {n0 : Machine}
   have g11_10 : reg n11 a0 = (if PZ = 0 then 0 else 1) := by
     rw [V11]
     by_cases h : PZ = 0
-    · rw [if_pos h, if_pos ((accV_eq_zero_iff 12).1 (keep_z11.trans h))]
-    · rw [if_neg h, if_neg (fun h' => h (keep_z11.symm.trans ((accV_eq_zero_iff 12).2 h')))]
+    · rw [ite_eq_left h, ite_eq_left ((accV_eq_zero_iff 12).1 (keep_z11.trans h))]
+    · rw [ite_eq_right h, ite_eq_right (fun h' => h (keep_z11.symm.trans ((accV_eq_zero_iff 12).2 h')))]
   -- 0xC6A
   obtain ⟨n12, c12, u12⟩ := s11.block pvHSc6a E11.E.C.self pvHSc6a_end
     ⟨trivial, trivial⟩

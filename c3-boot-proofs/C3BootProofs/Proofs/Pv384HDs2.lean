@@ -91,15 +91,15 @@ theorem mask01' {g : Word} (h : g = 0 ∨ g = 1) :
 theorem and_mask (x : Word) (c : Prop) [Decidable c] :
     x &&& (if c then 0xFFFFFFFF else 0) = if c then x else 0 := by
   by_cases h : c
-  · rw [if_pos h, if_pos h]; exact and_ones x
-  · rw [if_neg h, if_neg h]; exact BitVec.and_zero
+  · rw [ite_eq_left h, ite_eq_left h]; exact and_ones x
+  · rw [ite_eq_right h, ite_eq_right h]; exact BitVec.and_zero
 
 theorem w64_mask (x xh : Word) (c : Prop) [Decidable c] :
     W64 (x &&& (if c then 0xFFFFFFFF else 0)) (xh &&& (if c then 0xFFFFFFFF else 0)) = if c then W64 x xh else 0 := by
   rw [and_mask, and_mask]
   by_cases h : c
-  · simp only [if_pos h]
-  · simp only [if_neg h]; rfl
+  · simp only [ite_eq_left h]
+  · simp only [ite_eq_right h]; rfl
 
 theorem w64_sel {c : Word} (hc : c = 0 ∨ c = 1) (a1 a2 a3 a4 : Word) :
     W64 (if c = 1 then a3 else a1) (if c = 1 then a4 else a2) = if c = 1 then W64 a3 a4 else W64 a1 a2 := by

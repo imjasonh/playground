@@ -781,8 +781,8 @@ class Ops:
         g.emit(f"  have g{k}_10 : reg n{k} a0 = (if {X} = 0 then 0 else 1) := by")
         g.emit(f"    rw [V{k}]")
         g.emit(f"    by_cases h : {X} = 0")
-        g.emit(f"    · rw [if_pos h, if_pos ((accV_eq_zero_iff 12).1 (keep_z{k}.trans h))]")
-        g.emit(f"    · rw [if_neg h, if_neg (fun h' => h (keep_z{k}.symm.trans ((accV_eq_zero_iff 12).2 h')))]")
+        g.emit(f"    · rw [ite_eq_left h, ite_eq_left ((accV_eq_zero_iff 12).1 (keep_z{k}.trans h))]")
+        g.emit(f"    · rw [ite_eq_right h, ite_eq_right (fun h' => h (keep_z{k}.symm.trans ((accV_eq_zero_iff 12).2 h')))]")
         g.regs[10] = ("U", f"(if {X} = 0 then 0 else 1)")
 
     def sw(self, off, base, imm, src, c):
@@ -847,7 +847,7 @@ class Ops:
                f"    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)\n"
                f"    (by decide) (by decide) (by decide) l{k}_{ca:x} l{k}_{cb:x}", co, 0x65, pre=pre, written_sv=svs)
 
-    def ude(self, off, co, ca, cb, cm, ct, n, MI, Mv):
+    def ude(self, off, co, ca, cb, cm, ct, n, MI, Mv, mpos=None):
         g = self.g
         k = g.k
         pre, (u, v, q, r) = self.tq(ct)
@@ -866,7 +866,7 @@ class Ops:
                f"g{k}_2 g{k}_10 g{k}_11 g{k}_12 g{k}_13 g{k}_14 g{k}_15 g{k}_16 g{k}_17 hn1 (by omega)\n"
                f"    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)\n"
                f"    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) l{k}_{ca:x} l{k}_{cb:x}\n"
-               f"    (by rw [a{k}_{cm:x}, ord_val]; decide)", co, 0x65, pre=pre, written_sv=svs)
+               f"    {mpos or f'(by rw [a{k}_{cm:x}, ord_val]; decide)'}", co, 0x65, pre=pre, written_sv=svs)
 
     def lw(self, off, rd, base, imm, c):
         """`lw rd, imm(base)` reading the word at offset `c` of the frame."""
@@ -1365,6 +1365,55 @@ def stage_ha():
     return g, info
 
 
+def stage_hb():
+    g = Gen("HB", env3=True)
+    g.regs = {2: S(0), 8: S(0xD80), 24: ("U", "dh"), 23: ("U", "ulo"), 26: ("U", "uhi"), 20: ("U", "vlo"),
+              25: ("U", "vhi"), 18: ("U", "qhi"), 22: ("U", "rlo"), 13: ("U", "rhi")}
+    for r in (3, 4):
+        g.regs[r] = ("U", f"reg n0 ({r} : Fin 32)")
+    g.acc = {0x1B0: "RM", 0xE10: "dataVal p384ParamsData 0x0 12", 0x1C88: "PX", 0x1CB8: "PY"}
+    g.words = {0x10: ("U", "zf"), 0x14: ("U", "BitVec.ofNat 32 n"), 0x18: ("U", "BitVec.ofNat 32 rem"),
+               0x40: ("U", "dl"), 0x54: ("U", "qlo"), 0xE70: C(0xFFFFFFFF), 0xE74: C(0xFFFFFFFE)}
+    g.sv = {0x1714: "Fv", 0xD50: "Gv", 0x270: "Dv", 0x17A4: "Ev"}
+    params = params_of(g, 0xF02)
+    o = Ops(g)
+    g.block(0xF02, 0xF0C)
+    o.sw(0xF0C, 10, 0x524, 23, 0x1C68)
+    o.sw(0xF10, 10, 0x528, 26, 0x1C6C)
+    o.sw(0xF14, 10, 0x52C, 20, 0x1C70)
+    o.sw(0xF18, 10, 0x530, 25, 0x1C74)
+    o.lw(0xF1C, 11, 2, 0x54, 0x54)
+    o.sw(0xF1E, 10, 0x534, 11, 0x1C78)
+    o.sw(0xF22, 10, 0x538, 18, 0x1C7C)
+    o.sw(0xF26, 10, 0x53C, 22, 0x1C80)
+    o.sw(0xF2A, 10, 0x540, 13, 0x1C84)
+    g.block(0xF2E, 0xF4E); o.lw(0xF4E, 8, 2, 0x14, 0x14)
+    g.block(0xF50, 0xF52); o.ufg(0xF52, 0x1294, 0x1714, 0xD50, 0x1C68, "n")
+    g.block(0xF5A, 0xF6E); o.mc(0xF6E, 0x1714, 0x1294, 0x34)
+    g.block(0xF76, 0xF8A); o.mc(0xF8A, 0xD50, 0x12C8, 0x34)
+    MI = "(BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFE).toNat"
+    g.block(0xF92, 0xFBA)
+    o.ude(0xFBA, 0x1294, 0x270, 0x17A4, 0xE10, 0x1C68, "n", MI, "dataVal p384ParamsData 0x0 12",
+          f"(by rw [a{g.k}_e10]; decide)")
+    g.block(0xFC2, 0xFD0); o.mc(0xFD0, 0x270, 0x1294, 0x34)
+    g.block(0xFD8, 0xFEC); o.mc(0xFEC, 0x17A4, 0x12C8, 0x34)
+    o.lw(0xFF4, 10, 2, 0x18, 0x18)
+    g.block(0xFF6, 0xFF8, {10: ("U", "BitVec.ofNat 32 rem - BitVec.ofNat 32 n")})
+    info = {
+        "end": 0xFF8, "name": "pv_stHB", "title": "the end of a batch of the inversion of `Z`",
+        "doc": "From 0xF02 to 0xFF8: store the batch's matrix, apply it to `f`, `g`, `d`, and `e`,\nand count down the steps left.",
+        "thmdoc": "**The end of a batch of stage H**, from 0xF02 to 0xFF8.",
+        "params": "{B : Word} {zf dl dh ulo uhi vlo vhi qlo qhi rlo rhi : Word} {rem n RM PX PY : Nat} {Fv Gv Dv Ev : Int} "
+                  + params + " (hn1 : 1 ≤ n) (hn2 : n ≤ 62)",
+        "intro": ["have t0 : Steps n0 n0 := .refl n0", "have fR0 : ∀ x, PvR B x → n0.mem x = n0.mem x := fun _ _ => rfl"]
+                 + [f"have g0_{r} : reg n0 ({r} : Fin 32) = reg n0 ({r} : Fin 32) := rfl" for r in (3, 4)],
+        "import": "C3BootProofs.Proofs.Pv384HA",
+        "only": {"regs": {2, 3, 4, 10, 19, 24}, "words": {0x10, 0x40, 0xE70, 0xE74},
+                 "sv": {0x270, 0xD50, 0x1714, 0x17A4}},
+    }
+    return g, info
+
+
 def stage_b():
     g = Gen("B")
     g.regs = {2: S(0), 8: S(0xD80), 18: C(0), 19: ("U", "BitVec.ofNat 32 len"), 20: ("U", "ph")}
@@ -1443,7 +1492,7 @@ def main():
     g, info = {"B": stage_b, "C0": stage_c0, "CA": stage_ca, "CB": stage_cb, "C2a": stage_c2a,
                "C2b1": lambda: stage_c2b(1), "C2b0": lambda: stage_c2b(0), "D": stage_d,
                "E0": lambda: stage_e(0), "E1": lambda: stage_e(1), "F0": lambda: stage_f(0),
-               "F1": lambda: stage_f(1), "HS": stage_hs, "HA": stage_ha}[stage]()
+               "F1": lambda: stage_f(1), "HS": stage_hs, "HA": stage_ha, "HB": stage_hb}[stage]()
     stmt, proof = g.conclusion(info["end"], info.get("extra", ()), info.get("only"))
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.Pv384Lib"), title=info["title"], stage=stage,
                         doc=info["doc"]))
