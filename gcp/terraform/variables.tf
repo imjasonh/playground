@@ -13,6 +13,26 @@ variable "github_repository" {
   }
 }
 
+variable "github_repository_id" {
+  description = "Numeric ID of github_repository (gh api repos/OWNER/REPO --jq .id)."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_repository_id))
+    error_message = "github_repository_id must be a numeric GitHub repository ID."
+  }
+}
+
+variable "github_repository_owner_id" {
+  description = "Numeric ID of the account that owns github_repository (gh api repos/OWNER/REPO --jq .owner.id)."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_repository_owner_id))
+    error_message = "github_repository_owner_id must be a numeric GitHub account ID."
+  }
+}
+
 variable "github_workflow" {
   description = "Workflow path that may deploy and plan, relative to the repository root. The pool rejects tokens from any other workflow."
   type        = string
