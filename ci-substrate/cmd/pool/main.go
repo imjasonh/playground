@@ -57,7 +57,7 @@ type config struct {
 	IdleAfter time.Duration `env:"IDLE_AFTER, default=2m"`
 	// Interval is how often the pool reconciles with no queue change, and
 	// MinInterval the least time between reconciles that queue changes start.
-	Interval    time.Duration `env:"INTERVAL, default=30s"`
+	Interval    time.Duration `env:"INTERVAL, default=5s"`
 	MinInterval time.Duration `env:"MIN_INTERVAL, default=250ms"`
 }
 

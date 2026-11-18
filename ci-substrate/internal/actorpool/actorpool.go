@@ -111,8 +111,9 @@ type Config struct {
 	// pool suspends it.
 	IdleAfter time.Duration
 	// Interval is how often Run reconciles when the queue has not changed,
-	// to see what only Substrate knows: crashes, finished resumes, and
-	// actors gone idle.
+	// to see what only Substrate knows: crashes, finished resumes, a worker
+	// with room for a resume that failed, and actors gone idle. Scale-up
+	// waits on some of those, so keep it short.
 	Interval time.Duration
 	// MinInterval is the least time between two reconciles that queue
 	// changes start, so a busy build costs a few reconciles a second.
@@ -148,7 +149,7 @@ func New(cfg Config) (*Pool, error) {
 		cfg.IdleAfter = time.Minute
 	}
 	if cfg.Interval <= 0 {
-		cfg.Interval = 30 * time.Second
+		cfg.Interval = 5 * time.Second
 	}
 	if cfg.MinInterval <= 0 {
 		cfg.MinInterval = 250 * time.Millisecond
