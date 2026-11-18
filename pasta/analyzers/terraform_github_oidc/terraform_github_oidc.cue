@@ -179,7 +179,7 @@ terraform_github_oidc: schema.#Analyzer & {
 				{op: "matches", args: ["@_root", #"principalSet://iam\.googleapis\.com/[^"]*/attribute\.repository(?:_owner)?/|principal://iam\.googleapis\.com/[^"]*/subject/repo:"#]},
 			]
 			_message:  "IAM member binds a GitHub repository or owner by name; a renamed or deleted name can be registered by anyone, so map assertion.repository_id and bind attribute.repository_id instead"
-			_severity: "warning"
+			_severity: "error"
 			_name:     "gcp_workload_identity_member_by_name"
 			_doc:      "Flag Workload Identity IAM members on attribute.repository, attribute.repository_owner, or a repo: subject"
 		}).out
