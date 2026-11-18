@@ -167,4 +167,111 @@ def CtRegs (B : Word) (M : Word → BitVec 8) (f : Fin 32 → Word) (s : Ds) : P
   W64 (f 23) (f 26) = s.u ∧ W64 (f 20) (f 25) = s.v ∧
   W64 (memLoad32 M (B + 0x420 + 0x54)) (f 18) = s.q ∧ W64 (f 22) (f 13) = s.r
 
+theorem ult_val (a b : Word) : (if a.ult b then (1 : Word) else 0).toNat = if a.toNat < b.toNat then 1 else 0 := by
+  simp only [BitVec.ult]; split <;> simp_all
+
+theorem w64_add (x xh y yh : Word) :
+    W64 (x + y) ((if (x + y).ult x then 1 else 0) + (xh + yh)) = (W64 x xh + W64 y yh) % 2 ^ 64 := by
+  have := x.isLt; have := y.isLt; have := xh.isLt; have := yh.isLt
+  simp only [W64, BitVec.toNat_add, BitVec.ult, BitVec.toNat_add]
+  split <;> simp_all [BitVec.toNat_add] <;> omega
+
+theorem w64_sub (x xh y yh : Word) :
+    W64 (y - x) (yh - xh - (if y.ult x then 1 else 0)) = (W64 y yh + 2 ^ 64 - W64 x xh) % 2 ^ 64 := by
+  have := x.isLt; have := y.isLt; have := xh.isLt; have := yh.isLt
+  simp only [W64, BitVec.toNat_sub, BitVec.ult]
+  split <;> simp_all [BitVec.toNat_sub] <;> omega
+
+theorem w64_neg (x xh : Word) :
+    W64 (0 - x) (0 - xh - (if (0 : Word).ult x then 1 else 0)) = (2 ^ 64 - W64 x xh) % 2 ^ 64 := by
+  have := w64_sub x xh 0 0
+  simp only [W64, show (0 : Word).toNat = 0 from rfl, Nat.mul_zero, Nat.add_zero, Nat.zero_add] at this ⊢
+  exact this
+
+theorem w64_shl1 (x xh : Word) : W64 (x <<< 1) (xh <<< 1 ||| x >>> 31) = 2 * W64 x xh % 2 ^ 64 := by
+  have := x.isLt; have := xh.isLt
+  simp only [W64, toNat_or_shl1, BitVec.toNat_shiftLeft, Nat.shiftLeft_eq]
+  omega
+
+theorem w64_asr (x xh : Word) :
+    W64 (xh <<< 31 ||| x >>> 1) (xh.sshiftRight 1) = asr64 (W64 x xh) := by
+  have := x.isLt; have := xh.isLt
+  simp only [W64, asr64, toNat_or_shl31, toNat_sra1]
+  split <;> split <;> omega
+
+theorem w64_add2 (dl dh : Word) :
+    W64 (dl + 2) ((if (dl + 2).ult dl then 1 else 0) + dh) = (W64 dl dh + 2) % 2 ^ 64 := by
+  have := w64_add dl dh 2 0
+  rw [show dh + (0 : Word) = dh from BitVec.add_zero dh] at this
+  rw [this]; rfl
+
+theorem w64_2sub (dl dh : Word) :
+    W64 (2 - dl) (0 - dh - (if (2 : Word).ult dl then 1 else 0)) = (2 + 2 ^ 64 - W64 dl dh) % 2 ^ 64 := by
+  have := w64_sub dl dh 2 0
+  simpa [W64] using this
+
+theorem xorTop (x : Nat) (hx : x < 2 ^ 32) : x ^^^ 2 ^ 31 = (x + 2 ^ 31) % 2 ^ 32 := by
+  have h1 : (x ^^^ 2 ^ 31) / 2 ^ 31 = x / 2 ^ 31 ^^^ 1 := by
+    rw [Nat.xor_div_two_pow, Nat.div_self (by decide)]
+  have h2 : (x ^^^ 2 ^ 31) % 2 ^ 31 = x % 2 ^ 31 := by
+    rw [Nat.xor_mod_two_pow, Nat.mod_self, Nat.xor_zero]
+  have e := Nat.div_add_mod (x ^^^ 2 ^ 31) (2 ^ 31)
+  have hh : x / 2 ^ 31 < 2 := by omega
+  have h3 : x / 2 ^ 31 ^^^ 1 = 1 - x / 2 ^ 31 := by
+    generalize x / 2 ^ 31 = q at hh ⊢
+    rcases (by omega : q = 0 ∨ q = 1) with rfl | rfl <;> rfl
+  rw [h1, h2, h3] at e
+  omega
+
+theorem hbt (dl : Word) : (if (0 : Word).ult dl then (1 : Word) else 0).toNat = if dl.toNat = 0 then 0 else 1 := by
+    by_cases h : dl.toNat = 0
+    · have : dl = 0 := BitVec.eq_of_toNat_eq h
+      subst this; rfl
+    · rw [ite_eq_left (by simp only [BitVec.ult, show (0 : Word).toNat = 0 from rfl]; simp; omega), ite_eq_right h]; rfl
+theorem ct_c1 (dl dh : Word) :
+    ((dh ^^^ 0x80000000) &&& (0x80000000 - (dh ^^^ 0x80000000) - (if (0 : Word).ult dl then 1 else 0))) >>> 0x1F =
+      if dsPos (W64 dl dh) then 1 else 0 := by
+  have hd := dh.isLt; have hl := dl.isLt
+  apply BitVec.eq_of_toNat_eq
+  have hA : (dh ^^^ 0x80000000).toNat = (dh.toNat + 2 ^ 31) % 2 ^ 32 := by
+    rw [BitVec.toNat_xor, show (0x80000000 : Word).toNat = 2 ^ 31 from rfl, xorTop _ hd]
+  have hb : (if (0 : Word).ult dl then (1 : Word) else 0).toNat = if dl.toNat = 0 then 0 else 1 := by
+    by_cases h : dl.toNat = 0
+    · have : dl = 0 := BitVec.eq_of_toNat_eq h
+      subst this; rfl
+    · rw [ite_eq_left (by simp only [BitVec.ult, show (0 : Word).toNat = 0 from rfl]; simp; omega), ite_eq_right h]; rfl
+  rw [BitVec.toNat_ushiftRight, BitVec.toNat_and, Nat.shiftRight_eq_div_pow,
+    Nat.and_div_two_pow, BitVec.toNat_sub, BitVec.toNat_sub, hA, hb, show (0x80000000 : Word).toNat = 2 ^ 31 from rfl]
+  generalize hX : (dh.toNat + 2 ^ 31) % 2 ^ 32 / 2 ^ 31 = X
+  generalize hY : ((2 ^ 32 - if dl.toNat = 0 then 0 else 1) +
+      (2 ^ 32 - (dh.toNat + 2 ^ 31) % 2 ^ 32 + 2 ^ 31) % 2 ^ 32) % 2 ^ 32 / 2 ^ 31 = Y
+  by_cases hP : dsPos (W64 dl dh)
+  · rw [ite_eq_left hP]; show _ = 1
+    unfold dsPos W64 at hP
+    have h1 : X = 1 := by omega
+    have h2 : Y = 1 := by
+      by_cases h2 : dl.toNat = 0
+      · rw [ite_eq_left h2] at hY; omega
+      · rw [ite_eq_right h2] at hY; omega
+    subst h1 h2; rfl
+  · rw [ite_eq_right hP]; show _ = 0
+    unfold dsPos W64 at hP
+    have hP' : dl.toNat + 2 ^ 32 * dh.toNat = 0 ∨ 2 ^ 63 ≤ dl.toNat + 2 ^ 32 * dh.toNat := by
+      by_cases h1 : dl.toNat + 2 ^ 32 * dh.toNat = 0
+      · exact .inl h1
+      · exact .inr (Nat.le_of_not_lt fun h2 => hP ⟨h1, h2⟩)
+    clear hP
+    have hX2 : X < 2 := by omega
+    have hY2 : Y < 2 := by
+      by_cases h2 : dl.toNat = 0
+      · rw [ite_eq_left h2] at hY; omega
+      · rw [ite_eq_right h2] at hY; omega
+    have h0 : X = 0 ∨ Y = 0 := by
+      by_cases h2 : dl.toNat = 0
+      · rw [ite_eq_left h2] at hY; omega
+      · rw [ite_eq_right h2] at hY; omega
+    rcases h0 with rfl | rfl
+    · exact Nat.zero_and _
+    · exact Nat.and_zero _
+
 end C3.RV32.Pv
