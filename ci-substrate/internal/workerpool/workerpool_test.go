@@ -18,8 +18,6 @@ import (
 
 const scalePath = "/apis/ate.dev/v1/namespaces/ci-substrate-workers/workerpools/ci-runner/scale"
 
-// fakeAPIServer serves one WorkerPool's scale subresource to the bearer of
-// token.
 type fakeAPIServer struct {
 	mu       sync.Mutex
 	token    string

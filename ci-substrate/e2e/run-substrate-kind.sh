@@ -16,11 +16,9 @@
 # scales, so the burst node stays up; what the test checks is the WorkerPool.
 #
 # Needs docker, go, git, kind (tested with v0.33.0), kubectl, kubectl-ate, ko,
-# crane, and python3. Set
-# CI_SUBSTRATE_SUBSTRATE_SRC to a checkout of agent-substrate/substrate at
-# SUBSTRATE_VERSION; otherwise it clones one. Set CI_SUBSTRATE_KIND_KEEP=1 to
-# keep the cluster and registry it
-# creates.
+# crane, and python3. Set CI_SUBSTRATE_SUBSTRATE_SRC to a checkout of
+# agent-substrate/substrate at SUBSTRATE_VERSION; otherwise it clones one. Set
+# CI_SUBSTRATE_KIND_KEEP=1 to keep the cluster and registry it creates.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -78,11 +76,10 @@ echo "==> kind cluster ${CLUSTER_NAME}"
 if kind get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}"; then
   echo "Reusing kind cluster ${CLUSTER_NAME}"
 else
-  # The feature gates and runtime config are the ones Substrate's
-  # hack/create-kind-cluster.sh sets for its pod certificates. kube-proxy's
-  # nftables mode works on kernels without the iptables statistic match,
-  # which iptables mode needs for Services with more than one endpoint; the
-  # kube, git-k8s, and sshapp kind clusters use the same setting.
+  # Substrate's pod certificates need these feature gates and runtime config.
+  # kube-proxy's nftables mode works on kernels without the iptables
+  # statistic match, which iptables mode needs for Services with more than
+  # one endpoint.
   cat >"${WORKDIR}/kind.yaml" <<EOF
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
@@ -154,8 +151,8 @@ kubectl taint node "${WORKER}" ci-substrate.imjasonh.com/installing- 2>/dev/null
 kubectl taint node "${CONTROL_PLANE}" "${ALWAYS_ON}=true:NoSchedule" --overwrite
 
 echo "==> Substrate's control plane on ${CONTROL_PLANE}"
-# Deployments and StatefulSets stay on the always-on node. DaemonSets, such as
-# atelet, also tolerate its taint, so they run on both nodes.
+# DaemonSets such as atelet must run on both nodes, so they get the toleration
+# without the nodeSelector.
 pin_always_on() {
   python3 -c '
 import json, sys
@@ -206,8 +203,7 @@ if [[ -n "${off}" ]]; then
 fi
 
 echo "==> ci-substrate control plane"
-# run-kind.sh reuses this cluster and registry. The cluster outlives it; this
-# script's cleanup removes both.
+# This script's cleanup, not run-kind.sh's, removes the cluster and registry.
 CI_SUBSTRATE_KIND_CLUSTER="${CLUSTER_NAME}" \
   CI_SUBSTRATE_REGISTRY_NAME="${REGISTRY_NAME}" \
   CI_SUBSTRATE_REGISTRY_PORT="${REGISTRY_PORT}" \

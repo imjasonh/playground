@@ -10,10 +10,6 @@
 #   kubectl -n ate-system create configmap ci-substrate-pool-tenant-a \
 #     --from-file=egress-policy.yaml=egress-cas.yaml
 #   ko apply -f pool.yaml
-#
-# It also sets the replicas of the ci-runner WorkerPool in workerpool.yaml,
-# through its scale subresource, with a Kubernetes API token for ate-client
-# that the Role below lets do only that.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -82,8 +78,9 @@ spec:
               value: 2m
             - name: WORKER_POOL
               value: ci-substrate-workers/ci-runner
-            # ci-runner-base has one worker. A worker's 2 CPUs
-            # (workerpool.yaml) hold two of the template's 1-CPU actors.
+            # Match workerpool.yaml's limits and runner-template.yaml's
+            # resources: ci-runner-base's one 2-CPU worker, like each burst
+            # worker, holds two 1-CPU actors.
             - name: BASE_SLOTS
               value: "2"
             - name: ACTORS_PER_WORKER

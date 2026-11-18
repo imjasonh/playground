@@ -264,7 +264,6 @@ for a in json.load(sys.stdin).get("actors", []):
         print(s.get("state", "-"), w.get("workerPool", "-"), s.get("assignedNode", "-"))
 ' "$1"
 }
-# One actor ran the action, and it fits on the base worker.
 if [[ "$(burst_replicas)" != 0 ]]; then
   echo "the burst WorkerPool has $(burst_replicas) replicas for one actor, want 0" >&2
   exit 1
@@ -300,8 +299,6 @@ if [[ "$(kubectl get node "${node}" -o jsonpath='{.metadata.labels.ci-substrate\
   exit 1
 fi
 echo "ci-runner-2 ran on burst node ${node}"
-# The actors idle out and suspend. With none on a burst worker, the pool
-# scales the burst WorkerPool to zero.
 await_burst 0 300
 echo "burst WorkerPool scaled to 0"
 kubectl ate get actors -a "${ATESPACE}"

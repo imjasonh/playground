@@ -18,9 +18,7 @@ const (
 )
 
 // fakeSubstrate records the pool's calls and moves actors between states
-// the way Substrate would, one step per call. With workers set, a resume
-// places the actor on a base worker, then on a ready burst worker, and fails
-// when neither has room.
+// the way Substrate would, one step per call.
 type fakeSubstrate struct {
 	actors  map[string]actorpool.State
 	placed  map[string]string
@@ -79,8 +77,6 @@ func (f *fakeSubstrate) place() (string, error) {
 	}
 }
 
-// fakeWorkers is the burst WorkerPool. Its workers take room only once a
-// test marks them ready.
 type fakeWorkers struct {
 	sub                  *fakeSubstrate
 	baseSlots, perWorker int
@@ -164,8 +160,6 @@ func newHarness(t *testing.T, warm, maxActors int) *harness {
 	return h
 }
 
-// newScalingHarness is newHarness with a pool that sizes the burst
-// WorkerPool on top of baseSlots that always have room.
 func newScalingHarness(t *testing.T, warm, maxActors, baseSlots, perWorker, maxWorkers int) *harness {
 	t.Helper()
 	h := &harness{sub: newFake(), queue: &fakeQueue{}, now: time.Unix(1_700_000_000, 0)}
@@ -194,7 +188,6 @@ func newScalingHarness(t *testing.T, warm, maxActors, baseSlots, perWorker, maxW
 	return h
 }
 
-// reconcileErr reconciles once, expecting an error, and returns the calls.
 func (h *harness) reconcileErr(t *testing.T) []string {
 	t.Helper()
 	if err := h.pool.Reconcile(t.Context()); err == nil {
@@ -394,13 +387,9 @@ func TestRejectsBadConfig(t *testing.T) {
 
 func TestScalesWorkersForWorkBeyondBaseThenToZero(t *testing.T) {
 	h := newScalingHarness(t, 1, 4, 1, 1, 3)
-	// The warm actor fits on the base worker: no burst worker starts.
 	if got := h.reconcile(t); !slices.Equal(got, []string{"create ci-runner-0", "resume ci-runner-0"}) {
 		t.Fatalf("prewarm %v", got)
 	}
-	// It is busy and two more jobs queue. The pool asks for two burst
-	// workers before it resumes the new actors, which find no room while
-	// those workers start.
 	h.queue.busy, h.queue.queued = []string{"ci-runner-0"}, 2
 	if got := h.reconcileErr(t); !slices.Equal(got, []string{"create ci-runner-1", "create ci-runner-2", "resume ci-runner-1", "resume ci-runner-2", "scale 2"}) {
 		t.Fatalf("burst %v", got)
@@ -417,8 +406,6 @@ func TestScalesWorkersForWorkBeyondBaseThenToZero(t *testing.T) {
 	if got := h.states(); got != "ci-runner-0=running ci-runner-1=running ci-runner-2=running" {
 		t.Fatalf("states %q", got)
 	}
-	// Work drains. The workers stay while the runners idle out, then go
-	// to zero once every actor on them is suspended.
 	h.queue.busy, h.queue.queued = nil, 0
 	h.now = h.now.Add(2 * time.Minute)
 	if got := h.reconcile(t); !slices.Equal(got, []string{"suspend ci-runner-0", "suspend ci-runner-1", "suspend ci-runner-2"}) {
@@ -434,13 +421,9 @@ func TestScalesWorkersForWorkBeyondBaseThenToZero(t *testing.T) {
 
 func TestKeepsWorkersForWarmActorsThatHaveNotRun(t *testing.T) {
 	h := newScalingHarness(t, 2, 4, 1, 1, 2)
-	// Two warm actors: one fits on the base worker, and the other waits for
-	// a burst worker.
 	if got := h.reconcileErr(t); !slices.Equal(got, []string{"create ci-runner-0", "create ci-runner-1", "resume ci-runner-0", "resume ci-runner-1", "scale 1"}) {
 		t.Fatalf("prewarm %v", got)
 	}
-	// Nothing is queued, but ci-runner-1 has no snapshot yet. The pool keeps
-	// its worker and resumes it until the worker is up.
 	if got := h.reconcileErr(t); !slices.Equal(got, []string{"resume ci-runner-1"}) {
 		t.Fatalf("starting worker %v", got)
 	}
@@ -451,7 +434,6 @@ func TestKeepsWorkersForWarmActorsThatHaveNotRun(t *testing.T) {
 	if got := h.sub.placed["ci-runner-1"]; got != burstPool {
 		t.Fatalf("resumed on %q, want the burst pool", got)
 	}
-	// Both idle out, leaving two snapshots and no burst worker.
 	h.now = h.now.Add(2 * time.Minute)
 	if got := h.reconcile(t); !slices.Equal(got, []string{"suspend ci-runner-0", "suspend ci-runner-1"}) {
 		t.Fatalf("idle %v", got)
@@ -487,8 +469,6 @@ func TestKeepsWorkersWhileTheyHostActors(t *testing.T) {
 	if got := h.reconcile(t); len(got) != 0 {
 		t.Fatalf("suspending burst actor %v", got)
 	}
-	// The burst worker is empty, but a job arrives in the same reconcile:
-	// the pool resumes for it and leaves the workers alone.
 	h.sub.actors["ci-runner-1"] = actorpool.StateSuspended
 	delete(h.sub.placed, "ci-runner-1")
 	h.queue.queued = 1
@@ -498,7 +478,6 @@ func TestKeepsWorkersWhileTheyHostActors(t *testing.T) {
 	if got := h.sub.placed["ci-runner-0"]; got != basePool {
 		t.Fatalf("resumed on %q, want the base pool", got)
 	}
-	// With the job leased on the base worker, the burst workers go.
 	h.queue.queued, h.queue.busy = 0, []string{"ci-runner-0"}
 	if got := h.reconcile(t); !slices.Equal(got, []string{"scale 0"}) {
 		t.Fatalf("empty burst %v", got)
@@ -533,8 +512,6 @@ func TestWorkersStopAtMaxWorkers(t *testing.T) {
 	if creates := len(slices.DeleteFunc(got, func(c string) bool { return !strings.HasPrefix(c, "create ") })); creates != 9 {
 		t.Fatalf("%d creates, want 9", creates)
 	}
-	// Two workers hold four actors. The other five keep failing to
-	// resume, and the pool asks for no more workers.
 	h.workers.ready = 2
 	got = h.reconcileErr(t)
 	if slices.ContainsFunc(got, func(c string) bool { return strings.HasPrefix(c, "scale ") }) {

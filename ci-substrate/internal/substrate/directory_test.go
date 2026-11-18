@@ -43,7 +43,6 @@ func (f *fakeControl) ListActors(_ context.Context, req *ateapi.ListActorsReques
 	return page, nil
 }
 
-// serve runs control on an in-memory connection and returns a client for it.
 func serve(t *testing.T, control ateapi.ControlServer) ateapi.ControlClient {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)

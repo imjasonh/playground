@@ -107,10 +107,10 @@ workers for the actors that are running or about to resume beyond
 new worker is ready, a resume fails with "no worker has room for the
 actor", and the pool tries again on its next reconcile. It shrinks the
 `WorkerPool` only when no actor is resuming and none of its actors is on a
-burst worker, since Substrate picks which worker a scale-down removes. When
-every actor is suspended, that is zero, and the cluster autoscaler removes
-the burst nodes. The pool calls the Kubernetes API with a projected token
-for `ate-client`, which the `ci-substrate-pool` Role allows to get and patch
+burst worker, since a scale-down can stop any worker and Substrate crashes
+the actor on it. When every actor is suspended, that is zero, and the
+cluster autoscaler removes the burst nodes. The pool calls the Kubernetes
+API with a projected token for `ate-client`, which the `ci-substrate-pool` Role allows to get and patch
 only `workerpools/scale` for `ci-runner`.
 
 It reads the queue from the scheduler in `cas` with `WorkerService.Status`,

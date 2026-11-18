@@ -77,7 +77,6 @@ func TestStateMapping(t *testing.T) {
 	}
 }
 
-// actorControl serves one template and a fixed list of actors.
 type actorControl struct {
 	ateapi.UnimplementedControlServer
 	actors []*ateapi.Actor

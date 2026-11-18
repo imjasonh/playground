@@ -63,17 +63,14 @@ type config struct {
 	IdleAfter time.Duration `env:"IDLE_AFTER, default=2m"`
 	Interval  time.Duration `env:"INTERVAL, default=5s"`
 
-	// WorkerPool, as namespace/name, is the WorkerPool the pool sizes. Empty
-	// leaves every WorkerPool alone. BaseSlots is how many actors fit on
-	// workers the pool does not size, ActorsPerWorker how many fit on one
-	// of WorkerPool's workers, and MaxWorkers bounds its replicas.
+	// WorkerPool is the namespace/name of the WorkerPool the pool sizes, or
+	// empty for none. The other fields fill actorpool.Burst.
 	WorkerPool      string `env:"WORKER_POOL"`
 	BaseSlots       int    `env:"BASE_SLOTS, default=1"`
 	ActorsPerWorker int    `env:"ACTORS_PER_WORKER, default=1"`
 	MaxWorkers      int    `env:"MAX_WORKERS, default=4"`
 
-	// The Kubernetes API, for WorkerPool. Kubernetes sets the address in
-	// every pod.
+	// Kubernetes sets the API server's address in every pod.
 	KubeHost      string `env:"KUBERNETES_SERVICE_HOST"`
 	KubePort      string `env:"KUBERNETES_SERVICE_PORT"`
 	KubeCAFile    string `env:"KUBE_CA_FILE, default=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"`

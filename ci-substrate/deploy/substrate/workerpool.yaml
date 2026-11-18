@@ -4,17 +4,15 @@
 # either pool. Replace the image with the ateworker-gvisor image of your
 # Substrate install.
 #
-# ci-runner-base runs on the always-on node, labeled and tainted
-# ci-substrate.imjasonh.com/always-on=true, so the first actors start
-# without waiting for a node. ci-runner runs on nodes labeled
-# ci-substrate.imjasonh.com/burst=true, which the cluster autoscaler adds and
-# removes. The pool Deployment
-# (pool.yaml) sets ci-runner's replicas, to 0 when every actor fits on
-# ci-runner-base or is suspended. Substrate books each actor's resources
-# (runner-template.yaml) against a worker's limits; pool.yaml's BASE_SLOTS
-# and ACTORS_PER_WORKER count the actors that fit. The API requires the field, so this file
-# starts it at 0; kubectl apply leaves a field alone while the file's value
-# doesn't change, so applying it again doesn't reset what the pool set.
+# ci-runner-base runs on the always-on node so the first actors start without
+# waiting for a node. The pool Deployment (pool.yaml) sets ci-runner's
+# replicas. Substrate books each actor's resources (runner-template.yaml)
+# against a worker's limits, so pool.yaml's BASE_SLOTS and ACTORS_PER_WORKER
+# must match the limits here.
+#
+# The API requires ci-runner's replicas, so this file starts it at 0. kubectl
+# apply leaves a field alone while the file's value doesn't change, so
+# applying this file again doesn't reset what the pool set.
 apiVersion: v1
 kind: Namespace
 metadata:

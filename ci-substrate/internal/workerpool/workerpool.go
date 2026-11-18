@@ -1,7 +1,6 @@
 // Package workerpool reads and sets the replicas of one Substrate WorkerPool
 // through its scale subresource, as the pod's ServiceAccount. It implements
-// actorpool.Workers with the standard library, so the pool needs no
-// Kubernetes client library for two requests.
+// actorpool.Workers.
 package workerpool
 
 import (
