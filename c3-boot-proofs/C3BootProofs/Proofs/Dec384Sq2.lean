@@ -1,4 +1,11 @@
 import C3BootProofs.Proofs.Dec384Sq
+import C3BootProofs.Proofs.P384FromRepr
+import C3BootProofs.Proofs.P384Retrieve
+import C3BootProofs.Proofs.P384Neg
+import C3BootProofs.Proofs.CondSelect
+import C3BootProofs.Proofs.CtWrap
+import C3BootProofs.Proofs.UintEq
+import C3BootProofs.Proofs.Leaves
 
 /-!
 # P-384 point decompression: one inlined Montgomery squaring
@@ -29,6 +36,23 @@ structure DqCode (M : Word → BitVec 8) : Prop where
   bsub : CodeIn M BSUB borrowingSubCode
   sel : CodeIn M SEL uintSelect12Code
   mm : CodeIn M MM mulMont12Code
+  p3mul : CodeIn M (BitVec.ofNat 32 p384MulAddress) p384MulCode
+  p3add : CodeIn M (BitVec.ofNat 32 p384AddAddress) p384AddCode
+  csel : CodeIn M (BitVec.ofNat 32 condSelect384Address) condSelect384Code
+  cmap : CodeIn M (BitVec.ofNat 32 ctMap384Address) ctMap384Code
+  neg : CodeIn M (BitVec.ofNat 32 p384NegAddress) p384NegCode
+  nz12 : CodeIn M (BitVec.ofNat 32 uint12IsNonzeroAddress) uint12IsNonzeroCode
+  refnz : CodeIn M (BitVec.ofNat 32 uintRefIsNonzeroAddress) uintRefIsNonzeroCode
+  cta : CodeIn M (BitVec.ofNat 32 uint12CtAssignAddress) uint12CtAssignCode
+  sca : CodeIn M (BitVec.ofNat 32 sliceCtAssignAddress) sliceCtAssignCode
+  sqm : CodeIn M (BitVec.ofNat 32 sqMont12Address) sqMont12Code
+  eq12 : CodeIn M (BitVec.ofNat 32 uint12EqAddress) uint12EqCode
+  bb : CodeIn M (BitVec.ofNat 32 blackBoxU8Address) blackBoxU8Code
+  cte : CodeIn M (BitVec.ofNat 32 choiceCtEqAddress) choiceCtEqCode
+  rt : CodeIn M (BitVec.ofNat 32 p384FieldRetrieveAddress) p384FieldRetrieveCode
+  mr : CodeIn M (BitVec.ofNat 32 montRetrieve12Address) montRetrieve12Code
+  frp : CodeIn M (BitVec.ofNat 32 p384FromReprAddress) p384FromReprCode
+  za : CodeIn M (BitVec.ofNat 32 zeroArray48Address) zeroArray48Code
 
 theorem codeHi {M M' : Word → BitVec 8} {b : Word} {code : List Nat} (hc : CodeIn M b code)
     (hb : 0x40000000 ≤ b.toNat) (hl : b.toNat + code.length ≤ 2 ^ 32)
@@ -40,7 +64,15 @@ theorem DqCode.hi {M M' : Word → BitVec 8} (C : DqCode M) (h : ∀ x : Word, 0
   ⟨codeHi C.self (by decide) (by decide) h, codeHi C.stub (by decide) (by decide) h,
     codeHi C.body (by decide) (by decide) h, codeHi C.mset (by decide) (by decide) h,
     codeHi C.bsub (by decide) (by decide) h, codeHi C.sel (by decide) (by decide) h,
-    codeHi C.mm (by decide) (by decide) h⟩
+    codeHi C.mm (by decide) (by decide) h, codeHi C.p3mul (by decide) (by decide) h,
+    codeHi C.p3add (by decide) (by decide) h, codeHi C.csel (by decide) (by decide) h,
+    codeHi C.cmap (by decide) (by decide) h, codeHi C.neg (by decide) (by decide) h,
+    codeHi C.nz12 (by decide) (by decide) h, codeHi C.refnz (by decide) (by decide) h,
+    codeHi C.cta (by decide) (by decide) h, codeHi C.sca (by decide) (by decide) h,
+    codeHi C.sqm (by decide) (by decide) h, codeHi C.eq12 (by decide) (by decide) h,
+    codeHi C.bb (by decide) (by decide) h, codeHi C.cte (by decide) (by decide) h,
+    codeHi C.rt (by decide) (by decide) h, codeHi C.mr (by decide) (by decide) h,
+    codeHi C.frp (by decide) (by decide) h, codeHi C.za (by decide) (by decide) h⟩
 
 /-- `decompress`'s frame at `S`, with 0x1A0 bytes below for its callees, all
 below the code. -/
@@ -48,6 +80,7 @@ structure DqFrame (S : Word) : Prop where
   al : S.toNat % 16 = 0
   lo : 0x1A0 ≤ S.toNat
   hi : S.toNat + 0xA50 ≤ 0x40000000
+  dsep : Sep (S + 0xFFFFFE60) 0xBF0 (0x3FCC4200 : Word) 0xC60
 
 theorem DqFrame.at {S : Word} (F : DqFrame S) (c : Nat) (hc : c ≤ 0xA50) : (S + BitVec.ofNat 32 c).toNat = S.toNat + c := by
   have := F.hi; rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
