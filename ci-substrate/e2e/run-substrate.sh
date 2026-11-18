@@ -11,7 +11,9 @@
 # 127.0.0.1 is not; set CI_SUBSTRATE_ACTOR_IMAGE_REPO to a repository that
 # is, and the template is resolved against that one. Set
 # CI_SUBSTRATE_ATEWORKER_IMAGE to a mirror of the ateworker-gvisor image when
-# the cluster cannot pull from ghcr.io.
+# the cluster cannot pull from ghcr.io. Set CI_SUBSTRATE_WORKER_REQUESTS to a
+# resource list such as "{cpu: 100m, memory: 512Mi}" to give the worker pods
+# requests below their limits; Substrate sizes a worker from its limits alone.
 #
 # The WorkerPools in workerpool.yaml need a node labeled
 # ci-substrate.imjasonh.com/always-on=true (it may carry the matching taint)
@@ -39,6 +41,7 @@ ATESPACE=tenant-a
 # actions. Scale it down so actors do the work this script checks.
 RUNNER_DEPLOYMENT="${CI_SUBSTRATE_RUNNER_DEPLOYMENT:-runner-tenant-a}"
 WORKER_IMAGE="${CI_SUBSTRATE_ATEWORKER_IMAGE:-}"
+WORKER_REQUESTS="${CI_SUBSTRATE_WORKER_REQUESTS:-}"
 ACTOR_IMAGE_REPO="${CI_SUBSTRATE_ACTOR_IMAGE_REPO:-${KO_DOCKER_REPO:-}}"
 PORT_FORWARD_PIDS=()
 
@@ -95,12 +98,20 @@ if ! grep -q "atespace: ${ATESPACE}$" "${WORKDIR}/policy.yaml"; then
 fi
 
 echo "==> WorkerPool"
+workerpool_edits=()
 if [[ -n "${WORKER_IMAGE}" ]]; then
-  sed "s#ghcr.io/agent-substrate/substrate/ateworker-gvisor:[^[:space:]]*#${WORKER_IMAGE}#" "${OVERLAY}/workerpool.yaml" | kubectl apply -f -
-else
-  kubectl apply -f "${OVERLAY}/workerpool.yaml"
+  workerpool_edits+=(-e "s#ghcr.io/agent-substrate/substrate/ateworker-gvisor:[^[:space:]]*#${WORKER_IMAGE}#")
 fi
-kubectl -n ci-substrate-workers rollout status deployment/ci-runner-base --timeout=300s
+if [[ -n "${WORKER_REQUESTS}" ]]; then
+  workerpool_edits+=(-e "s#^\([[:space:]]*\)limits: #\1requests: ${WORKER_REQUESTS}\n&#")
+fi
+sed -e '' "${workerpool_edits[@]}" "${OVERLAY}/workerpool.yaml" | kubectl apply -f -
+kubectl -n ci-substrate-workers rollout status deployment/ci-runner-base --timeout=300s || {
+  kubectl -n ci-substrate-workers get pods -o wide || true
+  kubectl -n ci-substrate-workers describe pods | tail -40 || true
+  kubectl describe nodes | grep -A12 'Allocated resources' || true
+  exit 1
+}
 
 echo "==> ExternalVolumes preview gate"
 # ate-api-server takes --preview=<gate,...>. The template's external volume

@@ -237,6 +237,12 @@ for app in cas otel-collector jaeger; do
 done
 
 echo "==> Substrate actors"
-KO_DOCKER_REPO="localhost:${REGISTRY_PORT}/ci-substrate" bash "${ROOT}/e2e/run-substrate.sh"
+# Both kind nodes report all of the host's CPUs and share them, and a 4-CPU
+# CI runner's always-on node has less than 2 CPUs unrequested once Substrate
+# and cas run there. Small requests let the workers schedule, and their
+# limits, which Substrate books actors against, stay as deployed.
+KO_DOCKER_REPO="localhost:${REGISTRY_PORT}/ci-substrate" \
+  CI_SUBSTRATE_WORKER_REQUESTS="${CI_SUBSTRATE_WORKER_REQUESTS:-{cpu: 100m, memory: 512Mi\}}" \
+  bash "${ROOT}/e2e/run-substrate.sh"
 
 echo "ci-substrate Substrate kind e2e passed"
