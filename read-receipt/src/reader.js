@@ -16,7 +16,41 @@ export function isAdvanceKey(event) {
   return event.key === 'ArrowRight' || event.key === ' ';
 }
 
-/** Steps through `total` words. The clock starts at the first step. */
+/** The fastest pace a reader can step through a doc, in words per minute. */
+export const MAX_WPM = 400;
+
+/**
+ * How many words a reader can step through at once before the pace limit
+ * applies, so a quick "of the" doesn't stall.
+ */
+const BURST = 5;
+
+const WORDS_PER_MS = MAX_WPM / 60_000;
+
+/**
+ * Reports whether a reader could step through `total` words in `seconds`,
+ * rounded to the nearest second, under `MAX_WPM`.
+ * @param {number} total
+ * @param {number} seconds
+ * @return {boolean}
+ */
+export function withinSpeedLimit(total, seconds) {
+  return total <= BURST + (seconds + 0.5) * 1000 * WORDS_PER_MS;
+}
+
+/**
+ * @param {number} total
+ * @param {number} seconds
+ * @return {?number} Words per minute, or null when `seconds` is 0.
+ */
+export function wordsPerMinute(total, seconds) {
+  return seconds ? Math.round((total * 60) / seconds) : null;
+}
+
+/**
+ * Steps through `total` words, no faster than `MAX_WPM` after the first
+ * `BURST`. The clock starts at the first step.
+ */
 export class Reader {
   /**
    * @param {number} total
@@ -33,6 +67,21 @@ export class Reader {
     this.startedAt_ = null;
     /** @private {?number} */
     this.finishedAt_ = null;
+    /** @private Steps allowed right away, as of `steppedAt_`. */
+    this.allowance_ = BURST;
+    /** @private {?number} */
+    this.steppedAt_ = null;
+  }
+
+  /**
+   * @param {number} now
+   * @return {number}
+   * @private
+   */
+  allowanceAt_(now) {
+    if (this.steppedAt_ === null) return this.allowance_;
+    const earned = (now - this.steppedAt_) * WORDS_PER_MS;
+    return Math.min(BURST, this.allowance_ + earned);
   }
 
   /** @return {number} The index of the word to click next. */
@@ -51,14 +100,20 @@ export class Reader {
   }
 
   /**
-   * Marks the current word read.
+   * Marks the current word read, unless the doc is done or the step comes
+   * sooner than `MAX_WPM` allows.
    * @return {boolean} Whether the reader moved.
    */
   advance() {
     if (this.done) return false;
-    this.startedAt_ ??= this.now_();
+    const now = this.now_();
+    const allowance = this.allowanceAt_(now);
+    if (allowance < 1) return false;
+    this.allowance_ = allowance - 1;
+    this.steppedAt_ = now;
+    this.startedAt_ ??= now;
     this.index_++;
-    if (this.done) this.finishedAt_ = this.now_();
+    if (this.done) this.finishedAt_ = now;
     return true;
   }
 

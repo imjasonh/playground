@@ -4,6 +4,7 @@ import {test} from 'node:test';
 import {
   decodeDoc,
   encodeDoc,
+  longestLink,
   readReceipt,
   receiptHash,
   sign,
@@ -114,6 +115,18 @@ test('readReceipt flags a missing or malformed proof', async () => {
   params.set('p', 'x');
   params.set('t', '5.0');
   assert.equal((await readReceipt(params.toString()))?.verified, false);
+});
+
+test('longestLink covers any reading time and finish time', async () => {
+  const base = 'https://example.com/read-receipt/';
+  const longest = await longestLink(base, DOC);
+  const real = `${base}#${await receiptHash(DOC, 12_345_678, FINISHED)}`;
+  assert.ok(real.length <= longest, `${real.length} > ${longest}`);
+  const most = '9'.repeat(15);
+  const params = new URLSearchParams(await receiptHash(DOC, 0, 0));
+  params.set('t', most);
+  params.set('f', most);
+  assert.equal(longest, `${base}#${params}`.length);
 });
 
 test('readReceipt returns null without a doc', async () => {

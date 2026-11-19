@@ -2,8 +2,20 @@
 // page.
 
 import {renderMarkdown} from './markdown.js';
-import {Reader, formatDuration, isAdvanceKey} from './reader.js';
-import {readReceipt, receiptHash} from './receipt.js';
+import {
+  MAX_WPM,
+  Reader,
+  formatDuration,
+  isAdvanceKey,
+  withinSpeedLimit,
+  wordsPerMinute,
+} from './reader.js';
+import {
+  MAX_LINK_LENGTH,
+  longestLink,
+  readReceipt,
+  receiptHash,
+} from './receipt.js';
 import {wrapWords} from './words.js';
 
 /**
@@ -23,6 +35,7 @@ const toolbar = byId('toolbar');
 const progress = /** @type {!HTMLProgressElement} */ (byId('progress'));
 const count = byId('count');
 const hint = byId('hint');
+const slow = byId('slow');
 const banner = byId('banner');
 const doc = byId('doc');
 const done = byId('done');
@@ -57,6 +70,7 @@ function show(view) {
   compose.hidden = view !== 'compose';
   toolbar.hidden = view !== 'reading';
   done.hidden = true;
+  slow.textContent = '';
   doc.hidden = view === 'compose';
   banner.hidden = view !== 'receipt';
   receiptActions.hidden = view !== 'receipt';
@@ -83,7 +97,7 @@ function updateProgress() {
   count.textContent =
     `${reader.index.toLocaleString()} of ` +
     `${reader.total.toLocaleString()} words`;
-  hint.hidden = reader.done;
+  hint.hidden = reader.done || Boolean(slow.textContent);
 }
 
 /**
@@ -102,8 +116,25 @@ function keepInView(word) {
   }
 }
 
+/** @return {string} This page's address without the fragment. */
+function pageAddress() {
+  return location.origin + location.pathname + location.search;
+}
+
 /** @param {string} text */
-function startReading(text) {
+async function startReading(text) {
+  reader = null;
+  const length = await longestLink(pageAddress(), text);
+  if (length > MAX_LINK_LENGTH) {
+    show('compose');
+    showComposeError(
+      `This doc is too long for a receipt link. Its link would be about ` +
+        `${length.toLocaleString()} characters, and the limit is ` +
+        `${MAX_LINK_LENGTH.toLocaleString()}. Ask your agent to make it ` +
+        'shorter?',
+    );
+    return;
+  }
   markdown = text;
   renderMarkdown(doc, text);
   words = wrapWords(doc);
@@ -128,7 +159,10 @@ function startReading(text) {
 function advance() {
   if (!reader) return;
   const previous = reader.index;
-  if (!reader.advance()) return;
+  if (!reader.advance()) {
+    slowDown();
+    return;
+  }
   markWord(previous, 'current', false);
   markWord(previous, 'read', true);
   updateProgress();
@@ -149,6 +183,22 @@ function nudge() {
   keepInView(words[reader.index][0]);
 }
 
+/** @type {number|undefined} */
+let slowTimer;
+
+/** Flashes the current word and says why a step was refused. */
+function slowDown() {
+  if (!reader || reader.done) return;
+  nudge();
+  slow.textContent = `Slow down. The limit is ${MAX_WPM} words a minute.`;
+  updateProgress();
+  clearTimeout(slowTimer);
+  slowTimer = setTimeout(() => {
+    slow.textContent = '';
+    updateProgress();
+  }, 2000);
+}
+
 const dateFormat = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'short',
@@ -158,12 +208,33 @@ const dateFormat = new Intl.DateTimeFormat(undefined, {
  * @param {number} total
  * @param {number} seconds
  * @param {?Date} finished
- * @return {string} Like "all 192 words in 53s, finishing Nov 18, 2026, 9:58
- *     PM", in the viewer's time zone.
+ * @return {string} Like "all 192 words in 47s (245 words a minute), finishing
+ *     Nov 18, 2026, 9:58 PM", in the viewer's time zone.
  */
 function describeReading(total, seconds, finished) {
-  const read = `all ${total.toLocaleString()} words in ${formatDuration(seconds)}`;
+  let read = `all ${total.toLocaleString()} words in ${formatDuration(seconds)}`;
+  const wpm = wordsPerMinute(total, seconds);
+  if (wpm !== null) read += ` (${wpm.toLocaleString()} words a minute)`;
   return finished ? `${read}, finishing ${dateFormat.format(finished)}` : read;
+}
+
+/**
+ * @param {number} total
+ * @param {{seconds: number, finished: ?Date, verified: boolean}} receipt
+ * @return {string} What the banner says about `receipt`.
+ */
+function describeReceipt(total, receipt) {
+  if (!receipt.verified) {
+    return "This receipt doesn't match the doc. The doc or the times in the " +
+      'link changed after the receipt was made.';
+  }
+  if (!withinSpeedLimit(total, receipt.seconds)) {
+    return `This receipt is too fast to be real: ${total.toLocaleString()} ` +
+      `words in ${formatDuration(receipt.seconds)} is over the limit of ` +
+      `${MAX_WPM} words a minute.`;
+  }
+  return 'Receipt checks out. The person who sent you this clicked through ' +
+    `${describeReading(total, receipt.seconds, receipt.finished)}.`;
 }
 
 /** @param {!Reader} finished */
@@ -208,19 +279,18 @@ async function route() {
   markdown = receipt.markdown;
   renderMarkdown(doc, markdown);
   const total = wrapWords(doc).length;
-  banner.classList.toggle('bad', !receipt.verified);
-  banner.textContent = receipt.verified ?
-    'Receipt checks out. The person who sent you this clicked through ' +
-      `${describeReading(total, receipt.seconds, receipt.finished)}.` :
-    "This receipt doesn't match the doc. The doc or the times in the link " +
-      'changed after the receipt was made.';
+  banner.classList.toggle(
+    'bad',
+    !receipt.verified || !withinSpeedLimit(total, receipt.seconds),
+  );
+  banner.textContent = describeReceipt(total, receipt);
   show('receipt');
   window.scrollTo({top: 0});
 }
 
 compose.addEventListener('submit', (event) => {
   event.preventDefault();
-  startReading(source.value);
+  void startReading(source.value);
 });
 
 source.addEventListener('input', () => showComposeError(''));
@@ -235,7 +305,7 @@ byId('edit').addEventListener('click', () => {
 
 byId('read-yourself').addEventListener('click', () => {
   source.value = markdown;
-  startReading(markdown);
+  void startReading(markdown);
 });
 
 doc.addEventListener('click', (event) => {

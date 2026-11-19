@@ -123,11 +123,32 @@ export async function receiptHash(markdown, seconds, finished) {
 }
 
 /**
+ * The longest receipt link this page makes, so a link still fits in a chat
+ * message.
+ */
+export const MAX_LINK_LENGTH = 32_000;
+
+const MAX_DIGITS = 15;
+
+/**
+ * Measures the longest receipt link `markdown` could get, whatever the times
+ * in it.
+ * @param {string} base The link before its fragment.
+ * @param {string} markdown
+ * @return {!Promise<number>}
+ */
+export async function longestLink(base, markdown) {
+  const most = 10 ** MAX_DIGITS - 1;
+  return base.length + 1 + (await receiptHash(markdown, most, most)).length;
+}
+
+/**
  * @param {?string} text
  * @return {number} `text` as a whole number, or NaN.
  */
 function wholeNumber(text) {
-  return text && /^\d{1,15}$/.test(text) ? Number(text) : NaN;
+  const digits = new RegExp(`^\\d{1,${MAX_DIGITS}}$`);
+  return text && digits.test(text) ? Number(text) : NaN;
 }
 
 /**
