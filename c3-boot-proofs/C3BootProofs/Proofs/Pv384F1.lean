@@ -1,4 +1,4 @@
-import C3BootProofs.Proofs.Pv384Lib4
+import C3BootProofs.Proofs.Pv384F0
 
 /-!
 # `p384_verify_prehash`: the wNAF digits of pair 1
@@ -93,54 +93,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (a0_360 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x360) 12 = ((P1X, P1Y, P1Z)).2.1)
     (a0_390 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x390) 12 = ((P1X, P1Y, P1Z)).2.2)
     (a0_3c0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2)
-    (a0_450 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1)
-    (a0_480 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1)
-    (a0_4b0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2)
-    (a0_4e0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1)
-    (a0_510 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1)
-    (a0_540 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2)
-    (a0_570 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1)
-    (a0_5a0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1)
-    (a0_5d0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2)
-    (a0_600 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1)
-    (a0_630 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1)
-    (a0_660 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2)
-    (a0_690 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1)
-    (a0_6c0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1)
-    (a0_6f0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2)
-    (a0_720 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1)
-    (a0_750 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1)
-    (a0_780 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2)
-    (a0_7b0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1)
-    (a0_7e0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1)
-    (a0_810 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2)
-    (a0_840 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1)
-    (a0_870 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1)
-    (a0_8a0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2)
-    (a0_8d0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1)
-    (a0_900 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1)
-    (a0_930 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2)
-    (a0_960 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1)
-    (a0_990 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1)
-    (a0_9c0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2)
-    (a0_9f0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1)
-    (a0_a20 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1)
-    (a0_a50 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2)
-    (a0_a80 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1)
-    (a0_ab0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1)
-    (a0_ae0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2)
-    (a0_b10 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1)
-    (a0_b40 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1)
-    (a0_b70 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2)
-    (a0_ba0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1)
-    (a0_bd0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1)
-    (a0_c00 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2)
-    (a0_c30 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1)
-    (a0_c60 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1)
-    (a0_c90 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2)
-    (a0_cc0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1)
-    (a0_cf0 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1)
-    (a0_d20 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2)
     (a0_17a4 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1)
     (a0_17d4 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1)
     (a0_1804 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x1804) 12 = ((P0X, P0Y, P0Z)).2.2)
@@ -150,7 +102,9 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (a0_18c4 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x18C4) 12 = ((P1X, P1Y, P1Z)).2.2)
     (a0_18f4 : accV n0.mem (B + 0x420 + BitVec.ofNat 32 0x18F4) 12 = U2)
     (w0_1924 : memLoad32 n0.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length)
-    (mb0_1928 : memBytes n0.mem (B + 0x420 + BitVec.ofNat 32 0x1928) 0x181 = wnafBytes (wnafGo (n3fm U1 1) 0x180 0x181 0 0) 0x181) (hU2 : U2 < n384) :
+    (mb0_1928 : memBytes n0.mem (B + 0x420 + BitVec.ofNat 32 0x1928) 0x181 = wnafBytes (wnafGo (n3fm U1 1) 0x180 0x181 0 0) 0x181)
+    (tb0_450 : ∀ j, j < 8 → ptV n0.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j)
+    (tb0_8d0 : ∀ j, j < 8 → ptV n0.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j) (hU2 : U2 < n384) :
     ∃ n', Steps n0 n' ∧
       St n'.mem PV n' 0xA76 (reg n') ∧
       PvEnv5 n'.mem ∧
@@ -174,54 +128,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
       accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x1B0) 12 = RM ∧
       accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x1E0) 12 = SM ∧
       accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x210) 12 = ZM ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 ∧
-      accV n'.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 ∧
       memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0xE10) = BitVec.ofNat 32 (wnafGo (n3fm (U2) 1) 0x180 0x181 0 0).length ∧
       memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0x1294) = BitVec.ofNat 32 (wnafGo (n3fm (U2) 1) 0x180 0x181 0 0).length ∧
       memLoad32 n'.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length ∧
@@ -230,7 +136,9 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
       memBytes n'.mem (B + 0x420 + BitVec.ofNat 32 0xE14) 0x181 = wnafBytes (wnafGo (n3fm (U2) 1) 0x180 0x181 0 0) 0x181 ∧
       memBytes n'.mem (B + 0x420 + BitVec.ofNat 32 0x1298) 0x181 = wnafBytes (wnafGo (n3fm (U2) 1) 0x180 0x181 0 0) 0x181 ∧
       memBytes n'.mem (B + 0x420 + BitVec.ofNat 32 0x1928) 0x181 = wnafBytes (wnafGo (n3fm U1 1) 0x180 0x181 0 0) 0x181 ∧
-      memBytes n'.mem (B + 0x420 + BitVec.ofNat 32 0x1AB0) 0x181 = wnafBytes (wnafGo (n3fm (U2) 1) 0x180 0x181 0 0) 0x181 := by
+      memBytes n'.mem (B + 0x420 + BitVec.ofNat 32 0x1AB0) 0x181 = wnafBytes (wnafGo (n3fm (U2) 1) 0x180 0x181 0 0) 0x181 ∧
+      (∀ j, j < 8 → ptV n'.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j) ∧
+      (∀ j, j < 8 → ptV n'.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j) := by
   have t0 : Steps n0 n0 := .refl n0
   have fR0 : ∀ x, PvR B x → n0.mem x = n0.mem x := fun _ _ => rfl
   have g0_3 : reg n0 (3 : Fin 32) = reg n0 (3 : Fin 32) := rfl
@@ -276,6 +184,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g1_10 : reg n1 a0 = B + 0x420 + BitVec.ofNat 32 0xD50 := by
     rw [rb1]; simp +decide only [runBlock, BInstr.run, pvF1958, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g0_2, g0_3, g0_4, g0_9, g0_18, g0_19, g0_20, g0_21, g0_22, g0_23, g0_24, g0_25, s0.zero, BitVec.zero_add]) <;> pv_val
+  have tb1_450 : ∀ j, j < 8 → ptV n1.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K1 (by decide) (by decide) tb0_450
+  have tb1_8d0 : ∀ j, j < 8 → ptV n1.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K1 (by decide) (by decide) tb0_8d0
   have mb1_1928 : memBytes n1.mem (B + 0x420 + BitVec.ofNat 32 0x1928) 0x181 = wnafBytes (wnafGo (n3fm U1 1) 0x180 0x181 0 0) 0x181 := by
     rw [memBytes_keep K1 (by decide) (by decide)]; exact mb0_1928
   have a1_120 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
@@ -306,102 +218,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K1.acc (by decide) (by decide)).trans a0_390
   have a1_3c0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K1.acc (by decide) (by decide)).trans a0_3c0
-  have a1_450 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K1.acc (by decide) (by decide)).trans a0_450
-  have a1_480 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K1.acc (by decide) (by decide)).trans a0_480
-  have a1_4b0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K1.acc (by decide) (by decide)).trans a0_4b0
-  have a1_4e0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K1.acc (by decide) (by decide)).trans a0_4e0
-  have a1_510 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K1.acc (by decide) (by decide)).trans a0_510
-  have a1_540 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K1.acc (by decide) (by decide)).trans a0_540
-  have a1_570 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K1.acc (by decide) (by decide)).trans a0_570
-  have a1_5a0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K1.acc (by decide) (by decide)).trans a0_5a0
-  have a1_5d0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K1.acc (by decide) (by decide)).trans a0_5d0
-  have a1_600 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K1.acc (by decide) (by decide)).trans a0_600
-  have a1_630 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K1.acc (by decide) (by decide)).trans a0_630
-  have a1_660 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K1.acc (by decide) (by decide)).trans a0_660
-  have a1_690 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K1.acc (by decide) (by decide)).trans a0_690
-  have a1_6c0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K1.acc (by decide) (by decide)).trans a0_6c0
-  have a1_6f0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K1.acc (by decide) (by decide)).trans a0_6f0
-  have a1_720 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K1.acc (by decide) (by decide)).trans a0_720
-  have a1_750 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K1.acc (by decide) (by decide)).trans a0_750
-  have a1_780 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K1.acc (by decide) (by decide)).trans a0_780
-  have a1_7b0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K1.acc (by decide) (by decide)).trans a0_7b0
-  have a1_7e0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K1.acc (by decide) (by decide)).trans a0_7e0
-  have a1_810 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K1.acc (by decide) (by decide)).trans a0_810
-  have a1_840 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K1.acc (by decide) (by decide)).trans a0_840
-  have a1_870 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K1.acc (by decide) (by decide)).trans a0_870
-  have a1_8a0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K1.acc (by decide) (by decide)).trans a0_8a0
-  have a1_8d0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K1.acc (by decide) (by decide)).trans a0_8d0
-  have a1_900 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K1.acc (by decide) (by decide)).trans a0_900
-  have a1_930 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K1.acc (by decide) (by decide)).trans a0_930
-  have a1_960 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K1.acc (by decide) (by decide)).trans a0_960
-  have a1_990 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K1.acc (by decide) (by decide)).trans a0_990
-  have a1_9c0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K1.acc (by decide) (by decide)).trans a0_9c0
-  have a1_9f0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K1.acc (by decide) (by decide)).trans a0_9f0
-  have a1_a20 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K1.acc (by decide) (by decide)).trans a0_a20
-  have a1_a50 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K1.acc (by decide) (by decide)).trans a0_a50
-  have a1_a80 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K1.acc (by decide) (by decide)).trans a0_a80
-  have a1_ab0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K1.acc (by decide) (by decide)).trans a0_ab0
-  have a1_ae0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K1.acc (by decide) (by decide)).trans a0_ae0
-  have a1_b10 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K1.acc (by decide) (by decide)).trans a0_b10
-  have a1_b40 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K1.acc (by decide) (by decide)).trans a0_b40
-  have a1_b70 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K1.acc (by decide) (by decide)).trans a0_b70
-  have a1_ba0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K1.acc (by decide) (by decide)).trans a0_ba0
-  have a1_bd0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K1.acc (by decide) (by decide)).trans a0_bd0
-  have a1_c00 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K1.acc (by decide) (by decide)).trans a0_c00
-  have a1_c30 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K1.acc (by decide) (by decide)).trans a0_c30
-  have a1_c60 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K1.acc (by decide) (by decide)).trans a0_c60
-  have a1_c90 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K1.acc (by decide) (by decide)).trans a0_c90
-  have a1_cc0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K1.acc (by decide) (by decide)).trans a0_cc0
-  have a1_cf0 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K1.acc (by decide) (by decide)).trans a0_cf0
-  have a1_d20 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K1.acc (by decide) (by decide)).trans a0_d20
   have a1_17a4 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K1.acc (by decide) (by decide)).trans a0_17a4
   have a1_17d4 : accV n1.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -442,6 +258,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g2_23 : reg n2 (23 : Fin 32) = BitVec.ofNat 32 0x188 := by rw [P2.regs (23 : Fin 32) (by decide), g1_23]
   have g2_24 : reg n2 (24 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x1924 := by rw [P2.regs (24 : Fin 32) (by decide), g1_24]
   have g2_25 : reg n2 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P2.regs (25 : Fin 32) (by decide), g1_25]
+  have tb2_450 : ∀ j, j < 8 → ptV n2.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K2 (by decide) (by decide) tb1_450
+  have tb2_8d0 : ∀ j, j < 8 → ptV n2.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K2 (by decide) (by decide) tb1_8d0
   have mb2_1928 : memBytes n2.mem (B + 0x420 + BitVec.ofNat 32 0x1928) 0x181 = wnafBytes (wnafGo (n3fm U1 1) 0x180 0x181 0 0) 0x181 := by
     rw [memBytes_keep K2 (by decide) (by decide)]; exact mb1_1928
   have a2_120 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
@@ -472,102 +292,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K2.acc (by decide) (by decide)).trans a1_390
   have a2_3c0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K2.acc (by decide) (by decide)).trans a1_3c0
-  have a2_450 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K2.acc (by decide) (by decide)).trans a1_450
-  have a2_480 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K2.acc (by decide) (by decide)).trans a1_480
-  have a2_4b0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K2.acc (by decide) (by decide)).trans a1_4b0
-  have a2_4e0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K2.acc (by decide) (by decide)).trans a1_4e0
-  have a2_510 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K2.acc (by decide) (by decide)).trans a1_510
-  have a2_540 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K2.acc (by decide) (by decide)).trans a1_540
-  have a2_570 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K2.acc (by decide) (by decide)).trans a1_570
-  have a2_5a0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K2.acc (by decide) (by decide)).trans a1_5a0
-  have a2_5d0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K2.acc (by decide) (by decide)).trans a1_5d0
-  have a2_600 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K2.acc (by decide) (by decide)).trans a1_600
-  have a2_630 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K2.acc (by decide) (by decide)).trans a1_630
-  have a2_660 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K2.acc (by decide) (by decide)).trans a1_660
-  have a2_690 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K2.acc (by decide) (by decide)).trans a1_690
-  have a2_6c0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K2.acc (by decide) (by decide)).trans a1_6c0
-  have a2_6f0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K2.acc (by decide) (by decide)).trans a1_6f0
-  have a2_720 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K2.acc (by decide) (by decide)).trans a1_720
-  have a2_750 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K2.acc (by decide) (by decide)).trans a1_750
-  have a2_780 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K2.acc (by decide) (by decide)).trans a1_780
-  have a2_7b0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K2.acc (by decide) (by decide)).trans a1_7b0
-  have a2_7e0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K2.acc (by decide) (by decide)).trans a1_7e0
-  have a2_810 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K2.acc (by decide) (by decide)).trans a1_810
-  have a2_840 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K2.acc (by decide) (by decide)).trans a1_840
-  have a2_870 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K2.acc (by decide) (by decide)).trans a1_870
-  have a2_8a0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K2.acc (by decide) (by decide)).trans a1_8a0
-  have a2_8d0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K2.acc (by decide) (by decide)).trans a1_8d0
-  have a2_900 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K2.acc (by decide) (by decide)).trans a1_900
-  have a2_930 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K2.acc (by decide) (by decide)).trans a1_930
-  have a2_960 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K2.acc (by decide) (by decide)).trans a1_960
-  have a2_990 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K2.acc (by decide) (by decide)).trans a1_990
-  have a2_9c0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K2.acc (by decide) (by decide)).trans a1_9c0
-  have a2_9f0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K2.acc (by decide) (by decide)).trans a1_9f0
-  have a2_a20 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K2.acc (by decide) (by decide)).trans a1_a20
-  have a2_a50 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K2.acc (by decide) (by decide)).trans a1_a50
-  have a2_a80 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K2.acc (by decide) (by decide)).trans a1_a80
-  have a2_ab0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K2.acc (by decide) (by decide)).trans a1_ab0
-  have a2_ae0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K2.acc (by decide) (by decide)).trans a1_ae0
-  have a2_b10 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K2.acc (by decide) (by decide)).trans a1_b10
-  have a2_b40 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K2.acc (by decide) (by decide)).trans a1_b40
-  have a2_b70 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K2.acc (by decide) (by decide)).trans a1_b70
-  have a2_ba0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K2.acc (by decide) (by decide)).trans a1_ba0
-  have a2_bd0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K2.acc (by decide) (by decide)).trans a1_bd0
-  have a2_c00 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K2.acc (by decide) (by decide)).trans a1_c00
-  have a2_c30 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K2.acc (by decide) (by decide)).trans a1_c30
-  have a2_c60 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K2.acc (by decide) (by decide)).trans a1_c60
-  have a2_c90 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K2.acc (by decide) (by decide)).trans a1_c90
-  have a2_cc0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K2.acc (by decide) (by decide)).trans a1_cc0
-  have a2_cf0 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K2.acc (by decide) (by decide)).trans a1_cf0
-  have a2_d20 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K2.acc (by decide) (by decide)).trans a1_d20
   have a2_17a4 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K2.acc (by decide) (by decide)).trans a1_17a4
   have a2_17d4 : accV n2.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -587,7 +311,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w2_1924 : memLoad32 n2.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w1_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K2 _ (by omega) (by omega)
-  clear w1_1924 a1_18f4 a1_18c4 a1_1894 a1_1864 a1_1834 a1_1804 a1_17d4 a1_17a4 a1_d20 a1_cf0 a1_cc0 a1_c90 a1_c60 a1_c30 a1_c00 a1_bd0 a1_ba0 a1_b70 a1_b40 a1_b10 a1_ae0 a1_ab0 a1_a80 a1_a50 a1_a20 a1_9f0 a1_9c0 a1_990 a1_960 a1_930 a1_900 a1_8d0 a1_8a0 a1_870 a1_840 a1_810 a1_7e0 a1_7b0 a1_780 a1_750 a1_720 a1_6f0 a1_6c0 a1_690 a1_660 a1_630 a1_600 a1_5d0 a1_5a0 a1_570 a1_540 a1_510 a1_4e0 a1_4b0 a1_480 a1_450 a1_3c0 a1_390 a1_360 a1_330 a1_300 a1_2d0 a1_2a0 a1_270 a1_210 a1_1e0 a1_1b0 a1_180 a1_150 a1_120 mb1_1928 g1_10 g1_8 g1_25 g1_24 g1_23 g1_22 g1_21 g1_20 g1_19 g1_18 g1_9 g1_4 g1_3 g1_2 fR1 t1 K1 fr1 rb1 E1 s1 m1 u1 c1
+  clear w1_1924 a1_18f4 a1_18c4 a1_1894 a1_1864 a1_1834 a1_1804 a1_17d4 a1_17a4 a1_3c0 a1_390 a1_360 a1_330 a1_300 a1_2d0 a1_2a0 a1_270 a1_210 a1_1e0 a1_1b0 a1_180 a1_150 a1_120 mb1_1928 tb1_8d0 tb1_450 g1_10 g1_8 g1_25 g1_24 g1_23 g1_22 g1_21 g1_20 g1_19 g1_18 g1_9 g1_4 g1_3 g1_2 fR1 t1 K1 fr1 rb1 E1 s1 m1 u1 c1
   -- 0x96C
   obtain ⟨n3, c3, u3⟩ := s2.block pvF196c E2.E.E.E.C.self pvF196c_end
     ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩
@@ -637,6 +361,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g3_13 : reg n3 a3 = BitVec.ofNat 32 0xE88FDC45 := by
     rw [rb3]; simp +decide only [runBlock, BInstr.run, pvF196c, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g2_2, g2_3, g2_4, g2_8, g2_9, g2_18, g2_19, g2_20, g2_21, g2_22, g2_23, g2_24, g2_25, s2.zero, BitVec.zero_add]) <;> pv_val
+  have tb3_450 : ∀ j, j < 8 → ptV n3.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K3 (by decide) (by decide) tb2_450
+  have tb3_8d0 : ∀ j, j < 8 → ptV n3.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K3 (by decide) (by decide) tb2_8d0
   have mb3_1928 : memBytes n3.mem (B + 0x420 + BitVec.ofNat 32 0x1928) 0x181 = wnafBytes (wnafGo (n3fm U1 1) 0x180 0x181 0 0) 0x181 := by
     rw [memBytes_keep K3 (by decide) (by decide)]; exact mb2_1928
   have a3_120 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
@@ -667,102 +395,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K3.acc (by decide) (by decide)).trans a2_390
   have a3_3c0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K3.acc (by decide) (by decide)).trans a2_3c0
-  have a3_450 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K3.acc (by decide) (by decide)).trans a2_450
-  have a3_480 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K3.acc (by decide) (by decide)).trans a2_480
-  have a3_4b0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K3.acc (by decide) (by decide)).trans a2_4b0
-  have a3_4e0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K3.acc (by decide) (by decide)).trans a2_4e0
-  have a3_510 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K3.acc (by decide) (by decide)).trans a2_510
-  have a3_540 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K3.acc (by decide) (by decide)).trans a2_540
-  have a3_570 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K3.acc (by decide) (by decide)).trans a2_570
-  have a3_5a0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K3.acc (by decide) (by decide)).trans a2_5a0
-  have a3_5d0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K3.acc (by decide) (by decide)).trans a2_5d0
-  have a3_600 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K3.acc (by decide) (by decide)).trans a2_600
-  have a3_630 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K3.acc (by decide) (by decide)).trans a2_630
-  have a3_660 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K3.acc (by decide) (by decide)).trans a2_660
-  have a3_690 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K3.acc (by decide) (by decide)).trans a2_690
-  have a3_6c0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K3.acc (by decide) (by decide)).trans a2_6c0
-  have a3_6f0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K3.acc (by decide) (by decide)).trans a2_6f0
-  have a3_720 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K3.acc (by decide) (by decide)).trans a2_720
-  have a3_750 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K3.acc (by decide) (by decide)).trans a2_750
-  have a3_780 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K3.acc (by decide) (by decide)).trans a2_780
-  have a3_7b0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K3.acc (by decide) (by decide)).trans a2_7b0
-  have a3_7e0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K3.acc (by decide) (by decide)).trans a2_7e0
-  have a3_810 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K3.acc (by decide) (by decide)).trans a2_810
-  have a3_840 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K3.acc (by decide) (by decide)).trans a2_840
-  have a3_870 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K3.acc (by decide) (by decide)).trans a2_870
-  have a3_8a0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K3.acc (by decide) (by decide)).trans a2_8a0
-  have a3_8d0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K3.acc (by decide) (by decide)).trans a2_8d0
-  have a3_900 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K3.acc (by decide) (by decide)).trans a2_900
-  have a3_930 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K3.acc (by decide) (by decide)).trans a2_930
-  have a3_960 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K3.acc (by decide) (by decide)).trans a2_960
-  have a3_990 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K3.acc (by decide) (by decide)).trans a2_990
-  have a3_9c0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K3.acc (by decide) (by decide)).trans a2_9c0
-  have a3_9f0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K3.acc (by decide) (by decide)).trans a2_9f0
-  have a3_a20 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K3.acc (by decide) (by decide)).trans a2_a20
-  have a3_a50 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K3.acc (by decide) (by decide)).trans a2_a50
-  have a3_a80 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K3.acc (by decide) (by decide)).trans a2_a80
-  have a3_ab0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K3.acc (by decide) (by decide)).trans a2_ab0
-  have a3_ae0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K3.acc (by decide) (by decide)).trans a2_ae0
-  have a3_b10 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K3.acc (by decide) (by decide)).trans a2_b10
-  have a3_b40 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K3.acc (by decide) (by decide)).trans a2_b40
-  have a3_b70 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K3.acc (by decide) (by decide)).trans a2_b70
-  have a3_ba0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K3.acc (by decide) (by decide)).trans a2_ba0
-  have a3_bd0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K3.acc (by decide) (by decide)).trans a2_bd0
-  have a3_c00 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K3.acc (by decide) (by decide)).trans a2_c00
-  have a3_c30 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K3.acc (by decide) (by decide)).trans a2_c30
-  have a3_c60 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K3.acc (by decide) (by decide)).trans a2_c60
-  have a3_c90 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K3.acc (by decide) (by decide)).trans a2_c90
-  have a3_cc0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K3.acc (by decide) (by decide)).trans a2_cc0
-  have a3_cf0 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K3.acc (by decide) (by decide)).trans a2_cf0
-  have a3_d20 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K3.acc (by decide) (by decide)).trans a2_d20
   have a3_17a4 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K3.acc (by decide) (by decide)).trans a2_17a4
   have a3_17d4 : accV n3.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -782,7 +414,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w3_1924 : memLoad32 n3.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w2_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K3 _ (by omega) (by omega)
-  clear w2_1924 a2_18f4 a2_18c4 a2_1894 a2_1864 a2_1834 a2_1804 a2_17d4 a2_17a4 a2_d20 a2_cf0 a2_cc0 a2_c90 a2_c60 a2_c30 a2_c00 a2_bd0 a2_ba0 a2_b70 a2_b40 a2_b10 a2_ae0 a2_ab0 a2_a80 a2_a50 a2_a20 a2_9f0 a2_9c0 a2_990 a2_960 a2_930 a2_900 a2_8d0 a2_8a0 a2_870 a2_840 a2_810 a2_7e0 a2_7b0 a2_780 a2_750 a2_720 a2_6f0 a2_6c0 a2_690 a2_660 a2_630 a2_600 a2_5d0 a2_5a0 a2_570 a2_540 a2_510 a2_4e0 a2_4b0 a2_480 a2_450 a2_3c0 a2_390 a2_360 a2_330 a2_300 a2_2d0 a2_2a0 a2_270 a2_210 a2_1e0 a2_1b0 a2_180 a2_150 a2_120 mb2_1928 g2_25 g2_24 g2_23 g2_22 g2_21 g2_20 g2_19 g2_18 g2_9 g2_8 g2_4 g2_3 g2_2 fR2 t2 E2 fr2 s2 V2 K2 P2
+  clear w2_1924 a2_18f4 a2_18c4 a2_1894 a2_1864 a2_1834 a2_1804 a2_17d4 a2_17a4 a2_3c0 a2_390 a2_360 a2_330 a2_300 a2_2d0 a2_2a0 a2_270 a2_210 a2_1e0 a2_1b0 a2_180 a2_150 a2_120 mb2_1928 tb2_8d0 tb2_450 g2_25 g2_24 g2_23 g2_22 g2_21 g2_20 g2_19 g2_18 g2_9 g2_8 g2_4 g2_3 g2_2 fR2 t2 E2 fr2 s2 V2 K2 P2
   -- 0x97A: pv_mr
   obtain ⟨n4, P4, K4, V4⟩ := pv_mr F E3 s3 pv_at_97a pv_at_97e (by decide) (by decide)
     g3_2 g3_10 g3_11 g3_12 g3_13 (by decide) (by decide) (by decide) (by decide)
@@ -805,6 +437,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g4_23 : reg n4 (23 : Fin 32) = BitVec.ofNat 32 0x188 := by rw [P4.regs (23 : Fin 32) (by decide), g3_23]
   have g4_24 : reg n4 (24 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x1924 := by rw [P4.regs (24 : Fin 32) (by decide), g3_24]
   have g4_25 : reg n4 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P4.regs (25 : Fin 32) (by decide), g3_25]
+  have tb4_450 : ∀ j, j < 8 → ptV n4.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K4 (by decide) (by decide) tb3_450
+  have tb4_8d0 : ∀ j, j < 8 → ptV n4.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K4 (by decide) (by decide) tb3_8d0
   have mb4_1928 : memBytes n4.mem (B + 0x420 + BitVec.ofNat 32 0x1928) 0x181 = wnafBytes (wnafGo (n3fm U1 1) 0x180 0x181 0 0) 0x181 := by
     rw [memBytes_keep K4 (by decide) (by decide)]; exact mb3_1928
   have a4_120 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
@@ -835,102 +471,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K4.acc (by decide) (by decide)).trans a3_390
   have a4_3c0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K4.acc (by decide) (by decide)).trans a3_3c0
-  have a4_450 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K4.acc (by decide) (by decide)).trans a3_450
-  have a4_480 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K4.acc (by decide) (by decide)).trans a3_480
-  have a4_4b0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K4.acc (by decide) (by decide)).trans a3_4b0
-  have a4_4e0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K4.acc (by decide) (by decide)).trans a3_4e0
-  have a4_510 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K4.acc (by decide) (by decide)).trans a3_510
-  have a4_540 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K4.acc (by decide) (by decide)).trans a3_540
-  have a4_570 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K4.acc (by decide) (by decide)).trans a3_570
-  have a4_5a0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K4.acc (by decide) (by decide)).trans a3_5a0
-  have a4_5d0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K4.acc (by decide) (by decide)).trans a3_5d0
-  have a4_600 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K4.acc (by decide) (by decide)).trans a3_600
-  have a4_630 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K4.acc (by decide) (by decide)).trans a3_630
-  have a4_660 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K4.acc (by decide) (by decide)).trans a3_660
-  have a4_690 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K4.acc (by decide) (by decide)).trans a3_690
-  have a4_6c0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K4.acc (by decide) (by decide)).trans a3_6c0
-  have a4_6f0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K4.acc (by decide) (by decide)).trans a3_6f0
-  have a4_720 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K4.acc (by decide) (by decide)).trans a3_720
-  have a4_750 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K4.acc (by decide) (by decide)).trans a3_750
-  have a4_780 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K4.acc (by decide) (by decide)).trans a3_780
-  have a4_7b0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K4.acc (by decide) (by decide)).trans a3_7b0
-  have a4_7e0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K4.acc (by decide) (by decide)).trans a3_7e0
-  have a4_810 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K4.acc (by decide) (by decide)).trans a3_810
-  have a4_840 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K4.acc (by decide) (by decide)).trans a3_840
-  have a4_870 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K4.acc (by decide) (by decide)).trans a3_870
-  have a4_8a0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K4.acc (by decide) (by decide)).trans a3_8a0
-  have a4_8d0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K4.acc (by decide) (by decide)).trans a3_8d0
-  have a4_900 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K4.acc (by decide) (by decide)).trans a3_900
-  have a4_930 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K4.acc (by decide) (by decide)).trans a3_930
-  have a4_960 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K4.acc (by decide) (by decide)).trans a3_960
-  have a4_990 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K4.acc (by decide) (by decide)).trans a3_990
-  have a4_9c0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K4.acc (by decide) (by decide)).trans a3_9c0
-  have a4_9f0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K4.acc (by decide) (by decide)).trans a3_9f0
-  have a4_a20 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K4.acc (by decide) (by decide)).trans a3_a20
-  have a4_a50 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K4.acc (by decide) (by decide)).trans a3_a50
-  have a4_a80 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K4.acc (by decide) (by decide)).trans a3_a80
-  have a4_ab0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K4.acc (by decide) (by decide)).trans a3_ab0
-  have a4_ae0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K4.acc (by decide) (by decide)).trans a3_ae0
-  have a4_b10 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K4.acc (by decide) (by decide)).trans a3_b10
-  have a4_b40 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K4.acc (by decide) (by decide)).trans a3_b40
-  have a4_b70 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K4.acc (by decide) (by decide)).trans a3_b70
-  have a4_ba0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K4.acc (by decide) (by decide)).trans a3_ba0
-  have a4_bd0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K4.acc (by decide) (by decide)).trans a3_bd0
-  have a4_c00 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K4.acc (by decide) (by decide)).trans a3_c00
-  have a4_c30 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K4.acc (by decide) (by decide)).trans a3_c30
-  have a4_c60 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K4.acc (by decide) (by decide)).trans a3_c60
-  have a4_c90 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K4.acc (by decide) (by decide)).trans a3_c90
-  have a4_cc0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K4.acc (by decide) (by decide)).trans a3_cc0
-  have a4_cf0 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K4.acc (by decide) (by decide)).trans a3_cf0
-  have a4_d20 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K4.acc (by decide) (by decide)).trans a3_d20
   have a4_17a4 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K4.acc (by decide) (by decide)).trans a3_17a4
   have a4_17d4 : accV n4.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -952,7 +492,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w4_1924 : memLoad32 n4.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w3_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K4 _ (by omega) (by omega)
-  clear w3_1924 a3_18f4 a3_18c4 a3_1894 a3_1864 a3_1834 a3_1804 a3_17d4 a3_17a4 a3_d20 a3_cf0 a3_cc0 a3_c90 a3_c60 a3_c30 a3_c00 a3_bd0 a3_ba0 a3_b70 a3_b40 a3_b10 a3_ae0 a3_ab0 a3_a80 a3_a50 a3_a20 a3_9f0 a3_9c0 a3_990 a3_960 a3_930 a3_900 a3_8d0 a3_8a0 a3_870 a3_840 a3_810 a3_7e0 a3_7b0 a3_780 a3_750 a3_720 a3_6f0 a3_6c0 a3_690 a3_660 a3_630 a3_600 a3_5d0 a3_5a0 a3_570 a3_540 a3_510 a3_4e0 a3_4b0 a3_480 a3_450 a3_3c0 a3_390 a3_360 a3_330 a3_300 a3_2d0 a3_2a0 a3_270 a3_210 a3_1e0 a3_1b0 a3_180 a3_150 a3_120 mb3_1928 g3_13 g3_12 g3_11 g3_10 g3_25 g3_24 g3_23 g3_22 g3_21 g3_20 g3_19 g3_18 g3_9 g3_8 g3_4 g3_3 g3_2 fR3 t3 K3 fr3 rb3 E3 s3 m3 u3 c3
+  clear w3_1924 a3_18f4 a3_18c4 a3_1894 a3_1864 a3_1834 a3_1804 a3_17d4 a3_17a4 a3_3c0 a3_390 a3_360 a3_330 a3_300 a3_2d0 a3_2a0 a3_270 a3_210 a3_1e0 a3_1b0 a3_180 a3_150 a3_120 mb3_1928 tb3_8d0 tb3_450 g3_13 g3_12 g3_11 g3_10 g3_25 g3_24 g3_23 g3_22 g3_21 g3_20 g3_19 g3_18 g3_9 g3_8 g3_4 g3_3 g3_2 fR3 t3 K3 fr3 rb3 E3 s3 m3 u3 c3
   -- 0x982
   obtain ⟨n5, c5, u5⟩ := s4.block pvF1982 E4.E.E.E.C.self pvF1982_end
     ⟨trivial, trivial, trivial, trivial, trivial⟩
@@ -996,6 +536,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g5_11 : reg n5 a1 = B + 0x420 + BitVec.ofNat 32 0xE10 := by
     rw [rb5]; simp +decide only [runBlock, BInstr.run, pvF1982, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g4_2, g4_3, g4_4, g4_8, g4_9, g4_18, g4_19, g4_20, g4_21, g4_22, g4_23, g4_24, g4_25, s4.zero, BitVec.zero_add]) <;> pv_val
+  have tb5_450 : ∀ j, j < 8 → ptV n5.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K5 (by decide) (by decide) tb4_450
+  have tb5_8d0 : ∀ j, j < 8 → ptV n5.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K5 (by decide) (by decide) tb4_8d0
   have mb5_1928 : memBytes n5.mem (B + 0x420 + BitVec.ofNat 32 0x1928) 0x181 = wnafBytes (wnafGo (n3fm U1 1) 0x180 0x181 0 0) 0x181 := by
     rw [memBytes_keep K5 (by decide) (by decide)]; exact mb4_1928
   have a5_120 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
@@ -1026,102 +570,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K5.acc (by decide) (by decide)).trans a4_390
   have a5_3c0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K5.acc (by decide) (by decide)).trans a4_3c0
-  have a5_450 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K5.acc (by decide) (by decide)).trans a4_450
-  have a5_480 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K5.acc (by decide) (by decide)).trans a4_480
-  have a5_4b0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K5.acc (by decide) (by decide)).trans a4_4b0
-  have a5_4e0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K5.acc (by decide) (by decide)).trans a4_4e0
-  have a5_510 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K5.acc (by decide) (by decide)).trans a4_510
-  have a5_540 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K5.acc (by decide) (by decide)).trans a4_540
-  have a5_570 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K5.acc (by decide) (by decide)).trans a4_570
-  have a5_5a0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K5.acc (by decide) (by decide)).trans a4_5a0
-  have a5_5d0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K5.acc (by decide) (by decide)).trans a4_5d0
-  have a5_600 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K5.acc (by decide) (by decide)).trans a4_600
-  have a5_630 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K5.acc (by decide) (by decide)).trans a4_630
-  have a5_660 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K5.acc (by decide) (by decide)).trans a4_660
-  have a5_690 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K5.acc (by decide) (by decide)).trans a4_690
-  have a5_6c0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K5.acc (by decide) (by decide)).trans a4_6c0
-  have a5_6f0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K5.acc (by decide) (by decide)).trans a4_6f0
-  have a5_720 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K5.acc (by decide) (by decide)).trans a4_720
-  have a5_750 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K5.acc (by decide) (by decide)).trans a4_750
-  have a5_780 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K5.acc (by decide) (by decide)).trans a4_780
-  have a5_7b0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K5.acc (by decide) (by decide)).trans a4_7b0
-  have a5_7e0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K5.acc (by decide) (by decide)).trans a4_7e0
-  have a5_810 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K5.acc (by decide) (by decide)).trans a4_810
-  have a5_840 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K5.acc (by decide) (by decide)).trans a4_840
-  have a5_870 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K5.acc (by decide) (by decide)).trans a4_870
-  have a5_8a0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K5.acc (by decide) (by decide)).trans a4_8a0
-  have a5_8d0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K5.acc (by decide) (by decide)).trans a4_8d0
-  have a5_900 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K5.acc (by decide) (by decide)).trans a4_900
-  have a5_930 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K5.acc (by decide) (by decide)).trans a4_930
-  have a5_960 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K5.acc (by decide) (by decide)).trans a4_960
-  have a5_990 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K5.acc (by decide) (by decide)).trans a4_990
-  have a5_9c0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K5.acc (by decide) (by decide)).trans a4_9c0
-  have a5_9f0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K5.acc (by decide) (by decide)).trans a4_9f0
-  have a5_a20 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K5.acc (by decide) (by decide)).trans a4_a20
-  have a5_a50 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K5.acc (by decide) (by decide)).trans a4_a50
-  have a5_a80 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K5.acc (by decide) (by decide)).trans a4_a80
-  have a5_ab0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K5.acc (by decide) (by decide)).trans a4_ab0
-  have a5_ae0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K5.acc (by decide) (by decide)).trans a4_ae0
-  have a5_b10 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K5.acc (by decide) (by decide)).trans a4_b10
-  have a5_b40 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K5.acc (by decide) (by decide)).trans a4_b40
-  have a5_b70 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K5.acc (by decide) (by decide)).trans a4_b70
-  have a5_ba0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K5.acc (by decide) (by decide)).trans a4_ba0
-  have a5_bd0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K5.acc (by decide) (by decide)).trans a4_bd0
-  have a5_c00 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K5.acc (by decide) (by decide)).trans a4_c00
-  have a5_c30 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K5.acc (by decide) (by decide)).trans a4_c30
-  have a5_c60 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K5.acc (by decide) (by decide)).trans a4_c60
-  have a5_c90 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K5.acc (by decide) (by decide)).trans a4_c90
-  have a5_cc0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K5.acc (by decide) (by decide)).trans a4_cc0
-  have a5_cf0 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K5.acc (by decide) (by decide)).trans a4_cf0
-  have a5_d20 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K5.acc (by decide) (by decide)).trans a4_d20
   have a5_e10 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0xE10) 12 = n3fm (U2) 1 :=
     (K5.acc (by decide) (by decide)).trans a4_e10
   have a5_17a4 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
@@ -1143,7 +591,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w5_1924 : memLoad32 n5.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w4_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K5 _ (by omega) (by omega)
-  clear w4_1924 a4_e10 a4_18f4 a4_18c4 a4_1894 a4_1864 a4_1834 a4_1804 a4_17d4 a4_17a4 a4_d20 a4_cf0 a4_cc0 a4_c90 a4_c60 a4_c30 a4_c00 a4_bd0 a4_ba0 a4_b70 a4_b40 a4_b10 a4_ae0 a4_ab0 a4_a80 a4_a50 a4_a20 a4_9f0 a4_9c0 a4_990 a4_960 a4_930 a4_900 a4_8d0 a4_8a0 a4_870 a4_840 a4_810 a4_7e0 a4_7b0 a4_780 a4_750 a4_720 a4_6f0 a4_6c0 a4_690 a4_660 a4_630 a4_600 a4_5d0 a4_5a0 a4_570 a4_540 a4_510 a4_4e0 a4_4b0 a4_480 a4_450 a4_3c0 a4_390 a4_360 a4_330 a4_300 a4_2d0 a4_2a0 a4_270 a4_210 a4_1e0 a4_1b0 a4_180 a4_150 a4_120 mb4_1928 g4_25 g4_24 g4_23 g4_22 g4_21 g4_20 g4_19 g4_18 g4_9 g4_8 g4_4 g4_3 g4_2 fR4 t4 E4 fr4 s4 V4 K4 P4
+  clear w4_1924 a4_e10 a4_18f4 a4_18c4 a4_1894 a4_1864 a4_1834 a4_1804 a4_17d4 a4_17a4 a4_3c0 a4_390 a4_360 a4_330 a4_300 a4_2d0 a4_2a0 a4_270 a4_210 a4_1e0 a4_1b0 a4_180 a4_150 a4_120 mb4_1928 tb4_8d0 tb4_450 g4_25 g4_24 g4_23 g4_22 g4_21 g4_20 g4_19 g4_18 g4_9 g4_8 g4_4 g4_3 g4_2 fR4 t4 E4 fr4 s4 V4 K4 P4
   -- 0x992: pv_tbb
   obtain ⟨n6, P6, K6, V6⟩ := pv_tbb F E5 s5 pv_at_992 pv_at_996 (by decide) (by decide)
     g5_2 g5_10 g5_11 (by decide) (by decide) (by decide)
@@ -1165,6 +613,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g6_23 : reg n6 (23 : Fin 32) = BitVec.ofNat 32 0x188 := by rw [P6.regs (23 : Fin 32) (by decide), g5_23]
   have g6_24 : reg n6 (24 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x1924 := by rw [P6.regs (24 : Fin 32) (by decide), g5_24]
   have g6_25 : reg n6 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P6.regs (25 : Fin 32) (by decide), g5_25]
+  have tb6_450 : ∀ j, j < 8 → ptV n6.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K6 (by decide) (by decide) tb5_450
+  have tb6_8d0 : ∀ j, j < 8 → ptV n6.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K6 (by decide) (by decide) tb5_8d0
   have mb6_1928 : memBytes n6.mem (B + 0x420 + BitVec.ofNat 32 0x1928) 0x181 = wnafBytes (wnafGo (n3fm U1 1) 0x180 0x181 0 0) 0x181 := by
     rw [memBytes_keep K6 (by decide) (by decide)]; exact mb5_1928
   have mb6_d50 : leN (memBytes n6.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30).reverse = n3fm (U2) 1 := by
@@ -1197,102 +649,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K6.acc (by decide) (by decide)).trans a5_390
   have a6_3c0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K6.acc (by decide) (by decide)).trans a5_3c0
-  have a6_450 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K6.acc (by decide) (by decide)).trans a5_450
-  have a6_480 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K6.acc (by decide) (by decide)).trans a5_480
-  have a6_4b0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K6.acc (by decide) (by decide)).trans a5_4b0
-  have a6_4e0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K6.acc (by decide) (by decide)).trans a5_4e0
-  have a6_510 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K6.acc (by decide) (by decide)).trans a5_510
-  have a6_540 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K6.acc (by decide) (by decide)).trans a5_540
-  have a6_570 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K6.acc (by decide) (by decide)).trans a5_570
-  have a6_5a0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K6.acc (by decide) (by decide)).trans a5_5a0
-  have a6_5d0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K6.acc (by decide) (by decide)).trans a5_5d0
-  have a6_600 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K6.acc (by decide) (by decide)).trans a5_600
-  have a6_630 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K6.acc (by decide) (by decide)).trans a5_630
-  have a6_660 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K6.acc (by decide) (by decide)).trans a5_660
-  have a6_690 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K6.acc (by decide) (by decide)).trans a5_690
-  have a6_6c0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K6.acc (by decide) (by decide)).trans a5_6c0
-  have a6_6f0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K6.acc (by decide) (by decide)).trans a5_6f0
-  have a6_720 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K6.acc (by decide) (by decide)).trans a5_720
-  have a6_750 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K6.acc (by decide) (by decide)).trans a5_750
-  have a6_780 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K6.acc (by decide) (by decide)).trans a5_780
-  have a6_7b0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K6.acc (by decide) (by decide)).trans a5_7b0
-  have a6_7e0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K6.acc (by decide) (by decide)).trans a5_7e0
-  have a6_810 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K6.acc (by decide) (by decide)).trans a5_810
-  have a6_840 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K6.acc (by decide) (by decide)).trans a5_840
-  have a6_870 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K6.acc (by decide) (by decide)).trans a5_870
-  have a6_8a0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K6.acc (by decide) (by decide)).trans a5_8a0
-  have a6_8d0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K6.acc (by decide) (by decide)).trans a5_8d0
-  have a6_900 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K6.acc (by decide) (by decide)).trans a5_900
-  have a6_930 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K6.acc (by decide) (by decide)).trans a5_930
-  have a6_960 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K6.acc (by decide) (by decide)).trans a5_960
-  have a6_990 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K6.acc (by decide) (by decide)).trans a5_990
-  have a6_9c0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K6.acc (by decide) (by decide)).trans a5_9c0
-  have a6_9f0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K6.acc (by decide) (by decide)).trans a5_9f0
-  have a6_a20 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K6.acc (by decide) (by decide)).trans a5_a20
-  have a6_a50 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K6.acc (by decide) (by decide)).trans a5_a50
-  have a6_a80 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K6.acc (by decide) (by decide)).trans a5_a80
-  have a6_ab0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K6.acc (by decide) (by decide)).trans a5_ab0
-  have a6_ae0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K6.acc (by decide) (by decide)).trans a5_ae0
-  have a6_b10 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K6.acc (by decide) (by decide)).trans a5_b10
-  have a6_b40 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K6.acc (by decide) (by decide)).trans a5_b40
-  have a6_b70 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K6.acc (by decide) (by decide)).trans a5_b70
-  have a6_ba0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K6.acc (by decide) (by decide)).trans a5_ba0
-  have a6_bd0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K6.acc (by decide) (by decide)).trans a5_bd0
-  have a6_c00 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K6.acc (by decide) (by decide)).trans a5_c00
-  have a6_c30 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K6.acc (by decide) (by decide)).trans a5_c30
-  have a6_c60 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K6.acc (by decide) (by decide)).trans a5_c60
-  have a6_c90 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K6.acc (by decide) (by decide)).trans a5_c90
-  have a6_cc0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K6.acc (by decide) (by decide)).trans a5_cc0
-  have a6_cf0 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K6.acc (by decide) (by decide)).trans a5_cf0
-  have a6_d20 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K6.acc (by decide) (by decide)).trans a5_d20
   have a6_e10 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0xE10) 12 = n3fm (U2) 1 :=
     (K6.acc (by decide) (by decide)).trans a5_e10
   have a6_17a4 : accV n6.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
@@ -1314,7 +670,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w6_1924 : memLoad32 n6.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w5_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K6 _ (by omega) (by omega)
-  clear w5_1924 a5_18f4 a5_18c4 a5_1894 a5_1864 a5_1834 a5_1804 a5_17d4 a5_17a4 a5_e10 a5_d20 a5_cf0 a5_cc0 a5_c90 a5_c60 a5_c30 a5_c00 a5_bd0 a5_ba0 a5_b70 a5_b40 a5_b10 a5_ae0 a5_ab0 a5_a80 a5_a50 a5_a20 a5_9f0 a5_9c0 a5_990 a5_960 a5_930 a5_900 a5_8d0 a5_8a0 a5_870 a5_840 a5_810 a5_7e0 a5_7b0 a5_780 a5_750 a5_720 a5_6f0 a5_6c0 a5_690 a5_660 a5_630 a5_600 a5_5d0 a5_5a0 a5_570 a5_540 a5_510 a5_4e0 a5_4b0 a5_480 a5_450 a5_3c0 a5_390 a5_360 a5_330 a5_300 a5_2d0 a5_2a0 a5_270 a5_210 a5_1e0 a5_1b0 a5_180 a5_150 a5_120 mb5_1928 g5_11 g5_10 g5_25 g5_24 g5_23 g5_22 g5_21 g5_20 g5_19 g5_18 g5_9 g5_8 g5_4 g5_3 g5_2 fR5 t5 K5 fr5 rb5 E5 s5 m5 u5 c5
+  clear w5_1924 a5_18f4 a5_18c4 a5_1894 a5_1864 a5_1834 a5_1804 a5_17d4 a5_17a4 a5_e10 a5_3c0 a5_390 a5_360 a5_330 a5_300 a5_2d0 a5_2a0 a5_270 a5_210 a5_1e0 a5_1b0 a5_180 a5_150 a5_120 mb5_1928 tb5_8d0 tb5_450 g5_11 g5_10 g5_25 g5_24 g5_23 g5_22 g5_21 g5_20 g5_19 g5_18 g5_9 g5_8 g5_4 g5_3 g5_2 fR5 t5 K5 fr5 rb5 E5 s5 m5 u5 c5
   -- 0x99A
   obtain ⟨n7, c7, u7⟩ := s6.block pvF199a E6.E.E.E.C.self pvF199a_end
     ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩
@@ -1361,6 +717,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g7_12 : reg n7 a2 = BitVec.ofNat 32 0x30 := by
     rw [rb7]; simp +decide only [runBlock, BInstr.run, pvF199a, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g6_2, g6_3, g6_4, g6_8, g6_9, g6_18, g6_19, g6_20, g6_21, g6_22, g6_23, g6_24, g6_25, s6.zero, BitVec.zero_add]) <;> pv_val
+  have tb7_450 : ∀ j, j < 8 → ptV n7.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K7 (by decide) (by decide) tb6_450
+  have tb7_8d0 : ∀ j, j < 8 → ptV n7.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K7 (by decide) (by decide) tb6_8d0
   have mb7_d50 : leN (memBytes n7.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30).reverse = n3fm (U2) 1 := by
     rw [memBytes_keep K7 (by decide) (by decide)]; exact mb6_d50
   have mb7_1928 : memBytes n7.mem (B + 0x420 + BitVec.ofNat 32 0x1928) 0x181 = wnafBytes (wnafGo (n3fm U1 1) 0x180 0x181 0 0) 0x181 := by
@@ -1393,102 +753,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K7.acc (by decide) (by decide)).trans a6_390
   have a7_3c0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K7.acc (by decide) (by decide)).trans a6_3c0
-  have a7_450 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K7.acc (by decide) (by decide)).trans a6_450
-  have a7_480 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K7.acc (by decide) (by decide)).trans a6_480
-  have a7_4b0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K7.acc (by decide) (by decide)).trans a6_4b0
-  have a7_4e0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K7.acc (by decide) (by decide)).trans a6_4e0
-  have a7_510 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K7.acc (by decide) (by decide)).trans a6_510
-  have a7_540 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K7.acc (by decide) (by decide)).trans a6_540
-  have a7_570 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K7.acc (by decide) (by decide)).trans a6_570
-  have a7_5a0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K7.acc (by decide) (by decide)).trans a6_5a0
-  have a7_5d0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K7.acc (by decide) (by decide)).trans a6_5d0
-  have a7_600 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K7.acc (by decide) (by decide)).trans a6_600
-  have a7_630 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K7.acc (by decide) (by decide)).trans a6_630
-  have a7_660 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K7.acc (by decide) (by decide)).trans a6_660
-  have a7_690 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K7.acc (by decide) (by decide)).trans a6_690
-  have a7_6c0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K7.acc (by decide) (by decide)).trans a6_6c0
-  have a7_6f0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K7.acc (by decide) (by decide)).trans a6_6f0
-  have a7_720 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K7.acc (by decide) (by decide)).trans a6_720
-  have a7_750 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K7.acc (by decide) (by decide)).trans a6_750
-  have a7_780 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K7.acc (by decide) (by decide)).trans a6_780
-  have a7_7b0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K7.acc (by decide) (by decide)).trans a6_7b0
-  have a7_7e0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K7.acc (by decide) (by decide)).trans a6_7e0
-  have a7_810 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K7.acc (by decide) (by decide)).trans a6_810
-  have a7_840 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K7.acc (by decide) (by decide)).trans a6_840
-  have a7_870 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K7.acc (by decide) (by decide)).trans a6_870
-  have a7_8a0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K7.acc (by decide) (by decide)).trans a6_8a0
-  have a7_8d0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K7.acc (by decide) (by decide)).trans a6_8d0
-  have a7_900 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K7.acc (by decide) (by decide)).trans a6_900
-  have a7_930 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K7.acc (by decide) (by decide)).trans a6_930
-  have a7_960 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K7.acc (by decide) (by decide)).trans a6_960
-  have a7_990 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K7.acc (by decide) (by decide)).trans a6_990
-  have a7_9c0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K7.acc (by decide) (by decide)).trans a6_9c0
-  have a7_9f0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K7.acc (by decide) (by decide)).trans a6_9f0
-  have a7_a20 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K7.acc (by decide) (by decide)).trans a6_a20
-  have a7_a50 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K7.acc (by decide) (by decide)).trans a6_a50
-  have a7_a80 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K7.acc (by decide) (by decide)).trans a6_a80
-  have a7_ab0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K7.acc (by decide) (by decide)).trans a6_ab0
-  have a7_ae0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K7.acc (by decide) (by decide)).trans a6_ae0
-  have a7_b10 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K7.acc (by decide) (by decide)).trans a6_b10
-  have a7_b40 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K7.acc (by decide) (by decide)).trans a6_b40
-  have a7_b70 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K7.acc (by decide) (by decide)).trans a6_b70
-  have a7_ba0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K7.acc (by decide) (by decide)).trans a6_ba0
-  have a7_bd0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K7.acc (by decide) (by decide)).trans a6_bd0
-  have a7_c00 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K7.acc (by decide) (by decide)).trans a6_c00
-  have a7_c30 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K7.acc (by decide) (by decide)).trans a6_c30
-  have a7_c60 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K7.acc (by decide) (by decide)).trans a6_c60
-  have a7_c90 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K7.acc (by decide) (by decide)).trans a6_c90
-  have a7_cc0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K7.acc (by decide) (by decide)).trans a6_cc0
-  have a7_cf0 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K7.acc (by decide) (by decide)).trans a6_cf0
-  have a7_d20 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K7.acc (by decide) (by decide)).trans a6_d20
   have a7_e10 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0xE10) 12 = n3fm (U2) 1 :=
     (K7.acc (by decide) (by decide)).trans a6_e10
   have a7_17a4 : accV n7.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
@@ -1510,7 +774,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w7_1924 : memLoad32 n7.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w6_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K7 _ (by omega) (by omega)
-  clear w6_1924 a6_18f4 a6_18c4 a6_1894 a6_1864 a6_1834 a6_1804 a6_17d4 a6_17a4 a6_e10 a6_d20 a6_cf0 a6_cc0 a6_c90 a6_c60 a6_c30 a6_c00 a6_bd0 a6_ba0 a6_b70 a6_b40 a6_b10 a6_ae0 a6_ab0 a6_a80 a6_a50 a6_a20 a6_9f0 a6_9c0 a6_990 a6_960 a6_930 a6_900 a6_8d0 a6_8a0 a6_870 a6_840 a6_810 a6_7e0 a6_7b0 a6_780 a6_750 a6_720 a6_6f0 a6_6c0 a6_690 a6_660 a6_630 a6_600 a6_5d0 a6_5a0 a6_570 a6_540 a6_510 a6_4e0 a6_4b0 a6_480 a6_450 a6_3c0 a6_390 a6_360 a6_330 a6_300 a6_2d0 a6_2a0 a6_270 a6_210 a6_1e0 a6_1b0 a6_180 a6_150 a6_120 mb6_d50 mb6_1928 g6_25 g6_24 g6_23 g6_22 g6_21 g6_20 g6_19 g6_18 g6_9 g6_8 g6_4 g6_3 g6_2 fR6 t6 E6 fr6 s6 V6 K6 P6
+  clear w6_1924 a6_18f4 a6_18c4 a6_1894 a6_1864 a6_1834 a6_1804 a6_17d4 a6_17a4 a6_e10 a6_3c0 a6_390 a6_360 a6_330 a6_300 a6_2d0 a6_2a0 a6_270 a6_210 a6_1e0 a6_1b0 a6_180 a6_150 a6_120 mb6_d50 mb6_1928 tb6_8d0 tb6_450 g6_25 g6_24 g6_23 g6_22 g6_21 g6_20 g6_19 g6_18 g6_9 g6_8 g6_4 g6_3 g6_2 fR6 t6 E6 fr6 s6 V6 K6 P6
   -- 0x9AE: pv_mc
   obtain ⟨n8, P8, K8, V8⟩ := pv_mc F E7.E.E.E s7 pv_at_9ae pv_at_9b2 (by decide) (by decide)
     g7_2 g7_10 g7_11 g7_12 (by decide) (by decide) (by decide)
@@ -1532,6 +796,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g8_23 : reg n8 (23 : Fin 32) = BitVec.ofNat 32 0x188 := by rw [P8.regs (23 : Fin 32) (by decide), g7_23]
   have g8_24 : reg n8 (24 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x1924 := by rw [P8.regs (24 : Fin 32) (by decide), g7_24]
   have g8_25 : reg n8 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P8.regs (25 : Fin 32) (by decide), g7_25]
+  have tb8_450 : ∀ j, j < 8 → ptV n8.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K8 (by decide) (by decide) tb7_450
+  have tb8_8d0 : ∀ j, j < 8 → ptV n8.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K8 (by decide) (by decide) tb7_8d0
   have mb8_d50 : leN (memBytes n8.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30).reverse = n3fm (U2) 1 := by
     rw [memBytes_keep K8 (by decide) (by decide)]; exact mb7_d50
   have mb8_1928 : memBytes n8.mem (B + 0x420 + BitVec.ofNat 32 0x1928) 0x181 = wnafBytes (wnafGo (n3fm U1 1) 0x180 0x181 0 0) 0x181 := by
@@ -1570,102 +838,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K8.acc (by decide) (by decide)).trans a7_390
   have a8_3c0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K8.acc (by decide) (by decide)).trans a7_3c0
-  have a8_450 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K8.acc (by decide) (by decide)).trans a7_450
-  have a8_480 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K8.acc (by decide) (by decide)).trans a7_480
-  have a8_4b0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K8.acc (by decide) (by decide)).trans a7_4b0
-  have a8_4e0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K8.acc (by decide) (by decide)).trans a7_4e0
-  have a8_510 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K8.acc (by decide) (by decide)).trans a7_510
-  have a8_540 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K8.acc (by decide) (by decide)).trans a7_540
-  have a8_570 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K8.acc (by decide) (by decide)).trans a7_570
-  have a8_5a0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K8.acc (by decide) (by decide)).trans a7_5a0
-  have a8_5d0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K8.acc (by decide) (by decide)).trans a7_5d0
-  have a8_600 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K8.acc (by decide) (by decide)).trans a7_600
-  have a8_630 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K8.acc (by decide) (by decide)).trans a7_630
-  have a8_660 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K8.acc (by decide) (by decide)).trans a7_660
-  have a8_690 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K8.acc (by decide) (by decide)).trans a7_690
-  have a8_6c0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K8.acc (by decide) (by decide)).trans a7_6c0
-  have a8_6f0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K8.acc (by decide) (by decide)).trans a7_6f0
-  have a8_720 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K8.acc (by decide) (by decide)).trans a7_720
-  have a8_750 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K8.acc (by decide) (by decide)).trans a7_750
-  have a8_780 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K8.acc (by decide) (by decide)).trans a7_780
-  have a8_7b0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K8.acc (by decide) (by decide)).trans a7_7b0
-  have a8_7e0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K8.acc (by decide) (by decide)).trans a7_7e0
-  have a8_810 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K8.acc (by decide) (by decide)).trans a7_810
-  have a8_840 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K8.acc (by decide) (by decide)).trans a7_840
-  have a8_870 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K8.acc (by decide) (by decide)).trans a7_870
-  have a8_8a0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K8.acc (by decide) (by decide)).trans a7_8a0
-  have a8_8d0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K8.acc (by decide) (by decide)).trans a7_8d0
-  have a8_900 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K8.acc (by decide) (by decide)).trans a7_900
-  have a8_930 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K8.acc (by decide) (by decide)).trans a7_930
-  have a8_960 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K8.acc (by decide) (by decide)).trans a7_960
-  have a8_990 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K8.acc (by decide) (by decide)).trans a7_990
-  have a8_9c0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K8.acc (by decide) (by decide)).trans a7_9c0
-  have a8_9f0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K8.acc (by decide) (by decide)).trans a7_9f0
-  have a8_a20 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K8.acc (by decide) (by decide)).trans a7_a20
-  have a8_a50 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K8.acc (by decide) (by decide)).trans a7_a50
-  have a8_a80 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K8.acc (by decide) (by decide)).trans a7_a80
-  have a8_ab0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K8.acc (by decide) (by decide)).trans a7_ab0
-  have a8_ae0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K8.acc (by decide) (by decide)).trans a7_ae0
-  have a8_b10 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K8.acc (by decide) (by decide)).trans a7_b10
-  have a8_b40 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K8.acc (by decide) (by decide)).trans a7_b40
-  have a8_b70 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K8.acc (by decide) (by decide)).trans a7_b70
-  have a8_ba0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K8.acc (by decide) (by decide)).trans a7_ba0
-  have a8_bd0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K8.acc (by decide) (by decide)).trans a7_bd0
-  have a8_c00 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K8.acc (by decide) (by decide)).trans a7_c00
-  have a8_c30 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K8.acc (by decide) (by decide)).trans a7_c30
-  have a8_c60 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K8.acc (by decide) (by decide)).trans a7_c60
-  have a8_c90 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K8.acc (by decide) (by decide)).trans a7_c90
-  have a8_cc0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K8.acc (by decide) (by decide)).trans a7_cc0
-  have a8_cf0 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K8.acc (by decide) (by decide)).trans a7_cf0
-  have a8_d20 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K8.acc (by decide) (by decide)).trans a7_d20
   have a8_17a4 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K8.acc (by decide) (by decide)).trans a7_17a4
   have a8_17d4 : accV n8.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -1685,7 +857,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w8_1924 : memLoad32 n8.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w7_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K8 _ (by omega) (by omega)
-  clear w7_1924 a7_18f4 a7_18c4 a7_1894 a7_1864 a7_1834 a7_1804 a7_17d4 a7_17a4 a7_e10 a7_d20 a7_cf0 a7_cc0 a7_c90 a7_c60 a7_c30 a7_c00 a7_bd0 a7_ba0 a7_b70 a7_b40 a7_b10 a7_ae0 a7_ab0 a7_a80 a7_a50 a7_a20 a7_9f0 a7_9c0 a7_990 a7_960 a7_930 a7_900 a7_8d0 a7_8a0 a7_870 a7_840 a7_810 a7_7e0 a7_7b0 a7_780 a7_750 a7_720 a7_6f0 a7_6c0 a7_690 a7_660 a7_630 a7_600 a7_5d0 a7_5a0 a7_570 a7_540 a7_510 a7_4e0 a7_4b0 a7_480 a7_450 a7_3c0 a7_390 a7_360 a7_330 a7_300 a7_2d0 a7_2a0 a7_270 a7_210 a7_1e0 a7_1b0 a7_180 a7_150 a7_120 mb7_1928 mb7_d50 g7_12 g7_11 g7_10 g7_25 g7_24 g7_23 g7_22 g7_21 g7_20 g7_19 g7_18 g7_9 g7_8 g7_4 g7_3 g7_2 fR7 t7 K7 fr7 rb7 E7 s7 m7 u7 c7
+  clear w7_1924 a7_18f4 a7_18c4 a7_1894 a7_1864 a7_1834 a7_1804 a7_17d4 a7_17a4 a7_e10 a7_3c0 a7_390 a7_360 a7_330 a7_300 a7_2d0 a7_2a0 a7_270 a7_210 a7_1e0 a7_1b0 a7_180 a7_150 a7_120 mb7_1928 mb7_d50 tb7_8d0 tb7_450 g7_12 g7_11 g7_10 g7_25 g7_24 g7_23 g7_22 g7_21 g7_20 g7_19 g7_18 g7_9 g7_8 g7_4 g7_3 g7_2 fR7 t7 K7 fr7 rb7 E7 s7 m7 u7 c7
   -- 0x9B6
   obtain ⟨n9, c9, u9⟩ := s8.block pvF19b6 E8.E.E.E.C.self pvF19b6_end
     ⟨trivial, trivial, trivial, trivial⟩
@@ -1729,6 +901,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g9_11 : reg n9 a1 = BitVec.ofNat 32 0x30 := by
     rw [rb9]; simp +decide only [runBlock, BInstr.run, pvF19b6, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g8_2, g8_3, g8_4, g8_8, g8_9, g8_18, g8_19, g8_20, g8_21, g8_22, g8_23, g8_24, g8_25, s8.zero, BitVec.zero_add]) <;> pv_val
+  have tb9_450 : ∀ j, j < 8 → ptV n9.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K9 (by decide) (by decide) tb8_450
+  have tb9_8d0 : ∀ j, j < 8 → ptV n9.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K9 (by decide) (by decide) tb8_8d0
   have mb9_d50 : leN (memBytes n9.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30).reverse = n3fm (U2) 1 := by
     rw [memBytes_keep K9 (by decide) (by decide)]; exact mb8_d50
   have mb9_e10 : leN (memBytes n9.mem (B + 0x420 + BitVec.ofNat 32 0xE10) 0x30).reverse = n3fm (U2) 1 := by
@@ -1763,102 +939,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K9.acc (by decide) (by decide)).trans a8_390
   have a9_3c0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K9.acc (by decide) (by decide)).trans a8_3c0
-  have a9_450 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K9.acc (by decide) (by decide)).trans a8_450
-  have a9_480 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K9.acc (by decide) (by decide)).trans a8_480
-  have a9_4b0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K9.acc (by decide) (by decide)).trans a8_4b0
-  have a9_4e0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K9.acc (by decide) (by decide)).trans a8_4e0
-  have a9_510 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K9.acc (by decide) (by decide)).trans a8_510
-  have a9_540 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K9.acc (by decide) (by decide)).trans a8_540
-  have a9_570 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K9.acc (by decide) (by decide)).trans a8_570
-  have a9_5a0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K9.acc (by decide) (by decide)).trans a8_5a0
-  have a9_5d0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K9.acc (by decide) (by decide)).trans a8_5d0
-  have a9_600 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K9.acc (by decide) (by decide)).trans a8_600
-  have a9_630 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K9.acc (by decide) (by decide)).trans a8_630
-  have a9_660 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K9.acc (by decide) (by decide)).trans a8_660
-  have a9_690 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K9.acc (by decide) (by decide)).trans a8_690
-  have a9_6c0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K9.acc (by decide) (by decide)).trans a8_6c0
-  have a9_6f0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K9.acc (by decide) (by decide)).trans a8_6f0
-  have a9_720 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K9.acc (by decide) (by decide)).trans a8_720
-  have a9_750 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K9.acc (by decide) (by decide)).trans a8_750
-  have a9_780 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K9.acc (by decide) (by decide)).trans a8_780
-  have a9_7b0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K9.acc (by decide) (by decide)).trans a8_7b0
-  have a9_7e0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K9.acc (by decide) (by decide)).trans a8_7e0
-  have a9_810 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K9.acc (by decide) (by decide)).trans a8_810
-  have a9_840 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K9.acc (by decide) (by decide)).trans a8_840
-  have a9_870 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K9.acc (by decide) (by decide)).trans a8_870
-  have a9_8a0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K9.acc (by decide) (by decide)).trans a8_8a0
-  have a9_8d0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K9.acc (by decide) (by decide)).trans a8_8d0
-  have a9_900 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K9.acc (by decide) (by decide)).trans a8_900
-  have a9_930 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K9.acc (by decide) (by decide)).trans a8_930
-  have a9_960 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K9.acc (by decide) (by decide)).trans a8_960
-  have a9_990 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K9.acc (by decide) (by decide)).trans a8_990
-  have a9_9c0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K9.acc (by decide) (by decide)).trans a8_9c0
-  have a9_9f0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K9.acc (by decide) (by decide)).trans a8_9f0
-  have a9_a20 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K9.acc (by decide) (by decide)).trans a8_a20
-  have a9_a50 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K9.acc (by decide) (by decide)).trans a8_a50
-  have a9_a80 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K9.acc (by decide) (by decide)).trans a8_a80
-  have a9_ab0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K9.acc (by decide) (by decide)).trans a8_ab0
-  have a9_ae0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K9.acc (by decide) (by decide)).trans a8_ae0
-  have a9_b10 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K9.acc (by decide) (by decide)).trans a8_b10
-  have a9_b40 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K9.acc (by decide) (by decide)).trans a8_b40
-  have a9_b70 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K9.acc (by decide) (by decide)).trans a8_b70
-  have a9_ba0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K9.acc (by decide) (by decide)).trans a8_ba0
-  have a9_bd0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K9.acc (by decide) (by decide)).trans a8_bd0
-  have a9_c00 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K9.acc (by decide) (by decide)).trans a8_c00
-  have a9_c30 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K9.acc (by decide) (by decide)).trans a8_c30
-  have a9_c60 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K9.acc (by decide) (by decide)).trans a8_c60
-  have a9_c90 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K9.acc (by decide) (by decide)).trans a8_c90
-  have a9_cc0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K9.acc (by decide) (by decide)).trans a8_cc0
-  have a9_cf0 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K9.acc (by decide) (by decide)).trans a8_cf0
-  have a9_d20 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K9.acc (by decide) (by decide)).trans a8_d20
   have a9_17a4 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K9.acc (by decide) (by decide)).trans a8_17a4
   have a9_17d4 : accV n9.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -1878,7 +958,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w9_1924 : memLoad32 n9.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w8_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K9 _ (by omega) (by omega)
-  clear w8_1924 a8_18f4 a8_18c4 a8_1894 a8_1864 a8_1834 a8_1804 a8_17d4 a8_17a4 a8_d20 a8_cf0 a8_cc0 a8_c90 a8_c60 a8_c30 a8_c00 a8_bd0 a8_ba0 a8_b70 a8_b40 a8_b10 a8_ae0 a8_ab0 a8_a80 a8_a50 a8_a20 a8_9f0 a8_9c0 a8_990 a8_960 a8_930 a8_900 a8_8d0 a8_8a0 a8_870 a8_840 a8_810 a8_7e0 a8_7b0 a8_780 a8_750 a8_720 a8_6f0 a8_6c0 a8_690 a8_660 a8_630 a8_600 a8_5d0 a8_5a0 a8_570 a8_540 a8_510 a8_4e0 a8_4b0 a8_480 a8_450 a8_3c0 a8_390 a8_360 a8_330 a8_300 a8_2d0 a8_2a0 a8_270 a8_210 a8_1e0 a8_1b0 a8_180 a8_150 a8_120 mb8_e10 mb8_1928 mb8_d50 g8_25 g8_24 g8_23 g8_22 g8_21 g8_20 g8_19 g8_18 g8_9 g8_8 g8_4 g8_3 g8_2 fR8 t8 E8 fr8 s8 V8 K8 P8
+  clear w8_1924 a8_18f4 a8_18c4 a8_1894 a8_1864 a8_1834 a8_1804 a8_17d4 a8_17a4 a8_3c0 a8_390 a8_360 a8_330 a8_300 a8_2d0 a8_2a0 a8_270 a8_210 a8_1e0 a8_1b0 a8_180 a8_150 a8_120 mb8_e10 mb8_1928 mb8_d50 tb8_8d0 tb8_450 g8_25 g8_24 g8_23 g8_22 g8_21 g8_20 g8_19 g8_18 g8_9 g8_8 g8_4 g8_3 g8_2 fR8 t8 E8 fr8 s8 V8 K8 P8
   -- 0x9C2: pv_rev
   obtain ⟨n10, P10, K10, V10⟩ := pv_rev F E9 s9 pv_at_9c2 pv_at_9c6 (by decide) (by decide)
     g9_2 g9_10 g9_11 (by decide)
@@ -1900,6 +980,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g10_23 : reg n10 (23 : Fin 32) = BitVec.ofNat 32 0x188 := by rw [P10.regs (23 : Fin 32) (by decide), g9_23]
   have g10_24 : reg n10 (24 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x1924 := by rw [P10.regs (24 : Fin 32) (by decide), g9_24]
   have g10_25 : reg n10 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P10.regs (25 : Fin 32) (by decide), g9_25]
+  have tb10_450 : ∀ j, j < 8 → ptV n10.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K10 (by decide) (by decide) tb9_450
+  have tb10_8d0 : ∀ j, j < 8 → ptV n10.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K10 (by decide) (by decide) tb9_8d0
   have mb10_d50 : leN (memBytes n10.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30).reverse = n3fm (U2) 1 := by
     rw [memBytes_keep K10 (by decide) (by decide)]; exact mb9_d50
   have mb10_1928 : memBytes n10.mem (B + 0x420 + BitVec.ofNat 32 0x1928) 0x181 = wnafBytes (wnafGo (n3fm U1 1) 0x180 0x181 0 0) 0x181 := by
@@ -1935,102 +1019,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K10.acc (by decide) (by decide)).trans a9_390
   have a10_3c0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K10.acc (by decide) (by decide)).trans a9_3c0
-  have a10_450 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K10.acc (by decide) (by decide)).trans a9_450
-  have a10_480 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K10.acc (by decide) (by decide)).trans a9_480
-  have a10_4b0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K10.acc (by decide) (by decide)).trans a9_4b0
-  have a10_4e0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K10.acc (by decide) (by decide)).trans a9_4e0
-  have a10_510 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K10.acc (by decide) (by decide)).trans a9_510
-  have a10_540 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K10.acc (by decide) (by decide)).trans a9_540
-  have a10_570 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K10.acc (by decide) (by decide)).trans a9_570
-  have a10_5a0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K10.acc (by decide) (by decide)).trans a9_5a0
-  have a10_5d0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K10.acc (by decide) (by decide)).trans a9_5d0
-  have a10_600 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K10.acc (by decide) (by decide)).trans a9_600
-  have a10_630 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K10.acc (by decide) (by decide)).trans a9_630
-  have a10_660 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K10.acc (by decide) (by decide)).trans a9_660
-  have a10_690 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K10.acc (by decide) (by decide)).trans a9_690
-  have a10_6c0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K10.acc (by decide) (by decide)).trans a9_6c0
-  have a10_6f0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K10.acc (by decide) (by decide)).trans a9_6f0
-  have a10_720 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K10.acc (by decide) (by decide)).trans a9_720
-  have a10_750 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K10.acc (by decide) (by decide)).trans a9_750
-  have a10_780 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K10.acc (by decide) (by decide)).trans a9_780
-  have a10_7b0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K10.acc (by decide) (by decide)).trans a9_7b0
-  have a10_7e0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K10.acc (by decide) (by decide)).trans a9_7e0
-  have a10_810 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K10.acc (by decide) (by decide)).trans a9_810
-  have a10_840 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K10.acc (by decide) (by decide)).trans a9_840
-  have a10_870 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K10.acc (by decide) (by decide)).trans a9_870
-  have a10_8a0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K10.acc (by decide) (by decide)).trans a9_8a0
-  have a10_8d0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K10.acc (by decide) (by decide)).trans a9_8d0
-  have a10_900 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K10.acc (by decide) (by decide)).trans a9_900
-  have a10_930 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K10.acc (by decide) (by decide)).trans a9_930
-  have a10_960 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K10.acc (by decide) (by decide)).trans a9_960
-  have a10_990 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K10.acc (by decide) (by decide)).trans a9_990
-  have a10_9c0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K10.acc (by decide) (by decide)).trans a9_9c0
-  have a10_9f0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K10.acc (by decide) (by decide)).trans a9_9f0
-  have a10_a20 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K10.acc (by decide) (by decide)).trans a9_a20
-  have a10_a50 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K10.acc (by decide) (by decide)).trans a9_a50
-  have a10_a80 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K10.acc (by decide) (by decide)).trans a9_a80
-  have a10_ab0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K10.acc (by decide) (by decide)).trans a9_ab0
-  have a10_ae0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K10.acc (by decide) (by decide)).trans a9_ae0
-  have a10_b10 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K10.acc (by decide) (by decide)).trans a9_b10
-  have a10_b40 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K10.acc (by decide) (by decide)).trans a9_b40
-  have a10_b70 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K10.acc (by decide) (by decide)).trans a9_b70
-  have a10_ba0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K10.acc (by decide) (by decide)).trans a9_ba0
-  have a10_bd0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K10.acc (by decide) (by decide)).trans a9_bd0
-  have a10_c00 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K10.acc (by decide) (by decide)).trans a9_c00
-  have a10_c30 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K10.acc (by decide) (by decide)).trans a9_c30
-  have a10_c60 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K10.acc (by decide) (by decide)).trans a9_c60
-  have a10_c90 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K10.acc (by decide) (by decide)).trans a9_c90
-  have a10_cc0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K10.acc (by decide) (by decide)).trans a9_cc0
-  have a10_cf0 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K10.acc (by decide) (by decide)).trans a9_cf0
-  have a10_d20 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K10.acc (by decide) (by decide)).trans a9_d20
   have a10_17a4 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K10.acc (by decide) (by decide)).trans a9_17a4
   have a10_17d4 : accV n10.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -2050,7 +1038,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w10_1924 : memLoad32 n10.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w9_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K10 _ (by omega) (by omega)
-  clear w9_1924 a9_18f4 a9_18c4 a9_1894 a9_1864 a9_1834 a9_1804 a9_17d4 a9_17a4 a9_d20 a9_cf0 a9_cc0 a9_c90 a9_c60 a9_c30 a9_c00 a9_bd0 a9_ba0 a9_b70 a9_b40 a9_b10 a9_ae0 a9_ab0 a9_a80 a9_a50 a9_a20 a9_9f0 a9_9c0 a9_990 a9_960 a9_930 a9_900 a9_8d0 a9_8a0 a9_870 a9_840 a9_810 a9_7e0 a9_7b0 a9_780 a9_750 a9_720 a9_6f0 a9_6c0 a9_690 a9_660 a9_630 a9_600 a9_5d0 a9_5a0 a9_570 a9_540 a9_510 a9_4e0 a9_4b0 a9_480 a9_450 a9_3c0 a9_390 a9_360 a9_330 a9_300 a9_2d0 a9_2a0 a9_270 a9_210 a9_1e0 a9_1b0 a9_180 a9_150 a9_120 mb9_1928 mb9_e10 mb9_d50 g9_11 g9_10 g9_25 g9_24 g9_23 g9_22 g9_21 g9_20 g9_19 g9_18 g9_9 g9_8 g9_4 g9_3 g9_2 fR9 t9 K9 fr9 rb9 E9 s9 m9 u9 c9
+  clear w9_1924 a9_18f4 a9_18c4 a9_1894 a9_1864 a9_1834 a9_1804 a9_17d4 a9_17a4 a9_3c0 a9_390 a9_360 a9_330 a9_300 a9_2d0 a9_2a0 a9_270 a9_210 a9_1e0 a9_1b0 a9_180 a9_150 a9_120 mb9_1928 mb9_e10 mb9_d50 tb9_8d0 tb9_450 g9_11 g9_10 g9_25 g9_24 g9_23 g9_22 g9_21 g9_20 g9_19 g9_18 g9_9 g9_8 g9_4 g9_3 g9_2 fR9 t9 K9 fr9 rb9 E9 s9 m9 u9 c9
   -- 0x9CA
   obtain ⟨n11, c11, u11⟩ := s10.block pvF19ca E10.E.E.E.C.self pvF19ca_end
     ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩
@@ -2097,6 +1085,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g11_12 : reg n11 a2 = BitVec.ofNat 32 0x30 := by
     rw [rb11]; simp +decide only [runBlock, BInstr.run, pvF19ca, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g10_2, g10_3, g10_4, g10_8, g10_9, g10_18, g10_19, g10_20, g10_21, g10_22, g10_23, g10_24, g10_25, s10.zero, BitVec.zero_add]) <;> pv_val
+  have tb11_450 : ∀ j, j < 8 → ptV n11.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K11 (by decide) (by decide) tb10_450
+  have tb11_8d0 : ∀ j, j < 8 → ptV n11.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K11 (by decide) (by decide) tb10_8d0
   have mb11_d50 : leN (memBytes n11.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30).reverse = n3fm (U2) 1 := by
     rw [memBytes_keep K11 (by decide) (by decide)]; exact mb10_d50
   have mb11_e10 : leN (memBytes n11.mem (B + 0x420 + BitVec.ofNat 32 0xE10) 0x30) = n3fm (U2) 1 := by
@@ -2131,102 +1123,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K11.acc (by decide) (by decide)).trans a10_390
   have a11_3c0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K11.acc (by decide) (by decide)).trans a10_3c0
-  have a11_450 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K11.acc (by decide) (by decide)).trans a10_450
-  have a11_480 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K11.acc (by decide) (by decide)).trans a10_480
-  have a11_4b0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K11.acc (by decide) (by decide)).trans a10_4b0
-  have a11_4e0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K11.acc (by decide) (by decide)).trans a10_4e0
-  have a11_510 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K11.acc (by decide) (by decide)).trans a10_510
-  have a11_540 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K11.acc (by decide) (by decide)).trans a10_540
-  have a11_570 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K11.acc (by decide) (by decide)).trans a10_570
-  have a11_5a0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K11.acc (by decide) (by decide)).trans a10_5a0
-  have a11_5d0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K11.acc (by decide) (by decide)).trans a10_5d0
-  have a11_600 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K11.acc (by decide) (by decide)).trans a10_600
-  have a11_630 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K11.acc (by decide) (by decide)).trans a10_630
-  have a11_660 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K11.acc (by decide) (by decide)).trans a10_660
-  have a11_690 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K11.acc (by decide) (by decide)).trans a10_690
-  have a11_6c0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K11.acc (by decide) (by decide)).trans a10_6c0
-  have a11_6f0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K11.acc (by decide) (by decide)).trans a10_6f0
-  have a11_720 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K11.acc (by decide) (by decide)).trans a10_720
-  have a11_750 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K11.acc (by decide) (by decide)).trans a10_750
-  have a11_780 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K11.acc (by decide) (by decide)).trans a10_780
-  have a11_7b0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K11.acc (by decide) (by decide)).trans a10_7b0
-  have a11_7e0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K11.acc (by decide) (by decide)).trans a10_7e0
-  have a11_810 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K11.acc (by decide) (by decide)).trans a10_810
-  have a11_840 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K11.acc (by decide) (by decide)).trans a10_840
-  have a11_870 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K11.acc (by decide) (by decide)).trans a10_870
-  have a11_8a0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K11.acc (by decide) (by decide)).trans a10_8a0
-  have a11_8d0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K11.acc (by decide) (by decide)).trans a10_8d0
-  have a11_900 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K11.acc (by decide) (by decide)).trans a10_900
-  have a11_930 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K11.acc (by decide) (by decide)).trans a10_930
-  have a11_960 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K11.acc (by decide) (by decide)).trans a10_960
-  have a11_990 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K11.acc (by decide) (by decide)).trans a10_990
-  have a11_9c0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K11.acc (by decide) (by decide)).trans a10_9c0
-  have a11_9f0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K11.acc (by decide) (by decide)).trans a10_9f0
-  have a11_a20 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K11.acc (by decide) (by decide)).trans a10_a20
-  have a11_a50 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K11.acc (by decide) (by decide)).trans a10_a50
-  have a11_a80 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K11.acc (by decide) (by decide)).trans a10_a80
-  have a11_ab0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K11.acc (by decide) (by decide)).trans a10_ab0
-  have a11_ae0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K11.acc (by decide) (by decide)).trans a10_ae0
-  have a11_b10 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K11.acc (by decide) (by decide)).trans a10_b10
-  have a11_b40 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K11.acc (by decide) (by decide)).trans a10_b40
-  have a11_b70 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K11.acc (by decide) (by decide)).trans a10_b70
-  have a11_ba0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K11.acc (by decide) (by decide)).trans a10_ba0
-  have a11_bd0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K11.acc (by decide) (by decide)).trans a10_bd0
-  have a11_c00 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K11.acc (by decide) (by decide)).trans a10_c00
-  have a11_c30 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K11.acc (by decide) (by decide)).trans a10_c30
-  have a11_c60 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K11.acc (by decide) (by decide)).trans a10_c60
-  have a11_c90 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K11.acc (by decide) (by decide)).trans a10_c90
-  have a11_cc0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K11.acc (by decide) (by decide)).trans a10_cc0
-  have a11_cf0 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K11.acc (by decide) (by decide)).trans a10_cf0
-  have a11_d20 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K11.acc (by decide) (by decide)).trans a10_d20
   have a11_17a4 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K11.acc (by decide) (by decide)).trans a10_17a4
   have a11_17d4 : accV n11.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -2246,7 +1142,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w11_1924 : memLoad32 n11.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w10_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K11 _ (by omega) (by omega)
-  clear w10_1924 a10_18f4 a10_18c4 a10_1894 a10_1864 a10_1834 a10_1804 a10_17d4 a10_17a4 a10_d20 a10_cf0 a10_cc0 a10_c90 a10_c60 a10_c30 a10_c00 a10_bd0 a10_ba0 a10_b70 a10_b40 a10_b10 a10_ae0 a10_ab0 a10_a80 a10_a50 a10_a20 a10_9f0 a10_9c0 a10_990 a10_960 a10_930 a10_900 a10_8d0 a10_8a0 a10_870 a10_840 a10_810 a10_7e0 a10_7b0 a10_780 a10_750 a10_720 a10_6f0 a10_6c0 a10_690 a10_660 a10_630 a10_600 a10_5d0 a10_5a0 a10_570 a10_540 a10_510 a10_4e0 a10_4b0 a10_480 a10_450 a10_3c0 a10_390 a10_360 a10_330 a10_300 a10_2d0 a10_2a0 a10_270 a10_210 a10_1e0 a10_1b0 a10_180 a10_150 a10_120 mb10_e10 mb10_1928 mb10_d50 g10_25 g10_24 g10_23 g10_22 g10_21 g10_20 g10_19 g10_18 g10_9 g10_8 g10_4 g10_3 g10_2 fR10 t10 E10 fr10 s10 V10 K10 P10
+  clear w10_1924 a10_18f4 a10_18c4 a10_1894 a10_1864 a10_1834 a10_1804 a10_17d4 a10_17a4 a10_3c0 a10_390 a10_360 a10_330 a10_300 a10_2d0 a10_2a0 a10_270 a10_210 a10_1e0 a10_1b0 a10_180 a10_150 a10_120 mb10_e10 mb10_1928 mb10_d50 tb10_8d0 tb10_450 g10_25 g10_24 g10_23 g10_22 g10_21 g10_20 g10_19 g10_18 g10_9 g10_8 g10_4 g10_3 g10_2 fR10 t10 E10 fr10 s10 V10 K10 P10
   -- 0x9DE: pv_mc
   obtain ⟨n12, P12, K12, V12⟩ := pv_mc F E11.E.E.E s11 pv_at_9de pv_at_9e2 (by decide) (by decide)
     g11_2 g11_10 g11_11 g11_12 (by decide) (by decide) (by decide)
@@ -2268,6 +1164,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g12_23 : reg n12 (23 : Fin 32) = BitVec.ofNat 32 0x188 := by rw [P12.regs (23 : Fin 32) (by decide), g11_23]
   have g12_24 : reg n12 (24 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x1924 := by rw [P12.regs (24 : Fin 32) (by decide), g11_24]
   have g12_25 : reg n12 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P12.regs (25 : Fin 32) (by decide), g11_25]
+  have tb12_450 : ∀ j, j < 8 → ptV n12.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K12 (by decide) (by decide) tb11_450
+  have tb12_8d0 : ∀ j, j < 8 → ptV n12.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K12 (by decide) (by decide) tb11_8d0
   have mb12_e10 : leN (memBytes n12.mem (B + 0x420 + BitVec.ofNat 32 0xE10) 0x30) = n3fm (U2) 1 := by
     rw [memBytes_keep K12 (by decide) (by decide)]; exact mb11_e10
   have mb12_1928 : memBytes n12.mem (B + 0x420 + BitVec.ofNat 32 0x1928) 0x181 = wnafBytes (wnafGo (n3fm U1 1) 0x180 0x181 0 0) 0x181 := by
@@ -2306,102 +1206,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K12.acc (by decide) (by decide)).trans a11_390
   have a12_3c0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K12.acc (by decide) (by decide)).trans a11_3c0
-  have a12_450 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K12.acc (by decide) (by decide)).trans a11_450
-  have a12_480 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K12.acc (by decide) (by decide)).trans a11_480
-  have a12_4b0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K12.acc (by decide) (by decide)).trans a11_4b0
-  have a12_4e0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K12.acc (by decide) (by decide)).trans a11_4e0
-  have a12_510 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K12.acc (by decide) (by decide)).trans a11_510
-  have a12_540 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K12.acc (by decide) (by decide)).trans a11_540
-  have a12_570 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K12.acc (by decide) (by decide)).trans a11_570
-  have a12_5a0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K12.acc (by decide) (by decide)).trans a11_5a0
-  have a12_5d0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K12.acc (by decide) (by decide)).trans a11_5d0
-  have a12_600 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K12.acc (by decide) (by decide)).trans a11_600
-  have a12_630 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K12.acc (by decide) (by decide)).trans a11_630
-  have a12_660 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K12.acc (by decide) (by decide)).trans a11_660
-  have a12_690 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K12.acc (by decide) (by decide)).trans a11_690
-  have a12_6c0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K12.acc (by decide) (by decide)).trans a11_6c0
-  have a12_6f0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K12.acc (by decide) (by decide)).trans a11_6f0
-  have a12_720 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K12.acc (by decide) (by decide)).trans a11_720
-  have a12_750 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K12.acc (by decide) (by decide)).trans a11_750
-  have a12_780 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K12.acc (by decide) (by decide)).trans a11_780
-  have a12_7b0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K12.acc (by decide) (by decide)).trans a11_7b0
-  have a12_7e0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K12.acc (by decide) (by decide)).trans a11_7e0
-  have a12_810 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K12.acc (by decide) (by decide)).trans a11_810
-  have a12_840 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K12.acc (by decide) (by decide)).trans a11_840
-  have a12_870 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K12.acc (by decide) (by decide)).trans a11_870
-  have a12_8a0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K12.acc (by decide) (by decide)).trans a11_8a0
-  have a12_8d0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K12.acc (by decide) (by decide)).trans a11_8d0
-  have a12_900 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K12.acc (by decide) (by decide)).trans a11_900
-  have a12_930 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K12.acc (by decide) (by decide)).trans a11_930
-  have a12_960 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K12.acc (by decide) (by decide)).trans a11_960
-  have a12_990 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K12.acc (by decide) (by decide)).trans a11_990
-  have a12_9c0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K12.acc (by decide) (by decide)).trans a11_9c0
-  have a12_9f0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K12.acc (by decide) (by decide)).trans a11_9f0
-  have a12_a20 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K12.acc (by decide) (by decide)).trans a11_a20
-  have a12_a50 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K12.acc (by decide) (by decide)).trans a11_a50
-  have a12_a80 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K12.acc (by decide) (by decide)).trans a11_a80
-  have a12_ab0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K12.acc (by decide) (by decide)).trans a11_ab0
-  have a12_ae0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K12.acc (by decide) (by decide)).trans a11_ae0
-  have a12_b10 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K12.acc (by decide) (by decide)).trans a11_b10
-  have a12_b40 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K12.acc (by decide) (by decide)).trans a11_b40
-  have a12_b70 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K12.acc (by decide) (by decide)).trans a11_b70
-  have a12_ba0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K12.acc (by decide) (by decide)).trans a11_ba0
-  have a12_bd0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K12.acc (by decide) (by decide)).trans a11_bd0
-  have a12_c00 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K12.acc (by decide) (by decide)).trans a11_c00
-  have a12_c30 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K12.acc (by decide) (by decide)).trans a11_c30
-  have a12_c60 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K12.acc (by decide) (by decide)).trans a11_c60
-  have a12_c90 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K12.acc (by decide) (by decide)).trans a11_c90
-  have a12_cc0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K12.acc (by decide) (by decide)).trans a11_cc0
-  have a12_cf0 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K12.acc (by decide) (by decide)).trans a11_cf0
-  have a12_d20 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K12.acc (by decide) (by decide)).trans a11_d20
   have a12_17a4 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K12.acc (by decide) (by decide)).trans a11_17a4
   have a12_17d4 : accV n12.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -2421,7 +1225,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w12_1924 : memLoad32 n12.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w11_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K12 _ (by omega) (by omega)
-  clear w11_1924 a11_18f4 a11_18c4 a11_1894 a11_1864 a11_1834 a11_1804 a11_17d4 a11_17a4 a11_d20 a11_cf0 a11_cc0 a11_c90 a11_c60 a11_c30 a11_c00 a11_bd0 a11_ba0 a11_b70 a11_b40 a11_b10 a11_ae0 a11_ab0 a11_a80 a11_a50 a11_a20 a11_9f0 a11_9c0 a11_990 a11_960 a11_930 a11_900 a11_8d0 a11_8a0 a11_870 a11_840 a11_810 a11_7e0 a11_7b0 a11_780 a11_750 a11_720 a11_6f0 a11_6c0 a11_690 a11_660 a11_630 a11_600 a11_5d0 a11_5a0 a11_570 a11_540 a11_510 a11_4e0 a11_4b0 a11_480 a11_450 a11_3c0 a11_390 a11_360 a11_330 a11_300 a11_2d0 a11_2a0 a11_270 a11_210 a11_1e0 a11_1b0 a11_180 a11_150 a11_120 mb11_1928 mb11_e10 mb11_d50 g11_12 g11_11 g11_10 g11_25 g11_24 g11_23 g11_22 g11_21 g11_20 g11_19 g11_18 g11_9 g11_8 g11_4 g11_3 g11_2 fR11 t11 K11 fr11 rb11 E11 s11 m11 u11 c11
+  clear w11_1924 a11_18f4 a11_18c4 a11_1894 a11_1864 a11_1834 a11_1804 a11_17d4 a11_17a4 a11_3c0 a11_390 a11_360 a11_330 a11_300 a11_2d0 a11_2a0 a11_270 a11_210 a11_1e0 a11_1b0 a11_180 a11_150 a11_120 mb11_1928 mb11_e10 mb11_d50 tb11_8d0 tb11_450 g11_12 g11_11 g11_10 g11_25 g11_24 g11_23 g11_22 g11_21 g11_20 g11_19 g11_18 g11_9 g11_8 g11_4 g11_3 g11_2 fR11 t11 K11 fr11 rb11 E11 s11 m11 u11 c11
   -- 0x9E6
   obtain ⟨n13, c13, u13⟩ := s12.block pvF19e6 E12.E.E.E.C.self pvF19e6_end
     ⟨trivial, trivial, trivial, trivial⟩
@@ -2465,6 +1269,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g13_11 : reg n13 a1 = BitVec.ofNat 32 0x181 := by
     rw [rb13]; simp +decide only [runBlock, BInstr.run, pvF19e6, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g12_2, g12_3, g12_4, g12_8, g12_9, g12_18, g12_19, g12_20, g12_21, g12_22, g12_23, g12_24, g12_25, s12.zero, BitVec.zero_add]) <;> pv_val
+  have tb13_450 : ∀ j, j < 8 → ptV n13.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K13 (by decide) (by decide) tb12_450
+  have tb13_8d0 : ∀ j, j < 8 → ptV n13.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K13 (by decide) (by decide) tb12_8d0
   have mb13_d50 : leN (memBytes n13.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30) = n3fm (U2) 1 := by
     rw [memBytes_keep K13 (by decide) (by decide)]; exact mb12_d50
   have mb13_e10 : leN (memBytes n13.mem (B + 0x420 + BitVec.ofNat 32 0xE10) 0x30) = n3fm (U2) 1 := by
@@ -2499,102 +1307,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K13.acc (by decide) (by decide)).trans a12_390
   have a13_3c0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K13.acc (by decide) (by decide)).trans a12_3c0
-  have a13_450 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K13.acc (by decide) (by decide)).trans a12_450
-  have a13_480 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K13.acc (by decide) (by decide)).trans a12_480
-  have a13_4b0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K13.acc (by decide) (by decide)).trans a12_4b0
-  have a13_4e0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K13.acc (by decide) (by decide)).trans a12_4e0
-  have a13_510 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K13.acc (by decide) (by decide)).trans a12_510
-  have a13_540 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K13.acc (by decide) (by decide)).trans a12_540
-  have a13_570 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K13.acc (by decide) (by decide)).trans a12_570
-  have a13_5a0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K13.acc (by decide) (by decide)).trans a12_5a0
-  have a13_5d0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K13.acc (by decide) (by decide)).trans a12_5d0
-  have a13_600 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K13.acc (by decide) (by decide)).trans a12_600
-  have a13_630 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K13.acc (by decide) (by decide)).trans a12_630
-  have a13_660 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K13.acc (by decide) (by decide)).trans a12_660
-  have a13_690 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K13.acc (by decide) (by decide)).trans a12_690
-  have a13_6c0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K13.acc (by decide) (by decide)).trans a12_6c0
-  have a13_6f0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K13.acc (by decide) (by decide)).trans a12_6f0
-  have a13_720 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K13.acc (by decide) (by decide)).trans a12_720
-  have a13_750 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K13.acc (by decide) (by decide)).trans a12_750
-  have a13_780 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K13.acc (by decide) (by decide)).trans a12_780
-  have a13_7b0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K13.acc (by decide) (by decide)).trans a12_7b0
-  have a13_7e0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K13.acc (by decide) (by decide)).trans a12_7e0
-  have a13_810 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K13.acc (by decide) (by decide)).trans a12_810
-  have a13_840 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K13.acc (by decide) (by decide)).trans a12_840
-  have a13_870 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K13.acc (by decide) (by decide)).trans a12_870
-  have a13_8a0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K13.acc (by decide) (by decide)).trans a12_8a0
-  have a13_8d0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K13.acc (by decide) (by decide)).trans a12_8d0
-  have a13_900 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K13.acc (by decide) (by decide)).trans a12_900
-  have a13_930 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K13.acc (by decide) (by decide)).trans a12_930
-  have a13_960 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K13.acc (by decide) (by decide)).trans a12_960
-  have a13_990 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K13.acc (by decide) (by decide)).trans a12_990
-  have a13_9c0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K13.acc (by decide) (by decide)).trans a12_9c0
-  have a13_9f0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K13.acc (by decide) (by decide)).trans a12_9f0
-  have a13_a20 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K13.acc (by decide) (by decide)).trans a12_a20
-  have a13_a50 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K13.acc (by decide) (by decide)).trans a12_a50
-  have a13_a80 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K13.acc (by decide) (by decide)).trans a12_a80
-  have a13_ab0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K13.acc (by decide) (by decide)).trans a12_ab0
-  have a13_ae0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K13.acc (by decide) (by decide)).trans a12_ae0
-  have a13_b10 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K13.acc (by decide) (by decide)).trans a12_b10
-  have a13_b40 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K13.acc (by decide) (by decide)).trans a12_b40
-  have a13_b70 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K13.acc (by decide) (by decide)).trans a12_b70
-  have a13_ba0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K13.acc (by decide) (by decide)).trans a12_ba0
-  have a13_bd0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K13.acc (by decide) (by decide)).trans a12_bd0
-  have a13_c00 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K13.acc (by decide) (by decide)).trans a12_c00
-  have a13_c30 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K13.acc (by decide) (by decide)).trans a12_c30
-  have a13_c60 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K13.acc (by decide) (by decide)).trans a12_c60
-  have a13_c90 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K13.acc (by decide) (by decide)).trans a12_c90
-  have a13_cc0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K13.acc (by decide) (by decide)).trans a12_cc0
-  have a13_cf0 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K13.acc (by decide) (by decide)).trans a12_cf0
-  have a13_d20 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K13.acc (by decide) (by decide)).trans a12_d20
   have a13_17a4 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K13.acc (by decide) (by decide)).trans a12_17a4
   have a13_17d4 : accV n13.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -2614,7 +1326,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w13_1924 : memLoad32 n13.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w12_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K13 _ (by omega) (by omega)
-  clear w12_1924 a12_18f4 a12_18c4 a12_1894 a12_1864 a12_1834 a12_1804 a12_17d4 a12_17a4 a12_d20 a12_cf0 a12_cc0 a12_c90 a12_c60 a12_c30 a12_c00 a12_bd0 a12_ba0 a12_b70 a12_b40 a12_b10 a12_ae0 a12_ab0 a12_a80 a12_a50 a12_a20 a12_9f0 a12_9c0 a12_990 a12_960 a12_930 a12_900 a12_8d0 a12_8a0 a12_870 a12_840 a12_810 a12_7e0 a12_7b0 a12_780 a12_750 a12_720 a12_6f0 a12_6c0 a12_690 a12_660 a12_630 a12_600 a12_5d0 a12_5a0 a12_570 a12_540 a12_510 a12_4e0 a12_4b0 a12_480 a12_450 a12_3c0 a12_390 a12_360 a12_330 a12_300 a12_2d0 a12_2a0 a12_270 a12_210 a12_1e0 a12_1b0 a12_180 a12_150 a12_120 mb12_d50 mb12_1928 mb12_e10 g12_25 g12_24 g12_23 g12_22 g12_21 g12_20 g12_19 g12_18 g12_9 g12_8 g12_4 g12_3 g12_2 fR12 t12 E12 fr12 s12 V12 K12 P12
+  clear w12_1924 a12_18f4 a12_18c4 a12_1894 a12_1864 a12_1834 a12_1804 a12_17d4 a12_17a4 a12_3c0 a12_390 a12_360 a12_330 a12_300 a12_2d0 a12_2a0 a12_270 a12_210 a12_1e0 a12_1b0 a12_180 a12_150 a12_120 mb12_d50 mb12_1928 mb12_e10 tb12_8d0 tb12_450 g12_25 g12_24 g12_23 g12_22 g12_21 g12_20 g12_19 g12_18 g12_9 g12_8 g12_4 g12_3 g12_2 fR12 t12 E12 fr12 s12 V12 K12 P12
   -- 0x9F2: branch, not taken
   obtain ⟨n14, d14, u14⟩ := s13.notTaken E13.E.E.E.C.self 0x9F4 pv_at_9f2
     (by decide) (by rw [g13_11, s13.zero]; decide)
@@ -2640,6 +1352,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g14_23 : reg n14 (23 : Fin 32) = BitVec.ofNat 32 0x188 := by rw [u14.regs, g13_23]
   have g14_24 : reg n14 (24 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x1924 := by rw [u14.regs, g13_24]
   have g14_25 : reg n14 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [u14.regs, g13_25]
+  have tb14_450 : ∀ j, j < 8 → ptV n14.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K14 (by decide) (by decide) tb13_450
+  have tb14_8d0 : ∀ j, j < 8 → ptV n14.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K14 (by decide) (by decide) tb13_8d0
   have mb14_d50 : leN (memBytes n14.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30) = n3fm (U2) 1 := by
     rw [memBytes_keep K14 (by decide) (by decide)]; exact mb13_d50
   have mb14_e10 : leN (memBytes n14.mem (B + 0x420 + BitVec.ofNat 32 0xE10) 0x30) = n3fm (U2) 1 := by
@@ -2674,102 +1390,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K14.acc (by decide) (by decide)).trans a13_390
   have a14_3c0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K14.acc (by decide) (by decide)).trans a13_3c0
-  have a14_450 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K14.acc (by decide) (by decide)).trans a13_450
-  have a14_480 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K14.acc (by decide) (by decide)).trans a13_480
-  have a14_4b0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K14.acc (by decide) (by decide)).trans a13_4b0
-  have a14_4e0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K14.acc (by decide) (by decide)).trans a13_4e0
-  have a14_510 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K14.acc (by decide) (by decide)).trans a13_510
-  have a14_540 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K14.acc (by decide) (by decide)).trans a13_540
-  have a14_570 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K14.acc (by decide) (by decide)).trans a13_570
-  have a14_5a0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K14.acc (by decide) (by decide)).trans a13_5a0
-  have a14_5d0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K14.acc (by decide) (by decide)).trans a13_5d0
-  have a14_600 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K14.acc (by decide) (by decide)).trans a13_600
-  have a14_630 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K14.acc (by decide) (by decide)).trans a13_630
-  have a14_660 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K14.acc (by decide) (by decide)).trans a13_660
-  have a14_690 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K14.acc (by decide) (by decide)).trans a13_690
-  have a14_6c0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K14.acc (by decide) (by decide)).trans a13_6c0
-  have a14_6f0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K14.acc (by decide) (by decide)).trans a13_6f0
-  have a14_720 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K14.acc (by decide) (by decide)).trans a13_720
-  have a14_750 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K14.acc (by decide) (by decide)).trans a13_750
-  have a14_780 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K14.acc (by decide) (by decide)).trans a13_780
-  have a14_7b0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K14.acc (by decide) (by decide)).trans a13_7b0
-  have a14_7e0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K14.acc (by decide) (by decide)).trans a13_7e0
-  have a14_810 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K14.acc (by decide) (by decide)).trans a13_810
-  have a14_840 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K14.acc (by decide) (by decide)).trans a13_840
-  have a14_870 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K14.acc (by decide) (by decide)).trans a13_870
-  have a14_8a0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K14.acc (by decide) (by decide)).trans a13_8a0
-  have a14_8d0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K14.acc (by decide) (by decide)).trans a13_8d0
-  have a14_900 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K14.acc (by decide) (by decide)).trans a13_900
-  have a14_930 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K14.acc (by decide) (by decide)).trans a13_930
-  have a14_960 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K14.acc (by decide) (by decide)).trans a13_960
-  have a14_990 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K14.acc (by decide) (by decide)).trans a13_990
-  have a14_9c0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K14.acc (by decide) (by decide)).trans a13_9c0
-  have a14_9f0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K14.acc (by decide) (by decide)).trans a13_9f0
-  have a14_a20 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K14.acc (by decide) (by decide)).trans a13_a20
-  have a14_a50 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K14.acc (by decide) (by decide)).trans a13_a50
-  have a14_a80 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K14.acc (by decide) (by decide)).trans a13_a80
-  have a14_ab0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K14.acc (by decide) (by decide)).trans a13_ab0
-  have a14_ae0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K14.acc (by decide) (by decide)).trans a13_ae0
-  have a14_b10 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K14.acc (by decide) (by decide)).trans a13_b10
-  have a14_b40 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K14.acc (by decide) (by decide)).trans a13_b40
-  have a14_b70 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K14.acc (by decide) (by decide)).trans a13_b70
-  have a14_ba0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K14.acc (by decide) (by decide)).trans a13_ba0
-  have a14_bd0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K14.acc (by decide) (by decide)).trans a13_bd0
-  have a14_c00 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K14.acc (by decide) (by decide)).trans a13_c00
-  have a14_c30 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K14.acc (by decide) (by decide)).trans a13_c30
-  have a14_c60 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K14.acc (by decide) (by decide)).trans a13_c60
-  have a14_c90 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K14.acc (by decide) (by decide)).trans a13_c90
-  have a14_cc0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K14.acc (by decide) (by decide)).trans a13_cc0
-  have a14_cf0 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K14.acc (by decide) (by decide)).trans a13_cf0
-  have a14_d20 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K14.acc (by decide) (by decide)).trans a13_d20
   have a14_17a4 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K14.acc (by decide) (by decide)).trans a13_17a4
   have a14_17d4 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -2789,7 +1409,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w14_1924 : memLoad32 n14.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w13_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K14 _ (by omega) (by omega)
-  clear w13_1924 a13_18f4 a13_18c4 a13_1894 a13_1864 a13_1834 a13_1804 a13_17d4 a13_17a4 a13_d20 a13_cf0 a13_cc0 a13_c90 a13_c60 a13_c30 a13_c00 a13_bd0 a13_ba0 a13_b70 a13_b40 a13_b10 a13_ae0 a13_ab0 a13_a80 a13_a50 a13_a20 a13_9f0 a13_9c0 a13_990 a13_960 a13_930 a13_900 a13_8d0 a13_8a0 a13_870 a13_840 a13_810 a13_7e0 a13_7b0 a13_780 a13_750 a13_720 a13_6f0 a13_6c0 a13_690 a13_660 a13_630 a13_600 a13_5d0 a13_5a0 a13_570 a13_540 a13_510 a13_4e0 a13_4b0 a13_480 a13_450 a13_3c0 a13_390 a13_360 a13_330 a13_300 a13_2d0 a13_2a0 a13_270 a13_210 a13_1e0 a13_1b0 a13_180 a13_150 a13_120 mb13_1928 mb13_e10 mb13_d50 g13_11 g13_10 g13_25 g13_24 g13_23 g13_22 g13_21 g13_20 g13_19 g13_18 g13_9 g13_8 g13_4 g13_3 g13_2 fR13 t13 K13 fr13 rb13 E13 s13 m13 u13 c13
+  clear w13_1924 a13_18f4 a13_18c4 a13_1894 a13_1864 a13_1834 a13_1804 a13_17d4 a13_17a4 a13_3c0 a13_390 a13_360 a13_330 a13_300 a13_2d0 a13_2a0 a13_270 a13_210 a13_1e0 a13_1b0 a13_180 a13_150 a13_120 mb13_1928 mb13_e10 mb13_d50 tb13_8d0 tb13_450 g13_11 g13_10 g13_25 g13_24 g13_23 g13_22 g13_21 g13_20 g13_19 g13_18 g13_9 g13_8 g13_4 g13_3 g13_2 fR13 t13 K13 fr13 rb13 E13 s13 m13 u13 c13
   -- 0x9F4: zeroing loop
   obtain ⟨n15, t15x, s15, fr15, K15, V15, rg15⟩ := pv_zl F (c := 0xE10) 0x181 0 E14.E.E.E s14
     g14_10 g14_11 (by decide) (by decide)
@@ -2809,6 +1429,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g15_23 : reg n15 (23 : Fin 32) = BitVec.ofNat 32 0x188 := by rw [rg15 (23 : Fin 32) (by decide) (by decide), g14_23]
   have g15_24 : reg n15 (24 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x1924 := by rw [rg15 (24 : Fin 32) (by decide) (by decide), g14_24]
   have g15_25 : reg n15 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [rg15 (25 : Fin 32) (by decide) (by decide), g14_25]
+  have tb15_450 : ∀ j, j < 8 → ptV n15.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K15 (by decide) (by decide) tb14_450
+  have tb15_8d0 : ∀ j, j < 8 → ptV n15.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K15 (by decide) (by decide) tb14_8d0
   have mb15_d50 : leN (memBytes n15.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30) = n3fm (U2) 1 := by
     rw [memBytes_keep K15 (by decide) (by decide)]; exact mb14_d50
   have mb15_1928 : memBytes n15.mem (B + 0x420 + BitVec.ofNat 32 0x1928) 0x181 = wnafBytes (wnafGo (n3fm U1 1) 0x180 0x181 0 0) 0x181 := by
@@ -2843,102 +1467,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K15.acc (by decide) (by decide)).trans a14_390
   have a15_3c0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K15.acc (by decide) (by decide)).trans a14_3c0
-  have a15_450 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K15.acc (by decide) (by decide)).trans a14_450
-  have a15_480 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K15.acc (by decide) (by decide)).trans a14_480
-  have a15_4b0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K15.acc (by decide) (by decide)).trans a14_4b0
-  have a15_4e0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K15.acc (by decide) (by decide)).trans a14_4e0
-  have a15_510 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K15.acc (by decide) (by decide)).trans a14_510
-  have a15_540 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K15.acc (by decide) (by decide)).trans a14_540
-  have a15_570 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K15.acc (by decide) (by decide)).trans a14_570
-  have a15_5a0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K15.acc (by decide) (by decide)).trans a14_5a0
-  have a15_5d0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K15.acc (by decide) (by decide)).trans a14_5d0
-  have a15_600 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K15.acc (by decide) (by decide)).trans a14_600
-  have a15_630 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K15.acc (by decide) (by decide)).trans a14_630
-  have a15_660 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K15.acc (by decide) (by decide)).trans a14_660
-  have a15_690 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K15.acc (by decide) (by decide)).trans a14_690
-  have a15_6c0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K15.acc (by decide) (by decide)).trans a14_6c0
-  have a15_6f0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K15.acc (by decide) (by decide)).trans a14_6f0
-  have a15_720 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K15.acc (by decide) (by decide)).trans a14_720
-  have a15_750 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K15.acc (by decide) (by decide)).trans a14_750
-  have a15_780 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K15.acc (by decide) (by decide)).trans a14_780
-  have a15_7b0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K15.acc (by decide) (by decide)).trans a14_7b0
-  have a15_7e0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K15.acc (by decide) (by decide)).trans a14_7e0
-  have a15_810 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K15.acc (by decide) (by decide)).trans a14_810
-  have a15_840 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K15.acc (by decide) (by decide)).trans a14_840
-  have a15_870 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K15.acc (by decide) (by decide)).trans a14_870
-  have a15_8a0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K15.acc (by decide) (by decide)).trans a14_8a0
-  have a15_8d0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K15.acc (by decide) (by decide)).trans a14_8d0
-  have a15_900 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K15.acc (by decide) (by decide)).trans a14_900
-  have a15_930 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K15.acc (by decide) (by decide)).trans a14_930
-  have a15_960 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K15.acc (by decide) (by decide)).trans a14_960
-  have a15_990 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K15.acc (by decide) (by decide)).trans a14_990
-  have a15_9c0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K15.acc (by decide) (by decide)).trans a14_9c0
-  have a15_9f0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K15.acc (by decide) (by decide)).trans a14_9f0
-  have a15_a20 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K15.acc (by decide) (by decide)).trans a14_a20
-  have a15_a50 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K15.acc (by decide) (by decide)).trans a14_a50
-  have a15_a80 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K15.acc (by decide) (by decide)).trans a14_a80
-  have a15_ab0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K15.acc (by decide) (by decide)).trans a14_ab0
-  have a15_ae0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K15.acc (by decide) (by decide)).trans a14_ae0
-  have a15_b10 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K15.acc (by decide) (by decide)).trans a14_b10
-  have a15_b40 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K15.acc (by decide) (by decide)).trans a14_b40
-  have a15_b70 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K15.acc (by decide) (by decide)).trans a14_b70
-  have a15_ba0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K15.acc (by decide) (by decide)).trans a14_ba0
-  have a15_bd0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K15.acc (by decide) (by decide)).trans a14_bd0
-  have a15_c00 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K15.acc (by decide) (by decide)).trans a14_c00
-  have a15_c30 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K15.acc (by decide) (by decide)).trans a14_c30
-  have a15_c60 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K15.acc (by decide) (by decide)).trans a14_c60
-  have a15_c90 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K15.acc (by decide) (by decide)).trans a14_c90
-  have a15_cc0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K15.acc (by decide) (by decide)).trans a14_cc0
-  have a15_cf0 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K15.acc (by decide) (by decide)).trans a14_cf0
-  have a15_d20 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K15.acc (by decide) (by decide)).trans a14_d20
   have a15_17a4 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K15.acc (by decide) (by decide)).trans a14_17a4
   have a15_17d4 : accV n15.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -2958,7 +1486,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w15_1924 : memLoad32 n15.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w14_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K15 _ (by omega) (by omega)
-  clear w14_1924 a14_18f4 a14_18c4 a14_1894 a14_1864 a14_1834 a14_1804 a14_17d4 a14_17a4 a14_d20 a14_cf0 a14_cc0 a14_c90 a14_c60 a14_c30 a14_c00 a14_bd0 a14_ba0 a14_b70 a14_b40 a14_b10 a14_ae0 a14_ab0 a14_a80 a14_a50 a14_a20 a14_9f0 a14_9c0 a14_990 a14_960 a14_930 a14_900 a14_8d0 a14_8a0 a14_870 a14_840 a14_810 a14_7e0 a14_7b0 a14_780 a14_750 a14_720 a14_6f0 a14_6c0 a14_690 a14_660 a14_630 a14_600 a14_5d0 a14_5a0 a14_570 a14_540 a14_510 a14_4e0 a14_4b0 a14_480 a14_450 a14_3c0 a14_390 a14_360 a14_330 a14_300 a14_2d0 a14_2a0 a14_270 a14_210 a14_1e0 a14_1b0 a14_180 a14_150 a14_120 mb14_1928 mb14_e10 mb14_d50 g14_25 g14_24 g14_23 g14_22 g14_21 g14_20 g14_19 g14_18 g14_11 g14_10 g14_9 g14_8 g14_4 g14_3 g14_2 fR14 t14 K14 fr14 E14 m14 s14 u14 d14
+  clear w14_1924 a14_18f4 a14_18c4 a14_1894 a14_1864 a14_1834 a14_1804 a14_17d4 a14_17a4 a14_3c0 a14_390 a14_360 a14_330 a14_300 a14_2d0 a14_2a0 a14_270 a14_210 a14_1e0 a14_1b0 a14_180 a14_150 a14_120 mb14_1928 mb14_e10 mb14_d50 tb14_8d0 tb14_450 g14_25 g14_24 g14_23 g14_22 g14_21 g14_20 g14_19 g14_18 g14_11 g14_10 g14_9 g14_8 g14_4 g14_3 g14_2 fR14 t14 K14 fr14 E14 m14 s14 u14 d14
   -- 0x9FE
   obtain ⟨n16, c16, u16⟩ := s15.block pvF19fe E15.E.E.E.C.self pvF19fe_end
     ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩
@@ -3006,6 +1534,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g16_21 : reg n16 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x1924 := by
     rw [rb16]; simp +decide only [runBlock, BInstr.run, pvF19fe, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g15_2, g15_3, g15_4, g15_8, g15_9, g15_18, g15_19, g15_20, g15_21, g15_22, g15_23, g15_24, g15_25, s15.zero, BitVec.zero_add]) <;> pv_val
+  have tb16_450 : ∀ j, j < 8 → ptV n16.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K16 (by decide) (by decide) tb15_450
+  have tb16_8d0 : ∀ j, j < 8 → ptV n16.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K16 (by decide) (by decide) tb15_8d0
   have mb16_d50 : leN (memBytes n16.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30) = n3fm (U2) 1 := by
     rw [memBytes_keep K16 (by decide) (by decide)]; exact mb15_d50
   have mb16_e10 : memBytes n16.mem (B + 0x420 + BitVec.ofNat 32 0xE10) 0x181 = List.replicate 0x181 0 := by
@@ -3040,102 +1572,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K16.acc (by decide) (by decide)).trans a15_390
   have a16_3c0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K16.acc (by decide) (by decide)).trans a15_3c0
-  have a16_450 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K16.acc (by decide) (by decide)).trans a15_450
-  have a16_480 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K16.acc (by decide) (by decide)).trans a15_480
-  have a16_4b0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K16.acc (by decide) (by decide)).trans a15_4b0
-  have a16_4e0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K16.acc (by decide) (by decide)).trans a15_4e0
-  have a16_510 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K16.acc (by decide) (by decide)).trans a15_510
-  have a16_540 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K16.acc (by decide) (by decide)).trans a15_540
-  have a16_570 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K16.acc (by decide) (by decide)).trans a15_570
-  have a16_5a0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K16.acc (by decide) (by decide)).trans a15_5a0
-  have a16_5d0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K16.acc (by decide) (by decide)).trans a15_5d0
-  have a16_600 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K16.acc (by decide) (by decide)).trans a15_600
-  have a16_630 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K16.acc (by decide) (by decide)).trans a15_630
-  have a16_660 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K16.acc (by decide) (by decide)).trans a15_660
-  have a16_690 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K16.acc (by decide) (by decide)).trans a15_690
-  have a16_6c0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K16.acc (by decide) (by decide)).trans a15_6c0
-  have a16_6f0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K16.acc (by decide) (by decide)).trans a15_6f0
-  have a16_720 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K16.acc (by decide) (by decide)).trans a15_720
-  have a16_750 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K16.acc (by decide) (by decide)).trans a15_750
-  have a16_780 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K16.acc (by decide) (by decide)).trans a15_780
-  have a16_7b0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K16.acc (by decide) (by decide)).trans a15_7b0
-  have a16_7e0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K16.acc (by decide) (by decide)).trans a15_7e0
-  have a16_810 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K16.acc (by decide) (by decide)).trans a15_810
-  have a16_840 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K16.acc (by decide) (by decide)).trans a15_840
-  have a16_870 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K16.acc (by decide) (by decide)).trans a15_870
-  have a16_8a0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K16.acc (by decide) (by decide)).trans a15_8a0
-  have a16_8d0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K16.acc (by decide) (by decide)).trans a15_8d0
-  have a16_900 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K16.acc (by decide) (by decide)).trans a15_900
-  have a16_930 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K16.acc (by decide) (by decide)).trans a15_930
-  have a16_960 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K16.acc (by decide) (by decide)).trans a15_960
-  have a16_990 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K16.acc (by decide) (by decide)).trans a15_990
-  have a16_9c0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K16.acc (by decide) (by decide)).trans a15_9c0
-  have a16_9f0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K16.acc (by decide) (by decide)).trans a15_9f0
-  have a16_a20 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K16.acc (by decide) (by decide)).trans a15_a20
-  have a16_a50 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K16.acc (by decide) (by decide)).trans a15_a50
-  have a16_a80 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K16.acc (by decide) (by decide)).trans a15_a80
-  have a16_ab0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K16.acc (by decide) (by decide)).trans a15_ab0
-  have a16_ae0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K16.acc (by decide) (by decide)).trans a15_ae0
-  have a16_b10 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K16.acc (by decide) (by decide)).trans a15_b10
-  have a16_b40 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K16.acc (by decide) (by decide)).trans a15_b40
-  have a16_b70 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K16.acc (by decide) (by decide)).trans a15_b70
-  have a16_ba0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K16.acc (by decide) (by decide)).trans a15_ba0
-  have a16_bd0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K16.acc (by decide) (by decide)).trans a15_bd0
-  have a16_c00 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K16.acc (by decide) (by decide)).trans a15_c00
-  have a16_c30 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K16.acc (by decide) (by decide)).trans a15_c30
-  have a16_c60 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K16.acc (by decide) (by decide)).trans a15_c60
-  have a16_c90 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K16.acc (by decide) (by decide)).trans a15_c90
-  have a16_cc0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K16.acc (by decide) (by decide)).trans a15_cc0
-  have a16_cf0 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K16.acc (by decide) (by decide)).trans a15_cf0
-  have a16_d20 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K16.acc (by decide) (by decide)).trans a15_d20
   have a16_17a4 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K16.acc (by decide) (by decide)).trans a15_17a4
   have a16_17d4 : accV n16.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -3155,7 +1591,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w16_1924 : memLoad32 n16.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w15_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K16 _ (by omega) (by omega)
-  clear w15_1924 a15_18f4 a15_18c4 a15_1894 a15_1864 a15_1834 a15_1804 a15_17d4 a15_17a4 a15_d20 a15_cf0 a15_cc0 a15_c90 a15_c60 a15_c30 a15_c00 a15_bd0 a15_ba0 a15_b70 a15_b40 a15_b10 a15_ae0 a15_ab0 a15_a80 a15_a50 a15_a20 a15_9f0 a15_9c0 a15_990 a15_960 a15_930 a15_900 a15_8d0 a15_8a0 a15_870 a15_840 a15_810 a15_7e0 a15_7b0 a15_780 a15_750 a15_720 a15_6f0 a15_6c0 a15_690 a15_660 a15_630 a15_600 a15_5d0 a15_5a0 a15_570 a15_540 a15_510 a15_4e0 a15_4b0 a15_480 a15_450 a15_3c0 a15_390 a15_360 a15_330 a15_300 a15_2d0 a15_2a0 a15_270 a15_210 a15_1e0 a15_1b0 a15_180 a15_150 a15_120 mb15_e10 mb15_1928 mb15_d50 g15_25 g15_24 g15_23 g15_22 g15_21 g15_20 g15_19 g15_18 g15_9 g15_8 g15_4 g15_3 g15_2 fR15 t15 E15 rg15 V15 K15 fr15 s15 t15x
+  clear w15_1924 a15_18f4 a15_18c4 a15_1894 a15_1864 a15_1834 a15_1804 a15_17d4 a15_17a4 a15_3c0 a15_390 a15_360 a15_330 a15_300 a15_2d0 a15_2a0 a15_270 a15_210 a15_1e0 a15_1b0 a15_180 a15_150 a15_120 mb15_e10 mb15_1928 mb15_d50 tb15_8d0 tb15_450 g15_25 g15_24 g15_23 g15_22 g15_21 g15_20 g15_19 g15_18 g15_9 g15_8 g15_4 g15_3 g15_2 fR15 t15 E15 rg15 V15 K15 fr15 s15 t15x
   -- 0xA10: pv_mc
   obtain ⟨n17, P17, K17, V17⟩ := pv_mc F E16.E.E.E s16 pv_at_a10 pv_at_a14 (by decide) (by decide)
     g16_2 g16_10 g16_11 g16_12 (by decide) (by decide) (by decide)
@@ -3177,6 +1613,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g17_23 : reg n17 (23 : Fin 32) = BitVec.ofNat 32 0x188 := by rw [P17.regs (23 : Fin 32) (by decide), g16_23]
   have g17_24 : reg n17 (24 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x1924 := by rw [P17.regs (24 : Fin 32) (by decide), g16_24]
   have g17_25 : reg n17 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P17.regs (25 : Fin 32) (by decide), g16_25]
+  have tb17_450 : ∀ j, j < 8 → ptV n17.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K17 (by decide) (by decide) tb16_450
+  have tb17_8d0 : ∀ j, j < 8 → ptV n17.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K17 (by decide) (by decide) tb16_8d0
   have mb17_d50 : leN (memBytes n17.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30) = n3fm (U2) 1 := by
     rw [memBytes_keep K17 (by decide) (by decide)]; exact mb16_d50
   have mb17_e10 : memBytes n17.mem (B + 0x420 + BitVec.ofNat 32 0xE10) 0x181 = List.replicate 0x181 0 := by
@@ -3217,102 +1657,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K17.acc (by decide) (by decide)).trans a16_390
   have a17_3c0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K17.acc (by decide) (by decide)).trans a16_3c0
-  have a17_450 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K17.acc (by decide) (by decide)).trans a16_450
-  have a17_480 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K17.acc (by decide) (by decide)).trans a16_480
-  have a17_4b0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K17.acc (by decide) (by decide)).trans a16_4b0
-  have a17_4e0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K17.acc (by decide) (by decide)).trans a16_4e0
-  have a17_510 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K17.acc (by decide) (by decide)).trans a16_510
-  have a17_540 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K17.acc (by decide) (by decide)).trans a16_540
-  have a17_570 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K17.acc (by decide) (by decide)).trans a16_570
-  have a17_5a0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K17.acc (by decide) (by decide)).trans a16_5a0
-  have a17_5d0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K17.acc (by decide) (by decide)).trans a16_5d0
-  have a17_600 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K17.acc (by decide) (by decide)).trans a16_600
-  have a17_630 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K17.acc (by decide) (by decide)).trans a16_630
-  have a17_660 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K17.acc (by decide) (by decide)).trans a16_660
-  have a17_690 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K17.acc (by decide) (by decide)).trans a16_690
-  have a17_6c0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K17.acc (by decide) (by decide)).trans a16_6c0
-  have a17_6f0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K17.acc (by decide) (by decide)).trans a16_6f0
-  have a17_720 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K17.acc (by decide) (by decide)).trans a16_720
-  have a17_750 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K17.acc (by decide) (by decide)).trans a16_750
-  have a17_780 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K17.acc (by decide) (by decide)).trans a16_780
-  have a17_7b0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K17.acc (by decide) (by decide)).trans a16_7b0
-  have a17_7e0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K17.acc (by decide) (by decide)).trans a16_7e0
-  have a17_810 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K17.acc (by decide) (by decide)).trans a16_810
-  have a17_840 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K17.acc (by decide) (by decide)).trans a16_840
-  have a17_870 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K17.acc (by decide) (by decide)).trans a16_870
-  have a17_8a0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K17.acc (by decide) (by decide)).trans a16_8a0
-  have a17_8d0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K17.acc (by decide) (by decide)).trans a16_8d0
-  have a17_900 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K17.acc (by decide) (by decide)).trans a16_900
-  have a17_930 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K17.acc (by decide) (by decide)).trans a16_930
-  have a17_960 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K17.acc (by decide) (by decide)).trans a16_960
-  have a17_990 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K17.acc (by decide) (by decide)).trans a16_990
-  have a17_9c0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K17.acc (by decide) (by decide)).trans a16_9c0
-  have a17_9f0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K17.acc (by decide) (by decide)).trans a16_9f0
-  have a17_a20 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K17.acc (by decide) (by decide)).trans a16_a20
-  have a17_a50 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K17.acc (by decide) (by decide)).trans a16_a50
-  have a17_a80 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K17.acc (by decide) (by decide)).trans a16_a80
-  have a17_ab0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K17.acc (by decide) (by decide)).trans a16_ab0
-  have a17_ae0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K17.acc (by decide) (by decide)).trans a16_ae0
-  have a17_b10 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K17.acc (by decide) (by decide)).trans a16_b10
-  have a17_b40 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K17.acc (by decide) (by decide)).trans a16_b40
-  have a17_b70 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K17.acc (by decide) (by decide)).trans a16_b70
-  have a17_ba0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K17.acc (by decide) (by decide)).trans a16_ba0
-  have a17_bd0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K17.acc (by decide) (by decide)).trans a16_bd0
-  have a17_c00 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K17.acc (by decide) (by decide)).trans a16_c00
-  have a17_c30 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K17.acc (by decide) (by decide)).trans a16_c30
-  have a17_c60 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K17.acc (by decide) (by decide)).trans a16_c60
-  have a17_c90 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K17.acc (by decide) (by decide)).trans a16_c90
-  have a17_cc0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K17.acc (by decide) (by decide)).trans a16_cc0
-  have a17_cf0 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K17.acc (by decide) (by decide)).trans a16_cf0
-  have a17_d20 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K17.acc (by decide) (by decide)).trans a16_d20
   have a17_17a4 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K17.acc (by decide) (by decide)).trans a16_17a4
   have a17_17d4 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -3332,7 +1676,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w17_1924 : memLoad32 n17.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w16_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K17 _ (by omega) (by omega)
-  clear w16_1924 a16_18f4 a16_18c4 a16_1894 a16_1864 a16_1834 a16_1804 a16_17d4 a16_17a4 a16_d20 a16_cf0 a16_cc0 a16_c90 a16_c60 a16_c30 a16_c00 a16_bd0 a16_ba0 a16_b70 a16_b40 a16_b10 a16_ae0 a16_ab0 a16_a80 a16_a50 a16_a20 a16_9f0 a16_9c0 a16_990 a16_960 a16_930 a16_900 a16_8d0 a16_8a0 a16_870 a16_840 a16_810 a16_7e0 a16_7b0 a16_780 a16_750 a16_720 a16_6f0 a16_6c0 a16_690 a16_660 a16_630 a16_600 a16_5d0 a16_5a0 a16_570 a16_540 a16_510 a16_4e0 a16_4b0 a16_480 a16_450 a16_3c0 a16_390 a16_360 a16_330 a16_300 a16_2d0 a16_2a0 a16_270 a16_210 a16_1e0 a16_1b0 a16_180 a16_150 a16_120 mb16_1928 mb16_e10 mb16_d50 g16_21 g16_12 g16_11 g16_10 g16_25 g16_24 g16_23 g16_22 g16_20 g16_19 g16_18 g16_9 g16_8 g16_4 g16_3 g16_2 fR16 t16 K16 fr16 rb16 E16 s16 m16 u16 c16
+  clear w16_1924 a16_18f4 a16_18c4 a16_1894 a16_1864 a16_1834 a16_1804 a16_17d4 a16_17a4 a16_3c0 a16_390 a16_360 a16_330 a16_300 a16_2d0 a16_2a0 a16_270 a16_210 a16_1e0 a16_1b0 a16_180 a16_150 a16_120 mb16_1928 mb16_e10 mb16_d50 tb16_8d0 tb16_450 g16_21 g16_12 g16_11 g16_10 g16_25 g16_24 g16_23 g16_22 g16_20 g16_19 g16_18 g16_9 g16_8 g16_4 g16_3 g16_2 fR16 t16 K16 fr16 rb16 E16 s16 m16 u16 c16
   -- 0xA18
   obtain ⟨n18, c18, u18⟩ := s17.block pvF1a18 E17.E.E.E.C.self pvF1a18_end
     ⟨trivial, trivial, trivial, trivial, trivial, trivial, trivial⟩
@@ -3385,6 +1729,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g18_14 : reg n18 a4 = BitVec.ofNat 32 0x180 := by
     rw [rb18]; simp +decide only [runBlock, BInstr.run, pvF1a18, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g17_2, g17_3, g17_4, g17_8, g17_9, g17_18, g17_19, g17_20, g17_21, g17_22, g17_23, g17_24, g17_25, s17.zero, BitVec.zero_add]) <;> pv_val
+  have tb18_450 : ∀ j, j < 8 → ptV n18.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K18 (by decide) (by decide) tb17_450
+  have tb18_8d0 : ∀ j, j < 8 → ptV n18.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K18 (by decide) (by decide) tb17_8d0
   have mb18_d50 : leN (memBytes n18.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30) = n3fm (U2) 1 := by
     rw [memBytes_keep K18 (by decide) (by decide)]; exact mb17_d50
   have mb18_e10 : memBytes n18.mem (B + 0x420 + BitVec.ofNat 32 0xE10) 0x181 = List.replicate 0x181 0 := by
@@ -3421,102 +1769,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K18.acc (by decide) (by decide)).trans a17_390
   have a18_3c0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K18.acc (by decide) (by decide)).trans a17_3c0
-  have a18_450 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K18.acc (by decide) (by decide)).trans a17_450
-  have a18_480 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K18.acc (by decide) (by decide)).trans a17_480
-  have a18_4b0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K18.acc (by decide) (by decide)).trans a17_4b0
-  have a18_4e0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K18.acc (by decide) (by decide)).trans a17_4e0
-  have a18_510 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K18.acc (by decide) (by decide)).trans a17_510
-  have a18_540 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K18.acc (by decide) (by decide)).trans a17_540
-  have a18_570 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K18.acc (by decide) (by decide)).trans a17_570
-  have a18_5a0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K18.acc (by decide) (by decide)).trans a17_5a0
-  have a18_5d0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K18.acc (by decide) (by decide)).trans a17_5d0
-  have a18_600 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K18.acc (by decide) (by decide)).trans a17_600
-  have a18_630 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K18.acc (by decide) (by decide)).trans a17_630
-  have a18_660 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K18.acc (by decide) (by decide)).trans a17_660
-  have a18_690 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K18.acc (by decide) (by decide)).trans a17_690
-  have a18_6c0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K18.acc (by decide) (by decide)).trans a17_6c0
-  have a18_6f0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K18.acc (by decide) (by decide)).trans a17_6f0
-  have a18_720 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K18.acc (by decide) (by decide)).trans a17_720
-  have a18_750 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K18.acc (by decide) (by decide)).trans a17_750
-  have a18_780 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K18.acc (by decide) (by decide)).trans a17_780
-  have a18_7b0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K18.acc (by decide) (by decide)).trans a17_7b0
-  have a18_7e0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K18.acc (by decide) (by decide)).trans a17_7e0
-  have a18_810 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K18.acc (by decide) (by decide)).trans a17_810
-  have a18_840 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K18.acc (by decide) (by decide)).trans a17_840
-  have a18_870 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K18.acc (by decide) (by decide)).trans a17_870
-  have a18_8a0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K18.acc (by decide) (by decide)).trans a17_8a0
-  have a18_8d0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K18.acc (by decide) (by decide)).trans a17_8d0
-  have a18_900 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K18.acc (by decide) (by decide)).trans a17_900
-  have a18_930 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K18.acc (by decide) (by decide)).trans a17_930
-  have a18_960 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K18.acc (by decide) (by decide)).trans a17_960
-  have a18_990 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K18.acc (by decide) (by decide)).trans a17_990
-  have a18_9c0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K18.acc (by decide) (by decide)).trans a17_9c0
-  have a18_9f0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K18.acc (by decide) (by decide)).trans a17_9f0
-  have a18_a20 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K18.acc (by decide) (by decide)).trans a17_a20
-  have a18_a50 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K18.acc (by decide) (by decide)).trans a17_a50
-  have a18_a80 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K18.acc (by decide) (by decide)).trans a17_a80
-  have a18_ab0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K18.acc (by decide) (by decide)).trans a17_ab0
-  have a18_ae0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K18.acc (by decide) (by decide)).trans a17_ae0
-  have a18_b10 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K18.acc (by decide) (by decide)).trans a17_b10
-  have a18_b40 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K18.acc (by decide) (by decide)).trans a17_b40
-  have a18_b70 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K18.acc (by decide) (by decide)).trans a17_b70
-  have a18_ba0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K18.acc (by decide) (by decide)).trans a17_ba0
-  have a18_bd0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K18.acc (by decide) (by decide)).trans a17_bd0
-  have a18_c00 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K18.acc (by decide) (by decide)).trans a17_c00
-  have a18_c30 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K18.acc (by decide) (by decide)).trans a17_c30
-  have a18_c60 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K18.acc (by decide) (by decide)).trans a17_c60
-  have a18_c90 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K18.acc (by decide) (by decide)).trans a17_c90
-  have a18_cc0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K18.acc (by decide) (by decide)).trans a17_cc0
-  have a18_cf0 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K18.acc (by decide) (by decide)).trans a17_cf0
-  have a18_d20 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K18.acc (by decide) (by decide)).trans a17_d20
   have a18_17a4 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K18.acc (by decide) (by decide)).trans a17_17a4
   have a18_17d4 : accV n18.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -3536,7 +1788,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w18_1924 : memLoad32 n18.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w17_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K18 _ (by omega) (by omega)
-  clear w17_1924 a17_18f4 a17_18c4 a17_1894 a17_1864 a17_1834 a17_1804 a17_17d4 a17_17a4 a17_d20 a17_cf0 a17_cc0 a17_c90 a17_c60 a17_c30 a17_c00 a17_bd0 a17_ba0 a17_b70 a17_b40 a17_b10 a17_ae0 a17_ab0 a17_a80 a17_a50 a17_a20 a17_9f0 a17_9c0 a17_990 a17_960 a17_930 a17_900 a17_8d0 a17_8a0 a17_870 a17_840 a17_810 a17_7e0 a17_7b0 a17_780 a17_750 a17_720 a17_6f0 a17_6c0 a17_690 a17_660 a17_630 a17_600 a17_5d0 a17_5a0 a17_570 a17_540 a17_510 a17_4e0 a17_4b0 a17_480 a17_450 a17_3c0 a17_390 a17_360 a17_330 a17_300 a17_2d0 a17_2a0 a17_270 a17_210 a17_1e0 a17_1b0 a17_180 a17_150 a17_120 mb17_1298 mb17_1928 mb17_e10 mb17_d50 g17_25 g17_24 g17_23 g17_22 g17_21 g17_20 g17_19 g17_18 g17_9 g17_8 g17_4 g17_3 g17_2 fR17 t17 E17 fr17 s17 V17 K17 P17
+  clear w17_1924 a17_18f4 a17_18c4 a17_1894 a17_1864 a17_1834 a17_1804 a17_17d4 a17_17a4 a17_3c0 a17_390 a17_360 a17_330 a17_300 a17_2d0 a17_2a0 a17_270 a17_210 a17_1e0 a17_1b0 a17_180 a17_150 a17_120 mb17_1298 mb17_1928 mb17_e10 mb17_d50 tb17_8d0 tb17_450 g17_25 g17_24 g17_23 g17_22 g17_21 g17_20 g17_19 g17_18 g17_9 g17_8 g17_4 g17_3 g17_2 fR17 t17 E17 fr17 s17 V17 K17 P17
   -- 0xA2E: pv_wf
   obtain ⟨n19, P19, K19, V19⟩ := pv_wf F E18 s18 pv_at_a2e pv_at_a32 (by decide) (by decide)
     g18_2 g18_10 g18_11 g18_12 g18_13 g18_14 (by decide) (by decide) (by decide)
@@ -3561,6 +1813,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g19_24 : reg n19 (24 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x1924 := by rw [P19.regs (24 : Fin 32) (by decide), g18_24]
   have g19_25 : reg n19 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P19.regs (25 : Fin 32) (by decide), g18_25]
   have g19_10 : reg n19 a0 = BitVec.ofNat 32 (wnafGo (n3fm (U2) 1) 0x180 0x181 0 0).length := by exact V19.1
+  have tb19_450 : ∀ j, j < 8 → ptV n19.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K19 (by decide) (by decide) tb18_450
+  have tb19_8d0 : ∀ j, j < 8 → ptV n19.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K19 (by decide) (by decide) tb18_8d0
   have mb19_d50 : leN (memBytes n19.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30) = n3fm (U2) 1 := by
     rw [memBytes_keep K19 (by decide) (by decide)]; exact mb18_d50
   have mb19_e10 : memBytes n19.mem (B + 0x420 + BitVec.ofNat 32 0xE10) 0x181 = List.replicate 0x181 0 := by
@@ -3597,102 +1853,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K19.acc (by decide) (by decide)).trans a18_390
   have a19_3c0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K19.acc (by decide) (by decide)).trans a18_3c0
-  have a19_450 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K19.acc (by decide) (by decide)).trans a18_450
-  have a19_480 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K19.acc (by decide) (by decide)).trans a18_480
-  have a19_4b0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K19.acc (by decide) (by decide)).trans a18_4b0
-  have a19_4e0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K19.acc (by decide) (by decide)).trans a18_4e0
-  have a19_510 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K19.acc (by decide) (by decide)).trans a18_510
-  have a19_540 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K19.acc (by decide) (by decide)).trans a18_540
-  have a19_570 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K19.acc (by decide) (by decide)).trans a18_570
-  have a19_5a0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K19.acc (by decide) (by decide)).trans a18_5a0
-  have a19_5d0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K19.acc (by decide) (by decide)).trans a18_5d0
-  have a19_600 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K19.acc (by decide) (by decide)).trans a18_600
-  have a19_630 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K19.acc (by decide) (by decide)).trans a18_630
-  have a19_660 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K19.acc (by decide) (by decide)).trans a18_660
-  have a19_690 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K19.acc (by decide) (by decide)).trans a18_690
-  have a19_6c0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K19.acc (by decide) (by decide)).trans a18_6c0
-  have a19_6f0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K19.acc (by decide) (by decide)).trans a18_6f0
-  have a19_720 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K19.acc (by decide) (by decide)).trans a18_720
-  have a19_750 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K19.acc (by decide) (by decide)).trans a18_750
-  have a19_780 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K19.acc (by decide) (by decide)).trans a18_780
-  have a19_7b0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K19.acc (by decide) (by decide)).trans a18_7b0
-  have a19_7e0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K19.acc (by decide) (by decide)).trans a18_7e0
-  have a19_810 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K19.acc (by decide) (by decide)).trans a18_810
-  have a19_840 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K19.acc (by decide) (by decide)).trans a18_840
-  have a19_870 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K19.acc (by decide) (by decide)).trans a18_870
-  have a19_8a0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K19.acc (by decide) (by decide)).trans a18_8a0
-  have a19_8d0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K19.acc (by decide) (by decide)).trans a18_8d0
-  have a19_900 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K19.acc (by decide) (by decide)).trans a18_900
-  have a19_930 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K19.acc (by decide) (by decide)).trans a18_930
-  have a19_960 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K19.acc (by decide) (by decide)).trans a18_960
-  have a19_990 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K19.acc (by decide) (by decide)).trans a18_990
-  have a19_9c0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K19.acc (by decide) (by decide)).trans a18_9c0
-  have a19_9f0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K19.acc (by decide) (by decide)).trans a18_9f0
-  have a19_a20 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K19.acc (by decide) (by decide)).trans a18_a20
-  have a19_a50 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K19.acc (by decide) (by decide)).trans a18_a50
-  have a19_a80 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K19.acc (by decide) (by decide)).trans a18_a80
-  have a19_ab0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K19.acc (by decide) (by decide)).trans a18_ab0
-  have a19_ae0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K19.acc (by decide) (by decide)).trans a18_ae0
-  have a19_b10 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K19.acc (by decide) (by decide)).trans a18_b10
-  have a19_b40 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K19.acc (by decide) (by decide)).trans a18_b40
-  have a19_b70 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K19.acc (by decide) (by decide)).trans a18_b70
-  have a19_ba0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K19.acc (by decide) (by decide)).trans a18_ba0
-  have a19_bd0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K19.acc (by decide) (by decide)).trans a18_bd0
-  have a19_c00 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K19.acc (by decide) (by decide)).trans a18_c00
-  have a19_c30 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K19.acc (by decide) (by decide)).trans a18_c30
-  have a19_c60 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K19.acc (by decide) (by decide)).trans a18_c60
-  have a19_c90 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K19.acc (by decide) (by decide)).trans a18_c90
-  have a19_cc0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K19.acc (by decide) (by decide)).trans a18_cc0
-  have a19_cf0 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K19.acc (by decide) (by decide)).trans a18_cf0
-  have a19_d20 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K19.acc (by decide) (by decide)).trans a18_d20
   have a19_17a4 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K19.acc (by decide) (by decide)).trans a18_17a4
   have a19_17d4 : accV n19.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -3712,7 +1872,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w19_1924 : memLoad32 n19.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w18_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K19 _ (by omega) (by omega)
-  clear w18_1924 a18_18f4 a18_18c4 a18_1894 a18_1864 a18_1834 a18_1804 a18_17d4 a18_17a4 a18_d20 a18_cf0 a18_cc0 a18_c90 a18_c60 a18_c30 a18_c00 a18_bd0 a18_ba0 a18_b70 a18_b40 a18_b10 a18_ae0 a18_ab0 a18_a80 a18_a50 a18_a20 a18_9f0 a18_9c0 a18_990 a18_960 a18_930 a18_900 a18_8d0 a18_8a0 a18_870 a18_840 a18_810 a18_7e0 a18_7b0 a18_780 a18_750 a18_720 a18_6f0 a18_6c0 a18_690 a18_660 a18_630 a18_600 a18_5d0 a18_5a0 a18_570 a18_540 a18_510 a18_4e0 a18_4b0 a18_480 a18_450 a18_3c0 a18_390 a18_360 a18_330 a18_300 a18_2d0 a18_2a0 a18_270 a18_210 a18_1e0 a18_1b0 a18_180 a18_150 a18_120 mb18_1928 mb18_1298 mb18_e10 mb18_d50 g18_14 g18_13 g18_12 g18_11 g18_10 g18_25 g18_24 g18_23 g18_22 g18_21 g18_20 g18_19 g18_18 g18_9 g18_8 g18_4 g18_3 g18_2 fR18 t18 K18 fr18 rb18 E18 s18 m18 u18 c18
+  clear w18_1924 a18_18f4 a18_18c4 a18_1894 a18_1864 a18_1834 a18_1804 a18_17d4 a18_17a4 a18_3c0 a18_390 a18_360 a18_330 a18_300 a18_2d0 a18_2a0 a18_270 a18_210 a18_1e0 a18_1b0 a18_180 a18_150 a18_120 mb18_1928 mb18_1298 mb18_e10 mb18_d50 tb18_8d0 tb18_450 g18_14 g18_13 g18_12 g18_11 g18_10 g18_25 g18_24 g18_23 g18_22 g18_21 g18_20 g18_19 g18_18 g18_9 g18_8 g18_4 g18_3 g18_2 fR18 t18 K18 fr18 rb18 E18 s18 m18 u18 c18
   -- 0xA36: pv_sw
   obtain ⟨n20, d20, s20, _E20, fr20, K20, V20, rg20⟩ := pv_sw F E19.E.E.E s19 pv_at_a36 (off' := 0xA3A) (c := 0x1294) (by decide)
     (by rw [g19_25]; pv_addr) (by decide) (by decide)
@@ -3733,6 +1893,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g20_23 : reg n20 (23 : Fin 32) = BitVec.ofNat 32 0x188 := by rw [rg20 (23 : Fin 32), g19_23]
   have g20_24 : reg n20 (24 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x1924 := by rw [rg20 (24 : Fin 32), g19_24]
   have g20_25 : reg n20 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [rg20 (25 : Fin 32), g19_25]
+  have tb20_450 : ∀ j, j < 8 → ptV n20.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K20 (by decide) (by decide) tb19_450
+  have tb20_8d0 : ∀ j, j < 8 → ptV n20.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K20 (by decide) (by decide) tb19_8d0
   have mb20_d50 : leN (memBytes n20.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30) = n3fm (U2) 1 := by
     rw [memBytes_keep K20 (by decide) (by decide)]; exact mb19_d50
   have mb20_e10 : memBytes n20.mem (B + 0x420 + BitVec.ofNat 32 0xE10) 0x181 = List.replicate 0x181 0 := by
@@ -3769,102 +1933,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K20.acc (by decide) (by decide)).trans a19_390
   have a20_3c0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K20.acc (by decide) (by decide)).trans a19_3c0
-  have a20_450 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K20.acc (by decide) (by decide)).trans a19_450
-  have a20_480 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K20.acc (by decide) (by decide)).trans a19_480
-  have a20_4b0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K20.acc (by decide) (by decide)).trans a19_4b0
-  have a20_4e0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K20.acc (by decide) (by decide)).trans a19_4e0
-  have a20_510 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K20.acc (by decide) (by decide)).trans a19_510
-  have a20_540 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K20.acc (by decide) (by decide)).trans a19_540
-  have a20_570 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K20.acc (by decide) (by decide)).trans a19_570
-  have a20_5a0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K20.acc (by decide) (by decide)).trans a19_5a0
-  have a20_5d0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K20.acc (by decide) (by decide)).trans a19_5d0
-  have a20_600 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K20.acc (by decide) (by decide)).trans a19_600
-  have a20_630 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K20.acc (by decide) (by decide)).trans a19_630
-  have a20_660 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K20.acc (by decide) (by decide)).trans a19_660
-  have a20_690 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K20.acc (by decide) (by decide)).trans a19_690
-  have a20_6c0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K20.acc (by decide) (by decide)).trans a19_6c0
-  have a20_6f0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K20.acc (by decide) (by decide)).trans a19_6f0
-  have a20_720 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K20.acc (by decide) (by decide)).trans a19_720
-  have a20_750 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K20.acc (by decide) (by decide)).trans a19_750
-  have a20_780 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K20.acc (by decide) (by decide)).trans a19_780
-  have a20_7b0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K20.acc (by decide) (by decide)).trans a19_7b0
-  have a20_7e0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K20.acc (by decide) (by decide)).trans a19_7e0
-  have a20_810 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K20.acc (by decide) (by decide)).trans a19_810
-  have a20_840 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K20.acc (by decide) (by decide)).trans a19_840
-  have a20_870 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K20.acc (by decide) (by decide)).trans a19_870
-  have a20_8a0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K20.acc (by decide) (by decide)).trans a19_8a0
-  have a20_8d0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K20.acc (by decide) (by decide)).trans a19_8d0
-  have a20_900 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K20.acc (by decide) (by decide)).trans a19_900
-  have a20_930 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K20.acc (by decide) (by decide)).trans a19_930
-  have a20_960 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K20.acc (by decide) (by decide)).trans a19_960
-  have a20_990 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K20.acc (by decide) (by decide)).trans a19_990
-  have a20_9c0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K20.acc (by decide) (by decide)).trans a19_9c0
-  have a20_9f0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K20.acc (by decide) (by decide)).trans a19_9f0
-  have a20_a20 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K20.acc (by decide) (by decide)).trans a19_a20
-  have a20_a50 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K20.acc (by decide) (by decide)).trans a19_a50
-  have a20_a80 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K20.acc (by decide) (by decide)).trans a19_a80
-  have a20_ab0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K20.acc (by decide) (by decide)).trans a19_ab0
-  have a20_ae0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K20.acc (by decide) (by decide)).trans a19_ae0
-  have a20_b10 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K20.acc (by decide) (by decide)).trans a19_b10
-  have a20_b40 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K20.acc (by decide) (by decide)).trans a19_b40
-  have a20_b70 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K20.acc (by decide) (by decide)).trans a19_b70
-  have a20_ba0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K20.acc (by decide) (by decide)).trans a19_ba0
-  have a20_bd0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K20.acc (by decide) (by decide)).trans a19_bd0
-  have a20_c00 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K20.acc (by decide) (by decide)).trans a19_c00
-  have a20_c30 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K20.acc (by decide) (by decide)).trans a19_c30
-  have a20_c60 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K20.acc (by decide) (by decide)).trans a19_c60
-  have a20_c90 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K20.acc (by decide) (by decide)).trans a19_c90
-  have a20_cc0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K20.acc (by decide) (by decide)).trans a19_cc0
-  have a20_cf0 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K20.acc (by decide) (by decide)).trans a19_cf0
-  have a20_d20 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K20.acc (by decide) (by decide)).trans a19_d20
   have a20_17a4 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K20.acc (by decide) (by decide)).trans a19_17a4
   have a20_17d4 : accV n20.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -3886,7 +1954,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
       rw [add_ofNat_assoc]; exact K20 _ (by omega) (by omega)
   have w20_1294 : memLoad32 n20.mem (B + 0x420 + BitVec.ofNat 32 0x1294) = BitVec.ofNat 32 (wnafGo (n3fm (U2) 1) 0x180 0x181 0 0).length := by
     rw [V20, g19_10]
-  clear w19_1924 a19_18f4 a19_18c4 a19_1894 a19_1864 a19_1834 a19_1804 a19_17d4 a19_17a4 a19_d20 a19_cf0 a19_cc0 a19_c90 a19_c60 a19_c30 a19_c00 a19_bd0 a19_ba0 a19_b70 a19_b40 a19_b10 a19_ae0 a19_ab0 a19_a80 a19_a50 a19_a20 a19_9f0 a19_9c0 a19_990 a19_960 a19_930 a19_900 a19_8d0 a19_8a0 a19_870 a19_840 a19_810 a19_7e0 a19_7b0 a19_780 a19_750 a19_720 a19_6f0 a19_6c0 a19_690 a19_660 a19_630 a19_600 a19_5d0 a19_5a0 a19_570 a19_540 a19_510 a19_4e0 a19_4b0 a19_480 a19_450 a19_3c0 a19_390 a19_360 a19_330 a19_300 a19_2d0 a19_2a0 a19_270 a19_210 a19_1e0 a19_1b0 a19_180 a19_150 a19_120 mb19_1298 mb19_1928 mb19_e10 mb19_d50 g19_10 g19_25 g19_24 g19_23 g19_22 g19_21 g19_20 g19_19 g19_18 g19_9 g19_8 g19_4 g19_3 g19_2 fR19 t19 E19 fr19 s19 V19 K19 P19
+  clear w19_1924 a19_18f4 a19_18c4 a19_1894 a19_1864 a19_1834 a19_1804 a19_17d4 a19_17a4 a19_3c0 a19_390 a19_360 a19_330 a19_300 a19_2d0 a19_2a0 a19_270 a19_210 a19_1e0 a19_1b0 a19_180 a19_150 a19_120 mb19_1298 mb19_1928 mb19_e10 mb19_d50 tb19_8d0 tb19_450 g19_10 g19_25 g19_24 g19_23 g19_22 g19_21 g19_20 g19_19 g19_18 g19_9 g19_8 g19_4 g19_3 g19_2 fR19 t19 E19 fr19 s19 V19 K19 P19
   -- 0xA3A
   obtain ⟨n21, c21, u21⟩ := s20.block pvF1a3a E20.E.E.E.C.self pvF1a3a_end
     ⟨trivial, trivial, trivial, trivial, trivial, trivial, trivial⟩
@@ -3933,6 +2001,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g21_12 : reg n21 a2 = BitVec.ofNat 32 0x188 := by
     rw [rb21]; simp +decide only [runBlock, BInstr.run, pvF1a3a, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g20_2, g20_3, g20_4, g20_8, g20_9, g20_10, g20_18, g20_19, g20_20, g20_21, g20_22, g20_23, g20_24, g20_25, s20.zero, BitVec.zero_add]) <;> pv_val
+  have tb21_450 : ∀ j, j < 8 → ptV n21.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K21 (by decide) (by decide) tb20_450
+  have tb21_8d0 : ∀ j, j < 8 → ptV n21.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K21 (by decide) (by decide) tb20_8d0
   have mb21_d50 : leN (memBytes n21.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30) = n3fm (U2) 1 := by
     rw [memBytes_keep K21 (by decide) (by decide)]; exact mb20_d50
   have mb21_e10 : memBytes n21.mem (B + 0x420 + BitVec.ofNat 32 0xE10) 0x181 = List.replicate 0x181 0 := by
@@ -3969,102 +2041,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K21.acc (by decide) (by decide)).trans a20_390
   have a21_3c0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K21.acc (by decide) (by decide)).trans a20_3c0
-  have a21_450 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K21.acc (by decide) (by decide)).trans a20_450
-  have a21_480 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K21.acc (by decide) (by decide)).trans a20_480
-  have a21_4b0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K21.acc (by decide) (by decide)).trans a20_4b0
-  have a21_4e0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K21.acc (by decide) (by decide)).trans a20_4e0
-  have a21_510 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K21.acc (by decide) (by decide)).trans a20_510
-  have a21_540 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K21.acc (by decide) (by decide)).trans a20_540
-  have a21_570 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K21.acc (by decide) (by decide)).trans a20_570
-  have a21_5a0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K21.acc (by decide) (by decide)).trans a20_5a0
-  have a21_5d0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K21.acc (by decide) (by decide)).trans a20_5d0
-  have a21_600 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K21.acc (by decide) (by decide)).trans a20_600
-  have a21_630 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K21.acc (by decide) (by decide)).trans a20_630
-  have a21_660 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K21.acc (by decide) (by decide)).trans a20_660
-  have a21_690 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K21.acc (by decide) (by decide)).trans a20_690
-  have a21_6c0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K21.acc (by decide) (by decide)).trans a20_6c0
-  have a21_6f0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K21.acc (by decide) (by decide)).trans a20_6f0
-  have a21_720 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K21.acc (by decide) (by decide)).trans a20_720
-  have a21_750 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K21.acc (by decide) (by decide)).trans a20_750
-  have a21_780 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K21.acc (by decide) (by decide)).trans a20_780
-  have a21_7b0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K21.acc (by decide) (by decide)).trans a20_7b0
-  have a21_7e0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K21.acc (by decide) (by decide)).trans a20_7e0
-  have a21_810 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K21.acc (by decide) (by decide)).trans a20_810
-  have a21_840 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K21.acc (by decide) (by decide)).trans a20_840
-  have a21_870 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K21.acc (by decide) (by decide)).trans a20_870
-  have a21_8a0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K21.acc (by decide) (by decide)).trans a20_8a0
-  have a21_8d0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K21.acc (by decide) (by decide)).trans a20_8d0
-  have a21_900 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K21.acc (by decide) (by decide)).trans a20_900
-  have a21_930 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K21.acc (by decide) (by decide)).trans a20_930
-  have a21_960 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K21.acc (by decide) (by decide)).trans a20_960
-  have a21_990 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K21.acc (by decide) (by decide)).trans a20_990
-  have a21_9c0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K21.acc (by decide) (by decide)).trans a20_9c0
-  have a21_9f0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K21.acc (by decide) (by decide)).trans a20_9f0
-  have a21_a20 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K21.acc (by decide) (by decide)).trans a20_a20
-  have a21_a50 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K21.acc (by decide) (by decide)).trans a20_a50
-  have a21_a80 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K21.acc (by decide) (by decide)).trans a20_a80
-  have a21_ab0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K21.acc (by decide) (by decide)).trans a20_ab0
-  have a21_ae0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K21.acc (by decide) (by decide)).trans a20_ae0
-  have a21_b10 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K21.acc (by decide) (by decide)).trans a20_b10
-  have a21_b40 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K21.acc (by decide) (by decide)).trans a20_b40
-  have a21_b70 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K21.acc (by decide) (by decide)).trans a20_b70
-  have a21_ba0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K21.acc (by decide) (by decide)).trans a20_ba0
-  have a21_bd0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K21.acc (by decide) (by decide)).trans a20_bd0
-  have a21_c00 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K21.acc (by decide) (by decide)).trans a20_c00
-  have a21_c30 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K21.acc (by decide) (by decide)).trans a20_c30
-  have a21_c60 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K21.acc (by decide) (by decide)).trans a20_c60
-  have a21_c90 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K21.acc (by decide) (by decide)).trans a20_c90
-  have a21_cc0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K21.acc (by decide) (by decide)).trans a20_cc0
-  have a21_cf0 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K21.acc (by decide) (by decide)).trans a20_cf0
-  have a21_d20 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K21.acc (by decide) (by decide)).trans a20_d20
   have a21_17a4 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K21.acc (by decide) (by decide)).trans a20_17a4
   have a21_17d4 : accV n21.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -4087,7 +2063,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w21_1924 : memLoad32 n21.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w20_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K21 _ (by omega) (by omega)
-  clear w20_1294 w20_1924 a20_18f4 a20_18c4 a20_1894 a20_1864 a20_1834 a20_1804 a20_17d4 a20_17a4 a20_d20 a20_cf0 a20_cc0 a20_c90 a20_c60 a20_c30 a20_c00 a20_bd0 a20_ba0 a20_b70 a20_b40 a20_b10 a20_ae0 a20_ab0 a20_a80 a20_a50 a20_a20 a20_9f0 a20_9c0 a20_990 a20_960 a20_930 a20_900 a20_8d0 a20_8a0 a20_870 a20_840 a20_810 a20_7e0 a20_7b0 a20_780 a20_750 a20_720 a20_6f0 a20_6c0 a20_690 a20_660 a20_630 a20_600 a20_5d0 a20_5a0 a20_570 a20_540 a20_510 a20_4e0 a20_4b0 a20_480 a20_450 a20_3c0 a20_390 a20_360 a20_330 a20_300 a20_2d0 a20_2a0 a20_270 a20_210 a20_1e0 a20_1b0 a20_180 a20_150 a20_120 mb20_1928 mb20_1298 mb20_e10 mb20_d50 g20_25 g20_24 g20_23 g20_22 g20_21 g20_20 g20_19 g20_18 g20_10 g20_9 g20_8 g20_4 g20_3 g20_2 fR20 t20 E20 rg20 V20 K20 fr20 _E20 s20 d20
+  clear w20_1294 w20_1924 a20_18f4 a20_18c4 a20_1894 a20_1864 a20_1834 a20_1804 a20_17d4 a20_17a4 a20_3c0 a20_390 a20_360 a20_330 a20_300 a20_2d0 a20_2a0 a20_270 a20_210 a20_1e0 a20_1b0 a20_180 a20_150 a20_120 mb20_1928 mb20_1298 mb20_e10 mb20_d50 tb20_8d0 tb20_450 g20_25 g20_24 g20_23 g20_22 g20_21 g20_20 g20_19 g20_18 g20_10 g20_9 g20_8 g20_4 g20_3 g20_2 fR20 t20 E20 rg20 V20 K20 fr20 _E20 s20 d20
   -- 0xA4E: pv_mc
   obtain ⟨n22, P22, K22, V22⟩ := pv_mc F E21.E.E.E s21 pv_at_a4e pv_at_a52 (by decide) (by decide)
     g21_2 g21_10 g21_11 g21_12 (by decide) (by decide) (by decide)
@@ -4109,6 +2085,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g22_23 : reg n22 (23 : Fin 32) = BitVec.ofNat 32 0x188 := by rw [P22.regs (23 : Fin 32) (by decide), g21_23]
   have g22_24 : reg n22 (24 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x1924 := by rw [P22.regs (24 : Fin 32) (by decide), g21_24]
   have g22_25 : reg n22 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P22.regs (25 : Fin 32) (by decide), g21_25]
+  have tb22_450 : ∀ j, j < 8 → ptV n22.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K22 (by decide) (by decide) tb21_450
+  have tb22_8d0 : ∀ j, j < 8 → ptV n22.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K22 (by decide) (by decide) tb21_8d0
   have mb22_d50 : leN (memBytes n22.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30) = n3fm (U2) 1 := by
     rw [memBytes_keep K22 (by decide) (by decide)]; exact mb21_d50
   have mb22_1298 : memBytes n22.mem (B + 0x420 + BitVec.ofNat 32 0x1298) 0x181 = wnafBytes (wnafGo (n3fm (U2) 1) 0x180 0x181 0 0) 0x181 := by
@@ -4149,102 +2129,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K22.acc (by decide) (by decide)).trans a21_390
   have a22_3c0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K22.acc (by decide) (by decide)).trans a21_3c0
-  have a22_450 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K22.acc (by decide) (by decide)).trans a21_450
-  have a22_480 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K22.acc (by decide) (by decide)).trans a21_480
-  have a22_4b0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K22.acc (by decide) (by decide)).trans a21_4b0
-  have a22_4e0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K22.acc (by decide) (by decide)).trans a21_4e0
-  have a22_510 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K22.acc (by decide) (by decide)).trans a21_510
-  have a22_540 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K22.acc (by decide) (by decide)).trans a21_540
-  have a22_570 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K22.acc (by decide) (by decide)).trans a21_570
-  have a22_5a0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K22.acc (by decide) (by decide)).trans a21_5a0
-  have a22_5d0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K22.acc (by decide) (by decide)).trans a21_5d0
-  have a22_600 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K22.acc (by decide) (by decide)).trans a21_600
-  have a22_630 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K22.acc (by decide) (by decide)).trans a21_630
-  have a22_660 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K22.acc (by decide) (by decide)).trans a21_660
-  have a22_690 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K22.acc (by decide) (by decide)).trans a21_690
-  have a22_6c0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K22.acc (by decide) (by decide)).trans a21_6c0
-  have a22_6f0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K22.acc (by decide) (by decide)).trans a21_6f0
-  have a22_720 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K22.acc (by decide) (by decide)).trans a21_720
-  have a22_750 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K22.acc (by decide) (by decide)).trans a21_750
-  have a22_780 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K22.acc (by decide) (by decide)).trans a21_780
-  have a22_7b0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K22.acc (by decide) (by decide)).trans a21_7b0
-  have a22_7e0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K22.acc (by decide) (by decide)).trans a21_7e0
-  have a22_810 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K22.acc (by decide) (by decide)).trans a21_810
-  have a22_840 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K22.acc (by decide) (by decide)).trans a21_840
-  have a22_870 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K22.acc (by decide) (by decide)).trans a21_870
-  have a22_8a0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K22.acc (by decide) (by decide)).trans a21_8a0
-  have a22_8d0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K22.acc (by decide) (by decide)).trans a21_8d0
-  have a22_900 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K22.acc (by decide) (by decide)).trans a21_900
-  have a22_930 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K22.acc (by decide) (by decide)).trans a21_930
-  have a22_960 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K22.acc (by decide) (by decide)).trans a21_960
-  have a22_990 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K22.acc (by decide) (by decide)).trans a21_990
-  have a22_9c0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K22.acc (by decide) (by decide)).trans a21_9c0
-  have a22_9f0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K22.acc (by decide) (by decide)).trans a21_9f0
-  have a22_a20 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K22.acc (by decide) (by decide)).trans a21_a20
-  have a22_a50 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K22.acc (by decide) (by decide)).trans a21_a50
-  have a22_a80 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K22.acc (by decide) (by decide)).trans a21_a80
-  have a22_ab0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K22.acc (by decide) (by decide)).trans a21_ab0
-  have a22_ae0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K22.acc (by decide) (by decide)).trans a21_ae0
-  have a22_b10 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K22.acc (by decide) (by decide)).trans a21_b10
-  have a22_b40 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K22.acc (by decide) (by decide)).trans a21_b40
-  have a22_b70 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K22.acc (by decide) (by decide)).trans a21_b70
-  have a22_ba0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K22.acc (by decide) (by decide)).trans a21_ba0
-  have a22_bd0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K22.acc (by decide) (by decide)).trans a21_bd0
-  have a22_c00 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K22.acc (by decide) (by decide)).trans a21_c00
-  have a22_c30 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K22.acc (by decide) (by decide)).trans a21_c30
-  have a22_c60 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K22.acc (by decide) (by decide)).trans a21_c60
-  have a22_c90 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K22.acc (by decide) (by decide)).trans a21_c90
-  have a22_cc0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K22.acc (by decide) (by decide)).trans a21_cc0
-  have a22_cf0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K22.acc (by decide) (by decide)).trans a21_cf0
-  have a22_d20 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K22.acc (by decide) (by decide)).trans a21_d20
   have a22_17a4 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K22.acc (by decide) (by decide)).trans a21_17a4
   have a22_17d4 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -4273,7 +2157,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
       have := V22 (0x0 + q) (by omega)
       rwa [show 0xE10 + (0x0 + q) = 0xE10 + q by omega,
         show 0x1294 + (0x0 + q) = 0x1294 + q by omega] at this
-  clear w21_1924 w21_1294 a21_18f4 a21_18c4 a21_1894 a21_1864 a21_1834 a21_1804 a21_17d4 a21_17a4 a21_d20 a21_cf0 a21_cc0 a21_c90 a21_c60 a21_c30 a21_c00 a21_bd0 a21_ba0 a21_b70 a21_b40 a21_b10 a21_ae0 a21_ab0 a21_a80 a21_a50 a21_a20 a21_9f0 a21_9c0 a21_990 a21_960 a21_930 a21_900 a21_8d0 a21_8a0 a21_870 a21_840 a21_810 a21_7e0 a21_7b0 a21_780 a21_750 a21_720 a21_6f0 a21_6c0 a21_690 a21_660 a21_630 a21_600 a21_5d0 a21_5a0 a21_570 a21_540 a21_510 a21_4e0 a21_4b0 a21_480 a21_450 a21_3c0 a21_390 a21_360 a21_330 a21_300 a21_2d0 a21_2a0 a21_270 a21_210 a21_1e0 a21_1b0 a21_180 a21_150 a21_120 mb21_1928 mb21_1298 mb21_e10 mb21_d50 g21_12 g21_11 g21_10 g21_25 g21_24 g21_23 g21_22 g21_21 g21_20 g21_19 g21_18 g21_9 g21_8 g21_4 g21_3 g21_2 fR21 t21 K21 fr21 rb21 E21 s21 m21 u21 c21
+  clear w21_1924 w21_1294 a21_18f4 a21_18c4 a21_1894 a21_1864 a21_1834 a21_1804 a21_17d4 a21_17a4 a21_3c0 a21_390 a21_360 a21_330 a21_300 a21_2d0 a21_2a0 a21_270 a21_210 a21_1e0 a21_1b0 a21_180 a21_150 a21_120 mb21_1928 mb21_1298 mb21_e10 mb21_d50 tb21_8d0 tb21_450 g21_12 g21_11 g21_10 g21_25 g21_24 g21_23 g21_22 g21_21 g21_20 g21_19 g21_18 g21_9 g21_8 g21_4 g21_3 g21_2 fR21 t21 K21 fr21 rb21 E21 s21 m21 u21 c21
   -- 0xA56
   obtain ⟨n23, c23, u23⟩ := s22.block pvF1a56 E22.E.E.E.C.self pvF1a56_end
     ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩
@@ -4320,6 +2204,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g23_12 : reg n23 a2 = BitVec.ofNat 32 0x188 := by
     rw [rb23]; simp +decide only [runBlock, BInstr.run, pvF1a56, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g22_2, g22_3, g22_4, g22_8, g22_9, g22_18, g22_19, g22_20, g22_21, g22_22, g22_23, g22_24, g22_25, s22.zero, BitVec.zero_add, BitVec.reduceMul]) <;> pv_val
+  have tb23_450 : ∀ j, j < 8 → ptV n23.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K23 (by decide) (by decide) tb22_450
+  have tb23_8d0 : ∀ j, j < 8 → ptV n23.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K23 (by decide) (by decide) tb22_8d0
   have mb23_d50 : leN (memBytes n23.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30) = n3fm (U2) 1 := by
     rw [memBytes_keep K23 (by decide) (by decide)]; exact mb22_d50
   have mb23_e14 : memBytes n23.mem (B + 0x420 + BitVec.ofNat 32 0xE14) 0x181 = wnafBytes (wnafGo (n3fm (U2) 1) 0x180 0x181 0 0) 0x181 := by
@@ -4356,102 +2244,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K23.acc (by decide) (by decide)).trans a22_390
   have a23_3c0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K23.acc (by decide) (by decide)).trans a22_3c0
-  have a23_450 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K23.acc (by decide) (by decide)).trans a22_450
-  have a23_480 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K23.acc (by decide) (by decide)).trans a22_480
-  have a23_4b0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K23.acc (by decide) (by decide)).trans a22_4b0
-  have a23_4e0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K23.acc (by decide) (by decide)).trans a22_4e0
-  have a23_510 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K23.acc (by decide) (by decide)).trans a22_510
-  have a23_540 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K23.acc (by decide) (by decide)).trans a22_540
-  have a23_570 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K23.acc (by decide) (by decide)).trans a22_570
-  have a23_5a0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K23.acc (by decide) (by decide)).trans a22_5a0
-  have a23_5d0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K23.acc (by decide) (by decide)).trans a22_5d0
-  have a23_600 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K23.acc (by decide) (by decide)).trans a22_600
-  have a23_630 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K23.acc (by decide) (by decide)).trans a22_630
-  have a23_660 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K23.acc (by decide) (by decide)).trans a22_660
-  have a23_690 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K23.acc (by decide) (by decide)).trans a22_690
-  have a23_6c0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K23.acc (by decide) (by decide)).trans a22_6c0
-  have a23_6f0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K23.acc (by decide) (by decide)).trans a22_6f0
-  have a23_720 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K23.acc (by decide) (by decide)).trans a22_720
-  have a23_750 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K23.acc (by decide) (by decide)).trans a22_750
-  have a23_780 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K23.acc (by decide) (by decide)).trans a22_780
-  have a23_7b0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K23.acc (by decide) (by decide)).trans a22_7b0
-  have a23_7e0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K23.acc (by decide) (by decide)).trans a22_7e0
-  have a23_810 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K23.acc (by decide) (by decide)).trans a22_810
-  have a23_840 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K23.acc (by decide) (by decide)).trans a22_840
-  have a23_870 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K23.acc (by decide) (by decide)).trans a22_870
-  have a23_8a0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K23.acc (by decide) (by decide)).trans a22_8a0
-  have a23_8d0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K23.acc (by decide) (by decide)).trans a22_8d0
-  have a23_900 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K23.acc (by decide) (by decide)).trans a22_900
-  have a23_930 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K23.acc (by decide) (by decide)).trans a22_930
-  have a23_960 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K23.acc (by decide) (by decide)).trans a22_960
-  have a23_990 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K23.acc (by decide) (by decide)).trans a22_990
-  have a23_9c0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K23.acc (by decide) (by decide)).trans a22_9c0
-  have a23_9f0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K23.acc (by decide) (by decide)).trans a22_9f0
-  have a23_a20 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K23.acc (by decide) (by decide)).trans a22_a20
-  have a23_a50 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K23.acc (by decide) (by decide)).trans a22_a50
-  have a23_a80 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K23.acc (by decide) (by decide)).trans a22_a80
-  have a23_ab0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K23.acc (by decide) (by decide)).trans a22_ab0
-  have a23_ae0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K23.acc (by decide) (by decide)).trans a22_ae0
-  have a23_b10 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K23.acc (by decide) (by decide)).trans a22_b10
-  have a23_b40 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K23.acc (by decide) (by decide)).trans a22_b40
-  have a23_b70 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K23.acc (by decide) (by decide)).trans a22_b70
-  have a23_ba0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K23.acc (by decide) (by decide)).trans a22_ba0
-  have a23_bd0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K23.acc (by decide) (by decide)).trans a22_bd0
-  have a23_c00 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K23.acc (by decide) (by decide)).trans a22_c00
-  have a23_c30 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K23.acc (by decide) (by decide)).trans a22_c30
-  have a23_c60 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K23.acc (by decide) (by decide)).trans a22_c60
-  have a23_c90 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K23.acc (by decide) (by decide)).trans a22_c90
-  have a23_cc0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K23.acc (by decide) (by decide)).trans a22_cc0
-  have a23_cf0 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K23.acc (by decide) (by decide)).trans a22_cf0
-  have a23_d20 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K23.acc (by decide) (by decide)).trans a22_d20
   have a23_17a4 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K23.acc (by decide) (by decide)).trans a22_17a4
   have a23_17d4 : accV n23.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -4477,7 +2269,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w23_1924 : memLoad32 n23.mem (B + 0x420 + BitVec.ofNat 32 0x1924) = BitVec.ofNat 32 (wnafGo (n3fm U1 1) 0x180 0x181 0 0).length := by
     rw [← w22_1924]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K23 _ (by omega) (by omega)
-  clear w22_e10 w22_1924 w22_1294 a22_18f4 a22_18c4 a22_1894 a22_1864 a22_1834 a22_1804 a22_17d4 a22_17a4 a22_d20 a22_cf0 a22_cc0 a22_c90 a22_c60 a22_c30 a22_c00 a22_bd0 a22_ba0 a22_b70 a22_b40 a22_b10 a22_ae0 a22_ab0 a22_a80 a22_a50 a22_a20 a22_9f0 a22_9c0 a22_990 a22_960 a22_930 a22_900 a22_8d0 a22_8a0 a22_870 a22_840 a22_810 a22_7e0 a22_7b0 a22_780 a22_750 a22_720 a22_6f0 a22_6c0 a22_690 a22_660 a22_630 a22_600 a22_5d0 a22_5a0 a22_570 a22_540 a22_510 a22_4e0 a22_4b0 a22_480 a22_450 a22_3c0 a22_390 a22_360 a22_330 a22_300 a22_2d0 a22_2a0 a22_270 a22_210 a22_1e0 a22_1b0 a22_180 a22_150 a22_120 mb22_e14 mb22_1928 mb22_1298 mb22_d50 g22_25 g22_24 g22_23 g22_22 g22_21 g22_20 g22_19 g22_18 g22_9 g22_8 g22_4 g22_3 g22_2 fR22 t22 E22 fr22 s22 V22 K22 P22
+  clear w22_e10 w22_1924 w22_1294 a22_18f4 a22_18c4 a22_1894 a22_1864 a22_1834 a22_1804 a22_17d4 a22_17a4 a22_3c0 a22_390 a22_360 a22_330 a22_300 a22_2d0 a22_2a0 a22_270 a22_210 a22_1e0 a22_1b0 a22_180 a22_150 a22_120 mb22_e14 mb22_1928 mb22_1298 mb22_d50 tb22_8d0 tb22_450 g22_25 g22_24 g22_23 g22_22 g22_21 g22_20 g22_19 g22_18 g22_9 g22_8 g22_4 g22_3 g22_2 fR22 t22 E22 fr22 s22 V22 K22 P22
   -- 0xA68: pv_mc
   obtain ⟨n24, P24, K24, V24⟩ := pv_mc F E23.E.E.E s23 pv_at_a68 pv_at_a6c (by decide) (by decide)
     g23_2 g23_10 g23_11 g23_12 (by decide) (by decide) (by decide)
@@ -4499,6 +2291,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g24_23 : reg n24 (23 : Fin 32) = BitVec.ofNat 32 0x188 := by rw [P24.regs (23 : Fin 32) (by decide), g23_23]
   have g24_24 : reg n24 (24 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x1924 := by rw [P24.regs (24 : Fin 32) (by decide), g23_24]
   have g24_25 : reg n24 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P24.regs (25 : Fin 32) (by decide), g23_25]
+  have tb24_450 : ∀ j, j < 8 → ptV n24.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K24 (by decide) (by decide) tb23_450
+  have tb24_8d0 : ∀ j, j < 8 → ptV n24.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K24 (by decide) (by decide) tb23_8d0
   have mb24_d50 : leN (memBytes n24.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30) = n3fm (U2) 1 := by
     rw [memBytes_keep K24 (by decide) (by decide)]; exact mb23_d50
   have mb24_e14 : memBytes n24.mem (B + 0x420 + BitVec.ofNat 32 0xE14) 0x181 = wnafBytes (wnafGo (n3fm (U2) 1) 0x180 0x181 0 0) 0x181 := by
@@ -4541,102 +2337,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K24.acc (by decide) (by decide)).trans a23_390
   have a24_3c0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K24.acc (by decide) (by decide)).trans a23_3c0
-  have a24_450 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K24.acc (by decide) (by decide)).trans a23_450
-  have a24_480 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K24.acc (by decide) (by decide)).trans a23_480
-  have a24_4b0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K24.acc (by decide) (by decide)).trans a23_4b0
-  have a24_4e0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K24.acc (by decide) (by decide)).trans a23_4e0
-  have a24_510 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K24.acc (by decide) (by decide)).trans a23_510
-  have a24_540 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K24.acc (by decide) (by decide)).trans a23_540
-  have a24_570 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K24.acc (by decide) (by decide)).trans a23_570
-  have a24_5a0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K24.acc (by decide) (by decide)).trans a23_5a0
-  have a24_5d0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K24.acc (by decide) (by decide)).trans a23_5d0
-  have a24_600 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K24.acc (by decide) (by decide)).trans a23_600
-  have a24_630 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K24.acc (by decide) (by decide)).trans a23_630
-  have a24_660 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K24.acc (by decide) (by decide)).trans a23_660
-  have a24_690 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K24.acc (by decide) (by decide)).trans a23_690
-  have a24_6c0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K24.acc (by decide) (by decide)).trans a23_6c0
-  have a24_6f0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K24.acc (by decide) (by decide)).trans a23_6f0
-  have a24_720 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K24.acc (by decide) (by decide)).trans a23_720
-  have a24_750 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K24.acc (by decide) (by decide)).trans a23_750
-  have a24_780 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K24.acc (by decide) (by decide)).trans a23_780
-  have a24_7b0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K24.acc (by decide) (by decide)).trans a23_7b0
-  have a24_7e0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K24.acc (by decide) (by decide)).trans a23_7e0
-  have a24_810 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K24.acc (by decide) (by decide)).trans a23_810
-  have a24_840 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K24.acc (by decide) (by decide)).trans a23_840
-  have a24_870 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K24.acc (by decide) (by decide)).trans a23_870
-  have a24_8a0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K24.acc (by decide) (by decide)).trans a23_8a0
-  have a24_8d0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K24.acc (by decide) (by decide)).trans a23_8d0
-  have a24_900 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K24.acc (by decide) (by decide)).trans a23_900
-  have a24_930 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K24.acc (by decide) (by decide)).trans a23_930
-  have a24_960 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K24.acc (by decide) (by decide)).trans a23_960
-  have a24_990 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K24.acc (by decide) (by decide)).trans a23_990
-  have a24_9c0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K24.acc (by decide) (by decide)).trans a23_9c0
-  have a24_9f0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K24.acc (by decide) (by decide)).trans a23_9f0
-  have a24_a20 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K24.acc (by decide) (by decide)).trans a23_a20
-  have a24_a50 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K24.acc (by decide) (by decide)).trans a23_a50
-  have a24_a80 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K24.acc (by decide) (by decide)).trans a23_a80
-  have a24_ab0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K24.acc (by decide) (by decide)).trans a23_ab0
-  have a24_ae0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K24.acc (by decide) (by decide)).trans a23_ae0
-  have a24_b10 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K24.acc (by decide) (by decide)).trans a23_b10
-  have a24_b40 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K24.acc (by decide) (by decide)).trans a23_b40
-  have a24_b70 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K24.acc (by decide) (by decide)).trans a23_b70
-  have a24_ba0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K24.acc (by decide) (by decide)).trans a23_ba0
-  have a24_bd0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K24.acc (by decide) (by decide)).trans a23_bd0
-  have a24_c00 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K24.acc (by decide) (by decide)).trans a23_c00
-  have a24_c30 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K24.acc (by decide) (by decide)).trans a23_c30
-  have a24_c60 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K24.acc (by decide) (by decide)).trans a23_c60
-  have a24_c90 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K24.acc (by decide) (by decide)).trans a23_c90
-  have a24_cc0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K24.acc (by decide) (by decide)).trans a23_cc0
-  have a24_cf0 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K24.acc (by decide) (by decide)).trans a23_cf0
-  have a24_d20 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K24.acc (by decide) (by decide)).trans a23_d20
   have a24_17a4 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K24.acc (by decide) (by decide)).trans a23_17a4
   have a24_17d4 : accV n24.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -4668,7 +2368,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
       have := V24 (0x0 + q) (by omega)
       rwa [show 0x1AAC + (0x0 + q) = 0x1AAC + q by omega,
         show 0xE10 + (0x0 + q) = 0xE10 + q by omega] at this
-  clear w23_1924 w23_1294 w23_e10 a23_18f4 a23_18c4 a23_1894 a23_1864 a23_1834 a23_1804 a23_17d4 a23_17a4 a23_d20 a23_cf0 a23_cc0 a23_c90 a23_c60 a23_c30 a23_c00 a23_bd0 a23_ba0 a23_b70 a23_b40 a23_b10 a23_ae0 a23_ab0 a23_a80 a23_a50 a23_a20 a23_9f0 a23_9c0 a23_990 a23_960 a23_930 a23_900 a23_8d0 a23_8a0 a23_870 a23_840 a23_810 a23_7e0 a23_7b0 a23_780 a23_750 a23_720 a23_6f0 a23_6c0 a23_690 a23_660 a23_630 a23_600 a23_5d0 a23_5a0 a23_570 a23_540 a23_510 a23_4e0 a23_4b0 a23_480 a23_450 a23_3c0 a23_390 a23_360 a23_330 a23_300 a23_2d0 a23_2a0 a23_270 a23_210 a23_1e0 a23_1b0 a23_180 a23_150 a23_120 mb23_1928 mb23_1298 mb23_e14 mb23_d50 g23_12 g23_11 g23_10 g23_25 g23_24 g23_23 g23_22 g23_21 g23_20 g23_19 g23_18 g23_9 g23_8 g23_4 g23_3 g23_2 fR23 t23 K23 fr23 rb23 E23 s23 m23 u23 c23
+  clear w23_1924 w23_1294 w23_e10 a23_18f4 a23_18c4 a23_1894 a23_1864 a23_1834 a23_1804 a23_17d4 a23_17a4 a23_3c0 a23_390 a23_360 a23_330 a23_300 a23_2d0 a23_2a0 a23_270 a23_210 a23_1e0 a23_1b0 a23_180 a23_150 a23_120 mb23_1928 mb23_1298 mb23_e14 mb23_d50 tb23_8d0 tb23_450 g23_12 g23_11 g23_10 g23_25 g23_24 g23_23 g23_22 g23_21 g23_20 g23_19 g23_18 g23_9 g23_8 g23_4 g23_3 g23_2 fR23 t23 K23 fr23 rb23 E23 s23 m23 u23 c23
   -- 0xA70
   obtain ⟨n25, c25, u25⟩ := s24.block pvF1a70 E24.E.E.E.C.self pvF1a70_end
     ⟨trivial, trivial⟩
@@ -4707,6 +2407,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g25_9 : reg n25 (9 : Fin 32) = BitVec.ofNat 32 0x2 := by
     rw [rb25]; simp +decide only [runBlock, BInstr.run, pvF1a70, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g24_2, g24_3, g24_4, g24_8, g24_9, g24_18, g24_19, g24_20, g24_21, g24_22, g24_23, g24_24, g24_25, s24.zero, BitVec.zero_add]) <;> pv_val
+  have tb25_450 : ∀ j, j < 8 → ptV n25.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K25 (by decide) (by decide) tb24_450
+  have tb25_8d0 : ∀ j, j < 8 → ptV n25.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K25 (by decide) (by decide) tb24_8d0
   have mb25_d50 : leN (memBytes n25.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30) = n3fm (U2) 1 := by
     rw [memBytes_keep K25 (by decide) (by decide)]; exact mb24_d50
   have mb25_e14 : memBytes n25.mem (B + 0x420 + BitVec.ofNat 32 0xE14) 0x181 = wnafBytes (wnafGo (n3fm (U2) 1) 0x180 0x181 0 0) 0x181 := by
@@ -4745,102 +2449,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K25.acc (by decide) (by decide)).trans a24_390
   have a25_3c0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K25.acc (by decide) (by decide)).trans a24_3c0
-  have a25_450 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K25.acc (by decide) (by decide)).trans a24_450
-  have a25_480 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K25.acc (by decide) (by decide)).trans a24_480
-  have a25_4b0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K25.acc (by decide) (by decide)).trans a24_4b0
-  have a25_4e0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K25.acc (by decide) (by decide)).trans a24_4e0
-  have a25_510 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K25.acc (by decide) (by decide)).trans a24_510
-  have a25_540 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K25.acc (by decide) (by decide)).trans a24_540
-  have a25_570 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K25.acc (by decide) (by decide)).trans a24_570
-  have a25_5a0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K25.acc (by decide) (by decide)).trans a24_5a0
-  have a25_5d0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K25.acc (by decide) (by decide)).trans a24_5d0
-  have a25_600 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K25.acc (by decide) (by decide)).trans a24_600
-  have a25_630 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K25.acc (by decide) (by decide)).trans a24_630
-  have a25_660 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K25.acc (by decide) (by decide)).trans a24_660
-  have a25_690 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K25.acc (by decide) (by decide)).trans a24_690
-  have a25_6c0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K25.acc (by decide) (by decide)).trans a24_6c0
-  have a25_6f0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K25.acc (by decide) (by decide)).trans a24_6f0
-  have a25_720 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K25.acc (by decide) (by decide)).trans a24_720
-  have a25_750 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K25.acc (by decide) (by decide)).trans a24_750
-  have a25_780 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K25.acc (by decide) (by decide)).trans a24_780
-  have a25_7b0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K25.acc (by decide) (by decide)).trans a24_7b0
-  have a25_7e0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K25.acc (by decide) (by decide)).trans a24_7e0
-  have a25_810 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K25.acc (by decide) (by decide)).trans a24_810
-  have a25_840 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K25.acc (by decide) (by decide)).trans a24_840
-  have a25_870 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K25.acc (by decide) (by decide)).trans a24_870
-  have a25_8a0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K25.acc (by decide) (by decide)).trans a24_8a0
-  have a25_8d0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K25.acc (by decide) (by decide)).trans a24_8d0
-  have a25_900 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K25.acc (by decide) (by decide)).trans a24_900
-  have a25_930 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K25.acc (by decide) (by decide)).trans a24_930
-  have a25_960 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K25.acc (by decide) (by decide)).trans a24_960
-  have a25_990 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K25.acc (by decide) (by decide)).trans a24_990
-  have a25_9c0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K25.acc (by decide) (by decide)).trans a24_9c0
-  have a25_9f0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K25.acc (by decide) (by decide)).trans a24_9f0
-  have a25_a20 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K25.acc (by decide) (by decide)).trans a24_a20
-  have a25_a50 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K25.acc (by decide) (by decide)).trans a24_a50
-  have a25_a80 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K25.acc (by decide) (by decide)).trans a24_a80
-  have a25_ab0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K25.acc (by decide) (by decide)).trans a24_ab0
-  have a25_ae0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K25.acc (by decide) (by decide)).trans a24_ae0
-  have a25_b10 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K25.acc (by decide) (by decide)).trans a24_b10
-  have a25_b40 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K25.acc (by decide) (by decide)).trans a24_b40
-  have a25_b70 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K25.acc (by decide) (by decide)).trans a24_b70
-  have a25_ba0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K25.acc (by decide) (by decide)).trans a24_ba0
-  have a25_bd0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K25.acc (by decide) (by decide)).trans a24_bd0
-  have a25_c00 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K25.acc (by decide) (by decide)).trans a24_c00
-  have a25_c30 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K25.acc (by decide) (by decide)).trans a24_c30
-  have a25_c60 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K25.acc (by decide) (by decide)).trans a24_c60
-  have a25_c90 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K25.acc (by decide) (by decide)).trans a24_c90
-  have a25_cc0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K25.acc (by decide) (by decide)).trans a24_cc0
-  have a25_cf0 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K25.acc (by decide) (by decide)).trans a24_cf0
-  have a25_d20 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K25.acc (by decide) (by decide)).trans a24_d20
   have a25_17a4 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K25.acc (by decide) (by decide)).trans a24_17a4
   have a25_17d4 : accV n25.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -4869,7 +2477,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w25_1aac : memLoad32 n25.mem (B + 0x420 + BitVec.ofNat 32 0x1AAC) = BitVec.ofNat 32 (wnafGo (n3fm (U2) 1) 0x180 0x181 0 0).length := by
     rw [← w24_1aac]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K25 _ (by omega) (by omega)
-  clear w24_1aac w24_1924 w24_1294 w24_e10 a24_18f4 a24_18c4 a24_1894 a24_1864 a24_1834 a24_1804 a24_17d4 a24_17a4 a24_d20 a24_cf0 a24_cc0 a24_c90 a24_c60 a24_c30 a24_c00 a24_bd0 a24_ba0 a24_b70 a24_b40 a24_b10 a24_ae0 a24_ab0 a24_a80 a24_a50 a24_a20 a24_9f0 a24_9c0 a24_990 a24_960 a24_930 a24_900 a24_8d0 a24_8a0 a24_870 a24_840 a24_810 a24_7e0 a24_7b0 a24_780 a24_750 a24_720 a24_6f0 a24_6c0 a24_690 a24_660 a24_630 a24_600 a24_5d0 a24_5a0 a24_570 a24_540 a24_510 a24_4e0 a24_4b0 a24_480 a24_450 a24_3c0 a24_390 a24_360 a24_330 a24_300 a24_2d0 a24_2a0 a24_270 a24_210 a24_1e0 a24_1b0 a24_180 a24_150 a24_120 mb24_1ab0 mb24_1928 mb24_1298 mb24_e14 mb24_d50 g24_25 g24_24 g24_23 g24_22 g24_21 g24_20 g24_19 g24_18 g24_9 g24_8 g24_4 g24_3 g24_2 fR24 t24 E24 fr24 s24 V24 K24 P24
+  clear w24_1aac w24_1924 w24_1294 w24_e10 a24_18f4 a24_18c4 a24_1894 a24_1864 a24_1834 a24_1804 a24_17d4 a24_17a4 a24_3c0 a24_390 a24_360 a24_330 a24_300 a24_2d0 a24_2a0 a24_270 a24_210 a24_1e0 a24_1b0 a24_180 a24_150 a24_120 mb24_1ab0 mb24_1928 mb24_1298 mb24_e14 mb24_d50 tb24_8d0 tb24_450 g24_25 g24_24 g24_23 g24_22 g24_21 g24_20 g24_19 g24_18 g24_9 g24_8 g24_4 g24_3 g24_2 fR24 t24 E24 fr24 s24 V24 K24 P24
   -- 0xA72: branch, not taken
   obtain ⟨n26, d26, u26⟩ := s25.notTaken E25.E.E.E.C.self 0xA76 pv_at_a72
     (by decide) (by rw [g25_9, g25_22]; decide)
@@ -4893,6 +2501,10 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have g26_23 : reg n26 (23 : Fin 32) = BitVec.ofNat 32 0x188 := by rw [u26.regs, g25_23]
   have g26_24 : reg n26 (24 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x1924 := by rw [u26.regs, g25_24]
   have g26_25 : reg n26 (25 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [u26.regs, g25_25]
+  have tb26_450 : ∀ j, j < 8 → ptV n26.mem B (0x450 + 0x90 * j) = tblPt (P0X, P0Y, P0Z) j :=
+    tbl_keep K26 (by decide) (by decide) tb25_450
+  have tb26_8d0 : ∀ j, j < 8 → ptV n26.mem B (0x8D0 + 0x90 * j) = tblPt (P1X, P1Y, P1Z) j :=
+    tbl_keep K26 (by decide) (by decide) tb25_8d0
   have mb26_d50 : leN (memBytes n26.mem (B + 0x420 + BitVec.ofNat 32 0xD50) 0x30) = n3fm (U2) 1 := by
     rw [memBytes_keep K26 (by decide) (by decide)]; exact mb25_d50
   have mb26_e14 : memBytes n26.mem (B + 0x420 + BitVec.ofNat 32 0xE14) 0x181 = wnafBytes (wnafGo (n3fm (U2) 1) 0x180 0x181 0 0) 0x181 := by
@@ -4931,102 +2543,6 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
     (K26.acc (by decide) (by decide)).trans a25_390
   have a26_3c0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x3C0) 12 = U2 :=
     (K26.acc (by decide) (by decide)).trans a25_3c0
-  have a26_450 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x450) 12 = (tblPt (P0X, P0Y, P0Z) 0).1 :=
-    (K26.acc (by decide) (by decide)).trans a25_450
-  have a26_480 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x480) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.1 :=
-    (K26.acc (by decide) (by decide)).trans a25_480
-  have a26_4b0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x4B0) 12 = (tblPt (P0X, P0Y, P0Z) 0).2.2 :=
-    (K26.acc (by decide) (by decide)).trans a25_4b0
-  have a26_4e0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x4E0) 12 = (tblPt (P0X, P0Y, P0Z) 1).1 :=
-    (K26.acc (by decide) (by decide)).trans a25_4e0
-  have a26_510 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x510) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.1 :=
-    (K26.acc (by decide) (by decide)).trans a25_510
-  have a26_540 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x540) 12 = (tblPt (P0X, P0Y, P0Z) 1).2.2 :=
-    (K26.acc (by decide) (by decide)).trans a25_540
-  have a26_570 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x570) 12 = (tblPt (P0X, P0Y, P0Z) 2).1 :=
-    (K26.acc (by decide) (by decide)).trans a25_570
-  have a26_5a0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x5A0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.1 :=
-    (K26.acc (by decide) (by decide)).trans a25_5a0
-  have a26_5d0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x5D0) 12 = (tblPt (P0X, P0Y, P0Z) 2).2.2 :=
-    (K26.acc (by decide) (by decide)).trans a25_5d0
-  have a26_600 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x600) 12 = (tblPt (P0X, P0Y, P0Z) 3).1 :=
-    (K26.acc (by decide) (by decide)).trans a25_600
-  have a26_630 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x630) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.1 :=
-    (K26.acc (by decide) (by decide)).trans a25_630
-  have a26_660 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x660) 12 = (tblPt (P0X, P0Y, P0Z) 3).2.2 :=
-    (K26.acc (by decide) (by decide)).trans a25_660
-  have a26_690 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x690) 12 = (tblPt (P0X, P0Y, P0Z) 4).1 :=
-    (K26.acc (by decide) (by decide)).trans a25_690
-  have a26_6c0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x6C0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.1 :=
-    (K26.acc (by decide) (by decide)).trans a25_6c0
-  have a26_6f0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x6F0) 12 = (tblPt (P0X, P0Y, P0Z) 4).2.2 :=
-    (K26.acc (by decide) (by decide)).trans a25_6f0
-  have a26_720 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x720) 12 = (tblPt (P0X, P0Y, P0Z) 5).1 :=
-    (K26.acc (by decide) (by decide)).trans a25_720
-  have a26_750 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x750) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.1 :=
-    (K26.acc (by decide) (by decide)).trans a25_750
-  have a26_780 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x780) 12 = (tblPt (P0X, P0Y, P0Z) 5).2.2 :=
-    (K26.acc (by decide) (by decide)).trans a25_780
-  have a26_7b0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x7B0) 12 = (tblPt (P0X, P0Y, P0Z) 6).1 :=
-    (K26.acc (by decide) (by decide)).trans a25_7b0
-  have a26_7e0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x7E0) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.1 :=
-    (K26.acc (by decide) (by decide)).trans a25_7e0
-  have a26_810 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x810) 12 = (tblPt (P0X, P0Y, P0Z) 6).2.2 :=
-    (K26.acc (by decide) (by decide)).trans a25_810
-  have a26_840 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x840) 12 = (tblPt (P0X, P0Y, P0Z) 7).1 :=
-    (K26.acc (by decide) (by decide)).trans a25_840
-  have a26_870 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x870) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.1 :=
-    (K26.acc (by decide) (by decide)).trans a25_870
-  have a26_8a0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x8A0) 12 = (tblPt (P0X, P0Y, P0Z) 7).2.2 :=
-    (K26.acc (by decide) (by decide)).trans a25_8a0
-  have a26_8d0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x8D0) 12 = (tblPt (P1X, P1Y, P1Z) 0).1 :=
-    (K26.acc (by decide) (by decide)).trans a25_8d0
-  have a26_900 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x900) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.1 :=
-    (K26.acc (by decide) (by decide)).trans a25_900
-  have a26_930 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x930) 12 = (tblPt (P1X, P1Y, P1Z) 0).2.2 :=
-    (K26.acc (by decide) (by decide)).trans a25_930
-  have a26_960 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x960) 12 = (tblPt (P1X, P1Y, P1Z) 1).1 :=
-    (K26.acc (by decide) (by decide)).trans a25_960
-  have a26_990 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x990) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.1 :=
-    (K26.acc (by decide) (by decide)).trans a25_990
-  have a26_9c0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x9C0) 12 = (tblPt (P1X, P1Y, P1Z) 1).2.2 :=
-    (K26.acc (by decide) (by decide)).trans a25_9c0
-  have a26_9f0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x9F0) 12 = (tblPt (P1X, P1Y, P1Z) 2).1 :=
-    (K26.acc (by decide) (by decide)).trans a25_9f0
-  have a26_a20 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0xA20) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.1 :=
-    (K26.acc (by decide) (by decide)).trans a25_a20
-  have a26_a50 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0xA50) 12 = (tblPt (P1X, P1Y, P1Z) 2).2.2 :=
-    (K26.acc (by decide) (by decide)).trans a25_a50
-  have a26_a80 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0xA80) 12 = (tblPt (P1X, P1Y, P1Z) 3).1 :=
-    (K26.acc (by decide) (by decide)).trans a25_a80
-  have a26_ab0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0xAB0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.1 :=
-    (K26.acc (by decide) (by decide)).trans a25_ab0
-  have a26_ae0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0xAE0) 12 = (tblPt (P1X, P1Y, P1Z) 3).2.2 :=
-    (K26.acc (by decide) (by decide)).trans a25_ae0
-  have a26_b10 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0xB10) 12 = (tblPt (P1X, P1Y, P1Z) 4).1 :=
-    (K26.acc (by decide) (by decide)).trans a25_b10
-  have a26_b40 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0xB40) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.1 :=
-    (K26.acc (by decide) (by decide)).trans a25_b40
-  have a26_b70 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0xB70) 12 = (tblPt (P1X, P1Y, P1Z) 4).2.2 :=
-    (K26.acc (by decide) (by decide)).trans a25_b70
-  have a26_ba0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0xBA0) 12 = (tblPt (P1X, P1Y, P1Z) 5).1 :=
-    (K26.acc (by decide) (by decide)).trans a25_ba0
-  have a26_bd0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0xBD0) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.1 :=
-    (K26.acc (by decide) (by decide)).trans a25_bd0
-  have a26_c00 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0xC00) 12 = (tblPt (P1X, P1Y, P1Z) 5).2.2 :=
-    (K26.acc (by decide) (by decide)).trans a25_c00
-  have a26_c30 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0xC30) 12 = (tblPt (P1X, P1Y, P1Z) 6).1 :=
-    (K26.acc (by decide) (by decide)).trans a25_c30
-  have a26_c60 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0xC60) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.1 :=
-    (K26.acc (by decide) (by decide)).trans a25_c60
-  have a26_c90 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0xC90) 12 = (tblPt (P1X, P1Y, P1Z) 6).2.2 :=
-    (K26.acc (by decide) (by decide)).trans a25_c90
-  have a26_cc0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0xCC0) 12 = (tblPt (P1X, P1Y, P1Z) 7).1 :=
-    (K26.acc (by decide) (by decide)).trans a25_cc0
-  have a26_cf0 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0xCF0) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.1 :=
-    (K26.acc (by decide) (by decide)).trans a25_cf0
-  have a26_d20 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0xD20) 12 = (tblPt (P1X, P1Y, P1Z) 7).2.2 :=
-    (K26.acc (by decide) (by decide)).trans a25_d20
   have a26_17a4 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = ((P0X, P0Y, P0Z)).1 :=
     (K26.acc (by decide) (by decide)).trans a25_17a4
   have a26_17d4 : accV n26.mem (B + 0x420 + BitVec.ofNat 32 0x17D4) 12 = ((P0X, P0Y, P0Z)).2.1 :=
@@ -5055,7 +2571,7 @@ theorem pv_stF1 {B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} {P0X P0Y P0Z P1X P1Y 
   have w26_1aac : memLoad32 n26.mem (B + 0x420 + BitVec.ofNat 32 0x1AAC) = BitVec.ofNat 32 (wnafGo (n3fm (U2) 1) 0x180 0x181 0 0).length := by
     rw [← w25_1aac]; exact memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]; exact K26 _ (by omega) (by omega)
-  clear w25_1aac w25_1924 w25_1294 w25_e10 a25_18f4 a25_18c4 a25_1894 a25_1864 a25_1834 a25_1804 a25_17d4 a25_17a4 a25_d20 a25_cf0 a25_cc0 a25_c90 a25_c60 a25_c30 a25_c00 a25_bd0 a25_ba0 a25_b70 a25_b40 a25_b10 a25_ae0 a25_ab0 a25_a80 a25_a50 a25_a20 a25_9f0 a25_9c0 a25_990 a25_960 a25_930 a25_900 a25_8d0 a25_8a0 a25_870 a25_840 a25_810 a25_7e0 a25_7b0 a25_780 a25_750 a25_720 a25_6f0 a25_6c0 a25_690 a25_660 a25_630 a25_600 a25_5d0 a25_5a0 a25_570 a25_540 a25_510 a25_4e0 a25_4b0 a25_480 a25_450 a25_3c0 a25_390 a25_360 a25_330 a25_300 a25_2d0 a25_2a0 a25_270 a25_210 a25_1e0 a25_1b0 a25_180 a25_150 a25_120 mb25_1ab0 mb25_1928 mb25_1298 mb25_e14 mb25_d50 g25_9 g25_25 g25_24 g25_23 g25_22 g25_21 g25_20 g25_19 g25_18 g25_8 g25_4 g25_3 g25_2 fR25 t25 K25 fr25 rb25 E25 s25 m25 u25 c25
-  exact ⟨n26, t26, s26, E26, fR26, g26_2, g26_3, g26_4, g26_9, g26_18, g26_19, g26_20, g26_21, g26_22, g26_23, g26_24, g26_25, keep_len, a26_120, a26_150, a26_180, a26_1b0, a26_1e0, a26_210, a26_450, a26_480, a26_4b0, a26_4e0, a26_510, a26_540, a26_570, a26_5a0, a26_5d0, a26_600, a26_630, a26_660, a26_690, a26_6c0, a26_6f0, a26_720, a26_750, a26_780, a26_7b0, a26_7e0, a26_810, a26_840, a26_870, a26_8a0, a26_8d0, a26_900, a26_930, a26_960, a26_990, a26_9c0, a26_9f0, a26_a20, a26_a50, a26_a80, a26_ab0, a26_ae0, a26_b10, a26_b40, a26_b70, a26_ba0, a26_bd0, a26_c00, a26_c30, a26_c60, a26_c90, a26_cc0, a26_cf0, a26_d20, w26_e10, w26_1294, w26_1924, w26_1aac, mb26_d50, mb26_e14, mb26_1298, mb26_1928, mb26_1ab0⟩
+  clear w25_1aac w25_1924 w25_1294 w25_e10 a25_18f4 a25_18c4 a25_1894 a25_1864 a25_1834 a25_1804 a25_17d4 a25_17a4 a25_3c0 a25_390 a25_360 a25_330 a25_300 a25_2d0 a25_2a0 a25_270 a25_210 a25_1e0 a25_1b0 a25_180 a25_150 a25_120 mb25_1ab0 mb25_1928 mb25_1298 mb25_e14 mb25_d50 tb25_8d0 tb25_450 g25_9 g25_25 g25_24 g25_23 g25_22 g25_21 g25_20 g25_19 g25_18 g25_8 g25_4 g25_3 g25_2 fR25 t25 K25 fr25 rb25 E25 s25 m25 u25 c25
+  exact ⟨n26, t26, s26, E26, fR26, g26_2, g26_3, g26_4, g26_9, g26_18, g26_19, g26_20, g26_21, g26_22, g26_23, g26_24, g26_25, keep_len, a26_120, a26_150, a26_180, a26_1b0, a26_1e0, a26_210, w26_e10, w26_1294, w26_1924, w26_1aac, mb26_d50, mb26_e14, mb26_1298, mb26_1928, mb26_1ab0, tb26_450, tb26_8d0⟩
 
 end C3.RV32.Pv

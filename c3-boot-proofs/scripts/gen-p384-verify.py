@@ -111,6 +111,7 @@ class Gen:
         self.words = {}
         self.sv = {}
         self.mbf = {}
+        self.tbl = {}
 
     def emit(self, s):
         self.out.append(s)
@@ -178,9 +179,26 @@ class Gen:
         mb = f"memBytes n{k}.mem (B + 0x420 + BitVec.ofNat 32 0x{d:X}) 0x{N:X}"
         return {"leN": f"leN ({mb}) = {v}", "leNr": f"leN ({mb}).reverse = {v}", "list": f"{mb} = {v}"}[kind]
 
+    def tbl_stmt(self, k, c0, T, n):
+        return f"∀ j, j < {n} → ptV n{k}.mem B (0x{c0:X} + 0x90 * j) = {T} j"
+
     def mem_facts(self, k, c, w, written_acc=None, written_bytes=None, written_words=None, written_sv=None,
-                  written_mbf=None):
+                  written_mbf=None, written_tbl=None):
         """Facts after a step that wrote the `w` bytes at offset `c`."""
+        written_tbl = written_tbl or {}
+        newt = {}
+        for c0, (T, n) in sorted(self.tbl.items()):
+            if c0 in written_tbl:
+                continue
+            if c0 + 0x90 * n <= c or c + w <= c0:
+                self.emit(f"  have tb{k}_{c0:x} : {self.tbl_stmt(k, c0, T, n)} :=")
+                self.emit(f"    tbl_keep K{k} (by decide) (by decide) tb{k-1}_{c0:x}")
+                newt[c0] = (T, n)
+        for c0, (T, n, proof) in sorted(written_tbl.items()):
+            self.emit(f"  have tb{k}_{c0:x} : {self.tbl_stmt(k, c0, T, n)} :=")
+            self.emit(f"    {proof}")
+            newt[c0] = (T, n)
+        self.tbl = newt
         written_mbf = written_mbf or {}
         newm = {}
         for d, (N, kind, v) in sorted(self.mbf.items()):
@@ -325,7 +343,7 @@ class Gen:
         return k
 
     def call(self, wrapper, off, args, c, w, written_acc=None, written_bytes=None, extra_regs=None, pre=None,
-             written_sv=None, written_mbf=None, written_words=None, post=None):
+             written_sv=None, written_mbf=None, written_words=None, post=None, written_tbl=None):
         k = self.k = self.k + 1
         self.emit(f"  -- 0x{off:X}: {wrapper}")
         for line in pre or []:
@@ -344,7 +362,7 @@ class Gen:
             self.emit(f"  have g{k}_{r} : reg n{k} {rname(r)} = {lean_val(v)} := by {proof}")
             self.regs[r] = v
         self.mem_facts(k, c, w, written_acc, written_bytes, written_sv=written_sv, written_mbf=written_mbf,
-                       written_words=written_words)
+                       written_words=written_words, written_tbl=written_tbl)
         self.end_step()
         return k
 
@@ -395,6 +413,10 @@ class Gen:
             if not keep("mbf", d):
                 continue
             conj.append(self.mbf_stmt(0, d, N, kind, v).replace("n0.mem", "n'.mem")); terms.append(f"mb{k}_{d:x}")
+        for c0, (T, n) in sorted(self.tbl.items()):
+            if not keep("tbl", c0):
+                continue
+            conj.append("(" + self.tbl_stmt(0, c0, T, n).replace("n0.mem", "n'.mem") + ")"); terms.append(f"tb{k}_{c0:x}")
         stmt = "∃ n', " + " ∧\n      ".join(conj)
         proof = f"  exact ⟨n{k}, " + ", ".join(terms) + "⟩"
         return stmt, proof
@@ -480,8 +502,13 @@ class Ops:
                     f"  rwa [show 0x{dst:X} + (0x{d - src:X} + q) = 0x{nd:X} + q by omega,",
                     f"    show 0x{src:X} + (0x{d - src:X} + q) = 0x{d:X} + q by omega] at this]",
                     f"exact mb{k}_{d:x}"])
+        tbls = {}
+        for c0, (T, n) in g.tbl.items():
+            if src <= c0 and c0 + 0x90 * n <= src + N:
+                tbls[dst + (c0 - src)] = (T, n, f"tbl_cp V{k + 1} (by decide) (by decide) (by decide) tb{k}_{c0:x}")
         g.call("pv_mc", off, f"g{k}_2 g{k}_10 g{k}_11 g{k}_12 (by decide) (by decide) (by decide)", dst, N,
-               copy_facts(g, dst, src, N, f"V{k + 1}"), written_sv=svs, written_mbf=mbs, written_words=words)
+               copy_facts(g, dst, src, N, f"V{k + 1}"), written_sv=svs, written_mbf=mbs, written_words=words,
+               written_tbl=tbls)
 
     def mcK(self, off, dst, K, N, data, doff=None):
         g = self.g
@@ -773,6 +800,19 @@ class Ops:
         g.call("pv_inz", off, f"g{k}_2 g{k}_10 (by decide) (by decide)", 0, 0,
                extra_regs={10: (C(1), f"rw [V{k + 1}, ite_eq_right hnz{k + 1}]; rfl")}, pre=pre)
 
+    def mktbl(self, c0, T, n=8):
+        """Gathers the limb facts of a table of `n` points at offset `c0` into one fact."""
+        g = self.g
+        k = g.k
+        g.emit(f"  have tb{k}_{c0:x} : {g.tbl_stmt(k, c0, T, n)} := fun j hj => match j, hj with")
+        for j in range(n):
+            c = c0 + 0x90 * j
+            g.emit(f"    | {j}, _ => ptV_mk a{k}_{c:x} a{k}_{c + 0x30:x} a{k}_{c + 0x60:x}")
+            for o in (0, 0x30, 0x60):
+                del g.acc[c + o]
+        g.emit(f"    | _ + {n}, h => absurd h (by omega)")
+        g.tbl[c0] = (T, n)
+
     def inzf(self, off, x):
         """`Uint<12>::is_nonzero` of the limbs at `x`, as a flag."""
         g = self.g
@@ -1014,6 +1054,8 @@ def params_of(g, off, extra=""):
         ps.append(f"(l0_{d:x} : (n0.mem (B + 0x420 + BitVec.ofNat 32 (0x{d:X} + 0x30))).toNat ≤ 1)")
     for d, (N, kind, v) in sorted(g.mbf.items()):
         ps.append(f"(mb0_{d:x} : {g.mbf_stmt(0, d, N, kind, v)})")
+    for c0, (T, n) in sorted(g.tbl.items()):
+        ps.append(f"(tb0_{c0:x} : {g.tbl_stmt(0, c0, T, n)})")
     return "\n    ".join(ps) + extra
 
 
@@ -1176,11 +1218,50 @@ def pt_acc(c, P):
     return {c: f"({P}).1", c + 0x30: f"({P}).2.1", c + 0x60: f"({P}).2.2"}
 
 
-def stage_e(i):
-    """One pass of the table loop, for pair `i`."""
-    g = Gen(f"E{i}", env4=True)
+def fresh(g, name):
+    """A generator for the next theorem of a split stage, starting from the facts `g` ends with."""
+    ng = Gen(name, env4=g.lvl == 4, env3=g.lvl >= 3, lvl=g.lvl)
+    internal = lambda v: re.search(r"\bn[1-9]\d*\b", lean_val(v) if not isinstance(v, str) else v)
+    ng.regs = {r: v for r, v in g.regs.items() if not internal(v)}
+    ng.acc = {d: v for d, v in g.acc.items() if not internal(v)}
+    ng.bytes = {e: v for e, v in g.bytes.items() if not internal(v)}
+    ng.words = {e: v for e, v in g.words.items() if not internal(v)}
+    ng.sv = dict(g.sv)
+    ng.mbf = dict(g.mbf)
+    ng.tbl = dict(g.tbl)
+    return ng
+
+
+def stage_e(i, part):
+    """One pass of the table loop, for pair `i`, in three theorems: the setup and the doubling
+    (`part` "a"), the first four additions ("b"), and the last four and the copies out ("c")."""
     P = f"(P{i}X, P{i}Y, P{i}Z)"
     lt = f"hP{i}"
+    pts = "{P0X P0Y P0Z P1X P1Y P1Z : Nat}"
+
+    def info_of(g, off, end, title, keep=None):
+        info = {
+            "end": end, "name": f"pv_stE{i}{part}", "title": f"the table of pair {i}, {title}",
+            "doc": f"One pass of the table loop: the odd multiples `P + j·2P` of pair {i}'s point, at "
+                   f"0x{0x450 + 0x480 * i:X}. This part: {title}.",
+            "thmdoc": f"**The table of pair {i}, {title}**, from 0x{off:X} to 0x{end:X}.",
+            "params": "{B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} " + pts + " " + params_of(g, off)
+                      + f" (hP{i} : PtLt {P})",
+            "intro": ["have t0 : Steps n0 n0 := .refl n0",
+                      "have fR0 : ∀ x, PvR B x → n0.mem x = n0.mem x := fun _ _ => rfl"]
+                     + [f"have g0_{r} : reg n0 ({r} : Fin 32) = reg n0 ({r} : Fin 32) := rfl" for r in (3, 4)],
+            # Each part imports the one before so that `lake` builds them one at a time: each needs
+            # several GB, and CI runners have 16 GB.
+            "import": {("0", "a"): "C3BootProofs.Proofs.Pv384Tbl", ("0", "b"): "C3BootProofs.Proofs.Pv384E0a",
+                       ("0", "c"): "C3BootProofs.Proofs.Pv384E0b", ("1", "a"): "C3BootProofs.Proofs.Pv384E0c",
+                       ("1", "b"): "C3BootProofs.Proofs.Pv384E1a",
+                       ("1", "c"): "C3BootProofs.Proofs.Pv384E1b"}[(str(i), part)],
+        }
+        if keep is not None:
+            info["only"] = {"regs": {2, 3, 4, 18, 19, 20, 21, 22, 23, 25}, "acc": keep}
+        return info
+
+    g = Gen(f"E{i}a", env4=True)
     g.regs = {2: S(0), 18: S(0x17A4 + 0xC0 * i), 19: C(i), 20: C(2), 21: C(0x480), 22: S(0x450), 23: C(0x3FCC4600),
               25: S(0xD80)}
     for r in (3, 4):
@@ -1193,13 +1274,13 @@ def stage_e(i):
     g.acc.update(pt_acc(0x330, "(P1X, P1Y, P1Z)"))
     g.acc.update({0x300: "U1", 0x3C0: "U2"})
     if i == 1:
-        for j in range(8):
-            g.acc.update(pt_acc(0x450 + 0x90 * j, f"tblPt (P0X, P0Y, P0Z) {j}"))
+        g.tbl = {0x450: ("tblPt (P0X, P0Y, P0Z)", 8)}
     start = 0x7F4
     if i == 0:
         g.regs = {r: v for r, v in g.regs.items() if r not in (19, 20, 21, 22)}
         start = 0x7E4
-    params = params_of(g, start)
+    g0 = g
+    params_a = params_of(g, start)
     o = Ops(g)
     if i == 0:
         g.block(0x7E4, 0x7F0)
@@ -1212,32 +1293,42 @@ def stage_e(i):
     g.block(0x830, 0x850); o.mc(0x850, 0xE10, 0x1294, 0x480)
     g.block(0x858, 0x868); o.pd(0x868, 0x1714, 0xD50, P, lt)
     g.block(0x870, 0x884); o.mc(0x884, 0x1294, 0xD50, 0x90)
-    o.branch(0x88C)
-    for j in range(8):
-        g.block(0x88E, 0x89E); o.mc(0x89E, 0xE10 + 0x90 * j, 0x1294, 0x90)
-        g.block(0x8A6, 0x8B6)
-        o.pa(0x8B6, 0x1294, 0x1714, f"tblPt {P} {j + 1}", f"tblPt_lt {lt} {j}", f"ptDblT_lt {P}")
-        g.block(0x8BE, 0x8C6); o.branch(0x8C6)
+    end_a = o.branch(0x88C)
+    if part == "a":
+        info = info_of(g0, start, end_a, "the setup and the doubling")
+        info["params"] = info["params"].replace(params_of(g0, start), params_a)
+        return g, info
+
+    def loop(g, js):
+        o = Ops(g)
+        for j in js:
+            g.block(0x88E, 0x89E); o.mc(0x89E, 0xE10 + 0x90 * j, 0x1294, 0x90)
+            g.block(0x8A6, 0x8B6)
+            o.pa(0x8B6, 0x1294, 0x1714, f"tblPt {P} {j + 1}", f"tblPt_lt {lt} {j}", f"ptDblT_lt {P}")
+            g.block(0x8BE, 0x8C6); end = o.branch(0x8C6)
+        return end
+
+    g = fresh(g, f"E{i}b")
+    params_b = params_of(g, end_a)
+    end_b = loop(g, range(4))
+    if part == "b":
+        info = info_of(g, end_a, end_b, "the first four additions")
+        info["params"] = "{B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} " + pts + " " + params_b + f" (hP{i} : PtLt {P})"
+        return g, info
+    g = fresh(g, f"E{i}c")
+    params_c = params_of(g, end_b)
+    loop(g, range(4, 8))
+    o = Ops(g)
+    o.mktbl(0xE10, f"tblPt {P}")
     g.block(0x8C8, 0x8E0); o.mc(0x8E0, 0x1294, 0xE10, 0x480)
     g.block(0x8E8, 0x8FA); o.mc(0x8FA, 0x450 + 0x480 * i, 0x1294, 0x480)
     g.block(0x902, 0x904); end = o.branch(0x904)
     keep = {0x120, 0x150, 0x180, 0x1B0, 0x1E0, 0x210, 0x1834, 0x18F4, 0x300, 0x3C0}
     keep |= {0x17A4 + j for j in (0, 0x30, 0x60)} | {0x1864 + j for j in (0, 0x30, 0x60)}
     keep |= {0x270 + j for j in (0, 0x30, 0x60)} | {0x330 + j for j in (0, 0x30, 0x60)}
-    keep |= {0x450 + 0x90 * j + c for j in range(8 * (i + 1)) for c in (0, 0x30, 0x60)}
-    pts = "{P0X P0Y P0Z P1X P1Y P1Z : Nat}"
-    info = {
-        "end": end, "name": f"pv_stE{i}", "title": f"the table of pair {i}",
-        "doc": f"One pass of the table loop: the odd multiples `P + j·2P` of pair {i}'s point, at "
-               f"0x{0x450 + 0x480 * i:X}.",
-        "thmdoc": f"**The table of pair {i}**, from 0x{start:X} to 0x{end:X}.",
-        "params": "{B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} " + pts + " " + params
-                  + f" (hP{i} : PtLt {P})",
-        "intro": ["have t0 : Steps n0 n0 := .refl n0", "have fR0 : ∀ x, PvR B x → n0.mem x = n0.mem x := fun _ _ => rfl"]
-                 + [f"have g0_{r} : reg n0 ({r} : Fin 32) = reg n0 ({r} : Fin 32) := rfl" for r in (3, 4)],
-        "import": "C3BootProofs.Proofs.Pv384Lib3",
-        "only": {"regs": {2, 3, 4, 18, 19, 20, 21, 22, 23, 25}, "acc": keep},
-    }
+    info = info_of(g, end_b, end, "the last four additions and the copies out", keep)
+    info["only"]["tbl"] = {0x450 + 0x480 * t for t in range(i + 1)}
+    info["params"] = "{B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} " + pts + " " + params_c + f" (hP{i} : PtLt {P})"
     return g, info
 
 
@@ -1257,9 +1348,7 @@ def stage_f(i):
     for c, P in ((0x17A4, "(P0X, P0Y, P0Z)"), (0x1864, "(P1X, P1Y, P1Z)"), (0x270, "(P0X, P0Y, P0Z)"),
                  (0x330, "(P1X, P1Y, P1Z)")):
         g.acc.update(pt_acc(c, P))
-    for t, P in ((0, "(P0X, P0Y, P0Z)"), (1, "(P1X, P1Y, P1Z)")):
-        for j in range(8):
-            g.acc.update(pt_acc(0x450 + 0x480 * t + 0x90 * j, f"tblPt {P} {j}"))
+    g.tbl = {0x450: ("tblPt (P0X, P0Y, P0Z)", 8), 0x8D0: ("tblPt (P1X, P1Y, P1Z)", 8)}
     if i == 1:
         ds0 = "wnafGo (n3fm U1 1) 0x180 0x181 0 0"
         g.words = {0x1924: ("U", f"BitVec.ofNat 32 ({ds0}).length")}
@@ -1285,7 +1374,6 @@ def stage_f(i):
     g.block(0xA56, 0xA68); o.mc(0xA68, 0x1924 + 0x188 * i, 0xE10, 0x188)
     g.block(0xA70, 0xA72); end = o.branch(0xA72)
     keep = {0x120, 0x150, 0x180, 0x1B0, 0x1E0, 0x210}
-    keep |= {0x450 + 0x90 * j + c for j in range(16) for c in (0, 0x30, 0x60)}
     keep_pairs = {0x1834, 0x18F4, 0x300, 0x3C0} | {c + j for c in (0x17A4, 0x1864, 0x270, 0x330) for j in (0, 0x30, 0x60)}
     if i == 0:
         keep |= keep_pairs
@@ -1298,8 +1386,8 @@ def stage_f(i):
         "params": "{B : Word} {QX QY QZ RM SM ZM U1 U2 : Nat} " + pts + " " + params + f" ({hU} : U{i + 1} < n384)",
         "intro": ["have t0 : Steps n0 n0 := .refl n0", "have fR0 : ∀ x, PvR B x → n0.mem x = n0.mem x := fun _ _ => rfl"]
                  + [f"have g0_{r} : reg n0 ({r} : Fin 32) = reg n0 ({r} : Fin 32) := rfl" for r in (3, 4)],
-        "import": "C3BootProofs.Proofs.Pv384Lib4",
-        "only": {"regs": {2, 3, 4, 9, 18, 19, 20, 21, 22, 23, 24, 25}, "acc": keep},
+        "import": "C3BootProofs.Proofs.Pv384E1c" if i == 0 else "C3BootProofs.Proofs.Pv384F0",
+        "only": {"regs": {2, 3, 4, 9, 18, 19, 20, 21, 22, 23, 24, 25}, "acc": keep, "tbl": {0x450, 0x8D0}},
         "extra": [(f"(wnafGo (n3fm U{i + 1} 1) 0x180 0x181 0 0).length ≤ 0x181", "keep_len")],
     }
     return g, info
@@ -1631,7 +1719,8 @@ def main():
     stage = sys.argv[1]
     g, info = {"B": stage_b, "C0": stage_c0, "CA": stage_ca, "CB": stage_cb, "C2a": stage_c2a,
                "C2b1": lambda: stage_c2b(1), "C2b0": lambda: stage_c2b(0), "D": stage_d,
-               "E0": lambda: stage_e(0), "E1": lambda: stage_e(1), "F0": lambda: stage_f(0),
+               "E0a": lambda: stage_e(0, "a"), "E0b": lambda: stage_e(0, "b"), "E0c": lambda: stage_e(0, "c"),
+               "E1a": lambda: stage_e(1, "a"), "E1b": lambda: stage_e(1, "b"), "E1c": lambda: stage_e(1, "c"), "F0": lambda: stage_f(0),
                "F1": lambda: stage_f(1), "HS": stage_hs, "HA": stage_ha, "HB": stage_hb, "HP": stage_hp, "I1": lambda: stage_i(1),
                "I0": lambda: stage_i(0)}[stage]()
     stmt, proof = g.conclusion(info["end"], info.get("extra", ()), info.get("only"))
