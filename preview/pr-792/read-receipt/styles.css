@@ -141,6 +141,12 @@ button:hover,
   margin-block-start: 1rem;
 }
 
+.intro {
+  margin: 0 0 0.75rem;
+  max-inline-size: 65ch;
+  text-wrap: pretty;
+}
+
 .compose label {
   font-weight: 600;
 }
@@ -373,8 +379,14 @@ progress::-moz-progress-bar {
 /* Word-by-word reading */
 
 .doc.reading {
+  /* Room to bring the last lines up to the middle of the screen. */
+  padding-block-end: 50vh;
   user-select: none;
   -webkit-user-select: none;
+}
+
+/* Taps anywhere advance, so rapid taps mustn't zoom. */
+html:has(.doc.reading) {
   touch-action: manipulation;
 }
 
