@@ -142,6 +142,10 @@ import C3BootProofs.Proofs.SvL3
 import C3BootProofs.Proofs.SvL4
 import C3BootProofs.Proofs.SvL5
 import C3BootProofs.Proofs.SvL6
+import C3BootProofs.Proofs.SvX1
+import C3BootProofs.Proofs.SvX2n
+import C3BootProofs.Proofs.SvX2z
+import C3BootProofs.Proofs.SvX2c
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main

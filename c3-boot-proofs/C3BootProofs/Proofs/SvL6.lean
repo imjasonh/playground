@@ -85,13 +85,13 @@ theorem sv_l6 {B out bp rootp dg lp ll rp rl kp x8 x9 x22 x23 x24 x25 : Word} {v
     (tb_in : SvIn B (rp) (rl).toNat)
     (kb_in : SvIn B kp 0x41)
     (D0 : P2Data n0.mem) :
-    (¬ (n0.mem kp = BitVec.ofNat 8 4 ∧ GsOk n0.mem kp ∧ ∃ tl9, derOptRes 0xA3 (memBytes n0.mem (rp) (rl).toNat) = some (.ok tl9) ∧ (rl) - BitVec.ofNat 32 (tl9.header + tl9.len) = 0 ∧ ∃ tl25, derElement 0x30 (memBytes n0.mem ((rp) + BitVec.ofNat 32 tl9.header) (BitVec.ofNat 32 tl9.len).toNat) = .ok tl25 ∧ (BitVec.ofNat 32 tl9.len) - BitVec.ofNat 32 (tl25.header + tl25.len) = 0 ∧ True) ∧ SvErrRet B out v n0) ∨
-    (n0.mem kp = BitVec.ofNat 8 4 ∧
-    GsOk n0.mem kp ∧
+    (¬ ((n0.mem kp = BitVec.ofNat 8 4) ∧ (GsOk n0.mem kp) ∧ ∃ tl9, derOptRes 0xA3 (memBytes n0.mem (rp) (rl).toNat) = some (.ok tl9) ∧ ((rl) - BitVec.ofNat 32 (tl9.header + tl9.len) = 0) ∧ ∃ tl25, derElement 0x30 (memBytes n0.mem ((rp) + BitVec.ofNat 32 tl9.header) (BitVec.ofNat 32 tl9.len).toNat) = .ok tl25 ∧ ((BitVec.ofNat 32 tl9.len) - BitVec.ofNat 32 (tl25.header + tl25.len) = 0) ∧ True) ∧ SvErrRet B out v n0) ∨
+    ((n0.mem kp = BitVec.ofNat 8 4) ∧
+    (GsOk n0.mem kp) ∧
     ∃ tl9, derOptRes 0xA3 (memBytes n0.mem (rp) (rl).toNat) = some (.ok tl9) ∧
-    (rl) - BitVec.ofNat 32 (tl9.header + tl9.len) = 0 ∧
+    ((rl) - BitVec.ofNat 32 (tl9.header + tl9.len) = 0) ∧
     ∃ tl25, derElement 0x30 (memBytes n0.mem ((rp) + BitVec.ofNat 32 tl9.header) (BitVec.ofNat 32 tl9.len).toNat) = .ok tl25 ∧
-    (BitVec.ofNat 32 tl9.len) - BitVec.ofNat 32 (tl25.header + tl25.len) = 0 ∧
+    ((BitVec.ofNat 32 tl9.len) - BitVec.ofNat 32 (tl25.header + tl25.len) = 0) ∧
     ∃ n', Steps n0 n' ∧
         St n'.mem SV n' 0x4EA (reg n') ∧
         SvCode n'.mem ∧

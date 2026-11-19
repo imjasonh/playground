@@ -79,12 +79,12 @@ theorem sv_l4 {B out bp rootp dg lp ll rp rl sgl orl orp trp tcl sgp arp arl trl
     (w0_180 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x180) = rp)
     (w0_184 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x184) = rl)
     (tb_in : SvIn B (rp) (rl).toNat) :
-    (¬ (∃ tl6, derElement 0x30 (memBytes n0.mem (rp) (rl).toNat) = .ok tl6 ∧ ∃ tl13, derElement 0x30 (memBytes n0.mem ((rp) + BitVec.ofNat 32 (tl6.header + tl6.len)) ((rl) - BitVec.ofNat 32 (tl6.header + tl6.len)).toNat) = .ok tl13 ∧ ∃ tm22 rs22, readTime (memBytes n0.mem (((rp) + BitVec.ofNat 32 (tl6.header + tl6.len)) + BitVec.ofNat 32 tl13.header) (tl13.len)) = some (tm22, rs22) ∧ ∃ tm31 rs31, readTime rs22 = some (tm31, rs31) ∧ rs31 = [] ∧ True) ∧ SvErrRet B out v n0) ∨
+    (¬ (∃ tl6, derElement 0x30 (memBytes n0.mem (rp) (rl).toNat) = .ok tl6 ∧ ∃ tl13, derElement 0x30 (memBytes n0.mem ((rp) + BitVec.ofNat 32 (tl6.header + tl6.len)) ((rl) - BitVec.ofNat 32 (tl6.header + tl6.len)).toNat) = .ok tl13 ∧ ∃ tm22 rs22, readTime (memBytes n0.mem (((rp) + BitVec.ofNat 32 (tl6.header + tl6.len)) + BitVec.ofNat 32 tl13.header) (tl13.len)) = some (tm22, rs22) ∧ ∃ tm31 rs31, readTime rs22 = some (tm31, rs31) ∧ (rs31 = []) ∧ True) ∧ SvErrRet B out v n0) ∨
     (∃ tl6, derElement 0x30 (memBytes n0.mem (rp) (rl).toNat) = .ok tl6 ∧
     ∃ tl13, derElement 0x30 (memBytes n0.mem ((rp) + BitVec.ofNat 32 (tl6.header + tl6.len)) ((rl) - BitVec.ofNat 32 (tl6.header + tl6.len)).toNat) = .ok tl13 ∧
     ∃ tm22 rs22, readTime (memBytes n0.mem (((rp) + BitVec.ofNat 32 (tl6.header + tl6.len)) + BitVec.ofNat 32 tl13.header) (tl13.len)) = some (tm22, rs22) ∧
     ∃ tm31 rs31, readTime rs22 = some (tm31, rs31) ∧
-    rs31 = [] ∧
+    (rs31 = []) ∧
     ∃ n', Steps n0 n' ∧
         St n'.mem SV n' 0x322 (reg n') ∧
         SvCode n'.mem ∧

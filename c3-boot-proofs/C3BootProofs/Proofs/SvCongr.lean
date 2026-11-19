@@ -365,4 +365,59 @@ theorem br_bne_byte_f {b : BitVec 8} {n : Nat} (hn : n < 256) (h : b = BitVec.of
 theorem SvIn.r0 {B p : Word} {n : Nat} (h : SvIn B p n) (hn : 0 < n) : SvR B p := by
   have := (h.sep.sub (c := 0) (l := 1) (by omega)).symm; rwa [add_ofNat_zero] at this
 
+theorem oid_ok_content {L : Bytes} {rp p l : Word} (h : derContent rp (derOid L) = .ok (p, l)) :
+    ∃ t, derOid L = .ok t ∧ p = rp + BitVec.ofNat 32 t.header ∧ l = BitVec.ofNat 32 t.len := by
+  cases ho : derOid L with
+  | error e => rw [ho] at h; cases h
+  | ok t => rw [ho] at h; simp only [derContent, Except.ok.injEq, Prod.mk.injEq] at h; exact ⟨t, rfl, h.1.symm, h.2.symm⟩
+
+/-- An OID read from bytes outside the stack starts at a nonzero address. -/
+theorem SvIn.oid_ne {B rp rl p l : Word} {M : Word → BitVec 8} (h : SvIn B rp rl.toNat)
+    (ho : derContent rp (derOid (memBytes M rp rl.toNat)) = .ok (p, l)) : p ≠ 0 := by
+  obtain ⟨t, ht, hp, -⟩ := oid_ok_content ho
+  rw [hp]; exact h.ok_ne (derOid_ok_elem ht)
+
+/-- The OID's content, outside the stack. -/
+theorem SvIn.oidIn {B rp rl p l : Word} {M : Word → BitVec 8} (h : SvIn B rp rl.toNat)
+    (ho : derContent rp (derOid (memBytes M rp rl.toNat)) = .ok (p, l)) : SvIn B p l.toNat := by
+  obtain ⟨t, ht, hp, hl⟩ := oid_ok_content ho
+  rw [hp, hl]; exact h.contentW (derOid_ok_elem ht)
+
+theorem content_ok_elem {L : Bytes} {rp p l : Word} {tag : Nat} (h : derContent rp (derElement tag L) = .ok (p, l)) :
+    ∃ t, derElement tag L = .ok t ∧ p = rp + BitVec.ofNat 32 t.header ∧ l = BitVec.ofNat 32 t.len := by
+  cases ho : derElement tag L with
+  | error e => rw [ho] at h; cases h
+  | ok t => rw [ho] at h; simp only [derContent, Except.ok.injEq, Prod.mk.injEq] at h; exact ⟨t, rfl, h.1.symm, h.2.symm⟩
+
+/-- An element's content read from bytes outside the stack, as a slice. -/
+theorem SvIn.contentIn {B rp rl p l : Word} {M : Word → BitVec 8} {tag : Nat} (h : SvIn B rp rl.toNat)
+    (ho : derContent rp (derElement tag (memBytes M rp rl.toNat)) = .ok (p, l)) : SvIn B p l.toNat := by
+  obtain ⟨t, ht, hp, hl⟩ := content_ok_elem ho
+  rw [hp, hl]; exact h.contentW ht
+
+theorem sub_ofNat_toNat {x y : Word} (h : y.toNat ≤ x.toNat) : x - y = BitVec.ofNat 32 (x.toNat - y.toNat) := by
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_sub, BitVec.toNat_ofNat]
+  have := x.isLt; have := y.isLt; omega
+
+theorem bool_ok_elem {L : Bytes} {r : Except DerError DerTlv} (h : derBoolOf L r = .ok ()) : ∃ t, r = .ok t := by
+  cases r with
+  | error e => simp [derBoolOf] at h
+  | ok t => exact ⟨t, rfl⟩
+
+/-- `Der::boolean_true`'s error word, masked to a byte, is not 0xFF. -/
+theorem derErr_ff_ne (e : DerError) :
+    ((derErrByte e).zeroExtend 32 &&& BitVec.ofNat 32 0xFF) + BitVec.ofNat 32 0xFFFFFF01 ≠ 0 := by
+  cases e <;> decide
+
+/-- No element reads from no bytes. -/
+theorem content_empty {M : Word → BitVec 8} {rp p x : Word} {tag : Nat} {r : Word × Word}
+    (h0 : x = 0) : derContent rp (derElement tag (memBytes M p x.toNat)) ≠ .ok r := by
+  subst h0; intro h; cases h
+
+theorem toNat_pos_of_ne {x : Word} (h : x ≠ 0) : 0 < x.toNat := by
+  rcases Nat.eq_zero_or_pos x.toNat with e | e
+  · exact absurd (BitVec.eq_of_toNat_eq (by rw [e]; rfl)) h
+  · exact e
+
 end C3.RV32.Sv

@@ -67,13 +67,13 @@ theorem sv_l3 {B out bp rootp dg lp ll rp rl sgl orl orp trl trp tcl sgp : Word}
     (w0_180 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x180) = rp)
     (w0_184 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x184) = rl)
     (tb_in : SvIn B (rp) (rl).toNat) :
-    (¬ (∃ tl2, derElement 2 (memBytes n0.mem (rp) (rl).toNat) = .ok tl2 ∧ ∃ ip2 il2, derPosIntOf (memBytes n0.mem (rp) (rl).toNat) (rp) (.ok tl2) = .ok (ip2, il2) ∧ (il2).toNat ≤ 20 ∧ ∃ tl9, derElement 0x30 (memBytes n0.mem ((rp) + BitVec.ofNat 32 (tl2.header + tl2.len)) ((rl) - BitVec.ofNat 32 (tl2.header + tl2.len)).toNat) = .ok tl9 ∧ ∃ op19 ol19, derAlgOf n0.mem ((rp) + BitVec.ofNat 32 (tl2.header + tl2.len)) (tl9.header + tl9.len) = .ok ((op19, ol19), none) ∧ memBytes n0.mem op19 ol19 = memBytes n0.mem (BitVec.ofNat 32 0x3FCC4840) 8 ∧ True) ∧ SvErrRet B out v n0) ∨
+    (¬ (∃ tl2, derElement 2 (memBytes n0.mem (rp) (rl).toNat) = .ok tl2 ∧ ∃ ip2 il2, derPosIntOf (memBytes n0.mem (rp) (rl).toNat) (rp) (.ok tl2) = .ok (ip2, il2) ∧ ((il2).toNat ≤ 20) ∧ ∃ tl9, derElement 0x30 (memBytes n0.mem ((rp) + BitVec.ofNat 32 (tl2.header + tl2.len)) ((rl) - BitVec.ofNat 32 (tl2.header + tl2.len)).toNat) = .ok tl9 ∧ ∃ op19 ol19, derAlgOf n0.mem ((rp) + BitVec.ofNat 32 (tl2.header + tl2.len)) (tl9.header + tl9.len) = .ok ((op19, ol19), none) ∧ (memBytes n0.mem op19 ol19 = memBytes n0.mem (BitVec.ofNat 32 0x3FCC4840) 8) ∧ True) ∧ SvErrRet B out v n0) ∨
     (∃ tl2, derElement 2 (memBytes n0.mem (rp) (rl).toNat) = .ok tl2 ∧
     ∃ ip2 il2, derPosIntOf (memBytes n0.mem (rp) (rl).toNat) (rp) (.ok tl2) = .ok (ip2, il2) ∧
-    (il2).toNat ≤ 20 ∧
+    ((il2).toNat ≤ 20) ∧
     ∃ tl9, derElement 0x30 (memBytes n0.mem ((rp) + BitVec.ofNat 32 (tl2.header + tl2.len)) ((rl) - BitVec.ofNat 32 (tl2.header + tl2.len)).toNat) = .ok tl9 ∧
     ∃ op19 ol19, derAlgOf n0.mem ((rp) + BitVec.ofNat 32 (tl2.header + tl2.len)) (tl9.header + tl9.len) = .ok ((op19, ol19), none) ∧
-    memBytes n0.mem op19 ol19 = memBytes n0.mem (BitVec.ofNat 32 0x3FCC4840) 8 ∧
+    (memBytes n0.mem op19 ol19 = memBytes n0.mem (BitVec.ofNat 32 0x3FCC4840) 8) ∧
     ∃ n', Steps n0 n' ∧
         St n'.mem SV n' 0x266 (reg n') ∧
         SvCode n'.mem ∧
