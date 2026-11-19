@@ -474,4 +474,29 @@ theorem hasher_init_f {M M0 : Word → BitVec 8} {B : Word}
   · rw [show (0x60 : Word) = BitVec.ofNat 32 0x60 from rfl, add_ofNat_assoc, hlo]; rfl
   · rw [show (0x64 : Word) = BitVec.ofNat 32 0x64 from rfl, add_ofNat_assoc, hhi]; rfl
 
+/-- The first 32 bytes of `L`, each cut to a byte. -/
+def b32 (L : Bytes) : Bytes := (List.range 32).map fun j => (BitVec.ofNat 8 (L.getD j 0)).toNat
+
+theorem zext_lo8 (b : BitVec 8) : (b.zeroExtend 32).extractLsb' 0 8 = b := by
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.extractLsb'_toNat, BitVec.toNat_setWidth, Nat.shiftRight_zero]
+  have := b.isLt
+  omega
+
+/-- 32 bytes of the frame that hold the first 32 bytes of `L`. -/
+theorem join32 {M : Word → BitVec 8} {B : Word} {L : Bytes} {c : Nat}
+    (h0 : M (B + 0x21A0 + BitVec.ofNat 32 c) = BitVec.ofNat 8 (L.getD 0 0))
+    (h1 : ∀ j, j < 31 → M (B + 0x21A0 + BitVec.ofNat 32 (c + 1 + j)) = BitVec.ofNat 8 (L.getD (1 + j) 0)) :
+    memBytes M (B + 0x21A0 + BitVec.ofNat 32 c) 32 = b32 L := by
+  unfold memBytes b32
+  apply List.map_congr_left
+  intro j hj
+  rw [List.mem_range] at hj
+  rw [add_ofNat_assoc]
+  rcases j with _ | j
+  · rw [Nat.add_zero, h0]
+  · have := h1 j (by omega)
+    rw [show c + 1 + j = c + (j + 1) by omega, show 1 + j = j + 1 by omega] at this
+    rw [this]
+
 end C3.RV32.Sv

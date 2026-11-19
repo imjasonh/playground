@@ -1886,6 +1886,44 @@ class Gen:
         self.frame_after(k, [(oc, 32)], {})
         self.digest = (k, oc, f"sha256 ({msg})")
 
+    def rfi(self, off, pp, np, inp, ha7):
+        """`merkle::root_from_inclusion` with the digest at 0x1380 as the leaf
+        hash and the result at 0x420; returns k and the spec's value."""
+        kd, ocd, lh = self.digest
+        assert ocd == 0x1380 and kd == self.k
+        k = self.k = self.k + 1
+        a = [lean_val(self.regs[r]) for r in (11, 12, 13, 14)]
+        self.call_head(k, off, "sv_rfiF", f"(oc := 0x420) (lc := 0x1380) (np := {np})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"R{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (S2.sv F KS fR{k-1}) (RK0.sv F fR{k-1}) KS RS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, 0x420)} {self.reg_is(k - 1, 15, 0x1380)} g{k-1}_16 {ha7} (by decide) (by decide) {inp}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [g{k-1}_11, g{k-1}_12, g{k-1}_13, g{k-1}_14, D{kd}, sv_mbRo2 RS fR{k-1} {inp}] at R{k}")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        return k, f"rootFromInclusion (pair64 ({a[0]}) ({a[1]})) (pair64 ({a[2]}) ({a[3]})) ({lh}) (memBytes M0 ({pp}) ({np}))"
+
+    def a32eq(self, off, oc, oc2, post=()):
+        """`<[u8; 32]>::eq` of the frame's bytes at `oc` and `oc2`; returns k.
+        The result in `a0` is left to the caller. `post` gets k and returns
+        lines that use the facts before the call."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_a32eqF", f"(oc := 0x{oc:X}) (oc2 := 0x{oc2:X})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"a0_{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, oc)} {self.reg_is(k - 1, 11, oc2)} (by decide) (by decide)")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        for line in (post(k) if post else []):
+            self.emit(line)
+        self.frame_after(k, [], {})
+        return k
+
     def branch(self, off, taken, why):
         """A branch whose direction `why` proves: a term for `reg == reg` or its negation."""
         text, ln = INSTR[off]
@@ -7170,20 +7208,31 @@ def stage_cr1(eqhi):
     return g, info
 
 
+def rk_start(g):
+    """After the entry's index check at 0x300E: `s7` and `s9` hold the index,
+    `s0` the checkpoint's fields at offset 0x1020, whose root is at 0x1048."""
+    params = cs_start(g)
+    params = [q for q in params if not (q.startswith("(g0_23 :") or q.startswith("(g0_25 :"))]
+    g.regs[23] = ("U", "lih")
+    g.regs[25] = ("U", "lil")
+    g.regs[8] = ("S", 0x1020)
+    rb = "((BitVec.ofNat 8 (rt.getD 0 0)).zeroExtend 32).extractLsb' 0 8"
+    g.bytes[0x1048] = rb
+    g.ranges[0x1049] = (31, "BitVec.ofNat 8 (rt.getD (1 + j) 0)")
+    params += ["(g0_23 : reg n0 (23 : Fin 32) = lih)", "(g0_25 : reg n0 (25 : Fin 32) = lil)",
+               "(g0_8 : reg n0 (8 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1020)",
+               f"(b0_1048 : n0.mem ({fa(0x1048)}) = {rb})",
+               "(q0_1049 : ∀ j, j < 31 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1049 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0))",
+               "(S2 : SvSha2Code M0)", "(KS : SvK2Sep B)", "(RS : SvRoSep B)", "(RK0 : SvRkCode M0)"]
+    return params
+
+
 def stage_rl():
     """From 0x300E to 0x30EC: the log entry's leaf hash."""
     g = Gen("Rl")
     g.generic_alu = True
-    params = cs_start(g)
-    params = [q for q in params if not q.startswith("(g0_23 :")]
-    g.regs[23] = ("U", "lih")
-    g.regs[25] = ("U", "lil")
-    g.regs[8] = ("S", 0x1020)
-    params = [q for q in params if not q.startswith("(g0_25 :")]
-    params += ["(g0_23 : reg n0 (23 : Fin 32) = lih)", "(g0_25 : reg n0 (25 : Fin 32) = lil)",
-               "(g0_8 : reg n0 (8 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1020)",
-               "(S2 : SvSha2Code M0)", "(KS : SvK2Sep B)", "(RS : SvRoSep B)", "(RK0 : SvRkCode M0)",
-               "(dgi_in : SvIn B w84 32)", "(sig_in : SvIn B w68 w64.toNat)", "(crt_in : SvIn B w6c x26.toNat)"]
+    params = rk_start(g)
+    params += ["(dgi_in : SvIn B w84 32)", "(sig_in : SvIn B w68 w64.toNat)", "(crt_in : SvIn B w6c x26.toNat)"]
     ro = "(Or.inr ⟨by decide, by decide⟩)"
     g.store(0x300E, "sb")
     g.block(0x3012, 0x3022)
@@ -7222,12 +7271,87 @@ def stage_rl():
     g.fin(0x30E4, 0x1380)
     kd, oc, ex = g.digest
     g.extra.append((f"memBytes n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x{oc:X}) 32 = {ex}", f"D{kd}"))
-    stmt, proof = finish(g, 0x30EC, sorted(set(CL_KEEP_REGS + [8, 23])), set(g.words) - {0x480, 0x484}, set())
+    stmt, proof = finish(g, 0x30EC, sorted(set(CL_KEEP_REGS + [8, 23])), set(g.words) - {0x480, 0x484})
     info = {"name": "sv_rl", "title": "the log entry's leaf hash",
             "doc": "From 0x300E to 0x30EC: SHA-256 of the entry's canonical body, built from its constant parts and "
             "the base64 of the image digest, the image signature, and the leaf certificate, goes to offset 0x1380.",
             "params": params, "stmt": stmt, "proof": proof, "binders": CS_BINDERS.replace("op ol : Word}", "op ol lih lil : Word}"),
             "start": 0x300E, "import": "C3BootProofs.Proofs.SvRk"}
+    return g, info
+
+
+def stage_rm():
+    """From 0x30EC to 0x316E: the inclusion proof's root is the checkpoint's."""
+    g = Gen("Rm")
+    g.generic_alu = True
+    params = rk_start(g)
+    g.digest = (0, 0x1380, "lh")
+    g.pinned.add("D0")
+    params += ["(D0 : memBytes n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 32 = lh)",
+               "(hpp : memLoad32 M0 (bp + 0x10) = pp)", "(hpl : memLoad32 M0 (bp + 0x14) = pl)",
+               "(pp_in4 : SvIn B (bp + 0x10) 4)", "(pl_in4 : SvIn B (bp + 0x14) 4)",
+               "(a_pp : (bp + 0x10).toNat % 4 = 0)", "(a_pl : (bp + 0x14).toNat % 4 = 0)",
+               "(pp_in : SvIn B pp pl.toNat)"]
+    g.load_mem(0x30EC, "pp", "hpp", "pp_in4", "a_pp")
+    g.carry_digest()
+    g.load_mem(0x30F0, "pl", "hpl", "pl_in4", "a_pl")
+    g.carry_digest()
+    g.block(0x30F4, 0x3106)
+    g.carry_digest()
+    g.load(0x3106, "lw")
+    g.carry_digest()
+    g.load(0x3108, "lw")
+    g.carry_digest()
+    k, ex = g.rfi(0x310A, "pp", "(pl).toNat", "(Or.inl pp_in)", f"(by rw [g{g.k}_17, ofNat_toNat_self])")
+    g.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+    g.emit(f"  rw [hr{k}] at R{k}")
+    g.emit(f"  rcases r{k} with _ | root{k}")
+    g.sc.append(("eq", ex, f"some root{k}", [f"root{k}"], f"hr{k}"))
+
+    def none(sub):
+        sub.emit(f"  obtain ⟨z{k}, y{k}⟩ := R{k}")
+        sub.frame_after(k, [(0x420, 33)], {}, {0x420: ("(1 : BitVec 8)", f"z{k}"), 0x421: ("(0x1B : BitVec 8)", f"y{k}")})
+        sub.load(0x3112, "lbu")
+        sub.load(0x3116, "lbu")
+        sub.branch(0x311A, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.block(0x311C, 0x311E)
+        sub.jump(0x311E)
+        sub.fail(sub.fail_proof(("eq", f"hr{k}")))
+    g.fork(none)
+    g.emit(f"  obtain ⟨z{k}, rb{k}⟩ := R{k}")
+    g.pinned.add(f"rb{k}")
+    g.frame_after(k, [(0x420, 33)], {}, {0x420: ("(0 : BitVec 8)", f"z{k}")})
+    g.ranges[0x421] = (32, f"BitVec.ofNat 8 (root{k}.getD j 0)")
+    g.emit(f"  have q{k}_421 : ∀ j, j < 32 → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x421 + j)) = BitVec.ofNat 8 (root{k}.getD j 0) :=")
+    g.emit(f"    fun j hj => by rw [← add_ofNat_assoc]; exact memBytes_range rb{k} j hj")
+    g.load(0x3112, "lbu")
+    g.load(0x3116, "lbu")
+    g.branch(0x311A, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.block(0x312A, 0x3134)
+    g.block(0x3134, 0x3142)
+    g.mc(0x3142, 0x1481, 0x422, 0x1F)
+    g.block(0x314A, 0x3152)
+    g.store(0x3152, "sb")
+    g.block(0x3156, 0x3160)
+    ke = g.a32eq(0x3160, 0x1480, 0x1048, lambda k: [
+        f"  rw [join32 b{k-1}_1480 q{k-1}_1481, join32 (b{k-1}_1048.trans (zext_lo8 _)) q{k-1}_1049] at a0_{k}"])
+    eq = f"b32 root{k} = b32 rt"
+
+    def differ(sub):
+        sub.set_a0(ke, 0, "ite_eq_right hroot")
+        sub.branch(0x3168, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.jump(0x316A)
+        sub.fail(sub.fail_proof(("prop", "hroot")))
+    g.prop_check(eq, "hroot", differ)
+    g.set_a0(ke, 1, "ite_eq_left hroot")
+    g.branch(0x3168, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    stmt, proof = finish(g, 0x316E, sorted(set(CL_KEEP_REGS + [8, 23])), set(g.words) - {0x420, 0x424, 0x428, 0x42C})
+    info = {"name": "sv_rm", "title": "the inclusion proof",
+            "doc": "From 0x30EC to 0x316E: `root_from_inclusion` rebuilds a root from the leaf hash at offset 0x1380, the "
+            "entry's index, the checkpoint's size, and the bundle's proof, and the root is the checkpoint's.",
+            "params": params, "stmt": stmt, "proof": proof,
+            "binders": CS_BINDERS.replace("op ol : Word}", "op ol lih lil pp pl : Word}").replace("{rt sg : Bytes}", "{rt sg lh : Bytes}"),
+            "start": 0x30EC, "import": "C3BootProofs.Proofs.SvRk"}
     return g, info
 
 
@@ -7254,7 +7378,7 @@ def main():
                 **{f"Cn{x}": (lambda x=x: stage_cn(x)) for x in ("m", "e", "s")},
                 **{f"Cg{x}": (lambda x=x: stage_cg(x)) for x in range(5)},
                 **{f"Cm{x}": (lambda x=x: stage_cm(x)) for x in CM_DOC}, "Csx": stage_csx,
-                "Cr1e": lambda: stage_cr1(True), "Cr1n": lambda: stage_cr1(False), "Rl": stage_rl}[stage]()
+                "Cr1e": lambda: stage_cr1(True), "Cr1n": lambda: stage_cr1(False), "Rl": stage_rl, "Rm": stage_rm}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
