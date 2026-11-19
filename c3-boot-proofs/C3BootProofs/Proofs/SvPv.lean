@@ -80,3 +80,62 @@ theorem sv_pvF {n : Machine} {B : Word} {off : Nat} {imm o pk ph rp sp' : Word} 
       | (rw [sv2 _ (by decide), r1 _ (by decide)])
 
 end C3.RV32.Sv
+
+namespace C3.RV32.Sv
+
+open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv
+
+def svLpv : List BInstr :=
+  [.lw a0 sp 0x7C, .lw a0 a0 0xFFFFFFF4, .aluImm .add a4 sp 0x100, .lui a1 0x1000, .aluImm .add a1 a1 0x20,
+   .alu .add a1 a1 sp, .aluImm .add a2 x0 0x30, .aluImm .add a3 sp 0xD0]
+
+set_option maxRecDepth 100000 in
+theorem svLpv_end : blockEnd sigstoreVerifyCode 0xDC8 svLpv = some 0xDDE := by decide
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 16000000 in
+/-- **The leaf's signature check**, from 0xDC8 to 0xDE6: `p384_verify_prehash`
+on the issuer's key, the digest at offset 0x1020, and `r` and `s` at
+offsets 0xD0 and 0x100. -/
+theorem sv_lpv {n : Machine} {B q pk : Word} (F : Fr B 0x3830) (E : SvCode n.mem) (PE : PvEnv7 n.mem)
+    (s : St n.mem SV n 0xDC8 (reg n)) (rsp : reg n sp = B + 0x21A0)
+    (w7c : memLoad32 n.mem (B + 0x21A0 + BitVec.ofNat 32 0x7C) = q) (hpk : memLoad32 n.mem (q + 0xFFFFFFF4) = pk)
+    (al : (q + 0xFFFFFFF4).toNat % 4 = 0) (pkIn : SvIn B pk 0x61)
+    (side : PvSide n.mem pk (B + 0x21A0 + BitVec.ofNat 32 0x1020) 48 (B + 0x21A0 + BitVec.ofNat 32 0xD0)
+      (B + 0x21A0 + BitVec.ofNat 32 0x100)) :
+    (pvModel n.mem pk (B + 0x21A0 + BitVec.ofNat 32 0x1020) 48 (B + 0x21A0 + BitVec.ofNat 32 0xD0)
+      (B + 0x21A0 + BitVec.ofNat 32 0x100) = none ∧ Panics n) ∨
+    (∃ v, pvModel n.mem pk (B + 0x21A0 + BitVec.ofNat 32 0x1020) 48 (B + 0x21A0 + BitVec.ofNat 32 0xD0)
+      (B + 0x21A0 + BitVec.ofNat 32 0x100) = some v ∧
+      ∃ n', Steps n n' ∧ St n'.mem SV n' 0xDE6 (reg n') ∧ reg n' sp = B + 0x21A0 ∧
+        (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧
+        reg n' a0 = v ∧ SvKeepL B n.mem n'.mem [] ∧ (∀ x, SvR B x → n'.mem x = n.mem x)) := by
+  have hFh := F.hi
+  obtain ⟨n1, c1, u1⟩ := s.block svLpv E.self svLpv_end (by
+    simp +decide only [svLpv, BlockOk, BInstr.ok, BInstr.run, upd, ↓reduceIte, and_true]
+    rw [rsp]
+    refine ⟨sv_al F (c := 0x7C) (by decide) (by decide), ?_⟩
+    rw [show memLoad32 n.mem (B + 0x21A0 + 0x7C) = q from w7c]; exact al)
+  have m1 : n1.mem = n.mem := u1.mem
+  have s1 : St n1.mem SV n1 0xDDE (reg n1) := ⟨u1.pc, rfl, fun _ => rfl⟩
+  have k1 : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n1 q = reg n q :=
+    fun q hq => by rw [u1.regs, runBlock_reg _ _ _ q s.zero (by revert hq; revert q; decide)]
+  have E1 : SvCode n1.mem := by rw [m1]; exact E
+  rcases sv_pvF (pk := pk) (ph := B + 0x21A0 + BitVec.ofNat 32 0x1020) (len := 48)
+      (rp := B + 0x21A0 + BitVec.ofNat 32 0xD0) (sp' := B + 0x21A0 + BitVec.ofNat 32 0x100)
+      F E1 (by rw [m1]; exact PE) s1 sv_at_dde sv_at_de2 (by decide) (by decide) (by rw [k1 sp (by decide), rsp])
+      (by rw [u1.regs]; simp +decide only [svLpv, runBlock, BInstr.run, upd, ↓reduceIte]; rw [rsp]
+          rw [show memLoad32 n.mem (B + 0x21A0 + 0x7C) = q from w7c]; exact hpk)
+      (by rw [u1.regs]; simp +decide only [svLpv, runBlock, BInstr.run, upd, ↓reduceIte]; rw [rsp]; exact sv_hi B 0x1020)
+      (by rw [u1.regs]; simp +decide only [svLpv, runBlock, BInstr.run, upd, ↓reduceIte])
+      (by rw [u1.regs]; simp +decide only [svLpv, runBlock, BInstr.run, upd, ↓reduceIte]; rw [rsp]; rfl)
+      (by rw [u1.regs]; simp +decide only [svLpv, runBlock, BInstr.run, upd, ↓reduceIte]; rw [rsp]; rfl)
+      pkIn.pvSep (by have := pkIn.lo; omega) (sv_pvSep F (by decide)) (sv_pvSep F (by decide)) (sv_pvSep F (by decide))
+      (by rw [sv_at F _ (by decide)]; omega) (by rw [m1]; exact side) with ⟨hn, hp⟩ | ⟨v, hv, n2, c2, s2, sp2, k2, a2, K2, f2⟩
+  · rw [m1] at hn
+    exact .inl ⟨hn, hp.of_steps c1⟩
+  · rw [m1] at hv K2 f2
+    exact .inr ⟨v, hv, n2, c1.trans c2, s2, sp2, fun q hq => by rw [k2 q hq, k1 q (by revert hq; revert q; decide)],
+      a2, K2, f2⟩
+
+end C3.RV32.Sv
