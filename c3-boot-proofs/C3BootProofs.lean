@@ -166,6 +166,7 @@ import C3BootProofs.Proofs.SvL8a
 import C3BootProofs.Proofs.SvImiss
 import C3BootProofs.Proofs.SvIhit
 import C3BootProofs.Proofs.SvIend
+import C3BootProofs.Proofs.SvSha
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main
