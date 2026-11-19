@@ -1,9 +1,9 @@
 import C3BootProofs.Proofs.SvTsa
 
 /-!
-# `sigstore::verify`: the timestamp token's ContentInfo
+# `sigstore::verify`: the timestamp response's status and content type
 
-From 0x2034 to 0x21A0: the timestamp token is a `ContentInfo` sequence with nothing after it, whose first part is a sequence holding the version `INTEGER 0`, and whose content type is signedData.
+From 0x2034 to 0x21A0: the timestamp response is a sequence with nothing after it, its status is a sequence holding only `INTEGER 0` (granted), and its token is a `ContentInfo` whose content type is signedData.
 -/
 
 namespace C3.RV32.Sv

@@ -3870,8 +3870,8 @@ def tsa_rest0(g, at, hname, target):
 
 
 def stage_tsa1():
-    """From 0x2034 to 0x21A0: the timestamp token's `ContentInfo`, its version,
-    and the signedData OID."""
+    """From 0x2034 to 0x21A0: the timestamp response, its status, and the
+    token's signedData OID."""
     g = Gen("Tsa1")
     regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
             19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20)}
@@ -3953,10 +3953,10 @@ def stage_tsa1():
     g.set_a0(ks, 0, "ite_eq_left hsd")
     g.branch(0x219C, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
     stmt, proof = finish(g, 0x21A0, [2, 3, 4, 18, 19, 20, 21, 26, 27], set(g.words), set(g.bytes))
-    info = {"name": "sv_tsa1", "title": "the timestamp token's ContentInfo",
-            "doc": "From 0x2034 to 0x21A0: the timestamp token is a `ContentInfo` sequence with nothing after it, "
-            "whose first part is a sequence holding the version `INTEGER 0`, and whose content type is "
-            "signedData.",
+    info = {"name": "sv_tsa1", "title": "the timestamp response's status and content type",
+            "doc": "From 0x2034 to 0x21A0: the timestamp response is a sequence with nothing after it, its status "
+            "is a sequence holding only `INTEGER 0` (granted), and its token is a `ContentInfo` whose content "
+            "type is signedData.",
             "params": params, "stmt": stmt, "proof": proof, "binders": TSA_BINDERS, "start": 0x2034,
             "import": "C3BootProofs.Proofs.SvTsa"}
     return g, info
