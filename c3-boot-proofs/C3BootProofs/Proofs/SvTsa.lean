@@ -159,6 +159,26 @@ theorem br_m32_t {x : Word} (h : x ≠ 32) : branchTaken .bne (aluEval .add x 0x
 theorem br_m32_f {x : Word} (h : x = 32) : branchTaken .bne (aluEval .add x 0xFFFFFFE0) 0 = false :=
   br_bne_f ((add_m32 x).mpr h)
 
+/-- `snez` of `dg`, ANDed with a flag of 0 or 1, is zero unless both hold. -/
+theorem snez_and_eq {dg f : Word} (hf : f = 0 ∨ f = 1) :
+    aluEval .and (aluEval .sltu 0 dg) f = 0 ↔ ¬ (dg ≠ 0 ∧ f = 1) := by
+  have hs : aluEval .sltu 0 dg = if dg = 0 then 0 else 1 := by
+    by_cases h : dg = 0
+    · rw [h]; rfl
+    · simp only [h, ↓reduceIte]
+      show (if (0 : Word).ult dg then (1 : Word) else 0) = 1
+      rw [ite_eq_left_iff.mpr]
+      intro h'
+      simp only [BitVec.ult, decide_eq_true_eq] at h'
+      exact absurd (toNat_pos_of_ne h) h'
+  rw [hs]
+  rcases hf with rfl | rfl
+  · by_cases h : dg = 0 <;> simp [h, aluEval]
+  · by_cases h : dg = 0
+    · simp [h, aluEval]
+    · simp only [h, ↓reduceIte, aluEval, ne_eq, not_false_eq_true, true_and, not_true_eq_false, iff_false]
+      decide
+
 theorem sv_spA0 (B : Word) : B + 0x21A0 + 0xFFFFFF60 = B + BitVec.ofNat 32 0x2100 := by
   rw [BitVec.add_assoc]; rfl
 
