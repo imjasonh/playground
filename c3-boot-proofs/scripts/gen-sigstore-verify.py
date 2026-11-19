@@ -5464,6 +5464,45 @@ def stage_tst4(kind):
     return g, info
 
 
+def stage_tst5(tag, present):
+    """From 0x2952: the optional `[0]` TSA name (to 0x2970), or from 0x2970 the
+    optional `[1]` extensions and the TSTInfo's end (to 0x29AA)."""
+    g = Gen(f"Tst{5 if tag == 0xA0 else 6}" + ("s" if present else "n"))
+    params = tst_start(g)
+    params.append(f"(hce : derOptRes 0x{tag:X} (memBytes M0 (rp) (rl).toNat) {'≠' if present else '='} none)")
+    if tag == 0xA0:
+        g.block(0x2952, 0x2962)
+        tst_opt(g, 0x2962, 0x1320, 0xA0, present, 0x296A)
+        end = 0x2970
+    else:
+        g.block(0x2970, 0x2980)
+        tst_opt(g, 0x2980, 0x1320, 0xA1, present, 0x2988, inverted=True)
+        g.block(0x299A, 0x29A2)
+        g.load(0x29A2, "lw")
+        rem = lean_val(g.regs[10])
+
+        def trailing(sub):
+            sub.branch(0x29A4, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_f hend")
+            sub.block(0x29A6, 0x29A8)
+            sub.jump(0x29A8)
+            sub.fail(sub.fail_proof(("prop", "hend")), "sv_fail_2c60")
+        g.prop_check(f"{rem} = 0", "hend", trailing)
+        g.branch(0x29A4, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_t hend")
+        end = 0x29AA
+    keep = set(g.words) - {0x424, 0x428, 0x42C, 0x430}
+    stmt, proof = finish(g, end, TST_KEEP, keep, set())
+    if tag == 0xA0:
+        title, doc = "the TSTInfo's TSA name", "the TSTInfo's optional `[0]` TSA name is " + (
+            "present and well formed." if present else "absent.")
+    else:
+        title, doc = "the TSTInfo's extensions", "the TSTInfo's optional `[1]` extensions are " + (
+            "present and well formed" if present else "absent") + ", and nothing follows."
+    info = tst_opt_info(f"sv_tst{5 if tag == 0xA0 else 6}" + ("s" if present else "n"), 0, end, present, title,
+                        f"From 0x{0x2952 if tag == 0xA0 else 0x2970:X} to 0x{end:X}: {doc}")
+    info.update({"params": params, "stmt": stmt, "proof": proof, "start": 0x2952 if tag == 0xA0 else 0x2970})
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -5475,7 +5514,9 @@ def main():
                 **{f"Tsav{x}": (lambda x=x: stage_tsav(x)) for x in ("ct", "md", "other")},
                 "Tsal": stage_tsal, "Tsax": stage_tsax, "Tst1": stage_tst1, "Tst2": stage_tst2,
                 "Tst3n": lambda: stage_tst3(False), "Tst3s": lambda: stage_tst3(True),
-                **{f"Tst4{x}": (lambda x=x: stage_tst4(x)) for x in TST4_DOC}}[stage]()
+                **{f"Tst4{x}": (lambda x=x: stage_tst4(x)) for x in TST4_DOC},
+                "Tst5n": lambda: stage_tst5(0xA0, False), "Tst5s": lambda: stage_tst5(0xA0, True),
+                "Tst6n": lambda: stage_tst5(0xA1, False), "Tst6s": lambda: stage_tst5(0xA1, True)}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

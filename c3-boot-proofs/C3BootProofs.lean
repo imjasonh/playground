@@ -202,6 +202,10 @@ import C3BootProofs.Proofs.SvTst4e1
 import C3BootProofs.Proofs.SvTst4x1
 import C3BootProofs.Proofs.SvTst4nn
 import C3BootProofs.Proofs.SvTst4ns
+import C3BootProofs.Proofs.SvTst5n
+import C3BootProofs.Proofs.SvTst5s
+import C3BootProofs.Proofs.SvTst6n
+import C3BootProofs.Proofs.SvTst6s
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main
