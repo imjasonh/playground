@@ -3564,13 +3564,106 @@ def stage_iend():
             "import": "C3BootProofs.Proofs.SvFail"}
     return g, info
 
+
+# --- after the leaf's signature check -------------------------------------------
+
+DPV_WORDS = [e for e in range(0x24, 0x134, 4) if e not in (0x74, 0x78)]
+DPV_PAIRS = [(0x48, 0x34), (0x44, 0x30), (0x40, 0x2C), (0x3C, 0x28), (0x38, 0x24)]
+DPV_BINDERS = ("{B out bp x21 x26 pv tsp tsl " + " ".join(f"e{i}p e{i}l" for i in range(5)) + " : Word} "
+               + "{" + " ".join(f"w{e:x}" for e in DPV_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+
+
+def seq_fail_2c60(sub, k, oc, dc):
+    """`Der::sequence`'s failing case at 0xE80: the null address, `lw`, `lbu`,
+    `bnez` not taken, and `j` to the exit at 0x2C60."""
+    sub.emit(f"  obtain ⟨z{k}, -⟩ := Er{k} er{k} hr{k}")
+    sub.frame_after(k, [(oc, 16), (dc + 8, 8)], {oc: ("0", f"z{k}")})
+    sub.load(0xE88, "lw")
+    sub.load_any(0xE8C)
+    sub.branch(0xE90, False, f"by rw [g{sub.k}_9, s{sub.k}.zero]; rfl")
+    sub.jump(0xE92)
+    sub.fail(sub.fail_proof(("eq", f"hr{k}")), "sv_fail_2c60")
+
+
+def stage_dpv():
+    """From 0xDE6, after `p384_verify_prehash`: its result, the five policy
+    values against the trust root's, and `Der::sequence` on the timestamp."""
+    g = Gen("Dpv")
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 10: ("U", "pv")}
+    words = {e: f"w{e:x}" for e in DPV_WORDS}
+    params = start(g, regs, words, {("tsp", "tsl"): "ts_in"})
+    for i, (pe, le) in enumerate(DPV_PAIRS):
+        params += [f"(he{i}p : memLoad32 M0 (w80 + 0x{8 * i:X}) = e{i}p)",
+                   f"(he{i}l : memLoad32 M0 (w80 + 0x{8 * i + 4:X}) = e{i}l)",
+                   f"(he{i}p_in : SvIn B (w80 + 0x{8 * i:X}) 4)", f"(he{i}l_in : SvIn B (w80 + 0x{8 * i + 4:X}) 4)",
+                   f"(ae{i}p : (w80 + 0x{8 * i:X}).toNat % 4 = 0)", f"(ae{i}l : (w80 + 0x{8 * i + 4:X}).toNat % 4 = 0)",
+                   f"(p{i}_in : SvRo B w{pe:x} w{le:x}.toNat)", f"(e{i}_in : SvRo B e{i}p e{i}l.toNat)"]
+    params += ["(htsp : memLoad32 M0 (bp + 0x8) = tsp)", "(htsl : memLoad32 M0 (bp + 0xC) = tsl)",
+               "(htsp_in : SvIn B (bp + 0x8) 4)", "(htsl_in : SvIn B (bp + 0xC) 4)",
+               "(atsp : (bp + 0x8).toNat % 4 = 0)", "(atsl : (bp + 0xC).toNat % 4 = 0)"]
+
+    def zero(sub):
+        sub.branch(0xDE6, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hpv)")
+        sub.fail(sub.fail_proof(("prop", "hpv")), "sv_fail_ee2")
+    g.prop_check("pv ≠ 0", "hpv", zero)
+    g.branch(0xDE6, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hpv")
+    for i, (pe, le) in enumerate(DPV_PAIRS):
+        at = 0xDE8 + 0x14 * i
+        g.load(at, "lw")
+        g.load_mem(at + 2, f"e{i}p", f"he{i}p", f"he{i}p_in", f"ae{i}p")
+        g.load_mem(at + 4, f"e{i}l", f"he{i}l", f"he{i}l_in", f"ae{i}l")
+        g.load(at + 6, "lw")
+        g.load(at + 8, "lw")
+        ke = g.seqeq(at + 0xA, f"w{pe:x}", f"w{le:x}.toNat", f"e{i}p", f"e{i}l.toNat", f"p{i}_in", f"e{i}_in",
+                     ha3=f"(by rw [g{g.k}_13, ofNat_toNat_self])", ha1=f"(by rw [g{g.k}_11, ofNat_toNat_self])")
+        hq = f"hq{i}"
+
+        def ne(sub, ke=ke, at=at, hq=hq):
+            sub.set_a0(ke, 0, f"ite_eq_right {hq}")
+            sub.branch(at + 0x12, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+            sub.fail(sub.fail_proof(("prop", hq)), "sv_fail_ef0")
+        g.prop_check(f"memBytes M0 w{pe:x} w{le:x}.toNat = memBytes M0 e{i}p e{i}l.toNat", hq, ne)
+        g.set_a0(ke, 1, f"ite_eq_left {hq}")
+        g.branch(at + 0x12, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.block(0xE4C, 0xE4E)
+    g.load_mem(0xE4E, "tsp", "htsp", "htsp_in", "atsp")
+    g.load_mem(0xE50, "tsl", "htsl", "htsl_in", "atsl")
+    g.block(0xE52, 0xE5A)
+    g.store(0xE5A, "sw")
+    g.store(0xE5C, "sw")
+    g.store(0xE5E, "sw")
+    g.store(0xE60, "sw")
+    g.block(0xE62, 0xE6C)
+    g.store(0xE6C, "sw")
+    g.store(0xE6E, "sw")
+    g.block(0xE70, 0xE80)
+    k, ex, rd = g.seqr(0xE80, 0xA20, 0x1320)
+    t = f"tl{k}"
+    g.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+    g.emit(f"  rcases r{k} with er{k} | {t}")
+    g.sc.append(("eq", ex, f".ok {t}", [t], f"hr{k}"))
+    g.fork(lambda sub: seq_fail_2c60(sub, k, 0xA20, 0x1320))
+    g.seq_ok(k, 0xA20, 0x1320, t, rd)
+    g.load(0xE88, "lw")
+    g.load(0xE8C, "lbu")
+    g.branch(0xE90, True, f"by rw [g{g.k}_9, s{g.k}.zero]; exact br_bne_t ({rd[2]}.ok_ne hr{k})")
+    stmt, proof = finish(g, 0xE96, [2, 3, 4, 8, 9, 18, 19, 20, 21, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "sv_dpv", "title": "the leaf's signature result and the trust root's policy values",
+            "doc": "From 0xDE6 to 0xE96: `p384_verify_prehash`'s result must be nonzero, the leaf's five policy "
+            "values must equal the trust root's, and the timestamp must start with a DER sequence.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": DPV_BINDERS, "start": 0xDE6,
+            "import": "C3BootProofs.Proofs.SvFail2"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
                 **{f"Dp{i}": stage_dpol(i) for i in range(6)}, "Dbc1": stage_dbc1, "Dbc2e": stage_dbc2e, "Dbc2": stage_dbc2, "Dku1": stage_dku1, "Dku2": stage_dku2,
                 "Deku1": stage_deku1, "Deku2": stage_deku2, "Deku3": stage_deku3,
                 "L7": stage_l7, "L8a": stage_l8a,
-                "Imiss": stage_imiss, "Ihit": stage_ihit, "Iend": stage_iend}[stage]()
+                "Imiss": stage_imiss, "Ihit": stage_ihit, "Iend": stage_iend, "Dpv": stage_dpv}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
