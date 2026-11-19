@@ -10,7 +10,7 @@
     <meta name="theme-color" content="#fff3d1" />
     <meta
       name="description"
-      content="Addition flash cards for kids. Pick the right answer of two by swiping, tapping, or pressing the arrow keys."
+      content="Math flash cards for kids: addition, subtraction, multiplication, and division. Pick the right answer of two by swiping, tapping, or pressing the arrow keys."
     />
     <title>Math Cards</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
@@ -26,6 +26,20 @@
     <main class="app">
       <h1 class="visually-hidden">Math Cards</h1>
       <header class="scoreboard">
+        <div class="modes" role="group" aria-label="Problems">
+          <button type="button" class="mode" data-mode="addition" aria-pressed="true">
+            <span aria-hidden="true">+</span>
+            <span class="visually-hidden">Addition</span>
+          </button>
+          <button type="button" class="mode" data-mode="subtraction" aria-pressed="false">
+            <span aria-hidden="true">−</span>
+            <span class="visually-hidden">Subtraction</span>
+          </button>
+          <button type="button" class="mode" data-mode="multiply-divide" aria-pressed="false">
+            <span aria-hidden="true">× ÷</span>
+            <span class="visually-hidden">Multiplication and division</span>
+          </button>
+        </div>
         <dl class="stats">
           <div class="stat stat-answered">
             <dt>Answered</dt>

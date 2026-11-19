@@ -3,6 +3,9 @@ import {describe, test} from 'node:test';
 
 import {
   KINDS,
+  MODES,
+  dealCard,
+  isMode,
   makeCard,
   problemText,
   randomInt,
@@ -99,8 +102,134 @@ describe('addition', () => {
   });
 });
 
+describe('subtraction', () => {
+  test('stays within 100 and leaves at least 1', () => {
+    const rng = seeded(5);
+    for (let i = 0; i < 5000; i++) {
+      const card = makeCard('subtraction', rng);
+      const [a, b] = card.operands;
+      assert.ok(a <= 100 && b >= 1, `${a} − ${b}`);
+      assert.equal(card.answer, a - b);
+      assert.ok(card.answer >= 1, `${a} − ${b}`);
+      assert.equal(card.choices.filter((n) => n === card.answer).length, 1);
+      assert.ok(card.choices.every((n) => n >= 0 && n <= 100));
+    }
+  });
+
+  test('wrong answers include borrow mistakes and adding instead', () => {
+    const wrong = KINDS.subtraction.distractors(
+        {operands: [52, 17], answer: 35}, {max: 100});
+    assert.deepEqual(
+        new Set(wrong), new Set([34, 36, 33, 37, 25, 45, 53, 69]));
+  });
+
+  test('wrong answers stay in range', () => {
+    const wrong = KINDS.subtraction.distractors(
+        {operands: [95, 94], answer: 1}, {max: 100});
+    assert.deepEqual(new Set(wrong), new Set([0, 2, 3, 11]));
+  });
+});
+
+describe('multiplication', () => {
+  test('uses factors from 1 to 5', () => {
+    const rng = seeded(6);
+    const seen = new Set();
+    for (let i = 0; i < 2000; i++) {
+      const card = makeCard('multiplication', rng);
+      const [a, b] = card.operands;
+      assert.ok(a >= 1 && a <= 5 && b >= 1 && b <= 5, `${a} × ${b}`);
+      assert.equal(card.answer, a * b);
+      assert.equal(card.choices.filter((n) => n === card.answer).length, 1);
+      assert.ok(card.choices.every((n) => n >= 0));
+      seen.add(`${a}×${b}`);
+    }
+    assert.equal(seen.size, 25);
+  });
+
+  test('wrong answers include a group off and adding instead', () => {
+    const wrong = KINDS.multiplication.distractors(
+        {operands: [3, 4], answer: 12});
+    assert.deepEqual(new Set(wrong), new Set([15, 9, 16, 8, 7, 13, 11]));
+  });
+
+  test('1 × 1 still has a wrong answer', () => {
+    const wrong = KINDS.multiplication.distractors(
+        {operands: [1, 1], answer: 1});
+    assert.deepEqual(new Set(wrong), new Set([0, 2]));
+  });
+});
+
+describe('division', () => {
+  test('divides evenly with divisor and quotient from 1 to 5', () => {
+    const rng = seeded(7);
+    for (let i = 0; i < 2000; i++) {
+      const card = makeCard('division', rng);
+      const [dividend, divisor] = card.operands;
+      assert.ok(divisor >= 1 && divisor <= 5, `${dividend} ÷ ${divisor}`);
+      assert.ok(card.answer >= 1 && card.answer <= 5);
+      assert.equal(card.answer * divisor, dividend);
+      assert.equal(card.choices.filter((n) => n === card.answer).length, 1);
+      assert.ok(card.choices.every((n) => n >= 0));
+    }
+  });
+
+  test('wrong answers include the divisor and subtracting instead', () => {
+    const wrong = KINDS.division.distractors(
+        {operands: [15, 3], answer: 5});
+    assert.deepEqual(new Set(wrong), new Set([4, 6, 3, 12]));
+  });
+
+  test('wrong answers never repeat the answer', () => {
+    const wrong = KINDS.division.distractors({operands: [4, 2], answer: 2});
+    assert.deepEqual(new Set(wrong), new Set([1, 3]));
+  });
+});
+
+describe('modes', () => {
+  test('every mode names known kinds', () => {
+    for (const kinds of Object.values(MODES)) {
+      assert.ok(kinds.length > 0);
+      assert.ok(kinds.every((kind) => Object.hasOwn(KINDS, kind)));
+    }
+  });
+
+  test('multiply-divide deals both kinds', () => {
+    const rng = seeded(8);
+    let division = 0;
+    const n = 2000;
+    for (let i = 0; i < n; i++) {
+      const card = dealCard('multiply-divide', rng);
+      assert.ok(['multiplication', 'division'].includes(card.kind));
+      if (card.kind === 'division') {
+        division++;
+      }
+    }
+    assert.ok(division > n * 0.4 && division < n * 0.6, `${division} of ${n}`);
+  });
+
+  test('each single-kind mode deals only its kind', () => {
+    const rng = seeded(9);
+    for (let i = 0; i < 200; i++) {
+      assert.equal(dealCard('addition', rng).kind, 'addition');
+      assert.equal(dealCard('subtraction', rng).kind, 'subtraction');
+    }
+  });
+
+  test('isMode accepts only mode keys', () => {
+    assert.ok(isMode('subtraction'));
+    assert.ok(!isMode('calculus'));
+    assert.ok(!isMode('constructor'));
+    assert.ok(!isMode(null));
+  });
+
+  test('dealCard rejects an unknown mode', () => {
+    assert.throws(() => dealCard('calculus', Math.random), /unknown mode/);
+  });
+});
+
 test('makeCard rejects an unknown kind', () => {
   assert.throws(() => makeCard('calculus', Math.random), /unknown/);
+  assert.throws(() => makeCard('toString', Math.random), /unknown/);
 });
 
 test('problem text', () => {

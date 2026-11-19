@@ -36,7 +36,7 @@ playground/
 ├── git-k8s/               # Go: kube controllers that mirror git repositories, run checks, and land branches
 ├── life-lab/              # browser front-end for life-stl (wasm + three.js + Node tests)
 ├── marptalk/              # present narrated Marp decks with browser TTS and subtitles (vendored Marp Core + Node tests)
-├── math-cards/            # addition flash cards for kids: swipe or click the right answer (JS + Node tests)
+├── math-cards/            # math flash cards for kids (+, −, × ÷): swipe or click the right answer (JS + Node tests)
 ├── its-not-jaws/          # Cursor SDK harness: knower/guesser secret-guessing game
 ├── nes-player/            # play NEScript example ROMs from main, or a local .nes, with jsnes
 ├── nethack-agent/         # Cursor SDK harness: learn a terminal game from the screen and its own notes
@@ -107,7 +107,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `queens/` | yes | Queens and Two Not Touch puzzle generator and player; JS modules, npm scripts, tests |
 | `life-lab/` | yes | Game of Life sculpture lab; vendored wasm built from `life-stl/` |
 | `marptalk/` | yes | Narrated Marp deck player; JS modules, vendored Marp Core, tests |
-| `math-cards/` | yes | Addition flash cards for kids; JS modules, npm scripts, tests |
+| `math-cards/` | yes | Addition, subtraction, and multiplication/division flash cards for kids; JS modules, npm scripts, tests |
 | `nes-player/` | yes | Play NEScript ROMs from `main` or a local `.nes` with jsnes; JS modules, vendored jsnes, tests |
 | `nypd-choppers/` | yes | NYPD helicopter tracker; JS modules, npm scripts, tests |
 | `nyt-crossword/` | yes | NYT crossword solve times; JS modules, npm scripts, tests |
@@ -1062,7 +1062,7 @@ bundle exec fastlane test
 | `queens/` | Generate and play Queens (one queen per row, column, and region) and Two Not Touch (two stars each) on phones. Four levels set the board size and the hardest solving rule a puzzle needs; every puzzle has one solution and needs no guessing. Hints point out wrong marks, then explain the next step. Workers build puzzles off the main thread, and the URL seed shares a puzzle | Node test runner |
 | `life-lab/` | Draw Life gen 0, preview the printable Z-stack in 3D, export STL / Bambu 3MF (wasm from `life-stl/`; rebuild via `life-lab/build-wasm.sh`) | Node test runner |
 | `marptalk/` | Present a Marp deck with each slide's speaker notes read aloud by browser text-to-speech, one sentence at a time, with subtitles, speed control (0.5× to 2×), and voice choice. Plays three bundled decks or an uploaded `.md`. Renders with Marp Core bundled into `vendor/` without math (`npm run vendor`). `scripts/check.js` checks a deck, and the [marptalk skill](.cursor/skills/marptalk/SKILL.md) tells agents how to write one | Node test runner (fake speech synthesizer and clock) |
-| `math-cards/` | Addition flash cards for kids. Each card shows a sum up to 100 and two answers; swipe the card toward the right one on a phone, or click it or press the Left or Right arrow key. The wrong answer is a likely mistake (off by one, two, or ten, or digits swapped). Keeps cards answered, the streak, and the best streak in `localStorage`, and celebrates every 10 right in a row. `src/problems.js` registers problem kinds so subtraction, multiplication, and larger sums can be added | Node test runner |
+| `math-cards/` | Math flash cards for kids at first- and second-grade level. Three modes: addition with sums up to 100, subtraction within 100, and mixed multiplication and division with factors from 1 to 5. Each card shows a problem and two answers; swipe the card toward the right one on a phone, or click it or press the Left or Right arrow key. The wrong answer is a likely mistake (off by one, two, or ten, digits swapped, or the wrong operation). Keeps the mode, cards answered, the streak, and the best streak in `localStorage`, and celebrates every 10 right in a row. `src/problems.js` registers problem kinds and the modes that deal them | Node test runner |
 | `nes-player/` | Play the NEScript games (the ones the README shows, plus SHA-256 and Coin Cavern), fetched from `raw.githubusercontent.com` on `main`, or a dropped `.nes` file, with jsnes. Keyboard, gamepad, and touch controls for two players | Node test runner |
 | `nypd-choppers/` | NYPD helicopter daily flight paths, hours, and fuel-cost estimates from ADS-B | Node test runner |
 | `nyt-crossword/` | NYT crossword solve times by weekday, and puzzles that were started but not finished | Node test runner |
