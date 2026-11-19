@@ -587,6 +587,21 @@ class Gen:
                        lambda r: f"rk{k} {rname(r)} (by decide) (by decide)")
         return k, f"derOptRes 0x{tag:X} (memBytes M0 ({rp}) ({rl}).toNat)", (rp, rl, inp)
 
+    def opt2(self, off, oc, dc, tag):
+        """`Der::optional` through `sv_optF2`; returns k and the result's
+        expression. `N{k}` says the reader is left alone when the tag is absent."""
+        k = self.k = self.k + 1
+        rp, rl, inp = self.reader(k - 1, dc)
+        self.call_head(k, off, "sv_optF2", f"(oc := 0x{oc:X}) (dc := 0x{dc:X}) (tag := 0x{tag:X})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"R{k}", f"N{k}", f"fr{k}"])
+        self.emit(f"    {self.der_args(k, off, oc, dc, tag=tag)} (by decide) (by decide) (by decide) (by decide)")
+        self.emit(f"    (by decide) w{k-1}_{dc + 8:x} w{k-1}_{dc + 12:x} {inp}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [sv_mb fR{k-1} {inp}] at R{k} N{k}")
+        self.keep_regs(k, [r for r in range(32) if r not in (1, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 28, 29, 30)],
+                       lambda r: f"rk{k} {rname(r)} (by decide) (by decide)")
+        return k, f"derOptRes 0x{tag:X} (memBytes M0 ({rp}) ({rl}).toNat)", (rp, rl, inp)
+
     def iis(self, off, dc):
         """`Der::integer_is` with the expected value in `a1`; returns k and the result's expression."""
         k = self.k = self.k + 1
@@ -4253,13 +4268,115 @@ def stage_tsa3():
     return g, info
 
 
+TSA4_BINDERS = ("{B out bp x21 x26 sdp sdl : Word} "
+                + "{" + " ".join(f"w{e:x}" for e in DPV_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+
+
+def tsa4_err(sub, k):
+    """Malformed certificates: `lbu`, `bnez` to 0x298E, `lbu s0`, `j` to 0x2C60."""
+    sub.emit(f"  rw [hr{k}] at R{k}")
+    sub.emit(f"  obtain ⟨y0_{k}, -⟩ := R{k}")
+    sub.frame_after(k, [(0x420, 0x18), (0x2A8, 8)], {}, {0x420: ("(1 : BitVec 8)", f"y0_{k}")})
+    sub.load(0x23BC, "lbu")
+    sub.branch(0x23C0, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+    sub.load_any(0x298E)
+    sub.jump(0x2992)
+    sub.fail(sub.fail_proof(("eq", f"hr{k}")), "sv_fail_2c60")
+
+
+def tsa4_crl(g):
+    """From 0x23C4: the `SignedData` reader's length; when it isn't zero, the
+    next tag must not be `[1]` (CRLs). Both ways reach 0x23DC."""
+    g.load(0x23C4, "lw")
+    rl = lean_val(g.regs[10])
+    rp = lean_val(g.words[0x2A8])
+    inp = g.slices[(rp, rl)]
+    P = f"{rl} = 0 ∨ (M0 ({rp})).toNat ≠ 0xA1"
+    g.pinned |= {"hnz", "ha1"}
+
+    def crl(sub):
+        sub.emit("  have hnz : ¬ " + f"{rl} = 0 := fun h => hcrl (.inl h)")
+        sub.emit(f"  have ha1 : (M0 ({rp})).toNat = 0xA1 := Decidable.of_not_not fun h => hcrl (.inr h)")
+        sub.branch(0x23C8, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_f hnz")
+        sub.load(0x23CA, "lw")
+        sub.load_in(0x23CE, inp, "(toNat_pos_of_ne hnz)")
+        sub.block(0x23D2, 0x23D6)
+        sub.block(0x23D6, 0x23D8)
+        sub.branch(0x23D8, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_tag_a1_t ha1")
+        sub.fail(sub.fail_proof(("prop", "hcrl")), "sv_fail_2c60")
+    g.prop_check(P, "hcrl", crl)
+    g.emit(f"  by_cases hz : {rl} = 0")
+
+    def zero(sub):
+        sub.branch(0x23C8, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t hz")
+        sub.exit_here()
+    g.fork(zero)
+    g.emit(f"  have ha1 : (M0 ({rp})).toNat ≠ 0xA1 := hcrl.resolve_left hz")
+    g.branch(0x23C8, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hz")
+    g.load(0x23CA, "lw")
+    g.load_in(0x23CE, inp, "(toNat_pos_of_ne hz)")
+    g.block(0x23D2, 0x23D6)
+    g.block(0x23D6, 0x23D8)
+    g.branch(0x23D8, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_tag_a1_f ha1")
+
+
+def stage_tsa4(present):
+    """From 0x23AA to 0x23DC: the optional certificates, and no CRLs."""
+    g = Gen("Tsa4" + ("s" if present else "n"))
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 20: ("S", 0x1320)}
+    words = {e: f"w{e:x}" for e in DPV_WORDS}
+    words.update({0x2A8: "sdp", 0x2AC: "sdl"})
+    params = start(g, regs, words, {("sdp", "sdl"): "sd_in"})
+    L = "(memBytes M0 (sdp) (sdl).toNat)"
+    params.append(f"(hce : derOptRes 0xA0 {L} {'≠' if present else '='} none)")
+    g.block(0x23AA, 0x23B4)
+    k, ex, rd = g.opt2(0x23B4, 0x420, 0x2A0, 0xA0)
+    rp, rl, inp = rd
+    if present:
+        t = f"tl{k}"
+        g.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+        g.emit(f"  rcases r{k} with _ | (er{k} | {t})")
+        g.sc.append(("eq", ex, f"some (.ok {t})", [t], f"hr{k}"))
+        g.fork(lambda sub: sub.emit(f"  exact absurd hr{k} hce"))
+        g.fork(lambda sub: tsa4_err(sub, k))
+        g.emit(f"  rw [hr{k}] at R{k}")
+        g.emit(f"  obtain ⟨y0_{k}, y4_{k}, y8_{k}, y12_{k}, y16_{k}, y20_{k}, d8_{k}, d12_{k}⟩ := R{k}")
+        h = f"BitVec.ofNat 32 {t}.header"
+        hl = f"BitVec.ofNat 32 ({t}.header + {t}.len)"
+        g.frame_after(k, [(0x420, 0x18), (0x2A8, 8)],
+                      {0x424: (f"({rp}) + {h}", f"y4_{k}"), 0x428: (f"BitVec.ofNat 32 {t}.len", f"y8_{k}"),
+                       0x42C: (f"{rp}", f"y12_{k}"), 0x430: (hl, f"y16_{k}"),
+                       0x2A8: (f"({rp}) + {hl}", f"d8_{k}"), 0x2AC: (f"({rl}) - {hl}", f"d12_{k}")},
+                      {0x420: ("(0 : BitVec 8)", f"y0_{k}"), 0x434: (f"BitVec.ofNat 8 {t}.tag", f"y20_{k}")})
+        g.slices[(f"({rp}) + {hl}", f"({rl}) - {hl}")] = f"({inp}.restW (opt_ok_elem hr{k}))"
+    else:
+        g.emit(f"  rw [hce] at R{k}")
+        g.emit(f"  obtain ⟨y0_{k}, y4_{k}⟩ := R{k}")
+        g.emit(f"  replace K{k} := N{k} hce")
+        g.frame_after(k, [(0x420, 0x18)], {0x424: ("0", f"y4_{k}")}, {0x420: ("(0 : BitVec 8)", f"y0_{k}")})
+    g.load(0x23BC, "lbu")
+    g.branch(0x23C0, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    tsa4_crl(g)
+    keep = set(g.words) - {0x424, 0x428, 0x42C, 0x430}
+    stmt, proof = finish(g, 0x23DC, [2, 3, 4, 9, 18, 19, 20, 21, 26, 27], keep, set())
+    info = {"name": "sv_tsa4" + ("s" if present else "n"),
+            "title": "the timestamp's certificates" + ("" if present else ", absent"),
+            "doc": "From 0x23AA to 0x23DC: the `SignedData`'s `[0]` certificates are "
+            + ("present and well formed" if present else "absent") + ", and the next field isn't `[1]` CRLs.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": TSA4_BINDERS, "start": 0x23AA,
+            "import": "C3BootProofs.Proofs.SvTsa"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
                 **{f"Dp{i}": stage_dpol(i) for i in range(6)}, "Dbc1": stage_dbc1, "Dbc2e": stage_dbc2e, "Dbc2": stage_dbc2, "Dku1": stage_dku1, "Dku2": stage_dku2,
                 "Deku1": stage_deku1, "Deku2": stage_deku2, "Deku3": stage_deku3,
                 "L7": stage_l7, "L8a": stage_l8a,
-                "Imiss": stage_imiss, "Ihit": stage_ihit, "Iend": stage_iend, "Dpv": stage_dpv, "Ts1": stage_ts1, "Tsa1": stage_tsa1, "Tsa2": stage_tsa2, "Tsa3": stage_tsa3}[stage]()
+                "Imiss": stage_imiss, "Ihit": stage_ihit, "Iend": stage_iend, "Dpv": stage_dpv, "Ts1": stage_ts1, "Tsa1": stage_tsa1, "Tsa2": stage_tsa2, "Tsa3": stage_tsa3,
+                "Tsa4n": lambda: stage_tsa4(False), "Tsa4s": lambda: stage_tsa4(True)}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

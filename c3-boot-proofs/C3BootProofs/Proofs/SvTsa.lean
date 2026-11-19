@@ -135,6 +135,14 @@ theorem isSha256Of_ok_elem {M : Word → BitVec 8} {p : Word} {n : Nat} {x : Boo
   | error b => rw [hA] at h; cases h
   | ok v => exact alg_ok_elem hA
 
+theorem tag_a1 : ∀ b : BitVec 8, (aluEval .add (b.zeroExtend 32) 0xFFFFFF5F = 0 ↔ b.toNat = 0xA1) := by decide
+
+theorem br_tag_a1_t {b : BitVec 8} (h : b.toNat = 0xA1) :
+    branchTaken .beq (aluEval .add (b.zeroExtend 32) 0xFFFFFF5F) 0 = true := br_beq_t ((tag_a1 b).mpr h)
+
+theorem br_tag_a1_f {b : BitVec 8} (h : b.toNat ≠ 0xA1) :
+    branchTaken .beq (aluEval .add (b.zeroExtend 32) 0xFFFFFF5F) 0 = false := br_beq_f fun e => h ((tag_a1 b).mp e)
+
 theorem sv_spA0 (B : Word) : B + 0x21A0 + 0xFFFFFF60 = B + BitVec.ofNat 32 0x2100 := by
   rw [BitVec.add_assoc]; rfl
 
