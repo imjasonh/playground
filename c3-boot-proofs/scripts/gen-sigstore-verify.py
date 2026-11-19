@@ -1025,9 +1025,21 @@ class Gen:
         self.ranges[oc + 1] = (48, f"BitVec.ofNat 8 ((sr{k}).getD j 0)")
         self.ranges[oc + 49] = (48, f"BitVec.ofNat 8 ((ss{k}).getD j 0)")
         self.load(off + 8, "lbu")
-        self.load_any(off + 0xC)
+        self.load(off + 0xC, "lbu")
         self.branch(off + 0x10, False, f"by rw [g{self.k}_10, s{self.k}.zero]; decide")
         return k
+
+
+    def assemble_word(self, e, x):
+        """The word at offset `e` is `x`, from the bytes `sb` stored of `x` and of
+        `x` shifted right by 8, 16, and 24."""
+        k = self.k
+        self.emit(f"  have w{k}_{e:x} : {self.word_stmt(k, e, ('U', x))} := ld_of_shr_bytes b{k}_{e:x}")
+        for i in (1, 2, 3):
+            self.emit(f"    (by rw [show {fa(e)} + {i} = {fa(e + i)} by sv_addr]; exact b{k}_{e + i:x})")
+        self.words[e] = ("U", x)
+        for i in range(4):
+            self.bytes.pop(e + i, None)
 
     # --- operations -------------------------------------------------------------
 
@@ -1057,6 +1069,12 @@ class Gen:
                 v = ("C", x[1] & int(tk[4], 16)) if x is not None and x[0] == "C" else None
                 if x is not None and x[0] == "U":
                     v = ("U", f"({lean_val(x)}) &&& BitVec.ofNat 32 0x{int(tk[4], 16):X}")
+                    unc[rd] = reg_of(tk[3])
+            elif tk[0] == ".aluImm" and tk[1] == ".srl":
+                rd = reg_of(tk[2]); x = vals.get(reg_of(tk[3]))
+                v = None
+                if x is not None and x[0] == "U":
+                    v = ("U", f"({lean_val(x)}) >>> {int(tk[4], 16)}")
                     unc[rd] = reg_of(tk[3])
             elif tk[0] == ".aluImm" and tk[1] == ".sll":
                 rd = reg_of(tk[2]); x = vals.get(reg_of(tk[3]))
@@ -1145,6 +1163,13 @@ class Gen:
             vstr = lean_val(val)
             fact = f"w{k-1}_{e:x}"
         else:
+            if e not in self.bytes and (e - e % 4) not in self.words:
+                for s0, (n, tmpl) in self.ranges.items():
+                    if s0 <= e < s0 + n:
+                        val = re.sub(r"\bj\b", f"{e - s0}", tmpl)
+                        self.emit(f"  have b{k-1}_{e:x} : {self.byte_stmt(k - 1, e, val)} := q{k-1}_{s0:x} {e - s0} (by decide)")
+                        self.bytes[e] = val
+                        break
             self.emit(f"  obtain ⟨n{k}, d{k}, u{k}⟩ := s{k-1}.lbu E{k-1}.self sv_at_{off:x} (off' := 0x{off + ln:X}) (by decide)")
             if e not in self.bytes:
                 self.byte_from_word(k - 1, e)
@@ -1244,7 +1269,19 @@ class Gen:
         self.emit(f"  have fr{k} := P{k}.fr")
         self.common(k, f"P{k}.steps", f"fr{k}", f"V{k-1}.keep K{k} (by decide)")
         self.keep_regs(k, CALL_KEEP, lambda r: f"P{k}.regs {rname(r)} (by decide)")
+        moved = {}
+        for s0, (n, tmpl) in sorted(self.ranges.items()):
+            lo, hi = max(s0, src), min(s0 + n, src + N)
+            if lo < hi:
+                d, o = lo - s0, lo - src
+                moved[dst + o] = (hi - lo, re.sub(r"\bj\b", f"({d} + j)", tmpl) if d else tmpl, s0, d, o)
         self.keep_frame(k, ("K", dst, N), ww, wb)
+        for ns, (n, tmpl, s0, d, o) in sorted(moved.items()):
+            self.emit(f"  have q{k}_{ns:x} : ∀ j, j < {n} → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{ns:X} + j)) = {tmpl} := fun j hj => by")
+            dj = f"({d} + j)" if d else "j"
+            self.emit(f"    rw [show 0x{ns:X} + j = 0x{dst:X} + (0x{o:X} + j) by omega, X{k} (0x{o:X} + j) (by omega),")
+            self.emit(f"      show 0x{src:X} + (0x{o:X} + j) = 0x{s0:X} + {dj} by omega]; exact q{k-1}_{s0:x} {dj} (by omega)")
+            self.ranges[ns] = (n, tmpl)
         self.end_step()
 
     def branch(self, off, taken, why):
@@ -3327,12 +3364,69 @@ def stage_l7():
             "start": 0x4EA, "import": "C3BootProofs.Proofs.SvEcdsa"}
     return g, info
 
+
+L8_BINDERS = ("{B out bp x9 x21 x25 x26 rootp trl sgp : Word} {sr ss : Bytes} "
+              + "{" + " ".join(f"w{e:x}" for e in range(0x24, 0x88, 4) if e not in (0x78, 0x7C, 0x80))
+              + " : Word} {v : Nat → Word} {n0 : Machine}")
+
+
+def stage_l8a():
+    """From 0xA44 to the intermediates loop at 0xAE2: the parsed leaf's fields."""
+    g = Gen("L8a")
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 27: ("S", 0xA20), 9: ("U", "x9"), 21: ("U", "x21"), 25: ("U", "x25"), 26: ("U", "x26"),
+            20: ("U", "(BitVec.ofNat 8 (sr.getD 0 0)).zeroExtend 32", "BitVec.ofNat 8 (sr.getD 0 0)")}
+    words = {e: f"w{e:x}" for e in range(0x24, 0x88, 4)}
+    words.update({0x78: "trl", 0x7C: "sgp", 0x80: "rootp"})
+    params = start(g, regs, words, {})
+    g.ranges[0xA21] = (48, "BitVec.ofNat 8 (sr.getD j 0)")
+    g.ranges[0xA51] = (48, "BitVec.ofNat 8 (ss.getD j 0)")
+    params += ["(q0_a21 : ∀ j, j < 48 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0xA21 + j)) = BitVec.ofNat 8 (sr.getD j 0))",
+               "(q0_a51 : ∀ j, j < 48 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0xA51 + j)) = BitVec.ofNat 8 (ss.getD j 0))"]
+    g.block(0xA44, 0xA54)
+    g.mc(0xA54, 0x420, 0xA22, 0x5F)
+    g.load(0xA5C, "lw")
+    g.block(0xA5E, 0xA62)
+    g.block(0xA62, 0xA66)
+    g.block(0xA66, 0xA6A)
+    g.store(0xA6A, "sb")
+    g.store(0xA6E, "sb")
+    g.store(0xA72, "sb")
+    g.load(0xA76, "lw")
+    g.store(0xA78, "sw")
+    g.store(0xA7A, "sw")
+    for o in range(0xA7C, 0xAA4, 4):
+        g.load(o, "lw")
+        g.store(o + 2, "sw")
+    g.store(0xAA4, "sb")
+    g.block(0xAA8, 0xAB4)
+    g.mc(0xAB4, 0xD1, 0x420, 0x5F)
+    g.store(0xABC, "sw")
+    g.store(0xABE, "sb")
+    g.assemble_word(0x8C, "trl")
+    for o in range(0xAC2, 0xAD2, 4):
+        g.load(o, "lw")
+        g.store(o + 2, "sw")
+    g.store(0xAD2, "sw")
+    g.load(0xAD6, "lw")
+    g.block(0xAD8, 0xADC)
+    g.store(0xADC, "sw")
+    g.block(0xADE, 0xAE2)
+    stmt, proof = finish(g, 0xAE2, [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                         set(range(0x24, 0x134, 4)), set(g.bytes))
+    info = {"name": "sv_l8a", "title": "the parsed leaf",
+            "doc": "From 0xA44 to the intermediates loop at 0xAE2: `sigstore::verify` copies the leaf's fields, "
+            "with `r` and `s`, into its `Leaf` at offset 0x88 of the frame.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": L8_BINDERS, "start": 0xA44,
+            "import": "C3BootProofs.Proofs.SvFail"}
+    return g, info
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
                 **{f"Dp{i}": stage_dpol(i) for i in range(6)}, "Dbc1": stage_dbc1, "Dbc2e": stage_dbc2e, "Dbc2": stage_dbc2, "Dku1": stage_dku1, "Dku2": stage_dku2,
                 "Deku1": stage_deku1, "Deku2": stage_deku2, "Deku3": stage_deku3,
-                "L7": stage_l7}[stage]()
+                "L7": stage_l7, "L8a": stage_l8a}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

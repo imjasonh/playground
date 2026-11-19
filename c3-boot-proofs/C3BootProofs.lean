@@ -161,6 +161,8 @@ import C3BootProofs.Proofs.SvDeku1
 import C3BootProofs.Proofs.SvDeku2
 import C3BootProofs.Proofs.SvDeku3
 import C3BootProofs.Proofs.SvL7
+import C3BootProofs.Proofs.SvFail
+import C3BootProofs.Proofs.SvL8a
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main

@@ -111,6 +111,7 @@ theorem sv_l7 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4 
         reg n' (9 : Fin 32) = x9 ∧
         reg n' (18 : Fin 32) = out ∧
         reg n' (19 : Fin 32) = bp ∧
+        reg n' (20 : Fin 32) = (BitVec.ofNat 8 ((sr43).getD 0 0)).zeroExtend 32 ∧
         reg n' (21 : Fin 32) = x21 ∧
         reg n' (25 : Fin 32) = x25 ∧
         reg n' (26 : Fin 32) = x26 ∧
@@ -4026,6 +4027,7 @@ theorem sv_l7 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4 
   have q44_a51 : ∀ j, j < 48 → n44.mem (B + 0x21A0 + BitVec.ofNat 32 (0xA51 + j)) = BitVec.ofNat 8 ((ss43).getD j 0) := fun j hj => by rw [m44]; exact q43_a51 j hj
   clear b43_a20 w43_94 w43_90 w43_8c w43_88 w43_84 w43_80 w43_7c w43_78 w43_74 w43_70 w43_6c w43_68 w43_64 w43_60 w43_5c w43_58 w43_54 w43_50 w43_4c w43_48 w43_44 w43_40 w43_3c w43_38 w43_34 w43_30 w43_2c w43_28 w43_24 q43_a51 q43_a21 ys_43 yr_43 y0_43 g43_2 g43_27 g43_26 g43_25 g43_21 g43_19 g43_18 g43_9 g43_4 g43_3 V43 E43 fR43 t43 fr43 K43 rk43 sp43 s43 c43
   -- 0xA3E: lbu
+  have b44_a21 : n44.mem (B + 0x21A0 + BitVec.ofNat 32 0xA21) = BitVec.ofNat 8 ((sr43).getD 0 0) := q44_a21 0 (by decide)
   obtain ⟨n45, d45, u45⟩ := s44.lbu E44.self sv_at_a3e (off' := 0xA42) (by decide)
   have s45 : St n45.mem SV n45 0xA42 (reg n45) := ⟨u45.pc, rfl, fun _ => rfl⟩
   have m45 : n45.mem = n44.mem := u45.mem
@@ -4045,6 +4047,9 @@ theorem sv_l7 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4 
   have g45_25 : reg n45 (25 : Fin 32) = x25 := by rw [u45.regs, upd_ne (by decide) (by decide), g44_25]
   have g45_26 : reg n45 (26 : Fin 32) = x26 := by rw [u45.regs, upd_ne (by decide) (by decide), g44_26]
   have g45_27 : reg n45 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u45.regs, upd_ne (by decide) (by decide), g44_27]
+  have g45_20 : reg n45 (20 : Fin 32) = (BitVec.ofNat 8 ((sr43).getD 0 0)).zeroExtend 32 := by
+    rw [u45.regs]; simp +decide only [upd, ↓reduceIte]
+    rw [g44_27, show B + 0x21A0 + BitVec.ofNat 32 0xA20 + 0x1 = B + 0x21A0 + BitVec.ofNat 32 0xA21 by sv_addr, b44_a21]
   have w45_24 : memLoad32 n45.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = sl9 := by rw [m45]; exact w44_24
   have w45_28 : memLoad32 n45.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = sl7 := by rw [m45]; exact w44_28
   have w45_2c : memLoad32 n45.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = sl5 := by rw [m45]; exact w44_2c
@@ -4075,6 +4080,7 @@ theorem sv_l7 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4 
   have w45_90 : memLoad32 n45.mem (B + 0x21A0 + BitVec.ofNat 32 0x90) = cur := by rw [m45]; exact w44_90
   have w45_94 : memLoad32 n45.mem (B + 0x21A0 + BitVec.ofNat 32 0x94) = rem := by rw [m45]; exact w44_94
   have b45_a20 : n45.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) = (0 : BitVec 8) := by rw [m45]; exact b44_a20
+  have b45_a21 : n45.mem (B + 0x21A0 + BitVec.ofNat 32 0xA21) = BitVec.ofNat 8 ((sr43).getD 0 0) := by rw [m45]; exact b44_a21
   have q45_a21 : ∀ j, j < 48 → n45.mem (B + 0x21A0 + BitVec.ofNat 32 (0xA21 + j)) = BitVec.ofNat 8 ((sr43).getD j 0) := fun j hj => by rw [m45]; exact q44_a21 j hj
   have q45_a51 : ∀ j, j < 48 → n45.mem (B + 0x21A0 + BitVec.ofNat 32 (0xA51 + j)) = BitVec.ofNat 8 ((ss43).getD j 0) := fun j hj => by rw [m45]; exact q44_a51 j hj
   clear q44_a51 q44_a21 b44_a20 w44_94 w44_90 w44_8c w44_88 w44_84 w44_80 w44_7c w44_78 w44_74 w44_70 w44_6c w44_68 w44_64 w44_60 w44_5c w44_58 w44_54 w44_50 w44_4c w44_48 w44_44 w44_40 w44_3c w44_38 w44_34 w44_30 w44_2c w44_28 w44_24 g44_10 g44_27 g44_26 g44_25 g44_21 g44_19 g44_18 g44_9 g44_4 g44_3 g44_2 V44 E44 fR44 t44 fr44 m44 s44 u44 d44
@@ -4095,6 +4101,7 @@ theorem sv_l7 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4 
   have g46_10 : reg n46 a0 = ((0 : BitVec 8)).zeroExtend 32 := by rw [u46.regs, g45_10]
   have g46_18 : reg n46 (18 : Fin 32) = out := by rw [u46.regs, g45_18]
   have g46_19 : reg n46 (19 : Fin 32) = bp := by rw [u46.regs, g45_19]
+  have g46_20 : reg n46 (20 : Fin 32) = (BitVec.ofNat 8 ((sr43).getD 0 0)).zeroExtend 32 := by rw [u46.regs, g45_20]
   have g46_21 : reg n46 (21 : Fin 32) = x21 := by rw [u46.regs, g45_21]
   have g46_25 : reg n46 (25 : Fin 32) = x25 := by rw [u46.regs, g45_25]
   have g46_26 : reg n46 (26 : Fin 32) = x26 := by rw [u46.regs, g45_26]
@@ -4129,9 +4136,10 @@ theorem sv_l7 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4 
   have w46_90 : memLoad32 n46.mem (B + 0x21A0 + BitVec.ofNat 32 0x90) = cur := by rw [m46]; exact w45_90
   have w46_94 : memLoad32 n46.mem (B + 0x21A0 + BitVec.ofNat 32 0x94) = rem := by rw [m46]; exact w45_94
   have b46_a20 : n46.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) = (0 : BitVec 8) := by rw [m46]; exact b45_a20
+  have b46_a21 : n46.mem (B + 0x21A0 + BitVec.ofNat 32 0xA21) = BitVec.ofNat 8 ((sr43).getD 0 0) := by rw [m46]; exact b45_a21
   have q46_a21 : ∀ j, j < 48 → n46.mem (B + 0x21A0 + BitVec.ofNat 32 (0xA21 + j)) = BitVec.ofNat 8 ((sr43).getD j 0) := fun j hj => by rw [m46]; exact q45_a21 j hj
   have q46_a51 : ∀ j, j < 48 → n46.mem (B + 0x21A0 + BitVec.ofNat 32 (0xA51 + j)) = BitVec.ofNat 8 ((ss43).getD j 0) := fun j hj => by rw [m46]; exact q45_a51 j hj
-  clear q45_a51 q45_a21 b45_a20 w45_94 w45_90 w45_8c w45_88 w45_84 w45_80 w45_7c w45_78 w45_74 w45_70 w45_6c w45_68 w45_64 w45_60 w45_5c w45_58 w45_54 w45_50 w45_4c w45_48 w45_44 w45_40 w45_3c w45_38 w45_34 w45_30 w45_2c w45_28 w45_24 g45_27 g45_26 g45_25 g45_21 g45_19 g45_18 g45_10 g45_9 g45_4 g45_3 g45_2 V45 E45 fR45 t45 fr45 m45 s45 u45 d45
-  exact .inr ⟨hz_4, hz_7, hz_10, hz_13, hz_21, hz_38, sr43, ss43, hr43, n46, t46, s46, E46, V46, fR46, g46_2, g46_3, g46_4, g46_9, g46_18, g46_19, g46_21, g46_25, g46_26, g46_27, w46_24, w46_28, w46_2c, w46_30, w46_34, w46_38, w46_3c, w46_40, w46_44, w46_48, w46_4c, w46_50, w46_54, w46_58, w46_5c, w46_60, w46_64, w46_68, w46_6c, w46_70, w46_74, w46_78, w46_7c, w46_80, w46_84, w46_88, w46_8c, w46_90, w46_94, q46_a21, q46_a51⟩
+  clear q45_a51 q45_a21 b45_a21 b45_a20 w45_94 w45_90 w45_8c w45_88 w45_84 w45_80 w45_7c w45_78 w45_74 w45_70 w45_6c w45_68 w45_64 w45_60 w45_5c w45_58 w45_54 w45_50 w45_4c w45_48 w45_44 w45_40 w45_3c w45_38 w45_34 w45_30 w45_2c w45_28 w45_24 g45_20 g45_27 g45_26 g45_25 g45_21 g45_19 g45_18 g45_10 g45_9 g45_4 g45_3 g45_2 V45 E45 fR45 t45 fr45 m45 s45 u45 d45 b44_a21
+  exact .inr ⟨hz_4, hz_7, hz_10, hz_13, hz_21, hz_38, sr43, ss43, hr43, n46, t46, s46, E46, V46, fR46, g46_2, g46_3, g46_4, g46_9, g46_18, g46_19, g46_20, g46_21, g46_25, g46_26, g46_27, w46_24, w46_28, w46_2c, w46_30, w46_34, w46_38, w46_3c, w46_40, w46_44, w46_48, w46_4c, w46_50, w46_54, w46_58, w46_5c, w46_60, w46_64, w46_68, w46_6c, w46_70, w46_74, w46_78, w46_7c, w46_80, w46_84, w46_88, w46_8c, w46_90, w46_94, q46_a21, q46_a51⟩
 
 end C3.RV32.Sv

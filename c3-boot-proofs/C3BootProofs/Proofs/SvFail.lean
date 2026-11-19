@@ -158,4 +158,16 @@ theorem sv_fail_2a82 {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr 
   · rw [M2, memStore8_ne (out_ne1 out), memStore8_same]
   · intro x hx h0 h1; rw [M2, memStore8_ne h1, memStore8_ne h0, fR x hx]
 
+theorem shr_byte (x : Word) (k : Nat) (hk : k + 8 ≤ 32) : (x >>> k).extractLsb' 0 8 = x.extractLsb' k 8 := by
+  apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.extractLsb'_toNat, BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow]
+  omega
+
+/-- A word from the bytes `sb` stores of it and of it shifted right. -/
+theorem ld_of_shr_bytes {M : Word → BitVec 8} {a x : Word} (h0 : M a = x.extractLsb' 0 8)
+    (h1 : M (a + 1) = (x >>> 8).extractLsb' 0 8) (h2 : M (a + 2) = (x >>> 16).extractLsb' 0 8)
+    (h3 : M (a + 3) = (x >>> 24).extractLsb' 0 8) : memLoad32 M a = x := by
+  rw [shr_byte x 8 (by decide)] at h1; rw [shr_byte x 16 (by decide)] at h2; rw [shr_byte x 24 (by decide)] at h3
+  exact ld_of_bytes h0 h1 h2 h3
+
 end C3.RV32.Sv
