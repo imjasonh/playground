@@ -185,6 +185,9 @@ import C3BootProofs.Proofs.SvTsa4n
 import C3BootProofs.Proofs.SvTsa4s
 import C3BootProofs.Proofs.SvTsa5
 import C3BootProofs.Proofs.SvTsaa
+import C3BootProofs.Proofs.SvTsavct
+import C3BootProofs.Proofs.SvTsavmd
+import C3BootProofs.Proofs.SvTsavother
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main

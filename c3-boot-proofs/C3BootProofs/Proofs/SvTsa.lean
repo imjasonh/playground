@@ -146,6 +146,19 @@ theorem br_tag_a1_f {b : BitVec 8} (h : b.toNat ≠ 0xA1) :
 theorem sub_le_toNat {a b : Word} (h : b.toNat ≤ a.toNat) : (a - b).toNat ≤ a.toNat := by
   rw [BitVec.toNat_sub]; have := a.isLt; have := b.isLt; simp only [Nat.reducePow] at *; omega
 
+theorem add_m32 (x : Word) : x + 0xFFFFFFE0 = 0 ↔ x = 32 := by
+  constructor
+  · intro h
+    have e : x = x + 0xFFFFFFE0 + 32 := by rw [BitVec.add_assoc]; exact (BitVec.add_zero x).symm
+    rw [e, h]; rfl
+  · intro h; subst h; rfl
+
+theorem br_m32_t {x : Word} (h : x ≠ 32) : branchTaken .bne (aluEval .add x 0xFFFFFFE0) 0 = true :=
+  br_bne_t fun e => h ((add_m32 x).mp e)
+
+theorem br_m32_f {x : Word} (h : x = 32) : branchTaken .bne (aluEval .add x 0xFFFFFFE0) 0 = false :=
+  br_bne_f ((add_m32 x).mpr h)
+
 theorem sv_spA0 (B : Word) : B + 0x21A0 + 0xFFFFFF60 = B + BitVec.ofNat 32 0x2100 := by
   rw [BitVec.add_assoc]; rfl
 

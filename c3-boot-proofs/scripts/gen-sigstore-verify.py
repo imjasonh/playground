@@ -4717,6 +4717,114 @@ def stage_tsaa():
     return g, info
 
 
+ATTRV_BINDERS = ("{B out bp x21 x26 dg p0 L0 cp rem op ol vcp vcl : Word} "
+                 + "{" + " ".join(f"w{e:x}" for e in DPV_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+CT_OID = "memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC486E) 9"
+MD_OID = "memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4877) 9"
+
+
+def attrv_oid_tail(sub):
+    """`Der::oid` failing at 0x25FE: `lw`, `beqz` to 0x2994, `lbu s0`, `j` to 0x2C60."""
+    sub.load(0x2606, "lw")
+    sub.branch(0x260A, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; rfl")
+    sub.load_any(0x2994)
+    sub.jump(0x2998)
+
+
+def attrv_oct_tail(sub):
+    """`Der::octet_string` failing at 0x2658: `lw`, `beqz` to 0x2994, `lbu s0`, `j` to 0x2C60."""
+    sub.load(0x2660, "lw")
+    sub.branch(0x2664, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; rfl")
+    sub.load_any(0x2994)
+    sub.jump(0x2998)
+
+
+def attrv_len_fail(sub):
+    sub.branch(0x2670, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_m32_t h32")
+    sub.fail(sub.fail_proof(("prop", "h32")), "sv_fail_2c60")
+
+
+def stage_tsav(kind):
+    """One signed attribute from 0x25DA to 0x267A: a contentType, a messageDigest,
+    or another attribute."""
+    g = Gen("Tsav" + kind)
+    params = attr_start(g, {0x74: "p0", 0x1388: "vcp", 0x138C: "vcl"})
+    g.regs.update({22: ("U", "ol"), 23: ("U", "op"), 25: ("U", "L0")})
+    params += ["(g0_22 : reg n0 (22 : Fin 32) = ol)", "(g0_23 : reg n0 (23 : Fin 32) = op)",
+               "(g0_25 : reg n0 (25 : Fin 32) = L0)", "(oid_in : SvIn B op ol.toNat)", "(vc_in : SvIn B vcp vcl.toNat)"]
+    g.slices[("vcp", "vcl")] = "vc_in"
+    g.slices[("op", "ol")] = "oid_in"
+    if kind == "ct":
+        params.append(f"(hct : {CT_OID})")
+    else:
+        params.append(f"(hct : ¬ {CT_OID})")
+        params.append(f"(hmd : {'' if kind == 'md' else '¬ '}{MD_OID})")
+    g.block(0x25DA, 0x25E8)
+    ke = g.seqeq(0x25E8, "op", "ol.toNat", "BitVec.ofNat 32 0x3FCC486E", "9", "(.inl oid_in)",
+                 "(.inr ⟨by decide, by decide⟩)", ha1=f"(by rw [g{g.k}_11, ofNat_toNat_self])")
+    if kind == "ct":
+        g.set_a0(ke, 1, "ite_eq_left hct")
+        g.branch(0x25F0, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+        g.block(0x25F2, 0x25FE)
+        k, op2, ol2 = g.oid(0x25FE, 0x420, 0x1380, attrv_oid_tail, "sv_fail_2c60")
+        g.load(0x2606, "lw")
+        g.branch(0x260A, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({g.slices[(op2, ol2)]}.pos_ne)")
+        g.load(0x260E, "lw")
+        g.block(0x2612, 0x261C)
+        ks = g.sne(0x261C, op2, f"{ol2}.toNat", "BitVec.ofNat 32 0x3FCC4862", "11", f"(.inl {g.slices[(op2, ol2)]})",
+                   "(.inr ⟨by decide, by decide⟩)", ha1=f"(by rw [g{g.k}_11, ofNat_toNat_self])")
+        eq = f"memBytes M0 {op2} {ol2}.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4862) 11"
+
+        def ne(sub):
+            sub.set_a0(ks, 1, "ite_eq_right htst")
+            sub.branch(0x2624, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+            sub.fail(sub.fail_proof(("prop", "htst")), "sv_fail_2c60")
+        g.prop_check(eq, "htst", ne)
+        g.set_a0(ks, 0, "ite_eq_left htst")
+        g.branch(0x2624, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+        g.load(0x2628, "lw")
+        tsa_rest0(g, 0x262A, "hrest0", 0x2C60)
+        g.block(0x262E, 0x2630)
+        g.store(0x2630, "sw")
+        g.jump(0x2632)
+    else:
+        g.set_a0(ke, 0, "ite_eq_right hct")
+        g.branch(0x25F0, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+        g.block(0x2634, 0x2642)
+        km = g.seqeq(0x2642, "op", "ol.toNat", "BitVec.ofNat 32 0x3FCC4877", "9", "(.inl oid_in)",
+                     "(.inr ⟨by decide, by decide⟩)", ha1=f"(by rw [g{g.k}_11, ofNat_toNat_self])")
+        if kind == "md":
+            g.set_a0(km, 1, "ite_eq_left hmd")
+            g.branch(0x264A, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+            g.block(0x264C, 0x2658)
+            k, vp, vl = g.oct(0x2658, 0x420, 0x1380, attrv_oct_tail, "sv_fail_2c60")
+            g.load(0x2660, "lw")
+            g.branch(0x2664, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({g.slices[(vp, vl)]}.pos_ne)")
+            g.block(0x2668, 0x266A)
+            g.load(0x266A, "lw")
+            g.block(0x266E, 0x2670)
+            g.prop_check(f"{vl} = 32", "h32", attrv_len_fail)
+            g.branch(0x2670, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_m32_f h32")
+            g.load(0x2674, "lw")
+            tsa_rest0(g, 0x2676, "hrest0", 0x2C60)
+        else:
+            g.set_a0(km, 0, "ite_eq_right hmd")
+            g.branch(0x264A, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    keep = set(g.words) - {0x420, 0x424, 0x428, 0x42C, 0x430}
+    stmt, proof = finish(g, 0x267A, [2, 3, 4, 9, 18, 19, 20, 21, 24, 25, 26, 27], keep, set())
+    titles = {"ct": "a contentType attribute", "md": "a messageDigest attribute", "other": "another signed attribute"}
+    docs = {"ct": "the attribute is contentType, whose value is the TSTInfo OID with nothing after it; frame "
+                  "offset 0x78 becomes 1.",
+            "md": "the attribute is messageDigest, whose value is a 32-byte octet string with nothing after it; "
+                  "its address goes to `s8`.",
+            "other": "the attribute is neither contentType nor messageDigest, and is skipped."}
+    info = {"name": "sv_tsav" + kind, "title": titles[kind],
+            "doc": "From 0x25DA to 0x267A: " + docs[kind],
+            "params": params, "stmt": stmt, "proof": proof, "binders": ATTRV_BINDERS, "start": 0x25DA,
+            "import": "C3BootProofs.Proofs.SvTsa"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -4724,7 +4832,8 @@ def main():
                 "Deku1": stage_deku1, "Deku2": stage_deku2, "Deku3": stage_deku3,
                 "L7": stage_l7, "L8a": stage_l8a,
                 "Imiss": stage_imiss, "Ihit": stage_ihit, "Iend": stage_iend, "Dpv": stage_dpv, "Ts1": stage_ts1, "Tsa1": stage_tsa1, "Tsa2": stage_tsa2, "Tsa3": stage_tsa3,
-                "Tsa4n": lambda: stage_tsa4(False), "Tsa4s": lambda: stage_tsa4(True), "Tsa5": stage_tsa5, "Tsaa": stage_tsaa}[stage]()
+                "Tsa4n": lambda: stage_tsa4(False), "Tsa4s": lambda: stage_tsa4(True), "Tsa5": stage_tsa5, "Tsaa": stage_tsaa,
+                **{f"Tsav{x}": (lambda x=x: stage_tsav(x)) for x in ("ct", "md", "other")}}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
