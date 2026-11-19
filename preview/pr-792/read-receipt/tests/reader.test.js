@@ -1,0 +1,74 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+
+import {Reader, formatDuration, isAdvanceKey} from '../src/reader.js';
+
+/**
+ * @param {string} key
+ * @param {!Object=} overrides
+ * @return {!Object} A keydown event's fields.
+ */
+function key(key, overrides = {}) {
+  return {
+    key,
+    repeat: false,
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+    ...overrides,
+  };
+}
+
+test('isAdvanceKey accepts fresh Right Arrow and Space presses', () => {
+  assert.equal(isAdvanceKey(key('ArrowRight')), true);
+  assert.equal(isAdvanceKey(key(' ')), true);
+});
+
+test('isAdvanceKey ignores held keys', () => {
+  assert.equal(isAdvanceKey(key('ArrowRight', {repeat: true})), false);
+  assert.equal(isAdvanceKey(key(' ', {repeat: true})), false);
+});
+
+test('isAdvanceKey ignores other keys and modified presses', () => {
+  for (const name of ['ArrowLeft', 'ArrowDown', 'Enter', 'a', 'Spacebar']) {
+    assert.equal(isAdvanceKey(key(name)), false, name);
+  }
+  for (const modifier of ['altKey', 'ctrlKey', 'metaKey', 'shiftKey']) {
+    assert.equal(isAdvanceKey(key(' ', {[modifier]: true})), false, modifier);
+  }
+});
+
+test('Reader steps through every word once', () => {
+  const reader = new Reader(3);
+  assert.equal(reader.index, 0);
+  assert.equal(reader.done, false);
+  assert.equal(reader.advance(), true);
+  assert.equal(reader.advance(), true);
+  assert.equal(reader.done, false);
+  assert.equal(reader.advance(), true);
+  assert.equal(reader.done, true);
+  assert.equal(reader.index, 3);
+  assert.equal(reader.advance(), false);
+  assert.equal(reader.index, 3);
+});
+
+test('Reader times from the first step to the last', () => {
+  let now = 1000;
+  const reader = new Reader(2, () => now);
+  now = 60_000;
+  assert.equal(reader.seconds, 0);
+  reader.advance();
+  now += 4_400;
+  assert.equal(reader.seconds, 4);
+  reader.advance();
+  now += 100_000;
+  assert.equal(reader.seconds, 4);
+});
+
+test('formatDuration drops leading zero units', () => {
+  assert.equal(formatDuration(0), '0s');
+  assert.equal(formatDuration(42), '42s');
+  assert.equal(formatDuration(252), '4m 12s');
+  assert.equal(formatDuration(3605), '1h 0m 5s');
+});
