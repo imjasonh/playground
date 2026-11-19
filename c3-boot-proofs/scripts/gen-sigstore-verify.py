@@ -190,12 +190,12 @@ def err44(sub, entry):
     sub.jump(0xB48)
 
 
-def fail_elem(sub, k, oc, dc, hr, null, width, fail_tail):
+def fail_elem(sub, k, oc, dc, hr, null, width, fail_tail, exit_lemma="sv_fail"):
     """A reader's failing case: the null address at `oc`, then `fail_tail`."""
     sub.emit(f"  obtain ⟨z{hr}, -⟩ := {null}")
     sub.frame_after(k, [(oc, width), (dc + 8, 8)], {oc: ("0", f"z{hr}")})
     fail_tail(sub)
-    sub.fail(sub.fail_proof(("eq", hr)))
+    sub.fail(sub.fail_proof(("eq", hr)), exit_lemma)
 
 
 class Gen:
@@ -494,7 +494,7 @@ class Gen:
         self.slices[(f"{rp}", hl)] = f"({inp}.rawW {hr})"
         self.slices_nat[(f"{rp}", f"{t}.header + {t}.len")] = f"({inp}.rawN {hr})"
 
-    def elem_split(self, k, expr, oc, dc, rd, fail_tail):
+    def elem_split(self, k, expr, oc, dc, rd, fail_tail, exit_lemma="sv_fail"):
         """Splits on `Der::element`'s result; the failing case reads the null
         address and runs `fail_tail` from there. Returns the `DerTlv` name."""
         t = f"tl{k}"
@@ -502,7 +502,7 @@ class Gen:
         self.emit(f"  rcases r{k} with er{k} | {t}")
         self.sc.append(("eq", expr, f".ok {t}", [t], f"hr{k}"))
 
-        self.fork(lambda sub: fail_elem(sub, k, oc, dc, f"hr{k}", f"Er{k} er{k} hr{k}", 17, fail_tail))
+        self.fork(lambda sub: fail_elem(sub, k, oc, dc, f"hr{k}", f"Er{k} er{k} hr{k}", 17, fail_tail, exit_lemma))
         self.elem_ok(k, oc, dc, t, rd)
         return t
 
@@ -1030,7 +1030,7 @@ class Gen:
         self.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
         self.emit(f"  rcases r{k} with er{k} | {t}")
         self.sc.append(("eq", ex, f".ok {t}", [t], f"hr{k}"))
-        self.fork(lambda sub: fail_elem(sub, k, oc, dc, f"hr{k}", f"Er{k} er{k} hr{k}", 17, fail_tail))
+        self.fork(lambda sub: fail_elem(sub, k, oc, dc, f"hr{k}", f"Er{k} er{k} hr{k}", 17, fail_tail, exit_lemma))
         self.elem_ok(k, oc, dc, t, (rp, rl, inp))
         self.last_tlv = t
         return k
@@ -4369,6 +4369,242 @@ def stage_tsa4(present):
     return g, info
 
 
+TSA5_BINDERS = ("{B out bp x21 x26 sip sil : Word} "
+                + "{" + " ".join(f"w{e:x}" for e in DPV_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+
+
+def tsa5_ii_fail(sub, k, err):
+    """`Der::integer_is` failing at 0x245A: an error goes to 0x24A0, a different
+    value to 0x2C60."""
+    sub.emit(f"  rw [hr{k}] at R{k}")
+    sub.emit(f"  obtain ⟨a0_{k}, a1_{k}⟩ := R{k}")
+    sub.emit(f"  have g{k}_10 : reg n{k} a0 = BitVec.ofNat 32 0x{1 if err else 0:X} := a0_{k}")
+    sub.regs[10] = ("C", 1 if err else 0)
+    if not err:
+        sub.emit(f"  have g{k}_11 : reg n{k} a1 = BitVec.ofNat 32 0x0 := by rw [a1_{k}]; rfl")
+        sub.regs[11] = ("C", 0)
+    sub.frame_after(k, [(0x208, 8)], {})
+    sub.block(0x2462, 0x2464)
+    if err:
+        sub.branch(0x2464, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.block(0x24A0, 0x24A2)
+        sub.jump(0x24A2)
+    else:
+        sub.branch(0x2464, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.block(0x2466, 0x2468)
+        sub.branch(0x2468, True, f"by rw [g{sub.k}_11, s{sub.k}.zero]; decide")
+    sub.fail(sub.fail_proof(("eq", f"hr{k}")), "sv_fail_2c60")
+
+
+def tsa5_sha_fail(sub, k, err):
+    """`tsa::is_sha256` failing at 0x2494: an error goes through 0x24A0, another
+    algorithm to 0x2C60."""
+    sub.emit(f"  rw [hr{k}] at R{k}")
+    sub.emit(f"  obtain ⟨a0_{k}, a1_{k}⟩ := R{k}")
+    sub.emit(f"  have g{k}_10 : reg n{k} a0 = BitVec.ofNat 32 0x{1 if err else 0:X} := a0_{k}")
+    sub.regs[10] = ("C", 1 if err else 0)
+    if not err:
+        sub.emit(f"  have g{k}_11 : reg n{k} a1 = BitVec.ofNat 32 0x0 := by rw [a1_{k}]; rfl")
+        sub.regs[11] = ("C", 0)
+    sub.frame_after(k, [(0x208, 8)], {})
+    sub.block(0x249C, 0x249E)
+    if err:
+        sub.branch(0x249E, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.block(0x24A0, 0x24A2)
+        sub.jump(0x24A2)
+    else:
+        sub.branch(0x249E, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.block(0x24AA, 0x24AC)
+        sub.branch(0x24AC, True, f"by rw [g{sub.k}_11, s{sub.k}.zero]; decide")
+    sub.fail(sub.fail_proof(("eq", f"hr{k}")), "sv_fail_2c60")
+
+
+def tsa5_elem_tail(sub):
+    """`Der::element` failing at 0x2476: `lw`, `beqz` to 0x2994, `lbu s0`, `j` to 0x2C60."""
+    sub.load(0x247E, "lw")
+    sub.branch(0x2482, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; rfl")
+    sub.load_any(0x2994)
+    sub.jump(0x2998)
+
+
+def tsa5_none(sub, k):
+    """No signed attributes: `lbu`, `bnez` not taken, `lw`, `beqz` to 0x2C60."""
+    sub.emit(f"  rw [hr{k}] at R{k}")
+    sub.emit(f"  obtain ⟨y0_{k}, y4_{k}⟩ := R{k}")
+    sub.frame_after(k, [(0x420, 0x18), (0x208, 8)], {0x424: ("0", f"y4_{k}")}, {0x420: ("(0 : BitVec 8)", f"y0_{k}")})
+    sub.load(0x24C2, "lbu")
+    sub.branch(0x24C6, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+    sub.load(0x24CA, "lw")
+    sub.branch(0x24CE, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; rfl")
+    sub.fail(sub.fail_proof(("eq", f"hr{k}")), "sv_fail_2c60")
+
+
+def tsa5_err(sub, k):
+    """Malformed signed attributes: `lbu`, `bnez` to 0x298E, `lbu s0`, `j` to 0x2C60."""
+    sub.emit(f"  rw [hr{k}] at R{k}")
+    sub.emit(f"  obtain ⟨y0_{k}, -⟩ := R{k}")
+    sub.frame_after(k, [(0x420, 0x18), (0x208, 8)], {}, {0x420: ("(1 : BitVec 8)", f"y0_{k}")})
+    sub.load(0x24C2, "lbu")
+    sub.branch(0x24C6, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+    sub.load_any(0x298E)
+    sub.jump(0x2992)
+    sub.fail(sub.fail_proof(("eq", f"hr{k}")), "sv_fail_2c60")
+
+
+def tsa5_noattrs(sub, hname):
+    """An empty signed attributes set: `beqz` to 0x2682, then no digest and no
+    content type, and `beqz` to 0x29A6."""
+    sub.branch(0x2502, True, f"by rw [g{sub.k}_20, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not {hname})")
+    sub.block(0x2682, 0x2686)
+    sub.pinned.add(f"g{sub.k + 1}_11")
+    sub.load(0x2686, "lw")
+    sub.block(0x2688, 0x268A)
+    kk = sub.k
+    sub.emit(f"  have g{kk}_10 : reg n{kk} a0 = BitVec.ofNat 32 0x0 := by")
+    sub.emit(f"    rw [rb{kk}]; simp +decide only [runBlock, BInstr.run, sv{sub.name}2688, upd, ↓reduceIte, aluEval]")
+    sub.emit(f"    rw [g{kk - 1}_11]; exact BitVec.and_zero")
+    sub.regs[10] = ("C", 0)
+    sub.branch(0x268A, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; rfl")
+    sub.block(0x29A6, 0x29A8)
+    sub.jump(0x29A8)
+    sub.fail(sub.fail_proof(("prop", hname)), "sv_fail_2c60")
+
+
+def stage_tsa5():
+    """From 0x23DC to the signed attributes loop at 0x2506."""
+    g = Gen("Tsa5")
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 20: ("S", 0x1320)}
+    words = {e: f"w{e:x}" for e in DPV_WORDS}
+    words.update({0x2A8: "sip", 0x2AC: "sil"})
+    params = start(g, regs, words, {("sip", "sil"): "si_in"}) + ["(D0 : SvData M0)"]
+    g.block(0x23DC, 0x23E2)
+    k1, t1, rd1 = tsa_read(g, 0x23E2, 0x2A0, "set")
+    g.block(0x23F6, 0x2400)
+    g.mc(0x2400, 0x17D, 0x425, 0xB)
+    g.load(0x2408, "lw")
+    g.store(0x240C, "sw")
+    g.store(0x2410, "sb")
+    g.word_of_bytes(0x17C, f"BitVec.ofNat 32 {t1}.len")
+    tsa_rest0(g, 0x2414, "hrest0", 0x2838)
+    g.block(0x2418, 0x241E)
+    k2, t2, rd2 = tsa_read(g, 0x241E, 0x178)
+    g.block(0x2432, 0x243C)
+    g.mc(0x243C, 0x205, 0x425, 0xB)
+    g.load(0x2444, "lw")
+    g.store(0x2448, "sw")
+    g.store(0x244C, "sb")
+    g.word_of_bytes(0x204, f"BitVec.ofNat 32 {t2}.len")
+    g.block(0x2450, 0x2452)
+    tsa_rest0(g, 0x2452, "hrest1", 0x2C60)
+    g.block(0x2456, 0x245A)
+    k, ex, rd = g.iis(0x245A, 0x200)
+    rp, rl, inp = rd
+    g.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+    g.emit(f"  rcases r{k} with b{k} | (_ | _)")
+    g.sc.append(("eq", ex, ".ok true", [], f"hr{k}"))
+    g.fork(lambda sub: tsa5_ii_fail(sub, k, True))
+    g.fork(lambda sub: tsa5_ii_fail(sub, k, False))
+    g.emit(f"  obtain ⟨te{k}, hte{k}⟩ := ii_ok_elem hr{k}")
+    g.sc.append(("eq", f"derElement 2 (memBytes M0 ({rp}) ({rl}).toNat)", f".ok te{k}", [f"te{k}"], f"hte{k}"))
+    g.emit(f"  obtain ⟨d8_{k}, d12_{k}⟩ := A{k} te{k} hte{k}")
+    g.emit(f"  rw [hr{k}] at R{k}")
+    g.emit(f"  obtain ⟨a0_{k}, a1_{k}⟩ := R{k}")
+    g.emit(f"  have g{k}_10 : reg n{k} a0 = BitVec.ofNat 32 0x0 := a0_{k}")
+    g.emit(f"  have g{k}_11 : reg n{k} a1 = BitVec.ofNat 32 0x1 := by rw [a1_{k}]; rfl")
+    g.regs[10] = ("C", 0)
+    g.regs[11] = ("C", 1)
+    hl = f"BitVec.ofNat 32 (te{k}.header + te{k}.len)"
+    g.frame_after(k, [(0x208, 8)], {0x208: (f"({rp}) + {hl}", f"d8_{k}"), 0x20C: (f"({rl}) - {hl}", f"d12_{k}")})
+    g.slices[(f"({rp}) + {hl}", f"({rl}) - {hl}")] = f"({inp}.restW hte{k})"
+    g.block(0x2462, 0x2464)
+    g.branch(0x2464, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.block(0x2466, 0x2468)
+    g.branch(0x2468, False, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
+    g.block(0x246C, 0x2476)
+    k, ex, rd = g.elem(0x2476, 0x420, 0x200, 0x30)
+    t = g.elem_split(k, ex, 0x420, 0x200, rd, tsa5_elem_tail, "sv_fail_2c60")
+    g.load(0x247E, "lw")
+    g.branch(0x2482, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({rd[2]}.ok_ne hr{k})")
+    g.load(0x2486, "lw")
+    g.store(0x248A, "sw")
+    g.load(0x248C, "lw")
+    g.store(0x2490, "sw")
+    g.block(0x2492, 0x2494)
+    k, ex, rd = g.issha(0x2494, 0x200)
+    rp, rl, inp = rd
+    g.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+    g.emit(f"  rcases r{k} with b{k} | (_ | _)")
+    g.sc.append(("eq", ex, ".ok true", [], f"hr{k}"))
+    g.fork(lambda sub: tsa5_sha_fail(sub, k, True))
+    g.fork(lambda sub: tsa5_sha_fail(sub, k, False))
+    g.emit(f"  obtain ⟨te{k}, hte{k}⟩ := isSha256Of_ok_elem hr{k}")
+    g.sc.append(("eq", f"derElement 0x30 (memBytes M0 ({rp}) ({rl}).toNat)", f".ok te{k}", [f"te{k}"], f"hte{k}"))
+    g.emit(f"  obtain ⟨d8_{k}, d12_{k}⟩ := A{k} te{k} hte{k}")
+    g.emit(f"  rw [hr{k}] at R{k}")
+    g.emit(f"  obtain ⟨a0_{k}, a1_{k}⟩ := R{k}")
+    g.emit(f"  have g{k}_10 : reg n{k} a0 = BitVec.ofNat 32 0x0 := a0_{k}")
+    g.emit(f"  have g{k}_11 : reg n{k} a1 = BitVec.ofNat 32 0x1 := by rw [a1_{k}]; rfl")
+    g.regs[10] = ("C", 0)
+    g.regs[11] = ("C", 1)
+    hl = f"BitVec.ofNat 32 (te{k}.header + te{k}.len)"
+    g.frame_after(k, [(0x208, 8)], {0x208: (f"({rp}) + {hl}", f"d8_{k}"), 0x20C: (f"({rl}) - {hl}", f"d12_{k}")})
+    g.slices[(f"({rp}) + {hl}", f"({rl}) - {hl}")] = f"({inp}.restW hte{k})"
+    g.block(0x249C, 0x249E)
+    g.branch(0x249E, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.block(0x24AA, 0x24AC)
+    g.branch(0x24AC, False, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
+    g.block(0x24B0, 0x24BA)
+    k, ex, rd = g.opt(0x24BA, 0x420, 0x200, 0xA0)
+    rp, rl, inp = rd
+    t = f"tl{k}"
+    g.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+    g.emit(f"  rcases r{k} with _ | (er{k} | {t})")
+    g.sc.append(("eq", ex, f"some (.ok {t})", [t], f"hr{k}"))
+    g.fork(lambda sub: tsa5_none(sub, k))
+    g.fork(lambda sub: tsa5_err(sub, k))
+    g.emit(f"  rw [hr{k}] at R{k}")
+    g.emit(f"  obtain ⟨y0_{k}, y4_{k}, y8_{k}, y12_{k}, y16_{k}, y20_{k}, d8_{k}, d12_{k}⟩ := R{k}")
+    h = f"BitVec.ofNat 32 {t}.header"
+    hl = f"BitVec.ofNat 32 ({t}.header + {t}.len)"
+    g.frame_after(k, [(0x420, 0x18), (0x208, 8)],
+                  {0x424: (f"({rp}) + {h}", f"y4_{k}"), 0x428: (f"BitVec.ofNat 32 {t}.len", f"y8_{k}"),
+                   0x42C: (f"{rp}", f"y12_{k}"), 0x430: (hl, f"y16_{k}"),
+                   0x208: (f"({rp}) + {hl}", f"d8_{k}"), 0x20C: (f"({rl}) - {hl}", f"d12_{k}")},
+                  {0x420: ("(0 : BitVec 8)", f"y0_{k}"), 0x434: (f"BitVec.ofNat 8 {t}.tag", f"y20_{k}")})
+    g.slices[(f"({rp}) + {h}", f"BitVec.ofNat 32 {t}.len")] = f"({inp}.contentW (opt_ok_elem hr{k}))"
+    g.slices[(f"({rp}) + {hl}", f"({rl}) - {hl}")] = f"({inp}.restW (opt_ok_elem hr{k}))"
+    g.load(0x24C2, "lbu")
+    g.branch(0x24C6, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.load(0x24CA, "lw")
+    g.branch(0x24CE, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({inp}.ok_ne (opt_ok_elem hr{k}))")
+    g.block(0x24D2, 0x24D4)
+    g.store(0x24D4, "sw")
+    g.block(0x24D6, 0x24DA)
+    g.load(0x24DA, "lw")
+    g.load(0x24DE, "lw")
+    g.store(0x24E0, "sw")
+    g.load(0x24E2, "lw")
+    g.store(0x24E4, "sw")
+    g.block(0x24E6, 0x24EE)
+    g.store(0x24EE, "sw")
+    g.block(0x24F0, 0x24F2)
+    g.store(0x24F2, "sw")
+    g.store(0x24F4, "sw")
+    g.block(0x24F6, 0x2500)
+    g.store(0x2500, "sw")
+    len_ = lean_val(g.regs[20])
+    g.prop_check(f"{len_} ≠ 0", "hattrs", lambda sub: tsa5_noattrs(sub, "hattrs"))
+    g.branch(0x2502, False, f"by rw [g{g.k}_20, s{g.k}.zero]; exact br_beq_f hattrs")
+    stmt, proof = finish(g, 0x2506, [2, 3, 4, 9, 18, 19, 20, 21, 24, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "sv_tsa5", "title": "the timestamp's SignerInfo",
+            "doc": "From 0x23DC to the signed attributes loop at 0x2506: one `SignerInfo` with version `INTEGER 1`, "
+            "its `sid` element, digest algorithm SHA-256, and nonempty `[0]` signed attributes.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": TSA5_BINDERS, "start": 0x23DC,
+            "import": "C3BootProofs.Proofs.SvTsa"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -4376,7 +4612,7 @@ def main():
                 "Deku1": stage_deku1, "Deku2": stage_deku2, "Deku3": stage_deku3,
                 "L7": stage_l7, "L8a": stage_l8a,
                 "Imiss": stage_imiss, "Ihit": stage_ihit, "Iend": stage_iend, "Dpv": stage_dpv, "Ts1": stage_ts1, "Tsa1": stage_tsa1, "Tsa2": stage_tsa2, "Tsa3": stage_tsa3,
-                "Tsa4n": lambda: stage_tsa4(False), "Tsa4s": lambda: stage_tsa4(True)}[stage]()
+                "Tsa4n": lambda: stage_tsa4(False), "Tsa4s": lambda: stage_tsa4(True), "Tsa5": stage_tsa5}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

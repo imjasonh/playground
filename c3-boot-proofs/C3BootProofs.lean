@@ -183,6 +183,7 @@ import C3BootProofs.Proofs.SvTsa2
 import C3BootProofs.Proofs.SvTsa3
 import C3BootProofs.Proofs.SvTsa4n
 import C3BootProofs.Proofs.SvTsa4s
+import C3BootProofs.Proofs.SvTsa5
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main
