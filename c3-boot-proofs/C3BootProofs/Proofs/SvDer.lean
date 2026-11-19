@@ -239,4 +239,126 @@ theorem sv_seqF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {im
   obtain ⟨K, Ok, Er, fr⟩ := dnm_facts _ ho2 ho3 hd2 hd3 hs f'
   exact ⟨n', c', s', sp', k', K, Ok, Er, fr⟩
 
+/-- The words `Der::element` leaves when the read succeeds: the content's
+address and length, the whole element's address and length, and the tag,
+and the reader moved past the element. -/
+def DerTlvW (M : Word → BitVec 8) (B : Word) (oc dc : Nat) (rp rl : Word) (t : DerTlv) : Prop :=
+  memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 oc) = rp + BitVec.ofNat 32 t.header ∧
+  memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (oc + 4)) = BitVec.ofNat 32 t.len ∧
+  memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (oc + 8)) = rp ∧
+  memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (oc + 12)) = BitVec.ofNat 32 (t.header + t.len) ∧
+  M (B + 0x21A0 + BitVec.ofNat 32 (oc + 16)) = BitVec.ofNat 8 t.tag ∧
+  memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp + BitVec.ofNat 32 (t.header + t.len) ∧
+  memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = rl - BitVec.ofNat 32 (t.header + t.len)
+
+set_option maxHeartbeats 8000000 in
+/-- What `derTlvMem` leaves on the frame. -/
+theorem dtm_facts {B : Word} {M : Word → BitVec 8} {oc dc : Nat} {rp rl : Word} (r : Except DerError DerTlv)
+    (ho2 : oc + 20 ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (hs : oc + 20 ≤ dc + 8 ∨ dc + 16 ≤ oc) :
+    SvKeepL B M (derTlvMem M (B + 0x21A0 + BitVec.ofNat 32 oc) (B + 0x21A0 + BitVec.ofNat 32 dc) rp rl r)
+        [(oc, 17), (dc + 8, 8)] ∧
+      (∀ t, r = .ok t → DerTlvW (derTlvMem M (B + 0x21A0 + BitVec.ofNat 32 oc) (B + 0x21A0 + BitVec.ofNat 32 dc)
+        rp rl r) B oc dc rp rl t) ∧
+      (∀ e, r = .error e → DerErrW (derTlvMem M (B + 0x21A0 + BitVec.ofNat 32 oc) (B + 0x21A0 + BitVec.ofNat 32 dc)
+        rp rl r) B oc e) ∧
+      (∀ x, SvR B x → derTlvMem M (B + 0x21A0 + BitVec.ofNat 32 oc) (B + 0x21A0 + BitVec.ofNat 32 dc) rp rl r x =
+        M x) := by
+  have o4 := lit4 (B + 0x21A0) oc (by omega)
+  have o8 := lit8 (B + 0x21A0) oc (by omega)
+  have o12 := lit12 (B + 0x21A0) oc (by omega)
+  have o16 : B + 0x21A0 + BitVec.ofNat 32 oc + 0x10 = B + 0x21A0 + BitVec.ofNat 32 (oc + 16) :=
+    frame_lit _ (by simpa using (show oc + 16 < 2 ^ 32 by omega))
+  have d8 := lit8 (B + 0x21A0) dc (by omega)
+  have d12 := lit12 (B + 0x21A0) dc (by omega)
+  have st : ∀ (N : Word → BitVec 8) (a e : Nat) (v : Word), a + 4 ≤ 0x1690 → e + 1 ≤ 0x1690 → (a + 4 ≤ e ∨ e + 1 ≤ a) →
+      memStore32 N (B + 0x21A0 + BitVec.ofNat 32 a) v (B + 0x21A0 + BitVec.ofNat 32 e) =
+        N (B + 0x21A0 + BitVec.ofNat 32 e) :=
+    fun N a e v ha he h => memStore32_get_sep (sepS (B + 0x21A0) (by omega) (by omega) (by omega))
+  have st8 : ∀ (N : Word → BitVec 8) (a e : Nat) (v : BitVec 8), a + 1 ≤ 0x1690 → e + 1 ≤ 0x1690 → a ≠ e →
+      memStore8 N (B + 0x21A0 + BitVec.ofNat 32 a) v (B + 0x21A0 + BitVec.ofNat 32 e) =
+        N (B + 0x21A0 + BitVec.ofNat 32 e) :=
+    fun N a e v ha he h => memStore8_ne (add_ofNat_ne _ (by omega) (by omega) (Ne.symm h))
+  have ldst : ∀ (N : Word → BitVec 8) (a e : Nat) (v : Word), a % 4 = 0 → e % 4 = 0 → a + 4 ≤ 0x1690 →
+      e + 4 ≤ 0x1690 → memLoad32 (memStore32 N (B + 0x21A0 + BitVec.ofNat 32 a) v) (B + 0x21A0 + BitVec.ofNat 32 e) =
+        if a = e then v else memLoad32 N (B + 0x21A0 + BitVec.ofNat 32 e) :=
+    fun N a e v h1 h2 h3 h4 => ld_st_sv h1 h2 (by omega) (by omega)
+  have ld8 : ∀ (N : Word → BitVec 8) (a e : Nat) (v : BitVec 8), a + 1 ≤ 0x1690 → e + 4 ≤ 0x1690 → (a < e ∨ e + 4 ≤ a) →
+      memLoad32 (memStore8 N (B + 0x21A0 + BitVec.ofNat 32 a) v) (B + 0x21A0 + BitVec.ofNat 32 e) =
+        memLoad32 N (B + 0x21A0 + BitVec.ofNat 32 e) :=
+    fun N a e v h1 h2 h3 => memLoad32_store8_sep (sepS (B + 0x21A0) (by omega) (by omega) (by omega))
+  refine ⟨fun e he hL => ?_, fun t ht => ?_, fun er he => ?_, fun x hx => ?_⟩
+  · have h1 := hL _ (List.mem_cons_self ..)
+    have h2 := hL _ (List.mem_cons_of_mem _ (List.mem_singleton_self _))
+    simp only at h1 h2
+    cases r with
+    | error er =>
+      simp only [derTlvMem]
+      rw [o4, st8 _ (oc + 4) e _ (by omega) he (by omega), st _ oc e _ (by omega) he (by omega)]
+    | ok t =>
+      simp only [derTlvMem]
+      rw [o16, st8 _ (oc + 16) e _ (by omega) he (by omega), o12, st _ (oc + 12) e _ (by omega) he (by omega), o8,
+        st _ (oc + 8) e _ (by omega) he (by omega), o4, st _ (oc + 4) e _ (by omega) he (by omega),
+        st _ oc e _ (by omega) he (by omega), d12, st _ (dc + 12) e _ (by omega) he (by omega), d8,
+        st _ (dc + 8) e _ (by omega) he (by omega)]
+  · subst ht
+    simp only [DerTlvW, derTlvMem]
+    rw [o4, o8, o12, o16, d8, d12, memStore8_same]
+    simp (disch := omega) only [ld8, ldst, ite_true]
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> (try simp (disch := omega) only [ite_eq_right]) <;> trivial
+  · subst he
+    simp only [DerErrW, derTlvMem]
+    rw [o4, memStore8_same, ld8 _ (oc + 4) oc _ (by omega) (by omega) (by omega), memLoad32_store32_same]
+    exact ⟨rfl, rfl⟩
+  · have hx' : ∀ c, c + 1 ≤ 0x1690 → Sep (B + 0x21A0 + BitVec.ofNat 32 c) 1 x 1 := fun c hc => svR_hi hx hc
+    have s4 : ∀ (N : Word → BitVec 8) (a : Nat) (v : Word), a + 4 ≤ 0x1690 →
+        memStore32 N (B + 0x21A0 + BitVec.ofNat 32 a) v x = N x := fun N a v ha =>
+      memStore32_get_sep (svR_hi hx ha)
+    cases r with
+    | error er =>
+      simp only [derTlvMem]
+      rw [o4, memStore8_ne (sep1_ne (hx' (oc + 4) (by omega))), s4 _ oc _ (by omega)]
+    | ok t =>
+      simp only [derTlvMem]
+      rw [o16, memStore8_ne (sep1_ne (hx' (oc + 16) (by omega))), o12, s4 _ (oc + 12) _ (by omega), o8,
+        s4 _ (oc + 8) _ (by omega), o4, s4 _ (oc + 4) _ (by omega), s4 _ oc _ (by omega), d12,
+        s4 _ (dc + 12) _ (by omega), d8, s4 _ (dc + 8) _ (by omega)]
+
+set_option maxHeartbeats 4000000 in
+/-- **A call to `Der::element`** with tag `tag`, the result at offset `oc`
+of the frame, and the reader at offset `dc`. -/
+theorem sv_elemF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o rp rl : Word} {oc dc tag : Nat}
+    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 derElementAddress)
+    (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
+    (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 oc) (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 dc)
+    (ha2 : reg n a2 = BitVec.ofNat 32 tag) (htag : tag < 256)
+    (ho2 : oc + 20 ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (hs : oc + 20 ≤ dc + 8 ∨ dc + 16 ≤ oc)
+    (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp)
+    (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = rl) :
+    ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧
+      (∀ q, tlvClob q = false → q ≠ ra → reg n' q = reg n q) ∧
+      SvKeepL B M n'.mem [(oc, 17), (dc + 8, 8)] ∧
+      (∀ t, derElement tag (memBytes M rp rl.toNat) = .ok t → DerTlvW n'.mem B oc dc rp rl t) ∧
+      (∀ e, derElement tag (memBytes M rp rl.toNat) = .error e → DerErrW n'.mem B oc e) ∧
+      (∀ x, SvR B x → n'.mem x = M x) := by
+  have hFl := F.lo; have hFh := F.hi
+  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := s.callRa C.self h1 h2 hb (by decide)
+  have r1 := PEnv.reg1 regs1 s.zero
+  have d8 := lit8 (B + 0x21A0) dc (by omega)
+  obtain ⟨n2, c2, pc2, mem2, k2⟩ := derElement_correct n1 (tag := tag) (by decide) (by rw [mem1]; exact C.elem)
+    (by rw [mem1]; exact C.tlv) pc1 (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1])
+    (by rw [r1 a2 (by decide), ha2]) htag (by rw [regs1]; simp +decide [upd]) (even_clear _ hev)
+    (sv_al F (by omega) ho3) (sv_al F (by omega) hd3)
+    (by rw [← sv_base']; exact F.sepHi (by omega) (by decide) (by decide))
+    (by rw [← sv_base']; exact F.sepHi (by omega) (by decide) (by decide))
+    (by rw [d8, ← sv_base']; exact F.sepHi (by omega) (by decide) (by decide))
+  rw [mem1, d8, lit12 (B + 0x21A0) dc (by omega), hrp, hrl] at mem2
+  obtain ⟨K, Ok, Er, fr⟩ := dtm_facts (rp := rp) (rl := rl) (derElement tag (memBytes M rp rl.toNat)) ho2 ho3 hd2 hd3 hs
+  rw [← mem2] at K Ok Er fr
+  exact ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, fun q hk hr => by rw [k2 q hk, r1 q hr], K, Ok, Er, fr⟩
+
 end C3.RV32.Sv
