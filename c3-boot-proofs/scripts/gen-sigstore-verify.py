@@ -1344,6 +1344,22 @@ class Gen:
         self.frame_after(k, [], {})
         return k
 
+    def b64f(self, off, rc, oc, tc, nl, L):
+        """`base64::decode_into` of the `nl` bytes at offset `tc` of the frame;
+        returns k. The caller rewrites the input bytes and splits."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_b64fF", f"(rc := 0x{rc:X}) (oc := 0x{oc:X}) (tc := 0x{tc:X}) (nl := {nl}) (L := {L})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"Ok{k}", f"Bad{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (CK0.sv F fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, rc)} {self.reg_is(k - 1, 11, tc)} g{k-1}_12 {self.reg_is(k - 1, 13, oc)} g{k-1}_14")
+        self.emit(f"    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        return k
+
     def gt(self, off, oc, p, nl, inp, ha2):
         """`time::generalized_time` on the `nl` bytes at `p`, split on its answer:
         `None` reads the error flag at `oc + 0x60 - 0x60` with `lbu`, `beqz` not
@@ -6180,8 +6196,9 @@ def stage_ck2(lead):
     return g, info
 
 
+CK_LOW = [0x8, 0xC, 0x10, 0x14, 0x18, 0x1C, 0x20]
 CKD_BINDERS = ("{B out bp x21 x26 dg q ckl c p rl rp sgp : Word} "
-               + "{" + " ".join(f"w{e:x}" for e in TST_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+               + "{" + " ".join(f"w{e:x}" for e in CK_LOW + TST_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
 
 
 def ckd_start(g):
@@ -6191,6 +6208,7 @@ def ckd_start(g):
     words = {e: f"w{e:x}" for e in TST_WORDS}
     words.update({0x74: "q", 0x428: "sgp"})
     words.update(TL_STRUCT)
+    words.update({e: f"w{e:x}" for e in CK_LOW})
     return start(g, regs, words, {})
 
 
@@ -6349,7 +6367,8 @@ def ck_fail_none(sub, why):
 
 
 CL_BINDERS = ("{B out bp x21 x26 dg c q rl rp sgp op ol : Word} {rt : Bytes} "
-              + "{" + " ".join(f"w{e:x}" for e in TST_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+              + "{" + " ".join(f"w{e:x}" for e in [0x8, 0xC, 0x10, 0x14, 0x18, 0x20] + TST_WORDS)
+              + " : Word} {v : Nat → Word} {n0 : Machine}")
 CL_KEEP_REGS = [2, 3, 4, 9, 18, 19, 21, 22, 23, 24, 25, 26, 27]
 
 
@@ -6363,6 +6382,7 @@ def cl_start(g):
     words.update({0x74: "q'", 0x428: "sgp", 0x1C: "(BitVec.ofNat 8 (rt.getD 0 0)).zeroExtend 32"})
     words.pop(0x74)
     words.update(TL_STRUCT)
+    words.update({e: f"w{e:x}" for e in (0x8, 0xC, 0x10, 0x14, 0x18, 0x20)})
     params = start(g, regs, words, {})
     g.ranges[0x320] = (31, "BitVec.ofNat 8 (rt.getD (1 + j) 0)")
     params += ["(q0_320 : ∀ j, j < 31 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x320 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0))"]
@@ -6481,13 +6501,13 @@ def stage_cs1():
     return g, info
 
 
-CS_BINDERS = CL_BINDERS.replace("op ol : Word} {rt : Bytes}", "op ol : Word} {rt sg : Bytes}")
+CS_BINDERS = CL_BINDERS.replace("op ol : Word} {rt : Bytes}", "op ol : Word} {rt sg : Bytes}").replace(" w10 ", " ")
 
 
 def cs_start(g):
     """The signature loop's head at 0x2D6E: the word at 0x30 says whether a
     signature by the log was found, which would be at offsets 0x10 and 0x1480."""
-    params = cl_start(g)
+    params = [q for q in cl_start(g) if not q.startswith("(w0_10 :")]
     g.words[0x10] = ("U", "(BitVec.ofNat 8 (sg.getD 0 0)).zeroExtend 32")
     params.append(f"(w0_10 : memLoad32 n0.mem ({fa(0x10)}) = (BitVec.ofNat 8 (sg.getD 0 0)).zeroExtend 32)")
     g.ranges[0x1480] = (63, "BitVec.ofNat 8 (sg.getD (1 + j) 0)")
@@ -6633,6 +6653,120 @@ def stage_cn(kind):
     return g, info
 
 
+def cg_start(g):
+    params = cs_start(g)
+    new = {10: "pg", 22: "gi", 8: "s0v", 21: "s5v", 23: "s7v"}
+    params = [q for q in params if not any(q.startswith(f"(g0_{r} :") for r in new)]
+    for r, v in new.items():
+        g.regs[r] = ("U", v)
+        params.append(f"(g0_{r} : reg n0 {rname(r)} = {v})")
+    return params
+
+
+def stage_cg(kpad):
+    """One pass of the base64 group loop, from 0x2E0C back to it, for a group
+    whose first `=` is at position `kpad` (4: none): the group decodes."""
+    g = Gen(f"Cg{kpad}")
+    g.generic_alu = True
+    params = cg_start(g)
+    params += ["(hne : pg ≠ w8)", "(CK0 : SvCkCode M0)", "(pg_in : SvIn B pg 4)",
+               "(pb1 : SvIn B (pg + 0x1) 1)", "(pb2 : SvIn B (pg + 0x2) 1)", "(pb3 : SvIn B (pg + 0x3) 1)"]
+    g.load(0x2E0C, "lw")
+    g.branch(0x2E0E, False, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_beq_f hne")
+    g.load_in(0x2E12, "pb1", "(by decide)")
+    g.load_in(0x2E16, "pb2", "(by decide)")
+    g.load_in(0x2E1A, "pb3", "(by decide)")
+    g.load_in(0x2E1E, "pg_in", "(by decide)")
+    for o, e in ((0x2E22, 0x2E24), (0x2E24, 0x2E26), (0x2E26, 0x2E28), (0x2E28, 0x2E2A), (0x2E2A, 0x2E2C), (0x2E2C, 0x2E2E)):
+        g.block(o, e)
+    k = g.k
+    g.emit(f"  have pk{k} : {lean_val(g.regs[11])} = memLoad32 M0 pg := pack4 _ _ _ _")
+    g.emit(f"  rw [pk{k}] at g{k}_11")
+    g.regs[11] = ("U", "memLoad32 M0 pg")
+    g.block(0x2E2E, 0x2E32)
+    g.block(0x2E32, 0x2E3A)
+    g.store(0x2E3A, "sw")
+    g.block(0x2E3C, 0x2E3E)
+    g.block(0x2E3E, 0x2E40)
+    for j in range(4):
+        if j == kpad:
+            break
+        g.branch(0x2E40, False, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
+        addr = lean_val(g.regs[10])
+        nm = f"pc{j}"
+        params.append(f"({nm} : SvIn B ({addr}) 1)")
+        g.load_in(0x2E42, nm, "(by decide)")
+        g.block(0x2E46, 0x2E4A, {12: (f"(M0 ({addr})).zeroExtend 32 + 0xFFFFFFC3",
+                                      "rw [rb{k}]; simp +decide only [runBlock, BInstr.run, " + f"svCg{kpad}2e46" + ", upd, ↓reduceIte]; rw [g{p}_12]; rfl")})
+        g.block(0x2E4A, 0x2E4C)
+        g.block(0x2E4C, 0x2E4E)
+        hn = f"hq{j}"
+        params.append(f"({hn} : M0 ({addr}) ≠ 0x3D)")
+        g.branch(0x2E4E, True, f"by rw [g{g.k}_12, s{g.k}.zero]; exact br_bne_t fun e => {hn} ((pad_iff _).mp e)")
+    if kpad < 4:
+        g.branch(0x2E40, False, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
+        addr = lean_val(g.regs[10])
+        params.append(f"(pc{kpad} : SvIn B ({addr}) 1)")
+        params.append(f"(hq{kpad} : M0 ({addr}) = 0x3D)")
+        g.load_in(0x2E42, f"pc{kpad}", "(by decide)")
+        g.block(0x2E46, 0x2E4A, {12: (f"(M0 ({addr})).zeroExtend 32 + 0xFFFFFFC3",
+                                      "rw [rb{k}]; simp +decide only [runBlock, BInstr.run, " + f"svCg{kpad}2e46" + ", upd, ↓reduceIte]; rw [g{p}_12]; rfl")})
+        g.block(0x2E4A, 0x2E4C)
+        g.block(0x2E4C, 0x2E4E)
+        g.branch(0x2E4E, False, f"by rw [g{g.k}_12, s{g.k}.zero]; exact br_bne_f ((pad_iff _).mpr hq{kpad})")
+        g.load(0x2E50, "lw")
+        last = lean_val(g.regs[22])
+
+        def not_last(sub):
+            sub.branch(0x2E52, True, f"by rw [g{sub.k}_22, g{sub.k}_10]; exact br_bne_t hlast")
+            ck_fail_2ff2(sub, "hlast")
+        g.prop_check(f"{last} = {lean_val(g.words[0xC])}", "hlast", not_last)
+        g.branch(0x2E52, False, f"by rw [g{g.k}_22, g{g.k}_10]; exact br_bne_f hlast")
+    else:
+        g.branch(0x2E40, True, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
+    g.block(0x2E56, 0x2E68)
+    kb = g.b64f(0x2E68, 0x420, 0x200, 0x1380, "4", "3")
+    g.emit(f"  rw [mb4_of_ld w{kb-1}_1380] at Ok{kb} Bad{kb}")
+    ex = "base64Decode (memBytes M0 pg 4)"
+    g.emit(f"  obtain ⟨r{kb}, hr{kb}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+    g.emit(f"  rcases r{kb} with _ | bq{kb}")
+    g.sc.append(("eq", ex, f"some bq{kb}", [f"bq{kb}"], f"hr{kb}"))
+
+    def bad_tail(sub):
+        sub.load(0x2E70, "lbu")
+        sub.block(0x2E74, 0x2E76)
+        sub.branch(0x2E76, True, f"by rw [g{sub.k}_11, s{sub.k}.zero]; decide")
+
+    def none(sub):
+        sub.emit(f"  have z{kb} := Bad{kb} fun b h => by rw [hr{kb}] at h; cases h")
+        sub.frame_after(kb, [(0x420, 8), (0x200, 3)], {}, {0x420: ("(1 : BitVec 8)", f"z{kb}")})
+        bad_tail(sub)
+        ck_fail_none(sub, ("eq", f"hr{kb}"))
+    g.fork(none)
+
+    def long(sub):
+        sub.emit(f"  have z{kb} := Bad{kb} fun b h => by rw [hr{kb}] at h; cases h; omega")
+        sub.frame_after(kb, [(0x420, 8), (0x200, 3)], {}, {0x420: ("(1 : BitVec 8)", f"z{kb}")})
+        bad_tail(sub)
+        ck_fail_none(sub, ("prop", "hl3"))
+    g.prop_check(f"bq{kb}.length ≤ 3", "hl3", long)
+    g.emit(f"  have z{kb} := Ok{kb} bq{kb} hr{kb} hl3")
+    g.frame_after(kb, [(0x420, 8), (0x200, 3)], {}, {0x420: ("(0 : BitVec 8)", f"z{kb}")})
+    g.load(0x2E70, "lbu")
+    g.block(0x2E74, 0x2E76)
+    g.branch(0x2E76, False, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
+    g.jump(0x2E7A)
+    keep = sorted(set(CL_KEEP_REGS + [8, 10, 21, 22, 23, 24]))
+    stmt, proof = finish(g, 0x2E0C, keep, set(g.words) - {0x420, 0x424}, set())
+    info = {"name": f"sv_cg{kpad}", "title": "a base64 group of a signature line",
+            "doc": f"One pass of the base64 group loop, from 0x2E0C back to it: the next four bytes decode as base64, "
+            + ("and none is `=`." if kpad == 4 else f"their first `=` is byte {kpad}, and this is the last group."),
+            "params": params, "stmt": stmt, "proof": proof,
+            "binders": CS_BINDERS.replace("op ol : Word}", "op ol pg gi s0v s5v s7v : Word}"),
+            "start": 0x2E0C, "import": "C3BootProofs.Proofs.SvCs"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -6653,7 +6787,8 @@ def main():
                 "Ckd": stage_ckd, "Cke": stage_cke,
                 **{f"Cl{x}": (lambda x=x: stage_cl(x)) for x in ("miss", "hit", "end")},
                 "Cs1": stage_cs1, "Csa": stage_csa,
-                **{f"Cn{x}": (lambda x=x: stage_cn(x)) for x in ("m", "e", "s")}}[stage]()
+                **{f"Cn{x}": (lambda x=x: stage_cn(x)) for x in ("m", "e", "s")},
+                **{f"Cg{x}": (lambda x=x: stage_cg(x)) for x in range(5)}}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
