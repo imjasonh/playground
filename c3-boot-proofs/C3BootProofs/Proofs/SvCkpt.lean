@@ -74,6 +74,14 @@ theorem SvRo.ne0 {B p : Word} {nl : Nat} (h : SvRo B p nl) : p ≠ 0 := by
   · exact h.pos_ne
   · intro e; rw [e] at h1; exact absurd h1 (by decide)
 
+theorem br_bgeu_t {a b : Word} (h : ¬ a.toNat < b.toNat) : branchTaken .bgeu a b = true := by
+  simp only [branchTaken, BitVec.ult, Bool.not_eq_true', decide_eq_false_iff_not]; exact h
+theorem br_bgeu_f {a b : Word} (h : a.toNat < b.toNat) : branchTaken .bgeu a b = false := by
+  simp only [branchTaken, BitVec.ult, Bool.not_eq_false', decide_eq_true_eq]; exact h
+
+/-- A byte minus `'0'` is zero exactly when the byte is `'0'`. -/
+theorem digit0_iff : ∀ b : BitVec 8, b.zeroExtend 32 + 0xFFFFFFD0 = 0 ↔ b = 0x30 := by decide
+
 /-- What `checkpoint::line` leaves at offset `oc` of the frame. -/
 def LineW (M : Word → BitVec 8) (B : Word) (oc : Nat) (p : Word) (n : Nat) : Option Nat → Prop
   | none => memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 oc) = 0 ∧ M (B + 0x21A0 + BitVec.ofNat 32 (oc + 4)) = 0x1A

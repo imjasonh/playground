@@ -230,6 +230,7 @@ class Gen:
         self.slices_nat = {}  # (address, length) -> a proof of `SvIn`
         self.pinned = set()  # names `end_step` keeps
         self.extra = []  # (conjunct, term) pairs the conclusion adds
+        self.generic_alu = False  # single ALU instructions the evaluator lacks become `aluEval` terms
         self.digest = None  # (step, offset, value) of a SHA-256 digest in the frame
         self.ranges = {}  # frame offset -> (length, the byte at offset + j, in terms of `j`)
         self.exits = []  # forks that reach the stage's end: (placeholder, generator)
@@ -1046,7 +1047,7 @@ class Gen:
         return k, f"derBoolOf {L} (derElement 1 {L})", (rp, rl, inp)
 
 
-    def tlv(self, off, oc, dc, fail_tail):
+    def tlv(self, off, oc, dc, fail_tail, exit_lemma="sv_fail"):
         """`Der::tlv` on the reader at `dc`, split on its result; returns k. The
         element's name is in `last_tlv`."""
         k = self.k = self.k + 1
@@ -1441,8 +1442,21 @@ class Gen:
             elif tk[0] == ".aluImm" and tk[1] == ".xor":
                 rd = reg_of(tk[2]); x = vals.get(reg_of(tk[3]))
                 v = ("C", x[1] ^ int(tk[4], 16)) if x is not None and x[0] == "C" else None
+                if v is None and x is not None and self.generic_alu and start + ln == end:
+                    v = ("U", f"aluEval .xor ({lean_val(x)}) (BitVec.ofNat 32 0x{int(tk[4], 16):X})")
+                    unc[rd] = reg_of(tk[3])
             elif tk[0] in (".aluImm", ".alu"):
                 rd = reg_of(tk[2]); v = None
+                if self.generic_alu and start + ln == end:
+                    xs = reg_of(tk[3])
+                    ys = reg_of(tk[4]) if tk[0] == ".alu" else None
+                    x = vals.get(xs)
+                    y = vals.get(ys) if ys is not None else ("C", int(tk[4], 16))
+                    if x is not None and y is not None:
+                        v = ("U", f"aluEval {tk[1]} ({lean_val(x)}) ({lean_val(y)})")
+                        srcs = tuple(q for q in (xs, ys) if q is not None and q != 0)
+                        if srcs:
+                            unc[rd] = srcs
             else:
                 raise ValueError(text)
             vals[rd] = v
@@ -5993,6 +6007,90 @@ def stage_ck1():
     return g, info
 
 
+CK2_BINDERS = ("{B out bp x21 x26 dg q ckl sl sp1 rl rp sgp : Word} "
+               + "{" + " ".join(f"w{e:x}" for e in TST_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+
+
+def ck_fail_2ff2(sub, hname):
+    sub.block(0x2FF2, 0x2FF4)
+    sub.jump(0x2FF4)
+    sub.fail(sub.fail_proof(("prop", hname)))
+
+
+def ck2_start(g):
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
+            8: ("U", "sl"), 9: ("U", "sp1"), 22: ("U", "rl"), 23: ("U", "rp"), 25: ("U", "ckl")}
+    words = {e: f"w{e:x}" for e in TST_WORDS}
+    words.update({0x74: "q", 0x428: "sgp"})
+    words.update(TL_STRUCT)
+    return start(g, regs, words, {})
+
+
+def stage_ck2(lead):
+    """From 0x2BCA to the size's digit loop at 0x2C06: the signature section
+    fits in the checkpoint, the size line has 1 to 20 bytes, and a size of
+    more than one digit doesn't start with `0`."""
+    g = Gen("Ck2" + ("b" if lead else "a"))
+    g.generic_alu = True
+    params = ck2_start(g)
+    params += ["(sz_in : SvIn B sp1 sl.toNat)", f"(hsl : {'' if lead else '¬ '}1 < sl.toNat)"]
+    g.load(0x2BCA, "lw")
+
+    def big(sub):
+        sub.branch(0x2BCC, True, f"by rw [g{sub.k}_10, g{sub.k}_25]; exact br_bgeu_t hc1")
+        ck_fail_2ff2(sub, "hc1")
+    g.prop_check("w5c.toNat < ckl.toNat", "hc1", big)
+    g.branch(0x2BCC, False, f"by rw [g{g.k}_10, g{g.k}_25]; exact br_bgeu_f hc1")
+    g.load(0x2BD0, "lw")
+    g.block(0x2BD2, 0x2BD6)
+    g.block(0x2BD6, 0x2BD8)
+    g.store(0x2BD8, "sw")
+    body = lean_val(g.regs[10])
+
+    def neg(sub):
+        sub.branch(0x2BDA, True, f"by rw [g{sub.k}_25, g{sub.k}_10]; exact br_bltu_t (Decidable.of_not_not hc2)")
+        ck_fail_2ff2(sub, "hc2")
+    g.prop_check(f"¬ (ckl).toNat < ({body}).toNat", "hc2", neg)
+    g.branch(0x2BDA, False, f"by rw [g{g.k}_25, g{g.k}_10]; exact br_bltu_f hc2")
+    g.block(0x2BDE, 0x2BE2)
+    g.block(0x2BE2, 0x2BE4)
+    d = lean_val(g.regs[10])
+
+    def size_len(sub):
+        sub.branch(0x2BE4, True, f"by rw [g{sub.k}_10, g{sub.k}_11]; exact br_bltu_t (Decidable.of_not_not hc3)")
+        ck_fail_2ff2(sub, "hc3")
+    g.prop_check(f"¬ ({d}).toNat < (BitVec.ofNat 32 0xFFFFFFED).toNat", "hc3", size_len)
+    g.branch(0x2BE4, False, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_bltu_f hc3")
+    g.load(0x2BE8, "lw")
+    g.store(0x2BEC, "sw")
+    g.block(0x2BEE, 0x2BF0)
+    if not lead:
+        g.branch(0x2BF0, True, f"by rw [g{g.k}_10, g{g.k}_8]; exact br_bgeu_t hsl")
+    else:
+        g.branch(0x2BF0, False, f"by rw [g{g.k}_10, g{g.k}_8]; exact br_bgeu_f hsl")
+        g.load_in(0x2BF4, "sz_in", "(by omega)")
+        g.block(0x2BF8, 0x2BFC, {10: ("(M0 sp1).zeroExtend 32 + 0xFFFFFFD0",
+                                      "rw [rb{k}]; simp +decide only [runBlock, BInstr.run, svCk2b2bf8, upd, ↓reduceIte]; rw [g{p}_10]; rfl")})
+
+        def zero(sub):
+            sub.branch(0x2BFC, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t ((digit0_iff _).mpr (Decidable.of_not_not hlead))")
+            ck_fail_2ff2(sub, "hlead")
+        g.prop_check("M0 sp1 ≠ 0x30", "hlead", zero)
+        g.branch(0x2BFC, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f fun e => hlead ((digit0_iff _).mp e)")
+    g.store(0x2C00, "sw")
+    g.store(0x2C02, "sw")
+    g.block(0x2C04, 0x2C06)
+    stmt, proof = finish(g, 0x2C06, [2, 3, 4, 8, 9, 10, 18, 19, 21, 22, 23, 24, 25, 26, 27], set(g.words), set())
+    info = {"name": "sv_ck2" + ("b" if lead else "a"), "title": "the checkpoint's size line" + (", leading digit" if lead else ""),
+            "doc": "From 0x2BCA to the size's digit loop at 0x2C06: the signature section is shorter than the "
+            "checkpoint, the size line has 1 to 20 bytes" + (", and its first byte isn't `0`." if lead else
+            ", and it has one byte."),
+            "params": params, "stmt": stmt, "proof": proof, "binders": CK2_BINDERS, "start": 0x2BCA,
+            "import": "C3BootProofs.Proofs.SvCkpt"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -6008,7 +6106,8 @@ def main():
                 "Tst5n": lambda: stage_tst5(0xA0, False), "Tst5s": lambda: stage_tst5(0xA0, True),
                 "Tst6n": lambda: stage_tst5(0xA1, False), "Tst6s": lambda: stage_tst5(0xA1, True),
                 "Tsv": stage_tsv, **{f"Tl{x}": (lambda x=x: stage_tl(x)) for x in ("miss", "hit", "end")},
-                "Tsig": stage_tsig, "Ck1": stage_ck1}[stage]()
+                "Tsig": stage_tsig, "Ck1": stage_ck1,
+                "Ck2a": lambda: stage_ck2(False), "Ck2b": lambda: stage_ck2(True)}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

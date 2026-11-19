@@ -215,6 +215,8 @@ import C3BootProofs.Proofs.SvTsig
 import C3BootProofs.Proofs.SvTpv
 import C3BootProofs.Proofs.SvCkpt
 import C3BootProofs.Proofs.SvCk1
+import C3BootProofs.Proofs.SvCk2a
+import C3BootProofs.Proofs.SvCk2b
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main
