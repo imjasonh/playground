@@ -15,6 +15,12 @@ open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv
 
 set_option maxRecDepth 20000
 
+/-- Proves that two sums of a base address and constants are equal. -/
+macro "sv_addr" : tactic =>
+  `(tactic| (apply BitVec.eq_of_toNat_eq
+             simp only [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.ofNat_eq_ofNat, Nat.reducePow, Nat.reduceMod]
+               <;> omega))
+
 theorem sv_at {B : Word} (F : Fr B 0x3830) (c : Nat) (hc : c ≤ 0x1690) :
     (B + 0x21A0 + BitVec.ofNat 32 c).toNat = B.toNat + 0x21A0 + c := by
   have := F.at (0x21A0 + c) (by omega); rw [← add_ofNat_assoc] at this; exact this.trans (by omega)
@@ -95,6 +101,14 @@ theorem byte3 (A B C D : BitVec 8) : (A ++ B ++ C ++ D).extractLsb' 24 8 = A := 
   simp only [BitVec.getLsbD_append, BitVec.getLsbD_extractLsb']
   simp [hi, show ¬ (24 + i < 8) by omega, show ¬ (24 + i - 8 < 8) by omega, show ¬ (24 + i - 8 - 8 < 8) by omega,
     show 24 + i - 8 - 8 - 8 = i by omega]
+
+theorem ld_cp {M M' : Word → BitVec 8} {S : Word} {c d : Nat}
+    (h : ∀ q, q < 4 → M' (S + BitVec.ofNat 32 (c + q)) = M (S + BitVec.ofNat 32 (d + q))) :
+    memLoad32 M' (S + BitVec.ofNat 32 c) = memLoad32 M (S + BitVec.ofNat 32 d) :=
+  by
+  rw [ld_ofNat, ld_ofNat]
+  simp only [add_ofNat_assoc]
+  rw [h _ (by omega), h _ (by omega), h _ (by omega), h _ (by omega)]
 
 /-- A byte of a word. -/
 theorem byte_of_ld {M : Word → BitVec 8} {a w : Word} (h : memLoad32 M a = w) :

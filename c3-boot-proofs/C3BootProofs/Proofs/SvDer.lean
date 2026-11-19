@@ -138,6 +138,83 @@ theorem dnm_facts {B : Word} {M M' : Word → BitVec 8} {oc dc : Nat} {rp rl : W
       rw [s4 _ oc _ (by omega), o12, s4 _ (oc + 12) _ (by omega), o4, s4 _ (oc + 4) _ (by omega), o8,
         s4 _ (oc + 8) _ (by omega), d12, s4 _ (dc + 12) _ (by omega), d8, s4 _ (dc + 8) _ (by omega)]
 
+theorem br_beq_t {a b : Word} (h : a = b) : branchTaken .beq a b = true := by simp [branchTaken, h]
+theorem br_beq_f {a b : Word} (h : a ≠ b) : branchTaken .beq a b = false := by simp [branchTaken, h]
+theorem br_bne_t {a b : Word} (h : a ≠ b) : branchTaken .bne a b = true := by simp [branchTaken, h]
+theorem br_bne_f {a b : Word} (h : a = b) : branchTaken .bne a b = false := by simp [branchTaken, h]
+
+/-- Where `sigstore::verify` writes its result: two bytes outside the stack
+and the code. -/
+structure SvOut (B out : Word) : Prop where
+  stk : Sep out 2 (B + 0xFFFFFE60) 0x39D0
+  code : Sep out 2 SV sigstoreVerifyCode.length
+
+/-- `sigstore::verify` returned `Err`: from `n0`, the machine reaches the
+return address with the stack and the callee-saved registers restored,
+`Err`'s discriminant 1 at `out`, and memory outside the stack unchanged
+except for the result. -/
+def SvErrRet (B out : Word) (v : Nat → Word) (n0 : Machine) : Prop :=
+  ∃ n', Steps n0 n' ∧ n'.pc = v 0 ∧ reg n' sp = B + 0x3830 ∧ (∀ k, k < 13 → reg n' (savedReg k) = v k) ∧
+    reg n' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧ reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧ n'.mem out = 1 ∧
+    ∀ x, SvR B x → x ≠ out → x ≠ out + 1 → n'.mem x = n0.mem x
+
+/-- **The failing exit**: from a step at 0x966, `sigstore::verify` returns `Err`. -/
+theorem sv_fail {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr B 0x3830) (E : SvCode n.mem)
+    (s : St n.mem SV n 0x966 (reg n)) (t : Steps n0 n) (fR : ∀ x, SvR B x → n.mem x = n0.mem x)
+    (V : SvSaves B n.mem v) (hret : v 0 &&& ~~~1 = v 0) (rsp : reg n sp = B + 0x21A0)
+    (hout : reg n (18 : Fin 32) = out) (hO : SvOut B out) (r3 : reg n (3 : Fin 32) = reg n0 (3 : Fin 32))
+    (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)) : SvErrRet B out v n0 := by
+  have sOS : Sep out 2 (B + BitVec.ofNat 32 0x37FC) 0x34 := by
+    have := hO.stk.symm.sub (c := 0x1A0 + 0x37FC) (l := 0x34) (by decide)
+    rw [show B + 0xFFFFFE60 + BitVec.ofNat 32 (0x1A0 + 0x37FC) = B + BitVec.ofNat 32 0x37FC by
+      rw [BitVec.add_assoc]; rfl] at this
+    exact this.symm
+  obtain ⟨n', c', pc', mem', sp', sv', g', t'⟩ := sv_err E.self F s rsp hout V hret sOS hO.code
+  refine ⟨n', t.trans c', pc', sp', sv', by rw [g', r3], by rw [t', r4], ?_, fun x hx h0 h1 => ?_⟩
+  · rw [mem']; unfold svErrMem
+    rw [memStore8_ne (show out ≠ out + 1 by
+      have := add_ofNat_ne out (c := 0) (d := 1) (by decide) (by decide) (by decide)
+      rwa [add_ofNat_zero] at this), memStore8_same]
+  · rw [mem']; unfold svErrMem; rw [memStore8_ne h1, memStore8_ne h0, fR x hx]
+
+/-- The content of an element read from bytes outside the stack is outside it too. -/
+theorem SvIn.content {B rp : Word} {M : Word → BitVec 8} {rl tag : Nat} {t : DerTlv} (h : SvIn B rp rl)
+    (ht : derElement tag (memBytes M rp rl) = .ok t) : SvIn B (rp + BitVec.ofNat 32 t.header) t.len := by
+  have hb := derElement_bound ht
+  rw [memBytes_length] at hb
+  have e : (rp + BitVec.ofNat 32 t.header).toNat = rp.toNat + t.header := by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat]; have := h.fit; omega
+  refine ⟨?_, by rw [e]; have := h.pos; omega, by rw [e]; have := h.fit; omega⟩
+  have := h.sep.sub (c := t.header) (l := t.len) (by omega)
+  exact this
+
+/-- So are the bytes after it. -/
+theorem SvIn.rest {B rp : Word} {M : Word → BitVec 8} {rl tag : Nat} {t : DerTlv} (h : SvIn B rp rl)
+    (ht : derElement tag (memBytes M rp rl) = .ok t) :
+    SvIn B (rp + BitVec.ofNat 32 (t.header + t.len)) (rl - (t.header + t.len)) := by
+  have hb := derElement_bound ht
+  rw [memBytes_length] at hb
+  have e : (rp + BitVec.ofNat 32 (t.header + t.len)).toNat = rp.toNat + (t.header + t.len) := by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat]; have := h.fit; omega
+  refine ⟨?_, by rw [e]; have := h.pos; omega, by rw [e]; have := h.fit; omega⟩
+  exact h.sep.sub (c := t.header + t.len) (l := rl - (t.header + t.len)) (by omega)
+
+/-- A successful read's content address isn't null. -/
+theorem SvIn.ok_ne {B rp : Word} {M : Word → BitVec 8} {rl tag : Nat} {t : DerTlv} (h : SvIn B rp rl)
+    (ht : derElement tag (memBytes M rp rl) = .ok t) : rp + BitVec.ofNat 32 t.header ≠ 0 := fun e => by
+  have := (h.content ht).pos; rw [e] at this; exact absurd this (by decide)
+
+/-- The length left after a read. -/
+theorem rest_len {rp rl : Word} {M : Word → BitVec 8} {tag : Nat} {t : DerTlv}
+    (ht : derElement tag (memBytes M rp rl.toNat) = .ok t) :
+    (rl - BitVec.ofNat 32 (t.header + t.len)).toNat = rl.toNat - (t.header + t.len) := by
+  have hb := derElement_bound ht
+  rw [memBytes_length] at hb
+  have hlt := rl.isLt
+  rw [BitVec.toNat_sub, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (show t.header + t.len < 2 ^ 32 by omega)]
+  simp only [Nat.reducePow] at hlt ⊢
+  omega
+
 /-- **A call to `Der::sequence`**, as the generated stages track it. -/
 theorem sv_seqF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o rp rl : Word} {oc dc : Nat}
     (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
