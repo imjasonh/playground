@@ -1765,6 +1765,24 @@ class Gen:
             self.ranges[ns] = (n, tmpl)
         self.end_step()
 
+    def mcIn(self, off, dst, p, N, inp):
+        """`memcpy` of `N` bytes at `p` outside the stack, whose `SvIn` is `inp`,
+        to offset `dst` of the frame."""
+        k = self.k = self.k + 1
+        self.emit(f"  -- 0x{off:X}: memcpy from the bundle")
+        self.emit(f"  obtain ⟨n{k}, P{k}, K{k}, X{k}⟩ := sv_mcIn (c := 0x{dst:X}) (N := 0x{N:X}) F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x}")
+        self.emit(f"    (by decide) (by decide) g{k-1}_2 {self.reg_is(k-1, 10, dst)} g{k-1}_11 g{k-1}_12 (by decide) {inp}")
+        self.emit(f"  have s{k} := P{k}.st")
+        self.emit(f"  have fr{k} := P{k}.fr")
+        self.common(k, f"P{k}.steps", f"fr{k}", f"V{k-1}.keep K{k} (by decide)")
+        self.keep_regs(k, CALL_KEEP, lambda r: f"P{k}.regs {rname(r)} (by decide)")
+        self.keep_frame(k, ("K", dst, N), {}, {})
+        tmpl = f"M0 (({p}) + BitVec.ofNat 32 j)"
+        self.emit(f"  have q{k}_{dst:x} : ∀ j, j < {N} → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{dst:X} + j)) = {tmpl} :=")
+        self.emit(f"    fun j hj => (X{k} j hj).trans (fR{k-1} _ ({inp}.r hj))")
+        self.ranges[dst] = (N, tmpl)
+        self.end_step()
+
     def branch(self, off, taken, why):
         """A branch whose direction `why` proves: a term for `reg == reg` or its negation."""
         text, ln = INSTR[off]
@@ -6987,6 +7005,68 @@ def stage_csx():
     return g, info
 
 
+def stage_cr1(eqhi):
+    """From the checkpoint's signature at 0x2F5A to 0x300E: the checkpoint's
+    fields go to offset 0x1020, and the entry's index is below the size."""
+    g = Gen("Cr1" + ("e" if eqhi else "n"))
+    g.generic_alu = True
+    params = cs_start(g)
+    params += ["(lid_in : SvIn B (q + BitVec.ofNat 32 0x5) 19)", "(h80 : w80 ≠ 0)",
+               "(hlih : memLoad32 M0 (bp + 0x2C) = lih)", "(hlil : memLoad32 M0 (bp + 0x28) = lil)",
+               "(lih_in : SvIn B (bp + 0x2C) 4)", "(lil_in : SvIn B (bp + 0x28) 4)",
+               "(a_lih : (bp + 0x2C).toNat % 4 = 0)", "(a_lil : (bp + 0x28).toNat % 4 = 0)",
+               f"(hhi : lih {'=' if eqhi else '≠'} w70)"]
+    g.block(0x2F5A, 0x2F62)
+    g.mcIn(0x2F62, 0x240, lean_val(g.regs[11]), 0x13, "lid_in")
+    g.block(0x2F6A, 0x2F76)
+    g.mc(0x2F76, 0x1320, 0x320, 0x1F)
+    g.load(0x2F7E, "lw")
+    g.branch(0x2F80, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_t h80")
+    g.block(0x2F86, 0x2F92)
+    g.mc(0x2F92, 0x1025, 0x240, 0x13)
+    g.load(0x2F9A, "lw")
+    g.block(0x2F9C, 0x2FA0)
+    g.store(0x2FA0, "sw")
+    g.load(0x2FA2, "lw")
+    g.store(0x2FA4, "sw")
+    g.load(0x2FA6, "lw")
+    g.store(0x2FA8, "sb")
+    g.block(0x2FAC, 0x2FBE)
+    g.mc(0x2FBE, 0x1049, 0x1320, 0x1F)
+    g.load_mem(0x2FC6, "lih", "hlih", "lih_in", "a_lih")
+    g.load_mem(0x2FCA, "lil", "hlil", "lil_in", "a_lil")
+    g.load(0x2FCE, "lw")
+    g.store(0x2FD0, "sw")
+    g.store(0x2FD2, "sb")
+    g.load(0x2FD6, "lw")
+    g.store(0x2FD8, "sw")
+    g.load(0x2FDA, "lw")
+    g.store(0x2FDC, "sw")
+    if eqhi:
+        g.branch(0x2FDE, True, f"by rw [g{g.k}_23, g{g.k}_10]; exact br_beq_t hhi")
+        g.load(0x3004, "lw")
+        g.block(0x3006, 0x300A)
+    else:
+        g.branch(0x2FDE, False, f"by rw [g{g.k}_23, g{g.k}_10]; exact br_beq_f hhi")
+        g.load(0x2FE2, "lw")
+        g.block(0x2FE4, 0x2FE8)
+        g.jump(0x2FE8)
+    lt = lean_val(g.regs[10])
+
+    def big(sub):
+        sub.branch(0x300A, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hidx)")
+        sub.fail(sub.fail_proof(("prop", "hidx")), "sv_fail_3122")
+    g.prop_check(f"{lt} ≠ 0", "hidx", big)
+    g.branch(0x300A, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hidx")
+    stmt, proof = finish(g, 0x300E, sorted(set(CL_KEEP_REGS + [8, 23])), set(g.words), set(g.bytes))
+    info = {"name": "sv_cr1" + ("e" if eqhi else "n"), "title": "the entry's index against the checkpoint's size",
+            "doc": "From the checkpoint's signature at 0x2F5A to 0x300E: the checkpoint's log, size, and root go to "
+            "offset 0x1020, and the entry's 64-bit index is below the size.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": CS_BINDERS.replace("op ol : Word}", "op ol lih lil : Word}"),
+            "start": 0x2F5A, "import": "C3BootProofs.Proofs.SvRk"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -7009,7 +7089,8 @@ def main():
                 "Cs1": stage_cs1, "Csa": stage_csa,
                 **{f"Cn{x}": (lambda x=x: stage_cn(x)) for x in ("m", "e", "s")},
                 **{f"Cg{x}": (lambda x=x: stage_cg(x)) for x in range(5)},
-                **{f"Cm{x}": (lambda x=x: stage_cm(x)) for x in CM_DOC}, "Csx": stage_csx}[stage]()
+                **{f"Cm{x}": (lambda x=x: stage_cm(x)) for x in CM_DOC}, "Csx": stage_csx,
+                "Cr1e": lambda: stage_cr1(True), "Cr1n": lambda: stage_cr1(False)}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
