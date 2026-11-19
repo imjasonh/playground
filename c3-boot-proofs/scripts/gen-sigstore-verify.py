@@ -1327,6 +1327,23 @@ class Gen:
         self.emit(f"  have w{k}_{oc:x} : {self.word_stmt(k, oc, ('U', val))} := {pf}")
         self.words[oc] = ("U", val)
 
+    def esl(self, off, p, q, nl, hp, hq):
+        """`<[u8]>::equal_same_length` of `nl` bytes at `p` and `q`; returns k.
+        The result in `a0` is left to the caller."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_eslF", f"(nl := {nl})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"a0_{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    g{k-1}_10 g{k-1}_11 g{k-1}_12 {hp} {hq}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [sv_mbRo F fR{k-1} {hp}, sv_mbRo F fR{k-1} {hq}] at a0_{k}")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        self.frame_after(k, [], {})
+        return k
+
     def gt(self, off, oc, p, nl, inp, ha2):
         """`time::generalized_time` on the `nl` bytes at `p`, split on its answer:
         `None` reads the error flag at `oc + 0x60 - 0x60` with `lbu`, `beqz` not
@@ -6419,7 +6436,7 @@ def stage_cl(kind):
 
 
 def stage_cs1():
-    """From the log's entry at 0x2D12 to the signature loop at 0x2D74: the log
+    """From the log's entry at 0x2D12 to the signature loop at 0x2D6E: the log
     key's hash, from the origin, a newline, the Ed25519 tag, and the key."""
     g = Gen("Cs1")
     params = cl_start(g)
@@ -6452,16 +6469,83 @@ def stage_cs1():
     g.block(0x2D62, 0x2D6A)
     g.load(0x2D6A, "lw")
     g.store(0x2D6C, "sw")
-    g.load(0x2D6E, "lw")
-    g.block(0x2D70, 0x2D72)
-    g.store(0x2D72, "sw")
-    kd, oc, ex = g.digest
-    stmt, proof = finish(g, 0x2D74, CL_KEEP_REGS, set(g.words), set(g.bytes))
+    stmt, proof = finish(g, 0x2D6E, CL_KEEP_REGS, set(g.words), set(g.bytes))
     info = {"name": "sv_cs1", "title": "the log key's hash",
-            "doc": "From the log's entry at 0x2D12 to the signature loop at 0x2D74: the word at offset 0x14 is the "
+            "doc": "From the log's entry at 0x2D12 to the signature loop at 0x2D6E: the word at offset 0x14 is the "
             "first word of SHA-256 of the origin line, a newline, the Ed25519 key tag, and the log's key.",
             "params": params, "stmt": stmt, "proof": proof, "binders": CL_BINDERS.replace("op ol : Word}", "op ol kp kw : Word}"),
             "start": 0x2D12, "import": "C3BootProofs.Proofs.SvCkpt"}
+    return g, info
+
+
+CS_BINDERS = CL_BINDERS.replace("op ol : Word} {rt : Bytes}", "op ol : Word} {rt sg : Bytes}")
+
+
+def cs_start(g):
+    """The signature loop's head at 0x2D6E: the word at 0x30 says whether a
+    signature by the log was found, which would be at offsets 0x10 and 0x1480."""
+    params = cl_start(g)
+    g.words[0x10] = ("U", "(BitVec.ofNat 8 (sg.getD 0 0)).zeroExtend 32")
+    params.append(f"(w0_10 : memLoad32 n0.mem ({fa(0x10)}) = (BitVec.ofNat 8 (sg.getD 0 0)).zeroExtend 32)")
+    g.ranges[0x1480] = (63, "BitVec.ofNat 8 (sg.getD (1 + j) 0)")
+    params.append("(q0_1480 : ∀ j, j < 63 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1480 + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0))")
+    return params
+
+
+def stage_csa():
+    """From the signature loop's head at 0x2D6E to the name scan at 0x2DCC:
+    the next line of the signature section starts with an em dash and a space."""
+    g = Gen("Csa")
+    g.generic_alu = True
+    params = cs_start(g) + ["(hrem : w5c ≠ 0)", "(sg_in : SvIn B w38 w5c.toNat)", "(CK0 : SvCkCode M0)"]
+    g.load(0x2D6E, "lw")
+    g.block(0x2D70, 0x2D72)
+    g.store(0x2D72, "sw")
+    g.load(0x2D74, "lw")
+    g.branch(0x2D76, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hrem")
+    g.block(0x2D7A, 0x2D7E)
+    g.load(0x2D7E, "lw")
+    g.load(0x2D80, "lw")
+    k, ix, rp, rn, rin = g.line(0x2D82, 0x420, "w38", "(w5c).toNat", "(.inl sg_in)",
+                                f"(by rw [g{g.k}_12, ofNat_toNat_self])", ck_line_tail(0x2D8A, 22))
+    g.load(0x2D8A, "lw")
+    g.branch(0x2D8E, False, f"by rw [g{g.k}_22, s{g.k}.zero]; exact br_beq_f sg_in.pos_ne")
+    g.load(0x2D92, "lw")
+    g.block(0x2D96, 0x2D98)
+
+    def short(sub):
+        sub.branch(0x2D98, True, f"by rw [g{sub.k}_8, g{sub.k}_10]; exact br_bltu_t (by rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega)")
+        ck_fail_2ff2(sub, "h4")
+    g.prop_check(f"4 ≤ {ix}", "h4", short)
+    g.branch(0x2D98, False, f"by rw [g{g.k}_8, g{g.k}_10]; exact br_bltu_f (by rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega)")
+    g.pinned.add("h4")
+    g.load(0x2D9C, "lw")
+    g.store(0x2DA0, "sw")
+    g.load(0x2DA2, "lw")
+    g.store(0x2DA6, "sw")
+    g.block(0x2DA8, 0x2DB4)
+    ke = g.esl(0x2DB4, "w38", "BitVec.ofNat 32 0x3FCC4855", "4", f"(.inl (sg_in.shrink (by omega)))",
+               "(.inr ⟨by decide, by decide⟩)")
+    eq = "memBytes M0 w38 4 = memBytes M0 (BitVec.ofNat 32 0x3FCC4855) 4"
+
+    def no_dash(sub):
+        sub.set_a0(ke, 0, "ite_eq_right hdash")
+        sub.branch(0x2DBC, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        ck_fail_2ff2(sub, "hdash")
+    g.prop_check(eq, "hdash", no_dash)
+    g.set_a0(ke, 1, "ite_eq_left hdash")
+    g.branch(0x2DBC, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.block(0x2DC0, 0x2DC2)
+    g.block(0x2DC2, 0x2DC6)
+    g.block(0x2DC6, 0x2DC8)
+    g.store(0x2DC8, "sw")
+    g.store(0x2DCA, "sw")
+    stmt, proof = finish(g, 0x2DCC, CL_KEEP_REGS + [8, 10], set(g.words), set(g.bytes))
+    info = {"name": "sv_csa", "title": "a signature line's em dash",
+            "doc": "From the signature loop's head at 0x2D6E to the name scan at 0x2DCC: the signature section isn't "
+            "empty, and its next line has at least four bytes, an em dash and a space.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": CS_BINDERS, "start": 0x2D6E,
+            "import": "C3BootProofs.Proofs.SvEd"}
     return g, info
 
 
@@ -6484,7 +6568,7 @@ def main():
                 "Ck2a": lambda: stage_ck2(False), "Ck2b": lambda: stage_ck2(True),
                 "Ckd": stage_ckd, "Cke": stage_cke,
                 **{f"Cl{x}": (lambda x=x: stage_cl(x)) for x in ("miss", "hit", "end")},
-                "Cs1": stage_cs1}[stage]()
+                "Cs1": stage_cs1, "Csa": stage_csa}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

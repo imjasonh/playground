@@ -137,4 +137,42 @@ theorem sv_edF {n : Machine} {B : Word} {off : Nat} {imm o pk msg : Word} {oc le
   · rw [rs2 _ (BitVec.ofNat 32 0x40) (by decide), r1 _ (by decide)]
   · rw [rs2 _ (BitVec.ofNat 32 0x3C) (by decide), r1 _ (by decide)]
 
+set_option maxHeartbeats 8000000 in
+/-- **A call to `<[u8]>::equal_same_length`** on `nl` bytes at `p` and at `q`. -/
+theorem sv_eslF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o p q : Word} {nl : Nat}
+    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 equalSameLengthAddress)
+    (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
+    (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = p) (ha1 : reg n a1 = q) (ha2 : reg n a2 = BitVec.ofNat 32 nl)
+    (hp : SvRo B p nl) (hq : SvRo B q nl) :
+    ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
+      (∀ r : Fin 32, r.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' r = reg n r) ∧
+      reg n' a0 = (if memBytes M p nl = memBytes M q nl then 1 else 0) ∧
+      SvKeepL B M n'.mem [] ∧ (∀ x, SvR B x → n'.mem x = M x) := by
+  have hFl := F.lo; have hFh := F.hi; have hFa := F.al
+  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := s.callRa C.self h1 h2 hb (by decide)
+  have r1 := PEnv.reg1 regs1 s.zero
+  have hS : (B + (0x21A0 : Word)).toNat = B.toNat + 0x21A0 := F.at 0x21A0 (by decide)
+  have sp1 : reg n1 sp = B + 0x21A0 := by rw [r1 sp (by decide), rsp]
+  have eM : BitVec.ofNat 32 equalSameLengthAddress + 0xC912 = BitVec.ofNat 32 memcmpAddress := by decide
+  obtain ⟨n2, c2, pc2, a02, k2, f2⟩ := equalSameLength_correct n1 (base := BitVec.ofNat 32 equalSameLengthAddress)
+    (by decide) (by rw [mem1]; exact C.equalSameLength) (by rw [mem1, eM]; exact C.memcmp) pc1
+    (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1]) (by rw [r1 a2 (by decide), ha2])
+    (by have := hp.fit; omega) (by rw [regs1]; simp +decide [upd]) (even_clear _ hev) (by rw [sp1, hS]; omega)
+    (by rw [sp1, sv_sp4]; exact F.sepHi (by decide) (by decide) (by decide))
+    (by rw [sp1, sv_sp4, eM]; exact F.sepHi (by decide) (by decide) (by decide))
+    (by rw [sp1, sv_sp4]; exact hp.sep F (c := 0x219C) (n := 4) (by decide))
+    (by rw [sp1, sv_sp4]; exact hq.sep F (c := 0x219C) (n := 4) (by decide))
+  rw [sp1, sv_sp4] at f2
+  rw [mem1] at a02
+  refine ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, by rw [k2 sp (by decide) (by decide) (by decide)
+    (by decide) (by decide), sp1], fun r hr => ?_, a02, fun e he _ => ?_, fun x hx => ?_⟩
+  · have hr' : r ≠ a0 ∧ r ≠ a1 ∧ r ≠ a2 ∧ r ≠ a3 ∧ r ≠ a4 ∧ r ≠ ra := by revert hr; revert r; decide
+    obtain ⟨q10, q11, q12, q13, q14, q1⟩ := hr'
+    rw [k2 r q10 q11 q12 q13 q14, r1 r q1]
+  · rw [f2 _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega)), mem1]
+  · rw [f2 x (svR_sp4 hx), mem1]
+
 end C3.RV32.Sv

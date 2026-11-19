@@ -224,6 +224,7 @@ import C3BootProofs.Proofs.SvClhit
 import C3BootProofs.Proofs.SvClend
 import C3BootProofs.Proofs.SvCs1
 import C3BootProofs.Proofs.SvEd
+import C3BootProofs.Proofs.SvCsa
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main
