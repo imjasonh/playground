@@ -271,4 +271,127 @@ theorem sv_ms2F {n : Machine} {B : Word} {off : Nat} {imm o v : Word} {c N : Nat
   rw [mem']
   exact fillBytes_sep (sepS (B + 0x21A0) (by omega) (by omega) (by omega)) (Nat.le_refl N)
 
+/-- The little-endian word of bytes `i` to `i + 3` of `L`. -/
+def le4 (L : Bytes) (i : Nat) : Word :=
+  BitVec.ofNat 8 (L.getD (i + 3) 0) ++ BitVec.ofNat 8 (L.getD (i + 2) 0) ++ BitVec.ofNat 8 (L.getD (i + 1) 0) ++
+    BitVec.ofNat 8 (L.getD i 0)
+
+theorem ld_digest {M : Word → BitVec 8} {a : Word} {n : Nat} {L : Bytes} (h : memBytes M a n = L) (hn : 4 ≤ n) :
+    memLoad32 M a = le4 L 0 := by
+  have r := memBytes_range h
+  unfold memLoad32 le4
+  rw [show a = a + BitVec.ofNat 32 0 from (add_ofNat_zero a).symm, add_ofNat_zero,
+    show (3 : Word) = BitVec.ofNat 32 3 from rfl, show (2 : Word) = BitVec.ofNat 32 2 from rfl,
+    show (1 : Word) = BitVec.ofNat 32 1 from rfl, r 3 (by omega), r 2 (by omega), r 1 (by omega)]
+  have h0 := r 0 (by omega)
+  rw [add_ofNat_zero] at h0
+  rw [h0]
+
+theorem partsBytes_four (M : Word → BitVec 8) (P : Word) :
+    partsBytes M P 4 = memBytes M (partPtr M P 0) (partLen M P 0) ++ memBytes M (partPtr M P 1) (partLen M P 1) ++
+      memBytes M (partPtr M P 2) (partLen M P 2) ++ memBytes M (partPtr M P 3) (partLen M P 3) := by
+  simp only [partsBytes, List.nil_append]
+
+theorem partPtr_at {M : Word → BitVec 8} {B p : Word} {pc i : Nat}
+    (h : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (pc + 8 * i)) = p) :
+    partPtr M (B + 0x21A0 + BitVec.ofNat 32 pc) i = p := by
+  unfold partPtr; rw [add_ofNat_assoc]; exact h
+
+theorem partLen_at {M : Word → BitVec 8} {B : Word} {pc i l : Nat} (hl : l < 2 ^ 32)
+    (h : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (pc + (8 * i + 4))) = BitVec.ofNat 32 l) :
+    partLen M (B + 0x21A0 + BitVec.ofNat 32 pc) i = l := by
+  unfold partLen; rw [add_ofNat_assoc, h, BitVec.toNat_ofNat]; omega
+
+set_option maxHeartbeats 8000000 in
+/-- **A call to `c3_crypto::sha::sha256_parts`** on four slices whose
+descriptors are at offset `pc`, with the digest at offset `oc`. -/
+theorem sv_sha256P4F {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o p0 p1 p2 p3 : Word}
+    {oc pc l0 l1 l2 l3 : Nat}
+    (F : Fr B 0x3830) (C : SvCode M) (SC : SvSha2Code M) (KS : SvK2Sep B) (s : St M SV n off (reg n))
+    (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 sha256PartsAddress)
+    (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
+    (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 oc)
+    (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 pc) (ha2 : reg n a2 = BitVec.ofNat 32 4)
+    (ho2 : oc + 32 ≤ 0x1690) (hp2 : pc + 32 ≤ 0x1690) (hp3 : pc % 4 = 0)
+    (hp0 : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 pc) = p0)
+    (hl0 : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (pc + 4)) = BitVec.ofNat 32 l0)
+    (hp1 : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (pc + 8)) = p1)
+    (hl1 : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (pc + 12)) = BitVec.ofNat 32 l1)
+    (hp2' : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (pc + 16)) = p2)
+    (hl2 : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (pc + 20)) = BitVec.ofNat 32 l2)
+    (hp3' : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (pc + 24)) = p3)
+    (hl3 : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (pc + 28)) = BitVec.ofNat 32 l3)
+    (r0 : SvRo B p0 l0) (r1 : SvRo B p1 l1) (r2 : SvRo B p2 l2) (r3 : SvRo B p3 l3)
+    (hl0' : l0 < 2 ^ 31) (hl1' : l1 < 2 ^ 31) (hl2' : l2 < 2 ^ 31) (hl3' : l3 < 2 ^ 31) :
+    ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
+      (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧
+      SvKeepL B M n'.mem [(oc, 32)] ∧
+      memBytes n'.mem (B + 0x21A0 + BitVec.ofNat 32 oc) 32 =
+        sha256 (memBytes M p0 l0 ++ memBytes M p1 l1 ++ memBytes M p2 l2 ++ memBytes M p3 l3) ∧
+      (∀ x, SvR B x → n'.mem x = M x) := by
+  have hFl := F.lo; have hFh := F.hi; have hFa := F.al
+  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := s.callRa C.self h1 h2 hb (by decide)
+  have r1' := PEnv.reg1 regs1 s.zero
+  have hS : (B + (0x21A0 : Word)).toNat = B.toNat + 0x21A0 := F.at 0x21A0 (by decide)
+  have hq0 := r0.lo; have hq1 := r1.lo; have hq2 := r2.lo; have hq3 := r3.lo
+  have z0 : 0 < p0.toNat := Nat.pos_of_ne_zero fun e => r0.ne0 (BitVec.eq_of_toNat_eq e)
+  have z1 : 0 < p1.toNat := Nat.pos_of_ne_zero fun e => r1.ne0 (BitVec.eq_of_toNat_eq e)
+  have z2 : 0 < p2.toNat := Nat.pos_of_ne_zero fun e => r2.ne0 (BitVec.eq_of_toNat_eq e)
+  have z3 : 0 < p3.toNat := Nat.pos_of_ne_zero fun e => r3.ne0 (BitVec.eq_of_toNat_eq e)
+  have e0 := partPtr_at (i := 0) (show memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (pc + 8 * 0)) = p0 by exact hp0)
+  have e1 := partPtr_at (i := 1) (show memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (pc + 8 * 1)) = p1 by exact hp1)
+  have e2 := partPtr_at (i := 2) (show memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (pc + 8 * 2)) = p2 by exact hp2')
+  have e3 := partPtr_at (i := 3) (show memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (pc + 8 * 3)) = p3 by exact hp3')
+  have f0 := partLen_at (i := 0) (by omega) (show memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (pc + (8 * 0 + 4))) =
+    BitVec.ofNat 32 l0 by exact hl0)
+  have f1 := partLen_at (i := 1) (by omega) (show memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (pc + (8 * 1 + 4))) =
+    BitVec.ofNat 32 l1 by exact hl1)
+  have f2' := partLen_at (i := 2) (by omega) (show memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (pc + (8 * 2 + 4))) =
+    BitVec.ofNat 32 l2 by exact hl2)
+  have f3 := partLen_at (i := 3) (by omega) (show memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (pc + (8 * 3 + 4))) =
+    BitVec.ofNat 32 l3 by exact hl3)
+  have hpb : partsBytes M (B + 0x21A0 + BitVec.ofNat 32 pc) 4 =
+      memBytes M p0 l0 ++ memBytes M p1 l1 ++ memBytes M p2 l2 ++ memBytes M p3 l3 := by
+    rw [partsBytes_four, e0, e1, e2, e3, f0, f1, f2', f3]
+  have env : PartsEnv n1.mem (B + 0x21A0 + BitVec.ofNat 32 oc) (B + 0x21A0 + BitVec.ofNat 32 pc) (B + 0x21A0) 4 := by
+    rw [mem1]
+    refine ⟨SC.parts, SC.iv, SC.upd, SC.ublk, SC.fin, SC.z, SC.fblk, SC.ms, SC.mcs, SC.mcb, SC.cmp, SC.idx, SC.k,
+      by rw [hS]; omega, by rw [hS]; omega, by rw [hS]; omega,
+      by rw [sv_at F _ (by omega)]; omega, sv_al F (by omega) hp3, by rw [sv_at F _ (by omega)]; omega,
+      ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · rw [sv_sp270, ← sv_base']; exact sepS B (by omega) (by omega) (by omega)
+    · rw [hpb, List.length_append, List.length_append, List.length_append, memBytes_length, memBytes_length,
+        memBytes_length, memBytes_length]; omega
+    · intro i hi
+      rcases (by omega : i = 0 ∨ i = 1 ∨ i = 2 ∨ i = 3) with rfl | rfl | rfl | rfl
+      · rw [e0, f0, sv_sp270]; exact ⟨hl0', hq0, (r0.sep F (c := 0x1F30) (n := 0x270) (by decide)).symm⟩
+      · rw [e1, f1, sv_sp270]; exact ⟨hl1', hq1, (r1.sep F (c := 0x1F30) (n := 0x270) (by decide)).symm⟩
+      · rw [e2, f2', sv_sp270]; exact ⟨hl2', hq2, (r2.sep F (c := 0x1F30) (n := 0x270) (by decide)).symm⟩
+      · rw [e3, f3, sv_sp270]; exact ⟨hl3', hq3, (r3.sep F (c := 0x1F30) (n := 0x270) (by decide)).symm⟩
+    · rw [sv_sp270, ← sv_base']; exact sepS B (by omega) (by omega) (by omega)
+    · rw [sv_sp270]
+      have h := KS.sub (c := 0x1A0 + 0x1F30) (l := 0x270) (by decide)
+      rw [show B + 0xFFFFFE60 + BitVec.ofNat 32 (0x1A0 + 0x1F30) = B + BitVec.ofNat 32 0x1F30 by
+        rw [BitVec.add_assoc]; rfl] at h
+      exact h.symm
+    · rw [sv_sp270]; exact (F.bufData (c := 0x1F30) (n := 0x270) (by decide) (by decide) (by decide)).symm
+  obtain ⟨n2, c2, pc2, sp2, k2, dg2, f2⟩ := sha256Parts_correct n1 env pc1
+    (by rw [r1' a0 (by decide), ha0]) (by rw [r1' a1 (by decide), ha1]) (by rw [r1' a2 (by decide), ha2])
+    (by rw [regs1]; simp +decide [upd]) (even_clear _ hev) (by rw [r1' sp (by decide), rsp])
+  rw [mem1, sv_sp270] at f2
+  rw [mem1, hpb] at dg2
+  refine ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, sp2, fun q hq => ?_,
+    fun e he hL => ?_, dg2, fun x hx => f2 x (svR_sp270 hx) (svR_hi hx ho2)⟩
+  · have hq' : q ≠ t0 ∧ q ≠ t1 ∧ q ≠ (7 : Fin 32) ∧ q ≠ a0 ∧ q ≠ a1 ∧ q ≠ a2 ∧ q ≠ a3 ∧ q ≠ a4 ∧ q ≠ a5 ∧
+        q ≠ a6 ∧ q ≠ a7 ∧ q ≠ (28 : Fin 32) ∧ q ≠ (29 : Fin 32) ∧ q ≠ (30 : Fin 32) ∧ q ≠ (31 : Fin 32) ∧
+        q ≠ ra := by revert hq; revert q; decide
+    obtain ⟨q5, q6, q7, q10, q11, q12, q13, q14, q15, q16, q17, q28, q29, q30, q31, q1⟩ := hq'
+    rw [k2 q q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, r1' q q1]
+  · have h1 := hL _ (List.mem_singleton_self _)
+    simp only at h1
+    exact f2 _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega))
+      (sepS (B + 0x21A0) (by omega) (by omega) (by omega))
+
 end C3.RV32.Sv

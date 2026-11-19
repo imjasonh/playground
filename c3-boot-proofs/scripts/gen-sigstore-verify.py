@@ -1292,6 +1292,41 @@ class Gen:
         self.regs[2] = ("S", 0)
         return k, f"base64Decode (memBytes M0 ({t}) ({nl}))"
 
+    def parts4(self, off, oc, pc, parts):
+        """`c3_crypto::sha::sha256_parts` of four slices whose descriptors are at
+        offset `pc`; `parts` lists (address, length, `SvRo`, length fact, bound)."""
+        k = self.k = self.k + 1
+        ls = " ".join(f"(l{i} := {pt[1]})" for i, pt in enumerate(parts))
+        self.call_head(k, off, "sv_sha256P4F", f"(oc := 0x{oc:X}) (pc := 0x{pc:X}) {ls}",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"D{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (S2.sv F KS fR{k-1}) KS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, oc)} {self.reg_is(k - 1, 11, pc)} g{k-1}_12 (by decide) (by decide) (by decide)")
+        self.emit("    " + " ".join(f"w{k-1}_{pc + 8 * i:x} {pt[3]}" for i, pt in enumerate(parts)))
+        self.emit("    " + " ".join(pt[2] for pt in parts) + " " + " ".join(pt[4] for pt in parts))
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit("  rw [" + ", ".join(f"sv_mbRo F fR{k-1} {pt[2]}" for pt in parts) + f"] at D{k}")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        self.pinned.add(f"D{k}")
+        self.frame_after(k, [(oc, 32)], {})
+        body = " ++ ".join(f"memBytes M0 ({pt[0]}) ({pt[1]})" for pt in parts)
+        self.digest = (k, oc, f"sha256 ({body})")
+        return k
+
+    def digest_word(self):
+        """The digest's first word, as a frame word fact."""
+        kd, oc, ex = self.digest
+        k = self.k
+        val = f"le4 ({ex}) 0"
+        if kd == k:
+            pf = f"ld_digest D{k} (by decide)"
+        else:
+            pf = f"by rw [m{k}]; exact ld_digest D{kd} (by decide)"
+        self.emit(f"  have w{k}_{oc:x} : {self.word_stmt(k, oc, ('U', val))} := {pf}")
+        self.words[oc] = ("U", val)
+
     def gt(self, off, oc, p, nl, inp, ha2):
         """`time::generalized_time` on the `nl` bytes at `p`, split on its answer:
         `None` reads the error flag at `oc + 0x60 - 0x60` with `lbu`, `beqz` not
@@ -6383,6 +6418,53 @@ def stage_cl(kind):
     return g, info
 
 
+def stage_cs1():
+    """From the log's entry at 0x2D12 to the signature loop at 0x2D74: the log
+    key's hash, from the origin, a newline, the Ed25519 tag, and the key."""
+    g = Gen("Cs1")
+    params = cl_start(g)
+    params += ["(S2 : SvSha2Code M0)", "(KS : SvK2Sep B)", "(hkp : memLoad32 M0 (q + 0x18) = kp)",
+               "(hkw : memLoad32 M0 (q + 0x1C) = kw)", "(kp_in4 : SvIn B (q + 0x18) 4)", "(kw_in4 : SvIn B (q + 0x1C) 4)",
+               "(a_kp : (q + 0x18).toNat % 4 = 0)", "(a_kw : (q + 0x1C).toNat % 4 = 0)",
+               "(kp_in : SvIn B kp 32)", "(l_in : SvIn B w48 w44.toNat)"]
+    g.block(0x2D12, 0x2D14)
+    g.load_mem(0x2D14, "kp", "hkp", "kp_in4", "a_kp")
+    g.load_mem(0x2D16, "kw", "hkw", "kw_in4", "a_kw")
+    g.store(0x2D18, "sw")
+    g.block(0x2D1A, 0x2D24)
+    g.load(0x2D24, "lw")
+    g.block(0x2D26, 0x2D2A)
+    g.store(0x2D2A, "sw")
+    g.load(0x2D2C, "lw")
+    for o in (0x2D2E, 0x2D30, 0x2D32):
+        g.store(o, "sw")
+    g.block(0x2D34, 0x2D40)
+    for o in (0x2D40, 0x2D42, 0x2D44, 0x2D46, 0x2D48):
+        g.store(o, "sw")
+    g.block(0x2D4A, 0x2D58)
+    parts = [("w48", "(w44).toNat", "(.inl l_in)", f"(by rw [w{g.k}_424, ofNat_toNat_self])", "(by have := l_in.lo; omega)"),
+             ("BitVec.ofNat 32 0x3FCC4850", "1", "(.inr ⟨by decide, by decide⟩)", f"w{g.k}_42c", "(by decide)"),
+             ("BitVec.ofNat 32 0x3FCC47D7", "1", "(.inr ⟨by decide, by decide⟩)", f"w{g.k}_434", "(by decide)"),
+             ("kp", "32", "(.inl kp_in)", f"w{g.k}_43c", "(by decide)")]
+    g.parts4(0x2D58, 0x1380, 0x420, parts)
+    g.digest_word()
+    g.store(0x2D60, "sw")
+    g.block(0x2D62, 0x2D6A)
+    g.load(0x2D6A, "lw")
+    g.store(0x2D6C, "sw")
+    g.load(0x2D6E, "lw")
+    g.block(0x2D70, 0x2D72)
+    g.store(0x2D72, "sw")
+    kd, oc, ex = g.digest
+    stmt, proof = finish(g, 0x2D74, CL_KEEP_REGS, set(g.words), set(g.bytes))
+    info = {"name": "sv_cs1", "title": "the log key's hash",
+            "doc": "From the log's entry at 0x2D12 to the signature loop at 0x2D74: the word at offset 0x14 is the "
+            "first word of SHA-256 of the origin line, a newline, the Ed25519 key tag, and the log's key.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": CL_BINDERS.replace("op ol : Word}", "op ol kp kw : Word}"),
+            "start": 0x2D12, "import": "C3BootProofs.Proofs.SvCkpt"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -6401,7 +6483,8 @@ def main():
                 "Tsig": stage_tsig, "Ck1": stage_ck1,
                 "Ck2a": lambda: stage_ck2(False), "Ck2b": lambda: stage_ck2(True),
                 "Ckd": stage_ckd, "Cke": stage_cke,
-                **{f"Cl{x}": (lambda x=x: stage_cl(x)) for x in ("miss", "hit", "end")}}[stage]()
+                **{f"Cl{x}": (lambda x=x: stage_cl(x)) for x in ("miss", "hit", "end")},
+                "Cs1": stage_cs1}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
