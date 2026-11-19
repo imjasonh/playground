@@ -3,7 +3,11 @@
 `llvm-objdump -d` output for it. `decide` checks each lemma against the
 function's extracted bytes, so a wrong line fails the build.
 
-Usage: decode-lemmas.py OBJDUMP_OUTPUT START_ADDRESS PREFIX CODE_NAME
+Usage: decode-lemmas.py OBJDUMP_OUTPUT START_ADDRESS PREFIX CODE_NAME [CHUNK]
+
+With CHUNK, the bytes are also split into CHUNK-byte pieces (`PREFIX_c<i>`),
+and each lemma decodes from its piece through `fetchRel_chunk`. Use it for
+long functions, where `decide` on the whole list is slow.
 """
 import re, sys
 REGS = {'zero':0,'ra':1,'sp':2,'gp':3,'tp':4,'t0':5,'t1':6,'t2':7,'s0':8,'fp':8,'s1':9}
@@ -15,6 +19,8 @@ def r(n): v=REGS[n]; return NAMES.get(v, f'({v} : Fin 32)')
 def w(v): return f'0x{v & 0xFFFFFFFF:X}'
 def imm(s): return int(s,0)
 src, start, prefix, code = sys.argv[1], int(sys.argv[2],16), sys.argv[3], sys.argv[4]
+chunk = int(sys.argv[5]) if len(sys.argv) > 5 else 0
+data = []
 ALU = {'add':'add','sub':'sub','and':'and','or':'or','xor':'xor','sltu':'sltu','slt':'slt','mul':'mul','mulhu':'mulhu','mulh':'mulh','divu':'divu','remu':'remu','div':'div','rem':'rem','sll':'sll','srl':'srl','sra':'sra'}
 ALUI = {'addi':'add','andi':'and','ori':'or','xori':'xor','sltiu':'sltu','slti':'slt','slli':'sll','srli':'srl','srai':'sra'}
 BR = {'beq','bne','bltu','bgeu','blt','bge'}
@@ -25,6 +31,8 @@ for line in open(src):
     addr = int(m.group(1),16); ln = len(m.group(2)) // 2
     op = m.group(3); args = [a.strip() for a in re.sub(r'<.*>','',m.group(4)).split(',') if a.strip()]
     off = addr - start
+    if off != len(data): sys.exit(f'gap before {addr:x}')
+    data += list(int(m.group(2), 16).to_bytes(ln, 'little'))
     def mem(a):
         mm = re.match(r'(-?0x[0-9a-f]+|-?\d+)\((\w+)\)', a); return imm(mm.group(1)), mm.group(2)
     if op in ALU: ins = f'.alu .{ALU[op]} {r(args[0])} {r(args[1])} {r(args[2])}'
@@ -66,5 +74,19 @@ for line in open(src):
     elif op == 'bltz': ins = f'.branch .blt {r(args[0])} x0 {w(imm(args[1]) - addr)}'
     elif op == 'bgez': ins = f'.branch .bge {r(args[0])} x0 {w(imm(args[1]) - addr)}'
     else: sys.exit(f'unknown {op} at {addr:x}: {line}')
-    out.append(f'theorem {prefix}_at_{off:x} : fetchRel {code} 0x{off:X} = some ({ins}, {ln}) := by decide')
-print('\n'.join(out))
+    out.append((off, f'theorem {prefix}_at_{off:x} : fetchRel {code} 0x{off:X} = some ({ins}, {ln}) :='))
+if not chunk:
+    print('\n'.join(f'{s} by decide' for _, s in out))
+    sys.exit()
+for i in range(0, len(data), chunk):
+    piece = data[i:i + chunk + 4]
+    body = ',\n    '.join(', '.join(f'0x{b:02x}' for b in piece[j:j + 12]) for j in range(0, len(piece), 12))
+    print(f'/-- Bytes 0x{i:X} to 0x{i + len(piece):X} of `{code}`. -/')
+    print(f'def {prefix}_c{i // chunk} : List Nat :=\n  [{body}]')
+    print(f'theorem {prefix}_c{i // chunk}_ok : {prefix}_c{i // chunk} <+: List.drop {i} {code} := by decide')
+    print()
+for off, s in out:
+    i = off // chunk
+    tail = i * chunk + chunk + 4 >= len(data)
+    h4 = '.inr (by decide)' if tail else '.inl (by decide)'
+    print(f'{s}\n  (fetchRel_chunk {prefix}_c{i}_ok (by decide) ({h4})).trans (by decide)')
