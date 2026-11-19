@@ -1223,6 +1223,44 @@ class Gen:
         self.digest = (k, oc, f"sha256 (memBytes M0 ({p0}) ({l0}) ++ memBytes M0 ({p1}) ({l1}))")
         return k
 
+    def line(self, off, oc, p, nl, inp, ha2, fail_tail):
+        """`checkpoint::line` on the `nl` bytes at `p`, split on the newline's
+        index; the failing case runs `fail_tail`. Returns (k, the index's name,
+        and the rest's address, length, and `SvRo`)."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_lineF", f"(oc := 0x{oc:X}) (nl := {nl})",
+                       [f"c{k}", f"s{k}", f"rk{k}", f"K{k}", f"L{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (CK0.sv F fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide)")
+        self.emit(f"    {self.reg_is(k - 1, 10, oc)} g{k-1}_11 {ha2} (by decide) (by decide) {inp}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [nlScan_ro F fR{k-1} {inp}] at L{k}")
+        self.keep_regs(k, [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        ex = f"nlScan M0 ({p}) 0 ({nl})"
+        ix = f"ix{k}"
+        self.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+        self.emit(f"  rcases r{k} with _ | {ix}")
+        self.sc.append(("eq", ex, f"some {ix}", [ix], f"hr{k}"))
+        self.fork(lambda sub: sub.line_none(k, oc, fail_tail))
+        self.pinned |= {f"hix{k}"}
+        self.emit(f"  have hix{k} : {ix} < {nl} := by have := (nlScan_lt _ _ _ hr{k}).2; omega")
+        self.emit(f"  rw [hr{k}] at L{k}")
+        self.emit(f"  obtain ⟨y0_{k}, y4_{k}, y8_{k}, y12_{k}⟩ := L{k}")
+        rp = f"({p}) + BitVec.ofNat 32 ({ix} + 1)"
+        self.frame_after(k, [(oc, 16)], {oc: (p, f"y0_{k}"), oc + 4: (f"BitVec.ofNat 32 {ix}", f"y4_{k}"),
+                                         oc + 8: (rp, f"y8_{k}"),
+                                         oc + 12: (f"BitVec.ofNat 32 ({nl}) - BitVec.ofNat 32 ({ix} + 1)", f"y12_{k}")})
+        return k, ix, rp, f"({nl}) - ({ix} + 1)", f"(line_rest {inp} hix{k})"
+
+    def line_none(self, k, oc, fail_tail):
+        self.emit(f"  rw [hr{k}] at L{k}")
+        self.emit(f"  obtain ⟨z0_{k}, z4_{k}⟩ := L{k}")
+        self.frame_after(k, [(oc, 16)], {oc: ("0", f"z0_{k}")}, {oc + 4: ("(0x1A : BitVec 8)", f"z4_{k}")})
+        fail_tail(self)
+        self.load_any(0x2FEA)
+        self.jump(0x2FEE)
+        self.fail(self.fail_proof(("eq", f"hr{k}")))
+
     def gt(self, off, oc, p, nl, inp, ha2):
         """`time::generalized_time` on the `nl` bytes at `p`, split on its answer:
         `None` reads the error flag at `oc + 0x60 - 0x60` with `lbu`, `beqz` not
@@ -5855,6 +5893,106 @@ def stage_tsig():
     return g, info
 
 
+CK_BINDERS = ("{B out bp x21 x26 dg dp pv q ckp ckl : Word} "
+              + "{" + " ".join(f"w{e:x}" for e in TST_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+
+
+def ck_line_tail(lw_off, reg, sw_off=None):
+    def tail(sub):
+        sub.load(lw_off, "lw")
+        if sw_off is not None:
+            sub.store(sw_off, "sw")
+        br = sw_off + 2 if sw_off is not None else lw_off + 4
+        sub.branch(br, True, f"by rw [g{sub.k}_{reg}, s{sub.k}.zero]; rfl")
+    return tail
+
+
+def stage_ck1():
+    """From 0x2B34 to 0x2BCA: the TSA's signature checked, and the
+    checkpoint's origin, size, and root lines and the blank line after them."""
+    g = Gen("Ck1")
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
+            22: ("U", "dp"), 23: ("S", 0xA40), 10: ("U", "pv")}
+    words = {e: f"w{e:x}" for e in TST_WORDS}
+    words.update({0x74: "q"})
+    words.update(TL_STRUCT)
+    params = start(g, regs, words, {})
+    params += ["(CK0 : SvCkCode M0)", "(hckp : memLoad32 M0 (bp + 0x18) = ckp)",
+               "(hckl : memLoad32 M0 (bp + 0x1C) = ckl)", "(ckp_in4 : SvIn B (bp + 0x18) 4)",
+               "(ckl_in4 : SvIn B (bp + 0x1C) 4)", "(a_ckp : (bp + 0x18).toNat % 4 = 0)",
+               "(a_ckl : (bp + 0x1C).toNat % 4 = 0)", "(ck_in : SvIn B ckp ckl.toNat)"]
+
+    def bad_sig(sub):
+        sub.branch(0x2B34, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hv)")
+        sub.block(0x2C5E, 0x2C60)
+        sub.fail(sub.fail_proof(("prop", "hv")), "sv_fail_2c60")
+    g.prop_check("pv ≠ 0", "hv", bad_sig)
+    g.branch(0x2B34, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hv")
+    g.load_mem(0x2B38, "ckp", "hckp", "ckp_in4", "a_ckp")
+    g.load_mem(0x2B3C, "ckl", "hckl", "ckl_in4", "a_ckl")
+    g.block(0x2B40, 0x2B44)
+    g.store(0x2B44, "sw")
+    g.block(0x2B46, 0x2B48)
+    k0, ix0, p1, n1, in1 = g.line(0x2B48, 0x420, "ckp", "(ckl).toNat", "(.inl ck_in)",
+                                  f"(by rw [g{g.k}_12, ofNat_toNat_self])", ck_line_tail(0x2B50, 10, 0x2B54))
+    g.load(0x2B50, "lw")
+    g.store(0x2B54, "sw")
+    g.branch(0x2B56, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ck_in.pos_ne")
+    rest = (p1, n1, in1, k0)
+    lines = [(0x2B5A, 0x2B6A, 0x2B72, 9), (0x2B7A, 0x2B88, 0x2B90, 23), (0x2B98, 0x2BA8, 0x2BB0, 10)]
+    ks = []
+    for (blk, call, lw, reg) in lines:
+        p, nl, inp, kp = rest
+        g.block(blk, blk + 4)
+        if blk == 0x2B5A:
+            g.load(0x2B5E, "lw")
+            g.store(0x2B60, "sw")
+            g.load(0x2B62, "lw")
+            g.load(0x2B64, "lw")
+            g.block(0x2B66, 0x2B6A)
+        else:
+            g.load(blk + 4, "lw")
+            g.load(blk + 6 if blk == 0x2B7A else blk + 8, "lw")
+            g.load(blk + 8 if blk == 0x2B7A else blk + 0xA, "lw")
+            g.block(blk + 0xA if blk == 0x2B7A else blk + 0xC, call)
+        ha2 = f"(by rw [g{g.k}_12, sub_ofNat (Nat.succ_le_of_lt hix{kp}) (by omega)])"
+        k, ix, p2, n2, in2 = g.line(call, 0x420, p, nl, inp, ha2, ck_line_tail(lw, reg))
+        ks.append((k, ix, p, nl, inp))
+        g.load(lw, "lw")
+        g.branch(lw + 4, False, f"by rw [g{g.k}_{reg}, s{g.k}.zero]; exact br_beq_f {inp}.ne0")
+        rest = (p2, n2, in2, k)
+    k3, ix3 = ks[-1][0], ks[-1][1]
+    g.load(0x2BB8, "lw")
+
+    def not_blank(sub):
+        sub.branch(0x2BBC, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_t hblank")
+        sub.block(0x2FF2, 0x2FF4)
+        sub.jump(0x2FF4)
+        sub.fail(sub.fail_proof(("prop", "hblank")))
+    g.prop_check(f"BitVec.ofNat 32 {ix3} = 0", "hblank", not_blank)
+    g.branch(0x2BBC, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_f hblank")
+    g.load(0x2BC0, "lw")
+    g.store(0x2BC4, "sw")
+    sig = lean_val(g.regs[10])
+
+    def no_sig(sub):
+        sub.branch(0x2BC6, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hsig)")
+        sub.block(0x2FF2, 0x2FF4)
+        sub.jump(0x2FF4)
+        sub.fail(sub.fail_proof(("prop", "hsig")))
+    g.prop_check(f"{sig} ≠ 0", "hsig", no_sig)
+    g.branch(0x2BC6, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hsig")
+    keep = set(g.words) - {0x420, 0x424}
+    stmt, proof = finish(g, 0x2BCA, [2, 3, 4, 8, 9, 18, 19, 21, 22, 23, 24, 25, 26, 27], keep, set())
+    info = {"name": "sv_ck1", "title": "the checkpoint's lines",
+            "doc": "From 0x2B34 to 0x2BCA: the TSA's signature checked, and the checkpoint splits into an origin "
+            "line, a size line, a root line, a blank line, and a nonempty rest.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": CK_BINDERS, "start": 0x2B34,
+            "import": "C3BootProofs.Proofs.SvCkpt"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -5870,7 +6008,7 @@ def main():
                 "Tst5n": lambda: stage_tst5(0xA0, False), "Tst5s": lambda: stage_tst5(0xA0, True),
                 "Tst6n": lambda: stage_tst5(0xA1, False), "Tst6s": lambda: stage_tst5(0xA1, True),
                 "Tsv": stage_tsv, **{f"Tl{x}": (lambda x=x: stage_tl(x)) for x in ("miss", "hit", "end")},
-                "Tsig": stage_tsig}[stage]()
+                "Tsig": stage_tsig, "Ck1": stage_ck1}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
