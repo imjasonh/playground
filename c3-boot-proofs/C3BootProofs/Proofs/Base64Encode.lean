@@ -380,7 +380,7 @@ theorem bee_call {M0 M : Word → BitVec 8} {S D sp0 : Word} {n : Nat} (E : BeeE
       (∀ x, Sep (sp0 + 0xFFFFFFD0 + 0xFFFFFF00) 0x100 x 1 → Sep S 0x68 x 1 → nn'.mem x = M x) ∧
       HasherAt nn'.mem S (msg ++ memBytes M (sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 o) 4) ∧
       reg nn' sp = sp0 + 0xFFFFFFD0 ∧
-      ∀ r, r.val ∈ [4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg nn' r = reg nn r := by
+      ∀ r, r.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg nn' r = reg nn r := by
   obtain ⟨U, hcE, -⟩ := bee_upd E fr ho
   obtain ⟨m1, c1, pc1, mem1, regs1⟩ := st.callRa hcE h1 h2 hb (by decide)
   have r1 : ∀ r, r ≠ ra → reg m1 r = reg nn r := fun r hr => by rw [regs1, upd_ne' hr st.zero]
@@ -473,7 +473,7 @@ theorem bee_group {M0 M : Word → BitVec 8} {S D sp0 : Word} {n : Nat} (E : Bee
       (∀ x, Sep (sp0 + 0xFFFFFED0) 0x10C x 1 → Sep S 0x68 x 1 → nn'.mem x = M x) ∧
       HasherAt nn'.mem S (msg ++ base64Encode [(M (p + 0)).toNat, (M (p + 1)).toNat, (M (p + 2)).toNat]) ∧
       reg nn' sp = sp0 + 0xFFFFFFD0 ∧ reg nn' a0 = p + 3 ∧ reg nn' 8 = aluEval .add (reg nn 8) 0xFFFFFFFD ∧
-      ∀ r, r.val ∈ [4, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg nn' r = reg nn r := by
+      ∀ r, r.val ∈ [3, 4, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg nn' r = reg nn r := by
   have hz := st.zero
   obtain ⟨R, hR⟩ : ∃ R, sp0 + 0xFFFFFED0 = R := ⟨_, rfl⟩
   have eF : sp0 + 0xFFFFFFD0 = R + BitVec.ofNat 32 0x100 := by rw [← hR, BitVec.add_assoc]; rfl
@@ -588,7 +588,7 @@ theorem bee_loop {M0 Ms0 : Word → BitVec 8} {S D sp0 : Word} {n : Nat} (E : Be
       ∃ nn', Steps nn nn' ∧ St nn'.mem BEE nn' 0x98 (reg nn') ∧ BeeFrame nn'.mem M0 S (sp0 + 0xFFFFFED0) ∧
         (∀ x, Sep (sp0 + 0xFFFFFED0) 0x10C x 1 → Sep S 0x68 x 1 → nn'.mem x = Ms0 x) ∧
         HasherAt nn'.mem S (msg ++ base64Encode (memBytes M0 D (3 * G))) ∧ reg nn' sp = sp0 + 0xFFFFFFD0 ∧
-        ∀ q, q.val ∈ [4, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg nn' q = reg nn q
+        ∀ q, q.val ∈ [3, 4, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg nn' q = reg nn q
   | r, j, nn, hr, st, L => by
     have hDw := E.hDw
     have sDS := E.sDS
@@ -700,7 +700,7 @@ theorem bee_fin {M0 M1 : Word → BitVec 8} {S D sp0 : Word} {n : Nat} (E : BeeE
       (∀ x, Sep (sp0 + 0xFFFFFED0) 0x100 x 1 → Sep S 0x68 x 1 → nn'.mem x = M1 x) ∧
       HasherAt nn'.mem S (X ++ memBytes M1 (sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 o) 4) ∧
       reg nn' sp = sp0 + 0xFFFFFFD0 ∧
-      ∀ q, q.val ∈ [4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg nn' q = reg nn q := by
+      ∀ q, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg nn' q = reg nn q := by
   have hz := st.zero
   obtain ⟨-, hcE, -⟩ := bee_upd E fr1 (o := 0) (by decide)
   obtain ⟨n1, c1, u1⟩ := St.block beeC st hcE beeC_end (by simp only [BlockOk, BInstr.ok, beeC, and_self])
@@ -737,7 +737,7 @@ theorem bee_tail {M0 Ms0 : Word → BitVec 8} {S D sp0 : Word} {n : Nat} (E : Be
     ∃ nn', Steps nn nn' ∧ St nn'.mem BEE nn' 0x12C (reg nn') ∧
       (∀ x, Sep (sp0 + 0xFFFFFED0) 0x10C x 1 → Sep S 0x68 x 1 → nn'.mem x = Ms0 x) ∧
       HasherAt nn'.mem S (msg ++ base64Encode (memBytes M0 D n)) ∧ reg nn' sp = sp0 + 0xFFFFFFD0 ∧
-      ∀ q, q.val ∈ [4, 24, 25, 26, 27] → reg nn' q = reg nn q := by
+      ∀ q, q.val ∈ [3, 4, 24, 25, 26, 27] → reg nn' q = reg nn q := by
   have hz := st.zero
   have hDw := E.hDw
   obtain ⟨R, hR⟩ : ∃ R, sp0 + 0xFFFFFED0 = R := ⟨_, rfl⟩
@@ -787,13 +787,13 @@ theorem bee_tail {M0 Ms0 : Word → BitVec 8} {S D sp0 : Word} {n : Nat} (E : Be
   -- after the stores of a last group at `sp + o`, its call and the epilogue's view of memory
   have finish : ∀ {nB : Machine} {MB : Word → BitVec 8} {o : Nat} {cs : Bytes}, o ≤ 8 → Steps nn nB →
       St MB BEE nB 0x120 (reg nB) → (∀ x, (∀ k, k < 4 → x ≠ sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 (o + k)) → MB x = nn.mem x) →
-      reg nB a1 = sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 o → (∀ qq, qq.val ∈ [4, 22, 24, 25, 26, 27] → reg nB qq = reg nn qq) →
+      reg nB a1 = sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 o → (∀ qq, qq.val ∈ [3, 4, 22, 24, 25, 26, 27] → reg nB qq = reg nn qq) →
       reg nB sp = sp0 + 0xFFFFFFD0 → memBytes MB (sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 o) 4 = cs →
       cs = base64Encode (memBytes M0 q (n % 3)) →
       ∃ nn', Steps nn nn' ∧ St nn'.mem BEE nn' 0x12C (reg nn') ∧
         (∀ x, Sep R 0x10C x 1 → Sep S 0x68 x 1 → nn'.mem x = Ms0 x) ∧
         HasherAt nn'.mem S (msg ++ base64Encode (memBytes M0 D n)) ∧ reg nn' sp = sp0 + 0xFFFFFFD0 ∧
-        ∀ qq, qq.val ∈ [4, 24, 25, 26, 27] → reg nn' qq = reg nn qq := by
+        ∀ qq, qq.val ∈ [3, 4, 24, 25, 26, 27] → reg nn' qq = reg nn qq := by
     intro nB MB o cs ho cB uB hMB a1B KB spB hmb hcs
     have neR : ∀ {w : Nat} (x : Word), 0x10C ≤ w → w ≤ 0x130 → Sep R w x 1 →
         ∀ k, k < 4 → x ≠ sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 (o + k) := fun {w} x h1 h2 hx k hk =>
@@ -905,11 +905,11 @@ theorem beeSave_end : blockEnd base64EncodeToCode 2 (saveBlock beePs) = some 0x1
 theorem beeRestore_end : blockEnd base64EncodeToCode 0x12C (restoreBlock beePs) = some 0x13E := by decide
 end
 
-theorem bee_ps_mem : ∀ q : Fin 32, q.val ∈ [1, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] →
-    q.val ∈ [4, 24, 25, 26, 27] ∨ ∃ o, (q, o) ∈ beePs := by
+theorem bee_ps_mem : ∀ q : Fin 32, q.val ∈ [1, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] →
+    q.val ∈ [3, 4, 24, 25, 26, 27] ∨ ∃ o, (q, o) ∈ beePs := by
   intro q hq
-  rcases (by decide : ∀ q : Fin 32, q.val ∈ [1, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] →
-      q.val ∈ [4, 24, 25, 26, 27] ∨ q = ra ∨ q = 8 ∨ q = 9 ∨ q = 18 ∨ q = 19 ∨ q = 20 ∨ q = 21 ∨ q = 22 ∨ q = 23) q hq
+  rcases (by decide : ∀ q : Fin 32, q.val ∈ [1, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] →
+      q.val ∈ [3, 4, 24, 25, 26, 27] ∨ q = ra ∨ q = 8 ∨ q = 9 ∨ q = 18 ∨ q = 19 ∨ q = 20 ∨ q = 21 ∨ q = 22 ∨ q = 23) q hq
     with h | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
   · exact Or.inl h
   · exact Or.inr ⟨0x2C, by decide⟩
@@ -934,7 +934,7 @@ theorem base64EncodeTo_correct (m : Machine) {sp0 S D retAddr : Word} {n : Nat} 
     (ha2 : reg m a2 = S) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hsp : reg m sp = sp0)
     (H : HasherAt m.mem S msg) (hlen : msg.length + 4 * (n / 3) + 4 < 2 ^ 32) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
-      (∀ q, q.val ∈ [1, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
+      (∀ q, q.val ∈ [1, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
       HasherAt m'.mem S (msg ++ base64Encode (memBytes m.mem D n)) ∧
       ∀ x, Sep (sp0 + 0xFFFFFED0) 0x130 x 1 → Sep S 0x68 x 1 → m'.mem x = m.mem x := by
   obtain ⟨F, hF⟩ : ∃ F, sp0 + 0xFFFFFFD0 = F := ⟨_, rfl⟩
@@ -1030,9 +1030,9 @@ theorem base64EncodeTo_correct (m : Machine) {sp0 S D retAddr : Word} {n : Nat} 
       BeeFrame nn.mem m.mem S (sp0 + 0xFFFFFED0) →
       (∀ x, Sep (sp0 + 0xFFFFFED0) 0x10C x 1 → Sep S 0x68 x 1 → nn.mem x = Ms0 x) →
       HasherAt nn.mem S (msg ++ base64Encode (memBytes m.mem D (3 * G))) → reg nn sp = F →
-      (∀ q, q.val ∈ [4, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg nn q = reg m3 q) →
+      (∀ q, q.val ∈ [3, 4, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg nn q = reg m3 q) →
       ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
-        (∀ q, q.val ∈ [1, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
+        (∀ q, q.val ∈ [1, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
         HasherAt m'.mem S (msg ++ base64Encode (memBytes m.mem D n)) ∧
         ∀ x, Sep (sp0 + 0xFFFFFED0) 0x130 x 1 → Sep S 0x68 x 1 → m'.mem x = m.mem x := by
     intro nn cn st fr sl Hn rsp K
@@ -1078,8 +1078,9 @@ theorem base64EncodeTo_correct (m : Machine) {sp0 S D retAddr : Word} {n : Nat} 
     · rcases bee_ps_mem q hq with h4 | ⟨o, ho⟩
       · obtain ⟨hv, hs', hps'⟩ : q.val ≠ 0 ∧ q ≠ sp ∧ (∀ p ∈ beePs, p.1 ≠ q) := by revert h4; revert q; decide
         rw [regs7, upd_ne hv hs', restoreRegs_ne _ _ _ _ q u4.zero hps', K4 q h4]
-        rcases (by decide : ∀ q : Fin 32, q.val ∈ [4, 24, 25, 26, 27] → q = 4 ∨ q.val ∈ [24, 25, 26, 27]) q h4 with
-          rfl | h2427
+        rcases (by decide : ∀ q : Fin 32, q.val ∈ [3, 4, 24, 25, 26, 27] → q = 3 ∨ q = 4 ∨ q.val ∈ [24, 25, 26, 27]) q h4 with
+          rfl | rfl | h2427
+        · rw [K 3 (by decide), K3 3 (by decide)]
         · rw [K 4 (by decide), K3 4 (by decide)]
         · rw [K q (by revert h2427; revert q; decide), K3 q (by revert h2427; revert q; decide)]
       · exact hslot q o ho

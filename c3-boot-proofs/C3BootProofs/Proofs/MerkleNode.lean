@@ -75,7 +75,7 @@ theorem merkleNodeHash_correct (m : Machine) {out L Rt sp0 retAddr : Word}
     (ha0 : reg m a0 = out) (ha1 : reg m a1 = L) (ha2 : reg m a2 = Rt)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hsp : reg m sp = sp0) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
-      (∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
+      (∀ r, r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
         r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) →
         r ≠ (31 : Fin 32) → reg m' r = reg m r) ∧
       memBytes m'.mem out 32 = nodeHash (memBytes m.mem L 32) (memBytes m.mem Rt 32) ∧
@@ -293,11 +293,11 @@ theorem merkleNodeHash_correct (m : Machine) {out L Rt sp0 retAddr : Word}
   have sp4 : reg n4 sp = sp0 := by
     rw [RC]; simp +decide only [runBlock, BInstr.run, nhC, upd_app, ↓reduceIte]; simp only [ev_add]; rw [sp3', ← hG]
     rw [BitVec.add_assoc]; exact BitVec.add_zero sp0
-  have k3 : ∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
+  have k3 : ∀ r, r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
       r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) →
-      r ≠ (31 : Fin 32) → reg n3 r = reg n2 r := fun r _ => K3 r
+      r ≠ (31 : Fin 32) → reg n3 r = reg n2 r := K3
   refine ⟨n5, c1.trans (c2.trans (c3.trans (c4.trans (.single d5)))), ?_, ?_,
-    fun r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_, ?_, fun x hx hy => ?_⟩
+    fun r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_, ?_, fun x hx hy => ?_⟩
   · rw [pc5, ra4, add_lit_zero, hret]
   · rw [regs5, sp4]
   · rw [regs5]
@@ -306,7 +306,7 @@ theorem merkleNodeHash_correct (m : Machine) {out L Rt sp0 retAddr : Word}
     by_cases q2 : r = sp
     · subst q2; rw [sp4, hsp]
     rw [RC]; simp only [runBlock, BInstr.run, nhC]
-    rw [updz (by simp [upd]) q2, updz u3.zero q1, k3 r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31,
+    rw [updz (by simp [upd]) q2, updz u3.zero q1, k3 r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31,
       r2 r q1, RA]
     simp only [runBlock, BInstr.run, nhA]
     rw [updz (by simp [upd]) q12, updz (by simp [upd]) q11, updz (by simp [upd]) q15, updz (by simp [upd]) q14,

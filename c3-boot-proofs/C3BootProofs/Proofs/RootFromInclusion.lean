@@ -268,7 +268,7 @@ theorem rf_hash {M0 M1 Mx : Word → BitVec 8} {out L Pp sp0 R G X Y o o2 : Word
     ∃ n' My, Steps nn n' ∧ St My (BitVec.ofNat 32 rootFromInclusionAddress) n' (off + 0x18) (reg n') ∧
       memBytes My G 32 = nodeHash (memBytes Mx X 32) (memBytes Mx Y 32) ∧
       (∀ x, Sep R 0x2D0 x 1 → My x = M1 x) ∧
-      ∀ q, q ≠ ra → q ≠ (3 : Fin 32) → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
+      ∀ q, q ≠ ra → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
         q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ a7 → q ≠ (28 : Fin 32) → q ≠ (29 : Fin 32) →
         q ≠ (30 : Fin 32) → q ≠ (31 : Fin 32) → reg n' q = reg nn q := by
   let Q := BitVec.ofNat 32 rootFromInclusionAddress
@@ -345,7 +345,7 @@ theorem rf_hash {M0 M1 Mx : Word → BitVec 8} {out L Pp sp0 R G X Y o o2 : Word
       (by
         rw [show G + (0x20 : Word) = G + BitVec.ofNat 32 0x20 from rfl, C.Gc]
         exact hx.sub (c := 0x290 + 0x20) (l := 32) (by omega)), inv x hx]
-  have k2 : ∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
+  have k2 : ∀ r, r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
       r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) →
       r ≠ (31 : Fin 32) → reg n2 r = reg n1 r := K2
   have c2x : ∀ {b : Word} {code : List Nat}, CodeIn M0 b code → 0x40000000 ≤ b.toNat →
@@ -401,7 +401,7 @@ theorem rf_hash {M0 M1 Mx : Word → BitVec 8} {out L Pp sp0 R G X Y o o2 : Word
       r ≠ (7 : Fin 32) → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) → r ≠ sp →
       reg n5 r = reg n4 r := K5
   refine ⟨n5, M5, c1.trans (c2.trans (c3.trans (c4.trans c5))), ⟨by rw [pc5], hM5, fun _ => rfl⟩, ?_, ?_,
-    fun q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_⟩
+    fun q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_⟩
   · rw [← out2]
     unfold memBytes; apply List.map_congr_left; intro i hi; have hi := List.mem_range.mp hi
     show (M5 (G + BitVec.ofNat 32 i)).toNat = (M2 (G + 0x20 + BitVec.ofNat 32 i)).toNat
@@ -418,7 +418,7 @@ theorem rf_hash {M0 M1 Mx : Word → BitVec 8} {out L Pp sp0 R G X Y o o2 : Word
     · rw [k5 q q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2, r4 q q1, R3]
       simp only [runBlock, BInstr.run, rfCopy]
       rw [updz (by simp [upd]) q12, updz (by simp [upd]) q11, updz u2.zero q10,
-        k2 q q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, r1 q q1]
+        k2 q q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, r1 q q1]
     · rw [sp5, r4 sp (by decide), sp3, ← hsp]
 
 set_option maxRecDepth 20000 in
@@ -570,7 +570,7 @@ theorem rf_loop {M0 M1 : Word → BitVec 8} {out L Pp sp0 R G : Word} {n k : Nat
       (∀ x, Sep R 0x2D0 x 1 → Mx x = M1 x) → memBytes Mx G 32 = r →
       reg nn s3 = Pp + BitVec.ofNat 32 (32 * i) → reg nn s4 = Pp + BitVec.ofNat 32 n → reg nn sp = G →
       ∃ n' My, Steps nn n' ∧ (∀ x, Sep R 0x2D0 x 1 → My x = M1 x) ∧
-        (∀ q, q ≠ ra → q ≠ (3 : Fin 32) → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
+        (∀ q, q ≠ ra → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
           q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ a7 → q ≠ (28 : Fin 32) → q ≠ (29 : Fin 32) →
           q ≠ (30 : Fin 32) → q ≠ (31 : Fin 32) → q ≠ s0 → q ≠ s1 → q ≠ s3 → q ≠ s5 → q ≠ s6 →
           reg n' q = reg nn q) ∧
@@ -597,14 +597,14 @@ theorem rf_loop {M0 M1 : Word → BitVec 8} {out L Pp sp0 R G : Word} {n k : Nat
     · obtain ⟨n3, e3, u3⟩ := u2.self.taken hc 0x120 rf_at_fe (by decide) (by
         simp only [branchTaken]; rw [u2.regs, A1, (pair64_zero _ _).mpr h0, u2.self.zero]; decide)
       refine ⟨n3, Mx, .cons e1 (.cons e2 (.single e3)), inv,
-        fun q q1 q3 q5 q6 q7 q10 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => by rw [u3.regs, keep2 q q10], ?_⟩
+        fun q q1 q5 q6 q7 q10 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => by rw [u3.regs, keep2 q q10], ?_⟩
       show if pair64 (reg nn s6) (reg nn s5) = 0 then _ else _
       rw [ite_eq_left h0]; exact ⟨u3.self, hr⟩
     · obtain ⟨n3, e3, u3⟩ := u2.self.notTaken hc 0x100 rf_at_fe (by decide) (by
         simp only [branchTaken]; rw [u2.regs, A1, u2.self.zero]
         exact beq_eq_false_iff_ne.mpr (fun h => h0 ((pair64_zero _ _).mp h)))
       refine ⟨n3, Mx, .cons e1 (.cons e2 (.single e3)), inv,
-        fun q q1 q3 q5 q6 q7 q10 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => by rw [u3.regs, keep2 q q10], ?_⟩
+        fun q q1 q5 q6 q7 q10 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => by rw [u3.regs, keep2 q q10], ?_⟩
       show if pair64 (reg nn s6) (reg nn s5) = 0 then _ else _
       rw [ite_eq_right h0]; exact u3.self
   | succ j ih =>
@@ -635,7 +635,7 @@ theorem rf_loop {M0 M1 : Word → BitVec 8} {out L Pp sp0 R G : Word} {n k : Nat
         St M9 (BitVec.ofNat 32 rootFromInclusionAddress) n9 0x98 (reg n9) → (∀ x, Sep R 0x2D0 x 1 → M9 x = M1 x) →
         memBytes M9 G 32 = r9 → reg n9 s3 = p → reg n9 s4 = Pp + BitVec.ofNat 32 n → reg n9 sp = G →
         ∃ n' My, Steps n9 n' ∧ (∀ x, Sep R 0x2D0 x 1 → My x = M1 x) ∧
-          (∀ q, q ≠ ra → q ≠ (3 : Fin 32) → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
+          (∀ q, q ≠ ra → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
             q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ a7 → q ≠ (28 : Fin 32) → q ≠ (29 : Fin 32) →
             q ≠ (30 : Fin 32) → q ≠ (31 : Fin 32) → q ≠ s0 → q ≠ s1 → q ≠ s3 → q ≠ s5 → q ≠ s6 →
             reg n' q = reg n9 q) ∧
@@ -657,8 +657,8 @@ theorem rf_loop {M0 M1 : Word → BitVec 8} {out L Pp sp0 R G : Word} {n k : Nat
         (by rw [R12, K11 s4 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), keep10 _ (by decide), h4])
         (by rw [R12, K11 sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), keep10 _ (by decide), h2])
       refine ⟨n13, M13, .cons e10 (c11.trans (.cons e12 c13)), i13,
-        fun q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 q19 q21 q22 => ?_, ?_⟩
-      · rw [K13 q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 q19 q21 q22, R12,
+        fun q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 q19 q21 q22 => ?_, ?_⟩
+      · rw [K13 q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 q19 q21 q22, R12,
           K11 q q10 q11 q8 q9 q21 q22, keep10 q q19]
       · rw [R12, R12, R12, R12, hf11, hs11, keep10 _ (by decide), keep10 _ (by decide), keep10 _ (by decide),
           keep10 _ (by decide)] at D13
@@ -673,7 +673,7 @@ theorem rf_loop {M0 M1 : Word → BitVec 8} {out L Pp sp0 R G : Word} {n k : Nat
     have pathB : ∀ n5 : Machine, St Mx (BitVec.ofNat 32 rootFromInclusionAddress) n5 0xB8 (reg n5) →
         Steps nn n5 → (∀ q, q ≠ a0 → q ≠ a1 → reg n5 q = reg nn q) →
         ∃ n' My, Steps nn n' ∧ (∀ x, Sep R 0x2D0 x 1 → My x = M1 x) ∧
-          (∀ q, q ≠ ra → q ≠ (3 : Fin 32) → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
+          (∀ q, q ≠ ra → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
             q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ a7 → q ≠ (28 : Fin 32) → q ≠ (29 : Fin 32) →
             q ≠ (30 : Fin 32) → q ≠ (31 : Fin 32) → q ≠ s0 → q ≠ s1 → q ≠ s3 → q ≠ s5 → q ≠ s6 →
             reg n' q = reg nn q) ∧
@@ -695,17 +695,17 @@ theorem rf_loop {M0 M1 : Word → BitVec 8} {out L Pp sp0 R G : Word} {n k : Nat
         hpw hGw hps hGs
       rw [hpd, hGr] at h7
       have hc7 := C.codeX i7 E.cRF (by decide) (by decide)
-      have k7 : ∀ q, q ≠ ra → q ≠ (3 : Fin 32) → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
+      have k7 : ∀ q, q ≠ ra → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
           q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ a7 → q ≠ (28 : Fin 32) → q ≠ (29 : Fin 32) →
           q ≠ (30 : Fin 32) → q ≠ (31 : Fin 32) → reg n7 q = reg nn q :=
-        fun q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => by
-          rw [K7 q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, R6]
+        fun q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => by
+          rw [K7 q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, R6]
           simp only [runBlock, BInstr.run, rfB]
           rw [updz (by simp [upd]) q11, updz (by simp [upd]) q12, updz u5.zero q10, k5 q q10 q11]
       have ks : ∀ q, q = s0 ∨ q = s1 ∨ q = s5 ∨ q = s6 ∨ q = s3 ∨ q = s4 ∨ q = sp → reg n7 q = reg nn q := by
         intro q hq
         rcases hq with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-          exact k7 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+          exact k7 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
             (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
             (by decide)
       obtain ⟨n8, c8, u8, he8, K8⟩ := rf_even hc7 64 n7 (by
@@ -720,14 +720,14 @@ theorem rf_loop {M0 M1 : Word → BitVec 8} {out L Pp sp0 R G : Word} {n k : Nat
       have e2 : pair64 (reg n8 s6) (reg n8 s5) = (shiftEven f z).2 := by rw [← he8]
       rw [e1, e2] at D9
       refine ⟨n9, My, c5.trans (c6.trans (c7.trans (c8.trans c9))), i9,
-        fun q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 q19 q21 q22 => ?_, D9⟩
-      rw [K9 q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 q19 q21 q22,
-        kk q q10 q11 q8 q9 q21 q22, k7 q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31]
+        fun q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 q19 q21 q22 => ?_, D9⟩
+      rw [K9 q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 q19 q21 q22,
+        kk q q10 q11 q8 q9 q21 q22, k7 q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31]
     -- Path A: `node_hash(r, p)`.
     have pathA : ∀ n5 : Machine, St Mx (BitVec.ofNat 32 rootFromInclusionAddress) n5 0x7A (reg n5) →
         Steps nn n5 → (∀ q, q ≠ a0 → q ≠ a1 → reg n5 q = reg nn q) →
         ∃ n' My, Steps nn n' ∧ (∀ x, Sep R 0x2D0 x 1 → My x = M1 x) ∧
-          (∀ q, q ≠ ra → q ≠ (3 : Fin 32) → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
+          (∀ q, q ≠ ra → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
             q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ a7 → q ≠ (28 : Fin 32) → q ≠ (29 : Fin 32) →
             q ≠ (30 : Fin 32) → q ≠ (31 : Fin 32) → q ≠ s0 → q ≠ s1 → q ≠ s3 → q ≠ s5 → q ≠ s6 →
             reg n' q = reg nn q) ∧
@@ -748,26 +748,26 @@ theorem rf_loop {M0 M1 : Word → BitVec 8} {out L Pp sp0 R G : Word} {n k : Nat
         (by rw [R6]; simp +decide only [runBlock, BInstr.run, rfA, upd_app, ↓reduceIte]; exact sp5)
         hGw hpw hGs hps
       rw [hpd, hGr] at h7
-      have k7 : ∀ q, q ≠ ra → q ≠ (3 : Fin 32) → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
+      have k7 : ∀ q, q ≠ ra → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
           q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ a7 → q ≠ (28 : Fin 32) → q ≠ (29 : Fin 32) →
           q ≠ (30 : Fin 32) → q ≠ (31 : Fin 32) → reg n7 q = reg nn q :=
-        fun q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => by
-          rw [K7 q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, R6]
+        fun q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => by
+          rw [K7 q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, R6]
           simp only [runBlock, BInstr.run, rfA]
           rw [updz (by simp [upd]) q12, updz (by simp [upd]) q11, updz u5.zero q10, k5 q q10 q11]
       have ks : ∀ q, q = s0 ∨ q = s1 ∨ q = s5 ∨ q = s6 ∨ q = s3 ∨ q = s4 ∨ q = sp → reg n7 q = reg nn q := by
         intro q hq
         rcases hq with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-          exact k7 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+          exact k7 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
             (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
             (by decide)
       obtain ⟨n9, My, c9, i9, K9, D9⟩ := tail n7 M7 _ u7 i7 h7 (by rw [ks s3 (by simp), hs3])
         (by rw [ks s4 (by simp), hs4]) (by rw [ks sp (by simp), hsp])
       rw [ks s1 (by simp), ks s0 (by simp), ks s6 (by simp), ks s5 (by simp), hf, hzz] at D9
       refine ⟨n9, My, c5.trans (c6.trans (c7.trans c9)), i9,
-        fun q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 q19 q21 q22 => ?_, D9⟩
-      rw [K9 q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 q19 q21 q22,
-        k7 q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31]
+        fun q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 q19 q21 q22 => ?_, D9⟩
+      rw [K9 q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 q19 q21 q22,
+        k7 q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31]
     -- The tests at 0x5E through 0x78.
     obtain ⟨n1, e1, u1⟩ := s.alu hc rf_at_5e (off' := 0x62) (by decide)
     have K1 := u1.upd_ne hz
@@ -783,7 +783,7 @@ theorem rf_loop {M0 M1 : Word → BitVec 8} {out L Pp sp0 R G : Word} {n k : Nat
     · obtain ⟨n3, e3, u3⟩ := u2'.taken hc 0x100 rf_at_66 (by decide) (by
         simp only [branchTaken]; rw [R2, A1, (pair64_zero _ _).mpr (hzz.trans hz0), u2'.zero]; decide)
       refine ⟨n3, Mx, .cons e1 (.cons e2 (.single e3)), inv,
-        fun q q1 q3 q5 q6 q7 q10 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => by rw [u3.regs, R2, K1 q q10], ?_⟩
+        fun q q1 q5 q6 q7 q10 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => by rw [u3.regs, R2, K1 q q10], ?_⟩
       rw [ite_eq_left hz0]; exact u3.self
     · obtain ⟨n3, e3, u3⟩ := u2'.notTaken hc 0x68 rf_at_66 (by decide) (by
         simp only [branchTaken]; rw [R2, A1, u2'.zero]
@@ -1112,13 +1112,13 @@ set_option maxRecDepth 20000 in
 theorem rfS_end : blockEnd rootFromInclusionCode 0x40 rfS = some 0x54 := by decide
 
 /-- The registers that nothing in `root_from_inclusion` writes. -/
-def RFOther (q : Fin 32) : Prop := q.val ∈ [0, 4, 23, 24, 25, 26, 27]
+def RFOther (q : Fin 32) : Prop := q.val ∈ [0, 3, 4, 23, 24, 25, 26, 27]
 
 theorem RFOther.ne {q : Fin 32} (h : RFOther q) {r : Fin 32}
-    (hr : r.val ∉ [0, 4, 23, 24, 25, 26, 27] := by decide) : q ≠ r := fun e => hr (e ▸ h)
+    (hr : r.val ∉ [0, 3, 4, 23, 24, 25, 26, 27] := by decide) : q ≠ r := fun e => hr (e ▸ h)
 
 set_option synthInstance.maxSize 100000 in
-theorem rf_cat : ∀ q : Fin 32, q ≠ (3 : Fin 32) → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 →
+theorem rf_cat : ∀ q : Fin 32, q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 →
     q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ a7 → q ≠ (28 : Fin 32) → q ≠ (29 : Fin 32) →
     q ≠ (30 : Fin 32) → q ≠ (31 : Fin 32) →
     (q = ra ∨ q = s0 ∨ q = s1 ∨ q = s2 ∨ q = s3 ∨ q = s4 ∨ q = s5 ∨ q = s6) ∨ q = sp ∨ RFOther q := by
@@ -1128,7 +1128,7 @@ theorem rf_cat : ∀ q : Fin 32, q ≠ (3 : Fin 32) → q ≠ t0 → q ≠ t1 �
 returns to, for the specification's result `res`. -/
 def RFPost (m m' : Machine) (sp0 out retAddr : Word) (res : Option Bytes) : Prop :=
   Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
-    (∀ q, q ≠ (3 : Fin 32) → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 →
+    (∀ q, q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 →
       q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ a7 → q ≠ (28 : Fin 32) → q ≠ (29 : Fin 32) → q ≠ (30 : Fin 32) →
       q ≠ (31 : Fin 32) → reg m' q = reg m q) ∧
     (match res with
@@ -1151,7 +1151,7 @@ theorem rootFromInclusion_correct (m : Machine) {out L Pp sp0 retAddr : Word} {n
     (ha0 : reg m a0 = out) (ha5 : reg m a5 = L) (ha6 : reg m a6 = Pp) (ha7 : reg m a7 = BitVec.ofNat 32 n)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hsp : reg m sp = sp0) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
-      (∀ q, q ≠ (3 : Fin 32) → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 →
+      (∀ q, q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 → q ≠ a3 →
         q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ a7 → q ≠ (28 : Fin 32) → q ≠ (29 : Fin 32) → q ≠ (30 : Fin 32) →
         q ≠ (31 : Fin 32) → reg m' q = reg m q) ∧
       (match rootFromInclusion (pair64 (reg m a1) (reg m a2)) (pair64 (reg m a3) (reg m a4))
@@ -1195,9 +1195,9 @@ theorem rootFromInclusion_correct (m : Machine) {out L Pp sp0 retAddr : Word} {n
     obtain ⟨m', c', pc', sp', rs', ks', o1, o2, fr⟩ :=
       rf_err C (f := reg m) (fun _ _ _ => rfl) hret' hz0 nz s inv hs2 hsp'
     refine ⟨m', cs.trans c', by rw [pc', hra], by rw [sp', eG60],
-      fun q q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_, by rw [hn]; exact ⟨o1, o2⟩,
+      fun q q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_, by rw [hn]; exact ⟨o1, o2⟩,
       fun x hx hy => by rw [fr x hx hy]⟩
-    rcases rf_cat q q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 with hr | rfl | hO
+    rcases rf_cat q q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 with hr | rfl | hO
     · exact rs' q hr
     · rw [sp', eG60, hsp]
     · rw [ks' q hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne, ko q hO]
@@ -1209,9 +1209,9 @@ theorem rootFromInclusion_correct (m : Machine) {out L Pp sp0 retAddr : Word} {n
     obtain ⟨m', c', pc', sp', rs', ks', o1, o2, fr⟩ :=
       rf_ok C (f := reg m) (fun _ _ _ => rfl) hret' hz0 nz s inv hs2 hsp' hr
     refine ⟨m', cs.trans c', by rw [pc', hra], by rw [sp', eG60],
-      fun q q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_, by rw [hn]; exact ⟨o1, o2⟩,
+      fun q q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_, by rw [hn]; exact ⟨o1, o2⟩,
       fun x hx hy => by rw [fr x hx hy]⟩
-    rcases rf_cat q q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 with hr | rfl | hO
+    rcases rf_cat q q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 with hr | rfl | hO
     · exact rs' q hr
     · rw [sp', eG60, hsp]
     · rw [ks' q hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne
@@ -1396,16 +1396,16 @@ theorem rootFromInclusion_correct (m : Machine) {out L Pp sp0 retAddr : Word} {n
       rw [← hspec, rootFromInclusion_eq, hlen, ite_eq_left ⟨hm, hb, hlt⟩]; rfl
     have cs : Steps m n10 := cs6.trans (c7.trans (c8.trans (c9.trans (.single e10))))
     have ks2 : reg n' s2 = out := by
-      rw [K' s2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      rw [K' s2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
         (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
         (by decide) (by decide) (by decide) (by decide) (by decide), s01 s2 (by decide), s2_1]
     have ksp : reg n' sp = G := by
-      rw [K' sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      rw [K' sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
         (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
         (by decide) (by decide) (by decide) (by decide) (by decide), sp10]
     have ko : ∀ q, RFOther q → reg n' q = reg m q := fun q hO => by
       rw [K' q hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne
-        hO.ne hO.ne hO.ne hO.ne hO.ne hO.ne, oB q hO]
+        hO.ne hO.ne hO.ne hO.ne hO.ne, oB q hO]
     generalize inclusionPath (pair64 (reg m a1) (reg m a2)) (pair64 (reg m a3) (reg m a4) - 1)
       (memBytes M0 L 32) (chunks32 (n / 32) (memBytes M0 Pp n)) = o at D hS
     rcases o with _ | ⟨sf, rf⟩
