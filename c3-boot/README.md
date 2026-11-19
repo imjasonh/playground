@@ -36,6 +36,15 @@ Not done yet:
 - The eFuse lock is a no-op. Which protection unit can lock the eFuse
   controller is a phase 0 hardware question, and the lock is a release
   blocker. Until it exists, a signed application can burn any eFuse.
+- eFuse programming timing at 160 MHz is unchecked. The bootloader
+  programs `SECURE_VERSION` with whatever timing the eFuse controller's
+  registers hold at boot, and the timing depends on the bus clock. At
+  160 MHz the bus clock is 80 MHz, not the ROM's 20 MHz, so a raise might
+  program out of specification. Either
+  raise the level before switching clocks, switch back to the crystal for
+  the raise, or set the timing registers for 80 MHz as ESP-IDF's
+  `efuse_hal_set_timing` does. Test the choice on a board set aside for
+  eFuse tests.
 - **Demo builds are valid releases, on purpose for now.** `c3-release.yml`
   signs the demo application under the release identity on every push to
   `main`, so each demo build is a valid image at security version 0. Once a
@@ -88,9 +97,10 @@ C3_GENESIS=dev cargo build --locked --release --target riscv32imc-unknown-none-e
 ```
 
 The default test build of the bootloader image (development keys, no eFuse
-burns) is reproducible: building it anywhere gives the digest in
-`bootloader/dev-image.sha256`, and `bootloader/check-digest.sh` checks it in
-CI. A change to the bootloader, `c3-verify`, `c3-crypto`, a dependency, or
+burns) is reproducible on x86-64 Linux, where CI builds it: it gives the
+digest in `bootloader/dev-image.sha256`, and `bootloader/check-digest.sh`
+checks it in CI. Builds on macOS and on arm64 Linux give other digests, so
+regenerate the pin in an x86-64 Linux container. A change to the bootloader, `c3-verify`, `c3-crypto`, a dependency, or
 the toolchain changes the digest; run `bootloader/check-digest.sh --update`
 to pin the new one.
 
@@ -162,6 +172,17 @@ boots the signed slot in QEMU. See [`release/README.md`](release/README.md).
 
 ## Hardware
 
-No board is needed yet. Constants that come from Espressif's documentation
-are marked **(hardware)** in `docs/formats.md`, and the plan lists how each
-one gets checked on a real board.
+Constants that come from Espressif's documentation are marked
+**(hardware)** in `docs/formats.md`, and the plan lists how each one gets
+checked on a real board.
+
+On an ESP32-C3 v0.4 board, the development build boots a fakestore-signed
+slot, maps flash, and jumps to the demo application, which confirms its
+slot. The ROM leaves the CPU at 20 MHz and arms timer group 0's and 1's
+watchdogs for 1.3 s, and a boot at that speed takes 9.3 s, so the bootloader
+first sets its own watchdog budget and switches the CPU to 160 MHz. Then a
+boot that checks one slot takes 1.2 s. See `docs/measurements.md`.
+
+Flash a board over USB with `espflash write-bin 0x0 flash.bin`, using a
+`flash.bin` from `c3-ota flash` as `qemu/scenarios.sh` builds it. The
+console is the board's USB serial port.

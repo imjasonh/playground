@@ -72,7 +72,8 @@ data, and keeps its slot buffers on a 95 KiB stack.
 | --- | --- |
 | The ROM loads a bootloader image of this size into this region **(hardware)** | Assumed from the technical reference manual and ESP-IDF |
 | The ROM doesn't use memory below `0x3FCDC710` after it jumps to the bootloader **(hardware)** | Assumed from ESP-IDF's linker script |
-| Boot time for two slot checks with 16-link chains **(hardware)** | Not measured on a board. The RV32 model counts about 135 million instructions for one full slot check; see [Boot cost on the RV32 model](#boot-cost-on-the-rv32-model) |
+| Boot time for two slot checks with 16-link chains **(hardware)** | Not measured. One slot check with an empty chain, from the bootloader's start to the jump, measured on an ESP32-C3 v0.4 on 2026-11-19: 188.7 million cycles, 1.18 s at 160 MHz and 9.34 s at the ROM's 20 MHz. The RV32 model counts about 137 million instructions for that boot, so about 1.4 cycles per instruction; see [Boot cost on the RV32 model](#boot-cost-on-the-rv32-model) |
+| The ROM's clock and watchdogs **(hardware)** | Measured on an ESP32-C3 v0.4: the CPU runs from the 40 MHz crystal divided by 2, the 480 MHz PLL is on, timer group 0's and 1's watchdogs are armed in flash-boot mode for 26,000,000 bus-clock ticks (1.3 s at 20 MHz), the RTC watchdog is off, and the super watchdog feeds itself |
 | Software SHA-256 over a full 1,920 KiB slot **(hardware)** | Not measured |
 | eFuse controller lock against machine-mode writes **(hardware)** | Not tested. A release blocker |
 

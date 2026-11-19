@@ -93,6 +93,23 @@ fn write_record(addr: u32, record: &[u8; bootstate::RECORD_LEN]) {
     }
 }
 
+/// Turns off timer group 0's watchdog, which the bootloader leaves armed so
+/// that a trial image that hangs before confirming its slot is reset. A build
+/// that doesn't confirm leaves it armed.
+fn stop_watchdog() {
+    const WDTCONFIG0: usize = 0x6001_F048;
+    const WDTWPROTECT: usize = 0x6001_F064;
+    const WDT_WKEY: u32 = 0x50D8_3AA1;
+    const WDT_CONF_UPDATE_EN: u32 = 1 << 22;
+    // SAFETY: timer group 0's watchdog registers, word-aligned.
+    unsafe {
+        core::ptr::write_volatile(WDTWPROTECT as *mut u32, WDT_WKEY);
+        core::ptr::write_volatile(WDTCONFIG0 as *mut u32, 0);
+        core::ptr::write_volatile(WDTCONFIG0 as *mut u32, WDT_CONF_UPDATE_EN);
+        core::ptr::write_volatile(WDTWPROTECT as *mut u32, 0);
+    }
+}
+
 #[unsafe(no_mangle)]
 extern "C" fn app_main(slot_index: u32) -> ! {
     // SAFETY: NUL-terminated format strings with matching arguments.
@@ -128,6 +145,9 @@ extern "C" fn app_main(slot_index: u32) -> ! {
         write_record(target, &bootstate::encode(&next));
         // SAFETY: as above.
         unsafe { ets_printf(c"c3-demo: confirmed slot %d\n".as_ptr(), slot_index) };
+    }
+    if CONFIRM {
+        stop_watchdog();
     }
     // SAFETY: as above.
     unsafe { ets_printf(c"c3-demo: idle\n".as_ptr()) };

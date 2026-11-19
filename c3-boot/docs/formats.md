@@ -536,3 +536,10 @@ RAM segments copied, flash segments mapped, and register `a0` holding the
 booted slot: 0 for slot A or 1 for slot B. The application sets up its own
 stack. It may use all of SRAM, including the bootloader's region, because
 the bootloader never runs again until the next reset.
+
+The CPU runs at 160 MHz from the PLL, with an 80 MHz bus clock. Timer group
+0's watchdog is armed to reset the chip 10 s after the bootloader started,
+counted on the crystal, and timer group 1's is off. The application feeds
+the watchdog or turns it off once it runs. An application that hangs
+before it confirms a trial slot is reset, and the next boot counts the
+trial down. **(hardware)**

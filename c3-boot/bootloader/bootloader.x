@@ -19,6 +19,9 @@ SECTIONS
   {
     KEEP(*(.text._start))
     *(.text .text.*)
+    /* Last, so that changing the clock and watchdog setup moves no other
+     * function. */
+    *(.text_setup)
   } > IRAM
 
   .rodata : ALIGN(4)

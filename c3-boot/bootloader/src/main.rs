@@ -9,10 +9,12 @@
 #![no_std]
 #![no_main]
 
+mod clock;
 mod efuse;
 mod flash;
 mod mmu;
 mod rom;
+mod watchdog;
 
 use c3_verify::accept::Accepted;
 use c3_verify::accept::SlotParts;
@@ -49,7 +51,7 @@ _start:
     addi t0, t0, 4
     j 1b
 2:
-    call boot_main
+    call setup
 3:
     j 3b
 "#
@@ -230,6 +232,19 @@ fn boot(slot: Slot, accepted: &Accepted, image_flash: u32, target: u8, efuse_lev
     let entry: extern "C" fn(u32) -> ! =
         unsafe { core::mem::transmute(accepted.header.entry_point as usize) };
     entry(slot_index)
+}
+
+/// Replaces the ROM's watchdogs and clock, then boots. Everything it runs
+/// is in `.text_setup`, which `bootloader.x` links after the rest of the
+/// code, so that a change here moves no function the proofs cover.
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".text_setup")]
+extern "C" fn setup() -> ! {
+    // The ROM's watchdog counts bus-clock ticks, so replace it before the
+    // clock switch shortens it.
+    watchdog::arm();
+    clock::run_at_160mhz();
+    boot_main()
 }
 
 #[unsafe(no_mangle)]
