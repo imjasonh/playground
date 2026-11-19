@@ -1262,6 +1262,36 @@ class Gen:
         self.jump(0x2FEE)
         self.fail(self.fail_proof(("eq", f"hr{k}")))
 
+    def ms(self, off, c, N):
+        """`memset` of `N` bytes at offset `c`."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_ms2F", f"(c := 0x{c:X}) (N := 0x{N:X})",
+                       [f"c{k}", f"s{k}", f"rk{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide)")
+        self.emit(f"    {self.reg_is(k - 1, 10, c)} g{k-1}_11 g{k-1}_12 (by decide)")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.frame_after(k, [(c, N)], {})
+        return k
+
+    def b64(self, off, rc, oc, t, nl, inp, ha2, L):
+        """`base64::decode_into` of the `nl` bytes at `t`; returns k and the
+        expression of the decoded bytes. The caller splits."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_b64F", f"(rc := 0x{rc:X}) (oc := 0x{oc:X}) (nl := {nl}) (L := {L})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"Ok{k}", f"Bad{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (CK0.sv F fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, rc)} g{k-1}_11 {ha2} {self.reg_is(k - 1, 13, oc)} g{k-1}_14")
+        self.emit(f"    (by decide) (by decide) (by decide) (by decide) {inp}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [sv_mbRo F fR{k-1} {inp}] at Ok{k} Bad{k}")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        return k, f"base64Decode (memBytes M0 ({t}) ({nl}))"
+
     def gt(self, off, oc, p, nl, inp, ha2):
         """`time::generalized_time` on the `nl` bytes at `p`, split on its answer:
         `None` reads the error flag at `oc + 0x60 - 0x60` with `lbu`, `beqz` not
@@ -6170,6 +6200,99 @@ def stage_ckd():
     return g, info
 
 
+def cke_tail(g, bad):
+    """From 0x2CA2: the decoder's error flag, then its length against 32."""
+    g.block(0x2CA2, 0x2CAA)
+    g.load(0x2CAA, "lbu")
+    if bad == "flag":
+        g.branch(0x2CAE, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+        return
+    g.branch(0x2CAE, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.block(0x2CB2, 0x2CBA)
+    g.load(0x2CBA, "lw")
+    g.block(0x2CBC, 0x2CBE)
+
+
+def stage_cke():
+    """From the size's digit loop's end at 0x2C06 to the log loop at 0x2CE2:
+    the size fits in 63 bits, and the root line is the base64 of 32 bytes."""
+    g = Gen("Cke")
+    g.generic_alu = True
+    params = ckd_start(g) + ["(hc : c = 0)", "(CK0 : SvCkCode M0)", "(rt_in : SvIn B rp rl.toNat)"]
+    g.branch(0x2C06, True, f"by rw [g{g.k}_8, s{g.k}.zero]; exact br_beq_t hc")
+    g.load(0x2C6E, "lw")
+
+    def big(sub):
+        sub.branch(0x2C70, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_blt0_t hsz")
+        ck_fail_2ff2(sub, "hsz")
+    g.prop_check("w70.toNat < 2 ^ 31", "hsz", big)
+    g.branch(0x2C70, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_blt0_f hsz")
+    g.block(0x2C74, 0x2C7E)
+    g.ms(0x2C7E, 0x420, 0x60)
+    g.block(0x2C86, 0x2C9A)
+    k, ex = g.b64(0x2C9A, 0x1380, 0x420, "rp", "(rl).toNat", "(.inl rt_in)", f"(by rw [g{g.k}_12, ofNat_toNat_self])", "0x60")
+    g.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+    g.emit(f"  rcases r{k} with _ | bs{k}")
+    g.sc.append(("eq", ex, f"some bs{k}", [f"bs{k}"], f"hr{k}"))
+
+    def none(sub):
+        sub.emit(f"  have z{k} := Bad{k} fun b h => by rw [hr{k}] at h; cases h")
+        sub.frame_after(k, [(0x1380, 8), (0x420, 0x60)], {}, {0x1380: ("(1 : BitVec 8)", f"z{k}")})
+        cke_tail(sub, "flag")
+        ck_fail_none(sub, ("eq", f"hr{k}"))
+    g.fork(none)
+    bs = f"bs{k}"
+    hl = "hl32"
+
+    def wrong_len(sub):
+        sub.emit(f"  by_cases hle : {bs}.length ≤ 0x60")
+
+        def long(s2):
+            s2.emit(f"  have z{k} := Bad{k} fun b h => by rw [hr{k}] at h; cases h; omega")
+            s2.frame_after(k, [(0x1380, 8), (0x420, 0x60)], {}, {0x1380: ("(1 : BitVec 8)", f"z{k}")})
+            cke_tail(s2, "flag")
+            ck_fail_none(s2, ("prop", hl))
+        sub.emit("  rotate_left")
+        sub.fork(long)
+        sub.emit(f"  obtain ⟨b0_{k}, b4_{k}, -⟩ := Ok{k} {bs} hr{k} hle")
+        sub.frame_after(k, [(0x1380, 8), (0x420, 0x60)], {0x1384: (f"BitVec.ofNat 32 {bs}.length", f"b4_{k}")},
+                        {0x1380: ("(0 : BitVec 8)", f"b0_{k}")})
+        cke_tail(sub, "len")
+        sub.branch(0x2CBE, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_t (ne32_add (by omega) {hl})")
+        ck_fail_none(sub, ("prop", hl))
+    g.prop_check(f"{bs}.length = 32", hl, wrong_len)
+    g.emit(f"  obtain ⟨b0_{k}, b4_{k}, bm_{k}⟩ := Ok{k} {bs} hr{k} (by omega)")
+    g.pinned |= {f"bm_{k}"}
+    g.frame_after(k, [(0x1380, 8), (0x420, 0x60)], {0x1384: (f"BitVec.ofNat 32 {bs}.length", f"b4_{k}")},
+                  {0x1380: ("(0 : BitVec 8)", f"b0_{k}")})
+    g.ranges[0x420] = (32, f"BitVec.ofNat 8 ({bs}.getD j 0)")
+    g.emit(f"  have q{k}_420 : ∀ j, j < 32 → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x420 + j)) = BitVec.ofNat 8 ({bs}.getD j 0) :=")
+    g.emit(f"    fun j hj => by rw [← add_ofNat_assoc]; exact memBytes_range bm_{k} j (by omega)")
+    cke_tail(g, "len")
+    g.branch(0x2CBE, False, f"by rw [g{g.k}_10, s{g.k}.zero, {hl}]; decide")
+    g.load(0x2CC2, "lbu")
+    g.store(0x2CC6, "sw")
+    g.block(0x2CC8, 0x2CD0)
+    g.mc(0x2CD0, 0x320, 0x421, 0x1F)
+    g.load(0x2CD8, "lw")
+    g.block(0x2CDA, 0x2CDE)
+    g.block(0x2CDE, 0x2CE2)
+    stmt, proof = finish(g, 0x2CE2, [2, 3, 4, 9, 18, 19, 21, 22, 23, 24, 25, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "sv_cke", "title": "the checkpoint's root hash",
+            "doc": "From the size's digit loop's end at 0x2C06 to the log loop at 0x2CE2: the size is below 2^63, "
+            "and the root line is the base64 of 32 bytes, which go to the word at offset 0x1C and the 31 bytes "
+            "at offset 0x320.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": CKD_BINDERS, "start": 0x2C06,
+            "import": "C3BootProofs.Proofs.SvCkpt"}
+    return g, info
+
+
+def ck_fail_none(sub, why):
+    sub.block(0x2FF2, 0x2FF4)
+    sub.jump(0x2FF4)
+    sub.fail(sub.fail_proof(why))
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -6187,7 +6310,7 @@ def main():
                 "Tsv": stage_tsv, **{f"Tl{x}": (lambda x=x: stage_tl(x)) for x in ("miss", "hit", "end")},
                 "Tsig": stage_tsig, "Ck1": stage_ck1,
                 "Ck2a": lambda: stage_ck2(False), "Ck2b": lambda: stage_ck2(True),
-                "Ckd": stage_ckd}[stage]()
+                "Ckd": stage_ckd, "Cke": stage_cke}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

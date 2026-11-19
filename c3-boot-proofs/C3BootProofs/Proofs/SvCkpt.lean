@@ -1,5 +1,6 @@
 import C3BootProofs.Proofs.SvTpv
 import C3BootProofs.Proofs.CheckpointLine
+import C3BootProofs.Proofs.Base64Decode
 
 /-!
 # `sigstore::verify`: the checkpoint's lines
@@ -17,13 +18,16 @@ set_option maxRecDepth 20000
 /-- The checkpoint code `sigstore::verify` calls, beyond `SvCode`. -/
 structure SvCkCode (M : Word → BitVec 8) : Prop where
   line : CodeIn M (BitVec.ofNat 32 checkpointLineAddress) checkpointLineCode
+  b64 : CodeIn M BDI base64DecodeIntoCode
+  cw : CodeIn M BCW copyFromSliceU8Code
 
 theorem SvCkCode.sv {M M0 : Word → BitVec 8} {B : Word} (F : Fr B 0x3830) (D : SvCkCode M0)
     (fR : ∀ x, SvR B x → M x = M0 x) : SvCkCode M := by
   have hx : ∀ x : Word, 0x40000000 ≤ x.toNat → M x = M0 x := fun x hx => fR x (sep_of_le (by
     have hb : (B + 0xFFFFFE60).toNat = B.toNat - 0x1A0 := F.below 0x1A0 (by decide) (by decide)
     have := F.hi; rw [hb]; omega) (by have := x.isLt; omega))
-  exact ⟨codeHi D.line (by decide) (by decide) hx⟩
+  exact ⟨codeHi D.line (by decide) (by decide) hx, codeHi D.b64 (by decide) (by decide) hx,
+    codeHi D.cw (by decide) (by decide) hx⟩
 
 theorem nlScan_congr {M M' : Word → BitVec 8} {p : Word} :
     ∀ (f k : Nat), (∀ i, k ≤ i → i < k + f → M (p + BitVec.ofNat 32 i) = M' (p + BitVec.ofNat 32 i)) →
@@ -78,6 +82,24 @@ theorem br_bgeu_t {a b : Word} (h : ¬ a.toNat < b.toNat) : branchTaken .bgeu a 
   simp only [branchTaken, BitVec.ult, Bool.not_eq_true', decide_eq_false_iff_not]; exact h
 theorem br_bgeu_f {a b : Word} (h : a.toNat < b.toNat) : branchTaken .bgeu a b = false := by
   simp only [branchTaken, BitVec.ult, Bool.not_eq_false', decide_eq_true_eq]; exact h
+
+theorem br_blt0_t {a : Word} (h : ¬ a.toNat < 2 ^ 31) : branchTaken .blt a 0 = true := by
+  simp only [branchTaken, BitVec.slt, BitVec.toInt, decide_eq_true_eq]
+  have := a.isLt
+  have h1 : ¬ (2 * a.toNat < 2 ^ 32) := by omega
+  simp only [h1, ↓reduceIte, show BitVec.toNat (0 : Word) = 0 from rfl]
+  omega
+theorem br_blt0_f {a : Word} (h : a.toNat < 2 ^ 31) : branchTaken .blt a 0 = false := by
+  simp only [branchTaken, BitVec.slt, BitVec.toInt, decide_eq_false_iff_not]
+  have h1 : 2 * a.toNat < 2 ^ 32 := by omega
+  simp only [h1, ↓reduceIte, show BitVec.toNat (0 : Word) = 0 from rfl]
+  omega
+
+theorem ne32_add {n : Nat} (h1 : n < 2 ^ 32) (h2 : n ≠ 32) : BitVec.ofNat 32 n + 0xFFFFFFE0 ≠ 0 := fun e => by
+  have := congrArg BitVec.toNat e
+  rw [BitVec.toNat_add, BitVec.toNat_ofNat] at this
+  exact h2 (by simp only [show (0xFFFFFFE0 : Word).toNat = 2 ^ 32 - 32 from rfl,
+    show (0 : Word).toNat = 0 from rfl] at this; omega)
 
 /-- A byte minus `'0'` is zero exactly when the byte is `'0'`. -/
 theorem digit0_iff : ∀ b : BitVec 8, b.zeroExtend 32 + 0xFFFFFFD0 = 0 ↔ b = 0x30 := by decide
@@ -163,5 +185,90 @@ theorem sv_lineF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {i
       · rw [ld_st_ne (by omega) (by omega) (by omega), ld_st_ne (by omega) (by omega) (by omega), ld_st_eq rfl]
       · rw [ld_st_ne (by omega) (by omega) (by omega), ld_st_eq rfl]
       · rw [ld_st_eq rfl]
+
+theorem memBytes_range {M : Word → BitVec 8} {a : Word} {n : Nat} {L : Bytes} (h : memBytes M a n = L) :
+    ∀ j, j < n → M (a + BitVec.ofNat 32 j) = BitVec.ofNat 8 (L.getD j 0) := fun j hj => by
+  rw [← h, getD_memBytes M a hj, BitVec.ofNat_toNat, BitVec.setWidth_eq]
+
+set_option maxHeartbeats 8000000 in
+/-- **A call to `base64::decode_into`** on the `nl` bytes at `t`, with the
+result at offset `rc` and the output buffer of `L` bytes at offset `oc`. -/
+theorem sv_b64F {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o t : Word} {rc oc nl L : Nat}
+    (F : Fr B 0x3830) (C : SvCode M) (CK : SvCkCode M) (s : St M SV n off (reg n))
+    (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : SV + BitVec.ofNat 32 off + imm + o = BDI)
+    (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
+    (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 rc) (ha1 : reg n a1 = t)
+    (ha2 : reg n a2 = BitVec.ofNat 32 nl) (ha3 : reg n a3 = B + 0x21A0 + BitVec.ofNat 32 oc)
+    (ha4 : reg n a4 = BitVec.ofNat 32 L) (hr2 : rc + 8 ≤ 0x1690) (hr3 : rc % 4 = 0) (ho2 : oc + L ≤ 0x1690)
+    (hs : rc + 8 ≤ oc ∨ oc + L ≤ rc) (hin : SvRo B t nl) :
+    ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
+      (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧
+      SvKeepL B M n'.mem [(rc, 8), (oc, L)] ∧
+      (∀ bs, base64Decode (memBytes M t nl) = some bs → bs.length ≤ L →
+        n'.mem (B + 0x21A0 + BitVec.ofNat 32 rc) = 0 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 (rc + 4)) = BitVec.ofNat 32 bs.length ∧
+        memBytes n'.mem (B + 0x21A0 + BitVec.ofNat 32 oc) bs.length = bs) ∧
+      ((∀ bs, base64Decode (memBytes M t nl) = some bs → L < bs.length) →
+        n'.mem (B + 0x21A0 + BitVec.ofNat 32 rc) = 1) ∧
+      (∀ x, SvR B x → n'.mem x = M x) := by
+  have hFl := F.lo; have hFh := F.hi; have hFa := F.al
+  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := s.callRa C.self h1 h2 hb (by decide)
+  have r1 := PEnv.reg1 regs1 s.zero
+  have hS : (B + (0x21A0 : Word)).toNat = B.toNat + 0x21A0 := F.at 0x21A0 (by decide)
+  have hpl := hin.lo
+  have eB : MCS + 8 = BMB := by decide
+  obtain ⟨n2, c2, pc2, sp2, k2, ok2, bad2, f2⟩ := base64DecodeInto_correct n1 (sp0 := B + 0x21A0)
+    (by rw [mem1]; exact CK.b64) (by rw [mem1]; exact CK.cw) (by rw [mem1]; exact C.K.stub)
+    (by rw [mem1, ← eB]; exact C.K.body) pc1
+    (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1]) (by rw [r1 a2 (by decide), ha2])
+    (by rw [r1 a3 (by decide), ha3]) (by rw [r1 a4 (by decide), ha4])
+    (by rw [regs1]; simp +decide [upd]) (even_clear _ hev) (by rw [r1 sp (by decide), rsp])
+    (by rw [hS]; omega) (by rw [hS]; omega) (by rw [hS]; omega)
+    (by rw [sv_at F _ (by omega)]; omega) (sv_al F (by omega) hr3) (by rw [sv_at F _ (by omega)]; omega)
+    (by omega)
+    (by rw [sv_sp50, ← sv_base']; exact sepS B (by omega) (by omega) (by omega))
+    (by rw [sv_sp50]; exact (hin.sep F (c := 0x2150) (n := 0x50) (by decide)).symm)
+    (by rw [sv_sp50, ← sv_base']; exact sepS B (by omega) (by omega) (by omega))
+    (by rw [← sv_base']; exact (hin.sep F (c := 0x21A0 + oc) (n := L) (by omega)).symm)
+    (sepS (B + 0x21A0) hs (by omega) (by omega))
+  rw [mem1] at ok2 bad2 f2
+  rw [sv_sp50] at f2
+  have hfS : ∀ x, SvR B x → Sep (B + BitVec.ofNat 32 0x2150) 0x50 x 1 := fun x hx => by
+    have := svR_lo (k := 0x50) hx (by decide) (by decide)
+    rwa [sv_lo B 0x50 (by decide)] at this
+  refine ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, sp2,
+    fun q hq => by rw [k2 q (by revert hq; revert q; decide), r1 q (by revert hq; revert q; decide)],
+    fun e he hL => ?_, fun bs hd hl => ?_, bad2, fun x hx => f2 x (hfS x hx) (svR_hi hx ho2) (svR_hi hx hr2)⟩
+  · have h1 := hL _ List.mem_cons_self
+    have h2 := hL _ (List.mem_cons_of_mem _ (List.mem_singleton_self _))
+    simp only at h1 h2
+    exact f2 _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega))
+      (sepS (B + 0x21A0) (by omega) (by omega) (by omega)) (sepS (B + 0x21A0) (by omega) (by omega) (by omega))
+  · obtain ⟨b0, b4, bm⟩ := ok2 bs hd hl
+    exact ⟨b0, by rw [← add_ofNat_assoc]; exact b4, bm⟩
+
+/-- **A call to `memset`** on `N` bytes at offset `c`, stated as a step of a
+stage. -/
+theorem sv_ms2F {n : Machine} {B : Word} {off : Nat} {imm o v : Word} {c N : Nat}
+    (F : Fr B 0x3830) (C : SvCode n.mem) (s : St n.mem SV n off (reg n))
+    (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : SV + BitVec.ofNat 32 off + imm + o = MSET) (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
+    (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 c) (ha1 : reg n a1 = v) (ha2 : reg n a2 = BitVec.ofNat 32 N)
+    (hc : c + N ≤ 0x1690) :
+    ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧
+      (∀ q : Fin 32, q.val ∈ [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧
+      SvKeepL B n.mem n'.mem [(c, N)] ∧ (∀ x, SvR B x → n'.mem x = n.mem x) := by
+  obtain ⟨n', st, s', mem', regs'⟩ := sv_msF F C s h1 h2 hb hev ha0 ha1 ha2 hc
+  refine ⟨n', st, s', fun q hq => regs' q (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+    (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+    (by revert hq; revert q; decide) (by revert hq; revert q; decide), fun e he hL => ?_,
+    fun x hx => by rw [mem']; exact fillBytes_sep (svR_hi hx hc) (Nat.le_refl N)⟩
+  have h1 := hL _ (List.mem_singleton_self _)
+  simp only at h1
+  rw [mem']
+  exact fillBytes_sep (sepS (B + 0x21A0) (by omega) (by omega) (by omega)) (Nat.le_refl N)
 
 end C3.RV32.Sv
