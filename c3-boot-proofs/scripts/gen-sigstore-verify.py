@@ -6677,6 +6677,7 @@ def stage_cs1():
 
 
 CS_BINDERS = CL_BINDERS.replace("op ol : Word} {rt : Bytes}", "op ol : Word} {rt sg : Bytes}").replace(" w10 ", " ")
+RK_BINDERS = CS_BINDERS.replace(" w70 ", " w70 w74 ")
 
 
 def cs_start(g):
@@ -7216,6 +7217,8 @@ def rk_start(g):
     g.regs[23] = ("U", "lih")
     g.regs[25] = ("U", "lil")
     g.regs[8] = ("S", 0x1020)
+    g.words[0x74] = ("U", "w74")
+    params.append(f"(w0_74 : memLoad32 n0.mem ({fa(0x74)}) = w74)")
     rb = "((BitVec.ofNat 8 (rt.getD 0 0)).zeroExtend 32).extractLsb' 0 8"
     g.bytes[0x1048] = rb
     g.ranges[0x1049] = (31, "BitVec.ofNat 8 (rt.getD (1 + j) 0)")
@@ -7275,7 +7278,7 @@ def stage_rl():
     info = {"name": "sv_rl", "title": "the log entry's leaf hash",
             "doc": "From 0x300E to 0x30EC: SHA-256 of the entry's canonical body, built from its constant parts and "
             "the base64 of the image digest, the image signature, and the leaf certificate, goes to offset 0x1380.",
-            "params": params, "stmt": stmt, "proof": proof, "binders": CS_BINDERS.replace("op ol : Word}", "op ol lih lil : Word}"),
+            "params": params, "stmt": stmt, "proof": proof, "binders": RK_BINDERS.replace("op ol : Word}", "op ol lih lil : Word}"),
             "start": 0x300E, "import": "C3BootProofs.Proofs.SvRk"}
     return g, info
 
@@ -7350,8 +7353,98 @@ def stage_rm():
             "doc": "From 0x30EC to 0x316E: `root_from_inclusion` rebuilds a root from the leaf hash at offset 0x1380, the "
             "entry's index, the checkpoint's size, and the bundle's proof, and the root is the checkpoint's.",
             "params": params, "stmt": stmt, "proof": proof,
-            "binders": CS_BINDERS.replace("op ol : Word}", "op ol lih lil pp pl : Word}").replace("{rt sg : Bytes}", "{rt sg lh : Bytes}"),
+            "binders": RK_BINDERS.replace("op ol : Word}", "op ol lih lil pp pl : Word}").replace("{rt sg : Bytes}", "{rt sg lh : Bytes}"),
             "start": 0x30EC, "import": "C3BootProofs.Proofs.SvRk"}
+    return g, info
+
+
+# The validity-window checks after 0x316E. Each compares the timestamp's
+# 64-bit time (words 0x3C and 0x78) with one bound, high words first. For
+# each: its first offset, whether `beq` puts the bound first, the loads on
+# the equal and unequal paths, `sltu`'s offset, whether it computes
+# time < bound (else bound < time), the `beqz` and its target, and the
+# `j 0x966` it skips.
+WIN = [
+    # (start, hi loads, beq, eq target, eq loads, ne loads, ne jump, sltu, time_lt_bound, extra, beqz, next, fail_j)
+    (0x316E, [(0x316E, "lw"), (0x3170, "lw")], (0x3172, "a0a1"), 0x317C, [(0x317C, "lw"), (0x317E, "lw")],
+     [(0x3176, "lw"), (0x3178, "lw")], 0x317A, 0x3180, True, [(0x3184, 0x3186)], 0x3186, 0x318C, 0x3188),
+    (0x318C, [(0x318C, "lw"), (0x318E, "lw")], (0x3190, "a1a0"), 0x319A, [(0x319A, "lw"), (0x319C, "lw")],
+     [(0x3194, "lw"), (0x3196, "lw")], 0x3198, 0x319E, False, [], 0x31A2, 0x31A8, 0x31A4),
+    (0x31A8, [(0x31A8, "lw"), (0x31AA, "mem:i2h"), (0x31AE, "lw")], (0x31B0, "a0a1"), 0x31B8,
+     [(0x31B8, "lw"), (0x31BA, "mem:i2l"), (0x31BE, "lw")], [(0x31B4, "lw")], 0x31B6, 0x31C0, True, [], 0x31C4, 0x31CA, 0x31C6),
+    (0x31CA, [(0x31CA, "lw"), (0x31CC, "mem:i3h"), (0x31D0, "lw")], (0x31D2, "a1a0"), 0x31DA,
+     [(0x31DA, "lw"), (0x31DC, "mem:i3l"), (0x31E0, "lw")], [(0x31D6, "lw")], 0x31D8, 0x31E2, False, [], 0x31E6, 0x31EC, 0x31E8),
+    (0x31EC, [(0x31EC, "lw"), (0x31EE, "mem:t4h"), (0x31F0, "lw")], (0x31F2, "a0a1"), 0x31FA,
+     [(0x31FA, "lw"), (0x31FC, "mem:t4l"), (0x31FE, "lw")], [(0x31F6, "lw")], 0x31F8, 0x3200, True, [], 0x3204, 0x320A, 0x3206),
+    (0x320A, [(0x320A, "lw"), (0x320C, "mem:t5h"), (0x320E, "lw")], (0x3210, "a1a0"), 0x3218,
+     [(0x3218, "lw"), (0x321A, "mem:t5l"), (0x321C, "lw")], [(0x3214, "lw")], 0x3216, 0x321E, False, [], 0x3222, 0x3228, 0x3224),
+    (0x3228, [(0x3228, "lw"), (0x322C, "lw")], (0x322E, "a0a1"), 0x3236, [(0x3236, "lw"), (0x323A, "lw")],
+     [(0x3232, "lw")], 0x3234, 0x323C, True, [], 0x3240, 0x3246, 0x3242),
+    (0x3246, [(0x3246, "lw"), (0x324A, "lw")], (0x324C, "a1a0"), 0x3254, [(0x3254, "lw"), (0x3258, "lw")],
+     [(0x3250, "lw")], 0x3252, 0x325A, False, [], 0x325E, 0x3264, 0x3260),
+]
+
+# The words outside the stack that the intermediate and TSA windows load:
+# name -> (base word, offset as the instruction writes it).
+WIN_MEM = {"i2h": ("w7c", "0xFFFFFFE8"), "i2l": ("w7c", "0xFFFFFFE4"), "i3h": ("w7c", "0xFFFFFFF0"),
+           "i3l": ("w7c", "0xFFFFFFEC"), "t4h": ("w74", "0xC"), "t4l": ("w74", "0x8"),
+           "t5h": ("w74", "0x14"), "t5l": ("w74", "0x10")}
+
+
+def stage_win(i, eq):
+    """Validity-window check `i`, with the time's high word equal to the
+    bound's (`eq`) or not."""
+    (st, hi, (beq, order), eqt, eql, nel, nej, sl, tlb, extra, bz, nxt, fj) = WIN[i]
+    g = Gen(f"Win{i}{'e' if eq else 'n'}")
+    g.generic_alu = True
+    params = rk_start(g)
+    for e, nm in ((0x1028, "k28"), (0x102C, "k2c"), (0x1030, "k30"), (0x1034, "k34")):
+        g.words[e] = ("U", nm)
+        params.append(f"(w0_{e:x} : memLoad32 n0.mem ({fa(e)}) = {nm})")
+
+    def loads(lst):
+        for o, kind in lst:
+            if kind.startswith("mem:"):
+                nm = kind[4:]
+                base, imm = WIN_MEM[nm]
+                params.extend([f"(h{nm} : memLoad32 M0 ({base} + {imm}) = {nm})", f"(i{nm} : SvIn B ({base} + {imm}) 4)",
+                               f"(a{nm} : ({base} + {imm}).toNat % 4 = 0)"])
+                g.load_mem(o, nm, f"h{nm}", f"i{nm}", f"a{nm}")
+            else:
+                g.load(o, kind)
+    loads(hi)
+    x, y = (10, 11) if order == "a0a1" else (11, 10)
+    vx, vy = lean_val(g.regs[x]), lean_val(g.regs[y])
+    params.append(f"(hhi : {vx} {'=' if eq else '≠'} {vy})")
+    if eq:
+        g.branch(beq, True, f"by rw [g{g.k}_{x}, g{g.k}_{y}]; exact br_beq_t hhi")
+        loads(eql)
+    else:
+        g.branch(beq, False, f"by rw [g{g.k}_{x}, g{g.k}_{y}]; exact br_beq_f hhi")
+        loads(nel)
+        g.jump(nej)
+    g.block(sl, sl + 4)
+    for a, b in extra:
+        g.block(a, b)
+    r = lean_val(g.regs[10])
+
+    def out(sub):
+        sub.branch(bz, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_f hwin")
+        sub.jump(fj)
+        sub.fail(sub.fail_proof(("prop", "hwin")))
+    g.prop_check(f"{r} = 0", "hwin", out)
+    g.branch(bz, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_t hwin")
+    stmt, proof = finish(g, nxt, sorted(set(CL_KEEP_REGS + [8, 23])), set(g.words))
+    which = ["the leaf certificate's start", "the leaf certificate's end", "the intermediate's start",
+             "the intermediate's end", "the TSA certificate's start", "the TSA certificate's end",
+             "the log key's start", "the log key's end"][i]
+    info = {"name": f"sv_win{i}{'e' if eq else 'n'}", "title": f"the timestamp against {which}",
+            "doc": f"From 0x{st:X} to 0x{nxt:X}: the timestamp's time isn't "
+            + ("before " if tlb else "after ") + which + ", with the high words "
+            + ("equal." if eq else "different."),
+            "params": params, "stmt": stmt, "proof": proof,
+            "binders": RK_BINDERS.replace("op ol : Word}", "op ol lih lil k28 k2c k30 k34 i2h i2l i3h i3l t4h t4l t5h t5l : Word}"),
+            "start": st, "import": "C3BootProofs.Proofs.SvRk"}
     return g, info
 
 
@@ -7378,7 +7471,8 @@ def main():
                 **{f"Cn{x}": (lambda x=x: stage_cn(x)) for x in ("m", "e", "s")},
                 **{f"Cg{x}": (lambda x=x: stage_cg(x)) for x in range(5)},
                 **{f"Cm{x}": (lambda x=x: stage_cm(x)) for x in CM_DOC}, "Csx": stage_csx,
-                "Cr1e": lambda: stage_cr1(True), "Cr1n": lambda: stage_cr1(False), "Rl": stage_rl, "Rm": stage_rm}[stage]()
+                "Cr1e": lambda: stage_cr1(True), "Cr1n": lambda: stage_cr1(False), "Rl": stage_rl, "Rm": stage_rm,
+                **{f"Win{i}{x}": (lambda i=i, x=x: stage_win(i, x == "e")) for i in range(8) for x in "en"}}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
