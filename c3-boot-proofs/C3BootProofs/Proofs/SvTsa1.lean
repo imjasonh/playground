@@ -2567,11 +2567,11 @@ theorem sv_tsa1 {B out bp x21 x26 c0p c0l : Word} {w24 w28 w2c w30 w34 w38 w3c w
     (by rw [show B + 0x21A0 + BitVec.ofNat 32 0x161C + 1 = B + 0x21A0 + BitVec.ofNat 32 0x161D by sv_addr]; exact b19_161d)
     (by rw [show B + 0x21A0 + BitVec.ofNat 32 0x161C + 2 = B + 0x21A0 + BitVec.ofNat 32 0x161E by sv_addr]; exact b19_161e)
     (by rw [show B + 0x21A0 + BitVec.ofNat 32 0x161C + 3 = B + 0x21A0 + BitVec.ofNat 32 0x161F by sv_addr]; exact b19_161f)
-  by_cases hr0 : (c0l) - BitVec.ofNat 32 (tl10.header + tl10.len) = 0
+  by_cases hrest0 : (c0l) - BitVec.ofNat 32 (tl10.header + tl10.len) = 0
   rotate_left
   · -- 0x209A: branch, taken
     obtain ⟨n20, d20, u20⟩ := s19.taken E19.self 0x2838 sv_at_209a
-      (by decide) (by rw [g19_10, s19.zero]; exact br_bne_t hr0)
+      (by decide) (by rw [g19_10, s19.zero]; exact br_bne_t hrest0)
     have s20 : St n20.mem SV n20 0x2838 (reg n20) := ⟨u20.pc, rfl, fun _ => rfl⟩
     have m20 : n20.mem = n19.mem := u20.mem
     have fr20 : ∀ x, SvR B x → n20.mem x = n19.mem x := fun x _ => by rw [m20]
@@ -2899,10 +2899,10 @@ theorem sv_tsa1 {B out bp x21 x26 c0p c0l : Word} {w24 w28 w2c w30 w34 w38 w3c w
     have b22_426 : n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x426) = (BitVec.ofNat 32 tl10.len).extractLsb' 16 8 := by rw [m22]; exact b21_426
     have b22_427 : n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x427) = (BitVec.ofNat 32 tl10.len).extractLsb' 24 8 := by rw [m22]; exact b21_427
     clear b21_427 b21_426 b21_425 b21_424 w21_1624 w21_1620 w21_161c w21_1618 w21_1614 w21_1610 w21_160c w21_1608 w21_42c w21_428 w21_424 w21_420 w21_130 w21_12c w21_128 w21_124 w21_120 w21_11c w21_118 w21_114 w21_110 w21_10c w21_108 w21_104 w21_100 w21_fc w21_f8 w21_f4 w21_f0 w21_ec w21_e8 w21_e4 w21_e0 w21_dc w21_d8 w21_d4 w21_d0 w21_cc w21_c8 w21_c4 w21_c0 w21_bc w21_b8 w21_b4 w21_b0 w21_ac w21_a8 w21_a4 w21_a0 w21_9c w21_98 w21_94 w21_90 w21_8c w21_88 w21_84 w21_80 w21_7c w21_70 w21_6c w21_68 w21_64 w21_60 w21_5c w21_58 w21_54 w21_50 w21_4c w21_48 w21_44 w21_40 w21_3c w21_38 w21_34 w21_30 w21_2c w21_28 w21_24 g21_8 g21_27 g21_26 g21_21 g21_19 g21_18 g21_11 g21_10 g21_9 g21_4 g21_3 g21_2 V21 E21 fR21 t21 fr21 rb21 s21 m21 u21 c21
-    exact .inl ⟨(fun ⟨tl10', h0', h1', _⟩ => by rw [hr10] at h0'; cases h0'; exact hr0 h1'), sv_fail_2c60 F E22 s22 t22 (fun x hx => (fR22 x hx).trans (fM x hx).symm) V22 hret g22_2 g22_18 hO g22_3 g22_4⟩
+    exact .inl ⟨(fun ⟨tl10', h0', h1', _⟩ => by rw [hr10] at h0'; cases h0'; exact hrest0 h1'), sv_fail_2c60 F E22 s22 t22 (fun x hx => (fR22 x hx).trans (fM x hx).symm) V22 hret g22_2 g22_18 hO g22_3 g22_4⟩
   -- 0x209A: branch, not taken
   obtain ⟨n20, d20, u20⟩ := s19.notTaken E19.self 0x209E sv_at_209a
-    (by decide) (by rw [g19_10, s19.zero]; exact br_bne_f hr0)
+    (by decide) (by rw [g19_10, s19.zero]; exact br_bne_f hrest0)
   have s20 : St n20.mem SV n20 0x209E (reg n20) := ⟨u20.pc, rfl, fun _ => rfl⟩
   have m20 : n20.mem = n19.mem := u20.mem
   have fr20 : ∀ x, SvR B x → n20.mem x = n19.mem x := fun x _ => by rw [m20]
@@ -6297,11 +6297,11 @@ theorem sv_tsa1 {B out bp x21 x26 c0p c0l : Word} {w24 w28 w2c w30 w34 w38 w3c w
   have b38_426 : n38.mem (B + 0x21A0 + BitVec.ofNat 32 0x426) = (BitVec.ofNat 32 tl22.len).extractLsb' 16 8 := by rw [m38]; exact b37_426
   have b38_427 : n38.mem (B + 0x21A0 + BitVec.ofNat 32 0x427) = (BitVec.ofNat 32 tl22.len).extractLsb' 24 8 := by rw [m38]; exact b37_427
   clear b37_427 b37_426 b37_425 b37_424 w37_1634 w37_1630 w37_162c w37_1628 w37_1624 w37_1620 w37_161c w37_1618 w37_1614 w37_1610 w37_160c w37_1608 w37_42c w37_428 w37_424 w37_420 w37_130 w37_12c w37_128 w37_124 w37_120 w37_11c w37_118 w37_114 w37_110 w37_10c w37_108 w37_104 w37_100 w37_fc w37_f8 w37_f4 w37_f0 w37_ec w37_e8 w37_e4 w37_e0 w37_dc w37_d8 w37_d4 w37_d0 w37_cc w37_c8 w37_c4 w37_c0 w37_bc w37_b8 w37_b4 w37_b0 w37_ac w37_a8 w37_a4 w37_a0 w37_9c w37_98 w37_94 w37_90 w37_8c w37_88 w37_84 w37_80 w37_7c w37_70 w37_6c w37_68 w37_64 w37_60 w37_5c w37_58 w37_54 w37_50 w37_4c w37_48 w37_44 w37_40 w37_3c w37_38 w37_34 w37_30 w37_2c w37_28 w37_24 g37_27 g37_26 g37_21 g37_19 g37_18 g37_11 g37_10 g37_9 g37_8 g37_4 g37_3 g37_2 V37 E37 fR37 t37 fr37 m37 s37 u37 d37
-  by_cases hr1 : (BitVec.ofNat 32 tl22.len) - BitVec.ofNat 32 (te33.header + te33.len) = 0
+  by_cases hrest1 : (BitVec.ofNat 32 tl22.len) - BitVec.ofNat 32 (te33.header + te33.len) = 0
   rotate_left
   · -- 0x2116: branch, taken
     obtain ⟨n39, d39, u39⟩ := s38.taken E38.self 0x2C60 sv_at_2116
-      (by decide) (by rw [g38_10, s38.zero]; exact br_bne_t hr1)
+      (by decide) (by rw [g38_10, s38.zero]; exact br_bne_t hrest1)
     have s39 : St n39.mem SV n39 0x2C60 (reg n39) := ⟨u39.pc, rfl, fun _ => rfl⟩
     have m39 : n39.mem = n38.mem := u39.mem
     have fr39 : ∀ x, SvR B x → n39.mem x = n38.mem x := fun x _ => by rw [m39]
@@ -6408,10 +6408,10 @@ theorem sv_tsa1 {B out bp x21 x26 c0p c0l : Word} {w24 w28 w2c w30 w34 w38 w3c w
     have b39_426 : n39.mem (B + 0x21A0 + BitVec.ofNat 32 0x426) = (BitVec.ofNat 32 tl22.len).extractLsb' 16 8 := by rw [m39]; exact b38_426
     have b39_427 : n39.mem (B + 0x21A0 + BitVec.ofNat 32 0x427) = (BitVec.ofNat 32 tl22.len).extractLsb' 24 8 := by rw [m39]; exact b38_427
     clear b38_427 b38_426 b38_425 b38_424 w38_1634 w38_1630 w38_162c w38_1628 w38_1624 w38_1620 w38_161c w38_1618 w38_1614 w38_1610 w38_160c w38_1608 w38_42c w38_428 w38_424 w38_420 w38_130 w38_12c w38_128 w38_124 w38_120 w38_11c w38_118 w38_114 w38_110 w38_10c w38_108 w38_104 w38_100 w38_fc w38_f8 w38_f4 w38_f0 w38_ec w38_e8 w38_e4 w38_e0 w38_dc w38_d8 w38_d4 w38_d0 w38_cc w38_c8 w38_c4 w38_c0 w38_bc w38_b8 w38_b4 w38_b0 w38_ac w38_a8 w38_a4 w38_a0 w38_9c w38_98 w38_94 w38_90 w38_8c w38_88 w38_84 w38_80 w38_7c w38_70 w38_6c w38_68 w38_64 w38_60 w38_5c w38_58 w38_54 w38_50 w38_4c w38_48 w38_44 w38_40 w38_3c w38_38 w38_34 w38_30 w38_2c w38_28 w38_24 g38_10 g38_27 g38_26 g38_21 g38_19 g38_18 g38_11 g38_9 g38_8 g38_4 g38_3 g38_2 V38 E38 fR38 t38 fr38 m38 s38 u38 d38
-    exact .inl ⟨(fun ⟨tl10', h0', h1', tl22', h2', h3', te33', h4', h5', _⟩ => by rw [hr10] at h0'; cases h0'; rw [hr22] at h2'; cases h2'; rw [hr33] at h3'; cases h3'; rw [hte33] at h4'; cases h4'; exact hr1 h5'), sv_fail_2c60 F E39 s39 t39 (fun x hx => (fR39 x hx).trans (fM x hx).symm) V39 hret g39_2 g39_18 hO g39_3 g39_4⟩
+    exact .inl ⟨(fun ⟨tl10', h0', h1', tl22', h2', h3', te33', h4', h5', _⟩ => by rw [hr10] at h0'; cases h0'; rw [hr22] at h2'; cases h2'; rw [hr33] at h3'; cases h3'; rw [hte33] at h4'; cases h4'; exact hrest1 h5'), sv_fail_2c60 F E39 s39 t39 (fun x hx => (fR39 x hx).trans (fM x hx).symm) V39 hret g39_2 g39_18 hO g39_3 g39_4⟩
   -- 0x2116: branch, not taken
   obtain ⟨n39, d39, u39⟩ := s38.notTaken E38.self 0x211A sv_at_2116
-    (by decide) (by rw [g38_10, s38.zero]; exact br_bne_f hr1)
+    (by decide) (by rw [g38_10, s38.zero]; exact br_bne_f hrest1)
   have s39 : St n39.mem SV n39 0x211A (reg n39) := ⟨u39.pc, rfl, fun _ => rfl⟩
   have m39 : n39.mem = n38.mem := u39.mem
   have fr39 : ∀ x, SvR B x → n39.mem x = n38.mem x := fun x _ => by rw [m39]
@@ -8173,11 +8173,11 @@ theorem sv_tsa1 {B out bp x21 x26 c0p c0l : Word} {w24 w28 w2c w30 w34 w38 w3c w
     (by rw [show B + 0x21A0 + BitVec.ofNat 32 0x163C + 1 = B + 0x21A0 + BitVec.ofNat 32 0x163D by sv_addr]; exact b50_163d)
     (by rw [show B + 0x21A0 + BitVec.ofNat 32 0x163C + 2 = B + 0x21A0 + BitVec.ofNat 32 0x163E by sv_addr]; exact b50_163e)
     (by rw [show B + 0x21A0 + BitVec.ofNat 32 0x163C + 3 = B + 0x21A0 + BitVec.ofNat 32 0x163F by sv_addr]; exact b50_163f)
-  by_cases hr2 : ((BitVec.ofNat 32 tl10.len) - BitVec.ofNat 32 (tl22.header + tl22.len)) - BitVec.ofNat 32 (tl41.header + tl41.len) = 0
+  by_cases hrest2 : ((BitVec.ofNat 32 tl10.len) - BitVec.ofNat 32 (tl22.header + tl22.len)) - BitVec.ofNat 32 (tl41.header + tl41.len) = 0
   rotate_left
   · -- 0x2166: branch, taken
     obtain ⟨n51, d51, u51⟩ := s50.taken E50.self 0x2838 sv_at_2166
-      (by decide) (by rw [g50_10, s50.zero]; exact br_bne_t hr2)
+      (by decide) (by rw [g50_10, s50.zero]; exact br_bne_t hrest2)
     have s51 : St n51.mem SV n51 0x2838 (reg n51) := ⟨u51.pc, rfl, fun _ => rfl⟩
     have m51 : n51.mem = n50.mem := u51.mem
     have fr51 : ∀ x, SvR B x → n51.mem x = n50.mem x := fun x _ => by rw [m51]
@@ -8529,10 +8529,10 @@ theorem sv_tsa1 {B out bp x21 x26 c0p c0l : Word} {w24 w28 w2c w30 w34 w38 w3c w
     have b53_426 : n53.mem (B + 0x21A0 + BitVec.ofNat 32 0x426) = (BitVec.ofNat 32 tl41.len).extractLsb' 16 8 := by rw [m53]; exact b52_426
     have b53_427 : n53.mem (B + 0x21A0 + BitVec.ofNat 32 0x427) = (BitVec.ofNat 32 tl41.len).extractLsb' 24 8 := by rw [m53]; exact b52_427
     clear b52_427 b52_426 b52_425 b52_424 w52_1644 w52_1640 w52_163c w52_1638 w52_1634 w52_1630 w52_162c w52_1628 w52_1624 w52_1620 w52_161c w52_1618 w52_1614 w52_1610 w52_160c w52_1608 w52_42c w52_428 w52_424 w52_420 w52_130 w52_12c w52_128 w52_124 w52_120 w52_11c w52_118 w52_114 w52_110 w52_10c w52_108 w52_104 w52_100 w52_fc w52_f8 w52_f4 w52_f0 w52_ec w52_e8 w52_e4 w52_e0 w52_dc w52_d8 w52_d4 w52_d0 w52_cc w52_c8 w52_c4 w52_c0 w52_bc w52_b8 w52_b4 w52_b0 w52_ac w52_a8 w52_a4 w52_a0 w52_9c w52_98 w52_94 w52_90 w52_8c w52_88 w52_84 w52_80 w52_7c w52_70 w52_6c w52_68 w52_64 w52_60 w52_5c w52_58 w52_54 w52_50 w52_4c w52_48 w52_44 w52_40 w52_3c w52_38 w52_34 w52_30 w52_2c w52_28 w52_24 g52_8 g52_27 g52_26 g52_21 g52_19 g52_18 g52_11 g52_10 g52_9 g52_4 g52_3 g52_2 V52 E52 fR52 t52 fr52 rb52 s52 m52 u52 c52
-    exact .inl ⟨(fun ⟨tl10', h0', h1', tl22', h2', h3', te33', h4', h5', tl41', h6', h7', _⟩ => by rw [hr10] at h0'; cases h0'; rw [hr22] at h2'; cases h2'; rw [hr33] at h3'; cases h3'; rw [hte33] at h4'; cases h4'; rw [hr41] at h6'; cases h6'; exact hr2 h7'), sv_fail_2c60 F E53 s53 t53 (fun x hx => (fR53 x hx).trans (fM x hx).symm) V53 hret g53_2 g53_18 hO g53_3 g53_4⟩
+    exact .inl ⟨(fun ⟨tl10', h0', h1', tl22', h2', h3', te33', h4', h5', tl41', h6', h7', _⟩ => by rw [hr10] at h0'; cases h0'; rw [hr22] at h2'; cases h2'; rw [hr33] at h3'; cases h3'; rw [hte33] at h4'; cases h4'; rw [hr41] at h6'; cases h6'; exact hrest2 h7'), sv_fail_2c60 F E53 s53 t53 (fun x hx => (fR53 x hx).trans (fM x hx).symm) V53 hret g53_2 g53_18 hO g53_3 g53_4⟩
   -- 0x2166: branch, not taken
   obtain ⟨n51, d51, u51⟩ := s50.notTaken E50.self 0x216A sv_at_2166
-    (by decide) (by rw [g50_10, s50.zero]; exact br_bne_f hr2)
+    (by decide) (by rw [g50_10, s50.zero]; exact br_bne_f hrest2)
   have s51 : St n51.mem SV n51 0x216A (reg n51) := ⟨u51.pc, rfl, fun _ => rfl⟩
   have m51 : n51.mem = n50.mem := u51.mem
   have fr51 : ∀ x, SvR B x → n51.mem x = n50.mem x := fun x _ => by rw [m51]
@@ -10405,6 +10405,6 @@ theorem sv_tsa1 {B out bp x21 x26 c0p c0l : Word} {w24 w28 w2c w30 w34 w38 w3c w
   have w59_1640 : memLoad32 n59.mem (B + 0x21A0 + BitVec.ofNat 32 0x1640) = ((((c0p) + BitVec.ofNat 32 tl10.header) + BitVec.ofNat 32 (tl22.header + tl22.len)) + BitVec.ofNat 32 tl41.header) + BitVec.ofNat 32 (to53.header + to53.len) := by rw [m59]; exact w58_1640
   have w59_1644 : memLoad32 n59.mem (B + 0x21A0 + BitVec.ofNat 32 0x1644) = (BitVec.ofNat 32 tl41.len) - BitVec.ofNat 32 (to53.header + to53.len) := by rw [m59]; exact w58_1644
   clear w58_1644 w58_1640 w58_163c w58_1638 w58_1634 w58_1630 w58_162c w58_1628 w58_1624 w58_1620 w58_161c w58_1618 w58_1614 w58_1610 w58_160c w58_1608 w58_42c w58_428 w58_424 w58_420 w58_130 w58_12c w58_128 w58_124 w58_120 w58_11c w58_118 w58_114 w58_110 w58_10c w58_108 w58_104 w58_100 w58_fc w58_f8 w58_f4 w58_f0 w58_ec w58_e8 w58_e4 w58_e0 w58_dc w58_d8 w58_d4 w58_d0 w58_cc w58_c8 w58_c4 w58_c0 w58_bc w58_b8 w58_b4 w58_b0 w58_ac w58_a8 w58_a4 w58_a0 w58_9c w58_98 w58_94 w58_90 w58_8c w58_88 w58_84 w58_80 w58_7c w58_70 w58_6c w58_68 w58_64 w58_60 w58_5c w58_58 w58_54 w58_50 w58_4c w58_48 w58_44 w58_40 w58_3c w58_38 w58_34 w58_30 w58_2c w58_28 w58_24 g58_27 g58_26 g58_21 g58_19 g58_18 g58_9 g58_8 g58_4 g58_3 g58_2 V58 E58 fR58 t58 fr58 K58 a0_58 rk58 s58 c58
-  exact .inr ⟨tl10, hr10, hr0, tl22, hr22, hr33, te33, hte33, hr1, tl41, hr41, hr2, op53, ol53, hr53, to53, ht53, hsd, n59, t59, s59, E59, V59, fR59, g59_2, g59_3, g59_4, g59_18, g59_19, g59_21, g59_26, g59_27, w59_24, w59_28, w59_2c, w59_30, w59_34, w59_38, w59_3c, w59_40, w59_44, w59_48, w59_4c, w59_50, w59_54, w59_58, w59_5c, w59_60, w59_64, w59_68, w59_6c, w59_70, w59_7c, w59_80, w59_84, w59_88, w59_8c, w59_90, w59_94, w59_98, w59_9c, w59_a0, w59_a4, w59_a8, w59_ac, w59_b0, w59_b4, w59_b8, w59_bc, w59_c0, w59_c4, w59_c8, w59_cc, w59_d0, w59_d4, w59_d8, w59_dc, w59_e0, w59_e4, w59_e8, w59_ec, w59_f0, w59_f4, w59_f8, w59_fc, w59_100, w59_104, w59_108, w59_10c, w59_110, w59_114, w59_118, w59_11c, w59_120, w59_124, w59_128, w59_12c, w59_130, w59_420, w59_424, w59_428, w59_42c, w59_1608, w59_160c, w59_1610, w59_1614, w59_1618, w59_161c, w59_1620, w59_1624, w59_1628, w59_162c, w59_1630, w59_1634, w59_1638, w59_163c, w59_1640, w59_1644⟩
+  exact .inr ⟨tl10, hr10, hrest0, tl22, hr22, hr33, te33, hte33, hrest1, tl41, hr41, hrest2, op53, ol53, hr53, to53, ht53, hsd, n59, t59, s59, E59, V59, fR59, g59_2, g59_3, g59_4, g59_18, g59_19, g59_21, g59_26, g59_27, w59_24, w59_28, w59_2c, w59_30, w59_34, w59_38, w59_3c, w59_40, w59_44, w59_48, w59_4c, w59_50, w59_54, w59_58, w59_5c, w59_60, w59_64, w59_68, w59_6c, w59_70, w59_7c, w59_80, w59_84, w59_88, w59_8c, w59_90, w59_94, w59_98, w59_9c, w59_a0, w59_a4, w59_a8, w59_ac, w59_b0, w59_b4, w59_b8, w59_bc, w59_c0, w59_c4, w59_c8, w59_cc, w59_d0, w59_d4, w59_d8, w59_dc, w59_e0, w59_e4, w59_e8, w59_ec, w59_f0, w59_f4, w59_f8, w59_fc, w59_100, w59_104, w59_108, w59_10c, w59_110, w59_114, w59_118, w59_11c, w59_120, w59_124, w59_128, w59_12c, w59_130, w59_420, w59_424, w59_428, w59_42c, w59_1608, w59_160c, w59_1610, w59_1614, w59_1618, w59_161c, w59_1620, w59_1624, w59_1628, w59_162c, w59_1630, w59_1634, w59_1638, w59_163c, w59_1640, w59_1644⟩
 
 end C3.RV32.Sv

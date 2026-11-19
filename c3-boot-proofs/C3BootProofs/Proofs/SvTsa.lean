@@ -114,6 +114,27 @@ theorem sv_nestF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {i
   obtain ⟨K, Ok, Er, fr⟩ := dnm_facts _ ho2 ho3 hd2 hd3 hs f2
   exact ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, sp2, fun q hk hr => by rw [k2 q hk, r1 q hr], K, Ok, Er, fr⟩
 
+theorem isSha256Of_congr {M M0 : Word → BitVec 8} {p : Word} {n : Nat}
+    (h : ∀ i, i < n → M (p + BitVec.ofNat 32 i) = M0 (p + BitVec.ofNat 32 i)) : isSha256Of M p n = isSha256Of M0 p n := by
+  unfold isSha256Of
+  rw [derAlgOf_congr h]
+  cases hA : derAlgOf M0 p n with
+  | error b => rfl
+  | ok v =>
+    obtain ⟨⟨op, ol⟩, r⟩ := v
+    obtain ⟨c, rfl, hc⟩ := derAlgOf_ok_range hA
+    have e : memBytes M (p + BitVec.ofNat 32 c) ol = memBytes M0 (p + BitVec.ofNat 32 c) ol := mb_sub h hc
+    cases r with
+    | none => simp only [e]
+    | some x => obtain ⟨_, u⟩ := x; simp only [e]
+
+theorem isSha256Of_ok_elem {M : Word → BitVec 8} {p : Word} {n : Nat} {x : Bool} (h : isSha256Of M p n = .ok x) :
+    ∃ t, derElement 0x30 (memBytes M p n) = .ok t := by
+  unfold isSha256Of at h
+  cases hA : derAlgOf M p n with
+  | error b => rw [hA] at h; cases h
+  | ok v => exact alg_ok_elem hA
+
 theorem sv_spA0 (B : Word) : B + 0x21A0 + 0xFFFFFF60 = B + BitVec.ofNat 32 0x2100 := by
   rw [BitVec.add_assoc]; rfl
 
