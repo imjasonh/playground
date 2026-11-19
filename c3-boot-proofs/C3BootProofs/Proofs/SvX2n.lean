@@ -151,6 +151,7 @@ theorem sv_x2n {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x84) = w84 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x88) = p0 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x8C) = L ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x90) = cur ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x94) = rest ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) = sl0 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA24) = sl1 ∧
@@ -4017,6 +4018,6 @@ theorem sv_x2n {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have w27_1020 : memLoad32 n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = vp8 := by rw [m27]; exact w26_1020
   have w27_1024 : memLoad32 n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = vl8 := by rw [m27]; exact w26_1024
   clear w26_1024 w26_1020 w26_a44 w26_a40 w26_a3c w26_a38 w26_a34 w26_a30 w26_a2c w26_a28 w26_a24 w26_a20 w26_32c w26_328 w26_94 w26_90 w26_8c w26_88 w26_84 w26_80 w26_7c w26_78 w26_74 w26_70 w26_6c w26_68 w26_64 w26_60 w26_5c w26_58 w26_54 w26_50 w26_4c w26_48 w26_44 w26_40 w26_3c w26_38 w26_34 w26_30 g26_27 g26_26 g26_25 g26_24 g26_23 g26_22 g26_21 g26_19 g26_18 g26_11 g26_10 g26_9 g26_8 g26_4 g26_3 g26_2 V26 E26 fR26 t26 fr26 m26 s26 u26 d26
-  exact .inr ⟨vp8, vl8, hr8, te8, ht8, hz_12, hr19, n27, t27, s27, E27, V27, fR27, g27_2, g27_3, g27_4, g27_8, g27_9, g27_18, g27_19, g27_21, g27_25, g27_26, g27_27, w27_30, w27_34, w27_38, w27_3c, w27_40, w27_48, w27_4c, w27_50, w27_54, w27_58, w27_5c, w27_60, w27_64, w27_68, w27_6c, w27_70, w27_74, w27_78, w27_7c, w27_80, w27_84, w27_88, w27_8c, w27_94, w27_a20, w27_a24, w27_a28, w27_a2c, w27_a30, w27_a34, w27_a38, w27_a3c, w27_a40, w27_a44⟩
+  exact .inr ⟨vp8, vl8, hr8, te8, ht8, hz_12, hr19, n27, t27, s27, E27, V27, fR27, g27_2, g27_3, g27_4, g27_8, g27_9, g27_18, g27_19, g27_21, g27_25, g27_26, g27_27, w27_30, w27_34, w27_38, w27_3c, w27_40, w27_48, w27_4c, w27_50, w27_54, w27_58, w27_5c, w27_60, w27_64, w27_68, w27_6c, w27_70, w27_74, w27_78, w27_7c, w27_80, w27_84, w27_88, w27_8c, w27_90, w27_94, w27_a20, w27_a24, w27_a28, w27_a2c, w27_a30, w27_a34, w27_a38, w27_a3c, w27_a40, w27_a44⟩
 
 end C3.RV32.Sv

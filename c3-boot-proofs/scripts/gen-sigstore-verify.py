@@ -717,13 +717,13 @@ class Gen:
         self.branch(br_off, False, f"by rw [g{self.k}_{reg}, s{self.k}.zero]; exact br_beq_f ({rd[2]}.ok_ne hr{k})")
         return t
 
-    def seqeq(self, off, p, pl, q, ql, hp, hq, ha3=None):
+    def seqeq(self, off, p, pl, q, ql, hp, hq, ha3=None, ha1=None):
         """`<[u8]>::eq` of `pl` bytes at `p` and `ql` at `q`; returns k."""
         k = self.k = self.k + 1
         self.call_head(k, off, "sv_seqEqF", f"(pl := {pl}) (ql := {ql})",
                        [f"c{k}", f"s{k}", f"rk{k}", f"a0_{k}", f"K{k}", f"fr{k}"])
         self.emit(f"    F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
-        self.emit(f"    g{k-1}_10 g{k-1}_11 g{k-1}_12 {ha3 or f'g{k-1}_13'} {hp} {hq}")
+        self.emit(f"    g{k-1}_10 {ha1 or f'g{k-1}_11'} g{k-1}_12 {ha3 or f'g{k-1}_13'} {hp} {hq}")
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
         self.emit(f"  rw [sv_mbRo F fR{k-1} {hp}, sv_mbRo F fR{k-1} {hq}] at a0_{k}")
         self.keep_regs(k, [r for r in range(32) if r not in (1, 6, 10, 11, 12, 13, 14)],
@@ -915,6 +915,31 @@ class Gen:
         L = f"(memBytes n0.mem ({rp}) ({rl}).toNat)"
         return k, f"derBoolOf {L} (derElement 1 {L})", (rp, rl, inp)
 
+
+    def tlv(self, off, oc, dc, fail_tail):
+        """`Der::tlv` on the reader at `dc`, split on its result; returns k. The
+        element's name is in `last_tlv`."""
+        k = self.k = self.k + 1
+        rp, rl, inp = self.reader(k - 1, dc)
+        self.call_head(k, off, "sv_tlvF", f"(oc := 0x{oc:X}) (dc := 0x{dc:X})",
+                       [f"c{k}", f"s{k}", f"rk{k}", f"K{k}", f"Ok{k}", f"Er{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) {self.reg_is(k - 1, 10, oc)}")
+        self.emit(f"    {self.reg_is(k - 1, 11, dc)} (by decide) (by decide) (by decide) (by decide) (by decide)")
+        self.emit(f"    w{k-1}_{dc + 8:x} w{k-1}_{dc + 12:x}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [sv_mb fR{k-1} {inp}] at Ok{k} Er{k}")
+        self.keep_regs(k, [r for r in range(32) if r not in (1, 5, 6, 7, 11, 12, 13, 14, 15, 16, 17)],
+                       lambda r: f"rk{k} {rname(r)} (by decide) (by decide)")
+        ex = f"derTlv (memBytes n0.mem ({rp}) ({rl}).toNat)"
+        t = f"tl{k}"
+        self.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+        self.emit(f"  rcases r{k} with er{k} | {t}")
+        self.sc.append(("eq", ex, f".ok {t}", [t], f"hr{k}"))
+        self.fork(lambda sub: fail_elem(sub, k, oc, dc, f"hr{k}", f"Er{k} er{k} hr{k}", 17, fail_tail))
+        self.elem_ok(k, oc, dc, t, (rp, rl, inp))
+        self.last_tlv = t
+        return k
+
     # --- operations -------------------------------------------------------------
 
     def block(self, start, end):
@@ -940,6 +965,9 @@ class Gen:
                 if x is not None and x[0] == "U":
                     v = ("U", f"({lean_val(x)}) &&& BitVec.ofNat 32 0x{int(tk[4], 16):X}")
                     unc[rd] = reg_of(tk[3])
+            elif tk[0] == ".aluImm" and tk[1] == ".sll":
+                rd = reg_of(tk[2]); x = vals.get(reg_of(tk[3]))
+                v = ("C", (x[1] << int(tk[4], 16)) & 0xFFFFFFFF) if x is not None and x[0] == "C" else None
             elif tk[0] == ".alu" and tk[1] == ".sub":
                 rd = reg_of(tk[2]); x = vals.get(reg_of(tk[3])); y = vals.get(reg_of(tk[4]))
                 v = ("U", f"({lean_val(x)}) - ({lean_val(y)})") if x is not None and y is not None and x[0] == "U" and y[0] == "U" else None
@@ -984,6 +1012,8 @@ class Gen:
                 continue
             self.emit(f"    rw [rb{k}]; simp +decide only [runBlock, BInstr.run, {blk}, upd, ↓reduceIte, aluEval]")
             self.emit(f"    all_goals (try simp only [{prev}])")
+            if any(tokens(t)[1] == ".sll" for t in ins if tokens(t)[0] == ".aluImm"):
+                self.emit("    all_goals (try simp only [BitVec.reduceToNat, Nat.reduceMod, BitVec.reduceHShiftLeft])")
             self.emit(f"    all_goals first | with_reducible rfl | sv_addr | decide")
             new[r] = v
         self.regs = new
@@ -2214,7 +2244,7 @@ def x2_tail(g):
 
 
 X2_KEEP_REGS = [2, 3, 4, 8, 9, 18, 19, 21, 25, 26, 27]
-X2_KEEP_WORDS = LOOP_KEEP | {0x38, 0x3C, 0x40, 0x48, 0x94}
+X2_KEEP_WORDS = LOOP_KEEP | {0x38, 0x3C, 0x40, 0x48, 0x90, 0x94}
 X2_BINDERS = LOOP_BINDERS.replace(" : Word}", " op rem2 ol rest rp2 : Word}")
 
 
@@ -2380,9 +2410,152 @@ def stage_x2c():
             "import": "C3BootProofs.Proofs.SvData"}
     return g, info
 
+
+KU_C, EKU_C, BC_C = 0x3FCC4889, 0x3FCC4892, 0x3FCC488F
+POL = [0x3FCC48B8 + 10 * i for i in range(5)]
+
+
+def oid_is(c):
+    return f"memBytes n0.mem op ol.toNat = memBytes n0.mem (BitVec.ofNat 32 0x{c:X}) 3"
+
+
+def pol_is(i):
+    return f"memBytes n0.mem (BitVec.ofNat 32 0x{POL[i]:X}) 10 = memBytes n0.mem op ol.toNat"
+
+
+def d_start(g):
+    """The facts at the OID tests, 0x60E."""
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 27: ("S", 0xA20), 9: ("U", "x9"), 21: ("U", "x21"), 25: ("U", "x25"),
+            26: ("U", "x26"), 8: ("U", "op")}
+    words = {0x30: "f30", 0x34: "f34", 0x38: "vl", 0x3C: "vp", 0x40: "rem", 0x48: "ol", 0x88: "p0", 0x8C: "L",
+             0x90: "cur", 0x94: "rest"}
+    for i in range(10):
+        words[0xA20 + 4 * i] = f"sl{i}"
+    for e in range(0x4C, 0x88, 4):
+        words[e] = f"w{e:x}"
+    params = start(g, regs, words, {("vp", "vl"): "val_in", ("op", "ol"): "oid_in"})
+    params += ["(SD0 : SvData n0.mem)"]
+    return params
+
+
+def d_test(g, at, c, want, hname):
+    """The test at `at` of the OID against the 3-byte one at `c`: `want` says
+    whether the extension's OID is that one."""
+    g.block(at, at + 4)
+    g.load(at + 4, "lw")
+    g.block(at + 6, at + 0xE)
+    ke = g.seqeq(at + 0xE, "op", "ol.toNat", f"BitVec.ofNat 32 0x{c:X}", "3", "(.inl oid_in)",
+                 "(.inr ⟨by decide, by decide⟩)", ha1=f"(by rw [g{g.k}_11, ofNat_toNat_self])")
+    g.set_a0(ke, 1 if want else 0, f"ite_eq_left {hname}" if want else f"ite_eq_right {hname}")
+    g.branch(at + 0x16, not want, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+
+
+def d_next(g):
+    """From 0x95C: the reader's new length becomes `rem`, and back to the head."""
+    g.load(0x95C, "lw")
+    g.store(0x95E, "sw")
+    g.jump(0x960)
+
+
+def d_policy_loop(g, upto):
+    """The policy OID table, missed `upto` times (and matched next, below 5)."""
+    g.block(0x89C, 0x8A6)
+    for i in range(upto + (1 if upto < 5 else 0)):
+        g.block(0x8A6, 0x8A8)
+        g.branch(0x8A8, False, f"by rw [g{g.k}_22, g{g.k}_10]; decide")
+        g.load_data(0x8AC, POL[i], 0xD4 + 8 * i)
+        g.block(0x8B0, 0x8B4)
+        g.load(0x8B4, "lw")
+        ke = g.seqeq(0x8B6, f"BitVec.ofNat 32 0x{POL[i]:X}", "10", "op", "ol.toNat", "(.inr ⟨by decide, by decide⟩)",
+                     "(.inl oid_in)", f"(by rw [g{g.k}_13, ofNat_toNat_self])")
+        hit = i == upto
+        g.set_a0(ke, 1 if hit else 0, f"ite_eq_left hp{i}" if hit else f"ite_eq_right hp{i}")
+        g.block(0x8BE, 0x8C2)
+        g.branch(0x8C2, not hit, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    if upto == 5:
+        g.block(0x8A6, 0x8A8)
+        g.branch(0x8A8, True, f"by rw [g{g.k}_22, g{g.k}_10]; decide")
+
+
+D_KEEP_REGS = [2, 3, 4, 9, 18, 19, 21, 25, 26, 27]
+D_KEEP_WORDS = LOOP_KEEP | {0x40, 0x90, 0x94}
+D_BINDERS = LOOP_BINDERS.replace(" : Word}", " op ol vp vl rest : Word}")
+
+
+def stage_dpol(i):
+    """From the OID tests at 0x60E back to the loop head, for an extension
+    whose OID is policy OID `i`, or none of the OIDs `sigstore::verify` reads
+    when `i` is 5."""
+    def gen():
+        g = Gen(f"Dp{i}")
+        params = d_start(g)
+        params += [f"(hku : ¬ {oid_is(KU_C)})", f"(heku : ¬ {oid_is(EKU_C)})", f"(hbc : ¬ {oid_is(BC_C)})"]
+        params += [f"(hp{j} : ¬ {pol_is(j)})" for j in range(i)]
+        if i < 5:
+            params.append(f"(hp{i} : {pol_is(i)})")
+        d_test(g, 0x60E, KU_C, False, "hku")
+        d_test(g, 0x6BC, EKU_C, False, "heku")
+        d_test(g, 0x78E, BC_C, False, "hbc")
+        d_policy_loop(g, i)
+        if i < 5:
+            g.block(0x8C4, 0x8CC)
+            g.load(0x8CC, "lw")
+            g.block(0x8CE, 0x8D2)
+            g.store(0x8D2, "sw")
+            g.load(0x8D4, "lw")
+            g.store(0x8D6, "sw")
+            g.store(0x8D8, "sw")
+            g.block(0x8DA, 0x8E4)
+            g.store(0x8E4, "sw")
+            g.block(0x8E6, 0x8F6)
+            k = g.tlv(0x8F6, 0x1020, 0x1480, lambda sub: (sub.load(0x8FE, "lw"),
+                      sub.branch(0x902, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; rfl"), err44(sub, 0x9BA)))
+            t = g.last_tlv
+            g.load(0x8FE, "lw")
+            g.branch(0x902, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f (val_in.tlv_ne hr{k})")
+            g.load(0x904, "lbu")
+            g.block(0x908, 0x90A)
+            hz = f"hz_{g.k}"
+
+            def fail_tag(sub):
+                sub.branch(0x90A, True, f"by rw [g{sub.k}_11, g{sub.k}_12]; exact br_bne_byte_t (by decide) {hz}")
+                sub.block(0xB4E, 0xB50)
+                sub.jump(0xB50)
+                err44(sub, 0xB38)
+                sub.fail(sub.fail_proof(("prop", hz)))
+            g.prop_check(f"BitVec.ofNat 8 {t}.tag = BitVec.ofNat 8 0xC", hz, fail_tag)
+            g.branch(0x90A, False, f"by rw [g{g.k}_11, g{g.k}_12]; exact br_bne_byte_f (by decide) {hz}")
+            g.load(0x90E, "lw")
+            rest = lean_val(g.words[0x148C])
+            hz = f"hz_{g.k}"
+
+            def fail_rest(sub):
+                sub.branch(0x912, True, f"by rw [g{sub.k}_11, s{sub.k}.zero]; exact br_bne_t {hz}")
+                err44(sub, 0xB36)
+                sub.fail(sub.fail_proof(("prop", hz)))
+            g.prop_check(f"{rest} = 0", hz, fail_rest)
+            g.branch(0x912, False, f"by rw [g{g.k}_11, s{g.k}.zero]; exact br_bne_f {hz}")
+            g.load(0x916, "lw")
+            g.block(0x91A, 0x928)
+            g.store(0x928, "sw")
+            g.store(0x92A, "sw")
+            g.jump(0x92C)
+        d_next(g)
+        stmt, proof = finish(g, 0x4EA, D_KEEP_REGS, D_KEEP_WORDS, set())
+        what = f"policy OID {i}" if i < 5 else "none of the OIDs it tests"
+        info = {"name": f"sv_dp{i}", "title": f"an extension with {what}",
+                "doc": f"From the OID tests at 0x60E back to the loop head at 0x4EA, for an extension with {what}"
+                + (": its value must be one `UTF8String`, which fills policy slot " + str(i) + "." if i < 5 else "."),
+                "params": params, "stmt": stmt, "proof": proof, "binders": D_BINDERS, "start": 0x60E,
+                "import": "C3BootProofs.Proofs.SvData"}
+        return g, info
+    return gen
+
 def main():
     stage = sys.argv[1]
-    g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c}[stage]()
+    g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
+                **{f"Dp{i}": stage_dpol(i) for i in range(6)}}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

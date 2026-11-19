@@ -190,6 +190,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x84) = w84 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x88) = p0 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x8C) = L ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x90) = cur ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x94) = rest ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) = sl0 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA24) = sl1 ∧
@@ -5569,7 +5570,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have w42_1020 : memLoad32 n42.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = vp14 := by rw [m42]; exact w41_1020
     have w42_1024 : memLoad32 n42.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = vl14 := by rw [m42]; exact w41_1024
     clear w41_1024 w41_1020 w41_a44 w41_a40 w41_a3c w41_a38 w41_a34 w41_a30 w41_a2c w41_a28 w41_a24 w41_a20 w41_32c w41_328 w41_94 w41_90 w41_8c w41_88 w41_84 w41_80 w41_7c w41_78 w41_74 w41_70 w41_6c w41_68 w41_64 w41_60 w41_5c w41_58 w41_54 w41_50 w41_4c w41_48 w41_44 w41_40 w41_3c w41_38 w41_34 w41_30 g41_23 g41_22 g41_27 g41_26 g41_25 g41_24 g41_21 g41_19 g41_18 g41_10 g41_9 g41_8 g41_4 g41_3 g41_2 V41 E41 fR41 t41 fr41 rb41 s41 m41 u41 c41 g40_10
-    exact .inr ⟨hr7, tb7, htb7, vp14, vl14, hr14, te14, ht14, hz_18, hr25, (.inl hm0), n42, t42, s42, E42, V42, fR42, g42_2, g42_3, g42_4, g42_8, g42_9, g42_18, g42_19, g42_21, g42_25, g42_26, g42_27, w42_30, w42_34, w42_38, w42_3c, w42_40, w42_48, w42_4c, w42_50, w42_54, w42_58, w42_5c, w42_60, w42_64, w42_68, w42_6c, w42_70, w42_74, w42_78, w42_7c, w42_80, w42_84, w42_88, w42_8c, w42_94, w42_a20, w42_a24, w42_a28, w42_a2c, w42_a30, w42_a34, w42_a38, w42_a3c, w42_a40, w42_a44⟩
+    exact .inr ⟨hr7, tb7, htb7, vp14, vl14, hr14, te14, ht14, hz_18, hr25, (.inl hm0), n42, t42, s42, E42, V42, fR42, g42_2, g42_3, g42_4, g42_8, g42_9, g42_18, g42_19, g42_21, g42_25, g42_26, g42_27, w42_30, w42_34, w42_38, w42_3c, w42_40, w42_48, w42_4c, w42_50, w42_54, w42_58, w42_5c, w42_60, w42_64, w42_68, w42_6c, w42_70, w42_74, w42_78, w42_7c, w42_80, w42_84, w42_88, w42_8c, w42_90, w42_94, w42_a20, w42_a24, w42_a28, w42_a2c, w42_a30, w42_a34, w42_a38, w42_a3c, w42_a40, w42_a44⟩
   have g40_10 : reg n40 a0 = BitVec.ofNat 32 0 := by rw [a0_40, ite_eq_right hm0]; rfl
   -- 0x608
   obtain ⟨n41, c41, u41⟩ := s40.block svX2c608 E40.self svX2c608_end
@@ -6305,7 +6306,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have w50_1020 : memLoad32 n50.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = vp14 := by rw [m50]; exact w49_1020
     have w50_1024 : memLoad32 n50.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = vl14 := by rw [m50]; exact w49_1024
     clear w49_1024 w49_1020 w49_a44 w49_a40 w49_a3c w49_a38 w49_a34 w49_a30 w49_a2c w49_a28 w49_a24 w49_a20 w49_32c w49_328 w49_94 w49_90 w49_8c w49_88 w49_84 w49_80 w49_7c w49_78 w49_74 w49_70 w49_6c w49_68 w49_64 w49_60 w49_5c w49_58 w49_54 w49_50 w49_4c w49_48 w49_44 w49_40 w49_3c w49_38 w49_34 w49_30 g49_23 g49_22 g49_27 g49_26 g49_25 g49_24 g49_21 g49_19 g49_18 g49_10 g49_9 g49_8 g49_4 g49_3 g49_2 V49 E49 fR49 t49 fr49 rb49 s49 m49 u49 c49 g48_10
-    exact .inr ⟨hr7, tb7, htb7, vp14, vl14, hr14, te14, ht14, hz_18, hr25, (.inr (.inl hm1)), n50, t50, s50, E50, V50, fR50, g50_2, g50_3, g50_4, g50_8, g50_9, g50_18, g50_19, g50_21, g50_25, g50_26, g50_27, w50_30, w50_34, w50_38, w50_3c, w50_40, w50_48, w50_4c, w50_50, w50_54, w50_58, w50_5c, w50_60, w50_64, w50_68, w50_6c, w50_70, w50_74, w50_78, w50_7c, w50_80, w50_84, w50_88, w50_8c, w50_94, w50_a20, w50_a24, w50_a28, w50_a2c, w50_a30, w50_a34, w50_a38, w50_a3c, w50_a40, w50_a44⟩
+    exact .inr ⟨hr7, tb7, htb7, vp14, vl14, hr14, te14, ht14, hz_18, hr25, (.inr (.inl hm1)), n50, t50, s50, E50, V50, fR50, g50_2, g50_3, g50_4, g50_8, g50_9, g50_18, g50_19, g50_21, g50_25, g50_26, g50_27, w50_30, w50_34, w50_38, w50_3c, w50_40, w50_48, w50_4c, w50_50, w50_54, w50_58, w50_5c, w50_60, w50_64, w50_68, w50_6c, w50_70, w50_74, w50_78, w50_7c, w50_80, w50_84, w50_88, w50_8c, w50_90, w50_94, w50_a20, w50_a24, w50_a28, w50_a2c, w50_a30, w50_a34, w50_a38, w50_a3c, w50_a40, w50_a44⟩
   have g48_10 : reg n48 a0 = BitVec.ofNat 32 0 := by rw [a0_48, ite_eq_right hm1]; rfl
   -- 0x608
   obtain ⟨n49, c49, u49⟩ := s48.block svX2c608 E48.self svX2c608_end
@@ -7041,7 +7042,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have w58_1020 : memLoad32 n58.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = vp14 := by rw [m58]; exact w57_1020
     have w58_1024 : memLoad32 n58.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = vl14 := by rw [m58]; exact w57_1024
     clear w57_1024 w57_1020 w57_a44 w57_a40 w57_a3c w57_a38 w57_a34 w57_a30 w57_a2c w57_a28 w57_a24 w57_a20 w57_32c w57_328 w57_94 w57_90 w57_8c w57_88 w57_84 w57_80 w57_7c w57_78 w57_74 w57_70 w57_6c w57_68 w57_64 w57_60 w57_5c w57_58 w57_54 w57_50 w57_4c w57_48 w57_44 w57_40 w57_3c w57_38 w57_34 w57_30 g57_23 g57_22 g57_27 g57_26 g57_25 g57_24 g57_21 g57_19 g57_18 g57_10 g57_9 g57_8 g57_4 g57_3 g57_2 V57 E57 fR57 t57 fr57 rb57 s57 m57 u57 c57 g56_10
-    exact .inr ⟨hr7, tb7, htb7, vp14, vl14, hr14, te14, ht14, hz_18, hr25, (.inr (.inr (.inl hm2))), n58, t58, s58, E58, V58, fR58, g58_2, g58_3, g58_4, g58_8, g58_9, g58_18, g58_19, g58_21, g58_25, g58_26, g58_27, w58_30, w58_34, w58_38, w58_3c, w58_40, w58_48, w58_4c, w58_50, w58_54, w58_58, w58_5c, w58_60, w58_64, w58_68, w58_6c, w58_70, w58_74, w58_78, w58_7c, w58_80, w58_84, w58_88, w58_8c, w58_94, w58_a20, w58_a24, w58_a28, w58_a2c, w58_a30, w58_a34, w58_a38, w58_a3c, w58_a40, w58_a44⟩
+    exact .inr ⟨hr7, tb7, htb7, vp14, vl14, hr14, te14, ht14, hz_18, hr25, (.inr (.inr (.inl hm2))), n58, t58, s58, E58, V58, fR58, g58_2, g58_3, g58_4, g58_8, g58_9, g58_18, g58_19, g58_21, g58_25, g58_26, g58_27, w58_30, w58_34, w58_38, w58_3c, w58_40, w58_48, w58_4c, w58_50, w58_54, w58_58, w58_5c, w58_60, w58_64, w58_68, w58_6c, w58_70, w58_74, w58_78, w58_7c, w58_80, w58_84, w58_88, w58_8c, w58_90, w58_94, w58_a20, w58_a24, w58_a28, w58_a2c, w58_a30, w58_a34, w58_a38, w58_a3c, w58_a40, w58_a44⟩
   have g56_10 : reg n56 a0 = BitVec.ofNat 32 0 := by rw [a0_56, ite_eq_right hm2]; rfl
   -- 0x608
   obtain ⟨n57, c57, u57⟩ := s56.block svX2c608 E56.self svX2c608_end
@@ -8131,6 +8132,6 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have w66_1020 : memLoad32 n66.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = vp14 := by rw [m66]; exact w65_1020
   have w66_1024 : memLoad32 n66.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = vl14 := by rw [m66]; exact w65_1024
   clear w65_1024 w65_1020 w65_a44 w65_a40 w65_a3c w65_a38 w65_a34 w65_a30 w65_a2c w65_a28 w65_a24 w65_a20 w65_32c w65_328 w65_94 w65_90 w65_8c w65_88 w65_84 w65_80 w65_7c w65_78 w65_74 w65_70 w65_6c w65_68 w65_64 w65_60 w65_5c w65_58 w65_54 w65_50 w65_4c w65_48 w65_44 w65_40 w65_3c w65_38 w65_34 w65_30 g65_23 g65_22 g65_27 g65_26 g65_25 g65_24 g65_21 g65_19 g65_18 g65_10 g65_9 g65_8 g65_4 g65_3 g65_2 V65 E65 fR65 t65 fr65 rb65 s65 m65 u65 c65 g64_10
-  exact .inr ⟨hr7, tb7, htb7, vp14, vl14, hr14, te14, ht14, hz_18, hr25, (.inr (.inr (.inr (hm3)))), n66, t66, s66, E66, V66, fR66, g66_2, g66_3, g66_4, g66_8, g66_9, g66_18, g66_19, g66_21, g66_25, g66_26, g66_27, w66_30, w66_34, w66_38, w66_3c, w66_40, w66_48, w66_4c, w66_50, w66_54, w66_58, w66_5c, w66_60, w66_64, w66_68, w66_6c, w66_70, w66_74, w66_78, w66_7c, w66_80, w66_84, w66_88, w66_8c, w66_94, w66_a20, w66_a24, w66_a28, w66_a2c, w66_a30, w66_a34, w66_a38, w66_a3c, w66_a40, w66_a44⟩
+  exact .inr ⟨hr7, tb7, htb7, vp14, vl14, hr14, te14, ht14, hz_18, hr25, (.inr (.inr (.inr (hm3)))), n66, t66, s66, E66, V66, fR66, g66_2, g66_3, g66_4, g66_8, g66_9, g66_18, g66_19, g66_21, g66_25, g66_26, g66_27, w66_30, w66_34, w66_38, w66_3c, w66_40, w66_48, w66_4c, w66_50, w66_54, w66_58, w66_5c, w66_60, w66_64, w66_68, w66_6c, w66_70, w66_74, w66_78, w66_7c, w66_80, w66_84, w66_88, w66_8c, w66_90, w66_94, w66_a20, w66_a24, w66_a28, w66_a2c, w66_a30, w66_a34, w66_a38, w66_a3c, w66_a40, w66_a44⟩
 
 end C3.RV32.Sv

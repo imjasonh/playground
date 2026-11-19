@@ -420,4 +420,12 @@ theorem toNat_pos_of_ne {x : Word} (h : x ≠ 0) : 0 < x.toNat := by
   · exact absurd (BitVec.eq_of_toNat_eq (by rw [e]; rfl)) h
   · exact e
 
+/-- An element `Der::tlv` reads from bytes outside the stack has a nonzero content address. -/
+theorem SvIn.tlv_ne {B rp rl : Word} {M : Word → BitVec 8} {t : DerTlv} (h : SvIn B rp rl.toNat)
+    (ht : derTlv (memBytes M rp rl.toNat) = .ok t) : rp + BitVec.ofNat 32 t.header ≠ 0 := fun e => by
+  have hb := derTlv_bound ht; rw [memBytes_length] at hb
+  have hp := h.pos; have hf := h.fit
+  have := congrArg BitVec.toNat e
+  rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (0 : Word).toNat = 0 from rfl] at this; omega
+
 end C3.RV32.Sv
