@@ -173,6 +173,7 @@ import C3BootProofs.Proofs.SvLeafH2
 import C3BootProofs.Proofs.SvLeafH3
 import C3BootProofs.Proofs.SvLeafHash
 import C3BootProofs.Proofs.SvPv
+import C3BootProofs.Proofs.SvFail2
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main
