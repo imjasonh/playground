@@ -25,13 +25,65 @@ structure SvCode (M : Word → BitVec 8) : Prop where
   elem : CodeIn M (BitVec.ofNat 32 derElementAddress) derElementCode
   tlv : CodeIn M (BitVec.ofNat 32 derTlvAddress) derTlvCode
   K : P3Code M
+  derBitString : CodeIn M (BitVec.ofNat 32 derBitStringAddress) derBitStringCode
+  derPositiveInteger : CodeIn M (BitVec.ofNat 32 derPositiveIntegerAddress) derPositiveIntegerCode
+  derInteger : CodeIn M (BitVec.ofNat 32 derIntegerAddress) derIntegerCode
+  derOptional : CodeIn M (BitVec.ofNat 32 derOptionalAddress) derOptionalCode
+  derIntegerIs : CodeIn M (BitVec.ofNat 32 derIntegerIsAddress) derIntegerIsCode
+  sliceEq : CodeIn M (BitVec.ofNat 32 sliceEqAddress) sliceEqCode
+  equalSameLength : CodeIn M (BitVec.ofNat 32 equalSameLengthAddress) equalSameLengthCode
+  memcmp : CodeIn M (BitVec.ofNat 32 memcmpAddress) memcmpCode
+  derAlgorithm : CodeIn M (BitVec.ofNat 32 derAlgorithmAddress) derAlgorithmCode
+  derOid : CodeIn M (BitVec.ofNat 32 derOidAddress) derOidCode
+  sliceNe : CodeIn M (BitVec.ofNat 32 sliceNeAddress) sliceNeCode
+  x509ReadTime : CodeIn M (BitVec.ofNat 32 x509ReadTimeAddress) x509ReadTimeCode
+  generalizedTime : CodeIn M (BitVec.ofNat 32 generalizedTimeAddress) generalizedTimeCode
+  dateTime : CodeIn M (BitVec.ofNat 32 dateTimeAddress) dateTimeCode
+  timeDigits2 : CodeIn M (BitVec.ofNat 32 timeDigits2Address) timeDigits2Code
+  derBooleanTrue : CodeIn M (BitVec.ofNat 32 derBooleanTrueAddress) derBooleanTrueCode
+  derOctetString : CodeIn M (BitVec.ofNat 32 derOctetStringAddress) derOctetStringCode
+  listsOid : CodeIn M (BitVec.ofNat 32 listsOidAddress) listsOidCode
+  derSet : CodeIn M (BitVec.ofNat 32 derSetAddress) derSetCode
+  ecdsaSignature48 : CodeIn M (BitVec.ofNat 32 ecdsaSignature48Address) ecdsaSignature48Code
+  derScalar48 : CodeIn M (BitVec.ofNat 32 derScalar48Address) derScalar48Code
+  derScalar32 : CodeIn M (BitVec.ofNat 32 derScalar32Address) derScalar32Code
+  zipSkipNext : CodeIn M (BitVec.ofNat 32 zipSkipNextAddress) zipSkipNextCode
+  isSha256 : CodeIn M (BitVec.ofNat 32 isSha256Address) isSha256Code
+  arr32Eq : CodeIn M (BitVec.ofNat 32 arr32EqAddress) arr32EqCode
+  arr32Ne : CodeIn M (BitVec.ofNat 32 arr32NeAddress) arr32NeCode
 
 set_option maxRecDepth 100000 in
 theorem SvCode.hi {M M' : Word → BitVec 8} (C : SvCode M) (h : ∀ x : Word, 0x40000000 ≤ x.toNat → M' x = M x) :
     SvCode M' :=
   ⟨codeHi C.self (by decide) (by decide) h, codeHi C.seq (by decide) (by decide) h,
     codeHi C.nest (by decide) (by decide) h, codeHi C.elem (by decide) (by decide) h,
-    codeHi C.tlv (by decide) (by decide) h, C.K.hi h⟩
+    codeHi C.tlv (by decide) (by decide) h, C.K.hi h,
+    codeHi C.derBitString (by decide) (by decide) h,
+    codeHi C.derPositiveInteger (by decide) (by decide) h,
+    codeHi C.derInteger (by decide) (by decide) h,
+    codeHi C.derOptional (by decide) (by decide) h,
+    codeHi C.derIntegerIs (by decide) (by decide) h,
+    codeHi C.sliceEq (by decide) (by decide) h,
+    codeHi C.equalSameLength (by decide) (by decide) h,
+    codeHi C.memcmp (by decide) (by decide) h,
+    codeHi C.derAlgorithm (by decide) (by decide) h,
+    codeHi C.derOid (by decide) (by decide) h,
+    codeHi C.sliceNe (by decide) (by decide) h,
+    codeHi C.x509ReadTime (by decide) (by decide) h,
+    codeHi C.generalizedTime (by decide) (by decide) h,
+    codeHi C.dateTime (by decide) (by decide) h,
+    codeHi C.timeDigits2 (by decide) (by decide) h,
+    codeHi C.derBooleanTrue (by decide) (by decide) h,
+    codeHi C.derOctetString (by decide) (by decide) h,
+    codeHi C.listsOid (by decide) (by decide) h,
+    codeHi C.derSet (by decide) (by decide) h,
+    codeHi C.ecdsaSignature48 (by decide) (by decide) h,
+    codeHi C.derScalar48 (by decide) (by decide) h,
+    codeHi C.derScalar32 (by decide) (by decide) h,
+    codeHi C.zipSkipNext (by decide) (by decide) h,
+    codeHi C.isSha256 (by decide) (by decide) h,
+    codeHi C.arr32Eq (by decide) (by decide) h,
+    codeHi C.arr32Ne (by decide) (by decide) h⟩
 
 /-- Bytes that `sigstore::verify` reads but no step writes: outside the
 stack, and not wrapping around. -/
