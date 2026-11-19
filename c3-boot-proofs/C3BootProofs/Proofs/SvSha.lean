@@ -1,5 +1,6 @@
 import C3BootProofs.Proofs.SvFail
 import C3BootProofs.Proofs.Sha512Blocks
+import C3BootProofs.Image.BootloaderData4
 
 /-!
 # `sigstore::verify`: SHA-384 of the leaf's `tbsCertificate`
@@ -56,6 +57,8 @@ theorem sv_mcIn {B : Word} {m : Machine} {off : Nat} {imm o p : Word} {c N : Nat
 
 abbrev SK5 : Word := BitVec.ofNat 32 sha512KAddress
 
+abbrev IV5 : Word := BitVec.ofNat 32 sha384IVAddress
+
 /-- The SHA-512 code `verify_leaf` calls, and the round constants. -/
 structure SvShaCode (M : Word → BitVec 8) : Prop where
   blk : CodeIn M (BitVec.ofNat 32 sha384UpdateBlocksAddress) sha384UpdateBlocksCode
@@ -65,6 +68,7 @@ structure SvShaCode (M : Word → BitVec 8) : Prop where
   z48 : CodeIn M (BitVec.ofNat 32 zeroArray48Address) zeroArray48Code
   z64 : CodeIn M (BitVec.ofNat 32 zeroArray64Address) zeroArray64Code
   k : CodeIn M SK5 sha512KData
+  iv : CodeIn M IV5 sha384IVData
 
 /-- The round constants sit apart from the stack. -/
 def SvKSep (B : Word) : Prop := Sep (B + 0xFFFFFE60) 0x39D0 SK5 640
@@ -79,7 +83,9 @@ theorem SvShaCode.sv {M M0 : Word → BitVec 8} {B : Word} (F : Fr B 0x3830) (KS
     codeHi D.z48 (by decide) (by decide) hx, codeHi D.z64 (by decide) (by decide) hx,
     fun i hi' => by
       rw [fR _ (KS.symm.sub (c := i) (l := 1) (by have : sha512KData.length = 640 := rfl; omega)).symm]
-      exact D.k i hi'⟩
+      exact D.k i hi',
+    fun i hi => by
+      rw [fR _ (dataR (q := IV5) (ql := sha384IVData.length) F (by decide) (by decide) i hi)]; exact D.iv i hi⟩
 
 theorem sv_sp390 (B : Word) : B + 0x21A0 + 0xFFFFFC70 = B + BitVec.ofNat 32 0x1E10 := by
   rw [BitVec.add_assoc]; rfl
