@@ -1,8 +1,10 @@
 # Read receipt
 
 Paste a Markdown doc and read it one word at a time. Each word stays muted
-until you click it, or press Right Arrow or Space, and the highlight moves to
-the next word. Holding a key down does nothing: each word takes its own press.
+until you click or tap anywhere on the page, or press Right Arrow or Space,
+and the highlight moves to the next word. Holding a key down does nothing:
+each word takes its own press. The page scrolls to keep the highlighted word
+near the middle of the screen.
 
 After the last word, you get a receipt link to share. The link holds the doc
 and a proof that someone clicked through every word of it, how long that

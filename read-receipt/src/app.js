@@ -53,8 +53,6 @@ let markdown = '';
 let reader = null;
 /** @type {!Array<!Array<!HTMLSpanElement>>} Each word's spans. */
 let words = [];
-/** @type {!Map<!Element, number>} The word index of each span. */
-let wordOf = new Map();
 
 /**
  * @param {number} index
@@ -101,18 +99,24 @@ function updateProgress() {
 }
 
 /**
- * Scrolls `word` toward the middle of the viewport once it leaves the middle
- * half, so the page doesn't move on every word.
+ * Scrolls `word` back to the middle of the screen below the toolbar once it
+ * drifts a tenth of the screen away, so the page moves every few lines and
+ * not on every word.
  * @param {!HTMLElement} word
  */
 function keepInView(word) {
   const rect = word.getBoundingClientRect();
   const height = window.innerHeight;
-  if (rect.top < height * 0.25 || rect.bottom > height * 0.75) {
-    word.scrollIntoView({block: 'center', inline: 'nearest'});
-  } else {
-    // Words inside a code block can still be off to the side.
-    word.scrollIntoView({block: 'nearest', inline: 'nearest'});
+  const top = Math.max(0, toolbar.getBoundingClientRect().bottom);
+  const drift = (rect.top + rect.bottom) / 2 - (top + height) / 2;
+  if (Math.abs(drift) > height * 0.1) window.scrollBy({top: drift});
+  // Code blocks and tables scroll sideways on their own.
+  const box = word.closest('pre, table');
+  if (box) {
+    const edges = box.getBoundingClientRect();
+    if (rect.left < edges.left || rect.right > edges.right) {
+      box.scrollLeft += rect.left - edges.left - edges.width / 2;
+    }
   }
 }
 
@@ -138,9 +142,6 @@ async function startReading(text) {
   markdown = text;
   renderMarkdown(doc, text);
   words = wrapWords(doc);
-  wordOf = new Map(
-    words.flatMap((spans, index) => spans.map((span) => [span, index])),
-  );
   if (!words.length) {
     reader = null;
     show('compose');
@@ -174,7 +175,7 @@ function advance() {
   keepInView(words[reader.index][0]);
 }
 
-/** Flashes the current word after a click on some other word. */
+/** Flashes the current word. */
 function nudge() {
   if (!reader || reader.done) return;
   markWord(reader.index, 'nudge', false);
@@ -308,17 +309,17 @@ byId('read-yourself').addEventListener('click', () => {
   void startReading(markdown);
 });
 
-doc.addEventListener('click', (event) => {
+// A click or tap anywhere on the page moves to the next word.
+document.addEventListener('click', (event) => {
   if (!reader || reader.done) return;
   const target = /** @type {!Element} */ (event.target);
-  // Links in the doc only open once it's read.
-  if (target.closest('a')) event.preventDefault();
-  const span = target.closest('.word');
-  if (span && wordOf.get(span) === reader.index) {
-    advance();
-  } else {
-    nudge();
+  if (target.closest('button, input, textarea, select')) return;
+  if (target.closest('a')) {
+    if (!doc.contains(target)) return;
+    // Links in the doc only open once it's read.
+    event.preventDefault();
   }
+  advance();
 });
 
 document.addEventListener('keydown', (event) => {

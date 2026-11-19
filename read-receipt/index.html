@@ -24,6 +24,14 @@
 
     <main>
       <form class="compose" id="compose" hidden>
+        <p class="intro">
+          We've all been sent a doc that's a pile of slop that the sender
+          clearly didn't read. That's pretty rude. But if you <em>did</em> read
+          it, you can use this tool to prove it! Copy the markdown text below
+          (it will not leave your browser) and click/tap through each word. At
+          the end you'll get a link that you can share to prove you read the
+          whole thing!
+        </p>
         <label for="source">Markdown</label>
         <textarea
           id="source"
@@ -42,8 +50,8 @@
         </div>
         <div class="toolbar-row">
           <p class="hint" id="hint">
-            <span class="hint-pointer">Click the highlighted word, or press → or Space.</span>
-            <span class="hint-touch">Tap the highlighted word.</span>
+            <span class="hint-pointer">Click anywhere, or press → or Space, for the next word.</span>
+            <span class="hint-touch">Tap anywhere for the next word.</span>
           </p>
           <p class="hint slow" id="slow" role="status"></p>
           <button type="button" class="ghost" id="edit">Edit</button>
