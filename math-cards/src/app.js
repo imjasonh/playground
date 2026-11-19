@@ -1,8 +1,6 @@
-import {dealCard, isMode, spokenProblem} from './problems.js';
-import {filledDots, loadStats, recordAnswer, saveStats} from './stats.js';
+import {dealCard, spokenProblem} from './problems.js';
+import {Progress, filledDots} from './stats.js';
 
-const MODE_KEY = 'math-cards:mode';
-const DEFAULT_MODE = 'addition';
 // A drag past this fraction of the card's width picks that side's answer.
 const COMMIT_FRACTION = 0.3;
 // A flick faster than this (pixels per millisecond) picks an answer before
@@ -55,34 +53,7 @@ try {
   // Storage is blocked. Stats last until the page closes.
 }
 
-function loadMode() {
-  try {
-    const saved = storage?.getItem(MODE_KEY);
-    return isMode(saved) ? saved : DEFAULT_MODE;
-  } catch {
-    return DEFAULT_MODE;
-  }
-}
-
-function saveMode() {
-  try {
-    storage?.setItem(MODE_KEY, mode);
-  } catch {
-    // The mode lasts until the page closes.
-  }
-}
-
-function statsFor(modeKey) {
-  if (!statsByMode.has(modeKey)) {
-    statsByMode.set(modeKey, loadStats(storage, modeKey));
-  }
-  return statsByMode.get(modeKey);
-}
-
-let mode = loadMode();
-// Each mode's stats, so a blocked storage still keeps them apart.
-const statsByMode = new Map();
-let stats = statsFor(mode);
+const progress = new Progress(storage);
 let card = null;
 let busy = false;
 let drag = null;
@@ -102,6 +73,7 @@ function span(className, text, hidden = false) {
 }
 
 function renderStats(bump) {
+  const {stats} = progress;
   for (const [key, el] of Object.entries(statEls)) {
     const text = String(stats[key]);
     if (el.textContent === text) {
@@ -188,18 +160,15 @@ function lean(side) {
 }
 
 function enterCard() {
-  if (reducedMotion.matches) {
-    cardEl.animate({opacity: [0, 1]}, {duration: 150, easing: 'ease-out'});
-    return;
-  }
   cardEl.animate({opacity: [0, 1]}, {duration: 150, easing: 'ease-out'});
-  cardEl.animate({scale: [0.6, 1]}, {duration: 450, easing: SPRING});
+  if (!reducedMotion.matches) {
+    cardEl.animate({scale: [0.6, 1]}, {duration: 450, easing: SPRING});
+  }
 }
 
 function flyAway(side) {
   if (reducedMotion.matches) {
-    return cardEl.animate({opacity: [1, 0]},
-        {duration: 150, easing: 'ease-in', fill: 'forwards'}).finished;
+    return fadeOut();
   }
   const direction = side === 'left' ? -1 : 1;
   const distance = window.innerWidth * 1.2;
@@ -232,12 +201,13 @@ function shake() {
 
 function renderModes() {
   for (const button of modeButtons) {
-    button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
+    button.setAttribute(
+        'aria-pressed', String(button.dataset.mode === progress.mode));
   }
 }
 
 function deal(note = '') {
-  card = dealCard(mode, Math.random, card);
+  card = dealCard(progress.mode, Math.random, card);
   resetCardPosition();
   renderCard();
   const next = `${spokenProblem(card)} equals what?`;
@@ -253,19 +223,17 @@ async function choose(side) {
   lean(null);
   const picked = card.choices[side === 'left' ? 0 : 1];
   const correct = picked === card.answer;
-  const result = recordAnswer(stats, correct);
-  stats = result.stats;
-  statsByMode.set(mode, stats);
-  saveStats(storage, mode, stats);
+  const celebrating = progress.record(correct);
   renderStats(true);
   revealAnswer(correct, side);
 
   const solved = `${spokenProblem(card)} is ${card.answer}.`;
   let note = correct ? `Right! ${solved}` : `Not quite. ${solved}`;
   let cheered = null;
-  if (result.celebrate) {
-    note += ` ${stats.streak} in a row!`;
-    cheered = celebrate(stats.streak);
+  if (celebrating) {
+    const {streak} = progress.stats;
+    note += ` ${streak} in a row!`;
+    cheered = celebrate(streak);
   }
 
   try {
@@ -447,13 +415,11 @@ for (const [side, button] of Object.entries(buttons)) {
 
 for (const button of modeButtons) {
   button.addEventListener('click', () => {
-    if (button.dataset.mode === mode) {
+    if (button.dataset.mode === progress.mode) {
       return;
     }
-    mode = button.dataset.mode;
-    saveMode();
+    progress.selectMode(button.dataset.mode);
     renderModes();
-    stats = statsFor(mode);
     renderStats(false);
     // A card that is flying off or showing a missed answer deals the next
     // card in the new mode when it finishes.
@@ -482,5 +448,5 @@ document.addEventListener('keydown', (event) => {
 
 renderStats(false);
 renderModes();
-card = dealCard(mode, Math.random);
+card = dealCard(progress.mode, Math.random);
 renderCard();

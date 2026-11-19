@@ -7,7 +7,6 @@ import {
   dealCard,
   isMode,
   makeCard,
-  problemText,
   randomInt,
   sameProblem,
   spokenProblem,
@@ -232,8 +231,7 @@ test('makeCard rejects an unknown kind', () => {
   assert.throws(() => makeCard('toString', Math.random), /unknown/);
 });
 
-test('problem text', () => {
+test('spokenProblem', () => {
   const problem = {operands: [23, 45], operator: '+', spoken: 'plus'};
-  assert.equal(problemText(problem), '23 + 45');
   assert.equal(spokenProblem(problem), '23 plus 45');
 });

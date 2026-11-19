@@ -1,15 +1,15 @@
 /**
- * @fileoverview Answer counts and streaks for each mode, kept in
- * localStorage.
+ * @fileoverview The player's progress: the selected mode, and each mode's
+ * answer counts and streaks, kept in localStorage.
  */
 
-const KEY_PREFIX = 'math-cards:v1';
+import {DEFAULT_MODE, isMode} from './problems.js';
 
-/**
- * Addition was the only mode before modes had their own stats, so its
- * stats fall back to the key from then.
- */
-export const LEGACY_KEY = KEY_PREFIX;
+const MODE_KEY = 'math-cards:mode';
+const STATS_PREFIX = 'math-cards:v1';
+
+// Addition was the only mode before each mode had its own stats, which were
+// saved under STATS_PREFIX alone.
 const LEGACY_MODE = 'addition';
 
 /** A celebration plays each time the streak reaches a multiple of this. */
@@ -22,80 +22,6 @@ export const CELEBRATE_EVERY = 10;
  * @property {number} streak Right answers in a row, up to now.
  * @property {number} best Longest streak.
  */
-
-/** @return {!Stats} */
-export function emptyStats() {
-  return {answered: 0, correct: 0, streak: 0, best: 0};
-}
-
-/**
- * @param {string} mode
- * @return {string} The storage key for the mode's stats.
- */
-export function statsKey(mode) {
-  return `${KEY_PREFIX}:${mode}`;
-}
-
-/**
- * @param {?Storage} storage
- * @param {string} mode
- * @return {?string}
- */
-function readSaved(storage, mode) {
-  const saved = storage?.getItem(statsKey(mode)) ?? null;
-  if (saved == null && mode === LEGACY_MODE) {
-    return storage?.getItem(LEGACY_KEY) ?? null;
-  }
-  return saved;
-}
-
-/**
- * Reads a mode's stats from storage. A missing, unreadable, or malformed
- * value reads as zero, field by field.
- * @param {?Storage} storage
- * @param {string} mode
- * @return {!Stats}
- */
-export function loadStats(storage, mode) {
-  const stats = emptyStats();
-  let saved;
-  try {
-    saved = JSON.parse(readSaved(storage, mode) ?? 'null');
-  } catch {
-    return stats;
-  }
-  if (saved == null || typeof saved !== 'object') {
-    return stats;
-  }
-  for (const key of Object.keys(stats)) {
-    const value = saved[key];
-    if (Number.isSafeInteger(value) && value >= 0) {
-      stats[key] = value;
-    }
-  }
-  return stats;
-}
-
-/**
- * Writes a mode's stats to storage. Returns false when the browser
- * refuses, such as when storage is full or blocked, so the page keeps
- * counting in memory.
- * @param {?Storage} storage
- * @param {string} mode
- * @param {!Stats} stats
- * @return {boolean}
- */
-export function saveStats(storage, mode, stats) {
-  if (!storage) {
-    return false;
-  }
-  try {
-    storage.setItem(statsKey(mode), JSON.stringify(stats));
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Returns the stats after one more answer, and whether that answer earns a
@@ -129,4 +55,116 @@ export function filledDots(streak) {
     return 0;
   }
   return streak % CELEBRATE_EVERY || CELEBRATE_EVERY;
+}
+
+/**
+ * Reads a key, or null when storage is missing or refuses.
+ * @param {?Storage} storage
+ * @param {string} key
+ * @return {?string}
+ */
+function read(storage, key) {
+  try {
+    return storage?.getItem(key) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Writes a key. When storage is missing, full, or blocked, the value lasts
+ * only in memory.
+ * @param {?Storage} storage
+ * @param {string} key
+ * @param {string} value
+ */
+function write(storage, key, value) {
+  try {
+    storage?.setItem(key, value);
+  } catch {
+    // Progress keeps counting in memory.
+  }
+}
+
+/**
+ * Parses saved stats. A missing or malformed value reads as zero, field by
+ * field.
+ * @param {?string} saved
+ * @return {!Stats}
+ */
+function parseStats(saved) {
+  const stats = {answered: 0, correct: 0, streak: 0, best: 0};
+  let parsed;
+  try {
+    parsed = JSON.parse(saved ?? 'null');
+  } catch {
+    return stats;
+  }
+  if (parsed == null || typeof parsed !== 'object') {
+    return stats;
+  }
+  for (const key of Object.keys(stats)) {
+    const value = parsed[key];
+    if (Number.isSafeInteger(value) && value >= 0) {
+      stats[key] = value;
+    }
+  }
+  return stats;
+}
+
+/**
+ * The selected mode and each mode's stats. Reads each from storage once and
+ * keeps it in memory, so modes stay apart even when storage refuses writes.
+ */
+export class Progress {
+  /** @param {?Storage} storage */
+  constructor(storage) {
+    /** @private @const {?Storage} */
+    this.storage_ = storage;
+    /** @private @const {!Map<string, !Stats>} */
+    this.statsByMode_ = new Map();
+    const saved = read(storage, MODE_KEY);
+    /** @private {string} */
+    this.mode_ = isMode(saved) ? saved : DEFAULT_MODE;
+  }
+
+  /** @return {string} The selected mode. */
+  get mode() {
+    return this.mode_;
+  }
+
+  /** @return {!Stats} The selected mode's stats. */
+  get stats() {
+    const mode = this.mode_;
+    if (!this.statsByMode_.has(mode)) {
+      let saved = read(this.storage_, `${STATS_PREFIX}:${mode}`);
+      if (saved == null && mode === LEGACY_MODE) {
+        saved = read(this.storage_, STATS_PREFIX);
+      }
+      this.statsByMode_.set(mode, parseStats(saved));
+    }
+    return this.statsByMode_.get(mode);
+  }
+
+  /** @param {string} mode A key in MODES. */
+  selectMode(mode) {
+    if (!isMode(mode)) {
+      throw new Error(`unknown mode ${mode}`);
+    }
+    this.mode_ = mode;
+    write(this.storage_, MODE_KEY, mode);
+  }
+
+  /**
+   * Records an answer in the selected mode.
+   * @param {boolean} correct
+   * @return {boolean} Whether the answer earns a celebration.
+   */
+  record(correct) {
+    const {stats, celebrate} = recordAnswer(this.stats, correct);
+    this.statsByMode_.set(this.mode_, stats);
+    write(this.storage_, `${STATS_PREFIX}:${this.mode_}`,
+        JSON.stringify(stats));
+    return celebrate;
+  }
 }

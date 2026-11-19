@@ -3,14 +3,12 @@ import {describe, test} from 'node:test';
 
 import {
   CELEBRATE_EVERY,
-  LEGACY_KEY,
-  emptyStats,
+  Progress,
   filledDots,
-  loadStats,
   recordAnswer,
-  saveStats,
-  statsKey,
 } from '../src/stats.js';
+
+const ZERO = Object.freeze({answered: 0, correct: 0, streak: 0, best: 0});
 
 function memoryStorage(initial = {}) {
   const values = new Map(Object.entries(initial));
@@ -21,9 +19,20 @@ function memoryStorage(initial = {}) {
   };
 }
 
+function blockedStorage() {
+  return {
+    getItem() {
+      throw new Error('blocked');
+    },
+    setItem() {
+      throw new Error('full');
+    },
+  };
+}
+
 describe('recordAnswer', () => {
   test('counts answers and grows the streak', () => {
-    let stats = emptyStats();
+    let stats = ZERO;
     for (let i = 0; i < 3; i++) {
       ({stats} = recordAnswer(stats, true));
     }
@@ -40,7 +49,7 @@ describe('recordAnswer', () => {
   });
 
   test('celebrates every ten in a row', () => {
-    let stats = emptyStats();
+    let stats = ZERO;
     const celebrations = [];
     for (let i = 1; i <= 25; i++) {
       const result = recordAnswer(stats, true);
@@ -60,70 +69,102 @@ describe('recordAnswer', () => {
   });
 });
 
-describe('storage', () => {
-  test('round-trips', () => {
-    const storage = memoryStorage();
-    const stats = {answered: 12, correct: 10, streak: 4, best: 7};
-    assert.equal(saveStats(storage, 'subtraction', stats), true);
-    assert.deepEqual(loadStats(storage, 'subtraction'), stats);
+describe('Progress', () => {
+  test('starts in addition with no stats', () => {
+    const progress = new Progress(memoryStorage());
+    assert.equal(progress.mode, 'addition');
+    assert.deepEqual(progress.stats, ZERO);
   });
 
-  test('keeps each mode apart', () => {
+  test('saves the mode and each mode\'s stats', () => {
     const storage = memoryStorage();
-    const plus = {answered: 3, correct: 3, streak: 3, best: 3};
-    const times = {answered: 9, correct: 4, streak: 0, best: 2};
-    saveStats(storage, 'addition', plus);
-    saveStats(storage, 'multiply-divide', times);
-    assert.deepEqual(loadStats(storage, 'addition'), plus);
-    assert.deepEqual(loadStats(storage, 'multiply-divide'), times);
-    assert.deepEqual(loadStats(storage, 'subtraction'), emptyStats());
-    assert.ok(storage.values.has(statsKey('multiply-divide')));
+    const progress = new Progress(storage);
+    progress.record(true);
+    progress.selectMode('subtraction');
+    progress.record(true);
+    progress.record(false);
+
+    assert.deepEqual([...storage.values.keys()].sort(), [
+      'math-cards:mode',
+      'math-cards:v1:addition',
+      'math-cards:v1:subtraction',
+    ]);
+    const reopened = new Progress(storage);
+    assert.equal(reopened.mode, 'subtraction');
+    assert.deepEqual(
+        reopened.stats, {answered: 2, correct: 1, streak: 0, best: 1});
+    reopened.selectMode('addition');
+    assert.deepEqual(
+        reopened.stats, {answered: 1, correct: 1, streak: 1, best: 1});
+    reopened.selectMode('multiply-divide');
+    assert.deepEqual(reopened.stats, ZERO);
+  });
+
+  test('reports a celebration every ten in a row', () => {
+    const progress = new Progress(memoryStorage());
+    const celebrations = [];
+    for (let i = 1; i <= 20; i++) {
+      if (progress.record(true)) {
+        celebrations.push(i);
+      }
+    }
+    assert.deepEqual(celebrations, [10, 20]);
   });
 
   test('addition falls back to the stats saved before modes', () => {
     const old = {answered: 40, correct: 35, streak: 6, best: 12};
-    const storage = memoryStorage({[LEGACY_KEY]: JSON.stringify(old)});
-    assert.deepEqual(loadStats(storage, 'addition'), old);
-    assert.deepEqual(loadStats(storage, 'subtraction'), emptyStats());
-
-    const next = {...old, answered: 41, correct: 36, streak: 7};
-    saveStats(storage, 'addition', next);
-    assert.deepEqual(loadStats(storage, 'addition'), next);
+    const storage = memoryStorage({'math-cards:v1': JSON.stringify(old)});
+    const progress = new Progress(storage);
+    assert.deepEqual(progress.stats, old);
+    progress.record(true);
+    assert.equal(
+        storage.values.get('math-cards:v1:addition'),
+        JSON.stringify({answered: 41, correct: 36, streak: 7, best: 12}));
+    progress.selectMode('subtraction');
+    assert.deepEqual(progress.stats, ZERO);
   });
 
-  test('missing storage reads as zero', () => {
-    assert.deepEqual(loadStats(null, 'addition'), emptyStats());
-    assert.deepEqual(loadStats(memoryStorage(), 'addition'), emptyStats());
-    assert.equal(saveStats(null, 'addition', emptyStats()), false);
+  test('an unknown saved mode reads as addition', () => {
+    const progress =
+        new Progress(memoryStorage({'math-cards:mode': 'constructor'}));
+    assert.equal(progress.mode, 'addition');
+  });
+
+  test('rejects an unknown mode', () => {
+    const progress = new Progress(memoryStorage());
+    assert.throws(() => progress.selectMode('calculus'), /unknown mode/);
+    assert.equal(progress.mode, 'addition');
   });
 
   test('corrupt JSON reads as zero', () => {
-    const storage = memoryStorage({[statsKey('addition')]: '{nope'});
-    assert.deepEqual(loadStats(storage, 'addition'), emptyStats());
+    const storage = memoryStorage({'math-cards:v1:addition': '{nope'});
+    assert.deepEqual(new Progress(storage).stats, ZERO);
   });
 
   test('bad fields read as zero, one at a time', () => {
     const storage = memoryStorage({
-      [statsKey('addition')]: JSON.stringify(
+      'math-cards:v1:addition': JSON.stringify(
           {answered: 8, correct: -1, streak: 'lots', best: 2.5}),
     });
     assert.deepEqual(
-        loadStats(storage, 'addition'),
+        new Progress(storage).stats,
         {answered: 8, correct: 0, streak: 0, best: 0});
   });
 
-  test('a storage that throws reports failure', () => {
-    const storage = {
-      getItem() {
-        throw new Error('blocked');
-      },
-      setItem() {
-        throw new Error('full');
-      },
-    };
-    assert.deepEqual(loadStats(storage, 'addition'), emptyStats());
-    assert.equal(saveStats(storage, 'addition', emptyStats()), false);
-  });
+  for (const [name, storage] of [
+    ['missing', null],
+    ['blocked', blockedStorage()],
+  ]) {
+    test(`${name} storage keeps each mode apart in memory`, () => {
+      const progress = new Progress(storage);
+      progress.record(true);
+      progress.selectMode('subtraction');
+      assert.deepEqual(progress.stats, ZERO);
+      progress.selectMode('addition');
+      assert.deepEqual(
+          progress.stats, {answered: 1, correct: 1, streak: 1, best: 1});
+    });
+  }
 });
 
 test('filledDots', () => {
