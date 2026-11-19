@@ -3871,19 +3871,19 @@ def tsa_read(g, off, dc, kind="seq"):
     return k, t, rd
 
 
-def tsa_rest0(g, at, hname, target):
-    """`bnez a0` at `at` on a reader's length, which must be zero; the failing
-    branch goes to `target`: 0x2838 (`s0 = 1`) or 0x2C60."""
-    rem = lean_val(g.regs[10])
+def tsa_rest0(g, at, hname, target, reg=10):
+    """`bnez` at `at` on a reader's length in `reg`, which must be zero; the
+    failing branch goes to `target`: 0x2838 (`s0 = 1`) or 0x2C60."""
+    rem = lean_val(g.regs[reg])
 
     def fail(sub):
-        sub.branch(at, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_t {hname}")
+        sub.branch(at, True, f"by rw [g{sub.k}_{reg}, s{sub.k}.zero]; exact br_bne_t {hname}")
         if target == 0x2838:
             sub.block(0x2838, 0x283A)
             sub.jump(0x283A)
         sub.fail(sub.fail_proof(("prop", hname)), "sv_fail_2c60")
     g.prop_check(f"{rem} = 0", hname, fail)
-    g.branch(at, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_f {hname}")
+    g.branch(at, False, f"by rw [g{g.k}_{reg}, s{g.k}.zero]; exact br_bne_f {hname}")
 
 
 def stage_tsa1():
@@ -4149,13 +4149,117 @@ def stage_tsa2():
     return g, info
 
 
+TSA3_BINDERS = ("{B out bp x21 x26 sdp sdl ecp ecl : Word} "
+                + "{" + " ".join(f"w{e:x}" for e in DPV_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+
+
+def tsa3_none(sub, k):
+    """No eContent: `lbu`, `bnez` not taken, `lw`, `li s0`, `beqz` to 0x2C60."""
+    sub.emit(f"  rw [hr{k}] at R{k}")
+    sub.emit(f"  obtain ⟨y0_{k}, y4_{k}⟩ := R{k}")
+    sub.frame_after(k, [(0x420, 0x18), (0x2E8, 8)], {0x424: ("0", f"y4_{k}")}, {0x420: ("(0 : BitVec 8)", f"y0_{k}")})
+    sub.load(0x2328, "lbu")
+    sub.branch(0x232C, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+    sub.load(0x2330, "lw")
+    sub.block(0x2334, 0x2336)
+    sub.branch(0x2336, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; rfl")
+    sub.fail(sub.fail_proof(("eq", f"hr{k}")), "sv_fail_2c60")
+
+
+def tsa3_err(sub, k):
+    """A malformed eContent: `lbu`, `bnez` to 0x298E, `lbu s0`, `j` to 0x2C60."""
+    sub.emit(f"  rw [hr{k}] at R{k}")
+    sub.emit(f"  obtain ⟨y0_{k}, -⟩ := R{k}")
+    sub.frame_after(k, [(0x420, 0x18), (0x2E8, 8)], {}, {0x420: ("(1 : BitVec 8)", f"y0_{k}")})
+    sub.load(0x2328, "lbu")
+    sub.branch(0x232C, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+    sub.load_any(0x298E)
+    sub.jump(0x2992)
+    sub.fail(sub.fail_proof(("eq", f"hr{k}")), "sv_fail_2c60")
+
+
+def tsa3_oct_tail(sub):
+    """`Der::octet_string` failing at 0x238C: `lw`, `sw`, `beqz` to 0x2994, `lbu s0`, `j` to 0x2C60."""
+    sub.load(0x2394, "lw")
+    sub.store(0x2398, "sw")
+    sub.branch(0x239A, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; rfl")
+    sub.load_any(0x2994)
+    sub.jump(0x2998)
+
+
+def stage_tsa3():
+    """From 0x2316 to 0x23AA: the encapsulated TSTInfo's octet string."""
+    g = Gen("Tsa3")
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 20: ("S", 0x1320)}
+    words = {e: f"w{e:x}" for e in DPV_WORDS}
+    words.update({0x2A8: "sdp", 0x2AC: "sdl", 0x2E8: "ecp", 0x2EC: "ecl"})
+    params = start(g, regs, words, {("sdp", "sdl"): "sd_in", ("ecp", "ecl"): "ec_in"})
+    g.block(0x2316, 0x2320)
+    k, ex, rd = g.opt(0x2320, 0x420, 0x2E0, 0xA0)
+    rp, rl, inp = rd
+    t = f"tl{k}"
+    g.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+    g.emit(f"  rcases r{k} with _ | (er{k} | {t})")
+    g.sc.append(("eq", ex, f"some (.ok {t})", [t], f"hr{k}"))
+    g.fork(lambda sub: tsa3_none(sub, k))
+    g.fork(lambda sub: tsa3_err(sub, k))
+    g.emit(f"  rw [hr{k}] at R{k}")
+    g.emit(f"  obtain ⟨y0_{k}, y4_{k}, y8_{k}, y12_{k}, y16_{k}, y20_{k}, d8_{k}, d12_{k}⟩ := R{k}")
+    h = f"BitVec.ofNat 32 {t}.header"
+    hl = f"BitVec.ofNat 32 ({t}.header + {t}.len)"
+    g.frame_after(k, [(0x420, 0x18), (0x2E8, 8)],
+                  {0x424: (f"({rp}) + {h}", f"y4_{k}"), 0x428: (f"BitVec.ofNat 32 {t}.len", f"y8_{k}"),
+                   0x42C: (f"{rp}", f"y12_{k}"), 0x430: (hl, f"y16_{k}"),
+                   0x2E8: (f"({rp}) + {hl}", f"d8_{k}"), 0x2EC: (f"({rl}) - {hl}", f"d12_{k}")},
+                  {0x420: ("(0 : BitVec 8)", f"y0_{k}"), 0x434: (f"BitVec.ofNat 8 {t}.tag", f"y20_{k}")})
+    g.slices[(f"({rp}) + {h}", f"BitVec.ofNat 32 {t}.len")] = f"({inp}.contentW (opt_ok_elem hr{k}))"
+    g.slices[(f"({rp}) + {hl}", f"({rl}) - {hl}")] = f"({inp}.restW (opt_ok_elem hr{k}))"
+    g.load(0x2328, "lbu")
+    g.branch(0x232C, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.load(0x2330, "lw")
+    g.block(0x2334, 0x2336)
+    g.branch(0x2336, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({inp}.ok_ne (opt_ok_elem hr{k}))")
+    g.load(0x233A, "lw")
+    g.load(0x233E, "lw")
+    g.block(0x2342, 0x2356)
+    g.store(0x2356, "sw")
+    g.store(0x2358, "sb")
+    g.store(0x235C, "sb")
+    g.store(0x2360, "sb")
+    g.block(0x2364, 0x2368)
+    g.store(0x2368, "sb")
+    g.store(0x236C, "sw")
+    g.block(0x236E, 0x2378)
+    g.store(0x2378, "sw")
+    g.block(0x237A, 0x237C)
+    g.assemble_word(0x158C, f"BitVec.ofNat 32 {t}.len")
+    tsa_rest0(g, 0x237C, "hrest0", 0x2C60, 12)
+    g.block(0x2380, 0x238C)
+    k2, vp, vl = g.oct(0x238C, 0x420, 0x1588, tsa3_oct_tail, "sv_fail_2c60")
+    g.load(0x2394, "lw")
+    g.store(0x2398, "sw")
+    g.branch(0x239A, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({g.slices[(vp, vl)]}.pos_ne)")
+    g.load(0x239E, "lw")
+    tsa_rest0(g, 0x23A2, "hrest1", 0x2C60)
+    g.load(0x23A6, "lw")
+    stmt, proof = finish(g, 0x23AA, [2, 3, 4, 8, 9, 18, 19, 20, 21, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "sv_tsa3", "title": "the timestamp's TSTInfo",
+            "doc": "From 0x2316 to 0x23AA: the encapsulated content has its `[0]` eContent with nothing after "
+            "it, an octet string with nothing after it, whose address goes to frame offset 0x70 and length "
+            "to `s5`.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": TSA3_BINDERS, "start": 0x2316,
+            "import": "C3BootProofs.Proofs.SvTsa"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
                 **{f"Dp{i}": stage_dpol(i) for i in range(6)}, "Dbc1": stage_dbc1, "Dbc2e": stage_dbc2e, "Dbc2": stage_dbc2, "Dku1": stage_dku1, "Dku2": stage_dku2,
                 "Deku1": stage_deku1, "Deku2": stage_deku2, "Deku3": stage_deku3,
                 "L7": stage_l7, "L8a": stage_l8a,
-                "Imiss": stage_imiss, "Ihit": stage_ihit, "Iend": stage_iend, "Dpv": stage_dpv, "Ts1": stage_ts1, "Tsa1": stage_tsa1, "Tsa2": stage_tsa2}[stage]()
+                "Imiss": stage_imiss, "Ihit": stage_ihit, "Iend": stage_iend, "Dpv": stage_dpv, "Ts1": stage_ts1, "Tsa1": stage_tsa1, "Tsa2": stage_tsa2, "Tsa3": stage_tsa3}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
