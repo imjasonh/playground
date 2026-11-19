@@ -409,7 +409,7 @@ progress::-moz-progress-bar {
 /* Finished */
 
 .done {
-  margin-block-start: 2.5rem;
+  margin-block-start: 1rem;
   padding: 1.25rem;
   border: 1px solid var(--rule);
   border-radius: 0.75rem;
@@ -427,7 +427,6 @@ progress::-moz-progress-bar {
 
 .done p {
   margin: 0 0 1rem;
-  color: var(--muted);
 }
 
 .done label {

@@ -1,5 +1,6 @@
 // Builds and checks receipt links. A receipt link carries the doc, how long the
-// reading took, and a hash of both with a secret only this page knows.
+// reading took, when it finished, and a hash of all three with a secret only
+// this page knows.
 //
 // The secret ships in this file, so anyone who reads the source can forge a
 // receipt. The hash stops casual edits to the doc or the time, not a
@@ -7,8 +8,11 @@
 
 const SECRET = '48151623429108';
 
-/** The newest receipt format. */
-const VERSION = '1';
+/**
+ * The newest receipt format. Version 1 had no finish time; those links still
+ * verify.
+ */
+const VERSION = '2';
 
 /**
  * @param {!Uint8Array} bytes
@@ -74,13 +78,12 @@ export async function decodeDoc(encoded) {
 }
 
 /**
- * Hashes a doc and its reading time with the secret.
- * @param {string} markdown
- * @param {number} seconds
+ * Hashes the secret and `fields`, one per line.
+ * @param {!Array<string|number>} fields
  * @return {!Promise<string>} The first 128 bits of the SHA-256, in hex.
  */
-export async function sign(markdown, seconds) {
-  const message = `${SECRET}\n${VERSION}\n${seconds}\n${markdown}`;
+async function proof(fields) {
+  const message = [SECRET, ...fields].join('\n');
   const digest = await crypto.subtle.digest(
     'SHA-256',
     new TextEncoder().encode(message),
@@ -91,26 +94,49 @@ export async function sign(markdown, seconds) {
 }
 
 /**
+ * Hashes a doc, its reading time, and its finish time with the secret.
+ * @param {string} markdown
+ * @param {number} seconds
+ * @param {number} finished Seconds since the epoch.
+ * @return {!Promise<string>} The first 128 bits of the SHA-256, in hex.
+ */
+export function sign(markdown, seconds, finished) {
+  return proof([VERSION, seconds, finished, markdown]);
+}
+
+/**
  * Builds the fragment of a receipt link, without the leading `#`.
  * @param {string} markdown
  * @param {number} seconds
+ * @param {number} finished Seconds since the epoch.
  * @return {!Promise<string>}
  */
-export async function receiptHash(markdown, seconds) {
+export async function receiptHash(markdown, seconds, finished) {
   const params = new URLSearchParams({
     v: VERSION,
     t: String(seconds),
-    p: await sign(markdown, seconds),
+    f: String(finished),
+    p: await sign(markdown, seconds, finished),
     d: await encodeDoc(markdown),
   });
   return params.toString();
 }
 
 /**
+ * @param {?string} text
+ * @return {number} `text` as a whole number, or NaN.
+ */
+function wholeNumber(text) {
+  return text && /^\d{1,15}$/.test(text) ? Number(text) : NaN;
+}
+
+/**
  * Reads a receipt from a URL fragment.
  * @param {string} hash `location.hash`, with or without the leading `#`.
- * @return {!Promise<?{markdown: string, seconds: number, verified: boolean}>}
- *     The receipt, or null when the fragment has no doc in it. Throws when
+ * @return {!Promise<?{markdown: string, seconds: number, finished: ?Date,
+ *     verified: boolean}>} The receipt, or null when the fragment has no doc
+ *     in it. `seconds` and `finished` are 0 and null unless the receipt
+ *     verified, and `finished` is null for a version 1 receipt. Throws when
  *     the fragment has a doc that can't be read.
  */
 export async function readReceipt(hash) {
@@ -118,11 +144,22 @@ export async function readReceipt(hash) {
   const doc = params.get('d');
   if (!doc) return null;
   const markdown = await decodeDoc(doc);
-  const time = params.get('t') ?? '';
-  const seconds = /^\d+$/.test(time) ? Number(time) : NaN;
-  const verified =
-    params.get('v') === VERSION &&
-    Number.isSafeInteger(seconds) &&
-    params.get('p') === (await sign(markdown, seconds));
-  return {markdown, seconds: verified ? seconds : 0, verified};
+  const seconds = wholeNumber(params.get('t'));
+  const finished = wholeNumber(params.get('f'));
+  const version = params.get('v');
+  let expected = null;
+  if (version === VERSION && !isNaN(seconds) && !isNaN(finished)) {
+    expected = await sign(markdown, seconds, finished);
+  } else if (version === '1' && !isNaN(seconds)) {
+    expected = await proof(['1', seconds, markdown]);
+  }
+  if (expected === null || params.get('p') !== expected) {
+    return {markdown, seconds: 0, finished: null, verified: false};
+  }
+  return {
+    markdown,
+    seconds,
+    finished: version === VERSION ? new Date(finished * 1000) : null,
+    verified: true,
+  };
 }
