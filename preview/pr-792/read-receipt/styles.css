@@ -232,6 +232,15 @@ progress::-moz-progress-bar {
   font-size: 0.875rem;
 }
 
+.hint.slow {
+  color: var(--bad-ink);
+  font-weight: 600;
+}
+
+.hint.slow:empty {
+  display: none;
+}
+
 .hint-touch {
   display: none;
 }

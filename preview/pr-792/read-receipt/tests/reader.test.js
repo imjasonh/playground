@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 
-import {Reader, formatDuration, isAdvanceKey} from '../src/reader.js';
+import {
+  Reader,
+  formatDuration,
+  isAdvanceKey,
+  withinSpeedLimit,
+  wordsPerMinute,
+} from '../src/reader.js';
 
 /**
  * @param {string} key
@@ -66,6 +72,53 @@ test('Reader times from the first step to the last', () => {
   now += 100_000;
   assert.equal(reader.seconds, 4);
   assert.equal(reader.finishedAt, 64_400);
+});
+
+test('Reader allows a short burst, then 400 words a minute', () => {
+  let now = 0;
+  const reader = new Reader(100, () => now);
+  for (let i = 0; i < 5; i++) assert.equal(reader.advance(), true, `${i}`);
+  assert.equal(reader.advance(), false);
+  now += 149;
+  assert.equal(reader.advance(), false);
+  now += 1;
+  assert.equal(reader.advance(), true);
+  assert.equal(reader.advance(), false);
+  assert.equal(reader.index, 6);
+});
+
+test('Reader saves up only a short burst during a pause', () => {
+  let now = 0;
+  const reader = new Reader(100, () => now);
+  reader.advance();
+  now += 60_000;
+  for (let i = 0; i < 5; i++) assert.equal(reader.advance(), true, `${i}`);
+  assert.equal(reader.advance(), false);
+});
+
+test('Reader at its fastest stays within the speed limit', () => {
+  let now = 0;
+  const reader = new Reader(400, () => now);
+  while (!reader.done) {
+    if (!reader.advance()) now += 1;
+  }
+  assert.equal(reader.seconds, 59);
+  assert.equal(withinSpeedLimit(400, reader.seconds), true);
+});
+
+test('withinSpeedLimit allows the burst plus 400 words a minute', () => {
+  // 0 seconds is anything under half a second.
+  assert.equal(withinSpeedLimit(8, 0), true);
+  assert.equal(withinSpeedLimit(9, 0), false);
+  assert.equal(withinSpeedLimit(405, 60), true);
+  assert.equal(withinSpeedLimit(409, 60), false);
+  assert.equal(withinSpeedLimit(192, 47), true);
+  assert.equal(withinSpeedLimit(192, 10), false);
+});
+
+test('wordsPerMinute rounds and skips a zero time', () => {
+  assert.equal(wordsPerMinute(192, 47), 245);
+  assert.equal(wordsPerMinute(3, 0), null);
 });
 
 test('formatDuration drops leading zero units', () => {

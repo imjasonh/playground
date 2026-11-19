@@ -7,7 +7,18 @@ the next word. Holding a key down does nothing: each word takes its own press.
 After the last word, you get a receipt link to share. The link holds the doc
 and a proof that someone clicked through every word of it, how long that
 took, and when they finished. Opening the link shows the doc under a banner
-that says whether the proof checks out.
+that says whether the proof checks out, with the reading speed in words a
+minute.
+
+## Limits
+
+- **Speed:** after the first 5 words, the page refuses steps faster than 400
+  words a minute and says to slow down. A link whose reading time is under
+  that limit doesn't check out. The constants are in
+  [`src/reader.js`](src/reader.js).
+- **Length:** a receipt link can be at most 32,000 characters, so it fits in
+  a chat message. The page measures the link before you start and turns away
+  a doc that's too long.
 
 ## The proof isn't secure
 
