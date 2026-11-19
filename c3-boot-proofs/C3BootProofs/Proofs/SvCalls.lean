@@ -88,9 +88,15 @@ theorem SvCode.hi {M M' : Word → BitVec 8} (C : SvCode M) (h : ∀ x : Word, 0
 /-- Bytes that `sigstore::verify` reads but no step writes: outside the
 stack, and not wrapping around. -/
 structure SvIn (B rp : Word) (rl : Nat) : Prop where
-  sep : Sep rp rl (B + 0xFFFFFE60) 0x39D0
+  sep14 : Sep rp (rl + 14) (B + 0xFFFFFE60) 0x39D0
   pos : 0 < rp.toNat
-  fit : rp.toNat + rl < 2 ^ 32
+  lo : rp.toNat + rl + 14 ≤ 0x40000000
+
+theorem SvIn.sep {B rp : Word} {rl : Nat} (h : SvIn B rp rl) : Sep rp rl (B + 0xFFFFFE60) 0x39D0 := by
+  have := h.sep14.sub (c := 0) (l := rl) (by omega); rwa [add_ofNat_zero] at this
+
+theorem SvIn.fit {B rp : Word} {rl : Nat} (h : SvIn B rp rl) : rp.toNat + rl < 2 ^ 32 := by
+  have := h.lo; omega
 
 theorem SvIn.sepLo {B rp : Word} {rl : Nat} (h : SvIn B rp rl) {c n : Nat} (hc : c + n ≤ 0x3830) :
     Sep rp rl (B + BitVec.ofNat 32 c) n := by

@@ -185,9 +185,8 @@ theorem SvIn.content {B rp : Word} {M : Word → BitVec 8} {rl tag : Nat} {t : D
   rw [memBytes_length] at hb
   have e : (rp + BitVec.ofNat 32 t.header).toNat = rp.toNat + t.header := by
     rw [BitVec.toNat_add, BitVec.toNat_ofNat]; have := h.fit; omega
-  refine ⟨?_, by rw [e]; have := h.pos; omega, by rw [e]; have := h.fit; omega⟩
-  have := h.sep.sub (c := t.header) (l := t.len) (by omega)
-  exact this
+  refine ⟨?_, by rw [e]; have := h.pos; omega, by rw [e]; have := h.lo; omega⟩
+  exact h.sep14.sub (c := t.header) (l := t.len + 14) (by omega)
 
 /-- So are the bytes after it. -/
 theorem SvIn.rest {B rp : Word} {M : Word → BitVec 8} {rl tag : Nat} {t : DerTlv} (h : SvIn B rp rl)
@@ -197,8 +196,8 @@ theorem SvIn.rest {B rp : Word} {M : Word → BitVec 8} {rl tag : Nat} {t : DerT
   rw [memBytes_length] at hb
   have e : (rp + BitVec.ofNat 32 (t.header + t.len)).toNat = rp.toNat + (t.header + t.len) := by
     rw [BitVec.toNat_add, BitVec.toNat_ofNat]; have := h.fit; omega
-  refine ⟨?_, by rw [e]; have := h.pos; omega, by rw [e]; have := h.fit; omega⟩
-  exact h.sep.sub (c := t.header + t.len) (l := rl - (t.header + t.len)) (by omega)
+  refine ⟨?_, by rw [e]; have := h.pos; omega, by rw [e]; have := h.lo; omega⟩
+  exact h.sep14.sub (c := t.header + t.len) (l := rl - (t.header + t.len) + 14) (by omega)
 
 /-- A successful read's content address isn't null. -/
 theorem SvIn.ok_ne {B rp : Word} {M : Word → BitVec 8} {rl tag : Nat} {t : DerTlv} (h : SvIn B rp rl)
