@@ -5191,8 +5191,9 @@ def stage_tst1():
     return g, info
 
 
+TST_WORDS = sorted(DPV_WORDS + [0x78])
 TST2_BINDERS = ("{B out bp x21 x26 dg dp rp rl : Word} {sr ss : Bytes} "
-                + "{" + " ".join(f"w{e:x}" for e in DPV_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+                + "{" + " ".join(f"w{e:x}" for e in TST_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
 
 
 def tst_start(g):
@@ -5202,7 +5203,7 @@ def tst_start(g):
             19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
             25: ("U", "(BitVec.ofNat 8 (sr.getD 0 0)).zeroExtend 32", "BitVec.ofNat 8 (sr.getD 0 0)"),
             8: ("C", 0x18), 20: ("S", 0x1320), 22: ("U", "dp")}
-    words = {e: f"w{e:x}" for e in DPV_WORDS}
+    words = {e: f"w{e:x}" for e in TST_WORDS}
     words.update({0x1328: "rp", 0x132C: "rl"})
     params = start(g, regs, words, {("rp", "rl"): "rd_in"}) + ["(D0 : SvData M0)"]
     g.ranges[0x1020] = (47, "BitVec.ofNat 8 (sr.getD (1 + j) 0)")
@@ -5503,6 +5504,77 @@ def stage_tst5(tag, present):
     return g, info
 
 
+TSV_BINDERS = ("{B out bp x21 x26 dg dp : Word} {sr ss : Bytes} "
+               + "{" + " ".join(f"w{e:x}" for e in TST_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+
+
+def stage_tsv():
+    """From 0x29AA to the TSA loop at 0x2A40: the parsed timestamp's fields."""
+    g = Gen("Tsv")
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
+            25: ("U", "(BitVec.ofNat 8 (sr.getD 0 0)).zeroExtend 32", "BitVec.ofNat 8 (sr.getD 0 0)"),
+            8: ("C", 0x18), 20: ("S", 0x1320), 22: ("U", "dp")}
+    words = {e: f"w{e:x}" for e in TST_WORDS}
+    params = start(g, regs, words, {})
+    g.ranges[0x1020] = (47, "BitVec.ofNat 8 (sr.getD (1 + j) 0)")
+    g.ranges[0x104F] = (48, "BitVec.ofNat 8 (ss.getD j 0)")
+    params += ["(q0_1020 : ∀ j, j < 47 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1020 + j)) = BitVec.ofNat 8 (sr.getD (1 + j) 0))",
+               "(q0_104f : ∀ j, j < 48 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x104F + j)) = BitVec.ofNat 8 (ss.getD j 0))",
+               "(h70 : w70 ≠ 0)"]
+    g.block(0x29AA, 0x29BE)
+    g.mc(0x29BE, 0x1480, 0x1020, 0x5F)
+    g.load(0x29C6, "lw")
+    g.branch(0x29C8, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f h70")
+    g.block(0x29CA, 0x29D6)
+    k = g.k
+    g.emit(f"  rw [shr_shr] at g{k}_11 g{k}_12")
+    g.regs[11] = ("U", "(x21) >>> (8 + 8)")
+    g.regs[12] = ("U", "(x21) >>> (8 + 16)")
+    for o in (0x29D6, 0x29DA, 0x29DE):
+        g.store(o, "sb")
+    g.load(0x29E2, "lw")
+    g.block(0x29E4, 0x29E6)
+    g.store(0x29E6, "sw")
+    g.block(0x29E8, 0x29F0)
+    for o in (0x29F0, 0x29F4, 0x29F8):
+        g.load(o, "lw")
+        g.store(o + 2, "sw")
+    g.store(0x29FC, "sb")
+    g.block(0x2A00, 0x2A14)
+    g.mc(0x2A14, 0xA41, 0x1480, 0x5F)
+    g.store(0x2A1C, "sw")
+    g.store(0x2A20, "sw")
+    g.load(0x2A24, "lw")
+    g.store(0x2A26, "sw")
+    g.store(0x2A28, "sb")
+    k = g.k
+    for e, sh in ((0xA25, 8), (0xA26, 16), (0xA27, 24)):
+        val = f"((x21) >>> {sh}).extractLsb' 0 8"
+        g.emit(f"  have bs{k}_{e:x} : {g.byte_stmt(k, e, val)} := b{k}_{e:x}")
+    g.emit(f"  have w{k}_a24 : {g.word_stmt(k, 0xA24, ('U', 'x21'))} := ld_of_shr_bytes b{k}_a24")
+    for i in (1, 2, 3):
+        g.emit(f"    (by rw [show {fa(0xA24)} + {i} = {fa(0xA24 + i)} by sv_addr]; exact bs{k}_{0xA24 + i:x})")
+    g.words[0xA24] = ("U", "x21")
+    for i in range(4):
+        g.bytes.pop(0xA24 + i, None)
+    for o in (0x2A2C, 0x2A30):
+        g.load(o, "lw")
+        g.store(o + 2, "sw")
+    g.load(0x2A34, "lw")
+    g.block(0x2A36, 0x2A3A)
+    g.store(0x2A3A, "sw")
+    g.block(0x2A3C, 0x2A40)
+    stmt, proof = finish(g, 0x2A40, [2, 3, 4, 9, 18, 19, 21, 22, 23, 24, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "sv_tsv", "title": "the parsed timestamp",
+            "doc": "From 0x29AA to the TSA loop at 0x2A40: `sigstore::verify` copies the timestamp's fields, with "
+            "the signature's `r` and `s`, into its `Timestamp` at offset 0xA20 of the frame, and points the "
+            "loop at the trust root's TSA keys.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": TSV_BINDERS, "start": 0x29AA,
+            "import": "C3BootProofs.Proofs.SvGt"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -5516,7 +5588,8 @@ def main():
                 "Tst3n": lambda: stage_tst3(False), "Tst3s": lambda: stage_tst3(True),
                 **{f"Tst4{x}": (lambda x=x: stage_tst4(x)) for x in TST4_DOC},
                 "Tst5n": lambda: stage_tst5(0xA0, False), "Tst5s": lambda: stage_tst5(0xA0, True),
-                "Tst6n": lambda: stage_tst5(0xA1, False), "Tst6s": lambda: stage_tst5(0xA1, True)}[stage]()
+                "Tst6n": lambda: stage_tst5(0xA1, False), "Tst6s": lambda: stage_tst5(0xA1, True),
+                "Tsv": stage_tsv}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

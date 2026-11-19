@@ -13,6 +13,10 @@ open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv
 
 set_option maxRecDepth 20000
 
+theorem shr_shr (x : Word) (a b : Nat) : x >>> a >>> b = x >>> (a + b) := by
+  apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.toNat_ushiftRight, Nat.shiftRight_add]
+
 /-- A positive integer's content bytes, which are never empty. -/
 theorem SvIn.posIntIn {B rp rl ip il : Word} {M : Word → BitVec 8} {t : DerTlv} (h : SvIn B rp rl.toNat)
     (ht : derElement 2 (memBytes M rp rl.toNat) = .ok t)
