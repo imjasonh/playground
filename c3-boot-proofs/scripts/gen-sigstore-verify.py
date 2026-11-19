@@ -950,13 +950,13 @@ class Gen:
         self.slices[(f"({rp}) + {hl}", f"({rl}) - {hl}")] = f"({inp}.restW ht{k})"
         return k, vp, vl
 
-    def lo(self, off, p, nl, q, ql, hp, hq):
+    def lo(self, off, p, nl, q, ql, hp, hq, ha1=None):
         """`der::lists_oid`; returns k. Its result in `a0` and `a1` is left to the caller."""
         k = self.k = self.k + 1
         self.call_head(k, off, "sv_loF", f"(nl := {nl}) (ql := {ql})",
                        [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"R{k}", f"K{k}", f"fr{k}"])
         self.emit(f"    F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
-        self.emit(f"    g{k-1}_10 g{k-1}_11 g{k-1}_12 (by rw [g{k-1}_13, ofNat_toNat_self]) {hp} {hq}")
+        self.emit(f"    g{k-1}_10 {ha1 or f'g{k-1}_11'} g{k-1}_12 (by rw [g{k-1}_13, ofNat_toNat_self]) {hp} {hq}")
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
         self.emit(f"  rw [listsOidOf, listsOidLoop_congr _ _ _ (sv_pt fR{k-1} {hp}), sv_mb fR{k-1} {hq}, ← listsOidOf] at R{k}")
         self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
@@ -4605,6 +4605,118 @@ def stage_tsa5():
     return g, info
 
 
+ATTR_BINDERS = ("{B out bp x21 x26 dg p0 L0 cp rem : Word} "
+                + "{" + " ".join(f"w{e:x}" for e in DPV_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+
+
+def attr_start(g, extra_words=None):
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 9: ("S", 0x1320),
+            20: ("U", "rem"), 24: ("U", "dg")}
+    words = {e: f"w{e:x}" for e in DPV_WORDS}
+    words.update({0x1320: "p0", 0x1324: "L0", 0x1328: "cp", 0x132C: "rem"})
+    words.update(extra_words or {})
+    return start(g, regs, words, {("cp", "rem"): "cr_in", ("p0", "L0"): "p0_in"})
+
+
+def attr_oid_tail(sub):
+    """`Der::oid` failing at 0x2552: `lw s7`, `beqz` to 0x2994, `lbu s0`, `j` to 0x2C60."""
+    sub.load(0x255A, "lw")
+    sub.branch(0x255E, True, f"by rw [g{sub.k}_23, s{sub.k}.zero]; rfl")
+    sub.load_any(0x2994)
+    sub.jump(0x2998)
+
+
+def attr_lo_fail(sub, k, err):
+    """`der::lists_oid` failing: an error, or the OID listed before."""
+    sub.emit(f"  rw [hr{k}] at R{k}")
+    sub.emit(f"  obtain ⟨a0_{k}, a1_{k}⟩ := R{k}")
+    sub.emit(f"  have g{k}_10 : reg n{k} a0 = BitVec.ofNat 32 0x{1 if err else 0:X} := a0_{k}")
+    sub.regs[10] = ("C", 1 if err else 0)
+    if not err:
+        sub.emit(f"  have g{k}_11 : reg n{k} a1 = BitVec.ofNat 32 0x1 := by rw [a1_{k}]; rfl")
+        sub.regs[11] = ("C", 1)
+    sub.block(0x25C8, 0x25CC)
+    if err:
+        sub.branch(0x25CC, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+    else:
+        sub.branch(0x25CC, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.block(0x25D0, 0x25D6)
+        sub.branch(0x25D6, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+    sub.fail(sub.fail_proof(("eq", f"hr{k}")), "sv_fail_2c60")
+
+
+def stage_tsaa():
+    """One signed attribute, from the loop head at 0x2506 to 0x25DA."""
+    g = Gen("Tsaa")
+    params = attr_start(g)
+    g.load(0x2506, "lw")
+
+    def big(sub):
+        sub.branch(0x250A, True, f"by rw [g{sub.k}_25, g{sub.k}_20]; exact br_bltu_t (by omega)")
+        sub.block(0x26FA, 0x26FC)
+        sub.jump(0x26FC)
+        sub.fail(sub.fail_proof(("prop", "hle")), "sv_fail_2c60")
+    g.prop_check("(rem).toNat ≤ (L0).toNat", "hle", big)
+    g.branch(0x250A, False, f"by rw [g{g.k}_25, g{g.k}_20]; exact br_bltu_f (by omega)")
+    g.load(0x250E, "lw")
+    g.store(0x2510, "sw")
+    g.block(0x2512, 0x251E)
+    k1, t1, rd1 = tsa_read(g, 0x251E, 0x1320)
+    g.block(0x2532, 0x253C)
+    g.mc(0x253C, 0x325, 0x425, 0xB)
+    g.store(0x2544, "sw")
+    g.store(0x2548, "sb")
+    g.word_of_bytes(0x324, f"BitVec.ofNat 32 {t1}.len")
+    g.block(0x254C, 0x2552)
+    k, op, ol = g.oid(0x2552, 0x420, 0x320, attr_oid_tail, "sv_fail_2c60")
+    oid_in = g.slices[(op, ol)]
+    g.load(0x255A, "lw")
+    g.branch(0x255E, False, f"by rw [g{g.k}_23, s{g.k}.zero]; exact br_beq_f ({oid_in}.pos_ne)")
+    g.load(0x2562, "lw")
+    g.block(0x2566, 0x256C)
+    k2, t2, rd2 = tsa_read(g, 0x256C, 0x320, "set")
+    g.block(0x2580, 0x258E)
+    g.mc(0x258E, 0x1385, 0x425, 0xB)
+    g.load(0x2596, "lw")
+    g.block(0x259A, 0x25A2)
+    g.store(0x25A2, "sw")
+    g.block(0x25A4, 0x25AE)
+    g.store(0x25AE, "sb")
+    g.word_of_bytes(0x1384, f"BitVec.ofNat 32 {t2}.len")
+    tsa_rest0(g, 0x25B2, "hrest0", 0x2838)
+    g.block(0x25B6, 0x25BA)
+    g.load(0x25BA, "lw")
+    g.block(0x25BC, 0x25C0)
+    nl = f"((L0) - (rem)).toNat"
+    k = g.lo(0x25C0, "p0", nl, op, f"{ol}.toNat", f"(p0_in.shrink (sub_le_toNat hle))", f"{oid_in}",
+             ha1=f"(by rw [g{g.k}_11, ofNat_toNat_self])")
+    ex = f"listsOidOf M0 p0 {nl} (memBytes M0 {op} {ol}.toNat)"
+    g.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+    g.emit(f"  rcases r{k} with b{k} | (_ | _)")
+    g.sc.append(("eq", ex, ".ok false", [], f"hr{k}"))
+    g.fork(lambda sub: attr_lo_fail(sub, k, True))
+    g.emit("  rotate_left")
+    g.fork(lambda sub: attr_lo_fail(sub, k, False))
+    g.emit(f"  rw [hr{k}] at R{k}")
+    g.emit(f"  obtain ⟨a0_{k}, a1_{k}⟩ := R{k}")
+    g.emit(f"  have g{k}_10 : reg n{k} a0 = BitVec.ofNat 32 0x0 := a0_{k}")
+    g.emit(f"  have g{k}_11 : reg n{k} a1 = BitVec.ofNat 32 0x0 := by rw [a1_{k}]; rfl")
+    g.regs[10] = ("C", 0)
+    g.regs[11] = ("C", 0)
+    g.block(0x25C8, 0x25CC)
+    g.branch(0x25CC, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.block(0x25D0, 0x25D6)
+    g.branch(0x25D6, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    stmt, proof = finish(g, 0x25DA, [2, 3, 4, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "sv_tsaa", "title": "a signed attribute's type",
+            "doc": "One signed attribute, from the loop head at 0x2506 to 0x25DA: a sequence of an OID and a set "
+            "with nothing after it, whose OID no earlier attribute has.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": ATTR_BINDERS, "start": 0x2506,
+            "import": "C3BootProofs.Proofs.SvTsa"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -4612,7 +4724,7 @@ def main():
                 "Deku1": stage_deku1, "Deku2": stage_deku2, "Deku3": stage_deku3,
                 "L7": stage_l7, "L8a": stage_l8a,
                 "Imiss": stage_imiss, "Ihit": stage_ihit, "Iend": stage_iend, "Dpv": stage_dpv, "Ts1": stage_ts1, "Tsa1": stage_tsa1, "Tsa2": stage_tsa2, "Tsa3": stage_tsa3,
-                "Tsa4n": lambda: stage_tsa4(False), "Tsa4s": lambda: stage_tsa4(True), "Tsa5": stage_tsa5}[stage]()
+                "Tsa4n": lambda: stage_tsa4(False), "Tsa4s": lambda: stage_tsa4(True), "Tsa5": stage_tsa5, "Tsaa": stage_tsaa}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

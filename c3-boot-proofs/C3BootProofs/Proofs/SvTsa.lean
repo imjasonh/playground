@@ -143,6 +143,9 @@ theorem br_tag_a1_t {b : BitVec 8} (h : b.toNat = 0xA1) :
 theorem br_tag_a1_f {b : BitVec 8} (h : b.toNat ≠ 0xA1) :
     branchTaken .beq (aluEval .add (b.zeroExtend 32) 0xFFFFFF5F) 0 = false := br_beq_f fun e => h ((tag_a1 b).mp e)
 
+theorem sub_le_toNat {a b : Word} (h : b.toNat ≤ a.toNat) : (a - b).toNat ≤ a.toNat := by
+  rw [BitVec.toNat_sub]; have := a.isLt; have := b.isLt; simp only [Nat.reducePow] at *; omega
+
 theorem sv_spA0 (B : Word) : B + 0x21A0 + 0xFFFFFF60 = B + BitVec.ofNat 32 0x2100 := by
   rw [BitVec.add_assoc]; rfl
 
