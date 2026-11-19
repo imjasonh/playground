@@ -68,4 +68,80 @@ theorem derIntIsOf_congr {B rp rl : Word} {M M0 : Word → BitVec 8} {v : BitVec
         rw [show (BitVec.ofNat 32 t.len).toNat = t.len by
           rw [BitVec.toNat_ofNat]; exact Nat.mod_eq_of_lt (by have := hc.fit; omega), sv_mb fR hc]
 
+theorem bits_ok_elem {L : Bytes} {rp : Word} {r : Except DerError DerTlv} {x : Word × Word}
+    (h : derBitsOf L rp r = .ok x) : ∃ t, r = .ok t := by
+  cases r with
+  | error e => simp [derBitsOf] at h
+  | ok t => exact ⟨t, rfl⟩
+
+theorem pos_ok_elem {L : Bytes} {rp : Word} {r : Except DerError DerTlv} {x : Word × Word}
+    (h : derPosIntOf L rp r = .ok x) : ∃ t, r = .ok t := by
+  cases r with
+  | error e => simp [derPosIntOf, derIntOf] at h
+  | ok t => exact ⟨t, rfl⟩
+
+theorem opt_ok_elem {tag : Nat} {L : Bytes} {t : DerTlv} (h : derOptRes tag L = some (.ok t)) :
+    derElement tag L = .ok t := by
+  cases L with
+  | nil => simp [derOptRes] at h
+  | cons b rest =>
+    by_cases hb : b = tag
+    · simp only [derOptRes, hb, ite_true] at h
+      simp only [derElement, hb, ite_true]
+      exact Option.some.inj h
+    · simp only [derOptRes, hb, ite_false] at h
+      cases h
+
+theorem SvIn.ofNatLen {B rp : Word} {n : Nat} (h : SvIn B rp n) : SvIn B rp (BitVec.ofNat 32 n).toNat := by
+  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by have := h.fit; omega)]; exact h
+
+/-- The content of a read, with its length as the word the reader keeps. -/
+theorem SvIn.contentW {B rp rl : Word} {M : Word → BitVec 8} {tag : Nat} {t : DerTlv} (h : SvIn B rp rl.toNat)
+    (ht : derElement tag (memBytes M rp rl.toNat) = .ok t) :
+    SvIn B (rp + BitVec.ofNat 32 t.header) (BitVec.ofNat 32 t.len).toNat := (h.content ht).ofNatLen
+
+/-- The bytes after a read, with their length as the word the reader keeps. -/
+theorem SvIn.restW {B rp rl : Word} {M : Word → BitVec 8} {tag : Nat} {t : DerTlv} (h : SvIn B rp rl.toNat)
+    (ht : derElement tag (memBytes M rp rl.toNat) = .ok t) :
+    SvIn B (rp + BitVec.ofNat 32 (t.header + t.len)) (rl - BitVec.ofNat 32 (t.header + t.len)).toNat := by
+  rw [rest_len ht]; exact h.rest ht
+
+/-- The whole element of a read. -/
+theorem SvIn.rawW {B rp rl : Word} {M : Word → BitVec 8} {tag : Nat} {t : DerTlv} (h : SvIn B rp rl.toNat)
+    (ht : derElement tag (memBytes M rp rl.toNat) = .ok t) :
+    SvIn B rp (BitVec.ofNat 32 (t.header + t.len)).toNat := by
+  have hb := derElement_bound ht
+  rw [memBytes_length] at hb
+  refine SvIn.ofNatLen ⟨?_, h.pos, by have := h.lo; omega⟩
+  have := h.sep14.sub (c := 0) (l := t.header + t.len + 14) (by omega)
+  rwa [add_ofNat_zero] at this
+
+theorem SvIn.pos_ne {B p : Word} {l : Nat} (h : SvIn B p l) : p ≠ 0 := fun e => by
+  have := h.pos; rw [e] at this; exact absurd this (by decide)
+
+/-- The bits of a `BIT STRING` read from bytes outside the stack. -/
+theorem SvIn.bitsW {B rp rl p l : Word} {M : Word → BitVec 8} {t : DerTlv} (h : SvIn B rp rl.toNat)
+    (ht : derElement 3 (memBytes M rp rl.toNat) = .ok t)
+    (hb : derBitsOf (memBytes M rp rl.toNat) rp (.ok t) = .ok (p, l)) : SvIn B p l.toNat := by
+  have hc := h.content ht
+  simp only [derBitsOf] at hb
+  by_cases hk : t.len ≠ 0 ∧ (memBytes M rp rl.toNat).getD t.header 0 = 0
+  · rw [ite_eq_left hk] at hb
+    cases hb
+    have e : rp + BitVec.ofNat 32 (t.header + 1) = rp + BitVec.ofNat 32 t.header + BitVec.ofNat 32 1 := by
+      rw [add_ofNat_assoc]
+    rw [e]
+    refine SvIn.ofNatLen ⟨?_, ?_, ?_⟩
+    · have := hc.sep14.sub (c := 1) (l := t.len - 1 + 14) (by omega); exact this
+    · have hp := hc.pos; have hf := hc.lo
+      rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
+    · have hf := hc.lo; rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
+  · rw [ite_eq_right hk] at hb; cases hb
+
+theorem ii_ok_elem {M : Word → BitVec 8} {L : Bytes} {rp : Word} {r : Except DerError DerTlv} {v : BitVec 8} {x : Bool}
+    (h : derIntIsOf M L rp r v = .ok x) : ∃ t, r = .ok t := by
+  cases r with
+  | error e => simp [derIntIsOf, derIntOf] at h
+  | ok t => exact ⟨t, rfl⟩
+
 end C3.RV32.Sv
