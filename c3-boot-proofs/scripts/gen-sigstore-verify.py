@@ -6293,6 +6293,96 @@ def ck_fail_none(sub, why):
     sub.fail(sub.fail_proof(why))
 
 
+CL_BINDERS = ("{B out bp x21 x26 dg c q rl rp sgp op ol : Word} {rt : Bytes} "
+              + "{" + " ".join(f"w{e:x}" for e in TST_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+CL_KEEP_REGS = [2, 3, 4, 9, 18, 19, 21, 22, 23, 24, 25, 26, 27]
+
+
+def cl_start(g):
+    """The log loop's head at 0x2CE2: `s1` counts down the bytes of entries
+    left and `s9` points 0x20 bytes before the next entry."""
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
+            9: ("U", "c"), 22: ("U", "rl"), 23: ("U", "rp"), 25: ("U", "q")}
+    words = {e: f"w{e:x}" for e in TST_WORDS}
+    words.update({0x74: "q'", 0x428: "sgp", 0x1C: "(BitVec.ofNat 8 (rt.getD 0 0)).zeroExtend 32"})
+    words.pop(0x74)
+    words.update(TL_STRUCT)
+    params = start(g, regs, words, {})
+    g.ranges[0x320] = (31, "BitVec.ofNat 8 (rt.getD (1 + j) 0)")
+    params += ["(q0_320 : ∀ j, j < 31 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x320 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0))"]
+    return params
+
+
+CL_PARAMS = ["(hc : c ≠ 0)", "(horg : memLoad32 M0 (q + 0x20) = op)",
+             "(hol : memLoad32 M0 (q + 0x24) = ol)", "(eo_in : SvIn B (q + 0x20) 4)",
+             "(el_in : SvIn B (q + 0x24) 4)",
+             "(a_op : (q + 0x20).toNat % 4 = 0)", "(a_ol : (q + 0x24).toNat % 4 = 0)",
+             "(o_in : SvIn B op ol.toNat)", "(l_in : SvIn B w48 w44.toNat)"]
+CL_EQ = "memBytes M0 op ol.toNat = memBytes M0 w48 w44.toNat"
+
+
+def stage_cl(kind):
+    """The log loop at 0x2CE2: a log whose origin isn't the checkpoint's
+    ("miss", back to 0x2CE2), the log whose origin is ("hit", to 0x2D12), or
+    no logs left ("end")."""
+    g = Gen("Cl" + kind)
+    params = cl_start(g)
+    g.block(0x2CE2, 0x2CE4)
+    if kind == "end":
+        params.append("(hc : c = 0)")
+
+        def none(sub):
+            sub.branch(0x2CE4, False, f"by rw [g{sub.k}_9, s{sub.k}.zero]; exact br_bne_f hc")
+            sub.jump(0x2CE6)
+            sub.fail(sub.fail_proof(("prop", "hf")))
+        g.prop_check("False", "hf", none)
+        stmt, _ = finish(g, 0x2CE2, [2], set(), set())
+        g.emit("  exact hf.elim")
+        proof = ""
+        title, doc = "no log left", ("The log loop at 0x2CE2 with no entries left: no listed log has the "
+                                     "checkpoint's origin, and `sigstore::verify` fails.")
+    else:
+        params += CL_PARAMS + [f"(hm : {'¬ ' if kind == 'miss' else ''}{CL_EQ})"]
+        g.branch(0x2CE4, True, f"by rw [g{g.k}_9, s{g.k}.zero]; exact br_bne_t hc")
+        g.load_mem(0x2CEA, "op", "horg", "eo_in", "a_op")
+        g.store(0x2CEE, "sw")
+        hz = f"hz_{g.k}"
+
+        def null(sub):
+            sub.branch(0x2CF0, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_f (Decidable.of_not_not {hz})")
+            sub.jump(0x2CF2)
+            sub.fail(sub.fail_proof(("prop", hz)))
+        g.prop_check("op ≠ 0", hz, null)
+        g.branch(0x2CF0, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_t {hz}")
+        g.load_mem(0x2CF6, "ol", "hol", "el_in", "a_ol")
+        g.load(0x2CFA, "lw")
+        g.block(0x2CFC, 0x2CFE)
+        g.load(0x2CFE, "lw")
+        g.load(0x2D00, "lw")
+        ke = g.seqeq(0x2D02, "op", "ol.toNat", "w48", "w44.toNat", "(.inl o_in)", "(.inl l_in)",
+                     f"(by rw [g{g.k}_13, ofNat_toNat_self])", f"(by rw [g{g.k}_11, ofNat_toNat_self])")
+        g.set_a0(ke, 0 if kind == "miss" else 1, f"ite_eq_{'right' if kind == 'miss' else 'left'} hm")
+        g.block(0x2D0A, 0x2D0C)
+        g.block(0x2D0C, 0x2D10)
+        if kind == "miss":
+            g.branch(0x2D10, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+            end = 0x2CE2
+            title, doc = "a log that didn't sign the checkpoint", (
+                "One pass of the log loop, from 0x2CE2 back to it, for a listed log whose origin isn't the "
+                "checkpoint's.")
+        else:
+            g.branch(0x2D10, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+            end = 0x2D12
+            title, doc = "the log the checkpoint names", (
+                "The log loop's end, from 0x2CE2 to 0x2D12, at a listed log whose origin is the checkpoint's.")
+        stmt, proof = finish(g, end, CL_KEEP_REGS, set(g.words), set(g.bytes))
+    info = {"name": "sv_cl" + kind, "title": title, "doc": doc,
+            "params": params, "stmt": stmt, "proof": proof, "binders": CL_BINDERS, "start": 0x2CE2,
+            "import": "C3BootProofs.Proofs.SvCkpt"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -6310,7 +6400,8 @@ def main():
                 "Tsv": stage_tsv, **{f"Tl{x}": (lambda x=x: stage_tl(x)) for x in ("miss", "hit", "end")},
                 "Tsig": stage_tsig, "Ck1": stage_ck1,
                 "Ck2a": lambda: stage_ck2(False), "Ck2b": lambda: stage_ck2(True),
-                "Ckd": stage_ckd, "Cke": stage_cke}[stage]()
+                "Ckd": stage_ckd, "Cke": stage_cke,
+                **{f"Cl{x}": (lambda x=x: stage_cl(x)) for x in ("miss", "hit", "end")}}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
