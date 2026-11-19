@@ -3,12 +3,13 @@ import {describe, test} from 'node:test';
 
 import {
   CELEBRATE_EVERY,
-  STORAGE_KEY,
+  LEGACY_KEY,
   emptyStats,
   filledDots,
   loadStats,
   recordAnswer,
   saveStats,
+  statsKey,
 } from '../src/stats.js';
 
 function memoryStorage(initial = {}) {
@@ -63,28 +64,52 @@ describe('storage', () => {
   test('round-trips', () => {
     const storage = memoryStorage();
     const stats = {answered: 12, correct: 10, streak: 4, best: 7};
-    assert.equal(saveStats(storage, stats), true);
-    assert.deepEqual(loadStats(storage), stats);
+    assert.equal(saveStats(storage, 'subtraction', stats), true);
+    assert.deepEqual(loadStats(storage, 'subtraction'), stats);
+  });
+
+  test('keeps each mode apart', () => {
+    const storage = memoryStorage();
+    const plus = {answered: 3, correct: 3, streak: 3, best: 3};
+    const times = {answered: 9, correct: 4, streak: 0, best: 2};
+    saveStats(storage, 'addition', plus);
+    saveStats(storage, 'multiply-divide', times);
+    assert.deepEqual(loadStats(storage, 'addition'), plus);
+    assert.deepEqual(loadStats(storage, 'multiply-divide'), times);
+    assert.deepEqual(loadStats(storage, 'subtraction'), emptyStats());
+    assert.ok(storage.values.has(statsKey('multiply-divide')));
+  });
+
+  test('addition falls back to the stats saved before modes', () => {
+    const old = {answered: 40, correct: 35, streak: 6, best: 12};
+    const storage = memoryStorage({[LEGACY_KEY]: JSON.stringify(old)});
+    assert.deepEqual(loadStats(storage, 'addition'), old);
+    assert.deepEqual(loadStats(storage, 'subtraction'), emptyStats());
+
+    const next = {...old, answered: 41, correct: 36, streak: 7};
+    saveStats(storage, 'addition', next);
+    assert.deepEqual(loadStats(storage, 'addition'), next);
   });
 
   test('missing storage reads as zero', () => {
-    assert.deepEqual(loadStats(null), emptyStats());
-    assert.deepEqual(loadStats(memoryStorage()), emptyStats());
-    assert.equal(saveStats(null, emptyStats()), false);
+    assert.deepEqual(loadStats(null, 'addition'), emptyStats());
+    assert.deepEqual(loadStats(memoryStorage(), 'addition'), emptyStats());
+    assert.equal(saveStats(null, 'addition', emptyStats()), false);
   });
 
   test('corrupt JSON reads as zero', () => {
-    const storage = memoryStorage({[STORAGE_KEY]: '{nope'});
-    assert.deepEqual(loadStats(storage), emptyStats());
+    const storage = memoryStorage({[statsKey('addition')]: '{nope'});
+    assert.deepEqual(loadStats(storage, 'addition'), emptyStats());
   });
 
   test('bad fields read as zero, one at a time', () => {
     const storage = memoryStorage({
-      [STORAGE_KEY]: JSON.stringify(
+      [statsKey('addition')]: JSON.stringify(
           {answered: 8, correct: -1, streak: 'lots', best: 2.5}),
     });
     assert.deepEqual(
-        loadStats(storage), {answered: 8, correct: 0, streak: 0, best: 0});
+        loadStats(storage, 'addition'),
+        {answered: 8, correct: 0, streak: 0, best: 0});
   });
 
   test('a storage that throws reports failure', () => {
@@ -96,8 +121,8 @@ describe('storage', () => {
         throw new Error('full');
       },
     };
-    assert.deepEqual(loadStats(storage), emptyStats());
-    assert.equal(saveStats(storage, emptyStats()), false);
+    assert.deepEqual(loadStats(storage, 'addition'), emptyStats());
+    assert.equal(saveStats(storage, 'addition', emptyStats()), false);
   });
 });
 
