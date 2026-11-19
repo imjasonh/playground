@@ -232,6 +232,7 @@ class Gen:
         self.extra = []  # (conjunct, term) pairs the conclusion adds
         self.generic_alu = False  # single ALU instructions the evaluator lacks become `aluEval` terms
         self.digest = None  # (step, offset, value) of a SHA-256 digest in the frame
+        self.hasher = None  # (step, message, length facts) of the SHA-256 hasher at 0x420
         self.ranges = {}  # frame offset -> (length, the byte at offset + j, in terms of `j`)
         self.exits = []  # forks that reach the stage's end: (placeholder, generator)
 
@@ -1714,7 +1715,7 @@ class Gen:
             if sv[0] == "U" and len(sv) == 3:
                 ww, wb = {}, {e: (sv[2], f"by rw [W{k}, {srcfact}, lbu_low]")}
             else:
-                ww, wb = {}, {e: (f"({lean_val(sv)}).extractLsb' 0 8", f"by rw [W{k}, {srcfact}]")}
+                ww, wb = {}, {e: (f"({lean_val(sv)}).extractLsb' 0 8", f"by rw [W{k}, {srcfact}]" + ("; rfl" if src == 0 else ""))}
         self.keep_regs(k, range(32), lambda r: f"rg{k} {rname(r)}")
         self.keep_frame(k, ("K", e, w), ww, wb)
         self.end_step()
@@ -1782,6 +1783,108 @@ class Gen:
         self.emit(f"    fun j hj => (X{k} j hj).trans (fR{k-1} _ ({inp}.r hj))")
         self.ranges[dst] = (N, tmpl)
         self.end_step()
+
+    def mcRo(self, off, dst, p, N, inp):
+        """`memcpy` of `N` bytes at `p` in the bundle or the image's constants,
+        whose `SvRo2` is `inp`, to offset `dst` of the frame."""
+        k = self.k = self.k + 1
+        self.emit(f"  -- 0x{off:X}: memcpy from outside the stack")
+        self.emit(f"  obtain ⟨n{k}, P{k}, K{k}, X{k}⟩ := sv_mcRo2 (c := 0x{dst:X}) (N := 0x{N:X}) F RS E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x}")
+        self.emit(f"    (by decide) (by decide) g{k-1}_2 {self.reg_is(k-1, 10, dst)} g{k-1}_11 g{k-1}_12 (by decide) {inp}")
+        self.emit(f"  have s{k} := P{k}.st")
+        self.emit(f"  have fr{k} := P{k}.fr")
+        self.common(k, f"P{k}.steps", f"fr{k}", f"V{k-1}.keep K{k} (by decide)")
+        self.keep_regs(k, CALL_KEEP, lambda r: f"P{k}.regs {rname(r)} (by decide)")
+        self.keep_frame(k, ("K", dst, N), {}, {})
+        tmpl = f"M0 (({p}) + BitVec.ofNat 32 j)"
+        self.emit(f"  have q{k}_{dst:x} : ∀ j, j < {N} → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{dst:X} + j)) = {tmpl} :=")
+        self.emit(f"    fun j hj => (X{k} j hj).trans (fR{k-1} _ (SvRo2.r RS {inp} hj))")
+        self.ranges[dst] = (N, tmpl)
+        self.end_step()
+
+    def hinit(self):
+        """The hasher at 0x420 holds nothing."""
+        k = self.k
+        self.emit(f"  have H{k} := hasher_init_f b{k}_45f q{k}_460 S2.iv w{k}_480 w{k}_484")
+        self.pinned.add(f"H{k}")
+        self.hasher = (k, "[]", [])
+
+    def carry_hasher(self):
+        kh, msg, bl = self.hasher
+        k = self.k
+        if kh == k:
+            return
+        self.emit(f"  have H{k} : HasherAt n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) ({msg}) := by rw [m{k}]; exact H{kh}")
+        self.pinned.add(f"H{k}")
+        self.hasher = (k, msg, bl)
+
+    def hlen_proof(self, extra):
+        kh, msg, bl = self.hasher
+        facts = "; ".join(bl)
+        return (f"(by {facts + '; ' if facts else ''}simp only [List.length_append, List.length_nil, memBytes_length]{' at *' if False else ''}; omega)"
+                if True else "")
+
+    def upd(self, off, D, nl, inp, hn, bound):
+        """`Sha256::update` of the `nl` bytes at `D` into the hasher at 0x420."""
+        self.carry_hasher()
+        kh, msg, bl = self.hasher
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_updF", f"(hc := 0x420) (nl := {nl}) (msg := {msg})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"H{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (S2.sv F KS fR{k-1}) KS RS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, 0x420)} g{k-1}_11 g{k-1}_12 (by decide) (by decide) {inp} H{kh} {hn}")
+        pre = [x for x in bl + [bound] if x]
+        self.emit(f"    (by {'; '.join(pre) + '; ' if pre else ''}simp only [List.length_append, List.length_nil, memBytes_length]; omega)")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [sv_mbRo2 RS fR{k-1} {inp}] at H{k}")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        self.pinned.add(f"H{k}")
+        self.frame_after(k, [(0x420, 0x68)], {})
+        self.hasher = (k, f"{msg} ++ memBytes M0 ({D}) ({nl})", bl)
+
+    def b64e(self, off, D, nl, inp, ha1, bound):
+        """`base64::encode_to` of the `nl` bytes at `D` into the hasher at 0x420."""
+        self.carry_hasher()
+        kh, msg, bl = self.hasher
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_b64eF", f"(hc := 0x420) (nl := {nl}) (msg := {msg})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"H{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (S2.sv F KS fR{k-1}) (RK0.sv F fR{k-1}) KS RS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    g{k-1}_10 {ha1} {self.reg_is(k - 1, 12, 0x420)} (by decide) (by decide) {inp} H{kh}")
+        pre = [x for x in bl + [bound] if x]
+        self.emit(f"    (by {'; '.join(pre) + '; ' if pre else ''}simp only [List.length_append, List.length_nil, memBytes_length]; omega)")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [sv_mbRo2 RS fR{k-1} {inp}] at H{k}")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        self.pinned.add(f"H{k}")
+        self.frame_after(k, [(0x420, 0x68)], {})
+        piece = f"memBytes M0 ({D}) ({nl})"
+        nb = bl + [f"have := b64_len_le ({piece}); rw [memBytes_length] at this"]
+        self.hasher = (k, f"{msg} ++ base64Encode ({piece})", nb)
+
+    def fin(self, off, oc):
+        """`Sha256::finish` of the hasher at 0x420 into offset `oc`."""
+        self.carry_hasher()
+        kh, msg, bl = self.hasher
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_finF", f"(hc := 0x420) (oc := 0x{oc:X}) (msg := {msg})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"D{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (S2.sv F KS fR{k-1}) (RK0.sv F fR{k-1}) KS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, oc)} {self.reg_is(k - 1, 11, 0x420)} (by decide) (by decide) H{kh}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        self.pinned.add(f"D{k}")
+        self.frame_after(k, [(oc, 32)], {})
+        self.digest = (k, oc, f"sha256 ({msg})")
 
     def branch(self, off, taken, why):
         """A branch whose direction `why` proves: a term for `reg == reg` or its negation."""
@@ -7067,6 +7170,67 @@ def stage_cr1(eqhi):
     return g, info
 
 
+def stage_rl():
+    """From 0x300E to 0x30EC: the log entry's leaf hash."""
+    g = Gen("Rl")
+    g.generic_alu = True
+    params = cs_start(g)
+    params = [q for q in params if not q.startswith("(g0_23 :")]
+    g.regs[23] = ("U", "lih")
+    g.regs[25] = ("U", "lil")
+    g.regs[8] = ("S", 0x1020)
+    params = [q for q in params if not q.startswith("(g0_25 :")]
+    params += ["(g0_23 : reg n0 (23 : Fin 32) = lih)", "(g0_25 : reg n0 (25 : Fin 32) = lil)",
+               "(g0_8 : reg n0 (8 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1020)",
+               "(S2 : SvSha2Code M0)", "(KS : SvK2Sep B)", "(RS : SvRoSep B)", "(RK0 : SvRkCode M0)",
+               "(dgi_in : SvIn B w84 32)", "(sig_in : SvIn B w68 w64.toNat)", "(crt_in : SvIn B w6c x26.toNat)"]
+    ro = "(Or.inr ⟨by decide, by decide⟩)"
+    g.store(0x300E, "sb")
+    g.block(0x3012, 0x3022)
+    g.mcRo(0x3022, 0x460, "BitVec.ofNat 32 0x3FCC42A8", 0x20, ro)
+    g.store(0x302A, "sw")
+    g.store(0x302E, "sw")
+    g.hinit()
+    g.block(0x3032, 0x3040)
+    g.upd(0x3040, "BitVec.ofNat 32 0x3FCC4106", "0x1", ro, "(by decide)", "")
+    g.block(0x3048, 0x3058)
+    g.upd(0x3058, "BitVec.ofNat 32 0x3FCC46F0", "0x71", ro, "(by decide)", "")
+    g.block(0x3060, 0x3068)
+    g.carry_hasher()
+    g.load(0x3068, "lw")
+    g.b64e(0x306A, "w84", "32", "(.inl dgi_in)", f"g{g.k}_11", "")
+    g.block(0x3072, 0x3082)
+    g.upd(0x3082, "BitVec.ofNat 32 0x3FCC4761", "0x1B", ro, "(by decide)", "")
+    g.block(0x308A, 0x308E)
+    g.carry_hasher()
+    g.load(0x308E, "lw")
+    g.carry_hasher()
+    g.load(0x3090, "lw")
+    g.b64e(0x3092, "w68", "(w64).toNat", "(.inl sig_in)", f"(by rw [g{g.k}_11, ofNat_toNat_self])", "have := sig_in.lo")
+    g.block(0x309A, 0x30AA)
+    g.upd(0x30AA, "BitVec.ofNat 32 0x3FCC477C", "0x54", ro, "(by decide)", "have := sig_in.lo")
+    g.block(0x30B2, 0x30B6)
+    g.carry_hasher()
+    g.load(0x30B6, "lw")
+    g.carry_hasher()
+    g.block(0x30B8, 0x30BA)
+    g.b64e(0x30BA, "w6c", "(x26).toNat", "(.inl crt_in)", f"(by rw [g{g.k}_11, ofNat_toNat_self])",
+           "have := sig_in.lo; have := crt_in.lo")
+    g.block(0x30C2, 0x30D0)
+    g.upd(0x30D0, "BitVec.ofNat 32 0x3FCC47D0", "0x7", ro, "(by decide)", "have := sig_in.lo; have := crt_in.lo")
+    g.block(0x30D8, 0x30E4)
+    g.fin(0x30E4, 0x1380)
+    kd, oc, ex = g.digest
+    g.extra.append((f"memBytes n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x{oc:X}) 32 = {ex}", f"D{kd}"))
+    stmt, proof = finish(g, 0x30EC, sorted(set(CL_KEEP_REGS + [8, 23])), set(g.words) - {0x480, 0x484}, set())
+    info = {"name": "sv_rl", "title": "the log entry's leaf hash",
+            "doc": "From 0x300E to 0x30EC: SHA-256 of the entry's canonical body, built from its constant parts and "
+            "the base64 of the image digest, the image signature, and the leaf certificate, goes to offset 0x1380.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": CS_BINDERS.replace("op ol : Word}", "op ol lih lil : Word}"),
+            "start": 0x300E, "import": "C3BootProofs.Proofs.SvRk"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -7090,7 +7254,7 @@ def main():
                 **{f"Cn{x}": (lambda x=x: stage_cn(x)) for x in ("m", "e", "s")},
                 **{f"Cg{x}": (lambda x=x: stage_cg(x)) for x in range(5)},
                 **{f"Cm{x}": (lambda x=x: stage_cm(x)) for x in CM_DOC}, "Csx": stage_csx,
-                "Cr1e": lambda: stage_cr1(True), "Cr1n": lambda: stage_cr1(False)}[stage]()
+                "Cr1e": lambda: stage_cr1(True), "Cr1n": lambda: stage_cr1(False), "Rl": stage_rl}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

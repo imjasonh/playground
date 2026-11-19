@@ -446,4 +446,32 @@ theorem sv_a32eqF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {
   · rw [f2 _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega)), mem1]
   · rw [f2 x (svR_sp4 hx), mem1]
 
+theorem b64_len_le : ∀ xs : Bytes, (base64Encode xs).length ≤ 4 * (xs.length / 3) + 4
+  | [] => by simp [base64Encode]
+  | [_] => by simp [base64Encode]
+  | [_, _] => by simp [base64Encode]
+  | _ :: _ :: _ :: rest => by
+    have := b64_len_le rest
+    simp only [base64Encode, List.length_append, List.length_cons, List.length_nil]
+    omega
+
+/-- A hasher with nothing hashed at offset 0x420 of the frame: SHA-256's
+initial words copied to 0x460, a zero position at 0x45F, and a zero count. -/
+theorem hasher_init_f {M M0 : Word → BitVec 8} {B : Word}
+    (hpos : M (B + 0x21A0 + BitVec.ofNat 32 0x45F) = (BitVec.ofNat 32 0x0).extractLsb' 0 8)
+    (hiv : ∀ j, j < 32 → M (B + 0x21A0 + BitVec.ofNat 32 (0x460 + j)) =
+      M0 (BitVec.ofNat 32 0x3FCC42A8 + BitVec.ofNat 32 j))
+    (cIV : CodeIn M0 (BitVec.ofNat 32 shaIVAddress) shaIVData)
+    (hlo : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 0x480) = BitVec.ofNat 32 0x0)
+    (hhi : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 0x484) = BitVec.ofNat 32 0x0) :
+    HasherAt M (B + 0x21A0 + BitVec.ofNat 32 0x420) [] := by
+  apply hasher_init
+  · rw [show (0x3F : Word) = BitVec.ofNat 32 0x3F from rfl, add_ofNat_assoc, hpos]; rfl
+  · rw [show (0x40 : Word) = BitVec.ofNat 32 0x40 from rfl, add_ofNat_assoc, ← iv_words cIV]
+    apply wordsAt_copy
+    intro j hj
+    rw [add_ofNat_assoc]; exact hiv j hj
+  · rw [show (0x60 : Word) = BitVec.ofNat 32 0x60 from rfl, add_ofNat_assoc, hlo]; rfl
+  · rw [show (0x64 : Word) = BitVec.ofNat 32 0x64 from rfl, add_ofNat_assoc, hhi]; rfl
+
 end C3.RV32.Sv
