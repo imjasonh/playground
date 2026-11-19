@@ -262,7 +262,7 @@ class Gen:
 
     def common(self, k, steps, fr, saves):
         self.emit(f"  have t{k} : Steps n0 n{k} := t{k-1}.trans {steps}")
-        self.emit(f"  have fR{k} : ∀ x, SvR B x → n{k}.mem x = n0.mem x := fun x hx => ({fr} x hx).trans (fR{k-1} x hx)")
+        self.emit(f"  have fR{k} : ∀ x, SvR B x → n{k}.mem x = M0 x := fun x hx => ({fr} x hx).trans (fR{k-1} x hx)")
         self.emit(f"  have E{k} : SvCode n{k}.mem := E{k-1}.fr F {fr}")
         self.emit(f"  have V{k} : SvSaves B n{k}.mem v := {saves}")
 
@@ -467,7 +467,7 @@ class Gen:
         self.emit(f"  rw [sv_mb fR{k-1} {inp}] at Ok{k} Er{k}")
         self.keep_regs(k, [r for r in range(32) if r not in (1, 5, 6, 7, 11, 12, 13, 14, 15, 16, 17)],
                        lambda r: f"rk{k} {rname(r)} (by decide) (by decide)")
-        return k, f"derElement 0x{tag:X} (memBytes n0.mem ({rp}) ({rl}).toNat)", (rp, rl, inp)
+        return k, f"derElement 0x{tag:X} (memBytes M0 ({rp}) ({rl}).toNat)", (rp, rl, inp)
 
     def elem_ok(self, k, oc, dc, t, rd):
         rp, rl, inp = rd
@@ -523,7 +523,7 @@ class Gen:
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
         self.emit(f"  rw [sv_mb fR{k-1} {inp}] at A{k} Ok{k} Er{k}")
         self.keep_regs(k, OID_KEEP, lambda r: f"rk{k} {rname(r)} (by decide) (by decide)")
-        L = f"(memBytes n0.mem ({rp}) ({rl}).toNat)"
+        L = f"(memBytes M0 ({rp}) ({rl}).toNat)"
         el = f"derElement 3 {L}"
         t = f"tl{k}"
 
@@ -575,7 +575,7 @@ class Gen:
         self.emit(f"  rw [sv_mb fR{k-1} {inp}] at R{k}")
         self.keep_regs(k, [r for r in range(32) if r not in (1, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 28, 29, 30)],
                        lambda r: f"rk{k} {rname(r)} (by decide) (by decide)")
-        return k, f"derOptRes 0x{tag:X} (memBytes n0.mem ({rp}) ({rl}).toNat)", (rp, rl, inp)
+        return k, f"derOptRes 0x{tag:X} (memBytes M0 ({rp}) ({rl}).toNat)", (rp, rl, inp)
 
     def iis(self, off, dc):
         """`Der::integer_is` with the expected value in `a1`; returns k and the result's expression."""
@@ -594,8 +594,8 @@ class Gen:
         self.regs.pop(2, None)
         self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
         self.regs[2] = ("S", 0)
-        L = f"(memBytes n0.mem ({rp}) ({rl}).toNat)"
-        return k, f"derIntIsOf n0.mem {L} ({rp}) (derElement 2 {L}) (({a1}).extractLsb' 0 8)", (rp, rl, inp)
+        L = f"(memBytes M0 ({rp}) ({rl}).toNat)"
+        return k, f"derIntIsOf M0 {L} ({rp}) (derElement 2 {L}) (({a1}).extractLsb' 0 8)", (rp, rl, inp)
 
 
     def pos(self, off, oc, dc, fail_tail):
@@ -610,7 +610,7 @@ class Gen:
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
         self.emit(f"  rw [sv_mb fR{k-1} {inp}] at A{k} Ok{k} Er{k}")
         self.keep_regs(k, OID_KEEP, lambda r: f"rk{k} {rname(r)} (by decide) (by decide)")
-        L = f"(memBytes n0.mem ({rp}) ({rl}).toNat)"
+        L = f"(memBytes M0 ({rp}) ({rl}).toNat)"
         t = f"tl{k}"
         self.split_on(k, f"derElement 2 {L}", f"er{k}", t, f".ok {t}", [t],
                       lambda sub: fail_elem(sub, k, oc, dc, f"hr{k}", f"Er{k} er{k} (by rw [hr{k}]; rfl)", 8, fail_tail))
@@ -640,7 +640,7 @@ class Gen:
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
         self.emit(f"  rw [sv_mb fR{k-1} {inp}] at Ok{k} Er{k}")
         self.keep_regs(k, OID_KEEP, lambda r: f"rk{k} {rname(r)} (by decide) (by decide)")
-        return k, f"derElement 0x30 (memBytes n0.mem ({rp}) ({rl}).toNat)", (rp, rl, inp)
+        return k, f"derElement 0x30 (memBytes M0 ({rp}) ({rl}).toNat)", (rp, rl, inp)
 
     def seq_ok(self, k, oc, dc, t, rd):
         rp, rl, inp = rd
@@ -673,7 +673,7 @@ class Gen:
                        lambda r: f"rk{k} {rname(r)} (by decide)")
         self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
         self.regs[2] = ("S", 0)
-        return k, f"derAlgOf n0.mem ({p}) ({nl})", p, inp
+        return k, f"derAlgOf M0 ({p}) ({nl})", p, inp
 
     def sne(self, off, p, pl, q, ql, hp, hq, ha1=None, ha3=None):
         """`<[u8]>::ne` of `pl` bytes at `p` and `ql` at `q`; returns k. The result in
@@ -710,7 +710,7 @@ class Gen:
                        lambda r: f"rk{k} {rname(r)} (by decide)")
         self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
         self.regs[2] = ("S", 0)
-        bytes_ = alias_bytes = f"(memBytes n0.mem ({rp}) ({rl}))"
+        bytes_ = alias_bytes = f"(memBytes M0 ({rp}) ({rl}))"
         return k, bytes_, rp, rl, inp
 
     def rt_split(self, k, bytes_, oc, dc, rp, rl, inp, fail_tail):
@@ -794,7 +794,7 @@ class Gen:
             self.emit(f"  have g{k}_{r} : reg n{k} {rname(r)} = {lean_val(v)} := by rw [u{k}.regs, upd_ne (by decide) (by decide), g{k-1}_{r}]")
             new[r] = v
         ext = "zeroExtend" if kind == ".lbu" else "signExtend"
-        vstr = f"(n0.mem ({addr})).{ext} 32"
+        vstr = f"(M0 ({addr})).{ext} 32"
         self.emit(f"  have g{k}_{rd} : reg n{k} {rname(rd)} = {vstr} := by")
         self.emit(f"    rw [u{k}.regs]; simp +decide only [upd, ↓reduceIte]")
         if imm == 0:
@@ -834,7 +834,7 @@ class Gen:
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
         self.emit(f"  rw [sv_mb fR{k-1} {inp}] at A{k} Ok{k} Er{k}")
         self.keep_regs(k, OID_KEEP, lambda r: f"rk{k} {rname(r)} (by decide) (by decide)")
-        L = f"(memBytes n0.mem ({rp}) ({rl}).toNat)"
+        L = f"(memBytes M0 ({rp}) ({rl}).toNat)"
         ex = f"derContent ({rp}) (derOid {L})"
         op, ol = f"op{k}", f"ol{k}"
         self.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
@@ -874,7 +874,7 @@ class Gen:
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
         self.emit(f"  rw [sv_mb fR{k-1} {inp}] at A{k} Ok{k} Er{k}")
         self.keep_regs(k, OID_KEEP, lambda r: f"rk{k} {rname(r)} (by decide) (by decide)")
-        L = f"(memBytes n0.mem ({rp}) ({rl}).toNat)"
+        L = f"(memBytes M0 ({rp}) ({rl}).toNat)"
         ex = f"derContent ({rp}) (derElement 4 {L})"
         vp, vl = f"vp{k}", f"vl{k}"
         self.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
@@ -951,7 +951,7 @@ class Gen:
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
         self.emit(f"  rw [sv_mb fR{k-1} {inp}] at a0_{k} A{k}")
         self.keep_regs(k, OID_KEEP, lambda r: f"rk{k} {rname(r)} (by decide) (by decide)")
-        L = f"(memBytes n0.mem ({rp}) ({rl}).toNat)"
+        L = f"(memBytes M0 ({rp}) ({rl}).toNat)"
         return k, f"derBoolOf {L} (derElement 1 {L})", (rp, rl, inp)
 
 
@@ -969,7 +969,7 @@ class Gen:
         self.emit(f"  rw [sv_mb fR{k-1} {inp}] at Ok{k} Er{k}")
         self.keep_regs(k, [r for r in range(32) if r not in (1, 5, 6, 7, 11, 12, 13, 14, 15, 16, 17)],
                        lambda r: f"rk{k} {rname(r)} (by decide) (by decide)")
-        ex = f"derTlv (memBytes n0.mem ({rp}) ({rl}).toNat)"
+        ex = f"derTlv (memBytes M0 ({rp}) ({rl}).toNat)"
         t = f"tl{k}"
         self.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
         self.emit(f"  rcases r{k} with er{k} | {t}")
@@ -991,7 +991,7 @@ class Gen:
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
         self.emit(f"  rw [sv_mb fR{k-1} {inp}] at A{k} Ok{k} Er{k}")
         self.keep_regs(k, OID_KEEP, lambda r: f"rk{k} {rname(r)} (by decide) (by decide)")
-        L = f"(memBytes n0.mem ({rp}) ({rl}).toNat)"
+        L = f"(memBytes M0 ({rp}) ({rl}).toNat)"
         return k, f"derIntOf {L} ({rp}) (derElement 2 {L})", (rp, rl, inp)
 
 
@@ -1009,7 +1009,7 @@ class Gen:
                        lambda r: f"rk{k} {rname(r)} (by decide)")
         self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
         self.regs[2] = ("S", 0)
-        ex = f"ecdsaSigOf 48 n0.mem ({p}) ({nl})"
+        ex = f"ecdsaSigOf 48 M0 ({p}) ({nl})"
         self.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
         self.emit(f"  rcases r{k} with eb{k} | ⟨sr{k}, ss{k}⟩")
         self.sc.append(("eq", ex, f".ok (sr{k}, ss{k})", [f"sr{k}", f"ss{k}"], f"hr{k}"))
@@ -1336,7 +1336,7 @@ class Gen:
         """Close the failing case at 0x966 (or, with `exit_lemma`, 0xEE4 or
         0x2A82) with `why_not`, a proof that the stage's checks failed."""
         k = self.k
-        self.emit(f"  exact .inl ⟨({why_not}), {exit_lemma} F E{k} s{k} t{k} fR{k} V{k} hret g{k}_2 g{k}_18 hO g{k}_3 g{k}_4⟩")
+        self.emit(f"  exact .inl ⟨({why_not}), {exit_lemma} F E{k} s{k} t{k} (fun x hx => (fR{k} x hx).trans (fM x hx).symm) V{k} hret g{k}_2 g{k}_18 hO g{k}_3 g{k}_4⟩")
 
     # --- calls through SvDer ----------------------------------------------------
 
@@ -1350,13 +1350,14 @@ class Gen:
         self.emit(f"    {self.reg_is(k-1, 10, oc)} {self.reg_is(k-1, 11, dc)} (by decide) (by decide) (by decide) (by decide)")
         self.emit(f"    (by decide) w{k-1}_{dc + 8:x} w{k-1}_{dc + 12:x} {bytes_name}_in")
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [sv_mb fR{k-1} {bytes_name}_in] at Ok{k} Er{k}")
         self.keep_regs(k, OID_KEEP, lambda r: f"rk{k} {rname(r)} (by decide) (by decide)")
         return k
 
     def conclusion(self, off, keep_regs, keep_words, keep_bytes, wit):
         k = self.k
         conj = ["Steps n0 n'", f"St n'.mem SV n' 0x{off:X} (reg n')", "SvCode n'.mem", "SvSaves B n'.mem v",
-                "(∀ x, SvR B x → n'.mem x = n0.mem x)"]
+                "(∀ x, SvR B x → n'.mem x = M0 x)"]
         terms = [f"t{k}", f"s{k}", f"E{k}", f"V{k}", f"fR{k}"]
         for r, v in sorted(self.regs.items()):
             if r not in keep_regs:
@@ -1424,10 +1425,10 @@ def stage_l1():
         params.append(f"(w0_{e:x} : memLoad32 n0.mem ({fa(e)}) = {lean_val(v)})")
     params.append("(lc_in : SvIn B lp ll.toNat)")
     g.emit("  have t0 : Steps n0 n0 := .refl n0")
-    g.emit("  have fR0 : ∀ x, SvR B x → n0.mem x = n0.mem x := fun _ _ => rfl")
+    g.emit("  have fR0 : ∀ x, SvR B x → n0.mem x = M0 x := fM")
     g.emit("  have g0_3 : reg n0 (3 : Fin 32) = reg n0 (3 : Fin 32) := rfl")
     g.emit("  have g0_4 : reg n0 (4 : Fin 32) = reg n0 (4 : Fin 32) := rfl")
-    der = "(memBytes n0.mem lp ll.toNat)"
+    der = "(memBytes M0 lp ll.toNat)"
     k = g.seq(0x72, 0xA20, 0x2E0, "lc", "lp", "ll")
     t = f"tl{k}"
     rest = f"ll - BitVec.ofNat 32 ({t}.header + {t}.len)"
@@ -1486,7 +1487,7 @@ def stage_l1():
     info = {"name": "sv_l1", "title": "the certificate", "doc": "From the call to `Der::sequence` over the leaf "
             "certificate at 0x72 to the call to `Der::element` for the `tbsCertificate` at 0xD0: the "
             "certificate is one `SEQUENCE` that fills the bytes.",
-            "params": params, "stmt": stmt, "proof": proof}
+            "params": params, "stmt": stmt, "proof": proof, "import": "C3BootProofs.Proofs.SvCongr"}
     return g, info
 
 
@@ -1506,7 +1507,7 @@ def start(g, regs, words, slices):
         params.append(f"({name} : SvIn B ({rp}) ({rl}).toNat)")
         g.slices[(rp, rl)] = name
     g.emit("  have t0 : Steps n0 n0 := .refl n0")
-    g.emit("  have fR0 : ∀ x, SvR B x → n0.mem x = n0.mem x := fun _ _ => rfl")
+    g.emit("  have fR0 : ∀ x, SvR B x → n0.mem x = M0 x := fM")
     g.emit("  have g0_3 : reg n0 (3 : Fin 32) = reg n0 (3 : Fin 32) := rfl")
     g.emit("  have g0_4 : reg n0 (4 : Fin 32) = reg n0 (4 : Fin 32) := rfl")
     return params
@@ -1669,7 +1670,7 @@ def stage_l2():
     g.fork(fail_ii_err)
     g.fork(fail_ii_false)
     g.emit(f"  obtain ⟨te{k}, hte{k}⟩ := ii_ok_elem hr{k}")
-    g.sc.append(("eq", f"derElement 2 (memBytes n0.mem ({rp}) ({rl}).toNat)", f".ok te{k}", [f"te{k}"], f"hte{k}"))
+    g.sc.append(("eq", f"derElement 2 (memBytes M0 ({rp}) ({rl}).toNat)", f".ok te{k}", [f"te{k}"], f"hte{k}"))
     g.emit(f"  obtain ⟨d8_{k}, d12_{k}⟩ := A{k} te{k} hte{k}")
     g.emit(f"  rw [hr{k}] at R{k}")
     g.emit(f"  obtain ⟨a0_{k}, a1_{k}⟩ := R{k}")
@@ -1767,7 +1768,7 @@ def stage_l3():
         return sub.sne(0x256, f"op{ka}", f"ol{ka}", "BitVec.ofNat 32 0x3FCC4840", "8",
                        f"(.inl ({inp}.algOid hr{ka}))", "(.inr ⟨by decide, by decide⟩)")
 
-    oid = f"memBytes n0.mem op{ka} ol{ka} = memBytes n0.mem (BitVec.ofNat 32 0x3FCC4840) 8"
+    oid = f"memBytes M0 op{ka} ol{ka} = memBytes M0 (BitVec.ofNat 32 0x3FCC4840) 8"
 
     def fail_alg_params(sub):
         sub.pinned |= {f"prp{ka}", f"pu{ka}"}
@@ -1985,7 +1986,7 @@ def stage_l5():
     g.fork(fail_err)
     g.fork(fail_none)
     g.emit(f"  obtain ⟨ta{k}, hta{k}⟩ := alg_ok_elem hr{k}")
-    g.sc.append(("eq", f"derElement 0x30 (memBytes n0.mem ({p}) ({nl}))", f".ok ta{k}", [f"ta{k}"], f"hta{k}"))
+    g.sc.append(("eq", f"derElement 0x30 (memBytes M0 ({p}) ({nl}))", f".ok ta{k}", [f"ta{k}"], f"hta{k}"))
     g.emit(f"  rw [hr{k}] at R{k}")
     g.emit(f"  obtain ⟨y0_{k}, y4_{k}, y8_{k}, y12_{k}, y24_{k}⟩ := R{k}")
     g.emit(f"  obtain ⟨d8_{k}, d12_{k}⟩ := A{k} ta{k} hta{k}")
@@ -2021,7 +2022,7 @@ def stage_l5():
     g.block(0x3B8, 0x3C2)
     ke = g.seqeq(0x3C2, pc, f"pu{ka}.len", "BitVec.ofNat 32 0x3FCC4848", "8", f"(.inl ({inp}.algParamsIn hr{ka}))",
                  "(.inr ⟨by decide, by decide⟩)")
-    curve = f"memBytes n0.mem ({pc}) pu{ka}.len = memBytes n0.mem (BitVec.ofNat 32 0x3FCC4848) 8"
+    curve = f"memBytes M0 ({pc}) pu{ka}.len = memBytes M0 (BitVec.ofNat 32 0x3FCC4848) 8"
     hz = f"hz_{ke}"
 
     def fail_curve(sub):
@@ -2034,7 +2035,7 @@ def stage_l5():
     g.set_a0(ke, 1, f"ite_eq_left {hz}")
     g.block(0x3CA, 0x3CE)
     ks = spki_tail(g, op, ol, inp, ka, False)
-    oid = f"memBytes n0.mem {op} {ol} = memBytes n0.mem (BitVec.ofNat 32 0x3FCC4914) 7"
+    oid = f"memBytes M0 {op} {ol} = memBytes M0 (BitVec.ofNat 32 0x3FCC4914) 7"
     hz = f"hz_{ks}"
 
     def fail_oid(sub):
@@ -2103,7 +2104,7 @@ def stage_l6():
             23: ("U", "x23"), 24: ("U", "x24"), 25: ("U", "x25"), 26: ("U", "ll"), 27: ("S", 0xA20)}
     words = {0x180: "rp", 0x184: "rl"}
     params = start(g, regs, words, {("rp", "rl"): "tb_in"})
-    params += ["(kb_in : SvIn B kp 0x41)", "(D0 : P2Data n0.mem)"]
+    params += ["(kb_in : SvIn B kp 0x41)", "(D0 : P2Data M0)"]
     # The key: tag 4, then a point on the curve.
     g.load_in(0x424, "kb_in")
     g.block(0x428, 0x42C)
@@ -2112,7 +2113,7 @@ def stage_l6():
     def fail_tag(sub):
         sub.branch(0x42C, True, f"by rw [g{sub.k}_10, g{sub.k}_11]; exact br_bne_byte_t (by decide) {hz}")
         sub.fail(sub.fail_proof(("prop", hz)))
-    g.prop_check("n0.mem kp = BitVec.ofNat 8 4", hz, fail_tag)
+    g.prop_check("M0 kp = BitVec.ofNat 8 4", hz, fail_tag)
     g.branch(0x42C, False, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_bne_byte_f (by decide) {hz}")
     g.block(0x430, 0x43A)
     k = g.gs(0x43A, 0xA20, "kb_in")
@@ -2124,7 +2125,7 @@ def stage_l6():
         sub.load(0x442, "lw")
         sub.branch(0x446, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
         sub.fail(sub.fail_proof(("prop", hz)))
-    g.prop_check("GsOk n0.mem kp", hz, fail_gs)
+    g.prop_check("GsOk M0 kp", hz, fail_gs)
     g.emit(f"  have y0_{k} := Ok{k} {hz}")
     g.frame_after(k, [(0xA20, 0x48)], {0xA20: ("0", f"y0_{k}")})
     g.load(0x442, "lw")
@@ -2372,7 +2373,7 @@ def x2_tail(g):
     g.regs[11] = ("U", "BitVec.ofNat 32 (L.toNat - rem.toNat)")
     g.load(0x5C2, "lw")
     kl = g.lo(0x5C4, "p0", "L.toNat - rem.toNat", "op", "ol.toNat", "ea_in", "oid_in")
-    ex = "listsOidOf n0.mem p0 (L.toNat - rem.toNat) (memBytes n0.mem op ol.toNat)"
+    ex = "listsOidOf M0 p0 (L.toNat - rem.toNat) (memBytes M0 op ol.toNat)"
     g.emit(f"  obtain ⟨r{kl}, hr{kl}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
     g.emit(f"  rcases r{kl} with lb{kl} | (_ | _)")
     g.sc.append(("eq", ex, ".ok false", [], f"hr{kl}"))
@@ -2431,7 +2432,7 @@ def stage_x2n():
     extension whose next byte isn't 1: not critical."""
     g = Gen("X2n")
     params = x2_start(g)
-    params += ["(hr2 : rem2 ≠ 0)", "(hb1 : n0.mem rp2 ≠ BitVec.ofNat 8 1)"]
+    params += ["(hr2 : rem2 ≠ 0)", "(hb1 : M0 rp2 ≠ BitVec.ofNat 8 1)"]
     g.branch(0x560, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hr2")
     g.load(0x562, "lw")
     g.load_in(0x566, "in2", "(toNat_pos_of_ne hr2)")
@@ -2481,8 +2482,8 @@ CRIT = [0x3FCC4889 + 3 * i for i in range(4)]
 
 
 def crit_allowed():
-    x = "memBytes n0.mem op ol.toNat"
-    return " ∨ ".join(f"memBytes n0.mem (BitVec.ofNat 32 0x{a:X}) 3 = {x}" for a in CRIT)
+    x = "memBytes M0 op ol.toNat"
+    return " ∨ ".join(f"memBytes M0 (BitVec.ofNat 32 0x{a:X}) 3 = {x}" for a in CRIT)
 
 
 def crit_proof(i, h):
@@ -2497,7 +2498,7 @@ def stage_x2c():
     critical extension."""
     g = Gen("X2c")
     params = x2_start(g)
-    params += ["(hr2 : rem2 ≠ 0)", "(hb1 : n0.mem rp2 = BitVec.ofNat 8 1)", "(SD0 : SvData n0.mem)"]
+    params += ["(hr2 : rem2 ≠ 0)", "(hb1 : M0 rp2 = BitVec.ofNat 8 1)", "(SD0 : SvData M0)"]
     g.branch(0x560, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hr2")
     g.load(0x562, "lw")
     g.load_in(0x566, "in2", "(toNat_pos_of_ne hr2)")
@@ -2526,7 +2527,7 @@ def stage_x2c():
     tb = f"tb{kb}"
     g.emit(f"  obtain ⟨{tb}, htb{kb}⟩ := bool_ok_elem hr{kb}")
     rp, rl, inp = rd
-    L = f"(memBytes n0.mem ({rp}) ({rl}).toNat)"
+    L = f"(memBytes M0 ({rp}) ({rl}).toNat)"
     g.sc.append(("eq", f"derElement 1 {L}", f".ok {tb}", [tb], f"htb{kb}"))
     g.emit(f"  obtain ⟨d8_{kb}, d12_{kb}⟩ := A{kb} {tb} htb{kb}")
     hl = f"BitVec.ofNat 32 ({tb}.header + {tb}.len)"
@@ -2549,7 +2550,7 @@ def stage_x2c():
         g.load(0x5FE, "lw")
         ke = g.seqeq(0x600, f"BitVec.ofNat 32 0x{CRIT[i]:X}", "3", "op", "ol.toNat", "(.inr ⟨by decide, by decide⟩)",
                      "(.inl oid_in)", f"(by rw [g{g.k}_13, ofNat_toNat_self])")
-        eq = f"memBytes n0.mem (BitVec.ofNat 32 0x{CRIT[i]:X}) 3 = memBytes n0.mem op ol.toNat"
+        eq = f"memBytes M0 (BitVec.ofNat 32 0x{CRIT[i]:X}) 3 = memBytes M0 op ol.toNat"
         hm = f"hm{i}"
         g.emit(f"  by_cases {hm} : {eq}")
         if i < 3:
@@ -2594,11 +2595,11 @@ POL = [0x3FCC48B8 + 10 * i for i in range(5)]
 
 
 def oid_is(c):
-    return f"memBytes n0.mem op ol.toNat = memBytes n0.mem (BitVec.ofNat 32 0x{c:X}) 3"
+    return f"memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x{c:X}) 3"
 
 
 def pol_is(i):
-    return f"memBytes n0.mem (BitVec.ofNat 32 0x{POL[i]:X}) 10 = memBytes n0.mem op ol.toNat"
+    return f"memBytes M0 (BitVec.ofNat 32 0x{POL[i]:X}) 10 = memBytes M0 op ol.toNat"
 
 
 def d_start(g):
@@ -2613,7 +2614,7 @@ def d_start(g):
     for e in range(0x4C, 0x88, 4):
         words[e] = f"w{e:x}"
     params = start(g, regs, words, {("vp", "vl"): "val_in", ("op", "ol"): "oid_in"})
-    params += ["(SD0 : SvData n0.mem)"]
+    params += ["(SD0 : SvData M0)"]
     return params
 
 
@@ -2888,7 +2889,7 @@ def stage_dbc2():
 
     def ca_true(sub):
         sub.pinned.add("hb1")
-        sub.emit(f"  have hb1 : n0.mem cp = BitVec.ofNat 8 1 := Decidable.of_not_not {hz}")
+        sub.emit(f"  have hb1 : M0 cp = BitVec.ofNat 8 1 := Decidable.of_not_not {hz}")
         sub.branch(0x830, False, f"by rw [g{sub.k}_23, g{sub.k}_11]; exact br_bne_byte_f (by decide) hb1")
         sub.block(0x834, 0x83C)
         kb, ex, rd = sub.boolt(0x83C, 0x1480)
@@ -2931,7 +2932,7 @@ def stage_dbc2():
         sub.load(0x858, "lw")
         sub.load_in(0x85C, f"({inp}.restW htb{kb})", "(toNat_pos_of_ne hzc)")
         sub.block(0x860, 0x862)
-        sub.emit(f"  by_cases hb2 : n0.mem ({cp2}) = BitVec.ofNat 8 2")
+        sub.emit(f"  by_cases hb2 : M0 ({cp2}) = BitVec.ofNat 8 2")
 
         def two(s2):
             s2.branch(0x862, False, f"by rw [g{s2.k}_10, g{s2.k}_11]; exact br_bne_byte_f (by decide) hb2")
@@ -2944,7 +2945,7 @@ def stage_dbc2():
         sub.branch(0x862, True, f"by rw [g{sub.k}_10, g{sub.k}_11]; exact br_bne_byte_t (by decide) hb2")
         err9b6(sub)
         sub.fail(sub.fail_proof(("prop", hz)))
-    g.prop_check("n0.mem cp ≠ BitVec.ofNat 8 1", hz, ca_true)
+    g.prop_check("M0 cp ≠ BitVec.ofNat 8 1", hz, ca_true)
     g.branch(0x830, True, f"by rw [g{g.k}_23, g{g.k}_11]; exact br_bne_byte_t (by decide) {hz}")
     g.block(0x860, 0x862)
     hz2 = f"hz_{g.k}"
@@ -2953,7 +2954,7 @@ def stage_dbc2():
         sub.branch(0x862, True, f"by rw [g{sub.k}_10, g{sub.k}_11]; exact br_bne_byte_t (by decide) {hz2}")
         err9b6(sub)
         sub.fail(sub.fail_proof(("prop", hz2)))
-    g.prop_check("n0.mem cp = BitVec.ofNat 8 2", hz2, not_int)
+    g.prop_check("M0 cp = BitVec.ofNat 8 2", hz2, not_int)
     g.branch(0x862, False, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_bne_byte_f (by decide) {hz2}")
     g.block(0x866, 0x876)
     ki, ex, rd = g.intc(0x876, 0x1020, 0x1480)
@@ -2972,7 +2973,7 @@ def stage_dbc2():
     g.fork(bad_int)
     rp, rl, inp = rd
     g.emit(f"  obtain ⟨ti{ki}, hti{ki}⟩ := int_ok_elem hr{ki}")
-    L = f"(memBytes n0.mem ({rp}) ({rl}).toNat)"
+    L = f"(memBytes M0 ({rp}) ({rl}).toNat)"
     g.sc.append(("eq", f"derElement 2 {L}", f".ok ti{ki}", [f"ti{ki}"], f"hti{ki}"))
     g.emit(f"  obtain ⟨p0_{ki}, p4_{ki}⟩ := Ok{ki} ip{ki} il{ki} hr{ki}")
     g.emit(f"  obtain ⟨d8_{ki}, d12_{ki}⟩ := A{ki} ti{ki} hti{ki}")
@@ -3046,7 +3047,7 @@ def stage_dku1():
 def ku_tail(g, last):
     """From 0x93E with the allowed unused bits in `a4`."""
     hz = f"hz_{g.k}u"
-    P = f"BitVec.ofNat 32 (kuUnused (n0.mem ({last}))) = (n0.mem cp).zeroExtend 32"
+    P = f"BitVec.ofNat 32 (kuUnused (M0 ({last}))) = (M0 cp).zeroExtend 32"
 
     def bad_unused(sub):
         sub.branch(0x93E, True, f"by rw [g{sub.k}_14, g{sub.k}_13]; exact br_bne_t {hz}")
@@ -3072,7 +3073,7 @@ def ku_tail(g, last):
         sub.branch(0x954, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bge_sext_t (Decidable.of_not_not {hz})")
         err44(sub, 0xB46)
         sub.fail(sub.fail_proof(("prop", hz)))
-    g.prop_check("¬ (n0.mem (cp + 0x1)).toNat < 0x80", hz, no_sign)
+    g.prop_check("¬ (M0 (cp + 0x1)).toNat < 0x80", hz, no_sign)
     g.branch(0x954, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bge_sext_f {hz}")
     g.block(0x958, 0x95A)
     g.store(0x95A, "sw")
@@ -3114,7 +3115,7 @@ def stage_dku2():
         sub.load_in(0x674, "c_in", "(toNat_pos_of_ne hk0)")
         sub.block(0x678, 0x67A)
         sub.branch(0x67A, True, f"by rw [g{sub.k}_12, g{sub.k}_14, hk1]; rfl")
-        sub.emit(f"  by_cases hu : (n0.mem cp).zeroExtend 32 = (0 : Word)")
+        sub.emit(f"  by_cases hu : (M0 cp).zeroExtend 32 = (0 : Word)")
 
         def unused0(s2):
             s2.branch(0x896, False, f"by rw [g{s2.k}_13, s{s2.k}.zero]; exact br_bne_f hu")
@@ -3146,12 +3147,12 @@ def stage_dku2():
     g.branch(0x684, False, f"by rw [g{g.k}_14, s{g.k}.zero]; exact br_beq_f (c_in.lastIn h2).pos_ne")
     g.load_in(0x688, "(c_in.lastIn h2)", "(by decide)")
     lastv = lean_val(g.regs[14])
-    lb = lastv[len("(n0.mem ("):-len(")).zeroExtend 32")]
-    g.emit(f"  by_cases hl : n0.mem ({lb}) = 0")
+    lb = lastv[len("(M0 ("):-len(")).zeroExtend 32")]
+    g.emit(f"  by_cases hl : M0 ({lb}) = 0")
 
     def last0(sub):
         sub.branch(0x68C, True, f"by rw [g{sub.k}_14, s{sub.k}.zero, hl]; rfl")
-        sub.block(0x93C, 0x93E, {14: (f"BitVec.ofNat 32 (kuUnused (n0.mem ({lb})))",
+        sub.block(0x93C, 0x93E, {14: (f"BitVec.ofNat 32 (kuUnused (M0 ({lb})))",
                                     "rw [rb{k}]; simp +decide only [runBlock, BInstr.run, svDku293c, upd, ↓reduceIte, aluEval]; "
                                     "exact kuUnused_zero hl")})
         ku_tail(sub, lb)
@@ -3159,7 +3160,7 @@ def stage_dku2():
     g.fork(last0)
     g.branch(0x68C, False, f"by rw [g{g.k}_14, s{g.k}.zero]; exact br_beq_f (zext_ne_zero hl)")
     k = g.k
-    g.block(0x690, 0x6BA, {14: (f"BitVec.ofNat 32 (kuUnused (n0.mem ({lb})))",
+    g.block(0x690, 0x6BA, {14: (f"BitVec.ofNat 32 (kuUnused (M0 ({lb})))",
                                 "rw [rb{k}, ← kuUnused_ne hl, ← g{p}_14]; rfl")})
     g.jump(0x6BA)
     ku_tail(g, lb)
@@ -3258,7 +3259,7 @@ def stage_deku2():
     """One pass of the `ExtKeyUsage` loop, from 0x74A back to 0x74A: the next
     OID, and whether it is `codeSigning`."""
     g = Gen("Deku2")
-    params = eku_start(g) + ["(hcl : cl ≠ 0)", "(SD0 : SvData n0.mem)"]
+    params = eku_start(g) + ["(hcl : cl ≠ 0)", "(SD0 : SvData M0)"]
     g.load(0x74A, "lw")
     g.branch(0x74E, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hcl")
     g.block(0x752, 0x762)
@@ -3275,7 +3276,7 @@ def stage_deku2():
     g.block(0x776, 0x780)
     ke = g.seqeq(0x780, op, f"{ol}.toNat", f"BitVec.ofNat 32 0x{CODESIGN:X}", "8", f"(.inl {g.slices[(op, ol)]})",
                  "(.inr ⟨by decide, by decide⟩)", ha1=f"(by rw [g{g.k}_11, ofNat_toNat_self])")
-    eq = f"memBytes n0.mem {op} {ol}.toNat = memBytes n0.mem (BitVec.ofNat 32 0x{CODESIGN:X}) 8"
+    eq = f"memBytes M0 {op} {ol}.toNat = memBytes M0 (BitVec.ofNat 32 0x{CODESIGN:X}) 8"
     g.emit(f"  have g{ke}_10 : reg n{ke} a0 = if {eq} then BitVec.ofNat 32 1 else BitVec.ofNat 32 0 := a0_{ke}")
     g.regs[10] = ("U", f"if {eq} then BitVec.ofNat 32 1 else BitVec.ofNat 32 0")
     g.block(0x788, 0x78C)
@@ -3376,7 +3377,7 @@ def stage_l7():
         sub.set_a0(ks, 1, f"ite_eq_right {hz}")
         sub.branch(0xA24, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
         sub.fail(sub.fail_proof(("prop", hz)))
-    g.prop_check("memBytes n0.mem orp orl = memBytes n0.mem arp arl", hz, algdiff)
+    g.prop_check("memBytes M0 orp orl = memBytes M0 arp arl", hz, algdiff)
     g.set_a0(ks, 0, f"ite_eq_left {hz}")
     g.branch(0xA24, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
     g.block(0xA26, 0xA2E)
@@ -3490,12 +3491,12 @@ def i_entry(g):
                    f"(by rw [g{g.k}_13, ofNat_toNat_self])", f"(by rw [g{g.k}_11, ofNat_toNat_self])")
 
 
-I_PARAMS = ["(hc : c ≠ 0)", "(hsubj : memLoad32 n0.mem (q + 0xFFFFFFFC) = subj)",
-            "(hslen : memLoad32 n0.mem (q + 0x0) = slen)", "(es_in : SvIn B (q + 0xFFFFFFFC) 4)",
+I_PARAMS = ["(hc : c ≠ 0)", "(hsubj : memLoad32 M0 (q + 0xFFFFFFFC) = subj)",
+            "(hslen : memLoad32 M0 (q + 0x0) = slen)", "(es_in : SvIn B (q + 0xFFFFFFFC) 4)",
             "(el_in : SvIn B (q + 0x0) 4)",
             "(a_subj : (q + 0xFFFFFFFC).toNat % 4 = 0)", "(a_slen : (q + 0x0).toNat % 4 = 0)",
             "(s_in : SvIn B subj slen.toNat)", "(i_in : SvIn B ip il.toNat)"]
-I_EQ = "memBytes n0.mem subj slen.toNat = memBytes n0.mem ip il.toNat"
+I_EQ = "memBytes M0 subj slen.toNat = memBytes M0 ip il.toNat"
 
 
 def stage_imiss():
@@ -3576,6 +3577,7 @@ def main():
     print(f"theorem {info['name']} " + info.get("binders", "{B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : Machine}"))
     print("    (F : Fr B 0x3830) (E0 : SvCode n0.mem) (V0 : SvSaves B n0.mem v) (hret : v 0 &&& ~~~1 = v 0)")
     print(f"    (hO : SvOut B out) (s0 : St n0.mem SV n0 0x{info.get('start', 0x72):X} (reg n0))")
+    print("    (M0 : Word → BitVec 8) (fM : ∀ x, SvR B x → n0.mem x = M0 x)")
     print("    " + "\n    ".join(info["params"]) + " :")
     print(f"    {info['stmt']} := by")
     print("\n".join(g.out))

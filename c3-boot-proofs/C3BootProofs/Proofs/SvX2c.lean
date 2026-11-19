@@ -88,6 +88,7 @@ set_option maxHeartbeats 0 in
 theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4 sl5 sl6 sl7 sl8 sl9 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w74 w78 w7c w80 w84 op rem2 ol rest rp2 : Word} {v : Nat → Word} {n0 : Machine}
     (F : Fr B 0x3830) (E0 : SvCode n0.mem) (V0 : SvSaves B n0.mem v) (hret : v 0 &&& ~~~1 = v 0)
     (hO : SvOut B out) (s0 : St n0.mem SV n0 0x560 (reg n0))
+    (M0 : Word → BitVec 8) (fM : ∀ x, SvR B x → n0.mem x = M0 x)
     (g0_2 : reg n0 sp = B + 0x21A0)
     (g0_8 : reg n0 (8 : Fin 32) = op)
     (g0_9 : reg n0 (9 : Fin 32) = x9)
@@ -141,21 +142,21 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     (ea_in : SvIn B p0 (L.toNat - rem.toNat))
     (hle : rem.toNat ≤ L.toNat)
     (hr2 : rem2 ≠ 0)
-    (hb1 : n0.mem rp2 = BitVec.ofNat 8 1)
-    (SD0 : SvData n0.mem) :
-    (¬ (derBoolOf (memBytes n0.mem (rp2) (rem2).toNat) (derElement 1 (memBytes n0.mem (rp2) (rem2).toNat)) = .ok () ∧ ∃ tb7, derElement 1 (memBytes n0.mem (rp2) (rem2).toNat) = .ok tb7 ∧ ∃ vp14 vl14, derContent ((rp2) + BitVec.ofNat 32 (tb7.header + tb7.len)) (derElement 4 (memBytes n0.mem ((rp2) + BitVec.ofNat 32 (tb7.header + tb7.len)) ((rem2) - BitVec.ofNat 32 (tb7.header + tb7.len)).toNat)) = .ok (vp14, vl14) ∧ ∃ te14, derElement 4 (memBytes n0.mem ((rp2) + BitVec.ofNat 32 (tb7.header + tb7.len)) ((rem2) - BitVec.ofNat 32 (tb7.header + tb7.len)).toNat) = .ok te14 ∧ (((rem2) - BitVec.ofNat 32 (tb7.header + tb7.len)) - BitVec.ofNat 32 (te14.header + te14.len) = 0) ∧ listsOidOf n0.mem p0 (L.toNat - rem.toNat) (memBytes n0.mem op ol.toNat) = .ok false ∧ (memBytes n0.mem (BitVec.ofNat 32 0x3FCC4889) 3 = memBytes n0.mem op ol.toNat ∨ memBytes n0.mem (BitVec.ofNat 32 0x3FCC488C) 3 = memBytes n0.mem op ol.toNat ∨ memBytes n0.mem (BitVec.ofNat 32 0x3FCC488F) 3 = memBytes n0.mem op ol.toNat ∨ memBytes n0.mem (BitVec.ofNat 32 0x3FCC4892) 3 = memBytes n0.mem op ol.toNat) ∧ True) ∧ SvErrRet B out v n0) ∨
-    (derBoolOf (memBytes n0.mem (rp2) (rem2).toNat) (derElement 1 (memBytes n0.mem (rp2) (rem2).toNat)) = .ok () ∧
-    ∃ tb7, derElement 1 (memBytes n0.mem (rp2) (rem2).toNat) = .ok tb7 ∧
-    ∃ vp14 vl14, derContent ((rp2) + BitVec.ofNat 32 (tb7.header + tb7.len)) (derElement 4 (memBytes n0.mem ((rp2) + BitVec.ofNat 32 (tb7.header + tb7.len)) ((rem2) - BitVec.ofNat 32 (tb7.header + tb7.len)).toNat)) = .ok (vp14, vl14) ∧
-    ∃ te14, derElement 4 (memBytes n0.mem ((rp2) + BitVec.ofNat 32 (tb7.header + tb7.len)) ((rem2) - BitVec.ofNat 32 (tb7.header + tb7.len)).toNat) = .ok te14 ∧
+    (hb1 : M0 rp2 = BitVec.ofNat 8 1)
+    (SD0 : SvData M0) :
+    (¬ (derBoolOf (memBytes M0 (rp2) (rem2).toNat) (derElement 1 (memBytes M0 (rp2) (rem2).toNat)) = .ok () ∧ ∃ tb7, derElement 1 (memBytes M0 (rp2) (rem2).toNat) = .ok tb7 ∧ ∃ vp14 vl14, derContent ((rp2) + BitVec.ofNat 32 (tb7.header + tb7.len)) (derElement 4 (memBytes M0 ((rp2) + BitVec.ofNat 32 (tb7.header + tb7.len)) ((rem2) - BitVec.ofNat 32 (tb7.header + tb7.len)).toNat)) = .ok (vp14, vl14) ∧ ∃ te14, derElement 4 (memBytes M0 ((rp2) + BitVec.ofNat 32 (tb7.header + tb7.len)) ((rem2) - BitVec.ofNat 32 (tb7.header + tb7.len)).toNat) = .ok te14 ∧ (((rem2) - BitVec.ofNat 32 (tb7.header + tb7.len)) - BitVec.ofNat 32 (te14.header + te14.len) = 0) ∧ listsOidOf M0 p0 (L.toNat - rem.toNat) (memBytes M0 op ol.toNat) = .ok false ∧ (memBytes M0 (BitVec.ofNat 32 0x3FCC4889) 3 = memBytes M0 op ol.toNat ∨ memBytes M0 (BitVec.ofNat 32 0x3FCC488C) 3 = memBytes M0 op ol.toNat ∨ memBytes M0 (BitVec.ofNat 32 0x3FCC488F) 3 = memBytes M0 op ol.toNat ∨ memBytes M0 (BitVec.ofNat 32 0x3FCC4892) 3 = memBytes M0 op ol.toNat) ∧ True) ∧ SvErrRet B out v n0) ∨
+    (derBoolOf (memBytes M0 (rp2) (rem2).toNat) (derElement 1 (memBytes M0 (rp2) (rem2).toNat)) = .ok () ∧
+    ∃ tb7, derElement 1 (memBytes M0 (rp2) (rem2).toNat) = .ok tb7 ∧
+    ∃ vp14 vl14, derContent ((rp2) + BitVec.ofNat 32 (tb7.header + tb7.len)) (derElement 4 (memBytes M0 ((rp2) + BitVec.ofNat 32 (tb7.header + tb7.len)) ((rem2) - BitVec.ofNat 32 (tb7.header + tb7.len)).toNat)) = .ok (vp14, vl14) ∧
+    ∃ te14, derElement 4 (memBytes M0 ((rp2) + BitVec.ofNat 32 (tb7.header + tb7.len)) ((rem2) - BitVec.ofNat 32 (tb7.header + tb7.len)).toNat) = .ok te14 ∧
     (((rem2) - BitVec.ofNat 32 (tb7.header + tb7.len)) - BitVec.ofNat 32 (te14.header + te14.len) = 0) ∧
-    listsOidOf n0.mem p0 (L.toNat - rem.toNat) (memBytes n0.mem op ol.toNat) = .ok false ∧
-    (memBytes n0.mem (BitVec.ofNat 32 0x3FCC4889) 3 = memBytes n0.mem op ol.toNat ∨ memBytes n0.mem (BitVec.ofNat 32 0x3FCC488C) 3 = memBytes n0.mem op ol.toNat ∨ memBytes n0.mem (BitVec.ofNat 32 0x3FCC488F) 3 = memBytes n0.mem op ol.toNat ∨ memBytes n0.mem (BitVec.ofNat 32 0x3FCC4892) 3 = memBytes n0.mem op ol.toNat) ∧
+    listsOidOf M0 p0 (L.toNat - rem.toNat) (memBytes M0 op ol.toNat) = .ok false ∧
+    (memBytes M0 (BitVec.ofNat 32 0x3FCC4889) 3 = memBytes M0 op ol.toNat ∨ memBytes M0 (BitVec.ofNat 32 0x3FCC488C) 3 = memBytes M0 op ol.toNat ∨ memBytes M0 (BitVec.ofNat 32 0x3FCC488F) 3 = memBytes M0 op ol.toNat ∨ memBytes M0 (BitVec.ofNat 32 0x3FCC4892) 3 = memBytes M0 op ol.toNat) ∧
     ∃ n', Steps n0 n' ∧
         St n'.mem SV n' 0x60E (reg n') ∧
         SvCode n'.mem ∧
         SvSaves B n'.mem v ∧
-        (∀ x, SvR B x → n'.mem x = n0.mem x) ∧
+        (∀ x, SvR B x → n'.mem x = M0 x) ∧
         reg n' sp = B + 0x21A0 ∧
         reg n' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧
         reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧
@@ -203,7 +204,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = sl8 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) = sl9) := by
   have t0 : Steps n0 n0 := .refl n0
-  have fR0 : ∀ x, SvR B x → n0.mem x = n0.mem x := fun _ _ => rfl
+  have fR0 : ∀ x, SvR B x → n0.mem x = M0 x := fM
   have g0_3 : reg n0 (3 : Fin 32) = reg n0 (3 : Fin 32) := rfl
   have g0_4 : reg n0 (4 : Fin 32) = reg n0 (4 : Fin 32) := rfl
   -- 0x560: branch, not taken
@@ -213,7 +214,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m1 : n1.mem = n0.mem := u1.mem
   have fr1 : ∀ x, SvR B x → n1.mem x = n0.mem x := fun x _ => by rw [m1]
   have t1 : Steps n0 n1 := t0.trans (.single d1)
-  have fR1 : ∀ x, SvR B x → n1.mem x = n0.mem x := fun x hx => (fr1 x hx).trans (fR0 x hx)
+  have fR1 : ∀ x, SvR B x → n1.mem x = M0 x := fun x hx => (fr1 x hx).trans (fR0 x hx)
   have E1 : SvCode n1.mem := E0.fr F fr1
   have V1 : SvSaves B n1.mem v := V0.same m1
   have g1_2 : reg n1 sp = B + 0x21A0 := by rw [u1.regs, g0_2]
@@ -273,7 +274,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m2 : n2.mem = n1.mem := u2.mem
   have fr2 : ∀ x, SvR B x → n2.mem x = n1.mem x := fun x _ => by rw [m2]
   have t2 : Steps n0 n2 := t1.trans (.single d2)
-  have fR2 : ∀ x, SvR B x → n2.mem x = n0.mem x := fun x hx => (fr2 x hx).trans (fR1 x hx)
+  have fR2 : ∀ x, SvR B x → n2.mem x = M0 x := fun x hx => (fr2 x hx).trans (fR1 x hx)
   have E2 : SvCode n2.mem := E1.fr F fr2
   have V2 : SvSaves B n2.mem v := V1.same m2
   have g2_2 : reg n2 sp = B + 0x21A0 := by rw [u2.regs, upd_ne (by decide) (by decide), g1_2]
@@ -335,7 +336,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m3 : n3.mem = n2.mem := u3.mem
   have fr3 : ∀ x, SvR B x → n3.mem x = n2.mem x := fun x _ => by rw [m3]
   have t3 : Steps n0 n3 := t2.trans (.single d3)
-  have fR3 : ∀ x, SvR B x → n3.mem x = n0.mem x := fun x hx => (fr3 x hx).trans (fR2 x hx)
+  have fR3 : ∀ x, SvR B x → n3.mem x = M0 x := fun x hx => (fr3 x hx).trans (fR2 x hx)
   have E3 : SvCode n3.mem := E2.fr F fr3
   have V3 : SvSaves B n3.mem v := V2.same m3
   have g3_2 : reg n3 sp = B + 0x21A0 := by rw [u3.regs, upd_ne (by decide) (by decide), g2_2]
@@ -352,7 +353,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g3_25 : reg n3 (25 : Fin 32) = x25 := by rw [u3.regs, upd_ne (by decide) (by decide), g2_25]
   have g3_26 : reg n3 (26 : Fin 32) = x26 := by rw [u3.regs, upd_ne (by decide) (by decide), g2_26]
   have g3_27 : reg n3 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u3.regs, upd_ne (by decide) (by decide), g2_27]
-  have g3_10 : reg n3 a0 = (n0.mem (rp2)).zeroExtend 32 := by
+  have g3_10 : reg n3 a0 = (M0 (rp2)).zeroExtend 32 := by
     rw [u3.regs]; simp +decide only [upd, ↓reduceIte]
     rw [g2_10, show (rp2) + 0x0 = rp2 from BitVec.add_zero _, fR2 _ (in2.r0 (toNat_pos_of_ne hr2))]
   have w3_30 : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = f30 := by rw [m3]; exact w2_30
@@ -399,7 +400,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have rb4 : ∀ q, reg n4 q = (runBlock svX2c56a (n3.mem, reg n3)).2 q := fun q => by rw [u4.regs]
   have fr4 : ∀ x, SvR B x → n4.mem x = n3.mem x := fun x _ => by rw [m4]
   have t4 : Steps n0 n4 := t3.trans c4
-  have fR4 : ∀ x, SvR B x → n4.mem x = n0.mem x := fun x hx => (fr4 x hx).trans (fR3 x hx)
+  have fR4 : ∀ x, SvR B x → n4.mem x = M0 x := fun x hx => (fr4 x hx).trans (fR3 x hx)
   have E4 : SvCode n4.mem := E3.fr F fr4
   have V4 : SvSaves B n4.mem v := V3.same m4
   have g4_2 : reg n4 sp = B + 0x21A0 := by
@@ -412,7 +413,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb4, runBlock_reg _ _ _ (8 : Fin 32) s3.zero (by decide), g3_8]
   have g4_9 : reg n4 (9 : Fin 32) = x9 := by
     rw [rb4, runBlock_reg _ _ _ (9 : Fin 32) s3.zero (by decide), g3_9]
-  have g4_10 : reg n4 a0 = (n0.mem (rp2)).zeroExtend 32 := by
+  have g4_10 : reg n4 a0 = (M0 (rp2)).zeroExtend 32 := by
     rw [rb4, runBlock_reg _ _ _ a0 s3.zero (by decide), g3_10]
   have g4_18 : reg n4 (18 : Fin 32) = out := by
     rw [rb4, runBlock_reg _ _ _ (18 : Fin 32) s3.zero (by decide), g3_18]
@@ -477,7 +478,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m5 : n5.mem = n4.mem := u5.mem
   have fr5 : ∀ x, SvR B x → n5.mem x = n4.mem x := fun x _ => by rw [m5]
   have t5 : Steps n0 n5 := t4.trans (.single d5)
-  have fR5 : ∀ x, SvR B x → n5.mem x = n0.mem x := fun x hx => (fr5 x hx).trans (fR4 x hx)
+  have fR5 : ∀ x, SvR B x → n5.mem x = M0 x := fun x hx => (fr5 x hx).trans (fR4 x hx)
   have E5 : SvCode n5.mem := E4.fr F fr5
   have V5 : SvSaves B n5.mem v := V4.same m5
   have g5_2 : reg n5 sp = B + 0x21A0 := by rw [u5.regs, g4_2]
@@ -485,7 +486,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g5_4 : reg n5 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [u5.regs, g4_4]
   have g5_8 : reg n5 (8 : Fin 32) = op := by rw [u5.regs, g4_8]
   have g5_9 : reg n5 (9 : Fin 32) = x9 := by rw [u5.regs, g4_9]
-  have g5_10 : reg n5 a0 = (n0.mem (rp2)).zeroExtend 32 := by rw [u5.regs, g4_10]
+  have g5_10 : reg n5 a0 = (M0 (rp2)).zeroExtend 32 := by rw [u5.regs, g4_10]
   have g5_11 : reg n5 a1 = BitVec.ofNat 32 0x1 := by rw [u5.regs, g4_11]
   have g5_18 : reg n5 (18 : Fin 32) = out := by rw [u5.regs, g4_18]
   have g5_19 : reg n5 (19 : Fin 32) = bp := by rw [u5.regs, g4_19]
@@ -539,7 +540,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have rb6 : ∀ q, reg n6 q = (runBlock svX2c570 (n5.mem, reg n5)).2 q := fun q => by rw [u6.regs]
   have fr6 : ∀ x, SvR B x → n6.mem x = n5.mem x := fun x _ => by rw [m6]
   have t6 : Steps n0 n6 := t5.trans c6
-  have fR6 : ∀ x, SvR B x → n6.mem x = n0.mem x := fun x hx => (fr6 x hx).trans (fR5 x hx)
+  have fR6 : ∀ x, SvR B x → n6.mem x = M0 x := fun x hx => (fr6 x hx).trans (fR5 x hx)
   have E6 : SvCode n6.mem := E5.fr F fr6
   have V6 : SvSaves B n6.mem v := V5.same m6
   have g6_2 : reg n6 sp = B + 0x21A0 := by
@@ -615,7 +616,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     F E6 s6 sv_at_572 sv_at_576 (by decide) (by decide) g6_2 g6_10
     (by decide) (by decide) w6_328 w6_32c in2
   have t7 : Steps n0 n7 := t6.trans c7
-  have fR7 : ∀ x, SvR B x → n7.mem x = n0.mem x := fun x hx => (fr7 x hx).trans (fR6 x hx)
+  have fR7 : ∀ x, SvR B x → n7.mem x = M0 x := fun x hx => (fr7 x hx).trans (fR6 x hx)
   have E7 : SvCode n7.mem := E6.fr F fr7
   have V7 : SvSaves B n7.mem v := V6.keepL K7 (by decide)
   rw [sv_mb fR6 in2] at a0_7 A7
@@ -632,7 +633,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g7_25 : reg n7 (25 : Fin 32) = x25 := by rw [rk7 (25 : Fin 32) (by decide) (by decide), g6_25]
   have g7_26 : reg n7 (26 : Fin 32) = x26 := by rw [rk7 (26 : Fin 32) (by decide) (by decide), g6_26]
   have g7_27 : reg n7 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rk7 (27 : Fin 32) (by decide) (by decide), g6_27]
-  obtain ⟨r7, hr7⟩ : ∃ r, derBoolOf (memBytes n0.mem (rp2) (rem2).toNat) (derElement 1 (memBytes n0.mem (rp2) (rem2).toNat)) = r := ⟨_, rfl⟩
+  obtain ⟨r7, hr7⟩ : ∃ r, derBoolOf (memBytes M0 (rp2) (rem2).toNat) (derElement 1 (memBytes M0 (rp2) (rem2).toNat)) = r := ⟨_, rfl⟩
   rcases r7 with eb7 | ⟨⟩
   · have g7_10 : reg n7 a0 = (derErrByte eb7).zeroExtend 32 := by rw [a0_7, hr7]; rfl
     have w7_30 : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = f30 := (K7.w32 (by decide) (by decide)).trans w6_30
@@ -673,7 +674,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     obtain ⟨n8, d8, s8, fr8, K8, W8, rg8⟩ := sv_sw F E7 s7 sv_at_57a (off' := 0x57C) (c := 0x44)
       (by decide) (by rw [g7_2]; sv_addr) (by decide) (by decide)
     have t8 : Steps n0 n8 := t7.trans d8
-    have fR8 : ∀ x, SvR B x → n8.mem x = n0.mem x := fun x hx => (fr8 x hx).trans (fR7 x hx)
+    have fR8 : ∀ x, SvR B x → n8.mem x = M0 x := fun x hx => (fr8 x hx).trans (fR7 x hx)
     have E8 : SvCode n8.mem := E7.fr F fr8
     have V8 : SvSaves B n8.mem v := V7.keep K8 (by decide)
     have g8_2 : reg n8 sp = B + 0x21A0 := by rw [rg8 sp, g7_2]
@@ -733,7 +734,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have rb9 : ∀ q, reg n9 q = (runBlock svX2c57c (n8.mem, reg n8)).2 q := fun q => by rw [u9.regs]
     have fr9 : ∀ x, SvR B x → n9.mem x = n8.mem x := fun x _ => by rw [m9]
     have t9 : Steps n0 n9 := t8.trans c9
-    have fR9 : ∀ x, SvR B x → n9.mem x = n0.mem x := fun x hx => (fr9 x hx).trans (fR8 x hx)
+    have fR9 : ∀ x, SvR B x → n9.mem x = M0 x := fun x hx => (fr9 x hx).trans (fR8 x hx)
     have E9 : SvCode n9.mem := E8.fr F fr9
     have V9 : SvSaves B n9.mem v := V8.same m9
     have g9_2 : reg n9 sp = B + 0x21A0 := by
@@ -807,7 +808,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have rb10 : ∀ q, reg n10 q = (runBlock svX2c580 (n9.mem, reg n9)).2 q := fun q => by rw [u10.regs]
     have fr10 : ∀ x, SvR B x → n10.mem x = n9.mem x := fun x _ => by rw [m10]
     have t10 : Steps n0 n10 := t9.trans c10
-    have fR10 : ∀ x, SvR B x → n10.mem x = n0.mem x := fun x hx => (fr10 x hx).trans (fR9 x hx)
+    have fR10 : ∀ x, SvR B x → n10.mem x = M0 x := fun x hx => (fr10 x hx).trans (fR9 x hx)
     have E10 : SvCode n10.mem := E9.fr F fr10
     have V10 : SvSaves B n10.mem v := V9.same m10
     have g10_2 : reg n10 sp = B + 0x21A0 := by
@@ -880,7 +881,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m11 : n11.mem = n10.mem := u11.mem
     have fr11 : ∀ x, SvR B x → n11.mem x = n10.mem x := fun x _ => by rw [m11]
     have t11 : Steps n0 n11 := t10.trans (.single d11)
-    have fR11 : ∀ x, SvR B x → n11.mem x = n0.mem x := fun x hx => (fr11 x hx).trans (fR10 x hx)
+    have fR11 : ∀ x, SvR B x → n11.mem x = M0 x := fun x hx => (fr11 x hx).trans (fR10 x hx)
     have E11 : SvCode n11.mem := E10.fr F fr11
     have V11 : SvSaves B n11.mem v := V10.same m11
     have g11_2 : reg n11 sp = B + 0x21A0 := by rw [u11.regs, g10_2]
@@ -939,7 +940,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m12 : n12.mem = n11.mem := u12.mem
     have fr12 : ∀ x, SvR B x → n12.mem x = n11.mem x := fun x _ => by rw [m12]
     have t12 : Steps n0 n12 := t11.trans (.single d12)
-    have fR12 : ∀ x, SvR B x → n12.mem x = n0.mem x := fun x hx => (fr12 x hx).trans (fR11 x hx)
+    have fR12 : ∀ x, SvR B x → n12.mem x = M0 x := fun x hx => (fr12 x hx).trans (fR11 x hx)
     have E12 : SvCode n12.mem := E11.fr F fr12
     have V12 : SvSaves B n12.mem v := V11.same m12
     have g12_2 : reg n12 sp = B + 0x21A0 := by rw [u12.regs, upd_ne (by decide) (by decide), g11_2]
@@ -998,7 +999,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m13 : n13.mem = n12.mem := u13.mem
     have fr13 : ∀ x, SvR B x → n13.mem x = n12.mem x := fun x _ => by rw [m13]
     have t13 : Steps n0 n13 := t12.trans (.single d13)
-    have fR13 : ∀ x, SvR B x → n13.mem x = n0.mem x := fun x hx => (fr13 x hx).trans (fR12 x hx)
+    have fR13 : ∀ x, SvR B x → n13.mem x = M0 x := fun x hx => (fr13 x hx).trans (fR12 x hx)
     have E13 : SvCode n13.mem := E12.fr F fr13
     have V13 : SvSaves B n13.mem v := V12.same m13
     have g13_2 : reg n13 sp = B + 0x21A0 := by rw [u13.regs, g12_2]
@@ -1050,7 +1051,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have w13_a40 : memLoad32 n13.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = sl8 := by rw [m13]; exact w12_a40
     have w13_a44 : memLoad32 n13.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) = sl9 := by rw [m13]; exact w12_a44
     clear w12_a44 w12_a40 w12_a3c w12_a38 w12_a34 w12_a30 w12_a2c w12_a28 w12_a24 w12_a20 w12_94 w12_90 w12_8c w12_88 w12_84 w12_80 w12_7c w12_78 w12_74 w12_70 w12_6c w12_68 w12_64 w12_60 w12_5c w12_58 w12_54 w12_50 w12_4c w12_48 w12_44 w12_40 w12_34 w12_30 g12_27 g12_26 g12_25 g12_24 g12_22 g12_21 g12_19 g12_18 g12_10 g12_9 g12_8 g12_4 g12_3 g12_2 V12 E12 fR12 t12 fr12 m12 s12 u12 d12
-    exact .inl ⟨(fun ⟨h0', _⟩ => by rw [hr7] at h0'; cases h0'), sv_fail F E13 s13 t13 fR13 V13 hret g13_2 g13_18 hO g13_3 g13_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by rw [hr7] at h0'; cases h0'), sv_fail F E13 s13 t13 (fun x hx => (fR13 x hx).trans (fM x hx).symm) V13 hret g13_2 g13_18 hO g13_3 g13_4⟩
   have g7_10 : reg n7 a0 = BitVec.ofNat 32 0xFFFFFFFF := by rw [a0_7, hr7]; rfl
   obtain ⟨tb7, htb7⟩ := bool_ok_elem hr7
   obtain ⟨d8_7, d12_7⟩ := A7 tb7 htb7
@@ -1094,7 +1095,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   obtain ⟨n8, d8, s8, fr8, K8, W8, rg8⟩ := sv_sw F E7 s7 sv_at_57a (off' := 0x57C) (c := 0x44)
     (by decide) (by rw [g7_2]; sv_addr) (by decide) (by decide)
   have t8 : Steps n0 n8 := t7.trans d8
-  have fR8 : ∀ x, SvR B x → n8.mem x = n0.mem x := fun x hx => (fr8 x hx).trans (fR7 x hx)
+  have fR8 : ∀ x, SvR B x → n8.mem x = M0 x := fun x hx => (fr8 x hx).trans (fR7 x hx)
   have E8 : SvCode n8.mem := E7.fr F fr8
   have V8 : SvSaves B n8.mem v := V7.keep K8 (by decide)
   have g8_2 : reg n8 sp = B + 0x21A0 := by rw [rg8 sp, g7_2]
@@ -1156,7 +1157,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have rb9 : ∀ q, reg n9 q = (runBlock svX2c57c_584 (n8.mem, reg n8)).2 q := fun q => by rw [u9.regs]
   have fr9 : ∀ x, SvR B x → n9.mem x = n8.mem x := fun x _ => by rw [m9]
   have t9 : Steps n0 n9 := t8.trans c9
-  have fR9 : ∀ x, SvR B x → n9.mem x = n0.mem x := fun x hx => (fr9 x hx).trans (fR8 x hx)
+  have fR9 : ∀ x, SvR B x → n9.mem x = M0 x := fun x hx => (fr9 x hx).trans (fR8 x hx)
   have E9 : SvCode n9.mem := E8.fr F fr9
   have V9 : SvSaves B n9.mem v := V8.same m9
   have g9_2 : reg n9 sp = B + 0x21A0 := by
@@ -1233,7 +1234,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m10 : n10.mem = n9.mem := u10.mem
   have fr10 : ∀ x, SvR B x → n10.mem x = n9.mem x := fun x _ => by rw [m10]
   have t10 : Steps n0 n10 := t9.trans (.single d10)
-  have fR10 : ∀ x, SvR B x → n10.mem x = n0.mem x := fun x hx => (fr10 x hx).trans (fR9 x hx)
+  have fR10 : ∀ x, SvR B x → n10.mem x = M0 x := fun x hx => (fr10 x hx).trans (fR9 x hx)
   have E10 : SvCode n10.mem := E9.fr F fr10
   have V10 : SvSaves B n10.mem v := V9.same m10
   have g10_2 : reg n10 sp = B + 0x21A0 := by rw [u10.regs, g9_2]
@@ -1295,7 +1296,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have rb11 : ∀ q, reg n11 q = (runBlock svX2c588 (n10.mem, reg n10)).2 q := fun q => by rw [u11.regs]
   have fr11 : ∀ x, SvR B x → n11.mem x = n10.mem x := fun x _ => by rw [m11]
   have t11 : Steps n0 n11 := t10.trans c11
-  have fR11 : ∀ x, SvR B x → n11.mem x = n0.mem x := fun x hx => (fr11 x hx).trans (fR10 x hx)
+  have fR11 : ∀ x, SvR B x → n11.mem x = M0 x := fun x hx => (fr11 x hx).trans (fR10 x hx)
   have E11 : SvCode n11.mem := E10.fr F fr11
   have V11 : SvSaves B n11.mem v := V10.same m11
   have g11_2 : reg n11 sp = B + 0x21A0 := by
@@ -1374,7 +1375,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m12 : n12.mem = n11.mem := u12.mem
   have fr12 : ∀ x, SvR B x → n12.mem x = n11.mem x := fun x _ => by rw [m12]
   have t12 : Steps n0 n12 := t11.trans (.single d12)
-  have fR12 : ∀ x, SvR B x → n12.mem x = n0.mem x := fun x hx => (fr12 x hx).trans (fR11 x hx)
+  have fR12 : ∀ x, SvR B x → n12.mem x = M0 x := fun x hx => (fr12 x hx).trans (fR11 x hx)
   have E12 : SvCode n12.mem := E11.fr F fr12
   have V12 : SvSaves B n12.mem v := V11.same m12
   have g12_2 : reg n12 sp = B + 0x21A0 := by rw [u12.regs, g11_2]
@@ -1437,7 +1438,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have rb13 : ∀ q, reg n13 q = (runBlock svX2c58e (n12.mem, reg n12)).2 q := fun q => by rw [u13.regs]
   have fr13 : ∀ x, SvR B x → n13.mem x = n12.mem x := fun x _ => by rw [m13]
   have t13 : Steps n0 n13 := t12.trans c13
-  have fR13 : ∀ x, SvR B x → n13.mem x = n0.mem x := fun x hx => (fr13 x hx).trans (fR12 x hx)
+  have fR13 : ∀ x, SvR B x → n13.mem x = M0 x := fun x hx => (fr13 x hx).trans (fR12 x hx)
   have E13 : SvCode n13.mem := E12.fr F fr13
   have V13 : SvSaves B n13.mem v := V12.same m13
   have g13_2 : reg n13 sp = B + 0x21A0 := by
@@ -1518,7 +1519,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     F E13 s13 sv_at_598 sv_at_59c (by decide) (by decide) g13_2 g13_10 g13_11 (by decide) (by decide) (by decide) (by decide)
     (by decide) w13_328 w13_32c (in2.restW htb7)
   have t14 : Steps n0 n14 := t13.trans c14
-  have fR14 : ∀ x, SvR B x → n14.mem x = n0.mem x := fun x hx => (fr14 x hx).trans (fR13 x hx)
+  have fR14 : ∀ x, SvR B x → n14.mem x = M0 x := fun x hx => (fr14 x hx).trans (fR13 x hx)
   have E14 : SvCode n14.mem := E13.fr F fr14
   have V14 : SvSaves B n14.mem v := V13.keepL K14 (by decide)
   rw [sv_mb fR13 (in2.restW htb7)] at A14 Ok14 Er14
@@ -1536,7 +1537,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g14_25 : reg n14 (25 : Fin 32) = x25 := by rw [rk14 (25 : Fin 32) (by decide) (by decide), g13_25]
   have g14_26 : reg n14 (26 : Fin 32) = x26 := by rw [rk14 (26 : Fin 32) (by decide) (by decide), g13_26]
   have g14_27 : reg n14 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rk14 (27 : Fin 32) (by decide) (by decide), g13_27]
-  obtain ⟨r14, hr14⟩ : ∃ r, derContent ((rp2) + BitVec.ofNat 32 (tb7.header + tb7.len)) (derElement 4 (memBytes n0.mem ((rp2) + BitVec.ofNat 32 (tb7.header + tb7.len)) ((rem2) - BitVec.ofNat 32 (tb7.header + tb7.len)).toNat)) = r := ⟨_, rfl⟩
+  obtain ⟨r14, hr14⟩ : ∃ r, derContent ((rp2) + BitVec.ofNat 32 (tb7.header + tb7.len)) (derElement 4 (memBytes M0 ((rp2) + BitVec.ofNat 32 (tb7.header + tb7.len)) ((rem2) - BitVec.ofNat 32 (tb7.header + tb7.len)).toNat)) = r := ⟨_, rfl⟩
   rcases r14 with er14 | ⟨vp14, vl14⟩
   · obtain ⟨z14, -⟩ := Er14 er14 hr14
     have w14_30 : memLoad32 n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = f30 := (K14.w32 (by decide) (by decide)).trans w13_30
@@ -1582,7 +1583,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m15 : n15.mem = n14.mem := u15.mem
     have fr15 : ∀ x, SvR B x → n15.mem x = n14.mem x := fun x _ => by rw [m15]
     have t15 : Steps n0 n15 := t14.trans (.single d15)
-    have fR15 : ∀ x, SvR B x → n15.mem x = n0.mem x := fun x hx => (fr15 x hx).trans (fR14 x hx)
+    have fR15 : ∀ x, SvR B x → n15.mem x = M0 x := fun x hx => (fr15 x hx).trans (fR14 x hx)
     have E15 : SvCode n15.mem := E14.fr F fr15
     have V15 : SvSaves B n15.mem v := V14.same m15
     have g15_2 : reg n15 sp = B + 0x21A0 := by rw [u15.regs, upd_ne (by decide) (by decide), g14_2]
@@ -1642,7 +1643,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     obtain ⟨n16, d16, s16, fr16, K16, W16, rg16⟩ := sv_sw F E15 s15 sv_at_5a4 (off' := 0x5A6) (c := 0x3C)
       (by decide) (by rw [g15_2]; sv_addr) (by decide) (by decide)
     have t16 : Steps n0 n16 := t15.trans d16
-    have fR16 : ∀ x, SvR B x → n16.mem x = n0.mem x := fun x hx => (fr16 x hx).trans (fR15 x hx)
+    have fR16 : ∀ x, SvR B x → n16.mem x = M0 x := fun x hx => (fr16 x hx).trans (fR15 x hx)
     have E16 : SvCode n16.mem := E15.fr F fr16
     have V16 : SvSaves B n16.mem v := V15.keep K16 (by decide)
     have g16_2 : reg n16 sp = B + 0x21A0 := by rw [rg16 sp, g15_2]
@@ -1704,7 +1705,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m17 : n17.mem = n16.mem := u17.mem
     have fr17 : ∀ x, SvR B x → n17.mem x = n16.mem x := fun x _ => by rw [m17]
     have t17 : Steps n0 n17 := t16.trans (.single d17)
-    have fR17 : ∀ x, SvR B x → n17.mem x = n0.mem x := fun x hx => (fr17 x hx).trans (fR16 x hx)
+    have fR17 : ∀ x, SvR B x → n17.mem x = M0 x := fun x hx => (fr17 x hx).trans (fR16 x hx)
     have E17 : SvCode n17.mem := E16.fr F fr17
     have V17 : SvSaves B n17.mem v := V16.same m17
     have g17_2 : reg n17 sp = B + 0x21A0 := by rw [u17.regs, g16_2]
@@ -1765,7 +1766,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m18 : n18.mem = n17.mem := u18.mem
     have fr18 : ∀ x, SvR B x → n18.mem x = n17.mem x := fun x _ => by rw [m18]
     have t18 : Steps n0 n18 := t17.trans (.single d18)
-    have fR18 : ∀ x, SvR B x → n18.mem x = n0.mem x := fun x hx => (fr18 x hx).trans (fR17 x hx)
+    have fR18 : ∀ x, SvR B x → n18.mem x = M0 x := fun x hx => (fr18 x hx).trans (fR17 x hx)
     have E18 : SvCode n18.mem := E17.fr F fr18
     have V18 : SvSaves B n18.mem v := V17.same m18
     have g18_2 : reg n18 sp = B + 0x21A0 := by rw [u18.regs, upd_ne (by decide) (by decide), g17_2]
@@ -1826,7 +1827,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m19 : n19.mem = n18.mem := u19.mem
     have fr19 : ∀ x, SvR B x → n19.mem x = n18.mem x := fun x _ => by rw [m19]
     have t19 : Steps n0 n19 := t18.trans (.single d19)
-    have fR19 : ∀ x, SvR B x → n19.mem x = n0.mem x := fun x hx => (fr19 x hx).trans (fR18 x hx)
+    have fR19 : ∀ x, SvR B x → n19.mem x = M0 x := fun x hx => (fr19 x hx).trans (fR18 x hx)
     have E19 : SvCode n19.mem := E18.fr F fr19
     have V19 : SvSaves B n19.mem v := V18.same m19
     have g19_2 : reg n19 sp = B + 0x21A0 := by rw [u19.regs, g18_2]
@@ -1884,7 +1885,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     obtain ⟨n20, d20, s20, fr20, K20, W20, rg20⟩ := sv_sw F E19 s19 sv_at_b38 (off' := 0xB3A) (c := 0x44)
       (by decide) (by rw [g19_2]; sv_addr) (by decide) (by decide)
     have t20 : Steps n0 n20 := t19.trans d20
-    have fR20 : ∀ x, SvR B x → n20.mem x = n0.mem x := fun x hx => (fr20 x hx).trans (fR19 x hx)
+    have fR20 : ∀ x, SvR B x → n20.mem x = M0 x := fun x hx => (fr20 x hx).trans (fR19 x hx)
     have E20 : SvCode n20.mem := E19.fr F fr20
     have V20 : SvSaves B n20.mem v := V19.keep K20 (by decide)
     have g20_2 : reg n20 sp = B + 0x21A0 := by rw [rg20 sp, g19_2]
@@ -1944,7 +1945,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m21 : n21.mem = n20.mem := u21.mem
     have fr21 : ∀ x, SvR B x → n21.mem x = n20.mem x := fun x _ => by rw [m21]
     have t21 : Steps n0 n21 := t20.trans (.single d21)
-    have fR21 : ∀ x, SvR B x → n21.mem x = n0.mem x := fun x hx => (fr21 x hx).trans (fR20 x hx)
+    have fR21 : ∀ x, SvR B x → n21.mem x = M0 x := fun x hx => (fr21 x hx).trans (fR20 x hx)
     have E21 : SvCode n21.mem := E20.fr F fr21
     have V21 : SvSaves B n21.mem v := V20.same m21
     have g21_2 : reg n21 sp = B + 0x21A0 := by rw [u21.regs, g20_2]
@@ -2004,7 +2005,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m22 : n22.mem = n21.mem := u22.mem
     have fr22 : ∀ x, SvR B x → n22.mem x = n21.mem x := fun x _ => by rw [m22]
     have t22 : Steps n0 n22 := t21.trans (.single d22)
-    have fR22 : ∀ x, SvR B x → n22.mem x = n0.mem x := fun x hx => (fr22 x hx).trans (fR21 x hx)
+    have fR22 : ∀ x, SvR B x → n22.mem x = M0 x := fun x hx => (fr22 x hx).trans (fR21 x hx)
     have E22 : SvCode n22.mem := E21.fr F fr22
     have V22 : SvSaves B n22.mem v := V21.same m22
     have g22_2 : reg n22 sp = B + 0x21A0 := by rw [u22.regs, upd_ne (by decide) (by decide), g21_2]
@@ -2064,7 +2065,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m23 : n23.mem = n22.mem := u23.mem
     have fr23 : ∀ x, SvR B x → n23.mem x = n22.mem x := fun x _ => by rw [m23]
     have t23 : Steps n0 n23 := t22.trans (.single d23)
-    have fR23 : ∀ x, SvR B x → n23.mem x = n0.mem x := fun x hx => (fr23 x hx).trans (fR22 x hx)
+    have fR23 : ∀ x, SvR B x → n23.mem x = M0 x := fun x hx => (fr23 x hx).trans (fR22 x hx)
     have E23 : SvCode n23.mem := E22.fr F fr23
     have V23 : SvSaves B n23.mem v := V22.same m23
     have g23_2 : reg n23 sp = B + 0x21A0 := by rw [u23.regs, g22_2]
@@ -2117,7 +2118,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have w23_a44 : memLoad32 n23.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) = sl9 := by rw [m23]; exact w22_a44
     have w23_1020 : memLoad32 n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = 0 := by rw [m23]; exact w22_1020
     clear w22_1020 w22_a44 w22_a40 w22_a3c w22_a38 w22_a34 w22_a30 w22_a2c w22_a28 w22_a24 w22_a20 w22_94 w22_90 w22_8c w22_88 w22_84 w22_80 w22_7c w22_78 w22_74 w22_70 w22_6c w22_68 w22_64 w22_60 w22_5c w22_58 w22_54 w22_50 w22_4c w22_48 w22_40 w22_3c w22_34 w22_30 g22_27 g22_26 g22_25 g22_24 g22_23 g22_22 g22_21 g22_19 g22_18 g22_9 g22_8 g22_4 g22_3 g22_2 V22 E22 fR22 t22 fr22 m22 s22 u22 d22
-    exact .inl ⟨(fun ⟨h0', tb7', h1', vp14', vl14', h2', _⟩ => by rw [hr7] at h0'; cases h0'; rw [htb7] at h1'; cases h1'; rw [hr14] at h2'; cases h2'), sv_fail F E23 s23 t23 fR23 V23 hret g23_2 g23_18 hO g23_3 g23_4⟩
+    exact .inl ⟨(fun ⟨h0', tb7', h1', vp14', vl14', h2', _⟩ => by rw [hr7] at h0'; cases h0'; rw [htb7] at h1'; cases h1'; rw [hr14] at h2'; cases h2'), sv_fail F E23 s23 t23 (fun x hx => (fR23 x hx).trans (fM x hx).symm) V23 hret g23_2 g23_18 hO g23_3 g23_4⟩
   obtain ⟨te14, ht14, -, -⟩ := content_ok_elem hr14
   obtain ⟨p0_14, p4_14⟩ := Ok14 vp14 vl14 hr14
   obtain ⟨d8_14, d12_14⟩ := A14 te14 ht14
@@ -2167,7 +2168,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m15 : n15.mem = n14.mem := u15.mem
   have fr15 : ∀ x, SvR B x → n15.mem x = n14.mem x := fun x _ => by rw [m15]
   have t15 : Steps n0 n15 := t14.trans (.single d15)
-  have fR15 : ∀ x, SvR B x → n15.mem x = n0.mem x := fun x hx => (fr15 x hx).trans (fR14 x hx)
+  have fR15 : ∀ x, SvR B x → n15.mem x = M0 x := fun x hx => (fr15 x hx).trans (fR14 x hx)
   have E15 : SvCode n15.mem := E14.fr F fr15
   have V15 : SvSaves B n15.mem v := V14.same m15
   have g15_2 : reg n15 sp = B + 0x21A0 := by rw [u15.regs, upd_ne (by decide) (by decide), g14_2]
@@ -2230,7 +2231,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   obtain ⟨n16, d16, s16, fr16, K16, W16, rg16⟩ := sv_sw F E15 s15 sv_at_5a4 (off' := 0x5A6) (c := 0x3C)
     (by decide) (by rw [g15_2]; sv_addr) (by decide) (by decide)
   have t16 : Steps n0 n16 := t15.trans d16
-  have fR16 : ∀ x, SvR B x → n16.mem x = n0.mem x := fun x hx => (fr16 x hx).trans (fR15 x hx)
+  have fR16 : ∀ x, SvR B x → n16.mem x = M0 x := fun x hx => (fr16 x hx).trans (fR15 x hx)
   have E16 : SvCode n16.mem := E15.fr F fr16
   have V16 : SvSaves B n16.mem v := V15.keep K16 (by decide)
   have g16_2 : reg n16 sp = B + 0x21A0 := by rw [rg16 sp, g15_2]
@@ -2295,7 +2296,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m17 : n17.mem = n16.mem := u17.mem
   have fr17 : ∀ x, SvR B x → n17.mem x = n16.mem x := fun x _ => by rw [m17]
   have t17 : Steps n0 n17 := t16.trans (.single d17)
-  have fR17 : ∀ x, SvR B x → n17.mem x = n0.mem x := fun x hx => (fr17 x hx).trans (fR16 x hx)
+  have fR17 : ∀ x, SvR B x → n17.mem x = M0 x := fun x hx => (fr17 x hx).trans (fR16 x hx)
   have E17 : SvCode n17.mem := E16.fr F fr17
   have V17 : SvSaves B n17.mem v := V16.same m17
   have g17_2 : reg n17 sp = B + 0x21A0 := by rw [u17.regs, g16_2]
@@ -2360,7 +2361,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m18 : n18.mem = n17.mem := u18.mem
   have fr18 : ∀ x, SvR B x → n18.mem x = n17.mem x := fun x _ => by rw [m18]
   have t18 : Steps n0 n18 := t17.trans (.single d18)
-  have fR18 : ∀ x, SvR B x → n18.mem x = n0.mem x := fun x hx => (fr18 x hx).trans (fR17 x hx)
+  have fR18 : ∀ x, SvR B x → n18.mem x = M0 x := fun x hx => (fr18 x hx).trans (fR17 x hx)
   have E18 : SvCode n18.mem := E17.fr F fr18
   have V18 : SvSaves B n18.mem v := V17.same m18
   have g18_2 : reg n18 sp = B + 0x21A0 := by rw [u18.regs, upd_ne (by decide) (by decide), g17_2]
@@ -2429,7 +2430,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m19 : n19.mem = n18.mem := u19.mem
     have fr19 : ∀ x, SvR B x → n19.mem x = n18.mem x := fun x _ => by rw [m19]
     have t19 : Steps n0 n19 := t18.trans (.single d19)
-    have fR19 : ∀ x, SvR B x → n19.mem x = n0.mem x := fun x hx => (fr19 x hx).trans (fR18 x hx)
+    have fR19 : ∀ x, SvR B x → n19.mem x = M0 x := fun x hx => (fr19 x hx).trans (fR18 x hx)
     have E19 : SvCode n19.mem := E18.fr F fr19
     have V19 : SvSaves B n19.mem v := V18.same m19
     have g19_2 : reg n19 sp = B + 0x21A0 := by rw [u19.regs, g18_2]
@@ -2495,7 +2496,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have rb20 : ∀ q, reg n20 q = (runBlock svX2cb36 (n19.mem, reg n19)).2 q := fun q => by rw [u20.regs]
     have fr20 : ∀ x, SvR B x → n20.mem x = n19.mem x := fun x _ => by rw [m20]
     have t20 : Steps n0 n20 := t19.trans c20
-    have fR20 : ∀ x, SvR B x → n20.mem x = n0.mem x := fun x hx => (fr20 x hx).trans (fR19 x hx)
+    have fR20 : ∀ x, SvR B x → n20.mem x = M0 x := fun x hx => (fr20 x hx).trans (fR19 x hx)
     have E20 : SvCode n20.mem := E19.fr F fr20
     have V20 : SvSaves B n20.mem v := V19.same m20
     have g20_2 : reg n20 sp = B + 0x21A0 := by
@@ -2574,7 +2575,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     obtain ⟨n21, d21, s21, fr21, K21, W21, rg21⟩ := sv_sw F E20 s20 sv_at_b38 (off' := 0xB3A) (c := 0x44)
       (by decide) (by rw [g20_2]; sv_addr) (by decide) (by decide)
     have t21 : Steps n0 n21 := t20.trans d21
-    have fR21 : ∀ x, SvR B x → n21.mem x = n0.mem x := fun x hx => (fr21 x hx).trans (fR20 x hx)
+    have fR21 : ∀ x, SvR B x → n21.mem x = M0 x := fun x hx => (fr21 x hx).trans (fR20 x hx)
     have E21 : SvCode n21.mem := E20.fr F fr21
     have V21 : SvSaves B n21.mem v := V20.keep K21 (by decide)
     have g21_2 : reg n21 sp = B + 0x21A0 := by rw [rg21 sp, g20_2]
@@ -2639,7 +2640,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m22 : n22.mem = n21.mem := u22.mem
     have fr22 : ∀ x, SvR B x → n22.mem x = n21.mem x := fun x _ => by rw [m22]
     have t22 : Steps n0 n22 := t21.trans (.single d22)
-    have fR22 : ∀ x, SvR B x → n22.mem x = n0.mem x := fun x hx => (fr22 x hx).trans (fR21 x hx)
+    have fR22 : ∀ x, SvR B x → n22.mem x = M0 x := fun x hx => (fr22 x hx).trans (fR21 x hx)
     have E22 : SvCode n22.mem := E21.fr F fr22
     have V22 : SvSaves B n22.mem v := V21.same m22
     have g22_2 : reg n22 sp = B + 0x21A0 := by rw [u22.regs, g21_2]
@@ -2704,7 +2705,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m23 : n23.mem = n22.mem := u23.mem
     have fr23 : ∀ x, SvR B x → n23.mem x = n22.mem x := fun x _ => by rw [m23]
     have t23 : Steps n0 n23 := t22.trans (.single d23)
-    have fR23 : ∀ x, SvR B x → n23.mem x = n0.mem x := fun x hx => (fr23 x hx).trans (fR22 x hx)
+    have fR23 : ∀ x, SvR B x → n23.mem x = M0 x := fun x hx => (fr23 x hx).trans (fR22 x hx)
     have E23 : SvCode n23.mem := E22.fr F fr23
     have V23 : SvSaves B n23.mem v := V22.same m23
     have g23_2 : reg n23 sp = B + 0x21A0 := by rw [u23.regs, upd_ne (by decide) (by decide), g22_2]
@@ -2769,7 +2770,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m24 : n24.mem = n23.mem := u24.mem
     have fr24 : ∀ x, SvR B x → n24.mem x = n23.mem x := fun x _ => by rw [m24]
     have t24 : Steps n0 n24 := t23.trans (.single d24)
-    have fR24 : ∀ x, SvR B x → n24.mem x = n0.mem x := fun x hx => (fr24 x hx).trans (fR23 x hx)
+    have fR24 : ∀ x, SvR B x → n24.mem x = M0 x := fun x hx => (fr24 x hx).trans (fR23 x hx)
     have E24 : SvCode n24.mem := E23.fr F fr24
     have V24 : SvSaves B n24.mem v := V23.same m24
     have g24_2 : reg n24 sp = B + 0x21A0 := by rw [u24.regs, g23_2]
@@ -2827,7 +2828,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have w24_1020 : memLoad32 n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = vp14 := by rw [m24]; exact w23_1020
     have w24_1024 : memLoad32 n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = vl14 := by rw [m24]; exact w23_1024
     clear w23_1024 w23_1020 w23_a44 w23_a40 w23_a3c w23_a38 w23_a34 w23_a30 w23_a2c w23_a28 w23_a24 w23_a20 w23_32c w23_328 w23_94 w23_90 w23_8c w23_88 w23_84 w23_80 w23_7c w23_78 w23_74 w23_70 w23_6c w23_68 w23_64 w23_60 w23_5c w23_58 w23_54 w23_50 w23_4c w23_48 w23_44 w23_40 w23_3c w23_34 w23_30 g23_27 g23_26 g23_25 g23_24 g23_23 g23_22 g23_21 g23_19 g23_18 g23_10 g23_9 g23_8 g23_4 g23_3 g23_2 V23 E23 fR23 t23 fr23 m23 s23 u23 d23
-    exact .inl ⟨(fun ⟨h0', tb7', h1', vp14', vl14', h2', te14', h3', h4', _⟩ => by rw [hr7] at h0'; cases h0'; rw [htb7] at h1'; cases h1'; rw [hr14] at h2'; cases h2'; rw [ht14] at h3'; cases h3'; exact hz_18 h4'), sv_fail F E24 s24 t24 fR24 V24 hret g24_2 g24_18 hO g24_3 g24_4⟩
+    exact .inl ⟨(fun ⟨h0', tb7', h1', vp14', vl14', h2', te14', h3', h4', _⟩ => by rw [hr7] at h0'; cases h0'; rw [htb7] at h1'; cases h1'; rw [hr14] at h2'; cases h2'; rw [ht14] at h3'; cases h3'; exact hz_18 h4'), sv_fail F E24 s24 t24 (fun x hx => (fR24 x hx).trans (fM x hx).symm) V24 hret g24_2 g24_18 hO g24_3 g24_4⟩
   -- 0x5AE: branch, not taken
   obtain ⟨n19, d19, u19⟩ := s18.notTaken E18.self 0x5B2 sv_at_5ae
     (by decide) (by rw [g18_10, s18.zero]; exact br_bne_f hz_18)
@@ -2835,7 +2836,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m19 : n19.mem = n18.mem := u19.mem
   have fr19 : ∀ x, SvR B x → n19.mem x = n18.mem x := fun x _ => by rw [m19]
   have t19 : Steps n0 n19 := t18.trans (.single d19)
-  have fR19 : ∀ x, SvR B x → n19.mem x = n0.mem x := fun x hx => (fr19 x hx).trans (fR18 x hx)
+  have fR19 : ∀ x, SvR B x → n19.mem x = M0 x := fun x hx => (fr19 x hx).trans (fR18 x hx)
   have E19 : SvCode n19.mem := E18.fr F fr19
   have V19 : SvSaves B n19.mem v := V18.same m19
   have g19_2 : reg n19 sp = B + 0x21A0 := by rw [u19.regs, g18_2]
@@ -2900,7 +2901,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m20 : n20.mem = n19.mem := u20.mem
   have fr20 : ∀ x, SvR B x → n20.mem x = n19.mem x := fun x _ => by rw [m20]
   have t20 : Steps n0 n20 := t19.trans (.single d20)
-  have fR20 : ∀ x, SvR B x → n20.mem x = n0.mem x := fun x hx => (fr20 x hx).trans (fR19 x hx)
+  have fR20 : ∀ x, SvR B x → n20.mem x = M0 x := fun x hx => (fr20 x hx).trans (fR19 x hx)
   have E20 : SvCode n20.mem := E19.fr F fr20
   have V20 : SvSaves B n20.mem v := V19.same m20
   have g20_2 : reg n20 sp = B + 0x21A0 := by rw [u20.regs, upd_ne (by decide) (by decide), g19_2]
@@ -2964,7 +2965,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   obtain ⟨n21, d21, s21, fr21, K21, W21, rg21⟩ := sv_sw F E20 s20 sv_at_5b6 (off' := 0x5B8) (c := 0x38)
     (by decide) (by rw [g20_2]; sv_addr) (by decide) (by decide)
   have t21 : Steps n0 n21 := t20.trans d21
-  have fR21 : ∀ x, SvR B x → n21.mem x = n0.mem x := fun x hx => (fr21 x hx).trans (fR20 x hx)
+  have fR21 : ∀ x, SvR B x → n21.mem x = M0 x := fun x hx => (fr21 x hx).trans (fR20 x hx)
   have E21 : SvCode n21.mem := E20.fr F fr21
   have V21 : SvSaves B n21.mem v := V20.keep K21 (by decide)
   have g21_2 : reg n21 sp = B + 0x21A0 := by rw [rg21 sp, g20_2]
@@ -3030,7 +3031,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m22 : n22.mem = n21.mem := u22.mem
   have fr22 : ∀ x, SvR B x → n22.mem x = n21.mem x := fun x _ => by rw [m22]
   have t22 : Steps n0 n22 := t21.trans (.single d22)
-  have fR22 : ∀ x, SvR B x → n22.mem x = n0.mem x := fun x hx => (fr22 x hx).trans (fR21 x hx)
+  have fR22 : ∀ x, SvR B x → n22.mem x = M0 x := fun x hx => (fr22 x hx).trans (fR21 x hx)
   have E22 : SvCode n22.mem := E21.fr F fr22
   have V22 : SvSaves B n22.mem v := V21.same m22
   have g22_2 : reg n22 sp = B + 0x21A0 := by rw [u22.regs, upd_ne (by decide) (by decide), g21_2]
@@ -3099,7 +3100,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have rb23 : ∀ q, reg n23 q = (runBlock svX2c5ba (n22.mem, reg n22)).2 q := fun q => by rw [u23.regs]
   have fr23 : ∀ x, SvR B x → n23.mem x = n22.mem x := fun x _ => by rw [m23]
   have t23 : Steps n0 n23 := t22.trans c23
-  have fR23 : ∀ x, SvR B x → n23.mem x = n0.mem x := fun x hx => (fr23 x hx).trans (fR22 x hx)
+  have fR23 : ∀ x, SvR B x → n23.mem x = M0 x := fun x hx => (fr23 x hx).trans (fR22 x hx)
   have E23 : SvCode n23.mem := E22.fr F fr23
   have V23 : SvSaves B n23.mem v := V22.same m23
   have g23_2 : reg n23 sp = B + 0x21A0 := by
@@ -3191,7 +3192,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m24 : n24.mem = n23.mem := u24.mem
   have fr24 : ∀ x, SvR B x → n24.mem x = n23.mem x := fun x _ => by rw [m24]
   have t24 : Steps n0 n24 := t23.trans (.single d24)
-  have fR24 : ∀ x, SvR B x → n24.mem x = n0.mem x := fun x hx => (fr24 x hx).trans (fR23 x hx)
+  have fR24 : ∀ x, SvR B x → n24.mem x = M0 x := fun x hx => (fr24 x hx).trans (fR23 x hx)
   have E24 : SvCode n24.mem := E23.fr F fr24
   have V24 : SvSaves B n24.mem v := V23.same m24
   have g24_2 : reg n24 sp = B + 0x21A0 := by rw [u24.regs, upd_ne (by decide) (by decide), g23_2]
@@ -3260,7 +3261,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     F E24 s24 sv_at_5c4 sv_at_5c8 (by decide) (by decide) g24_2
     g24_10 g24_11 g24_12 (by rw [g24_13, ofNat_toNat_self]) ea_in oid_in
   have t25 : Steps n0 n25 := t24.trans c25
-  have fR25 : ∀ x, SvR B x → n25.mem x = n0.mem x := fun x hx => (fr25 x hx).trans (fR24 x hx)
+  have fR25 : ∀ x, SvR B x → n25.mem x = M0 x := fun x hx => (fr25 x hx).trans (fR24 x hx)
   have E25 : SvCode n25.mem := E24.fr F fr25
   have V25 : SvSaves B n25.mem v := V24.keepL K25 (by decide)
   rw [listsOidOf, listsOidLoop_congr _ _ _ (sv_pt fR24 ea_in), sv_mb fR24 oid_in, ← listsOidOf] at R25
@@ -3319,7 +3320,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have w25_1020 : memLoad32 n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = vp14 := (K25.w32 (by decide) (by decide)).trans w24_1020
   have w25_1024 : memLoad32 n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = vl14 := (K25.w32 (by decide) (by decide)).trans w24_1024
   clear w24_1024 w24_1020 w24_a44 w24_a40 w24_a3c w24_a38 w24_a34 w24_a30 w24_a2c w24_a28 w24_a24 w24_a20 w24_32c w24_328 w24_94 w24_90 w24_8c w24_88 w24_84 w24_80 w24_7c w24_78 w24_74 w24_70 w24_6c w24_68 w24_64 w24_60 w24_5c w24_58 w24_54 w24_50 w24_4c w24_48 w24_44 w24_40 w24_3c w24_38 w24_34 w24_30 g24_13 g24_27 g24_26 g24_25 g24_24 g24_23 g24_22 g24_21 g24_19 g24_18 g24_12 g24_11 g24_10 g24_9 g24_8 g24_4 g24_3 g24_2 V24 E24 fR24 t24 fr24 m24 s24 u24 d24
-  obtain ⟨r25, hr25⟩ : ∃ r, listsOidOf n0.mem p0 (L.toNat - rem.toNat) (memBytes n0.mem op ol.toNat) = r := ⟨_, rfl⟩
+  obtain ⟨r25, hr25⟩ : ∃ r, listsOidOf M0 p0 (L.toNat - rem.toNat) (memBytes M0 op ol.toNat) = r := ⟨_, rfl⟩
   rcases r25 with lb25 | (_ | _)
   · rw [hr25] at R25
     obtain ⟨a0_25, a1_25⟩ := R25
@@ -3333,7 +3334,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have rb26 : ∀ q, reg n26 q = (runBlock svX2c5cc (n25.mem, reg n25)).2 q := fun q => by rw [u26.regs]
     have fr26 : ∀ x, SvR B x → n26.mem x = n25.mem x := fun x _ => by rw [m26]
     have t26 : Steps n0 n26 := t25.trans c26
-    have fR26 : ∀ x, SvR B x → n26.mem x = n0.mem x := fun x hx => (fr26 x hx).trans (fR25 x hx)
+    have fR26 : ∀ x, SvR B x → n26.mem x = M0 x := fun x hx => (fr26 x hx).trans (fR25 x hx)
     have E26 : SvCode n26.mem := E25.fr F fr26
     have V26 : SvSaves B n26.mem v := V25.same m26
     have g26_2 : reg n26 sp = B + 0x21A0 := by
@@ -3415,7 +3416,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     obtain ⟨n27, d27, s27, fr27, K27, W27, rg27⟩ := sv_sw F E26 s26 sv_at_5ce (off' := 0x5D0) (c := 0x44)
       (by decide) (by rw [g26_2]; sv_addr) (by decide) (by decide)
     have t27 : Steps n0 n27 := t26.trans d27
-    have fR27 : ∀ x, SvR B x → n27.mem x = n0.mem x := fun x hx => (fr27 x hx).trans (fR26 x hx)
+    have fR27 : ∀ x, SvR B x → n27.mem x = M0 x := fun x hx => (fr27 x hx).trans (fR26 x hx)
     have E27 : SvCode n27.mem := E26.fr F fr27
     have V27 : SvSaves B n27.mem v := V26.keep K27 (by decide)
     have g27_2 : reg n27 sp = B + 0x21A0 := by rw [rg27 sp, g26_2]
@@ -3482,7 +3483,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m28 : n28.mem = n27.mem := u28.mem
     have fr28 : ∀ x, SvR B x → n28.mem x = n27.mem x := fun x _ => by rw [m28]
     have t28 : Steps n0 n28 := t27.trans (.single d28)
-    have fR28 : ∀ x, SvR B x → n28.mem x = n0.mem x := fun x hx => (fr28 x hx).trans (fR27 x hx)
+    have fR28 : ∀ x, SvR B x → n28.mem x = M0 x := fun x hx => (fr28 x hx).trans (fR27 x hx)
     have E28 : SvCode n28.mem := E27.fr F fr28
     have V28 : SvSaves B n28.mem v := V27.same m28
     have g28_2 : reg n28 sp = B + 0x21A0 := by rw [u28.regs, g27_2]
@@ -3549,7 +3550,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m29 : n29.mem = n28.mem := u29.mem
     have fr29 : ∀ x, SvR B x → n29.mem x = n28.mem x := fun x _ => by rw [m29]
     have t29 : Steps n0 n29 := t28.trans (.single d29)
-    have fR29 : ∀ x, SvR B x → n29.mem x = n0.mem x := fun x hx => (fr29 x hx).trans (fR28 x hx)
+    have fR29 : ∀ x, SvR B x → n29.mem x = M0 x := fun x hx => (fr29 x hx).trans (fR28 x hx)
     have E29 : SvCode n29.mem := E28.fr F fr29
     have V29 : SvSaves B n29.mem v := V28.same m29
     have g29_2 : reg n29 sp = B + 0x21A0 := by rw [u29.regs, upd_ne (by decide) (by decide), g28_2]
@@ -3616,7 +3617,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m30 : n30.mem = n29.mem := u30.mem
     have fr30 : ∀ x, SvR B x → n30.mem x = n29.mem x := fun x _ => by rw [m30]
     have t30 : Steps n0 n30 := t29.trans (.single d30)
-    have fR30 : ∀ x, SvR B x → n30.mem x = n0.mem x := fun x hx => (fr30 x hx).trans (fR29 x hx)
+    have fR30 : ∀ x, SvR B x → n30.mem x = M0 x := fun x hx => (fr30 x hx).trans (fR29 x hx)
     have E30 : SvCode n30.mem := E29.fr F fr30
     have V30 : SvSaves B n30.mem v := V29.same m30
     have g30_2 : reg n30 sp = B + 0x21A0 := by rw [u30.regs, g29_2]
@@ -3676,7 +3677,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have w30_1020 : memLoad32 n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = vp14 := by rw [m30]; exact w29_1020
     have w30_1024 : memLoad32 n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = vl14 := by rw [m30]; exact w29_1024
     clear w29_1024 w29_1020 w29_a44 w29_a40 w29_a3c w29_a38 w29_a34 w29_a30 w29_a2c w29_a28 w29_a24 w29_a20 w29_32c w29_328 w29_94 w29_90 w29_8c w29_88 w29_84 w29_80 w29_7c w29_78 w29_74 w29_70 w29_6c w29_68 w29_64 w29_60 w29_5c w29_58 w29_54 w29_50 w29_4c w29_48 w29_44 w29_40 w29_3c w29_38 w29_34 w29_30 g29_27 g29_26 g29_25 g29_24 g29_23 g29_22 g29_21 g29_19 g29_18 g29_11 g29_10 g29_9 g29_8 g29_4 g29_3 g29_2 V29 E29 fR29 t29 fr29 m29 s29 u29 d29
-    exact .inl ⟨(fun ⟨h0', tb7', h1', vp14', vl14', h2', te14', h3', h4', h5', _⟩ => by rw [hr7] at h0'; cases h0'; rw [htb7] at h1'; cases h1'; rw [hr14] at h2'; cases h2'; rw [ht14] at h3'; cases h3'; rw [hr25] at h5'; cases h5'), sv_fail F E30 s30 t30 fR30 V30 hret g30_2 g30_18 hO g30_3 g30_4⟩
+    exact .inl ⟨(fun ⟨h0', tb7', h1', vp14', vl14', h2', te14', h3', h4', h5', _⟩ => by rw [hr7] at h0'; cases h0'; rw [htb7] at h1'; cases h1'; rw [hr14] at h2'; cases h2'; rw [ht14] at h3'; cases h3'; rw [hr25] at h5'; cases h5'), sv_fail F E30 s30 t30 (fun x hx => (fR30 x hx).trans (fM x hx).symm) V30 hret g30_2 g30_18 hO g30_3 g30_4⟩
   rotate_left
   · rw [hr25] at R25
     obtain ⟨a0_25, a1_25⟩ := R25
@@ -3690,7 +3691,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have rb26 : ∀ q, reg n26 q = (runBlock svX2c5cc (n25.mem, reg n25)).2 q := fun q => by rw [u26.regs]
     have fr26 : ∀ x, SvR B x → n26.mem x = n25.mem x := fun x _ => by rw [m26]
     have t26 : Steps n0 n26 := t25.trans c26
-    have fR26 : ∀ x, SvR B x → n26.mem x = n0.mem x := fun x hx => (fr26 x hx).trans (fR25 x hx)
+    have fR26 : ∀ x, SvR B x → n26.mem x = M0 x := fun x hx => (fr26 x hx).trans (fR25 x hx)
     have E26 : SvCode n26.mem := E25.fr F fr26
     have V26 : SvSaves B n26.mem v := V25.same m26
     have g26_2 : reg n26 sp = B + 0x21A0 := by
@@ -3772,7 +3773,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     obtain ⟨n27, d27, s27, fr27, K27, W27, rg27⟩ := sv_sw F E26 s26 sv_at_5ce (off' := 0x5D0) (c := 0x44)
       (by decide) (by rw [g26_2]; sv_addr) (by decide) (by decide)
     have t27 : Steps n0 n27 := t26.trans d27
-    have fR27 : ∀ x, SvR B x → n27.mem x = n0.mem x := fun x hx => (fr27 x hx).trans (fR26 x hx)
+    have fR27 : ∀ x, SvR B x → n27.mem x = M0 x := fun x hx => (fr27 x hx).trans (fR26 x hx)
     have E27 : SvCode n27.mem := E26.fr F fr27
     have V27 : SvSaves B n27.mem v := V26.keep K27 (by decide)
     have g27_2 : reg n27 sp = B + 0x21A0 := by rw [rg27 sp, g26_2]
@@ -3839,7 +3840,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m28 : n28.mem = n27.mem := u28.mem
     have fr28 : ∀ x, SvR B x → n28.mem x = n27.mem x := fun x _ => by rw [m28]
     have t28 : Steps n0 n28 := t27.trans (.single d28)
-    have fR28 : ∀ x, SvR B x → n28.mem x = n0.mem x := fun x hx => (fr28 x hx).trans (fR27 x hx)
+    have fR28 : ∀ x, SvR B x → n28.mem x = M0 x := fun x hx => (fr28 x hx).trans (fR27 x hx)
     have E28 : SvCode n28.mem := E27.fr F fr28
     have V28 : SvSaves B n28.mem v := V27.same m28
     have g28_2 : reg n28 sp = B + 0x21A0 := by rw [u28.regs, g27_2]
@@ -3906,7 +3907,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m29 : n29.mem = n28.mem := u29.mem
     have fr29 : ∀ x, SvR B x → n29.mem x = n28.mem x := fun x _ => by rw [m29]
     have t29 : Steps n0 n29 := t28.trans (.single d29)
-    have fR29 : ∀ x, SvR B x → n29.mem x = n0.mem x := fun x hx => (fr29 x hx).trans (fR28 x hx)
+    have fR29 : ∀ x, SvR B x → n29.mem x = M0 x := fun x hx => (fr29 x hx).trans (fR28 x hx)
     have E29 : SvCode n29.mem := E28.fr F fr29
     have V29 : SvSaves B n29.mem v := V28.same m29
     have g29_2 : reg n29 sp = B + 0x21A0 := by rw [u29.regs, upd_ne (by decide) (by decide), g28_2]
@@ -3976,7 +3977,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have rb30 : ∀ q, reg n30 q = (runBlock svX2c5d6 (n29.mem, reg n29)).2 q := fun q => by rw [u30.regs]
     have fr30 : ∀ x, SvR B x → n30.mem x = n29.mem x := fun x _ => by rw [m30]
     have t30 : Steps n0 n30 := t29.trans c30
-    have fR30 : ∀ x, SvR B x → n30.mem x = n0.mem x := fun x hx => (fr30 x hx).trans (fR29 x hx)
+    have fR30 : ∀ x, SvR B x → n30.mem x = M0 x := fun x hx => (fr30 x hx).trans (fR29 x hx)
     have E30 : SvCode n30.mem := E29.fr F fr30
     have V30 : SvSaves B n30.mem v := V29.same m30
     have g30_2 : reg n30 sp = B + 0x21A0 := by
@@ -4060,7 +4061,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     obtain ⟨n31, d31, s31, fr31, K31, W31, rg31⟩ := sv_sw F E30 s30 sv_at_5da (off' := 0x5DC) (c := 0x44)
       (by decide) (by rw [g30_2]; sv_addr) (by decide) (by decide)
     have t31 : Steps n0 n31 := t30.trans d31
-    have fR31 : ∀ x, SvR B x → n31.mem x = n0.mem x := fun x hx => (fr31 x hx).trans (fR30 x hx)
+    have fR31 : ∀ x, SvR B x → n31.mem x = M0 x := fun x hx => (fr31 x hx).trans (fR30 x hx)
     have E31 : SvCode n31.mem := E30.fr F fr31
     have V31 : SvSaves B n31.mem v := V30.keep K31 (by decide)
     have g31_2 : reg n31 sp = B + 0x21A0 := by rw [rg31 sp, g30_2]
@@ -4127,7 +4128,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m32 : n32.mem = n31.mem := u32.mem
     have fr32 : ∀ x, SvR B x → n32.mem x = n31.mem x := fun x _ => by rw [m32]
     have t32 : Steps n0 n32 := t31.trans (.single d32)
-    have fR32 : ∀ x, SvR B x → n32.mem x = n0.mem x := fun x hx => (fr32 x hx).trans (fR31 x hx)
+    have fR32 : ∀ x, SvR B x → n32.mem x = M0 x := fun x hx => (fr32 x hx).trans (fR31 x hx)
     have E32 : SvCode n32.mem := E31.fr F fr32
     have V32 : SvSaves B n32.mem v := V31.same m32
     have g32_2 : reg n32 sp = B + 0x21A0 := by rw [u32.regs, g31_2]
@@ -4194,7 +4195,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m33 : n33.mem = n32.mem := u33.mem
     have fr33 : ∀ x, SvR B x → n33.mem x = n32.mem x := fun x _ => by rw [m33]
     have t33 : Steps n0 n33 := t32.trans (.single d33)
-    have fR33 : ∀ x, SvR B x → n33.mem x = n0.mem x := fun x hx => (fr33 x hx).trans (fR32 x hx)
+    have fR33 : ∀ x, SvR B x → n33.mem x = M0 x := fun x hx => (fr33 x hx).trans (fR32 x hx)
     have E33 : SvCode n33.mem := E32.fr F fr33
     have V33 : SvSaves B n33.mem v := V32.same m33
     have g33_2 : reg n33 sp = B + 0x21A0 := by rw [u33.regs, upd_ne (by decide) (by decide), g32_2]
@@ -4261,7 +4262,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m34 : n34.mem = n33.mem := u34.mem
     have fr34 : ∀ x, SvR B x → n34.mem x = n33.mem x := fun x _ => by rw [m34]
     have t34 : Steps n0 n34 := t33.trans (.single d34)
-    have fR34 : ∀ x, SvR B x → n34.mem x = n0.mem x := fun x hx => (fr34 x hx).trans (fR33 x hx)
+    have fR34 : ∀ x, SvR B x → n34.mem x = M0 x := fun x hx => (fr34 x hx).trans (fR33 x hx)
     have E34 : SvCode n34.mem := E33.fr F fr34
     have V34 : SvSaves B n34.mem v := V33.same m34
     have g34_2 : reg n34 sp = B + 0x21A0 := by rw [u34.regs, g33_2]
@@ -4321,7 +4322,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have w34_1020 : memLoad32 n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = vp14 := by rw [m34]; exact w33_1020
     have w34_1024 : memLoad32 n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = vl14 := by rw [m34]; exact w33_1024
     clear w33_1024 w33_1020 w33_a44 w33_a40 w33_a3c w33_a38 w33_a34 w33_a30 w33_a2c w33_a28 w33_a24 w33_a20 w33_32c w33_328 w33_94 w33_90 w33_8c w33_88 w33_84 w33_80 w33_7c w33_78 w33_74 w33_70 w33_6c w33_68 w33_64 w33_60 w33_5c w33_58 w33_54 w33_50 w33_4c w33_48 w33_44 w33_40 w33_3c w33_38 w33_34 w33_30 g33_27 g33_26 g33_25 g33_24 g33_23 g33_22 g33_21 g33_19 g33_18 g33_11 g33_10 g33_9 g33_8 g33_4 g33_3 g33_2 V33 E33 fR33 t33 fr33 m33 s33 u33 d33
-    exact .inl ⟨(fun ⟨h0', tb7', h1', vp14', vl14', h2', te14', h3', h4', h5', _⟩ => by rw [hr7] at h0'; cases h0'; rw [htb7] at h1'; cases h1'; rw [hr14] at h2'; cases h2'; rw [ht14] at h3'; cases h3'; rw [hr25] at h5'; cases h5'), sv_fail F E34 s34 t34 fR34 V34 hret g34_2 g34_18 hO g34_3 g34_4⟩
+    exact .inl ⟨(fun ⟨h0', tb7', h1', vp14', vl14', h2', te14', h3', h4', h5', _⟩ => by rw [hr7] at h0'; cases h0'; rw [htb7] at h1'; cases h1'; rw [hr14] at h2'; cases h2'; rw [ht14] at h3'; cases h3'; rw [hr25] at h5'; cases h5'), sv_fail F E34 s34 t34 (fun x hx => (fR34 x hx).trans (fM x hx).symm) V34 hret g34_2 g34_18 hO g34_3 g34_4⟩
   rw [hr25] at R25
   obtain ⟨a0_25, a1_25⟩ := R25
   have g25_10 : reg n25 a0 = BitVec.ofNat 32 0x0 := a0_25
@@ -4334,7 +4335,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have rb26 : ∀ q, reg n26 q = (runBlock svX2c5cc (n25.mem, reg n25)).2 q := fun q => by rw [u26.regs]
   have fr26 : ∀ x, SvR B x → n26.mem x = n25.mem x := fun x _ => by rw [m26]
   have t26 : Steps n0 n26 := t25.trans c26
-  have fR26 : ∀ x, SvR B x → n26.mem x = n0.mem x := fun x hx => (fr26 x hx).trans (fR25 x hx)
+  have fR26 : ∀ x, SvR B x → n26.mem x = M0 x := fun x hx => (fr26 x hx).trans (fR25 x hx)
   have E26 : SvCode n26.mem := E25.fr F fr26
   have V26 : SvSaves B n26.mem v := V25.same m26
   have g26_2 : reg n26 sp = B + 0x21A0 := by
@@ -4416,7 +4417,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   obtain ⟨n27, d27, s27, fr27, K27, W27, rg27⟩ := sv_sw F E26 s26 sv_at_5ce (off' := 0x5D0) (c := 0x44)
     (by decide) (by rw [g26_2]; sv_addr) (by decide) (by decide)
   have t27 : Steps n0 n27 := t26.trans d27
-  have fR27 : ∀ x, SvR B x → n27.mem x = n0.mem x := fun x hx => (fr27 x hx).trans (fR26 x hx)
+  have fR27 : ∀ x, SvR B x → n27.mem x = M0 x := fun x hx => (fr27 x hx).trans (fR26 x hx)
   have E27 : SvCode n27.mem := E26.fr F fr27
   have V27 : SvSaves B n27.mem v := V26.keep K27 (by decide)
   have g27_2 : reg n27 sp = B + 0x21A0 := by rw [rg27 sp, g26_2]
@@ -4483,7 +4484,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m28 : n28.mem = n27.mem := u28.mem
   have fr28 : ∀ x, SvR B x → n28.mem x = n27.mem x := fun x _ => by rw [m28]
   have t28 : Steps n0 n28 := t27.trans (.single d28)
-  have fR28 : ∀ x, SvR B x → n28.mem x = n0.mem x := fun x hx => (fr28 x hx).trans (fR27 x hx)
+  have fR28 : ∀ x, SvR B x → n28.mem x = M0 x := fun x hx => (fr28 x hx).trans (fR27 x hx)
   have E28 : SvCode n28.mem := E27.fr F fr28
   have V28 : SvSaves B n28.mem v := V27.same m28
   have g28_2 : reg n28 sp = B + 0x21A0 := by rw [u28.regs, g27_2]
@@ -4550,7 +4551,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m29 : n29.mem = n28.mem := u29.mem
   have fr29 : ∀ x, SvR B x → n29.mem x = n28.mem x := fun x _ => by rw [m29]
   have t29 : Steps n0 n29 := t28.trans (.single d29)
-  have fR29 : ∀ x, SvR B x → n29.mem x = n0.mem x := fun x hx => (fr29 x hx).trans (fR28 x hx)
+  have fR29 : ∀ x, SvR B x → n29.mem x = M0 x := fun x hx => (fr29 x hx).trans (fR28 x hx)
   have E29 : SvCode n29.mem := E28.fr F fr29
   have V29 : SvSaves B n29.mem v := V28.same m29
   have g29_2 : reg n29 sp = B + 0x21A0 := by rw [u29.regs, upd_ne (by decide) (by decide), g28_2]
@@ -4620,7 +4621,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have rb30 : ∀ q, reg n30 q = (runBlock svX2c5d6 (n29.mem, reg n29)).2 q := fun q => by rw [u30.regs]
   have fr30 : ∀ x, SvR B x → n30.mem x = n29.mem x := fun x _ => by rw [m30]
   have t30 : Steps n0 n30 := t29.trans c30
-  have fR30 : ∀ x, SvR B x → n30.mem x = n0.mem x := fun x hx => (fr30 x hx).trans (fR29 x hx)
+  have fR30 : ∀ x, SvR B x → n30.mem x = M0 x := fun x hx => (fr30 x hx).trans (fR29 x hx)
   have E30 : SvCode n30.mem := E29.fr F fr30
   have V30 : SvSaves B n30.mem v := V29.same m30
   have g30_2 : reg n30 sp = B + 0x21A0 := by
@@ -4704,7 +4705,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   obtain ⟨n31, d31, s31, fr31, K31, W31, rg31⟩ := sv_sw F E30 s30 sv_at_5da (off' := 0x5DC) (c := 0x44)
     (by decide) (by rw [g30_2]; sv_addr) (by decide) (by decide)
   have t31 : Steps n0 n31 := t30.trans d31
-  have fR31 : ∀ x, SvR B x → n31.mem x = n0.mem x := fun x hx => (fr31 x hx).trans (fR30 x hx)
+  have fR31 : ∀ x, SvR B x → n31.mem x = M0 x := fun x hx => (fr31 x hx).trans (fR30 x hx)
   have E31 : SvCode n31.mem := E30.fr F fr31
   have V31 : SvSaves B n31.mem v := V30.keep K31 (by decide)
   have g31_2 : reg n31 sp = B + 0x21A0 := by rw [rg31 sp, g30_2]
@@ -4771,7 +4772,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m32 : n32.mem = n31.mem := u32.mem
   have fr32 : ∀ x, SvR B x → n32.mem x = n31.mem x := fun x _ => by rw [m32]
   have t32 : Steps n0 n32 := t31.trans (.single d32)
-  have fR32 : ∀ x, SvR B x → n32.mem x = n0.mem x := fun x hx => (fr32 x hx).trans (fR31 x hx)
+  have fR32 : ∀ x, SvR B x → n32.mem x = M0 x := fun x hx => (fr32 x hx).trans (fR31 x hx)
   have E32 : SvCode n32.mem := E31.fr F fr32
   have V32 : SvSaves B n32.mem v := V31.same m32
   have g32_2 : reg n32 sp = B + 0x21A0 := by rw [u32.regs, g31_2]
@@ -4838,7 +4839,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m33 : n33.mem = n32.mem := u33.mem
   have fr33 : ∀ x, SvR B x → n33.mem x = n32.mem x := fun x _ => by rw [m33]
   have t33 : Steps n0 n33 := t32.trans (.single d33)
-  have fR33 : ∀ x, SvR B x → n33.mem x = n0.mem x := fun x hx => (fr33 x hx).trans (fR32 x hx)
+  have fR33 : ∀ x, SvR B x → n33.mem x = M0 x := fun x hx => (fr33 x hx).trans (fR32 x hx)
   have E33 : SvCode n33.mem := E32.fr F fr33
   have V33 : SvSaves B n33.mem v := V32.same m33
   have g33_2 : reg n33 sp = B + 0x21A0 := by rw [u33.regs, g32_2]
@@ -4906,7 +4907,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have rb34 : ∀ q, reg n34 q = (runBlock svX2c5e4 (n33.mem, reg n33)).2 q := fun q => by rw [u34.regs]
   have fr34 : ∀ x, SvR B x → n34.mem x = n33.mem x := fun x _ => by rw [m34]
   have t34 : Steps n0 n34 := t33.trans c34
-  have fR34 : ∀ x, SvR B x → n34.mem x = n0.mem x := fun x hx => (fr34 x hx).trans (fR33 x hx)
+  have fR34 : ∀ x, SvR B x → n34.mem x = M0 x := fun x hx => (fr34 x hx).trans (fR33 x hx)
   have E34 : SvCode n34.mem := E33.fr F fr34
   have V34 : SvSaves B n34.mem v := V33.same m34
   have g34_2 : reg n34 sp = B + 0x21A0 := by
@@ -4993,7 +4994,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m35 : n35.mem = n34.mem := u35.mem
   have fr35 : ∀ x, SvR B x → n35.mem x = n34.mem x := fun x _ => by rw [m35]
   have t35 : Steps n0 n35 := t34.trans (.single d35)
-  have fR35 : ∀ x, SvR B x → n35.mem x = n0.mem x := fun x hx => (fr35 x hx).trans (fR34 x hx)
+  have fR35 : ∀ x, SvR B x → n35.mem x = M0 x := fun x hx => (fr35 x hx).trans (fR34 x hx)
   have E35 : SvCode n35.mem := E34.fr F fr35
   have V35 : SvSaves B n35.mem v := V34.same m35
   have g35_2 : reg n35 sp = B + 0x21A0 := by rw [u35.regs, g34_2]
@@ -5060,7 +5061,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m36 : n36.mem = n35.mem := u36.mem
   have fr36 : ∀ x, SvR B x → n36.mem x = n35.mem x := fun x _ => by rw [m36]
   have t36 : Steps n0 n36 := t35.trans (.single d36)
-  have fR36 : ∀ x, SvR B x → n36.mem x = n0.mem x := fun x hx => (fr36 x hx).trans (fR35 x hx)
+  have fR36 : ∀ x, SvR B x → n36.mem x = M0 x := fun x hx => (fr36 x hx).trans (fR35 x hx)
   have E36 : SvCode n36.mem := E35.fr F fr36
   have V36 : SvSaves B n36.mem v := V35.same m36
   have g36_2 : reg n36 sp = B + 0x21A0 := by rw [u36.regs, upd_ne (by decide) (by decide), g35_2]
@@ -5130,7 +5131,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m37 : n37.mem = n36.mem := u37.mem
   have fr37 : ∀ x, SvR B x → n37.mem x = n36.mem x := fun x _ => by rw [m37]
   have t37 : Steps n0 n37 := t36.trans (.single d37)
-  have fR37 : ∀ x, SvR B x → n37.mem x = n0.mem x := fun x hx => (fr37 x hx).trans (fR36 x hx)
+  have fR37 : ∀ x, SvR B x → n37.mem x = M0 x := fun x hx => (fr37 x hx).trans (fR36 x hx)
   have E37 : SvCode n37.mem := E36.fr F fr37
   have V37 : SvSaves B n37.mem v := V36.same m37
   have g37_2 : reg n37 sp = B + 0x21A0 := by rw [u37.regs, upd_ne (by decide) (by decide), g36_2]
@@ -5201,7 +5202,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have rb38 : ∀ q, reg n38 q = (runBlock svX2c5fc (n37.mem, reg n37)).2 q := fun q => by rw [u38.regs]
   have fr38 : ∀ x, SvR B x → n38.mem x = n37.mem x := fun x _ => by rw [m38]
   have t38 : Steps n0 n38 := t37.trans c38
-  have fR38 : ∀ x, SvR B x → n38.mem x = n0.mem x := fun x hx => (fr38 x hx).trans (fR37 x hx)
+  have fR38 : ∀ x, SvR B x → n38.mem x = M0 x := fun x hx => (fr38 x hx).trans (fR37 x hx)
   have E38 : SvCode n38.mem := E37.fr F fr38
   have V38 : SvSaves B n38.mem v := V37.same m38
   have g38_2 : reg n38 sp = B + 0x21A0 := by
@@ -5288,7 +5289,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m39 : n39.mem = n38.mem := u39.mem
   have fr39 : ∀ x, SvR B x → n39.mem x = n38.mem x := fun x _ => by rw [m39]
   have t39 : Steps n0 n39 := t38.trans (.single d39)
-  have fR39 : ∀ x, SvR B x → n39.mem x = n0.mem x := fun x hx => (fr39 x hx).trans (fR38 x hx)
+  have fR39 : ∀ x, SvR B x → n39.mem x = M0 x := fun x hx => (fr39 x hx).trans (fR38 x hx)
   have E39 : SvCode n39.mem := E38.fr F fr39
   have V39 : SvSaves B n39.mem v := V38.same m39
   have g39_2 : reg n39 sp = B + 0x21A0 := by rw [u39.regs, upd_ne (by decide) (by decide), g38_2]
@@ -5357,7 +5358,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     F E39 s39 sv_at_600 sv_at_604 (by decide) (by decide) g39_2
     g39_10 g39_11 g39_12 (by rw [g39_13, ofNat_toNat_self]) (.inr ⟨by decide, by decide⟩) (.inl oid_in)
   have t40 : Steps n0 n40 := t39.trans c40
-  have fR40 : ∀ x, SvR B x → n40.mem x = n0.mem x := fun x hx => (fr40 x hx).trans (fR39 x hx)
+  have fR40 : ∀ x, SvR B x → n40.mem x = M0 x := fun x hx => (fr40 x hx).trans (fR39 x hx)
   have E40 : SvCode n40.mem := E39.fr F fr40
   have V40 : SvSaves B n40.mem v := V39.keepL K40 (by decide)
   rw [sv_mbRo F fR39 (.inr ⟨by decide, by decide⟩), sv_mbRo F fR39 (.inl oid_in)] at a0_40
@@ -5416,7 +5417,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have w40_1020 : memLoad32 n40.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = vp14 := (K40.w32 (by decide) (by decide)).trans w39_1020
   have w40_1024 : memLoad32 n40.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = vl14 := (K40.w32 (by decide) (by decide)).trans w39_1024
   clear w39_1024 w39_1020 w39_a44 w39_a40 w39_a3c w39_a38 w39_a34 w39_a30 w39_a2c w39_a28 w39_a24 w39_a20 w39_32c w39_328 w39_94 w39_90 w39_8c w39_88 w39_84 w39_80 w39_7c w39_78 w39_74 w39_70 w39_6c w39_68 w39_64 w39_60 w39_5c w39_58 w39_54 w39_50 w39_4c w39_48 w39_44 w39_40 w39_3c w39_38 w39_34 w39_30 g39_13 g39_27 g39_26 g39_25 g39_24 g39_23 g39_22 g39_21 g39_19 g39_18 g39_12 g39_11 g39_10 g39_9 g39_8 g39_4 g39_3 g39_2 V39 E39 fR39 t39 fr39 m39 s39 u39 d39
-  by_cases hm0 : memBytes n0.mem (BitVec.ofNat 32 0x3FCC4889) 3 = memBytes n0.mem op ol.toNat
+  by_cases hm0 : memBytes M0 (BitVec.ofNat 32 0x3FCC4889) 3 = memBytes M0 op ol.toNat
   · have g40_10 : reg n40 a0 = BitVec.ofNat 32 1 := by rw [a0_40, ite_eq_left hm0]; rfl
     -- 0x608
     obtain ⟨n41, c41, u41⟩ := s40.block svX2c608 E40.self svX2c608_end
@@ -5426,7 +5427,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have rb41 : ∀ q, reg n41 q = (runBlock svX2c608 (n40.mem, reg n40)).2 q := fun q => by rw [u41.regs]
     have fr41 : ∀ x, SvR B x → n41.mem x = n40.mem x := fun x _ => by rw [m41]
     have t41 : Steps n0 n41 := t40.trans c41
-    have fR41 : ∀ x, SvR B x → n41.mem x = n0.mem x := fun x hx => (fr41 x hx).trans (fR40 x hx)
+    have fR41 : ∀ x, SvR B x → n41.mem x = M0 x := fun x hx => (fr41 x hx).trans (fR40 x hx)
     have E41 : SvCode n41.mem := E40.fr F fr41
     have V41 : SvSaves B n41.mem v := V40.same m41
     have g41_2 : reg n41 sp = B + 0x21A0 := by
@@ -5511,7 +5512,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m42 : n42.mem = n41.mem := u42.mem
     have fr42 : ∀ x, SvR B x → n42.mem x = n41.mem x := fun x _ => by rw [m42]
     have t42 : Steps n0 n42 := t41.trans (.single d42)
-    have fR42 : ∀ x, SvR B x → n42.mem x = n0.mem x := fun x hx => (fr42 x hx).trans (fR41 x hx)
+    have fR42 : ∀ x, SvR B x → n42.mem x = M0 x := fun x hx => (fr42 x hx).trans (fR41 x hx)
     have E42 : SvCode n42.mem := E41.fr F fr42
     have V42 : SvSaves B n42.mem v := V41.same m42
     have g42_2 : reg n42 sp = B + 0x21A0 := by rw [u42.regs, g41_2]
@@ -5580,7 +5581,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have rb41 : ∀ q, reg n41 q = (runBlock svX2c608 (n40.mem, reg n40)).2 q := fun q => by rw [u41.regs]
   have fr41 : ∀ x, SvR B x → n41.mem x = n40.mem x := fun x _ => by rw [m41]
   have t41 : Steps n0 n41 := t40.trans c41
-  have fR41 : ∀ x, SvR B x → n41.mem x = n0.mem x := fun x hx => (fr41 x hx).trans (fR40 x hx)
+  have fR41 : ∀ x, SvR B x → n41.mem x = M0 x := fun x hx => (fr41 x hx).trans (fR40 x hx)
   have E41 : SvCode n41.mem := E40.fr F fr41
   have V41 : SvSaves B n41.mem v := V40.same m41
   have g41_2 : reg n41 sp = B + 0x21A0 := by
@@ -5665,7 +5666,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m42 : n42.mem = n41.mem := u42.mem
   have fr42 : ∀ x, SvR B x → n42.mem x = n41.mem x := fun x _ => by rw [m42]
   have t42 : Steps n0 n42 := t41.trans (.single d42)
-  have fR42 : ∀ x, SvR B x → n42.mem x = n0.mem x := fun x hx => (fr42 x hx).trans (fR41 x hx)
+  have fR42 : ∀ x, SvR B x → n42.mem x = M0 x := fun x hx => (fr42 x hx).trans (fR41 x hx)
   have E42 : SvCode n42.mem := E41.fr F fr42
   have V42 : SvSaves B n42.mem v := V41.same m42
   have g42_2 : reg n42 sp = B + 0x21A0 := by rw [u42.regs, g41_2]
@@ -5731,7 +5732,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m43 : n43.mem = n42.mem := u43.mem
   have fr43 : ∀ x, SvR B x → n43.mem x = n42.mem x := fun x _ => by rw [m43]
   have t43 : Steps n0 n43 := t42.trans (.single d43)
-  have fR43 : ∀ x, SvR B x → n43.mem x = n0.mem x := fun x hx => (fr43 x hx).trans (fR42 x hx)
+  have fR43 : ∀ x, SvR B x → n43.mem x = M0 x := fun x hx => (fr43 x hx).trans (fR42 x hx)
   have E43 : SvCode n43.mem := E42.fr F fr43
   have V43 : SvSaves B n43.mem v := V42.same m43
   have g43_2 : reg n43 sp = B + 0x21A0 := by rw [u43.regs, g42_2]
@@ -5797,7 +5798,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m44 : n44.mem = n43.mem := u44.mem
   have fr44 : ∀ x, SvR B x → n44.mem x = n43.mem x := fun x _ => by rw [m44]
   have t44 : Steps n0 n44 := t43.trans (.single d44)
-  have fR44 : ∀ x, SvR B x → n44.mem x = n0.mem x := fun x hx => (fr44 x hx).trans (fR43 x hx)
+  have fR44 : ∀ x, SvR B x → n44.mem x = M0 x := fun x hx => (fr44 x hx).trans (fR43 x hx)
   have E44 : SvCode n44.mem := E43.fr F fr44
   have V44 : SvSaves B n44.mem v := V43.same m44
   have g44_2 : reg n44 sp = B + 0x21A0 := by rw [u44.regs, upd_ne (by decide) (by decide), g43_2]
@@ -5866,7 +5867,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m45 : n45.mem = n44.mem := u45.mem
   have fr45 : ∀ x, SvR B x → n45.mem x = n44.mem x := fun x _ => by rw [m45]
   have t45 : Steps n0 n45 := t44.trans (.single d45)
-  have fR45 : ∀ x, SvR B x → n45.mem x = n0.mem x := fun x hx => (fr45 x hx).trans (fR44 x hx)
+  have fR45 : ∀ x, SvR B x → n45.mem x = M0 x := fun x hx => (fr45 x hx).trans (fR44 x hx)
   have E45 : SvCode n45.mem := E44.fr F fr45
   have V45 : SvSaves B n45.mem v := V44.same m45
   have g45_2 : reg n45 sp = B + 0x21A0 := by rw [u45.regs, upd_ne (by decide) (by decide), g44_2]
@@ -5937,7 +5938,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have rb46 : ∀ q, reg n46 q = (runBlock svX2c5fc (n45.mem, reg n45)).2 q := fun q => by rw [u46.regs]
   have fr46 : ∀ x, SvR B x → n46.mem x = n45.mem x := fun x _ => by rw [m46]
   have t46 : Steps n0 n46 := t45.trans c46
-  have fR46 : ∀ x, SvR B x → n46.mem x = n0.mem x := fun x hx => (fr46 x hx).trans (fR45 x hx)
+  have fR46 : ∀ x, SvR B x → n46.mem x = M0 x := fun x hx => (fr46 x hx).trans (fR45 x hx)
   have E46 : SvCode n46.mem := E45.fr F fr46
   have V46 : SvSaves B n46.mem v := V45.same m46
   have g46_2 : reg n46 sp = B + 0x21A0 := by
@@ -6024,7 +6025,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m47 : n47.mem = n46.mem := u47.mem
   have fr47 : ∀ x, SvR B x → n47.mem x = n46.mem x := fun x _ => by rw [m47]
   have t47 : Steps n0 n47 := t46.trans (.single d47)
-  have fR47 : ∀ x, SvR B x → n47.mem x = n0.mem x := fun x hx => (fr47 x hx).trans (fR46 x hx)
+  have fR47 : ∀ x, SvR B x → n47.mem x = M0 x := fun x hx => (fr47 x hx).trans (fR46 x hx)
   have E47 : SvCode n47.mem := E46.fr F fr47
   have V47 : SvSaves B n47.mem v := V46.same m47
   have g47_2 : reg n47 sp = B + 0x21A0 := by rw [u47.regs, upd_ne (by decide) (by decide), g46_2]
@@ -6093,7 +6094,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     F E47 s47 sv_at_600 sv_at_604 (by decide) (by decide) g47_2
     g47_10 g47_11 g47_12 (by rw [g47_13, ofNat_toNat_self]) (.inr ⟨by decide, by decide⟩) (.inl oid_in)
   have t48 : Steps n0 n48 := t47.trans c48
-  have fR48 : ∀ x, SvR B x → n48.mem x = n0.mem x := fun x hx => (fr48 x hx).trans (fR47 x hx)
+  have fR48 : ∀ x, SvR B x → n48.mem x = M0 x := fun x hx => (fr48 x hx).trans (fR47 x hx)
   have E48 : SvCode n48.mem := E47.fr F fr48
   have V48 : SvSaves B n48.mem v := V47.keepL K48 (by decide)
   rw [sv_mbRo F fR47 (.inr ⟨by decide, by decide⟩), sv_mbRo F fR47 (.inl oid_in)] at a0_48
@@ -6152,7 +6153,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have w48_1020 : memLoad32 n48.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = vp14 := (K48.w32 (by decide) (by decide)).trans w47_1020
   have w48_1024 : memLoad32 n48.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = vl14 := (K48.w32 (by decide) (by decide)).trans w47_1024
   clear w47_1024 w47_1020 w47_a44 w47_a40 w47_a3c w47_a38 w47_a34 w47_a30 w47_a2c w47_a28 w47_a24 w47_a20 w47_32c w47_328 w47_94 w47_90 w47_8c w47_88 w47_84 w47_80 w47_7c w47_78 w47_74 w47_70 w47_6c w47_68 w47_64 w47_60 w47_5c w47_58 w47_54 w47_50 w47_4c w47_48 w47_44 w47_40 w47_3c w47_38 w47_34 w47_30 g47_13 g47_27 g47_26 g47_25 g47_24 g47_23 g47_22 g47_21 g47_19 g47_18 g47_12 g47_11 g47_10 g47_9 g47_8 g47_4 g47_3 g47_2 V47 E47 fR47 t47 fr47 m47 s47 u47 d47
-  by_cases hm1 : memBytes n0.mem (BitVec.ofNat 32 0x3FCC488C) 3 = memBytes n0.mem op ol.toNat
+  by_cases hm1 : memBytes M0 (BitVec.ofNat 32 0x3FCC488C) 3 = memBytes M0 op ol.toNat
   · have g48_10 : reg n48 a0 = BitVec.ofNat 32 1 := by rw [a0_48, ite_eq_left hm1]; rfl
     -- 0x608
     obtain ⟨n49, c49, u49⟩ := s48.block svX2c608 E48.self svX2c608_end
@@ -6162,7 +6163,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have rb49 : ∀ q, reg n49 q = (runBlock svX2c608 (n48.mem, reg n48)).2 q := fun q => by rw [u49.regs]
     have fr49 : ∀ x, SvR B x → n49.mem x = n48.mem x := fun x _ => by rw [m49]
     have t49 : Steps n0 n49 := t48.trans c49
-    have fR49 : ∀ x, SvR B x → n49.mem x = n0.mem x := fun x hx => (fr49 x hx).trans (fR48 x hx)
+    have fR49 : ∀ x, SvR B x → n49.mem x = M0 x := fun x hx => (fr49 x hx).trans (fR48 x hx)
     have E49 : SvCode n49.mem := E48.fr F fr49
     have V49 : SvSaves B n49.mem v := V48.same m49
     have g49_2 : reg n49 sp = B + 0x21A0 := by
@@ -6247,7 +6248,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m50 : n50.mem = n49.mem := u50.mem
     have fr50 : ∀ x, SvR B x → n50.mem x = n49.mem x := fun x _ => by rw [m50]
     have t50 : Steps n0 n50 := t49.trans (.single d50)
-    have fR50 : ∀ x, SvR B x → n50.mem x = n0.mem x := fun x hx => (fr50 x hx).trans (fR49 x hx)
+    have fR50 : ∀ x, SvR B x → n50.mem x = M0 x := fun x hx => (fr50 x hx).trans (fR49 x hx)
     have E50 : SvCode n50.mem := E49.fr F fr50
     have V50 : SvSaves B n50.mem v := V49.same m50
     have g50_2 : reg n50 sp = B + 0x21A0 := by rw [u50.regs, g49_2]
@@ -6316,7 +6317,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have rb49 : ∀ q, reg n49 q = (runBlock svX2c608 (n48.mem, reg n48)).2 q := fun q => by rw [u49.regs]
   have fr49 : ∀ x, SvR B x → n49.mem x = n48.mem x := fun x _ => by rw [m49]
   have t49 : Steps n0 n49 := t48.trans c49
-  have fR49 : ∀ x, SvR B x → n49.mem x = n0.mem x := fun x hx => (fr49 x hx).trans (fR48 x hx)
+  have fR49 : ∀ x, SvR B x → n49.mem x = M0 x := fun x hx => (fr49 x hx).trans (fR48 x hx)
   have E49 : SvCode n49.mem := E48.fr F fr49
   have V49 : SvSaves B n49.mem v := V48.same m49
   have g49_2 : reg n49 sp = B + 0x21A0 := by
@@ -6401,7 +6402,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m50 : n50.mem = n49.mem := u50.mem
   have fr50 : ∀ x, SvR B x → n50.mem x = n49.mem x := fun x _ => by rw [m50]
   have t50 : Steps n0 n50 := t49.trans (.single d50)
-  have fR50 : ∀ x, SvR B x → n50.mem x = n0.mem x := fun x hx => (fr50 x hx).trans (fR49 x hx)
+  have fR50 : ∀ x, SvR B x → n50.mem x = M0 x := fun x hx => (fr50 x hx).trans (fR49 x hx)
   have E50 : SvCode n50.mem := E49.fr F fr50
   have V50 : SvSaves B n50.mem v := V49.same m50
   have g50_2 : reg n50 sp = B + 0x21A0 := by rw [u50.regs, g49_2]
@@ -6467,7 +6468,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m51 : n51.mem = n50.mem := u51.mem
   have fr51 : ∀ x, SvR B x → n51.mem x = n50.mem x := fun x _ => by rw [m51]
   have t51 : Steps n0 n51 := t50.trans (.single d51)
-  have fR51 : ∀ x, SvR B x → n51.mem x = n0.mem x := fun x hx => (fr51 x hx).trans (fR50 x hx)
+  have fR51 : ∀ x, SvR B x → n51.mem x = M0 x := fun x hx => (fr51 x hx).trans (fR50 x hx)
   have E51 : SvCode n51.mem := E50.fr F fr51
   have V51 : SvSaves B n51.mem v := V50.same m51
   have g51_2 : reg n51 sp = B + 0x21A0 := by rw [u51.regs, g50_2]
@@ -6533,7 +6534,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m52 : n52.mem = n51.mem := u52.mem
   have fr52 : ∀ x, SvR B x → n52.mem x = n51.mem x := fun x _ => by rw [m52]
   have t52 : Steps n0 n52 := t51.trans (.single d52)
-  have fR52 : ∀ x, SvR B x → n52.mem x = n0.mem x := fun x hx => (fr52 x hx).trans (fR51 x hx)
+  have fR52 : ∀ x, SvR B x → n52.mem x = M0 x := fun x hx => (fr52 x hx).trans (fR51 x hx)
   have E52 : SvCode n52.mem := E51.fr F fr52
   have V52 : SvSaves B n52.mem v := V51.same m52
   have g52_2 : reg n52 sp = B + 0x21A0 := by rw [u52.regs, upd_ne (by decide) (by decide), g51_2]
@@ -6602,7 +6603,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m53 : n53.mem = n52.mem := u53.mem
   have fr53 : ∀ x, SvR B x → n53.mem x = n52.mem x := fun x _ => by rw [m53]
   have t53 : Steps n0 n53 := t52.trans (.single d53)
-  have fR53 : ∀ x, SvR B x → n53.mem x = n0.mem x := fun x hx => (fr53 x hx).trans (fR52 x hx)
+  have fR53 : ∀ x, SvR B x → n53.mem x = M0 x := fun x hx => (fr53 x hx).trans (fR52 x hx)
   have E53 : SvCode n53.mem := E52.fr F fr53
   have V53 : SvSaves B n53.mem v := V52.same m53
   have g53_2 : reg n53 sp = B + 0x21A0 := by rw [u53.regs, upd_ne (by decide) (by decide), g52_2]
@@ -6673,7 +6674,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have rb54 : ∀ q, reg n54 q = (runBlock svX2c5fc (n53.mem, reg n53)).2 q := fun q => by rw [u54.regs]
   have fr54 : ∀ x, SvR B x → n54.mem x = n53.mem x := fun x _ => by rw [m54]
   have t54 : Steps n0 n54 := t53.trans c54
-  have fR54 : ∀ x, SvR B x → n54.mem x = n0.mem x := fun x hx => (fr54 x hx).trans (fR53 x hx)
+  have fR54 : ∀ x, SvR B x → n54.mem x = M0 x := fun x hx => (fr54 x hx).trans (fR53 x hx)
   have E54 : SvCode n54.mem := E53.fr F fr54
   have V54 : SvSaves B n54.mem v := V53.same m54
   have g54_2 : reg n54 sp = B + 0x21A0 := by
@@ -6760,7 +6761,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m55 : n55.mem = n54.mem := u55.mem
   have fr55 : ∀ x, SvR B x → n55.mem x = n54.mem x := fun x _ => by rw [m55]
   have t55 : Steps n0 n55 := t54.trans (.single d55)
-  have fR55 : ∀ x, SvR B x → n55.mem x = n0.mem x := fun x hx => (fr55 x hx).trans (fR54 x hx)
+  have fR55 : ∀ x, SvR B x → n55.mem x = M0 x := fun x hx => (fr55 x hx).trans (fR54 x hx)
   have E55 : SvCode n55.mem := E54.fr F fr55
   have V55 : SvSaves B n55.mem v := V54.same m55
   have g55_2 : reg n55 sp = B + 0x21A0 := by rw [u55.regs, upd_ne (by decide) (by decide), g54_2]
@@ -6829,7 +6830,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     F E55 s55 sv_at_600 sv_at_604 (by decide) (by decide) g55_2
     g55_10 g55_11 g55_12 (by rw [g55_13, ofNat_toNat_self]) (.inr ⟨by decide, by decide⟩) (.inl oid_in)
   have t56 : Steps n0 n56 := t55.trans c56
-  have fR56 : ∀ x, SvR B x → n56.mem x = n0.mem x := fun x hx => (fr56 x hx).trans (fR55 x hx)
+  have fR56 : ∀ x, SvR B x → n56.mem x = M0 x := fun x hx => (fr56 x hx).trans (fR55 x hx)
   have E56 : SvCode n56.mem := E55.fr F fr56
   have V56 : SvSaves B n56.mem v := V55.keepL K56 (by decide)
   rw [sv_mbRo F fR55 (.inr ⟨by decide, by decide⟩), sv_mbRo F fR55 (.inl oid_in)] at a0_56
@@ -6888,7 +6889,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have w56_1020 : memLoad32 n56.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = vp14 := (K56.w32 (by decide) (by decide)).trans w55_1020
   have w56_1024 : memLoad32 n56.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = vl14 := (K56.w32 (by decide) (by decide)).trans w55_1024
   clear w55_1024 w55_1020 w55_a44 w55_a40 w55_a3c w55_a38 w55_a34 w55_a30 w55_a2c w55_a28 w55_a24 w55_a20 w55_32c w55_328 w55_94 w55_90 w55_8c w55_88 w55_84 w55_80 w55_7c w55_78 w55_74 w55_70 w55_6c w55_68 w55_64 w55_60 w55_5c w55_58 w55_54 w55_50 w55_4c w55_48 w55_44 w55_40 w55_3c w55_38 w55_34 w55_30 g55_13 g55_27 g55_26 g55_25 g55_24 g55_23 g55_22 g55_21 g55_19 g55_18 g55_12 g55_11 g55_10 g55_9 g55_8 g55_4 g55_3 g55_2 V55 E55 fR55 t55 fr55 m55 s55 u55 d55
-  by_cases hm2 : memBytes n0.mem (BitVec.ofNat 32 0x3FCC488F) 3 = memBytes n0.mem op ol.toNat
+  by_cases hm2 : memBytes M0 (BitVec.ofNat 32 0x3FCC488F) 3 = memBytes M0 op ol.toNat
   · have g56_10 : reg n56 a0 = BitVec.ofNat 32 1 := by rw [a0_56, ite_eq_left hm2]; rfl
     -- 0x608
     obtain ⟨n57, c57, u57⟩ := s56.block svX2c608 E56.self svX2c608_end
@@ -6898,7 +6899,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have rb57 : ∀ q, reg n57 q = (runBlock svX2c608 (n56.mem, reg n56)).2 q := fun q => by rw [u57.regs]
     have fr57 : ∀ x, SvR B x → n57.mem x = n56.mem x := fun x _ => by rw [m57]
     have t57 : Steps n0 n57 := t56.trans c57
-    have fR57 : ∀ x, SvR B x → n57.mem x = n0.mem x := fun x hx => (fr57 x hx).trans (fR56 x hx)
+    have fR57 : ∀ x, SvR B x → n57.mem x = M0 x := fun x hx => (fr57 x hx).trans (fR56 x hx)
     have E57 : SvCode n57.mem := E56.fr F fr57
     have V57 : SvSaves B n57.mem v := V56.same m57
     have g57_2 : reg n57 sp = B + 0x21A0 := by
@@ -6983,7 +6984,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m58 : n58.mem = n57.mem := u58.mem
     have fr58 : ∀ x, SvR B x → n58.mem x = n57.mem x := fun x _ => by rw [m58]
     have t58 : Steps n0 n58 := t57.trans (.single d58)
-    have fR58 : ∀ x, SvR B x → n58.mem x = n0.mem x := fun x hx => (fr58 x hx).trans (fR57 x hx)
+    have fR58 : ∀ x, SvR B x → n58.mem x = M0 x := fun x hx => (fr58 x hx).trans (fR57 x hx)
     have E58 : SvCode n58.mem := E57.fr F fr58
     have V58 : SvSaves B n58.mem v := V57.same m58
     have g58_2 : reg n58 sp = B + 0x21A0 := by rw [u58.regs, g57_2]
@@ -7052,7 +7053,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have rb57 : ∀ q, reg n57 q = (runBlock svX2c608 (n56.mem, reg n56)).2 q := fun q => by rw [u57.regs]
   have fr57 : ∀ x, SvR B x → n57.mem x = n56.mem x := fun x _ => by rw [m57]
   have t57 : Steps n0 n57 := t56.trans c57
-  have fR57 : ∀ x, SvR B x → n57.mem x = n0.mem x := fun x hx => (fr57 x hx).trans (fR56 x hx)
+  have fR57 : ∀ x, SvR B x → n57.mem x = M0 x := fun x hx => (fr57 x hx).trans (fR56 x hx)
   have E57 : SvCode n57.mem := E56.fr F fr57
   have V57 : SvSaves B n57.mem v := V56.same m57
   have g57_2 : reg n57 sp = B + 0x21A0 := by
@@ -7137,7 +7138,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m58 : n58.mem = n57.mem := u58.mem
   have fr58 : ∀ x, SvR B x → n58.mem x = n57.mem x := fun x _ => by rw [m58]
   have t58 : Steps n0 n58 := t57.trans (.single d58)
-  have fR58 : ∀ x, SvR B x → n58.mem x = n0.mem x := fun x hx => (fr58 x hx).trans (fR57 x hx)
+  have fR58 : ∀ x, SvR B x → n58.mem x = M0 x := fun x hx => (fr58 x hx).trans (fR57 x hx)
   have E58 : SvCode n58.mem := E57.fr F fr58
   have V58 : SvSaves B n58.mem v := V57.same m58
   have g58_2 : reg n58 sp = B + 0x21A0 := by rw [u58.regs, g57_2]
@@ -7203,7 +7204,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m59 : n59.mem = n58.mem := u59.mem
   have fr59 : ∀ x, SvR B x → n59.mem x = n58.mem x := fun x _ => by rw [m59]
   have t59 : Steps n0 n59 := t58.trans (.single d59)
-  have fR59 : ∀ x, SvR B x → n59.mem x = n0.mem x := fun x hx => (fr59 x hx).trans (fR58 x hx)
+  have fR59 : ∀ x, SvR B x → n59.mem x = M0 x := fun x hx => (fr59 x hx).trans (fR58 x hx)
   have E59 : SvCode n59.mem := E58.fr F fr59
   have V59 : SvSaves B n59.mem v := V58.same m59
   have g59_2 : reg n59 sp = B + 0x21A0 := by rw [u59.regs, g58_2]
@@ -7269,7 +7270,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m60 : n60.mem = n59.mem := u60.mem
   have fr60 : ∀ x, SvR B x → n60.mem x = n59.mem x := fun x _ => by rw [m60]
   have t60 : Steps n0 n60 := t59.trans (.single d60)
-  have fR60 : ∀ x, SvR B x → n60.mem x = n0.mem x := fun x hx => (fr60 x hx).trans (fR59 x hx)
+  have fR60 : ∀ x, SvR B x → n60.mem x = M0 x := fun x hx => (fr60 x hx).trans (fR59 x hx)
   have E60 : SvCode n60.mem := E59.fr F fr60
   have V60 : SvSaves B n60.mem v := V59.same m60
   have g60_2 : reg n60 sp = B + 0x21A0 := by rw [u60.regs, upd_ne (by decide) (by decide), g59_2]
@@ -7338,7 +7339,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m61 : n61.mem = n60.mem := u61.mem
   have fr61 : ∀ x, SvR B x → n61.mem x = n60.mem x := fun x _ => by rw [m61]
   have t61 : Steps n0 n61 := t60.trans (.single d61)
-  have fR61 : ∀ x, SvR B x → n61.mem x = n0.mem x := fun x hx => (fr61 x hx).trans (fR60 x hx)
+  have fR61 : ∀ x, SvR B x → n61.mem x = M0 x := fun x hx => (fr61 x hx).trans (fR60 x hx)
   have E61 : SvCode n61.mem := E60.fr F fr61
   have V61 : SvSaves B n61.mem v := V60.same m61
   have g61_2 : reg n61 sp = B + 0x21A0 := by rw [u61.regs, upd_ne (by decide) (by decide), g60_2]
@@ -7409,7 +7410,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have rb62 : ∀ q, reg n62 q = (runBlock svX2c5fc (n61.mem, reg n61)).2 q := fun q => by rw [u62.regs]
   have fr62 : ∀ x, SvR B x → n62.mem x = n61.mem x := fun x _ => by rw [m62]
   have t62 : Steps n0 n62 := t61.trans c62
-  have fR62 : ∀ x, SvR B x → n62.mem x = n0.mem x := fun x hx => (fr62 x hx).trans (fR61 x hx)
+  have fR62 : ∀ x, SvR B x → n62.mem x = M0 x := fun x hx => (fr62 x hx).trans (fR61 x hx)
   have E62 : SvCode n62.mem := E61.fr F fr62
   have V62 : SvSaves B n62.mem v := V61.same m62
   have g62_2 : reg n62 sp = B + 0x21A0 := by
@@ -7496,7 +7497,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m63 : n63.mem = n62.mem := u63.mem
   have fr63 : ∀ x, SvR B x → n63.mem x = n62.mem x := fun x _ => by rw [m63]
   have t63 : Steps n0 n63 := t62.trans (.single d63)
-  have fR63 : ∀ x, SvR B x → n63.mem x = n0.mem x := fun x hx => (fr63 x hx).trans (fR62 x hx)
+  have fR63 : ∀ x, SvR B x → n63.mem x = M0 x := fun x hx => (fr63 x hx).trans (fR62 x hx)
   have E63 : SvCode n63.mem := E62.fr F fr63
   have V63 : SvSaves B n63.mem v := V62.same m63
   have g63_2 : reg n63 sp = B + 0x21A0 := by rw [u63.regs, upd_ne (by decide) (by decide), g62_2]
@@ -7565,7 +7566,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     F E63 s63 sv_at_600 sv_at_604 (by decide) (by decide) g63_2
     g63_10 g63_11 g63_12 (by rw [g63_13, ofNat_toNat_self]) (.inr ⟨by decide, by decide⟩) (.inl oid_in)
   have t64 : Steps n0 n64 := t63.trans c64
-  have fR64 : ∀ x, SvR B x → n64.mem x = n0.mem x := fun x hx => (fr64 x hx).trans (fR63 x hx)
+  have fR64 : ∀ x, SvR B x → n64.mem x = M0 x := fun x hx => (fr64 x hx).trans (fR63 x hx)
   have E64 : SvCode n64.mem := E63.fr F fr64
   have V64 : SvSaves B n64.mem v := V63.keepL K64 (by decide)
   rw [sv_mbRo F fR63 (.inr ⟨by decide, by decide⟩), sv_mbRo F fR63 (.inl oid_in)] at a0_64
@@ -7624,7 +7625,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have w64_1020 : memLoad32 n64.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = vp14 := (K64.w32 (by decide) (by decide)).trans w63_1020
   have w64_1024 : memLoad32 n64.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = vl14 := (K64.w32 (by decide) (by decide)).trans w63_1024
   clear w63_1024 w63_1020 w63_a44 w63_a40 w63_a3c w63_a38 w63_a34 w63_a30 w63_a2c w63_a28 w63_a24 w63_a20 w63_32c w63_328 w63_94 w63_90 w63_8c w63_88 w63_84 w63_80 w63_7c w63_78 w63_74 w63_70 w63_6c w63_68 w63_64 w63_60 w63_5c w63_58 w63_54 w63_50 w63_4c w63_48 w63_44 w63_40 w63_3c w63_38 w63_34 w63_30 g63_13 g63_27 g63_26 g63_25 g63_24 g63_23 g63_22 g63_21 g63_19 g63_18 g63_12 g63_11 g63_10 g63_9 g63_8 g63_4 g63_3 g63_2 V63 E63 fR63 t63 fr63 m63 s63 u63 d63
-  by_cases hm3 : memBytes n0.mem (BitVec.ofNat 32 0x3FCC4892) 3 = memBytes n0.mem op ol.toNat
+  by_cases hm3 : memBytes M0 (BitVec.ofNat 32 0x3FCC4892) 3 = memBytes M0 op ol.toNat
   rotate_left
   · have g64_10 : reg n64 a0 = BitVec.ofNat 32 0 := by rw [a0_64, ite_eq_right hm3]; rfl
     -- 0x608
@@ -7635,7 +7636,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have rb65 : ∀ q, reg n65 q = (runBlock svX2c608 (n64.mem, reg n64)).2 q := fun q => by rw [u65.regs]
     have fr65 : ∀ x, SvR B x → n65.mem x = n64.mem x := fun x _ => by rw [m65]
     have t65 : Steps n0 n65 := t64.trans c65
-    have fR65 : ∀ x, SvR B x → n65.mem x = n0.mem x := fun x hx => (fr65 x hx).trans (fR64 x hx)
+    have fR65 : ∀ x, SvR B x → n65.mem x = M0 x := fun x hx => (fr65 x hx).trans (fR64 x hx)
     have E65 : SvCode n65.mem := E64.fr F fr65
     have V65 : SvSaves B n65.mem v := V64.same m65
     have g65_2 : reg n65 sp = B + 0x21A0 := by
@@ -7720,7 +7721,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m66 : n66.mem = n65.mem := u66.mem
     have fr66 : ∀ x, SvR B x → n66.mem x = n65.mem x := fun x _ => by rw [m66]
     have t66 : Steps n0 n66 := t65.trans (.single d66)
-    have fR66 : ∀ x, SvR B x → n66.mem x = n0.mem x := fun x hx => (fr66 x hx).trans (fR65 x hx)
+    have fR66 : ∀ x, SvR B x → n66.mem x = M0 x := fun x hx => (fr66 x hx).trans (fR65 x hx)
     have E66 : SvCode n66.mem := E65.fr F fr66
     have V66 : SvSaves B n66.mem v := V65.same m66
     have g66_2 : reg n66 sp = B + 0x21A0 := by rw [u66.regs, g65_2]
@@ -7786,7 +7787,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m67 : n67.mem = n66.mem := u67.mem
     have fr67 : ∀ x, SvR B x → n67.mem x = n66.mem x := fun x _ => by rw [m67]
     have t67 : Steps n0 n67 := t66.trans (.single d67)
-    have fR67 : ∀ x, SvR B x → n67.mem x = n0.mem x := fun x hx => (fr67 x hx).trans (fR66 x hx)
+    have fR67 : ∀ x, SvR B x → n67.mem x = M0 x := fun x hx => (fr67 x hx).trans (fR66 x hx)
     have E67 : SvCode n67.mem := E66.fr F fr67
     have V67 : SvSaves B n67.mem v := V66.same m67
     have g67_2 : reg n67 sp = B + 0x21A0 := by rw [u67.regs, g66_2]
@@ -7852,7 +7853,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m68 : n68.mem = n67.mem := u68.mem
     have fr68 : ∀ x, SvR B x → n68.mem x = n67.mem x := fun x _ => by rw [m68]
     have t68 : Steps n0 n68 := t67.trans (.single d68)
-    have fR68 : ∀ x, SvR B x → n68.mem x = n0.mem x := fun x hx => (fr68 x hx).trans (fR67 x hx)
+    have fR68 : ∀ x, SvR B x → n68.mem x = M0 x := fun x hx => (fr68 x hx).trans (fR67 x hx)
     have E68 : SvCode n68.mem := E67.fr F fr68
     have V68 : SvSaves B n68.mem v := V67.same m68
     have g68_2 : reg n68 sp = B + 0x21A0 := by rw [u68.regs, upd_ne (by decide) (by decide), g67_2]
@@ -7918,7 +7919,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have m69 : n69.mem = n68.mem := u69.mem
     have fr69 : ∀ x, SvR B x → n69.mem x = n68.mem x := fun x _ => by rw [m69]
     have t69 : Steps n0 n69 := t68.trans (.single d69)
-    have fR69 : ∀ x, SvR B x → n69.mem x = n0.mem x := fun x hx => (fr69 x hx).trans (fR68 x hx)
+    have fR69 : ∀ x, SvR B x → n69.mem x = M0 x := fun x hx => (fr69 x hx).trans (fR68 x hx)
     have E69 : SvCode n69.mem := E68.fr F fr69
     have V69 : SvSaves B n69.mem v := V68.same m69
     have g69_2 : reg n69 sp = B + 0x21A0 := by rw [u69.regs, g68_2]
@@ -7977,8 +7978,8 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have w69_1020 : memLoad32 n69.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = vp14 := by rw [m69]; exact w68_1020
     have w69_1024 : memLoad32 n69.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = vl14 := by rw [m69]; exact w68_1024
     clear w68_1024 w68_1020 w68_a44 w68_a40 w68_a3c w68_a38 w68_a34 w68_a30 w68_a2c w68_a28 w68_a24 w68_a20 w68_32c w68_328 w68_94 w68_90 w68_8c w68_88 w68_84 w68_80 w68_7c w68_78 w68_74 w68_70 w68_6c w68_68 w68_64 w68_60 w68_5c w68_58 w68_54 w68_50 w68_4c w68_48 w68_44 w68_40 w68_3c w68_38 w68_34 w68_30 g68_27 g68_26 g68_25 g68_24 g68_23 g68_22 g68_21 g68_19 g68_18 g68_10 g68_9 g68_8 g68_4 g68_3 g68_2 V68 E68 fR68 t68 fr68 m68 s68 u68 d68
-    have hna : ¬ (memBytes n0.mem (BitVec.ofNat 32 0x3FCC4889) 3 = memBytes n0.mem op ol.toNat ∨ memBytes n0.mem (BitVec.ofNat 32 0x3FCC488C) 3 = memBytes n0.mem op ol.toNat ∨ memBytes n0.mem (BitVec.ofNat 32 0x3FCC488F) 3 = memBytes n0.mem op ol.toNat ∨ memBytes n0.mem (BitVec.ofNat 32 0x3FCC4892) 3 = memBytes n0.mem op ol.toNat) := fun h => h.elim hm0 (fun h => h.elim hm1 (fun h => h.elim hm2 hm3))
-    exact .inl ⟨(fun ⟨h0', tb7', h1', vp14', vl14', h2', te14', h3', h4', h5', h6', _⟩ => by rw [hr7] at h0'; cases h0'; rw [htb7] at h1'; cases h1'; rw [hr14] at h2'; cases h2'; rw [ht14] at h3'; cases h3'; rw [hr25] at h5'; cases h5'; exact hna h6'), sv_fail F E69 s69 t69 fR69 V69 hret g69_2 g69_18 hO g69_3 g69_4⟩
+    have hna : ¬ (memBytes M0 (BitVec.ofNat 32 0x3FCC4889) 3 = memBytes M0 op ol.toNat ∨ memBytes M0 (BitVec.ofNat 32 0x3FCC488C) 3 = memBytes M0 op ol.toNat ∨ memBytes M0 (BitVec.ofNat 32 0x3FCC488F) 3 = memBytes M0 op ol.toNat ∨ memBytes M0 (BitVec.ofNat 32 0x3FCC4892) 3 = memBytes M0 op ol.toNat) := fun h => h.elim hm0 (fun h => h.elim hm1 (fun h => h.elim hm2 hm3))
+    exact .inl ⟨(fun ⟨h0', tb7', h1', vp14', vl14', h2', te14', h3', h4', h5', h6', _⟩ => by rw [hr7] at h0'; cases h0'; rw [htb7] at h1'; cases h1'; rw [hr14] at h2'; cases h2'; rw [ht14] at h3'; cases h3'; rw [hr25] at h5'; cases h5'; exact hna h6'), sv_fail F E69 s69 t69 (fun x hx => (fR69 x hx).trans (fM x hx).symm) V69 hret g69_2 g69_18 hO g69_3 g69_4⟩
   have g64_10 : reg n64 a0 = BitVec.ofNat 32 1 := by rw [a0_64, ite_eq_left hm3]; rfl
   -- 0x608
   obtain ⟨n65, c65, u65⟩ := s64.block svX2c608 E64.self svX2c608_end
@@ -7988,7 +7989,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have rb65 : ∀ q, reg n65 q = (runBlock svX2c608 (n64.mem, reg n64)).2 q := fun q => by rw [u65.regs]
   have fr65 : ∀ x, SvR B x → n65.mem x = n64.mem x := fun x _ => by rw [m65]
   have t65 : Steps n0 n65 := t64.trans c65
-  have fR65 : ∀ x, SvR B x → n65.mem x = n0.mem x := fun x hx => (fr65 x hx).trans (fR64 x hx)
+  have fR65 : ∀ x, SvR B x → n65.mem x = M0 x := fun x hx => (fr65 x hx).trans (fR64 x hx)
   have E65 : SvCode n65.mem := E64.fr F fr65
   have V65 : SvSaves B n65.mem v := V64.same m65
   have g65_2 : reg n65 sp = B + 0x21A0 := by
@@ -8073,7 +8074,7 @@ theorem sv_x2c {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have m66 : n66.mem = n65.mem := u66.mem
   have fr66 : ∀ x, SvR B x → n66.mem x = n65.mem x := fun x _ => by rw [m66]
   have t66 : Steps n0 n66 := t65.trans (.single d66)
-  have fR66 : ∀ x, SvR B x → n66.mem x = n0.mem x := fun x hx => (fr66 x hx).trans (fR65 x hx)
+  have fR66 : ∀ x, SvR B x → n66.mem x = M0 x := fun x hx => (fr66 x hx).trans (fR65 x hx)
   have E66 : SvCode n66.mem := E65.fr F fr66
   have V66 : SvSaves B n66.mem v := V65.same m66
   have g66_2 : reg n66 sp = B + 0x21A0 := by rw [u66.regs, g65_2]

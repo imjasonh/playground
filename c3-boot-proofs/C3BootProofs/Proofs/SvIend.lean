@@ -19,6 +19,7 @@ set_option maxHeartbeats 0 in
 theorem sv_iend {B out bp x9 x21 x26 il c q ip subj slen : Word} {w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w60 w64 w68 w6c w70 w74 w78 w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word} {v : Nat → Word} {n0 : Machine}
     (F : Fr B 0x3830) (E0 : SvCode n0.mem) (V0 : SvSaves B n0.mem v) (hret : v 0 &&& ~~~1 = v 0)
     (hO : SvOut B out) (s0 : St n0.mem SV n0 0xAE2 (reg n0))
+    (M0 : Word → BitVec 8) (fM : ∀ x, SvR B x → n0.mem x = M0 x)
     (g0_2 : reg n0 sp = B + 0x21A0)
     (g0_9 : reg n0 (9 : Fin 32) = x9)
     (g0_18 : reg n0 (18 : Fin 32) = out)
@@ -103,10 +104,10 @@ theorem sv_iend {B out bp x9 x21 x26 il c q ip subj slen : Word} {w24 w28 w2c w3
         St n'.mem SV n' 0xAE2 (reg n') ∧
         SvCode n'.mem ∧
         SvSaves B n'.mem v ∧
-        (∀ x, SvR B x → n'.mem x = n0.mem x) ∧
+        (∀ x, SvR B x → n'.mem x = M0 x) ∧
         reg n' sp = B + 0x21A0) := by
   have t0 : Steps n0 n0 := .refl n0
-  have fR0 : ∀ x, SvR B x → n0.mem x = n0.mem x := fun _ _ => rfl
+  have fR0 : ∀ x, SvR B x → n0.mem x = M0 x := fM
   have g0_3 : reg n0 (3 : Fin 32) = reg n0 (3 : Fin 32) := rfl
   have g0_4 : reg n0 (4 : Fin 32) = reg n0 (4 : Fin 32) := rfl
   by_cases hf : False
@@ -118,7 +119,7 @@ theorem sv_iend {B out bp x9 x21 x26 il c q ip subj slen : Word} {w24 w28 w2c w3
     have m1 : n1.mem = n0.mem := u1.mem
     have fr1 : ∀ x, SvR B x → n1.mem x = n0.mem x := fun x _ => by rw [m1]
     have t1 : Steps n0 n1 := t0.trans (.single d1)
-    have fR1 : ∀ x, SvR B x → n1.mem x = n0.mem x := fun x hx => (fr1 x hx).trans (fR0 x hx)
+    have fR1 : ∀ x, SvR B x → n1.mem x = M0 x := fun x hx => (fr1 x hx).trans (fR0 x hx)
     have E1 : SvCode n1.mem := E0.fr F fr1
     have V1 : SvSaves B n1.mem v := V0.same m1
     have g1_2 : reg n1 sp = B + 0x21A0 := by rw [u1.regs, g0_2]
@@ -207,7 +208,7 @@ theorem sv_iend {B out bp x9 x21 x26 il c q ip subj slen : Word} {w24 w28 w2c w3
     have m2 : n2.mem = n1.mem := u2.mem
     have fr2 : ∀ x, SvR B x → n2.mem x = n1.mem x := fun x _ => by rw [m2]
     have t2 : Steps n0 n2 := t1.trans (.single d2)
-    have fR2 : ∀ x, SvR B x → n2.mem x = n0.mem x := fun x hx => (fr2 x hx).trans (fR1 x hx)
+    have fR2 : ∀ x, SvR B x → n2.mem x = M0 x := fun x hx => (fr2 x hx).trans (fR1 x hx)
     have E2 : SvCode n2.mem := E1.fr F fr2
     have V2 : SvSaves B n2.mem v := V1.same m2
     have g2_2 : reg n2 sp = B + 0x21A0 := by rw [u2.regs, g1_2]
@@ -290,7 +291,7 @@ theorem sv_iend {B out bp x9 x21 x26 il c q ip subj slen : Word} {w24 w28 w2c w3
     have w2_12c : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x12C) = w12c := by rw [m2]; exact w1_12c
     have w2_130 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x130) = w130 := by rw [m2]; exact w1_130
     clear w1_130 w1_12c w1_128 w1_124 w1_120 w1_11c w1_118 w1_114 w1_110 w1_10c w1_108 w1_104 w1_100 w1_fc w1_f8 w1_f4 w1_f0 w1_ec w1_e8 w1_e4 w1_e0 w1_dc w1_d8 w1_d4 w1_d0 w1_cc w1_c8 w1_c4 w1_c0 w1_bc w1_b8 w1_b4 w1_b0 w1_ac w1_a8 w1_a4 w1_a0 w1_9c w1_98 w1_94 w1_90 w1_8c w1_88 w1_84 w1_80 w1_7c w1_78 w1_74 w1_70 w1_6c w1_68 w1_64 w1_60 w1_5c w1_58 w1_54 w1_50 w1_4c w1_48 w1_44 w1_40 w1_3c w1_38 w1_34 w1_30 w1_2c w1_28 w1_24 g1_27 g1_26 g1_25 g1_21 g1_20 g1_19 g1_18 g1_9 g1_4 g1_3 g1_2 V1 E1 fR1 t1 fr1 m1 s1 u1 d1
-    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hf h0'), sv_fail_2a82 F E2 s2 t2 fR2 V2 hret g2_2 g2_18 hO g2_3 g2_4⟩
+    exact .inl ⟨(fun ⟨h0', _⟩ => by exact hf h0'), sv_fail_2a82 F E2 s2 t2 (fun x hx => (fR2 x hx).trans (fM x hx).symm) V2 hret g2_2 g2_18 hO g2_3 g2_4⟩
   exact hf.elim
 
 
