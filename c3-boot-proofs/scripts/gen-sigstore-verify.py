@@ -637,7 +637,7 @@ class Gen:
         return k, f"derIntIsOf M0 {L} ({rp}) (derElement 2 {L}) (({a1}).extractLsb' 0 8)", (rp, rl, inp)
 
 
-    def pos(self, off, oc, dc, fail_tail):
+    def pos(self, off, oc, dc, fail_tail, exit_lemma="sv_fail"):
         """`Der::positive_integer`, split on the element and then on the integer.
         Returns k and the names of the integer's address and length."""
         k = self.k = self.k + 1
@@ -652,13 +652,13 @@ class Gen:
         L = f"(memBytes M0 ({rp}) ({rl}).toNat)"
         t = f"tl{k}"
         self.split_on(k, f"derElement 2 {L}", f"er{k}", t, f".ok {t}", [t],
-                      lambda sub: fail_elem(sub, k, oc, dc, f"hr{k}", f"Er{k} er{k} (by rw [hr{k}]; rfl)", 8, fail_tail))
+                      lambda sub: fail_elem(sub, k, oc, dc, f"hr{k}", f"Er{k} er{k} (by rw [hr{k}]; rfl)", 8, fail_tail, exit_lemma))
         pv = f"derPosIntOf {L} ({rp}) (.ok {t})"
         k2 = f"{k}b"
         self.emit(f"  obtain ⟨r{k2}, hr{k2}⟩ : ∃ r, {pv} = r := ⟨_, rfl⟩")
         self.emit(f"  rcases r{k2} with er{k2} | ⟨ip{k}, il{k}⟩")
         self.sc.append(("eq", pv, f".ok (ip{k}, il{k})", [f"ip{k}", f"il{k}"], f"hr{k2}"))
-        self.fork(lambda sub: fail_elem(sub, k, oc, dc, f"hr{k2}", f"Er{k} er{k2} (by rw [hr{k}, hr{k2}])", 8, fail_tail))
+        self.fork(lambda sub: fail_elem(sub, k, oc, dc, f"hr{k2}", f"Er{k} er{k2} (by rw [hr{k}, hr{k2}])", 8, fail_tail, exit_lemma))
         self.emit(f"  obtain ⟨p0_{k}, p4_{k}⟩ := Ok{k} ip{k} il{k} (by rw [hr{k}, hr{k2}])")
         self.emit(f"  obtain ⟨d8_{k}, d12_{k}⟩ := A{k} {t} hr{k}")
         hl = f"BitVec.ofNat 32 ({t}.header + {t}.len)"
@@ -1152,6 +1152,43 @@ class Gen:
         self.load(off + 0xC, "lbu")
         self.branch(off + 0x10, True, f"by rw [g{self.k}_10, s{self.k}.zero]; decide")
         return k
+
+    def gt(self, off, oc, p, nl, inp, ha2):
+        """`time::generalized_time` on the `nl` bytes at `p`, split on its answer:
+        `None` reads the error flag at `oc + 0x60 - 0x60` with `lbu`, `beqz` not
+        taken, `lbu s0`, and `j` to 0x2C60. Returns (k, the time's name)."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_gtF", f"(oc := 0x{oc:X}) (nl := {nl})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"Ok{k}", f"Er{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, oc)} g{k-1}_11 {ha2} (by decide) (by decide) {inp}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [sv_mb fR{k-1} {inp}] at Ok{k} Er{k}")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        ex = f"generalizedTime (memBytes M0 ({p}) ({nl}))"
+        tt = f"tm{k}"
+        self.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+        self.emit(f"  rcases r{k} with _ | {tt}")
+        self.sc.append(("eq", ex, f"some {tt}", [tt], f"hr{k}"))
+        self.fork(lambda sub: sub.gt_none(k, oc))
+        self.emit(f"  obtain ⟨-, y0_{k}, y8_{k}, y12_{k}⟩ := Ok{k} {tt} hr{k}")
+        self.frame_after(k, [(oc, 16)], {oc + 8: (f"BitVec.ofNat 32 ({tt} % 2 ^ 32)", f"y8_{k}"),
+                                         oc + 12: (f"BitVec.ofNat 32 ({tt} / 2 ^ 32)", f"y12_{k}")},
+                         {oc: ("(0 : BitVec 8)", f"y0_{k}")})
+        return k, tt
+
+    def gt_none(self, k, oc):
+        """`gt`'s failing case at 0x28A0."""
+        self.emit(f"  obtain ⟨y0_{k}, y1_{k}⟩ := Er{k} hr{k}")
+        self.frame_after(k, [(oc, 16)], {}, {oc: ("(1 : BitVec 8)", f"y0_{k}"), oc + 1: ("(0x19 : BitVec 8)", f"y1_{k}")})
+        self.load(0x28A0, "lbu")
+        self.branch(0x28A4, False, f"by rw [g{self.k}_10, s{self.k}.zero]; decide")
+        self.load(0x28A6, "lbu")
+        self.jump(0x28AA)
+        self.fail(self.fail_proof(("eq", f"hr{k}")), "sv_fail_2c60")
 
     def ds32(self, off, oc, dc, fail_tail):
         """`der::scalar::<32>` on the reader at `dc`, with the result at `oc`,
@@ -5154,6 +5191,92 @@ def stage_tst1():
     return g, info
 
 
+TST2_BINDERS = ("{B out bp x21 x26 dg dp rp rl : Word} {sr ss : Bytes} "
+                + "{" + " ".join(f"w{e:x}" for e in DPV_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+
+
+def tst_start(g):
+    """The state after the message imprint: the TSTInfo's reader at 0x1320
+    holds (`rp`, `rl`), and the signature's bytes are at 0x1020."""
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
+            25: ("U", "(BitVec.ofNat 8 (sr.getD 0 0)).zeroExtend 32", "BitVec.ofNat 8 (sr.getD 0 0)"),
+            8: ("C", 0x18), 20: ("S", 0x1320), 22: ("U", "dp")}
+    words = {e: f"w{e:x}" for e in DPV_WORDS}
+    words.update({0x1328: "rp", 0x132C: "rl"})
+    params = start(g, regs, words, {("rp", "rl"): "rd_in"}) + ["(D0 : SvData M0)"]
+    g.ranges[0x1020] = (47, "BitVec.ofNat 8 (sr.getD (1 + j) 0)")
+    g.ranges[0x104F] = (48, "BitVec.ofNat 8 (ss.getD j 0)")
+    params += ["(q0_1020 : ∀ j, j < 47 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1020 + j)) = BitVec.ofNat 8 (sr.getD (1 + j) 0))",
+               "(q0_104f : ∀ j, j < 48 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x104F + j)) = BitVec.ofNat 8 (ss.getD j 0))"]
+    return params
+
+
+TST_KEEP = [2, 3, 4, 8, 18, 19, 20, 21, 22, 24, 25, 26, 27]
+
+
+def stage_tst2():
+    """From 0x283C to 0x28BC: the serial number and the generation time."""
+    g = Gen("Tst2")
+    params = tst_start(g)
+    g.block(0x283C, 0x2848)
+    g.pinned |= {f"ipin{g.k + 1}", f"ilpos{g.k + 1}"}
+    k, rd = g.pos(0x2848, 0x420, 0x1320, lambda sub: tsa_oid_tail(sub, 0x2850), "sv_fail_2c60")
+    inp = rd[2]
+    g.emit(f"  obtain ⟨ipin{k}, ilpos{k}⟩ := {inp}.posIntIn hr{k} hr{k}b")
+    g.load(0x2850, "lw")
+    g.branch(0x2854, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({inp}.serial_ne hr{k} hr{k}b)")
+    g.load(0x2858, "lw")
+    g.branch(0x285C, False, f"by rw [g{g.k}_11, s{g.k}.zero]; exact br_beq_f fun e => by rw [e] at ilpos{k}; exact absurd ilpos{k} (by decide)")
+    g.load_in(0x285E, f"ipin{k}", f"ilpos{k}")
+    b0 = lean_val(g.regs[10])
+    g.block(0x2862, 0x2866, {10: (f"aluEval .sltu ({b0}) 1",
+                                  "rw [rb{k}]; simp +decide only [runBlock, BInstr.run, svTst22862, upd, ↓reduceIte]; rw [g{p}_10]")})
+    a0v = lean_val(g.regs[10])
+    a1v = lean_val(g.regs[11])
+    g.block(0x2866, 0x2868, {11: (f"({a1v}) - ({a0v})",
+                                  "rw [rb{k}]; simp +decide only [runBlock, BInstr.run, svTst22866, upd, ↓reduceIte]; rw [g{p}_11, g{p}_10]; rfl")})
+    g.block(0x2868, 0x286A)
+    hz = "hser"
+    big = lean_val(g.regs[11])
+
+    def fail_long(sub):
+        sub.branch(0x286A, True, f"by rw [g{sub.k}_10, g{sub.k}_11]; exact br_bltu_t (by rw [show (BitVec.ofNat 32 0x14).toNat = 20 from rfl]; omega)")
+        sub.fail(sub.fail_proof(("prop", hz)), "sv_fail_2c60")
+    g.prop_check(f"({big}).toNat ≤ 20", hz, fail_long)
+    g.branch(0x286A, False, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_bltu_f (by rw [show (BitVec.ofNat 32 0x14).toNat = 20 from rfl]; omega)")
+    g.block(0x286E, 0x287C)
+    k, ex, rd = g.elem(0x287C, 0x420, 0x1320, 0x18)
+    def gt_elem_tail(sub):
+        sub.load(0x2884, "lw")
+        sub.branch(0x2888, True, f"by rw [g{sub.k}_11, s{sub.k}.zero]; rfl")
+        sub.load_any(0x2994)
+        sub.jump(0x2998)
+    t = g.elem_split(k, ex, 0x420, 0x1320, rd, gt_elem_tail, "sv_fail_2c60")
+    g.load(0x2884, "lw")
+    g.branch(0x2888, False, f"by rw [g{g.k}_11, s{g.k}.zero]; exact br_beq_f ({rd[2]}.ok_ne hr{k})")
+    g.load(0x288C, "lw")
+    g.block(0x2890, 0x2898)
+    cp = f"({rd[0]}) + BitVec.ofNat 32 {t}.header"
+    cl = f"BitVec.ofNat 32 {t}.len"
+    g.gt(0x2898, 0x1380, cp, f"({cl}).toNat", g.slices[(cp, cl)], f"(by rw [g{g.k}_12, ofNat_toNat_self])")
+    g.load(0x28A0, "lbu")
+    g.branch(0x28A4, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.block(0x28AC, 0x28B4)
+    g.load(0x28B4, "lw")
+    g.store(0x28B6, "sw")
+    g.load(0x28B8, "lw")
+    g.store(0x28BA, "sw")
+    stmt, proof = finish(g, 0x28BC, TST_KEEP, set(g.words), set(g.bytes))
+    info = {"name": "sv_tst2", "title": "the TSTInfo's serial number and time",
+            "doc": "From 0x283C to 0x28BC: the TSTInfo's serial number is a positive integer of at most 20 "
+            "bytes, not counting a leading zero, and its `genTime` is a `GeneralizedTime`, whose seconds "
+            "go to the words at offsets 0x3C and 0x78.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": TST2_BINDERS, "start": 0x283C,
+            "import": "C3BootProofs.Proofs.SvGt"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -5163,7 +5286,7 @@ def main():
                 "Imiss": stage_imiss, "Ihit": stage_ihit, "Iend": stage_iend, "Dpv": stage_dpv, "Ts1": stage_ts1, "Tsa1": stage_tsa1, "Tsa2": stage_tsa2, "Tsa3": stage_tsa3,
                 "Tsa4n": lambda: stage_tsa4(False), "Tsa4s": lambda: stage_tsa4(True), "Tsa5": stage_tsa5, "Tsaa": stage_tsaa,
                 **{f"Tsav{x}": (lambda x=x: stage_tsav(x)) for x in ("ct", "md", "other")},
-                "Tsal": stage_tsal, "Tsax": stage_tsax, "Tst1": stage_tst1}[stage]()
+                "Tsal": stage_tsal, "Tsax": stage_tsax, "Tst1": stage_tst1, "Tst2": stage_tst2}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
