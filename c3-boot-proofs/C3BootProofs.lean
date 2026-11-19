@@ -193,6 +193,15 @@ import C3BootProofs.Proofs.SvTsax
 import C3BootProofs.Proofs.SvTst1
 import C3BootProofs.Proofs.SvGt
 import C3BootProofs.Proofs.SvTst2
+import C3BootProofs.Proofs.SvTst3n
+import C3BootProofs.Proofs.SvTst3s
+import C3BootProofs.Proofs.SvTst4e0
+import C3BootProofs.Proofs.SvTst4o
+import C3BootProofs.Proofs.SvTst4x0
+import C3BootProofs.Proofs.SvTst4e1
+import C3BootProofs.Proofs.SvTst4x1
+import C3BootProofs.Proofs.SvTst4nn
+import C3BootProofs.Proofs.SvTst4ns
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main
