@@ -63,6 +63,7 @@ playground/
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── qr-quine/              # QR symbol that encodes a data URL of itself
 ├── queens/                # generate and play Queens and Two Not Touch puzzles (JS + Node tests)
+├── read-receipt/          # read pasted Markdown word by word, then share a receipt link (JS + Node tests)
 ├── kube/                  # Go library: Kubernetes controller runtime on the standard library alone
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
 ├── nyt-crossword/         # NYT crossword solve times (JS + Node tests + daily scrape)
@@ -105,6 +106,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
 | `qr-quine/` | yes | QR symbol whose payload is a data URL of itself; JS modules, npm scripts, tests |
 | `queens/` | yes | Queens and Two Not Touch puzzle generator and player; JS modules, npm scripts, tests |
+| `read-receipt/` | yes | Read pasted Markdown word by word and share a receipt link; JS modules, vendored marked and DOMPurify, tests |
 | `life-lab/` | yes | Game of Life sculpture lab; vendored wasm built from `life-stl/` |
 | `marptalk/` | yes | Narrated Marp deck player; JS modules, vendored Marp Core, tests |
 | `math-cards/` | yes | Addition, subtraction, and multiplication/division flash cards for kids; JS modules, npm scripts, tests |
@@ -1060,6 +1062,7 @@ bundle exec fastlane test
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
 | `qr-quine/` | QR symbol that encodes a `data:` URL of itself | Node test runner |
 | `queens/` | Generate and play Queens (one queen per row, column, and region) and Two Not Touch (two stars each) on phones. Four levels set the board size and the hardest solving rule a puzzle needs; every puzzle has one solution and needs no guessing. Hints point out wrong marks, then explain the next step. Workers build puzzles off the main thread, and the URL seed shares a puzzle | Node test runner |
+| `read-receipt/` | Paste Markdown and read it one word at a time: click or tap anywhere, or press Right Arrow or Space, and held keys don't count. The page keeps the highlighted word near the middle of the screen. After a 5-word burst, steps faster than 400 words a minute are refused, and a doc whose link would pass 32,000 characters is turned away before reading. The last word gives a receipt link that holds the compressed doc, the reading time, and the finish time in its fragment, with a SHA-256 proof over a secret that is public in the source, so the receipt isn't secure. Opening the link checks the proof and the speed limit and shows the times and words a minute in a banner above the doc. Renders with vendored marked and sanitizes with the Sanitizer API, or vendored DOMPurify where `setHTML` is missing (`npm run vendor`) | Node test runner |
 | `life-lab/` | Draw Life gen 0, preview the printable Z-stack in 3D, export STL / Bambu 3MF (wasm from `life-stl/`; rebuild via `life-lab/build-wasm.sh`) | Node test runner |
 | `marptalk/` | Present a Marp deck with each slide's speaker notes read aloud by browser text-to-speech, one sentence at a time, with subtitles, speed control (0.5× to 2×), and voice choice. Plays three bundled decks or an uploaded `.md`. Renders with Marp Core bundled into `vendor/` without math (`npm run vendor`). `scripts/check.js` checks a deck, and the [marptalk skill](.cursor/skills/marptalk/SKILL.md) tells agents how to write one | Node test runner (fake speech synthesizer and clock) |
 | `math-cards/` | Math flash cards for kids at first- and second-grade level. Three modes: addition with sums up to 100, subtraction within 100, and mixed multiplication and division with factors from 1 to 5. Each card shows a problem and two answers; swipe the card toward the right one on a phone, or click it or press the Left or Right arrow key. The wrong answer is a likely mistake (off by one, two, or ten, digits swapped, or the wrong operation). Keeps the selected mode in `localStorage`, and cards answered, the streak, and the best streak for each mode, and celebrates every 10 right in a row. `src/problems.js` registers problem kinds and the modes that deal them | Node test runner |
