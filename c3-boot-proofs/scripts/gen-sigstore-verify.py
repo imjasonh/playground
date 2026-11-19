@@ -5575,6 +5575,111 @@ def stage_tsv():
     return g, info
 
 
+TL_STRUCT = {0xA20: "w70", 0xA24: "x21", 0xA28: "w5c", 0xA2C: "w48", 0xA30: "w44", 0xA34: "w60", 0xA38: "w3c",
+             0xA3C: "w78", 0xAA0: "dp", 0xAA4: "dg"}
+TL_BINDERS = ("{B out bp x21 x26 dg dp c q sid slen : Word} {sr ss : Bytes} "
+              + "{" + " ".join(f"w{e:x}" for e in TST_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+TL_KEEP_REGS = [2, 3, 4, 9, 18, 19, 21, 22, 23, 24, 26, 27]
+
+
+def tl_start(g):
+    """The TSA loop's head at 0x2A40: `s1` counts down the bytes of entries
+    left, and the word at 0x74 points 0x20 bytes before the next entry."""
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
+            22: ("U", "dp"), 23: ("S", 0xA40), 9: ("U", "c")}
+    words = {e: f"w{e:x}" for e in TST_WORDS}
+    words.update({0x74: "q"})
+    words.update(TL_STRUCT)
+    params = start(g, regs, words, {})
+    g.bytes[0xA40] = "BitVec.ofNat 8 (sr.getD 0 0)"
+    g.ranges[0xA41] = (47, "BitVec.ofNat 8 (sr.getD (1 + j) 0)")
+    g.ranges[0xA70] = (48, "BitVec.ofNat 8 (ss.getD j 0)")
+    params += ["(b0_a40 : n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (sr.getD 0 0))",
+               "(q0_a41 : ∀ j, j < 47 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0xA41 + j)) = BitVec.ofNat 8 (sr.getD (1 + j) 0))",
+               "(q0_a70 : ∀ j, j < 48 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0xA70 + j)) = BitVec.ofNat 8 (ss.getD j 0))"]
+    return params
+
+
+TL_PARAMS = ["(hc : c ≠ 0)", "(hsid : memLoad32 M0 (q + 0x20) = sid)",
+             "(hslen : memLoad32 M0 (q + 0x24) = slen)", "(es_in : SvIn B (q + 0x20) 4)",
+             "(el_in : SvIn B (q + 0x24) 4)",
+             "(a_sid : (q + 0x20).toNat % 4 = 0)", "(a_slen : (q + 0x24).toNat % 4 = 0)",
+             "(s_in : SvIn B sid slen.toNat)", "(i_in : SvIn B w5c w48.toNat)"]
+TL_EQ = "memBytes M0 sid slen.toNat = memBytes M0 w5c w48.toNat"
+
+
+def tl_entry(g):
+    """From 0x2A40 to the comparison at 0x2A5A, for an entry with a signer ID."""
+    g.branch(0x2A40, False, f"by rw [g{g.k}_9, s{g.k}.zero]; exact br_beq_f hc")
+    g.load(0x2A42, "lw")
+    g.load_mem(0x2A44, "sid", "hsid", "es_in", "a_sid")
+    hz = f"hz_{g.k}"
+
+    def null(sub):
+        sub.branch(0x2A48, True, f"by rw [g{sub.k}_20, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not {hz})")
+        sub.fail(sub.fail_proof(("prop", hz)), "sv_fail_2a82")
+    g.prop_check("sid ≠ 0", hz, null)
+    g.branch(0x2A48, False, f"by rw [g{g.k}_20, s{g.k}.zero]; exact br_beq_f {hz}")
+    g.load(0x2A4C, "lw")
+    g.load_mem(0x2A4E, "slen", "hslen", "el_in", "a_slen")
+    g.block(0x2A52, 0x2A56)
+    g.load(0x2A56, "lw")
+    g.load(0x2A58, "lw")
+    return g.seqeq(0x2A5A, "sid", "slen.toNat", "w5c", "w48.toNat", "(.inl s_in)", "(.inl i_in)",
+                   f"(by rw [g{g.k}_13, ofNat_toNat_self])", f"(by rw [g{g.k}_11, ofNat_toNat_self])")
+
+
+def stage_tl(kind):
+    """The TSA loop at 0x2A40: an entry whose signer ID isn't the timestamp's
+    ("miss", back to 0x2A40), the entry that is ("hit", to 0x2A94), or no
+    entries left ("end")."""
+    g = Gen("Tl" + kind)
+    params = tl_start(g)
+    if kind == "end":
+        params.append("(hc : c = 0)")
+
+        def none(sub):
+            sub.branch(0x2A40, True, f"by rw [g{sub.k}_9, s{sub.k}.zero]; exact br_beq_t hc")
+            sub.fail(sub.fail_proof(("prop", "hf")), "sv_fail_2a82")
+        g.prop_check("False", "hf", none)
+        stmt, _ = finish(g, 0x2A40, [2], set(), set())
+        g.emit("  exact hf.elim")
+        proof = ""
+        title, doc = "no TSA key left", ("The TSA loop at 0x2A40 with no entries left: no listed TSA key has the "
+                                          "timestamp's signer ID, and `sigstore::verify` fails.")
+    else:
+        params += TL_PARAMS + [f"(hm : {'¬ ' if kind == 'miss' else ''}{TL_EQ})"]
+        ke = tl_entry(g)
+        g.set_a0(ke, 0 if kind == "miss" else 1, f"ite_eq_{'right' if kind == 'miss' else 'left'} hm")
+        g.block(0x2A62, 0x2A64)
+        g.block(0x2A64, 0x2A68)
+        g.store(0x2A68, "sw")
+        if kind == "miss":
+            g.branch(0x2A6A, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+            end, keep_regs = 0x2A40, TL_KEEP_REGS
+            title, doc = "a TSA key that didn't sign the timestamp", (
+                "One pass of the TSA loop, from 0x2A40 back to it, for a listed TSA key whose signer ID isn't the "
+                "timestamp's.")
+        else:
+            g.branch(0x2A6A, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+            g.load(0x2A6C, "lw")
+            g.load(0x2A6E, "lw")
+            g.block(0x2A70, 0x2A74)
+            kn = g.sne(0x2A74, "w5c", "w48.toNat", "sid", "slen.toNat", "(.inl i_in)", "(.inl s_in)",
+                       f"(by rw [g{g.k}_11, ofNat_toNat_self])", f"(by rw [g{g.k}_13, ofNat_toNat_self])")
+            g.set_a0(kn, 0, "ite_eq_left hm.symm")
+            g.branch(0x2A7C, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+            end, keep_regs = 0x2A94, TL_KEEP_REGS + [8, 20, 25]
+            title, doc = "the TSA key that signed the timestamp", (
+                "The TSA loop's end, from 0x2A40 to 0x2A94, at a listed TSA key whose signer ID is the timestamp's.")
+        stmt, proof = finish(g, end, sorted(keep_regs), set(g.words), set(g.bytes))
+    info = {"name": "sv_tl" + kind, "title": title, "doc": doc,
+            "params": params, "stmt": stmt, "proof": proof, "binders": TL_BINDERS, "start": 0x2A40,
+            "import": "C3BootProofs.Proofs.SvGt"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -5589,7 +5694,7 @@ def main():
                 **{f"Tst4{x}": (lambda x=x: stage_tst4(x)) for x in TST4_DOC},
                 "Tst5n": lambda: stage_tst5(0xA0, False), "Tst5s": lambda: stage_tst5(0xA0, True),
                 "Tst6n": lambda: stage_tst5(0xA1, False), "Tst6s": lambda: stage_tst5(0xA1, True),
-                "Tsv": stage_tsv}[stage]()
+                "Tsv": stage_tsv, **{f"Tl{x}": (lambda x=x: stage_tl(x)) for x in ("miss", "hit", "end")}}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
