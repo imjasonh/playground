@@ -140,6 +140,7 @@ import C3BootProofs.Proofs.SvL1
 import C3BootProofs.Proofs.SvL2
 import C3BootProofs.Proofs.SvL3
 import C3BootProofs.Proofs.SvL4
+import C3BootProofs.Proofs.SvL5
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main

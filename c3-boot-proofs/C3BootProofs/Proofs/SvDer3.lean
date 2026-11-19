@@ -372,6 +372,9 @@ theorem sv_iiF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm
 theorem sv_sp70 (B : Word) : B + 0x21A0 + 0xFFFFFF90 = B + BitVec.ofNat 32 0x2130 := by
   rw [BitVec.add_assoc]; rfl
 
+theorem lit24 (S : Word) (c : Nat) (hc : c + 24 < 2 ^ 32) :
+    S + BitVec.ofNat 32 c + 0x18 = S + BitVec.ofNat 32 (c + 24) := frame_lit _ (by simpa using hc)
+
 /-- What `Der::algorithm` leaves at offset `oc`. -/
 def AlgW (M : Word → BitVec 8) (B : Word) (oc : Nat) : Except (BitVec 8) ((Word × Nat) × Option (Word × DerTlv)) → Prop
   | .error b => memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 oc) = 0 ∧ M (B + 0x21A0 + BitVec.ofNat 32 (oc + 4)) = b
@@ -380,7 +383,9 @@ def AlgW (M : Word → BitVec 8) (B : Word) (oc : Nat) : Except (BitVec 8) ((Wor
       memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (oc + 8)) = 0
   | .ok ((op, ol), some (rp, u)) => memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 oc) = op ∧
       memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (oc + 4)) = BitVec.ofNat 32 ol ∧
-      memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (oc + 8)) = rp + BitVec.ofNat 32 u.header
+      memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (oc + 8)) = rp + BitVec.ofNat 32 u.header ∧
+      memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (oc + 12)) = BitVec.ofNat 32 u.len ∧
+      M (B + 0x21A0 + BitVec.ofNat 32 (oc + 24)) = BitVec.ofNat 8 u.tag
 
 set_option maxHeartbeats 16000000 in
 /-- **A call to `Der::algorithm`** with the result at offset `oc` and the
@@ -469,7 +474,11 @@ theorem sv_algF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {im
       obtain ⟨⟨op, ol⟩, w⟩ := v
       cases w with
       | none => intro R; exact ⟨R.1, by rw [← o4]; exact R.2.1, by rw [← o8]; exact R.2.2⟩
-      | some w => obtain ⟨rp, u⟩ := w; intro R; exact ⟨R.1, by rw [← o4]; exact R.2.1, by rw [← o8]; exact R.2.2.1⟩
+      | some w =>
+        obtain ⟨rp, u⟩ := w; intro R
+        exact ⟨R.1, by rw [← o4]; exact R.2.1, by rw [← o8]; exact R.2.2.1,
+          by rw [← lit12 (B + 0x21A0) oc (by omega)]; exact R.2.2.2.1,
+          by rw [← lit24 (B + 0x21A0) oc (by omega)]; exact R.2.2.2.2.2.2⟩
   · intro x hx
     have hxF : Sep (B + BitVec.ofNat 32 (0x21A0 - 0x70)) 0x70 x 1 := by
       have := svR_lo (k := 0x70) hx (by decide) (by decide)

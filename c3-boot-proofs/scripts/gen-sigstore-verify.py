@@ -13,6 +13,7 @@ on.
 Usage: python3 scripts/gen-sigstore-verify.py STAGE > C3BootProofs/Proofs/Sv<STAGE>.lean
 """
 
+import os
 import re
 import sys
 
@@ -72,6 +73,8 @@ def add(a, b):
         return b
     if b[0] == "C" and b[1] == 0:
         return a
+    if a[0] == "U" and b[0] == "C":
+        return ("U", f"({a[1]}) + BitVec.ofNat 32 0x{b[1] & 0xFFFFFFFF:X}")
     return None
 
 
@@ -113,6 +116,17 @@ def rt_fail(sub, k, oc, dc, fail_tail):
     sub.emit(f"  have y0_{k} := Er{k} hr{k}")
     sub.frame_after(k, [(oc, 16), (dc + 8, 8)], {}, {oc: ("(1 : BitVec 8)", f"y0_{k}")})
     fail_tail(sub)
+    sub.fail(sub.fail_proof(("eq", f"hr{k}")))
+
+
+def seq_fail(sub, k, oc, dc, lw_off, lbu_off, br_off):
+    """`Der::sequence`'s failing case: the null address, then `lw`, `lbu`, and `beqz` to 0x966."""
+    sub.emit(f"  obtain ⟨z{k}, -⟩ := Er{k} er{k} hr{k}")
+    sub.frame_after(k, [(oc, 16), (dc + 8, 8)], {oc: ("0", f"z{k}")})
+    sub.load(lw_off, "lw")
+    sub.load_any(lbu_off)
+    reg = reg_of(tokens(INSTR[br_off][0])[2])
+    sub.branch(br_off, True, f"by rw [g{sub.k}_{reg}, s{sub.k}.zero]; rfl")
     sub.fail(sub.fail_proof(("eq", f"hr{k}")))
 
 
@@ -580,6 +594,7 @@ class Gen:
         self.emit(f"    (by decide) w{k-1}_{dc + 8:x} w{k-1}_{dc + 12:x} {inp}")
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
         self.emit(f"  rw [derAlgOf_congr (sv_pt fR{k-1} {inp})] at R{k}")
+        self.emit(f"  rw [sv_mb fR{k-1} {inp}] at A{k}")
         self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
                        lambda r: f"rk{k} {rname(r)} (by decide)")
         self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
@@ -646,12 +661,47 @@ class Gen:
         self.slices_nat[(rp2, rl2)] = f"({inp}.drop hkk{k})"
         return nb, rb, f"hrb{k}"
 
+
+    def seq_split(self, k, ex, oc, dc, rd, lw_off, lbu_off, br_off):
+        """Splits on `Der::sequence`'s result; the failing case reads the null
+        address and the error code and branches to 0x966. Returns the `DerTlv` name."""
+        t = f"tl{k}"
+        self.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+        self.emit(f"  rcases r{k} with er{k} | {t}")
+        self.sc.append(("eq", ex, f".ok {t}", [t], f"hr{k}"))
+        self.fork(lambda sub: seq_fail(sub, k, oc, dc, lw_off, lbu_off, br_off))
+        self.seq_ok(k, oc, dc, t, rd)
+        self.load(lw_off, "lw")
+        self.load(lbu_off, "lbu")
+        reg = reg_of(tokens(INSTR[br_off][0])[2])
+        self.branch(br_off, False, f"by rw [g{self.k}_{reg}, s{self.k}.zero]; exact br_beq_f ({rd[2]}.ok_ne hr{k})")
+        return t
+
+    def seqeq(self, off, p, pl, q, ql, hp, hq):
+        """`<[u8]>::eq` of `pl` bytes at `p` and `ql` at `q`; returns k."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_seqEqF", f"(pl := {pl}) (ql := {ql})",
+                       [f"c{k}", f"s{k}", f"rk{k}", f"a0_{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    g{k-1}_10 g{k-1}_11 g{k-1}_12 g{k-1}_13 {hp} {hq}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [sv_mbRo F fR{k-1} {hp}, sv_mbRo F fR{k-1} {hq}] at a0_{k}")
+        self.keep_regs(k, [r for r in range(32) if r not in (1, 6, 10, 11, 12, 13, 14)],
+                       lambda r: f"rk{k} {rname(r)} (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)")
+        self.frame_after(k, [], {})
+        return k
+
+    def set_a0(self, k, val, how):
+        """`a0` after a comparison at step `k` is the constant `val`."""
+        self.emit(f"  have g{k}_10 : reg n{k} a0 = BitVec.ofNat 32 {val} := by rw [a0_{k}, {how}]; rfl")
+        self.regs[10] = ("C", val)
+
     # --- operations -------------------------------------------------------------
 
     def block(self, start, end):
         """ALU instructions from `start` to `end`."""
         k = self.k = self.k + 1
-        ins, off, vals, writes = [], start, dict(self.regs), {}
+        ins, off, vals, writes, unc = [], start, dict(self.regs), {}, {}
         vals[0] = ("C", 0)
         while off < end:
             text, ln = INSTR[off]
@@ -660,12 +710,17 @@ class Gen:
             if tk[0] == ".lui":
                 rd = reg_of(tk[1]); v = ("C", int(tk[2], 16))
             elif tk[0] == ".aluImm" and tk[1] == ".add":
-                rd = reg_of(tk[2]); v = add(vals.get(reg_of(tk[3])), ("C", int(tk[4], 16)))
+                rd = reg_of(tk[2]); src = vals.get(reg_of(tk[3])); v = add(src, ("C", int(tk[4], 16)))
+                if src is not None and src[0] == "U" and v is not None and v != src:
+                    unc[rd] = reg_of(tk[3])
             elif tk[0] == ".alu" and tk[1] == ".add":
                 rd = reg_of(tk[2]); v = add(vals.get(reg_of(tk[3])), vals.get(reg_of(tk[4])))
             elif tk[0] == ".aluImm" and tk[1] == ".and":
                 rd = reg_of(tk[2]); x = vals.get(reg_of(tk[3]))
                 v = ("C", x[1] & int(tk[4], 16)) if x is not None and x[0] == "C" else None
+            elif tk[0] == ".aluImm" and tk[1] == ".xor":
+                rd = reg_of(tk[2]); x = vals.get(reg_of(tk[3]))
+                v = ("C", x[1] ^ int(tk[4], 16)) if x is not None and x[0] == "C" else None
             elif tk[0] in (".aluImm", ".alu"):
                 rd = reg_of(tk[2]); v = None
             else:
@@ -696,9 +751,13 @@ class Gen:
             if v is None:
                 continue
             self.emit(f"  have g{k}_{r} : reg n{k} {rname(r)} = {lean_val(v)} := by")
+            if r in unc and len(ins) == 1:
+                self.emit(f"    rw [rb{k}, ← g{k-1}_{unc[r]}]; rfl")
+                new[r] = v
+                continue
             self.emit(f"    rw [rb{k}]; simp +decide only [runBlock, BInstr.run, {blk}, upd, ↓reduceIte, aluEval]")
             self.emit(f"    all_goals (try simp only [{prev}])")
-            self.emit(f"    all_goals first | decide | sv_addr")
+            self.emit(f"    all_goals first | with_reducible rfl | sv_addr | decide")
             new[r] = v
         self.regs = new
         self.keep_frame(k, ("same",))
@@ -1248,7 +1307,8 @@ def stage_l3():
 
     def alg_to_sne(sub, params):
         sub.emit(f"  rw [hr{ka}] at R{ka}")
-        sub.emit(f"  obtain ⟨y0_{ka}, y4_{ka}, y8_{ka}⟩ := R{ka}")
+        extra = "" if params == "0" else ", -, -"
+        sub.emit(f"  obtain ⟨y0_{ka}, y4_{ka}, y8_{ka}{extra}⟩ := R{ka}")
         sub.frame_after(ka, [(0xA20, 0x1C), (0x1028, 8)],
                         {0xA20: (f"op{ka}", f"y0_{ka}"), 0xA24: (f"BitVec.ofNat 32 ol{ka}", f"y4_{ka}"),
                          0xA28: (params, f"y8_{ka}")})
@@ -1385,20 +1445,214 @@ def stage_l4():
         sub.fail(sub.fail_proof(("prop", hz)))
     g.prop_check(f"{ra} = []", hz, fail_rest)
     g.branch(0x314, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_f (rest_eq {hra} {hz})")
-    stmt, proof = finish(g, 0x318, [2, 3, 4, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+    g.block(0x318, 0x31A)
+    g.load(0x31A, "lw")
+    g.store(0x31C, "sw")
+    g.load(0x31E, "lw")
+    g.store(0x320, "sw")
+    stmt, proof = finish(g, 0x322, [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
                          {0x4C, 0x50, 0x54, 0x58, 0x5C, 0x60, 0x64, 0x68, 0x6C, 0x70, 0x74, 0x78, 0x7C, 0x80, 0x84,
                           0x180, 0x184}, set())
     binders = ("{B out bp rootp dg lp ll rp rl sgl orl orp trp tcl sgp arp arl trl : Word} {v : Nat → Word} "
                "{n0 : Machine}")
     info = {"name": "sv_l4", "title": "the issuer and the validity",
-            "doc": "From 0x266 to the subject at 0x318: the issuer, and the validity, a sequence of exactly two "
+            "doc": "From 0x266 to the subject at 0x322: the issuer, and the validity, a sequence of exactly two "
             "times.", "params": params, "stmt": stmt, "proof": proof, "binders": binders, "start": 0x266,
+            "import": "C3BootProofs.Proofs.SvCongr"}
+    return g, info
+
+
+def spki_tail(g, op, ol, inp, ka, taken_s6):
+    """From 0x3CE: compare the key's algorithm OID with id-ecPublicKey. With
+    `taken_s6`, continue to `bnez s6`, which the caller takes."""
+    g.block(0x3CE, 0x3DC)
+    ks = g.sne(0x3DC, op, ol, "BitVec.ofNat 32 0x3FCC4914", "7", f"(.inl ({inp}.algOid hr{ka}))",
+               "(.inr ⟨by decide, by decide⟩)")
+    if taken_s6:
+        g.block(0x3E4, 0x3E6)
+    return ks
+
+
+def l5_done(g, params, off):
+    stmt, proof = finish(g, off, [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27], {0x180, 0x184}, set())
+    binders = "{B out bp rootp dg lp ll rp rl x9 x22 x23 x24 x25 : Word} {v : Nat → Word} {n0 : Machine}"
+    return g, {"name": "sv_l5", "title": "t", "doc": "d", "params": params, "stmt": stmt, "proof": proof,
+               "binders": binders, "start": 0x322, "import": "C3BootProofs.Proofs.SvCongr"}
+
+
+def stage_l5():
+    """From the subject at 0x322 to 0x424: the subject and the subject public key."""
+    g = Gen("L5")
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 8: ("S", 0xA20),
+            9: ("U", "x9"), 18: ("U", "out"), 19: ("U", "bp"), 21: ("U", "lp"), 22: ("U", "x22"),
+            23: ("U", "x23"), 24: ("U", "x24"), 25: ("U", "x25"), 26: ("U", "ll"), 27: ("S", 0xA20)}
+    words = {0x180: "rp", 0x184: "rl"}
+    params = start(g, regs, words, {("rp", "rl"): "tb_in"})
+    g.block(0x322, 0x330)
+    k, ex, rd = g.elem(0x330, 0xA20, 0x178, 0x30)
+    g.elem_split(k, ex, 0xA20, 0x178, rd, lw_branch_fail(0x338, 0x33A, 10))
+    g.load(0x338, "lw")
+    g.branch(0x33A, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({rd[2]}.ok_ne hr{k})")
+    # The subject public key info.
+    g.block(0x33E, 0x348)
+    k, ex, rd = g.seqr(0x348, 0xA20, 0x178)
+    g.seq_split(k, ex, 0xA20, 0x178, rd, 0x350, 0x354, 0x358)
+    if os.environ.get("SV_STOP") == "a":
+        return l5_done(g, params, 0x35C)
+    g.block(0x35C, 0x36E)
+    g.mc(0x36E, 0x1025, 0xA25, 0xB)
+    g.store(0x376, "sw")
+    g.store(0x37A, "sb")
+    g.block(0x37E, 0x38E)
+    if os.environ.get("SV_STOP") == "b":
+        return l5_done(g, params, 0x38E)
+    k, ex, p, inp = g.alg(0x38E, 0xA20, 0x1020)
+    nl = nat_of(lean_val(g.words[0x102C]))
+    ka = k
+    g.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+    g.emit(f"  rcases r{k} with ab{k} | ⟨⟨op{k}, ol{k}⟩, _ | ⟨prp{k}, pu{k}⟩⟩")
+    g.sc.append(("eq", ex, f".ok ((op{k}, ol{k}), some (prp{k}, pu{k}))", [f"op{k}", f"ol{k}", f"prp{k}", f"pu{k}"],
+                 f"hr{k}"))
+    op, ol = f"op{ka}", f"ol{ka}"
+
+    def fail_err(sub):
+        sub.emit(f"  rw [hr{ka}] at R{ka}")
+        sub.emit(f"  obtain ⟨y0_{ka}, -⟩ := R{ka}")
+        sub.frame_after(ka, [(0xA20, 0x1C), (0x1028, 8)], {0xA20: ("0", f"y0_{ka}")})
+        sub.load(0x396, "lw")
+        sub.branch(0x39A, True, f"by rw [g{sub.k}_8, s{sub.k}.zero]; rfl")
+        sub.load_any(0x962)
+        sub.fail(sub.fail_proof(("eq", f"hr{ka}")))
+
+    def fail_none(sub):
+        sub.emit(f"  rw [hr{ka}] at R{ka}")
+        sub.emit(f"  obtain ⟨y0_{ka}, y4_{ka}, y8_{ka}⟩ := R{ka}")
+        sub.frame_after(ka, [(0xA20, 0x1C), (0x1028, 8)],
+                        {0xA20: (op, f"y0_{ka}"), 0xA24: (f"BitVec.ofNat 32 {ol}", f"y4_{ka}"), 0xA28: ("0", f"y8_{ka}")})
+        sub.load(0x396, "lw")
+        sub.branch(0x39A, False, f"by rw [g{sub.k}_8, s{sub.k}.zero]; exact br_beq_f ({inp}.algOid hr{ka}).pos_ne")
+        sub.load(0x39E, "lw")
+        sub.load(0x3A2, "lw")
+        sub.block(0x3A6, 0x3A8)
+        sub.branch(0x3A8, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; rfl")
+        spki_tail(sub, op, ol, inp, ka, True)
+        sub.branch(0x3E6, True, f"by rw [g{sub.k}_22, s{sub.k}.zero]; decide")
+        sub.fail(sub.fail_proof(("eq", f"hr{ka}")))
+    g.fork(fail_err)
+    g.fork(fail_none)
+    g.emit(f"  obtain ⟨ta{k}, hta{k}⟩ := alg_ok_elem hr{k}")
+    g.sc.append(("eq", f"derElement 0x30 (memBytes n0.mem ({p}) ({nl}))", f".ok ta{k}", [f"ta{k}"], f"hta{k}"))
+    g.emit(f"  rw [hr{k}] at R{k}")
+    g.emit(f"  obtain ⟨y0_{k}, y4_{k}, y8_{k}, y12_{k}, y24_{k}⟩ := R{k}")
+    g.emit(f"  obtain ⟨d8_{k}, d12_{k}⟩ := A{k} ta{k} hta{k}")
+    hl = f"BitVec.ofNat 32 (ta{k}.header + ta{k}.len)"
+    rp2, rl2 = f"({p}) + {hl}", f"(BitVec.ofNat 32 ({nl})) - {hl}"
+    pc = f"prp{k} + BitVec.ofNat 32 pu{k}.header"
+    g.frame_after(k, [(0xA20, 0x1C), (0x1028, 8)],
+                  {0xA20: (op, f"y0_{k}"), 0xA24: (f"BitVec.ofNat 32 {ol}", f"y4_{k}"), 0xA28: (pc, f"y8_{k}"),
+                   0xA2C: (f"BitVec.ofNat 32 pu{k}.len", f"y12_{k}"), 0x1028: (rp2, f"d8_{k}"),
+                   0x102C: (rl2, f"d12_{k}")},
+                  {0xA38: (f"BitVec.ofNat 8 pu{k}.tag", f"y24_{k}")})
+    g.slices[(rp2, rl2)] = f"({inp}.restN hta{k})"
+    if os.environ.get("SV_STOP") == "c":
+        return l5_done(g, params, 0x396)
+    g.load(0x396, "lw")
+    g.branch(0x39A, False, f"by rw [g{g.k}_8, s{g.k}.zero]; exact br_beq_f ({inp}.algOid hr{ka}).pos_ne")
+    g.load(0x39E, "lw")
+    g.load(0x3A2, "lw")
+    g.block(0x3A6, 0x3A8)
+    g.branch(0x3A8, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({inp}.algParams hr{ka})")
+    g.load(0x3AA, "lbu")
+    g.block(0x3AE, 0x3B0)
+    hz = f"hz_{g.k}"
+
+    def fail_tag(sub):
+        sub.branch(0x3B0, True, f"by rw [g{sub.k}_11, g{sub.k}_12]; exact br_bne_byte_t (by decide) {hz}")
+        spki_tail(sub, op, ol, inp, ka, True)
+        sub.branch(0x3E6, True, f"by rw [g{sub.k}_22, s{sub.k}.zero]; decide")
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check(f"BitVec.ofNat 8 pu{ka}.tag = BitVec.ofNat 8 6", hz, fail_tag)
+    g.branch(0x3B0, False, f"by rw [g{g.k}_11, g{g.k}_12]; exact br_bne_byte_f (by decide) {hz}")
+    g.load(0x3B4, "lw")
+    g.block(0x3B8, 0x3C2)
+    ke = g.seqeq(0x3C2, pc, f"pu{ka}.len", "BitVec.ofNat 32 0x3FCC4848", "8", f"(.inl ({inp}.algParamsIn hr{ka}))",
+                 "(.inr ⟨by decide, by decide⟩)")
+    curve = f"memBytes n0.mem ({pc}) pu{ka}.len = memBytes n0.mem (BitVec.ofNat 32 0x3FCC4848) 8"
+    hz = f"hz_{ke}"
+
+    def fail_curve(sub):
+        sub.set_a0(ke, 0, f"ite_eq_right {hz}")
+        sub.block(0x3CA, 0x3CE)
+        spki_tail(sub, op, ol, inp, ka, True)
+        sub.branch(0x3E6, True, f"by rw [g{sub.k}_22, s{sub.k}.zero]; decide")
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check(curve, hz, fail_curve)
+    g.set_a0(ke, 1, f"ite_eq_left {hz}")
+    g.block(0x3CA, 0x3CE)
+    ks = spki_tail(g, op, ol, inp, ka, False)
+    oid = f"memBytes n0.mem {op} {ol} = memBytes n0.mem (BitVec.ofNat 32 0x3FCC4914) 7"
+    hz = f"hz_{ks}"
+
+    def fail_oid(sub):
+        sub.set_a0(ks, 1, f"ite_eq_right {hz}")
+        sub.block(0x3E4, 0x3E6)
+        sub.branch(0x3E6, False, f"by rw [g{sub.k}_22, s{sub.k}.zero]; decide")
+        sub.branch(0x3EA, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check(oid, hz, fail_oid)
+    g.set_a0(ks, 0, f"ite_eq_left {hz}")
+    g.block(0x3E4, 0x3E6)
+    g.branch(0x3E6, False, f"by rw [g{g.k}_22, s{g.k}.zero]; decide")
+    g.branch(0x3EA, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    if os.environ.get("SV_STOP") == "d":
+        return l5_done(g, params, 0x3EE)
+    # The key: a BIT STRING of 65 bytes that ends the subject public key info.
+    g.block(0x3EE, 0x3FE)
+    k = g.bits(0x3FE, 0xA20, 0x1020, lw_branch_fail(0x406, 0x40A, 10))
+    g.load(0x406, "lw")
+    g.branch(0x40A, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({g.slices[('bp%d' % k, 'bl%d' % k)]}.pos_ne)")
+    if os.environ.get("SV_STOP") == "e":
+        return l5_done(g, params, 0x40E)
+    g.block(0x40E, 0x410)
+    if os.environ.get("SV_STOP") == "e1":
+        return l5_done(g, params, 0x410)
+    g.load(0x410, "lw")
+    if os.environ.get("SV_STOP") == "e2":
+        return l5_done(g, params, 0x414)
+    g.block(0x414, 0x418)
+    if os.environ.get("SV_STOP") == "f":
+        return l5_done(g, params, 0x418)
+    hz = f"hz_{g.k}"
+
+    def fail_len(sub):
+        sub.branch(0x418, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_t (sub_lit_ne (c := 0x41) (by decide) {hz})")
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check(f"bl{k} = BitVec.ofNat 32 0x41", hz, fail_len)
+    g.branch(0x418, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_f (sub_lit_eq (c := 0x41) (by decide) {hz})")
+    g.load(0x41C, "lw")
+    rest = lean_val(g.words[0x102C])
+    hz = f"hz_{g.k}"
+
+    def fail_rest(sub):
+        sub.branch(0x420, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_t {hz}")
+        sub.block(0x1C0, 0x1C2)
+        sub.jump(0x1C2)
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check(f"{rest} = 0", hz, fail_rest)
+    g.branch(0x420, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_f {hz}")
+    stmt, proof = finish(g, 0x424, [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                         {0x180, 0x184}, set())
+    binders = "{B out bp rootp dg lp ll rp rl x9 x22 x23 x24 x25 : Word} {v : Nat → Word} {n0 : Machine}"
+    info = {"name": "sv_l5", "title": "the subject and its public key",
+            "doc": "From the subject at 0x322 to 0x424: the subject, and the subject public key info, whose "
+            "algorithm must be id-ecPublicKey with the P-256 curve and whose key must be a 65-byte BIT STRING.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": binders, "start": 0x322,
             "import": "C3BootProofs.Proofs.SvCongr"}
     return g, info
 
 def main():
     stage = sys.argv[1]
-    g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4}[stage]()
+    g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

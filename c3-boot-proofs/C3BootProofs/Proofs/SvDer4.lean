@@ -150,4 +150,45 @@ theorem sv_rtF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm
     rw [o8] at w8; rw [o12] at w12; rw [d8] at wd8; rw [d12] at wd12
     exact ⟨h64, b0, w8, w12, k, hk, wd8, wd12, hr⟩
 
+theorem sv_sp4 (B : Word) : B + 0x21A0 + 0xFFFFFFFC = B + BitVec.ofNat 32 0x219C := by
+  rw [BitVec.add_assoc]; rfl
+
+set_option maxHeartbeats 8000000 in
+/-- **A call to `<[u8]>::eq`** of `pl` bytes at `p` and `ql` bytes at `q`. -/
+theorem sv_seqEqF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o p q : Word} {pl ql : Nat}
+    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 sliceEqAddress)
+    (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
+    (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = p) (ha1 : reg n a1 = BitVec.ofNat 32 pl)
+    (ha2 : reg n a2 = q) (ha3 : reg n a3 = BitVec.ofNat 32 ql) (hp : SvRo B p pl) (hq : SvRo B q ql) :
+    ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧
+      (∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ t1 → r ≠ ra → reg n' r = reg n r) ∧
+      reg n' a0 = (if memBytes M p pl = memBytes M q ql then 1 else 0) ∧
+      SvKeepL B M n'.mem [] ∧ (∀ x, SvR B x → n'.mem x = M x) := by
+  have hFl := F.lo; have hFh := F.hi; have hFa := F.al
+  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := s.callRa C.self h1 h2 hb (by decide)
+  have r1 := PEnv.reg1 regs1 s.zero
+  have hS : (B + (0x21A0 : Word)).toNat = B.toNat + 0x21A0 := F.at 0x21A0 (by decide)
+  obtain ⟨n2, c2, pc2, a02, k2, f2⟩ := sliceEq_correct n1 (p := p) (q := q) (pl := pl) (ql := ql) (by decide)
+    (by rw [mem1]; exact C.sliceEq) (by rw [mem1]; exact C.equalSameLength) (by rw [mem1]; exact C.memcmp) pc1
+    (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1])
+    (by rw [r1 a2 (by decide), ha2]) (by rw [r1 a3 (by decide), ha3]) (by have := hp.fit; omega)
+    (by have := hq.fit; omega) (by rw [regs1]; simp +decide [upd]) (even_clear _ hev)
+    (by rw [r1 sp (by decide), rsp, hS]; omega)
+    (by rw [r1 sp (by decide), rsp, sv_sp4]; exact F.sepHi (by decide) (by decide) (by decide))
+    (by rw [r1 sp (by decide), rsp, sv_sp4]; exact F.sepHi (by decide) (by decide) (by decide))
+    (by rw [r1 sp (by decide), rsp, sv_sp4]; exact hp.sep F (by decide))
+    (by rw [r1 sp (by decide), rsp, sv_sp4]; exact hq.sep F (by decide))
+  rw [mem1, r1 sp (by decide), rsp, sv_sp4] at f2
+  rw [mem1] at a02
+  have hfS : ∀ x, SvR B x → Sep (B + BitVec.ofNat 32 0x219C) 4 x 1 := fun x hx => by
+    have := svR_lo (k := 4) hx (by decide) (by decide)
+    rwa [sv_lo B 4 (by decide)] at this
+  refine ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩,
+    fun r h0 h1 h2 h3 h4 h5 hra => by rw [k2 r h0 h1 h2 h3 h4 h5, r1 r hra], a02, fun e he _ => ?_,
+    fun x hx => f2 x (hfS x hx)⟩
+  exact f2 _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega))
+
 end C3.RV32.Sv

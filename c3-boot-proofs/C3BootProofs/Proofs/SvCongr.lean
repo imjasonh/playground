@@ -259,6 +259,11 @@ theorem SvIn.serial_ne {B rp rl ip il : Word} {M : Word → BitVec 8} {t : DerTl
         · cases hi
         · cases hi; exact hn
 
+/-- The first `k` bytes. -/
+theorem SvIn.shrink {B rp : Word} {rl k : Nat} (h : SvIn B rp rl) (hk : k ≤ rl) : SvIn B rp k :=
+  ⟨by have := h.sep14.sub (c := 0) (l := k + 14) (by omega); rwa [add_ofNat_zero] at this, h.pos,
+    by have := h.lo; omega⟩
+
 /-- The bytes after the first `k`. -/
 theorem SvIn.drop {B rp : Word} {rl k : Nat} (h : SvIn B rp rl) (hk : k ≤ rl) :
     SvIn B (rp + BitVec.ofNat 32 k) (rl - k) := by
@@ -280,5 +285,80 @@ theorem rest_ne {M : Word → BitVec 8} {p : Word} {n : Nat} {r : Bytes} (hn : n
 theorem rest_eq {M : Word → BitVec 8} {p : Word} {n : Nat} {r : Bytes}
     (h : r = memBytes M p n) (hz : r = []) : BitVec.ofNat 32 n = 0 := by
   have := congrArg List.length h; rw [hz, memBytes_length] at this; rw [← this]; rfl
+
+theorem alg_ok_elem {M : Word → BitVec 8} {p : Word} {n : Nat} {x : (Word × Nat) × Option (Word × DerTlv)}
+    (h : derAlgOf M p n = .ok x) : ∃ t, derElement 0x30 (memBytes M p n) = .ok t := by
+  unfold derAlgOf at h
+  cases ht : derElement 0x30 (memBytes M p n) with
+  | error e => rw [ht] at h; cases h
+  | ok t => exact ⟨t, rfl⟩
+
+/-- The bytes after a read, from a natural length. -/
+theorem SvIn.restN {B rp : Word} {rl : Nat} {M : Word → BitVec 8} {tag : Nat} {t : DerTlv} (h : SvIn B rp rl)
+    (ht : derElement tag (memBytes M rp rl) = .ok t) :
+    SvIn B (rp + BitVec.ofNat 32 (t.header + t.len)) (BitVec.ofNat 32 rl - BitVec.ofNat 32 (t.header + t.len)).toNat := by
+  have h' := h.ofNatLen
+  have e : (BitVec.ofNat 32 rl).toNat = rl := by rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by have := h.fit; omega)]
+  rw [← e] at ht
+  exact h'.restW ht
+
+/-- The parameters' content that `Der::algorithm` finds in bytes outside the stack. -/
+theorem SvIn.algParamsIn {B p op prp : Word} {n ol : Nat} {u : DerTlv} {M : Word → BitVec 8} (h : SvIn B p n)
+    (hq : derAlgOf M p n = .ok ((op, ol), some (prp, u))) : SvIn B (prp + BitVec.ofNat 32 u.header) u.len := by
+  unfold derAlgOf at hq
+  cases ht : derElement 0x30 (memBytes M p n) with
+  | error e => rw [ht] at hq; cases hq
+  | ok t =>
+    rw [ht] at hq
+    simp only at hq
+    cases ho : derOid (memBytes M (p + BitVec.ofNat 32 t.header) t.len) with
+    | error e => rw [ho] at hq; cases hq
+    | ok o =>
+      rw [ho] at hq
+      simp only at hq
+      have hc := h.content ht
+      have hob := derElement_bound (derOid_ok_elem ho); rw [memBytes_length] at hob
+      split at hq
+      · cases hq
+      · split at hq
+        · cases hq
+        · rename_i u' hu
+          split at hq
+          · simp only [Except.ok.injEq, Prod.mk.injEq, Option.some.injEq] at hq
+            obtain ⟨_, h1, h2⟩ := hq
+            rw [← h1, ← h2]
+            have hub := derTlv_bound hu; rw [memBytes_length] at hub
+            have hr := hc.drop (k := o.header + o.len) (by omega)
+            have := hr.drop (k := u'.header) (by omega)
+            exact this.shrink (by omega)
+          · cases hq
+
+theorem sub_lit_ne {x : Word} {c c' : Nat} (hc : c + c' = 2 ^ 32) (h : x ≠ BitVec.ofNat 32 c) :
+    x + BitVec.ofNat 32 c' ≠ 0 := fun e => h (by
+  apply BitVec.eq_of_toNat_eq
+  have h0 := congrArg BitVec.toNat e
+  simp only [BitVec.toNat_add, BitVec.toNat_ofNat] at h0 ⊢
+  rw [show (0 : Word).toNat = 0 from rfl] at h0
+  have := x.isLt; omega)
+
+theorem sub_lit_eq {x : Word} {c c' : Nat} (hc : c + c' = 2 ^ 32) (h : x = BitVec.ofNat 32 c) :
+    x + BitVec.ofNat 32 c' = 0 := by
+  subst h; apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.toNat_add, BitVec.toNat_ofNat]; rw [show (0 : Word).toNat = 0 from rfl]; omega
+
+theorem br_bne_byte_t {b : BitVec 8} {n : Nat} (_hn : n < 256) (h : b ≠ BitVec.ofNat 8 n) :
+    branchTaken .bne (b.zeroExtend 32) (BitVec.ofNat 32 n) = true := by
+  simp only [branchTaken, bne_iff_ne, ne_eq]
+  intro e; apply h; apply BitVec.eq_of_toNat_eq
+  have := congrArg BitVec.toNat e
+  simp only [BitVec.toNat_setWidth, BitVec.toNat_ofNat] at this ⊢
+  have := b.isLt; omega
+
+theorem br_bne_byte_f {b : BitVec 8} {n : Nat} (hn : n < 256) (h : b = BitVec.ofNat 8 n) :
+    branchTaken .bne (b.zeroExtend 32) (BitVec.ofNat 32 n) = false := by
+  subst h
+  simp only [branchTaken, bne_eq_false_iff_eq]
+  apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.toNat_setWidth, BitVec.toNat_ofNat]; omega
 
 end C3.RV32.Sv
