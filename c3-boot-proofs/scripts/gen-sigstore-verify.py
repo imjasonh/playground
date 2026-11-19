@@ -132,6 +132,17 @@ def seq_fail(sub, k, oc, dc, lw_off, lbu_off, br_off):
     sub.fail(sub.fail_proof(("eq", f"hr{k}")))
 
 
+def es_fail(sub, k, off, oc):
+    """`der::ecdsa_signature`'s failing case: 1 at `oc`, then `lbu`, `lbu`, `bnez`."""
+    sub.emit(f"  rw [hr{k}] at R{k}")
+    sub.emit(f"  obtain ⟨y0_{k}, -⟩ := R{k}")
+    sub.frame_after(k, [(oc, 97)], {}, {oc: ("(1 : BitVec 8)", f"y0_{k}")})
+    sub.load(off + 8, "lbu")
+    sub.load_any(off + 0xC)
+    sub.branch(off + 0x10, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+    sub.fail(sub.fail_proof(("eq", f"hr{k}")))
+
+
 def oid_fail(sub, k, oc, dc, fail_tail):
     """`Der::oid`'s failing case: the null address at `oc`, then `fail_tail`."""
     sub.emit(f"  obtain ⟨z{k}, -⟩ := Er{k} er{k} hr{k}")
@@ -194,6 +205,7 @@ class Gen:
         self.slices = {}  # (address, length word) of bytes outside the stack -> a proof of `SvIn`
         self.slices_nat = {}  # (address, length) -> a proof of `SvIn`
         self.pinned = set()  # names `end_step` keeps
+        self.ranges = {}  # frame offset -> (length, the byte at offset + j, in terms of `j`)
         self.exits = []  # forks that reach the stage's end: (placeholder, generator)
 
     def emit(self, s):
@@ -291,7 +303,18 @@ class Gen:
         for e, (v, pf) in sorted(written_bytes.items()):
             self.emit(f"  have b{k}_{e:x} : {self.byte_stmt(k, e, v)} := {pf}")
             newb[e] = v
-        self.words, self.bytes = neww, newb
+        newr = {}
+        for s, (n, tmpl) in sorted(self.ranges.items()):
+            if not outside(kind, s, n):
+                continue
+            stmt = f"∀ j, j < {n} → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{s:X} + j)) = {tmpl}"
+            if kind[0] == "same":
+                pf = f"fun j hj => by rw [m{k}]; exact q{k-1}_{s:x} j hj"
+            else:
+                pf = f"fun j hj => (K{k}.range (by decide) (by decide) j hj).trans (q{k-1}_{s:x} j hj)"
+            self.emit(f"  have q{k}_{s:x} : {stmt} := {pf}")
+            newr[s] = (n, tmpl)
+        self.words, self.bytes, self.ranges = neww, newb, newr
 
     def keep_frame_L(self, k, ranges):
         self.keep_frame(k, ("L", ranges))
@@ -971,6 +994,41 @@ class Gen:
         L = f"(memBytes n0.mem ({rp}) ({rl}).toNat)"
         return k, f"derIntOf {L} ({rp}) (derElement 2 {L})", (rp, rl, inp)
 
+
+    def es(self, off, oc, p, nl, inp):
+        """`der::ecdsa_signature::<48>` on `nl` bytes at `p`, split on its result;
+        returns k. The success case's `r` and `s` are `sr{k}` and `ss{k}`."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_esF", f"(oc := 0x{oc:X}) (nl := {nl})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"R{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, oc)} g{k-1}_11 g{k-1}_12 (by decide) {inp}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [ecdsaSigOf_congr (sv_pt fR{k-1} {inp})] at R{k}")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        ex = f"ecdsaSigOf 48 n0.mem ({p}) ({nl})"
+        self.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+        self.emit(f"  rcases r{k} with eb{k} | ⟨sr{k}, ss{k}⟩")
+        self.sc.append(("eq", ex, f".ok (sr{k}, ss{k})", [f"sr{k}", f"ss{k}"], f"hr{k}"))
+
+        self.fork(lambda sub: es_fail(sub, k, off, oc))
+        self.emit(f"  rw [hr{k}] at R{k}")
+        self.emit(f"  obtain ⟨y0_{k}, yr_{k}, ys_{k}⟩ := R{k}")
+        self.emit(f"  have q{k}_{oc + 1:x} : ∀ j, j < 48 → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{oc + 1:X} + j)) = "
+                  f"BitVec.ofNat 8 ((sr{k}).getD j 0) := fun j hj => by rw [show 0x{oc + 1:X} + j = 0x{oc:X} + 1 + j by omega]; exact yr_{k} j hj")
+        self.emit(f"  have q{k}_{oc + 49:x} : ∀ j, j < 48 → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{oc + 49:X} + j)) = "
+                  f"BitVec.ofNat 8 ((ss{k}).getD j 0) := fun j hj => by rw [show 0x{oc + 49:X} + j = 0x{oc:X} + 49 + j by omega]; exact ys_{k} j hj")
+        self.frame_after(k, [(oc, 97)], {}, {oc: ("(0 : BitVec 8)", f"y0_{k}")})
+        self.ranges[oc + 1] = (48, f"BitVec.ofNat 8 ((sr{k}).getD j 0)")
+        self.ranges[oc + 49] = (48, f"BitVec.ofNat 8 ((ss{k}).getD j 0)")
+        self.load(off + 8, "lbu")
+        self.load_any(off + 0xC)
+        self.branch(off + 0x10, False, f"by rw [g{self.k}_10, s{self.k}.zero]; decide")
+        return k
+
     # --- operations -------------------------------------------------------------
 
     def block(self, start, end, extra=None):
@@ -1006,6 +1064,11 @@ class Gen:
             elif tk[0] == ".alu" and tk[1] == ".sub":
                 rd = reg_of(tk[2]); x = vals.get(reg_of(tk[3])); y = vals.get(reg_of(tk[4]))
                 v = ("U", f"({lean_val(x)}) - ({lean_val(y)})") if x is not None and y is not None and x[0] == "U" and y[0] == "U" else None
+            elif tk[0] == ".alu" and tk[1] == ".and":
+                rd = reg_of(tk[2]); x, y = vals.get(reg_of(tk[3])), vals.get(reg_of(tk[4]))
+                v = ("U", f"({lean_val(x)}) &&& ({lean_val(y)})") if x is not None and y is not None else None
+                if v is not None:
+                    unc[rd] = (reg_of(tk[3]), reg_of(tk[4]))
             elif tk[0] == ".alu" and tk[1] == ".or":
                 rd = reg_of(tk[2]); x, y = vals.get(reg_of(tk[3])), vals.get(reg_of(tk[4]))
                 v = ("U", f"({lean_val(x)}) ||| ({lean_val(y)})") if x is not None and y is not None else None
@@ -1243,6 +1306,9 @@ class Gen:
                 continue
             conj.append(f"n'.mem ({fa(e)}) = {v}")
             terms.append(f"b{k}_{e:x}")
+        for s, (n, tmpl) in sorted(self.ranges.items()):
+            conj.append(f"(∀ j, j < {n} → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{s:X} + j)) = {tmpl})")
+            terms.append(f"q{k}_{s:x}")
         return conj, terms
 
     def block_defs(self):
@@ -3184,11 +3250,89 @@ def stage_deku3():
             "import": "C3BootProofs.Proofs.SvData"}
     return g, info
 
+
+def stage_l7():
+    """From the extensions loop's end at 0x4EA to the leaf's signature at 0xA44."""
+    g = Gen("L7")
+    params = loop_start(g)
+    params = [x for x in params if not x.startswith("(xl_in")]
+    for e, v in {0x60: "orp", 0x64: "BitVec.ofNat 32 orl", 0x70: "arp", 0x74: "BitVec.ofNat 32 arl",
+                 0x7C: "sgp", 0x68: "BitVec.ofNat 32 sgl"}.items():
+        g.words[e] = ("U", v)
+        params = [x for x in params if not x.startswith(f"(w0_{e:x} ")]
+        params.append(f"(w0_{e:x} : memLoad32 n0.mem ({fa(e)}) = {v})")
+    params += ["(hrem : rem = 0)", "(or_in : SvIn B orp orl)", "(ar_in : SvIn B arp arl)", "(sg_in : SvIn B sgp sgl)"]
+    g.load(0x4EA, "lw")
+    g.branch(0x4EC, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_t hrem")
+    for i, (ld, st, br) in enumerate([(0x9C0, 0x9C4, 0x9C6), (0x9CA, 0x9CE, 0x9D0), (0x9D4, 0x9D8, 0x9DA),
+                                      (0x9DE, 0x9E2, 0x9E4)]):
+        g.load(ld, "lw")
+        g.store(st, "sw")
+        hz = f"hz_{g.k}"
+
+        def missing(sub, br=br, hz=hz):
+            sub.branch(br, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not {hz})")
+            sub.block(0xB32, 0xB34)
+            sub.jump(0xB34)
+            sub.fail(sub.fail_proof(("prop", hz)))
+        g.prop_check(f"sl{2 * i} ≠ 0", hz, missing)
+        g.branch(br, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f {hz}")
+    g.load(0x9E8, "lw")
+    g.store(0x9EC, "sw")
+    g.block(0x9EE, 0x9F2, {10: ("if BitVec.ult 0 (sl8) then (1 : Word) else 0",
+                                "rw [rb{k}]; simp only [runBlock, BInstr.run, svL79ee, upd, aluEval]; "
+                                "rw [g{p}_10, s{p}.zero]; rfl")})
+    g.load(0x9F2, "lw")
+    g.load(0x9F4, "lw")
+    g.block(0x9F6, 0x9F8)
+    g.block(0x9F8, 0x9FA)
+    v = lean_val(g.regs[10])
+    hz = f"hz_{g.k}"
+
+    def flags(sub):
+        sub.branch(0x9FA, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not {hz})")
+        sub.block(0xB32, 0xB34)
+        sub.jump(0xB34)
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check(f"{v} ≠ 0", hz, flags)
+    g.branch(0x9FA, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f {hz}")
+    g.block(0x9FE, 0xA00)
+    for ld, st in [(0xA00, 0xA02), (0xA04, 0xA06), (0xA08, 0xA0A), (0xA0C, 0xA0E), (0xA10, 0xA12)]:
+        g.load(ld, "lw")
+        g.store(st, "sw")
+    for ld in (0xA14, 0xA16, 0xA18, 0xA1A):
+        g.load(ld, "lw")
+    ks = g.sne(0xA1C, "orp", "orl", "arp", "arl", "(.inl or_in)", "(.inl ar_in)")
+    hz = f"hz_{ks}"
+
+    def algdiff(sub):
+        sub.set_a0(ks, 1, f"ite_eq_right {hz}")
+        sub.branch(0xA24, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check("memBytes n0.mem orp orl = memBytes n0.mem arp arl", hz, algdiff)
+    g.set_a0(ks, 0, f"ite_eq_left {hz}")
+    g.branch(0xA24, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.block(0xA26, 0xA2E)
+    g.load(0xA2E, "lw")
+    g.load(0xA30, "lw")
+    k = g.es(0xA32, 0xA20, "sgp", "sgl", "sg_in")
+    stmt, proof = finish(g, 0xA44, [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                         set(range(0x24, 0x88, 4)) | {0x88, 0x8C, 0x90, 0x94}, set())
+    info = {"name": "sv_l7", "title": "the policy and the leaf's signature",
+            "doc": "From the extensions loop's end at 0x4EA to 0xA44: all five identity-policy slots are filled, "
+            "`KeyUsage` and `ExtKeyUsage` were seen, the outer signature algorithm matches the tbsCertificate's, "
+            "and the signature value is an ECDSA signature with 48-byte `r` and `s`.",
+            "params": params, "stmt": stmt, "proof": proof,
+            "binders": LOOP_BINDERS.replace(" : Word}", " orp arp sgp : Word} {orl arl sgl : Nat}"),
+            "start": 0x4EA, "import": "C3BootProofs.Proofs.SvEcdsa"}
+    return g, info
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
                 **{f"Dp{i}": stage_dpol(i) for i in range(6)}, "Dbc1": stage_dbc1, "Dbc2e": stage_dbc2e, "Dbc2": stage_dbc2, "Dku1": stage_dku1, "Dku2": stage_dku2,
-                "Deku1": stage_deku1, "Deku2": stage_deku2, "Deku3": stage_deku3}[stage]()
+                "Deku1": stage_deku1, "Deku2": stage_deku2, "Deku3": stage_deku3,
+                "L7": stage_l7}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

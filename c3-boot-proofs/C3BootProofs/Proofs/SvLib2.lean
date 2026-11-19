@@ -78,6 +78,12 @@ theorem SvKeep.b8 {B : Word} {M M' : Word → BitVec 8} {c w e : Nat} (K : SvKee
     (h : e + 1 ≤ c ∨ c + w ≤ e) : M' (B + 0x21A0 + BitVec.ofNat 32 e) = M (B + 0x21A0 + BitVec.ofNat 32 e) :=
   K _ he (by omega)
 
+/-- A range of frame bytes that an `SvKeep` keeps. -/
+theorem SvKeep.range {B : Word} {M M' : Word → BitVec 8} {c w s n : Nat} (K : SvKeep B M M' c w)
+    (hs : s + n ≤ 0x1690) (h : s + n ≤ c ∨ c + w ≤ s) :
+    ∀ j, j < n → M' (B + 0x21A0 + BitVec.ofNat 32 (s + j)) = M (B + 0x21A0 + BitVec.ofNat 32 (s + j)) :=
+  fun j hj => K _ (by omega) (by omega)
+
 theorem SvKeep.same {B : Word} {M M' : Word → BitVec 8} (h : M' = M) : SvKeep B M M' 0 0 :=
   fun _ _ _ => by rw [h]
 

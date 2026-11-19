@@ -32,6 +32,12 @@ theorem SvKeepL.b8 {B : Word} {M M' : Word → BitVec 8} {L : List (Nat × Nat)}
     M' (B + 0x21A0 + BitVec.ofNat 32 e) = M (B + 0x21A0 + BitVec.ofNat 32 e) :=
   K _ he fun p hp => by have := h p hp; omega
 
+/-- A range of frame bytes that an `SvKeepL` keeps. -/
+theorem SvKeepL.range {B : Word} {M M' : Word → BitVec 8} {L : List (Nat × Nat)} {s n : Nat} (K : SvKeepL B M M' L)
+    (hs : s + n ≤ 0x1690) (h : ∀ p ∈ L, s + n ≤ p.1 ∨ p.1 + p.2 ≤ s) :
+    ∀ j, j < n → M' (B + 0x21A0 + BitVec.ofNat 32 (s + j)) = M (B + 0x21A0 + BitVec.ofNat 32 (s + j)) :=
+  fun j hj => K _ (by omega) fun p hp => by have := h p hp; omega
+
 theorem SvSaves.keepL {B : Word} {M M' : Word → BitVec 8} {v : Nat → Word} {L : List (Nat × Nat)}
     (V : SvSaves B M v) (K : SvKeepL B M M' L) (h : ∀ p ∈ L, p.1 + p.2 ≤ 0x165C) : SvSaves B M' v := fun k hk => by
   rw [← V k hk, show 0x382C - 4 * k = 0x21A0 + (0x168C - 4 * k) by omega, sv_base]
