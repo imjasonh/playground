@@ -6,7 +6,7 @@ import {
   encodeDoc,
   longestLink,
   readReceipt,
-  receiptHash,
+  receiptFragment,
   sign,
 } from '../src/receipt.js';
 
@@ -47,13 +47,11 @@ test('sign depends on the doc, the time, and the finish', async () => {
   assert.notEqual(await sign(`${DOC} `, 90, FINISHED), proof);
 });
 
-test('readReceipt verifies a receipt from receiptHash', async () => {
-  const hash = await receiptHash(DOC, 252, FINISHED);
+test('readReceipt verifies a receipt from receiptFragment', async () => {
+  const hash = await receiptFragment(DOC, 252, FINISHED);
   assert.deepEqual(await readReceipt(`#${hash}`), {
     markdown: DOC,
-    seconds: 252,
-    finished: new Date('2026-11-19T02:58:00Z'),
-    verified: true,
+    reading: {seconds: 252, finished: new Date('2026-11-19T02:58:00Z')},
   });
 });
 
@@ -63,67 +61,61 @@ test('readReceipt verifies a version 1 receipt, which has no finish', async () =
     '&d=U1bwz0nh4nJUKEstKs7Mz1MwVChKTU7NLCjR4wIA';
   assert.deepEqual(await readReceipt(hash), {
     markdown: '# Old\n\nA version 1 receipt.\n',
-    seconds: 42,
-    finished: null,
-    verified: true,
+    reading: {seconds: 42, finished: null},
   });
   const params = new URLSearchParams(hash);
   params.set('f', String(FINISHED));
-  assert.equal((await readReceipt(params.toString()))?.finished, null);
+  assert.equal((await readReceipt(params.toString()))?.reading?.finished, null);
 });
 
 test('readReceipt flags an edited time', async () => {
-  const params = new URLSearchParams(await receiptHash(DOC, 252, FINISHED));
+  const params = new URLSearchParams(await receiptFragment(DOC, 252, FINISHED));
   params.set('t', '10');
   const receipt = await readReceipt(params.toString());
-  assert.equal(receipt?.verified, false);
-  assert.equal(receipt?.seconds, 0);
-  assert.equal(receipt?.markdown, DOC);
+  assert.deepEqual(receipt, {markdown: DOC, reading: null});
 });
 
 test('readReceipt flags an edited or missing finish', async () => {
-  const params = new URLSearchParams(await receiptHash(DOC, 252, FINISHED));
+  const params = new URLSearchParams(await receiptFragment(DOC, 252, FINISHED));
   params.set('f', String(FINISHED - 86400));
   assert.deepEqual(await readReceipt(params.toString()), {
     markdown: DOC,
-    seconds: 0,
-    finished: null,
-    verified: false,
+    reading: null,
   });
   params.delete('f');
-  assert.equal((await readReceipt(params.toString()))?.verified, false);
+  assert.equal((await readReceipt(params.toString()))?.reading, null);
 });
 
 test('readReceipt flags a downgrade to version 1', async () => {
-  const params = new URLSearchParams(await receiptHash(DOC, 252, FINISHED));
+  const params = new URLSearchParams(await receiptFragment(DOC, 252, FINISHED));
   params.set('v', '1');
-  assert.equal((await readReceipt(params.toString()))?.verified, false);
+  assert.equal((await readReceipt(params.toString()))?.reading, null);
 });
 
 test('readReceipt flags an edited doc', async () => {
-  const params = new URLSearchParams(await receiptHash(DOC, 252, FINISHED));
+  const params = new URLSearchParams(await receiptFragment(DOC, 252, FINISHED));
   params.set('d', await encodeDoc(DOC.replace('Friday', 'Monday')));
   const receipt = await readReceipt(params.toString());
-  assert.equal(receipt?.verified, false);
+  assert.equal(receipt?.reading, null);
   assert.match(receipt?.markdown ?? '', /Monday/);
 });
 
 test('readReceipt flags a missing or malformed proof', async () => {
-  const params = new URLSearchParams(await receiptHash(DOC, 5, FINISHED));
+  const params = new URLSearchParams(await receiptFragment(DOC, 5, FINISHED));
   params.delete('p');
-  assert.equal((await readReceipt(params.toString()))?.verified, false);
+  assert.equal((await readReceipt(params.toString()))?.reading, null);
   params.set('p', 'x');
   params.set('t', '5.0');
-  assert.equal((await readReceipt(params.toString()))?.verified, false);
+  assert.equal((await readReceipt(params.toString()))?.reading, null);
 });
 
 test('longestLink covers any reading time and finish time', async () => {
   const base = 'https://example.com/read-receipt/';
   const longest = await longestLink(base, DOC);
-  const real = `${base}#${await receiptHash(DOC, 12_345_678, FINISHED)}`;
+  const real = `${base}#${await receiptFragment(DOC, 12_345_678, FINISHED)}`;
   assert.ok(real.length <= longest, `${real.length} > ${longest}`);
   const most = '9'.repeat(15);
-  const params = new URLSearchParams(await receiptHash(DOC, 0, 0));
+  const params = new URLSearchParams(await receiptFragment(DOC, 0, 0));
   params.set('t', most);
   params.set('f', most);
   assert.equal(longest, `${base}#${params}`.length);

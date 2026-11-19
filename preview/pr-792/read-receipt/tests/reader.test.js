@@ -4,7 +4,7 @@ import {test} from 'node:test';
 import {
   Reader,
   formatDuration,
-  isAdvanceKey,
+  isStepKey,
   withinSpeedLimit,
   wordsPerMinute,
 } from '../src/reader.js';
@@ -17,7 +17,6 @@ import {
 function key(key, overrides = {}) {
   return {
     key,
-    repeat: false,
     altKey: false,
     ctrlKey: false,
     metaKey: false,
@@ -26,22 +25,17 @@ function key(key, overrides = {}) {
   };
 }
 
-test('isAdvanceKey accepts fresh Right Arrow and Space presses', () => {
-  assert.equal(isAdvanceKey(key('ArrowRight')), true);
-  assert.equal(isAdvanceKey(key(' ')), true);
+test('isStepKey accepts Right Arrow and Space', () => {
+  assert.equal(isStepKey(key('ArrowRight')), true);
+  assert.equal(isStepKey(key(' ')), true);
 });
 
-test('isAdvanceKey ignores held keys', () => {
-  assert.equal(isAdvanceKey(key('ArrowRight', {repeat: true})), false);
-  assert.equal(isAdvanceKey(key(' ', {repeat: true})), false);
-});
-
-test('isAdvanceKey ignores other keys and modified presses', () => {
+test('isStepKey ignores other keys and modified presses', () => {
   for (const name of ['ArrowLeft', 'ArrowDown', 'Enter', 'a', 'Spacebar']) {
-    assert.equal(isAdvanceKey(key(name)), false, name);
+    assert.equal(isStepKey(key(name)), false, name);
   }
   for (const modifier of ['altKey', 'ctrlKey', 'metaKey', 'shiftKey']) {
-    assert.equal(isAdvanceKey(key(' ', {[modifier]: true})), false, modifier);
+    assert.equal(isStepKey(key(' ', {[modifier]: true})), false, modifier);
   }
 });
 
@@ -66,10 +60,12 @@ test('Reader times from the first step to the last', () => {
   assert.equal(reader.seconds, 0);
   reader.advance();
   now += 4_400;
-  assert.equal(reader.seconds, 4);
+  assert.equal(reader.seconds, 0);
   assert.equal(reader.finishedAt, null);
   reader.advance();
+  assert.equal(reader.seconds, 4);
   now += 100_000;
+  assert.equal(reader.advance(), false);
   assert.equal(reader.seconds, 4);
   assert.equal(reader.finishedAt, 64_400);
 });
