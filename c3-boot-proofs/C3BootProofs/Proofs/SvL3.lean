@@ -1756,7 +1756,7 @@ theorem sv_l3 {B out bp rootp dg lp ll rp rl sgl orl orp trl trp tcl sgp : Word}
     have w28_1024 : memLoad32 n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = BitVec.ofNat 32 (tl9.header + tl9.len) := (K28.w32 (by decide) (by decide)).trans w27_1024
     clear w27_1024 w27_1020 w27_a28 w27_a24 w27_a20 w27_184 w27_180 w27_84 w27_80 w27_7c w27_78 w27_74 w27_70 g27_13 g27_12 g27_27 g27_26 g27_25 g27_24 g27_23 g27_22 g27_21 g27_19 g27_18 g27_11 g27_10 g27_9 g27_8 g27_4 g27_3 g27_2 V27 E27 fR27 t27 fr27 rb27 s27 m27 u27 c27
     by_cases ho_28 : memBytes n0.mem op19 ol19 = memBytes n0.mem (BitVec.ofNat 32 0x3FCC4840) 8
-    · have g28_10 : reg n28 a0 = BitVec.ofNat 32 0 := by rw [a0_28, if_pos ho_28]; rfl
+    · have g28_10 : reg n28 a0 = BitVec.ofNat 32 0 := by rw [a0_28, ite_eq_left ho_28]; rfl
       -- 0x25E: branch, not taken
       obtain ⟨n29, d29, u29⟩ := s28.notTaken E28.self 0x262 sv_at_25e
         (by decide) (by rw [g28_10, s28.zero]; decide)
@@ -1836,7 +1836,7 @@ theorem sv_l3 {B out bp rootp dg lp ll rp rl sgl orl orp trl trp tcl sgp : Word}
       have w30_1024 : memLoad32 n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = BitVec.ofNat 32 (tl9.header + tl9.len) := by rw [m30]; exact w29_1024
       clear w29_1024 w29_1020 w29_a28 w29_a24 w29_a20 w29_184 w29_180 w29_84 w29_80 w29_7c w29_78 w29_74 w29_70 g29_27 g29_26 g29_25 g29_24 g29_23 g29_22 g29_21 g29_19 g29_18 g29_10 g29_9 g29_8 g29_4 g29_3 g29_2 V29 E29 fR29 t29 fr29 m29 s29 u29 d29 g28_10
       exact .inl ⟨(fun ⟨tl2', h0', ip2', il2', h1', h2', tl9', h3', op19', ol19', h4', _⟩ => by rw [hr2] at h0'; cases h0'; rw [hr2b] at h1'; cases h1'; rw [hr9] at h3'; cases h3'; rw [hr19] at h4'; cases h4'), sv_fail F E30 s30 t30 fR30 V30 hret g30_2 g30_18 hO g30_3 g30_4⟩
-    have g28_10 : reg n28 a0 = BitVec.ofNat 32 1 := by rw [a0_28, if_neg ho_28]; rfl
+    have g28_10 : reg n28 a0 = BitVec.ofNat 32 1 := by rw [a0_28, ite_eq_right ho_28]; rfl
     -- 0x25E: branch, taken
     obtain ⟨n29, d29, u29⟩ := s28.taken E28.self 0x966 sv_at_25e
       (by decide) (by rw [g28_10, s28.zero]; decide)
@@ -2287,7 +2287,7 @@ theorem sv_l3 {B out bp rootp dg lp ll rp rl sgl orl orp trl trp tcl sgp : Word}
   clear w27_1024 w27_1020 w27_a28 w27_a24 w27_a20 w27_184 w27_180 w27_84 w27_80 w27_7c w27_78 w27_74 w27_70 g27_13 g27_12 g27_27 g27_26 g27_25 g27_24 g27_23 g27_22 g27_21 g27_19 g27_18 g27_11 g27_10 g27_9 g27_8 g27_4 g27_3 g27_2 V27 E27 fR27 t27 fr27 rb27 s27 m27 u27 c27
   by_cases hz_28 : memBytes n0.mem op19 ol19 = memBytes n0.mem (BitVec.ofNat 32 0x3FCC4840) 8
   rotate_left
-  · have g28_10 : reg n28 a0 = BitVec.ofNat 32 1 := by rw [a0_28, if_neg hz_28]; rfl
+  · have g28_10 : reg n28 a0 = BitVec.ofNat 32 1 := by rw [a0_28, ite_eq_right hz_28]; rfl
     -- 0x25E: branch, taken
     obtain ⟨n29, d29, u29⟩ := s28.taken E28.self 0x966 sv_at_25e
       (by decide) (by rw [g28_10, s28.zero]; decide)
@@ -2328,7 +2328,7 @@ theorem sv_l3 {B out bp rootp dg lp ll rp rl sgl orl orp trl trp tcl sgp : Word}
     have w29_1024 : memLoad32 n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = BitVec.ofNat 32 (tl9.header + tl9.len) := by rw [m29]; exact w28_1024
     clear w28_1024 w28_1020 w28_a28 w28_a24 w28_a20 w28_184 w28_180 w28_84 w28_80 w28_7c w28_78 w28_74 w28_70 g28_27 g28_26 g28_25 g28_24 g28_23 g28_22 g28_21 g28_19 g28_18 g28_9 g28_8 g28_4 g28_3 g28_2 V28 E28 fR28 t28 fr28 K28 a0_28 rk28 s28 c28
     exact .inl ⟨(fun ⟨tl2', h0', ip2', il2', h1', h2', tl9', h3', op19', ol19', h4', h5', _⟩ => by rw [hr2] at h0'; cases h0'; rw [hr2b] at h1'; cases h1'; rw [hr9] at h3'; cases h3'; rw [hr19] at h4'; cases h4'; exact hz_28 h5'), sv_fail F E29 s29 t29 fR29 V29 hret g29_2 g29_18 hO g29_3 g29_4⟩
-  have g28_10 : reg n28 a0 = BitVec.ofNat 32 0 := by rw [a0_28, if_pos hz_28]; rfl
+  have g28_10 : reg n28 a0 = BitVec.ofNat 32 0 := by rw [a0_28, ite_eq_left hz_28]; rfl
   -- 0x25E: branch, not taken
   obtain ⟨n29, d29, u29⟩ := s28.notTaken E28.self 0x262 sv_at_25e
     (by decide) (by rw [g28_10, s28.zero]; decide)
