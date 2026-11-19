@@ -1,7 +1,8 @@
-import {makeCard, spokenProblem} from './problems.js';
+import {dealCard, isMode, spokenProblem} from './problems.js';
 import {filledDots, loadStats, recordAnswer, saveStats} from './stats.js';
 
-const KIND = 'addition';
+const MODE_KEY = 'math-cards:mode';
+const DEFAULT_MODE = 'addition';
 // A drag past this fraction of the card's width picks that side's answer.
 const COMMIT_FRACTION = 0.3;
 // A flick faster than this (pixels per millisecond) picks an answer before
@@ -18,7 +19,7 @@ const RIGHT_PAUSE_MS = 350;
 const WRONG_PAUSE_MS = 1600;
 const CHEER_MS = 2400;
 const PIECES = 40;
-const PIECE_SYMBOLS = [...'0123456789', '+', '+', '+', '='];
+const DIGITS = [...'0123456789'];
 const PIECE_COLORS = [
   '#ff4f8b', '#ff9f1c', '#ffd23f', '#2dc76d', '#1fc7b6', '#2f80ff',
   '#8b5cf6',
@@ -40,6 +41,7 @@ const statEls = {
   best: document.querySelector('#best'),
 };
 const dotEls = [...document.querySelectorAll('#dots li')];
+const modeButtons = [...document.querySelectorAll('.mode')];
 const statusEl = document.querySelector('#status');
 const partyEl = document.querySelector('#party');
 const cheerEl = document.querySelector('#cheer');
@@ -53,7 +55,25 @@ try {
   // Storage is blocked. Stats last until the page closes.
 }
 
+function loadMode() {
+  try {
+    const saved = storage?.getItem(MODE_KEY);
+    return isMode(saved) ? saved : DEFAULT_MODE;
+  } catch {
+    return DEFAULT_MODE;
+  }
+}
+
+function saveMode() {
+  try {
+    storage?.setItem(MODE_KEY, mode);
+  } catch {
+    // The mode lasts until the page closes.
+  }
+}
+
 let stats = loadStats(storage);
+let mode = loadMode();
 let card = null;
 let busy = false;
 let drag = null;
@@ -201,8 +221,14 @@ function shake() {
   ], {duration: 450, easing: 'ease-in-out'});
 }
 
+function renderModes() {
+  for (const button of modeButtons) {
+    button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
+  }
+}
+
 function deal(note = '') {
-  card = makeCard(KIND, Math.random, card);
+  card = dealCard(mode, Math.random, card);
   resetCardPosition();
   renderCard();
   const next = `${spokenProblem(card)} equals what?`;
@@ -276,9 +302,11 @@ function burst() {
   const width = window.innerWidth;
   const height = window.innerHeight;
   const reach = Math.min(width, height) * 0.55;
+  const op = card.operator;
+  const symbols = [...DIGITS, op, op, op, '='];
   for (let i = 0; i < PIECES; i++) {
     const piece = span('piece',
-        PIECE_SYMBOLS[Math.floor(Math.random() * PIECE_SYMBOLS.length)]);
+        symbols[Math.floor(Math.random() * symbols.length)]);
     piece.style.color =
         PIECE_COLORS[Math.floor(Math.random() * PIECE_COLORS.length)];
     piece.style.fontSize = `${1.5 + Math.random() * 2.5}rem`;
@@ -407,6 +435,23 @@ for (const [side, button] of Object.entries(buttons)) {
   button.addEventListener('click', () => choose(side));
 }
 
+for (const button of modeButtons) {
+  button.addEventListener('click', () => {
+    if (button.dataset.mode === mode) {
+      return;
+    }
+    mode = button.dataset.mode;
+    saveMode();
+    renderModes();
+    // A card that is flying off or showing a missed answer deals the next
+    // card in the new mode when it finishes.
+    if (!busy) {
+      deal();
+      enterCard();
+    }
+  });
+}
+
 document.addEventListener('keydown', (event) => {
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
     return;
@@ -424,5 +469,6 @@ document.addEventListener('keydown', (event) => {
 });
 
 renderStats(false);
-card = makeCard(KIND, Math.random);
+renderModes();
+card = dealCard(mode, Math.random);
 renderCard();
