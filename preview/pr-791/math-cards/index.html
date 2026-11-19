@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#fff3d1" />
+    <meta
+      name="description"
+      content="Addition flash cards for kids. Pick the right answer of two by swiping, tapping, or pressing the arrow keys."
+    />
+    <title>Math Cards</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500..700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <h1 class="visually-hidden">Math Cards</h1>
+      <header class="scoreboard">
+        <dl class="stats">
+          <div class="stat stat-answered">
+            <dt>Answered</dt>
+            <dd id="answered">0</dd>
+          </div>
+          <div class="stat stat-streak">
+            <dt>Streak</dt>
+            <dd id="streak">0</dd>
+          </div>
+          <div class="stat stat-best">
+            <dt>Best</dt>
+            <dd id="best">0</dd>
+          </div>
+        </dl>
+        <ol id="dots" class="dots" aria-hidden="true">
+          <li></li><li></li><li></li><li></li><li></li>
+          <li></li><li></li><li></li><li></li><li></li>
+        </ol>
+      </header>
+
+      <section class="play" aria-label="Card">
+        <noscript>
+          <p class="noscript">Math Cards needs JavaScript to deal cards.</p>
+        </noscript>
+        <div id="card" class="card">
+          <p id="problem" class="problem"></p>
+        </div>
+        <div class="choices">
+          <button
+            type="button"
+            id="choice-left"
+            class="choice choice-left"
+            aria-keyshortcuts="ArrowLeft"
+          >
+            <span class="arrow" aria-hidden="true">←</span>
+            <span class="value"></span>
+          </button>
+          <button
+            type="button"
+            id="choice-right"
+            class="choice choice-right"
+            aria-keyshortcuts="ArrowRight"
+          >
+            <span class="value"></span>
+            <span class="arrow" aria-hidden="true">→</span>
+          </button>
+        </div>
+      </section>
+
+      <p id="status" class="visually-hidden" role="status"></p>
+    </main>
+
+    <div id="party" class="party" aria-hidden="true">
+      <p id="cheer" class="cheer" hidden>
+        <span id="cheer-count" class="cheer-count"></span>
+        <span class="cheer-words">in a row!</span>
+      </p>
+    </div>
+
+    <script type="module" src="src/app.js"></script>
+    <script src="whbiab.js" data-app="math-cards"></script>
+  </body>
+</html>
