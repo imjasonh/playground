@@ -61,6 +61,17 @@ theorem dad_facts_out {B : Word} {M M' : Word → BitVec 8} {dc kf oc ow : Nat} 
     | ok t => simp only [derAdvance]; rw [d12, memStore32_get_sep (svR_hi hx (by omega)), d8,
         memStore32_get_sep (svR_hi hx (by omega))]
 
+/-- A scalar read means an element was read. -/
+theorem derScalarOf_elem {N : Nat} {L : Bytes} {rp : Word} {r : Except DerError DerTlv} {bs : Bytes}
+    (h : derScalarOf N L rp r = .ok bs) : ∃ t, r = .ok t := by
+  cases r with
+  | ok t => exact ⟨t, rfl⟩
+  | error e =>
+    exfalso
+    unfold derScalarOf at h
+    split at h <;> first | cases h | skip
+    all_goals (rename_i heq; cases heq)
+
 theorem sv_sp90 (B : Word) : B + 0x21A0 + 0xFFFFFF70 = B + BitVec.ofNat 32 0x2110 := by
   rw [BitVec.add_assoc]; rfl
 

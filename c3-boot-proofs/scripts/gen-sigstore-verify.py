@@ -151,6 +151,16 @@ def oid_fail(sub, k, oc, dc, fail_tail):
     sub.fail(sub.fail_proof(("eq", f"hr{k}")))
 
 
+def ds32_fail(sub, k, oc, dc, fail_tail):
+    """`der::scalar::<32>`'s failing case: 1 and the error byte at `oc`, then `fail_tail`."""
+    sub.emit(f"  rw [hr{k}] at R{k}")
+    sub.emit(f"  obtain ⟨y0_{k}, y1_{k}⟩ := R{k}")
+    sub.frame_after(k, [(oc, 33), (dc + 8, 8)], {},
+                    {oc: ("(1 : BitVec 8)", f"y0_{k}"), oc + 1: (f"eb{k}", f"y1_{k}")})
+    fail_tail(sub)
+    sub.fail(sub.fail_proof(("eq", f"hr{k}")), "sv_fail_2c60")
+
+
 def err44(sub, entry):
     """The failing exits that go through 0xB46, from `entry`."""
     if entry == 0xB3C:
@@ -1029,6 +1039,54 @@ class Gen:
         self.branch(off + 0x10, False, f"by rw [g{self.k}_10, s{self.k}.zero]; decide")
         return k
 
+
+    def ds32(self, off, oc, dc, fail_tail):
+        """`der::scalar::<32>` on the reader at `dc`, with the result at `oc`,
+        split on its result. Returns k; the success case's bytes are `bs{k}`."""
+        k = self.k = self.k + 1
+        rp, rl, inp = self.reader(k - 1, dc)
+        self.call_head(k, off, "sv_ds32F", f"(oc := 0x{oc:X}) (dc := 0x{dc:X})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"A{k}", f"R{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, oc)} {self.reg_is(k - 1, 11, dc)} (by decide) (by decide) (by decide) (by decide)")
+        self.emit(f"    w{k-1}_{dc + 8:x} w{k-1}_{dc + 12:x} {inp}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [sv_mb fR{k-1} {inp}] at A{k} R{k}")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        L = f"(memBytes M0 ({rp}) ({rl}).toNat)"
+        ex = f"derScalarOf 32 {L} ({rp}) (derElement 2 {L})"
+        self.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+        self.emit(f"  rcases r{k} with eb{k} | bs{k}")
+        self.sc.append(("eq", ex, f".ok bs{k}", [f"bs{k}"], f"hr{k}"))
+        self.fork(lambda sub: ds32_fail(sub, k, oc, dc, fail_tail))
+        self.emit(f"  rw [hr{k}] at R{k}")
+        self.emit(f"  obtain ⟨y0_{k}, yb_{k}⟩ := R{k}")
+        te = f"te{k}"
+        self.emit(f"  obtain ⟨{te}, hte{k}⟩ := derScalarOf_elem hr{k}")
+        self.sc.append(("eq", f"derElement 2 {L}", f".ok {te}", [te], f"hte{k}"))
+        self.emit(f"  obtain ⟨d8_{k}, d12_{k}⟩ := A{k} {te} hte{k}")
+        self.emit(f"  have q{k}_{oc + 1:x} : ∀ j, j < 32 → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{oc + 1:X} + j)) = "
+                  f"BitVec.ofNat 8 ((bs{k}).getD j 0) := fun j hj => by rw [show 0x{oc + 1:X} + j = 0x{oc:X} + 1 + j by omega]; exact yb_{k} j hj")
+        hl = f"BitVec.ofNat 32 ({te}.header + {te}.len)"
+        self.frame_after(k, [(oc, 33), (dc + 8, 8)],
+                         {dc + 8: (f"({rp}) + {hl}", f"d8_{k}"), dc + 12: (f"({rl}) - {hl}", f"d12_{k}")},
+                         {oc: ("(0 : BitVec 8)", f"y0_{k}")})
+        self.ranges[oc + 1] = (32, f"BitVec.ofNat 8 ((bs{k}).getD j 0)")
+        self.slices[(f"({rp}) + {hl}", f"({rl}) - {hl}")] = f"({inp}.restW hte{k})"
+        return k
+
+    def word_of_bytes(self, e, x):
+        """The word at offset `e` is `x`, from byte facts `x.extractLsb' (8 i) 8`."""
+        k = self.k
+        self.emit(f"  have w{k}_{e:x} : {self.word_stmt(k, e, ('U', x))} := ld_of_bytes b{k}_{e:x}")
+        for i in (1, 2, 3):
+            self.emit(f"    (by rw [show {fa(e)} + {i} = {fa(e + i)} by sv_addr]; exact b{k}_{e + i:x})")
+        self.words[e] = ("U", x)
+        for i in range(4):
+            self.bytes.pop(e + i, None)
 
     def assemble_word(self, e, x):
         """The word at offset `e` is `x`, from the bytes `sb` stored of `x` and of
@@ -3657,13 +3715,102 @@ def stage_dpv():
     return g, info
 
 
+TS_WORDS = DPV_WORDS
+TS_BINDERS = ("{B out bp x21 x26 tsp tsl : Word} {tl : DerTlv} "
+              + "{" + " ".join(f"w{e:x}" for e in TS_WORDS if e not in (0x64, 0x68)) + " : Word} {v : Nat → Word} {n0 : Machine}")
+
+
+def ts_scalar_fail(sub, a, reg):
+    """After a failing `der::scalar::<32>`: `lbu`, `lbu`, `beqz` not taken, `mv s0`, and `j` to 0x2C60."""
+    sub.load(a, "lbu")
+    sub.load(a + 4, "lbu")
+    sub.branch(a + 8, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+    sub.block(a + 0xA, a + 0xC)
+    sub.jump(a + 0xC)
+
+
+def stage_ts1():
+    """From 0xE96 to 0xFBA: the timestamp signature's `r` and `s`."""
+    g = Gen("Ts1")
+    cp = "(tsp) + BitVec.ofNat 32 tl.header"
+    cl = "BitVec.ofNat 32 tl.len"
+    byte = f"({cl}).extractLsb' 0 8"
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 20: ("S", 0x1320),
+            9: ("U", cp), 8: ("U", f"({byte}).zeroExtend 32", byte)}
+    words = {e: f"w{e:x}" for e in TS_WORDS}
+    words.update({0x64: "tsl", 0x68: "tsp", 0xA20: cp, 0xA24: cl, 0xA28: cp, 0xA2C: cl, 0x1320: "tsp",
+                  0x1324: "tsl", 0x1328: "(tsp) + BitVec.ofNat 32 (tl.header + tl.len)",
+                  0x132C: "(tsl) - BitVec.ofNat 32 (tl.header + tl.len)"})
+    params = start(g, regs, words, {})
+    g.bytes[0xA24] = byte
+    params += [f"(b0_a24 : n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA24) = {byte})",
+               "(ts_in : SvIn B tsp tsl.toNat)", "(ht : derElement 0x30 (memBytes M0 tsp tsl.toNat) = .ok tl)"]
+    g.slices[(cp, cl)] = "(ts_in.contentW ht)"
+    g.block(0xE96, 0xEA4)
+    g.mc(0xEA4, 0x325, 0xA25, 0xB)
+    g.load(0xEAC, "lw")
+    g.store(0xEB0, "sw")
+    g.store(0xEB4, "sb")
+    g.word_of_bytes(0x324, cl)
+    g.block(0xEB8, 0xEBA)
+    rem = "(tsl) - BitVec.ofNat 32 (tl.header + tl.len)"
+
+    def trailing(sub):
+        sub.branch(0xEBA, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_f hrem")
+        sub.jump(0xEBC)
+        sub.fail(sub.fail_proof(("prop", "hrem")), "sv_fail_2c60")
+    g.prop_check(f"{rem} = 0", "hrem", trailing)
+    g.branch(0xEBA, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_t hrem")
+    g.block(0xEC0, 0xECA)
+    k1 = g.ds32(0xECA, 0xA20, 0x320, lambda sub: ts_scalar_fail(sub, 0xED2, 22))
+    g.load(0xED2, "lbu")
+    g.load(0xED6, "lbu")
+    g.branch(0xEDA, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.block(0xEFA, 0xF0C)
+    g.mc(0xF0C, 0x1020, 0xA22, 0x1F)
+    g.block(0xF14, 0xF1E)
+    k2 = g.ds32(0xF1E, 0xA20, 0x320, lambda sub: ts_scalar_fail(sub, 0xF26, 9))
+    g.load(0xF26, "lbu")
+    g.load(0xF2A, "lbu")
+    g.branch(0xF2E, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.block(0xF36, 0xF44)
+    g.mc(0xF44, 0x420, 0xA22, 0x1F)
+    g.load(0xF4C, "lw")
+    rem2 = lean_val(g.words[0x32C])
+
+    def trailing2(sub):
+        sub.branch(0xF50, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_f hrem2")
+        sub.jump(0xF52)
+        sub.fail(sub.fail_proof(("prop", "hrem2")), "sv_fail_2c60")
+    g.prop_check(f"{rem2} = 0", "hrem2", trailing2)
+    g.branch(0xF50, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_t hrem2")
+    g.block(0xF56, 0xF68)
+    g.mc(0xF68, 0x1480, 0x1020, 0x1F)
+    g.block(0xF70, 0xF7E)
+    g.mc(0xF7E, 0x1380, 0x420, 0x1F)
+    g.block(0xF86, 0xF94)
+    g.mc(0xF94, 0x139, 0x1480, 0x1F)
+    g.block(0xF9C, 0xFAA)
+    g.mc(0xFAA, 0x159, 0x1380, 0x1F)
+    g.store(0xFB2, "sb")
+    g.store(0xFB6, "sb")
+    stmt, proof = finish(g, 0xFBA, [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "sv_ts1", "title": "the timestamp signature's scalars",
+            "doc": "From 0xE96 to 0xFBA: `sigstore::verify` reads the timestamp signature's `r` and `s` with "
+            "`der::scalar::<32>` and copies them to offsets 0x138 and 0x158 of the frame.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": TS_BINDERS, "start": 0xE96,
+            "import": "C3BootProofs.Proofs.SvTs"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
                 **{f"Dp{i}": stage_dpol(i) for i in range(6)}, "Dbc1": stage_dbc1, "Dbc2e": stage_dbc2e, "Dbc2": stage_dbc2, "Dku1": stage_dku1, "Dku2": stage_dku2,
                 "Deku1": stage_deku1, "Deku2": stage_deku2, "Deku3": stage_deku3,
                 "L7": stage_l7, "L8a": stage_l8a,
-                "Imiss": stage_imiss, "Ihit": stage_ihit, "Iend": stage_iend, "Dpv": stage_dpv}[stage]()
+                "Imiss": stage_imiss, "Ihit": stage_ihit, "Iend": stage_iend, "Dpv": stage_dpv, "Ts1": stage_ts1}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
