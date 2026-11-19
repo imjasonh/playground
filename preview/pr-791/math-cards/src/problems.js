@@ -85,7 +85,6 @@ function wrongOnly(candidates, answer, min, max = Infinity) {
 }
 
 const addition = {
-  name: 'Addition',
   defaults: {max: 100},
 
   /**
@@ -120,7 +119,6 @@ const addition = {
 };
 
 const subtraction = {
-  name: 'Subtraction',
   defaults: {max: 100},
 
   /**
@@ -156,7 +154,6 @@ const subtraction = {
 };
 
 const multiplication = {
-  name: 'Multiplication',
   defaults: {maxFactor: 5},
 
   /**
@@ -198,7 +195,6 @@ const multiplication = {
 };
 
 const division = {
-  name: 'Division',
   defaults: {maxFactor: 5},
 
   /**
@@ -247,6 +243,9 @@ export const MODES = {
   'multiply-divide': ['multiplication', 'division'],
 };
 
+/** The mode a new player starts in. */
+export const DEFAULT_MODE = 'addition';
+
 /**
  * Reports whether key names a mode.
  * @param {?string} key
@@ -263,8 +262,7 @@ export function isMode(key) {
  * @return {boolean}
  */
 export function sameProblem(a, b) {
-  return a.kind === b.kind && a.operator === b.operator &&
-      a.operands.length === b.operands.length &&
+  return a.kind === b.kind && a.operands.length === b.operands.length &&
       a.operands.every((n, i) => n === b.operands[i]);
 }
 
@@ -290,9 +288,10 @@ export function makeCard(kindKey, rng, previous = null, options = {}) {
     problem = kind.generate(rng, settings);
   }
   const wrong = kind.distractors(problem, settings);
-  const distractor = wrong.length > 0 ?
-      wrong[randomInt(rng, 0, wrong.length - 1)] :
-      problem.answer + 1;
+  if (wrong.length === 0) {
+    throw new Error(`no wrong answer for ${spokenProblem(problem)}`);
+  }
+  const distractor = wrong[randomInt(rng, 0, wrong.length - 1)];
   const choices = rng() < 0.5 ?
       [problem.answer, distractor] :
       [distractor, problem.answer];
@@ -313,15 +312,6 @@ export function dealCard(modeKey, rng, previous = null) {
   }
   const kinds = MODES[modeKey];
   return makeCard(kinds[randomInt(rng, 0, kinds.length - 1)], rng, previous);
-}
-
-/**
- * Returns the problem as text, such as "23 + 45".
- * @param {!Problem} problem
- * @return {string}
- */
-export function problemText(problem) {
-  return problem.operands.join(` ${problem.operator} `);
 }
 
 /**
