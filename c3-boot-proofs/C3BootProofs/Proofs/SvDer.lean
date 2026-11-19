@@ -155,6 +155,7 @@ and the code. -/
 structure SvOut (B out : Word) : Prop where
   stk : Sep out 2 (B + 0xFFFFFE60) 0x39D0
   code : Sep out 2 SV sigstoreVerifyCode.length
+  al : out.toNat % 2 = 0
 
 /-- `sigstore::verify` returned `Err`: from `n0`, the machine reaches the
 return address with the stack and the callee-saved registers restored,

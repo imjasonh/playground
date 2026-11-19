@@ -1265,11 +1265,11 @@ class Gen:
         self.end_step()
         return tgt
 
-    def fail(self, why_not):
-        """Close the failing case at 0x966 with `why_not`, a proof that the
-        stage's checks failed."""
+    def fail(self, why_not, exit_lemma="sv_fail"):
+        """Close the failing case at 0x966 (or, with `exit_lemma`, 0xEE4 or
+        0x2A82) with `why_not`, a proof that the stage's checks failed."""
         k = self.k
-        self.emit(f"  exact .inl ⟨({why_not}), sv_fail F E{k} s{k} t{k} fR{k} V{k} hret g{k}_2 g{k}_18 hO g{k}_3 g{k}_4⟩")
+        self.emit(f"  exact .inl ⟨({why_not}), {exit_lemma} F E{k} s{k} t{k} fR{k} V{k} hret g{k}_2 g{k}_18 hO g{k}_3 g{k}_4⟩")
 
     # --- calls through SvDer ----------------------------------------------------
 
