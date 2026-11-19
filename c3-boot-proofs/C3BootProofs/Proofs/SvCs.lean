@@ -130,4 +130,10 @@ theorem sv_b64fF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {i
   exact f2 _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega))
     (sepS (B + 0x21A0) (by omega) (by omega) (by omega)) (sepS (B + 0x21A0) (by omega) (by omega) (by omega))
 
+theorem ne68_add {n : Nat} (h1 : n < 2 ^ 32) (h2 : n ≠ 68) : BitVec.ofNat 32 n + BitVec.ofNat 32 0xFFFFFFBC ≠ 0 :=
+  fun e => by
+    have := congrArg BitVec.toNat e
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat] at this
+    exact h2 (by simp only [show (0 : Word).toNat = 0 from rfl] at this; omega)
+
 end C3.RV32.Sv
