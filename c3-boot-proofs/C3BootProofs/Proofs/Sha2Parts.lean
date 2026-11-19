@@ -158,7 +158,7 @@ theorem pt_loop {M0 MH : Word → BitVec 8} {out P sp0 F R : Word} {k : Nat}
       ∃ n' My, Steps n n' ∧ St My (BitVec.ofNat 32 sha256PartsAddress) n' 0x46 (reg n') ∧
         (∀ x, Sep (F + 0xFFFFFF00) 0x100 x 1 → Sep F 0x68 x 1 → My x = MH x) ∧
         HasherAt My F (partsBytes M0 P k) ∧
-        ∀ q, q ≠ ra → q ≠ (3 : Fin 32) → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
+        ∀ q, q ≠ ra → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
           q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ a7 → q ≠ (28 : Fin 32) → q ≠ (29 : Fin 32) →
           q ≠ (30 : Fin 32) → q ≠ (31 : Fin 32) → q ≠ s0 → q ≠ s1 → reg n' q = reg n q := by
   let Q := BitVec.ofNat 32 sha256PartsAddress
@@ -271,14 +271,14 @@ theorem pt_loop {M0 MH : Word → BitVec 8} {out P sp0 F R : Word} {k : Nat}
     have aMU := agree MU inv6
     have cxU := codeX MU aMU _ _ E.cX (by decide) (by decide)
     have u6 : St MU Q n6 0x42 (reg n6) := ⟨by rw [pc6], hMU, fun _ => rfl⟩
-    have k6 : ∀ q, q ≠ ra → q ≠ (3 : Fin 32) → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 →
+    have k6 : ∀ q, q ≠ ra → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 →
         q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ a7 → q ≠ (28 : Fin 32) → q ≠ (29 : Fin 32) →
         q ≠ (30 : Fin 32) → q ≠ (31 : Fin 32) → q ≠ sp → reg n6 q = reg n5 q := K6
     obtain ⟨n7, d7, u7⟩ := u6.aluImm cxU pt_at_42 (off' := 0x44) (by decide)
     have K7 := u7.upd_ne u6.zero
     have u7' : St MU Q n7 0x44 (reg n7) := u7.self
     have s0_6 : reg n6 s0 = BitVec.ofNat 32 (8 * (r + 1)) := by
-      rw [k6 s0 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      rw [k6 s0 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
         (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
         (by decide) (by decide), r5 s0 (by decide), K14 s0 (by decide) (by decide) (by decide) (by decide), hs0]
     have s0_7 : reg n7 s0 = BitVec.ofNat 32 (8 * r) := by
@@ -288,14 +288,14 @@ theorem pt_loop {M0 MH : Word → BitVec 8} {out P sp0 F R : Word} {k : Nat}
       rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat, show (0xFFFFFFF8 : Word).toNat = 2 ^ 32 - 8 from rfl]
       have := E.hPw; omega
     have H6' : HasherAt MU F (partsBytes M0 P (j + 1)) := H6
-    have KK : ∀ q, q ≠ ra → q ≠ (3 : Fin 32) → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
+    have KK : ∀ q, q ≠ ra → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
         q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ a7 → q ≠ (28 : Fin 32) → q ≠ (29 : Fin 32) →
         q ≠ (30 : Fin 32) → q ≠ (31 : Fin 32) → q ≠ s0 → q ≠ s1 → reg n7 q = reg n q :=
-      fun q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 => by
+      fun q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 => by
         have q2 : q ≠ sp ∨ q = sp := by by_cases h : q = sp <;> simp [h]
         rw [K7 q q8]
         rcases q2 with q2 | rfl
-        · rw [k6 q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2, r5 q q1,
+        · rw [k6 q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2, r5 q q1,
             K14 q q10 q11 q12 q9]
         · rw [sp6, hsp]
     by_cases hr : r = 0
@@ -305,8 +305,8 @@ theorem pt_loop {M0 MH : Word → BitVec 8} {out P sp0 F R : Word} {k : Nat}
       have hk : j + 1 = k := by omega
       rw [hk] at H6'
       exact ⟨n8, MU, .cons d1 (.cons d2 (.cons d3 (.cons d4 (c5.trans (c6.trans (.cons d7 (.single d8))))))),
-        u8.self, inv6, H6', fun q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 => by
-          rw [u8.regs, KK q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9]⟩
+        u8.self, inv6, H6', fun q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 => by
+          rw [u8.regs, KK q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9]⟩
     · obtain ⟨n8, d8, u8⟩ := u7'.taken cxU 0x32 pt_at_44 (by decide) (by
         simp only [branchTaken, s0_7, u7'.zero, bne_iff_ne, ne_eq]
         intro h; apply hr
@@ -314,19 +314,19 @@ theorem pt_loop {M0 MH : Word → BitVec 8} {out P sp0 F R : Word} {k : Nat}
         rw [BitVec.toNat_ofNat, show (0 : Word).toNat = 0 from rfl, Nat.mod_eq_of_lt (by have := E.hPw; omega)] at this
         omega)
       have sp7 : reg n7 sp = F := by
-        rw [KK sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        rw [KK sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
           (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
           (by decide) (by decide) (by decide), hsp]
       have s1_7 : reg n7 s1 = P + BitVec.ofNat 32 (8 * (j + 1)) := by
-        rw [K7 s1 (by decide), k6 s1 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        rw [K7 s1 (by decide), k6 s1 (by decide) (by decide) (by decide) (by decide) (by decide)
           (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
           (by decide) (by decide) (by decide) (by decide), r5 s1 (by decide), K4 s1 (by decide), s1_3]
       obtain ⟨n9, My, c9, u9, inv9, H9, K9⟩ := ih (j + 1) n8 MU (by omega) (by omega) u8.self inv6 H6'
         (by rw [u8.regs, s0_7]) (by rw [u8.regs, s1_7]) (by rw [u8.regs, sp7])
       exact ⟨n9, My, .cons d1 (.cons d2 (.cons d3 (.cons d4 (c5.trans (c6.trans (.cons d7 (.cons d8 c9))))))),
-        u9, inv9, H9, fun q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 => by
-          rw [K9 q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9, u8.regs,
-            KK q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9]⟩
+        u9, inv9, H9, fun q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 => by
+          rw [K9 q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9, u8.regs,
+            KK q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9]⟩
 
 set_option maxHeartbeats 8000000 in
 set_option maxRecDepth 200000 in
@@ -341,7 +341,7 @@ theorem sha256Parts_correct (m : Machine) {out P sp0 retAddr : Word} {k : Nat}
     (ha0 : reg m a0 = out) (ha1 : reg m a1 = P) (ha2 : reg m a2 = BitVec.ofNat 32 k)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hsp : reg m sp = sp0) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
-      (∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
+      (∀ r, r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
         r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) →
         r ≠ (31 : Fin 32) → reg m' r = reg m r) ∧
       memBytes m'.mem out 32 = sha256 (partsBytes m.mem P k) ∧
@@ -548,14 +548,14 @@ theorem sha256Parts_correct (m : Machine) {out P sp0 retAddr : Word} {k : Nat}
   have HL : ∃ n18 MU, Steps m13 n18 ∧ St MU Q n18 0x46 (reg n18) ∧
       (∀ x, Sep (F + 0xFFFFFF00) 0x100 x 1 → Sep F 0x68 x 1 → MU x = MH x) ∧
       HasherAt MU F (partsBytes M0 P k) ∧
-      ∀ q, q ≠ ra → q ≠ (3 : Fin 32) → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
+      ∀ q, q ≠ ra → q ≠ t0 → q ≠ t1 → q ≠ (7 : Fin 32) → q ≠ a0 → q ≠ a1 → q ≠ a2 →
         q ≠ a3 → q ≠ a4 → q ≠ a5 → q ≠ a6 → q ≠ a7 → q ≠ (28 : Fin 32) → q ≠ (29 : Fin 32) →
         q ≠ (30 : Fin 32) → q ≠ (31 : Fin 32) → q ≠ s0 → q ≠ s1 → reg n18 q = reg m13 q := by
     by_cases hk : k = 0
     · obtain ⟨n14, d14, u14⟩ := u13'.taken cXH 0x46 pt_at_30 (by decide) (by
         simp only [branchTaken]; rw [s0_13, u13'.zero, hk]; decide)
       exact ⟨n14, MH, .single d14, u14.self, fun _ _ _ => rfl, by rw [hk]; exact H0,
-        fun q _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => by rw [u14.regs]⟩
+        fun q _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => by rw [u14.regs]⟩
     · obtain ⟨n14, d14, u14⟩ := u13'.notTaken cXH 0x32 pt_at_30 (by decide) (by
         simp only [branchTaken, s0_13, u13'.zero]
         apply decide_eq_false; intro h; apply hk
@@ -567,21 +567,21 @@ theorem sha256Parts_correct (m : Machine) {out P sp0 retAddr : Word} {k : Nat}
         (by rw [u14.regs, K13 s1 (by decide), s1_12, Nat.mul_zero, add_ofNat_zero])
         (by rw [u14.regs, K13 sp (by decide), sp12])
       exact ⟨n18, MU, .cons d14 c18, u18, inv18, H18,
-        fun q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 => by
-          rw [K18 q q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9, u14.regs]⟩
+        fun q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9 => by
+          rw [K18 q q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9, u14.regs]⟩
   obtain ⟨m18, MU, c18, u18, fU, HU, K18⟩ := HL
   have eU : F + 0xFFFFFF00 = R + BitVec.ofNat 32 0x90 := by rw [hFR, BitVec.add_assoc]; rfl
   have MUR : ∀ x, Sep R 0x270 x 1 → MU x = M0 x := fun x hx => by
     rw [fU x (by rw [eU]; exact Rx _ _ (by omega) x hx) (by rw [hFR]; exact Rx _ _ (by omega) x hx), MHR x hx]
   have cMU := codeX MU MUR
   have cXU := cMU _ _ E.cX (by decide) (by decide)
-  have K1218 : ∀ r, r ≠ ra → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
+  have K1218 : ∀ r, r ≠ ra → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
       r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
       r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → r ≠ sp → r ≠ s0 → r ≠ s1 → reg m18 r = reg m12 r :=
-    fun r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 _ q8 q9 => by
-      rw [K18 r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9, K13 r q8]
+    fun r q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 _ q8 q9 => by
+      rw [K18 r q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q8 q9, K13 r q8]
   have sp18' : reg m18 sp = F := by
-    rw [K18 sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+    rw [K18 sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide), K13 sp (by decide), sp12]
   -- Move the hasher, as `finalize` takes it by value.
@@ -665,7 +665,7 @@ theorem sha256Parts_correct (m : Machine) {out P sp0 retAddr : Word} {k : Nat}
   have s2_24 : reg m24 s2 = out := by
     rw [k24 s2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), K1823 s2 (by decide) (by decide)
-      (by decide) (by decide), K1218 s2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide), K1218 s2 (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide) (by decide) (by decide), s2_12]
   have eR : F + 0xFFFFFE70 = R := by rw [hFR, BitVec.add_assoc]; exact BitVec.add_zero R
@@ -801,7 +801,7 @@ theorem sha256Parts_correct (m : Machine) {out P sp0 retAddr : Word} {k : Nat}
     rw [u34.upd_eq (by decide), K33 sp (by decide), K32 sp (by decide), K31 sp (by decide), K30 sp (by decide), sp29']
     show sp0 + 0xFFFFFF20 + 0xE0 = sp0
     rw [BitVec.add_assoc]; exact BitVec.add_zero sp0
-  have k29 : ∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
+  have k29 : ∀ r, r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
       r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) →
       r ≠ (31 : Fin 32) → reg m29 r = reg m28 r := K29
   have k6 : ∀ r, r ≠ t0 → r ≠ s0 → r ≠ s1 → r ≠ s2 → r ≠ a0 → r ≠ a1 → r ≠ a2 → reg m6 r = reg m1 r := K6
@@ -810,7 +810,7 @@ theorem sha256Parts_correct (m : Machine) {out P sp0 retAddr : Word} {k : Nat}
   have S2 : Steps m12 m24 := .cons e13 (c18.trans (.cons e19 (.cons e20 (.cons e21 (.cons e22 (.cons e23 c24))))))
   have S3 : Steps m24 m35 := .cons e25 (.cons e26 (.cons e27 (.cons e28 (c29.trans (.cons e30 (.cons e31 (.cons e32
     (.cons e33 (.cons e34 (.single e35))))))))))
-  refine ⟨m35, S1.trans (S2.trans S3), ?_, ?_, fun r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_,
+  refine ⟨m35, S1.trans (S2.trans S3), ?_, ?_, fun r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_,
     ?_, fun x hx hz => ?_⟩
   · rw [pc35, ra34, add_lit_zero, hra, hret]
   · rw [regs35, sp34]
@@ -826,9 +826,9 @@ theorem sha256Parts_correct (m : Machine) {out P sp0 retAddr : Word} {k : Nat}
     by_cases q18 : r = s2
     · subst q18; rw [K34 s2 (by decide), u33.upd_eq (by decide)]
     rw [K34 r q2, K33 r q18, K32 r q9, K31 r q8, K30 r q1,
-      k29 r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, r28 r q1, K26 r q10, K25 r q11,
+      k29 r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, r28 r q1, K26 r q10, K25 r q11,
       k24 r q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2, K1823 r q1 q10 q11 q12,
-      K1218 r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2 q8 q9,
+      K1218 r q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2 q8 q9,
       K69 r q1 q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2, k6 r q5 q8 q9 q18 q10 q11 q12, K1 r q2]
   · rw [mem35]; exact out29
   · rw [mem35]

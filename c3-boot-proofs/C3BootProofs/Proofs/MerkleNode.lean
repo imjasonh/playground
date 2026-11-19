@@ -295,7 +295,7 @@ theorem merkleNodeHash_correct (m : Machine) {out L Rt sp0 retAddr : Word}
     rw [BitVec.add_assoc]; exact BitVec.add_zero sp0
   have k3 : ∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
       r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) →
-      r ≠ (31 : Fin 32) → reg n3 r = reg n2 r := K3
+      r ≠ (31 : Fin 32) → reg n3 r = reg n2 r := fun r _ => K3 r
   refine ⟨n5, c1.trans (c2.trans (c3.trans (c4.trans (.single d5)))), ?_, ?_,
     fun r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_, ?_, fun x hx hy => ?_⟩
   · rw [pc5, ra4, add_lit_zero, hret]

@@ -69,7 +69,7 @@ theorem shaFinish_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Bytes}
     (ha0 : reg m a0 = out) (ha1 : reg m a1 = S) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
     (hsp : reg m sp = sp0) (H : HasherAt m.mem S msg) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
-      (∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
+      (∀ r, r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
         r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) →
         r ≠ (31 : Fin 32) → reg m' r = reg m r) ∧
       memBytes m'.mem out 32 = sha256 msg ∧
@@ -293,11 +293,11 @@ theorem shaFinish_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Bytes}
     rw [BitVec.add_assoc]; exact BitVec.add_zero sp0
   have s0_7 : reg n7 s0 = reg m s0 := by
     rw [RC]; simp +decide only [runBlock, BInstr.run, fiC, upd_app, ↓reduceIte]; rw [sp6', vS0]
-  have k6 : ∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
+  have k6 : ∀ r, r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
       r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) →
       r ≠ (31 : Fin 32) → reg n6 r = reg n5 r := K6
   refine ⟨n8, c1.trans (c2.trans (c3.trans (c4.trans (c5.trans (c6.trans (c7.trans (.single d8))))))), ?_, ?_,
-    fun r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_, ?_, fun x hx hy => ?_⟩
+    fun r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_, ?_, fun x hx hy => ?_⟩
   · rw [pc8, ra7, add_lit_zero, hret]
   · rw [regs8, sp7]
   · rw [regs8]
@@ -309,7 +309,7 @@ theorem shaFinish_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Bytes}
     · subst q8; exact s0_7
     rw [RC]; simp only [runBlock, BInstr.run, fiC]
     rw [updz (by simp [upd]) q2, updz (by simp [upd]) q8, updz u6.zero q1,
-      k6 r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, r5 r q1, KB r q10 q11,
+      k6 r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, r5 r q1, KB r q10 q11,
       k3 r q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2, r2 r q1, K1 r q2 q8 q10 q12]
   · rw [mem8]; exact out6
   · rw [mem8, fr6 x (by have h := hx.sub (c := 0) (l := 0x190) (by omega); rwa [add_ofNat_zero] at h)

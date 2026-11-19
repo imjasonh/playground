@@ -720,7 +720,7 @@ theorem shaFinBlock_correct (m : Machine) {st bp T retAddr : Word}
     (hKT : Sep (BitVec.ofNat 32 shaKAddress) 256 (T + 0xFFFFFED0) 0x130)
     (hKs : Sep (BitVec.ofNat 32 shaKAddress) 256 st 32) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = T ∧
-      (∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
+      (∀ r, r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
         r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) →
         r ≠ (31 : Fin 32) → reg m' r = reg m r) ∧
       wordsAt m'.mem st 8 = Sha256.compress (wordsAt m.mem st 8) (memBytes m.mem bp 64) ∧
@@ -974,9 +974,9 @@ theorem shaFinBlock_correct (m : Machine) {st bp T retAddr : Word}
     rw [BitVec.add_assoc]; show T + 0xFFFFFED0 + (BitVec.ofNat 32 0xE0 + 0x50) = T
     rw [BitVec.add_assoc]; exact BitVec.add_zero T
   have s0_18 : reg n18 s0 = reg m s0 := by rw [K18' s0 (by decide), u17.upd_eq (by decide)]
-  have k15 : ∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 →
+  have k15 : ∀ r, r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 →
       r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
-      r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → reg n15 r = reg n14 r := fun r _ q5 q6 q7 q10 q11 q12 q13
+      r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → reg n15 r = reg n14 r := fun r q5 q6 q7 q10 q11 q12 q13
       q14 q15 q16 q17 q28 q29 q30 q31 => K15 r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31
   have blk : memBytes MB (Bk + BitVec.ofNat 32 (64 * 0)) 64 = memBytes M0 bp 64 := by
     rw [Nat.mul_zero, add_ofNat_zero]
@@ -998,7 +998,7 @@ theorem shaFinBlock_correct (m : Machine) {st bp T retAddr : Word}
   refine ⟨n19, .cons d1 (.cons d2 (.cons d3 (.cons d4 (.cons d5 (.cons d6 (.cons d7 (.cons d8 (c9.trans
     (.cons d10 (.cons d11 (.cons d12 (.cons d13 (.cons d14 (c15.trans (.cons d16 (.cons d17 (.cons d18
     (.single d19)))))))))))))))))), ?_, ?_,
-    fun r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_, ?_, fun x hx hy => ?_⟩
+    fun r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_, ?_, fun x hx hy => ?_⟩
   · rw [pc19, ra18, add_lit_zero, hret]
   · rw [regs19, sp18]
   · rw [regs19]
@@ -1008,7 +1008,7 @@ theorem shaFinBlock_correct (m : Machine) {st bp T retAddr : Word}
     · subst hsp'; rw [sp18, hsp]
     by_cases hs0' : r = s0
     · subst hs0'; exact s0_18
-    rw [K18' r hsp', K17 r hs0', K16 r hra', k15 r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31,
+    rw [K18' r hsp', K17 r hs0', K16 r hra', k15 r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31,
       K9_14 r hra' q10 q11 q12, k9 r q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 hsp',
       K18 r hra' hs0' q10 q12, K1 r hsp']
   · have hbl : blockList MB Bk 1 = [memBytes M0 bp 64] := by
@@ -1312,7 +1312,7 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
     (ha0 : reg m a0 = out) (ha1 : reg m a1 = S) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
     (hsp : reg m sp = sp0) (H : HasherAt m.mem S msg) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
-      (∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
+      (∀ r, r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
         r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) →
         r ≠ (31 : Fin 32) → reg m' r = reg m r) ∧
       memBytes m'.mem out 32 = sha256 msg ∧
@@ -1643,14 +1643,14 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
       (∀ k, 0x40 ≤ k → k < 0x60 → MC (G + BitVec.ofNat 32 k) = MQ (G + BitVec.ofNat 32 k)) ∧
       memBytes MC S 56 = lastPre ∧
       wordsAt MC (S + 0x40) 8 = (fullBlocks msg ++ B1).foldl Sha256.compress Sha256.h0 ∧
-      ∀ r, r ≠ ra → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 →
+      ∀ r, r ≠ ra → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 →
         r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
         r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → reg nC r = reg m26 r := by
     by_cases hsh : pos < 56
     · obtain ⟨n27, d27, u27⟩ := u26'.taken cFQ 0xC8 sf_at_a8 (by decide) (by
         simp only [branchTaken]; rw [a0_26, s3_26, ult_lit (by decide) (by omega)]
         exact decide_eq_true (by omega))
-      refine ⟨n27, MQ, .single d27, u27.self, MQR, fun _ _ _ => rfl, ?_, ?_, fun r _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
+      refine ⟨n27, MQ, .single d27, u27.self, MQR, fun _ _ _ => rfl, ?_, ?_, fun r _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
         u27.regs r⟩
       · show memBytes MQ S 56 = if pos < 56 then _ else _
         rw [ite_eq_left_of_eq_true _ _ (eq_true hsh), mq 56 (by omega) (by omega),
@@ -1727,11 +1727,11 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
       have cF' := codeX MF MFR
       have cFF := cF' _ _ E.cF (by decide) (by decide)
       have u32 : St MF U n32 0xB8 (reg n32) := ⟨by rw [pc32], rfl, fun _ => rfl⟩
-      have k32 : ∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 →
+      have k32 : ∀ r, r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 →
           r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
           r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → reg n32 r = reg n31 r := K32
       have s4_32 : reg n32 s4 = S := by
-        rw [k32 s4 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+        rw [k32 s4 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
           (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
           K2631 s4 (by decide) (by decide) (by decide), s4_26]
       obtain ⟨n33, d33, u33⟩ := u32.aluImm cFF sf_at_b8 (off' := 0xBC) (by decide)
@@ -1772,7 +1772,7 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
       have k38 : ∀ r, r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → reg n38 r = reg n37 r := K38
       refine ⟨n38, MR, .cons d27 (.cons d28 (.cons d29 (.cons d30 (.cons d31 (c32.trans (.cons d33 (.cons d34
         (.cons d35 (.cons d36 (.cons d37 c38)))))))))), ⟨by rw [pc38], mem38, fun _ => rfl⟩, MRR, ?_, ?_, ?_,
-        fun r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_⟩
+        fun r q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_⟩
       · intro k h1 h2
         have hGk : Sep R 0x130 (G + BitVec.ofNat 32 k) 1 := by
           rw [Gc]
@@ -1798,19 +1798,19 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
         show fillBytes MF _ _ _ _ = _
         rw [fillBytes_sep h (Nat.le_refl 56)]
       · rw [k38 r q12 q13 q14 q15 q16, r37 r q1, K35 r q11, K34 r q10, K33 r q12,
-          k32 r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, K2631 r q1 q10 q11]
+          k32 r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, K2631 r q1 q10 q11]
   obtain ⟨nC, MC, cC, uC, MCR, MCs, bC, wC, KC⟩ := C2
   -- Registers at 0xC2, from `m16`.
-  have KC16 : ∀ r, r ≠ ra → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
+  have KC16 : ∀ r, r ≠ ra → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
       r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
       r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → reg nC r = reg m16 r :=
-    fun r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => by
-      rw [KC r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, K26 r q10,
+    fun r q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => by
+      rw [KC r q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, K26 r q10,
         K1625 r q1 q10 q11 q12 q13 q14 q15 q16]
   have rC : ∀ r, r = s0 ∨ r = s1 ∨ r = s2 ∨ r = s4 ∨ r = s5 ∨ r = s6 ∨ r = sp → reg nC r = reg m16 r := by
     intro r h
     rcases h with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-      exact KC16 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      exact KC16 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
         (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
   have g16' : ∀ r, r = s0 ∨ r = s1 ∨ r = s2 ∨ r = s4 ∨ r = sp → reg m16 r = reg m15 r := by
     intro r h
@@ -1936,13 +1936,13 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
     simp only [List.foldl_append, List.foldl_cons, List.foldl_nil]
   have cMZ := codeX MZ MZR
   have u46 : St MZ U n46 0xDC (reg n46) := ⟨by rw [pc46], rfl, fun _ => rfl⟩
-  have k46 : ∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 →
+  have k46 : ∀ r, r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 →
       r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
       r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → reg n46 r = reg n45 r := K46
   have r46 : ∀ r, r = s0 ∨ r = s1 ∨ r = s2 ∨ r = sp → reg n46 r = reg nC r := by
     intro r h
     rcases h with rfl | rfl | rfl | rfl <;>
-      rw [k46 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      rw [k46 _ (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
         (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
         KC45 _ (by decide) (by decide) (by decide)]
   have cFZ := cMZ _ _ E.cF (by decide) (by decide)
@@ -2179,17 +2179,17 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
     show sp0 + 0xFFFFFFA0 + 0x60 = sp0
     rw [BitVec.add_assoc]; exact BitVec.add_zero sp0
   -- Everything from `m15` back to the entry, for the registers no callee clobbers.
-  have chain : ∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
+  have chain : ∀ r, r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
       r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) →
       r ≠ (31 : Fin 32) → r ≠ ra → r ≠ sp → r ≠ s0 → r ≠ s1 → r ≠ s2 → r ≠ s3 → r ≠ s4 → r ≠ s5 → r ≠ s6 →
-      reg n64 r = reg m r := fun r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q1 q2 q8 q9 q18 q19
+      reg n64 r = reg m r := fun r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q1 q2 q8 q9 q18 q19
         q20 q21 q22 => by
     rw [K64' r q1 q8 q9 q18 q19 q20 q21 q22 q2,
       k61' r q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2,
       K4960 r q1 q10 q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2,
       k49 r q10 q11 q12 q13 q14 q5 q8 q9, u48.regs, K47 r q10,
-      k46 r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, KC45 r q1 q10 q11,
-      KC16 r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31,
+      k46 r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, KC45 r q1 q10 q11,
+      KC16 r q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31,
       g16 r q10 q11 q12 q13 q14 q15 q16 q17 q5 q19 q21 q22,
       Kp r q2 q1 q5 q6 q7 q8 q9 q18 q20 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30]
   have S1 : Steps m m15 := c3.trans (.cons e4 (.cons e5 (.cons e6 (.cons e7 (.cons e8 (c9.trans
@@ -2210,7 +2210,7 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
     rw [m6 _ (sOFr.sub (c := i) (l := 1) (by omega)).symm, copyBytes_in hi (by omega),
       m5 _ (sGF.sub (c := i) (l := 1) (by omega)).symm, copyBytes_in hi (by omega)]
   refine ⟨n65, S1.trans (S2.trans (S3.trans (S4.trans (S5.trans S6)))), ?_, ?_,
-    fun r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_, ?_, fun x hx hy hz => ?_⟩
+    fun r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_, ?_, fun x hx hy hz => ?_⟩
   · rw [pc65, rRa, add_lit_zero, hret]
   · rw [regs65, rSp]
   · rw [regs65]
@@ -2235,7 +2235,7 @@ theorem shaFinalize_correct (m : Machine) {S out sp0 retAddr : Word} {msg : Byte
     · subst q20; exact sv s4 0x48 (by decide) (by decide) (by omega) (by omega) vs4
     by_cases q21 : r = s5
     · subst q21; exact sv s5 0x44 (by decide) (by decide) (by omega) (by omega) vs5
-    exact chain r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q1 q2 q8 q9 q18 q19 q20 q21 q22
+    exact chain r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q1 q2 q8 q9 q18 q19 q20 q21 q22
   · rw [mem65, mE, outB, hbF, sha256_stream]
   · rw [mem65, mE]; exact M6R x hx hy hz
 

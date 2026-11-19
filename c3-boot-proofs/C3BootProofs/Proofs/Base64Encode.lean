@@ -394,7 +394,7 @@ theorem bee_call {M0 M : Word → BitVec 8} {S D sp0 : Word} {n : Nat} (E : BeeE
     rw [add_ofNat_zero, BitVec.add_assoc]; rfl
   refine ⟨m2, c1.trans c2, ⟨pc2, rfl, fun _ => rfl⟩, fun x hS hR => ?_, fr2, H2, sp2, fun r hr => ?_⟩
   · rw [fr2 x (by rw [hF]; exact (hR.symm.subR (c := 0) (l := 0x100) (by decide)).symm) hS, fr x hS hR]
-  · rw [K2 r (by revert hr; revert r; decide) (by revert hr; revert r; decide) (by revert hr; revert r; decide)
+  · rw [K2 r (by revert hr; revert r; decide) (by revert hr; revert r; decide)
       (by revert hr; revert r; decide) (by revert hr; revert r; decide) (by revert hr; revert r; decide)
       (by revert hr; revert r; decide) (by revert hr; revert r; decide) (by revert hr; revert r; decide)
       (by revert hr; revert r; decide) (by revert hr; revert r; decide) (by revert hr; revert r; decide)

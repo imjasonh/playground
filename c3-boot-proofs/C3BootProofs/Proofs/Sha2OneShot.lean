@@ -190,7 +190,7 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
     (ha0 : reg m a0 = out) (ha1 : reg m a1 = D) (ha2 : reg m a2 = BitVec.ofNat 32 n)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hsp : reg m sp = sp0) (hn : n < 2 ^ 31) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
-      (∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
+      (∀ r, r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
         r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) →
         r ≠ (31 : Fin 32) → reg m' r = reg m r) ∧
       memBytes m'.mem out 32 = sha256 (memBytes m.mem D n) ∧
@@ -448,14 +448,14 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
   have cMU := codeX MU MUR
   have cXU := cMU _ _ E.cX (by decide) (by decide)
   have u18 : St MU Q m18 0x3C (reg m18) := ⟨by rw [pc18], rfl, fun _ => rfl⟩
-  have k18 : ∀ r, r ≠ ra → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
+  have k18 : ∀ r, r ≠ ra → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
       r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
       r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → r ≠ sp → reg m18 r = reg m17 r := K18
-  have K1218 : ∀ r, r ≠ ra → r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
+  have K1218 : ∀ r, r ≠ ra → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 →
       r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) →
       r ≠ (30 : Fin 32) → r ≠ (31 : Fin 32) → r ≠ sp → reg m18 r = reg m12 r :=
-    fun r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2 => by
-      rw [k18 r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2, K1217 r q1 q10 q11 q12]
+    fun r q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2 => by
+      rw [k18 r q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2, K1217 r q1 q10 q11 q12]
   have sp18' : reg m18 sp = F := sp18
   -- Move the hasher, as `finalize` takes it by value.
   obtain ⟨m19, e19, u19⟩ := u18.aluImm cXU os_at_3c (off' := 0x3E) (by decide)
@@ -538,7 +538,7 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
   have s2_24 : reg m24 s2 = out := by
     rw [k24 s2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), K1823 s2 (by decide) (by decide)
-      (by decide) (by decide), K1218 s2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
+      (by decide) (by decide), K1218 s2 (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
       (by decide) (by decide) (by decide), s2_12]
   have eR : F + 0xFFFFFE70 = R := by rw [hFR, BitVec.add_assoc]; exact BitVec.add_zero R
@@ -674,7 +674,7 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
     rw [u34.upd_eq (by decide), K33 sp (by decide), K32 sp (by decide), K31 sp (by decide), K30 sp (by decide), sp29']
     show sp0 + 0xFFFFFF20 + 0xE0 = sp0
     rw [BitVec.add_assoc]; exact BitVec.add_zero sp0
-  have k29 : ∀ r, r ≠ (3 : Fin 32) → r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
+  have k29 : ∀ r, r ≠ t0 → r ≠ t1 → r ≠ (7 : Fin 32) → r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 →
       r ≠ a4 → r ≠ a5 → r ≠ a6 → r ≠ a7 → r ≠ (28 : Fin 32) → r ≠ (29 : Fin 32) → r ≠ (30 : Fin 32) →
       r ≠ (31 : Fin 32) → reg m29 r = reg m28 r := K29
   have k6 : ∀ r, r ≠ t0 → r ≠ s0 → r ≠ s1 → r ≠ s2 → r ≠ a0 → r ≠ a1 → r ≠ a2 → reg m6 r = reg m1 r := K6
@@ -684,7 +684,7 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
     (.cons e21 (.cons e22 (.cons e23 c24))))))))))
   have S3 : Steps m24 m35 := .cons e25 (.cons e26 (.cons e27 (.cons e28 (c29.trans (.cons e30 (.cons e31 (.cons e32
     (.cons e33 (.cons e34 (.single e35))))))))))
-  refine ⟨m35, S1.trans (S2.trans S3), ?_, ?_, fun r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_,
+  refine ⟨m35, S1.trans (S2.trans S3), ?_, ?_, fun r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 => ?_,
     ?_, fun x hx hz => ?_⟩
   · rw [pc35, ra34, add_lit_zero, hra, hret]
   · rw [regs35, sp34]
@@ -700,9 +700,9 @@ theorem sha256Fn_correct (m : Machine) {out D sp0 retAddr : Word} {n : Nat}
     by_cases q18 : r = s2
     · subst q18; rw [K34 s2 (by decide), u33.upd_eq (by decide)]
     rw [K34 r q2, K33 r q18, K32 r q9, K31 r q8, K30 r q1,
-      k29 r q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, r28 r q1, K26 r q10, K25 r q11,
+      k29 r q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31, r28 r q1, K26 r q10, K25 r q11,
       k24 r q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2, K1823 r q1 q10 q11 q12,
-      K1218 r q1 q3 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2,
+      K1218 r q1 q5 q6 q7 q10 q11 q12 q13 q14 q15 q16 q17 q28 q29 q30 q31 q2,
       K69 r q1 q11 q12 q13 q14 q15 q16 q17 q5 q6 q7 q28 q29 q30 q2, k6 r q5 q8 q9 q18 q10 q11 q12, K1 r q2]
   · rw [mem35]; exact out29
   · rw [mem35]
