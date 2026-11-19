@@ -4127,8 +4127,8 @@ TSA2_BINDERS = ("{B out bp x21 x26 cip cil : Word} "
                 + "{" + " ".join(f"w{e:x}" for e in DPV_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
 
 
-def tsa_issha_fail(sub, k, dc, err):
-    """`tsa::is_sha256` failing at 0x2290: an error, or another algorithm."""
+def tsa_issha_fail(sub, k, dc, err, at=0x2298):
+    """`tsa::is_sha256` failing: an error, or another algorithm. Its tests start at `at`."""
     sub.emit(f"  rw [hr{k}] at R{k}")
     sub.emit(f"  obtain ⟨a0_{k}, a1_{k}⟩ := R{k}")
     sub.emit(f"  have g{k}_10 : reg n{k} a0 = BitVec.ofNat 32 0x{1 if err else 0:X} := a0_{k}")
@@ -4137,7 +4137,7 @@ def tsa_issha_fail(sub, k, dc, err):
         sub.emit(f"  have g{k}_11 : reg n{k} a1 = BitVec.ofNat 32 0x0 := by rw [a1_{k}]; rfl")
         sub.regs[11] = ("C", 0)
     sub.frame_after(k, [(dc + 8, 8)], {})
-    tsa_ii_tests(sub, 0x2298, err, None)
+    tsa_ii_tests(sub, at, err, None)
     sub.fail(sub.fail_proof(("eq", f"hr{k}")), "sv_fail_2c60")
 
 
@@ -5031,12 +5031,125 @@ def stage_tsax():
     g.load(0x26DE, "lw")
     g.block(0x26E0, 0x26E4)
     g.es2(0x26E4, 0x420, vp, f"({vl}).toNat", g.slices[(vp, vl)], f"(by rw [g{g.k}_12, ofNat_toNat_self])")
-    stmt, proof = finish(g, 0x2704, [2, 3, 4, 9, 18, 19, 21, 24, 26, 27], set(g.words), set(g.bytes))
+    stmt, proof = finish(g, 0x2704, [2, 3, 4, 8, 9, 18, 19, 21, 24, 25, 26, 27], set(g.words), set(g.bytes))
     info = {"name": "sv_tsax", "title": "the timestamp's signature algorithm",
             "doc": "The signed attributes loop's exit at 0x267A to 0x2704: both a message digest and a content type "
             "were seen, the `SignerInfo`'s signature algorithm is ecdsa-with-SHA384 with no parameters, and its "
             "signature is a DER ECDSA signature with 48-byte scalars.",
             "params": params, "stmt": stmt, "proof": proof, "binders": TSAL_BINDERS, "start": 0x267A,
+            "import": "C3BootProofs.Proofs.SvTsa"}
+    return g, info
+
+
+TST_BINDERS = ("{B out bp x21 x26 dg sip sil : Word} {sr ss : Bytes} "
+               + "{" + " ".join(f"w{e:x}" for e in DPV_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+
+
+def tst1_oct_tail(sub):
+    sub.load(0x2820, "lw")
+    sub.branch(0x2824, True, f"by rw [g{sub.k}_22, s{sub.k}.zero]; rfl")
+    sub.load_any(0x2994)
+    sub.jump(0x2998)
+
+
+def tst_len_fail(sub):
+    sub.branch(0x282E, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_m32_t h32")
+    sub.fail(sub.fail_proof(("prop", "h32")), "sv_fail_2c60")
+
+
+def stage_tst1():
+    """From 0x2704 to 0x283C: the TSTInfo sequence, its version, policy, and
+    message imprint."""
+    g = Gen("Tst1")
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
+            25: ("U", "(BitVec.ofNat 8 (sr.getD 0 0)).zeroExtend 32", "BitVec.ofNat 8 (sr.getD 0 0)")}
+    words = {e: f"w{e:x}" for e in DPV_WORDS}
+    words.update({0x208: "sip", 0x20C: "sil"})
+    params = start(g, regs, words, {("w70", "x21"): "tst_in"}) + ["(D0 : SvData M0)"]
+    g.ranges[0x421] = (48, "BitVec.ofNat 8 (sr.getD j 0)")
+    g.ranges[0x451] = (48, "BitVec.ofNat 8 (ss.getD j 0)")
+    params += ["(q0_421 : ∀ j, j < 48 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x421 + j)) = BitVec.ofNat 8 (sr.getD j 0))",
+               "(q0_451 : ∀ j, j < 48 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x451 + j)) = BitVec.ofNat 8 (ss.getD j 0))"]
+    g.block(0x2704, 0x2714)
+    g.mc(0x2714, 0x1020, 0x422, 0x5F)
+    g.load(0x271C, "lw")
+    tsa_rest0(g, 0x2720, "hsi0", 0x2C60)
+    g.load(0x2724, "lw")
+    g.block(0x2726, 0x2728)
+    g.store(0x2728, "sw")
+    g.block(0x272A, 0x272C)
+    for o in (0x272C, 0x272E, 0x2730):
+        g.store(o, "sw")
+    g.block(0x2732, 0x2738)
+    k1, t1, rd1 = tsa_read(g, 0x2738, 0x240)
+    g.block(0x274C, 0x275A)
+    g.mc(0x275A, 0x1325, 0x425, 0xB)
+    g.load(0x2762, "lw")
+    g.block(0x2766, 0x276E)
+    g.store(0x276E, "sw")
+    g.block(0x2770, 0x277A)
+    g.store(0x277A, "sb")
+    g.word_of_bytes(0x1324, f"BitVec.ofNat 32 {t1}.len")
+    tsa_rest0(g, 0x277E, "hrest0", 0x2838)
+    g.block(0x2780, 0x278A)
+    tsa_iis(g, 0x278A, 0x1320, 0x2792, 0x29A6)
+    g.block(0x27A0, 0x27AC)
+    k, op, ol = g.oid(0x27AC, 0x420, 0x1320, lambda sub: tsa_oid_tail(sub, 0x27B4), "sv_fail_2c60")
+    g.load(0x27B4, "lw")
+    g.branch(0x27B8, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({g.slices[(op, ol)]}.pos_ne)")
+    g.block(0x27BC, 0x27C8)
+    k2, t2, rd2 = tsa_read(g, 0x27C8, 0x1320)
+    g.block(0x27DC, 0x27E6)
+    g.mc(0x27E6, 0x325, 0x425, 0xB)
+    g.store(0x27EE, "sw")
+    g.store(0x27F2, "sb")
+    g.word_of_bytes(0x324, f"BitVec.ofNat 32 {t2}.len")
+    g.block(0x27F6, 0x27F8)
+    k, ex, rd = g.issha(0x27F8, 0x320)
+    rp, rl, inp = rd
+    g.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+    g.emit(f"  rcases r{k} with b{k} | (_ | _)")
+    g.sc.append(("eq", ex, ".ok true", [], f"hr{k}"))
+    g.fork(lambda sub: tsa_issha_fail(sub, k, 0x320, True, 0x2800))
+    g.fork(lambda sub: tsa_issha_fail(sub, k, 0x320, False, 0x2800))
+    g.emit(f"  obtain ⟨te{k}, hte{k}⟩ := isSha256Of_ok_elem hr{k}")
+    g.sc.append(("eq", f"derElement 0x30 (memBytes M0 ({rp}) ({rl}).toNat)", f".ok te{k}", [f"te{k}"], f"hte{k}"))
+    g.emit(f"  obtain ⟨d8_{k}, d12_{k}⟩ := A{k} te{k} hte{k}")
+    g.emit(f"  rw [hr{k}] at R{k}")
+    g.emit(f"  obtain ⟨a0_{k}, a1_{k}⟩ := R{k}")
+    g.emit(f"  have g{k}_10 : reg n{k} a0 = BitVec.ofNat 32 0x0 := a0_{k}")
+    g.emit(f"  have g{k}_11 : reg n{k} a1 = BitVec.ofNat 32 0x1 := by rw [a1_{k}]; rfl")
+    g.regs[10] = ("C", 0)
+    g.regs[11] = ("C", 1)
+    hl = f"BitVec.ofNat 32 (te{k}.header + te{k}.len)"
+    g.frame_after(k, [(0x328, 8)], {0x328: (f"({rp}) + {hl}", f"d8_{k}"), 0x32C: (f"({rl}) - {hl}", f"d12_{k}")})
+    g.slices[(f"({rp}) + {hl}", f"({rl}) - {hl}")] = f"({inp}.restW hte{k})"
+    tsa_ii_tests(g, 0x2800, None, None)
+    g.block(0x2812, 0x2818)
+    k, vp, vl = g.oct(0x2818, 0x420, 0x320, tst1_oct_tail, "sv_fail_2c60")
+    g.load(0x2820, "lw")
+    g.branch(0x2824, False, f"by rw [g{g.k}_22, s{g.k}.zero]; exact br_beq_f ({g.slices[(vp, vl)]}.pos_ne)")
+    g.load(0x2828, "lw")
+    g.block(0x282C, 0x282E)
+    g.prop_check(f"{vl} = 32", "h32", tst_len_fail)
+    g.branch(0x282E, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_m32_f h32")
+    g.load(0x2832, "lw")
+    rem = lean_val(g.regs[10])
+
+    def rest_fail(sub):
+        sub.branch(0x2836, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_f hrest1")
+        sub.block(0x2838, 0x283A)
+        sub.jump(0x283A)
+        sub.fail(sub.fail_proof(("prop", "hrest1")), "sv_fail_2c60")
+    g.prop_check(f"{rem} = 0", "hrest1", rest_fail)
+    g.branch(0x2836, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_t hrest1")
+    stmt, proof = finish(g, 0x283C, [2, 3, 4, 8, 18, 19, 20, 21, 22, 24, 25, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "sv_tst1", "title": "the TSTInfo's version, policy, and message imprint",
+            "doc": "From 0x2704 to 0x283C: nothing follows the `SignerInfo`'s signature, the encapsulated content "
+            "is one `TSTInfo` sequence whose version is `INTEGER 1`, whose policy is an OID, and whose message "
+            "imprint is a SHA-256 algorithm identifier and a 32-byte digest with nothing after them.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": TST_BINDERS, "start": 0x2704,
             "import": "C3BootProofs.Proofs.SvTsa"}
     return g, info
 
@@ -5050,7 +5163,7 @@ def main():
                 "Imiss": stage_imiss, "Ihit": stage_ihit, "Iend": stage_iend, "Dpv": stage_dpv, "Ts1": stage_ts1, "Tsa1": stage_tsa1, "Tsa2": stage_tsa2, "Tsa3": stage_tsa3,
                 "Tsa4n": lambda: stage_tsa4(False), "Tsa4s": lambda: stage_tsa4(True), "Tsa5": stage_tsa5, "Tsaa": stage_tsaa,
                 **{f"Tsav{x}": (lambda x=x: stage_tsav(x)) for x in ("ct", "md", "other")},
-                "Tsal": stage_tsal, "Tsax": stage_tsax}[stage]()
+                "Tsal": stage_tsal, "Tsax": stage_tsax, "Tst1": stage_tst1}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

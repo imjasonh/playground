@@ -190,6 +190,7 @@ import C3BootProofs.Proofs.SvTsavmd
 import C3BootProofs.Proofs.SvTsavother
 import C3BootProofs.Proofs.SvTsal
 import C3BootProofs.Proofs.SvTsax
+import C3BootProofs.Proofs.SvTst1
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main

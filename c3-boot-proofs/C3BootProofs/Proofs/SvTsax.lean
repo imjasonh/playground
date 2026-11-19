@@ -166,11 +166,13 @@ theorem sv_tsax {B out bp x21 x26 dg p0 L0 cp rem sip sil flag : Word} {w24 w28 
         reg n' sp = B + 0x21A0 ∧
         reg n' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧
         reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧
+        reg n' (8 : Fin 32) = BitVec.ofNat 32 0x18 ∧
         reg n' (9 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 ∧
         reg n' (18 : Fin 32) = out ∧
         reg n' (19 : Fin 32) = bp ∧
         reg n' (21 : Fin 32) = x21 ∧
         reg n' (24 : Fin 32) = dg ∧
+        reg n' (25 : Fin 32) = (BitVec.ofNat 8 ((sr24).getD 0 0)).zeroExtend 32 ∧
         reg n' (26 : Fin 32) = x26 ∧
         reg n' (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 ∧
@@ -6368,6 +6370,6 @@ theorem sv_tsax {B out bp x21 x26 dg p0 L0 cp rem sip sil flag : Word} {w24 w28 
   have q27_421 : ∀ j, j < 48 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x421 + j)) = BitVec.ofNat 8 ((sr24).getD j 0) := fun j hj => by rw [m27]; exact q26_421 j hj
   have q27_451 : ∀ j, j < 48 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x451 + j)) = BitVec.ofNat 8 ((ss24).getD j 0) := fun j hj => by rw [m27]; exact q26_451 j hj
   clear q26_451 q26_421 b26_421 b26_420 w26_1384 w26_1380 w26_132c w26_1328 w26_1324 w26_1320 w26_20c w26_208 w26_130 w26_12c w26_128 w26_124 w26_120 w26_11c w26_118 w26_114 w26_110 w26_10c w26_108 w26_104 w26_100 w26_fc w26_f8 w26_f4 w26_f0 w26_ec w26_e8 w26_e4 w26_e0 w26_dc w26_d8 w26_d4 w26_d0 w26_cc w26_c8 w26_c4 w26_c0 w26_bc w26_b8 w26_b4 w26_b0 w26_ac w26_a8 w26_a4 w26_a0 w26_9c w26_98 w26_94 w26_90 w26_8c w26_88 w26_84 w26_80 w26_7c w26_78 w26_70 w26_6c w26_68 w26_64 w26_60 w26_5c w26_58 w26_54 w26_50 w26_4c w26_48 w26_44 w26_40 w26_3c w26_38 w26_34 w26_30 w26_2c w26_28 w26_24 g26_25 g26_27 g26_26 g26_24 g26_21 g26_20 g26_19 g26_18 g26_10 g26_9 g26_8 g26_4 g26_3 g26_2 V26 E26 fR26 t26 fr26 m26 s26 u26 d26 b25_421
-  exact .inr ⟨hfl, op8, ol8, hr8, te8, hte8, hoid, vp19, vl19, hr19, te19, ht19, sr24, ss24, hr24, n27, t27, s27, E27, V27, fR27, g27_2, g27_3, g27_4, g27_9, g27_18, g27_19, g27_21, g27_24, g27_26, g27_27, w27_24, w27_28, w27_2c, w27_30, w27_34, w27_38, w27_3c, w27_40, w27_44, w27_48, w27_4c, w27_50, w27_54, w27_58, w27_5c, w27_60, w27_64, w27_68, w27_6c, w27_70, w27_78, w27_7c, w27_80, w27_84, w27_88, w27_8c, w27_90, w27_94, w27_98, w27_9c, w27_a0, w27_a4, w27_a8, w27_ac, w27_b0, w27_b4, w27_b8, w27_bc, w27_c0, w27_c4, w27_c8, w27_cc, w27_d0, w27_d4, w27_d8, w27_dc, w27_e0, w27_e4, w27_e8, w27_ec, w27_f0, w27_f4, w27_f8, w27_fc, w27_100, w27_104, w27_108, w27_10c, w27_110, w27_114, w27_118, w27_11c, w27_120, w27_124, w27_128, w27_12c, w27_130, w27_208, w27_20c, w27_1320, w27_1324, w27_1328, w27_132c, w27_1380, w27_1384, b27_420, b27_421, q27_421, q27_451⟩
+  exact .inr ⟨hfl, op8, ol8, hr8, te8, hte8, hoid, vp19, vl19, hr19, te19, ht19, sr24, ss24, hr24, n27, t27, s27, E27, V27, fR27, g27_2, g27_3, g27_4, g27_8, g27_9, g27_18, g27_19, g27_21, g27_24, g27_25, g27_26, g27_27, w27_24, w27_28, w27_2c, w27_30, w27_34, w27_38, w27_3c, w27_40, w27_44, w27_48, w27_4c, w27_50, w27_54, w27_58, w27_5c, w27_60, w27_64, w27_68, w27_6c, w27_70, w27_78, w27_7c, w27_80, w27_84, w27_88, w27_8c, w27_90, w27_94, w27_98, w27_9c, w27_a0, w27_a4, w27_a8, w27_ac, w27_b0, w27_b4, w27_b8, w27_bc, w27_c0, w27_c4, w27_c8, w27_cc, w27_d0, w27_d4, w27_d8, w27_dc, w27_e0, w27_e4, w27_e8, w27_ec, w27_f0, w27_f4, w27_f8, w27_fc, w27_100, w27_104, w27_108, w27_10c, w27_110, w27_114, w27_118, w27_11c, w27_120, w27_124, w27_128, w27_12c, w27_130, w27_208, w27_20c, w27_1320, w27_1324, w27_1328, w27_132c, w27_1380, w27_1384, b27_420, b27_421, q27_421, q27_451⟩
 
 end C3.RV32.Sv
