@@ -54,4 +54,31 @@ theorem sv_mcIn {B : Word} {m : Machine} {off : Nat} {imm o p : Word} {c N : Nat
   · rw [← add_ofNat_assoc, fr2 _ (by rw [add_ofNat_assoc]; exact FS.lowB hb16 (by decide) (by omega)),
       cp_at hj (by omega)]
 
+abbrev SK5 : Word := BitVec.ofNat 32 sha512KAddress
+
+/-- The SHA-512 code `verify_leaf` calls, and the round constants. -/
+structure SvShaCode (M : Word → BitVec 8) : Prop where
+  blk : CodeIn M (BitVec.ofNat 32 sha384UpdateBlocksAddress) sha384UpdateBlocksCode
+  cmp : CodeIn M (BitVec.ofNat 32 sha512CompressAddress) sha512CompressCode
+  idx : CodeIn M (BitVec.ofNat 32 rangeFromIndexAddress) rangeFromIndexCode
+  fin : CodeIn M (BitVec.ofNat 32 sha512FinBlockAddress) sha512FinBlockCode
+  z48 : CodeIn M (BitVec.ofNat 32 zeroArray48Address) zeroArray48Code
+  z64 : CodeIn M (BitVec.ofNat 32 zeroArray64Address) zeroArray64Code
+  k : CodeIn M SK5 sha512KData
+
+/-- The round constants sit apart from the stack. -/
+def SvKSep (B : Word) : Prop := Sep (B + 0xFFFFFE60) 0x39D0 SK5 640
+
+theorem SvShaCode.sv {M M0 : Word → BitVec 8} {B : Word} (F : Fr B 0x3830) (KS : SvKSep B) (D : SvShaCode M0)
+    (fR : ∀ x, SvR B x → M x = M0 x) : SvShaCode M := by
+  have hx : ∀ x : Word, 0x40000000 ≤ x.toNat → M x = M0 x := fun x hx => fR x (sep_of_le (by
+    have hb : (B + 0xFFFFFE60).toNat = B.toNat - 0x1A0 := F.below 0x1A0 (by decide) (by decide)
+    have := F.hi; rw [hb]; omega) (by have := x.isLt; omega))
+  exact ⟨codeHi D.blk (by decide) (by decide) hx, codeHi D.cmp (by decide) (by decide) hx,
+    codeHi D.idx (by decide) (by decide) hx, codeHi D.fin (by decide) (by decide) hx,
+    codeHi D.z48 (by decide) (by decide) hx, codeHi D.z64 (by decide) (by decide) hx,
+    fun i hi' => by
+      rw [fR _ (KS.symm.sub (c := i) (l := 1) (by have : sha512KData.length = 640 := rfl; omega)).symm]
+      exact D.k i hi'⟩
+
 end C3.RV32.Sv
