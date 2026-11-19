@@ -75,6 +75,8 @@ def add(a, b):
         return a
     if a[0] == "U" and b[0] == "C":
         return ("U", f"({a[1]}) + BitVec.ofNat 32 0x{b[1] & 0xFFFFFFFF:X}")
+    if a[0] == "U" and b[0] == "U":
+        return ("U", f"({a[1]}) + ({b[1]})")
     return None
 
 
@@ -140,6 +142,15 @@ def oid_fail(sub, k, oc, dc, fail_tail):
 
 def err44(sub, entry):
     """The failing exits that go through 0xB46, from `entry`."""
+    if entry == 0xB3C:
+        sub.load_any(0xB3C)
+        sub.jump(0xB40)
+        entry = 0xB44
+    if entry == 0xB42:
+        sub.block(0xB42, 0xB44)
+        entry = 0xB44
+    if entry == 0xB44:
+        sub.store(0xB44, "sw")
     if entry == 0xB2E:
         sub.block(0xB2E, 0xB30)
         sub.jump(0xB30)
@@ -738,15 +749,17 @@ class Gen:
 
 
     def load_in(self, off, inp, pos="(by omega)"):
-        """`lbu` of the first byte of bytes outside the stack, whose `SvIn` is `inp`."""
+        """`lbu` or `lb` of a byte outside the stack, whose `SvIn` is `inp`."""
         text, ln = INSTR[off]
         tk = tokens(text)
+        kind = tk[1]
         rd, base, imm = reg_of(tk[2]), reg_of(tk[3]), int(tk[4], 16)
-        assert imm == 0, text
         p = lean_val(self.regs[base])
+        addr = p if imm == 0 else f"({p}) + 0x{imm:X}"
         k = self.k = self.k + 1
-        self.emit(f"  -- 0x{off:X}: lbu from the bundle")
-        self.emit(f"  obtain ⟨n{k}, d{k}, u{k}⟩ := s{k-1}.lbu E{k-1}.self sv_at_{off:x} (off' := 0x{off + ln:X}) (by decide)")
+        self.emit(f"  -- 0x{off:X}: {kind[1:]} from the bundle")
+        lemma = "s{0}.lbu".format(k - 1) if kind == ".lbu" else "St.lb s{0}".format(k - 1)
+        self.emit(f"  obtain ⟨n{k}, d{k}, u{k}⟩ := {lemma} E{k-1}.self sv_at_{off:x} (off' := 0x{off + ln:X}) (by decide)")
         self.st(k, off + ln)
         self.emit(f"  have m{k} : n{k}.mem = n{k-1}.mem := u{k}.mem")
         self.emit(f"  have fr{k} : ∀ x, SvR B x → n{k}.mem x = n{k-1}.mem x := fun x _ => by rw [m{k}]")
@@ -757,15 +770,18 @@ class Gen:
                 continue
             self.emit(f"  have g{k}_{r} : reg n{k} {rname(r)} = {lean_val(v)} := by rw [u{k}.regs, upd_ne (by decide) (by decide), g{k-1}_{r}]")
             new[r] = v
-        vstr = f"(n0.mem ({p})).zeroExtend 32"
+        ext = "zeroExtend" if kind == ".lbu" else "signExtend"
+        vstr = f"(n0.mem ({addr})).{ext} 32"
         self.emit(f"  have g{k}_{rd} : reg n{k} {rname(rd)} = {vstr} := by")
         self.emit(f"    rw [u{k}.regs]; simp +decide only [upd, ↓reduceIte]")
-        self.emit(f"    rw [g{k-1}_{base}, show ({p}) + 0x0 = {p} from BitVec.add_zero _, fR{k-1} _ ({inp}.r0 {pos})]")
+        if imm == 0:
+            self.emit(f"    rw [g{k-1}_{base}, show ({p}) + 0x0 = {p} from BitVec.add_zero _, fR{k-1} _ ({inp}.r0 {pos})]")
+        else:
+            self.emit(f"    rw [g{k-1}_{base}, fR{k-1} _ ({inp}.r0 {pos})]")
         new[rd] = ("U", vstr)
         self.regs = new
         self.keep_frame(k, ("same",))
         self.end_step()
-
 
     def gs(self, off, oc, inp):
         """`VerifyingKey::from_sec1_bytes` on the 65 bytes `a1` points at; returns k."""
@@ -957,8 +973,9 @@ class Gen:
 
     # --- operations -------------------------------------------------------------
 
-    def block(self, start, end):
-        """ALU instructions from `start` to `end`."""
+    def block(self, start, end, extra=None):
+        """ALU instructions from `start` to `end`. `extra` maps a register to its
+        value and a proof, from facts of the step before."""
         k = self.k = self.k + 1
         ins, off, vals, writes, unc = [], start, dict(self.regs), {}, {}
         vals[0] = ("C", 0)
@@ -973,7 +990,10 @@ class Gen:
                 if src is not None and src[0] == "U" and v is not None and v != src:
                     unc[rd] = reg_of(tk[3])
             elif tk[0] == ".alu" and tk[1] == ".add":
-                rd = reg_of(tk[2]); v = add(vals.get(reg_of(tk[3])), vals.get(reg_of(tk[4])))
+                rd = reg_of(tk[2]); x, y = vals.get(reg_of(tk[3])), vals.get(reg_of(tk[4]))
+                v = add(x, y)
+                if x is not None and y is not None and x[0] == "U" and y[0] == "U":
+                    unc[rd] = (reg_of(tk[3]), reg_of(tk[4]))
             elif tk[0] == ".aluImm" and tk[1] == ".and":
                 rd = reg_of(tk[2]); x = vals.get(reg_of(tk[3]))
                 v = ("C", x[1] & int(tk[4], 16)) if x is not None and x[0] == "C" else None
@@ -986,6 +1006,11 @@ class Gen:
             elif tk[0] == ".alu" and tk[1] == ".sub":
                 rd = reg_of(tk[2]); x = vals.get(reg_of(tk[3])); y = vals.get(reg_of(tk[4]))
                 v = ("U", f"({lean_val(x)}) - ({lean_val(y)})") if x is not None and y is not None and x[0] == "U" and y[0] == "U" else None
+            elif tk[0] == ".alu" and tk[1] == ".or":
+                rd = reg_of(tk[2]); x, y = vals.get(reg_of(tk[3])), vals.get(reg_of(tk[4]))
+                v = ("U", f"({lean_val(x)}) ||| ({lean_val(y)})") if x is not None and y is not None else None
+                if v is not None:
+                    unc[rd] = (reg_of(tk[3]), reg_of(tk[4]))
             elif tk[0] == ".aluImm" and tk[1] == ".xor":
                 rd = reg_of(tk[2]); x = vals.get(reg_of(tk[3]))
                 v = ("C", x[1] ^ int(tk[4], 16)) if x is not None and x[0] == "C" else None
@@ -1018,11 +1043,12 @@ class Gen:
             self.emit(f"    rw [rb{k}, runBlock_reg _ _ _ {rname(r)} s{k-1}.zero (by decide), g{k-1}_{r}]")
             new[r] = v
         for r, v in sorted(writes.items()):
-            if v is None:
+            if v is None or r in (extra or {}):
                 continue
             self.emit(f"  have g{k}_{r} : reg n{k} {rname(r)} = {lean_val(v)} := by")
             if r in unc and len(ins) == 1:
-                self.emit(f"    rw [rb{k}, ← g{k-1}_{unc[r]}]; rfl")
+                srcs = unc[r] if isinstance(unc[r], tuple) else (unc[r],)
+                self.emit(f"    rw [rb{k}" + "".join(f", ← g{k-1}_{q}" for q in srcs) + "]; rfl")
                 new[r] = v
                 continue
             self.emit(f"    rw [rb{k}]; simp +decide only [runBlock, BInstr.run, {blk}, upd, ↓reduceIte, aluEval]")
@@ -1031,6 +1057,10 @@ class Gen:
                 self.emit("    all_goals (try simp only [BitVec.reduceToNat, Nat.reduceMod, BitVec.reduceHShiftLeft])")
             self.emit(f"    all_goals first | with_reducible rfl | sv_addr | decide")
             new[r] = v
+        for r, (v, pf) in (extra or {}).items():
+            self.emit(f"  have g{k}_{r} : reg n{k} {rname(r)} = {v} := by")
+            self.emit(f"    {pf.format(k=k, p=k - 1)}")
+            new[r] = ("U", v)
         self.regs = new
         self.keep_frame(k, ("same",))
         self.end_step()
@@ -2842,10 +2872,323 @@ def stage_dbc2():
     return g, info
 
 
+
+def stage_dku1():
+    """From the OID tests at 0x60E to 0x670, for a `KeyUsage` extension: its
+    value starts with a `BIT STRING`."""
+    g = Gen("Dku1")
+    params = d_start(g)
+    params += [f"(hku : {oid_is(KU_C)})"]
+    d_test(g, 0x60E, KU_C, True, "hku")
+    g.block(0x626, 0x62E)
+    g.load(0x62E, "lw")
+    g.block(0x630, 0x634)
+    g.store(0x634, "sw")
+    g.load(0x636, "lw")
+    g.store(0x638, "sw")
+    g.store(0x63A, "sw")
+    g.block(0x63C, 0x646)
+    g.store(0x646, "sw")
+    g.block(0x648, 0x65A)
+    k, ex, rd = g.elem(0x65A, 0x1020, 0x1480, 3)
+
+    def tail(sub):
+        sub.load(0x662, "lw")
+        sub.branch(0x666, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; rfl")
+        err44(sub, 0xB3C)
+    g.elem_split(k, ex, 0x1020, 0x1480, rd, tail)
+    g.load(0x662, "lw")
+    g.branch(0x666, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({rd[2]}.ok_ne hr{k})")
+    g.load(0x66A, "lw")
+    g.block(0x66E, 0x670)
+    stmt, proof = finish(g, 0x670, D_KEEP_REGS + [8, 10, 11, 12], D_KEEP_WORDS | {0x148C}, set())
+    info = {"name": "sv_dku1", "title": "a `KeyUsage` extension's `BIT STRING`",
+            "doc": "From the OID tests at 0x60E to 0x670, for a `KeyUsage` extension: its value starts with a "
+            "`BIT STRING`.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": D_BINDERS, "start": 0x60E,
+            "import": "C3BootProofs.Proofs.SvKu"}
+    return g, info
+
+
+def ku_tail(g, last):
+    """From 0x93E with the allowed unused bits in `a4`."""
+    hz = f"hz_{g.k}u"
+    P = f"BitVec.ofNat 32 (kuUnused (n0.mem ({last}))) = (n0.mem cp).zeroExtend 32"
+
+    def bad_unused(sub):
+        sub.branch(0x93E, True, f"by rw [g{sub.k}_14, g{sub.k}_13]; exact br_bne_t {hz}")
+        err44(sub, 0xB44)
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check(P, hz, bad_unused)
+    g.branch(0x93E, False, f"by rw [g{g.k}_14, g{g.k}_13]; exact br_bne_f {hz}")
+    g.load(0x942, "lw")
+    hz = f"hz_{g.k}"
+
+    def rest(sub):
+        sub.branch(0x946, True, f"by rw [g{sub.k}_11, s{sub.k}.zero]; exact br_bne_t {hz}")
+        err44(sub, 0xB42)
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check("vrem = 0", hz, rest)
+    g.branch(0x946, False, f"by rw [g{g.k}_11, s{g.k}.zero]; exact br_bne_f {hz}")
+    g.block(0x94A, 0x94C)
+    g.branch(0x94C, False, f"by rw [g{g.k}_12, g{g.k}_11]; exact br_beq_f (ne_one_of h2)")
+    g.load_in(0x950, "(c_in.secondIn h2)", "(by decide)")
+    hz = f"hz_{g.k}"
+
+    def no_sign(sub):
+        sub.branch(0x954, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bge_sext_t (Decidable.of_not_not {hz})")
+        err44(sub, 0xB46)
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check("¬ (n0.mem (cp + 0x1)).toNat < 0x80", hz, no_sign)
+    g.branch(0x954, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bge_sext_f {hz}")
+    g.block(0x958, 0x95A)
+    g.store(0x95A, "sw")
+    d_next(g)
+
+
+KU_BINDERS = LOOP_BINDERS.replace(" : Word}", " cp kl vrem rest : Word}")
+
+
+def stage_dku2():
+    """From 0x670, the `KeyUsage` bits: at least one byte after the unused-bit
+    count, which must match the last byte, nothing after, and
+    `digitalSignature` set."""
+    g = Gen("Dku2")
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 27: ("S", 0xA20), 9: ("U", "x9"), 21: ("U", "x21"), 25: ("U", "x25"),
+            26: ("U", "x26"), 8: ("S", 0x1320), 10: ("U", "cp"), 11: ("C", 0x14), 12: ("U", "kl")}
+    words = {0x30: "f30", 0x34: "f34", 0x40: "rem", 0x88: "p0", 0x8C: "L", 0x90: "cur", 0x94: "rest",
+             0x148C: "vrem"}
+    for i in range(10):
+        words[0xA20 + 4 * i] = f"sl{i}"
+    for e in range(0x4C, 0x88, 4):
+        words[e] = f"w{e:x}"
+    params = start(g, regs, words, {("cp", "kl"): "c_in"})
+    hz = "h2"
+
+    def short(sub):
+        sub.emit("  by_cases hk0 : kl = 0")
+
+        def zero(s2):
+            s2.branch(0x670, True, f"by rw [g{s2.k}_12, s{s2.k}.zero]; exact br_beq_t hk0")
+            err44(s2, 0xB44)
+            s2.fail(s2.fail_proof(("prop", hz)))
+        sub.fork(zero)
+        sub.branch(0x670, False, f"by rw [g{sub.k}_12, s{sub.k}.zero]; exact br_beq_f hk0")
+        sub.emit("  have hk1 : kl = BitVec.ofNat 32 0x1 := by")
+        sub.emit("    apply BitVec.eq_of_toNat_eq; have := toNat_pos_of_ne hk0; rw [show (BitVec.ofNat 32 0x1).toNat = 1 from rfl]; omega")
+        sub.pinned.add("hk1")
+        sub.load_in(0x674, "c_in", "(toNat_pos_of_ne hk0)")
+        sub.block(0x678, 0x67A)
+        sub.branch(0x67A, True, f"by rw [g{sub.k}_12, g{sub.k}_14, hk1]; rfl")
+        sub.emit(f"  by_cases hu : (n0.mem cp).zeroExtend 32 = (0 : Word)")
+
+        def unused0(s2):
+            s2.branch(0x896, False, f"by rw [g{s2.k}_13, s{s2.k}.zero]; exact br_bne_f hu")
+            s2.jump(0x89A)
+            s2.load(0x942, "lw")
+            s2.emit("  by_cases hv : vrem = 0")
+
+            def vz(s3):
+                s3.branch(0x946, False, f"by rw [g{s3.k}_11, s{s3.k}.zero]; exact br_bne_f hv")
+                s3.block(0x94A, 0x94C)
+                s3.branch(0x94C, True, f"by rw [g{s3.k}_12, g{s3.k}_11, hk1]; rfl")
+                err44(s3, 0xB46)
+                s3.fail(s3.fail_proof(("prop", hz)))
+            s2.fork(vz)
+            s2.branch(0x946, True, f"by rw [g{s2.k}_11, s{s2.k}.zero]; exact br_bne_t hv")
+            err44(s2, 0xB42)
+            s2.fail(s2.fail_proof(("prop", hz)))
+        sub.fork(unused0)
+        sub.branch(0x896, True, f"by rw [g{sub.k}_13, s{sub.k}.zero]; exact br_bne_t hu")
+        err44(sub, 0xB44)
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check("2 ≤ kl.toNat", hz, short)
+    g.branch(0x670, False, f"by rw [g{g.k}_12, s{g.k}.zero]; exact br_beq_f (ne_zero_of h2)")
+    g.load_in(0x674, "c_in", "(by omega)")
+    g.block(0x678, 0x67A)
+    g.branch(0x67A, False, f"by rw [g{g.k}_12, g{g.k}_14]; exact br_beq_f (ne_one_of h2)")
+    g.block(0x67E, 0x682)
+    g.block(0x682, 0x684)
+    g.branch(0x684, False, f"by rw [g{g.k}_14, s{g.k}.zero]; exact br_beq_f (c_in.lastIn h2).pos_ne")
+    g.load_in(0x688, "(c_in.lastIn h2)", "(by decide)")
+    lastv = lean_val(g.regs[14])
+    lb = lastv[len("(n0.mem ("):-len(")).zeroExtend 32")]
+    g.emit(f"  by_cases hl : n0.mem ({lb}) = 0")
+
+    def last0(sub):
+        sub.branch(0x68C, True, f"by rw [g{sub.k}_14, s{sub.k}.zero, hl]; rfl")
+        sub.block(0x93C, 0x93E, {14: (f"BitVec.ofNat 32 (kuUnused (n0.mem ({lb})))",
+                                    "rw [rb{k}]; simp +decide only [runBlock, BInstr.run, svDku293c, upd, ↓reduceIte, aluEval]; "
+                                    "exact kuUnused_zero hl")})
+        ku_tail(sub, lb)
+        sub.exit_here()
+    g.fork(last0)
+    g.branch(0x68C, False, f"by rw [g{g.k}_14, s{g.k}.zero]; exact br_beq_f (zext_ne_zero hl)")
+    k = g.k
+    g.block(0x690, 0x6BA, {14: (f"BitVec.ofNat 32 (kuUnused (n0.mem ({lb})))",
+                                "rw [rb{k}, ← kuUnused_ne hl, ← g{p}_14]; rfl")})
+    g.jump(0x6BA)
+    ku_tail(g, lb)
+    stmt, proof = finish(g, 0x4EA, D_KEEP_REGS, D_KEEP_WORDS, set())
+    info = {"name": "sv_dku2", "title": "the `KeyUsage` bits",
+            "doc": "From 0x670, a `KeyUsage` value's bits: at least one byte after the unused-bit count, which must "
+            "match the last byte's trailing zeros (eight for a zero byte), nothing after the `BIT STRING`, and "
+            "`digitalSignature` set.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": KU_BINDERS, "start": 0x670,
+            "import": "C3BootProofs.Proofs.SvKu"}
+    return g, info
+
+
+def stage_deku1():
+    """From the OID tests at 0x60E to the inner loop at 0x74A, for an
+    `ExtKeyUsage` extension: its value is a `SEQUENCE` that fills it."""
+    g = Gen("Deku1")
+    params = d_start(g)
+    params += [f"(hku : ¬ {oid_is(KU_C)})", f"(heku : {oid_is(EKU_C)})"]
+    d_test(g, 0x60E, KU_C, False, "hku")
+    d_test(g, 0x6BC, EKU_C, True, "heku")
+    g.block(0x6D4, 0x6DC)
+    g.load(0x6DC, "lw")
+    g.store(0x6DE, "sw")
+    g.load(0x6E0, "lw")
+    g.store(0x6E2, "sw")
+    g.store(0x6E4, "sw")
+    g.store(0x6E6, "sw")
+    g.block(0x6E8, 0x6F8)
+    k, ex, rd = g.seqr(0x6F8, 0x1020, 0x1380)
+    t = f"tl{k}"
+    g.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+    g.emit(f"  rcases r{k} with er{k} | {t}")
+    g.sc.append(("eq", ex, f".ok {t}", [t], f"hr{k}"))
+    ks = k
+
+    def fail_seq(sub):
+        sub.emit(f"  obtain ⟨z{ks}, -⟩ := Er{ks} er{ks} hr{ks}")
+        sub.frame_after(ks, [(0x1020, 16), (0x1388, 8)], {0x1020: ("0", f"z{ks}")})
+        sub.load(0x700, "lw")
+        sub.load_any(0x704)
+        sub.branch(0x708, True, f"by rw [g{sub.k}_8, s{sub.k}.zero]; rfl")
+        err9b6(sub)
+        sub.fail(sub.fail_proof(("eq", f"hr{ks}")))
+    g.fork(fail_seq)
+    g.seq_ok(k, 0x1020, 0x1380, t, rd)
+    g.load(0x700, "lw")
+    g.load(0x704, "lbu")
+    g.branch(0x708, False, f"by rw [g{g.k}_8, s{g.k}.zero]; exact br_beq_f ({rd[2]}.ok_ne hr{ks})")
+    g.block(0x70C, 0x71E)
+    g.mc(0x71E, 0x1485, 0x1025, 0xB)
+    g.block(0x726, 0x730)
+    g.load(0x730, "lw")
+    g.store(0x732, "sw")
+    g.block(0x736, 0x740)
+    g.store(0x740, "sb")
+    rest = lean_val(g.words[0x138C])
+    hz = f"hz_{g.k}"
+
+    def fail_rest(sub):
+        sub.branch(0x744, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_t {hz}")
+        sub.block(0xB4A, 0xB4C)
+        sub.jump(0xB4C)
+        err9b6(sub)
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check(f"{rest} = 0", hz, fail_rest)
+    g.branch(0x744, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_f {hz}")
+    g.block(0x748, 0x74A)
+    stmt, proof = finish(g, 0x74A, D_KEEP_REGS + [8, 22], D_KEEP_WORDS | {0x1488, 0x148C}, set())
+    info = {"name": "sv_deku1", "title": "an `ExtKeyUsage` extension's `SEQUENCE`",
+            "doc": "From the OID tests at 0x60E to the inner loop at 0x74A, for an `ExtKeyUsage` extension: its "
+            "value is a `SEQUENCE` that fills it.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": D_BINDERS, "start": 0x60E,
+            "import": "C3BootProofs.Proofs.SvData"}
+    return g, info
+
+
+def eku_start(g):
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 27: ("S", 0xA20), 9: ("U", "x9"), 21: ("U", "x21"), 25: ("U", "x25"),
+            26: ("U", "x26"), 8: ("S", 0x1320), 22: ("U", "found")}
+    words = {0x30: "f30", 0x34: "f34", 0x40: "rem", 0x88: "p0", 0x8C: "L", 0x90: "cur", 0x94: "rest",
+             0x1488: "cp", 0x148C: "cl"}
+    for i in range(10):
+        words[0xA20 + 4 * i] = f"sl{i}"
+    for e in range(0x4C, 0x88, 4):
+        words[e] = f"w{e:x}"
+    return start(g, regs, words, {("cp", "cl"): "c_in"})
+
+
+EKU_BINDERS = LOOP_BINDERS.replace(" : Word}", " cp cl rest found : Word}")
+CODESIGN = 0x3FCC4820
+
+
+def stage_deku2():
+    """One pass of the `ExtKeyUsage` loop, from 0x74A back to 0x74A: the next
+    OID, and whether it is `codeSigning`."""
+    g = Gen("Deku2")
+    params = eku_start(g) + ["(hcl : cl ≠ 0)", "(SD0 : SvData n0.mem)"]
+    g.load(0x74A, "lw")
+    g.branch(0x74E, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hcl")
+    g.block(0x752, 0x762)
+
+    def tail(sub):
+        sub.load(0x76A, "lw")
+        sub.branch(0x76E, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; rfl")
+        sub.load_any(0x9B2)
+        err9b6(sub)
+    k, op, ol = g.oid(0x762, 0x1020, 0x1480, tail)
+    g.load(0x76A, "lw")
+    g.branch(0x76E, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({g.slices[(op, ol)]}.pos_ne)")
+    g.load(0x772, "lw")
+    g.block(0x776, 0x780)
+    ke = g.seqeq(0x780, op, f"{ol}.toNat", f"BitVec.ofNat 32 0x{CODESIGN:X}", "8", f"(.inl {g.slices[(op, ol)]})",
+                 "(.inr ⟨by decide, by decide⟩)", ha1=f"(by rw [g{g.k}_11, ofNat_toNat_self])")
+    eq = f"memBytes n0.mem {op} {ol}.toNat = memBytes n0.mem (BitVec.ofNat 32 0x{CODESIGN:X}) 8"
+    g.emit(f"  have g{ke}_10 : reg n{ke} a0 = if {eq} then BitVec.ofNat 32 1 else BitVec.ofNat 32 0 := a0_{ke}")
+    g.regs[10] = ("U", f"if {eq} then BitVec.ofNat 32 1 else BitVec.ofNat 32 0")
+    g.block(0x788, 0x78C)
+    g.jump(0x78C)
+    stmt, proof = finish(g, 0x74A, D_KEEP_REGS + [8, 22], D_KEEP_WORDS | {0x1488, 0x148C}, set())
+    info = {"name": "sv_deku2", "title": "an `ExtKeyUsage` OID",
+            "doc": "One pass of the `ExtKeyUsage` loop, from 0x74A back to 0x74A: the next entry must be an OID, and "
+            "the flag in `s6` gains whether it is `codeSigning`.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": EKU_BINDERS, "start": 0x74A,
+            "import": "C3BootProofs.Proofs.SvData"}
+    return g, info
+
+
+def stage_deku3():
+    """The end of the `ExtKeyUsage` loop at 0x74A: `codeSigning` must have
+    appeared; back to the extensions loop's head."""
+    g = Gen("Deku3")
+    params = eku_start(g) + ["(hcl : cl = 0)"]
+    g.load(0x74A, "lw")
+    g.branch(0x74E, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_t hcl")
+    g.block(0x92E, 0x932)
+    hz = f"hz_{g.k}"
+
+    def none(sub):
+        sub.branch(0x932, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not {hz})")
+        err44(sub, 0xB46)
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check("found &&& BitVec.ofNat 32 0x1 ≠ 0", hz, none)
+    g.branch(0x932, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f {hz}")
+    g.block(0x936, 0x938)
+    g.store(0x938, "sw")
+    g.jump(0x93A)
+    d_next(g)
+    stmt, proof = finish(g, 0x4EA, D_KEEP_REGS, D_KEEP_WORDS, set())
+    info = {"name": "sv_deku3", "title": "the end of an `ExtKeyUsage` value",
+            "doc": "The end of the `ExtKeyUsage` loop at 0x74A: the flag must show `codeSigning`, which sets the "
+            "`codeSigning` flag; back to the extensions loop's head.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": EKU_BINDERS, "start": 0x74A,
+            "import": "C3BootProofs.Proofs.SvData"}
+    return g, info
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
-                **{f"Dp{i}": stage_dpol(i) for i in range(6)}, "Dbc1": stage_dbc1, "Dbc2e": stage_dbc2e, "Dbc2": stage_dbc2}[stage]()
+                **{f"Dp{i}": stage_dpol(i) for i in range(6)}, "Dbc1": stage_dbc1, "Dbc2e": stage_dbc2e, "Dbc2": stage_dbc2, "Dku1": stage_dku1, "Dku2": stage_dku2,
+                "Deku1": stage_deku1, "Deku2": stage_deku2, "Deku3": stage_deku3}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

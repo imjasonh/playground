@@ -155,6 +155,11 @@ import C3BootProofs.Proofs.SvDp5
 import C3BootProofs.Proofs.SvDbc1
 import C3BootProofs.Proofs.SvDbc2e
 import C3BootProofs.Proofs.SvDbc2
+import C3BootProofs.Proofs.SvDku1
+import C3BootProofs.Proofs.SvDku2
+import C3BootProofs.Proofs.SvDeku1
+import C3BootProofs.Proofs.SvDeku2
+import C3BootProofs.Proofs.SvDeku3
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main
