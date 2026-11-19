@@ -144,4 +144,141 @@ theorem ii_ok_elem {M : Word → BitVec 8} {L : Bytes} {rp : Word} {r : Except D
   | error e => simp [derIntIsOf, derIntOf] at h
   | ok t => exact ⟨t, rfl⟩
 
+theorem br_bltu_t {a b : Word} (h : a.toNat < b.toNat) : branchTaken .bltu a b = true := by
+  simp only [branchTaken, BitVec.ult, decide_eq_true_eq]; exact h
+theorem br_bltu_f {a b : Word} (h : ¬ a.toNat < b.toNat) : branchTaken .bltu a b = false := by
+  simp only [branchTaken, BitVec.ult, decide_eq_false_iff_not]; exact h
+
+/-- The whole element of a read, with a natural length. -/
+theorem SvIn.rawN {B rp rl : Word} {M : Word → BitVec 8} {tag : Nat} {t : DerTlv} (h : SvIn B rp rl.toNat)
+    (ht : derElement tag (memBytes M rp rl.toNat) = .ok t) : SvIn B rp (t.header + t.len) := by
+  have hb := derElement_bound ht
+  rw [memBytes_length] at hb
+  refine ⟨?_, h.pos, by have := h.lo; omega⟩
+  have := h.sep14.sub (c := 0) (l := t.header + t.len + 14) (by omega)
+  rwa [add_ofNat_zero] at this
+
+/-- The OID that `Der::algorithm` reads from bytes outside the stack. -/
+theorem SvIn.algOid {B p op : Word} {n ol : Nat} {M : Word → BitVec 8} {w : Option (Word × DerTlv)} (h : SvIn B p n)
+    (hq : derAlgOf M p n = .ok ((op, ol), w)) : SvIn B op ol := by
+  unfold derAlgOf at hq
+  cases ht : derElement 0x30 (memBytes M p n) with
+  | error e => rw [ht] at hq; cases hq
+  | ok t =>
+    rw [ht] at hq
+    simp only at hq
+    cases ho : derOid (memBytes M (p + BitVec.ofNat 32 t.header) t.len) with
+    | error e => rw [ho] at hq; cases hq
+    | ok o =>
+      rw [ho] at hq
+      simp only at hq
+      have hc : SvIn B (p + BitVec.ofNat 32 t.header + BitVec.ofNat 32 o.header) o.len :=
+        (h.content ht).content (derOid_ok_elem ho)
+      split at hq
+      · cases hq; exact hc
+      · split at hq
+        · cases hq
+        · split at hq
+          · cases hq; exact hc
+          · cases hq
+
+/-- A constant's bytes are outside the stack. -/
+theorem dataR {B q : Word} {ql : Nat} (F : Fr B 0x3830) (h1 : 0x3FCC4200 ≤ q.toNat) (h2 : q.toNat + ql ≤ 0x3FCC4E60)
+    (i : Nat) (hi : i < ql) : SvR B (q + BitVec.ofNat 32 i) := by
+  have hs := F.dsep.subR (c := q.toNat - 0x3FCC4200 + i) (l := 1) (by omega)
+  have e : (0x3FCC4200 : Word) + BitVec.ofNat 32 (q.toNat - 0x3FCC4200 + i) = q + BitVec.ofNat 32 i := by
+    apply BitVec.eq_of_toNat_eq
+    rw [BitVec.toNat_add, BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+    have := q.isLt
+    rw [show (0x3FCC4200 : Word).toNat = 1070350848 from rfl]
+    omega
+  rw [e] at hs
+  exact hs
+
+/-- Constants and bundle bytes read the same in two memories that agree
+outside the stack. -/
+theorem sv_mbRo {B q : Word} {ql : Nat} {M M0 : Word → BitVec 8} (F : Fr B 0x3830)
+    (fR : ∀ x, SvR B x → M x = M0 x) (h : SvRo B q ql) : memBytes M q ql = memBytes M0 q ql := by
+  rcases h with h | ⟨h1, h2⟩
+  · exact sv_mb fR h
+  · exact memBytes_congr fun i hi => fR _ (dataR F h1 h2 i hi)
+
+/-- The parameters `Der::algorithm` finds in bytes outside the stack start
+at a nonzero address. -/
+theorem SvIn.algParams {B p op prp : Word} {n ol : Nat} {u : DerTlv} {M : Word → BitVec 8} (h : SvIn B p n)
+    (hq : derAlgOf M p n = .ok ((op, ol), some (prp, u))) : prp + BitVec.ofNat 32 u.header ≠ 0 := by
+  unfold derAlgOf at hq
+  cases ht : derElement 0x30 (memBytes M p n) with
+  | error e => rw [ht] at hq; cases hq
+  | ok t =>
+    rw [ht] at hq
+    simp only at hq
+    cases ho : derOid (memBytes M (p + BitVec.ofNat 32 t.header) t.len) with
+    | error e => rw [ho] at hq; cases hq
+    | ok o =>
+      rw [ho] at hq
+      simp only at hq
+      have hc := h.content ht
+      have hob := derElement_bound (derOid_ok_elem ho); rw [memBytes_length] at hob
+      split at hq
+      · cases hq
+      · split at hq
+        · cases hq
+        · rename_i u' hu
+          split at hq
+          · simp only [Except.ok.injEq, Prod.mk.injEq, Option.some.injEq] at hq
+            obtain ⟨_, h1, h2⟩ := hq
+            rw [← h1, ← h2]
+            have hub := derTlv_bound hu; rw [memBytes_length] at hub
+            intro e
+            have h1 := hc.pos; have h2 := hc.lo
+            have : (p + BitVec.ofNat 32 t.header + BitVec.ofNat 32 (o.header + o.len) +
+                BitVec.ofNat 32 u'.header).toNat = (p + BitVec.ofNat 32 t.header).toNat + (o.header + o.len) + u'.header := by
+              rw [BitVec.toNat_add, BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega
+            rw [e, show (0 : Word).toNat = 0 from rfl] at this; omega
+          · cases hq
+
+/-- A positive integer read from bytes outside the stack starts at a nonzero address. -/
+theorem SvIn.serial_ne {B rp rl ip il : Word} {M : Word → BitVec 8} {t : DerTlv} (h : SvIn B rp rl.toNat)
+    (ht : derElement 2 (memBytes M rp rl.toNat) = .ok t)
+    (hp : derPosIntOf (memBytes M rp rl.toNat) rp (.ok t) = .ok (ip, il)) : ip ≠ 0 := by
+  have hn := h.ok_ne ht
+  unfold derPosIntOf at hp
+  cases hi : derIntOf (memBytes M rp rl.toNat) rp (.ok t) with
+  | error e => rw [hi] at hp; cases hp
+  | ok pl =>
+    rw [hi] at hp
+    simp only at hp
+    split at hp
+    · cases hp
+    · cases hp
+      simp only [derIntOf] at hi
+      split at hi
+      · cases hi
+      · split at hi
+        · cases hi
+        · cases hi; exact hn
+
+/-- The bytes after the first `k`. -/
+theorem SvIn.drop {B rp : Word} {rl k : Nat} (h : SvIn B rp rl) (hk : k ≤ rl) :
+    SvIn B (rp + BitVec.ofNat 32 k) (rl - k) := by
+  have e : (rp + BitVec.ofNat 32 k).toNat = rp.toNat + k := by
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat]; have := h.lo; omega
+  refine ⟨h.sep14.sub (c := k) (l := rl - k + 14) (by omega), by rw [e]; have := h.pos; omega,
+    by rw [e]; have := h.lo; omega⟩
+
+/-- A length below `2 ^ 32` is zero exactly when its word is. -/
+theorem ofNat_eq_zero_iff {n : Nat} (h : n < 2 ^ 32) : BitVec.ofNat 32 n = 0 ↔ n = 0 := by
+  constructor
+  · intro e; have := congrArg BitVec.toNat e; rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt h] at this; exact this
+  · intro e; rw [e]; rfl
+
+theorem rest_ne {M : Word → BitVec 8} {p : Word} {n : Nat} {r : Bytes} (hn : n < 2 ^ 32)
+    (h : r = memBytes M p n) (hz : ¬ r = []) : BitVec.ofNat 32 n ≠ 0 := fun e => by
+  rw [ofNat_eq_zero_iff hn] at e; subst e; exact hz (by rw [h]; rfl)
+
+theorem rest_eq {M : Word → BitVec 8} {p : Word} {n : Nat} {r : Bytes}
+    (h : r = memBytes M p n) (hz : r = []) : BitVec.ofNat 32 n = 0 := by
+  have := congrArg List.length h; rw [hz, memBytes_length] at this; rw [← this]; rfl
+
 end C3.RV32.Sv
