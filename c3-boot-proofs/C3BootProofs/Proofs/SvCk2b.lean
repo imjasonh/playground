@@ -958,7 +958,7 @@ theorem sv_ck2b {B out bp x21 x26 dg q ckl sl sp1 rl rp sgp : Word} {w24 w28 w2c
   have g4_27 : reg n4 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb4, runBlock_reg _ _ _ (27 : Fin 32) s3.zero (by decide), g3_27]
   have g4_10 : reg n4 a0 = aluEval .xor (w5c) (BitVec.ofNat 32 0xFFFFFFFF) := by
-    rw [rb4, ← g3_10]; rfl
+    rw [rb4]; simp +decide only [runBlock, BInstr.run, svCk2b2bd2, upd, ↓reduceIte]; rw [g3_10] <;> rfl
   have w4_24 : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m4]; exact w3_24
   have w4_28 : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m4]; exact w3_28
   have w4_2c : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m4]; exact w3_2c
@@ -1079,7 +1079,7 @@ theorem sv_ck2b {B out bp x21 x26 dg q ckl sl sp1 rl rp sgp : Word} {w24 w28 w2c
   have g5_27 : reg n5 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb5, runBlock_reg _ _ _ (27 : Fin 32) s4.zero (by decide), g4_27]
   have g5_10 : reg n5 a0 = (aluEval .xor (w5c) (BitVec.ofNat 32 0xFFFFFFFF)) + (ckl) := by
-    rw [rb5, ← g4_10, ← g4_25]; rfl
+    rw [rb5]; simp +decide only [runBlock, BInstr.run, svCk2b2bd6, upd, ↓reduceIte]; rw [g4_10, g4_25] <;> rfl
   have w5_24 : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m5]; exact w4_24
   have w5_28 : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m5]; exact w4_28
   have w5_2c : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m5]; exact w4_2c
@@ -1751,7 +1751,7 @@ theorem sv_ck2b {B out bp x21 x26 dg q ckl sl sp1 rl rp sgp : Word} {w24 w28 w2c
   have g8_27 : reg n8 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb8, runBlock_reg _ _ _ (27 : Fin 32) s7.zero (by decide), g7_27]
   have g8_10 : reg n8 a0 = (sl) + BitVec.ofNat 32 0xFFFFFFEC := by
-    rw [rb8, ← g7_8]; rfl
+    rw [rb8]; simp +decide only [runBlock, BInstr.run, svCk2b2bde, upd, ↓reduceIte]; rw [g7_8] <;> rfl
   have w8_20 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x20) = (aluEval .xor (w5c) (BitVec.ofNat 32 0xFFFFFFFF)) + (ckl) := by rw [m8]; exact w7_20
   have w8_24 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m8]; exact w7_24
   have w8_28 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m8]; exact w7_28

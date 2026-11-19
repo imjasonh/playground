@@ -1489,7 +1489,11 @@ class Gen:
             self.emit(f"  have g{k}_{r} : reg n{k} {rname(r)} = {lean_val(v)} := by")
             if r in unc and len(ins) == 1:
                 srcs = unc[r] if isinstance(unc[r], tuple) else (unc[r],)
-                self.emit(f"    rw [rb{k}" + "".join(f", ← g{k-1}_{q}" for q in srcs) + "]; rfl")
+                if self.generic_alu:
+                    fw = ", ".join(f"g{k-1}_{q}" for q in dict.fromkeys(srcs))
+                    self.emit(f"    rw [rb{k}]; simp +decide only [runBlock, BInstr.run, {blk}, upd, ↓reduceIte]; rw [{fw}] <;> rfl")
+                else:
+                    self.emit(f"    rw [rb{k}" + "".join(f", ← g{k-1}_{q}" for q in srcs) + "]; rfl")
                 new[r] = v
                 continue
             self.emit(f"    rw [rb{k}]; simp +decide only [runBlock, BInstr.run, {blk}, upd, ↓reduceIte, aluEval]")
@@ -6091,6 +6095,81 @@ def stage_ck2(lead):
     return g, info
 
 
+CKD_BINDERS = ("{B out bp x21 x26 dg q ckl c p rl rp sgp : Word} "
+               + "{" + " ".join(f"w{e:x}" for e in TST_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+
+
+def ckd_start(g):
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
+            8: ("U", "c"), 9: ("U", "p"), 22: ("U", "rl"), 23: ("U", "rp"), 25: ("U", "ckl"), 10: ("C", 10)}
+    words = {e: f"w{e:x}" for e in TST_WORDS}
+    words.update({0x74: "q", 0x428: "sgp"})
+    words.update(TL_STRUCT)
+    return start(g, regs, words, {})
+
+
+def stage_ckd():
+    """One pass of the size's digit loop, from 0x2C06 back to it: the next
+    byte is a digit, and the size times ten plus the digit fits in 64 bits."""
+    g = Gen("Ckd")
+    g.generic_alu = True
+    params = ckd_start(g) + ["(hc : c ≠ 0)", "(pin : SvIn B p c.toNat)"]
+    g.branch(0x2C06, False, f"by rw [g{g.k}_8, s{g.k}.zero]; exact br_beq_f hc")
+    g.load_in(0x2C08, "pin", "(toNat_pos_of_ne hc)")
+    g.block(0x2C0C, 0x2C10)
+    g.block(0x2C10, 0x2C14)
+    d = lean_val(g.regs[11])
+
+    def not_digit(sub):
+        sub.branch(0x2C14, True, f"by rw [g{sub.k}_11, g{sub.k}_10]; exact br_bgeu_t hdig")
+        ck_fail_2ff2(sub, "hdig")
+    g.prop_check(f"({d}).toNat < (BitVec.ofNat 32 0xA).toNat", "hdig", not_digit)
+    g.branch(0x2C14, False, f"by rw [g{g.k}_11, g{g.k}_10]; exact br_bgeu_f hdig")
+    g.load(0x2C18, "lw")
+    g.block(0x2C1A, 0x2C1E)
+    g.load(0x2C1E, "lw")
+    g.block(0x2C20, 0x2C24)
+    g.block(0x2C24, 0x2C28)
+    g.block(0x2C28, 0x2C2A)
+    g.block(0x2C2A, 0x2C2E)
+    g.block(0x2C2E, 0x2C32)
+    g.block(0x2C32, 0x2C34)
+    ov1 = lean_val(g.regs[13])
+
+    def over1(sub):
+        sub.branch(0x2C34, True, f"by rw [g{sub.k}_13, s{sub.k}.zero]; exact br_bne_t hov1")
+        ck_fail_2ff2(sub, "hov1")
+    g.prop_check(f"{ov1} = 0", "hov1", over1)
+    g.branch(0x2C34, False, f"by rw [g{g.k}_13, s{g.k}.zero]; exact br_bne_f hov1")
+    g.load(0x2C38, "lw")
+    g.block(0x2C3A, 0x2C3E)
+    g.block(0x2C3E, 0x2C40)
+    g.store(0x2C40, "sw")
+    g.block(0x2C42, 0x2C46)
+    g.block(0x2C46, 0x2C4A)
+    g.store(0x2C4A, "sw")
+    g.block(0x2C4C, 0x2C50)
+    g.block(0x2C50, 0x2C52)
+    g.block(0x2C52, 0x2C54)
+    g.block(0x2C54, 0x2C56)
+    ov2 = lean_val(g.regs[11])
+
+    def over2(sub):
+        sub.branch(0x2C56, False, f"by rw [g{sub.k}_11, s{sub.k}.zero]; exact br_beq_f hov2")
+        sub.jump(0x2C58)
+        ck_fail_2ff2(sub, "hov2")
+    g.prop_check(f"{ov2} = 0", "hov2", over2)
+    g.branch(0x2C56, True, f"by rw [g{g.k}_11, s{g.k}.zero]; exact br_beq_t hov2")
+    stmt, proof = finish(g, 0x2C06, [2, 3, 4, 8, 9, 10, 18, 19, 21, 22, 23, 24, 25, 26, 27], set(g.words), set())
+    info = {"name": "sv_ckd", "title": "a digit of the checkpoint's size",
+            "doc": "One pass of the size's digit loop, from 0x2C06 back to it: the next byte is a decimal digit, and "
+            "the 64-bit size at offsets 0x60 and 0x70 times ten plus the digit doesn't overflow.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": CKD_BINDERS, "start": 0x2C06,
+            "import": "C3BootProofs.Proofs.SvCkpt"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -6107,7 +6186,8 @@ def main():
                 "Tst6n": lambda: stage_tst5(0xA1, False), "Tst6s": lambda: stage_tst5(0xA1, True),
                 "Tsv": stage_tsv, **{f"Tl{x}": (lambda x=x: stage_tl(x)) for x in ("miss", "hit", "end")},
                 "Tsig": stage_tsig, "Ck1": stage_ck1,
-                "Ck2a": lambda: stage_ck2(False), "Ck2b": lambda: stage_ck2(True)}[stage]()
+                "Ck2a": lambda: stage_ck2(False), "Ck2b": lambda: stage_ck2(True),
+                "Ckd": stage_ckd}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
