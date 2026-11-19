@@ -903,7 +903,7 @@ class Gen:
         self.emit("  " + tag)
         self.exits.append((tag, self))
 
-    def oct(self, off, oc, dc, fail_tail):
+    def oct(self, off, oc, dc, fail_tail, exit_lemma="sv_fail"):
         """`Der::octet_string` on the reader at `dc`, split on its result. Returns k
         and the names of the content's address and length."""
         k = self.k = self.k + 1
