@@ -361,4 +361,8 @@ theorem br_bne_byte_f {b : BitVec 8} {n : Nat} (hn : n < 256) (h : b = BitVec.of
   apply BitVec.eq_of_toNat_eq
   simp only [BitVec.toNat_setWidth, BitVec.toNat_ofNat]; omega
 
+/-- An input's first byte is outside the stack. -/
+theorem SvIn.r0 {B p : Word} {n : Nat} (h : SvIn B p n) (hn : 0 < n) : SvR B p := by
+  have := (h.sep.sub (c := 0) (l := 1) (by omega)).symm; rwa [add_ofNat_zero] at this
+
 end C3.RV32.Sv

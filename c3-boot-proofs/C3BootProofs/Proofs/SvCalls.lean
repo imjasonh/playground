@@ -1,6 +1,7 @@
 import C3BootProofs.Proofs.SvLib
 import C3BootProofs.Proofs.DerNested
 import C3BootProofs.Proofs.DerElement
+import C3BootProofs.Proofs.Fs256Main
 
 /-!
 # `sigstore::verify`: its calls
@@ -25,6 +26,7 @@ structure SvCode (M : Word → BitVec 8) : Prop where
   elem : CodeIn M (BitVec.ofNat 32 derElementAddress) derElementCode
   tlv : CodeIn M (BitVec.ofNat 32 derTlvAddress) derTlvCode
   K : P3Code M
+  gs : C3.RV32.Gs.GsCode M
   derBitString : CodeIn M (BitVec.ofNat 32 derBitStringAddress) derBitStringCode
   derPositiveInteger : CodeIn M (BitVec.ofNat 32 derPositiveIntegerAddress) derPositiveIntegerCode
   derInteger : CodeIn M (BitVec.ofNat 32 derIntegerAddress) derIntegerCode
@@ -57,7 +59,7 @@ theorem SvCode.hi {M M' : Word → BitVec 8} (C : SvCode M) (h : ∀ x : Word, 0
     SvCode M' :=
   ⟨codeHi C.self (by decide) (by decide) h, codeHi C.seq (by decide) (by decide) h,
     codeHi C.nest (by decide) (by decide) h, codeHi C.elem (by decide) (by decide) h,
-    codeHi C.tlv (by decide) (by decide) h, C.K.hi h,
+    codeHi C.tlv (by decide) (by decide) h, C.K.hi h, C.gs.hi h,
     codeHi C.derBitString (by decide) (by decide) h,
     codeHi C.derPositiveInteger (by decide) (by decide) h,
     codeHi C.derInteger (by decide) (by decide) h,

@@ -696,6 +696,52 @@ class Gen:
         self.emit(f"  have g{k}_10 : reg n{k} a0 = BitVec.ofNat 32 {val} := by rw [a0_{k}, {how}]; rfl")
         self.regs[10] = ("C", val)
 
+
+    def load_in(self, off, inp):
+        """`lbu` of the first byte of bytes outside the stack, whose `SvIn` is `inp`."""
+        text, ln = INSTR[off]
+        tk = tokens(text)
+        rd, base, imm = reg_of(tk[2]), reg_of(tk[3]), int(tk[4], 16)
+        assert imm == 0, text
+        p = lean_val(self.regs[base])
+        k = self.k = self.k + 1
+        self.emit(f"  -- 0x{off:X}: lbu from the bundle")
+        self.emit(f"  obtain ⟨n{k}, d{k}, u{k}⟩ := s{k-1}.lbu E{k-1}.self sv_at_{off:x} (off' := 0x{off + ln:X}) (by decide)")
+        self.st(k, off + ln)
+        self.emit(f"  have m{k} : n{k}.mem = n{k-1}.mem := u{k}.mem")
+        self.emit(f"  have fr{k} : ∀ x, SvR B x → n{k}.mem x = n{k-1}.mem x := fun x _ => by rw [m{k}]")
+        self.common(k, f"(.single d{k})", f"fr{k}", f"V{k-1}.same m{k}")
+        new = {}
+        for r, v in sorted(self.regs.items()):
+            if r == rd:
+                continue
+            self.emit(f"  have g{k}_{r} : reg n{k} {rname(r)} = {lean_val(v)} := by rw [u{k}.regs, upd_ne (by decide) (by decide), g{k-1}_{r}]")
+            new[r] = v
+        vstr = f"(n0.mem ({p})).zeroExtend 32"
+        self.emit(f"  have g{k}_{rd} : reg n{k} {rname(rd)} = {vstr} := by")
+        self.emit(f"    rw [u{k}.regs]; simp +decide only [upd, ↓reduceIte]")
+        self.emit(f"    rw [g{k-1}_{base}, show ({p}) + 0x0 = {p} from BitVec.add_zero _, fR{k-1} _ ({inp}.r0 (by omega))]")
+        new[rd] = ("U", vstr)
+        self.regs = new
+        self.keep_frame(k, ("same",))
+        self.end_step()
+
+
+    def gs(self, off, oc, inp):
+        """`VerifyingKey::from_sec1_bytes` on the 65 bytes `a1` points at; returns k."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_gsF", f"(oc := 0x{oc:X})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"Ok{k}", f"Er{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (P2Data.sv F D0 fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, oc)} g{k-1}_11 (by decide) (by decide) {inp}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [gsOk_congr (sv_pt fR{k-1} {inp})] at Ok{k} Er{k}")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        return k
+
     # --- operations -------------------------------------------------------------
 
     def block(self, start, end):
@@ -963,7 +1009,7 @@ HEADER = """import {imp}
 
 namespace C3.RV32.Sv
 
-open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv
+open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv C3.RV32.Gs C3.RV32.P2
 
 set_option maxRecDepth 20000
 set_option linter.unusedSimpArgs false
@@ -1650,9 +1696,147 @@ def stage_l5():
             "import": "C3BootProofs.Proofs.SvCongr"}
     return g, info
 
+
+def stage_l6():
+    """From 0x424 to the extensions loop at 0x4EA."""
+    g = Gen("L6")
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 8: ("U", "x8"),
+            9: ("U", "x9"), 18: ("U", "out"), 19: ("U", "bp"), 21: ("U", "kp"), 22: ("U", "x22"),
+            23: ("U", "x23"), 24: ("U", "x24"), 25: ("U", "x25"), 26: ("U", "ll"), 27: ("S", 0xA20)}
+    words = {0x180: "rp", 0x184: "rl"}
+    params = start(g, regs, words, {("rp", "rl"): "tb_in"})
+    params += ["(kb_in : SvIn B kp 0x41)", "(D0 : P2Data n0.mem)"]
+    # The key: tag 4, then a point on the curve.
+    g.load_in(0x424, "kb_in")
+    g.block(0x428, 0x42C)
+    hz = f"hz_{g.k}"
+
+    def fail_tag(sub):
+        sub.branch(0x42C, True, f"by rw [g{sub.k}_10, g{sub.k}_11]; exact br_bne_byte_t (by decide) {hz}")
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check("n0.mem kp = BitVec.ofNat 8 4", hz, fail_tag)
+    g.branch(0x42C, False, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_bne_byte_f (by decide) {hz}")
+    g.block(0x430, 0x43A)
+    k = g.gs(0x43A, 0xA20, "kb_in")
+    hz = f"hz_{k}"
+
+    def fail_gs(sub):
+        sub.emit(f"  have y0_{k} := Er{k} {hz}")
+        sub.frame_after(k, [(0xA20, 0x48)], {0xA20: ("1", f"y0_{k}")})
+        sub.load(0x442, "lw")
+        sub.branch(0x446, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check("GsOk n0.mem kp", hz, fail_gs)
+    g.emit(f"  have y0_{k} := Ok{k} {hz}")
+    g.frame_after(k, [(0xA20, 0x48)], {0xA20: ("0", f"y0_{k}")})
+    g.load(0x442, "lw")
+    g.branch(0x446, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    # The extensions: `[3] EXPLICIT`, the last part of the tbsCertificate.
+    g.block(0x44A, 0x458)
+    k, ex, rd = g.opt(0x458, 0xA20, 0x178, 0xA3)
+    t = f"tl{k}"
+    g.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+    g.emit(f"  rcases r{k} with _ | (er{k} | {t})")
+    g.sc.append(("eq", ex, f"some (.ok {t})", [t], f"hr{k}"))
+
+    def fail_none(sub):
+        sub.emit(f"  rw [hr{k}] at R{k}")
+        sub.emit(f"  obtain ⟨y0_{k}, y4_{k}⟩ := R{k}")
+        sub.frame_after(k, [(0xA20, 0x18), (0x180, 8)], {0xA24: ("0", f"y4_{k}")}, {0xA20: ("(0 : BitVec 8)", f"y0_{k}")})
+        sub.load(0x460, "lbu")
+        sub.branch(0x464, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.load(0x468, "lw")
+        sub.block(0x46C, 0x46E)
+        sub.branch(0x46E, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; rfl")
+        sub.fail(sub.fail_proof(("eq", f"hr{k}")))
+
+    def fail_err(sub):
+        sub.emit(f"  rw [hr{k}] at R{k}")
+        sub.emit(f"  obtain ⟨y0_{k}, -⟩ := R{k}")
+        sub.frame_after(k, [(0xA20, 0x18), (0x180, 8)], {}, {0xA20: ("(1 : BitVec 8)", f"y0_{k}")})
+        sub.load(0x460, "lbu")
+        sub.branch(0x464, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.load_any(0x17E)
+        sub.jump(0x182)
+        sub.fail(sub.fail_proof(("eq", f"hr{k}")))
+    g.fork(fail_none)
+    g.fork(fail_err)
+    g.emit(f"  rw [hr{k}] at R{k}")
+    g.emit(f"  obtain ⟨y0_{k}, y4_{k}, y8_{k}, y12_{k}, y16_{k}, y20_{k}, d8_{k}, d12_{k}⟩ := R{k}")
+    rp, rl, inp = rd
+    h = f"BitVec.ofNat 32 {t}.header"
+    hl = f"BitVec.ofNat 32 ({t}.header + {t}.len)"
+    g.frame_after(k, [(0xA20, 0x18), (0x180, 8)],
+                  {0xA24: (f"({rp}) + {h}", f"y4_{k}"), 0xA28: (f"BitVec.ofNat 32 {t}.len", f"y8_{k}"),
+                   0xA2C: (f"{rp}", f"y12_{k}"), 0xA30: (hl, f"y16_{k}"),
+                   0x180: (f"({rp}) + {hl}", f"d8_{k}"), 0x184: (f"({rl}) - {hl}", f"d12_{k}")},
+                  {0xA20: ("(0 : BitVec 8)", f"y0_{k}"), 0xA34: (f"BitVec.ofNat 8 {t}.tag", f"y20_{k}")})
+    g.slices[(f"({rp}) + {h}", f"BitVec.ofNat 32 {t}.len")] = f"({inp}.contentW (opt_ok_elem hr{k}))"
+    g.load(0x460, "lbu")
+    g.branch(0x464, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.load(0x468, "lw")
+    g.block(0x46C, 0x46E)
+    g.branch(0x46E, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({inp}.ok_ne (opt_ok_elem hr{k}))")
+    g.load(0x472, "lw")
+    rest = lean_val(g.words[0x184])
+    hz = f"hz_{g.k}"
+
+    def fail_trest(sub):
+        sub.branch(0x476, True, f"by rw [g{sub.k}_11, s{sub.k}.zero]; exact br_bne_t {hz}")
+        sub.block(0x1C0, 0x1C2)
+        sub.jump(0x1C2)
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check(f"{rest} = 0", hz, fail_trest)
+    g.branch(0x476, False, f"by rw [g{g.k}_11, s{g.k}.zero]; exact br_bne_f {hz}")
+    g.load(0x47A, "lw")
+    g.block(0x47E, 0x486)
+    for o in (0x486, 0x488, 0x48A):
+        g.store(o, "sw")
+    g.block(0x48C, 0x496)
+    g.store(0x496, "sw")
+    g.block(0x498, 0x4AC)
+    k, ex, rd = g.elem(0x4AC, 0xA20, 0x1320, 0x30)
+    g.elem_split(k, ex, 0xA20, 0x1320, rd, lw_branch_fail(0x4B4, 0x4B8, 10))
+    g.load(0x4B4, "lw")
+    g.branch(0x4B8, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({rd[2]}.ok_ne hr{k})")
+    g.load(0x4BC, "lw")
+    rest = lean_val(g.words[0x132C])
+    hz = f"hz_{g.k}"
+
+    def fail_xrest(sub):
+        sub.branch(0x4BE, True, f"by rw [g{sub.k}_11, s{sub.k}.zero]; exact br_bne_t {hz}")
+        sub.block(0x1C0, 0x1C2)
+        sub.jump(0x1C2)
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check(f"{rest} = 0", hz, fail_xrest)
+    g.branch(0x4BE, False, f"by rw [g{g.k}_11, s{g.k}.zero]; exact br_bne_f {hz}")
+    g.load(0x4C2, "lw")
+    for o in (0x4C6, 0x4C8, 0x4CA, 0x4CC, 0x4CE):
+        g.store(o, "sw")
+    # Clear the five identity-policy slots.
+    g.block(0x4D0, 0x4DA)
+    g.branch(0x4DA, False, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
+    for i in range(5):
+        g.store(0x4DC, "sw")
+        g.block(0x4E0, 0x4E4)
+        g.branch(0x4E4, i < 4, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
+    g.store(0x4E6, "sw")
+    g.store(0x4E8, "sw")
+    stmt, proof = finish(g, 0x4EA, [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                         {0x30, 0x34, 0x40, 0x88, 0x8C, 0x90, 0x94, 0xA20, 0xA24, 0xA28, 0xA2C, 0xA30, 0xA34, 0xA38,
+                          0xA3C, 0xA40, 0xA44}, set())
+    binders = "{B out bp rootp dg lp ll rp rl kp x8 x9 x22 x23 x24 x25 : Word} {v : Nat → Word} {n0 : Machine}"
+    info = {"name": "sv_l6", "title": "the leaf's key and the extensions' start",
+            "doc": "From 0x424 to the extensions loop at 0x4EA: the key is tag 4 and a point on P-256, the "
+            "tbsCertificate ends with `[3] EXPLICIT` extensions that hold one `SEQUENCE`, and the five "
+            "identity-policy slots and the two flags start at zero.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": binders, "start": 0x424,
+            "import": "C3BootProofs.Proofs.SvP256"}
+    return g, info
+
 def main():
     stage = sys.argv[1]
-    g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5}[stage]()
+    g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

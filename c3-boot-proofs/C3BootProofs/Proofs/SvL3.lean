@@ -8,7 +8,7 @@ From the serial number at 0x1C8 to 0x266: the serial number, a positive integer 
 
 namespace C3.RV32.Sv
 
-open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv
+open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv C3.RV32.Gs C3.RV32.P2
 
 set_option maxRecDepth 20000
 set_option linter.unusedSimpArgs false

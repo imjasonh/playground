@@ -8,7 +8,7 @@ From the call to `Der::sequence` over the leaf certificate at 0x72 to the call t
 
 namespace C3.RV32.Sv
 
-open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv
+open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv C3.RV32.Gs C3.RV32.P2
 
 set_option maxRecDepth 20000
 set_option linter.unusedSimpArgs false
