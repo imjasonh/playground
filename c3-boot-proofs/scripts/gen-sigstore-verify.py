@@ -229,6 +229,8 @@ class Gen:
         self.slices = {}  # (address, length word) of bytes outside the stack -> a proof of `SvIn`
         self.slices_nat = {}  # (address, length) -> a proof of `SvIn`
         self.pinned = set()  # names `end_step` keeps
+        self.extra = []  # (conjunct, term) pairs the conclusion adds
+        self.digest = None  # (step, offset, value) of a SHA-256 digest in the frame
         self.ranges = {}  # frame offset -> (length, the byte at offset + j, in terms of `j`)
         self.exits = []  # forks that reach the stage's end: (placeholder, generator)
 
@@ -1153,6 +1155,74 @@ class Gen:
         self.branch(off + 0x10, True, f"by rw [g{self.k}_10, s{self.k}.zero]; decide")
         return k
 
+    def digest_stmt(self, k, oc, ex):
+        return f"memBytes n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 0x{oc:X}) 32 = {ex}"
+
+    def sha256(self, off, oc, p, nl, inp, ha2, hn):
+        """`c3_crypto::sha::sha256` of the `nl` bytes at `p` into offset `oc`."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_sha256F", f"(oc := 0x{oc:X}) (nl := {nl})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"D{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (S2.sv F KS fR{k-1}) KS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, oc)} g{k-1}_11 {ha2} (by decide) {inp} {hn}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [sv_mbRo F fR{k-1} {inp}] at D{k}")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        self.pinned.add(f"D{k}")
+        self.frame_after(k, [(oc, 32)], {})
+        self.digest = (k, oc, f"sha256 (memBytes M0 ({p}) ({nl}))")
+        return k
+
+    def carry_digest(self):
+        """The digest survives a step that left memory alone."""
+        kd, oc, ex = self.digest
+        k = self.k
+        self.emit(f"  have D{k} : {self.digest_stmt(k, oc, ex)} := by rw [m{k}]; exact D{kd}")
+        self.pinned.add(f"D{k}")
+        self.digest = (k, oc, ex)
+
+    def a32ne(self, off, oc, q, qin):
+        """`<[u8; 32]>::ne` of the digest at offset `oc` and the 32 bytes at `q`.
+        The result in `a0` is left to the caller."""
+        kd, ocd, ex = self.digest
+        assert ocd == oc and kd == self.k
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_a32neF", f"(oc := 0x{oc:X})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"a0_{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, oc)} g{k-1}_11 (by decide) {qin}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [D{kd}, sv_mbRo F fR{k-1} {qin}] at a0_{k}")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        self.frame_after(k, [], {})
+        return k
+
+    def parts2(self, off, oc, pc, p0, l0, r0, p1, l1, r1, hl0, hl1, hn0, hn1):
+        """`c3_crypto::sha::sha256_parts` of two slices whose descriptors are at
+        offset `pc`, into offset `oc`."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_sha256P2F", f"(oc := 0x{oc:X}) (pc := 0x{pc:X}) (l0 := {l0}) (l1 := {l1})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"D{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (S2.sv F KS fR{k-1}) KS s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, oc)} {self.reg_is(k - 1, 11, pc)} g{k-1}_12 (by decide) (by decide) (by decide)")
+        self.emit(f"    w{k-1}_{pc:x} {hl0} w{k-1}_{pc + 8:x} {hl1} {r0} {r1} {hn0} {hn1}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [sv_mbRo F fR{k-1} {r0}, sv_mbRo F fR{k-1} {r1}] at D{k}")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        self.pinned.add(f"D{k}")
+        self.frame_after(k, [(oc, 32)], {})
+        self.digest = (k, oc, f"sha256 (memBytes M0 ({p0}) ({l0}) ++ memBytes M0 ({p1}) ({l1}))")
+        return k
+
     def gt(self, off, oc, p, nl, inp, ha2):
         """`time::generalized_time` on the `nl` bytes at `p`, split on its answer:
         `None` reads the error flag at `oc + 0x60 - 0x60` with `lbu`, `beqz` not
@@ -1585,6 +1655,9 @@ class Gen:
         for s, (n, tmpl) in sorted(self.ranges.items()):
             conj.append(f"(∀ j, j < {n} → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{s:X} + j)) = {tmpl})")
             terms.append(f"q{k}_{s:x}")
+        for c, t in self.extra:
+            conj.append(c)
+            terms.append(t)
         return conj, terms
 
     def block_defs(self):
@@ -5680,6 +5753,108 @@ def stage_tl(kind):
     return g, info
 
 
+TSIG_BINDERS = TL_BINDERS.replace("c q sid slen : Word}", "q sid slen : Word}")
+
+
+def tsig_start(g):
+    """After the TSA loop's hit at 0x2A94: the word at 0x74 points at the
+    entry, and `s4` and `s9` hold its signer ID."""
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
+            22: ("U", "dp"), 23: ("S", 0xA40)}
+    words = {e: f"w{e:x}" for e in TST_WORDS}
+    words.update({0x74: "q"})
+    words.update(TL_STRUCT)
+    params = start(g, regs, words, {})
+    g.bytes[0xA40] = "BitVec.ofNat 8 (sr.getD 0 0)"
+    g.ranges[0xA41] = (47, "BitVec.ofNat 8 (sr.getD (1 + j) 0)")
+    g.ranges[0xA70] = (48, "BitVec.ofNat 8 (ss.getD j 0)")
+    params += ["(b0_a40 : n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (sr.getD 0 0))",
+               "(q0_a41 : ∀ j, j < 47 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0xA41 + j)) = BitVec.ofNat 8 (sr.getD (1 + j) 0))",
+               "(q0_a70 : ∀ j, j < 48 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0xA70 + j)) = BitVec.ofNat 8 (ss.getD j 0))",
+               "(S2 : SvSha2Code M0)", "(KS : SvK2Sep B)",
+               "(tst_in : SvIn B w70 x21.toNat)", "(dg_in : SvIn B dg 32)", "(sig_in : SvIn B w68 w64.toNat)",
+               "(dp_in : SvIn B dp 32)", "(sa_in : SvIn B w44 w60.toNat)"]
+    return params
+
+
+def stage_tsig():
+    """From 0x2A94 to the TSA's signature check at 0x2B16: the token's
+    digests, and the hash of its signed attributes."""
+    g = Gen("Tsig")
+    params = tsig_start(g)
+    g.load(0x2A94, "lw")
+    g.block(0x2A98, 0x2A9C)
+    g.load(0x2A9C, "lw")
+    g.sha256(0x2A9E, 0x420, "w70", "(x21).toNat", "(.inl tst_in)", f"(by rw [g{g.k}_12, ofNat_toNat_self])",
+             "(by have := tst_in.lo; omega)")
+    g.block(0x2AA6, 0x2AAC)
+    g.carry_digest()
+    ka = g.a32ne(0x2AAC, 0x420, "dg", "(.inl dg_in)")
+    eq1 = "sha256 (memBytes M0 (w70) (x21).toNat) = memBytes M0 dg 32"
+
+    def bad_tst(sub):
+        sub.set_a0(ka, 1, "ite_eq_right htd")
+        sub.block(0x2AB4, 0x2AB6)
+        sub.branch(0x2AB6, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.fail(sub.fail_proof(("prop", "htd")), "sv_fail_2c60")
+    g.prop_check(eq1, "htd", bad_tst)
+    g.set_a0(ka, 0, "ite_eq_left htd")
+    g.block(0x2AB4, 0x2AB6)
+    g.branch(0x2AB6, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.block(0x2ABA, 0x2ABE)
+    g.load(0x2ABE, "lw")
+    g.load(0x2AC0, "lw")
+    g.sha256(0x2AC2, 0x420, "w68", "(w64).toNat", "(.inl sig_in)", f"(by rw [g{g.k}_12, ofNat_toNat_self])",
+             "(by have := sig_in.lo; omega)")
+    g.block(0x2ACA, 0x2AD0)
+    g.carry_digest()
+    kb = g.a32ne(0x2AD0, 0x420, "dp", "(.inl dp_in)")
+    eq2 = "sha256 (memBytes M0 (w68) (w64).toNat) = memBytes M0 dp 32"
+
+    def bad_imprint(sub):
+        sub.set_a0(kb, 1, "ite_eq_right him")
+        sub.branch(0x2AD8, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.fail(sub.fail_proof(("prop", "him")), "sv_fail_2c60")
+    g.prop_check(eq2, "him", bad_imprint)
+    g.set_a0(kb, 0, "ite_eq_left him")
+    g.branch(0x2AD8, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.load(0x2ADC, "lw")
+
+    def empty_attrs(sub):
+        sub.branch(0x2ADE, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hsa)")
+        sub.block(0x2C5A, 0x2C5C)
+        sub.jump(0x2C5C)
+        sub.fail(sub.fail_proof(("prop", "hsa")), "sv_fail_2c60")
+    g.prop_check("w60 ≠ 0", "hsa", empty_attrs)
+    g.branch(0x2ADE, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hsa")
+    g.pinned.add("hsa")
+    g.load(0x2AE2, "lw")
+    g.block(0x2AE4, 0x2AE6)
+    g.load(0x2AE6, "lw")
+    g.block(0x2AE8, 0x2AEA)
+    g.block(0x2AEA, 0x2AF2)
+    g.block(0x2AF2, 0x2AF8)
+    for o in (0x2AF8, 0x2AFA, 0x2AFC, 0x2AFE):
+        g.store(o, "sw")
+    g.block(0x2B00, 0x2B0E)
+    p1 = lean_val(g.words[0x1028])
+    l1w = lean_val(g.words[0x102C])
+    g.parts2(0x2B0E, 0x420, 0x1020, "BitVec.ofNat 32 0x3FCC486D", "1", "(.inr ⟨by decide, by decide⟩)",
+             p1, f"({l1w}).toNat", "(sa_drop1 sa_in hsa)",
+             f"w{g.k}_1024", f"(by rw [w{g.k}_102c, ofNat_toNat_self])", "(by decide)", "(sa_drop1_lt sa_in hsa)")
+    kd, oc, ex = g.digest
+    g.extra.append((f"memBytes n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x{oc:X}) 32 = {ex}", f"D{kd}"))
+    stmt, proof = finish(g, 0x2B16, TL_KEEP_REGS, set(g.words), set(g.bytes))
+    info = {"name": "sv_tsig", "title": "the timestamp's digests",
+            "doc": "From 0x2A94 to 0x2B16: SHA-256 of the TSTInfo is the signed `messageDigest`, SHA-256 of the "
+            "image signature is the TSTInfo's message imprint, the signed attributes aren't empty, and the "
+            "frame at offset 0x420 holds SHA-256 of the signed attributes with their first byte replaced by 0x31.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": TSIG_BINDERS, "start": 0x2A94,
+            "import": "C3BootProofs.Proofs.SvSha2"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -5694,7 +5869,8 @@ def main():
                 **{f"Tst4{x}": (lambda x=x: stage_tst4(x)) for x in TST4_DOC},
                 "Tst5n": lambda: stage_tst5(0xA0, False), "Tst5s": lambda: stage_tst5(0xA0, True),
                 "Tst6n": lambda: stage_tst5(0xA1, False), "Tst6s": lambda: stage_tst5(0xA1, True),
-                "Tsv": stage_tsv, **{f"Tl{x}": (lambda x=x: stage_tl(x)) for x in ("miss", "hit", "end")}}[stage]()
+                "Tsv": stage_tsv, **{f"Tl{x}": (lambda x=x: stage_tl(x)) for x in ("miss", "hit", "end")},
+                "Tsig": stage_tsig}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
