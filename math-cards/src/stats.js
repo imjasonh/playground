@@ -1,8 +1,16 @@
 /**
- * @fileoverview Answer counts and streaks, kept in localStorage.
+ * @fileoverview Answer counts and streaks for each mode, kept in
+ * localStorage.
  */
 
-export const STORAGE_KEY = 'math-cards:v1';
+const KEY_PREFIX = 'math-cards:v1';
+
+/**
+ * Addition was the only mode before modes had their own stats, so its
+ * stats fall back to the key from then.
+ */
+export const LEGACY_KEY = KEY_PREFIX;
+const LEGACY_MODE = 'addition';
 
 /** A celebration plays each time the streak reaches a multiple of this. */
 export const CELEBRATE_EVERY = 10;
@@ -21,16 +29,38 @@ export function emptyStats() {
 }
 
 /**
- * Reads stats from storage. A missing, unreadable, or malformed value
- * reads as zero, field by field.
+ * @param {string} mode
+ * @return {string} The storage key for the mode's stats.
+ */
+export function statsKey(mode) {
+  return `${KEY_PREFIX}:${mode}`;
+}
+
+/**
  * @param {?Storage} storage
+ * @param {string} mode
+ * @return {?string}
+ */
+function readSaved(storage, mode) {
+  const saved = storage?.getItem(statsKey(mode)) ?? null;
+  if (saved == null && mode === LEGACY_MODE) {
+    return storage?.getItem(LEGACY_KEY) ?? null;
+  }
+  return saved;
+}
+
+/**
+ * Reads a mode's stats from storage. A missing, unreadable, or malformed
+ * value reads as zero, field by field.
+ * @param {?Storage} storage
+ * @param {string} mode
  * @return {!Stats}
  */
-export function loadStats(storage) {
+export function loadStats(storage, mode) {
   const stats = emptyStats();
   let saved;
   try {
-    saved = JSON.parse(storage?.getItem(STORAGE_KEY) ?? 'null');
+    saved = JSON.parse(readSaved(storage, mode) ?? 'null');
   } catch {
     return stats;
   }
@@ -47,18 +77,20 @@ export function loadStats(storage) {
 }
 
 /**
- * Writes stats to storage. Returns false when the browser refuses, such as
- * when storage is full or blocked, so the page keeps counting in memory.
+ * Writes a mode's stats to storage. Returns false when the browser
+ * refuses, such as when storage is full or blocked, so the page keeps
+ * counting in memory.
  * @param {?Storage} storage
+ * @param {string} mode
  * @param {!Stats} stats
  * @return {boolean}
  */
-export function saveStats(storage, stats) {
+export function saveStats(storage, mode, stats) {
   if (!storage) {
     return false;
   }
   try {
-    storage.setItem(STORAGE_KEY, JSON.stringify(stats));
+    storage.setItem(statsKey(mode), JSON.stringify(stats));
     return true;
   } catch {
     return false;

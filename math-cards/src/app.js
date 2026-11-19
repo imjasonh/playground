@@ -72,8 +72,17 @@ function saveMode() {
   }
 }
 
-let stats = loadStats(storage);
+function statsFor(modeKey) {
+  if (!statsByMode.has(modeKey)) {
+    statsByMode.set(modeKey, loadStats(storage, modeKey));
+  }
+  return statsByMode.get(modeKey);
+}
+
 let mode = loadMode();
+// Each mode's stats, so a blocked storage still keeps them apart.
+const statsByMode = new Map();
+let stats = statsFor(mode);
 let card = null;
 let busy = false;
 let drag = null;
@@ -246,7 +255,8 @@ async function choose(side) {
   const correct = picked === card.answer;
   const result = recordAnswer(stats, correct);
   stats = result.stats;
-  saveStats(storage, stats);
+  statsByMode.set(mode, stats);
+  saveStats(storage, mode, stats);
   renderStats(true);
   revealAnswer(correct, side);
 
@@ -443,6 +453,8 @@ for (const button of modeButtons) {
     mode = button.dataset.mode;
     saveMode();
     renderModes();
+    stats = statsFor(mode);
+    renderStats(false);
     // A card that is flying off or showing a missed answer deals the next
     // card in the new mode when it finishes.
     if (!busy) {

@@ -29,9 +29,10 @@ multiplication, it is one group too many or too few, off by one, or the two
 numbers added. For division, it is off by one, the divisor, or the two
 numbers subtracted.
 
-The page keeps the number of cards answered, the number right, the current
-streak, and the best streak in `localStorage` under `math-cards:v1`. All
-modes share them.
+Each mode keeps its own number of cards answered, number right, current
+streak, and best streak in `localStorage` under `math-cards:v1:<mode>`.
+Addition also reads `math-cards:v1`, where the page kept its stats before it
+had modes.
 
 ## Adding problem kinds
 
