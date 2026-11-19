@@ -168,4 +168,83 @@ theorem sv_s5bF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {im
   exact f2 _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega))
     (sepS (B + 0x21A0) (by omega) (by omega) (by omega))
 
+theorem sv_sp50 (B : Word) : B + 0x21A0 + 0xFFFFFFB0 = B + BitVec.ofNat 32 0x2150 := by
+  rw [BitVec.add_assoc]; rfl
+
+set_option maxHeartbeats 8000000 in
+/-- **A call to `zeroArray48` or `zeroArray64`** (`N` is 48 or 64, `fr` the
+callee's frame size) at offset `c` of the frame. -/
+theorem sv_zaF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o : Word} {c : Nat}
+    (F : Fr B 0x3830) (C : SvCode M) (SC : SvShaCode M) (s : St M SV n off (reg n))
+    (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
+    (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
+    (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 c) {N : Nat}
+    (hN : (SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 zeroArray48Address ∧ N = 48) ∨
+      (SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 zeroArray64Address ∧ N = 64))
+    (hc : c + N ≤ 0x1690) :
+    ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
+      (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧
+      SvKeepL B M n'.mem [(c, N)] ∧
+      (∀ j, j < N → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (c + j)) = 0) ∧
+      (∀ x, SvR B x → n'.mem x = M x) := by
+  have hFl := F.lo; have hFh := F.hi; have hFa := F.al
+  have hS : (B + (0x21A0 : Word)).toNat = B.toNat + 0x21A0 := F.at 0x21A0 (by decide)
+  have hSa : (B + (0x21A0 : Word)).toNat % 16 = 0 := by rw [hS]; omega
+  rcases hN with ⟨hb, rfl⟩ | ⟨hb, rfl⟩
+  · obtain ⟨n1, c1, pc1, mem1, regs1⟩ := s.callRa C.self h1 h2 hb (by decide)
+    have r1 := PEnv.reg1 regs1 s.zero
+    obtain ⟨n2, c2, pc2, sp2, k2, f2⟩ := zeroArray48_correct n1 (d := B + 0x21A0 + BitVec.ofNat 32 c)
+      (by rw [mem1]; exact SC.z48) (by rw [mem1]; exact C.K.stub) (by rw [mem1]; exact C.K.body) pc1
+      (by rw [r1 a0 (by decide), ha0]) (by rw [regs1]; simp +decide [upd]) (even_clear _ hev)
+      (by rw [r1 sp (by decide), rsp]) hSa (by rw [hS]; omega) (by rw [hS]; omega)
+      (by rw [sv_at F _ (by omega)]; omega)
+      (by rw [sv_sp50, ← sv_base']; exact sepS B (by omega) (by omega) (by omega))
+    rw [mem1, sv_sp50] at f2
+    have hfS : ∀ x, SvR B x → Sep (B + BitVec.ofNat 32 0x2150) 0x50 x 1 := fun x hx => by
+      have := svR_lo (k := 0x50) hx (by decide) (by decide)
+      rwa [sv_lo B 0x50 (by decide)] at this
+    refine ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, sp2,
+      fun q hq => by rw [k2 q (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide) (by revert hq; revert q; decide), r1 q (by revert hq; revert q; decide)],
+      fun e he hL => ?_, fun j hj => ?_, fun x hx => ?_⟩
+    · have h1 := hL _ (List.mem_singleton_self _)
+      simp only at h1
+      rw [f2 _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega)),
+        fillBytes_sep (sepS (B + 0x21A0) (c := c) (n := 48) (d := e) (k := 1) (by omega) (by omega) (by omega))
+          (Nat.le_refl _)]
+    · rw [← add_ofNat_assoc, f2 _ (by rw [add_ofNat_assoc, ← sv_base']; exact sepS B (by omega) (by omega) (by omega)),
+        fill_at hj (by decide)]
+    · rw [f2 x (hfS x hx), fillBytes_sep (svR_hi (c := c) (l := 48) hx hc) (Nat.le_refl _)]
+  · obtain ⟨n1, c1, pc1, mem1, regs1⟩ := s.callRa C.self h1 h2 hb (by decide)
+    have r1 := PEnv.reg1 regs1 s.zero
+    obtain ⟨n2, c2, pc2, sp2, k2, f2⟩ := zeroArray64_correct n1 (d := B + 0x21A0 + BitVec.ofNat 32 c)
+      (by rw [mem1]; exact SC.z64) (by rw [mem1]; exact C.K.stub) (by rw [mem1]; exact C.K.body) pc1
+      (by rw [r1 a0 (by decide), ha0]) (by rw [regs1]; simp +decide [upd]) (even_clear _ hev)
+      (by rw [r1 sp (by decide), rsp]) hSa (by rw [hS]; omega) (by rw [hS]; omega)
+      (by rw [sv_at F _ (by omega)]; omega)
+      (by rw [sv_sp60, ← sv_base']; exact sepS B (by omega) (by omega) (by omega))
+    rw [mem1, sv_sp60] at f2
+    have hfS : ∀ x, SvR B x → Sep (B + BitVec.ofNat 32 0x2140) 0x60 x 1 := fun x hx => by
+      have := svR_lo (k := 0x60) hx (by decide) (by decide)
+      rwa [sv_lo B 0x60 (by decide)] at this
+    refine ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, sp2,
+      fun q hq => by rw [k2 q (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
+        (by revert hq; revert q; decide) (by revert hq; revert q; decide), r1 q (by revert hq; revert q; decide)],
+      fun e he hL => ?_, fun j hj => ?_, fun x hx => ?_⟩
+    · have h1 := hL _ (List.mem_singleton_self _)
+      simp only at h1
+      rw [f2 _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega)),
+        fillBytes_sep (sepS (B + 0x21A0) (c := c) (n := 64) (d := e) (k := 1) (by omega) (by omega) (by omega))
+          (Nat.le_refl _)]
+    · rw [← add_ofNat_assoc, f2 _ (by rw [add_ofNat_assoc, ← sv_base']; exact sepS B (by omega) (by omega) (by omega)),
+        fill_at hj (by decide)]
+    · rw [f2 x (hfS x hx), fillBytes_sep (svR_hi (c := c) (l := 64) hx hc) (Nat.le_refl _)]
+
 end C3.RV32.Sv
