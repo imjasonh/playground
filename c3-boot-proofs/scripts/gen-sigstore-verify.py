@@ -675,14 +675,14 @@ class Gen:
         self.regs[2] = ("S", 0)
         return k, f"derAlgOf n0.mem ({p}) ({nl})", p, inp
 
-    def sne(self, off, p, pl, q, ql, hp, hq):
+    def sne(self, off, p, pl, q, ql, hp, hq, ha1=None, ha3=None):
         """`<[u8]>::ne` of `pl` bytes at `p` and `ql` at `q`; returns k. The result in
         `a0` is left to the caller."""
         k = self.k = self.k + 1
         self.call_head(k, off, "sv_sneF", f"(pl := {pl}) (ql := {ql})",
                        [f"c{k}", f"s{k}", f"rk{k}", f"a0_{k}", f"K{k}", f"fr{k}"])
         self.emit(f"    F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
-        self.emit(f"    g{k-1}_10 g{k-1}_11 g{k-1}_12 g{k-1}_13 {hp} {hq}")
+        self.emit(f"    g{k-1}_10 {ha1 or f'g{k-1}_11'} g{k-1}_12 {ha3 or f'g{k-1}_13'} {hp} {hq}")
         self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
         self.emit(f"  rw [sv_mbRo F fR{k-1} {hp}, sv_mbRo F fR{k-1} {hq}] at a0_{k}")
         self.keep_regs(k, [r for r in range(32) if r not in (1, 6, 10, 11, 12, 13, 14)],
@@ -1040,6 +1040,36 @@ class Gen:
         self.words[e] = ("U", x)
         for i in range(4):
             self.bytes.pop(e + i, None)
+
+
+    def load_mem(self, off, val, eq, inp, al):
+        """`lw` of a word outside the stack: `eq` says the word at the address is
+        `val`, `inp` that its 4 bytes are outside the stack, and `al` that the
+        address is aligned."""
+        text, ln = INSTR[off]
+        tk = tokens(text)
+        rd, base, imm = reg_of(tk[2]), reg_of(tk[3]), int(tk[4], 16)
+        k = self.k = self.k + 1
+        self.emit(f"  -- 0x{off:X}: lw outside the stack")
+        self.emit(f"  obtain ⟨n{k}, d{k}, u{k}⟩ := s{k-1}.lw E{k-1}.self sv_at_{off:x} (off' := 0x{off + ln:X}) (by decide)")
+        self.emit(f"    (by rw [g{k-1}_{base}]; exact {al})")
+        self.st(k, off + ln)
+        self.emit(f"  have m{k} : n{k}.mem = n{k-1}.mem := u{k}.mem")
+        self.emit(f"  have fr{k} : ∀ x, SvR B x → n{k}.mem x = n{k-1}.mem x := fun x _ => by rw [m{k}]")
+        self.common(k, f"(.single d{k})", f"fr{k}", f"V{k-1}.same m{k}")
+        new = {}
+        for r, v in sorted(self.regs.items()):
+            if r == rd:
+                continue
+            self.emit(f"  have g{k}_{r} : reg n{k} {rname(r)} = {lean_val(v)} := by rw [u{k}.regs, upd_ne (by decide) (by decide), g{k-1}_{r}]")
+            new[r] = v
+        self.emit(f"  have g{k}_{rd} : reg n{k} {rname(rd)} = {val} := by")
+        self.emit(f"    rw [u{k}.regs]; simp +decide only [upd, ↓reduceIte]")
+        self.emit(f"    rw [g{k-1}_{base}, sv_ld fR{k-1} {inp}, {eq}]")
+        new[rd] = ("U", val)
+        self.regs = new
+        self.keep_frame(k, ("same",))
+        self.end_step()
 
     # --- operations -------------------------------------------------------------
 
@@ -3421,12 +3451,125 @@ def stage_l8a():
             "import": "C3BootProofs.Proofs.SvFail"}
     return g, info
 
+
+def i_start(g):
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 27: ("S", 0xA20), 9: ("U", "x9"), 21: ("U", "x21"), 25: ("U", "il"), 26: ("U", "x26"),
+            20: ("U", "c")}
+    words = {e: f"w{e:x}" for e in range(0x24, 0x134, 4)}
+    words.update({0x5C: "ip", 0x7C: "q"})
+    params = start(g, regs, words, {})
+    return params
+
+
+I_BINDERS = ("{B out bp x9 x21 x26 il c q ip subj slen : Word} "
+             + "{" + " ".join(f"w{e:x}" for e in range(0x24, 0x134, 4) if e not in (0x5C, 0x7C))
+             + " : Word} {v : Nat → Word} {n0 : Machine}")
+I_KEEP = set(range(0x24, 0x134, 4))
+
+
+def i_entry(g):
+    """From 0xAE2 to the comparison at 0xB06, for an entry with a subject."""
+    g.branch(0xAE2, True, f"by rw [g{g.k}_20, s{g.k}.zero]; exact br_bne_t hc")
+    g.load(0xAEA, "lw")
+    g.load_mem(0xAEC, "subj", "hsubj", "es_in", "a_subj")
+    hz = f"hz_{g.k}"
+
+    def null(sub):
+        sub.branch(0xAF0, False, f"by rw [g{sub.k}_22, s{sub.k}.zero]; exact br_bne_f (Decidable.of_not_not {hz})")
+        sub.jump(0xAF4)
+        sub.fail(sub.fail_proof(("prop", hz)), "sv_fail_2a82")
+    g.prop_check("subj ≠ 0", hz, null)
+    g.branch(0xAF0, True, f"by rw [g{g.k}_22, s{g.k}.zero]; exact br_bne_t {hz}")
+    g.load(0xAF8, "lw")
+    g.load_mem(0xAFA, "slen", "hslen", "el_in", "a_slen")
+    g.block(0xAFE, 0xB02)
+    g.load(0xB02, "lw")
+    g.block(0xB04, 0xB06)
+    return g.seqeq(0xB06, "subj", "slen.toNat", "ip", "il.toNat", "(.inl s_in)", "(.inl i_in)",
+                   f"(by rw [g{g.k}_13, ofNat_toNat_self])", f"(by rw [g{g.k}_11, ofNat_toNat_self])")
+
+
+I_PARAMS = ["(hc : c ≠ 0)", "(hsubj : memLoad32 n0.mem (q + 0xFFFFFFFC) = subj)",
+            "(hslen : memLoad32 n0.mem (q + 0x0) = slen)", "(es_in : SvIn B (q + 0xFFFFFFFC) 4)",
+            "(el_in : SvIn B (q + 0x0) 4)",
+            "(a_subj : (q + 0xFFFFFFFC).toNat % 4 = 0)", "(a_slen : (q + 0x0).toNat % 4 = 0)",
+            "(s_in : SvIn B subj slen.toNat)", "(i_in : SvIn B ip il.toNat)"]
+I_EQ = "memBytes n0.mem subj slen.toNat = memBytes n0.mem ip il.toNat"
+
+
+def stage_imiss():
+    """One pass of the intermediates loop, from 0xAE2 back to it, for an entry
+    whose subject isn't the leaf's issuer."""
+    g = Gen("Imiss")
+    params = i_start(g) + I_PARAMS + [f"(hm : ¬ {I_EQ})"]
+    ke = i_entry(g)
+    g.set_a0(ke, 0, "ite_eq_right hm")
+    g.block(0xB0E, 0xB10)
+    g.block(0xB10, 0xB14)
+    g.store(0xB14, "sw")
+    g.branch(0xB16, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    stmt, proof = finish(g, 0xAE2, [2, 3, 4, 9, 18, 19, 20, 21, 25, 26, 27], I_KEEP, set())
+    info = {"name": "sv_imiss", "title": "an intermediate that didn't issue the leaf",
+            "doc": "One pass of the intermediates loop, from 0xAE2 back to it, for a listed intermediate whose "
+            "subject isn't the leaf's issuer.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": I_BINDERS, "start": 0xAE2,
+            "import": "C3BootProofs.Proofs.SvFail"}
+    return g, info
+
+
+def stage_ihit():
+    """The intermediates loop's end at the intermediate that issued the leaf."""
+    g = Gen("Ihit")
+    params = i_start(g) + I_PARAMS + [f"(hm : {I_EQ})"]
+    ke = i_entry(g)
+    g.set_a0(ke, 1, "ite_eq_left hm")
+    g.block(0xB0E, 0xB10)
+    g.block(0xB10, 0xB14)
+    g.store(0xB14, "sw")
+    g.branch(0xB16, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.load(0xB18, "lw")
+    g.block(0xB1A, 0xB20)
+    kn = g.sne(0xB20, "ip", "il.toNat", "subj", "slen.toNat", "(.inl i_in)", "(.inl s_in)",
+               f"(by rw [g{g.k}_11, ofNat_toNat_self])", f"(by rw [g{g.k}_13, ofNat_toNat_self])")
+    g.set_a0(kn, 0, "ite_eq_left hm.symm")
+    g.branch(0xB28, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    stmt, proof = finish(g, 0xB56, [2, 3, 4, 8, 9, 18, 19, 21, 22, 23, 25, 26, 27], I_KEEP, set())
+    info = {"name": "sv_ihit", "title": "the intermediate that issued the leaf",
+            "doc": "The intermediates loop's end, from 0xAE2 to 0xB56, at a listed intermediate whose subject is the "
+            "leaf's issuer.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": I_BINDERS, "start": 0xAE2,
+            "import": "C3BootProofs.Proofs.SvFail"}
+    return g, info
+
+
+def stage_iend():
+    """The intermediates loop with no entries left: no intermediate issued the leaf."""
+    g = Gen("Iend")
+    params = i_start(g) + ["(hc : c = 0)"]
+    hz = "hf"
+
+    def none(sub):
+        sub.branch(0xAE2, False, f"by rw [g{sub.k}_20, s{sub.k}.zero]; exact br_bne_f hc")
+        sub.jump(0xAE6)
+        sub.fail(sub.fail_proof(("prop", hz)), "sv_fail_2a82")
+    g.prop_check("False", hz, none)
+    stmt, _ = finish(g, 0xAE2, [2], set(), set())
+    g.emit("  exact hf.elim")
+    info = {"name": "sv_iend", "title": "no intermediate left",
+            "doc": "The intermediates loop at 0xAE2 with no entries left: no listed intermediate issued the leaf, "
+            "and `sigstore::verify` fails.",
+            "params": params, "stmt": stmt, "proof": "", "binders": I_BINDERS, "start": 0xAE2,
+            "import": "C3BootProofs.Proofs.SvFail"}
+    return g, info
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
                 **{f"Dp{i}": stage_dpol(i) for i in range(6)}, "Dbc1": stage_dbc1, "Dbc2e": stage_dbc2e, "Dbc2": stage_dbc2, "Dku1": stage_dku1, "Dku2": stage_dku2,
                 "Deku1": stage_deku1, "Deku2": stage_deku2, "Deku3": stage_deku3,
-                "L7": stage_l7, "L8a": stage_l8a}[stage]()
+                "L7": stage_l7, "L8a": stage_l8a,
+                "Imiss": stage_imiss, "Ihit": stage_ihit, "Iend": stage_iend}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

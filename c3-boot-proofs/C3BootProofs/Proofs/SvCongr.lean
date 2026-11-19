@@ -459,4 +459,13 @@ theorem br_beq_byte_t {b : BitVec 8} {n : Nat} (hn : n < 256) (h : b = BitVec.of
   simp only [branchTaken, bne_eq_false_iff_eq] at this ⊢
   simp only [beq_iff_eq]; exact this
 
+/-- A word outside the stack reads the same in two memories that agree there. -/
+theorem sv_ld {B p : Word} {M M0 : Word → BitVec 8} (fR : ∀ x, SvR B x → M x = M0 x) (h : SvIn B p 4) :
+    memLoad32 M p = memLoad32 M0 p := by
+  unfold memLoad32
+  have e : ∀ i, i < 4 → M (p + BitVec.ofNat 32 i) = M0 (p + BitVec.ofNat 32 i) := sv_pt fR h
+  have e0 := e 0 (by decide); rw [add_ofNat_zero] at e0
+  rw [e0, show p + 1 = p + BitVec.ofNat 32 1 from rfl, e 1 (by decide), show p + 2 = p + BitVec.ofNat 32 2 from rfl,
+    e 2 (by decide), show p + 3 = p + BitVec.ofNat 32 3 from rfl, e 3 (by decide)]
+
 end C3.RV32.Sv
