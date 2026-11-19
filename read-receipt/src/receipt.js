@@ -111,7 +111,7 @@ export function sign(markdown, seconds, finished) {
  * @param {number} finished Seconds since the epoch.
  * @return {!Promise<string>}
  */
-export async function receiptHash(markdown, seconds, finished) {
+export async function receiptFragment(markdown, seconds, finished) {
   const params = new URLSearchParams({
     v: VERSION,
     t: String(seconds),
@@ -139,7 +139,7 @@ const MAX_DIGITS = 15;
  */
 export async function longestLink(base, markdown) {
   const most = 10 ** MAX_DIGITS - 1;
-  return base.length + 1 + (await receiptHash(markdown, most, most)).length;
+  return base.length + 1 + (await receiptFragment(markdown, most, most)).length;
 }
 
 /**
@@ -152,13 +152,18 @@ function wholeNumber(text) {
 }
 
 /**
+ * How long a verified receipt's reading took and when it finished. `finished`
+ * is null for a version 1 receipt.
+ * @typedef {{seconds: number, finished: ?Date}} Reading
+ */
+
+/**
  * Reads a receipt from a URL fragment.
  * @param {string} hash `location.hash`, with or without the leading `#`.
- * @return {!Promise<?{markdown: string, seconds: number, finished: ?Date,
- *     verified: boolean}>} The receipt, or null when the fragment has no doc
- *     in it. `seconds` and `finished` are 0 and null unless the receipt
- *     verified, and `finished` is null for a version 1 receipt. Throws when
- *     the fragment has a doc that can't be read.
+ * @return {!Promise<?{markdown: string, reading: ?Reading}>} The receipt, or
+ *     null when the fragment has no doc in it. `reading` is null when the
+ *     proof doesn't match the doc and times. Throws when the fragment has a
+ *     doc that can't be read.
  */
 export async function readReceipt(hash) {
   const params = new URLSearchParams(hash.replace(/^#/, ''));
@@ -175,12 +180,13 @@ export async function readReceipt(hash) {
     expected = await proof(['1', seconds, markdown]);
   }
   if (expected === null || params.get('p') !== expected) {
-    return {markdown, seconds: 0, finished: null, verified: false};
+    return {markdown, reading: null};
   }
   return {
     markdown,
-    seconds,
-    finished: version === VERSION ? new Date(finished * 1000) : null,
-    verified: true,
+    reading: {
+      seconds,
+      finished: version === VERSION ? new Date(finished * 1000) : null,
+    },
   };
 }

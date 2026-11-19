@@ -1,15 +1,13 @@
 // Tracks progress through a doc one word at a time.
 
 /**
- * Reports whether a keydown should move to the next word. Only a fresh press
- * of Right Arrow or Space counts: a held key's auto-repeat doesn't, and
- * neither does a shortcut with a modifier.
- * @param {{key: string, repeat: boolean, altKey: boolean, ctrlKey: boolean,
- *     metaKey: boolean, shiftKey: boolean}} event
+ * Reports whether a keydown is a step key: Right Arrow or Space, without a
+ * modifier, so shortcuts keep working. A held key's repeats match too.
+ * @param {{key: string, altKey: boolean, ctrlKey: boolean, metaKey: boolean,
+ *     shiftKey: boolean}} event
  * @return {boolean}
  */
-export function isAdvanceKey(event) {
-  if (event.repeat) return false;
+export function isStepKey(event) {
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
     return false;
   }
@@ -66,22 +64,9 @@ export class Reader {
     /** @private {?number} */
     this.startedAt_ = null;
     /** @private {?number} */
-    this.finishedAt_ = null;
+    this.steppedAt_ = null;
     /** @private Steps allowed right away, as of `steppedAt_`. */
     this.allowance_ = BURST;
-    /** @private {?number} */
-    this.steppedAt_ = null;
-  }
-
-  /**
-   * @param {number} now
-   * @return {number}
-   * @private
-   */
-  allowanceAt_(now) {
-    if (this.steppedAt_ === null) return this.allowance_;
-    const earned = (now - this.steppedAt_) * WORDS_PER_MS;
-    return Math.min(BURST, this.allowance_ + earned);
   }
 
   /** @return {number} The index of the word to click next. */
@@ -107,26 +92,29 @@ export class Reader {
   advance() {
     if (this.done) return false;
     const now = this.now_();
-    const allowance = this.allowanceAt_(now);
+    const earned =
+      this.steppedAt_ === null ? 0 : (now - this.steppedAt_) * WORDS_PER_MS;
+    const allowance = Math.min(BURST, this.allowance_ + earned);
     if (allowance < 1) return false;
     this.allowance_ = allowance - 1;
     this.steppedAt_ = now;
     this.startedAt_ ??= now;
     this.index_++;
-    if (this.done) this.finishedAt_ = now;
     return true;
   }
 
-  /** @return {?number} When the last word was read, in ms since the epoch. */
+  /**
+   * @return {?number} When the last word was read, in ms since the epoch, or
+   *     null until then.
+   */
   get finishedAt() {
-    return this.finishedAt_;
+    return this.done ? this.steppedAt_ : null;
   }
 
-  /** @return {number} Whole seconds from the first step to the last. */
+  /** @return {number} Whole seconds from the first step to the latest. */
   get seconds() {
-    if (this.startedAt_ === null) return 0;
-    const end = this.finishedAt_ ?? this.now_();
-    return Math.round((end - this.startedAt_) / 1000);
+    if (this.startedAt_ === null || this.steppedAt_ === null) return 0;
+    return Math.round((this.steppedAt_ - this.startedAt_) / 1000);
   }
 }
 

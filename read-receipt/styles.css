@@ -243,7 +243,8 @@ progress::-moz-progress-bar {
   font-weight: 600;
 }
 
-.hint.slow:empty {
+.hint.slow:empty,
+.toolbar-row:has(.slow:not(:empty)) .hint:not(.slow) {
   display: none;
 }
 

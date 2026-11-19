@@ -6,7 +6,7 @@ import {
   MAX_WPM,
   Reader,
   formatDuration,
-  isAdvanceKey,
+  isStepKey,
   withinSpeedLimit,
   wordsPerMinute,
 } from './reader.js';
@@ -14,7 +14,7 @@ import {
   MAX_LINK_LENGTH,
   longestLink,
   readReceipt,
-  receiptHash,
+  receiptFragment,
 } from './receipt.js';
 import {wrapWords} from './words.js';
 
@@ -47,9 +47,20 @@ const copyTip = byId('copy-tip');
 const shareButton = byId('share');
 const receiptActions = byId('receipt-actions');
 
+/**
+ * @param {?EventTarget} target Not always an element: an event dispatched on
+ *     the document targets the document.
+ * @return {boolean} Whether `target` keeps its own clicks and keys.
+ */
+function isControl(target) {
+  return target instanceof Element &&
+    target.closest('button, input, textarea, select, [contenteditable]') !==
+      null;
+}
+
 /** The Markdown on screen. */
 let markdown = '';
-/** @type {?Reader} Set while the reader is stepping through a doc. */
+/** @type {?Reader} Set only in the reading view. */
 let reader = null;
 /** @type {!Array<!Array<!HTMLSpanElement>>} Each word's spans. */
 let words = [];
@@ -65,6 +76,7 @@ function markWord(index, className, on) {
 
 /** @param {'compose'|'reading'|'receipt'} view */
 function show(view) {
+  if (view !== 'reading') reader = null;
   compose.hidden = view !== 'compose';
   toolbar.hidden = view !== 'reading';
   done.hidden = true;
@@ -88,14 +100,14 @@ function clearHash() {
   }
 }
 
-function updateProgress() {
-  if (!reader) return;
-  progress.max = reader.total;
-  progress.value = reader.index;
+/** @param {!Reader} current */
+function updateProgress(current) {
+  progress.max = current.total;
+  progress.value = current.index;
   count.textContent =
-    `${reader.index.toLocaleString()} of ` +
-    `${reader.total.toLocaleString()} words`;
-  hint.hidden = reader.done || Boolean(slow.textContent);
+    `${current.index.toLocaleString()} of ` +
+    `${current.total.toLocaleString()} words`;
+  hint.hidden = current.done;
 }
 
 /**
@@ -127,7 +139,6 @@ function pageAddress() {
 
 /** @param {string} text */
 async function startReading(text) {
-  reader = null;
   const length = await longestLink(pageAddress(), text);
   if (length > MAX_LINK_LENGTH) {
     show('compose');
@@ -143,7 +154,6 @@ async function startReading(text) {
   renderMarkdown(doc, text);
   words = wrapWords(doc);
   if (!words.length) {
-    reader = null;
     show('compose');
     showComposeError('That doc has no words to read.');
     return;
@@ -153,50 +163,45 @@ async function startReading(text) {
   reader = new Reader(words.length);
   show('reading');
   markWord(0, 'current', true);
-  updateProgress();
+  updateProgress(reader);
   window.scrollTo({top: 0});
 }
 
-function advance() {
-  if (!reader) return;
-  const previous = reader.index;
-  if (!reader.advance()) {
-    slowDown();
+/** @param {!Reader} current */
+function advance(current) {
+  const previous = current.index;
+  if (!current.advance()) {
+    slowDown(current.index);
     return;
   }
   markWord(previous, 'current', false);
   markWord(previous, 'read', true);
-  updateProgress();
-  if (reader.done) {
-    void finish(reader);
+  updateProgress(current);
+  if (current.done) {
+    void finish(current);
     return;
   }
-  markWord(reader.index, 'current', true);
-  keepInView(words[reader.index][0]);
-}
-
-/** Flashes the current word. */
-function nudge() {
-  if (!reader || reader.done) return;
-  markWord(reader.index, 'nudge', false);
-  void doc.offsetWidth;
-  markWord(reader.index, 'nudge', true);
-  keepInView(words[reader.index][0]);
+  markWord(current.index, 'current', true);
+  keepInView(words[current.index][0]);
 }
 
 /** @type {number|undefined} */
 let slowTimer;
 
-/** Flashes the current word and says why a step was refused. */
-function slowDown() {
-  if (!reader || reader.done) return;
-  nudge();
+/**
+ * Flashes the current word and says why a step was refused.
+ * @param {number} index
+ */
+function slowDown(index) {
+  markWord(index, 'nudge', false);
+  // Restarts the flash when it's still running.
+  void doc.offsetWidth;
+  markWord(index, 'nudge', true);
+  keepInView(words[index][0]);
   slow.textContent = `Slow down. The limit is ${MAX_WPM} words a minute.`;
-  updateProgress();
   clearTimeout(slowTimer);
   slowTimer = setTimeout(() => {
     slow.textContent = '';
-    updateProgress();
   }, 2000);
 }
 
@@ -207,12 +212,11 @@ const dateFormat = new Intl.DateTimeFormat(undefined, {
 
 /**
  * @param {number} total
- * @param {number} seconds
- * @param {?Date} finished
+ * @param {!Reading} reading
  * @return {string} Like "all 192 words in 47s (245 words a minute), finishing
  *     Nov 18, 2026, 9:58 PM", in the viewer's time zone.
  */
-function describeReading(total, seconds, finished) {
+function describeReading(total, {seconds, finished}) {
   let read = `all ${total.toLocaleString()} words in ${formatDuration(seconds)}`;
   const wpm = wordsPerMinute(total, seconds);
   if (wpm !== null) read += ` (${wpm.toLocaleString()} words a minute)`;
@@ -221,37 +225,48 @@ function describeReading(total, seconds, finished) {
 
 /**
  * @param {number} total
- * @param {{seconds: number, finished: ?Date, verified: boolean}} receipt
- * @return {string} What the banner says about `receipt`.
+ * @param {?Reading} reading Null when the receipt doesn't match its doc.
+ * @return {{ok: boolean, message: string}} Whether the receipt holds up, and
+ *     what the banner says about it.
  */
-function describeReceipt(total, receipt) {
-  if (!receipt.verified) {
-    return "This receipt doesn't match the doc. The doc or the times in the " +
-      'link changed after the receipt was made.';
+function judgeReceipt(total, reading) {
+  if (!reading) {
+    return {
+      ok: false,
+      message: "This receipt doesn't match the doc. The doc or the times in " +
+        'the link changed after the receipt was made.',
+    };
   }
-  if (!withinSpeedLimit(total, receipt.seconds)) {
-    return `This receipt is too fast to be real: ${total.toLocaleString()} ` +
-      `words in ${formatDuration(receipt.seconds)} is over the limit of ` +
-      `${MAX_WPM} words a minute.`;
+  if (!withinSpeedLimit(total, reading.seconds)) {
+    return {
+      ok: false,
+      message: `This receipt is too fast to be real: ` +
+        `${total.toLocaleString()} words in ` +
+        `${formatDuration(reading.seconds)} is over the limit of ` +
+        `${MAX_WPM} words a minute.`,
+    };
   }
-  return 'Receipt checks out. The person who sent you this clicked through ' +
-    `${describeReading(total, receipt.seconds, receipt.finished)}.`;
+  return {
+    ok: true,
+    message: 'Receipt checks out. The person who sent you this clicked ' +
+      `through ${describeReading(total, reading)}.`,
+  };
 }
 
 /** @param {!Reader} finished */
 async function finish(finished) {
   const seconds = finished.seconds;
-  const end = Math.floor((finished.finishedAt ?? Date.now()) / 1000);
-  const url = new URL(location.href);
-  url.hash = await receiptHash(markdown, seconds, end);
+  const end = Math.floor(/** @type {number} */ (finished.finishedAt) / 1000);
+  const fragment = await receiptFragment(markdown, seconds, end);
   if (reader !== finished) return;
+  const href = `${pageAddress()}#${fragment}`;
   doc.classList.remove('reading');
-  link.value = url.href;
+  link.value = href;
+  const reading = {seconds, finished: new Date(end * 1000)};
   doneSummary.textContent =
-    `You clicked through ` +
-    `${describeReading(finished.total, seconds, new Date(end * 1000))}. ` +
+    `You clicked through ${describeReading(finished.total, reading)}. ` +
     'Whoever opens this link sees the doc, your time, and when you finished.';
-  history.replaceState(null, '', url);
+  history.replaceState(null, '', href);
   done.hidden = false;
   window.scrollTo({top: 0});
   doneTitle.focus({preventScroll: true});
@@ -262,7 +277,6 @@ async function finish(finished) {
  * is none.
  */
 async function route() {
-  reader = null;
   let receipt;
   try {
     receipt = await readReceipt(location.hash);
@@ -279,12 +293,9 @@ async function route() {
   }
   markdown = receipt.markdown;
   renderMarkdown(doc, markdown);
-  const total = wrapWords(doc).length;
-  banner.classList.toggle(
-    'bad',
-    !receipt.verified || !withinSpeedLimit(total, receipt.seconds),
-  );
-  banner.textContent = describeReceipt(total, receipt);
+  const {ok, message} = judgeReceipt(wrapWords(doc).length, receipt.reading);
+  banner.classList.toggle('bad', !ok);
+  banner.textContent = message;
   show('receipt');
   window.scrollTo({top: 0});
 }
@@ -297,7 +308,6 @@ compose.addEventListener('submit', (event) => {
 source.addEventListener('input', () => showComposeError(''));
 
 byId('edit').addEventListener('click', () => {
-  reader = null;
   clearHash();
   source.value = markdown;
   show('compose');
@@ -311,28 +321,22 @@ byId('read-yourself').addEventListener('click', () => {
 
 // A click or tap anywhere on the page moves to the next word.
 document.addEventListener('click', (event) => {
-  if (!reader || reader.done) return;
-  const target = /** @type {!Element} */ (event.target);
-  if (target.closest('button, input, textarea, select')) return;
-  if (target.closest('a')) {
+  if (!reader || reader.done || isControl(event.target)) return;
+  const target = event.target;
+  if (target instanceof Element && target.closest('a')) {
     if (!doc.contains(target)) return;
     // Links in the doc only open once it's read.
     event.preventDefault();
   }
-  advance();
+  advance(reader);
 });
 
 document.addEventListener('keydown', (event) => {
-  if (!reader || reader.done) return;
-  if (event.key !== ' ' && event.key !== 'ArrowRight') return;
-  const target = /** @type {!Element} */ (event.target);
-  if (target.closest?.('button, input, textarea, select, [contenteditable]')) {
-    return;
-  }
-  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  if (!reader || reader.done || !isStepKey(event)) return;
+  if (isControl(event.target)) return;
   // Held keys still don't scroll the page, but only fresh presses count.
   event.preventDefault();
-  if (isAdvanceKey(event)) advance();
+  if (!event.repeat) advance(reader);
 });
 
 doc.addEventListener('animationend', (event) => {
