@@ -1508,6 +1508,9 @@ class Gen:
             elif tk[0] == ".aluImm" and tk[1] == ".sll":
                 rd = reg_of(tk[2]); x = vals.get(reg_of(tk[3]))
                 v = ("C", (x[1] << int(tk[4], 16)) & 0xFFFFFFFF) if x is not None and x[0] == "C" else None
+                if v is None and x is not None and self.generic_alu and start + ln == end:
+                    v = ("U", f"aluEval .sll ({lean_val(x)}) (BitVec.ofNat 32 0x{int(tk[4], 16):X})")
+                    unc[rd] = reg_of(tk[3])
             elif tk[0] == ".alu" and tk[1] == ".sub":
                 rd = reg_of(tk[2]); x = vals.get(reg_of(tk[3])); y = vals.get(reg_of(tk[4]))
                 v = ("U", f"({lean_val(x)}) - ({lean_val(y)})") if x is not None and y is not None and x[0] == "U" and y[0] == "U" else None
@@ -6549,6 +6552,87 @@ def stage_csa():
     return g, info
 
 
+def cn_start(g):
+    params = cs_start(g)
+    g.regs.update({9: ("U", "c"), 10: ("U", "pa"), 8: ("U", "nl0")})
+    params += ["(g0_8 : reg n0 (8 : Fin 32) = nl0)", "(g0_10 : reg n0 a0 = pa)"]
+    return params
+
+
+def stage_cn(kind):
+    """The name scan at 0x2DCC: a byte that isn't a space ("m", back to
+    0x2DCC), the line's end ("e"), or the space ("s", on to the base64 groups
+    at 0x2E0C)."""
+    g = Gen("Cn" + kind)
+    g.generic_alu = True
+    params = cn_start(g)
+    g.load(0x2DCC, "lw")
+    if kind == "e":
+        params.append("(heq : w40 = c)")
+
+        def end(sub):
+            sub.branch(0x2DCE, True, f"by rw [g{sub.k}_11, g{sub.k}_9]; exact br_beq_t heq")
+            ck_fail_2ff2(sub, "hf")
+        g.prop_check("False", "hf", end)
+        stmt, _ = finish(g, 0x2DCC, [2], set(), set())
+        g.emit("  exact hf.elim")
+        proof = ""
+        title, doc = "a signature line without a space", "The name scan at 0x2DCC reaches the line's end: `sigstore::verify` fails."
+    else:
+        params += ["(hne : w40 ≠ c)", "(pa_in : SvIn B pa 1)",
+                   f"(hsp : M0 pa {'≠' if kind == 'm' else '='} 0x20)"]
+        g.branch(0x2DCE, False, f"by rw [g{g.k}_11, g{g.k}_9]; exact br_beq_f hne")
+        g.load_in(0x2DD2, "pa_in", "(by decide)")
+        g.block(0x2DD6, 0x2DD8, {11: ("(M0 pa).zeroExtend 32 + 0xFFFFFFE0",
+                                      "rw [rb{k}]; simp +decide only [runBlock, BInstr.run, svCn" + kind + "2dd6, upd, ↓reduceIte]; rw [g{p}_11]; rfl")})
+        if kind == "m":
+            g.branch(0x2DD8, False, f"by rw [g{g.k}_11, s{g.k}.zero]; exact br_beq_f fun e => hsp ((space_iff _).mp e)")
+            g.block(0x2DDA, 0x2DDC)
+            g.block(0x2DDC, 0x2DDE)
+            g.jump(0x2DDE)
+            end, keep = 0x2DCC, CL_KEEP_REGS + [8, 10]
+            title, doc = "a byte of a signature line's name", ("One pass of the name scan, from 0x2DCC back to it: "
+                                                              "the next byte of the line isn't a space.")
+        else:
+            g.branch(0x2DD8, True, f"by rw [g{g.k}_11, s{g.k}.zero]; exact br_beq_t ((space_iff _).mpr hsp)")
+
+            def empty(sub):
+                sub.branch(0x2DE0, True, f"by rw [g{sub.k}_9, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hc0)")
+                ck_fail_2ff2(sub, "hc0")
+            g.prop_check("c ≠ 0", "hc0", empty)
+            g.branch(0x2DE0, False, f"by rw [g{g.k}_9, s{g.k}.zero]; exact br_beq_f hc0")
+            g.block(0x2DE4, 0x2DE8)
+            g.load(0x2DE8, "lw")
+            g.block(0x2DEA, 0x2DEE)
+            g.block(0x2DEE, 0x2DF2)
+            r = lean_val(g.regs[10])
+
+            def ragged(sub):
+                sub.branch(0x2DF2, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_t h4m")
+                ck_fail_2ff2(sub, "h4m")
+            g.prop_check(f"{r} = 0", "h4m", ragged)
+            g.branch(0x2DF2, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_f h4m")
+            g.block(0x2DF6, 0x2DF8)
+            g.block(0x2DF8, 0x2DFA)
+            g.block(0x2DFA, 0x2DFE)
+            g.load(0x2DFE, "lw")
+            g.block(0x2E00, 0x2E02)
+            g.store(0x2E02, "sw")
+            g.block(0x2E04, 0x2E06)
+            g.block(0x2E06, 0x2E08)
+            g.store(0x2E08, "sw")
+            g.block(0x2E0A, 0x2E0C)
+            end, keep = 0x2E0C, CL_KEEP_REGS + [8, 10, 21, 22, 23]
+            title, doc = "the space after a signature line's name", (
+                "From the name scan at 0x2DCC to the base64 groups at 0x2E0C: the name isn't empty, and the base64 "
+                "after the space has a multiple of four bytes.")
+        stmt, proof = finish(g, end, sorted(set(keep)), set(g.words), set(g.bytes))
+    info = {"name": "sv_cn" + kind, "title": title, "doc": doc,
+            "params": params, "stmt": stmt, "proof": proof, "binders": CS_BINDERS.replace("op ol : Word}", "op ol c pa nl0 : Word}"),
+            "start": 0x2DCC, "import": "C3BootProofs.Proofs.SvCs"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -6568,7 +6652,8 @@ def main():
                 "Ck2a": lambda: stage_ck2(False), "Ck2b": lambda: stage_ck2(True),
                 "Ckd": stage_ckd, "Cke": stage_cke,
                 **{f"Cl{x}": (lambda x=x: stage_cl(x)) for x in ("miss", "hit", "end")},
-                "Cs1": stage_cs1, "Csa": stage_csa}[stage]()
+                "Cs1": stage_cs1, "Csa": stage_csa,
+                **{f"Cn{x}": (lambda x=x: stage_cn(x)) for x in ("m", "e", "s")}}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
