@@ -940,6 +940,21 @@ class Gen:
         self.last_tlv = t
         return k
 
+
+    def intc(self, off, oc, dc):
+        """`Der::integer` on the reader at `dc`; returns (k, expression, reader). The caller splits."""
+        k = self.k = self.k + 1
+        rp, rl, inp = self.reader(k - 1, dc)
+        self.call_head(k, off, "sv_intF", f"(oc := 0x{oc:X}) (dc := 0x{dc:X})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"A{k}", f"Ok{k}", f"Er{k}", f"fr{k}"])
+        self.emit(f"    {self.der_args(k, off, oc, dc)} (by decide) (by decide) (by decide) (by decide)")
+        self.emit(f"    (by decide) w{k-1}_{dc + 8:x} w{k-1}_{dc + 12:x} {inp}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [sv_mb fR{k-1} {inp}] at A{k} Ok{k} Er{k}")
+        self.keep_regs(k, OID_KEEP, lambda r: f"rk{k} {rname(r)} (by decide) (by decide)")
+        L = f"(memBytes n0.mem ({rp}) ({rl}).toNat)"
+        return k, f"derIntOf {L} ({rp}) (derElement 2 {L})", (rp, rl, inp)
+
     # --- operations -------------------------------------------------------------
 
     def block(self, start, end):
@@ -2552,10 +2567,285 @@ def stage_dpol(i):
         return g, info
     return gen
 
+
+def err9b6(sub):
+    """The failing exit through 0x9B6: `sw s6, 0x44(sp)`, then 0xB46."""
+    sub.store(0x9B6, "sw")
+    sub.jump(0x9B8)
+    err44(sub, 0xB46)
+
+
+def stage_dbc1():
+    """From the OID tests at 0x60E to 0x81C, for a `BasicConstraints`
+    extension: its value is a `SEQUENCE` that fills it."""
+    g = Gen("Dbc1")
+    params = d_start(g)
+    params += [f"(hku : ¬ {oid_is(KU_C)})", f"(heku : ¬ {oid_is(EKU_C)})", f"(hbc : {oid_is(BC_C)})"]
+    d_test(g, 0x60E, KU_C, False, "hku")
+    d_test(g, 0x6BC, EKU_C, False, "heku")
+    d_test(g, 0x78E, BC_C, True, "hbc")
+    g.block(0x7A6, 0x7AE)
+    g.load(0x7AE, "lw")
+    g.store(0x7B0, "sw")
+    g.load(0x7B2, "lw")
+    g.store(0x7B4, "sw")
+    g.store(0x7B6, "sw")
+    g.store(0x7B8, "sw")
+    g.block(0x7BA, 0x7CA)
+    k, ex, rd = g.seqr(0x7CA, 0x1020, 0x1380)
+    t = f"tl{k}"
+    g.emit(f"  obtain ⟨r{k}, hr{k}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+    g.emit(f"  rcases r{k} with er{k} | {t}")
+    g.sc.append(("eq", ex, f".ok {t}", [t], f"hr{k}"))
+    ks = k
+
+    def fail_seq(sub):
+        sub.emit(f"  obtain ⟨z{ks}, -⟩ := Er{ks} er{ks} hr{ks}")
+        sub.frame_after(ks, [(0x1020, 16), (0x1388, 8)], {0x1020: ("0", f"z{ks}")})
+        sub.load(0x7D2, "lw")
+        sub.load_any(0x7D6)
+        sub.branch(0x7DA, True, f"by rw [g{sub.k}_8, s{sub.k}.zero]; rfl")
+        err9b6(sub)
+        sub.fail(sub.fail_proof(("eq", f"hr{ks}")))
+    g.fork(fail_seq)
+    g.seq_ok(k, 0x1020, 0x1380, t, rd)
+    g.load(0x7D2, "lw")
+    g.load(0x7D6, "lbu")
+    g.branch(0x7DA, False, f"by rw [g{g.k}_8, s{g.k}.zero]; exact br_beq_f ({rd[2]}.ok_ne hr{ks})")
+    g.block(0x7DE, 0x7F0)
+    g.mc(0x7F0, 0x1485, 0x1025, 0xB)
+    g.block(0x7F8, 0x802)
+    g.load(0x802, "lw")
+    g.store(0x804, "sw")
+    g.block(0x808, 0x812)
+    g.store(0x812, "sb")
+    g.block(0x816, 0x818)
+    rest = lean_val(g.words[0x138C])
+    hz = f"hz_{g.k}"
+
+    def fail_rest(sub):
+        sub.branch(0x818, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_t {hz}")
+        err9b6(sub)
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check(f"{rest} = 0", hz, fail_rest)
+    g.branch(0x818, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_f {hz}")
+    stmt, proof = finish(g, 0x81C, D_KEEP_REGS + [8, 22], D_KEEP_WORDS | {0x1488, 0x148C}, set())
+    info = {"name": "sv_dbc1", "title": "a `BasicConstraints` extension's `SEQUENCE`",
+            "doc": "From the OID tests at 0x60E to 0x81C, for a `BasicConstraints` extension: its value is a "
+            "`SEQUENCE` that fills it.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": D_BINDERS, "start": 0x60E,
+            "import": "C3BootProofs.Proofs.SvData"}
+    return g, info
+
+
+def bc_start(g):
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 27: ("S", 0xA20), 9: ("U", "x9"), 21: ("U", "x21"), 25: ("U", "x25"),
+            26: ("U", "x26"), 8: ("S", 0x1320), 22: ("C", 1)}
+    words = {0x30: "f30", 0x34: "f34", 0x40: "rem", 0x88: "p0", 0x8C: "L", 0x90: "cur", 0x94: "rest",
+             0x1488: "cp", 0x148C: "cl"}
+    for i in range(10):
+        words[0xA20 + 4 * i] = f"sl{i}"
+    for e in range(0x4C, 0x88, 4):
+        words[e] = f"w{e:x}"
+    return start(g, regs, words, {("cp", "cl"): "c_in"})
+
+
+BC_BINDERS = LOOP_BINDERS.replace(" : Word}", " cp cl rest : Word}")
+
+
+def stage_dbc2e():
+    """From 0x81C, for an empty `BasicConstraints` sequence: back to the head."""
+    g = Gen("Dbc2e")
+    params = bc_start(g) + ["(hcl : cl = 0)"]
+    g.load(0x81C, "lw")
+    g.branch(0x820, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_t hcl")
+    d_next(g)
+    stmt, proof = finish(g, 0x4EA, D_KEEP_REGS, D_KEEP_WORDS, set())
+    info = {"name": "sv_dbc2e", "title": "an empty `BasicConstraints`",
+            "doc": "From 0x81C, for an empty `BasicConstraints` sequence: `cA` is false, back to the loop head.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": BC_BINDERS, "start": 0x81C,
+            "import": "C3BootProofs.Proofs.SvData"}
+    return g, info
+
+
+def bc_int_fails(sub, kh, hz, sw_s6):
+    """`Der::integer` at 0x876 on the reader at 0x1480, then the checks after it,
+    in a part of the stage where every way on fails with `hz`."""
+    ki, ex, rd = sub.intc(0x876, 0x1020, 0x1480)
+    sub.pinned |= {f"ip{ki}", f"il{ki}", f"ti{ki}", f"hti{ki}"}
+    sub.emit(f"  obtain ⟨r{ki}, hr{ki}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+    sub.emit(f"  rcases r{ki} with ei{ki} | ⟨ip{ki}, il{ki}⟩")
+
+    def bad(s2):
+        s2.emit(f"  obtain ⟨z{ki}, -⟩ := Er{ki} ei{ki} hr{ki}")
+        s2.frame_after(ki, [(0x1020, 8), (0x1488, 8)], {0x1020: ("0", f"z{ki}")})
+        s2.load(0x87E, "lw")
+        s2.branch(0x882, True, f"by rw [g{s2.k}_10, s{s2.k}.zero]; rfl")
+        s2.load_any(0x9B2)
+        err9b6(s2)
+        s2.fail(s2.fail_proof(("prop", hz)))
+    sub.fork(bad)
+    rp, rl, inp = rd
+    sub.emit(f"  obtain ⟨ti{ki}, hti{ki}⟩ := int_ok_elem hr{ki}")
+    sub.emit(f"  obtain ⟨p0_{ki}, p4_{ki}⟩ := Ok{ki} ip{ki} il{ki} hr{ki}")
+    sub.emit(f"  obtain ⟨d8_{ki}, d12_{ki}⟩ := A{ki} ti{ki} hti{ki}")
+    hl = f"BitVec.ofNat 32 (ti{ki}.header + ti{ki}.len)"
+    sub.frame_after(ki, [(0x1020, 8), (0x1488, 8)],
+                    {0x1020: (f"ip{ki}", f"p0_{ki}"), 0x1024: (f"il{ki}", f"p4_{ki}"),
+                     0x1488: (f"({rp}) + {hl}", f"d8_{ki}"), 0x148C: (f"({rl}) - {hl}", f"d12_{ki}")})
+    sub.load(0x87E, "lw")
+    sub.branch(0x882, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_f ({inp}.int_ne hr{ki})")
+    sub.load(0x886, "lw")
+    rest = lean_val(sub.words[0x148C])
+    sub.emit(f"  by_cases hzr{ki} : {rest} = 0")
+
+    def nonempty(s2):
+        s2.branch(0x88A, True, f"by rw [g{s2.k}_10, s{s2.k}.zero]; exact br_bne_t hzr{ki}")
+        err9b6(s2)
+        s2.fail(s2.fail_proof(("prop", hz)))
+    sub.emit("  rotate_left")
+    sub.fork(nonempty)
+    sub.branch(0x88A, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_f hzr{ki}")
+    sub.block(0x88E, 0x890)
+    return ki
+
+
+def stage_dbc2():
+    """From 0x81C, for a nonempty `BasicConstraints` sequence: `cA` must be
+    absent, and an optional `pathLenConstraint` integer must end it."""
+    g = Gen("Dbc2")
+    params = bc_start(g) + ["(hcl : cl ≠ 0)"]
+    g.load(0x81C, "lw")
+    g.branch(0x820, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hcl")
+    g.load(0x824, "lw")
+    g.load_in(0x828, "c_in", "(toNat_pos_of_ne hcl)")
+    g.block(0x82C, 0x830)
+    hz = f"hz_{g.k}"
+
+    def ca_true(sub):
+        sub.pinned.add("hb1")
+        sub.emit(f"  have hb1 : n0.mem cp = BitVec.ofNat 8 1 := Decidable.of_not_not {hz}")
+        sub.branch(0x830, False, f"by rw [g{sub.k}_23, g{sub.k}_11]; exact br_bne_byte_f (by decide) hb1")
+        sub.block(0x834, 0x83C)
+        kb, ex, rd = sub.boolt(0x83C, 0x1480)
+        sub.pinned |= {f"tb{kb}", f"htb{kb}", "hb1"}
+        sub.emit(f"  obtain ⟨r{kb}, hr{kb}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+        sub.emit(f"  rcases r{kb} with eb{kb} | ⟨⟩")
+
+        def bad_bool(s2):
+            s2.emit(f"  have g{kb}_10 : reg n{kb} a0 = (derErrByte eb{kb}).zeroExtend 32 := by rw [a0_{kb}, hr{kb}]; rfl")
+            s2.regs[10] = ("U", f"(derErrByte eb{kb}).zeroExtend 32")
+            s2.frame_after(kb, [(0x1488, 8)], {})
+            s2.block(0x844, 0x848)
+            s2.block(0x848, 0x84C)
+            s2.branch(0x84C, True, f"by rw [g{s2.k}_11, s{s2.k}.zero]; exact br_bne_t (derErr_ff_ne eb{kb})")
+            s2.block(0xB52, 0xB54)
+            s2.jump(0xB54)
+            err9b6(s2)
+            s2.fail(s2.fail_proof(("prop", hz)))
+        sub.fork(bad_bool)
+        sub.emit(f"  have g{kb}_10 : reg n{kb} a0 = BitVec.ofNat 32 0xFFFFFFFF := by rw [a0_{kb}, hr{kb}]; rfl")
+        sub.regs[10] = ("C", 0xFFFFFFFF)
+        rp, rl, inp = rd
+        sub.emit(f"  obtain ⟨tb{kb}, htb{kb}⟩ := bool_ok_elem hr{kb}")
+        sub.emit(f"  obtain ⟨d8_{kb}, d12_{kb}⟩ := A{kb} tb{kb} htb{kb}")
+        hl = f"BitVec.ofNat 32 (tb{kb}.header + tb{kb}.len)"
+        cp2, cl2 = f"({rp}) + {hl}", f"({rl}) - {hl}"
+        sub.frame_after(kb, [(0x1488, 8)], {0x1488: (cp2, f"d8_{kb}"), 0x148C: (cl2, f"d12_{kb}")})
+        sub.slices[(cp2, cl2)] = f"({inp}.restW htb{kb})"
+        sub.block(0x844, 0x84C)
+        sub.branch(0x84C, False, f"by rw [g{sub.k}_11, s{sub.k}.zero]; decide")
+        sub.load(0x850, "lw")
+        sub.emit(f"  by_cases hzc : {cl2} = 0")
+
+        def empty_after(s2):
+            s2.branch(0x854, True, f"by rw [g{s2.k}_10, s{s2.k}.zero]; exact br_beq_t hzc")
+            err44(s2, 0xB46)
+            s2.fail(s2.fail_proof(("prop", hz)))
+        sub.fork(empty_after)
+        sub.branch(0x854, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_f hzc")
+        sub.load(0x858, "lw")
+        sub.load_in(0x85C, f"({inp}.restW htb{kb})", "(toNat_pos_of_ne hzc)")
+        sub.block(0x860, 0x862)
+        sub.emit(f"  by_cases hb2 : n0.mem ({cp2}) = BitVec.ofNat 8 2")
+
+        def two(s2):
+            s2.branch(0x862, False, f"by rw [g{s2.k}_10, g{s2.k}_11]; exact br_bne_byte_f (by decide) hb2")
+            s2.block(0x866, 0x876)
+            bc_int_fails(s2, kb, hz, True)
+            s2.branch(0x890, True, f"by rw [g{s2.k}_23, g{s2.k}_10]; exact br_beq_byte_t (by decide) hb1")
+            err44(s2, 0xB46)
+            s2.fail(s2.fail_proof(("prop", hz)))
+        sub.fork(two)
+        sub.branch(0x862, True, f"by rw [g{sub.k}_10, g{sub.k}_11]; exact br_bne_byte_t (by decide) hb2")
+        err9b6(sub)
+        sub.fail(sub.fail_proof(("prop", hz)))
+    g.prop_check("n0.mem cp ≠ BitVec.ofNat 8 1", hz, ca_true)
+    g.branch(0x830, True, f"by rw [g{g.k}_23, g{g.k}_11]; exact br_bne_byte_t (by decide) {hz}")
+    g.block(0x860, 0x862)
+    hz2 = f"hz_{g.k}"
+
+    def not_int(sub):
+        sub.branch(0x862, True, f"by rw [g{sub.k}_10, g{sub.k}_11]; exact br_bne_byte_t (by decide) {hz2}")
+        err9b6(sub)
+        sub.fail(sub.fail_proof(("prop", hz2)))
+    g.prop_check("n0.mem cp = BitVec.ofNat 8 2", hz2, not_int)
+    g.branch(0x862, False, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_bne_byte_f (by decide) {hz2}")
+    g.block(0x866, 0x876)
+    ki, ex, rd = g.intc(0x876, 0x1020, 0x1480)
+    g.emit(f"  obtain ⟨r{ki}, hr{ki}⟩ : ∃ r, {ex} = r := ⟨_, rfl⟩")
+    g.emit(f"  rcases r{ki} with ei{ki} | ⟨ip{ki}, il{ki}⟩")
+    g.sc.append(("eq", ex, f".ok (ip{ki}, il{ki})", [f"ip{ki}", f"il{ki}"], f"hr{ki}"))
+
+    def bad_int(s2):
+        s2.emit(f"  obtain ⟨z{ki}, -⟩ := Er{ki} ei{ki} hr{ki}")
+        s2.frame_after(ki, [(0x1020, 8), (0x1488, 8)], {0x1020: ("0", f"z{ki}")})
+        s2.load(0x87E, "lw")
+        s2.branch(0x882, True, f"by rw [g{s2.k}_10, s{s2.k}.zero]; rfl")
+        s2.load_any(0x9B2)
+        err9b6(s2)
+        s2.fail(s2.fail_proof(("eq", f"hr{ki}")))
+    g.fork(bad_int)
+    rp, rl, inp = rd
+    g.emit(f"  obtain ⟨ti{ki}, hti{ki}⟩ := int_ok_elem hr{ki}")
+    L = f"(memBytes n0.mem ({rp}) ({rl}).toNat)"
+    g.sc.append(("eq", f"derElement 2 {L}", f".ok ti{ki}", [f"ti{ki}"], f"hti{ki}"))
+    g.emit(f"  obtain ⟨p0_{ki}, p4_{ki}⟩ := Ok{ki} ip{ki} il{ki} hr{ki}")
+    g.emit(f"  obtain ⟨d8_{ki}, d12_{ki}⟩ := A{ki} ti{ki} hti{ki}")
+    hl = f"BitVec.ofNat 32 (ti{ki}.header + ti{ki}.len)"
+    g.frame_after(ki, [(0x1020, 8), (0x1488, 8)],
+                  {0x1020: (f"ip{ki}", f"p0_{ki}"), 0x1024: (f"il{ki}", f"p4_{ki}"),
+                   0x1488: (f"({rp}) + {hl}", f"d8_{ki}"), 0x148C: (f"({rl}) - {hl}", f"d12_{ki}")})
+    g.load(0x87E, "lw")
+    g.branch(0x882, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f ({inp}.int_ne hr{ki})")
+    g.load(0x886, "lw")
+    rest = lean_val(g.words[0x148C])
+    hz3 = f"hz_{g.k}"
+
+    def nonempty(sub):
+        sub.branch(0x88A, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_bne_t {hz3}")
+        err9b6(sub)
+        sub.fail(sub.fail_proof(("prop", hz3)))
+    g.prop_check(f"{rest} = 0", hz3, nonempty)
+    g.branch(0x88A, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_f {hz3}")
+    g.block(0x88E, 0x890)
+    g.branch(0x890, False, f"by rw [g{g.k}_23, g{g.k}_10]; exact br_beq_byte_f (by decide) {hz}")
+    g.jump(0x894)
+    d_next(g)
+    stmt, proof = finish(g, 0x4EA, D_KEEP_REGS, D_KEEP_WORDS, set())
+    info = {"name": "sv_dbc2", "title": "a nonempty `BasicConstraints`",
+            "doc": "From 0x81C, for a nonempty `BasicConstraints` sequence: it must not start with `cA`, and "
+            "must hold one `pathLenConstraint` integer that ends it.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": BC_BINDERS, "start": 0x81C,
+            "import": "C3BootProofs.Proofs.SvData"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
-                **{f"Dp{i}": stage_dpol(i) for i in range(6)}}[stage]()
+                **{f"Dp{i}": stage_dpol(i) for i in range(6)}, "Dbc1": stage_dbc1, "Dbc2e": stage_dbc2e, "Dbc2": stage_dbc2}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

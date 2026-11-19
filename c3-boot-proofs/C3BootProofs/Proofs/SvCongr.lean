@@ -428,4 +428,35 @@ theorem SvIn.tlv_ne {B rp rl : Word} {M : Word → BitVec 8} {t : DerTlv} (h : S
   have := congrArg BitVec.toNat e
   rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (0 : Word).toNat = 0 from rfl] at this; omega
 
+theorem int_ok_elem {L : Bytes} {rp : Word} {r : Except DerError DerTlv} {x : Word × Word}
+    (h : derIntOf L rp r = .ok x) : ∃ t, r = .ok t := by
+  cases r with
+  | error e => simp [derIntOf] at h
+  | ok t => exact ⟨t, rfl⟩
+
+/-- An integer read from bytes outside the stack starts at a nonzero address. -/
+theorem SvIn.int_ne {B rp rl ip il : Word} {M : Word → BitVec 8} (h : SvIn B rp rl.toNat)
+    (hp : derIntOf (memBytes M rp rl.toNat) rp (derElement 2 (memBytes M rp rl.toNat)) = .ok (ip, il)) : ip ≠ 0 := by
+  obtain ⟨t, ht⟩ := int_ok_elem hp
+  rw [ht] at hp
+  have hn := h.ok_ne ht
+  simp only [derIntOf] at hp
+  split at hp
+  · cases hp
+  · split at hp
+    · cases hp
+    · cases hp; exact hn
+
+theorem br_beq_byte_f {b : BitVec 8} {n : Nat} (hn : n < 256) (h : b ≠ BitVec.ofNat 8 n) :
+    branchTaken .beq (b.zeroExtend 32) (BitVec.ofNat 32 n) = false := by
+  have := br_bne_byte_t hn h
+  simp only [branchTaken, bne_iff_ne, ne_eq] at this ⊢
+  simp only [beq_eq_false_iff_ne, ne_eq]; exact this
+
+theorem br_beq_byte_t {b : BitVec 8} {n : Nat} (hn : n < 256) (h : b = BitVec.ofNat 8 n) :
+    branchTaken .beq (b.zeroExtend 32) (BitVec.ofNat 32 n) = true := by
+  have := br_bne_byte_f hn h
+  simp only [branchTaken, bne_eq_false_iff_eq] at this ⊢
+  simp only [beq_iff_eq]; exact this
+
 end C3.RV32.Sv
