@@ -136,4 +136,19 @@ theorem ne68_add {n : Nat} (h1 : n < 2 ^ 32) (h2 : n ≠ 68) : BitVec.ofNat 32 n
     rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat] at this
     exact h2 (by simp only [show (0 : Word).toNat = 0 from rfl] at this; omega)
 
+/-- The signature's first byte, from a word's low byte, and its other 63. -/
+theorem sig_join {M : Word → BitVec 8} {B : Word} {L : Bytes}
+    (h0 : M (B + 0x21A0 + BitVec.ofNat 32 0x420) = ((BitVec.ofNat 8 (L.getD 0 0)).zeroExtend 32).extractLsb' 0 8)
+    (h1 : ∀ j, j < 63 → M (B + 0x21A0 + BitVec.ofNat 32 (0x421 + j)) = BitVec.ofNat 8 (L.getD (1 + j) 0)) :
+    ∀ j, j < 64 → M (B + 0x21A0 + BitVec.ofNat 32 (0x420 + j)) = BitVec.ofNat 8 (L.getD j 0) := fun j hj => by
+  rcases j with _ | j
+  · rw [Nat.add_zero, h0]
+    apply BitVec.eq_of_toNat_eq
+    rw [BitVec.extractLsb'_toNat, BitVec.toNat_setWidth, Nat.shiftRight_zero]
+    have := (BitVec.ofNat 8 (L.getD 0 0)).isLt
+    omega
+  · have := h1 j (by omega)
+    rw [show 0x421 + j = 0x420 + (j + 1) by omega, show 1 + j = j + 1 by omega] at this
+    exact this
+
 end C3.RV32.Sv

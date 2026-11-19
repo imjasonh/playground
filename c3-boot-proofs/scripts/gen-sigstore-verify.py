@@ -1360,6 +1360,22 @@ class Gen:
         self.regs[2] = ("S", 0)
         return k
 
+    def ed(self, off, oc, pk, msg, ln, L, hsig, pk_in, msg_in, hlen, ha2):
+        """`ed25519_verify` of the signature `L` at offset `oc`; returns k. The
+        result in `a0` is left to the caller."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_edF", f"(oc := 0x{oc:X}) (len := {ln}) (L := {L}) (M0 := M0)",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"a0_{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} EE0 RS hiv fR{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    g{k-1}_10 g{k-1}_11 {ha2} {self.reg_is(k - 1, 13, oc)} (by decide) {hsig} {pk_in} {msg_in} {hlen}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        self.frame_after(k, [], {})
+        return k
+
     def gt(self, off, oc, p, nl, inp, ha2):
         """`time::generalized_time` on the `nl` bytes at `p`, split on its answer:
         `None` reads the error flag at `oc + 0x60 - 0x60` with `lbu`, `beqz` not
@@ -6915,6 +6931,62 @@ def stage_cm(kind):
     return g, info
 
 
+def stage_csx():
+    """From the signature loop's head at 0x2D6E, with no lines left, to 0x2F5A:
+    a line signed the checkpoint with the log's key."""
+    g = Gen("Csx")
+    g.generic_alu = True
+    params = cs_start(g) + ["(hrem0 : w5c = 0)", "(EE0 : EvEnv M0)", "(RS : SvRoSep B)",
+                            "(hiv : (s5Hv M0 (BitVec.ofNat 32 0x3FCC4AF8)).toList = Sha512.h0)",
+                            "(pk_in : SvIn B w34 32)", "(msg_in : SvIn B w24 w20.toNat)", "(hlen : w20.toNat < 2 ^ 31)"]
+    g.load(0x2D6E, "lw")
+    g.block(0x2D70, 0x2D72)
+    g.store(0x2D72, "sw")
+    g.load(0x2D74, "lw")
+    g.branch(0x2D76, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_t hrem0")
+    g.load(0x2F24, "lw")
+    fl = lean_val(g.regs[10])
+
+    def none(sub):
+        sub.branch(0x2F26, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not hfound)")
+        sub.block(0x2FF8, 0x2FFA)
+        sub.jump(0x2FFA)
+        sub.fail(sub.fail_proof(("prop", "hfound")))
+    g.prop_check(f"{fl} ≠ 0", "hfound", none)
+    g.branch(0x2F26, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hfound")
+    g.block(0x2F28, 0x2F38)
+    g.mc(0x2F38, 0x421, 0x1480, 0x3F)
+    g.load(0x2F40, "lw")
+    g.store(0x2F42, "sb")
+    g.block(0x2F46, 0x2F4A)
+    g.load(0x2F4A, "lw")
+    g.load(0x2F4C, "lw")
+    g.load(0x2F4E, "lw")
+    k = g.k
+    g.pinned.add(f"hs{k}")
+    g.emit(f"  have hs{k} := sig_join b{k}_420 q{k}_421")
+    ke = g.ed(0x2F50, 0x420, "w34", "w24", "(w20).toNat", "sg", f"hs{k}", "pk_in", "msg_in", "hlen",
+              f"(by rw [g{g.k}_12, ofNat_toNat_self])")
+    ev = "evSpec (sigMem M0 (B + 0x21A0 + BitVec.ofNat 32 0x420) sg) w34 (B + 0x21A0 + BitVec.ofNat 32 0x420) w24 (w20).toNat = true"
+
+    def bad(sub):
+        sub.set_a0(ke, 0, "ite_eq_right hev")
+        sub.branch(0x2F58, True, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+        sub.block(0x2FFE, 0x3000)
+        sub.jump(0x3000)
+        sub.fail(sub.fail_proof(("prop", "hev")))
+    g.prop_check(ev, "hev", bad)
+    g.set_a0(ke, 1, "ite_eq_left hev")
+    g.branch(0x2F58, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    stmt, proof = finish(g, 0x2F5A, sorted(set(CL_KEEP_REGS)), set(g.words), set())
+    info = {"name": "sv_csx", "title": "the checkpoint's signature",
+            "doc": "From the signature loop's head at 0x2D6E, with nothing left, to 0x2F5A: a line signed by the log "
+            "was found, and `ed25519_verify` accepts its signature over the checkpoint's body with the log's key.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": CS_BINDERS, "start": 0x2D6E,
+            "import": "C3BootProofs.Proofs.SvCs"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -6937,7 +7009,7 @@ def main():
                 "Cs1": stage_cs1, "Csa": stage_csa,
                 **{f"Cn{x}": (lambda x=x: stage_cn(x)) for x in ("m", "e", "s")},
                 **{f"Cg{x}": (lambda x=x: stage_cg(x)) for x in range(5)},
-                **{f"Cm{x}": (lambda x=x: stage_cm(x)) for x in CM_DOC}}[stage]()
+                **{f"Cm{x}": (lambda x=x: stage_cm(x)) for x in CM_DOC}, "Csx": stage_csx}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
