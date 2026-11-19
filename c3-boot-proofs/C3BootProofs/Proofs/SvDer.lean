@@ -138,7 +138,8 @@ theorem dnm_facts {B : Word} {M M' : Word → BitVec 8} {oc dc : Nat} {rp rl : W
       rw [s4 _ oc _ (by omega), o12, s4 _ (oc + 12) _ (by omega), o4, s4 _ (oc + 4) _ (by omega), o8,
         s4 _ (oc + 8) _ (by omega), d12, s4 _ (dc + 12) _ (by omega), d8, s4 _ (dc + 8) _ (by omega)]
 
-theorem br_beq_t {a b : Word} (h : a = b) : branchTaken .beq a b = true := by simp [branchTaken, h]
+theorem br_beq_t {a b : Word} (h : a = b) : branchTaken .beq a b = true := by
+  subst h; exact decide_eq_true rfl
 theorem br_beq_f {a b : Word} (h : a ≠ b) : branchTaken .beq a b = false := by simp [branchTaken, h]
 theorem br_bne_t {a b : Word} (h : a ≠ b) : branchTaken .bne a b = true := by simp [branchTaken, h]
 theorem br_bne_f {a b : Word} (h : a = b) : branchTaken .bne a b = false := by simp [branchTaken, h]
