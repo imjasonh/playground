@@ -149,21 +149,39 @@ function nudge() {
   keepInView(words[reader.index][0]);
 }
 
+const dateFormat = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
+
+/**
+ * @param {number} total
+ * @param {number} seconds
+ * @param {?Date} finished
+ * @return {string} Like "all 192 words in 53s, finishing Nov 18, 2026, 9:58
+ *     PM", in the viewer's time zone.
+ */
+function describeReading(total, seconds, finished) {
+  const read = `all ${total.toLocaleString()} words in ${formatDuration(seconds)}`;
+  return finished ? `${read}, finishing ${dateFormat.format(finished)}` : read;
+}
+
 /** @param {!Reader} finished */
 async function finish(finished) {
   const seconds = finished.seconds;
+  const end = Math.floor((finished.finishedAt ?? Date.now()) / 1000);
   const url = new URL(location.href);
-  url.hash = await receiptHash(markdown, seconds);
+  url.hash = await receiptHash(markdown, seconds, end);
   if (reader !== finished) return;
   doc.classList.remove('reading');
   link.value = url.href;
   doneSummary.textContent =
-    `All ${finished.total.toLocaleString()} words in ` +
-    `${formatDuration(seconds)}. The link has the doc in it, and opening it ` +
-    'checks the receipt.';
+    `You clicked through ` +
+    `${describeReading(finished.total, seconds, new Date(end * 1000))}. ` +
+    'Whoever opens this link sees the doc, your time, and when you finished.';
   history.replaceState(null, '', url);
   done.hidden = false;
-  done.scrollIntoView({block: 'center'});
+  window.scrollTo({top: 0});
   doneTitle.focus({preventScroll: true});
 }
 
@@ -192,10 +210,9 @@ async function route() {
   const total = wrapWords(doc).length;
   banner.classList.toggle('bad', !receipt.verified);
   banner.textContent = receipt.verified ?
-    `Receipt checks out. Someone clicked through all ` +
-      `${total.toLocaleString()} words of this doc in ` +
-      `${formatDuration(receipt.seconds)}.` :
-    "This receipt doesn't match the doc. The doc or the reading time " +
+    'Receipt checks out. The person who sent you this clicked through ' +
+      `${describeReading(total, receipt.seconds, receipt.finished)}.` :
+    "This receipt doesn't match the doc. The doc or the times in the link " +
       'changed after the receipt was made.';
   show('receipt');
   window.scrollTo({top: 0});

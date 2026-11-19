@@ -61,9 +61,11 @@ test('Reader times from the first step to the last', () => {
   reader.advance();
   now += 4_400;
   assert.equal(reader.seconds, 4);
+  assert.equal(reader.finishedAt, null);
   reader.advance();
   now += 100_000;
   assert.equal(reader.seconds, 4);
+  assert.equal(reader.finishedAt, 64_400);
 });
 
 test('formatDuration drops leading zero units', () => {

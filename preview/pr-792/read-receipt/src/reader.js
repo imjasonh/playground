@@ -62,6 +62,11 @@ export class Reader {
     return true;
   }
 
+  /** @return {?number} When the last word was read, in ms since the epoch. */
+  get finishedAt() {
+    return this.finishedAt_;
+  }
+
   /** @return {number} Whole seconds from the first step to the last. */
   get seconds() {
     if (this.startedAt_ === null) return 0;

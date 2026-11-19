@@ -5,16 +5,19 @@ until you click it, or press Right Arrow or Space, and the highlight moves to
 the next word. Holding a key down does nothing: each word takes its own press.
 
 After the last word, you get a receipt link to share. The link holds the doc
-and a proof that someone clicked through every word of it, and how long that
-took. Opening the link shows the doc and checks the proof.
+and a proof that someone clicked through every word of it, how long that
+took, and when they finished. Opening the link shows the doc under a banner
+that says whether the proof checks out.
 
 ## The proof isn't secure
 
-The proof is a SHA-256 hash of a secret, the doc, and the reading time. The
-secret is a constant in [`src/receipt.js`](src/receipt.js), so anyone who
-reads the source can make a receipt for a doc they never opened. The receipt
-shows that someone clicked through the doc, or went to some trouble to fake
-it. Changing the doc or the time in a link makes the check fail.
+The proof is a SHA-256 hash of a secret, the doc, the reading time, and the
+finish time. The secret is a constant in [`src/receipt.js`](src/receipt.js),
+so anyone who reads the source can make a receipt for a doc they never
+opened. The receipt shows that someone clicked through the doc, or went to
+some trouble to fake it. Changing the doc or either time in a link makes the
+check fail. Version 1 links, made before receipts held the finish time, still
+check out, without a finish time.
 
 ## Privacy
 
