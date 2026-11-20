@@ -1738,8 +1738,9 @@ class Gen:
         self.keep_frame(k, ("K", e, w), ww, wb)
         self.end_step()
 
-    def mc(self, off, dst, src, N):
-        """`memcpy` of `N` bytes from offset `src` of the frame to `dst`."""
+    def mc(self, off, dst, src, N, call=None):
+        """`memcpy` of `N` bytes from offset `src` of the frame to `dst`, or
+        another call with the same result, whose head `call` writes."""
         k = self.k
         ww, wb = {}, {}
         for e, v in self.words.items():
@@ -1761,10 +1762,14 @@ class Gen:
             if e in self.bytes:
                 wb[ne] = (self.bytes[e], f"by rw [show 0x{ne:X} = 0x{dst:X} + 0x{j:X} from rfl, X{k + 1} 0x{j:X} (by decide)]; exact b{k}_{e:x}")
         k = self.k = self.k + 1
-        self.emit(f"  -- 0x{off:X}: memcpy")
-        self.emit(f"  obtain ⟨n{k}, P{k}, K{k}, X{k}⟩ := sv_mc (c := 0x{dst:X}) (d := 0x{src:X}) (N := 0x{N:X}) F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x}")
-        self.emit(f"    (by decide) (by decide) g{k-1}_2 {self.reg_is(k-1, 10, dst)} {self.reg_is(k-1, 11, src)} g{k-1}_12")
-        self.emit(f"    (by decide) (by decide) (by decide)")
+        if call is None:
+            self.emit(f"  -- 0x{off:X}: memcpy")
+            self.emit(f"  obtain ⟨n{k}, P{k}, K{k}, X{k}⟩ := sv_mc (c := 0x{dst:X}) (d := 0x{src:X}) (N := 0x{N:X}) F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x}")
+            self.emit(f"    (by decide) (by decide) g{k-1}_2 {self.reg_is(k-1, 10, dst)} {self.reg_is(k-1, 11, src)} g{k-1}_12")
+            self.emit(f"    (by decide) (by decide) (by decide)")
+        else:
+            for line in call(k):
+                self.emit(line)
         self.emit(f"  have s{k} := P{k}.st")
         self.emit(f"  have fr{k} := P{k}.fr")
         self.common(k, f"P{k}.steps", f"fr{k}", f"V{k-1}.keep K{k} (by decide)")
@@ -1812,7 +1817,7 @@ class Gen:
         self.ranges[dst] = (N, tmpl)
         self.end_step()
 
-    def mcRo(self, off, dst, p, N, inp):
+    def mcRo(self, off, dst, p, N, inp, acc=False):
         """`memcpy` of `N` bytes at `p` in the bundle or the image's constants,
         whose `SvRo2` is `inp`, to offset `dst` of the frame."""
         k = self.k = self.k + 1
@@ -1828,6 +1833,9 @@ class Gen:
         self.emit(f"  have q{k}_{dst:x} : ∀ j, j < {N} → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{dst:X} + j)) = {tmpl} :=")
         self.emit(f"    fun j hj => (X{k} j hj).trans (fR{k-1} _ (SvRo2.r RS {inp} hj))")
         self.ranges[dst] = (N, tmpl)
+        if acc:
+            self.acc[dst] = (N // 4, f"accV M0 ({p}) {N // 4}")
+            self.emit(f"  have a{k}_{dst:x} : {self.acc_stmt(k, dst, N // 4, f'accV M0 ({p}) {N // 4}')} := acc_of_frame q{k}_{dst:x}")
         self.end_step()
 
     def hinit(self):
@@ -2019,6 +2027,98 @@ class Gen:
         self.regs[2] = ("S", 0)
         self.frame_after(k, [], {})
         return k
+
+    def cu2(self, off, dst, src):
+        """`CtOption::<NonZeroScalar<NistP256>>::unwrap` of the option at
+        offset `src`, whose choice byte is 1, into `dst`: a copy of 32 bytes."""
+        self.mc(off, dst, src, 0x20, lambda k: [
+            f"  -- 0x{off:X}: CtOption::unwrap",
+            f"  obtain ⟨n{k}, P{k}, K{k}, X{k}⟩ := sv_cu2 (co := 0x{dst:X}) (cs := 0x{src:X}) F E{k-1} (EC0.sv F fR{k-1}) s{k-1}",
+            f"    sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2 {self.reg_is(k-1, 10, dst)} {self.reg_is(k-1, 11, src)}",
+            f"    (by decide) (by decide) (by decide) b{k-1}_{src + 0x20:x}"])
+
+    def cs2c(self, off, co, ca, b, c_proof):
+        """The P-256 field's `conditional_select` of `a` at offset `ca` and the
+        constant `b`, with choice 0 (`c_proof`): a copy of `a`'s limbs."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_cs2F", f"(co := 0x{co:X}) (ca := 0x{ca:X})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"W{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (EC0.sv F fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, co)} {self.reg_is(k - 1, 11, ca)} g{k-1}_12 g{k-1}_13 (.inl {c_proof})")
+        self.emit(f"    (by decide) (by decide) (by decide) (by decide) (by decide)")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        n, v = self.acc[ca]
+        self.frame_after(k, [(co, 32)], {}, {}, {co: (8, v, f"(acc_of_sel0 {c_proof} W{k}).trans a{k-1}_{ca:x}")})
+
+    def nz2(self, off, co, cx, nz_proof):
+        """`NonZeroScalar::<NistP256>::new` of the limbs at offset `cx`, which
+        `nz_proof` says hold a nonzero value, into offset `co`."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_nz2F", f"(co := 0x{co:X}) (cx := 0x{cx:X})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"W{k}", f"Z{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (EC0.sv F fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, co)} {self.reg_is(k - 1, 11, cx)} (by decide) (by decide) (by decide) (by decide)")
+        n, v = self.acc[cx]
+        self.emit(f"  simp only [limbs0_iff a{k-1}_{cx:x}, ite_eq_right {nz_proof}] at Z{k}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        self.frame_after(k, [(co, 0x21)], {}, {co + 0x20: ("(1 : BitVec 8)", f"by rw [show {fa(co + 0x20)} = {fa(co)} + 0x20 by sv_addr]; exact Z{k}")},
+                         {co: (8, v, f"(acc_of_bytes W{k}).trans a{k-1}_{cx:x}")})
+
+    def by2(self, off, co, b, inp):
+        """`bytes2scalar` for P-256 of the 32 bytes at `b`, into offset `co`."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_by2F", f"(co := 0x{co:X})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"A{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (BY0.sv F fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, co)} g{k-1}_11 (by decide) (by decide) {inp}")
+        self.emit(f"  rw [sv_mb fR{k-1} {inp}] at A{k}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        self.frame_after(k, [(co, 32)], {}, {}, {co: (8, f"beNat (memBytes M0 ({b}) 32) % C3.p256.n", f"A{k}")})
+
+    def unz8(self, off, cx):
+        """`Uint<8>::is_nonzero` of the limbs at offset `cx`; returns k. The
+        result in `a0` is left to the caller, as an `if` on their value."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_unz8F", f"(cx := 0x{cx:X})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"a0_{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (EC0.sv F fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, cx)} (by decide) (by decide)")
+        self.emit(f"  simp only [limbs0_iff a{k-1}_{cx:x}] at a0_{k}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        self.frame_after(k, [], {})
+        return k
+
+    def bb(self, off):
+        """`core::hint::black_box::<u8>` of `a0`."""
+        old = lean_val(self.regs[10])
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_bbF", "", [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"a0_{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        val = f"(({old}).extractLsb' 0 8).zeroExtend 32"
+        self.emit(f"  have g{k}_10 : reg n{k} a0 = {val} := by rw [a0_{k}, g{k-1}_10]")
+        self.regs[10] = ("U", val)
+        self.frame_after(k, [], {})
 
     def isr(self, off, cx, y, post=None):
         """`ecdsa::in_scalar_range` of the 32 bytes at offset `cx` and at `y`."""
@@ -7691,6 +7791,87 @@ def stage_eca2():
     return g, info
 
 
+def stage_eca3():
+    """From 0x10D6 to the inversion's head at 0x1328: the key's point in
+    projective form, `r` and `s` as nonzero scalars, and the prehash."""
+    g = Gen("EcA3")
+    g.generic_alu = True
+    params = ec_start(g)
+    X, Y = "gsVal M0 x21 1 * 2 ^ 256 % p256", "gsVal M0 x21 0x21 * 2 ^ 256 % p256"
+    g.regs[22] = ("U", "((0 : BitVec 8)).zeroExtend 32")
+    params.append("(g0_22 : reg n0 (22 : Fin 32) = ((0 : BitVec 8)).zeroExtend 32)")
+    for d, v in ((0x178, X), (0x198, Y), (0x1480, "beNat (b32 er)"), (0x1020, "beNat (b32 es)")):
+        g.acc[d] = (8, v)
+        params.append(f"(a0_{d:x} : accV n0.mem ({fa(d)}) 8 = {v})")
+    params += ["(RS : SvRoSep B)", "(BY0 : BYEnv M0)", "(hrz : beNat (b32 er) ≠ 0)", "(hsz : beNat (b32 es) ≠ 0)",
+               "(dg_in : SvIn B w84 32)"]
+    ro = "(Or.inr ⟨by decide, by decide⟩)"
+    for b0, call, dst, src, n in ((0x10D6, 0x10EA, 0xA20, 0x1480, 0x20), (0x10F2, 0x1106, 0xA40, 0x1020, 0x20),
+                                  (0x110E, 0x111E, 0x420, 0xA20, 0x40), (0x1126, 0x1130, 0x200, 0x420, 0x40),
+                                  (0x1138, 0x1148, 0xA40, 0x198, 0x20), (0x1150, 0x115E, 0xA20, 0x178, 0x20)):
+        g.block(b0, call)
+        g.mc(call, dst, src, n)
+    g.block(0x1166, 0x117C)
+    g.mcRo(0x117C, 0xA60, "BitVec.ofNat 32 0x3FCC43A8", 0x20, ro, acc=True)
+    g.block(0x1184, 0x1186)
+    g.bb(0x1186)
+    g.block(0x118E, 0x11A8)
+    g.cs2c(0x11A8, 0x240, 0xA20, "s6", "(by decide)")
+    g.block(0x11B0, 0x11BA)
+    g.cs2c(0x11BA, 0x260, 0xA40, "s6", "(by decide)")
+    g.block(0x11C2, 0x11CC)
+    g.cs2c(0x11CC, 0x280, 0xA60, "s6", "(by decide)")
+    g.block(0x11D4, 0x11E2)
+    g.mc(0x11E2, 0xA20, 0x200, 0x20)
+    g.block(0x11EA, 0x11F6)
+    g.nz2(0x11F6, 0x420, 0xA20, "hrz")
+    g.block(0x11FE, 0x120A)
+    g.cu2(0x120A, 0xA20, 0x420)
+    g.block(0x1212, 0x1228)
+    g.mc(0x1228, 0x1020, 0x220, 0x20)
+    g.block(0x1230, 0x123C)
+    g.nz2(0x123C, 0x420, 0x1020, "hsz")
+    g.block(0x1244, 0x124A)
+    g.cu2(0x124A, 0xA40, 0x420)
+    g.block(0x1252, 0x1260)
+    g.mc(0x1260, 0x2A0, 0xA20, 0x20)
+    g.block(0x1268, 0x1270)
+    g.mc(0x1270, 0x2C0, 0xA40, 0x20)
+    g.block(0x1278, 0x127A)
+    g.load(0x127A, "lw")
+    g.by2(0x127C, 0x2E0, "w84", "dg_in")
+    g.block(0x1284, 0x1286)
+    k = g.unz8(0x1286, 0x2C0)
+    g.set_a0(k, 1, "ite_eq_right hsz")
+    g.block(0x128E, 0x12A8)
+    g.mcRo(0x12A8, 0x1380, "BitVec.ofNat 32 0x3FCC4268", 0x20, ro, acc=True)
+    g.block(0x12B0, 0x12BA)
+    g.store(0x12BA, "sb")
+    g.block(0x12BE, 0x12CC)
+    g.mc(0x12CC, 0x1480, 0x2C0, 0x20)
+    g.store(0x12D4, "sb")
+    g.block(0x12D8, 0x12E6)
+    g.ms(0x12E6, 0x1020, 0x24)
+    g.block(0x12EE, 0x12FE)
+    g.mcRo(0x12FE, 0x420, "BitVec.ofNat 32 0x3FCC42E8", 0x20, ro, acc=True)
+    g.block(0x1306, 0x1308)
+    g.store(0x1308, "sb")
+    g.block(0x130C, 0x1312)
+    g.store(0x1312, "sw")
+    g.block(0x1314, 0x1320)
+    g.store(0x1320, "sw")
+    g.block(0x1322, 0x1326)
+    g.store(0x1326, "sw")
+    stmt, proof = finish(g, 0x1328, [2, 3, 4, 18, 19, 20, 21, 23, 25, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "sv_eca3", "title": "the P-256 check's inputs",
+            "doc": "From 0x10D6 to the inversion's head at 0x1328: the leaf key's point at offsets 0x240, 0x260, and "
+            "0x280 in projective form, `r` and `s` at 0x2A0 and 0x2C0, the prehash as a scalar at 0x2E0, and the "
+            "order and the inversion's state set up.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": EC_BINDERS, "start": 0x10D6,
+            "import": "C3BootProofs.Proofs.SvEc"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -7716,7 +7897,7 @@ def main():
                 **{f"Cm{x}": (lambda x=x: stage_cm(x)) for x in CM_DOC}, "Csx": stage_csx,
                 "Cr1e": lambda: stage_cr1(True), "Cr1n": lambda: stage_cr1(False), "Rl": stage_rl, "Rm": stage_rm,
                 **{f"Win{i}{x}": (lambda i=i, x=x: stage_win(i, x == "e")) for i in range(8) for x in "en"},
-                "EcA1": stage_eca1, "EcA2": stage_eca2}[stage]()
+                "EcA1": stage_eca1, "EcA2": stage_eca2, "EcA3": stage_eca3}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

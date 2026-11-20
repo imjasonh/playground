@@ -618,4 +618,44 @@ theorem gsVal_sv {M M0 : Word → BitVec 8} {B inp : Word} {o : Nat} (fR : ∀ x
     memBytes_congr fun i hi => by rw [add_ofNat_assoc]; exact fR _ (hin.r (by omega))
   rw [e]
 
+/-- Limbs copied byte by byte hold the same value. -/
+theorem acc_of_bytes {M M' : Word → BitVec 8} {a b : Word} {n : Nat}
+    (h : ∀ j, j < 4 * n → M' (a + BitVec.ofNat 32 j) = M (b + BitVec.ofNat 32 j)) : accV M' a n = accV M b n :=
+  accV_congr2 n fun i hi => memLoad32_congr2 fun j hj => by
+    rw [add_ofNat_assoc, add_ofNat_assoc]; exact h _ (by omega)
+
+/-- Frame bytes copied from `p` hold the limbs at `p`. -/
+theorem acc_of_frame {M M0 : Word → BitVec 8} {B p : Word} {c n : Nat}
+    (h : ∀ j, j < 4 * n → M (B + 0x21A0 + BitVec.ofNat 32 (c + j)) = M0 (p + BitVec.ofNat 32 j)) :
+    accV M (B + 0x21A0 + BitVec.ofNat 32 c) n = accV M0 p n :=
+  acc_of_bytes fun j hj => by rw [add_ofNat_assoc]; exact h j hj
+
+/-- `conditional_select` with choice 0 copies `a`. -/
+theorem acc_of_sel0 {M M' : Word → BitVec 8} {o a b c : Word} (hc : c = 0)
+    (W : ∀ i, i < 8 → memLoad32 M' (o + BitVec.ofNat 32 (4 * i)) =
+      if c = 1 then memLoad32 M (b + BitVec.ofNat 32 (4 * i)) else memLoad32 M (a + BitVec.ofNat 32 (4 * i))) :
+    accV M' o 8 = accV M a 8 :=
+  accV_congr2 8 fun i hi => by rw [W i hi, hc]; rfl
+
+/-- **A call to `core::hint::black_box::<u8>`**: the low byte of `a0`. -/
+theorem sv_bbF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o : Word}
+    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 blackBoxU8Address)
+    (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0) (rsp : reg n sp = B + 0x21A0) :
+    ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
+      (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧
+      reg n' a0 = ((reg n a0).extractLsb' 0 8).zeroExtend 32 ∧
+      SvKeepL B M n'.mem [] ∧ (∀ x, SvR B x → n'.mem x = M x) := by
+  have hFl := F.lo; have hFh := F.hi; have hFa := F.al
+  have FS : Fr (B + 0x21A0) 0x1690 := F.sub (c := 0x21A0) (by decide) (by decide)
+  obtain ⟨n', c', s', a0', f', k'⟩ := c_bb s C.self C.K FS h1 h2 hb hev rsp
+  have e1 : B + 0x21A0 + 0xFFFFFFFF = B + BitVec.ofNat 32 0x219F := sv_spX B 1 (by decide)
+  rw [e1] at f'
+  refine ⟨n', c', ⟨s'.pc, rfl, fun _ => rfl⟩, by rw [k' sp (by decide) (by decide), rsp],
+    fun q hq => k' q (by revert hq; revert q; decide) (by revert hq; revert q; decide), a0',
+    fun e he _ => f' _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega)),
+    fun x hx => f' x (svR_spX hx (by decide) (by decide) (by decide))⟩
+
 end C3.RV32.Sv
