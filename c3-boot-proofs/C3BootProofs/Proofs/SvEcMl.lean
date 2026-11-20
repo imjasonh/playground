@@ -156,7 +156,7 @@ theorem GM2.keep {B : Word} {M M' : Word → BitVec 8} {T0 T1 : Nat → Pt2} {D0
     (K.mb (by decide) (by decide)).trans G.d0, (K.mb (by decide) (by decide)).trans G.d1⟩
 
 /-- The registers the main loop keeps at position `k`. -/
-structure GR2 (B : Word) (m : Machine) (r3 r4 r18 r19 r26 : Word) (k : Nat) : Prop where
+structure GR2 (B : Word) (m : Machine) (r3 r4 r18 r19 r25 r26 : Word) (k : Nat) : Prop where
   sp : reg m sp = B + 0x21A0
   g3 : reg m (3 : Fin 32) = r3
   g4 : reg m (4 : Fin 32) = r4
@@ -167,20 +167,21 @@ structure GR2 (B : Word) (m : Machine) (r3 r4 r18 r19 r26 : Word) (k : Nat) : Pr
   s5 : reg m (21 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA40
   s6 : reg m (22 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 (0x1024 + k)
   s8 : reg m (24 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA60
+  s9 : reg m (25 : Fin 32) = r25
   s10 : reg m (26 : Fin 32) = r26
   s11 : reg m (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20
 
-theorem GR2.of {B r3 r4 r18 r19 r26 : Word} {m m' : Machine} {k : Nat} (R : GR2 B m r3 r4 r18 r19 r26 k)
-    (h : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 9, 18, 19, 20, 21, 22, 24, 26, 27] → reg m' q = reg m q) :
-    GR2 B m' r3 r4 r18 r19 r26 k :=
+theorem GR2.of {B r3 r4 r18 r19 r25 r26 : Word} {m m' : Machine} {k : Nat} (R : GR2 B m r3 r4 r18 r19 r25 r26 k)
+    (h : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 9, 18, 19, 20, 21, 22, 24, 25, 26, 27] → reg m' q = reg m q) :
+    GR2 B m' r3 r4 r18 r19 r25 r26 k :=
   ⟨by rw [h RV32.sp (by decide), R.sp], by rw [h _ (by decide), R.g3], by rw [h _ (by decide), R.g4],
     by rw [h _ (by decide), R.s1], by rw [h _ (by decide), R.s2], by rw [h _ (by decide), R.s3],
     by rw [h _ (by decide), R.s4], by rw [h _ (by decide), R.s5], by rw [h _ (by decide), R.s6],
-    by rw [h _ (by decide), R.s8], by rw [h _ (by decide), R.s10], by rw [h _ (by decide), R.s11]⟩
+    by rw [h _ (by decide), R.s8], by rw [h _ (by decide), R.s9], by rw [h _ (by decide), R.s10], by rw [h _ (by decide), R.s11]⟩
 
 theorem keepL2 {m m' : Machine}
     (h : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) :
-    ∀ q : Fin 32, q.val ∈ [2, 3, 4, 9, 18, 19, 20, 21, 22, 24, 26, 27] → reg m' q = reg m q :=
+    ∀ q : Fin 32, q.val ∈ [2, 3, 4, 9, 18, 19, 20, 21, 22, 24, 25, 26, 27] → reg m' q = reg m q :=
   fun q hq => h q (by revert hq; revert q; decide)
 
 theorem ptF_eq {M : Word → BitVec 8} {B : Word} {c : Nat} {P : Pt2} (h : ptF M B c = P) :
@@ -196,15 +197,15 @@ theorem mlHd_end : blockEnd sigstoreVerifyCode 0x199C mlHd = some 0x19A6 := by d
 set_option maxHeartbeats 16000000 in
 /-- The end of a pair's step that adds an entry, from 0x1A5E: add the point
 at offset `cr` to the accumulator, mark it, and move to the next pair. -/
-theorem ml2_tail {B r3 r4 r18 r19 r26 : Word} {k j cr : Nat} {Q acc : Pt2}
+theorem ml2_tail {B r3 r4 r18 r19 r25 r26 : Word} {k j cr : Nat} {Q acc : Pt2}
     {m : Machine} (F : Fr B 0x3830) (E : MlEnv m.mem) (s : St m.mem SV m 0x1A5E (reg m))
-    (R : GR2 B m r3 r4 r18 r19 r26 k)
+    (R : GR2 B m r3 r4 r18 r19 r25 r26 k)
     (h23 : reg m (23 : Fin 32) = BitVec.ofNat 32 (j + 1)) (ha0 : reg m a0 = B + 0x21A0 + BitVec.ofNat 32 0x1480)
     (ha1 : reg m a1 = B + 0x21A0 + BitVec.ofNat 32 cr) (hcr : cr + 96 ≤ 0x1690) (acr : cr % 4 = 0)
     (hQ : ptF m.mem B cr = Q) (hQl : Pt2Lt Q) (A : ptF m.mem B 0x1480 = acc) (hl : Pt2Lt acc)
     (hj : j < 2) (hk : k + 1 ≤ 0x101) :
     ∃ m', Steps m m' ∧ MlEnv m'.mem ∧ (∀ x, SvR B x → m'.mem x = m.mem x) ∧ SvKeepL B m.mem m'.mem mlW ∧
-      St m'.mem SV m' 0x19A6 (reg m') ∧ GR2 B m' r3 r4 r18 r19 r26 k ∧
+      St m'.mem SV m' 0x19A6 (reg m') ∧ GR2 B m' r3 r4 r18 r19 r25 r26 k ∧
       reg m' (8 : Fin 32) = 1 ∧ reg m' (23 : Fin 32) = BitVec.ofNat 32 (j + 1) ∧
       reg m' a0 = B + 0x21A0 + BitVec.ofNat 32 (0x1024 + k + 0x108 * (j + 1)) ∧
       ptF m'.mem B 0x1480 = ptAdd2 acc Q := by
@@ -223,7 +224,7 @@ theorem ml2_tail {B r3 r4 r18 r19 r26 : Word} {k j cr : Nat} {Q acc : Pt2}
   have s4 : St n1.mem SV n4 0x19A6 (reg n4) := ⟨u4.pc, u4.mem, fun _ => rfl⟩
   have k4 : ∀ q : Fin 32, q ≠ a0 → reg n4 q = reg n3 q := fun q h =>
     by rw [u4.regs, runBlock_reg _ _ _ q s3.zero (by simp [mlHd, BInstr.dst, h])]
-  have R1 : GR2 B n1 r3 r4 r18 r19 r26 k := R.of fun q hq => by
+  have R1 : GR2 B n1 r3 r4 r18 r19 r25 r26 k := R.of fun q hq => by
     by_cases h : q = sp
     · subst h; rw [sp1, R.sp]
     · exact rk1 q (by revert hq h; revert q; decide)
@@ -235,7 +236,7 @@ theorem ml2_tail {B r3 r4 r18 r19 r26 : Word} {k j cr : Nat} {Q acc : Pt2}
     rw [u4.regs]; simp +decide only [runBlock, BInstr.run, mlHd, upd, ↓reduceIte, aluEval]
     rw [r23, r22, s3.zero, show (0 : Word) + 0x108 = BitVec.ofNat 32 0x108 from rfl]
     exact ofNat_mul_add (B + 0x21A0) (j + 1) (0x1024 + k) 0x108 (by omega) (by decide) (by omega)
-  have R4 : GR2 B n4 r3 r4 r18 r19 r26 k := R1.of fun q hq => by
+  have R4 : GR2 B n4 r3 r4 r18 r19 r25 r26 k := R1.of fun q hq => by
     rw [k4 q (by revert hq; revert q; decide), u3.regs, k2 q (by revert hq; revert q; decide)]
   have m4 : n4.mem = n1.mem := by rw [u4.mem]; simp only [runBlock, BInstr.run, mlHd]
   refine ⟨n4, c1.trans (c2.trans (.cons d3 c4)), by rw [m4]; exact E1,
@@ -292,16 +293,16 @@ theorem sp_1480 (S : Word) : (0x1000 : Word) + 0x480 + S = S + BitVec.ofNat 32 0
 set_option maxHeartbeats 64000000 in
 /-- **One pair's step**, from 0x19A6: read the digit byte of pair `j` at
 position `k` and act on it as `mlPair2` does. -/
-theorem ml2_pair {B r3 r4 r18 r19 r26 : Word} {T0 T1 : Nat → Pt2} {D0 D1 : List Nat} {k j : Nat} {st : Pt2 × Bool}
+theorem ml2_pair {B r3 r4 r18 r19 r25 r26 : Word} {T0 T1 : Nat → Pt2} {D0 D1 : List Nat} {k j : Nat} {st : Pt2 × Bool}
     {m : Machine} (F : Fr B 0x3830) (E : MlEnv m.mem) (s : St m.mem SV m 0x19A6 (reg m))
-    (R : GR2 B m r3 r4 r18 r19 r26 k) (hs0 : reg m (8 : Fin 32) = if st.2 then 1 else 0)
+    (R : GR2 B m r3 r4 r18 r19 r25 r26 k) (hs0 : reg m (8 : Fin 32) = if st.2 then 1 else 0)
     (h23 : reg m (23 : Fin 32) = BitVec.ofNat 32 j)
     (ha0 : reg m a0 = B + 0x21A0 + BitVec.ofNat 32 (0x1024 + k + 0x108 * j)) (M : GM2 B m.mem T0 T1 D0 D1)
     (A : ptF m.mem B 0x1480 = st.1) (hl : Pt2Lt st.1) (hj : j < 2) (hk : k + 1 ≤ 0x101) :
     (mlPair2 (if j = 0 then T0 else T1) (if j = 0 then D0 else D1) k st = none ∧ Panics m) ∨
     (∃ st', mlPair2 (if j = 0 then T0 else T1) (if j = 0 then D0 else D1) k st = some st' ∧
       ∃ m', Steps m m' ∧ MlEnv m'.mem ∧ (∀ x, SvR B x → m'.mem x = m.mem x) ∧ SvKeepL B m.mem m'.mem mlW ∧
-        St m'.mem SV m' 0x19A6 (reg m') ∧ GR2 B m' r3 r4 r18 r19 r26 k ∧
+        St m'.mem SV m' 0x19A6 (reg m') ∧ GR2 B m' r3 r4 r18 r19 r25 r26 k ∧
         reg m' (8 : Fin 32) = (if st'.2 then 1 else 0) ∧ reg m' (23 : Fin 32) = BitVec.ofNat 32 (j + 1) ∧
         reg m' a0 = B + 0x21A0 + BitVec.ofNat 32 (0x1024 + k + 0x108 * (j + 1)) ∧
         GM2 B m'.mem T0 T1 D0 D1 ∧ ptF m'.mem B 0x1480 = st'.1 ∧ Pt2Lt st'.1) := by
@@ -341,7 +342,7 @@ theorem ml2_pair {B r3 r4 r18 r19 r26 : Word} {T0 T1 : Nat → Pt2} {D0 D1 : Lis
     rw [u3.regs, upd_same (by decide), e2 _ (by decide), ha0, add_lit_zero, hb]
   have k3 : ∀ q : Fin 32, q ≠ a1 → q ≠ a2 → reg n3 q = reg m q := fun q h1 h2 => by
     rw [u3.regs, updz s2.zero h2, e2 q h1]
-  have R3 : GR2 B n3 r3 r4 r18 r19 r26 k := R.of fun q hq => k3 q (by revert hq; revert q; decide)
+  have R3 : GR2 B n3 r3 r4 r18 r19 r25 r26 k := R.of fun q hq => k3 q (by revert hq; revert q; decide)
     (by revert hq; revert q; decide)
   unfold mlPair2
   rw [ite_eq_right (by omega)]
@@ -363,7 +364,7 @@ theorem ml2_pair {B r3 r4 r18 r19 r26 : Word} {T0 T1 : Nat → Pt2} {D0 D1 : Lis
     have r23 : reg n5 (23 : Fin 32) = BitVec.ofNat 32 (j + 1) := by
       rw [u5.regs]; simp +decide only [runBlock, BInstr.run, mlZ, upd, ↓reduceIte, aluEval]
       rw [u4.regs, k3 _ (by decide) (by decide), h23, show (1 : Word) = BitVec.ofNat 32 1 from rfl, BitVec.ofNat_add_ofNat]
-    have R5 : GR2 B n5 r3 r4 r18 r19 r26 k := R.of fun q hq => k5 q (by revert hq; revert q; decide)
+    have R5 : GR2 B n5 r3 r4 r18 r19 r25 r26 k := R.of fun q hq => k5 q (by revert hq; revert q; decide)
       (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
     obtain ⟨n6, d6, u6⟩ := s5.jump C sv_at_19c0 (off' := 0x19A6) (by decide) (by rw [s5.pc]; decide)
     refine .inr ⟨st, rfl, n6, c0.trans (.cons d1 (c1'.trans (.cons d2 (.cons d3 (.cons d4 (c5.trans (.single d6))))))),
@@ -393,7 +394,7 @@ theorem ml2_pair {B r3 r4 r18 r19 r26 : Word} {T0 T1 : Nat → Pt2} {D0 D1 : Lis
       rw [u5.regs]; simp +decide only [runBlock, BInstr.run, mlN, upd, ↓reduceIte, aluEval]
       rw [e4, k3 _ (by decide) (by decide), h23, show (1 : Word) = BitVec.ofNat 32 1 from rfl, BitVec.ofNat_add_ofNat]
     have a25 : reg n5 a2 = b.zeroExtend 32 := by rw [k5 _ (by decide) (by decide) (by decide) (by decide), a23]
-    have R5 : GR2 B n5 r3 r4 r18 r19 r26 k := R3.of fun q hq => k5 q (by revert hq; revert q; decide)
+    have R5 : GR2 B n5 r3 r4 r18 r19 r25 r26 k := R3.of fun q hq => k5 q (by revert hq; revert q; decide)
       (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
     have hT : ∀ i, i < 8 → ptF m.mem B (0x420 + 0x300 * j + 0x60 * i) = (if j = 0 then T0 else T1) i ∧
         Pt2Lt ((if j = 0 then T0 else T1) i) := fun i hi => by
@@ -463,7 +464,7 @@ theorem ml2_pair {B r3 r4 r18 r19 r26 : Word} {T0 T1 : Nat → Pt2} {D0 D1 : Lis
         have a09 : reg n9 a0 = B + 0x21A0 + BitVec.ofNat 32 0xA40 := by
           rw [u9.regs]; simp +decide only [runBlock, BInstr.run, mlG2, upd, ↓reduceIte]
           simp only [e8, k7 (21 : Fin 32) (by decide) (by decide) (by decide), R5.s5, aluEval]; exact BitVec.zero_add _
-        have R9 : GR2 B n9 r3 r4 r18 r19 r26 k := R5.of fun q hq => k9 q (by revert hq; revert q; decide)
+        have R9 : GR2 B n9 r3 r4 r18 r19 r25 r26 k := R5.of fun q hq => k9 q (by revert hq; revert q; decide)
           (by revert hq; revert q; decide) (by revert hq; revert q; decide) (by revert hq; revert q; decide)
           (by revert hq; revert q; decide)
         have s9' : St n9.mem SV n9 0x1A1E (reg n9) := ⟨s9.pc, rfl, fun _ => rfl⟩
@@ -475,7 +476,7 @@ theorem ml2_pair {B r3 r4 r18 r19 r26 : Word} {T0 T1 : Nat → Pt2} {D0 D1 : Lis
         have E10 : MlEnv n10.mem := (E.fr F (by rw [← s9.mem]; exact f10))
         obtain ⟨n11, c11, u11⟩ := s10.block mlG3 E10.C.self mlG3_end ⟨trivial, trivial, trivial, trivial⟩
         have s11 : St n10.mem SV n11 0x1A30 (reg n11) := ⟨u11.pc, u11.mem, fun _ => rfl⟩
-        have R10 : GR2 B n10 r3 r4 r18 r19 r26 k := R9.of fun q hq => by
+        have R10 : GR2 B n10 r3 r4 r18 r19 r25 r26 k := R9.of fun q hq => by
           by_cases h : q = sp
           · subst h; rw [sp10, R9.sp]
           · exact rk10 q (by revert hq h; revert q; decide)
@@ -496,7 +497,7 @@ theorem ml2_pair {B r3 r4 r18 r19 r26 : Word} {T0 T1 : Nat → Pt2} {D0 D1 : Lis
           (c := 0xA60) (d := 0x420 + 0x300 * j + 0x60 * ix + 0x40) (N := 0x20)
           (by decide) (by omega) (by omega)
         have E12 : MlEnv n12.mem := E10.fr F (by rw [← s11.mem]; exact P12.fr)
-        have R12 : GR2 B n12 r3 r4 r18 r19 r26 k := R10.of fun q hq => by
+        have R12 : GR2 B n12 r3 r4 r18 r19 r25 r26 k := R10.of fun q hq => by
           rw [P12.regs q (by revert hq; revert q; decide), k11 q (by revert hq; revert q; decide)
             (by revert hq; revert q; decide) (by revert hq; revert q; decide)]
         have r8'' : reg n12 (8 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 (0x420 + 0x300 * j + 0x60 * ix) := by
@@ -517,7 +518,7 @@ theorem ml2_pair {B r3 r4 r18 r19 r26 : Word} {T0 T1 : Nat → Pt2} {D0 D1 : Lis
           (c := 0xA20) (d := 0x420 + 0x300 * j + 0x60 * ix) (N := 0x20)
           (by decide) (by omega) (by omega)
         have E14 : MlEnv n14.mem := E12.fr F (by rw [← s13.mem]; exact P14.fr)
-        have R14 : GR2 B n14 r3 r4 r18 r19 r26 k := R12.of fun q hq => by
+        have R14 : GR2 B n14 r3 r4 r18 r19 r25 r26 k := R12.of fun q hq => by
           rw [P14.regs q (by revert hq; revert q; decide), k13 q (by revert hq; revert q; decide)
             (by revert hq; revert q; decide) (by revert hq; revert q; decide)]
         obtain ⟨n15, c15, u15⟩ := P14.st.block mlG5 E14.C.self mlG5_end ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩
