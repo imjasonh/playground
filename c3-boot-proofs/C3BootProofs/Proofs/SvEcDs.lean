@@ -593,4 +593,12 @@ theorem sv_low8F {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {i
       have := svR_sp1 hx 0 (by decide) 0 (by decide)
       rw [add_ofNat_zero, add_ofNat_zero] at this; exact this h.symm), mem1]
 
+theorem w64_split {a b : Word} {L : Nat} (h : a.toNat + 2 ^ 32 * b.toNat = L) :
+    a = BitVec.ofNat 32 (L % 2 ^ 32) ∧ b = BitVec.ofNat 32 (L / 2 ^ 32) := by
+  have ha := a.isLt; have hb := b.isLt
+  constructor <;> apply BitVec.eq_of_toNat_eq <;> rw [BitVec.toNat_ofNat] <;> omega
+
+theorem acc2_of8 {M : Word → BitVec 8} {p : Word} {V : Nat} (h : accV M p 8 = V) : accV M p 2 = V % 2 ^ 64 := by
+  rw [← h, ← accV_mod64 M p 6]
+
 end C3.RV32.Sv
