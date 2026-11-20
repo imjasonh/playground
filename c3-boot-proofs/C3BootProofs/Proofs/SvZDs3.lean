@@ -36,6 +36,7 @@ theorem zt_partB {B : Word} {m : Machine} {gl dl dh ul uh vl vh ql qh rl rh cnt 
     ∃ m', Steps m m' ∧ SvCode m'.mem ∧ SvIvCode m'.mem ∧ (∀ x, SvR B x → m'.mem x = m.mem x) ∧
       SvKeepL B m.mem m'.mem ztL ∧ St m'.mem SV m' 0x1D60 (reg m') ∧ reg m' sp = B + 0x21A0 ∧
       reg m' (3 : Fin 32) = reg m (3 : Fin 32) ∧ reg m' (4 : Fin 32) = reg m (4 : Fin 32) ∧
+      (∀ q : Fin 32, q.val ∈ [18, 19, 26] → reg m' q = reg m q) ∧
       reg m' (27 : Fin 32) = B + 0x21A0 + 0xA20 ∧
       (∀ c : Word, c.toNat + 4 ≤ 0x80 → 0x24 ≤ c.toNat → c.toNat + 4 ≤ 0x3C →
         memLoad32 m'.mem (B + 0x21A0 + c) = memLoad32 m.mem (B + 0x21A0 + c)) ∧
@@ -92,7 +93,7 @@ theorem zt_partB {B : Word} {m : Machine} {gl dl dh ul uh vl vh ql qh rl rh cnt 
   have r1_20 : reg n1 (20 : Fin 32) = rl := by
     rw [b1]; simp +decide only [runBlock, BInstr.run, zt5, upd, ↓reduceIte, aluEval, hsp]
     simp (disch := decide) only [zld_st hS]; exact w5c
-  have k1 : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 9, 21, 22, 23, 24, 27] → reg n1 q = reg m q := fun q hq => by
+  have k1 : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 9, 18, 19, 21, 22, 23, 24, 26, 27] → reg n1 q = reg m q := fun q hq => by
     rw [b1, runBlock_reg _ _ _ _ hz (by revert hq; revert q; decide)]
   have fr1 : ∀ x, SvR B x → n1.mem x = m.mem x := fun x hx => by
     rw [m1]; simp +decide only [runBlock, BInstr.run, zt5, upd, ↓reduceIte, aluEval, hsp]
@@ -152,7 +153,7 @@ theorem zt_partB {B : Word} {m : Machine} {gl dl dh ul uh vl vh ql qh rl rh cnt 
     · rw [b3]; simp +decide only [runBlock, BInstr.run, zt6, upd, ↓reduceIte, aluEval, z2, sp2]
       simp (disch := decide) only [zld_st hS]
       rw [zkld K2 (by decide) (by simp), w1 _ (by decide) (by decide), wc, w_zadd]
-  have k3 : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 8, 9, 20, 21, 22, 24, 25, 27] → reg n3 q = reg n2 q := fun q hq => by
+  have k3 : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 24, 25, 26, 27] → reg n3 q = reg n2 q := fun q hq => by
     rw [b3, runBlock_reg _ _ _ _ z2 (by revert hq; revert q; decide)]
   have fr3 : ∀ x, SvR B x → n3.mem x = n2.mem x := fun x hx => by
     rw [m3]; simp +decide only [runBlock, BInstr.run, zt6, upd, ↓reduceIte, aluEval, sp2]
@@ -224,7 +225,7 @@ theorem zt_partB {B : Word} {m : Machine} {gl dl dh ul uh vl vh ql qh rl rh cnt 
   have r5_24 : reg n5 (24 : Fin 32) = gl &&& 1 := by
     rw [b5]; simp +decide only [runBlock, BInstr.run, zt7, upd, ↓reduceIte, aluEval, sp4]
     exact g10
-  have k5 : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 8, 20, 25, 27] → reg n5 q = reg n4 q := fun q hq => by
+  have k5 : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 8, 18, 19, 20, 25, 26, 27] → reg n5 q = reg n4 q := fun q hq => by
     rw [b5, runBlock_reg _ _ _ _ z4 (by revert hq; revert q; decide)]
   have fr5 : ∀ x, SvR B x → n5.mem x = n4.mem x := fun x hx => by
     rw [m5]; simp +decide only [runBlock, BInstr.run, zt7, upd, ↓reduceIte, aluEval, sp4, e4_27, w_add0]
@@ -293,9 +294,9 @@ theorem zt_partB {B : Word} {m : Machine} {gl dl dh ul uh vl vh ql qh rl rh cnt 
     simp (disch := first | decide | omega |
       (simp only [BitVec.toNat_ofNat, BitVec.ofNat_eq_ofNat, Nat.reducePow, Nat.reduceMod]; omega))
       only [zk_st32 hS, zk_st8 hS]
-  have k7 : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 27] → reg n7 q = reg n6 q := fun q hq => by
+  have k7 : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 18, 19, 26, 27] → reg n7 q = reg n6 q := fun q hq => by
     rw [b7, runBlock_reg _ _ _ _ z6 (by revert hq; revert q; decide)]
-  have e6_3 : ∀ q : Fin 32, q.val ∈ [3, 4] → reg n6 q = reg m q := fun q hq => by
+  have e6_3 : ∀ q : Fin 32, q.val ∈ [3, 4, 18, 19, 26] → reg n6 q = reg m q := fun q hq => by
     rw [r6 q (by revert hq; revert q; decide), k5 q (by revert hq; revert q; decide),
       r4 q (by revert hq; revert q; decide), k3 q (by revert hq; revert q; decide),
       r2 q (by revert hq; revert q; decide), k1 q (by revert hq; revert q; decide)]
@@ -322,7 +323,9 @@ theorem zt_partB {B : Word} {m : Machine} {gl dl dh ul uh vl vh ql qh rl rh cnt 
     fun e he hL => by
       rw [K7 e he hL, K6 e he (by simp), K5 e he hL, K4 e he (by simp), K3 e he hL, K2 e he (by simp), K1 e he hL],
     ⟨u7.pc, rfl, fun _ => rfl⟩, by rw [k7 _ (by decide), sp6], by rw [k7 _ (by decide), e6_3 _ (by decide)],
-    by rw [k7 _ (by decide), e6_3 _ (by decide)], by rw [k7 _ (by decide), e6_27],
+    by rw [k7 _ (by decide), e6_3 _ (by decide)],
+    fun q hq => by rw [k7 q (by revert hq; revert q; decide), e6_3 q (by revert hq; revert q; decide)],
+    by rw [k7 _ (by decide), e6_27],
     fun c hc h1 h2 => by
       rw [w7 c hc (by omega), x6 c hc (by omega), y4 c hc (by omega)], ?_, ?_, ?_, p6.symm ▸ ?_, ?_⟩
   · rw [m7]; simp +decide only [runBlock, BInstr.run, zt8, upd, ↓reduceIte, aluEval, sp6, e6_27, w_add0]

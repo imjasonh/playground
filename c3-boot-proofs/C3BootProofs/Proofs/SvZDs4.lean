@@ -23,16 +23,17 @@ theorem zt_body {B : Word} {m : Machine} {s : Ds} {cnt : Word}
     ∃ m', Steps m m' ∧ SvCode m'.mem ∧ SvIvCode m'.mem ∧ (∀ x, SvR B x → m'.mem x = m.mem x) ∧
       SvKeepL B m.mem m'.mem ztL ∧ St m'.mem SV m' 0x1D60 (reg m') ∧ reg m' sp = B + 0x21A0 ∧
       reg m' (3 : Fin 32) = reg m (3 : Fin 32) ∧ reg m' (4 : Fin 32) = reg m (4 : Fin 32) ∧
+      (∀ q : Fin 32, q.val ∈ [18, 19, 26] → reg m' q = reg m q) ∧
       reg m' (27 : Fin 32) = B + 0x21A0 + 0xA20 ∧
       memLoad32 m'.mem (B + 0x21A0 + 0x48) = cnt + 0xFFFFFFFF ∧ ZtRegs B m'.mem (reg m') (dsStep s) := by
   obtain ⟨δ, f, g, u, v, q, r⟩ := s
   obtain ⟨hδ, hf, hg, hu, hv, hq, hr⟩ := hc
   dsimp only at hδ hf hg hu hv hq hr
   subst hδ hf hg hu hv hq hr
-  obtain ⟨n1, c1, E1, IC1, fr1, K1, s1, sp1, r1_3, r1_4, r1_27, r1_23, r1_24, r1_21, r1_9, r1_22, q1, w1_10, w1_c,
+  obtain ⟨n1, c1, E1, IC1, fr1, K1, s1, sp1, r1_3, r1_4, r1_k, r1_27, r1_23, r1_24, r1_21, r1_9, r1_22, q1, w1_10, w1_c,
       w1_48, w1_44, w1_40, w1_70, w1_60, w1_5c, w1_74, d1, f1, g1⟩ :=
     zt_partA F E IC st hsp h27 rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl hcnt
-  obtain ⟨n2, c2, E2, IC2, fr2, K2, s2, sp2, r2_3, r2_4, r2_27, k2, w2_48, u2, v2, q2, rr2⟩ :=
+  obtain ⟨n2, c2, E2, IC2, fr2, K2, s2, sp2, r2_3, r2_4, r2_k, r2_27, k2, w2_48, u2, v2, q2, rr2⟩ :=
     zt_partB F E1 IC1 s1 sp1 r1_27 r1_23 r1_24 r1_21 r1_9 r1_22 w1_10 w1_c w1_48 w1_44 w1_40 w1_5c w1_74
   obtain ⟨A1, A2, A3, A4, A5, A6, A7⟩ := ct_arith (memLoad32 m.mem (B + 0x21A0 + 0x34))
     (memLoad32 m.mem (B + 0x21A0 + 0x38)) (memLoad32 m.mem (B + 0x21A0 + 0x30))
@@ -42,7 +43,8 @@ theorem zt_body {B : Word} {m : Machine} {s : Ds} {cnt : Word}
     (memLoad32 m.mem (B + 0x21A0 + 0x70)) (memLoad32 m.mem (B + 0x21A0 + 0x60))
     (memLoad32 m.mem (B + 0x21A0 + 0x5C)) (memLoad32 m.mem (B + 0x21A0 + 0x74))
   refine ⟨n2, c1.trans c2, E2, IC2, fun x hx => by rw [fr2 x hx, fr1 x hx],
-    fun e he hL => by rw [K2 e he hL, K1 e he hL], s2, sp2, by rw [r2_3, r1_3], by rw [r2_4, r1_4], r2_27, w2_48,
+    fun e he hL => by rw [K2 e he hL, K1 e he hL], s2, sp2, by rw [r2_3, r1_3], by rw [r2_4, r1_4],
+    fun q hq => by rw [r2_k q hq, r1_k q hq], r2_27, w2_48,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · rw [k2 _ (by decide) (by decide) (by decide), k2 _ (by decide) (by decide) (by decide), d1, A1]
   · rw [k2 _ (by decide) (by decide) (by decide), k2 _ (by decide) (by decide) (by decide), f1, A2]
@@ -67,6 +69,7 @@ theorem zt_loop {B : Word} (F : Fr B 0x3830) :
       ∃ m', Steps m m' ∧ SvCode m'.mem ∧ SvIvCode m'.mem ∧ (∀ x, SvR B x → m'.mem x = m.mem x) ∧
         SvKeepL B m.mem m'.mem ztL ∧ St m'.mem SV m' 0x1D62 (reg m') ∧ reg m' sp = B + 0x21A0 ∧
         reg m' (3 : Fin 32) = reg m (3 : Fin 32) ∧ reg m' (4 : Fin 32) = reg m (4 : Fin 32) ∧
+        (∀ q : Fin 32, q.val ∈ [18, 19, 26] → reg m' q = reg m q) ∧
         reg m' (27 : Fin 32) = B + 0x21A0 + 0xA20 ∧ memLoad32 m'.mem (B + 0x21A0 + 0x48) = 0 ∧
         ZtRegs B m'.mem (reg m') (dsIter k s) := by
   have FS : Fr (B + 0x21A0) 0x1690 := F.sub (c := 0x21A0) (by decide) (by decide)
@@ -83,7 +86,8 @@ theorem zt_loop {B : Word} (F : Fr B 0x3830) :
     have e2 : ∀ q : Fin 32, q ≠ a0 → reg n2 q = reg m q := fun q h => by rw [u2.regs, updz st.zero h]
     exact ⟨n2, .cons d1 (.single d2), by rw [m2]; exact E, by rw [m2]; exact IC, fun x _ => by rw [m2],
       fun e _ _ => by rw [m2], ⟨u2.pc, rfl, fun _ => rfl⟩, by rw [e2 _ (by decide), hsp],
-      e2 _ (by decide), e2 _ (by decide), by rw [e2 _ (by decide), h27], by rw [m2, hcnt]; try rfl,
+      e2 _ (by decide), e2 _ (by decide), fun q hq => e2 q (by revert hq; revert q; decide),
+      by rw [e2 _ (by decide), h27], by rw [m2, hcnt]; try rfl,
       hc.of m2 (e2 _ (by decide))⟩
   | succ k ih =>
     intro m s E IC st hsp h27 hcnt hk hc
@@ -96,18 +100,19 @@ theorem zt_loop {B : Word} (F : Fr B 0x3830) :
     have m2 : n2.mem = m.mem := u2.mem
     have e2 : ∀ q : Fin 32, q ≠ a0 → reg n2 q = reg m q := fun q h => by rw [u2.regs, updz st.zero h]
     have s2 : St n2.mem SV n2 0x1BA4 (reg n2) := ⟨u2.pc, rfl, fun _ => rfl⟩
-    obtain ⟨n3, c3, E3, IC3, fr3, K3, s3, sp3, r3_3, r3_4, r3_27, w3, Z3⟩ :=
+    obtain ⟨n3, c3, E3, IC3, fr3, K3, s3, sp3, r3_3, r3_4, r3_k, r3_27, w3, Z3⟩ :=
       zt_body F (by rw [m2]; exact E) (by rw [m2]; exact IC) s2 (by rw [e2 _ (by decide), hsp])
         (by rw [e2 _ (by decide), h27]) (by rw [m2, hcnt]) (hc.of m2 (e2 _ (by decide)))
     obtain ⟨n4, d4, u4⟩ := s3.jump E3.self sv_at_1d60 (off' := 0x1B9E) (by decide) (by rw [s3.pc]; decide)
     have m4 : n4.mem = n3.mem := u4.mem
     have s4 : St n4.mem SV n4 0x1B9E (reg n4) := ⟨u4.pc, rfl, fun _ => rfl⟩
-    obtain ⟨n5, c5, E5, IC5, fr5, K5, s5, sp5, r5_3, r5_4, r5_27, w5, Z5⟩ :=
+    obtain ⟨n5, c5, E5, IC5, fr5, K5, s5, sp5, r5_3, r5_4, r5_k, r5_27, w5, Z5⟩ :=
       ih (s := dsStep s) (by rw [m4]; exact E3) (by rw [m4]; exact IC3) s4 (by rw [u4.regs, sp3])
         (by rw [u4.regs, r3_27]) (by rw [m4, w3, ofNat_succ_dec]) (by omega) (Z3.of m4 (u4.regs _))
     exact ⟨n5, .cons d1 (.cons d2 (c3.trans (.cons d4 c5))), E5, IC5,
       fun x hx => by rw [fr5 x hx, m4, fr3 x hx, m2],
       fun e he hL => by rw [K5 e he hL, m4, K3 e he hL, m2], s5, sp5,
-      by rw [r5_3, u4.regs, r3_3, e2 _ (by decide)], by rw [r5_4, u4.regs, r3_4, e2 _ (by decide)], r5_27, w5, Z5⟩
+      by rw [r5_3, u4.regs, r3_3, e2 _ (by decide)], by rw [r5_4, u4.regs, r3_4, e2 _ (by decide)],
+      fun q hq => by rw [r5_k q hq, u4.regs, r3_k q hq, e2 q (by revert hq; revert q; decide)], r5_27, w5, Z5⟩
 
 end C3.RV32.Sv
