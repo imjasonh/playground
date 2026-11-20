@@ -1,0 +1,10 @@
+// Good
+if (arr.includes(item)) {}
+if (!str.includes("prefix")) {}
+if (str.indexOf("prefix") === 0) {}
+
+// Bad
+if (arr.includes(item)) {} // want "use .includes() instead of comparing .indexOf()"
+if (!str.includes("prefix")) {} // want "use !.includes() instead of comparing .indexOf()"
+if (str.includes("foo")) {} // want "use .includes() instead of comparing .indexOf()"
+if (!str.includes("bar")) {} // want "use !.includes() instead of comparing .indexOf()"
