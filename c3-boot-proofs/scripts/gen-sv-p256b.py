@@ -104,7 +104,7 @@ chain4 = ", ".join(f"r{k}_4" for k in range(K, 0, -1))
 steps = f"c{K}"
 for k in range(K - 1, 0, -1):
     steps = f"c{k}.trans ({steps})"
-P(f"  refine .inr ⟨⟨{names[0] if False else 'x1_0'}, trivial⟩, n{K}, {steps}, fR{K}, s{K}, ME.fr F fR{K},")
+P(f"  refine .inr ⟨⟨x1_0, trivial⟩, n{K}, {steps}, fR{K}, s{K}, ME.fr F fR{K}, V{K},")
 P(f"    by rw [{chain3}]; exact I.g3, by rw [{chain4}]; exact I.g4,")
 P("    " + ", ".join(pname(k) for k, _ in keep) + ",")
 P(f"    ⟨fun j hj => ?_, fun j hj => ?_, fun j _ => ⟨tbl2_lt hG j, tbl2_lt hQ j⟩, mb{K}_1024, mb{K}_112c⟩⟩")
@@ -141,7 +141,7 @@ O(f"    (hG : Pt2Lt {P0})")
 O(f"    (hQ : Pt2Lt {P1}) :")
 O(f"    (¬ ({SC}) ∧ Panics n0) ∨")
 O(f"    (({SC}) ∧ ∃ m', Steps n0 m' ∧ (∀ x, SvR B x → m'.mem x = M0 x) ∧ St m'.mem SV m' 0x18F8 (reg m') ∧")
-O("      MlEnv m'.mem ∧ reg m' (3 : Fin 32) = r3 ∧ reg m' (4 : Fin 32) = r4 ∧")
+O("      MlEnv m'.mem ∧ SvSaves B m'.mem v ∧ reg m' (3 : Fin 32) = r3 ∧ reg m' (4 : Fin 32) = r4 ∧")
 for _, t in keep:
     O(f"      {t} ∧")
 O(f"      GM2 B m'.mem (tbl2 {P0}) (tbl2 {P1})")
