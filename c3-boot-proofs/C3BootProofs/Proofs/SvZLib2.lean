@@ -43,6 +43,36 @@ theorem sv_sepLow {B : Word} {c l k : Nat} (hc : c + l ≤ 0x1690) (hk : k ≤ 0
     Sep (B + 0x21A0 + BitVec.ofNat 32 c) l (B + 0x21A0 + BitVec.ofNat 32 (2 ^ 32 - k)) k := by
   rw [sv_spX B k hk, ← sv_base']; exact sepS B (by omega) (by omega) (by omega)
 
+theorem _root_.C3.RV32.P2.P2Code.sv {M M0 : Word → BitVec 8} {B : Word} (F : Fr B 0x3830) (D : P2Code M0)
+    (fR : ∀ x, SvR B x → M x = M0 x) : P2Code M :=
+  D.hi fun x hx => fR x (sep_of_le (by
+    have hb : (B + 0xFFFFFE60).toNat = B.toNat - 0x1A0 := F.below 0x1A0 (by decide) (by decide)
+    have := F.hi; rw [hb]; omega) (by have := x.isLt; omega))
+
+theorem _root_.C3.RV32.Gd.GdCode.sv {M M0 : Word → BitVec 8} {B : Word} (F : Fr B 0x3830) (D : GdCode M0)
+    (fR : ∀ x, SvR B x → M x = M0 x) : GdCode M :=
+  D.hi fun x hx => fR x (sep_of_le (by
+    have hb : (B + 0xFFFFFE60).toNat = B.toNat - 0x1A0 := F.below 0x1A0 (by decide) (by decide)
+    have := F.hi; rw [hb]; omega) (by have := x.isLt; omega))
+
+theorem _root_.C3.RV32.P2.P2Data.sv {M M0 : Word → BitVec 8} {B : Word} (F : Fr B 0x3830) (D : P2Data M0)
+    (fR : ∀ x, SvR B x → M x = M0 x) : P2Data M :=
+  P2Data.of F D fR
+
+theorem ite_lt {c : Prop} [Decidable c] {a b p : Nat} (ha : a < p) (hb : b < p) : (if c then a else b) < p := by
+  split <;> assumption
+
+theorem limbs_eq_iff {M : Word → BitVec 8} {a b : Word} {va vb : Nat} (ha : accV M a 8 = va)
+    (hb : accV M b 8 = vb) :
+    (∀ i, i < 8 → memLoad32 M (a + BitVec.ofNat 32 (4 * i)) = memLoad32 M (b + BitVec.ofNat 32 (4 * i))) ↔
+      va = vb := by
+  subst ha hb
+  exact ⟨fun h => accV_congr2 8 fun i hi => h i hi, fun h => accV_inj 8 h⟩
+
+theorem beNat_of_leNr {M : Word → BitVec 8} {p : Word} {V : Nat} (h : leN (memBytes M p 32).reverse = V) :
+    beNat (memBytes M p 32) = V := by
+  rw [beNat_eq_leN]; exact h
+
 set_option maxHeartbeats 8000000 in
 /-- **A call to the P-256 field's `conditional_select`** of the limbs at
 offsets `ca` and `cb` by the choice `c`, into offset `co`. -/
@@ -366,5 +396,28 @@ theorem sv_by2Fs {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {i
   simp only at h1
   exact f2 _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega))
     (sepS (B + 0x21A0) (by omega) (by omega) (by omega))
+
+theorem ch01 {nzw : Word} {P : Prop} [Decidable P] (h : nzw = 0 ∨ nzw = 1) :
+    (((nzw &&& ((if P then 1 else 0 : Word) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32 &&&
+      BitVec.ofNat 32 0xFF : Word) = 0 ∨
+    (((nzw &&& ((if P then 1 else 0 : Word) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32 &&&
+      BitVec.ofNat 32 0xFF : Word) = 1 := by
+  rcases h with rfl | rfl <;> split <;> decide
+
+theorem ch01b {nzw : Word} {P : Prop} [Decidable P] (h : nzw = 0 ∨ nzw = 1) :
+    ((((nzw &&& ((if P then 1 else 0 : Word) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32 : Word).extractLsb'
+      0 8) = 0 ∨
+    ((((nzw &&& ((if P then 1 else 0 : Word) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32 : Word).extractLsb'
+      0 8) = 1 := by
+  rcases h with rfl | rfl <;> split <;> decide
+
+theorem ch01c {nzw : Word} {P : Prop} [Decidable P] (h : nzw = 0 ∨ nzw = 1) :
+    ((((nzw &&& ((if P then 1 else 0 : Word) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32 : Word).extractLsb'
+      0 8) = 0 ∨
+    ((((nzw &&& ((if P then 1 else 0 : Word) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32 : Word).extractLsb'
+      0 8) = 1 := ch01b h
+
+theorem zext_01b {b : BitVec 8} (h : b = 0 ∨ b = 1) : (b.zeroExtend 32 : Word) = 0 ∨ (b.zeroExtend 32 : Word) = 1 := by
+  rcases h with rfl | rfl <;> decide
 
 end C3.RV32.Sv

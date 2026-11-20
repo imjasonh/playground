@@ -299,6 +299,7 @@ import C3BootProofs.Proofs.SvZDs
 import C3BootProofs.Proofs.SvZDs2
 import C3BootProofs.Proofs.SvZDs3
 import C3BootProofs.Proofs.SvZDs4
+import C3BootProofs.Proofs.SvZE
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main
