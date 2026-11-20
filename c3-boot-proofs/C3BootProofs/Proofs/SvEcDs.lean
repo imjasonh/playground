@@ -601,4 +601,9 @@ theorem w64_split {a b : Word} {L : Nat} (h : a.toNat + 2 ^ 32 * b.toNat = L) :
 theorem acc2_of8 {M : Word → BitVec 8} {p : Word} {V : Nat} (h : accV M p 8 = V) : accV M p 2 = V % 2 ^ 64 := by
   rw [← h, ← accV_mod64 M p 6]
 
+theorem umin_ne0 {a : Word} (h : a ≠ 0) : (if a.toNat < 62 then a else 62) ≠ 0 := by
+  split
+  · exact h
+  · decide
+
 end C3.RV32.Sv

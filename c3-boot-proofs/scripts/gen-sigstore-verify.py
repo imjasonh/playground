@@ -2120,6 +2120,45 @@ class Gen:
         self.regs[10] = ("U", val)
         self.frame_after(k, [], {})
 
+    def umin(self, off):
+        """`u32::min(a0, 62)`."""
+        old = lean_val(self.regs[10])
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_uminF", "", [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"a0_{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (IC0.sv F fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2 g{k-1}_10")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        val = f"(if ({old}).toNat < 62 then {old} else 62)"
+        self.emit(f"  have g{k}_10 : reg n{k} a0 = {val} := a0_{k}")
+        self.regs[10] = ("U", val)
+        self.frame_after(k, [], {})
+
+    def low8(self, off, oc, sign_le):
+        """`lowest` of the 8 limbs at offset `oc` with their sign byte after
+        them: the low 64 bits as a signed word in `a1:a0`."""
+        n, V = self.acc[oc]
+        sgn = self.bytes[oc + 0x20]
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_low8F", f"(oc := 0x{oc:X})", [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"L{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (IC0.sv F fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, oc)} (by decide) (by decide) (by rw [show 0x{oc:X} + 0x20 = 0x{oc + 0x20:X} from rfl, b{k-1}_{oc + 0x20:x}]; exact {sign_le})")
+        self.emit(f"  rw [show 0x{oc:X} + 0x20 = 0x{oc + 0x20:X} from rfl, b{k-1}_{oc + 0x20:x}, acc2_of8 a{k-1}_{oc:x}] at L{k}")
+        self.emit(f"  obtain ⟨e0_{k}, e1_{k}⟩ := w64_split L{k}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        Lv = f"lowestVal ({sgn}).toNat (({V}) % 2 ^ 64)"
+        self.emit(f"  have g{k}_10 : reg n{k} a0 = BitVec.ofNat 32 (({Lv}) % 2 ^ 32) := e0_{k}")
+        self.emit(f"  have g{k}_11 : reg n{k} a1 = BitVec.ofNat 32 (({Lv}) / 2 ^ 32) := e1_{k}")
+        self.regs[10] = ("U", f"BitVec.ofNat 32 (({Lv}) % 2 ^ 32)")
+        self.regs[11] = ("U", f"BitVec.ofNat 32 (({Lv}) / 2 ^ 32)")
+        self.frame_after(k, [], {})
+
     def isr(self, off, cx, y, post=None):
         """`ecdsa::in_scalar_range` of the 32 bytes at offset `cx` and at `y`."""
         k = self.k + 1
@@ -7872,6 +7911,92 @@ def stage_eca3():
     return g, info
 
 
+IV_ACC = {0x240: "qx", 0x260: "qy", 0x280: "qz", 0x2A0: "rv", 0x2C0: "sv", 0x2E0: "zv",
+          0x1380: "fv", 0x1480: "gv", 0x1020: "dv", 0x420: "ev"}
+IV_SIGN = {0x13A0: "fs", 0x14A0: "gs", 0x1044: "ds", 0x444: "es"}
+IV_BINDERS = ("{B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs gs ds es : BitVec 8} "
+              + "{" + " ".join(IV_ACC.values()) + " : Nat} "
+              + "{" + " ".join(f"w{e:x}" for e in DPV_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+
+
+def iv_start(g):
+    """The head of the inversion of `s` at 0x1328: `f` and `g`, each 8 limbs
+    with a sign byte after them, `d` and `e`, the steps left at 0x78, and
+    `δ` in `s9:s7`."""
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 20: ("S", 0x1320), 21: ("U", "s5v"), 23: ("U", "dlo"), 24: ("U", "s8v"),
+            25: ("U", "dhi"), 26: ("U", "x26"), 27: ("S", 0xA20)}
+    words = {e: f"w{e:x}" for e in DPV_WORDS}
+    words[0x78] = "rem"
+    params = start(g, regs, words, {})
+    for d, nm in sorted(IV_ACC.items()):
+        g.acc[d] = (8, nm)
+        params.append(f"(a0_{d:x} : accV n0.mem ({fa(d)}) 8 = {nm})")
+    for e, nm in sorted(IV_SIGN.items()):
+        g.bytes[e] = nm
+        params.append(f"(b0_{e:x} : n0.mem ({fa(e)}) = {nm})")
+    params += ["(IC0 : SvIvCode M0)", "(EC0 : SvEcCode M0)"]
+    return params
+
+
+def stage_ivh(kind):
+    """The inversion's head at 0x1328: steps left ("c", to the scan at
+    0x1338) or none ("x", to 0x1556)."""
+    g = Gen("IvH" + kind)
+    g.generic_alu = True
+    params = iv_start(g)
+    g.load(0x1328, "lw")
+    if kind == "x":
+        params.append("(hrem : rem = 0)")
+        g.branch(0x132A, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_t hrem")
+        end = 0x1556
+    else:
+        params.append("(hrem : rem ≠ 0)")
+        g.branch(0x132A, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hrem")
+        g.block(0x132E, 0x1338)
+        end = 0x1338
+    keep = [2, 3, 4, 18, 19, 20, 21, 23, 24, 25, 26, 27] + ([10, 11] if kind == "c" else [])
+    stmt, proof = finish(g, end, keep, set(g.words), set(g.bytes))
+    info = {"name": "sv_ivh" + kind, "title": "the head of the inversion of `s`",
+            "doc": "The inversion's head at 0x1328: " + ("steps are left, and the scan of `g` starts at 0x1338."
+                                                        if kind == "c" else "no steps are left, on to 0x1556."),
+            "params": params, "stmt": stmt, "proof": proof, "binders": IV_BINDERS, "start": 0x1328,
+            "import": "C3BootProofs.Proofs.SvEcDs"}
+    return g, info
+
+
+def stage_iva():
+    """From the scan's end at 0x134C to the divstep loop at 0x1392: the
+    batch's size `min rem 62`, the low words of `f` and `g`, and the identity
+    matrix."""
+    g = Gen("IvA")
+    g.generic_alu = True
+    params = iv_start(g)
+    params += ["(hrem : rem ≠ 0)", "(hfs : fs.toNat ≤ 1)", "(hgs : gs.toNat ≤ 1)"]
+    g.load(0x134C, "lw")
+    g.umin(0x134E)
+    g.block(0x1356, 0x1358)
+    g.block(0x1358, 0x1360)
+    g.low8(0x1360, 0x1380, "hfs")
+    g.block(0x1368, 0x136A)
+    g.store(0x136A, "sw")
+    g.block(0x136C, 0x1374)
+    g.low8(0x1374, 0x1480, "hgs")
+    g.block(0x137C, 0x138C)
+    g.store(0x138C, "sw")
+    g.block(0x138E, 0x1390)
+    n = lean_val(g.regs[9])
+    g.branch(0x1390, False, f"by rw [g{g.k}_9, s{g.k}.zero]; exact br_beq_f (umin_ne0 hrem)")
+    stmt, proof = finish(g, 0x1392, [2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+                                     26, 27, 29, 31], set(g.words), set(g.bytes))
+    info = {"name": "sv_iva", "title": "the start of a batch of the inversion of `s`",
+            "doc": "From the scan's end at 0x134C to the divstep loop at 0x1392: the batch runs `min rem 62` steps, "
+            "on the low 64 bits of `f` and `g` as signed words, starting from the identity matrix.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": IV_BINDERS, "start": 0x134C,
+            "import": "C3BootProofs.Proofs.SvEcDs"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -7897,7 +8022,8 @@ def main():
                 **{f"Cm{x}": (lambda x=x: stage_cm(x)) for x in CM_DOC}, "Csx": stage_csx,
                 "Cr1e": lambda: stage_cr1(True), "Cr1n": lambda: stage_cr1(False), "Rl": stage_rl, "Rm": stage_rm,
                 **{f"Win{i}{x}": (lambda i=i, x=x: stage_win(i, x == "e")) for i in range(8) for x in "en"},
-                "EcA1": stage_eca1, "EcA2": stage_eca2, "EcA3": stage_eca3}[stage]()
+                "EcA1": stage_eca1, "EcA2": stage_eca2, "EcA3": stage_eca3,
+                "IvHc": lambda: stage_ivh("c"), "IvHx": lambda: stage_ivh("x"), "IvA": stage_iva}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
