@@ -56,7 +56,6 @@ theorem sv_p256 {B out bp x21 x26 : Word} {er es : Bytes} {v : Nat → Word} {n0
     (k1 : SvIn B x21 1) (k41 : SvIn B x21 0x41) (dg_in : SvIn B (memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x84)) 32)
     (UE0 : CodeIn M0 (BitVec.ofNat 32 uint8EqAddress) uint8EqCode) (N80 : CodeIn M0 (BitVec.ofNat 32 norm8Address) norm8Code) (PM0 : CodeIn M0 (BitVec.ofNat 32 p256ScalarMulAddress) p256ScalarMulCode) (WM0 : CodeIn M0 (BitVec.ofNat 32 wideMulAddress) wideMulCode) (PT0 : SvPtCode M0) (WN0 : SvWnCode M0) (ME : MlEnv M0) (P2C0 : P2Code M0) (GDC0 : C3.RV32.Gd.GdCode M0) (P2D0 : P2Data M0) (SC0 : CodeIn M0 (BitVec.ofNat 32 p256ScalarCtEqAddress) p256ScalarCtEqCode)
     (hidC : CodeIn M0 (BitVec.ofNat 32 p256IdentityAddress) p256IdentityData) (hidR : accV M0 (BitVec.ofNat 32 0x3FCC442C) 8 < p256)
-    (hN : 0 < accV M0 (BitVec.ofNat 32 0x3FCC4268) 8) (hP : 0 < accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)
     (hG : Pt2Lt (accV M0 (BitVec.ofNat 32 0x3FCC4690 + BitVec.ofNat 32 0x0) 8, accV M0 (BitVec.ofNat 32 0x3FCC4690 + BitVec.ofNat 32 0x20) 8, accV M0 (BitVec.ofNat 32 0x3FCC4690 + BitVec.ofNat 32 0x40) 8)) (hQ : Pt2Lt ((gsVal M0 x21 1 * 2 ^ 256 % p256), (gsVal M0 x21 0x21 * 2 ^ 256 % p256), (accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8)))
     (hzi : ∀ Z τd τf Dz Fz, τd ≤ 1 → τf ≤ 1 → sgnVal τf Fz = (p256Sz M0 Z).f → sgnVal τd Dz = (p256Sz M0 Z).d →
         normVal8 τd τf Dz (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8) < p256) :
@@ -136,6 +135,12 @@ theorem sv_p256 {B out bp x21 x26 : Word} {er es : Bytes} {v : Nat → Word} {n0
         accV m'.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = (beNat (memBytes M0 (memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x84)) 32) % C3.p256.n) ∧
         accV m'.mem (B + 0x21A0 + BitVec.ofNat 32 0x15A8) 8 = (stm.1.1) ∧
         accV m'.mem (B + 0x21A0 + BitVec.ofNat 32 0x15C8) 8 = (stm.1.2.1)))) := by
+  have hN : 0 < accV M0 (BitVec.ofNat 32 0x3FCC4268) 8 := by
+    show 0 < accV M0 BYO 8; rw [BY0.ord]; decide
+  have hP : 0 < accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by
+    have h := code_accV D0.params 0 8 (by decide)
+    rw [add_ofNat_zero] at h
+    show 0 < accV M0 P2N 8; rw [h]; decide
   rcases sv_p256_inv F E0 V0 hret hO s0 M0 fM g0_2 g0_18 g0_19 g0_20 g0_21 g0_26 g0_27 b0_138 q0_139 b0_158 q0_159 EC0 IC0 UC0 D0 BG0 RS BY0 k1 k41 dg_in with ⟨hn, e⟩ | ⟨h1, h2, m1, c1, fr1, s1, I1⟩
   · exact .inl ⟨hn, e⟩
   obtain ⟨m2, c2, fr2, s2, I2⟩ := iv_loop F hret hO hN 10 s1 I1

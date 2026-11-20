@@ -59,8 +59,9 @@ stage the previous stage's facts by name. It ends in one of three ways:
 Its statement doesn't mention any intermediate machine. The two inverses
 are witnesses that `sgnVal` ties to the states of `ivLoop8` and `zvLoop`.
 It still takes these hypotheses:
-- Bounds on constants in the image: the base point's coordinates, the
-  key's `Z`, p, n, and the identity's coordinate.
+- Bounds on three constants in the image that aren't extracted yet: the
+  base point's coordinates (0x3FCC4690), the key's `Z` (0x3FCC43A8), and
+  the identity's coordinate (0x3FCC442C).
 - The range bound of the inversion of `Z` (`hzi`), which is
   safegcd's bound on `d` and `e`.
 
