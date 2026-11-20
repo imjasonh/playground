@@ -8046,7 +8046,7 @@ def iv_start(g):
     with a sign byte after them, `d` and `e`, the steps left at 0x78, and
     `δ` in `s9:s7`."""
     regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
-            19: ("U", "bp"), 20: ("S", 0x1320), 21: ("U", "s5v"), 23: ("U", "dlo"), 24: ("U", "s8v"),
+            19: ("U", "bp"), 21: ("U", "s5v"), 23: ("U", "dlo"), 24: ("U", "s8v"),
             25: ("U", "dhi"), 26: ("U", "x26"), 27: ("S", 0xA20)}
     words = {e: f"w{e:x}" for e in DPV_WORDS}
     words[0x78] = "rem"
@@ -8228,6 +8228,8 @@ def stage_ecd():
     g = Gen("EcD")
     g.generic_alu = True
     params = iv_start(g)
+    g.regs[20] = ("S", 0xA20)
+    params.append("(g0_20 : reg n0 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20)")
     g.acc[0x420] = (8, "wv")
     params = [p for p in params if not p.startswith("(a0_420 ")]
     params.append("(a0_420 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = wv)")

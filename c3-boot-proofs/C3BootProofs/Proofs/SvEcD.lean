@@ -67,7 +67,6 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
     (g0_2 : reg n0 sp = B + 0x21A0)
     (g0_18 : reg n0 (18 : Fin 32) = out)
     (g0_19 : reg n0 (19 : Fin 32) = bp)
-    (g0_20 : reg n0 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320)
     (g0_21 : reg n0 (21 : Fin 32) = s5v)
     (g0_23 : reg n0 (23 : Fin 32) = dlo)
     (g0_24 : reg n0 (24 : Fin 32) = s8v)
@@ -156,6 +155,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
     (b0_14a0 : n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs)
     (IC0 : SvIvCode M0)
     (EC0 : SvEcCode M0)
+    (g0_20 : reg n0 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20)
     (a0_420 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = wv)
     (RS : SvRoSep B)
     (PM0 : CodeIn M0 (BitVec.ofNat 32 p256ScalarMulAddress) p256ScalarMulCode)
@@ -171,7 +171,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
         reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧
         reg n' (18 : Fin 32) = out ∧
         reg n' (19 : Fin 32) = bp ∧
-        reg n' (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 ∧
+        reg n' (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 ∧
         reg n' (21 : Fin 32) = BitVec.ofNat 32 0x2 ∧
         reg n' (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 ∧
         reg n' (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 ∧
@@ -309,7 +309,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
     rw [rb1, runBlock_reg _ _ _ (18 : Fin 32) s0.zero (by decide), g0_18]
   have g1_19 : reg n1 (19 : Fin 32) = bp := by
     rw [rb1, runBlock_reg _ _ _ (19 : Fin 32) s0.zero (by decide), g0_19]
-  have g1_20 : reg n1 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by
+  have g1_20 : reg n1 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb1, runBlock_reg _ _ _ (20 : Fin 32) s0.zero (by decide), g0_20]
   have g1_21 : reg n1 (21 : Fin 32) = s5v := by
     rw [rb1, runBlock_reg _ _ _ (21 : Fin 32) s0.zero (by decide), g0_21]
@@ -431,7 +431,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
   have g2_4 : reg n2 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P2.regs (4 : Fin 32) (by decide), g1_4]
   have g2_18 : reg n2 (18 : Fin 32) = out := by rw [P2.regs (18 : Fin 32) (by decide), g1_18]
   have g2_19 : reg n2 (19 : Fin 32) = bp := by rw [P2.regs (19 : Fin 32) (by decide), g1_19]
-  have g2_20 : reg n2 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by rw [P2.regs (20 : Fin 32) (by decide), g1_20]
+  have g2_20 : reg n2 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [P2.regs (20 : Fin 32) (by decide), g1_20]
   have g2_21 : reg n2 (21 : Fin 32) = s5v := by rw [P2.regs (21 : Fin 32) (by decide), g1_21]
   have g2_23 : reg n2 (23 : Fin 32) = dlo := by rw [P2.regs (23 : Fin 32) (by decide), g1_23]
   have g2_24 : reg n2 (24 : Fin 32) = s8v := by rw [P2.regs (24 : Fin 32) (by decide), g1_24]
@@ -544,7 +544,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
     rw [rb3, runBlock_reg _ _ _ (18 : Fin 32) s2.zero (by decide), g2_18]
   have g3_19 : reg n3 (19 : Fin 32) = bp := by
     rw [rb3, runBlock_reg _ _ _ (19 : Fin 32) s2.zero (by decide), g2_19]
-  have g3_20 : reg n3 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by
+  have g3_20 : reg n3 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb3, runBlock_reg _ _ _ (20 : Fin 32) s2.zero (by decide), g2_20]
   have g3_21 : reg n3 (21 : Fin 32) = s5v := by
     rw [rb3, runBlock_reg _ _ _ (21 : Fin 32) s2.zero (by decide), g2_21]
@@ -668,7 +668,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
   have g4_4 : reg n4 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [rk4 (4 : Fin 32) (by decide), g3_4]
   have g4_18 : reg n4 (18 : Fin 32) = out := by rw [rk4 (18 : Fin 32) (by decide), g3_18]
   have g4_19 : reg n4 (19 : Fin 32) = bp := by rw [rk4 (19 : Fin 32) (by decide), g3_19]
-  have g4_20 : reg n4 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by rw [rk4 (20 : Fin 32) (by decide), g3_20]
+  have g4_20 : reg n4 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rk4 (20 : Fin 32) (by decide), g3_20]
   have g4_21 : reg n4 (21 : Fin 32) = s5v := by rw [rk4 (21 : Fin 32) (by decide), g3_21]
   have g4_23 : reg n4 (23 : Fin 32) = dlo := by rw [rk4 (23 : Fin 32) (by decide), g3_23]
   have g4_24 : reg n4 (24 : Fin 32) = s8v := by rw [rk4 (24 : Fin 32) (by decide), g3_24]
@@ -781,7 +781,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
     rw [rb5, runBlock_reg _ _ _ (18 : Fin 32) s4.zero (by decide), g4_18]
   have g5_19 : reg n5 (19 : Fin 32) = bp := by
     rw [rb5, runBlock_reg _ _ _ (19 : Fin 32) s4.zero (by decide), g4_19]
-  have g5_20 : reg n5 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by
+  have g5_20 : reg n5 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb5, runBlock_reg _ _ _ (20 : Fin 32) s4.zero (by decide), g4_20]
   have g5_21 : reg n5 (21 : Fin 32) = s5v := by
     rw [rb5, runBlock_reg _ _ _ (21 : Fin 32) s4.zero (by decide), g4_21]
@@ -906,7 +906,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
   have g6_4 : reg n6 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [rk6 (4 : Fin 32) (by decide), g5_4]
   have g6_18 : reg n6 (18 : Fin 32) = out := by rw [rk6 (18 : Fin 32) (by decide), g5_18]
   have g6_19 : reg n6 (19 : Fin 32) = bp := by rw [rk6 (19 : Fin 32) (by decide), g5_19]
-  have g6_20 : reg n6 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by rw [rk6 (20 : Fin 32) (by decide), g5_20]
+  have g6_20 : reg n6 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rk6 (20 : Fin 32) (by decide), g5_20]
   have g6_21 : reg n6 (21 : Fin 32) = s5v := by rw [rk6 (21 : Fin 32) (by decide), g5_21]
   have g6_23 : reg n6 (23 : Fin 32) = dlo := by rw [rk6 (23 : Fin 32) (by decide), g5_23]
   have g6_24 : reg n6 (24 : Fin 32) = s8v := by rw [rk6 (24 : Fin 32) (by decide), g5_24]
@@ -1020,7 +1020,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
     rw [rb7, runBlock_reg _ _ _ (18 : Fin 32) s6.zero (by decide), g6_18]
   have g7_19 : reg n7 (19 : Fin 32) = bp := by
     rw [rb7, runBlock_reg _ _ _ (19 : Fin 32) s6.zero (by decide), g6_19]
-  have g7_20 : reg n7 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by
+  have g7_20 : reg n7 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb7, runBlock_reg _ _ _ (20 : Fin 32) s6.zero (by decide), g6_20]
   have g7_21 : reg n7 (21 : Fin 32) = s5v := by
     rw [rb7, runBlock_reg _ _ _ (21 : Fin 32) s6.zero (by decide), g6_21]
@@ -1149,7 +1149,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
   have g8_4 : reg n8 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P8.regs (4 : Fin 32) (by decide), g7_4]
   have g8_18 : reg n8 (18 : Fin 32) = out := by rw [P8.regs (18 : Fin 32) (by decide), g7_18]
   have g8_19 : reg n8 (19 : Fin 32) = bp := by rw [P8.regs (19 : Fin 32) (by decide), g7_19]
-  have g8_20 : reg n8 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by rw [P8.regs (20 : Fin 32) (by decide), g7_20]
+  have g8_20 : reg n8 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [P8.regs (20 : Fin 32) (by decide), g7_20]
   have g8_21 : reg n8 (21 : Fin 32) = s5v := by rw [P8.regs (21 : Fin 32) (by decide), g7_21]
   have g8_22 : reg n8 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [P8.regs (22 : Fin 32) (by decide), g7_22]
   have g8_23 : reg n8 (23 : Fin 32) = dlo := by rw [P8.regs (23 : Fin 32) (by decide), g7_23]
@@ -1266,7 +1266,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
     rw [rb9, runBlock_reg _ _ _ (18 : Fin 32) s8.zero (by decide), g8_18]
   have g9_19 : reg n9 (19 : Fin 32) = bp := by
     rw [rb9, runBlock_reg _ _ _ (19 : Fin 32) s8.zero (by decide), g8_19]
-  have g9_20 : reg n9 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by
+  have g9_20 : reg n9 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb9, runBlock_reg _ _ _ (20 : Fin 32) s8.zero (by decide), g8_20]
   have g9_21 : reg n9 (21 : Fin 32) = s5v := by
     rw [rb9, runBlock_reg _ _ _ (21 : Fin 32) s8.zero (by decide), g8_21]
@@ -1396,7 +1396,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
   have g10_4 : reg n10 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P10.regs (4 : Fin 32) (by decide), g9_4]
   have g10_18 : reg n10 (18 : Fin 32) = out := by rw [P10.regs (18 : Fin 32) (by decide), g9_18]
   have g10_19 : reg n10 (19 : Fin 32) = bp := by rw [P10.regs (19 : Fin 32) (by decide), g9_19]
-  have g10_20 : reg n10 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by rw [P10.regs (20 : Fin 32) (by decide), g9_20]
+  have g10_20 : reg n10 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [P10.regs (20 : Fin 32) (by decide), g9_20]
   have g10_21 : reg n10 (21 : Fin 32) = s5v := by rw [P10.regs (21 : Fin 32) (by decide), g9_21]
   have g10_22 : reg n10 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [P10.regs (22 : Fin 32) (by decide), g9_22]
   have g10_23 : reg n10 (23 : Fin 32) = dlo := by rw [P10.regs (23 : Fin 32) (by decide), g9_23]
@@ -1521,7 +1521,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
     rw [rb11, runBlock_reg _ _ _ (18 : Fin 32) s10.zero (by decide), g10_18]
   have g11_19 : reg n11 (19 : Fin 32) = bp := by
     rw [rb11, runBlock_reg _ _ _ (19 : Fin 32) s10.zero (by decide), g10_19]
-  have g11_20 : reg n11 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by
+  have g11_20 : reg n11 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb11, runBlock_reg _ _ _ (20 : Fin 32) s10.zero (by decide), g10_20]
   have g11_21 : reg n11 (21 : Fin 32) = s5v := by
     rw [rb11, runBlock_reg _ _ _ (21 : Fin 32) s10.zero (by decide), g10_21]
@@ -1654,7 +1654,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
   have g12_4 : reg n12 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P12.regs (4 : Fin 32) (by decide), g11_4]
   have g12_18 : reg n12 (18 : Fin 32) = out := by rw [P12.regs (18 : Fin 32) (by decide), g11_18]
   have g12_19 : reg n12 (19 : Fin 32) = bp := by rw [P12.regs (19 : Fin 32) (by decide), g11_19]
-  have g12_20 : reg n12 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by rw [P12.regs (20 : Fin 32) (by decide), g11_20]
+  have g12_20 : reg n12 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [P12.regs (20 : Fin 32) (by decide), g11_20]
   have g12_21 : reg n12 (21 : Fin 32) = s5v := by rw [P12.regs (21 : Fin 32) (by decide), g11_21]
   have g12_22 : reg n12 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [P12.regs (22 : Fin 32) (by decide), g11_22]
   have g12_23 : reg n12 (23 : Fin 32) = dlo := by rw [P12.regs (23 : Fin 32) (by decide), g11_23]
@@ -1788,7 +1788,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
     rw [rb13, runBlock_reg _ _ _ (18 : Fin 32) s12.zero (by decide), g12_18]
   have g13_19 : reg n13 (19 : Fin 32) = bp := by
     rw [rb13, runBlock_reg _ _ _ (19 : Fin 32) s12.zero (by decide), g12_19]
-  have g13_20 : reg n13 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by
+  have g13_20 : reg n13 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb13, runBlock_reg _ _ _ (20 : Fin 32) s12.zero (by decide), g12_20]
   have g13_21 : reg n13 (21 : Fin 32) = s5v := by
     rw [rb13, runBlock_reg _ _ _ (21 : Fin 32) s12.zero (by decide), g12_21]
@@ -1926,7 +1926,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
   have g14_4 : reg n14 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P14.regs (4 : Fin 32) (by decide), g13_4]
   have g14_18 : reg n14 (18 : Fin 32) = out := by rw [P14.regs (18 : Fin 32) (by decide), g13_18]
   have g14_19 : reg n14 (19 : Fin 32) = bp := by rw [P14.regs (19 : Fin 32) (by decide), g13_19]
-  have g14_20 : reg n14 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by rw [P14.regs (20 : Fin 32) (by decide), g13_20]
+  have g14_20 : reg n14 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [P14.regs (20 : Fin 32) (by decide), g13_20]
   have g14_21 : reg n14 (21 : Fin 32) = s5v := by rw [P14.regs (21 : Fin 32) (by decide), g13_21]
   have g14_22 : reg n14 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [P14.regs (22 : Fin 32) (by decide), g13_22]
   have g14_23 : reg n14 (23 : Fin 32) = dlo := by rw [P14.regs (23 : Fin 32) (by decide), g13_23]
@@ -2062,7 +2062,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
     rw [rb15, runBlock_reg _ _ _ (18 : Fin 32) s14.zero (by decide), g14_18]
   have g15_19 : reg n15 (19 : Fin 32) = bp := by
     rw [rb15, runBlock_reg _ _ _ (19 : Fin 32) s14.zero (by decide), g14_19]
-  have g15_20 : reg n15 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by
+  have g15_20 : reg n15 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb15, runBlock_reg _ _ _ (20 : Fin 32) s14.zero (by decide), g14_20]
   have g15_21 : reg n15 (21 : Fin 32) = s5v := by
     rw [rb15, runBlock_reg _ _ _ (21 : Fin 32) s14.zero (by decide), g14_21]
@@ -2210,7 +2210,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
   have g16_4 : reg n16 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P16.regs (4 : Fin 32) (by decide), g15_4]
   have g16_18 : reg n16 (18 : Fin 32) = out := by rw [P16.regs (18 : Fin 32) (by decide), g15_18]
   have g16_19 : reg n16 (19 : Fin 32) = bp := by rw [P16.regs (19 : Fin 32) (by decide), g15_19]
-  have g16_20 : reg n16 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by rw [P16.regs (20 : Fin 32) (by decide), g15_20]
+  have g16_20 : reg n16 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [P16.regs (20 : Fin 32) (by decide), g15_20]
   have g16_21 : reg n16 (21 : Fin 32) = s5v := by rw [P16.regs (21 : Fin 32) (by decide), g15_21]
   have g16_22 : reg n16 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [P16.regs (22 : Fin 32) (by decide), g15_22]
   have g16_23 : reg n16 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by rw [P16.regs (23 : Fin 32) (by decide), g15_23]
@@ -2363,7 +2363,7 @@ theorem sv_ecd {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
     rw [rb17, runBlock_reg _ _ _ (18 : Fin 32) s16.zero (by decide), g16_18]
   have g17_19 : reg n17 (19 : Fin 32) = bp := by
     rw [rb17, runBlock_reg _ _ _ (19 : Fin 32) s16.zero (by decide), g16_19]
-  have g17_20 : reg n17 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by
+  have g17_20 : reg n17 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb17, runBlock_reg _ _ _ (20 : Fin 32) s16.zero (by decide), g16_20]
   have g17_22 : reg n17 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by
     rw [rb17, runBlock_reg _ _ _ (22 : Fin 32) s16.zero (by decide), g16_22]

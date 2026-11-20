@@ -52,7 +52,6 @@ theorem sv_ive {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
     (g0_2 : reg n0 sp = B + 0x21A0)
     (g0_18 : reg n0 (18 : Fin 32) = out)
     (g0_19 : reg n0 (19 : Fin 32) = bp)
-    (g0_20 : reg n0 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320)
     (g0_23 : reg n0 (23 : Fin 32) = dlo)
     (g0_24 : reg n0 (24 : Fin 32) = s8v)
     (g0_25 : reg n0 (25 : Fin 32) = dhi)
@@ -273,8 +272,6 @@ theorem sv_ive {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
     rw [rb1, runBlock_reg _ _ _ (18 : Fin 32) s0.zero (by decide), g0_18]
   have g1_19 : reg n1 (19 : Fin 32) = bp := by
     rw [rb1, runBlock_reg _ _ _ (19 : Fin 32) s0.zero (by decide), g0_19]
-  have g1_20 : reg n1 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by
-    rw [rb1, runBlock_reg _ _ _ (20 : Fin 32) s0.zero (by decide), g0_20]
   have g1_21 : reg n1 (21 : Fin 32) = BitVec.ofNat 32 0x1 := by
     rw [rb1, runBlock_reg _ _ _ (21 : Fin 32) s0.zero (by decide), g0_21]
   have g1_23 : reg n1 (23 : Fin 32) = dlo := by
@@ -289,7 +286,7 @@ theorem sv_ive {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
     rw [rb1, runBlock_reg _ _ _ (27 : Fin 32) s0.zero (by decide), g0_27]
   have g1_10 : reg n1 a0 = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by
     rw [rb1]; simp +decide only [runBlock, BInstr.run, svIvE1556, upd, ↓reduceIte, aluEval]
-    all_goals (try simp only [g0_2, g0_3, g0_4, g0_18, g0_19, g0_20, g0_21, g0_23, g0_24, g0_25, g0_26, g0_27, s0.zero])
+    all_goals (try simp only [g0_2, g0_3, g0_4, g0_18, g0_19, g0_21, g0_23, g0_24, g0_25, g0_26, g0_27, s0.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
   have w1_24 : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m1]; exact w0_24
   have w1_28 : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m1]; exact w0_28
@@ -387,7 +384,6 @@ theorem sv_ive {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
   have g2_10 : reg n2 a0 = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by rw [u2.regs, upd_ne (by decide) (by decide), g1_10]
   have g2_18 : reg n2 (18 : Fin 32) = out := by rw [u2.regs, upd_ne (by decide) (by decide), g1_18]
   have g2_19 : reg n2 (19 : Fin 32) = bp := by rw [u2.regs, upd_ne (by decide) (by decide), g1_19]
-  have g2_20 : reg n2 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by rw [u2.regs, upd_ne (by decide) (by decide), g1_20]
   have g2_21 : reg n2 (21 : Fin 32) = BitVec.ofNat 32 0x1 := by rw [u2.regs, upd_ne (by decide) (by decide), g1_21]
   have g2_23 : reg n2 (23 : Fin 32) = dlo := by rw [u2.regs, upd_ne (by decide) (by decide), g1_23]
   have g2_24 : reg n2 (24 : Fin 32) = s8v := by rw [u2.regs, upd_ne (by decide) (by decide), g1_24]
@@ -478,7 +474,7 @@ theorem sv_ive {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
   have a2_1020 : accV n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = dv := by rw [m2]; exact a1_1020
   have a2_1380 : accV n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = fv := by rw [m2]; exact a1_1380
   have a2_1480 : accV n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = gv := by rw [m2]; exact a1_1480
-  clear a1_1480 a1_1380 a1_1020 a1_420 a1_2e0 a1_2c0 a1_2a0 a1_280 a1_260 a1_240 b1_14a0 b1_13a0 b1_1040 b1_440 w1_130 w1_12c w1_128 w1_124 w1_120 w1_11c w1_118 w1_114 w1_110 w1_10c w1_108 w1_104 w1_100 w1_fc w1_f8 w1_f4 w1_f0 w1_ec w1_e8 w1_e4 w1_e0 w1_dc w1_d8 w1_d4 w1_d0 w1_cc w1_c8 w1_c4 w1_c0 w1_bc w1_b8 w1_b4 w1_b0 w1_ac w1_a8 w1_a4 w1_a0 w1_9c w1_98 w1_94 w1_90 w1_8c w1_88 w1_84 w1_80 w1_7c w1_78 w1_70 w1_6c w1_68 w1_64 w1_60 w1_5c w1_58 w1_54 w1_50 w1_4c w1_48 w1_44 w1_40 w1_3c w1_38 w1_34 w1_30 w1_2c w1_28 w1_24 g1_10 g1_27 g1_26 g1_25 g1_24 g1_23 g1_21 g1_20 g1_19 g1_18 g1_4 g1_3 g1_2 V1 E1 fR1 t1 fr1 rb1 s1 m1 u1 c1 g0_4 g0_3 fR0 t0
+  clear a1_1480 a1_1380 a1_1020 a1_420 a1_2e0 a1_2c0 a1_2a0 a1_280 a1_260 a1_240 b1_14a0 b1_13a0 b1_1040 b1_440 w1_130 w1_12c w1_128 w1_124 w1_120 w1_11c w1_118 w1_114 w1_110 w1_10c w1_108 w1_104 w1_100 w1_fc w1_f8 w1_f4 w1_f0 w1_ec w1_e8 w1_e4 w1_e0 w1_dc w1_d8 w1_d4 w1_d0 w1_cc w1_c8 w1_c4 w1_c0 w1_bc w1_b8 w1_b4 w1_b0 w1_ac w1_a8 w1_a4 w1_a0 w1_9c w1_98 w1_94 w1_90 w1_8c w1_88 w1_84 w1_80 w1_7c w1_78 w1_70 w1_6c w1_68 w1_64 w1_60 w1_5c w1_58 w1_54 w1_50 w1_4c w1_48 w1_44 w1_40 w1_3c w1_38 w1_34 w1_30 w1_2c w1_28 w1_24 g1_10 g1_27 g1_26 g1_25 g1_24 g1_23 g1_21 g1_19 g1_18 g1_4 g1_3 g1_2 V1 E1 fR1 t1 fr1 rb1 s1 m1 u1 c1 g0_4 g0_3 fR0 t0
   -- 0x1562
   obtain ⟨n3, c3, u3⟩ := s2.block svIvE1562 E2.self svIvE1562_end
     ⟨trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial⟩
@@ -516,19 +512,19 @@ theorem sv_ive {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
     rw [rb3, runBlock_reg _ _ _ (27 : Fin 32) s2.zero (by decide), g2_27]
   have g3_10 : reg n3 a0 = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb3]; simp +decide only [runBlock, BInstr.run, svIvE1562, upd, ↓reduceIte, aluEval]
-    all_goals (try simp only [g2_2, g2_3, g2_4, g2_10, g2_12, g2_18, g2_19, g2_20, g2_21, g2_23, g2_24, g2_25, g2_26, g2_27, s2.zero])
+    all_goals (try simp only [g2_2, g2_3, g2_4, g2_10, g2_12, g2_18, g2_19, g2_21, g2_23, g2_24, g2_25, g2_26, g2_27, s2.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
   have g3_11 : reg n3 a1 = B + 0x21A0 + BitVec.ofNat 32 0x1020 := by
     rw [rb3]; simp +decide only [runBlock, BInstr.run, svIvE1562, upd, ↓reduceIte, aluEval]
-    all_goals (try simp only [g2_2, g2_3, g2_4, g2_10, g2_12, g2_18, g2_19, g2_20, g2_21, g2_23, g2_24, g2_25, g2_26, g2_27, s2.zero])
+    all_goals (try simp only [g2_2, g2_3, g2_4, g2_10, g2_12, g2_18, g2_19, g2_21, g2_23, g2_24, g2_25, g2_26, g2_27, s2.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
   have g3_13 : reg n3 a3 = BitVec.ofNat 32 0x3FCC4268 := by
     rw [rb3]; simp +decide only [runBlock, BInstr.run, svIvE1562, upd, ↓reduceIte, aluEval]
-    all_goals (try simp only [g2_2, g2_3, g2_4, g2_10, g2_12, g2_18, g2_19, g2_20, g2_21, g2_23, g2_24, g2_25, g2_26, g2_27, s2.zero])
+    all_goals (try simp only [g2_2, g2_3, g2_4, g2_10, g2_12, g2_18, g2_19, g2_21, g2_23, g2_24, g2_25, g2_26, g2_27, s2.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
   have g3_20 : reg n3 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb3]; simp +decide only [runBlock, BInstr.run, svIvE1562, upd, ↓reduceIte, aluEval]
-    all_goals (try simp only [g2_2, g2_3, g2_4, g2_10, g2_12, g2_18, g2_19, g2_20, g2_21, g2_23, g2_24, g2_25, g2_26, g2_27, s2.zero])
+    all_goals (try simp only [g2_2, g2_3, g2_4, g2_10, g2_12, g2_18, g2_19, g2_21, g2_23, g2_24, g2_25, g2_26, g2_27, s2.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
   have w3_24 : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m3]; exact w2_24
   have w3_28 : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m3]; exact w2_28
@@ -611,7 +607,7 @@ theorem sv_ive {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs
   have a3_1020 : accV n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = dv := by rw [m3]; exact a2_1020
   have a3_1380 : accV n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = fv := by rw [m3]; exact a2_1380
   have a3_1480 : accV n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = gv := by rw [m3]; exact a2_1480
-  clear a2_1480 a2_1380 a2_1020 a2_420 a2_2e0 a2_2c0 a2_2a0 a2_280 a2_260 a2_240 b2_14a0 b2_13a0 b2_1040 b2_440 w2_130 w2_12c w2_128 w2_124 w2_120 w2_11c w2_118 w2_114 w2_110 w2_10c w2_108 w2_104 w2_100 w2_fc w2_f8 w2_f4 w2_f0 w2_ec w2_e8 w2_e4 w2_e0 w2_dc w2_d8 w2_d4 w2_d0 w2_cc w2_c8 w2_c4 w2_c0 w2_bc w2_b8 w2_b4 w2_b0 w2_ac w2_a8 w2_a4 w2_a0 w2_9c w2_98 w2_94 w2_90 w2_8c w2_88 w2_84 w2_80 w2_7c w2_78 w2_70 w2_6c w2_68 w2_64 w2_60 w2_5c w2_58 w2_54 w2_50 w2_4c w2_48 w2_44 w2_40 w2_3c w2_38 w2_34 w2_30 w2_2c w2_28 w2_24 g2_12 g2_27 g2_26 g2_25 g2_24 g2_23 g2_21 g2_20 g2_19 g2_18 g2_10 g2_4 g2_3 g2_2 V2 E2 fR2 t2 fr2 m2 s2 u2 d2
+  clear a2_1480 a2_1380 a2_1020 a2_420 a2_2e0 a2_2c0 a2_2a0 a2_280 a2_260 a2_240 b2_14a0 b2_13a0 b2_1040 b2_440 w2_130 w2_12c w2_128 w2_124 w2_120 w2_11c w2_118 w2_114 w2_110 w2_10c w2_108 w2_104 w2_100 w2_fc w2_f8 w2_f4 w2_f0 w2_ec w2_e8 w2_e4 w2_e0 w2_dc w2_d8 w2_d4 w2_d0 w2_cc w2_c8 w2_c4 w2_c0 w2_bc w2_b8 w2_b4 w2_b0 w2_ac w2_a8 w2_a4 w2_a0 w2_9c w2_98 w2_94 w2_90 w2_8c w2_88 w2_84 w2_80 w2_7c w2_78 w2_70 w2_6c w2_68 w2_64 w2_60 w2_5c w2_58 w2_54 w2_50 w2_4c w2_48 w2_44 w2_40 w2_3c w2_38 w2_34 w2_30 w2_2c w2_28 w2_24 g2_12 g2_27 g2_26 g2_25 g2_24 g2_23 g2_21 g2_19 g2_18 g2_10 g2_4 g2_3 g2_2 V2 E2 fR2 t2 fr2 m2 s2 u2 d2
   -- 0x1582: sv_nrm8F
   obtain ⟨n4, c4, s4, sp4, rk4, A4, K4, fr4⟩ := sv_nrm8F (co := 0xA20) (cx := 0x1020)
     F E3 (UC0.sv F fR3) (EC0.sv F fR3) (codeIn_sv F fR3 N80 (by decide) (by decide)) s3 sv_at_1582 sv_at_1586 (by decide) (by decide) g3_2
