@@ -42,8 +42,31 @@ for `Z` (`SvZLoop2.lean`), and `iv_loop` and `iv_exit` against `ivLoop8`
 for `s` (`SvIvLoop.lean`), which also stops when `g` reaches zero.
 [`gen-sv-zloop.py`](../c3-boot-proofs/scripts/gen-sv-zloop.py) and
 [`gen-sv-ivloop.py`](../c3-boot-proofs/scripts/gen-sv-ivloop.py) write
-them from the stages' statements. The stages still have to be composed
-into one theorem against `sigstoreVerify` in `Spec/Sigstore.lean`.
+them from the stages' statements.
+
+`sv_p256` (`SvP256All.lean`) composes the whole check from 0xFBA to
+0x2034 out of four segments (`SvP256A.lean` to `SvP256D.lean`) and the
+three loops. The scripts that write them use
+[`svchain.py`](../c3-boot-proofs/scripts/svchain.py), which passes each
+stage the previous stage's facts by name. It ends in one of three ways:
+- An error return, when `r` or `s` is out of range, the key isn't on the
+  curve, or the affine `x` of `u₁G + u₂Q` doesn't match `r`.
+- A panic, when the inversion of `s` doesn't end with `f = ±1`, or when
+  the main loop reads an invalid digit.
+- 0x2034, with the frame and registers that the rest of the function
+  needs.
+
+Its statement doesn't mention any intermediate machine. The two inverses
+are witnesses that `sgnVal` ties to the states of `ivLoop8` and `zvLoop`.
+It still takes these hypotheses:
+- Bounds on constants in the image: the base point's coordinates, the
+  key's `Z`, p, n, and the identity's coordinate.
+- The range bound of the inversion of `Z` (`hzi`), which is
+  safegcd's bound on `d` and `e`.
+
+The stages still have to be composed into one theorem against
+`sigstoreVerify` in `Spec/Sigstore.lean`, and the models (`ivLoop8`,
+`mlMain2`, `zvLoop`) linked to `p256.verify` in `Spec/Ecdsa.lean`.
 
 `_start` and the clock and watchdog `setup` that runs before `boot_main`
 aren't among the extracted functions, so they are trusted.
