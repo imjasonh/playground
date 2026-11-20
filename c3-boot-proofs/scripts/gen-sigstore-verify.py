@@ -2159,6 +2159,60 @@ class Gen:
         self.regs[11] = ("U", f"BitVec.ofNat 32 (({Lv}) / 2 ^ 32)")
         self.frame_after(k, [], {})
 
+    def upd8(self, off, kind, co, ca, cb, ct, s, hs, sla, slb, extra=""):
+        """`update_fg::<8>` (`kind` "fg") or `update_de::<8>` ("de") of the
+        values at offsets `ca` and `cb` with the matrix at `ct`, into `co` and
+        `co + 0x24`. The results' signs and magnitudes become checks with
+        binders."""
+        k = self.k = self.k + 1
+        wrapper = "sv_ufg8F" if kind == "fg" else "sv_ude8F"
+        self.call_head(k, off, wrapper, f"(co := 0x{co:X}) (ca := 0x{ca:X}) (cb := 0x{cb:X}) (ct := 0x{ct:X}) (s := {s})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"R1_{k}", f"R2_{k}", f"K{k}", f"fr{k}"])
+        regs = [10, 11, 12, 13, 14] + ([15, 16, 17] if kind == "de" else [])
+        args = " ".join(self.reg_is(k - 1, r, v) if isinstance(v, int) else f"g{k-1}_{r}"
+                        for r, v in zip(regs, [co, ca, cb] + ([ct, None] if kind == "fg" else [None, None, None, ct, None])))
+        self.emit(f"    F E{k-1} (UC0.sv F fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {args} {hs} (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)")
+        self.emit(f"    (by decide) (by decide) (by decide) (by decide) {extra}")
+        self.emit(f"    (by rw [show 0x{ca:X} + 0x20 = 0x{ca + 0x20:X} from rfl, b{k-1}_{ca + 0x20:x}]; exact {sla})")
+        self.emit(f"    (by rw [show 0x{cb:X} + 0x20 = 0x{cb + 0x20:X} from rfl, b{k-1}_{cb + 0x20:x}]; exact {slb})")
+        na, va = self.acc[ca]
+        nb, vb = self.acc[cb]
+        sa, sb = self.bytes[ca + 0x20], self.bytes[cb + 0x20]
+        w = [lean_val(self.words[ct + i]) for i in range(0, 0x20, 4)]
+        mi = f"(({lean_val(self.words[0x70])}).toNat + 2 ^ 32 * ({lean_val(self.words[0x60])}).toNat)"
+        ent = [f"i64Val (({w[2 * i]}).toNat + 2 ^ 32 * ({w[2 * i + 1]}).toNat)" for i in range(4)]
+        names = [f"σ{k}a", f"A{k}a", f"σ{k}b", f"A{k}b"]
+        for j, (R, e0, e1) in enumerate(((f"R1_{k}", ent[0], ent[1]), (f"R2_{k}", ent[2], ent[3]))):
+            sg, A = names[2 * j], names[2 * j + 1]
+            self.emit(f"  obtain ⟨{sg}, {A}, hσ{j}_{k}, e{j}_{k}, bb{j}_{k}, vv{j}_{k}⟩ := {R}")
+            o = 0x10 * j
+            self.emit(f"  simp only [svI, svM, show 0x{ca:X} + 0x20 = 0x{ca + 0x20:X} from rfl, show 0x{cb:X} + 0x20 = 0x{cb + 0x20:X} from rfl,")
+            self.emit(f"    show 0x{ct:X} + 0x{o:X} = 0x{ct + o:X} from rfl, show 0x{ct:X} + 0x{o + 8:X} = 0x{ct + o + 8:X} from rfl] at e{j}_{k}")
+            self.emit(f"  rw [b{k-1}_{ca + 0x20:x}, a{k-1}_{ca:x}, b{k-1}_{cb + 0x20:x}, a{k-1}_{cb:x},")
+            self.emit(f"    acc2_frame w{k-1}_{ct + o:x} w{k-1}_{ct + o + 4:x}, acc2_frame w{k-1}_{ct + o + 8:x} w{k-1}_{ct + o + 12:x}] at e{j}_{k}")
+            X = f"sgnVal ({sa}).toNat ({va}) * {e0} + sgnVal ({sb}).toNat ({vb}) * {e1}"
+            self.sc.append(("eq", f"sgnVal {sg} {A}", X, [sg, A], f"e{j}_{k}"))
+            self.sc.append(("prop", f"{sg} ≤ 1", f"hσ{j}_{k}"))
+        if kind == "de":
+            self.emit(f"  rw [accV_dataR F fR{k-1} (by decide) (by decide)] at bb0_{k} vv0_{k} bb1_{k} vv1_{k}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        byts, accs = {}, {}
+        for j in range(2):
+            sg, A = names[2 * j], names[2 * j + 1]
+            if kind == "fg":
+                sgn, mag = sg, f"{A} / 2 ^ {s} % 2 ^ 256"
+            else:
+                L = f"lrsm8 {sg} {A} {mi} {s} (accV M0 (BitVec.ofNat 32 0x3FCC4268) 8)"
+                sgn, mag = f"({L}).1", f"({L}).2"
+            byts[co + 0x24 * j + 0x20] = (f"BitVec.ofNat 8 {sgn}", f"byte_of_toNat bb{j}_{k}")
+            accs[co + 0x24 * j] = (8, mag, f"vv{j}_{k}")
+        self.frame_after(k, [(co, 0x45)], {}, byts, accs)
+
     def isr(self, off, cx, y, post=None):
         """`ecdsa::in_scalar_range` of the 32 bytes at offset `cx` and at `y`."""
         k = self.k + 1
@@ -7913,7 +7967,7 @@ def stage_eca3():
 
 IV_ACC = {0x240: "qx", 0x260: "qy", 0x280: "qz", 0x2A0: "rv", 0x2C0: "sv", 0x2E0: "zv",
           0x1380: "fv", 0x1480: "gv", 0x1020: "dv", 0x420: "ev"}
-IV_SIGN = {0x13A0: "fs", 0x14A0: "gs", 0x1044: "ds", 0x444: "es"}
+IV_SIGN = {0x13A0: "fs", 0x14A0: "gs", 0x1040: "ds", 0x440: "es"}
 IV_BINDERS = ("{B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs gs ds es : BitVec 8} "
               + "{" + " ".join(IV_ACC.values()) + " : Nat} "
               + "{" + " ".join(f"w{e:x}" for e in DPV_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
@@ -7997,6 +8051,60 @@ def stage_iva():
     return g, info
 
 
+def stage_ivb():
+    """From the divstep loop's exit at 0x1478 back to the head at 0x1328: the
+    batch's matrix stored, applied to `f` and `g` and to `d` and `e`, and the
+    steps left reduced by the batch's size."""
+    g = Gen("IvB")
+    g.generic_alu = True
+    params = iv_start(g)
+    g.regs[24] = ("C", 0x3FCC4268)
+    params = [p for p in params if not p.startswith("(g0_24 ")]
+    params.append("(g0_24 : reg n0 (24 : Fin 32) = BitVec.ofNat 32 0x3FCC4268)")
+    for r, nm in ((14, "ulo"), (5, "uhi"), (31, "vlo"), (17, "vhi"), (8, "qlo"), (29, "qhi"), (12, "rlo"), (6, "rhi")):
+        g.regs[r] = ("U", nm)
+        params.append(f"(g0_{r} : reg n0 {rname(r)} = {nm})")
+    g.words[0x5C] = ("U", "BitVec.ofNat 32 ns")
+    params = [p for p in params if not p.startswith("(w0_5c ")]
+    params += ["(w0_5c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = BitVec.ofNat 32 ns)",
+               "(hns1 : 1 ≤ ns)", "(hns2 : ns ≤ 62)", "(UC0 : SvUpCode M0)", "(hfs : fs.toNat ≤ 1)",
+               "(hgs : gs.toNat ≤ 1)", "(hds : ds.toNat ≤ 1)", "(hes : es.toNat ≤ 1)"]
+    g.block(0x1478, 0x147A)
+    for o in (0x147A, 0x147C, 0x1480, 0x1484, 0x1488, 0x148A, 0x148E, 0x1490):
+        g.store(o, "sw")
+    g.block(0x1494, 0x14AE)
+    g.load(0x14AE, "lw")
+    g.block(0x14B0, 0x14B2)
+    g.upd8(0x14B2, "fg", 0xA20, 0x1380, 0x1480, 0x320, "ns", "hns1 (by omega)", "hfs", "hgs")
+    g.block(0x14BA, 0x14CE)
+    g.mc(0x14CE, 0x1380, 0xA20, 0x24)
+    g.block(0x14D6, 0x14EA)
+    g.mc(0x14EA, 0x1480, 0xA44, 0x24)
+    g.block(0x14F2, 0x150C)
+    g.load(0x150C, "lw")
+    g.load(0x150E, "lw")
+    g.block(0x1510, 0x1512)
+    g.upd8(0x1512, "de", 0xA20, 0x1020, 0x420, 0x320, "ns", "hns1 (by omega)", "hds", "hes",
+           extra="(by decide) (by decide) (by decide)")
+    g.block(0x151A, 0x152E)
+    g.mc(0x152E, 0x1020, 0xA20, 0x24)
+    g.block(0x1536, 0x1546)
+    g.mc(0x1546, 0x420, 0xA44, 0x24)
+    g.load(0x154E, "lw")
+    g.block(0x1550, 0x1552)
+    g.store(0x1552, "sw")
+    g.jump(0x1554)
+    stmt, proof = finish(g, 0x1328, [2, 3, 4, 18, 19, 20, 21, 23, 24, 25, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "sv_ivb", "title": "the end of a batch of the inversion of `s`",
+            "doc": "From the divstep loop's exit at 0x1478 back to the head at 0x1328: the batch's matrix is stored "
+            "at 0x320, `update_fg` applies it to `f` and `g` and `update_de` to `d` and `e`, and the steps left drop "
+            "by the batch's size.",
+            "params": params, "stmt": stmt, "proof": proof,
+            "binders": IV_BINDERS.replace("rem : Word}", "rem ulo uhi vlo vhi qlo qhi rlo rhi : Word} {ns : Nat}"),
+            "start": 0x1478, "import": "C3BootProofs.Proofs.SvIvLib"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -8023,7 +8131,7 @@ def main():
                 "Cr1e": lambda: stage_cr1(True), "Cr1n": lambda: stage_cr1(False), "Rl": stage_rl, "Rm": stage_rm,
                 **{f"Win{i}{x}": (lambda i=i, x=x: stage_win(i, x == "e")) for i in range(8) for x in "en"},
                 "EcA1": stage_eca1, "EcA2": stage_eca2, "EcA3": stage_eca3,
-                "IvHc": lambda: stage_ivh("c"), "IvHx": lambda: stage_ivh("x"), "IvA": stage_iva}[stage]()
+                "IvHc": lambda: stage_ivh("c"), "IvHx": lambda: stage_ivh("x"), "IvA": stage_iva, "IvB": stage_ivb}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

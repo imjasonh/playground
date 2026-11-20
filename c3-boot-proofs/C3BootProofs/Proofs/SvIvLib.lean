@@ -289,4 +289,14 @@ theorem sv_ude8F {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {i
   exact fr2 _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega))
     (sepS (B + 0x21A0) (by omega) (by omega) (by omega))
 
+theorem acc2_frame {M : Word → BitVec 8} {B a b : Word} {c : Nat}
+    (h0 : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 c) = a) (h1 : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (c + 4)) = b) :
+    accV M (B + 0x21A0 + BitVec.ofNat 32 c) 2 = a.toNat + 2 ^ 32 * b.toNat := by
+  simp only [accV]
+  rw [show 4 * 0 = 0 from rfl, add_ofNat_zero, h0, show 4 * 1 = 4 from rfl, add_ofNat_assoc, h1]
+  omega
+
+theorem byte_of_toNat {b : BitVec 8} {σ : Nat} (h : b.toNat = σ) : b = BitVec.ofNat 8 σ := by
+  apply BitVec.eq_of_toNat_eq; rw [BitVec.toNat_ofNat, ← h]; exact (Nat.mod_eq_of_lt b.isLt).symm
+
 end C3.RV32.Sv
