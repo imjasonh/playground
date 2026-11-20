@@ -308,6 +308,7 @@ import C3BootProofs.Proofs.SvP256A
 import C3BootProofs.Proofs.SvP256B
 import C3BootProofs.Proofs.SvP256C
 import C3BootProofs.Proofs.SvP256D
+import C3BootProofs.Proofs.SvP256All
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main
