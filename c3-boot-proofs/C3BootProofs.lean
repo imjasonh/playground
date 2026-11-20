@@ -295,6 +295,7 @@ import C3BootProofs.Proofs.SvZS
 import C3BootProofs.Proofs.SvZA
 import C3BootProofs.Proofs.SvZB
 import C3BootProofs.Proofs.SvZDs
+import C3BootProofs.Proofs.SvZDs2
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main
