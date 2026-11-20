@@ -234,6 +234,7 @@ class Gen:
         self.digest = None  # (step, offset, value) of a SHA-256 digest in the frame
         self.hasher = None  # (step, message, length facts) of the SHA-256 hasher at 0x420
         self.ranges = {}  # frame offset -> (length, the byte at offset + j, in terms of `j`)
+        self.acc = {}  # frame offset -> (limbs, the value of `accV` there)
         self.exits = []  # forks that reach the stage's end: (placeholder, generator)
 
     def emit(self, s):
@@ -342,7 +343,20 @@ class Gen:
                 pf = f"fun j hj => (K{k}.range (by decide) (by decide) j hj).trans (q{k-1}_{s:x} j hj)"
             self.emit(f"  have q{k}_{s:x} : {stmt} := {pf}")
             newr[s] = (n, tmpl)
-        self.words, self.bytes, self.ranges = neww, newb, newr
+        newa = {}
+        for d, (n, v) in sorted(self.acc.items()):
+            if not outside(kind, d, 4 * n):
+                continue
+            if kind[0] == "same":
+                pf = f"by rw [m{k}]; exact a{k-1}_{d:x}"
+            else:
+                pf = f"(K{k}.acc (by decide) (by decide)).trans a{k-1}_{d:x}"
+            self.emit(f"  have a{k}_{d:x} : {self.acc_stmt(k, d, n, v)} := {pf}")
+            newa[d] = (n, v)
+        self.words, self.bytes, self.ranges, self.acc = neww, newb, newr, newa
+
+    def acc_stmt(self, k, d, n, v):
+        return f"accV n{k}.mem ({fa(d)}) {n} = {v}"
 
     def keep_frame_L(self, k, ranges):
         self.keep_frame(k, ("L", ranges))
@@ -471,10 +485,14 @@ class Gen:
             parts.append(f"g{k-1}_12 (by decide)")
         return " ".join(parts)
 
-    def frame_after(self, k, ranges, words, byts=None):
+    def frame_after(self, k, ranges, words, byts=None, accs=None):
         """Frame facts after a call that kept all but `ranges`, with `words`
-        (offset -> (value, proof)) and `byts` written."""
+        (offset -> (value, proof)), `byts`, and `accs` (offset -> (limbs,
+        value, proof)) written."""
         self.keep_frame(k, ("L", ranges))
+        for d, (n, v, pf) in sorted((accs or {}).items()):
+            self.acc[d] = (n, v)
+            self.emit(f"  have a{k}_{d:x} : {self.acc_stmt(k, d, n, v)} := {pf}")
         for e, (v, pf) in sorted(words.items()):
             self.words[e] = ("U", v)
             self.emit(f"  have w{k}_{e:x} : {self.word_stmt(k, e, ('U', v))} := {pf}")
@@ -1757,7 +1775,17 @@ class Gen:
             if lo < hi:
                 d, o = lo - s0, lo - src
                 moved[dst + o] = (hi - lo, re.sub(r"\bj\b", f"({d} + j)", tmpl) if d else tmpl, s0, d, o)
+        macc = {}
+        for d0, (n, v) in sorted(self.acc.items()):
+            if src <= d0 and d0 + 4 * n <= src + N:
+                macc[dst + d0 - src] = (n, v, d0)
         self.keep_frame(k, ("K", dst, N), ww, wb)
+        for nd, (n, v, d0) in sorted(macc.items()):
+            o = d0 - src
+            self.emit(f"  have a{k}_{nd:x} : {self.acc_stmt(k, nd, n, v)} := (accV_S {n} fun q hq => by")
+            self.emit(f"    rw [show 0x{nd:X} + q = 0x{dst:X} + (0x{o:X} + q) by omega, X{k} (0x{o:X} + q) (by omega),")
+            self.emit(f"      show 0x{src:X} + (0x{o:X} + q) = 0x{d0:X} + q by omega]).trans a{k-1}_{d0:x}")
+            self.acc[nd] = (n, v)
         for ns, (n, tmpl, s0, d, o) in sorted(moved.items()):
             self.emit(f"  have q{k}_{ns:x} : ∀ j, j < {n} → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{ns:X} + j)) = {tmpl} := fun j hj => by")
             dj = f"({d} + j)" if d else "j"
@@ -2010,6 +2038,9 @@ class Gen:
         for s, (n, tmpl) in sorted(self.ranges.items()):
             conj.append(f"(∀ j, j < {n} → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{s:X} + j)) = {tmpl})")
             terms.append(f"q{k}_{s:x}")
+        for d, (n, v) in sorted(self.acc.items()):
+            conj.append(f"accV n'.mem ({fa(d)}) {n} = {v}")
+            terms.append(f"a{k}_{d:x}")
         for c, t in self.extra:
             conj.append(c)
             terms.append(t)
