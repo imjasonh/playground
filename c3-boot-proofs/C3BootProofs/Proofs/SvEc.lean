@@ -304,7 +304,7 @@ theorem lzLimbs_congr {M M0 : Word → BitVec 8} {q : Word} :
     simp only [lzLimbs]
     rw [h k (by omega), lzLimbs_congr k fun i hi => h i (by omega)]
 
-theorem BYEnv.sv {M M0 : Word → BitVec 8} {B : Word} (F : Fr B 0x3830) (D : BYEnv M0)
+theorem _root_.C3.RV32.BYEnv.sv {M M0 : Word → BitVec 8} {B : Word} (F : Fr B 0x3830) (D : BYEnv M0)
     (fR : ∀ x, SvR B x → M x = M0 x) : BYEnv M := by
   have hx : ∀ x : Word, 0x40000000 ≤ x.toNat → M x = M0 x := fun x hx => fR x (sep_of_le (by
     have hb : (B + 0xFFFFFE60).toNat = B.toNat - 0x1A0 := F.below 0x1A0 (by decide) (by decide)
@@ -320,7 +320,7 @@ theorem BYEnv.sv {M M0 : Word → BitVec 8} {B : Word} (F : Fr B 0x3830) (D : BY
       exact ld_dataR F fR (by omega) (by omega)]
     exact D.ordLz
 
-theorem BGEnv.sv {M M0 : Word → BitVec 8} {B : Word} (F : Fr B 0x3830) (D : BGEnv M0)
+theorem _root_.C3.RV32.BGEnv.sv {M M0 : Word → BitVec 8} {B : Word} (F : Fr B 0x3830) (D : BGEnv M0)
     (fR : ∀ x, SvR B x → M x = M0 x) : BGEnv M := by
   have hx : ∀ x : Word, 0x40000000 ≤ x.toNat → M x = M0 x := fun x hx => fR x (sep_of_le (by
     have hb : (B + 0xFFFFFE60).toNat = B.toNat - 0x1A0 := F.below 0x1A0 (by decide) (by decide)
@@ -585,5 +585,37 @@ theorem sv_gsFull {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {
     · rw [← add_ofNat_assoc]; exact o2
     · rw [← add_ofNat_assoc]; exact o3
     · rw [← add_ofNat_assoc]; exact o4
+
+theorem accV_zero_iff {M : Word → BitVec 8} {b : Word} :
+    ∀ n, accV M b n = 0 ↔ ∀ i, i < n → memLoad32 M (b + BitVec.ofNat 32 (4 * i)) = 0
+  | 0 => by simp [accV]
+  | n + 1 => by
+    simp only [accV]
+    rw [Nat.add_eq_zero_iff, accV_zero_iff n]
+    constructor
+    · rintro ⟨h1, h2⟩ i hi
+      rcases Nat.lt_succ_iff_lt_or_eq.mp hi with hi | rfl
+      · exact h1 i hi
+      · have hp : 0 < 2 ^ (32 * i) := Nat.pow_pos (by decide)
+        have : (memLoad32 M (b + BitVec.ofNat 32 (4 * i))).toNat = 0 := by
+          rcases Nat.mul_eq_zero.mp h2 with h | h
+          · exact h
+          · omega
+        exact BitVec.eq_of_toNat_eq this
+    · intro h
+      refine ⟨fun i hi => h i (by omega), ?_⟩
+      rw [h n (by omega), show (0 : Word).toNat = 0 from rfl, Nat.zero_mul]
+
+/-- The limbs at `b` are all zero exactly when the value they hold is. -/
+theorem limbs0_iff {M : Word → BitVec 8} {b : Word} {v : Nat} (h : accV M b 8 = v) :
+    (∀ i, i < 8 → memLoad32 M (b + BitVec.ofNat 32 (4 * i)) = 0) ↔ v = 0 := by
+  rw [← h, accV_zero_iff]
+
+theorem gsVal_sv {M M0 : Word → BitVec 8} {B inp : Word} {o : Nat} (fR : ∀ x, SvR B x → M x = M0 x)
+    (hin : SvIn B inp 0x41) (ho : o + 32 ≤ 0x41) : gsVal M inp o = gsVal M0 inp o := by
+  unfold gsVal
+  have e : memBytes M (inp + BitVec.ofNat 32 o) 32 = memBytes M0 (inp + BitVec.ofNat 32 o) 32 :=
+    memBytes_congr fun i hi => by rw [add_ofNat_assoc]; exact fR _ (hin.r (by omega))
+  rw [e]
 
 end C3.RV32.Sv

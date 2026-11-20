@@ -266,6 +266,7 @@ import C3BootProofs.Proofs.SvWin7n
 import C3BootProofs.Proofs.SvOk
 import C3BootProofs.Proofs.SvEc
 import C3BootProofs.Proofs.SvEcA1
+import C3BootProofs.Proofs.SvEcA2
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main

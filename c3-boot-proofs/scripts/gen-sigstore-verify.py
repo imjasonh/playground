@@ -1969,6 +1969,57 @@ class Gen:
         self.end_step()
         return k
 
+    def gsf(self, off, oc, inp):
+        """`VerifyingKey::from_sec1_bytes` with the accepted point; returns k."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_gsFull", f"(oc := 0x{oc:X})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"K{k}", f"Ok{k}", f"Er{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (P2Data.sv F D0 fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, oc)} g{k-1}_11 (by decide) (by decide) {inp}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.emit(f"  rw [gsOk_congr (sv_pt fR{k-1} {inp})] at Ok{k} Er{k}")
+        self.emit(f"  rw [gsVal_sv fR{k-1} {inp} (o := 1) (by decide), gsVal_sv fR{k-1} {inp} (o := 0x21) (by decide)] at Ok{k}")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        return k
+
+    def sf2(self, off, co, cb, post=None):
+        """`ScalarValue::<NistP256>::from_slice` of the 32 bytes at offset `cb`
+        into offset `co`; returns k. The caller splits."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_sf2F", f"(co := 0x{co:X}) (cb := 0x{cb:X})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"L{k}", f"G{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (BG0.sv F fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, co)} {self.reg_is(k - 1, 11, cb)} (by decide) (by decide) (by decide)")
+        for line in (post(k) if post else []):
+            self.emit(line)
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        return k
+
+    def sz(self, off, oc, post=None):
+        """`ScalarValue::<NistP256>::is_zero` of the limbs at offset `oc`;
+        returns k. The result in `a0` is left to the caller."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_szF", f"(oc := 0x{oc:X})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"a0_{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (EC0.sv F fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, oc)} (by decide) (by decide)")
+        for line in (post(k) if post else []):
+            self.emit(line)
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        self.frame_after(k, [], {})
+        return k
+
     def isr(self, off, cx, y, post=None):
         """`ecdsa::in_scalar_range` of the 32 bytes at offset `cx` and at `y`."""
         k = self.k + 1
@@ -7564,6 +7615,82 @@ def stage_eca1():
     return g, info
 
 
+def ec_fail_after(sub, br, jmp, why):
+    """A `beqz` at `br` that falls through to `j 0x24A4` at `jmp`."""
+    sub.branch(br, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+    sub.jump(jmp)
+    sub.fail(sub.fail_proof(why), "sv_fail_24a4")
+
+
+def stage_eca2():
+    """From 0x1008 to 0x10D6: the leaf key decoded to a point, and `r` and
+    `s` as scalars, both nonzero."""
+    g = Gen("EcA2")
+    g.generic_alu = True
+    params = ec_start(g)
+    params += ["(D0 : P2Data M0)", "(BG0 : BGEnv M0)", "(k_in : SvIn B x21 0x41)"]
+    g.block(0x1008, 0x100C)
+    k = g.gsf(0x100C, 0x1B8, "k_in")
+
+    def bad_key(sub):
+        sub.emit(f"  have z{k} := Er{k} hgs")
+        sub.frame_after(k, [(0x1B8, 0x48)], {0x1B8: ("1", f"z{k}")})
+        sub.load(0x1014, "lw")
+        ec_fail_after(sub, 0x1018, 0x101A, ("prop", "hgs"))
+    g.prop_check("GsOk M0 x21", "hgs", bad_key)
+    X, Y = "gsVal M0 x21 1 * 2 ^ 256 % p256", "gsVal M0 x21 0x21 * 2 ^ 256 % p256"
+    g.emit(f"  obtain ⟨o1_{k}, o2_{k}, o3_{k}, o4_{k}⟩ := Ok{k} hgs")
+    g.frame_after(k, [(0x1B8, 0x48)], {0x1B8: ("0", f"o1_{k}")}, {0x1FC: ("(0 : BitVec 8)", f"o4_{k}")},
+                  {0x1BC: (8, X, f"o2_{k}"), 0x1DC: (8, Y, f"o3_{k}")})
+    g.load(0x1014, "lw")
+    g.branch(0x1018, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.block(0x101E, 0x1026)
+    g.mc(0x1026, 0x178, 0x1BC, 0x40)
+    g.load(0x102E, "lbu")
+    for (b0, b1, cb, mcoff, dst, br, jmp, nxt, L, hn) in (
+            (0x1032, 0x103C, 0x138, 0x1062, 0x1480, 0x1048, 0x104A, 0x104E, "er", "hlr"),
+            (0x106A, 0x1074, 0x158, 0x109A, 0x1020, 0x1080, 0x1082, 0x1086, "es", "hls")):
+        g.block(b0, b1)
+        k = g.sf2(b1, 0xA20, cb, lambda k, cb=cb: [
+            f"  rw [join32 b{k-1}_{cb:x} q{k-1}_{cb + 1:x}] at L{k} G{k}"])
+        prop = f"beNat (b32 {L}) < C3.p256.n"
+
+        def big(sub, k=k, br=br, jmp=jmp, hn=hn):
+            sub.emit(f"  have z{k} := G{k} (Nat.le_of_not_lt {hn})")
+            sub.frame_after(k, [(0xA20, 36)], {0xA20: ("1", f"z{k}")})
+            sub.load(br - 4, "lw")
+            ec_fail_after(sub, br, jmp, ("prop", hn))
+        g.prop_check(prop, hn, big)
+        g.emit(f"  obtain ⟨z{k}, y{k}⟩ := L{k} {hn}")
+        g.frame_after(k, [(0xA20, 36)], {0xA20: ("0", f"z{k}")}, {},
+                      {0xA24: (8, f"beNat (b32 {L})", f"by rw [show B + 0x21A0 + BitVec.ofNat 32 0xA24 = B + 0x21A0 + BitVec.ofNat 32 0xA20 + 4 by sv_addr]; exact y{k}")})
+        g.load(br - 4, "lw")
+        g.branch(br, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+        g.block(nxt, mcoff)
+        g.mc(mcoff, dst, 0xA24, 0x20)
+    for (b0, b1, c, br, jmp, nxt, L, hn) in ((0x10A2, 0x10AA, 0x1480, 0x10B6, 0x10B8, 0x10BC, "er", "hzr"),
+                                             (0x10BC, 0x10C4, 0x1020, 0x10D0, 0x10D2, 0x10D6, "es", "hzs")):
+        g.block(b0, b1)
+        k = g.sz(b1, c, lambda k, c=c: [f"  simp only [limbs0_iff a{k-1}_{c:x}] at a0_{k}"])
+        prop = f"beNat (b32 {L}) ≠ 0"
+
+        def zero(sub, k=k, b1=b1, br=br, jmp=jmp, hn=hn):
+            sub.set_a0(k, 1, f"ite_eq_left (Decidable.of_not_not {hn})")
+            sub.block(b1 + 8, br)
+            ec_fail_after(sub, br, jmp, ("prop", hn))
+        g.prop_check(prop, hn, zero)
+        g.set_a0(k, 0, f"ite_eq_right {hn}")
+        g.block(b1 + 8, br)
+        g.branch(br, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    stmt, proof = finish(g, 0x10D6, [2, 3, 4, 18, 19, 20, 21, 22, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "sv_eca2", "title": "the leaf key's point and the signature's scalars",
+            "doc": "From 0x1008 to 0x10D6: the leaf key decodes to a point on P-256, and the image signature's `r` "
+            "and `s` are scalars below the order and not zero.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": EC_BINDERS, "start": 0x1008,
+            "import": "C3BootProofs.Proofs.SvEc"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -7589,7 +7716,7 @@ def main():
                 **{f"Cm{x}": (lambda x=x: stage_cm(x)) for x in CM_DOC}, "Csx": stage_csx,
                 "Cr1e": lambda: stage_cr1(True), "Cr1n": lambda: stage_cr1(False), "Rl": stage_rl, "Rm": stage_rm,
                 **{f"Win{i}{x}": (lambda i=i, x=x: stage_win(i, x == "e")) for i in range(8) for x in "en"},
-                "EcA1": stage_eca1}[stage]()
+                "EcA1": stage_eca1, "EcA2": stage_eca2}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
