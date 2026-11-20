@@ -1924,6 +1924,29 @@ class Gen:
         self.frame_after(k, [], {})
         return k
 
+    def pure(self, off, wrapper, named, args, post=None):
+        """A call through `wrapper` that leaves memory alone and returns its
+        result in `a0`; returns k. The result is left to the caller. `post`
+        gets k and returns lines that use the facts before the call."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, wrapper, named, [f"c{k}", f"s{k}", f"rk{k}", f"a0_{k}", f"m{k}"])
+        self.emit(f"    {args}")
+        for line in (post(k) if post else []):
+            self.emit(line)
+        self.emit(f"  have fr{k} : ∀ x, SvR B x → n{k}.mem x = n{k-1}.mem x := fun x _ => by rw [m{k}]")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.same m{k}")
+        self.keep_regs(k, [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.keep_frame(k, ("same",))
+        self.end_step()
+        return k
+
+    def isr(self, off, cx, y, post=None):
+        """`ecdsa::in_scalar_range` of the 32 bytes at offset `cx` and at `y`."""
+        k = self.k + 1
+        return self.pure(off, "sv_isrF", "", f"E{k-1} (EC0.sv F fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} "
+                         f"(by decide) (by decide) {self.reg_is(k - 1, 10, cx)} g{k-1}_11 g{k-1}_12 g{k-1}_13", post)
+
     def branch(self, off, taken, why):
         """A branch whose direction `why` proves: a term for `reg == reg` or its negation."""
         text, ln = INSTR[off]
@@ -7448,6 +7471,68 @@ def stage_win(i, eq):
     return g, info
 
 
+def ec_start(g):
+    """At 0xFBA, after the image signature's `r` and `s` are read: `r` at
+    offset 0x138 and `s` at 0x158, each a byte and 31 more."""
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 20: ("S", 0x1320), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20)}
+    words = {e: f"w{e:x}" for e in DPV_WORDS}
+    params = start(g, regs, words, {})
+    for c, L in ((0x138, "er"), (0x158, "es")):
+        g.bytes[c] = f"BitVec.ofNat 8 ({L}.getD 0 0)"
+        params.append(f"(b0_{c:x} : n0.mem ({fa(c)}) = BitVec.ofNat 8 ({L}.getD 0 0))")
+        g.ranges[c + 1] = (31, f"BitVec.ofNat 8 ({L}.getD (1 + j) 0)")
+        params.append(f"(q0_{c + 1:x} : ∀ j, j < 31 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{c + 1:X} + j)) = "
+                      f"BitVec.ofNat 8 ({L}.getD (1 + j) 0))")
+    params += ["(EC0 : SvEcCode M0)"]
+    return params
+
+
+EC_BINDERS = ("{B out bp x21 x26 : Word} {er es : Bytes} "
+              + "{" + " ".join(f"w{e:x}" for e in DPV_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+ORD256 = "BitVec.ofNat 32 0x3FCC4288"
+
+
+def stage_eca1():
+    """From 0xFBA to 0x1008: `r` and `s` are in `[1, n)`, and the leaf key's
+    encoding starts with 4."""
+    g = Gen("EcA1")
+    g.generic_alu = True
+    params = ec_start(g)
+    params += ["(k_in : SvIn B x21 1)"]
+    for c, off, nxt, hn in ((0x138, 0xFBA, 0xFD4, "hr"), (0x158, 0xFDA, 0xFF4, "hs")):
+        g.block(off, off + 0x12)
+        k = g.isr(off + 0x12, c, ORD256, lambda k, c=c: [
+            f"  rw [join32 b{k-1}_{c:x} q{k-1}_{c + 1:x}, mb_dataR F fR{k-1} (by decide) (by decide)] at a0_{k}"])
+        L = "er" if c == 0x138 else "es"
+        prop = f"inScalarRange (b32 {L}) (memBytes M0 ({ORD256}) 32) = true"
+
+        def out(sub, k=k, hn=hn, nxt=nxt):
+            sub.set_a0(k, 0, f"ite_eq_right {hn}")
+            sub.branch(nxt, False, f"by rw [g{sub.k}_10, s{sub.k}.zero]; decide")
+            sub.jump(nxt + 2)
+            sub.fail(sub.fail_proof(("prop", hn)), "sv_fail_24a4")
+        g.prop_check(prop, hn, out)
+        g.set_a0(k, 1, f"ite_eq_left {hn}")
+        g.branch(nxt, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    g.load_in(0xFFA, "k_in", "(by decide)")
+    g.block(0xFFE, 0x1000)
+
+    def tag(sub):
+        sub.branch(0x1000, False, f"by rw [g{sub.k}_10, g{sub.k}_11]; exact br_beq_f fun e => htag ((zext_eq4 _).mp e)")
+        sub.jump(0x1004)
+        sub.fail(sub.fail_proof(("prop", "htag")), "sv_fail_24a4")
+    g.prop_check("M0 x21 = 4", "htag", tag)
+    g.branch(0x1000, True, f"by rw [g{g.k}_10, g{g.k}_11, htag]; decide")
+    stmt, proof = finish(g, 0x1008, [2, 3, 4, 18, 19, 20, 21, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "sv_eca1", "title": "the image signature's scalars and the key's tag",
+            "doc": "From 0xFBA to 0x1008: the image signature's `r` and `s` are in `[1, n)` for P-256's order `n`, "
+            "and the leaf key's SEC1 encoding starts with 4, an uncompressed point.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": EC_BINDERS, "start": 0xFBA,
+            "import": "C3BootProofs.Proofs.SvEc"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -7472,7 +7557,8 @@ def main():
                 **{f"Cg{x}": (lambda x=x: stage_cg(x)) for x in range(5)},
                 **{f"Cm{x}": (lambda x=x: stage_cm(x)) for x in CM_DOC}, "Csx": stage_csx,
                 "Cr1e": lambda: stage_cr1(True), "Cr1n": lambda: stage_cr1(False), "Rl": stage_rl, "Rm": stage_rm,
-                **{f"Win{i}{x}": (lambda i=i, x=x: stage_win(i, x == "e")) for i in range(8) for x in "en"}}[stage]()
+                **{f"Win{i}{x}": (lambda i=i, x=x: stage_win(i, x == "e")) for i in range(8) for x in "en"},
+                "EcA1": stage_eca1}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
