@@ -86,7 +86,7 @@ O("theorem sv_p256_z " + binders)
 O(hyp_text)
 O("    (hid : CodeIn M0 (BitVec.ofNat 32 p256IdentityAddress) p256IdentityData) :")
 O("    Panics n0 ∨")
-O(f"    (({SC}) ∧ ∃ stm, {ML} = some stm ∧")
+O(f"    (({SC}) ∧ ∃ stm, {ML} = some stm ∧ Pt2Lt stm.1 ∧")
 O("      ∃ m', Steps n0 m' ∧ (∀ x, SvR B x → m'.mem x = M0 x) ∧ St m'.mem SV m' 0x1B54 (reg m') ∧")
 O(f"        ZvInv B m' v r3 r4 out bp x26 {NZW} rv sv zv stm.1.1 stm.1.2.1")
 O(f"          ({P}) ({R2}) W (p256Zv0 M0 stm.1.2.2)) := by")
@@ -99,7 +99,7 @@ O(f"    wnafGo_len (by have := accV_lt n1.mem ({fa(0x380)}) 8; rw [a1_380] at th
 O(f"  have hL1 : {L1} ≤ 0x101 :=")
 O(f"    wnafGo_len (by have := accV_lt n1.mem ({fa(0x400)}) 8; rw [a1_400] at this; exact this) _ _ _ (by decide) (by decide)")
 O("  rcases ml2_main F ME1 RS (F.dataIn fR1 hid (by decide) (by decide)) s1 r1_2 r1_9 r1_a0 r1_27 hL0 hL1 G1 with")
-O("    ⟨-, hp⟩ | ⟨stm, hst, n2, c2, E2, fr2, K2, s2, X2, r2_22, -, -, A2, -⟩")
+O("    ⟨-, hp⟩ | ⟨stm, hst, n2, c2, E2, fr2, K2, s2, X2, r2_22, -, -, A2, l2⟩")
 O("  · exact .inl (Panics.of_steps c1 hp)")
 O("  have fR2 : ∀ x, SvR B x → n2.mem x = M0 x := fun x hx => (fr2 x hx).trans (fR1 x hx)")
 
@@ -131,7 +131,7 @@ t = ["E3", "IC0.sv F fR3", "EC0.sv F fR3", "UC0.sv F fR3", "V3", "r3_2", "by rw 
 for a, b in ((0x320, 0x340), (0x1380, 0x13A0), (0x1480, 0x14A0), (0x1020, 0x1040)):
     t += [f"by rw [b3_{b:x}, a3_{a:x}]; rfl", f"by rw [b3_{b:x}]; decide"]
 t.append("fun e he => ?_")
-O(f"  refine .inr ⟨x1, stm, hst, n3, c1.trans (c2.trans c3), fR3, s3, " + ", ".join(t) + "⟩")
+O(f"  refine .inr ⟨x1, stm, hst, l2, n3, c1.trans (c2.trans c3), fR3, s3, " + ", ".join(t) + "⟩")
 O("  simp only [ziWords, List.mem_cons, List.not_mem_nil, or_false] at he")
 O("  rcases he with " + " | ".join(["rfl"] * len(ZIW)))
 for e in ZIW:
