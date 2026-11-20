@@ -1833,9 +1833,14 @@ class Gen:
         self.emit(f"  have q{k}_{dst:x} : ∀ j, j < {N} → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{dst:X} + j)) = {tmpl} :=")
         self.emit(f"    fun j hj => (X{k} j hj).trans (fR{k-1} _ (SvRo2.r RS {inp} hj))")
         self.ranges[dst] = (N, tmpl)
-        if acc:
+        if acc is True:
             self.acc[dst] = (N // 4, f"accV M0 ({p}) {N // 4}")
             self.emit(f"  have a{k}_{dst:x} : {self.acc_stmt(k, dst, N // 4, f'accV M0 ({p}) {N // 4}')} := acc_of_frame q{k}_{dst:x}")
+        elif acc:
+            for d in range(0, N, 4 * acc):
+                v = f"accV M0 ({p} + BitVec.ofNat 32 0x{d:X}) {acc}"
+                self.acc[dst + d] = (acc, v)
+                self.emit(f"  have a{k}_{dst + d:x} : {self.acc_stmt(k, dst + d, acc, v)} := acc_of_frame_at (d := 0x{d:X}) q{k}_{dst:x} (by decide)")
         self.end_step()
 
     def hinit(self):
@@ -2251,6 +2256,26 @@ class Gen:
         self.regs[2] = ("S", 0)
         self.frame_after(k, [], {})
         return k
+
+    def psm(self, off, co, ca, cb):
+        """The P-256 scalar field's `mul` of the scalars at offsets `ca` and
+        `cb`, into offset `co`."""
+        k = self.k = self.k + 1
+        na, va = self.acc[ca]
+        nb, vb = self.acc[cb]
+        self.call_head(k, off, "sv_psmF", f"(co := 0x{co:X}) (ca := 0x{ca:X}) (cb := 0x{cb:X})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"A{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (codeIn_sv F fR{k-1} PM0 (by decide) (by decide)) (codeIn_sv F fR{k-1} WM0 (by decide) (by decide))")
+        self.emit(f"    s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, co)} {self.reg_is(k - 1, 11, ca)} {self.reg_is(k - 1, 12, cb)}")
+        self.emit(f"    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)")
+        self.emit(f"  rw [a{k-1}_{ca:x}, a{k-1}_{cb:x}] at A{k}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        self.frame_after(k, [(co, 32)], {}, {}, {co: (8, f"psmVal (({va}) * ({vb}))", f"A{k}")})
 
     def isr(self, off, cx, y, post=None):
         """`ecdsa::in_scalar_range` of the 32 bytes at offset `cx` and at `y`."""
@@ -8197,6 +8222,44 @@ def stage_ive():
     return g, info
 
 
+def stage_ecd():
+    """From 0x15DA to the table loop at 0x1690: `u₁ = z·s⁻¹` and `u₂ = r·s⁻¹`,
+    and the two pairs `(G, u₁)` and `(Q, u₂)` laid out for the tables."""
+    g = Gen("EcD")
+    g.generic_alu = True
+    params = iv_start(g)
+    g.acc[0x420] = (8, "wv")
+    params = [p for p in params if not p.startswith("(a0_420 ")]
+    params.append("(a0_420 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = wv)")
+    params += ["(RS : SvRoSep B)", "(PM0 : CodeIn M0 (BitVec.ofNat 32 p256ScalarMulAddress) p256ScalarMulCode)",
+               "(WM0 : CodeIn M0 (BitVec.ofNat 32 wideMulAddress) wideMulCode)"]
+    g.block(0x15DA, 0x15E4)
+    g.mc(0x15E4, 0x300, 0x420, 0x20)
+    g.block(0x15EC, 0x15F4)
+    g.psm(0x15F4, 0x480, 0x2E0, 0x300)
+    g.block(0x15FC, 0x1608)
+    g.psm(0x1608, 0xA80, 0x2A0, 0x300)
+    g.block(0x1610, 0x1622)
+    g.mcRo(0x1622, 0x420, "BitVec.ofNat 32 0x3FCC4690", 0x60, "(Or.inr ⟨by decide, by decide⟩)", acc=8)
+    g.block(0x162A, 0x1638)
+    g.mc(0x1638, 0xA20, 0x240, 0x60)
+    g.block(0x1640, 0x164A)
+    g.mc(0x164A, 0x320, 0x420, 0x80)
+    g.block(0x1652, 0x1660)
+    g.mc(0x1660, 0x3A0, 0xA20, 0x80)
+    g.block(0x1668, 0x1680)
+    g.mc(0x1680, 0x1480, 0x320, 0x100)
+    g.block(0x1688, 0x1690)
+    stmt, proof = finish(g, 0x1690, [2, 3, 4, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "sv_ecd", "title": "`u₁` and `u₂`, and the pairs of the linear combination",
+            "doc": "From 0x15DA to the table loop at 0x1690: `u₁ = z·s⁻¹` and `u₂ = r·s⁻¹` with the scalar field's "
+            "`mul`, and the pairs `(G, u₁)` and `(Q, u₂)` copied to offset 0x1480.",
+            "params": params, "stmt": stmt, "proof": proof,
+            "binders": IV_BINDERS.replace("{fs gs ds es : BitVec 8}", "{fs gs ds es : BitVec 8} {wv : Nat}"),
+            "start": 0x15DA, "import": "C3BootProofs.Proofs.SvEcLib2"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -8223,7 +8286,7 @@ def main():
                 "Cr1e": lambda: stage_cr1(True), "Cr1n": lambda: stage_cr1(False), "Rl": stage_rl, "Rm": stage_rm,
                 **{f"Win{i}{x}": (lambda i=i, x=x: stage_win(i, x == "e")) for i in range(8) for x in "en"},
                 "EcA1": stage_eca1, "EcA2": stage_eca2, "EcA3": stage_eca3,
-                "IvHc": lambda: stage_ivh("c"), "IvHx": lambda: stage_ivh("x"), "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive}[stage]()
+                "IvHc": lambda: stage_ivh("c"), "IvHx": lambda: stage_ivh("x"), "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive, "EcD": stage_ecd}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
