@@ -36,10 +36,14 @@ inlined P-256 ECDSA check at offsets 0xFBA to 0x2034:
   is proved against the same `dsStep` model as `p384_verify_prehash`'s.
 - `SvZE`: the affine `x` and the comparison with `r`.
 
-The batch loops of the two inversions still need their inductions (the
-counterpart of `Pv384HLoop.lean`), and the stages still have to be
-composed into one theorem against `sigstoreVerify` in
-`Spec/Sigstore.lean`.
+The batch loops of the two inversions are proved by induction, the
+counterpart of `Pv384HLoop.lean`: `zv_loop` against the model `zvLoop`
+for `Z` (`SvZLoop2.lean`), and `iv_loop` and `iv_exit` against `ivLoop8`
+for `s` (`SvIvLoop.lean`), which also stops when `g` reaches zero.
+[`gen-sv-zloop.py`](../c3-boot-proofs/scripts/gen-sv-zloop.py) and
+[`gen-sv-ivloop.py`](../c3-boot-proofs/scripts/gen-sv-ivloop.py) write
+them from the stages' statements. The stages still have to be composed
+into one theorem against `sigstoreVerify` in `Spec/Sigstore.lean`.
 
 `_start` and the clock and watchdog `setup` that runs before `boot_main`
 aren't among the extracted functions, so they are trusted.
