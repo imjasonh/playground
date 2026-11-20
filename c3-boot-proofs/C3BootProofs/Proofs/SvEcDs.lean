@@ -177,4 +177,218 @@ theorem ecP_ok (M : Word → BitVec 8) (f : Fin 32 → Word) (hz : f 0 = 0) (s :
     (try simp only [decide_eq_true_eq, BitVec.toNat_ofNat, BitVec.ofNat_eq_ofNat, Nat.reducePow, Nat.reduceMod] at *)
     <;> omega
 
+theorem EcDsRegs.congr {M : Word → BitVec 8} {f f' : Fin 32 → Word} {s : Ds} (h : EcDsRegs M f s)
+    (e : ∀ q : Fin 32, q.val ∈ [2, 5, 6, 8, 10, 11, 12, 14, 17, 22, 23, 25, 29, 31] → f' q = f q) :
+    EcDsRegs M f' s := by
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := h
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
+    simp only [e 2 (by decide), e 5 (by decide), e 6 (by decide), e 8 (by decide), e 10 (by decide),
+      e 11 (by decide), e 12 (by decide), e 14 (by decide), e 17 (by decide), e 22 (by decide), e 23 (by decide),
+      e 25 (by decide), e 29 (by decide), e 31 (by decide)] <;> assumption
+
+/-- The registers the loop keeps. -/
+theorem ec_keep (M M' : Word → BitVec 8) (f : Fin 32 → Word) (hz : f 0 = 0) (X : List BInstr)
+    (hX : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 16, 18, 19, 21, 24, 26, 27] → q ∉ X.filterMap BInstr.dst) :
+    (∀ q : Fin 32, q.val ∈ [2, 3, 4, 18, 19, 21, 24, 26, 27] → (runBlock ecS (M', (runBlock X (M, f)).2)).2 q = f q) ∧
+      (runBlock ecS (M', (runBlock X (M, f)).2)).2 16 = f 16 + 0xFFFFFFFF := by
+  have hz' : (runBlock X (M, f)).2 0 = 0 := runBlock_zero X M f hz
+  constructor
+  · intro q hq
+    rw [runBlock_reg _ _ _ q hz' (by simp only [ecS]; revert hq; revert q; decide),
+      runBlock_reg _ _ _ q hz (hX q (by revert hq; revert q; decide))]
+  · have e : (runBlock X (M, f)).2 16 = f 16 := runBlock_reg _ _ _ 16 hz (hX 16 (by decide))
+    simp +decide only [runBlock, BInstr.run, ecS, upd, ↓reduceIte, aluEval]
+    rw [e]
+
+/-- What one pass of the loop leaves: the step taken, the counter less one,
+the other registers it keeps, memory changed at most in `f`'s high word, and
+the code still in place. -/
+def EcDsPost (Mx : Word → BitVec 8) (m : Machine) (s : Ds) (Mx' : Word → BitVec 8) (m' : Machine) (off : Nat) : Prop :=
+  Steps m m' ∧ St Mx' SV m' off (reg m') ∧ EcDsRegs Mx' (reg m') s ∧
+    (∀ q : Fin 32, q.val ∈ [2, 3, 4, 18, 19, 21, 24, 26, 27] → reg m' q = reg m q) ∧
+    (∀ x, Sep (reg m sp + 0x74) 4 x 1 → Mx' x = Mx x) ∧ CodeIn Mx' SV sigstoreVerifyCode
+
+set_option maxHeartbeats 8000000 in
+/-- **One divstep** of the loop at 0x1392, to the branch at 0x1474. -/
+theorem ec_body {Mx : Word → BitVec 8} (hc : CodeIn Mx SV sigstoreVerifyCode) {m : Machine} {s : Ds}
+    (st : St Mx SV m 0x1392 (reg m)) (h : EcDsRegs Mx (reg m) s)
+    (hsa : (reg m sp + 0x74).toNat % 4 = 0) (hsc : Sep (reg m sp + 0x74) 4 SV sigstoreVerifyCode.length) :
+    ∃ m' Mx', EcDsPost Mx m (dsStep s) Mx' m' 0x1474 ∧ reg m' 16 = reg m 16 + 0xFFFFFFFF := by
+  have hz := st.zero
+  obtain ⟨m1, c1, u1⟩ := st.block ecA hc ecA_end ⟨trivial, trivial⟩
+  have s1 : St Mx SV m1 0x1396 (reg m1) := ⟨u1.pc, u1.mem, fun _ => rfl⟩
+  have z1 := s1.zero
+  have r1a3 : reg m1 a3 = reg m a0 &&& 1 := by
+    rw [u1.regs]; simp +decide only [runBlock, BInstr.run, ecA, upd, ↓reduceIte, aluEval]
+  have r1k : ∀ q : Fin 32, q ≠ a3 → reg m1 q = reg m q := fun q hq => by
+    rw [u1.regs, runBlock_reg _ _ _ q hz (by simp only [ecA, List.filterMap_cons, List.filterMap_nil, BInstr.dst]; simpa using hq)]
+  have h1 : EcDsRegs Mx (reg m1) s := h.congr fun q hq => r1k q (by revert hq; revert q; decide)
+  have sp1 : reg m1 sp = reg m sp := r1k sp (by decide)
+  -- the shift and the counter, after the case's block, ending at 0x1474
+  have fin : ∀ {m4 : Machine} {M4 : Word → BitVec 8} (X : List BInstr) (f0 : Fin 32 → Word), f0 0 = 0 →
+      St M4 SV m4 0x1446 (reg m4) → reg m4 = (runBlock X (Mx, f0)).2 → Steps m m4 →
+      EcDsRegs M4 (runBlock ecS (M4, (runBlock X (Mx, f0)).2)).2 (dsStep s) →
+      (∀ q : Fin 32, q.val ∈ [2, 3, 4, 16, 18, 19, 21, 24, 26, 27] → q ∉ X.filterMap BInstr.dst) →
+      (∀ q : Fin 32, q.val ∈ [2, 3, 4, 16, 18, 19, 21, 24, 26, 27] → f0 q = reg m q) →
+      (∀ x, Sep (reg m sp + 0x74) 4 x 1 → M4 x = Mx x) → CodeIn M4 SV sigstoreVerifyCode →
+      ∃ m' Mx', EcDsPost Mx m (dsStep s) Mx' m' 0x1474 ∧ reg m' 16 = reg m 16 + 0xFFFFFFFF := by
+    intro m4 M4 X f0 hf0 s4 e4 c4 hd hX hk hM hC
+    obtain ⟨m5, c5, u5⟩ := s4.block ecS hC ecS_end ⟨trivial, trivial, trivial, trivial, trivial, trivial, trivial,
+      trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial⟩
+    have e5 : reg m5 = (runBlock ecS (M4, (runBlock X (Mx, f0)).2)).2 := by
+      funext q; rw [u5.regs, e4]
+    obtain ⟨kk, kt⟩ := ec_keep Mx M4 f0 hf0 X hX
+    refine ⟨m5, M4, ⟨c4.trans c5, ⟨u5.pc, u5.mem, fun _ => rfl⟩, by rw [e5]; exact hd, fun q hq => ?_, hM, hC⟩, ?_⟩
+    · rw [e5, kk q hq, hk q (by revert hq; revert q; decide)]
+    · rw [e5, kt, hk 16 (by decide)]
+  have k1 : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 16, 18, 19, 21, 24, 26, 27] → reg m1 q = reg m q :=
+    fun q hq => r1k q (by revert hq; revert q; decide)
+  have pathN : ∀ {m5 : Machine}, St Mx SV m5 0x1414 (reg m5) → Steps m m5 → EcDsRegs Mx (reg m5) s →
+      (∀ q : Fin 32, q.val ∈ [2, 3, 4, 16, 18, 19, 21, 24, 26, 27] → reg m5 q = reg m q) → s.g % 2 = 1 →
+      ¬ dsPos s.δ → ∃ m' Mx', EcDsPost Mx m (dsStep s) Mx' m' 0x1474 ∧ reg m' 16 = reg m 16 + 0xFFFFFFFF := by
+    intro m5 s5 c5 h5 k5 hgo hnp
+    have sp5 : reg m5 sp = reg m sp := k5 sp (by decide)
+    obtain ⟨m6, c6, u6⟩ := s5.block ecN hc ecN_end ⟨trivial, trivial, by
+      simp +decide only [BInstr.ok, BInstr.run, upd, ↓reduceIte]; rw [sp5]; exact hsa, trivial, trivial, trivial,
+      trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial⟩
+    have M6 : (runBlock ecN (Mx, reg m5)).1 = Mx := by simp only [runBlock, BInstr.run, ecN]
+    rw [M6] at u6
+    exact fin ecN (reg m5) s5.zero ⟨u6.pc, u6.mem, fun _ => rfl⟩ (by funext q; rw [u6.regs]) (c5.trans c6)
+      (ecN_ok Mx (reg m5) s5.zero s h5 hgo hnp) (by decide) k5 (fun _ _ => rfl) hc
+  have pathP : ∀ {m5 : Machine}, St Mx SV m5 0x13C2 (reg m5) → Steps m m5 → EcDsRegs Mx (reg m5) s →
+      (∀ q : Fin 32, q.val ∈ [2, 3, 4, 16, 18, 19, 21, 24, 26, 27] → reg m5 q = reg m q) → s.g % 2 = 1 →
+      dsPos s.δ → ∃ m' Mx', EcDsPost Mx m (dsStep s) Mx' m' 0x1474 ∧ reg m' 16 = reg m 16 + 0xFFFFFFFF := by
+    intro m5 s5 c5 h5 k5 hgo hp
+    have sp5 : reg m5 sp = reg m sp := k5 sp (by decide)
+    have Pr : (runBlock ecP (Mx, reg m5)).2 sp = reg m sp := by
+      rw [runBlock_reg _ _ _ sp s5.zero (by decide), sp5]
+    obtain ⟨m6, c6, u6⟩ := s5.block ecP hc ecP_end (by
+      simp +decide only [BlockOk, BInstr.ok, BInstr.run, ecP, upd, ↓reduceIte, true_and, and_true]
+      rw [sp5]; exact ⟨hsa, hsa, hsc⟩)
+    have M6 : (runBlock ecP (Mx, reg m5)).1 = memStore32 Mx (reg m sp + 0x74) (reg m5 a1) := by
+      simp +decide only [runBlock, BInstr.run, ecP, upd, ↓reduceIte]; rw [sp5]
+    have C6 : CodeIn (runBlock ecP (Mx, reg m5)).1 SV sigstoreVerifyCode := by rw [M6]; exact hc.store32 hsc
+    have s6 : St (runBlock ecP (Mx, reg m5)).1 SV m6 0x1412 (reg m6) := ⟨u6.pc, u6.mem, fun _ => rfl⟩
+    obtain ⟨m7, d7, u7⟩ := s6.jump C6 sv_at_1412 (off' := 0x1446) (by decide) (by rw [s6.pc]; decide)
+    exact fin ecP (reg m5) s5.zero u7.self (by funext q; rw [u7.regs, u6.regs]) (c5.trans (c6.trans (.single d7)))
+      (ecP_ok Mx (reg m5) s5.zero s h5 hgo hp) (by decide) k5
+      (fun x hx => by rw [M6, memStore32_get_sep hx]) C6
+  have hδ := h1.1
+  have hg := h1.2.2.1
+  by_cases hge : s.g % 2 = 0
+  · have ha3 : reg m1 a3 = 0 := by rw [r1a3, ← r1k 10 (by decide)]; exact (ds_odd hg).2 hge
+    obtain ⟨m2, d2, u2⟩ := s1.notTaken hc 0x1398 sv_at_1396 (by decide)
+      (by show (reg m1 a3 != reg m1 x0) = false; rw [ha3, z1]; rfl)
+    have e2 : reg m2 = reg m1 := funext u2.regs
+    obtain ⟨m3, c3, u3⟩ := u2.self.block ecE hc ecE_end ⟨trivial, trivial, trivial, trivial, trivial, trivial, trivial,
+      trivial, trivial, trivial, trivial⟩
+    have M3 : (runBlock ecE (Mx, reg m2)).1 = Mx := by simp only [runBlock, BInstr.run, ecE]
+    rw [M3] at u3
+    have s3 : St Mx SV m3 0x13B0 (reg m3) := ⟨u3.pc, u3.mem, fun _ => rfl⟩
+    obtain ⟨m4, d4, u4⟩ := s3.jump hc sv_at_13b0 (off' := 0x1446) (by decide) (by rw [s3.pc]; decide)
+    exact fin ecE (reg m1) z1 u4.self (by funext q; rw [u4.regs, u3.regs, e2])
+      (c1.trans (.cons d2 (c3.trans (.single d4)))) (ecE_ok Mx (reg m1) z1 s h1 hge) (by decide) k1
+      (fun _ _ => rfl) hc
+  have hgo : s.g % 2 = 1 := by omega
+  have ha3 : reg m1 a3 ≠ 0 := by
+    rw [r1a3, ← r1k 10 (by decide)]; exact fun h0 => hge ((ds_odd hg).1 h0)
+  obtain ⟨m2, d2, u2⟩ := s1.taken hc 0x13B2 sv_at_1396 (by decide)
+    (by show (reg m1 a3 != reg m1 x0) = true; rw [z1]; simpa using ha3)
+  have e2 : reg m2 = reg m1 := funext u2.regs
+  by_cases h25 : reg m1 25 = 0
+  · obtain ⟨m3, d3, u3⟩ := u2.self.taken hc 0x13BC sv_at_13b2 (by decide)
+      (by show (reg m2 25 == reg m2 x0) = true; rw [e2, h25, z1]; rfl)
+    have e3 : reg m3 = reg m1 := by funext q; rw [u3.regs, e2]
+    obtain ⟨m4, c4, u4⟩ := u3.self.block ecZ hc ecZ_end ⟨trivial, trivial⟩
+    have M4 : (runBlock ecZ (Mx, reg m3)).1 = Mx := by simp only [runBlock, BInstr.run, ecZ]
+    rw [M4] at u4
+    have s4 : St Mx SV m4 0x13C0 (reg m4) := ⟨u4.pc, u4.mem, fun _ => rfl⟩
+    have r4a3 : reg m4 a3 = if (0 : Word).ult (reg m1 23) then 1 else 0 := by
+      rw [u4.regs, e3]; simp +decide only [runBlock, BInstr.run, ecZ, upd, ↓reduceIte, aluEval, z1]
+    have r4k : ∀ q : Fin 32, q ≠ a3 → reg m4 q = reg m1 q := fun q hq => by
+      rw [u4.regs, e3, runBlock_reg _ _ _ q z1
+        (by simp only [ecZ, List.filterMap_cons, List.filterMap_nil, BInstr.dst]; simpa using hq)]
+    have h4 : EcDsRegs Mx (reg m4) s := h1.congr fun q hq => r4k q (by revert hq; revert q; decide)
+    have k4 : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 16, 18, 19, 21, 24, 26, 27] → reg m4 q = reg m q :=
+      fun q hq => by rw [r4k q (by revert hq; revert q; decide), k1 q hq]
+    by_cases h23 : reg m1 23 = 0
+    · have hnp : ¬ dsPos s.δ := by rw [ds_pos_lo hδ h25]; simpa using h23
+      obtain ⟨m5, d5, u5⟩ := s4.taken hc 0x1414 sv_at_13c0 (by decide)
+        (by show (reg m4 a3 == reg m4 x0) = true; rw [r4a3, h23, s4.zero]; decide)
+      exact pathN u5.self (c1.trans (.cons d2 (.cons d3 (c4.trans (.single d5)))))
+        (h4.congr fun q _ => u5.regs q) (fun q hq => by rw [u5.regs, k4 q hq]) hgo hnp
+    · have hp : dsPos s.δ := by rw [ds_pos_lo hδ h25]; exact h23
+      have hu : (0 : Word).ult (reg m1 23) = true := by
+        simp only [BitVec.ult, decide_eq_true_eq]; exact Nat.pos_of_ne_zero fun e => h23 (BitVec.eq_of_toNat_eq e)
+      obtain ⟨m5, d5, u5⟩ := s4.notTaken hc 0x13C2 sv_at_13c0 (by decide)
+        (by show (reg m4 a3 == reg m4 x0) = false; rw [r4a3, hu, s4.zero]; decide)
+      exact pathP u5.self (c1.trans (.cons d2 (.cons d3 (c4.trans (.single d5)))))
+        (h4.congr fun q _ => u5.regs q) (fun q hq => by rw [u5.regs, k4 q hq]) hgo hp
+  · obtain ⟨m3, d3, u3⟩ := u2.self.notTaken hc 0x13B6 sv_at_13b2 (by decide)
+      (by show (reg m2 25 == reg m2 x0) = false; rw [e2, z1]; simpa using h25)
+    have e3 : reg m3 = reg m1 := by funext q; rw [u3.regs, e2]
+    obtain ⟨m4, c4, u4⟩ := u3.self.block ecT hc ecT_end ⟨trivial, trivial⟩
+    have M4 : (runBlock ecT (Mx, reg m3)).1 = Mx := by simp only [runBlock, BInstr.run, ecT]
+    rw [M4] at u4
+    have s4' : St Mx SV m4 0x13BA (reg m4) := ⟨u4.pc, u4.mem, fun _ => rfl⟩
+    obtain ⟨m4', d4', u4'⟩ := s4'.jump hc sv_at_13ba (off' := 0x13C0) (by decide) (by rw [s4'.pc]; decide)
+    have s4 : St Mx SV m4' 0x13C0 (reg m4') := u4'.self
+    have r4a3 : reg m4' a3 = if (0 : Word).slt (reg m1 25) then 1 else 0 := by
+      rw [u4'.regs, u4.regs, e3]; simp +decide only [runBlock, BInstr.run, ecT, upd, ↓reduceIte, aluEval, z1]
+    have r4k : ∀ q : Fin 32, q ≠ a3 → reg m4' q = reg m1 q := fun q hq => by
+      rw [u4'.regs, u4.regs, e3, runBlock_reg _ _ _ q z1
+        (by simp only [ecT, List.filterMap_cons, List.filterMap_nil, BInstr.dst]; simpa using hq)]
+    have h4 : EcDsRegs Mx (reg m4') s := h1.congr fun q hq => r4k q (by revert hq; revert q; decide)
+    have k4 : ∀ q : Fin 32, q.val ∈ [2, 3, 4, 16, 18, 19, 21, 24, 26, 27] → reg m4' q = reg m q :=
+      fun q hq => by rw [r4k q (by revert hq; revert q; decide), k1 q hq]
+    have c4' : Steps m m4' := c1.trans (.cons d2 (.cons d3 (c4.trans (.single d4'))))
+    by_cases hs : (0 : Word).slt (reg m1 25) = true
+    · have hp : dsPos s.δ := (ds_pos_hi hδ h25).2 hs
+      obtain ⟨m5, d5, u5⟩ := s4.notTaken hc 0x13C2 sv_at_13c0 (by decide)
+        (by show (reg m4' a3 == reg m4' x0) = false; rw [r4a3, hs, s4.zero]; decide)
+      exact pathP u5.self (c4'.trans (.single d5))
+        (h4.congr fun q _ => u5.regs q) (fun q hq => by rw [u5.regs, k4 q hq]) hgo hp
+    · have hnp : ¬ dsPos s.δ := fun hp => hs ((ds_pos_hi hδ h25).1 hp)
+      obtain ⟨m5, d5, u5⟩ := s4.taken hc 0x1414 sv_at_13c0 (by decide)
+        (by show (reg m4' a3 == reg m4' x0) = true; rw [r4a3, Bool.not_eq_true _ |>.mp hs, s4.zero]; decide)
+      exact pathN u5.self (c4'.trans (.single d5))
+        (h4.congr fun q _ => u5.regs q) (fun q hq => by rw [u5.regs, k4 q hq]) hgo hnp
+
+/-- **The divstep loop** at 0x1392, with `k + 1` steps left in `a6`, runs
+them all and leaves at 0x1478. -/
+theorem ec_loop (k : Nat) :
+    ∀ {m : Machine} {Mx : Word → BitVec 8} {s : Ds}, CodeIn Mx SV sigstoreVerifyCode → St Mx SV m 0x1392 (reg m) →
+      EcDsRegs Mx (reg m) s → reg m 16 = BitVec.ofNat 32 (k + 1) → k + 1 < 2 ^ 32 →
+      (reg m sp + 0x74).toNat % 4 = 0 → Sep (reg m sp + 0x74) 4 SV sigstoreVerifyCode.length →
+      ∃ m' Mx', EcDsPost Mx m (dsIter (k + 1) s) Mx' m' 0x1478 := by
+  induction k with
+  | zero =>
+    intro m Mx s hc st h h16 _ hsa hsc
+    obtain ⟨m1, M1, ⟨c1, s1, h1, k1, f1, C1⟩, t1⟩ := ec_body hc st h hsa hsc
+    have e : reg m1 16 = 0 := by rw [t1, h16]; decide
+    obtain ⟨m2, d2, u2⟩ := s1.notTaken C1 0x1478 sv_at_1474 (by decide)
+      (by show (reg m1 16 != reg m1 x0) = false; rw [e, s1.zero]; rfl)
+    exact ⟨m2, M1, c1.trans (.single d2), u2.self, h1.congr fun q _ => u2.regs q,
+      fun q hq => by rw [u2.regs, k1 q hq], f1, C1⟩
+  | succ k ih =>
+    intro m Mx s hc st h h16 hk hsa hsc
+    obtain ⟨m1, M1, ⟨c1, s1, h1, k1, f1, C1⟩, t1⟩ := ec_body hc st h hsa hsc
+    have e : reg m1 16 = BitVec.ofNat 32 (k + 1) := by
+      rw [t1, h16]; apply BitVec.eq_of_toNat_eq
+      rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat, show (0xFFFFFFFF : Word).toNat = 4294967295 from rfl,
+        show (2 : Nat) ^ 32 = 4294967296 from rfl, Nat.mod_add_mod,
+        show k + 1 + 1 + 4294967295 = k + 1 + 4294967296 by omega, Nat.add_mod_right]
+    have hne : reg m1 16 ≠ 0 := by
+      rw [e]; intro h0
+      have := congrArg BitVec.toNat h0
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega), show (0 : Word).toNat = 0 from rfl] at this
+      omega
+    obtain ⟨m2, d2, u2⟩ := s1.taken C1 0x1392 sv_at_1474 (by decide)
+      (by show (reg m1 16 != reg m1 x0) = true; rw [s1.zero]; simpa using hne)
+    have sp2 : reg m2 sp = reg m sp := by rw [u2.regs, k1 sp (by decide)]
+    obtain ⟨m3, M3, c3, s3, h3, k3, f3, C3⟩ := ih C1 u2.self (h1.congr fun q _ => u2.regs q) (by rw [u2.regs, e])
+      (by omega) (by rw [sp2]; exact hsa) (by rw [sp2]; exact hsc)
+    refine ⟨m3, M3, c1.trans (.cons d2 c3), s3, h3, fun q hq => by rw [k3 q hq, u2.regs, k1 q hq],
+      fun x hx => by rw [f3 x (by rw [sp2]; exact hx), f1 x hx], C3⟩
+
 end C3.RV32.Sv
