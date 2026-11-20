@@ -324,4 +324,47 @@ theorem sv_z32F {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {im
     rw [f2 x hx']
     exact fillBytes_sep (svR_hi hx hco) (Nat.le_refl 32)
 
+set_option maxHeartbeats 8000000 in
+/-- **A call to `bytes2scalar`** for P-256 of the 32 bytes at offset `cb`,
+into offset `co`: the big-endian value reduced modulo the order. -/
+theorem sv_by2Fs {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o : Word} {co cb : Nat}
+    (F : Fr B 0x3830) (C : SvCode M) (BE : BYEnv M) (s : St M SV n off (reg n))
+    (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : SV + BitVec.ofNat 32 off + imm + o = BY)
+    (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
+    (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 co)
+    (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 cb)
+    (hco : co + 32 ≤ 0x1690) (hco4 : co % 4 = 0) (hcb : cb + 32 ≤ 0x1690) :
+    ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
+      (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧
+      accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 co) 8 =
+        beNat (memBytes M (B + 0x21A0 + BitVec.ofNat 32 cb) 32) % C3.p256.n ∧
+      SvKeepL B M n'.mem [(co, 32)] ∧ (∀ x, SvR B x → n'.mem x = M x) := by
+  have hFl := F.lo; have hFh := F.hi; have hFa := F.al
+  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := s.callRa C.self h1 h2 hb (by decide)
+  have r1 := PEnv.reg1 regs1 s.zero
+  have hS : (B + (0x21A0 : Word)).toNat = B.toNat + 0x21A0 := F.at 0x21A0 (by decide)
+  have FS : Fr (B + 0x21A0) 0x1690 := F.sub (c := 0x21A0) (by decide) (by decide)
+  have e1 : B + 0x21A0 + 0xFFFFFF20 = B + BitVec.ofNat 32 0x20C0 := sv_spX B 0xE0 (by decide)
+  obtain ⟨n2, c2, pc2, sp2, k2, A2, f2⟩ := bytes2scalar256_correct n1 (sp0 := B + 0x21A0)
+    (out := B + 0x21A0 + BitVec.ofNat 32 co) (b := B + 0x21A0 + BitVec.ofNat 32 cb) (by rw [mem1]; exact BE) pc1
+    (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1])
+    (by rw [regs1]; simp +decide [upd]) (even_clear _ hev) (by rw [r1 sp (by decide), rsp])
+    (by rw [hS]; omega) (by rw [hS]; omega) (by rw [hS]; unfold dramEnd; omega)
+    (by rw [sv_at F _ (by omega)]; unfold dramEnd; omega) (sv_al F (by omega) hco4)
+    (by rw [sv_at F _ (by omega)]; omega)
+    (by rw [e1, ← sv_base']; exact sepS B (by omega) (by omega) (by omega))
+    (by rw [e1, ← sv_base']; exact sepS B (by omega) (by omega) (by omega))
+    (by rw [e1]; exact F.bufData (by decide) (by decide) (by decide))
+  rw [mem1, e1] at f2
+  rw [mem1] at A2
+  refine ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, sp2,
+    fun q hq => by rw [k2 q (by revert hq; revert q; decide), r1 q (by revert hq; revert q; decide)], A2,
+    fun e he hL => ?_, fun x hx => f2 x (svR_spX hx (by decide) (by decide) (by decide)) (svR_hi hx hco)⟩
+  have h1 := hL _ (List.mem_singleton_self _)
+  simp only at h1
+  exact f2 _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega))
+    (sepS (B + 0x21A0) (by omega) (by omega) (by omega))
+
 end C3.RV32.Sv
