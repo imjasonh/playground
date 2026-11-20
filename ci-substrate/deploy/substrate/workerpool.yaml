@@ -27,7 +27,7 @@ metadata:
     workload: ci-runner
 spec:
   replicas: 1
-  workerImage: ghcr.io/agent-substrate/substrate/ateworker-gvisor:v1.0.0
+  workerImage: ghcr.io/agent-substrate/substrate/ateworker-gvisor:v1.0.1
   sandboxClasses:
     - name: gvisor
   template:
@@ -49,7 +49,7 @@ metadata:
     workload: ci-runner
 spec:
   replicas: 0
-  workerImage: ghcr.io/agent-substrate/substrate/ateworker-gvisor:v1.0.0
+  workerImage: ghcr.io/agent-substrate/substrate/ateworker-gvisor:v1.0.1
   sandboxClasses:
     - name: gvisor
   template:
