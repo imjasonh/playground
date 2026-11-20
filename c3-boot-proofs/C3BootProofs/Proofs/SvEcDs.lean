@@ -1,6 +1,8 @@
 import C3BootProofs.Proofs.SvEc
 import C3BootProofs.Proofs.Pv384Ds
 import C3BootProofs.Proofs.Pv384CIt
+import C3BootProofs.Proofs.Lowest
+import C3BootProofs.Proofs.Prim
 
 /-!
 # `sigstore::verify`: the P-256 check's divstep batch
@@ -503,5 +505,92 @@ theorem ec_scan {Mx : Word → BitVec 8} {B : Word} (F : Fr B 0x3830) (hc : Code
           simp only [ecScC, List.filterMap_cons, List.filterMap_nil, BInstr.dst]; simpa using h1'
         rw [u6.regs, u5.regs, runBlock_reg _ _ _ q (by rw [u4.regs]; exact s3.zero) hq,
           u4.regs, k3 q h0' h1' h2'], .inr ⟨fun h => hw (h i hi), u6.self⟩⟩
+
+theorem sv_sp1 (B : Word) : B + 0x21A0 + 0xFFFFFFFF = B + BitVec.ofNat 32 0x219F := by
+  rw [BitVec.add_assoc]; rfl
+
+theorem svR_sp1 {B x : Word} (hx : SvR B x) : Sep (B + BitVec.ofNat 32 0x219F) 1 x 1 := by
+  have := svR_lo (k := 1) hx (by decide) (by decide)
+  rwa [sv_lo B 1 (by decide)] at this
+
+/-- The inversion's code beyond `SvEcCode`. -/
+structure SvIvCode (M : Word → BitVec 8) : Prop where
+  umin : CodeIn M (BitVec.ofNat 32 u32MinAddress) u32MinCode
+  low8 : CodeIn M (BitVec.ofNat 32 lowest8Address) lowest8Code
+  sel64 : CodeIn M (BitVec.ofNat 32 selectI64Address) selectI64Code
+
+theorem SvIvCode.sv {M M0 : Word → BitVec 8} {B : Word} (F : Fr B 0x3830) (D : SvIvCode M0)
+    (fR : ∀ x, SvR B x → M x = M0 x) : SvIvCode M := by
+  have hx : ∀ x : Word, 0x40000000 ≤ x.toNat → M x = M0 x := fun x hx => fR x (sep_of_le (by
+    have hb : (B + 0xFFFFFE60).toNat = B.toNat - 0x1A0 := F.below 0x1A0 (by decide) (by decide)
+    have := F.hi; rw [hb]; omega) (by have := x.isLt; omega))
+  exact ⟨codeHi D.umin (by decide) (by decide) hx, codeHi D.low8 (by decide) (by decide) hx,
+    codeHi D.sel64 (by decide) (by decide) hx⟩
+
+/-- **A call to `u32::min(a0, 62)`**. -/
+theorem sv_uminF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o a : Word}
+    (F : Fr B 0x3830) (C : SvCode M) (IC : SvIvCode M) (s : St M SV n off (reg n))
+    (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 u32MinAddress)
+    (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0) (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = a) :
+    ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
+      (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧
+      reg n' a0 = (if a.toNat < 62 then a else 62) ∧
+      SvKeepL B M n'.mem [] ∧ (∀ x, SvR B x → n'.mem x = M x) := by
+  have hFl := F.lo; have hFh := F.hi; have hFa := F.al
+  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := s.callRa C.self h1 h2 hb (by decide)
+  have r1 := PEnv.reg1 regs1 s.zero
+  have sp1 : reg n1 sp = B + 0x21A0 := by rw [r1 sp (by decide), rsp]
+  obtain ⟨n2, c2, pc2, a02, k2, f2⟩ := u32Min_correct n1 (base := BitVec.ofNat 32 u32MinAddress)
+    (by rw [mem1]; exact IC.umin) pc1 (by rw [r1 a0 (by decide), ha0])
+    (by rw [sp1, sv_sp1]; exact F.sepHi (by decide) (by decide) (by decide))
+    (by rw [regs1]; simp +decide [upd]) (even_clear _ hev)
+  rw [sp1, sv_sp1] at f2
+  refine ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, by rw [k2 sp (by decide) (by decide) (by decide)
+    (by decide), sp1], fun r hr => ?_, a02, fun e he _ => ?_, fun x hx => ?_⟩
+  · have hr' : r ≠ a0 ∧ r ≠ a1 ∧ r ≠ a2 ∧ r ≠ a3 ∧ r ≠ ra := by revert hr; revert r; decide
+    obtain ⟨q10, q11, q12, q13, q1⟩ := hr'
+    rw [k2 r q10 q11 q12 q13, r1 r q1]
+  · rw [f2 _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega)), mem1]
+  · rw [f2 x (svR_sp1 hx), mem1]
+
+/-- **A call to `lowest` on 8 limbs** at offset `oc`, whose sign byte is at
+`oc + 0x20`. -/
+theorem sv_low8F {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o : Word} {oc : Nat}
+    (F : Fr B 0x3830) (C : SvCode M) (IC : SvIvCode M) (s : St M SV n off (reg n))
+    (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 lowest8Address)
+    (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0) (rsp : reg n sp = B + 0x21A0)
+    (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 oc) (ho : oc + 0x24 ≤ 0x1690) (ho4 : oc % 4 = 0)
+    (hσ : (M (B + 0x21A0 + BitVec.ofNat 32 (oc + 0x20))).toNat ≤ 1) :
+    ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
+      (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧
+      (reg n' a0).toNat + 2 ^ 32 * (reg n' a1).toNat =
+        lowestVal (M (B + 0x21A0 + BitVec.ofNat 32 (oc + 0x20))).toNat (accV M (B + 0x21A0 + BitVec.ofNat 32 oc) 2) ∧
+      SvKeepL B M n'.mem [] ∧ (∀ x, SvR B x → n'.mem x = M x) := by
+  have hFl := F.lo; have hFh := F.hi; have hFa := F.al
+  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := s.callRa C.self h1 h2 hb (by decide)
+  have r1 := PEnv.reg1 regs1 s.zero
+  have sp1 : reg n1 sp = B + 0x21A0 := by rw [r1 sp (by decide), rsp]
+  have eS : BitVec.ofNat 32 lowest8Address + 0x22 = BitVec.ofNat 32 selectI64Address := by decide
+  obtain ⟨n2, c2, pc2, sp2, k2, L2, f2⟩ := lowest8_correct n1 (P := BitVec.ofNat 32 lowest8Address)
+    (by decide) (by rw [mem1]; exact IC.low8) (by rw [mem1, eS]; exact IC.sel64) pc1
+    (by rw [r1 a0 (by decide), ha0]) (by rw [regs1]; simp +decide [upd]) (even_clear _ hev)
+    (sv_al F (by omega) ho4) (by rw [mem1, show (0x20 : Word) = BitVec.ofNat 32 0x20 from rfl, add_ofNat_assoc]; exact hσ)
+    (by rw [sp1, sv_sp1, eS]; exact F.sepHi (by decide) (by decide) (by decide))
+  rw [mem1, show (0x20 : Word) = BitVec.ofNat 32 0x20 from rfl, add_ofNat_assoc] at L2
+  rw [sp1, sv_sp1] at f2
+  refine ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, by rw [sp2, sp1],
+    fun q hq => by rw [k2 q (by revert hq; revert q; decide), r1 q (by revert hq; revert q; decide)], L2,
+    fun e he _ => ?_, fun x hx => ?_⟩
+  · rw [f2 _ (fun h => by
+      have := (sepS B (c := 0x219F) (n := 1) (d := 0x21A0 + e) (k := 1) (by omega) (by omega) (by omega)) 0
+        (by decide) 0 (by decide)
+      rw [add_ofNat_zero, add_ofNat_zero] at this; rw [← sv_base'] at h; exact this h.symm), mem1]
+  · rw [f2 x (fun h => by
+      have := svR_sp1 hx 0 (by decide) 0 (by decide)
+      rw [add_ofNat_zero, add_ofNat_zero] at this; exact this h.symm), mem1]
 
 end C3.RV32.Sv
