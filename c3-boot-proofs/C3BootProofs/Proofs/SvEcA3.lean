@@ -1,4 +1,4 @@
-import C3BootProofs.Proofs.SvEc
+import C3BootProofs.Proofs.SvMs0
 
 /-!
 # `sigstore::verify`: the P-256 check's inputs
@@ -490,6 +490,7 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x138) = BitVec.ofNat 8 (er.getD 0 0) ∧
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x158) = BitVec.ofNat 8 (es.getD 0 0) ∧
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 ∧
+        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = 0 ∧
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 ∧
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 ∧
         (∀ j, j < 31 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x139 + j)) = BitVec.ofNat 8 (er.getD (1 + j) 0)) ∧
@@ -511,6 +512,7 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
         accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = beNat (b32 er) ∧
         accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) 8 = beNat (b32 es) ∧
         accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA60) 8 = accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8 ∧
+        accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = 0 ∧
         accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4268) 8 ∧
         accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = beNat (b32 es)) := by
   have t0 : Steps n0 n0 := .refl n0
@@ -6635,8 +6637,8 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have a51_1380 : accV n51.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4268) 8 := by rw [m51]; exact a50_1380
   have a51_1480 : accV n51.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = beNat (b32 es) := by rw [m51]; exact a50_1480
   clear a50_1480 a50_1380 a50_1020 a50_a60 a50_a40 a50_a20 a50_420 a50_2e0 a50_2c0 a50_2a0 a50_280 a50_260 a50_240 a50_220 a50_200 a50_198 a50_178 q50_1380 q50_a60 q50_159 q50_139 b50_14a0 b50_13a0 b50_440 b50_158 b50_138 w50_130 w50_12c w50_128 w50_124 w50_120 w50_11c w50_118 w50_114 w50_110 w50_10c w50_108 w50_104 w50_100 w50_fc w50_f8 w50_f4 w50_f0 w50_ec w50_e8 w50_e4 w50_e0 w50_dc w50_d8 w50_d4 w50_d0 w50_cc w50_c8 w50_c4 w50_c0 w50_bc w50_b8 w50_b4 w50_b0 w50_ac w50_a8 w50_a4 w50_a0 w50_9c w50_98 w50_94 w50_90 w50_8c w50_88 w50_84 w50_80 w50_7c w50_70 w50_6c w50_68 w50_64 w50_60 w50_5c w50_58 w50_54 w50_50 w50_4c w50_48 w50_44 w50_40 w50_3c w50_38 w50_34 w50_30 w50_2c w50_28 w50_24 g50_27 g50_26 g50_25 g50_24 g50_23 g50_22 g50_21 g50_20 g50_19 g50_18 g50_8 g50_4 g50_3 g50_2 V50 E50 fR50 t50 rg50 W50 K50 fr50 s50 d50
-  -- 0x12E6: sv_ms2F
-  obtain ⟨n52, c52, s52, rk52, K52, fr52⟩ := sv_ms2F (c := 0x1020) (N := 0x24)
+  -- 0x12E6: sv_ms3F
+  obtain ⟨n52, c52, s52, rk52, K52, fr52, Z52⟩ := sv_ms3F (c := 0x1020) (N := 0x24)
     F E51 s51 sv_at_12e6 sv_at_12ea (by decide) (by decide)
     g51_10 g51_11 g51_12 (by decide)
   have t52 : Steps n0 n52 := t51.trans c52
@@ -6748,6 +6750,8 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have a52_a60 : accV n52.mem (B + 0x21A0 + BitVec.ofNat 32 0xA60) 8 = accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8 := (K52.acc (by decide) (by decide)).trans a51_a60
   have a52_1380 : accV n52.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4268) 8 := (K52.acc (by decide) (by decide)).trans a51_1380
   have a52_1480 : accV n52.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = beNat (b32 es) := (K52.acc (by decide) (by decide)).trans a51_1480
+  have a52_1020 : accV n52.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = 0 := acc0_of_fill fun j hj => by rw [show 0x1020 + j = 0x1020 + (0x0 + j) by omega]; exact Z52 _ (by omega)
+  have b52_1040 : n52.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = 0 := by rw [show 0x1040 = 0x1020 + 0x20 from rfl]; exact Z52 _ (by decide)
   clear a51_1480 a51_1380 a51_1020 a51_a60 a51_a40 a51_a20 a51_420 a51_2e0 a51_2c0 a51_2a0 a51_280 a51_260 a51_240 a51_220 a51_200 a51_198 a51_178 q51_1380 q51_a60 q51_159 q51_139 b51_14a0 b51_13a0 b51_440 b51_158 b51_138 w51_130 w51_12c w51_128 w51_124 w51_120 w51_11c w51_118 w51_114 w51_110 w51_10c w51_108 w51_104 w51_100 w51_fc w51_f8 w51_f4 w51_f0 w51_ec w51_e8 w51_e4 w51_e0 w51_dc w51_d8 w51_d4 w51_d0 w51_cc w51_c8 w51_c4 w51_c0 w51_bc w51_b8 w51_b4 w51_b0 w51_ac w51_a8 w51_a4 w51_a0 w51_9c w51_98 w51_94 w51_90 w51_8c w51_88 w51_84 w51_80 w51_7c w51_70 w51_6c w51_68 w51_64 w51_60 w51_5c w51_58 w51_54 w51_50 w51_4c w51_48 w51_44 w51_40 w51_3c w51_38 w51_34 w51_30 w51_2c w51_28 w51_24 g51_12 g51_11 g51_10 g51_27 g51_26 g51_25 g51_24 g51_23 g51_22 g51_21 g51_20 g51_19 g51_18 g51_8 g51_4 g51_3 g51_2 V51 E51 fR51 t51 fr51 rb51 s51 m51 u51 c51
   -- 0x12EE
   obtain ⟨n53, c53, u53⟩ := s52.block svEcA312ee E52.self svEcA312ee_end
@@ -6869,6 +6873,7 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have b53_138 : n53.mem (B + 0x21A0 + BitVec.ofNat 32 0x138) = BitVec.ofNat 8 (er.getD 0 0) := by rw [m53]; exact b52_138
   have b53_158 : n53.mem (B + 0x21A0 + BitVec.ofNat 32 0x158) = BitVec.ofNat 8 (es.getD 0 0) := by rw [m53]; exact b52_158
   have b53_440 : n53.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) = (1 : BitVec 8) := by rw [m53]; exact b52_440
+  have b53_1040 : n53.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = 0 := by rw [m53]; exact b52_1040
   have b53_13a0 : n53.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := by rw [m53]; exact b52_13a0
   have b53_14a0 : n53.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := by rw [m53]; exact b52_14a0
   have q53_139 : ∀ j, j < 31 → n53.mem (B + 0x21A0 + BitVec.ofNat 32 (0x139 + j)) = BitVec.ofNat 8 (er.getD (1 + j) 0) := fun j hj => by rw [m53]; exact q52_139 j hj
@@ -6889,9 +6894,10 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have a53_a20 : accV n53.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = beNat (b32 er) := by rw [m53]; exact a52_a20
   have a53_a40 : accV n53.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) 8 = beNat (b32 es) := by rw [m53]; exact a52_a40
   have a53_a60 : accV n53.mem (B + 0x21A0 + BitVec.ofNat 32 0xA60) 8 = accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8 := by rw [m53]; exact a52_a60
+  have a53_1020 : accV n53.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = 0 := by rw [m53]; exact a52_1020
   have a53_1380 : accV n53.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4268) 8 := by rw [m53]; exact a52_1380
   have a53_1480 : accV n53.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = beNat (b32 es) := by rw [m53]; exact a52_1480
-  clear a52_1480 a52_1380 a52_a60 a52_a40 a52_a20 a52_420 a52_2e0 a52_2c0 a52_2a0 a52_280 a52_260 a52_240 a52_220 a52_200 a52_198 a52_178 q52_1380 q52_a60 q52_159 q52_139 b52_14a0 b52_13a0 b52_440 b52_158 b52_138 w52_130 w52_12c w52_128 w52_124 w52_120 w52_11c w52_118 w52_114 w52_110 w52_10c w52_108 w52_104 w52_100 w52_fc w52_f8 w52_f4 w52_f0 w52_ec w52_e8 w52_e4 w52_e0 w52_dc w52_d8 w52_d4 w52_d0 w52_cc w52_c8 w52_c4 w52_c0 w52_bc w52_b8 w52_b4 w52_b0 w52_ac w52_a8 w52_a4 w52_a0 w52_9c w52_98 w52_94 w52_90 w52_8c w52_88 w52_84 w52_80 w52_7c w52_70 w52_6c w52_68 w52_64 w52_60 w52_5c w52_58 w52_54 w52_50 w52_4c w52_48 w52_44 w52_40 w52_3c w52_38 w52_34 w52_30 w52_2c w52_28 w52_24 g52_27 g52_26 g52_25 g52_24 g52_23 g52_22 g52_21 g52_20 g52_19 g52_18 g52_8 g52_4 g52_3 g52_2 V52 E52 fR52 t52 fr52 K52 rk52 s52 c52
+  clear b52_1040 a52_1020 a52_1480 a52_1380 a52_a60 a52_a40 a52_a20 a52_420 a52_2e0 a52_2c0 a52_2a0 a52_280 a52_260 a52_240 a52_220 a52_200 a52_198 a52_178 q52_1380 q52_a60 q52_159 q52_139 b52_14a0 b52_13a0 b52_440 b52_158 b52_138 w52_130 w52_12c w52_128 w52_124 w52_120 w52_11c w52_118 w52_114 w52_110 w52_10c w52_108 w52_104 w52_100 w52_fc w52_f8 w52_f4 w52_f0 w52_ec w52_e8 w52_e4 w52_e0 w52_dc w52_d8 w52_d4 w52_d0 w52_cc w52_c8 w52_c4 w52_c0 w52_bc w52_b8 w52_b4 w52_b0 w52_ac w52_a8 w52_a4 w52_a0 w52_9c w52_98 w52_94 w52_90 w52_8c w52_88 w52_84 w52_80 w52_7c w52_70 w52_6c w52_68 w52_64 w52_60 w52_5c w52_58 w52_54 w52_50 w52_4c w52_48 w52_44 w52_40 w52_3c w52_38 w52_34 w52_30 w52_2c w52_28 w52_24 g52_27 g52_26 g52_25 g52_24 g52_23 g52_22 g52_21 g52_20 g52_19 g52_18 g52_8 g52_4 g52_3 g52_2 V52 E52 fR52 t52 Z52 fr52 K52 rk52 s52 c52
   -- 0x12FE: memcpy from outside the stack
   obtain ⟨n54, P54, K54, X54⟩ := sv_mcRo2 (c := 0x420) (N := 0x20) F RS E53 s53 sv_at_12fe sv_at_1302
     (by decide) (by decide) g53_2 g53_10 g53_11 g53_12 (by decide) (Or.inr ⟨by decide, by decide⟩)
@@ -6984,6 +6990,7 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have b54_138 : n54.mem (B + 0x21A0 + BitVec.ofNat 32 0x138) = BitVec.ofNat 8 (er.getD 0 0) := (K54.b8 (by decide) (by decide)).trans b53_138
   have b54_158 : n54.mem (B + 0x21A0 + BitVec.ofNat 32 0x158) = BitVec.ofNat 8 (es.getD 0 0) := (K54.b8 (by decide) (by decide)).trans b53_158
   have b54_440 : n54.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) = (1 : BitVec 8) := (K54.b8 (by decide) (by decide)).trans b53_440
+  have b54_1040 : n54.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = 0 := (K54.b8 (by decide) (by decide)).trans b53_1040
   have b54_13a0 : n54.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := (K54.b8 (by decide) (by decide)).trans b53_13a0
   have b54_14a0 : n54.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := (K54.b8 (by decide) (by decide)).trans b53_14a0
   have q54_139 : ∀ j, j < 31 → n54.mem (B + 0x21A0 + BitVec.ofNat 32 (0x139 + j)) = BitVec.ofNat 8 (er.getD (1 + j) 0) := fun j hj => (K54.range (by decide) (by decide) j hj).trans (q53_139 j hj)
@@ -7003,12 +7010,13 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have a54_a20 : accV n54.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = beNat (b32 er) := (K54.acc (by decide) (by decide)).trans a53_a20
   have a54_a40 : accV n54.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) 8 = beNat (b32 es) := (K54.acc (by decide) (by decide)).trans a53_a40
   have a54_a60 : accV n54.mem (B + 0x21A0 + BitVec.ofNat 32 0xA60) 8 = accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8 := (K54.acc (by decide) (by decide)).trans a53_a60
+  have a54_1020 : accV n54.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = 0 := (K54.acc (by decide) (by decide)).trans a53_1020
   have a54_1380 : accV n54.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4268) 8 := (K54.acc (by decide) (by decide)).trans a53_1380
   have a54_1480 : accV n54.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = beNat (b32 es) := (K54.acc (by decide) (by decide)).trans a53_1480
   have q54_420 : ∀ j, j < 32 → n54.mem (B + 0x21A0 + BitVec.ofNat 32 (0x420 + j)) = M0 ((BitVec.ofNat 32 0x3FCC42E8) + BitVec.ofNat 32 j) :=
     fun j hj => (X54 j hj).trans (fR53 _ (SvRo2.r RS (Or.inr ⟨by decide, by decide⟩) hj))
   have a54_420 : accV n54.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC42E8) 8 := acc_of_frame q54_420
-  clear a53_1480 a53_1380 a53_a60 a53_a40 a53_a20 a53_420 a53_2e0 a53_2c0 a53_2a0 a53_280 a53_260 a53_240 a53_220 a53_200 a53_198 a53_178 q53_1380 q53_a60 q53_159 q53_139 b53_14a0 b53_13a0 b53_440 b53_158 b53_138 w53_130 w53_12c w53_128 w53_124 w53_120 w53_11c w53_118 w53_114 w53_110 w53_10c w53_108 w53_104 w53_100 w53_fc w53_f8 w53_f4 w53_f0 w53_ec w53_e8 w53_e4 w53_e0 w53_dc w53_d8 w53_d4 w53_d0 w53_cc w53_c8 w53_c4 w53_c0 w53_bc w53_b8 w53_b4 w53_b0 w53_ac w53_a8 w53_a4 w53_a0 w53_9c w53_98 w53_94 w53_90 w53_8c w53_88 w53_84 w53_80 w53_7c w53_70 w53_6c w53_68 w53_64 w53_60 w53_5c w53_58 w53_54 w53_50 w53_4c w53_48 w53_44 w53_40 w53_3c w53_38 w53_34 w53_30 w53_2c w53_28 w53_24 g53_12 g53_11 g53_10 g53_27 g53_26 g53_25 g53_24 g53_23 g53_22 g53_21 g53_20 g53_19 g53_18 g53_8 g53_4 g53_3 g53_2 V53 E53 fR53 t53 fr53 rb53 s53 m53 u53 c53
+  clear a53_1480 a53_1380 a53_1020 a53_a60 a53_a40 a53_a20 a53_420 a53_2e0 a53_2c0 a53_2a0 a53_280 a53_260 a53_240 a53_220 a53_200 a53_198 a53_178 q53_1380 q53_a60 q53_159 q53_139 b53_14a0 b53_13a0 b53_1040 b53_440 b53_158 b53_138 w53_130 w53_12c w53_128 w53_124 w53_120 w53_11c w53_118 w53_114 w53_110 w53_10c w53_108 w53_104 w53_100 w53_fc w53_f8 w53_f4 w53_f0 w53_ec w53_e8 w53_e4 w53_e0 w53_dc w53_d8 w53_d4 w53_d0 w53_cc w53_c8 w53_c4 w53_c0 w53_bc w53_b8 w53_b4 w53_b0 w53_ac w53_a8 w53_a4 w53_a0 w53_9c w53_98 w53_94 w53_90 w53_8c w53_88 w53_84 w53_80 w53_7c w53_70 w53_6c w53_68 w53_64 w53_60 w53_5c w53_58 w53_54 w53_50 w53_4c w53_48 w53_44 w53_40 w53_3c w53_38 w53_34 w53_30 w53_2c w53_28 w53_24 g53_12 g53_11 g53_10 g53_27 g53_26 g53_25 g53_24 g53_23 g53_22 g53_21 g53_20 g53_19 g53_18 g53_8 g53_4 g53_3 g53_2 V53 E53 fR53 t53 fr53 rb53 s53 m53 u53 c53
   -- 0x1306
   obtain ⟨n55, c55, u55⟩ := s54.block svEcA31306 E54.self svEcA31306_end
     ⟨trivial, trivial⟩
@@ -7119,6 +7127,7 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have b55_138 : n55.mem (B + 0x21A0 + BitVec.ofNat 32 0x138) = BitVec.ofNat 8 (er.getD 0 0) := by rw [m55]; exact b54_138
   have b55_158 : n55.mem (B + 0x21A0 + BitVec.ofNat 32 0x158) = BitVec.ofNat 8 (es.getD 0 0) := by rw [m55]; exact b54_158
   have b55_440 : n55.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) = (1 : BitVec 8) := by rw [m55]; exact b54_440
+  have b55_1040 : n55.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = 0 := by rw [m55]; exact b54_1040
   have b55_13a0 : n55.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := by rw [m55]; exact b54_13a0
   have b55_14a0 : n55.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := by rw [m55]; exact b54_14a0
   have q55_139 : ∀ j, j < 31 → n55.mem (B + 0x21A0 + BitVec.ofNat 32 (0x139 + j)) = BitVec.ofNat 8 (er.getD (1 + j) 0) := fun j hj => by rw [m55]; exact q54_139 j hj
@@ -7140,9 +7149,10 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have a55_a20 : accV n55.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = beNat (b32 er) := by rw [m55]; exact a54_a20
   have a55_a40 : accV n55.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) 8 = beNat (b32 es) := by rw [m55]; exact a54_a40
   have a55_a60 : accV n55.mem (B + 0x21A0 + BitVec.ofNat 32 0xA60) 8 = accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8 := by rw [m55]; exact a54_a60
+  have a55_1020 : accV n55.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = 0 := by rw [m55]; exact a54_1020
   have a55_1380 : accV n55.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4268) 8 := by rw [m55]; exact a54_1380
   have a55_1480 : accV n55.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = beNat (b32 es) := by rw [m55]; exact a54_1480
-  clear a54_420 q54_420 a54_1480 a54_1380 a54_a60 a54_a40 a54_a20 a54_2e0 a54_2c0 a54_2a0 a54_280 a54_260 a54_240 a54_220 a54_200 a54_198 a54_178 q54_1380 q54_a60 q54_159 q54_139 b54_14a0 b54_13a0 b54_440 b54_158 b54_138 w54_130 w54_12c w54_128 w54_124 w54_120 w54_11c w54_118 w54_114 w54_110 w54_10c w54_108 w54_104 w54_100 w54_fc w54_f8 w54_f4 w54_f0 w54_ec w54_e8 w54_e4 w54_e0 w54_dc w54_d8 w54_d4 w54_d0 w54_cc w54_c8 w54_c4 w54_c0 w54_bc w54_b8 w54_b4 w54_b0 w54_ac w54_a8 w54_a4 w54_a0 w54_9c w54_98 w54_94 w54_90 w54_8c w54_88 w54_84 w54_80 w54_7c w54_70 w54_6c w54_68 w54_64 w54_60 w54_5c w54_58 w54_54 w54_50 w54_4c w54_48 w54_44 w54_40 w54_3c w54_38 w54_34 w54_30 w54_2c w54_28 w54_24 g54_27 g54_26 g54_25 g54_24 g54_23 g54_22 g54_21 g54_20 g54_19 g54_18 g54_8 g54_4 g54_3 g54_2 V54 E54 fR54 t54 fr54 s54 X54 K54 P54
+  clear a54_420 q54_420 a54_1480 a54_1380 a54_1020 a54_a60 a54_a40 a54_a20 a54_2e0 a54_2c0 a54_2a0 a54_280 a54_260 a54_240 a54_220 a54_200 a54_198 a54_178 q54_1380 q54_a60 q54_159 q54_139 b54_14a0 b54_13a0 b54_1040 b54_440 b54_158 b54_138 w54_130 w54_12c w54_128 w54_124 w54_120 w54_11c w54_118 w54_114 w54_110 w54_10c w54_108 w54_104 w54_100 w54_fc w54_f8 w54_f4 w54_f0 w54_ec w54_e8 w54_e4 w54_e0 w54_dc w54_d8 w54_d4 w54_d0 w54_cc w54_c8 w54_c4 w54_c0 w54_bc w54_b8 w54_b4 w54_b0 w54_ac w54_a8 w54_a4 w54_a0 w54_9c w54_98 w54_94 w54_90 w54_8c w54_88 w54_84 w54_80 w54_7c w54_70 w54_6c w54_68 w54_64 w54_60 w54_5c w54_58 w54_54 w54_50 w54_4c w54_48 w54_44 w54_40 w54_3c w54_38 w54_34 w54_30 w54_2c w54_28 w54_24 g54_27 g54_26 g54_25 g54_24 g54_23 g54_22 g54_21 g54_20 g54_19 g54_18 g54_8 g54_4 g54_3 g54_2 V54 E54 fR54 t54 fr54 s54 X54 K54 P54
   -- 0x1308: sb
   obtain ⟨n56, d56, s56, fr56, K56, W56, rg56⟩ := sv_sb F E55 s55 sv_at_1308 (off' := 0x130C) (c := 0x440)
     (by decide) (by rw [g55_2]; sv_addr) (by decide)
@@ -7232,6 +7242,7 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have w56_130 : memLoad32 n56.mem (B + 0x21A0 + BitVec.ofNat 32 0x130) = w130 := (K56.w32 (by decide) (by decide)).trans w55_130
   have b56_138 : n56.mem (B + 0x21A0 + BitVec.ofNat 32 0x138) = BitVec.ofNat 8 (er.getD 0 0) := (K56.b8 (by decide) (by decide)).trans b55_138
   have b56_158 : n56.mem (B + 0x21A0 + BitVec.ofNat 32 0x158) = BitVec.ofNat 8 (es.getD 0 0) := (K56.b8 (by decide) (by decide)).trans b55_158
+  have b56_1040 : n56.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = 0 := (K56.b8 (by decide) (by decide)).trans b55_1040
   have b56_13a0 : n56.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := (K56.b8 (by decide) (by decide)).trans b55_13a0
   have b56_14a0 : n56.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := (K56.b8 (by decide) (by decide)).trans b55_14a0
   have b56_440 : n56.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := by rw [W56, s55.zero]; rfl
@@ -7254,9 +7265,10 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have a56_a20 : accV n56.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = beNat (b32 er) := (K56.acc (by decide) (by decide)).trans a55_a20
   have a56_a40 : accV n56.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) 8 = beNat (b32 es) := (K56.acc (by decide) (by decide)).trans a55_a40
   have a56_a60 : accV n56.mem (B + 0x21A0 + BitVec.ofNat 32 0xA60) 8 = accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8 := (K56.acc (by decide) (by decide)).trans a55_a60
+  have a56_1020 : accV n56.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = 0 := (K56.acc (by decide) (by decide)).trans a55_1020
   have a56_1380 : accV n56.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4268) 8 := (K56.acc (by decide) (by decide)).trans a55_1380
   have a56_1480 : accV n56.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = beNat (b32 es) := (K56.acc (by decide) (by decide)).trans a55_1480
-  clear a55_1480 a55_1380 a55_a60 a55_a40 a55_a20 a55_420 a55_2e0 a55_2c0 a55_2a0 a55_280 a55_260 a55_240 a55_220 a55_200 a55_198 a55_178 q55_1380 q55_a60 q55_420 q55_159 q55_139 b55_14a0 b55_13a0 b55_440 b55_158 b55_138 w55_130 w55_12c w55_128 w55_124 w55_120 w55_11c w55_118 w55_114 w55_110 w55_10c w55_108 w55_104 w55_100 w55_fc w55_f8 w55_f4 w55_f0 w55_ec w55_e8 w55_e4 w55_e0 w55_dc w55_d8 w55_d4 w55_d0 w55_cc w55_c8 w55_c4 w55_c0 w55_bc w55_b8 w55_b4 w55_b0 w55_ac w55_a8 w55_a4 w55_a0 w55_9c w55_98 w55_94 w55_90 w55_8c w55_88 w55_84 w55_80 w55_7c w55_70 w55_6c w55_68 w55_64 w55_60 w55_5c w55_58 w55_54 w55_50 w55_4c w55_48 w55_44 w55_40 w55_3c w55_38 w55_34 w55_30 w55_2c w55_28 w55_24 g55_25 g55_27 g55_26 g55_24 g55_23 g55_22 g55_21 g55_20 g55_19 g55_18 g55_8 g55_4 g55_3 g55_2 V55 E55 fR55 t55 fr55 rb55 s55 m55 u55 c55
+  clear a55_1480 a55_1380 a55_1020 a55_a60 a55_a40 a55_a20 a55_420 a55_2e0 a55_2c0 a55_2a0 a55_280 a55_260 a55_240 a55_220 a55_200 a55_198 a55_178 q55_1380 q55_a60 q55_420 q55_159 q55_139 b55_14a0 b55_13a0 b55_1040 b55_440 b55_158 b55_138 w55_130 w55_12c w55_128 w55_124 w55_120 w55_11c w55_118 w55_114 w55_110 w55_10c w55_108 w55_104 w55_100 w55_fc w55_f8 w55_f4 w55_f0 w55_ec w55_e8 w55_e4 w55_e0 w55_dc w55_d8 w55_d4 w55_d0 w55_cc w55_c8 w55_c4 w55_c0 w55_bc w55_b8 w55_b4 w55_b0 w55_ac w55_a8 w55_a4 w55_a0 w55_9c w55_98 w55_94 w55_90 w55_8c w55_88 w55_84 w55_80 w55_7c w55_70 w55_6c w55_68 w55_64 w55_60 w55_5c w55_58 w55_54 w55_50 w55_4c w55_48 w55_44 w55_40 w55_3c w55_38 w55_34 w55_30 w55_2c w55_28 w55_24 g55_25 g55_27 g55_26 g55_24 g55_23 g55_22 g55_21 g55_20 g55_19 g55_18 g55_8 g55_4 g55_3 g55_2 V55 E55 fR55 t55 fr55 rb55 s55 m55 u55 c55
   -- 0x130C
   obtain ⟨n57, c57, u57⟩ := s56.block svEcA3130c E56.self svEcA3130c_end
     ⟨trivial, trivial, trivial⟩
@@ -7371,6 +7383,7 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have b57_138 : n57.mem (B + 0x21A0 + BitVec.ofNat 32 0x138) = BitVec.ofNat 8 (er.getD 0 0) := by rw [m57]; exact b56_138
   have b57_158 : n57.mem (B + 0x21A0 + BitVec.ofNat 32 0x158) = BitVec.ofNat 8 (es.getD 0 0) := by rw [m57]; exact b56_158
   have b57_440 : n57.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := by rw [m57]; exact b56_440
+  have b57_1040 : n57.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = 0 := by rw [m57]; exact b56_1040
   have b57_13a0 : n57.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := by rw [m57]; exact b56_13a0
   have b57_14a0 : n57.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := by rw [m57]; exact b56_14a0
   have q57_139 : ∀ j, j < 31 → n57.mem (B + 0x21A0 + BitVec.ofNat 32 (0x139 + j)) = BitVec.ofNat 8 (er.getD (1 + j) 0) := fun j hj => by rw [m57]; exact q56_139 j hj
@@ -7392,9 +7405,10 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have a57_a20 : accV n57.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = beNat (b32 er) := by rw [m57]; exact a56_a20
   have a57_a40 : accV n57.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) 8 = beNat (b32 es) := by rw [m57]; exact a56_a40
   have a57_a60 : accV n57.mem (B + 0x21A0 + BitVec.ofNat 32 0xA60) 8 = accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8 := by rw [m57]; exact a56_a60
+  have a57_1020 : accV n57.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = 0 := by rw [m57]; exact a56_1020
   have a57_1380 : accV n57.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4268) 8 := by rw [m57]; exact a56_1380
   have a57_1480 : accV n57.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = beNat (b32 es) := by rw [m57]; exact a56_1480
-  clear a56_1480 a56_1380 a56_a60 a56_a40 a56_a20 a56_420 a56_2e0 a56_2c0 a56_2a0 a56_280 a56_260 a56_240 a56_220 a56_200 a56_198 a56_178 q56_1380 q56_a60 q56_420 q56_159 q56_139 b56_440 b56_14a0 b56_13a0 b56_158 b56_138 w56_130 w56_12c w56_128 w56_124 w56_120 w56_11c w56_118 w56_114 w56_110 w56_10c w56_108 w56_104 w56_100 w56_fc w56_f8 w56_f4 w56_f0 w56_ec w56_e8 w56_e4 w56_e0 w56_dc w56_d8 w56_d4 w56_d0 w56_cc w56_c8 w56_c4 w56_c0 w56_bc w56_b8 w56_b4 w56_b0 w56_ac w56_a8 w56_a4 w56_a0 w56_9c w56_98 w56_94 w56_90 w56_8c w56_88 w56_84 w56_80 w56_7c w56_70 w56_6c w56_68 w56_64 w56_60 w56_5c w56_58 w56_54 w56_50 w56_4c w56_48 w56_44 w56_40 w56_3c w56_38 w56_34 w56_30 w56_2c w56_28 w56_24 g56_27 g56_26 g56_25 g56_24 g56_23 g56_22 g56_21 g56_20 g56_19 g56_18 g56_8 g56_4 g56_3 g56_2 V56 E56 fR56 t56 rg56 W56 K56 fr56 s56 d56
+  clear a56_1480 a56_1380 a56_1020 a56_a60 a56_a40 a56_a20 a56_420 a56_2e0 a56_2c0 a56_2a0 a56_280 a56_260 a56_240 a56_220 a56_200 a56_198 a56_178 q56_1380 q56_a60 q56_420 q56_159 q56_139 b56_440 b56_14a0 b56_13a0 b56_1040 b56_158 b56_138 w56_130 w56_12c w56_128 w56_124 w56_120 w56_11c w56_118 w56_114 w56_110 w56_10c w56_108 w56_104 w56_100 w56_fc w56_f8 w56_f4 w56_f0 w56_ec w56_e8 w56_e4 w56_e0 w56_dc w56_d8 w56_d4 w56_d0 w56_cc w56_c8 w56_c4 w56_c0 w56_bc w56_b8 w56_b4 w56_b0 w56_ac w56_a8 w56_a4 w56_a0 w56_9c w56_98 w56_94 w56_90 w56_8c w56_88 w56_84 w56_80 w56_7c w56_70 w56_6c w56_68 w56_64 w56_60 w56_5c w56_58 w56_54 w56_50 w56_4c w56_48 w56_44 w56_40 w56_3c w56_38 w56_34 w56_30 w56_2c w56_28 w56_24 g56_27 g56_26 g56_25 g56_24 g56_23 g56_22 g56_21 g56_20 g56_19 g56_18 g56_8 g56_4 g56_3 g56_2 V56 E56 fR56 t56 rg56 W56 K56 fr56 s56 d56
   -- 0x1312: sw
   obtain ⟨n58, d58, s58, fr58, K58, W58, rg58⟩ := sv_sw F E57 s57 sv_at_1312 (off' := 0x1314) (c := 0x78)
     (by decide) (by rw [g57_2]; sv_addr) (by decide) (by decide)
@@ -7486,6 +7500,7 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have b58_138 : n58.mem (B + 0x21A0 + BitVec.ofNat 32 0x138) = BitVec.ofNat 8 (er.getD 0 0) := (K58.b8 (by decide) (by decide)).trans b57_138
   have b58_158 : n58.mem (B + 0x21A0 + BitVec.ofNat 32 0x158) = BitVec.ofNat 8 (es.getD 0 0) := (K58.b8 (by decide) (by decide)).trans b57_158
   have b58_440 : n58.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := (K58.b8 (by decide) (by decide)).trans b57_440
+  have b58_1040 : n58.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = 0 := (K58.b8 (by decide) (by decide)).trans b57_1040
   have b58_13a0 : n58.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := (K58.b8 (by decide) (by decide)).trans b57_13a0
   have b58_14a0 : n58.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := (K58.b8 (by decide) (by decide)).trans b57_14a0
   have w58_78 : memLoad32 n58.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = BitVec.ofNat 32 0x24F := by rw [W58, g57_10]
@@ -7508,9 +7523,10 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have a58_a20 : accV n58.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = beNat (b32 er) := (K58.acc (by decide) (by decide)).trans a57_a20
   have a58_a40 : accV n58.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) 8 = beNat (b32 es) := (K58.acc (by decide) (by decide)).trans a57_a40
   have a58_a60 : accV n58.mem (B + 0x21A0 + BitVec.ofNat 32 0xA60) 8 = accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8 := (K58.acc (by decide) (by decide)).trans a57_a60
+  have a58_1020 : accV n58.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = 0 := (K58.acc (by decide) (by decide)).trans a57_1020
   have a58_1380 : accV n58.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4268) 8 := (K58.acc (by decide) (by decide)).trans a57_1380
   have a58_1480 : accV n58.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = beNat (b32 es) := (K58.acc (by decide) (by decide)).trans a57_1480
-  clear a57_1480 a57_1380 a57_a60 a57_a40 a57_a20 a57_420 a57_2e0 a57_2c0 a57_2a0 a57_280 a57_260 a57_240 a57_220 a57_200 a57_198 a57_178 q57_1380 q57_a60 q57_420 q57_159 q57_139 b57_14a0 b57_13a0 b57_440 b57_158 b57_138 w57_130 w57_12c w57_128 w57_124 w57_120 w57_11c w57_118 w57_114 w57_110 w57_10c w57_108 w57_104 w57_100 w57_fc w57_f8 w57_f4 w57_f0 w57_ec w57_e8 w57_e4 w57_e0 w57_dc w57_d8 w57_d4 w57_d0 w57_cc w57_c8 w57_c4 w57_c0 w57_bc w57_b8 w57_b4 w57_b0 w57_ac w57_a8 w57_a4 w57_a0 w57_9c w57_98 w57_94 w57_90 w57_8c w57_88 w57_84 w57_80 w57_7c w57_70 w57_6c w57_68 w57_64 w57_60 w57_5c w57_58 w57_54 w57_50 w57_4c w57_48 w57_44 w57_40 w57_3c w57_38 w57_34 w57_30 w57_2c w57_28 w57_24 g57_23 g57_10 g57_27 g57_26 g57_25 g57_24 g57_22 g57_21 g57_20 g57_19 g57_18 g57_8 g57_4 g57_3 g57_2 V57 E57 fR57 t57 fr57 rb57 s57 m57 u57 c57
+  clear a57_1480 a57_1380 a57_1020 a57_a60 a57_a40 a57_a20 a57_420 a57_2e0 a57_2c0 a57_2a0 a57_280 a57_260 a57_240 a57_220 a57_200 a57_198 a57_178 q57_1380 q57_a60 q57_420 q57_159 q57_139 b57_14a0 b57_13a0 b57_1040 b57_440 b57_158 b57_138 w57_130 w57_12c w57_128 w57_124 w57_120 w57_11c w57_118 w57_114 w57_110 w57_10c w57_108 w57_104 w57_100 w57_fc w57_f8 w57_f4 w57_f0 w57_ec w57_e8 w57_e4 w57_e0 w57_dc w57_d8 w57_d4 w57_d0 w57_cc w57_c8 w57_c4 w57_c0 w57_bc w57_b8 w57_b4 w57_b0 w57_ac w57_a8 w57_a4 w57_a0 w57_9c w57_98 w57_94 w57_90 w57_8c w57_88 w57_84 w57_80 w57_7c w57_70 w57_6c w57_68 w57_64 w57_60 w57_5c w57_58 w57_54 w57_50 w57_4c w57_48 w57_44 w57_40 w57_3c w57_38 w57_34 w57_30 w57_2c w57_28 w57_24 g57_23 g57_10 g57_27 g57_26 g57_25 g57_24 g57_22 g57_21 g57_20 g57_19 g57_18 g57_8 g57_4 g57_3 g57_2 V57 E57 fR57 t57 fr57 rb57 s57 m57 u57 c57
   -- 0x1314
   obtain ⟨n59, c59, u59⟩ := s58.block svEcA31314 E58.self svEcA31314_end
     ⟨trivial, trivial, trivial, trivial⟩
@@ -7628,6 +7644,7 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have b59_138 : n59.mem (B + 0x21A0 + BitVec.ofNat 32 0x138) = BitVec.ofNat 8 (er.getD 0 0) := by rw [m59]; exact b58_138
   have b59_158 : n59.mem (B + 0x21A0 + BitVec.ofNat 32 0x158) = BitVec.ofNat 8 (es.getD 0 0) := by rw [m59]; exact b58_158
   have b59_440 : n59.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := by rw [m59]; exact b58_440
+  have b59_1040 : n59.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = 0 := by rw [m59]; exact b58_1040
   have b59_13a0 : n59.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := by rw [m59]; exact b58_13a0
   have b59_14a0 : n59.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := by rw [m59]; exact b58_14a0
   have q59_139 : ∀ j, j < 31 → n59.mem (B + 0x21A0 + BitVec.ofNat 32 (0x139 + j)) = BitVec.ofNat 8 (er.getD (1 + j) 0) := fun j hj => by rw [m59]; exact q58_139 j hj
@@ -7649,9 +7666,10 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have a59_a20 : accV n59.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = beNat (b32 er) := by rw [m59]; exact a58_a20
   have a59_a40 : accV n59.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) 8 = beNat (b32 es) := by rw [m59]; exact a58_a40
   have a59_a60 : accV n59.mem (B + 0x21A0 + BitVec.ofNat 32 0xA60) 8 = accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8 := by rw [m59]; exact a58_a60
+  have a59_1020 : accV n59.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = 0 := by rw [m59]; exact a58_1020
   have a59_1380 : accV n59.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4268) 8 := by rw [m59]; exact a58_1380
   have a59_1480 : accV n59.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = beNat (b32 es) := by rw [m59]; exact a58_1480
-  clear a58_1480 a58_1380 a58_a60 a58_a40 a58_a20 a58_420 a58_2e0 a58_2c0 a58_2a0 a58_280 a58_260 a58_240 a58_220 a58_200 a58_198 a58_178 q58_1380 q58_a60 q58_420 q58_159 q58_139 w58_78 b58_14a0 b58_13a0 b58_440 b58_158 b58_138 w58_130 w58_12c w58_128 w58_124 w58_120 w58_11c w58_118 w58_114 w58_110 w58_10c w58_108 w58_104 w58_100 w58_fc w58_f8 w58_f4 w58_f0 w58_ec w58_e8 w58_e4 w58_e0 w58_dc w58_d8 w58_d4 w58_d0 w58_cc w58_c8 w58_c4 w58_c0 w58_bc w58_b8 w58_b4 w58_b0 w58_ac w58_a8 w58_a4 w58_a0 w58_9c w58_98 w58_94 w58_90 w58_8c w58_88 w58_84 w58_80 w58_7c w58_70 w58_6c w58_68 w58_64 w58_60 w58_5c w58_58 w58_54 w58_50 w58_4c w58_48 w58_44 w58_40 w58_3c w58_38 w58_34 w58_30 w58_2c w58_28 w58_24 g58_27 g58_26 g58_25 g58_24 g58_23 g58_22 g58_21 g58_20 g58_19 g58_18 g58_10 g58_8 g58_4 g58_3 g58_2 V58 E58 fR58 t58 rg58 W58 K58 fr58 s58 d58
+  clear a58_1480 a58_1380 a58_1020 a58_a60 a58_a40 a58_a20 a58_420 a58_2e0 a58_2c0 a58_2a0 a58_280 a58_260 a58_240 a58_220 a58_200 a58_198 a58_178 q58_1380 q58_a60 q58_420 q58_159 q58_139 w58_78 b58_14a0 b58_13a0 b58_1040 b58_440 b58_158 b58_138 w58_130 w58_12c w58_128 w58_124 w58_120 w58_11c w58_118 w58_114 w58_110 w58_10c w58_108 w58_104 w58_100 w58_fc w58_f8 w58_f4 w58_f0 w58_ec w58_e8 w58_e4 w58_e0 w58_dc w58_d8 w58_d4 w58_d0 w58_cc w58_c8 w58_c4 w58_c0 w58_bc w58_b8 w58_b4 w58_b0 w58_ac w58_a8 w58_a4 w58_a0 w58_9c w58_98 w58_94 w58_90 w58_8c w58_88 w58_84 w58_80 w58_7c w58_70 w58_6c w58_68 w58_64 w58_60 w58_5c w58_58 w58_54 w58_50 w58_4c w58_48 w58_44 w58_40 w58_3c w58_38 w58_34 w58_30 w58_2c w58_28 w58_24 g58_27 g58_26 g58_25 g58_24 g58_23 g58_22 g58_21 g58_20 g58_19 g58_18 g58_10 g58_8 g58_4 g58_3 g58_2 V58 E58 fR58 t58 rg58 W58 K58 fr58 s58 d58
   -- 0x1320: sw
   obtain ⟨n60, d60, s60, fr60, K60, W60, rg60⟩ := sv_sw F E59 s59 sv_at_1320 (off' := 0x1322) (c := 0x70)
     (by decide) (by rw [g59_2]; sv_addr) (by decide) (by decide)
@@ -7744,6 +7762,7 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have b60_138 : n60.mem (B + 0x21A0 + BitVec.ofNat 32 0x138) = BitVec.ofNat 8 (er.getD 0 0) := (K60.b8 (by decide) (by decide)).trans b59_138
   have b60_158 : n60.mem (B + 0x21A0 + BitVec.ofNat 32 0x158) = BitVec.ofNat 8 (es.getD 0 0) := (K60.b8 (by decide) (by decide)).trans b59_158
   have b60_440 : n60.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := (K60.b8 (by decide) (by decide)).trans b59_440
+  have b60_1040 : n60.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = 0 := (K60.b8 (by decide) (by decide)).trans b59_1040
   have b60_13a0 : n60.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := (K60.b8 (by decide) (by decide)).trans b59_13a0
   have b60_14a0 : n60.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := (K60.b8 (by decide) (by decide)).trans b59_14a0
   have w60_70 : memLoad32 n60.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = BitVec.ofNat 32 0x11FF43B1 := by rw [W60, g59_10]
@@ -7766,9 +7785,10 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have a60_a20 : accV n60.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = beNat (b32 er) := (K60.acc (by decide) (by decide)).trans a59_a20
   have a60_a40 : accV n60.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) 8 = beNat (b32 es) := (K60.acc (by decide) (by decide)).trans a59_a40
   have a60_a60 : accV n60.mem (B + 0x21A0 + BitVec.ofNat 32 0xA60) 8 = accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8 := (K60.acc (by decide) (by decide)).trans a59_a60
+  have a60_1020 : accV n60.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = 0 := (K60.acc (by decide) (by decide)).trans a59_1020
   have a60_1380 : accV n60.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4268) 8 := (K60.acc (by decide) (by decide)).trans a59_1380
   have a60_1480 : accV n60.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = beNat (b32 es) := (K60.acc (by decide) (by decide)).trans a59_1480
-  clear a59_1480 a59_1380 a59_a60 a59_a40 a59_a20 a59_420 a59_2e0 a59_2c0 a59_2a0 a59_280 a59_260 a59_240 a59_220 a59_200 a59_198 a59_178 q59_1380 q59_a60 q59_420 q59_159 q59_139 b59_14a0 b59_13a0 b59_440 b59_158 b59_138 w59_130 w59_12c w59_128 w59_124 w59_120 w59_11c w59_118 w59_114 w59_110 w59_10c w59_108 w59_104 w59_100 w59_fc w59_f8 w59_f4 w59_f0 w59_ec w59_e8 w59_e4 w59_e0 w59_dc w59_d8 w59_d4 w59_d0 w59_cc w59_c8 w59_c4 w59_c0 w59_bc w59_b8 w59_b4 w59_b0 w59_ac w59_a8 w59_a4 w59_a0 w59_9c w59_98 w59_94 w59_90 w59_8c w59_88 w59_84 w59_80 w59_7c w59_78 w59_70 w59_6c w59_68 w59_64 w59_60 w59_5c w59_58 w59_54 w59_50 w59_4c w59_48 w59_44 w59_40 w59_3c w59_38 w59_34 w59_30 w59_2c w59_28 w59_24 g59_11 g59_10 g59_27 g59_26 g59_25 g59_24 g59_23 g59_22 g59_21 g59_20 g59_19 g59_18 g59_8 g59_4 g59_3 g59_2 V59 E59 fR59 t59 fr59 rb59 s59 m59 u59 c59
+  clear a59_1480 a59_1380 a59_1020 a59_a60 a59_a40 a59_a20 a59_420 a59_2e0 a59_2c0 a59_2a0 a59_280 a59_260 a59_240 a59_220 a59_200 a59_198 a59_178 q59_1380 q59_a60 q59_420 q59_159 q59_139 b59_14a0 b59_13a0 b59_1040 b59_440 b59_158 b59_138 w59_130 w59_12c w59_128 w59_124 w59_120 w59_11c w59_118 w59_114 w59_110 w59_10c w59_108 w59_104 w59_100 w59_fc w59_f8 w59_f4 w59_f0 w59_ec w59_e8 w59_e4 w59_e0 w59_dc w59_d8 w59_d4 w59_d0 w59_cc w59_c8 w59_c4 w59_c0 w59_bc w59_b8 w59_b4 w59_b0 w59_ac w59_a8 w59_a4 w59_a0 w59_9c w59_98 w59_94 w59_90 w59_8c w59_88 w59_84 w59_80 w59_7c w59_78 w59_70 w59_6c w59_68 w59_64 w59_60 w59_5c w59_58 w59_54 w59_50 w59_4c w59_48 w59_44 w59_40 w59_3c w59_38 w59_34 w59_30 w59_2c w59_28 w59_24 g59_11 g59_10 g59_27 g59_26 g59_25 g59_24 g59_23 g59_22 g59_21 g59_20 g59_19 g59_18 g59_8 g59_4 g59_3 g59_2 V59 E59 fR59 t59 fr59 rb59 s59 m59 u59 c59
   -- 0x1322
   obtain ⟨n61, c61, u61⟩ := s60.block svEcA31322 E60.self svEcA31322_end
     ⟨trivial, trivial⟩
@@ -7884,6 +7904,7 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have b61_138 : n61.mem (B + 0x21A0 + BitVec.ofNat 32 0x138) = BitVec.ofNat 8 (er.getD 0 0) := by rw [m61]; exact b60_138
   have b61_158 : n61.mem (B + 0x21A0 + BitVec.ofNat 32 0x158) = BitVec.ofNat 8 (es.getD 0 0) := by rw [m61]; exact b60_158
   have b61_440 : n61.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := by rw [m61]; exact b60_440
+  have b61_1040 : n61.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = 0 := by rw [m61]; exact b60_1040
   have b61_13a0 : n61.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := by rw [m61]; exact b60_13a0
   have b61_14a0 : n61.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := by rw [m61]; exact b60_14a0
   have q61_139 : ∀ j, j < 31 → n61.mem (B + 0x21A0 + BitVec.ofNat 32 (0x139 + j)) = BitVec.ofNat 8 (er.getD (1 + j) 0) := fun j hj => by rw [m61]; exact q60_139 j hj
@@ -7905,9 +7926,10 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have a61_a20 : accV n61.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = beNat (b32 er) := by rw [m61]; exact a60_a20
   have a61_a40 : accV n61.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) 8 = beNat (b32 es) := by rw [m61]; exact a60_a40
   have a61_a60 : accV n61.mem (B + 0x21A0 + BitVec.ofNat 32 0xA60) 8 = accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8 := by rw [m61]; exact a60_a60
+  have a61_1020 : accV n61.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = 0 := by rw [m61]; exact a60_1020
   have a61_1380 : accV n61.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4268) 8 := by rw [m61]; exact a60_1380
   have a61_1480 : accV n61.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = beNat (b32 es) := by rw [m61]; exact a60_1480
-  clear a60_1480 a60_1380 a60_a60 a60_a40 a60_a20 a60_420 a60_2e0 a60_2c0 a60_2a0 a60_280 a60_260 a60_240 a60_220 a60_200 a60_198 a60_178 q60_1380 q60_a60 q60_420 q60_159 q60_139 w60_70 b60_14a0 b60_13a0 b60_440 b60_158 b60_138 w60_130 w60_12c w60_128 w60_124 w60_120 w60_11c w60_118 w60_114 w60_110 w60_10c w60_108 w60_104 w60_100 w60_fc w60_f8 w60_f4 w60_f0 w60_ec w60_e8 w60_e4 w60_e0 w60_dc w60_d8 w60_d4 w60_d0 w60_cc w60_c8 w60_c4 w60_c0 w60_bc w60_b8 w60_b4 w60_b0 w60_ac w60_a8 w60_a4 w60_a0 w60_9c w60_98 w60_94 w60_90 w60_8c w60_88 w60_84 w60_80 w60_7c w60_78 w60_6c w60_68 w60_64 w60_60 w60_5c w60_58 w60_54 w60_50 w60_4c w60_48 w60_44 w60_40 w60_3c w60_38 w60_34 w60_30 w60_2c w60_28 w60_24 g60_27 g60_26 g60_25 g60_24 g60_23 g60_22 g60_21 g60_20 g60_19 g60_18 g60_11 g60_10 g60_8 g60_4 g60_3 g60_2 V60 E60 fR60 t60 rg60 W60 K60 fr60 s60 d60
+  clear a60_1480 a60_1380 a60_1020 a60_a60 a60_a40 a60_a20 a60_420 a60_2e0 a60_2c0 a60_2a0 a60_280 a60_260 a60_240 a60_220 a60_200 a60_198 a60_178 q60_1380 q60_a60 q60_420 q60_159 q60_139 w60_70 b60_14a0 b60_13a0 b60_1040 b60_440 b60_158 b60_138 w60_130 w60_12c w60_128 w60_124 w60_120 w60_11c w60_118 w60_114 w60_110 w60_10c w60_108 w60_104 w60_100 w60_fc w60_f8 w60_f4 w60_f0 w60_ec w60_e8 w60_e4 w60_e0 w60_dc w60_d8 w60_d4 w60_d0 w60_cc w60_c8 w60_c4 w60_c0 w60_bc w60_b8 w60_b4 w60_b0 w60_ac w60_a8 w60_a4 w60_a0 w60_9c w60_98 w60_94 w60_90 w60_8c w60_88 w60_84 w60_80 w60_7c w60_78 w60_6c w60_68 w60_64 w60_60 w60_5c w60_58 w60_54 w60_50 w60_4c w60_48 w60_44 w60_40 w60_3c w60_38 w60_34 w60_30 w60_2c w60_28 w60_24 g60_27 g60_26 g60_25 g60_24 g60_23 g60_22 g60_21 g60_20 g60_19 g60_18 g60_11 g60_10 g60_8 g60_4 g60_3 g60_2 V60 E60 fR60 t60 rg60 W60 K60 fr60 s60 d60
   -- 0x1326: sw
   obtain ⟨n62, d62, s62, fr62, K62, W62, rg62⟩ := sv_sw F E61 s61 sv_at_1326 (off' := 0x1328) (c := 0x60)
     (by decide) (by rw [g61_2]; sv_addr) (by decide) (by decide)
@@ -8000,6 +8022,7 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have b62_138 : n62.mem (B + 0x21A0 + BitVec.ofNat 32 0x138) = BitVec.ofNat 8 (er.getD 0 0) := (K62.b8 (by decide) (by decide)).trans b61_138
   have b62_158 : n62.mem (B + 0x21A0 + BitVec.ofNat 32 0x158) = BitVec.ofNat 8 (es.getD 0 0) := (K62.b8 (by decide) (by decide)).trans b61_158
   have b62_440 : n62.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := (K62.b8 (by decide) (by decide)).trans b61_440
+  have b62_1040 : n62.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = 0 := (K62.b8 (by decide) (by decide)).trans b61_1040
   have b62_13a0 : n62.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := (K62.b8 (by decide) (by decide)).trans b61_13a0
   have b62_14a0 : n62.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = (BitVec.ofNat 32 0x0).extractLsb' 0 8 := (K62.b8 (by decide) (by decide)).trans b61_14a0
   have w62_60 : memLoad32 n62.mem (B + 0x21A0 + BitVec.ofNat 32 0x60) = BitVec.ofNat 32 0x332E3755 := by rw [W62, g61_10]
@@ -8022,9 +8045,10 @@ theorem sv_eca3 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have a62_a20 : accV n62.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = beNat (b32 er) := (K62.acc (by decide) (by decide)).trans a61_a20
   have a62_a40 : accV n62.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) 8 = beNat (b32 es) := (K62.acc (by decide) (by decide)).trans a61_a40
   have a62_a60 : accV n62.mem (B + 0x21A0 + BitVec.ofNat 32 0xA60) 8 = accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8 := (K62.acc (by decide) (by decide)).trans a61_a60
+  have a62_1020 : accV n62.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = 0 := (K62.acc (by decide) (by decide)).trans a61_1020
   have a62_1380 : accV n62.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4268) 8 := (K62.acc (by decide) (by decide)).trans a61_1380
   have a62_1480 : accV n62.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = beNat (b32 es) := (K62.acc (by decide) (by decide)).trans a61_1480
-  clear a61_1480 a61_1380 a61_a60 a61_a40 a61_a20 a61_420 a61_2e0 a61_2c0 a61_2a0 a61_280 a61_260 a61_240 a61_220 a61_200 a61_198 a61_178 q61_1380 q61_a60 q61_420 q61_159 q61_139 b61_14a0 b61_13a0 b61_440 b61_158 b61_138 w61_130 w61_12c w61_128 w61_124 w61_120 w61_11c w61_118 w61_114 w61_110 w61_10c w61_108 w61_104 w61_100 w61_fc w61_f8 w61_f4 w61_f0 w61_ec w61_e8 w61_e4 w61_e0 w61_dc w61_d8 w61_d4 w61_d0 w61_cc w61_c8 w61_c4 w61_c0 w61_bc w61_b8 w61_b4 w61_b0 w61_ac w61_a8 w61_a4 w61_a0 w61_9c w61_98 w61_94 w61_90 w61_8c w61_88 w61_84 w61_80 w61_7c w61_78 w61_70 w61_6c w61_68 w61_64 w61_60 w61_5c w61_58 w61_54 w61_50 w61_4c w61_48 w61_44 w61_40 w61_3c w61_38 w61_34 w61_30 w61_2c w61_28 w61_24 g61_10 g61_27 g61_26 g61_25 g61_24 g61_23 g61_22 g61_21 g61_20 g61_19 g61_18 g61_11 g61_8 g61_4 g61_3 g61_2 V61 E61 fR61 t61 fr61 rb61 s61 m61 u61 c61
-  exact .inr ⟨n62, t62, s62, E62, V62, fR62, g62_2, g62_3, g62_4, g62_18, g62_19, g62_20, g62_21, g62_23, g62_24, g62_25, g62_26, g62_27, w62_24, w62_28, w62_2c, w62_30, w62_34, w62_38, w62_3c, w62_40, w62_44, w62_48, w62_4c, w62_50, w62_54, w62_58, w62_5c, w62_60, w62_64, w62_68, w62_6c, w62_70, w62_78, w62_7c, w62_80, w62_84, w62_88, w62_8c, w62_90, w62_94, w62_98, w62_9c, w62_a0, w62_a4, w62_a8, w62_ac, w62_b0, w62_b4, w62_b8, w62_bc, w62_c0, w62_c4, w62_c8, w62_cc, w62_d0, w62_d4, w62_d8, w62_dc, w62_e0, w62_e4, w62_e8, w62_ec, w62_f0, w62_f4, w62_f8, w62_fc, w62_100, w62_104, w62_108, w62_10c, w62_110, w62_114, w62_118, w62_11c, w62_120, w62_124, w62_128, w62_12c, w62_130, b62_138, b62_158, b62_440, b62_13a0, b62_14a0, q62_139, q62_159, q62_420, q62_a60, q62_1380, a62_178, a62_198, a62_200, a62_220, a62_240, a62_260, a62_280, a62_2a0, a62_2c0, a62_2e0, a62_420, a62_a20, a62_a40, a62_a60, a62_1380, a62_1480⟩
+  clear a61_1480 a61_1380 a61_1020 a61_a60 a61_a40 a61_a20 a61_420 a61_2e0 a61_2c0 a61_2a0 a61_280 a61_260 a61_240 a61_220 a61_200 a61_198 a61_178 q61_1380 q61_a60 q61_420 q61_159 q61_139 b61_14a0 b61_13a0 b61_1040 b61_440 b61_158 b61_138 w61_130 w61_12c w61_128 w61_124 w61_120 w61_11c w61_118 w61_114 w61_110 w61_10c w61_108 w61_104 w61_100 w61_fc w61_f8 w61_f4 w61_f0 w61_ec w61_e8 w61_e4 w61_e0 w61_dc w61_d8 w61_d4 w61_d0 w61_cc w61_c8 w61_c4 w61_c0 w61_bc w61_b8 w61_b4 w61_b0 w61_ac w61_a8 w61_a4 w61_a0 w61_9c w61_98 w61_94 w61_90 w61_8c w61_88 w61_84 w61_80 w61_7c w61_78 w61_70 w61_6c w61_68 w61_64 w61_60 w61_5c w61_58 w61_54 w61_50 w61_4c w61_48 w61_44 w61_40 w61_3c w61_38 w61_34 w61_30 w61_2c w61_28 w61_24 g61_10 g61_27 g61_26 g61_25 g61_24 g61_23 g61_22 g61_21 g61_20 g61_19 g61_18 g61_11 g61_8 g61_4 g61_3 g61_2 V61 E61 fR61 t61 fr61 rb61 s61 m61 u61 c61
+  exact .inr ⟨n62, t62, s62, E62, V62, fR62, g62_2, g62_3, g62_4, g62_18, g62_19, g62_20, g62_21, g62_23, g62_24, g62_25, g62_26, g62_27, w62_24, w62_28, w62_2c, w62_30, w62_34, w62_38, w62_3c, w62_40, w62_44, w62_48, w62_4c, w62_50, w62_54, w62_58, w62_5c, w62_60, w62_64, w62_68, w62_6c, w62_70, w62_78, w62_7c, w62_80, w62_84, w62_88, w62_8c, w62_90, w62_94, w62_98, w62_9c, w62_a0, w62_a4, w62_a8, w62_ac, w62_b0, w62_b4, w62_b8, w62_bc, w62_c0, w62_c4, w62_c8, w62_cc, w62_d0, w62_d4, w62_d8, w62_dc, w62_e0, w62_e4, w62_e8, w62_ec, w62_f0, w62_f4, w62_f8, w62_fc, w62_100, w62_104, w62_108, w62_10c, w62_110, w62_114, w62_118, w62_11c, w62_120, w62_124, w62_128, w62_12c, w62_130, b62_138, b62_158, b62_440, b62_1040, b62_13a0, b62_14a0, q62_139, q62_159, q62_420, q62_a60, q62_1380, a62_178, a62_198, a62_200, a62_220, a62_240, a62_260, a62_280, a62_2a0, a62_2c0, a62_2e0, a62_420, a62_a20, a62_a40, a62_a60, a62_1020, a62_1380, a62_1480⟩
 
 end C3.RV32.Sv

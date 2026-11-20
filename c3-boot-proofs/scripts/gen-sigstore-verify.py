@@ -8360,7 +8360,7 @@ def stage_eca3():
     g.mc(0x12CC, 0x1480, 0x2C0, 0x20)
     g.store(0x12D4, "sb")
     g.block(0x12D8, 0x12E6)
-    g.ms(0x12E6, 0x1020, 0x24)
+    g.ms0(0x12E6, 0x1020, 0x24, accs=(0x1020,), byts=(0x1040,))
     g.block(0x12EE, 0x12FE)
     g.mcRo(0x12FE, 0x420, "BitVec.ofNat 32 0x3FCC42E8", 0x20, ro, acc=True)
     g.block(0x1306, 0x1308)
@@ -8377,7 +8377,7 @@ def stage_eca3():
             "0x280 in projective form, `r` and `s` at 0x2A0 and 0x2C0, the prehash as a scalar at 0x2E0, and the "
             "order and the inversion's state set up.",
             "params": params, "stmt": stmt, "proof": proof, "binders": EC_BINDERS, "start": 0x10D6,
-            "import": "C3BootProofs.Proofs.SvEc"}
+            "import": "C3BootProofs.Proofs.SvMs0"}
     return g, info
 
 
