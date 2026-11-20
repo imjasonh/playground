@@ -291,6 +291,7 @@ import C3BootProofs.Proofs.SvEcMl
 import C3BootProofs.Proofs.SvEcMl2
 import C3BootProofs.Proofs.SvEcMl3
 import C3BootProofs.Proofs.SvZLib
+import C3BootProofs.Proofs.SvZLib2
 import C3BootProofs.Proofs.SvZS
 import C3BootProofs.Proofs.SvZA
 import C3BootProofs.Proofs.SvZB
