@@ -236,6 +236,7 @@ class Gen:
         self.ranges = {}  # frame offset -> (length, the byte at offset + j, in terms of `j`)
         self.acc = {}  # frame offset -> (limbs, the value of `accV` there)
         self.pt = {}  # frame offset -> the P-256 point `ptF` reads there
+        self.mb = {}  # frame offset -> (length, kind, value) of a `memBytes` fact
         self.exits = []  # forks that reach the stage's end: (placeholder, generator)
 
     def emit(self, s):
@@ -364,7 +365,21 @@ class Gen:
                 pf = f"(K{k}.pt (by decide) (by decide)).trans p{k-1}_{d:x}"
             self.emit(f"  have p{k}_{d:x} : ptF n{k}.mem B 0x{d:X} = {v} := {pf}")
             newp[d] = v
-        self.words, self.bytes, self.ranges, self.acc, self.pt = neww, newb, newr, newa, newp
+        newm = {}
+        for d, (N, kd, v) in sorted(self.mb.items()):
+            if not outside(kind, d, N):
+                continue
+            if kind[0] == "same":
+                pf = f"by rw [m{k}]; exact mb{k-1}_{d:x}"
+            else:
+                pf = f"by rw [K{k}.mb (by decide) (by decide)]; exact mb{k-1}_{d:x}"
+            self.emit(f"  have mb{k}_{d:x} : {self.mb_stmt(k, d, N, kd, v)} := {pf}")
+            newm[d] = (N, kd, v)
+        self.words, self.bytes, self.ranges, self.acc, self.pt, self.mb = neww, newb, newr, newa, newp, newm
+
+    def mb_stmt(self, k, d, N, kind, v, st=None):
+        mbs = f"memBytes {st or f'n{k}.mem'} ({fa(d)}) 0x{N:X}"
+        return {"leNr": f"leN ({mbs}).reverse = {v}", "leN": f"leN ({mbs}) = {v}", "list": f"{mbs} = {v}"}[kind]
 
     def acc_stmt(self, k, d, n, v):
         return f"accV n{k}.mem ({fa(d)}) {n} = {v}"
@@ -1649,6 +1664,8 @@ class Gen:
                 continue
             self.emit(f"    rw [rb{k}]; simp +decide only [runBlock, BInstr.run, {blk}, upd, ↓reduceIte, aluEval]")
             self.emit(f"    all_goals (try simp only [{prev}])")
+            if any(tokens(t)[1] == ".mul" for t in ins if tokens(t)[0] == ".alu"):
+                self.emit("    all_goals (try simp only [BitVec.reduceMul, BitVec.zero_add])")
             if any(tokens(t)[1] == ".sll" for t in ins if tokens(t)[0] == ".aluImm"):
                 self.emit("    all_goals (try simp only [BitVec.reduceToNat, Nat.reduceMod, BitVec.reduceHShiftLeft])")
             self.emit(f"    all_goals first | with_reducible rfl | sv_addr | decide")
@@ -1800,6 +1817,17 @@ class Gen:
             if src <= d0 and d0 + 4 * n <= src + N:
                 macc[dst + d0 - src] = (n, v, d0)
         self.keep_frame(k, ("K", dst, N), ww, wb)
+        mmb = {}
+        for d0, (Nb, kd, v) in sorted(self.mb.items()):
+            if src <= d0 and d0 + Nb <= src + N:
+                mmb[dst + d0 - src] = (Nb, kd, v, d0)
+        for nd, (Nb, kd, v, d0) in sorted(mmb.items()):
+            o = d0 - src
+            self.emit(f"  have mb{k}_{nd:x} : {self.mb_stmt(k, nd, Nb, kd, v)} := by")
+            self.emit(f"    rw [memBytes_cp (S := B + 0x21A0) (c := 0x{nd:X}) (d := 0x{d0:X}) (N := 0x{Nb:X}) fun q hq => by")
+            self.emit(f"      rw [show 0x{nd:X} + q = 0x{dst:X} + (0x{o:X} + q) by omega, X{k} (0x{o:X} + q) (by omega),")
+            self.emit(f"        show 0x{src:X} + (0x{o:X} + q) = 0x{d0:X} + q by omega]]; exact mb{k-1}_{d0:x}")
+            self.mb[nd] = (Nb, kd, v)
         mpt = {}
         for d0, v in sorted(self.pt.items()):
             if src <= d0 and d0 + 96 <= src + N:
@@ -2349,6 +2377,79 @@ class Gen:
         self.pt[cl] = nv
         self.emit(f"  have p{k}_{cl:x} : ptF n{k}.mem B 0x{cl:X} = {nv} := P{k}")
 
+    def post(self, k, c, w):
+        """The facts after a call that `sv_*`'s `SvPost` and `SvKeep` describe."""
+        self.emit(f"  have s{k} := P{k}.st")
+        self.emit(f"  have fr{k} := P{k}.fr")
+        self.common(k, f"P{k}.steps", f"fr{k}", f"V{k-1}.keep K{k} (by decide)")
+        self.keep_regs(k, CALL_KEEP, lambda r: f"P{k}.regs {rname(r)} (by decide)")
+        self.keep_frame(k, ("K", c, w), {}, {})
+
+    def tbb8(self, off, co, cx):
+        """`to_be_byte_array` of the 8 limbs at offset `cx` into offset `co`."""
+        n, V = self.acc[cx]
+        k = self.k = self.k + 1
+        self.emit(f"  -- 0x{off:X}: to_be_byte_array")
+        self.emit(f"  obtain ⟨n{k}, P{k}, K{k}, L{k}⟩ := sv_tbb8 (co := 0x{co:X}) (cx := 0x{cx:X}) F E{k-1} (WN0.sv F fR{k-1}) s{k-1}")
+        self.emit(f"    sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2 {self.reg_is(k-1, 10, co)} {self.reg_is(k-1, 11, cx)}")
+        self.emit(f"    (by decide) (by decide) (by decide)")
+        self.emit(f"  rw [a{k-1}_{cx:x}] at L{k}")
+        self.post(k, co, 32)
+        self.mb[co] = (32, "leNr", V)
+        self.emit(f"  have mb{k}_{co:x} : {self.mb_stmt(k, co, 32, 'leNr', V)} := L{k}")
+        self.end_step()
+
+    def rev(self, off, c, N):
+        """`<[u8]>::reverse` of the `N` bytes at offset `c`."""
+        Nb, kd, V = self.mb[c]
+        assert Nb == N and kd == "leNr"
+        k = self.k = self.k + 1
+        self.emit(f"  -- 0x{off:X}: reverse")
+        self.emit(f"  obtain ⟨n{k}, P{k}, K{k}, R{k}⟩ := sv_rev (c := 0x{c:X}) (N := 0x{N:X}) F E{k-1} (WN0.sv F fR{k-1}) s{k-1}")
+        self.emit(f"    sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) {self.reg_is(k-1, 10, c)} g{k-1}_11 (by decide)")
+        self.emit(f"  have mbr{k} := mb{k-1}_{c:x}")
+        self.post(k, c, N)
+        self.mb[c] = (N, "leN", V)
+        self.emit(f"  have mb{k}_{c:x} : {self.mb_stmt(k, c, N, 'leN', V)} := by rw [R{k}]; exact mbr{k}")
+        self.end_step()
+
+    def zloop(self, c, N):
+        """The clearing loop at 0x184E over the `N` bytes at offset `c`."""
+        k = self.k = self.k + 1
+        self.emit(f"  -- 0x184E: clear 0x{N:X} bytes")
+        self.emit(f"  obtain ⟨n{k}, Z{k}, c{k}, s{k}', C{k}, rk{k}, z{k}, fz{k}⟩ := ec_zloop F (c := 0x{c:X}) (N := 0x{N:X}) (by decide)")
+        self.emit(f"    0x{N:X} 0 (by decide) (by decide) E{k-1}.self s{k-1} (by rw [g{k-1}_10]; try rfl) g{k-1}_11")
+        self.emit(f"  have s{k} : St n{k}.mem SV n{k} 0x1858 (reg n{k}) := ⟨s{k}'.pc, rfl, fun _ => rfl⟩")
+        self.emit(f"  have fr{k} : ∀ x, SvR B x → n{k}.mem x = n{k-1}.mem x := fun x hx => by")
+        self.emit(f"    rw [s{k}'.mem]; exact fz{k} x (svR_hi (c := 0x{c:X} + 0) hx (by decide))")
+        self.emit(f"  have K{k} : SvKeep B n{k-1}.mem n{k}.mem 0x{c:X} 0x{N:X} := fun e he hh => by")
+        self.emit(f"    rw [s{k}'.mem]; exact fz{k} _ (sepS (B + 0x21A0) (c := 0x{c:X} + 0) (n := 0x{N:X}) (d := e) (k := 1) (by omega) (by omega) (by omega))")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keep K{k} (by decide)")
+        self.keep_regs(k, [r for r in range(32) if r not in (1, 10, 11)], lambda r: f"rk{k} {rname(r)} (by decide) (by decide)")
+        self.keep_frame(k, ("K", c, N), {}, {})
+        self.mb[c] = (N, "list", f"List.replicate 0x{N:X} 0")
+        self.emit(f"  have mb{k}_{c:x} : {self.mb_stmt(k, c, N, 'list', f'List.replicate 0x{N:X} 0')} :=")
+        self.emit(f"    Pv.memBytes_zero fun j hj => by rw [s{k}'.mem]; have := z{k} j hj; rwa [Nat.add_zero] at this")
+        self.end_step()
+
+    def wf(self, off, cw, cc):
+        """`wnaf_form` with the cleared buffer at `cw` and the number's bytes
+        at `cc`."""
+        _, kd1, X = self.mb[cc]
+        assert kd1 == "leN"
+        k = self.k = self.k + 1
+        self.emit(f"  -- 0x{off:X}: wnaf_form")
+        self.emit(f"  obtain ⟨n{k}, P{k}, K{k}, A{k}, D{k}, H{k}⟩ := sv_wf (cw := 0x{cw:X}) (cc := 0x{cc:X}) F E{k-1} (WN0.sv F fR{k-1}) s{k-1}")
+        self.emit(f"    sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2 {self.reg_is(k-1, 10, cw)} g{k-1}_11")
+        self.emit(f"    {self.reg_is(k-1, 12, cc)} g{k-1}_13 g{k-1}_14 (by decide) (by decide) (by decide) mb{k-1}_{cc:x} mb{k-1}_{cw:x}")
+        self.post(k, cw, 0x101)
+        W = f"wnafGo ({X}) 0x100 0x101 0 0"
+        self.emit(f"  have g{k}_10 : reg n{k} a0 = BitVec.ofNat 32 ({W}).length := A{k}")
+        self.regs[10] = ("U", f"BitVec.ofNat 32 ({W}).length")
+        self.mb[cw] = (0x101, "list", f"wnafBytes ({W}) 0x101")
+        self.emit(f"  have mb{k}_{cw:x} : {self.mb_stmt(k, cw, 0x101, 'list', f'wnafBytes ({W}) 0x101')} := D{k}")
+        self.end_step()
+
     def isr(self, off, cx, y, post=None):
         """`ecdsa::in_scalar_range` of the 32 bytes at offset `cx` and at `y`."""
         k = self.k + 1
@@ -2427,6 +2528,9 @@ class Gen:
         for d, v in sorted(self.pt.items()):
             conj.append(f"ptF n'.mem B 0x{d:X} = {v}")
             terms.append(f"p{k}_{d:x}")
+        for d, (N, kd, v) in sorted(self.mb.items()):
+            conj.append(self.mb_stmt(k, d, N, kd, v, st="n'.mem"))
+            terms.append(f"mb{k}_{d:x}")
         for c, t in self.extra:
             conj.append(c)
             terms.append(t)
@@ -8337,10 +8441,48 @@ def stage_ecd():
     return g, info
 
 
-def stage_ect():
-    """The table loop from 0x1690 to 0x178A, both passes: for each pair's point
-    `P`, the table `P, 3P, …, 15P`, stored at 0xA20 and 0xD20."""
-    g = Gen("EcT")
+FACT_PARAMS = ("(g0_", "(w0_", "(b0_", "(q0_", "(a0_", "(p0_", "(mb0_")
+
+
+def restart(g, name, params):
+    """A new stage that starts where `g` is, with its facts as hypotheses, and
+    the other hypotheses of `params`. Returns the new generator and its
+    hypotheses."""
+    h = Gen(name)
+    h.generic_alu = g.generic_alu
+    for a in ("regs", "words", "bytes", "ranges", "acc", "pt", "mb"):
+        setattr(h, a, dict(getattr(g, a)))
+    for a in ("pt_lts", "sign_le"):
+        if hasattr(g, a):
+            setattr(h, a, dict(getattr(g, a)))
+    out = []
+    for r, v in sorted(h.regs.items()):
+        if r not in (3, 4):
+            out.append(f"(g0_{r} : reg n0 {rname(r)} = {lean_val(v)})")
+    for e, v in sorted(h.words.items()):
+        out.append(f"(w0_{e:x} : memLoad32 n0.mem ({fa(e)}) = {lean_val(v)})")
+    for e, v in sorted(h.bytes.items()):
+        out.append(f"(b0_{e:x} : n0.mem ({fa(e)}) = {v})")
+    for s0, (n, tmpl) in sorted(h.ranges.items()):
+        out.append(f"(q0_{s0:x} : ∀ j, j < {n} → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x{s0:X} + j)) = {tmpl})")
+    for d, (n, v) in sorted(h.acc.items()):
+        out.append(f"(a0_{d:x} : accV n0.mem ({fa(d)}) {n} = {v})")
+    for d, v in sorted(h.pt.items()):
+        out.append(f"(p0_{d:x} : ptF n0.mem B 0x{d:X} = {v})")
+    for d, (N, kd, v) in sorted(h.mb.items()):
+        out.append(f"(mb0_{d:x} : {h.mb_stmt(0, d, N, kd, v)})")
+    out += [p for p in params if not p.startswith(FACT_PARAMS)]
+    h.emit("  have t0 : Steps n0 n0 := .refl n0")
+    h.emit("  have fR0 : ∀ x, SvR B x → n0.mem x = M0 x := fM")
+    h.emit("  have g0_3 : reg n0 (3 : Fin 32) = reg n0 (3 : Fin 32) := rfl")
+    h.emit("  have g0_4 : reg n0 (4 : Fin 32) = reg n0 (4 : Fin 32) := rfl")
+    return h, out
+
+
+def stage_ect(want):
+    """The table loop from 0x1690 to 0x178A, in four parts `want`: for each
+    pair's point `P`, the table `P, 3P, …, 15P`, stored at 0xA20 and 0xD20."""
+    g = Gen("EcT0a")
     g.generic_alu = True
     params = iv_start(g)
     g.regs[20] = ("S", 0xA20)
@@ -8353,15 +8495,35 @@ def stage_ect():
         if 0x1480 <= d < 0x1580:
             del g.acc[d]
     params = [p for p in params if not re.match(r"\(a0_14[89a-f]", p)]
-    g.pt = {0x1480: "P0", 0x1500: "P1"}
-    g.acc.update({0x14E0: (8, "U1"), 0x1560: (8, "U2")})
-    params += ["(p0_1480 : ptF n0.mem B 0x1480 = P0)", "(p0_1500 : ptF n0.mem B 0x1500 = P1)",
+    for d in list(g.acc):
+        if 0x320 <= d < 0x420:
+            del g.acc[d]
+    g.pt = {0x1480: "P0", 0x1500: "P1", 0x320: "P0", 0x3A0: "P1"}
+    g.acc.update({0x14E0: (8, "U1"), 0x1560: (8, "U2"), 0x380: (8, "U1"), 0x400: (8, "U2")})
+    params += ["(p0_320 : ptF n0.mem B 0x320 = P0)", "(p0_3a0 : ptF n0.mem B 0x3A0 = P1)",
+               "(a0_380 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x380) 8 = U1)",
+               "(a0_400 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x400) 8 = U2)",
+               "(p0_1480 : ptF n0.mem B 0x1480 = P0)", "(p0_1500 : ptF n0.mem B 0x1500 = P1)",
                "(a0_14e0 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x14E0) 8 = U1)",
                "(a0_1560 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x1560) 8 = U2)",
                "(hP0 : Pt2Lt P0)", "(hP1 : Pt2Lt P1)", "(RS : SvRoSep B)", "(PT0 : SvPtCode M0)"]
     g.pt_lts = {"P0": "hP0", "P1": "hP1"}
     ro = "(Or.inr ⟨by decide, by decide⟩)"
     g.branch(0x1690, False, f"by rw [g{g.k}_21, s{g.k}.zero]; decide")
+    parts = {}
+    bin_ = IV_BINDERS.replace("{fs gs ds es : BitVec 8}", "{fs gs ds es : BitVec 8} {U1 U2 : Nat} {P0 P1 : Pt2}")
+
+    def cut(g, params, label, off, nxt):
+        stmt, proof = finish(g, off, sorted(g.regs), set(g.words), set(g.bytes))
+        parts[label] = (g, {"name": f"sv_ect{label.lower()}", "title": f"the tables of the linear combination, part {label}",
+                            "doc": f"Part {label} of the table loop from 0x1690 to 0x178A: the odd multiples `P + j·2P` of "
+                            "`G` and of `Q`, stored at offsets 0xA20 and 0xD20.",
+                            "params": params, "stmt": stmt, "proof": proof, "binders": bin_,
+                            "start": g.start_off,
+                            "import": {"0a": "C3BootProofs.Proofs.SvEcPt", "0b": "C3BootProofs.Proofs.SvEcT0a",
+                                       "1a": "C3BootProofs.Proofs.SvEcT0b", "1b": "C3BootProofs.Proofs.SvEcT1a"}[label]})
+        return restart(g, f"EcT{nxt}", params)
+    g.start_off = 0x1690
     for i in range(2):
         Pn = f"P{i}"
         g.block(0x1694, 0x16A2)
@@ -8382,11 +8544,12 @@ def stage_ect():
         g.pd2(0x1700, 0x1320, 0x1380)
         g.block(0x1708, 0x1718)
         g.mc(0x1718, 0x420, 0x1380, 0x60)
-        g.emit(f"  have p{g.k}_420' : ptF n{g.k}.mem B 0x420 = tbl2 {Pn} 0 := p{g.k}_420")
         g.pt[0x420] = f"tbl2 {Pn} 0"
-        g.emit(f"  replace p{g.k}_420 := p{g.k}_420'")
         g.branch(0x1720, False, f"by rw [g{g.k}_9, s{g.k}.zero]; decide")
         for j in range(8):
+            if j == 4:
+                g, params = cut(g, params, f"{i}a", 0x1722, f"{i}b")
+                g.start_off = 0x1722
             g.block(0x1722, 0x172C)
             g.mc(0x172C, 0x1020 + 0x60 * j, 0x420, 0x60)
             g.block(0x1734, 0x1740)
@@ -8399,13 +8562,82 @@ def stage_ect():
         g.mc(0x177C, 0xA20 + 0x300 * i, 0x420, 0x300)
         g.block(0x1784, 0x1786)
         g.branch(0x1786, i == 0, f"by rw [g{g.k}_24, g{g.k}_21]; decide")
-    stmt, proof = finish(g, 0x178A, [2, 3, 4, 18, 19, 20, 21, 23, 24, 25, 26, 27], set(g.words), set(g.bytes))
-    info = {"name": "sv_ect", "title": "the tables of the linear combination",
-            "doc": "The table loop from 0x1690 to 0x178A, both passes: the odd multiples `P + j·2P` of `G` and of "
-            "`Q`, stored at offsets 0xA20 and 0xD20.",
+        if i == 0:
+            g, params = cut(g, params, "0b", 0x1694, "1a")
+            g.start_off = 0x1694
+    cut(g, params, "1b", 0x178A, "x")
+    return parts[want]
+
+
+def stage_ecw():
+    """From 0x178A to 0x18F8: the tables moved to 0x420, and the width-5 NAF
+    digits of `u₁` and `u₂`, each in a 0x108-byte record at 0xA20 and 0xB28,
+    copied to 0x1020."""
+    g = Gen("EcW")
+    g.generic_alu = True
+    params = iv_start(g)
+    for d in list(g.acc):
+        if d not in (0x2A0, 0x2C0, 0x2E0):
+            del g.acc[d]
+    params = [p for p in params if not (p.startswith("(a0_") and not p.startswith(("(a0_2a0", "(a0_2c0", "(a0_2e0")))]
+    for e in list(g.bytes):
+        if e in IV_SIGN:
+            del g.bytes[e]
+    params = [p for p in params if not re.match(r"\(b0_(13a0|14a0|1040|440) ", p)]
+    g.regs[20] = ("S", 0xA20)
+    params.append("(g0_20 : reg n0 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20)")
+    g.pt = {0x320: "P0", 0x3A0: "P1"}
+    g.acc.update({0x380: (8, "U1"), 0x400: (8, "U2")})
+    params += ["(p0_320 : ptF n0.mem B 0x320 = P0)", "(p0_3a0 : ptF n0.mem B 0x3A0 = P1)",
+               "(a0_380 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x380) 8 = U1)",
+               "(a0_400 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x400) 8 = U2)"]
+    for i, P in ((0, "P0"), (1, "P1")):
+        for j in range(8):
+            c = 0xA20 + 0x300 * i + 0x60 * j
+            g.pt[c] = f"tbl2 {P} {j}"
+            params.append(f"(p0_{c:x} : ptF n0.mem B 0x{c:X} = tbl2 {P} {j})")
+    params += ["(WN0 : SvWnCode M0)"]
+    g.block(0x178A, 0x17A2)
+    g.mc(0x17A2, 0x420, 0xA20, 0x600)
+    g.block(0x17AA, 0x17C2)
+    g.mc(0x17C2, 0x1380, 0x320, 0x100)
+    g.block(0x17CA, 0x17DC)
+    g.branch(0x17DC, False, f"by rw [g{g.k}_25, s{g.k}.zero]; decide")
+    for i in range(2):
+        g.block(0x17E0, 0x17F0)
+        g.mc(0x17F0, 0x1588, 0x13E0 + 0x80 * i, 0x20)
+        g.block(0x17F8, 0x1808)
+        g.tbb8(0x1808, 0x1480, 0x1588)
+        g.block(0x1810, 0x181C)
+        g.rev(0x181C, 0x1480, 0x20)
+        g.block(0x1824, 0x1838)
+        g.mc(0x1838, 0x1320, 0x1480, 0x20)
+        g.block(0x1840, 0x184C)
+        g.branch(0x184C, False, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
+        g.zloop(0x1480, 0x101)
+        g.block(0x1858, 0x186C)
+        g.mc(0x186C, 0x1024, 0x1480, 0x101)
+        g.block(0x1874, 0x188C)
+        g.wf(0x188C, 0x1024, 0x1320)
+        g.store(0x1894, "sw")
+        g.block(0x1898, 0x18AC)
+        g.mc(0x18AC, 0x1480, 0x1020, 0x108)
+        g.block(0x18B4, 0x18C6)
+        g.mc(0x18C6, 0xA20 + 0x108 * i, 0x1480, 0x108)
+        g.block(0x18CE, 0x18D0)
+        g.branch(0x18D0, i == 0, f"by rw [g{g.k}_8, g{g.k}_25]; decide")
+    g.block(0x18D4, 0x18E8)
+    g.mc(0x18E8, 0x1020, 0xA20, 0x210)
+    g.load(0x18F0, "lw")
+    g.load(0x18F4, "lw")
+    stmt, proof = finish(g, 0x18F8, [2, 3, 4, 9, 10, 18, 19, 20, 21, 23, 24, 25, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "sv_ecw", "title": "the wNAF digits of `u₁` and `u₂`",
+            "doc": "From 0x178A to 0x18F8: the tables move to offset 0x420, and `wnaf_form` writes the width-5 NAF "
+            "digits of `u₁` and `u₂`, which end up in records at 0x1020 and 0x1128 with their lengths.",
             "params": params, "stmt": stmt, "proof": proof,
-            "binders": IV_BINDERS.replace("{fs gs ds es : BitVec 8}", "{fs gs ds es : BitVec 8} {U1 U2 : Nat} {P0 P1 : Pt2}"),
-            "start": 0x1690, "import": "C3BootProofs.Proofs.SvEcPt"}
+            "binders": IV_BINDERS.replace("{fs gs ds es : BitVec 8}", "{U1 U2 : Nat} {P0 P1 : Pt2}").replace(
+                "fv gv dv ev : Nat}", "fv gv dv ev : Nat}"),
+            "start": 0x178A, "import": "C3BootProofs.Proofs.SvEcW\nimport C3BootProofs.Proofs.SvEcT1b"}
     return g, info
 
 
@@ -8435,7 +8667,8 @@ def main():
                 "Cr1e": lambda: stage_cr1(True), "Cr1n": lambda: stage_cr1(False), "Rl": stage_rl, "Rm": stage_rm,
                 **{f"Win{i}{x}": (lambda i=i, x=x: stage_win(i, x == "e")) for i in range(8) for x in "en"},
                 "EcA1": stage_eca1, "EcA2": stage_eca2, "EcA3": stage_eca3,
-                "IvHc": lambda: stage_ivh("c"), "IvHx": lambda: stage_ivh("x"), "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive, "EcD": stage_ecd, "EcT": stage_ect}[stage]()
+                "IvHc": lambda: stage_ivh("c"), "IvHx": lambda: stage_ivh("x"), "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive, "EcD": stage_ecd, "EcW": stage_ecw,
+                **{f"EcT{x}": (lambda x=x: stage_ect(x)) for x in ("0a", "0b", "1a", "1b")}}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

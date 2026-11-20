@@ -53,7 +53,7 @@ theorem ec_zloop {B : Word} (F : Fr B 0x3830) {c N : Nat} (hN : c + N ≤ 0x1690
       rw [h1]; exact ofNat_pred j
     have k1 : ∀ q : Fin 32, q ≠ a0 → q ≠ a1 → reg m1 q = reg m q := fun q h0' h1' => by
       have hq : q ∉ ecZ1.filterMap BInstr.dst := by
-        simp only [ecZ1, List.filterMap_cons, List.filterMap_nil, BInstr.dst, Option.some, List.mem_cons, List.mem_nil_iff,
+        simp only [ecZ1, List.filterMap_cons, List.filterMap_nil, BInstr.dst, List.mem_cons, List.mem_nil_iff,
           or_false, not_or]; exact ⟨h0', h1'⟩
       rw [u1.regs, runBlock_reg _ _ _ q hz hq]
     have fr1 : ∀ x, x ≠ B + 0x21A0 + BitVec.ofNat 32 (c + i) → (runBlock ecZ1 (Mx, reg m)).1 x = Mx x :=
@@ -270,5 +270,15 @@ theorem sv_wf {B : Word} {m : Machine} {off : Nat} {imm o : Word} {cw cc X : Nat
     have := congrArg (·.getD i 0) hZ
     simp only [memBytes_getD h1'] at this
     rw [this, getD_rep0]
+
+theorem SvKeep.mb {B : Word} {M M' : Word → BitVec 8} {c w d N : Nat} (K : SvKeep B M M' c w)
+    (hd : d + N ≤ 0x1690) (h : d + N ≤ c ∨ c + w ≤ d) :
+    memBytes M' (B + 0x21A0 + BitVec.ofNat 32 d) N = memBytes M (B + 0x21A0 + BitVec.ofNat 32 d) N :=
+  memBytes_congr fun j hj => by rw [add_ofNat_assoc]; exact K.range hd h j hj
+
+theorem SvKeepL.mb {B : Word} {M M' : Word → BitVec 8} {L : List (Nat × Nat)} {d N : Nat} (K : SvKeepL B M M' L)
+    (hd : d + N ≤ 0x1690) (h : ∀ p ∈ L, d + N ≤ p.1 ∨ p.1 + p.2 ≤ d) :
+    memBytes M' (B + 0x21A0 + BitVec.ofNat 32 d) N = memBytes M (B + 0x21A0 + BitVec.ofNat 32 d) N :=
+  memBytes_congr fun j hj => by rw [add_ofNat_assoc]; exact K.range hd h j hj
 
 end C3.RV32.Sv

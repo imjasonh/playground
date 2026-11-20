@@ -279,6 +279,11 @@ import C3BootProofs.Proofs.SvEcLib2
 import C3BootProofs.Proofs.SvEcD
 import C3BootProofs.Proofs.SvEcPt
 import C3BootProofs.Proofs.SvEcW
+import C3BootProofs.Proofs.SvEcT0a
+import C3BootProofs.Proofs.SvEcT0b
+import C3BootProofs.Proofs.SvEcT1a
+import C3BootProofs.Proofs.SvEcT1b
+import C3BootProofs.Proofs.SvEcW2
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main
