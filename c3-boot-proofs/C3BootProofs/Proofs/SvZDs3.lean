@@ -98,8 +98,8 @@ theorem zt_partB {B : Word} {m : Machine} {gl dl dh ul uh vl vh ql qh rl rh cnt 
     rw [m1]; simp +decide only [runBlock, BInstr.run, zt5, upd, ↓reduceIte, aluEval, hsp]
     simp (disch := decide) only [svR_zst32 hx]
   have K1 : SvKeepL B m.mem n1.mem ztL := fun e he hL => by
-    have h1 := hL _ (List.mem_cons_self ..)
-    simp only at h1
+    simp only [ztL, List.forall_mem_cons, List.forall_mem_nil, and_true] at hL
+    obtain ⟨h1, h2, h3, h4, h5⟩ := hL
     rw [m1]; simp +decide only [runBlock, BInstr.run, zt5, upd, ↓reduceIte, aluEval, hsp]
     simp (disch := first | decide | omega |
       (simp only [BitVec.toNat_ofNat, BitVec.ofNat_eq_ofNat, Nat.reducePow, Nat.reduceMod]; omega))
@@ -158,8 +158,8 @@ theorem zt_partB {B : Word} {m : Machine} {gl dl dh ul uh vl vh ql qh rl rh cnt 
     rw [m3]; simp +decide only [runBlock, BInstr.run, zt6, upd, ↓reduceIte, aluEval, sp2]
     simp (disch := decide) only [svR_zst32 hx]
   have K3 : SvKeepL B n2.mem n3.mem ztL := fun e he hL => by
-    have h1 := hL _ (List.mem_cons_self ..)
-    simp only at h1
+    simp only [ztL, List.forall_mem_cons, List.forall_mem_nil, and_true] at hL
+    obtain ⟨h1, h2, h3, h4, h5⟩ := hL
     rw [m3]; simp +decide only [runBlock, BInstr.run, zt6, upd, ↓reduceIte, aluEval, sp2]
     simp (disch := first | decide | omega |
       (simp only [BitVec.toNat_ofNat, BitVec.ofNat_eq_ofNat, Nat.reducePow, Nat.reduceMod]; omega))
@@ -230,9 +230,8 @@ theorem zt_partB {B : Word} {m : Machine} {gl dl dh ul uh vl vh ql qh rl rh cnt 
     rw [m5]; simp +decide only [runBlock, BInstr.run, zt7, upd, ↓reduceIte, aluEval, sp4, e4_27, w_add0]
     simp (disch := decide) only [svR_zst32 hx, svR_zst8 hx]
   have K5 : SvKeepL B n4.mem n5.mem ztL := fun e he hL => by
-    have h1 := hL _ (List.mem_cons_self ..)
-    have h2 := hL _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))
-    simp only at h1 h2
+    simp only [ztL, List.forall_mem_cons, List.forall_mem_nil, and_true] at hL
+    obtain ⟨h1, h2, h3, h4, h5⟩ := hL
     rw [m5]; simp +decide only [runBlock, BInstr.run, zt7, upd, ↓reduceIte, aluEval, sp4, e4_27, w_add0]
     simp (disch := first | decide | omega |
       (simp only [BitVec.toNat_ofNat, BitVec.ofNat_eq_ofNat, Nat.reducePow, Nat.reduceMod]; omega))
@@ -288,9 +287,8 @@ theorem zt_partB {B : Word} {m : Machine} {gl dl dh ul uh vl vh ql qh rl rh cnt 
     rw [m7]; simp +decide only [runBlock, BInstr.run, zt8, upd, ↓reduceIte, aluEval, sp6, e6_27, w_add0]
     simp (disch := decide) only [svR_zst32 hx, svR_zst8 hx]
   have K7 : SvKeepL B n6.mem n7.mem ztL := fun e he hL => by
-    have h1 := hL _ (List.mem_cons_self ..)
-    have h2 := hL _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))
-    simp only at h1 h2
+    simp only [ztL, List.forall_mem_cons, List.forall_mem_nil, and_true] at hL
+    obtain ⟨h1, h2, h3, h4, h5⟩ := hL
     rw [m7]; simp +decide only [runBlock, BInstr.run, zt8, upd, ↓reduceIte, aluEval, sp6, e6_27, w_add0]
     simp (disch := first | decide | omega |
       (simp only [BitVec.toNat_ofNat, BitVec.ofNat_eq_ofNat, Nat.reducePow, Nat.reduceMod]; omega))

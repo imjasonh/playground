@@ -40,7 +40,7 @@ theorem w64_asr' (x xh : Word) : W64 (x >>> 1 ||| xh <<< 31) (xh.sshiftRight 1) 
   rw [BitVec.or_comm]; exact w64_asr x xh
 
 /-- The frame bytes a divstep keeps. -/
-abbrev ztL : List (Nat × Nat) := [(0x4, 0x74), (0xA20, 1)]
+abbrev ztL : List (Nat × Nat) := [(0x4, 0x18), (0x24, 0x28), (0x5C, 0x8), (0x70, 0x8), (0xA20, 1)]
 
 set_option maxHeartbeats 64000000 in
 /-- The first half of a constant-time divstep, from 0x1BA4 to the fourth
@@ -144,9 +144,8 @@ theorem zt_partA {B : Word} {m : Machine} {dl dh fl fh gl gh ul uh vl vh ql qh r
     rw [m1]; simp +decide only [runBlock, BInstr.run, zt1, upd, ↓reduceIte, aluEval, hsp, h27, w_add0]
     simp (disch := decide) only [svR_zst32 hx, svR_zst8 hx]
   have K1 : SvKeepL B m.mem n1.mem ztL := fun e he hL => by
-    have h1 := hL _ (List.mem_cons_self ..)
-    have h2 := hL _ (List.mem_cons_of_mem _ (List.mem_cons_self ..))
-    simp only at h1 h2
+    simp only [ztL, List.forall_mem_cons, List.forall_mem_nil, and_true] at hL
+    obtain ⟨h1, h2, h3, h4, h5⟩ := hL
     rw [m1]; simp +decide only [runBlock, BInstr.run, zt1, upd, ↓reduceIte, aluEval, hsp, h27, w_add0]
     simp (disch := first | decide | omega |
       (simp only [BitVec.toNat_ofNat, BitVec.ofNat_eq_ofNat, Nat.reducePow, Nat.reduceMod]; omega))
@@ -203,8 +202,8 @@ theorem zt_partA {B : Word} {m : Machine} {dl dh fl fh gl gh ul uh vl vh ql qh r
     rw [m3]; simp +decide only [runBlock, BInstr.run, zt2, upd, ↓reduceIte, aluEval, sp2]
     simp (disch := decide) only [svR_zst32 hx]
   have K3 : SvKeepL B n2.mem n3.mem ztL := fun e he hL => by
-    have h1 := hL _ (List.mem_cons_self ..)
-    simp only at h1
+    simp only [ztL, List.forall_mem_cons, List.forall_mem_nil, and_true] at hL
+    obtain ⟨h1, h2, h3, h4, h5⟩ := hL
     rw [m3]; simp +decide only [runBlock, BInstr.run, zt2, upd, ↓reduceIte, aluEval, sp2]
     simp (disch := first | decide | omega |
       (simp only [BitVec.toNat_ofNat, BitVec.ofNat_eq_ofNat, Nat.reducePow, Nat.reduceMod]; omega))
@@ -263,8 +262,8 @@ theorem zt_partA {B : Word} {m : Machine} {dl dh fl fh gl gh ul uh vl vh ql qh r
     rw [m5]; simp +decide only [runBlock, BInstr.run, zt3, upd, ↓reduceIte, aluEval, sp4]
     simp (disch := decide) only [svR_zst32 hx]
   have K5 : SvKeepL B n4.mem n5.mem ztL := fun e he hL => by
-    have h1 := hL _ (List.mem_cons_self ..)
-    simp only at h1
+    simp only [ztL, List.forall_mem_cons, List.forall_mem_nil, and_true] at hL
+    obtain ⟨h1, h2, h3, h4, h5⟩ := hL
     rw [m5]; simp +decide only [runBlock, BInstr.run, zt3, upd, ↓reduceIte, aluEval, sp4]
     simp (disch := first | decide | omega |
       (simp only [BitVec.toNat_ofNat, BitVec.ofNat_eq_ofNat, Nat.reducePow, Nat.reduceMod]; omega))
@@ -337,8 +336,8 @@ theorem zt_partA {B : Word} {m : Machine} {dl dh fl fh gl gh ul uh vl vh ql qh r
     rw [m7]; simp +decide only [runBlock, BInstr.run, zt4, upd, ↓reduceIte, aluEval, sp6]
     simp (disch := decide) only [svR_zst32 hx]
   have K7 : SvKeepL B n6.mem n7.mem ztL := fun e he hL => by
-    have h1 := hL _ (List.mem_cons_self ..)
-    simp only at h1
+    simp only [ztL, List.forall_mem_cons, List.forall_mem_nil, and_true] at hL
+    obtain ⟨h1, h2, h3, h4, h5⟩ := hL
     rw [m7]; simp +decide only [runBlock, BInstr.run, zt4, upd, ↓reduceIte, aluEval, sp6]
     simp (disch := first | decide | omega |
       (simp only [BitVec.toNat_ofNat, BitVec.ofNat_eq_ofNat, Nat.reducePow, Nat.reduceMod]; omega))
