@@ -371,6 +371,10 @@ DATA_EXTRA4 = [
 DATA_EXTRA5 = [
     ("p256Identity", "sigstoreVerify", 0x1918, 0x60),
     ("p256InvParams", "sigstoreVerify", 0x1A98, 0x60),
+    ("p256MontOne", "sigstoreVerify", 0x116E, 0x20),
+    ("p256One", "sigstoreVerify", 0x12EE, 0x20),
+    ("p256GMont", "sigstoreVerify", 0x1610, 0x60),
+    ("p256AffineIdX", "sigstoreVerify", 0x1F8E, 0x20),
 ]
 
 

@@ -58,12 +58,11 @@ stage the previous stage's facts by name. It ends in one of three ways:
 
 Its statement doesn't mention any intermediate machine. The two inverses
 are witnesses that `sgnVal` ties to the states of `ivLoop8` and `zvLoop`.
-It still takes these hypotheses:
-- Bounds on three constants in the image that aren't extracted yet: the
-  base point's coordinates (0x3FCC4690), the key's `Z` (0x3FCC43A8), and
-  the identity's coordinate (0x3FCC442C).
-- The range bound of the inversion of `Z` (`hzi`), which is
-  safegcd's bound on `d` and `e`.
+It derives the bounds on the constants it reads (p, n, the base point,
+1 in Montgomery form, and the identity's coordinate) from the image's
+data, which `BootloaderData5.lean` extracts. It still takes one
+mathematical hypothesis: the range bound of the inversion of `Z`
+(`hzi`), which is safegcd's bound on `d` and `e`.
 
 The stages still have to be composed into one theorem against
 `sigstoreVerify` in `Spec/Sigstore.lean`, and the models (`ivLoop8`,
