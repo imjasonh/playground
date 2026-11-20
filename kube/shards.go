@@ -224,10 +224,12 @@ func (s *sharder) run(ctx context.Context) {
 	s.logger(ctx).Info("waiting for shards", "shards", s.n, "namespace", s.ns)
 	for {
 		s.sync(ctx)
+		timer := time.NewTimer(retryPeriod)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-time.After(retryPeriod):
+		case <-timer.C:
 		}
 	}
 }

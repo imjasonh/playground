@@ -32,15 +32,15 @@
           <span>Scenario</span>
           <select id="scenario"></select>
         </label>
-        <button id="reset" class="btn ghost" title="Restart the current scenario">↺ Reset</button>
+        <button type="button" id="reset" class="btn ghost" title="Restart the current scenario">↺ Reset</button>
       </div>
 
       <div class="tool-group">
-        <button id="playpause" class="btn primary">▶ Start</button>
+        <button type="button" id="playpause" class="btn primary">▶ Start</button>
         <div class="speed" role="group" aria-label="Simulation speed">
-          <button class="btn chip speed-btn" data-speed="1">1×</button>
-          <button class="btn chip speed-btn" data-speed="2">2×</button>
-          <button class="btn chip speed-btn" data-speed="4">4×</button>
+          <button type="button" class="btn chip speed-btn" data-speed="1">1×</button>
+          <button type="button" class="btn chip speed-btn" data-speed="2">2×</button>
+          <button type="button" class="btn chip speed-btn" data-speed="4">4×</button>
         </div>
         <span id="clock" class="clock">00:00</span>
       </div>
@@ -50,7 +50,7 @@
           <span>Node pool</span>
           <select id="nodetype"></select>
         </label>
-        <button id="addnode" class="btn primary" title="Provision a new node (takes time to boot)">+ Add node</button>
+        <button type="button" id="addnode" class="btn primary" title="Provision a new node (takes time to boot)">+ Add node</button>
       </div>
 
       <div class="tool-group toggles">
@@ -62,7 +62,7 @@
           <input type="checkbox" id="autoscale" />
           <span>Cluster autoscaler</span>
         </label>
-        <button id="help" class="btn ghost" title="How to play">? Help</button>
+        <button type="button" id="help" class="btn ghost" title="How to play">? Help</button>
       </div>
     </div>
 
@@ -97,7 +97,7 @@
 
     <div id="help-modal" class="modal" hidden>
       <div class="modal-card">
-        <button id="help-close" class="modal-close" aria-label="Close">✕</button>
+        <button type="button" id="help-close" class="modal-close" aria-label="Close">✕</button>
         <h2>How to play</h2>
         <p>
           You are the Kubernetes <strong>scheduler</strong> and <strong>cluster operator</strong>.

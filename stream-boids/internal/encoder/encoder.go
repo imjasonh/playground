@@ -185,10 +185,12 @@ func (e *Encoder) Run(ctx context.Context) error {
 			backoff = e.cfg.MinBackoff
 		}
 		log.Warn("ffmpeg stopped; restarting", "error", err, "uptime", time.Since(started).Round(time.Millisecond), "backoff", backoff)
+		timer := time.NewTimer(backoff)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return nil
-		case <-time.After(backoff):
+		case <-timer.C:
 		}
 		backoff = min(backoff*2, e.cfg.MaxBackoff)
 	}

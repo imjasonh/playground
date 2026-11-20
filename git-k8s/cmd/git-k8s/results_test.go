@@ -339,11 +339,13 @@ func TestResultsEndpointWaitsForBranch(t *testing.T) {
 	go func() { answered <- sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=3", "gofmt", res) }()
 	waitFor := func(what string, cond func() bool) {
 		t.Helper()
+		tick := time.NewTicker(time.Millisecond)
+		defer tick.Stop()
 		for !cond() {
 			select {
 			case w := <-answered:
 				t.Fatalf("got %d %q before the request %s", w.Code, w.Body, what)
-			case <-time.After(time.Millisecond):
+			case <-tick.C:
 			}
 		}
 	}
@@ -407,10 +409,12 @@ func TestResultsEndpointCantFetch(t *testing.T) {
 	}{
 		{"an error", func(context.Context) error { return errors.New("the API server is unavailable") }},
 		{"no answer", func(ctx context.Context) error {
+			timer := time.NewTimer(time.Minute)
+			defer timer.Stop()
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(time.Minute):
+			case <-timer.C:
 				return errors.New("the API server didn't answer")
 			}
 		}},
@@ -459,11 +463,13 @@ func TestResultsHandOff(t *testing.T) {
 		defer close(done)
 		sendResult(ctx, rs, path, "gofmt", res)
 	}()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
 	for rs.heldFor(branchKey)["gofmt"] == nil {
 		select {
 		case <-done:
 			t.Fatal("the request ended without holding its result")
-		case <-time.After(time.Millisecond):
+		case <-tick.C:
 		}
 	}
 

@@ -45,7 +45,7 @@ go_time_after_select: schema.#Analyzer & {
 
 		diagnose: {
 			message:  "time.After in a for-select loop will leak memory until timer expires; use time.NewTimer and Reset instead"
-			severity: "hint"
+			severity: "warning"
 		}
 	}
 }

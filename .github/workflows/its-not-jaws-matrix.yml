@@ -33,6 +33,8 @@ concurrency:
   group: its-not-jaws-matrix
   cancel-in-progress: false
 
+permissions: {}
+
 jobs:
   prepare:
     runs-on: ubuntu-latest

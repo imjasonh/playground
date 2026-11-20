@@ -226,10 +226,12 @@ func (b *Bot) Run(ctx context.Context) error {
 				return ctx.Err()
 			}
 			clog.WarnContext(ctx, "lease failed; retrying", "err", err)
+			timer := time.NewTimer(time.Second)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return ctx.Err()
-			case <-time.After(time.Second):
+			case <-timer.C:
 			}
 			continue
 		}

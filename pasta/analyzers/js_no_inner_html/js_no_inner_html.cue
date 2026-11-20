@@ -35,15 +35,17 @@ js_no_inner_html: schema.#Analyzer & {
 						property: {capture: "prop", pattern: {node: "property_identifier"}}
 					}
 				}
+				right: {capture: "rhs"}
 			}
 			where: [
 				{op: "eq", args: ["@prop", "innerHTML"]},
+				{op: "not_matches", args: ["@rhs", "^DOMPurify\\.sanitize\\("]},
 			]
 		}
 
 		diagnose: {
 			message:  "direct assignment to innerHTML can lead to XSS; use textContent, replaceChildren(), or a sanitizer"
-			severity: "hint"
+			severity: "warning"
 		}
 	}
 }

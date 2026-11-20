@@ -121,10 +121,12 @@ func fetchAPK(ctx context.Context, c *http.Client, url, checksum, out string) er
 	var err error
 	for attempt := range fetchAttempts {
 		if attempt > 0 {
+			timer := time.NewTimer(time.Duration(1<<attempt) * time.Second)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return ctx.Err()
-			case <-time.After(time.Duration(1<<attempt) * time.Second):
+			case <-timer.C:
 			}
 		}
 		var retry bool

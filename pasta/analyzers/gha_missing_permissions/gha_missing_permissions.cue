@@ -33,7 +33,7 @@ gha_missing_permissions: schema.#Analyzer & {
 		}
 
 		diagnose: {
-			severity: "hint"
+			severity: "warning"
 			message:  "workflow lacks a top-level permissions: definition; specify explicit minimal permissions"
 		}
 	}

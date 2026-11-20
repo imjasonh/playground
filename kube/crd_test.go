@@ -421,11 +421,13 @@ func TestEnsureCRDAfterCanceledCreate(t *testing.T) {
 	defer cancel()
 	first := make(chan error, 1)
 	go func() { first <- m.ensureCRD(ctx, gizmos) }()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
 	for requests.Load() < 3 {
 		select {
 		case err := <-first:
 			t.Fatalf("the first use = %v before its context ended", err)
-		case <-time.After(time.Millisecond):
+		case <-tick.C:
 		}
 	}
 	second := make(chan error, 1)

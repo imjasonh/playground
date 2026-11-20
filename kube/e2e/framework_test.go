@@ -612,9 +612,11 @@ func TestLeaderElectionFailover(t *testing.T) {
 	defer func() {
 		for _, rep := range []*replica{a, b} {
 			rep.cancel()
+			timer := time.NewTimer(30 * time.Second)
 			select {
 			case <-rep.done:
-			case <-time.After(30 * time.Second):
+				timer.Stop()
+			case <-timer.C:
 				t.Error("replica didn't stop")
 			}
 		}

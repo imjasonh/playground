@@ -36,7 +36,7 @@ html_button_type: schema.#Analyzer & {
 		}
 
 		diagnose: {
-			severity: "hint"
+			severity: "warning"
 			message:  "<button> missing explicit type attribute (defaults to type=\"submit\"); add type=\"button\", type=\"submit\", or type=\"reset\""
 		}
 	}

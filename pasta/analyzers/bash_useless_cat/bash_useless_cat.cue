@@ -40,7 +40,7 @@ bash_useless_cat: schema.#Analyzer & {
 
 		diagnose: {
 			message:  "useless use of cat in pipeline; pass the file directly or use input redirection `< file`"
-			severity: "hint"
+			severity: "warning"
 		}
 	}
 }

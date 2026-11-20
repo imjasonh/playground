@@ -374,9 +374,11 @@ func TestInformerBacksOffWhenWatchesEndEarly(t *testing.T) {
 			ctx, cancel := context.WithCancel(clog.WithLogger(t.Context(), clog.NewLogger(slog.New(slog.DiscardHandler))))
 			t.Cleanup(cancel)
 			go inf.run(ctx)
+			timer := time.NewTimer(10 * time.Second)
 			select {
 			case <-inf.synced:
-			case <-time.After(10 * time.Second):
+				timer.Stop()
+			case <-timer.C:
 				t.Fatalf("the informer didn't sync after %d streaming lists", streams.Load())
 			}
 			if got := keys(inf); !slices.Equal(got, []string{"a"}) {
@@ -506,9 +508,11 @@ func TestInformerDoesntShowWritesThatOverlapAList(t *testing.T) {
 			}
 			f.mu.Unlock()
 			f.drop <- struct{}{}
+			timer := time.NewTimer(5 * time.Second)
 			select {
 			case <-listed:
-			case <-time.After(5 * time.Second):
+				timer.Stop()
+			case <-timer.C:
 				t.Fatal("the informer didn't list again")
 			}
 			waitFor(t, "the list", func() bool { return watched(ka) == "2" })

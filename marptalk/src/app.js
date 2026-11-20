@@ -127,9 +127,8 @@ function loadDeck(markdown, source) {
 
   const style = document.createElement('style');
   style.textContent = `${deck.css}\n${SCREEN_CSS}`;
-  const template = document.createElement('template');
-  template.innerHTML = deck.html;
-  shadow.replaceChildren(style, template.content);
+  const parsed = new DOMParser().parseFromString(deck.html, 'text/html');
+  shadow.replaceChildren(style, ...parsed.body.childNodes);
   slideEls = Array.from(shadow.querySelectorAll('div.marpit > svg'));
   const box = slideEls[0]?.viewBox?.baseVal;
   const ratio = box?.width && box?.height ? box.width / box.height : 16 / 9;

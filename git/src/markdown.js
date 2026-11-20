@@ -135,7 +135,7 @@ function splitTableRow(row) {
 }
 
 function isTableDelimiter(line) {
-  if (!line || line.indexOf('-') === -1) return false;
+  if (!line || !line.includes('-')) return false;
   const cells = splitTableRow(line);
   return cells.length > 0 && cells.every((c) => /^:?-+:?$/.test(c));
 }
@@ -238,12 +238,12 @@ export function renderMarkdown(src) {
     }
 
     // GitHub-style pipe table (header row + delimiter row + body).
-    if (line.indexOf('|') !== -1 && i + 1 < lines.length && isTableDelimiter(lines[i + 1])) {
+    if (line.includes('|') && i + 1 < lines.length && isTableDelimiter(lines[i + 1])) {
       const header = line;
       const delimiter = lines[i + 1];
       i += 2;
       const body = [];
-      while (i < lines.length && !isBlank(lines[i]) && lines[i].indexOf('|') !== -1) {
+      while (i < lines.length && !isBlank(lines[i]) && lines[i].includes('|')) {
         body.push(lines[i]);
         i += 1;
       }

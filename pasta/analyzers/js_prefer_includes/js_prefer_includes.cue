@@ -52,7 +52,7 @@ js_prefer_includes: schema.#Analyzer & {
 
 		diagnose: {
 			message:  "use .includes() instead of comparing .indexOf()"
-			severity: "hint"
+			severity: "warning"
 		}
 	}
 }

@@ -34,7 +34,7 @@ rust_todo_macro: schema.#Analyzer & {
 
 		diagnose: {
 			message:  "`@macro_name!()` left in code; complete implementation before shipping"
-			severity: "hint"
+			severity: "warning"
 		}
 	}
 }

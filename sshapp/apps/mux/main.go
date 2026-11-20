@@ -184,10 +184,12 @@ func proxySSHSession(ctx context.Context, clientSess ssh.Session, addr string, s
 		}
 		slog.Warn("backend session setup failed; retrying",
 			"app", target.App, "addr", addr, "attempt", attempt, "error", err)
+		timer := time.NewTimer(250 * time.Millisecond)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return 1, err
-		case <-time.After(250 * time.Millisecond):
+		case <-timer.C:
 		}
 	}
 	defer b.conn.Close()
