@@ -235,4 +235,30 @@ theorem sv_pa2F {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {im
     exact f2 _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega))
       (sepS (B + 0x21A0) (by omega) (by omega) (by omega))
 
+/-- A point survives a step that wrote elsewhere. -/
+theorem SvKeep.pt {B : Word} {M M' : Word → BitVec 8} {c w d : Nat} (K : SvKeep B M M' c w)
+    (hd : d + 96 ≤ 0x1690) (h : d + 96 ≤ c ∨ c + w ≤ d) : ptF M' B d = ptF M B d := by
+  unfold ptF
+  rw [K.acc (n := 8) (by omega) (by omega), K.acc (n := 8) (by omega) (by omega), K.acc (n := 8) (by omega) (by omega)]
+
+theorem SvKeepL.pt {B : Word} {M M' : Word → BitVec 8} {L : List (Nat × Nat)} {d : Nat} (K : SvKeepL B M M' L)
+    (hd : d + 96 ≤ 0x1690) (h : ∀ p ∈ L, d + 96 ≤ p.1 ∨ p.1 + p.2 ≤ d) : ptF M' B d = ptF M B d := by
+  unfold ptF
+  rw [K.acc (n := 8) (by omega) (fun p hp => by have := h p hp; omega),
+    K.acc (n := 8) (by omega) (fun p hp => by have := h p hp; omega),
+    K.acc (n := 8) (by omega) (fun p hp => by have := h p hp; omega)]
+
+/-- A point moves with a copy of the bytes that hold it. -/
+theorem ptF_cp {B : Word} {M M' : Word → BitVec 8} {dst src N c d : Nat}
+    (X : ∀ j, j < N → M' (B + 0x21A0 + BitVec.ofNat 32 (dst + j)) = M (B + 0x21A0 + BitVec.ofNat 32 (src + j)))
+    (h1 : src ≤ c) (h2 : c + 96 ≤ src + N) (hd : d + src = c + dst) : ptF M' B d = ptF M B c := by
+  have e : ∀ o, o + 32 ≤ 96 → accV M' (B + 0x21A0 + BitVec.ofNat 32 (d + o)) 8 =
+      accV M (B + 0x21A0 + BitVec.ofNat 32 (c + o)) 8 := fun o ho => accV_S 8 fun q hq => by
+    have := X (c - src + o + q) (by omega)
+    rwa [show dst + (c - src + o + q) = d + o + q by omega, show src + (c - src + o + q) = c + o + q by omega] at this
+  unfold ptF
+  have e0 := e 0 (by decide)
+  rw [Nat.add_zero, Nat.add_zero] at e0
+  rw [e0, e 0x20 (by decide), e 0x40 (by decide)]
+
 end C3.RV32.Sv

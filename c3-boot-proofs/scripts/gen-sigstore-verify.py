@@ -235,6 +235,7 @@ class Gen:
         self.hasher = None  # (step, message, length facts) of the SHA-256 hasher at 0x420
         self.ranges = {}  # frame offset -> (length, the byte at offset + j, in terms of `j`)
         self.acc = {}  # frame offset -> (limbs, the value of `accV` there)
+        self.pt = {}  # frame offset -> the P-256 point `ptF` reads there
         self.exits = []  # forks that reach the stage's end: (placeholder, generator)
 
     def emit(self, s):
@@ -353,7 +354,17 @@ class Gen:
                 pf = f"(K{k}.acc (by decide) (by decide)).trans a{k-1}_{d:x}"
             self.emit(f"  have a{k}_{d:x} : {self.acc_stmt(k, d, n, v)} := {pf}")
             newa[d] = (n, v)
-        self.words, self.bytes, self.ranges, self.acc = neww, newb, newr, newa
+        newp = {}
+        for d, v in sorted(self.pt.items()):
+            if not outside(kind, d, 96):
+                continue
+            if kind[0] == "same":
+                pf = f"by rw [m{k}]; exact p{k-1}_{d:x}"
+            else:
+                pf = f"(K{k}.pt (by decide) (by decide)).trans p{k-1}_{d:x}"
+            self.emit(f"  have p{k}_{d:x} : ptF n{k}.mem B 0x{d:X} = {v} := {pf}")
+            newp[d] = v
+        self.words, self.bytes, self.ranges, self.acc, self.pt = neww, newb, newr, newa, newp
 
     def acc_stmt(self, k, d, n, v):
         return f"accV n{k}.mem ({fa(d)}) {n} = {v}"
@@ -1562,6 +1573,10 @@ class Gen:
                 if v is None and x is not None and self.generic_alu and start + ln == end:
                     v = ("U", f"aluEval .sll ({lean_val(x)}) (BitVec.ofNat 32 0x{int(tk[4], 16):X})")
                     unc[rd] = reg_of(tk[3])
+            elif tk[0] == ".alu" and tk[1] == ".mul" and all(
+                    vals.get(reg_of(t)) is not None and vals.get(reg_of(t))[0] == "C" for t in tk[3:5]):
+                rd = reg_of(tk[2])
+                v = ("C", (vals[reg_of(tk[3])][1] * vals[reg_of(tk[4])][1]) & 0xFFFFFFFF)
             elif tk[0] == ".alu" and tk[1] == ".sub":
                 rd = reg_of(tk[2]); x = vals.get(reg_of(tk[3])); y = vals.get(reg_of(tk[4]))
                 v = ("U", f"({lean_val(x)}) - ({lean_val(y)})") if x is not None and y is not None and x[0] == "U" and y[0] == "U" else None
@@ -1785,6 +1800,13 @@ class Gen:
             if src <= d0 and d0 + 4 * n <= src + N:
                 macc[dst + d0 - src] = (n, v, d0)
         self.keep_frame(k, ("K", dst, N), ww, wb)
+        mpt = {}
+        for d0, v in sorted(self.pt.items()):
+            if src <= d0 and d0 + 96 <= src + N:
+                mpt[dst + d0 - src] = (v, d0)
+        for nd, (v, d0) in sorted(mpt.items()):
+            self.emit(f"  have p{k}_{nd:x} : ptF n{k}.mem B 0x{nd:X} = {v} := (ptF_cp X{k} (by decide) (by decide) (by decide)).trans p{k-1}_{d0:x}")
+            self.pt[nd] = v
         for nd, (n, v, d0) in sorted(macc.items()):
             o = d0 - src
             self.emit(f"  have a{k}_{nd:x} : {self.acc_stmt(k, nd, n, v)} := (accV_S {n} fun q hq => by")
@@ -2277,6 +2299,56 @@ class Gen:
         self.regs[2] = ("S", 0)
         self.frame_after(k, [(co, 32)], {}, {}, {co: (8, f"psmVal (({va}) * ({vb}))", f"A{k}")})
 
+    def pt_lt(self, v):
+        """A proof that the point `v` is below the modulus."""
+        mm = re.fullmatch(r"tbl2 (\(?\w+\)?) (\d+)", v)
+        if mm:
+            return f"(tbl2_lt {self.pt_lts[mm.group(1)]} {mm.group(2)})"
+        mm = re.fullmatch(r"ptDbl2 (\(?\w+\)?)", v)
+        if mm:
+            return f"(ptDbl2_lt _)"
+        if v.startswith("ptAdd2 "):
+            return "(ptAdd2_lt _ _)"
+        return self.pt_lts[v]
+
+    def pd2(self, off, co, cs):
+        """The P-256 point doubling of the point at offset `cs` into `co`."""
+        k = self.k = self.k + 1
+        v = self.pt[cs]
+        self.call_head(k, off, "sv_pd2F", f"(co := 0x{co:X}) (cs := 0x{cs:X})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"P{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (PT0.sv F fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, co)} {self.reg_is(k - 1, 11, cs)} (by decide) (by decide) (by decide) (by decide)")
+        self.emit(f"    p{k-1}_{cs:x} {self.pt_lt(v)}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        self.frame_after(k, [(co, 96)], {})
+        nv = f"ptDbl2 {v}" if re.fullmatch(r"\(?\w+\)?", v) else f"ptDbl2 ({v})"
+        self.pt[co] = nv
+        self.emit(f"  have p{k}_{co:x} : ptF n{k}.mem B 0x{co:X} = {nv} := P{k}")
+
+    def pa2(self, off, cl, cr, nv):
+        """The P-256 point addition of the point at `cr` to the one at `cl`,
+        in place; `nv` names the sum."""
+        k = self.k = self.k + 1
+        vl, vr = self.pt[cl], self.pt[cr]
+        self.call_head(k, off, "sv_pa2F", f"(cl := 0x{cl:X}) (cr := 0x{cr:X})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"P{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (PT0.sv F fR{k-1}) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, cl)} {self.reg_is(k - 1, 11, cr)} (by decide) (by decide) (by decide) (by decide)")
+        self.emit(f"    p{k-1}_{cl:x} p{k-1}_{cr:x} {self.pt_lt(vl)} {self.pt_lt(vr)}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        self.frame_after(k, [(cl, 96)], {})
+        self.pt[cl] = nv
+        self.emit(f"  have p{k}_{cl:x} : ptF n{k}.mem B 0x{cl:X} = {nv} := P{k}")
+
     def isr(self, off, cx, y, post=None):
         """`ecdsa::in_scalar_range` of the 32 bytes at offset `cx` and at `y`."""
         k = self.k + 1
@@ -2352,6 +2424,9 @@ class Gen:
         for d, (n, v) in sorted(self.acc.items()):
             conj.append(f"accV n'.mem ({fa(d)}) {n} = {v}")
             terms.append(f"a{k}_{d:x}")
+        for d, v in sorted(self.pt.items()):
+            conj.append(f"ptF n'.mem B 0x{d:X} = {v}")
+            terms.append(f"p{k}_{d:x}")
         for c, t in self.extra:
             conj.append(c)
             terms.append(t)
@@ -8262,6 +8337,78 @@ def stage_ecd():
     return g, info
 
 
+def stage_ect():
+    """The table loop from 0x1690 to 0x178A, both passes: for each pair's point
+    `P`, the table `P, 3P, …, 15P`, stored at 0xA20 and 0xD20."""
+    g = Gen("EcT")
+    g.generic_alu = True
+    params = iv_start(g)
+    g.regs[20] = ("S", 0xA20)
+    params.append("(g0_20 : reg n0 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20)")
+    g.regs.update({22: ("C", 0x3FCC4690), 23: ("S", 0x1480), 24: ("C", 0), 21: ("C", 2), 25: ("C", 0x300)})
+    params = [p for p in params if not re.match(r"\(g0_(21|22|23|24|25) ", p)]
+    for r in (21, 22, 23, 24, 25):
+        params.append(f"(g0_{r} : reg n0 {rname(r)} = {lean_val(g.regs[r])})")
+    for d in list(g.acc):
+        if 0x1480 <= d < 0x1580:
+            del g.acc[d]
+    params = [p for p in params if not re.match(r"\(a0_14[89a-f]", p)]
+    g.pt = {0x1480: "P0", 0x1500: "P1"}
+    g.acc.update({0x14E0: (8, "U1"), 0x1560: (8, "U2")})
+    params += ["(p0_1480 : ptF n0.mem B 0x1480 = P0)", "(p0_1500 : ptF n0.mem B 0x1500 = P1)",
+               "(a0_14e0 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x14E0) 8 = U1)",
+               "(a0_1560 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x1560) 8 = U2)",
+               "(hP0 : Pt2Lt P0)", "(hP1 : Pt2Lt P1)", "(RS : SvRoSep B)", "(PT0 : SvPtCode M0)"]
+    g.pt_lts = {"P0": "hP0", "P1": "hP1"}
+    ro = "(Or.inr ⟨by decide, by decide⟩)"
+    g.branch(0x1690, False, f"by rw [g{g.k}_21, s{g.k}.zero]; decide")
+    for i in range(2):
+        Pn = f"P{i}"
+        g.block(0x1694, 0x16A2)
+        g.mc(0x16A2, 0x1380, 0x1480 + 0x80 * i, 0x80)
+        g.block(0x16AA, 0x16B0)
+        g.branch(0x16B0, False, f"by rw [g{g.k}_9, s{g.k}.zero]; decide")
+        for j in range(8):
+            g.block(0x16B2, 0x16BA)
+            g.mcRo(0x16BA, 0x420 + 0x60 * j, "BitVec.ofNat 32 0x3FCC4690", 0x60, ro)
+            g.block(0x16C2, 0x16C8)
+            if j < 7:
+                g.branch(0x16C8, True, f"by rw [g{g.k}_9, s{g.k}.zero]; decide")
+            else:
+                g.branch(0x16C8, False, f"by rw [g{g.k}_9, s{g.k}.zero]; decide")
+        g.block(0x16CA, 0x16E8)
+        g.mc(0x16E8, 0x1020, 0x420, 0x300)
+        g.block(0x16F0, 0x1700)
+        g.pd2(0x1700, 0x1320, 0x1380)
+        g.block(0x1708, 0x1718)
+        g.mc(0x1718, 0x420, 0x1380, 0x60)
+        g.emit(f"  have p{g.k}_420' : ptF n{g.k}.mem B 0x420 = tbl2 {Pn} 0 := p{g.k}_420")
+        g.pt[0x420] = f"tbl2 {Pn} 0"
+        g.emit(f"  replace p{g.k}_420 := p{g.k}_420'")
+        g.branch(0x1720, False, f"by rw [g{g.k}_9, s{g.k}.zero]; decide")
+        for j in range(8):
+            g.block(0x1722, 0x172C)
+            g.mc(0x172C, 0x1020 + 0x60 * j, 0x420, 0x60)
+            g.block(0x1734, 0x1740)
+            g.pa2(0x1740, 0x420, 0x1320, f"tbl2 {Pn} {j + 1}")
+            g.block(0x1748, 0x1750)
+            g.branch(0x1750, j < 7, f"by rw [g{g.k}_9, s{g.k}.zero]; decide")
+        g.block(0x1752, 0x1766)
+        g.mc(0x1766, 0x420, 0x1020, 0x300)
+        g.block(0x176E, 0x177C)
+        g.mc(0x177C, 0xA20 + 0x300 * i, 0x420, 0x300)
+        g.block(0x1784, 0x1786)
+        g.branch(0x1786, i == 0, f"by rw [g{g.k}_24, g{g.k}_21]; decide")
+    stmt, proof = finish(g, 0x178A, [2, 3, 4, 18, 19, 20, 21, 23, 24, 25, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "sv_ect", "title": "the tables of the linear combination",
+            "doc": "The table loop from 0x1690 to 0x178A, both passes: the odd multiples `P + j·2P` of `G` and of "
+            "`Q`, stored at offsets 0xA20 and 0xD20.",
+            "params": params, "stmt": stmt, "proof": proof,
+            "binders": IV_BINDERS.replace("{fs gs ds es : BitVec 8}", "{fs gs ds es : BitVec 8} {U1 U2 : Nat} {P0 P1 : Pt2}"),
+            "start": 0x1690, "import": "C3BootProofs.Proofs.SvEcPt"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -8288,7 +8435,7 @@ def main():
                 "Cr1e": lambda: stage_cr1(True), "Cr1n": lambda: stage_cr1(False), "Rl": stage_rl, "Rm": stage_rm,
                 **{f"Win{i}{x}": (lambda i=i, x=x: stage_win(i, x == "e")) for i in range(8) for x in "en"},
                 "EcA1": stage_eca1, "EcA2": stage_eca2, "EcA3": stage_eca3,
-                "IvHc": lambda: stage_ivh("c"), "IvHx": lambda: stage_ivh("x"), "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive, "EcD": stage_ecd}[stage]()
+                "IvHc": lambda: stage_ivh("c"), "IvHx": lambda: stage_ivh("x"), "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive, "EcD": stage_ecd, "EcT": stage_ect}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
