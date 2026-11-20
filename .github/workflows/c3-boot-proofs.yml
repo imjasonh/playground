@@ -170,12 +170,13 @@ jobs:
           python3 ../c3-boot-proofs/scripts/extract-functions.py "${RUNNER_TEMP}/bootloader.bin" \
             "${elf}" "${bin}/llvm-nm" "${RUNNER_TEMP}/Bootloader.lean" "${RUNNER_TEMP}/BootloaderData.lean" \
             "${RUNNER_TEMP}/BootloaderData2.lean" "${RUNNER_TEMP}/BootloaderData3.lean" \
-            "${RUNNER_TEMP}/BootloaderData4.lean"
+            "${RUNNER_TEMP}/BootloaderData4.lean" "${RUNNER_TEMP}/BootloaderData5.lean"
           diff ../c3-boot-proofs/C3BootProofs/Image/Bootloader.lean "${RUNNER_TEMP}/Bootloader.lean"
           diff ../c3-boot-proofs/C3BootProofs/Image/BootloaderData.lean "${RUNNER_TEMP}/BootloaderData.lean"
           diff ../c3-boot-proofs/C3BootProofs/Image/BootloaderData2.lean "${RUNNER_TEMP}/BootloaderData2.lean"
           diff ../c3-boot-proofs/C3BootProofs/Image/BootloaderData3.lean "${RUNNER_TEMP}/BootloaderData3.lean"
           diff ../c3-boot-proofs/C3BootProofs/Image/BootloaderData4.lean "${RUNNER_TEMP}/BootloaderData4.lean"
+          diff ../c3-boot-proofs/C3BootProofs/Image/BootloaderData5.lean "${RUNNER_TEMP}/BootloaderData5.lean"
 
       - name: Run the RV32 model in lockstep with QEMU
         working-directory: c3-boot
