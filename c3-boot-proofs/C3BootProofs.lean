@@ -305,6 +305,7 @@ import C3BootProofs.Proofs.SvZLoop
 import C3BootProofs.Proofs.SvZLoop2
 import C3BootProofs.Proofs.SvIvLoop
 import C3BootProofs.Proofs.SvP256A
+import C3BootProofs.Proofs.SvP256B
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main
