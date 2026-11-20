@@ -16,8 +16,13 @@ set_option linter.unusedVariables false
 
 def svIvHc132e : List BInstr :=
   [.aluImm .add a0 x0 0xFFFFFFFF, .lui a1 0x1000, .aluImm .add a1 a1 0x480, .alu .add a1 a1 sp]
-set_option maxRecDepth 100000 in
-theorem svIvHc132e_end : blockEnd sigstoreVerifyCode 0x132E svIvHc132e = some 0x1338 := by decide
+theorem svIvHc132e_end : blockEnd sigstoreVerifyCode 0x132E svIvHc132e = some 0x1338 := by
+  simp only [svIvHc132e]
+  rw [blockEnd, sv_at_132e]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_1330]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_1332]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_1336]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 set_option maxHeartbeats 0 in
 theorem sv_ivhc {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {fs gs ds es : BitVec 8} {qx qy qz rv sv zv fv gv dv ev : Nat} {w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word} {v : Nat → Word} {n0 : Machine}

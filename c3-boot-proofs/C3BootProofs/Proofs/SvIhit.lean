@@ -16,28 +16,41 @@ set_option linter.unusedVariables false
 
 def svIhitafe : List BInstr :=
   [.alu .add a0 x0 (22 : Fin 32), .alu .add a1 x0 (23 : Fin 32)]
-set_option maxRecDepth 100000 in
-theorem svIhitafe_end : blockEnd sigstoreVerifyCode 0xAFE svIhitafe = some 0xB02 := by decide
+theorem svIhitafe_end : blockEnd sigstoreVerifyCode 0xAFE svIhitafe = some 0xB02 := by
+  simp only [svIhitafe]
+  rw [blockEnd, sv_at_afe]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_b00]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svIhitb04 : List BInstr :=
   [.alu .add a3 x0 (25 : Fin 32)]
-set_option maxRecDepth 100000 in
-theorem svIhitb04_end : blockEnd sigstoreVerifyCode 0xB04 svIhitb04 = some 0xB06 := by decide
+theorem svIhitb04_end : blockEnd sigstoreVerifyCode 0xB04 svIhitb04 = some 0xB06 := by
+  simp only [svIhitb04]
+  rw [blockEnd, sv_at_b04]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svIhitb0e : List BInstr :=
   [.aluImm .add (20 : Fin 32) (20 : Fin 32) 0xFFFFFFE0]
-set_option maxRecDepth 100000 in
-theorem svIhitb0e_end : blockEnd sigstoreVerifyCode 0xB0E svIhitb0e = some 0xB10 := by decide
+theorem svIhitb0e_end : blockEnd sigstoreVerifyCode 0xB0E svIhitb0e = some 0xB10 := by
+  simp only [svIhitb0e]
+  rw [blockEnd, sv_at_b0e]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svIhitb10 : List BInstr :=
   [.aluImm .add (8 : Fin 32) (8 : Fin 32) 0x20]
-set_option maxRecDepth 100000 in
-theorem svIhitb10_end : blockEnd sigstoreVerifyCode 0xB10 svIhitb10 = some 0xB14 := by decide
+theorem svIhitb10_end : blockEnd sigstoreVerifyCode 0xB10 svIhitb10 = some 0xB14 := by
+  simp only [svIhitb10]
+  rw [blockEnd, sv_at_b10]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svIhitb1a : List BInstr :=
   [.alu .add a1 x0 (25 : Fin 32), .alu .add a2 x0 (22 : Fin 32), .alu .add a3 x0 (23 : Fin 32)]
-set_option maxRecDepth 100000 in
-theorem svIhitb1a_end : blockEnd sigstoreVerifyCode 0xB1A svIhitb1a = some 0xB20 := by decide
+theorem svIhitb1a_end : blockEnd sigstoreVerifyCode 0xB1A svIhitb1a = some 0xB20 := by
+  simp only [svIhitb1a]
+  rw [blockEnd, sv_at_b1a]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_b1c]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_b1e]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 set_option maxHeartbeats 0 in
 theorem sv_ihit {B out bp x9 x21 x26 il c q ip subj slen : Word} {w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w60 w64 w68 w6c w70 w74 w78 w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word} {v : Nat → Word} {n0 : Machine}

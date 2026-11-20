@@ -280,10 +280,13 @@ import C3BootProofs.Proofs.SvEcD
 import C3BootProofs.Proofs.SvEcPt
 import C3BootProofs.Proofs.SvEcW
 import C3BootProofs.Proofs.SvEcT0a
+import C3BootProofs.Proofs.SvEcT0c
 import C3BootProofs.Proofs.SvEcT0b
 import C3BootProofs.Proofs.SvEcT1a
+import C3BootProofs.Proofs.SvEcT1c
 import C3BootProofs.Proofs.SvEcT1b
 import C3BootProofs.Proofs.SvEcW2
+import C3BootProofs.Proofs.SvEcW3
 import C3BootProofs.Proofs.SvEcMl
 import C3BootProofs.Proofs.SvEcMl2
 import C3BootProofs.Proofs.SvEcMl3

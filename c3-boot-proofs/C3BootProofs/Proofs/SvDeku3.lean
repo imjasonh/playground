@@ -16,13 +16,17 @@ set_option linter.unusedVariables false
 
 def svDeku392e : List BInstr :=
   [.aluImm .and a0 (22 : Fin 32) 0x1]
-set_option maxRecDepth 100000 in
-theorem svDeku392e_end : blockEnd sigstoreVerifyCode 0x92E svDeku392e = some 0x932 := by decide
+theorem svDeku392e_end : blockEnd sigstoreVerifyCode 0x92E svDeku392e = some 0x932 := by
+  simp only [svDeku392e]
+  rw [blockEnd, sv_at_92e]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svDeku3936 : List BInstr :=
   [.aluImm .add a0 x0 0x1]
-set_option maxRecDepth 100000 in
-theorem svDeku3936_end : blockEnd sigstoreVerifyCode 0x936 svDeku3936 = some 0x938 := by decide
+theorem svDeku3936_end : blockEnd sigstoreVerifyCode 0x936 svDeku3936 = some 0x938 := by
+  simp only [svDeku3936]
+  rw [blockEnd, sv_at_936]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 set_option maxHeartbeats 0 in
 theorem sv_deku3 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4 sl5 sl6 sl7 sl8 sl9 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w74 w78 w7c w80 w84 cp cl rest found : Word} {v : Nat → Word} {n0 : Machine}

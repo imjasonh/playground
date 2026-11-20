@@ -16,8 +16,14 @@ set_option linter.unusedVariables false
 
 def svTst3s28bc : List BInstr :=
   [.aluImm .add a0 sp 0x420, .lui a1 0x1000, .aluImm .add a1 a1 0x320, .alu .add a1 a1 sp, .aluImm .add a2 x0 0x30]
-set_option maxRecDepth 100000 in
-theorem svTst3s28bc_end : blockEnd sigstoreVerifyCode 0x28BC svTst3s28bc = some 0x28CC := by decide
+theorem svTst3s28bc_end : blockEnd sigstoreVerifyCode 0x28BC svTst3s28bc = some 0x28CC := by
+  simp only [svTst3s28bc]
+  rw [blockEnd, sv_at_28bc]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_28c0]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_28c2]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_28c6]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_28c8]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 set_option maxHeartbeats 0 in
 theorem sv_tst3s {B out bp x21 x26 dg dp rp rl : Word} {sr ss : Bytes} {w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w78 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word} {v : Nat → Word} {n0 : Machine}

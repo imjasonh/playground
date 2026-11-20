@@ -16,23 +16,34 @@ set_option linter.unusedVariables false
 
 def svZA1b64 : List BInstr :=
   [.alu .add (8 : Fin 32) x0 a0, .aluImm .add a0 sp 0x320]
-set_option maxRecDepth 100000 in
-theorem svZA1b64_end : blockEnd sigstoreVerifyCode 0x1B64 svZA1b64 = some 0x1B68 := by decide
+theorem svZA1b64_end : blockEnd sigstoreVerifyCode 0x1B64 svZA1b64 = some 0x1B68 := by
+  simp only [svZA1b64]
+  rw [blockEnd, sv_at_1b64]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_1b66]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svZA1b74 : List BInstr :=
   [.lui a0 0x1000, .aluImm .add a0 a0 0x380, .alu .add a0 a0 sp]
-set_option maxRecDepth 100000 in
-theorem svZA1b74_end : blockEnd sigstoreVerifyCode 0x1B74 svZA1b74 = some 0x1B7C := by decide
+theorem svZA1b74_end : blockEnd sigstoreVerifyCode 0x1B74 svZA1b74 = some 0x1B7C := by
+  simp only [svZA1b74]
+  rw [blockEnd, sv_at_1b74]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_1b76]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_1b7a]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svZA1b94 : List BInstr :=
   [.aluImm .add a0 x0 0x1]
-set_option maxRecDepth 100000 in
-theorem svZA1b94_end : blockEnd sigstoreVerifyCode 0x1B94 svZA1b94 = some 0x1B96 := by decide
+theorem svZA1b94_end : blockEnd sigstoreVerifyCode 0x1B94 svZA1b94 = some 0x1B96 := by
+  simp only [svZA1b94]
+  rw [blockEnd, sv_at_1b94]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svZA1b98 : List BInstr :=
   [.aluImm .add (24 : Fin 32) x0 0x1]
-set_option maxRecDepth 100000 in
-theorem svZA1b98_end : blockEnd sigstoreVerifyCode 0x1B98 svZA1b98 = some 0x1B9A := by decide
+theorem svZA1b98_end : blockEnd sigstoreVerifyCode 0x1B98 svZA1b98 = some 0x1B9A := by
+  simp only [svZA1b98]
+  rw [blockEnd, sv_at_1b98]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 set_option maxHeartbeats 0 in
 theorem sv_za {B out bp x26 dlo dhi rem nzw : Word} {fs gs ds es : BitVec 8} {rv sv zv X Y fv gv dv ev : Nat} {w4c w50 w54 w58 w64 w68 w6c w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word} {v : Nat → Word} {n0 : Machine}

@@ -16,18 +16,30 @@ set_option linter.unusedVariables false
 
 def svTst6n2970 : List BInstr :=
   [.aluImm .add a0 sp 0x420, .lui a1 0x1000, .aluImm .add a1 a1 0x320, .alu .add a1 a1 sp, .aluImm .add a2 x0 0xA1]
-set_option maxRecDepth 100000 in
-theorem svTst6n2970_end : blockEnd sigstoreVerifyCode 0x2970 svTst6n2970 = some 0x2980 := by decide
+theorem svTst6n2970_end : blockEnd sigstoreVerifyCode 0x2970 svTst6n2970 = some 0x2980 := by
+  simp only [svTst6n2970]
+  rw [blockEnd, sv_at_2970]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_2974]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_2976]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_297a]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_297c]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTst6n299a : List BInstr :=
   [.lui a0 0x1000, .aluImm .add a0 a0 0x320, .alu .add a0 a0 sp]
-set_option maxRecDepth 100000 in
-theorem svTst6n299a_end : blockEnd sigstoreVerifyCode 0x299A svTst6n299a = some 0x29A2 := by decide
+theorem svTst6n299a_end : blockEnd sigstoreVerifyCode 0x299A svTst6n299a = some 0x29A2 := by
+  simp only [svTst6n299a]
+  rw [blockEnd, sv_at_299a]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_299c]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_29a0]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTst6n29a6 : List BInstr :=
   [.aluImm .add (8 : Fin 32) x0 0x18]
-set_option maxRecDepth 100000 in
-theorem svTst6n29a6_end : blockEnd sigstoreVerifyCode 0x29A6 svTst6n29a6 = some 0x29A8 := by decide
+theorem svTst6n29a6_end : blockEnd sigstoreVerifyCode 0x29A6 svTst6n29a6 = some 0x29A8 := by
+  simp only [svTst6n29a6]
+  rw [blockEnd, sv_at_29a6]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 set_option maxHeartbeats 0 in
 theorem sv_tst6n {B out bp x21 x26 dg dp rp rl : Word} {sr ss : Bytes} {w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w78 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word} {v : Nat → Word} {n0 : Machine}

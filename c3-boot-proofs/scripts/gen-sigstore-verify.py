@@ -2566,10 +2566,14 @@ class Gen:
             lines.append(f"def {blk} : List BInstr :=")
             bi = [i.replace(".load .lw ", ".lw ").replace(".store .sw ", ".sw ") for i in ins]
             lines.append("  [" + ", ".join(bi) + "]")
-            lines.append("set_option maxRecDepth 100000 in")
-            if len(ins) >= 12:
-                lines.append("set_option maxHeartbeats 4000000 in")
-            lines.append(f"theorem {blk}_end : blockEnd sigstoreVerifyCode 0x{start:X} {blk} = some 0x{end:X} := by decide")
+            lines.append(f"theorem {blk}_end : blockEnd sigstoreVerifyCode 0x{start:X} {blk} = some 0x{end:X} := by")
+            lines.append(f"  simp only [{blk}]")
+            off = start
+            while off < end:
+                lines.append(f"  rw [blockEnd, sv_at_{off:x}]; dsimp only; rw [if_pos (by decide)]; "
+                             "simp only [BitVec.reduceToNat, Nat.reduceAdd]")
+                off += INSTR[off][1]
+            lines.append("  rfl")
             lines.append("")
         return lines
 
@@ -8506,7 +8510,7 @@ def restart(g, name, params):
 
 
 def stage_ect(want):
-    """The table loop from 0x1690 to 0x178A, in four parts `want`: for each
+    """The table loop from 0x1690 to 0x178A, in six parts `want`: for each
     pair's point `P`, the table `P, 3P, …, 15P`, stored at 0xA20 and 0xD20."""
     g = Gen("EcT0a")
     g.generic_alu = True
@@ -8546,8 +8550,9 @@ def stage_ect(want):
                             "`G` and of `Q`, stored at offsets 0xA20 and 0xD20.",
                             "params": params, "stmt": stmt, "proof": proof, "binders": bin_,
                             "start": g.start_off,
-                            "import": {"0a": "C3BootProofs.Proofs.SvEcPt", "0b": "C3BootProofs.Proofs.SvEcT0a",
-                                       "1a": "C3BootProofs.Proofs.SvEcT0b", "1b": "C3BootProofs.Proofs.SvEcT1a"}[label]})
+                            "import": {"0a": "C3BootProofs.Proofs.SvEcPt", "0c": "C3BootProofs.Proofs.SvEcT0a",
+                                       "0b": "C3BootProofs.Proofs.SvEcT0c", "1a": "C3BootProofs.Proofs.SvEcT0b",
+                                       "1c": "C3BootProofs.Proofs.SvEcT1a", "1b": "C3BootProofs.Proofs.SvEcT1c"}[label]})
         return restart(g, f"EcT{nxt}", params)
     g.start_off = 0x1690
     for i in range(2):
@@ -8566,6 +8571,8 @@ def stage_ect(want):
                 g.branch(0x16C8, False, f"by rw [g{g.k}_9, s{g.k}.zero]; decide")
         g.block(0x16CA, 0x16E8)
         g.mc(0x16E8, 0x1020, 0x420, 0x300)
+        g, params = cut(g, params, f"{i}a", 0x16F0, f"{i}c")
+        g.start_off = 0x16F0
         g.block(0x16F0, 0x1700)
         g.pd2(0x1700, 0x1320, 0x1380)
         g.block(0x1708, 0x1718)
@@ -8574,7 +8581,7 @@ def stage_ect(want):
         g.branch(0x1720, False, f"by rw [g{g.k}_9, s{g.k}.zero]; decide")
         for j in range(8):
             if j == 4:
-                g, params = cut(g, params, f"{i}a", 0x1722, f"{i}b")
+                g, params = cut(g, params, f"{i}c", 0x1722, f"{i}b")
                 g.start_off = 0x1722
             g.block(0x1722, 0x172C)
             g.mc(0x172C, 0x1020 + 0x60 * j, 0x420, 0x60)
@@ -8595,10 +8602,11 @@ def stage_ect(want):
     return parts[want]
 
 
-def stage_ecw():
-    """From 0x178A to 0x18F8: the tables moved to 0x420, and the width-5 NAF
-    digits of `u₁` and `u₂`, each in a 0x108-byte record at 0xA20 and 0xB28,
-    copied to 0x1020."""
+def stage_ecw(want="a"):
+    """From 0x178A to 0x18F8, in two parts `want`: the tables moved to 0x420,
+    and the width-5 NAF digits of `u₁` (part "a", to the loop's second pass
+    at 0x17E0) and `u₂` (part "b"), each in a 0x108-byte record at 0xA20 and
+    0xB28, copied to 0x1020."""
     g = Gen("EcW")
     g.generic_alu = True
     params = iv_start(g)
@@ -8652,18 +8660,29 @@ def stage_ecw():
         g.mc(0x18C6, 0xA20 + 0x108 * i, 0x1480, 0x108)
         g.block(0x18CE, 0x18D0)
         g.branch(0x18D0, i == 0, f"by rw [g{g.k}_8, g{g.k}_25]; decide")
+        if i == 0:
+            stmt, proof = finish(g, 0x17E0, sorted(g.regs), set(g.words), set(g.bytes))
+            info_a = {"name": "sv_ecw", "title": "the wNAF digits of `u₁`",
+                      "doc": "From 0x178A to the loop's second pass at 0x17E0: the tables move to offset 0x420, and "
+                      "`wnaf_form` writes the width-5 NAF digits of `u₁`, which end up in the record at 0xA20 with "
+                      "their length.",
+                      "params": params, "stmt": stmt, "proof": proof,
+                      "binders": IV_BINDERS.replace("{fs gs ds es : BitVec 8}", "{U1 U2 : Nat} {P0 P1 : Pt2}"),
+                      "start": 0x178A, "import": "C3BootProofs.Proofs.SvEcW\nimport C3BootProofs.Proofs.SvEcT1b"}
+            if want == "a":
+                return g, info_a
+            g, params = restart(g, "EcW3", params)
     g.block(0x18D4, 0x18E8)
     g.mc(0x18E8, 0x1020, 0xA20, 0x210)
     g.load(0x18F0, "lw")
     g.load(0x18F4, "lw")
     stmt, proof = finish(g, 0x18F8, [2, 3, 4, 9, 10, 18, 19, 20, 21, 23, 24, 25, 26, 27], set(g.words), set(g.bytes))
-    info = {"name": "sv_ecw", "title": "the wNAF digits of `u₁` and `u₂`",
-            "doc": "From 0x178A to 0x18F8: the tables move to offset 0x420, and `wnaf_form` writes the width-5 NAF "
-            "digits of `u₁` and `u₂`, which end up in records at 0x1020 and 0x1128 with their lengths.",
+    info = {"name": "sv_ecw3", "title": "the wNAF digits of `u₂`",
+            "doc": "From the loop's second pass at 0x17E0 to 0x18F8: `wnaf_form` writes the width-5 NAF digits of "
+            "`u₂`, and both records end up at 0x1020 and 0x1128 with their lengths.",
             "params": params, "stmt": stmt, "proof": proof,
-            "binders": IV_BINDERS.replace("{fs gs ds es : BitVec 8}", "{U1 U2 : Nat} {P0 P1 : Pt2}").replace(
-                "fv gv dv ev : Nat}", "fv gv dv ev : Nat}"),
-            "start": 0x178A, "import": "C3BootProofs.Proofs.SvEcW\nimport C3BootProofs.Proofs.SvEcT1b"}
+            "binders": IV_BINDERS.replace("{fs gs ds es : BitVec 8}", "{U1 U2 : Nat} {P0 P1 : Pt2}"),
+            "start": 0x17E0, "import": "C3BootProofs.Proofs.SvEcW2"}
     return g, info
 
 
@@ -8883,8 +8902,8 @@ def main():
                 "Cr1e": lambda: stage_cr1(True), "Cr1n": lambda: stage_cr1(False), "Rl": stage_rl, "Rm": stage_rm,
                 **{f"Win{i}{x}": (lambda i=i, x=x: stage_win(i, x == "e")) for i in range(8) for x in "en"},
                 "EcA1": stage_eca1, "EcA2": stage_eca2, "EcA3": stage_eca3,
-                "IvHc": lambda: stage_ivh("c"), "IvHx": lambda: stage_ivh("x"), "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive, "EcD": stage_ecd, "EcW": stage_ecw, "ZS": stage_zs, "ZA": stage_za, "ZB": stage_zb,
-                **{f"EcT{x}": (lambda x=x: stage_ect(x)) for x in ("0a", "0b", "1a", "1b")}}[stage]()
+                "IvHc": lambda: stage_ivh("c"), "IvHx": lambda: stage_ivh("x"), "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive, "EcD": stage_ecd, "EcW": stage_ecw, "EcW3": lambda: stage_ecw("b"), "ZS": stage_zs, "ZA": stage_za, "ZB": stage_zb,
+                **{f"EcT{x}": (lambda x=x: stage_ect(x)) for x in ("0a", "0c", "0b", "1a", "1c", "1b")}}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

@@ -16,43 +16,62 @@ set_option linter.unusedVariables false
 
 def svCsa2d70 : List BInstr :=
   [.aluImm .and a0 a0 0x1]
-set_option maxRecDepth 100000 in
-theorem svCsa2d70_end : blockEnd sigstoreVerifyCode 0x2D70 svCsa2d70 = some 0x2D72 := by decide
+theorem svCsa2d70_end : blockEnd sigstoreVerifyCode 0x2D70 svCsa2d70 = some 0x2D72 := by
+  simp only [svCsa2d70]
+  rw [blockEnd, sv_at_2d70]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svCsa2d7a : List BInstr :=
   [.aluImm .add a0 sp 0x420]
-set_option maxRecDepth 100000 in
-theorem svCsa2d7a_end : blockEnd sigstoreVerifyCode 0x2D7A svCsa2d7a = some 0x2D7E := by decide
+theorem svCsa2d7a_end : blockEnd sigstoreVerifyCode 0x2D7A svCsa2d7a = some 0x2D7E := by
+  simp only [svCsa2d7a]
+  rw [blockEnd, sv_at_2d7a]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svCsa2d96 : List BInstr :=
   [.aluImm .add a0 x0 0x4]
-set_option maxRecDepth 100000 in
-theorem svCsa2d96_end : blockEnd sigstoreVerifyCode 0x2D96 svCsa2d96 = some 0x2D98 := by decide
+theorem svCsa2d96_end : blockEnd sigstoreVerifyCode 0x2D96 svCsa2d96 = some 0x2D98 := by
+  simp only [svCsa2d96]
+  rw [blockEnd, sv_at_2d96]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svCsa2ff2 : List BInstr :=
   [.aluImm .add (20 : Fin 32) x0 0x1A]
-set_option maxRecDepth 100000 in
-theorem svCsa2ff2_end : blockEnd sigstoreVerifyCode 0x2FF2 svCsa2ff2 = some 0x2FF4 := by decide
+theorem svCsa2ff2_end : blockEnd sigstoreVerifyCode 0x2FF2 svCsa2ff2 = some 0x2FF4 := by
+  simp only [svCsa2ff2]
+  rw [blockEnd, sv_at_2ff2]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svCsa2da8 : List BInstr :=
   [.aluImm .add a2 x0 0x4, .alu .add a0 x0 (22 : Fin 32), .lui a1 0x3FCC5000, .aluImm .add a1 a1 0xFFFFF855]
-set_option maxRecDepth 100000 in
-theorem svCsa2da8_end : blockEnd sigstoreVerifyCode 0x2DA8 svCsa2da8 = some 0x2DB4 := by decide
+theorem svCsa2da8_end : blockEnd sigstoreVerifyCode 0x2DA8 svCsa2da8 = some 0x2DB4 := by
+  simp only [svCsa2da8]
+  rw [blockEnd, sv_at_2da8]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_2daa]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_2dac]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_2db0]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svCsa2dc0 : List BInstr :=
   [.aluImm .add (9 : Fin 32) x0 0x0]
-set_option maxRecDepth 100000 in
-theorem svCsa2dc0_end : blockEnd sigstoreVerifyCode 0x2DC0 svCsa2dc0 = some 0x2DC2 := by decide
+theorem svCsa2dc0_end : blockEnd sigstoreVerifyCode 0x2DC0 svCsa2dc0 = some 0x2DC2 := by
+  simp only [svCsa2dc0]
+  rw [blockEnd, sv_at_2dc0]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svCsa2dc2 : List BInstr :=
   [.aluImm .add a0 (22 : Fin 32) 0x4]
-set_option maxRecDepth 100000 in
-theorem svCsa2dc2_end : blockEnd sigstoreVerifyCode 0x2DC2 svCsa2dc2 = some 0x2DC6 := by decide
+theorem svCsa2dc2_end : blockEnd sigstoreVerifyCode 0x2DC2 svCsa2dc2 = some 0x2DC6 := by
+  simp only [svCsa2dc2]
+  rw [blockEnd, sv_at_2dc2]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svCsa2dc6 : List BInstr :=
   [.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFFFC]
-set_option maxRecDepth 100000 in
-theorem svCsa2dc6_end : blockEnd sigstoreVerifyCode 0x2DC6 svCsa2dc6 = some 0x2DC8 := by decide
+theorem svCsa2dc6_end : blockEnd sigstoreVerifyCode 0x2DC6 svCsa2dc6 = some 0x2DC8 := by
+  simp only [svCsa2dc6]
+  rw [blockEnd, sv_at_2dc6]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 set_option maxHeartbeats 0 in
 theorem sv_csa {B out bp x21 x26 dg c q rl rp sgp op ol : Word} {rt sg : Bytes} {w8 wc w14 w18 w20 w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w78 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word} {v : Nat → Word} {n0 : Machine}

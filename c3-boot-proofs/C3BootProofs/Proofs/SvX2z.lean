@@ -16,13 +16,20 @@ set_option linter.unusedVariables false
 
 def svX2z58c : List BInstr :=
   [.aluImm .add (23 : Fin 32) x0 0x0]
-set_option maxRecDepth 100000 in
-theorem svX2z58c_end : blockEnd sigstoreVerifyCode 0x58C svX2z58c = some 0x58E := by decide
+theorem svX2z58c_end : blockEnd sigstoreVerifyCode 0x58C svX2z58c = some 0x58E := by
+  simp only [svX2z58c]
+  rw [blockEnd, sv_at_58c]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svX2z58e : List BInstr :=
   [.lui a0 0x1000, .aluImm .add a0 a0 0x20, .alu .add a0 a0 sp, .aluImm .add a1 sp 0x320]
-set_option maxRecDepth 100000 in
-theorem svX2z58e_end : blockEnd sigstoreVerifyCode 0x58E svX2z58e = some 0x598 := by decide
+theorem svX2z58e_end : blockEnd sigstoreVerifyCode 0x58E svX2z58e = some 0x598 := by
+  simp only [svX2z58e]
+  rw [blockEnd, sv_at_58e]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_590]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_594]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_596]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 set_option maxHeartbeats 0 in
 theorem sv_x2z {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4 sl5 sl6 sl7 sl8 sl9 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w74 w78 w7c w80 w84 op rem2 ol rest rp2 : Word} {v : Nat → Word} {n0 : Machine}

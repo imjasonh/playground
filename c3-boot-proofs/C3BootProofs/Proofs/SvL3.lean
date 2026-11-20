@@ -16,33 +16,56 @@ set_option linter.unusedVariables false
 
 def svL31c8 : List BInstr :=
   [.aluImm .add a0 sp 0x7FF, .aluImm .add a0 a0 0x221, .aluImm .add a1 sp 0x178]
-set_option maxRecDepth 100000 in
-theorem svL31c8_end : blockEnd sigstoreVerifyCode 0x1C8 svL31c8 = some 0x1D2 := by decide
+theorem svL31c8_end : blockEnd sigstoreVerifyCode 0x1C8 svL31c8 = some 0x1D2 := by
+  simp only [svL31c8]
+  rw [blockEnd, sv_at_1c8]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_1cc]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_1d0]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svL31e6 : List BInstr :=
   [.aluImm .add a1 x0 0x14]
-set_option maxRecDepth 100000 in
-theorem svL31e6_end : blockEnd sigstoreVerifyCode 0x1E6 svL31e6 = some 0x1E8 := by decide
+theorem svL31e6_end : blockEnd sigstoreVerifyCode 0x1E6 svL31e6 = some 0x1E8 := by
+  simp only [svL31e6]
+  rw [blockEnd, sv_at_1e6]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svL31ec : List BInstr :=
   [.aluImm .add a0 sp 0x7FF, .aluImm .add a0 a0 0x221, .aluImm .add a1 sp 0x178, .aluImm .add a2 x0 0x30]
-set_option maxRecDepth 100000 in
-theorem svL31ec_end : blockEnd sigstoreVerifyCode 0x1EC svL31ec = some 0x1FA := by decide
+theorem svL31ec_end : blockEnd sigstoreVerifyCode 0x1EC svL31ec = some 0x1FA := by
+  simp only [svL31ec]
+  rw [blockEnd, sv_at_1ec]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_1f0]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_1f4]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_1f6]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svL3222 : List BInstr :=
   [.aluImm .add a0 sp 0x7FF, .aluImm .add a0 a0 0x221, .lui a1 0x1000, .aluImm .add a1 a1 0x20, .alu .add a1 a1 sp]
-set_option maxRecDepth 100000 in
-theorem svL3222_end : blockEnd sigstoreVerifyCode 0x222 svL3222 = some 0x232 := by decide
+theorem svL3222_end : blockEnd sigstoreVerifyCode 0x222 svL3222 = some 0x232 := by
+  simp only [svL3222]
+  rw [blockEnd, sv_at_222]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_226]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_22a]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_22c]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_230]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svL3246 : List BInstr :=
   [.alu .add a2 x0 (27 : Fin 32)]
-set_option maxRecDepth 100000 in
-theorem svL3246_end : blockEnd sigstoreVerifyCode 0x246 svL3246 = some 0x248 := by decide
+theorem svL3246_end : blockEnd sigstoreVerifyCode 0x246 svL3246 = some 0x248 := by
+  simp only [svL3246]
+  rw [blockEnd, sv_at_246]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svL324c : List BInstr :=
   [.lui a2 0x3FCC5000, .aluImm .add a2 a2 0xFFFFF840, .aluImm .add a3 x0 0x8]
-set_option maxRecDepth 100000 in
-theorem svL324c_end : blockEnd sigstoreVerifyCode 0x24C svL324c = some 0x256 := by decide
+theorem svL324c_end : blockEnd sigstoreVerifyCode 0x24C svL324c = some 0x256 := by
+  simp only [svL324c]
+  rw [blockEnd, sv_at_24c]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_250]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_254]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 set_option maxHeartbeats 0 in
 theorem sv_l3 {B out bp rootp dg lp ll rp rl sgl orl orp trl trp tcl sgp : Word} {v : Nat → Word} {n0 : Machine}

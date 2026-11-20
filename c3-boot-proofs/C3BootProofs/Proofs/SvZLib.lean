@@ -1,4 +1,6 @@
 import C3BootProofs.Proofs.SvIvLib
+import C3BootProofs.Proofs.SvEcW3
+import C3BootProofs.Proofs.SvEcMl3
 
 /-!
 # `sigstore::verify`: wrappers for the inversion of `Z`

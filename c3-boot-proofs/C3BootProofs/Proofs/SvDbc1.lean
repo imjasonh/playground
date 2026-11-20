@@ -16,63 +16,110 @@ set_option linter.unusedVariables false
 
 def svDbc160e : List BInstr :=
   [.aluImm .add a3 x0 0x3, .alu .add a0 x0 (8 : Fin 32)]
-set_option maxRecDepth 100000 in
-theorem svDbc160e_end : blockEnd sigstoreVerifyCode 0x60E svDbc160e = some 0x612 := by decide
+theorem svDbc160e_end : blockEnd sigstoreVerifyCode 0x60E svDbc160e = some 0x612 := by
+  simp only [svDbc160e]
+  rw [blockEnd, sv_at_60e]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_610]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svDbc1614 : List BInstr :=
   [.lui a2 0x3FCC5000, .aluImm .add a2 a2 0xFFFFF889]
-set_option maxRecDepth 100000 in
-theorem svDbc1614_end : blockEnd sigstoreVerifyCode 0x614 svDbc1614 = some 0x61C := by decide
+theorem svDbc1614_end : blockEnd sigstoreVerifyCode 0x614 svDbc1614 = some 0x61C := by
+  simp only [svDbc1614]
+  rw [blockEnd, sv_at_614]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_618]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svDbc16bc : List BInstr :=
   [.aluImm .add a3 x0 0x3, .alu .add a0 x0 (8 : Fin 32)]
-set_option maxRecDepth 100000 in
-theorem svDbc16bc_end : blockEnd sigstoreVerifyCode 0x6BC svDbc16bc = some 0x6C0 := by decide
+theorem svDbc16bc_end : blockEnd sigstoreVerifyCode 0x6BC svDbc16bc = some 0x6C0 := by
+  simp only [svDbc16bc]
+  rw [blockEnd, sv_at_6bc]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_6be]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svDbc16c2 : List BInstr :=
   [.lui a2 0x3FCC5000, .aluImm .add a2 a2 0xFFFFF892]
-set_option maxRecDepth 100000 in
-theorem svDbc16c2_end : blockEnd sigstoreVerifyCode 0x6C2 svDbc16c2 = some 0x6CA := by decide
+theorem svDbc16c2_end : blockEnd sigstoreVerifyCode 0x6C2 svDbc16c2 = some 0x6CA := by
+  simp only [svDbc16c2]
+  rw [blockEnd, sv_at_6c2]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_6c6]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svDbc178e : List BInstr :=
   [.aluImm .add a3 x0 0x3, .alu .add a0 x0 (8 : Fin 32)]
-set_option maxRecDepth 100000 in
-theorem svDbc178e_end : blockEnd sigstoreVerifyCode 0x78E svDbc178e = some 0x792 := by decide
+theorem svDbc178e_end : blockEnd sigstoreVerifyCode 0x78E svDbc178e = some 0x792 := by
+  simp only [svDbc178e]
+  rw [blockEnd, sv_at_78e]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_790]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svDbc1794 : List BInstr :=
   [.lui a2 0x3FCC5000, .aluImm .add a2 a2 0xFFFFF88F]
-set_option maxRecDepth 100000 in
-theorem svDbc1794_end : blockEnd sigstoreVerifyCode 0x794 svDbc1794 = some 0x79C := by decide
+theorem svDbc1794_end : blockEnd sigstoreVerifyCode 0x794 svDbc1794 = some 0x79C := by
+  simp only [svDbc1794]
+  rw [blockEnd, sv_at_794]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_798]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svDbc17a6 : List BInstr :=
   [.lui a0 0x1000, .aluImm .add a0 a0 0x320, .alu .add a0 a0 sp]
-set_option maxRecDepth 100000 in
-theorem svDbc17a6_end : blockEnd sigstoreVerifyCode 0x7A6 svDbc17a6 = some 0x7AE := by decide
+theorem svDbc17a6_end : blockEnd sigstoreVerifyCode 0x7A6 svDbc17a6 = some 0x7AE := by
+  simp only [svDbc17a6]
+  rw [blockEnd, sv_at_7a6]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_7a8]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_7ac]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svDbc17ba : List BInstr :=
   [.lui a0 0x1000, .aluImm .add a0 a0 0x20, .alu .add a0 a0 sp, .lui a1 0x1000, .aluImm .add a1 a1 0x380, .alu .add a1 a1 sp]
-set_option maxRecDepth 100000 in
-theorem svDbc17ba_end : blockEnd sigstoreVerifyCode 0x7BA svDbc17ba = some 0x7CA := by decide
+theorem svDbc17ba_end : blockEnd sigstoreVerifyCode 0x7BA svDbc17ba = some 0x7CA := by
+  simp only [svDbc17ba]
+  rw [blockEnd, sv_at_7ba]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_7bc]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_7c0]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_7c2]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_7c4]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_7c8]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svDbc17de : List BInstr :=
   [.aluImm .add a2 x0 0xB, .lui a0 0x1000, .aluImm .add a0 a0 0x485, .alu .add a0 a0 sp, .lui a1 0x1000, .aluImm .add a1 a1 0x25, .alu .add a1 a1 sp]
-set_option maxRecDepth 100000 in
-theorem svDbc17de_end : blockEnd sigstoreVerifyCode 0x7DE svDbc17de = some 0x7F0 := by decide
+theorem svDbc17de_end : blockEnd sigstoreVerifyCode 0x7DE svDbc17de = some 0x7F0 := by
+  simp only [svDbc17de]
+  rw [blockEnd, sv_at_7de]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_7e0]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_7e2]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_7e6]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_7e8]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_7ea]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_7ee]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svDbc17f8 : List BInstr :=
   [.lui a0 0x1000, .aluImm .add a0 a0 0x320, .alu .add a1 sp a0]
-set_option maxRecDepth 100000 in
-theorem svDbc17f8_end : blockEnd sigstoreVerifyCode 0x7F8 svDbc17f8 = some 0x802 := by decide
+theorem svDbc17f8_end : blockEnd sigstoreVerifyCode 0x7F8 svDbc17f8 = some 0x802 := by
+  simp only [svDbc17f8]
+  rw [blockEnd, sv_at_7f8]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_7fa]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_7fe]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svDbc1808 : List BInstr :=
   [.lui a2 0x1000, .aluImm .add a2 a2 0x320, .alu .add (8 : Fin 32) sp a2]
-set_option maxRecDepth 100000 in
-theorem svDbc1808_end : blockEnd sigstoreVerifyCode 0x808 svDbc1808 = some 0x812 := by decide
+theorem svDbc1808_end : blockEnd sigstoreVerifyCode 0x808 svDbc1808 = some 0x812 := by
+  simp only [svDbc1808]
+  rw [blockEnd, sv_at_808]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_80a]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_80e]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svDbc1816 : List BInstr :=
   [.aluImm .add (22 : Fin 32) x0 0x1]
-set_option maxRecDepth 100000 in
-theorem svDbc1816_end : blockEnd sigstoreVerifyCode 0x816 svDbc1816 = some 0x818 := by decide
+theorem svDbc1816_end : blockEnd sigstoreVerifyCode 0x816 svDbc1816 = some 0x818 := by
+  simp only [svDbc1816]
+  rw [blockEnd, sv_at_816]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 set_option maxHeartbeats 0 in
 theorem sv_dbc1 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4 sl5 sl6 sl7 sl8 sl9 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w74 w78 w7c w80 w84 op ol vp vl rest : Word} {v : Nat → Word} {n0 : Machine}

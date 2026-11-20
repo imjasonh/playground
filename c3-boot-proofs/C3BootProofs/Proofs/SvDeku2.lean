@@ -16,18 +16,31 @@ set_option linter.unusedVariables false
 
 def svDeku2752 : List BInstr :=
   [.lui a0 0x1000, .aluImm .add a0 a0 0x20, .alu .add a0 a0 sp, .lui a1 0x1000, .aluImm .add a1 a1 0x480, .alu .add a1 a1 sp]
-set_option maxRecDepth 100000 in
-theorem svDeku2752_end : blockEnd sigstoreVerifyCode 0x752 svDeku2752 = some 0x762 := by decide
+theorem svDeku2752_end : blockEnd sigstoreVerifyCode 0x752 svDeku2752 = some 0x762 := by
+  simp only [svDeku2752]
+  rw [blockEnd, sv_at_752]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_754]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_758]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_75a]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_75c]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_760]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svDeku2776 : List BInstr :=
   [.aluImm .add a3 x0 0x8, .lui a2 0x3FCC5000, .aluImm .add a2 a2 0xFFFFF820]
-set_option maxRecDepth 100000 in
-theorem svDeku2776_end : blockEnd sigstoreVerifyCode 0x776 svDeku2776 = some 0x780 := by decide
+theorem svDeku2776_end : blockEnd sigstoreVerifyCode 0x776 svDeku2776 = some 0x780 := by
+  simp only [svDeku2776]
+  rw [blockEnd, sv_at_776]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_778]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_77c]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svDeku2788 : List BInstr :=
   [.alu .or (22 : Fin 32) (22 : Fin 32) a0]
-set_option maxRecDepth 100000 in
-theorem svDeku2788_end : blockEnd sigstoreVerifyCode 0x788 svDeku2788 = some 0x78C := by decide
+theorem svDeku2788_end : blockEnd sigstoreVerifyCode 0x788 svDeku2788 = some 0x78C := by
+  simp only [svDeku2788]
+  rw [blockEnd, sv_at_788]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 set_option maxHeartbeats 0 in
 theorem sv_deku2 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4 sl5 sl6 sl7 sl8 sl9 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w74 w78 w7c w80 w84 cp cl rest found : Word} {v : Nat → Word} {n0 : Machine}

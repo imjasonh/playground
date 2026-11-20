@@ -16,103 +16,173 @@ set_option linter.unusedVariables false
 
 def svTsa221a0 : List BInstr :=
   [.aluImm .add a0 sp 0x420, .lui a1 0x1000, .aluImm .add a1 a1 0x638, .alu .add a1 a1 sp, .aluImm .add a2 x0 0xA0]
-set_option maxRecDepth 100000 in
-theorem svTsa221a0_end : blockEnd sigstoreVerifyCode 0x21A0 svTsa221a0 = some 0x21B0 := by decide
+theorem svTsa221a0_end : blockEnd sigstoreVerifyCode 0x21A0 svTsa221a0 = some 0x21B0 := by
+  simp only [svTsa221a0]
+  rw [blockEnd, sv_at_21a0]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_21a4]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_21a6]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_21aa]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_21ac]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa221c4 : List BInstr :=
   [.aluImm .add a1 sp 0x425, .lui a0 0x1000, .aluImm .add a0 a0 0x64D, .alu .add a0 a0 sp, .aluImm .add a2 x0 0xB]
-set_option maxRecDepth 100000 in
-theorem svTsa221c4_end : blockEnd sigstoreVerifyCode 0x21C4 svTsa221c4 = some 0x21D2 := by decide
+theorem svTsa221c4_end : blockEnd sigstoreVerifyCode 0x21C4 svTsa221c4 = some 0x21D2 := by
+  simp only [svTsa221c4]
+  rw [blockEnd, sv_at_21c4]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_21c8]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_21ca]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_21ce]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_21d0]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa221da : List BInstr :=
   [.lui a0 0x1000, .aluImm .add a0 a0 0x320, .alu .add a1 sp a0]
-set_option maxRecDepth 100000 in
-theorem svTsa221da_end : blockEnd sigstoreVerifyCode 0x21DA svTsa221da = some 0x21E4 := by decide
+theorem svTsa221da_end : blockEnd sigstoreVerifyCode 0x21DA svTsa221da = some 0x21E4 := by
+  simp only [svTsa221da]
+  rw [blockEnd, sv_at_21da]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_21dc]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_21e0]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa221ec : List BInstr :=
   [.lui a2 0x1000, .aluImm .add a2 a2 0x320, .alu .add (20 : Fin 32) sp a2]
-set_option maxRecDepth 100000 in
-theorem svTsa221ec_end : blockEnd sigstoreVerifyCode 0x21EC svTsa221ec = some 0x21F6 := by decide
+theorem svTsa221ec_end : blockEnd sigstoreVerifyCode 0x21EC svTsa221ec = some 0x21F6 := by
+  simp only [svTsa221ec]
+  rw [blockEnd, sv_at_21ec]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_21ee]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_21f2]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa22838 : List BInstr :=
   [.aluImm .add (8 : Fin 32) x0 0x1]
-set_option maxRecDepth 100000 in
-theorem svTsa22838_end : blockEnd sigstoreVerifyCode 0x2838 svTsa22838 = some 0x283A := by decide
+theorem svTsa22838_end : blockEnd sigstoreVerifyCode 0x2838 svTsa22838 = some 0x283A := by
+  simp only [svTsa22838]
+  rw [blockEnd, sv_at_2838]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa221fe : List BInstr :=
   [.aluImm .add a0 sp 0x420, .lui a1 0x1000, .aluImm .add a1 a1 0x648, .alu .add a1 a1 sp]
-set_option maxRecDepth 100000 in
-theorem svTsa221fe_end : blockEnd sigstoreVerifyCode 0x21FE svTsa221fe = some 0x220A := by decide
+theorem svTsa221fe_end : blockEnd sigstoreVerifyCode 0x21FE svTsa221fe = some 0x220A := by
+  simp only [svTsa221fe]
+  rw [blockEnd, sv_at_21fe]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_2202]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_2204]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_2208]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa2221e : List BInstr :=
   [.aluImm .add a1 sp 0x425, .aluImm .add a0 sp 0x2A5, .aluImm .add a2 x0 0xB]
-set_option maxRecDepth 100000 in
-theorem svTsa2221e_end : blockEnd sigstoreVerifyCode 0x221E svTsa2221e = some 0x2228 := by decide
+theorem svTsa2221e_end : blockEnd sigstoreVerifyCode 0x221E svTsa2221e = some 0x2228 := by
+  simp only [svTsa2221e]
+  rw [blockEnd, sv_at_221e]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_2222]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_2226]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa22240 : List BInstr :=
   [.aluImm .add a0 sp 0x2A0, .aluImm .add a1 x0 0x3]
-set_option maxRecDepth 100000 in
-theorem svTsa22240_end : blockEnd sigstoreVerifyCode 0x2240 svTsa22240 = some 0x2244 := by decide
+theorem svTsa22240_end : blockEnd sigstoreVerifyCode 0x2240 svTsa22240 = some 0x2244 := by
+  simp only [svTsa22240]
+  rw [blockEnd, sv_at_2240]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_2242]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa2224c : List BInstr :=
   [.aluImm .and a0 a0 0x1, .alu .add (8 : Fin 32) x0 a1]
-set_option maxRecDepth 100000 in
-theorem svTsa2224c_end : blockEnd sigstoreVerifyCode 0x224C svTsa2224c = some 0x2250 := by decide
+theorem svTsa2224c_end : blockEnd sigstoreVerifyCode 0x224C svTsa2224c = some 0x2250 := by
+  simp only [svTsa2224c]
+  rw [blockEnd, sv_at_224c]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_224e]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa22254 : List BInstr :=
   [.aluImm .and (8 : Fin 32) (8 : Fin 32) 0x1]
-set_option maxRecDepth 100000 in
-theorem svTsa22254_end : blockEnd sigstoreVerifyCode 0x2254 svTsa22254 = some 0x2256 := by decide
+theorem svTsa22254_end : blockEnd sigstoreVerifyCode 0x2254 svTsa22254 = some 0x2256 := by
+  simp only [svTsa22254]
+  rw [blockEnd, sv_at_2254]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa229a6 : List BInstr :=
   [.aluImm .add (8 : Fin 32) x0 0x18]
-set_option maxRecDepth 100000 in
-theorem svTsa229a6_end : blockEnd sigstoreVerifyCode 0x29A6 svTsa229a6 = some 0x29A8 := by decide
+theorem svTsa229a6_end : blockEnd sigstoreVerifyCode 0x29A6 svTsa229a6 = some 0x29A8 := by
+  simp only [svTsa229a6]
+  rw [blockEnd, sv_at_29a6]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa2225a : List BInstr :=
   [.aluImm .add a0 sp 0x420, .aluImm .add a1 sp 0x2A0]
-set_option maxRecDepth 100000 in
-theorem svTsa2225a_end : blockEnd sigstoreVerifyCode 0x225A svTsa2225a = some 0x2260 := by decide
+theorem svTsa2225a_end : blockEnd sigstoreVerifyCode 0x225A svTsa2225a = some 0x2260 := by
+  simp only [svTsa2225a]
+  rw [blockEnd, sv_at_225a]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_225e]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa22274 : List BInstr :=
   [.aluImm .add a1 sp 0x425, .aluImm .add a0 sp 0x2C5, .aluImm .add a2 x0 0xB]
-set_option maxRecDepth 100000 in
-theorem svTsa22274_end : blockEnd sigstoreVerifyCode 0x2274 svTsa22274 = some 0x227E := by decide
+theorem svTsa22274_end : blockEnd sigstoreVerifyCode 0x2274 svTsa22274 = some 0x227E := by
+  simp only [svTsa22274]
+  rw [blockEnd, sv_at_2274]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_2278]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_227c]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa2228e : List BInstr :=
   [.aluImm .add a0 sp 0x2C0]
-set_option maxRecDepth 100000 in
-theorem svTsa2228e_end : blockEnd sigstoreVerifyCode 0x228E svTsa2228e = some 0x2290 := by decide
+theorem svTsa2228e_end : blockEnd sigstoreVerifyCode 0x228E svTsa2228e = some 0x2290 := by
+  simp only [svTsa2228e]
+  rw [blockEnd, sv_at_228e]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa22298 : List BInstr :=
   [.aluImm .and a0 a0 0x1, .alu .add (8 : Fin 32) x0 a1]
-set_option maxRecDepth 100000 in
-theorem svTsa22298_end : blockEnd sigstoreVerifyCode 0x2298 svTsa22298 = some 0x229C := by decide
+theorem svTsa22298_end : blockEnd sigstoreVerifyCode 0x2298 svTsa22298 = some 0x229C := by
+  simp only [svTsa22298]
+  rw [blockEnd, sv_at_2298]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_229a]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa222a0 : List BInstr :=
   [.aluImm .and a0 (8 : Fin 32) 0x1, .aluImm .add (8 : Fin 32) x0 0x18]
-set_option maxRecDepth 100000 in
-theorem svTsa222a0_end : blockEnd sigstoreVerifyCode 0x22A0 svTsa222a0 = some 0x22A6 := by decide
+theorem svTsa222a0_end : blockEnd sigstoreVerifyCode 0x22A0 svTsa222a0 = some 0x22A6 := by
+  simp only [svTsa222a0]
+  rw [blockEnd, sv_at_22a0]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_22a4]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa222b2 : List BInstr :=
   [.aluImm .add a0 sp 0x420, .aluImm .add a1 sp 0x2A0]
-set_option maxRecDepth 100000 in
-theorem svTsa222b2_end : blockEnd sigstoreVerifyCode 0x22B2 svTsa222b2 = some 0x22B8 := by decide
+theorem svTsa222b2_end : blockEnd sigstoreVerifyCode 0x22B2 svTsa222b2 = some 0x22B8 := by
+  simp only [svTsa222b2]
+  rw [blockEnd, sv_at_22b2]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_22b6]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa222cc : List BInstr :=
   [.aluImm .add a1 sp 0x425, .aluImm .add a0 sp 0x2E5, .aluImm .add a2 x0 0xB]
-set_option maxRecDepth 100000 in
-theorem svTsa222cc_end : blockEnd sigstoreVerifyCode 0x22CC svTsa222cc = some 0x22D6 := by decide
+theorem svTsa222cc_end : blockEnd sigstoreVerifyCode 0x22CC svTsa222cc = some 0x22D6 := by
+  simp only [svTsa222cc]
+  rw [blockEnd, sv_at_22cc]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_22d0]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_22d4]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa222e6 : List BInstr :=
   [.aluImm .add a0 sp 0x420, .aluImm .add a1 sp 0x2E0]
-set_option maxRecDepth 100000 in
-theorem svTsa222e6_end : blockEnd sigstoreVerifyCode 0x22E6 svTsa222e6 = some 0x22EC := by decide
+theorem svTsa222e6_end : blockEnd sigstoreVerifyCode 0x22E6 svTsa222e6 = some 0x22EC := by
+  simp only [svTsa222e6]
+  rw [blockEnd, sv_at_22e6]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_22ea]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svTsa22300 : List BInstr :=
   [.lui a2 0x3FCC5000, .aluImm .add a2 a2 0xFFFFF862, .aluImm .add a3 x0 0xB]
-set_option maxRecDepth 100000 in
-theorem svTsa22300_end : blockEnd sigstoreVerifyCode 0x2300 svTsa22300 = some 0x230A := by decide
+theorem svTsa22300_end : blockEnd sigstoreVerifyCode 0x2300 svTsa22300 = some 0x230A := by
+  simp only [svTsa22300]
+  rw [blockEnd, sv_at_2300]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_2304]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_2308]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 set_option maxHeartbeats 0 in
 theorem sv_tsa2 {B out bp x21 x26 cip cil : Word} {w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word} {v : Nat → Word} {n0 : Machine}

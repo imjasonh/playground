@@ -16,18 +16,32 @@ set_option linter.unusedVariables false
 
 def svEcA1fba : List BInstr :=
   [.lui a2 0x3FCC4000, .aluImm .add a2 a2 0x288, .aluImm .add a0 sp 0x138, .aluImm .add a1 x0 0x20, .aluImm .add a3 x0 0x20]
-set_option maxRecDepth 100000 in
-theorem svEcA1fba_end : blockEnd sigstoreVerifyCode 0xFBA svEcA1fba = some 0xFCC := by decide
+theorem svEcA1fba_end : blockEnd sigstoreVerifyCode 0xFBA svEcA1fba = some 0xFCC := by
+  simp only [svEcA1fba]
+  rw [blockEnd, sv_at_fba]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_fbe]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_fc2]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_fc4]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_fc8]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svEcA1fda : List BInstr :=
   [.lui a2 0x3FCC4000, .aluImm .add a2 a2 0x288, .aluImm .add a0 sp 0x158, .aluImm .add a1 x0 0x20, .aluImm .add a3 x0 0x20]
-set_option maxRecDepth 100000 in
-theorem svEcA1fda_end : blockEnd sigstoreVerifyCode 0xFDA svEcA1fda = some 0xFEC := by decide
+theorem svEcA1fda_end : blockEnd sigstoreVerifyCode 0xFDA svEcA1fda = some 0xFEC := by
+  simp only [svEcA1fda]
+  rw [blockEnd, sv_at_fda]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_fde]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_fe2]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_fe4]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rw [blockEnd, sv_at_fe8]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 def svEcA1ffe : List BInstr :=
   [.aluImm .add a1 x0 0x4]
-set_option maxRecDepth 100000 in
-theorem svEcA1ffe_end : blockEnd sigstoreVerifyCode 0xFFE svEcA1ffe = some 0x1000 := by decide
+theorem svEcA1ffe_end : blockEnd sigstoreVerifyCode 0xFFE svEcA1ffe = some 0x1000 := by
+  simp only [svEcA1ffe]
+  rw [blockEnd, sv_at_ffe]; dsimp only; rw [if_pos (by decide)]; simp only [BitVec.reduceToNat, Nat.reduceAdd]
+  rfl
 
 set_option maxHeartbeats 0 in
 theorem sv_eca1 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word} {v : Nat → Word} {n0 : Machine}
