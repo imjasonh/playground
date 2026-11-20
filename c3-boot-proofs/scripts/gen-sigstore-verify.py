@@ -1320,6 +1320,23 @@ class Gen:
         self.frame_after(k, [(c, N)], {})
         return k
 
+    def ms0(self, off, c, N, accs=(), byts=()):
+        """`memset` of `N` zero bytes at offset `c`, with the limbs at `accs`
+        and the bytes at `byts` zero after it."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_ms3F", f"(c := 0x{c:X}) (N := 0x{N:X})",
+                       [f"c{k}", f"s{k}", f"rk{k}", f"K{k}", f"fr{k}", f"Z{k}"])
+        self.emit(f"    F E{k-1} s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide)")
+        self.emit(f"    {self.reg_is(k - 1, 10, c)} g{k-1}_11 g{k-1}_12 (by decide)")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        accd = {d: (8, "0", f"acc0_of_fill fun j hj => by rw [show 0x{d:X} + j = 0x{c:X} + (0x{d - c:X} + j) by omega]; "
+                            f"exact Z{k} _ (by omega)") for d in accs}
+        bytd = {e: ("0", f"by rw [show 0x{e:X} = 0x{c:X} + 0x{e - c:X} from rfl]; exact Z{k} _ (by decide)") for e in byts}
+        self.frame_after(k, [(c, N)], {}, bytd, accd)
+        return k
+
     def b64(self, off, rc, oc, t, nl, inp, ha2, L):
         """`base64::decode_into` of the `nl` bytes at `t`; returns k and the
         expression of the decoded bytes. The caller splits."""
@@ -8641,6 +8658,79 @@ def stage_ecw():
     return g, info
 
 
+Z_BINDERS = ("{B out bp x26 : Word} {rv sv zv X Y Z : Nat} "
+             + "{" + " ".join(f"w{e:x}" for e in DPV_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
+Z_ACC = {0x2A0: "rv", 0x2C0: "sv", 0x2E0: "zv"}
+INV_PARAMS = "BitVec.ofNat 32 0x3FCC4B38"
+
+
+def z_start(g):
+    """At 0x1A72, after the main loop: the sum `(X, Y, Z)` at 0x1480 and `r`,
+    `s`, and the prehash at 0x2A0, 0x2C0, and 0x2E0."""
+    regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
+            19: ("U", "bp"), 20: ("C", 0x60), 21: ("S", 0xA40), 22: ("S", 0x1023), 24: ("S", 0xA60),
+            26: ("U", "x26"), 27: ("S", 0xA20)}
+    words = {e: f"w{e:x}" for e in DPV_WORDS}
+    params = start(g, regs, words, {})
+    for d, nm in sorted({**Z_ACC, 0x1480: "X", 0x14A0: "Y", 0x14C0: "Z"}.items()):
+        g.acc[d] = (8, nm)
+        params.append(f"(a0_{d:x} : accV n0.mem ({fa(d)}) 8 = {nm})")
+    params += ["(RS : SvRoSep B)", "(EC0 : SvEcCode M0)"]
+    return params
+
+
+def stage_zs():
+    """From 0x1A72 to the inversion's head at 0x1B54: the sum copied to
+    0x15A8, the field's modulus and `R²` at 0x420, whether `Z` is nonzero,
+    and the inversion of `Z` set up with `f = p`, `g = Z`, `d = 0`, `e = R²`,
+    `δ = 1`, and 591 steps left."""
+    g = Gen("ZS")
+    g.generic_alu = True
+    params = z_start(g)
+    ro = "(Or.inr ⟨by decide, by decide⟩)"
+    g.block(0x1A72, 0x1A86)
+    g.mc(0x1A86, 0x15A8, 0x1480, 0x60)
+    g.block(0x1A8E, 0x1AAA)
+    g.mcRo(0x1AAA, 0x420, INV_PARAMS, 0x20, ro, acc=True)
+    g.block(0x1AB2, 0x1AB4)
+    g.store(0x1AB4, "sw")
+    g.store(0x1AB8, "sw")
+    g.block(0x1ABC, 0x1ACA)
+    g.mcRo(0x1ACA, 0x440, "BitVec.ofNat 32 0x3FCC4B78", 0x20, ro, acc=True)
+    g.block(0x1AD2, 0x1AD4)
+    k = g.unz8(0x1AD4, 0x15E8)
+    nz = "(if Z = 0 then 0 else 1 : Word)"
+    g.emit(f"  have g{k}_10 : reg n{k} a0 = {nz} := a0_{k}")
+    g.regs[10] = ("U", nz)
+    g.block(0x1ADC, 0x1AE0)
+    g.store(0x1AE0, "sw")
+    g.block(0x1AE2, 0x1AEA)
+    g.mcRo(0x1AEA, 0x320, INV_PARAMS, 0x20, ro, acc=True)
+    g.store(0x1AF2, "sb")
+    g.block(0x1AF6, 0x1B04)
+    g.mc(0x1B04, 0x1380, 0x15E8, 0x20)
+    g.block(0x1B0C, 0x1B14)
+    g.store(0x1B14, "sb")
+    g.block(0x1B18, 0x1B26)
+    g.ms0(0x1B26, 0x1480, 0x24, accs=(0x1480,), byts=(0x14A0,))
+    g.block(0x1B2E, 0x1B3C)
+    g.mcRo(0x1B3C, 0x1020, "BitVec.ofNat 32 0x3FCC4B78", 0x20, ro, acc=True)
+    g.store(0x1B44, "sw")
+    g.store(0x1B46, "sb")
+    g.block(0x1B4A, 0x1B4C)
+    g.store(0x1B4C, "sw")
+    g.block(0x1B4E, 0x1B52)
+    g.store(0x1B52, "sw")
+    stmt, proof = finish(g, 0x1B54, [2, 3, 4, 18, 19, 20, 21, 22, 23, 24, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "sv_zs", "title": "the start of the inversion of `Z`",
+            "doc": "From 0x1A72 to the inversion's head at 0x1B54: the sum moves to 0x15A8, the word at 0x20 records "
+            "whether its `Z` is nonzero, and the inversion of `Z` starts from `f = p`, `g = Z`, `d = 0`, `e = R²`, "
+            "and `δ = 1`, with 591 steps left.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": Z_BINDERS, "start": 0x1A72,
+            "import": "C3BootProofs.Proofs.SvZLib"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -8667,7 +8757,7 @@ def main():
                 "Cr1e": lambda: stage_cr1(True), "Cr1n": lambda: stage_cr1(False), "Rl": stage_rl, "Rm": stage_rm,
                 **{f"Win{i}{x}": (lambda i=i, x=x: stage_win(i, x == "e")) for i in range(8) for x in "en"},
                 "EcA1": stage_eca1, "EcA2": stage_eca2, "EcA3": stage_eca3,
-                "IvHc": lambda: stage_ivh("c"), "IvHx": lambda: stage_ivh("x"), "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive, "EcD": stage_ecd, "EcW": stage_ecw,
+                "IvHc": lambda: stage_ivh("c"), "IvHx": lambda: stage_ivh("x"), "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive, "EcD": stage_ecd, "EcW": stage_ecw, "ZS": stage_zs,
                 **{f"EcT{x}": (lambda x=x: stage_ect(x)) for x in ("0a", "0b", "1a", "1b")}}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
