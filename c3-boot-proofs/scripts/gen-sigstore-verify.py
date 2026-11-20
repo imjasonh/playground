@@ -2213,6 +2213,45 @@ class Gen:
             accs[co + 0x24 * j] = (8, mag, f"vv{j}_{k}")
         self.frame_after(k, [(co, 0x45)], {}, byts, accs)
 
+    def nrm8(self, off, co, cx, fs_or, np):
+        """`SignedInt<8>::norm` of the value at offset `cx` with `f`'s sign in
+        `a2` (`fs_or` proves it is 0 or 1) and the modulus at `np`."""
+        k = self.k = self.k + 1
+        n, V = self.acc[cx]
+        sg = self.bytes[cx + 0x20]
+        fsv = lean_val(self.regs[12])
+        self.call_head(k, off, "sv_nrm8F", f"(co := 0x{co:X}) (cx := 0x{cx:X})",
+                       [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"A{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (UC0.sv F fR{k-1}) (EC0.sv F fR{k-1}) (codeIn_sv F fR{k-1} N80 (by decide) (by decide)) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, co)} {self.reg_is(k - 1, 11, cx)} g{k-1}_12 {fs_or} g{k-1}_13 (by decide) (by decide)")
+        self.emit(f"    (by decide) (by decide) (by decide) (by decide) (by decide)")
+        self.emit(f"    (by rw [show 0x{cx:X} + 0x20 = 0x{cx + 0x20:X} from rfl, b{k-1}_{cx + 0x20:x}]; exact {self.sign_le[cx + 0x20]})")
+        self.emit(f"  rw [show 0x{cx:X} + 0x20 = 0x{cx + 0x20:X} from rfl, b{k-1}_{cx + 0x20:x}, a{k-1}_{cx:x},")
+        self.emit(f"    accV_dataR F fR{k-1} (by decide) (by decide)] at A{k}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        val = f"normVal8 ({sg}).toNat ({fsv}).toNat ({V}) (accV M0 ({np}) 8)"
+        self.frame_after(k, [(co, 32)], {}, {}, {co: (8, val, f"A{k}")})
+
+    def ueq8(self, off, cp, q):
+        """`Uint<8>::eq` of the limbs at offset `cp` and the constant at `q`;
+        returns k. The result in `a0` is left to the caller."""
+        k = self.k = self.k + 1
+        self.call_head(k, off, "sv_ueq8F", f"(cp := 0x{cp:X})", [f"c{k}", f"s{k}", f"sp{k}", f"rk{k}", f"a0_{k}", f"K{k}", f"fr{k}"])
+        self.emit(f"    F E{k-1} (codeIn_sv F fR{k-1} UE0 (by decide) (by decide)) s{k-1} sv_at_{off:x} sv_at_{off + 4:x} (by decide) (by decide) g{k-1}_2")
+        self.emit(f"    {self.reg_is(k - 1, 10, cp)} g{k-1}_11 (by decide) (by decide) (by decide)")
+        self.emit(f"  rw [a{k-1}_{cp:x}, accV_dataR F fR{k-1} (by decide) (by decide)] at a0_{k}")
+        self.common(k, f"c{k}", f"fr{k}", f"V{k-1}.keepL K{k} (by decide)")
+        self.keep_regs(k, [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+                       lambda r: f"rk{k} {rname(r)} (by decide)")
+        self.emit(f"  have g{k}_2 : reg n{k} sp = B + 0x21A0 := sp{k}")
+        self.regs[2] = ("S", 0)
+        self.frame_after(k, [], {})
+        return k
+
     def isr(self, off, cx, y, post=None):
         """`ecdsa::in_scalar_range` of the 32 bytes at offset `cx` and at `y`."""
         k = self.k + 1
@@ -2241,6 +2280,9 @@ class Gen:
         """Close the failing case at 0x966 (or, with `exit_lemma`, 0xEE4 or
         0x2A82) with `why_not`, a proof that the stage's checks failed."""
         k = self.k
+        if exit_lemma == "sv_panic_1908":
+            self.emit(f"  exact .inl ⟨({why_not}), Panics.of_steps t{k} (sv_panic_1908 F E{k} s{k} g{k}_2)⟩")
+            return
         self.emit(f"  exact .inl ⟨({why_not}), {exit_lemma} F E{k} s{k} t{k} (fun x hx => (fR{k} x hx).trans (fM x hx).symm) V{k} hret g{k}_2 g{k}_18 hO g{k}_3 g{k}_4⟩")
 
     # --- calls through SvDer ----------------------------------------------------
@@ -2433,7 +2475,8 @@ def finish(g, off, keep_regs, keep_words=None, keep_bytes=None):
             for b in c[3]:
                 names[b] = b.rstrip("0123456789").rstrip("_") + "_" + b[len(b.rstrip("0123456789")):]
     body = "∃ n', " + " ∧\n        ".join(conj)
-    stmt = (f"(¬ ({g.sc_prop()}) ∧ SvErrRet B out v n0) ∨\n    (" + g.sc_ok(body) + ")")
+    bad = "Panics n0" if getattr(g, "panics", False) else "SvErrRet B out v n0"
+    stmt = (f"(¬ ({g.sc_prop()}) ∧ {bad}) ∨\n    (" + g.sc_ok(body) + ")")
     proof = "  exact .inr ⟨" + ", ".join(g.sc_terms() + [f"n{g.k}"] + terms) + "⟩"
     for tag, sub in g.exits:
         assert sub.sc_prop() == g.sc_prop(), (tag, sub.sc_prop(), g.sc_prop())
@@ -7955,7 +7998,7 @@ def stage_eca3():
     g.store(0x1320, "sw")
     g.block(0x1322, 0x1326)
     g.store(0x1326, "sw")
-    stmt, proof = finish(g, 0x1328, [2, 3, 4, 18, 19, 20, 21, 23, 25, 26, 27], set(g.words), set(g.bytes))
+    stmt, proof = finish(g, 0x1328, [2, 3, 4, 18, 19, 20, 21, 23, 24, 25, 26, 27], set(g.words), set(g.bytes))
     info = {"name": "sv_eca3", "title": "the P-256 check's inputs",
             "doc": "From 0x10D6 to the inversion's head at 0x1328: the leaf key's point at offsets 0x240, 0x260, and "
             "0x280 in projective form, `r` and `s` at 0x2A0 and 0x2C0, the prehash as a scalar at 0x2E0, and the "
@@ -8105,6 +8148,55 @@ def stage_ivb():
     return g, info
 
 
+def stage_ive():
+    """From the inversion's exit at 0x1556 to 0x15DA: `d` normalized by `f`'s
+    sign into the inverse of `s`, and `f` checked to be 1."""
+    g = Gen("IvE")
+    g.generic_alu = True
+    g.panics = True
+    params = iv_start(g)
+    g.regs[21] = ("C", 1)
+    params = [p for p in params if not p.startswith("(g0_21 ")]
+    params.append("(g0_21 : reg n0 (21 : Fin 32) = BitVec.ofNat 32 0x1)")
+    params += ["(UC0 : SvUpCode M0)", "(UE0 : CodeIn M0 (BitVec.ofNat 32 uint8EqAddress) uint8EqCode)",
+               "(N80 : CodeIn M0 (BitVec.ofNat 32 norm8Address) norm8Code)", "(hfs : fs.toNat ≤ 1)", "(hds : ds.toNat ≤ 1)"]
+    g.sign_le = {0x1040: "hds"}
+    g.block(0x1556, 0x155E)
+    g.load(0x155E, "lbu")
+    g.block(0x1562, 0x1582)
+    g.nrm8(0x1582, 0xA20, 0x1020, "(zext_01 hfs)", "BitVec.ofNat 32 0x3FCC4268")
+    g.block(0x158A, 0x159A)
+    k = g.ueq8(0x159A, 0x1380, "BitVec.ofNat 32 0x3FCC42E8")
+    prop = "fv = accV M0 (BitVec.ofNat 32 0x3FCC42E8) 8"
+
+    def bad(sub, k=k):
+        sub.set_a0(k, 0, "ite_eq_right hf1")
+        sub.block(0x15A2, 0x15AA)
+        sub.bb(0x15AA)
+        sub.block(0x15B2, 0x15C8)
+        sub.mc(0x15C8, 0x420, 0xA20, 0x20)
+        sub.block(0x15D0, 0x15D2)
+        sub.store(0x15D2, "sb")
+        sub.branch(0x15D6, True, f"by rw [g{sub.k}_9, g{sub.k}_10]; decide")
+        sub.fail(sub.fail_proof(("prop", "hf1")), "sv_panic_1908")
+    g.prop_check(prop, "hf1", bad)
+    g.set_a0(k, 1, "ite_eq_left hf1")
+    g.block(0x15A2, 0x15AA)
+    g.bb(0x15AA)
+    g.block(0x15B2, 0x15C8)
+    g.mc(0x15C8, 0x420, 0xA20, 0x20)
+    g.block(0x15D0, 0x15D2)
+    g.store(0x15D2, "sb")
+    g.branch(0x15D6, False, f"by rw [g{g.k}_9, g{g.k}_10]; decide")
+    stmt, proof = finish(g, 0x15DA, [2, 3, 4, 18, 19, 20, 21, 23, 24, 25, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "sv_ive", "title": "the end of the inversion of `s`",
+            "doc": "From the inversion's exit at 0x1556 to 0x15DA: `d`, normalized by `f`'s sign, is the inverse "
+            "of `s` at offset 0x420, provided `f` is 1; otherwise `CtOption::unwrap` panics.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": IV_BINDERS, "start": 0x1556,
+            "import": "C3BootProofs.Proofs.SvIvLib"}
+    return g, info
+
+
 def main():
     stage = sys.argv[1]
     g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
@@ -8131,7 +8223,7 @@ def main():
                 "Cr1e": lambda: stage_cr1(True), "Cr1n": lambda: stage_cr1(False), "Rl": stage_rl, "Rm": stage_rm,
                 **{f"Win{i}{x}": (lambda i=i, x=x: stage_win(i, x == "e")) for i in range(8) for x in "en"},
                 "EcA1": stage_eca1, "EcA2": stage_eca2, "EcA3": stage_eca3,
-                "IvHc": lambda: stage_ivh("c"), "IvHx": lambda: stage_ivh("x"), "IvA": stage_iva, "IvB": stage_ivb}[stage]()
+                "IvHc": lambda: stage_ivh("c"), "IvHx": lambda: stage_ivh("x"), "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive}[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

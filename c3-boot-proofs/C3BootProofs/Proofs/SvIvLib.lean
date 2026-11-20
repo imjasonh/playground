@@ -1,6 +1,8 @@
 import C3BootProofs.Proofs.SvEcDs
 import C3BootProofs.Proofs.UpdateFg8
 import C3BootProofs.Proofs.UpdateDe8
+import C3BootProofs.Proofs.Norm8
+import C3BootProofs.Proofs.UintEq
 
 /-!
 # `sigstore::verify`: the P-256 inversion's matrix updates
@@ -298,5 +300,161 @@ theorem acc2_frame {M : Word → BitVec 8} {B a b : Word} {c : Nat}
 
 theorem byte_of_toNat {b : BitVec 8} {σ : Nat} (h : b.toNat = σ) : b = BitVec.ofNat 8 σ := by
   apply BitVec.eq_of_toNat_eq; rw [BitVec.toNat_ofNat, ← h]; exact (Nat.mod_eq_of_lt b.isLt).symm
+
+/-- Two runs of limbs are equal limb by limb exactly when their values are. -/
+theorem limbsEq_iff {M M' : Word → BitVec 8} {p q : Word} :
+    ∀ n, (∀ i, i < n → memLoad32 M (p + BitVec.ofNat 32 (4 * i)) = memLoad32 M' (q + BitVec.ofNat 32 (4 * i))) ↔
+      accV M p n = accV M' q n
+  | 0 => ⟨fun _ => rfl, fun _ i hi => absurd hi (Nat.not_lt_zero _)⟩
+  | n + 1 => by
+    simp only [accV]
+    have l1 := accV_lt M p n; have l2 := accV_lt M' q n
+    have hp : 0 < 2 ^ (32 * n) := Nat.pow_pos (by decide)
+    constructor
+    · intro h
+      rw [(limbsEq_iff n).mp fun i hi => h i (by omega), h n (by omega)]
+    · intro h i hi
+      have e1 : accV M p n = accV M' q n := by
+        have := congrArg (· % 2 ^ (32 * n)) h
+        simp only [Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt l1, Nat.mod_eq_of_lt l2] at this
+        exact this
+      rcases Nat.lt_succ_iff_lt_or_eq.mp hi with hi | rfl
+      · exact (limbsEq_iff n).mpr e1 i hi
+      · apply BitVec.eq_of_toNat_eq
+        have := congrArg (· / 2 ^ (32 * i)) h
+        rw [Nat.add_mul_div_right _ _ hp, Nat.add_mul_div_right _ _ hp, Nat.div_eq_of_lt l1,
+          Nat.div_eq_of_lt l2] at this
+        omega
+
+set_option maxHeartbeats 8000000 in
+/-- **A call to `Uint<8>::eq`** of the limbs at offset `cp` and the constant
+at `q`. -/
+theorem sv_ueq8F {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o q : Word} {cp : Nat}
+    (F : Fr B 0x3830) (C : SvCode M) (hue : CodeIn M (BitVec.ofNat 32 uint8EqAddress) uint8EqCode)
+    (st : St M SV n off (reg n))
+    (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 uint8EqAddress)
+    (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0) (rsp : reg n sp = B + 0x21A0)
+    (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 cp) (ha1 : reg n a1 = q)
+    (hcp : cp + 32 ≤ 0x1690) (acp : cp % 4 = 0) (hq4 : q.toNat % 4 = 0) :
+    ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
+      (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧
+      reg n' a0 = (if accV M (B + 0x21A0 + BitVec.ofNat 32 cp) 8 = accV M q 8 then 1 else 0) ∧
+      SvKeepL B M n'.mem [] ∧ (∀ x, SvR B x → n'.mem x = M x) := by
+  have hFl := F.lo; have hFh := F.hi; have hFa := F.al
+  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := st.callRa C.self h1 h2 hb (by decide)
+  have r1 := PEnv.reg1 regs1 st.zero
+  have sp1 : reg n1 sp = B + 0x21A0 := by rw [r1 sp (by decide), rsp]
+  have hS : (B + (0x21A0 : Word)).toNat = B.toNat + 0x21A0 := F.at 0x21A0 (by decide)
+  obtain ⟨n2, c2, pc2, a02, k2, f2⟩ := uint8Eq_correct n1 (base := BitVec.ofNat 32 uint8EqAddress)
+    (by rw [mem1]; exact hue) pc1 (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1])
+    (sv_al F (by omega) acp) hq4 (by rw [sp1, hS]; omega)
+    (by rw [sp1, sv_sp4]; exact F.sepHi (by decide) (by decide) (by decide))
+    (by rw [regs1]; simp +decide [upd]) (even_clear _ hev)
+  rw [sp1, sv_sp4] at f2
+  rw [mem1] at a02
+  simp only [limbsEq_iff 8] at a02
+  refine ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, by
+    rw [k2 sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), sp1], fun r hr => ?_, a02,
+    fun e he _ => ?_, fun x hx => ?_⟩
+  · have hr' : r ≠ a0 ∧ r ≠ a1 ∧ r ≠ a2 ∧ r ≠ a3 ∧ r ≠ a4 ∧ r ≠ a5 ∧ r ≠ ra := by revert hr; revert r; decide
+    obtain ⟨q10, q11, q12, q13, q14, q15, q1⟩ := hr'
+    rw [k2 r q10 q11 q12 q13 q14 q15, r1 r q1]
+  · rw [f2 _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega)), mem1]
+  · rw [f2 x (svR_sp4 hx), mem1]
+
+set_option maxHeartbeats 8000000 in
+/-- **A call to `SignedInt<8>::norm`** of the value at offset `cx` with `f`'s
+sign `fs` in `a2` and the modulus at `np`, into offset `co`. -/
+theorem sv_nrm8F {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o np fs : Word} {co cx : Nat}
+    (F : Fr B 0x3830) (C : SvCode M) (UC : SvUpCode M) (EC : SvEcCode M)
+    (hn8 : CodeIn M (BitVec.ofNat 32 norm8Address) norm8Code) (st : St M SV n off (reg n))
+    (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
+    (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
+    (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 norm8Address)
+    (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0) (rsp : reg n sp = B + 0x21A0)
+    (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 co) (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 cx)
+    (ha2 : reg n a2 = fs) (hfs : fs = 0 ∨ fs = 1) (ha3 : reg n a3 = np)
+    (hco : co + 32 ≤ 0x1690) (hcx : cx + 33 ≤ 0x1690) (aco : co % 4 = 0) (acx : cx % 4 = 0)
+    (hn1 : 0x3FCC4200 ≤ np.toNat) (hn2 : np.toNat + 32 ≤ 0x3FCC4E60) (hn4 : np.toNat % 4 = 0)
+    (hσ : (M (B + 0x21A0 + BitVec.ofNat 32 (cx + 0x20))).toNat ≤ 1) :
+    ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
+      (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧
+      accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 co) 8 =
+        normVal8 (M (B + 0x21A0 + BitVec.ofNat 32 (cx + 0x20))).toNat fs.toNat
+          (accV M (B + 0x21A0 + BitVec.ofNat 32 cx) 8) (accV M np 8) ∧
+      SvKeepL B M n'.mem [(co, 32)] ∧ (∀ x, SvR B x → n'.mem x = M x) := by
+  have hFl := F.lo; have hFh := F.hi; have hFa := F.al
+  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := st.callRa C.self h1 h2 hb (by decide)
+  have r1 := PEnv.reg1 regs1 st.zero
+  have hS : (B + (0x21A0 : Word)).toNat = B.toNat + 0x21A0 := F.at 0x21A0 (by decide)
+  have FS : Fr (B + 0x21A0) 0x1690 := F.sub (c := 0x21A0) (by decide) (by decide)
+  have EN : Nm8Env n1.mem (BitVec.ofNat 32 norm8Address) (B + 0x21A0) (B + 0x21A0 + BitVec.ofNat 32 co)
+      (B + 0x21A0 + BitVec.ofNat 32 cx) np := by
+    rw [mem1]
+    refine ⟨by decide, hn8, ?_, ?_, ?_, ?_, ?_, ?_, ?_, by rw [hS]; omega, by rw [hS]; omega,
+      sv_al F (by omega) aco, sv_al F (by omega) acx, hn4, by rw [sv_at F _ (by omega)]; omega,
+      FS.lowHi (by decide) rfl (by decide) (by decide), FS.lowHi (by decide) rfl (by decide) (by decide),
+      FS.lowHi (by decide) rfl (by decide) (by decide), FS.lowHi (by decide) rfl (by decide) (by decide),
+      FS.lowHi (by decide) rfl (by decide) (by decide), FS.lowHi (by decide) rfl (by decide) (by decide),
+      FS.lowHi (by decide) rfl (by decide) (by decide), FS.lowHi (by decide) rfl (by decide) (by decide),
+      FS.sepHi hco (by decide) (by decide), FS.sepHi hco (by decide) (by decide), FS.sepHi hco (by decide) (by decide),
+      FS.lowN (k := 0x90) (by decide) (by decide) hco, FS.lowN (k := 0x90) (by decide) (by decide) hcx,
+      by rw [show n8R (B + 0x21A0) = B + BitVec.ofNat 32 0x2110 from sv_spX B 0x90 (by decide)]
+         exact (F.bufData (by decide) hn1 hn2).symm⟩
+    · rw [show BitVec.ofNat 32 norm8Address + 0xFFFFFEA4 = BitVec.ofNat 32 uint8IsNonzeroAddress by decide]; exact EC.unz8
+    · rw [show BitVec.ofNat 32 norm8Address + 0xFFFF10B2 = BitVec.ofNat 32 uintRefIsNonzeroAddress by decide]
+      exact C.K.refnz
+    · rw [show BitVec.ofNat 32 norm8Address + 0x2C2C = MSET by decide]; exact C.K.mset
+    · rw [show n8Bsub (BitVec.ofNat 32 norm8Address) = BSUB by decide]; exact C.K.bsub
+    · rw [show BitVec.ofNat 32 norm8Address + 0xFFFFF112 = BitVec.ofNat 32 uintSelect8Address by decide]; exact UC.sel8
+    · rw [show BitVec.ofNat 32 norm8Address + 0x2C94 = MCS by decide]; exact C.K.stub
+    · rw [show BitVec.ofNat 32 norm8Address + 0x2C9C = MCS + 8 by decide]; exact C.K.body
+  obtain ⟨n2, c2, pc2, sp2, k2, A2, f2⟩ := norm8_correct n1 EN pc1 (by rw [r1 sp (by decide), rsp])
+    (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1]) (by rw [r1 a2 (by decide), ha2]; exact hfs)
+    (by rw [r1 a3 (by decide), ha3]) (by rw [mem1, add_lit20]; exact hσ)
+    (by rw [regs1]; simp +decide [upd]) (even_clear _ hev)
+  rw [mem1, add_lit20, r1 a2 (by decide), ha2] at A2
+  have e1 : n8R (B + 0x21A0) = B + BitVec.ofNat 32 0x2110 := sv_spX B 0x90 (by decide)
+  rw [mem1, e1] at f2
+  refine ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, sp2,
+    fun q hq => by rw [k2 q (by revert hq; revert q; decide), r1 q (by revert hq; revert q; decide)], A2,
+    fun e he hL => ?_, fun x hx => f2 x (svR_spX hx (by decide) (by decide) (by decide)) (svR_hi hx hco)⟩
+  have h1 := hL _ (List.mem_singleton_self _)
+  simp only at h1
+  exact f2 _ (by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega))
+    (sepS (B + 0x21A0) (by omega) (by omega) (by omega))
+
+/-- **The panic at 0x1908**: `s` has no inverse, and `CtOption::unwrap`'s
+assertion fails. -/
+theorem sv_panic_1908 {B : Word} {n : Machine} (F : Fr B 0x3830) (E : SvCode n.mem) (s : St n.mem SV n 0x1908 (reg n))
+    (rsp : reg n sp = B + 0x21A0) : Panics n := by
+  have FS : Fr (B + 0x21A0) 0x1690 := F.sub (c := 0x21A0) (by decide) (by decide)
+  obtain ⟨n1, c1, u1⟩ := s.block (off' := 0x1910) [.aluImm .add a0 sp 0x7FF, .aluImm .add a0 a0 0x221] E.self
+    (by decide) ⟨trivial, trivial, trivial⟩
+  have s1 : St n.mem SV n1 0x1910 (reg n1) := ⟨u1.pc, u1.mem.trans (by simp only [runBlock, BInstr.run]), fun _ => rfl⟩
+  have sp1 : reg n1 sp = B + 0x21A0 := by
+    rw [u1.regs]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; exact rsp
+  obtain ⟨n2, c2, pc2, mem2, regs2⟩ := s1.callRa E.self sv_at_1910 sv_at_1914
+    (cb := BitVec.ofNat 32 assertFailedU8Address) (by decide) (by decide)
+  exact Panics.of_steps (c1.trans c2) (assertFailedU8_panics n2 (by rw [mem2]; exact E.K.panic) pc2
+    (by rw [regs2, upd_ne (by decide) (by decide), sp1]; exact FS.room (by decide)))
+
+theorem zext_01 {b : BitVec 8} (h : b.toNat ≤ 1) : b.zeroExtend 32 = 0 ∨ b.zeroExtend 32 = 1 := by
+  have : b = 0 ∨ b = 1 := by
+    rcases Nat.le_one_iff_eq_zero_or_eq_one.mp h with h | h
+    · exact .inl (BitVec.eq_of_toNat_eq h)
+    · exact .inr (BitVec.eq_of_toNat_eq h)
+  rcases this with rfl | rfl
+  · exact .inl rfl
+  · exact .inr rfl
+
+theorem codeIn_sv {M M0 : Word → BitVec 8} {B b : Word} {c : List Nat} (F : Fr B 0x3830)
+    (fR : ∀ x, SvR B x → M x = M0 x) (h : CodeIn M0 b c) (h1 : 0x40000000 ≤ b.toNat)
+    (h2 : b.toNat + c.length ≤ 2 ^ 32) : CodeIn M b c :=
+  codeHi h h1 h2 fun x hx => fR x (sep_of_le (by
+    have hb : (B + 0xFFFFFE60).toNat = B.toNat - 0x1A0 := F.below 0x1A0 (by decide) (by decide)
+    have := F.hi; rw [hb]; omega) (by have := x.isLt; omega))
 
 end C3.RV32.Sv

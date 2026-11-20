@@ -274,6 +274,7 @@ import C3BootProofs.Proofs.SvIvHx
 import C3BootProofs.Proofs.SvIvA
 import C3BootProofs.Proofs.SvIvLib
 import C3BootProofs.Proofs.SvIvB
+import C3BootProofs.Proofs.SvIvE
 import C3BootProofs.Proofs.Fs384Main
 import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main
