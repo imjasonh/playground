@@ -160,7 +160,7 @@ function renderStatus(snapshot) {
 }
 
 function renderBoard(snapshot) {
-  boardEl.innerHTML = '';
+  boardEl.replaceChildren();
 
   for (let row = 0; row < ROWS; row += 1) {
     for (let col = 0; col < COLS; col += 1) {
@@ -195,13 +195,13 @@ function renderBoard(snapshot) {
   }
 
   if (!pointerSession?.dragging) {
-    ghostLayerEl.innerHTML = '';
+    ghostLayerEl.replaceChildren();
     clearDropTargets();
   }
 }
 
 function renderTray(snapshot) {
-  trayEl.innerHTML = '';
+  trayEl.replaceChildren();
 
   if (snapshot.trayPieces.length === 0) {
     const empty = document.createElement('p');
@@ -246,7 +246,7 @@ function renderSelectedPreview(snapshot) {
   }
 
   selectedPreviewEl.hidden = false;
-  previewShapeEl.innerHTML = '';
+  previewShapeEl.replaceChildren();
   const piece = pieceById(snapshot.selectedPieceId);
   previewShapeEl.appendChild(buildShapeElement(snapshot.selectedOrientation, piece.color, 20));
 }
@@ -375,7 +375,7 @@ function onPointerUp(event) {
     handleTap(session, event);
   }
 
-  ghostLayerEl.innerHTML = '';
+  ghostLayerEl.replaceChildren();
   clearDropTargets();
   updateBodyDragState(false);
 }
@@ -411,7 +411,7 @@ function finishDrag(event) {
     }
   }
 
-  ghostLayerEl.innerHTML = '';
+  ghostLayerEl.replaceChildren();
   clearDropTargets();
   updateBodyDragState(false);
 }
@@ -427,7 +427,7 @@ function showGhost(pieceId, row, col) {
   const cells = absoluteCells(orientation, row, col);
 
   ghostLayerEl.hidden = false;
-  ghostLayerEl.innerHTML = '';
+  ghostLayerEl.replaceChildren();
 
   const wrapRect = boardEl.parentElement.getBoundingClientRect();
 

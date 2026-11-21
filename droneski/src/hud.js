@@ -59,9 +59,16 @@ function updateHUD(frame, altitude, distToSkier, skierSpeed, progress, proximity
   reticleCorners.forEach((c) => c.style.borderColor = color);
   const warnings = getWarnings(proximity);
   if (warnings.length === 0) {
-    warningsEl.innerHTML = "";
+    warningsEl.replaceChildren();
   } else {
-    warningsEl.innerHTML = warnings.map((w) => `<div class="warning ${w.level}">${w.text}</div>`).join("");
+    warningsEl.replaceChildren(
+      ...warnings.map((w) => {
+        const div = document.createElement("div");
+        div.className = `warning ${w.level}`;
+        div.textContent = w.text;
+        return div;
+      })
+    );
   }
 }
 function showEndScreen(state, crashReason) {
@@ -80,16 +87,22 @@ function showEndScreen(state, crashReason) {
   const avgVis = (state.visibilitySum / n * 100).toFixed(0);
   const avgDist = (state.distanceSum / n * 100).toFixed(0);
   const avgSmooth = (state.smoothnessSum / n * 100).toFixed(0);
-  breakdown.innerHTML = [
+  const lines = [
     `Centering ........ ${avgCenter}%`,
     `Visibility ....... ${avgVis}%`,
     `Distance ......... ${avgDist}%`,
     `Smoothness ....... ${avgSmooth}%`
-  ].join("<br>");
+  ];
+  const nodes = [];
+  lines.forEach((line, i) => {
+    if (i > 0) nodes.push(document.createElement("br"));
+    nodes.push(document.createTextNode(line));
+  });
+  breakdown.replaceChildren(...nodes);
   endScreen.style.display = "flex";
   reticleEl.style.borderColor = "";
   reticleCorners.forEach((c) => c.style.borderColor = "");
-  warningsEl.innerHTML = "";
+  warningsEl.replaceChildren();
 }
 function updateMuteIndicator(muted, visible) {
   muteEl.classList.toggle("visible", visible);

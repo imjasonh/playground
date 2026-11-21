@@ -234,7 +234,8 @@ export function createViewer(ctx) {
       rawBtn.setAttribute('aria-pressed', String(!preview));
       if (preview) {
         const body = el('div', 'markdown-body');
-        body.innerHTML = renderMarkdown(source);
+        const parsed = new DOMParser().parseFromString(renderMarkdown(source), 'text/html');
+        body.replaceChildren(...parsed.body.childNodes);
         content.replaceChildren(body);
       } else {
         const pre = el('pre', 'md-raw');

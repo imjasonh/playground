@@ -91,7 +91,7 @@ async function loadDay(date) {
 
 function populateDays() {
   const days = state.index.days.slice().sort((a, b) => b.date.localeCompare(a.date));
-  el.daySelect.innerHTML = "";
+  el.daySelect.replaceChildren();
   const all = document.createElement("option");
   all.value = ALL_DAYS;
   all.textContent = `All ${days.length} day${days.length === 1 ? "" : "s"}`;
@@ -164,40 +164,69 @@ function renderSummary(analysis, selection) {
     { value: `${Math.round(t.estimatedGallons).toLocaleString()} gal`, label: "Estimated Jet-A", sub: "turbine cruise burn" },
     { value: fmtMoney(t.estimatedCost), label: "Estimated fuel cost", sub: `@ ${fmtMoney(currentPrice())}/gal` },
   ];
-  el.summary.innerHTML = cards
-    .map(
-      (c) => `<div class="card"><div class="value">${c.value}</div>` +
-        `<div class="label">${c.label}</div><div class="sub">${c.sub}</div></div>`,
-    )
-    .join("");
+  el.summary.replaceChildren(
+    ...cards.map((c) => {
+      const card = document.createElement("div");
+      card.className = "card";
+      const val = document.createElement("div");
+      val.className = "value";
+      val.textContent = c.value;
+      const lbl = document.createElement("div");
+      lbl.className = "label";
+      lbl.textContent = c.label;
+      const sub = document.createElement("div");
+      sub.className = "sub";
+      sub.textContent = c.sub;
+      card.append(val, lbl, sub);
+      return card;
+    }),
+  );
 }
 
 function renderTable(analysis) {
   const rows = analysis.perAircraft;
   if (!rows.length) {
-    el.rows.innerHTML = "";
+    el.rows.replaceChildren();
     el.emptyNote.hidden = false;
     el.emptyNote.textContent =
       "No NYPD helicopters were tracked airborne in this period.";
     return;
   }
   el.emptyNote.hidden = true;
-  el.rows.innerHTML = rows
-    .map((a) => {
+  el.rows.replaceChildren(
+    ...rows.map((a) => {
       const miles = Math.round(kmToMiles(a.distanceKm)).toLocaleString();
-      return (
-        '<tr>' +
-        `<td><span class="tail-cell"><span class="swatch" style="background:${a.color}"></span>${a.tail ?? a.hex}</span></td>` +
-        `<td>${a.model ?? "&mdash;"}</td>` +
-        `<td class="num">${a.flightCount}</td>` +
-        `<td class="num">${formatDuration(a.estimatedSeconds)}</td>` +
-        `<td class="num">${miles} mi</td>` +
-        `<td class="num">${Math.round(a.estimatedGallons).toLocaleString()} gal</td>` +
-        `<td class="num">${fmtMoney(a.estimatedCost)}</td>` +
-        '</tr>'
-      );
-    })
-    .join("");
+      const tr = document.createElement("tr");
+
+      const tdTail = document.createElement("td");
+      const tailSpan = document.createElement("span");
+      tailSpan.className = "tail-cell";
+      const swatch = document.createElement("span");
+      swatch.className = "swatch";
+      swatch.style.background = a.color;
+      tailSpan.append(swatch, a.tail ?? a.hex);
+      tdTail.append(tailSpan);
+
+      const tdModel = document.createElement("td");
+      tdModel.textContent = a.model ?? "—";
+
+      const numCells = [
+        String(a.flightCount),
+        formatDuration(a.estimatedSeconds),
+        `${miles} mi`,
+        `${Math.round(a.estimatedGallons).toLocaleString()} gal`,
+        fmtMoney(a.estimatedCost),
+      ].map((text) => {
+        const td = document.createElement("td");
+        td.className = "num";
+        td.textContent = text;
+        return td;
+      });
+
+      tr.append(tdTail, tdModel, ...numCells);
+      return tr;
+    }),
+  );
 }
 
 // Draw flight paths for the given samples. For a single day this shows the
@@ -249,16 +278,20 @@ function renderMap(selection, samples, price, ctx) {
 function renderLegend(items) {
   if (!items.length) {
     el.legend.classList.remove("show");
-    el.legend.innerHTML = "";
+    el.legend.replaceChildren();
     return;
   }
-  el.legend.innerHTML = items
-    .map(
-      (a) =>
-        `<div class="legend-item"><span class="swatch" style="background:${a.color}"></span>` +
-        `${a.tail ?? a.hex}</div>`,
-    )
-    .join("");
+  el.legend.replaceChildren(
+    ...items.map((a) => {
+      const item = document.createElement("div");
+      item.className = "legend-item";
+      const swatch = document.createElement("span");
+      swatch.className = "swatch";
+      swatch.style.background = a.color;
+      item.append(swatch, a.tail ?? a.hex);
+      return item;
+    }),
+  );
   el.legend.classList.add("show");
 }
 

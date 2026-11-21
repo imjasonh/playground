@@ -485,11 +485,11 @@ function goToSearchHit(hit) {
 
 function clearPlaceResults() {
   el.placeResults.hidden = true;
-  el.placeResults.innerHTML = "";
+  el.placeResults.replaceChildren();
 }
 
 function showPlaceResults(hits, { emptyMessage } = {}) {
-  el.placeResults.innerHTML = "";
+  el.placeResults.replaceChildren();
   if (!hits.length) {
     const li = document.createElement("li");
     li.className = "place-empty";
