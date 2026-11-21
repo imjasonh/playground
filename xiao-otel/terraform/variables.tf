@@ -10,7 +10,7 @@ variable "region" {
 }
 
 variable "name" {
-  description = "Name for the service, runtime service account, and image repository. Use the app directory name."
+  description = "Name for the service and image repository. Use the app directory name."
   type        = string
   default     = "xiao-otel"
 

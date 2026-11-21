@@ -412,7 +412,7 @@ fn broadcast_ble_and_serve_ota(metrics: &xiao_esp32c3::protocol::AdvMetrics) {
         .create_characteristic(uuid_or_panic(OTA_CONTROL_UUID), NimbleProperties::WRITE);
     let data_char = service.lock().create_characteristic(
         uuid_or_panic(OTA_DATA_UUID),
-        NimbleProperties::WRITE | NimbleProperties::WRITE_NR,
+        NimbleProperties::WRITE | NimbleProperties::WRITE_NO_RSP,
     );
     let status_char = service.lock().create_characteristic(
         uuid_or_panic(OTA_STATUS_UUID),

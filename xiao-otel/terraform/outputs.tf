@@ -5,3 +5,7 @@ output "url" {
 output "image" {
   value = ko_build.server.image_ref
 }
+
+output "service_account" {
+  value = google_service_account.service.email
+}
