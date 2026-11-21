@@ -1,4 +1,4 @@
-# An update on the security of `kontain.me`
+# `kontain.me` security incident postmortem
 
 On Wednesday, November 18th, 2026, an attacker compromised the GCP project that runs [kontain.me](https://github.com/imjasonh/kontain.me) and began mining crypto. This is a postmortem of the incident.
 
