@@ -30,7 +30,11 @@ MERGES = [(f'SvWin{i}', f'sv_win{i}', (f'SvWin{i}e', f'sv_win{i}e'), (f'SvWin{i}
     ('SvTst4', 'sv_tst4', ('SvTst4e0', 'sv_tst4e0'), ('SvSegTst4o', 'sv_seg_tst4o'), ('SvSegTst4x0', 'sv_seg_tst4x0'),
      "the `TSTInfo`'s optional `ordering` and `nonce`"),
     ('SvTst5', 'sv_tst5', ('SvTst5n', 'sv_tst5n'), ('SvTst5s', 'sv_tst5s'), "the `TSTInfo`'s optional `tsa` name"),
-    ('SvTst6', 'sv_tst6', ('SvTst6n', 'sv_tst6n'), ('SvTst6s', 'sv_tst6s'), "the `TSTInfo`'s optional extensions")]
+    ('SvTst6', 'sv_tst6', ('SvTst6n', 'sv_tst6n'), ('SvTst6s', 'sv_tst6s'), "the `TSTInfo`'s optional extensions"),
+    ('SvCg', 'sv_cg', ('SvCg0', 'sv_cg0'), ('SvCg1', 'sv_cg1'), ('SvCg2', 'sv_cg2'), ('SvCg3', 'sv_cg3'),
+     ('SvCg4', 'sv_cg4'), "one base64 group of a cosignature, padded at any of its places or not at all"),
+    ('SvCm', 'sv_cm', ('SvCmdl', 'sv_cmdl'), ('SvCmdn', 'sv_cmdn'), ('SvCmf', 'sv_cmf'), ('SvCmk', 'sv_cmk'),
+     ('SvCmn', 'sv_cmn'), ('SvCms', 'sv_cms'), ('SvCmx', 'sv_cmx'), "the end of a signature line")]
 
 SEGMENTS = {
     'SvSegLeaf': ('sv_seg_leaf', [('SvL1', 'sv_l1'), ('SvL2', 'sv_l2'), ('SvL3', 'sv_l3'), ('SvL4', 'sv_l4'),

@@ -10,7 +10,7 @@ stage's facts on whole, so it never takes them apart.
 
 import re
 
-from svchain import Stage, lean_binders, top_split
+from svchain import DEFAULTS, Stage, lean_binders, top_split
 from svseg import Segment, canon, split_in, strip_exists
 
 
@@ -48,29 +48,78 @@ def sc_pattern(stage):
     return names
 
 
+def complement(x, y):
+    """How hypothesis type `y` follows from `¬ x`: a term from `¬ x` named `h`,
+    and whether `y` needs a witness first. None if it doesn't."""
+    if negates(x, y):
+        return ("{h}", None)
+    m = re.fullmatch(r"(.+) < (.+)", x)
+    if m and y == f"{m.group(2)} ≤ {m.group(1)}":
+        return ("(Nat.not_lt.mp {h})", None)
+    m = re.fullmatch(r"(.+) = none", x)
+    m2 = m and re.fullmatch(re.escape(m.group(1)) + r" = some (\w+)", y)
+    if m2:
+        return ("{h}w", "obtain ⟨{h}v, {h}w⟩ := Option.ne_none_iff_exists'.mp {h}", m2.group(1), m.group(1))
+    return None
+
+
 def split(stages, names):
-    """A decision tree over `stages`: a hypothesis that some of them take and
-    the others take negated, then the trees of each side."""
+    """A decision tree over `stages`: a hypothesis that some of them take, and
+    one that follows from its negation that the others take, then the trees
+    of each side."""
     if len(stages) == 1:
         return ('leaf', stages[0])
-    first = dict(stages[0].params)
-    for p, t in stages[0].params:
-        tys = [dict(st.params).get(p) for st in stages]
-        if None in tys or len(set(tys)) != 2:
+    for p, t in [pt for st in stages for pt in st.params]:
+        pos = [st for st in stages if dict(st.params).get(p) == t]
+        rest = [st for st in stages if st not in pos]
+        if not rest:
             continue
-        pos_t = next((x for x in set(tys) if any(negates(x, y) for y in set(tys))), None)
-        if pos_t is None:
-            continue
-        pos = [st for st, ty in zip(stages, tys) if ty == pos_t]
-        neg = [st for st, ty in zip(stages, tys) if ty != pos_t]
-        h = "hb" if not names else f"hb{len(names) + 1}"
-        names.append(p)
-        return ('split', p, pos_t, h, split(pos, names), split(neg, names))
+        negmap, pre, wit = {}, None, None
+        for st in rest:
+            found = None
+            for q, u in st.params:
+                c = complement(t, u)
+                if c:
+                    found = (q, c)
+                    break
+            if not found:
+                break
+            negmap.setdefault(st.name, {})[found[0]] = found[1][0]
+            pre = pre or found[1][1]
+            wit = found[1][2:] if len(found[1]) > 2 else None
+        else:
+            # The negated side must take the complement in every stage, by the same name.
+            qs = {tuple(m) for m in (tuple(sorted(v)) for v in negmap.values())}
+            if len(qs) != 1:
+                continue
+            h = "hb" if not names else f"hb{len(names) + 1}"
+            names.append(p)
+            neg = {q: f.format(h=h) for q, f in next(iter(negmap.values())).items()}
+            names += [q for q in neg if q != p]
+            return ('split', p, t, h, split(pos, names), split(rest, names), neg,
+                    pre.format(h=h) if pre else None, (wit[0], wit[1], h) if pre and wit else None)
     raise ValueError(f"no hypothesis tells {[st.name for st in stages]} apart")
+
+
+def subst_w(text, subs):
+    for b, e in subs.items():
+        text = re.sub(rf"(?<![\w.']){re.escape(b)}(?![\w'])", e, text)
+    return text
 
 
 def leaves(tree):
     return [tree[1]] if tree[0] == 'leaf' else leaves(tree[4]) + leaves(tree[5])
+
+
+def witnesses_of(tree, acc=(), out=None):
+    """For each leaf, the witnesses that decisions above it introduce: (binder, expression, hypothesis)."""
+    out = {} if out is None else out
+    if tree[0] == 'leaf':
+        out[tree[1].name] = list(acc)
+        return out
+    witnesses_of(tree[4], acc, out)
+    witnesses_of(tree[5], acc + ((tree[8],) if tree[8] else ()), out)
+    return out
 
 
 def merged(fname, name, vs, doc):
@@ -79,10 +128,15 @@ def merged(fname, name, vs, doc):
     conds = []
     tree = split([Stage(*v) for v in vs], conds)
     order = leaves(tree)
+    wits = witnesses_of(tree)
+    bound = {b for ws in wits.values() for b, _, _ in ws}
     a = order[0]
-    common = [f.key for f in a.facts if all(f.key in {g.key for g in st.facts} for st in order)]
-    reorder = [[f.key for f in st.facts] != common for st in order]
     types = {'w': 'Word', 'r': 'Word', 'b': 'BitVec 8', 'a': 'Nat'}
+    common = [f.key for f in a.facts if all(f.key in {g.key for g in st.facts} for st in order)]
+    # A fact the stages state differently that can't be a witness's value is left out.
+    common = [k for k in common if k == 'KL' or k[0] in types or
+              len({next(g.text for g in st.facts if g.key == k) for st in order}) == 1]
+    reorder = [[f.key for f in st.facts] != common for st in order]
     fa, dvars = [], []
     kl_union = None
     for fs in zip(*[[next(f for f in st.facts if f.key == k) for k in common] for st in order]):
@@ -107,6 +161,8 @@ def merged(fname, name, vs, doc):
             seen_b |= set(new_names)
             if new_names:
                 bgroups.append("{" + " ".join(new_names) + " : " + ty + "}")
+    bgroups = [g for g in ("{" + " ".join(x for x in g[1:g.rindex(' : ')].split() if x not in bound) + g[g.rindex(' : '):]
+                           for g in bgroups) if not g.startswith("{ :")]
     binders = " ".join(bgroups)
     hyps, seen = [], set()
     for st in order:
@@ -117,7 +173,8 @@ def merged(fname, name, vs, doc):
             hyps.append((p, t))
     for st in order:
         assert all(dict(hyps)[p] == t for p, t in st.params if p not in conds), "the stages' hypotheses disagree"
-    scs = [" ∧ ".join(st.sc_parts + [f"{d} = {vals[j]}" for d, _, vals in dvars]) or "True"
+    scs = [" ∧ ".join([f"∃ {b}, {x} = some {b}" for b, x, _ in wits[st.name]] + st.sc_parts +
+                      [f"{d} = {vals[j]}" for d, _, vals in dvars]) or "True"
            for j, st in enumerate(order)]
     dbind = "".join(f"∃ {d} : {t}, " for d, t, _ in dvars)
     slices = []
@@ -163,11 +220,11 @@ def merged(fname, name, vs, doc):
             t = f".inr {t}" if t.startswith('⟨') or ' ' not in t else f".inr ({t})"
         return t
 
-    def leaf(st, path, ind):
+    def leaf(st, path, ind, bare=False):
         j = order.index(st)
         nm = sc_pattern(st)
         pat = f"⟨{', '.join(nm)}, rest⟩" if nm else "rest"
-        prs = nm + ["rfl"] * len(dvars)
+        prs = [y for _, _, h in wits[st.name] for y in (f"{h}v", f"{h}w")] + nm + ["rfl"] * len(dvars)
         pf = ("⟨" + ", ".join(prs) + "⟩" if len(prs) > 1 else prs[0]) if prs else "trivial"
         if reorder[j]:
             own = [f.key for f in st.facts if f.key != 'STEPS']
@@ -187,27 +244,55 @@ def merged(fname, name, vs, doc):
         vals = "".join(f"{v[j]}, " for _, _, v in dvars)
         args = " ".join(path.get(p, p) for p, _ in st.params)
         sl = "".join(f"{ts[j]}, " for _, _, ts in slices)
-        out.append(f"{ind}· rcases {st.name} {named_of[st.name]} {args} with {st.errpat} | {pat}")
-        out.append(f"{ind}  · exact .inl e")
+        b = "" if bare else "· "
+        sub = ind if bare else ind + "  "
+        named = named_of[st.name]
+        for wb, _, wh in wits[st.name]:
+            named = named.replace(f"({wb} := {wb})", f"({wb} := {wh}v)")
+        for wb in bound - {x for x, _, _ in wits[st.name]}:
+            ty = dict(st.binders).get(wb)
+            if ty:
+                named = named.replace(f"({wb} := {wb})", f"({wb} := {DEFAULTS[ty]})")
+        out.append(f"{ind}{b}rcases {st.name} {named} {args} with {st.errpat} | {pat}")
+        out.append(f"{sub}· exact .inl e")
         if pre:
-            out.append(f"{ind}  · {pre.strip()}")
-            out.append(f"{ind}    exact .inr ⟨{vals}{side(pf, j)}, {sl}{rest}⟩")
+            out.append(f"{sub}· {pre.strip()}")
+            out.append(f"{sub}  exact .inr ⟨{vals}{side(pf, j)}, {sl}{rest}⟩")
         else:
-            out.append(f"{ind}  · exact .inr ⟨{vals}{side(pf, j)}, {sl}{rest}⟩")
+            out.append(f"{sub}· exact .inr ⟨{vals}{side(pf, j)}, {sl}{rest}⟩")
 
-    def emit(t, path, ind, top=False):
+    def emit(t, path, ind, top=False, bare=False, subs=None):
+        subs = subs or {}
         if t[0] == 'leaf':
-            leaf(t[1], path, ind)
+            leaf(t[1], path, ind, bare)
             return
-        _, p, ty, h, pos, neg = t
+        if bare:
+            _, p, ty, h, pos, neg, negmap, pre, wit = t
+            ty = subst_w(ty, subs)
+            nsubs = {**subs, wit[0]: f"{wit[2]}v"} if wit else subs
+            out.append(f"{ind}by_cases {h} : {ty}")
+            emit(pos, {**path, p: h}, ind, subs=subs)
+            if pre:
+                out.append(f"{ind}· {pre}")
+                emit(neg, {**path, **negmap}, ind + "  ", bare=True, subs=nsubs)
+            else:
+                emit(neg, {**path, **negmap}, ind, subs=nsubs)
+            return
+        _, p, ty, h, pos, neg, negmap, pre, wit = t
+        ty = subst_w(ty, subs)
+        nsubs = {**subs, wit[0]: f"{wit[2]}v"} if wit else subs
         if top:
             out.append(f"{ind}by_cases {h} : {ty}")
             inner = ind
         else:
             out.append(f"{ind}· by_cases {h} : {ty}")
             inner = ind + "  "
-        emit(pos, {**path, p: h}, inner)
-        emit(neg, {**path, p: h}, inner)
+        emit(pos, {**path, p: h}, inner, subs=subs)
+        if pre:
+            out.append(f"{inner}· {pre}")
+            emit(neg, {**path, **negmap}, inner + "  ", top=False, bare=True, subs=nsubs)
+        else:
+            emit(neg, {**path, **negmap}, inner, subs=nsubs)
 
     emit(tree, {}, "  ", top=True)
     out += ["", "end C3.RV32.Sv", ""]
