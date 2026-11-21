@@ -45,6 +45,9 @@ concurrency:
   group: ios-signing-bootstrap-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   bootstrap:
     runs-on: macos-latest

@@ -222,10 +222,12 @@ func (p *Pool) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-tick.C:
 		case <-changed:
+			timer := time.NewTimer(time.Until(last.Add(p.cfg.MinInterval)))
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return ctx.Err()
-			case <-time.After(time.Until(last.Add(p.cfg.MinInterval))):
+			case <-timer.C:
 			}
 		}
 	}
@@ -246,10 +248,12 @@ func (p *Pool) watch(ctx context.Context, changed chan<- struct{}) {
 			return
 		}
 		slog.WarnContext(ctx, "queue watch stopped", "err", err)
+		timer := time.NewTimer(p.cfg.Interval)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-time.After(p.cfg.Interval):
+		case <-timer.C:
 		}
 	}
 }

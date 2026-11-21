@@ -73,9 +73,13 @@ function renderClues(container, dir) {
     const filled = indices.every((i) => state.guesses[i]);
     if (filled) btn.classList.add("is-filled");
 
-    btn.innerHTML =
-      `<span class="clue-range">${formatRange(span)}</span>` +
-      `<span class="clue-text">${escapeHtml(span.clue)}</span>`;
+    const rangeEl = document.createElement("span");
+    rangeEl.className = "clue-range";
+    rangeEl.textContent = formatRange(span);
+    const textEl = document.createElement("span");
+    textEl.className = "clue-text";
+    textEl.textContent = span.clue;
+    btn.append(rangeEl, textEl);
     btn.addEventListener("pointerdown", (event) => {
       // Keep / open the soft keyboard; don't let the button steal focus.
       event.preventDefault();
@@ -87,14 +91,6 @@ function renderClues(container, dir) {
     });
     container.appendChild(btn);
   });
-}
-
-function escapeHtml(text) {
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
 }
 
 function highlightSet() {
@@ -167,9 +163,13 @@ function renderActiveClue() {
     const letter = letterAt(state, cellIndex);
     if (letter) btn.classList.add("is-filled");
     btn.setAttribute("aria-label", `Cell ${cellIndex + 1}`);
-    btn.innerHTML =
-      `<span class="active-slot-num">${cellIndex + 1}</span>` +
-      `<span class="active-slot-letter">${letter || ""}</span>`;
+    const numEl = document.createElement("span");
+    numEl.className = "active-slot-num";
+    numEl.textContent = String(cellIndex + 1);
+    const letterEl = document.createElement("span");
+    letterEl.className = "active-slot-letter";
+    letterEl.textContent = letter || "";
+    btn.append(numEl, letterEl);
     btn.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       focusEntry();
@@ -194,7 +194,7 @@ function renderSpiral() {
   const parts = [];
 
   parts.push(
-    `<svg viewBox="0 0 ${vb} ${vb}" role="img" aria-label="Spiral puzzle grid with ${size} cells">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${vb} ${vb}" role="img" aria-label="Spiral puzzle grid with ${size} cells">`,
   );
 
   layout.cells.forEach((cell, i) => {
@@ -220,7 +220,8 @@ function renderSpiral() {
   });
 
   parts.push("</svg>");
-  els.spiral.innerHTML = parts.join("");
+  const svgDoc = new DOMParser().parseFromString(parts.join(""), "image/svg+xml");
+  els.spiral.replaceChildren(document.importNode(svgDoc.documentElement, true));
 
   els.spiral.querySelectorAll(".cell").forEach((node) => {
     node.addEventListener("pointerdown", (event) => {

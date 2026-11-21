@@ -925,14 +925,25 @@ function upsertFileRow(meta, dir, verb) {
     row = document.createElement("div");
     row.id = id;
     row.className = "file-row";
-    row.innerHTML = `
-      <div class="file-head">
-        <span class="file-arrow">${dir === "out" ? "↑" : "↓"}</span>
-        <span class="file-name"></span>
-        <span class="file-size"></span>
-      </div>
-      <progress max="1" value="0"></progress>
-      <div class="file-note"></div>`;
+    const head = document.createElement("div");
+    head.className = "file-head";
+    const arrow = document.createElement("span");
+    arrow.className = "file-arrow";
+    arrow.textContent = dir === "out" ? "↑" : "↓";
+    const nameEl = document.createElement("span");
+    nameEl.className = "file-name";
+    const sizeEl = document.createElement("span");
+    sizeEl.className = "file-size";
+    head.append(arrow, nameEl, sizeEl);
+
+    const progressEl = document.createElement("progress");
+    progressEl.max = 1;
+    progressEl.value = 0;
+
+    const noteEl = document.createElement("div");
+    noteEl.className = "file-note";
+
+    row.append(head, progressEl, noteEl);
     el["file-list"].prepend(row);
   }
   row.querySelector(".file-name").textContent = meta.name;
@@ -1037,7 +1048,7 @@ function renderLocation(who, loc) {
 // ---------------------------------------------------------------------------
 
 function showQr(container, text, caption) {
-  container.innerHTML = "";
+  container.replaceChildren();
   try {
     const canvas = renderToCanvas(text, { size: 360 });
     canvas.setAttribute("role", "img");

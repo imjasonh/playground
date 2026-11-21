@@ -266,10 +266,12 @@ func (s *Sim) start(ctx context.Context) (*instance, error) {
 			conn.Close()
 			break
 		}
+		timer := time.NewTimer(5 * time.Millisecond)
 		select {
 		case <-inst.exited:
+			timer.Stop()
 			return nil, fmt.Errorf("instance %s exited during startup", id)
-		case <-time.After(5 * time.Millisecond):
+		case <-timer.C:
 		}
 		if time.Now().After(deadline) {
 			inst.kill("killed")

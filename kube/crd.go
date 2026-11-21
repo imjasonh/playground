@@ -238,10 +238,12 @@ func (m *Manager) waitEstablished(ctx context.Context, name string) (*liveCRD, e
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("CustomResourceDefinition %s was not established after a minute", name)
 		}
+		timer := time.NewTimer(100 * time.Millisecond)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return nil, ctx.Err()
-		case <-time.After(100 * time.Millisecond):
+		case <-timer.C:
 		}
 	}
 }
@@ -437,10 +439,12 @@ func (c *controller[T, P]) maintainCRD(ctx context.Context) {
 	// Only the replica that holds the shard of the CRD's name does this.
 	// Others wait in case the shard moves to them.
 	for key := (Key{Name: c.crd().name()}); !c.sh.owns(key); {
+		timer := time.NewTimer(5 * time.Second)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-time.After(5 * time.Second):
+		case <-timer.C:
 		}
 	}
 	delay := 5 * time.Second
@@ -454,10 +458,12 @@ func (c *controller[T, P]) maintainCRD(ctx context.Context) {
 			return
 		}
 		c.logger(ctx).Warn("CustomResourceDefinition migration failed; retrying", "crd", c.crd().name(), "err", err, "retry", delay)
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-time.After(delay):
+		case <-timer.C:
 		}
 		delay = min(2*delay, 5*time.Minute)
 	}

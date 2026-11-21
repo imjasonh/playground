@@ -237,7 +237,7 @@ impl TestRepo {
                     }
                     std::fs::write(&full, contents).unwrap();
                 }
-                Spec::Symlink(..) => unimplemented!("dangling symlink specs unused"),
+                Spec::Symlink(..) => panic!("dangling symlink specs unused"),
             }
         }
         git(&self.work, &["add", "-A"]);

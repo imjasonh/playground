@@ -301,11 +301,13 @@ func runScenario(ctx context.Context, env map[string]string, p plan, out string)
 	go pollRefs(recCtx, r, rn.w, filepath.Join(env["STATE"], "repos"), func() []string { return keys }, []string{"main"})
 	go tick(recCtx, r, rn.w)
 	go func() {
+		flushTick := time.NewTicker(time.Second)
+		defer flushTick.Stop()
 		for {
 			select {
 			case <-recCtx.Done():
 				return
-			case <-time.After(time.Second):
+			case <-flushTick.C:
 				r.flush()
 			}
 		}
@@ -510,11 +512,14 @@ func (rn *runner) warmup(ctx context.Context) error {
 		if time.Since(start) > 10*time.Minute {
 			return errors.New("the warm-up branches didn't land within 10 minutes")
 		}
+		timer := time.NewTimer(250 * time.Millisecond)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return ctx.Err()
 		case <-rn.w.changed:
-		case <-time.After(250 * time.Millisecond):
+			timer.Stop()
+		case <-timer.C:
 		}
 	}
 	rn.note("warm-up landed after %s", time.Since(start).Round(time.Millisecond))

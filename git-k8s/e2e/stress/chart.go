@@ -353,6 +353,8 @@ func toPNG(chrome, svgPath string) error {
 	}
 	deadline := time.Now().Add(30 * time.Second)
 	lastSize := int64(-1)
+	tick := time.NewTicker(300 * time.Millisecond)
+	defer tick.Stop()
 	for time.Now().Before(deadline) {
 		select {
 		case <-done:
@@ -360,7 +362,7 @@ func toPNG(chrome, svgPath string) error {
 				return nil
 			}
 			return fmt.Errorf("chrome exited without writing %s", png)
-		case <-time.After(300 * time.Millisecond):
+		case <-tick.C:
 		}
 		if fi, err := os.Stat(png); err == nil && fi.Size() > 0 {
 			if fi.Size() == lastSize {

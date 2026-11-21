@@ -374,10 +374,12 @@ func rollService(ctx context.Context, project, region, service, url, oldInstance
 		} else {
 			last = fmt.Errorf("still instance %s", st.Instance)
 		}
+		timer := time.NewTimer(300 * time.Millisecond)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return nil, ctx.Err()
-		case <-time.After(300 * time.Millisecond):
+		case <-timer.C:
 		}
 	}
 	return nil, fmt.Errorf("new instance did not serve: %w", last)

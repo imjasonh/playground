@@ -176,7 +176,7 @@ function updateDisplayInfo() {
     ["Palette", paletteSummary(d)],
     ["Refresh", d.refresh],
   ];
-  els.displayInfo.innerHTML = "";
+  els.displayInfo.replaceChildren();
   for (const [k, v] of rows) {
     const key = document.createElement("dt");
     key.textContent = k;

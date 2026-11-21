@@ -174,7 +174,11 @@ function startDuel(selectedMode) {
 
 function resetOverlayCopy() {
   overlayKicker.textContent = "Frontier protocol";
-  overlayTitle.innerHTML = "Read the wind.<br>Own the horizon.";
+  overlayTitle.replaceChildren(
+    "Read the wind.",
+    document.createElement("br"),
+    "Own the horizon.",
+  );
   overlayCopy.textContent =
     "Every duel redraws the frontier. Set your angle and powder, then send it—crosswind can bend the whole shot.";
   const [cpuButton, localButton] = modeButtons;

@@ -112,15 +112,22 @@ function commitSubject(content) {
 
 // --- Navigator ------------------------------------------------------------
 
+function replaceHtml(el, html) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  el.replaceChildren(...doc.body.childNodes);
+}
+
 export function renderPackTitle(el, session) {
   const name = session.base.replace(/^https?:\/\//, "").replace(/^file:\/\//, "");
   const source = session.base.startsWith("file://")
     ? session.large ? "local file, streamed" : "local file"
     : "fetched";
-  el.innerHTML =
+  replaceHtml(
+    el,
     `<p class="pack-name" title="${escapeHtml(session.base)}">${escapeHtml(name)}</p>` +
-    `<p class="pack-meta">${session.stats.count.toLocaleString()} objects · ` +
-    `${escapeHtml(formatBytes(session.stats.totalPacked))} · ${source}</p>`;
+      `<p class="pack-meta">${session.stats.count.toLocaleString()} objects · ` +
+      `${escapeHtml(formatBytes(session.stats.totalPacked))} · ${source}</p>`,
+  );
 }
 
 /**
@@ -129,7 +136,7 @@ export function renderPackTitle(el, session) {
  */
 export function renderObjectRows(el, rows, session, { selectedOid = null, limit = 500 } = {}) {
   if (rows.length === 0) {
-    el.innerHTML = `<li class="empty-row">No matching objects.</li>`;
+    replaceHtml(el, `<li class="empty-row">No matching objects.</li>`);
     return;
   }
   const parts = [];
@@ -153,7 +160,7 @@ export function renderObjectRows(el, rows, session, { selectedOid = null, limit 
         `</button></li>`,
     );
   }
-  el.innerHTML = parts.join("");
+  replaceHtml(el, parts.join(""));
 }
 
 /** Move the selected-row marker without rebuilding the list. */
@@ -183,63 +190,72 @@ export function renderAuthorFilter(select, attribution) {
 export function renderRefs(el, session) {
   const refs = (session.refs || []).slice().sort((a, b) => a.name.localeCompare(b.name));
   if (refs.length === 0) {
-    el.innerHTML = `<li class="empty-row">No refs. Local packs don't carry them.</li>`;
+    replaceHtml(el, `<li class="empty-row">No refs. Local packs don't carry them.</li>`);
     return;
   }
-  el.innerHTML = refs
-    .map((ref) => {
-      const obj = session.byOid.get(ref.oid);
-      const head = ref.oid === session.head && ref.name !== "HEAD" ? ` <span class="tag">HEAD</span>` : "";
-      const name = `<span class="row-label">${escapeHtml(ref.name)}${head}</span>`;
-      const sub = `<span class="row-sub">${escapeHtml(shortOid(ref.oid))}</span>`;
-      if (!obj) {
-        return `<li><div class="row muted">${typePill("missing")}<span class="row-main">${name}${sub}</span></div></li>`;
-      }
-      return (
-        `<li><button type="button" class="row" data-oid="${escapeHtml(ref.oid)}">` +
-        `${typePill(obj.typeName)}<span class="row-main">${name}${sub}</span></button></li>`
-      );
-    })
-    .join("");
+  replaceHtml(
+    el,
+    refs
+      .map((ref) => {
+        const obj = session.byOid.get(ref.oid);
+        const head = ref.oid === session.head && ref.name !== "HEAD" ? ` <span class="tag">HEAD</span>` : "";
+        const name = `<span class="row-label">${escapeHtml(ref.name)}${head}</span>`;
+        const sub = `<span class="row-sub">${escapeHtml(shortOid(ref.oid))}</span>`;
+        if (!obj) {
+          return `<li><div class="row muted">${typePill("missing")}<span class="row-main">${name}${sub}</span></div></li>`;
+        }
+        return (
+          `<li><button type="button" class="row" data-oid="${escapeHtml(ref.oid)}">` +
+          `${typePill(obj.typeName)}<span class="row-main">${name}${sub}</span></button></li>`
+        );
+      })
+      .join(""),
+  );
 }
 
 /** Paths tab: flattened tree entries, each opening its blob. */
 export function renderPaths(el, entries, { limit = 2000 } = {}) {
   if (!entries || entries.length === 0) {
-    el.innerHTML = `<li class="empty-row">No paths match.</li>`;
+    replaceHtml(el, `<li class="empty-row">No paths match.</li>`);
     return;
   }
-  el.innerHTML = entries
-    .slice(0, limit)
-    .map((entry) => {
-      const size = entry.size != null ? formatBytes(entry.size) : "not in pack";
-      const name = `<span class="row-label">${escapeHtml(entry.path)}</span>`;
-      if (!entry.inPack) {
-        return `<li><div class="row muted"><span class="row-main">${name}</span><span class="row-size">${size}</span></div></li>`;
-      }
-      return (
-        `<li><button type="button" class="row" data-oid="${escapeHtml(entry.oid)}">` +
-        `<span class="row-main">${name}</span><span class="row-size">${escapeHtml(size)}</span></button></li>`
-      );
-    })
-    .join("");
+  replaceHtml(
+    el,
+    entries
+      .slice(0, limit)
+      .map((entry) => {
+        const size = entry.size != null ? formatBytes(entry.size) : "not in pack";
+        const name = `<span class="row-label">${escapeHtml(entry.path)}</span>`;
+        if (!entry.inPack) {
+          return `<li><div class="row muted"><span class="row-main">${name}</span><span class="row-size">${size}</span></div></li>`;
+        }
+        return (
+          `<li><button type="button" class="row" data-oid="${escapeHtml(entry.oid)}">` +
+          `<span class="row-main">${name}</span><span class="row-size">${escapeHtml(size)}</span></button></li>`
+        );
+      })
+      .join(""),
+  );
 }
 
 // --- Landing --------------------------------------------------------------
 
 export function renderSaved(el, list) {
-  el.innerHTML = list
-    .map(
-      (row) =>
-        `<li><div class="saved-info"><span class="saved-name">${escapeHtml(row.base)}</span>` +
-        `<span class="muted">${escapeHtml(formatBytes(row.packBytes))} · ${row.refCount} refs · ` +
-        `${escapeHtml(new Date(row.savedAt).toLocaleString())}</span></div>` +
-        `<div class="saved-actions">` +
-        `<button type="button" class="primary" data-open="${escapeHtml(row.key)}">Open</button>` +
-        `<button type="button" data-delete="${escapeHtml(row.key)}">Delete</button>` +
-        `</div></li>`,
-    )
-    .join("");
+  replaceHtml(
+    el,
+    list
+      .map(
+        (row) =>
+          `<li><div class="saved-info"><span class="saved-name">${escapeHtml(row.base)}</span>` +
+          `<span class="muted">${escapeHtml(formatBytes(row.packBytes))} · ${row.refCount} refs · ` +
+          `${escapeHtml(new Date(row.savedAt).toLocaleString())}</span></div>` +
+          `<div class="saved-actions">` +
+          `<button type="button" class="primary" data-open="${escapeHtml(row.key)}">Open</button>` +
+          `<button type="button" data-delete="${escapeHtml(row.key)}">Delete</button>` +
+          `</div></li>`,
+      )
+      .join(""),
+  );
 }
 
 // --- Overview -------------------------------------------------------------
@@ -263,21 +279,23 @@ export function renderOverview(el, session, state) {
   const unresolved = session.unresolved?.length || 0;
   if (unresolved > 0) figures.push(["Unresolved", unresolved.toLocaleString()]);
 
-  el.innerHTML =
+  replaceHtml(
+    el,
     `<div class="view-inner">` +
-    `<h2 class="view-title">Overview</h2>` +
-    `<dl class="figures">${figures
-      .map(([k, v]) => `<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd></div>`)
-      .join("")}</dl>` +
-    `<div class="cards">` +
-    typesCard(session) +
-    largestCard(session, state.metric || "packed") +
-    authorCard(session.attribution, state.authorMetric || "packed") +
-    depthCard(stats) +
-    reachCard(session) +
-    packCard(session, state) +
-    (state.compare ? compareCard(state.compare) : "") +
-    `</div></div>`;
+      `<h2 class="view-title">Overview</h2>` +
+      `<dl class="figures">${figures
+        .map(([k, v]) => `<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd></div>`)
+        .join("")}</dl>` +
+      `<div class="cards">` +
+      typesCard(session) +
+      largestCard(session, state.metric || "packed") +
+      authorCard(session.attribution, state.authorMetric || "packed") +
+      depthCard(stats) +
+      reachCard(session) +
+      packCard(session, state) +
+      (state.compare ? compareCard(state.compare) : "") +
+      `</div></div>`,
+  );
 }
 
 function card(title, body, { wide = false, actions = "" } = {}) {
@@ -519,7 +537,7 @@ function diffList(title, rows) {
 
 export function renderDetail(el, obj, session) {
   if (!obj) {
-    el.innerHTML = `<div class="view-inner"><p class="empty">Pick an object from the list.</p></div>`;
+    replaceHtml(el, `<div class="view-inner"><p class="empty">Pick an object from the list.</p></div>`);
     return;
   }
 
@@ -592,7 +610,7 @@ export function renderDetail(el, obj, session) {
   }
 
   parts.push(`</div>`);
-  el.innerHTML = parts.join("");
+  replaceHtml(el, parts.join(""));
 }
 
 function storedAs(obj) {

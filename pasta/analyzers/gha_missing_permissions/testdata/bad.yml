@@ -1,0 +1,7 @@
+name: Bad # want "workflow lacks a top-level permissions: definition"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo bad

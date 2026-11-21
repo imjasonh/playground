@@ -89,7 +89,7 @@ mod tests {
     #[async_trait(?Send)]
     impl RepoRegistry for FakeRegistry {
         async fn register(&self, _repo: &str) -> Result<()> {
-            unimplemented!("list_all tests don't register")
+            Err("list_all tests don't register".into())
         }
 
         async fn list_page(&self, cursor: Option<&str>) -> Result<RegistryPage> {

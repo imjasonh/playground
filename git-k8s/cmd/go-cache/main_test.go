@@ -374,6 +374,8 @@ func TestConcurrentModuleFetches(t *testing.T) {
 	stop, sampled := make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(sampled)
+		tick := time.NewTicker(time.Millisecond)
+		defer tick.Stop()
 		for {
 			peak = max(peak, usage())
 			select {
@@ -381,7 +383,7 @@ func TestConcurrentModuleFetches(t *testing.T) {
 				return
 			case <-t.Context().Done():
 				return
-			case <-time.After(time.Millisecond):
+			case <-tick.C:
 			}
 		}
 	}()
