@@ -3,12 +3,12 @@
 # A token for any other environment cannot impersonate these accounts.
 #
 # The deploy account can change app stacks, but it cannot take over the
-# project. This stack creates each app's runtime account
-# (var.app_service_accounts), and the deploy account can act as those
-# accounts and no others. It cannot create service accounts, set IAM on
-# one, or change custom roles. It can grant and revoke project roles, but
-# only the roles in var.app_project_roles. Pool admin stays with the
-# credentials that apply this stack.
+# project. Each app stack creates its own runtime service account through
+# the custom role below (create, update, delete, actAs — without
+# setIamPolicy, key creation, or token minting). The deploy account cannot
+# change custom roles, and it can grant and revoke only the project roles
+# in var.app_project_roles. Pool admin stays with the credentials that
+# apply this stack.
 #
 # The plan account can refresh an app stack and read the state bucket. It
 # cannot change Cloud Run, IAM, or objects outside that bucket. ko rebuilds
@@ -74,6 +74,17 @@ locals {
     "roles/billing.costsManager" = google_service_account.github_deploy.email
     "roles/billing.viewer"       = google_service_account.github_plan.email
   }
+
+  # Create, update, delete, and attach per-service runtime service accounts in
+  # app stacks without setIamPolicy, key creation, or token minting.
+  github_deploy_service_account_permissions = [
+    "iam.serviceAccounts.actAs",
+    "iam.serviceAccounts.create",
+    "iam.serviceAccounts.delete",
+    "iam.serviceAccounts.get",
+    "iam.serviceAccounts.list",
+    "iam.serviceAccounts.update",
+  ]
 
   # Manage secrets without reading or adding their values.
   github_deploy_secret_permissions = [
@@ -168,20 +179,27 @@ resource "google_project_iam_member" "github_deploy_app_roles" {
   }
 }
 
-resource "google_service_account" "app" {
-  for_each = var.app_service_accounts
+removed {
+  from = google_service_account.app
 
-  project      = var.project_id
-  account_id   = each.key
-  display_name = each.value
+  lifecycle {
+    destroy = false
+  }
 }
 
-resource "google_service_account_iam_member" "github_deploy_act_as" {
-  for_each = google_service_account.app
+resource "google_project_iam_custom_role" "github_deploy_service_accounts" {
+  project     = var.project_id
+  role_id     = "playground_deploy_service_accounts"
+  title       = "Playground deploy service accounts"
+  description = "Create, update, delete, and attach app runtime service accounts. Cannot set IAM policies, create keys, or mint tokens."
+  permissions = local.github_deploy_service_account_permissions
+  stage       = "GA"
+}
 
-  service_account_id = each.value.name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${google_service_account.github_deploy.email}"
+resource "google_project_iam_member" "github_deploy_service_accounts" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.github_deploy_service_accounts.name
+  member  = "serviceAccount:${google_service_account.github_deploy.email}"
 }
 
 resource "google_project_iam_member" "github_plan" {

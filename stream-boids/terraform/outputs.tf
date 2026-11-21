@@ -8,7 +8,7 @@ output "image" {
 }
 
 output "service_account" {
-  value = data.google_service_account.vm.email
+  value = google_service_account.vm.email
 }
 
 output "add_secrets" {

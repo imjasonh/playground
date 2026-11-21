@@ -756,14 +756,15 @@ VMs and networks, and create Secret Manager secrets and set who reads
 them, for `stream-boids`; neither account holds a role that reads a
 secret's value. Re-apply this stack when those roles change.
 
-An app does not create its runtime service account either. Add the
-account to `app_service_accounts` in `gcp/terraform`, apply that stack,
-and read the account in the app with a `google_service_account` data
-source. The deploy account can act as only those accounts. It cannot
-create a service account, set IAM on one, or change a custom role, and
-it can grant and revoke only the project roles in `app_project_roles`.
-If an app needs another project role for its account, add the role
-there and re-apply.
+Each app stack creates and manages its own dedicated runtime service
+account (`google_service_account`) with minimal permissions (never the
+default Compute Engine service account). The deploy account holds a
+custom role (`playground_deploy_service_accounts`) that allows creating,
+updating, deleting, and attaching service accounts without setting IAM
+on a service account, creating keys, or minting tokens, and it can grant
+and revoke only the project roles in `app_project_roles`. If an app
+needs another project role for its account, add the role there and
+re-apply `gcp/terraform`.
 
 The same stack also creates a third Workload Identity provider and
 service account, bound to neither the deploy nor the plan account's

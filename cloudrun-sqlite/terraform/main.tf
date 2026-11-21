@@ -34,18 +34,14 @@ resource "google_artifact_registry_repository" "images" {
   depends_on = [google_project_service.services]
 }
 
-# gcp/terraform creates the runtime accounts. The deploy account can act
-# as them but cannot create a service account.
-data "google_service_account" "service" {
-  account_id = var.name
+import {
+  to = google_service_account.service
+  id = "projects/${var.project_id}/serviceAccounts/${var.name}@${var.project_id}.iam.gserviceaccount.com"
 }
 
-removed {
-  from = google_service_account.service
-
-  lifecycle {
-    destroy = false
-  }
+resource "google_service_account" "service" {
+  account_id   = var.name
+  display_name = "cloudrun-sqlite service"
 }
 
 resource "google_project_iam_member" "telemetry" {
@@ -56,13 +52,13 @@ resource "google_project_iam_member" "telemetry" {
 
   project = var.project_id
   role    = each.value
-  member  = "serviceAccount:${data.google_service_account.service.email}"
+  member  = "serviceAccount:${google_service_account.service.email}"
 }
 
 resource "google_storage_bucket_iam_member" "replica" {
   bucket = google_storage_bucket.replica.name
   role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${data.google_service_account.service.email}"
+  member = "serviceAccount:${google_service_account.service.email}"
 }
 
 resource "ko_build" "server" {
@@ -91,7 +87,7 @@ resource "google_cloud_run_v2_service" "service" {
   # The volume and in-memory scratch need the second-generation runtime.
   template {
     execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
-    service_account       = data.google_service_account.service.email
+    service_account       = google_service_account.service.email
 
     scaling {
       # One writer at a time. Cloud Run can briefly run more than this
@@ -170,16 +166,14 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
 # The read-only replica has its own account so that its bucket role can't
 # write. The server also opens SQLite read-only and refuses writes, but
 # the role holds even if that code changes.
-data "google_service_account" "reader" {
-  account_id = "${var.name}-reader"
+import {
+  to = google_service_account.reader
+  id = "projects/${var.project_id}/serviceAccounts/${var.name}-reader@${var.project_id}.iam.gserviceaccount.com"
 }
 
-removed {
-  from = google_service_account.reader
-
-  lifecycle {
-    destroy = false
-  }
+resource "google_service_account" "reader" {
+  account_id   = "${var.name}-reader"
+  display_name = "cloudrun-sqlite read-only replica"
 }
 
 resource "google_project_iam_member" "reader_telemetry" {
@@ -190,14 +184,14 @@ resource "google_project_iam_member" "reader_telemetry" {
 
   project = var.project_id
   role    = each.value
-  member  = "serviceAccount:${data.google_service_account.reader.email}"
+  member  = "serviceAccount:${google_service_account.reader.email}"
 }
 
 # Gets and lists only: no uploads, deletes, or overwrites.
 resource "google_storage_bucket_iam_member" "reader" {
   bucket = google_storage_bucket.replica.name
   role   = "roles/storage.objectViewer"
-  member = "serviceAccount:${data.google_service_account.reader.email}"
+  member = "serviceAccount:${google_service_account.reader.email}"
 }
 
 # A separate service, so for now it has its own URL. A load balancer can
@@ -209,7 +203,7 @@ resource "google_cloud_run_v2_service" "reader" {
 
   template {
     execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
-    service_account       = data.google_service_account.reader.email
+    service_account       = google_service_account.reader.email
 
     scaling {
       max_instance_count = var.reader_max_instances
