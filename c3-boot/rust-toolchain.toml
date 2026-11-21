@@ -1,0 +1,7 @@
+# Toolchain pin for the c3-boot workspace. The bootloader proofs cover the
+# machine code this exact compiler produces, so change it only together with
+# the pinned image digest.
+[toolchain]
+channel = "1.99.1"
+components = ["clippy", "rustfmt"]
+targets = ["riscv32imc-unknown-none-elf"]

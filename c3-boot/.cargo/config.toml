@@ -1,0 +1,14 @@
+# Build settings that make the bootloader image easier to prove. Changing
+# either changes the pinned image digest (bootloader/check-digest.sh).
+#
+# sha2's compact software backend: SHA-256 and SHA-512 compression as loops
+# instead of unrolled rounds. Host builds use it too, so the tests and the
+# Lean differential harnesses run the code the bootloader runs.
+[build]
+rustflags = ["--cfg", 'sha2_backend_soft="compact"']
+
+# For the RISC-V builds, also turn off LLVM's machine outliner, which moves
+# short instruction runs into shared helpers. Cargo uses a target's
+# rustflags instead of [build]'s, so the sha2 setting is repeated here.
+[target.riscv32imc-unknown-none-elf]
+rustflags = ["--cfg", 'sha2_backend_soft="compact"', "-C", "llvm-args=-enable-machine-outliner=never"]

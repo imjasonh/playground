@@ -1,0 +1,46 @@
+[package]
+name = "c3-boot-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+# cargo-fuzz builds with a nightly toolchain and sanitizer flags, so this crate
+# stays out of the c3-boot workspace.
+[workspace]
+
+[dependencies]
+c3-crypto = { path = "../crypto" }
+c3-ota = { path = "../ota" }
+c3-verify = { path = "../verify" }
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "formats"
+path = "fuzz_targets/formats.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "trust"
+path = "fuzz_targets/trust.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sigstore"
+path = "fuzz_targets/sigstore.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "slot"
+path = "fuzz_targets/slot.rs"
+test = false
+doc = false
+bench = false
