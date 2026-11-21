@@ -305,6 +305,21 @@ final class PlaygroundUITests: XCTestCase {
             || app.staticTexts["every 1s"].waitForExistence(timeout: 3))
     }
 
+    func testXIAOESP32C3ExperimentOpens() {
+        let app = launchApp()
+
+        openExperiment("xiao-esp32c3", title: "XIAO ESP32C3", in: app)
+
+        XCTAssertTrue(app.navigationBars["XIAO ESP32C3"].waitForExistence(timeout: 8))
+        let simulateButton = app.buttons["xiaoSimulateWakeButton"]
+        XCTAssertTrue(simulateButton.waitForExistence(timeout: 8))
+        simulateButton.tap()
+        XCTAssertTrue(
+            app.otherElements["xiaoMetricsDashboard"].waitForExistence(timeout: 5)
+                || app.staticTexts["Latest wake cycle"].waitForExistence(timeout: 5)
+        )
+    }
+
     func testAppAttestExperimentOpens() {
         let app = launchApp()
 

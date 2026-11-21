@@ -149,6 +149,11 @@ them:
 - **[`esp32-ble/`](esp32-ble/)** — Rust/ESP-IDF firmware that advertises as
   PlaygroundBLE. The Playground iOS **ESP32 BLE** experiment writes LED
   commands and displays status notifications.
+- **[`xiao-esp32c3/`](xiao-esp32c3/)** — Rust/ESP-IDF firmware for the Seeed
+  Studio XIAO ESP32C3: times wake-cycle phases (`sensor`, `compute`,
+  `epd_refresh`, and `radio`), toggles a GPIO logic probe for hardware power
+  profilers, and broadcasts 24-byte BLE Manufacturer Specific Data bursts to
+  the Playground iOS **XIAO ESP32C3** dashboard and OTLP forwarder.
 - **[`git-server/`](git-server/)** — a git smart-HTTP server for Cloudflare
   Workers, in Rust: repositories in R2, refs in Durable Objects, plus
   file/tree/blame APIs and streaming pack ingest.
