@@ -2820,6 +2820,8 @@ def stage_l1():
     g.block(0xBC, 0xD0)
     keep_regs = [2, 3, 4, 10, 11, 12, 18, 19, 21, 22, 25, 26, 27]
     conj, terms = g.conclusion(0xD0, keep_regs, set(g.words), set(g.bytes), [])
+    conj = conj + [f"SvKeepL B n0.mem n'.mem {kl_lean(g.kl)}"]
+    terms = terms + [f"keep_kk{g.k}.mono (by decide)"]
     stmt = (f"(¬ ({sc}) ∧ SvErrRet B out v n0) ∨\n    (∃ t, derElement 0x30 {der} = .ok t ∧ "
             f"ll - BitVec.ofNat 32 (t.header + t.len) = 0 ∧\n      ∃ n', " + " ∧\n        ".join(c.replace(t, "t") for c in conj) + ")")
     proof = f"  exact .inr ⟨{t}, hr{k}, hz_{rest_k}, n{g.k}, " + ", ".join(terms) + "⟩"
@@ -6337,17 +6339,18 @@ def stage_tst1():
 
 
 TST_WORDS = sorted(DPV_WORDS + [0x78])
-TST2_BINDERS = ("{B out bp x21 x26 dg dp rp rl : Word} {sr ss : Bytes} "
+TST2_BINDERS = ("{B out bp x21 x26 dg dp rp rl x8 : Word} {sr ss : Bytes} "
                 + "{" + " ".join(f"w{e:x}" for e in TST_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
 
 
-def tst_start(g):
+def tst_start(g, s0_any=False):
     """The state after the message imprint: the TSTInfo's reader at 0x1320
-    holds (`rp`, `rl`), and the signature's bytes are at 0x1020."""
+    holds (`rp`, `rl`), and the signature's bytes are at 0x1020. `s0` is 0x18,
+    or after the `ordering` boolean, which sets it to -1, any value `x8`."""
     regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
             19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
             25: ("U", "(BitVec.ofNat 8 (sr.getD 0 0)).zeroExtend 32", "BitVec.ofNat 8 (sr.getD 0 0)"),
-            8: ("C", 0x18), 20: ("S", 0x1320), 22: ("U", "dp")}
+            8: ("U", "x8") if s0_any else ("C", 0x18), 20: ("S", 0x1320), 22: ("U", "dp")}
     words = {e: f"w{e:x}" for e in TST_WORDS}
     words.update({0x1328: "rp", 0x132C: "rl"})
     params = start(g, regs, words, {("rp", "rl"): "rd_in"}) + ["(D0 : SvData M0)"]
@@ -6512,7 +6515,7 @@ def stage_tst4(kind):
     """The TSTInfo's optional `ordering` and `nonce`, in pieces that end where
     the code's paths meet."""
     g = Gen("Tst4" + kind)
-    params = tst_start(g)
+    params = tst_start(g, kind in ("e1", "x1", "nn", "ns"))
     start_, end, title, what = TST4_DOC[kind]
     at = {"0x28DA": 0x28E2, "0x2918": 0x2920}.get(start_)
     if kind in ("e0", "e1"):
@@ -6614,7 +6617,7 @@ def stage_tst5(tag, present):
     """From 0x2952: the optional `[0]` TSA name (to 0x2970), or from 0x2970 the
     optional `[1]` extensions and the TSTInfo's end (to 0x29AA)."""
     g = Gen(f"Tst{5 if tag == 0xA0 else 6}" + ("s" if present else "n"))
-    params = tst_start(g)
+    params = tst_start(g, True)
     params.append(f"(hce : derOptRes 0x{tag:X} (memBytes M0 (rp) (rl).toNat) {'≠' if present else '='} none)")
     if tag == 0xA0:
         g.block(0x2952, 0x2962)
@@ -6649,7 +6652,7 @@ def stage_tst5(tag, present):
     return g, info
 
 
-TSV_BINDERS = ("{B out bp x21 x26 dg dp : Word} {sr ss : Bytes} "
+TSV_BINDERS = ("{B out bp x21 x26 dg dp x8 : Word} {sr ss : Bytes} "
                + "{" + " ".join(f"w{e:x}" for e in TST_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
 
 
@@ -6659,7 +6662,7 @@ def stage_tsv():
     regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
             19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
             25: ("U", "(BitVec.ofNat 8 (sr.getD 0 0)).zeroExtend 32", "BitVec.ofNat 8 (sr.getD 0 0)"),
-            8: ("C", 0x18), 20: ("S", 0x1320), 22: ("U", "dp")}
+            8: ("U", "x8"), 20: ("S", 0x1320), 22: ("U", "dp")}
     words = {e: f"w{e:x}" for e in TST_WORDS}
     params = start(g, regs, words, {})
     g.ranges[0x1020] = (47, "BitVec.ofNat 8 (sr.getD (1 + j) 0)")

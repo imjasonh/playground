@@ -106,7 +106,8 @@ theorem sv_l1 {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : Machine}
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x158C) = (BitVec.ofNat 32 t.len).extractLsb' 0 8 ∧
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x158D) = (BitVec.ofNat 32 t.len).extractLsb' 8 8 ∧
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x158E) = (BitVec.ofNat 32 t.len).extractLsb' 16 8 ∧
-        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x158F) = (BitVec.ofNat 32 t.len).extractLsb' 24 8) := by
+        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x158F) = (BitVec.ofNat 32 t.len).extractLsb' 24 8 ∧
+        SvKeepL B n0.mem n'.mem [(0xA20, 0x10), (0x2E8, 0x8), (0x158D, 0xB), (0x1588, 0x4), (0x158C, 0x1)]) := by
   have t0 : Steps n0 n0 := .refl n0
   have fR0 : ∀ x, SvR B x → n0.mem x = M0 x := fM
   have g0_3 : reg n0 (3 : Fin 32) = reg n0 (3 : Fin 32) := rfl
@@ -823,6 +824,6 @@ theorem sv_l1 {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : Machine}
   have b12_158e : n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x158E) = (BitVec.ofNat 32 tl1.len).extractLsb' 16 8 := by rw [m12]; exact b11_158e
   have b12_158f : n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x158F) = (BitVec.ofNat 32 tl1.len).extractLsb' 24 8 := by rw [m12]; exact b11_158f
   clear b11_158f b11_158e b11_158d b11_158c b11_a27 b11_a26 b11_a25 b11_a24 w11_1594 w11_1590 w11_1588 w11_a2c w11_a28 w11_a24 w11_a20 w11_2ec w11_2e8 w11_2e4 w11_2e0 g11_27 g11_26 g11_25 g11_22 g11_21 g11_20 g11_19 g11_18 g11_10 g11_9 g11_8 g11_4 g11_3 g11_2 V11 E11 fR11 t11 fr11 m11 s11 u11 d11
-  exact .inr ⟨tl1, hr1, hz_10, n12, t12, s12, E12, V12, fR12, g12_2, g12_3, g12_4, g12_10, g12_11, g12_12, g12_18, g12_19, g12_21, g12_22, g12_25, g12_26, g12_27, w12_2e0, w12_2e4, w12_2e8, w12_2ec, w12_a20, w12_a24, w12_a28, w12_a2c, w12_1588, w12_1590, w12_1594, b12_a24, b12_a25, b12_a26, b12_a27, b12_158c, b12_158d, b12_158e, b12_158f⟩
+  exact .inr ⟨tl1, hr1, hz_10, n12, t12, s12, E12, V12, fR12, g12_2, g12_3, g12_4, g12_10, g12_11, g12_12, g12_18, g12_19, g12_21, g12_22, g12_25, g12_26, g12_27, w12_2e0, w12_2e4, w12_2e8, w12_2ec, w12_a20, w12_a24, w12_a28, w12_a2c, w12_1588, w12_1590, w12_1594, b12_a24, b12_a25, b12_a26, b12_a27, b12_158c, b12_158d, b12_158e, b12_158f, keep_kk12.mono (by decide)⟩
 
 end C3.RV32.Sv

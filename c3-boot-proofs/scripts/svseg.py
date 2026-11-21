@@ -455,6 +455,7 @@ class Segment:
             self.names += names
             P(f"  rcases {'@' if ch.at else ''}{st.name} " + " ".join(args) + f" with {st.errpat} | ⟨" + ", ".join(names + pats) + "⟩")
             self.fail(ch.k, st.fail, P)
+        self.panics = any(it[1].fail == 'Panics' for it in self.items if it[0] == 'stage')
         self.ch = ch
         self.proof = proof
         K = ch.k
@@ -469,18 +470,36 @@ class Segment:
         self.end = re.search(r"0x[0-9A-F]+", ch.prev['ST'].text).group(0)
         return self
 
+    def union_kl(self):
+        out = []
+        for _, facts in self.hist[1:]:
+            out += [r for r in re.findall(r"\(0x[0-9A-F]+, 0x[0-9A-F]+\)", facts['KL'].text) if r not in out]
+        return "[" + ", ".join(out) + "]"
+
     def statement(self):
         extra = f" {{{' '.join(self.extra_binders)} : Word}}" if self.extra_binders else ""
         out = [f"theorem {self.name} BINDERS"]
         out += [f"    ({p} : {t})" for p, t in self.hyps]
         out[-1] += " :"
-        out.append("    SvErrRet B out v n0 ∨ Panics n0 ∨")
-        body = list(self.sc)
-        body.append(f"∃ m', Steps n0 m' ∧ (∀ x, SvR B x → m'.mem x = M0 x) ∧ St m'.mem SV m' {self.end} (reg m') ∧\n"
-                    "        SvCode m'.mem ∧ SvSaves B m'.mem v ∧ reg m' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧\n"
-                    "        reg m' (4 : Fin 32) = reg n0 (4 : Fin 32)" +
-                    "".join(f" ∧\n        {t}" for _, t in self.keep))
-        out.append("    (" + " ∧\n      ".join(body) + ")")
+        if self.panics:
+            out.append("    SvErrRet B out v n0 ∨ Panics n0 ∨")
+            body = list(self.sc)
+            body.append(f"∃ m', Steps n0 m' ∧ (∀ x, SvR B x → m'.mem x = M0 x) ∧ St m'.mem SV m' {self.end} (reg m') ∧\n"
+                        "        SvCode m'.mem ∧ SvSaves B m'.mem v ∧ reg m' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧\n"
+                        "        reg m' (4 : Fin 32) = reg n0 (4 : Fin 32)" +
+                        "".join(f" ∧\n        {t}" for _, t in self.keep))
+            out.append("    (" + " ∧\n      ".join(body) + ")")
+        else:
+            out.append("    SvErrRet B out v n0 ∨")
+            lines = [f"{x} ∧" for x in self.sc] + ["∃ n', Steps n0 n' ∧"]
+            out.append("    (" + lines[0])
+            out += ["      " + x if x != lines[-1] else "    " + x for x in lines[1:]]
+            facts = ["(∀ x, SvR B x → n'.mem x = M0 x)", f"St n'.mem SV n' {self.end} (reg n')", "SvCode n'.mem",
+                     "SvSaves B n'.mem v", "reg n' (3 : Fin 32) = reg n0 (3 : Fin 32)",
+                     "reg n' (4 : Fin 32) = reg n0 (4 : Fin 32)"]
+            facts += [t.replace("m'", "n'") for _, t in self.keep]
+            facts.append(f"SvKeepL B n0.mem n'.mem {self.union_kl()}")
+            out += [f"        {t}" + (" ∧" if j + 1 < len(facts) else ")") for j, t in enumerate(facts)]
         text = "\n".join(out)
         groups_ = []
         for g in re.findall(r"\{([^}]*)\}", self.binders + extra):
@@ -497,6 +516,13 @@ class Segment:
         out = ["set_option maxHeartbeats 64000000 in", f"/-- {self.doc} -/", self.statement() + " := by"]
         out += self.proof
         pn = [fname(key, K) for key, _ in self.keep]
-        out.append("  exact .inr (.inr ⟨" + ", ".join(self.names) + f", n{K}, {chain_steps(K)}, fR{K}, s{K}, E{K}, V{K},")
-        out.append(f"    by rw [{r3}], by rw [{r4}]" + "".join(f", {x}" for x in pn) + "⟩)")
+        if self.panics:
+            out.append("  exact .inr (.inr ⟨" + ", ".join(self.names) + f", n{K}, {chain_steps(K)}, fR{K}, s{K}, E{K}, V{K},")
+            out.append(f"    by rw [{r3}], by rw [{r4}]" + "".join(f", {x}" for x in pn) + "⟩)")
+        else:
+            kl = "K1_L"
+            for k in range(2, K + 1):
+                kl = f"({kl}).trans K{k}_L"
+            out.append("  exact .inr ⟨" + ", ".join(self.names) + f", n{K}, {chain_steps(K)}, fR{K}, s{K}, E{K}, V{K},")
+            out.append(f"    by rw [{r3}], by rw [{r4}]" + "".join(f", {x}" for x in pn) + f", ({kl}).mono (by decide)⟩")
         return "\n".join(out)

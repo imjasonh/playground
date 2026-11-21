@@ -10,7 +10,7 @@ stage's facts on whole, so it never takes them apart.
 
 import re
 
-from svchain import Stage, top_split
+from svchain import Stage, lean_binders, top_split
 from svseg import Segment, canon, split_in, strip_exists
 
 
@@ -80,12 +80,12 @@ def merged(fname, name, vs, doc):
     tree = split([Stage(*v) for v in vs], conds)
     order = leaves(tree)
     a = order[0]
-    assert all([f.key for f in st.facts] == [f.key for f in a.facts] for st in order), "the stages leave different facts"
-    assert all(st.binders == a.binders for st in order)
+    common = [f.key for f in a.facts if all(f.key in {g.key for g in st.facts} for st in order)]
+    reorder = [[f.key for f in st.facts] != common for st in order]
     types = {'w': 'Word', 'r': 'Word', 'b': 'BitVec 8', 'a': 'Nat'}
     fa, dvars = [], []
     kl_union = None
-    for fs in zip(*[st.facts for st in order]):
+    for fs in zip(*[[next(f for f in st.facts if f.key == k) for k in common] for st in order]):
         x = fs[0]
         if all(f.text == x.text for f in fs):
             fa.append(x.text)
@@ -95,12 +95,19 @@ def merged(fname, name, vs, doc):
                 kl_union += [r for r in re.findall(r"\(0x[0-9A-F]+, 0x[0-9A-F]+\)", f.text) if r not in kl_union]
             fa.append("SvKeepL B n0.mem n'.mem [" + ", ".join(kl_union) + "]")
         else:
-            d = f"d_{x.key}"
+            d = f"{name.removeprefix('sv_')}_{x.key}"
             dvars.append((d, types[x.key[0]], [f.rhs for f in fs]))
             fa.append(x.text[:len(x.text) - len(x.rhs)] + d)
     src = open(f'C3BootProofs/Proofs/{files[a.name]}.lean').read()
-    i = src.index(f'theorem {a.name} ')
-    binders = src[i + len(f'theorem {a.name} '):src.index('(F : ', i)].strip()
+    own = {st.name: lean_binders(files[st.name], st.name) for st in order}
+    seen_b, bgroups = set(), []
+    for st in order:
+        for names, ty in own[st.name]:
+            new_names = [x for x in names if x not in seen_b]
+            seen_b |= set(new_names)
+            if new_names:
+                bgroups.append("{" + " ".join(new_names) + " : " + ty + "}")
+    binders = " ".join(bgroups)
     hyps, seen = [], set()
     for st in order:
         for p, t in st.params:
@@ -116,8 +123,9 @@ def merged(fname, name, vs, doc):
     slices = []
     dk = {d: i for i, (d, _, _) in enumerate(dvars)}
     for d, _, _ in dvars:
-        m = re.fullmatch(r"d_w([0-9a-f]+)", d)
-        dl = f"d_w{int(m.group(1), 16) + 4:x}" if m else None
+        stem = name.removeprefix('sv_')
+        m = re.fullmatch(rf"{stem}_w([0-9a-f]+)", d)
+        dl = f"{stem}_w{int(m.group(1), 16) + 4:x}" if m else None
         if dl in dk:
             terms = []
             for j, st in enumerate(order):
@@ -127,7 +135,7 @@ def merged(fname, name, vs, doc):
                 slices.append((d, dl, terms))
     slice_text = "".join(f" ∧ SvIn B {d} {dl}.toNat" for d, dl, _ in slices)
     facts = fa[1:]
-    named = " ".join(f"({x} := {x})" for x, _ in a.binders)
+    named_of = {st.name: " ".join(f"({x} := {x})" for names, _ in own[st.name] for x in names) for st in order}
     who = ", ".join(f"`{st.name}`" for st in order[:-1]) + (" and " if len(order) == 2 else ", and ") + f"`{order[-1].name}`"
     out = [f"import C3BootProofs.Proofs.{files[st.name]}" for st in order] + [
            "", f"/-!\n# `sigstore::verify`: {doc}\n\nWritten by `scripts/gen-sv-segs.py` from {who}.\n-/",
@@ -161,19 +169,31 @@ def merged(fname, name, vs, doc):
         pat = f"⟨{', '.join(nm)}, rest⟩" if nm else "rest"
         prs = nm + ["rfl"] * len(dvars)
         pf = ("⟨" + ", ".join(prs) + "⟩" if len(prs) > 1 else prs[0]) if prs else "trivial"
-        if kl_union is not None:
+        if reorder[j]:
+            own = [f.key for f in st.facts if f.key != 'STEPS']
+            out_names = {k: f"f_{k}" for k in own}
+            pre = f"{ind}    obtain ⟨n', fc, {', '.join(out_names[k] for k in own)}⟩ := rest\n"
+            terms = [out_names[k] + (".mono (by decide)" if k == 'KL' else "") for k in common if k != 'STEPS']
+            rest = f"⟨n', fc, {', '.join(terms)}⟩"
+        elif kl_union is not None:
+            pre = ""
             chain = "fun k => k.mono (by decide)"
             for _ in range(nfacts):
                 chain = f"fun h => h.imp_right ({chain})"
             rest = f"rest.imp (fun _ => {chain})"
         else:
+            pre = ""
             rest = "rest"
         vals = "".join(f"{v[j]}, " for _, _, v in dvars)
         args = " ".join(path.get(p, p) for p, _ in st.params)
         sl = "".join(f"{ts[j]}, " for _, _, ts in slices)
-        out.append(f"{ind}· rcases {st.name} {named} {args} with ⟨-, e⟩ | {pat}")
+        out.append(f"{ind}· rcases {st.name} {named_of[st.name]} {args} with {st.errpat} | {pat}")
         out.append(f"{ind}  · exact .inl e")
-        out.append(f"{ind}  · exact .inr ⟨{vals}{side(pf, j)}, {sl}{rest}⟩")
+        if pre:
+            out.append(f"{ind}  · {pre.strip()}")
+            out.append(f"{ind}    exact .inr ⟨{vals}{side(pf, j)}, {sl}{rest}⟩")
+        else:
+            out.append(f"{ind}  · exact .inr ⟨{vals}{side(pf, j)}, {sl}{rest}⟩")
 
     def emit(t, path, ind, top=False):
         if t[0] == 'leaf':

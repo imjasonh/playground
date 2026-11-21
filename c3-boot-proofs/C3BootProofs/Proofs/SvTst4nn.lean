@@ -22,13 +22,13 @@ theorem svTst4nn2932_end : blockEnd sigstoreVerifyCode 0x2932 svTst4nn2932 = som
   rfl
 
 set_option maxHeartbeats 0 in
-theorem sv_tst4nn {B out bp x21 x26 dg dp rp rl : Word} {sr ss : Bytes} {w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w78 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word} {v : Nat → Word} {n0 : Machine}
+theorem sv_tst4nn {B out bp x21 x26 dg dp rp rl x8 : Word} {sr ss : Bytes} {w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w78 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word} {v : Nat → Word} {n0 : Machine}
     (F : Fr B 0x3830) (E0 : SvCode n0.mem) (V0 : SvSaves B n0.mem v) (hret : v 0 &&& ~~~1 = v 0)
     (hO : SvOut B out) (s0 : St n0.mem SV n0 0x2932 (reg n0))
     (M0 : Word → BitVec 8) (fM : ∀ x, SvR B x → n0.mem x = M0 x)
     (g0_10 : reg n0 a0 = (M0 rp).zeroExtend 32)
     (g0_2 : reg n0 sp = B + 0x21A0)
-    (g0_8 : reg n0 (8 : Fin 32) = BitVec.ofNat 32 0x18)
+    (g0_8 : reg n0 (8 : Fin 32) = x8)
     (g0_18 : reg n0 (18 : Fin 32) = out)
     (g0_19 : reg n0 (19 : Fin 32) = bp)
     (g0_20 : reg n0 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320)
@@ -122,7 +122,7 @@ theorem sv_tst4nn {B out bp x21 x26 dg dp rp rl : Word} {sr ss : Bytes} {w24 w28
         reg n' sp = B + 0x21A0 ∧
         reg n' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧
         reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧
-        reg n' (8 : Fin 32) = BitVec.ofNat 32 0x18 ∧
+        reg n' (8 : Fin 32) = x8 ∧
         reg n' (18 : Fin 32) = out ∧
         reg n' (19 : Fin 32) = bp ∧
         reg n' (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 ∧
@@ -225,7 +225,7 @@ theorem sv_tst4nn {B out bp x21 x26 dg dp rp rl : Word} {sr ss : Bytes} {w24 w28
     rw [rb1, runBlock_reg _ _ _ (3 : Fin 32) s0.zero (by decide), g0_3]
   have g1_4 : reg n1 (4 : Fin 32) = reg n0 (4 : Fin 32) := by
     rw [rb1, runBlock_reg _ _ _ (4 : Fin 32) s0.zero (by decide), g0_4]
-  have g1_8 : reg n1 (8 : Fin 32) = BitVec.ofNat 32 0x18 := by
+  have g1_8 : reg n1 (8 : Fin 32) = x8 := by
     rw [rb1, runBlock_reg _ _ _ (8 : Fin 32) s0.zero (by decide), g0_8]
   have g1_10 : reg n1 a0 = (M0 rp).zeroExtend 32 := by
     rw [rb1, runBlock_reg _ _ _ a0 s0.zero (by decide), g0_10]
@@ -336,7 +336,7 @@ theorem sv_tst4nn {B out bp x21 x26 dg dp rp rl : Word} {sr ss : Bytes} {w24 w28
   have g2_2 : reg n2 sp = B + 0x21A0 := by rw [u2.regs, g1_2]
   have g2_3 : reg n2 (3 : Fin 32) = reg n0 (3 : Fin 32) := by rw [u2.regs, g1_3]
   have g2_4 : reg n2 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [u2.regs, g1_4]
-  have g2_8 : reg n2 (8 : Fin 32) = BitVec.ofNat 32 0x18 := by rw [u2.regs, g1_8]
+  have g2_8 : reg n2 (8 : Fin 32) = x8 := by rw [u2.regs, g1_8]
   have g2_10 : reg n2 a0 = (M0 rp).zeroExtend 32 := by rw [u2.regs, g1_10]
   have g2_11 : reg n2 a1 = BitVec.ofNat 32 0x2 := by rw [u2.regs, g1_11]
   have g2_18 : reg n2 (18 : Fin 32) = out := by rw [u2.regs, g1_18]

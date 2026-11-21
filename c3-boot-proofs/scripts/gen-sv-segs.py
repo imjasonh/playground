@@ -22,7 +22,15 @@ MERGES = [(f'SvWin{i}', f'sv_win{i}', (f'SvWin{i}e', f'sv_win{i}e'), (f'SvWin{i}
     ('SvCk2', 'sv_ck2', ('SvCk2a', 'sv_ck2a'), ('SvCk2b', 'sv_ck2b'),
      "the checkpoint's size line, one digit or more"),
     ('SvTsav', 'sv_tsav', ('SvTsavct', 'sv_tsavct'), ('SvTsavmd', 'sv_tsavmd'), ('SvTsavother', 'sv_tsavother'),
-     "one signed attribute's value: the content type, the message digest, or another")]
+     "one signed attribute's value: the content type, the message digest, or another"),
+    ('SvTst3', 'sv_tst3', ('SvTst3n', 'sv_tst3n'), ('SvTst3s', 'sv_tst3s'), "the `TSTInfo`'s optional accuracy"),
+    ('SvTst4n', 'sv_tst4n', ('SvTst4nn', 'sv_tst4nn'), ('SvTst4ns', 'sv_tst4ns'), "the byte after the `ordering` tag"),
+    ('SvTst4b', 'sv_tst4b', ('SvTst4e1', 'sv_tst4e1'), ('SvSegTst4x1', 'sv_seg_tst4x1'),
+     "after the `ordering` boolean, the end of the `TSTInfo` or more"),
+    ('SvTst4', 'sv_tst4', ('SvTst4e0', 'sv_tst4e0'), ('SvSegTst4o', 'sv_seg_tst4o'), ('SvSegTst4x0', 'sv_seg_tst4x0'),
+     "the `TSTInfo`'s optional `ordering` and `nonce`"),
+    ('SvTst5', 'sv_tst5', ('SvTst5n', 'sv_tst5n'), ('SvTst5s', 'sv_tst5s'), "the `TSTInfo`'s optional `tsa` name"),
+    ('SvTst6', 'sv_tst6', ('SvTst6n', 'sv_tst6n'), ('SvTst6s', 'sv_tst6s'), "the `TSTInfo`'s optional extensions")]
 
 SEGMENTS = {
     'SvSegLeaf': ('sv_seg_leaf', [('SvL1', 'sv_l1'), ('SvL2', 'sv_l2'), ('SvL3', 'sv_l3'), ('SvL4', 'sv_l4'),
@@ -39,6 +47,16 @@ SEGMENTS = {
     'SvSegCkpt': ('sv_seg_ck', [('SvCk1', 'sv_ck1'), ('SvCk2', 'sv_ck2')],
                 "**The checkpoint's origin and size**: from 0x2B34 to the size loop at 0x2C06, `sv_ck1` and "
                 "`sv_ck2`."),
+    'SvSegTst4x1': ('sv_seg_tst4x1', [('SvTst4x1', 'sv_tst4x1'), ('SvTst4n', 'sv_tst4n')],
+                    "**The nonce after the `ordering` boolean**: from 0x2918 to 0x2952."),
+    'SvSegTst4x0': ('sv_seg_tst4x0', [('SvTst4x0', 'sv_tst4x0'), ('SvTst4n', 'sv_tst4n')],
+                    "**The nonce with no `ordering`**: from 0x28DA to 0x2952."),
+    'SvSegTst4o': ('sv_seg_tst4o', [('SvTst4o', 'sv_tst4o'), ('SvTst4b', 'sv_tst4b')],
+                   "**The `ordering` boolean and what follows it**: from 0x28DA to 0x2952."),
+    'SvSegTst': ('sv_seg_tst', [('SvTst1', 'sv_tst1'), ('SvTst2', 'sv_tst2'), ('SvTst3', 'sv_tst3'), ('SvTst4', 'sv_tst4'),
+                                ('SvTst5', 'sv_tst5'), ('SvTst6', 'sv_tst6'), ('SvTsv', 'sv_tsv')],
+                 "**The `TSTInfo` and the timestamp's signature**: from 0x2704 to the TSA search at 0x2A40, "
+                 "`sv_tst1` to `sv_tsv`."),
     'SvSegWin': ('sv_seg_win', [('SvCr1', 'sv_cr1'), ('SvRl', 'sv_rl'), ('SvRm', 'sv_rm')] +
                  [(f'SvWin{i}', f'sv_win{i}') for i in range(8)],
                  "**The entry's index and the validity windows**: from 0x2F5A to the successful exit at 0x3264, "
@@ -70,8 +88,28 @@ def write(fname):
     open(f'C3BootProofs/Proofs/{fname}.lean', 'w').write("\n".join(out))
 
 
-if __name__ == "__main__":
+# Merges and segments that others are built from, in the order to write them.
+ORDER = ['SvTst4n', 'SvSegTst4x1', 'SvSegTst4x0', 'SvTst4b', 'SvSegTst4o', 'SvTst4']
+
+
+def build(f):
     for fn, nm, *vs, doc in MERGES:
-        merged(fn, nm, vs, doc[0].upper() + doc[1:] + ".")
-    for f in sys.argv[1:] or SEGMENTS:
-        write(f)
+        if fn == f:
+            merged(fn, nm, vs, doc[0].upper() + doc[1:] + ".")
+            return
+    write(f)
+
+
+if __name__ == "__main__":
+    if sys.argv[1:]:
+        for f in sys.argv[1:]:
+            build(f)
+    else:
+        for f in ORDER:
+            build(f)
+        for fn, *_ in MERGES:
+            if fn not in ORDER:
+                build(fn)
+        for f in SEGMENTS:
+            if f not in ORDER:
+                build(f)
