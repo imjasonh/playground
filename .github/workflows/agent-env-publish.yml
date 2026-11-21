@@ -1,0 +1,73 @@
+# Build .agents/apko.yaml with apko-frontend, push it to GHCR, and Cosign-sign it.
+#
+# Images are ghcr.io/imjasonh/playground/agent-env, tagged with cfg-<sha256>
+# (the SHA-256 of .agents/apko.yaml that .agents/setup.sh looks up first),
+# the commit SHA, and latest.
+
+name: agent-env publish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .agents/apko.yaml
+      - .github/workflows/agent-env-publish.yml
+  workflow_dispatch: {}
+
+concurrency:
+  group: agent-env-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish agent-env image
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # setup-ko logs Docker into GHCR with GITHUB_TOKEN.
+      - uses: imjasonh/setup-ko@61b4d1d396f5b2e7d6bb6fefdce3dc38d1a13445 # v0.10
+        with:
+          version: v0.19.1
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@fb28c2b6339dcd94da6e4cbcbc5e888961f6f8c3 # v3.9.0
+
+      - name: Build and push
+        id: build
+        run: |
+          repo="ghcr.io/${GITHUB_REPOSITORY}/agent-env"
+          cfg_sha="$(sha256sum .agents/apko.yaml | awk '{print $1}')"
+          meta="$(mktemp)"
+          docker buildx build \
+            --platform linux/amd64 \
+            --provenance=false \
+            --metadata-file "${meta}" \
+            --push \
+            -f .agents/apko.yaml \
+            -t "${repo}:cfg-${cfg_sha}" \
+            -t "${repo}:${GITHUB_SHA}" \
+            -t "${repo}:latest" \
+            .agents
+          digest="$(jq -r '.["containerimage.digest"]' "${meta}")"
+          image="${repo}@${digest}"
+          echo "image=${image}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "Published \`${image}\`, tagged \`cfg-${cfg_sha}\`, \`${GITHUB_SHA}\`, and \`latest\`."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Sign
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+        run: cosign sign --yes "${IMAGE}"
