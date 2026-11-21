@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/google/go-containerregistry v0.22.1
 	github.com/imjasonh/playground/wehadababyitsaboy/go v0.0.0
-	github.com/klauspost/compress v1.20.4
+	github.com/klauspost/compress v1.20.5
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.1.0
 	github.com/values-conflict/go-sqlite-fdw v0.0.0
@@ -29,7 +29,7 @@ require (
 	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 	gotest.tools/v3 v3.5.2 // indirect
-	modernc.org/libc v1.82.2 // indirect
+	modernc.org/libc v1.82.7 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.13.0 // indirect
 )
