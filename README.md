@@ -235,7 +235,7 @@ them from an XcodeGen `project.yml` that declares `platform: macOS`:
 See [`docs/macos-sparkle-design.md`](docs/macos-sparkle-design.md) for the macOS
 release design (Developer ID + notarization + Sparkle appcast on GitHub Pages).
 
-Human-authored project posts (`blog-post.md` next to an experiment) publish to
+Human-authored posts (`posts/<stub>.md`) publish to
 [`/posts/`](https://imjasonh.github.io/playground/posts/) (with an
 [RSS feed](https://imjasonh.github.io/playground/posts/feed.xml)). The home
 page header links to that catalog.

@@ -75,6 +75,7 @@ playground/
 ├── palette-swap/          # nearest-color palette swap in Wasm (Go simd experiment)
 ├── pasta/                 # CUE + tree-sitter multi-language linters/fixers (Go CLI)
 ├── population-rays/       # directional 5° population-slice map (JS + Node tests)
+├── posts/                 # human-authored blog posts (posts/<stub>.md; built to /posts/)
 ├── sshapp/                # GKE Autopilot Wish SSH apps (Go + Terraform + ko_build)
 ├── stream-boids/          # Go: boids streamed to YouTube Live from a Spot VM (apko + ko + Terraform)
 ├── sundial/               # sundial clock: long shadow follows the sun
@@ -159,6 +160,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `hello-macos/` | no | Example macOS app (XcodeGen + SwiftUI); no `index.html` |
 | `onramp/` | no | Offline Mac network triage / can’t-get-online playbooks (XcodeGen + SwiftUI + Sparkle); no `index.html` |
 | `roll/` | no | Menu bar app: click rolls, right-click countdowns and monitor photos (XcodeGen + Sparkle); no `index.html` |
+| `posts/` | no | Human-authored blog posts (`posts/<stub>.md`); built to `/posts/` at deploy time; no `index.html` |
 | `.github/` | no | Infrastructure only |
 | `README.md` | no | Not a directory |
 
@@ -312,8 +314,8 @@ identical to production, stay quiet). If any of those changed, it writes
 built from the PR. The production home page is regenerated with the PR base
 branch's index template, so an unmerged template change does not go live.
 `deploy.yml` also runs
-`.github/scripts/build-blog.py` to publish `/posts/` from every `blog-post.md`
-in the source tree. `deploy.yml`, `preview.yml`, and `cleanup.yml` each
+`.github/scripts/build-blog.py` to publish `/posts/` from every `posts/<stub>.md`
+file. `deploy.yml`, `preview.yml`, and `cleanup.yml` each
 regenerate the root index from the published `gh-pages` tree so the list stays
 current as previews come and go. Because the deploy publishes with
 `keep_files: true` (to preserve `preview/`), a browser app that is renamed or
@@ -492,7 +494,7 @@ pinned Wrangler version) selects every Cloudflare Worker app, and a change to
 | Go | `go.mod` | `gofmt` (`.github/scripts/check-gofmt.sh` fails the Go job when `gofmt` would change a `.go` file outside `vendor` and `testdata`) → `go build ./...` → `go test -race ./...`. `cloudrun-sqlite` builds and tests with `GOFLAGS=-tags=vfs`, and `litestream` runs the packages that upstream's CI unit-tests, with `-tags vfs` for the root package |
 | Rust | `Cargo.toml` | `cargo fmt --check` → `cargo clippy --locked --all-targets -D warnings` → `cargo test --locked`; Cloudflare Worker apps (with `wrangler.toml`) also run wasm clippy + a release `wasm32-unknown-unknown` build, then `wrangler deploy --dry-run` with the Wrangler version pinned in `.github/wrangler/package.json` (`.github/scripts/check-worker-deploy-build.sh`, with a decoy `package.json` like wrangler-action creates) so Test covers the deploy artifact path. It fails when that Wrangler doesn't recognize a `wrangler.toml` key. Crates set `[lints.rust] unused = "deny"` so unused methods fail even without clippy. |
 | pasta | `pasta/` / `.pasta/` / lintable sources (`.go`, `.js`, `.ts`, `.tsx`, `.jsx`, `.rs`, `.swift`, `.sh`, `.yml`, `.yaml`, `.html`, `.css`, `.toml`, `.tf`, `.tfvars`, `.hcl`, …) via `discover-pasta.sh` | `go build ./pasta/cmd/pasta` → `pasta test .pasta` → `pasta -fail-on=warning ./...` |
-| posts | any `blog-post.md`, or `.github/scripts/build-blog*` / `test-blog.sh` / `discover-blog.sh` / the blog page templates, via `discover-blog.sh` | `python3 .github/scripts/build-blog_test.py` |
+| posts | any file under `posts/`, or `.github/scripts/build-blog*` / `test-blog.sh` / `discover-blog*` / the blog page templates, via `discover-blog.sh` | `python3 .github/scripts/build-blog_test.py` and `bash .github/scripts/discover-blog_test.sh` |
 | site index | `.github/pages/index.html.tmpl`, `render-index.py`, `publish-site-index.sh`, or the index discovery/test scripts, via `discover-index.sh` | `python3 .github/scripts/render-index_test.py` and `bash .github/scripts/discover-index_test.sh` |
 
 Go is the only ecosystem here with a stable, first-class data-race detector (`go test -race`). Rust ThreadSanitizer is still nightly-only and cannot instrument `wasm32-unknown-unknown` Worker tests; JavaScript/Node has no equivalent flag. Those legs stay as they are.
@@ -674,18 +676,17 @@ npm run test:e2e   # if defined
 npm start          # if defined (static server)
 ```
 
-## Adding a project post
+## Adding a post
 
-A `blog-post.md` file anywhere in the source tree (except hidden and generated
-directories) is published to `/posts/<parent-dir>/`. Dates come from git
-author history. Local images referenced from the file are copied next to the
-generated HTML; a missing image fails the build. The catalog also writes
-`/posts/feed.xml` (RSS 2.0, newest first, full post HTML). The builder
-copies `whbiab.js` into `/posts/`, and the page templates load it as
-`posts` on the index and `posts-<parent-dir>` on each post, so a new post is
-tracked without a tag in the Markdown.
+A `posts/<stub>.md` file is published to `/posts/<stub>/`. Dates come from git
+author history. Local images referenced from the file (relative to `posts/`) are
+copied next to the generated HTML; a missing image fails the build. The catalog
+also writes `/posts/feed.xml` (RSS 2.0, newest first, full post HTML). The
+builder copies `whbiab.js` into `/posts/`, and the page templates load it as
+`posts` on the index and `posts-<stub>` on each post, so a new post is tracked
+without a tag in the Markdown.
 
-**Agents must not create, edit, or rewrite `blog-post.md` files.** Only a
+**Agents must not create, edit, or rewrite `posts/<stub>.md` files.** Only a
 human author writes those.
 
 To preview the catalog locally:
@@ -1004,11 +1005,11 @@ bundle exec fastlane test
 - **Apple HIG**: when you design, edit, or review iOS / macOS / watchOS UI (`ios/`, `hello-macos/`, `onramp/`, `roll/`), read [`.cursor/skills/apple-hig/SKILL.md`](.cursor/skills/apple-hig/SKILL.md) and consult the linked [Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/) topics.
 - **Foundation Models context**: when you add or change on-device Foundation Models chat, tools, `@Generable` types, or compaction in `ios/` (Blather, Live Translate, or a new FM experiment), read [`.cursor/skills/foundation-models-context/SKILL.md`](.cursor/skills/foundation-models-context/SKILL.md) and follow [TN3193](https://developer.apple.com/documentation/technotes/tn3193-managing-the-on-device-foundation-model-s-context-window).
 - **Do not commit**: `node_modules/`, secrets, env files, browser/Go/Rust build artifacts (`target/`), `*.xcodeproj`, `*.dmg`, or Playwright/Jest output (`test-results/`, `coverage/`).
-- **Do not write `blog-post.md` files.** Those are human-authored project
+- **Do not write `posts/<stub>.md` files.** Those are human-authored
   posts. Agents must not create, edit, or rewrite them. The published
   `/posts/` catalog is generated at deploy time from those files; do not
-  commit generated HTML under `posts/`. The published `posts/` directory
-  name is reserved (it is not a browser app).
+  commit generated HTML under `posts/`. The `posts/` directory is not a
+  browser app.
 
 ## Pull requests
 
