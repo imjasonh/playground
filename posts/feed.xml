@@ -5,7 +5,44 @@
     <link>https://imjasonh.github.io/playground/posts/</link>
     <description>Posts from Playground.</description>
     <atom:link href="https://imjasonh.github.io/playground/posts/feed.xml" rel="self" type="application/rss+xml"/>
-    <lastBuildDate>Sat, 14 Nov 2026 11:23:09 -0500</lastBuildDate>
+    <lastBuildDate>Sat, 21 Nov 2026 14:19:30 -0500</lastBuildDate>
+    <item>
+      <title>kontain.me security incident postmortem</title>
+      <link>https://imjasonh.github.io/playground/posts/kontain.me-compromise/</link>
+      <guid isPermaLink="true">https://imjasonh.github.io/playground/posts/kontain.me-compromise/</guid>
+      <description>kontain.me security incident postmortem</description>
+      <pubDate>Sat, 21 Nov 2026 13:22:49 -0500</pubDate>
+      <content:encoded><![CDATA[<p>On Wednesday, November 18th, 2026, an attacker compromised the GCP project that runs <a href="https://github.com/imjasonh/kontain.me">kontain.me</a> and began mining crypto. This is a postmortem of the incident.</p>
+<p>No users of kontain.me (if any) were harmed; no malicious data was served to users, no contents were taken.</p>
+<h2>How it happened</h2>
+<p><code>kontain.me</code> runs on a number of separate Google Cloud Run services, a Service Account with minimal permissions, a shared Cloud Storage bucket, a load balancer and some GCP-managed DNS entries. The architecture of each of the apps is defined in Terraform in the public <a href="https://github.com/imjasonh/kontain.me">https://github.com/imjasonh/kontain.me</a> repo.</p>
+<p>To deploy these services automatically, there's a deployer service account, <code>gha-deployer</code>, which has permissions to deploy Cloud Run services, manage Service Accounts, buckets, load balancers and DNS entries. That service account can be assumed by a GitHub Actions workflow in the repo, configured using <a href="https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-google-cloud-platform">OIDC Workload Identity Federation</a>. The trust relationships were not defined in Terraform, but were instead click-opsed at some point in the forgotten past.</p>
+<p>Workload Identity is a Very Good Thing(tm), but like a lot of good things, it's also complicated. It's easy to get wrong, and I got it wrong, in at least two ways:</p>
+<ol>
+<li>The rule allowing the GitHub Actions workflow to assume the GCP SA was overly broad. It matched only on the workflow path, <code>.github/workflows/deploy.yaml</code>, and did not check that the repo matched <code>imjasonh/kontain.me</code>. This was a dumb omission on my part; any GitHub repo that minted an OIDC token from <code>deploy.yaml</code> could become my deployer service account.</li>
+<li>The deployer SA had project-wide <code>iam.serviceAccounts.actAs</code> permissions. Though the app's service account had minimal permissions (read/write to the one GCS bucket), the project also had the default GCP service account enabled, which had broad <strong>Editor</strong> access to the project. This is the classic <code>&lt;project-number&gt;-compute@developer.gserviceaccount.com</code> account.</li>
+</ol>
+<p>So, using (1), the attacker was able to run a GHA workflow in their repo and become my deployer. As my deployer, they were able to <code>actAs</code> the default GCP SA, which could do .....<em>anything</em>. It could enable APIs, create GKE clusters and VMs, request quota increases, and run Vertex AI training jobs. And it did, all of those.</p>
+<p>Even if they hadn't acted-as the <strong>Editor</strong> default SA, they could have created and acted-as another SA.</p>
+<p>Upon noticing the fraudulent usage, I immediately disabled the SA being used to create new jobs, and unlinked billing. However, this didn't stop the resources in use, and GCP prevented me from canceling or deleting Vertex AI jobs while billing was unlinked🤦. I re-linked billing, cancelled jobs, and re-un-linked. Because jobs were spread across many regions, and because the GCP UI doesn't let me bulk-delete jobs, I had my agent write a script that would cancel all jobs one-by-one.</p>
+<h2>What the attacker did</h2>
+<p>The attacker seems to have gained access late Tuesday and made some exploratory requests to make sure they could do what they wanted. On Wednesday around noon Eastern they began creating Vertex AI training runs in three regions. The jobs they ran were actually doing crypto mining, contributing to a wallet they presumably own.</p>
+<p>Spend began relatively slowly, at ~$44/hour worth of GPU usage, but within an hour they had requested more GPU quota and began sending more requests to the tune of more than $300/hour. Luckily, I noticed the anomalous traffic and put a stop to it as quickly as I could.</p>
+<h2>Where we got lucky</h2>
+<p>Because kontain.me doesn't normally cost me much money at all, and because I'm constantly paranoid about me doing something stupid (the only smart thing I regularly do!), I had set up a budget alert on the project at $10. The service costs me under $1/month normally, so spending $10 means something is Going Wrong. That budget alert was tripped quickly after the attack began in earnest, and by the time I saw it they'd already hit &gt;$40 of usage.</p>
+<h2>Where we are now</h2>
+<p>I filed a GCP Support ticket for the fraudulent usage, and they were very helpful. At the time of writing they're still tallying the total damage; they say it can take a few days after the last fraudulent usage to assess the total bill. The project is unlinked from billing in the meantime, so kontain.me is down. I may decide not to bring it up again, or if I do I may bring it up in a different shape.</p>
+<p>I also reported the GitHub user and repo that ran the fraudulent GHA workflow to get into my GCP project.</p>
+<p>The attacker spent $400-$500 of my/Google's money, and I believe gained somewhere around $0.03 worth of crypto. They taught me an important lesson about hosting services on the internet, which I'm sharing with you right now.</p>
+<h2>Takeaways</h2>
+<ol>
+<li>Use Workload Identity, but make sure it's tightly constrained. Ask your nearest agent to do a security review and propose fixes.</li>
+<li>Use only Service Accounts with minimal permissions; disable the GCP default service account. Project-wide <code>actAs</code> is full project access otherwise. Avoid project-wide <code>actAs</code> while you're at it.</li>
+<li>Set up budget alerts, and check your email.</li>
+</ol>
+<p>I don't know whether my attacker used any kind of AI in their attack; frankly, they probably only needed some GitHub searches and some relatively straightforward bash scripts to probe. I used AI to defend and it made responding much faster, by parsing thousands of audit log entries, and immediately identifying the behavior. Response would have taken much longer without it, and with this attack, time was literally money.</p>
+<p>Ultimately, this was my boneheaded mistake, and GCP has been very helpful in getting it resolved.</p>]]></content:encoded>
+    </item>
     <item>
       <title>wehadababyitsaboy: a dead simple, dead cheap usage tracking nanoframework</title>
       <link>https://imjasonh.github.io/playground/posts/wehadababyitsaboy/</link>

@@ -1,5 +1,11 @@
 [
   {
+    "slug": "kontain.me-compromise",
+    "title": "kontain.me security incident postmortem",
+    "published": "2026-11-21",
+    "updated": "2026-11-21"
+  },
+  {
     "slug": "wehadababyitsaboy",
     "title": "wehadababyitsaboy: a dead simple, dead cheap usage tracking nanoframework",
     "published": "2026-11-14",
