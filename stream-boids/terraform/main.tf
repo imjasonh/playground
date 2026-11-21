@@ -56,27 +56,31 @@ resource "ko_build" "app" {
   env = ["GOFLAGS=-buildvcs=false"]
 }
 
-import {
-  to = google_service_account.vm
-  id = "projects/${var.project_id}/serviceAccounts/${var.name}@${var.project_id}.iam.gserviceaccount.com"
+# gcp/terraform creates the runtime account. The deploy account can act
+# as it but cannot create a service account.
+data "google_service_account" "vm" {
+  account_id = var.name
 }
 
-resource "google_service_account" "vm" {
-  account_id   = var.name
-  display_name = "stream-boids VM"
+removed {
+  from = google_service_account.vm
+
+  lifecycle {
+    destroy = false
+  }
 }
 
 resource "google_project_iam_member" "vm_logging" {
   project = var.project_id
   role    = "roles/logging.logWriter"
-  member  = "serviceAccount:${google_service_account.vm.email}"
+  member  = "serviceAccount:${data.google_service_account.vm.email}"
 }
 
 resource "google_artifact_registry_repository_iam_member" "vm_pull" {
   repository = google_artifact_registry_repository.images.name
   location   = google_artifact_registry_repository.images.location
   role       = "roles/artifactregistry.reader"
-  member     = "serviceAccount:${google_service_account.vm.email}"
+  member     = "serviceAccount:${data.google_service_account.vm.email}"
 }
 
 # Each secret's ID is what the service asks for by name.
@@ -100,7 +104,7 @@ resource "google_secret_manager_secret_iam_member" "vm" {
 
   secret_id = google_secret_manager_secret.secrets[each.key].id
   role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.vm.email}"
+  member    = "serviceAccount:${data.google_service_account.vm.email}"
 }
 
 # A network of its own, with no firewall rules, so nothing can connect in.
@@ -176,7 +180,7 @@ resource "google_compute_instance_template" "vm" {
   }
 
   service_account {
-    email  = google_service_account.vm.email
+    email  = data.google_service_account.vm.email
     scopes = ["cloud-platform"]
   }
 

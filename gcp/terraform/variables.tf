@@ -88,6 +88,22 @@ variable "chrome_webstore_github_environment" {
   }
 }
 
+variable "app_service_accounts" {
+  description = "Runtime service accounts for app stacks: account ID to display name. This stack creates them, and they are the only accounts the deploy account can act as. An app stack reads its account with a google_service_account data source."
+  type        = map(string)
+  default = {
+    "cloudrun-sqlite"        = "cloudrun-sqlite service"
+    "cloudrun-sqlite-reader" = "cloudrun-sqlite read-only replica"
+    "stream-boids"           = "stream-boids VM"
+    "xiao-otel"              = "xiao-otel App Attest OTLP collector"
+  }
+
+  validation {
+    condition     = alltrue([for id in keys(var.app_service_accounts) : can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", id))])
+    error_message = "Each app_service_accounts key must be a service account ID: 6 to 30 characters, lowercase letters, digits, and hyphens."
+  }
+}
+
 variable "app_project_roles" {
   description = "Project roles the deploy account can grant and revoke, for app runtime accounts. It cannot change a binding for any other role."
   type        = list(string)

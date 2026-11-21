@@ -20,9 +20,10 @@ resource "google_artifact_registry_repository" "images" {
   depends_on = [google_project_service.services]
 }
 
-resource "google_service_account" "service" {
-  account_id   = var.name
-  display_name = "${var.name} App Attest OTLP collector"
+# gcp/terraform creates the runtime account. The deploy account can act
+# as it but cannot create a service account.
+data "google_service_account" "service" {
+  account_id = var.name
 }
 
 resource "google_project_iam_member" "telemetry" {
@@ -33,7 +34,7 @@ resource "google_project_iam_member" "telemetry" {
 
   project = var.project_id
   role    = each.value
-  member  = "serviceAccount:${google_service_account.service.email}"
+  member  = "serviceAccount:${data.google_service_account.service.email}"
 }
 
 resource "ko_build" "server" {
@@ -56,7 +57,7 @@ resource "google_cloud_run_v2_service" "service" {
 
   template {
     execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
-    service_account       = google_service_account.service.email
+    service_account       = data.google_service_account.service.email
 
     scaling {
       # Keep a single instance warm/shared so in-memory App Attest challenges
