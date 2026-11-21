@@ -7041,6 +7041,10 @@ def ck2_start(g):
     words = {e: f"w{e:x}" for e in TST_WORDS}
     words.update({0x74: "q", 0x428: "sgp"})
     words.update(TL_STRUCT)
+    # `sv_ck1` rewrote the frame words that the struct at 0xA20 copied.
+    for e, nm in TL_STRUCT.items():
+        if nm.startswith("w"):
+            del words[e]
     return start(g, regs, words, {})
 
 

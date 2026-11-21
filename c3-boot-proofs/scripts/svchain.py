@@ -240,7 +240,11 @@ class Chain:
                     pending.append((pn, ty))
         for pn, ty in pending:
             t = re.sub(IDENT.format("n0"), f"n{self.k}", ty) if self.k else ty
-            a = resolve(pn, subst(t, env)) if resolve else None
+            free = {b for b in bs if b not in env and re.search(IDENT.format(re.escape(b)), t)}
+            a = resolve(pn, subst(t, env), free) if resolve else None
+            if isinstance(a, tuple):
+                a, assigns = a
+                env.update(assigns)
             if a is None:
                 raise ValueError(f"{stage.name}: no argument for {pn} : {subst(t, env)}")
             got[pn] = a
@@ -270,7 +274,7 @@ class Chain:
                 piece = piece.strip()
                 while piece.startswith('∃ '):
                     c = piece.index(',')
-                    names += [wren.get(b, f"x{k}_{n}{b}") for b in piece[2:c].split()]
+                    names += [wren.get(b, f"x{k}_{n}{b}") for b in piece[2:c].split(":")[0].split()]
                     piece = piece[c + 1:].strip()
                 names.append(f"x{k}_{n}")
                 proofs.append((f"x{k}_{n}", piece))

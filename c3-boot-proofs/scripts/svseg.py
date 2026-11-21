@@ -33,11 +33,13 @@ def strip_exists(part):
 def witnesses(stage, k):
     ren = {}
     for part in stage.sc_parts:
-        while part.startswith('∃ '):
-            c = part.index(',')
-            for b in part[2:c].split():
-                ren[b] = f"{b}_{k}"
-            part = part[c + 1:].strip()
+        for piece in top_split(part, ' ∧ '):
+            piece = piece.strip()
+            while piece.startswith('∃ '):
+                c = piece.index(',')
+                for b in piece[2:c].split(":")[0].split():
+                    ren[b] = f"{b}_{k}"
+                piece = piece[c + 1:].strip()
     return ren
 
 
@@ -113,6 +115,16 @@ class Segment:
         for p, l, pf in self.ins:
             if p == ptr and l == n:
                 return pf
+        for ix, (hp, P0, N0) in self.nl.items():
+            if ptr == P0 and n in (canon(ix), canon(f"(BitVec.ofNat 32 {ix}).toNat")):
+                base = self.derive_in(P0, N0)
+                if base:
+                    t = f"({base}).nlLine {hp}"
+                    return t if n == canon(ix) else f"({t}).ofNatLen"
+            if ptr == canon(f"{P0} + BitVec.ofNat 32 ({ix} + 1)") and n == canon(f"{N0} - ({ix} + 1)"):
+                base = self.derive_in(P0, N0)
+                if base:
+                    return f"({base}).nlRest {hp}"
         if ptr in self.bits:
             pf, tl, bl = self.bits[ptr]
             if tl in self.parses:
@@ -161,8 +173,27 @@ class Segment:
                     return f"({base}).rawW {hp}"
         return None
 
+    def match_sc(self, ty, free):
+        """An earlier success-condition conjunct that is `ty` with its unassigned
+        binders `free` filled in: its proof and the binders' values."""
+        free = sorted(free, key=len, reverse=True)
+        if not free:
+            return None
+        pat = re.escape(canon(ty))
+        for i, b in enumerate(free):
+            pat = re.sub(rf"(?<![\w.']){re.escape(re.escape(b))}(?![\w'])", f"\x00{i}\x00", pat)
+        for i, b in enumerate(free):
+            pat = pat.replace(f"\x00{i}\x00", f"(?P<g{i}>[\\w.']+)", 1).replace(f"\x00{i}\x00", f"(?P=g{i})")
+        hits = []
+        for pf, piece in self.pieces:
+            m = re.fullmatch(pat, canon(piece))
+            if m:
+                hits.append((pf, {b: m.group(f"g{i}") for i, b in enumerate(free) if f"g{i}" in m.groupdict()}))
+        return hits[-1] if hits else None
+
     def record(self, proofs):
         """Remembers the slices that the parses in a success condition found."""
+        self.pieces = getattr(self, 'pieces', []) + list(proofs)
         for pf, piece in proofs:
             piece = strip_parens(piece)
             m = re.fullmatch(r"derElement \S+ \(memBytes M0 (.+)\) = \.ok (\w+)", piece)
@@ -178,6 +209,16 @@ class Segment:
             m = re.fullmatch(r"(\w+) = BitVec\.ofNat 32 (\S+)", piece)
             if m:
                 self.eqs[m.group(1)] = (pf, m.group(2))
+            if piece.startswith('SvIn B '):
+                ptr, n = split_in(piece[len('SvIn B '):])
+                self.ins.append((ptr, n, pf))
+            m = re.fullmatch(r"nlScan M0 (\S+|\(.+\)) 0 (\S+|\(.+\)) = some (\w+)", piece)
+            if m:
+                self.nl[m.group(3)] = (pf, canon(m.group(1)), canon(m.group(2)))
+            m = re.fullmatch(r"derOid \(memBytes M0 (.+)\) = \.ok (\w+)", piece)
+            if m:
+                ptr, ln = split_in(m.group(1))
+                self.parses[m.group(2)] = (f"(derOid_ok_elem {pf})", ptr, ln)
             m = re.fullmatch(r"derOptRes \S+ \(memBytes M0 (.+)\) = some \(\.ok (\w+)\)", piece)
             if m:
                 ptr, ln = split_in(m.group(1))
@@ -267,6 +308,30 @@ class Segment:
 
     SIZES = {'w': 4, 'b': 1, 'a': 32}
 
+    def source(self, key, e, j, facts):
+        """The fact `key` at step `j`, as a term and its value: stated, or a word
+        inside a byte range that step `j` copied from `M0`."""
+        if key in facts:
+            f = facts[key]
+            pre = {'w': 'w0_', 'b': 'b0_', 'a': 'a0_', 'q': 'q0_'}[key[0]]
+            return getattr(f, 'name', None) or (fname(key, j) if j else f"{pre}{key[1:]}"), strip_parens(f.rhs)
+        if key[0] != 'w':
+            return None
+        for k2, f in facts.items():
+            if k2[0] != 'q' or k2 == 'q':
+                continue
+            m = re.fullmatch(r"\(?∀ j, j < (\w+) → \w+\.mem \(B \+ 0x21A0 \+ BitVec\.ofNat 32 \((0x[0-9A-F]+) \+ j\)\) = "
+                             r"M0 \((.+) \+ BitVec\.ofNat 32 j\)\)?", f.text)
+            if not m:
+                continue
+            n, c, srcp = int(m.group(1), 0), int(m.group(2), 16), m.group(3)
+            if c <= e and e + 4 <= c + n:
+                name = fname(k2, j) if j else f"q0_{k2[1:]}"
+                d = e - c
+                return (f"(memLoad32_of_range (c := 0x{c:X}) (d := {d}) {name} (by decide))",
+                        f"memLoad32 M0 ({srcp} + BitVec.ofNat 32 {d})")
+        return None
+
     def carry(self, key, ty):
         """A frame fact that the previous stage doesn't state, from the last stage
         that did, if no stage since wrote its bytes: the term and its value."""
@@ -282,9 +347,10 @@ class Segment:
             size = self.SIZES[key[0]]
         for idx in range(len(self.hist) - 1, -1, -1):
             j, facts = self.hist[idx]
-            if key not in facts:
+            found = self.source(key, e, j, facts)
+            if not found:
                 continue
-            term = getattr(facts[key], 'name', None) or (fname(key, j) if j else f"{ {'w': 'w0_', 'b': 'b0_', 'a': 'a0_', 'q': 'q0_'}[key[0]]}{key[1:]}")
+            term, val = found
             for i, later in self.hist[idx + 1:]:
                 kl = later.get('KL')
                 if kl is None:
@@ -301,8 +367,7 @@ class Segment:
                     term = f"(({K}.acc (by decide) (by decide)).trans {term})"
                 else:
                     term = f"(fun j hj => ({K}.range (by decide) (by decide) j hj).trans ({term} j hj))"
-            f = facts[key]
-            return term, strip_parens(f.rhs)
+            return term, val
         m = re.fullmatch(r"(memLoad32 n0\.mem \(B \+ 0x21A0 \+ BitVec\.ofNat 32 0x[0-9A-F]+\)) = (\w+)", ty)
         if m and key[0] == 'w':
             nm = m.group(2)
@@ -320,11 +385,14 @@ class Segment:
             return self.carry(key, ty)
         return None
 
-    def resolve(self, p, ty):
+    def resolve(self, p, ty, free=()):
         if p in self.extra:
             return self.extra[p]
+        hit = self.match_sc(ty, free)
+        if hit:
+            return hit
         for q, t in self.hyps:
-            if q == p and t == ty:
+            if q == p and t == ty and not free:
                 return p
         local = re.search(r"(?<![\w.'])(n\d+|\w+_\d+|d\d+_\w+)(?![\w'])", ty)
         if ty.startswith('SvIn B '):
@@ -359,6 +427,7 @@ class Segment:
         self.parses = {}
         self.bits = {}
         self.eqs = {}
+        self.nl = {}
         for p, t in first.params:
             if t.startswith('SvIn B '):
                 ptr, ln = split_in(t[len('SvIn B '):])
