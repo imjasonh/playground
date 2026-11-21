@@ -7856,6 +7856,17 @@ def stage_cm(kind):
         g.block(0x2F1E, 0x2F20)
         g.store(0x2F20, "sw")
         g.jump(0x2F22)
+        # The signature found is the decoded line after its key ID.
+        k = g.k
+        g.emit("  have hdrop : ∀ i, (bs.drop 4).getD i 0 = bs.getD (4 + i) 0 := fun i => by")
+        g.emit("    simp only [List.getD_eq_getElem?_getD, List.getElem?_drop]")
+        w10 = "(BitVec.ofNat 8 ((bs.drop 4).getD 0 0)).zeroExtend 32"
+        g.emit(f"  have w{k}_10 : {g.word_stmt(k, 0x10, ('U', w10))} := by rw [w{k}_10, hdrop]")
+        g.emit(f"  have q{k}_1480 : ∀ j, j < 63 → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1480 + j)) = "
+               "BitVec.ofNat 8 ((bs.drop 4).getD (1 + j) 0) := fun j hj => by")
+        g.emit(f"    rw [q{k}_1480 j hj, hdrop, show 4 + (1 + j) = 5 + j by omega]")
+        g.words[0x10] = ("U", w10)
+        g.ranges[0x1480] = (63, "BitVec.ofNat 8 ((bs.drop 4).getD (1 + j) 0)")
         return 0x2D6E
 
     if fails:

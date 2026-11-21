@@ -139,11 +139,54 @@ def merged(fname, name, vs, doc):
     a = live[0]
     common = [f.key for f in a.facts if all(f.key in {g.key for g in st.facts} for st in live)]
     # A fact the stages state differently that can't be a witness's value is left out.
+    reorder = None
+    fa, dvars = [], []
+    kl_union = None
+    # Facts that differ only by a list in place of a list binder: the list becomes a witness.
+    ltexts = {st.name: {k: next(f.text for f in st.facts if f.key == k) for k in common} for st in live}
+    lsub = None
+    for ref in live:
+        for b, ty in ref.binders:
+            if ty != 'Bytes':
+                continue
+            vals, ok = {}, True
+            for k in common:
+                t0 = ltexts[ref.name][k]
+                if all(ltexts[st.name][k] == t0 for st in live) or not re.search(rf"(?<![\w.']){re.escape(b)}(?![\w'])", t0):
+                    continue
+                pat = re.escape(t0)
+                pat = re.sub(rf"(?<![\w.']){re.escape(re.escape(b))}(?![\w'])", lambda _: "(.+?)", pat)
+                for st in live:
+                    mm = re.fullmatch(pat, ltexts[st.name][k])
+                    if not mm or len(set(mm.groups())) != 1:
+                        ok = False
+                        break
+                    v = mm.group(1)
+                    if vals.setdefault(st.name, v) != v:
+                        ok = False
+                        break
+                if not ok:
+                    break
+            if ok and vals and len(set(vals.values())) > 1:
+                lsub = (b, ref.name, vals)
+                break
+        if lsub:
+            break
+    if lsub:
+        b, rname, vals = lsub
+        d = f"{name.removeprefix('sv_')}_{b}"
+        dvars.append((d, 'Bytes', [vals.get(st.name, b) for st in order]))
+        for st in live:
+            for k in common:
+                t = ltexts[rname][k]
+                if re.search(rf"(?<![\w.']){re.escape(b)}(?![\w'])", t):
+                    new_t = re.sub(rf"(?<![\w.']){re.escape(b)}(?![\w'])", d, t)
+                    for f in st.facts:
+                        if f.key == k:
+                            f.text = new_t
     common = [k for k in common if k == 'KL' or k[0] in types or
               len({next(g.text for g in st.facts if g.key == k) for st in live}) == 1]
     reorder = [[f.key for f in st.facts] != common for st in order]
-    fa, dvars = [], []
-    kl_union = None
     for fs in zip(*[[next(f for f in st.facts if f.key == k) for k in common] for st in live]):
         x = fs[0]
         if all(f.text == x.text for f in fs):

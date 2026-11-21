@@ -245,7 +245,7 @@ theorem sv_cmf {B out bp x21 x26 dg c q rl rp sgp op ol pg gi s0v s5v s7v waa4 :
         reg n' (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x8) = w8 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xC) = wc ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x10) = (BitVec.ofNat 8 (bs.getD 4 0)).zeroExtend 32 ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x10) = (BitVec.ofNat 8 ((bs.drop 4).getD 0 0)).zeroExtend 32 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x14) = w14 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x18) = w18 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1C) = (BitVec.ofNat 8 (rt.getD 0 0)).zeroExtend 32 ∧
@@ -330,7 +330,7 @@ theorem sv_cmf {B out bp x21 x26 dg c q rl rp sgp op ol pg gi s0v s5v s7v waa4 :
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1384) = BitVec.ofNat 32 bs.length ∧
         (∀ j, j < 31 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x320 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0)) ∧
         (∀ j, j < 68 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x420 + j)) = BitVec.ofNat 8 (bs.getD j 0)) ∧
-        (∀ j, j < 63 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1480 + j)) = BitVec.ofNat 8 (bs.getD (5 + j) 0)) ∧
+        (∀ j, j < 63 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1480 + j)) = BitVec.ofNat 8 ((bs.drop 4).getD (1 + j) 0)) ∧
         SvKeepL B n0.mem n'.mem [(0x420, 0x60), (0x1380, 0x8), (0x420, 0x60), (0x10, 0x4), (0x1480, 0x3F), (0x30, 0x4)]) := by
   have t0 : Steps n0 n0 := .refl n0
   have fR0 : ∀ x, SvR B x → n0.mem x = M0 x := fM
@@ -5294,6 +5294,11 @@ theorem sv_cmf {B out bp x21 x26 dg c q rl rp sgp op ol pg gi s0v s5v s7v waa4 :
   have q37_420 : ∀ j, j < 68 → n37.mem (B + 0x21A0 + BitVec.ofNat 32 (0x420 + j)) = BitVec.ofNat 8 (bs.getD j 0) := fun j hj => by rw [m37]; exact q36_420 j hj
   have q37_1480 : ∀ j, j < 63 → n37.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1480 + j)) = BitVec.ofNat 8 (bs.getD (5 + j) 0) := fun j hj => by rw [m37]; exact q36_1480 j hj
   clear q36_1480 q36_420 q36_320 w36_30 b36_1380 b36_424 w36_1384 w36_aa4 w36_aa0 w36_a3c w36_a38 w36_a34 w36_a30 w36_a2c w36_a28 w36_a24 w36_a20 w36_420 w36_130 w36_12c w36_128 w36_124 w36_120 w36_11c w36_118 w36_114 w36_110 w36_10c w36_108 w36_104 w36_100 w36_fc w36_f8 w36_f4 w36_f0 w36_ec w36_e8 w36_e4 w36_e0 w36_dc w36_d8 w36_d4 w36_d0 w36_cc w36_c8 w36_c4 w36_c0 w36_bc w36_b8 w36_b4 w36_b0 w36_ac w36_a8 w36_a4 w36_a0 w36_9c w36_98 w36_94 w36_90 w36_8c w36_88 w36_84 w36_80 w36_7c w36_78 w36_70 w36_6c w36_68 w36_64 w36_60 w36_5c w36_58 w36_54 w36_50 w36_4c w36_48 w36_44 w36_40 w36_3c w36_38 w36_34 w36_2c w36_28 w36_24 w36_20 w36_1c w36_18 w36_14 w36_10 w36_c w36_8 g36_27 g36_26 g36_25 g36_24 g36_23 g36_22 g36_21 g36_19 g36_18 g36_10 g36_9 g36_8 g36_4 g36_3 g36_2 V36 E36 fR36 t36 rg36 W36 K36 fr36 s36 d36
+  have hdrop : ∀ i, (bs.drop 4).getD i 0 = bs.getD (4 + i) 0 := fun i => by
+    simp only [List.getD_eq_getElem?_getD, List.getElem?_drop]
+  have w37_10 : memLoad32 n37.mem (B + 0x21A0 + BitVec.ofNat 32 0x10) = (BitVec.ofNat 8 ((bs.drop 4).getD 0 0)).zeroExtend 32 := by rw [w37_10, hdrop]
+  have q37_1480 : ∀ j, j < 63 → n37.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1480 + j)) = BitVec.ofNat 8 ((bs.drop 4).getD (1 + j) 0) := fun j hj => by
+    rw [q37_1480 j hj, hdrop, show 4 + (1 + j) = 5 + j by omega]
   exact .inr ⟨hdup, n37, t37, s37, E37, V37, fR37, g37_2, g37_3, g37_4, g37_9, g37_18, g37_19, g37_21, g37_22, g37_23, g37_24, g37_25, g37_26, g37_27, w37_8, w37_c, w37_10, w37_14, w37_18, w37_1c, w37_20, w37_24, w37_28, w37_2c, w37_30, w37_34, w37_38, w37_3c, w37_40, w37_44, w37_48, w37_4c, w37_50, w37_54, w37_58, w37_5c, w37_60, w37_64, w37_68, w37_6c, w37_70, w37_78, w37_7c, w37_80, w37_84, w37_88, w37_8c, w37_90, w37_94, w37_98, w37_9c, w37_a0, w37_a4, w37_a8, w37_ac, w37_b0, w37_b4, w37_b8, w37_bc, w37_c0, w37_c4, w37_c8, w37_cc, w37_d0, w37_d4, w37_d8, w37_dc, w37_e0, w37_e4, w37_e8, w37_ec, w37_f0, w37_f4, w37_f8, w37_fc, w37_100, w37_104, w37_108, w37_10c, w37_110, w37_114, w37_118, w37_11c, w37_120, w37_124, w37_128, w37_12c, w37_130, w37_a20, w37_a24, w37_a28, w37_a2c, w37_a30, w37_a34, w37_a38, w37_a3c, w37_aa0, w37_aa4, w37_1384, q37_320, q37_420, q37_1480, keep_kk37.mono (by decide)⟩
 
 end C3.RV32.Sv
