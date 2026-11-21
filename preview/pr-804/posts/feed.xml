@@ -5,12 +5,12 @@
     <link>https://imjasonh.github.io/playground/preview/pr-804/posts/</link>
     <description>Posts from Playground.</description>
     <atom:link href="https://imjasonh.github.io/playground/preview/pr-804/posts/feed.xml" rel="self" type="application/rss+xml"/>
-    <lastBuildDate>Sat, 21 Nov 2026 18:40:05 +0000</lastBuildDate>
+    <lastBuildDate>Sat, 21 Nov 2026 14:19:30 -0500</lastBuildDate>
     <item>
-      <title>An update on the security of kontain.me</title>
+      <title>kontain.me security incident postmortem</title>
       <link>https://imjasonh.github.io/playground/preview/pr-804/posts/kontain.me-compromise/</link>
       <guid isPermaLink="true">https://imjasonh.github.io/playground/preview/pr-804/posts/kontain.me-compromise/</guid>
-      <description>An update on the security of kontain.me</description>
+      <description>kontain.me security incident postmortem</description>
       <pubDate>Sat, 21 Nov 2026 13:22:49 -0500</pubDate>
       <content:encoded><![CDATA[<p>On Wednesday, November 18th, 2026, an attacker compromised the GCP project that runs <a href="https://github.com/imjasonh/kontain.me">kontain.me</a> and began mining crypto. This is a postmortem of the incident.</p>
 <p>No users of kontain.me (if any) were harmed; no malicious data was served to users, no contents were taken.</p>
