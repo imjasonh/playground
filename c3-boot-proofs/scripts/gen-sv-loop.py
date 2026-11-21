@@ -27,6 +27,11 @@ LOOPS = {
     'SvILoop': ('sv_iloop', ('SvImiss', 'sv_imiss'),
                 "the search of the root's Fulcio intermediates for the leaf's issuer, over `k` entries that "
                 "don't match"),
+    'SvTLoop': ('sv_tloop', ('SvTlmiss', 'sv_tlmiss'),
+                "the search of the root's TSAs for the timestamp's signer, over `k` entries that don't match"),
+    'SvCLoop': ('sv_cloop', ('SvClmiss', 'sv_clmiss'),
+                "the search of the root's logs for the checkpoint's origin, over `k` entries that don't match"),
+    'SvCkdLoop': ('sv_ckdloop', ('SvCkd', 'sv_ckd'), "the checkpoint's size, over `k` digits"),
 }
 
 GLOBAL = ('F', 'hret', 'hO', 'M0')
@@ -62,15 +67,15 @@ def write(fname):
         f = facts.get(key) or facts.get('ra' + key[2:] if re.fullmatch(r'r1[0-7]', key) else '')
         if f is None:
             raise ValueError(f"{sname} doesn't keep {p}")
+        if f.rhs is None or len(top_split(t, ' = ')) != 2:
+            if strip_parens(re.sub(r"n'", "n0", f.text)) != strip_parens(t):
+                raise ValueError(f"{sname} changes {p}")
+            continue
         new = strip_parens(f.rhs)
         if new != rhs:
             if rhs not in bset or rhs in upd:
                 raise ValueError(f"{p}: {rhs} -> {new}")
             upd[rhs] = new
-    for b, e in upd.items():
-        others = {x for x in bset if x != b and re.search(IDENT.format(re.escape(x)), e)} & set(upd)
-        if others:
-            raise ValueError(f"{b}'s update {e} names other loop variables {others}")
     head_text = " ".join(t for _, t in head)
     local = {}
     kept_per = []
@@ -83,9 +88,17 @@ def write(fname):
             kept_per.append((p, t))
     loopv = list(upd)
 
-    def it(b, K):
-        e = re.sub(IDENT.format(re.escape(b)), 'x', upd[b])
-        return f"(svIter (fun x => {e}) {K} {b})"
+    proj = {b: "s" + ".2" * j + (".1" if j + 1 < len(loopv) else "") for j, b in enumerate(loopv)}
+    if len(loopv) == 1:
+        proj = {loopv[0]: "s"}
+    step = "fun s => " + ("(" + ", ".join(subst(subst(upd[b], local), proj) for b in loopv) + ")" if len(loopv) > 1
+                          else subst(subst(upd[loopv[0]], local), proj))
+
+    def tup(vs):
+        return f"({', '.join(vs)})" if len(vs) > 1 else vs[0]
+
+    def it(K, vs=None):
+        return f"svIter ({step}) {K} {tup(vs or loopv)}"
 
     def at(t, K, mach="n0"):
         t = subst(t, local)
@@ -121,12 +134,12 @@ def write(fname):
     for p, t in head:
         O(f"    ({p} : {at(t, 0) if False else t}) →")
     prime = {b: b + "'" for b in loopv}
-    eqs = lambda K: " ∧ ".join(f"{b}' = {it(b, K)}" for b in loopv)
+    peq = lambda K: f"{tup(list(prime.values()))} = {it(K)}"
     if kept_per:
-        O(f"    (∀ i, i < k → ∀ {' '.join(prime.values())}, " + " → ".join(f"{b}' = {it(b, 'i')}" for b in loopv) +
-          " → " + " ∧ ".join(f"({subst(subst(t, local), prime)})" for _, t in kept_per) + ") →")
+        O(f"    (∀ i, i < k → ∀ {' '.join(prime.values())}, {peq('i')} → " +
+          " ∧ ".join(f"({subst(subst(t, local), prime)})" for _, t in kept_per) + ") →")
     kl = re.search(r"\[.*\]", facts['KL'].text).group(0)
-    O(f"    SvErrRet B out v n0 ∨ ∃ n' {' '.join(prime.values())}, Steps n0 n' ∧ {eqs('k')} ∧")
+    O(f"    SvErrRet B out v n0 ∨ ∃ n' {' '.join(prime.values())}, Steps n0 n' ∧ {peq('k')} ∧")
     O("      reg n' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧ reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧")
     O(f"      SvKeepL B n0.mem n'.mem {kl} ∧")
     O("      " + " ∧\n      ".join(paren(re.sub(IDENT.format("n0"), "n'", subst(subst(t, local), prime)))
@@ -136,12 +149,12 @@ def write(fname):
     O("  induction k with")
     O("  | zero =>")
     O(f"    intro {' '.join(loopv)} n0 {' '.join(hn)}" + (" _" if kept_per else ""))
-    O(f"    exact .inr ⟨n0, {', '.join(loopv)}, .refl _, {(Z + ', ') * len(loopv)}rfl, rfl, SvKeepL.refl.mono (by decide), "
+    O(f"    exact .inr ⟨n0, {', '.join(loopv)}, .refl _, (svIter_zero _ {tup(loopv)}).symm, rfl, rfl, SvKeepL.refl.mono (by decide), "
       f"{', '.join(hn)}⟩")
     O("  | succ k ih =>")
     O(f"    intro {' '.join(loopv)} n0 {' '.join(hn)}" + (" H" if kept_per else ""))
     if kept_per:
-        O(f"    obtain ⟨{', '.join(p for p, _ in kept_per)}⟩ := H 0 (Nat.succ_pos k) {' '.join(loopv)} {(Z + ' ') * len(loopv)}".rstrip())
+        O(f"    obtain ⟨{', '.join(p for p, _ in kept_per)}⟩ := H 0 (Nat.succ_pos k) {' '.join(loopv)} (svIter_zero _ {tup(loopv)}).symm")
     args = []
     for p, t in st.params:
         if p in local.values() or (p, t) in per and (p, t) not in kept_per:
@@ -160,13 +173,14 @@ def write(fname):
     a2 = a2[len(a2) - len(st.params):]
     hargs = [a for (p, _), a in zip(st.params, a2) if p in hn]
     vs = " ".join(prime.values())
-    es = " ".join(f"e{j}" for j in range(len(loopv)))
-    sh = " ".join(f"(e{j}.trans {S})" for j in range(len(loopv)))
+    es = "e0"
+    sh = f"(e0.trans (svIter_succ _ i {tup(loopv)}).symm)"
+    shk = f"(e0.trans (svIter_succ _ k {tup(loopv)}).symm)"
     O(f"    rcases ih {' '.join(hargs)}" +
       (f" (fun i hi {vs} {es} => H (i + 1) (Nat.succ_lt_succ hi) {vs} {sh})" if kept_per else "") +
-      f" with e | ⟨n', {', '.join(prime.values())}, cs, {', '.join(f'e{j}' for j in range(len(loopv)))}, h3, h4, hk, rest⟩")
+      f" with e | ⟨n', {', '.join(prime.values())}, cs, e0, h3, h4, hk, rest⟩")
     O("    · exact .inl (SvErrRet.pre c1 r1_3 r1_4 (fun x hx => (fR1 x hx).trans (fM x hx).symm) e)")
-    O(f"    · exact .inr ⟨n', {', '.join(prime.values())}, c1.trans cs, {sh.replace(') (', '), (')}, "
+    O(f"    · exact .inr ⟨n', {', '.join(prime.values())}, c1.trans cs, {shk}, "
       "h3.trans r1_3, h4.trans r1_4, (K1_L.trans hk).mono (by decide), rest⟩")
     O("")
     O("end C3.RV32.Sv")

@@ -7034,17 +7034,19 @@ def ck_fail_2ff2(sub, hname):
     sub.fail(sub.fail_proof(("prop", hname)))
 
 
+def tl_struct_after_ck1():
+    """The fields of the struct at 0xA20 that still copy what `TL_STRUCT` says
+    once `sv_ck1` has rewritten the frame words and registers the others copied."""
+    return {e: nm for e, nm in TL_STRUCT.items() if e in (0xAA0, 0xAA4)}
+
+
 def ck2_start(g):
     regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
             19: ("U", "bp"), 21: ("U", "x21"), 26: ("U", "x26"), 27: ("S", 0xA20), 24: ("U", "dg"),
             8: ("U", "sl"), 9: ("U", "sp1"), 22: ("U", "rl"), 23: ("U", "rp"), 25: ("U", "ckl")}
     words = {e: f"w{e:x}" for e in TST_WORDS}
     words.update({0x74: "q", 0x428: "sgp"})
-    words.update(TL_STRUCT)
-    # `sv_ck1` rewrote the frame words that the struct at 0xA20 copied.
-    for e, nm in TL_STRUCT.items():
-        if nm.startswith("w"):
-            del words[e]
+    words.update(tl_struct_after_ck1())
     return start(g, regs, words, {})
 
 
@@ -7123,7 +7125,7 @@ def ckd_start(g):
             8: ("U", "c"), 9: ("U", "p"), 22: ("U", "rl"), 23: ("U", "rp"), 25: ("U", "ckl"), 10: ("C", 10)}
     words = {e: f"w{e:x}" for e in TST_WORDS}
     words.update({0x74: "q", 0x428: "sgp"})
-    words.update(TL_STRUCT)
+    words.update(tl_struct_after_ck1())
     words.update({e: f"w{e:x}" for e in CK_LOW})
     return start(g, regs, words, {})
 
