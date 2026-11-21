@@ -128,7 +128,7 @@ EOF
 
 # levels LOG... prints every security level the bootloader read, in order.
 levels() {
-  cat "$@" | tr -d '\r' | sed -n 's/^c3-boot: security level \([0-9a-f]*\)$/\1/p'
+  sed -n 's/\r//g; s/^c3-boot: security level \([0-9a-f]*\)$/\1/p' "$@"
 }
 
 # expect_monotone LOG... fails if the security level ever went down, or if
