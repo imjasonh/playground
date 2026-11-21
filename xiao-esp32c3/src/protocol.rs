@@ -43,6 +43,21 @@ pub const FLAG_EPD_PARTIAL: u8 = 1 << 2;
 /// Flag bit 3: last reset was a brownout (`ESP_RST_BROWNOUT`).
 pub const FLAG_BROWNOUT_RESET: u8 = 1 << 3;
 
+/// Custom BLE GATT service UUID (128-bit) for on-demand firmware OTA updates from the iPhone.
+pub const OTA_SERVICE_UUID: &str = "4fafc301-1fb5-459e-8fcc-c5c9c331914b";
+
+/// Write characteristic: iPhone → XIAO OTA control (`BEGIN <size> <sha256>`, `COMMIT`, `ABORT`).
+pub const OTA_CONTROL_UUID: &str = "beb5483e-36e1-4688-b7f5-ea07361bc301";
+
+/// Write-without-response characteristic: iPhone → XIAO raw firmware binary chunks.
+pub const OTA_DATA_UUID: &str = "beb5483e-36e1-4688-b7f5-ea07361bc302";
+
+/// Read + notify characteristic: XIAO → iPhone OTA status line (`IDLE`, `READY`, `PROGRESS`, `OK`, `ERR`).
+pub const OTA_STATUS_UUID: &str = "1a3c0001-36e1-4688-b7f5-ea07361bc303";
+
+/// Size of each OTA partition slot (`ota_0` / `ota_1`) in `partitions.csv` (1.9375 MiB).
+pub const OTA_SLOT_BYTES: u32 = 0x1F_0000;
+
 /// Typical small SPI e-paper width in pixels (1.54″ / 2.13″ class, 200×200 = 5,000 bytes packed 1-bit).
 pub const EPD_WIDTH: usize = 200;
 
@@ -477,6 +492,117 @@ pub fn reset_reason_name(code: i32) -> &'static str {
     }
 }
 
+/// Control command written by the iPhone to [`OTA_CONTROL_UUID`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum OtaCommand {
+    /// Erase and open the inactive OTA partition for `size` bytes with expected lowercase hex `sha256`.
+    Begin { size: u32, sha256: String },
+    /// Finalize the OTA image, verify the SHA-256 digest, switch the boot partition, and reboot.
+    Commit,
+    /// Cancel an in-progress OTA transfer.
+    Abort,
+}
+
+/// Status notification sent by the XIAO on [`OTA_STATUS_UUID`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum OtaStatus {
+    Idle,
+    Ready { total: u32 },
+    Progress { written: u32, total: u32 },
+    Ok { sha256: String },
+    Error { message: String },
+}
+
+/// Parse an OTA control command string from the iPhone.
+pub fn parse_ota_command(raw: &str) -> Option<OtaCommand> {
+    let parts: Vec<&str> = raw.split_whitespace().collect();
+    if parts.is_empty() {
+        return None;
+    }
+    let head = parts[0].to_ascii_uppercase();
+    match head.as_str() {
+        "COMMIT" if parts.len() == 1 => Some(OtaCommand::Commit),
+        "ABORT" if parts.len() == 1 => Some(OtaCommand::Abort),
+        "BEGIN" if parts.len() == 3 => {
+            let size: u32 = parts[1].parse().ok()?;
+            if size == 0 || size > OTA_SLOT_BYTES {
+                return None;
+            }
+            let sha = parts[2]
+                .strip_prefix("sha256:")
+                .unwrap_or(parts[2])
+                .to_ascii_lowercase();
+            if sha.len() != 64 || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+                return None;
+            }
+            Some(OtaCommand::Begin { size, sha256: sha })
+        }
+        _ => None,
+    }
+}
+
+/// Encode an [`OtaCommand`] into its wire string.
+pub fn encode_ota_command(cmd: &OtaCommand) -> String {
+    match cmd {
+        OtaCommand::Begin { size, sha256 } => format!("BEGIN {size} {sha256}"),
+        OtaCommand::Commit => "COMMIT".to_string(),
+        OtaCommand::Abort => "ABORT".to_string(),
+    }
+}
+
+/// Format an [`OtaStatus`] line for the notify characteristic.
+pub fn format_ota_status(status: &OtaStatus) -> String {
+    match status {
+        OtaStatus::Idle => "IDLE".to_string(),
+        OtaStatus::Ready { total } => format!("READY total={total}"),
+        OtaStatus::Progress { written, total } => {
+            format!("PROGRESS written={written} total={total}")
+        }
+        OtaStatus::Ok { sha256 } => format!("OK sha256={sha256}"),
+        OtaStatus::Error { message } => format!("ERR {message}"),
+    }
+}
+
+/// Parse an [`OtaStatus`] line from the notify characteristic.
+pub fn parse_ota_status(raw: &str) -> Option<OtaStatus> {
+    let raw = raw.trim();
+    if raw == "IDLE" {
+        return Some(OtaStatus::Idle);
+    }
+    if let Some(msg) = raw.strip_prefix("ERR ") {
+        return Some(OtaStatus::Error {
+            message: msg.trim().to_string(),
+        });
+    }
+    if let Some(rest) = raw.strip_prefix("READY ") {
+        let total = rest.trim().strip_prefix("total=")?.parse().ok()?;
+        return Some(OtaStatus::Ready { total });
+    }
+    if let Some(rest) = raw.strip_prefix("OK ") {
+        let sha256 = rest.trim().strip_prefix("sha256=")?.to_ascii_lowercase();
+        if sha256.len() != 64 || !sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+            return None;
+        }
+        return Some(OtaStatus::Ok { sha256 });
+    }
+    if let Some(rest) = raw.strip_prefix("PROGRESS ") {
+        let mut written = None;
+        let mut total = None;
+        for part in rest.split_whitespace() {
+            if let Some(w) = part.strip_prefix("written=") {
+                written = Some(w.parse().ok()?);
+            } else if let Some(t) = part.strip_prefix("total=") {
+                total = Some(t.parse().ok()?);
+            }
+        }
+        return Some(OtaStatus::Progress {
+            written: written?,
+            total: total?,
+        });
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -635,5 +761,48 @@ mod tests {
         };
         assert_eq!(m.total_active_us(), 475_000);
         assert!(m.estimated_energy_uj() > 50_000);
+    }
+
+    #[test]
+    fn ota_command_and_status_round_trip() {
+        let sha = "a".repeat(64);
+        let begin = OtaCommand::Begin {
+            size: 384_000,
+            sha256: sha.clone(),
+        };
+        assert_eq!(parse_ota_command(&encode_ota_command(&begin)), Some(begin));
+        assert_eq!(
+            parse_ota_command(&format!("begin 384000 sha256:{sha}")),
+            Some(OtaCommand::Begin {
+                size: 384_000,
+                sha256: sha.clone(),
+            })
+        );
+        assert_eq!(
+            parse_ota_command(&encode_ota_command(&OtaCommand::Commit)),
+            Some(OtaCommand::Commit)
+        );
+        assert_eq!(
+            parse_ota_command(&encode_ota_command(&OtaCommand::Abort)),
+            Some(OtaCommand::Abort)
+        );
+        assert_eq!(parse_ota_command("BEGIN 0 aaaa"), None);
+        assert_eq!(parse_ota_command("BEGIN 99999999 aaaa"), None);
+
+        for st in [
+            OtaStatus::Idle,
+            OtaStatus::Ready { total: 384_000 },
+            OtaStatus::Progress {
+                written: 65_536,
+                total: 384_000,
+            },
+            OtaStatus::Ok { sha256: sha },
+            OtaStatus::Error {
+                message: "sha256 mismatch".to_string(),
+            },
+        ] {
+            let line = format_ota_status(&st);
+            assert_eq!(parse_ota_status(&line), Some(st), "{line}");
+        }
     }
 }

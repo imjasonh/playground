@@ -36,6 +36,29 @@ returns `LOW` when the phase finishes. Connect `D0` to a Nordic Power Profiler
 Kit II (PPK2) digital logic input while powering the XIAO through its `BAT+`
 and `BAT-` pads at 3.7 V to align code phases with current spikes.
 
+## On-demand BLE GATT OTA updates from iPhone
+
+`partitions.csv` divides the 4 MB flash into two 1.9375 MiB app slots (`ota_0`
+at `0x20000` and `ota_1` at `0x210000`) with `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`.
+
+The 150 ms BLE advertisement burst is connectable (`ConnMode::Und`) and exposes
+the OTA GATT service (`4fafc301-1fb5-459e-8fcc-c5c9c331914b`):
+
+| Role | UUID | Properties | Format |
+|------|------|------------|--------|
+| Service | `4fafc301-1fb5-459e-8fcc-c5c9c331914b` | — | — |
+| Control | `beb5483e-36e1-4688-b7f5-ea07361bc301` | Write | `BEGIN <size> <sha256>`, `COMMIT`, `ABORT` |
+| Data | `beb5483e-36e1-4688-b7f5-ea07361bc302` | Write / Write Without Response | Raw `.bin` chunks (up to 480 B) |
+| Status | `1a3c0001-36e1-4688-b7f5-ea07361bc303` | Read + Notify | `IDLE`, `READY total=<n>`, `PROGRESS written=<w> total=<n>`, `OK sha256=<hex>`, `ERR <msg>` |
+
+On normal wakes when the iPhone only listens passively, no connection occurs
+and the XIAO drops back into deep sleep after 150 ms. When you stage a `.bin`
+(or pull `:latest` from GHCR) and tap **Arm Update for Next Wake** in the iOS
+app, the iPhone connects during the 150 ms burst, streams the image into the
+inactive OTA partition, verifies the SHA-256 digest, and reboots into the new
+slot. On the first wake cycle in the new slot, the firmware calls
+`esp_ota_mark_app_valid_cancel_rollback()`.
+
 ## Build and flash
 
 One-time host setup:

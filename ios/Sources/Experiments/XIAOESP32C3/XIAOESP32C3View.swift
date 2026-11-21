@@ -1,9 +1,11 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
-/// Foreground BLE telemetry collector, phase-budget dashboard, and OTLP/HTTP forwarder
-/// for the Seeed Studio XIAO ESP32C3 firmware (`xiao-esp32c3/`).
+/// Foreground BLE telemetry collector, phase-budget dashboard, OTLP/HTTP forwarder,
+/// and BLE GATT OTA firmware installer for the Seeed Studio XIAO ESP32C3 (`xiao-esp32c3/`).
 struct XIAOESP32C3View: View {
     @StateObject private var controller = XIAOESP32C3Controller()
+    @State private var isImportingFirmware = false
 
     var body: some View {
         ScrollView {
@@ -12,6 +14,7 @@ struct XIAOESP32C3View: View {
                 scanControls
                 metricsDashboard
                 phaseBreakdownPanel
+                otaUpdaterPanel
                 otelForwarderPanel
                 historyPanel
                 howItWorks
@@ -19,6 +22,23 @@ struct XIAOESP32C3View: View {
             .padding()
         }
         .navigationTitle("XIAO ESP32C3")
+        .fileImporter(
+            isPresented: $isImportingFirmware,
+            allowedContentTypes: [.data]
+        ) { result in
+            switch result {
+            case .success(let url):
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer {
+                    if scoped { url.stopAccessingSecurityScopedResource() }
+                }
+                if let data = try? Data(contentsOf: url) {
+                    controller.stageFirmware(data: data, name: url.lastPathComponent)
+                }
+            case .failure(let error):
+                controller.otaStatusText = "File import failed: \(error.localizedDescription)"
+            }
+        }
         .onAppear {
             controller.start()
         }
@@ -201,6 +221,82 @@ struct XIAOESP32C3View: View {
         .accessibilityIdentifier(id)
     }
 
+    private var otaUpdaterPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Firmware OTA update over BLE")
+                .font(.subheadline.bold())
+
+            HStack(spacing: 8) {
+                Button {
+                    Task {
+                        await controller.pullLatestFirmwareFromGHCR()
+                    }
+                } label: {
+                    Label("Pull GHCR :latest", systemImage: "arrow.down.circle")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("xiaoOtaPullGhcrButton")
+
+                Button {
+                    isImportingFirmware = true
+                } label: {
+                    Label("Choose .bin", systemImage: "folder")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("xiaoOtaChooseBinButton")
+            }
+
+            if let staged = controller.stagedFirmwareData {
+                LabeledContent("Staged image", value: "\(controller.stagedFirmwareName) (\(staged.count) B)")
+                    .font(.caption)
+                    .accessibilityIdentifier("xiaoOtaStagedName")
+                LabeledContent("SHA-256", value: String(controller.stagedFirmwareSHA256.prefix(16)) + "…")
+                    .font(.caption.monospaced())
+                    .accessibilityIdentifier("xiaoOtaStagedSha")
+            }
+
+            if case .streaming(let written, let total) = controller.otaPhase, total > 0 {
+                let fraction = Double(written) / Double(total)
+                ProgressView(value: min(max(fraction, 0), 1))
+                    .accessibilityLabel("OTA transfer progress")
+                    .accessibilityValue("\(Int((fraction * 100).rounded())) percent")
+                    .accessibilityIdentifier("xiaoOtaProgressView")
+            }
+
+            if controller.otaPhase == .armed || controller.otaPhase == .connecting || controller.otaPhase == .erasing {
+                Button(role: .destructive) {
+                    controller.cancelOTAUpdate()
+                } label: {
+                    Label("Cancel Armed OTA", systemImage: "xmark.circle.fill")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("xiaoOtaCancelButton")
+            } else {
+                Button {
+                    controller.armOTAUpdate()
+                } label: {
+                    Label("Arm Update for Next Wake", systemImage: "bolt.horizontal.circle.fill")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(controller.stagedFirmwareData == nil)
+                .accessibilityIdentifier("xiaoOtaArmButton")
+            }
+
+            Text(controller.otaStatusText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("xiaoOtaStatusText")
+        }
+        .padding(12)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("xiaoOtaPanel")
+    }
+
     private var otelForwarderPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("OpenTelemetry OTLP/HTTP forwarder")
@@ -300,10 +396,12 @@ struct XIAOESP32C3View: View {
                     + "filtering, 1-bit framebuffer rendering, e-paper SPI + LUT refresh, and the "
                     + "previous BLE TX burst into RTC slow memory (.rtc.data), and toggles GPIO 2 "
                     + "(D0) HIGH during each phase for Nordic PPK2 power correlation. It then "
-                    + "broadcasts a 150 ms non-connectable BLE Manufacturer Specific Data (0xFFFF) "
-                    + "packet and drops back into deep sleep. The iPhone scans with duplicates "
-                    + "enabled, deduplicates frames by seq, and forwards OTLP/HTTP v1 JSON to "
-                    + "your OpenTelemetry Collector. Firmware lives in xiao-esp32c3/."
+                    + "broadcasts a 150 ms BLE Manufacturer Specific Data (0xFFFF) packet and "
+                    + "drops back into deep sleep. When an OTA update is armed in this app, the "
+                    + "iPhone connects during that 150 ms burst, streams the new firmware into the "
+                    + "inactive OTA partition (ota_0 / ota_1), verifies the SHA-256 digest, and "
+                    + "reboots the board with automatic rollback protection. Firmware lives in "
+                    + "xiao-esp32c3/ and Cloud Run collector lives in xiao-otel/."
             )
             .font(.caption)
             .foregroundStyle(.secondary)

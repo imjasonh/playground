@@ -13,13 +13,25 @@ struct XIAOESP32C3Sample: Identifiable, Equatable {
     let metrics: XIAOESP32C3Metrics
 }
 
-/// Scans for connectionless XIAO ESP32C3 BLE Manufacturer Specific Data (`0xFFFF`)
-/// bursts, deduplicates frames by sequence number (`seq`), updates the live
-/// performance and e-paper refresh dashboard, and optionally POSTs OTLP/HTTP
-/// JSON payloads to an OpenTelemetry Collector or the `xiao-otel` Cloud Run
-/// service (authorized with Apple App Attest).
+/// Scans for XIAO ESP32C3 BLE Manufacturer Specific Data (`0xFFFF`) bursts,
+/// deduplicates frames by sequence number (`seq`), updates the live performance
+/// and e-paper refresh dashboard, forwards OTLP/HTTP JSON payloads to an
+/// OpenTelemetry Collector or the `xiao-otel` Cloud Run service (authorized
+/// with Apple App Attest), and installs OTA firmware updates over BLE GATT on
+/// the board's next wake burst.
 @MainActor
 final class XIAOESP32C3Controller: NSObject, ObservableObject {
+    enum OTAPhase: Equatable {
+        case idle
+        case armed
+        case connecting
+        case erasing
+        case streaming(written: UInt32, total: UInt32)
+        case committing
+        case completed(sha256: String)
+        case failed(String)
+    }
+
     private static let endpointDefaultsKey = "xiao-esp32c3.otelEndpoint"
     private static let forwardingDefaultsKey = "xiao-esp32c3.forwardingEnabled"
     private static let appAttestEnabledDefaultsKey = "xiao-esp32c3.useAppAttest"
@@ -36,7 +48,21 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     @Published var lastForwardStatus = "Not forwarded yet."
     @Published var statusMessage = "Flash xiao-esp32c3 or inject a simulated wake burst."
 
+    // BLE GATT OTA state
+    @Published var otaPhase: OTAPhase = .idle
+    @Published var stagedFirmwareData: Data?
+    @Published var stagedFirmwareName = ""
+    @Published var stagedFirmwareSHA256 = ""
+    @Published var otaStatusText = "Load a firmware .bin or pull :latest from GHCR to arm an update."
+
     private var central: CBCentralManager?
+    private var peripherals: [UUID: CBPeripheral] = [:]
+    private var otaPeripheral: CBPeripheral?
+    private var otaControlChar: CBCharacteristic?
+    private var otaDataChar: CBCharacteristic?
+    private var otaStatusChar: CBCharacteristic?
+    private var otaStreamTask: Task<Void, Never>?
+
     private var lastSeqByDevice: [UUID: UInt8] = [:]
     private var simulatedSeq: UInt8 = 0
     private var simulatedWakeCount: UInt32 = 0
@@ -45,6 +71,11 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     private let attestStore: any AppAttestStoring
     private let http: any AppAttestHTTPClient
     private let simulatedDeviceId = UUID()
+
+    private let otaServiceUUID = CBUUID(string: XIAOESP32C3Protocol.otaServiceUUIDString)
+    private let otaControlUUID = CBUUID(string: XIAOESP32C3Protocol.otaControlUUIDString)
+    private let otaDataUUID = CBUUID(string: XIAOESP32C3Protocol.otaDataUUIDString)
+    private let otaStatusUUID = CBUUID(string: XIAOESP32C3Protocol.otaStatusUUIDString)
 
     init(
         defaults: UserDefaults = .standard,
@@ -101,8 +132,10 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     }
 
     func stop() {
+        otaStreamTask?.cancel()
         central?.stopScan()
         isScanning = false
+        peripherals.removeAll()
     }
 
     func toggleScan() {
@@ -143,6 +176,238 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         defaults.set(enabled, forKey: Self.appAttestEnabledDefaultsKey)
     }
 
+    // MARK: - BLE GATT OTA Update
+
+    /// Stage a firmware binary for BLE OTA installation.
+    func stageFirmware(data: Data, name: String) {
+        guard !data.isEmpty, UInt32(data.count) <= XIAOESP32C3Protocol.otaSlotBytes else {
+            otaPhase = .failed("Firmware size (\(data.count) B) exceeds OTA slot (\(XIAOESP32C3Protocol.otaSlotBytes) B).")
+            otaStatusText = "Firmware size is out of bounds."
+            return
+        }
+        let sha = XIAOESP32C3Protocol.sha256Hex(data)
+        stagedFirmwareData = data
+        stagedFirmwareName = name
+        stagedFirmwareSHA256 = sha
+        otaPhase = .idle
+        otaStatusText = "Staged \(name) (\(data.count) B, sha256 \(sha.prefix(12))…)."
+    }
+
+    /// Stage a synthetic test firmware binary on Simulator or when testing the OTA flow without GHCR.
+    func stageSimulatedFirmware() {
+        var fake = Data("ESP-IDF-XIAO-ESP32C3-OTA-TEST-".utf8)
+        fake.append(Data(repeating: 0xA5, count: 4096))
+        stageFirmware(data: fake, name: "xiao-esp32c3-sim.bin")
+    }
+
+    /// Pull the latest published `xiao-esp32c3` firmware layer from GHCR anonymously.
+    func pullLatestFirmwareFromGHCR(
+        repo: String = XIAOESP32C3Protocol.defaultGHCRRepo,
+        tag: String = XIAOESP32C3Protocol.defaultGHCRTag
+    ) async {
+        otaStatusText = "Fetching anonymous GHCR token for \(repo):\(tag)…"
+        guard let tokenURL = URL(string: "https://ghcr.io/token?scope=repository:\(repo):pull") else {
+            otaStatusText = "Invalid GHCR repository name."
+            return
+        }
+        do {
+            let (tokData, tokResp) = try await http.data(for: URLRequest(url: tokenURL))
+            guard (tokResp as? HTTPURLResponse)?.statusCode == 200,
+                  let tokJSON = try JSONSerialization.jsonObject(with: tokData) as? [String: Any],
+                  let token = tokJSON["token"] as? String
+            else {
+                otaPhase = .failed("Could not fetch GHCR anonymous pull token.")
+                otaStatusText = "GHCR token fetch failed."
+                return
+            }
+
+            guard let manifestURL = URL(string: "https://ghcr.io/v2/\(repo)/manifests/\(tag)") else {
+                return
+            }
+            var manifestReq = URLRequest(url: manifestURL)
+            manifestReq.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            manifestReq.setValue(
+                "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json",
+                forHTTPHeaderField: "Accept"
+            )
+            let (manData, manResp) = try await http.data(for: manifestReq)
+            guard (manResp as? HTTPURLResponse)?.statusCode == 200,
+                  let manJSON = try JSONSerialization.jsonObject(with: manData) as? [String: Any],
+                  let layers = manJSON["layers"] as? [[String: Any]],
+                  let firstLayer = layers.first,
+                  let digest = firstLayer["digest"] as? String
+            else {
+                otaPhase = .failed("No published GHCR image found at \(repo):\(tag).")
+                otaStatusText = "No GHCR layer found for \(repo):\(tag)."
+                return
+            }
+
+            otaStatusText = "Downloading layer \(digest.prefix(19))…"
+            guard let blobURL = URL(string: "https://ghcr.io/v2/\(repo)/blobs/\(digest)") else {
+                return
+            }
+            var blobReq = URLRequest(url: blobURL)
+            blobReq.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            let (blobData, blobResp) = try await http.data(for: blobReq)
+            guard (blobResp as? HTTPURLResponse)?.statusCode == 200 else {
+                otaPhase = .failed("GHCR blob download failed.")
+                otaStatusText = "GHCR blob download failed."
+                return
+            }
+            stageFirmware(data: blobData, name: "ghcr:\(tag) (\(digest.prefix(19)))")
+        } catch {
+            otaPhase = .failed(error.localizedDescription)
+            otaStatusText = "GHCR pull error: \(error.localizedDescription)"
+        }
+    }
+
+    /// Arm the iPhone to connect on the very next XIAO BLE wake burst and stream the staged firmware.
+    func armOTAUpdate() {
+        guard let data = stagedFirmwareData, !data.isEmpty else {
+            otaStatusText = "Stage a firmware image first."
+            return
+        }
+        otaPhase = .armed
+        otaStatusText = "Armed (\(data.count) B). Waiting for the next XIAO-C3 wake burst to connect…"
+        if !isScanning, isBluetoothUsable {
+            startScan()
+        }
+    }
+
+    /// Cancel an armed or in-progress OTA update.
+    func cancelOTAUpdate() {
+        otaStreamTask?.cancel()
+        otaStreamTask = nil
+        if let peripheral = otaPeripheral, let ctrl = otaControlChar {
+            if let abortData = XIAOESP32C3Protocol.encodeOTACommand(.abort).data(using: .utf8) {
+                peripheral.writeValue(abortData, for: ctrl, type: .withResponse)
+            }
+            central?.cancelPeripheralConnection(peripheral)
+        }
+        otaPeripheral = nil
+        otaControlChar = nil
+        otaDataChar = nil
+        otaStatusChar = nil
+        otaPhase = .idle
+        otaStatusText = "OTA update cancelled."
+    }
+
+    /// Simulate a complete BLE OTA transfer (used when tapping Simulate Wake while OTA is armed).
+    private func runSimulatedOTATransfer() {
+        guard let data = stagedFirmwareData else {
+            return
+        }
+        let total = UInt32(data.count)
+        let sha = stagedFirmwareSHA256
+        otaPhase = .streaming(written: total, total: total)
+        otaPhase = .completed(sha256: sha)
+        otaStatusText = "Installed \(stagedFirmwareName) (\(total) B, sha256 \(sha.prefix(12))…)."
+    }
+
+    private func beginOTAConnection(to peripheral: CBPeripheral) {
+        guard let central, central.state == .poweredOn else {
+            return
+        }
+        otaPeripheral = peripheral
+        peripheral.delegate = self
+        otaPhase = .connecting
+        otaStatusText = "Caught wake burst! Connecting to \(peripheral.name ?? XIAOESP32C3Protocol.deviceName) for OTA…"
+        central.connect(peripheral, options: nil)
+    }
+
+    private func sendOTABeginIfReady() {
+        guard let peripheral = otaPeripheral,
+              let ctrl = otaControlChar,
+              otaDataChar != nil,
+              otaStatusChar != nil,
+              let firmware = stagedFirmwareData
+        else {
+            return
+        }
+        guard otaPhase == .connecting else {
+            return
+        }
+        otaPhase = .erasing
+        let cmd = XIAOESP32C3OTACommand.begin(
+            size: UInt32(firmware.count),
+            sha256: stagedFirmwareSHA256
+        )
+        otaStatusText = "Erasing inactive OTA partition for \(firmware.count) bytes…"
+        if let encoded = XIAOESP32C3Protocol.encodeOTACommand(cmd).data(using: .utf8) {
+            peripheral.writeValue(encoded, for: ctrl, type: .withResponse)
+        }
+    }
+
+    private func startStreamingOTAChunks() {
+        guard let peripheral = otaPeripheral,
+              let dataChar = otaDataChar,
+              let ctrlChar = otaControlChar,
+              let firmware = stagedFirmwareData
+        else {
+            return
+        }
+        otaStreamTask?.cancel()
+        let mtu = max(peripheral.maximumWriteValueLength(for: .withoutResponse), 180)
+        let chunkSize = min(mtu, 480)
+        let chunks = XIAOESP32C3Protocol.chunkFirmware(firmware, chunkSize: chunkSize)
+        let total = UInt32(firmware.count)
+        otaPhase = .streaming(written: 0, total: total)
+        otaStatusText = "Streaming \(total) bytes in \(chunks.count) BLE packets (\(chunkSize) B/pkt)…"
+
+        otaStreamTask = Task { @MainActor [weak self] in
+            var sentBytes: UInt32 = 0
+            for (idx, chunk) in chunks.enumerated() {
+                if Task.isCancelled { return }
+                peripheral.writeValue(chunk, for: dataChar, type: .withoutResponse)
+                sentBytes += UInt32(chunk.count)
+                if idx % 16 == 0 || sentBytes == total {
+                    self?.otaPhase = .streaming(written: sentBytes, total: total)
+                    try? await Task.sleep(for: .milliseconds(12))
+                } else {
+                    try? await Task.sleep(for: .milliseconds(3))
+                }
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.otaPhase = .committing
+            self.otaStatusText = "Verifying SHA-256 on XIAO and switching active OTA slot…"
+            if let commitData = XIAOESP32C3Protocol.encodeOTACommand(.commit).data(using: .utf8) {
+                peripheral.writeValue(commitData, for: ctrlChar, type: .withResponse)
+            }
+        }
+    }
+
+    func handleOTAStatusNotification(_ line: String) {
+        guard let parsed = XIAOESP32C3Protocol.parseOTAStatus(line) else {
+            return
+        }
+        switch parsed {
+        case .idle:
+            break
+        case .ready:
+            startStreamingOTAChunks()
+        case .progress(let written, let total):
+            otaPhase = .streaming(written: written, total: total)
+            let pct = total > 0 ? Int((Double(written) / Double(total) * 100).rounded()) : 0
+            otaStatusText = "Flashing inactive slot: \(written)/\(total) bytes (\(pct)%)."
+        case .ok(let sha256):
+            otaStreamTask?.cancel()
+            otaPhase = .completed(sha256: sha256)
+            otaStatusText = "Update verified (\(sha256.prefix(12))…). XIAO-C3 is rebooting into the new slot."
+            if let peripheral = otaPeripheral {
+                central?.cancelPeripheralConnection(peripheral)
+            }
+        case .error(let message):
+            otaStreamTask?.cancel()
+            otaPhase = .failed(message)
+            otaStatusText = "OTA error: \(message)"
+            if let peripheral = otaPeripheral {
+                central?.cancelPeripheralConnection(peripheral)
+            }
+        }
+    }
+
+    // MARK: - Telemetry & OTLP Forwarding
+
     /// Inject a realistic wake-cycle telemetry packet for testing on Simulator or without a board nearby.
     func injectSimulatedWake() {
         simulatedSeq = simulatedSeq &+ 1
@@ -171,6 +436,9 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             deviceName: XIAOESP32C3Protocol.deviceName,
             rssi: -54
         )
+        if otaPhase == .armed {
+            runSimulatedOTATransfer()
+        }
     }
 
     /// Parse a raw `CBAdvertisementDataManufacturerDataKey` buffer, deduplicate by `seq`,
@@ -186,6 +454,12 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         guard let metrics = XIAOESP32C3Protocol.decodeManufacturerData(mfgData) else {
             return false
         }
+        // If an OTA update is armed and we have a live CBPeripheral handle for this board,
+        // connect immediately during its 150 ms wake window!
+        if otaPhase == .armed, let peripheral = peripherals[deviceId] {
+            beginOTAConnection(to: peripheral)
+        }
+
         // Deduplicate repeated frames from the same 150 ms burst.
         if lastSeqByDevice[deviceId] == metrics.seq {
             return false
@@ -308,7 +582,6 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         let (_, response) = try await http.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401, authorizeWithAppAttest {
-            // If Cloud Run restarted and lost in-memory registration, re-register once and retry.
             defaults.removeObject(forKey: Self.registeredHostDefaultsKey)
         }
         return code
@@ -417,7 +690,119 @@ extension XIAOESP32C3Controller: CBCentralManagerDelegate {
         let name = advertisedName ?? peripheral.name ?? XIAOESP32C3Protocol.deviceName
         let rssi = RSSI.intValue
         Task { @MainActor in
+            self.peripherals[id] = peripheral
             self.ingestManufacturerData(mfg, deviceId: id, deviceName: name, rssi: rssi)
+        }
+    }
+
+    nonisolated func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        let service = CBUUID(string: XIAOESP32C3Protocol.otaServiceUUIDString)
+        Task { @MainActor in
+            self.otaStatusText = "Connected to XIAO-C3. Discovering OTA service…"
+        }
+        peripheral.discoverServices([service])
+    }
+
+    nonisolated func centralManager(
+        _ central: CBCentralManager,
+        didFailToConnect peripheral: CBPeripheral,
+        error: Error?
+    ) {
+        let detail = error?.localizedDescription ?? "connection failed"
+        Task { @MainActor in
+            if self.otaPhase == .connecting {
+                // Re-arm for the next wake burst if the 150 ms window closed before connection completed.
+                self.otaPhase = .armed
+                self.otaStatusText = "Missed 150 ms wake window (\(detail)); still armed for next wake…"
+            }
+        }
+    }
+
+    nonisolated func centralManager(
+        _ central: CBCentralManager,
+        didDisconnectPeripheral peripheral: CBPeripheral,
+        error: Error?
+    ) {
+        Task { @MainActor in
+            self.otaPeripheral = nil
+            self.otaControlChar = nil
+            self.otaDataChar = nil
+            self.otaStatusChar = nil
+            if case .completed = self.otaPhase {
+                return
+            }
+            if case .failed = self.otaPhase {
+                return
+            }
+            if self.otaPhase != .idle && self.otaPhase != .armed {
+                self.otaPhase = .failed("BLE link dropped during OTA transfer.")
+                self.otaStatusText = "Disconnected before OTA commit completed."
+            }
+        }
+    }
+}
+
+extension XIAOESP32C3Controller: CBPeripheralDelegate {
+    nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        if let error {
+            Task { @MainActor in
+                self.otaPhase = .failed(error.localizedDescription)
+                self.otaStatusText = "OTA service discovery failed: \(error.localizedDescription)"
+            }
+            return
+        }
+        let serviceUUID = CBUUID(string: XIAOESP32C3Protocol.otaServiceUUIDString)
+        let ctrlUUID = CBUUID(string: XIAOESP32C3Protocol.otaControlUUIDString)
+        let dataUUID = CBUUID(string: XIAOESP32C3Protocol.otaDataUUIDString)
+        let statusUUID = CBUUID(string: XIAOESP32C3Protocol.otaStatusUUIDString)
+        guard let services = peripheral.services else { return }
+        for service in services where service.uuid == serviceUUID {
+            peripheral.discoverCharacteristics([ctrlUUID, dataUUID, statusUUID], for: service)
+        }
+    }
+
+    nonisolated func peripheral(
+        _ peripheral: CBPeripheral,
+        didDiscoverCharacteristicsFor service: CBService,
+        error: Error?
+    ) {
+        if let error {
+            Task { @MainActor in
+                self.otaPhase = .failed(error.localizedDescription)
+                self.otaStatusText = "OTA characteristics failed: \(error.localizedDescription)"
+            }
+            return
+        }
+        guard let chars = service.characteristics else { return }
+        Task { @MainActor in
+            for ch in chars {
+                if ch.uuid == self.otaControlUUID {
+                    self.otaControlChar = ch
+                } else if ch.uuid == self.otaDataUUID {
+                    self.otaDataChar = ch
+                } else if ch.uuid == self.otaStatusUUID {
+                    self.otaStatusChar = ch
+                    peripheral.setNotifyValue(true, for: ch)
+                }
+            }
+            self.sendOTABeginIfReady()
+        }
+    }
+
+    nonisolated func peripheral(
+        _ peripheral: CBPeripheral,
+        didUpdateValueFor characteristic: CBCharacteristic,
+        error: Error?
+    ) {
+        guard error == nil,
+              characteristic.uuid == CBUUID(string: XIAOESP32C3Protocol.otaStatusUUIDString),
+              let data = characteristic.value,
+              let line = String(data: data, encoding: .utf8)
+        else {
+            return
+        }
+        Task { @MainActor in
+            self.handleOTAStatusNotification(line)
         }
     }
 }

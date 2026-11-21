@@ -152,4 +152,68 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         let fromFull = XIAOESP32C3Controller.resolveMetricsURL(from: "http://192.168.1.50:4318/v1/metrics")
         XCTAssertEqual(fromFull?.absoluteString, "http://192.168.1.50:4318/v1/metrics")
     }
+
+    func testOTACommandAndStatusRoundTrip() {
+        let sha = String(repeating: "a", count: 64)
+        let begin = XIAOESP32C3OTACommand.begin(size: 384_000, sha256: sha)
+        XCTAssertEqual(
+            XIAOESP32C3Protocol.parseOTACommand(XIAOESP32C3Protocol.encodeOTACommand(begin)),
+            begin
+        )
+        XCTAssertEqual(
+            XIAOESP32C3Protocol.parseOTACommand("begin 384000 sha256:\(sha)"),
+            begin
+        )
+        XCTAssertEqual(
+            XIAOESP32C3Protocol.parseOTACommand(XIAOESP32C3Protocol.encodeOTACommand(.commit)),
+            .commit
+        )
+        XCTAssertEqual(
+            XIAOESP32C3Protocol.parseOTACommand(XIAOESP32C3Protocol.encodeOTACommand(.abort)),
+            .abort
+        )
+        XCTAssertNil(XIAOESP32C3Protocol.parseOTACommand("BEGIN 0 \(sha)"))
+        XCTAssertNil(XIAOESP32C3Protocol.parseOTACommand("BEGIN 99999999 \(sha)"))
+
+        let statuses: [XIAOESP32C3OTAStatus] = [
+            .idle,
+            .ready(total: 384_000),
+            .progress(written: 65_536, total: 384_000),
+            .ok(sha256: sha),
+            .error(message: "sha256 mismatch"),
+        ]
+        for st in statuses {
+            let line = XIAOESP32C3Protocol.formatOTAStatus(st)
+            XCTAssertEqual(XIAOESP32C3Protocol.parseOTAStatus(line), st, line)
+        }
+
+        let sampleData = Data(repeating: 0x5A, count: 550)
+        let chunks = XIAOESP32C3Protocol.chunkFirmware(sampleData, chunkSize: 240)
+        XCTAssertEqual(chunks.map(\.count), [240, 240, 70])
+    }
+
+    @MainActor
+    func testArmedOTATransferOnSimulatedWake() {
+        let suite = "xiao-esp32c3.ota-tests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("suite")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let controller = XIAOESP32C3Controller(defaults: defaults)
+        controller.stageSimulatedFirmware()
+        XCTAssertNotNil(controller.stagedFirmwareData)
+        XCTAssertEqual(controller.otaPhase, .idle)
+
+        controller.armOTAUpdate()
+        XCTAssertEqual(controller.otaPhase, .armed)
+
+        controller.injectSimulatedWake()
+        XCTAssertEqual(
+            controller.otaPhase,
+            .completed(sha256: controller.stagedFirmwareSHA256)
+        )
+    }
 }

@@ -52,7 +52,7 @@ help:
 test:
 	cargo test --lib --locked
 
-$(SDKCONFIG_DEFAULTS): sdkconfig.defaults.in
+$(SDKCONFIG_DEFAULTS): sdkconfig.defaults.in partitions.csv
 	@mkdir -p $(FW_TARGET_DIR)
 	@sed 's|@PROJECT_DIR@|$(CURDIR)|g' sdkconfig.defaults.in > $@
 

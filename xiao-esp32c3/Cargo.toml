@@ -27,7 +27,9 @@ firmware = []
 anyhow = "1"
 esp-idf-svc = { version = "0.53", features = ["std", "native", "binstart"] }
 esp32-nimble = "0.13"
+hex = "0.4"
 log = "0.4"
+sha2 = "0.11"
 
 [build-dependencies]
 embuild = { version = "0.33", features = ["espidf"] }

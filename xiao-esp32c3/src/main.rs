@@ -1,40 +1,62 @@
-//! Seeed Studio XIAO ESP32C3 profiling and BLE advertisement telemetry prototype.
+//! Seeed Studio XIAO ESP32C3 profiling, BLE advertisement telemetry, and
+//! on-demand BLE GATT OTA firmware receiver.
 //!
 //! Each wake cycle executes four instrumented stages:
 //! 1. `sensor_us`: reads battery voltage and runs the fixed-point spike/EMA filter.
 //! 2. `compute_us`: renders a 200×200 1-bit e-paper status tile in RAM.
 //! 3. `epd_refresh_us`: measures the e-paper SPI transfer and BUSY refresh wait
 //!    (partial refresh on most wakes, full refresh every 10th wake).
-//! 4. `radio_us`: broadcasts a 150 ms connectionless BLE Manufacturer Specific Data
-//!    (`0xFFFF`) burst at a 20–30 ms interval, records the radio duration in RTC
-//!    slow memory for the next wake, and enters deep sleep.
+//! 4. `radio_us`: broadcasts a 150 ms BLE Manufacturer Specific Data (`0xFFFF`)
+//!    burst at a 20–30 ms interval.
+//!
+//! The advertisement is connectable (`ConnMode::Und`) with the custom OTA GATT
+//! service registered. On normal wakes when the iPhone only listens passively,
+//! zero connections occur and the XIAO enters deep sleep immediately after the
+//! 150 ms burst. When the user arms a firmware update in the iPhone app, the
+//! iPhone connects during that 150 ms burst, keeping the XIAO awake just long
+//! enough to stream the new image into the inactive OTA slot (`ota_0` / `ota_1`),
+//! verify its SHA-256 digest, and reboot.
 //!
 //! GPIO 2 (D0 on the XIAO ESP32C3) toggles HIGH during each active phase as a
 //! logic-analyzer / Nordic PPK2 power-profiler marker pin.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+
 use anyhow::Result;
 use esp32_nimble::enums::ConnMode;
-use esp32_nimble::{BLEAdvertisementData, BLEDevice};
+use esp32_nimble::utilities::BleUuid;
+use esp32_nimble::{uuid128, BLEAdvertisementData, BLECharacteristic, BLEDevice, NimbleProperties};
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::hal::gpio::{Output, PinDriver};
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::sys::{
-    esp_deep_sleep_start, esp_reset_reason, esp_sleep_enable_timer_wakeup, esp_timer_get_time,
+    esp_deep_sleep_start, esp_ota_abort, esp_ota_begin, esp_ota_end,
+    esp_ota_get_next_update_partition, esp_ota_get_running_partition, esp_ota_get_state_partition,
+    esp_ota_handle_t, esp_ota_img_states_t, esp_ota_img_states_t_ESP_OTA_IMG_PENDING_VERIFY,
+    esp_ota_mark_app_valid_cancel_rollback, esp_ota_set_boot_partition, esp_ota_write,
+    esp_partition_t, esp_reset_reason, esp_restart, esp_sleep_enable_timer_wakeup,
+    esp_timer_get_time, ESP_OK,
 };
-use log::info;
+use log::{info, warn};
+use sha2::{Digest, Sha256};
 use xiao_esp32c3::protocol::{
-    encode_mfg_data, format_status_line, reset_reason_name, simulate_epd_frame,
-    simulate_sensor_filter, PhaseAccumulator, DEVICE_NAME, EPD_FRAME_BYTES,
-    EPD_FULL_REFRESH_SIM_US, EPD_PARTIAL_REFRESH_SIM_US, FIRMWARE_ID, FLAG_BROWNOUT_RESET,
-    FLAG_DEEP_SLEEP_WAKE, FLAG_EPD_PARTIAL,
+    encode_mfg_data, format_ota_status, format_status_line, parse_ota_command, reset_reason_name,
+    simulate_epd_frame, simulate_sensor_filter, OtaCommand, OtaStatus, PhaseAccumulator,
+    DEVICE_NAME, EPD_FRAME_BYTES, EPD_FULL_REFRESH_SIM_US, EPD_PARTIAL_REFRESH_SIM_US, FIRMWARE_ID,
+    FLAG_BROWNOUT_RESET, FLAG_DEEP_SLEEP_WAKE, FLAG_EPD_PARTIAL, OTA_CONTROL_UUID, OTA_DATA_UUID,
+    OTA_SERVICE_UUID, OTA_SLOT_BYTES, OTA_STATUS_UUID,
 };
 
 /// Logic marker pin for Nordic PPK2 / oscilloscope correlation (GPIO 2 = XIAO D0).
 const PROBE_GPIO_LABEL: &str = "GPIO2 (D0)";
 
-/// Duration of each connectionless BLE advertising burst in milliseconds.
+/// Duration of each BLE advertising burst in milliseconds.
 /// At 20–30 ms advertising intervals, 150 ms emits ~6–7 packets across channels 37/38/39.
 const BLE_BURST_MS: u32 = 150;
+
+/// Maximum time an active BLE OTA connection may keep the board awake before timing out (120 s).
+const OTA_SESSION_TIMEOUT_MS: u32 = 120_000;
 
 /// Deep-sleep interval between wake cycles in microseconds (5 seconds for bench profiling).
 const DEEP_SLEEP_INTERVAL_US: u64 = 5_000_000;
@@ -96,8 +118,13 @@ fn main() -> Result<()> {
         format_status_line(&metrics)
     );
 
-    // Phase 4: BLE connectionless advertisement burst (26-byte Manufacturer Data: 0xFFFF + 24B payload).
-    let (_, radio_us) = measure_phase(&mut probe, || broadcast_ble_burst(&metrics))?;
+    // Phase 4: BLE advertisement burst (26-byte Manufacturer Data: 0xFFFF + 24B payload),
+    // plus on-demand BLE GATT OTA if the iPhone connects during the 150 ms burst.
+    let (_, radio_us) = measure_phase(&mut probe, || broadcast_ble_and_serve_ota(&metrics))?;
+
+    // If this slot booted in PENDING_VERIFY after an OTA update, completing a wake cycle
+    // and radio burst proves the image is healthy. Cancel rollback before deep sleeping.
+    mark_ota_slot_valid_if_pending();
 
     unsafe {
         // SAFETY: single-core ESP32-C3 main task after BLE stop and before deep sleep.
@@ -133,8 +160,6 @@ fn now_us() -> u64 {
 
 /// Benchmark e-paper SPI byte streaming and panel BUSY refresh latency.
 fn simulate_epd_spi_and_refresh(frame: &[u8], partial: bool) {
-    // Simulate 4 MHz SPI transfer of the 5,000-byte 1-bit buffer (~10 ms) plus a short
-    // bench refresh delay so real hardware measurements show distinct partial vs full phases.
     let mut acc: u32 = 0;
     for chunk in frame.chunks(64) {
         for &b in chunk {
@@ -150,22 +175,294 @@ fn simulate_epd_spi_and_refresh(frame: &[u8], partial: bool) {
     FreeRtos::delay_ms(delay_ms);
 }
 
+/// Check if the running OTA partition is in `ESP_OTA_IMG_PENDING_VERIFY` and mark it valid.
+fn mark_ota_slot_valid_if_pending() {
+    // SAFETY: esp_ota_get_running_partition, esp_ota_get_state_partition, and
+    // esp_ota_mark_app_valid_cancel_rollback are thread-safe ESP-IDF C APIs.
+    unsafe {
+        let part = esp_ota_get_running_partition();
+        if part.is_null() {
+            return;
+        }
+        let mut state: esp_ota_img_states_t = 0;
+        if esp_ota_get_state_partition(part, &mut state) == ESP_OK
+            && state == esp_ota_img_states_t_ESP_OTA_IMG_PENDING_VERIFY
+        {
+            let err = esp_ota_mark_app_valid_cancel_rollback();
+            if err == ESP_OK {
+                info!("ota: marked new firmware slot valid (rollback cancelled)");
+            } else {
+                warn!("ota: mark_app_valid failed err={err}");
+            }
+        }
+    }
+}
+
+struct OtaWriterState {
+    handle: Option<esp_ota_handle_t>,
+    partition: *const esp_partition_t,
+    expected_size: u32,
+    expected_sha256: String,
+    written: u32,
+    next_notify_at: u32,
+    hasher: Sha256,
+    reboot_pending: bool,
+}
+
+// SAFETY: `partition` points to an immutable ESP-IDF partition descriptor table entry in flash/ROM.
+unsafe impl Send for OtaWriterState {}
+
+impl Default for OtaWriterState {
+    fn default() -> Self {
+        Self {
+            handle: None,
+            partition: core::ptr::null(),
+            expected_size: 0,
+            expected_sha256: String::new(),
+            written: 0,
+            next_notify_at: 0,
+            hasher: Sha256::new(),
+            reboot_pending: false,
+        }
+    }
+}
+
+impl OtaWriterState {
+    fn abort_active(&mut self) {
+        if let Some(h) = self.handle.take() {
+            // SAFETY: `h` was returned by `esp_ota_begin` and has not been ended yet.
+            unsafe {
+                let _ = esp_ota_abort(h);
+            }
+        }
+        self.partition = core::ptr::null();
+        self.expected_size = 0;
+        self.expected_sha256.clear();
+        self.written = 0;
+        self.next_notify_at = 0;
+        self.hasher = Sha256::new();
+    }
+
+    fn begin(&mut self, size: u32, sha256: String) -> OtaStatus {
+        self.abort_active();
+        if size == 0 || size > OTA_SLOT_BYTES {
+            return OtaStatus::Error {
+                message: format!("invalid size {size}"),
+            };
+        }
+        // SAFETY: queries ESP-IDF's partition table for the inactive OTA app slot and opens it.
+        unsafe {
+            let part = esp_ota_get_next_update_partition(core::ptr::null());
+            if part.is_null() {
+                return OtaStatus::Error {
+                    message: "no inactive OTA slot (run make flash-all)".to_string(),
+                };
+            }
+            let mut handle: esp_ota_handle_t = 0;
+            let err = esp_ota_begin(part, size as usize, &mut handle);
+            if err != ESP_OK {
+                return OtaStatus::Error {
+                    message: format!("esp_ota_begin err={err}"),
+                };
+            }
+            self.handle = Some(handle);
+            self.partition = part;
+            self.expected_size = size;
+            self.expected_sha256 = sha256;
+            self.written = 0;
+            self.next_notify_at = 16 * 1024;
+            self.hasher = Sha256::new();
+            info!("ota: opened inactive partition for {size} bytes");
+            OtaStatus::Ready { total: size }
+        }
+    }
+
+    fn write_chunk(&mut self, chunk: &[u8]) -> Option<OtaStatus> {
+        let Some(handle) = self.handle else {
+            return Some(OtaStatus::Error {
+                message: "write before BEGIN".to_string(),
+            });
+        };
+        if chunk.is_empty() {
+            return None;
+        }
+        let next_written = self.written.saturating_add(chunk.len() as u32);
+        if next_written > self.expected_size {
+            self.abort_active();
+            return Some(OtaStatus::Error {
+                message: format!("overflow: {next_written} > {}", self.expected_size),
+            });
+        }
+        // SAFETY: `handle` is an active OTA handle and `chunk` is valid for `chunk.len()` bytes.
+        let err = unsafe { esp_ota_write(handle, chunk.as_ptr().cast(), chunk.len()) };
+        if err != ESP_OK {
+            self.abort_active();
+            return Some(OtaStatus::Error {
+                message: format!("esp_ota_write err={err}"),
+            });
+        }
+        self.hasher.update(chunk);
+        self.written = next_written;
+        if self.written >= self.next_notify_at || self.written == self.expected_size {
+            self.next_notify_at = self.written.saturating_add(16 * 1024);
+            return Some(OtaStatus::Progress {
+                written: self.written,
+                total: self.expected_size,
+            });
+        }
+        None
+    }
+
+    fn commit(&mut self) -> OtaStatus {
+        let Some(handle) = self.handle.take() else {
+            return OtaStatus::Error {
+                message: "commit before BEGIN".to_string(),
+            };
+        };
+        if self.written != self.expected_size {
+            // SAFETY: `handle` was just taken and is still open.
+            unsafe {
+                let _ = esp_ota_abort(handle);
+            }
+            let w = self.written;
+            let total = self.expected_size;
+            self.abort_active();
+            return OtaStatus::Error {
+                message: format!("incomplete: {w}/{total} bytes"),
+            };
+        }
+        let actual_sha = hex::encode(self.hasher.clone().finalize());
+        if actual_sha != self.expected_sha256 {
+            // SAFETY: `handle` was just taken and is still open.
+            unsafe {
+                let _ = esp_ota_abort(handle);
+            }
+            let expected = self.expected_sha256.clone();
+            self.abort_active();
+            return OtaStatus::Error {
+                message: format!("sha256 mismatch: got {actual_sha}, want {expected}"),
+            };
+        }
+        // SAFETY: finalizes the verified OTA image and switches `otadata` to boot `self.partition`.
+        unsafe {
+            let end_err = esp_ota_end(handle);
+            if end_err != ESP_OK {
+                self.abort_active();
+                return OtaStatus::Error {
+                    message: format!("esp_ota_end err={end_err}"),
+                };
+            }
+            let boot_err = esp_ota_set_boot_partition(self.partition);
+            if boot_err != ESP_OK {
+                self.abort_active();
+                return OtaStatus::Error {
+                    message: format!("esp_ota_set_boot_partition err={boot_err}"),
+                };
+            }
+        }
+        info!("ota: committed {actual_sha}, rebooting into new slot");
+        self.reboot_pending = true;
+        OtaStatus::Ok { sha256: actual_sha }
+    }
+}
+
+fn notify_ota_status(
+    ch: &Arc<esp32_nimble::utilities::mutex::Mutex<BLECharacteristic>>,
+    st: &OtaStatus,
+) {
+    let line = format_ota_status(st);
+    info!("ota status: {line}");
+    ch.lock().set_value(line.as_bytes()).notify();
+}
+
 /// Broadcast the 24-byte metrics struct inside BLE Manufacturer Specific Data (`0xFFFF`)
-/// for [`BLE_BURST_MS`] without accepting GATT connections.
-fn broadcast_ble_burst(metrics: &xiao_esp32c3::protocol::AdvMetrics) {
+/// for [`BLE_BURST_MS`]. If an iPhone connects during that window to push an OTA update,
+/// stay awake until the OTA transfer completes or disconnects.
+fn broadcast_ble_and_serve_ota(metrics: &xiao_esp32c3::protocol::AdvMetrics) {
     let device = BLEDevice::take();
+    let _ = device.set_preferred_mtu(512);
+    let server = device.get_server();
     let advertising = device.get_advertising();
+
+    let connected = Arc::new(AtomicBool::new(false));
+    let ota_state = Arc::new(Mutex::new(OtaWriterState::default()));
+
+    let conn_on_connect = Arc::clone(&connected);
+    server.on_connect(move |server, desc| {
+        conn_on_connect.store(true, Ordering::SeqCst);
+        info!("ble connected for OTA: {desc:?}");
+        // Fast 7.5 ms - 15 ms connection interval for high-throughput BLE OTA streaming.
+        let _ = server.update_conn_params(desc.conn_handle(), 6, 12, 0, 200);
+    });
+
+    let conn_on_disconnect = Arc::clone(&connected);
+    let state_on_disconnect = Arc::clone(&ota_state);
+    server.on_disconnect(move |_desc, reason| {
+        info!("ble disconnected: {reason:?}");
+        state_on_disconnect
+            .lock()
+            .expect("ota_state")
+            .abort_active();
+        conn_on_disconnect.store(false, Ordering::SeqCst);
+    });
+
+    let service = server.create_service(uuid_or_panic(OTA_SERVICE_UUID));
+    let control_char = service
+        .lock()
+        .create_characteristic(uuid_or_panic(OTA_CONTROL_UUID), NimbleProperties::WRITE);
+    let data_char = service.lock().create_characteristic(
+        uuid_or_panic(OTA_DATA_UUID),
+        NimbleProperties::WRITE | NimbleProperties::WRITE_NR,
+    );
+    let status_char = service.lock().create_characteristic(
+        uuid_or_panic(OTA_STATUS_UUID),
+        NimbleProperties::READ | NimbleProperties::NOTIFY,
+    );
+
+    status_char
+        .lock()
+        .set_value(format_ota_status(&OtaStatus::Idle).as_bytes());
+
+    let ctrl_state = Arc::clone(&ota_state);
+    let ctrl_status_char = Arc::clone(&status_char);
+    control_char.lock().on_write(move |args| {
+        let raw = String::from_utf8_lossy(args.recv_data());
+        info!("ota control write: {raw}");
+        let mut guard = ctrl_state.lock().expect("ota_state");
+        let reply = match parse_ota_command(raw.as_ref()) {
+            Some(OtaCommand::Begin { size, sha256 }) => guard.begin(size, sha256),
+            Some(OtaCommand::Commit) => guard.commit(),
+            Some(OtaCommand::Abort) => {
+                guard.abort_active();
+                OtaStatus::Idle
+            }
+            None => OtaStatus::Error {
+                message: "invalid OTA command".to_string(),
+            },
+        };
+        notify_ota_status(&ctrl_status_char, &reply);
+    });
+
+    let data_state = Arc::clone(&ota_state);
+    let data_status_char = Arc::clone(&status_char);
+    data_char.lock().on_write(move |args| {
+        let chunk = args.recv_data();
+        let mut guard = data_state.lock().expect("ota_state");
+        if let Some(status) = guard.write_chunk(chunk) {
+            notify_ota_status(&data_status_char, &status);
+        }
+    });
 
     let mfg = encode_mfg_data(metrics);
     let mut adv = BLEAdvertisementData::new();
     adv.name(DEVICE_NAME).manufacturer_data(&mfg);
 
     let mut guard = advertising.lock();
-    // 20 ms to 30 ms interval (in 0.625 ms units: 32..48) in non-connectable mode,
-    // with scan response enabled so the device name fits in the scan response packet
-    // while the 31-byte primary packet carries Flags (3B) + Manufacturer Data (28B).
+    // Connectable undirected mode (`ConnMode::Und`) at 20–30 ms interval (`32..48` * 0.625 ms).
+    // Passive listeners still read the exact same 31-byte primary packet (`3B` Flags + `28B` Mfg Data),
+    // while an iPhone with a queued OTA update can connect during the 150 ms burst.
     guard
-        .advertisement_type(ConnMode::Non)
+        .advertisement_type(ConnMode::Und)
         .scan_response(true)
         .min_interval(32)
         .max_interval(48);
@@ -182,7 +479,34 @@ fn broadcast_ble_burst(metrics: &xiao_esp32c3::protocol::AdvMetrics) {
 
     FreeRtos::delay_ms(BLE_BURST_MS);
 
-    if let Err(err) = advertising.lock().stop() {
-        info!("ble stop error: {err:?}");
+    // If the iPhone connected during the 150 ms window to install an OTA update,
+    // stay awake until the transfer finishes, disconnects, or hits the timeout.
+    if connected.load(Ordering::SeqCst) {
+        info!("ota: iPhone connected during burst; holding awake for BLE OTA");
+        let mut waited_ms: u32 = 0;
+        while connected.load(Ordering::SeqCst) && waited_ms < OTA_SESSION_TIMEOUT_MS {
+            FreeRtos::delay_ms(50);
+            waited_ms = waited_ms.saturating_add(50);
+            let should_reboot = ota_state.lock().expect("ota_state").reboot_pending;
+            if should_reboot {
+                // Give NimBLE 250 ms to flush the final `OK sha256=...` notification before rebooting.
+                FreeRtos::delay_ms(250);
+                unsafe {
+                    esp_restart();
+                }
+            }
+        }
+    }
+
+    let _ = advertising.lock().stop();
+}
+
+fn uuid_or_panic(text: &str) -> BleUuid {
+    match text {
+        OTA_SERVICE_UUID => uuid128!("4fafc301-1fb5-459e-8fcc-c5c9c331914b"),
+        OTA_CONTROL_UUID => uuid128!("beb5483e-36e1-4688-b7f5-ea07361bc301"),
+        OTA_DATA_UUID => uuid128!("beb5483e-36e1-4688-b7f5-ea07361bc302"),
+        OTA_STATUS_UUID => uuid128!("1a3c0001-36e1-4688-b7f5-ea07361bc303"),
+        other => panic!("unknown UUID {other}"),
     }
 }
