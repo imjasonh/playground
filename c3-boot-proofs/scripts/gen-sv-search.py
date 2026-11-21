@@ -31,6 +31,9 @@ SEARCHES = {
                   "the search of the root's TSAs for the timestamp's signer"),
     'SvCSearch': ('sv_csearch', ('SvClmiss', 'sv_clmiss'), ('SvClhit', 'sv_clhit'), ('SvClend', 'sv_clend'),
                   "the search of the root's logs for the checkpoint's origin"),
+    'SvNSearch': ('sv_nsearch', ('SvCnm', 'sv_cnm'), ('SvCns', 'sv_cns'), ('SvCne', 'sv_cne'),
+                  "the search of a signature line for the space after the signer's name",
+                  {'cond': 'hne', 'end': 'heq', 'match': 'hsp'}),
 }
 
 
@@ -47,16 +50,17 @@ def success_text(sfile, sname):
 
 
 def write(fname):
-    name, (mf, mn), (hf, hn_), (ef, en), doc = SEARCHES[fname]
+    name, (mf, mn), (hf, hn_), (ef, en), doc, *more = SEARCHES[fname]
+    opts = more[0] if more else {}
+    condn, endn, matchn = opts.get('cond', 'hc'), opts.get('end', 'hc'), opts.get('match', 'hm')
     L = Loop(mf, mn)
     H = Stage(hf, hn_)
     E = Stage(ef, en)
     st, head, loopv = L.st, L.head, L.loopv
-    hm = dict(H.params)['hm']
-    cond = [(p, t) for p, t in L.kept_per if p == 'hc']
-    assert cond, "no `hc` in the miss stage"
-    cnt = strip_parens(top_split(cond[0][1], ' ≠ ')[0])
-    valid = [(p, t) for p, t in L.kept_per if p != 'hm']
+    hm = dict(H.params)[matchn]
+    assert any(p == condn for p, _ in L.kept_per), f"no `{condn}` in the miss stage"
+    cnt = L.primed(dict(E.params)[endn])
+    valid = [(p, t) for p, t in L.kept_per if p != matchn]
     ps = list(L.prime.values())
     tup = L.tup()
     hn = [p for p, _ in head]
@@ -93,7 +97,7 @@ def write(fname):
     O(f"theorem {name} {' '.join(L.fixed)}")
     O("    " + " ".join(f"({p} : {t})" for p, t in st.params if p in GLOBAL) + " :")
     O(f"    ∀ (N : Nat) {{{' '.join(loopv)} : Word}} {{n0 : Machine}},")
-    O(f"    (hz : ∀ {' '.join(ps)}, {L.peq('N')} → {cnt}' = 0) →")
+    O(f"    (hz : ∀ {' '.join(ps)}, {L.peq('N')} → {cnt}) →")
     for p, t in head:
         O(f"    ({p} : {t}) →")
     vtext = " ∧ ".join(f"({L.primed(t)})" for _, t in valid) or "True"
@@ -110,7 +114,7 @@ def write(fname):
     O(f"    intro {' '.join(loopv)} n0 hz {' '.join(hn)} _")
     eargs = []
     for p, t in E.params:
-        if p == 'hc':
+        if p == endn:
             eargs.append(f"(hz {' '.join(loopv)} (svIter_zero _ {tup}).symm)")
         else:
             eargs.append("rfl" if (p, t) in L.per and (p, t) not in L.kept_per else p)
@@ -132,12 +136,12 @@ def write(fname):
     O(f"    by_cases hm : {subst(hm, L.local)}")
     hargs = []
     for p, t in H.params:
-        hargs.append("rfl" if (p, t) in L.per and (p, t) not in L.kept_per else p)
+        hargs.append("hm" if p == matchn else "rfl" if (p, t) in L.per and (p, t) not in L.kept_per else p)
     O(f"    · rcases {hn_} {L.named()} {' '.join(hargs)} with ⟨-, e⟩ | okh")
     O("      · exact .inl e")
     O(f"      · exact .inr ⟨0, Nat.succ_pos N, fun i hi => absurd hi (Nat.not_lt_zero i), {', '.join(loopv)}, "
       f"(svIter_zero _ {tup}).symm, n0, .refl _, rfl, rfl, SvKeepL.refl.mono (by decide), okh⟩")
-    args = L.args()
+    args = L.args({matchn: 'hm'})
     ch = Chain(lambda x: None)
     _, names1, pats1, _ = ch.call(st, {p: a for (p, _), a in zip(st.params, args)})
     O(f"    rcases {mn} {L.named()} {' '.join(args)} with ⟨-, e⟩ | ⟨{', '.join(names1 + pats1)}⟩")
@@ -190,7 +194,7 @@ def stage_form(O, name, okname, L, H, ps, valid, hm, cnt):
     O(f"/-- `{name}` as a stage. -/")
     O(f"theorem {name}_st {fixed} {{N : Nat}} {{{' '.join(L.loopv)} : Word}} {{n0 : Machine}}")
     O("    " + " ".join(f"({p} : {t})" for p, t in L.st.params if p in GLOBAL))
-    O(f"    (hz : ∀ {' '.join(ps)}, {L.peq('N')} → {cnt}' = 0)")
+    O(f"    (hz : ∀ {' '.join(ps)}, {L.peq('N')} → {cnt})")
     for p, t in L.head:
         O(f"    ({p} : {t})")
     O(f"    (H : ∀ i, i < N → ∀ {' '.join(ps)}, {L.peq('i')} → {vtext}) :")
@@ -202,7 +206,9 @@ def stage_form(O, name, okname, L, H, ps, valid, hm, cnt):
         O("      " + " ∧ ".join(L.primed(x) for x in H.sc_parts) + " ∧")
     O("    ∃ n', Steps n0 n' ∧")
     O("        " + " ∧\n        ".join(t for _, t in facts) + ") := by")
-    O(f"  rcases {name} F hret hO M0 N hz {' '.join(hn)} H with e | ⟨k, hk, hn, {', '.join(ps)}, e0, nk, cs, hr3, hr4, hkl, okh⟩")
+    fixed_names = list(dict.fromkeys(b for g in L.fixed for b in g[1:g.rindex(' : ')].split()))
+    O(f"  rcases {name} {' '.join(f'({b} := {b})' for b in fixed_names)} F hret hO M0 N hz {' '.join(hn)} H with e | "
+      f"⟨k, hk, hn, {', '.join(ps)}, e0, nk, cs, hr3, hr4, hkl, okh⟩")
     O("  · exact .inl e")
     O(f"  unfold {okname} at okh")
     O(f"  obtain ⟨{', '.join(nm + ['n1', 'cn'] + [f'f_{k}' for k, _ in facts])}⟩ := okh")

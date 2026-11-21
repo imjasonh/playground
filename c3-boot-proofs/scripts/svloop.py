@@ -98,7 +98,8 @@ class Loop:
         return ""
 
     def named(self):
-        return " ".join(f"({b} := {b})" for names, _ in self.binders for b in names if b not in self.local and b != 'n0')
+        names = [b for ns, _ in self.binders for b in ns if b not in self.local and b != 'n0']
+        return " ".join(f"({b} := {b})" for b in dict.fromkeys(names))
 
     def args(self, extra=None):
         """`st`'s arguments where each hypothesis is its own name, and each
