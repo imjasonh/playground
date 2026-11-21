@@ -9,6 +9,7 @@ conclusion in the first stage's terms.
 """
 
 import re
+import subprocess
 
 BASE = 'C3BootProofs/Proofs/'
 IDENT = r"(?<![\w.'])({})(?![\w'])"
@@ -297,6 +298,24 @@ class Chain:
         sc = [subst(p, env) for p in stage.sc_parts]
         self.proofs = [(nm, subst(t, env)) for nm, t in proofs]
         return args, names, pats, sc
+
+
+def lean_binders(sfile, sname):
+    """The implicit binders of `sname` as Lean elaborated them, auto-bound ones
+    included: a list of (names, type)."""
+    src = f"import C3BootProofs.Proofs.{sfile}\nopen C3 C3.RV32 C3.RV32.Sv\n#check @{sname}\n"
+    path = f"/tmp/svchain_{sname}.lean"
+    open(path, 'w').write(src)
+    out = subprocess.run(["lake", "env", "lean", path], capture_output=True, text=True).stdout
+    sig = " ".join(out.split())
+    sig = sig[sig.index(" : ∀ ") + len(" : ∀ "):]
+    res = []
+    while sig.startswith('{'):
+        g = groups(sig, '{', '}')[0]
+        names, ty = g.rsplit(' : ', 1)
+        res.append((names.split(), ty.replace("C3.Bytes", "Bytes")))
+        sig = sig[len(g) + 2:].lstrip()
+    return res
 
 
 def fname(key, k):

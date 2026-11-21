@@ -64,9 +64,44 @@ data, which `BootloaderData5.lean` extracts. It still takes one
 mathematical hypothesis: the range bound of the inversion of `Z`
 (`hzi`), which is safegcd's bound on `d` and `e`.
 
-The stages still have to be composed into one theorem against
-`sigstoreVerify` in `Spec/Sigstore.lean`, and the models (`ivLoop8`,
-`mlMain2`, `zvLoop`) linked to `p256.verify` in `Spec/Ecdsa.lean`.
+### Composing the rest of `sigstore::verify`
+
+Every stage also states the frame ranges it may write
+(`SvKeepL B n0.mem n'.mem [...]`), so a composed theorem can carry a frame
+fact past stages that don't mention it. Three scripts compose stages:
+
+- [`gen-sv-segs.py`](../c3-boot-proofs/scripts/gen-sv-segs.py) writes
+  straight runs of stages with
+  [`svseg.py`](../c3-boot-proofs/scripts/svseg.py). A segment ends in an
+  error return, a panic, or every stage's success condition followed by
+  the state at its end. It derives each slice hypothesis (`SvIn`) from the
+  parse that found the slice. It takes a frame fact that no stage in the
+  segment states as a hypothesis about the segment's start. Two stages
+  that start at the same place under a hypothesis and its negation become
+  one merged stage ([`svmerge.py`](../c3-boot-proofs/scripts/svmerge.py)).
+  Values the two leave differently become witnesses.
+- [`gen-sv-loop.py`](../c3-boot-proofs/scripts/gen-sv-loop.py) writes the
+  theorem for `k` iterations of a stage that returns to its own start. The
+  loop's variables are a tuple that one step function updates
+  (`svIter`).
+- [`gen-sv-search.py`](../c3-boot-proofs/scripts/gen-sv-search.py) writes
+  the searches through the root's lists: an error return, or the first
+  entry that matches and the end of the stage that handles it.
+
+Composed so far: the leaf up to its extensions (`sv_seg_leaf`), the
+policy and the signature's DER (`sv_seg_dpv`), the timestamp up to its
+signed attributes (`sv_seg_tsa`), the checkpoint's origin and size
+(`sv_seg_ck`), the entry's index and the validity windows up to the
+successful exit (`sv_seg_win`), the size's digit loop (`sv_ckdloop`), and
+the searches for the issuer, the TSA, and the log (`sv_isearch`,
+`sv_tsearch`, `sv_csearch`).
+
+Left: the loops over the leaf's extensions, the timestamp's attributes,
+and the checkpoint's cosignatures; the timestamp's `TSTInfo` branches;
+one theorem from the entry to the return; the layout of `Bundle` and
+`SigstoreRoot` in memory, and that theorem against `sigstoreVerify` in
+`Spec/Sigstore.lean`; and the models (`ivLoop8`, `mlMain2`, `zvLoop`)
+against `p256.verify` in `Spec/Ecdsa.lean`.
 
 `_start` and the clock and watchdog `setup` that runs before `boot_main`
 aren't among the extracted functions, so they are trusted.

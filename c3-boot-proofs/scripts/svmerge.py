@@ -48,64 +48,89 @@ def sc_pattern(stage):
     return names
 
 
-def merged(fname, name, va, vb, doc):
-    a, b = Stage(*va), Stage(*vb)
-    ta, tb = dict(a.params), dict(b.params)
-    cond = None
-    for p in ta:
-        if p in tb and ta[p] != tb[p]:
-            if negates(ta[p], tb[p]):
-                cond = p
-            elif negates(tb[p], ta[p]):
-                cond = p
-                a, b, va, vb = b, a, vb, va
-                ta, tb = tb, ta
-    assert cond, (a.name, b.name)
-    assert all(ta[p] == tb[p] for p in ta if p != cond and p in tb), "the stages' hypotheses disagree"
-    assert [f.key for f in a.facts] == [f.key for f in b.facts], "the stages leave different facts"
+def split(stages, names):
+    """A decision tree over `stages`: a hypothesis that some of them take and
+    the others take negated, then the trees of each side."""
+    if len(stages) == 1:
+        return ('leaf', stages[0])
+    first = dict(stages[0].params)
+    for p, t in stages[0].params:
+        tys = [dict(st.params).get(p) for st in stages]
+        if None in tys or len(set(tys)) != 2:
+            continue
+        pos_t = next((x for x in set(tys) if any(negates(x, y) for y in set(tys))), None)
+        if pos_t is None:
+            continue
+        pos = [st for st, ty in zip(stages, tys) if ty == pos_t]
+        neg = [st for st, ty in zip(stages, tys) if ty != pos_t]
+        h = "hb" if not names else f"hb{len(names) + 1}"
+        names.append(p)
+        return ('split', p, pos_t, h, split(pos, names), split(neg, names))
+    raise ValueError(f"no hypothesis tells {[st.name for st in stages]} apart")
+
+
+def leaves(tree):
+    return [tree[1]] if tree[0] == 'leaf' else leaves(tree[4]) + leaves(tree[5])
+
+
+def merged(fname, name, vs, doc):
+    """Writes a merged stage from the stages `vs`, a list of (file, theorem)."""
+    files = {Stage(*v).name: v[0] for v in vs}
+    conds = []
+    tree = split([Stage(*v) for v in vs], conds)
+    order = leaves(tree)
+    a = order[0]
+    assert all([f.key for f in st.facts] == [f.key for f in a.facts] for st in order), "the stages leave different facts"
+    assert all(st.binders == a.binders for st in order)
     types = {'w': 'Word', 'r': 'Word', 'b': 'BitVec 8', 'a': 'Nat'}
     fa, dvars = [], []
     kl_union = None
-    for x, y in zip(a.facts, b.facts):
-        if x.text == y.text:
+    for fs in zip(*[st.facts for st in order]):
+        x = fs[0]
+        if all(f.text == x.text for f in fs):
             fa.append(x.text)
         elif x.key == 'KL':
-            la = re.findall(r"\(0x[0-9A-F]+, 0x[0-9A-F]+\)", x.text)
-            lb = re.findall(r"\(0x[0-9A-F]+, 0x[0-9A-F]+\)", y.text)
-            kl_union = la + [r for r in lb if r not in la]
+            kl_union = []
+            for f in fs:
+                kl_union += [r for r in re.findall(r"\(0x[0-9A-F]+, 0x[0-9A-F]+\)", f.text) if r not in kl_union]
             fa.append("SvKeepL B n0.mem n'.mem [" + ", ".join(kl_union) + "]")
         else:
             d = f"d_{x.key}"
-            dvars.append((d, types[x.key[0]], x.rhs, y.rhs))
+            dvars.append((d, types[x.key[0]], [f.rhs for f in fs]))
             fa.append(x.text[:len(x.text) - len(x.rhs)] + d)
-    assert a.binders == b.binders
-    src = open(f'C3BootProofs/Proofs/{va[0]}.lean').read()
+    src = open(f'C3BootProofs/Proofs/{files[a.name]}.lean').read()
     i = src.index(f'theorem {a.name} ')
     binders = src[i + len(f'theorem {a.name} '):src.index('(F : ', i)].strip()
-    hyps = [(p, t) for p, t in a.params if p != cond] + [(p, t) for p, t in b.params if p not in ta]
-    sca = " ∧ ".join(a.sc_parts + [f"{d} = {va}" for d, _, va, _ in dvars]) or "True"
-    scb = " ∧ ".join(b.sc_parts + [f"{d} = {vb}" for d, _, _, vb in dvars]) or "True"
-    dbind = "".join(f"∃ {d} : {t}, " for d, t, _, _ in dvars)
+    hyps, seen = [], set()
+    for st in order:
+        for p, t in st.params:
+            if p in conds or p in seen:
+                continue
+            seen.add(p)
+            hyps.append((p, t))
+    for st in order:
+        assert all(dict(hyps)[p] == t for p, t in st.params if p not in conds), "the stages' hypotheses disagree"
+    scs = [" ∧ ".join(st.sc_parts + [f"{d} = {vals[j]}" for d, _, vals in dvars]) or "True"
+           for j, st in enumerate(order)]
+    dbind = "".join(f"∃ {d} : {t}, " for d, t, _ in dvars)
     slices = []
-    dk = {d: i for i, (d, _, _, _) in enumerate(dvars)}
-    for d, _, _, _ in dvars:
+    dk = {d: i for i, (d, _, _) in enumerate(dvars)}
+    for d, _, _ in dvars:
         m = re.fullmatch(r"d_w([0-9a-f]+)", d)
         dl = f"d_w{int(m.group(1), 16) + 4:x}" if m else None
         if dl in dk:
             terms = []
-            for i, st in enumerate((a, b)):
+            for j, st in enumerate(order):
                 ctx = SliceCtx(st, sc_pattern(st))
-                ptr = canon(dvars[dk[d]][2 + i])
-                n = canon(f"({dvars[dk[dl]][2 + i]}).toNat")
-                terms.append(ctx.derive_in(ptr, n))
+                terms.append(ctx.derive_in(canon(dvars[dk[d]][2][j]), canon(f"({dvars[dk[dl]][2][j]}).toNat")))
             if all(terms):
                 slices.append((d, dl, terms))
     slice_text = "".join(f" ∧ SvIn B {d} {dl}.toNat" for d, dl, _ in slices)
     facts = fa[1:]
     named = " ".join(f"({x} := {x})" for x, _ in a.binders)
-    args = {st.name: " ".join(p if p != cond else "hb" for p, _ in st.params) for st in (a, b)}
-    out = [f"import C3BootProofs.Proofs.{va[0]}", f"import C3BootProofs.Proofs.{vb[0]}", "",
-           f"/-!\n# `sigstore::verify`: {doc}\n\nWritten by `scripts/gen-sv-segs.py` from `{a.name}` and `{b.name}`.\n-/",
+    who = ", ".join(f"`{st.name}`" for st in order[:-1]) + (" and " if len(order) == 2 else ", and ") + f"`{order[-1].name}`"
+    out = [f"import C3BootProofs.Proofs.{files[st.name]}" for st in order] + [
+           "", f"/-!\n# `sigstore::verify`: {doc}\n\nWritten by `scripts/gen-sv-segs.py` from {who}.\n-/",
            "", "namespace C3.RV32.Sv", ""]
     for line in src.split('\n'):
         if line.startswith('open '):
@@ -117,13 +142,21 @@ def merged(fname, name, va, vb, doc):
     out += [f"    ({p} : {t})" for p, t in hyps]
     out[-1] += " :"
     out.append("    SvErrRet B out v n0 ∨")
-    out.append(f"    ({dbind}(({sca}) ∨ ({scb})){slice_text} ∧")
+    out.append(f"    ({dbind}(" + " ∨ ".join(f"({x})" for x in scs) + f"){slice_text} ∧")
     out.append("    ∃ n', Steps n0 n' ∧")
     out += [f"        {t}" + (" ∧" if j + 1 < len(facts) else ")") for j, t in enumerate(facts)]
     out[-1] += " := by"
-    out.append(f"  by_cases hb : {ta[cond]}")
     nfacts = len(facts)
-    for i, (side, st) in enumerate(((".inl", a), (".inr", b))):
+    n = len(order)
+
+    def side(pf, j):
+        t = f".inl {pf}" if j < n - 1 else pf
+        for _ in range(j):
+            t = f".inr {t}" if t.startswith('⟨') or ' ' not in t else f".inr ({t})"
+        return t
+
+    def leaf(st, path, ind):
+        j = order.index(st)
         nm = sc_pattern(st)
         pat = f"⟨{', '.join(nm)}, rest⟩" if nm else "rest"
         prs = nm + ["rfl"] * len(dvars)
@@ -135,10 +168,27 @@ def merged(fname, name, va, vb, doc):
             rest = f"rest.imp (fun _ => {chain})"
         else:
             rest = "rest"
-        vals = "".join(f"{(va, vb)[i]}, " for _, _, va, vb in dvars)
-        out.append(f"  · rcases {st.name} {named} {args[st.name]} with ⟨-, e⟩ | {pat}")
-        out.append("    · exact .inl e")
-        sl = "".join(f"{ts[i]}, " for _, _, ts in slices)
-        out.append(f"    · exact .inr ⟨{vals}{side} {pf}, {sl}{rest}⟩")
+        vals = "".join(f"{v[j]}, " for _, _, v in dvars)
+        args = " ".join(path.get(p, p) for p, _ in st.params)
+        sl = "".join(f"{ts[j]}, " for _, _, ts in slices)
+        out.append(f"{ind}· rcases {st.name} {named} {args} with ⟨-, e⟩ | {pat}")
+        out.append(f"{ind}  · exact .inl e")
+        out.append(f"{ind}  · exact .inr ⟨{vals}{side(pf, j)}, {sl}{rest}⟩")
+
+    def emit(t, path, ind, top=False):
+        if t[0] == 'leaf':
+            leaf(t[1], path, ind)
+            return
+        _, p, ty, h, pos, neg = t
+        if top:
+            out.append(f"{ind}by_cases {h} : {ty}")
+            inner = ind
+        else:
+            out.append(f"{ind}· by_cases {h} : {ty}")
+            inner = ind + "  "
+        emit(pos, {**path, p: h}, inner)
+        emit(neg, {**path, p: h}, inner)
+
+    emit(tree, {}, "  ", top=True)
     out += ["", "end C3.RV32.Sv", ""]
     open(f'C3BootProofs/Proofs/{fname}.lean', 'w').write("\n".join(out))

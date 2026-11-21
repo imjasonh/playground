@@ -5995,6 +5995,9 @@ def stage_tsav(kind):
     or another attribute."""
     g = Gen("Tsav" + kind)
     params = attr_start(g, {0x74: "p0", 0x1388: "vcp", 0x138C: "vcl"})
+    if 0x78 not in g.words:
+        g.words[0x78] = ("U", "w78") if isinstance(next(iter(g.words.values())), tuple) else "w78"
+        params.append(f"(w0_78 : memLoad32 n0.mem ({fa(0x78)}) = w78)")
     g.regs.update({22: ("U", "ol"), 23: ("U", "op"), 25: ("U", "L0")})
     params += ["(g0_22 : reg n0 (22 : Fin 32) = ol)", "(g0_23 : reg n0 (23 : Fin 32) = op)",
                "(g0_25 : reg n0 (25 : Fin 32) = L0)", "(oid_in : SvIn B op ol.toNat)", "(vc_in : SvIn B vcp vcl.toNat)"]

@@ -311,6 +311,10 @@ import C3BootProofs.Proofs.SvP256D
 import C3BootProofs.Proofs.SvP256All
 import C3BootProofs.Proofs.SvSeg
 import C3BootProofs.Proofs.SvSegLeaf
+import C3BootProofs.Proofs.SvTsav
+import C3BootProofs.Proofs.SvISearch
+import C3BootProofs.Proofs.SvTSearch
+import C3BootProofs.Proofs.SvCSearch
 import C3BootProofs.Proofs.SvCkdLoop
 import C3BootProofs.Proofs.SvCLoop
 import C3BootProofs.Proofs.SvTLoop

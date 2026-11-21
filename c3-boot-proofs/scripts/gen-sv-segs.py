@@ -20,7 +20,9 @@ MERGES = [(f'SvWin{i}', f'sv_win{i}', (f'SvWin{i}e', f'sv_win{i}e'), (f'SvWin{i}
     ('SvCr1', 'sv_cr1', ('SvCr1e', 'sv_cr1e'), ('SvCr1n', 'sv_cr1n'),
      "the entry's index against the checkpoint's size, whichever way the high words compare"),
     ('SvCk2', 'sv_ck2', ('SvCk2a', 'sv_ck2a'), ('SvCk2b', 'sv_ck2b'),
-     "the checkpoint's size line, one digit or more")]
+     "the checkpoint's size line, one digit or more"),
+    ('SvTsav', 'sv_tsav', ('SvTsavct', 'sv_tsavct'), ('SvTsavmd', 'sv_tsavmd'), ('SvTsavother', 'sv_tsavother'),
+     "one signed attribute's value: the content type, the message digest, or another")]
 
 SEGMENTS = {
     'SvSegLeaf': ('sv_seg_leaf', [('SvL1', 'sv_l1'), ('SvL2', 'sv_l2'), ('SvL3', 'sv_l3'), ('SvL4', 'sv_l4'),
@@ -69,7 +71,7 @@ def write(fname):
 
 
 if __name__ == "__main__":
-    for fn, nm, va, vb, doc in MERGES:
-        merged(fn, nm, va, vb, doc[0].upper() + doc[1:] + ".")
+    for fn, nm, *vs, doc in MERGES:
+        merged(fn, nm, vs, doc[0].upper() + doc[1:] + ".")
     for f in sys.argv[1:] or SEGMENTS:
         write(f)
