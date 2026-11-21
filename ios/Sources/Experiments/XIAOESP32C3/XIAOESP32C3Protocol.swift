@@ -90,7 +90,17 @@ enum XIAOESP32C3Protocol {
     static let flagEpdPartial: UInt8 = 1 << 2
     static let flagBrownoutReset: UInt8 = 1 << 3
 
-    static let defaultOtelEndpoint = "http://192.168.1.50:4318/v1/metrics"
+    static let otelEndpointInfoPlistKey = "XIAOOtelEndpoint"
+    static let fallbackOtelEndpoint = "https://xiao-otel-965235416369.us-central1.run.app/v1/metrics"
+    static var defaultOtelEndpoint: String {
+        if let configured = Bundle.main.object(forInfoDictionaryKey: otelEndpointInfoPlistKey) as? String {
+            let trimmed = configured.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        return fallbackOtelEndpoint
+    }
     static let defaultGHCRRepo = "imjasonh/playground/xiao-esp32c3"
     static let defaultGHCRTag = "latest"
 
