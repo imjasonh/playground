@@ -200,6 +200,20 @@ resource "google_project_iam_member" "github_deploy_service_accounts" {
   project = var.project_id
   role    = google_project_iam_custom_role.github_deploy_service_accounts.name
   member  = "serviceAccount:${google_service_account.github_deploy.email}"
+
+  condition {
+    title       = "app-runtime-service-accounts-only"
+    description = "Exclude default service accounts and shared playground-* accounts."
+    expression = format(
+      "resource.type != 'iam.googleapis.com/ServiceAccount' || (%s)",
+      join(" && ", [
+        "!resource.name.endsWith('-compute@developer.gserviceaccount.com')",
+        "!resource.name.endsWith('@appspot.gserviceaccount.com')",
+        "!resource.name.startsWith('projects/${var.project_id}/serviceAccounts/playground-')",
+        "!resource.name.startsWith('projects/-/serviceAccounts/playground-')",
+      ]),
+    )
+  }
 }
 
 resource "google_project_iam_member" "github_plan" {
