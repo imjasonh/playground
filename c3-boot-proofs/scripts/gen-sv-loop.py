@@ -24,10 +24,10 @@ from svchain import IDENT, Chain, Stage, subst  # noqa: E402
 from svloop import GLOBAL, Loop  # noqa: E402
 from svmerge import sc_pattern  # noqa: E402
 
-# Loops that a stage leaves once a variable is 0: file: (exit file, exit theorem, variable).
-EXITS = {'SvCkdLoop': ('SvCke', 'sv_cke', 'c')}
+# Loops that a stage leaves: file: (exit file, exit theorem, the exit's hypothesis that ends the loop).
+EXITS = {'SvCkdLoop': ('SvCke', 'sv_cke', 'hc'), 'SvCgLoop': ('SvCm', 'sv_cm', 'hend')}
 # Loops over a slice, one byte an iteration: file: (pointer, the slice's hypothesis).
-RUNS = {'SvCkdLoop': ('p', 'pin')}
+RUNS = {'SvCkdLoop': ('c', 'p', 'pin')}
 
 # file: (theorem, body stage, doc)
 LOOPS = {
@@ -39,6 +39,7 @@ LOOPS = {
     'SvCLoop': ('sv_cloop', ('SvClmiss', 'sv_clmiss'),
                 "the search of the root's logs for the checkpoint's origin, over `k` entries that don't match"),
     'SvCkdLoop': ('sv_ckdloop', ('SvCkd', 'sv_ckd'), "the checkpoint's size, over `k` digits"),
+    'SvCgLoop': ('sv_cgloop', ('SvCg', 'sv_cg'), "a cosignature's base64, over `k` groups of four"),
 }
 
 
@@ -96,7 +97,7 @@ def write(fname):
     args = L.args()
     ch = Chain(lambda x: None)
     _, names1, pats1, _ = ch.call(st, {p: a for (p, _), a in zip(st.params, args)})
-    O(f"    rcases {sname} {L.named()} {' '.join(args)} with ⟨-, e⟩ | ⟨{', '.join(names1 + pats1)}⟩")
+    O(f"    rcases {sname} {L.named()} {' '.join(args)} with {st.errpat} | ⟨{', '.join(names1 + pats1)}⟩")
     O("    · exact .inl e")
     ov = {'F': 'F', 'hret': 'hret', 'hO': 'hO', 'M0': 'M0', 'E0': 'E1', 'V0': 'V1', 's0': 's1', 'fM': 'fR1'}
     for p, _ in L.per:
@@ -124,7 +125,11 @@ def write(fname):
     open(f'C3BootProofs/Proofs/{fname}.lean', 'w').write("\n".join(out))
 
 
-def exit_form(O, name, L, efile, ename, cnt):
+def name_file(name):
+    return next(f for f, (n, _, _) in LOOPS.items() if n == name)
+
+
+def exit_form(O, name, L, efile, ename, endp):
     """`N` iterations of the loop, then the stage `ename` that leaves it once
     `cnt` is 0, as one stage."""
     E = Stage(efile, ename)
@@ -132,7 +137,8 @@ def exit_form(O, name, L, efile, ename, cnt):
     ps = list(L.prime.values())
     pr = dict(zip(L.loopv, ps))
     hn = [p for p, _ in head]
-    extra = [(p, t) for p, t in E.params if p not in {q for q, _ in st.params}]
+    loopfree = {p for p, t in L.kept_per if not any(re.search(IDENT.format(re.escape(b)), t) for b in L.loopv)}
+    extra = [(p, t) for p, t in E.params if p not in {q for q, _ in st.params} or p in loopfree]
     facts = []
     for f in E.facts:
         if f.key == 'STEPS':
@@ -150,13 +156,14 @@ def exit_form(O, name, L, efile, ename, cnt):
     O(f"/-- `N` iterations of `{name}`, then `{ename}`, as a stage. -/")
     O(f"theorem {name}_st {' '.join(L.fixed)} {{N : Nat}} {{{' '.join(L.loopv)} : Word}} {{n0 : Machine}}")
     O("    " + " ".join(f"({p} : {t})" for p, t in st.params if p in GLOBAL))
-    O(f"    (hz : ∀ {' '.join(ps)}, {L.peq('N')} → {cnt}' = 0)")
+    end = subst(subst(dict(E.params)[endp], L.local), pr)
+    O(f"    (hz : ∀ {' '.join(ps)}, {L.peq('N')} → {end})")
     for p, t in head:
         O(f"    ({p} : {t})")
     O(f"    (H : ∀ i, i < N → ∀ {' '.join(ps)}, {L.peq('i')} → " +
       " ∧ ".join(f"({L.primed(t)})" for _, t in L.kept_per) + ")")
     for p, t in extra:
-        if p != 'hc':
+        if p != endp:
             O(f"    ({p} : {subst(subst(t, L.local), pr)})")
     O("    :")
     concl = ["    SvErrRet B out v n0 ∨", f"    (∃ {' '.join(ps)}, {L.peq('N')} ∧"]
@@ -167,21 +174,26 @@ def exit_form(O, name, L, efile, ename, cnt):
     for line in concl:
         O(line)
     for p, t in extra:
-        if p != 'hc':
+        if p != endp:
             concl.insert(0, f"    ({p} : {subst(subst(t, L.local), pr)})")
-    concl.insert(len([x for x in extra if x[0] != 'hc']), "    :")
+    concl.insert(len([x for x in extra if x[0] != endp]), "    :")
     open(f'/tmp/{name}_st.stmt', 'w').write("\n".join(c.replace("svIter (", "svIter (", 1) for c in concl)
-                                            .replace(L.peq('N'), L.peq(f"{cnt}.toNat")))
+                                            .replace(L.peq('N'), L.peq(f"{RUNS[name_file(name)][0]}.toNat")
+                                                     if name_file(name) in RUNS else L.peq('N')))
     h1 = [f"{p}'" for p in hn]
-    O(f"  rcases {name} F hret hO M0 N {' '.join(hn)} H with e | ⟨n1, {', '.join(ps)}, cs, e0, hr3, hr4, hkl, "
+    fixed_names = list(dict.fromkeys(b for g in L.fixed for b in g[1:g.rindex(' : ')].split()))
+    O(f"  rcases {name} {' '.join(f'({b} := {b})' for b in fixed_names)} F hret hO M0 N {' '.join(hn)} H with e | "
+      f"⟨n1, {', '.join(ps)}, cs, e0, hr3, hr4, hkl, "
       f"{', '.join(h1)}⟩")
     O("  · exact .inl e")
     rn = dict(zip(hn, h1))
-    rn.update({'hc': f"(hz {' '.join(ps)} e0)"})
+    for p in loopfree:
+        rn.setdefault(p, p)
+    rn.update({endp: f"(hz {' '.join(ps)} e0)"})
     eargs = " ".join(rn.get(p, p) for p, _ in E.params)
     enamed = " ".join(f"({b} := {pr.get(b, b)})" for names, _ in L.binders for b in names if b in E.binder_set()
                       and b not in L.local and b != 'n0')
-    O(f"  rcases {ename} {enamed} {eargs} with ⟨-, e⟩ | ⟨{', '.join(enm + ['n2', 'c2'] + [f'f_{k}' for k, _ in facts])}⟩")
+    O(f"  rcases {ename} {enamed} {eargs} with {E.errpat} | ⟨{', '.join(enm + ['n2', 'c2'] + [f'f_{k}' for k, _ in facts])}⟩")
     O(f"  · exact .inl (SvErrRet.pre cs hr3 hr4 (fun x hx => ({rn['fM']} x hx).trans (fM x hx).symm) e)")
     terms = [{"r3": "f_r3.trans hr3", "r4": "f_r4.trans hr4", "KL": "(hkl.trans f_KL).mono (by decide)"}.get(k, f"f_{k}")
              for k, _ in facts]
@@ -189,7 +201,7 @@ def exit_form(O, name, L, efile, ename, cnt):
 
 
 
-def run_form(O, name, L, efile, ename, cnt, ptr, slice_hyp):
+def run_form(O, name, L, efile, ename, endp, cnt, ptr, slice_hyp):
     """The loop and its exit over every byte of the slice (`ptr`, `cnt`): the
     count reaches 0 after `cnt.toNat` iterations, and each iteration has its
     byte."""
@@ -216,7 +228,7 @@ def run_form(O, name, L, efile, ename, cnt, ptr, slice_hyp):
         O(line)
     F = f"({L.step})"
     T = " × ".join(["Word"] * n)
-    O(f"  refine {name}_st (N := {cnt}.toNat) F hret hO M0 ?_ {' '.join(hn)} ?_ {' '.join(x for x in extra if x != 'hc')}")
+    O(f"  refine {name}_st (N := {cnt}.toNat) F hret hO M0 ?_ {' '.join(hn)} ?_ {' '.join(x for x in extra if x != endp)}")
     dec = f"svIter_dec1 (F := {F}) (fun s : {T} => {proj(j_cnt)}) (fun s => rfl)"
     inc = f"svIter_add (F := {F}) (fun s : {T} => {proj(j_ptr)}) (d := 1) (fun s => rfl)"
     O(f"  · intro {' '.join(ps)} e")

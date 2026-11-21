@@ -123,7 +123,7 @@ def write(fname):
     used = " ".join(t for _, t in E.params)
     edef = " ".join(f"({b} := {DEFAULTS[ty]})" for b, ty in E.binders
                     if b in L.local and not re.search(IDENT.format(re.escape(b)), used))
-    O(f"    rcases {en} {L.named()} {edef} {' '.join(eargs)} with ⟨-, e⟩ | ⟨{', '.join(enames)}, -⟩")
+    O(f"    rcases {en} {L.named()} {edef} {' '.join(eargs)} with {E.errpat} | ⟨{', '.join(enames)}, -⟩")
     O("    · exact .inl e")
     O(f"    · exact {enames[0]}.elim")
     O("  | succ N ih =>")
@@ -137,14 +137,14 @@ def write(fname):
     hargs = []
     for p, t in H.params:
         hargs.append("hm" if p == matchn else "rfl" if (p, t) in L.per and (p, t) not in L.kept_per else p)
-    O(f"    · rcases {hn_} {L.named()} {' '.join(hargs)} with ⟨-, e⟩ | okh")
+    O(f"    · rcases {hn_} {L.named()} {' '.join(hargs)} with {H.errpat} | okh")
     O("      · exact .inl e")
     O(f"      · exact .inr ⟨0, Nat.succ_pos N, fun i hi => absurd hi (Nat.not_lt_zero i), {', '.join(loopv)}, "
       f"(svIter_zero _ {tup}).symm, n0, .refl _, rfl, rfl, SvKeepL.refl.mono (by decide), okh⟩")
     args = L.args({matchn: 'hm'})
     ch = Chain(lambda x: None)
     _, names1, pats1, _ = ch.call(st, {p: a for (p, _), a in zip(st.params, args)})
-    O(f"    rcases {mn} {L.named()} {' '.join(args)} with ⟨-, e⟩ | ⟨{', '.join(names1 + pats1)}⟩")
+    O(f"    rcases {mn} {L.named()} {' '.join(args)} with {st.errpat} | ⟨{', '.join(names1 + pats1)}⟩")
     O("    · exact .inl e")
     ov = {'F': 'F', 'hret': 'hret', 'hO': 'hO', 'M0': 'M0', 'E0': 'E1', 'V0': 'V1', 's0': 's1', 'fM': 'fR1'}
     for p, _ in L.per:

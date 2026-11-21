@@ -7588,6 +7588,9 @@ def cg_start(g):
     for r, v in new.items():
         g.regs[r] = ("U", v)
         params.append(f"(g0_{r} : reg n0 {rname(r)} = {v})")
+    # The loop over the groups moves `s8` past the copy of it at 0xAA4.
+    g.words[0xAA4] = ("U", "waa4")
+    params = [q if not q.startswith("(w0_aa4 :") else f"(w0_aa4 : memLoad32 n0.mem ({fa(0xAA4)}) = waa4)" for q in params]
     return params
 
 
@@ -7690,7 +7693,7 @@ def stage_cg(kpad):
             "doc": f"One pass of the base64 group loop, from 0x2E0C back to it: the next four bytes decode as base64, "
             + ("and none is `=`." if kpad == 4 else f"their first `=` is byte {kpad}, and this is the last group."),
             "params": params, "stmt": stmt, "proof": proof,
-            "binders": CS_BINDERS.replace("op ol : Word}", "op ol pg gi s0v s5v s7v : Word}"),
+            "binders": CS_BINDERS.replace("op ol : Word}", "op ol pg gi s0v s5v s7v waa4 : Word}"),
             "start": 0x2E0C, "import": "C3BootProofs.Proofs.SvCs"}
     return g, info
 
@@ -7838,7 +7841,7 @@ def stage_cm(kind):
     info = {"name": "sv_cm" + kind, "title": "a signature line's name and signature",
             "doc": "From the base64 group loop's end at 0x2E0C: " + CM_DOC[kind],
             "params": params, "stmt": stmt, "proof": proof,
-            "binders": CS_BINDERS.replace("op ol : Word}", "op ol pg gi s0v s5v s7v : Word}").replace("{rt sg : Bytes}", "{rt sg bs : Bytes}"),
+            "binders": CS_BINDERS.replace("op ol : Word}", "op ol pg gi s0v s5v s7v waa4 : Word}").replace("{rt sg : Bytes}", "{rt sg bs : Bytes}"),
             "start": 0x2E0C, "import": "C3BootProofs.Proofs.SvCs"}
     return g, info
 
