@@ -7,5 +7,5 @@ output "image" {
 }
 
 output "service_account" {
-  value = google_service_account.service.email
+  value = data.google_service_account.service.email
 }
