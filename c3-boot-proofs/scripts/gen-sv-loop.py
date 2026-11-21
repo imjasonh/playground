@@ -20,8 +20,12 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from svchain import IDENT, Chain, subst  # noqa: E402
+from svchain import IDENT, Chain, Stage, subst  # noqa: E402
 from svloop import GLOBAL, Loop  # noqa: E402
+from svmerge import sc_pattern  # noqa: E402
+
+# Loops that a stage leaves once a variable is 0: file: (exit file, exit theorem, variable).
+EXITS = {'SvCkdLoop': ('SvCke', 'sv_cke', 'c')}
 
 # file: (theorem, body stage, doc)
 LOOPS = {
@@ -51,6 +55,8 @@ def write(fname):
     O = out.append
     O("import C3BootProofs.Proofs.SvSeg")
     O(f"import C3BootProofs.Proofs.{sfile}")
+    if fname in EXITS:
+        O(f"import C3BootProofs.Proofs.{EXITS[fname][0]}")
     O("")
     O(f"/-!\n# `sigstore::verify`: {Doc}\n\nWritten by `scripts/gen-sv-loop.py` from `{sname}`.\n-/")
     O("")
@@ -104,10 +110,70 @@ def write(fname):
     O("    · exact .inl (SvErrRet.pre c1 r1_3 r1_4 (fun x hx => (fR1 x hx).trans (fM x hx).symm) e)")
     O(f"    · exact .inr ⟨n', {', '.join(L.prime.values())}, c1.trans cs, (e0.trans (svIter_succ _ k {tup}).symm), "
       "h3.trans r1_3, h4.trans r1_4, (K1_L.trans hk).mono (by decide), rest⟩")
+    if fname in EXITS:
+        O("")
+        exit_form(O, name, L, *EXITS[fname])
     O("")
     O("end C3.RV32.Sv")
     O("")
     open(f'C3BootProofs/Proofs/{fname}.lean', 'w').write("\n".join(out))
+
+
+def exit_form(O, name, L, efile, ename, cnt):
+    """`N` iterations of the loop, then the stage `ename` that leaves it once
+    `cnt` is 0, as one stage."""
+    E = Stage(efile, ename)
+    st, head = L.st, L.head
+    ps = list(L.prime.values())
+    pr = dict(zip(L.loopv, ps))
+    hn = [p for p, _ in head]
+    extra = [(p, t) for p, t in E.params if p not in {q for q, _ in st.params}]
+    facts = []
+    for f in E.facts:
+        if f.key == 'STEPS':
+            continue
+        t = subst(f.text, pr)
+        if f.key in ('r3', 'r4'):
+            t = f"reg n' ({f.key[1]} : Fin 32) = reg n0 ({f.key[1]} : Fin 32)"
+        elif f.key == 'KL':
+            u = list(dict.fromkeys(re.findall(r"\(0x[0-9A-F]+, 0x[0-9A-F]+\)", L.kl + f.text)))
+            t = "SvKeepL B n0.mem n'.mem [" + ", ".join(u) + "]"
+        facts.append((f.key, f"({t})" if t.startswith('∀') else t))
+    enm = sc_pattern(E)
+    O("set_option maxHeartbeats 16000000 in")
+    O("set_option maxRecDepth 100000 in")
+    O(f"/-- `N` iterations of `{name}`, then `{ename}`, as a stage. -/")
+    O(f"theorem {name}_st {' '.join(L.fixed)} {{N : Nat}} {{{' '.join(L.loopv)} : Word}} {{n0 : Machine}}")
+    O("    " + " ".join(f"({p} : {t})" for p, t in st.params if p in GLOBAL))
+    O(f"    (hz : ∀ {' '.join(ps)}, {L.peq('N')} → {cnt}' = 0)")
+    for p, t in head:
+        O(f"    ({p} : {t})")
+    O(f"    (H : ∀ i, i < N → ∀ {' '.join(ps)}, {L.peq('i')} → " +
+      " ∧ ".join(f"({L.primed(t)})" for _, t in L.kept_per) + ")")
+    for p, t in extra:
+        if p != 'hc':
+            O(f"    ({p} : {subst(subst(t, L.local), pr)})")
+    O("    :")
+    O("    SvErrRet B out v n0 ∨")
+    O(f"    (∃ {' '.join(ps)}, {L.peq('N')} ∧")
+    if E.sc_parts:
+        O("      " + " ∧ ".join(subst(x, pr) for x in E.sc_parts) + " ∧")
+    O("    ∃ n', Steps n0 n' ∧")
+    O("        " + " ∧\n        ".join(t for _, t in facts) + ") := by")
+    h1 = [f"{p}'" for p in hn]
+    O(f"  rcases {name} F hret hO M0 N {' '.join(hn)} H with e | ⟨n1, {', '.join(ps)}, cs, e0, hr3, hr4, hkl, "
+      f"{', '.join(h1)}⟩")
+    O("  · exact .inl e")
+    rn = dict(zip(hn, h1))
+    rn.update({'hc': f"(hz {' '.join(ps)} e0)"})
+    eargs = " ".join(rn.get(p, p) for p, _ in E.params)
+    enamed = " ".join(f"({b} := {pr.get(b, b)})" for names, _ in L.binders for b in names if b in E.binder_set()
+                      and b not in L.local and b != 'n0')
+    O(f"  rcases {ename} {enamed} {eargs} with ⟨-, e⟩ | ⟨{', '.join(enm + ['n2', 'c2'] + [f'f_{k}' for k, _ in facts])}⟩")
+    O(f"  · exact .inl (SvErrRet.pre cs hr3 hr4 (fun x hx => ({rn['fM']} x hx).trans (fM x hx).symm) e)")
+    terms = [{"r3": "f_r3.trans hr3", "r4": "f_r4.trans hr4", "KL": "(hkl.trans f_KL).mono (by decide)"}.get(k, f"f_{k}")
+             for k, _ in facts]
+    O(f"  exact .inr ⟨{', '.join(ps)}, e0, {', '.join(enm + ['n2', 'cs.trans c2'] + terms)}⟩")
 
 
 if __name__ == "__main__":
