@@ -1,12 +1,12 @@
 # An update on the security of `kontain.me`
 
-On Wednesday, November 18th, 2026, an attacker compromised the GCP project that runs `kontain.me` and began mining crypto. This is a postmortem of the incident.
+On Wednesday, November 18th, 2026, an attacker compromised the GCP project that runs [kontain.me](https://github.com/imjasonh/kontain.me) and began mining crypto. This is a postmortem of the incident.
 
 No users of kontain.me (if any) were harmed; no malicious data was served to users, no contents were taken.
 
 ## How it happened
 
-`kontain.me` is hosted as a number of separate Google Cloud Run services, a Service Account with minimal permissions, a shared Cloud Storage bucket, a load balancer and some GCP-managed DNS entries. The architecture of each of the apps is defined in Terraform in the public https://github.com/imjasonh/kontain.me repo.
+`kontain.me` runs on a number of separate Google Cloud Run services, a Service Account with minimal permissions, a shared Cloud Storage bucket, a load balancer and some GCP-managed DNS entries. The architecture of each of the apps is defined in Terraform in the public https://github.com/imjasonh/kontain.me repo.
 
 To deploy these services automatically, there's a deployer service account, `gha-deployer`, which has permissions to deploy Cloud Run services, manage Service Accounts, buckets, load balancers and DNS entries. That service account can be assumed by a GitHub Actions workflow in the repo, configured using [OIDC Workload Identity Federation](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-google-cloud-platform). The trust relationships were not defined in Terraform, but were instead click-opsed at some point in the forgotten past.
 
@@ -25,7 +25,7 @@ Upon noticing the fraudulent usage, I immediately disabled the SA being used to 
 
 The attacker seems to have gained access late Tuesday and made some exploratory requests to make sure they could do what they wanted. On Wednesday around noon Eastern they began creating Vertex AI training runs in three regions. The jobs they ran were actually doing crypto mining, contributing to a wallet they presumably own.
 
-Usage began relatively slowly, at ~$44/hour worth of GPU usage, but within an hour they had requested more GPU quota and began sending more requests to the tune of more than $300/hour. Luckily, I noticed the anomalous traffic and put a stop to it as quickly as I could.
+Spend began relatively slowly, at ~$44/hour worth of GPU usage, but within an hour they had requested more GPU quota and began sending more requests to the tune of more than $300/hour. Luckily, I noticed the anomalous traffic and put a stop to it as quickly as I could.
 
 ## Where we got lucky
 
@@ -33,7 +33,7 @@ Because kontain.me doesn't normally cost me much money at all, and because I'm c
 
 ## Where we are now
 
-I filed a GCP Support ticket for the fraudulent usage, and they were very helpful. At the time of writing they're still waiting to tally the total damage; they say it can take a few days after the last fraudulent usage to assess the total bill. The project is unlinked from billing in the meantime, so kontain.me is down. I may decide not to bring it up again, or if I do I may bring it up in a different shape.
+I filed a GCP Support ticket for the fraudulent usage, and they were very helpful. At the time of writing they're still tallying the total damage; they say it can take a few days after the last fraudulent usage to assess the total bill. The project is unlinked from billing in the meantime, so kontain.me is down. I may decide not to bring it up again, or if I do I may bring it up in a different shape.
 
 I also reported the GitHub user and repo that ran the fraudulent GHA workflow to get into my GCP project.
 
