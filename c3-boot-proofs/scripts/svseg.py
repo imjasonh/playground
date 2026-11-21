@@ -366,6 +366,7 @@ class Segment:
             found = self.source(key, e, j, facts)
             if not found:
                 continue
+            self.found_text = facts[key].text if key in facts else None
             term, val = found
             for i, later in self.hist[idx + 1:]:
                 kl = later.get('KL')
@@ -479,8 +480,8 @@ class Segment:
             if not key or key[0] not in 'wbq' or key in ch.prev or len(self.hist) < 2:
                 continue
             c = self.carry(key, t)
-            if c:
-                text = re.sub(r"(?<![\w.'])n0(?![\w'])", "n'", t)
+            if c and self.found_text:
+                text = re.sub(r"(?<![\w.'])n\d+(?![\w'])", "n'", strip_parens(self.found_text))
                 self.carried.append((key, f"({text})" if text.startswith('∀') else text, c[0]))
         self.ch = ch
         self.proof = proof
