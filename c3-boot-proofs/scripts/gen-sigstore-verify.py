@@ -3822,6 +3822,11 @@ def stage_x2z():
     i = max(j for j, l in enumerate(lines) if l.startswith("  obtain ⟨te"))
     g.out = lines[:i] + [f"  exact absurd hr{k} (content_empty (w0_32c.symm.trans (by rw [hr2]) |> fun h => by simpa using hr2))"]
     g.out[-1] = f"  exact absurd hr{k} (content_empty hr2)"
+    # The success condition can't hold, so state it as `False`, which a merge
+    # reads as a stage that only fails.
+    stmt = ("(¬ ((False) ∧ True) ∧ SvErrRet B out v n0) ∨\n    ((False) ∧\n    "
+            + stmt[stmt.index("∃ n', Steps"):])
+    g.out = [re.sub(r"exact \.inl ⟨\(fun [^()]*\), ", "exact .inl ⟨(fun h => h.1), ", ln) for ln in g.out]
     info = {"name": "sv_x2z", "title": "an extension with no value",
             "doc": "From 0x560, for an extension that ends after its OID: `Der::octet_string` finds no value, "
             "and `sigstore::verify` fails.",

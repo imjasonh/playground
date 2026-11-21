@@ -211,8 +211,6 @@ class Segment:
         """An earlier success-condition conjunct that is `ty` with its unassigned
         binders `free` filled in: its proof and the binders' values."""
         free = sorted(free, key=len, reverse=True)
-        if not free:
-            return None
         pat = re.escape(canon(ty))
         for i, b in enumerate(free):
             pat = re.sub(rf"(?<![\w.']){re.escape(re.escape(b))}(?![\w'])", f"\x00{i}\x00", pat)
@@ -445,6 +443,9 @@ class Segment:
         hit = self.match_sc(ty, free)
         if hit:
             return hit
+        m = re.fullmatch(r"(.+) ≤ (\w+)", strip_parens(ty))
+        if m and m.group(2) in free:
+            return ("(Nat.le_refl _)", {m.group(2): f"({m.group(1)})"})
         m = re.fullmatch(r"(.+) = (.+) \+ BitVec\.ofNat 32 \((\w+) \* 4\)", strip_parens(ty))
         if m and m.group(3) in free:
             terms = split_sum(strip_parens(m.group(1)))

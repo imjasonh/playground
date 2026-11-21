@@ -133,7 +133,7 @@ theorem sv_cm {dp B out bp : Word} {x21 : Word} {x26 dg c q : Word} {rl rp sgp o
     (CK0 : SvCkCode M0)
     (b_in : SvIn B s7v s0v.toNat) :
     SvErrRet B out v n0 ∨
-    (∃ cm_sg : Bytes, ∃ cm_w30 : Word, (((False) ∧ cm_sg = sg ∧ cm_w30 = w30) ∨ ((False) ∧ cm_sg = sg ∧ cm_w30 = w30) ∨ (∃ bs, base64Decode (memBytes M0 s7v s0v.toNat) = some bs ∧ (False) ∧ cm_sg = sg ∧ cm_w30 = w30) ∨ (∃ bs, base64Decode (memBytes M0 s7v s0v.toNat) = some bs ∧ cm_sg = sg ∧ cm_w30 = w30) ∨ (∃ bs, base64Decode (memBytes M0 s7v s0v.toNat) = some bs ∧ (w2c = 0) ∧ cm_sg = (bs.drop 4) ∧ cm_w30 = BitVec.ofNat 32 0x1) ∨ (∃ bs, base64Decode (memBytes M0 s7v s0v.toNat) = some bs ∧ (False) ∧ cm_sg = sg ∧ cm_w30 = w30) ∨ (∃ bs, base64Decode (memBytes M0 s7v s0v.toNat) = some bs ∧ cm_sg = sg ∧ cm_w30 = w30) ∨ (cm_sg = sg ∧ cm_w30 = w30)) ∧
+    (∃ cm_sg : Bytes, ∃ cm_w30 : Word, ((False) ∨ (False) ∨ (False) ∨ (∃ bs, base64Decode (memBytes M0 s7v s0v.toNat) = some bs ∧ cm_sg = sg ∧ cm_w30 = w30) ∨ (∃ bs, base64Decode (memBytes M0 s7v s0v.toNat) = some bs ∧ (w2c = 0) ∧ cm_sg = (bs.drop 4) ∧ cm_w30 = BitVec.ofNat 32 0x1) ∨ (False) ∨ (∃ bs, base64Decode (memBytes M0 s7v s0v.toNat) = some bs ∧ cm_sg = sg ∧ cm_w30 = w30) ∨ (cm_sg = sg ∧ cm_w30 = w30)) ∧
     ∃ n', Steps n0 n' ∧
         St n'.mem SV n' 0x2D6E (reg n') ∧
         SvCode n'.mem ∧

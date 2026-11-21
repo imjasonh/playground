@@ -89,9 +89,8 @@ theorem sv_x2z {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     (ea_in : SvIn B p0 (L.toNat - rem.toNat))
     (hle : rem.toNat ≤ L.toNat)
     (hr2 : rem2 = 0) :
-    (¬ (∃ vp4 vl4, derContent (rp2) (derElement 4 (memBytes M0 (rp2) (rem2).toNat)) = .ok (vp4, vl4) ∧ ∃ te4, derElement 4 (memBytes M0 (rp2) (rem2).toNat) = .ok te4 ∧ True) ∧ SvErrRet B out v n0) ∨
-    (∃ vp4 vl4, derContent (rp2) (derElement 4 (memBytes M0 (rp2) (rem2).toNat)) = .ok (vp4, vl4) ∧
-    ∃ te4, derElement 4 (memBytes M0 (rp2) (rem2).toNat) = .ok te4 ∧
+    (¬ ((False) ∧ True) ∧ SvErrRet B out v n0) ∨
+    ((False) ∧
     ∃ n', Steps n0 n' ∧
         St n'.mem SV n' 0x5A0 (reg n') ∧
         SvCode n'.mem ∧
@@ -960,7 +959,7 @@ theorem sv_x2z {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     have w13_a44 : memLoad32 n13.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) = sl9 := by rw [m13]; exact w12_a44
     have w13_1020 : memLoad32 n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = 0 := by rw [m13]; exact w12_1020
     clear w12_1020 w12_a44 w12_a40 w12_a3c w12_a38 w12_a34 w12_a30 w12_a2c w12_a28 w12_a24 w12_a20 w12_94 w12_90 w12_8c w12_88 w12_84 w12_80 w12_7c w12_78 w12_74 w12_70 w12_6c w12_68 w12_64 w12_60 w12_5c w12_58 w12_54 w12_50 w12_4c w12_48 w12_40 w12_3c w12_34 w12_30 g12_27 g12_26 g12_25 g12_24 g12_23 g12_22 g12_21 g12_19 g12_18 g12_9 g12_8 g12_4 g12_3 g12_2 V12 E12 fR12 t12 fr12 m12 s12 u12 d12
-    exact .inl ⟨(fun ⟨vp4', vl4', h0', _⟩ => by rw [hr4] at h0'; cases h0'), sv_fail F E13 s13 t13 (fun x hx => (fR13 x hx).trans (fM x hx).symm) V13 hret g13_2 g13_18 hO g13_3 g13_4⟩
+    exact .inl ⟨(fun h => h.1), sv_fail F E13 s13 t13 (fun x hx => (fR13 x hx).trans (fM x hx).symm) V13 hret g13_2 g13_18 hO g13_3 g13_4⟩
   exact absurd hr4 (content_empty hr2)
 
 

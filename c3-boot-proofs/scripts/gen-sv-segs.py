@@ -34,9 +34,28 @@ MERGES = [(f'SvWin{i}', f'sv_win{i}', (f'SvWin{i}e', f'sv_win{i}e'), (f'SvWin{i}
     ('SvCg', 'sv_cg', ('SvCg0', 'sv_cg0'), ('SvCg1', 'sv_cg1'), ('SvCg2', 'sv_cg2'), ('SvCg3', 'sv_cg3'),
      ('SvCg4', 'sv_cg4'), "one base64 group of a cosignature, padded at any of its places or not at all"),
     ('SvCm', 'sv_cm', ('SvCme', 'sv_cme'), ('SvCmdl', 'sv_cmdl'), ('SvCmdn', 'sv_cmdn'), ('SvCmf', 'sv_cmf'), ('SvCmk', 'sv_cmk'),
-     ('SvCmn', 'sv_cmn'), ('SvCms', 'sv_cms'), ('SvCmx', 'sv_cmx'), "the end of a signature line, empty or not")]
+     ('SvCmn', 'sv_cmn'), ('SvCms', 'sv_cms'), ('SvCmx', 'sv_cmx'), "the end of a signature line, empty or not"),
+    ('SvX2', 'sv_x2', ('SvX2z', 'sv_x2z'), ('SvX2n', 'sv_x2n'), ('SvX2c', 'sv_x2c'),
+     "an extension's criticality and value"),
+    ('SvDbc2m', 'sv_dbc2m', ('SvDbc2e', 'sv_dbc2e'), ('SvDbc2', 'sv_dbc2'),
+     "a `BasicConstraints` sequence, empty or not"),
+    ('SvD', 'sv_d', ('SvSegDku', 'sv_seg_dku'), ('SvSegEku', 'sv_seg_eku'), ('SvSegDbc', 'sv_seg_dbc'),
+     *[(f'SvDp{i}', f'sv_dp{i}') for i in range(6)],
+     "an extension by its OID: `KeyUsage`, `ExtKeyUsage`, `BasicConstraints`, a policy OID, or another")]
 
 SEGMENTS = {
+    'SvSegDbc': ('sv_seg_dbc', [('SvDbc1', 'sv_dbc1'), ('SvDbc2m', 'sv_dbc2m')],
+                 "**A `BasicConstraints` extension**: from the OID tests at 0x60E back to the extensions loop at "
+                 "0x4EA, `sv_dbc1` and `sv_dbc2m`."),
+    'SvSegEku': ('sv_seg_eku', [('SvDeku1', 'sv_deku1'), ('SvEkuLoop', 'sv_ekuloop_st')],
+                 "**An `ExtKeyUsage` extension**: from the OID tests at 0x60E back to the extensions loop at "
+                 "0x4EA, `sv_deku1` and the loop over its OIDs."),
+    'SvSegExt': ('sv_seg_ext', [('SvX1', 'sv_x1'), ('SvX2', 'sv_x2'), ('SvD', 'sv_d')],
+                 "**One extension of the leaf**: from the extensions loop's head at 0x4EA back to it, `sv_x1`, "
+                 "`sv_x2`, and `sv_d`."),
+    'SvSegDku': ('sv_seg_dku', [('SvDku1', 'sv_dku1'), ('SvDku2', 'sv_dku2')],
+                 "**A `KeyUsage` extension**: from the OID tests at 0x60E back to the extensions loop at 0x4EA, "
+                 "`sv_dku1` and `sv_dku2`."),
     'SvSegLeaf': ('sv_seg_leaf', [('SvL1', 'sv_l1'), ('SvL2', 'sv_l2'), ('SvL3', 'sv_l3'), ('SvL4', 'sv_l4'),
                                   ('SvL5', 'sv_l5'), ('SvL6', 'sv_l6')],
                   "**The leaf certificate up to its extensions**: from 0x72 to the extensions loop at 0x4EA, "
@@ -99,7 +118,8 @@ def write(fname):
 
 
 # Merges and segments that others are built from, in the order to write them.
-ORDER = ['SvTst4n', 'SvSegTst4x1', 'SvSegTst4x0', 'SvTst4b', 'SvSegTst4o', 'SvTst4']
+ORDER = ['SvTst4n', 'SvSegTst4x1', 'SvSegTst4x0', 'SvTst4b', 'SvSegTst4o', 'SvTst4',
+         'SvDbc2m', 'SvSegDbc', 'SvSegDku', 'SvSegEku', 'SvX2', 'SvD', 'SvSegExt']
 
 
 def build(f):

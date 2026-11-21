@@ -222,7 +222,8 @@ def merged(fname, name, vs, doc):
             hyps.append((p, t))
     for st in order:
         assert all(dict(hyps)[p] == t for p, t in st.params if p not in conds), "the stages' hypotheses disagree"
-    scs = [" ∧ ".join([f"∃ {b}, {x} = some {b}" for b, x, _ in wits[st.name]] + st.sc_parts +
+    scs = ["False" if st.name in vac else
+           " ∧ ".join([f"∃ {b}, {x} = some {b}" for b, x, _ in wits[st.name]] + st.sc_parts +
                       [f"{d} = {vals[j]}" for d, _, vals in dvars]) or "True"
            for j, st in enumerate(order)]
     dbind = "".join(f"∃ {d} : {t}, " for d, t, _ in dvars)
@@ -231,14 +232,17 @@ def merged(fname, name, vs, doc):
     for d, _, _ in dvars:
         stem = name.removeprefix('sv_')
         m = re.fullmatch(rf"{stem}_w([0-9a-f]+)", d)
-        dl = f"{stem}_w{int(m.group(1), 16) + 4:x}" if m else None
-        if dl in dk:
+        for dl in ([f"{stem}_w{int(m.group(1), 16) + o:x}" for o in (4, -4)] if m else []):
+            if dl not in dk:
+                continue
             terms = []
             for j, st in enumerate(order):
                 ctx = SliceCtx(st, sc_pattern(st))
-                terms.append(ctx.derive_in(canon(dvars[dk[d]][2][j]), canon(f"({dvars[dk[dl]][2][j]}).toNat")))
+                terms.append("-" if st.name in vac else
+                             ctx.derive_in(canon(dvars[dk[d]][2][j]), canon(f"({dvars[dk[dl]][2][j]}).toNat")))
             if all(terms):
                 slices.append((d, dl, terms))
+                break
     slice_text = "".join(f" ∧ SvIn B {d} {dl}.toNat" for d, dl, _ in slices)
     facts = fa[1:]
     named_of = {st.name: " ".join(f"({x} := {x})" for names, _ in own[st.name] for x in names) for st in order}

@@ -77,6 +77,12 @@ theorem svSubOfNat_toNat {r : Word} {a : Nat} (ha : a ≤ r.toNat) :
 
 theorem svRem_zero {r : Word} (h : r.toNat ≤ 0) : r = 0 := BitVec.eq_of_toNat_eq (by simp; omega)
 
+/-- What a DER element leaves of a slice is shorter than the slice. -/
+theorem svRem_elem {rp rl : Word} {M : Word → BitVec 8} {tag : Nat} {t : DerTlv} {N : Nat}
+    (ht : derElement tag (memBytes M rp rl.toNat) = .ok t) (hN : rl.toNat ≤ N + 1) :
+    (rl - BitVec.ofNat 32 (t.header + t.len)).toNat ≤ N := by
+  rw [rest_len ht]; have := derElement_header ht; omega
+
 /-- A slice without its first `k` bytes, its length written as the code
 computes it: adding `2 ^ 32 - k`. -/
 theorem SvIn.dropLit {B p : Word} {n k : Nat} (h : SvIn B p n) (hk : k ≤ n) (hk0 : 0 < k) :
