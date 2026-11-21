@@ -378,4 +378,146 @@ theorem sv_cgloop_st {dp B out bp x21 x26 c q : Word} {rl rp : Word} {sgp : Word
   · exact .inl (SvErrRet.pre cs hr3 hr4 (fun x hx => (fM' x hx).trans (fM x hx).symm) e)
   exact .inr ⟨dg', pg', gi', e0, h0, n2, cs.trans c2, f_ST, f_E, f_V, f_FR, f_r2, f_q320, (hkl.trans f_KL).mono (by decide)⟩
 
+set_option maxHeartbeats 16000000 in
+/-- `sv_cgloop_st` over `N` groups of 4 bytes from `pg` to `w8`. -/
+theorem sv_cgloop_run {dp B out bp x21 x26 c q : Word} {rl rp : Word} {sgp : Word} {op ol : Word} {s0v s5v s7v waa4 : Word} {rt sg : Bytes} {w8 wc w14 w18 w20 w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w78 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word} {v : Nat → Word} {N : Nat} {dg pg gi : Word} {n0 : Machine}
+    (F : Fr B 0x3830) (hret : v 0 &&& ~~~1 = v 0) (hO : SvOut B out) (M0 : Word → BitVec 8)
+    (E0 : SvCode n0.mem)
+    (V0 : SvSaves B n0.mem v)
+    (s0 : St n0.mem SV n0 0x2E0C (reg n0))
+    (fM : ∀ x, SvR B x → n0.mem x = M0 x)
+    (g0_2 : reg n0 sp = B + 0x21A0)
+    (g0_9 : reg n0 (9 : Fin 32) = c)
+    (g0_18 : reg n0 (18 : Fin 32) = out)
+    (g0_19 : reg n0 (19 : Fin 32) = bp)
+    (g0_24 : reg n0 (24 : Fin 32) = dg)
+    (g0_25 : reg n0 (25 : Fin 32) = q)
+    (g0_26 : reg n0 (26 : Fin 32) = x26)
+    (g0_27 : reg n0 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20)
+    (w0_8 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x8) = w8)
+    (w0_c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xC) = wc)
+    (w0_14 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x14) = w14)
+    (w0_18 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x18) = w18)
+    (w0_1c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x1C) = (BitVec.ofNat 8 (rt.getD 0 0)).zeroExtend 32)
+    (w0_20 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x20) = w20)
+    (w0_24 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24)
+    (w0_28 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28)
+    (w0_2c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c)
+    (w0_30 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x30) = w30)
+    (w0_34 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x34) = w34)
+    (w0_38 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x38) = w38)
+    (w0_3c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x3C) = w3c)
+    (w0_40 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x40) = w40)
+    (w0_44 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x44) = w44)
+    (w0_48 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x48) = w48)
+    (w0_4c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x4C) = w4c)
+    (w0_50 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = w50)
+    (w0_54 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54)
+    (w0_58 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x58) = w58)
+    (w0_5c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c)
+    (w0_60 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x60) = w60)
+    (w0_64 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x64) = w64)
+    (w0_68 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x68) = w68)
+    (w0_6c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x6C) = w6c)
+    (w0_70 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = w70)
+    (w0_78 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = w78)
+    (w0_7c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x7C) = w7c)
+    (w0_80 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x80) = w80)
+    (w0_84 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x84) = w84)
+    (w0_88 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x88) = w88)
+    (w0_8c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x8C) = w8c)
+    (w0_90 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x90) = w90)
+    (w0_94 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x94) = w94)
+    (w0_98 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x98) = w98)
+    (w0_9c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x9C) = w9c)
+    (w0_a0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA0) = wa0)
+    (w0_a4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA4) = wa4)
+    (w0_a8 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA8) = wa8)
+    (w0_ac : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAC) = wac)
+    (w0_b0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xB0) = wb0)
+    (w0_b4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xB4) = wb4)
+    (w0_b8 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xB8) = wb8)
+    (w0_bc : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xBC) = wbc)
+    (w0_c0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xC0) = wc0)
+    (w0_c4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xC4) = wc4)
+    (w0_c8 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xC8) = wc8)
+    (w0_cc : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xCC) = wcc)
+    (w0_d0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xD0) = wd0)
+    (w0_d4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xD4) = wd4)
+    (w0_d8 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xD8) = wd8)
+    (w0_dc : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xDC) = wdc)
+    (w0_e0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xE0) = we0)
+    (w0_e4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xE4) = we4)
+    (w0_e8 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xE8) = we8)
+    (w0_ec : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xEC) = wec)
+    (w0_f0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xF0) = wf0)
+    (w0_f4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xF4) = wf4)
+    (w0_f8 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xF8) = wf8)
+    (w0_fc : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xFC) = wfc)
+    (w0_100 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x100) = w100)
+    (w0_104 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x104) = w104)
+    (w0_108 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x108) = w108)
+    (w0_10c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x10C) = w10c)
+    (w0_110 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x110) = w110)
+    (w0_114 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x114) = w114)
+    (w0_118 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x118) = w118)
+    (w0_11c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x11C) = w11c)
+    (w0_120 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x120) = w120)
+    (w0_124 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x124) = w124)
+    (w0_128 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x128) = w128)
+    (w0_12c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x12C) = w12c)
+    (w0_130 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x130) = w130)
+    (w0_428 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x428) = sgp)
+    (w0_a20 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) = w70)
+    (w0_a24 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA24) = x21)
+    (w0_a28 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA28) = w5c)
+    (w0_a2c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA2C) = w48)
+    (w0_a30 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA30) = w44)
+    (w0_a34 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA34) = w60)
+    (w0_a38 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA38) = w3c)
+    (w0_a3c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA3C) = w78)
+    (w0_aa0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp)
+    (w0_aa4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = waa4)
+    (q0_320 : ∀ j, j < 31 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x320 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0))
+    (w0_10 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x10) = (BitVec.ofNat 8 (sg.getD 0 0)).zeroExtend 32)
+    (q0_1480 : ∀ j, j < 63 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1480 + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0))
+    (g0_10 : reg n0 a0 = pg)
+    (g0_22 : reg n0 (22 : Fin 32) = gi)
+    (g0_8 : reg n0 (8 : Fin 32) = s0v)
+    (g0_21 : reg n0 (21 : Fin 32) = s5v)
+    (g0_23 : reg n0 (23 : Fin 32) = s7v)
+    (slice : SvIn B pg (N * 4)) (hend : w8 = pg + BitVec.ofNat 32 (N * 4))
+    (b_in : SvIn B s7v s0v.toNat)
+    (CK0 : SvCkCode M0)
+    (l_in : SvIn B w48 w44.toNat)
+    (nm_in : SvIn B w28 c.toNat)
+    (hnz : w40 ≠ s5v)
+    :
+    SvErrRet B out v n0 ∨
+    (∃ dg' pg' gi', (dg', pg', gi') = svIter (fun s => (((s.2.1)) + BitVec.ofNat 32 0x4, ((s.2.1)) + BitVec.ofNat 32 0x4, ((s.2.2)) + BitVec.ofNat 32 0x1)) N (dg, pg, gi) ∧
+      (((False)) ∨ (∃ bs, base64Decode (memBytes M0 s7v s0v.toNat) = some bs ∧ (False)) ∨ (∃ bs, base64Decode (memBytes M0 s7v s0v.toNat) = some bs) ∨ (∃ bs, base64Decode (memBytes M0 s7v s0v.toNat) = some bs ∧ (w2c = 0)) ∨ (∃ bs, base64Decode (memBytes M0 s7v s0v.toNat) = some bs ∧ (False)) ∨ (∃ bs, base64Decode (memBytes M0 s7v s0v.toNat) = some bs) ∨ (True)) ∧
+    ∃ n', Steps n0 n' ∧
+        St n'.mem SV n' 0x2D6E (reg n') ∧
+        SvCode n'.mem ∧
+        SvSaves B n'.mem v ∧
+        (∀ x, SvR B x → n'.mem x = M0 x) ∧
+        reg n' sp = B + 0x21A0 ∧
+        (∀ j, j < 31 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x320 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0)) ∧
+        SvKeepL B n0.mem n'.mem [(0x1380, 0x4), (0x420, 0x8), (0x200, 0x3), (0x420, 0x60), (0x1380, 0x8), (0x10, 0x4), (0x1480, 0x3F), (0x30, 0x4)]) := by
+  have fit := slice.fit
+  refine sv_cgloop_st (dp := dp) (B := B) (out := out) (bp := bp) (x21 := x21) (x26 := x26) (c := c) (q := q) (rl := rl) (rp := rp) (sgp := sgp) (op := op) (ol := ol) (s0v := s0v) (s5v := s5v) (s7v := s7v) (waa4 := waa4) (rt := rt) (sg := sg) (w8 := w8) (wc := wc) (w14 := w14) (w18 := w18) (w20 := w20) (w24 := w24) (w28 := w28) (w2c := w2c) (w30 := w30) (w34 := w34) (w38 := w38) (w3c := w3c) (w40 := w40) (w44 := w44) (w48 := w48) (w4c := w4c) (w50 := w50) (w54 := w54) (w58 := w58) (w5c := w5c) (w60 := w60) (w64 := w64) (w68 := w68) (w6c := w6c) (w70 := w70) (w78 := w78) (w7c := w7c) (w80 := w80) (w84 := w84) (w88 := w88) (w8c := w8c) (w90 := w90) (w94 := w94) (w98 := w98) (w9c := w9c) (wa0 := wa0) (wa4 := wa4) (wa8 := wa8) (wac := wac) (wb0 := wb0) (wb4 := wb4) (wb8 := wb8) (wbc := wbc) (wc0 := wc0) (wc4 := wc4) (wc8 := wc8) (wcc := wcc) (wd0 := wd0) (wd4 := wd4) (wd8 := wd8) (wdc := wdc) (we0 := we0) (we4 := we4) (we8 := we8) (wec := wec) (wf0 := wf0) (wf4 := wf4) (wf8 := wf8) (wfc := wfc) (w100 := w100) (w104 := w104) (w108 := w108) (w10c := w10c) (w110 := w110) (w114 := w114) (w118 := w118) (w11c := w11c) (w120 := w120) (w124 := w124) (w128 := w128) (w12c := w12c) (w130 := w130) (v := v) (N := N) F hret hO M0 ?_ E0 V0 s0 fM g0_2 g0_9 g0_18 g0_19 g0_24 g0_25 g0_26 g0_27 w0_8 w0_c w0_14 w0_18 w0_1c w0_20 w0_24 w0_28 w0_2c w0_30 w0_34 w0_38 w0_3c w0_40 w0_44 w0_48 w0_4c w0_50 w0_54 w0_58 w0_5c w0_60 w0_64 w0_68 w0_6c w0_70 w0_78 w0_7c w0_80 w0_84 w0_88 w0_8c w0_90 w0_94 w0_98 w0_9c w0_a0 w0_a4 w0_a8 w0_ac w0_b0 w0_b4 w0_b8 w0_bc w0_c0 w0_c4 w0_c8 w0_cc w0_d0 w0_d4 w0_d8 w0_dc w0_e0 w0_e4 w0_e8 w0_ec w0_f0 w0_f4 w0_f8 w0_fc w0_100 w0_104 w0_108 w0_10c w0_110 w0_114 w0_118 w0_11c w0_120 w0_124 w0_128 w0_12c w0_130 w0_428 w0_a20 w0_a24 w0_a28 w0_a2c w0_a30 w0_a34 w0_a38 w0_a3c w0_aa0 w0_aa4 q0_320 w0_10 q0_1480 g0_10 g0_22 g0_8 g0_21 g0_23 ?_ hnz nm_in l_in CK0 b_in
+  · intro dg' pg' gi' e
+    have h1 := congrArg (fun s => s.2.1) e
+    simp only at h1
+    rw [svIter_add (F := (fun s => (((s.2.1)) + BitVec.ofNat 32 0x4, ((s.2.1)) + BitVec.ofNat 32 0x4, ((s.2.2)) + BitVec.ofNat 32 0x1))) (fun s : Word × Word × Word => s.2.1) (d := 4) (fun s => rfl)] at h1
+    simp only at h1
+    rw [h1, hend, Nat.mul_comm]
+  · intro i hi dg' pg' gi' e
+    have h2 := congrArg (fun s => s.2.1) e
+    simp only at h2
+    rw [svIter_add (F := (fun s => (((s.2.1)) + BitVec.ofNat 32 0x4, ((s.2.1)) + BitVec.ofNat 32 0x4, ((s.2.2)) + BitVec.ofNat 32 0x1))) (fun s : Word × Word × Word => s.2.1) (d := 4) (fun s => rfl)] at h2
+    simp only at h2
+    have G : SvIn B pg' 4 := by rw [h2, Nat.mul_comm]; exact (slice.drop (k := 4 * i) (by omega)).shrink (by omega)
+    exact ⟨(by rw [h2, hend]; bv_omega), (CK0), (G), (by rw [show ((pg') + 0x1) = pg' + BitVec.ofNat 32 1 by bv_omega]; exact (G.drop (k := 1) (by omega)).shrink (by omega)), (by rw [show ((pg') + 0x2) = pg' + BitVec.ofNat 32 2 by bv_omega]; exact (G.drop (k := 2) (by omega)).shrink (by omega)), (by rw [show ((pg') + 0x3) = pg' + BitVec.ofNat 32 3 by bv_omega]; exact (G.drop (k := 3) (by omega)).shrink (by omega)), (by rw [show ((pg')) = pg' + BitVec.ofNat 32 0 by bv_omega]; exact (G.drop (k := 0) (by omega)).shrink (by omega)), (by rw [show (((pg')) + BitVec.ofNat 32 0x1) = pg' + BitVec.ofNat 32 1 by bv_omega]; exact (G.drop (k := 1) (by omega)).shrink (by omega)), (by rw [show ((((pg')) + BitVec.ofNat 32 0x1) + BitVec.ofNat 32 0x1) = pg' + BitVec.ofNat 32 2 by bv_omega]; exact (G.drop (k := 2) (by omega)).shrink (by omega)), (by rw [show (((((pg')) + BitVec.ofNat 32 0x1) + BitVec.ofNat 32 0x1) + BitVec.ofNat 32 0x1) = pg' + BitVec.ofNat 32 3 by bv_omega]; exact (G.drop (k := 3) (by omega)).shrink (by omega))⟩
+
 end C3.RV32.Sv

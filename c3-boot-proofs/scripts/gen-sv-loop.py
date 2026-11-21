@@ -28,6 +28,8 @@ from svmerge import sc_pattern  # noqa: E402
 EXITS = {'SvCkdLoop': ('SvCke', 'sv_cke', 'hc'), 'SvCgLoop': ('SvCm', 'sv_cm', 'hend')}
 # Loops over a slice, one byte an iteration: file: (pointer, the slice's hypothesis).
 RUNS = {'SvCkdLoop': ('c', 'p', 'pin')}
+# Loops over a slice a group at a time up to an end pointer: file: (pointer, group size, end).
+RUNS4 = {'SvCgLoop': ('pg', 4, 'w8')}
 
 # file: (theorem, body stage, doc)
 LOOPS = {
@@ -119,6 +121,9 @@ def write(fname):
     if fname in RUNS:
         O("")
         run_form(O, name, L, *EXITS[fname], *RUNS[fname])
+    if fname in RUNS4:
+        O("")
+        run4_form(O, name, L, *EXITS[fname], *RUNS4[fname])
     O("")
     O("end C3.RV32.Sv")
     O("")
@@ -247,6 +252,70 @@ def run_form(O, name, L, efile, ename, endp, cnt, ptr, slice_hyp):
     O("    refine ⟨?_, ?_⟩")
     O("    · rw [h1]; bv_omega")
     O(f"    · rw [h1, h2, Nat.mul_one, svSub_toNat (by omega)]; exact {slice_hyp}.drop (by omega)")
+
+
+def run4_form(O, name, L, efile, ename, endp, ptr, size, end):
+    """`name_st` over `N` groups of `size` bytes from `ptr` to `end`."""
+    E = Stage(efile, ename)
+    st = L.st
+    ps = list(L.prime.values())
+    n = len(L.loopv)
+    j_ptr = L.loopv.index(ptr)
+
+    def proj(j):
+        return "s" + ".2" * j + (".1" if j + 1 < n else "")
+    F = f"({L.step})"
+    T = " × ".join(["Word"] * n)
+    hn = [p for p, _ in L.head]
+    loopfree = [p for p, t in L.kept_per if not any(re.search(IDENT.format(re.escape(b)), t) for b in L.loopv)]
+    extra = [p for p, _ in E.params if p not in {q for q, _ in st.params} or p in loopfree]
+    stmt = open(f'/tmp/{name}_st.stmt').read().split('\n')
+    i_colon = stmt.index("    :")
+    inc = f"svIter_add (F := {F}) (fun s : {T} => {proj(j_ptr)}) (d := {size}) (fun s => rfl)"
+    fixed_names = list(dict.fromkeys(b for g in L.fixed for b in g[1:g.rindex(' : ')].split()))
+    O("set_option maxHeartbeats 16000000 in")
+    O(f"/-- `{name}_st` over `N` groups of {size} bytes from `{ptr}` to `{end}`. -/")
+    O(f"theorem {name}_run {' '.join(L.fixed)} {{N : Nat}} {{{' '.join(L.loopv)} : Word}} {{n0 : Machine}}")
+    O("    " + " ".join(f"({p} : {t})" for p, t in st.params if p in GLOBAL))
+    for p, t in L.head:
+        O(f"    ({p} : {t})")
+    O(f"    (slice : SvIn B {ptr} (N * {size})) (hend : {end} = {ptr} + BitVec.ofNat 32 (N * {size}))")
+    for line in stmt[:i_colon]:
+        if not line.strip().startswith("(hz :") and not line.strip().startswith("(H :"):
+            O(line)
+    for line in stmt[i_colon:]:
+        O(line)
+    O(f"  have fit := slice.fit")
+    O(f"  refine {name}_st {' '.join(f'({b} := {b})' for b in fixed_names)} (N := N) F hret hO M0 ?_ {' '.join(hn)} ?_ "
+      f"{' '.join(x for x in extra if x != endp)}")
+    O(f"  · intro {' '.join(ps)} e")
+    O(f"    have h1 := congrArg (fun s => {proj(j_ptr)}) e")
+    O("    simp only at h1")
+    O(f"    rw [{inc}] at h1")
+    O("    simp only at h1")
+    O("    rw [h1, hend, Nat.mul_comm]")
+    O(f"  · intro i hi {' '.join(ps)} e")
+    O(f"    have h2 := congrArg (fun s => {proj(j_ptr)}) e")
+    O("    simp only at h2")
+    O(f"    rw [{inc}] at h2")
+    O("    simp only at h2")
+    O(f"    have G : SvIn B {ptr}' {size} := by rw [h2, Nat.mul_comm]; exact (slice.drop (k := {size} * i) (by omega)).shrink (by omega)")
+    parts = []
+    for p, t in L.kept_per:
+        tp = L.primed(t)
+        if p in loopfree:
+            parts.append(p)
+        elif p == 'hne' or tp.endswith(f"≠ {end}"):
+            parts.append(f"by rw [h2, hend]; bv_omega")
+        elif re.fullmatch(rf"SvIn B \(?{re.escape(ptr)}'\)? {size}", tp):
+            parts.append("G")
+        else:
+            m = re.fullmatch(r"SvIn B (.+) 1", tp)
+            assert m, tp
+            k = sum(int(x, 16) for x in re.findall(r"0x([0-9A-Fa-f]+)", m.group(1)))
+            parts.append(f"by rw [show {m.group(1)} = {ptr}' + BitVec.ofNat 32 {k} by bv_omega]; "
+                         f"exact (G.drop (k := {k}) (by omega)).shrink (by omega)")
+    O("    exact ⟨" + ", ".join(f"({x})" for x in parts) + "⟩")
 
 
 if __name__ == "__main__":
