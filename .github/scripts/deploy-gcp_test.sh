@@ -491,6 +491,53 @@ if grep -E '^tofu .* apply ' <<<"$missing_calls"; then
   echo "$missing_calls" >&2
 fi
 
+# A plan with no changes writes the step summary and skips the PR comment.
+cat >"$tmp/bin/tofu" <<EOF
+#!/bin/sh
+printf 'tofu' >> "$log"
+printf ' %s' "\$@" >> "$log"
+printf '\\n' >> "$log"
+if [ "\$2" = "plan" ]; then
+  echo 'google_cloud_run_v2_service.app: Refreshing state... [id=example]'
+  echo
+  echo 'No changes. Your infrastructure matches the configuration.'
+  echo
+  echo 'OpenTofu has compared your real infrastructure against your configuration and'
+  echo 'found no differences, so no changes are needed.'
+fi
+if [ "\$2" = "show" ]; then
+  cat <<'JSON'
+{"resource_changes": [
+  {"address": "google_cloud_run_v2_service.app", "change": {"actions": ["no-op"]}}
+]}
+JSON
+fi
+EOF
+chmod +x "$tmp/bin/tofu"
+: >"$log"
+: >"$summary"
+noop_out=$(
+  PATH="$tmp/bin:$PATH" \
+    GCP_DEPLOY_ROOT="$tmp" \
+    GCP_PROJECT_ID="$project" \
+    GCP_PLAN_WORKLOAD_IDENTITY_PROVIDER="$plan_wif" \
+    GCP_PLAN_SERVICE_ACCOUNT="$plan_sa" \
+    GCP_TF_STATE_BUCKET="$bucket" \
+    GITHUB_REPOSITORY="$repo" \
+    GITHUB_STEP_SUMMARY="$summary" \
+    PR_NUMBER=12 \
+    GH_TOKEN=test-token \
+    bash "$deploy" --plan example-app
+)
+noop_calls=$(cat "$log")
+assert_contains "$noop_out" "No changes. Your infrastructure matches the configuration." "no-op plan prints the plan"
+assert_contains "$noop_out" "no changes; skipping pull request comment" "no-op plan skips the comment"
+assert_contains "$(cat "$summary")" "**No changes. Your infrastructure matches the configuration.**" "no-op plan still writes step summary"
+if [[ "$noop_calls" == *$'\ngh '* || "$noop_calls" == gh\ * ]]; then
+  fail "no-op plan must not call gh to comment"
+  echo "$noop_calls" >&2
+fi
+
 if ((failures > 0)); then
   echo "$failures test(s) failed" >&2
   exit 1

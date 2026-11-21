@@ -306,9 +306,9 @@ summarize_plan_json() {
   '
 }
 
-# Comment the plan on the pull request and on the job summary: the
-# Plan: line, one line per resource action, and the full plan text in a
-# collapsed section. The fence grows until the plan text cannot close it.
+# Comment the plan on the pull request (when it has changes) and on the job
+# summary: the Plan: line, one line per resource action, and the full plan text
+# in a collapsed section. The fence grows until the plan text cannot close it.
 post_plan() {
   local text=$1 changes=$2
   local marker="<!-- gcp-plan:${app} -->"
@@ -337,6 +337,10 @@ post_plan() {
   printf '%s\n' "$text"
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     printf '%s\n' "$body" >>"$GITHUB_STEP_SUMMARY"
+  fi
+  if [[ -z "$changes" && "$totals" == "No changes."* ]]; then
+    echo "no changes; skipping pull request comment"
+    return 0
   fi
   if [[ -z "${PR_NUMBER:-}" ]]; then
     return 0
