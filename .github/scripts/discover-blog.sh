@@ -5,7 +5,7 @@
 #   discover-blog.sh --all
 #     Always enable (first push / full suite).
 #   discover-blog.sh --from-changes [path...]
-#     Enable when a blog-post.md file or the posts builder / templates
+#     Enable when a file under posts/ or the posts builder / templates
 #     changed. Paths may also be piped on stdin.
 set -euo pipefail
 
@@ -15,9 +15,9 @@ emit() {
 
 is_blog_path() {
   case "$1" in
-    blog-post.md|*/blog-post.md) return 0 ;;
+    posts/*) return 0 ;;
     .github/scripts/build-blog.py|.github/scripts/build-blog_test.py) return 0 ;;
-    .github/scripts/test-blog.sh|.github/scripts/discover-blog.sh) return 0 ;;
+    .github/scripts/test-blog.sh|.github/scripts/discover-blog.sh|.github/scripts/discover-blog_test.sh) return 0 ;;
     .github/pages/blog-index.html.tmpl|.github/pages/blog-post.html.tmpl|.github/pages/blog-shared.css) return 0 ;;
   esac
   return 1
