@@ -25,7 +25,7 @@ set_option maxRecDepth 100000
 
 set_option maxHeartbeats 64000000 in
 /-- **The entry's index and the validity windows**: from 0x2F5A to the successful exit at 0x3264, `sv_cr1`, `sv_rl`, `sv_rm`, and the eight window checks. -/
-theorem sv_seg_win {dp B out bp x21 x26 dg c q rl rp : Word} {lih lil : Word} {rt sg : Bytes} {w8 wc w14 w18 w20 w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w78 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 wa20 wa24 wa28 wa2c wa30 wa34 wa38 wa3c : Word} {v : Nat → Word} {n0 : Machine} {w74 : Word}
+theorem sv_seg_win {dp B out bp x21 x26 dg c q rl rp : Word} {lih lil : Word} {rt sg : Bytes} {w8 wc w14 w18 w20 w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w78 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 wa20 wa24 wa28 wa2c wa30 wa34 wa38 wa3c waa4 : Word} {v : Nat → Word} {n0 : Machine} {w74 : Word}
     (F : Fr B 0x3830)
     (E0 : SvCode n0.mem)
     (V0 : SvSaves B n0.mem v)
@@ -127,7 +127,7 @@ theorem sv_seg_win {dp B out bp x21 x26 dg c q rl rp : Word} {lih lil : Word} {r
     (w0_a38 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA38) = wa38)
     (w0_a3c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA3C) = wa3c)
     (w0_aa0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp)
-    (w0_aa4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg)
+    (w0_aa4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = waa4)
     (q0_320 : ∀ j, j < 31 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x320 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0))
     (w0_10 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x10) = (BitVec.ofNat 8 (sg.getD 0 0)).zeroExtend 32)
     (q0_1480 : ∀ j, j < 63 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1480 + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0))
@@ -301,7 +301,7 @@ theorem sv_seg_win {dp B out bp x21 x26 dg c q rl rp : Word} {lih lil : Word} {r
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA38) = wa38 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA3C) = wa3c ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = waa4 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1028) = (memLoad32 M0 (((q) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 3)) ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x102C) = (memLoad32 M0 (((q) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 7)) ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1030) = (memLoad32 M0 (((q) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 11)) ∧

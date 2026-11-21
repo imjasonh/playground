@@ -32,6 +32,11 @@ class Loop:
         self.per = [(p, t) for p, t in st.params if p not in GLOBAL and (p, t) not in self.head]
         facts = self.facts = {f.key: f for f in st.facts}
         upd = self.upd = {}
+        types = {}
+        for names, ty in self.binders:
+            for b in names:
+                types[b] = ty
+        self.types = types
         for p, t in self.head:
             key = param_key(p)
             if not key:
@@ -41,14 +46,16 @@ class Loop:
             if f is None:
                 raise ValueError(f"{sname} doesn't keep {p}")
             if f.rhs is None or len(top_split(t, ' = ')) != 2:
-                if strip_parens(re.sub(r"n'", "n0", f.text)) != strip_parens(t):
+                old_t, new_t = strip_parens(t), strip_parens(re.sub(r"n'", "n0", f.text))
+                if new_t != old_t and not self.learn(old_t, new_t, bset):
                     raise ValueError(f"{sname} changes {p}")
                 continue
             new = strip_parens(f.rhs)
             if new != rhs:
-                if rhs not in bset or rhs in upd:
+                if rhs in bset and rhs not in upd:
+                    upd[rhs] = new
+                elif not self.learn(rhs, new, bset):
                     raise ValueError(f"{p}: {rhs} -> {new}")
-                upd[rhs] = new
         head_text = " ".join(t for _, t in self.head)
         self.local = {}
         self.kept_per = []
@@ -74,6 +81,23 @@ class Loop:
             if keep:
                 self.fixed.append("{" + " ".join(keep) + " : " + ty + "}")
         self.kl = re.search(r"\[.*\]", facts['KL'].text).group(0)
+
+    def learn(self, old, new, bset):
+        """Learns the new value of a binder from an expression `old` that names
+        it and the same expression `new` with the value in its place."""
+        for b in sorted(bset, key=len, reverse=True):
+            rx = rf"(?<![\w.']){re.escape(b)}(?![\w'])"
+            if not re.search(rx, old):
+                continue
+            pat = re.sub(rf"(?<![\w.']){re.escape(re.escape(b))}(?![\w'])", lambda _: "(.+?)", re.escape(old))
+            m = re.fullmatch(pat, new)
+            if m and len(set(m.groups())) == 1 and m.group(1) != b:
+                v = m.group(1)
+                if self.upd.get(b, v) != v:
+                    return False
+                self.upd[b] = v
+                return True
+        return False
 
     def tup(self, vs=None):
         vs = vs or self.loopv

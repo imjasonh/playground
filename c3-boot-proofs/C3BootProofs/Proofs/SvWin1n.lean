@@ -22,7 +22,7 @@ theorem svWin1n319e_end : blockEnd sigstoreVerifyCode 0x319E svWin1n319e = some 
   rfl
 
 set_option maxHeartbeats 0 in
-theorem sv_win1n {B out bp x21 x26 dg c q rl rp sgp op ol lih lil k28 k2c k30 k34 i2h i2l i3h i3l t4h t4l t5h t5l : Word} {rt sg : Bytes} {w8 wc w14 w18 w20 w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w74 w78 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word} {wa20 wa24 wa28 wa2c wa30 wa34 wa38 wa3c : Word} {v : Nat → Word} {n0 : Machine}
+theorem sv_win1n {B out bp x21 x26 dg c q rl rp sgp op ol lih lil k28 k2c k30 k34 i2h i2l i3h i3l t4h t4l t5h t5l : Word} {rt sg : Bytes} {w8 wc w14 w18 w20 w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w74 w78 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word} {wa20 wa24 wa28 wa2c wa30 wa34 wa38 wa3c waa4 : Word} {v : Nat → Word} {n0 : Machine}
     (F : Fr B 0x3830) (E0 : SvCode n0.mem) (V0 : SvSaves B n0.mem v) (hret : v 0 &&& ~~~1 = v 0)
     (hO : SvOut B out) (s0 : St n0.mem SV n0 0x318C (reg n0))
     (M0 : Word → BitVec 8) (fM : ∀ x, SvR B x → n0.mem x = M0 x)
@@ -117,7 +117,7 @@ theorem sv_win1n {B out bp x21 x26 dg c q rl rp sgp op ol lih lil k28 k2c k30 k3
     (w0_a38 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA38) = wa38)
     (w0_a3c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA3C) = wa3c)
     (w0_aa0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp)
-    (w0_aa4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg)
+    (w0_aa4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = waa4)
     (q0_320 : ∀ j, j < 31 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x320 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0))
     (w0_10 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x10) = (BitVec.ofNat 8 (sg.getD 0 0)).zeroExtend 32)
     (w0_74 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x74) = w74)
@@ -240,7 +240,7 @@ theorem sv_win1n {B out bp x21 x26 dg c q rl rp sgp op ol lih lil k28 k2c k30 k3
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA38) = wa38 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA3C) = wa3c ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = waa4 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1028) = k28 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x102C) = k2c ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1030) = k30 ∧
@@ -365,7 +365,7 @@ theorem sv_win1n {B out bp x21 x26 dg c q rl rp sgp op ol lih lil k28 k2c k30 k3
   have w1_a38 : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0xA38) = wa38 := by rw [m1]; exact w0_a38
   have w1_a3c : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0xA3C) = wa3c := by rw [m1]; exact w0_a3c
   have w1_aa0 : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp := by rw [m1]; exact w0_aa0
-  have w1_aa4 : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg := by rw [m1]; exact w0_aa4
+  have w1_aa4 : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = waa4 := by rw [m1]; exact w0_aa4
   have w1_1028 : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x1028) = k28 := by rw [m1]; exact w0_1028
   have w1_102c : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x102C) = k2c := by rw [m1]; exact w0_102c
   have w1_1030 : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x1030) = k30 := by rw [m1]; exact w0_1030
@@ -487,7 +487,7 @@ theorem sv_win1n {B out bp x21 x26 dg c q rl rp sgp op ol lih lil k28 k2c k30 k3
   have w2_a38 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0xA38) = wa38 := by rw [m2]; exact w1_a38
   have w2_a3c : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0xA3C) = wa3c := by rw [m2]; exact w1_a3c
   have w2_aa0 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp := by rw [m2]; exact w1_aa0
-  have w2_aa4 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg := by rw [m2]; exact w1_aa4
+  have w2_aa4 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = waa4 := by rw [m2]; exact w1_aa4
   have w2_1028 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x1028) = k28 := by rw [m2]; exact w1_1028
   have w2_102c : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x102C) = k2c := by rw [m2]; exact w1_102c
   have w2_1030 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x1030) = k30 := by rw [m2]; exact w1_1030
@@ -608,7 +608,7 @@ theorem sv_win1n {B out bp x21 x26 dg c q rl rp sgp op ol lih lil k28 k2c k30 k3
   have w3_a38 : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0xA38) = wa38 := by rw [m3]; exact w2_a38
   have w3_a3c : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0xA3C) = wa3c := by rw [m3]; exact w2_a3c
   have w3_aa0 : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp := by rw [m3]; exact w2_aa0
-  have w3_aa4 : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg := by rw [m3]; exact w2_aa4
+  have w3_aa4 : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = waa4 := by rw [m3]; exact w2_aa4
   have w3_1028 : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x1028) = k28 := by rw [m3]; exact w2_1028
   have w3_102c : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x102C) = k2c := by rw [m3]; exact w2_102c
   have w3_1030 : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x1030) = k30 := by rw [m3]; exact w2_1030
@@ -731,7 +731,7 @@ theorem sv_win1n {B out bp x21 x26 dg c q rl rp sgp op ol lih lil k28 k2c k30 k3
   have w4_a38 : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0xA38) = wa38 := by rw [m4]; exact w3_a38
   have w4_a3c : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0xA3C) = wa3c := by rw [m4]; exact w3_a3c
   have w4_aa0 : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp := by rw [m4]; exact w3_aa0
-  have w4_aa4 : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg := by rw [m4]; exact w3_aa4
+  have w4_aa4 : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = waa4 := by rw [m4]; exact w3_aa4
   have w4_1028 : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x1028) = k28 := by rw [m4]; exact w3_1028
   have w4_102c : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x102C) = k2c := by rw [m4]; exact w3_102c
   have w4_1030 : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x1030) = k30 := by rw [m4]; exact w3_1030
@@ -854,7 +854,7 @@ theorem sv_win1n {B out bp x21 x26 dg c q rl rp sgp op ol lih lil k28 k2c k30 k3
   have w5_a38 : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0xA38) = wa38 := by rw [m5]; exact w4_a38
   have w5_a3c : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0xA3C) = wa3c := by rw [m5]; exact w4_a3c
   have w5_aa0 : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp := by rw [m5]; exact w4_aa0
-  have w5_aa4 : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg := by rw [m5]; exact w4_aa4
+  have w5_aa4 : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = waa4 := by rw [m5]; exact w4_aa4
   have w5_1028 : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x1028) = k28 := by rw [m5]; exact w4_1028
   have w5_102c : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x102C) = k2c := by rw [m5]; exact w4_102c
   have w5_1030 : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x1030) = k30 := by rw [m5]; exact w4_1030
@@ -975,7 +975,7 @@ theorem sv_win1n {B out bp x21 x26 dg c q rl rp sgp op ol lih lil k28 k2c k30 k3
   have w6_a38 : memLoad32 n6.mem (B + 0x21A0 + BitVec.ofNat 32 0xA38) = wa38 := by rw [m6]; exact w5_a38
   have w6_a3c : memLoad32 n6.mem (B + 0x21A0 + BitVec.ofNat 32 0xA3C) = wa3c := by rw [m6]; exact w5_a3c
   have w6_aa0 : memLoad32 n6.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp := by rw [m6]; exact w5_aa0
-  have w6_aa4 : memLoad32 n6.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg := by rw [m6]; exact w5_aa4
+  have w6_aa4 : memLoad32 n6.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = waa4 := by rw [m6]; exact w5_aa4
   have w6_1028 : memLoad32 n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x1028) = k28 := by rw [m6]; exact w5_1028
   have w6_102c : memLoad32 n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x102C) = k2c := by rw [m6]; exact w5_102c
   have w6_1030 : memLoad32 n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x1030) = k30 := by rw [m6]; exact w5_1030
@@ -1113,7 +1113,7 @@ theorem sv_win1n {B out bp x21 x26 dg c q rl rp sgp op ol lih lil k28 k2c k30 k3
   have w7_a38 : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0xA38) = wa38 := by rw [m7]; exact w6_a38
   have w7_a3c : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0xA3C) = wa3c := by rw [m7]; exact w6_a3c
   have w7_aa0 : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp := by rw [m7]; exact w6_aa0
-  have w7_aa4 : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg := by rw [m7]; exact w6_aa4
+  have w7_aa4 : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = waa4 := by rw [m7]; exact w6_aa4
   have w7_1028 : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x1028) = k28 := by rw [m7]; exact w6_1028
   have w7_102c : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x102C) = k2c := by rw [m7]; exact w6_102c
   have w7_1030 : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x1030) = k30 := by rw [m7]; exact w6_1030
@@ -1236,7 +1236,7 @@ theorem sv_win1n {B out bp x21 x26 dg c q rl rp sgp op ol lih lil k28 k2c k30 k3
     have w8_a38 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0xA38) = wa38 := by rw [m8]; exact w7_a38
     have w8_a3c : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0xA3C) = wa3c := by rw [m8]; exact w7_a3c
     have w8_aa0 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp := by rw [m8]; exact w7_aa0
-    have w8_aa4 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg := by rw [m8]; exact w7_aa4
+    have w8_aa4 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = waa4 := by rw [m8]; exact w7_aa4
     have w8_1028 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x1028) = k28 := by rw [m8]; exact w7_1028
     have w8_102c : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x102C) = k2c := by rw [m8]; exact w7_102c
     have w8_1030 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x1030) = k30 := by rw [m8]; exact w7_1030
@@ -1357,7 +1357,7 @@ theorem sv_win1n {B out bp x21 x26 dg c q rl rp sgp op ol lih lil k28 k2c k30 k3
     have w9_a38 : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0xA38) = wa38 := by rw [m9]; exact w8_a38
     have w9_a3c : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0xA3C) = wa3c := by rw [m9]; exact w8_a3c
     have w9_aa0 : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp := by rw [m9]; exact w8_aa0
-    have w9_aa4 : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg := by rw [m9]; exact w8_aa4
+    have w9_aa4 : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = waa4 := by rw [m9]; exact w8_aa4
     have w9_1028 : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x1028) = k28 := by rw [m9]; exact w8_1028
     have w9_102c : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x102C) = k2c := by rw [m9]; exact w8_102c
     have w9_1030 : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x1030) = k30 := by rw [m9]; exact w8_1030
@@ -1479,7 +1479,7 @@ theorem sv_win1n {B out bp x21 x26 dg c q rl rp sgp op ol lih lil k28 k2c k30 k3
   have w8_a38 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0xA38) = wa38 := by rw [m8]; exact w7_a38
   have w8_a3c : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0xA3C) = wa3c := by rw [m8]; exact w7_a3c
   have w8_aa0 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp := by rw [m8]; exact w7_aa0
-  have w8_aa4 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg := by rw [m8]; exact w7_aa4
+  have w8_aa4 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = waa4 := by rw [m8]; exact w7_aa4
   have w8_1028 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x1028) = k28 := by rw [m8]; exact w7_1028
   have w8_102c : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x102C) = k2c := by rw [m8]; exact w7_102c
   have w8_1030 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x1030) = k30 := by rw [m8]; exact w7_1030

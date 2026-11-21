@@ -66,6 +66,15 @@ theorem svRem_le {r : Word} {a N : Nat} (h2 : 2 ≤ a) (ha : a ≤ r.toNat) (hN 
   simp only [Nat.reducePow] at *
   omega
 
+/-- What is left of a slice after a line and its newline. -/
+theorem svRem_le1 {r : Word} {a N : Nat} (h1 : 1 ≤ a) (ha : a ≤ r.toNat) (hN : r.toNat ≤ N + 1) :
+    (BitVec.ofNat 32 r.toNat - BitVec.ofNat 32 a).toNat ≤ N := by
+  bv_omega
+
+theorem svSubOfNat_toNat {r : Word} {a : Nat} (ha : a ≤ r.toNat) :
+    (BitVec.ofNat 32 r.toNat - BitVec.ofNat 32 a).toNat = r.toNat - a := by
+  bv_omega
+
 theorem svRem_zero {r : Word} (h : r.toNat ≤ 0) : r = 0 := BitVec.eq_of_toNat_eq (by simp; omega)
 
 /-- A slice without its first `k` bytes, its length written as the code
