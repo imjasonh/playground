@@ -1,0 +1,4 @@
+/xiao-otel
+/terraform/.terraform/
+/terraform/*.tfstate*
+/terraform/.tofu-plan.*

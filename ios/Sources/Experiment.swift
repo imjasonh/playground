@@ -58,5 +58,6 @@ enum ExperimentCatalog {
         LayaExperiment.experiment,
         BlatherExperiment.experiment,
         PhoneVRExperiment.experiment,
+        XIAOESP32C3Experiment.experiment,
     ]
 }

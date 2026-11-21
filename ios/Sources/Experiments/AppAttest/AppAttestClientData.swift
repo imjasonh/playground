@@ -20,6 +20,7 @@ struct AppAttestClientData: Codable, Equatable {
 struct AppAttestAssertionClientData: Codable, Equatable {
     var action: String
     var challenge: String
+    var payload: String?
 
     static let whoami = "whoami"
 

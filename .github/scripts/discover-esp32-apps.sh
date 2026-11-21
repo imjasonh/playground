@@ -2,9 +2,9 @@
 # Discover top-level ESP32 firmware crates and emit a JSON array.
 #
 # An ESP32 firmware crate is a non-hidden top-level directory with Cargo.toml
-# whose .cargo/config.toml configures an Xtensa ESP-IDF target. Device builds
-# need the espup Xtensa toolchain, so discover-rust-apps.sh leaves these out
-# and test.yml's ESP32 jobs test them instead.
+# whose .cargo/config.toml configures an Xtensa or RISC-V ESP-IDF target. Device
+# builds need the espup / ESP-IDF toolchain, so discover-rust-apps.sh leaves
+# these out and test.yml's ESP32 jobs test them instead.
 #
 # Usage:
 #   discover-esp32-apps.sh --all
@@ -25,7 +25,7 @@ is_esp32_app() {
   local name="$1"
   [[ "$name" != .* && "$name" != */* ]] &&
     [[ -f "$name/Cargo.toml" ]] &&
-    grep -Eq '^\[target\.xtensa-[^]]*-espidf\]' "$name/.cargo/config.toml" 2>/dev/null
+    grep -Eq '^\[target\.(xtensa|riscv32[a-z]*)-[^]]*-espidf\]' "$name/.cargo/config.toml" 2>/dev/null
 }
 
 every_esp32_app() {
