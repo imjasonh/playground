@@ -95,6 +95,7 @@ variable "app_service_accounts" {
     "cloudrun-sqlite"        = "cloudrun-sqlite service"
     "cloudrun-sqlite-reader" = "cloudrun-sqlite read-only replica"
     "stream-boids"           = "stream-boids VM"
+    "xiao-otel"              = "xiao-otel App Attest OTLP collector"
   }
 
   validation {

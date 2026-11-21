@@ -139,4 +139,17 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         XCTAssertEqual(controller.history.count, 2)
         XCTAssertEqual(controller.latestSample?.metrics.wakeCount, 10)
     }
+
+    @MainActor
+    func testResolveMetricsAndBaseURLs() {
+        let fromHost = XIAOESP32C3Controller.resolveMetricsURL(from: "https://xiao-otel-xyz.a.run.app")
+        XCTAssertEqual(fromHost?.absoluteString, "https://xiao-otel-xyz.a.run.app/v1/metrics")
+        if let fromHost {
+            let base = XIAOESP32C3Controller.resolveBaseURL(from: fromHost)
+            XCTAssertEqual(base?.absoluteString, "https://xiao-otel-xyz.a.run.app/")
+        }
+
+        let fromFull = XIAOESP32C3Controller.resolveMetricsURL(from: "http://192.168.1.50:4318/v1/metrics")
+        XCTAssertEqual(fromFull?.absoluteString, "http://192.168.1.50:4318/v1/metrics")
+    }
 }

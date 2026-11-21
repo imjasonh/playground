@@ -154,6 +154,9 @@ them:
   `epd_refresh`, and `radio`), toggles a GPIO logic probe for hardware power
   profilers, and broadcasts 24-byte BLE Manufacturer Specific Data bursts to
   the Playground iOS **XIAO ESP32C3** dashboard and OTLP forwarder.
+- **[`xiao-otel/`](xiao-otel/)** — Go service on Cloud Run that verifies Apple
+  App Attest assertions from the Playground iOS app and writes XIAO ESP32C3
+  OTLP/HTTP telemetry to Google Cloud Monitoring (Go + Terraform).
 - **[`git-server/`](git-server/)** — a git smart-HTTP server for Cloudflare
   Workers, in Rust: repositories in R2, refs in Durable Objects, plus
   file/tree/blame APIs and streaming pack ingest.

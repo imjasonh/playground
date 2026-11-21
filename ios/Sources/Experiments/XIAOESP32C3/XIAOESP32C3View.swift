@@ -216,6 +216,16 @@ struct XIAOESP32C3View: View {
             .frame(minHeight: 44)
             .accessibilityIdentifier("xiaoOtelAutoForwardToggle")
 
+            Toggle(
+                "Authorize with Apple App Attest (xiao-otel Cloud Run)",
+                isOn: Binding(
+                    get: { controller.useAppAttest },
+                    set: { controller.updateUseAppAttest($0) }
+                )
+            )
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("xiaoOtelAppAttestToggle")
+
             HStack(spacing: 8) {
                 TextField(
                     XIAOESP32C3Protocol.defaultOtelEndpoint,

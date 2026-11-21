@@ -1,5 +1,6 @@
 import Combine
 @preconcurrency import CoreBluetooth
+import DeviceCheck
 import Foundation
 
 /// A single received BLE telemetry frame from a Seeed Studio XIAO ESP32C3 board.
@@ -15,11 +16,14 @@ struct XIAOESP32C3Sample: Identifiable, Equatable {
 /// Scans for connectionless XIAO ESP32C3 BLE Manufacturer Specific Data (`0xFFFF`)
 /// bursts, deduplicates frames by sequence number (`seq`), updates the live
 /// performance and e-paper refresh dashboard, and optionally POSTs OTLP/HTTP
-/// JSON payloads to an OpenTelemetry Collector.
+/// JSON payloads to an OpenTelemetry Collector or the `xiao-otel` Cloud Run
+/// service (authorized with Apple App Attest).
 @MainActor
 final class XIAOESP32C3Controller: NSObject, ObservableObject {
     private static let endpointDefaultsKey = "xiao-esp32c3.otelEndpoint"
     private static let forwardingDefaultsKey = "xiao-esp32c3.forwardingEnabled"
+    private static let appAttestEnabledDefaultsKey = "xiao-esp32c3.useAppAttest"
+    private static let registeredHostDefaultsKey = "xiao-esp32c3.attestedHost"
 
     @Published var bluetoothState: CBManagerState = .unknown
     @Published var isScanning = false
@@ -27,6 +31,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     @Published var history: [XIAOESP32C3Sample] = []
     @Published var otelEndpoint: String
     @Published var forwardingEnabled: Bool
+    @Published var useAppAttest: Bool
     @Published var forwardedCount = 0
     @Published var lastForwardStatus = "Not forwarded yet."
     @Published var statusMessage = "Flash xiao-esp32c3 or inject a simulated wake burst."
@@ -36,16 +41,32 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     private var simulatedSeq: UInt8 = 0
     private var simulatedWakeCount: UInt32 = 0
     private let defaults: UserDefaults
+    private let attestKeys: any AppAttestKeyGenerating
+    private let attestStore: any AppAttestStoring
+    private let http: any AppAttestHTTPClient
     private let simulatedDeviceId = UUID()
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        attestKeys: any AppAttestKeyGenerating = SystemAppAttestKeys(),
+        attestStore: (any AppAttestStoring)? = nil,
+        http: any AppAttestHTTPClient = URLSession.shared
+    ) {
         self.defaults = defaults
+        self.attestKeys = attestKeys
+        self.attestStore = attestStore ?? AppAttestUserDefaultsStore(defaults: defaults)
+        self.http = http
         if let savedEndpoint = defaults.string(forKey: Self.endpointDefaultsKey), !savedEndpoint.isEmpty {
             self.otelEndpoint = savedEndpoint
         } else {
             self.otelEndpoint = XIAOESP32C3Protocol.defaultOtelEndpoint
         }
         self.forwardingEnabled = defaults.bool(forKey: Self.forwardingDefaultsKey)
+        if defaults.object(forKey: Self.appAttestEnabledDefaultsKey) != nil {
+            self.useAppAttest = defaults.bool(forKey: Self.appAttestEnabledDefaultsKey)
+        } else {
+            self.useAppAttest = true
+        }
         super.init()
     }
 
@@ -115,6 +136,11 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     func updateForwardingEnabled(_ enabled: Bool) {
         forwardingEnabled = enabled
         defaults.set(enabled, forKey: Self.forwardingDefaultsKey)
+    }
+
+    func updateUseAppAttest(_ enabled: Bool) {
+        useAppAttest = enabled
+        defaults.set(enabled, forKey: Self.appAttestEnabledDefaultsKey)
     }
 
     /// Inject a realistic wake-cycle telemetry packet for testing on Simulator or without a board nearby.
@@ -197,7 +223,9 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
 
     private func forwardToOtel(sample: XIAOESP32C3Sample) {
         let trimmed = otelEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: trimmed), let scheme = url.scheme, scheme == "http" || scheme == "https" else {
+        guard let metricsURL = Self.resolveMetricsURL(from: trimmed),
+              let baseURL = Self.resolveBaseURL(from: metricsURL)
+        else {
             lastForwardStatus = "Invalid OTLP URL: \(trimmed)"
             return
         }
@@ -212,21 +240,22 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             return
         }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 4
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
-
-        lastForwardStatus = "POSTing wake #\(sample.metrics.wakeCount) to \(url.host ?? trimmed)…"
         let wakeNumber = sample.metrics.wakeCount
+        let shouldAttest = useAppAttest
+        lastForwardStatus = "POSTing wake #\(wakeNumber) to \(metricsURL.host ?? trimmed)…"
         Task { @MainActor in
             do {
-                let (_, response) = try await URLSession.shared.data(for: request)
-                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                let code = try await self.postMetrics(
+                    body: body,
+                    metricsURL: metricsURL,
+                    baseURL: baseURL,
+                    authorizeWithAppAttest: shouldAttest
+                )
                 if (200..<300).contains(code) {
                     self.forwardedCount += 1
-                    self.lastForwardStatus = "Exported wake #\(wakeNumber) (HTTP \(code))."
+                    self.lastForwardStatus = shouldAttest
+                        ? "Exported wake #\(wakeNumber) with App Attest (HTTP \(code))."
+                        : "Exported wake #\(wakeNumber) (HTTP \(code))."
                 } else {
                     self.lastForwardStatus = "Collector returned HTTP \(code) for wake #\(wakeNumber)."
                 }
@@ -234,6 +263,122 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
                 self.lastForwardStatus = "Export failed: \(error.localizedDescription)"
             }
         }
+    }
+
+    /// Export `body` to `metricsURL`, optionally performing the App Attest handshake and
+    /// attaching `X-Apple-App-Attest-*` assertion headers for the `xiao-otel` Cloud Run backend.
+    func postMetrics(
+        body: Data,
+        metricsURL: URL,
+        baseURL: URL,
+        authorizeWithAppAttest: Bool
+    ) async throws -> Int {
+        var request = URLRequest(url: metricsURL)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 6
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+
+        if authorizeWithAppAttest {
+            let api = AppAttestAPI(baseURL: baseURL, http: http)
+            let keyId = try await ensureBackendAttested(api: api, baseURL: baseURL)
+            let challenge = try await api.fetchChallenge()
+            let clientData = AppAttestAssertionClientData(
+                action: "metrics",
+                challenge: challenge.challenge
+            )
+            let clientJSON = try clientData.jsonBytes()
+            request.setValue(keyId, forHTTPHeaderField: "X-Apple-App-Attest-Key-Id")
+            request.setValue(
+                clientJSON.base64EncodedString(),
+                forHTTPHeaderField: "X-Apple-App-Attest-Client-Data"
+            )
+            if attestKeys.isSupported {
+                let assertion = try await attestKeys.generateAssertion(
+                    keyId,
+                    clientDataHash: AppAttestHashing.sha256(clientJSON)
+                )
+                request.setValue(
+                    assertion.base64EncodedString(),
+                    forHTTPHeaderField: "X-Apple-App-Attest-Assertion"
+                )
+            }
+        }
+
+        let (_, response) = try await http.data(for: request)
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401, authorizeWithAppAttest {
+            // If Cloud Run restarted and lost in-memory registration, re-register once and retry.
+            defaults.removeObject(forKey: Self.registeredHostDefaultsKey)
+        }
+        return code
+    }
+
+    private func ensureBackendAttested(api: AppAttestAPI, baseURL: URL) async throws -> String {
+        let hostKey = baseURL.absoluteString
+        if defaults.string(forKey: Self.registeredHostDefaultsKey) == hostKey,
+           let existingKey = attestStore.keyId,
+           !existingKey.isEmpty
+        {
+            return existingKey
+        }
+
+        let challenge = try await api.fetchChallenge()
+        let userId = attestStore.userId.isEmpty ? "xiao-ios-\(attestStore.deviceId)" : attestStore.userId
+        let clientData = AppAttestClientData(
+            challenge: challenge.challenge,
+            userId: userId,
+            deviceId: attestStore.deviceId
+        )
+        let clientJSON = try clientData.jsonBytes()
+        let registered: AppAttestRegisterResponse
+        if attestKeys.isSupported {
+            let hash = AppAttestHashing.sha256(clientJSON)
+            let keyId: String
+            if let existing = attestStore.keyId, !existing.isEmpty {
+                keyId = existing
+            } else {
+                let fresh = try await attestKeys.generateKey()
+                attestStore.keyId = fresh
+                keyId = fresh
+            }
+            let attestation = try await attestKeys.attestKey(keyId, clientDataHash: hash)
+            registered = try await api.register(
+                keyId: keyId,
+                attestationObject: attestation,
+                clientDataJSON: clientJSON
+            )
+        } else {
+            registered = try await api.registerUnattested(clientDataJSON: clientJSON)
+        }
+        attestStore.keyId = registered.keyId
+        attestStore.isRegistered = true
+        defaults.set(hostKey, forKey: Self.registeredHostDefaultsKey)
+        return registered.keyId
+    }
+
+    static func resolveMetricsURL(from raw: String) -> URL? {
+        guard let url = URL(string: raw),
+              let scheme = url.scheme,
+              scheme == "http" || scheme == "https"
+        else {
+            return nil
+        }
+        if url.path.isEmpty || url.path == "/" {
+            return url.appending(path: "v1/metrics")
+        }
+        return url
+    }
+
+    static func resolveBaseURL(from metricsURL: URL) -> URL? {
+        guard var components = URLComponents(url: metricsURL, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        if components.path.hasSuffix("/v1/metrics") {
+            let prefix = components.path.dropLast("/v1/metrics".count)
+            components.path = prefix.isEmpty ? "/" : String(prefix)
+        }
+        return components.url
     }
 
     private func applyBluetoothState(_ state: CBManagerState) {
