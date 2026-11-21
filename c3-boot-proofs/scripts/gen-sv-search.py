@@ -21,6 +21,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from svchain import DEFAULTS, IDENT, Chain, Stage, lean_binders, strip_parens, subst, top_split  # noqa: E402
 from svloop import GLOBAL, Loop  # noqa: E402
+from svmerge import sc_pattern  # noqa: E402
 
 # file: (theorem, miss, hit, end, doc)
 SEARCHES = {
@@ -159,9 +160,56 @@ def write(fname):
     O(f"      | zero => cases e1.trans (svIter_zero _ {tup}); exact hm")
     O(f"      | succ i => exact hn i (by omega) {vs} (e1.trans (svIter_succ _ i {tup}))")
     O("")
+    stage_form(O, name, okname, L, H, ps, valid, hm, cnt)
+    O("")
     O("end C3.RV32.Sv")
     O("")
     open(f'C3BootProofs/Proofs/{fname}.lean', 'w').write("\n".join(out))
+
+
+def stage_form(O, name, okname, L, H, ps, valid, hm, cnt):
+    """The search as a stage: its hypotheses, then an error return or the
+    entry that matches and the state at the end of `hit`."""
+    fixed = " ".join(L.fixed)
+    hn = [p for p, _ in L.head]
+    nm = sc_pattern(H)
+    facts = []
+    for f in H.facts:
+        if f.key == 'STEPS':
+            continue
+        t = L.primed(f.text)
+        if f.key in ('r3', 'r4'):
+            t = f"reg n' ({f.key[1]} : Fin 32) = reg n0 ({f.key[1]} : Fin 32)"
+        elif f.key == 'KL':
+            u = list(dict.fromkeys(re.findall(r"\(0x[0-9A-F]+, 0x[0-9A-F]+\)", L.kl + f.text)))
+            t = "SvKeepL B n0.mem n'.mem [" + ", ".join(u) + "]"
+        facts.append((f.key, f"({t})" if t.startswith('∀') else t))
+    vtext = " ∧ ".join(f"({L.primed(t)})" for _, t in valid) or "True"
+    O("set_option maxHeartbeats 16000000 in")
+    O("set_option maxRecDepth 100000 in")
+    O(f"/-- `{name}` as a stage. -/")
+    O(f"theorem {name}_st {fixed} {{N : Nat}} {{{' '.join(L.loopv)} : Word}} {{n0 : Machine}}")
+    O("    " + " ".join(f"({p} : {t})" for p, t in L.st.params if p in GLOBAL))
+    O(f"    (hz : ∀ {' '.join(ps)}, {L.peq('N')} → {cnt}' = 0)")
+    for p, t in L.head:
+        O(f"    ({p} : {t})")
+    O(f"    (H : ∀ i, i < N → ∀ {' '.join(ps)}, {L.peq('i')} → {vtext}) :")
+    O("    SvErrRet B out v n0 ∨")
+    O("    (∃ k, k < N ∧")
+    O(f"      (∀ i, i < k → ∀ {' '.join(ps)}, {L.peq('i')} → ¬ ({L.primed(hm)})) ∧")
+    O(f"      ∃ {' '.join(ps)}, {L.peq('k')} ∧")
+    if H.sc_parts:
+        O("      " + " ∧ ".join(L.primed(x) for x in H.sc_parts) + " ∧")
+    O("    ∃ n', Steps n0 n' ∧")
+    O("        " + " ∧\n        ".join(t for _, t in facts) + ") := by")
+    O(f"  rcases {name} F hret hO M0 N hz {' '.join(hn)} H with e | ⟨k, hk, hn, {', '.join(ps)}, e0, nk, cs, hr3, hr4, hkl, okh⟩")
+    O("  · exact .inl e")
+    O(f"  unfold {okname} at okh")
+    O(f"  obtain ⟨{', '.join(nm + ['n1', 'cn'] + [f'f_{k}' for k, _ in facts])}⟩ := okh")
+    terms = []
+    for k, _ in facts:
+        terms.append({"r3": "f_r3.trans hr3", "r4": "f_r4.trans hr4", "KL": "(hkl.trans f_KL).mono (by decide)"}.get(k, f"f_{k}"))
+    O(f"  exact .inr ⟨k, hk, hn, {', '.join(ps)}, e0, {', '.join(nm + ['n1', 'cs.trans cn'] + terms)}⟩")
 
 
 if __name__ == "__main__":

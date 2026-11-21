@@ -163,6 +163,45 @@ def main():
     O(f"    · exact .inr ⟨k + 1, {', '.join(ps)}, svChain.cons ⟨h0, {', '.join(names1)}, rfl⟩ chn, nk, c1.trans cs, "
       "h3.trans r1_3, h4.trans r1_4, (K1_L.trans hk).mono (by decide), okk⟩")
     O("")
+    # The loop as a stage.
+    pr = dict(zip(loopv, ps))
+    facts = []
+    for f in X.facts:
+        if f.key == 'STEPS':
+            continue
+        t = subst(f.text, pr)
+        if f.key in ('r3', 'r4'):
+            t = f"reg n' ({f.key[1]} : Fin 32) = reg n0 ({f.key[1]} : Fin 32)"
+        elif f.key == 'KL':
+            u = list(dict.fromkeys(re.findall(r"\(0x[0-9A-F]+, 0x[0-9A-F]+\)", L.kl + f.text)))
+            t = "SvKeepL B n0.mem n'.mem [" + ", ".join(u) + "]"
+        facts.append((f.key, f"({t})" if t.startswith('∀') else t))
+    xnm = sc_pattern(X)
+    O("set_option maxHeartbeats 16000000 in")
+    O("set_option maxRecDepth 100000 in")
+    O(f"/-- `{NAME}` as a stage. -/")
+    O(f"theorem {NAME}_st {fixed} {{N : Nat}} {{dg flag cp rem : Word}} {{n0 : Machine}}")
+    O("    " + " ".join(f"({p} : {t})" for p, t in st.params if p in GLOBAL))
+    O("    (hN : rem.toNat ≤ N) (hflag : flag = 0 ∨ flag = 1)")
+    for p, t in head:
+        O(f"    ({p} : {t})")
+    for p, t in L.kept_per:
+        if p != 'hrem':
+            O(f"    ({p} : {t})")
+    O("    :")
+    O("    SvErrRet B out v n0 ∨")
+    O(f"    (∃ k {' '.join(ps)}, svChain ({STEP} {fixed_names} M0) k {tup} {ptup} ∧")
+    O("      rem' = 0 ∧" + ("" if not X.sc_parts else "\n      " + " ∧ ".join(subst(x, pr) for x in X.sc_parts) + " ∧"))
+    O("    ∃ n', Steps n0 n' ∧")
+    O("        " + " ∧\n        ".join(t for _, t in facts) + ") := by")
+    O(f"  rcases {NAME} F hret hO M0 N hN hflag {' '.join(hn)} {' '.join(per_names)} with e | "
+      f"⟨k, {', '.join(ps)}, chn, nk, cs, hr3, hr4, hkl, okh⟩")
+    O("  · exact .inl e")
+    O(f"  obtain ⟨hz, {', '.join(xnm + ['n1', 'cn'] + [f'f_{k}' for k, _ in facts])}⟩ := okh")
+    terms = [{"r3": "f_r3.trans hr3", "r4": "f_r4.trans hr4", "KL": "(hkl.trans f_KL).mono (by decide)"}.get(k, f"f_{k}")
+             for k, _ in facts]
+    O(f"  exact .inr ⟨k, {', '.join(ps)}, chn, hz, {', '.join(xnm + ['n1', 'cs.trans cn'] + terms)}⟩")
+    O("")
     O("end C3.RV32.Sv")
     O("")
     open('C3BootProofs/Proofs/SvAttrLoop.lean', 'w').write("\n".join(out))
