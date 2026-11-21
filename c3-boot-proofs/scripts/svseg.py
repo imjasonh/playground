@@ -1,0 +1,276 @@
+"""Writes a segment theorem of `sigstore::verify`: a run of generated stages,
+composed with `svchain.Chain`.
+
+The theorem takes the first stage's hypotheses. It ends in an error
+return, a panic, or every stage's success condition followed by the state
+at the segment's end. The success conditions stay one chain of conjuncts,
+so later conditions and facts can name earlier stages' witnesses.
+
+A later stage's hypothesis that no earlier fact gives is one of:
+- a hypothesis of the first stage with the same name and type;
+- a code or data fact about `M0`, which the theorem also takes;
+- an `SvIn` fact about a slice that a DER parse in an earlier success
+  condition found, which `SvIn.contentW`, `SvIn.restW`, and `SvIn.rawW`
+  derive from the slice it parsed;
+- a term from `extra`.
+"""
+
+import re
+
+from svchain import Chain, Stage, fname, strip_parens, top_split
+
+GLOBAL_TYPES = ('CodeIn M0', 'P2Data M0', 'P2Code M0', 'BYEnv M0', 'BGEnv M0', 'SvEcCode M0', 'SvIvCode M0',
+                'SvUpCode M0', 'SvRoSep B', 'SvShaCode M0', 'PvEnv7 M0', 'SvWnCode M0', 'SvKSep B')
+
+
+def strip_exists(part):
+    while part.startswith('∃ '):
+        part = part[part.index(',') + 1:].strip()
+    return part
+
+
+def witnesses(stage, k):
+    ren = {}
+    for part in stage.sc_parts:
+        while part.startswith('∃ '):
+            c = part.index(',')
+            for b in part[2:c].split():
+                ren[b] = f"{b}_{k}"
+            part = part[c + 1:].strip()
+    return ren
+
+
+def split_in(s):
+    """The pointer and length word of `SvIn B p l.toNat`'s arguments `p l.toNat`."""
+    parts = [x for x in top_split(s.strip(), ' ') if x]
+    return canon(parts[0]), canon(" ".join(parts[1:]))
+
+
+def split_sum(e):
+    """The top-level terms of a `+`/`-` chain: [(op, term)], the first op ''."""
+    out, depth, cur, op, i = [], 0, '', '', 0
+    while i < len(e):
+        c = e[i]
+        if c in '([{⟨':
+            depth += 1
+        elif c in ')]}⟩':
+            depth -= 1
+        if depth == 0 and (e.startswith(' + ', i) or e.startswith(' - ', i)):
+            out.append((op, cur))
+            op, cur = e[i + 1], ''
+            i += 3
+            continue
+        cur += c
+        i += 1
+    out.append((op, cur))
+    return out
+
+
+def canon(e):
+    """`e` without parentheses that left association or application makes redundant."""
+    e = strip_parens(e.strip())
+    terms = split_sum(e)
+    if len(terms) > 1:
+        out = canon(terms[0][1])
+        for op, t in terms[1:]:
+            c = canon(t)
+            out += f" {op} " + (f"({c})" if len(split_sum(c)) > 1 else c)
+        return out
+    toks = [t for t in top_split(e, ' ') if t]
+    if len(toks) > 1:
+        return " ".join(canon_atom(t) for t in toks)
+    return canon_atom(e) if e.startswith('(') else e
+
+
+def canon_atom(t):
+    m = re.fullmatch(r"(\(.*\))((?:\.\w+)*)", t)
+    if m and strip_parens(m.group(1)) != m.group(1):
+        c = canon(m.group(1))
+        atomic = len([x for x in top_split(c, ' ') if x]) == 1
+        return (c if atomic else f"({c})") + m.group(2)
+    return t
+
+
+def chain_steps(K):
+    s = f"c{K}"
+    for k in range(K - 1, 0, -1):
+        s = f"c{k}.trans ({s})"
+    return s
+
+
+class Segment:
+    def __init__(self, name, seq, doc, extra=None):
+        self.name = name
+        self.stages = [Stage(*x) for x in seq]
+        self.seq = seq
+        self.doc = doc
+        self.extra = extra or {}
+
+    def derive_in(self, ptr, n):
+        """A proof of `SvIn B ptr n`, with `ptr` and the length `n` in `canon` form."""
+        for p, l, pf in self.ins:
+            if p == ptr and l == n:
+                return pf
+        if ptr in self.bits:
+            pf, tl, bl = self.bits[ptr]
+            if tl in self.parses:
+                hp, P0, N0 = self.parses[tl]
+                base = self.derive_in(P0, N0)
+                if base:
+                    term = f"SvIn.bitsW ({base}) {hp} {pf}"
+                    if n == canon(f"{bl}.toNat"):
+                        return term
+                    if bl in self.eqs and self.eqs[bl][1] == n:
+                        return f"by have h := {term}; rw [{self.eqs[bl][0]}] at h; exact h"
+        m = re.fullmatch(r"(.+) \+ BitVec\.ofNat 32 (\w+)\.header", ptr)
+        if m and m.group(2) in self.parses:
+            w = m.group(2)
+            hp, P0, N0 = self.parses[w]
+            if canon(m.group(1)) == P0:
+                base = self.derive_in(P0, N0)
+                if base and n == canon(f"{w}.len"):
+                    return f"({base}).content {hp}"
+                if base and n == canon(f"(BitVec.ofNat 32 {w}.len).toNat"):
+                    return f"(({base}).content {hp}).ofNatLen"
+        m = re.fullmatch(r"(.+) \+ BitVec\.ofNat 32 \((\w+)\.header \+ \2\.len\)", ptr)
+        if m and m.group(2) in self.parses:
+            w = m.group(2)
+            hp, P0, N0 = self.parses[w]
+            hl = f"BitVec.ofNat 32 ({w}.header + {w}.len)"
+            if canon(m.group(1)) == P0:
+                base = self.derive_in(P0, N0)
+                if base and N0.endswith('.toNat') and n == canon(f"({N0[:-6]} - {hl}).toNat"):
+                    return f"({base}).restW {hp}"
+                if base and n == canon(f"{N0} - ({w}.header + {w}.len)"):
+                    return f"({base}).rest {hp}"
+                if base and n == canon(f"(BitVec.ofNat 32 ({N0}) - {hl}).toNat"):
+                    return f"({base}).restN {hp}"
+        for w, (hp, P0, N0) in self.parses.items():
+            if P0 != ptr:
+                continue
+            base = None
+            if n == canon(f"{w}.header + {w}.len") and N0.endswith('.toNat'):
+                base = self.derive_in(P0, N0)
+                if base:
+                    return f"({base}).rawN {hp}"
+            if n == canon(f"(BitVec.ofNat 32 ({w}.header + {w}.len)).toNat") and N0.endswith('.toNat'):
+                base = self.derive_in(P0, N0)
+                if base:
+                    return f"({base}).rawW {hp}"
+        return None
+
+    def resolve(self, p, ty):
+        if p in self.extra:
+            return self.extra[p]
+        for q, t in self.hyps:
+            if q == p and t == ty:
+                return p
+        if ty.startswith('SvIn B '):
+            ptr, ln = split_in(ty[len('SvIn B '):])
+            pf = self.derive_in(ptr, ln)
+            return f"({pf})" if pf else None
+        if ty.startswith(GLOBAL_TYPES) and not re.search(r"(?<![\w.'])n\d+(?![\w'])", ty):
+            nm = p
+            while nm in {q for q, _ in self.hyps}:
+                nm += "'"
+            self.hyps.append((nm, ty))
+            return nm
+        return None
+
+    def build(self):
+        first = self.stages[0]
+        s = open('C3BootProofs/Proofs/' + self.seq[0][0] + '.lean').read()
+        i = s.index(f'theorem {first.name} ')
+        self.binders = s[i + len(f'theorem {first.name} '):s.index('\n', i)]
+        self.hyps = list(first.params)
+        self.ins = []
+        self.parses = {}
+        self.bits = {}
+        self.eqs = {}
+        for p, t in first.params:
+            if t.startswith('SvIn B '):
+                ptr, ln = split_in(t[len('SvIn B '):])
+                self.ins.append((ptr, ln, p))
+        proof = []
+        P = proof.append
+        ch = Chain(P)
+        self.sc = []
+        self.names = []
+
+        for idx, st in enumerate(self.stages):
+            k = ch.k
+            if idx == 0:
+                ov = {p: p for p, _ in st.params}
+            else:
+                ov = {'F': 'F', 'hret': 'hret', 'hO': 'hO', 'M0': 'M0', 'E0': f'E{k}', 'V0': f'V{k}', 's0': f's{k}',
+                      'fM': f'fR{k}'}
+            args, names, pats, sc = ch.call(st, ov, resolve=self.resolve, wren=witnesses(st, k + 1))
+            kk = ch.k
+            for pf, piece in ch.proofs:
+                piece = strip_parens(piece)
+                m = re.fullmatch(r"derElement \S+ \(memBytes M0 (.+)\) = \.ok (\w+)", piece)
+                if m:
+                    ptr, ln = split_in(m.group(1))
+                    self.parses[m.group(2)] = (pf, ptr, ln)
+                toks = [x for x in top_split(piece, ' ') if x]
+                if len(toks) == 7 and toks[0] == 'derBitsOf' and toks[4] == '=' and toks[5] == '.ok':
+                    tl = re.fullmatch(r"\(\.ok (\w+)\)", toks[3])
+                    pr = re.fullmatch(r"\((\w+), (\w+)\)", toks[6])
+                    if tl and pr:
+                        self.bits[pr.group(1)] = (pf, tl.group(1), pr.group(2))
+                m = re.fullmatch(r"(\w+) = BitVec\.ofNat 32 (\S+)", piece)
+                if m:
+                    self.eqs[m.group(1)] = (pf, m.group(2))
+                m = re.fullmatch(r"derOptRes \S+ \(memBytes M0 (.+)\) = some \(\.ok (\w+)\)", piece)
+                if m:
+                    ptr, ln = split_in(m.group(1))
+                    self.parses[m.group(2)] = (f"(opt_ok_elem {pf})", ptr, ln)
+            self.sc += sc
+            self.names += names
+            P(f"  rcases @{st.name} " + " ".join(args) + " with ⟨-, e⟩ | ⟨" + ", ".join(names + pats) + "⟩")
+            if kk == 1:
+                P("  · exact .inr (.inl e)" if st.fail == 'Panics' else "  · exact .inl e")
+            elif st.fail == 'Panics':
+                P(f"  · exact .inr (.inl (Panics.of_steps ({chain_steps(kk - 1)}) e))")
+            else:
+                r3 = ", ".join(f"r{j}_3" for j in range(kk - 1, 0, -1))
+                r4 = ", ".join(f"r{j}_4" for j in range(kk - 1, 0, -1))
+                P(f"  · exact .inl (SvErrRet.pre ({chain_steps(kk - 1)}) (by rw [{r3}]) (by rw [{r4}])")
+                P(f"      (fun x hx => (fR{kk - 1} x hx).trans (fM x hx).symm) e)")
+        self.ch = ch
+        self.proof = proof
+        K = ch.k
+        self.keep = []
+        for key, f in ch.prev.items():
+            if key in ('STEPS', 'ST', 'E', 'V', 'FR', 'r3', 'r4'):
+                continue
+            t = re.sub(rf"(?<![\w.'])n{K}(?![\w'])", "m'", f.text)
+            if re.search(r"(?<![\w.'])n[1-9]\d*(?![\w'])", t):
+                continue
+            self.keep.append((key, t))
+        self.end = re.search(r"0x[0-9A-F]+", ch.prev['ST'].text).group(0)
+        return self
+
+    def statement(self):
+        out = [f"theorem {self.name} {self.binders}"]
+        out += [f"    ({p} : {t})" for p, t in self.hyps]
+        out[-1] += " :"
+        out.append("    SvErrRet B out v n0 ∨ Panics n0 ∨")
+        body = list(self.sc)
+        body.append(f"∃ m', Steps n0 m' ∧ (∀ x, SvR B x → m'.mem x = M0 x) ∧ St m'.mem SV m' {self.end} (reg m') ∧\n"
+                    "        SvCode m'.mem ∧ SvSaves B m'.mem v ∧ reg m' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧\n"
+                    "        reg m' (4 : Fin 32) = reg n0 (4 : Fin 32)" +
+                    "".join(f" ∧\n        {t}" for _, t in self.keep))
+        out.append("    (" + " ∧\n      ".join(body) + ")")
+        return "\n".join(out)
+
+    def lean(self):
+        K = self.ch.k
+        r3 = ", ".join(f"r{j}_3" for j in range(K, 0, -1))
+        r4 = ", ".join(f"r{j}_4" for j in range(K, 0, -1))
+        out = ["set_option maxHeartbeats 64000000 in", f"/-- {self.doc} -/", self.statement() + " := by"]
+        out += self.proof
+        pn = [fname(key, K) for key, _ in self.keep]
+        out.append("  exact .inr (.inr ⟨" + ", ".join(self.names) + f", n{K}, {chain_steps(K)}, fR{K}, s{K}, E{K}, V{K},")
+        out.append(f"    by rw [{r3}], by rw [{r4}]" + "".join(f", {x}" for x in pn) + "⟩)")
+        return "\n".join(out)

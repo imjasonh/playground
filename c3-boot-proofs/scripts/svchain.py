@@ -139,7 +139,7 @@ class Stage:
         body = "\n".join(rest[self.nsc:])
         body = body[body.index("∃ n', ") + len("∃ n', "):]
         body = body.rstrip()
-        while body.endswith(')'):
+        while body.endswith(')') and body.count(')') > body.count('('):
             body = body[:-1]
         self.facts = []
         for l in body.split('\n'):
@@ -171,31 +171,54 @@ class Chain:
         self.k = 0
         self.prev = {}
 
-    def call(self, stage, overrides, fixed=None):
-        """Emits `rcases` for `stage` at step `k + 1`, with arguments from the
-        previous stage's facts and from `overrides`; returns the names of the
-        success-condition conjuncts and the instantiated facts."""
+    def call(self, stage, overrides, fixed=None, resolve=None, wren=None):
+        """Emits nothing; returns the arguments for `stage` at step `k + 1`,
+        the names for its success condition's witnesses and proofs, the
+        names for its facts, and its success condition's parts, all
+        instantiated.
+
+        Hypotheses come from `overrides`, then from the previous stage's
+        facts by name. A hypothesis about a binder that no fact gives is
+        `rfl`. `resolve(name, instantiated type)` gives the rest."""
         k = self.k + 1
         env = dict(fixed or {})
-        args = []
+        wren = wren or {}
+        env.update(wren)
+        bs = stage.binder_set()
+        got = {}
+        pending = []
         for pn, ty in stage.params:
+            parts = top_split(ty, ' = ')
+            rhs = strip_parens(parts[-1])
             if pn in overrides:
-                args.append(overrides[pn])
-                parts = top_split(ty, ' = ')
-                rhs = strip_parens(parts[-1])
-                if overrides[pn] == 'rfl' and len(parts) == 2 and rhs in stage.binder_set() and rhs not in env:
-                    env[rhs] = strip_parens(parts[0]).replace('n0', f"n{self.k}") if self.k else strip_parens(parts[0])
+                got[pn] = overrides[pn]
+                if overrides[pn] == 'rfl' and len(parts) == 2 and rhs in bs and rhs not in env:
+                    lhs = strip_parens(parts[0])
+                    env[rhs] = re.sub(IDENT.format("n0"), f"n{self.k}", lhs) if self.k else lhs
                 continue
             key = param_key(pn)
             if key and key.startswith('mb') and ty.startswith('leN'):
                 key = 'ln' + key[2:]
-            if key is None or key not in self.prev:
-                raise ValueError(f"{stage.name}: no argument for {pn} : {ty}")
-            f = self.prev[key]
-            args.append(f"{f.key[0] if f.key[0] != 'm' else 'mb'}{self.k}_{f.key[1:] if f.key[0] != 'm' else f.key[2:]}")
-            rhs = strip_parens(top_split(ty, ' = ')[-1])
-            if rhs in stage.binder_set() and rhs not in env:
-                env[rhs] = strip_parens(f.rhs)
+            if key and key not in self.prev and re.fullmatch(r'r1[0-7]', key):
+                key = 'ra' + key[2]
+            if key and key in self.prev:
+                f = self.prev[key]
+                got[pn] = fname(f.key, self.k)
+                if rhs in bs and rhs not in env:
+                    env[rhs] = strip_parens(f.rhs)
+            elif key and len(parts) == 2 and rhs in bs and rhs not in env:
+                got[pn] = 'rfl'
+                lhs = strip_parens(parts[0])
+                env[rhs] = re.sub(IDENT.format("n0"), f"n{self.k}", lhs) if self.k else lhs
+            else:
+                pending.append((pn, ty))
+        for pn, ty in pending:
+            t = re.sub(IDENT.format("n0"), f"n{self.k}", ty) if self.k else ty
+            a = resolve(pn, subst(t, env)) if resolve else None
+            if a is None:
+                raise ValueError(f"{stage.name}: no argument for {pn} : {subst(t, env)}")
+            got[pn] = a
+        args = [got[pn] for pn, _ in stage.params]
         used = " ".join(ty for _, ty in stage.params)
         last = {b: i for i, (b, _) in enumerate(stage.binders)}
         bargs = []
@@ -207,7 +230,19 @@ class Chain:
                 if last[b] == i and ty in DEFAULTS:
                     env.setdefault(b, DEFAULTS[ty])
         args = bargs + args
-        names = [f"x{k}_{i}" for i in range(stage.nsc)]
+        names = []
+        proofs = []
+        n = 0
+        for part in stage.sc_parts:
+            for piece in top_split(part, ' ∧ '):
+                piece = piece.strip()
+                while piece.startswith('∃ '):
+                    c = piece.index(',')
+                    names += [wren.get(b, f"x{k}_{n}{b}") for b in piece[2:c].split()]
+                    piece = piece[c + 1:].strip()
+                names.append(f"x{k}_{n}")
+                proofs.append((f"x{k}_{n}", piece))
+                n += 1
         pats = []
         facts = {}
         for f in stage.facts:
@@ -216,7 +251,7 @@ class Chain:
             elif f.key in ('ST', 'E', 'V', 'FR'):
                 pats.append({'ST': 's', 'E': 'E', 'V': 'V', 'FR': 'fR'}[f.key] + str(k))
             else:
-                pats.append(f"{f.key[0] if f.key[0] != 'm' else 'mb'}{k}_{f.key[1:] if f.key[0] != 'm' else f.key[2:]}")
+                pats.append(fname(f.key, k))
             t = re.sub(IDENT.format("n0"), f"n{k - 1}", f.text).replace("n'", f"n{k}")
             t = subst(t, env)
             facts[f.key] = Fact(f.key, t)
@@ -224,4 +259,10 @@ class Chain:
         self.k = k
         self.prev = facts
         sc = [subst(p, env) for p in stage.sc_parts]
+        self.proofs = [(nm, subst(t, env)) for nm, t in proofs]
         return args, names, pats, sc
+
+
+def fname(key, k):
+    """The name of fact `key` of step `k` in the generated proofs."""
+    return f"{key[0] if key[0] != 'm' else 'mb'}{k}_{key[1:] if key[0] != 'm' else key[2:]}"

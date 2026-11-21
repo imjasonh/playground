@@ -109,6 +109,7 @@ if hyps[-1].endswith(' :'):
 out = []
 O = out.append
 O("import C3BootProofs.Proofs.SvIvLoop")
+O("import C3BootProofs.Proofs.SvSeg")
 O("import C3BootProofs.Proofs.SvEcA1")
 O("import C3BootProofs.Proofs.SvEcA2")
 O("import C3BootProofs.Proofs.SvEcA3\n")
@@ -117,11 +118,6 @@ O("From 0xFBA to the inversion's head at 0x1328: `sv_eca1`, `sv_eca2`, and `sv_e
 O("the key, and set up the inversion, whose state is then `IvInv` for the starting `ivLoop8` state `p256Iv0`.")
 O("The frame words the inversion keeps are those at the start.\n-/\n")
 O("namespace C3.RV32.Sv\n\nopen C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv C3.RV32.Gs C3.RV32.P2\n\nset_option maxRecDepth 100000\n")
-O("theorem SvErrRet.pre {B out : Word} {v : Nat → Word} {n0 n1 : Machine} (h : Steps n0 n1)")
-O("    (h3 : reg n1 (3 : Fin 32) = reg n0 (3 : Fin 32)) (h4 : reg n1 (4 : Fin 32) = reg n0 (4 : Fin 32))")
-O("    (hm : ∀ x, SvR B x → n1.mem x = n0.mem x) (e : SvErrRet B out v n1) : SvErrRet B out v n0 := by")
-O("  obtain ⟨n', s, pc, sp', sv, r3, r4, o, m⟩ := e")
-O("  exact ⟨n', h.trans s, pc, sp', sv, r3.trans h3, r4.trans h4, o, fun x hx h1 h2 => (m x hx h1 h2).trans (hm x hx)⟩\n")
 O("/-- The inversion of `s`'s starting state: `f` is the order `n`, `g` is `s`, `d` is 0, `e` is 1, and")
 O("591 divsteps are left. -/")
 O("def p256Iv0 (M0 : Word → BitVec 8) (es : Bytes) : Iv :=")
