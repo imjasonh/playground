@@ -26,7 +26,7 @@ import (
 	"github.com/imjasonh/playground/xiao-otel/internal/otlp"
 )
 
-const testAppID = "W5LPA2QM2W.io.github.imjasonh.playground"
+const testAppID = "TEAMID1234.com.example.playground"
 
 const sampleOTLPJSON = `{"resourceMetrics":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"xiao-esp32c3"}},{"key":"device.id","value":{"stringValue":"xiao-c3-01"}}]},"scopeMetrics":[{"metrics":[{"name":"mcu.wake.count","gauge":{"dataPoints":[{"asInt":"15","timeUnixNano":"1700000000000000000"}]}},{"name":"mcu.phase.duration_us","gauge":{"dataPoints":[{"asInt":"1100","timeUnixNano":"1700000000000000000","attributes":[{"key":"phase","value":{"stringValue":"sensor"}}]},{"asInt":"3400","timeUnixNano":"1700000000000000000","attributes":[{"key":"phase","value":{"stringValue":"compute"}}]},{"asInt":"320000","timeUnixNano":"1700000000000000000","attributes":[{"key":"phase","value":{"stringValue":"epd_refresh"}}]},{"asInt":"150000","timeUnixNano":"1700000000000000000","attributes":[{"key":"phase","value":{"stringValue":"radio"}}]}]}},{"name":"mcu.battery_mv","gauge":{"dataPoints":[{"asInt":"3890","timeUnixNano":"1700000000000000000"}]}},{"name":"mcu.ble.rssi","gauge":{"dataPoints":[{"asInt":"-58","timeUnixNano":"1700000000000000000"}]}}]}]}]}`
 

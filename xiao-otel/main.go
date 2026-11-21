@@ -20,12 +20,12 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
-var env = envconfig.MustProcess(context.Background(), &struct {
+type config struct {
 	Port            string `env:"PORT, default=8080"`
-	AppID           string `env:"APP_ID, default=W5LPA2QM2W.io.github.imjasonh.playground"`
+	AppID           string `env:"APP_ID, required"`
 	AllowUnattested bool   `env:"ALLOW_UNATTESTED"`
 	ProjectID       string `env:"GOOGLE_CLOUD_PROJECT"`
-}{})
+}
 
 func main() {
 	if err := run(context.Background()); err != nil {
@@ -37,6 +37,11 @@ func run(ctx context.Context) error {
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, os.Interrupt)
 	defer stop()
 	ctx = clog.WithLogger(ctx, clog.NewLogger(slog.Default()))
+
+	var env config
+	if err := envconfig.Process(ctx, &env); err != nil {
+		return err
+	}
 
 	verifier, err := attest.NewVerifier(env.AppID, env.AllowUnattested, attest.NewMemoryStore())
 	if err != nil {
