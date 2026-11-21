@@ -1,6 +1,14 @@
+# syntax=ghcr.io/imjasonh/playground/apko-frontend
+#
 # Wolfi user-space environment for remote agents working in playground.
-# Built in user space by .agents/setup.sh with apko and unpacked into
-# ~/.apko-root so Wolfi tools take precedence over the host Debian 12 image.
+# Published to ghcr.io/imjasonh/playground/agent-env by
+# .github/workflows/agent-env-publish.yml (or built on the fly by
+# .agents/setup.sh with apko) and unpacked into ~/.apko-root so Wolfi
+# tools take precedence over the host Debian 12 image.
+#
+# Go, Node.js, npm, pnpm, and rustup are already preinstalled in
+# /usr/local/bin on the remote VM, so this image stays lean (~45 MB) and
+# provides the Wolfi userland plus container, cloud, and CLI tools.
 contents:
   keyring:
     - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
@@ -32,10 +40,8 @@ contents:
     - crane
     - ko
     - opentofu-1.12
-    # Language toolchains & package managers
-    - go-1.27
-    - nodejs-24
-    - npm
-    - pnpm
 archs:
   - x86_64
+annotations:
+  org.opencontainers.image.title: playground-agent-env
+  org.opencontainers.image.source: https://github.com/imjasonh/playground
