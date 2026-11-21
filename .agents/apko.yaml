@@ -1,0 +1,41 @@
+# Wolfi user-space environment for remote agents working in playground.
+# Built in user space by .agents/setup.sh with apko and unpacked into
+# ~/.apko-root so Wolfi tools take precedence over the host Debian 12 image.
+contents:
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  repositories:
+    - https://packages.wolfi.dev/os
+  packages:
+    - wolfi-base
+    - ca-certificates-bundle
+    - patchelf
+    # Core CLI & build utilities
+    - bash
+    - coreutils
+    - findutils
+    - grep
+    - sed
+    - gnutar
+    - gzip
+    - xz
+    - unzip
+    - curl
+    - jq
+    - ripgrep
+    - tree
+    - make
+    - pkgconf
+    - gh
+    # Container, Kubernetes & Cloud / IaC tools
+    - apko
+    - crane
+    - ko
+    - opentofu-1.12
+    # Language toolchains & package managers
+    - go-1.27
+    - nodejs-24
+    - npm
+    - pnpm
+archs:
+  - x86_64
