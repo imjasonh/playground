@@ -21,6 +21,8 @@ github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/klauspost/compress v1.20.4 h1:dD0v/bvxtjCBqQu6sx1TNWkalEY5lNTIe+HY9w8TeNI=
 github.com/klauspost/compress v1.20.4/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
+github.com/klauspost/compress v1.20.5 h1:rJj5VjH4xQxbnLphg6eqUcDxRFCw1jpMdDY9qXlrwSs=
+github.com/klauspost/compress v1.20.5/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
 github.com/mattn/go-isatty v0.0.24 h1:tGZZoVgT/KiqK1c8ocVLeDS8BSWMRd47J3Lbz7vsReI=
 github.com/mattn/go-isatty v0.0.24/go.mod h1:nMCL3Zebbrt45jsMDgnfIwz6ydEQApk5oEI3HqDio6A=
 github.com/ncruces/go-strftime v1.1.0 h1:vtPmPWMkb539RGV9WpWT9EwJGvrOCKvMNI4obWL47Hk=
@@ -86,6 +88,8 @@ modernc.org/libc v1.81.2 h1:pq7PQKJphxVWivpqqIzl5v8mQErIQy/RGO2DyxFjkvo=
 modernc.org/libc v1.81.2/go.mod h1:RD9VtbGtyV+/I4Q14lQy8CcMu06DpX2d6V1KwlmZv9c=
 modernc.org/libc v1.82.2 h1:K3TUCixVZY66COpG2pT9P6LFWEGDxpGgdzD1Gfev+fU=
 modernc.org/libc v1.82.2/go.mod h1:WBaPsU0/fkgMv+ZmiCCad2I+uDGYyTc49Mln3jFh4zk=
+modernc.org/libc v1.82.7 h1:RHwJOmnX1g0TkXDtgrUUNvw68EWjjPmdTg69vpF2UC8=
+modernc.org/libc v1.82.7/go.mod h1:WBaPsU0/fkgMv+ZmiCCad2I+uDGYyTc49Mln3jFh4zk=
 modernc.org/mathutil v1.7.1 h1:GCZVGXdaN8gTqB1Mf/usp1Y/hSqgI2vAGGP4jZMCxOU=
 modernc.org/mathutil v1.7.1/go.mod h1:4p5IwJITfppl0G4sUEDtCr4DthTaT47/N3aT6MhfgJg=
 modernc.org/memory v1.12.1 h1:nFMiWrpStgZczNl6XI9GnIk/rWhYIyHGUaR04pGbp9g=
