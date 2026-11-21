@@ -87,9 +87,18 @@ def find_post_paths(root: Path) -> list[Path]:
     return found
 
 
-def assign_slugs(paths: list[Path], root: Path | None = None) -> dict[Path, str]:
+RESERVED_SLUGS = {"index.html", "index.json", "feed.xml", "whbiab.js"}
+
+
+def assign_slugs(paths: list[Path]) -> dict[Path, str]:
     """Map each ``posts/<stub>.md`` path to its URL slug (``<stub>``)."""
-    return {path: path.stem for path in paths}
+    slugs: dict[Path, str] = {}
+    for path in paths:
+        slug = path.stem
+        if slug in RESERVED_SLUGS:
+            raise BuildError(f"post slug {slug!r} conflicts with a generated catalog file")
+        slugs[path] = slug
+    return slugs
 
 
 def git_author_dates(repo: Path, rel_path: str) -> tuple[datetime | None, datetime | None]:
@@ -794,13 +803,18 @@ def build(
     """Write the catalog into ``dest``. Raises ``BuildError`` on missing images."""
     source = source.resolve()
     dest = dest.resolve()
+    posts_dir = source / POSTS_DIR
+    if dest == posts_dir or posts_dir in dest.parents or dest in posts_dir.parents:
+        raise BuildError(
+            f"output directory {dest} overlaps source posts directory {posts_dir}"
+        )
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
     shutil.copyfile(WHBIAB_JS, dest / "whbiab.js")
 
     paths = find_post_paths(source)
-    slugs = assign_slugs(paths, source)
+    slugs = assign_slugs(paths)
     posts: list[Post] = []
     post_tmpl = post_template if post_template is not None else POST_TEMPLATE_PATH.read_text()
     for path in paths:

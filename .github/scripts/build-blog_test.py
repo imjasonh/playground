@@ -67,11 +67,42 @@ def test_slugs_come_from_filename_stem() -> None:
         p2 = posts / "kontain.me-compromise.md"
         p1.write_text("# Pasta\n")
         p2.write_text("# Postmortem\n")
-        slugs = bb.assign_slugs([p1, p2], root)
+        slugs = bb.assign_slugs([p1, p2])
         check(
             slugs == {p1: "pasta", p2: "kontain.me-compromise"},
             f"slugs from stem: {slugs}",
         )
+
+
+def test_reserved_slug_fails_build() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        posts = root / "posts"
+        posts.mkdir()
+        (posts / "feed.xml.md").write_text("# Collides\n")
+        try:
+            bb.build(root, root / "out")
+        except bb.BuildError as exc:
+            check("conflicts" in str(exc), f"message: {exc}")
+        else:
+            raise AssertionError("expected BuildError for reserved slug")
+
+
+def test_out_overlapping_posts_dir_fails_build() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        posts = root / "posts"
+        posts.mkdir()
+        post = posts / "pasta.md"
+        post.write_text("# Pasta\n")
+        for bad_dest in (posts, posts / "sub", root):
+            try:
+                bb.build(root, bad_dest)
+            except bb.BuildError as exc:
+                check("overlaps" in str(exc), f"message: {exc}")
+            else:
+                raise AssertionError(f"expected BuildError for dest={bad_dest}")
+        check(post.is_file(), "source post preserved when build rejects overlapping dest")
 
 
 def test_markdown_basics() -> None:
@@ -514,6 +545,7 @@ def test_real_repo_posts_build() -> None:
         check("pasta" in slugs, f"pasta post present: {slugs}")
         check("its-not-jaws" in slugs, f"its-not-jaws post present: {slugs}")
         check("nescript" in slugs, f"nescript post present: {slugs}")
+        check("wehadababyitsaboy" in slugs, f"wehadababyitsaboy post present: {slugs}")
         # Do not pin the newest slug. A PR that adds a post has a later
         # git author date than pasta, so a pasta-is-newest check fails those PRs.
         pasta_html = (dest / "pasta" / "index.html").read_text()
@@ -534,11 +566,19 @@ def test_real_repo_posts_build() -> None:
             slugs.index("pasta") < slugs.index("its-not-jaws"),
             "pasta is newer than its-not-jaws",
         )
+        pasta = next(p for p in posts if p.slug == "pasta")
+        check(
+            pasta.published is not None
+            and pasta.published.isoformat() == "2026-08-19T09:41:18-04:00",
+            f"pasta published timestamp {pasta.published}",
+        )
         check("Published August 19, 2026" in pasta_html, "pasta published date")
         # The author keeps editing the pasta post, so don't pin its updated date.
-        _, pasta_last = bb.git_author_dates(REPO_ROOT, "posts/pasta.md")
-        check(pasta_last is not None, "pasta updated date present")
-        pasta_updated = bb.format_date(pasta_last)
+        check(
+            pasta.updated is not None and pasta.updated.date() > pasta.published.date(),
+            f"pasta updated after publish: {pasta.updated}",
+        )
+        pasta_updated = bb.format_date(pasta.updated)
         check(f"Updated {pasta_updated}" in pasta_html, f"pasta updated {pasta_updated}")
         nescript_html = (dest / "nescript" / "index.html").read_text()
         check("Introducing NEScript" in nescript_html, "nescript title")

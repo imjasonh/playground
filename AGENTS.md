@@ -75,6 +75,7 @@ playground/
 ├── palette-swap/          # nearest-color palette swap in Wasm (Go simd experiment)
 ├── pasta/                 # CUE + tree-sitter multi-language linters/fixers (Go CLI)
 ├── population-rays/       # directional 5° population-slice map (JS + Node tests)
+├── posts/                 # human-authored blog posts (posts/<stub>.md; built to /posts/)
 ├── sshapp/                # GKE Autopilot Wish SSH apps (Go + Terraform + ko_build)
 ├── stream-boids/          # Go: boids streamed to YouTube Live from a Spot VM (apko + ko + Terraform)
 ├── sundial/               # sundial clock: long shadow follows the sun
@@ -159,6 +160,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `hello-macos/` | no | Example macOS app (XcodeGen + SwiftUI); no `index.html` |
 | `onramp/` | no | Offline Mac network triage / can’t-get-online playbooks (XcodeGen + SwiftUI + Sparkle); no `index.html` |
 | `roll/` | no | Menu bar app: click rolls, right-click countdowns and monitor photos (XcodeGen + Sparkle); no `index.html` |
+| `posts/` | no | Human-authored blog posts (`posts/<stub>.md`); built to `/posts/` at deploy time; no `index.html` |
 | `.github/` | no | Infrastructure only |
 | `README.md` | no | Not a directory |
 
