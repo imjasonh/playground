@@ -57,6 +57,10 @@ SEGMENTS = {
                                 ('SvTst5', 'sv_tst5'), ('SvTst6', 'sv_tst6'), ('SvTsv', 'sv_tsv')],
                  "**The `TSTInfo` and the timestamp's signature**: from 0x2704 to the TSA search at 0x2A40, "
                  "`sv_tst1` to `sv_tsv`."),
+    'SvSegAttrPre': ('sv_seg_attr_pre', [('SvTsaa', 'sv_tsaa'), ('SvTsav', 'sv_tsav')],
+                     "**The first signed attribute**: from 0x2506 to the attributes loop's branch at 0x267A."),
+    'SvSegAttr': ('sv_seg_attr', [('SvTsal', 'sv_tsal'), ('SvTsaa', 'sv_tsaa'), ('SvTsav', 'sv_tsav')],
+                  "**One more signed attribute**: from the attributes loop's branch at 0x267A back to it."),
     'SvSegWin': ('sv_seg_win', [('SvCr1', 'sv_cr1'), ('SvRl', 'sv_rl'), ('SvRm', 'sv_rm')] +
                  [(f'SvWin{i}', f'sv_win{i}') for i in range(8)],
                  "**The entry's index and the validity windows**: from 0x2F5A to the successful exit at 0x3264, "

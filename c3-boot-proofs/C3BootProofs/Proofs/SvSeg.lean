@@ -27,6 +27,26 @@ theorem svIter_zero {α : Type} (f : α → α) (a : α) : svIter f 0 a = a := r
 
 theorem svIter_succ {α : Type} (f : α → α) (k : Nat) (a : α) : svIter f (k + 1) a = svIter f k (f a) := rfl
 
+/-- `k` steps of `R` from `a` to `b`: the states of a loop whose step depends
+on what it reads. It is `Nat.rec`, like `svIter`. -/
+def svChain {α : Type} (R : α → α → Prop) (k : Nat) (a b : α) : Prop :=
+  Nat.rec (motive := fun _ => α → Prop) (fun a => a = b) (fun _ ih a => ∃ m, R a m ∧ ih m) k a
+
+theorem svChain.nil {α : Type} {R : α → α → Prop} {a : α} : svChain R 0 a a := rfl
+
+theorem svChain.cons {α : Type} {R : α → α → Prop} {k : Nat} {a m b : α} (h : R a m) (c : svChain R k m b) :
+    svChain R (k + 1) a b := ⟨m, h, c⟩
+
+/-- What is left of a slice after an element of at least two bytes. -/
+theorem svRem_le {r : Word} {a N : Nat} (h2 : 2 ≤ a) (ha : a ≤ r.toNat) (hN : r.toNat ≤ N + 1) :
+    (r - BitVec.ofNat 32 a).toNat ≤ N := by
+  have hr := r.isLt
+  rw [BitVec.toNat_sub, BitVec.toNat_ofNat]
+  simp only [Nat.reducePow] at *
+  omega
+
+theorem svRem_zero {r : Word} (h : r.toNat ≤ 0) : r = 0 := BitVec.eq_of_toNat_eq (by simp; omega)
+
 /-- A word inside a byte range copied from `M'`. -/
 theorem memLoad32_of_range {M M' : Word → BitVec 8} {S src : Word} {c n d : Nat}
     (h : ∀ j, j < n → M (S + BitVec.ofNat 32 (c + j)) = M' (src + BitVec.ofNat 32 j)) (hd : d + 4 ≤ n) :

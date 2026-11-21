@@ -125,6 +125,12 @@ class Segment:
                 base = self.derive_in(P0, N0)
                 if base:
                     return f"({base}).nlRest {hp}"
+        if ptr in self.contents:
+            hp, P0, N0, l, lemma = self.contents[ptr]
+            if n == canon(f"{l}.toNat"):
+                base = self.derive_in(P0, N0)
+                if base:
+                    return f"({base}).{lemma} {hp}"
         if ptr in self.bits:
             pf, tl, bl = self.bits[ptr]
             if tl in self.parses:
@@ -209,6 +215,15 @@ class Segment:
             m = re.fullmatch(r"(\w+) = BitVec\.ofNat 32 (\S+)", piece)
             if m:
                 self.eqs[m.group(1)] = (pf, m.group(2))
+            toks = [x for x in top_split(piece, ' ') if x]
+            if len(toks) == 6 and toks[0] == 'derContent' and toks[3] == '=' and toks[4] == '.ok':
+                inner = strip_parens(toks[2])
+                pr = re.fullmatch(r"\((\w+), (\w+)\)", toks[5])
+                m2 = re.fullmatch(r"(derOid|derElement \S+) \(memBytes M0 (.+)\)", inner)
+                if pr and m2:
+                    ptr, ln = split_in(m2.group(2))
+                    lemma = "oidIn" if m2.group(1) == "derOid" else "contentIn"
+                    self.contents[pr.group(1)] = (pf, ptr, ln, pr.group(2), lemma)
             if piece.startswith('SvIn B '):
                 ptr, n = split_in(piece[len('SvIn B '):])
                 self.ins.append((ptr, n, pf))
@@ -314,7 +329,8 @@ class Segment:
         if key in facts:
             f = facts[key]
             pre = {'w': 'w0_', 'b': 'b0_', 'a': 'a0_', 'q': 'q0_'}[key[0]]
-            return getattr(f, 'name', None) or (fname(key, j) if j else f"{pre}{key[1:]}"), strip_parens(f.rhs)
+            return (getattr(f, 'name', None) or (fname(key, j) if j else f"{pre}{key[1:]}"),
+                    strip_parens(f.rhs) if f.rhs else None)
         if key[0] != 'w':
             return None
         for k2, f in facts.items():
@@ -428,6 +444,7 @@ class Segment:
         self.bits = {}
         self.eqs = {}
         self.nl = {}
+        self.contents = {}
         for p, t in first.params:
             if t.startswith('SvIn B '):
                 ptr, ln = split_in(t[len('SvIn B '):])
@@ -456,6 +473,15 @@ class Segment:
             P(f"  rcases {'@' if ch.at else ''}{st.name} " + " ".join(args) + f" with {st.errpat} | ⟨" + ", ".join(names + pats) + "⟩")
             self.fail(ch.k, st.fail, P)
         self.panics = any(it[1].fail == 'Panics' for it in self.items if it[0] == 'stage')
+        self.carried = []
+        for p, t in first.params:
+            key = param_key(p)
+            if not key or key[0] not in 'wbq' or key in ch.prev or len(self.hist) < 2:
+                continue
+            c = self.carry(key, t)
+            if c:
+                text = re.sub(r"(?<![\w.'])n0(?![\w'])", "n'", t)
+                self.carried.append((key, f"({text})" if text.startswith('∀') else text, c[0]))
         self.ch = ch
         self.proof = proof
         K = ch.k
@@ -498,6 +524,7 @@ class Segment:
                      "SvSaves B n'.mem v", "reg n' (3 : Fin 32) = reg n0 (3 : Fin 32)",
                      "reg n' (4 : Fin 32) = reg n0 (4 : Fin 32)"]
             facts += [t.replace("m'", "n'") for _, t in self.keep]
+            facts += [t for _, t, _ in self.carried]
             facts.append(f"SvKeepL B n0.mem n'.mem {self.union_kl()}")
             out += [f"        {t}" + (" ∧" if j + 1 < len(facts) else ")") for j, t in enumerate(facts)]
         text = "\n".join(out)
@@ -524,5 +551,6 @@ class Segment:
             for k in range(2, K + 1):
                 kl = f"({kl}).trans K{k}_L"
             out.append("  exact .inr ⟨" + ", ".join(self.names) + f", n{K}, {chain_steps(K)}, fR{K}, s{K}, E{K}, V{K},")
-            out.append(f"    by rw [{r3}], by rw [{r4}]" + "".join(f", {x}" for x in pn) + f", ({kl}).mono (by decide)⟩")
+            out.append(f"    by rw [{r3}], by rw [{r4}]" + "".join(f", {x}" for x in pn) +
+                       "".join(f", {term}" for _, _, term in self.carried) + f", ({kl}).mono (by decide)⟩")
         return "\n".join(out)

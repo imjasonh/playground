@@ -5965,7 +5965,7 @@ def stage_tsaa():
     return g, info
 
 
-ATTRV_BINDERS = ("{B out bp x21 x26 dg p0 L0 cp rem op ol vcp vcl : Word} "
+ATTRV_BINDERS = ("{B out bp x21 x26 dg p0 L0 cp rem op ol vcp vcl x20 : Word} "
                  + "{" + " ".join(f"w{e:x}" for e in DPV_WORDS) + " : Word} {v : Nat → Word} {n0 : Machine}")
 CT_OID = "memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC486E) 9"
 MD_OID = "memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4877) 9"
@@ -6000,6 +6000,9 @@ def stage_tsav(kind):
     if 0x78 not in g.words:
         g.words[0x78] = ("U", "w78") if isinstance(next(iter(g.words.values())), tuple) else "w78"
         params.append(f"(w0_78 : memLoad32 n0.mem ({fa(0x78)}) = w78)")
+    # `sv_tsaa` moved past the attribute in the frame but not in `s4`.
+    g.regs[20] = ("U", "x20")
+    params = [q.replace("(g0_20 : reg n0 (20 : Fin 32) = rem)", "(g0_20 : reg n0 (20 : Fin 32) = x20)") for q in params]
     g.regs.update({22: ("U", "ol"), 23: ("U", "op"), 25: ("U", "L0")})
     params += ["(g0_22 : reg n0 (22 : Fin 32) = ol)", "(g0_23 : reg n0 (23 : Fin 32) = op)",
                "(g0_25 : reg n0 (25 : Fin 32) = L0)", "(oid_in : SvIn B op ol.toNat)", "(vc_in : SvIn B vcp vcl.toNat)"]

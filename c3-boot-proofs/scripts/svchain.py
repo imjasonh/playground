@@ -106,7 +106,7 @@ PARAM_KEY = {'g0_': 'r', 'w0_': 'w', 'a0_': 'a', 'b0_': 'b', 'q0_': 'q', 'p0_': 
 
 def param_key(p):
     for pre, k in PARAM_KEY.items():
-        if p.startswith(pre):
+        if p.startswith(pre) and re.fullmatch(r"[0-9a-f]+", p[len(pre):]):
             return k + p[len(pre):]
     return None
 

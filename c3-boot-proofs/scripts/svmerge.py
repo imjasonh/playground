@@ -18,7 +18,7 @@ class SliceCtx(Segment):
     """The slices a stage's hypotheses and success condition give, for `Segment.derive_in`."""
 
     def __init__(self, stage, names):
-        self.ins, self.parses, self.bits, self.eqs, self.nl = [], {}, {}, {}, {}
+        self.ins, self.parses, self.bits, self.eqs, self.nl, self.contents = [], {}, {}, {}, {}, {}
         for p, t in stage.params:
             if t.startswith('SvIn B '):
                 ptr, n = split_in(t[len('SvIn B '):])
