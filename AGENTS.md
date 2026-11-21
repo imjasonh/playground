@@ -59,6 +59,8 @@ playground/
 ├── inkbot/                # Rust Cloudflare Worker: e-ink frame host + Slack @inkbot
 ├── inkbot-esp32/          # Rust/ESP-IDF firmware: poll inkbot + signed OTA, or APP=maze, on Waveshare 7.5″
 ├── esp32-ble/             # Rust/ESP-IDF firmware: BLE GATT LED control for the iOS experiment
+├── xiao-esp32c3/          # Rust/ESP-IDF firmware: XIAO ESP32C3 phase/power profiling + e-paper refresh BLE telemetry
+├── xiao-otel/             # Go: Cloud Run App Attest OTLP collector for xiao-esp32c3 → Cloud Monitoring
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── qr-quine/              # QR symbol that encodes a data URL of itself
@@ -141,6 +143,8 @@ its root. This is the same rule used by deploy and preview workflows.
 | `inkbot/` | no | Rust Cloudflare Worker (e-ink frame + Slack); no `index.html` |
 | `inkbot-esp32/` | no | Rust/ESP-IDF ESP32 firmware (espup); no `index.html` |
 | `esp32-ble/` | no | Rust/ESP-IDF ESP32 BLE GATT firmware (espup); no `index.html` |
+| `xiao-esp32c3/` | no | Rust/ESP-IDF XIAO ESP32C3 phase/power profiling + BLE advertisement telemetry firmware; no `index.html` |
+| `xiao-otel/` | no | Go server for Cloud Run (App Attest OTLP collector → Cloud Monitoring + Terraform); no `index.html` |
 | `git-server/` | no | Rust Cloudflare Worker; no `index.html` |
 | `git-fuse/` | no | Rust CLI (FUSE); no `index.html` |
 | `life-stl/` | no | Rust CLI (STL generator); no `index.html` |
