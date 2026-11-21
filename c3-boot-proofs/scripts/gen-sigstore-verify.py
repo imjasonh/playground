@@ -7442,12 +7442,14 @@ def cs_start(g):
     g.ranges[0x1480] = (63, "BitVec.ofNat 8 (sg.getD (1 + j) 0)")
     params.append("(q0_1480 : ∀ j, j < 63 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1480 + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0))")
     # The signature loop changes the frame words and registers that the struct
-    # at 0xA20 copied during the log search.
+    # at 0xA20 copied during the log search, and uses 0x420 to 0x42C as scratch.
     for e in CS_STRUCT:
         if e in g.words:
             g.words[e] = ("U", f"w{e:x}")
             params = [q if not q.startswith(f"(w0_{e:x} :") else f"(w0_{e:x} : memLoad32 n0.mem ({fa(e)}) = w{e:x})"
                       for q in params]
+    g.words.pop(0x428, None)
+    params = [q for q in params if not q.startswith("(w0_428 :")]
     return params
 
 
