@@ -85,7 +85,7 @@ func unpackClientDataBytes(raw json.RawMessage) ([]byte, error) {
 }
 
 func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
-	body, err := readBody(r)
+	body, err := readBody(w, r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -110,7 +110,7 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUnattestedToken(w http.ResponseWriter, r *http.Request) {
-	body, err := readBody(r)
+	body, err := readBody(w, r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -135,7 +135,7 @@ func (s *Server) handleUnattestedToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleWhoami(w http.ResponseWriter, r *http.Request) {
-	body, err := readBody(r)
+	body, err := readBody(w, r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -171,7 +171,7 @@ func (s *Server) handleWhoami(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := clog.FromContext(ctx)
-	body, err := readBody(r)
+	body, err := readBody(w, r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -275,9 +275,14 @@ func decodeHeaderBase64(s string) ([]byte, error) {
 	return nil, errors.New("invalid base64")
 }
 
-func readBody(r *http.Request) ([]byte, error) {
+func readBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	defer r.Body.Close()
-	return io.ReadAll(io.LimitReader(r.Body, maxRequestBodyBytes))
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, errors.New("request body is invalid or exceeds 64 KiB")
+	}
+	return body, nil
 }
 
 func writeDeviceRecord(w http.ResponseWriter, rec *attest.DeviceRecord) {

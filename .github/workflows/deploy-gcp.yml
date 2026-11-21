@@ -40,11 +40,10 @@ on:
       - ".github/scripts/deploy-gcp-result_test.sh"
       - ".github/scripts/install-zig.sh"
       - "**/gcp-deploy.json"
-      - "cloudrun-sqlite/terraform/**"
-      - "stream-boids/terraform/**"
-      - "stream-boids/apko.yaml"
+      - "cloudrun-sqlite/**"
+      - "stream-boids/**"
       - "wehadababyitsaboy/terraform/**"
-      - "xiao-otel/terraform/**"
+      - "xiao-otel/**"
   workflow_dispatch: {}
 
 # A second push waits. Cancelling an apply can leave state locked.

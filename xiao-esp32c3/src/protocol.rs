@@ -352,6 +352,7 @@ pub fn parse_status_line(raw: &str) -> Option<AdvMetrics> {
 /// - `mcu.ble.rssi` (gauge)
 pub fn format_otlp_json(device_id: &str, m: &AdvMetrics, rssi: i32, time_unix_nano: u64) -> String {
     let ts = time_unix_nano.to_string();
+    let escaped_device_id = escape_json_str(device_id);
     format!(
         concat!(
             r#"{{"resourceMetrics":[{{"resource":{{"attributes":["#,
@@ -369,7 +370,7 @@ pub fn format_otlp_json(device_id: &str, m: &AdvMetrics, rssi: i32, time_unix_na
             r#"{{"name":"mcu.ble.rssi","gauge":{{"dataPoints":[{{"asInt":"{rssi}","timeUnixNano":"{ts}"}}]}}}}"#,
             r#"]}}]}}]}}"#
         ),
-        device_id = device_id,
+        device_id = escaped_device_id,
         wake_count = m.wake_count,
         sensor_us = m.sensor_us,
         compute_us = m.compute_us,
@@ -379,6 +380,19 @@ pub fn format_otlp_json(device_id: &str, m: &AdvMetrics, rssi: i32, time_unix_na
         rssi = rssi,
         ts = ts,
     )
+}
+
+fn escape_json_str(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if c.is_control() => {}
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 /// Deterministic integer-only sensor filter benchmark for the RISC-V ESP32-C3 (which has no FPU).

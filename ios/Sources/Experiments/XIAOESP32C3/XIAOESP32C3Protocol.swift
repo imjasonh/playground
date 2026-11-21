@@ -293,9 +293,28 @@ enum XIAOESP32C3Protocol {
         timeUnixNano: UInt64
     ) -> String {
         let ts = String(timeUnixNano)
+        let safeDeviceId = escapeJSONString(deviceId)
         return """
-        {"resourceMetrics":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"xiao-esp32c3"}},{"key":"device.id","value":{"stringValue":"\(deviceId)"}}]},"scopeMetrics":[{"metrics":[{"name":"mcu.wake.count","gauge":{"dataPoints":[{"asInt":"\(metrics.wakeCount)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.phase.duration_us","gauge":{"dataPoints":[{"asInt":"\(metrics.sensorUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"sensor"}}]},{"asInt":"\(metrics.computeUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"compute"}}]},{"asInt":"\(metrics.epdRefreshUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"epd_refresh"}}]},{"asInt":"\(metrics.radioUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"radio"}}]}]}},{"name":"mcu.battery_mv","gauge":{"dataPoints":[{"asInt":"\(metrics.batteryMv)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.ble.rssi","gauge":{"dataPoints":[{"asInt":"\(rssi)","timeUnixNano":"\(ts)"}]}}]}]}]}
+        {"resourceMetrics":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"xiao-esp32c3"}},{"key":"device.id","value":{"stringValue":"\(safeDeviceId)"}}]},"scopeMetrics":[{"metrics":[{"name":"mcu.wake.count","gauge":{"dataPoints":[{"asInt":"\(metrics.wakeCount)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.phase.duration_us","gauge":{"dataPoints":[{"asInt":"\(metrics.sensorUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"sensor"}}]},{"asInt":"\(metrics.computeUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"compute"}}]},{"asInt":"\(metrics.epdRefreshUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"epd_refresh"}}]},{"asInt":"\(metrics.radioUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"radio"}}]}]}},{"name":"mcu.battery_mv","gauge":{"dataPoints":[{"asInt":"\(metrics.batteryMv)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.ble.rssi","gauge":{"dataPoints":[{"asInt":"\(rssi)","timeUnixNano":"\(ts)"}]}}]}]}]}
         """
+    }
+
+    private static func escapeJSONString(_ value: String) -> String {
+        var out = ""
+        out.reserveCapacity(value.count)
+        for scalar in value.unicodeScalars {
+            switch scalar {
+            case "\"":
+                out.append("\\\"")
+            case "\\":
+                out.append("\\\\")
+            case "\0"..<" ":
+                continue
+            default:
+                out.unicodeScalars.append(scalar)
+            }
+        }
+        return out
     }
 
     /// Format a microsecond duration for display (`1,450 µs` or `320.5 ms`).

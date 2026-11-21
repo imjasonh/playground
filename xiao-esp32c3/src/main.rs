@@ -58,6 +58,12 @@ const BLE_BURST_MS: u32 = 150;
 /// Maximum time an active BLE OTA connection may keep the board awake before timing out (120 s).
 const OTA_SESSION_TIMEOUT_MS: u32 = 120_000;
 
+/// Maximum idle time on an open BLE connection without any OTA control/data write (15 s).
+const OTA_IDLE_TIMEOUT_US: u64 = 15_000_000;
+
+/// ESP-IDF firmware binary magic byte (`ESP_IMAGE_HEADER_MAGIC`).
+const ESP_IMAGE_HEADER_MAGIC: u8 = 0xE9;
+
 /// Deep-sleep interval between wake cycles in microseconds (5 seconds for bench profiling).
 const DEEP_SLEEP_INTERVAL_US: u64 = 5_000_000;
 
@@ -205,6 +211,7 @@ struct OtaWriterState {
     expected_sha256: String,
     written: u32,
     next_notify_at: u32,
+    last_activity_us: u64,
     hasher: Sha256,
     reboot_pending: bool,
 }
@@ -221,6 +228,7 @@ impl Default for OtaWriterState {
             expected_sha256: String::new(),
             written: 0,
             next_notify_at: 0,
+            last_activity_us: 0,
             hasher: Sha256::new(),
             reboot_pending: false,
         }
@@ -245,6 +253,7 @@ impl OtaWriterState {
 
     fn begin(&mut self, size: u32, sha256: String) -> OtaStatus {
         self.abort_active();
+        self.last_activity_us = now_us();
         if size == 0 || size > OTA_SLOT_BYTES {
             return OtaStatus::Error {
                 message: format!("invalid size {size}"),
@@ -278,6 +287,7 @@ impl OtaWriterState {
     }
 
     fn write_chunk(&mut self, chunk: &[u8]) -> Option<OtaStatus> {
+        self.last_activity_us = now_us();
         let Some(handle) = self.handle else {
             return Some(OtaStatus::Error {
                 message: "write before BEGIN".to_string(),
@@ -285,6 +295,12 @@ impl OtaWriterState {
         };
         if chunk.is_empty() {
             return None;
+        }
+        if self.written == 0 && chunk[0] != ESP_IMAGE_HEADER_MAGIC {
+            self.abort_active();
+            return Some(OtaStatus::Error {
+                message: format!("invalid ESP-IDF image header byte {:#04x}", chunk[0]),
+            });
         }
         let next_written = self.written.saturating_add(chunk.len() as u32);
         if next_written > self.expected_size {
@@ -314,6 +330,7 @@ impl OtaWriterState {
     }
 
     fn commit(&mut self) -> OtaStatus {
+        self.last_activity_us = now_us();
         let Some(handle) = self.handle.take() else {
             return OtaStatus::Error {
                 message: "commit before BEGIN".to_string(),
@@ -388,7 +405,9 @@ fn broadcast_ble_and_serve_ota(metrics: &xiao_esp32c3::protocol::AdvMetrics) {
     let ota_state = Arc::new(Mutex::new(OtaWriterState::default()));
 
     let conn_on_connect = Arc::clone(&connected);
+    let state_on_connect = Arc::clone(&ota_state);
     server.on_connect(move |server, desc| {
+        state_on_connect.lock().expect("ota_state").last_activity_us = now_us();
         conn_on_connect.store(true, Ordering::SeqCst);
         info!("ble connected for OTA: {desc:?}");
         // Fast 7.5 ms - 15 ms connection interval for high-throughput BLE OTA streaming.
@@ -487,13 +506,19 @@ fn broadcast_ble_and_serve_ota(metrics: &xiao_esp32c3::protocol::AdvMetrics) {
         while connected.load(Ordering::SeqCst) && waited_ms < OTA_SESSION_TIMEOUT_MS {
             FreeRtos::delay_ms(50);
             waited_ms = waited_ms.saturating_add(50);
-            let should_reboot = ota_state.lock().expect("ota_state").reboot_pending;
-            if should_reboot {
+            let mut guard = ota_state.lock().expect("ota_state");
+            if guard.reboot_pending {
+                drop(guard);
                 // Give NimBLE 250 ms to flush the final `OK sha256=...` notification before rebooting.
                 FreeRtos::delay_ms(250);
                 unsafe {
                     esp_restart();
                 }
+            }
+            if now_us().saturating_sub(guard.last_activity_us) > OTA_IDLE_TIMEOUT_US {
+                warn!("ota: idle timeout on BLE connection; aborting and entering deep sleep");
+                guard.abort_active();
+                break;
             }
         }
     }

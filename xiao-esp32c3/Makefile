@@ -82,12 +82,12 @@ check-firmware:
 BOOTLOADER := $(firstword $(wildcard $(FW_TARGET_DIR)/$(TARGET)/release/build/esp-idf-sys-*/out/build/bootloader/bootloader.bin))
 
 flash: build
-	espflash flash --port $(PORT) $(BIN)
+	espflash flash --port $(PORT) --partition-table partitions.csv $(BIN)
 
 flash-all: build
 	@test -n "$(BOOTLOADER)" || { echo "ERROR: bootloader.bin not found under target/. Run 'make build' first."; exit 1; }
 	espflash erase-flash --port $(PORT)
-	espflash flash --port $(PORT) --bootloader $(BOOTLOADER) $(BIN)
+	espflash flash --port $(PORT) --bootloader $(BOOTLOADER) --partition-table partitions.csv $(BIN)
 
 monitor:
 	espflash monitor --port $(PORT)

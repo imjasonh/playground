@@ -408,4 +408,13 @@ struct XIAOESP32C3View: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+
+    private func isOTAInProgress(_ phase: XIAOESP32C3Controller.OTAPhase) -> Bool {
+        switch phase {
+        case .armed, .connecting, .erasing, .streaming, .committing:
+            return true
+        case .idle, .completed, .failed:
+            return false
+        }
+    }
 }

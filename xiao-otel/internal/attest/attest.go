@@ -8,6 +8,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/x509"
 	"encoding/asn1"
 	"encoding/base64"
@@ -49,6 +50,10 @@ const (
 	challengeTTL        = 5 * time.Minute
 	unattestedKeyPrefix = "unattested:"
 	maxClientDataBytes  = 2 * 1024
+	maxAttestationBytes = 16 * 1024
+	maxAssertionBytes   = 8 * 1024
+	maxChallenges       = 4096
+	maxDevices          = 4096
 	maxFieldChars       = 128
 	flagAT              = 0x40
 )
@@ -57,6 +62,8 @@ var (
 	aaguidProduction  = []byte("appattest\x00\x00\x00\x00\x00\x00\x00")
 	aaguidDevelopment = []byte("appattestdevelop")
 	nonceOID          = asn1.ObjectIdentifier{1, 2, 840, 113635, 100, 8, 2}
+	oidECDSASHA256    = asn1.ObjectIdentifier{1, 2, 840, 10045, 4, 3, 2}
+	oidECDSASHA384    = asn1.ObjectIdentifier{1, 2, 840, 10045, 4, 3, 3}
 )
 
 // ParseRootPEM parses a PEM-encoded X.509 root certificate.
@@ -107,9 +114,23 @@ func NewMemoryStore() *MemoryStore {
 func (s *MemoryStore) PutChallenge(challenge string, expiresAt time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	now := expiresAt.Add(-challengeTTL)
 	for k, exp := range s.challenges {
-		if exp.Before(expiresAt.Add(-challengeTTL)) {
+		if now.After(exp) {
 			delete(s.challenges, k)
+		}
+	}
+	if len(s.challenges) >= maxChallenges {
+		var oldestKey string
+		var oldestExp time.Time
+		for k, exp := range s.challenges {
+			if oldestKey == "" || exp.Before(oldestExp) {
+				oldestKey = k
+				oldestExp = exp
+			}
+		}
+		if oldestKey != "" {
+			delete(s.challenges, oldestKey)
 		}
 	}
 	s.challenges[challenge] = expiresAt
@@ -148,6 +169,19 @@ func (s *MemoryStore) GetDevice(keyID string) (*DeviceRecord, error) {
 func (s *MemoryStore) PutDevice(rec *DeviceRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, exists := s.devices[rec.KeyID]; !exists && len(s.devices) >= maxDevices {
+		var oldestKey string
+		var oldestTime time.Time
+		for k, v := range s.devices {
+			if oldestKey == "" || v.CreatedAt.Before(oldestTime) {
+				oldestKey = k
+				oldestTime = v.CreatedAt
+			}
+		}
+		if oldestKey != "" {
+			delete(s.devices, oldestKey)
+		}
+	}
 	copyRec := *rec
 	copyRec.PublicKey = bytes.Clone(rec.PublicKey)
 	s.devices[rec.KeyID] = copyRec
@@ -161,6 +195,7 @@ type Verifier struct {
 	Roots           []*x509.Certificate
 	Store           Store
 	Now             func() time.Time
+	verifyMu        sync.Mutex
 }
 
 // NewVerifier creates a Verifier anchored at Apple's App Attestation Root CA.
@@ -258,17 +293,30 @@ func (v *Verifier) Register(keyID, attestationB64 string, clientDataRaw []byte) 
 	if err != nil {
 		return nil, errors.New("attestationObject is not valid base64")
 	}
+	if len(attBytes) > maxAttestationBytes {
+		return nil, errors.New("attestationObject too large")
+	}
 	clientHash := sha256.Sum256(clientDataRaw)
 	pubKey, dev, err := v.verifyAttestationObject(keyID, attBytes, clientHash[:], now)
 	if err != nil {
 		return nil, err
+	}
+	v.verifyMu.Lock()
+	defer v.verifyMu.Unlock()
+	existing, err := v.Store.GetDevice(keyID)
+	if err != nil {
+		return nil, err
+	}
+	var prevCounter uint32
+	if existing != nil {
+		prevCounter = existing.Counter
 	}
 	rec := &DeviceRecord{
 		KeyID:       keyID,
 		UserID:      cd.UserID,
 		DeviceID:    cd.DeviceID,
 		PublicKey:   pubKey,
-		Counter:     0,
+		Counter:     prevCounter,
 		Unattested:  false,
 		Development: dev,
 		CreatedAt:   now,
@@ -309,14 +357,17 @@ func (v *Verifier) RegisterUnattested(clientDataRaw []byte) (*DeviceRecord, erro
 
 // VerifyAssertion checks a one-time challenge, action, and P-256 assertion signature,
 // advances the stored counter, and returns the device record.
-// If bodyToMatchPayload is non-empty and the clientData includes a "payload" SHA-256 hex digest,
-// VerifyAssertion also verifies that the request body matches that digest.
+// When bodyToMatchPayload is non-empty, clientData is required to include a matching
+// "payload" SHA-256 hex digest so the signed assertion cryptographically binds the HTTP body.
 func (v *Verifier) VerifyAssertion(keyID, assertionB64 string, clientDataRaw, bodyToMatchPayload []byte, wantAction string) (*DeviceRecord, error) {
 	acd, err := parseAssertionClientData(clientDataRaw, wantAction)
 	if err != nil {
 		return nil, err
 	}
-	if len(bodyToMatchPayload) > 0 && acd.Payload != "" {
+	if len(bodyToMatchPayload) > 0 {
+		if acd.Payload == "" {
+			return nil, errors.New("clientData payload digest is required")
+		}
 		wantSum := sha256.Sum256(bodyToMatchPayload)
 		if !strings.EqualFold(acd.Payload, hex.EncodeToString(wantSum[:])) {
 			return nil, errors.New("clientData payload digest does not match request metrics")
@@ -326,6 +377,8 @@ func (v *Verifier) VerifyAssertion(keyID, assertionB64 string, clientDataRaw, bo
 	if err := v.Store.ConsumeChallenge(acd.Challenge, now); err != nil {
 		return nil, err
 	}
+	v.verifyMu.Lock()
+	defer v.verifyMu.Unlock()
 	rec, err := v.Store.GetDevice(keyID)
 	if err != nil {
 		return nil, err
@@ -345,6 +398,9 @@ func (v *Verifier) VerifyAssertion(keyID, assertionB64 string, clientDataRaw, bo
 	assertionBytes, err := decodeBase64(assertionB64)
 	if err != nil {
 		return nil, errors.New("assertionObject is not base64")
+	}
+	if len(assertionBytes) > maxAssertionBytes {
+		return nil, errors.New("assertionObject too large")
 	}
 	clientHash := sha256.Sum256(clientDataRaw)
 	newCounter, err := verifyAssertionObject(v.AppID, rec.PublicKey, assertionBytes, clientHash[:], rec.Counter)
@@ -398,7 +454,7 @@ func (v *Verifier) verifyAttestationObject(keyID string, raw, clientHash []byte,
 		certs = append(certs, c)
 	}
 	for i := 0; i+1 < len(certs); i++ {
-		if err := certs[i].CheckSignatureFrom(certs[i+1]); err != nil {
+		if err := verifyCertSignedBy(certs[i], certs[i+1]); err != nil {
 			return nil, false, errors.New("x5c chain signature invalid")
 		}
 	}
@@ -408,7 +464,7 @@ func (v *Verifier) verifyAttestationObject(keyID string, raw, clientHash []byte,
 		if now.Before(root.NotBefore) || now.After(root.NotAfter) {
 			continue
 		}
-		if last.CheckSignatureFrom(root) == nil || bytes.Equal(last.RawTBSCertificate, root.RawTBSCertificate) {
+		if verifyCertSignedBy(last, root) == nil || bytes.Equal(last.RawTBSCertificate, root.RawTBSCertificate) {
 			anchored = true
 			break
 		}
@@ -450,6 +506,48 @@ func (v *Verifier) verifyAttestationObject(keyID string, raw, clientHash []byte,
 		return nil, false, err
 	}
 	return uncompressed, dev, nil
+}
+
+// verifyCertSignedBy verifies child's signature using issuer's ECDSA public key.
+// Apple's credCert leaf uses ecdsa-with-SHA256 while Apple App Attestation CA 1G
+// has a P-384 key; verifyCertSignedBy supports both P-256 and P-384 with SHA-256 or SHA-384
+// and enforces CA basic constraints on non-leaf issuers.
+func verifyCertSignedBy(child, issuer *x509.Certificate) error {
+	if !bytes.Equal(child.RawTBSCertificate, issuer.RawTBSCertificate) && (!issuer.BasicConstraintsValid || !issuer.IsCA) {
+		return errors.New("issuer certificate is not a CA")
+	}
+	if err := child.CheckSignatureFrom(issuer); err == nil {
+		return nil
+	}
+	pub, ok := issuer.PublicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return errors.New("issuer public key is not ECDSA")
+	}
+	var sigAlgOID asn1.ObjectIdentifier
+	var seq struct {
+		TBS []byte
+		Alg struct {
+			OID asn1.ObjectIdentifier
+		}
+	}
+	if _, err := asn1.Unmarshal(child.Raw, &seq); err == nil {
+		sigAlgOID = seq.Alg.OID
+	}
+	var digest []byte
+	switch {
+	case sigAlgOID.Equal(oidECDSASHA256) || child.SignatureAlgorithm == x509.ECDSAWithSHA256:
+		sum := sha256.Sum256(child.RawTBSCertificate)
+		digest = sum[:]
+	case sigAlgOID.Equal(oidECDSASHA384) || child.SignatureAlgorithm == x509.ECDSAWithSHA384:
+		sum := sha512.Sum384(child.RawTBSCertificate)
+		digest = sum[:]
+	default:
+		return errors.New("unsupported certificate signature algorithm")
+	}
+	if !ecdsa.VerifyASN1(pub, digest, child.Signature) {
+		return errors.New("certificate ECDSA signature invalid")
+	}
+	return nil
 }
 
 func checkAttestAuthData(authData []byte, appID string, keyIDRaw []byte) (bool, error) {

@@ -93,6 +93,15 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         XCTAssertTrue(jsonString.contains(#""name":"mcu.battery_mv""#))
         XCTAssertTrue(jsonString.contains(#""name":"mcu.ble.rssi""#))
         XCTAssertTrue(jsonString.contains(#""asInt":"-58""#))
+
+        let escapedJSON = XIAOESP32C3Protocol.formatOTLPJSON(
+            deviceId: #"xiao-"quoted"\01"#,
+            metrics: metrics,
+            rssi: -58,
+            timeUnixNano: 1_700_000_000_000_000_000
+        )
+        let escapedData = try XCTUnwrap(escapedJSON.data(using: .utf8))
+        XCTAssertNotNil(try JSONSerialization.jsonObject(with: escapedData) as? [String: Any])
     }
 
     @MainActor

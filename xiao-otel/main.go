@@ -77,6 +77,9 @@ func run(ctx context.Context) error {
 	httpSrv := &http.Server{
 		Handler:           srv.Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 	ln, err := net.Listen("tcp", ":"+env.Port)
 	if err != nil {

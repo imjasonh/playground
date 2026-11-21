@@ -81,6 +81,19 @@ type Point struct {
 	Int64Value int64
 }
 
+const (
+	maxPointsPerPayload = 32
+	maxLabelsPerPoint   = 8
+	maxLabelValueChars  = 128
+)
+
+var allowedMetrics = map[string]string{
+	"mcu.wake.count":        "custom.googleapis.com/xiao_esp32c3/mcu/wake/count",
+	"mcu.phase.duration_us": "custom.googleapis.com/xiao_esp32c3/mcu/phase/duration_us",
+	"mcu.battery_mv":        "custom.googleapis.com/xiao_esp32c3/mcu/battery_mv",
+	"mcu.ble.rssi":          "custom.googleapis.com/xiao_esp32c3/mcu/ble/rssi",
+}
+
 // Parse extracts normalized Cloud Monitoring points from an OTLP/HTTP v1 JSON body.
 func Parse(raw []byte, defaultNow time.Time) ([]Point, error) {
 	var p Payload
@@ -94,12 +107,12 @@ func Parse(raw []byte, defaultNow time.Time) ([]Point, error) {
 		for _, attr := range rm.Resource.Attributes {
 			switch attr.Key {
 			case "service.name":
-				if attr.Value.StringValue != "" {
-					service = attr.Value.StringValue
+				if v := sanitizeLabelValue(attr.Value.StringValue); v != "" {
+					service = v
 				}
 			case "device.id":
-				if attr.Value.StringValue != "" {
-					deviceID = attr.Value.StringValue
+				if v := sanitizeLabelValue(attr.Value.StringValue); v != "" {
+					deviceID = v
 				}
 			}
 		}
@@ -108,6 +121,10 @@ func Parse(raw []byte, defaultNow time.Time) ([]Point, error) {
 				if m.Name == "" {
 					continue
 				}
+				metricType, err := toCloudMonitoringType(m.Name)
+				if err != nil {
+					return nil, err
+				}
 				var dps []NumberDataPoint
 				if m.Gauge != nil {
 					dps = append(dps, m.Gauge.DataPoints...)
@@ -115,17 +132,24 @@ func Parse(raw []byte, defaultNow time.Time) ([]Point, error) {
 				if m.Sum != nil {
 					dps = append(dps, m.Sum.DataPoints...)
 				}
-				metricType := toCloudMonitoringType(m.Name)
 				for _, dp := range dps {
+					if len(out) >= maxPointsPerPayload {
+						return nil, fmt.Errorf("OTLP payload exceeds %d data points", maxPointsPerPayload)
+					}
 					val, err := parsePointInt(dp)
 					if err != nil {
 						return nil, fmt.Errorf("metric %s: %w", m.Name, err)
 					}
 					ts := parseUnixNano(dp.TimeUnixNano, defaultNow)
-					labels := make(map[string]string, len(dp.Attributes)+1)
+					labels := make(map[string]string, min(len(dp.Attributes), maxLabelsPerPoint))
 					for _, a := range dp.Attributes {
-						if a.Key != "" && a.Value.StringValue != "" {
-							labels[sanitizeLabelKey(a.Key)] = a.Value.StringValue
+						if len(labels) >= maxLabelsPerPoint {
+							break
+						}
+						k := sanitizeLabelKey(a.Key)
+						v := sanitizeLabelValue(a.Value.StringValue)
+						if k != "" && v != "" {
+							labels[k] = v
 						}
 					}
 					out = append(out, Point{
@@ -146,15 +170,20 @@ func Parse(raw []byte, defaultNow time.Time) ([]Point, error) {
 	return out, nil
 }
 
-func toCloudMonitoringType(otlpName string) string {
+func toCloudMonitoringType(otlpName string) (string, error) {
 	clean := strings.TrimSpace(otlpName)
-	clean = strings.ReplaceAll(clean, ".", "/")
-	return "custom.googleapis.com/xiao_esp32c3/" + clean
+	if mapped, ok := allowedMetrics[clean]; ok {
+		return mapped, nil
+	}
+	return "", fmt.Errorf("unsupported metric name %q", otlpName)
 }
 
 func sanitizeLabelKey(k string) string {
 	var b strings.Builder
 	for _, r := range k {
+		if b.Len() >= 64 {
+			break
+		}
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
 			b.WriteRune(r)
 		} else {
@@ -162,6 +191,14 @@ func sanitizeLabelKey(k string) string {
 		}
 	}
 	return b.String()
+}
+
+func sanitizeLabelValue(v string) string {
+	trimmed := strings.TrimSpace(v)
+	if len(trimmed) > maxLabelValueChars {
+		return trimmed[:maxLabelValueChars]
+	}
+	return trimmed
 }
 
 func parsePointInt(dp NumberDataPoint) (int64, error) {
@@ -311,7 +348,7 @@ func (e *CloudMonitoringExporter) Export(ctx context.Context, attestedUserID, at
 	}
 	client := e.HTTPClient
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{Timeout: 10 * time.Second}
 	}
 	resp, err := client.Do(req)
 	if err != nil {

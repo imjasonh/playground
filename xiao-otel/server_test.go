@@ -115,11 +115,12 @@ func TestAttestedHandshakeAndMetricsForwarding(t *testing.T) {
 		t.Fatal(err)
 	}
 	leafTmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(2),
-		Subject:      pkix.Name{CommonName: "Test credCert"},
-		NotBefore:    now.Add(-time.Hour),
-		NotAfter:     now.Add(24 * time.Hour),
-		KeyUsage:     x509.KeyUsageDigitalSignature,
+		SerialNumber:       big.NewInt(2),
+		Subject:            pkix.Name{CommonName: "Test credCert"},
+		NotBefore:          now.Add(-time.Hour),
+		NotAfter:           now.Add(24 * time.Hour),
+		KeyUsage:           x509.KeyUsageDigitalSignature,
+		SignatureAlgorithm: x509.ECDSAWithSHA256,
 		ExtraExtensions: []pkix.Extension{{
 			Id:    asn1.ObjectIdentifier{1, 2, 840, 113635, 100, 8, 2},
 			Value: nonceExtVal,
@@ -156,7 +157,8 @@ func TestAttestedHandshakeAndMetricsForwarding(t *testing.T) {
 	// 5. Fetch a new challenge and sign a POST /v1/metrics assertion.
 	metricsChal := fetchChallenge(t, ts.URL)
 	otlpSum := sha256.Sum256([]byte(sampleOTLPJSON))
-	metricsClientData := `{"action":"metrics","challenge":"` + metricsChal + `","payload":"` + hex.EncodeToString(otlpSum[:]) + `"}`
+	payloadHex := hex.EncodeToString(otlpSum[:])
+	metricsClientData := `{"action":"metrics","challenge":"` + metricsChal + `","payload":"` + payloadHex + `"}`
 	assertionB64 := signAssertion(t, leafKey, testAppID, 1, []byte(metricsClientData))
 
 	headers := map[string]string{
@@ -175,9 +177,9 @@ func TestAttestedHandshakeAndMetricsForwarding(t *testing.T) {
 		t.Fatalf("unexpected attested identities: user=%q device=%q", exp.userID, exp.deviceID)
 	}
 
-	// 6. Replaying the same counter or challenge must fail with 401.
+	// 6. Replaying the same counter or omitting the payload digest must fail with 401.
 	replayChal := fetchChallenge(t, ts.URL)
-	staleClientData := `{"action":"metrics","challenge":"` + replayChal + `"}`
+	staleClientData := `{"action":"metrics","challenge":"` + replayChal + `","payload":"` + payloadHex + `"}`
 	staleAssertionB64 := signAssertion(t, leafKey, testAppID, 1, []byte(staleClientData))
 	staleResp := postJSON(t, ts.URL+"/v1/metrics", []byte(sampleOTLPJSON), map[string]string{
 		"X-Apple-App-Attest-Key-Id":      keyID,
@@ -186,6 +188,18 @@ func TestAttestedHandshakeAndMetricsForwarding(t *testing.T) {
 	})
 	if staleResp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("stale counter status=%d, want 401", staleResp.StatusCode)
+	}
+
+	noPayloadChal := fetchChallenge(t, ts.URL)
+	noPayloadCD := `{"action":"metrics","challenge":"` + noPayloadChal + `"}`
+	noPayloadAssert := signAssertion(t, leafKey, testAppID, 2, []byte(noPayloadCD))
+	noPayloadResp := postJSON(t, ts.URL+"/v1/metrics", []byte(sampleOTLPJSON), map[string]string{
+		"X-Apple-App-Attest-Key-Id":      keyID,
+		"X-Apple-App-Attest-Assertion":   noPayloadAssert,
+		"X-Apple-App-Attest-Client-Data": base64.StdEncoding.EncodeToString([]byte(noPayloadCD)),
+	})
+	if noPayloadResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("missing payload digest status=%d, want 401", noPayloadResp.StatusCode)
 	}
 }
 
@@ -225,7 +239,8 @@ func TestUnattestedSimulatorMetricsFlowAndCloudMonitoringExport(t *testing.T) {
 	}
 
 	mChal := fetchChallenge(t, ts.URL)
-	mCD := `{"action":"metrics","challenge":"` + mChal + `"}`
+	otlpSum := sha256.Sum256([]byte(sampleOTLPJSON))
+	mCD := `{"action":"metrics","challenge":"` + mChal + `","payload":"` + hex.EncodeToString(otlpSum[:]) + `"}`
 	mResp := postJSON(t, ts.URL+"/v1/metrics", []byte(sampleOTLPJSON), map[string]string{
 		"X-Apple-App-Attest-Key-Id":      "unattested:sim-1",
 		"X-Apple-App-Attest-Client-Data": mCD,

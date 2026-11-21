@@ -254,6 +254,15 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
                 otaStatusText = "GHCR blob download failed."
                 return
             }
+            let expectedHex = digest.hasPrefix("sha256:")
+                ? String(digest.dropFirst("sha256:".count)).lowercased()
+                : digest.lowercased()
+            let actualHex = XIAOESP32C3Protocol.sha256Hex(blobData)
+            guard actualHex == expectedHex else {
+                otaPhase = .failed("GHCR layer SHA-256 mismatch (got \(actualHex.prefix(12))…, expected \(expectedHex.prefix(12))…).")
+                otaStatusText = "GHCR layer digest verification failed."
+                return
+            }
             stageFirmware(data: blobData, name: "ghcr:\(tag) (\(digest.prefix(19)))")
         } catch {
             otaPhase = .failed(error.localizedDescription)
@@ -559,7 +568,8 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             let challenge = try await api.fetchChallenge()
             let clientData = AppAttestAssertionClientData(
                 action: "metrics",
-                challenge: challenge.challenge
+                challenge: challenge.challenge,
+                payload: XIAOESP32C3Protocol.sha256Hex(body)
             )
             let clientJSON = try clientData.jsonBytes()
             request.setValue(keyId, forHTTPHeaderField: "X-Apple-App-Attest-Key-Id")
@@ -568,14 +578,22 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
                 forHTTPHeaderField: "X-Apple-App-Attest-Client-Data"
             )
             if attestKeys.isSupported {
-                let assertion = try await attestKeys.generateAssertion(
-                    keyId,
-                    clientDataHash: AppAttestHashing.sha256(clientJSON)
-                )
-                request.setValue(
-                    assertion.base64EncodedString(),
-                    forHTTPHeaderField: "X-Apple-App-Attest-Assertion"
-                )
+                do {
+                    let assertion = try await attestKeys.generateAssertion(
+                        keyId,
+                        clientDataHash: AppAttestHashing.sha256(clientJSON)
+                    )
+                    request.setValue(
+                        assertion.base64EncodedString(),
+                        forHTTPHeaderField: "X-Apple-App-Attest-Assertion"
+                    )
+                } catch {
+                    if Self.isInvalidKey(error) {
+                        attestStore.keyId = nil
+                        defaults.removeObject(forKey: Self.registeredHostDefaultsKey)
+                    }
+                    throw error
+                }
             }
         }
 
@@ -615,12 +633,27 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
                 attestStore.keyId = fresh
                 keyId = fresh
             }
-            let attestation = try await attestKeys.attestKey(keyId, clientDataHash: hash)
-            registered = try await api.register(
-                keyId: keyId,
-                attestationObject: attestation,
-                clientDataJSON: clientJSON
-            )
+            do {
+                let attestation = try await attestKeys.attestKey(keyId, clientDataHash: hash)
+                registered = try await api.register(
+                    keyId: keyId,
+                    attestationObject: attestation,
+                    clientDataJSON: clientJSON
+                )
+            } catch {
+                if Self.isInvalidKey(error) {
+                    let fresh = try await attestKeys.generateKey()
+                    attestStore.keyId = fresh
+                    let attestation = try await attestKeys.attestKey(fresh, clientDataHash: hash)
+                    registered = try await api.register(
+                        keyId: fresh,
+                        attestationObject: attestation,
+                        clientDataJSON: clientJSON
+                    )
+                } else {
+                    throw error
+                }
+            }
         } else {
             registered = try await api.registerUnattested(clientDataJSON: clientJSON)
         }
@@ -628,6 +661,11 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         attestStore.isRegistered = true
         defaults.set(hostKey, forKey: Self.registeredHostDefaultsKey)
         return registered.keyId
+    }
+
+    private static func isInvalidKey(_ error: Error) -> Bool {
+        let ns = error as NSError
+        return ns.domain == DCError.errorDomain && ns.code == DCError.invalidKey.rawValue
     }
 
     static func resolveMetricsURL(from raw: String) -> URL? {
