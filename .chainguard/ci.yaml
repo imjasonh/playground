@@ -1,0 +1,18 @@
+# Chainguard Checks runs each check in its own microVM. A presubmit check runs
+# when a pull request is opened, reopened, or updated.
+# A check has no network access unless it lists hosts under network.egress.
+version: 1
+environment:
+  packages: [go]
+checks:
+  clash-vet:
+    trigger: presubmit
+    cmd: go -C clash vet ./...
+  clash-test:
+    trigger: presubmit
+    cmd: go -C clash test ./...
+  testtrace-test:
+    trigger: presubmit
+    cmd: go -C testtrace test ./...
+    network:
+      egress: [proxy.golang.org, sum.golang.org]
