@@ -30,48 +30,48 @@ def check(cond: bool, msg: str) -> None:
         raise AssertionError(msg)
 
 
-def test_find_posts_nested_and_skips_junk() -> None:
+def test_find_posts_only_reads_posts_dir() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
+        posts = root / "posts"
+        posts.mkdir()
+        (posts / "pasta.md").write_text("# Pasta\n")
+        (posts / "kontain.me-compromise.md").write_text("# Postmortem\n")
+        (posts / ".draft.md").write_text("# hidden\n")
+        (posts / "notes.txt").write_text("not markdown\n")
+        (posts / "nested").mkdir()
+        (posts / "nested" / "sub.md").write_text("# nested ignored\n")
         (root / "pasta").mkdir()
-        (root / "pasta" / "blog-post.md").write_text("# Pasta\n")
-        nested = root / "ios" / "Sources" / "Experiments" / "LocalLens"
-        nested.mkdir(parents=True)
-        (nested / "blog-post.md").write_text("# Lens\n")
-        (root / "node_modules" / "pkg").mkdir(parents=True)
-        (root / "node_modules" / "pkg" / "blog-post.md").write_text("# no\n")
-        (root / ".hidden").mkdir()
-        (root / ".hidden" / "blog-post.md").write_text("# no\n")
+        (root / "pasta" / "blog-post.md").write_text("# old path ignored\n")
         paths = [p.relative_to(root).as_posix() for p in bb.find_post_paths(root)]
         check(
             paths == [
-                "ios/Sources/Experiments/LocalLens/blog-post.md",
-                "pasta/blog-post.md",
+                "posts/kontain.me-compromise.md",
+                "posts/pasta.md",
             ],
-            f"nested kept, junk skipped: {paths}",
+            f"only posts/<stub>.md kept: {paths}",
         )
 
 
-def test_slug_collision_uses_relative_parent() -> None:
+def test_find_posts_missing_dir_returns_empty() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        check(bb.find_post_paths(Path(d)) == [], "missing posts/ returns empty")
+
+
+def test_slugs_come_from_filename_stem() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        (root / "a" / "foo").mkdir(parents=True)
-        (root / "b" / "foo").mkdir(parents=True)
-        p1 = root / "a" / "foo" / "blog-post.md"
-        p2 = root / "b" / "foo" / "blog-post.md"
-        p1.write_text("# A\n")
-        p2.write_text("# B\n")
+        posts = root / "posts"
+        posts.mkdir()
+        p1 = posts / "pasta.md"
+        p2 = posts / "kontain.me-compromise.md"
+        p1.write_text("# Pasta\n")
+        p2.write_text("# Postmortem\n")
         slugs = bb.assign_slugs([p1, p2], root)
-        check(set(slugs.values()) == {"a-foo", "b-foo"}, f"colliding slugs: {slugs}")
-
-
-def test_root_post_slug_is_home() -> None:
-    with tempfile.TemporaryDirectory() as d:
-        root = Path(d)
-        path = root / "blog-post.md"
-        path.write_text("# Root\n")
-        slugs = bb.assign_slugs([path], root)
-        check(slugs[path] == "home", f"root slug: {slugs[path]}")
+        check(
+            slugs == {p1: "pasta", p2: "kontain.me-compromise"},
+            f"slugs from stem: {slugs}",
+        )
 
 
 def test_markdown_basics() -> None:
@@ -134,8 +134,8 @@ def test_extract_title_strips_h1() -> None:
 def test_missing_image_fails_build() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        (root / "app").mkdir()
-        (root / "app" / "blog-post.md").write_text("# Hi\n\n![x](./gone.jpg)\n")
+        (root / "posts").mkdir()
+        (root / "posts" / "app.md").write_text("# Hi\n\n![x](./gone.jpg)\n")
         try:
             bb.build(root, root / "out")
         except bb.BuildError as exc:
@@ -147,9 +147,9 @@ def test_missing_image_fails_build() -> None:
 def test_escaped_image_path_fails_build() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        (root / "app").mkdir()
+        (root / "posts").mkdir()
         (root / "secret.jpg").write_text("x")
-        (root / "app" / "blog-post.md").write_text("# Hi\n\n![x](../secret.jpg)\n")
+        (root / "posts" / "app.md").write_text("# Hi\n\n![x](../secret.jpg)\n")
         try:
             bb.build(root, root / "out")
         except bb.BuildError as exc:
@@ -161,9 +161,9 @@ def test_escaped_image_path_fails_build() -> None:
 def test_copies_local_image_and_remote_urls_stay() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        (root / "app").mkdir()
-        (root / "app" / "pic.jpg").write_bytes(b"jpeg")
-        (root / "app" / "blog-post.md").write_text(
+        (root / "posts").mkdir()
+        (root / "posts" / "pic.jpg").write_bytes(b"jpeg")
+        (root / "posts" / "app.md").write_text(
             "# Hi\n\n![local](./pic.jpg)\n\n![remote](https://example.com/x.png)\n"
         )
         bb.build(root, root / "out")
@@ -179,9 +179,9 @@ def test_copies_local_image_and_remote_urls_stay() -> None:
 def test_rss_uses_absolute_urls_and_full_html() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        (root / "app").mkdir()
-        (root / "app" / "pic.jpg").write_bytes(b"jpeg")
-        (root / "app" / "blog-post.md").write_text(
+        (root / "posts").mkdir()
+        (root / "posts" / "pic.jpg").write_bytes(b"jpeg")
+        (root / "posts" / "app.md").write_text(
             "# Hello\n\nA paragraph.\n\n![local](./pic.jpg)\n"
         )
         dest = root / "out"
@@ -227,10 +227,10 @@ def test_git_dates_first_and_last() -> None:
         _git(repo, "init")
         _git(repo, "config", "user.email", "dev@example.com")
         _git(repo, "config", "user.name", "Dev")
-        (repo / "app").mkdir()
-        post = repo / "app" / "blog-post.md"
+        (repo / "posts").mkdir()
+        post = repo / "posts" / "app.md"
         post.write_text("# Hi\n\nfirst\n")
-        _git(repo, "add", "app/blog-post.md")
+        _git(repo, "add", "posts/app.md")
         _git(
             repo,
             "commit",
@@ -242,7 +242,7 @@ def test_git_dates_first_and_last() -> None:
             },
         )
         post.write_text("# Hi\n\nsecond\n")
-        _git(repo, "add", "app/blog-post.md")
+        _git(repo, "add", "posts/app.md")
         _git(
             repo,
             "commit",
@@ -253,7 +253,7 @@ def test_git_dates_first_and_last() -> None:
                 "GIT_COMMITTER_DATE": "2026-03-02T09:00:00-05:00",
             },
         )
-        published, updated = bb.git_author_dates(repo, "app/blog-post.md")
+        published, updated = bb.git_author_dates(repo, "posts/app.md")
         check(published is not None and updated is not None, "dates present")
         check(published.date().isoformat() == "2026-01-15", f"published {published}")
         check(updated.date().isoformat() == "2026-03-02", f"updated {updated}")
@@ -264,7 +264,7 @@ def test_git_dates_first_and_last() -> None:
         check("Published January 15, 2026" in html, "published label")
         check("Updated March 2, 2026" in html, "updated label")
         check('class="updated"' in html, "updated date is marked for lighter type")
-        check(posts[0].slug == "app", "slug from parent")
+        check(posts[0].slug == "app", "slug from stem")
 
 
 def test_git_dates_ignore_pure_rename() -> None:
@@ -287,7 +287,8 @@ def test_git_dates_ignore_pure_rename() -> None:
                 "GIT_COMMITTER_DATE": "2026-04-24T12:11:51-04:00",
             },
         )
-        _git(repo, "mv", "app/intro.md", "app/blog-post.md")
+        (repo / "posts").mkdir()
+        _git(repo, "mv", "app/intro.md", "posts/app.md")
         _git(
             repo,
             "commit",
@@ -298,7 +299,7 @@ def test_git_dates_ignore_pure_rename() -> None:
                 "GIT_COMMITTER_DATE": "2026-10-27T12:00:00-04:00",
             },
         )
-        published, updated = bb.git_author_dates(repo, "app/blog-post.md")
+        published, updated = bb.git_author_dates(repo, "posts/app.md")
         check(published is not None and updated is not None, "dates present")
         check(published.isoformat() == "2026-04-24T12:11:51-04:00", f"published {published}")
         check(updated.isoformat() == "2026-04-24T12:11:51-04:00", f"updated {updated}")
@@ -394,7 +395,8 @@ def test_git_dates_subtree_import_keeps_original_timestamps() -> None:
                 "GIT_COMMITTER_DATE": "2026-10-26T08:53:38-04:00",
             },
         )
-        _git(repo, "mv", "nescript/intro.md", "nescript/blog-post.md")
+        (repo / "posts").mkdir()
+        _git(repo, "mv", "nescript/intro.md", "posts/nescript.md")
         _git(
             repo,
             "commit",
@@ -405,7 +407,7 @@ def test_git_dates_subtree_import_keeps_original_timestamps() -> None:
                 "GIT_COMMITTER_DATE": "2026-10-27T12:00:00-04:00",
             },
         )
-        published, updated = bb.git_author_dates(repo, "nescript/blog-post.md")
+        published, updated = bb.git_author_dates(repo, "posts/nescript.md")
         check(published is not None and updated is not None, "dates present")
         check(published.isoformat() == "2026-04-24T12:11:51-04:00", f"published {published}")
         check(updated.isoformat() == "2026-04-24T16:04:54-04:00", f"updated {updated}")
@@ -413,11 +415,11 @@ def test_git_dates_subtree_import_keeps_original_timestamps() -> None:
         html = (repo / "out" / "nescript" / "index.html").read_text()
         check("Published April 24, 2026" in html, "published label")
         check("Updated" not in html, "same-day update stays off the page")
-        check(posts[0].slug == "nescript", "slug from parent")
+        check(posts[0].slug == "nescript", "slug from stem")
 
-        post = repo / "nescript" / "blog-post.md"
+        post = repo / "posts" / "nescript.md"
         post.write_text("# Introducing\n\nthird\n")
-        _git(repo, "add", "nescript/blog-post.md")
+        _git(repo, "add", "posts/nescript.md")
         _git(
             repo,
             "commit",
@@ -428,7 +430,7 @@ def test_git_dates_subtree_import_keeps_original_timestamps() -> None:
                 "GIT_COMMITTER_DATE": "2026-10-28T09:30:00-04:00",
             },
         )
-        published, updated = bb.git_author_dates(repo, "nescript/blog-post.md")
+        published, updated = bb.git_author_dates(repo, "posts/nescript.md")
         check(published.isoformat() == "2026-04-24T12:11:51-04:00", f"published after edit {published}")
         check(updated.isoformat() == "2026-10-28T09:30:00-04:00", f"updated after edit {updated}")
 
@@ -468,9 +470,9 @@ def test_newer_post_sorts_ahead_of_existing() -> None:
         _git(repo, "init")
         _git(repo, "config", "user.email", "dev@example.com")
         _git(repo, "config", "user.name", "Dev")
-        (repo / "pasta").mkdir()
-        (repo / "pasta" / "blog-post.md").write_text("# pasta\n\nexisting\n")
-        _git(repo, "add", "pasta/blog-post.md")
+        (repo / "posts").mkdir()
+        (repo / "posts" / "pasta.md").write_text("# pasta\n\nexisting\n")
+        _git(repo, "add", "posts/pasta.md")
         _git(
             repo,
             "commit",
@@ -481,9 +483,8 @@ def test_newer_post_sorts_ahead_of_existing() -> None:
                 "GIT_COMMITTER_DATE": "2026-08-19T12:00:00-05:00",
             },
         )
-        (repo / "ios").mkdir()
-        (repo / "ios" / "blog-post.md").write_text("# iOS\n\ndraft\n")
-        _git(repo, "add", "ios/blog-post.md")
+        (repo / "posts" / "ios.md").write_text("# iOS\n\ndraft\n")
+        _git(repo, "add", "posts/ios.md")
         _git(
             repo,
             "commit",
@@ -513,7 +514,7 @@ def test_real_repo_posts_build() -> None:
         check("pasta" in slugs, f"pasta post present: {slugs}")
         check("its-not-jaws" in slugs, f"its-not-jaws post present: {slugs}")
         check("nescript" in slugs, f"nescript post present: {slugs}")
-        # Do not pin the newest slug. A PR that adds blog-post.md has a later
+        # Do not pin the newest slug. A PR that adds a post has a later
         # git author date than pasta, so a pasta-is-newest check fails those PRs.
         pasta_html = (dest / "pasta" / "index.html").read_text()
         check("__SHARED_CSS__" not in pasta_html, "shared CSS inlined")
@@ -535,14 +536,9 @@ def test_real_repo_posts_build() -> None:
         )
         check("Published August 19, 2026" in pasta_html, "pasta published date")
         # The author keeps editing the pasta post, so don't pin its updated date.
-        pasta_last = subprocess.run(
-            ["git", "log", "-1", "--format=%aI", "--", "pasta/blog-post.md"],
-            cwd=REPO_ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-        pasta_updated = bb.format_date(datetime.fromisoformat(pasta_last))
+        _, pasta_last = bb.git_author_dates(REPO_ROOT, "posts/pasta.md")
+        check(pasta_last is not None, "pasta updated date present")
+        pasta_updated = bb.format_date(pasta_last)
         check(f"Updated {pasta_updated}" in pasta_html, f"pasta updated {pasta_updated}")
         nescript_html = (dest / "nescript" / "index.html").read_text()
         check("Introducing NEScript" in nescript_html, "nescript title")
@@ -575,8 +571,8 @@ def test_real_repo_posts_build() -> None:
 def test_catalog_loads_whbiab() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        (root / "pasta").mkdir()
-        (root / "pasta" / "blog-post.md").write_text("# Pasta\n\nHello.\n")
+        (root / "posts").mkdir()
+        (root / "posts" / "pasta.md").write_text("# Pasta\n\nHello.\n")
         dest = root / "out"
         bb.build(root, dest)
         script = (dest / "whbiab.js").read_text()

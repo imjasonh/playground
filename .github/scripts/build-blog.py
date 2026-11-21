@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Build the published /posts/ catalog from blog-post.md files.
+"""Build the published /posts/ catalog from posts/<stub>.md files.
 
-Discovers every ``blog-post.md`` in a repository source tree, converts the
+Discovers every ``posts/<stub>.md`` in a repository source tree, converts the
 Markdown to HTML, copies local images the posts reference, and writes a
 reverse-chronological index plus an RSS 2.0 feed. The index and each post
 load ``wehadababyitsaboy/web/whbiab.js``. Publication and update
@@ -38,19 +38,7 @@ SHARED_CSS_PATH = PAGES_DIR / "blog-shared.css"
 SOURCE_ROOT = SCRIPT_DIR.parents[1]
 WHBIAB_JS = SOURCE_ROOT / "wehadababyitsaboy" / "web" / "whbiab.js"
 
-POST_FILENAME = "blog-post.md"
-SKIP_DIR_NAMES = {
-    ".git",
-    ".venv",
-    "__pycache__",
-    "node_modules",
-    "target",
-    "dist",
-    "DerivedData",
-    "vendor",
-    "coverage",
-    "test-results",
-}
+POSTS_DIR = "posts"
 
 ALERT_TYPES = {
     "NOTE": "Note",
@@ -86,53 +74,22 @@ class Post:
 
 
 def find_post_paths(root: Path) -> list[Path]:
-    """Return blog-post.md paths under ``root``, skipping generated/hidden trees."""
-    found: list[Path] = []
-    root = root.resolve()
-    for path in root.rglob(POST_FILENAME):
-        if not path.is_file():
-            continue
-        rel_parts = path.relative_to(root).parts
-        if any(part.startswith(".") or part in SKIP_DIR_NAMES for part in rel_parts[:-1]):
-            continue
-        found.append(path)
+    """Return ``posts/<stub>.md`` paths under ``root``, skipping hidden files."""
+    posts_dir = root.resolve() / POSTS_DIR
+    if not posts_dir.is_dir():
+        return []
+    found = [
+        path
+        for path in posts_dir.glob("*.md")
+        if path.is_file() and not path.name.startswith(".")
+    ]
     found.sort()
     return found
 
 
-def assign_slugs(paths: list[Path], root: Path) -> dict[Path, str]:
-    """Map each post path to a URL slug.
-
-    The default slug is the parent directory name, or ``home`` when the file
-    sits at the repository root. If two posts share that name, colliding
-    paths use a hyphenated relative-parent slug instead.
-    """
-    root = root.resolve()
-    prelim: dict[Path, str] = {}
-    counts: dict[str, int] = {}
-    for path in paths:
-        if path.parent.resolve() == root:
-            slug = "home"
-        else:
-            slug = path.parent.name
-        prelim[path] = slug
-        counts[slug] = counts.get(slug, 0) + 1
-
-    slugs: dict[Path, str] = {}
-    used: set[str] = set()
-    for path in paths:
-        slug = prelim[path]
-        if counts[slug] > 1:
-            rel_parent = path.parent.relative_to(root)
-            slug = "-".join(rel_parent.parts) if rel_parent.parts else slug
-        original = slug
-        n = 2
-        while slug in used:
-            slug = f"{original}-{n}"
-            n += 1
-        used.add(slug)
-        slugs[path] = slug
-    return slugs
+def assign_slugs(paths: list[Path], root: Path | None = None) -> dict[Path, str]:
+    """Map each ``posts/<stub>.md`` path to its URL slug (``<stub>``)."""
+    return {path: path.stem for path in paths}
 
 
 def git_author_dates(repo: Path, rel_path: str) -> tuple[datetime | None, datetime | None]:
@@ -625,8 +582,7 @@ def _consume_autolink(text: str, i: int, out: list[str]) -> int | None:
 
 def load_post(root: Path, path: Path, slug: str) -> Post:
     raw = path.read_text(encoding="utf-8")
-    fallback = "home" if path.parent.resolve() == root.resolve() else path.parent.name
-    title_md, body = extract_title(raw, fallback)
+    title_md, body = extract_title(raw, slug)
     rel = str(path.relative_to(root))
     published, updated = git_author_dates(root, rel)
     return Post(

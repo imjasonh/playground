@@ -1,6 +1,6 @@
 # NEScript
 
-For the original writeup, see [Introducing NEScript](./blog-post.md).
+For the original writeup, see [Introducing NEScript](../posts/nescript.md).
 
 NEScript is a statically-typed, compiled programming language for NES game development.
 

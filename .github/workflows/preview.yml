@@ -223,11 +223,9 @@ jobs:
             for (const f of files) {
               if (f.status === 'removed') continue;
               const name = f.filename;
-              if (name !== 'blog-post.md' && !name.endsWith('/blog-post.md')) continue;
-              const parts = name.split('/');
-              // Default slug is the parent directory, matching assign_slugs.
-              const slug = parts.length === 1 ? 'home' : parts[parts.length - 2];
-              changedPosts.push(`${url}posts/${slug}/`);
+              const match = name.match(/^posts\/([^./][^/]*)\.md$/);
+              if (!match) continue;
+              changedPosts.push(`${url}posts/${match[1]}/`);
             }
             const postLinks = changedPosts.length
               ? `\n${changedPosts.map((u) => `- ${u}`).join('\n')}`
