@@ -76,10 +76,6 @@ theorem SvHasher.same {B : Word} {M M' : Word → BitVec 8} {c : Nat} {msg : Byt
     (h : ∀ j, j < 0xD0 → M' (B + 0x21A0 + BitVec.ofNat 32 (c + j)) = M (B + 0x21A0 + BitVec.ofNat 32 (c + j))) :
     SvHasher B M' c msg := H.copy h
 
-theorem SvKeepL.trans {B : Word} {M1 M2 M3 : Word → BitVec 8} {L1 L2 : List (Nat × Nat)}
-    (K1 : SvKeepL B M1 M2 L1) (K2 : SvKeepL B M2 M3 L2) : SvKeepL B M1 M3 (L1 ++ L2) := fun e he hL =>
-  (K2 e he fun p hp => hL p (List.mem_append_right _ hp)).trans (K1 e he fun p hp => hL p (List.mem_append_left _ hp))
-
 theorem SvKeepL.of {B : Word} {M M' : Word → BitVec 8} {c w : Nat} (K : SvKeep B M M' c w) : SvKeepL B M M' [(c, w)] :=
   fun e he hL => K e he (hL _ (List.mem_singleton_self _))
 

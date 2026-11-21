@@ -30,6 +30,7 @@ def cname(l):
     if l.startswith("SvCode"): return 'E'
     if l.startswith("SvSaves"): return 'V'
     if l.startswith("(∀ x, SvR"): return 'FR'
+    if l.startswith("SvKeepL B n0.mem n'.mem"): return 'KL'
     if l.startswith("reg n' sp"): return 'r2'
     m=re.match(r"reg n' \((\d+) : Fin 32\)",l)
     if m: return 'r'+m.group(1)

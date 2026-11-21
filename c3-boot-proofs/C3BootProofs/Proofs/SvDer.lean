@@ -21,6 +21,18 @@ def SvKeepL (B : Word) (M M' : Word → BitVec 8) (L : List (Nat × Nat)) : Prop
   ∀ e, e + 1 ≤ 0x1690 → (∀ p ∈ L, e < p.1 ∨ p.1 + p.2 ≤ e) →
     M' (B + 0x21A0 + BitVec.ofNat 32 e) = M (B + 0x21A0 + BitVec.ofNat 32 e)
 
+theorem SvKeepL.refl {B : Word} {M : Word → BitVec 8} : SvKeepL B M M [] := fun _ _ _ => rfl
+
+theorem SvKeepL.trans {B : Word} {M0 M1 M2 : Word → BitVec 8} {L1 L2 : List (Nat × Nat)} (h1 : SvKeepL B M0 M1 L1)
+    (h2 : SvKeepL B M1 M2 L2) : SvKeepL B M0 M2 (L1 ++ L2) := fun e he hL =>
+  (h2 e he fun p hp => hL p (List.mem_append_right _ hp)).trans (h1 e he fun p hp => hL p (List.mem_append_left _ hp))
+
+theorem SvKeepL.mono {B : Word} {M M' : Word → BitVec 8} {L L' : List (Nat × Nat)} (h : SvKeepL B M M' L)
+    (hs : ∀ p ∈ L, p ∈ L') : SvKeepL B M M' L' := fun e he hL => h e he fun p hp => hL p (hs p hp)
+
+theorem SvKeep.toL {B : Word} {M M' : Word → BitVec 8} {c w : Nat} (h : SvKeep B M M' c w) :
+    SvKeepL B M M' [(c, w)] := fun e he hL => h e he (hL _ (List.mem_singleton_self _))
+
 theorem SvKeepL.w32 {B : Word} {M M' : Word → BitVec 8} {L : List (Nat × Nat)} {e : Nat} (K : SvKeepL B M M' L)
     (he : e + 4 ≤ 0x1690) (h : ∀ p ∈ L, e + 4 ≤ p.1 ∨ p.1 + p.2 ≤ e) :
     memLoad32 M' (B + 0x21A0 + BitVec.ofNat 32 e) = memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 e) :=

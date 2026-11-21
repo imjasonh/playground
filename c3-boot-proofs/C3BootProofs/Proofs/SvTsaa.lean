@@ -322,7 +322,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x424) = (BitVec.ofNat 32 tl20.len).extractLsb' 0 8 ∧
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x425) = (BitVec.ofNat 32 tl20.len).extractLsb' 8 8 ∧
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x426) = (BitVec.ofNat 32 tl20.len).extractLsb' 16 8 ∧
-        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x427) = (BitVec.ofNat 32 tl20.len).extractLsb' 24 8) := by
+        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x427) = (BitVec.ofNat 32 tl20.len).extractLsb' 24 8 ∧
+        SvKeepL B n0.mem n'.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)]) := by
   have t0 : Steps n0 n0 := .refl n0
   have fR0 : ∀ x, SvR B x → n0.mem x = M0 x := fM
   have g0_3 : reg n0 (3 : Fin 32) = reg n0 (3 : Fin 32) := rfl
@@ -351,6 +352,7 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g1_25 : reg n1 (25 : Fin 32) = L0 := by
     rw [u1.regs]; simp +decide only [upd, ↓reduceIte]
     rw [g0_9, show B + 0x21A0 + BitVec.ofNat 32 0x1320 + 0x4 = B + 0x21A0 + BitVec.ofNat 32 0x1324 by sv_addr, w0_1324]
+  have keep_kk1 : SvKeepL B n0.mem n1.mem [] := by rw [m1]; exact (SvKeepL.refl : SvKeepL B n0.mem n0.mem [])
   have w1_24 : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m1]; exact w0_24
   have w1_28 : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m1]; exact w0_28
   have w1_2c : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m1]; exact w0_2c
@@ -445,6 +447,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     have g2_25 : reg n2 (25 : Fin 32) = L0 := by rw [u2.regs, g1_25]
     have g2_26 : reg n2 (26 : Fin 32) = x26 := by rw [u2.regs, g1_26]
     have g2_27 : reg n2 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u2.regs, g1_27]
+    have keep_kk2 : SvKeepL B n0.mem n2.mem [] := by rw [m2]; exact keep_kk1
+    clear keep_kk1
     have w2_24 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m2]; exact w1_24
     have w2_28 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m2]; exact w1_28
     have w2_2c : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m2]; exact w1_2c
@@ -555,6 +559,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
       rw [rb3]; simp +decide only [runBlock, BInstr.run, svTsaa26fa, upd, ↓reduceIte, aluEval]
       all_goals (try simp only [g2_2, g2_3, g2_4, g2_9, g2_18, g2_19, g2_20, g2_21, g2_24, g2_25, g2_26, g2_27, s2.zero])
       all_goals first | with_reducible rfl | sv_addr | decide
+    have keep_kk3 : SvKeepL B n0.mem n3.mem [] := by rw [m3]; exact keep_kk2
+    clear keep_kk2
     have w3_24 : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m3]; exact w2_24
     have w3_28 : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m3]; exact w2_28
     have w3_2c : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m3]; exact w2_2c
@@ -649,6 +655,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     have g4_25 : reg n4 (25 : Fin 32) = L0 := by rw [u4.regs, g3_25]
     have g4_26 : reg n4 (26 : Fin 32) = x26 := by rw [u4.regs, g3_26]
     have g4_27 : reg n4 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u4.regs, g3_27]
+    have keep_kk4 : SvKeepL B n0.mem n4.mem [] := by rw [m4]; exact keep_kk3
+    clear keep_kk3
     have w4_24 : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m4]; exact w3_24
     have w4_28 : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m4]; exact w3_28
     have w4_2c : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m4]; exact w3_2c
@@ -743,6 +751,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g2_25 : reg n2 (25 : Fin 32) = L0 := by rw [u2.regs, g1_25]
   have g2_26 : reg n2 (26 : Fin 32) = x26 := by rw [u2.regs, g1_26]
   have g2_27 : reg n2 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u2.regs, g1_27]
+  have keep_kk2 : SvKeepL B n0.mem n2.mem [] := by rw [m2]; exact keep_kk1
+  clear keep_kk1
   have w2_24 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m2]; exact w1_24
   have w2_28 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m2]; exact w1_28
   have w2_2c : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m2]; exact w1_2c
@@ -839,6 +849,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g3_10 : reg n3 a0 = p0 := by
     rw [u3.regs]; simp +decide only [upd, ↓reduceIte]
     rw [g2_9, show B + 0x21A0 + BitVec.ofNat 32 0x1320 + 0x0 = B + 0x21A0 + BitVec.ofNat 32 0x1320 by sv_addr, w2_1320]
+  have keep_kk3 : SvKeepL B n0.mem n3.mem [] := by rw [m3]; exact keep_kk2
+  clear keep_kk2
   have w3_24 : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m3]; exact w2_24
   have w3_28 : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m3]; exact w2_28
   have w3_2c : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m3]; exact w2_2c
@@ -930,6 +942,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g4_25 : reg n4 (25 : Fin 32) = L0 := by rw [rg4 (25 : Fin 32), g3_25]
   have g4_26 : reg n4 (26 : Fin 32) = x26 := by rw [rg4 (26 : Fin 32), g3_26]
   have g4_27 : reg n4 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rg4 (27 : Fin 32), g3_27]
+  have keep_kk4 : SvKeepL B n0.mem n4.mem [(0x74, 0x4)] := keep_kk3.trans K4.toL
+  clear keep_kk3
   have w4_24 : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := (K4.w32 (by decide) (by decide)).trans w3_24
   have w4_28 : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := (K4.w32 (by decide) (by decide)).trans w3_28
   have w4_2c : memLoad32 n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := (K4.w32 (by decide) (by decide)).trans w3_2c
@@ -1045,6 +1059,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     rw [rb5]; simp +decide only [runBlock, BInstr.run, svTsaa2512, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g4_2, g4_3, g4_4, g4_9, g4_10, g4_18, g4_19, g4_20, g4_21, g4_24, g4_25, g4_26, g4_27, s4.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
+  have keep_kk5 : SvKeepL B n0.mem n5.mem [(0x74, 0x4)] := by rw [m5]; exact keep_kk4
+  clear keep_kk4
   have w5_24 : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m5]; exact w4_24
   have w5_28 : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m5]; exact w4_28
   have w5_2c : memLoad32 n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m5]; exact w4_2c
@@ -1141,6 +1157,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   obtain ⟨r6, hr6⟩ : ∃ r, derElement 0x30 (memBytes M0 (cp) (rem).toNat) = r := ⟨_, rfl⟩
   rcases r6 with er6 | tl6
   · obtain ⟨z6, -⟩ := Er6 er6 hr6
+    have keep_kk6 : SvKeepL B n0.mem n6.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8)] := keep_kk5.trans K6
+    clear keep_kk5
     have w6_24 : memLoad32 n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := (K6.w32 (by decide) (by decide)).trans w5_24
     have w6_28 : memLoad32 n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := (K6.w32 (by decide) (by decide)).trans w5_28
     have w6_2c : memLoad32 n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := (K6.w32 (by decide) (by decide)).trans w5_2c
@@ -1236,6 +1254,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     have g7_9 : reg n7 (9 : Fin 32) = 0 := by
       rw [u7.regs]; simp +decide only [upd, ↓reduceIte]
       rw [g6_2, show B + 0x21A0 + 0x420 = B + 0x21A0 + BitVec.ofNat 32 0x420 by sv_addr, w6_420]
+    have keep_kk7 : SvKeepL B n0.mem n7.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8)] := by rw [m7]; exact keep_kk6
+    clear keep_kk6
     have w7_24 : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m7]; exact w6_24
     have w7_28 : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m7]; exact w6_28
     have w7_2c : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m7]; exact w6_2c
@@ -1328,6 +1348,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     have g8_25 : reg n8 (25 : Fin 32) = L0 := by rw [u8.regs, upd_ne (by decide) (by decide), g7_25]
     have g8_26 : reg n8 (26 : Fin 32) = x26 := by rw [u8.regs, upd_ne (by decide) (by decide), g7_26]
     have g8_27 : reg n8 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u8.regs, upd_ne (by decide) (by decide), g7_27]
+    have keep_kk8 : SvKeepL B n0.mem n8.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8)] := by rw [m8]; exact keep_kk7
+    clear keep_kk7
     have w8_24 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m8]; exact w7_24
     have w8_28 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m8]; exact w7_28
     have w8_2c : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m8]; exact w7_2c
@@ -1421,6 +1443,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     have g9_25 : reg n9 (25 : Fin 32) = L0 := by rw [u9.regs, g8_25]
     have g9_26 : reg n9 (26 : Fin 32) = x26 := by rw [u9.regs, g8_26]
     have g9_27 : reg n9 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u9.regs, g8_27]
+    have keep_kk9 : SvKeepL B n0.mem n9.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8)] := by rw [m9]; exact keep_kk8
+    clear keep_kk8
     have w9_24 : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m9]; exact w8_24
     have w9_28 : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m9]; exact w8_28
     have w9_2c : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m9]; exact w8_2c
@@ -1494,6 +1518,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     clear w8_1324 w8_1320 w8_420 w8_130 w8_12c w8_128 w8_124 w8_120 w8_11c w8_118 w8_114 w8_110 w8_10c w8_108 w8_104 w8_100 w8_fc w8_f8 w8_f4 w8_f0 w8_ec w8_e8 w8_e4 w8_e0 w8_dc w8_d8 w8_d4 w8_d0 w8_cc w8_c8 w8_c4 w8_c0 w8_bc w8_b8 w8_b4 w8_b0 w8_ac w8_a8 w8_a4 w8_a0 w8_9c w8_98 w8_94 w8_90 w8_8c w8_88 w8_84 w8_80 w8_7c w8_74 w8_70 w8_6c w8_68 w8_64 w8_60 w8_5c w8_58 w8_54 w8_50 w8_4c w8_48 w8_44 w8_40 w8_3c w8_38 w8_34 w8_30 w8_2c w8_28 w8_24 g8_27 g8_26 g8_25 g8_24 g8_21 g8_20 g8_19 g8_18 g8_9 g8_4 g8_3 g8_2 V8 E8 fR8 t8 fr8 m8 s8 u8 d8
     exact .inl ⟨(fun ⟨h0', tl6', h1', _⟩ => by rw [hr6] at h1'; cases h1'), sv_fail_2c60 F E9 s9 t9 (fun x hx => (fR9 x hx).trans (fM x hx).symm) V9 hret g9_2 g9_18 hO g9_3 g9_4⟩
   obtain ⟨o0_6, o4_6, o8_6, o12_6, d8_6, d12_6⟩ := Ok6 tl6 hr6
+  have keep_kk6 : SvKeepL B n0.mem n6.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8)] := keep_kk5.trans K6
+  clear keep_kk5
   have w6_24 : memLoad32 n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := (K6.w32 (by decide) (by decide)).trans w5_24
   have w6_28 : memLoad32 n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := (K6.w32 (by decide) (by decide)).trans w5_28
   have w6_2c : memLoad32 n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := (K6.w32 (by decide) (by decide)).trans w5_2c
@@ -1594,6 +1620,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g7_9 : reg n7 (9 : Fin 32) = (cp) + BitVec.ofNat 32 tl6.header := by
     rw [u7.regs]; simp +decide only [upd, ↓reduceIte]
     rw [g6_2, show B + 0x21A0 + 0x420 = B + 0x21A0 + BitVec.ofNat 32 0x420 by sv_addr, w6_420]
+  have keep_kk7 : SvKeepL B n0.mem n7.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8)] := by rw [m7]; exact keep_kk6
+  clear keep_kk6
   have w7_24 : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m7]; exact w6_24
   have w7_28 : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m7]; exact w6_28
   have w7_2c : memLoad32 n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m7]; exact w6_2c
@@ -1697,6 +1725,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g8_8 : reg n8 (8 : Fin 32) = ((BitVec.ofNat 32 tl6.len).extractLsb' 0 8).zeroExtend 32 := by
     rw [u8.regs]; simp +decide only [upd, ↓reduceIte]
     rw [g7_2, show B + 0x21A0 + 0x424 = B + 0x21A0 + BitVec.ofNat 32 0x424 by sv_addr, b7_424]
+  have keep_kk8 : SvKeepL B n0.mem n8.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8)] := by rw [m8]; exact keep_kk7
+  clear keep_kk7
   have w8_24 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m8]; exact w7_24
   have w8_28 : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m8]; exact w7_28
   have w8_2c : memLoad32 n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m8]; exact w7_2c
@@ -1797,6 +1827,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g9_25 : reg n9 (25 : Fin 32) = L0 := by rw [u9.regs, g8_25]
   have g9_26 : reg n9 (26 : Fin 32) = x26 := by rw [u9.regs, g8_26]
   have g9_27 : reg n9 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u9.regs, g8_27]
+  have keep_kk9 : SvKeepL B n0.mem n9.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8)] := by rw [m9]; exact keep_kk8
+  clear keep_kk8
   have w9_24 : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m9]; exact w8_24
   have w9_28 : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m9]; exact w8_28
   have w9_2c : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m9]; exact w8_2c
@@ -1923,6 +1955,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     rw [rb10]; simp +decide only [runBlock, BInstr.run, svTsaa2532, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g9_2, g9_3, g9_4, g9_8, g9_9, g9_18, g9_19, g9_20, g9_21, g9_24, g9_25, g9_26, g9_27, s9.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
+  have keep_kk10 : SvKeepL B n0.mem n10.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8)] := by rw [m10]; exact keep_kk9
+  clear keep_kk9
   have w10_24 : memLoad32 n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m10]; exact w9_24
   have w10_28 : memLoad32 n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m10]; exact w9_28
   have w10_2c : memLoad32 n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m10]; exact w9_2c
@@ -2032,6 +2066,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g11_25 : reg n11 (25 : Fin 32) = L0 := by rw [P11.regs (25 : Fin 32) (by decide), g10_25]
   have g11_26 : reg n11 (26 : Fin 32) = x26 := by rw [P11.regs (26 : Fin 32) (by decide), g10_26]
   have g11_27 : reg n11 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [P11.regs (27 : Fin 32) (by decide), g10_27]
+  have keep_kk11 : SvKeepL B n0.mem n11.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB)] := keep_kk10.trans K11.toL
+  clear keep_kk10
   have w11_24 : memLoad32 n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := (K11.w32 (by decide) (by decide)).trans w10_24
   have w11_28 : memLoad32 n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := (K11.w32 (by decide) (by decide)).trans w10_28
   have w11_2c : memLoad32 n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := (K11.w32 (by decide) (by decide)).trans w10_2c
@@ -2147,6 +2183,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g12_25 : reg n12 (25 : Fin 32) = L0 := by rw [rg12 (25 : Fin 32), g11_25]
   have g12_26 : reg n12 (26 : Fin 32) = x26 := by rw [rg12 (26 : Fin 32), g11_26]
   have g12_27 : reg n12 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rg12 (27 : Fin 32), g11_27]
+  have keep_kk12 : SvKeepL B n0.mem n12.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4)] := keep_kk11.trans K12.toL
+  clear keep_kk11
   have w12_24 : memLoad32 n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := (K12.w32 (by decide) (by decide)).trans w11_24
   have w12_28 : memLoad32 n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := (K12.w32 (by decide) (by decide)).trans w11_28
   have w12_2c : memLoad32 n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := (K12.w32 (by decide) (by decide)).trans w11_2c
@@ -2253,6 +2291,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g13_25 : reg n13 (25 : Fin 32) = L0 := by rw [rg13 (25 : Fin 32), g12_25]
   have g13_26 : reg n13 (26 : Fin 32) = x26 := by rw [rg13 (26 : Fin 32), g12_26]
   have g13_27 : reg n13 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rg13 (27 : Fin 32), g12_27]
+  have keep_kk13 : SvKeepL B n0.mem n13.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1)] := keep_kk12.trans K13.toL
+  clear keep_kk12
   have w13_24 : memLoad32 n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := (K13.w32 (by decide) (by decide)).trans w12_24
   have w13_28 : memLoad32 n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := (K13.w32 (by decide) (by decide)).trans w12_28
   have w13_2c : memLoad32 n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := (K13.w32 (by decide) (by decide)).trans w12_2c
@@ -2389,6 +2429,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     rw [rb14]; simp +decide only [runBlock, BInstr.run, svTsaa254c, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g13_2, g13_3, g13_4, g13_8, g13_9, g13_18, g13_19, g13_20, g13_21, g13_24, g13_25, g13_26, g13_27, s13.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
+  have keep_kk14 : SvKeepL B n0.mem n14.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1)] := by rw [m14]; exact keep_kk13
+  clear keep_kk13
   have w14_24 : memLoad32 n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m14]; exact w13_24
   have w14_28 : memLoad32 n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m14]; exact w13_28
   have w14_2c : memLoad32 n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m14]; exact w13_2c
@@ -2498,6 +2540,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   obtain ⟨r15, hr15⟩ : ∃ r, derContent ((cp) + BitVec.ofNat 32 tl6.header) (derOid (memBytes M0 ((cp) + BitVec.ofNat 32 tl6.header) (BitVec.ofNat 32 tl6.len).toNat)) = r := ⟨_, rfl⟩
   rcases r15 with er15 | ⟨op15, ol15⟩
   · obtain ⟨z15, -⟩ := Er15 er15 hr15
+    have keep_kk15 : SvKeepL B n0.mem n15.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8)] := keep_kk14.trans K15
+    clear keep_kk14
     have w15_24 : memLoad32 n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := (K15.w32 (by decide) (by decide)).trans w14_24
     have w15_28 : memLoad32 n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := (K15.w32 (by decide) (by decide)).trans w14_28
     have w15_2c : memLoad32 n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := (K15.w32 (by decide) (by decide)).trans w14_2c
@@ -2601,6 +2645,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     have g16_23 : reg n16 (23 : Fin 32) = 0 := by
       rw [u16.regs]; simp +decide only [upd, ↓reduceIte]
       rw [g15_2, show B + 0x21A0 + 0x420 = B + 0x21A0 + BitVec.ofNat 32 0x420 by sv_addr, w15_420]
+    have keep_kk16 : SvKeepL B n0.mem n16.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8)] := by rw [m16]; exact keep_kk15
+    clear keep_kk15
     have w16_24 : memLoad32 n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m16]; exact w15_24
     have w16_28 : memLoad32 n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m16]; exact w15_28
     have w16_2c : memLoad32 n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m16]; exact w15_2c
@@ -2702,6 +2748,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     have g17_25 : reg n17 (25 : Fin 32) = L0 := by rw [u17.regs, g16_25]
     have g17_26 : reg n17 (26 : Fin 32) = x26 := by rw [u17.regs, g16_26]
     have g17_27 : reg n17 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u17.regs, g16_27]
+    have keep_kk17 : SvKeepL B n0.mem n17.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8)] := by rw [m17]; exact keep_kk16
+    clear keep_kk16
     have w17_24 : memLoad32 n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m17]; exact w16_24
     have w17_28 : memLoad32 n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m17]; exact w16_28
     have w17_2c : memLoad32 n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m17]; exact w16_2c
@@ -2801,6 +2849,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     have g18_25 : reg n18 (25 : Fin 32) = L0 := by rw [u18.regs, upd_ne (by decide) (by decide), g17_25]
     have g18_26 : reg n18 (26 : Fin 32) = x26 := by rw [u18.regs, upd_ne (by decide) (by decide), g17_26]
     have g18_27 : reg n18 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u18.regs, upd_ne (by decide) (by decide), g17_27]
+    have keep_kk18 : SvKeepL B n0.mem n18.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8)] := by rw [m18]; exact keep_kk17
+    clear keep_kk17
     have w18_24 : memLoad32 n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m18]; exact w17_24
     have w18_28 : memLoad32 n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m18]; exact w17_28
     have w18_2c : memLoad32 n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m18]; exact w17_2c
@@ -2901,6 +2951,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     have g19_25 : reg n19 (25 : Fin 32) = L0 := by rw [u19.regs, g18_25]
     have g19_26 : reg n19 (26 : Fin 32) = x26 := by rw [u19.regs, g18_26]
     have g19_27 : reg n19 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u19.regs, g18_27]
+    have keep_kk19 : SvKeepL B n0.mem n19.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8)] := by rw [m19]; exact keep_kk18
+    clear keep_kk18
     have w19_24 : memLoad32 n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m19]; exact w18_24
     have w19_28 : memLoad32 n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m19]; exact w18_28
     have w19_2c : memLoad32 n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m19]; exact w18_2c
@@ -2982,6 +3034,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   obtain ⟨to15, ht15, -, -⟩ := oid_ok_content hr15
   obtain ⟨p0_15, p4_15⟩ := Ok15 op15 ol15 hr15
   obtain ⟨d8_15, d12_15⟩ := A15 to15 (derOid_ok_elem ht15)
+  have keep_kk15 : SvKeepL B n0.mem n15.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8)] := keep_kk14.trans K15
+  clear keep_kk14
   have w15_24 : memLoad32 n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := (K15.w32 (by decide) (by decide)).trans w14_24
   have w15_28 : memLoad32 n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := (K15.w32 (by decide) (by decide)).trans w14_28
   have w15_2c : memLoad32 n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := (K15.w32 (by decide) (by decide)).trans w14_2c
@@ -3088,6 +3142,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g16_23 : reg n16 (23 : Fin 32) = op15 := by
     rw [u16.regs]; simp +decide only [upd, ↓reduceIte]
     rw [g15_2, show B + 0x21A0 + 0x420 = B + 0x21A0 + BitVec.ofNat 32 0x420 by sv_addr, w15_420]
+  have keep_kk16 : SvKeepL B n0.mem n16.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8)] := by rw [m16]; exact keep_kk15
+  clear keep_kk15
   have w16_24 : memLoad32 n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m16]; exact w15_24
   have w16_28 : memLoad32 n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m16]; exact w15_28
   have w16_2c : memLoad32 n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m16]; exact w15_2c
@@ -3192,6 +3248,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g17_25 : reg n17 (25 : Fin 32) = L0 := by rw [u17.regs, g16_25]
   have g17_26 : reg n17 (26 : Fin 32) = x26 := by rw [u17.regs, g16_26]
   have g17_27 : reg n17 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u17.regs, g16_27]
+  have keep_kk17 : SvKeepL B n0.mem n17.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8)] := by rw [m17]; exact keep_kk16
+  clear keep_kk16
   have w17_24 : memLoad32 n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m17]; exact w16_24
   have w17_28 : memLoad32 n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m17]; exact w16_28
   have w17_2c : memLoad32 n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m17]; exact w16_2c
@@ -3299,6 +3357,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g18_22 : reg n18 (22 : Fin 32) = ol15 := by
     rw [u18.regs]; simp +decide only [upd, ↓reduceIte]
     rw [g17_2, show B + 0x21A0 + 0x424 = B + 0x21A0 + BitVec.ofNat 32 0x424 by sv_addr, w17_424]
+  have keep_kk18 : SvKeepL B n0.mem n18.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8)] := by rw [m18]; exact keep_kk17
+  clear keep_kk17
   have w18_24 : memLoad32 n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m18]; exact w17_24
   have w18_28 : memLoad32 n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m18]; exact w17_28
   have w18_2c : memLoad32 n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m18]; exact w17_2c
@@ -3428,6 +3488,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     rw [rb19]; simp +decide only [runBlock, BInstr.run, svTsaa2566, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g18_2, g18_3, g18_4, g18_8, g18_9, g18_18, g18_19, g18_20, g18_21, g18_22, g18_23, g18_24, g18_25, g18_26, g18_27, s18.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
+  have keep_kk19 : SvKeepL B n0.mem n19.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8)] := by rw [m19]; exact keep_kk18
+  clear keep_kk18
   have w19_24 : memLoad32 n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m19]; exact w18_24
   have w19_28 : memLoad32 n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m19]; exact w18_28
   have w19_2c : memLoad32 n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m19]; exact w18_2c
@@ -3535,6 +3597,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   obtain ⟨r20, hr20⟩ : ∃ r, derElement 0x31 (memBytes M0 (((cp) + BitVec.ofNat 32 tl6.header) + BitVec.ofNat 32 (to15.header + to15.len)) ((BitVec.ofNat 32 tl6.len) - BitVec.ofNat 32 (to15.header + to15.len)).toNat) = r := ⟨_, rfl⟩
   rcases r20 with er20 | tl20
   · obtain ⟨z20, -⟩ := Er20 er20 hr20
+    have keep_kk20 : SvKeepL B n0.mem n20.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8)] := keep_kk19.trans K20
+    clear keep_kk19
     have w20_24 : memLoad32 n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := (K20.w32 (by decide) (by decide)).trans w19_24
     have w20_28 : memLoad32 n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := (K20.w32 (by decide) (by decide)).trans w19_28
     have w20_2c : memLoad32 n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := (K20.w32 (by decide) (by decide)).trans w19_2c
@@ -3637,6 +3701,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     have g21_9 : reg n21 (9 : Fin 32) = 0 := by
       rw [u21.regs]; simp +decide only [upd, ↓reduceIte]
       rw [g20_2, show B + 0x21A0 + 0x420 = B + 0x21A0 + BitVec.ofNat 32 0x420 by sv_addr, w20_420]
+    have keep_kk21 : SvKeepL B n0.mem n21.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8)] := by rw [m21]; exact keep_kk20
+    clear keep_kk20
     have w21_24 : memLoad32 n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m21]; exact w20_24
     have w21_28 : memLoad32 n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m21]; exact w20_28
     have w21_2c : memLoad32 n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m21]; exact w20_2c
@@ -3735,6 +3801,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     have g22_25 : reg n22 (25 : Fin 32) = L0 := by rw [u22.regs, upd_ne (by decide) (by decide), g21_25]
     have g22_26 : reg n22 (26 : Fin 32) = x26 := by rw [u22.regs, upd_ne (by decide) (by decide), g21_26]
     have g22_27 : reg n22 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u22.regs, upd_ne (by decide) (by decide), g21_27]
+    have keep_kk22 : SvKeepL B n0.mem n22.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8)] := by rw [m22]; exact keep_kk21
+    clear keep_kk21
     have w22_24 : memLoad32 n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m22]; exact w21_24
     have w22_28 : memLoad32 n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m22]; exact w21_28
     have w22_2c : memLoad32 n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m22]; exact w21_2c
@@ -3834,6 +3902,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     have g23_25 : reg n23 (25 : Fin 32) = L0 := by rw [u23.regs, g22_25]
     have g23_26 : reg n23 (26 : Fin 32) = x26 := by rw [u23.regs, g22_26]
     have g23_27 : reg n23 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u23.regs, g22_27]
+    have keep_kk23 : SvKeepL B n0.mem n23.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8)] := by rw [m23]; exact keep_kk22
+    clear keep_kk22
     have w23_24 : memLoad32 n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m23]; exact w22_24
     have w23_28 : memLoad32 n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m23]; exact w22_28
     have w23_2c : memLoad32 n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m23]; exact w22_2c
@@ -3911,6 +3981,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     clear w22_132c w22_1328 w22_1324 w22_1320 w22_420 w22_324 w22_320 w22_130 w22_12c w22_128 w22_124 w22_120 w22_11c w22_118 w22_114 w22_110 w22_10c w22_108 w22_104 w22_100 w22_fc w22_f8 w22_f4 w22_f0 w22_ec w22_e8 w22_e4 w22_e0 w22_dc w22_d8 w22_d4 w22_d0 w22_cc w22_c8 w22_c4 w22_c0 w22_bc w22_b8 w22_b4 w22_b0 w22_ac w22_a8 w22_a4 w22_a0 w22_9c w22_98 w22_94 w22_90 w22_8c w22_88 w22_84 w22_80 w22_7c w22_74 w22_70 w22_6c w22_68 w22_64 w22_60 w22_5c w22_58 w22_54 w22_50 w22_4c w22_48 w22_44 w22_40 w22_3c w22_38 w22_34 w22_30 w22_2c w22_28 w22_24 g22_27 g22_26 g22_25 g22_24 g22_23 g22_22 g22_21 g22_20 g22_19 g22_18 g22_9 g22_4 g22_3 g22_2 V22 E22 fR22 t22 fr22 m22 s22 u22 d22
     exact .inl ⟨(fun ⟨h0', tl6', h1', op15', ol15', h2', to15', h3', tl20', h4', _⟩ => by rw [hr6] at h1'; cases h1'; rw [hr15] at h2'; cases h2'; rw [ht15] at h3'; cases h3'; rw [hr20] at h4'; cases h4'), sv_fail_2c60 F E23 s23 t23 (fun x hx => (fR23 x hx).trans (fM x hx).symm) V23 hret g23_2 g23_18 hO g23_3 g23_4⟩
   obtain ⟨o0_20, o4_20, o8_20, o12_20, d8_20, d12_20⟩ := Ok20 tl20 hr20
+  have keep_kk20 : SvKeepL B n0.mem n20.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8)] := keep_kk19.trans K20
+  clear keep_kk19
   have w20_24 : memLoad32 n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := (K20.w32 (by decide) (by decide)).trans w19_24
   have w20_28 : memLoad32 n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := (K20.w32 (by decide) (by decide)).trans w19_28
   have w20_2c : memLoad32 n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := (K20.w32 (by decide) (by decide)).trans w19_2c
@@ -4018,6 +4090,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g21_9 : reg n21 (9 : Fin 32) = (((cp) + BitVec.ofNat 32 tl6.header) + BitVec.ofNat 32 (to15.header + to15.len)) + BitVec.ofNat 32 tl20.header := by
     rw [u21.regs]; simp +decide only [upd, ↓reduceIte]
     rw [g20_2, show B + 0x21A0 + 0x420 = B + 0x21A0 + BitVec.ofNat 32 0x420 by sv_addr, w20_420]
+  have keep_kk21 : SvKeepL B n0.mem n21.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8)] := by rw [m21]; exact keep_kk20
+  clear keep_kk20
   have w21_24 : memLoad32 n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m21]; exact w20_24
   have w21_28 : memLoad32 n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m21]; exact w20_28
   have w21_2c : memLoad32 n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m21]; exact w20_2c
@@ -4127,6 +4201,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g22_8 : reg n22 (8 : Fin 32) = ((BitVec.ofNat 32 tl20.len).extractLsb' 0 8).zeroExtend 32 := by
     rw [u22.regs]; simp +decide only [upd, ↓reduceIte]
     rw [g21_2, show B + 0x21A0 + 0x424 = B + 0x21A0 + BitVec.ofNat 32 0x424 by sv_addr, b21_424]
+  have keep_kk22 : SvKeepL B n0.mem n22.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8)] := by rw [m22]; exact keep_kk21
+  clear keep_kk21
   have w22_24 : memLoad32 n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m22]; exact w21_24
   have w22_28 : memLoad32 n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m22]; exact w21_28
   have w22_2c : memLoad32 n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m22]; exact w21_2c
@@ -4233,6 +4309,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g23_25 : reg n23 (25 : Fin 32) = L0 := by rw [u23.regs, g22_25]
   have g23_26 : reg n23 (26 : Fin 32) = x26 := by rw [u23.regs, g22_26]
   have g23_27 : reg n23 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u23.regs, g22_27]
+  have keep_kk23 : SvKeepL B n0.mem n23.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8)] := by rw [m23]; exact keep_kk22
+  clear keep_kk22
   have w23_24 : memLoad32 n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m23]; exact w22_24
   have w23_28 : memLoad32 n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m23]; exact w22_28
   have w23_2c : memLoad32 n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m23]; exact w22_2c
@@ -4367,6 +4445,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     rw [rb24]; simp +decide only [runBlock, BInstr.run, svTsaa2580, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g23_2, g23_3, g23_4, g23_8, g23_9, g23_18, g23_19, g23_20, g23_21, g23_22, g23_23, g23_24, g23_25, g23_26, g23_27, s23.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
+  have keep_kk24 : SvKeepL B n0.mem n24.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8)] := by rw [m24]; exact keep_kk23
+  clear keep_kk23
   have w24_24 : memLoad32 n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m24]; exact w23_24
   have w24_28 : memLoad32 n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m24]; exact w23_28
   have w24_2c : memLoad32 n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m24]; exact w23_2c
@@ -4482,6 +4562,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g25_25 : reg n25 (25 : Fin 32) = L0 := by rw [P25.regs (25 : Fin 32) (by decide), g24_25]
   have g25_26 : reg n25 (26 : Fin 32) = x26 := by rw [P25.regs (26 : Fin 32) (by decide), g24_26]
   have g25_27 : reg n25 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [P25.regs (27 : Fin 32) (by decide), g24_27]
+  have keep_kk25 : SvKeepL B n0.mem n25.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB)] := keep_kk24.trans K25.toL
+  clear keep_kk24
   have w25_24 : memLoad32 n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := (K25.w32 (by decide) (by decide)).trans w24_24
   have w25_28 : memLoad32 n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := (K25.w32 (by decide) (by decide)).trans w24_28
   have w25_2c : memLoad32 n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := (K25.w32 (by decide) (by decide)).trans w24_2c
@@ -4609,6 +4691,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g26_10 : reg n26 a0 = ((BitVec.ofNat 32 tl6.len) - BitVec.ofNat 32 (to15.header + to15.len)) - BitVec.ofNat 32 (tl20.header + tl20.len) := by
     rw [u26.regs]; simp +decide only [upd, ↓reduceIte]
     rw [g25_2, show B + 0x21A0 + 0x32C = B + 0x21A0 + BitVec.ofNat 32 0x32C by sv_addr, w25_32c]
+  have keep_kk26 : SvKeepL B n0.mem n26.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB)] := by rw [m26]; exact keep_kk25
+  clear keep_kk25
   have w26_24 : memLoad32 n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m26]; exact w25_24
   have w26_28 : memLoad32 n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m26]; exact w25_28
   have w26_2c : memLoad32 n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m26]; exact w25_2c
@@ -4745,6 +4829,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     rw [rb27]; simp +decide only [runBlock, BInstr.run, svTsaa259a, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g26_2, g26_3, g26_4, g26_8, g26_9, g26_10, g26_18, g26_19, g26_20, g26_21, g26_22, g26_23, g26_24, g26_25, g26_26, g26_27, s26.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
+  have keep_kk27 : SvKeepL B n0.mem n27.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB)] := by rw [m27]; exact keep_kk26
+  clear keep_kk26
   have w27_24 : memLoad32 n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m27]; exact w26_24
   have w27_28 : memLoad32 n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m27]; exact w26_28
   have w27_2c : memLoad32 n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m27]; exact w26_2c
@@ -4858,6 +4944,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g28_25 : reg n28 (25 : Fin 32) = L0 := by rw [rg28 (25 : Fin 32), g27_25]
   have g28_26 : reg n28 (26 : Fin 32) = x26 := by rw [rg28 (26 : Fin 32), g27_26]
   have g28_27 : reg n28 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rg28 (27 : Fin 32), g27_27]
+  have keep_kk28 : SvKeepL B n0.mem n28.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4)] := keep_kk27.trans K28.toL
+  clear keep_kk27
   have w28_24 : memLoad32 n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := (K28.w32 (by decide) (by decide)).trans w27_24
   have w28_28 : memLoad32 n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := (K28.w32 (by decide) (by decide)).trans w27_28
   have w28_2c : memLoad32 n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := (K28.w32 (by decide) (by decide)).trans w27_2c
@@ -4999,6 +5087,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     rw [rb29]; simp +decide only [runBlock, BInstr.run, svTsaa25a4, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g28_2, g28_3, g28_4, g28_8, g28_9, g28_10, g28_11, g28_18, g28_19, g28_20, g28_21, g28_22, g28_23, g28_24, g28_25, g28_26, g28_27, s28.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
+  have keep_kk29 : SvKeepL B n0.mem n29.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4)] := by rw [m29]; exact keep_kk28
+  clear keep_kk28
   have w29_24 : memLoad32 n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m29]; exact w28_24
   have w29_28 : memLoad32 n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m29]; exact w28_28
   have w29_2c : memLoad32 n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m29]; exact w28_2c
@@ -5114,6 +5204,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g30_25 : reg n30 (25 : Fin 32) = L0 := by rw [rg30 (25 : Fin 32), g29_25]
   have g30_26 : reg n30 (26 : Fin 32) = x26 := by rw [rg30 (26 : Fin 32), g29_26]
   have g30_27 : reg n30 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rg30 (27 : Fin 32), g29_27]
+  have keep_kk30 : SvKeepL B n0.mem n30.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := keep_kk29.trans K30.toL
+  clear keep_kk29
   have w30_24 : memLoad32 n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := (K30.w32 (by decide) (by decide)).trans w29_24
   have w30_28 : memLoad32 n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := (K30.w32 (by decide) (by decide)).trans w29_28
   have w30_2c : memLoad32 n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := (K30.w32 (by decide) (by decide)).trans w29_2c
@@ -5239,6 +5331,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     have g31_25 : reg n31 (25 : Fin 32) = L0 := by rw [u31.regs, g30_25]
     have g31_26 : reg n31 (26 : Fin 32) = x26 := by rw [u31.regs, g30_26]
     have g31_27 : reg n31 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u31.regs, g30_27]
+    have keep_kk31 : SvKeepL B n0.mem n31.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := by rw [m31]; exact keep_kk30
+    clear keep_kk30
     have w31_24 : memLoad32 n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m31]; exact w30_24
     have w31_28 : memLoad32 n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m31]; exact w30_28
     have w31_2c : memLoad32 n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m31]; exact w30_2c
@@ -5376,6 +5470,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
       rw [rb32]; simp +decide only [runBlock, BInstr.run, svTsaa2838, upd, ↓reduceIte, aluEval]
       all_goals (try simp only [g31_2, g31_3, g31_4, g31_8, g31_9, g31_10, g31_11, g31_12, g31_18, g31_19, g31_20, g31_21, g31_22, g31_23, g31_24, g31_25, g31_26, g31_27, s31.zero])
       all_goals first | with_reducible rfl | sv_addr | decide
+    have keep_kk32 : SvKeepL B n0.mem n32.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := by rw [m32]; exact keep_kk31
+    clear keep_kk31
     have w32_24 : memLoad32 n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m32]; exact w31_24
     have w32_28 : memLoad32 n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m32]; exact w31_28
     have w32_2c : memLoad32 n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m32]; exact w31_2c
@@ -5492,6 +5588,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     have g33_25 : reg n33 (25 : Fin 32) = L0 := by rw [u33.regs, g32_25]
     have g33_26 : reg n33 (26 : Fin 32) = x26 := by rw [u33.regs, g32_26]
     have g33_27 : reg n33 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u33.regs, g32_27]
+    have keep_kk33 : SvKeepL B n0.mem n33.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := by rw [m33]; exact keep_kk32
+    clear keep_kk32
     have w33_24 : memLoad32 n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m33]; exact w32_24
     have w33_28 : memLoad32 n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m33]; exact w32_28
     have w33_2c : memLoad32 n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m33]; exact w32_2c
@@ -5609,6 +5707,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g31_25 : reg n31 (25 : Fin 32) = L0 := by rw [u31.regs, g30_25]
   have g31_26 : reg n31 (26 : Fin 32) = x26 := by rw [u31.regs, g30_26]
   have g31_27 : reg n31 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u31.regs, g30_27]
+  have keep_kk31 : SvKeepL B n0.mem n31.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := by rw [m31]; exact keep_kk30
+  clear keep_kk30
   have w31_24 : memLoad32 n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m31]; exact w30_24
   have w31_28 : memLoad32 n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m31]; exact w30_28
   have w31_2c : memLoad32 n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m31]; exact w30_2c
@@ -5746,6 +5846,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     rw [rb32]; simp +decide only [runBlock, BInstr.run, svTsaa25b6, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g31_2, g31_3, g31_4, g31_8, g31_9, g31_10, g31_11, g31_12, g31_18, g31_19, g31_20, g31_21, g31_22, g31_23, g31_24, g31_25, g31_26, g31_27, s31.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
+  have keep_kk32 : SvKeepL B n0.mem n32.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := by rw [m32]; exact keep_kk31
+  clear keep_kk31
   have w32_24 : memLoad32 n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m32]; exact w31_24
   have w32_28 : memLoad32 n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m32]; exact w31_28
   have w32_2c : memLoad32 n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m32]; exact w31_2c
@@ -5864,6 +5966,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g33_10 : reg n33 a0 = p0 := by
     rw [u33.regs]; simp +decide only [upd, ↓reduceIte]
     rw [g32_2, show B + 0x21A0 + 0x74 = B + 0x21A0 + BitVec.ofNat 32 0x74 by sv_addr, w32_74]
+  have keep_kk33 : SvKeepL B n0.mem n33.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := by rw [m33]; exact keep_kk32
+  clear keep_kk32
   have w33_24 : memLoad32 n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m33]; exact w32_24
   have w33_28 : memLoad32 n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m33]; exact w32_28
   have w33_2c : memLoad32 n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m33]; exact w32_2c
@@ -6005,6 +6109,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     rw [rb34]; simp +decide only [runBlock, BInstr.run, svTsaa25bc, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g33_2, g33_3, g33_4, g33_8, g33_9, g33_10, g33_11, g33_12, g33_18, g33_19, g33_20, g33_21, g33_22, g33_23, g33_24, g33_25, g33_26, g33_27, s33.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
+  have keep_kk34 : SvKeepL B n0.mem n34.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := by rw [m34]; exact keep_kk33
+  clear keep_kk33
   have w34_24 : memLoad32 n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m34]; exact w33_24
   have w34_28 : memLoad32 n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m34]; exact w33_28
   have w34_2c : memLoad32 n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m34]; exact w33_2c
@@ -6117,6 +6223,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g35_26 : reg n35 (26 : Fin 32) = x26 := by rw [rk35 (26 : Fin 32) (by decide), g34_26]
   have g35_27 : reg n35 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rk35 (27 : Fin 32) (by decide), g34_27]
   have g35_2 : reg n35 sp = B + 0x21A0 := sp35
+  have keep_kk35 : SvKeepL B n0.mem n35.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := keep_kk34.trans K35
+  clear keep_kk34
   have w35_24 : memLoad32 n35.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := (K35.w32 (by decide) (by decide)).trans w34_24
   have w35_28 : memLoad32 n35.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := (K35.w32 (by decide) (by decide)).trans w34_28
   have w35_2c : memLoad32 n35.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := (K35.w32 (by decide) (by decide)).trans w34_2c
@@ -6253,6 +6361,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
       rw [rb36]; simp +decide only [runBlock, BInstr.run, svTsaa25c8, upd, ↓reduceIte, aluEval]
       all_goals (try simp only [g35_2, g35_3, g35_4, g35_8, g35_9, g35_10, g35_18, g35_19, g35_20, g35_21, g35_22, g35_23, g35_24, g35_25, g35_26, g35_27, s35.zero])
       all_goals first | with_reducible rfl | sv_addr | decide
+    have keep_kk36 : SvKeepL B n0.mem n36.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := by rw [m36]; exact keep_kk35
+    clear keep_kk35
     have w36_24 : memLoad32 n36.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m36]; exact w35_24
     have w36_28 : memLoad32 n36.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m36]; exact w35_28
     have w36_2c : memLoad32 n36.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m36]; exact w35_2c
@@ -6366,6 +6476,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     have g37_25 : reg n37 (25 : Fin 32) = L0 := by rw [u37.regs, g36_25]
     have g37_26 : reg n37 (26 : Fin 32) = x26 := by rw [u37.regs, g36_26]
     have g37_27 : reg n37 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u37.regs, g36_27]
+    have keep_kk37 : SvKeepL B n0.mem n37.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := by rw [m37]; exact keep_kk36
+    clear keep_kk36
     have w37_24 : memLoad32 n37.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m37]; exact w36_24
     have w37_28 : memLoad32 n37.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m37]; exact w36_28
     have w37_2c : memLoad32 n37.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m37]; exact w36_2c
@@ -6509,6 +6621,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
       rw [rb36]; simp +decide only [runBlock, BInstr.run, svTsaa25c8, upd, ↓reduceIte, aluEval]
       all_goals (try simp only [g35_2, g35_3, g35_4, g35_8, g35_9, g35_10, g35_11, g35_18, g35_19, g35_20, g35_21, g35_22, g35_23, g35_24, g35_25, g35_26, g35_27, s35.zero])
       all_goals first | with_reducible rfl | sv_addr | decide
+    have keep_kk36 : SvKeepL B n0.mem n36.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := by rw [m36]; exact keep_kk35
+    clear keep_kk35
     have w36_24 : memLoad32 n36.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m36]; exact w35_24
     have w36_28 : memLoad32 n36.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m36]; exact w35_28
     have w36_2c : memLoad32 n36.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m36]; exact w35_2c
@@ -6624,6 +6738,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     have g37_25 : reg n37 (25 : Fin 32) = L0 := by rw [u37.regs, g36_25]
     have g37_26 : reg n37 (26 : Fin 32) = x26 := by rw [u37.regs, g36_26]
     have g37_27 : reg n37 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u37.regs, g36_27]
+    have keep_kk37 : SvKeepL B n0.mem n37.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := by rw [m37]; exact keep_kk36
+    clear keep_kk36
     have w37_24 : memLoad32 n37.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m37]; exact w36_24
     have w37_28 : memLoad32 n37.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m37]; exact w36_28
     have w37_2c : memLoad32 n37.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m37]; exact w36_2c
@@ -6761,6 +6877,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
       rw [rb38]; simp +decide only [runBlock, BInstr.run, svTsaa25d0, upd, ↓reduceIte, aluEval]
       all_goals (try simp only [g37_2, g37_3, g37_4, g37_8, g37_9, g37_10, g37_11, g37_18, g37_19, g37_20, g37_21, g37_22, g37_23, g37_24, g37_25, g37_26, g37_27, s37.zero])
       all_goals first | with_reducible rfl | sv_addr | decide
+    have keep_kk38 : SvKeepL B n0.mem n38.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := by rw [m38]; exact keep_kk37
+    clear keep_kk37
     have w38_24 : memLoad32 n38.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m38]; exact w37_24
     have w38_28 : memLoad32 n38.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m38]; exact w37_28
     have w38_2c : memLoad32 n38.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m38]; exact w37_2c
@@ -6876,6 +6994,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     have g39_25 : reg n39 (25 : Fin 32) = L0 := by rw [u39.regs, g38_25]
     have g39_26 : reg n39 (26 : Fin 32) = x26 := by rw [u39.regs, g38_26]
     have g39_27 : reg n39 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u39.regs, g38_27]
+    have keep_kk39 : SvKeepL B n0.mem n39.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := by rw [m39]; exact keep_kk38
+    clear keep_kk38
     have w39_24 : memLoad32 n39.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m39]; exact w38_24
     have w39_28 : memLoad32 n39.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m39]; exact w38_28
     have w39_2c : memLoad32 n39.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m39]; exact w38_2c
@@ -7018,6 +7138,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     rw [rb36]; simp +decide only [runBlock, BInstr.run, svTsaa25c8, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g35_2, g35_3, g35_4, g35_8, g35_9, g35_10, g35_11, g35_18, g35_19, g35_20, g35_21, g35_22, g35_23, g35_24, g35_25, g35_26, g35_27, s35.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
+  have keep_kk36 : SvKeepL B n0.mem n36.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := by rw [m36]; exact keep_kk35
+  clear keep_kk35
   have w36_24 : memLoad32 n36.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m36]; exact w35_24
   have w36_28 : memLoad32 n36.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m36]; exact w35_28
   have w36_2c : memLoad32 n36.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m36]; exact w35_2c
@@ -7133,6 +7255,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g37_25 : reg n37 (25 : Fin 32) = L0 := by rw [u37.regs, g36_25]
   have g37_26 : reg n37 (26 : Fin 32) = x26 := by rw [u37.regs, g36_26]
   have g37_27 : reg n37 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u37.regs, g36_27]
+  have keep_kk37 : SvKeepL B n0.mem n37.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := by rw [m37]; exact keep_kk36
+  clear keep_kk36
   have w37_24 : memLoad32 n37.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m37]; exact w36_24
   have w37_28 : memLoad32 n37.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m37]; exact w36_28
   have w37_2c : memLoad32 n37.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m37]; exact w36_2c
@@ -7270,6 +7394,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
     rw [rb38]; simp +decide only [runBlock, BInstr.run, svTsaa25d0, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g37_2, g37_3, g37_4, g37_8, g37_9, g37_10, g37_11, g37_18, g37_19, g37_20, g37_21, g37_22, g37_23, g37_24, g37_25, g37_26, g37_27, s37.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
+  have keep_kk38 : SvKeepL B n0.mem n38.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := by rw [m38]; exact keep_kk37
+  clear keep_kk37
   have w38_24 : memLoad32 n38.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m38]; exact w37_24
   have w38_28 : memLoad32 n38.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m38]; exact w37_28
   have w38_2c : memLoad32 n38.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m38]; exact w37_2c
@@ -7385,6 +7511,8 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have g39_25 : reg n39 (25 : Fin 32) = L0 := by rw [u39.regs, g38_25]
   have g39_26 : reg n39 (26 : Fin 32) = x26 := by rw [u39.regs, g38_26]
   have g39_27 : reg n39 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u39.regs, g38_27]
+  have keep_kk39 : SvKeepL B n0.mem n39.mem [(0x74, 0x4), (0x420, 0x10), (0x1328, 0x8), (0x325, 0xB), (0x320, 0x4), (0x324, 0x1), (0x420, 0x8), (0x328, 0x8), (0x420, 0x10), (0x328, 0x8), (0x1385, 0xB), (0x1380, 0x4), (0x1384, 0x1)] := by rw [m39]; exact keep_kk38
+  clear keep_kk38
   have w39_24 : memLoad32 n39.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m39]; exact w38_24
   have w39_28 : memLoad32 n39.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m39]; exact w38_28
   have w39_2c : memLoad32 n39.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m39]; exact w38_2c
@@ -7473,6 +7601,6 @@ theorem sv_tsaa {B out bp x21 x26 dg p0 L0 cp rem : Word} {w24 w28 w2c w30 w34 w
   have b39_426 : n39.mem (B + 0x21A0 + BitVec.ofNat 32 0x426) = (BitVec.ofNat 32 tl20.len).extractLsb' 16 8 := by rw [m39]; exact b38_426
   have b39_427 : n39.mem (B + 0x21A0 + BitVec.ofNat 32 0x427) = (BitVec.ofNat 32 tl20.len).extractLsb' 24 8 := by rw [m39]; exact b38_427
   clear b38_427 b38_426 b38_425 b38_424 w38_138c w38_1388 w38_1384 w38_1380 w38_132c w38_1328 w38_1324 w38_1320 w38_42c w38_428 w38_424 w38_420 w38_32c w38_328 w38_324 w38_320 w38_130 w38_12c w38_128 w38_124 w38_120 w38_11c w38_118 w38_114 w38_110 w38_10c w38_108 w38_104 w38_100 w38_fc w38_f8 w38_f4 w38_f0 w38_ec w38_e8 w38_e4 w38_e0 w38_dc w38_d8 w38_d4 w38_d0 w38_cc w38_c8 w38_c4 w38_c0 w38_bc w38_b8 w38_b4 w38_b0 w38_ac w38_a8 w38_a4 w38_a0 w38_9c w38_98 w38_94 w38_90 w38_8c w38_88 w38_84 w38_80 w38_7c w38_74 w38_70 w38_6c w38_68 w38_64 w38_60 w38_5c w38_58 w38_54 w38_50 w38_4c w38_48 w38_44 w38_40 w38_3c w38_38 w38_34 w38_30 w38_2c w38_28 w38_24 g38_10 g38_8 g38_27 g38_26 g38_25 g38_24 g38_23 g38_22 g38_21 g38_20 g38_19 g38_18 g38_11 g38_9 g38_4 g38_3 g38_2 V38 E38 fR38 t38 fr38 rb38 s38 m38 u38 c38
-  exact .inr ⟨hle, tl6, hr6, op15, ol15, hr15, to15, ht15, tl20, hr20, hrest0, hr35, n39, t39, s39, E39, V39, fR39, g39_2, g39_3, g39_4, g39_9, g39_18, g39_19, g39_20, g39_21, g39_22, g39_23, g39_24, g39_25, g39_26, g39_27, w39_24, w39_28, w39_2c, w39_30, w39_34, w39_38, w39_3c, w39_40, w39_44, w39_48, w39_4c, w39_50, w39_54, w39_58, w39_5c, w39_60, w39_64, w39_68, w39_6c, w39_70, w39_74, w39_7c, w39_80, w39_84, w39_88, w39_8c, w39_90, w39_94, w39_98, w39_9c, w39_a0, w39_a4, w39_a8, w39_ac, w39_b0, w39_b4, w39_b8, w39_bc, w39_c0, w39_c4, w39_c8, w39_cc, w39_d0, w39_d4, w39_d8, w39_dc, w39_e0, w39_e4, w39_e8, w39_ec, w39_f0, w39_f4, w39_f8, w39_fc, w39_100, w39_104, w39_108, w39_10c, w39_110, w39_114, w39_118, w39_11c, w39_120, w39_124, w39_128, w39_12c, w39_130, w39_320, w39_324, w39_328, w39_32c, w39_420, w39_424, w39_428, w39_42c, w39_1320, w39_1324, w39_1328, w39_132c, w39_1380, w39_1384, w39_1388, w39_138c, b39_424, b39_425, b39_426, b39_427⟩
+  exact .inr ⟨hle, tl6, hr6, op15, ol15, hr15, to15, ht15, tl20, hr20, hrest0, hr35, n39, t39, s39, E39, V39, fR39, g39_2, g39_3, g39_4, g39_9, g39_18, g39_19, g39_20, g39_21, g39_22, g39_23, g39_24, g39_25, g39_26, g39_27, w39_24, w39_28, w39_2c, w39_30, w39_34, w39_38, w39_3c, w39_40, w39_44, w39_48, w39_4c, w39_50, w39_54, w39_58, w39_5c, w39_60, w39_64, w39_68, w39_6c, w39_70, w39_74, w39_7c, w39_80, w39_84, w39_88, w39_8c, w39_90, w39_94, w39_98, w39_9c, w39_a0, w39_a4, w39_a8, w39_ac, w39_b0, w39_b4, w39_b8, w39_bc, w39_c0, w39_c4, w39_c8, w39_cc, w39_d0, w39_d4, w39_d8, w39_dc, w39_e0, w39_e4, w39_e8, w39_ec, w39_f0, w39_f4, w39_f8, w39_fc, w39_100, w39_104, w39_108, w39_10c, w39_110, w39_114, w39_118, w39_11c, w39_120, w39_124, w39_128, w39_12c, w39_130, w39_320, w39_324, w39_328, w39_32c, w39_420, w39_424, w39_428, w39_42c, w39_1320, w39_1324, w39_1328, w39_132c, w39_1380, w39_1384, w39_1388, w39_138c, b39_424, b39_425, b39_426, b39_427, keep_kk39.mono (by decide)⟩
 
 end C3.RV32.Sv

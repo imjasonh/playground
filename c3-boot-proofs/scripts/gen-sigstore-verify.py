@@ -216,6 +216,7 @@ class Gen:
     def __init__(self, name):
         self.name = name
         self.k = 0
+        self.kl = []
         self.out = []
         self.blocks = []
         self.regs = {}
@@ -309,6 +310,18 @@ class Gen:
         written_words = written_words or {}
         written_bytes = written_bytes or {}
         neww, newb = {}, {}
+        prev = f"keep_kk{k-1}" if k > 1 else "(SvKeepL.refl : SvKeepL B n0.mem n0.mem [])"
+        if kind[0] == "same":
+            term = f"by rw [m{k}]; exact {prev}"
+        elif kind[0] == "K":
+            self.kl = self.kl + [(kind[1], kind[2])]
+            term = f"{prev}.trans K{k}.toL"
+        else:
+            self.kl = self.kl + list(kind[1])
+            term = f"{prev}.trans K{k}"
+        self.emit(f"  have keep_kk{k} : SvKeepL B n0.mem n{k}.mem {kl_lean(self.kl)} := {term}")
+        if k > 1:
+            self.emit(f"  clear keep_kk{k-1}")
 
         for e, v in sorted(self.words.items()):
             if e in written_words or not outside(kind, e, 4):
@@ -2839,6 +2852,11 @@ def start(g, regs, words, slices):
     return params
 
 
+def kl_lean(ranges):
+    """The Lean list of the frame ranges `ranges`."""
+    return "[" + ", ".join(f"(0x{c:X}, 0x{w:X})" for c, w in ranges) + "]"
+
+
 def finish(g, off, keep_regs, keep_words=None, keep_bytes=None):
     conj, terms = g.conclusion(off, keep_regs, keep_words if keep_words is not None else set(g.words),
                                keep_bytes if keep_bytes is not None else set(g.bytes), [])
@@ -2847,6 +2865,11 @@ def finish(g, off, keep_regs, keep_words=None, keep_bytes=None):
         if c[0] == "eq":
             for b in c[3]:
                 names[b] = b.rstrip("0123456789").rstrip("_") + "_" + b[len(b.rstrip("0123456789")):]
+    union = []
+    for path in [g] + [sub for _, sub in g.exits]:
+        union += [r for r in path.kl if r not in union]
+    conj = conj + [f"SvKeepL B n0.mem n'.mem {kl_lean(union)}"]
+    terms = terms + [f"keep_kk{g.k}.mono (by decide)"]
     body = "∃ n', " + " ∧\n        ".join(conj)
     bad = "Panics n0" if getattr(g, "panics", False) else "SvErrRet B out v n0"
     stmt = (f"(¬ ({g.sc_prop()}) ∧ {bad}) ∨\n    (" + g.sc_ok(body) + ")")
@@ -2855,8 +2878,8 @@ def finish(g, off, keep_regs, keep_words=None, keep_bytes=None):
         assert sub.sc_prop() == g.sc_prop(), (tag, sub.sc_prop(), g.sc_prop())
         sconj, sterms = sub.conclusion(off, keep_regs, keep_words if keep_words is not None else set(g.words),
                                        keep_bytes if keep_bytes is not None else set(g.bytes), [])
-        assert sconj == conj, (tag, set(sconj) ^ set(conj))
-        line = "exact .inr ⟨" + ", ".join(sub.sc_terms() + [f"n{sub.k}"] + sterms) + "⟩"
+        assert sconj == conj[:-1], (tag, set(sconj) ^ set(conj[:-1]))
+        line = "exact .inr ⟨" + ", ".join(sub.sc_terms() + [f"n{sub.k}"] + sterms + [f"keep_kk{sub.k}.mono (by decide)"]) + "⟩"
         g.out = [l.replace(tag, line) for l in g.out]
     return stmt, proof
 
@@ -8112,6 +8135,13 @@ def stage_win(i, eq):
     g = Gen(f"Win{i}{'e' if eq else 'n'}")
     g.generic_alu = True
     params = rk_start(g)
+    # `sv_rm` writes the computed root over the cosignature at 0x1480, and
+    # leaves `s0` at the checkpoint's root.
+    del g.ranges[0x1480]
+    g.regs[8] = ("S", 0x1048)
+    params = [q for q in params if not q.startswith("(q0_1480 :")]
+    params = [q.replace("(g0_8 : reg n0 (8 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1020)",
+                        "(g0_8 : reg n0 (8 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1048)") for q in params]
     for e, nm in ((0x1028, "k28"), (0x102C, "k2c"), (0x1030, "k30"), (0x1034, "k34")):
         g.words[e] = ("U", nm)
         params.append(f"(w0_{e:x} : memLoad32 n0.mem ({fa(e)}) = {nm})")
@@ -9111,9 +9141,8 @@ def stage_ze():
     return g, info
 
 
-def main():
-    stage = sys.argv[1]
-    g, info = {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
+def stages():
+    return {"L1": stage_l1, "L2": stage_l2, "L3": stage_l3, "L4": stage_l4, "L5": stage_l5, "L6": stage_l6, "X1": stage_x1, "X2n": stage_x2n, "X2z": stage_x2z, "X2c": stage_x2c,
                 **{f"Dp{i}": stage_dpol(i) for i in range(6)}, "Dbc1": stage_dbc1, "Dbc2e": stage_dbc2e, "Dbc2": stage_dbc2, "Dku1": stage_dku1, "Dku2": stage_dku2,
                 "Deku1": stage_deku1, "Deku2": stage_deku2, "Deku3": stage_deku3,
                 "L7": stage_l7, "L8a": stage_l8a,
@@ -9138,7 +9167,15 @@ def main():
                 **{f"Win{i}{x}": (lambda i=i, x=x: stage_win(i, x == "e")) for i in range(8) for x in "en"},
                 "EcA1": stage_eca1, "EcA2": stage_eca2, "EcA3": stage_eca3,
                 "IvHc": lambda: stage_ivh("c"), "IvHx": lambda: stage_ivh("x"), "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive, "EcD": stage_ecd, "EcW": stage_ecw, "EcW3": lambda: stage_ecw("b"), "ZS": stage_zs, "ZA": stage_za, "ZB": stage_zb, "ZE": stage_ze,
-                **{f"EcT{x}": (lambda x=x: stage_ect(x)) for x in ("0a", "0c", "0b", "1a", "1c", "1b")}}[stage]()
+                **{f"EcT{x}": (lambda x=x: stage_ect(x)) for x in ("0a", "0c", "0b", "1a", "1c", "1b")}}
+
+
+def main():
+    stage = sys.argv[1]
+    if stage == "--list":
+        print("\n".join(stages()))
+        return
+    g, info = stages()[stage]()
     print(HEADER.format(imp=info.get("import", "C3BootProofs.Proofs.SvDer"), title=info["title"], doc=info["doc"]))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")

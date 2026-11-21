@@ -121,7 +121,7 @@ for p, _ in zs.params:
 ch.k = 2
 args, names, pats, _ = ch.call(zs, ov, {'out': 'out', 'bp': 'bp', 'x26': 'x26', 'rv': 'rv', 'sv': 'sv', 'zv': 'zv',
                                        'X': 'stm.1.1', 'Y': 'stm.1.2.1', 'Z': 'stm.1.2.2'})
-O("  rcases @sv_zs " + " ".join(args) + " with ⟨hn, -⟩ | ⟨" + ", ".join(pats) + "⟩")
+O(f"  rcases {'@' if ch.at else ''}sv_zs " + " ".join(args) + " with ⟨hn, -⟩ | ⟨" + ", ".join(pats) + "⟩")
 O("  · exact absurd trivial hn")
 t = ["E3", "IC0.sv F fR3", "EC0.sv F fR3", "UC0.sv F fR3", "V3", "r3_2", "by rw [r3_3, X2.g3]; exact g1_3",
      "by rw [r3_4, X2.g4]; exact g1_4", "r3_18", "r3_19", "r3_26", "r3_27", "w3_20", "by rw [w3_34, w3_38]; rfl",

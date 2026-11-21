@@ -72,7 +72,8 @@ def fact_key(l):
         return 'STEPS'
     if re.match(r"St n'\.mem SV n' 0x", l):
         return 'ST'
-    for pre, nm in (("SvCode", 'E'), ("SvSaves", 'V'), ("(∀ x, SvR", 'FR'), ("reg n' sp", 'r2')):
+    for pre, nm in (("SvCode", 'E'), ("SvSaves", 'V'), ("(∀ x, SvR", 'FR'), ("reg n' sp", 'r2'),
+                    ("SvKeepL B n0.mem n'.mem", 'KL')):
         if l.startswith(pre):
             return nm
     m = re.match(r"reg n' \((\d+) : Fin 32\)", l) or re.match(r"reg n' (a\d)", l)
@@ -116,26 +117,35 @@ class Stage:
         j = s.index(':= by\n', i)
         st = s[i:j]
         self.name = name
-        hdr_end = st.index('\n')
+        hdr_end = st.index('(F : ') if '(F : ' in st else st.index('\n')
         self.binders = []
         for g in groups(st[:hdr_end], '{', '}'):
             names, ty = g.rsplit(' : ', 1)
             for n in names.split():
                 self.binders.append((n, ty.strip()))
-        k = st.index('\n    (¬')
+        self.errpat = '⟨-, e⟩'
+        if '\n    (¬' in st:
+            k = st.index('\n    (¬')
+            neg = st[k + len('\n    (¬ ('):]
+            e = min(x for x in (neg.find(') ∧ SvErrRet'), neg.find(') ∧ Panics')) if x >= 0)
+            self.sc = neg[:e]
+            self.fail = 'Panics' if neg[e:].startswith(') ∧ Panics') else 'SvErrRet'
+        else:
+            k = st.index('\n    SvErrRet B out v n0 ∨')
+            self.sc = None
+            self.fail = 'SvErrRet'
+            self.errpat = 'e'
         self.params = []
         for g in groups(st[hdr_end:k]):
             pn, ty = g.split(' : ', 1)
             self.params.append((pn.strip(), ty.strip()))
-        neg = st[k + len('\n    (¬ ('):]
-        e = min(x for x in (neg.find(') ∧ SvErrRet'), neg.find(') ∧ Panics')) if x >= 0)
-        self.sc = neg[:e]
-        self.fail = 'Panics' if neg[e:].startswith(') ∧ Panics') else 'SvErrRet'
         rest = st[k:].split('\n')[2:]
         self.nsc = next(i for i, l in enumerate(rest) if "∃ n', Steps" in l)
         self.sc_parts = [l.strip().rstrip('∧').strip() for l in rest[:self.nsc]]
         if self.sc_parts:
             self.sc_parts[0] = self.sc_parts[0][1:]
+        if self.sc is None:
+            self.sc = " ∧ ".join(self.sc_parts)
         body = "\n".join(rest[self.nsc:])
         body = body[body.index("∃ n', ") + len("∃ n', "):]
         body = body.rstrip()
@@ -171,7 +181,7 @@ class Chain:
         self.k = 0
         self.prev = {}
 
-    def call(self, stage, overrides, fixed=None, resolve=None, wren=None):
+    def call(self, stage, overrides, fixed=None, resolve=None, wren=None, carry=None):
         """Emits nothing; returns the arguments for `stage` at step `k + 1`,
         the names for its success condition's witnesses and proofs, the
         names for its facts, and its success condition's parts, all
@@ -201,17 +211,33 @@ class Chain:
                 key = 'ln' + key[2:]
             if key and key not in self.prev and re.fullmatch(r'r1[0-7]', key):
                 key = 'ra' + key[2]
+            carried = carry(key, ty) if key and key not in self.prev and carry else None
             if key and key in self.prev:
                 f = self.prev[key]
                 got[pn] = fname(f.key, self.k)
                 if rhs in bs and rhs not in env:
                     env[rhs] = strip_parens(f.rhs)
+            elif carried:
+                got[pn], val = carried
+                if rhs in bs and rhs not in env:
+                    env[rhs] = val
             elif key and len(parts) == 2 and rhs in bs and rhs not in env:
                 got[pn] = 'rfl'
                 lhs = strip_parens(parts[0])
                 env[rhs] = re.sub(IDENT.format("n0"), f"n{self.k}", lhs) if self.k else lhs
             else:
-                pending.append((pn, ty))
+                lhs = re.sub(IDENT.format("n0"), f"n{self.k}", strip_parens(parts[0])) if len(parts) == 2 else None
+                f = next((f for f in self.prev.values() if lhs and f.rhs is not None and
+                          strip_parens(top_split(f.text, ' = ')[0]) == lhs), None)
+                if f is not None:
+                    got[pn] = fname(f.key, self.k)
+                    if rhs in bs and rhs not in env:
+                        env[rhs] = strip_parens(f.rhs)
+                elif lhs and rhs in bs and rhs not in env:
+                    got[pn] = 'rfl'
+                    env[rhs] = lhs
+                else:
+                    pending.append((pn, ty))
         for pn, ty in pending:
             t = re.sub(IDENT.format("n0"), f"n{self.k}", ty) if self.k else ty
             a = resolve(pn, subst(t, env)) if resolve else None
@@ -229,7 +255,13 @@ class Chain:
                 bargs.append(DEFAULTS.get(ty, '_'))
                 if last[b] == i and ty in DEFAULTS:
                     env.setdefault(b, DEFAULTS[ty])
-        args = bargs + args
+        if len({b for b, _ in stage.binders}) == len(stage.binders):
+            named = [f"({b} := {DEFAULTS[ty]})" for (b, ty), a in zip(stage.binders, bargs) if a != '_']
+            args = named + args
+            self.at = False
+        else:
+            args = bargs + args
+            self.at = True
         names = []
         proofs = []
         n = 0

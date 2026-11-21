@@ -48,7 +48,7 @@ def inst(t):
 
 
 P("  have hrem' : BitVec.ofNat 32 st.rem = 0 := by rw [h0]; rfl")
-P("  rcases @sv_ze " + " ".join(args) + " with ⟨hn, e⟩ | ⟨" + ", ".join(names + pats) + "⟩")
+P(f"  rcases {'@' if ch.at else ''}sv_ze " + " ".join(args) + " with ⟨hn, e⟩ | ⟨" + ", ".join(names + pats) + "⟩")
 P("  · exact .inl ⟨hn, e⟩")
 keep = []
 for key, f in ch.prev.items():

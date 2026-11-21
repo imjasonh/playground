@@ -54,7 +54,7 @@ for p, _ in ive.params:
         ov[p] = 'rfl'
 args, names, pats, sc_ive = ch.call(ive, ov, fixed)
 SC = " ∧ ".join(f"({x})" for x in sc_ive) + " ∧ True"
-P("  rcases @sv_ive " + " ".join(args) + " with ⟨hn, e⟩ | ⟨" + ", ".join(names + pats) + "⟩")
+P(f"  rcases {'@' if ch.at else ''}sv_ive " + " ".join(args) + " with ⟨hn, e⟩ | ⟨" + ", ".join(names + pats) + "⟩")
 P("  · exact .inl ⟨hn, e⟩")
 
 P0 = P1 = None
@@ -76,7 +76,7 @@ for st in stages[1:]:
         ov.update({'hP0': 'hG', 'hP1': 'hQ'})
     args, names, pats, _ = ch.call(st, ov, fixed)
     assert not names
-    P(f"  rcases @{st.name} " + " ".join(args) + " with ⟨hn, -⟩ | ⟨" + ", ".join(pats) + "⟩")
+    P(f"  rcases {'@' if ch.at else ''}{st.name} " + " ".join(args) + " with ⟨hn, -⟩ | ⟨" + ", ".join(pats) + "⟩")
     P("  · exact absurd trivial hn")
 
 K = ch.k

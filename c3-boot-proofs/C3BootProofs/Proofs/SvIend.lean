@@ -105,7 +105,8 @@ theorem sv_iend {B out bp x9 x21 x26 il c q ip subj slen : Word} {w24 w28 w2c w3
         SvCode n'.mem ∧
         SvSaves B n'.mem v ∧
         (∀ x, SvR B x → n'.mem x = M0 x) ∧
-        reg n' sp = B + 0x21A0) := by
+        reg n' sp = B + 0x21A0 ∧
+        SvKeepL B n0.mem n'.mem []) := by
   have t0 : Steps n0 n0 := .refl n0
   have fR0 : ∀ x, SvR B x → n0.mem x = M0 x := fM
   have g0_3 : reg n0 (3 : Fin 32) = reg n0 (3 : Fin 32) := rfl
@@ -133,6 +134,7 @@ theorem sv_iend {B out bp x9 x21 x26 il c q ip subj slen : Word} {w24 w28 w2c w3
     have g1_25 : reg n1 (25 : Fin 32) = il := by rw [u1.regs, g0_25]
     have g1_26 : reg n1 (26 : Fin 32) = x26 := by rw [u1.regs, g0_26]
     have g1_27 : reg n1 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u1.regs, g0_27]
+    have keep_kk1 : SvKeepL B n0.mem n1.mem [] := by rw [m1]; exact (SvKeepL.refl : SvKeepL B n0.mem n0.mem [])
     have w1_24 : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m1]; exact w0_24
     have w1_28 : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m1]; exact w0_28
     have w1_2c : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m1]; exact w0_2c
@@ -222,6 +224,8 @@ theorem sv_iend {B out bp x9 x21 x26 il c q ip subj slen : Word} {w24 w28 w2c w3
     have g2_25 : reg n2 (25 : Fin 32) = il := by rw [u2.regs, g1_25]
     have g2_26 : reg n2 (26 : Fin 32) = x26 := by rw [u2.regs, g1_26]
     have g2_27 : reg n2 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u2.regs, g1_27]
+    have keep_kk2 : SvKeepL B n0.mem n2.mem [] := by rw [m2]; exact keep_kk1
+    clear keep_kk1
     have w2_24 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x24) = w24 := by rw [m2]; exact w1_24
     have w2_28 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x28) = w28 := by rw [m2]; exact w1_28
     have w2_2c : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C) = w2c := by rw [m2]; exact w1_2c

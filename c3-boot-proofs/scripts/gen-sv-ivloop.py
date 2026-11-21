@@ -33,7 +33,8 @@ def cname(l):
         return 'STEPS'
     if re.match(r"St n'\.mem SV n' 0x", l):
         return 'ST'
-    for pre, nm in (("SvCode", 'E'), ("SvSaves", 'V'), ("(∀ x, SvR", 'FR'), ("reg n' sp", 'r2')):
+    for pre, nm in (("SvCode", 'E'), ("SvSaves", 'V'), ("(∀ x, SvR", 'FR'), ("reg n' sp", 'r2'),
+                    ("SvKeepL B n0.mem n'.mem", 'KL')):
         if l.startswith(pre):
             return nm
     m = re.match(r"reg n' \((\d+) : Fin 32\)", l) or re.match(r"reg n' (a\d)", l)
