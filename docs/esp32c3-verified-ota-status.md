@@ -88,20 +88,34 @@ fact past stages that don't mention it. Three scripts compose stages:
   the searches through the root's lists: an error return, or the first
   entry that matches and the end of the stage that handles it.
 
-Composed so far: the leaf up to its extensions (`sv_seg_leaf`), the
-policy and the signature's DER (`sv_seg_dpv`), the timestamp up to its
-signed attributes (`sv_seg_tsa`), the checkpoint's origin and size
-(`sv_seg_ck`), the entry's index and the validity windows up to the
-successful exit (`sv_seg_win`), the size's digit loop (`sv_ckdloop`), and
-the searches for the issuer, the TSA, and the log (`sv_isearch`,
-`sv_tsearch`, `sv_csearch`).
+A segment's statement has the same form as a stage's, so segments,
+merged stages, and the `_st` forms of loops and searches compose into
+larger segments. A merge decides between its stages on a hypothesis and
+its negation, on `a < b` against `b ≤ a`, or on whether a decode
+returned `none`. [`gen-sv-attrloop.py`](../c3-boot-proofs/scripts/gen-sv-attrloop.py)
+writes the one loop so far whose step depends on what it parses: the
+signed attributes, as a chain of `sv_attrStep` relations (`svChain`).
 
-Left: the loops over the leaf's extensions, the timestamp's attributes,
-and the checkpoint's cosignatures; the timestamp's `TSTInfo` branches;
-one theorem from the entry to the return; the layout of `Bundle` and
-`SigstoreRoot` in memory, and that theorem against `sigstoreVerify` in
-`Spec/Sigstore.lean`; and the models (`ivLoop8`, `mlMain2`, `zvLoop`)
-against `p256.verify` in `Spec/Ecdsa.lean`.
+Composed so far:
+
+- Segments: the leaf up to its extensions (`sv_seg_leaf`), the policy and
+  the signature's DER (`sv_seg_dpv`), the timestamp up to its signed
+  attributes (`sv_seg_tsa`), the `TSTInfo` and the timestamp's signature
+  (`sv_seg_tst`), the checkpoint's origin and size (`sv_seg_ck`), and the
+  entry's index and the validity windows up to the successful exit
+  (`sv_seg_win`).
+- Loops: the signed attributes (`sv_attrloop`), the size's digits
+  (`sv_ckdloop_run`), and a cosignature's base64 groups with the end of its
+  line (`sv_cgloop_st`).
+- Searches: the issuer, the TSA, the log, and the space in a signature
+  line (`sv_isearch`, `sv_tsearch`, `sv_csearch`, `sv_nsearch`).
+
+Left: the loop over the leaf's extensions and the one over the
+checkpoint's signature lines; one theorem from the entry to the return;
+the layout of `Bundle` and `SigstoreRoot` in memory, and that theorem
+against `sigstoreVerify` in `Spec/Sigstore.lean`; and the models
+(`ivLoop8`, `mlMain2`, `zvLoop`) against `p256.verify` in
+`Spec/Ecdsa.lean`.
 
 `_start` and the clock and watchdog `setup` that runs before `boot_main`
 aren't among the extracted functions, so they are trusted.
