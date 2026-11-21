@@ -77,6 +77,20 @@ theorem svSubOfNat_toNat {r : Word} {a : Nat} (ha : a ≤ r.toNat) :
 
 theorem svRem_zero {r : Word} (h : r.toNat ≤ 0) : r = 0 := BitVec.eq_of_toNat_eq (by simp; omega)
 
+/-- A counter that starts at `c0`, that each step moves by `d`, and that isn't
+0 after any of the first `N` steps. -/
+theorem svCnt_ne {α : Type} {F : α → α} {s : α} {N : Nat} (g : α → Word) (c0 : Word) (d : Nat)
+    (h : ∀ s, g (F s) = g s + BitVec.ofNat 32 d) (hs : g s = c0) (hN : ∀ i, i < N → c0 + BitVec.ofNat 32 (i * d) ≠ 0)
+    {i : Nat} (hi : i < N) {c' : Word} (hc : c' = g (svIter F i s)) : c' ≠ 0 := by
+  rw [hc, svIter_add g h, hs]; exact hN i hi
+
+/-- A counter that starts at `c0`, that each step moves by `d`, and that is 0
+after `N` steps. -/
+theorem svCnt_zero {α : Type} {F : α → α} {s : α} {N : Nat} (g : α → Word) (c0 : Word) (d : Nat)
+    (h : ∀ s, g (F s) = g s + BitVec.ofNat 32 d) (hs : g s = c0) (hN : c0 + BitVec.ofNat 32 (N * d) = 0)
+    {c' : Word} (hc : c' = g (svIter F N s)) : c' = 0 := by
+  rw [hc, svIter_add g h, hs]; exact hN
+
 /-- What a DER element leaves of a slice is shorter than the slice. -/
 theorem svRem_elem {rp rl : Word} {M : Word → BitVec 8} {tag : Nat} {t : DerTlv} {N : Nat}
     (ht : derElement tag (memBytes M rp rl.toNat) = .ok t) (hN : rl.toNat ≤ N + 1) :

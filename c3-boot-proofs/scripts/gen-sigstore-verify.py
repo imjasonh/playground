@@ -4814,16 +4814,23 @@ def i_start(g):
     regs = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 18: ("U", "out"),
             19: ("U", "bp"), 27: ("S", 0xA20), 9: ("U", "x9"), 21: ("U", "x21"), 25: ("U", "il"), 26: ("U", "x26"),
             20: ("U", "c")}
-    words = {e: f"w{e:x}" for e in range(0x24, 0x134, 4)}
+    words = {e: f"w{e:x}" for e in I_KEEP}
     words.update({0x5C: "ip", 0x7C: "q"})
     params = start(g, regs, words, {})
+    # The leaf's signature, `r` then `s`, as `sv_l8a` copied it.
+    g.bytes[0xD0] = "BitVec.ofNat 8 (sr.getD 0 0)"
+    g.ranges[0xD1] = (47, "BitVec.ofNat 8 (sr.getD (1 + j) 0)")
+    g.ranges[0x100] = (48, "BitVec.ofNat 8 (ss.getD j 0)")
+    params += [f"(b0_d0 : n0.mem ({fa(0xD0)}) = BitVec.ofNat 8 (sr.getD 0 0))",
+               "(q0_d1 : ∀ j, j < 47 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0xD1 + j)) = BitVec.ofNat 8 (sr.getD (1 + j) 0))",
+               "(q0_100 : ∀ j, j < 48 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x100 + j)) = BitVec.ofNat 8 (ss.getD j 0))"]
     return params
 
 
+I_KEEP = set(range(0x24, 0xD0, 4)) | {0x130}
 I_BINDERS = ("{B out bp x9 x21 x26 il c q ip subj slen : Word} "
-             + "{" + " ".join(f"w{e:x}" for e in range(0x24, 0x134, 4) if e not in (0x5C, 0x7C))
-             + " : Word} {v : Nat → Word} {n0 : Machine}")
-I_KEEP = set(range(0x24, 0x134, 4))
+             + "{" + " ".join(f"w{e:x}" for e in sorted(I_KEEP) if e not in (0x5C, 0x7C))
+             + " : Word} {sr ss : Bytes} {v : Nat → Word} {n0 : Machine}")
 
 
 def i_entry(g):
@@ -4867,7 +4874,7 @@ def stage_imiss():
     g.block(0xB10, 0xB14)
     g.store(0xB14, "sw")
     g.branch(0xB16, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-    stmt, proof = finish(g, 0xAE2, [2, 3, 4, 9, 18, 19, 20, 21, 25, 26, 27], I_KEEP, set())
+    stmt, proof = finish(g, 0xAE2, [2, 3, 4, 9, 18, 19, 20, 21, 25, 26, 27], I_KEEP, {0xD0})
     info = {"name": "sv_imiss", "title": "an intermediate that didn't issue the leaf",
             "doc": "One pass of the intermediates loop, from 0xAE2 back to it, for a listed intermediate whose "
             "subject isn't the leaf's issuer.",
@@ -4892,7 +4899,7 @@ def stage_ihit():
                f"(by rw [g{g.k}_11, ofNat_toNat_self])", f"(by rw [g{g.k}_13, ofNat_toNat_self])")
     g.set_a0(kn, 0, "ite_eq_left hm.symm")
     g.branch(0xB28, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-    stmt, proof = finish(g, 0xB56, [2, 3, 4, 8, 9, 18, 19, 21, 22, 23, 25, 26, 27], I_KEEP, set())
+    stmt, proof = finish(g, 0xB56, [2, 3, 4, 8, 9, 18, 19, 21, 22, 23, 25, 26, 27], I_KEEP, {0xD0})
     info = {"name": "sv_ihit", "title": "the intermediate that issued the leaf",
             "doc": "The intermediates loop's end, from 0xAE2 to 0xB56, at a listed intermediate whose subject is the "
             "leaf's issuer.",

@@ -101,6 +101,30 @@ def chain_steps(K):
     return s
 
 
+def part_count(part):
+    """How many names `Chain` gives a success condition's part: one for each
+    witness and one for each conjunct's proof."""
+    n = 0
+    for piece in top_split(part, ' ∧ '):
+        piece = piece.strip()
+        while piece.startswith('∃ '):
+            c = piece.index(',')
+            n += len(piece[2:c].split(":")[0].split())
+            piece = piece[c + 1:].strip()
+        n += 1
+    return n
+
+
+def counter(step, init):
+    """A search's counter, the first part of its state: its start and what
+    each step adds, when both are constants."""
+    st = re.fullmatch(r"\(\(s\.1\)\) \+ BitVec\.ofNat 32 (0x[0-9A-F]+), .+", step)
+    c0 = strip_parens(init)
+    if st and re.fullmatch(r"BitVec\.ofNat 32 0x[0-9A-F]+", c0):
+        return c0, int(st.group(1), 16)
+    return None
+
+
 class Segment:
     def __init__(self, name, seq, doc, extra=None):
         self.name = name
@@ -276,6 +300,10 @@ class Segment:
 
     def fail(self, kk, kind, P, indent="  "):
         """The proof of the segment's goal from step `kk`'s error return or panic `e`."""
+        if kind == 'Both':
+            self.fail(kk, 'SvErrRet', P, indent)
+            self.fail(kk, 'Panics', P, indent)
+            return
         if kk == 1:
             P(f"{indent}· exact .inr (.inl e)" if kind == 'Panics' else f"{indent}· exact .inl e")
         elif kind == 'Panics':
@@ -437,6 +465,85 @@ class Segment:
             return self.carry(key, ty)
         return None
 
+    def split_each(self, p, ty):
+        """A hypothesis about each of a search's first `N` states, whose parts
+        are a counter that isn't 0 yet, facts the segment knows, and facts
+        about the start that become a hypothesis of the segment."""
+        parts = top_split(ty, ' → ')
+        if len(parts) != 3 or not re.fullmatch(r"∀ i, i < \d+", parts[0]):
+            return None
+        m = re.fullmatch(r"∀ ([\w' ]+), \(([\w', ]+)\) = svIter \(fun s => \((.+)\)\) i \(\(?(.+?)\)?, .+\)", parts[1])
+        if not m:
+            return None
+        cnt = counter(m.group(3), m.group(4))
+        vs = m.group(1).split()
+        bound = ['i'] + vs
+        mentions = lambda t: any(re.search(rf"(?<![\w.']){re.escape(b)}(?![\w'])", t) for b in bound)
+        local = r"(?<![\w.'])(n\d+|[\w']+_\d+|d\d+_\w+)(?![\w'])"
+        terms, lifted = [], []
+        for part in (strip_parens(x) for x in top_split(parts[2], ' ∧ ')):
+            if part == f"{vs[0]} ≠ 0" and cnt:
+                terms.append(f"(svCnt_ne Prod.fst ({cnt[0]}) 0x{cnt[1]:X} (by intro _; rfl) rfl (by decide) hi "
+                             "(congrArg Prod.fst h))")
+            elif not mentions(part) and re.search(local, part):
+                pf = self.resolve(f"{p}_{len(terms)}", part)
+                if pf is None or isinstance(pf, tuple):
+                    return None
+                terms.append(pf)
+            elif mentions(part) and re.search(local, re.sub("|".join(rf"(?<![\w.']){re.escape(b)}(?![\w'])" for b in bound),
+                                                            "", part)):
+                return None
+            else:
+                terms.append(None)
+                lifted.append(part)
+        if not lifted:
+            return f"(fun i hi {' '.join(vs)} h => ⟨{', '.join(terms)}⟩)"
+        nm = p + "'"
+        while nm in {q for q, _ in self.hyps}:
+            nm += "'"
+        self.hyps.append((nm, f"{parts[0]} → {parts[1]} → " + " ∧ ".join(f"({x})" for x in lifted)))
+        self.lifted.append(nm)
+        call = f"({nm} i hi {' '.join(vs)} h)"
+        j = 0
+        for t, x in enumerate(terms):
+            if x is None:
+                last = j == len(lifted) - 1
+                terms[t] = call + ".2" * j + ("" if last else ".1")
+                j += 1
+        return f"(fun i hi {' '.join(vs)} h => ⟨{', '.join(terms)}⟩)"
+
+    def lift_each(self, p, ty):
+        """A hypothesis about the state a search stopped at, from a hypothesis
+        of the segment about each state the search can reach."""
+        loc = set(re.findall(r"(?<![\w.'])([\w']+_\d+)(?![\w'])", ty))
+        if not loc or re.search(r"(?<![\w.'])(n\d+|d\d+_\w+)(?![\w'])", ty):
+            return None
+        for pf, piece in self.pieces:
+            m = re.fullmatch(r"\(([\w', ]+)\) = svIter (.+) ([\w']+) (\(.+\))", canon(strip_exists(piece)))
+            if not m:
+                continue
+            vs = m.group(1).split(', ')
+            if not loc <= set(vs):
+                continue
+            idx = m.group(3)
+            lt = next((q for q, x in self.pieces if re.fullmatch(rf"{re.escape(idx)} < (\d+)", canon(strip_exists(x)))), None)
+            if not lt:
+                continue
+            bound = next(re.fullmatch(rf"{re.escape(idx)} < (\d+)", canon(strip_exists(x))).group(1)
+                         for q, x in self.pieces if q == lt)
+            fresh = [f"y{j}" for j in range(len(vs))]
+            body = ty
+            for v, f in zip(vs, fresh):
+                body = re.sub(rf"(?<![\w.']){re.escape(v)}(?![\w'])", f, body)
+            nm = p
+            while nm in {q for q, _ in self.hyps}:
+                nm += "'"
+            self.hyps.append((nm, f"∀ i, i < {bound} → ∀ {' '.join(fresh)}, ({', '.join(fresh)}) = svIter {m.group(2)} i "
+                                  f"{m.group(4)} → {body}"))
+            self.lifted.append(nm)
+            return f"({nm} {idx} {lt} {' '.join(vs)} {pf})"
+        return None
+
     def resolve(self, p, ty, free=()):
         if p in self.extra:
             return self.extra[p]
@@ -446,6 +553,22 @@ class Segment:
         m = re.fullmatch(r"(.+) ≤ (\w+)", strip_parens(ty))
         if m and m.group(2) in free:
             return ("(Nat.le_refl _)", {m.group(2): f"({m.group(1)})"})
+        # A counter that starts at a constant and drops by a constant reaches 0
+        # after their quotient's steps.
+        m = re.fullmatch(r"∀ ([\w' ]+), \(([\w', ]+)\) = svIter \(fun s => \((.+)\)\) (\w+) \(\(?(.+?)\)?, .+\) → (\S+) = 0",
+                         strip_parens(ty))
+        if m and m.group(4) in free and m.group(6) == m.group(2).split(', ')[0]:
+            cnt = counter(m.group(3), m.group(5))
+            if cnt:
+                c0, d = cnt
+                dec, start = 2 ** 32 - d, int(re.search(r"0x[0-9A-F]+", c0).group(0), 16)
+                if start % dec == 0:
+                    vs = " ".join("_" for _ in m.group(1).split())
+                    return (f"(fun {vs} h => svCnt_zero Prod.fst ({c0}) 0x{d:X} (by intro _; rfl) rfl (by decide) "
+                            "(congrArg Prod.fst h))", {m.group(4): str(start // dec)})
+        hit = self.split_each(p, strip_parens(ty))
+        if hit:
+            return hit
         m = re.fullmatch(r"(.+) = (.+) \+ BitVec\.ofNat 32 \((\w+) \* 4\)", strip_parens(ty))
         if m and m.group(3) in free:
             terms = split_sum(strip_parens(m.group(1)))
@@ -470,7 +593,7 @@ class Segment:
             self.hyps.append((nm, ty))
             self.lifted.append(nm)
             return nm
-        return None
+        return self.lift_each(p, ty)
 
     def build(self):
         first = self.stages[0]
@@ -522,14 +645,25 @@ class Segment:
             self.names += names
             P(f"  rcases {'@' if ch.at else ''}{st.name} " + " ".join(args) + f" with {st.errpat} | ⟨" + ", ".join(names + pats) + "⟩")
             self.fail(ch.k, st.fail, P)
-        self.panics = any(it[1].fail == 'Panics' for it in self.items if it[0] == 'stage')
+        self.panics = any(it[1].fail in ('Panics', 'Both') for it in self.items if it[0] == 'stage')
+        self.hide_loads()
         self.carried = []
+        # Every frame fact that a stage states and no later stage writes over.
+        stated = {}
         for p, t in first.params:
             key = param_key(p)
-            if not key or key[0] not in 'wbq' or key in ch.prev or len(self.hist) < 2:
+            if key:
+                stated[key] = t
+        for _, facts in self.hist[1:]:
+            for key, f in facts.items():
+                stated.setdefault(key, f.text)
+        for key, t in stated.items():
+            if key[0] not in 'wbq' or key in ch.prev or len(self.hist) < 2:
                 continue
             c = self.carry(key, t)
             if c and self.found_text:
+                if len(re.findall(r"(?<![\w.'])n\d+(?![\w'])", self.found_text)) != 1:
+                    continue
                 text = re.sub(r"(?<![\w.'])n\d+(?![\w'])", "n'", strip_parens(self.found_text))
                 self.carried.append((key, f"({text})" if text.startswith('∀') else text, c[0]))
         self.ch = ch
@@ -546,6 +680,24 @@ class Segment:
         self.end = re.search(r"0x[0-9A-F]+", ch.prev['ST'].text).group(0)
         return self
 
+    def hide_loads(self):
+        """A success condition that names a frame word of a machine inside the
+        segment, which no stage stated, has that word as a witness instead."""
+        load = r"memLoad32 n\d+\.mem \(B \+ 0x21A0 \+ BitVec\.ofNat 32 0x[0-9A-F]+\)"
+        names, at, sc, u = list(self.names), 0, [], 0
+        for part in self.sc:
+            terms = list(dict.fromkeys(re.findall(load, part)))
+            if terms:
+                us = [f"u{u + j}" for j in range(len(terms))]
+                u += len(terms)
+                for t, v in zip(terms, us):
+                    part = part.replace(t, v)
+                part = f"∃ {' '.join(us)}, {part}"
+                names[at:at] = [f"({t})" for t in terms]
+            at += part_count(part)
+            sc.append(part)
+        self.sc, self.names = sc, names
+
     def union_kl(self):
         out = []
         for _, facts in self.hist[1:]:
@@ -557,26 +709,17 @@ class Segment:
         out = [f"theorem {self.name} BINDERS"]
         out += [f"    ({p} : {t})" for p, t in self.hyps]
         out[-1] += " :"
-        if self.panics:
-            out.append("    SvErrRet B out v n0 ∨ Panics n0 ∨")
-            body = list(self.sc)
-            body.append(f"∃ m', Steps n0 m' ∧ (∀ x, SvR B x → m'.mem x = M0 x) ∧ St m'.mem SV m' {self.end} (reg m') ∧\n"
-                        "        SvCode m'.mem ∧ SvSaves B m'.mem v ∧ reg m' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧\n"
-                        "        reg m' (4 : Fin 32) = reg n0 (4 : Fin 32)" +
-                        "".join(f" ∧\n        {t}" for _, t in self.keep))
-            out.append("    (" + " ∧\n      ".join(body) + ")")
-        else:
-            out.append("    SvErrRet B out v n0 ∨")
-            lines = [f"{x} ∧" for x in self.sc] + ["∃ n', Steps n0 n' ∧"]
-            out.append("    (" + lines[0])
-            out += ["      " + x if x != lines[-1] else "    " + x for x in lines[1:]]
-            facts = ["(∀ x, SvR B x → n'.mem x = M0 x)", f"St n'.mem SV n' {self.end} (reg n')", "SvCode n'.mem",
-                     "SvSaves B n'.mem v", "reg n' (3 : Fin 32) = reg n0 (3 : Fin 32)",
-                     "reg n' (4 : Fin 32) = reg n0 (4 : Fin 32)"]
-            facts += [t.replace("m'", "n'") for _, t in self.keep]
-            facts += [t for _, t, _ in self.carried]
-            facts.append(f"SvKeepL B n0.mem n'.mem {self.union_kl()}")
-            out += [f"        {t}" + (" ∧" if j + 1 < len(facts) else ")") for j, t in enumerate(facts)]
+        out.append("    SvErrRet B out v n0 ∨ Panics n0 ∨" if self.panics else "    SvErrRet B out v n0 ∨")
+        lines = [f"{x} ∧" for x in self.sc] + ["∃ n', Steps n0 n' ∧"]
+        out.append("    (" + lines[0])
+        out += ["      " + x if x != lines[-1] else "    " + x for x in lines[1:]]
+        facts = ["(∀ x, SvR B x → n'.mem x = M0 x)", f"St n'.mem SV n' {self.end} (reg n')", "SvCode n'.mem",
+                 "SvSaves B n'.mem v", "reg n' (3 : Fin 32) = reg n0 (3 : Fin 32)",
+                 "reg n' (4 : Fin 32) = reg n0 (4 : Fin 32)"]
+        facts += [t.replace("m'", "n'") for _, t in self.keep]
+        facts += [t for _, t, _ in self.carried]
+        facts.append(f"SvKeepL B n0.mem n'.mem {self.union_kl()}")
+        out += [f"        {t}" + (" ∧" if j + 1 < len(facts) else ")") for j, t in enumerate(facts)]
         text = "\n".join(out)
         groups_ = []
         for g in re.findall(r"\{([^}]*)\}", self.binders + extra):
@@ -593,14 +736,11 @@ class Segment:
         out = ["set_option maxHeartbeats 64000000 in", f"/-- {self.doc} -/", self.statement() + " := by"]
         out += self.proof
         pn = [fname(key, K) for key, _ in self.keep]
-        if self.panics:
-            out.append("  exact .inr (.inr ⟨" + ", ".join(self.names) + f", n{K}, {chain_steps(K)}, fR{K}, s{K}, E{K}, V{K},")
-            out.append(f"    by rw [{r3}], by rw [{r4}]" + "".join(f", {x}" for x in pn) + "⟩)")
-        else:
-            kl = "K1_L"
-            for k in range(2, K + 1):
-                kl = f"({kl}).trans K{k}_L"
-            out.append("  exact .inr ⟨" + ", ".join(self.names) + f", n{K}, {chain_steps(K)}, fR{K}, s{K}, E{K}, V{K},")
-            out.append(f"    by rw [{r3}], by rw [{r4}]" + "".join(f", {x}" for x in pn) +
-                       "".join(f", {term}" for _, _, term in self.carried) + f", ({kl}).mono (by decide)⟩")
+        kl = "K1_L"
+        for k in range(2, K + 1):
+            kl = f"({kl}).trans K{k}_L"
+        wrap = (".inr (.inr ", ")") if self.panics else (".inr ", "")
+        out.append(f"  exact {wrap[0]}⟨" + ", ".join(self.names) + f", n{K}, {chain_steps(K)}, fR{K}, s{K}, E{K}, V{K},")
+        out.append(f"    by rw [{r3}], by rw [{r4}]" + "".join(f", {x}" for x in pn) +
+                   "".join(f", {term}" for _, _, term in self.carried) + f", ({kl}).mono (by decide)⟩{wrap[1]}")
         return "\n".join(out)

@@ -129,6 +129,7 @@ theorem sv_seg_dku {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x38) = vl ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x3C) = vp ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x48) = ol ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x148C) = (vl) - BitVec.ofNat 32 (tl16_1.header + tl16_1.len) ∧
         SvKeepL B n0.mem n'.mem [(0x1480, 0x4), (0x1484, 0x4), (0x1488, 0x4), (0x148C, 0x4), (0x1020, 0x11), (0x1488, 0x8), (0x34, 0x4), (0x40, 0x4)]) := by
   rcases sv_dku1 F E0 V0 hret hO s0 M0 fM g0_2 g0_8 g0_9 g0_18 g0_19 g0_21 g0_25 g0_26 g0_27 w0_30 w0_34 w0_38 w0_3c w0_40 w0_48 w0_4c w0_50 w0_54 w0_58 w0_5c w0_60 w0_64 w0_68 w0_6c w0_70 w0_74 w0_78 w0_7c w0_80 w0_84 w0_88 w0_8c w0_90 w0_94 w0_a20 w0_a24 w0_a28 w0_a2c w0_a30 w0_a34 w0_a38 w0_a3c w0_a40 w0_a44 val_in oid_in SD0 hku with ⟨-, e⟩ | ⟨tl16_1, x1_0, n1, c1, s1, E1, V1, fR1, r1_2, r1_3, r1_4, r1_8, r1_9, r1_a0, r1_a1, r1_a2, r1_18, r1_19, r1_21, r1_25, r1_26, r1_27, w1_30, w1_34, w1_40, w1_4c, w1_50, w1_54, w1_58, w1_5c, w1_60, w1_64, w1_68, w1_6c, w1_70, w1_74, w1_78, w1_7c, w1_80, w1_84, w1_88, w1_8c, w1_90, w1_94, w1_a20, w1_a24, w1_a28, w1_a2c, w1_a30, w1_a34, w1_a38, w1_a3c, w1_a40, w1_a44, w1_148c, K1_L⟩
   · exact .inl e
@@ -136,6 +137,6 @@ theorem sv_seg_dku {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3
   · exact .inl (SvErrRet.pre (c1) (by rw [r1_3]) (by rw [r1_4])
       (fun x hx => (fR1 x hx).trans (fM x hx).symm) e)
   exact .inr ⟨tl16_1, x1_0, x2_0, x2_1, x2_2, x2_3, n2, c1.trans (c2), fR2, s2, E2, V2,
-    by rw [r2_3, r1_3], by rw [r2_4, r1_4], r2_2, r2_9, r2_18, r2_19, r2_21, r2_25, r2_26, r2_27, w2_30, w2_34, w2_40, w2_4c, w2_50, w2_54, w2_58, w2_5c, w2_60, w2_64, w2_68, w2_6c, w2_70, w2_74, w2_78, w2_7c, w2_80, w2_84, w2_88, w2_8c, w2_90, w2_94, w2_a20, w2_a24, w2_a28, w2_a2c, w2_a30, w2_a34, w2_a38, w2_a3c, w2_a40, w2_a44, ((K2_L.w32 (by decide) (by decide)).trans ((K1_L.w32 (by decide) (by decide)).trans w0_38)), ((K2_L.w32 (by decide) (by decide)).trans ((K1_L.w32 (by decide) (by decide)).trans w0_3c)), ((K2_L.w32 (by decide) (by decide)).trans ((K1_L.w32 (by decide) (by decide)).trans w0_48)), ((K1_L).trans K2_L).mono (by decide)⟩
+    by rw [r2_3, r1_3], by rw [r2_4, r1_4], r2_2, r2_9, r2_18, r2_19, r2_21, r2_25, r2_26, r2_27, w2_30, w2_34, w2_40, w2_4c, w2_50, w2_54, w2_58, w2_5c, w2_60, w2_64, w2_68, w2_6c, w2_70, w2_74, w2_78, w2_7c, w2_80, w2_84, w2_88, w2_8c, w2_90, w2_94, w2_a20, w2_a24, w2_a28, w2_a2c, w2_a30, w2_a34, w2_a38, w2_a3c, w2_a40, w2_a44, ((K2_L.w32 (by decide) (by decide)).trans ((K1_L.w32 (by decide) (by decide)).trans w0_38)), ((K2_L.w32 (by decide) (by decide)).trans ((K1_L.w32 (by decide) (by decide)).trans w0_3c)), ((K2_L.w32 (by decide) (by decide)).trans ((K1_L.w32 (by decide) (by decide)).trans w0_48)), ((K2_L.w32 (by decide) (by decide)).trans w1_148c), ((K1_L).trans K2_L).mono (by decide)⟩
 
 end C3.RV32.Sv

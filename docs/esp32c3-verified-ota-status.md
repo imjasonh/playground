@@ -98,24 +98,36 @@ signed attributes, as a chain of `sv_attrStep` relations (`svChain`).
 
 Composed so far:
 
-- Segments: the leaf up to its extensions (`sv_seg_leaf`), the policy and
-  the signature's DER (`sv_seg_dpv`), the timestamp up to its signed
-  attributes (`sv_seg_tsa`), the `TSTInfo` and the timestamp's signature
-  (`sv_seg_tst`), the checkpoint's origin and size (`sv_seg_ck`), and the
-  entry's index and the validity windows up to the successful exit
-  (`sv_seg_win`).
-- Loops: the signed attributes (`sv_attrloop`), the size's digits
-  (`sv_ckdloop_run`), and a cosignature's base64 groups with the end of its
-  line (`sv_cgloop_st`).
+- Segments: the leaf, its extensions, the intermediate that issued it, and
+  the leaf's signature, from the entry at 0x72 to the policy check at 0xDE6
+  (`sv_seg_cert`); the policy and the signature's DER (`sv_seg_dpv`); the
+  timestamp up to its signed attributes (`sv_seg_tsa`); the `TSTInfo` and
+  the timestamp's signature (`sv_seg_tst`); the checkpoint's origin and size
+  (`sv_seg_ck`); and the entry's index and the validity windows up to the
+  successful exit (`sv_seg_win`).
+- Loops: the leaf's extensions (`sv_extloop`, with the OIDs of an
+  `ExtKeyUsage` value in `sv_ekuloop`), the signed attributes
+  (`sv_attrloop`), the size's digits (`sv_ckdloop_run`), the checkpoint's
+  signature lines (`sv_cosigloop`), and a cosignature's base64 groups with
+  the end of its line (`sv_cgloop_st`).
 - Searches: the issuer, the TSA, the log, and the space in a signature
   line (`sv_isearch`, `sv_tsearch`, `sv_csearch`, `sv_nsearch`).
 
-Left: the loop over the leaf's extensions and the one over the
-checkpoint's signature lines; one theorem from the entry to the return;
+[`gen-sv-relloop.py`](../c3-boot-proofs/scripts/gen-sv-relloop.py) writes
+the loops whose step depends on what one pass parses (the extensions, the
+`ExtKeyUsage` OIDs, the signature lines). `sv_lh` restates the leaf's hash
+(`sv_lhash`) and the `p384_verify_prehash` call (`sv_lpv`) as a stage. It
+states the call's result over any memory that holds the key, the prehash,
+`r`, and `s` (`SvPvRes`), since `pvModel` reads only those
+(`pvModel_congr`).
+
+Left: the identity-policy slots as slices through the extensions loop, so
+the policy check composes after `sv_seg_cert`; `sv_p256`, `sv_tpv`, and the
+successful return as stages; one theorem from the entry to the return;
 the layout of `Bundle` and `SigstoreRoot` in memory, and that theorem
 against `sigstoreVerify` in `Spec/Sigstore.lean`; and the models
-(`ivLoop8`, `mlMain2`, `zvLoop`) against `p256.verify` in
-`Spec/Ecdsa.lean`.
+(`ivLoop8`, `mlMain2`, `zvLoop`, `pvModel`) against `p256.verify` and
+P-384 in `Spec/Ecdsa.lean`.
 
 `_start` and the clock and watchdog `setup` that runs before `boot_main`
 aren't among the extracted functions, so they are trusted.

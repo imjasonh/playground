@@ -47,6 +47,10 @@ SEGMENTS = {
     'SvSegDbc': ('sv_seg_dbc', [('SvDbc1', 'sv_dbc1'), ('SvDbc2m', 'sv_dbc2m')],
                  "**A `BasicConstraints` extension**: from the OID tests at 0x60E back to the extensions loop at "
                  "0x4EA, `sv_dbc1` and `sv_dbc2m`."),
+    'SvSegCert': ('sv_seg_cert', [('SvSegLeaf', 'sv_seg_leaf'), ('SvExtLoop', 'sv_extloop_st'), ('SvL8a', 'sv_l8a'),
+                                  ('SvISearch', 'sv_isearch_st'), ('SvLh', 'sv_lh')],
+                  "**The leaf certificate and its issuer**: from 0x72 to the policy check at 0xDE6: the leaf, its "
+                  "extensions, the intermediate that issued it, and the leaf's signature."),
     'SvSegEku': ('sv_seg_eku', [('SvDeku1', 'sv_deku1'), ('SvEkuLoop', 'sv_ekuloop_st')],
                  "**An `ExtKeyUsage` extension**: from the OID tests at 0x60E back to the extensions loop at "
                  "0x4EA, `sv_deku1` and the loop over its OIDs."),

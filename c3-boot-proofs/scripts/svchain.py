@@ -111,6 +111,23 @@ def param_key(p):
     return None
 
 
+def unify(pat, text, free):
+    """The values of the binders `free` that make `pat` read as `text`, when
+    each occurs in `pat` and the rest of `pat` matches as written."""
+    used = [b for b in sorted(free, key=len, reverse=True) if re.search(IDENT.format(re.escape(b)), pat)]
+    if not used:
+        return {}
+    rx = re.escape(pat)
+    for i, b in enumerate(used):
+        rx = re.sub(rf"(?<![\w.']){re.escape(re.escape(b))}(?![\w'])", f"\x00{i}\x00", rx)
+    for i, b in enumerate(used):
+        rx = rx.replace(f"\x00{i}\x00", f"(?P<g{i}>[\\w.']+|\\(.+?\\))", 1).replace(f"\x00{i}\x00", f"(?P=g{i})")
+    m = re.fullmatch(rx, text)
+    if not m:
+        return {}
+    return {b: strip_parens(m.group(f"g{i}")) for i, b in enumerate(used)}
+
+
 class Stage:
     def __init__(self, fn, name):
         s = open(BASE + fn + '.lean').read()
@@ -134,8 +151,9 @@ class Stage:
         else:
             k = st.index('\n    SvErrRet B out v n0 ∨')
             self.sc = None
-            self.fail = 'SvErrRet'
-            self.errpat = 'e'
+            both = st[k:].startswith('\n    SvErrRet B out v n0 ∨ Panics n0 ∨')
+            self.fail = 'Both' if both else 'SvErrRet'
+            self.errpat = 'e | e' if both else 'e'
         self.params = []
         for g in groups(st[hdr_end:k]):
             pn, ty = g.split(' : ', 1)
@@ -198,6 +216,7 @@ class Chain:
         bs = stage.binder_set()
         got = {}
         pending = []
+        deferred = {}
         for pn, ty in stage.params:
             parts = top_split(ty, ' = ')
             rhs = strip_parens(parts[-1])
@@ -205,7 +224,7 @@ class Chain:
                 got[pn] = overrides[pn]
                 if overrides[pn] == 'rfl' and len(parts) == 2 and rhs in bs and rhs not in env:
                     lhs = strip_parens(parts[0])
-                    env[rhs] = re.sub(IDENT.format("n0"), f"n{self.k}", lhs) if self.k else lhs
+                    env[rhs] = deferred[rhs] = re.sub(IDENT.format("n0"), f"n{self.k}", lhs) if self.k else lhs
                 continue
             key = param_key(pn)
             if key and key.startswith('mb') and ty.startswith('leN'):
@@ -218,6 +237,11 @@ class Chain:
                 got[pn] = fname(f.key, self.k)
                 if rhs in bs and rhs not in env:
                     env[rhs] = strip_parens(f.rhs)
+                elif f.rhs is not None:
+                    env.update(unify(rhs, strip_parens(f.rhs), [b for b in bs if b not in env]))
+                else:
+                    t = re.sub(IDENT.format("n0"), f"n{self.k}", strip_parens(ty))
+                    env.update(unify(t, strip_parens(f.text), [b for b in bs if b not in env]))
             elif carried:
                 got[pn], val = carried
                 if rhs in bs and rhs not in env:
@@ -225,7 +249,7 @@ class Chain:
             elif key and len(parts) == 2 and rhs in bs and rhs not in env:
                 got[pn] = 'rfl'
                 lhs = strip_parens(parts[0])
-                env[rhs] = re.sub(IDENT.format("n0"), f"n{self.k}", lhs) if self.k else lhs
+                env[rhs] = deferred[rhs] = re.sub(IDENT.format("n0"), f"n{self.k}", lhs) if self.k else lhs
             else:
                 lhs = re.sub(IDENT.format("n0"), f"n{self.k}", strip_parens(parts[0])) if len(parts) == 2 else None
                 f = next((f for f in self.prev.values() if lhs and f.rhs is not None and
@@ -236,9 +260,13 @@ class Chain:
                         env[rhs] = strip_parens(f.rhs)
                 elif lhs and rhs in bs and rhs not in env:
                     got[pn] = 'rfl'
-                    env[rhs] = lhs
+                    env[rhs] = deferred[rhs] = lhs
                 else:
                     pending.append((pn, ty))
+        # A binder that a hypothesis defines is its definition in the caller's terms.
+        for _ in range(len(deferred)):
+            for b, lhs in deferred.items():
+                env[b] = subst(lhs, {x: v for x, v in env.items() if x != b})
         for pn, ty in pending:
             t = re.sub(IDENT.format("n0"), f"n{self.k}", ty) if self.k else ty
             free = {b for b in bs if b not in env and re.search(IDENT.format(re.escape(b)), t)}
