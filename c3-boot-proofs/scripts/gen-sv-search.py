@@ -23,6 +23,10 @@ from svchain import DEFAULTS, IDENT, Chain, Stage, lean_binders, strip_parens, s
 from svloop import GLOBAL, Loop  # noqa: E402
 from svmerge import sc_pattern  # noqa: E402
 
+# Searches that scan a slice a byte at a time, counting up from 0: file: (count, pointer, bound).
+RUNS = {'SvNSearch': ('c', 'pa', 'w40')}
+RUNS_BOUND = {'sv_nsearch': 'w40'}
+
 # file: (theorem, miss, hit, end, doc)
 SEARCHES = {
     'SvISearch': ('sv_isearch', ('SvImiss', 'sv_imiss'), ('SvIhit', 'sv_ihit'), ('SvIend', 'sv_iend'),
@@ -165,6 +169,9 @@ def write(fname):
     O(f"      | succ i => exact hn i (by omega) {vs} (e1.trans (svIter_succ _ i {tup}))")
     O("")
     stage_form(O, name, okname, L, H, ps, valid, hm, cnt)
+    if fname in RUNS:
+        O("")
+        run_form(O, name, L, ps, valid, hm, *RUNS[fname])
     O("")
     O("end C3.RV32.Sv")
     O("")
@@ -206,6 +213,11 @@ def stage_form(O, name, okname, L, H, ps, valid, hm, cnt):
         O("      " + " ∧ ".join(L.primed(x) for x in H.sc_parts) + " ∧")
     O("    ∃ n', Steps n0 n' ∧")
     O("        " + " ∧\n        ".join(t for _, t in facts) + ") := by")
+    lines = O.__self__
+    i0 = max(i for i, l in enumerate(lines) if l.startswith("    SvErrRet B out v n0 ∨"))
+    nb = f"{RUNS_BOUND.get(name, 'N')}.toNat"
+    open(f"/tmp/{name}_st.stmt", "w").write("\n".join(lines[i0:]).replace(L.peq('N'), L.peq(nb))
+                                            .replace("∃ k, k < N ∧", f"∃ k, k < {nb} ∧"))
     fixed_names = list(dict.fromkeys(b for g in L.fixed for b in g[1:g.rindex(' : ')].split()))
     O(f"  rcases {name} {' '.join(f'({b} := {b})' for b in fixed_names)} F hret hO M0 N hz {' '.join(hn)} H with e | "
       f"⟨k, hk, hn, {', '.join(ps)}, e0, nk, cs, hr3, hr4, hkl, okh⟩")
@@ -216,6 +228,52 @@ def stage_form(O, name, okname, L, H, ps, valid, hm, cnt):
     for k, _ in facts:
         terms.append({"r3": "f_r3.trans hr3", "r4": "f_r4.trans hr4", "KL": "(hkl.trans f_KL).mono (by decide)"}.get(k, f"f_{k}"))
     O(f"  exact .inr ⟨k, hk, hn, {', '.join(ps)}, e0, {', '.join(nm + ['n1', 'cs.trans cn'] + terms)}⟩")
+
+
+
+def run_form(O, name, L, ps, valid, hm, cnt, ptr, bound):
+    """`name_st` over every byte of the slice (`ptr`, `bound`): `cnt` counts up
+    from 0 to `bound`, and each iteration reads one byte of the slice."""
+    src = open(f"/tmp/{name}_st.stmt").read()
+    n = len(L.loopv)
+    j_cnt, j_ptr = L.loopv.index(cnt), L.loopv.index(ptr)
+
+    def proj(j):
+        return "s" + ".2" * j + (".1" if j + 1 < n else "")
+    F = f"({L.step})"
+    T = " × ".join(["Word"] * n)
+    zero = "BitVec.ofNat 32 0x0"
+    z = lambda t: re.sub(IDENT.format(re.escape(cnt)), f"({zero})", t)
+    hn = [p for p, _ in L.head]
+    fixed_names = list(dict.fromkeys(b for g in L.fixed for b in g[1:g.rindex(' : ')].split()))
+    O("set_option maxHeartbeats 16000000 in")
+    O(f"/-- `{name}_st` over every byte of the slice: `{cnt}` counts from 0 to `{bound}`. -/")
+    O(f"theorem {name}_run {' '.join(L.fixed)} {{{' '.join(b for b in L.loopv if b != cnt)} : Word}} {{n0 : Machine}}")
+    O("    " + " ".join(f"({p} : {t})" for p, t in L.st.params if p in GLOBAL))
+    for p, t in L.head:
+        O(f"    ({p} : {z(t)})")
+    O(f"    (slice : SvIn B {ptr} {bound}.toNat) :")
+    for line in src.split("\n"):
+        O(z(line))
+    inc = lambda j: f"svIter_add (F := {F}) (fun s : {T} => {proj(j)}) (d := 1) (fun s => rfl)"
+    O(f"  refine {name}_st {' '.join(f'({b} := {b})' for b in fixed_names)} ({cnt} := {zero}) (N := {bound}.toNat) "
+      f"F hret hO M0 ?_ {' '.join(hn)} ?_")
+    O(f"  · intro {' '.join(ps)} e")
+    O(f"    have h1 := congrArg (fun s => {proj(j_cnt)}) e")
+    O("    simp only at h1")
+    O(f"    rw [{inc(j_cnt)}] at h1")
+    O("    simp only at h1")
+    O("    rw [h1]; bv_omega")
+    O(f"  · intro i hi {' '.join(ps)} e")
+    O(f"    have h1 := congrArg (fun s => {proj(j_cnt)}) e")
+    O(f"    have h2 := congrArg (fun s => {proj(j_ptr)}) e")
+    O("    simp only at h1 h2")
+    O(f"    rw [{inc(j_cnt)}] at h1")
+    O(f"    rw [{inc(j_ptr)}] at h2")
+    O("    simp only at h1 h2")
+    O("    refine ⟨?_, ?_⟩")
+    O("    · rw [h1]; bv_omega")
+    O("    · rw [h2, Nat.mul_one]; exact (slice.drop (k := i) (by omega)).shrink (by omega)")
 
 
 if __name__ == "__main__":
