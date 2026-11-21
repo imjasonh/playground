@@ -13,7 +13,7 @@ To deploy these services automatically, there's a deployer service account, `gha
 Workload Identity is a Very Good Thing(tm), but like a lot of good things, it's also complicated. It's easy to get wrong, and I got it wrong, in at least two ways:
 
 1. The rule allowing the GitHub Actions workflow to assume the GCP SA was overly broad. It matched only on the workflow path, `.github/workflows/deploy.yaml`, and did not check that the repo matched `imjasonh/kontain.me`. This was a dumb omission on my part; any GitHub repo that minted an OIDC token from `deploy.yaml` could become my deployer service account.
-2. The deployer SA had project-wide `iam.serviceAccounts.actAs` permissions. Though the app's service account had minimal permissions (read/write to the one GCS bucket), the project also had the default GCP service account enabled, which had broad **Editor** access to the project. This is the classic `<project-number>@compute.gserviceaccount.com` account.
+2. The deployer SA had project-wide `iam.serviceAccounts.actAs` permissions. Though the app's service account had minimal permissions (read/write to the one GCS bucket), the project also had the default GCP service account enabled, which had broad **Editor** access to the project. This is the classic `<project-number>-compute@developer.gserviceaccount.com` account.
 
 So, using (1), the attacker was able to run a GHA workflow in their repo and become my deployer. As my deployer, they were able to `actAs` the default GCP SA, which could do ....._anything_. It could enable APIs, create GKE clusters and VMs, request quota increases, and run Vertex AI training jobs. And it did, all of those.
 
