@@ -170,7 +170,7 @@ def subst(text, env):
     if not env:
         return text
     pat = re.compile(IDENT.format("|".join(sorted(map(re.escape, env), key=len, reverse=True))))
-    return pat.sub(lambda m: env[m.group(1)] if env[m.group(1)].replace('_', '').isalnum()
+    return pat.sub(lambda m: env[m.group(1)] if env[m.group(1)].replace('_', '').replace("'", '').isalnum()
                    else "(" + env[m.group(1)] + ")", text)
 
 

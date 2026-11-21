@@ -113,7 +113,7 @@ theorem sv_ckdloop {B out bp x26 dg q ckl rl rp sgp : Word} {w8 wc w10 w14 w18 w
     (w0_428 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x428) = sgp) →
     (w0_aa0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp) →
     (w0_aa4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg) →
-    (∀ i, i < k → ∀ c' p' x21' w60' w70', (c', p', x21', w60', w70') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFFF, ((s.2.1)) + BitVec.ofNat 32 0x1, (s.2.2.2.2), ((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA)), ((aluEval .mul ((s.2.2.2.2)) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))))) i (c, p, x21, w60, w70) → ((c') ≠ 0) ∧ (SvIn B (p') (c').toNat)) →
+    (∀ i, i < k → ∀ c' p' x21' w60' w70', (c', p', x21', w60', w70') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFFF, ((s.2.1)) + BitVec.ofNat 32 0x1, (s.2.2.2.2), ((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA)), ((aluEval .mul ((s.2.2.2.2)) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))))) i (c, p, x21, w60, w70) → (c' ≠ 0) ∧ (SvIn B p' c'.toNat)) →
     SvErrRet B out v n0 ∨ ∃ n' c' p' x21' w60' w70', Steps n0 n' ∧ (c', p', x21', w60', w70') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFFF, ((s.2.1)) + BitVec.ofNat 32 0x1, (s.2.2.2.2), ((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA)), ((aluEval .mul ((s.2.2.2.2)) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))))) k (c, p, x21, w60, w70) ∧
       reg n' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧ reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧
       SvKeepL B n0.mem n'.mem [(0x60, 0x4), (0x70, 0x4)] ∧
@@ -122,12 +122,12 @@ theorem sv_ckdloop {B out bp x26 dg q ckl rl rp sgp : Word} {w8 wc w10 w14 w18 w
       St n'.mem SV n' 0x2C06 (reg n') ∧
       (∀ x, SvR B x → n'.mem x = M0 x) ∧
       reg n' sp = B + 0x21A0 ∧
-      reg n' (8 : Fin 32) = (c') ∧
-      reg n' (9 : Fin 32) = (p') ∧
+      reg n' (8 : Fin 32) = c' ∧
+      reg n' (9 : Fin 32) = p' ∧
       reg n' a0 = BitVec.ofNat 32 0xA ∧
       reg n' (18 : Fin 32) = out ∧
       reg n' (19 : Fin 32) = bp ∧
-      reg n' (21 : Fin 32) = (x21') ∧
+      reg n' (21 : Fin 32) = x21' ∧
       reg n' (22 : Fin 32) = rl ∧
       reg n' (23 : Fin 32) = rp ∧
       reg n' (24 : Fin 32) = dg ∧
@@ -156,11 +156,11 @@ theorem sv_ckdloop {B out bp x26 dg q ckl rl rp sgp : Word} {w8 wc w10 w14 w18 w
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54 ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x58) = w58 ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c ∧
-      memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x60) = (w60') ∧
+      memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x60) = w60' ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x64) = w64 ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x68) = w68 ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x6C) = w6c ∧
-      memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = (w70') ∧
+      memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = w70' ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x74) = q ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = w78 ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x7C) = w7c ∧
@@ -231,7 +231,7 @@ set_option maxRecDepth 100000 in
 /-- `N` iterations of `sv_ckdloop`, then `sv_cke`, as a stage. -/
 theorem sv_ckdloop_st {B out bp x26 dg q ckl rl rp sgp : Word} {w8 wc w10 w14 w18 w1c w20 w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w64 w68 w6c w78 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word} {v : Nat → Word} {N : Nat} {c p x21 w60 w70 : Word} {n0 : Machine}
     (F : Fr B 0x3830) (hret : v 0 &&& ~~~1 = v 0) (hO : SvOut B out) (M0 : Word → BitVec 8)
-    (hz : ∀ c' p' x21' w60' w70', (c', p', x21', w60', w70') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFFF, ((s.2.1)) + BitVec.ofNat 32 0x1, (s.2.2.2.2), ((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA)), ((aluEval .mul ((s.2.2.2.2)) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))))) N (c, p, x21, w60, w70) → (c') = 0)
+    (hz : ∀ c' p' x21' w60' w70', (c', p', x21', w60', w70') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFFF, ((s.2.1)) + BitVec.ofNat 32 0x1, (s.2.2.2.2), ((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA)), ((aluEval .mul ((s.2.2.2.2)) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))))) N (c, p, x21, w60, w70) → c' = 0)
     (E0 : SvCode n0.mem)
     (V0 : SvSaves B n0.mem v)
     (s0 : St n0.mem SV n0 0x2C06 (reg n0))
@@ -327,13 +327,13 @@ theorem sv_ckdloop_st {B out bp x26 dg q ckl rl rp sgp : Word} {w8 wc w10 w14 w1
     (w0_428 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x428) = sgp)
     (w0_aa0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp)
     (w0_aa4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg)
-    (H : ∀ i, i < N → ∀ c' p' x21' w60' w70', (c', p', x21', w60', w70') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFFF, ((s.2.1)) + BitVec.ofNat 32 0x1, (s.2.2.2.2), ((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA)), ((aluEval .mul ((s.2.2.2.2)) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))))) i (c, p, x21, w60, w70) → ((c') ≠ 0) ∧ (SvIn B (p') (c').toNat))
+    (H : ∀ i, i < N → ∀ c' p' x21' w60' w70', (c', p', x21', w60', w70') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFFF, ((s.2.1)) + BitVec.ofNat 32 0x1, (s.2.2.2.2), ((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA)), ((aluEval .mul ((s.2.2.2.2)) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))))) i (c, p, x21, w60, w70) → (c' ≠ 0) ∧ (SvIn B p' c'.toNat))
     (CK0 : SvCkCode M0)
     (rt_in : SvIn B rp rl.toNat)
     :
     SvErrRet B out v n0 ∨
     (∃ c' p' x21' w60' w70', (c', p', x21', w60', w70') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFFF, ((s.2.1)) + BitVec.ofNat 32 0x1, (s.2.2.2.2), ((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA)), ((aluEval .mul ((s.2.2.2.2)) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))))) N (c, p, x21, w60, w70) ∧
-      ((w70').toNat < 2 ^ 31) ∧ ∃ bs7, base64Decode (memBytes M0 (rp) ((rl).toNat)) = some bs7 ∧ (bs7.length = 32) ∧
+      (w70'.toNat < 2 ^ 31) ∧ ∃ bs7, base64Decode (memBytes M0 (rp) ((rl).toNat)) = some bs7 ∧ (bs7.length = 32) ∧
     ∃ n', Steps n0 n' ∧
         St n'.mem SV n' 0x2CE2 (reg n') ∧
         SvCode n'.mem ∧
@@ -345,7 +345,7 @@ theorem sv_ckdloop_st {B out bp x26 dg q ckl rl rp sgp : Word} {w8 wc w10 w14 w1
         reg n' (9 : Fin 32) = BitVec.ofNat 32 0x100 ∧
         reg n' (18 : Fin 32) = out ∧
         reg n' (19 : Fin 32) = bp ∧
-        reg n' (21 : Fin 32) = (x21') ∧
+        reg n' (21 : Fin 32) = x21' ∧
         reg n' (22 : Fin 32) = rl ∧
         reg n' (23 : Fin 32) = rp ∧
         reg n' (24 : Fin 32) = dg ∧
@@ -374,11 +374,11 @@ theorem sv_ckdloop_st {B out bp x26 dg q ckl rl rp sgp : Word} {w8 wc w10 w14 w1
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x58) = w58 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x60) = (w60') ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x60) = w60' ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x64) = w64 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x68) = w68 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x6C) = w6c ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = (w70') ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = w70' ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x74) = q ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = w78 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x7C) = w7c ∧
@@ -546,7 +546,7 @@ theorem sv_ckdloop_run {B out bp x26 dg q ckl rl rp sgp : Word} {w8 wc w10 w14 w
     :
     SvErrRet B out v n0 ∨
     (∃ c' p' x21' w60' w70', (c', p', x21', w60', w70') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFFF, ((s.2.1)) + BitVec.ofNat 32 0x1, (s.2.2.2.2), ((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA)), ((aluEval .mul ((s.2.2.2.2)) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))))) c.toNat (c, p, x21, w60, w70) ∧
-      ((w70').toNat < 2 ^ 31) ∧ ∃ bs7, base64Decode (memBytes M0 (rp) ((rl).toNat)) = some bs7 ∧ (bs7.length = 32) ∧
+      (w70'.toNat < 2 ^ 31) ∧ ∃ bs7, base64Decode (memBytes M0 (rp) ((rl).toNat)) = some bs7 ∧ (bs7.length = 32) ∧
     ∃ n', Steps n0 n' ∧
         St n'.mem SV n' 0x2CE2 (reg n') ∧
         SvCode n'.mem ∧
@@ -558,7 +558,7 @@ theorem sv_ckdloop_run {B out bp x26 dg q ckl rl rp sgp : Word} {w8 wc w10 w14 w
         reg n' (9 : Fin 32) = BitVec.ofNat 32 0x100 ∧
         reg n' (18 : Fin 32) = out ∧
         reg n' (19 : Fin 32) = bp ∧
-        reg n' (21 : Fin 32) = (x21') ∧
+        reg n' (21 : Fin 32) = x21' ∧
         reg n' (22 : Fin 32) = rl ∧
         reg n' (23 : Fin 32) = rp ∧
         reg n' (24 : Fin 32) = dg ∧
@@ -587,11 +587,11 @@ theorem sv_ckdloop_run {B out bp x26 dg q ckl rl rp sgp : Word} {w8 wc w10 w14 w
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = w54 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x58) = w58 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x5C) = w5c ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x60) = (w60') ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x60) = w60' ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x64) = w64 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x68) = w68 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x6C) = w6c ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = (w70') ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = w70' ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x74) = q ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = w78 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x7C) = w7c ∧

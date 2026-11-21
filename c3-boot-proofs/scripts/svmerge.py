@@ -10,7 +10,7 @@ stage's facts on whole, so it never takes them apart.
 
 import re
 
-from svchain import DEFAULTS, Stage, lean_binders, top_split
+from svchain import DEFAULTS, Stage, lean_binders, strip_parens, top_split
 from svseg import Segment, canon, split_in, strip_exists
 
 
@@ -18,7 +18,8 @@ class SliceCtx(Segment):
     """The slices a stage's hypotheses and success condition give, for `Segment.derive_in`."""
 
     def __init__(self, stage, names):
-        self.ins, self.parses, self.bits, self.eqs, self.nl, self.contents = [], {}, {}, {}, {}, {}
+        self.ins, self.parses, self.bits, self.eqs, self.nl, self.contents, self.les = [], {}, {}, {}, {}, {}, {}
+        self.closed, self.lts = {}, {}
         for p, t in stage.params:
             if t.startswith('SvIn B '):
                 ptr, n = split_in(t[len('SvIn B '):])
@@ -132,14 +133,18 @@ def merged(fname, name, vs, doc):
     bound = {b for ws in wits.values() for b, _, _ in ws}
     a = order[0]
     types = {'w': 'Word', 'r': 'Word', 'b': 'BitVec 8', 'a': 'Nat'}
-    common = [f.key for f in a.facts if all(f.key in {g.key for g in st.facts} for st in order)]
+    # A stage whose success condition is `False` only ever fails; it states nothing at its end.
+    vac = {st.name for st in order if st.sc_parts and strip_parens(st.sc_parts[0]) == 'False'}
+    live = [st for st in order if st.name not in vac] or order
+    a = live[0]
+    common = [f.key for f in a.facts if all(f.key in {g.key for g in st.facts} for st in live)]
     # A fact the stages state differently that can't be a witness's value is left out.
     common = [k for k in common if k == 'KL' or k[0] in types or
-              len({next(g.text for g in st.facts if g.key == k) for st in order}) == 1]
+              len({next(g.text for g in st.facts if g.key == k) for st in live}) == 1]
     reorder = [[f.key for f in st.facts] != common for st in order]
     fa, dvars = [], []
     kl_union = None
-    for fs in zip(*[[next(f for f in st.facts if f.key == k) for k in common] for st in order]):
+    for fs in zip(*[[next(f for f in st.facts if f.key == k) for k in common] for st in live]):
         x = fs[0]
         if all(f.text == x.text for f in fs):
             fa.append(x.text)
@@ -150,7 +155,8 @@ def merged(fname, name, vs, doc):
             fa.append("SvKeepL B n0.mem n'.mem [" + ", ".join(kl_union) + "]")
         else:
             d = f"{name.removeprefix('sv_')}_{x.key}"
-            dvars.append((d, types[x.key[0]], [f.rhs for f in fs]))
+            by_live = {st.name: f.rhs for st, f in zip(live, fs)}
+            dvars.append((d, types[x.key[0]], [by_live.get(st.name, fs[0].rhs) for st in order]))
             fa.append(x.text[:len(x.text) - len(x.rhs)] + d)
     src = open(f'C3BootProofs/Proofs/{files[a.name]}.lean').read()
     own = {st.name: lean_binders(files[st.name], st.name) for st in order}
@@ -220,8 +226,28 @@ def merged(fname, name, vs, doc):
             t = f".inr {t}" if t.startswith('⟨') or ' ' not in t else f".inr ({t})"
         return t
 
+    def named_for(st):
+        named = named_of[st.name]
+        for wb, _, wh in wits[st.name]:
+            named = named.replace(f"({wb} := {wb})", f"({wb} := {wh}v)")
+        for wb in bound - {x for x, _, _ in wits[st.name]}:
+            ty = dict(st.binders).get(wb)
+            if ty:
+                named = named.replace(f"({wb} := {wb})", f"({wb} := {DEFAULTS[ty]})")
+        return named
+
     def leaf(st, path, ind, bare=False):
         j = order.index(st)
+        wsub = {wb: f"{wh}v" for wb, _, wh in wits[st.name]}
+        if st.name in vac:
+            named = named_for(st)
+            args = " ".join(path.get(p, p) for p, _ in st.params)
+            b = "" if bare else "· "
+            sub = ind if bare else ind + "  "
+            out.append(f"{ind}{b}rcases {st.name} {named} {args} with {st.errpat} | ⟨hf, -⟩")
+            out.append(f"{sub}· exact .inl e")
+            out.append(f"{sub}· exact hf.elim")
+            return
         nm = sc_pattern(st)
         pat = f"⟨{', '.join(nm)}, rest⟩" if nm else "rest"
         prs = [y for _, _, h in wits[st.name] for y in (f"{h}v", f"{h}w")] + nm + ["rfl"] * len(dvars)
@@ -241,18 +267,12 @@ def merged(fname, name, vs, doc):
         else:
             pre = ""
             rest = "rest"
-        vals = "".join(f"{v[j]}, " for _, _, v in dvars)
+        vals = "".join(f"{subst_w(v[j], wsub)}, " for _, _, v in dvars)
         args = " ".join(path.get(p, p) for p, _ in st.params)
         sl = "".join(f"{ts[j]}, " for _, _, ts in slices)
         b = "" if bare else "· "
         sub = ind if bare else ind + "  "
-        named = named_of[st.name]
-        for wb, _, wh in wits[st.name]:
-            named = named.replace(f"({wb} := {wb})", f"({wb} := {wh}v)")
-        for wb in bound - {x for x, _, _ in wits[st.name]}:
-            ty = dict(st.binders).get(wb)
-            if ty:
-                named = named.replace(f"({wb} := {wb})", f"({wb} := {DEFAULTS[ty]})")
+        named = named_for(st)
         out.append(f"{ind}{b}rcases {st.name} {named} {args} with {st.errpat} | {pat}")
         out.append(f"{sub}· exact .inl e")
         if pre:

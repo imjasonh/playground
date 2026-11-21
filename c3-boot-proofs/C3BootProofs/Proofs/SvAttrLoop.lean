@@ -18,7 +18,7 @@ def sv_attrStep (B out bp x21 x26 p0 L0 sip sil w24 w28 w2c w30 w34 w38 w3c w40 
 
 /-- How `sv_tsax` ends once no attributes are left. -/
 def sv_attrloopOk (B out bp x21 x26 p0 L0 sip sil w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word) (v : Nat → Word) (M0 : Word → BitVec 8) (dg' flag' cp' rem' : Word) (nk : Machine) : Prop :=
-  rem' = 0 ∧ ((((dg') ≠ 0 ∧ (flag') = 1) ∧
+  rem' = 0 ∧ (((dg' ≠ 0 ∧ flag' = 1) ∧
     ∃ op8 ol8, derAlgOf M0 (sip) ((sil).toNat) = .ok ((op8, ol8), none) ∧
     ∃ te8, derElement 0x30 (memBytes M0 (sip) (sil).toNat) = .ok te8 ∧
     (memBytes M0 op8 ol8 = memBytes M0 (BitVec.ofNat 32 0x3FCC4818) 8) ∧
@@ -38,7 +38,7 @@ def sv_attrloopOk (B out bp x21 x26 p0 L0 sip sil w24 w28 w2c w30 w34 w38 w3c w4
         reg n' (18 : Fin 32) = out ∧
         reg n' (19 : Fin 32) = bp ∧
         reg n' (21 : Fin 32) = x21 ∧
-        reg n' (24 : Fin 32) = (dg') ∧
+        reg n' (24 : Fin 32) = dg' ∧
         reg n' (25 : Fin 32) = (BitVec.ofNat 8 ((sr24).getD 0 0)).zeroExtend 32 ∧
         reg n' (26 : Fin 32) = x26 ∧
         reg n' (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 ∧
@@ -62,7 +62,7 @@ def sv_attrloopOk (B out bp x21 x26 p0 L0 sip sil w24 w28 w2c w30 w34 w38 w3c w4
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x68) = w68 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x6C) = w6c ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = w70 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = (flag') ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = flag' ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x7C) = w7c ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x80) = w80 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x84) = w84 ∧
@@ -113,8 +113,8 @@ def sv_attrloopOk (B out bp x21 x26 p0 L0 sip sil w24 w28 w2c w30 w34 w38 w3c w4
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x20C) = ((sil) - BitVec.ofNat 32 (te8.header + te8.len)) - BitVec.ofNat 32 (te19.header + te19.len) ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1320) = p0 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1324) = L0 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1328) = (cp') ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x132C) = (rem') ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1328) = cp' ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x132C) = rem' ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) = vp19 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1384) = vl19 ∧
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (0 : BitVec 8) ∧
@@ -346,7 +346,7 @@ theorem sv_attrloop_st {B out bp x21 x26 p0 L0 sip sil w24 w28 w2c w30 w34 w38 w
     SvErrRet B out v n0 ∨
     (∃ k dg' flag' cp' rem', svChain (sv_attrStep B out bp x21 x26 p0 L0 sip sil w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 v M0) k (dg, flag, cp, rem) (dg', flag', cp', rem') ∧
       rem' = 0 ∧
-      ((dg') ≠ 0 ∧ (flag') = 1) ∧ ∃ op8 ol8, derAlgOf M0 (sip) ((sil).toNat) = .ok ((op8, ol8), none) ∧ ∃ te8, derElement 0x30 (memBytes M0 (sip) (sil).toNat) = .ok te8 ∧ (memBytes M0 op8 ol8 = memBytes M0 (BitVec.ofNat 32 0x3FCC4818) 8) ∧ ∃ vp19 vl19, derContent ((sip) + BitVec.ofNat 32 (te8.header + te8.len)) (derElement 4 (memBytes M0 ((sip) + BitVec.ofNat 32 (te8.header + te8.len)) ((sil) - BitVec.ofNat 32 (te8.header + te8.len)).toNat)) = .ok (vp19, vl19) ∧ ∃ te19, derElement 4 (memBytes M0 ((sip) + BitVec.ofNat 32 (te8.header + te8.len)) ((sil) - BitVec.ofNat 32 (te8.header + te8.len)).toNat) = .ok te19 ∧ ∃ sr24 ss24, ecdsaSigOf 48 M0 (vp19) ((vl19).toNat) = .ok (sr24, ss24) ∧
+      (dg' ≠ 0 ∧ flag' = 1) ∧ ∃ op8 ol8, derAlgOf M0 (sip) ((sil).toNat) = .ok ((op8, ol8), none) ∧ ∃ te8, derElement 0x30 (memBytes M0 (sip) (sil).toNat) = .ok te8 ∧ (memBytes M0 op8 ol8 = memBytes M0 (BitVec.ofNat 32 0x3FCC4818) 8) ∧ ∃ vp19 vl19, derContent ((sip) + BitVec.ofNat 32 (te8.header + te8.len)) (derElement 4 (memBytes M0 ((sip) + BitVec.ofNat 32 (te8.header + te8.len)) ((sil) - BitVec.ofNat 32 (te8.header + te8.len)).toNat)) = .ok (vp19, vl19) ∧ ∃ te19, derElement 4 (memBytes M0 ((sip) + BitVec.ofNat 32 (te8.header + te8.len)) ((sil) - BitVec.ofNat 32 (te8.header + te8.len)).toNat) = .ok te19 ∧ ∃ sr24 ss24, ecdsaSigOf 48 M0 (vp19) ((vl19).toNat) = .ok (sr24, ss24) ∧
     ∃ n', Steps n0 n' ∧
         St n'.mem SV n' 0x2704 (reg n') ∧
         SvCode n'.mem ∧
@@ -360,7 +360,7 @@ theorem sv_attrloop_st {B out bp x21 x26 p0 L0 sip sil w24 w28 w2c w30 w34 w38 w
         reg n' (18 : Fin 32) = out ∧
         reg n' (19 : Fin 32) = bp ∧
         reg n' (21 : Fin 32) = x21 ∧
-        reg n' (24 : Fin 32) = (dg') ∧
+        reg n' (24 : Fin 32) = dg' ∧
         reg n' (25 : Fin 32) = (BitVec.ofNat 8 ((sr24).getD 0 0)).zeroExtend 32 ∧
         reg n' (26 : Fin 32) = x26 ∧
         reg n' (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 ∧
@@ -384,7 +384,7 @@ theorem sv_attrloop_st {B out bp x21 x26 p0 L0 sip sil w24 w28 w2c w30 w34 w38 w
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x68) = w68 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x6C) = w6c ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = w70 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = (flag') ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = flag' ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x7C) = w7c ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x80) = w80 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x84) = w84 ∧
@@ -435,8 +435,8 @@ theorem sv_attrloop_st {B out bp x21 x26 p0 L0 sip sil w24 w28 w2c w30 w34 w38 w
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x20C) = ((sil) - BitVec.ofNat 32 (te8.header + te8.len)) - BitVec.ofNat 32 (te19.header + te19.len) ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1320) = p0 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1324) = L0 ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1328) = (cp') ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x132C) = (rem') ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1328) = cp' ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x132C) = rem' ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) = vp19 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1384) = vl19 ∧
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) = (0 : BitVec 8) ∧

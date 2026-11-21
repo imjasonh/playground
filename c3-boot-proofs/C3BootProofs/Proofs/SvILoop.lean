@@ -98,7 +98,7 @@ theorem sv_iloop {B out bp x9 x21 x26 il ip : Word} {w24 w28 w2c w30 w34 w38 w3c
     (w0_128 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x128) = w128) →
     (w0_12c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x12C) = w12c) →
     (w0_130 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x130) = w130) →
-    (∀ i, i < k → ∀ c' q', (c', q') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2)) + BitVec.ofNat 32 0x20)) i (c, q) → ((c') ≠ 0) ∧ (SvIn B ((q') + 0xFFFFFFFC) 4) ∧ (SvIn B ((q') + 0x0) 4) ∧ (((q') + 0xFFFFFFFC).toNat % 4 = 0) ∧ (((q') + 0x0).toNat % 4 = 0) ∧ (SvIn B (memLoad32 M0 ((q') + 0xFFFFFFFC)) (memLoad32 M0 ((q') + 0x0)).toNat) ∧ (SvIn B ip il.toNat) ∧ (¬ memBytes M0 (memLoad32 M0 ((q') + 0xFFFFFFFC)) (memLoad32 M0 ((q') + 0x0)).toNat = memBytes M0 ip il.toNat)) →
+    (∀ i, i < k → ∀ c' q', (c', q') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2)) + BitVec.ofNat 32 0x20)) i (c, q) → (c' ≠ 0) ∧ (SvIn B (q' + 0xFFFFFFFC) 4) ∧ (SvIn B (q' + 0x0) 4) ∧ ((q' + 0xFFFFFFFC).toNat % 4 = 0) ∧ ((q' + 0x0).toNat % 4 = 0) ∧ (SvIn B (memLoad32 M0 (q' + 0xFFFFFFFC)) (memLoad32 M0 (q' + 0x0)).toNat) ∧ (SvIn B ip il.toNat) ∧ (¬ memBytes M0 (memLoad32 M0 (q' + 0xFFFFFFFC)) (memLoad32 M0 (q' + 0x0)).toNat = memBytes M0 ip il.toNat)) →
     SvErrRet B out v n0 ∨ ∃ n' c' q', Steps n0 n' ∧ (c', q') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2)) + BitVec.ofNat 32 0x20)) k (c, q) ∧
       reg n' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧ reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧
       SvKeepL B n0.mem n'.mem [(0x7C, 0x4)] ∧
@@ -110,7 +110,7 @@ theorem sv_iloop {B out bp x9 x21 x26 il ip : Word} {w24 w28 w2c w30 w34 w38 w3c
       reg n' (9 : Fin 32) = x9 ∧
       reg n' (18 : Fin 32) = out ∧
       reg n' (19 : Fin 32) = bp ∧
-      reg n' (20 : Fin 32) = (c') ∧
+      reg n' (20 : Fin 32) = c' ∧
       reg n' (21 : Fin 32) = x21 ∧
       reg n' (25 : Fin 32) = il ∧
       reg n' (26 : Fin 32) = x26 ∧
@@ -137,7 +137,7 @@ theorem sv_iloop {B out bp x9 x21 x26 il ip : Word} {w24 w28 w2c w30 w34 w38 w3c
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = w70 ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x74) = w74 ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = w78 ∧
-      memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x7C) = (q') ∧
+      memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x7C) = q' ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x80) = w80 ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x84) = w84 ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x88) = w88 ∧

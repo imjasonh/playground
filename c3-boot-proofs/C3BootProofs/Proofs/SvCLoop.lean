@@ -118,7 +118,7 @@ theorem sv_cloop {B out bp x21 x26 dg rl rp sgp : Word} {rt : Bytes} {w8 wc w10 
     (w0_aa0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp) →
     (w0_aa4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg) →
     (q0_320 : ∀ j, j < 31 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x320 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0)) →
-    (∀ i, i < k → ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i (c, q, w80) → ((c') ≠ 0) ∧ (SvIn B ((q') + 0x20) 4) ∧ (SvIn B ((q') + 0x24) 4) ∧ (((q') + 0x20).toNat % 4 = 0) ∧ (((q') + 0x24).toNat % 4 = 0) ∧ (SvIn B (memLoad32 M0 ((q') + 0x20)) (memLoad32 M0 ((q') + 0x24)).toNat) ∧ (SvIn B w48 w44.toNat) ∧ (¬ memBytes M0 (memLoad32 M0 ((q') + 0x20)) (memLoad32 M0 ((q') + 0x24)).toNat = memBytes M0 w48 w44.toNat)) →
+    (∀ i, i < k → ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i (c, q, w80) → (c' ≠ 0) ∧ (SvIn B (q' + 0x20) 4) ∧ (SvIn B (q' + 0x24) 4) ∧ ((q' + 0x20).toNat % 4 = 0) ∧ ((q' + 0x24).toNat % 4 = 0) ∧ (SvIn B (memLoad32 M0 (q' + 0x20)) (memLoad32 M0 (q' + 0x24)).toNat) ∧ (SvIn B w48 w44.toNat) ∧ (¬ memBytes M0 (memLoad32 M0 (q' + 0x20)) (memLoad32 M0 (q' + 0x24)).toNat = memBytes M0 w48 w44.toNat)) →
     SvErrRet B out v n0 ∨ ∃ n' c' q' w80', Steps n0 n' ∧ (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) k (c, q, w80) ∧
       reg n' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧ reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧
       SvKeepL B n0.mem n'.mem [(0x80, 0x4)] ∧
@@ -127,14 +127,14 @@ theorem sv_cloop {B out bp x21 x26 dg rl rp sgp : Word} {rt : Bytes} {w8 wc w10 
       St n'.mem SV n' 0x2CE2 (reg n') ∧
       (∀ x, SvR B x → n'.mem x = M0 x) ∧
       reg n' sp = B + 0x21A0 ∧
-      reg n' (9 : Fin 32) = (c') ∧
+      reg n' (9 : Fin 32) = c' ∧
       reg n' (18 : Fin 32) = out ∧
       reg n' (19 : Fin 32) = bp ∧
       reg n' (21 : Fin 32) = x21 ∧
       reg n' (22 : Fin 32) = rl ∧
       reg n' (23 : Fin 32) = rp ∧
       reg n' (24 : Fin 32) = dg ∧
-      reg n' (25 : Fin 32) = (q') ∧
+      reg n' (25 : Fin 32) = q' ∧
       reg n' (26 : Fin 32) = x26 ∧
       reg n' (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x8) = w8 ∧
@@ -166,7 +166,7 @@ theorem sv_cloop {B out bp x21 x26 dg rl rp sgp : Word} {rt : Bytes} {w8 wc w10 
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = w70 ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = w78 ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x7C) = w7c ∧
-      memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x80) = (w80') ∧
+      memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x80) = w80' ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x84) = w84 ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x88) = w88 ∧
       memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x8C) = w8c ∧

@@ -1,4 +1,4 @@
-import C3BootProofs.Proofs.SvSeg
+import C3BootProofs.Proofs.SvSegCk
 import C3BootProofs.Proofs.SvDpv
 import C3BootProofs.Proofs.SvTs1
 

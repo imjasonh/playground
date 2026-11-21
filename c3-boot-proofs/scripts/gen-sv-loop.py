@@ -279,7 +279,7 @@ def run4_form(O, name, L, efile, ename, endp, ptr, size, end):
     O("    " + " ".join(f"({p} : {t})" for p, t in st.params if p in GLOBAL))
     for p, t in L.head:
         O(f"    ({p} : {t})")
-    O(f"    (slice : SvIn B {ptr} (N * {size})) (hend : {end} = {ptr} + BitVec.ofNat 32 (N * {size}))")
+    O(f"    (hend : {end} = {ptr} + BitVec.ofNat 32 (N * {size})) (slice : SvIn B {ptr} (N * {size}))")
     for line in stmt[:i_colon]:
         if not line.strip().startswith("(hz :") and not line.strip().startswith("(H :"):
             O(line)

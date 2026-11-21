@@ -33,8 +33,8 @@ MERGES = [(f'SvWin{i}', f'sv_win{i}', (f'SvWin{i}e', f'sv_win{i}e'), (f'SvWin{i}
     ('SvTst6', 'sv_tst6', ('SvTst6n', 'sv_tst6n'), ('SvTst6s', 'sv_tst6s'), "the `TSTInfo`'s optional extensions"),
     ('SvCg', 'sv_cg', ('SvCg0', 'sv_cg0'), ('SvCg1', 'sv_cg1'), ('SvCg2', 'sv_cg2'), ('SvCg3', 'sv_cg3'),
      ('SvCg4', 'sv_cg4'), "one base64 group of a cosignature, padded at any of its places or not at all"),
-    ('SvCm', 'sv_cm', ('SvCmdl', 'sv_cmdl'), ('SvCmdn', 'sv_cmdn'), ('SvCmf', 'sv_cmf'), ('SvCmk', 'sv_cmk'),
-     ('SvCmn', 'sv_cmn'), ('SvCms', 'sv_cms'), ('SvCmx', 'sv_cmx'), "the end of a signature line")]
+    ('SvCm', 'sv_cm', ('SvCme', 'sv_cme'), ('SvCmdl', 'sv_cmdl'), ('SvCmdn', 'sv_cmdn'), ('SvCmf', 'sv_cmf'), ('SvCmk', 'sv_cmk'),
+     ('SvCmn', 'sv_cmn'), ('SvCms', 'sv_cms'), ('SvCmx', 'sv_cmx'), "the end of a signature line, empty or not")]
 
 SEGMENTS = {
     'SvSegLeaf': ('sv_seg_leaf', [('SvL1', 'sv_l1'), ('SvL2', 'sv_l2'), ('SvL3', 'sv_l3'), ('SvL4', 'sv_l4'),
@@ -65,6 +65,8 @@ SEGMENTS = {
                      "**The first signed attribute**: from 0x2506 to the attributes loop's branch at 0x267A."),
     'SvSegAttr': ('sv_seg_attr', [('SvTsal', 'sv_tsal'), ('SvTsaa', 'sv_tsaa'), ('SvTsav', 'sv_tsav')],
                   "**One more signed attribute**: from the attributes loop's branch at 0x267A back to it."),
+    'SvSegCosig': ('sv_seg_cosig', [('SvCsa', 'sv_csa'), ('SvNSearch', 'sv_nsearch_run'), ('SvCgLoop', 'sv_cgloop_run')],
+                   "**One signature line of the checkpoint**: from the signature loop's head at 0x2D6E back to it."),
     'SvSegWin': ('sv_seg_win', [('SvCr1', 'sv_cr1'), ('SvRl', 'sv_rl'), ('SvRm', 'sv_rm')] +
                  [(f'SvWin{i}', f'sv_win{i}') for i in range(8)],
                  "**The entry's index and the validity windows**: from 0x2F5A to the successful exit at 0x3264, "
@@ -85,7 +87,7 @@ def opens(seq):
 def write(fname):
     name, seq, doc = SEGMENTS[fname]
     seg = Segment(name, seq, doc).build()
-    out = ["import C3BootProofs.Proofs.SvSegCk" if fname == 'SvSegCkpt' else "import C3BootProofs.Proofs.SvSeg"]
+    out = ["import C3BootProofs.Proofs.SvSegCk"]
     for x in seq:
         out += [f"import C3BootProofs.Proofs.{fn}" for fn, _ in (x[1] if x[0] == 'merge' else [x])]
     out += ["", "/-!", f"# `sigstore::verify`: {doc.split('**')[1].rstrip('.:')}", "",

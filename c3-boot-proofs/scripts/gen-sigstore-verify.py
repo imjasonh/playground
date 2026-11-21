@@ -7428,7 +7428,8 @@ def stage_cs1():
     return g, info
 
 
-CS_BINDERS = CL_BINDERS.replace("op ol : Word} {rt : Bytes}", "op ol : Word} {rt sg : Bytes}").replace(" w10 ", " ")
+CS_BINDERS = (CL_BINDERS.replace("op ol : Word} {rt : Bytes}", "op ol : Word} {rt sg : Bytes}").replace(" w10 ", " ")
+              .replace("{v : Nat → Word}", "{wa20 wa24 wa28 wa2c wa30 wa34 wa38 wa3c : Word} {v : Nat → Word}"))
 RK_BINDERS = CS_BINDERS.replace(" w70 ", " w70 w74 ")
 
 
@@ -7440,7 +7441,17 @@ def cs_start(g):
     params.append(f"(w0_10 : memLoad32 n0.mem ({fa(0x10)}) = (BitVec.ofNat 8 (sg.getD 0 0)).zeroExtend 32)")
     g.ranges[0x1480] = (63, "BitVec.ofNat 8 (sg.getD (1 + j) 0)")
     params.append("(q0_1480 : ∀ j, j < 63 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1480 + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0))")
+    # The signature loop changes the frame words and registers that the struct
+    # at 0xA20 copied during the log search.
+    for e in CS_STRUCT:
+        if e in g.words:
+            g.words[e] = ("U", f"w{e:x}")
+            params = [q if not q.startswith(f"(w0_{e:x} :") else f"(w0_{e:x} : memLoad32 n0.mem ({fa(e)}) = w{e:x})"
+                      for q in params]
     return params
+
+
+CS_STRUCT = [0xA20, 0xA24, 0xA28, 0xA2C, 0xA30, 0xA34, 0xA38, 0xA3C]
 
 
 def stage_csa():
@@ -7699,6 +7710,7 @@ def stage_cg(kpad):
 
 
 CM_DOC = {
+    "e": "the line has nothing after the name and its space: `sigstore::verify` fails.",
     "n": "the line names another log, and the loop moves to the next line.",
     "dn": "the line names the log, and its base64 doesn't decode: `sigstore::verify` fails.",
     "dl": "the line names the log, and its signature decodes to more than 96 bytes: `sigstore::verify` fails.",
@@ -7718,6 +7730,24 @@ def stage_cm(kind):
     params = cg_start(g)
     params = [q for q in params if not q.startswith("(g0_9 :")]
     params.append("(g0_9 : reg n0 (9 : Fin 32) = c)")
+    if kind == "e":
+        params += ["(hend : pg = w8)", "(hnz : w40 = s5v)"]
+        g.load(0x2E0C, "lw")
+        g.branch(0x2E0E, True, f"by rw [g{g.k}_10, g{g.k}_11]; exact br_beq_t hend")
+        g.load(0x2E7C, "lw")
+
+        def fail_e(sub):
+            sub.branch(0x2E7E, True, f"by rw [g{sub.k}_10, g{sub.k}_21]; exact br_beq_t hnz")
+            ck_fail_2ff2(sub, "hf")
+        g.prop_check("False", "hf", fail_e)
+        stmt, _ = finish(g, 0x2D6E, [2], set(), set())
+        g.emit("  exact hf.elim")
+        info = {"name": "sv_cme", "title": "a signature line's name and signature",
+                "doc": "From the base64 group loop's end at 0x2E0C: " + CM_DOC[kind],
+                "params": params, "stmt": stmt, "proof": "",
+                "binders": CS_BINDERS.replace("op ol : Word}", "op ol pg gi s0v s5v s7v waa4 : Word}"),
+                "start": 0x2E0C, "import": "C3BootProofs.Proofs.SvCs"}
+        return g, info
     params += ["(hend : pg = w8)", "(hnz : w40 ≠ s5v)", "(nm_in : SvIn B w28 c.toNat)", "(l_in : SvIn B w48 w44.toNat)"]
     eqn = "memBytes M0 w28 c.toNat = memBytes M0 w48 w44.toNat"
     params.append(f"(hnm : {'¬ ' if kind == 'n' else ''}{eqn})")

@@ -68,6 +68,48 @@ theorem svRem_le {r : Word} {a N : Nat} (h2 : 2 ≤ a) (ha : a ≤ r.toNat) (hN 
 
 theorem svRem_zero {r : Word} (h : r.toNat ≤ 0) : r = 0 := BitVec.eq_of_toNat_eq (by simp; omega)
 
+/-- A slice without its first `k` bytes, its length written as the code
+computes it: adding `2 ^ 32 - k`. -/
+theorem SvIn.dropLit {B p : Word} {n k : Nat} (h : SvIn B p n) (hk : k ≤ n) (hk0 : 0 < k) :
+    SvIn B (p + BitVec.ofNat 32 k) (BitVec.ofNat 32 n + BitVec.ofNat 32 (0x100000000 - k)).toNat := by
+  have := h.fit
+  have e : (BitVec.ofNat 32 n + BitVec.ofNat 32 (0x100000000 - k)).toNat = n - k := by bv_omega
+  rw [e]; exact h.drop hk
+
+theorem svSll2 (y : Word) : aluEval .sll y (BitVec.ofNat 32 2) = BitVec.ofNat 32 (y.toNat * 4) := by
+  show y <<< ((BitVec.ofNat 32 2).toNat % 32) = _
+  rw [show (BitVec.ofNat 32 2).toNat % 32 = 2 from rfl]
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_shiftLeft, Nat.shiftLeft_eq, BitVec.toNat_ofNat]
+
+/-- What follows the byte at `c` in a slice, in whole groups of four. -/
+theorem SvIn.afterSep {B p L c : Word} {k : Nat} (S : SvIn B p L.toNat) (hk : k < L.toNat)
+    (hc : c = BitVec.ofNat 32 0x0 + BitVec.ofNat 32 (k * 1)) :
+    SvIn B (p + (c + BitVec.ofNat 32 0x1)) (((L - (c + BitVec.ofNat 32 0x1)) >>> 2).toNat * 4) := by
+  subst hc
+  have hf := S.fit
+  rw [show p + (BitVec.ofNat 32 0x0 + BitVec.ofNat 32 (k * 1) + BitVec.ofNat 32 0x1) = p + BitVec.ofNat 32 (k + 1) by
+    bv_omega]
+  exact (S.drop (k := k + 1) (by omega)).shrink (by bv_omega)
+
+/-- The bytes before the one at `c` in a slice. -/
+theorem SvIn.beforeSep {B p L c : Word} {k : Nat} (S : SvIn B p L.toNat) (hk : k < L.toNat)
+    (hc : c = BitVec.ofNat 32 0x0 + BitVec.ofNat 32 (k * 1)) : SvIn B p c.toNat := by
+  subst hc
+  have hf := S.fit
+  exact S.shrink (by bv_omega)
+
+/-- What follows the byte at `c` in a slice. -/
+theorem SvIn.afterSepAll {B p L c : Word} {k : Nat} (S : SvIn B p L.toNat) (hk : k < L.toNat)
+    (hc : c = BitVec.ofNat 32 0x0 + BitVec.ofNat 32 (k * 1)) :
+    SvIn B (p + (c + BitVec.ofNat 32 0x1)) (L - (c + BitVec.ofNat 32 0x1)).toNat := by
+  subst hc
+  have hf := S.fit
+  rw [show p + (BitVec.ofNat 32 0x0 + BitVec.ofNat 32 (k * 1) + BitVec.ofNat 32 0x1) = p + BitVec.ofNat 32 (k + 1) by
+    bv_omega, show (L - (BitVec.ofNat 32 0x0 + BitVec.ofNat 32 (k * 1) + BitVec.ofNat 32 0x1)).toNat = L.toNat - (k + 1) by
+    bv_omega]
+  exact S.drop (k := k + 1) (by omega)
+
 /-- A word inside a byte range copied from `M'`. -/
 theorem memLoad32_of_range {M M' : Word → BitVec 8} {S src : Word} {c n d : Nat}
     (h : ∀ j, j < n → M (S + BitVec.ofNat 32 (c + j)) = M' (src + BitVec.ofNat 32 j)) (hd : d + 4 ≤ n) :

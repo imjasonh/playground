@@ -15,7 +15,7 @@ open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv C3.RV32.Gs C3.RV32.P2
 
 /-- How `sv_clhit` ends from the entry that matches: its success condition, then the state at its end. -/
 def sv_csearchOk (B out bp x21 x26 dg rl rp sgp : Word) (rt : Bytes) (w8 wc w10 w14 w18 w20 w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w78 w7c w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word) (v : Nat → Word) (dp : Word) (M0 : Word → BitVec 8) (c' q' w80' : Word) (nk : Machine) : Prop :=
-  (((memLoad32 M0 ((q') + 0x20)) ≠ 0) ∧
+  (((memLoad32 M0 (q' + 0x20)) ≠ 0) ∧
     ∃ n', Steps nk n' ∧
         St n'.mem SV n' 0x2D12 (reg n') ∧
         SvCode n'.mem ∧
@@ -24,14 +24,14 @@ def sv_csearchOk (B out bp x21 x26 dg rl rp sgp : Word) (rt : Bytes) (w8 wc w10 
         reg n' sp = B + 0x21A0 ∧
         reg n' (3 : Fin 32) = reg nk (3 : Fin 32) ∧
         reg n' (4 : Fin 32) = reg nk (4 : Fin 32) ∧
-        reg n' (9 : Fin 32) = ((c')) + BitVec.ofNat 32 0xFFFFFFE0 ∧
+        reg n' (9 : Fin 32) = (c') + BitVec.ofNat 32 0xFFFFFFE0 ∧
         reg n' (18 : Fin 32) = out ∧
         reg n' (19 : Fin 32) = bp ∧
         reg n' (21 : Fin 32) = x21 ∧
         reg n' (22 : Fin 32) = rl ∧
         reg n' (23 : Fin 32) = rp ∧
         reg n' (24 : Fin 32) = dg ∧
-        reg n' (25 : Fin 32) = ((q')) + BitVec.ofNat 32 0x20 ∧
+        reg n' (25 : Fin 32) = (q') + BitVec.ofNat 32 0x20 ∧
         reg n' (26 : Fin 32) = x26 ∧
         reg n' (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x8) = w8 ∧
@@ -63,7 +63,7 @@ def sv_csearchOk (B out bp x21 x26 dg rl rp sgp : Word) (rt : Bytes) (w8 wc w10 
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = w70 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = w78 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x7C) = w7c ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x80) = (memLoad32 M0 ((q') + 0x20)) ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x80) = (memLoad32 M0 (q' + 0x20)) ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x84) = w84 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x88) = w88 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x8C) = w8c ∧
@@ -128,7 +128,7 @@ set_option maxRecDepth 100000 in
 theorem sv_csearch {B out bp x21 x26 dg rl rp sgp : Word} {rt : Bytes} {w8 wc w10 w14 w18 w20 w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w78 w7c w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word} {v : Nat → Word} {dp : Word}
     (F : Fr B 0x3830) (hret : v 0 &&& ~~~1 = v 0) (hO : SvOut B out) (M0 : Word → BitVec 8) :
     ∀ (N : Nat) {c q w80 : Word} {n0 : Machine},
-    (hz : ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) N (c, q, w80) → (c') = 0) →
+    (hz : ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) N (c, q, w80) → c' = 0) →
     (E0 : SvCode n0.mem) →
     (V0 : SvSaves B n0.mem v) →
     (s0 : St n0.mem SV n0 0x2CE2 (reg n0)) →
@@ -230,9 +230,9 @@ theorem sv_csearch {B out bp x21 x26 dg rl rp sgp : Word} {rt : Bytes} {w8 wc w1
     (w0_aa0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp) →
     (w0_aa4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg) →
     (q0_320 : ∀ j, j < 31 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x320 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0)) →
-    (∀ i, i < N → ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i (c, q, w80) → ((c') ≠ 0) ∧ (SvIn B ((q') + 0x20) 4) ∧ (SvIn B ((q') + 0x24) 4) ∧ (((q') + 0x20).toNat % 4 = 0) ∧ (((q') + 0x24).toNat % 4 = 0) ∧ (SvIn B (memLoad32 M0 ((q') + 0x20)) (memLoad32 M0 ((q') + 0x24)).toNat) ∧ (SvIn B w48 w44.toNat)) →
+    (∀ i, i < N → ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i (c, q, w80) → (c' ≠ 0) ∧ (SvIn B (q' + 0x20) 4) ∧ (SvIn B (q' + 0x24) 4) ∧ ((q' + 0x20).toNat % 4 = 0) ∧ ((q' + 0x24).toNat % 4 = 0) ∧ (SvIn B (memLoad32 M0 (q' + 0x20)) (memLoad32 M0 (q' + 0x24)).toNat) ∧ (SvIn B w48 w44.toNat)) →
     SvErrRet B out v n0 ∨ ∃ k, k < N ∧
-      (∀ i, i < k → ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i (c, q, w80) → ¬ (memBytes M0 (memLoad32 M0 ((q') + 0x20)) (memLoad32 M0 ((q') + 0x24)).toNat = memBytes M0 w48 w44.toNat)) ∧
+      (∀ i, i < k → ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i (c, q, w80) → ¬ (memBytes M0 (memLoad32 M0 (q' + 0x20)) (memLoad32 M0 (q' + 0x24)).toNat = memBytes M0 w48 w44.toNat)) ∧
       ∃ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) k (c, q, w80) ∧
       ∃ nk, Steps n0 nk ∧ reg nk (3 : Fin 32) = reg n0 (3 : Fin 32) ∧ reg nk (4 : Fin 32) = reg n0 (4 : Fin 32) ∧
       SvKeepL B n0.mem nk.mem [(0x80, 0x4)] ∧
@@ -265,7 +265,7 @@ set_option maxRecDepth 100000 in
 /-- `sv_csearch` as a stage. -/
 theorem sv_csearch_st {B out bp x21 x26 dg rl rp sgp : Word} {rt : Bytes} {w8 wc w10 w14 w18 w20 w24 w28 w2c w30 w34 w38 w3c w40 w44 w48 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w78 w7c w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 : Word} {v : Nat → Word} {dp : Word} {N : Nat} {c q w80 : Word} {n0 : Machine}
     (F : Fr B 0x3830) (hret : v 0 &&& ~~~1 = v 0) (hO : SvOut B out) (M0 : Word → BitVec 8)
-    (hz : ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) N (c, q, w80) → (c') = 0)
+    (hz : ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) N (c, q, w80) → c' = 0)
     (E0 : SvCode n0.mem)
     (V0 : SvSaves B n0.mem v)
     (s0 : St n0.mem SV n0 0x2CE2 (reg n0))
@@ -367,12 +367,12 @@ theorem sv_csearch_st {B out bp x21 x26 dg rl rp sgp : Word} {rt : Bytes} {w8 wc
     (w0_aa0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp)
     (w0_aa4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg)
     (q0_320 : ∀ j, j < 31 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x320 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0))
-    (H : ∀ i, i < N → ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i (c, q, w80) → ((c') ≠ 0) ∧ (SvIn B ((q') + 0x20) 4) ∧ (SvIn B ((q') + 0x24) 4) ∧ (((q') + 0x20).toNat % 4 = 0) ∧ (((q') + 0x24).toNat % 4 = 0) ∧ (SvIn B (memLoad32 M0 ((q') + 0x20)) (memLoad32 M0 ((q') + 0x24)).toNat) ∧ (SvIn B w48 w44.toNat)) :
+    (H : ∀ i, i < N → ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i (c, q, w80) → (c' ≠ 0) ∧ (SvIn B (q' + 0x20) 4) ∧ (SvIn B (q' + 0x24) 4) ∧ ((q' + 0x20).toNat % 4 = 0) ∧ ((q' + 0x24).toNat % 4 = 0) ∧ (SvIn B (memLoad32 M0 (q' + 0x20)) (memLoad32 M0 (q' + 0x24)).toNat) ∧ (SvIn B w48 w44.toNat)) :
     SvErrRet B out v n0 ∨
     (∃ k, k < N ∧
-      (∀ i, i < k → ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i (c, q, w80) → ¬ (memBytes M0 (memLoad32 M0 ((q') + 0x20)) (memLoad32 M0 ((q') + 0x24)).toNat = memBytes M0 w48 w44.toNat)) ∧
+      (∀ i, i < k → ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i (c, q, w80) → ¬ (memBytes M0 (memLoad32 M0 (q' + 0x20)) (memLoad32 M0 (q' + 0x24)).toNat = memBytes M0 w48 w44.toNat)) ∧
       ∃ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) k (c, q, w80) ∧
-      ((memLoad32 M0 ((q') + 0x20)) ≠ 0) ∧
+      ((memLoad32 M0 (q' + 0x20)) ≠ 0) ∧
     ∃ n', Steps n0 n' ∧
         St n'.mem SV n' 0x2D12 (reg n') ∧
         SvCode n'.mem ∧
@@ -381,14 +381,14 @@ theorem sv_csearch_st {B out bp x21 x26 dg rl rp sgp : Word} {rt : Bytes} {w8 wc
         reg n' sp = B + 0x21A0 ∧
         reg n' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧
         reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧
-        reg n' (9 : Fin 32) = ((c')) + BitVec.ofNat 32 0xFFFFFFE0 ∧
+        reg n' (9 : Fin 32) = (c') + BitVec.ofNat 32 0xFFFFFFE0 ∧
         reg n' (18 : Fin 32) = out ∧
         reg n' (19 : Fin 32) = bp ∧
         reg n' (21 : Fin 32) = x21 ∧
         reg n' (22 : Fin 32) = rl ∧
         reg n' (23 : Fin 32) = rp ∧
         reg n' (24 : Fin 32) = dg ∧
-        reg n' (25 : Fin 32) = ((q')) + BitVec.ofNat 32 0x20 ∧
+        reg n' (25 : Fin 32) = (q') + BitVec.ofNat 32 0x20 ∧
         reg n' (26 : Fin 32) = x26 ∧
         reg n' (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x8) = w8 ∧
@@ -420,7 +420,7 @@ theorem sv_csearch_st {B out bp x21 x26 dg rl rp sgp : Word} {rt : Bytes} {w8 wc
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = w70 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = w78 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x7C) = w7c ∧
-        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x80) = (memLoad32 M0 ((q') + 0x20)) ∧
+        memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x80) = (memLoad32 M0 (q' + 0x20)) ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x84) = w84 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x88) = w88 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x8C) = w8c ∧

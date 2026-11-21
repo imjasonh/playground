@@ -116,6 +116,14 @@ class Segment:
             if p == ptr and l == n:
                 return pf
         for ix, (hp, P0, N0) in self.nl.items():
+            m = re.fullmatch(rf"{re.escape(P0)} \+ BitVec\.ofNat 32 (0x[0-9A-Fa-f]+|\d+)", ptr)
+            if m and ix in self.les:
+                k = int(m.group(1), 0)
+                lpf, lk = self.les[ix]
+                if lk == k and n == canon(f"(BitVec.ofNat 32 {ix} + BitVec.ofNat 32 0x{0x100000000 - k:X}).toNat"):
+                    base = self.derive_in(P0, N0)
+                    if base:
+                        return f"SvIn.dropLit (k := {k}) (({base}).nlLine {hp}) {lpf} (by decide)"
             if ptr == P0 and n in (canon(ix), canon(f"(BitVec.ofNat 32 {ix}).toNat")):
                 base = self.derive_in(P0, N0)
                 if base:
@@ -125,6 +133,26 @@ class Segment:
                 base = self.derive_in(P0, N0)
                 if base:
                     return f"({base}).nlRest {hp}"
+        mc = re.fullmatch(r"([\w']+)\.toNat", n)
+        if mc and mc.group(1) in self.closed:
+            cpf, k = self.closed[mc.group(1)]
+            if k in self.lts:
+                kpf, Lw = self.lts[k]
+                S = self.derive_in(ptr, canon(f"({Lw}).toNat"))
+                if S:
+                    return f"SvIn.beforeSep ({S}) {kpf} {cpf}"
+        m = re.fullmatch(r"(.+) \+ \(([\w']+) \+ BitVec\.ofNat 32 0x1\)", ptr)
+        if m and m.group(2) in self.closed:
+            cpf, k = self.closed[m.group(2)]
+            if k in self.lts:
+                kpf, Lw = self.lts[k]
+                cand = canon(f"((({Lw}) - ({m.group(2)} + BitVec.ofNat 32 0x1)) >>> 2).toNat * 4")
+                cand_all = canon(f"(({Lw}) - ({m.group(2)} + BitVec.ofNat 32 0x1)).toNat")
+                if n in (cand, cand_all):
+                    S = self.derive_in(canon(m.group(1)), canon(f"({Lw}).toNat"))
+                    if S:
+                        lemma = "afterSep" if n == cand else "afterSepAll"
+                        return f"SvIn.{lemma} ({S}) {kpf} {cpf}"
         if ptr in self.contents:
             hp, P0, N0, l, lemma = self.contents[ptr]
             if n == canon(f"{l}.toNat"):
@@ -227,6 +255,15 @@ class Segment:
             if piece.startswith('SvIn B '):
                 ptr, n = split_in(piece[len('SvIn B '):])
                 self.ins.append((ptr, n, pf))
+            m = re.fullmatch(r"(\d+|0x[0-9A-Fa-f]+) ≤ (\w+)", piece)
+            if m:
+                self.les[m.group(2)] = (pf, int(m.group(1), 0))
+            m = re.fullmatch(r"\(?([\w']+)\)? = \(BitVec\.ofNat 32 0x0\) \+ BitVec\.ofNat 32 \((\w+) \* 1\)", piece)
+            if m:
+                self.closed[m.group(1)] = (pf, m.group(2))
+            m = re.fullmatch(r"(\w+) < (.+)\.toNat", piece)
+            if m:
+                self.lts[m.group(1)] = (pf, canon(m.group(2)))
             m = re.fullmatch(r"nlScan M0 (\S+|\(.+\)) 0 (\S+|\(.+\)) = some (\w+)", piece)
             if m:
                 self.nl[m.group(3)] = (pf, canon(m.group(1)), canon(m.group(2)))
@@ -408,10 +445,18 @@ class Segment:
         hit = self.match_sc(ty, free)
         if hit:
             return hit
+        m = re.fullmatch(r"(.+) = (.+) \+ BitVec\.ofNat 32 \((\w+) \* 4\)", strip_parens(ty))
+        if m and m.group(3) in free:
+            terms = split_sum(strip_parens(m.group(1)))
+            first = strip_parens(terms[0][1])
+            ms = re.fullmatch(r"aluEval \.sll (.+) \(BitVec\.ofNat 32 0x2\)", first)
+            rest = " + ".join(t for _, t in terms[1:])
+            if ms and len(terms) > 1 and canon(rest) == canon(m.group(2)):
+                return ("(by rw [svSll2]; exact BitVec.add_comm _ _)", {m.group(3): f"({strip_parens(ms.group(1))}).toNat"})
         for q, t in self.hyps:
             if q == p and t == ty and not free:
                 return p
-        local = re.search(r"(?<![\w.'])(n\d+|\w+_\d+|d\d+_\w+)(?![\w'])", ty)
+        local = re.search(r"(?<![\w.'])(n\d+|[\w']+_\d+|d\d+_\w+)(?![\w'])", ty)
         if ty.startswith('SvIn B '):
             ptr, ln = split_in(ty[len('SvIn B '):])
             pf = self.derive_in(ptr, ln)
@@ -446,6 +491,9 @@ class Segment:
         self.eqs = {}
         self.nl = {}
         self.contents = {}
+        self.les = {}
+        self.closed = {}
+        self.lts = {}
         for p, t in first.params:
             if t.startswith('SvIn B '):
                 ptr, ln = split_in(t[len('SvIn B '):])
