@@ -26,6 +26,8 @@ from svmerge import sc_pattern  # noqa: E402
 
 # Loops that a stage leaves once a variable is 0: file: (exit file, exit theorem, variable).
 EXITS = {'SvCkdLoop': ('SvCke', 'sv_cke', 'c')}
+# Loops over a slice, one byte an iteration: file: (pointer, the slice's hypothesis).
+RUNS = {'SvCkdLoop': ('p', 'pin')}
 
 # file: (theorem, body stage, doc)
 LOOPS = {
@@ -113,6 +115,9 @@ def write(fname):
     if fname in EXITS:
         O("")
         exit_form(O, name, L, *EXITS[fname])
+    if fname in RUNS:
+        O("")
+        run_form(O, name, L, *EXITS[fname], *RUNS[fname])
     O("")
     O("end C3.RV32.Sv")
     O("")
@@ -154,12 +159,19 @@ def exit_form(O, name, L, efile, ename, cnt):
         if p != 'hc':
             O(f"    ({p} : {subst(subst(t, L.local), pr)})")
     O("    :")
-    O("    SvErrRet B out v n0 ∨")
-    O(f"    (∃ {' '.join(ps)}, {L.peq('N')} ∧")
+    concl = ["    SvErrRet B out v n0 ∨", f"    (∃ {' '.join(ps)}, {L.peq('N')} ∧"]
     if E.sc_parts:
-        O("      " + " ∧ ".join(subst(x, pr) for x in E.sc_parts) + " ∧")
-    O("    ∃ n', Steps n0 n' ∧")
-    O("        " + " ∧\n        ".join(t for _, t in facts) + ") := by")
+        concl.append("      " + " ∧ ".join(subst(x, pr) for x in E.sc_parts) + " ∧")
+    concl.append("    ∃ n', Steps n0 n' ∧")
+    concl.append("        " + " ∧\n        ".join(t for _, t in facts) + ") := by")
+    for line in concl:
+        O(line)
+    for p, t in extra:
+        if p != 'hc':
+            concl.insert(0, f"    ({p} : {subst(subst(t, L.local), pr)})")
+    concl.insert(len([x for x in extra if x[0] != 'hc']), "    :")
+    open(f'/tmp/{name}_st.stmt', 'w').write("\n".join(c.replace("svIter (", "svIter (", 1) for c in concl)
+                                            .replace(L.peq('N'), L.peq(f"{cnt}.toNat")))
     h1 = [f"{p}'" for p in hn]
     O(f"  rcases {name} F hret hO M0 N {' '.join(hn)} H with e | ⟨n1, {', '.join(ps)}, cs, e0, hr3, hr4, hkl, "
       f"{', '.join(h1)}⟩")
@@ -174,6 +186,55 @@ def exit_form(O, name, L, efile, ename, cnt):
     terms = [{"r3": "f_r3.trans hr3", "r4": "f_r4.trans hr4", "KL": "(hkl.trans f_KL).mono (by decide)"}.get(k, f"f_{k}")
              for k, _ in facts]
     O(f"  exact .inr ⟨{', '.join(ps)}, e0, {', '.join(enm + ['n2', 'cs.trans c2'] + terms)}⟩")
+
+
+
+def run_form(O, name, L, efile, ename, cnt, ptr, slice_hyp):
+    """The loop and its exit over every byte of the slice (`ptr`, `cnt`): the
+    count reaches 0 after `cnt.toNat` iterations, and each iteration has its
+    byte."""
+    E = Stage(efile, ename)
+    st, head = L.st, L.head
+    ps = list(L.prime.values())
+    hn = [p for p, _ in head]
+    extra = [p for p, _ in E.params if p not in {q for q, _ in st.params}]
+    j_cnt, j_ptr = L.loopv.index(cnt), L.loopv.index(ptr)
+    n = len(L.loopv)
+
+    def proj(j):
+        return "s" + ".2" * j + (".1" if j + 1 < n else "")
+    src = open(f'C3BootProofs/Proofs/{L.sfile}.lean').read()
+    O("set_option maxHeartbeats 16000000 in")
+    O(f"/-- `{name}_st` over every byte of the slice: `{cnt}` reaches 0 after `{cnt}.toNat` iterations. -/")
+    stmt = [l for l in open(f'/tmp/{name}_st.stmt').read().split('\n')]
+    O(f"theorem {name}_run {' '.join(L.fixed)} {{{' '.join(L.loopv)} : Word}} {{n0 : Machine}}")
+    O("    " + " ".join(f"({p} : {t})" for p, t in st.params if p in GLOBAL))
+    for p, t in head:
+        O(f"    ({p} : {t})")
+    O(f"    ({slice_hyp} : {dict(L.kept_per)[slice_hyp]})")
+    for line in stmt:
+        O(line)
+    F = f"({L.step})"
+    T = " × ".join(["Word"] * n)
+    O(f"  refine {name}_st (N := {cnt}.toNat) F hret hO M0 ?_ {' '.join(hn)} ?_ {' '.join(x for x in extra if x != 'hc')}")
+    dec = f"svIter_dec1 (F := {F}) (fun s : {T} => {proj(j_cnt)}) (fun s => rfl)"
+    inc = f"svIter_add (F := {F}) (fun s : {T} => {proj(j_ptr)}) (d := 1) (fun s => rfl)"
+    O(f"  · intro {' '.join(ps)} e")
+    O(f"    have h1 := congrArg (fun s => {proj(j_cnt)}) e")
+    O("    simp only at h1")
+    O(f"    rw [{dec}] at h1")
+    O("    simp only at h1")
+    O(f"    rw [h1]; exact svSub_self_toNat {cnt}")
+    O(f"  · intro i hi {' '.join(ps)} e")
+    O(f"    have h1 := congrArg (fun s => {proj(j_cnt)}) e")
+    O(f"    have h2 := congrArg (fun s => {proj(j_ptr)}) e")
+    O("    simp only at h1 h2")
+    O(f"    rw [{dec}] at h1")
+    O(f"    rw [{inc}] at h2")
+    O("    simp only at h1 h2")
+    O("    refine ⟨?_, ?_⟩")
+    O("    · rw [h1]; bv_omega")
+    O(f"    · rw [h1, h2, Nat.mul_one, svSub_toNat (by omega)]; exact {slice_hyp}.drop (by omega)")
 
 
 if __name__ == "__main__":

@@ -27,6 +27,27 @@ theorem svIter_zero {α : Type} (f : α → α) (a : α) : svIter f 0 a = a := r
 
 theorem svIter_succ {α : Type} (f : α → α) (k : Nat) (a : α) : svIter f (k + 1) a = svIter f k (f a) := rfl
 
+/-- A part of a loop's state that each step moves by `d`. -/
+theorem svIter_add {α : Type} {F : α → α} (g : α → Word) {d : Nat} (h : ∀ s, g (F s) = g s + BitVec.ofNat 32 d) :
+    ∀ (i : Nat) (s : α), g (svIter F i s) = g s + BitVec.ofNat 32 (i * d)
+  | 0, s => by rw [svIter_zero, Nat.zero_mul]; exact (BitVec.add_zero _).symm
+  | i + 1, s => by
+    rw [svIter_succ, svIter_add g h i (F s), h s, BitVec.add_assoc, BitVec.ofNat_add_ofNat, Nat.succ_mul, Nat.add_comm d]
+
+/-- A part of a loop's state that each step lowers by 1. -/
+theorem svIter_dec1 {α : Type} {F : α → α} (g : α → Word) (h : ∀ s, g (F s) = g s + BitVec.ofNat 32 0xFFFFFFFF) :
+    ∀ (i : Nat) (s : α), g (svIter F i s) = g s - BitVec.ofNat 32 i
+  | 0, s => by rw [svIter_zero]; exact (BitVec.sub_zero _).symm
+  | i + 1, s => by
+    rw [svIter_succ, svIter_dec1 g h i (F s), h s]
+    bv_omega
+
+theorem svSub_toNat {c : Word} {i : Nat} (h : i ≤ c.toNat) : (c - BitVec.ofNat 32 i).toNat = c.toNat - i := by
+  bv_omega
+
+theorem svSub_self_toNat (c : Word) : c - BitVec.ofNat 32 c.toNat = 0 := by
+  bv_omega
+
 /-- `k` steps of `R` from `a` to `b`: the states of a loop whose step depends
 on what it reads. It is `Nat.rec`, like `svIter`. -/
 def svChain {α : Type} (R : α → α → Prop) (k : Nat) (a b : α) : Prop :=
