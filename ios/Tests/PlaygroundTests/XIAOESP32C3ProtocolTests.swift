@@ -450,8 +450,7 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
 
         let shaBuilding = String(repeating: "a", count: 40)
         let shaPublished = String(repeating: "b", count: 40)
-        var firmwareBytes = Data([0xE9, 0x02, 0x00, 0x00])
-        firmwareBytes.append(Data(repeating: 0x5A, count: 64))
+        let firmwareBytes = Data([0xE9, 0x02, 0x00, 0x00]) + Data(repeating: 0x5A, count: 64)
         let expectedDigest = "sha256:\(XIAOESP32C3Protocol.sha256Hex(firmwareBytes))"
 
         let http = FakeXIAOHTTP()
