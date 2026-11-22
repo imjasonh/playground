@@ -47,7 +47,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           default: true
-          buildtargets: esp32c3
+          buildtargets: esp32,esp32c3
           ldproxy: true
 
       - name: Restore the firmware Cargo cache

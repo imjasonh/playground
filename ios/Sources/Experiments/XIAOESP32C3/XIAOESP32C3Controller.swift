@@ -216,16 +216,31 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     }
 
     /// Pull the latest published `xiao-esp32c3` firmware layer from GHCR anonymously.
+    /// When `tag` is nil, resolves recent `main` commits touching `xiao-esp32c3` via the GitHub API
+    /// and picks the newest 40-char commit SHA with a published GHCR manifest (never uses `:latest`).
     func pullLatestFirmwareFromGHCR(
         repo: String = XIAOESP32C3Protocol.defaultGHCRRepo,
-        tag: String = XIAOESP32C3Protocol.defaultGHCRTag
+        tag: String? = nil
     ) async {
-        otaStatusText = "Fetching anonymous GHCR token for \(repo):\(tag)…"
         guard let tokenURL = URL(string: "https://ghcr.io/token?scope=repository:\(repo):pull") else {
             otaStatusText = "Invalid GHCR repository name."
             return
         }
         do {
+            let candidateTags: [String]
+            if let explicitTag = tag {
+                candidateTags = [explicitTag]
+            } else {
+                otaStatusText = "Resolving latest xiao-esp32c3 commit on main…"
+                candidateTags = try await resolveRecentFirmwareCommitSHAs()
+                guard !candidateTags.isEmpty else {
+                    otaPhase = .failed("Could not resolve recent xiao-esp32c3 commits from GitHub.")
+                    otaStatusText = "GitHub commit lookup returned no SHAs."
+                    return
+                }
+            }
+
+            otaStatusText = "Fetching anonymous GHCR token for \(repo)…"
             let (tokData, tokResp) = try await http.data(for: URLRequest(url: tokenURL))
             guard (tokResp as? HTTPURLResponse)?.statusCode == 200,
                   let tokJSON = try JSONSerialization.jsonObject(with: tokData) as? [String: Any],
@@ -236,28 +251,40 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
                 return
             }
 
-            guard let manifestURL = URL(string: "https://ghcr.io/v2/\(repo)/manifests/\(tag)") else {
-                return
+            var resolvedTag: String?
+            var resolvedDigest: String?
+            for candidate in candidateTags {
+                guard let manifestURL = URL(string: "https://ghcr.io/v2/\(repo)/manifests/\(candidate)") else {
+                    continue
+                }
+                var manifestReq = URLRequest(url: manifestURL)
+                manifestReq.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                manifestReq.setValue(
+                    "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json",
+                    forHTTPHeaderField: "Accept"
+                )
+                let (manData, manResp) = try await http.data(for: manifestReq)
+                if (manResp as? HTTPURLResponse)?.statusCode == 200,
+                   let manJSON = try JSONSerialization.jsonObject(with: manData) as? [String: Any],
+                   let layers = manJSON["layers"] as? [[String: Any]],
+                   let firstLayer = layers.first,
+                   let digest = firstLayer["digest"] as? String
+                {
+                    resolvedTag = candidate
+                    resolvedDigest = digest
+                    break
+                }
             }
-            var manifestReq = URLRequest(url: manifestURL)
-            manifestReq.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            manifestReq.setValue(
-                "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json",
-                forHTTPHeaderField: "Accept"
-            )
-            let (manData, manResp) = try await http.data(for: manifestReq)
-            guard (manResp as? HTTPURLResponse)?.statusCode == 200,
-                  let manJSON = try JSONSerialization.jsonObject(with: manData) as? [String: Any],
-                  let layers = manJSON["layers"] as? [[String: Any]],
-                  let firstLayer = layers.first,
-                  let digest = firstLayer["digest"] as? String
-            else {
-                otaPhase = .failed("No published GHCR image found at \(repo):\(tag).")
-                otaStatusText = "No GHCR layer found for \(repo):\(tag)."
+
+            guard let chosenTag = resolvedTag, let digest = resolvedDigest else {
+                let checked = candidateTags.prefix(3).map { String($0.prefix(7)) }.joined(separator: ", ")
+                otaPhase = .failed("No published GHCR image found for recent commits (\(checked)).")
+                otaStatusText = "No GHCR layer found for \(checked)."
                 return
             }
 
-            otaStatusText = "Downloading layer \(digest.prefix(19))…"
+            let shortTag = String(chosenTag.prefix(7))
+            otaStatusText = "Downloading \(shortTag) (\(digest.prefix(19)))…"
             guard let blobURL = URL(string: "https://ghcr.io/v2/\(repo)/blobs/\(digest)") else {
                 return
             }
@@ -278,10 +305,32 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
                 otaStatusText = "GHCR layer digest verification failed."
                 return
             }
-            stageFirmware(data: blobData, name: "ghcr:\(tag) (\(digest.prefix(19)))")
+            stageFirmware(data: blobData, name: "ghcr:\(shortTag) (\(digest.prefix(19)))")
         } catch {
             otaPhase = .failed(error.localizedDescription)
             otaStatusText = "GHCR pull error: \(error.localizedDescription)"
+        }
+    }
+
+    private func resolveRecentFirmwareCommitSHAs() async throws -> [String] {
+        let ghRepo = XIAOESP32C3Protocol.defaultGitHubRepo
+        let fwPath = XIAOESP32C3Protocol.defaultFirmwarePath
+        guard let url = URL(string: "https://api.github.com/repos/\(ghRepo)/commits?sha=main&path=\(fwPath)&per_page=5") else {
+            return []
+        }
+        var req = URLRequest(url: url)
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        let (data, resp) = try await http.data(for: req)
+        guard (resp as? HTTPURLResponse)?.statusCode == 200,
+              let commits = try JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        else {
+            return []
+        }
+        return commits.compactMap { entry -> String? in
+            guard let sha = entry["sha"] as? String, sha.count == 40 else {
+                return nil
+            }
+            return sha.lowercased()
         }
     }
 

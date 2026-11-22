@@ -441,6 +441,65 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         XCTAssertEqual(status, 200)
     }
 
+    @MainActor
+    func testPullLatestFirmwareFromGHCRResolvesCommitSHA() async throws {
+        let suite = "xiao-esp32c3.ghcr-sha.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let shaBuilding = String(repeating: "a", count: 40)
+        let shaPublished = String(repeating: "b", count: 40)
+        var firmwareBytes = Data([0xE9, 0x02, 0x00, 0x00])
+        firmwareBytes.append(Data(repeating: 0x5A, count: 64))
+        let expectedDigest = "sha256:\(XIAOESP32C3Protocol.sha256Hex(firmwareBytes))"
+
+        let http = FakeXIAOHTTP()
+        http.onRequest = { request in
+            let urlString = request.url?.absoluteString ?? ""
+            if urlString.contains("api.github.com/repos/imjasonh/playground/commits") {
+                return try Self.jsonResponse(
+                    #"[{"sha":"\#(shaBuilding)"},{"sha":"\#(shaPublished)"}]"#,
+                    status: 200
+                )
+            }
+            if urlString.contains("ghcr.io/token") {
+                return try Self.jsonResponse(#"{"token":"anon-tok"}"#, status: 200)
+            }
+            if urlString.hasSuffix("/manifests/\(shaBuilding)") {
+                return try Self.jsonResponse(#"{"errors":[{"code":"MANIFEST_UNKNOWN"}]}"#, status: 404)
+            }
+            if urlString.hasSuffix("/manifests/\(shaPublished)") {
+                return try Self.jsonResponse(
+                    #"{"layers":[{"mediaType":"application/octet-stream","digest":"\#(expectedDigest)"}]}"#,
+                    status: 200
+                )
+            }
+            if urlString.hasSuffix("/blobs/\(expectedDigest)") {
+                let url = try XCTUnwrap(request.url)
+                let resp = try XCTUnwrap(HTTPURLResponse(
+                    url: url,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/octet-stream"]
+                ))
+                return (firmwareBytes, resp)
+            }
+            return try Self.jsonResponse(#"{"error":"unexpected \(urlString)"}"#, status: 500)
+        }
+
+        let controller = XIAOESP32C3Controller(
+            defaults: defaults,
+            attestKeys: FakeXIAOAttestKeys(generatedKeys: []),
+            attestStore: AppAttestMemoryStore(deviceId: "dev-ota", userId: "user-ota"),
+            http: http
+        )
+        await controller.pullLatestFirmwareFromGHCR()
+
+        XCTAssertEqual(controller.stagedFirmwareData, firmwareBytes)
+        XCTAssertTrue(controller.stagedFirmwareName.hasPrefix("ghcr:\(shaPublished.prefix(7))"))
+    }
+
     private static func jsonResponse(_ body: String, status: Int) throws -> (Data, URLResponse) {
         let url = try XCTUnwrap(URL(string: "https://xiao-otel.example.test"))
         let response = try XCTUnwrap(HTTPURLResponse(
