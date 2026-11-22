@@ -507,6 +507,114 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         XCTAssertNil(XIAOESP32C3Protocol.validateESPImageHeader(firmwareBytes, expectedChipID: MCULabFirmwareTarget.xiaoESP32C3.chipID))
     }
 
+    func testOTLPPayloadsUseBoardSpecificServiceName() {
+        let epdFlags: UInt8 = XIAOESP32C3Protocol.flagEpdAttached
+            | (MCULabFirmwareTarget.epdMaze.boardID << 4)
+        let epdMetrics = XIAOESP32C3Metrics(
+            seq: 3,
+            flags: epdFlags,
+            wakeCount: 11,
+            sensorUs: 120,
+            computeUs: 9_500,
+            epdRefreshUs: 1_800_000,
+            radioUs: 500_000,
+            batteryMv: 5000
+        )
+        let metricsJSON = XIAOESP32C3Protocol.formatOTLPJSON(
+            deviceId: "epd-uuid-1",
+            metrics: epdMetrics,
+            rssi: -48,
+            timeUnixNano: 1_700_000_000_000_000_000
+        )
+        XCTAssertTrue(metricsJSON.contains(#""service.name","value":{"stringValue":"epd-maze"}"#))
+        XCTAssertTrue(metricsJSON.contains(#""device.id","value":{"stringValue":"epd-uuid-1"}"#))
+
+        let traceJSON = XIAOESP32C3Protocol.formatOTLPTraceJSON(
+            traceId: "0123456789abcdef0123456789abcdef",
+            rootSpanId: "0123456789abcdef",
+            deviceId: "epd-uuid-1",
+            metrics: epdMetrics,
+            rssi: -48,
+            timeUnixNano: 1_700_000_000_000_000_000
+        )
+        XCTAssertTrue(traceJSON.contains(#""service.name","value":{"stringValue":"epd-maze"}"#))
+        XCTAssertTrue(traceJSON.contains(#""name":"epd-maze.wake #11""#))
+    }
+
+    @MainActor
+    func testArmOTAUpdateRejectsMismatchedChipAfterSwitchingTarget() throws {
+        let suite = "mcu-lab.arm-guard.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let controller = XIAOESP32C3Controller(defaults: defaults)
+        var xiaoImage = Data(repeating: 0x00, count: 64)
+        xiaoImage[0] = 0xE9
+        xiaoImage[12] = 0x05 // ESP32-C3 chip_id = 0x0005
+
+        controller.selectedFirmwareTarget = .xiaoESP32C3
+        controller.stageFirmware(data: xiaoImage, name: "xiao-esp32c3.bin")
+        XCTAssertNotNil(controller.stagedFirmwareData)
+
+        // Switching target after staging must prevent arming the wrong chip binary.
+        controller.selectedFirmwareTarget = .epdMaze
+        controller.armOTAUpdate()
+        if case .failed = controller.otaPhase {
+            // Expected
+        } else {
+            XCTFail("Expected .failed OTA phase when arming ESP32-C3 binary for epd-maze, got \(controller.otaPhase)")
+        }
+    }
+
+    @MainActor
+    func testMultiDeviceIngestionDeduplicatesIndependently() throws {
+        let suite = "mcu-lab.multi-dev.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let controller = XIAOESP32C3Controller(defaults: defaults)
+        controller.updateForwardingEnabled(false)
+        controller.saveCollectDetailedProfile(false)
+
+        let xiaoId = UUID()
+        let epdId = UUID()
+
+        let xiaoMfg = XIAOESP32C3Protocol.encodeManufacturerData(
+            XIAOESP32C3Metrics(
+                seq: 1,
+                flags: XIAOESP32C3Protocol.flagDeepSleepWake | (MCULabFirmwareTarget.xiaoESP32C3.boardID << 4),
+                wakeCount: 1,
+                sensorUs: 1000,
+                computeUs: 2000,
+                epdRefreshUs: 3000,
+                radioUs: 4000,
+                batteryMv: 3900
+            )
+        )
+        let epdMfg = XIAOESP32C3Protocol.encodeManufacturerData(
+            XIAOESP32C3Metrics(
+                seq: 1,
+                flags: XIAOESP32C3Protocol.flagEpdAttached | (MCULabFirmwareTarget.epdMaze.boardID << 4),
+                wakeCount: 1,
+                sensorUs: 100,
+                computeUs: 8000,
+                epdRefreshUs: 1_500_000,
+                radioUs: 500_000,
+                batteryMv: 5000
+            )
+        )
+
+        XCTAssertTrue(controller.ingestManufacturerData(xiaoMfg, deviceId: xiaoId, deviceName: "XIAO-C3", rssi: -60))
+        // Duplicate seq 1 from XIAO is ignored, while seq 1 from EPD-75 is accepted.
+        XCTAssertFalse(controller.ingestManufacturerData(xiaoMfg, deviceId: xiaoId, deviceName: "XIAO-C3", rssi: -61))
+        XCTAssertTrue(controller.ingestManufacturerData(epdMfg, deviceId: epdId, deviceName: "EPD-75", rssi: -45))
+        XCTAssertFalse(controller.ingestManufacturerData(epdMfg, deviceId: epdId, deviceName: "EPD-75", rssi: -46))
+
+        XCTAssertEqual(controller.history.count, 2)
+        XCTAssertEqual(controller.history[0].deviceId, epdId)
+        XCTAssertEqual(controller.history[1].deviceId, xiaoId)
+    }
+
     private static func jsonResponse(_ body: String, status: Int) throws -> (Data, URLResponse) {
         let url = try XCTUnwrap(URL(string: "https://xiao-otel.example.test"))
         let response = try XCTUnwrap(HTTPURLResponse(

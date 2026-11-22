@@ -51,7 +51,11 @@ mod inner {
     /// Read the interrupted program counter from the FreeRTOS saved exception frame.
     ///
     /// - RISC-V (`esp32c3`): `RvExcFrame` stores `mepc` at word offset 0.
-    /// - Xtensa (`esp32`): `XtExcFrame` stores `exit` at word offset 0 and `pc` at word offset 1.
+    /// - Xtensa (`esp32`): both `XtExcFrame` (preempted, `exit != 0`) and `XtSolFrame`
+    ///   (solicited switch, `exit == 0`) store `pc` at word offset 1. For `XtSolFrame`,
+    ///   `pc` comes from windowed-ABI `a0`, whose top two bits encode the call window
+    ///   increment (`01`/`10`/`11`) instead of the `0x4000_0000` IRAM/IROM prefix; we
+    ///   normalize those top two bits back to `0x4000_0000`.
     #[inline]
     unsafe fn read_saved_pc(px_top_of_stack: *const u32) -> u32 {
         #[cfg(target_arch = "riscv32")]
@@ -60,7 +64,13 @@ mod inner {
         }
         #[cfg(target_arch = "xtensa")]
         {
-            *px_top_of_stack.add(1)
+            let exit = *px_top_of_stack;
+            let raw_pc = *px_top_of_stack.add(1);
+            if exit == 0 && raw_pc != 0 {
+                (raw_pc & 0x3FFF_FFFF) | 0x4000_0000
+            } else {
+                raw_pc
+            }
         }
         #[cfg(not(any(target_arch = "riscv32", target_arch = "xtensa")))]
         {

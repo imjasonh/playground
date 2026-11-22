@@ -117,6 +117,11 @@ struct XIAOESP32C3View: View {
                         .accessibilityIdentifier("xiaoLatestSeq")
                 }
 
+                LabeledContent(
+                    "Board",
+                    value: "\(sample.deviceName) (\(XIAOESP32C3Protocol.serviceName(for: m, profile: sample.profile)))"
+                )
+                .accessibilityIdentifier("xiaoBoardName")
                 LabeledContent("Wake count", value: "#\(m.wakeCount)")
                     .accessibilityIdentifier("xiaoWakeCount")
                 LabeledContent("Battery", value: "\(m.batteryMv) mV")
@@ -145,7 +150,7 @@ struct XIAOESP32C3View: View {
             ContentUnavailableView(
                 "No telemetry bursts yet",
                 systemImage: "cpu",
-                description: Text("Wake a XIAO ESP32C3 running xiao-esp32c3 or tap Simulate Wake to inspect phase durations and OTLP payloads.")
+                description: Text("Wake a board running mcu-lab (XIAO ESP32-C3 or Waveshare 7.5″ ESP32) or tap Simulate Wake to inspect phase durations and OTLP payloads.")
             )
             .frame(minHeight: 160)
             .accessibilityIdentifier("xiaoEmptyMetrics")
@@ -480,7 +485,7 @@ struct XIAOESP32C3View: View {
                     .accessibilityIdentifier("xiaoHistoryPlaceholder")
             } else {
                 ForEach(controller.history) { sample in
-                    Text("\(XIAOESP32C3Protocol.formatStatusLine(sample.metrics)) rssi=\(sample.rssi)")
+                    Text("[\(sample.deviceName)] \(XIAOESP32C3Protocol.formatStatusLine(sample.metrics)) rssi=\(sample.rssi)")
                         .font(.caption.monospaced())
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -498,16 +503,14 @@ struct XIAOESP32C3View: View {
             Text("How it works")
                 .font(.subheadline.bold())
             Text(
-                "The XIAO ESP32C3 wakes from deep sleep, records microsecond durations for sensor "
-                    + "filtering, 1-bit framebuffer rendering, e-paper SPI + LUT refresh, and the "
-                    + "previous BLE TX burst into RTC slow memory (.rtc.data), and toggles GPIO 2 "
-                    + "(D0) HIGH during each phase for Nordic PPK2 power correlation. It then "
-                    + "broadcasts a 150 ms BLE Manufacturer Specific Data (0xFFFF) packet and "
-                    + "drops back into deep sleep. When an OTA update is armed in this app, the "
-                    + "iPhone connects during that 150 ms burst, streams the new firmware into the "
-                    + "inactive OTA partition (ota_0 / ota_1), verifies the SHA-256 digest, and "
-                    + "reboots the board with automatic rollback protection. Firmware lives in "
-                    + "xiao-esp32c3/ and Cloud Run collector lives in xiao-otel/."
+                "Boards running mcu-lab (XIAO ESP32-C3 or Waveshare 7.5″ e-Paper ESP32) record "
+                    + "microsecond phase durations and 1 kHz PC hotspots, then broadcast a BLE "
+                    + "Manufacturer Specific Data (0xFFFF) packet with their board ID. This bridge "
+                    + "listens to all nearby boards simultaneously, forwards each board's metrics "
+                    + "and traces separately to GCP (xiao-otel/), and when an OTA update is armed, "
+                    + "connects only to the matching board ID, verifies the chip_id and SHA-256, "
+                    + "and reboots into the new slot with automatic rollback protection. Firmware "
+                    + "lives in mcu-lab/."
             )
             .font(.caption)
             .foregroundStyle(.secondary)

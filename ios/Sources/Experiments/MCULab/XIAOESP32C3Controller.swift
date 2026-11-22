@@ -71,6 +71,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     private var otaStreamTask: Task<Void, Never>?
     private var profilePeripheral: CBPeripheral?
     private var profileTargetDeviceId: UUID?
+    private var profileTargetSampleId: UUID?
 
     private var lastSeqByDevice: [UUID: UInt8] = [:]
     private var simulatedSeq: UInt8 = 0
@@ -345,14 +346,22 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         }
     }
 
-    /// Arm the iPhone to connect on the very next XIAO BLE wake burst and stream the staged firmware.
+    /// Arm the iPhone to connect on the very next matching board BLE wake burst and stream the staged firmware.
     func armOTAUpdate() {
         guard let data = stagedFirmwareData, !data.isEmpty else {
             otaStatusText = "Stage a firmware image first."
             return
         }
+        if let err = XIAOESP32C3Protocol.validateESPImageHeader(
+            data,
+            expectedChipID: selectedFirmwareTarget.chipID
+        ) {
+            otaPhase = .failed(err)
+            otaStatusText = "Staged image does not match \(selectedFirmwareTarget.displayName): \(err)"
+            return
+        }
         otaPhase = .armed
-        otaStatusText = "Armed (\(data.count) B). Waiting for the next XIAO-C3 wake burst to connect…"
+        otaStatusText = "Armed (\(data.count) B). Waiting for the next \(selectedFirmwareTarget.displayName) wake burst to connect…"
         if !isScanning, isBluetoothUsable {
             startScan()
         }
@@ -362,8 +371,10 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     func cancelOTAUpdate() {
         otaStreamTask?.cancel()
         otaStreamTask = nil
-        if let peripheral = otaPeripheral, let ctrl = otaControlChar {
-            if let abortData = XIAOESP32C3Protocol.encodeOTACommand(.abort).data(using: .utf8) {
+        if let peripheral = otaPeripheral {
+            if let ctrl = otaControlChar,
+               let abortData = XIAOESP32C3Protocol.encodeOTACommand(.abort).data(using: .utf8)
+            {
                 peripheral.writeValue(abortData, for: ctrl, type: .withResponse)
             }
             central?.cancelPeripheralConnection(peripheral)
@@ -453,7 +464,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             }
             guard let self, !Task.isCancelled else { return }
             self.otaPhase = .committing
-            self.otaStatusText = "Verifying SHA-256 on XIAO and switching active OTA slot…"
+            self.otaStatusText = "Verifying SHA-256 on \(self.selectedFirmwareTarget.displayName) and switching active OTA slot…"
             if let commitData = XIAOESP32C3Protocol.encodeOTACommand(.commit).data(using: .utf8) {
                 peripheral.writeValue(commitData, for: ctrlChar, type: .withResponse)
             }
@@ -476,7 +487,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         case .ok(let sha256):
             otaStreamTask?.cancel()
             otaPhase = .completed(sha256: sha256)
-            otaStatusText = "Update verified (\(sha256.prefix(12))…). XIAO-C3 is rebooting into the new slot."
+            otaStatusText = "Update verified (\(sha256.prefix(12))…). \(selectedFirmwareTarget.displayName) is rebooting into the new slot."
             if let peripheral = otaPeripheral {
                 central?.cancelPeripheralConnection(peripheral)
             }
@@ -498,7 +509,9 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         simulatedWakeCount += 1
 
         let isPartial = (simulatedWakeCount % 10) != 0
-        var flags: UInt8 = XIAOESP32C3Protocol.flagDeepSleepWake | XIAOESP32C3Protocol.flagEpdAttached
+        var flags: UInt8 = XIAOESP32C3Protocol.flagDeepSleepWake
+            | XIAOESP32C3Protocol.flagEpdAttached
+            | ((selectedFirmwareTarget.boardID & 0x0F) << 4)
         if isPartial {
             flags |= XIAOESP32C3Protocol.flagEpdPartial
         }
@@ -520,7 +533,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         ingestManufacturerData(
             mfg,
             deviceId: simulatedDeviceId,
-            deviceName: XIAOESP32C3Protocol.deviceName,
+            deviceName: selectedFirmwareTarget == .epdMaze ? "EPD-75" : XIAOESP32C3Protocol.deviceName,
             rssi: -54,
             profile: simulatedProfile
         )
@@ -544,24 +557,17 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             return false
         }
         // If an OTA update is armed and this advertisement comes from the matching board
-        // (`boardID == 0` is legacy XIAO ESP32-C3), connect immediately during its wake window!
-        let advBoardID = (metrics.flags >> 4) & 0x0F
+        // (`boardID == 0` is legacy XIAO ESP32-C3), connect immediately during its wake window,
+        // even if we already saw an earlier advertisement packet from this same burst!
+        let advBoardID = metrics.boardID
         let matchesOTATarget = advBoardID == selectedFirmwareTarget.boardID
             || (advBoardID == 0 && selectedFirmwareTarget == .xiaoESP32C3)
-        var initiatedProfilePull = false
         if otaPhase == .armed, matchesOTATarget, let peripheral = peripherals[deviceId] {
             beginOTAConnection(to: peripheral)
-        } else if collectDetailedProfile,
-                  profile == nil,
-                  otaPhase == .idle,
-                  profilePeripheral == nil,
-                  let peripheral = peripherals[deviceId]
-        {
-            beginProfileConnection(to: peripheral, deviceId: deviceId)
-            initiatedProfilePull = true
         }
 
-        // Deduplicate repeated frames from the same 150 ms burst.
+        // Deduplicate repeated frames from the same advertisement burst before
+        // recording history or initiating a GATT profile pull.
         if lastSeqByDevice[deviceId] == metrics.seq {
             return false
         }
@@ -583,6 +589,17 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         }
         statusMessage = "Wake #\(metrics.wakeCount) (seq \(metrics.seq)) from \(deviceName) at \(rssi) dBm."
 
+        var initiatedProfilePull = false
+        if collectDetailedProfile,
+           profile == nil,
+           otaPhase == .idle,
+           profilePeripheral == nil,
+           let peripheral = peripherals[deviceId]
+        {
+            beginProfileConnection(to: peripheral, deviceId: deviceId, sampleId: sample.id)
+            initiatedProfilePull = true
+        }
+
         if forwardingEnabled, !initiatedProfilePull {
             forwardToOtel(sample: sample)
         }
@@ -594,25 +611,34 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         defaults.set(enabled, forKey: Self.collectProfileDefaultsKey)
     }
 
-    private func beginProfileConnection(to peripheral: CBPeripheral, deviceId: UUID) {
+    private func beginProfileConnection(to peripheral: CBPeripheral, deviceId: UUID, sampleId: UUID) {
         guard let central, central.state == .poweredOn else {
             return
         }
         profilePeripheral = peripheral
         profileTargetDeviceId = deviceId
+        profileTargetSampleId = sampleId
         peripheral.delegate = self
         central.connect(peripheral, options: nil)
     }
 
     private func attachWakeProfile(_ profile: XIAOESP32C3WakeProfile, deviceId: UUID) {
         var updatedSample: XIAOESP32C3Sample?
-        if var latest = latestSample, latest.deviceId == deviceId {
+        if let targetId = profileTargetSampleId,
+           let idx = history.firstIndex(where: { $0.id == targetId })
+        {
+            history[idx].profile = profile
+            updatedSample = history[idx]
+        } else if let idx = history.firstIndex(where: { $0.deviceId == deviceId && $0.metrics.wakeCount == profile.wakeCount }) {
+            history[idx].profile = profile
+            updatedSample = history[idx]
+        }
+        if let updatedSample, latestSample?.id == updatedSample.id {
+            latestSample = updatedSample
+        } else if var latest = latestSample, updatedSample == nil, latest.deviceId == deviceId {
             latest.profile = profile
             latestSample = latest
             updatedSample = latest
-        }
-        if let idx = history.firstIndex(where: { $0.deviceId == deviceId && $0.metrics.wakeCount == profile.wakeCount }) {
-            history[idx].profile = profile
         }
         if forwardingEnabled, let updatedSample {
             forwardToOtel(sample: updatedSample)
@@ -624,19 +650,25 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             return
         }
         let targetDeviceId = profileTargetDeviceId
+        let targetSampleId = profileTargetSampleId
         profilePeripheral = nil
         profileTargetDeviceId = nil
+        profileTargetSampleId = nil
         if otaPeripheral?.identifier != peripheral.identifier {
             central?.cancelPeripheralConnection(peripheral)
         }
-        if fallbackForward,
-           forwardingEnabled,
-           let targetDeviceId,
-           let latest = latestSample,
-           latest.deviceId == targetDeviceId,
-           latest.profile == nil
-        {
-            forwardToOtel(sample: latest)
+        if fallbackForward, forwardingEnabled {
+            if let targetSampleId,
+               let sample = history.first(where: { $0.id == targetSampleId && $0.profile == nil })
+            {
+                forwardToOtel(sample: sample)
+            } else if let targetDeviceId,
+                      let latest = latestSample,
+                      latest.deviceId == targetDeviceId,
+                      latest.profile == nil
+            {
+                forwardToOtel(sample: latest)
+            }
         }
     }
 
@@ -1028,7 +1060,7 @@ extension XIAOESP32C3Controller: CBCentralManagerDelegate {
         let service = CBUUID(string: XIAOESP32C3Protocol.otaServiceUUIDString)
         Task { @MainActor in
             if self.otaPeripheral?.identifier == peripheral.identifier {
-                self.otaStatusText = "Connected to XIAO-C3. Discovering OTA service…"
+                self.otaStatusText = "Connected to \(self.selectedFirmwareTarget.displayName). Discovering OTA service…"
             }
         }
         peripheral.discoverServices([service])
@@ -1042,10 +1074,11 @@ extension XIAOESP32C3Controller: CBCentralManagerDelegate {
         let detail = error?.localizedDescription ?? "connection failed"
         Task { @MainActor in
             self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
-            if self.otaPhase == .connecting {
-                // Re-arm for the next wake burst if the 150 ms window closed before connection completed.
+            if self.otaPeripheral?.identifier == peripheral.identifier, self.otaPhase == .connecting {
+                // Re-arm for the next wake burst if the wake window closed before connection completed.
+                self.otaPeripheral = nil
                 self.otaPhase = .armed
-                self.otaStatusText = "Missed 150 ms wake window (\(detail)); still armed for next wake…"
+                self.otaStatusText = "Missed wake window (\(detail)); still armed for next wake…"
             }
         }
     }

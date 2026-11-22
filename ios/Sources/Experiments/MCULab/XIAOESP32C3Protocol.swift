@@ -54,6 +54,21 @@ struct XIAOESP32C3Metrics: Equatable, Identifiable {
     var epdRefreshModeLabel: String {
         isEpdPartialRefresh ? "Partial LUT" : "Full LUT"
     }
+
+    /// Board ID encoded in the upper 4 bits of `flags` (`0` = legacy XIAO, `1` = XIAO ESP32-C3, `2` = Waveshare EPD-75).
+    var boardID: UInt8 {
+        (flags >> 4) & 0x0F
+    }
+
+    /// Firmware target inferred from `boardID` when no GATT WakeProfile was pulled.
+    var inferredTarget: MCULabFirmwareTarget {
+        switch boardID {
+        case MCULabFirmwareTarget.epdMaze.boardID:
+            return .epdMaze
+        default:
+            return .xiaoESP32C3
+        }
+    }
 }
 
 /// Control command written by the iPhone to the XIAO BLE GATT OTA control characteristic.
@@ -464,6 +479,15 @@ enum XIAOESP32C3Protocol {
     }
 
     /// Build a valid OTLP/HTTP v1 JSON metrics payload (`application/json`).
+    /// Resolve the OTLP `service.name` for a wake sample (`profile.app` when available,
+    /// otherwise inferred from `metrics.boardID`).
+    static func serviceName(for metrics: XIAOESP32C3Metrics, profile: XIAOESP32C3WakeProfile?) -> String {
+        if let app = profile?.app, !app.isEmpty {
+            return app
+        }
+        return metrics.inferredTarget.rawValue
+    }
+
     static func formatOTLPJSON(
         deviceId: String,
         metrics: XIAOESP32C3Metrics,
@@ -473,6 +497,7 @@ enum XIAOESP32C3Protocol {
     ) -> String {
         let ts = String(timeUnixNano)
         let safeDeviceId = escapeJSONString(deviceId)
+        let safeServiceName = escapeJSONString(serviceName(for: metrics, profile: profile))
         var extraMetrics = ""
         if let profile {
             extraMetrics = """
@@ -480,7 +505,7 @@ enum XIAOESP32C3Protocol {
             """
         }
         return """
-        {"resourceMetrics":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"xiao-esp32c3"}},{"key":"device.id","value":{"stringValue":"\(safeDeviceId)"}}]},"scopeMetrics":[{"metrics":[{"name":"mcu.wake.count","gauge":{"dataPoints":[{"asInt":"\(metrics.wakeCount)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.phase.duration_us","gauge":{"dataPoints":[{"asInt":"\(metrics.sensorUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"sensor"}}]},{"asInt":"\(metrics.computeUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"compute"}}]},{"asInt":"\(metrics.epdRefreshUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"epd_refresh"}}]},{"asInt":"\(metrics.radioUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"radio"}}]}]}},{"name":"mcu.battery_mv","gauge":{"dataPoints":[{"asInt":"\(metrics.batteryMv)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.ble.rssi","gauge":{"dataPoints":[{"asInt":"\(rssi)","timeUnixNano":"\(ts)"}]}}\(extraMetrics)]}]}]}
+        {"resourceMetrics":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"\(safeServiceName)"}},{"key":"device.id","value":{"stringValue":"\(safeDeviceId)"}}]},"scopeMetrics":[{"metrics":[{"name":"mcu.wake.count","gauge":{"dataPoints":[{"asInt":"\(metrics.wakeCount)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.phase.duration_us","gauge":{"dataPoints":[{"asInt":"\(metrics.sensorUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"sensor"}}]},{"asInt":"\(metrics.computeUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"compute"}}]},{"asInt":"\(metrics.epdRefreshUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"epd_refresh"}}]},{"asInt":"\(metrics.radioUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"radio"}}]}]}},{"name":"mcu.battery_mv","gauge":{"dataPoints":[{"asInt":"\(metrics.batteryMv)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.ble.rssi","gauge":{"dataPoints":[{"asInt":"\(rssi)","timeUnixNano":"\(ts)"}]}}\(extraMetrics)]}]}]}
         """
     }
 
@@ -553,12 +578,17 @@ enum XIAOESP32C3Protocol {
             }
         }
 
+        let resolvedService = serviceName(for: metrics, profile: profile)
+        let rootSpanName = resolvedService == MCULabFirmwareTarget.xiaoESP32C3.rawValue
+            ? "xiao.wake #\(metrics.wakeCount)"
+            : "\(resolvedService).wake #\(metrics.wakeCount)"
+
         var spans: [String] = [
             formatSpanJSON(
                 traceId: traceId,
                 spanId: rootSpanId,
                 parentSpanId: nil,
-                name: "xiao.wake #\(metrics.wakeCount)",
+                name: rootSpanName,
                 startNs: wakeStartNs,
                 endNs: wakeEndNs,
                 attrs: rootAttrs,
@@ -625,8 +655,9 @@ enum XIAOESP32C3Protocol {
         }
 
         let safeDeviceId = escapeJSONString(deviceId)
+        let safeServiceName = escapeJSONString(resolvedService)
         return """
-        {"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"xiao-esp32c3"}},{"key":"device.id","value":{"stringValue":"\(safeDeviceId)"}}]},"scopeSpans":[{"spans":[\(spans.joined(separator: ","))]}]}]}
+        {"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"\(safeServiceName)"}},{"key":"device.id","value":{"stringValue":"\(safeDeviceId)"}}]},"scopeSpans":[{"spans":[\(spans.joined(separator: ","))]}]}]}
         """
     }
 
