@@ -156,12 +156,12 @@ final class PlaygroundUITests: XCTestCase {
             "Wigglecam should appear after scrolling the launcher"
         )
         XCTAssertTrue(
-            scrollLauncherUntilExists(app.staticTexts["ESP32 BLE"], in: app),
-            "ESP32 BLE should appear after scrolling the launcher"
-        )
-        XCTAssertTrue(
             scrollLauncherUntilExists(app.staticTexts["App Attest"], in: app),
             "App Attest should appear after scrolling the launcher"
+        )
+        XCTAssertTrue(
+            scrollLauncherUntilExists(app.staticTexts["MCU Lab"], in: app),
+            "MCU Lab should appear after scrolling the launcher"
         )
     }
 
@@ -280,42 +280,17 @@ final class PlaygroundUITests: XCTestCase {
             || app.otherElements["liveTranslatePlaceholder"].waitForExistence(timeout: 3))
     }
 
-    func testESP32BLEExperimentOpens() {
+    func testMCULabExperimentOpens() {
         let app = launchApp()
 
-        openExperiment("esp32-ble", title: "ESP32 BLE", in: app)
+        openExperiment("mcu-lab", title: "MCU Lab", in: app)
 
-        XCTAssertTrue(app.navigationBars["ESP32 BLE"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["esp32BleScanButton"].waitForExistence(timeout: 8)
-            || app.otherElements["esp32BleScanButton"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["esp32BleStatusMessage"].waitForExistence(timeout: 8)
-            || app.otherElements["esp32BleStatusMessage"].waitForExistence(timeout: 3)
-            || app.staticTexts["Flash esp32-ble, then scan."].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["esp32BleAvailabilityBanner"].waitForExistence(timeout: 8)
-            || app.otherElements["esp32BleAvailabilityBanner"].waitForExistence(timeout: 3)
-            || app.staticTexts["Bluetooth is on."].waitForExistence(timeout: 3)
-            || app.staticTexts["BLE needs a physical iPhone. The Simulator cannot talk to an ESP32."].waitForExistence(timeout: 3))
-        if !app.sliders["esp32BleBlinkSlider"].waitForExistence(timeout: 2) {
-            app.swipeUp()
-        }
-        XCTAssertTrue(app.sliders["esp32BleBlinkSlider"].waitForExistence(timeout: 8)
-            || app.otherElements["esp32BleBlinkSlider"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["esp32BleBlinkValue"].waitForExistence(timeout: 8)
-            || app.otherElements["esp32BleBlinkValue"].waitForExistence(timeout: 3)
-            || app.staticTexts["every 1s"].waitForExistence(timeout: 3))
-    }
-
-    func testXIAOESP32C3ExperimentOpens() {
-        let app = launchApp()
-
-        openExperiment("xiao-esp32c3", title: "XIAO ESP32C3", in: app)
-
-        XCTAssertTrue(app.navigationBars["XIAO ESP32C3"].waitForExistence(timeout: 8))
-        let simulateButton = app.buttons["xiaoSimulateWakeButton"]
+        XCTAssertTrue(app.navigationBars["MCU Lab"].waitForExistence(timeout: 8))
+        let simulateButton = app.buttons["mcuLabSimulateWakeButton"]
         XCTAssertTrue(simulateButton.waitForExistence(timeout: 8))
         simulateButton.tap()
         XCTAssertTrue(
-            app.otherElements["xiaoMetricsDashboard"].waitForExistence(timeout: 5)
+            app.otherElements["mcuLabMetricsDashboard"].waitForExistence(timeout: 5)
                 || app.staticTexts["Latest wake cycle"].waitForExistence(timeout: 5)
         )
     }

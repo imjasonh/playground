@@ -56,11 +56,9 @@ playground/
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
 ├── onramp/             # offline Mac can’t-get-online triage (Sparkle CD)
 ├── roll/                  # menu bar app: click rolls, right-click countdowns and monitor photos (Sparkle CD)
-├── inkbot/                # Rust Cloudflare Worker: e-ink frame host + Slack @inkbot
-├── inkbot-esp32/          # Rust/ESP-IDF firmware: poll inkbot + signed OTA, or APP=maze, on Waveshare 7.5″
-├── esp32-ble/             # Rust/ESP-IDF firmware: BLE GATT LED control for the iOS experiment
-├── xiao-esp32c3/          # Rust/ESP-IDF firmware: XIAO ESP32C3 phase/power profiling + e-paper refresh BLE telemetry
-├── xiao-otel/             # Go: Cloud Run App Attest OTLP collector for xiao-esp32c3 → Cloud Monitoring
+├── esp32-ble/             # Rust/ESP-IDF firmware: BLE GATT LED control
+├── mcu-lab/               # Rust/ESP-IDF multi-MCU firmware: shared BLE telemetry, BLE GATT OTA & profiling (xiao-esp32c3 + Waveshare 7.5″ epd-maze)
+├── xiao-otel/             # Go: Cloud Run App Attest OTLP collector + ELF/DWARF symbolizer for mcu-lab → Cloud Monitoring & Cloud Trace
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── qr-quine/              # QR symbol that encodes a data URL of itself
@@ -141,11 +139,9 @@ its root. This is the same rule used by deploy and preview workflows.
 | `y/` | no | Rust Cloudflare Worker (one-user microblog); no `index.html` |
 | `wehadababyitsaboy/` | no | Terraform stack (usage-tracking bucket) with a Go client in `go/`; no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
-| `inkbot/` | no | Rust Cloudflare Worker (e-ink frame + Slack); no `index.html` |
-| `inkbot-esp32/` | no | Rust/ESP-IDF ESP32 firmware (espup); no `index.html` |
 | `esp32-ble/` | no | Rust/ESP-IDF ESP32 BLE GATT firmware (espup); no `index.html` |
-| `xiao-esp32c3/` | no | Rust/ESP-IDF XIAO ESP32C3 phase/power profiling + BLE advertisement telemetry firmware; no `index.html` |
-| `xiao-otel/` | no | Go server for Cloud Run (App Attest OTLP collector → Cloud Monitoring + Terraform); no `index.html` |
+| `mcu-lab/` | no | Rust/ESP-IDF multi-MCU firmware (`xiao-esp32c3` + Waveshare 7.5″ `epd-maze`) with BLE telemetry, BLE GATT OTA & profiling; no `index.html` |
+| `xiao-otel/` | no | Go server for Cloud Run (App Attest OTLP collector + ELF/DWARF symbolizer → Cloud Monitoring & Cloud Trace + Terraform); no `index.html` |
 | `git-server/` | no | Rust Cloudflare Worker; no `index.html` |
 | `git-fuse/` | no | Rust CLI (FUSE); no `index.html` |
 | `life-stl/` | no | Rust CLI (STL generator); no `index.html` |
@@ -277,7 +273,7 @@ discovery scripts.
 | `preview.yml` | pull request opened/sync | When a browser app, the posts catalog, or the Pages home-page index changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, Rust, iOS, and macOS apps and ESP32 firmware, the kind end-to-end tests, nescript's example ROMs, the pasta style check, the posts catalog, and the site index, each in its own job. The `test` job fans in their results and is the required check |
-| `inkbot-esp32-publish.yml` | push to `main` touching `inkbot-esp32/**` (or this workflow), manual | Cross-builds inkbot firmware, pushes `ghcr.io/<owner>/playground/inkbot-esp32`, and Cosign-signs the digest (devices poll this for OTA) |
+| `mcu-lab-publish.yml` | push to `main` touching `mcu-lab/**` (or this workflow), manual | Cross-builds `xiao-esp32c3` (RISC-V) and `epd-maze` (Xtensa ESP32) profiling firmware and pushes `.bin` + `.elf.gz` to GHCR tagged by 40-char commit SHA |
 | `apko-frontend-publish.yml` | push to `main` touching `apko-frontend/**` (or this workflow), manual | Tests `apko-frontend`, builds it with ko for `linux/amd64` and `linux/arm64`, pushes `ghcr.io/<owner>/playground/apko-frontend` tagged with the commit and `latest`, and Cosign-signs the digest. apko configurations name the image in `# syntax=` |
 | `ios.yml` | push to `main` | Delivers changed iOS apps to TestFlight when the signing secrets are present. `test.yml` tests them |
 | `macos.yml` | push to `main` | Ships notarized Sparkle updates of changed macOS apps when the secrets are present. `test.yml` tests them |

@@ -53,11 +53,10 @@ enum ExperimentCatalog {
         LiveTranslateExperiment.experiment,
         VoxelWorldExperiment.experiment,
         WigglecamExperiment.experiment,
-        ESP32BLEExperiment.experiment,
         AppAttestExperiment.experiment,
         LayaExperiment.experiment,
         BlatherExperiment.experiment,
         PhoneVRExperiment.experiment,
-        XIAOESP32C3Experiment.experiment,
+        MCULabExperiment.experiment,
     ]
 }

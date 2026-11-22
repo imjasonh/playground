@@ -48,10 +48,6 @@ final class ExperimentCatalogTests: XCTestCase {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "live-translate" })
     }
 
-    func testIncludesESP32BLE() {
-        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "esp32-ble" })
-    }
-
     func testIncludesAppAttest() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "app-attest" })
     }
@@ -68,7 +64,7 @@ final class ExperimentCatalogTests: XCTestCase {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "phone-vr" })
     }
 
-    func testIncludesXIAOESP32C3() {
-        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "xiao-esp32c3" })
+    func testIncludesMCULab() {
+        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "mcu-lab" })
     }
 }
