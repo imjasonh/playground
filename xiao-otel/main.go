@@ -16,6 +16,7 @@ import (
 	_ "github.com/chainguard-dev/clog/gcp/init"
 	"github.com/imjasonh/playground/xiao-otel/internal/attest"
 	"github.com/imjasonh/playground/xiao-otel/internal/otlp"
+	"github.com/imjasonh/playground/xiao-otel/internal/symbolizer"
 	"github.com/sethvargo/go-envconfig"
 	"golang.org/x/oauth2/google"
 )
@@ -25,6 +26,8 @@ type config struct {
 	AppID           string `env:"APP_ID, required"`
 	AllowUnattested bool   `env:"ALLOW_UNATTESTED"`
 	ProjectID       string `env:"GOOGLE_CLOUD_PROJECT"`
+	SymbolGHCRRepo  string `env:"SYMBOL_GHCR_REPO, default=imjasonh/playground/xiao-esp32c3"`
+	SymbolELFPath   string `env:"SYMBOL_ELF_PATH"`
 }
 
 func main() {
@@ -84,6 +87,10 @@ func run(ctx context.Context) error {
 		Verifier:      verifier,
 		Exporter:      exporter,
 		TraceExporter: traceExporter,
+		Symbolizer: &symbolizer.Symbolizer{
+			Repo:         env.SymbolGHCRRepo,
+			LocalELFPath: env.SymbolELFPath,
+		},
 	}
 	httpSrv := &http.Server{
 		Handler:           srv.Routes(),

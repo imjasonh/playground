@@ -13,6 +13,7 @@ import (
 	"github.com/chainguard-dev/clog"
 	"github.com/imjasonh/playground/xiao-otel/internal/attest"
 	"github.com/imjasonh/playground/xiao-otel/internal/otlp"
+	"github.com/imjasonh/playground/xiao-otel/internal/symbolizer"
 )
 
 const maxRequestBodyBytes = 64 * 1024
@@ -22,6 +23,7 @@ type Server struct {
 	Verifier      *attest.Verifier
 	Exporter      otlp.Exporter
 	TraceExporter otlp.TraceExporter
+	Symbolizer    *symbolizer.Symbolizer
 }
 
 // Routes returns the HTTP handler for the service.
@@ -365,6 +367,8 @@ func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resolvedHotspots := s.Symbolizer.EnrichSpans(ctx, spans)
+
 	if s.TraceExporter != nil {
 		if err := s.TraceExporter.ExportSpans(ctx, rec.UserID, rec.DeviceID, spans); err != nil {
 			log.Error("cloud trace export failed", "err", err, "spans", len(spans))
@@ -376,19 +380,24 @@ func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 	log.Info("exported xiao-esp32c3 spans",
 		"spans", len(spans),
 		"trace_id", spans[0].TraceID,
+		"resolved_hotspots", len(resolvedHotspots),
 		"user_id", rec.UserID,
 		"ios_device_id", rec.DeviceID,
 		"counter", rec.Counter,
 		"unattested", rec.Unattested,
 	)
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"acceptedSpans": len(spans),
 		"traceId":       spans[0].TraceID,
 		"userId":        rec.UserID,
 		"deviceId":      rec.DeviceID,
 		"counter":       rec.Counter,
 		"unattested":    rec.Unattested,
-	})
+	}
+	if len(resolvedHotspots) > 0 {
+		resp["resolvedHotspots"] = resolvedHotspots
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func decodeHeaderBase64(s string) ([]byte, error) {

@@ -289,13 +289,21 @@ struct XIAOESP32C3View: View {
                         .font(.caption.bold())
                         .foregroundStyle(.secondary)
                     ForEach(profile.pcSamples.prefix(5)) { sample in
-                        HStack {
-                            Text(sample.pc)
-                                .font(.caption.monospaced())
-                            Spacer()
-                            Text("\(sample.hits) hits")
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(sample.pc)
+                                    .font(.caption.monospaced())
+                                Spacer()
+                                Text("\(sample.hits) hits")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                            if let sym = controller.resolvedHotspots[sample.pc], !sym.displayLabel.isEmpty {
+                                Text(sym.displayLabel)
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
                         }
                     }
                 }

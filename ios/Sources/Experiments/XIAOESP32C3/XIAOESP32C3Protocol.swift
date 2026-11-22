@@ -96,11 +96,27 @@ struct XIAOESP32C3PCSample: Equatable, Identifiable, Decodable {
     var id: String { pc }
 }
 
+/// A server-symbolized PC hotspot returned by `xiao-otel` (`POST /v1/traces`).
+struct XIAOESP32C3ResolvedSymbol: Equatable, Decodable {
+    var function: String?
+    var file: String?
+    var line: Int?
+
+    var displayLabel: String {
+        let fn = function ?? ""
+        if let file, let line, line > 0 {
+            return fn.isEmpty ? "\(file):\(line)" : "\(fn) (\(file):\(line))"
+        }
+        return fn
+    }
+}
+
 /// Detailed per-wake profiling snapshot pulled over BLE GATT (`PROFILE_CHAR_UUID`).
 struct XIAOESP32C3WakeProfile: Equatable, Decodable {
     var version: UInt8
     var wakeCount: UInt32
     var seq: UInt8
+    var elfSha256: String? = nil
     var freeHeapBytes: UInt32
     var minFreeHeapBytes: UInt32
     var stackHighWaterBytes: UInt32
@@ -112,6 +128,7 @@ struct XIAOESP32C3WakeProfile: Equatable, Decodable {
         case version = "v"
         case wakeCount = "wake"
         case seq
+        case elfSha256 = "elf_sha256"
         case freeHeapBytes = "free_heap"
         case minFreeHeapBytes = "min_heap"
         case stackHighWaterBytes = "stack_hw"
@@ -442,6 +459,9 @@ enum XIAOESP32C3Protocol {
         ]
         var rootEvents: [String] = []
         if let profile {
+            if let elfSha = profile.elfSha256, !elfSha.isEmpty {
+                rootAttrs.append(#"{"key":"mcu.elf_sha256","value":{"stringValue":"\#(escapeJSONString(elfSha))"}}"#)
+            }
             rootAttrs.append(#"{"key":"mcu.heap.free_bytes","value":{"intValue":"\#(profile.freeHeapBytes)"}}"#)
             rootAttrs.append(#"{"key":"mcu.heap.min_free_bytes","value":{"intValue":"\#(profile.minFreeHeapBytes)"}}"#)
             rootAttrs.append(#"{"key":"mcu.stack.high_water_bytes","value":{"intValue":"\#(profile.stackHighWaterBytes)"}}"#)

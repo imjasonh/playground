@@ -833,6 +833,7 @@ mod tests {
         let profile = WakeProfile {
             wake_count: 7,
             seq: 7,
+            elf_sha256: "deadbeef01234567".to_string(),
             free_heap_bytes: 210_944,
             min_free_heap_bytes: 198_400,
             stack_high_water_bytes: 3_072,
@@ -851,6 +852,7 @@ mod tests {
         };
         let json = format_wake_profile_json(&profile);
         assert!(json.contains(r#""wake":7"#));
+        assert!(json.contains(r#""elf_sha256":"deadbeef01234567""#));
         assert!(json.contains(r#""free_heap":210944"#));
         assert!(json.contains(r#""min_heap":198400"#));
         assert!(json.contains(r#""stack_hw":3072"#));
@@ -979,6 +981,7 @@ pub struct PcSample {
 pub struct WakeProfile {
     pub wake_count: u32,
     pub seq: u8,
+    pub elf_sha256: String,
     pub free_heap_bytes: u32,
     pub min_free_heap_bytes: u32,
     pub stack_high_water_bytes: u32,
@@ -1021,15 +1024,20 @@ impl SpanRecorder {
 
 /// Serialize a [`WakeProfile`] as compact JSON for BLE GATT transfer (`PROFILE_CHAR_UUID`).
 pub fn format_wake_profile_json(p: &WakeProfile) -> String {
-    let mut out = String::with_capacity(384);
+    let mut out = String::with_capacity(448);
     out.push_str(&format!(
-        r#"{{"v":1,"wake":{},"seq":{},"free_heap":{},"min_heap":{},"stack_hw":{},"cycles":{},"spans":["#,
-        p.wake_count,
-        p.seq,
-        p.free_heap_bytes,
-        p.min_free_heap_bytes,
-        p.stack_high_water_bytes,
-        p.cpu_cycles,
+        r#"{{"v":1,"wake":{},"seq":{},"#,
+        p.wake_count, p.seq
+    ));
+    if !p.elf_sha256.is_empty() {
+        out.push_str(&format!(
+            r#""elf_sha256":"{}","#,
+            escape_json_str(&p.elf_sha256)
+        ));
+    }
+    out.push_str(&format!(
+        r#""free_heap":{},"min_heap":{},"stack_hw":{},"cycles":{},"spans":["#,
+        p.free_heap_bytes, p.min_free_heap_bytes, p.stack_high_water_bytes, p.cpu_cycles,
     ));
     for (idx, sp) in p.spans.iter().enumerate() {
         if idx > 0 {

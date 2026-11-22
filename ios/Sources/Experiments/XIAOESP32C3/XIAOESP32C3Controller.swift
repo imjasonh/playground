@@ -49,6 +49,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     @Published var useAppAttest: Bool
     @Published var collectDetailedProfile: Bool
     @Published var latestTraceId: String?
+    @Published var resolvedHotspots: [String: XIAOESP32C3ResolvedSymbol] = [:]
     @Published var forwardedCount = 0
     @Published var lastForwardStatus = "Not forwarded yet."
     @Published var statusMessage = "Flash xiao-esp32c3 or inject a simulated wake burst."
@@ -621,6 +622,14 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
                 )
                 self.forwardedCount += 1
                 if (200..<300).contains(traceResult.status) {
+                    if let body = traceResult.responseBody,
+                       let decoded = try? JSONDecoder().decode(TraceIngestResponse.self, from: body),
+                       let hotspots = decoded.resolvedHotspots
+                    {
+                        for (pc, sym) in hotspots {
+                            self.resolvedHotspots[pc] = sym
+                        }
+                    }
                     self.lastForwardStatus = shouldAttest
                         ? "Exported wake #\(wakeNumber) metrics + trace (HTTP \(metricsResult.status), trace \(traceId.prefix(8))…)."
                         : "Exported wake #\(wakeNumber) metrics + trace (HTTP \(metricsResult.status))."
@@ -670,9 +679,14 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         return result.status
     }
 
+    private struct TraceIngestResponse: Decodable {
+        var resolvedHotspots: [String: XIAOESP32C3ResolvedSymbol]?
+    }
+
     private struct OTLPPostResult {
         let status: Int
         let errorMessage: String?
+        let responseBody: Data?
     }
 
     private func postOTLP(
@@ -780,7 +794,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         {
             errMsg = msg
         }
-        return OTLPPostResult(status: code, errorMessage: errMsg)
+        return OTLPPostResult(status: code, errorMessage: errMsg, responseBody: respData)
     }
 
     private func clearAttestationState() {
