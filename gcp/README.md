@@ -70,3 +70,61 @@ Chrome Web Store Developer Dashboard. Add the repository secret
 environment). `chrome-extension.yml` then mints a
 `chromewebstore`-scoped access token through this pool instead of a
 stored OAuth refresh token.
+
+## Remote MCP servers (Cloud Trace, Monitoring, Logging)
+
+Google Cloud automatically exposes managed remote MCP endpoints
+(`https://cloudtrace.googleapis.com/mcp`,
+`https://monitoring.googleapis.com/mcp`,
+`https://logging.googleapis.com/mcp`) whenever those APIs are enabled
+on the project (app stacks such as `xiao-otel` enable them).
+
+To allow your Google account (or an agent service account) to query
+those remote MCP servers, add it to `mcp_users` in
+`terraform/terraform.tfvars` and run `tofu apply`:
+
+```hcl
+mcp_users = ["user:you@example.com"]
+```
+
+That grants `roles/mcp.toolUser` (required to call any Google-managed
+MCP tool) plus read-only observability roles (`roles/cloudtrace.user`,
+`roles/monitoring.viewer`, `roles/logging.viewer`) and
+`roles/serviceusage.serviceUsageConsumer` (required for the
+`X-Goog-User-Project` quota header).
+
+Then authenticate ADC locally and add the endpoints to Antigravity's
+`~/.gemini/config/mcp_config.json`:
+
+```bash
+gcloud auth application-default login
+gcloud auth application-default set-quota-project PROJECT_ID
+```
+
+```json
+{
+  "mcpServers": {
+    "gcp-trace": {
+      "serverUrl": "https://cloudtrace.googleapis.com/mcp",
+      "authProviderType": "google_credentials",
+      "headers": {
+        "X-Goog-User-Project": "PROJECT_ID"
+      }
+    },
+    "gcp-monitoring": {
+      "serverUrl": "https://monitoring.googleapis.com/mcp",
+      "authProviderType": "google_credentials",
+      "headers": {
+        "X-Goog-User-Project": "PROJECT_ID"
+      }
+    },
+    "gcp-logging": {
+      "serverUrl": "https://logging.googleapis.com/mcp",
+      "authProviderType": "google_credentials",
+      "headers": {
+        "X-Goog-User-Project": "PROJECT_ID"
+      }
+    }
+  }
+}
+```

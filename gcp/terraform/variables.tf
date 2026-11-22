@@ -139,3 +139,14 @@ variable "state_bucket" {
     error_message = "state_bucket must be a Cloud Storage bucket name."
   }
 }
+
+variable "mcp_users" {
+  description = "IAM principals (such as user:you@example.com) allowed to call Google Cloud managed remote MCP servers (Cloud Trace, Cloud Monitoring, Cloud Logging) in this project."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for m in var.mcp_users : can(regex("^(user|group|serviceAccount):[^\\s]+@[^\\s]+$", m))])
+    error_message = "Each mcp_users entry must be a user:, group:, or serviceAccount: IAM member."
+  }
+}

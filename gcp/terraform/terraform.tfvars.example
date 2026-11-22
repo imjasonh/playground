@@ -10,3 +10,8 @@ github_repository_owner_id = "210737"
 # gets read access to this bucket.
 #   tofu init -backend-config="bucket=BUCKET"
 state_bucket = "BUCKET"
+
+# Optional: IAM principals allowed to call Google Cloud managed remote MCP
+# servers (Cloud Trace, Cloud Monitoring, Cloud Logging) from Antigravity or
+# another MCP client.
+# mcp_users = ["user:you@example.com"]

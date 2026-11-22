@@ -252,3 +252,32 @@ resource "google_storage_bucket_iam_member" "github_plan_state" {
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.github_plan.email}"
 }
+
+locals {
+  # Gate 1 (roles/mcp.toolUser) allows invoking Google-managed remote MCP
+  # endpoints; Gate 2 grants read-only access to traces, metrics, and logs,
+  # plus Service Usage Consumer for the X-Goog-User-Project quota header.
+  mcp_observability_roles = [
+    "roles/mcp.toolUser",
+    "roles/cloudtrace.user",
+    "roles/logging.viewer",
+    "roles/monitoring.viewer",
+    "roles/serviceusage.serviceUsageConsumer",
+  ]
+
+  mcp_user_role_pairs = {
+    for pair in setproduct(var.mcp_users, local.mcp_observability_roles) :
+    "${pair[0]}|${pair[1]}" => {
+      member = pair[0]
+      role   = pair[1]
+    }
+  }
+}
+
+resource "google_project_iam_member" "mcp_users" {
+  for_each = local.mcp_user_role_pairs
+
+  project = var.project_id
+  role    = each.value.role
+  member  = each.value.member
+}
