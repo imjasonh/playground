@@ -55,6 +55,9 @@ pub const OTA_DATA_UUID: &str = "beb5483e-36e1-4688-b7f5-ea07361bc302";
 /// Read + notify characteristic: XIAO → iPhone OTA status line (`IDLE`, `READY`, `PROGRESS`, `OK`, `ERR`).
 pub const OTA_STATUS_UUID: &str = "1a3c0001-36e1-4688-b7f5-ea07361bc303";
 
+/// Read characteristic: XIAO → iPhone latest wake sub-phase spans & profiling JSON.
+pub const PROFILE_CHAR_UUID: &str = "1a3c0002-36e1-4688-b7f5-ea07361bc303";
+
 /// Size of each OTA partition slot (`ota_0` / `ota_1`) in `partitions.csv` (1.9375 MiB).
 pub const OTA_SLOT_BYTES: u32 = 0x1F_0000;
 
@@ -819,4 +822,239 @@ mod tests {
             assert_eq!(parse_ota_status(&line), Some(st), "{line}");
         }
     }
+
+    #[test]
+    fn wake_profile_recorder_and_json_format() {
+        let mut rec = SpanRecorder::new(10_000);
+        rec.record("boot.init", "wake", 10_000, 10_450);
+        rec.record("epd.spi_transfer", "epd_refresh", 12_000, 14_800);
+        rec.record("epd.busy_wait", "epd_refresh", 14_800, 46_800);
+
+        let profile = WakeProfile {
+            wake_count: 7,
+            seq: 7,
+            git_sha: "a".repeat(40),
+            free_heap_bytes: 210_944,
+            min_free_heap_bytes: 198_400,
+            stack_high_water_bytes: 3_072,
+            cpu_cycles: 7_420_000,
+            spans: rec.into_spans(),
+            pc_samples: vec![
+                PcSample {
+                    pc: 0x4200_1a40,
+                    hits: 14,
+                },
+                PcSample {
+                    pc: 0x4200_3c18,
+                    hits: 5,
+                },
+            ],
+        };
+        let json = format_wake_profile_json(&profile);
+        assert!(json.contains(r#""wake":7"#));
+        assert!(json.contains(&format!(r#""git_sha":"{}""#, "a".repeat(40))));
+        assert!(json.contains(r#""free_heap":210944"#));
+        assert!(json.contains(r#""min_heap":198400"#));
+        assert!(json.contains(r#""stack_hw":3072"#));
+        assert!(json.contains(r#""cycles":7420000"#));
+        assert!(json.contains(
+            r#""name":"epd.busy_wait","parent":"epd_refresh","start_us":4800,"dur_us":32000"#
+        ));
+        assert!(json.contains(r#""pc":"0x42001a40","hits":14"#));
+    }
+
+    #[test]
+    fn pc_histogram_filters_invalid_addrs_and_sorts_hotspots() {
+        assert!(is_esp32c3_code_addr(0x4200_1a40)); // Flash IROM
+        assert!(is_esp32c3_code_addr(0x4038_0100)); // IRAM
+        assert!(is_esp32c3_code_addr(0x4000_0400)); // ROM
+        assert!(!is_esp32c3_code_addr(0x0000_0000));
+        assert!(!is_esp32c3_code_addr(0x3FC8_1000)); // DRAM (not executable)
+
+        let mut hist = PcHistogram::new();
+        hist.record(0x3FC8_1000); // ignored
+        hist.record(0x4200_3c18);
+        hist.record(0x4200_1a40);
+        hist.record(0x4200_1a40);
+        hist.record(0x4200_1a40);
+        hist.record(0x4200_3c18);
+
+        let top = hist.top_samples(2);
+        assert_eq!(
+            top,
+            vec![
+                PcSample {
+                    pc: 0x4200_1a40,
+                    hits: 3,
+                },
+                PcSample {
+                    pc: 0x4200_3c18,
+                    hits: 2,
+                },
+            ]
+        );
+    }
+}
+
+/// Returns true if `pc` lies inside ESP32-C3 executable instruction memory
+/// (Flash XIP IROM, IRAM, or internal ROM).
+pub const fn is_esp32c3_code_addr(pc: u32) -> bool {
+    (pc >= 0x4200_0000 && pc < 0x4280_0000)
+        || (pc >= 0x4037_C000 && pc < 0x403E_0000)
+        || (pc >= 0x4000_0000 && pc < 0x4006_0000)
+}
+
+/// Fixed-size zero-allocation PC sample histogram used by the 1 kHz profiler timer.
+#[derive(Debug, Clone)]
+pub struct PcHistogram {
+    pcs: [u32; 64],
+    hits: [u16; 64],
+    len: usize,
+}
+
+impl Default for PcHistogram {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PcHistogram {
+    pub const fn new() -> Self {
+        Self {
+            pcs: [0; 64],
+            hits: [0; 64],
+            len: 0,
+        }
+    }
+
+    /// Record a sampled PC address (aligned to 4 bytes). Ignores non-code addresses.
+    pub fn record(&mut self, pc: u32) {
+        if !is_esp32c3_code_addr(pc) {
+            return;
+        }
+        let aligned = pc & !0x3;
+        for i in 0..self.len {
+            if self.pcs[i] == aligned {
+                self.hits[i] = self.hits[i].saturating_add(1);
+                return;
+            }
+        }
+        if self.len < self.pcs.len() {
+            self.pcs[self.len] = aligned;
+            self.hits[self.len] = 1;
+            self.len += 1;
+        }
+    }
+
+    /// Return up to `limit` top hotspots sorted descending by hit count.
+    pub fn top_samples(&self, limit: usize) -> Vec<PcSample> {
+        let mut out: Vec<PcSample> = (0..self.len)
+            .map(|i| PcSample {
+                pc: self.pcs[i],
+                hits: self.hits[i],
+            })
+            .collect();
+        out.sort_by(|a, b| b.hits.cmp(&a.hits).then_with(|| a.pc.cmp(&b.pc)));
+        out.truncate(limit);
+        out
+    }
+}
+
+/// A single sub-phase timing span recorded on the MCU relative to wake start.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileSpan {
+    pub name: String,
+    pub parent: String,
+    pub start_us: u32,
+    pub duration_us: u32,
+}
+
+/// A sampled program counter hotspot (`pc` address + sample hit count).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PcSample {
+    pub pc: u32,
+    pub hits: u16,
+}
+
+/// Detailed per-wake profiling snapshot served over BLE GATT (`PROFILE_CHAR_UUID`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WakeProfile {
+    pub wake_count: u32,
+    pub seq: u8,
+    pub git_sha: String,
+    pub free_heap_bytes: u32,
+    pub min_free_heap_bytes: u32,
+    pub stack_high_water_bytes: u32,
+    pub cpu_cycles: u64,
+    pub spans: Vec<ProfileSpan>,
+    pub pc_samples: Vec<PcSample>,
+}
+
+/// Lightweight microsecond span recorder anchored to the start of a wake cycle.
+#[derive(Debug, Default)]
+pub struct SpanRecorder {
+    wake_start_us: u64,
+    spans: Vec<ProfileSpan>,
+}
+
+impl SpanRecorder {
+    pub fn new(wake_start_us: u64) -> Self {
+        Self {
+            wake_start_us,
+            spans: Vec::with_capacity(12),
+        }
+    }
+
+    pub fn record(&mut self, name: &str, parent: &str, start_us: u64, end_us: u64) {
+        let rel_start =
+            u32::try_from(start_us.saturating_sub(self.wake_start_us)).unwrap_or(u32::MAX);
+        let dur = u32::try_from(end_us.saturating_sub(start_us)).unwrap_or(u32::MAX);
+        self.spans.push(ProfileSpan {
+            name: name.to_string(),
+            parent: parent.to_string(),
+            start_us: rel_start,
+            duration_us: dur,
+        });
+    }
+
+    pub fn into_spans(self) -> Vec<ProfileSpan> {
+        self.spans
+    }
+}
+
+/// Serialize a [`WakeProfile`] as compact JSON for BLE GATT transfer (`PROFILE_CHAR_UUID`).
+pub fn format_wake_profile_json(p: &WakeProfile) -> String {
+    let mut out = String::with_capacity(448);
+    out.push_str(&format!(
+        r#"{{"v":1,"wake":{},"seq":{},"#,
+        p.wake_count, p.seq
+    ));
+    if !p.git_sha.is_empty() {
+        out.push_str(&format!(r#""git_sha":"{}","#, escape_json_str(&p.git_sha)));
+    }
+    out.push_str(&format!(
+        r#""free_heap":{},"min_heap":{},"stack_hw":{},"cycles":{},"spans":["#,
+        p.free_heap_bytes, p.min_free_heap_bytes, p.stack_high_water_bytes, p.cpu_cycles,
+    ));
+    for (idx, sp) in p.spans.iter().enumerate() {
+        if idx > 0 {
+            out.push(',');
+        }
+        out.push_str(&format!(
+            r#"{{"name":"{}","parent":"{}","start_us":{},"dur_us":{}}}"#,
+            escape_json_str(&sp.name),
+            escape_json_str(&sp.parent),
+            sp.start_us,
+            sp.duration_us,
+        ));
+    }
+    out.push_str(r#"],"pcs":["#);
+    for (idx, s) in p.pc_samples.iter().enumerate() {
+        if idx > 0 {
+            out.push(',');
+        }
+        out.push_str(&format!(r#"{{"pc":"0x{:08x}","hits":{}}}"#, s.pc, s.hits));
+    }
+    out.push_str("]}");
+    out
 }

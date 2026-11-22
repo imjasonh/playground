@@ -22,6 +22,11 @@ required-features = ["firmware"]
 default = []
 # Device firmware (esp-idf HAL + NimBLE). Host `cargo test` leaves this off.
 firmware = []
+# Enable fine-grained sub-phase spans, heap/stack/cycle telemetry, 1 kHz PC
+# hotspot sampling, and the BLE GATT PROFILE_CHAR_UUID endpoint. Debug builds
+# enable this automatically; production `--release --features firmware` strips
+# profiling to 0 bytes / 0 µs.
+profiling = []
 
 [target.'cfg(target_os = "espidf")'.dependencies]
 anyhow = "1"

@@ -257,6 +257,113 @@ func TestUnattestedSimulatorMetricsFlowAndCloudMonitoringExport(t *testing.T) {
 	}
 }
 
+func TestTracesEndpointAndServerSideMetricsSpans(t *testing.T) {
+	var traceRequests [][]byte
+	ctServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var buf bytes.Buffer
+		_, _ = buf.ReadFrom(r.Body)
+		traceRequests = append(traceRequests, buf.Bytes())
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer ctServer.Close()
+
+	verifier, err := attest.NewVerifier(testAppID, true, attest.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	traceExp := &otlp.CloudTraceExporter{
+		ProjectID:  "demo-gcp-proj",
+		BaseURL:    ctServer.URL,
+		HTTPClient: ctServer.Client(),
+	}
+	srv := &Server{
+		Verifier:      verifier,
+		TraceExporter: traceExp,
+	}
+	ts := httptest.NewServer(srv.Routes())
+	defer ts.Close()
+
+	// Register unattested simulator device.
+	chal := fetchChallenge(t, ts.URL)
+	regBody, _ := json.Marshal(map[string]any{
+		"clientData": `{"challenge":"` + chal + `","deviceId":"sim-trace","userId":"sim-user"}`,
+	})
+	if resp := postJSON(t, ts.URL+"/v1/unattested-token", regBody, nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("unattested register status=%d", resp.StatusCode)
+	}
+
+	// 1. POST /v1/traces with a wake waterfall.
+	sampleTraceJSON := `{
+		"resourceSpans": [{
+			"resource": {"attributes": [
+				{"key": "service.name", "value": {"stringValue": "xiao-esp32c3"}},
+				{"key": "device.id", "value": {"stringValue": "xiao-c3-01"}}
+			]},
+			"scopeSpans": [{
+				"spans": [{
+					"traceId": "0123456789abcdef0123456789abcdef",
+					"spanId": "1111111111111111",
+					"name": "xiao.wake",
+					"startTimeUnixNano": "1700000000000000000",
+					"endTimeUnixNano": "1700000000478000000",
+					"attributes": [
+						{"key": "mcu.wake.count", "value": {"intValue": "42"}},
+						{"key": "mcu.heap.free_bytes", "value": {"intValue": "210944"}}
+					],
+					"events": [{
+						"timeUnixNano": "1700000000100000000",
+						"name": "pc.hotspot",
+						"attributes": [{"key": "pc", "value": {"stringValue": "0x42001234"}}]
+					}]
+				}, {
+					"traceId": "0123456789abcdef0123456789abcdef",
+					"spanId": "2222222222222222",
+					"parentSpanId": "1111111111111111",
+					"name": "epd.busy_wait",
+					"startTimeUnixNano": "1700000000005000000",
+					"endTimeUnixNano": "1700000000325000000"
+				}]
+			}]
+		}]
+	}`
+	tChal := fetchChallenge(t, ts.URL)
+	tSum := sha256.Sum256([]byte(sampleTraceJSON))
+	tCD := `{"action":"traces","challenge":"` + tChal + `","payload":"` + hex.EncodeToString(tSum[:]) + `"}`
+	tResp := postJSON(t, ts.URL+"/v1/traces", []byte(sampleTraceJSON), map[string]string{
+		"X-Apple-App-Attest-Key-Id":      "unattested:sim-trace",
+		"X-Apple-App-Attest-Client-Data": base64.StdEncoding.EncodeToString([]byte(tCD)),
+	})
+	if tResp.StatusCode != http.StatusOK {
+		t.Fatalf("traces status=%d", tResp.StatusCode)
+	}
+	if len(traceRequests) != 1 {
+		t.Fatalf("expected 1 Cloud Trace batchWrite call, got %d", len(traceRequests))
+	}
+	if !bytes.Contains(traceRequests[0], []byte(`"epd.busy_wait"`)) || !bytes.Contains(traceRequests[0], []byte(`"pc.hotspot"`)) {
+		t.Fatalf("Cloud Trace payload missing expected spans/events: %s", string(traceRequests[0]))
+	}
+
+	// 2. POST /v1/metrics with W3C traceparent emits server-side spans under the same trace.
+	mChal := fetchChallenge(t, ts.URL)
+	mSum := sha256.Sum256([]byte(sampleOTLPJSON))
+	mCD := `{"action":"metrics","challenge":"` + mChal + `","payload":"` + hex.EncodeToString(mSum[:]) + `"}`
+	mResp := postJSON(t, ts.URL+"/v1/metrics", []byte(sampleOTLPJSON), map[string]string{
+		"X-Apple-App-Attest-Key-Id":      "unattested:sim-trace",
+		"X-Apple-App-Attest-Client-Data": mCD,
+		"traceparent":                    "00-0123456789abcdef0123456789abcdef-1111111111111111-01",
+	})
+	if mResp.StatusCode != http.StatusOK {
+		t.Fatalf("metrics with traceparent status=%d", mResp.StatusCode)
+	}
+	if len(traceRequests) != 2 {
+		t.Fatalf("expected 2 Cloud Trace batchWrite calls, got %d", len(traceRequests))
+	}
+	if !bytes.Contains(traceRequests[1], []byte(`"xiao-otel.app_attest.verify"`)) {
+		t.Fatalf("server-side spans missing app_attest.verify: %s", string(traceRequests[1]))
+	}
+}
+
 func fetchChallenge(t *testing.T, baseURL string) string {
 	t.Helper()
 	resp := postJSON(t, baseURL+"/v1/challenge", []byte(`{}`), nil)

@@ -13,14 +13,17 @@ import (
 	"github.com/chainguard-dev/clog"
 	"github.com/imjasonh/playground/xiao-otel/internal/attest"
 	"github.com/imjasonh/playground/xiao-otel/internal/otlp"
+	"github.com/imjasonh/playground/xiao-otel/internal/symbolizer"
 )
 
 const maxRequestBodyBytes = 64 * 1024
 
-// Server handles App Attest registration and OTLP metric ingestion.
+// Server handles App Attest registration and OTLP metric/trace ingestion.
 type Server struct {
-	Verifier *attest.Verifier
-	Exporter otlp.Exporter
+	Verifier      *attest.Verifier
+	Exporter      otlp.Exporter
+	TraceExporter otlp.TraceExporter
+	Symbolizer    *symbolizer.Symbolizer
 }
 
 // Routes returns the HTTP handler for the service.
@@ -33,6 +36,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/unattested-token", s.handleUnattestedToken)
 	mux.HandleFunc("POST /v1/whoami", s.handleWhoami)
 	mux.HandleFunc("POST /v1/metrics", s.handleMetrics)
+	mux.HandleFunc("POST /v1/traces", s.handleTraces)
 	return mux
 }
 
@@ -171,6 +175,7 @@ func (s *Server) handleWhoami(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := clog.FromContext(ctx)
+	reqStart := s.Verifier.Now()
 	body, err := readBody(w, r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -224,7 +229,9 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	verifyStart := s.Verifier.Now()
 	rec, err := s.Verifier.VerifyAssertion(keyID, assertionB64, cdBytes, otlpBytes, attest.ActionMetrics)
+	verifyEnd := s.Verifier.Now()
 	if err != nil {
 		log.Warn("app attest verification failed", "err", err)
 		writeError(w, http.StatusUnauthorized, err)
@@ -237,11 +244,64 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	exportStart := s.Verifier.Now()
 	if s.Exporter != nil {
 		if err := s.Exporter.Export(ctx, rec.UserID, rec.DeviceID, points); err != nil {
 			log.Error("cloud monitoring export failed", "err", err, "points", len(points))
 			writeError(w, http.StatusBadGateway, err)
 			return
+		}
+	}
+	exportEnd := s.Verifier.Now()
+
+	if s.TraceExporter != nil {
+		if traceID, parentSpanID, ok := otlp.ParseTraceparent(r.Header.Get("traceparent")); ok {
+			reqSpanID := otlp.NewSpanID()
+			serverSpans := []otlp.Span{
+				{
+					TraceID:      traceID,
+					SpanID:       reqSpanID,
+					ParentSpanID: parentSpanID,
+					Name:         "xiao-otel.metrics",
+					Service:      "xiao-otel",
+					DeviceID:     rec.DeviceID,
+					StartTime:    reqStart,
+					EndTime:      exportEnd,
+					Attributes: map[string]any{
+						"otlp.points": int64(len(points)),
+						"unattested":  rec.Unattested,
+					},
+				},
+				{
+					TraceID:      traceID,
+					SpanID:       otlp.NewSpanID(),
+					ParentSpanID: reqSpanID,
+					Name:         "xiao-otel.app_attest.verify",
+					Service:      "xiao-otel",
+					DeviceID:     rec.DeviceID,
+					StartTime:    verifyStart,
+					EndTime:      verifyEnd,
+					Attributes: map[string]any{
+						"attest.counter": int64(rec.Counter),
+					},
+				},
+				{
+					TraceID:      traceID,
+					SpanID:       otlp.NewSpanID(),
+					ParentSpanID: reqSpanID,
+					Name:         "xiao-otel.cloud_monitoring.export",
+					Service:      "xiao-otel",
+					DeviceID:     rec.DeviceID,
+					StartTime:    exportStart,
+					EndTime:      exportEnd,
+					Attributes: map[string]any{
+						"otlp.points": int64(len(points)),
+					},
+				},
+			}
+			if err := s.TraceExporter.ExportSpans(ctx, rec.UserID, rec.DeviceID, serverSpans); err != nil {
+				log.Warn("failed to export server-side metrics spans", "err", err)
+			}
 		}
 	}
 
@@ -259,6 +319,89 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		"counter":        rec.Counter,
 		"unattested":     rec.Unattested,
 	})
+}
+
+// handleTraces accepts an App Attest-authorized OTLP/HTTP v1 JSON traces request
+// and exports the spans to Google Cloud Trace.
+func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	log := clog.FromContext(ctx)
+	body, err := readBody(w, r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	keyID := strings.TrimSpace(r.Header.Get("X-Apple-App-Attest-Key-Id"))
+	if keyID == "" {
+		writeError(w, http.StatusUnauthorized, errors.New("App Attest authorization required"))
+		return
+	}
+	assertionB64 := strings.TrimSpace(r.Header.Get("X-Apple-App-Attest-Assertion"))
+	hdrCD := strings.TrimSpace(r.Header.Get("X-Apple-App-Attest-Client-Data"))
+	if hdrCD == "" {
+		writeError(w, http.StatusUnauthorized, errors.New("missing X-Apple-App-Attest-Client-Data header"))
+		return
+	}
+	var cdBytes []byte
+	if strings.HasPrefix(hdrCD, "{") {
+		cdBytes = []byte(hdrCD)
+	} else {
+		cdBytes, err = decodeHeaderBase64(hdrCD)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, errors.New("invalid X-Apple-App-Attest-Client-Data encoding"))
+			return
+		}
+	}
+
+	rec, err := s.Verifier.VerifyAssertion(keyID, assertionB64, cdBytes, body, attest.ActionTraces)
+	if err != nil {
+		log.Warn("app attest trace verification failed", "err", err)
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+
+	spans, err := otlp.ParseTraces(body, s.Verifier.Now())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	resolvedHotspots, err := s.Symbolizer.EnrichSpans(ctx, spans)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if s.TraceExporter != nil {
+		if err := s.TraceExporter.ExportSpans(ctx, rec.UserID, rec.DeviceID, spans); err != nil {
+			log.Error("cloud trace export failed", "err", err, "spans", len(spans))
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+	}
+
+	log.Info("exported xiao-esp32c3 spans",
+		"spans", len(spans),
+		"trace_id", spans[0].TraceID,
+		"resolved_hotspots", len(resolvedHotspots),
+		"user_id", rec.UserID,
+		"ios_device_id", rec.DeviceID,
+		"counter", rec.Counter,
+		"unattested", rec.Unattested,
+	)
+	resp := map[string]any{
+		"acceptedSpans": len(spans),
+		"traceId":       spans[0].TraceID,
+		"userId":        rec.UserID,
+		"deviceId":      rec.DeviceID,
+		"counter":       rec.Counter,
+		"unattested":    rec.Unattested,
+	}
+	if len(resolvedHotspots) > 0 {
+		resp["resolvedHotspots"] = resolvedHotspots
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func decodeHeaderBase64(s string) ([]byte, error) {

@@ -16,6 +16,7 @@ import (
 	_ "github.com/chainguard-dev/clog/gcp/init"
 	"github.com/imjasonh/playground/xiao-otel/internal/attest"
 	"github.com/imjasonh/playground/xiao-otel/internal/otlp"
+	"github.com/imjasonh/playground/xiao-otel/internal/symbolizer"
 	"github.com/sethvargo/go-envconfig"
 	"golang.org/x/oauth2/google"
 )
@@ -25,6 +26,8 @@ type config struct {
 	AppID           string `env:"APP_ID, required"`
 	AllowUnattested bool   `env:"ALLOW_UNATTESTED"`
 	ProjectID       string `env:"GOOGLE_CLOUD_PROJECT"`
+	SymbolGHCRRepo  string `env:"SYMBOL_GHCR_REPO, default=imjasonh/playground/xiao-esp32c3"`
+	SymbolELFPath   string `env:"SYMBOL_ELF_PATH"`
 }
 
 func main() {
@@ -58,6 +61,7 @@ func run(ctx context.Context) error {
 	}
 
 	var exporter otlp.Exporter
+	var traceExporter otlp.TraceExporter
 	if projectID != "" {
 		if ts, err := google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/monitoring.write"); err != nil {
 			slog.WarnContext(ctx, "Cloud Monitoring token source unavailable; running in dry-run mode", "err", err)
@@ -68,11 +72,25 @@ func run(ctx context.Context) error {
 			}
 			slog.InfoContext(ctx, "Cloud Monitoring export enabled", "project", projectID)
 		}
+		if ts, err := google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/trace.append"); err != nil {
+			slog.WarnContext(ctx, "Cloud Trace token source unavailable; trace export disabled", "err", err)
+		} else {
+			traceExporter = &otlp.CloudTraceExporter{
+				ProjectID:   projectID,
+				TokenSource: ts,
+			}
+			slog.InfoContext(ctx, "Cloud Trace export enabled", "project", projectID)
+		}
 	}
 
 	srv := &Server{
-		Verifier: verifier,
-		Exporter: exporter,
+		Verifier:      verifier,
+		Exporter:      exporter,
+		TraceExporter: traceExporter,
+		Symbolizer: &symbolizer.Symbolizer{
+			Repo:         env.SymbolGHCRRepo,
+			LocalELFPath: env.SymbolELFPath,
+		},
 	}
 	httpSrv := &http.Server{
 		Handler:           srv.Routes(),

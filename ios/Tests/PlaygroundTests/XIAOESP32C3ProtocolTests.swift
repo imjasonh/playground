@@ -342,6 +342,105 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         XCTAssertEqual(keys.attestedKeys, ["key-1", "key-2"])
     }
 
+    func testWakeProfileDecodeAndOTLPTraceJSON() throws {
+        let rawProfile = """
+        {"v":1,"wake":7,"seq":7,"free_heap":210944,"min_heap":198400,"stack_hw":3072,"cycles":7420000,"spans":[{"name":"boot.init","parent":"wake","start_us":0,"dur_us":420},{"name":"epd.busy_wait","parent":"epd_refresh","start_us":4800,"dur_us":32000}],"pcs":[{"pc":"0x42001a40","hits":14}]}
+        """
+        let profile = try XCTUnwrap(XIAOESP32C3Protocol.decodeWakeProfile(Data(rawProfile.utf8)))
+        XCTAssertEqual(profile.wakeCount, 7)
+        XCTAssertEqual(profile.freeHeapBytes, 210_944)
+        XCTAssertEqual(profile.spans.count, 2)
+        XCTAssertEqual(profile.pcSamples.first?.pc, "0x42001a40")
+
+        let metrics = XIAOESP32C3Metrics(
+            seq: 7,
+            flags: XIAOESP32C3Protocol.flagDeepSleepWake | XIAOESP32C3Protocol.flagEpdPartial,
+            wakeCount: 7,
+            sensorUs: 1_200,
+            computeUs: 3_400,
+            epdRefreshUs: 320_000,
+            radioUs: 150_000,
+            batteryMv: 3_910
+        )
+        let metricsJSON = XIAOESP32C3Protocol.formatOTLPJSON(
+            deviceId: "xiao-c3-01",
+            metrics: metrics,
+            rssi: -54,
+            timeUnixNano: 1_700_000_000_000_000_000,
+            profile: profile
+        )
+        XCTAssertTrue(metricsJSON.contains(#""name":"mcu.heap.free_bytes""#))
+        XCTAssertTrue(metricsJSON.contains(#""name":"mcu.cpu.cycles""#))
+        XCTAssertNotNil(try JSONSerialization.jsonObject(with: Data(metricsJSON.utf8)) as? [String: Any])
+
+        let traceJSON = XIAOESP32C3Protocol.formatOTLPTraceJSON(
+            traceId: "0123456789abcdef0123456789abcdef",
+            rootSpanId: "1111111111111111",
+            deviceId: "xiao-c3-01",
+            metrics: metrics,
+            rssi: -54,
+            timeUnixNano: 1_700_000_000_000_000_000,
+            profile: profile
+        )
+        let parsed = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(traceJSON.utf8)) as? [String: Any])
+        XCTAssertNotNil(parsed["resourceSpans"])
+        XCTAssertTrue(traceJSON.contains(#""name":"xiao.wake #7""#))
+        XCTAssertTrue(traceJSON.contains(#""name":"epd.busy_wait""#))
+        XCTAssertTrue(traceJSON.contains(#""name":"pc.hotspot""#))
+        XCTAssertTrue(traceJSON.contains(#""0x42001a40""#))
+    }
+
+    @MainActor
+    func testPostTracesWithAppAttest() async throws {
+        let suite = "xiao-esp32c3.traces.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = AppAttestMemoryStore(deviceId: "dev-t", userId: "user-t")
+        let keys = FakeXIAOAttestKeys(generatedKeys: ["trace-key-1"])
+        let http = FakeXIAOHTTP()
+        let challengeCounter = LockedInt()
+        http.onRequest = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/v1/challenge") {
+                let n = challengeCounter.next()
+                return try Self.jsonResponse(#"{"challenge":"c\#(n)","expiresAt":1700000000}"#, status: 200)
+            }
+            if path.hasSuffix("/v1/token") {
+                return try Self.jsonResponse(
+                    #"{"userId":"user-t","deviceId":"dev-t","keyId":"trace-key-1","unattested":false,"counter":0}"#,
+                    status: 200
+                )
+            }
+            if path.hasSuffix("/v1/traces") {
+                XCTAssertEqual(request.value(forHTTPHeaderField: "X-Apple-App-Attest-Key-Id"), "trace-key-1")
+                let cdB64 = try XCTUnwrap(request.value(forHTTPHeaderField: "X-Apple-App-Attest-Client-Data"))
+                let cdData = try XCTUnwrap(Data(base64Encoded: cdB64))
+                let cdObj = try JSONSerialization.jsonObject(with: cdData) as? [String: Any]
+                XCTAssertEqual(cdObj?["action"] as? String, "traces")
+                return try Self.jsonResponse(#"{"acceptedSpans":5}"#, status: 200)
+            }
+            return try Self.jsonResponse(#"{"error":"unexpected"}"#, status: 500)
+        }
+
+        let controller = XIAOESP32C3Controller(
+            defaults: defaults,
+            attestKeys: keys,
+            attestStore: store,
+            http: http
+        )
+        let baseURL = try XCTUnwrap(URL(string: "https://xiao-otel.example.test/"))
+        let tracesURL = XIAOESP32C3Controller.resolveTracesURL(from: baseURL)
+        let status = try await controller.postTraces(
+            body: Data(#"{"resourceSpans":[]}"#.utf8),
+            tracesURL: tracesURL,
+            baseURL: baseURL,
+            authorizeWithAppAttest: true
+        )
+        XCTAssertEqual(status, 200)
+    }
+
     private static func jsonResponse(_ body: String, status: Int) throws -> (Data, URLResponse) {
         let url = try XCTUnwrap(URL(string: "https://xiao-otel.example.test"))
         let response = try XCTUnwrap(HTTPURLResponse(
