@@ -62,6 +62,9 @@ jobs:
           HEAD_SHA: ${{ github.sha }}
         run: bash .github/scripts/discover-changed-apps.sh
 
+      - name: Check for tracked compiled binaries
+        run: bash .github/scripts/check-no-binaries.sh
+
       - name: Select the kind tests
         id: kind
         env:
@@ -796,6 +799,7 @@ jobs:
           bash .github/scripts/discover-nescript_test.sh
           bash .github/scripts/discover-go-modules_test.sh
           bash .github/scripts/check-whbiab-web_test.sh
+          bash .github/scripts/check-no-binaries_test.sh
 
   # The required check. It runs even when a job it needs failed or was
   # skipped, passes when every job passed or was skipped, and fails

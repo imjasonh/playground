@@ -1,10 +1,25 @@
 # Build output and local demo state.
 /bin/
 *.out
+*.test
+*.exe
 # Local blob/cache store directories a local run might create.
 /tmp-store/
 /tmp-cache/
 /bazel-*
 /user.bazelrc
+# Binaries from go build in the module root or a command's directory.
 /cas
 /cascache
+/casfs-csi
+/cictl
+/pool
+/rbe-run
+/runner
+/cmd/cas/cas
+/cmd/cascache/cascache
+/cmd/casfs-csi/casfs-csi
+/cmd/cictl/cictl
+/cmd/pool/pool
+/cmd/rbe-run/rbe-run
+/cmd/runner/runner
