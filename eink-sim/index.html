@@ -67,13 +67,29 @@
 
         <section class="panel">
           <h2>Rendering strategy</h2>
+          <div class="field" id="preset-field">
+            <span class="field-label">Photo presets</span>
+            <div class="button-row" id="preset-row"></div>
+          </div>
           <label class="field">
             <span class="field-label">Dithering</span>
             <select id="dither-select"></select>
           </label>
-          <label class="checkbox">
+          <label class="field" id="metric-field">
+            <span class="field-label">Color matching</span>
+            <select id="metric-select"></select>
+          </label>
+          <label class="field" id="gray-field">
+            <span class="field-label">B&amp;W channel filter</span>
+            <select id="gray-select"></select>
+          </label>
+          <label class="checkbox" id="serpentine-label">
             <input id="serpentine" type="checkbox" checked />
             <span>Serpentine scan (reduces worm artifacts)</span>
+          </label>
+          <label class="checkbox">
+            <input id="linear-light" type="checkbox" />
+            <span>Linear-light dithering (accurate midtones)</span>
           </label>
           <label class="field">
             <span class="field-label">Fit</span>
@@ -96,6 +112,10 @@
               Auto e-paper boost
             </button>
           </div>
+          <label class="checkbox">
+            <input id="auto-levels" type="checkbox" />
+            <span>Auto-levels (stretch tone range)</span>
+          </label>
           <div class="slider" data-adjust="saturation">
             <label>Saturation <output>1.00</output></label>
             <input type="range" min="0" max="3" step="0.05" value="1" />
@@ -111,6 +131,10 @@
           <div class="slider" data-adjust="gamma">
             <label>Gamma <output>1.00</output></label>
             <input type="range" min="0.3" max="2.5" step="0.05" value="1" />
+          </div>
+          <div class="slider" data-adjust="sharpen">
+            <label>Sharpen <output>0.00</output></label>
+            <input type="range" min="0" max="2" step="0.05" value="0" />
           </div>
           <button id="reset-adjust" class="link-button" type="button">
             Reset adjustments

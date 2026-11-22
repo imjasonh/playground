@@ -229,6 +229,21 @@ button:focus-visible {
   color: #fff;
 }
 
+.button-row button.active {
+  border-color: var(--accent);
+  background: rgba(98, 182, 255, 0.16);
+  color: #fff;
+}
+
+.checkbox.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.field[hidden] {
+  display: none;
+}
+
 .link-button {
   background: none;
   border: none;
