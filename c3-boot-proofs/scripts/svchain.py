@@ -323,8 +323,9 @@ class Chain:
         self.env = env
         self.k = k
         self.prev = facts
-        sc = [subst(p, env) for p in stage.sc_parts]
-        self.proofs = [(nm, subst(t, env)) for nm, t in proofs]
+        at = (lambda t: re.sub(IDENT.format("n0"), f"n{k - 1}", t)) if k > 1 else (lambda t: t)
+        sc = [at(subst(p, env)) for p in stage.sc_parts]
+        self.proofs = [(nm, at(subst(t, env))) for nm, t in proofs]
         return args, names, pats, sc
 
 

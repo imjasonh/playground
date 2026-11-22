@@ -60,7 +60,7 @@ SEGMENTS = {
                 "attributes, the `TSTInfo`, the TSA that signed it, and its signature."),
     'SvSegLog': ('sv_seg_log', [('SvSegCkpt', 'sv_seg_ck'), ('SvCkdLoop', 'sv_ckdloop_run'),
                                 ('SvCSearch', 'sv_csearch_st'), ('SvCs1', 'sv_cs1'),
-                                ('SvCosigLoop', 'sv_cosigloop_st'), ('SvSegWin', 'sv_seg_win')],
+                                ('SvCosigLoop', 'sv_cosigloop_st0'), ('SvSegWin', 'sv_seg_win')],
                  "**The transparency log entry**: from the checkpoint at 0x2B34 to the successful exit at 0x3264: "
                  "the checkpoint, the log that signed it, its signatures, the entry's index, and the validity "
                  "windows."),

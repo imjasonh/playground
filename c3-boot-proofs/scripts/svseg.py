@@ -523,8 +523,9 @@ class Segment:
             else:
                 terms.append(None)
                 lifted.append(part)
+        tup = lambda ts: ts[0] if len(ts) == 1 else f"⟨{', '.join(ts)}⟩"
         if not lifted:
-            return f"(fun i hi {' '.join(vs)} h => ⟨{', '.join(terms)}⟩)"
+            return f"(fun i hi {' '.join(vs)} h => {tup(terms)})"
         nm = p + "'"
         while nm in {q for q, _ in self.hyps}:
             nm += "'"
@@ -537,7 +538,7 @@ class Segment:
                 last = j == len(lifted) - 1
                 terms[t] = call + ".2" * j + ("" if last else ".1")
                 j += 1
-        return f"(fun i hi {' '.join(vs)} h => ⟨{', '.join(terms)}⟩)"
+        return f"(fun i hi {' '.join(vs)} h => {tup(terms)})"
 
     def derive_lit(self, v):
         """A slice at `v`, the content of a parse whose length the stage checks
@@ -812,8 +813,15 @@ class Segment:
             self.record(ch.proofs)
             self.sc += sc
             self.names += names
-            P(f"  rcases {'@' if ch.at else ''}{st.name} " + " ".join(args) + f" with {st.errpat} | ⟨" + ", ".join(names + pats) + "⟩")
+            # One `obtain` per level: one `rcases` pattern with hundreds of
+            # names takes Lean far longer.
+            hx = f"hx{ch.k}"
+            P(f"  rcases {'@' if ch.at else ''}{st.name} " + " ".join(args) + f" with {st.errpat} | {hx}")
             self.fail(ch.k, st.fail, P)
+            got = names + pats
+            for nm in got[:-1]:
+                P(f"  obtain ⟨{nm}, {hx}⟩ := {hx}")
+            P(f"  have {got[-1]} := {hx}")
         self.panics = any(it[1].fail in ('Panics', 'Both') for it in self.items if it[0] == 'stage')
         self.hide_loads()
         self.carried = []

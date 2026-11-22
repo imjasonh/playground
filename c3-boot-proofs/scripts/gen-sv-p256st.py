@@ -74,7 +74,7 @@ def main():
             e = int(m.group(1), 16)
             kept.append(e)
             f = FUN.sub(f"w{e:x}", f)
-        out_facts.append(f.replace("m'", "n'"))
+        out_facts.append(f.replace("m'", "n'").replace(DG, "w84"))
     out_facts.append("SvKeepL B n0.mem n'.mem [(0x0, 0x1690)]")
     terms = []
     for f, n in zip(facts, range(len(facts))):
@@ -83,13 +83,13 @@ def main():
     terms.append("SvKeepL.whole")
     # Binders and hypotheses.
     binders = header[len('theorem sv_p256 '):]
-    ws = " ".join(f"w{e:x}" for e in [0x84] + kept)
+    ws = " ".join(f"w{e:x}" for e in dict.fromkeys([0x84] + kept))
     binders = binders.replace("{er es : Bytes}", "{" + ws + " : Word} {er es : Bytes}", 1)
     new_params = []
     for p in params:
         p = p.replace(f"(dg_in : SvIn B ({DG}) 32)", f"(w0_84 : {DG} = w84) (dg_in : SvIn B w84 32)")
         new_params.append(p)
-    new_params.append("    " + " ".join(f"(w0_{e:x} : memLoad32 n0.mem ({FA} 0x{e:X}) = w{e:x})" for e in kept))
+    new_params.append("    " + " ".join(f"(w0_{e:x} : memLoad32 n0.mem ({FA} 0x{e:X}) = w{e:x})" for e in kept if e != 0x84))
     args = []
     for g in groups("\n".join(params)):
         nm = g.split(' : ', 1)[0].strip()
@@ -126,13 +126,15 @@ def main():
     O(f"theorem sv_p256_st {binders}")
     O("\n".join(new_params) + " :")
     O("    SvErrRet B out v n0 ∨ Panics n0 ∨")
-    O(f"    ({sc1} ∧")
+    O(f"    ({sc1.replace(DG, 'w84')} ∧")
     for part in mids:
-        O(f"      {part} ∧")
-    O(f"      {sc2} ∧")
+        O(f"      {part.replace(DG, 'w84')} ∧")
+    O(f"      {sc2.replace(DG, 'w84')} ∧")
     O("    ∃ n', Steps n0 n' ∧")
     O("        " + " ∧\n        ".join(out_facts) + ") := by")
-    O(f"  rcases sv_p256 {named} {' '.join(args)} with ⟨-, e⟩ | e | ⟨h1, {', '.join(pre)}, hfin⟩")
+    O(f"  have h := sv_p256 {named} {' '.join(args)}")
+    O("  rw [w0_84] at h")
+    O(f"  rcases h with ⟨-, e⟩ | e | ⟨h1, {', '.join(pre)}, hfin⟩")
     O("  · exact .inl e")
     O("  · exact .inr (.inl e)")
     O(f"  rcases hfin with ⟨-, e⟩ | ⟨h2, n1, c1, {', '.join(fin)}⟩")

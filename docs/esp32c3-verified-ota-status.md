@@ -96,44 +96,51 @@ returned `none`. [`gen-sv-attrloop.py`](../c3-boot-proofs/scripts/gen-sv-attrloo
 writes the one loop so far whose step depends on what it parses: the
 signed attributes, as a chain of `sv_attrStep` relations (`svChain`).
 
-Composed so far:
+Composed so far: `sv_verify_72` in
+[`SvTop.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvTop.lean), from
+0x72, just after the prologue, to the return. `sigstore::verify` returns
+`Err`, panics, or meets its success condition and returns `Ok` with the
+timestamp's time and the log entry's index in `out`. It is `sv_seg_sv`, then
+`sv_ok_3264`, and `sv_seg_sv` is four segments:
 
-- Segments: the leaf, its extensions, the intermediate that issued it, and
-  the leaf's signature, from the entry at 0x72 to the policy check at 0xDE6
-  (`sv_seg_cert`); the policy and the signature's DER (`sv_seg_dpv`); the
-  whole timestamp, from 0x2034 to the checkpoint at 0x2B34 (`sv_seg_ts`),
-  which includes the timestamp up to its signed attributes (`sv_seg_tsa`)
-  and the `TSTInfo` and the timestamp's signature (`sv_seg_tst`); the
-  checkpoint's origin and size
-  (`sv_seg_ck`); and the entry's index and the validity windows up to the
-  successful exit (`sv_seg_win`).
-- Loops: the leaf's extensions (`sv_extloop`, with the OIDs of an
-  `ExtKeyUsage` value in `sv_ekuloop`), the signed attributes
-  (`sv_attrloop`), the size's digits (`sv_ckdloop_run`), the checkpoint's
-  signature lines (`sv_cosigloop`), and a cosignature's base64 groups with
-  the end of its line (`sv_cgloop_st`).
-- Searches: the issuer, the TSA, the log, and the space in a signature
-  line (`sv_isearch`, `sv_tsearch`, `sv_csearch`, `sv_nsearch`).
+- the leaf, its extensions, the intermediate that issued it, the leaf's
+  signature, and the policy, from 0x72 to 0xFBA (`sv_seg_cert`);
+- the P-256 check of the artifact's signature, from 0xFBA to 0x2034
+  (`sv_p256_st`, which `gen-sv-p256st.py` writes from `sv_p256`);
+- the timestamp, from 0x2034 to 0x2B34 (`sv_seg_ts`);
+- the transparency log entry, from 0x2B34 to the successful exit at 0x3264
+  (`sv_seg_log`).
+
+Those include the loops over the leaf's extensions (`sv_extloop`, with the
+OIDs of an `ExtKeyUsage` value in `sv_ekuloop`), the signed attributes
+(`sv_attrloop`), the size's digits (`sv_ckdloop_run`), the checkpoint's
+signature lines (`sv_cosigloop_st0`), and a cosignature's base64 groups
+(`sv_cgloop_st`), and the searches for the issuer, the TSA, the log, and
+the space in a signature line.
 
 [`gen-sv-relloop.py`](../c3-boot-proofs/scripts/gen-sv-relloop.py) writes
-the loops whose step depends on what one pass parses (the extensions, the
-`ExtKeyUsage` OIDs, the signature lines). `sv_lh` restates the leaf's hash
-(`sv_lhash`) and the `p384_verify_prehash` call (`sv_lpv`) as a stage. It
-states the call's result over any memory that holds the key, the prehash,
-`r`, and `s` (`SvPvRes`), since `pvModel` reads only those
-(`pvModel_congr`). `sv_tp` does the same for the timestamp's signature
-(`sv_tpv`). A merge whose branches either keep a pointer or set it to a
-slice they parse states that the pointer is 0 or a slice, and the loops
-carry that from one pass to the next, so the message digest that the
-signed attributes loop found is a slice after the loop.
+the loops whose step depends on what one pass parses. `sv_lh` and `sv_tp`
+restate the two `p384_verify_prehash` calls as stages; each states the
+call's result over any memory that holds the key, the prehash, `r`, and
+`s` (`SvPvRes`), since `pvModel` reads only those (`pvModel_congr`). A
+merge whose branches either keep a pointer or set it to a slice they parse
+states that the pointer is 0 or a slice, and the loops carry that from one
+pass to the next. That is how the message digest that the signed
+attributes loop finds, and the five identity-policy slots that the
+extensions loop fills, are slices after their loops.
 
-Left: the identity-policy slots as slices through the extensions loop, so
-the policy check composes after `sv_seg_cert`; `sv_p256` and the
-successful return as stages; one theorem from the entry to the return;
-the layout of `Bundle` and `SigstoreRoot` in memory, and that theorem
-against `sigstoreVerify` in `Spec/Sigstore.lean`; and the models
-(`ivLoop8`, `mlMain2`, `zvLoop`, `pvModel`) against `p256.verify` and
-P-384 in `Spec/Ecdsa.lean`.
+`sv_verify_72` takes 178 hypotheses. Most say how `Bundle` and
+`SigstoreRoot` lie in memory (for example, that each of the root's
+intermediates, logs, and TSAs is a slice outside the stack), what the frame
+holds at 0x72, and that the code and constants are where the image puts
+them. The rest are the inversions' side conditions (`hzi`, `PvSide`), which
+the P-256 and P-384 models need.
+
+Left: the prologue (`sv_pro`, 0x0 to 0x72) in front of `sv_verify_72`; the
+layout hypotheses discharged from a description of `Bundle` and
+`SigstoreRoot` in memory, and `sv_verify_72` against `sigstoreVerify` in
+`Spec/Sigstore.lean`; the models (`ivLoop8`, `mlMain2`, `zvLoop`, `pvModel`)
+against `p256.verify` and P-384 in `Spec/Ecdsa.lean`; and `boot_main`.
 
 `_start` and the clock and watchdog `setup` that runs before `boot_main`
 aren't among the extracted functions, so they are trusted.
