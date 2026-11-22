@@ -485,6 +485,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         }
         // If an OTA update is armed and we have a live CBPeripheral handle for this board,
         // connect immediately during its 150 ms wake window!
+        var initiatedProfilePull = false
         if otaPhase == .armed, let peripheral = peripherals[deviceId] {
             beginOTAConnection(to: peripheral)
         } else if collectDetailedProfile,
@@ -494,6 +495,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
                   let peripheral = peripherals[deviceId]
         {
             beginProfileConnection(to: peripheral, deviceId: deviceId)
+            initiatedProfilePull = true
         }
 
         // Deduplicate repeated frames from the same 150 ms burst.
@@ -518,7 +520,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         }
         statusMessage = "Wake #\(metrics.wakeCount) (seq \(metrics.seq)) from \(deviceName) at \(rssi) dBm."
 
-        if forwardingEnabled {
+        if forwardingEnabled, !initiatedProfilePull {
             forwardToOtel(sample: sample)
         }
         return true
@@ -540,12 +542,38 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     }
 
     private func attachWakeProfile(_ profile: XIAOESP32C3WakeProfile, deviceId: UUID) {
+        var updatedSample: XIAOESP32C3Sample?
         if var latest = latestSample, latest.deviceId == deviceId {
             latest.profile = profile
             latestSample = latest
+            updatedSample = latest
         }
         if let idx = history.firstIndex(where: { $0.deviceId == deviceId && $0.metrics.wakeCount == profile.wakeCount }) {
             history[idx].profile = profile
+        }
+        if forwardingEnabled, let updatedSample {
+            forwardToOtel(sample: updatedSample)
+        }
+    }
+
+    private func finishProfileOnlyConnectionIfNeeded(for peripheral: CBPeripheral, fallbackForward: Bool) {
+        guard profilePeripheral?.identifier == peripheral.identifier else {
+            return
+        }
+        let targetDeviceId = profileTargetDeviceId
+        profilePeripheral = nil
+        profileTargetDeviceId = nil
+        if otaPeripheral?.identifier != peripheral.identifier {
+            central?.cancelPeripheralConnection(peripheral)
+        }
+        if fallbackForward,
+           forwardingEnabled,
+           let targetDeviceId,
+           let latest = latestSample,
+           latest.deviceId == targetDeviceId,
+           latest.profile == nil
+        {
+            forwardToOtel(sample: latest)
         }
     }
 
@@ -950,10 +978,7 @@ extension XIAOESP32C3Controller: CBCentralManagerDelegate {
     ) {
         let detail = error?.localizedDescription ?? "connection failed"
         Task { @MainActor in
-            if self.profilePeripheral?.identifier == peripheral.identifier {
-                self.profilePeripheral = nil
-                self.profileTargetDeviceId = nil
-            }
+            self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
             if self.otaPhase == .connecting {
                 // Re-arm for the next wake burst if the 150 ms window closed before connection completed.
                 self.otaPhase = .armed
@@ -968,10 +993,7 @@ extension XIAOESP32C3Controller: CBCentralManagerDelegate {
         error: Error?
     ) {
         Task { @MainActor in
-            if self.profilePeripheral?.identifier == peripheral.identifier {
-                self.profilePeripheral = nil
-                self.profileTargetDeviceId = nil
-            }
+            self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
             if self.otaPeripheral?.identifier != peripheral.identifier {
                 return
             }
@@ -997,6 +1019,7 @@ extension XIAOESP32C3Controller: CBPeripheralDelegate {
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         if let error {
             Task { @MainActor in
+                self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
                 if self.otaPeripheral?.identifier == peripheral.identifier {
                     self.otaPhase = .failed(error.localizedDescription)
                     self.otaStatusText = "OTA service discovery failed: \(error.localizedDescription)"
@@ -1009,9 +1032,21 @@ extension XIAOESP32C3Controller: CBPeripheralDelegate {
         let dataUUID = CBUUID(string: XIAOESP32C3Protocol.otaDataUUIDString)
         let statusUUID = CBUUID(string: XIAOESP32C3Protocol.otaStatusUUIDString)
         let profileUUID = CBUUID(string: XIAOESP32C3Protocol.profileCharUUIDString)
-        guard let services = peripheral.services else { return }
+        guard let services = peripheral.services else {
+            Task { @MainActor in
+                self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
+            }
+            return
+        }
+        var foundService = false
         for service in services where service.uuid == serviceUUID {
+            foundService = true
             peripheral.discoverCharacteristics([ctrlUUID, dataUUID, statusUUID, profileUUID], for: service)
+        }
+        if !foundService {
+            Task { @MainActor in
+                self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
+            }
         }
     }
 
@@ -1022,6 +1057,7 @@ extension XIAOESP32C3Controller: CBPeripheralDelegate {
     ) {
         if let error {
             Task { @MainActor in
+                self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
                 if self.otaPeripheral?.identifier == peripheral.identifier {
                     self.otaPhase = .failed(error.localizedDescription)
                     self.otaStatusText = "OTA characteristics failed: \(error.localizedDescription)"
@@ -1029,12 +1065,19 @@ extension XIAOESP32C3Controller: CBPeripheralDelegate {
             }
             return
         }
-        guard let chars = service.characteristics else { return }
+        guard let chars = service.characteristics else {
+            Task { @MainActor in
+                self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
+            }
+            return
+        }
         Task { @MainActor in
             let isProfileOnly = self.profilePeripheral?.identifier == peripheral.identifier
                 && self.otaPeripheral?.identifier != peripheral.identifier
+            var foundProfileChar = false
             for ch in chars {
                 if ch.uuid == self.profileCharUUID, self.collectDetailedProfile {
+                    foundProfileChar = true
                     peripheral.readValue(for: ch)
                 }
                 if !isProfileOnly {
@@ -1048,7 +1091,10 @@ extension XIAOESP32C3Controller: CBPeripheralDelegate {
                     }
                 }
             }
-            if !isProfileOnly {
+            if isProfileOnly, !foundProfileChar {
+                // Production firmware without profiling enabled does not expose PROFILE_CHAR_UUID.
+                self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
+            } else if !isProfileOnly {
                 self.sendOTABeginIfReady()
             }
         }
@@ -1059,26 +1105,24 @@ extension XIAOESP32C3Controller: CBPeripheralDelegate {
         didUpdateValueFor characteristic: CBCharacteristic,
         error: Error?
     ) {
-        guard error == nil, let data = characteristic.value else {
-            return
-        }
         let statusUUID = CBUUID(string: XIAOESP32C3Protocol.otaStatusUUIDString)
         let profileUUID = CBUUID(string: XIAOESP32C3Protocol.profileCharUUIDString)
         if characteristic.uuid == profileUUID {
-            if let decoded = XIAOESP32C3Protocol.decodeWakeProfile(data) {
-                let deviceId = peripheral.identifier
-                Task { @MainActor in
+            let decoded = (error == nil) ? characteristic.value.flatMap(XIAOESP32C3Protocol.decodeWakeProfile) : nil
+            let deviceId = peripheral.identifier
+            Task { @MainActor in
+                if let decoded {
                     self.attachWakeProfile(decoded, deviceId: deviceId)
-                    if self.profilePeripheral?.identifier == peripheral.identifier,
-                       self.otaPeripheral?.identifier != peripheral.identifier
-                    {
-                        self.central?.cancelPeripheralConnection(peripheral)
-                    }
+                    self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: false)
+                } else {
+                    self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
                 }
             }
             return
         }
-        guard characteristic.uuid == statusUUID,
+        guard error == nil,
+              characteristic.uuid == statusUUID,
+              let data = characteristic.value,
               let line = String(data: data, encoding: .utf8)
         else {
             return

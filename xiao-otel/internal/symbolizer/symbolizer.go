@@ -8,8 +8,10 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"debug/dwarf"
 	"debug/elf"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -240,7 +242,7 @@ func (s *Symbolizer) EnrichSpans(ctx context.Context, spans []otlp.Span) map[str
 	if !hasHotspots {
 		return nil
 	}
-	if elfTag == "" {
+	if !isValidTag(elfTag) {
 		elfTag = "latest"
 	}
 
@@ -284,6 +286,33 @@ func (s *Symbolizer) EnrichSpans(ctx context.Context, spans []otlp.Span) map[str
 		}
 	}
 	return resolved
+}
+
+func isValidTag(tag string) bool {
+	if tag == "latest" {
+		return true
+	}
+	return isHex64(tag)
+}
+
+func isHex64(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
+
+func isValidSHA256Digest(digest string) bool {
+	if !strings.HasPrefix(digest, "sha256:") {
+		return false
+	}
+	return isHex64(strings.TrimPrefix(digest, "sha256:"))
 }
 
 func parseHexPC(raw string) (uint64, error) {
@@ -350,6 +379,9 @@ func loadLocalELF(path string) (*Table, error) {
 }
 
 func (s *Symbolizer) fetchFromGHCR(ctx context.Context, tag string) (*Table, error) {
+	if !isValidTag(tag) {
+		return nil, errors.New("invalid ELF tag")
+	}
 	base := strings.TrimRight(s.RegistryBaseURL, "/")
 	if base == "" {
 		base = defaultRegistryBaseURL
@@ -421,11 +453,11 @@ func (s *Symbolizer) fetchFromGHCR(ctx context.Context, tag string) (*Table, err
 			break
 		}
 	}
-	if elfDigest == "" {
-		return nil, errors.New("manifest contains no ELF symbol layer")
+	if !isValidSHA256Digest(elfDigest) {
+		return nil, errors.New("manifest contains no valid ELF symbol layer digest")
 	}
 
-	// 3. Download ELF blob.
+	// 3. Download ELF blob and verify its SHA-256 matches the manifest digest.
 	blobURL := fmt.Sprintf("%s/v2/%s/blobs/%s", base, s.Repo, elfDigest)
 	blobReq, err := http.NewRequestWithContext(ctx, http.MethodGet, blobURL, nil)
 	if err != nil {
@@ -441,18 +473,32 @@ func (s *Symbolizer) fetchFromGHCR(ctx context.Context, tag string) (*Table, err
 		return nil, fmt.Errorf("GHCR blob HTTP %d", blobResp.StatusCode)
 	}
 
-	var reader io.Reader = io.LimitReader(blobResp.Body, maxELFBytes)
+	blobBytes, err := io.ReadAll(io.LimitReader(blobResp.Body, maxELFBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(blobBytes) > maxELFBytes {
+		return nil, errors.New("ELF blob exceeds size limit")
+	}
+	sum := sha256.Sum256(blobBytes)
+	if "sha256:"+hex.EncodeToString(sum[:]) != elfDigest {
+		return nil, errors.New("ELF blob SHA-256 does not match manifest digest")
+	}
+
+	rawELF := blobBytes
 	if gzipped {
-		gz, err := gzip.NewReader(reader)
+		gz, err := gzip.NewReader(bytes.NewReader(blobBytes))
 		if err != nil {
 			return nil, fmt.Errorf("gunzip ELF layer: %w", err)
 		}
 		defer gz.Close()
-		reader = io.LimitReader(gz, maxELFBytes)
-	}
-	rawELF, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, err
+		rawELF, err = io.ReadAll(io.LimitReader(gz, maxELFBytes+1))
+		if err != nil {
+			return nil, err
+		}
+		if len(rawELF) > maxELFBytes {
+			return nil, errors.New("decompressed ELF exceeds size limit")
+		}
 	}
 	return ParseELF(rawELF)
 }

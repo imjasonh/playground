@@ -271,6 +271,9 @@ func NewSpanID() string {
 	if _, err := rand.Read(b[:]); err != nil {
 		b[7] = 1
 	}
+	if b == ([8]byte{}) {
+		b[7] = 1
+	}
 	return hex.EncodeToString(b[:])
 }
 

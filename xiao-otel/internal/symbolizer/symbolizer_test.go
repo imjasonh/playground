@@ -3,6 +3,8 @@ package symbolizer
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -59,6 +61,9 @@ func TestParseELFAndEnrichSpansFromGHCR(t *testing.T) {
 		t.Fatal(err)
 	}
 	gzBytes := gzBuf.Bytes()
+	gzSum := sha256.Sum256(gzBytes)
+	elfDigest := "sha256:" + hex.EncodeToString(gzSum[:])
+	elfTag := strings.Repeat("a", 64)
 
 	// Serve the gzipped ELF through a mock GHCR OCI registry.
 	ghcr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -66,10 +71,10 @@ func TestParseELFAndEnrichSpansFromGHCR(t *testing.T) {
 		case strings.HasPrefix(r.URL.Path, "/token"):
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"token":"test-tok"}`))
-		case strings.HasSuffix(r.URL.Path, "/manifests/abc123"):
+		case strings.HasSuffix(r.URL.Path, "/manifests/"+elfTag):
 			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
-			_, _ = w.Write([]byte(`{"layers":[{"mediaType":"application/octet-stream","digest":"sha256:bin"},{"mediaType":"` + ELFMediaTypeGzip + `","digest":"sha256:elf"}]}`))
-		case strings.HasSuffix(r.URL.Path, "/blobs/sha256:elf"):
+			_, _ = w.Write([]byte(`{"layers":[{"mediaType":"application/octet-stream","digest":"sha256:` + strings.Repeat("b", 64) + `"},{"mediaType":"` + ELFMediaTypeGzip + `","digest":"` + elfDigest + `"}]}`))
+		case strings.HasSuffix(r.URL.Path, "/blobs/"+elfDigest):
 			w.Header().Set("Content-Type", ELFMediaTypeGzip)
 			_, _ = w.Write(gzBytes)
 		default:
@@ -93,7 +98,7 @@ func TestParseELFAndEnrichSpansFromGHCR(t *testing.T) {
 			StartTime: time.Now(),
 			EndTime:   time.Now(),
 			Attributes: map[string]any{
-				"mcu.elf_sha256": "abc123",
+				"mcu.elf_sha256": elfTag,
 			},
 			Events: []otlp.SpanEvent{
 				{

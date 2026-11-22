@@ -435,7 +435,15 @@ enum XIAOESP32C3Protocol {
     ) -> String {
         let totalActiveNs = metrics.totalActiveUs * 1_000
         let wakeStartNs = timeUnixNano > totalActiveNs ? timeUnixNano - totalActiveNs : timeUnixNano
-        let wakeEndNs = wakeStartNs + totalActiveNs
+        var wakeEndNs = wakeStartNs + totalActiveNs
+        if let profile {
+            for sub in profile.spans {
+                let subEnd = wakeStartNs + UInt64(sub.startUs + sub.durationUs) * 1_000
+                if subEnd > wakeEndNs {
+                    wakeEndNs = subEnd
+                }
+            }
+        }
 
         let sensorSpanId = randomHex(byteCount: 8)
         let computeSpanId = randomHex(byteCount: 8)

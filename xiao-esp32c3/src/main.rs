@@ -686,7 +686,7 @@ mod profiler {
             );
             let elf_sha256 = unsafe {
                 let desc = esp_app_get_description();
-                if !desc.is_null() {
+                if !desc.is_null() && (*desc).app_elf_sha256.iter().any(|&b| b != 0) {
                     hex::encode((*desc).app_elf_sha256)
                 } else {
                     String::new()
