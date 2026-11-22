@@ -3,7 +3,7 @@
 # sv_p256 as a stage, merges (gen-sv-segs.py writes them, and loops use
 # them), then searches and loops, then the segments, since segments use
 # loops, then the loops over segments, then the segments that use those, and
-# last the theorem from 0x72 to the return.
+# last the theorems from 0x72 and from the entry to the return.
 # The scripts ask Lean for some theorems' binders, so each phase builds the
 # files it wrote before the next phase runs. A file whose imports a later
 # phase rewrites may fail to build until then, so only the last build, of
@@ -35,5 +35,6 @@ phase scripts/gen-sv-segs.py --keep-going
 phase scripts/gen-sv-relloop.py
 phase scripts/gen-sv-segs.py
 phase scripts/gen-sv-top.py
+phase scripts/gen-sv-entry.py
 # shellcheck disable=SC2046
 lake build $(find C3BootProofs/Proofs -name '*.lean' -newer "$first" | sed 's|/|.|g; s|\.lean$||')

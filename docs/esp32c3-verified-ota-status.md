@@ -96,12 +96,16 @@ returned `none`. [`gen-sv-attrloop.py`](../c3-boot-proofs/scripts/gen-sv-attrloo
 writes the one loop so far whose step depends on what it parses: the
 signed attributes, as a chain of `sv_attrStep` relations (`svChain`).
 
-Composed so far: `sv_verify_72` in
-[`SvTop.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvTop.lean), from
-0x72, just after the prologue, to the return. `sigstore::verify` returns
-`Err`, panics, or meets its success condition and returns `Ok` with the
-timestamp's time and the log entry's index in `out`. It is `sv_seg_sv`, then
-`sv_ok_3264`, and `sv_seg_sv` is four segments:
+Composed so far: `sv_verify` in
+[`SvVerify.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvVerify.lean),
+from the entry to the return. Called with the result at `a0`, the bundle at
+`a1`, the trust root at `a2`, and the artifact's digest at `a3`,
+`sigstore::verify` returns `Err`, panics, or meets its success condition and
+returns `Ok` with the timestamp's time and the log entry's index in `out`.
+It is the prologue (`sv_pro`), then `sv_verify_72` in
+[`SvTop.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvTop.lean), which is
+`sv_seg_sv` and the successful return (`sv_ok_3264`). `sv_seg_sv` is four
+segments:
 
 - the leaf, its extensions, the intermediate that issued it, the leaf's
   signature, and the policy, from 0x72 to 0xFBA (`sv_seg_cert`);
@@ -129,16 +133,16 @@ pass to the next. That is how the message digest that the signed
 attributes loop finds, and the five identity-policy slots that the
 extensions loop fills, are slices after their loops.
 
-`sv_verify_72` takes 178 hypotheses. Most say how `Bundle` and
-`SigstoreRoot` lie in memory (for example, that each of the root's
-intermediates, logs, and TSAs is a slice outside the stack), what the frame
-holds at 0x72, and that the code and constants are where the image puts
+`sv_verify` takes 128 hypotheses, all about the memory and registers at
+the entry. Most say how `Bundle` and `SigstoreRoot` lie in memory (for
+example, that each of the root's intermediates, logs, and TSAs is a slice
+outside the stack) and that the code and constants are where the image puts
 them. The rest are the inversions' side conditions (`hzi`, `PvSide`), which
-the P-256 and P-384 models need.
+the P-256 and P-384 models need. The frame's contents at 0x72 are the
+prologue's (`svProMem`), so they need no hypotheses.
 
-Left: the prologue (`sv_pro`, 0x0 to 0x72) in front of `sv_verify_72`; the
-layout hypotheses discharged from a description of `Bundle` and
-`SigstoreRoot` in memory, and `sv_verify_72` against `sigstoreVerify` in
+Left: the layout hypotheses discharged from a description of `Bundle` and
+`SigstoreRoot` in memory, and `sv_verify` against `sigstoreVerify` in
 `Spec/Sigstore.lean`; the models (`ivLoop8`, `mlMain2`, `zvLoop`, `pvModel`)
 against `p256.verify` and P-384 in `Spec/Ecdsa.lean`; and `boot_main`.
 
