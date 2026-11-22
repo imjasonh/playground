@@ -36,24 +36,34 @@ real resolutions, pixel densities, and refresh estimates:
 | 7-color (ACeP) | Waveshare 5.65"/7.3" | + orange |
 | ESL (3 & 4 color) | Waveshare tri/four-color | black/white/red(/yellow) |
 
-### Palettes
+### Palettes & color matching
 
 Two palette kinds power the simulation (`src/dither.js`):
 
 - **List palettes** — snap each pixel to the nearest of a fixed set of pigment
-  inks (Spectra 6, ACeP 7-color, tri/four-color ESL). Nearest color uses a
-  perceptual "redmean" distance.
+  inks (Spectra 6, ACeP 7-color, tri/four-color ESL). Choose from multiple
+  perceptual color-matching metrics: **Oklab**, **PhotoPainter (RGB + Luma)**
+  (inspired by [PhotoPainter-E-Ink-Spectra-6-image-converter](https://github.com/Toon-nooT/PhotoPainter-E-Ink-Spectra-6-image-converter)),
+  **CIELAB (ΔE76)**, **Redmean**, or **Euclidean RGB**.
 - **Channel palettes** — quantize each RGB channel to _N_ evenly spaced levels
-  (grayscale Carta panels, and continuous-color CFA/ACeP panels).
+  (grayscale Carta panels, and continuous-color CFA/ACeP panels). Monochrome
+  panels also offer classic B&W photography channel filters (Rec. 709 luma,
+  red, orange, green, and blue).
 
 ### Rendering strategies (dithering)
 
-- None (nearest color)
-- Error diffusion: Floyd–Steinberg, Atkinson, Jarvis–Judice–Ninke, Stucki,
-  Sierra, Sierra Lite (with optional serpentine scanning)
-- Ordered / Bayer: 2×2, 4×4, 8×8
+- **Error diffusion**: Floyd–Steinberg, **Ostromoukhov** (2001 variable-coefficient
+  blue-noise error diffusion), Atkinson, **Riemersma** (Hilbert space-filling
+  curve), **Burkes**, Jarvis–Judice–Ninke, Stucki, Sierra, Sierra Lite (with
+  optional serpentine scanning)
+- **Ordered / positional**: **Blue Noise** (64×64 Ulichney void-and-cluster
+  matrix), **Yliluoma** (Algorithm 2 arbitrary-palette positional dithering),
+  Bayer 2×2, 4×4, 8×8
+- **Threshold**: None (nearest color)
+- Optional **linear-light dithering** for gamma-accurate midtones and shadow
+  detail (especially noticeable on 1-bit and 4-level B&W panels)
 
-### Realism
+### Realism & photo presets
 
 Quantization targets *ideal* primaries so dithering makes crisp decisions. A
 separate **panel-response** pass then maps those ideals into each panel's
@@ -67,10 +77,11 @@ measured-ish reflective appearance:
   large panel) the dither is area-averaged the way the eye integrates it at the
   panel's dot pitch; zoom in past 1:1 to inspect the individual ink dots.
 
-Toggle the reflective response off to compare against ideal colors, and use the
-**pre-processing** sliders (saturation / contrast / brightness / gamma) to
-compensate the way real converters do. "Auto e-paper boost" applies a typical
-saturation/contrast bump.
+Toggle the reflective response off to compare against ideal colors, use the
+contextual **photo presets** (PhotoPainter, Perceptual Oklab, Yliluoma, B&W
+Ostromoukhov, Blue Noise, Hilbert Stipple, etc.), or fine-tune the
+**pre-processing** controls (auto-levels, saturation, contrast, brightness,
+gamma, and unsharp-mask sharpen).
 
 ## Layout
 
@@ -79,9 +90,12 @@ eink-sim/
 ├── index.html          # UI
 ├── styles.css
 ├── src/
-│   ├── color.js        # color math (pure)
+│   ├── color.js        # color math, Oklab/CIELAB/PhotoPainter metrics, B&W filters (pure)
+│   ├── bluenoise.js    # 64x64 void-and-cluster blue-noise matrix (pure)
+│   ├── ostromoukhov.js # Ostromoukhov (2001) variable diffusion weights (pure)
 │   ├── dither.js       # adjust, quantize, dithering, panel response (pure)
 │   ├── displays.js     # device catalog + palettes + responses (pure)
+│   ├── presets.js      # display-aware photo conversion presets (pure)
 │   └── app.js          # DOM wiring, canvas, upload, samples
 └── tests/
     ├── dither.test.js
