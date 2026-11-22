@@ -18,7 +18,14 @@ ifeq ($(PORT),)
 PORT := /dev/cu.usbmodem101
 endif
 TARGET := riscv32imc-esp-espidf
+PROFILING ?= 0
+ifeq ($(PROFILING),1)
+FIRMWARE_FEATURES := firmware,profiling
+PROFILE_CARGO_ENV := CARGO_PROFILE_RELEASE_STRIP=none CARGO_PROFILE_RELEASE_DEBUG=line-tables-only
+else
 FIRMWARE_FEATURES := firmware
+PROFILE_CARGO_ENV :=
+endif
 
 override CARGO_TARGET_DIR := $(CURDIR)/target
 export CARGO_TARGET_DIR
@@ -37,17 +44,19 @@ PYTHON_SHIM   := $(CURDIR)/.embuild/python-shim
 export PATH := $(PYTHON_SHIM):$(PATH)
 export ESP_IDF_TOOLS_INSTALL_DIR := custom:$(CURDIR)/.embuild
 
-.PHONY: help build check-firmware flash flash-all monitor run clean test \
+.PHONY: help build build-profile check-firmware symbolize flash flash-all monitor run clean test \
 	ensure-python-shim
 
 help:
 	@echo "Targets:"
-	@echo "  make test      Host-side protocol and OTLP unit tests"
-	@echo "  make build     Cross-compile $(FIRMWARE_ID) for $(TARGET)"
-	@echo "  make flash     Build + flash to $(PORT)"
-	@echo "  make flash-all Erase + write bootloader, partition table, app"
-	@echo "  make monitor   Serial monitor on $(PORT)"
-	@echo "  make clean     cargo clean"
+	@echo "  make test          Host-side protocol and OTLP unit tests"
+	@echo "  make build         Cross-compile release $(FIRMWARE_ID) (profiling stripped)"
+	@echo "  make build-profile Cross-compile release $(FIRMWARE_ID) with profiling + 1 kHz PC sampler"
+	@echo "  make symbolize     Resolve PC hotspot addresses against $(BIN) (pass PC='0x4200...')"
+	@echo "  make flash         Build + flash to $(PORT) (add PROFILING=1 for profiling build)"
+	@echo "  make flash-all     Erase + write bootloader, partition table, app"
+	@echo "  make monitor       Serial monitor on $(PORT)"
+	@echo "  make clean         cargo clean"
 
 test:
 	cargo test --lib --locked
@@ -61,6 +70,7 @@ build: ensure-python-shim $(SDKCONFIG_DEFAULTS)
 	  echo "ERROR: could not read FIRMWARE_ID from src/protocol.rs"; \
 	  exit 1; \
 	fi
+	$(PROFILE_CARGO_ENV) \
 	CARGO_TARGET_DIR=$(FW_TARGET_DIR) \
 	ESP_IDF_SDKCONFIG_DEFAULTS=$(SDKCONFIG_DEFAULTS) \
 	ESP_IDF_SDKCONFIG=$(SDKCONFIG) \
@@ -69,7 +79,31 @@ build: ensure-python-shim $(SDKCONFIG_DEFAULTS)
 	    --bin xiao-esp32c3 \
 	    --target $(TARGET) \
 	    -Z build-std=std,panic_abort
+	@# Also verify the profiling feature compiles cleanly when building production firmware.
+	@if [ "$(PROFILING)" = "0" ]; then \
+	  CARGO_TARGET_DIR=$(FW_TARGET_DIR) \
+	  ESP_IDF_SDKCONFIG_DEFAULTS=$(SDKCONFIG_DEFAULTS) \
+	  ESP_IDF_SDKCONFIG=$(SDKCONFIG) \
+	    cargo +$(ESP_TOOLCHAIN) check --release \
+	      --features firmware,profiling \
+	      --bin xiao-esp32c3 \
+	      --target $(TARGET) \
+	      -Z build-std=std,panic_abort; \
+	fi
 	@$(MAKE) --no-print-directory check-firmware
+
+build-profile:
+	@$(MAKE) --no-print-directory build PROFILING=1
+
+symbolize:
+	@if [ -z "$(PC)" ]; then echo "Usage: make symbolize PC='0x42001a40 0x42003c18'"; exit 1; fi
+	@if command -v llvm-symbolizer >/dev/null 2>&1; then \
+	  llvm-symbolizer -e "$(BIN)" --demangle $(PC); \
+	elif command -v riscv32-esp-elf-addr2line >/dev/null 2>&1; then \
+	  riscv32-esp-elf-addr2line -f -C -i -e "$(BIN)" $(PC); \
+	else \
+	  addr2line -f -C -i -e "$(BIN)" $(PC); \
+	fi
 
 check-firmware:
 	@if [ ! -f "$(BIN)" ]; then echo "ERROR: missing $(BIN)"; exit 1; fi

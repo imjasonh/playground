@@ -31,22 +31,21 @@ use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::hal::gpio::{Output, PinDriver};
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::sys::{
-    esp_deep_sleep_start, esp_get_free_heap_size, esp_get_minimum_free_heap_size, esp_ota_abort,
-    esp_ota_begin, esp_ota_end, esp_ota_get_next_update_partition, esp_ota_get_running_partition,
-    esp_ota_get_state_partition, esp_ota_handle_t, esp_ota_img_states_t,
-    esp_ota_img_states_t_ESP_OTA_IMG_PENDING_VERIFY, esp_ota_mark_app_valid_cancel_rollback,
-    esp_ota_set_boot_partition, esp_ota_write, esp_partition_t, esp_reset_reason, esp_restart,
-    esp_sleep_enable_timer_wakeup, esp_timer_get_time, uxTaskGetStackHighWaterMark, ESP_OK,
+    esp_deep_sleep_start, esp_ota_abort, esp_ota_begin, esp_ota_end,
+    esp_ota_get_next_update_partition, esp_ota_get_running_partition, esp_ota_get_state_partition,
+    esp_ota_handle_t, esp_ota_img_states_t, esp_ota_img_states_t_ESP_OTA_IMG_PENDING_VERIFY,
+    esp_ota_mark_app_valid_cancel_rollback, esp_ota_set_boot_partition, esp_ota_write,
+    esp_partition_t, esp_reset_reason, esp_restart, esp_sleep_enable_timer_wakeup,
+    esp_timer_get_time, ESP_OK,
 };
 use log::{info, warn};
 use sha2::{Digest, Sha256};
 use xiao_esp32c3::protocol::{
-    encode_mfg_data, format_ota_status, format_status_line, format_wake_profile_json,
-    parse_ota_command, reset_reason_name, simulate_epd_frame, simulate_sensor_filter, OtaCommand,
-    OtaStatus, PhaseAccumulator, SpanRecorder, WakeProfile, DEVICE_NAME, EPD_FRAME_BYTES,
-    EPD_FULL_REFRESH_SIM_US, EPD_PARTIAL_REFRESH_SIM_US, FIRMWARE_ID, FLAG_BROWNOUT_RESET,
-    FLAG_DEEP_SLEEP_WAKE, FLAG_EPD_PARTIAL, OTA_CONTROL_UUID, OTA_DATA_UUID, OTA_SERVICE_UUID,
-    OTA_SLOT_BYTES, OTA_STATUS_UUID, PROFILE_CHAR_UUID,
+    encode_mfg_data, format_ota_status, format_status_line, parse_ota_command, reset_reason_name,
+    simulate_epd_frame, simulate_sensor_filter, OtaCommand, OtaStatus, PhaseAccumulator,
+    DEVICE_NAME, EPD_FRAME_BYTES, EPD_FULL_REFRESH_SIM_US, EPD_PARTIAL_REFRESH_SIM_US, FIRMWARE_ID,
+    FLAG_BROWNOUT_RESET, FLAG_DEEP_SLEEP_WAKE, FLAG_EPD_PARTIAL, OTA_CONTROL_UUID, OTA_DATA_UUID,
+    OTA_SERVICE_UUID, OTA_SLOT_BYTES, OTA_STATUS_UUID,
 };
 
 /// Logic marker pin for Nordic PPK2 / oscilloscope correlation (GPIO 2 = XIAO D0).
@@ -77,7 +76,7 @@ fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
 
-    let mut spans = SpanRecorder::new(wake_start_us);
+    let mut prof = profiler::WakeProfiler::start(wake_start_us);
     let reset_code = unsafe { esp_reset_reason() } as i32;
     let reset_name = reset_reason_name(reset_code);
     info!("{FIRMWARE_ID} wake (reset={reset_name}({reset_code}), probe={PROBE_GPIO_LABEL})");
@@ -85,7 +84,7 @@ fn main() -> Result<()> {
     let peripherals = Peripherals::take()?;
     let mut probe = PinDriver::output(peripherals.pins.gpio2)?;
     probe.set_low()?;
-    spans.record("boot.init", "wake", wake_start_us, now_us());
+    prof.record("boot.init", "wake", wake_start_us, now_us());
 
     let mut flags: u8 = 0;
     if reset_code == 8 {
@@ -105,7 +104,7 @@ fn main() -> Result<()> {
     let sensor_start = now_us();
     let (battery_mv, sensor_us) =
         measure_phase(&mut probe, || simulate_sensor_filter(next_wake, 64))?;
-    spans.record("sensor.adc_filter", "sensor", sensor_start, now_us());
+    prof.record("sensor.adc_filter", "sensor", sensor_start, now_us());
 
     // Phase 2: Compute / 1-bit e-paper framebuffer render.
     let compute_start = now_us();
@@ -113,11 +112,11 @@ fn main() -> Result<()> {
     let (checksum, compute_us) = measure_phase(&mut probe, || {
         simulate_epd_frame(&mut epd_buf, next_wake, battery_mv, is_partial_epd)
     })?;
-    spans.record("compute.epd_render", "compute", compute_start, now_us());
+    prof.record("compute.epd_render", "compute", compute_start, now_us());
 
     // Phase 3: E-paper SPI transfer + refresh wait.
     let (_, epd_refresh_us) = measure_phase(&mut probe, || {
-        simulate_epd_spi_and_refresh(&epd_buf, is_partial_epd, &mut spans)
+        simulate_epd_spi_and_refresh(&epd_buf, is_partial_epd, &mut prof)
     })?;
 
     // Build the 24-byte metrics snapshot in RTC slow memory.
@@ -127,36 +126,16 @@ fn main() -> Result<()> {
         acc.record_wake(sensor_us, compute_us, epd_refresh_us, battery_mv, flags)
     };
 
-    // Snapshot RTOS heap/stack and CPU cycle telemetry before bringing up BLE.
-    let (free_heap_bytes, min_free_heap_bytes, stack_high_water_bytes) = unsafe {
-        (
-            esp_get_free_heap_size(),
-            esp_get_minimum_free_heap_size(),
-            uxTaskGetStackHighWaterMark(core::ptr::null_mut()),
-        )
-    };
-    let cpu_cycles = now_us().saturating_sub(wake_start_us).saturating_mul(160);
-    let profile = WakeProfile {
-        wake_count: metrics.wake_count,
-        seq: metrics.seq,
-        free_heap_bytes,
-        min_free_heap_bytes,
-        stack_high_water_bytes,
-        cpu_cycles,
-        spans: spans.into_spans(),
-        pc_samples: Vec::new(),
-    };
-    let profile_json = format_wake_profile_json(&profile);
-
+    let profile_json = prof.finish_json(&metrics);
     info!(
-        "{} epd_checksum={checksum:#010x} free_heap={free_heap_bytes} stack_hw={stack_high_water_bytes}",
+        "{} epd_checksum={checksum:#010x}",
         format_status_line(&metrics)
     );
 
     // Phase 4: BLE advertisement burst (26-byte Manufacturer Data: 0xFFFF + 24B payload),
-    // plus on-demand BLE GATT OTA and WakeProfile read if the iPhone connects during the 150 ms burst.
+    // plus on-demand BLE GATT OTA (and WakeProfile read in debug/profiling builds).
     let (_, radio_us) = measure_phase(&mut probe, || {
-        broadcast_ble_and_serve_ota(&metrics, profile_json.as_bytes())
+        broadcast_ble_and_serve_ota(&metrics, profile_json.as_deref())
     })?;
 
     // If this slot booted in PENDING_VERIFY after an OTA update, completing a wake cycle
@@ -196,7 +175,7 @@ fn now_us() -> u64 {
 }
 
 /// Benchmark e-paper SPI byte streaming and panel BUSY refresh latency.
-fn simulate_epd_spi_and_refresh(frame: &[u8], partial: bool, spans: &mut SpanRecorder) {
+fn simulate_epd_spi_and_refresh(frame: &[u8], partial: bool, prof: &mut profiler::WakeProfiler) {
     let spi_start = now_us();
     let mut acc: u32 = 0;
     for chunk in frame.chunks(64) {
@@ -206,7 +185,7 @@ fn simulate_epd_spi_and_refresh(frame: &[u8], partial: bool, spans: &mut SpanRec
     }
     std::hint::black_box(acc);
     let spi_end = now_us();
-    spans.record("epd.spi_transfer", "epd_refresh", spi_start, spi_end);
+    prof.record("epd.spi_transfer", "epd_refresh", spi_start, spi_end);
 
     let busy_start = now_us();
     let delay_ms = if partial {
@@ -215,7 +194,7 @@ fn simulate_epd_spi_and_refresh(frame: &[u8], partial: bool, spans: &mut SpanRec
         EPD_FULL_REFRESH_SIM_US / 10_000 // 185 ms bench scaling
     };
     FreeRtos::delay_ms(delay_ms);
-    spans.record("epd.busy_wait", "epd_refresh", busy_start, now_us());
+    prof.record("epd.busy_wait", "epd_refresh", busy_start, now_us());
 }
 
 /// Check if the running OTA partition is in `ESP_OTA_IMG_PENDING_VERIFY` and mark it valid.
@@ -432,7 +411,10 @@ fn notify_ota_status(
 /// Broadcast the 24-byte metrics struct inside BLE Manufacturer Specific Data (`0xFFFF`)
 /// for [`BLE_BURST_MS`]. If an iPhone connects during that window to push an OTA update,
 /// stay awake until the OTA transfer completes or disconnects.
-fn broadcast_ble_and_serve_ota(metrics: &xiao_esp32c3::protocol::AdvMetrics, profile_json: &[u8]) {
+fn broadcast_ble_and_serve_ota(
+    metrics: &xiao_esp32c3::protocol::AdvMetrics,
+    profile_json: Option<&str>,
+) {
     let device = BLEDevice::take();
     let _ = device.set_preferred_mtu(512);
     let server = device.get_server();
@@ -474,14 +456,11 @@ fn broadcast_ble_and_serve_ota(metrics: &xiao_esp32c3::protocol::AdvMetrics, pro
         uuid_or_panic(OTA_STATUS_UUID),
         NimbleProperties::READ | NimbleProperties::NOTIFY,
     );
-    let profile_char = service
-        .lock()
-        .create_characteristic(uuid_or_panic(PROFILE_CHAR_UUID), NimbleProperties::READ);
 
     status_char
         .lock()
         .set_value(format_ota_status(&OtaStatus::Idle).as_bytes());
-    profile_char.lock().set_value(profile_json);
+    profiler::register_profile_char(&service, profile_json);
 
     let ctrl_state = Arc::clone(&ota_state);
     let ctrl_status_char = Arc::clone(&status_char);
@@ -574,5 +553,218 @@ fn uuid_or_panic(text: &str) -> BleUuid {
         OTA_DATA_UUID => uuid128!("beb5483e-36e1-4688-b7f5-ea07361bc302"),
         OTA_STATUS_UUID => uuid128!("1a3c0001-36e1-4688-b7f5-ea07361bc303"),
         other => panic!("unknown UUID {other}"),
+    }
+}
+
+#[cfg(any(debug_assertions, feature = "profiling"))]
+mod profiler {
+    use std::ffi::c_void;
+    use std::sync::{Arc, Mutex};
+
+    use esp32_nimble::utilities::mutex::Mutex as NimbleMutex;
+    use esp32_nimble::{uuid128, BLEService, NimbleProperties};
+    use esp_idf_svc::sys::{
+        esp_get_free_heap_size, esp_get_minimum_free_heap_size, esp_timer_create,
+        esp_timer_create_args_t, esp_timer_delete, esp_timer_dispatch_t_ESP_TIMER_TASK,
+        esp_timer_handle_t, esp_timer_start_periodic, esp_timer_stop, uxTaskGetStackHighWaterMark,
+        xTaskGetCurrentTaskHandle, TaskHandle_t, ESP_OK,
+    };
+    use log::info;
+    use xiao_esp32c3::protocol::{
+        format_wake_profile_json, AdvMetrics, PcHistogram, SpanRecorder, WakeProfile,
+    };
+
+    use super::now_us;
+
+    /// 1 kHz sampling interval (1,000 µs) for the PC hotspot sampler.
+    const PC_SAMPLE_PERIOD_US: u64 = 1_000;
+
+    /// Maximum number of PC hotspots included in the BLE GATT WakeProfile JSON.
+    const MAX_PC_HOTSPOTS: usize = 12;
+
+    struct PcSamplerState {
+        target_task: TaskHandle_t,
+        hist: Mutex<PcHistogram>,
+    }
+
+    // SAFETY: `target_task` is an opaque FreeRTOS task handle for the main task,
+    // which outlives the timer (the timer is stopped and deleted in `finish_json`).
+    unsafe impl Send for PcSamplerState {}
+    unsafe impl Sync for PcSamplerState {}
+
+    /// Timer callback executed at 1 kHz from the high-priority `esp_timer` task.
+    ///
+    /// When `esp_timer` preempts the main task, FreeRTOS's RISC-V port saves the
+    /// interrupted context (`RvExcFrame`, with `mepc` at offset 0) at the address
+    /// stored in the first word (`pxTopOfStack`) of the main task's TCB.
+    unsafe extern "C" fn pc_sample_timer_cb(arg: *mut c_void) {
+        if arg.is_null() {
+            return;
+        }
+        let state = &*(arg as *const PcSamplerState);
+        if state.target_task.is_null() {
+            return;
+        }
+        let px_top_of_stack = *(state.target_task as *const *const u32);
+        if px_top_of_stack.is_null() {
+            return;
+        }
+        let mepc = *px_top_of_stack;
+        if let Ok(mut hist) = state.hist.try_lock() {
+            hist.record(mepc);
+        }
+    }
+
+    pub struct WakeProfiler {
+        wake_start_us: u64,
+        spans: SpanRecorder,
+        timer: esp_timer_handle_t,
+        sampler: *mut PcSamplerState,
+    }
+
+    impl WakeProfiler {
+        pub fn start(wake_start_us: u64) -> Self {
+            let target_task = unsafe { xTaskGetCurrentTaskHandle() };
+            let sampler = Box::into_raw(Box::new(PcSamplerState {
+                target_task,
+                hist: Mutex::new(PcHistogram::new()),
+            }));
+            let mut timer: esp_timer_handle_t = core::ptr::null_mut();
+            let args = esp_timer_create_args_t {
+                callback: Some(pc_sample_timer_cb),
+                arg: sampler.cast::<c_void>(),
+                dispatch_method: esp_timer_dispatch_t_ESP_TIMER_TASK,
+                name: c"xiao_prof".as_ptr(),
+                skip_unhandled_events: true,
+            };
+            unsafe {
+                if esp_timer_create(&args, &mut timer) == ESP_OK {
+                    let _ = esp_timer_start_periodic(timer, PC_SAMPLE_PERIOD_US);
+                } else {
+                    timer = core::ptr::null_mut();
+                }
+            }
+            Self {
+                wake_start_us,
+                spans: SpanRecorder::new(wake_start_us),
+                timer,
+                sampler,
+            }
+        }
+
+        pub fn record(&mut self, name: &str, parent: &str, start_us: u64, end_us: u64) {
+            self.spans.record(name, parent, start_us, end_us);
+        }
+
+        pub fn finish_json(mut self, metrics: &AdvMetrics) -> Option<String> {
+            self.stop_timer();
+            let (free_heap_bytes, min_free_heap_bytes, stack_high_water_bytes) = unsafe {
+                (
+                    esp_get_free_heap_size(),
+                    esp_get_minimum_free_heap_size(),
+                    uxTaskGetStackHighWaterMark(core::ptr::null_mut()),
+                )
+            };
+            let cpu_cycles = now_us()
+                .saturating_sub(self.wake_start_us)
+                .saturating_mul(160);
+            let pc_samples = if !self.sampler.is_null() {
+                // SAFETY: timer has been stopped and deleted; we have exclusive access to `sampler`.
+                let state = unsafe { &*self.sampler };
+                state
+                    .hist
+                    .lock()
+                    .map(|h| h.top_samples(MAX_PC_HOTSPOTS))
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            info!(
+                "profile: free_heap={free_heap_bytes} min_heap={min_free_heap_bytes} stack_hw={stack_high_water_bytes} pc_hotspots={}",
+                pc_samples.len()
+            );
+            let spans = core::mem::take(&mut self.spans).into_spans();
+            let profile = WakeProfile {
+                wake_count: metrics.wake_count,
+                seq: metrics.seq,
+                free_heap_bytes,
+                min_free_heap_bytes,
+                stack_high_water_bytes,
+                cpu_cycles,
+                spans,
+                pc_samples,
+            };
+            Some(format_wake_profile_json(&profile))
+        }
+
+        fn stop_timer(&mut self) {
+            if !self.timer.is_null() {
+                unsafe {
+                    let _ = esp_timer_stop(self.timer);
+                    let _ = esp_timer_delete(self.timer);
+                }
+                self.timer = core::ptr::null_mut();
+            }
+        }
+    }
+
+    impl Drop for WakeProfiler {
+        fn drop(&mut self) {
+            self.stop_timer();
+            if !self.sampler.is_null() {
+                // SAFETY: timer is stopped and deleted; `sampler` was allocated via `Box::into_raw`.
+                unsafe {
+                    drop(Box::from_raw(self.sampler));
+                }
+                self.sampler = core::ptr::null_mut();
+            }
+        }
+    }
+
+    pub fn register_profile_char(
+        service: &Arc<NimbleMutex<BLEService>>,
+        profile_json: Option<&str>,
+    ) {
+        if let Some(json) = profile_json {
+            let profile_char = service.lock().create_characteristic(
+                uuid128!("1a3c0002-36e1-4688-b7f5-ea07361bc303"),
+                NimbleProperties::READ,
+            );
+            profile_char.lock().set_value(json.as_bytes());
+        }
+    }
+}
+
+#[cfg(not(any(debug_assertions, feature = "profiling")))]
+mod profiler {
+    use std::sync::Arc;
+
+    use esp32_nimble::utilities::mutex::Mutex as NimbleMutex;
+    use esp32_nimble::BLEService;
+    use xiao_esp32c3::protocol::AdvMetrics;
+
+    /// Zero-sized no-op profiler compiled into production release builds.
+    pub struct WakeProfiler;
+
+    impl WakeProfiler {
+        #[inline(always)]
+        pub fn start(_wake_start_us: u64) -> Self {
+            Self
+        }
+
+        #[inline(always)]
+        pub fn record(&mut self, _name: &str, _parent: &str, _start_us: u64, _end_us: u64) {}
+
+        #[inline(always)]
+        pub fn finish_json(self, _metrics: &AdvMetrics) -> Option<String> {
+            None
+        }
+    }
+
+    #[inline(always)]
+    pub fn register_profile_char(
+        _service: &Arc<NimbleMutex<BLEService>>,
+        _profile_json: Option<&str>,
+    ) {
     }
 }

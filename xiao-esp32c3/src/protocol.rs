@@ -860,6 +860,102 @@ mod tests {
         ));
         assert!(json.contains(r#""pc":"0x42001a40","hits":14"#));
     }
+
+    #[test]
+    fn pc_histogram_filters_invalid_addrs_and_sorts_hotspots() {
+        assert!(is_esp32c3_code_addr(0x4200_1a40)); // Flash IROM
+        assert!(is_esp32c3_code_addr(0x4038_0100)); // IRAM
+        assert!(is_esp32c3_code_addr(0x4000_0400)); // ROM
+        assert!(!is_esp32c3_code_addr(0x0000_0000));
+        assert!(!is_esp32c3_code_addr(0x3FC8_1000)); // DRAM (not executable)
+
+        let mut hist = PcHistogram::new();
+        hist.record(0x3FC8_1000); // ignored
+        hist.record(0x4200_3c18);
+        hist.record(0x4200_1a40);
+        hist.record(0x4200_1a40);
+        hist.record(0x4200_1a40);
+        hist.record(0x4200_3c18);
+
+        let top = hist.top_samples(2);
+        assert_eq!(
+            top,
+            vec![
+                PcSample {
+                    pc: 0x4200_1a40,
+                    hits: 3,
+                },
+                PcSample {
+                    pc: 0x4200_3c18,
+                    hits: 2,
+                },
+            ]
+        );
+    }
+}
+
+/// Returns true if `pc` lies inside ESP32-C3 executable instruction memory
+/// (Flash XIP IROM, IRAM, or internal ROM).
+pub const fn is_esp32c3_code_addr(pc: u32) -> bool {
+    (pc >= 0x4200_0000 && pc < 0x4280_0000)
+        || (pc >= 0x4037_C000 && pc < 0x403E_0000)
+        || (pc >= 0x4000_0000 && pc < 0x4006_0000)
+}
+
+/// Fixed-size zero-allocation PC sample histogram used by the 1 kHz profiler timer.
+#[derive(Debug, Clone)]
+pub struct PcHistogram {
+    pcs: [u32; 64],
+    hits: [u16; 64],
+    len: usize,
+}
+
+impl Default for PcHistogram {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PcHistogram {
+    pub const fn new() -> Self {
+        Self {
+            pcs: [0; 64],
+            hits: [0; 64],
+            len: 0,
+        }
+    }
+
+    /// Record a sampled PC address (aligned to 4 bytes). Ignores non-code addresses.
+    pub fn record(&mut self, pc: u32) {
+        if !is_esp32c3_code_addr(pc) {
+            return;
+        }
+        let aligned = pc & !0x3;
+        for i in 0..self.len {
+            if self.pcs[i] == aligned {
+                self.hits[i] = self.hits[i].saturating_add(1);
+                return;
+            }
+        }
+        if self.len < self.pcs.len() {
+            self.pcs[self.len] = aligned;
+            self.hits[self.len] = 1;
+            self.len += 1;
+        }
+    }
+
+    /// Return up to `limit` top hotspots sorted descending by hit count.
+    pub fn top_samples(&self, limit: usize) -> Vec<PcSample> {
+        let mut out: Vec<PcSample> = (0..self.len)
+            .map(|i| PcSample {
+                pc: self.pcs[i],
+                hits: self.hits[i],
+            })
+            .collect();
+        out.sort_by(|a, b| b.hits.cmp(&a.hits).then_with(|| a.pc.cmp(&b.pc)));
+        out.truncate(limit);
+        out
+    }
 }
 
 /// A single sub-phase timing span recorded on the MCU relative to wake start.
