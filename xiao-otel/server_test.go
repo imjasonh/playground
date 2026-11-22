@@ -316,7 +316,8 @@ func signAssertion(t *testing.T, key *ecdsa.PrivateKey, appID string, counter ui
 
 	clientHash := sha256.Sum256(clientData)
 	msg := append(append([]byte{}, authData...), clientHash[:]...)
-	digest := sha256.Sum256(msg)
+	nonce := sha256.Sum256(msg)
+	digest := sha256.Sum256(nonce[:])
 	sig, err := ecdsa.SignASN1(rand.Reader, key, digest[:])
 	if err != nil {
 		t.Fatal(err)

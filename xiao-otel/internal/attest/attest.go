@@ -604,10 +604,14 @@ func verifyAssertionObject(appID string, pubKeyBytes, assertionRaw, clientHash [
 	if err != nil {
 		return 0, err
 	}
+	// Per Apple's App Attest "Verify the Assertion" steps:
+	//   1. nonce = SHA256(authenticatorData || clientDataHash)
+	//   2. Verify the ECDSA-SHA256 signature over nonce (i.e. prehash digest = SHA256(nonce)).
 	nonceInput := make([]byte, 0, len(obj.AuthenticatorData)+len(clientHash))
 	nonceInput = append(nonceInput, obj.AuthenticatorData...)
 	nonceInput = append(nonceInput, clientHash...)
-	digest := sha256.Sum256(nonceInput)
+	nonce := sha256.Sum256(nonceInput)
+	digest := sha256.Sum256(nonce[:])
 	if !ecdsa.VerifyASN1(pub, digest[:], obj.Signature) {
 		return 0, errors.New("invalid assertion signature")
 	}
