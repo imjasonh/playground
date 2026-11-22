@@ -169,7 +169,8 @@ enum XIAOESP32C3Protocol {
         return fallbackOtelEndpoint
     }
     static let defaultGHCRRepo = "imjasonh/playground/xiao-esp32c3"
-    static let defaultGHCRTag = "latest"
+    static let defaultGitHubRepo = "imjasonh/playground"
+    static let defaultFirmwarePath = "xiao-esp32c3"
 
     /// Decode a 26-byte Manufacturer Specific Data buffer (`0xFFFF` company ID + 24-byte payload).
     static func decodeManufacturerData(_ data: Data) -> XIAOESP32C3Metrics? {

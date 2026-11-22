@@ -330,7 +330,7 @@ struct XIAOESP32C3View: View {
                         await controller.pullLatestFirmwareFromGHCR()
                     }
                 } label: {
-                    Label("Pull GHCR :latest", systemImage: "arrow.down.circle")
+                    Label("Pull latest from GHCR", systemImage: "arrow.down.circle")
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.bordered)

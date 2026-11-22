@@ -113,7 +113,7 @@ check-firmware:
 	fi
 	@echo "firmware $(FIRMWARE_ID) -> $(BIN) ($$(wc -c < "$(BIN)") bytes ELF)"
 
-BOOTLOADER := $(firstword $(wildcard $(FW_TARGET_DIR)/$(TARGET)/release/build/esp-idf-sys-*/out/build/bootloader/bootloader.bin))
+BOOTLOADER = $(firstword $(wildcard $(FW_TARGET_DIR)/$(TARGET)/release/build/esp-idf-sys-*/out/build/bootloader/bootloader.bin))
 
 flash: build
 	espflash flash --port $(PORT) --partition-table partitions.csv $(BIN)

@@ -106,17 +106,19 @@ fn main() -> Result<()> {
         measure_phase(&mut probe, || simulate_sensor_filter(next_wake, 64))?;
     prof.record("sensor.adc_filter", "sensor", sensor_start, now_us());
 
-    // Phase 2: Compute / 1-bit e-paper framebuffer render.
+    // Phase 2: Compute / 1-bit e-paper framebuffer render (static BSS buffer avoids 5 KB heap alloc/free per wake).
     let compute_start = now_us();
-    let mut epd_buf = vec![0u8; EPD_FRAME_BYTES];
+    static mut EPD_FRAME_BUF: [u8; EPD_FRAME_BYTES] = [0u8; EPD_FRAME_BYTES];
+    // SAFETY: single-core ESP32-C3 main task; `epd_buf` does not escape `main` and is not accessed from interrupts or BLE callbacks.
+    let epd_buf = unsafe { &mut *core::ptr::addr_of_mut!(EPD_FRAME_BUF) };
     let (checksum, compute_us) = measure_phase(&mut probe, || {
-        simulate_epd_frame(&mut epd_buf, next_wake, battery_mv, is_partial_epd)
+        simulate_epd_frame(epd_buf, next_wake, battery_mv, is_partial_epd)
     })?;
     prof.record("compute.epd_render", "compute", compute_start, now_us());
 
     // Phase 3: E-paper SPI transfer + refresh wait.
     let (_, epd_refresh_us) = measure_phase(&mut probe, || {
-        simulate_epd_spi_and_refresh(&epd_buf, is_partial_epd, &mut prof)
+        simulate_epd_spi_and_refresh(epd_buf, is_partial_epd, &mut prof)
     })?;
 
     // Build the 24-byte metrics snapshot in RTC slow memory.
