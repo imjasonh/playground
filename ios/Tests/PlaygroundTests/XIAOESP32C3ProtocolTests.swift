@@ -1,3 +1,4 @@
+import DeviceCheck
 import XCTest
 @testable import Playground
 
@@ -224,5 +225,200 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
             controller.otaPhase,
             .completed(sha256: controller.stagedFirmwareSHA256)
         )
+    }
+
+    @MainActor
+    func testPostMetricsGeneratesFreshKeyInsteadOfReattestingStaleKey() async throws {
+        let suite = "xiao-esp32c3.attest-stale.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = AppAttestMemoryStore(deviceId: "dev-1", userId: "user-1")
+        store.keyId = "stale-already-attested-key"
+
+        let keys = FakeXIAOAttestKeys(generatedKeys: ["fresh-key-1"])
+        let http = FakeXIAOHTTP()
+        let challengeCounter = LockedInt()
+        http.onRequest = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/v1/challenge") {
+                let n = challengeCounter.next()
+                return try Self.jsonResponse(#"{"challenge":"c\#(n)","expiresAt":1700000000}"#, status: 200)
+            }
+            if path.hasSuffix("/v1/token") {
+                let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+                let keyId = body?["keyId"] as? String ?? ""
+                XCTAssertEqual(keyId, "fresh-key-1")
+                return try Self.jsonResponse(
+                    #"{"userId":"user-1","deviceId":"dev-1","keyId":"\#(keyId)","unattested":false,"counter":0}"#,
+                    status: 200
+                )
+            }
+            if path.hasSuffix("/v1/metrics") {
+                XCTAssertEqual(request.value(forHTTPHeaderField: "X-Apple-App-Attest-Key-Id"), "fresh-key-1")
+                XCTAssertNotNil(request.value(forHTTPHeaderField: "X-Apple-App-Attest-Assertion"))
+                return try Self.jsonResponse(#"{"status":"accepted"}"#, status: 202)
+            }
+            return try Self.jsonResponse(#"{"error":"unexpected"}"#, status: 500)
+        }
+
+        let controller = XIAOESP32C3Controller(
+            defaults: defaults,
+            attestKeys: keys,
+            attestStore: store,
+            http: http
+        )
+        let metricsURL = try XCTUnwrap(URL(string: "https://xiao-otel.example.test/v1/metrics"))
+        let baseURL = try XCTUnwrap(URL(string: "https://xiao-otel.example.test/"))
+
+        let status = try await controller.postMetrics(
+            body: Data(#"{"resourceMetrics":[]}"#.utf8),
+            metricsURL: metricsURL,
+            baseURL: baseURL,
+            authorizeWithAppAttest: true
+        )
+        XCTAssertEqual(status, 202)
+        XCTAssertEqual(store.keyId, "fresh-key-1")
+        XCTAssertEqual(keys.attestedKeys, ["fresh-key-1"])
+    }
+
+    @MainActor
+    func testPostMetricsReattestsAndRetriesOnceAfter401() async throws {
+        let suite = "xiao-esp32c3.attest-401.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = AppAttestMemoryStore(deviceId: "dev-2", userId: "user-2")
+        let keys = FakeXIAOAttestKeys(generatedKeys: ["key-1", "key-2"])
+        let http = FakeXIAOHTTP()
+        let challengeCounter = LockedInt()
+        let metricsAttempts = LockedInt()
+        http.onRequest = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/v1/challenge") {
+                let n = challengeCounter.next()
+                return try Self.jsonResponse(#"{"challenge":"c\#(n)","expiresAt":1700000000}"#, status: 200)
+            }
+            if path.hasSuffix("/v1/token") {
+                let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+                let keyId = body?["keyId"] as? String ?? ""
+                return try Self.jsonResponse(
+                    #"{"userId":"user-2","deviceId":"dev-2","keyId":"\#(keyId)","unattested":false,"counter":0}"#,
+                    status: 200
+                )
+            }
+            if path.hasSuffix("/v1/metrics") {
+                let attempt = metricsAttempts.next()
+                let keyId = request.value(forHTTPHeaderField: "X-Apple-App-Attest-Key-Id")
+                if attempt == 1 {
+                    XCTAssertEqual(keyId, "key-1")
+                    return try Self.jsonResponse(#"{"error":"unknown key"}"#, status: 401)
+                }
+                XCTAssertEqual(keyId, "key-2")
+                return try Self.jsonResponse(#"{"status":"accepted"}"#, status: 202)
+            }
+            return try Self.jsonResponse(#"{"error":"unexpected"}"#, status: 500)
+        }
+
+        let controller = XIAOESP32C3Controller(
+            defaults: defaults,
+            attestKeys: keys,
+            attestStore: store,
+            http: http
+        )
+        let metricsURL = try XCTUnwrap(URL(string: "https://xiao-otel.example.test/v1/metrics"))
+        let baseURL = try XCTUnwrap(URL(string: "https://xiao-otel.example.test/"))
+
+        let status = try await controller.postMetrics(
+            body: Data(#"{"resourceMetrics":[]}"#.utf8),
+            metricsURL: metricsURL,
+            baseURL: baseURL,
+            authorizeWithAppAttest: true
+        )
+        XCTAssertEqual(status, 202)
+        XCTAssertEqual(store.keyId, "key-2")
+        XCTAssertEqual(keys.attestedKeys, ["key-1", "key-2"])
+    }
+
+    private static func jsonResponse(_ body: String, status: Int) throws -> (Data, URLResponse) {
+        let url = try XCTUnwrap(URL(string: "https://xiao-otel.example.test"))
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: url,
+            statusCode: status,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        ))
+        return (Data(body.utf8), response)
+    }
+}
+
+private final class FakeXIAOHTTP: AppAttestHTTPClient, @unchecked Sendable {
+    var onRequest: @Sendable (URLRequest) throws -> (Data, URLResponse) = { _ in
+        throw URLError(.badServerResponse)
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        try onRequest(request)
+    }
+}
+
+private final class FakeXIAOAttestKeys: AppAttestKeyGenerating, @unchecked Sendable {
+    let isSupported = true
+    private let lock = NSLock()
+    private var generatedKeys: [String]
+    private var attestedSet: Set<String> = ["stale-already-attested-key"]
+    private var attestedOrder: [String] = []
+
+    init(generatedKeys: [String]) {
+        self.generatedKeys = generatedKeys
+    }
+
+    var attestedKeys: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return attestedOrder
+    }
+
+    func generateKey() async throws -> String {
+        popNextKey()
+    }
+
+    func attestKey(_ keyId: String, clientDataHash _: Data) async throws -> Data {
+        try recordAttestation(keyId)
+    }
+
+    func generateAssertion(_: String, clientDataHash _: Data) async throws -> Data {
+        Data([0x02])
+    }
+
+    private func popNextKey() -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return generatedKeys.isEmpty ? "generated-fallback" : generatedKeys.removeFirst()
+    }
+
+    private func recordAttestation(_ keyId: String) throws -> Data {
+        lock.lock()
+        defer { lock.unlock() }
+        if attestedSet.contains(keyId) {
+            throw NSError(domain: DCError.errorDomain, code: DCError.invalidInput.rawValue)
+        }
+        attestedSet.insert(keyId)
+        attestedOrder.append(keyId)
+        return Data([0x01])
+    }
+}
+
+private final class LockedInt: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    func next() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        value += 1
+        return value
     }
 }

@@ -36,6 +36,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     private static let forwardingDefaultsKey = "xiao-esp32c3.forwardingEnabled"
     private static let appAttestEnabledDefaultsKey = "xiao-esp32c3.useAppAttest"
     private static let registeredHostDefaultsKey = "xiao-esp32c3.attestedHost"
+    private static let keychainAccount = "xiao-esp32c3.keyId"
 
     @Published var bluetoothState: CBManagerState = .unknown
     @Published var isScanning = false
@@ -85,7 +86,8 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     ) {
         self.defaults = defaults
         self.attestKeys = attestKeys
-        self.attestStore = attestStore ?? AppAttestUserDefaultsStore(defaults: defaults)
+        self.attestStore = attestStore
+            ?? AppAttestUserDefaultsStore(defaults: defaults, keychainAccount: Self.keychainAccount)
         self.http = http
         if let savedEndpoint = defaults.string(forKey: Self.endpointDefaultsKey), !savedEndpoint.isEmpty {
             self.otelEndpoint = savedEndpoint
@@ -556,6 +558,22 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         baseURL: URL,
         authorizeWithAppAttest: Bool
     ) async throws -> Int {
+        try await postMetricsAttempt(
+            body: body,
+            metricsURL: metricsURL,
+            baseURL: baseURL,
+            authorizeWithAppAttest: authorizeWithAppAttest,
+            allowReattestRetry: true
+        )
+    }
+
+    private func postMetricsAttempt(
+        body: Data,
+        metricsURL: URL,
+        baseURL: URL,
+        authorizeWithAppAttest: Bool,
+        allowReattestRetry: Bool
+    ) async throws -> Int {
         var request = URLRequest(url: metricsURL)
         request.httpMethod = "POST"
         request.timeoutInterval = 6
@@ -588,9 +606,17 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
                         forHTTPHeaderField: "X-Apple-App-Attest-Assertion"
                     )
                 } catch {
-                    if Self.isInvalidKey(error) {
-                        attestStore.keyId = nil
-                        defaults.removeObject(forKey: Self.registeredHostDefaultsKey)
+                    if Self.shouldRotateAttestKey(error) {
+                        clearAttestationState()
+                        if allowReattestRetry {
+                            return try await postMetricsAttempt(
+                                body: body,
+                                metricsURL: metricsURL,
+                                baseURL: baseURL,
+                                authorizeWithAppAttest: authorizeWithAppAttest,
+                                allowReattestRetry: false
+                            )
+                        }
                     }
                     throw error
                 }
@@ -600,9 +626,24 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         let (_, response) = try await http.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401, authorizeWithAppAttest {
-            defaults.removeObject(forKey: Self.registeredHostDefaultsKey)
+            clearAttestationState()
+            if allowReattestRetry {
+                return try await postMetricsAttempt(
+                    body: body,
+                    metricsURL: metricsURL,
+                    baseURL: baseURL,
+                    authorizeWithAppAttest: authorizeWithAppAttest,
+                    allowReattestRetry: false
+                )
+            }
         }
         return code
+    }
+
+    private func clearAttestationState() {
+        attestStore.keyId = nil
+        attestStore.isRegistered = false
+        defaults.removeObject(forKey: Self.registeredHostDefaultsKey)
     }
 
     private func ensureBackendAttested(api: AppAttestAPI, baseURL: URL) async throws -> String {
@@ -625,14 +666,10 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         let registered: AppAttestRegisterResponse
         if attestKeys.isSupported {
             let hash = AppAttestHashing.sha256(clientJSON)
-            let keyId: String
-            if let existing = attestStore.keyId, !existing.isEmpty {
-                keyId = existing
-            } else {
-                let fresh = try await attestKeys.generateKey()
-                attestStore.keyId = fresh
-                keyId = fresh
-            }
+            // DCAppAttestService.attestKey is a one-time operation per keyId: calling it on a
+            // key that has already been attested throws DCError.invalidInput (error 2). Always
+            // generate a fresh Secure Enclave key whenever registering with the backend.
+            let keyId = try await attestKeys.generateKey()
             do {
                 let attestation = try await attestKeys.attestKey(keyId, clientDataHash: hash)
                 registered = try await api.register(
@@ -641,9 +678,8 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
                     clientDataJSON: clientJSON
                 )
             } catch {
-                if Self.isInvalidKey(error) {
+                if Self.shouldRotateAttestKey(error) {
                     let fresh = try await attestKeys.generateKey()
-                    attestStore.keyId = fresh
                     let attestation = try await attestKeys.attestKey(fresh, clientDataHash: hash)
                     registered = try await api.register(
                         keyId: fresh,
@@ -663,9 +699,12 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         return registered.keyId
     }
 
-    private static func isInvalidKey(_ error: Error) -> Bool {
+    private static func shouldRotateAttestKey(_ error: Error) -> Bool {
         let ns = error as NSError
-        return ns.domain == DCError.errorDomain && ns.code == DCError.invalidKey.rawValue
+        guard ns.domain == DCError.errorDomain else {
+            return false
+        }
+        return ns.code == DCError.invalidKey.rawValue || ns.code == DCError.invalidInput.rawValue
     }
 
     static func resolveMetricsURL(from raw: String) -> URL? {
