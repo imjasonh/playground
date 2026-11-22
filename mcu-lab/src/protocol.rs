@@ -1,14 +1,14 @@
 //! Wire format, cycle/phase accumulator, e-paper benchmark helpers, and OTLP
-//! JSON builder for the Seeed Studio XIAO ESP32C3 profiling prototype.
+//! JSON builder for the multi-MCU `mcu-lab` firmware crate.
 //!
-//! The board wakes from deep sleep, measures discrete execution phases in
-//! microseconds (`sensor`, `compute`, `epd_refresh`, and `radio`), packs a
-//! 24-byte little-endian payload into a BLE Manufacturer Specific Data (0xFF)
-//! advertising frame, broadcasts a short non-connectable burst, and returns to
-//! deep sleep. The Playground iOS experiment scans for company ID `0xFFFF`,
-//! deduplicates frames by `seq`, renders a live performance and power budget
-//! dashboard, and optionally forwards OTLP/HTTP JSON metrics to an
-//! OpenTelemetry Collector.
+//! Each board measures discrete execution phases in microseconds (`sensor`,
+//! `compute`, `epd_refresh`, and `radio`), packs a 24-byte little-endian
+//! payload (with its `board_id` in `flags` bits 4..7) into a BLE Manufacturer
+//! Specific Data (`0xFF`) advertising frame, and broadcasts a burst. The
+//! Playground **MCU Lab** iOS experiment scans for company ID `0xFFFF`,
+//! deduplicates frames per device by `seq`, renders a live performance and
+//! power budget dashboard, and forwards OTLP/HTTP JSON metrics and traces to
+//! the OpenTelemetry collector.
 
 /// Advertised GAP short name (placed in scan response when present).
 pub const DEVICE_NAME: &str = "XIAO-C3";
@@ -102,16 +102,16 @@ pub fn validate_esp_image_header(chunk: &[u8], expected_chip_id: u16) -> Result<
 /// Custom BLE GATT service UUID (128-bit) for on-demand firmware OTA updates from the iPhone.
 pub const OTA_SERVICE_UUID: &str = "4fafc301-1fb5-459e-8fcc-c5c9c331914b";
 
-/// Write characteristic: iPhone → XIAO OTA control (`BEGIN <size> <sha256>`, `COMMIT`, `ABORT`).
+/// Write characteristic: iPhone → MCU OTA control (`BEGIN <size> <sha256>`, `COMMIT`, `ABORT`).
 pub const OTA_CONTROL_UUID: &str = "beb5483e-36e1-4688-b7f5-ea07361bc301";
 
-/// Write-without-response characteristic: iPhone → XIAO raw firmware binary chunks.
+/// Write-without-response characteristic: iPhone → MCU raw firmware binary chunks.
 pub const OTA_DATA_UUID: &str = "beb5483e-36e1-4688-b7f5-ea07361bc302";
 
-/// Read + notify characteristic: XIAO → iPhone OTA status line (`IDLE`, `READY`, `PROGRESS`, `OK`, `ERR`).
+/// Read + notify characteristic: MCU → iPhone OTA status line (`IDLE`, `READY`, `PROGRESS`, `OK`, `ERR`).
 pub const OTA_STATUS_UUID: &str = "1a3c0001-36e1-4688-b7f5-ea07361bc303";
 
-/// Read characteristic: XIAO → iPhone latest wake sub-phase spans & profiling JSON.
+/// Read characteristic: MCU → iPhone latest wake sub-phase spans & profiling JSON.
 pub const PROFILE_CHAR_UUID: &str = "1a3c0002-36e1-4688-b7f5-ea07361bc303";
 
 /// Size of each OTA partition slot (`ota_0` / `ota_1`) in `partitions.csv` (1.9375 MiB).
@@ -412,10 +412,14 @@ pub fn parse_status_line(raw: &str) -> Option<AdvMetrics> {
 pub fn format_otlp_json(device_id: &str, m: &AdvMetrics, rssi: i32, time_unix_nano: u64) -> String {
     let ts = time_unix_nano.to_string();
     let escaped_device_id = escape_json_str(device_id);
+    let service_name = match decode_board_id(m.flags) {
+        BOARD_WAVESHARE_EPD75 => "epd-maze",
+        _ => "xiao-esp32c3",
+    };
     format!(
         concat!(
             r#"{{"resourceMetrics":[{{"resource":{{"attributes":["#,
-            r#"{{"key":"service.name","value":{{"stringValue":"xiao-esp32c3"}}}},"#,
+            r#"{{"key":"service.name","value":{{"stringValue":"{service_name}"}}}},"#,
             r#"{{"key":"device.id","value":{{"stringValue":"{device_id}"}}}}"#,
             r#"]}},"scopeMetrics":[{{"metrics":["#,
             r#"{{"name":"mcu.wake.count","gauge":{{"dataPoints":[{{"asInt":"{wake_count}","timeUnixNano":"{ts}"}}]}}}},"#,
@@ -429,6 +433,7 @@ pub fn format_otlp_json(device_id: &str, m: &AdvMetrics, rssi: i32, time_unix_na
             r#"{{"name":"mcu.ble.rssi","gauge":{{"dataPoints":[{{"asInt":"{rssi}","timeUnixNano":"{ts}"}}]}}}}"#,
             r#"]}}]}}]}}"#
         ),
+        service_name = service_name,
         device_id = escaped_device_id,
         wake_count = m.wake_count,
         sensor_us = m.sensor_us,
@@ -576,7 +581,7 @@ pub enum OtaCommand {
     Abort,
 }
 
-/// Status notification sent by the XIAO on [`OTA_STATUS_UUID`].
+/// Status notification sent by the MCU on [`OTA_STATUS_UUID`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OtaStatus {
     Idle,

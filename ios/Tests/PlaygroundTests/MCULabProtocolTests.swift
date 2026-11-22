@@ -2,11 +2,11 @@ import DeviceCheck
 import XCTest
 @testable import Playground
 
-final class XIAOESP32C3ProtocolTests: XCTestCase {
+final class MCULabProtocolTests: XCTestCase {
     func testManufacturerDataRoundTrip() {
-        let metrics = XIAOESP32C3Metrics(
+        let metrics = MCULabMetrics(
             seq: 42,
-            flags: XIAOESP32C3Protocol.flagDeepSleepWake | XIAOESP32C3Protocol.flagEpdPartial,
+            flags: MCULabProtocol.flagDeepSleepWake | MCULabProtocol.flagEpdPartial,
             wakeCount: 1_024,
             sensorUs: 1_450,
             computeUs: 3_820,
@@ -14,12 +14,12 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
             radioUs: 152_000,
             batteryMv: 3_910
         )
-        let mfg = XIAOESP32C3Protocol.encodeManufacturerData(metrics)
-        XCTAssertEqual(mfg.count, XIAOESP32C3Protocol.manufacturerDataLength)
+        let mfg = MCULabProtocol.encodeManufacturerData(metrics)
+        XCTAssertEqual(mfg.count, MCULabProtocol.manufacturerDataLength)
         XCTAssertEqual(mfg[0], 0xFF)
         XCTAssertEqual(mfg[1], 0xFF)
 
-        let decoded = XIAOESP32C3Protocol.decodeManufacturerData(mfg)
+        let decoded = MCULabProtocol.decodeManufacturerData(mfg)
         XCTAssertEqual(decoded, metrics)
         XCTAssertEqual(decoded?.isDeepSleepWake, true)
         XCTAssertEqual(decoded?.isEpdPartialRefresh, true)
@@ -29,7 +29,7 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
     }
 
     func testDecodeRejectsWrongCompanyIDAndShortBuffers() {
-        let metrics = XIAOESP32C3Metrics(
+        let metrics = MCULabMetrics(
             seq: 1,
             flags: 0,
             wakeCount: 1,
@@ -39,17 +39,17 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
             radioUs: 150_000,
             batteryMv: 4_000
         )
-        var mfg = XIAOESP32C3Protocol.encodeManufacturerData(metrics)
+        var mfg = MCULabProtocol.encodeManufacturerData(metrics)
         mfg[0] = 0x4C
         mfg[1] = 0x00
-        XCTAssertNil(XIAOESP32C3Protocol.decodeManufacturerData(mfg))
-        XCTAssertNil(XIAOESP32C3Protocol.decodeManufacturerData(Data([0xFF, 0xFF, 0x01])))
+        XCTAssertNil(MCULabProtocol.decodeManufacturerData(mfg))
+        XCTAssertNil(MCULabProtocol.decodeManufacturerData(Data([0xFF, 0xFF, 0x01])))
     }
 
     func testFormatStatusLineMatchesFirmware() {
-        let metrics = XIAOESP32C3Metrics(
+        let metrics = MCULabMetrics(
             seq: 12,
-            flags: XIAOESP32C3Protocol.flagDeepSleepWake | XIAOESP32C3Protocol.flagEpdPartial,
+            flags: MCULabProtocol.flagDeepSleepWake | MCULabProtocol.flagEpdPartial,
             wakeCount: 12,
             sensorUs: 1_340,
             computeUs: 4_120,
@@ -58,15 +58,15 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
             batteryMv: 3_880
         )
         XCTAssertEqual(
-            XIAOESP32C3Protocol.formatStatusLine(metrics),
+            MCULabProtocol.formatStatusLine(metrics),
             "seq=12 wake=12 sensor_us=1340 compute_us=4120 epd_us=320000 radio_us=149500 batt_mv=3880 flags=0x05"
         )
     }
 
     func testFormatOTLPJSONContainsAllMetricsAndPhases() throws {
-        let metrics = XIAOESP32C3Metrics(
+        let metrics = MCULabMetrics(
             seq: 3,
-            flags: XIAOESP32C3Protocol.flagDeepSleepWake,
+            flags: MCULabProtocol.flagDeepSleepWake,
             wakeCount: 15,
             sensorUs: 1_100,
             computeUs: 3_400,
@@ -74,7 +74,7 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
             radioUs: 150_000,
             batteryMv: 3_890
         )
-        let jsonString = XIAOESP32C3Protocol.formatOTLPJSON(
+        let jsonString = MCULabProtocol.formatOTLPJSON(
             deviceId: "xiao-c3-01",
             metrics: metrics,
             rssi: -58,
@@ -95,7 +95,7 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         XCTAssertTrue(jsonString.contains(#""name":"mcu.ble.rssi""#))
         XCTAssertTrue(jsonString.contains(#""asInt":"-58""#))
 
-        let escapedJSON = XIAOESP32C3Protocol.formatOTLPJSON(
+        let escapedJSON = MCULabProtocol.formatOTLPJSON(
             deviceId: #"xiao-"quoted"\01"#,
             metrics: metrics,
             rssi: -58,
@@ -115,11 +115,11 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        let controller = XIAOESP32C3Controller(defaults: defaults)
+        let controller = MCULabController(defaults: defaults)
         let deviceId = UUID()
-        let metrics = XIAOESP32C3Metrics(
+        let metrics = MCULabMetrics(
             seq: 9,
-            flags: XIAOESP32C3Protocol.flagDeepSleepWake,
+            flags: MCULabProtocol.flagDeepSleepWake,
             wakeCount: 9,
             sensorUs: 1_200,
             computeUs: 3_500,
@@ -127,7 +127,7 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
             radioUs: 150_000,
             batteryMv: 3_950
         )
-        let mfg = XIAOESP32C3Protocol.encodeManufacturerData(metrics)
+        let mfg = MCULabProtocol.encodeManufacturerData(metrics)
 
         XCTAssertTrue(
             controller.ingestManufacturerData(mfg, deviceId: deviceId, deviceName: "XIAO-C3", rssi: -55)
@@ -142,7 +142,7 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         var nextMetrics = metrics
         nextMetrics.seq = 10
         nextMetrics.wakeCount = 10
-        let nextMfg = XIAOESP32C3Protocol.encodeManufacturerData(nextMetrics)
+        let nextMfg = MCULabProtocol.encodeManufacturerData(nextMetrics)
         XCTAssertTrue(
             controller.ingestManufacturerData(nextMfg, deviceId: deviceId, deviceName: "XIAO-C3", rssi: -52)
         )
@@ -152,40 +152,40 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
 
     @MainActor
     func testResolveMetricsAndBaseURLs() {
-        let fromHost = XIAOESP32C3Controller.resolveMetricsURL(from: "https://xiao-otel-xyz.a.run.app")
+        let fromHost = MCULabController.resolveMetricsURL(from: "https://xiao-otel-xyz.a.run.app")
         XCTAssertEqual(fromHost?.absoluteString, "https://xiao-otel-xyz.a.run.app/v1/metrics")
         if let fromHost {
-            let base = XIAOESP32C3Controller.resolveBaseURL(from: fromHost)
+            let base = MCULabController.resolveBaseURL(from: fromHost)
             XCTAssertEqual(base?.absoluteString, "https://xiao-otel-xyz.a.run.app/")
         }
 
-        let fromFull = XIAOESP32C3Controller.resolveMetricsURL(from: "http://192.168.1.50:4318/v1/metrics")
+        let fromFull = MCULabController.resolveMetricsURL(from: "http://192.168.1.50:4318/v1/metrics")
         XCTAssertEqual(fromFull?.absoluteString, "http://192.168.1.50:4318/v1/metrics")
     }
 
     func testOTACommandAndStatusRoundTrip() {
         let sha = String(repeating: "a", count: 64)
-        let begin = XIAOESP32C3OTACommand.begin(size: 384_000, sha256: sha)
+        let begin = MCULabOTACommand.begin(size: 384_000, sha256: sha)
         XCTAssertEqual(
-            XIAOESP32C3Protocol.parseOTACommand(XIAOESP32C3Protocol.encodeOTACommand(begin)),
+            MCULabProtocol.parseOTACommand(MCULabProtocol.encodeOTACommand(begin)),
             begin
         )
         XCTAssertEqual(
-            XIAOESP32C3Protocol.parseOTACommand("begin 384000 sha256:\(sha)"),
+            MCULabProtocol.parseOTACommand("begin 384000 sha256:\(sha)"),
             begin
         )
         XCTAssertEqual(
-            XIAOESP32C3Protocol.parseOTACommand(XIAOESP32C3Protocol.encodeOTACommand(.commit)),
+            MCULabProtocol.parseOTACommand(MCULabProtocol.encodeOTACommand(.commit)),
             .commit
         )
         XCTAssertEqual(
-            XIAOESP32C3Protocol.parseOTACommand(XIAOESP32C3Protocol.encodeOTACommand(.abort)),
+            MCULabProtocol.parseOTACommand(MCULabProtocol.encodeOTACommand(.abort)),
             .abort
         )
-        XCTAssertNil(XIAOESP32C3Protocol.parseOTACommand("BEGIN 0 \(sha)"))
-        XCTAssertNil(XIAOESP32C3Protocol.parseOTACommand("BEGIN 99999999 \(sha)"))
+        XCTAssertNil(MCULabProtocol.parseOTACommand("BEGIN 0 \(sha)"))
+        XCTAssertNil(MCULabProtocol.parseOTACommand("BEGIN 99999999 \(sha)"))
 
-        let statuses: [XIAOESP32C3OTAStatus] = [
+        let statuses: [MCULabOTAStatus] = [
             .idle,
             .ready(total: 384_000),
             .progress(written: 65_536, total: 384_000),
@@ -193,12 +193,12 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
             .error(message: "sha256 mismatch"),
         ]
         for st in statuses {
-            let line = XIAOESP32C3Protocol.formatOTAStatus(st)
-            XCTAssertEqual(XIAOESP32C3Protocol.parseOTAStatus(line), st, line)
+            let line = MCULabProtocol.formatOTAStatus(st)
+            XCTAssertEqual(MCULabProtocol.parseOTAStatus(line), st, line)
         }
 
         let sampleData = Data(repeating: 0x5A, count: 550)
-        let chunks = XIAOESP32C3Protocol.chunkFirmware(sampleData, chunkSize: 240)
+        let chunks = MCULabProtocol.chunkFirmware(sampleData, chunkSize: 240)
         XCTAssertEqual(chunks.map(\.count), [240, 240, 70])
     }
 
@@ -212,7 +212,7 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        let controller = XIAOESP32C3Controller(defaults: defaults)
+        let controller = MCULabController(defaults: defaults)
         controller.stageSimulatedFirmware()
         XCTAssertNotNil(controller.stagedFirmwareData)
         XCTAssertEqual(controller.otaPhase, .idle)
@@ -237,8 +237,8 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         let store = AppAttestMemoryStore(deviceId: "dev-1", userId: "user-1")
         store.keyId = "stale-already-attested-key"
 
-        let keys = FakeXIAOAttestKeys(generatedKeys: ["fresh-key-1"])
-        let http = FakeXIAOHTTP()
+        let keys = FakeMCULabAttestKeys(generatedKeys: ["fresh-key-1"])
+        let http = FakeMCULabHTTP()
         let challengeCounter = LockedInt()
         http.onRequest = { request in
             let path = request.url?.path ?? ""
@@ -263,7 +263,7 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
             return try Self.jsonResponse(#"{"error":"unexpected"}"#, status: 500)
         }
 
-        let controller = XIAOESP32C3Controller(
+        let controller = MCULabController(
             defaults: defaults,
             attestKeys: keys,
             attestStore: store,
@@ -291,8 +291,8 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
 
         let store = AppAttestMemoryStore(deviceId: "dev-2", userId: "user-2")
-        let keys = FakeXIAOAttestKeys(generatedKeys: ["key-1", "key-2"])
-        let http = FakeXIAOHTTP()
+        let keys = FakeMCULabAttestKeys(generatedKeys: ["key-1", "key-2"])
+        let http = FakeMCULabHTTP()
         let challengeCounter = LockedInt()
         let metricsAttempts = LockedInt()
         http.onRequest = { request in
@@ -322,7 +322,7 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
             return try Self.jsonResponse(#"{"error":"unexpected"}"#, status: 500)
         }
 
-        let controller = XIAOESP32C3Controller(
+        let controller = MCULabController(
             defaults: defaults,
             attestKeys: keys,
             attestStore: store,
@@ -346,15 +346,15 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         let rawProfile = """
         {"v":1,"wake":7,"seq":7,"free_heap":210944,"min_heap":198400,"stack_hw":3072,"cycles":7420000,"spans":[{"name":"boot.init","parent":"wake","start_us":0,"dur_us":420},{"name":"epd.busy_wait","parent":"epd_refresh","start_us":4800,"dur_us":32000}],"pcs":[{"pc":"0x42001a40","hits":14}]}
         """
-        let profile = try XCTUnwrap(XIAOESP32C3Protocol.decodeWakeProfile(Data(rawProfile.utf8)))
+        let profile = try XCTUnwrap(MCULabProtocol.decodeWakeProfile(Data(rawProfile.utf8)))
         XCTAssertEqual(profile.wakeCount, 7)
         XCTAssertEqual(profile.freeHeapBytes, 210_944)
         XCTAssertEqual(profile.spans.count, 2)
         XCTAssertEqual(profile.pcSamples.first?.pc, "0x42001a40")
 
-        let metrics = XIAOESP32C3Metrics(
+        let metrics = MCULabMetrics(
             seq: 7,
-            flags: XIAOESP32C3Protocol.flagDeepSleepWake | XIAOESP32C3Protocol.flagEpdPartial,
+            flags: MCULabProtocol.flagDeepSleepWake | MCULabProtocol.flagEpdPartial,
             wakeCount: 7,
             sensorUs: 1_200,
             computeUs: 3_400,
@@ -362,7 +362,7 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
             radioUs: 150_000,
             batteryMv: 3_910
         )
-        let metricsJSON = XIAOESP32C3Protocol.formatOTLPJSON(
+        let metricsJSON = MCULabProtocol.formatOTLPJSON(
             deviceId: "xiao-c3-01",
             metrics: metrics,
             rssi: -54,
@@ -373,7 +373,7 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         XCTAssertTrue(metricsJSON.contains(#""name":"mcu.cpu.cycles""#))
         XCTAssertNotNil(try JSONSerialization.jsonObject(with: Data(metricsJSON.utf8)) as? [String: Any])
 
-        let traceJSON = XIAOESP32C3Protocol.formatOTLPTraceJSON(
+        let traceJSON = MCULabProtocol.formatOTLPTraceJSON(
             traceId: "0123456789abcdef0123456789abcdef",
             rootSpanId: "1111111111111111",
             deviceId: "xiao-c3-01",
@@ -398,8 +398,8 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
 
         let store = AppAttestMemoryStore(deviceId: "dev-t", userId: "user-t")
-        let keys = FakeXIAOAttestKeys(generatedKeys: ["trace-key-1"])
-        let http = FakeXIAOHTTP()
+        let keys = FakeMCULabAttestKeys(generatedKeys: ["trace-key-1"])
+        let http = FakeMCULabHTTP()
         let challengeCounter = LockedInt()
         http.onRequest = { request in
             let path = request.url?.path ?? ""
@@ -424,14 +424,14 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
             return try Self.jsonResponse(#"{"error":"unexpected"}"#, status: 500)
         }
 
-        let controller = XIAOESP32C3Controller(
+        let controller = MCULabController(
             defaults: defaults,
             attestKeys: keys,
             attestStore: store,
             http: http
         )
         let baseURL = try XCTUnwrap(URL(string: "https://xiao-otel.example.test/"))
-        let tracesURL = XIAOESP32C3Controller.resolveTracesURL(from: baseURL)
+        let tracesURL = MCULabController.resolveTracesURL(from: baseURL)
         let status = try await controller.postTraces(
             body: Data(#"{"resourceSpans":[]}"#.utf8),
             tracesURL: tracesURL,
@@ -455,9 +455,9 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         hdr[12] = 0x05 // CHIP_ID_ESP32C3 = 0x0005 (little-endian)
         hdr[13] = 0x00
         let firmwareBytes = Data(hdr) + Data(repeating: 0x5A, count: 64)
-        let expectedDigest = "sha256:\(XIAOESP32C3Protocol.sha256Hex(firmwareBytes))"
+        let expectedDigest = "sha256:\(MCULabProtocol.sha256Hex(firmwareBytes))"
 
-        let http = FakeXIAOHTTP()
+        let http = FakeMCULabHTTP()
         http.onRequest = { request in
             let urlString = request.url?.absoluteString ?? ""
             if urlString.contains("api.github.com/repos/imjasonh/playground/commits") {
@@ -491,9 +491,9 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
             return try Self.jsonResponse(#"{"error":"unexpected \(urlString)"}"#, status: 500)
         }
 
-        let controller = XIAOESP32C3Controller(
+        let controller = MCULabController(
             defaults: defaults,
-            attestKeys: FakeXIAOAttestKeys(generatedKeys: []),
+            attestKeys: FakeMCULabAttestKeys(generatedKeys: []),
             attestStore: AppAttestMemoryStore(deviceId: "dev-ota", userId: "user-ota"),
             http: http
         )
@@ -503,14 +503,14 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         XCTAssertTrue(controller.stagedFirmwareName.hasPrefix("xiao-esp32c3@\(shaPublished.prefix(7))"))
 
         // Cross-chip safety check: ESP32-C3 binary must be rejected for Waveshare ESP32 target.
-        XCTAssertNotNil(XIAOESP32C3Protocol.validateESPImageHeader(firmwareBytes, expectedChipID: MCULabFirmwareTarget.epdMaze.chipID))
-        XCTAssertNil(XIAOESP32C3Protocol.validateESPImageHeader(firmwareBytes, expectedChipID: MCULabFirmwareTarget.xiaoESP32C3.chipID))
+        XCTAssertNotNil(MCULabProtocol.validateESPImageHeader(firmwareBytes, expectedChipID: MCULabFirmwareTarget.epdMaze.chipID))
+        XCTAssertNil(MCULabProtocol.validateESPImageHeader(firmwareBytes, expectedChipID: MCULabFirmwareTarget.xiaoESP32C3.chipID))
     }
 
     func testOTLPPayloadsUseBoardSpecificServiceName() {
-        let epdFlags: UInt8 = XIAOESP32C3Protocol.flagEpdAttached
+        let epdFlags: UInt8 = MCULabProtocol.flagEpdAttached
             | (MCULabFirmwareTarget.epdMaze.boardID << 4)
-        let epdMetrics = XIAOESP32C3Metrics(
+        let epdMetrics = MCULabMetrics(
             seq: 3,
             flags: epdFlags,
             wakeCount: 11,
@@ -520,7 +520,7 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
             radioUs: 500_000,
             batteryMv: 5000
         )
-        let metricsJSON = XIAOESP32C3Protocol.formatOTLPJSON(
+        let metricsJSON = MCULabProtocol.formatOTLPJSON(
             deviceId: "epd-uuid-1",
             metrics: epdMetrics,
             rssi: -48,
@@ -529,7 +529,7 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         XCTAssertTrue(metricsJSON.contains(#""service.name","value":{"stringValue":"epd-maze"}"#))
         XCTAssertTrue(metricsJSON.contains(#""device.id","value":{"stringValue":"epd-uuid-1"}"#))
 
-        let traceJSON = XIAOESP32C3Protocol.formatOTLPTraceJSON(
+        let traceJSON = MCULabProtocol.formatOTLPTraceJSON(
             traceId: "0123456789abcdef0123456789abcdef",
             rootSpanId: "0123456789abcdef",
             deviceId: "epd-uuid-1",
@@ -547,7 +547,7 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        let controller = XIAOESP32C3Controller(defaults: defaults)
+        let controller = MCULabController(defaults: defaults)
         var xiaoImage = Data(repeating: 0x00, count: 64)
         xiaoImage[0] = 0xE9
         xiaoImage[12] = 0x05 // ESP32-C3 chip_id = 0x0005
@@ -572,17 +572,17 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        let controller = XIAOESP32C3Controller(defaults: defaults)
+        let controller = MCULabController(defaults: defaults)
         controller.updateForwardingEnabled(false)
         controller.saveCollectDetailedProfile(false)
 
         let xiaoId = UUID()
         let epdId = UUID()
 
-        let xiaoMfg = XIAOESP32C3Protocol.encodeManufacturerData(
-            XIAOESP32C3Metrics(
+        let xiaoMfg = MCULabProtocol.encodeManufacturerData(
+            MCULabMetrics(
                 seq: 1,
-                flags: XIAOESP32C3Protocol.flagDeepSleepWake | (MCULabFirmwareTarget.xiaoESP32C3.boardID << 4),
+                flags: MCULabProtocol.flagDeepSleepWake | (MCULabFirmwareTarget.xiaoESP32C3.boardID << 4),
                 wakeCount: 1,
                 sensorUs: 1000,
                 computeUs: 2000,
@@ -591,10 +591,10 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
                 batteryMv: 3900
             )
         )
-        let epdMfg = XIAOESP32C3Protocol.encodeManufacturerData(
-            XIAOESP32C3Metrics(
+        let epdMfg = MCULabProtocol.encodeManufacturerData(
+            MCULabMetrics(
                 seq: 1,
-                flags: XIAOESP32C3Protocol.flagEpdAttached | (MCULabFirmwareTarget.epdMaze.boardID << 4),
+                flags: MCULabProtocol.flagEpdAttached | (MCULabFirmwareTarget.epdMaze.boardID << 4),
                 wakeCount: 1,
                 sensorUs: 100,
                 computeUs: 8000,
@@ -627,7 +627,7 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
     }
 }
 
-private final class FakeXIAOHTTP: AppAttestHTTPClient, @unchecked Sendable {
+private final class FakeMCULabHTTP: AppAttestHTTPClient, @unchecked Sendable {
     var onRequest: @Sendable (URLRequest) throws -> (Data, URLResponse) = { _ in
         throw URLError(.badServerResponse)
     }
@@ -637,7 +637,7 @@ private final class FakeXIAOHTTP: AppAttestHTTPClient, @unchecked Sendable {
     }
 }
 
-private final class FakeXIAOAttestKeys: AppAttestKeyGenerating, @unchecked Sendable {
+private final class FakeMCULabAttestKeys: AppAttestKeyGenerating, @unchecked Sendable {
     let isSupported = true
     private let lock = NSLock()
     private var generatedKeys: [String]

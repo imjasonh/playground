@@ -286,11 +286,11 @@ final class PlaygroundUITests: XCTestCase {
         openExperiment("mcu-lab", title: "MCU Lab", in: app)
 
         XCTAssertTrue(app.navigationBars["MCU Lab"].waitForExistence(timeout: 8))
-        let simulateButton = app.buttons["xiaoSimulateWakeButton"]
+        let simulateButton = app.buttons["mcuLabSimulateWakeButton"]
         XCTAssertTrue(simulateButton.waitForExistence(timeout: 8))
         simulateButton.tap()
         XCTAssertTrue(
-            app.otherElements["xiaoMetricsDashboard"].waitForExistence(timeout: 5)
+            app.otherElements["mcuLabMetricsDashboard"].waitForExistence(timeout: 5)
                 || app.staticTexts["Latest wake cycle"].waitForExistence(timeout: 5)
         )
     }

@@ -2,9 +2,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Foreground BLE telemetry collector, phase-budget dashboard, OTLP/HTTP forwarder,
-/// and BLE GATT OTA firmware installer for the Seeed Studio XIAO ESP32C3 (`xiao-esp32c3/`).
-struct XIAOESP32C3View: View {
-    @StateObject private var controller = XIAOESP32C3Controller()
+/// and BLE GATT OTA firmware installer for the MCU Lab boards (`mcu-lab/`).
+struct MCULabView: View {
+    @StateObject private var controller = MCULabController()
     @State private var isImportingFirmware = false
 
     var body: some View {
@@ -60,7 +60,7 @@ struct XIAOESP32C3View: View {
         }
         .font(.subheadline)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityIdentifier("xiaoAvailabilityBanner")
+        .accessibilityIdentifier("mcuLabAvailabilityBanner")
     }
 
     private var scanControls: some View {
@@ -79,7 +79,7 @@ struct XIAOESP32C3View: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!controller.isBluetoothUsable)
-                .accessibilityIdentifier("xiaoListenButton")
+                .accessibilityIdentifier("mcuLabListenButton")
 
                 Button {
                     controller.injectSimulatedWake()
@@ -88,7 +88,7 @@ struct XIAOESP32C3View: View {
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.bordered)
-                .accessibilityIdentifier("xiaoSimulateWakeButton")
+                .accessibilityIdentifier("mcuLabSimulateWakeButton")
             }
 
             Text(controller.statusMessage)
@@ -96,7 +96,7 @@ struct XIAOESP32C3View: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
-                .accessibilityIdentifier("xiaoStatusMessage")
+                .accessibilityIdentifier("mcuLabStatusMessage")
         }
     }
 
@@ -114,29 +114,29 @@ struct XIAOESP32C3View: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(Color.secondary.opacity(0.15), in: Capsule())
-                        .accessibilityIdentifier("xiaoLatestSeq")
+                        .accessibilityIdentifier("mcuLabLatestSeq")
                 }
 
                 LabeledContent(
                     "Board",
-                    value: "\(sample.deviceName) (\(XIAOESP32C3Protocol.serviceName(for: m, profile: sample.profile)))"
+                    value: "\(sample.deviceName) (\(MCULabProtocol.serviceName(for: m, profile: sample.profile)))"
                 )
-                .accessibilityIdentifier("xiaoBoardName")
+                .accessibilityIdentifier("mcuLabBoardName")
                 LabeledContent("Wake count", value: "#\(m.wakeCount)")
-                    .accessibilityIdentifier("xiaoWakeCount")
+                    .accessibilityIdentifier("mcuLabWakeCount")
                 LabeledContent("Battery", value: "\(m.batteryMv) mV")
-                    .accessibilityIdentifier("xiaoBatteryMv")
+                    .accessibilityIdentifier("mcuLabBatteryMv")
                 LabeledContent("RSSI", value: "\(sample.rssi) dBm")
-                    .accessibilityIdentifier("xiaoRssi")
+                    .accessibilityIdentifier("mcuLabRssi")
                 LabeledContent(
                     "Active awake time",
                     value: String(format: "%.1f ms", Double(m.totalActiveUs) / 1_000.0)
                 )
-                .accessibilityIdentifier("xiaoTotalActiveTime")
+                .accessibilityIdentifier("mcuLabTotalActiveTime")
                 LabeledContent("Estimated energy", value: "\(m.estimatedEnergyUj) µJ")
-                    .accessibilityIdentifier("xiaoEstimatedEnergy")
+                    .accessibilityIdentifier("mcuLabEstimatedEnergy")
                 LabeledContent("E-paper refresh mode", value: m.epdRefreshModeLabel)
-                    .accessibilityIdentifier("xiaoEpdMode")
+                    .accessibilityIdentifier("mcuLabEpdMode")
                 LabeledContent(
                     "Wake source",
                     value: m.isDeepSleepWake ? "Deep sleep timer" : "Cold boot / reset"
@@ -145,7 +145,7 @@ struct XIAOESP32C3View: View {
             .padding(12)
             .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier("xiaoMetricsDashboard")
+            .accessibilityIdentifier("mcuLabMetricsDashboard")
         } else {
             ContentUnavailableView(
                 "No telemetry bursts yet",
@@ -153,7 +153,7 @@ struct XIAOESP32C3View: View {
                 description: Text("Wake a board running mcu-lab (XIAO ESP32-C3 or Waveshare 7.5″ ESP32) or tap Simulate Wake to inspect phase durations and OTLP payloads.")
             )
             .frame(minHeight: 160)
-            .accessibilityIdentifier("xiaoEmptyMetrics")
+            .accessibilityIdentifier("mcuLabEmptyMetrics")
         }
     }
 
@@ -171,32 +171,32 @@ struct XIAOESP32C3View: View {
                     us: m.sensorUs,
                     fraction: Double(m.sensorUs) / total,
                     tint: .teal,
-                    id: "xiaoPhaseSensor"
+                    id: "mcuLabPhaseSensor"
                 )
                 phaseRow(
                     title: "Compute & 1-bit framebuffer",
                     us: m.computeUs,
                     fraction: Double(m.computeUs) / total,
                     tint: .blue,
-                    id: "xiaoPhaseCompute"
+                    id: "mcuLabPhaseCompute"
                 )
                 phaseRow(
                     title: "E-paper SPI & LUT refresh (\(m.epdRefreshModeLabel))",
                     us: m.epdRefreshUs,
                     fraction: Double(m.epdRefreshUs) / total,
                     tint: .purple,
-                    id: "xiaoPhaseEpd"
+                    id: "mcuLabPhaseEpd"
                 )
                 phaseRow(
                     title: "BLE advertisement burst (prev wake)",
                     us: m.radioUs,
                     fraction: Double(m.radioUs) / total,
                     tint: .orange,
-                    id: "xiaoPhaseRadio"
+                    id: "mcuLabPhaseRadio"
                 )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier("xiaoPhasePanel")
+            .accessibilityIdentifier("mcuLabPhasePanel")
         }
     }
 
@@ -208,7 +208,7 @@ struct XIAOESP32C3View: View {
         id: String
     ) -> some View {
         let pct = Int((fraction * 100).rounded())
-        let formatted = XIAOESP32C3Protocol.formatDurationUs(us)
+        let formatted = MCULabProtocol.formatDurationUs(us)
         return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(title)
@@ -240,7 +240,7 @@ struct XIAOESP32C3View: View {
                 )
             )
             .frame(minHeight: 44)
-            .accessibilityIdentifier("xiaoCollectProfileToggle")
+            .accessibilityIdentifier("mcuLabCollectProfileToggle")
 
             if let traceId = controller.latestTraceId {
                 LabeledContent("Last trace ID") {
@@ -248,7 +248,7 @@ struct XIAOESP32C3View: View {
                         .font(.caption.monospaced())
                         .textSelection(.enabled)
                 }
-                .accessibilityIdentifier("xiaoLastTraceId")
+                .accessibilityIdentifier("mcuLabLastTraceId")
             }
 
             if let profile = controller.latestSample?.profile {
@@ -279,7 +279,7 @@ struct XIAOESP32C3View: View {
                                 Text(sp.name)
                                     .font(.caption.monospaced())
                                 Spacer()
-                                Text(XIAOESP32C3Protocol.formatDurationUs(sp.durationUs))
+                                Text(MCULabProtocol.formatDurationUs(sp.durationUs))
                                     .font(.caption.monospacedDigit())
                                     .foregroundStyle(.secondary)
                             }
@@ -321,7 +321,7 @@ struct XIAOESP32C3View: View {
         .padding(12)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityIdentifier("xiaoProfilePanel")
+        .accessibilityIdentifier("mcuLabProfilePanel")
     }
 
     private var otaUpdaterPanel: some View {
@@ -347,7 +347,7 @@ struct XIAOESP32C3View: View {
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.bordered)
-                .accessibilityIdentifier("xiaoOtaPullGhcrButton")
+                .accessibilityIdentifier("mcuLabOtaPullGhcrButton")
 
                 Button {
                     isImportingFirmware = true
@@ -356,16 +356,16 @@ struct XIAOESP32C3View: View {
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.bordered)
-                .accessibilityIdentifier("xiaoOtaChooseBinButton")
+                .accessibilityIdentifier("mcuLabOtaChooseBinButton")
             }
 
             if let staged = controller.stagedFirmwareData {
                 LabeledContent("Staged image", value: "\(controller.stagedFirmwareName) (\(staged.count) B)")
                     .font(.caption)
-                    .accessibilityIdentifier("xiaoOtaStagedName")
+                    .accessibilityIdentifier("mcuLabOtaStagedName")
                 LabeledContent("SHA-256", value: String(controller.stagedFirmwareSHA256.prefix(16)) + "…")
                     .font(.caption.monospaced())
-                    .accessibilityIdentifier("xiaoOtaStagedSha")
+                    .accessibilityIdentifier("mcuLabOtaStagedSha")
             }
 
             if case .streaming(let written, let total) = controller.otaPhase, total > 0 {
@@ -373,7 +373,7 @@ struct XIAOESP32C3View: View {
                 ProgressView(value: min(max(fraction, 0), 1))
                     .accessibilityLabel("OTA transfer progress")
                     .accessibilityValue("\(Int((fraction * 100).rounded())) percent")
-                    .accessibilityIdentifier("xiaoOtaProgressView")
+                    .accessibilityIdentifier("mcuLabOtaProgressView")
             }
 
             if controller.otaPhase == .armed || controller.otaPhase == .connecting || controller.otaPhase == .erasing {
@@ -384,7 +384,7 @@ struct XIAOESP32C3View: View {
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("xiaoOtaCancelButton")
+                .accessibilityIdentifier("mcuLabOtaCancelButton")
             } else {
                 Button {
                     controller.armOTAUpdate()
@@ -394,18 +394,18 @@ struct XIAOESP32C3View: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(controller.stagedFirmwareData == nil)
-                .accessibilityIdentifier("xiaoOtaArmButton")
+                .accessibilityIdentifier("mcuLabOtaArmButton")
             }
 
             Text(controller.otaStatusText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .accessibilityIdentifier("xiaoOtaStatusText")
+                .accessibilityIdentifier("mcuLabOtaStatusText")
         }
         .padding(12)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityIdentifier("xiaoOtaPanel")
+        .accessibilityIdentifier("mcuLabOtaPanel")
     }
 
     private var otelForwarderPanel: some View {
@@ -421,7 +421,7 @@ struct XIAOESP32C3View: View {
                 )
             )
             .frame(minHeight: 44)
-            .accessibilityIdentifier("xiaoOtelAutoForwardToggle")
+            .accessibilityIdentifier("mcuLabOtelAutoForwardToggle")
 
             Toggle(
                 "Authorize with Apple App Attest (xiao-otel Cloud Run)",
@@ -431,11 +431,11 @@ struct XIAOESP32C3View: View {
                 )
             )
             .frame(minHeight: 44)
-            .accessibilityIdentifier("xiaoOtelAppAttestToggle")
+            .accessibilityIdentifier("mcuLabOtelAppAttestToggle")
 
             HStack(spacing: 8) {
                 TextField(
-                    XIAOESP32C3Protocol.defaultOtelEndpoint,
+                    MCULabProtocol.defaultOtelEndpoint,
                     text: Binding(
                         get: { controller.otelEndpoint },
                         set: { controller.updateEndpoint($0) }
@@ -447,7 +447,7 @@ struct XIAOESP32C3View: View {
                 .keyboardType(.URL)
                 .font(.body.monospaced())
                 .accessibilityLabel("OTLP metrics endpoint URL")
-                .accessibilityIdentifier("xiaoOtelEndpointField")
+                .accessibilityIdentifier("mcuLabOtelEndpointField")
 
                 Button("POST Now") {
                     controller.forwardLatestSampleNow()
@@ -455,23 +455,23 @@ struct XIAOESP32C3View: View {
                 .buttonStyle(.bordered)
                 .disabled(controller.latestSample == nil)
                 .frame(minHeight: 44)
-                .accessibilityIdentifier("xiaoOtelPostNowButton")
+                .accessibilityIdentifier("mcuLabOtelPostNowButton")
             }
 
             HStack {
                 Text(controller.lastForwardStatus)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("xiaoOtelStatus")
+                    .accessibilityIdentifier("mcuLabOtelStatus")
                 Spacer()
                 Text("Exported: \(controller.forwardedCount)")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("xiaoOtelExportedCount")
+                    .accessibilityIdentifier("mcuLabOtelExportedCount")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityIdentifier("xiaoOtelPanel")
+        .accessibilityIdentifier("mcuLabOtelPanel")
     }
 
     private var historyPanel: some View {
@@ -482,10 +482,10 @@ struct XIAOESP32C3View: View {
                 Text("Deduplicated BLE manufacturer frames appear here.")
                     .font(.body)
                     .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("xiaoHistoryPlaceholder")
+                    .accessibilityIdentifier("mcuLabHistoryPlaceholder")
             } else {
                 ForEach(controller.history) { sample in
-                    Text("[\(sample.deviceName)] \(XIAOESP32C3Protocol.formatStatusLine(sample.metrics)) rssi=\(sample.rssi)")
+                    Text("[\(sample.deviceName)] \(MCULabProtocol.formatStatusLine(sample.metrics)) rssi=\(sample.rssi)")
                         .font(.caption.monospaced())
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -495,7 +495,7 @@ struct XIAOESP32C3View: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityIdentifier("xiaoHistoryPanel")
+        .accessibilityIdentifier("mcuLabHistoryPanel")
     }
 
     private var howItWorks: some View {
@@ -518,7 +518,7 @@ struct XIAOESP32C3View: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func isOTAInProgress(_ phase: XIAOESP32C3Controller.OTAPhase) -> Bool {
+    private func isOTAInProgress(_ phase: MCULabController.OTAPhase) -> Bool {
         switch phase {
         case .armed, .connecting, .erasing, .streaming, .committing:
             return true

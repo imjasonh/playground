@@ -21,7 +21,7 @@ fn main() {
         })
         .unwrap_or_default();
     println!(
-        "cargo:rustc-env=XIAO_GIT_SHA={}",
+        "cargo:rustc-env=MCU_LAB_GIT_SHA={}",
         git_sha.to_ascii_lowercase()
     );
 

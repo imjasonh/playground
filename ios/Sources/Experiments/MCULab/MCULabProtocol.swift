@@ -3,8 +3,8 @@ import Foundation
 
 /// 24-byte profiling telemetry payload unpacked from BLE Manufacturer Specific Data (`0xFFFF`).
 ///
-/// Mirrors `AdvMetrics` in `xiao-esp32c3/src/protocol.rs`.
-struct XIAOESP32C3Metrics: Equatable, Identifiable {
+/// Mirrors `AdvMetrics` in `mcu-lab/src/protocol.rs`.
+struct MCULabMetrics: Equatable, Identifiable {
     var seq: UInt8
     var flags: UInt8
     var wakeCount: UInt32
@@ -19,19 +19,19 @@ struct XIAOESP32C3Metrics: Equatable, Identifiable {
     }
 
     var isDeepSleepWake: Bool {
-        (flags & XIAOESP32C3Protocol.flagDeepSleepWake) != 0
+        (flags & MCULabProtocol.flagDeepSleepWake) != 0
     }
 
     var isEpdAttached: Bool {
-        (flags & XIAOESP32C3Protocol.flagEpdAttached) != 0
+        (flags & MCULabProtocol.flagEpdAttached) != 0
     }
 
     var isEpdPartialRefresh: Bool {
-        (flags & XIAOESP32C3Protocol.flagEpdPartial) != 0
+        (flags & MCULabProtocol.flagEpdPartial) != 0
     }
 
     var isBrownoutReset: Bool {
-        (flags & XIAOESP32C3Protocol.flagBrownoutReset) != 0
+        (flags & MCULabProtocol.flagBrownoutReset) != 0
     }
 
     /// Total active awake duration across all four measured phases in microseconds.
@@ -71,15 +71,15 @@ struct XIAOESP32C3Metrics: Equatable, Identifiable {
     }
 }
 
-/// Control command written by the iPhone to the XIAO BLE GATT OTA control characteristic.
-enum XIAOESP32C3OTACommand: Equatable {
+/// Control command written by the iPhone to the MCU Lab BLE GATT OTA control characteristic.
+enum MCULabOTACommand: Equatable {
     case begin(size: UInt32, sha256: String)
     case commit
     case abort
 }
 
-/// Status notification sent by the XIAO on the BLE GATT OTA status characteristic.
-enum XIAOESP32C3OTAStatus: Equatable {
+/// Status notification sent by the MCU on the BLE GATT OTA status characteristic.
+enum MCULabOTAStatus: Equatable {
     case idle
     case ready(total: UInt32)
     case progress(written: UInt32, total: UInt32)
@@ -87,8 +87,8 @@ enum XIAOESP32C3OTAStatus: Equatable {
     case error(message: String)
 }
 
-/// A single sub-phase timing span recorded on the XIAO ESP32C3 MCU.
-struct XIAOESP32C3ProfileSpan: Equatable, Identifiable, Decodable {
+/// A single sub-phase timing span recorded on an MCU Lab board.
+struct MCULabProfileSpan: Equatable, Identifiable, Decodable {
     var name: String
     var parent: String
     var startUs: UInt32
@@ -104,7 +104,7 @@ struct XIAOESP32C3ProfileSpan: Equatable, Identifiable, Decodable {
 }
 
 /// A sampled program-counter hotspot (`pc` hex address + sample hits).
-struct XIAOESP32C3PCSample: Equatable, Identifiable, Decodable {
+struct MCULabPCSample: Equatable, Identifiable, Decodable {
     var pc: String
     var hits: UInt16
 
@@ -112,7 +112,7 @@ struct XIAOESP32C3PCSample: Equatable, Identifiable, Decodable {
 }
 
 /// A server-symbolized PC hotspot returned by `xiao-otel` (`POST /v1/traces`).
-struct XIAOESP32C3ResolvedSymbol: Equatable, Decodable {
+struct MCULabResolvedSymbol: Equatable, Decodable {
     var function: String?
     var file: String?
     var line: Int?
@@ -166,7 +166,7 @@ enum MCULabFirmwareTarget: String, CaseIterable, Identifiable {
 }
 
 /// Detailed per-wake profiling snapshot pulled over BLE GATT (`PROFILE_CHAR_UUID`).
-struct XIAOESP32C3WakeProfile: Equatable, Decodable {
+struct MCULabWakeProfile: Equatable, Decodable {
     var version: UInt8
     var wakeCount: UInt32
     var seq: UInt8
@@ -178,8 +178,8 @@ struct XIAOESP32C3WakeProfile: Equatable, Decodable {
     var minFreeHeapBytes: UInt32
     var stackHighWaterBytes: UInt32
     var cpuCycles: UInt64
-    var spans: [XIAOESP32C3ProfileSpan]
-    var pcSamples: [XIAOESP32C3PCSample]
+    var spans: [MCULabProfileSpan]
+    var pcSamples: [MCULabPCSample]
 
     enum CodingKeys: String, CodingKey {
         case version = "v"
@@ -199,7 +199,7 @@ struct XIAOESP32C3WakeProfile: Equatable, Decodable {
 }
 
 /// Shared wire format, BLE GATT OTA protocol, and OTLP JSON builder with `mcu-lab/src/protocol.rs`.
-enum XIAOESP32C3Protocol {
+enum MCULabProtocol {
     static let deviceName = "XIAO-C3"
     static let companyID: UInt16 = 0xFFFF
     static let payloadLength = 24
@@ -217,7 +217,7 @@ enum XIAOESP32C3Protocol {
     static let flagEpdPartial: UInt8 = 1 << 2
     static let flagBrownoutReset: UInt8 = 1 << 3
 
-    static let otelEndpointInfoPlistKey = "XIAOOtelEndpoint"
+    static let otelEndpointInfoPlistKey = "MCULabOtelEndpoint"
     static let fallbackOtelEndpoint = "https://xiao-otel-965235416369.us-central1.run.app/v1/metrics"
     static var defaultOtelEndpoint: String {
         if let configured = Bundle.main.object(forInfoDictionaryKey: otelEndpointInfoPlistKey) as? String {
@@ -249,7 +249,7 @@ enum XIAOESP32C3Protocol {
     }
 
     /// Decode a 26-byte Manufacturer Specific Data buffer (`0xFFFF` company ID + 24-byte payload).
-    static func decodeManufacturerData(_ data: Data) -> XIAOESP32C3Metrics? {
+    static func decodeManufacturerData(_ data: Data) -> MCULabMetrics? {
         guard data.count == manufacturerDataLength else {
             return nil
         }
@@ -261,19 +261,19 @@ enum XIAOESP32C3Protocol {
     }
 
     /// Encode a 26-byte Manufacturer Specific Data buffer (`0xFFFF` company ID + 24-byte payload).
-    static func encodeManufacturerData(_ metrics: XIAOESP32C3Metrics) -> Data {
+    static func encodeManufacturerData(_ metrics: MCULabMetrics) -> Data {
         var out = Data(capacity: manufacturerDataLength)
         out.appendUInt16LE(companyID)
         out.append(encodePayload(metrics))
         return out
     }
 
-    /// Decode a 24-byte little-endian payload into `XIAOESP32C3Metrics`.
-    static func decodePayload(_ data: Data) -> XIAOESP32C3Metrics? {
+    /// Decode a 24-byte little-endian payload into `MCULabMetrics`.
+    static func decodePayload(_ data: Data) -> MCULabMetrics? {
         guard data.count == payloadLength else {
             return nil
         }
-        return XIAOESP32C3Metrics(
+        return MCULabMetrics(
             seq: data[data.startIndex],
             flags: data[data.startIndex + 1],
             wakeCount: data.readUInt32LE(at: 2),
@@ -285,8 +285,8 @@ enum XIAOESP32C3Protocol {
         )
     }
 
-    /// Encode `XIAOESP32C3Metrics` into its 24-byte little-endian payload.
-    static func encodePayload(_ metrics: XIAOESP32C3Metrics) -> Data {
+    /// Encode `MCULabMetrics` into its 24-byte little-endian payload.
+    static func encodePayload(_ metrics: MCULabMetrics) -> Data {
         var out = Data(capacity: payloadLength)
         out.append(metrics.seq)
         out.append(metrics.flags)
@@ -299,8 +299,8 @@ enum XIAOESP32C3Protocol {
         return out
     }
 
-    /// Encode an OTA control command matching `encode_ota_command` in `xiao-esp32c3/src/protocol.rs`.
-    static func encodeOTACommand(_ command: XIAOESP32C3OTACommand) -> String {
+    /// Encode an OTA control command matching `encode_ota_command` in `mcu-lab/src/protocol.rs`.
+    static func encodeOTACommand(_ command: MCULabOTACommand) -> String {
         switch command {
         case .begin(let size, let sha256):
             return "BEGIN \(size) \(sha256.lowercased())"
@@ -312,7 +312,7 @@ enum XIAOESP32C3Protocol {
     }
 
     /// Parse an OTA control command string.
-    static func parseOTACommand(_ raw: String) -> XIAOESP32C3OTACommand? {
+    static func parseOTACommand(_ raw: String) -> MCULabOTACommand? {
         let parts = raw.split(whereSeparator: \.isWhitespace).map(String.init)
         guard let head = parts.first?.uppercased() else {
             return nil
@@ -339,8 +339,8 @@ enum XIAOESP32C3Protocol {
         }
     }
 
-    /// Format an OTA status line matching `format_ota_status` in `xiao-esp32c3/src/protocol.rs`.
-    static func formatOTAStatus(_ status: XIAOESP32C3OTAStatus) -> String {
+    /// Format an OTA status line matching `format_ota_status` in `mcu-lab/src/protocol.rs`.
+    static func formatOTAStatus(_ status: MCULabOTAStatus) -> String {
         switch status {
         case .idle:
             return "IDLE"
@@ -356,7 +356,7 @@ enum XIAOESP32C3Protocol {
     }
 
     /// Parse an OTA status notification line from `OTA_STATUS_UUID`.
-    static func parseOTAStatus(_ raw: String) -> XIAOESP32C3OTAStatus? {
+    static func parseOTAStatus(_ raw: String) -> MCULabOTAStatus? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed == "IDLE" {
             return .idle
@@ -423,19 +423,19 @@ enum XIAOESP32C3Protocol {
         return chunks
     }
 
-    /// Format a single-line summary matching `format_status_line` in `xiao-esp32c3/src/protocol.rs`.
-    static func formatStatusLine(_ m: XIAOESP32C3Metrics) -> String {
+    /// Format a single-line summary matching `format_status_line` in `mcu-lab/src/protocol.rs`.
+    static func formatStatusLine(_ m: MCULabMetrics) -> String {
         let flagsHex = String(format: "0x%02x", m.flags)
         return "seq=\(m.seq) wake=\(m.wakeCount) sensor_us=\(m.sensorUs) compute_us=\(m.computeUs) epd_us=\(m.epdRefreshUs) radio_us=\(m.radioUs) batt_mv=\(m.batteryMv) flags=\(flagsHex)"
     }
 
     /// Decode a `WakeProfile` JSON payload read from `PROFILE_CHAR_UUID`.
-    static func decodeWakeProfile(_ data: Data) -> XIAOESP32C3WakeProfile? {
-        try? JSONDecoder().decode(XIAOESP32C3WakeProfile.self, from: data)
+    static func decodeWakeProfile(_ data: Data) -> MCULabWakeProfile? {
+        try? JSONDecoder().decode(MCULabWakeProfile.self, from: data)
     }
 
     /// Generate a realistic simulated `WakeProfile` for bench / Simulator testing.
-    static func simulatedWakeProfile(for metrics: XIAOESP32C3Metrics) -> XIAOESP32C3WakeProfile {
+    static func simulatedWakeProfile(for metrics: MCULabMetrics) -> MCULabWakeProfile {
         let bootUs: UInt32 = 420
         let sensorStart = bootUs
         let computeStart = sensorStart + metrics.sensorUs
@@ -443,7 +443,7 @@ enum XIAOESP32C3Protocol {
         let spiUs = min(metrics.epdRefreshUs / 10, 2_800)
         let busyUs = metrics.epdRefreshUs > spiUs ? metrics.epdRefreshUs - spiUs : 0
         let totalActiveUs = UInt64(bootUs) + UInt64(metrics.sensorUs) + UInt64(metrics.computeUs) + UInt64(metrics.epdRefreshUs)
-        return XIAOESP32C3WakeProfile(
+        return MCULabWakeProfile(
             version: 1,
             wakeCount: metrics.wakeCount,
             seq: metrics.seq,
@@ -452,16 +452,16 @@ enum XIAOESP32C3Protocol {
             stackHighWaterBytes: 3_072,
             cpuCycles: totalActiveUs * 160,
             spans: [
-                XIAOESP32C3ProfileSpan(name: "boot.init", parent: "wake", startUs: 0, durationUs: bootUs),
-                XIAOESP32C3ProfileSpan(name: "sensor.adc_filter", parent: "sensor", startUs: sensorStart, durationUs: metrics.sensorUs),
-                XIAOESP32C3ProfileSpan(name: "compute.epd_render", parent: "compute", startUs: computeStart, durationUs: metrics.computeUs),
-                XIAOESP32C3ProfileSpan(name: "epd.spi_transfer", parent: "epd_refresh", startUs: epdStart, durationUs: spiUs),
-                XIAOESP32C3ProfileSpan(name: "epd.busy_wait", parent: "epd_refresh", startUs: epdStart + spiUs, durationUs: busyUs),
+                MCULabProfileSpan(name: "boot.init", parent: "wake", startUs: 0, durationUs: bootUs),
+                MCULabProfileSpan(name: "sensor.adc_filter", parent: "sensor", startUs: sensorStart, durationUs: metrics.sensorUs),
+                MCULabProfileSpan(name: "compute.epd_render", parent: "compute", startUs: computeStart, durationUs: metrics.computeUs),
+                MCULabProfileSpan(name: "epd.spi_transfer", parent: "epd_refresh", startUs: epdStart, durationUs: spiUs),
+                MCULabProfileSpan(name: "epd.busy_wait", parent: "epd_refresh", startUs: epdStart + spiUs, durationUs: busyUs),
             ],
             pcSamples: [
-                XIAOESP32C3PCSample(pc: "0x42001a40", hits: 14),
-                XIAOESP32C3PCSample(pc: "0x42003c18", hits: 6),
-                XIAOESP32C3PCSample(pc: "0x42000e84", hits: 3),
+                MCULabPCSample(pc: "0x42001a40", hits: 14),
+                MCULabPCSample(pc: "0x42003c18", hits: 6),
+                MCULabPCSample(pc: "0x42000e84", hits: 3),
             ]
         )
     }
@@ -481,7 +481,7 @@ enum XIAOESP32C3Protocol {
     /// Build a valid OTLP/HTTP v1 JSON metrics payload (`application/json`).
     /// Resolve the OTLP `service.name` for a wake sample (`profile.app` when available,
     /// otherwise inferred from `metrics.boardID`).
-    static func serviceName(for metrics: XIAOESP32C3Metrics, profile: XIAOESP32C3WakeProfile?) -> String {
+    static func serviceName(for metrics: MCULabMetrics, profile: MCULabWakeProfile?) -> String {
         if let app = profile?.app, !app.isEmpty {
             return app
         }
@@ -490,10 +490,10 @@ enum XIAOESP32C3Protocol {
 
     static func formatOTLPJSON(
         deviceId: String,
-        metrics: XIAOESP32C3Metrics,
+        metrics: MCULabMetrics,
         rssi: Int,
         timeUnixNano: UInt64,
-        profile: XIAOESP32C3WakeProfile? = nil
+        profile: MCULabWakeProfile? = nil
     ) -> String {
         let ts = String(timeUnixNano)
         let safeDeviceId = escapeJSONString(deviceId)
@@ -515,10 +515,10 @@ enum XIAOESP32C3Protocol {
         traceId: String,
         rootSpanId: String,
         deviceId: String,
-        metrics: XIAOESP32C3Metrics,
+        metrics: MCULabMetrics,
         rssi: Int,
         timeUnixNano: UInt64,
-        profile: XIAOESP32C3WakeProfile? = nil
+        profile: MCULabWakeProfile? = nil
     ) -> String {
         let totalActiveNs = metrics.totalActiveUs * 1_000
         let wakeStartNs = timeUnixNano > totalActiveNs ? timeUnixNano - totalActiveNs : timeUnixNano

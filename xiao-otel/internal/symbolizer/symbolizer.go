@@ -1,7 +1,7 @@
-// Package symbolizer resolves ESP32-C3 program counter (PC) hotspot addresses
-// to function names and source file:line locations using Go's standard debug/elf
-// and debug/dwarf packages, lazy-fetching symbolized ELF layers from GHCR by
-// firmware elf_sha256 (or latest).
+// Package symbolizer resolves mcu-lab (ESP32-C3 / ESP32) program counter (PC)
+// hotspot addresses to function names and source file:line locations using Go's
+// standard debug/elf and debug/dwarf packages, lazy-fetching symbolized ELF
+// layers from GHCR by 40-char git commit SHA (`mcu.git_sha`) and `mcu.app`.
 package symbolizer
 
 import (

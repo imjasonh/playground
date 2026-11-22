@@ -3,25 +3,25 @@ import Combine
 import DeviceCheck
 import Foundation
 
-/// A single received BLE telemetry frame from a Seeed Studio XIAO ESP32C3 board.
-struct XIAOESP32C3Sample: Identifiable, Equatable {
+/// A single received BLE telemetry frame from an MCU Lab board.
+struct MCULabSample: Identifiable, Equatable {
     let id: UUID
     let deviceId: UUID
     let deviceName: String
     let rssi: Int
     let receivedAt: Date
-    let metrics: XIAOESP32C3Metrics
-    var profile: XIAOESP32C3WakeProfile?
+    let metrics: MCULabMetrics
+    var profile: MCULabWakeProfile?
 }
 
-/// Scans for XIAO ESP32C3 BLE Manufacturer Specific Data (`0xFFFF`) bursts,
-/// deduplicates frames by sequence number (`seq`), updates the live performance
-/// and e-paper refresh dashboard, forwards OTLP/HTTP JSON payloads to an
-/// OpenTelemetry Collector or the `xiao-otel` Cloud Run service (authorized
-/// with Apple App Attest), and installs OTA firmware updates over BLE GATT on
-/// the board's next wake burst.
+/// Scans for MCU Lab BLE Manufacturer Specific Data (`0xFFFF`) bursts,
+/// deduplicates frames per device by sequence number (`seq`), updates the live
+/// performance and e-paper refresh dashboard, forwards OTLP/HTTP JSON payloads
+/// to an OpenTelemetry Collector or the `xiao-otel` Cloud Run service
+/// (authorized with Apple App Attest), and installs OTA firmware updates over
+/// BLE GATT on the matching board's next wake burst.
 @MainActor
-final class XIAOESP32C3Controller: NSObject, ObservableObject {
+final class MCULabController: NSObject, ObservableObject {
     enum OTAPhase: Equatable {
         case idle
         case armed
@@ -33,6 +33,8 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         case failed(String)
     }
 
+    // Preserve legacy UserDefaults / Keychain keys so existing installs keep their
+    // registered App Attest key ID and saved collector URL across the rename.
     private static let endpointDefaultsKey = "xiao-esp32c3.otelEndpoint"
     private static let forwardingDefaultsKey = "xiao-esp32c3.forwardingEnabled"
     private static let appAttestEnabledDefaultsKey = "xiao-esp32c3.useAppAttest"
@@ -42,17 +44,17 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
 
     @Published var bluetoothState: CBManagerState = .unknown
     @Published var isScanning = false
-    @Published var latestSample: XIAOESP32C3Sample?
-    @Published var history: [XIAOESP32C3Sample] = []
+    @Published var latestSample: MCULabSample?
+    @Published var history: [MCULabSample] = []
     @Published var otelEndpoint: String
     @Published var forwardingEnabled: Bool
     @Published var useAppAttest: Bool
     @Published var collectDetailedProfile: Bool
     @Published var latestTraceId: String?
-    @Published var resolvedHotspots: [String: XIAOESP32C3ResolvedSymbol] = [:]
+    @Published var resolvedHotspots: [String: MCULabResolvedSymbol] = [:]
     @Published var forwardedCount = 0
     @Published var lastForwardStatus = "Not forwarded yet."
-    @Published var statusMessage = "Flash xiao-esp32c3 or inject a simulated wake burst."
+    @Published var statusMessage = "Flash mcu-lab firmware or inject a simulated wake burst."
 
     // BLE GATT OTA state
     @Published var selectedFirmwareTarget: MCULabFirmwareTarget = .xiaoESP32C3
@@ -82,11 +84,11 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     private let http: any AppAttestHTTPClient
     private let simulatedDeviceId = UUID()
 
-    private let otaServiceUUID = CBUUID(string: XIAOESP32C3Protocol.otaServiceUUIDString)
-    private let otaControlUUID = CBUUID(string: XIAOESP32C3Protocol.otaControlUUIDString)
-    private let otaDataUUID = CBUUID(string: XIAOESP32C3Protocol.otaDataUUIDString)
-    private let otaStatusUUID = CBUUID(string: XIAOESP32C3Protocol.otaStatusUUIDString)
-    private let profileCharUUID = CBUUID(string: XIAOESP32C3Protocol.profileCharUUIDString)
+    private let otaServiceUUID = CBUUID(string: MCULabProtocol.otaServiceUUIDString)
+    private let otaControlUUID = CBUUID(string: MCULabProtocol.otaControlUUIDString)
+    private let otaDataUUID = CBUUID(string: MCULabProtocol.otaDataUUIDString)
+    private let otaStatusUUID = CBUUID(string: MCULabProtocol.otaStatusUUIDString)
+    private let profileCharUUID = CBUUID(string: MCULabProtocol.profileCharUUIDString)
 
     init(
         defaults: UserDefaults = .standard,
@@ -102,7 +104,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         if let savedEndpoint = defaults.string(forKey: Self.endpointDefaultsKey), !savedEndpoint.isEmpty {
             self.otelEndpoint = savedEndpoint
         } else {
-            self.otelEndpoint = XIAOESP32C3Protocol.defaultOtelEndpoint
+            self.otelEndpoint = MCULabProtocol.defaultOtelEndpoint
         }
         self.forwardingEnabled = defaults.bool(forKey: Self.forwardingDefaultsKey)
         if defaults.object(forKey: Self.appAttestEnabledDefaultsKey) != nil {
@@ -127,9 +129,9 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         case .poweredOn:
             return "Bluetooth is on."
         case .poweredOff:
-            return "Turn on Bluetooth to scan for XIAO-C3 advertisements."
+            return "Turn on Bluetooth to scan for MCU Lab advertisements."
         case .unauthorized:
-            return "Allow Bluetooth in Settings to scan for XIAO-C3."
+            return "Allow Bluetooth in Settings to scan for MCU Lab boards."
         case .unsupported:
             return "BLE needs a physical iPhone. Use Simulate Wake on the Simulator."
         case .resetting:
@@ -170,7 +172,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             return
         }
         isScanning = true
-        statusMessage = "Listening for XIAO-C3 BLE manufacturer bursts (0xFFFF)."
+        statusMessage = "Listening for MCU Lab BLE manufacturer bursts (0xFFFF)."
         // Allow duplicates so every new `seq` broadcast is delivered immediately.
         central.scanForPeripherals(
             withServices: nil,
@@ -197,12 +199,12 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
 
     /// Stage a firmware binary for BLE OTA installation.
     func stageFirmware(data: Data, name: String) {
-        guard !data.isEmpty, UInt32(data.count) <= XIAOESP32C3Protocol.otaSlotBytes else {
-            otaPhase = .failed("Firmware size (\(data.count) B) exceeds OTA slot (\(XIAOESP32C3Protocol.otaSlotBytes) B).")
+        guard !data.isEmpty, UInt32(data.count) <= MCULabProtocol.otaSlotBytes else {
+            otaPhase = .failed("Firmware size (\(data.count) B) exceeds OTA slot (\(MCULabProtocol.otaSlotBytes) B).")
             otaStatusText = "Firmware size is out of bounds."
             return
         }
-        let sha = XIAOESP32C3Protocol.sha256Hex(data)
+        let sha = MCULabProtocol.sha256Hex(data)
         stagedFirmwareData = data
         stagedFirmwareName = name
         stagedFirmwareSHA256 = sha
@@ -212,9 +214,13 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
 
     /// Stage a synthetic test firmware binary on Simulator or when testing the OTA flow without GHCR.
     func stageSimulatedFirmware() {
-        var fake = Data("ESP-IDF-XIAO-ESP32C3-OTA-TEST-".utf8)
+        var fake = Data(repeating: 0x00, count: 24)
+        fake[0] = 0xE9 // ESP_IMAGE_HEADER_MAGIC
+        let chipID = selectedFirmwareTarget.chipID
+        fake[12] = UInt8(truncatingIfNeeded: chipID)
+        fake[13] = UInt8(truncatingIfNeeded: chipID >> 8)
         fake.append(Data(repeating: 0xA5, count: 4096))
-        stageFirmware(data: fake, name: "xiao-esp32c3-sim.bin")
+        stageFirmware(data: fake, name: "\(selectedFirmwareTarget.rawValue)-sim.bin")
     }
 
     /// Pull the latest published `mcu-lab` firmware layer from GHCR anonymously.
@@ -303,13 +309,13 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             let expectedHex = digest.hasPrefix("sha256:")
                 ? String(digest.dropFirst("sha256:".count)).lowercased()
                 : digest.lowercased()
-            let actualHex = XIAOESP32C3Protocol.sha256Hex(blobData)
+            let actualHex = MCULabProtocol.sha256Hex(blobData)
             guard actualHex == expectedHex else {
                 otaPhase = .failed("GHCR layer SHA-256 mismatch (got \(actualHex.prefix(12))…, expected \(expectedHex.prefix(12))…).")
                 otaStatusText = "GHCR layer digest verification failed."
                 return
             }
-            if let headerError = XIAOESP32C3Protocol.validateESPImageHeader(
+            if let headerError = MCULabProtocol.validateESPImageHeader(
                 blobData,
                 expectedChipID: resolvedTarget.chipID
             ) {
@@ -325,8 +331,8 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     }
 
     private func resolveRecentFirmwareCommitSHAs() async throws -> [String] {
-        let ghRepo = XIAOESP32C3Protocol.defaultGitHubRepo
-        let fwPath = XIAOESP32C3Protocol.defaultFirmwarePath
+        let ghRepo = MCULabProtocol.defaultGitHubRepo
+        let fwPath = MCULabProtocol.defaultFirmwarePath
         guard let url = URL(string: "https://api.github.com/repos/\(ghRepo)/commits?sha=main&path=\(fwPath)&per_page=5") else {
             return []
         }
@@ -352,7 +358,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             otaStatusText = "Stage a firmware image first."
             return
         }
-        if let err = XIAOESP32C3Protocol.validateESPImageHeader(
+        if let err = MCULabProtocol.validateESPImageHeader(
             data,
             expectedChipID: selectedFirmwareTarget.chipID
         ) {
@@ -373,7 +379,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         otaStreamTask = nil
         if let peripheral = otaPeripheral {
             if let ctrl = otaControlChar,
-               let abortData = XIAOESP32C3Protocol.encodeOTACommand(.abort).data(using: .utf8)
+               let abortData = MCULabProtocol.encodeOTACommand(.abort).data(using: .utf8)
             {
                 peripheral.writeValue(abortData, for: ctrl, type: .withResponse)
             }
@@ -406,7 +412,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         otaPeripheral = peripheral
         peripheral.delegate = self
         otaPhase = .connecting
-        otaStatusText = "Caught wake burst! Connecting to \(peripheral.name ?? XIAOESP32C3Protocol.deviceName) for OTA…"
+        otaStatusText = "Caught wake burst! Connecting to \(peripheral.name ?? MCULabProtocol.deviceName) for OTA…"
         central.connect(peripheral, options: nil)
     }
 
@@ -423,12 +429,12 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             return
         }
         otaPhase = .erasing
-        let cmd = XIAOESP32C3OTACommand.begin(
+        let cmd = MCULabOTACommand.begin(
             size: UInt32(firmware.count),
             sha256: stagedFirmwareSHA256
         )
         otaStatusText = "Erasing inactive OTA partition for \(firmware.count) bytes…"
-        if let encoded = XIAOESP32C3Protocol.encodeOTACommand(cmd).data(using: .utf8) {
+        if let encoded = MCULabProtocol.encodeOTACommand(cmd).data(using: .utf8) {
             peripheral.writeValue(encoded, for: ctrl, type: .withResponse)
         }
     }
@@ -444,7 +450,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         otaStreamTask?.cancel()
         let mtu = max(peripheral.maximumWriteValueLength(for: .withoutResponse), 180)
         let chunkSize = min(mtu, 480)
-        let chunks = XIAOESP32C3Protocol.chunkFirmware(firmware, chunkSize: chunkSize)
+        let chunks = MCULabProtocol.chunkFirmware(firmware, chunkSize: chunkSize)
         let total = UInt32(firmware.count)
         otaPhase = .streaming(written: 0, total: total)
         otaStatusText = "Streaming \(total) bytes in \(chunks.count) BLE packets (\(chunkSize) B/pkt)…"
@@ -465,14 +471,14 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             guard let self, !Task.isCancelled else { return }
             self.otaPhase = .committing
             self.otaStatusText = "Verifying SHA-256 on \(self.selectedFirmwareTarget.displayName) and switching active OTA slot…"
-            if let commitData = XIAOESP32C3Protocol.encodeOTACommand(.commit).data(using: .utf8) {
+            if let commitData = MCULabProtocol.encodeOTACommand(.commit).data(using: .utf8) {
                 peripheral.writeValue(commitData, for: ctrlChar, type: .withResponse)
             }
         }
     }
 
     func handleOTAStatusNotification(_ line: String) {
-        guard let parsed = XIAOESP32C3Protocol.parseOTAStatus(line) else {
+        guard let parsed = MCULabProtocol.parseOTAStatus(line) else {
             return
         }
         switch parsed {
@@ -509,14 +515,14 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         simulatedWakeCount += 1
 
         let isPartial = (simulatedWakeCount % 10) != 0
-        var flags: UInt8 = XIAOESP32C3Protocol.flagDeepSleepWake
-            | XIAOESP32C3Protocol.flagEpdAttached
+        var flags: UInt8 = MCULabProtocol.flagDeepSleepWake
+            | MCULabProtocol.flagEpdAttached
             | ((selectedFirmwareTarget.boardID & 0x0F) << 4)
         if isPartial {
-            flags |= XIAOESP32C3Protocol.flagEpdPartial
+            flags |= MCULabProtocol.flagEpdPartial
         }
 
-        let metrics = XIAOESP32C3Metrics(
+        let metrics = MCULabMetrics(
             seq: simulatedSeq,
             flags: flags,
             wakeCount: simulatedWakeCount,
@@ -526,14 +532,14 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             radioUs: simulatedWakeCount == 1 ? 0 : 150_800,
             batteryMv: UInt16(max(3_300, 4_050 - Int(simulatedWakeCount % 400)))
         )
-        let mfg = XIAOESP32C3Protocol.encodeManufacturerData(metrics)
+        let mfg = MCULabProtocol.encodeManufacturerData(metrics)
         let simulatedProfile = collectDetailedProfile
-            ? XIAOESP32C3Protocol.simulatedWakeProfile(for: metrics)
+            ? MCULabProtocol.simulatedWakeProfile(for: metrics)
             : nil
         ingestManufacturerData(
             mfg,
             deviceId: simulatedDeviceId,
-            deviceName: selectedFirmwareTarget == .epdMaze ? "EPD-75" : XIAOESP32C3Protocol.deviceName,
+            deviceName: selectedFirmwareTarget == .epdMaze ? "EPD-75" : MCULabProtocol.deviceName,
             rssi: -54,
             profile: simulatedProfile
         )
@@ -551,9 +557,9 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         deviceName: String,
         rssi: Int,
         now: Date = Date(),
-        profile: XIAOESP32C3WakeProfile? = nil
+        profile: MCULabWakeProfile? = nil
     ) -> Bool {
-        guard let metrics = XIAOESP32C3Protocol.decodeManufacturerData(mfgData) else {
+        guard let metrics = MCULabProtocol.decodeManufacturerData(mfgData) else {
             return false
         }
         // If an OTA update is armed and this advertisement comes from the matching board
@@ -573,7 +579,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         }
         lastSeqByDevice[deviceId] = metrics.seq
 
-        let sample = XIAOESP32C3Sample(
+        let sample = MCULabSample(
             id: UUID(),
             deviceId: deviceId,
             deviceName: deviceName,
@@ -622,8 +628,8 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         central.connect(peripheral, options: nil)
     }
 
-    private func attachWakeProfile(_ profile: XIAOESP32C3WakeProfile, deviceId: UUID) {
-        var updatedSample: XIAOESP32C3Sample?
+    private func attachWakeProfile(_ profile: MCULabWakeProfile, deviceId: UUID) {
+        var updatedSample: MCULabSample?
         if let targetId = profileTargetSampleId,
            let idx = history.firstIndex(where: { $0.id == targetId })
         {
@@ -680,7 +686,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         forwardToOtel(sample: sample)
     }
 
-    private func forwardToOtel(sample: XIAOESP32C3Sample) {
+    private func forwardToOtel(sample: MCULabSample) {
         let trimmed = otelEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let metricsURL = Self.resolveMetricsURL(from: trimmed),
               let baseURL = Self.resolveBaseURL(from: metricsURL)
@@ -690,19 +696,19 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         }
         let tracesURL = Self.resolveTracesURL(from: baseURL)
         let timeNs = UInt64(sample.receivedAt.timeIntervalSince1970 * 1_000_000_000)
-        let traceId = XIAOESP32C3Protocol.randomHex(byteCount: 16)
-        let rootSpanId = XIAOESP32C3Protocol.randomHex(byteCount: 8)
+        let traceId = MCULabProtocol.randomHex(byteCount: 16)
+        let rootSpanId = MCULabProtocol.randomHex(byteCount: 8)
         let traceparent = "00-\(traceId)-\(rootSpanId)-01"
         latestTraceId = traceId
 
-        let metricsJSON = XIAOESP32C3Protocol.formatOTLPJSON(
+        let metricsJSON = MCULabProtocol.formatOTLPJSON(
             deviceId: sample.deviceId.uuidString,
             metrics: sample.metrics,
             rssi: sample.rssi,
             timeUnixNano: timeNs,
             profile: sample.profile
         )
-        let traceJSON = XIAOESP32C3Protocol.formatOTLPTraceJSON(
+        let traceJSON = MCULabProtocol.formatOTLPTraceJSON(
             traceId: traceId,
             rootSpanId: rootSpanId,
             deviceId: sample.deviceId.uuidString,
@@ -803,7 +809,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     }
 
     private struct TraceIngestResponse: Decodable {
-        var resolvedHotspots: [String: XIAOESP32C3ResolvedSymbol]?
+        var resolvedHotspots: [String: MCULabResolvedSymbol]?
     }
 
     private struct OTLPPostResult {
@@ -856,7 +862,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             let clientData = AppAttestAssertionClientData(
                 action: action,
                 challenge: challenge.challenge,
-                payload: XIAOESP32C3Protocol.sha256Hex(body)
+                payload: MCULabProtocol.sha256Hex(body)
             )
             let clientJSON = try clientData.jsonBytes()
             request.setValue(keyId, forHTTPHeaderField: "X-Apple-App-Attest-Key-Id")
@@ -1029,7 +1035,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     }
 }
 
-extension XIAOESP32C3Controller: CBCentralManagerDelegate {
+extension MCULabController: CBCentralManagerDelegate {
     nonisolated func centralManagerDidUpdateState(_ central: CBCentralManager) {
         let state = central.state
         Task { @MainActor in
@@ -1048,7 +1054,7 @@ extension XIAOESP32C3Controller: CBCentralManagerDelegate {
         }
         let id = peripheral.identifier
         let advertisedName = advertisementData[CBAdvertisementDataLocalNameKey] as? String
-        let name = advertisedName ?? peripheral.name ?? XIAOESP32C3Protocol.deviceName
+        let name = advertisedName ?? peripheral.name ?? MCULabProtocol.deviceName
         let rssi = RSSI.intValue
         Task { @MainActor in
             self.peripherals[id] = peripheral
@@ -1057,7 +1063,7 @@ extension XIAOESP32C3Controller: CBCentralManagerDelegate {
     }
 
     nonisolated func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        let service = CBUUID(string: XIAOESP32C3Protocol.otaServiceUUIDString)
+        let service = CBUUID(string: MCULabProtocol.otaServiceUUIDString)
         Task { @MainActor in
             if self.otaPeripheral?.identifier == peripheral.identifier {
                 self.otaStatusText = "Connected to \(self.selectedFirmwareTarget.displayName). Discovering OTA service…"
@@ -1111,7 +1117,7 @@ extension XIAOESP32C3Controller: CBCentralManagerDelegate {
     }
 }
 
-extension XIAOESP32C3Controller: CBPeripheralDelegate {
+extension MCULabController: CBPeripheralDelegate {
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         if let error {
             Task { @MainActor in
@@ -1123,11 +1129,11 @@ extension XIAOESP32C3Controller: CBPeripheralDelegate {
             }
             return
         }
-        let serviceUUID = CBUUID(string: XIAOESP32C3Protocol.otaServiceUUIDString)
-        let ctrlUUID = CBUUID(string: XIAOESP32C3Protocol.otaControlUUIDString)
-        let dataUUID = CBUUID(string: XIAOESP32C3Protocol.otaDataUUIDString)
-        let statusUUID = CBUUID(string: XIAOESP32C3Protocol.otaStatusUUIDString)
-        let profileUUID = CBUUID(string: XIAOESP32C3Protocol.profileCharUUIDString)
+        let serviceUUID = CBUUID(string: MCULabProtocol.otaServiceUUIDString)
+        let ctrlUUID = CBUUID(string: MCULabProtocol.otaControlUUIDString)
+        let dataUUID = CBUUID(string: MCULabProtocol.otaDataUUIDString)
+        let statusUUID = CBUUID(string: MCULabProtocol.otaStatusUUIDString)
+        let profileUUID = CBUUID(string: MCULabProtocol.profileCharUUIDString)
         guard let services = peripheral.services else {
             Task { @MainActor in
                 self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
@@ -1201,10 +1207,10 @@ extension XIAOESP32C3Controller: CBPeripheralDelegate {
         didUpdateValueFor characteristic: CBCharacteristic,
         error: Error?
     ) {
-        let statusUUID = CBUUID(string: XIAOESP32C3Protocol.otaStatusUUIDString)
-        let profileUUID = CBUUID(string: XIAOESP32C3Protocol.profileCharUUIDString)
+        let statusUUID = CBUUID(string: MCULabProtocol.otaStatusUUIDString)
+        let profileUUID = CBUUID(string: MCULabProtocol.profileCharUUIDString)
         if characteristic.uuid == profileUUID {
-            let decoded = (error == nil) ? characteristic.value.flatMap(XIAOESP32C3Protocol.decodeWakeProfile) : nil
+            let decoded = (error == nil) ? characteristic.value.flatMap(MCULabProtocol.decodeWakeProfile) : nil
             let deviceId = peripheral.identifier
             Task { @MainActor in
                 if let decoded {

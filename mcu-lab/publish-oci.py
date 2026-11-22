@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Push a XIAO ESP32C3 firmware .bin + gzipped symbolized ELF as a two-layer OCI artifact to GHCR.
+"""Push an mcu-lab firmware .bin + gzipped symbolized ELF as a two-layer OCI artifact to GHCR.
 
 Layer 0 (`application/octet-stream`): raw espflash .bin for BLE OTA from iOS.
-Layer 1 (`application/vnd.xiao.esp32c3.elf.v1+gzip`): gzipped ELF with line-tables-only
+Layer 1 (`application/vnd.mculab.elf.v1+gzip`): gzipped ELF with line-tables-only
 DWARF symbols for automatic server-side symbolization in `xiao-otel`.
 """
 
@@ -95,6 +95,7 @@ def main() -> int:
         print(f"invalid git commit sha: {git_sha!r}", file=sys.stderr)
         return 2
 
+    app_name = repo.rsplit("/", 1)[-1]
     registry = os.environ.get("OCI_REGISTRY", "ghcr.io")
     user = os.environ["GH_ACTOR"]
     password = os.environ["GH_TOKEN"]
@@ -125,14 +126,14 @@ def main() -> int:
                 "mediaType": BIN_MEDIA_TYPE,
                 "digest": bin_digest,
                 "size": len(bin_bytes),
-                "annotations": {"org.opencontainers.image.title": "xiao-esp32c3.bin"},
+                "annotations": {"org.opencontainers.image.title": f"{app_name}.bin"},
             },
             {
                 "mediaType": ELF_MEDIA_TYPE,
                 "digest": elf_digest,
                 "size": len(elf_gz),
                 "annotations": {
-                    "org.opencontainers.image.title": "xiao-esp32c3.elf.gz",
+                    "org.opencontainers.image.title": f"{app_name}.elf.gz",
                     "org.opencontainers.image.revision": git_sha,
                 },
             },

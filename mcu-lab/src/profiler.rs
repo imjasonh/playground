@@ -169,7 +169,7 @@ mod inner {
                 self.board.app,
                 pc_samples.len()
             );
-            let git_sha = option_env!("XIAO_GIT_SHA").unwrap_or("").to_string();
+            let git_sha = option_env!("MCU_LAB_GIT_SHA").unwrap_or("").to_string();
             let spans = core::mem::take(&mut self.spans).into_spans();
             let profile = WakeProfile {
                 wake_count: metrics.wake_count,
