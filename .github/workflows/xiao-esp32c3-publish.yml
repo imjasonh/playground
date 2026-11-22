@@ -79,4 +79,4 @@ jobs:
           BIN="target/xiao-esp32c3/xiao-esp32c3.bin"
           espflash save-image --chip esp32c3 "$ELF" "$BIN"
           OWNER_LOWER="$(printf '%s' "$REPO_OWNER" | tr '[:upper:]' '[:lower:]')"
-          python3 publish-oci.py "${OWNER_LOWER}/playground/xiao-esp32c3" "$BIN" "$ELF"
+          python3 publish-oci.py "${OWNER_LOWER}/playground/xiao-esp32c3" "${GITHUB_SHA}" "$BIN" "$ELF"

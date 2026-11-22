@@ -86,11 +86,15 @@ def put_manifest(registry: str, repo: str, token: str, tag: str, manifest_bytes:
 
 
 def main() -> int:
-    if len(sys.argv) != 4:
-        print("usage: publish-oci.py <repo> <firmware.bin> <firmware.elf>", file=sys.stderr)
+    if len(sys.argv) != 5:
+        print("usage: publish-oci.py <repo> <git-sha> <firmware.bin> <firmware.elf>", file=sys.stderr)
         return 2
 
-    repo, bin_path, elf_path = sys.argv[1], sys.argv[2], sys.argv[3]
+    repo, git_sha, bin_path, elf_path = sys.argv[1], sys.argv[2].lower(), sys.argv[3], sys.argv[4]
+    if len(git_sha) != 40 or any(c not in "0123456789abcdef" for c in git_sha):
+        print(f"invalid git commit sha: {git_sha!r}", file=sys.stderr)
+        return 2
+
     registry = os.environ.get("OCI_REGISTRY", "ghcr.io")
     user = os.environ["GH_ACTOR"]
     password = os.environ["GH_TOKEN"]
@@ -100,7 +104,6 @@ def main() -> int:
     with open(elf_path, "rb") as f:
         elf_bytes = f.read()
 
-    elf_sha = hashlib.sha256(elf_bytes).hexdigest()
     elf_gz = gzip.compress(elf_bytes, compresslevel=6)
     empty_cfg = b"{}"
 
@@ -130,14 +133,14 @@ def main() -> int:
                 "size": len(elf_gz),
                 "annotations": {
                     "org.opencontainers.image.title": "xiao-esp32c3.elf.gz",
-                    "io.github.imjasonh.elf_sha256": elf_sha,
+                    "org.opencontainers.image.revision": git_sha,
                 },
             },
         ],
     }
     manifest_bytes = json.dumps(manifest, separators=(",", ":")).encode()
 
-    for tag in ("latest", elf_sha):
+    for tag in ("latest", git_sha):
         digest = put_manifest(registry, repo, token, tag, manifest_bytes)
         print(f"published {registry}/{repo}:{tag} ({digest})")
     return 0

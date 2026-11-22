@@ -222,16 +222,20 @@ type Symbolizer struct {
 // EnrichSpans resolves `pc.hotspot` events on the given spans in place, adding
 // `function`, `file`, and `line` attributes before export, and returns the map
 // of resolved hex PC strings to Symbol.
-func (s *Symbolizer) EnrichSpans(ctx context.Context, spans []otlp.Span) map[string]Symbol {
+//
+// If a span specifies `mcu.git_sha`, it must be either `"latest"` or a 40-char
+// lowercase hex git commit SHA; any other value returns an error without falling
+// back to `"latest"`.
+func (s *Symbolizer) EnrichSpans(ctx context.Context, spans []otlp.Span) (map[string]Symbol, error) {
 	if s == nil {
-		return nil
+		return nil, nil
 	}
-	// Check whether any span contains pc.hotspot events and extract elf_sha256 if present.
-	elfTag := ""
+	// Check whether any span contains pc.hotspot events and extract mcu.git_sha if present.
+	tag := ""
 	hasHotspots := false
 	for i := range spans {
-		if v, ok := spans[i].Attributes["mcu.elf_sha256"].(string); ok && v != "" && elfTag == "" {
-			elfTag = strings.ToLower(strings.TrimSpace(v))
+		if v, ok := spans[i].Attributes["mcu.git_sha"].(string); ok && tag == "" {
+			tag = strings.ToLower(strings.TrimSpace(v))
 		}
 		for j := range spans[i].Events {
 			if spans[i].Events[j].Name == "pc.hotspot" {
@@ -240,15 +244,17 @@ func (s *Symbolizer) EnrichSpans(ctx context.Context, spans []otlp.Span) map[str
 		}
 	}
 	if !hasHotspots {
-		return nil
+		return nil, nil
 	}
-	if !isValidTag(elfTag) {
-		elfTag = "latest"
+	if tag == "" {
+		tag = "latest"
+	} else if !isValidTag(tag) {
+		return nil, fmt.Errorf("invalid symbol tag %q: must be \"latest\" or a 40-char hex commit SHA", tag)
 	}
 
-	tbl := s.tableForTag(ctx, elfTag)
+	tbl := s.tableForTag(ctx, tag)
 	if tbl == nil {
-		return nil
+		return nil, nil
 	}
 
 	resolved := make(map[string]Symbol)
@@ -285,18 +291,18 @@ func (s *Symbolizer) EnrichSpans(ctx context.Context, spans []otlp.Span) map[str
 			resolved[pcStr] = sym
 		}
 	}
-	return resolved
+	return resolved, nil
 }
 
 func isValidTag(tag string) bool {
 	if tag == "latest" {
 		return true
 	}
-	return isHex64(tag)
+	return isHexLen(tag, 40)
 }
 
-func isHex64(s string) bool {
-	if len(s) != 64 {
+func isHexLen(s string, n int) bool {
+	if len(s) != n {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
@@ -312,7 +318,7 @@ func isValidSHA256Digest(digest string) bool {
 	if !strings.HasPrefix(digest, "sha256:") {
 		return false
 	}
-	return isHex64(strings.TrimPrefix(digest, "sha256:"))
+	return isHexLen(strings.TrimPrefix(digest, "sha256:"), 64)
 }
 
 func parseHexPC(raw string) (uint64, error) {
@@ -352,9 +358,6 @@ func (s *Symbolizer) tableForTag(ctx context.Context, tag string) *Table {
 		tbl, err = loadLocalELF(s.LocalELFPath)
 	} else if s.Repo != "" {
 		tbl, err = s.fetchFromGHCR(ctx, tag)
-		if err != nil && tag != "latest" {
-			tbl, err = s.fetchFromGHCR(ctx, "latest")
-		}
 	}
 
 	s.mu.Lock()

@@ -367,7 +367,11 @@ func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resolvedHotspots := s.Symbolizer.EnrichSpans(ctx, spans)
+	resolvedHotspots, err := s.Symbolizer.EnrichSpans(ctx, spans)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 
 	if s.TraceExporter != nil {
 		if err := s.TraceExporter.ExportSpans(ctx, rec.UserID, rec.DeviceID, spans); err != nil {

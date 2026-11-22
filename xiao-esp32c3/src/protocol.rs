@@ -833,7 +833,7 @@ mod tests {
         let profile = WakeProfile {
             wake_count: 7,
             seq: 7,
-            elf_sha256: "deadbeef01234567".to_string(),
+            git_sha: "a".repeat(40),
             free_heap_bytes: 210_944,
             min_free_heap_bytes: 198_400,
             stack_high_water_bytes: 3_072,
@@ -852,7 +852,7 @@ mod tests {
         };
         let json = format_wake_profile_json(&profile);
         assert!(json.contains(r#""wake":7"#));
-        assert!(json.contains(r#""elf_sha256":"deadbeef01234567""#));
+        assert!(json.contains(&format!(r#""git_sha":"{}""#, "a".repeat(40))));
         assert!(json.contains(r#""free_heap":210944"#));
         assert!(json.contains(r#""min_heap":198400"#));
         assert!(json.contains(r#""stack_hw":3072"#));
@@ -981,7 +981,7 @@ pub struct PcSample {
 pub struct WakeProfile {
     pub wake_count: u32,
     pub seq: u8,
-    pub elf_sha256: String,
+    pub git_sha: String,
     pub free_heap_bytes: u32,
     pub min_free_heap_bytes: u32,
     pub stack_high_water_bytes: u32,
@@ -1029,11 +1029,8 @@ pub fn format_wake_profile_json(p: &WakeProfile) -> String {
         r#"{{"v":1,"wake":{},"seq":{},"#,
         p.wake_count, p.seq
     ));
-    if !p.elf_sha256.is_empty() {
-        out.push_str(&format!(
-            r#""elf_sha256":"{}","#,
-            escape_json_str(&p.elf_sha256)
-        ));
+    if !p.git_sha.is_empty() {
+        out.push_str(&format!(r#""git_sha":"{}","#, escape_json_str(&p.git_sha)));
     }
     out.push_str(&format!(
         r#""free_heap":{},"min_heap":{},"stack_hw":{},"cycles":{},"spans":["#,

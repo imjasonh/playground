@@ -63,7 +63,8 @@ func TestParseELFAndEnrichSpansFromGHCR(t *testing.T) {
 	gzBytes := gzBuf.Bytes()
 	gzSum := sha256.Sum256(gzBytes)
 	elfDigest := "sha256:" + hex.EncodeToString(gzSum[:])
-	elfTag := strings.Repeat("a", 64)
+	commitTag := strings.Repeat("a", 40)
+	latestRequested := false
 
 	// Serve the gzipped ELF through a mock GHCR OCI registry.
 	ghcr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +72,11 @@ func TestParseELFAndEnrichSpansFromGHCR(t *testing.T) {
 		case strings.HasPrefix(r.URL.Path, "/token"):
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"token":"test-tok"}`))
-		case strings.HasSuffix(r.URL.Path, "/manifests/"+elfTag):
+		case strings.HasSuffix(r.URL.Path, "/manifests/latest"):
+			latestRequested = true
+			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+			_, _ = w.Write([]byte(`{"layers":[{"mediaType":"application/octet-stream","digest":"sha256:` + strings.Repeat("b", 64) + `"},{"mediaType":"` + ELFMediaTypeGzip + `","digest":"` + elfDigest + `"}]}`))
+		case strings.HasSuffix(r.URL.Path, "/manifests/"+commitTag):
 			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
 			_, _ = w.Write([]byte(`{"layers":[{"mediaType":"application/octet-stream","digest":"sha256:` + strings.Repeat("b", 64) + `"},{"mediaType":"` + ELFMediaTypeGzip + `","digest":"` + elfDigest + `"}]}`))
 		case strings.HasSuffix(r.URL.Path, "/blobs/"+elfDigest):
@@ -90,30 +95,37 @@ func TestParseELFAndEnrichSpansFromGHCR(t *testing.T) {
 	}
 
 	pcHex := fmt.Sprintf("0x%x", mainPC)
-	spans := []otlp.Span{
-		{
-			TraceID:   "0123456789abcdef0123456789abcdef",
-			SpanID:    "1111111111111111",
-			Name:      "xiao.wake #1",
-			StartTime: time.Now(),
-			EndTime:   time.Now(),
-			Attributes: map[string]any{
-				"mcu.elf_sha256": elfTag,
-			},
-			Events: []otlp.SpanEvent{
-				{
-					Time: time.Now(),
-					Name: "pc.hotspot",
-					Attributes: map[string]any{
-						"pc":   pcHex,
-						"hits": int64(9),
+	makeSpans := func(tag string) []otlp.Span {
+		return []otlp.Span{
+			{
+				TraceID:   "0123456789abcdef0123456789abcdef",
+				SpanID:    "1111111111111111",
+				Name:      "xiao.wake #1",
+				StartTime: time.Now(),
+				EndTime:   time.Now(),
+				Attributes: map[string]any{
+					"mcu.git_sha": tag,
+				},
+				Events: []otlp.SpanEvent{
+					{
+						Time: time.Now(),
+						Name: "pc.hotspot",
+						Attributes: map[string]any{
+							"pc":   pcHex,
+							"hits": int64(9),
+						},
 					},
 				},
 			},
-		},
+		}
 	}
 
-	resolved := sym.EnrichSpans(t.Context(), spans)
+	// 1. Valid 40-char commit SHA resolves main.main + DWARF line info.
+	spans := makeSpans(commitTag)
+	resolved, err := sym.EnrichSpans(t.Context(), spans)
+	if err != nil {
+		t.Fatalf("EnrichSpans(%s) unexpected error: %v", commitTag, err)
+	}
 	got, ok := resolved[pcHex]
 	if !ok {
 		t.Fatalf("expected PC %s to resolve, got %+v", pcHex, resolved)
@@ -127,5 +139,25 @@ func TestParseELFAndEnrichSpansFromGHCR(t *testing.T) {
 	evAttrs := spans[0].Events[0].Attributes
 	if evAttrs["function"] != "main.main" || evAttrs["file"] != got.File {
 		t.Fatalf("span event attributes not enriched: %+v", evAttrs)
+	}
+
+	// 2. Invalid tags must return an error and never fall back to latest.
+	for _, bad := range []string{"../evil", "v1.0.0", "deadbeef", strings.Repeat("a", 64)} {
+		if _, err := sym.EnrichSpans(t.Context(), makeSpans(bad)); err == nil {
+			t.Fatalf("expected error for invalid tag %q, got nil", bad)
+		}
+	}
+
+	// 3. A valid 40-char commit SHA missing in GHCR must NOT fall back to latest.
+	missingCommit := strings.Repeat("c", 40)
+	missingResolved, err := sym.EnrichSpans(t.Context(), makeSpans(missingCommit))
+	if err != nil {
+		t.Fatalf("missing commit unexpected error: %v", err)
+	}
+	if len(missingResolved) != 0 {
+		t.Fatalf("expected no symbols for missing commit, got %+v", missingResolved)
+	}
+	if latestRequested {
+		t.Fatalf("missing commit fell back to :latest; must not fall back")
 	}
 }

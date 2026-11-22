@@ -564,11 +564,10 @@ mod profiler {
     use esp32_nimble::utilities::mutex::Mutex as NimbleMutex;
     use esp32_nimble::{uuid128, BLEService, NimbleProperties};
     use esp_idf_svc::sys::{
-        esp_app_get_description, esp_get_free_heap_size, esp_get_minimum_free_heap_size,
-        esp_timer_create, esp_timer_create_args_t, esp_timer_delete,
-        esp_timer_dispatch_t_ESP_TIMER_TASK, esp_timer_handle_t, esp_timer_start_periodic,
-        esp_timer_stop, uxTaskGetStackHighWaterMark, xTaskGetCurrentTaskHandle, TaskHandle_t,
-        ESP_OK,
+        esp_get_free_heap_size, esp_get_minimum_free_heap_size, esp_timer_create,
+        esp_timer_create_args_t, esp_timer_delete, esp_timer_dispatch_t_ESP_TIMER_TASK,
+        esp_timer_handle_t, esp_timer_start_periodic, esp_timer_stop, uxTaskGetStackHighWaterMark,
+        xTaskGetCurrentTaskHandle, TaskHandle_t, ESP_OK,
     };
     use log::info;
     use xiao_esp32c3::protocol::{
@@ -684,19 +683,12 @@ mod profiler {
                 "profile: free_heap={free_heap_bytes} min_heap={min_free_heap_bytes} stack_hw={stack_high_water_bytes} pc_hotspots={}",
                 pc_samples.len()
             );
-            let elf_sha256 = unsafe {
-                let desc = esp_app_get_description();
-                if !desc.is_null() && (*desc).app_elf_sha256.iter().any(|&b| b != 0) {
-                    hex::encode((*desc).app_elf_sha256)
-                } else {
-                    String::new()
-                }
-            };
+            let git_sha = option_env!("XIAO_GIT_SHA").unwrap_or("").to_string();
             let spans = core::mem::take(&mut self.spans).into_spans();
             let profile = WakeProfile {
                 wake_count: metrics.wake_count,
                 seq: metrics.seq,
-                elf_sha256,
+                git_sha,
                 free_heap_bytes,
                 min_free_heap_bytes,
                 stack_high_water_bytes,
