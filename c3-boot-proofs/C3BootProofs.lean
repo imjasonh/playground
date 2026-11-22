@@ -326,6 +326,8 @@ import C3BootProofs.Proofs.SvLh
 import C3BootProofs.Proofs.SvSegCert
 import C3BootProofs.Proofs.SvTp
 import C3BootProofs.Proofs.SvSegTs
+import C3BootProofs.Proofs.SvP256St
+import C3BootProofs.Proofs.SvSegLog
 import C3BootProofs.Proofs.SvSegCosig
 import C3BootProofs.Proofs.SvCme
 import C3BootProofs.Proofs.SvCgLoop

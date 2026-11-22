@@ -7307,7 +7307,7 @@ def ck_fail_none(sub, why):
 
 CL_BINDERS = ("{B out bp x21 x26 dg c q rl rp sgp op ol : Word} {rt : Bytes} "
               + "{" + " ".join(f"w{e:x}" for e in [0x8, 0xC, 0x10, 0x14, 0x18, 0x20] + TST_WORDS)
-              + " : Word} {v : Nat → Word} {n0 : Machine}")
+              + " : Word} {wa20 wa24 wa28 wa2c wa30 wa34 wa38 wa3c : Word} {v : Nat → Word} {n0 : Machine}")
 CL_KEEP_REGS = [2, 3, 4, 9, 18, 19, 21, 22, 23, 24, 25, 26, 27]
 
 
@@ -7321,6 +7321,9 @@ def cl_start(g):
     words.update({0x74: "q'", 0x428: "sgp", 0x1C: "(BitVec.ofNat 8 (rt.getD 0 0)).zeroExtend 32"})
     words.pop(0x74)
     words.update(TL_STRUCT)
+    # The checkpoint's checks change the frame words that the struct at 0xA20
+    # copied during the timestamp's search.
+    words.update({e: f"w{e:x}" for e in CS_STRUCT})
     words.update({e: f"w{e:x}" for e in (0x8, 0xC, 0x10, 0x14, 0x18, 0x20)})
     params = start(g, regs, words, {})
     g.ranges[0x320] = (31, "BitVec.ofNat 8 (rt.getD (1 + j) 0)")
@@ -7441,16 +7444,18 @@ def stage_cs1():
 
 
 CS_BINDERS = (CL_BINDERS.replace("op ol : Word} {rt : Bytes}", "op ol : Word} {rt sg : Bytes}").replace(" w10 ", " ")
-              .replace("{v : Nat → Word}", "{wa20 wa24 wa28 wa2c wa30 wa34 wa38 wa3c waa4 : Word} {v : Nat → Word}"))
+              .replace("{v : Nat → Word}", "{waa4 : Word} {v : Nat → Word}"))
 RK_BINDERS = CS_BINDERS.replace(" w70 ", " w70 w74 ")
 
 
 def cs_start(g):
     """The signature loop's head at 0x2D6E: the word at 0x30 says whether a
     signature by the log was found, which would be at offsets 0x10 and 0x1480."""
+    # Only the word's first byte matters, and only once a signature is found.
     params = [q for q in cl_start(g) if not q.startswith("(w0_10 :")]
-    g.words[0x10] = ("U", "(BitVec.ofNat 8 (sg.getD 0 0)).zeroExtend 32")
-    params.append(f"(w0_10 : memLoad32 n0.mem ({fa(0x10)}) = (BitVec.ofNat 8 (sg.getD 0 0)).zeroExtend 32)")
+    g.words.pop(0x10, None)
+    g.bytes[0x10] = "BitVec.ofNat 8 (sg.getD 0 0)"
+    params.append(f"(b0_10 : n0.mem ({fa(0x10)}) = BitVec.ofNat 8 (sg.getD 0 0))")
     g.ranges[0x1480] = (63, "BitVec.ofNat 8 (sg.getD (1 + j) 0)")
     params.append("(q0_1480 : ∀ j, j < 63 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1480 + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0))")
     # The signature loop changes the frame words and registers that the struct
@@ -7713,7 +7718,7 @@ def stage_cg(kpad):
     g.branch(0x2E76, False, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
     g.jump(0x2E7A)
     keep = sorted(set(CL_KEEP_REGS + [8, 10, 21, 22, 23, 24]))
-    stmt, proof = finish(g, 0x2E0C, keep, set(g.words) - {0x420, 0x424}, set())
+    stmt, proof = finish(g, 0x2E0C, keep, set(g.words) - {0x420, 0x424}, {0x10})
     info = {"name": f"sv_cg{kpad}", "title": "a base64 group of a signature line",
             "doc": f"One pass of the base64 group loop, from 0x2E0C back to it: the next four bytes decode as base64, "
             + ("and none is `=`." if kpad == 4 else f"their first `=` is byte {kpad}, and this is the last group."),
@@ -7873,11 +7878,13 @@ def stage_cm(kind):
         g.emit("  have hdrop : ∀ i, (bs.drop 4).getD i 0 = bs.getD (4 + i) 0 := fun i => by")
         g.emit("    simp only [List.getD_eq_getElem?_getD, List.getElem?_drop]")
         w10 = "(BitVec.ofNat 8 ((bs.drop 4).getD 0 0)).zeroExtend 32"
-        g.emit(f"  have w{k}_10 : {g.word_stmt(k, 0x10, ('U', w10))} := by rw [w{k}_10, hdrop]")
+        g.emit(f"  have b{k}_10 : n{k}.mem ({fa(0x10)}) = BitVec.ofNat 8 ((bs.drop 4).getD 0 0) := by")
+        g.emit(f"    rw [← (ldb n{k}.mem ({fa(0x10)})).1, w{k}_10, hdrop, zext_lo8]")
         g.emit(f"  have q{k}_1480 : ∀ j, j < 63 → n{k}.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1480 + j)) = "
                "BitVec.ofNat 8 ((bs.drop 4).getD (1 + j) 0) := fun j hj => by")
         g.emit(f"    rw [q{k}_1480 j hj, hdrop, show 4 + (1 + j) = 5 + j by omega]")
-        g.words[0x10] = ("U", w10)
+        g.words.pop(0x10)
+        g.bytes[0x10] = "BitVec.ofNat 8 ((bs.drop 4).getD 0 0)"
         g.ranges[0x1480] = (63, "BitVec.ofNat 8 ((bs.drop 4).getD (1 + j) 0)")
         return 0x2D6E
 
@@ -7892,7 +7899,7 @@ def stage_cm(kind):
     else:
         end = body(g)
         keep = sorted(set(CL_KEEP_REGS))
-        stmt, proof = finish(g, end, keep, set(g.words) - {0x420, 0x424, 0x428, 0x42C}, set())
+        stmt, proof = finish(g, end, keep, set(g.words) - {0x420, 0x424, 0x428, 0x42C}, {0x10})
     info = {"name": "sv_cm" + kind, "title": "a signature line's name and signature",
             "doc": "From the base64 group loop's end at 0x2E0C: " + CM_DOC[kind],
             "params": params, "stmt": stmt, "proof": proof,
@@ -7926,15 +7933,24 @@ def stage_csx():
     g.branch(0x2F26, False, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_beq_f hfound")
     g.block(0x2F28, 0x2F38)
     g.mc(0x2F38, 0x421, 0x1480, 0x3F)
+    k = g.k
+    w10 = f"memLoad32 n0.mem ({fa(0x10)})"
+    g.emit(f"  have w{k}_10 : memLoad32 n{k}.mem ({fa(0x10)}) = {w10} := keep_kk{k}.w32 (by decide) (by decide)")
+    g.words[0x10] = ("U", w10)
     g.load(0x2F40, "lw")
     g.store(0x2F42, "sb")
+    k2 = g.k
+    g.emit(f"  have b{k2}_420 : n{k2}.mem ({fa(0x420)}) = BitVec.ofNat 8 (sg.getD 0 0) := by")
+    g.emit(f"    rw [b{k2}_420, (ldb n0.mem ({fa(0x10)})).1]; exact b0_10")
+    g.bytes[0x420] = "BitVec.ofNat 8 (sg.getD 0 0)"
+    g.words.pop(0x10)
     g.block(0x2F46, 0x2F4A)
     g.load(0x2F4A, "lw")
     g.load(0x2F4C, "lw")
     g.load(0x2F4E, "lw")
     k = g.k
     g.pinned.add(f"hs{k}")
-    g.emit(f"  have hs{k} := sig_join b{k}_420 q{k}_421")
+    g.emit(f"  have hs{k} := sig_join (b{k}_420.trans (zext_lo8 _).symm) q{k}_421")
     ke = g.ed(0x2F50, 0x420, "w34", "w24", "(w20).toNat", "sg", f"hs{k}", "pk_in", "msg_in", "hlen",
               f"(by rw [g{g.k}_12, ofNat_toNat_self])")
     ev = "evSpec (sigMem M0 (B + 0x21A0 + BitVec.ofNat 32 0x420) sg) w34 (B + 0x21A0 + BitVec.ofNat 32 0x420) w24 (w20).toNat = true"
@@ -7948,7 +7964,7 @@ def stage_csx():
     g.prop_check(ev, "hev", bad)
     g.set_a0(ke, 1, "ite_eq_left hev")
     g.branch(0x2F58, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
-    stmt, proof = finish(g, 0x2F5A, sorted(set(CL_KEEP_REGS)), set(g.words), set())
+    stmt, proof = finish(g, 0x2F5A, sorted(set(CL_KEEP_REGS)), set(g.words), {0x10})
     info = {"name": "sv_csx", "title": "the checkpoint's signature",
             "doc": "From the signature loop's head at 0x2D6E, with nothing left, to 0x2F5A: a line signed by the log "
             "was found, and `ed25519_verify` accepts its signature over the checkpoint's body with the log's key.",

@@ -477,12 +477,6 @@ theorem hasher_init_f {M M0 : Word → BitVec 8} {B : Word}
 /-- The first 32 bytes of `L`, each cut to a byte. -/
 def b32 (L : Bytes) : Bytes := (List.range 32).map fun j => (BitVec.ofNat 8 (L.getD j 0)).toNat
 
-theorem zext_lo8 (b : BitVec 8) : (b.zeroExtend 32).extractLsb' 0 8 = b := by
-  apply BitVec.eq_of_toNat_eq
-  rw [BitVec.extractLsb'_toNat, BitVec.toNat_setWidth, Nat.shiftRight_zero]
-  have := b.isLt
-  omega
-
 /-- 32 bytes of the frame that hold the first 32 bytes of `L`. -/
 theorem join32 {M : Word → BitVec 8} {B : Word} {L : Bytes} {c : Nat}
     (h0 : M (B + 0x21A0 + BitVec.ofNat 32 c) = BitVec.ofNat 8 (L.getD 0 0))

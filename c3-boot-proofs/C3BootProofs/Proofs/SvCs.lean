@@ -48,6 +48,13 @@ theorem pack4 (b0 b1 b2 b3 : BitVec 8) :
           gl8 (show 8 ≤ i from by omega), gl8 (show 8 ≤ i - 8 from by omega), gl8 (show 8 ≤ i - 16 from by omega),
           show i - 8 - 8 - 8 = i - 24 from by omega]
 
+/-- The byte that a word holding a zero-extended byte stores first. -/
+theorem zext_lo8 (b : BitVec 8) : (b.zeroExtend 32).extractLsb' 0 8 = b := by
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.extractLsb'_toNat, BitVec.toNat_setWidth, Nat.shiftRight_zero]
+  have := b.isLt
+  omega
+
 theorem ldb (M : Word → BitVec 8) (a : Word) :
     (memLoad32 M a).extractLsb' 0 8 = M a ∧ (memLoad32 M a).extractLsb' 8 8 = M (a + 1) ∧
     (memLoad32 M a).extractLsb' 16 8 = M (a + 2) ∧ (memLoad32 M a).extractLsb' 24 8 = M (a + 3) := by

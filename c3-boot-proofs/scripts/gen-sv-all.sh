@@ -25,11 +25,11 @@ phase() {
   fi
 }
 
-phase scripts/gen-sv-segs.py
+phase scripts/gen-sv-segs.py --keep-going
 phase scripts/gen-sv-search.py
 phase scripts/gen-sv-loop.py
 phase scripts/gen-sv-attrloop.py
-phase scripts/gen-sv-segs.py
+phase scripts/gen-sv-segs.py --keep-going
 phase scripts/gen-sv-relloop.py
 phase scripts/gen-sv-segs.py
 # shellcheck disable=SC2046

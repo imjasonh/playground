@@ -2,7 +2,9 @@
 """Writes the segment theorems of `sigstore::verify` that `svseg.Segment`
 composes from runs of generated stages, one file per segment.
 
-Usage: python3 scripts/gen-sv-segs.py [name ...]   (from c3-boot-proofs/)
+Usage: python3 scripts/gen-sv-segs.py [--keep-going] [name ...]   (from c3-boot-proofs/)
+
+With --keep-going, a file that can't be written yet is skipped.
 """
 
 import os
@@ -48,14 +50,25 @@ SEGMENTS = {
                  "**A `BasicConstraints` extension**: from the OID tests at 0x60E back to the extensions loop at "
                  "0x4EA, `sv_dbc1` and `sv_dbc2m`."),
     'SvSegCert': ('sv_seg_cert', [('SvSegLeaf', 'sv_seg_leaf'), ('SvExtLoop', 'sv_extloop_st'), ('SvL8a', 'sv_l8a'),
-                                  ('SvISearch', 'sv_isearch_st'), ('SvLh', 'sv_lh')],
-                  "**The leaf certificate and its issuer**: from 0x72 to the policy check at 0xDE6: the leaf, its "
-                  "extensions, the intermediate that issued it, and the leaf's signature."),
+                                  ('SvISearch', 'sv_isearch_st'), ('SvLh', 'sv_lh'), ('SvSegDpv', 'sv_seg_dpv')],
+                  "**The leaf certificate and its issuer**: from 0x72 to the P-256 check at 0xFBA: the leaf, its "
+                  "extensions, the intermediate that issued it, the leaf's signature, and the policy."),
     'SvSegTs': ('sv_seg_ts', [('SvSegTsa', 'sv_seg_tsa'), ('SvSegAttrPre', 'sv_seg_attr_pre'),
                               ('SvAttrLoop', 'sv_attrloop_st'), ('SvSegTst', 'sv_seg_tst'),
                               ('SvTSearch', 'sv_tsearch_st'), ('SvTsig', 'sv_tsig'), ('SvTp', 'sv_tp')],
                 "**The timestamp**: from 0x2034 to the checkpoint at 0x2B34: the timestamp response, its signed "
                 "attributes, the `TSTInfo`, the TSA that signed it, and its signature."),
+    'SvSegLog': ('sv_seg_log', [('SvSegCkpt', 'sv_seg_ck'), ('SvCkdLoop', 'sv_ckdloop_run'),
+                                ('SvCSearch', 'sv_csearch_st'), ('SvCs1', 'sv_cs1'),
+                                ('SvCosigLoop', 'sv_cosigloop_st'), ('SvSegWin', 'sv_seg_win')],
+                 "**The transparency log entry**: from the checkpoint at 0x2B34 to the successful exit at 0x3264: "
+                 "the checkpoint, the log that signed it, its signatures, the entry's index, and the validity "
+                 "windows."),
+    'SvSegSv': ('sv_seg_sv', [('SvSegCert', 'sv_seg_cert'), ('SvP256St', 'sv_p256_st'), ('SvSegTs', 'sv_seg_ts'),
+                              ('SvSegLog', 'sv_seg_log')],
+                "**`sigstore::verify` to its successful exit**: from 0x72 to 0x3264: the leaf certificate and its "
+                "issuer, the P-256 check of the artifact's signature, the timestamp, and the transparency log "
+                "entry."),
     'SvSegEku': ('sv_seg_eku', [('SvDeku1', 'sv_deku1'), ('SvEkuLoop', 'sv_ekuloop_st')],
                  "**An `ExtKeyUsage` extension**: from the OID tests at 0x60E back to the extensions loop at "
                  "0x4EA, `sv_deku1` and the loop over its OIDs."),
@@ -140,15 +153,14 @@ def build(f):
 
 
 if __name__ == "__main__":
-    if sys.argv[1:]:
-        for f in sys.argv[1:]:
+    args = [a for a in sys.argv[1:] if a != '--keep-going']
+    keep_going = len(args) < len(sys.argv) - 1
+    names = args or (ORDER + [fn for fn, *_ in MERGES if fn not in ORDER] + [f for f in SEGMENTS if f not in ORDER])
+    for f in names:
+        try:
             build(f)
-    else:
-        for f in ORDER:
-            build(f)
-        for fn, *_ in MERGES:
-            if fn not in ORDER:
-                build(fn)
-        for f in SEGMENTS:
-            if f not in ORDER:
-                build(f)
+        except ValueError as e:
+            # A file may need one that a later script writes.
+            if not keep_going:
+                raise
+            print(f"{f}: not yet ({e})", file=sys.stderr)

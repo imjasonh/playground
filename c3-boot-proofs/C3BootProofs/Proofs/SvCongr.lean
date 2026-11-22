@@ -100,6 +100,16 @@ theorem SvIn.contentW {B rp rl : Word} {M : Word → BitVec 8} {tag : Nat} {t : 
     (ht : derElement tag (memBytes M rp rl.toNat) = .ok t) :
     SvIn B (rp + BitVec.ofNat 32 t.header) (BitVec.ofNat 32 t.len).toNat := (h.content ht).ofNatLen
 
+theorem derTlv_elem {L : Bytes} {t : DerTlv} (h : derTlv L = .ok t) : derElement (L.headD 0) L = .ok t := by
+  cases L with
+  | nil => cases h
+  | cons a l => simp only [derElement, List.headD_cons, ↓reduceIte]; exact h
+
+/-- The content of a `derTlv` read, with its length as a word. -/
+theorem SvIn.tlvW {B rp rl : Word} {M : Word → BitVec 8} {t : DerTlv} (h : SvIn B rp rl.toNat)
+    (ht : derTlv (memBytes M rp rl.toNat) = .ok t) :
+    SvIn B (rp + BitVec.ofNat 32 t.header) (BitVec.ofNat 32 t.len).toNat := h.contentW (derTlv_elem ht)
+
 /-- The bytes after a read, with their length as the word the reader keeps. -/
 theorem SvIn.restW {B rp rl : Word} {M : Word → BitVec 8} {tag : Nat} {t : DerTlv} (h : SvIn B rp rl.toNat)
     (ht : derElement tag (memBytes M rp rl.toNat) = .ok t) :

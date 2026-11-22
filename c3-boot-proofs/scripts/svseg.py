@@ -157,6 +157,12 @@ class Segment:
                 base = self.derive_in(P0, N0)
                 if base:
                     return f"({base}).nlRest {hp}"
+            if ptr == canon(f"{P0} + BitVec.ofNat 32 ({ix} + 1)") and \
+                    n == canon(f"(BitVec.ofNat 32 ({N0}) - BitVec.ofNat 32 ({ix} + 1)).toNat"):
+                base = self.derive_in(P0, N0)
+                if base:
+                    return (f"by rw [svSubNat_toNat (by have := ({base}).lo; omega) "
+                            f"(by have := (nlScan_lt _ _ _ {hp}).2; omega)]; exact ({base}).nlRest {hp}")
         mc = re.fullmatch(r"([\w']+)\.toNat", n)
         if mc and mc.group(1) in self.closed:
             cpf, k = self.closed[mc.group(1)]
@@ -293,6 +299,10 @@ class Segment:
             if m:
                 ptr, ln = split_in(m.group(1))
                 self.parses[m.group(2)] = (f"(derOid_ok_elem {pf})", ptr, ln)
+            m = re.fullmatch(r"derTlv \(memBytes M0 (.+)\) = \.ok (\w+)", piece)
+            if m:
+                ptr, ln = split_in(m.group(1))
+                self.parses[m.group(2)] = (f"(derTlv_elem {pf})", ptr, ln)
             m = re.fullmatch(r"derOptRes \S+ \(memBytes M0 (.+)\) = some \(\.ok (\w+)\)", piece)
             if m:
                 ptr, ln = split_in(m.group(1))
@@ -454,13 +464,30 @@ class Segment:
             taken = {q for q, _ in self.hyps} | set(re.findall(r"[\w']+", self.binders))
             while nm in taken:
                 nm += "'"
-            self.extra_binders.append(nm)
+            self.extra_binders.append((nm, 'Word'))
             hp = f"w0_{key[1:]}"
             while hp in {q for q, _ in self.hyps}:
                 hp += "'"
             self.hyps.append((hp, f"{m.group(1)} = {nm}"))
             self.lifted.append(hp)
             self.hist[0][1][key] = Fact(key, f"{m.group(1)} = {nm}")
+            self.hist[0][1][key].name = hp
+            return self.carry(key, ty)
+        # A byte or range of the start that no stage wrote, whose value names
+        # a stage's binder: the binder becomes the segment's.
+        m = re.fullmatch(r"(\(?∀ j, j < \w+ → )?n0\.mem \(B \+ 0x21A0 \+ BitVec\.ofNat 32 .+\) = (.+?)\)?", ty)
+        if m and key[0] in 'bq':
+            taken = {q for q, _ in self.hyps} | set(re.findall(r"[\w']+", self.binders))
+            names = [b for b in dict.fromkeys(re.findall(r"(?<![\w.'])([\w']+)(?![\w'])", m.group(2))) if b in self.btypes]
+            if not names or any(b in taken for b in names):
+                return None
+            self.extra_binders += [(b, self.btypes[b]) for b in names if (b, self.btypes[b]) not in self.extra_binders]
+            hp = f"{'b' if key[0] == 'b' else 'q'}0_{key[1:]}"
+            while hp in {q for q, _ in self.hyps}:
+                hp += "'"
+            self.hyps.append((hp, ty))
+            self.lifted.append(hp)
+            self.hist[0][1][key] = Fact(key, ty)
             self.hist[0][1][key].name = hp
             return self.carry(key, ty)
         return None
@@ -525,6 +552,38 @@ class Segment:
                 return f"by have h := {S}; rw [{pf}] at h; exact h", m.group(1)
         return None, None
 
+    def shrunk_in(self, ptr, ln):
+        """`SvIn B ptr ln` for a length `c - r - 1` that the code computes as
+        `~r + c`, inside a slice of length `c`."""
+        m = re.fullmatch(r"\(aluEval \.xor \((.+)\) \(BitVec\.ofNat 32 0xFFFFFFFF\) \+ (.+)\)\.toNat", ln)
+        S = m and self.derive_in(ptr, canon(f"({m.group(2)}).toNat"))
+        if not S:
+            return None
+        bounds = "".join(f"have := (nlScan_lt _ _ _ {hp}).2; " for hp, _, _ in self.nl.values())
+        return (f"(({S}).shrink (svNotAdd_le (by have := ({S}).lo; {bounds}"
+                "simp only [BitVec.toNat_sub, BitVec.toNat_ofNat, Nat.reducePow] at *; omega)))")
+
+    def const_in(self, ptr, ln):
+        """`SvIn B ptr ln` for a constant `ln`, from a slice at `ptr` whose
+        length a fact sets to a constant at least `ln`."""
+        if not re.fullmatch(r"\d+|0x[0-9A-Fa-f]+", ln):
+            return None
+        names = []
+        if ptr in self.bits:
+            names.append(self.bits[ptr][2])
+        if ptr in self.contents:
+            names.append(self.contents[ptr][3])
+        for lname in names:
+            if lname not in self.eqs:
+                continue
+            epf, k0 = self.eqs[lname]
+            S = self.derive_in(ptr, canon(f"({lname}).toNat"))
+            if not S or not re.fullmatch(r"\d+|0x[0-9A-Fa-f]+", k0) or int(k0, 0) < int(ln, 0):
+                continue
+            full = f"(show SvIn B ({ptr}) {k0} from by have h := {S}; rw [{epf}] at h; exact h)"
+            return full if int(k0, 0) == int(ln, 0) else f"({full}.shrink (by decide))"
+        return None
+
     def nonzero_in(self, ptr, ln):
         """`SvIn B ptr ln` from a fact that `ptr` is 0 or that slice, and one
         that it isn't 0."""
@@ -532,12 +591,15 @@ class Segment:
                     if canon(strip_exists(piece)) == canon(f"{ptr} = 0 ∨ SvIn B {ptr} {ln}")), None)
         if not alt:
             return None
+        ult = re.compile(rf"\(?if BitVec\.ult 0 \(?{re.escape(ptr)}\)? then \(1 : Word\) else 0\)? &&& .+ ≠ 0")
         for pf, piece in self.pieces:
             conj = [canon(strip_parens(x)) for x in top_split(strip_parens(strip_exists(piece)), ' ∧ ')]
-            if canon(f"{ptr} ≠ 0") in conj:
-                j = conj.index(canon(f"{ptr} ≠ 0"))
+            for j, c in enumerate(conj):
                 proj = pf + ".2" * j + (".1" if j + 1 < len(conj) else "")
-                return f"({alt}.resolve_left {proj})"
+                if c == canon(f"{ptr} ≠ 0"):
+                    return f"({alt}.resolve_left {proj})"
+                if ult.fullmatch(c):
+                    return f"({alt}.resolve_left (fun hx => {proj} (by rw [hx]; exact BitVec.zero_and)))"
         return None
 
     def by_cases(self, ty):
@@ -632,6 +694,20 @@ class Segment:
         hit = self.split_each(p, strip_parens(ty))
         if hit:
             return hit
+        m = re.fullmatch(r"(.+) = 0 ∨ SvIn B (.+)", strip_parens(ty))
+        if m and top_split(m.group(1), ' ∨ ') == [m.group(1)]:
+            x = canon(strip_parens(m.group(1)))
+            if x in ('0', 'BitVec.ofNat 32 0x0', '0#32'):
+                return "(.inl rfl)"
+            ptr, ln = split_in(m.group(2))
+            pf = self.derive_in(ptr, ln)
+            if pf:
+                return f"(.inr ({pf}))"
+        if ty.startswith('SvRo B '):
+            ptr, ln = split_in(ty[len('SvRo B '):])
+            pf = self.derive_in(ptr, ln) or self.nonzero_in(ptr, ln)
+            if pf:
+                return f"(.inl ({pf}))"
         m = re.fullmatch(r"(.+) ≠ 0", strip_parens(ty))
         if m:
             x = canon(strip_parens(m.group(1)))
@@ -653,7 +729,8 @@ class Segment:
         for q, t in self.hyps:
             if q == p and t == ty and not free:
                 return p
-        local = re.search(r"(?<![\w.'])(n\d+|[\w']+_\d+|d\d+_\w+)(?![\w'])", ty)
+        inner = {b for grp in re.findall(r"[∀∃] ([\w' ]+?)(?: : [^,]+)?,", ty) for b in grp.split()}
+        local = any(x not in inner for x in re.findall(r"(?<![\w.'])(n\d+|[\w']+_\d+|d\d+_\w+)(?![\w'])", ty))
         if ty.startswith('SvIn B '):
             ptr, ln = split_in(ty[len('SvIn B '):])
             pf = self.derive_in(ptr, ln)
@@ -665,6 +742,18 @@ class Segment:
             pf, k = self.derive_lit(ptr)
             if pf and k == ln:
                 return f"({pf})"
+            pf = self.const_in(ptr, ln)
+            if pf:
+                return pf
+            pf = self.shrunk_in(ptr, ln)
+            if pf:
+                return pf
+        m = re.fullmatch(r"(.+) < 2 \^ 31", strip_parens(ty))
+        if m:
+            for ptr, _, _ in list(self.ins):
+                pf = self.shrunk_in(ptr, canon(m.group(1)))
+                if pf:
+                    return f"(({pf}).len_lt)"
         if not local:
             nm = p
             while nm in {q for q, _ in self.hyps}:
@@ -680,6 +769,7 @@ class Segment:
         i = s.index(f'theorem {first.name} ')
         self.binders = s[i + len(f'theorem {first.name} '):s.index('\n', i)]
         self.hyps = list(first.params)
+        self.btypes = {b: ty for kind, st in self.items if kind == 'stage' for b, ty in st.binders}
         self.lifted = []
         self.extra_binders = []
         start = {}
@@ -784,7 +874,7 @@ class Segment:
         return "[" + ", ".join(out) + "]"
 
     def statement(self):
-        extra = f" {{{' '.join(self.extra_binders)} : Word}}" if self.extra_binders else ""
+        extra = "".join(f" {{{nm} : {ty}}}" for nm, ty in self.extra_binders)
         out = [f"theorem {self.name} BINDERS"]
         out += [f"    ({p} : {t})" for p, t in self.hyps]
         out[-1] += " :"

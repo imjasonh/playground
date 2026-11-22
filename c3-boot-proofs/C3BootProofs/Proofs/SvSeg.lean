@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.SvCongr
+import C3BootProofs.Proofs.CondNeg12
 
 /-!
 # `sigstore::verify`: lemmas for composing stages
@@ -74,6 +75,24 @@ theorem svRem_le1 {r : Word} {a N : Nat} (h1 : 1 ≤ a) (ha : a ≤ r.toNat) (hN
 theorem svSubOfNat_toNat {r : Word} {a : Nat} (ha : a ≤ r.toNat) :
     (BitVec.ofNat 32 r.toNat - BitVec.ofNat 32 a).toNat = r.toNat - a := by
   bv_omega
+
+theorem svSubNat_toNat {n a : Nat} (hn : n < 2 ^ 32) (ha : a ≤ n) :
+    (BitVec.ofNat 32 n - BitVec.ofNat 32 a).toNat = n - a := by
+  rw [BitVec.toNat_sub, BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hn,
+    Nat.mod_eq_of_lt (by omega : a < 2 ^ 32)]
+  omega
+
+theorem SvIn.len_lt {B p : Word} {n : Nat} (h : SvIn B p n) : n < 2 ^ 31 := by
+  have := h.lo; omega
+
+/-- `c - r - 1` in the form the code computes it, `~r + c`, when `r < c`. -/
+theorem svNotAdd_le {r c : Word} (h : r.toNat < c.toNat) :
+    (aluEval .xor r (BitVec.ofNat 32 0xFFFFFFFF) + c).toNat ≤ c.toNat := by
+  have hx : (aluEval .xor r (BitVec.ofNat 32 0xFFFFFFFF)).toNat + r.toNat = 2 ^ 32 - 1 := xor_ones_toNat r
+  have hc := c.isLt
+  rw [BitVec.toNat_add]
+  simp only [Nat.reducePow] at *
+  omega
 
 theorem svRem_zero {r : Word} (h : r.toNat ≤ 0) : r = 0 := BitVec.eq_of_toNat_eq (by simp; omega)
 
