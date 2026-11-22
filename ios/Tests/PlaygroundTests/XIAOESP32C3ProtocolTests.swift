@@ -443,14 +443,18 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
 
     @MainActor
     func testPullLatestFirmwareFromGHCRResolvesCommitSHA() async throws {
-        let suite = "xiao-esp32c3.ghcr-sha.\(UUID().uuidString)"
+        let suite = "mcu-lab.ghcr-sha.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defaults.removePersistentDomain(forName: suite)
         defer { defaults.removePersistentDomain(forName: suite) }
 
         let shaBuilding = String(repeating: "a", count: 40)
         let shaPublished = String(repeating: "b", count: 40)
-        let firmwareBytes = Data([0xE9, 0x02, 0x00, 0x00]) + Data(repeating: 0x5A, count: 64)
+        var hdr = [UInt8](repeating: 0, count: 24)
+        hdr[0] = 0xE9
+        hdr[12] = 0x05 // CHIP_ID_ESP32C3 = 0x0005 (little-endian)
+        hdr[13] = 0x00
+        let firmwareBytes = Data(hdr) + Data(repeating: 0x5A, count: 64)
         let expectedDigest = "sha256:\(XIAOESP32C3Protocol.sha256Hex(firmwareBytes))"
 
         let http = FakeXIAOHTTP()
@@ -493,10 +497,14 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
             attestStore: AppAttestMemoryStore(deviceId: "dev-ota", userId: "user-ota"),
             http: http
         )
-        await controller.pullLatestFirmwareFromGHCR()
+        await controller.pullLatestFirmwareFromGHCR(target: .xiaoESP32C3)
 
         XCTAssertEqual(controller.stagedFirmwareData, firmwareBytes)
-        XCTAssertTrue(controller.stagedFirmwareName.hasPrefix("ghcr:\(shaPublished.prefix(7))"))
+        XCTAssertTrue(controller.stagedFirmwareName.hasPrefix("xiao-esp32c3@\(shaPublished.prefix(7))"))
+
+        // Cross-chip safety check: ESP32-C3 binary must be rejected for Waveshare ESP32 target.
+        XCTAssertNotNil(XIAOESP32C3Protocol.validateESPImageHeader(firmwareBytes, expectedChipID: MCULabFirmwareTarget.epdMaze.chipID))
+        XCTAssertNil(XIAOESP32C3Protocol.validateESPImageHeader(firmwareBytes, expectedChipID: MCULabFirmwareTarget.xiaoESP32C3.chipID))
     }
 
     private static func jsonResponse(_ body: String, status: Int) throws -> (Data, URLResponse) {

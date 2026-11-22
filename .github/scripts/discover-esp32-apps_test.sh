@@ -23,20 +23,18 @@ discover() {
 }
 
 all=$(bash .github/scripts/discover-esp32-apps.sh --all)
-assert_eq "$all" '["esp32-ble","inkbot-esp32","xiao-esp32c3"]' "--all lists the crates with an ESP-IDF target"
+assert_eq "$all" '["esp32-ble","mcu-lab"]' "--all lists the crates with an ESP-IDF target"
 
 assert_eq "$(discover esp32-ble/src/protocol.rs)" '["esp32-ble"]' "a change in a crate selects that crate"
-assert_eq "$(discover xiao-esp32c3/src/protocol.rs)" '["xiao-esp32c3"]' "a change in a RISC-V ESP32 crate selects that crate"
-assert_eq "$(discover inkbot-esp32/tools/publisher/src/main.rs)" '["inkbot-esp32"]' \
-  "a change in a crate's tools selects that crate"
-assert_eq "$(discover .github/workflows/inkbot-esp32-publish.yml)" '["inkbot-esp32"]' \
+assert_eq "$(discover mcu-lab/src/protocol.rs)" '["mcu-lab"]' "a change in mcu-lab selects that crate"
+assert_eq "$(discover .github/workflows/mcu-lab-publish.yml)" '["mcu-lab"]' \
   "a change to a crate's publish workflow selects that crate"
 assert_eq "$(discover .github/scripts/test-esp32-host.sh)" "$all" "the host test script selects every crate"
 assert_eq "$(discover y/src/lib.rs README.md .github/workflows/test.yml)" '[]' \
   "a change outside the crates selects nothing"
 
 rust=$(bash .github/scripts/discover-rust-apps.sh --all)
-for app in esp32-ble inkbot-esp32 xiao-esp32c3; do
+for app in esp32-ble mcu-lab; do
   assert_eq "$(jq -c --arg a "$app" 'index($a) != null' <<<"$rust")" "false" \
     "discover-rust-apps.sh leaves out $app"
 done

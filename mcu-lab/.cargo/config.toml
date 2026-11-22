@@ -1,0 +1,16 @@
+# No default [build] target — host `cargo test` must stay on the host triple.
+# The Makefile passes `--target` and `MCU` per board.
+
+[target.riscv32imc-esp-espidf]
+linker = "ldproxy"
+runner = "espflash flash --monitor"
+rustflags = ["--cfg", "espidf_time64"]
+
+[target.xtensa-esp32-espidf]
+linker = "ldproxy"
+runner = "espflash flash --monitor"
+rustflags = ["--cfg", "espidf_time64"]
+
+[env]
+MCU = { value = "esp32c3", force = false }
+ESP_IDF_VERSION = "v6.1"

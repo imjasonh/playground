@@ -29,7 +29,9 @@ import (
 )
 
 const (
-	// ELFMediaTypeGzip is the OCI layer media type for gzipped symbolized ELFs in GHCR.
+	// ELFMediaTypeMCULabGzip is the OCI layer media type for gzipped symbolized mcu-lab ELFs in GHCR.
+	ELFMediaTypeMCULabGzip = "application/vnd.mculab.elf.v1+gzip"
+	// ELFMediaTypeGzip is the legacy OCI layer media type for gzipped symbolized xiao-esp32c3 ELFs in GHCR.
 	ELFMediaTypeGzip = "application/vnd.xiao.esp32c3.elf.v1+gzip"
 	// ELFMediaTypeRaw is an uncompressed ELF layer media type.
 	ELFMediaTypeRaw = "application/x-elf"
@@ -161,7 +163,7 @@ func parseDWARFLines(d *dwarf.Data) []lineEntry {
 
 func shortenSourcePath(p string) string {
 	clean := filepath.ToSlash(p)
-	for _, marker := range []string{"/xiao-esp32c3/", "/src/"} {
+	for _, marker := range []string{"/mcu-lab/", "/xiao-esp32c3/", "/src/"} {
 		if idx := strings.LastIndex(clean, marker); idx >= 0 {
 			return strings.TrimPrefix(clean[idx+1:], "/")
 		}
@@ -230,12 +232,16 @@ func (s *Symbolizer) EnrichSpans(ctx context.Context, spans []otlp.Span) (map[st
 	if s == nil {
 		return nil, nil
 	}
-	// Check whether any span contains pc.hotspot events and extract mcu.git_sha if present.
+	// Check whether any span contains pc.hotspot events and extract mcu.git_sha / mcu.app if present.
 	tag := ""
+	app := ""
 	hasHotspots := false
 	for i := range spans {
 		if v, ok := spans[i].Attributes["mcu.git_sha"].(string); ok && tag == "" {
 			tag = strings.ToLower(strings.TrimSpace(v))
+		}
+		if v, ok := spans[i].Attributes["mcu.app"].(string); ok && app == "" {
+			app = strings.ToLower(strings.TrimSpace(v))
 		}
 		for j := range spans[i].Events {
 			if spans[i].Events[j].Name == "pc.hotspot" {
@@ -249,8 +255,12 @@ func (s *Symbolizer) EnrichSpans(ctx context.Context, spans []otlp.Span) (map[st
 	if !isValidTag(tag) {
 		return nil, fmt.Errorf("invalid symbol tag %q: must be a 40-char hex commit SHA", tag)
 	}
+	repo, err := s.repoForApp(app)
+	if err != nil {
+		return nil, err
+	}
 
-	tbl := s.tableForTag(ctx, tag)
+	tbl := s.tableForRepoTag(ctx, repo, tag)
 	if tbl == nil {
 		return nil, nil
 	}
@@ -330,12 +340,31 @@ func (s *Symbolizer) now() time.Time {
 	return time.Now()
 }
 
-func (s *Symbolizer) tableForTag(ctx context.Context, tag string) *Table {
+func (s *Symbolizer) repoForApp(app string) (string, error) {
+	if app == "" || s.LocalELFPath != "" {
+		return s.Repo, nil
+	}
+	switch app {
+	case "xiao-esp32c3", "epd-maze":
+	default:
+		return "", fmt.Errorf("unsupported mcu.app %q for symbolization", app)
+	}
+	if s.Repo == "" {
+		return "", nil
+	}
+	if idx := strings.LastIndex(s.Repo, "/"); idx > 0 {
+		return s.Repo[:idx+1] + app, nil
+	}
+	return app, nil
+}
+
+func (s *Symbolizer) tableForRepoTag(ctx context.Context, repo, tag string) *Table {
+	cacheKey := repo + ":" + tag
 	s.mu.Lock()
 	if s.cache == nil {
 		s.cache = make(map[string]cacheEntry)
 	}
-	if entry, ok := s.cache[tag]; ok {
+	if entry, ok := s.cache[cacheKey]; ok {
 		if entry.table != nil {
 			s.mu.Unlock()
 			return entry.table
@@ -351,20 +380,20 @@ func (s *Symbolizer) tableForTag(ctx context.Context, tag string) *Table {
 	var err error
 	if s.LocalELFPath != "" {
 		tbl, err = loadLocalELF(s.LocalELFPath)
-	} else if s.Repo != "" {
-		tbl, err = s.fetchFromGHCR(ctx, tag)
+	} else if repo != "" {
+		tbl, err = s.fetchFromGHCR(ctx, repo, tag)
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err != nil || tbl == nil {
-		s.cache[tag] = cacheEntry{failedAt: s.now()}
+		s.cache[cacheKey] = cacheEntry{failedAt: s.now()}
 		return nil
 	}
 	if len(s.cache) >= maxCachedTables {
 		clear(s.cache)
 	}
-	s.cache[tag] = cacheEntry{table: tbl}
+	s.cache[cacheKey] = cacheEntry{table: tbl}
 	return tbl
 }
 
@@ -376,7 +405,7 @@ func loadLocalELF(path string) (*Table, error) {
 	return ParseELF(raw)
 }
 
-func (s *Symbolizer) fetchFromGHCR(ctx context.Context, tag string) (*Table, error) {
+func (s *Symbolizer) fetchFromGHCR(ctx context.Context, repo, tag string) (*Table, error) {
 	if !isValidTag(tag) {
 		return nil, errors.New("invalid ELF tag")
 	}
@@ -390,7 +419,7 @@ func (s *Symbolizer) fetchFromGHCR(ctx context.Context, tag string) (*Table, err
 	}
 
 	// 1. Fetch anonymous pull token.
-	tokURL := fmt.Sprintf("%s/token?scope=repository:%s:pull", base, s.Repo)
+	tokURL := fmt.Sprintf("%s/token?scope=repository:%s:pull", base, repo)
 	tokReq, err := http.NewRequestWithContext(ctx, http.MethodGet, tokURL, nil)
 	if err != nil {
 		return nil, err
@@ -411,7 +440,7 @@ func (s *Symbolizer) fetchFromGHCR(ctx context.Context, tag string) (*Table, err
 	}
 
 	// 2. Fetch OCI manifest for tag.
-	manURL := fmt.Sprintf("%s/v2/%s/manifests/%s", base, s.Repo, tag)
+	manURL := fmt.Sprintf("%s/v2/%s/manifests/%s", base, repo, tag)
 	manReq, err := http.NewRequestWithContext(ctx, http.MethodGet, manURL, nil)
 	if err != nil {
 		return nil, err
@@ -440,7 +469,7 @@ func (s *Symbolizer) fetchFromGHCR(ctx context.Context, tag string) (*Table, err
 	var gzipped bool
 	for _, layer := range manifest.Layers {
 		switch layer.MediaType {
-		case ELFMediaTypeGzip:
+		case ELFMediaTypeMCULabGzip, ELFMediaTypeGzip:
 			elfDigest = layer.Digest
 			gzipped = true
 		case ELFMediaTypeRaw:
@@ -456,7 +485,7 @@ func (s *Symbolizer) fetchFromGHCR(ctx context.Context, tag string) (*Table, err
 	}
 
 	// 3. Download ELF blob and verify its SHA-256 matches the manifest digest.
-	blobURL := fmt.Sprintf("%s/v2/%s/blobs/%s", base, s.Repo, elfDigest)
+	blobURL := fmt.Sprintf("%s/v2/%s/blobs/%s", base, repo, elfDigest)
 	blobReq, err := http.NewRequestWithContext(ctx, http.MethodGet, blobURL, nil)
 	if err != nil {
 		return nil, err

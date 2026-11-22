@@ -161,3 +161,19 @@ func TestParseELFAndEnrichSpansFromGHCR(t *testing.T) {
 		t.Fatalf("missing commit fell back to :latest; must not fall back")
 	}
 }
+
+func TestRepoForApp(t *testing.T) {
+	s := &Symbolizer{Repo: "imjasonh/playground/xiao-esp32c3"}
+
+	got, err := s.repoForApp("")
+	if err != nil || got != "imjasonh/playground/xiao-esp32c3" {
+		t.Fatalf("empty app: got %q, err=%v", got, err)
+	}
+	got, err = s.repoForApp("epd-maze")
+	if err != nil || got != "imjasonh/playground/epd-maze" {
+		t.Fatalf("epd-maze: got %q, err=%v", got, err)
+	}
+	if _, err := s.repoForApp("../evil"); err == nil {
+		t.Fatalf("expected error for unknown mcu.app")
+	}
+}
