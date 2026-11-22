@@ -32,7 +32,7 @@ import {
 } from "./fetchActivity.js";
 import { fetchPack, fetchRefs } from "./transport.js";
 import { deleteRepo, listRepos, loadRepo, saveRepo } from "./store.js";
-import { readUrlState, packShareUrl, writeUrlState } from "./urlState.js";
+import { createNavHistory, readUrlState, packShareUrl } from "./urlState.js";
 import {
   markSelected,
   renderAuthorFilter,
@@ -105,15 +105,16 @@ const els = {
 };
 
 let session = null;
+let cachedSession = null;
 let navTab = "objects";
 let view = "overview";
 const overviewState = { metric: "packed", authorMetric: "packed", compare: null };
 let savedCount = 0;
 let pendingRefs = null; // { base, refs, head } awaiting a ref-pick fetch
 
-// In-app navigation history of selected oids.
-let hist = [];
-let histPos = -1;
+// Browser-backed navigation history shared with the toolbar Back/Forward buttons.
+const nav = createNavHistory();
+let navSeq = 0;
 
 // --- Off-thread parsing with a graceful fallback -------------------------
 
@@ -362,7 +363,9 @@ async function fetchChoice(which) {
     showBusy(`Saving pack, ${formatBytes(pack.length)}.`, { indeterminate: true });
     await saveRepo(record);
     await refreshSavedCount();
-    showIdle(`Loaded ${session.objects.length.toLocaleString()} objects from ${record.base}.`);
+    if (session?.packId === record.base) {
+      showIdle(`Loaded ${session.objects.length.toLocaleString()} objects from ${record.base}.`);
+    }
   } catch (err) {
     reportError(err);
   } finally {
@@ -384,10 +387,12 @@ els.packFile.addEventListener("change", async (event) => {
     updateTray();
     if (file.size >= LARGE_PACK_BYTES) {
       await openLargePack(file);
-      showIdle(
-        `Loaded ${session.objects.length.toLocaleString()} objects from ${file.name} ` +
-          `(${formatBytes(file.size)}, streamed from disk, not saved).`,
-      );
+      if (session?.packId === `file://${file.name}`) {
+        showIdle(
+          `Loaded ${session.objects.length.toLocaleString()} objects from ${file.name} ` +
+            `(${formatBytes(file.size)}, streamed from disk, not saved).`,
+        );
+      }
       return;
     }
     showBusy(`Reading ${file.name}.`, { indeterminate: true });
@@ -397,7 +402,9 @@ els.packFile.addEventListener("change", async (event) => {
     showBusy(`Saving pack, ${formatBytes(pack.length)}.`, { indeterminate: true });
     await saveRepo(record);
     await refreshSavedCount();
-    showIdle(`Loaded ${session.objects.length.toLocaleString()} objects from ${file.name}.`);
+    if (session?.packId === record.base) {
+      showIdle(`Loaded ${session.objects.length.toLocaleString()} objects from ${file.name}.`);
+    }
   } catch (err) {
     reportError(err);
   }
@@ -420,10 +427,15 @@ function onParsePhase(p) {
 
 // --- Open a pack ----------------------------------------------------------
 
-async function openPack(record, { objectId = null } = {}) {
+async function openPack(
+  record,
+  { objectId = null, objectIndex = null, view: targetView = null, historyMode = "push", seq = null } = {},
+) {
+  const activeSeq = seq ?? ++navSeq;
   transfer = null;
   showBusy(`Parsing pack, ${formatBytes(record.pack.length)}.`, { indeterminate: true });
   const { parsed, resolved } = await parseAndResolve(record.pack, onParsePhase);
+  if (activeSeq !== navSeq) return;
 
   const roots = defaultRoots({ head: record.head, refs: record.refs });
   const reachable =
@@ -431,6 +443,7 @@ async function openPack(record, { objectId = null } = {}) {
       ? computeReachability({ byOid: resolved.byOid, contentByOid: resolved.contentByOid, roots }).reachable
       : null;
 
+  cachedSession = null;
   session = {
     packId: record.base,
     base: record.base,
@@ -449,6 +462,7 @@ async function openPack(record, { objectId = null } = {}) {
     attribution: attributeBlobs(resolved),
     trailer: null,
     selectedOid: null,
+    selectedIndex: null,
   };
   indexPaths(session);
 
@@ -462,7 +476,7 @@ async function openPack(record, { objectId = null } = {}) {
     })
     .catch(() => {});
 
-  await showPack({ objectId });
+  await showPack({ objectId, objectIndex, view: targetView, historyMode, seq: activeSeq });
 }
 
 // Run the streaming index in the worker, falling back to the main thread.
@@ -497,6 +511,7 @@ async function indexLargePack(file, onPhase) {
 }
 
 async function openLargePack(file) {
+  const activeSeq = ++navSeq;
   showBusy(`Indexing ${file.name}, ${formatBytes(file.size)}.`, { indeterminate: true });
   const index = await indexLargePack(file, (p) => {
     if (p.phase === "index" && p.count) {
@@ -506,12 +521,14 @@ async function openLargePack(file) {
       );
     }
   });
+  if (activeSeq !== navSeq) return;
 
   const byOid = new Map();
   for (const obj of index.objects) {
     if (obj.oid) byOid.set(obj.oid, obj);
   }
 
+  cachedSession = null;
   session = {
     packId: `file://${file.name}`,
     base: `file://${file.name}`,
@@ -533,10 +550,11 @@ async function openLargePack(file) {
     attribution: attributeBlobs({ objects: index.objects, byOid, contentByOid: index.contentByOid }),
     trailer: null,
     selectedOid: null,
+    selectedIndex: null,
     view: null,
   };
   indexPaths(session);
-  await showPack({});
+  await showPack({ historyMode: "push", seq: activeSeq });
 }
 
 // Name objects by their path in the HEAD tree (or the first commit's tree).
@@ -550,10 +568,13 @@ function indexPaths(s) {
 
 // Render a freshly opened session: navigator, overview, and the requested
 // object (or the overview when none was requested).
-async function showPack({ objectId = null }) {
-  hist = [];
-  histPos = -1;
-  updateNavButtons();
+async function showPack({
+  objectId = null,
+  objectIndex = null,
+  view: targetView = null,
+  historyMode = "push",
+  seq = null,
+} = {}) {
   overviewState.compare = null;
   for (const el of [els.filterType, els.filterDelta, els.filterReach, els.filterSearch]) el.value = "";
   els.filterSort.value = "offset";
@@ -568,16 +589,26 @@ async function showPack({ objectId = null }) {
   renderNavPanel();
   renderOverviewView();
 
-  if (objectId && session.byOid.has(objectId)) {
-    await go(objectId);
+  const obj =
+    (objectId && session.byOid.get(objectId)) ||
+    (objectIndex != null ? session.objects[objectIndex] : null) ||
+    null;
+
+  if (obj) {
+    await showObject(obj, { historyMode, seq });
   } else {
+    session.selectedOid = null;
+    session.selectedIndex = null;
     renderDetail(els.detail, null, session);
-    setView("overview");
-    writeUrlState({ packId: session.packId, objectId: null });
+    const nextView = targetView === "object" ? "object" : "overview";
+    setView(nextView);
+    commitNav({ packId: session.packId, view: nextView, objectId: null, objectIndex: null }, historyMode);
   }
 }
 
-function closePack() {
+function closePack({ cache = false } = {}) {
+  if (cache && session) cachedSession = session;
+  else if (!cache) cachedSession = null;
   session = null;
   els.workspace.hidden = true;
   els.landing.hidden = false;
@@ -736,62 +767,106 @@ function wireTablist(list, attr, onSelect) {
 wireTablist(document.querySelector(".nav .tablist"), "tab", setNavTab);
 wireTablist(document.querySelector(".view-tabs"), "view", (next) => {
   setView(next);
-  if (session) writeUrlState({ packId: session.packId, objectId: next === "object" ? session.selectedOid : null });
+  if (session) {
+    commitNav(
+      {
+        packId: session.packId,
+        view: next,
+        objectId: next === "object" ? session.selectedOid : null,
+        objectIndex: next === "object" && !session.selectedOid ? session.selectedIndex : null,
+      },
+      "push",
+    );
+  }
 });
 
-// --- Navigation (in-app history + URL) ----------------------------------
+// --- Navigation (browser history + URL) ----------------------------------
 
-async function go(oid) {
+function commitNav(target, historyMode) {
+  if (historyMode === "push") nav.push(target);
+  else if (historyMode === "replace") nav.replace(target);
+  updateNavButtons();
+}
+
+async function goLanding({ historyMode = "push" } = {}) {
+  const seq = ++navSeq;
+  els.refpicker.hidden = true;
+  updateTray();
+  if (session) closePack({ cache: true });
+  showIdle("");
+  commitNav({ packId: null, view: "landing" }, historyMode);
+  await refreshSaved();
+  if (seq !== navSeq) return;
+}
+
+async function go(oid, { historyMode = "push", seq = null } = {}) {
   if (!session) return;
   const obj = session.byOid.get(oid);
   if (!obj) {
     showIdle(`Object ${oid.slice(0, 8)} is not in this pack.`, { error: true });
     return;
   }
-  if (hist[histPos] !== oid) {
-    hist = hist.slice(0, histPos + 1);
-    hist.push(oid);
-    histPos = hist.length - 1;
-  }
-  await showObject(obj);
-  updateNavButtons();
+  await showObject(obj, { historyMode, seq });
 }
 
-async function showObject(obj) {
+async function showObject(obj, { historyMode = "push", seq = null } = {}) {
   if (!session) return;
-  session.selectedOid = obj?.oid || null;
-  session.view = null;
-  if (session.large && obj) {
+  const activeSeq = seq ?? ++navSeq;
+  const activeSession = session;
+  activeSession.selectedOid = obj?.oid || null;
+  activeSession.selectedIndex = obj ? obj.index : null;
+  activeSession.view = null;
+  if (activeSession.large && obj) {
     try {
-      session.view = await prefetchView(obj);
+      const prefetched = await prefetchView(obj);
+      if (activeSeq !== navSeq || session !== activeSession) return;
+      activeSession.view = prefetched;
     } catch (err) {
+      if (activeSeq !== navSeq || session !== activeSession) return;
       console.error(err);
     }
   }
-  renderDetail(els.detail, obj, session);
+  renderDetail(els.detail, obj, activeSession);
   els.detail.scrollTop = 0;
-  markSelected(els.objectList, session.selectedOid);
+  markSelected(els.objectList, activeSession.selectedOid);
   setView("object");
-  writeUrlState({ packId: session.packId, objectId: session.selectedOid });
+  commitNav(
+    {
+      packId: activeSession.packId,
+      view: "object",
+      objectId: activeSession.selectedOid,
+      objectIndex: activeSession.selectedOid ? null : activeSession.selectedIndex,
+    },
+    historyMode,
+  );
 }
 
 function updateNavButtons() {
-  els.navBack.disabled = histPos <= 0;
-  els.navFwd.disabled = histPos >= hist.length - 1;
+  els.navBack.disabled = !nav.canBack();
+  els.navFwd.disabled = !nav.canForward();
 }
 
 els.navBack.addEventListener("click", () => {
-  if (!session || histPos <= 0) return;
-  histPos -= 1;
-  showObject(session.byOid.get(hist[histPos]));
-  updateNavButtons();
+  nav.back();
 });
 
 els.navFwd.addEventListener("click", () => {
-  if (!session || histPos >= hist.length - 1) return;
-  histPos += 1;
-  showObject(session.byOid.get(hist[histPos]));
-  updateNavButtons();
+  nav.forward();
+});
+
+document.querySelector(".brand")?.addEventListener("click", (event) => {
+  if (
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  ) {
+    return;
+  }
+  event.preventDefault();
+  void goLanding({ historyMode: "push" });
 });
 
 els.jumpForm.addEventListener("submit", (event) => {
@@ -1004,63 +1079,135 @@ async function refreshSavedCount() {
 }
 
 async function openSaved(key) {
+  const seq = ++navSeq;
   try {
+    if (cachedSession?.packId === key) {
+      session = cachedSession;
+      cachedSession = null;
+      els.refpicker.hidden = true;
+      updateTray();
+      els.landing.hidden = true;
+      els.workspace.hidden = false;
+      setView("overview");
+      commitNav({ packId: session.packId, view: "overview", objectId: null, objectIndex: null }, "push");
+      showIdle(`Opened ${session.base}.`);
+      return;
+    }
     showBusy("Loading saved pack.", { indeterminate: true });
-    await openSavedPack(key);
+    await openSavedPack(key, { historyMode: "push", seq });
+    if (seq !== navSeq || !session) return;
     showIdle(`Opened ${session.base}.`);
   } catch (err) {
+    if (seq !== navSeq) return;
     reportError(err);
   }
 }
 
 async function deleteSaved(key) {
   await deleteRepo(key);
+  if (cachedSession?.packId === key) cachedSession = null;
   const { packId } = readUrlState();
-  if (packId === key) writeUrlState({ packId: null, objectId: null });
-  if (session?.packId === key) closePack();
+  if (packId === key) {
+    nav.replace({ packId: null, view: "landing" });
+    updateNavButtons();
+  }
+  if (session?.packId === key) closePack({ cache: false });
   await refreshSaved();
 }
 
-async function openSavedPack(packId, { objectId = null } = {}) {
+async function openSavedPack(
+  packId,
+  { objectId = null, objectIndex = null, view: targetView = null, historyMode = "push", seq = null } = {},
+) {
+  const activeSeq = seq ?? ++navSeq;
   const record = await loadRepo(packId);
+  if (activeSeq !== navSeq) return;
   if (!record) throw new Error(`No saved pack "${packId}" in this browser.`);
   if (!record.base.startsWith("file://")) els.repo.value = record.base;
   await refreshSavedCount();
-  await openPack(record, { objectId });
+  if (activeSeq !== navSeq) return;
+  await openPack(record, { objectId, objectIndex, view: targetView, historyMode, seq: activeSeq });
 }
 
-// --- URL restore ---------------------------------------------------------
+// --- URL & history restore -----------------------------------------------
 
-async function restoreFromUrl() {
-  const { packId, objectId } = readUrlState();
-  if (!packId) return;
-  if (session?.packId === packId) {
-    if (objectId && session.byOid.has(objectId)) go(objectId);
+async function restoreTarget(target, { historyMode = "none" } = {}) {
+  const seq = ++navSeq;
+  const { packId, view: targetView, objectId, objectIndex } = target;
+
+  if (!packId) {
+    els.refpicker.hidden = true;
+    updateTray();
+    if (session) closePack({ cache: true });
+    showIdle("");
+    commitNav({ packId: null, view: "landing" }, historyMode);
+    await refreshSaved();
     return;
   }
+
+  if (session?.packId !== packId && cachedSession?.packId === packId) {
+    session = cachedSession;
+    cachedSession = null;
+    els.refpicker.hidden = true;
+    updateTray();
+    els.landing.hidden = true;
+    els.workspace.hidden = false;
+    showIdle("");
+  }
+
+  if (session?.packId === packId) {
+    const obj =
+      (objectId && session.byOid.get(objectId)) ||
+      (objectIndex != null ? session.objects[objectIndex] : null) ||
+      null;
+    if (targetView === "object" && obj) {
+      if (session.selectedOid === (obj.oid || null) && session.selectedIndex === obj.index) {
+        markSelected(els.objectList, session.selectedOid);
+        setView("object");
+        commitNav(target, historyMode);
+      } else {
+        await showObject(obj, { historyMode, seq });
+      }
+    } else if (targetView === "object") {
+      session.selectedOid = null;
+      session.selectedIndex = null;
+      renderDetail(els.detail, null, session);
+      markSelected(els.objectList, null);
+      setView("object");
+      commitNav(target, historyMode);
+    } else {
+      setView("overview");
+      commitNav({ packId: session.packId, view: "overview", objectId: null, objectIndex: null }, historyMode);
+    }
+    return;
+  }
+
   try {
     showBusy("Restoring pack from link.", { indeterminate: true });
-    await openSavedPack(packId, { objectId });
+    await openSavedPack(packId, { objectId, objectIndex, view: targetView, historyMode, seq });
+    if (seq !== navSeq || !session) return;
     showIdle(`Restored ${session.objects.length.toLocaleString()} objects from ${session.base}.`);
   } catch (err) {
+    if (seq !== navSeq) return;
+    if (session) closePack({ cache: true });
     reportError(err);
     await refreshSaved();
   }
 }
 
-window.addEventListener("hashchange", () => {
-  const { objectId } = readUrlState();
-  if (objectId && session?.byOid.has(objectId) && objectId !== session.selectedOid) go(objectId);
-});
-
-window.addEventListener("popstate", () => {
-  void restoreFromUrl();
+window.addEventListener("popstate", (event) => {
+  const target = nav.onPopState(event.state);
+  updateNavButtons();
+  void restoreTarget(target, { historyMode: "none" });
 });
 
 async function boot() {
   await refreshSaved();
-  const { packId } = readUrlState();
-  if (packId) await restoreFromUrl();
+  const initial = nav.init();
+  updateNavButtons();
+  if (initial.packId) {
+    await restoreTarget(initial, { historyMode: "replace" });
+  }
 }
 
 boot().catch((err) => console.error(err));
