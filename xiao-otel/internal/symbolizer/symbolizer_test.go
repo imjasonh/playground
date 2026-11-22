@@ -141,8 +141,8 @@ func TestParseELFAndEnrichSpansFromGHCR(t *testing.T) {
 		t.Fatalf("span event attributes not enriched: %+v", evAttrs)
 	}
 
-	// 2. Invalid tags must return an error and never fall back to latest.
-	for _, bad := range []string{"../evil", "v1.0.0", "deadbeef", strings.Repeat("a", 64)} {
+	// 2. Invalid tags (including "latest") must return an error and never fetch :latest.
+	for _, bad := range []string{"latest", "../evil", "v1.0.0", "deadbeef", strings.Repeat("a", 64)} {
 		if _, err := sym.EnrichSpans(t.Context(), makeSpans(bad)); err == nil {
 			t.Fatalf("expected error for invalid tag %q, got nil", bad)
 		}

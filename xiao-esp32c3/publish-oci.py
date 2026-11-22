@@ -140,9 +140,8 @@ def main() -> int:
     }
     manifest_bytes = json.dumps(manifest, separators=(",", ":")).encode()
 
-    for tag in ("latest", git_sha):
-        digest = put_manifest(registry, repo, token, tag, manifest_bytes)
-        print(f"published {registry}/{repo}:{tag} ({digest})")
+    digest = put_manifest(registry, repo, token, git_sha, manifest_bytes)
+    print(f"published {registry}/{repo}:{git_sha} ({digest})")
     return 0
 
 

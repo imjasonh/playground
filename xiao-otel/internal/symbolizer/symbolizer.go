@@ -223,9 +223,9 @@ type Symbolizer struct {
 // `function`, `file`, and `line` attributes before export, and returns the map
 // of resolved hex PC strings to Symbol.
 //
-// If a span specifies `mcu.git_sha`, it must be either `"latest"` or a 40-char
-// lowercase hex git commit SHA; any other value returns an error without falling
-// back to `"latest"`.
+// Only 40-char lowercase hex git commit SHAs (`mcu.git_sha`) are accepted; any
+// other non-empty tag (including `"latest"`) returns an error. If `mcu.git_sha`
+// is omitted, symbolization is skipped without falling back to `:latest`.
 func (s *Symbolizer) EnrichSpans(ctx context.Context, spans []otlp.Span) (map[string]Symbol, error) {
 	if s == nil {
 		return nil, nil
@@ -243,13 +243,11 @@ func (s *Symbolizer) EnrichSpans(ctx context.Context, spans []otlp.Span) (map[st
 			}
 		}
 	}
-	if !hasHotspots {
+	if !hasHotspots || tag == "" {
 		return nil, nil
 	}
-	if tag == "" {
-		tag = "latest"
-	} else if !isValidTag(tag) {
-		return nil, fmt.Errorf("invalid symbol tag %q: must be \"latest\" or a 40-char hex commit SHA", tag)
+	if !isValidTag(tag) {
+		return nil, fmt.Errorf("invalid symbol tag %q: must be a 40-char hex commit SHA", tag)
 	}
 
 	tbl := s.tableForTag(ctx, tag)
@@ -295,9 +293,6 @@ func (s *Symbolizer) EnrichSpans(ctx context.Context, spans []otlp.Span) (map[st
 }
 
 func isValidTag(tag string) bool {
-	if tag == "latest" {
-		return true
-	}
 	return isHexLen(tag, 40)
 }
 
