@@ -246,7 +246,7 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
                 let n = challengeCounter.next()
                 return try Self.jsonResponse(#"{"challenge":"c\#(n)","expiresAt":1700000000}"#, status: 200)
             }
-            if path.hasSuffix("/v1/register") {
+            if path.hasSuffix("/v1/token") {
                 let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
                 let keyId = body?["keyId"] as? String ?? ""
                 XCTAssertEqual(keyId, "fresh-key-1")
@@ -301,7 +301,7 @@ final class XIAOESP32C3ProtocolTests: XCTestCase {
                 let n = challengeCounter.next()
                 return try Self.jsonResponse(#"{"challenge":"c\#(n)","expiresAt":1700000000}"#, status: 200)
             }
-            if path.hasSuffix("/v1/register") {
+            if path.hasSuffix("/v1/token") {
                 let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
                 let keyId = body?["keyId"] as? String ?? ""
                 return try Self.jsonResponse(
