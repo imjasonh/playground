@@ -72,6 +72,55 @@ enum XIAOESP32C3OTAStatus: Equatable {
     case error(message: String)
 }
 
+/// A single sub-phase timing span recorded on the XIAO ESP32C3 MCU.
+struct XIAOESP32C3ProfileSpan: Equatable, Identifiable, Decodable {
+    var name: String
+    var parent: String
+    var startUs: UInt32
+    var durationUs: UInt32
+
+    var id: String { "\(parent).\(name).\(startUs)" }
+
+    enum CodingKeys: String, CodingKey {
+        case name, parent
+        case startUs = "start_us"
+        case durationUs = "dur_us"
+    }
+}
+
+/// A sampled program-counter hotspot (`pc` hex address + sample hits).
+struct XIAOESP32C3PCSample: Equatable, Identifiable, Decodable {
+    var pc: String
+    var hits: UInt16
+
+    var id: String { pc }
+}
+
+/// Detailed per-wake profiling snapshot pulled over BLE GATT (`PROFILE_CHAR_UUID`).
+struct XIAOESP32C3WakeProfile: Equatable, Decodable {
+    var version: UInt8
+    var wakeCount: UInt32
+    var seq: UInt8
+    var freeHeapBytes: UInt32
+    var minFreeHeapBytes: UInt32
+    var stackHighWaterBytes: UInt32
+    var cpuCycles: UInt64
+    var spans: [XIAOESP32C3ProfileSpan]
+    var pcSamples: [XIAOESP32C3PCSample]
+
+    enum CodingKeys: String, CodingKey {
+        case version = "v"
+        case wakeCount = "wake"
+        case seq
+        case freeHeapBytes = "free_heap"
+        case minFreeHeapBytes = "min_heap"
+        case stackHighWaterBytes = "stack_hw"
+        case cpuCycles = "cycles"
+        case spans
+        case pcSamples = "pcs"
+    }
+}
+
 /// Shared wire format, BLE GATT OTA protocol, and OTLP JSON builder with `xiao-esp32c3/src/protocol.rs`.
 enum XIAOESP32C3Protocol {
     static let deviceName = "XIAO-C3"
@@ -83,6 +132,7 @@ enum XIAOESP32C3Protocol {
     static let otaControlUUIDString = "BEB5483E-36E1-4688-B7F5-EA07361BC301"
     static let otaDataUUIDString = "BEB5483E-36E1-4688-B7F5-EA07361BC302"
     static let otaStatusUUIDString = "1A3C0001-36E1-4688-B7F5-EA07361BC303"
+    static let profileCharUUIDString = "1A3C0002-36E1-4688-B7F5-EA07361BC303"
     static let otaSlotBytes: UInt32 = 0x1F_0000
 
     static let flagDeepSleepWake: UInt8 = 1 << 0
@@ -285,18 +335,229 @@ enum XIAOESP32C3Protocol {
         return "seq=\(m.seq) wake=\(m.wakeCount) sensor_us=\(m.sensorUs) compute_us=\(m.computeUs) epd_us=\(m.epdRefreshUs) radio_us=\(m.radioUs) batt_mv=\(m.batteryMv) flags=\(flagsHex)"
     }
 
+    /// Decode a `WakeProfile` JSON payload read from `PROFILE_CHAR_UUID`.
+    static func decodeWakeProfile(_ data: Data) -> XIAOESP32C3WakeProfile? {
+        try? JSONDecoder().decode(XIAOESP32C3WakeProfile.self, from: data)
+    }
+
+    /// Generate a realistic simulated `WakeProfile` for bench / Simulator testing.
+    static func simulatedWakeProfile(for metrics: XIAOESP32C3Metrics) -> XIAOESP32C3WakeProfile {
+        let bootUs: UInt32 = 420
+        let sensorStart = bootUs
+        let computeStart = sensorStart + metrics.sensorUs
+        let epdStart = computeStart + metrics.computeUs
+        let spiUs = min(metrics.epdRefreshUs / 10, 2_800)
+        let busyUs = metrics.epdRefreshUs > spiUs ? metrics.epdRefreshUs - spiUs : 0
+        let totalActiveUs = UInt64(bootUs) + UInt64(metrics.sensorUs) + UInt64(metrics.computeUs) + UInt64(metrics.epdRefreshUs)
+        return XIAOESP32C3WakeProfile(
+            version: 1,
+            wakeCount: metrics.wakeCount,
+            seq: metrics.seq,
+            freeHeapBytes: 210_944,
+            minFreeHeapBytes: 198_400,
+            stackHighWaterBytes: 3_072,
+            cpuCycles: totalActiveUs * 160,
+            spans: [
+                XIAOESP32C3ProfileSpan(name: "boot.init", parent: "wake", startUs: 0, durationUs: bootUs),
+                XIAOESP32C3ProfileSpan(name: "sensor.adc_filter", parent: "sensor", startUs: sensorStart, durationUs: metrics.sensorUs),
+                XIAOESP32C3ProfileSpan(name: "compute.epd_render", parent: "compute", startUs: computeStart, durationUs: metrics.computeUs),
+                XIAOESP32C3ProfileSpan(name: "epd.spi_transfer", parent: "epd_refresh", startUs: epdStart, durationUs: spiUs),
+                XIAOESP32C3ProfileSpan(name: "epd.busy_wait", parent: "epd_refresh", startUs: epdStart + spiUs, durationUs: busyUs),
+            ],
+            pcSamples: [
+                XIAOESP32C3PCSample(pc: "0x42001a40", hits: 14),
+                XIAOESP32C3PCSample(pc: "0x42003c18", hits: 6),
+                XIAOESP32C3PCSample(pc: "0x42000e84", hits: 3),
+            ]
+        )
+    }
+
+    /// Generate a lowercase hex string of `byteCount` random bytes (never all zeros).
+    static func randomHex(byteCount: Int) -> String {
+        var bytes = [UInt8](repeating: 0, count: max(byteCount, 1))
+        for idx in bytes.indices {
+            bytes[idx] = UInt8.random(in: 0...255)
+        }
+        if bytes.allSatisfy({ $0 == 0 }) {
+            bytes[bytes.count - 1] = 1
+        }
+        return bytes.map { String(format: "%02x", $0) }.joined()
+    }
+
     /// Build a valid OTLP/HTTP v1 JSON metrics payload (`application/json`).
     static func formatOTLPJSON(
         deviceId: String,
         metrics: XIAOESP32C3Metrics,
         rssi: Int,
-        timeUnixNano: UInt64
+        timeUnixNano: UInt64,
+        profile: XIAOESP32C3WakeProfile? = nil
     ) -> String {
         let ts = String(timeUnixNano)
         let safeDeviceId = escapeJSONString(deviceId)
+        var extraMetrics = ""
+        if let profile {
+            extraMetrics = """
+            ,{"name":"mcu.heap.free_bytes","gauge":{"dataPoints":[{"asInt":"\(profile.freeHeapBytes)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.heap.min_free_bytes","gauge":{"dataPoints":[{"asInt":"\(profile.minFreeHeapBytes)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.stack.high_water_bytes","gauge":{"dataPoints":[{"asInt":"\(profile.stackHighWaterBytes)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.cpu.cycles","gauge":{"dataPoints":[{"asInt":"\(profile.cpuCycles)","timeUnixNano":"\(ts)"}]}}
+            """
+        }
         return """
-        {"resourceMetrics":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"xiao-esp32c3"}},{"key":"device.id","value":{"stringValue":"\(safeDeviceId)"}}]},"scopeMetrics":[{"metrics":[{"name":"mcu.wake.count","gauge":{"dataPoints":[{"asInt":"\(metrics.wakeCount)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.phase.duration_us","gauge":{"dataPoints":[{"asInt":"\(metrics.sensorUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"sensor"}}]},{"asInt":"\(metrics.computeUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"compute"}}]},{"asInt":"\(metrics.epdRefreshUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"epd_refresh"}}]},{"asInt":"\(metrics.radioUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"radio"}}]}]}},{"name":"mcu.battery_mv","gauge":{"dataPoints":[{"asInt":"\(metrics.batteryMv)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.ble.rssi","gauge":{"dataPoints":[{"asInt":"\(rssi)","timeUnixNano":"\(ts)"}]}}]}]}]}
+        {"resourceMetrics":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"xiao-esp32c3"}},{"key":"device.id","value":{"stringValue":"\(safeDeviceId)"}}]},"scopeMetrics":[{"metrics":[{"name":"mcu.wake.count","gauge":{"dataPoints":[{"asInt":"\(metrics.wakeCount)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.phase.duration_us","gauge":{"dataPoints":[{"asInt":"\(metrics.sensorUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"sensor"}}]},{"asInt":"\(metrics.computeUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"compute"}}]},{"asInt":"\(metrics.epdRefreshUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"epd_refresh"}}]},{"asInt":"\(metrics.radioUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"radio"}}]}]}},{"name":"mcu.battery_mv","gauge":{"dataPoints":[{"asInt":"\(metrics.batteryMv)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.ble.rssi","gauge":{"dataPoints":[{"asInt":"\(rssi)","timeUnixNano":"\(ts)"}]}}\(extraMetrics)]}]}]}
         """
+    }
+
+    /// Build a valid OTLP/HTTP v1 JSON trace payload (`ExportTraceServiceRequest`) representing
+    /// the wake waterfall (`xiao.wake` root span + 4 MCU phase spans + optional firmware sub-phase spans).
+    static func formatOTLPTraceJSON(
+        traceId: String,
+        rootSpanId: String,
+        deviceId: String,
+        metrics: XIAOESP32C3Metrics,
+        rssi: Int,
+        timeUnixNano: UInt64,
+        profile: XIAOESP32C3WakeProfile? = nil
+    ) -> String {
+        let totalActiveNs = metrics.totalActiveUs * 1_000
+        let wakeStartNs = timeUnixNano > totalActiveNs ? timeUnixNano - totalActiveNs : timeUnixNano
+        let wakeEndNs = wakeStartNs + totalActiveNs
+
+        let sensorSpanId = randomHex(byteCount: 8)
+        let computeSpanId = randomHex(byteCount: 8)
+        let epdSpanId = randomHex(byteCount: 8)
+        let radioSpanId = randomHex(byteCount: 8)
+
+        let sensorStart = wakeStartNs
+        let sensorEnd = sensorStart + UInt64(metrics.sensorUs) * 1_000
+        let computeStart = sensorEnd
+        let computeEnd = computeStart + UInt64(metrics.computeUs) * 1_000
+        let epdStart = computeEnd
+        let epdEnd = epdStart + UInt64(metrics.epdRefreshUs) * 1_000
+        let radioStart = epdEnd
+        let radioEnd = radioStart + UInt64(metrics.radioUs) * 1_000
+
+        var rootAttrs: [String] = [
+            #"{"key":"mcu.wake.count","value":{"intValue":"\#(metrics.wakeCount)"}}"#,
+            #"{"key":"mcu.battery_mv","value":{"intValue":"\#(metrics.batteryMv)"}}"#,
+            #"{"key":"mcu.ble.rssi","value":{"intValue":"\#(rssi)"}}"#,
+            #"{"key":"mcu.epd.mode","value":{"stringValue":"\#(metrics.epdRefreshModeLabel)"}}"#,
+        ]
+        var rootEvents: [String] = []
+        if let profile {
+            rootAttrs.append(#"{"key":"mcu.heap.free_bytes","value":{"intValue":"\#(profile.freeHeapBytes)"}}"#)
+            rootAttrs.append(#"{"key":"mcu.heap.min_free_bytes","value":{"intValue":"\#(profile.minFreeHeapBytes)"}}"#)
+            rootAttrs.append(#"{"key":"mcu.stack.high_water_bytes","value":{"intValue":"\#(profile.stackHighWaterBytes)"}}"#)
+            rootAttrs.append(#"{"key":"mcu.cpu.cycles","value":{"intValue":"\#(profile.cpuCycles)"}}"#)
+            for sample in profile.pcSamples {
+                let safePc = escapeJSONString(sample.pc)
+                rootEvents.append(
+                    #"{"timeUnixNano":"\#(wakeEndNs)","name":"pc.hotspot","attributes":[{"key":"pc","value":{"stringValue":"\#(safePc)"}},{"key":"hits","value":{"intValue":"\#(sample.hits)"}}]}"#
+                )
+            }
+        }
+
+        var spans: [String] = [
+            formatSpanJSON(
+                traceId: traceId,
+                spanId: rootSpanId,
+                parentSpanId: nil,
+                name: "xiao.wake #\(metrics.wakeCount)",
+                startNs: wakeStartNs,
+                endNs: wakeEndNs,
+                attrs: rootAttrs,
+                events: rootEvents
+            ),
+            formatSpanJSON(
+                traceId: traceId,
+                spanId: sensorSpanId,
+                parentSpanId: rootSpanId,
+                name: "mcu.sensor",
+                startNs: sensorStart,
+                endNs: sensorEnd
+            ),
+            formatSpanJSON(
+                traceId: traceId,
+                spanId: computeSpanId,
+                parentSpanId: rootSpanId,
+                name: "mcu.compute",
+                startNs: computeStart,
+                endNs: computeEnd
+            ),
+            formatSpanJSON(
+                traceId: traceId,
+                spanId: epdSpanId,
+                parentSpanId: rootSpanId,
+                name: "mcu.epd_refresh",
+                startNs: epdStart,
+                endNs: epdEnd,
+                attrs: [#"{"key":"mcu.epd.mode","value":{"stringValue":"\#(metrics.epdRefreshModeLabel)"}}"#]
+            ),
+            formatSpanJSON(
+                traceId: traceId,
+                spanId: radioSpanId,
+                parentSpanId: rootSpanId,
+                name: "mcu.radio",
+                startNs: radioStart,
+                endNs: radioEnd
+            ),
+        ]
+
+        if let profile {
+            let parentMap: [String: String] = [
+                "wake": rootSpanId,
+                "sensor": sensorSpanId,
+                "compute": computeSpanId,
+                "epd_refresh": epdSpanId,
+                "radio": radioSpanId,
+            ]
+            for sub in profile.spans {
+                let parentId = parentMap[sub.parent] ?? rootSpanId
+                let subStart = wakeStartNs + UInt64(sub.startUs) * 1_000
+                let subEnd = subStart + UInt64(sub.durationUs) * 1_000
+                spans.append(
+                    formatSpanJSON(
+                        traceId: traceId,
+                        spanId: randomHex(byteCount: 8),
+                        parentSpanId: parentId,
+                        name: sub.name,
+                        startNs: subStart,
+                        endNs: subEnd
+                    )
+                )
+            }
+        }
+
+        let safeDeviceId = escapeJSONString(deviceId)
+        return """
+        {"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"xiao-esp32c3"}},{"key":"device.id","value":{"stringValue":"\(safeDeviceId)"}}]},"scopeSpans":[{"spans":[\(spans.joined(separator: ","))]}]}]}
+        """
+    }
+
+    private static func formatSpanJSON(
+        traceId: String,
+        spanId: String,
+        parentSpanId: String?,
+        name: String,
+        startNs: UInt64,
+        endNs: UInt64,
+        attrs: [String] = [],
+        events: [String] = []
+    ) -> String {
+        var parts: [String] = [
+            #""traceId":"\#(escapeJSONString(traceId))""#,
+            #""spanId":"\#(escapeJSONString(spanId))""#,
+        ]
+        if let parentSpanId {
+            parts.append(#""parentSpanId":"\#(escapeJSONString(parentSpanId))""#)
+        }
+        parts.append(#""name":"\#(escapeJSONString(name))""#)
+        parts.append(#""startTimeUnixNano":"\#(startNs)""#)
+        parts.append(#""endTimeUnixNano":"\#(endNs)""#)
+        if !attrs.isEmpty {
+            parts.append(#""attributes":[\#(attrs.joined(separator: ","))]"#)
+        }
+        if !events.isEmpty {
+            parts.append(#""events":[\#(events.joined(separator: ","))]"#)
+        }
+        return "{\(parts.joined(separator: ","))}"
     }
 
     private static func escapeJSONString(_ value: String) -> String {

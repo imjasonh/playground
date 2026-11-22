@@ -3,6 +3,7 @@
 resource "google_project_service" "services" {
   for_each = toset([
     "artifactregistry.googleapis.com",
+    "cloudtrace.googleapis.com",
     "logging.googleapis.com",
     "monitoring.googleapis.com",
     "run.googleapis.com",
@@ -28,6 +29,7 @@ data "google_service_account" "service" {
 
 resource "google_project_iam_member" "telemetry" {
   for_each = toset([
+    "roles/cloudtrace.agent",
     "roles/logging.logWriter",
     "roles/monitoring.metricWriter",
   ])

@@ -11,6 +11,7 @@ struct XIAOESP32C3Sample: Identifiable, Equatable {
     let rssi: Int
     let receivedAt: Date
     let metrics: XIAOESP32C3Metrics
+    var profile: XIAOESP32C3WakeProfile?
 }
 
 /// Scans for XIAO ESP32C3 BLE Manufacturer Specific Data (`0xFFFF`) bursts,
@@ -35,6 +36,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     private static let endpointDefaultsKey = "xiao-esp32c3.otelEndpoint"
     private static let forwardingDefaultsKey = "xiao-esp32c3.forwardingEnabled"
     private static let appAttestEnabledDefaultsKey = "xiao-esp32c3.useAppAttest"
+    private static let collectProfileDefaultsKey = "xiao-esp32c3.collectDetailedProfile"
     private static let registeredHostDefaultsKey = "xiao-esp32c3.attestedHost"
     private static let keychainAccount = "xiao-esp32c3.keyId"
 
@@ -45,6 +47,8 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     @Published var otelEndpoint: String
     @Published var forwardingEnabled: Bool
     @Published var useAppAttest: Bool
+    @Published var collectDetailedProfile: Bool
+    @Published var latestTraceId: String?
     @Published var forwardedCount = 0
     @Published var lastForwardStatus = "Not forwarded yet."
     @Published var statusMessage = "Flash xiao-esp32c3 or inject a simulated wake burst."
@@ -63,6 +67,8 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     private var otaDataChar: CBCharacteristic?
     private var otaStatusChar: CBCharacteristic?
     private var otaStreamTask: Task<Void, Never>?
+    private var profilePeripheral: CBPeripheral?
+    private var profileTargetDeviceId: UUID?
 
     private var lastSeqByDevice: [UUID: UInt8] = [:]
     private var simulatedSeq: UInt8 = 0
@@ -77,6 +83,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
     private let otaControlUUID = CBUUID(string: XIAOESP32C3Protocol.otaControlUUIDString)
     private let otaDataUUID = CBUUID(string: XIAOESP32C3Protocol.otaDataUUIDString)
     private let otaStatusUUID = CBUUID(string: XIAOESP32C3Protocol.otaStatusUUIDString)
+    private let profileCharUUID = CBUUID(string: XIAOESP32C3Protocol.profileCharUUIDString)
 
     init(
         defaults: UserDefaults = .standard,
@@ -99,6 +106,11 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             self.useAppAttest = defaults.bool(forKey: Self.appAttestEnabledDefaultsKey)
         } else {
             self.useAppAttest = true
+        }
+        if defaults.object(forKey: Self.collectProfileDefaultsKey) != nil {
+            self.collectDetailedProfile = defaults.bool(forKey: Self.collectProfileDefaultsKey)
+        } else {
+            self.collectDetailedProfile = true
         }
         super.init()
     }
@@ -441,11 +453,15 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             batteryMv: UInt16(max(3_300, 4_050 - Int(simulatedWakeCount % 400)))
         )
         let mfg = XIAOESP32C3Protocol.encodeManufacturerData(metrics)
+        let simulatedProfile = collectDetailedProfile
+            ? XIAOESP32C3Protocol.simulatedWakeProfile(for: metrics)
+            : nil
         ingestManufacturerData(
             mfg,
             deviceId: simulatedDeviceId,
             deviceName: XIAOESP32C3Protocol.deviceName,
-            rssi: -54
+            rssi: -54,
+            profile: simulatedProfile
         )
         if otaPhase == .armed {
             runSimulatedOTATransfer()
@@ -460,7 +476,8 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         deviceId: UUID,
         deviceName: String,
         rssi: Int,
-        now: Date = Date()
+        now: Date = Date(),
+        profile: XIAOESP32C3WakeProfile? = nil
     ) -> Bool {
         guard let metrics = XIAOESP32C3Protocol.decodeManufacturerData(mfgData) else {
             return false
@@ -469,6 +486,13 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         // connect immediately during its 150 ms wake window!
         if otaPhase == .armed, let peripheral = peripherals[deviceId] {
             beginOTAConnection(to: peripheral)
+        } else if collectDetailedProfile,
+                  profile == nil,
+                  otaPhase == .idle,
+                  profilePeripheral == nil,
+                  let peripheral = peripherals[deviceId]
+        {
+            beginProfileConnection(to: peripheral, deviceId: deviceId)
         }
 
         // Deduplicate repeated frames from the same 150 ms burst.
@@ -483,7 +507,8 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             deviceName: deviceName,
             rssi: rssi,
             receivedAt: now,
-            metrics: metrics
+            metrics: metrics,
+            profile: profile
         )
         latestSample = sample
         history.insert(sample, at: 0)
@@ -496,6 +521,31 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             forwardToOtel(sample: sample)
         }
         return true
+    }
+
+    func saveCollectDetailedProfile(_ enabled: Bool) {
+        collectDetailedProfile = enabled
+        defaults.set(enabled, forKey: Self.collectProfileDefaultsKey)
+    }
+
+    private func beginProfileConnection(to peripheral: CBPeripheral, deviceId: UUID) {
+        guard let central, central.state == .poweredOn else {
+            return
+        }
+        profilePeripheral = peripheral
+        profileTargetDeviceId = deviceId
+        peripheral.delegate = self
+        central.connect(peripheral, options: nil)
+    }
+
+    private func attachWakeProfile(_ profile: XIAOESP32C3WakeProfile, deviceId: UUID) {
+        if var latest = latestSample, latest.deviceId == deviceId {
+            latest.profile = profile
+            latestSample = latest
+        }
+        if let idx = history.firstIndex(where: { $0.deviceId == deviceId && $0.metrics.wakeCount == profile.wakeCount }) {
+            history[idx].profile = profile
+        }
     }
 
     func forwardLatestSampleNow() {
@@ -514,35 +564,68 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             lastForwardStatus = "Invalid OTLP URL: \(trimmed)"
             return
         }
+        let tracesURL = Self.resolveTracesURL(from: baseURL)
         let timeNs = UInt64(sample.receivedAt.timeIntervalSince1970 * 1_000_000_000)
-        let json = XIAOESP32C3Protocol.formatOTLPJSON(
+        let traceId = XIAOESP32C3Protocol.randomHex(byteCount: 16)
+        let rootSpanId = XIAOESP32C3Protocol.randomHex(byteCount: 8)
+        let traceparent = "00-\(traceId)-\(rootSpanId)-01"
+        latestTraceId = traceId
+
+        let metricsJSON = XIAOESP32C3Protocol.formatOTLPJSON(
             deviceId: sample.deviceId.uuidString,
             metrics: sample.metrics,
             rssi: sample.rssi,
-            timeUnixNano: timeNs
+            timeUnixNano: timeNs,
+            profile: sample.profile
         )
-        guard let body = json.data(using: .utf8) else {
+        let traceJSON = XIAOESP32C3Protocol.formatOTLPTraceJSON(
+            traceId: traceId,
+            rootSpanId: rootSpanId,
+            deviceId: sample.deviceId.uuidString,
+            metrics: sample.metrics,
+            rssi: sample.rssi,
+            timeUnixNano: timeNs,
+            profile: sample.profile
+        )
+        guard let metricsBody = metricsJSON.data(using: .utf8),
+              let traceBody = traceJSON.data(using: .utf8)
+        else {
             return
         }
 
         let wakeNumber = sample.metrics.wakeCount
         let shouldAttest = useAppAttest
-        lastForwardStatus = "POSTing wake #\(wakeNumber) to \(metricsURL.host ?? trimmed)…"
+        lastForwardStatus = "POSTing wake #\(wakeNumber) metrics + trace to \(metricsURL.host ?? trimmed)…"
         Task { @MainActor in
             do {
-                let code = try await self.postMetrics(
-                    body: body,
-                    metricsURL: metricsURL,
+                let metricsResult = try await self.postOTLP(
+                    body: metricsBody,
+                    url: metricsURL,
                     baseURL: baseURL,
-                    authorizeWithAppAttest: shouldAttest
+                    action: "metrics",
+                    authorizeWithAppAttest: shouldAttest,
+                    traceparent: traceparent
                 )
-                if (200..<300).contains(code) {
-                    self.forwardedCount += 1
+                guard (200..<300).contains(metricsResult.status) else {
+                    let detail = metricsResult.errorMessage.map { " (\($0))" } ?? ""
+                    self.lastForwardStatus = "Collector returned HTTP \(metricsResult.status) for wake #\(wakeNumber)\(detail)."
+                    return
+                }
+                let traceResult = try await self.postOTLP(
+                    body: traceBody,
+                    url: tracesURL,
+                    baseURL: baseURL,
+                    action: "traces",
+                    authorizeWithAppAttest: shouldAttest,
+                    traceparent: nil
+                )
+                self.forwardedCount += 1
+                if (200..<300).contains(traceResult.status) {
                     self.lastForwardStatus = shouldAttest
-                        ? "Exported wake #\(wakeNumber) with App Attest (HTTP \(code))."
-                        : "Exported wake #\(wakeNumber) (HTTP \(code))."
+                        ? "Exported wake #\(wakeNumber) metrics + trace (HTTP \(metricsResult.status), trace \(traceId.prefix(8))…)."
+                        : "Exported wake #\(wakeNumber) metrics + trace (HTTP \(metricsResult.status))."
                 } else {
-                    self.lastForwardStatus = "Collector returned HTTP \(code) for wake #\(wakeNumber)."
+                    self.lastForwardStatus = "Exported wake #\(wakeNumber) metrics (HTTP \(metricsResult.status)); trace returned HTTP \(traceResult.status)."
                 }
             } catch {
                 self.lastForwardStatus = "Export failed: \(error.localizedDescription)"
@@ -558,26 +641,75 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         baseURL: URL,
         authorizeWithAppAttest: Bool
     ) async throws -> Int {
-        try await postMetricsAttempt(
+        let result = try await postOTLP(
             body: body,
-            metricsURL: metricsURL,
+            url: metricsURL,
             baseURL: baseURL,
+            action: "metrics",
             authorizeWithAppAttest: authorizeWithAppAttest,
+            traceparent: nil
+        )
+        return result.status
+    }
+
+    /// Export an OTLP/HTTP v1 JSON trace payload to `tracesURL` with App Attest authorization.
+    func postTraces(
+        body: Data,
+        tracesURL: URL,
+        baseURL: URL,
+        authorizeWithAppAttest: Bool
+    ) async throws -> Int {
+        let result = try await postOTLP(
+            body: body,
+            url: tracesURL,
+            baseURL: baseURL,
+            action: "traces",
+            authorizeWithAppAttest: authorizeWithAppAttest,
+            traceparent: nil
+        )
+        return result.status
+    }
+
+    private struct OTLPPostResult {
+        let status: Int
+        let errorMessage: String?
+    }
+
+    private func postOTLP(
+        body: Data,
+        url: URL,
+        baseURL: URL,
+        action: String,
+        authorizeWithAppAttest: Bool,
+        traceparent: String?
+    ) async throws -> OTLPPostResult {
+        try await postOTLPAttempt(
+            body: body,
+            url: url,
+            baseURL: baseURL,
+            action: action,
+            authorizeWithAppAttest: authorizeWithAppAttest,
+            traceparent: traceparent,
             allowReattestRetry: true
         )
     }
 
-    private func postMetricsAttempt(
+    private func postOTLPAttempt(
         body: Data,
-        metricsURL: URL,
+        url: URL,
         baseURL: URL,
+        action: String,
         authorizeWithAppAttest: Bool,
+        traceparent: String?,
         allowReattestRetry: Bool
-    ) async throws -> Int {
-        var request = URLRequest(url: metricsURL)
+    ) async throws -> OTLPPostResult {
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = 6
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let traceparent {
+            request.setValue(traceparent, forHTTPHeaderField: "traceparent")
+        }
         request.httpBody = body
 
         if authorizeWithAppAttest {
@@ -585,7 +717,7 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             let keyId = try await ensureBackendAttested(api: api, baseURL: baseURL)
             let challenge = try await api.fetchChallenge()
             let clientData = AppAttestAssertionClientData(
-                action: "metrics",
+                action: action,
                 challenge: challenge.challenge,
                 payload: XIAOESP32C3Protocol.sha256Hex(body)
             )
@@ -609,11 +741,13 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
                     if Self.shouldRotateAttestKey(error) {
                         clearAttestationState()
                         if allowReattestRetry {
-                            return try await postMetricsAttempt(
+                            return try await postOTLPAttempt(
                                 body: body,
-                                metricsURL: metricsURL,
+                                url: url,
                                 baseURL: baseURL,
+                                action: action,
                                 authorizeWithAppAttest: authorizeWithAppAttest,
+                                traceparent: traceparent,
                                 allowReattestRetry: false
                             )
                         }
@@ -623,21 +757,30 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
             }
         }
 
-        let (_, response) = try await http.data(for: request)
+        let (respData, response) = try await http.data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401, authorizeWithAppAttest {
             clearAttestationState()
             if allowReattestRetry {
-                return try await postMetricsAttempt(
+                return try await postOTLPAttempt(
                     body: body,
-                    metricsURL: metricsURL,
+                    url: url,
                     baseURL: baseURL,
+                    action: action,
                     authorizeWithAppAttest: authorizeWithAppAttest,
+                    traceparent: traceparent,
                     allowReattestRetry: false
                 )
             }
         }
-        return code
+        var errMsg: String?
+        if !(200..<300).contains(code),
+           let obj = try? JSONSerialization.jsonObject(with: respData) as? [String: Any],
+           let msg = obj["error"] as? String
+        {
+            errMsg = msg
+        }
+        return OTLPPostResult(status: code, errorMessage: errMsg)
     }
 
     private func clearAttestationState() {
@@ -731,6 +874,10 @@ final class XIAOESP32C3Controller: NSObject, ObservableObject {
         return components.url
     }
 
+    static func resolveTracesURL(from baseURL: URL) -> URL {
+        baseURL.appending(path: "v1/traces")
+    }
+
     private func applyBluetoothState(_ state: CBManagerState) {
         bluetoothState = state
         if state != .poweredOn {
@@ -775,7 +922,9 @@ extension XIAOESP32C3Controller: CBCentralManagerDelegate {
     nonisolated func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         let service = CBUUID(string: XIAOESP32C3Protocol.otaServiceUUIDString)
         Task { @MainActor in
-            self.otaStatusText = "Connected to XIAO-C3. Discovering OTA service…"
+            if self.otaPeripheral?.identifier == peripheral.identifier {
+                self.otaStatusText = "Connected to XIAO-C3. Discovering OTA service…"
+            }
         }
         peripheral.discoverServices([service])
     }
@@ -787,6 +936,10 @@ extension XIAOESP32C3Controller: CBCentralManagerDelegate {
     ) {
         let detail = error?.localizedDescription ?? "connection failed"
         Task { @MainActor in
+            if self.profilePeripheral?.identifier == peripheral.identifier {
+                self.profilePeripheral = nil
+                self.profileTargetDeviceId = nil
+            }
             if self.otaPhase == .connecting {
                 // Re-arm for the next wake burst if the 150 ms window closed before connection completed.
                 self.otaPhase = .armed
@@ -801,6 +954,13 @@ extension XIAOESP32C3Controller: CBCentralManagerDelegate {
         error: Error?
     ) {
         Task { @MainActor in
+            if self.profilePeripheral?.identifier == peripheral.identifier {
+                self.profilePeripheral = nil
+                self.profileTargetDeviceId = nil
+            }
+            if self.otaPeripheral?.identifier != peripheral.identifier {
+                return
+            }
             self.otaPeripheral = nil
             self.otaControlChar = nil
             self.otaDataChar = nil
@@ -823,8 +983,10 @@ extension XIAOESP32C3Controller: CBPeripheralDelegate {
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         if let error {
             Task { @MainActor in
-                self.otaPhase = .failed(error.localizedDescription)
-                self.otaStatusText = "OTA service discovery failed: \(error.localizedDescription)"
+                if self.otaPeripheral?.identifier == peripheral.identifier {
+                    self.otaPhase = .failed(error.localizedDescription)
+                    self.otaStatusText = "OTA service discovery failed: \(error.localizedDescription)"
+                }
             }
             return
         }
@@ -832,9 +994,10 @@ extension XIAOESP32C3Controller: CBPeripheralDelegate {
         let ctrlUUID = CBUUID(string: XIAOESP32C3Protocol.otaControlUUIDString)
         let dataUUID = CBUUID(string: XIAOESP32C3Protocol.otaDataUUIDString)
         let statusUUID = CBUUID(string: XIAOESP32C3Protocol.otaStatusUUIDString)
+        let profileUUID = CBUUID(string: XIAOESP32C3Protocol.profileCharUUIDString)
         guard let services = peripheral.services else { return }
         for service in services where service.uuid == serviceUUID {
-            peripheral.discoverCharacteristics([ctrlUUID, dataUUID, statusUUID], for: service)
+            peripheral.discoverCharacteristics([ctrlUUID, dataUUID, statusUUID, profileUUID], for: service)
         }
     }
 
@@ -845,24 +1008,35 @@ extension XIAOESP32C3Controller: CBPeripheralDelegate {
     ) {
         if let error {
             Task { @MainActor in
-                self.otaPhase = .failed(error.localizedDescription)
-                self.otaStatusText = "OTA characteristics failed: \(error.localizedDescription)"
+                if self.otaPeripheral?.identifier == peripheral.identifier {
+                    self.otaPhase = .failed(error.localizedDescription)
+                    self.otaStatusText = "OTA characteristics failed: \(error.localizedDescription)"
+                }
             }
             return
         }
         guard let chars = service.characteristics else { return }
         Task { @MainActor in
+            let isProfileOnly = self.profilePeripheral?.identifier == peripheral.identifier
+                && self.otaPeripheral?.identifier != peripheral.identifier
             for ch in chars {
-                if ch.uuid == self.otaControlUUID {
-                    self.otaControlChar = ch
-                } else if ch.uuid == self.otaDataUUID {
-                    self.otaDataChar = ch
-                } else if ch.uuid == self.otaStatusUUID {
-                    self.otaStatusChar = ch
-                    peripheral.setNotifyValue(true, for: ch)
+                if ch.uuid == self.profileCharUUID, self.collectDetailedProfile {
+                    peripheral.readValue(for: ch)
+                }
+                if !isProfileOnly {
+                    if ch.uuid == self.otaControlUUID {
+                        self.otaControlChar = ch
+                    } else if ch.uuid == self.otaDataUUID {
+                        self.otaDataChar = ch
+                    } else if ch.uuid == self.otaStatusUUID {
+                        self.otaStatusChar = ch
+                        peripheral.setNotifyValue(true, for: ch)
+                    }
                 }
             }
-            self.sendOTABeginIfReady()
+            if !isProfileOnly {
+                self.sendOTABeginIfReady()
+            }
         }
     }
 
@@ -871,9 +1045,26 @@ extension XIAOESP32C3Controller: CBPeripheralDelegate {
         didUpdateValueFor characteristic: CBCharacteristic,
         error: Error?
     ) {
-        guard error == nil,
-              characteristic.uuid == CBUUID(string: XIAOESP32C3Protocol.otaStatusUUIDString),
-              let data = characteristic.value,
+        guard error == nil, let data = characteristic.value else {
+            return
+        }
+        let statusUUID = CBUUID(string: XIAOESP32C3Protocol.otaStatusUUIDString)
+        let profileUUID = CBUUID(string: XIAOESP32C3Protocol.profileCharUUIDString)
+        if characteristic.uuid == profileUUID {
+            if let decoded = XIAOESP32C3Protocol.decodeWakeProfile(data) {
+                let deviceId = peripheral.identifier
+                Task { @MainActor in
+                    self.attachWakeProfile(decoded, deviceId: deviceId)
+                    if self.profilePeripheral?.identifier == peripheral.identifier,
+                       self.otaPeripheral?.identifier != peripheral.identifier
+                    {
+                        self.central?.cancelPeripheralConnection(peripheral)
+                    }
+                }
+            }
+            return
+        }
+        guard characteristic.uuid == statusUUID,
               let line = String(data: data, encoding: .utf8)
         else {
             return

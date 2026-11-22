@@ -58,6 +58,7 @@ func run(ctx context.Context) error {
 	}
 
 	var exporter otlp.Exporter
+	var traceExporter otlp.TraceExporter
 	if projectID != "" {
 		if ts, err := google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/monitoring.write"); err != nil {
 			slog.WarnContext(ctx, "Cloud Monitoring token source unavailable; running in dry-run mode", "err", err)
@@ -68,11 +69,21 @@ func run(ctx context.Context) error {
 			}
 			slog.InfoContext(ctx, "Cloud Monitoring export enabled", "project", projectID)
 		}
+		if ts, err := google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/trace.append"); err != nil {
+			slog.WarnContext(ctx, "Cloud Trace token source unavailable; trace export disabled", "err", err)
+		} else {
+			traceExporter = &otlp.CloudTraceExporter{
+				ProjectID:   projectID,
+				TokenSource: ts,
+			}
+			slog.InfoContext(ctx, "Cloud Trace export enabled", "project", projectID)
+		}
 	}
 
 	srv := &Server{
-		Verifier: verifier,
-		Exporter: exporter,
+		Verifier:      verifier,
+		Exporter:      exporter,
+		TraceExporter: traceExporter,
 	}
 	httpSrv := &http.Server{
 		Handler:           srv.Routes(),

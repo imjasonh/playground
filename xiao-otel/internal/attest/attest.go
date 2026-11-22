@@ -44,6 +44,8 @@ oyFraWVIyd/dganmrduC1bmTBGwD
 const (
 	// ActionMetrics is the action string bound into each POST /v1/metrics assertion.
 	ActionMetrics = "metrics"
+	// ActionTraces is the action string bound into each POST /v1/traces assertion.
+	ActionTraces = "traces"
 	// ActionWhoami is the action string bound into each POST /v1/whoami assertion.
 	ActionWhoami = "whoami"
 

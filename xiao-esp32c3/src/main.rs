@@ -31,21 +31,22 @@ use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::hal::gpio::{Output, PinDriver};
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::sys::{
-    esp_deep_sleep_start, esp_ota_abort, esp_ota_begin, esp_ota_end,
-    esp_ota_get_next_update_partition, esp_ota_get_running_partition, esp_ota_get_state_partition,
-    esp_ota_handle_t, esp_ota_img_states_t, esp_ota_img_states_t_ESP_OTA_IMG_PENDING_VERIFY,
-    esp_ota_mark_app_valid_cancel_rollback, esp_ota_set_boot_partition, esp_ota_write,
-    esp_partition_t, esp_reset_reason, esp_restart, esp_sleep_enable_timer_wakeup,
-    esp_timer_get_time, ESP_OK,
+    esp_deep_sleep_start, esp_get_free_heap_size, esp_get_minimum_free_heap_size, esp_ota_abort,
+    esp_ota_begin, esp_ota_end, esp_ota_get_next_update_partition, esp_ota_get_running_partition,
+    esp_ota_get_state_partition, esp_ota_handle_t, esp_ota_img_states_t,
+    esp_ota_img_states_t_ESP_OTA_IMG_PENDING_VERIFY, esp_ota_mark_app_valid_cancel_rollback,
+    esp_ota_set_boot_partition, esp_ota_write, esp_partition_t, esp_reset_reason, esp_restart,
+    esp_sleep_enable_timer_wakeup, esp_timer_get_time, uxTaskGetStackHighWaterMark, ESP_OK,
 };
 use log::{info, warn};
 use sha2::{Digest, Sha256};
 use xiao_esp32c3::protocol::{
-    encode_mfg_data, format_ota_status, format_status_line, parse_ota_command, reset_reason_name,
-    simulate_epd_frame, simulate_sensor_filter, OtaCommand, OtaStatus, PhaseAccumulator,
-    DEVICE_NAME, EPD_FRAME_BYTES, EPD_FULL_REFRESH_SIM_US, EPD_PARTIAL_REFRESH_SIM_US, FIRMWARE_ID,
-    FLAG_BROWNOUT_RESET, FLAG_DEEP_SLEEP_WAKE, FLAG_EPD_PARTIAL, OTA_CONTROL_UUID, OTA_DATA_UUID,
-    OTA_SERVICE_UUID, OTA_SLOT_BYTES, OTA_STATUS_UUID,
+    encode_mfg_data, format_ota_status, format_status_line, format_wake_profile_json,
+    parse_ota_command, reset_reason_name, simulate_epd_frame, simulate_sensor_filter, OtaCommand,
+    OtaStatus, PhaseAccumulator, SpanRecorder, WakeProfile, DEVICE_NAME, EPD_FRAME_BYTES,
+    EPD_FULL_REFRESH_SIM_US, EPD_PARTIAL_REFRESH_SIM_US, FIRMWARE_ID, FLAG_BROWNOUT_RESET,
+    FLAG_DEEP_SLEEP_WAKE, FLAG_EPD_PARTIAL, OTA_CONTROL_UUID, OTA_DATA_UUID, OTA_SERVICE_UUID,
+    OTA_SLOT_BYTES, OTA_STATUS_UUID, PROFILE_CHAR_UUID,
 };
 
 /// Logic marker pin for Nordic PPK2 / oscilloscope correlation (GPIO 2 = XIAO D0).
@@ -72,9 +73,11 @@ const DEEP_SLEEP_INTERVAL_US: u64 = 5_000_000;
 static mut RTC_ACCUMULATOR: PhaseAccumulator = PhaseAccumulator::new();
 
 fn main() -> Result<()> {
+    let wake_start_us = now_us();
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
 
+    let mut spans = SpanRecorder::new(wake_start_us);
     let reset_code = unsafe { esp_reset_reason() } as i32;
     let reset_name = reset_reason_name(reset_code);
     info!("{FIRMWARE_ID} wake (reset={reset_name}({reset_code}), probe={PROBE_GPIO_LABEL})");
@@ -82,6 +85,7 @@ fn main() -> Result<()> {
     let peripherals = Peripherals::take()?;
     let mut probe = PinDriver::output(peripherals.pins.gpio2)?;
     probe.set_low()?;
+    spans.record("boot.init", "wake", wake_start_us, now_us());
 
     let mut flags: u8 = 0;
     if reset_code == 8 {
@@ -98,18 +102,22 @@ fn main() -> Result<()> {
     }
 
     // Phase 1: Sensor read + fixed-point filter.
+    let sensor_start = now_us();
     let (battery_mv, sensor_us) =
         measure_phase(&mut probe, || simulate_sensor_filter(next_wake, 64))?;
+    spans.record("sensor.adc_filter", "sensor", sensor_start, now_us());
 
     // Phase 2: Compute / 1-bit e-paper framebuffer render.
+    let compute_start = now_us();
     let mut epd_buf = vec![0u8; EPD_FRAME_BYTES];
     let (checksum, compute_us) = measure_phase(&mut probe, || {
         simulate_epd_frame(&mut epd_buf, next_wake, battery_mv, is_partial_epd)
     })?;
+    spans.record("compute.epd_render", "compute", compute_start, now_us());
 
     // Phase 3: E-paper SPI transfer + refresh wait.
     let (_, epd_refresh_us) = measure_phase(&mut probe, || {
-        simulate_epd_spi_and_refresh(&epd_buf, is_partial_epd)
+        simulate_epd_spi_and_refresh(&epd_buf, is_partial_epd, &mut spans)
     })?;
 
     // Build the 24-byte metrics snapshot in RTC slow memory.
@@ -119,14 +127,37 @@ fn main() -> Result<()> {
         acc.record_wake(sensor_us, compute_us, epd_refresh_us, battery_mv, flags)
     };
 
+    // Snapshot RTOS heap/stack and CPU cycle telemetry before bringing up BLE.
+    let (free_heap_bytes, min_free_heap_bytes, stack_high_water_bytes) = unsafe {
+        (
+            esp_get_free_heap_size(),
+            esp_get_minimum_free_heap_size(),
+            uxTaskGetStackHighWaterMark(core::ptr::null_mut()),
+        )
+    };
+    let cpu_cycles = now_us().saturating_sub(wake_start_us).saturating_mul(160);
+    let profile = WakeProfile {
+        wake_count: metrics.wake_count,
+        seq: metrics.seq,
+        free_heap_bytes,
+        min_free_heap_bytes,
+        stack_high_water_bytes,
+        cpu_cycles,
+        spans: spans.into_spans(),
+        pc_samples: Vec::new(),
+    };
+    let profile_json = format_wake_profile_json(&profile);
+
     info!(
-        "{} epd_checksum={checksum:#010x}",
+        "{} epd_checksum={checksum:#010x} free_heap={free_heap_bytes} stack_hw={stack_high_water_bytes}",
         format_status_line(&metrics)
     );
 
     // Phase 4: BLE advertisement burst (26-byte Manufacturer Data: 0xFFFF + 24B payload),
-    // plus on-demand BLE GATT OTA if the iPhone connects during the 150 ms burst.
-    let (_, radio_us) = measure_phase(&mut probe, || broadcast_ble_and_serve_ota(&metrics))?;
+    // plus on-demand BLE GATT OTA and WakeProfile read if the iPhone connects during the 150 ms burst.
+    let (_, radio_us) = measure_phase(&mut probe, || {
+        broadcast_ble_and_serve_ota(&metrics, profile_json.as_bytes())
+    })?;
 
     // If this slot booted in PENDING_VERIFY after an OTA update, completing a wake cycle
     // and radio burst proves the image is healthy. Cancel rollback before deep sleeping.
@@ -165,7 +196,8 @@ fn now_us() -> u64 {
 }
 
 /// Benchmark e-paper SPI byte streaming and panel BUSY refresh latency.
-fn simulate_epd_spi_and_refresh(frame: &[u8], partial: bool) {
+fn simulate_epd_spi_and_refresh(frame: &[u8], partial: bool, spans: &mut SpanRecorder) {
+    let spi_start = now_us();
     let mut acc: u32 = 0;
     for chunk in frame.chunks(64) {
         for &b in chunk {
@@ -173,12 +205,17 @@ fn simulate_epd_spi_and_refresh(frame: &[u8], partial: bool) {
         }
     }
     std::hint::black_box(acc);
+    let spi_end = now_us();
+    spans.record("epd.spi_transfer", "epd_refresh", spi_start, spi_end);
+
+    let busy_start = now_us();
     let delay_ms = if partial {
         EPD_PARTIAL_REFRESH_SIM_US / 10_000 // 32 ms bench scaling
     } else {
         EPD_FULL_REFRESH_SIM_US / 10_000 // 185 ms bench scaling
     };
     FreeRtos::delay_ms(delay_ms);
+    spans.record("epd.busy_wait", "epd_refresh", busy_start, now_us());
 }
 
 /// Check if the running OTA partition is in `ESP_OTA_IMG_PENDING_VERIFY` and mark it valid.
@@ -395,7 +432,7 @@ fn notify_ota_status(
 /// Broadcast the 24-byte metrics struct inside BLE Manufacturer Specific Data (`0xFFFF`)
 /// for [`BLE_BURST_MS`]. If an iPhone connects during that window to push an OTA update,
 /// stay awake until the OTA transfer completes or disconnects.
-fn broadcast_ble_and_serve_ota(metrics: &xiao_esp32c3::protocol::AdvMetrics) {
+fn broadcast_ble_and_serve_ota(metrics: &xiao_esp32c3::protocol::AdvMetrics, profile_json: &[u8]) {
     let device = BLEDevice::take();
     let _ = device.set_preferred_mtu(512);
     let server = device.get_server();
@@ -409,7 +446,7 @@ fn broadcast_ble_and_serve_ota(metrics: &xiao_esp32c3::protocol::AdvMetrics) {
     server.on_connect(move |server, desc| {
         state_on_connect.lock().expect("ota_state").last_activity_us = now_us();
         conn_on_connect.store(true, Ordering::SeqCst);
-        info!("ble connected for OTA: {desc:?}");
+        info!("ble connected for OTA/profile: {desc:?}");
         // Fast 7.5 ms - 15 ms connection interval for high-throughput BLE OTA streaming.
         let _ = server.update_conn_params(desc.conn_handle(), 6, 12, 0, 200);
     });
@@ -437,10 +474,14 @@ fn broadcast_ble_and_serve_ota(metrics: &xiao_esp32c3::protocol::AdvMetrics) {
         uuid_or_panic(OTA_STATUS_UUID),
         NimbleProperties::READ | NimbleProperties::NOTIFY,
     );
+    let profile_char = service
+        .lock()
+        .create_characteristic(uuid_or_panic(PROFILE_CHAR_UUID), NimbleProperties::READ);
 
     status_char
         .lock()
         .set_value(format_ota_status(&OtaStatus::Idle).as_bytes());
+    profile_char.lock().set_value(profile_json);
 
     let ctrl_state = Arc::clone(&ota_state);
     let ctrl_status_char = Arc::clone(&status_char);

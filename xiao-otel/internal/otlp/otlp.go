@@ -88,10 +88,14 @@ const (
 )
 
 var allowedMetrics = map[string]string{
-	"mcu.wake.count":        "custom.googleapis.com/xiao_esp32c3/mcu/wake/count",
-	"mcu.phase.duration_us": "custom.googleapis.com/xiao_esp32c3/mcu/phase/duration_us",
-	"mcu.battery_mv":        "custom.googleapis.com/xiao_esp32c3/mcu/battery_mv",
-	"mcu.ble.rssi":          "custom.googleapis.com/xiao_esp32c3/mcu/ble/rssi",
+	"mcu.wake.count":             "custom.googleapis.com/xiao_esp32c3/mcu/wake/count",
+	"mcu.phase.duration_us":      "custom.googleapis.com/xiao_esp32c3/mcu/phase/duration_us",
+	"mcu.battery_mv":             "custom.googleapis.com/xiao_esp32c3/mcu/battery_mv",
+	"mcu.ble.rssi":               "custom.googleapis.com/xiao_esp32c3/mcu/ble/rssi",
+	"mcu.heap.free_bytes":        "custom.googleapis.com/xiao_esp32c3/mcu/heap/free_bytes",
+	"mcu.heap.min_free_bytes":    "custom.googleapis.com/xiao_esp32c3/mcu/heap/min_free_bytes",
+	"mcu.stack.high_water_bytes": "custom.googleapis.com/xiao_esp32c3/mcu/stack/high_water_bytes",
+	"mcu.cpu.cycles":             "custom.googleapis.com/xiao_esp32c3/mcu/cpu/cycles",
 }
 
 // Parse extracts normalized Cloud Monitoring points from an OTLP/HTTP v1 JSON body.

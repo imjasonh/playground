@@ -14,6 +14,7 @@ struct XIAOESP32C3View: View {
                 scanControls
                 metricsDashboard
                 phaseBreakdownPanel
+                profileAndTracesPanel
                 otaUpdaterPanel
                 otelForwarderPanel
                 historyPanel
@@ -219,6 +220,95 @@ struct XIAOESP32C3View: View {
         .accessibilityLabel(title)
         .accessibilityValue("\(formatted), \(pct) percent")
         .accessibilityIdentifier(id)
+    }
+
+    private var profileAndTracesPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Firmware profile & Cloud Trace spans")
+                .font(.subheadline.bold())
+
+            Toggle(
+                "Collect detailed profile (sub-phase spans, heap/stack)",
+                isOn: Binding(
+                    get: { controller.collectDetailedProfile },
+                    set: { controller.saveCollectDetailedProfile($0) }
+                )
+            )
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("xiaoCollectProfileToggle")
+
+            if let traceId = controller.latestTraceId {
+                LabeledContent("Last trace ID") {
+                    Text(String(traceId.prefix(16)) + "…")
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                }
+                .accessibilityIdentifier("xiaoLastTraceId")
+            }
+
+            if let profile = controller.latestSample?.profile {
+                LabeledContent("Free / min heap") {
+                    Text("\(profile.freeHeapBytes / 1024) KB / \(profile.minFreeHeapBytes / 1024) KB")
+                        .font(.caption.monospacedDigit())
+                }
+                LabeledContent("Stack high-water") {
+                    Text("\(profile.stackHighWaterBytes) B")
+                        .font(.caption.monospacedDigit())
+                }
+                LabeledContent("Active CPU cycles") {
+                    Text("\(profile.cpuCycles)")
+                        .font(.caption.monospacedDigit())
+                }
+
+                if !profile.spans.isEmpty {
+                    let maxEnd = max(
+                        Double(profile.spans.map { $0.startUs + $0.durationUs }.max() ?? 1),
+                        1
+                    )
+                    Text("Sub-phase spans")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                    ForEach(profile.spans) { sp in
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack {
+                                Text(sp.name)
+                                    .font(.caption.monospaced())
+                                Spacer()
+                                Text(XIAOESP32C3Protocol.formatDurationUs(sp.durationUs))
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                            ProgressView(value: min(max(Double(sp.durationUs) / maxEnd, 0), 1))
+                                .tint(.indigo)
+                        }
+                    }
+                }
+
+                if !profile.pcSamples.isEmpty {
+                    Text("Top PC hotspots")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                    ForEach(profile.pcSamples.prefix(5)) { sample in
+                        HStack {
+                            Text(sample.pc)
+                                .font(.caption.monospaced())
+                            Spacer()
+                            Text("\(sample.hits) hits")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } else {
+                Text("Enable detailed profiling and receive or simulate a wake to inspect sub-phase spans and heap/stack stats.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("xiaoProfilePanel")
     }
 
     private var otaUpdaterPanel: some View {
