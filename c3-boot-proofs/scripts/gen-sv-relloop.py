@@ -22,7 +22,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from svchain import IDENT, Chain, Stage, lean_binders, param_key, strip_parens, subst, top_split  # noqa: E402
-from svloop import GLOBAL, Loop  # noqa: E402
+from svloop import GLOBAL, Loop, invariants  # noqa: E402
 from svmerge import sc_pattern  # noqa: E402
 from svseg import canon, strip_exists  # noqa: E402
 
@@ -149,6 +149,9 @@ def main(fname, c):
         ov[p] = p
     ov.update({p: v[2] for p, v in fixed_in.items()})
     ov.update(c['slice'](proofs, names1))
+    invs = invariants(L, proofs)
+    for p, _, nm in invs:
+        ov[p] = nm
     a2, _, _, _ = ch.call(st, ov)
     a2 = a2[len(a2) - len(st.params):]
     hn = [p for p, _ in head]
@@ -181,7 +184,7 @@ def main(fname, c):
     O("set_option linter.unusedVariables false in")
     O(f"/-- How `{EXIT[1]}` ends once `{FUEL}` is 0. -/")
     O(f"def {OK} {explicit} (M0 : Word → BitVec 8) {typed_ps} (nk : Machine) : Prop :=")
-    O(f"  {FUEL}' = 0 ∧ ({ok_k})")
+    O(f"  {FUEL}' = 0 ∧ " + "".join(f"({subst(t, dict(zip(loopv, ps)))}) ∧ " for _, t, _ in invs) + f"({ok_k})")
     O("")
     O("set_option maxHeartbeats 16000000 in")
     O("set_option maxRecDepth 100000 in")
@@ -203,7 +206,7 @@ def main(fname, c):
     xargs = " ".join({c['xcond']: 'h0', **xconv}.get(p, p) for p, _ in X.params)
     intro = f"intro {' '.join(loopv)} n0 hN {' '.join(hn)} {' '.join(per_names)} {' '.join(p for p, _ in xextra)}"
     exit_ok = (f"exact .inr ⟨0, {', '.join(loopv)}, svChain.nil, n0, .refl _, rfl, rfl, SvKeepL.refl.mono (by decide), "
-               "h0, okx⟩")
+               f"h0, {''.join(p + ', ' for p, _, _ in invs)}okx⟩")
     O("  intro N")
     O("  induction N with")
     O("  | zero =>")
@@ -256,17 +259,19 @@ def main(fname, c):
     O("    :")
     O("    SvErrRet B out v n0 ∨")
     O(f"    (∃ k {' '.join(ps)}, svChain ({STEP} {fixed_names} M0) k {tup} {ptup} ∧")
-    O(f"      {FUEL}' = 0 ∧" + ("" if not X.sc_parts else "\n      " + " ∧ ".join(subst(subst(x, xmap), pr) for x in X.sc_parts) + " ∧"))
+    O(f"      {FUEL}' = 0 ∧" + "".join(f" ({subst(t, pr)}) ∧" for _, t, _ in invs) +
+      ("" if not X.sc_parts else "\n      " + " ∧ ".join(subst(subst(x, xmap), pr) for x in X.sc_parts) + " ∧"))
     O("    ∃ n', Steps n0 n' ∧")
     O("        " + " ∧\n        ".join(t for _, t in facts) + ") := by")
     named = " ".join(f"({b} := {b})" for n, _ in groups_ for b in n)
     O(f"  rcases {NAME} {named} F hret hO M0 N hN {' '.join(hn)} {' '.join(per_names)} {' '.join(p for p, _ in xextra)} with e | "
       f"⟨k, {', '.join(ps)}, chn, nk, cs, hr3, hr4, hkl, okh⟩")
     O("  · exact .inl e")
-    O(f"  obtain ⟨hz, {', '.join(xnm + ['n1', 'cn'] + [f'f_{k}' for k, _ in facts])}⟩ := okh")
+    iv = [f"iv{j}" for j in range(len(invs))]
+    O(f"  obtain ⟨hz, {', '.join(iv + xnm + ['n1', 'cn'] + [f'f_{k}' for k, _ in facts])}⟩ := okh")
     terms = [{"r3": "f_r3.trans hr3", "r4": "f_r4.trans hr4", "KL": "(hkl.trans f_KL).mono (by decide)"}.get(k, f"f_{k}")
              for k, _ in facts]
-    O(f"  exact .inr ⟨k, {', '.join(ps)}, chn, hz, {', '.join(xnm + ['n1', 'cs.trans cn'] + terms)}⟩")
+    O(f"  exact .inr ⟨k, {', '.join(ps)}, chn, hz, {', '.join(iv + xnm + ['n1', 'cs.trans cn'] + terms)}⟩")
     O("")
     O("end C3.RV32.Sv")
     O("")

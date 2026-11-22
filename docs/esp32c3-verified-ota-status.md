@@ -101,8 +101,10 @@ Composed so far:
 - Segments: the leaf, its extensions, the intermediate that issued it, and
   the leaf's signature, from the entry at 0x72 to the policy check at 0xDE6
   (`sv_seg_cert`); the policy and the signature's DER (`sv_seg_dpv`); the
-  timestamp up to its signed attributes (`sv_seg_tsa`); the `TSTInfo` and
-  the timestamp's signature (`sv_seg_tst`); the checkpoint's origin and size
+  whole timestamp, from 0x2034 to the checkpoint at 0x2B34 (`sv_seg_ts`),
+  which includes the timestamp up to its signed attributes (`sv_seg_tsa`)
+  and the `TSTInfo` and the timestamp's signature (`sv_seg_tst`); the
+  checkpoint's origin and size
   (`sv_seg_ck`); and the entry's index and the validity windows up to the
   successful exit (`sv_seg_win`).
 - Loops: the leaf's extensions (`sv_extloop`, with the OIDs of an
@@ -119,10 +121,14 @@ the loops whose step depends on what one pass parses (the extensions, the
 (`sv_lhash`) and the `p384_verify_prehash` call (`sv_lpv`) as a stage. It
 states the call's result over any memory that holds the key, the prehash,
 `r`, and `s` (`SvPvRes`), since `pvModel` reads only those
-(`pvModel_congr`).
+(`pvModel_congr`). `sv_tp` does the same for the timestamp's signature
+(`sv_tpv`). A merge whose branches either keep a pointer or set it to a
+slice they parse states that the pointer is 0 or a slice, and the loops
+carry that from one pass to the next, so the message digest that the
+signed attributes loop found is a slice after the loop.
 
 Left: the identity-policy slots as slices through the extensions loop, so
-the policy check composes after `sv_seg_cert`; `sv_p256`, `sv_tpv`, and the
+the policy check composes after `sv_seg_cert`; `sv_p256` and the
 successful return as stages; one theorem from the entry to the return;
 the layout of `Bundle` and `SigstoreRoot` in memory, and that theorem
 against `sigstoreVerify` in `Spec/Sigstore.lean`; and the models

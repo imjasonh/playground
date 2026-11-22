@@ -103,7 +103,7 @@ theorem sv_seg_cert {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : Ma
       (∀ i, i < k_4 → ∀ c'_4 q'_4, (c'_4, q'_4) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2)) + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), ((rootp) + BitVec.ofNat 32 0x3C)) → ¬ (memBytes M0 (memLoad32 M0 (q'_4 + 0xFFFFFFFC)) (memLoad32 M0 (q'_4 + 0x0)).toNat = memBytes M0 (((((((lp + BitVec.ofNat 32 t_1_1.header)) + BitVec.ofNat 32 tl1_2_1.header) + BitVec.ofNat 32 (tl29_2_1.header + tl29_2_1.len))) + BitVec.ofNat 32 (tl2_3_1.header + tl2_3_1.len)) + BitVec.ofNat 32 (tl9_3_1.header + tl9_3_1.len)) (BitVec.ofNat 32 (tl6_4_1.header + tl6_4_1.len)).toNat)) ∧
       ∃ c'_4 q'_4, (c'_4, q'_4) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2)) + BitVec.ofNat 32 0x20)) k_4 ((BitVec.ofNat 32 0x80), ((rootp) + BitVec.ofNat 32 0x3C)) ∧
       ((memLoad32 M0 (q'_4 + 0xFFFFFFFC)) ≠ 0) ∧
-      ∃ pv_5, SvPvRes B M0 (memLoad32 M0 (((q'_4) + BitVec.ofNat 32 0x20) + 0xFFFFFFF4)) (sha384 (memBytes M0 (lp + BitVec.ofNat 32 t_1_1.header) (BitVec.ofNat 32 (tl1_2_1.header + tl1_2_1.len)).toNat)) sr43_2 ss43_2 (some pv_5) ∧
+      ∃ pv_5, SvPvRes M0 (memLoad32 M0 (((q'_4) + BitVec.ofNat 32 0x20) + 0xFFFFFFF4)) (B + 0x21A0 + BitVec.ofNat 32 0x1020) 48 (sha384 (memBytes M0 (lp + BitVec.ofNat 32 t_1_1.header) (BitVec.ofNat 32 (tl1_2_1.header + tl1_2_1.len)).toNat)) (B + 0x21A0 + BitVec.ofNat 32 0xD0) (B + 0x21A0 + BitVec.ofNat 32 0x100) sr43_2 ss43_2 (some pv_5) ∧
     ∃ n', Steps n0 n' ∧
         (∀ x, SvR B x → n'.mem x = M0 x) ∧
         St n'.mem SV n' 0xDE6 (reg n') ∧

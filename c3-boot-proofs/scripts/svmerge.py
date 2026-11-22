@@ -26,7 +26,8 @@ class SliceCtx(Segment):
                 self.ins.append((ptr, n, p))
         proofs = [x for x in names if re.fullmatch(r"h\d+", x)]
         pieces = [strip_exists(x.strip()) for part in stage.sc_parts for x in top_split(part, ' ∧ ')]
-        self.record(list(zip(proofs, pieces)))
+        self.pairs = list(zip(proofs, pieces))
+        self.record(self.pairs)
 
 
 def negates(x, y):
@@ -244,6 +245,50 @@ def merged(fname, name, vs, doc):
                 slices.append((d, dl, terms))
                 break
     slice_text = "".join(f" ∧ SvIn B {d} {dl}.toNat" for d, dl, _ in slices)
+    # A pointer that some branches keep and others set to a slice they parse:
+    # it is 0 or a slice, given that the kept one is.
+    cslices = []
+    sliced = {x for d, dl, _ in slices for x in (d, dl)}
+    for d, ty_d, vals in dvars:
+        if ty_d != 'Word' or d in sliced:
+            continue
+        stem = name.removeprefix('sv_')
+        m = re.fullmatch(rf"{stem}_w([0-9a-f]+)", d)
+        dl = f"{stem}_w{int(m.group(1), 16) + 4:x}" if m else None
+        dl = dl if dl in dk and dl not in sliced else None
+        base, terms, lens, ok = None, [], set(), True
+        for j, st in enumerate(order):
+            if st.name in vac:
+                terms.append("-")
+                continue
+            v = canon(vals[j])
+            vl = canon(dvars[dk[dl]][2][j]) if dl else None
+            ob = {b for b, _ in st.binders}
+            if v in ob and (dl is None or vl in ob):
+                if base not in (None, (v, vl)):
+                    ok = False
+                    break
+                base = (v, vl)
+                terms.append(None)
+                continue
+            ctx = SliceCtx(st, sc_pattern(st))
+            if dl:
+                S, L = ctx.derive_in(v, canon(f"({vl}).toNat")), f"{dl}.toNat"
+            else:
+                S, L = ctx.derive_lit(v)
+            if not S:
+                ok = False
+                break
+            lens.add(L)
+            terms.append(f".inr ({S})")
+        if not ok or base is None or len(lens) != 1 or all(t in (None, "-") for t in terms):
+            continue
+        L = lens.pop()
+        X, XL = base
+        hn = f"{X}_or0"
+        hyps.append((hn, f"{X} = 0 ∨ SvIn B {X} {XL + '.toNat' if dl else L}"))
+        cslices.append((d, L, [hn if t is None else t for t in terms]))
+    slice_text += "".join(f" ∧ ({d} = 0 ∨ SvIn B {d} {L})" for d, L, _ in cslices)
     facts = fa[1:]
     named_of = {st.name: " ".join(f"({x} := {x})" for names, _ in own[st.name] for x in names) for st in order}
     who = ", ".join(f"`{st.name}`" for st in order[:-1]) + (" and " if len(order) == 2 else ", and ") + f"`{order[-1].name}`"
@@ -316,7 +361,7 @@ def merged(fname, name, vs, doc):
             rest = "rest"
         vals = "".join(f"{subst_w(v[j], wsub)}, " for _, _, v in dvars)
         args = " ".join(path.get(p, p) for p, _ in st.params)
-        sl = "".join(f"{ts[j]}, " for _, _, ts in slices)
+        sl = "".join(f"{ts[j]}, " for _, _, ts in slices + cslices)
         b = "" if bare else "· "
         sub = ind if bare else ind + "  "
         named = named_for(st)

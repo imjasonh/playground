@@ -40,8 +40,8 @@ theorem sv_lh {B out bp x9 x21 x26 q w8c pk : Word} {sr ss : Bytes} {v : Nat →
     (apk : (q + 0xFFFFFFF4).toNat % 4 = 0) (pk_in : SvIn B pk 0x61)
     (side : ∀ M, PvSide M pk (B + 0x21A0 + BitVec.ofNat 32 0x1020) 48 (B + 0x21A0 + BitVec.ofNat 32 0xD0)
       (B + 0x21A0 + BitVec.ofNat 32 0x100)) :
-    (¬ (∃ pv, SvPvRes B M0 pk (sha384 (memBytes M0 x9 w8c.toNat)) sr ss (some pv)) ∧ Panics n0) ∨
-    (∃ pv, SvPvRes B M0 pk (sha384 (memBytes M0 x9 w8c.toNat)) sr ss (some pv) ∧
+    (¬ (∃ pv, SvPvRes M0 pk (B + 0x21A0 + BitVec.ofNat 32 0x1020) 48 (sha384 (memBytes M0 x9 w8c.toNat)) (B + 0x21A0 + BitVec.ofNat 32 0xD0) (B + 0x21A0 + BitVec.ofNat 32 0x100) sr ss (some pv)) ∧ Panics n0) ∨
+    (∃ pv, SvPvRes M0 pk (B + 0x21A0 + BitVec.ofNat 32 0x1020) 48 (sha384 (memBytes M0 x9 w8c.toNat)) (B + 0x21A0 + BitVec.ofNat 32 0xD0) (B + 0x21A0 + BitVec.ofNat 32 0x100) sr ss (some pv) ∧
     ∃ n', Steps n0 n' ∧
         St n'.mem SV n' 0xDE6 (reg n') ∧
         SvCode n'.mem ∧
@@ -69,16 +69,12 @@ theorem sv_lh {B out bp x9 x21 x26 q w8c pk : Word} {sr ss : Bytes} {v : Nat →
     (K1.w32 (by decide) (by decide)).trans w0_7c
   have hpk1 : memLoad32 n1.mem (q + 0xFFFFFFF4) = pk :=
     (memLoad32_congr fun j hj => (sv_pt fR1 pkp_in j hj).symm).symm.trans hpk
-  have At : SvPvAt B M0 n1.mem pk (sha384 (memBytes M0 x9 w8c.toNat)) sr ss := by
-    refine ⟨sv_mb fR1 pk_in, sv_mbRo F fR1 (.inr ⟨by decide, by decide⟩), sh1,
-      memBytes_svBytes fun j hj => ?_, memBytes_svBytes fun j hj => ?_⟩
-    · rw [add_ofNat_assoc]
-      rcases j with _ | i
-      · exact (K1.b8 (by decide) (by decide)).trans b0_d0
-      · rw [show 0xD0 + (i + 1) = 0xD1 + i by omega, show i + 1 = 1 + i by omega]
-        exact (K1.range (s := 0xD1) (n := 47) (by decide) (by decide) i (by omega)).trans (q0_d1 i (by omega))
-    · rw [add_ofNat_assoc]
-      exact (K1.range (s := 0x100) (n := 48) (by decide) (by decide) j hj).trans (q0_100 j hj)
+  have At : SvPvAt M0 n1.mem pk (B + 0x21A0 + BitVec.ofNat 32 0x1020) 48 (sha384 (memBytes M0 x9 w8c.toNat))
+      (B + 0x21A0 + BitVec.ofNat 32 0xD0) (B + 0x21A0 + BitVec.ofNat 32 0x100) sr ss :=
+    ⟨sv_mb fR1 pk_in, sv_mbRo F fR1 (.inr ⟨by decide, by decide⟩), sh1,
+      memBytes_frame1 ((K1.b8 (by decide) (by decide)).trans b0_d0)
+        fun j hj => (K1.range (s := 0xD1) (n := 47) (by decide) (by decide) j hj).trans (q0_d1 j hj),
+      memBytes_frame fun j hj => (K1.range (s := 0x100) (n := 48) (by decide) (by decide) j hj).trans (q0_100 j hj)⟩
   rcases sv_lpv F E1 (PvEnv7.sv F PE0 fR1) s1 sp1 w1_7c hpk1 apk pk_in (side n1.mem) with
     ⟨hn, pn⟩ | ⟨pv, hv, n2, c2, s2, sp2, rk2, a2, K2, fr2⟩
   · refine .inl ⟨fun ⟨pv, hpv⟩ => ?_, Panics.of_steps c1 pn⟩

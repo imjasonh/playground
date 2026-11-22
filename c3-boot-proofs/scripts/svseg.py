@@ -512,6 +512,69 @@ class Segment:
                 j += 1
         return f"(fun i hi {' '.join(vs)} h => ⟨{', '.join(terms)}⟩)"
 
+    def derive_lit(self, v):
+        """A slice at `v`, the content of a parse whose length the stage checks
+        is a constant: the proof and the length."""
+        if v not in self.contents:
+            return None, None
+        lname = self.contents[v][3]
+        S = self.derive_in(v, canon(f"({lname}).toNat"))
+        for pf, piece in getattr(self, 'pairs', None) or getattr(self, 'pieces', []):
+            m = re.fullmatch(rf"\(?{re.escape(lname)} = (\d+)\)?", strip_exists(piece).strip())
+            if S and m:
+                return f"by have h := {S}; rw [{pf}] at h; exact h", m.group(1)
+        return None, None
+
+    def nonzero_in(self, ptr, ln):
+        """`SvIn B ptr ln` from a fact that `ptr` is 0 or that slice, and one
+        that it isn't 0."""
+        alt = next((pf for pf, piece in getattr(self, 'pieces', [])
+                    if canon(strip_exists(piece)) == canon(f"{ptr} = 0 ∨ SvIn B {ptr} {ln}")), None)
+        if not alt:
+            return None
+        for pf, piece in self.pieces:
+            conj = [canon(strip_parens(x)) for x in top_split(strip_parens(strip_exists(piece)), ' ∧ ')]
+            if canon(f"{ptr} ≠ 0") in conj:
+                j = conj.index(canon(f"{ptr} ≠ 0"))
+                proj = pf + ".2" * j + (".1" if j + 1 < len(conj) else "")
+                return f"({alt}.resolve_left {proj})"
+        return None
+
+    def by_cases(self, ty):
+        """A hypothesis about a merge's witnesses, from each branch's equation
+        for them."""
+        locs = list(dict.fromkeys(re.findall(r"(?<![\w.'])([\w']+_\d+)(?![\w'])", ty)))
+        if not locs or re.search(r"(?<![\w.'])(n\d+|d\d+_\w+)(?![\w'])", ty):
+            return None
+        for pf, piece in self.pieces:
+            branches = top_split(strip_parens(piece), ' ∨ ')
+            if len(branches) < 2:
+                continue
+            pats, ok = [], True
+            for br in (strip_parens(b) for b in branches):
+                if br == 'False':
+                    pats.append("⟨⟩")
+                    continue
+                items, seen = [], set()
+                for conj in top_split(br, ' ∧ '):
+                    conj = strip_parens(conj.strip())
+                    while conj.startswith('∃ '):
+                        c = conj.index(',')
+                        items += ["_"] * len(conj[2:c].split(":")[0].split())
+                        conj = strip_parens(conj[c + 1:].strip())
+                    hit = next((j for j, d in enumerate(locs) if re.fullmatch(rf"{re.escape(d)} = .+", conj)), None)
+                    items.append(f"hd{hit}" if hit is not None else "_")
+                    if hit is not None:
+                        seen.add(hit)
+                if len(seen) != len(locs):
+                    ok = False
+                    break
+                pats.append("⟨" + ", ".join(items) + "⟩")
+            if ok:
+                rw = ", ".join(f"hd{j}" for j in range(len(locs)))
+                return f"(by rcases {pf} with {' | '.join(pats)} <;> rw [{rw}] <;> decide)"
+        return None
+
     def lift_each(self, p, ty):
         """A hypothesis about the state a search stopped at, from a hypothesis
         of the segment about each state the search can reach."""
@@ -569,6 +632,16 @@ class Segment:
         hit = self.split_each(p, strip_parens(ty))
         if hit:
             return hit
+        m = re.fullmatch(r"(.+) ≠ 0", strip_parens(ty))
+        if m:
+            x = canon(strip_parens(m.group(1)))
+            for ptr, ln, pf in self.ins:
+                if ptr == x:
+                    return f"(({pf}).pos_ne)"
+            if x in self.contents:
+                S = self.derive_in(x, canon(f"({self.contents[x][3]}).toNat"))
+                if S:
+                    return f"(({S}).pos_ne)"
         m = re.fullmatch(r"(.+) = (.+) \+ BitVec\.ofNat 32 \((\w+) \* 4\)", strip_parens(ty))
         if m and m.group(3) in free:
             terms = split_sum(strip_parens(m.group(1)))
@@ -586,6 +659,12 @@ class Segment:
             pf = self.derive_in(ptr, ln)
             if pf:
                 return f"({pf})"
+            pf = self.nonzero_in(ptr, ln)
+            if pf:
+                return pf
+            pf, k = self.derive_lit(ptr)
+            if pf and k == ln:
+                return f"({pf})"
         if not local:
             nm = p
             while nm in {q for q, _ in self.hyps}:
@@ -593,7 +672,7 @@ class Segment:
             self.hyps.append((nm, ty))
             self.lifted.append(nm)
             return nm
-        return self.lift_each(p, ty)
+        return self.by_cases(ty) or self.lift_each(p, ty)
 
     def build(self):
         first = self.stages[0]

@@ -51,6 +51,11 @@ SEGMENTS = {
                                   ('SvISearch', 'sv_isearch_st'), ('SvLh', 'sv_lh')],
                   "**The leaf certificate and its issuer**: from 0x72 to the policy check at 0xDE6: the leaf, its "
                   "extensions, the intermediate that issued it, and the leaf's signature."),
+    'SvSegTs': ('sv_seg_ts', [('SvSegTsa', 'sv_seg_tsa'), ('SvSegAttrPre', 'sv_seg_attr_pre'),
+                              ('SvAttrLoop', 'sv_attrloop_st'), ('SvSegTst', 'sv_seg_tst'),
+                              ('SvTSearch', 'sv_tsearch_st'), ('SvTsig', 'sv_tsig'), ('SvTp', 'sv_tp')],
+                "**The timestamp**: from 0x2034 to the checkpoint at 0x2B34: the timestamp response, its signed "
+                "attributes, the `TSTInfo`, the TSA that signed it, and its signature."),
     'SvSegEku': ('sv_seg_eku', [('SvDeku1', 'sv_deku1'), ('SvEkuLoop', 'sv_ekuloop_st')],
                  "**An `ExtKeyUsage` extension**: from the OID tests at 0x60E back to the extensions loop at "
                  "0x4EA, `sv_deku1` and the loop over its OIDs."),

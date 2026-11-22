@@ -11,6 +11,7 @@ each set by one of them to a read of memory, are replaced by that read.
 import re
 
 from svchain import IDENT, Stage, groups, param_key, strip_parens, subst, top_split
+from svseg import canon, strip_exists
 
 GLOBAL = ('F', 'hret', 'hO', 'M0')
 HEAD_EXTRA = ('E0', 'V0', 's0', 'fM')
@@ -138,3 +139,19 @@ class Loop:
             else:
                 out.append(p)
         return out
+
+
+def invariants(L, proofs):
+    """The hypotheses that a loop variable is 0 or a slice: each one's name,
+    type, and the body's proof of it for the variable's next value."""
+    out = []
+    for p, t in L.kept_per:
+        m = re.fullmatch(r"(\w+) = 0 ∨ SvIn B \1 (.+)", t)
+        if not m or m.group(1) not in L.loopv:
+            continue
+        want = canon(subst(t, {b: L.upd[b] for b in L.loopv}))
+        nm = next((n for n, piece in proofs if canon(strip_exists(piece)) == want), None)
+        if nm is None:
+            raise ValueError(f"{L.sname}: nothing keeps {p}")
+        out.append((p, t, nm))
+    return out

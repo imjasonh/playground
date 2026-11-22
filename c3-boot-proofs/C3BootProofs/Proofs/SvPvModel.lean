@@ -43,27 +43,40 @@ theorem memBytes_svBytes {M : Word → BitVec 8} {p : Word} {l : Bytes} {n : Nat
   unfold memBytes svBytes
   exact List.map_congr_left fun j hj => by rw [h j (List.mem_range.mp hj)]
 
-/-- What `p384_verify_prehash` reads when `sigstore::verify` checks the leaf's
-signature: the key and the scalar range's bound as in `M0`, the prehash `h`
-at 0x1020, and `r` and `s` at 0xD0 and 0x100. -/
-def SvPvAt (B : Word) (M0 M : Word → BitVec 8) (pk : Word) (h sr ss : Bytes) : Prop :=
+/-- What `p384_verify_prehash` reads: the key and the scalar range's bound as
+in `M0`, the prehash `h` at `ph`, and `r` and `s`, as `sr` and `ss`, at `rp`
+and `sp'`. -/
+def SvPvAt (M0 M : Word → BitVec 8) (pk ph : Word) (len : Nat) (h : Bytes) (rp sp' : Word) (sr ss : Bytes) :
+    Prop :=
   memBytes M pk 0x61 = memBytes M0 pk 0x61 ∧ memBytes M ISRN 48 = memBytes M0 ISRN 48 ∧
-    memBytes M (B + 0x21A0 + BitVec.ofNat 32 0x1020) 48 = h ∧
-    memBytes M (B + 0x21A0 + BitVec.ofNat 32 0xD0) 48 = svBytes sr 48 ∧
-    memBytes M (B + 0x21A0 + BitVec.ofNat 32 0x100) 48 = svBytes ss 48
+    memBytes M ph (min len 48) = h ∧ memBytes M rp 48 = svBytes sr 48 ∧ memBytes M sp' 48 = svBytes ss 48
 
 /-- `p384_verify_prehash` returns `r` on any memory that `SvPvAt` describes. -/
-def SvPvRes (B : Word) (M0 : Word → BitVec 8) (pk : Word) (h sr ss : Bytes) (r : Option Word) : Prop :=
-  ∀ M, SvPvAt B M0 M pk h sr ss →
-    pvModel M pk (B + 0x21A0 + BitVec.ofNat 32 0x1020) 48 (B + 0x21A0 + BitVec.ofNat 32 0xD0)
-      (B + 0x21A0 + BitVec.ofNat 32 0x100) = r
+def SvPvRes (M0 : Word → BitVec 8) (pk ph : Word) (len : Nat) (h : Bytes) (rp sp' : Word) (sr ss : Bytes)
+    (r : Option Word) : Prop :=
+  ∀ M, SvPvAt M0 M pk ph len h rp sp' sr ss → pvModel M pk ph len rp sp' = r
 
-theorem SvPvRes.of {B pk : Word} {M0 M : Word → BitVec 8} {h sr ss : Bytes} (hM : SvPvAt B M0 M pk h sr ss) :
-    SvPvRes B M0 pk h sr ss (pvModel M pk (B + 0x21A0 + BitVec.ofNat 32 0x1020) 48 (B + 0x21A0 + BitVec.ofNat 32 0xD0)
-      (B + 0x21A0 + BitVec.ofNat 32 0x100)) := fun M' hM' => by
-  obtain ⟨k, n, ph, r, s⟩ := hM
-  obtain ⟨k', n', ph', r', s'⟩ := hM'
-  exact pvModel_congr (k'.trans k.symm) (by simp only [Nat.min_self, ph, ph']) (r'.trans r.symm)
-    (s'.trans s.symm) (n'.trans n.symm)
+theorem SvPvRes.of {M0 M : Word → BitVec 8} {pk ph rp sp' : Word} {len : Nat} {h sr ss : Bytes}
+    (hM : SvPvAt M0 M pk ph len h rp sp' sr ss) : SvPvRes M0 pk ph len h rp sp' sr ss (pvModel M pk ph len rp sp') :=
+  fun M' hM' => by
+    obtain ⟨k, n, ph, r, s⟩ := hM
+    obtain ⟨k', n', ph', r', s'⟩ := hM'
+    exact pvModel_congr (k'.trans k.symm) (ph'.trans ph.symm) (r'.trans r.symm) (s'.trans s.symm) (n'.trans n.symm)
+
+/-- `r` or `s` in the frame as one byte and a range after it, or as one range. -/
+theorem memBytes_frame1 {B : Word} {M : Word → BitVec 8} {l : Bytes} {e : Nat}
+    (h0 : M (B + 0x21A0 + BitVec.ofNat 32 e) = BitVec.ofNat 8 (l.getD 0 0))
+    (h1 : ∀ j, j < 47 → M (B + 0x21A0 + BitVec.ofNat 32 (e + 1 + j)) = BitVec.ofNat 8 (l.getD (1 + j) 0)) :
+    memBytes M (B + 0x21A0 + BitVec.ofNat 32 e) 48 = svBytes l 48 :=
+  memBytes_svBytes fun j hj => by
+    rw [add_ofNat_assoc]
+    rcases j with _ | i
+    · exact h0
+    · rw [show e + (i + 1) = e + 1 + i by omega, show i + 1 = 1 + i by omega]; exact h1 i (by omega)
+
+theorem memBytes_frame {B : Word} {M : Word → BitVec 8} {l : Bytes} {e : Nat}
+    (h : ∀ j, j < 48 → M (B + 0x21A0 + BitVec.ofNat 32 (e + j)) = BitVec.ofNat 8 (l.getD j 0)) :
+    memBytes M (B + 0x21A0 + BitVec.ofNat 32 e) 48 = svBytes l 48 :=
+  memBytes_svBytes fun j hj => by rw [add_ofNat_assoc]; exact h j hj
 
 end C3.RV32.Sv

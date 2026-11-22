@@ -21,7 +21,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from svchain import IDENT, Chain, Stage, lean_binders, strip_parens, subst  # noqa: E402
-from svloop import GLOBAL, Loop  # noqa: E402
+from svloop import GLOBAL, Loop, invariants  # noqa: E402
 from svmerge import sc_pattern  # noqa: E402
 from svseg import canon, strip_exists  # noqa: E402
 
@@ -80,6 +80,9 @@ def main():
     for p, _ in L.per:
         ov[p] = p
     ov['cr_in'] = f"((cr_in).restW {tl_pf})"
+    invs = invariants(L, proofs)
+    for p, _, nm in invs:
+        ov[p] = nm
     a2, _, _, _ = ch.call(st, ov)
     a2 = a2[len(a2) - len(st.params):]
     hn = [p for p, _ in head]
@@ -106,7 +109,7 @@ def main():
     O("")
     O(f"/-- How `{EXIT[1]}` ends once no attributes are left. -/")
     O(f"def {OK} {explicit} (M0 : Word → BitVec 8) ({' '.join(ps)} : Word) (nk : Machine) : Prop :=")
-    O(f"  rem' = 0 ∧ ({ok_k})")
+    O(f"  rem' = 0 ∧ " + "".join(f"({subst(t, dict(zip(loopv, ps)))}) ∧ " for _, t, _ in invs) + f"({ok_k})")
     O("")
     O("set_option maxHeartbeats 16000000 in")
     O("set_option maxRecDepth 100000 in")
@@ -127,7 +130,7 @@ def main():
     xargs = " ".join({'hrem': 'h0', 'hflag': 'hflag'}.get(p, p) for p, _ in X.params)
     intro = f"intro {' '.join(loopv)} n0 hN hflag {' '.join(hn)} {' '.join(per_names)}"
     exit_ok = (f"exact .inr ⟨0, {', '.join(loopv)}, svChain.nil, n0, .refl _, rfl, rfl, SvKeepL.refl.mono (by decide), "
-               "h0, okx⟩")
+               f"h0, {''.join(p + ', ' for p, _, _ in invs)}okx⟩")
     O("  intro N")
     O("  induction N with")
     O("  | zero =>")
@@ -191,16 +194,18 @@ def main():
     O("    :")
     O("    SvErrRet B out v n0 ∨")
     O(f"    (∃ k {' '.join(ps)}, svChain ({STEP} {fixed_names} M0) k {tup} {ptup} ∧")
-    O("      rem' = 0 ∧" + ("" if not X.sc_parts else "\n      " + " ∧ ".join(subst(x, pr) for x in X.sc_parts) + " ∧"))
+    O("      rem' = 0 ∧" + "".join(f" ({subst(t, pr)}) ∧" for _, t, _ in invs) +
+      ("" if not X.sc_parts else "\n      " + " ∧ ".join(subst(x, pr) for x in X.sc_parts) + " ∧"))
     O("    ∃ n', Steps n0 n' ∧")
     O("        " + " ∧\n        ".join(t for _, t in facts) + ") := by")
     O(f"  rcases {NAME} F hret hO M0 N hN hflag {' '.join(hn)} {' '.join(per_names)} with e | "
       f"⟨k, {', '.join(ps)}, chn, nk, cs, hr3, hr4, hkl, okh⟩")
     O("  · exact .inl e")
-    O(f"  obtain ⟨hz, {', '.join(xnm + ['n1', 'cn'] + [f'f_{k}' for k, _ in facts])}⟩ := okh")
+    iv = [f"iv{j}" for j in range(len(invs))]
+    O(f"  obtain ⟨hz, {', '.join(iv + xnm + ['n1', 'cn'] + [f'f_{k}' for k, _ in facts])}⟩ := okh")
     terms = [{"r3": "f_r3.trans hr3", "r4": "f_r4.trans hr4", "KL": "(hkl.trans f_KL).mono (by decide)"}.get(k, f"f_{k}")
              for k, _ in facts]
-    O(f"  exact .inr ⟨k, {', '.join(ps)}, chn, hz, {', '.join(xnm + ['n1', 'cs.trans cn'] + terms)}⟩")
+    O(f"  exact .inr ⟨k, {', '.join(ps)}, chn, hz, {', '.join(iv + xnm + ['n1', 'cs.trans cn'] + terms)}⟩")
     O("")
     O("end C3.RV32.Sv")
     O("")
