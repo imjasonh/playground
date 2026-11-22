@@ -156,12 +156,12 @@ final class PlaygroundUITests: XCTestCase {
             "Wigglecam should appear after scrolling the launcher"
         )
         XCTAssertTrue(
-            scrollLauncherUntilExists(app.staticTexts["ESP32 BLE"], in: app),
-            "ESP32 BLE should appear after scrolling the launcher"
-        )
-        XCTAssertTrue(
             scrollLauncherUntilExists(app.staticTexts["App Attest"], in: app),
             "App Attest should appear after scrolling the launcher"
+        )
+        XCTAssertTrue(
+            scrollLauncherUntilExists(app.staticTexts["MCU Lab"], in: app),
+            "MCU Lab should appear after scrolling the launcher"
         )
     }
 
