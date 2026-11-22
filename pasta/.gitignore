@@ -1,5 +1,6 @@
 # Go build artifacts
 /pasta
+/pastals
 /dist/
 *.test
 

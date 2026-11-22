@@ -1014,6 +1014,10 @@ bundle exec fastlane test
 ## Pull requests
 
 - Target branch: **`main`**
+- **Always push your branch and open a PR unless the user says otherwise.** When
+  a task makes changes to the repository, commit them on a branch off `main`,
+  push the branch, and open a pull request directly instead of stopping to ask
+  whether to open one.
 - **No stacked PRs — branch every PR off `main`.** Each PR must be
   independently mergeable on its own, in any order. Do **not** base one PR's
   branch on another PR's branch (or on any non-`main` branch). Stacking has

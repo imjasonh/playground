@@ -2,6 +2,7 @@
 /cloudrun-sqlite
 /crsim
 /crbench
+/latproxy
 
 # Go test/coverage artifacts
 *.test
