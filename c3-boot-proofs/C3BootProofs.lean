@@ -543,3 +543,6 @@ import C3BootProofs.Models.P256Consts
 import C3BootProofs.Models.P384Inv
 import C3BootProofs.Models.P384Point
 import C3BootProofs.Models.P384Model
+import C3BootProofs.Models.EcdsaRcb
+import C3BootProofs.Models.P256Rcb
+import C3BootProofs.Models.P384Rcb
