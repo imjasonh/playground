@@ -1,9 +1,12 @@
-//! Reusable `McuApp` platform runtime for `mcu-lab` firmware targets.
+//! Reusable `McuApp<B: Board>` platform runtime for `mcu-lab` firmware targets.
 //!
-//! Apps implement [`McuApp`] and call [`run`] from `fn main()`. The platform
-//! owns boot initialization, Task Watchdog registration/feeding, CRC32-guarded
-//! RTC state, crash-loop rollback protection, `WakeProfiler`, BLE telemetry,
-//! resumable BLE GATT OTA, and flash coredump upload.
+//! Hardware boards implement [`Board`](crate::boards::Board); applications
+//! implement [`McuApp<B>`]. A flashable firmware binary simply wires one board
+//! and one app together via [`run::<B, A>()`].
+//!
+//! The platform owns boot initialization, Task Watchdog subscription/feeding,
+//! CRC32-guarded RTC state, crash-loop rollback protection, `WakeProfiler`,
+//! BLE telemetry, resumable BLE GATT OTA, and flash coredump upload.
 
 use std::thread;
 use std::time::{Duration, Instant};
@@ -20,10 +23,11 @@ use crate::ble_ota::{
     has_flash_coredump, is_ota_slot_pending_verify, mark_ota_slot_valid_if_pending,
     rollback_ota_slot_and_reboot, BleOtaNode,
 };
+use crate::boards::Board;
 use crate::profiler::{now_us, WakeProfiler};
 use crate::protocol::{
-    encode_board_flags, format_status_line, reset_reason_name, BoardConfig, RtcState,
-    FLAG_BROWNOUT_RESET, FLAG_DEEP_SLEEP_WAKE, MAX_CRASH_STREAK,
+    encode_board_flags, format_status_line, reset_reason_name, RtcState, FLAG_BROWNOUT_RESET,
+    FLAG_DEEP_SLEEP_WAKE, MAX_CRASH_STREAK,
 };
 
 /// Persistent CRC32-guarded state placed in RTC slow RAM so wake counters and
@@ -46,9 +50,10 @@ pub struct StepOutput {
     pub sensor_us: u32,
     pub compute_us: u32,
     pub epd_refresh_us: u32,
+    /// Optional battery/rail voltage override in mV (`0` falls back to `board.read_battery_mv()`).
     pub battery_mv: u16,
-    /// Additional low-nibble flag bits (`FLAG_EPD_ATTACHED`, `FLAG_EPD_PARTIAL`, etc.).
-    /// Board ID, deep-sleep wake, and brownout bits are added automatically by the platform.
+    /// Additional low-nibble flag bits (`FLAG_EPD_PARTIAL`, etc.).
+    /// Board ID, hardware flags, deep-sleep wake, and brownout bits are added automatically.
     pub flags: u8,
     /// Optional extra sleep after this step's BLE burst (e.g. hold a completed frame on screen).
     pub post_burst_delay_ms: u64,
@@ -83,29 +88,30 @@ impl<'a> StepContext<'a> {
     }
 }
 
-/// Trait implemented by every firmware app built on the `mcu-lab` platform.
-pub trait McuApp: Sized {
-    /// Static board, chip, GAP name, and battery-gate metadata.
-    const BOARD: BoardConfig;
+/// Trait implemented by every application built on top of a `mcu-lab` [`Board`].
+pub trait McuApp<B: Board>: Sized {
+    /// Short app slug (e.g. `"base"`, `"bench"`, `"maze"`). Combined with `B::SPEC.board`
+    /// as `<board>-<app>` for OTel `mcu.app` and GHCR symbol lookup.
+    const APP_NAME: &'static str;
 
     /// Firmware identifier string embedded in the binary (verified by `make check-firmware`).
     const FIRMWARE_ID: &'static str;
 
-    /// Deep-sleep or continuous-loop execution cadence.
-    const RUN_MODE: RunMode;
+    /// Execution cadence for this app on board `B` (defaults to `B::default_run_mode()`).
+    fn run_mode() -> RunMode {
+        B::default_run_mode()
+    }
 
-    /// Initialize board-specific peripherals (GPIO, SPI, displays, sensors).
-    fn init(peripherals: Peripherals) -> Result<Self>;
+    /// Initialize application state using the already-initialized `board`.
+    fn init(board: &mut B) -> Result<Self>;
 
-    /// Optional hardware self-test run once when booting a `PENDING_VERIFY` OTA slot.
-    ///
-    /// Returning `Err` rejects the new image and immediately rolls back to the previous slot.
-    fn self_test(&mut self) -> Result<()> {
+    /// Optional application-level self-test run after `board.self_test()` on `PENDING_VERIFY`.
+    fn self_test(&mut self, _board: &mut B) -> Result<()> {
         Ok(())
     }
 
     /// Execute one wake or animation step and return its phase durations and flags.
-    fn step(&mut self, ctx: &mut StepContext<'_>) -> Result<StepOutput>;
+    fn step(&mut self, board: &mut B, ctx: &mut StepContext<'_>) -> Result<StepOutput>;
 }
 
 /// Feed the ESP-IDF Task Watchdog for the current task.
@@ -122,8 +128,8 @@ fn is_crash_reset(code: i32) -> bool {
     matches!(code, 4 | 5 | 6 | 7 | 9)
 }
 
-/// Boot and run an [`McuApp`] on the shared `mcu-lab` platform.
-pub fn run<A: McuApp>() -> Result<()> {
+/// Boot board `B` and run application `A` on the shared `mcu-lab` platform.
+pub fn run<B: Board, A: McuApp<B>>() -> Result<()> {
     let boot_start_us = now_us();
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
@@ -134,13 +140,15 @@ pub fn run<A: McuApp>() -> Result<()> {
         let _ = esp_task_wdt_add(core::ptr::null_mut());
     }
 
+    let target_name = format!("{}-{}", B::SPEC.board, A::APP_NAME);
     let reset_code = unsafe { esp_reset_reason() } as i32;
     let reset_name = reset_reason_name(reset_code);
     info!(
-        "{} boot (board={}, chip={}, reset={reset_name}({reset_code}), coredump={})",
+        "{} boot (target={target_name}, board={}, app={}, chip={}, reset={reset_name}({reset_code}), coredump={})",
         A::FIRMWARE_ID,
-        A::BOARD.board,
-        A::BOARD.chip,
+        B::SPEC.board,
+        A::APP_NAME,
+        B::SPEC.chip,
         has_flash_coredump(),
     );
 
@@ -164,8 +172,19 @@ pub fn run<A: McuApp>() -> Result<()> {
     }
 
     let peripherals = Peripherals::take()?;
-    let mut app = match A::init(peripherals) {
-        Ok(app) => app,
+    let mut board = match B::init(peripherals) {
+        Ok(b) => b,
+        Err(err) => {
+            warn!("board init failed: {err:#}");
+            if is_ota_slot_pending_verify() {
+                rollback_ota_slot_and_reboot();
+            }
+            return Err(err);
+        }
+    };
+
+    let mut app = match A::init(&mut board) {
+        Ok(a) => a,
         Err(err) => {
             warn!("app init failed: {err:#}");
             if is_ota_slot_pending_verify() {
@@ -176,31 +195,33 @@ pub fn run<A: McuApp>() -> Result<()> {
     };
 
     if is_ota_slot_pending_verify() {
-        if let Err(err) = app.self_test() {
+        if let Err(err) = board.self_test().and_then(|()| app.self_test(&mut board)) {
             warn!("ota: self_test failed on PENDING_VERIFY slot: {err:#}");
             rollback_ota_slot_and_reboot();
         }
-        info!("ota: app self_test passed");
+        info!("ota: board + app self_test passed");
     }
 
-    let ble = BleOtaNode::init(A::BOARD);
+    let ble = BleOtaNode::init(B::SPEC);
     let mut ota_verified = false;
 
-    let mut base_flags = encode_board_flags(A::BOARD.board_id);
+    let mut base_flags = encode_board_flags(B::SPEC.board_id) | (board.hardware_flags() & 0x0F);
     if reset_code == 8 {
         base_flags |= FLAG_DEEP_SLEEP_WAKE;
     } else if reset_code == 9 {
         base_flags |= FLAG_BROWNOUT_RESET;
     }
 
-    match A::RUN_MODE {
+    match A::run_mode() {
         RunMode::DeepSleep {
             interval_us,
             burst_ms,
         } => {
             run_one_step(
+                &mut board,
                 &mut app,
                 &ble,
+                &target_name,
                 boot_start_us,
                 reset_code,
                 base_flags,
@@ -222,8 +243,10 @@ pub fn run<A: McuApp>() -> Result<()> {
             let tick = Instant::now();
             let cycle_start = now_us();
             match run_one_step(
+                &mut board,
                 &mut app,
                 &ble,
+                &target_name,
                 cycle_start,
                 reset_code,
                 base_flags,
@@ -237,7 +260,7 @@ pub fn run<A: McuApp>() -> Result<()> {
                     sleep_feeding_wdt(total_wait);
                 }
                 Err(err) => {
-                    warn!("{} step failed: {err:#}", A::BOARD.app);
+                    warn!("{target_name} step failed: {err:#}");
                     sleep_feeding_wdt(Duration::from_secs(2));
                 }
             }
@@ -245,9 +268,12 @@ pub fn run<A: McuApp>() -> Result<()> {
     }
 }
 
-fn run_one_step<A: McuApp>(
+#[allow(clippy::too_many_arguments)]
+fn run_one_step<B: Board, A: McuApp<B>>(
+    board: &mut B,
     app: &mut A,
     ble: &BleOtaNode,
+    target_name: &str,
     cycle_start_us: u64,
     reset_code: i32,
     base_flags: u8,
@@ -255,7 +281,7 @@ fn run_one_step<A: McuApp>(
     ota_verified: &mut bool,
 ) -> Result<u64> {
     feed_task_watchdog();
-    let mut prof = WakeProfiler::start(A::BOARD, cycle_start_us);
+    let mut prof = WakeProfiler::start(B::SPEC, target_name.to_string(), cycle_start_us);
     let next_wake = unsafe {
         let rtc = &*core::ptr::addr_of!(RTC_STATE);
         rtc.accumulator.wake_count.saturating_add(1)
@@ -266,9 +292,14 @@ fn run_one_step<A: McuApp>(
         reset_code,
         profiler: &mut prof,
     };
-    let out = app.step(&mut ctx)?;
+    let out = app.step(board, &mut ctx)?;
     feed_task_watchdog();
 
+    let battery_mv = if out.battery_mv > 0 {
+        out.battery_mv
+    } else {
+        board.read_battery_mv()
+    };
     let flags = base_flags | (out.flags & 0x0F);
     let metrics = unsafe {
         let rtc = &mut *core::ptr::addr_of_mut!(RTC_STATE);
@@ -276,7 +307,7 @@ fn run_one_step<A: McuApp>(
             out.sensor_us,
             out.compute_us,
             out.epd_refresh_us,
-            out.battery_mv,
+            battery_mv,
             flags,
         );
         rtc.seal();

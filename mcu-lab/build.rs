@@ -1,7 +1,7 @@
 //! Wire embuild's ESP-IDF sysenv, GNU Build ID linker flag, and git SHA on device builds.
 
 fn main() {
-    println!("cargo:rerun-if-changed=apps.json");
+    println!("cargo:rerun-if-changed=manifest.json");
     println!("cargo:rerun-if-changed=partitions.csv");
     println!("cargo:rerun-if-changed=sdkconfig.defaults");
     println!("cargo:rerun-if-changed=sdkconfig.defaults.xiao.in");

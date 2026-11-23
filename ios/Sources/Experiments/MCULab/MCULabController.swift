@@ -57,12 +57,22 @@ final class MCULabController: NSObject, ObservableObject {
     @Published var statusMessage = "Flash mcu-lab firmware or inject a simulated wake burst."
 
     // BLE GATT OTA state
-    @Published var selectedFirmwareTarget: MCULabFirmwareTarget = .xiaoESP32C3
+    @Published var selectedBoard: MCULabBoard = .xiaoESP32C3 {
+        didSet {
+            if !selectedBoard.compatibleApps.contains(selectedApp) {
+                selectedApp = selectedBoard.compatibleApps.first ?? .base
+            }
+        }
+    }
+    @Published var selectedApp: MCULabApp = .base
+    var selectedFirmwareTarget: MCULabFirmwareTarget {
+        MCULabFirmwareTarget(board: selectedBoard, app: selectedApp)
+    }
     @Published var otaPhase: OTAPhase = .idle
     @Published var stagedFirmwareData: Data?
     @Published var stagedFirmwareName = ""
     @Published var stagedFirmwareSHA256 = ""
-    @Published var otaStatusText = "Choose a firmware target and pull from GHCR (or pick a .bin) to arm an update."
+    @Published var otaStatusText = "Choose a board and app to pull from GHCR (or pick a .bin) to arm an update."
 
     private var central: CBCentralManager?
     private var peripherals: [UUID: CBPeripheral] = [:]
@@ -224,7 +234,7 @@ final class MCULabController: NSObject, ObservableObject {
         fake[12] = UInt8(truncatingIfNeeded: chipID)
         fake[13] = UInt8(truncatingIfNeeded: chipID >> 8)
         fake.append(Data(repeating: 0xA5, count: 4096))
-        stageFirmware(data: fake, name: "\(selectedFirmwareTarget.rawValue)-sim.bin")
+        stageFirmware(data: fake, name: "\(selectedFirmwareTarget.binName)-sim.bin")
     }
 
     /// Pull the latest published `mcu-lab` firmware layer from GHCR anonymously.
@@ -245,7 +255,7 @@ final class MCULabController: NSObject, ObservableObject {
             if let explicitTag = tag {
                 candidateTags = [explicitTag]
             } else {
-                otaStatusText = "Resolving latest \(resolvedTarget.rawValue) commit on main…"
+                otaStatusText = "Resolving latest \(resolvedTarget.binName) commit on main…"
                 candidateTags = try await resolveRecentFirmwareCommitSHAs()
                 guard !candidateTags.isEmpty else {
                     otaPhase = .failed("Could not resolve recent mcu-lab commits from GitHub.")
@@ -292,13 +302,13 @@ final class MCULabController: NSObject, ObservableObject {
 
             guard let chosenTag = resolvedTag, let digest = resolvedDigest else {
                 let checked = candidateTags.prefix(3).map { String($0.prefix(7)) }.joined(separator: ", ")
-                otaPhase = .failed("No published GHCR image found for \(resolvedTarget.rawValue) (\(checked)).")
-                otaStatusText = "No GHCR layer found for \(resolvedTarget.rawValue) (\(checked))."
+                otaPhase = .failed("No published GHCR image found for \(resolvedTarget.binName) (\(checked)).")
+                otaStatusText = "No GHCR layer found for \(resolvedTarget.binName) (\(checked))."
                 return
             }
 
             let shortTag = String(chosenTag.prefix(7))
-            otaStatusText = "Downloading \(resolvedTarget.rawValue)@\(shortTag)…"
+            otaStatusText = "Downloading \(resolvedTarget.binName)@\(shortTag)…"
             guard let blobURL = URL(string: "https://ghcr.io/v2/\(repo)/blobs/\(digest)") else {
                 return
             }
@@ -327,7 +337,7 @@ final class MCULabController: NSObject, ObservableObject {
                 otaStatusText = headerError
                 return
             }
-            stageFirmware(data: blobData, name: "\(resolvedTarget.rawValue)@\(shortTag) (\(digest.prefix(19)))")
+            stageFirmware(data: blobData, name: "\(resolvedTarget.binName)@\(shortTag) (\(digest.prefix(19)))")
         } catch {
             otaPhase = .failed(error.localizedDescription)
             otaStatusText = "GHCR pull error: \(error.localizedDescription)"
@@ -548,7 +558,7 @@ final class MCULabController: NSObject, ObservableObject {
         ingestManufacturerData(
             mfg,
             deviceId: simulatedDeviceId,
-            deviceName: selectedFirmwareTarget == .epdMaze ? "EPD-75" : MCULabProtocol.deviceName,
+            deviceName: selectedBoard.gapName,
             rssi: -54,
             profile: simulatedProfile
         )
@@ -575,8 +585,8 @@ final class MCULabController: NSObject, ObservableObject {
         // (`boardID == 0` is legacy XIAO ESP32-C3), connect immediately during its wake window,
         // even if we already saw an earlier advertisement packet from this same burst!
         let advBoardID = metrics.boardID
-        let matchesOTATarget = advBoardID == selectedFirmwareTarget.boardID
-            || (advBoardID == 0 && selectedFirmwareTarget == .xiaoESP32C3)
+        let matchesOTATarget = advBoardID == selectedBoard.boardID
+            || (advBoardID == 0 && selectedBoard == .xiaoESP32C3)
         if otaPhase == .armed, matchesOTATarget, let peripheral = peripherals[deviceId] {
             beginOTAConnection(to: peripheral)
         }
@@ -1044,8 +1054,8 @@ final class MCULabController: NSObject, ObservableObject {
         let coredumpsURL = Self.resolveCoredumpsURL(from: baseURL)
         let profile = latestSample?.profile
         let payload: [String: Any] = [
-            "app": profile?.app ?? selectedFirmwareTarget.rawValue,
-            "board": profile?.board ?? selectedFirmwareTarget.displayName,
+            "app": profile?.app ?? selectedFirmwareTarget.binName,
+            "board": profile?.board ?? selectedBoard.rawValue,
             "deviceId": peripheral.identifier.uuidString,
             "gitSha": profile?.gitSha ?? "",
             "buildId": profile?.buildId ?? "",

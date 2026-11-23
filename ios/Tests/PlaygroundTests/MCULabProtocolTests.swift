@@ -497,19 +497,20 @@ final class MCULabProtocolTests: XCTestCase {
             attestStore: AppAttestMemoryStore(deviceId: "dev-ota", userId: "user-ota"),
             http: http
         )
-        await controller.pullLatestFirmwareFromGHCR(target: .xiaoESP32C3)
+        let target = MCULabFirmwareTarget(board: .xiaoESP32C3, app: .base)
+        await controller.pullLatestFirmwareFromGHCR(target: target)
 
         XCTAssertEqual(controller.stagedFirmwareData, firmwareBytes)
-        XCTAssertTrue(controller.stagedFirmwareName.hasPrefix("xiao-esp32c3@\(shaPublished.prefix(7))"))
+        XCTAssertTrue(controller.stagedFirmwareName.hasPrefix("xiao-esp32c3-base@\(shaPublished.prefix(7))"))
 
-        // Cross-chip safety check: ESP32-C3 binary must be rejected for Waveshare ESP32 target.
-        XCTAssertNotNil(MCULabProtocol.validateESPImageHeader(firmwareBytes, expectedChipID: MCULabFirmwareTarget.epdMaze.chipID))
-        XCTAssertNil(MCULabProtocol.validateESPImageHeader(firmwareBytes, expectedChipID: MCULabFirmwareTarget.xiaoESP32C3.chipID))
+        // Cross-chip safety check: ESP32-C3 binary must be rejected for Waveshare ESP32 board.
+        XCTAssertNotNil(MCULabProtocol.validateESPImageHeader(firmwareBytes, expectedChipID: MCULabBoard.waveshareEPD75.chipID))
+        XCTAssertNil(MCULabProtocol.validateESPImageHeader(firmwareBytes, expectedChipID: MCULabBoard.xiaoESP32C3.chipID))
     }
 
     func testOTLPPayloadsUseBoardSpecificServiceName() {
         let epdFlags: UInt8 = MCULabProtocol.flagEpdAttached
-            | (MCULabFirmwareTarget.epdMaze.boardID << 4)
+            | (MCULabBoard.waveshareEPD75.boardID << 4)
         let epdMetrics = MCULabMetrics(
             seq: 3,
             flags: epdFlags,
@@ -526,7 +527,7 @@ final class MCULabProtocolTests: XCTestCase {
             rssi: -48,
             timeUnixNano: 1_700_000_000_000_000_000
         )
-        XCTAssertTrue(metricsJSON.contains(#""service.name","value":{"stringValue":"epd-maze"}"#))
+        XCTAssertTrue(metricsJSON.contains(#""service.name","value":{"stringValue":"waveshare-epd75"}"#))
         XCTAssertTrue(metricsJSON.contains(#""device.id","value":{"stringValue":"epd-uuid-1"}"#))
 
         let traceJSON = MCULabProtocol.formatOTLPTraceJSON(
@@ -537,8 +538,8 @@ final class MCULabProtocolTests: XCTestCase {
             rssi: -48,
             timeUnixNano: 1_700_000_000_000_000_000
         )
-        XCTAssertTrue(traceJSON.contains(#""service.name","value":{"stringValue":"epd-maze"}"#))
-        XCTAssertTrue(traceJSON.contains(#""name":"epd-maze.wake #11""#))
+        XCTAssertTrue(traceJSON.contains(#""service.name","value":{"stringValue":"waveshare-epd75"}"#))
+        XCTAssertTrue(traceJSON.contains(#""name":"waveshare-epd75.wake #11""#))
     }
 
     @MainActor
@@ -552,17 +553,21 @@ final class MCULabProtocolTests: XCTestCase {
         xiaoImage[0] = 0xE9
         xiaoImage[12] = 0x05 // ESP32-C3 chip_id = 0x0005
 
-        controller.selectedFirmwareTarget = .xiaoESP32C3
-        controller.stageFirmware(data: xiaoImage, name: "xiao-esp32c3.bin")
+        controller.selectedBoard = .xiaoESP32C3
+        controller.selectedApp = .bench
+        controller.stageFirmware(data: xiaoImage, name: "xiao-esp32c3-bench.bin")
         XCTAssertNotNil(controller.stagedFirmwareData)
 
-        // Switching target after staging must prevent arming the wrong chip binary.
-        controller.selectedFirmwareTarget = .epdMaze
+        // Switching board after staging must reset incompatible app to .base and block arming the wrong chip binary.
+        controller.selectedBoard = .waveshareEPD75
+        XCTAssertEqual(controller.selectedApp, .base)
+        XCTAssertEqual(MCULabBoard.waveshareEPD75.compatibleApps, [.base, .maze])
+        XCTAssertEqual(MCULabBoard.xiaoESP32C3.compatibleApps, [.base, .bench])
         controller.armOTAUpdate()
         if case .failed = controller.otaPhase {
             // Expected
         } else {
-            XCTFail("Expected .failed OTA phase when arming ESP32-C3 binary for epd-maze, got \(controller.otaPhase)")
+            XCTFail("Expected .failed OTA phase when arming ESP32-C3 binary for waveshare-epd75, got \(controller.otaPhase)")
         }
     }
 
@@ -582,7 +587,7 @@ final class MCULabProtocolTests: XCTestCase {
         let xiaoMfg = MCULabProtocol.encodeManufacturerData(
             MCULabMetrics(
                 seq: 1,
-                flags: MCULabProtocol.flagDeepSleepWake | (MCULabFirmwareTarget.xiaoESP32C3.boardID << 4),
+                flags: MCULabProtocol.flagDeepSleepWake | (MCULabBoard.xiaoESP32C3.boardID << 4),
                 wakeCount: 1,
                 sensorUs: 1000,
                 computeUs: 2000,
@@ -594,7 +599,7 @@ final class MCULabProtocolTests: XCTestCase {
         let epdMfg = MCULabProtocol.encodeManufacturerData(
             MCULabMetrics(
                 seq: 1,
-                flags: MCULabProtocol.flagEpdAttached | (MCULabFirmwareTarget.epdMaze.boardID << 4),
+                flags: MCULabProtocol.flagEpdAttached | (MCULabBoard.waveshareEPD75.boardID << 4),
                 wakeCount: 1,
                 sensorUs: 100,
                 computeUs: 8000,

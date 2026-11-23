@@ -13,8 +13,11 @@
 /// Advertised GAP short name (placed in scan response when present).
 pub const DEVICE_NAME: &str = "XIAO-C3";
 
-/// On-wire / log identifier. Bump when the binary packet layout changes.
+/// On-wire / log identifier for the XIAO benchmark app. Bump when the binary packet layout changes.
 pub const FIRMWARE_ID: &str = "xiao-esp32c3/0.1";
+
+/// On-wire / log identifier for the universal base OTA + OTel bootstrap firmware.
+pub const BASE_FIRMWARE_ID: &str = "mcu-lab-base/0.1";
 
 /// Bluetooth SIG test / internal-use company identifier (`0xFFFF`).
 pub const COMPANY_ID: u16 = 0xFFFF;
@@ -53,13 +56,12 @@ pub const CHIP_ID_ESP32: u16 = 0x0000;
 /// ESP-IDF `esp_image_header_t.chip_id` for ESP32-C3 (RISC-V).
 pub const CHIP_ID_ESP32C3: u16 = 0x0005;
 
-/// Static board/app descriptor passed into the shared BLE OTA + profiler runtime.
+/// Static hardware board descriptor (independent of which [`McuApp`] is running on it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BoardConfig {
+pub struct BoardSpec {
     pub board_id: u8,
     pub board: &'static str,
     pub chip: &'static str,
-    pub app: &'static str,
     pub gap_name: &'static str,
     pub chip_id: u16,
     pub cpu_mhz: u64,
@@ -418,7 +420,7 @@ pub fn format_otlp_json(device_id: &str, m: &AdvMetrics, rssi: i32, time_unix_na
     let ts = time_unix_nano.to_string();
     let escaped_device_id = escape_json_str(device_id);
     let service_name = match decode_board_id(m.flags) {
-        BOARD_WAVESHARE_EPD75 => "epd-maze",
+        BOARD_WAVESHARE_EPD75 => "waveshare-epd75",
         _ => "xiao-esp32c3",
     };
     format!(

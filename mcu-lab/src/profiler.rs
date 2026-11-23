@@ -50,7 +50,7 @@ mod inner {
     use log::info;
 
     use crate::protocol::{
-        encode_blob_frames, format_wake_profile_json, AdvMetrics, BoardConfig, PcHistogram,
+        encode_blob_frames, format_wake_profile_json, AdvMetrics, BoardSpec, PcHistogram,
         SpanRecorder, WakeProfile,
     };
 
@@ -155,7 +155,8 @@ mod inner {
     }
 
     pub struct WakeProfiler {
-        board: BoardConfig,
+        board: BoardSpec,
+        target_app: String,
         wake_start_us: u64,
         spans: SpanRecorder,
         timer: esp_timer_handle_t,
@@ -163,7 +164,7 @@ mod inner {
     }
 
     impl WakeProfiler {
-        pub fn start(board: BoardConfig, wake_start_us: u64) -> Self {
+        pub fn start(board: BoardSpec, target_app: String, wake_start_us: u64) -> Self {
             let target_task = unsafe { xTaskGetCurrentTaskHandle() };
             let sampler = Box::into_raw(Box::new(PcSamplerState {
                 target_task,
@@ -186,6 +187,7 @@ mod inner {
             }
             Self {
                 board,
+                target_app,
                 wake_start_us,
                 spans: SpanRecorder::new(wake_start_us),
                 timer,
@@ -222,7 +224,7 @@ mod inner {
             };
             info!(
                 "profile({}): free_heap={free_heap_bytes} min_heap={min_free_heap_bytes} stack_hw={stack_high_water_bytes} pc_hotspots={}",
-                self.board.app,
+                self.target_app,
                 pc_samples.len()
             );
             let git_sha = option_env!("MCU_LAB_GIT_SHA").unwrap_or("").to_string();
@@ -233,7 +235,7 @@ mod inner {
                 seq: metrics.seq,
                 board: self.board.board.to_string(),
                 chip: self.board.chip.to_string(),
-                app: self.board.app.to_string(),
+                app: self.target_app.clone(),
                 git_sha,
                 build_id,
                 free_heap_bytes,
@@ -328,7 +330,7 @@ mod inner {
     use esp32_nimble::utilities::mutex::Mutex as NimbleMutex;
     use esp32_nimble::BLEService;
 
-    use crate::protocol::{AdvMetrics, BoardConfig};
+    use crate::protocol::{AdvMetrics, BoardSpec};
 
     pub type ProfileCharHandle = ();
 
@@ -337,7 +339,7 @@ mod inner {
 
     impl WakeProfiler {
         #[inline(always)]
-        pub fn start(_board: BoardConfig, _wake_start_us: u64) -> Self {
+        pub fn start(_board: BoardSpec, _target_app: String, _wake_start_us: u64) -> Self {
             Self
         }
 

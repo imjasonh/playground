@@ -329,13 +329,21 @@ struct MCULabView: View {
             Text("Firmware OTA update over BLE")
                 .font(.subheadline.bold())
 
-            Picker("Firmware target", selection: $controller.selectedFirmwareTarget) {
-                ForEach(MCULabFirmwareTarget.allCases) { target in
-                    Text(target.displayName).tag(target)
+            Picker("Board", selection: $controller.selectedBoard) {
+                ForEach(MCULabBoard.allCases) { board in
+                    Text(board.displayName).tag(board)
                 }
             }
             .pickerStyle(.menu)
             .accessibilityIdentifier("mcuLabTargetPicker")
+
+            Picker("App", selection: $controller.selectedApp) {
+                ForEach(controller.selectedBoard.compatibleApps) { app in
+                    Text(app.displayName).tag(app)
+                }
+            }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("mcuLabAppPicker")
 
             HStack(spacing: 8) {
                 Button {

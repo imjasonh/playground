@@ -28,7 +28,7 @@ use sha2::{Digest, Sha256};
 use crate::profiler::{create_profile_char, now_us, update_profile_char, ProfileCharHandle};
 use crate::protocol::{
     decode_ota_chunk_frame, encode_blob_frames, encode_mfg_data, format_ota_status,
-    parse_ota_command, validate_esp_image_header, AdvMetrics, BoardConfig, OtaCommand, OtaStatus,
+    parse_ota_command, validate_esp_image_header, AdvMetrics, BoardSpec, OtaCommand, OtaStatus,
     COREDUMP_CHAR_UUID, OTA_CONTROL_UUID, OTA_DATA_UUID, OTA_SERVICE_UUID, OTA_SLOT_BYTES,
     OTA_STATUS_UUID,
 };
@@ -386,7 +386,7 @@ fn notify_ota_status(
 
 /// Persistent NimBLE peripheral + OTA / Profile / Coredump GATT server initialized once per boot.
 pub struct BleOtaNode {
-    board: BoardConfig,
+    board: BoardSpec,
     connected: Arc<AtomicBool>,
     last_battery_mv: Arc<AtomicU16>,
     ota_state: Arc<Mutex<OtaWriterState>>,
@@ -395,7 +395,7 @@ pub struct BleOtaNode {
 
 impl BleOtaNode {
     /// Initialize NimBLE and register the OTA + Profile + Coredump GATT service once.
-    pub fn init(board: BoardConfig) -> Self {
+    pub fn init(board: BoardSpec) -> Self {
         let device = BLEDevice::take();
         let _ = device.set_preferred_mtu(512);
         let server = device.get_server();
