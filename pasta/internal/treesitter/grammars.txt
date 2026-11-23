@@ -3,7 +3,9 @@
 #
 # A ref of go.mod compiles the grammar's Go module at the version go.mod
 # requires, which is also what the cgo backend links. Any other ref is a git
-# tag, for grammars without a usable Go module.
+# tag, for grammars without a usable Go module. A 40-character ref is a commit,
+# for a grammar that tags no releases; scripts/update-deps.sh moves it to the
+# head of the default branch.
 #
 # id          repository                             source          ref
 go            tree-sitter/tree-sitter-go             src             go.mod
@@ -27,3 +29,4 @@ sql           DerekStride/tree-sitter-sql            src             v0.3.13
 swift         alex-pinkus/tree-sitter-swift          src             go.mod
 toml          tree-sitter-grammars/tree-sitter-toml  src             go.mod
 hcl           tree-sitter-grammars/tree-sitter-hcl   src             go.mod
+lean          Julian/tree-sitter-lean                src             fefc2eff9a83eeb72cda44646709e40e33e09175

@@ -61,13 +61,18 @@ if newer "$runtime" "$latest"; then
 fi
 
 while read -r id repo ref; do
-  latest=$(newest_tag "$repo" "$ref")
-  if newer "$ref" "$latest"; then
-    echo "$id: $ref → $latest"
-    awk -v id="$id" -v ref="$latest" '$1 == id { sub(/[^ ]+$/, ref) } 1' "$GRAMMARS" > "$work/grammars.txt"
-    mv "$work/grammars.txt" "$GRAMMARS"
-    changed=1
+  # A commit ref follows the default branch; a tag ref follows newer tags.
+  if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+    latest=$(git ls-remote "https://github.com/$repo" HEAD | cut -f1)
+    [ -n "$latest" ] && [ "$latest" != "$ref" ] || continue
+  else
+    latest=$(newest_tag "$repo" "$ref")
+    newer "$ref" "$latest" || continue
   fi
+  echo "$id: $ref → $latest"
+  awk -v id="$id" -v ref="$latest" '$1 == id { sub(/[^ ]+$/, ref) } 1' "$GRAMMARS" > "$work/grammars.txt"
+  mv "$work/grammars.txt" "$GRAMMARS"
+  changed=1
 done < <(awk '!/^#/ && NF && $4 != "go.mod" { print $1, $2, $4 }' "$GRAMMARS")
 
 if [ "$changed" = 1 ]; then

@@ -35,7 +35,7 @@ import (
 	tstypescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
 )
 
-// sql and dockerfile have no usable Go module, so they parse with wasm.
+// sql, dockerfile, and lean have no usable Go module, so they parse with wasm.
 func init() {
 	native = &cgoBackend{langs: map[string]*C.TSLanguage{
 		"go":         language(tsgo.Language()),

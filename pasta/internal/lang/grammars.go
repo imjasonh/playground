@@ -32,6 +32,7 @@ var Grammars = map[string]func() *treesitter.Language{
 	"swift":      lang("swift"),
 	"toml":       lang("toml"),
 	"hcl":        lang("hcl"),
+	"lean":       lang("lean"),
 }
 
 func lang(grammar string) func() *treesitter.Language {

@@ -21,6 +21,11 @@ while read -r id repo sub ref; do
   if [ "$ref" = go.mod ]; then
     go mod download "github.com/$repo"
     read -r dir ref < <(go list -m -f '{{.Dir}} {{.Version}}' "github.com/$repo")
+  elif [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+    dir="$WORK/$id"
+    git init --quiet "$dir"
+    git -C "$dir" fetch --quiet --depth 1 "https://github.com/$repo" "$ref"
+    git -C "$dir" -c advice.detachedHead=false checkout --quiet FETCH_HEAD
   else
     dir="$WORK/$id"
     git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$ref" \

@@ -21,6 +21,7 @@ func TestDefinitionTypes(t *testing.T) {
 		"rust":       "fn f() {}\n",
 		"java":       "class C { void m() {} }\n",
 		"ruby":       "def f\nend\n\ndef self.g\nend\n",
+		"lean":       "def f := 1\n\ntheorem t : True := trivial\n\nabbrev A := Nat\n",
 	}
 	identifiers := []string{"identifier", "field_identifier", "property_identifier"}
 	for name, l := range lang.All {
