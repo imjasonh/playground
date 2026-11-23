@@ -1,16 +1,17 @@
 # mcu-lab — multi-MCU build / flash / monitor helpers.
 #
-# Supported APP targets:
-#   xiao-esp32c3   Seeed Studio XIAO ESP32-C3 (RISC-V, BLE profiler + OTA)
-#   epd-maze       Waveshare 7.5" e-Paper ESP32 Driver Board (Xtensa, maze + BLE OTA)
+# Apps are declared in apps.json. To add a new app:
+#   1. Implement `mcu_lab::platform::McuApp` in `src/bin/<app>.rs`
+#   2. Add `[[bin]]` in `Cargo.toml` and an entry in `apps.json`
 #
 # Local commands:
 #   make test                                # host protocol + maze unit tests
-#   make build                               # cross-compile all firmware targets
-#   make build-profile APP=xiao-esp32c3      # build profiling ELF with DWARF line tables
-#   make build-profile APP=epd-maze          # build Waveshare ESP32 profiling ELF
-#   make flash-all APP=epd-maze PROFILING=1  # one-time USB erase + bootloader + partitions + app
-#   make flash APP=epd-maze PROFILING=1      # fast USB app-only flash
+#   make list-apps                           # list apps declared in apps.json
+#   make build                               # cross-compile all apps in apps.json
+#   make build-app APP=<app>                 # cross-compile one app
+#   make build-profile APP=<app>             # cross-compile one app with profiling + DWARF
+#   make flash-all APP=<app> [PROFILING=1]   # one-time USB erase + bootloader + partitions + app
+#   make flash APP=<app> [PROFILING=1]       # fast USB app-only flash
 #   make monitor                             # serial monitor
 
 SHELL := /bin/bash
@@ -23,27 +24,30 @@ ifeq ($(PORT),)
 PORT := /dev/cu.usbmodem101
 endif
 
-ifeq ($(APP),xiao-esp32c3)
-TARGET := riscv32imc-esp-espidf
-MCU := esp32c3
-SDKCONFIG_IN := sdkconfig.defaults.xiao.in
-FIRMWARE_ID := $(shell awk -F'"' '/pub const FIRMWARE_ID/ { print $$2; exit }' src/protocol.rs)
-else ifeq ($(APP),epd-maze)
-TARGET := xtensa-esp32-espidf
-MCU := esp32
-SDKCONFIG_IN := sdkconfig.defaults.epd.in
-FIRMWARE_ID := $(shell awk -F'"' '/pub const MAZE_FIRMWARE_ID/ { print $$2; exit }' src/maze/mod.rs)
-else
-$(error Unknown APP '$(APP)' — expected xiao-esp32c3 or epd-maze)
+APPS := $(shell python3 -c 'import json; print(" ".join(a["app"] for a in json.load(open("apps.json"))))')
+APP_META = $(shell python3 -c 'import json, sys; apps = {a["app"]: a for a in json.load(open("apps.json"))}; a = apps.get(sys.argv[1]); print(a[sys.argv[2]] if a else "")' "$(APP)" "$(1)")
+
+TARGET := $(call APP_META,target)
+MCU := $(call APP_META,chip)
+SDKCONFIG_IN := $(call APP_META,sdkconfig)
+FIRMWARE_ID_FILE := $(call APP_META,firmware_id_file)
+FIRMWARE_ID_CONST := $(call APP_META,firmware_id_const)
+
+ifeq ($(TARGET),)
+$(error Unknown APP '$(APP)' — expected one of: $(APPS))
 endif
+
+FIRMWARE_ID := $(shell awk -F'"' '/pub const $(FIRMWARE_ID_CONST)/ { print $$2; exit }' $(FIRMWARE_ID_FILE))
 
 ifeq ($(PROFILING),1)
 FIRMWARE_FEATURES := firmware,profiling
-PROFILE_CARGO_ENV := CARGO_PROFILE_RELEASE_STRIP=none CARGO_PROFILE_RELEASE_DEBUG=line-tables-only
 else
 FIRMWARE_FEATURES := firmware
-PROFILE_CARGO_ENV :=
 endif
+
+# Always preserve DWARF line tables in the ELF so production crash coredumps
+# symbolize cleanly; `espflash save-image` strips debug sections from the .bin.
+PROFILE_CARGO_ENV := CARGO_PROFILE_RELEASE_STRIP=none CARGO_PROFILE_RELEASE_DEBUG=line-tables-only
 
 override CARGO_TARGET_DIR := $(CURDIR)/target
 export CARGO_TARGET_DIR
@@ -59,20 +63,24 @@ PYTHON_SHIM   := $(CURDIR)/.embuild/python-shim
 export PATH := $(PYTHON_SHIM):$(PATH)
 export ESP_IDF_TOOLS_INSTALL_DIR := custom:$(CURDIR)/.embuild
 
-.PHONY: help build build-app build-profile check-firmware symbolize flash flash-all monitor run clean test \
+.PHONY: help list-apps build build-app build-profile check-firmware symbolize flash flash-all monitor run clean test \
 	ensure-python-shim
 
 help:
-	@echo "Targets:"
+	@echo "Targets (apps from apps.json: $(APPS)):"
 	@echo "  make test                               Host-side protocol and maze unit tests"
-	@echo "  make build                              Cross-compile both xiao-esp32c3 and epd-maze"
-	@echo "  make build-app APP=<app>                Cross-compile one app (xiao-esp32c3 | epd-maze)"
+	@echo "  make list-apps                          Print all apps declared in apps.json"
+	@echo "  make build                              Cross-compile all apps in apps.json"
+	@echo "  make build-app APP=<app>                Cross-compile one app"
 	@echo "  make build-profile APP=<app>            Cross-compile one app with profiling + DWARF line tables"
 	@echo "  make symbolize APP=<app> PC='0x...'     Resolve PC hotspot addresses against $(BIN)"
 	@echo "  make flash APP=<app> [PROFILING=1]      Build + flash app to $(PORT)"
 	@echo "  make flash-all APP=<app> [PROFILING=1]  Erase + write bootloader, partition table, app"
 	@echo "  make monitor                            Serial monitor on $(PORT)"
 	@echo "  make clean                              cargo clean"
+
+list-apps:
+	@printf '%s\n' $(APPS)
 
 test:
 	cargo test --lib --locked
@@ -82,12 +90,13 @@ $(SDKCONFIG_DEFAULTS): $(SDKCONFIG_IN) partitions.csv
 	@sed 's|@PROJECT_DIR@|$(CURDIR)|g' $(SDKCONFIG_IN) > $@
 
 build:
-	@$(MAKE) --no-print-directory build-app APP=xiao-esp32c3 PROFILING=$(PROFILING)
-	@$(MAKE) --no-print-directory build-app APP=epd-maze PROFILING=$(PROFILING)
+	@for app in $(APPS); do \
+	  $(MAKE) --no-print-directory build-app APP=$$app PROFILING=$(PROFILING) || exit 1; \
+	done
 
 build-app: ensure-python-shim $(SDKCONFIG_DEFAULTS)
 	@if [ -z "$(FIRMWARE_ID)" ]; then \
-	  echo "ERROR: could not read FIRMWARE_ID for $(APP)"; \
+	  echo "ERROR: could not read $(FIRMWARE_ID_CONST) from $(FIRMWARE_ID_FILE) for $(APP)"; \
 	  exit 1; \
 	fi
 	$(PROFILE_CARGO_ENV) \

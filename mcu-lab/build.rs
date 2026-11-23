@@ -1,11 +1,14 @@
-//! Wire embuild's ESP-IDF sysenv on device builds.
+//! Wire embuild's ESP-IDF sysenv, GNU Build ID linker flag, and git SHA on device builds.
 
 fn main() {
+    println!("cargo:rerun-if-changed=apps.json");
     println!("cargo:rerun-if-changed=partitions.csv");
     println!("cargo:rerun-if-changed=sdkconfig.defaults");
-    println!("cargo:rerun-if-changed=sdkconfig.defaults.in");
+    println!("cargo:rerun-if-changed=sdkconfig.defaults.xiao.in");
+    println!("cargo:rerun-if-changed=sdkconfig.defaults.epd.in");
 
     println!("cargo:rerun-if-env-changed=GITHUB_SHA");
+    println!("cargo:rerun-if-env-changed=MCU_LAB_BUILD_ID");
     let git_sha = std::env::var("GITHUB_SHA")
         .ok()
         .filter(|s| s.len() == 40 && s.bytes().all(|b| b.is_ascii_hexdigit()))
@@ -25,7 +28,15 @@ fn main() {
         git_sha.to_ascii_lowercase()
     );
 
+    if let Ok(build_id) = std::env::var("MCU_LAB_BUILD_ID") {
+        let trimmed = build_id.trim().to_ascii_lowercase();
+        if trimmed.len() == 40 && trimmed.bytes().all(|b| b.is_ascii_hexdigit()) {
+            println!("cargo:rustc-env=MCU_LAB_BUILD_ID={trimmed}");
+        }
+    }
+
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("espidf") {
+        println!("cargo:rustc-link-arg=-Wl,--build-id=sha1");
         embuild::espidf::sysenv::output();
     }
 }

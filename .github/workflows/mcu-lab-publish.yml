@@ -21,21 +21,29 @@ permissions:
   packages: write
 
 jobs:
+  discover:
+    name: Discover mcu-lab apps
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.apps.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - id: apps
+        run: |
+          echo "matrix=$(jq -c '{include: map({app, target, chip})}' mcu-lab/apps.json)" >> "$GITHUB_OUTPUT"
+
   publish:
     name: Publish ${{ matrix.app }} firmware & symbols
+    needs: discover
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - app: xiao-esp32c3
-            target: riscv32imc-esp-espidf
-            chip: esp32c3
-          - app: epd-maze
-            target: xtensa-esp32-espidf
-            chip: esp32
+      matrix: ${{ fromJson(needs.discover.outputs.matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
