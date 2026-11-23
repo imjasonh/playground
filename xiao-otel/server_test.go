@@ -438,3 +438,46 @@ func signAssertion(t *testing.T, key *ecdsa.PrivateKey, appID string, counter ui
 	}
 	return base64.StdEncoding.EncodeToString(raw)
 }
+
+func TestCoredumpsEndpoint(t *testing.T) {
+	verifier, err := attest.NewVerifier(testAppID, true, attest.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &Server{
+		Verifier: verifier,
+	}
+	ts := httptest.NewServer(srv.Routes())
+	defer ts.Close()
+
+	chal := fetchChallenge(t, ts.URL)
+	regBody, _ := json.Marshal(map[string]any{
+		"clientData": `{"challenge":"` + chal + `","deviceId":"sim-cd","userId":"sim-user"}`,
+	})
+	if resp := postJSON(t, ts.URL+"/v1/unattested-token", regBody, nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("unattested register status=%d", resp.StatusCode)
+	}
+
+	cdBody := []byte(`{"app":"xiao-esp32c3","board":"xiao-esp32c3","deviceId":"dev-1","pcs":["0x42001234"]}`)
+	cChal := fetchChallenge(t, ts.URL)
+	cSum := sha256.Sum256(cdBody)
+	cCD := `{"action":"coredump","challenge":"` + cChal + `","payload":"` + hex.EncodeToString(cSum[:]) + `"}`
+	resp := postJSON(t, ts.URL+"/v1/coredumps", cdBody, map[string]string{
+		"X-Apple-App-Attest-Key-Id":      "unattested:sim-cd",
+		"X-Apple-App-Attest-Client-Data": base64.StdEncoding.EncodeToString([]byte(cCD)),
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("coredumps status=%d", resp.StatusCode)
+	}
+	var out struct {
+		Accepted     bool     `json:"accepted"`
+		ExtractedPCs []string `json:"extractedPCs"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if !out.Accepted || len(out.ExtractedPCs) != 1 || out.ExtractedPCs[0] != "0x42001234" {
+		t.Fatalf("unexpected coredump response: %+v", out)
+	}
+}

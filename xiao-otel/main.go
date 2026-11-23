@@ -22,12 +22,13 @@ import (
 )
 
 type config struct {
-	Port            string `env:"PORT, default=8080"`
-	AppID           string `env:"APP_ID, required"`
-	AllowUnattested bool   `env:"ALLOW_UNATTESTED"`
-	ProjectID       string `env:"GOOGLE_CLOUD_PROJECT"`
-	SymbolGHCRRepo  string `env:"SYMBOL_GHCR_REPO, default=imjasonh/playground/xiao-esp32c3"`
-	SymbolELFPath   string `env:"SYMBOL_ELF_PATH"`
+	Port              string `env:"PORT, default=8080"`
+	AppID             string `env:"APP_ID, required"`
+	AllowUnattested   bool   `env:"ALLOW_UNATTESTED"`
+	ProjectID         string `env:"GOOGLE_CLOUD_PROJECT"`
+	AttestStoreBucket string `env:"ATTEST_STORE_BUCKET"`
+	SymbolGHCRRepo    string `env:"SYMBOL_GHCR_REPO, default=imjasonh/playground/xiao-esp32c3"`
+	SymbolELFPath     string `env:"SYMBOL_ELF_PATH"`
 }
 
 func main() {
@@ -46,7 +47,22 @@ func run(ctx context.Context) error {
 		return err
 	}
 
-	verifier, err := attest.NewVerifier(env.AppID, env.AllowUnattested, attest.NewMemoryStore())
+	var store attest.Store = attest.NewMemoryStore()
+	if env.AttestStoreBucket != "" {
+		ts, err := google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/devstorage.read_write")
+		if err != nil {
+			slog.WarnContext(ctx, "GCS token source unavailable; falling back to in-memory App Attest store", "err", err)
+		} else {
+			store = &attest.GCSStore{
+				Bucket:      env.AttestStoreBucket,
+				Prefix:      "attest",
+				TokenSource: ts,
+			}
+			slog.InfoContext(ctx, "durable GCS App Attest store enabled", "bucket", env.AttestStoreBucket)
+		}
+	}
+
+	verifier, err := attest.NewVerifier(env.AppID, env.AllowUnattested, store)
 	if err != nil {
 		return err
 	}

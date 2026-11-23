@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"debug/dwarf"
 	"debug/elf"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -225,20 +226,23 @@ type Symbolizer struct {
 // `function`, `file`, and `line` attributes before export, and returns the map
 // of resolved hex PC strings to Symbol.
 //
-// Only 40-char lowercase hex git commit SHAs (`mcu.git_sha`) are accepted; any
-// other non-empty tag (including `"latest"`) returns an error. If `mcu.git_sha`
-// is omitted, symbolization is skipped without falling back to `:latest`.
+// Prefers `mcu.build_id` (`buildid-<40hex>` OCI tag) when present, falling back
+// to `mcu.git_sha` (`<40hex>` commit SHA). Any invalid tag (including `"latest"`)
+// returns an error.
 func (s *Symbolizer) EnrichSpans(ctx context.Context, spans []otlp.Span) (map[string]Symbol, error) {
 	if s == nil {
 		return nil, nil
 	}
-	// Check whether any span contains pc.hotspot events and extract mcu.git_sha / mcu.app if present.
-	tag := ""
+	gitSHA := ""
+	buildID := ""
 	app := ""
 	hasHotspots := false
 	for i := range spans {
-		if v, ok := spans[i].Attributes["mcu.git_sha"].(string); ok && tag == "" {
-			tag = strings.ToLower(strings.TrimSpace(v))
+		if v, ok := spans[i].Attributes["mcu.git_sha"].(string); ok && gitSHA == "" {
+			gitSHA = strings.ToLower(strings.TrimSpace(v))
+		}
+		if v, ok := spans[i].Attributes["mcu.build_id"].(string); ok && buildID == "" {
+			buildID = strings.ToLower(strings.TrimSpace(v))
 		}
 		if v, ok := spans[i].Attributes["mcu.app"].(string); ok && app == "" {
 			app = strings.ToLower(strings.TrimSpace(v))
@@ -249,20 +253,12 @@ func (s *Symbolizer) EnrichSpans(ctx context.Context, spans []otlp.Span) (map[st
 			}
 		}
 	}
-	if !hasHotspots || tag == "" {
+	if !hasHotspots || (buildID == "" && gitSHA == "") {
 		return nil, nil
 	}
-	if !isValidTag(tag) {
-		return nil, fmt.Errorf("invalid symbol tag %q: must be a 40-char hex commit SHA", tag)
-	}
-	repo, err := s.repoForApp(app)
-	if err != nil {
+	tbl, err := s.resolveTable(ctx, app, buildID, gitSHA)
+	if err != nil || tbl == nil {
 		return nil, err
-	}
-
-	tbl := s.tableForRepoTag(ctx, repo, tag)
-	if tbl == nil {
-		return nil, nil
 	}
 
 	resolved := make(map[string]Symbol)
@@ -302,8 +298,134 @@ func (s *Symbolizer) EnrichSpans(ctx context.Context, spans []otlp.Span) (map[st
 	return resolved, nil
 }
 
+// ResolvePCs resolves a list of hex PC strings (e.g. from a coredump) against the
+// firmware ELF identified by `buildID` (preferred) or `gitSHA`.
+func (s *Symbolizer) ResolvePCs(ctx context.Context, app, buildID, gitSHA string, pcs []string) (map[string]Symbol, error) {
+	if s == nil || len(pcs) == 0 {
+		return nil, nil
+	}
+	tbl, err := s.resolveTable(ctx, strings.ToLower(strings.TrimSpace(app)), strings.ToLower(strings.TrimSpace(buildID)), strings.ToLower(strings.TrimSpace(gitSHA)))
+	if err != nil || tbl == nil {
+		return nil, err
+	}
+	resolved := make(map[string]Symbol, len(pcs))
+	for _, pcStr := range pcs {
+		pc, err := parseHexPC(pcStr)
+		if err != nil {
+			continue
+		}
+		if sym, ok := tbl.Resolve(pc); ok {
+			resolved[pcStr] = sym
+		}
+	}
+	return resolved, nil
+}
+
+func (s *Symbolizer) resolveTable(ctx context.Context, app, buildID, gitSHA string) (*Table, error) {
+	var tags []string
+	if buildID != "" {
+		if !isHexLen(buildID, 40) {
+			return nil, fmt.Errorf("invalid build_id %q: must be 40-char hex", buildID)
+		}
+		tags = append(tags, "buildid-"+buildID)
+	}
+	if gitSHA != "" {
+		if !isHexLen(gitSHA, 40) {
+			return nil, fmt.Errorf("invalid symbol tag %q: must be a 40-char hex commit SHA", gitSHA)
+		}
+		tags = append(tags, gitSHA)
+	}
+	if len(tags) == 0 {
+		return nil, nil
+	}
+	repo, err := s.repoForApp(app)
+	if err != nil {
+		return nil, err
+	}
+	for _, tag := range tags {
+		if tbl := s.tableForRepoTag(ctx, repo, tag); tbl != nil {
+			return tbl, nil
+		}
+	}
+	return nil, nil
+}
+
+// ParseCoredumpPCs extracts deduplicated executable ESP32 / ESP32-C3 instruction
+// addresses from an ESP-IDF ELF coredump (`PT_NOTE` `CORE` notes).
+func ParseCoredumpPCs(raw []byte) ([]string, error) {
+	f, err := elf.NewFile(bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("parse coredump ELF: %w", err)
+	}
+	defer f.Close()
+
+	seen := make(map[uint32]struct{})
+	var pcs []string
+	for _, prog := range f.Progs {
+		if prog.Type != elf.PT_NOTE {
+			continue
+		}
+		noteData, err := io.ReadAll(io.LimitReader(prog.Open(), 64*1024))
+		if err != nil {
+			continue
+		}
+		// Walk 4-byte-aligned ELF note records: namesz(4), descsz(4), type(4), name, desc.
+		off := 0
+		for off+12 <= len(noteData) {
+			namesz := int(binary.LittleEndian.Uint32(noteData[off : off+4]))
+			descsz := int(binary.LittleEndian.Uint32(noteData[off+4 : off+8]))
+			off += 12
+			namePad := (namesz + 3) &^ 3
+			descPad := (descsz + 3) &^ 3
+			if off+namePad+descPad > len(noteData) {
+				break
+			}
+			desc := noteData[off+namePad : off+namePad+descsz]
+			off += namePad + descPad
+			for i := 0; i+4 <= len(desc); i += 4 {
+				word := binary.LittleEndian.Uint32(desc[i : i+4])
+				if isESPCodeAddr(word) {
+					if _, dup := seen[word]; !dup {
+						seen[word] = struct{}{}
+						pcs = append(pcs, fmt.Sprintf("0x%08x", word))
+					}
+				}
+			}
+		}
+	}
+	return pcs, nil
+}
+
+func isESPCodeAddr(pc uint32) bool {
+	return (pc >= 0x4200_0000 && pc < 0x4400_0000) ||
+		(pc >= 0x4037_C000 && pc < 0x403E_0000) ||
+		(pc >= 0x400D_0000 && pc < 0x4040_0000) ||
+		(pc >= 0x4008_0000 && pc < 0x400A_0000) ||
+		(pc >= 0x4000_0000 && pc < 0x4006_0000)
+}
+
 func isValidTag(tag string) bool {
+	if strings.HasPrefix(tag, "buildid-") {
+		return isHexLen(strings.TrimPrefix(tag, "buildid-"), 40)
+	}
 	return isHexLen(tag, 40)
+}
+
+func isValidAppName(app string) bool {
+	if len(app) == 0 || len(app) > 63 {
+		return false
+	}
+	for i := 0; i < len(app); i++ {
+		c := app[i]
+		isAlphaNum := (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+		if i == 0 && !isAlphaNum {
+			return false
+		}
+		if !isAlphaNum && c != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 func isHexLen(s string, n int) bool {
@@ -344,9 +466,7 @@ func (s *Symbolizer) repoForApp(app string) (string, error) {
 	if app == "" || s.LocalELFPath != "" {
 		return s.Repo, nil
 	}
-	switch app {
-	case "xiao-esp32c3", "epd-maze":
-	default:
+	if !isValidAppName(app) {
 		return "", fmt.Errorf("unsupported mcu.app %q for symbolization", app)
 	}
 	if s.Repo == "" {
