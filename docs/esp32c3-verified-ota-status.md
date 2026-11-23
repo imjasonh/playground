@@ -133,6 +133,18 @@ pass to the next. That is how the message digest that the signed
 attributes loop finds, and the five identity-policy slots that the
 extensions loop fills, are slices after their loops.
 
+`sv_verify_at` in
+[`SvVerifyAt.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvVerifyAt.lean)
+states it for a `Bundle` and a `SigstoreRoot`, the values `sigstoreVerify`
+takes: `SvBundleAt` and `SvRootAt` in
+[`SvLayout.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvLayout.lean) say
+how `rustc` lays the two out at `a1` and `a2`, and
+[`gen-sv-layout.py`](../c3-boot-proofs/scripts/gen-sv-layout.py) derives 88
+of `sv_verify`'s hypotheses from them. The other 43 say where the code and
+constants are (about 30), where the stack is and how the call was made, that
+the result and digest buffers are outside the stack, and the P-256 and P-384
+inversions' side conditions (`side`, `side'`, `hzi`).
+
 `sv_verify` takes 131 hypotheses, all about the memory and registers at
 the entry. Most say how `Bundle` and `SigstoreRoot` lie in memory and that
 the code and constants are where the image puts them. The root keeps its
@@ -143,9 +155,9 @@ reads them only after that check. The rest are the inversions' side conditions (
 the P-256 and P-384 models need. The frame's contents at 0x72 are the
 prologue's (`svProMem`), so they need no hypotheses.
 
-Left: the layout hypotheses discharged from a description of `Bundle` and
-`SigstoreRoot` in memory, and `sv_verify` against `sigstoreVerify` in
-`Spec/Sigstore.lean`; the models (`ivLoop8`, `mlMain2`, `zvLoop`, `pvModel`)
+Left: `sv_verify_at`'s success condition against `sigstoreVerify bundle root
+digest` in `Spec/Sigstore.lean`; the code and constants hypotheses from the
+image the ROM loads; the models (`ivLoop8`, `mlMain2`, `zvLoop`, `pvModel`)
 against `p256.verify` and P-384 in `Spec/Ecdsa.lean`; and `boot_main`.
 
 `_start` and the clock and watchdog `setup` that runs before `boot_main`
