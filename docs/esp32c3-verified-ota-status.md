@@ -155,10 +155,25 @@ reads them only after that check. The rest are the inversions' side conditions (
 the P-256 and P-384 models need. The frame's contents at 0x72 are the
 prologue's (`svProMem`), so they need no hypotheses.
 
-Left: `sv_verify_at`'s success condition against `sigstoreVerify bundle root
-digest` in `Spec/Sigstore.lean`; the code and constants hypotheses from the
-image the ROM loads; the models (`ivLoop8`, `mlMain2`, `zvLoop`, `pvModel`)
-against `p256.verify` and P-384 in `Spec/Ecdsa.lean`; and `boot_main`.
+`sv_verify_spec` in
+[`SvSpec.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvSpec.lean) turns
+`sv_verify_at`'s success condition into the specification: `sigstore::verify`
+returns `Err`, panics, or returns `Ok` with the time and log index of
+`sigstoreVerify bundle root digest` in `Spec/Sigstore.lean`. Each parse and
+loop the code runs is restated as the spec's function by a lemma in the
+`Sv*Link.lean` files (`parseLeaf_code`, `readExtensions_code`,
+`parseTimestamp_code`, `readTstInfo_code`, `treeSize_code`, `cosig_chain`,
+and others), and the constants in the image's data are the spec's
+(`SvConstsLink.lean`). It depends only on `propext` and `Quot.sound`. It
+assumes five facts about the models, stated in
+[`SvModels.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvModels.lean):
+that the P-384, P-256, and Ed25519 checks accept only signatures that
+`p384Verify`, `p256Verify`, and `ed25519Verify` accept; that a key the code
+decodes is on P-256; and that the Rekor entry's constants and the key ID's
+`0x01` are where the image puts them.
+
+Left: those five model facts; the code and constants hypotheses from the
+image the ROM loads; and `boot_main`.
 
 `_start` and the clock and watchdog `setup` that runs before `boot_main`
 aren't among the extracted functions, so they are trusted.
