@@ -28,7 +28,6 @@ final class SentinelController: ObservableObject {
     private let pathQueue = DispatchQueue(label: "io.github.imjasonh.lantern.path", qos: .utility)
     private var pathSatisfied = true
     private var watchTask: Task<Void, Never>?
-    private var probedMACsThisSession: Set<String> = []
     private let notificationCooldownSeconds: TimeInterval = 3600
 
     init(store: BaselineStore = BaselineStore(), autoStart: Bool = true) {
@@ -145,10 +144,12 @@ final class SentinelController: ObservableObject {
         currentNetwork = network
         currentTrust = baseline.trust
 
+        // Background discovery stays strictly passive (OS ARP table + mDNS browse).
+        // Active subnet nudges and TCP port probes only happen on explicit user clicks.
         async let discoveredTask = LANDiscoveryCollector.discover(
             network: network,
             existingDevices: baseline.knownDevices,
-            nudgeSubnet: network != .offline && baseline.trust != .untrusted,
+            nudgeSubnet: false,
             now: now
         )
         async let upnpTask: [UPnPMapping] = (network != .offline && baseline.trust != .untrusted)
@@ -168,26 +169,11 @@ final class SentinelController: ObservableObject {
             now: now
         )
 
-        var discovered = await discoveredTask
+        let discovered = await discoveredTask
         let mappings = await upnpTask
         let processes = await hostTask
         let conn = await connTask
         let external = await externalTask
-
-        // Targeted risky-port probe for newly seen or unprobed LAN hosts (throttled: max 4 hosts per pass).
-        if network != .offline && baseline.trust != .untrusted {
-            let candidates = discovered.filter { dev in
-                !dev.isThisMac && !probedMACsThisSession.contains(dev.id)
-            }.prefix(4)
-
-            for candidate in candidates {
-                probedMACsThisSession.insert(candidate.id)
-                let ports = await PortProbeCollector.probeHost(ip: candidate.ipAddress)
-                if let idx = discovered.firstIndex(where: { $0.id == candidate.id }) {
-                    discovered[idx].openPorts = ports
-                }
-            }
-        }
 
         let snapshot = WatchSnapshot(
             capturedAt: now,
@@ -334,6 +320,29 @@ final class SentinelController: ObservableObject {
             }
         }
         findings = store.state.findings
+    }
+
+    /// Persists open ports discovered from an explicit user-clicked probe in `DeviceExplorerSheet`.
+    func recordInteractivePortProbe(deviceID: String, openPorts: [OpenPort]) {
+        let netID = currentNetwork.id
+        store.update { state in
+            guard var baseline = state.baselines[netID],
+                  var device = baseline.knownDevices[deviceID]
+            else { return }
+            device.openPorts = openPorts
+            baseline.knownDevices[deviceID] = device
+            state.baselines[netID] = baseline
+        }
+        if let idx = devices.firstIndex(where: { $0.id == deviceID }) {
+            devices[idx].openPorts = openPorts
+        }
+    }
+
+    func updateDeviceClassification(deviceID: String, classification: DeviceClassification) {
+        store.setDeviceClassification(classification, mac: deviceID, networkID: currentNetwork.id)
+        if let idx = devices.firstIndex(where: { $0.id == deviceID }) {
+            devices[idx].classification = classification
+        }
     }
 
     func saveSettings() {

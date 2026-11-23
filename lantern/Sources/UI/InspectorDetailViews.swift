@@ -4,12 +4,18 @@ import SwiftUI
 
 struct DevicesView: View {
     @EnvironmentObject private var sentinel: SentinelController
+    @State private var selectedDevice: LANDevice?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("LAN Devices (\(sentinel.devices.count))")
-                    .font(.title2.weight(.semibold))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("LAN Devices (\(sentinel.devices.count))")
+                        .font(.title2.weight(.semibold))
+                    Text("Passively observed via ARP and mDNS. Click Explore on any device to run active probes.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer()
                 Text("Network: \(sentinel.currentNetwork.displayName)")
                     .font(.callout)
@@ -23,7 +29,7 @@ struct DevicesView: View {
                 ContentUnavailableView(
                     "No Devices Observed Yet",
                     systemImage: "network",
-                    description: Text("Click Scan Now to discover devices on your local network.")
+                    description: Text("Lantern listens passively for devices on your local network.")
                 )
             } else {
                 List(sentinel.devices) { device in
@@ -70,18 +76,29 @@ struct DevicesView: View {
 
                         Spacer()
 
-                        Toggle(
-                            "Trusted",
-                            isOn: Binding(
-                                get: { device.isTrusted },
-                                set: { sentinel.trust(device: device, trusted: $0) }
+                        HStack(spacing: 10) {
+                            Button("Explore…") {
+                                selectedDevice = device
+                            }
+                            .controlSize(.small)
+
+                            Toggle(
+                                "Trusted",
+                                isOn: Binding(
+                                    get: { device.isTrusted },
+                                    set: { sentinel.trust(device: device, trusted: $0) }
+                                )
                             )
-                        )
-                        .toggleStyle(.checkbox)
+                            .toggleStyle(.checkbox)
+                        }
                     }
                     .padding(.vertical, 4)
                 }
             }
+        }
+        .sheet(item: $selectedDevice) { device in
+            DeviceExplorerSheet(device: device)
+                .environmentObject(sentinel)
         }
     }
 

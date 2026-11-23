@@ -151,4 +151,28 @@ final class ParserTests: XCTestCase {
         let adguard = ExternalVantageCollector.parseAdGuardStats(adguardJSON)
         XCTAssertEqual(adguard.chattyClients.first?.suspiciousDomains, ["sdk.earnapp.com"])
     }
+
+    func testDeviceExplorerParsers() throws {
+        let pingOut = """
+        PING 192.168.1.42 (192.168.1.42): 56 data bytes
+        --- 192.168.1.42 ping statistics ---
+        4 packets transmitted, 4 packets received, 0.0% packet loss
+        round-trip min/avg/max/stddev = 1.120/2.450/4.010/0.800 ms
+        """
+        let ping = DeviceExplorer.parsePingOutput(pingOut)
+        XCTAssertEqual(ping.transmitted, 4)
+        XCTAssertEqual(ping.received, 4)
+        XCTAssertEqual(ping.packetLossPercent, 0.0, accuracy: 0.01)
+        XCTAssertEqual(ping.avgLatencyMs ?? 0, 2.450, accuracy: 0.01)
+
+        let html = "<html><head><TITLE>  Router Admin Portal \n</TITLE></head></html>"
+        XCTAssertEqual(DeviceExplorer.extractHTMLTitle(from: html), "Router Admin Portal")
+
+        let bannerData = Data([0x53, 0x53, 0x48, 0x2D, 0x32, 0x2E, 0x30, 0x00, 0xFF, 0x0A])
+        XCTAssertEqual(DeviceExplorer.sanitizeBanner(bannerData), "SSH-2.0")
+
+        let wol = try XCTUnwrap(DeviceExplorer.buildWakeOnLANPacket(mac: "aa:bb:cc:dd:ee:ff"))
+        XCTAssertEqual(wol.count, 102)
+        XCTAssertEqual(Array(wol.prefix(6)), [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
+    }
 }
