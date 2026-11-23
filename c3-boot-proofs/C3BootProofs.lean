@@ -530,3 +530,5 @@ import C3BootProofs.Theorems.Trace
 import C3BootProofs.Spec.TrustRoot
 import C3BootProofs.Theorems.TrustRoot
 import C3BootProofs.Audit
+import C3BootProofs.Models.EcdsaField
+import C3BootProofs.Models.EcdsaGroup
