@@ -178,6 +178,14 @@ invertible modulo `p`.
 Left: those three model facts; the code and constants hypotheses from the
 image the ROM loads; and `boot_main`.
 
+The model facts need polynomial identities modulo the curves' primes.
+`grind` depends on `Classical.choice`, so
+[`Ring/`](../c3-boot-proofs/C3BootProofs/Ring/) has a normalizer with two
+tactics that use only `propext`: `ring_eq` proves `Int` and `Nat`
+identities, and `ring_mod` proves congruences, including ones that hold
+modulo curve-equation hypotheses with cofactors that
+[`ring-cofactors.py`](../c3-boot-proofs/scripts/ring-cofactors.py) computes.
+
 `_start` and the clock and watchdog `setup` that runs before `boot_main`
 aren't among the extracted functions, so they are trusted.
 
