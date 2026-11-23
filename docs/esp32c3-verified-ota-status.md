@@ -164,15 +164,15 @@ loop the code runs is restated as the spec's function by a lemma in the
 `Sv*Link.lean` files (`parseLeaf_code`, `readExtensions_code`,
 `parseTimestamp_code`, `readTstInfo_code`, `treeSize_code`, `cosig_chain`,
 and others), and the constants in the image's data are the spec's
-(`SvConstsLink.lean`). It depends only on `propext` and `Quot.sound`. It
-assumes five facts about the models, stated in
-[`SvModels.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvModels.lean):
+(`SvConstsLink.lean`), as are the Rekor entry's pieces, which
+`BootloaderData6.lean` extracts (`SvRekorData`). It depends only on
+`propext` and `Quot.sound`. It assumes four facts about the models, stated
+in [`SvModels.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvModels.lean):
 that the P-384, P-256, and Ed25519 checks accept only signatures that
-`p384Verify`, `p256Verify`, and `ed25519Verify` accept; that a key the code
-decodes is on P-256; and that the Rekor entry's constants and the key ID's
-`0x01` are where the image puts them.
+`p384Verify`, `p256Verify`, and `ed25519Verify` accept, and that a key the
+code decodes is on P-256.
 
-Left: those five model facts; the code and constants hypotheses from the
+Left: those four model facts; the code and constants hypotheses from the
 image the ROM loads; and `boot_main`.
 
 `_start` and the clock and watchdog `setup` that runs before `boot_main`

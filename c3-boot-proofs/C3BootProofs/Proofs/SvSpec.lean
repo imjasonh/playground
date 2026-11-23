@@ -91,7 +91,7 @@ theorem sv_verify_spec {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle
     (RK0 : SvRkCode Me)
     (hOk : SvOutOk B (reg n a0))
     (MP384 : SvP384Model Me) (MP256 : SvP256Model Me) (MEd : ∀ sg, SvEdModel (sigMem Me (B + 0x21A0 + BitVec.ofNat 32 0x420) sg))
-    (MGs : SvGsModel Me) (RK : SvRekorConsts Me) :
+    (MGs : SvGsModel Me) (RD : SvRekorData Me) :
     SvErrRet B (reg n a0) (fun k => reg n (savedReg k)) n ∨ Panics n ∨
     ∃ v, sigstoreVerify bundle root (memBytes Me (reg n a3) 32) = some v ∧
       SvOkRet B (reg n a0) (fun k => reg n (savedReg k)) n (BitVec.ofNat 32 (v.signedTime % 2 ^ 32))
@@ -316,7 +316,7 @@ theorem sv_verify_spec {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle
     (Nat.le_refl _) (fun _ => rfl) (fun h => absurd (by decide) h)
   have hm2 := hm1 c203
   subst hm2
-  rw [hS, sv_newline SD0, RK.one, Elg.key, ofNat_toNat_lt h7] at hm'
+  rw [hS, sv_newline SD0, keyIdOne RK0, Elg.key, ofNat_toNat_lt h7] at hm'
   have hsg := checkpointSigs_sig _ hm' (fun s0 e => by cases e)
   have hlen := notAdd_toNat hsl
   rw [hS] at hlen
@@ -370,7 +370,7 @@ theorem sv_verify_spec {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle
   rw [hli] at hlt
   rw [decide_eq_true hlt, require_true]
   simp only [Option.bind_some]
-  rw [hli, RK.leaf, RK.pre, RK.mid1, RK.mid2, RK.post, Bd.leaf.2, Bd.inclusionProof.2] at c206
+  rw [hli, RD.leaf', RD.pre', RD.mid1', RD.mid2', RD.post', Bd.leaf.2, Bd.inclusionProof.2] at c206
   have hrk : ∀ d sg c, rekorLeafHash d sg c = sha256 ([] ++ [0x00] ++ rekorPre ++ base64Encode d ++ rekorMid1 ++
       base64Encode sg ++ rekorMid2 ++ base64Encode c ++ rekorPost) := fun d sg c => by
     unfold rekorLeafHash leafHash rekorEntry

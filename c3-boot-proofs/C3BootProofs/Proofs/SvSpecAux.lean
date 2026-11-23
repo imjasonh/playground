@@ -2,17 +2,63 @@ import C3BootProofs.Proofs.SvModels
 import C3BootProofs.Proofs.SvWinLink
 import C3BootProofs.Proofs.SvCosigLink
 import C3BootProofs.Proofs.SvConstsLink
+import C3BootProofs.Image.BootloaderData6
 
 /-!
 # Facts `sv_verify_spec` uses
 
 Lengths and byte ranges of hashes and of the checkpoint signature, the
-memory `ed25519_verify` reads, and the code's length arithmetic.
+memory `ed25519_verify` reads, the code's length arithmetic, and the Rekor
+entry's constants in the image.
 -/
 
 namespace C3.RV32.Sv
 
 open C3.Image C3.RV32.P3
+
+theorem codeIn_memBytes {M : Word → BitVec 8} {base : Word} {code : List Nat} (C : CodeIn M base code)
+    (hb : ∀ b ∈ code, b < 256) : memBytes M base code.length = code := by
+  unfold memBytes
+  apply List.ext_getElem
+  · rw [List.length_map, List.length_range]
+  · intro i h1 h2
+    simp only [List.getElem_map, List.getElem_range]
+    rw [C i h2]
+    unfold byteAt
+    rw [BitVec.toNat_ofNat, List.getD_eq_getElem?_getD, List.getElem?_eq_getElem h2, Option.getD_some]
+    exact Nat.mod_eq_of_lt (hb _ (List.getElem_mem h2))
+
+/-- The Rekor entry's constant pieces, where the image puts them. -/
+structure SvRekorData (M : Word → BitVec 8) : Prop where
+  leaf : CodeIn M (BitVec.ofNat 32 svRekorLeafAddress) svRekorLeafData
+  pre : CodeIn M (BitVec.ofNat 32 svRekorPreAddress) svRekorPreData
+  mid1 : CodeIn M (BitVec.ofNat 32 svRekorMid1Address) svRekorMid1Data
+  mid2 : CodeIn M (BitVec.ofNat 32 svRekorMid2Address) svRekorMid2Data
+  post : CodeIn M (BitVec.ofNat 32 svRekorPostAddress) svRekorPostData
+
+theorem SvRekorData.leaf' {M : Word → BitVec 8} (D : SvRekorData M) :
+    memBytes M (BitVec.ofNat 32 0x3FCC4106) 1 = [0x00] :=
+  codeIn_memBytes D.leaf (by decide)
+
+theorem SvRekorData.pre' {M : Word → BitVec 8} (D : SvRekorData M) :
+    memBytes M (BitVec.ofNat 32 0x3FCC46F0) 0x71 = rekorPre :=
+  (codeIn_memBytes D.pre (by decide)).trans (by decide)
+
+theorem SvRekorData.mid1' {M : Word → BitVec 8} (D : SvRekorData M) :
+    memBytes M (BitVec.ofNat 32 0x3FCC4761) 0x1B = rekorMid1 :=
+  (codeIn_memBytes D.mid1 (by decide)).trans (by decide)
+
+theorem SvRekorData.mid2' {M : Word → BitVec 8} (D : SvRekorData M) :
+    memBytes M (BitVec.ofNat 32 0x3FCC477C) 0x54 = rekorMid2 :=
+  (codeIn_memBytes D.mid2 (by decide)).trans (by decide)
+
+theorem SvRekorData.post' {M : Word → BitVec 8} (D : SvRekorData M) :
+    memBytes M (BitVec.ofNat 32 0x3FCC47D0) 7 = rekorPost :=
+  (codeIn_memBytes D.post (by decide)).trans (by decide)
+
+/-- The `0x01` of the key ID, which `merkleNodeHash` also prefixes. -/
+theorem keyIdOne {M : Word → BitVec 8} (D : SvRkCode M) : memBytes M (BitVec.ofNat 32 0x3FCC47D7) 1 = [0x01] :=
+  codeIn_memBytes D.pre (by decide)
 
 theorem round_length (w : Array Sha256.W32) (v : List Sha256.W32) (t : Nat) : (Sha256.round w v t).length = v.length := by
   unfold Sha256.round

@@ -40,13 +40,4 @@ def SvEdModel (M : Word → BitVec 8) : Prop :=
 def SvGsModel (M : Word → BitVec 8) : Prop :=
   ∀ bp, M bp = 4 → GsOk M bp → (C3.p256.decodePoint (memBytes M bp 65)).isSome = true
 
-/-- The constants of the Rekor entry and the key ID outside `SvData`. -/
-structure SvRekorConsts (M : Word → BitVec 8) : Prop where
-  leaf : memBytes M (BitVec.ofNat 32 0x3FCC4106) 1 = [0x00]
-  pre : memBytes M (BitVec.ofNat 32 0x3FCC46F0) 0x71 = rekorPre
-  mid1 : memBytes M (BitVec.ofNat 32 0x3FCC4761) 0x1B = rekorMid1
-  mid2 : memBytes M (BitVec.ofNat 32 0x3FCC477C) 0x54 = rekorMid2
-  post : memBytes M (BitVec.ofNat 32 0x3FCC47D0) 7 = rekorPost
-  one : memBytes M (BitVec.ofNat 32 0x3FCC47D7) 1 = [0x01]
-
 end C3.RV32.Sv
