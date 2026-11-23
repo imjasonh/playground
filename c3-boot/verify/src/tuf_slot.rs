@@ -4,7 +4,7 @@
 //! This replaces the key-set chain and trust-root blob of
 //! [`crate::accept`] with TUF metadata that the device checks from a pinned
 //! root, and the release identity with a compiled-in policy. The bootloader
-//! doesn't call it yet; `c3-boot/TODO.md` describes the cutover.
+//! doesn't call it yet; the cutover plan is in c3-boot's task list.
 
 use crate::accept::Accepted;
 use crate::error::Error;
