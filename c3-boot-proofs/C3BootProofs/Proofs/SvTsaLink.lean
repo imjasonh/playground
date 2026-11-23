@@ -207,7 +207,7 @@ set_option maxHeartbeats 8000000 in
 attributes and the `TSTInfo` are separate hypotheses. -/
 theorem parseTimestamp_code {M : Word → BitVec 8}
     {p0 l0 pr lr ps ls pa la pc lc pe le pd ld pq lq pg lg pn ln pk lk pt lt pv lv psd lsd q ql pi li pj lj pw lw px lx
-      py ly pz lz op53 ol53 op58 ol58 vp23 vl23 vp19 vl19 : Word} {op8 ol8 gt : Nat}
+      py ly pz lz op53 ol53 op58 ol58 vp23 vl23 vp19 vl19 op8 : Word} {ol8 gt : Nat}
     {tl10 tl22 te33 tl41 to53 tl2a tl15 te26 tl32 te41 tl49 to58 tl2b te23 tl2c tl13 te25 tl31 te39 tl45 te8 te19 : DerTlv}
     {md imp sr ss : Bytes}
     (hsd : memBytes M (BitVec.ofNat 32 0x3FCC4859) 9 = oidSignedData)
@@ -505,7 +505,7 @@ theorem ordering_nonce_cont {M : Word → BitVec 8} {B p l r8 q ql : Word} {β :
 set_option maxHeartbeats 8000000 in
 /-- The `TSTInfo` the code parsed, as `readTstInfo`. -/
 theorem readTstInfo_code {M : Word → BitVec 8}
-    {B p0 l0 pc lc pj lj pm lm pi li ps ls pg lg p3 l3 r8 p4 l4 p5 l5 p6 l6 op32 ol32 vp51 vl51 ip2 il2 : Word}
+    {B p0 l0 pc lc pj lj pm lm pi li ps ls pg lg p3 l3 r8 p4 l4 p5 l5 op32 ol32 vp51 vl51 ip2 il2 : Word}
     {tm : Nat} {tl13 te26 to32 tl36 te45 te51 tl2 tlg : DerTlv}
     (h148 : derElement 0x30 (memBytes M p0 l0.toNat) = .ok tl13)
     (h149 : l0 - BitVec.ofNat 32 (tl13.header + tl13.len) = 0)
