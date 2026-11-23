@@ -74,6 +74,9 @@ final class MCULabController: NSObject, ObservableObject {
     private var profilePeripheral: CBPeripheral?
     private var profileTargetDeviceId: UUID?
     private var profileTargetSampleId: UUID?
+    private var profileReassembler = MCULabBlobReassembler()
+    private var coredumpReassembler = MCULabBlobReassembler()
+    private var coredumpChar: CBCharacteristic?
 
     private var lastSeqByDevice: [UUID: UInt8] = [:]
     private var simulatedSeq: UInt8 = 0
@@ -89,6 +92,7 @@ final class MCULabController: NSObject, ObservableObject {
     private let otaDataUUID = CBUUID(string: MCULabProtocol.otaDataUUIDString)
     private let otaStatusUUID = CBUUID(string: MCULabProtocol.otaStatusUUIDString)
     private let profileCharUUID = CBUUID(string: MCULabProtocol.profileCharUUIDString)
+    private let coredumpCharUUID = CBUUID(string: MCULabProtocol.coredumpCharUUIDString)
 
     init(
         defaults: UserDefaults = .standard,
@@ -439,7 +443,7 @@ final class MCULabController: NSObject, ObservableObject {
         }
     }
 
-    private func startStreamingOTAChunks() {
+    private func startStreamingOTAChunks(fromOffset startOffset: UInt32 = 0) {
         guard let peripheral = otaPeripheral,
               let dataChar = otaDataChar,
               let ctrlChar = otaControlChar,
@@ -450,17 +454,22 @@ final class MCULabController: NSObject, ObservableObject {
         otaStreamTask?.cancel()
         let mtu = max(peripheral.maximumWriteValueLength(for: .withoutResponse), 180)
         let chunkSize = min(mtu, 480)
-        let chunks = MCULabProtocol.chunkFirmware(firmware, chunkSize: chunkSize)
+        let chunks = MCULabProtocol.chunkFirmwareFramed(
+            firmware,
+            startingAt: startOffset,
+            maxPacketBytes: chunkSize
+        )
         let total = UInt32(firmware.count)
-        otaPhase = .streaming(written: 0, total: total)
-        otaStatusText = "Streaming \(total) bytes in \(chunks.count) BLE packets (\(chunkSize) B/pkt)…"
+        otaPhase = .streaming(written: startOffset, total: total)
+        let resumeNote = startOffset > 0 ? " (resuming at \(startOffset) B)" : ""
+        otaStatusText = "Streaming \(total) bytes\(resumeNote) in \(chunks.count) framed BLE packets (\(chunkSize) B/pkt)…"
 
         otaStreamTask = Task { @MainActor [weak self] in
-            var sentBytes: UInt32 = 0
-            for (idx, chunk) in chunks.enumerated() {
+            var sentBytes: UInt32 = startOffset
+            for (idx, item) in chunks.enumerated() {
                 if Task.isCancelled { return }
-                peripheral.writeValue(chunk, for: dataChar, type: .withoutResponse)
-                sentBytes += UInt32(chunk.count)
+                peripheral.writeValue(item.frame, for: dataChar, type: .withoutResponse)
+                sentBytes += UInt32(item.payloadCount)
                 if idx % 16 == 0 || sentBytes == total {
                     self?.otaPhase = .streaming(written: sentBytes, total: total)
                     try? await Task.sleep(for: .milliseconds(12))
@@ -484,8 +493,8 @@ final class MCULabController: NSObject, ObservableObject {
         switch parsed {
         case .idle:
             break
-        case .ready:
-            startStreamingOTAChunks()
+        case .ready(_, let offset):
+            startStreamingOTAChunks(fromOffset: offset)
         case .progress(let written, let total):
             otaPhase = .streaming(written: written, total: total)
             let pct = total > 0 ? Int((Double(written) / Double(total) * 100).rounded()) : 0
@@ -1021,6 +1030,51 @@ final class MCULabController: NSObject, ObservableObject {
         baseURL.appending(path: "v1/traces")
     }
 
+    static func resolveCoredumpsURL(from baseURL: URL) -> URL {
+        baseURL.appending(path: "v1/coredumps")
+    }
+
+    private func uploadCoredump(_ elfData: Data, for peripheral: CBPeripheral, characteristic: CBCharacteristic) {
+        let trimmed = otelEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let metricsURL = Self.resolveMetricsURL(from: trimmed),
+              let baseURL = Self.resolveBaseURL(from: metricsURL)
+        else {
+            return
+        }
+        let coredumpsURL = Self.resolveCoredumpsURL(from: baseURL)
+        let profile = latestSample?.profile
+        let payload: [String: Any] = [
+            "app": profile?.app ?? selectedFirmwareTarget.rawValue,
+            "board": profile?.board ?? selectedFirmwareTarget.displayName,
+            "deviceId": peripheral.identifier.uuidString,
+            "gitSha": profile?.gitSha ?? "",
+            "buildId": profile?.buildId ?? "",
+            "elfBase64": elfData.base64EncodedString(),
+        ]
+        guard let body = try? JSONSerialization.data(withJSONObject: payload) else {
+            return
+        }
+        let shouldAttest = useAppAttest
+        Task { @MainActor in
+            do {
+                let res = try await self.postOTLP(
+                    body: body,
+                    url: coredumpsURL,
+                    baseURL: baseURL,
+                    action: "coredump",
+                    authorizeWithAppAttest: shouldAttest,
+                    traceparent: nil
+                )
+                if (200..<300).contains(res.status), let clear = "CLEAR".data(using: .utf8) {
+                    peripheral.writeValue(clear, for: characteristic, type: .withResponse)
+                    self.lastForwardStatus = "Uploaded \(elfData.count) B flash coredump and cleared MCU partition."
+                }
+            } catch {
+                self.lastForwardStatus = "Coredump upload failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
     private func applyBluetoothState(_ state: CBManagerState) {
         bluetoothState = state
         if state != .poweredOn {
@@ -1134,6 +1188,7 @@ extension MCULabController: CBPeripheralDelegate {
         let dataUUID = CBUUID(string: MCULabProtocol.otaDataUUIDString)
         let statusUUID = CBUUID(string: MCULabProtocol.otaStatusUUIDString)
         let profileUUID = CBUUID(string: MCULabProtocol.profileCharUUIDString)
+        let coredumpUUID = CBUUID(string: MCULabProtocol.coredumpCharUUIDString)
         guard let services = peripheral.services else {
             Task { @MainActor in
                 self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
@@ -1143,7 +1198,7 @@ extension MCULabController: CBPeripheralDelegate {
         var foundService = false
         for service in services where service.uuid == serviceUUID {
             foundService = true
-            peripheral.discoverCharacteristics([ctrlUUID, dataUUID, statusUUID, profileUUID], for: service)
+            peripheral.discoverCharacteristics([ctrlUUID, dataUUID, statusUUID, profileUUID, coredumpUUID], for: service)
         }
         if !foundService {
             Task { @MainActor in
@@ -1177,9 +1232,18 @@ extension MCULabController: CBPeripheralDelegate {
             let isProfileOnly = self.profilePeripheral?.identifier == peripheral.identifier
                 && self.otaPeripheral?.identifier != peripheral.identifier
             var foundProfileChar = false
+            self.profileReassembler.reset()
+            self.coredumpReassembler.reset()
             for ch in chars {
                 if ch.uuid == self.profileCharUUID, self.collectDetailedProfile {
                     foundProfileChar = true
+                    if ch.properties.contains(.notify) {
+                        peripheral.setNotifyValue(true, for: ch)
+                    } else {
+                        peripheral.readValue(for: ch)
+                    }
+                } else if ch.uuid == self.coredumpCharUUID {
+                    self.coredumpChar = ch
                     peripheral.readValue(for: ch)
                 }
                 if !isProfileOnly {
@@ -1209,15 +1273,43 @@ extension MCULabController: CBPeripheralDelegate {
     ) {
         let statusUUID = CBUUID(string: MCULabProtocol.otaStatusUUIDString)
         let profileUUID = CBUUID(string: MCULabProtocol.profileCharUUIDString)
+        let coredumpUUID = CBUUID(string: MCULabProtocol.coredumpCharUUIDString)
         if characteristic.uuid == profileUUID {
-            let decoded = (error == nil) ? characteristic.value.flatMap(MCULabProtocol.decodeWakeProfile) : nil
+            let rawValue = (error == nil) ? characteristic.value : nil
             let deviceId = peripheral.identifier
             Task { @MainActor in
-                if let decoded {
+                guard let raw = rawValue else {
+                    self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
+                    return
+                }
+                let payload: Data
+                if raw.count >= 2 && raw[raw.startIndex] == 0x4D && raw[raw.startIndex + 1] == 0x43 {
+                    guard let assembled = self.profileReassembler.push(raw) else {
+                        return // Waiting for remaining chunks
+                    }
+                    payload = assembled
+                } else {
+                    payload = raw
+                }
+                if let decoded = MCULabProtocol.decodeWakeProfile(payload) {
                     self.attachWakeProfile(decoded, deviceId: deviceId)
                     self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: false)
                 } else {
                     self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
+                }
+            }
+            return
+        }
+        if characteristic.uuid == coredumpUUID {
+            let rawValue = (error == nil) ? characteristic.value : nil
+            Task { @MainActor in
+                guard let raw = rawValue else { return }
+                if let text = String(data: raw, encoding: .utf8), text.trimmingCharacters(in: .whitespacesAndNewlines) == "AVAILABLE" {
+                    peripheral.setNotifyValue(true, for: characteristic)
+                    return
+                }
+                if let assembled = self.coredumpReassembler.push(raw) {
+                    self.uploadCoredump(assembled, for: peripheral, characteristic: characteristic)
                 }
             }
             return

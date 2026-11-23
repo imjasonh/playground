@@ -81,7 +81,7 @@ enum MCULabOTACommand: Equatable {
 /// Status notification sent by the MCU on the BLE GATT OTA status characteristic.
 enum MCULabOTAStatus: Equatable {
     case idle
-    case ready(total: UInt32)
+    case ready(total: UInt32, offset: UInt32 = 0)
     case progress(written: UInt32, total: UInt32)
     case ok(sha256: String)
     case error(message: String)
@@ -174,6 +174,7 @@ struct MCULabWakeProfile: Equatable, Decodable {
     var chip: String? = nil
     var app: String? = nil
     var gitSha: String? = nil
+    var buildId: String? = nil
     var freeHeapBytes: UInt32
     var minFreeHeapBytes: UInt32
     var stackHighWaterBytes: UInt32
@@ -189,12 +190,62 @@ struct MCULabWakeProfile: Equatable, Decodable {
         case chip
         case app
         case gitSha = "git_sha"
+        case buildId = "build_id"
         case freeHeapBytes = "free_heap"
         case minFreeHeapBytes = "min_heap"
         case stackHighWaterBytes = "stack_hw"
         case cpuCycles = "cycles"
         case spans
         case pcSamples = "pcs"
+    }
+}
+
+/// Reassembles chunked BLE GATT blob frames (`[0x4D, 0x43, index: u16 LE, total: u16 LE, payload...]`).
+struct MCULabBlobReassembler {
+    private var total: UInt16 = 0
+    private var parts: [Data?] = []
+    private var count: Int = 0
+
+    mutating func reset() {
+        total = 0
+        parts.removeAll(keepingCapacity: false)
+        count = 0
+    }
+
+    /// Push a raw BLE packet. Returns the reassembled payload once all frames arrive.
+    mutating func push(_ raw: Data) -> Data? {
+        guard raw.count >= 6,
+              raw[raw.startIndex] == 0x4D,
+              raw[raw.startIndex + 1] == 0x43
+        else {
+            return nil
+        }
+        let idx = raw.readUInt16LE(at: 2)
+        let frameTotal = raw.readUInt16LE(at: 4)
+        guard frameTotal > 0, idx < frameTotal else {
+            return nil
+        }
+        if total != frameTotal {
+            total = frameTotal
+            parts = Array(repeating: nil, count: Int(frameTotal))
+            count = 0
+        }
+        let slotIdx = Int(idx)
+        if parts[slotIdx] == nil {
+            parts[slotIdx] = raw.subdata(in: 6..<raw.count)
+            count += 1
+        }
+        guard count == Int(total) else {
+            return nil
+        }
+        var out = Data()
+        for part in parts {
+            if let part {
+                out.append(part)
+            }
+        }
+        reset()
+        return out
     }
 }
 
@@ -210,7 +261,8 @@ enum MCULabProtocol {
     static let otaDataUUIDString = "BEB5483E-36E1-4688-B7F5-EA07361BC302"
     static let otaStatusUUIDString = "1A3C0001-36E1-4688-B7F5-EA07361BC303"
     static let profileCharUUIDString = "1A3C0002-36E1-4688-B7F5-EA07361BC303"
-    static let otaSlotBytes: UInt32 = 0x1F_0000
+    static let coredumpCharUUIDString = "1A3C0003-36E1-4688-B7F5-EA07361BC303"
+    static let otaSlotBytes: UInt32 = 0x1E_0000
 
     static let flagDeepSleepWake: UInt8 = 1 << 0
     static let flagEpdAttached: UInt8 = 1 << 1
@@ -344,8 +396,8 @@ enum MCULabProtocol {
         switch status {
         case .idle:
             return "IDLE"
-        case .ready(let total):
-            return "READY total=\(total)"
+        case .ready(let total, let offset):
+            return offset == 0 ? "READY total=\(total)" : "READY total=\(total) offset=\(offset)"
         case .progress(let written, let total):
             return "PROGRESS written=\(written) total=\(total)"
         case .ok(let sha256):
@@ -367,12 +419,19 @@ enum MCULabProtocol {
         }
         if trimmed.hasPrefix("READY ") {
             let rest = trimmed.dropFirst(6).trimmingCharacters(in: .whitespaces)
-            guard rest.hasPrefix("total="),
-                  let total = UInt32(rest.dropFirst("total=".count))
-            else {
+            var total: UInt32?
+            var offset: UInt32 = 0
+            for part in rest.split(whereSeparator: \.isWhitespace).map(String.init) {
+                if part.hasPrefix("total=") {
+                    total = UInt32(part.dropFirst("total=".count))
+                } else if part.hasPrefix("offset=") {
+                    offset = UInt32(part.dropFirst("offset=".count)) ?? 0
+                }
+            }
+            guard let total else {
                 return nil
             }
-            return .ready(total: total)
+            return .ready(total: total, offset: offset)
         }
         if trimmed.hasPrefix("OK ") {
             let rest = trimmed.dropFirst(3).trimmingCharacters(in: .whitespaces)
@@ -404,6 +463,30 @@ enum MCULabProtocol {
         return nil
     }
 
+    /// Standard IEEE 802.3 CRC32 (polynomial `0xEDB88320`) matching `mcu-lab/src/protocol.rs`.
+    static func crc32(_ data: Data) -> UInt32 {
+        var crc: UInt32 = 0xFFFF_FFFF
+        for byte in data {
+            crc ^= UInt32(byte)
+            for _ in 0..<8 {
+                let mask = UInt32(bitPattern: -Int32(crc & 1))
+                crc = (crc >> 1) ^ (0xEDB8_8320 & mask)
+            }
+        }
+        return ~crc
+    }
+
+    /// Encode a framed OTA data chunk (`[b'O', b'T', offset: u32 LE, crc32: u32 LE, payload...]`).
+    static func encodeOTAChunkFrame(offset: UInt32, payload: Data) -> Data {
+        var out = Data(capacity: 10 + payload.count)
+        out.append(0x4F) // 'O'
+        out.append(0x54) // 'T'
+        out.appendUInt32LE(offset)
+        out.appendUInt32LE(crc32(payload))
+        out.append(payload)
+        return out
+    }
+
     /// Compute the lowercase hex SHA-256 digest of a firmware binary.
     static func sha256Hex(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -421,6 +504,29 @@ enum MCULabProtocol {
             offset = end
         }
         return chunks
+    }
+
+    /// Split a firmware binary starting at `startOffset` into offset+CRC32 framed BLE packets.
+    static func chunkFirmwareFramed(
+        _ data: Data,
+        startingAt startOffset: UInt32 = 0,
+        maxPacketBytes: Int = 480
+    ) -> [(offset: UInt32, frame: Data, payloadCount: Int)] {
+        let payloadLimit = max(maxPacketBytes - 10, 20)
+        let start = min(Int(startOffset), data.count)
+        var out: [(offset: UInt32, frame: Data, payloadCount: Int)] = []
+        var offset = start
+        while offset < data.count {
+            let end = min(offset + payloadLimit, data.count)
+            let slice = data.subdata(in: offset..<end)
+            out.append((
+                offset: UInt32(offset),
+                frame: encodeOTAChunkFrame(offset: UInt32(offset), payload: slice),
+                payloadCount: slice.count
+            ))
+            offset = end
+        }
+        return out
     }
 
     /// Format a single-line summary matching `format_status_line` in `mcu-lab/src/protocol.rs`.
@@ -565,6 +671,9 @@ enum MCULabProtocol {
             }
             if let gitSha = profile.gitSha, !gitSha.isEmpty {
                 rootAttrs.append(#"{"key":"mcu.git_sha","value":{"stringValue":"\#(escapeJSONString(gitSha))"}}"#)
+            }
+            if let buildId = profile.buildId, !buildId.isEmpty {
+                rootAttrs.append(#"{"key":"mcu.build_id","value":{"stringValue":"\#(escapeJSONString(buildId))"}}"#)
             }
             rootAttrs.append(#"{"key":"mcu.heap.free_bytes","value":{"intValue":"\#(profile.freeHeapBytes)"}}"#)
             rootAttrs.append(#"{"key":"mcu.heap.min_free_bytes","value":{"intValue":"\#(profile.minFreeHeapBytes)"}}"#)
