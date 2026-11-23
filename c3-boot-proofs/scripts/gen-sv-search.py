@@ -108,7 +108,7 @@ def write(fname):
     O(f"    (∀ i, i < N → ∀ {' '.join(ps)}, {L.peq('i')} → {vtext}) →")
     O("    SvErrRet B out v n0 ∨ ∃ k, k < N ∧")
     O(f"      (∀ i, i < k → ∀ {' '.join(ps)}, {L.peq('i')} → ¬ ({L.primed(hm)})) ∧")
-    O(f"      ∃ {' '.join(ps)}, {L.peq('k')} ∧")
+    O(f"      ∃ {' '.join(ps)}, {L.peq('k')} ∧ ({L.primed(hm)}) ∧")
     O("      ∃ nk, Steps n0 nk ∧ reg nk (3 : Fin 32) = reg n0 (3 : Fin 32) ∧ reg nk (4 : Fin 32) = reg n0 (4 : Fin 32) ∧")
     O(f"      SvKeepL B n0.mem nk.mem {L.kl} ∧")
     O(f"      {okname} {' '.join(fixed_names)} M0 {' '.join(ps)} nk := by")
@@ -144,7 +144,7 @@ def write(fname):
     O(f"    · rcases {hn_} {L.named()} {' '.join(hargs)} with {H.errpat} | okh")
     O("      · exact .inl e")
     O(f"      · exact .inr ⟨0, Nat.succ_pos N, fun i hi => absurd hi (Nat.not_lt_zero i), {', '.join(loopv)}, "
-      f"(svIter_zero _ {tup}).symm, n0, .refl _, rfl, rfl, SvKeepL.refl.mono (by decide), okh⟩")
+      f"(svIter_zero _ {tup}).symm, hm, n0, .refl _, rfl, rfl, SvKeepL.refl.mono (by decide), okh⟩")
     args = L.args({matchn: 'hm'})
     ch = Chain(lambda x: None)
     _, names1, pats1, _ = ch.call(st, {p: a for (p, _), a in zip(st.params, args)})
@@ -159,10 +159,10 @@ def write(fname):
     vs = " ".join(ps)
     O(f"    rcases ih (fun {vs} e0 => hz {vs} (e0.trans (svIter_succ _ N {tup}).symm)) {' '.join(hargs2)}"
       f" (fun i hi {vs} e0 => H (i + 1) (Nat.succ_lt_succ hi) {vs} (e0.trans (svIter_succ _ i {tup}).symm))"
-      f" with e | ⟨k, hk, hn, {', '.join(ps)}, e0, nk, cs, h3, h4, hkl, okh⟩")
+      f" with e | ⟨k, hk, hn, {', '.join(ps)}, e0, hmk, nk, cs, h3, h4, hkl, okh⟩")
     O("    · exact .inl (SvErrRet.pre c1 r1_3 r1_4 (fun x hx => (fR1 x hx).trans (fM x hx).symm) e)")
     O(f"    · refine .inr ⟨k + 1, by omega, fun i hi {vs} e1 => ?_, {', '.join(ps)}, "
-      f"(e0.trans (svIter_succ _ k {tup}).symm), nk, c1.trans cs, h3.trans r1_3, h4.trans r1_4, "
+      f"(e0.trans (svIter_succ _ k {tup}).symm), hmk, nk, c1.trans cs, h3.trans r1_3, h4.trans r1_4, "
       "(K1_L.trans hkl).mono (by decide), okh⟩")
     O("      cases i with")
     O(f"      | zero => cases e1.trans (svIter_zero _ {tup}); exact hm")
@@ -208,7 +208,7 @@ def stage_form(O, name, okname, L, H, ps, valid, hm, cnt):
     O("    SvErrRet B out v n0 ∨")
     O("    (∃ k, k < N ∧")
     O(f"      (∀ i, i < k → ∀ {' '.join(ps)}, {L.peq('i')} → ¬ ({L.primed(hm)})) ∧")
-    O(f"      ∃ {' '.join(ps)}, {L.peq('k')} ∧")
+    O(f"      ∃ {' '.join(ps)}, {L.peq('k')} ∧ ({L.primed(hm)}) ∧")
     if H.sc_parts:
         O("      " + " ∧ ".join(L.primed(x) for x in H.sc_parts) + " ∧")
     O("    ∃ n', Steps n0 n' ∧")
@@ -220,14 +220,14 @@ def stage_form(O, name, okname, L, H, ps, valid, hm, cnt):
                                             .replace("∃ k, k < N ∧", f"∃ k, k < {nb} ∧"))
     fixed_names = list(dict.fromkeys(b for g in L.fixed for b in g[1:g.rindex(' : ')].split()))
     O(f"  rcases {name} {' '.join(f'({b} := {b})' for b in fixed_names)} F hret hO M0 N hz {' '.join(hn)} H with e | "
-      f"⟨k, hk, hn, {', '.join(ps)}, e0, nk, cs, hr3, hr4, hkl, okh⟩")
+      f"⟨k, hk, hn, {', '.join(ps)}, e0, hmk, nk, cs, hr3, hr4, hkl, okh⟩")
     O("  · exact .inl e")
     O(f"  unfold {okname} at okh")
     O(f"  obtain ⟨{', '.join(nm + ['n1', 'cn'] + [f'f_{k}' for k, _ in facts])}⟩ := okh")
     terms = []
     for k, _ in facts:
         terms.append({"r3": "f_r3.trans hr3", "r4": "f_r4.trans hr4", "KL": "(hkl.trans f_KL).mono (by decide)"}.get(k, f"f_{k}"))
-    O(f"  exact .inr ⟨k, hk, hn, {', '.join(ps)}, e0, {', '.join(nm + ['n1', 'cs.trans cn'] + terms)}⟩")
+    O(f"  exact .inr ⟨k, hk, hn, {', '.join(ps)}, e0, hmk, {', '.join(nm + ['n1', 'cs.trans cn'] + terms)}⟩")
 
 
 
@@ -282,7 +282,7 @@ def run_form(O, name, L, ps, valid, hm, endt, cnt, ptr, bound):
     O("    · rw [h1]; bv_omega")
     O("    · rw [h2, Nat.mul_one]; exact (slice.drop (k := i) (by omega)).shrink (by omega)")
     O(f"  rcases {name}_st {' '.join(f'({b} := {b})' for b in fixed_names)} ({cnt} := {zero}) (N := {nb}) "
-      f"F hret hO M0 HZ {' '.join(hn)} HH with e | ⟨k, hk, hn, {', '.join(ps)}, e0, rest⟩")
+      f"F hret hO M0 HZ {' '.join(hn)} HH with e | ⟨k, hk, hn, {', '.join(ps)}, e0, hmk, rest⟩")
     O("  · exact .inl e")
     O(f"  have h1 := congrArg (fun s => {proj(j_cnt)}) e0")
     O(f"  have h2 := congrArg (fun s => {proj(j_ptr)}) e0")
@@ -290,7 +290,7 @@ def run_form(O, name, L, ps, valid, hm, endt, cnt, ptr, bound):
     O(f"  rw [{inc(j_cnt)}] at h1")
     O(f"  rw [{inc(j_ptr)}] at h2")
     O("  simp only at h1 h2")
-    O(f"  exact .inr ⟨k, hk, hn, {', '.join(ps)}, e0, h1, h2, rest⟩")
+    O(f"  exact .inr ⟨k, hk, hn, {', '.join(ps)}, e0, hmk, h1, h2, rest⟩")
 
 if __name__ == "__main__":
     for f in sys.argv[1:] or SEARCHES:

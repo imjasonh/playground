@@ -239,7 +239,7 @@ theorem sv_verify_72 {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : M
       (sl0'_2_1 ≠ 0) ∧ (sl2'_2_1 ≠ 0) ∧ (sl4'_2_1 ≠ 0) ∧ (sl6'_2_1 ≠ 0) ∧ ((if BitVec.ult 0 (sl8'_2_1) then (1 : Word) else 0) &&& ((f30'_2_1) &&& (f34'_2_1)) ≠ 0) ∧ (memBytes M0 (((lp + BitVec.ofNat 32 t_1_1_1.header)) + BitVec.ofNat 32 (tl1_2_1_1.header + tl1_2_1_1.len)) ((BitVec.ofNat 32 (tl8_2_1_1.header + tl8_2_1_1.len)).toNat) = memBytes M0 ((((((lp + BitVec.ofNat 32 t_1_1_1.header)) + BitVec.ofNat 32 tl1_2_1_1.header) + BitVec.ofNat 32 (tl29_2_1_1.header + tl29_2_1_1.len))) + BitVec.ofNat 32 (tl2_3_1_1.header + tl2_3_1_1.len)) ((BitVec.ofNat 32 (tl9_3_1_1.header + tl9_3_1_1.len)).toNat)) ∧ ∃ sr43_2_1 ss43_2_1, ecdsaSigOf 48 M0 (bp16_2_1_1) ((bl16_2_1_1.toNat)) = .ok (sr43_2_1, ss43_2_1) ∧
       ∃ k_4_1, k_4_1 < 4 ∧
       (∀ i, i < k_4_1 → ∀ c'_4_1 q'_4_1, (c'_4_1, q'_4_1) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2)) + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), ((rootp) + BitVec.ofNat 32 0x3C)) → ¬ (memBytes M0 (memLoad32 M0 (q'_4_1 + 0xFFFFFFFC)) (memLoad32 M0 (q'_4_1 + 0x0)).toNat = memBytes M0 (((((((lp + BitVec.ofNat 32 t_1_1_1.header)) + BitVec.ofNat 32 tl1_2_1_1.header) + BitVec.ofNat 32 (tl29_2_1_1.header + tl29_2_1_1.len))) + BitVec.ofNat 32 (tl2_3_1_1.header + tl2_3_1_1.len)) + BitVec.ofNat 32 (tl9_3_1_1.header + tl9_3_1_1.len)) (BitVec.ofNat 32 (tl6_4_1_1.header + tl6_4_1_1.len)).toNat)) ∧
-      ∃ c'_4_1 q'_4_1, (c'_4_1, q'_4_1) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2)) + BitVec.ofNat 32 0x20)) k_4_1 ((BitVec.ofNat 32 0x80), ((rootp) + BitVec.ofNat 32 0x3C)) ∧
+      ∃ c'_4_1 q'_4_1, (c'_4_1, q'_4_1) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2)) + BitVec.ofNat 32 0x20)) k_4_1 ((BitVec.ofNat 32 0x80), ((rootp) + BitVec.ofNat 32 0x3C)) ∧ (memBytes M0 (memLoad32 M0 (q'_4_1 + 0xFFFFFFFC)) (memLoad32 M0 (q'_4_1 + 0x0)).toNat = memBytes M0 (((((((lp + BitVec.ofNat 32 t_1_1_1.header)) + BitVec.ofNat 32 tl1_2_1_1.header) + BitVec.ofNat 32 (tl29_2_1_1.header + tl29_2_1_1.len))) + BitVec.ofNat 32 (tl2_3_1_1.header + tl2_3_1_1.len)) + BitVec.ofNat 32 (tl9_3_1_1.header + tl9_3_1_1.len)) (BitVec.ofNat 32 (tl6_4_1_1.header + tl6_4_1_1.len)).toNat) ∧
       ((memLoad32 M0 (q'_4_1 + 0xFFFFFFFC)) ≠ 0) ∧
       ∃ pv_5_1, SvPvRes M0 (memLoad32 M0 (((q'_4_1) + BitVec.ofNat 32 0x20) + 0xFFFFFFF4)) (B + 0x21A0 + BitVec.ofNat 32 0x1020) 48 (sha384 (memBytes M0 (lp + BitVec.ofNat 32 t_1_1_1.header) (BitVec.ofNat 32 (tl1_2_1_1.header + tl1_2_1_1.len)).toNat)) (B + 0x21A0 + BitVec.ofNat 32 0xD0) (B + 0x21A0 + BitVec.ofNat 32 0x100) sr43_2_1 ss43_2_1 (some pv_5_1) ∧
       (pv_5_1 ≠ 0) ∧
@@ -290,7 +290,7 @@ theorem sv_verify_72 {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : M
       ∃ vp23_3_1_3 vl23_3_1_3, derContent (((((((((((((((memLoad32 M0 (bp + 0x20))) + BitVec.ofNat 32 tl10_1_1_3.header) + BitVec.ofNat 32 (tl22_1_1_3.header + tl22_1_1_3.len)) + BitVec.ofNat 32 tl41_1_1_3.header) + BitVec.ofNat 32 (to53_1_1_3.header + to53_1_1_3.len))) + BitVec.ofNat 32 tl2_2_1_3.header) + BitVec.ofNat 32 tl15_2_1_3.header) + BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) + BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) + BitVec.ofNat 32 tl49_2_1_3.header) + BitVec.ofNat 32 (to58_2_1_3.header + to58_2_1_3.len))) + BitVec.ofNat 32 tl2_3_1_3.header) (derElement 4 (memBytes M0 (((((((((((((((memLoad32 M0 (bp + 0x20))) + BitVec.ofNat 32 tl10_1_1_3.header) + BitVec.ofNat 32 (tl22_1_1_3.header + tl22_1_1_3.len)) + BitVec.ofNat 32 tl41_1_1_3.header) + BitVec.ofNat 32 (to53_1_1_3.header + to53_1_1_3.len))) + BitVec.ofNat 32 tl2_2_1_3.header) + BitVec.ofNat 32 tl15_2_1_3.header) + BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) + BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) + BitVec.ofNat 32 tl49_2_1_3.header) + BitVec.ofNat 32 (to58_2_1_3.header + to58_2_1_3.len))) + BitVec.ofNat 32 tl2_3_1_3.header) (BitVec.ofNat 32 tl2_3_1_3.len).toNat)) = .ok (vp23_3_1_3, vl23_3_1_3) ∧
       ∃ te23_3_1_3, derElement 4 (memBytes M0 (((((((((((((((memLoad32 M0 (bp + 0x20))) + BitVec.ofNat 32 tl10_1_1_3.header) + BitVec.ofNat 32 (tl22_1_1_3.header + tl22_1_1_3.len)) + BitVec.ofNat 32 tl41_1_1_3.header) + BitVec.ofNat 32 (to53_1_1_3.header + to53_1_1_3.len))) + BitVec.ofNat 32 tl2_2_1_3.header) + BitVec.ofNat 32 tl15_2_1_3.header) + BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) + BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) + BitVec.ofNat 32 tl49_2_1_3.header) + BitVec.ofNat 32 (to58_2_1_3.header + to58_2_1_3.len))) + BitVec.ofNat 32 tl2_3_1_3.header) (BitVec.ofNat 32 tl2_3_1_3.len).toNat) = .ok te23_3_1_3 ∧
       ((BitVec.ofNat 32 tl2_3_1_3.len) - BitVec.ofNat 32 (te23_3_1_3.header + te23_3_1_3.len) = 0) ∧
-      ∃ tsa4_w2a8_4_1_3 : Word, ∃ tsa4_w2ac_4_1_3 : Word, (((((((BitVec.ofNat 32 tl15_2_1_3.len) - BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) - BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) - BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len)) = 0 ∨ (M0 (((((((((((((memLoad32 M0 (bp + 0x20))) + BitVec.ofNat 32 tl10_1_1_3.header) + BitVec.ofNat 32 (tl22_1_1_3.header + tl22_1_1_3.len)) + BitVec.ofNat 32 tl41_1_1_3.header) + BitVec.ofNat 32 (to53_1_1_3.header + to53_1_1_3.len))) + BitVec.ofNat 32 tl2_2_1_3.header) + BitVec.ofNat 32 tl15_2_1_3.header) + BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) + BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) + BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len)))).toNat ≠ 0xA1) ∧ tsa4_w2a8_4_1_3 = ((((((((((((memLoad32 M0 (bp + 0x20))) + BitVec.ofNat 32 tl10_1_1_3.header) + BitVec.ofNat 32 (tl22_1_1_3.header + tl22_1_1_3.len)) + BitVec.ofNat 32 tl41_1_1_3.header) + BitVec.ofNat 32 (to53_1_1_3.header + to53_1_1_3.len))) + BitVec.ofNat 32 tl2_2_1_3.header) + BitVec.ofNat 32 tl15_2_1_3.header) + BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) + BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) + BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len)) ∧ tsa4_w2ac_4_1_3 = ((((BitVec.ofNat 32 tl15_2_1_3.len) - BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) - BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) - BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len))) ∨ (∃ tl2, derOptRes 0xA0 (memBytes M0 (((((((((((((memLoad32 M0 (bp + 0x20))) + BitVec.ofNat 32 tl10_1_1_3.header) + BitVec.ofNat 32 (tl22_1_1_3.header + tl22_1_1_3.len)) + BitVec.ofNat 32 tl41_1_1_3.header) + BitVec.ofNat 32 (to53_1_1_3.header + to53_1_1_3.len))) + BitVec.ofNat 32 tl2_2_1_3.header) + BitVec.ofNat 32 tl15_2_1_3.header) + BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) + BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) + BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len))) (((((BitVec.ofNat 32 tl15_2_1_3.len) - BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) - BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) - BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len))).toNat) = some (.ok tl2) ∧ ((((((BitVec.ofNat 32 tl15_2_1_3.len) - BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) - BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) - BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len))) - BitVec.ofNat 32 (tl2.header + tl2.len) = 0 ∨ (M0 ((((((((((((((memLoad32 M0 (bp + 0x20))) + BitVec.ofNat 32 tl10_1_1_3.header) + BitVec.ofNat 32 (tl22_1_1_3.header + tl22_1_1_3.len)) + BitVec.ofNat 32 tl41_1_1_3.header) + BitVec.ofNat 32 (to53_1_1_3.header + to53_1_1_3.len))) + BitVec.ofNat 32 tl2_2_1_3.header) + BitVec.ofNat 32 tl15_2_1_3.header) + BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) + BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) + BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len))) + BitVec.ofNat 32 (tl2.header + tl2.len))).toNat ≠ 0xA1) ∧ tsa4_w2a8_4_1_3 = (((((((((((((memLoad32 M0 (bp + 0x20))) + BitVec.ofNat 32 tl10_1_1_3.header) + BitVec.ofNat 32 (tl22_1_1_3.header + tl22_1_1_3.len)) + BitVec.ofNat 32 tl41_1_1_3.header) + BitVec.ofNat 32 (to53_1_1_3.header + to53_1_1_3.len))) + BitVec.ofNat 32 tl2_2_1_3.header) + BitVec.ofNat 32 tl15_2_1_3.header) + BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) + BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) + BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len))) + BitVec.ofNat 32 (tl2.header + tl2.len) ∧ tsa4_w2ac_4_1_3 = (((((BitVec.ofNat 32 tl15_2_1_3.len) - BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) - BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) - BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len))) - BitVec.ofNat 32 (tl2.header + tl2.len))) ∧ SvIn B tsa4_w2a8_4_1_3 tsa4_w2ac_4_1_3.toNat ∧
+      ∃ tsa4_w2a8_4_1_3 : Word, ∃ tsa4_w2ac_4_1_3 : Word, (((derOptRes 0xA0 (memBytes M0 (((((((((((((memLoad32 M0 (bp + 0x20))) + BitVec.ofNat 32 tl10_1_1_3.header) + BitVec.ofNat 32 (tl22_1_1_3.header + tl22_1_1_3.len)) + BitVec.ofNat 32 tl41_1_1_3.header) + BitVec.ofNat 32 (to53_1_1_3.header + to53_1_1_3.len))) + BitVec.ofNat 32 tl2_2_1_3.header) + BitVec.ofNat 32 tl15_2_1_3.header) + BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) + BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) + BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len))) (((((BitVec.ofNat 32 tl15_2_1_3.len) - BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) - BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) - BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len))).toNat) = none) ∧ (((((BitVec.ofNat 32 tl15_2_1_3.len) - BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) - BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) - BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len)) = 0 ∨ (M0 (((((((((((((memLoad32 M0 (bp + 0x20))) + BitVec.ofNat 32 tl10_1_1_3.header) + BitVec.ofNat 32 (tl22_1_1_3.header + tl22_1_1_3.len)) + BitVec.ofNat 32 tl41_1_1_3.header) + BitVec.ofNat 32 (to53_1_1_3.header + to53_1_1_3.len))) + BitVec.ofNat 32 tl2_2_1_3.header) + BitVec.ofNat 32 tl15_2_1_3.header) + BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) + BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) + BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len)))).toNat ≠ 0xA1) ∧ tsa4_w2a8_4_1_3 = ((((((((((((memLoad32 M0 (bp + 0x20))) + BitVec.ofNat 32 tl10_1_1_3.header) + BitVec.ofNat 32 (tl22_1_1_3.header + tl22_1_1_3.len)) + BitVec.ofNat 32 tl41_1_1_3.header) + BitVec.ofNat 32 (to53_1_1_3.header + to53_1_1_3.len))) + BitVec.ofNat 32 tl2_2_1_3.header) + BitVec.ofNat 32 tl15_2_1_3.header) + BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) + BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) + BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len)) ∧ tsa4_w2ac_4_1_3 = ((((BitVec.ofNat 32 tl15_2_1_3.len) - BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) - BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) - BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len))) ∨ ((¬ (derOptRes 0xA0 (memBytes M0 (((((((((((((memLoad32 M0 (bp + 0x20))) + BitVec.ofNat 32 tl10_1_1_3.header) + BitVec.ofNat 32 (tl22_1_1_3.header + tl22_1_1_3.len)) + BitVec.ofNat 32 tl41_1_1_3.header) + BitVec.ofNat 32 (to53_1_1_3.header + to53_1_1_3.len))) + BitVec.ofNat 32 tl2_2_1_3.header) + BitVec.ofNat 32 tl15_2_1_3.header) + BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) + BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) + BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len))) (((((BitVec.ofNat 32 tl15_2_1_3.len) - BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) - BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) - BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len))).toNat) = none)) ∧ ∃ tl2, derOptRes 0xA0 (memBytes M0 (((((((((((((memLoad32 M0 (bp + 0x20))) + BitVec.ofNat 32 tl10_1_1_3.header) + BitVec.ofNat 32 (tl22_1_1_3.header + tl22_1_1_3.len)) + BitVec.ofNat 32 tl41_1_1_3.header) + BitVec.ofNat 32 (to53_1_1_3.header + to53_1_1_3.len))) + BitVec.ofNat 32 tl2_2_1_3.header) + BitVec.ofNat 32 tl15_2_1_3.header) + BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) + BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) + BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len))) (((((BitVec.ofNat 32 tl15_2_1_3.len) - BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) - BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) - BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len))).toNat) = some (.ok tl2) ∧ ((((((BitVec.ofNat 32 tl15_2_1_3.len) - BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) - BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) - BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len))) - BitVec.ofNat 32 (tl2.header + tl2.len) = 0 ∨ (M0 ((((((((((((((memLoad32 M0 (bp + 0x20))) + BitVec.ofNat 32 tl10_1_1_3.header) + BitVec.ofNat 32 (tl22_1_1_3.header + tl22_1_1_3.len)) + BitVec.ofNat 32 tl41_1_1_3.header) + BitVec.ofNat 32 (to53_1_1_3.header + to53_1_1_3.len))) + BitVec.ofNat 32 tl2_2_1_3.header) + BitVec.ofNat 32 tl15_2_1_3.header) + BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) + BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) + BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len))) + BitVec.ofNat 32 (tl2.header + tl2.len))).toNat ≠ 0xA1) ∧ tsa4_w2a8_4_1_3 = (((((((((((((memLoad32 M0 (bp + 0x20))) + BitVec.ofNat 32 tl10_1_1_3.header) + BitVec.ofNat 32 (tl22_1_1_3.header + tl22_1_1_3.len)) + BitVec.ofNat 32 tl41_1_1_3.header) + BitVec.ofNat 32 (to53_1_1_3.header + to53_1_1_3.len))) + BitVec.ofNat 32 tl2_2_1_3.header) + BitVec.ofNat 32 tl15_2_1_3.header) + BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) + BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) + BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len))) + BitVec.ofNat 32 (tl2.header + tl2.len) ∧ tsa4_w2ac_4_1_3 = (((((BitVec.ofNat 32 tl15_2_1_3.len) - BitVec.ofNat 32 (te26_2_1_3.header + te26_2_1_3.len)) - BitVec.ofNat 32 (tl32_2_1_3.header + tl32_2_1_3.len)) - BitVec.ofNat 32 (tl49_2_1_3.header + tl49_2_1_3.len))) - BitVec.ofNat 32 (tl2.header + tl2.len))) ∧ SvIn B tsa4_w2a8_4_1_3 tsa4_w2ac_4_1_3.toNat ∧
       ∃ tl2_5_1_3, derElement 0x31 (memBytes M0 (tsa4_w2a8_4_1_3) (tsa4_w2ac_4_1_3).toNat) = .ok tl2_5_1_3 ∧
       ((tsa4_w2ac_4_1_3) - BitVec.ofNat 32 (tl2_5_1_3.header + tl2_5_1_3.len) = 0) ∧
       ∃ tl13_5_1_3, derElement 0x30 (memBytes M0 ((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) (BitVec.ofNat 32 tl2_5_1_3.len).toNat) = .ok tl13_5_1_3 ∧
@@ -309,7 +309,7 @@ theorem sv_verify_72 {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : M
       ∃ tl20_1_2_3, derElement 0x31 (memBytes M0 ((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) ((BitVec.ofNat 32 tl6_1_2_3.len) - BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)).toNat) = .ok tl20_1_2_3 ∧
       (((BitVec.ofNat 32 tl6_1_2_3.len) - BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) - BitVec.ofNat 32 (tl20_1_2_3.header + tl20_1_2_3.len) = 0) ∧
       listsOidOf M0 (((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header) (((BitVec.ofNat 32 tl45_5_1_3.len)) - ((BitVec.ofNat 32 tl45_5_1_3.len))).toNat (memBytes M0 op15_1_2_3 ol15_1_2_3.toNat) = .ok false ∧
-      ∃ tsav_r24_2_2_3 : Word, ∃ tsav_w78_2_2_3 : Word, ∃ tsav_w1388_2_2_3 : Word, ∃ tsav_w138c_2_2_3 : Word, ((∃ op5 ol5, derContent ((((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) + BitVec.ofNat 32 tl20_1_2_3.header)) (derOid (memBytes M0 ((((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) + BitVec.ofNat 32 tl20_1_2_3.header)) ((BitVec.ofNat 32 tl20_1_2_3.len)).toNat)) = .ok (op5, ol5) ∧ ∃ to5, derOid (memBytes M0 ((((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) + BitVec.ofNat 32 tl20_1_2_3.header)) ((BitVec.ofNat 32 tl20_1_2_3.len)).toNat) = .ok to5 ∧ (memBytes M0 op5 ol5.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4862) 11) ∧ (((BitVec.ofNat 32 tl20_1_2_3.len)) - BitVec.ofNat 32 (to5.header + to5.len) = 0) ∧ tsav_r24_2_2_3 = (BitVec.ofNat 32 0x0) ∧ tsav_w78_2_2_3 = BitVec.ofNat 32 0x1 ∧ tsav_w1388_2_2_3 = ((((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) + BitVec.ofNat 32 tl20_1_2_3.header)) + BitVec.ofNat 32 (to5.header + to5.len) ∧ tsav_w138c_2_2_3 = ((BitVec.ofNat 32 tl20_1_2_3.len)) - BitVec.ofNat 32 (to5.header + to5.len)) ∨ (∃ vp8 vl8, derContent ((((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) + BitVec.ofNat 32 tl20_1_2_3.header)) (derElement 4 (memBytes M0 ((((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) + BitVec.ofNat 32 tl20_1_2_3.header)) ((BitVec.ofNat 32 tl20_1_2_3.len)).toNat)) = .ok (vp8, vl8) ∧ ∃ te8, derElement 4 (memBytes M0 ((((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) + BitVec.ofNat 32 tl20_1_2_3.header)) ((BitVec.ofNat 32 tl20_1_2_3.len)).toNat) = .ok te8 ∧ (vl8 = 32) ∧ (((BitVec.ofNat 32 tl20_1_2_3.len)) - BitVec.ofNat 32 (te8.header + te8.len) = 0) ∧ tsav_r24_2_2_3 = vp8 ∧ tsav_w78_2_2_3 = (BitVec.ofNat 32 0x0) ∧ tsav_w1388_2_2_3 = ((((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) + BitVec.ofNat 32 tl20_1_2_3.header)) + BitVec.ofNat 32 (te8.header + te8.len) ∧ tsav_w138c_2_2_3 = ((BitVec.ofNat 32 tl20_1_2_3.len)) - BitVec.ofNat 32 (te8.header + te8.len)) ∨ (tsav_r24_2_2_3 = (BitVec.ofNat 32 0x0) ∧ tsav_w78_2_2_3 = (BitVec.ofNat 32 0x0) ∧ tsav_w1388_2_2_3 = (((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) + BitVec.ofNat 32 tl20_1_2_3.header) ∧ tsav_w138c_2_2_3 = (BitVec.ofNat 32 tl20_1_2_3.len))) ∧ SvIn B tsav_w1388_2_2_3 tsav_w138c_2_2_3.toNat ∧ (tsav_r24_2_2_3 = 0 ∨ SvIn B tsav_r24_2_2_3 32) ∧
+      ∃ tsav_r24_2_2_3 : Word, ∃ tsav_w78_2_2_3 : Word, ∃ tsav_w1388_2_2_3 : Word, ∃ tsav_w138c_2_2_3 : Word, (((memBytes M0 op15_1_2_3 ol15_1_2_3.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC486E) 9) ∧ ∃ op5 ol5, derContent ((((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) + BitVec.ofNat 32 tl20_1_2_3.header)) (derOid (memBytes M0 ((((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) + BitVec.ofNat 32 tl20_1_2_3.header)) ((BitVec.ofNat 32 tl20_1_2_3.len)).toNat)) = .ok (op5, ol5) ∧ ∃ to5, derOid (memBytes M0 ((((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) + BitVec.ofNat 32 tl20_1_2_3.header)) ((BitVec.ofNat 32 tl20_1_2_3.len)).toNat) = .ok to5 ∧ (memBytes M0 op5 ol5.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4862) 11) ∧ (((BitVec.ofNat 32 tl20_1_2_3.len)) - BitVec.ofNat 32 (to5.header + to5.len) = 0) ∧ tsav_r24_2_2_3 = (BitVec.ofNat 32 0x0) ∧ tsav_w78_2_2_3 = BitVec.ofNat 32 0x1 ∧ tsav_w1388_2_2_3 = ((((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) + BitVec.ofNat 32 tl20_1_2_3.header)) + BitVec.ofNat 32 (to5.header + to5.len) ∧ tsav_w138c_2_2_3 = ((BitVec.ofNat 32 tl20_1_2_3.len)) - BitVec.ofNat 32 (to5.header + to5.len)) ∨ ((¬ (memBytes M0 op15_1_2_3 ol15_1_2_3.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC486E) 9)) ∧ (memBytes M0 op15_1_2_3 ol15_1_2_3.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4877) 9) ∧ ∃ vp8 vl8, derContent ((((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) + BitVec.ofNat 32 tl20_1_2_3.header)) (derElement 4 (memBytes M0 ((((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) + BitVec.ofNat 32 tl20_1_2_3.header)) ((BitVec.ofNat 32 tl20_1_2_3.len)).toNat)) = .ok (vp8, vl8) ∧ ∃ te8, derElement 4 (memBytes M0 ((((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) + BitVec.ofNat 32 tl20_1_2_3.header)) ((BitVec.ofNat 32 tl20_1_2_3.len)).toNat) = .ok te8 ∧ (vl8 = 32) ∧ (((BitVec.ofNat 32 tl20_1_2_3.len)) - BitVec.ofNat 32 (te8.header + te8.len) = 0) ∧ tsav_r24_2_2_3 = vp8 ∧ tsav_w78_2_2_3 = (BitVec.ofNat 32 0x0) ∧ tsav_w1388_2_2_3 = ((((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) + BitVec.ofNat 32 tl20_1_2_3.header)) + BitVec.ofNat 32 (te8.header + te8.len) ∧ tsav_w138c_2_2_3 = ((BitVec.ofNat 32 tl20_1_2_3.len)) - BitVec.ofNat 32 (te8.header + te8.len)) ∨ ((¬ (memBytes M0 op15_1_2_3 ol15_1_2_3.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC486E) 9)) ∧ (¬ (memBytes M0 op15_1_2_3 ol15_1_2_3.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4877) 9)) ∧ tsav_r24_2_2_3 = (BitVec.ofNat 32 0x0) ∧ tsav_w78_2_2_3 = (BitVec.ofNat 32 0x0) ∧ tsav_w1388_2_2_3 = (((((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 tl6_1_2_3.header) + BitVec.ofNat 32 (to15_1_2_3.header + to15_1_2_3.len)) + BitVec.ofNat 32 tl20_1_2_3.header) ∧ tsav_w138c_2_2_3 = (BitVec.ofNat 32 tl20_1_2_3.len))) ∧ SvIn B tsav_w1388_2_2_3 tsav_w138c_2_2_3.toNat ∧ (tsav_r24_2_2_3 = 0 ∨ SvIn B tsav_r24_2_2_3 32) ∧
       ∃ u0 u1 u2 u3 u4 u5 u6 u7 u8 u9 u10 u11 u12 u13 u14 u15 u16 u17 u18 u19 u20 u21 u22 u23 u24 u25 u26 u27 u28 u29 u30 u31, ∃ k_3_3 dg'_3_3 flag'_3_3 cp'_3_3 rem'_3_3, svChain (sv_attrStep B out bp vl23_3_1_3 ll (((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header) (BitVec.ofNat 32 tl45_5_1_3.len) (((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 (tl45_5_1_3.header + tl45_5_1_3.len)) (((((BitVec.ofNat 32 tl13_5_1_3.len) - BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) - BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) - BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) - BitVec.ofNat 32 (tl45_5_1_3.header + tl45_5_1_3.len)) (u0) (u1) (u2) (u3) (u4) (u5) (u6) (u7) ((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) (BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) (BitVec.ofNat 32 (tm31_4_1_1 / 2 ^ 32)) (BitVec.ofNat 32 (tm31_4_1_1 % 2 ^ 32)) (BitVec.ofNat 32 (tm22_4_1_1 / 2 ^ 32)) (BitVec.ofNat 32 (tm22_4_1_1 % 2 ^ 32)) ((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) (BitVec.ofNat 32 (tl45_5_1_3.header + tl45_5_1_3.len)) (memLoad32 M0 (bp + 0xC)) (memLoad32 M0 (bp + 0x8)) lp vp23_3_1_3 ((q'_4_1) + BitVec.ofNat 32 0x20) rootp dg (lp + BitVec.ofNat 32 t_1_1_1.header) (BitVec.ofNat 32 (tl1_2_1_1.header + tl1_2_1_1.len)) (((((((lp + BitVec.ofNat 32 t_1_1_1.header)) + BitVec.ofNat 32 tl1_2_1_1.header) + BitVec.ofNat 32 (tl29_2_1_1.header + tl29_2_1_1.len))) + BitVec.ofNat 32 (tl2_3_1_1.header + tl2_3_1_1.len)) + BitVec.ofNat 32 (tl9_3_1_1.header + tl9_3_1_1.len)) (BitVec.ofNat 32 (tl6_4_1_1.header + tl6_4_1_1.len)) sl0'_2_1 sl1'_2_1 sl2'_2_1 sl3'_2_1 sl4'_2_1 sl5'_2_1 sl6'_2_1 sl7'_2_1 sl8'_2_1 sl9'_2_1 (BitVec.ofNat 32 (tm22_4_1_1 % 2 ^ 32)) (BitVec.ofNat 32 (tm22_4_1_1 / 2 ^ 32)) (BitVec.ofNat 32 (tm31_4_1_1 % 2 ^ 32)) (BitVec.ofNat 32 (tm31_4_1_1 / 2 ^ 32)) (u8) (u9) (u10) (u11) (u12) (u13) (u14) (u15) (u16) (u17) (u18) (u19) (u20) (u21) (u22) (u23) (u24) (u25) (u26) (u27) (u28) (u29) (u30) (u31) bp35_5_1_1 v M0) k_3_3 (tsav_r24_2_2_3, tsav_w78_2_2_3, (((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 tl45_5_1_3.header)) + BitVec.ofNat 32 (tl6_1_2_3.header + tl6_1_2_3.len)), (((BitVec.ofNat 32 tl45_5_1_3.len)) - BitVec.ofNat 32 (tl6_1_2_3.header + tl6_1_2_3.len))) (dg'_3_3, flag'_3_3, cp'_3_3, rem'_3_3) ∧
       rem'_3_3 = 0 ∧ (dg'_3_3 = 0 ∨ SvIn B dg'_3_3 32) ∧
       (dg'_3_3 ≠ 0 ∧ flag'_3_3 = 1) ∧ ∃ op8_3_3 ol8_3_3, derAlgOf M0 ((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 (tl45_5_1_3.header + tl45_5_1_3.len))) (((((((BitVec.ofNat 32 tl13_5_1_3.len) - BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) - BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) - BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) - BitVec.ofNat 32 (tl45_5_1_3.header + tl45_5_1_3.len))).toNat) = .ok ((op8_3_3, ol8_3_3), none) ∧ ∃ te8_3_3, derElement 0x30 (memBytes M0 ((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 (tl45_5_1_3.header + tl45_5_1_3.len))) ((((((BitVec.ofNat 32 tl13_5_1_3.len) - BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) - BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) - BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) - BitVec.ofNat 32 (tl45_5_1_3.header + tl45_5_1_3.len))).toNat) = .ok te8_3_3 ∧ (memBytes M0 op8_3_3 ol8_3_3 = memBytes M0 (BitVec.ofNat 32 0x3FCC4818) 8) ∧ ∃ vp19_3_3 vl19_3_3, derContent (((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 (tl45_5_1_3.header + tl45_5_1_3.len))) + BitVec.ofNat 32 (te8_3_3.header + te8_3_3.len)) (derElement 4 (memBytes M0 (((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 (tl45_5_1_3.header + tl45_5_1_3.len))) + BitVec.ofNat 32 (te8_3_3.header + te8_3_3.len)) (((((((BitVec.ofNat 32 tl13_5_1_3.len) - BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) - BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) - BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) - BitVec.ofNat 32 (tl45_5_1_3.header + tl45_5_1_3.len))) - BitVec.ofNat 32 (te8_3_3.header + te8_3_3.len)).toNat)) = .ok (vp19_3_3, vl19_3_3) ∧ ∃ te19_3_3, derElement 4 (memBytes M0 (((((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) + BitVec.ofNat 32 (tl45_5_1_3.header + tl45_5_1_3.len))) + BitVec.ofNat 32 (te8_3_3.header + te8_3_3.len)) (((((((BitVec.ofNat 32 tl13_5_1_3.len) - BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) - BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) - BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) - BitVec.ofNat 32 (tl45_5_1_3.header + tl45_5_1_3.len))) - BitVec.ofNat 32 (te8_3_3.header + te8_3_3.len)).toNat) = .ok te19_3_3 ∧ ∃ sr24_3_3 ss24_3_3, ecdsaSigOf 48 M0 (vp19_3_3) ((vl19_3_3).toNat) = .ok (sr24_3_3, ss24_3_3) ∧
@@ -332,13 +332,13 @@ theorem sv_verify_72 {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : M
       (((il2_2_4_3) - (aluEval .sltu ((M0 (ip2_2_4_3)).zeroExtend 32) 1)).toNat ≤ 20) ∧
       ∃ tl13_2_4_3, derElement 0x18 (memBytes M0 (((((((vp23_3_1_3) + BitVec.ofNat 32 tl13_1_4_3.header) + BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) + BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) + BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) + BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)) ((((((BitVec.ofNat 32 tl13_1_4_3.len) - BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) - BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) - BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) - BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)).toNat) = .ok tl13_2_4_3 ∧
       ∃ tm18_2_4_3, generalizedTime (memBytes M0 ((((((((vp23_3_1_3) + BitVec.ofNat 32 tl13_1_4_3.header) + BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) + BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) + BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) + BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)) + BitVec.ofNat 32 tl13_2_4_3.header) ((BitVec.ofNat 32 tl13_2_4_3.len).toNat)) = some tm18_2_4_3 ∧
-      ∃ tst3_w1328_3_4_3 : Word, ∃ tst3_w132c_3_4_3 : Word, ((tst3_w1328_3_4_3 = ((((((((vp23_3_1_3) + BitVec.ofNat 32 tl13_1_4_3.header) + BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) + BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) + BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) + BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)) + BitVec.ofNat 32 (tl13_2_4_3.header + tl13_2_4_3.len)) ∧ tst3_w132c_3_4_3 = (((((((BitVec.ofNat 32 tl13_1_4_3.len) - BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) - BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) - BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) - BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)) - BitVec.ofNat 32 (tl13_2_4_3.header + tl13_2_4_3.len))) ∨ (∃ tl2, derOptRes 0x30 (memBytes M0 (((((((((vp23_3_1_3) + BitVec.ofNat 32 tl13_1_4_3.header) + BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) + BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) + BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) + BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)) + BitVec.ofNat 32 (tl13_2_4_3.header + tl13_2_4_3.len))) ((((((((BitVec.ofNat 32 tl13_1_4_3.len) - BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) - BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) - BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) - BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)) - BitVec.ofNat 32 (tl13_2_4_3.header + tl13_2_4_3.len))).toNat) = some (.ok tl2) ∧ tst3_w1328_3_4_3 = (((((((((vp23_3_1_3) + BitVec.ofNat 32 tl13_1_4_3.header) + BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) + BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) + BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) + BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)) + BitVec.ofNat 32 (tl13_2_4_3.header + tl13_2_4_3.len))) + BitVec.ofNat 32 (tl2.header + tl2.len) ∧ tst3_w132c_3_4_3 = ((((((((BitVec.ofNat 32 tl13_1_4_3.len) - BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) - BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) - BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) - BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)) - BitVec.ofNat 32 (tl13_2_4_3.header + tl13_2_4_3.len))) - BitVec.ofNat 32 (tl2.header + tl2.len))) ∧ SvIn B tst3_w1328_3_4_3 tst3_w132c_3_4_3.toNat ∧
-      ∃ tst4_r8_4_4_3 : Word, ∃ tst4_w1328_4_4_3 : Word, ∃ tst4_w132c_4_4_3 : Word, ((tst4_r8_4_4_3 = BitVec.ofNat 32 0x18 ∧ tst4_w1328_4_4_3 = tst3_w1328_3_4_3 ∧ tst4_w132c_4_4_3 = tst3_w132c_3_4_3) ∨ (derBoolOf (memBytes M0 (tst3_w1328_3_4_3) (tst3_w132c_3_4_3).toNat) (derElement 1 (memBytes M0 (tst3_w1328_3_4_3) (tst3_w132c_3_4_3).toNat)) = .ok () ∧ ∃ tb10_1, derElement 1 (memBytes M0 (tst3_w1328_3_4_3) (tst3_w132c_3_4_3).toNat) = .ok tb10_1 ∧ ∃ tst4b_w1328_2 : Word, ∃ tst4b_w132c_2 : Word, ((tst4b_w1328_2 = ((tst3_w1328_3_4_3) + BitVec.ofNat 32 (tb10_1.header + tb10_1.len)) ∧ tst4b_w132c_2 = ((tst3_w132c_3_4_3) - BitVec.ofNat 32 (tb10_1.header + tb10_1.len))) ∨ (∃ tst4n_w1328_2 : Word, ∃ tst4n_w132c_2 : Word, ((∃ ip4 il4, derIntOf (memBytes M0 (((tst3_w1328_3_4_3) + BitVec.ofNat 32 (tb10_1.header + tb10_1.len))) (((tst3_w132c_3_4_3) - BitVec.ofNat 32 (tb10_1.header + tb10_1.len))).toNat) (((tst3_w1328_3_4_3) + BitVec.ofNat 32 (tb10_1.header + tb10_1.len))) (derElement 2 (memBytes M0 (((tst3_w1328_3_4_3) + BitVec.ofNat 32 (tb10_1.header + tb10_1.len))) (((tst3_w132c_3_4_3) - BitVec.ofNat 32 (tb10_1.header + tb10_1.len))).toNat)) = .ok (ip4, il4) ∧ ∃ ti4, derElement 2 (memBytes M0 (((tst3_w1328_3_4_3) + BitVec.ofNat 32 (tb10_1.header + tb10_1.len))) (((tst3_w132c_3_4_3) - BitVec.ofNat 32 (tb10_1.header + tb10_1.len))).toNat) = .ok ti4 ∧ tst4n_w1328_2 = (((tst3_w1328_3_4_3) + BitVec.ofNat 32 (tb10_1.header + tb10_1.len))) + BitVec.ofNat 32 (ti4.header + ti4.len) ∧ tst4n_w132c_2 = (((tst3_w132c_3_4_3) - BitVec.ofNat 32 (tb10_1.header + tb10_1.len))) - BitVec.ofNat 32 (ti4.header + ti4.len)) ∨ (tst4n_w1328_2 = ((tst3_w1328_3_4_3) + BitVec.ofNat 32 (tb10_1.header + tb10_1.len)) ∧ tst4n_w132c_2 = ((tst3_w132c_3_4_3) - BitVec.ofNat 32 (tb10_1.header + tb10_1.len)))) ∧ SvIn B tst4n_w1328_2 tst4n_w132c_2.toNat ∧ tst4b_w1328_2 = tst4n_w1328_2 ∧ tst4b_w132c_2 = tst4n_w132c_2)) ∧ SvIn B tst4b_w1328_2 tst4b_w132c_2.toNat ∧ tst4_r8_4_4_3 = (BitVec.ofNat 32 0xFFFFFFFF) ∧ tst4_w1328_4_4_3 = tst4b_w1328_2 ∧ tst4_w132c_4_4_3 = tst4b_w132c_2) ∨ (∃ tst4n_w1328_2 : Word, ∃ tst4n_w132c_2 : Word, ((∃ ip4 il4, derIntOf (memBytes M0 (tst3_w1328_3_4_3) (tst3_w132c_3_4_3).toNat) (tst3_w1328_3_4_3) (derElement 2 (memBytes M0 (tst3_w1328_3_4_3) (tst3_w132c_3_4_3).toNat)) = .ok (ip4, il4) ∧ ∃ ti4, derElement 2 (memBytes M0 (tst3_w1328_3_4_3) (tst3_w132c_3_4_3).toNat) = .ok ti4 ∧ tst4n_w1328_2 = (tst3_w1328_3_4_3) + BitVec.ofNat 32 (ti4.header + ti4.len) ∧ tst4n_w132c_2 = (tst3_w132c_3_4_3) - BitVec.ofNat 32 (ti4.header + ti4.len)) ∨ (tst4n_w1328_2 = tst3_w1328_3_4_3 ∧ tst4n_w132c_2 = tst3_w132c_3_4_3)) ∧ SvIn B tst4n_w1328_2 tst4n_w132c_2.toNat ∧ tst4_r8_4_4_3 = (BitVec.ofNat 32 0x18) ∧ tst4_w1328_4_4_3 = tst4n_w1328_2 ∧ tst4_w132c_4_4_3 = tst4n_w132c_2)) ∧ SvIn B tst4_w1328_4_4_3 tst4_w132c_4_4_3.toNat ∧
-      ∃ tst5_w1328_5_4_3 : Word, ∃ tst5_w132c_5_4_3 : Word, ((tst5_w1328_5_4_3 = tst4_w1328_4_4_3 ∧ tst5_w132c_5_4_3 = tst4_w132c_4_4_3) ∨ (∃ tl2, derOptRes 0xA0 (memBytes M0 (tst4_w1328_4_4_3) (tst4_w132c_4_4_3).toNat) = some (.ok tl2) ∧ tst5_w1328_5_4_3 = (tst4_w1328_4_4_3) + BitVec.ofNat 32 (tl2.header + tl2.len) ∧ tst5_w132c_5_4_3 = (tst4_w132c_4_4_3) - BitVec.ofNat 32 (tl2.header + tl2.len))) ∧ SvIn B tst5_w1328_5_4_3 tst5_w132c_5_4_3.toNat ∧
-      ∃ tst6_w1328_6_4_3 : Word, ∃ tst6_w132c_6_4_3 : Word, (((tst5_w132c_5_4_3 = 0) ∧ tst6_w1328_6_4_3 = tst5_w1328_5_4_3 ∧ tst6_w132c_6_4_3 = tst5_w132c_5_4_3) ∨ (∃ tl2, derOptRes 0xA1 (memBytes M0 (tst5_w1328_5_4_3) (tst5_w132c_5_4_3).toNat) = some (.ok tl2) ∧ ((tst5_w132c_5_4_3) - BitVec.ofNat 32 (tl2.header + tl2.len) = 0) ∧ tst6_w1328_6_4_3 = (tst5_w1328_5_4_3) + BitVec.ofNat 32 (tl2.header + tl2.len) ∧ tst6_w132c_6_4_3 = (tst5_w132c_5_4_3) - BitVec.ofNat 32 (tl2.header + tl2.len))) ∧ SvIn B tst6_w1328_6_4_3 tst6_w132c_6_4_3.toNat ∧
+      ∃ tst3_w1328_3_4_3 : Word, ∃ tst3_w132c_3_4_3 : Word, (((derOptRes 0x30 (memBytes M0 (((((((((vp23_3_1_3) + BitVec.ofNat 32 tl13_1_4_3.header) + BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) + BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) + BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) + BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)) + BitVec.ofNat 32 (tl13_2_4_3.header + tl13_2_4_3.len))) ((((((((BitVec.ofNat 32 tl13_1_4_3.len) - BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) - BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) - BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) - BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)) - BitVec.ofNat 32 (tl13_2_4_3.header + tl13_2_4_3.len))).toNat) = none) ∧ tst3_w1328_3_4_3 = ((((((((vp23_3_1_3) + BitVec.ofNat 32 tl13_1_4_3.header) + BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) + BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) + BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) + BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)) + BitVec.ofNat 32 (tl13_2_4_3.header + tl13_2_4_3.len)) ∧ tst3_w132c_3_4_3 = (((((((BitVec.ofNat 32 tl13_1_4_3.len) - BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) - BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) - BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) - BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)) - BitVec.ofNat 32 (tl13_2_4_3.header + tl13_2_4_3.len))) ∨ ((¬ (derOptRes 0x30 (memBytes M0 (((((((((vp23_3_1_3) + BitVec.ofNat 32 tl13_1_4_3.header) + BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) + BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) + BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) + BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)) + BitVec.ofNat 32 (tl13_2_4_3.header + tl13_2_4_3.len))) ((((((((BitVec.ofNat 32 tl13_1_4_3.len) - BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) - BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) - BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) - BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)) - BitVec.ofNat 32 (tl13_2_4_3.header + tl13_2_4_3.len))).toNat) = none)) ∧ ∃ tl2, derOptRes 0x30 (memBytes M0 (((((((((vp23_3_1_3) + BitVec.ofNat 32 tl13_1_4_3.header) + BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) + BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) + BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) + BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)) + BitVec.ofNat 32 (tl13_2_4_3.header + tl13_2_4_3.len))) ((((((((BitVec.ofNat 32 tl13_1_4_3.len) - BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) - BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) - BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) - BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)) - BitVec.ofNat 32 (tl13_2_4_3.header + tl13_2_4_3.len))).toNat) = some (.ok tl2) ∧ tst3_w1328_3_4_3 = (((((((((vp23_3_1_3) + BitVec.ofNat 32 tl13_1_4_3.header) + BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) + BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) + BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) + BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)) + BitVec.ofNat 32 (tl13_2_4_3.header + tl13_2_4_3.len))) + BitVec.ofNat 32 (tl2.header + tl2.len) ∧ tst3_w132c_3_4_3 = ((((((((BitVec.ofNat 32 tl13_1_4_3.len) - BitVec.ofNat 32 (te26_1_4_3.header + te26_1_4_3.len)) - BitVec.ofNat 32 (to32_1_4_3.header + to32_1_4_3.len)) - BitVec.ofNat 32 (tl36_1_4_3.header + tl36_1_4_3.len))) - BitVec.ofNat 32 (tl2_2_4_3.header + tl2_2_4_3.len)) - BitVec.ofNat 32 (tl13_2_4_3.header + tl13_2_4_3.len))) - BitVec.ofNat 32 (tl2.header + tl2.len))) ∧ SvIn B tst3_w1328_3_4_3 tst3_w132c_3_4_3.toNat ∧
+      ∃ tst4_r8_4_4_3 : Word, ∃ tst4_w1328_4_4_3 : Word, ∃ tst4_w132c_4_4_3 : Word, (((tst3_w132c_3_4_3 = 0) ∧ tst4_r8_4_4_3 = BitVec.ofNat 32 0x18 ∧ tst4_w1328_4_4_3 = tst3_w1328_3_4_3 ∧ tst4_w132c_4_4_3 = tst3_w132c_3_4_3) ∨ ((¬ (tst3_w132c_3_4_3 = 0)) ∧ (M0 tst3_w1328_3_4_3 = BitVec.ofNat 8 1) ∧ derBoolOf (memBytes M0 (tst3_w1328_3_4_3) (tst3_w132c_3_4_3).toNat) (derElement 1 (memBytes M0 (tst3_w1328_3_4_3) (tst3_w132c_3_4_3).toNat)) = .ok () ∧ ∃ tb10_1, derElement 1 (memBytes M0 (tst3_w1328_3_4_3) (tst3_w132c_3_4_3).toNat) = .ok tb10_1 ∧ ∃ tst4b_w1328_2 : Word, ∃ tst4b_w132c_2 : Word, (((((tst3_w132c_3_4_3) - BitVec.ofNat 32 (tb10_1.header + tb10_1.len)) = 0) ∧ tst4b_w1328_2 = ((tst3_w1328_3_4_3) + BitVec.ofNat 32 (tb10_1.header + tb10_1.len)) ∧ tst4b_w132c_2 = ((tst3_w132c_3_4_3) - BitVec.ofNat 32 (tb10_1.header + tb10_1.len))) ∨ ((¬ (((tst3_w132c_3_4_3) - BitVec.ofNat 32 (tb10_1.header + tb10_1.len)) = 0)) ∧ ∃ tst4n_w1328_2 : Word, ∃ tst4n_w132c_2 : Word, (((M0 ((tst3_w1328_3_4_3) + BitVec.ofNat 32 (tb10_1.header + tb10_1.len)) = BitVec.ofNat 8 2) ∧ ∃ ip4 il4, derIntOf (memBytes M0 (((tst3_w1328_3_4_3) + BitVec.ofNat 32 (tb10_1.header + tb10_1.len))) (((tst3_w132c_3_4_3) - BitVec.ofNat 32 (tb10_1.header + tb10_1.len))).toNat) (((tst3_w1328_3_4_3) + BitVec.ofNat 32 (tb10_1.header + tb10_1.len))) (derElement 2 (memBytes M0 (((tst3_w1328_3_4_3) + BitVec.ofNat 32 (tb10_1.header + tb10_1.len))) (((tst3_w132c_3_4_3) - BitVec.ofNat 32 (tb10_1.header + tb10_1.len))).toNat)) = .ok (ip4, il4) ∧ ∃ ti4, derElement 2 (memBytes M0 (((tst3_w1328_3_4_3) + BitVec.ofNat 32 (tb10_1.header + tb10_1.len))) (((tst3_w132c_3_4_3) - BitVec.ofNat 32 (tb10_1.header + tb10_1.len))).toNat) = .ok ti4 ∧ tst4n_w1328_2 = (((tst3_w1328_3_4_3) + BitVec.ofNat 32 (tb10_1.header + tb10_1.len))) + BitVec.ofNat 32 (ti4.header + ti4.len) ∧ tst4n_w132c_2 = (((tst3_w132c_3_4_3) - BitVec.ofNat 32 (tb10_1.header + tb10_1.len))) - BitVec.ofNat 32 (ti4.header + ti4.len)) ∨ ((¬ (M0 ((tst3_w1328_3_4_3) + BitVec.ofNat 32 (tb10_1.header + tb10_1.len)) = BitVec.ofNat 8 2)) ∧ tst4n_w1328_2 = ((tst3_w1328_3_4_3) + BitVec.ofNat 32 (tb10_1.header + tb10_1.len)) ∧ tst4n_w132c_2 = ((tst3_w132c_3_4_3) - BitVec.ofNat 32 (tb10_1.header + tb10_1.len)))) ∧ SvIn B tst4n_w1328_2 tst4n_w132c_2.toNat ∧ tst4b_w1328_2 = tst4n_w1328_2 ∧ tst4b_w132c_2 = tst4n_w132c_2)) ∧ SvIn B tst4b_w1328_2 tst4b_w132c_2.toNat ∧ tst4_r8_4_4_3 = (BitVec.ofNat 32 0xFFFFFFFF) ∧ tst4_w1328_4_4_3 = tst4b_w1328_2 ∧ tst4_w132c_4_4_3 = tst4b_w132c_2) ∨ ((¬ (tst3_w132c_3_4_3 = 0)) ∧ (¬ (M0 tst3_w1328_3_4_3 = BitVec.ofNat 8 1)) ∧ ∃ tst4n_w1328_2 : Word, ∃ tst4n_w132c_2 : Word, (((M0 tst3_w1328_3_4_3 = BitVec.ofNat 8 2) ∧ ∃ ip4 il4, derIntOf (memBytes M0 (tst3_w1328_3_4_3) (tst3_w132c_3_4_3).toNat) (tst3_w1328_3_4_3) (derElement 2 (memBytes M0 (tst3_w1328_3_4_3) (tst3_w132c_3_4_3).toNat)) = .ok (ip4, il4) ∧ ∃ ti4, derElement 2 (memBytes M0 (tst3_w1328_3_4_3) (tst3_w132c_3_4_3).toNat) = .ok ti4 ∧ tst4n_w1328_2 = (tst3_w1328_3_4_3) + BitVec.ofNat 32 (ti4.header + ti4.len) ∧ tst4n_w132c_2 = (tst3_w132c_3_4_3) - BitVec.ofNat 32 (ti4.header + ti4.len)) ∨ ((¬ (M0 tst3_w1328_3_4_3 = BitVec.ofNat 8 2)) ∧ tst4n_w1328_2 = tst3_w1328_3_4_3 ∧ tst4n_w132c_2 = tst3_w132c_3_4_3)) ∧ SvIn B tst4n_w1328_2 tst4n_w132c_2.toNat ∧ tst4_r8_4_4_3 = (BitVec.ofNat 32 0x18) ∧ tst4_w1328_4_4_3 = tst4n_w1328_2 ∧ tst4_w132c_4_4_3 = tst4n_w132c_2)) ∧ SvIn B tst4_w1328_4_4_3 tst4_w132c_4_4_3.toNat ∧
+      ∃ tst5_w1328_5_4_3 : Word, ∃ tst5_w132c_5_4_3 : Word, (((derOptRes 0xA0 (memBytes M0 (tst4_w1328_4_4_3) (tst4_w132c_4_4_3).toNat) = none) ∧ tst5_w1328_5_4_3 = tst4_w1328_4_4_3 ∧ tst5_w132c_5_4_3 = tst4_w132c_4_4_3) ∨ ((¬ (derOptRes 0xA0 (memBytes M0 (tst4_w1328_4_4_3) (tst4_w132c_4_4_3).toNat) = none)) ∧ ∃ tl2, derOptRes 0xA0 (memBytes M0 (tst4_w1328_4_4_3) (tst4_w132c_4_4_3).toNat) = some (.ok tl2) ∧ tst5_w1328_5_4_3 = (tst4_w1328_4_4_3) + BitVec.ofNat 32 (tl2.header + tl2.len) ∧ tst5_w132c_5_4_3 = (tst4_w132c_4_4_3) - BitVec.ofNat 32 (tl2.header + tl2.len))) ∧ SvIn B tst5_w1328_5_4_3 tst5_w132c_5_4_3.toNat ∧
+      ∃ tst6_w1328_6_4_3 : Word, ∃ tst6_w132c_6_4_3 : Word, (((derOptRes 0xA1 (memBytes M0 (tst5_w1328_5_4_3) (tst5_w132c_5_4_3).toNat) = none) ∧ (tst5_w132c_5_4_3 = 0) ∧ tst6_w1328_6_4_3 = tst5_w1328_5_4_3 ∧ tst6_w132c_6_4_3 = tst5_w132c_5_4_3) ∨ ((¬ (derOptRes 0xA1 (memBytes M0 (tst5_w1328_5_4_3) (tst5_w132c_5_4_3).toNat) = none)) ∧ ∃ tl2, derOptRes 0xA1 (memBytes M0 (tst5_w1328_5_4_3) (tst5_w132c_5_4_3).toNat) = some (.ok tl2) ∧ ((tst5_w132c_5_4_3) - BitVec.ofNat 32 (tl2.header + tl2.len) = 0) ∧ tst6_w1328_6_4_3 = (tst5_w1328_5_4_3) + BitVec.ofNat 32 (tl2.header + tl2.len) ∧ tst6_w132c_6_4_3 = (tst5_w132c_5_4_3) - BitVec.ofNat 32 (tl2.header + tl2.len))) ∧ SvIn B tst6_w1328_6_4_3 tst6_w132c_6_4_3.toNat ∧
       ∃ k_5_3, k_5_3 < 4 ∧
       (∀ i, i < k_5_3 → ∀ c'_5_3 q'_5_3, (c'_5_3, q'_5_3) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2)) + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), ((rootp) + BitVec.ofNat 32 0x198)) → ¬ (memBytes M0 (memLoad32 M0 (q'_5_3 + 0x20)) (memLoad32 M0 (q'_5_3 + 0x24)).toNat = memBytes M0 ((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) (BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)).toNat)) ∧
-      ∃ c'_5_3 q'_5_3, (c'_5_3, q'_5_3) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2)) + BitVec.ofNat 32 0x20)) k_5_3 ((BitVec.ofNat 32 0x80), ((rootp) + BitVec.ofNat 32 0x198)) ∧
+      ∃ c'_5_3 q'_5_3, (c'_5_3, q'_5_3) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2)) + BitVec.ofNat 32 0x20)) k_5_3 ((BitVec.ofNat 32 0x80), ((rootp) + BitVec.ofNat 32 0x198)) ∧ (memBytes M0 (memLoad32 M0 (q'_5_3 + 0x20)) (memLoad32 M0 (q'_5_3 + 0x24)).toNat = memBytes M0 ((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) (BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)).toNat) ∧
       ((memLoad32 M0 (q'_5_3 + 0x20)) ≠ 0) ∧
       (sha256 (memBytes M0 (vp23_3_1_3) (vl23_3_1_3).toNat) = memBytes M0 dg'_3_3 32) ∧
       (sha256 (memBytes M0 ((memLoad32 M0 (bp + 0x8))) ((memLoad32 M0 (bp + 0xC))).toNat) = memBytes M0 vp51_1_4_3 32) ∧
@@ -351,27 +351,27 @@ theorem sv_verify_72 {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : M
       ∃ ix33_1_1_4, nlScan M0 (((((memLoad32 M0 (bp + 0x18))) + BitVec.ofNat 32 (ix7_1_1_4 + 1)) + BitVec.ofNat 32 (ix17_1_1_4 + 1)) + BitVec.ofNat 32 (ix25_1_1_4 + 1)) 0 ((((((memLoad32 M0 (bp + 0x1C))).toNat) - (ix7_1_1_4 + 1)) - (ix17_1_1_4 + 1)) - (ix25_1_1_4 + 1)) = some ix33_1_1_4 ∧
       (BitVec.ofNat 32 ix33_1_1_4 = 0) ∧
       (BitVec.ofNat 32 ((((((memLoad32 M0 (bp + 0x1C))).toNat) - (ix7_1_1_4 + 1)) - (ix17_1_1_4 + 1)) - (ix25_1_1_4 + 1)) - BitVec.ofNat 32 (ix33_1_1_4 + 1) ≠ 0) ∧
-      ((((BitVec.ofNat 32 ((((((memLoad32 M0 (bp + 0x1C))).toNat) - (ix7_1_1_4 + 1)) - (ix17_1_1_4 + 1)) - (ix25_1_1_4 + 1)) - BitVec.ofNat 32 (ix33_1_1_4 + 1)).toNat < (memLoad32 M0 (bp + 0x1C)).toNat) ∧ (¬ ((memLoad32 M0 (bp + 0x1C))).toNat < ((aluEval .xor ((BitVec.ofNat 32 ((((((memLoad32 M0 (bp + 0x1C))).toNat) - (ix7_1_1_4 + 1)) - (ix17_1_1_4 + 1)) - (ix25_1_1_4 + 1)) - BitVec.ofNat 32 (ix33_1_1_4 + 1))) (BitVec.ofNat 32 0xFFFFFFFF)) + ((memLoad32 M0 (bp + 0x1C)))).toNat) ∧ (¬ (((BitVec.ofNat 32 ix17_1_1_4)) + BitVec.ofNat 32 0xFFFFFFEC).toNat < (BitVec.ofNat 32 0xFFFFFFED).toNat) ∧ (M0 (((memLoad32 M0 (bp + 0x18))) + BitVec.ofNat 32 (ix7_1_1_4 + 1)) ≠ 0x30)) ∨ (((BitVec.ofNat 32 ((((((memLoad32 M0 (bp + 0x1C))).toNat) - (ix7_1_1_4 + 1)) - (ix17_1_1_4 + 1)) - (ix25_1_1_4 + 1)) - BitVec.ofNat 32 (ix33_1_1_4 + 1)).toNat < (memLoad32 M0 (bp + 0x1C)).toNat) ∧ (¬ ((memLoad32 M0 (bp + 0x1C))).toNat < ((aluEval .xor ((BitVec.ofNat 32 ((((((memLoad32 M0 (bp + 0x1C))).toNat) - (ix7_1_1_4 + 1)) - (ix17_1_1_4 + 1)) - (ix25_1_1_4 + 1)) - BitVec.ofNat 32 (ix33_1_1_4 + 1))) (BitVec.ofNat 32 0xFFFFFFFF)) + ((memLoad32 M0 (bp + 0x1C)))).toNat) ∧ (¬ (((BitVec.ofNat 32 ix17_1_1_4)) + BitVec.ofNat 32 0xFFFFFFEC).toNat < (BitVec.ofNat 32 0xFFFFFFED).toNat))) ∧
-      ∃ c'_2_4 p'_2_4 x21'_2_4 w60'_2_4 w70'_2_4, (c'_2_4, p'_2_4, x21'_2_4, w60'_2_4, w70'_2_4) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFFF, ((s.2.1)) + BitVec.ofNat 32 0x1, (s.2.2.2.2), ((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA)), ((aluEval .mul ((s.2.2.2.2)) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))))) (BitVec.ofNat 32 ix17_1_1_4).toNat ((BitVec.ofNat 32 ix17_1_1_4), (((memLoad32 M0 (bp + 0x18))) + BitVec.ofNat 32 (ix7_1_1_4 + 1)), vl23_3_1_3, (BitVec.ofNat 32 0x0), (BitVec.ofNat 32 0x0)) ∧
+      (((1 < (BitVec.ofNat 32 ix17_1_1_4).toNat) ∧ ((BitVec.ofNat 32 ((((((memLoad32 M0 (bp + 0x1C))).toNat) - (ix7_1_1_4 + 1)) - (ix17_1_1_4 + 1)) - (ix25_1_1_4 + 1)) - BitVec.ofNat 32 (ix33_1_1_4 + 1)).toNat < (memLoad32 M0 (bp + 0x1C)).toNat) ∧ (¬ ((memLoad32 M0 (bp + 0x1C))).toNat < ((aluEval .xor ((BitVec.ofNat 32 ((((((memLoad32 M0 (bp + 0x1C))).toNat) - (ix7_1_1_4 + 1)) - (ix17_1_1_4 + 1)) - (ix25_1_1_4 + 1)) - BitVec.ofNat 32 (ix33_1_1_4 + 1))) (BitVec.ofNat 32 0xFFFFFFFF)) + ((memLoad32 M0 (bp + 0x1C)))).toNat) ∧ (¬ (((BitVec.ofNat 32 ix17_1_1_4)) + BitVec.ofNat 32 0xFFFFFFEC).toNat < (BitVec.ofNat 32 0xFFFFFFED).toNat) ∧ (M0 (((memLoad32 M0 (bp + 0x18))) + BitVec.ofNat 32 (ix7_1_1_4 + 1)) ≠ 0x30)) ∨ ((¬ (1 < (BitVec.ofNat 32 ix17_1_1_4).toNat)) ∧ ((BitVec.ofNat 32 ((((((memLoad32 M0 (bp + 0x1C))).toNat) - (ix7_1_1_4 + 1)) - (ix17_1_1_4 + 1)) - (ix25_1_1_4 + 1)) - BitVec.ofNat 32 (ix33_1_1_4 + 1)).toNat < (memLoad32 M0 (bp + 0x1C)).toNat) ∧ (¬ ((memLoad32 M0 (bp + 0x1C))).toNat < ((aluEval .xor ((BitVec.ofNat 32 ((((((memLoad32 M0 (bp + 0x1C))).toNat) - (ix7_1_1_4 + 1)) - (ix17_1_1_4 + 1)) - (ix25_1_1_4 + 1)) - BitVec.ofNat 32 (ix33_1_1_4 + 1))) (BitVec.ofNat 32 0xFFFFFFFF)) + ((memLoad32 M0 (bp + 0x1C)))).toNat) ∧ (¬ (((BitVec.ofNat 32 ix17_1_1_4)) + BitVec.ofNat 32 0xFFFFFFEC).toNat < (BitVec.ofNat 32 0xFFFFFFED).toNat))) ∧
+      ∃ c'_2_4 p'_2_4 x21'_2_4 w60'_2_4 w70'_2_4, (c'_2_4, p'_2_4, x21'_2_4, w60'_2_4, w70'_2_4) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFFF, ((s.2.1)) + BitVec.ofNat 32 0x1, (s.2.2.2.2), ((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA)), ((aluEval .mul ((s.2.2.2.2)) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))))) (BitVec.ofNat 32 ix17_1_1_4).toNat ((BitVec.ofNat 32 ix17_1_1_4), (((memLoad32 M0 (bp + 0x18))) + BitVec.ofNat 32 (ix7_1_1_4 + 1)), vl23_3_1_3, (BitVec.ofNat 32 0x0), (BitVec.ofNat 32 0x0)) ∧ (∀ i, i < (BitVec.ofNat 32 ix17_1_1_4).toNat → ∀ c'_2_4 p'_2_4 x21'_2_4 w60'_2_4 w70'_2_4, (c'_2_4, p'_2_4, x21'_2_4, w60'_2_4, w70'_2_4) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFFF, ((s.2.1)) + BitVec.ofNat 32 0x1, (s.2.2.2.2), ((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA)), ((aluEval .mul ((s.2.2.2.2)) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 ((s.2.1))).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))) (aluEval .mul ((s.2.2.2.1)) (BitVec.ofNat 32 0xA))))) i ((BitVec.ofNat 32 ix17_1_1_4), (((memLoad32 M0 (bp + 0x18))) + BitVec.ofNat 32 (ix7_1_1_4 + 1)), vl23_3_1_3, (BitVec.ofNat 32 0x0), (BitVec.ofNat 32 0x0)) → ((((((M0 (p'_2_4)).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF).toNat < (BitVec.ofNat 32 0xA).toNat)) ∧ (((aluEval .sltu ((aluEval .mul (w70'_2_4) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu (w60'_2_4) (BitVec.ofNat 32 0xA))) (aluEval .mulhu (w60'_2_4) (BitVec.ofNat 32 0xA))) ||| (aluEval .sltu (BitVec.ofNat 32 0x0) (aluEval .mulhu (w70'_2_4) (BitVec.ofNat 32 0xA))) = 0)) ∧ (((aluEval .sltu (((((M0 (p'_2_4)).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul (w60'_2_4) (BitVec.ofNat 32 0xA))) (aluEval .mul (w60'_2_4) (BitVec.ofNat 32 0xA))) &&& (aluEval .sltu (((aluEval .mul (w70'_2_4) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu (w60'_2_4) (BitVec.ofNat 32 0xA))) + (aluEval .sltu (((((M0 (p'_2_4)).zeroExtend 32) + BitVec.ofNat 32 0xFFFFFFD0) &&& BitVec.ofNat 32 0xFF) + (aluEval .mul (w60'_2_4) (BitVec.ofNat 32 0xA))) (aluEval .mul (w60'_2_4) (BitVec.ofNat 32 0xA)))) ((aluEval .mul (w70'_2_4) (BitVec.ofNat 32 0xA)) + (aluEval .mulhu (w60'_2_4) (BitVec.ofNat 32 0xA)))) = 0))) ∧
       (w70'_2_4.toNat < 2 ^ 31) ∧ ∃ bs7_2_4, base64Decode (memBytes M0 (((((memLoad32 M0 (bp + 0x18))) + BitVec.ofNat 32 (ix7_1_1_4 + 1)) + BitVec.ofNat 32 (ix17_1_1_4 + 1))) (((BitVec.ofNat 32 ix25_1_1_4)).toNat)) = some bs7_2_4 ∧ (bs7_2_4.length = 32) ∧
       ∃ k_3_4, k_3_4 < 8 ∧
       (∀ i, i < k_3_4 → ∀ c'_3_4 q'_3_4 w80'_3_4, (c'_3_4, q'_3_4, w80'_3_4) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i ((BitVec.ofNat 32 0x100), ((rootp) + BitVec.ofNat 32 0x98), rootp) → ¬ (memBytes M0 (memLoad32 M0 (q'_3_4 + 0x20)) (memLoad32 M0 (q'_3_4 + 0x24)).toNat = memBytes M0 (memLoad32 M0 (bp + 0x18)) (BitVec.ofNat 32 ix7_1_1_4).toNat)) ∧
-      ∃ c'_3_4 q'_3_4 w80'_3_4, (c'_3_4, q'_3_4, w80'_3_4) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) k_3_4 ((BitVec.ofNat 32 0x100), ((rootp) + BitVec.ofNat 32 0x98), rootp) ∧
+      ∃ c'_3_4 q'_3_4 w80'_3_4, (c'_3_4, q'_3_4, w80'_3_4) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) k_3_4 ((BitVec.ofNat 32 0x100), ((rootp) + BitVec.ofNat 32 0x98), rootp) ∧ (memBytes M0 (memLoad32 M0 (q'_3_4 + 0x20)) (memLoad32 M0 (q'_3_4 + 0x24)).toNat = memBytes M0 (memLoad32 M0 (bp + 0x18)) (BitVec.ofNat 32 ix7_1_1_4).toNat) ∧
       ((memLoad32 M0 (q'_3_4 + 0x20)) ≠ 0) ∧
       ∃ u32 u33 u34 u35 u36 u37 u38 u39 u40 u41 u42 u43 u44 u45 u46 u47 u48 u49 u50 u51 u52 u53 u54 u55 u56 u57 u58 u59 u60, ∃ sg_5_4, ∃ k_5_4 c'_5_4 x21'_5_4 rl'_5_4 rp'_5_4 dg'_5_4 w8'_5_4 wc'_5_4 w28'_5_4 w2c'_5_4 w30'_5_4 w38'_5_4 w40'_5_4 w5c'_5_4 sg'_5_4, svChain (sv_cosigStep vp51_1_4_3 B out bp ll ((q'_3_4) + BitVec.ofNat 32 0x20) bs7_2_4 (le4 (sha256 (memBytes M0 ((memLoad32 M0 (bp + 0x18))) (((BitVec.ofNat 32 ix7_1_1_4)).toNat) ++ memBytes M0 (BitVec.ofNat 32 0x3FCC4850) (1) ++ memBytes M0 (BitVec.ofNat 32 0x3FCC47D7) (1) ++ memBytes M0 ((memLoad32 M0 (((q'_3_4) + BitVec.ofNat 32 0x20) + 0x18))) (32))) 0) (memLoad32 M0 (((q'_3_4) + BitVec.ofNat 32 0x20) + 0x1C)) ((aluEval .xor ((BitVec.ofNat 32 ((((((memLoad32 M0 (bp + 0x1C))).toNat) - (ix7_1_1_4 + 1)) - (ix17_1_1_4 + 1)) - (ix25_1_1_4 + 1)) - BitVec.ofNat 32 (ix33_1_1_4 + 1))) (BitVec.ofNat 32 0xFFFFFFFF)) + ((memLoad32 M0 (bp + 0x1C)))) (memLoad32 M0 (bp + 0x18)) (memLoad32 M0 (((q'_3_4) + BitVec.ofNat 32 0x20) + 0x18)) (BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32)) (BitVec.ofNat 32 ix7_1_1_4) (memLoad32 M0 (bp + 0x18)) (BitVec.ofNat 32 (tm31_4_1_1 / 2 ^ 32)) (BitVec.ofNat 32 (tm31_4_1_1 % 2 ^ 32)) (BitVec.ofNat 32 (tm22_4_1_1 / 2 ^ 32)) (BitVec.ofNat 32 (tm22_4_1_1 % 2 ^ 32)) w60'_2_4 (memLoad32 M0 (bp + 0xC)) (memLoad32 M0 (bp + 0x8)) lp w70'_2_4 (BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32)) ((q'_4_1) + BitVec.ofNat 32 0x20) (memLoad32 M0 (q'_3_4 + 0x20)) dg (lp + BitVec.ofNat 32 t_1_1_1.header) (BitVec.ofNat 32 (tl1_2_1_1.header + tl1_2_1_1.len)) (((((((lp + BitVec.ofNat 32 t_1_1_1.header)) + BitVec.ofNat 32 tl1_2_1_1.header) + BitVec.ofNat 32 (tl29_2_1_1.header + tl29_2_1_1.len))) + BitVec.ofNat 32 (tl2_3_1_1.header + tl2_3_1_1.len)) + BitVec.ofNat 32 (tl9_3_1_1.header + tl9_3_1_1.len)) (BitVec.ofNat 32 (tl6_4_1_1.header + tl6_4_1_1.len)) sl0'_2_1 sl1'_2_1 sl2'_2_1 sl3'_2_1 sl4'_2_1 sl5'_2_1 sl6'_2_1 sl7'_2_1 sl8'_2_1 sl9'_2_1 (BitVec.ofNat 32 (tm22_4_1_1 % 2 ^ 32)) (BitVec.ofNat 32 (tm22_4_1_1 / 2 ^ 32)) (BitVec.ofNat 32 (tm31_4_1_1 % 2 ^ 32)) (BitVec.ofNat 32 (tm31_4_1_1 / 2 ^ 32)) (u32) (u33) (u34) (u35) (u36) (u37) (u38) (u39) (u40) (u41) (u42) (u43) (u44) (u45) (u46) (u47) (u48) (u49) (u50) (u51) (u52) (u53) (u54) (u55) bp35_5_1_1 vp23_3_1_3 vl23_3_1_3 ((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) (BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) ((((((tsa4_w2a8_4_1_3) + BitVec.ofNat 32 tl2_5_1_3.header) + BitVec.ofNat 32 tl13_5_1_3.header) + BitVec.ofNat 32 (te25_5_1_3.header + te25_5_1_3.len)) + BitVec.ofNat 32 (tl31_5_1_3.header + tl31_5_1_3.len)) + BitVec.ofNat 32 (te39_5_1_3.header + te39_5_1_3.len)) (BitVec.ofNat 32 (tl45_5_1_3.header + tl45_5_1_3.len)) (BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32)) (BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32)) dg'_3_3 v 0 0 0 M0) k_5_4 (((c'_3_4) + BitVec.ofNat 32 0xFFFFFFE0), x21'_2_4, (BitVec.ofNat 32 ix25_1_1_4), ((((memLoad32 M0 (bp + 0x18))) + BitVec.ofNat 32 (ix7_1_1_4 + 1)) + BitVec.ofNat 32 (ix17_1_1_4 + 1)), dg'_3_3, (u56), (u57), (u58), (u59), (BitVec.ofNat 32 0x0), ((((((memLoad32 M0 (bp + 0x18))) + BitVec.ofNat 32 (ix7_1_1_4 + 1)) + BitVec.ofNat 32 (ix17_1_1_4 + 1)) + BitVec.ofNat 32 (ix25_1_1_4 + 1)) + BitVec.ofNat 32 (ix33_1_1_4 + 1)), (u60), (BitVec.ofNat 32 ((((((memLoad32 M0 (bp + 0x1C))).toNat) - (ix7_1_1_4 + 1)) - (ix17_1_1_4 + 1)) - (ix25_1_1_4 + 1)) - BitVec.ofNat 32 (ix33_1_1_4 + 1)), sg_5_4) (c'_5_4, x21'_5_4, rl'_5_4, rp'_5_4, dg'_5_4, w8'_5_4, wc'_5_4, w28'_5_4, w2c'_5_4, w30'_5_4, w38'_5_4, w40'_5_4, w5c'_5_4, sg'_5_4) ∧
       w5c'_5_4 = 0 ∧
       ((w30'_5_4) &&& BitVec.ofNat 32 0x1 ≠ 0) ∧ (evSpec (sigMem M0 (B + 0x21A0 + BitVec.ofNat 32 0x420) sg'_5_4) (memLoad32 M0 (((q'_3_4) + BitVec.ofNat 32 0x20) + 0x18)) (B + 0x21A0 + BitVec.ofNat 32 0x420) (memLoad32 M0 (bp + 0x18)) (((aluEval .xor ((BitVec.ofNat 32 ((((((memLoad32 M0 (bp + 0x1C))).toNat) - (ix7_1_1_4 + 1)) - (ix17_1_1_4 + 1)) - (ix25_1_1_4 + 1)) - BitVec.ofNat 32 (ix33_1_1_4 + 1))) (BitVec.ofNat 32 0xFFFFFFFF)) + ((memLoad32 M0 (bp + 0x1C))))).toNat = true) ∧
-      (((aluEval .sltu ((memLoad32 M0 (bp + 0x28))) (w60'_2_4) ≠ 0)) ∨ ((aluEval .sltu ((memLoad32 M0 (bp + 0x2C))) (w70'_2_4) ≠ 0))) ∧
+      ((((memLoad32 M0 (bp + 0x2C)) = w70'_2_4) ∧ (aluEval .sltu ((memLoad32 M0 (bp + 0x28))) (w60'_2_4) ≠ 0)) ∨ ((¬ ((memLoad32 M0 (bp + 0x2C)) = w70'_2_4)) ∧ (aluEval .sltu ((memLoad32 M0 (bp + 0x2C))) (w70'_2_4) ≠ 0))) ∧
       ∃ root6_3_6_4, rootFromInclusion (pair64 ((memLoad32 M0 (bp + 0x28))) ((memLoad32 M0 (bp + 0x2C)))) (pair64 (w60'_2_4) (w70'_2_4)) ((sha256 ([] ++ memBytes M0 (BitVec.ofNat 32 0x3FCC4106) (0x1) ++ memBytes M0 (BitVec.ofNat 32 0x3FCC46F0) (0x71) ++ base64Encode (memBytes M0 (dg) (32)) ++ memBytes M0 (BitVec.ofNat 32 0x3FCC4761) (0x1B) ++ base64Encode (memBytes M0 ((memLoad32 M0 (bp + 0x8))) (((memLoad32 M0 (bp + 0xC))).toNat)) ++ memBytes M0 (BitVec.ofNat 32 0x3FCC477C) (0x54) ++ base64Encode (memBytes M0 (lp) ((ll).toNat)) ++ memBytes M0 (BitVec.ofNat 32 0x3FCC47D0) (0x7)))) (memBytes M0 ((memLoad32 M0 (bp + 0x10))) (((memLoad32 M0 (bp + 0x14))).toNat)) = some root6_3_6_4 ∧
       (b32 root6_3_6_4 = b32 bs7_2_4) ∧
-      (((aluEval .sltu ((BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32))) ((BitVec.ofNat 32 (tm22_4_1_1 % 2 ^ 32))) = 0)) ∨ ((aluEval .sltu ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) ((BitVec.ofNat 32 (tm22_4_1_1 / 2 ^ 32))) = 0))) ∧
-      (((aluEval .sltu ((BitVec.ofNat 32 (tm31_4_1_1 % 2 ^ 32))) ((BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32))) = 0)) ∨ ((aluEval .sltu ((BitVec.ofNat 32 (tm31_4_1_1 / 2 ^ 32))) ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) = 0))) ∧
-      (((aluEval .sltu ((BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32))) ((memLoad32 M0 (((q'_4_1) + BitVec.ofNat 32 0x20) + 0xFFFFFFE4))) = 0)) ∨ ((aluEval .sltu ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) ((memLoad32 M0 (((q'_4_1) + BitVec.ofNat 32 0x20) + 0xFFFFFFE8))) = 0))) ∧
-      (((aluEval .sltu ((memLoad32 M0 (((q'_4_1) + BitVec.ofNat 32 0x20) + 0xFFFFFFEC))) ((BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32))) = 0)) ∨ ((aluEval .sltu ((memLoad32 M0 (((q'_4_1) + BitVec.ofNat 32 0x20) + 0xFFFFFFF0))) ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) = 0))) ∧
-      (((aluEval .sltu ((BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32))) ((memLoad32 M0 (((q'_5_3) + BitVec.ofNat 32 0x20) + 0x8))) = 0)) ∨ ((aluEval .sltu ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) ((memLoad32 M0 (((q'_5_3) + BitVec.ofNat 32 0x20) + 0xC))) = 0))) ∧
-      (((aluEval .sltu ((memLoad32 M0 (((q'_5_3) + BitVec.ofNat 32 0x20) + 0x10))) ((BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32))) = 0)) ∨ ((aluEval .sltu ((memLoad32 M0 (((q'_5_3) + BitVec.ofNat 32 0x20) + 0x14))) ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) = 0))) ∧
-      (((aluEval .sltu ((BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32))) ((memLoad32 M0 (((((q'_3_4) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 3))) = 0)) ∨ ((aluEval .sltu ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) ((memLoad32 M0 (((((q'_3_4) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 7))) = 0))) ∧
-      (((aluEval .sltu ((memLoad32 M0 (((((q'_3_4) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 11))) ((BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32))) = 0)) ∨ ((aluEval .sltu ((memLoad32 M0 (((((q'_3_4) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 15))) ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) = 0))) ∧
+      ((((BitVec.ofNat 32 (tm22_4_1_1 / 2 ^ 32)) = (BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) ∧ (aluEval .sltu ((BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32))) ((BitVec.ofNat 32 (tm22_4_1_1 % 2 ^ 32))) = 0)) ∨ ((¬ ((BitVec.ofNat 32 (tm22_4_1_1 / 2 ^ 32)) = (BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32)))) ∧ (aluEval .sltu ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) ((BitVec.ofNat 32 (tm22_4_1_1 / 2 ^ 32))) = 0))) ∧
+      ((((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32)) = (BitVec.ofNat 32 (tm31_4_1_1 / 2 ^ 32))) ∧ (aluEval .sltu ((BitVec.ofNat 32 (tm31_4_1_1 % 2 ^ 32))) ((BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32))) = 0)) ∨ ((¬ ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32)) = (BitVec.ofNat 32 (tm31_4_1_1 / 2 ^ 32)))) ∧ (aluEval .sltu ((BitVec.ofNat 32 (tm31_4_1_1 / 2 ^ 32))) ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) = 0))) ∧
+      ((((memLoad32 M0 (((q'_4_1) + BitVec.ofNat 32 0x20) + 0xFFFFFFE8)) = (BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) ∧ (aluEval .sltu ((BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32))) ((memLoad32 M0 (((q'_4_1) + BitVec.ofNat 32 0x20) + 0xFFFFFFE4))) = 0)) ∨ ((¬ ((memLoad32 M0 (((q'_4_1) + BitVec.ofNat 32 0x20) + 0xFFFFFFE8)) = (BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32)))) ∧ (aluEval .sltu ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) ((memLoad32 M0 (((q'_4_1) + BitVec.ofNat 32 0x20) + 0xFFFFFFE8))) = 0))) ∧
+      ((((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32)) = (memLoad32 M0 (((q'_4_1) + BitVec.ofNat 32 0x20) + 0xFFFFFFF0))) ∧ (aluEval .sltu ((memLoad32 M0 (((q'_4_1) + BitVec.ofNat 32 0x20) + 0xFFFFFFEC))) ((BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32))) = 0)) ∨ ((¬ ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32)) = (memLoad32 M0 (((q'_4_1) + BitVec.ofNat 32 0x20) + 0xFFFFFFF0)))) ∧ (aluEval .sltu ((memLoad32 M0 (((q'_4_1) + BitVec.ofNat 32 0x20) + 0xFFFFFFF0))) ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) = 0))) ∧
+      ((((memLoad32 M0 (((q'_5_3) + BitVec.ofNat 32 0x20) + 0xC)) = (BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) ∧ (aluEval .sltu ((BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32))) ((memLoad32 M0 (((q'_5_3) + BitVec.ofNat 32 0x20) + 0x8))) = 0)) ∨ ((¬ ((memLoad32 M0 (((q'_5_3) + BitVec.ofNat 32 0x20) + 0xC)) = (BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32)))) ∧ (aluEval .sltu ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) ((memLoad32 M0 (((q'_5_3) + BitVec.ofNat 32 0x20) + 0xC))) = 0))) ∧
+      ((((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32)) = (memLoad32 M0 (((q'_5_3) + BitVec.ofNat 32 0x20) + 0x14))) ∧ (aluEval .sltu ((memLoad32 M0 (((q'_5_3) + BitVec.ofNat 32 0x20) + 0x10))) ((BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32))) = 0)) ∨ ((¬ ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32)) = (memLoad32 M0 (((q'_5_3) + BitVec.ofNat 32 0x20) + 0x14)))) ∧ (aluEval .sltu ((memLoad32 M0 (((q'_5_3) + BitVec.ofNat 32 0x20) + 0x14))) ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) = 0))) ∧
+      ((((memLoad32 M0 (((((q'_3_4) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 7)) = (BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) ∧ (aluEval .sltu ((BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32))) ((memLoad32 M0 (((((q'_3_4) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 3))) = 0)) ∨ ((¬ ((memLoad32 M0 (((((q'_3_4) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 7)) = (BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32)))) ∧ (aluEval .sltu ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) ((memLoad32 M0 (((((q'_3_4) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 7))) = 0))) ∧
+      ((((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32)) = (memLoad32 M0 (((((q'_3_4) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 15))) ∧ (aluEval .sltu ((memLoad32 M0 (((((q'_3_4) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 11))) ((BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32))) = 0)) ∨ ((¬ ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32)) = (memLoad32 M0 (((((q'_3_4) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 15)))) ∧ (aluEval .sltu ((memLoad32 M0 (((((q'_3_4) + BitVec.ofNat 32 0x20)) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 15))) ((BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32))) = 0))) ∧
       SvOkRet B out v n0 (BitVec.ofNat 32 (tm18_2_4_3 % 2 ^ 32)) (BitVec.ofNat 32 (tm18_2_4_3 / 2 ^ 32)) (memLoad32 M0 (bp + 0x28)) (memLoad32 M0 (bp + 0x2C))) := by
   rcases sv_seg_sv F E0 V0 hret hO s0 M0 fM g0_2 g0_10 g0_11 g0_18 g0_19 g0_21 g0_22 g0_25 g0_26 g0_27 w0_2e0 w0_2e4 w0_2e8 w0_2ec lc_in D0 w0_a34 w0_a3c w0_a44 SD0 H' SH0 KS PE0 pkp_in apk pk_in side w0_d0 w0_d4 w0_d8 w0_dc w0_e0 w0_e4 w0_e8 w0_ec w0_f0 w0_f4 w0_f8 w0_fc w0_100 w0_104 w0_108 w0_10c w0_110 w0_114 w0_118 w0_11c w0_120 w0_124 w0_128 w0_12c ts_in he0p_in he0l_in ae0p ae0l e0_in he1p_in he1l_in ae1p ae1l e1_in he2p_in he2l_in ae2p ae2l e2_in he3p_in he3l_in ae3p ae3l e3_in he4p_in he4l_in ae4p ae4l e4_in htsp_in htsl_in atsp atsl EC0 IC0 UC0 BG0 RS BY0 dg_in UE0 N80 PM0 WM0 PT0 WN0 ME P2C0 GDC0 P2D0 SC0 hidC GD OD AD hzi c0_in hc0p_in hc0l_in ac0p ac0l D0' H'' S2 KS' pkp_in' apk' pk_in' side' w0_8 w0_c w0_10 w0_14 w0_18 w0_1c CK0 ckp_in4 ckl_in4 a_ckp a_ckl ck_in H''' KS'' kp_in4 kw_in4 a_kp a_kw kp_in EE0 hiv pk_in'' lid_in lih_in lil_in a_lih a_lil RK0 dgi_in pp_in4 pl_in4 a_pp a_pl pp_in ii2h ai2h ii2l ai2l ii3h ai3h ii3l ai3l it4h at4h it4l at4l it5h at5h it5l at5l with e | e | hx
   · exact .inl e
@@ -488,137 +488,138 @@ theorem sv_verify_72 {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : M
   obtain ⟨q'_4_1, hx⟩ := hx
   obtain ⟨h55, hx⟩ := hx
   obtain ⟨h56, hx⟩ := hx
-  obtain ⟨pv_5_1, hx⟩ := hx
   obtain ⟨h57, hx⟩ := hx
+  obtain ⟨pv_5_1, hx⟩ := hx
   obtain ⟨h58, hx⟩ := hx
   obtain ⟨h59, hx⟩ := hx
   obtain ⟨h60, hx⟩ := hx
   obtain ⟨h61, hx⟩ := hx
   obtain ⟨h62, hx⟩ := hx
   obtain ⟨h63, hx⟩ := hx
-  obtain ⟨tl49_1_6_1, hx⟩ := hx
   obtain ⟨h64, hx⟩ := hx
+  obtain ⟨tl49_1_6_1, hx⟩ := hx
   obtain ⟨h65, hx⟩ := hx
-  obtain ⟨bs9_2_6_1, hx⟩ := hx
   obtain ⟨h66, hx⟩ := hx
-  obtain ⟨te9_2_6_1, hx⟩ := hx
+  obtain ⟨bs9_2_6_1, hx⟩ := hx
   obtain ⟨h67, hx⟩ := hx
-  obtain ⟨bs16_2_6_1, hx⟩ := hx
+  obtain ⟨te9_2_6_1, hx⟩ := hx
   obtain ⟨h68, hx⟩ := hx
-  obtain ⟨te16_2_6_1, hx⟩ := hx
+  obtain ⟨bs16_2_6_1, hx⟩ := hx
   obtain ⟨h69, hx⟩ := hx
+  obtain ⟨te16_2_6_1, hx⟩ := hx
   obtain ⟨h70, hx⟩ := hx
   obtain ⟨h71, hx⟩ := hx
+  obtain ⟨h72, hx⟩ := hx
   obtain ⟨σd_2, hx⟩ := hx
   obtain ⟨σf_2, hx⟩ := hx
   obtain ⟨Dv_2, hx⟩ := hx
   obtain ⟨Fv_2, hx⟩ := hx
-  obtain ⟨h72, hx⟩ := hx
   obtain ⟨h73, hx⟩ := hx
   obtain ⟨h74, hx⟩ := hx
   obtain ⟨h75, hx⟩ := hx
   obtain ⟨h76, hx⟩ := hx
-  obtain ⟨stm_2, hx⟩ := hx
   obtain ⟨h77, hx⟩ := hx
+  obtain ⟨stm_2, hx⟩ := hx
+  obtain ⟨h78, hx⟩ := hx
   obtain ⟨τd_2, hx⟩ := hx
   obtain ⟨τf_2, hx⟩ := hx
   obtain ⟨Dz_2, hx⟩ := hx
   obtain ⟨Fz_2, hx⟩ := hx
-  obtain ⟨h78, hx⟩ := hx
   obtain ⟨h79, hx⟩ := hx
   obtain ⟨h80, hx⟩ := hx
   obtain ⟨h81, hx⟩ := hx
   obtain ⟨h82, hx⟩ := hx
-  obtain ⟨tl10_1_1_3, hx⟩ := hx
   obtain ⟨h83, hx⟩ := hx
+  obtain ⟨tl10_1_1_3, hx⟩ := hx
   obtain ⟨h84, hx⟩ := hx
-  obtain ⟨tl22_1_1_3, hx⟩ := hx
   obtain ⟨h85, hx⟩ := hx
+  obtain ⟨tl22_1_1_3, hx⟩ := hx
   obtain ⟨h86, hx⟩ := hx
-  obtain ⟨te33_1_1_3, hx⟩ := hx
   obtain ⟨h87, hx⟩ := hx
+  obtain ⟨te33_1_1_3, hx⟩ := hx
   obtain ⟨h88, hx⟩ := hx
-  obtain ⟨tl41_1_1_3, hx⟩ := hx
   obtain ⟨h89, hx⟩ := hx
+  obtain ⟨tl41_1_1_3, hx⟩ := hx
   obtain ⟨h90, hx⟩ := hx
+  obtain ⟨h91, hx⟩ := hx
   obtain ⟨op53_1_1_3, hx⟩ := hx
   obtain ⟨ol53_1_1_3, hx⟩ := hx
-  obtain ⟨h91, hx⟩ := hx
-  obtain ⟨to53_1_1_3, hx⟩ := hx
   obtain ⟨h92, hx⟩ := hx
+  obtain ⟨to53_1_1_3, hx⟩ := hx
   obtain ⟨h93, hx⟩ := hx
-  obtain ⟨tl2_2_1_3, hx⟩ := hx
   obtain ⟨h94, hx⟩ := hx
+  obtain ⟨tl2_2_1_3, hx⟩ := hx
   obtain ⟨h95, hx⟩ := hx
-  obtain ⟨tl15_2_1_3, hx⟩ := hx
   obtain ⟨h96, hx⟩ := hx
+  obtain ⟨tl15_2_1_3, hx⟩ := hx
   obtain ⟨h97, hx⟩ := hx
   obtain ⟨h98, hx⟩ := hx
-  obtain ⟨te26_2_1_3, hx⟩ := hx
   obtain ⟨h99, hx⟩ := hx
-  obtain ⟨tl32_2_1_3, hx⟩ := hx
+  obtain ⟨te26_2_1_3, hx⟩ := hx
   obtain ⟨h100, hx⟩ := hx
+  obtain ⟨tl32_2_1_3, hx⟩ := hx
   obtain ⟨h101, hx⟩ := hx
-  obtain ⟨te41_2_1_3, hx⟩ := hx
   obtain ⟨h102, hx⟩ := hx
+  obtain ⟨te41_2_1_3, hx⟩ := hx
   obtain ⟨h103, hx⟩ := hx
-  obtain ⟨tl49_2_1_3, hx⟩ := hx
   obtain ⟨h104, hx⟩ := hx
+  obtain ⟨tl49_2_1_3, hx⟩ := hx
+  obtain ⟨h105, hx⟩ := hx
   obtain ⟨op58_2_1_3, hx⟩ := hx
   obtain ⟨ol58_2_1_3, hx⟩ := hx
-  obtain ⟨h105, hx⟩ := hx
-  obtain ⟨to58_2_1_3, hx⟩ := hx
   obtain ⟨h106, hx⟩ := hx
+  obtain ⟨to58_2_1_3, hx⟩ := hx
   obtain ⟨h107, hx⟩ := hx
-  obtain ⟨tl2_3_1_3, hx⟩ := hx
   obtain ⟨h108, hx⟩ := hx
+  obtain ⟨tl2_3_1_3, hx⟩ := hx
   obtain ⟨h109, hx⟩ := hx
+  obtain ⟨h110, hx⟩ := hx
   obtain ⟨vp23_3_1_3, hx⟩ := hx
   obtain ⟨vl23_3_1_3, hx⟩ := hx
-  obtain ⟨h110, hx⟩ := hx
-  obtain ⟨te23_3_1_3, hx⟩ := hx
   obtain ⟨h111, hx⟩ := hx
+  obtain ⟨te23_3_1_3, hx⟩ := hx
   obtain ⟨h112, hx⟩ := hx
+  obtain ⟨h113, hx⟩ := hx
   obtain ⟨tsa4_w2a8_4_1_3, hx⟩ := hx
   obtain ⟨tsa4_w2ac_4_1_3, hx⟩ := hx
-  obtain ⟨h113, hx⟩ := hx
   obtain ⟨h114, hx⟩ := hx
-  obtain ⟨tl2_5_1_3, hx⟩ := hx
   obtain ⟨h115, hx⟩ := hx
+  obtain ⟨tl2_5_1_3, hx⟩ := hx
   obtain ⟨h116, hx⟩ := hx
-  obtain ⟨tl13_5_1_3, hx⟩ := hx
   obtain ⟨h117, hx⟩ := hx
+  obtain ⟨tl13_5_1_3, hx⟩ := hx
   obtain ⟨h118, hx⟩ := hx
   obtain ⟨h119, hx⟩ := hx
-  obtain ⟨te25_5_1_3, hx⟩ := hx
   obtain ⟨h120, hx⟩ := hx
-  obtain ⟨tl31_5_1_3, hx⟩ := hx
+  obtain ⟨te25_5_1_3, hx⟩ := hx
   obtain ⟨h121, hx⟩ := hx
+  obtain ⟨tl31_5_1_3, hx⟩ := hx
   obtain ⟨h122, hx⟩ := hx
-  obtain ⟨te39_5_1_3, hx⟩ := hx
   obtain ⟨h123, hx⟩ := hx
-  obtain ⟨tl45_5_1_3, hx⟩ := hx
+  obtain ⟨te39_5_1_3, hx⟩ := hx
   obtain ⟨h124, hx⟩ := hx
+  obtain ⟨tl45_5_1_3, hx⟩ := hx
   obtain ⟨h125, hx⟩ := hx
   obtain ⟨h126, hx⟩ := hx
-  obtain ⟨tl6_1_2_3, hx⟩ := hx
   obtain ⟨h127, hx⟩ := hx
+  obtain ⟨tl6_1_2_3, hx⟩ := hx
+  obtain ⟨h128, hx⟩ := hx
   obtain ⟨op15_1_2_3, hx⟩ := hx
   obtain ⟨ol15_1_2_3, hx⟩ := hx
-  obtain ⟨h128, hx⟩ := hx
-  obtain ⟨to15_1_2_3, hx⟩ := hx
   obtain ⟨h129, hx⟩ := hx
-  obtain ⟨tl20_1_2_3, hx⟩ := hx
+  obtain ⟨to15_1_2_3, hx⟩ := hx
   obtain ⟨h130, hx⟩ := hx
+  obtain ⟨tl20_1_2_3, hx⟩ := hx
   obtain ⟨h131, hx⟩ := hx
   obtain ⟨h132, hx⟩ := hx
+  obtain ⟨h133, hx⟩ := hx
   obtain ⟨tsav_r24_2_2_3, hx⟩ := hx
   obtain ⟨tsav_w78_2_2_3, hx⟩ := hx
   obtain ⟨tsav_w1388_2_2_3, hx⟩ := hx
   obtain ⟨tsav_w138c_2_2_3, hx⟩ := hx
-  obtain ⟨h133, hx⟩ := hx
   obtain ⟨h134, hx⟩ := hx
   obtain ⟨h135, hx⟩ := hx
+  obtain ⟨h136, hx⟩ := hx
   obtain ⟨u0, hx⟩ := hx
   obtain ⟨u1, hx⟩ := hx
   obtain ⟨u2, hx⟩ := hx
@@ -656,117 +657,120 @@ theorem sv_verify_72 {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : M
   obtain ⟨flag'_3_3, hx⟩ := hx
   obtain ⟨cp'_3_3, hx⟩ := hx
   obtain ⟨rem'_3_3, hx⟩ := hx
-  obtain ⟨h136, hx⟩ := hx
   obtain ⟨h137, hx⟩ := hx
   obtain ⟨h138, hx⟩ := hx
   obtain ⟨h139, hx⟩ := hx
+  obtain ⟨h140, hx⟩ := hx
   obtain ⟨op8_3_3, hx⟩ := hx
   obtain ⟨ol8_3_3, hx⟩ := hx
-  obtain ⟨h140, hx⟩ := hx
-  obtain ⟨te8_3_3, hx⟩ := hx
   obtain ⟨h141, hx⟩ := hx
+  obtain ⟨te8_3_3, hx⟩ := hx
   obtain ⟨h142, hx⟩ := hx
+  obtain ⟨h143, hx⟩ := hx
   obtain ⟨vp19_3_3, hx⟩ := hx
   obtain ⟨vl19_3_3, hx⟩ := hx
-  obtain ⟨h143, hx⟩ := hx
-  obtain ⟨te19_3_3, hx⟩ := hx
   obtain ⟨h144, hx⟩ := hx
+  obtain ⟨te19_3_3, hx⟩ := hx
+  obtain ⟨h145, hx⟩ := hx
   obtain ⟨sr24_3_3, hx⟩ := hx
   obtain ⟨ss24_3_3, hx⟩ := hx
-  obtain ⟨h145, hx⟩ := hx
   obtain ⟨h146, hx⟩ := hx
-  obtain ⟨tl13_1_4_3, hx⟩ := hx
   obtain ⟨h147, hx⟩ := hx
+  obtain ⟨tl13_1_4_3, hx⟩ := hx
   obtain ⟨h148, hx⟩ := hx
   obtain ⟨h149, hx⟩ := hx
-  obtain ⟨te26_1_4_3, hx⟩ := hx
   obtain ⟨h150, hx⟩ := hx
+  obtain ⟨te26_1_4_3, hx⟩ := hx
+  obtain ⟨h151, hx⟩ := hx
   obtain ⟨op32_1_4_3, hx⟩ := hx
   obtain ⟨ol32_1_4_3, hx⟩ := hx
-  obtain ⟨h151, hx⟩ := hx
-  obtain ⟨to32_1_4_3, hx⟩ := hx
   obtain ⟨h152, hx⟩ := hx
-  obtain ⟨tl36_1_4_3, hx⟩ := hx
+  obtain ⟨to32_1_4_3, hx⟩ := hx
   obtain ⟨h153, hx⟩ := hx
+  obtain ⟨tl36_1_4_3, hx⟩ := hx
   obtain ⟨h154, hx⟩ := hx
-  obtain ⟨te45_1_4_3, hx⟩ := hx
   obtain ⟨h155, hx⟩ := hx
+  obtain ⟨te45_1_4_3, hx⟩ := hx
+  obtain ⟨h156, hx⟩ := hx
   obtain ⟨vp51_1_4_3, hx⟩ := hx
   obtain ⟨vl51_1_4_3, hx⟩ := hx
-  obtain ⟨h156, hx⟩ := hx
-  obtain ⟨te51_1_4_3, hx⟩ := hx
   obtain ⟨h157, hx⟩ := hx
+  obtain ⟨te51_1_4_3, hx⟩ := hx
   obtain ⟨h158, hx⟩ := hx
   obtain ⟨h159, hx⟩ := hx
-  obtain ⟨tl2_2_4_3, hx⟩ := hx
   obtain ⟨h160, hx⟩ := hx
+  obtain ⟨tl2_2_4_3, hx⟩ := hx
+  obtain ⟨h161, hx⟩ := hx
   obtain ⟨ip2_2_4_3, hx⟩ := hx
   obtain ⟨il2_2_4_3, hx⟩ := hx
-  obtain ⟨h161, hx⟩ := hx
   obtain ⟨h162, hx⟩ := hx
-  obtain ⟨tl13_2_4_3, hx⟩ := hx
   obtain ⟨h163, hx⟩ := hx
-  obtain ⟨tm18_2_4_3, hx⟩ := hx
+  obtain ⟨tl13_2_4_3, hx⟩ := hx
   obtain ⟨h164, hx⟩ := hx
+  obtain ⟨tm18_2_4_3, hx⟩ := hx
+  obtain ⟨h165, hx⟩ := hx
   obtain ⟨tst3_w1328_3_4_3, hx⟩ := hx
   obtain ⟨tst3_w132c_3_4_3, hx⟩ := hx
-  obtain ⟨h165, hx⟩ := hx
   obtain ⟨h166, hx⟩ := hx
+  obtain ⟨h167, hx⟩ := hx
   obtain ⟨tst4_r8_4_4_3, hx⟩ := hx
   obtain ⟨tst4_w1328_4_4_3, hx⟩ := hx
   obtain ⟨tst4_w132c_4_4_3, hx⟩ := hx
-  obtain ⟨h167, hx⟩ := hx
   obtain ⟨h168, hx⟩ := hx
+  obtain ⟨h169, hx⟩ := hx
   obtain ⟨tst5_w1328_5_4_3, hx⟩ := hx
   obtain ⟨tst5_w132c_5_4_3, hx⟩ := hx
-  obtain ⟨h169, hx⟩ := hx
   obtain ⟨h170, hx⟩ := hx
+  obtain ⟨h171, hx⟩ := hx
   obtain ⟨tst6_w1328_6_4_3, hx⟩ := hx
   obtain ⟨tst6_w132c_6_4_3, hx⟩ := hx
-  obtain ⟨h171, hx⟩ := hx
   obtain ⟨h172, hx⟩ := hx
-  obtain ⟨k_5_3, hx⟩ := hx
   obtain ⟨h173, hx⟩ := hx
+  obtain ⟨k_5_3, hx⟩ := hx
   obtain ⟨h174, hx⟩ := hx
+  obtain ⟨h175, hx⟩ := hx
   obtain ⟨c'_5_3, hx⟩ := hx
   obtain ⟨q'_5_3, hx⟩ := hx
-  obtain ⟨h175, hx⟩ := hx
   obtain ⟨h176, hx⟩ := hx
   obtain ⟨h177, hx⟩ := hx
   obtain ⟨h178, hx⟩ := hx
   obtain ⟨h179, hx⟩ := hx
-  obtain ⟨pv_7_3, hx⟩ := hx
   obtain ⟨h180, hx⟩ := hx
   obtain ⟨h181, hx⟩ := hx
-  obtain ⟨ix7_1_1_4, hx⟩ := hx
+  obtain ⟨pv_7_3, hx⟩ := hx
   obtain ⟨h182, hx⟩ := hx
-  obtain ⟨ix17_1_1_4, hx⟩ := hx
   obtain ⟨h183, hx⟩ := hx
-  obtain ⟨ix25_1_1_4, hx⟩ := hx
+  obtain ⟨ix7_1_1_4, hx⟩ := hx
   obtain ⟨h184, hx⟩ := hx
-  obtain ⟨ix33_1_1_4, hx⟩ := hx
+  obtain ⟨ix17_1_1_4, hx⟩ := hx
   obtain ⟨h185, hx⟩ := hx
+  obtain ⟨ix25_1_1_4, hx⟩ := hx
   obtain ⟨h186, hx⟩ := hx
+  obtain ⟨ix33_1_1_4, hx⟩ := hx
   obtain ⟨h187, hx⟩ := hx
   obtain ⟨h188, hx⟩ := hx
+  obtain ⟨h189, hx⟩ := hx
+  obtain ⟨h190, hx⟩ := hx
   obtain ⟨c'_2_4, hx⟩ := hx
   obtain ⟨p'_2_4, hx⟩ := hx
   obtain ⟨x21'_2_4, hx⟩ := hx
   obtain ⟨w60'_2_4, hx⟩ := hx
   obtain ⟨w70'_2_4, hx⟩ := hx
-  obtain ⟨h189, hx⟩ := hx
-  obtain ⟨h190, hx⟩ := hx
-  obtain ⟨bs7_2_4, hx⟩ := hx
   obtain ⟨h191, hx⟩ := hx
   obtain ⟨h192, hx⟩ := hx
-  obtain ⟨k_3_4, hx⟩ := hx
   obtain ⟨h193, hx⟩ := hx
+  obtain ⟨bs7_2_4, hx⟩ := hx
   obtain ⟨h194, hx⟩ := hx
+  obtain ⟨h195, hx⟩ := hx
+  obtain ⟨k_3_4, hx⟩ := hx
+  obtain ⟨h196, hx⟩ := hx
+  obtain ⟨h197, hx⟩ := hx
   obtain ⟨c'_3_4, hx⟩ := hx
   obtain ⟨q'_3_4, hx⟩ := hx
   obtain ⟨w80'_3_4, hx⟩ := hx
-  obtain ⟨h195, hx⟩ := hx
-  obtain ⟨h196, hx⟩ := hx
+  obtain ⟨h198, hx⟩ := hx
+  obtain ⟨h199, hx⟩ := hx
+  obtain ⟨h200, hx⟩ := hx
   obtain ⟨u32, hx⟩ := hx
   obtain ⟨u33, hx⟩ := hx
   obtain ⟨u34, hx⟩ := hx
@@ -812,22 +816,22 @@ theorem sv_verify_72 {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : M
   obtain ⟨w40'_5_4, hx⟩ := hx
   obtain ⟨w5c'_5_4, hx⟩ := hx
   obtain ⟨sg'_5_4, hx⟩ := hx
-  obtain ⟨h197, hx⟩ := hx
-  obtain ⟨h198, hx⟩ := hx
-  obtain ⟨h199, hx⟩ := hx
-  obtain ⟨h200, hx⟩ := hx
   obtain ⟨h201, hx⟩ := hx
-  obtain ⟨root6_3_6_4, hx⟩ := hx
   obtain ⟨h202, hx⟩ := hx
   obtain ⟨h203, hx⟩ := hx
   obtain ⟨h204, hx⟩ := hx
   obtain ⟨h205, hx⟩ := hx
+  obtain ⟨root6_3_6_4, hx⟩ := hx
   obtain ⟨h206, hx⟩ := hx
   obtain ⟨h207, hx⟩ := hx
   obtain ⟨h208, hx⟩ := hx
   obtain ⟨h209, hx⟩ := hx
   obtain ⟨h210, hx⟩ := hx
   obtain ⟨h211, hx⟩ := hx
+  obtain ⟨h212, hx⟩ := hx
+  obtain ⟨h213, hx⟩ := hx
+  obtain ⟨h214, hx⟩ := hx
+  obtain ⟨h215, hx⟩ := hx
   obtain ⟨n1, hx⟩ := hx
   obtain ⟨c1, hx⟩ := hx
   obtain ⟨fR1, hx⟩ := hx
@@ -969,6 +973,6 @@ theorem sv_verify_72 {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : M
   obtain ⟨w1_1594, hx⟩ := hx
   obtain ⟨b1_a40, hx⟩ := hx
   have K1_L := hx
-  exact .inr (.inr ⟨t_1_1_1, h0, h1, tl1_2_1_1, h2, tl8_2_1_1, h3, tl16_2_1_1, h4, bp16_2_1_1, bl16_2_1_1, h5, h6, tl29_2_1_1, h7, h8, te43_2_1_1, h9, h10, tl2_3_1_1, h11, ip2_3_1_1, il2_3_1_1, h12, h13, tl9_3_1_1, h14, op19_3_1_1, ol19_3_1_1, h15, h16, tl6_4_1_1, h17, tl13_4_1_1, h18, tm22_4_1_1, rs22_4_1_1, h19, tm31_4_1_1, rs31_4_1_1, h20, h21, tl2_5_1_1, h22, tl6_5_1_1, h23, op15_5_1_1, ol15_5_1_1, prp15_5_1_1, pu15_5_1_1, h24, ta15_5_1_1, h25, h26, h27, h28, tl35_5_1_1, h29, bp35_5_1_1, bl35_5_1_1, h30, h31, h32, h33, h34, tl9_6_1_1, h35, h36, tl25_6_1_1, h37, h38, u0_1, u1_1, u2_1, k_2_1, f30'_2_1, f34'_2_1, rem'_2_1, cur'_2_1, sl0'_2_1, sl1'_2_1, sl2'_2_1, sl3'_2_1, sl4'_2_1, sl5'_2_1, sl6'_2_1, sl7'_2_1, sl8'_2_1, sl9'_2_1, h39, h40, h41, h42, h43, h44, h45, h46, h47, h48, h49, h50, h51, sr43_2_1, ss43_2_1, h52, k_4_1, h53, h54, c'_4_1, q'_4_1, h55, h56, pv_5_1, h57, h58, h59, h60, h61, h62, h63, tl49_1_6_1, h64, h65, bs9_2_6_1, h66, te9_2_6_1, h67, bs16_2_6_1, h68, te16_2_6_1, h69, h70, h71, σd_2, σf_2, Dv_2, Fv_2, h72, h73, h74, h75, h76, stm_2, h77, τd_2, τf_2, Dz_2, Fz_2, h78, h79, h80, h81, h82, tl10_1_1_3, h83, h84, tl22_1_1_3, h85, h86, te33_1_1_3, h87, h88, tl41_1_1_3, h89, h90, op53_1_1_3, ol53_1_1_3, h91, to53_1_1_3, h92, h93, tl2_2_1_3, h94, h95, tl15_2_1_3, h96, h97, h98, te26_2_1_3, h99, tl32_2_1_3, h100, h101, te41_2_1_3, h102, h103, tl49_2_1_3, h104, op58_2_1_3, ol58_2_1_3, h105, to58_2_1_3, h106, h107, tl2_3_1_3, h108, h109, vp23_3_1_3, vl23_3_1_3, h110, te23_3_1_3, h111, h112, tsa4_w2a8_4_1_3, tsa4_w2ac_4_1_3, h113, h114, tl2_5_1_3, h115, h116, tl13_5_1_3, h117, h118, h119, te25_5_1_3, h120, tl31_5_1_3, h121, h122, te39_5_1_3, h123, tl45_5_1_3, h124, h125, h126, tl6_1_2_3, h127, op15_1_2_3, ol15_1_2_3, h128, to15_1_2_3, h129, tl20_1_2_3, h130, h131, h132, tsav_r24_2_2_3, tsav_w78_2_2_3, tsav_w1388_2_2_3, tsav_w138c_2_2_3, h133, h134, h135, u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16, u17, u18, u19, u20, u21, u22, u23, u24, u25, u26, u27, u28, u29, u30, u31, k_3_3, dg'_3_3, flag'_3_3, cp'_3_3, rem'_3_3, h136, h137, h138, h139, op8_3_3, ol8_3_3, h140, te8_3_3, h141, h142, vp19_3_3, vl19_3_3, h143, te19_3_3, h144, sr24_3_3, ss24_3_3, h145, h146, tl13_1_4_3, h147, h148, h149, te26_1_4_3, h150, op32_1_4_3, ol32_1_4_3, h151, to32_1_4_3, h152, tl36_1_4_3, h153, h154, te45_1_4_3, h155, vp51_1_4_3, vl51_1_4_3, h156, te51_1_4_3, h157, h158, h159, tl2_2_4_3, h160, ip2_2_4_3, il2_2_4_3, h161, h162, tl13_2_4_3, h163, tm18_2_4_3, h164, tst3_w1328_3_4_3, tst3_w132c_3_4_3, h165, h166, tst4_r8_4_4_3, tst4_w1328_4_4_3, tst4_w132c_4_4_3, h167, h168, tst5_w1328_5_4_3, tst5_w132c_5_4_3, h169, h170, tst6_w1328_6_4_3, tst6_w132c_6_4_3, h171, h172, k_5_3, h173, h174, c'_5_3, q'_5_3, h175, h176, h177, h178, h179, pv_7_3, h180, h181, ix7_1_1_4, h182, ix17_1_1_4, h183, ix25_1_1_4, h184, ix33_1_1_4, h185, h186, h187, h188, c'_2_4, p'_2_4, x21'_2_4, w60'_2_4, w70'_2_4, h189, h190, bs7_2_4, h191, h192, k_3_4, h193, h194, c'_3_4, q'_3_4, w80'_3_4, h195, h196, u32, u33, u34, u35, u36, u37, u38, u39, u40, u41, u42, u43, u44, u45, u46, u47, u48, u49, u50, u51, u52, u53, u54, u55, u56, u57, u58, u59, u60, sg_5_4, k_5_4, c'_5_4, x21'_5_4, rl'_5_4, rp'_5_4, dg'_5_4, w8'_5_4, wc'_5_4, w28'_5_4, w2c'_5_4, w30'_5_4, w38'_5_4, w40'_5_4, w5c'_5_4, sg'_5_4, h197, h198, h199, h200, h201, root6_3_6_4, h202, h203, h204, h205, h206, h207, h208, h209, h210, h211, sv_ok_3264 F E1 s1 c1 (fun x hx => (fR1 x hx).trans (fM x hx).symm) V1 hret r1_2 r1_18 hOk r1_3 r1_4 w1_3c w1_78 r1_25 r1_23⟩)
+  exact .inr (.inr ⟨t_1_1_1, h0, h1, tl1_2_1_1, h2, tl8_2_1_1, h3, tl16_2_1_1, h4, bp16_2_1_1, bl16_2_1_1, h5, h6, tl29_2_1_1, h7, h8, te43_2_1_1, h9, h10, tl2_3_1_1, h11, ip2_3_1_1, il2_3_1_1, h12, h13, tl9_3_1_1, h14, op19_3_1_1, ol19_3_1_1, h15, h16, tl6_4_1_1, h17, tl13_4_1_1, h18, tm22_4_1_1, rs22_4_1_1, h19, tm31_4_1_1, rs31_4_1_1, h20, h21, tl2_5_1_1, h22, tl6_5_1_1, h23, op15_5_1_1, ol15_5_1_1, prp15_5_1_1, pu15_5_1_1, h24, ta15_5_1_1, h25, h26, h27, h28, tl35_5_1_1, h29, bp35_5_1_1, bl35_5_1_1, h30, h31, h32, h33, h34, tl9_6_1_1, h35, h36, tl25_6_1_1, h37, h38, u0_1, u1_1, u2_1, k_2_1, f30'_2_1, f34'_2_1, rem'_2_1, cur'_2_1, sl0'_2_1, sl1'_2_1, sl2'_2_1, sl3'_2_1, sl4'_2_1, sl5'_2_1, sl6'_2_1, sl7'_2_1, sl8'_2_1, sl9'_2_1, h39, h40, h41, h42, h43, h44, h45, h46, h47, h48, h49, h50, h51, sr43_2_1, ss43_2_1, h52, k_4_1, h53, h54, c'_4_1, q'_4_1, h55, h56, h57, pv_5_1, h58, h59, h60, h61, h62, h63, h64, tl49_1_6_1, h65, h66, bs9_2_6_1, h67, te9_2_6_1, h68, bs16_2_6_1, h69, te16_2_6_1, h70, h71, h72, σd_2, σf_2, Dv_2, Fv_2, h73, h74, h75, h76, h77, stm_2, h78, τd_2, τf_2, Dz_2, Fz_2, h79, h80, h81, h82, h83, tl10_1_1_3, h84, h85, tl22_1_1_3, h86, h87, te33_1_1_3, h88, h89, tl41_1_1_3, h90, h91, op53_1_1_3, ol53_1_1_3, h92, to53_1_1_3, h93, h94, tl2_2_1_3, h95, h96, tl15_2_1_3, h97, h98, h99, te26_2_1_3, h100, tl32_2_1_3, h101, h102, te41_2_1_3, h103, h104, tl49_2_1_3, h105, op58_2_1_3, ol58_2_1_3, h106, to58_2_1_3, h107, h108, tl2_3_1_3, h109, h110, vp23_3_1_3, vl23_3_1_3, h111, te23_3_1_3, h112, h113, tsa4_w2a8_4_1_3, tsa4_w2ac_4_1_3, h114, h115, tl2_5_1_3, h116, h117, tl13_5_1_3, h118, h119, h120, te25_5_1_3, h121, tl31_5_1_3, h122, h123, te39_5_1_3, h124, tl45_5_1_3, h125, h126, h127, tl6_1_2_3, h128, op15_1_2_3, ol15_1_2_3, h129, to15_1_2_3, h130, tl20_1_2_3, h131, h132, h133, tsav_r24_2_2_3, tsav_w78_2_2_3, tsav_w1388_2_2_3, tsav_w138c_2_2_3, h134, h135, h136, u0, u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12, u13, u14, u15, u16, u17, u18, u19, u20, u21, u22, u23, u24, u25, u26, u27, u28, u29, u30, u31, k_3_3, dg'_3_3, flag'_3_3, cp'_3_3, rem'_3_3, h137, h138, h139, h140, op8_3_3, ol8_3_3, h141, te8_3_3, h142, h143, vp19_3_3, vl19_3_3, h144, te19_3_3, h145, sr24_3_3, ss24_3_3, h146, h147, tl13_1_4_3, h148, h149, h150, te26_1_4_3, h151, op32_1_4_3, ol32_1_4_3, h152, to32_1_4_3, h153, tl36_1_4_3, h154, h155, te45_1_4_3, h156, vp51_1_4_3, vl51_1_4_3, h157, te51_1_4_3, h158, h159, h160, tl2_2_4_3, h161, ip2_2_4_3, il2_2_4_3, h162, h163, tl13_2_4_3, h164, tm18_2_4_3, h165, tst3_w1328_3_4_3, tst3_w132c_3_4_3, h166, h167, tst4_r8_4_4_3, tst4_w1328_4_4_3, tst4_w132c_4_4_3, h168, h169, tst5_w1328_5_4_3, tst5_w132c_5_4_3, h170, h171, tst6_w1328_6_4_3, tst6_w132c_6_4_3, h172, h173, k_5_3, h174, h175, c'_5_3, q'_5_3, h176, h177, h178, h179, h180, h181, pv_7_3, h182, h183, ix7_1_1_4, h184, ix17_1_1_4, h185, ix25_1_1_4, h186, ix33_1_1_4, h187, h188, h189, h190, c'_2_4, p'_2_4, x21'_2_4, w60'_2_4, w70'_2_4, h191, h192, h193, bs7_2_4, h194, h195, k_3_4, h196, h197, c'_3_4, q'_3_4, w80'_3_4, h198, h199, h200, u32, u33, u34, u35, u36, u37, u38, u39, u40, u41, u42, u43, u44, u45, u46, u47, u48, u49, u50, u51, u52, u53, u54, u55, u56, u57, u58, u59, u60, sg_5_4, k_5_4, c'_5_4, x21'_5_4, rl'_5_4, rp'_5_4, dg'_5_4, w8'_5_4, wc'_5_4, w28'_5_4, w2c'_5_4, w30'_5_4, w38'_5_4, w40'_5_4, w5c'_5_4, sg'_5_4, h201, h202, h203, h204, h205, root6_3_6_4, h206, h207, h208, h209, h210, h211, h212, h213, h214, h215, sv_ok_3264 F E1 s1 c1 (fun x hx => (fR1 x hx).trans (fM x hx).symm) V1 hret r1_2 r1_18 hOk r1_3 r1_4 w1_3c w1_78 r1_25 r1_23⟩)
 
 end C3.RV32.Sv

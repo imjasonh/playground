@@ -3,8 +3,8 @@ start at the same place under a hypothesis and its negation, and reach the
 same place with the same facts.
 
 The merged theorem takes the first stage's hypotheses except that one. It
-ends in an error return, or in either stage's success condition followed
-by their common facts. Its proof splits on the hypothesis and passes each
+ends in an error return, or in either stage's success condition, after the
+hypothesis or its negation that chose it, followed by their common facts. Its proof splits on the hypothesis and passes each
 stage's facts on whole, so it never takes them apart.
 """
 
@@ -124,6 +124,18 @@ def witnesses_of(tree, acc=(), out=None):
     return out
 
 
+def paths_of(tree, acc=(), out=None):
+    """For each leaf, the decisions above it: (hypothesis, the type it has on that side)."""
+    out = {} if out is None else out
+    if tree[0] == 'leaf':
+        out[tree[1].name] = list(acc)
+        return out
+    _, _, ty, h, pos, neg, *_ = tree
+    paths_of(pos, acc + ((h, ty),), out)
+    paths_of(neg, acc + ((h, f"¬ ({ty})"),), out)
+    return out
+
+
 def merged(fname, name, vs, doc):
     """Writes a merged stage from the stages `vs`, a list of (file, theorem)."""
     files = {Stage(*v).name: v[0] for v in vs}
@@ -131,6 +143,7 @@ def merged(fname, name, vs, doc):
     tree = split([Stage(*v) for v in vs], conds)
     order = leaves(tree)
     wits = witnesses_of(tree)
+    paths = paths_of(tree)
     bound = {b for ws in wits.values() for b, _, _ in ws}
     a = order[0]
     types = {'w': 'Word', 'r': 'Word', 'b': 'BitVec 8', 'a': 'Nat'}
@@ -224,7 +237,8 @@ def merged(fname, name, vs, doc):
     for st in order:
         assert all(dict(hyps)[p] == t for p, t in st.params if p not in conds), "the stages' hypotheses disagree"
     scs = ["False" if st.name in vac else
-           " ∧ ".join([f"∃ {b}, {x} = some {b}" for b, x, _ in wits[st.name]] + st.sc_parts +
+           " ∧ ".join([f"∃ {b}, {x} = some {b}" for b, x, _ in wits[st.name]] + [f"({t})" for _, t in paths[st.name]] +
+                      st.sc_parts +
                       [f"{d} = {vals[j]}" for d, _, vals in dvars]) or "True"
            for j, st in enumerate(order)]
     dbind = "".join(f"∃ {d} : {t}, " for d, t, _ in dvars)
@@ -342,7 +356,8 @@ def merged(fname, name, vs, doc):
             return
         nm = sc_pattern(st)
         pat = f"⟨{', '.join(nm)}, rest⟩" if nm else "rest"
-        prs = [y for _, _, h in wits[st.name] for y in (f"{h}v", f"{h}w")] + nm + ["rfl"] * len(dvars)
+        prs = ([y for _, _, h in wits[st.name] for y in (f"{h}v", f"{h}w")] + [h for h, _ in paths[st.name]] + nm +
+               ["rfl"] * len(dvars))
         pf = ("⟨" + ", ".join(prs) + "⟩" if len(prs) > 1 else prs[0]) if prs else "trivial"
         if reorder[j]:
             own = [f.key for f in st.facts if f.key != 'STEPS']

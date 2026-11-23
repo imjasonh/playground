@@ -78,7 +78,7 @@ theorem sv_seg_dbc {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3
     SvErrRet B out v n0 ∨
     (∃ tl24_1, derElement 0x30 (memBytes M0 (vp) (vl).toNat) = .ok tl24_1 ∧
       ((vl) - BitVec.ofNat 32 (tl24_1.header + tl24_1.len) = 0) ∧
-      ((True) ∨ ((M0 ((vp) + BitVec.ofNat 32 tl24_1.header) ≠ BitVec.ofNat 8 1) ∧ (M0 ((vp) + BitVec.ofNat 32 tl24_1.header) = BitVec.ofNat 8 2) ∧ ∃ ip10 il10, derIntOf (memBytes M0 (((vp) + BitVec.ofNat 32 tl24_1.header)) ((BitVec.ofNat 32 tl24_1.len)).toNat) (((vp) + BitVec.ofNat 32 tl24_1.header)) (derElement 2 (memBytes M0 (((vp) + BitVec.ofNat 32 tl24_1.header)) ((BitVec.ofNat 32 tl24_1.len)).toNat)) = .ok (ip10, il10) ∧ ∃ ti10, derElement 2 (memBytes M0 (((vp) + BitVec.ofNat 32 tl24_1.header)) ((BitVec.ofNat 32 tl24_1.len)).toNat) = .ok ti10 ∧ (((BitVec.ofNat 32 tl24_1.len)) - BitVec.ofNat 32 (ti10.header + ti10.len) = 0))) ∧
+      ((((BitVec.ofNat 32 tl24_1.len) = 0)) ∨ ((¬ ((BitVec.ofNat 32 tl24_1.len) = 0)) ∧ (M0 ((vp) + BitVec.ofNat 32 tl24_1.header) ≠ BitVec.ofNat 8 1) ∧ (M0 ((vp) + BitVec.ofNat 32 tl24_1.header) = BitVec.ofNat 8 2) ∧ ∃ ip10 il10, derIntOf (memBytes M0 (((vp) + BitVec.ofNat 32 tl24_1.header)) ((BitVec.ofNat 32 tl24_1.len)).toNat) (((vp) + BitVec.ofNat 32 tl24_1.header)) (derElement 2 (memBytes M0 (((vp) + BitVec.ofNat 32 tl24_1.header)) ((BitVec.ofNat 32 tl24_1.len)).toNat)) = .ok (ip10, il10) ∧ ∃ ti10, derElement 2 (memBytes M0 (((vp) + BitVec.ofNat 32 tl24_1.header)) ((BitVec.ofNat 32 tl24_1.len)).toNat) = .ok ti10 ∧ (((BitVec.ofNat 32 tl24_1.len)) - BitVec.ofNat 32 (ti10.header + ti10.len) = 0))) ∧
     ∃ n', Steps n0 n' ∧
         (∀ x, SvR B x → n'.mem x = M0 x) ∧
         St n'.mem SV n' 0x4EA (reg n') ∧

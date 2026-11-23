@@ -111,7 +111,7 @@ theorem sv_seg_tst4x1 {B out bp x21 x26 dg dp rp rl x8 : Word} {sr ss : Bytes} {
     (q0_104f : ∀ j, j < 48 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x104F + j)) = BitVec.ofNat 8 (ss.getD j 0))
     (hrl : rl ≠ 0) :
     SvErrRet B out v n0 ∨
-    (∃ tst4n_w1328_2 : Word, ∃ tst4n_w132c_2 : Word, ((∃ ip4 il4, derIntOf (memBytes M0 (rp) (rl).toNat) (rp) (derElement 2 (memBytes M0 (rp) (rl).toNat)) = .ok (ip4, il4) ∧ ∃ ti4, derElement 2 (memBytes M0 (rp) (rl).toNat) = .ok ti4 ∧ tst4n_w1328_2 = (rp) + BitVec.ofNat 32 (ti4.header + ti4.len) ∧ tst4n_w132c_2 = (rl) - BitVec.ofNat 32 (ti4.header + ti4.len)) ∨ (tst4n_w1328_2 = rp ∧ tst4n_w132c_2 = rl)) ∧ SvIn B tst4n_w1328_2 tst4n_w132c_2.toNat ∧
+    (∃ tst4n_w1328_2 : Word, ∃ tst4n_w132c_2 : Word, (((M0 rp = BitVec.ofNat 8 2) ∧ ∃ ip4 il4, derIntOf (memBytes M0 (rp) (rl).toNat) (rp) (derElement 2 (memBytes M0 (rp) (rl).toNat)) = .ok (ip4, il4) ∧ ∃ ti4, derElement 2 (memBytes M0 (rp) (rl).toNat) = .ok ti4 ∧ tst4n_w1328_2 = (rp) + BitVec.ofNat 32 (ti4.header + ti4.len) ∧ tst4n_w132c_2 = (rl) - BitVec.ofNat 32 (ti4.header + ti4.len)) ∨ ((¬ (M0 rp = BitVec.ofNat 8 2)) ∧ tst4n_w1328_2 = rp ∧ tst4n_w132c_2 = rl)) ∧ SvIn B tst4n_w1328_2 tst4n_w132c_2.toNat ∧
     ∃ n', Steps n0 n' ∧
         (∀ x, SvR B x → n'.mem x = M0 x) ∧
         St n'.mem SV n' 0x2952 (reg n') ∧

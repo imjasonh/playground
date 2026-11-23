@@ -169,17 +169,17 @@ theorem sv_seg_win {dp B out bp x21 x26 dg c q rl rp : Word} {lih lil : Word} {r
     (it5l : SvIn B (w74 + 0x10) 4)
     (at5l : (w74 + 0x10).toNat % 4 = 0) :
     SvErrRet B out v n0 ∨
-    ((((aluEval .sltu (lil) (w60) ≠ 0)) ∨ ((aluEval .sltu (lih) (w70) ≠ 0))) ∧
+    ((((lih = w70) ∧ (aluEval .sltu (lil) (w60) ≠ 0)) ∨ ((¬ (lih = w70)) ∧ (aluEval .sltu (lih) (w70) ≠ 0))) ∧
       ∃ root6_3, rootFromInclusion (pair64 (lil) (lih)) (pair64 (w60) (w70)) ((sha256 ([] ++ memBytes M0 (BitVec.ofNat 32 0x3FCC4106) (0x1) ++ memBytes M0 (BitVec.ofNat 32 0x3FCC46F0) (0x71) ++ base64Encode (memBytes M0 (w84) (32)) ++ memBytes M0 (BitVec.ofNat 32 0x3FCC4761) (0x1B) ++ base64Encode (memBytes M0 (w68) ((w64).toNat)) ++ memBytes M0 (BitVec.ofNat 32 0x3FCC477C) (0x54) ++ base64Encode (memBytes M0 (w6c) ((x26).toNat)) ++ memBytes M0 (BitVec.ofNat 32 0x3FCC47D0) (0x7)))) (memBytes M0 ((memLoad32 M0 (bp + 0x10))) (((memLoad32 M0 (bp + 0x14))).toNat)) = some root6_3 ∧
       (b32 root6_3 = b32 rt) ∧
-      (((aluEval .sltu (w3c) (w58) = 0)) ∨ ((aluEval .sltu (w78) (w54) = 0))) ∧
-      (((aluEval .sltu (w50) (w3c) = 0)) ∨ ((aluEval .sltu (w4c) (w78) = 0))) ∧
-      (((aluEval .sltu (w3c) ((memLoad32 M0 (w7c + 0xFFFFFFE4))) = 0)) ∨ ((aluEval .sltu (w78) ((memLoad32 M0 (w7c + 0xFFFFFFE8))) = 0))) ∧
-      (((aluEval .sltu ((memLoad32 M0 (w7c + 0xFFFFFFEC))) (w3c) = 0)) ∨ ((aluEval .sltu ((memLoad32 M0 (w7c + 0xFFFFFFF0))) (w78) = 0))) ∧
-      (((aluEval .sltu (w3c) ((memLoad32 M0 (w74 + 0x8))) = 0)) ∨ ((aluEval .sltu (w78) ((memLoad32 M0 (w74 + 0xC))) = 0))) ∧
-      (((aluEval .sltu ((memLoad32 M0 (w74 + 0x10))) (w3c) = 0)) ∨ ((aluEval .sltu ((memLoad32 M0 (w74 + 0x14))) (w78) = 0))) ∧
-      (((aluEval .sltu (w3c) ((memLoad32 M0 (((q) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 3))) = 0)) ∨ ((aluEval .sltu (w78) ((memLoad32 M0 (((q) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 7))) = 0))) ∧
-      (((aluEval .sltu ((memLoad32 M0 (((q) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 11))) (w3c) = 0)) ∨ ((aluEval .sltu ((memLoad32 M0 (((q) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 15))) (w78) = 0))) ∧
+      (((w54 = w78) ∧ (aluEval .sltu (w3c) (w58) = 0)) ∨ ((¬ (w54 = w78)) ∧ (aluEval .sltu (w78) (w54) = 0))) ∧
+      (((w78 = w4c) ∧ (aluEval .sltu (w50) (w3c) = 0)) ∨ ((¬ (w78 = w4c)) ∧ (aluEval .sltu (w4c) (w78) = 0))) ∧
+      ((((memLoad32 M0 (w7c + 0xFFFFFFE8)) = w78) ∧ (aluEval .sltu (w3c) ((memLoad32 M0 (w7c + 0xFFFFFFE4))) = 0)) ∨ ((¬ ((memLoad32 M0 (w7c + 0xFFFFFFE8)) = w78)) ∧ (aluEval .sltu (w78) ((memLoad32 M0 (w7c + 0xFFFFFFE8))) = 0))) ∧
+      (((w78 = (memLoad32 M0 (w7c + 0xFFFFFFF0))) ∧ (aluEval .sltu ((memLoad32 M0 (w7c + 0xFFFFFFEC))) (w3c) = 0)) ∨ ((¬ (w78 = (memLoad32 M0 (w7c + 0xFFFFFFF0)))) ∧ (aluEval .sltu ((memLoad32 M0 (w7c + 0xFFFFFFF0))) (w78) = 0))) ∧
+      ((((memLoad32 M0 (w74 + 0xC)) = w78) ∧ (aluEval .sltu (w3c) ((memLoad32 M0 (w74 + 0x8))) = 0)) ∨ ((¬ ((memLoad32 M0 (w74 + 0xC)) = w78)) ∧ (aluEval .sltu (w78) ((memLoad32 M0 (w74 + 0xC))) = 0))) ∧
+      (((w78 = (memLoad32 M0 (w74 + 0x14))) ∧ (aluEval .sltu ((memLoad32 M0 (w74 + 0x10))) (w3c) = 0)) ∨ ((¬ (w78 = (memLoad32 M0 (w74 + 0x14)))) ∧ (aluEval .sltu ((memLoad32 M0 (w74 + 0x14))) (w78) = 0))) ∧
+      ((((memLoad32 M0 (((q) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 7)) = w78) ∧ (aluEval .sltu (w3c) ((memLoad32 M0 (((q) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 3))) = 0)) ∨ ((¬ ((memLoad32 M0 (((q) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 7)) = w78)) ∧ (aluEval .sltu (w78) ((memLoad32 M0 (((q) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 7))) = 0))) ∧
+      (((w78 = (memLoad32 M0 (((q) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 15))) ∧ (aluEval .sltu ((memLoad32 M0 (((q) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 11))) (w3c) = 0)) ∨ ((¬ (w78 = (memLoad32 M0 (((q) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 15)))) ∧ (aluEval .sltu ((memLoad32 M0 (((q) + BitVec.ofNat 32 0x5) + BitVec.ofNat 32 15))) (w78) = 0))) ∧
     ∃ n', Steps n0 n' ∧
         (∀ x, SvR B x → n'.mem x = M0 x) ∧
         St n'.mem SV n' 0x3264 (reg n') ∧

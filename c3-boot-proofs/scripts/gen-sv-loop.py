@@ -31,6 +31,9 @@ RUNS = {'SvCkdLoop': ('c', 'p', 'pin')}
 # Loops over a slice a group at a time up to an end pointer: file: (pointer, group size, end).
 RUNS4 = {'SvCgLoop': ('pg', 4, 'w8')}
 
+# Loops that state the body's success condition for every iteration.
+PER_SC = {'SvCkdLoop', 'SvCgLoop'}
+
 # file: (theorem, body stage, doc)
 LOOPS = {
     'SvILoop': ('sv_iloop', ('SvImiss', 'sv_imiss'),
@@ -80,7 +83,10 @@ def write(fname):
     if L.kept_per:
         O(f"    (∀ i, i < k → ∀ {' '.join(L.prime.values())}, {L.peq('i')} → " +
           " ∧ ".join(f"({L.primed(t)})" for _, t in L.kept_per) + ") →")
-    O(f"    SvErrRet B out v n0 ∨ ∃ n' {' '.join(L.prime.values())}, Steps n0 n' ∧ {L.peq('k')} ∧")
+    vs = " ".join(L.prime.values())
+    per = per_sc(fname, L)
+    O(f"    SvErrRet B out v n0 ∨ ∃ n' {vs}, Steps n0 n' ∧ {L.peq('k')} ∧" +
+      (f" (∀ i, i < k → ∀ {vs}, {L.peq('i')} → {per}) ∧" if per else ""))
     O("      reg n' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧ reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧")
     O(f"      SvKeepL B n0.mem n'.mem {L.kl} ∧")
     O("      " + " ∧\n      ".join(paren(L.primed(t, "n'")) for _, t in head) + " := by")
@@ -89,8 +95,9 @@ def write(fname):
     O("  induction k with")
     O("  | zero =>")
     O(f"    intro {' '.join(loopv)} n0 {' '.join(hn)}" + (" _" if L.kept_per else ""))
-    O(f"    exact .inr ⟨n0, {', '.join(loopv)}, .refl _, (svIter_zero _ {tup}).symm, rfl, rfl, SvKeepL.refl.mono "
-      f"(by decide), {', '.join(hn)}⟩")
+    O(f"    exact .inr ⟨n0, {', '.join(loopv)}, .refl _, (svIter_zero _ {tup}).symm, " +
+      ("fun i hi => absurd hi (Nat.not_lt_zero i), " if per else "") +
+      f"rfl, rfl, SvKeepL.refl.mono (by decide), {', '.join(hn)}⟩")
     O("  | succ k ih =>")
     O(f"    intro {' '.join(loopv)} n0 {' '.join(hn)}" + (" H" if L.kept_per else ""))
     if L.kept_per:
@@ -107,14 +114,22 @@ def write(fname):
     a2, _, _, _ = ch.call(st, ov)
     a2 = a2[len(a2) - len(st.params):]
     hargs = [a for (p, _), a in zip(st.params, a2) if p in hn]
-    vs = " ".join(L.prime.values())
     O(f"    rcases ih {' '.join(hargs)}" +
       (f" (fun i hi {vs} e0 => H (i + 1) (Nat.succ_lt_succ hi) {vs} (e0.trans (svIter_succ _ i {tup}).symm))"
        if L.kept_per else "") +
-      f" with e | ⟨n', {', '.join(L.prime.values())}, cs, e0, h3, h4, hk, rest⟩")
+      f" with e | ⟨n', {', '.join(L.prime.values())}, cs, e0, {'hsc, ' if per else ''}h3, h4, hk, rest⟩")
     O("    · exact .inl (SvErrRet.pre c1 r1_3 r1_4 (fun x hx => (fR1 x hx).trans (fM x hx).symm) e)")
-    O(f"    · exact .inr ⟨n', {', '.join(L.prime.values())}, c1.trans cs, (e0.trans (svIter_succ _ k {tup}).symm), "
-      "h3.trans r1_3, h4.trans r1_4, (K1_L.trans hk).mono (by decide), rest⟩")
+    if per:
+        nsc = names1
+        O(f"    · refine .inr ⟨n', {', '.join(L.prime.values())}, c1.trans cs, (e0.trans (svIter_succ _ k {tup}).symm), "
+          f"fun i hi {vs} e1 => ?_, h3.trans r1_3, h4.trans r1_4, (K1_L.trans hk).mono (by decide), rest⟩")
+        O("      cases i with")
+        pf = nsc[0] if len(nsc) == 1 else f"⟨{', '.join(nsc)}⟩"
+        O(f"      | zero => cases e1.trans (svIter_zero _ {tup}); exact {pf}")
+        O(f"      | succ i => exact hsc i (by omega) {vs} (e1.trans (svIter_succ _ i {tup}))")
+    else:
+        O(f"    · exact .inr ⟨n', {', '.join(L.prime.values())}, c1.trans cs, (e0.trans (svIter_succ _ k {tup}).symm), "
+          "h3.trans r1_3, h4.trans r1_4, (K1_L.trans hk).mono (by decide), rest⟩")
     if fname in EXITS:
         O("")
         exit_form(O, name, L, *EXITS[fname])
@@ -128,6 +143,12 @@ def write(fname):
     O("end C3.RV32.Sv")
     O("")
     open(f'C3BootProofs/Proofs/{fname}.lean', 'w').write("\n".join(out))
+
+
+def per_sc(fname, L):
+    """The body's success condition at an iteration's values, if the loop states it."""
+    parts = [L.primed(x) for x in L.st.sc_parts]
+    return " ∧ ".join(f"({x})" for x in parts) if fname in PER_SC and parts else ""
 
 
 def name_file(name):
@@ -171,7 +192,9 @@ def exit_form(O, name, L, efile, ename, endp):
         if p != endp:
             O(f"    ({p} : {subst(subst(t, L.local), pr)})")
     O("    :")
-    concl = ["    SvErrRet B out v n0 ∨", f"    (∃ {' '.join(ps)}, {L.peq('N')} ∧"]
+    per = per_sc(name_file(name), L)
+    concl = ["    SvErrRet B out v n0 ∨", f"    (∃ {' '.join(ps)}, {L.peq('N')} ∧" +
+             (f" (∀ i, i < N → ∀ {' '.join(ps)}, {L.peq('i')} → {per}) ∧" if per else "")]
     if E.sc_parts:
         concl.append("      " + " ∧ ".join(subst(x, pr) for x in E.sc_parts) + " ∧")
     concl.append("    ∃ n', Steps n0 n' ∧")
@@ -182,13 +205,15 @@ def exit_form(O, name, L, efile, ename, endp):
         if p != endp:
             concl.insert(0, f"    ({p} : {subst(subst(t, L.local), pr)})")
     concl.insert(len([x for x in extra if x[0] != endp]), "    :")
-    open(f'/tmp/{name}_st.stmt', 'w').write("\n".join(c.replace("svIter (", "svIter (", 1) for c in concl)
-                                            .replace(L.peq('N'), L.peq(f"{RUNS[name_file(name)][0]}.toNat")
-                                                     if name_file(name) in RUNS else L.peq('N')))
+    stmt = "\n".join(c.replace("svIter (", "svIter (", 1) for c in concl)
+    if name_file(name) in RUNS:
+        cnt = RUNS[name_file(name)][0]
+        stmt = stmt.replace(L.peq('N'), L.peq(f"{cnt}.toNat")).replace("∀ i, i < N →", f"∀ i, i < {cnt}.toNat →")
+    open(f'/tmp/{name}_st.stmt', 'w').write(stmt)
     h1 = [f"{p}'" for p in hn]
     fixed_names = list(dict.fromkeys(b for g in L.fixed for b in g[1:g.rindex(' : ')].split()))
     O(f"  rcases {name} {' '.join(f'({b} := {b})' for b in fixed_names)} F hret hO M0 N {' '.join(hn)} H with e | "
-      f"⟨n1, {', '.join(ps)}, cs, e0, hr3, hr4, hkl, "
+      f"⟨n1, {', '.join(ps)}, cs, e0, {'hsc, ' if per else ''}hr3, hr4, hkl, "
       f"{', '.join(h1)}⟩")
     O("  · exact .inl e")
     rn = dict(zip(hn, h1))
@@ -202,7 +227,7 @@ def exit_form(O, name, L, efile, ename, endp):
     O(f"  · exact .inl (SvErrRet.pre cs hr3 hr4 (fun x hx => ({rn['fM']} x hx).trans (fM x hx).symm) e)")
     terms = [{"r3": "f_r3.trans hr3", "r4": "f_r4.trans hr4", "KL": "(hkl.trans f_KL).mono (by decide)"}.get(k, f"f_{k}")
              for k, _ in facts]
-    O(f"  exact .inr ⟨{', '.join(ps)}, e0, {', '.join(enm + ['n2', 'cs.trans c2'] + terms)}⟩")
+    O(f"  exact .inr ⟨{', '.join(ps)}, e0, {'hsc, ' if per else ''}{', '.join(enm + ['n2', 'cs.trans c2'] + terms)}⟩")
 
 
 

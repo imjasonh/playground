@@ -22,7 +22,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from svchain import IDENT, Chain, Stage, lean_binders, strip_parens, subst  # noqa: E402
 from svloop import GLOBAL, Loop, invariants  # noqa: E402
-from svmerge import sc_pattern  # noqa: E402
+from svmerge import paths_of, sc_pattern, split  # noqa: E402
 from svseg import canon, strip_exists  # noqa: E402
 
 BODY = ('SvSegAttr', 'sv_seg_attr')
@@ -152,8 +152,10 @@ def main():
       f"(by have := derElement_header {tl_pf}; omega)")
     O(f"      (by have := derElement_bound {tl_pf}; rw [memBytes_length] at this; exact this) hN")
     pats = []
+    paths = paths_of(split([Stage(*v) for v in TSAV], []))
     for vf, vn in TSAV:
-        nm = [f"{x}'" for x in sc_pattern(Stage(vf, vn))]
+        st_v = Stage(vf, vn)
+        nm = [f"pc{i}'" for i in range(len(paths[st_v.name]))] + [f"{x}'" for x in sc_pattern(st_v)]
         pats.append("⟨" + ", ".join(nm + ["e0", "e1", "e2", "e3"]) + "⟩")
     w78 = next(x for x in names1 if "tsav_w78" in x)
     O(f"    have hflag' : {w78} = 0 ∨ {w78} = 1 := by")
