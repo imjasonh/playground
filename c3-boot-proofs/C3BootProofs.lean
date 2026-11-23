@@ -533,3 +533,13 @@ import C3BootProofs.Audit
 import C3BootProofs.Models.EcdsaField
 import C3BootProofs.Models.EcdsaGroup
 import C3BootProofs.Models.EcdsaLoop
+import C3BootProofs.Models.EcdsaRep
+import C3BootProofs.Models.EcdsaInv
+import C3BootProofs.Models.EcdsaWnaf
+import C3BootProofs.Models.P256Inv
+import C3BootProofs.Models.P256Point
+import C3BootProofs.Models.P256Model
+import C3BootProofs.Models.P256Consts
+import C3BootProofs.Models.P384Inv
+import C3BootProofs.Models.P384Point
+import C3BootProofs.Models.P384Model
