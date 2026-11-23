@@ -111,7 +111,7 @@ theorem sv_imiss {B out bp x9 x21 x26 il c q ip subj slen : Word} {w24 w28 w2c w
     (el_in : SvIn B (q + 0x0) 4)
     (a_subj : (q + 0xFFFFFFFC).toNat % 4 = 0)
     (a_slen : (q + 0x0).toNat % 4 = 0)
-    (s_in : SvIn B subj slen.toNat)
+    (s_in : subj ≠ 0 → SvIn B subj slen.toNat)
     (i_in : SvIn B ip il.toNat)
     (hm : ¬ memBytes M0 subj slen.toNat = memBytes M0 ip il.toNat) :
     (¬ ((subj ≠ 0) ∧ True) ∧ SvErrRet B out v n0) ∨
@@ -1055,12 +1055,12 @@ theorem sv_imiss {B out bp x9 x21 x26 il c q ip subj slen : Word} {w24 w28 w2c w
   -- 0xB06: sv_seqEqF
   obtain ⟨n10, c10, s10, rk10, a0_10, K10, fr10⟩ := sv_seqEqF (pl := slen.toNat) (ql := il.toNat)
     F E9 s9 sv_at_b06 sv_at_b0a (by decide) (by decide) g9_2
-    g9_10 (by rw [g9_11, ofNat_toNat_self]) g9_12 (by rw [g9_13, ofNat_toNat_self]) (.inl s_in) (.inl i_in)
+    g9_10 (by rw [g9_11, ofNat_toNat_self]) g9_12 (by rw [g9_13, ofNat_toNat_self]) (.inl (s_in hz_3)) (.inl i_in)
   have t10 : Steps n0 n10 := t9.trans c10
   have fR10 : ∀ x, SvR B x → n10.mem x = M0 x := fun x hx => (fr10 x hx).trans (fR9 x hx)
   have E10 : SvCode n10.mem := E9.fr F fr10
   have V10 : SvSaves B n10.mem v := V9.keepL K10 (by decide)
-  rw [sv_mbRo F fR9 (.inl s_in), sv_mbRo F fR9 (.inl i_in)] at a0_10
+  rw [sv_mbRo F fR9 (.inl (s_in hz_3)), sv_mbRo F fR9 (.inl i_in)] at a0_10
   have g10_2 : reg n10 sp = B + 0x21A0 := by rw [rk10 sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g9_2]
   have g10_3 : reg n10 (3 : Fin 32) = reg n0 (3 : Fin 32) := by rw [rk10 (3 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g9_3]
   have g10_4 : reg n10 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [rk10 (4 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g9_4]

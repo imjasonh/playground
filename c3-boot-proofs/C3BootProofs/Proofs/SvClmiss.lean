@@ -151,7 +151,7 @@ theorem sv_clmiss {B out bp x21 x26 dg c q rl rp sgp op ol : Word} {rt : Bytes} 
     (el_in : SvIn B (q + 0x24) 4)
     (a_op : (q + 0x20).toNat % 4 = 0)
     (a_ol : (q + 0x24).toNat % 4 = 0)
-    (o_in : SvIn B op ol.toNat)
+    (o_in : op ≠ 0 → SvIn B op ol.toNat)
     (l_in : SvIn B w48 w44.toNat)
     (hm : ¬ memBytes M0 op ol.toNat = memBytes M0 w48 w44.toNat) :
     (¬ ((op ≠ 0) ∧ True) ∧ SvErrRet B out v n0) ∨
@@ -1684,12 +1684,12 @@ theorem sv_clmiss {B out bp x21 x26 dg c q rl rp sgp op ol : Word} {rt : Bytes} 
   -- 0x2D02: sv_seqEqF
   obtain ⟨n11, c11, s11, rk11, a0_11, K11, fr11⟩ := sv_seqEqF (pl := ol.toNat) (ql := w44.toNat)
     F E10 s10 sv_at_2d02 sv_at_2d06 (by decide) (by decide) g10_2
-    g10_10 (by rw [g10_11, ofNat_toNat_self]) g10_12 (by rw [g10_13, ofNat_toNat_self]) (.inl o_in) (.inl l_in)
+    g10_10 (by rw [g10_11, ofNat_toNat_self]) g10_12 (by rw [g10_13, ofNat_toNat_self]) (.inl (o_in hz_4)) (.inl l_in)
   have t11 : Steps n0 n11 := t10.trans c11
   have fR11 : ∀ x, SvR B x → n11.mem x = M0 x := fun x hx => (fr11 x hx).trans (fR10 x hx)
   have E11 : SvCode n11.mem := E10.fr F fr11
   have V11 : SvSaves B n11.mem v := V10.keepL K11 (by decide)
-  rw [sv_mbRo F fR10 (.inl o_in), sv_mbRo F fR10 (.inl l_in)] at a0_11
+  rw [sv_mbRo F fR10 (.inl (o_in hz_4)), sv_mbRo F fR10 (.inl l_in)] at a0_11
   have g11_2 : reg n11 sp = B + 0x21A0 := by rw [rk11 sp (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g10_2]
   have g11_3 : reg n11 (3 : Fin 32) = reg n0 (3 : Fin 32) := by rw [rk11 (3 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g10_3]
   have g11_4 : reg n11 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [rk11 (4 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g10_4]

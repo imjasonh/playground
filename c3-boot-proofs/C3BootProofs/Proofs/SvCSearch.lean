@@ -230,7 +230,7 @@ theorem sv_csearch {B out bp x21 x26 dg rl rp sgp : Word} {rt : Bytes} {w8 wc w1
     (w0_aa0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp) →
     (w0_aa4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg) →
     (q0_320 : ∀ j, j < 31 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x320 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0)) →
-    (∀ i, i < N → ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i (c, q, w80) → (c' ≠ 0) ∧ (SvIn B (q' + 0x20) 4) ∧ (SvIn B (q' + 0x24) 4) ∧ ((q' + 0x20).toNat % 4 = 0) ∧ ((q' + 0x24).toNat % 4 = 0) ∧ (SvIn B (memLoad32 M0 (q' + 0x20)) (memLoad32 M0 (q' + 0x24)).toNat) ∧ (SvIn B w48 w44.toNat)) →
+    (∀ i, i < N → ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i (c, q, w80) → (c' ≠ 0) ∧ (SvIn B (q' + 0x20) 4) ∧ (SvIn B (q' + 0x24) 4) ∧ ((q' + 0x20).toNat % 4 = 0) ∧ ((q' + 0x24).toNat % 4 = 0) ∧ ((memLoad32 M0 (q' + 0x20)) ≠ 0 → SvIn B (memLoad32 M0 (q' + 0x20)) (memLoad32 M0 (q' + 0x24)).toNat) ∧ (SvIn B w48 w44.toNat)) →
     SvErrRet B out v n0 ∨ ∃ k, k < N ∧
       (∀ i, i < k → ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i (c, q, w80) → ¬ (memBytes M0 (memLoad32 M0 (q' + 0x20)) (memLoad32 M0 (q' + 0x24)).toNat = memBytes M0 w48 w44.toNat)) ∧
       ∃ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) k (c, q, w80) ∧
@@ -367,7 +367,7 @@ theorem sv_csearch_st {B out bp x21 x26 dg rl rp sgp : Word} {rt : Bytes} {w8 wc
     (w0_aa0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA0) = dp)
     (w0_aa4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xAA4) = dg)
     (q0_320 : ∀ j, j < 31 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x320 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0))
-    (H : ∀ i, i < N → ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i (c, q, w80) → (c' ≠ 0) ∧ (SvIn B (q' + 0x20) 4) ∧ (SvIn B (q' + 0x24) 4) ∧ ((q' + 0x20).toNat % 4 = 0) ∧ ((q' + 0x24).toNat % 4 = 0) ∧ (SvIn B (memLoad32 M0 (q' + 0x20)) (memLoad32 M0 (q' + 0x24)).toNat) ∧ (SvIn B w48 w44.toNat)) :
+    (H : ∀ i, i < N → ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i (c, q, w80) → (c' ≠ 0) ∧ (SvIn B (q' + 0x20) 4) ∧ (SvIn B (q' + 0x24) 4) ∧ ((q' + 0x20).toNat % 4 = 0) ∧ ((q' + 0x24).toNat % 4 = 0) ∧ ((memLoad32 M0 (q' + 0x20)) ≠ 0 → SvIn B (memLoad32 M0 (q' + 0x20)) (memLoad32 M0 (q' + 0x24)).toNat) ∧ (SvIn B w48 w44.toNat)) :
     SvErrRet B out v n0 ∨
     (∃ k, k < N ∧
       (∀ i, i < k → ∀ c' q' w80', (c', q', w80') = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2.1)) + BitVec.ofNat 32 0x20, (memLoad32 M0 ((s.2.1) + 0x20)))) i (c, q, w80) → ¬ (memBytes M0 (memLoad32 M0 (q' + 0x20)) (memLoad32 M0 (q' + 0x24)).toNat = memBytes M0 w48 w44.toNat)) ∧

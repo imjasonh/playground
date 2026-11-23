@@ -110,15 +110,15 @@ theorem sv_seg_ts {B out bp x21 x26 c0p c0l : Word} {w24 w28 w2c w30 w34 w38 w3c
     (ac0p : (bp + 0x20).toNat % 4 = 0)
     (ac0l : (bp + 0x24).toNat % 4 = 0)
     (D0 : SvData M0)
-    (H' : ∀ i, i < 4 → ∀ c'_5 q'_5, (c'_5, q'_5) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2)) + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), ((w80) + BitVec.ofNat 32 0x198)) → (SvIn B (q'_5 + 0x20) 4) ∧ (SvIn B (q'_5 + 0x24) 4) ∧ ((q'_5 + 0x20).toNat % 4 = 0) ∧ ((q'_5 + 0x24).toNat % 4 = 0) ∧ (SvIn B (memLoad32 M0 (q'_5 + 0x20)) (memLoad32 M0 (q'_5 + 0x24)).toNat))
+    (H' : ∀ i, i < 4 → ∀ c'_5 q'_5, (c'_5, q'_5) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2)) + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), ((w80) + BitVec.ofNat 32 0x198)) → (SvIn B (q'_5 + 0x20) 4) ∧ (SvIn B (q'_5 + 0x24) 4) ∧ ((q'_5 + 0x20).toNat % 4 = 0) ∧ ((q'_5 + 0x24).toNat % 4 = 0) ∧ ((memLoad32 M0 (q'_5 + 0x20)) ≠ 0 → SvIn B (memLoad32 M0 (q'_5 + 0x20)) (memLoad32 M0 (q'_5 + 0x24)).toNat))
     (S2 : SvSha2Code M0)
     (KS : SvK2Sep B)
     (sig_in : SvIn B w68 w64.toNat)
     (PE0 : PvEnv7 M0)
-    (pkp_in : ∀ i, i < 4 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), (w80 + BitVec.ofNat 32 0x198)) → SvIn B (((y1) + BitVec.ofNat 32 0x20) + 0x18) 4)
-    (apk : ∀ i, i < 4 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), (w80 + BitVec.ofNat 32 0x198)) → (((y1) + BitVec.ofNat 32 0x20) + 0x18).toNat % 4 = 0)
-    (pk_in : ∀ i, i < 4 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), (w80 + BitVec.ofNat 32 0x198)) → SvIn B (memLoad32 M0 (((y1) + BitVec.ofNat 32 0x20) + 0x18)) 0x61)
-    (side : ∀ i, i < 4 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), (w80 + BitVec.ofNat 32 0x198)) → ∀ M, PvSide M (memLoad32 M0 (((y1) + BitVec.ofNat 32 0x20) + 0x18)) (B + 0x21A0 + BitVec.ofNat 32 0x420) 32 (B + 0x21A0 + BitVec.ofNat 32 0xA40)
+    (pkp_in : ∀ i, i < 4 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), (w80 + BitVec.ofNat 32 0x198)) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → SvIn B (((y1) + BitVec.ofNat 32 0x20) + 0x18) 4)
+    (apk : ∀ i, i < 4 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), (w80 + BitVec.ofNat 32 0x198)) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → (((y1) + BitVec.ofNat 32 0x20) + 0x18).toNat % 4 = 0)
+    (pk_in : ∀ i, i < 4 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), (w80 + BitVec.ofNat 32 0x198)) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → SvIn B (memLoad32 M0 (((y1) + BitVec.ofNat 32 0x20) + 0x18)) 0x61)
+    (side : ∀ i, i < 4 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), (w80 + BitVec.ofNat 32 0x198)) → (memLoad32 M0 (y1 + 0x20)) ≠ 0 → ∀ M, PvSide M (memLoad32 M0 (((y1) + BitVec.ofNat 32 0x20) + 0x18)) (B + 0x21A0 + BitVec.ofNat 32 0x420) 32 (B + 0x21A0 + BitVec.ofNat 32 0xA40)
       (B + 0x21A0 + BitVec.ofNat 32 0xA70)) :
     SvErrRet B out v n0 ∨ Panics n0 ∨
     (∃ tl10_1_1, derElement 0x30 (memBytes M0 (c0p) (c0l).toNat) = .ok tl10_1_1 ∧
@@ -1223,7 +1223,7 @@ theorem sv_seg_ts {B out bp x21 x26 c0p c0l : Word} {w24 w28 w2c w30 w34 w38 w3c
   obtain ⟨q6_a70, hx6⟩ := hx6
   obtain ⟨mb6_420, hx6⟩ := hx6
   have K6_L := hx6
-  rcases sv_tp F E6 V6 hret hO s6 M0 fR6 r6_2 rfl rfl r6_18 r6_19 rfl r6_21 r6_22 r6_23 r6_24 rfl r6_26 r6_27 w6_74 mb6_420 b6_a40 q6_a41 q6_a70 PE0 rfl (pkp_in k_5 x5_0 c'_5 q'_5 x5_2) (apk k_5 x5_0 c'_5 q'_5 x5_2) (pk_in k_5 x5_0 c'_5 q'_5 x5_2) (side k_5 x5_0 c'_5 q'_5 x5_2) with ⟨-, e⟩ | hx7
+  rcases sv_tp F E6 V6 hret hO s6 M0 fR6 r6_2 rfl rfl r6_18 r6_19 rfl r6_21 r6_22 r6_23 r6_24 rfl r6_26 r6_27 w6_74 mb6_420 b6_a40 q6_a41 q6_a70 PE0 rfl (pkp_in k_5 x5_0 c'_5 q'_5 x5_2 x5_3) (apk k_5 x5_0 c'_5 q'_5 x5_2 x5_3) (pk_in k_5 x5_0 c'_5 q'_5 x5_2 x5_3) (side k_5 x5_0 c'_5 q'_5 x5_2 x5_3) with ⟨-, e⟩ | hx7
   · exact .inr (.inl (Panics.of_steps (c1.trans (c2.trans (c3.trans (c4.trans (c5.trans (c6)))))) e))
   obtain ⟨pv_7, hx7⟩ := hx7
   obtain ⟨x7_0, hx7⟩ := hx7

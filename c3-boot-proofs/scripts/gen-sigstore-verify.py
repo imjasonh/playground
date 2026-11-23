@@ -4845,13 +4845,15 @@ def i_entry(g):
         sub.jump(0xAF4)
         sub.fail(sub.fail_proof(("prop", hz)), "sv_fail_2a82")
     g.prop_check("subj ≠ 0", hz, null)
+    g.pinned.add(hz)
+    g.s_in = f"(s_in {hz})"
     g.branch(0xAF0, True, f"by rw [g{g.k}_22, s{g.k}.zero]; exact br_bne_t {hz}")
     g.load(0xAF8, "lw")
     g.load_mem(0xAFA, "slen", "hslen", "el_in", "a_slen")
     g.block(0xAFE, 0xB02)
     g.load(0xB02, "lw")
     g.block(0xB04, 0xB06)
-    return g.seqeq(0xB06, "subj", "slen.toNat", "ip", "il.toNat", "(.inl s_in)", "(.inl i_in)",
+    return g.seqeq(0xB06, "subj", "slen.toNat", "ip", "il.toNat", f"(.inl {g.s_in})", "(.inl i_in)",
                    f"(by rw [g{g.k}_13, ofNat_toNat_self])", f"(by rw [g{g.k}_11, ofNat_toNat_self])")
 
 
@@ -4859,7 +4861,7 @@ I_PARAMS = ["(hc : c ≠ 0)", "(hsubj : memLoad32 M0 (q + 0xFFFFFFFC) = subj)",
             "(hslen : memLoad32 M0 (q + 0x0) = slen)", "(es_in : SvIn B (q + 0xFFFFFFFC) 4)",
             "(el_in : SvIn B (q + 0x0) 4)",
             "(a_subj : (q + 0xFFFFFFFC).toNat % 4 = 0)", "(a_slen : (q + 0x0).toNat % 4 = 0)",
-            "(s_in : SvIn B subj slen.toNat)", "(i_in : SvIn B ip il.toNat)"]
+            "(s_in : subj ≠ 0 → SvIn B subj slen.toNat)", "(i_in : SvIn B ip il.toNat)"]
 I_EQ = "memBytes M0 subj slen.toNat = memBytes M0 ip il.toNat"
 
 
@@ -4895,7 +4897,7 @@ def stage_ihit():
     g.branch(0xB16, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
     g.load(0xB18, "lw")
     g.block(0xB1A, 0xB20)
-    kn = g.sne(0xB20, "ip", "il.toNat", "subj", "slen.toNat", "(.inl i_in)", "(.inl s_in)",
+    kn = g.sne(0xB20, "ip", "il.toNat", "subj", "slen.toNat", "(.inl i_in)", f"(.inl {g.s_in})",
                f"(by rw [g{g.k}_11, ofNat_toNat_self])", f"(by rw [g{g.k}_13, ofNat_toNat_self])")
     g.set_a0(kn, 0, "ite_eq_left hm.symm")
     g.branch(0xB28, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
@@ -6768,7 +6770,7 @@ TL_PARAMS = ["(hc : c ≠ 0)", "(hsid : memLoad32 M0 (q + 0x20) = sid)",
              "(hslen : memLoad32 M0 (q + 0x24) = slen)", "(es_in : SvIn B (q + 0x20) 4)",
              "(el_in : SvIn B (q + 0x24) 4)",
              "(a_sid : (q + 0x20).toNat % 4 = 0)", "(a_slen : (q + 0x24).toNat % 4 = 0)",
-             "(s_in : SvIn B sid slen.toNat)", "(i_in : SvIn B w5c w48.toNat)"]
+             "(s_in : sid ≠ 0 → SvIn B sid slen.toNat)", "(i_in : SvIn B w5c w48.toNat)"]
 TL_EQ = "memBytes M0 sid slen.toNat = memBytes M0 w5c w48.toNat"
 
 
@@ -6783,13 +6785,15 @@ def tl_entry(g):
         sub.branch(0x2A48, True, f"by rw [g{sub.k}_20, s{sub.k}.zero]; exact br_beq_t (Decidable.of_not_not {hz})")
         sub.fail(sub.fail_proof(("prop", hz)), "sv_fail_2a82")
     g.prop_check("sid ≠ 0", hz, null)
+    g.pinned.add(hz)
+    g.s_in = f"(s_in {hz})"
     g.branch(0x2A48, False, f"by rw [g{g.k}_20, s{g.k}.zero]; exact br_beq_f {hz}")
     g.load(0x2A4C, "lw")
     g.load_mem(0x2A4E, "slen", "hslen", "el_in", "a_slen")
     g.block(0x2A52, 0x2A56)
     g.load(0x2A56, "lw")
     g.load(0x2A58, "lw")
-    return g.seqeq(0x2A5A, "sid", "slen.toNat", "w5c", "w48.toNat", "(.inl s_in)", "(.inl i_in)",
+    return g.seqeq(0x2A5A, "sid", "slen.toNat", "w5c", "w48.toNat", f"(.inl {g.s_in})", "(.inl i_in)",
                    f"(by rw [g{g.k}_13, ofNat_toNat_self])", f"(by rw [g{g.k}_11, ofNat_toNat_self])")
 
 
@@ -6829,7 +6833,7 @@ def stage_tl(kind):
             g.load(0x2A6C, "lw")
             g.load(0x2A6E, "lw")
             g.block(0x2A70, 0x2A74)
-            kn = g.sne(0x2A74, "w5c", "w48.toNat", "sid", "slen.toNat", "(.inl i_in)", "(.inl s_in)",
+            kn = g.sne(0x2A74, "w5c", "w48.toNat", "sid", "slen.toNat", "(.inl i_in)", f"(.inl {g.s_in})",
                        f"(by rw [g{g.k}_11, ofNat_toNat_self])", f"(by rw [g{g.k}_13, ofNat_toNat_self])")
             g.set_a0(kn, 0, "ite_eq_left hm.symm")
             g.branch(0x2A7C, True, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
@@ -7335,7 +7339,7 @@ CL_PARAMS = ["(hc : c ≠ 0)", "(horg : memLoad32 M0 (q + 0x20) = op)",
              "(hol : memLoad32 M0 (q + 0x24) = ol)", "(eo_in : SvIn B (q + 0x20) 4)",
              "(el_in : SvIn B (q + 0x24) 4)",
              "(a_op : (q + 0x20).toNat % 4 = 0)", "(a_ol : (q + 0x24).toNat % 4 = 0)",
-             "(o_in : SvIn B op ol.toNat)", "(l_in : SvIn B w48 w44.toNat)"]
+             "(o_in : op ≠ 0 → SvIn B op ol.toNat)", "(l_in : SvIn B w48 w44.toNat)"]
 CL_EQ = "memBytes M0 op ol.toNat = memBytes M0 w48 w44.toNat"
 
 
@@ -7371,13 +7375,14 @@ def stage_cl(kind):
             sub.jump(0x2CF2)
             sub.fail(sub.fail_proof(("prop", hz)))
         g.prop_check("op ≠ 0", hz, null)
+        g.pinned.add(hz)
         g.branch(0x2CF0, True, f"by rw [g{g.k}_10, s{g.k}.zero]; exact br_bne_t {hz}")
         g.load_mem(0x2CF6, "ol", "hol", "el_in", "a_ol")
         g.load(0x2CFA, "lw")
         g.block(0x2CFC, 0x2CFE)
         g.load(0x2CFE, "lw")
         g.load(0x2D00, "lw")
-        ke = g.seqeq(0x2D02, "op", "ol.toNat", "w48", "w44.toNat", "(.inl o_in)", "(.inl l_in)",
+        ke = g.seqeq(0x2D02, "op", "ol.toNat", "w48", "w44.toNat", f"(.inl (o_in {hz}))", "(.inl l_in)",
                      f"(by rw [g{g.k}_13, ofNat_toNat_self])", f"(by rw [g{g.k}_11, ofNat_toNat_self])")
         g.set_a0(ke, 0 if kind == "miss" else 1, f"ite_eq_{'right' if kind == 'miss' else 'left'} hm")
         g.block(0x2D0A, 0x2D0C)

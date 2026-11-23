@@ -49,14 +49,14 @@ theorem sv_seg_cert {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : Ma
     (w0_a3c : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA3C) = sl7)
     (w0_a44 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) = sl9)
     (SD0 : SvData M0)
-    (H' : ∀ i, i < 4 → ∀ c'_4 q'_4, (c'_4, q'_4) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2)) + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), ((rootp) + BitVec.ofNat 32 0x3C)) → (SvIn B (q'_4 + 0xFFFFFFFC) 4) ∧ (SvIn B (q'_4 + 0x0) 4) ∧ ((q'_4 + 0xFFFFFFFC).toNat % 4 = 0) ∧ ((q'_4 + 0x0).toNat % 4 = 0) ∧ (SvIn B (memLoad32 M0 (q'_4 + 0xFFFFFFFC)) (memLoad32 M0 (q'_4 + 0x0)).toNat))
+    (H' : ∀ i, i < 4 → ∀ c'_4 q'_4, (c'_4, q'_4) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0xFFFFFFE0, ((s.2)) + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), ((rootp) + BitVec.ofNat 32 0x3C)) → (SvIn B (q'_4 + 0xFFFFFFFC) 4) ∧ (SvIn B (q'_4 + 0x0) 4) ∧ ((q'_4 + 0xFFFFFFFC).toNat % 4 = 0) ∧ ((q'_4 + 0x0).toNat % 4 = 0) ∧ ((memLoad32 M0 (q'_4 + 0xFFFFFFFC)) ≠ 0 → SvIn B (memLoad32 M0 (q'_4 + 0xFFFFFFFC)) (memLoad32 M0 (q'_4 + 0x0)).toNat))
     (SH0 : SvShaCode M0)
     (KS : SvKSep B)
     (PE0 : PvEnv7 M0)
-    (pkp_in : ∀ i, i < 4 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), (rootp + BitVec.ofNat 32 0x3C)) → SvIn B (((y1) + BitVec.ofNat 32 0x20) + 0xFFFFFFF4) 4)
-    (apk : ∀ i, i < 4 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), (rootp + BitVec.ofNat 32 0x3C)) → (((y1) + BitVec.ofNat 32 0x20) + 0xFFFFFFF4).toNat % 4 = 0)
-    (pk_in : ∀ i, i < 4 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), (rootp + BitVec.ofNat 32 0x3C)) → SvIn B (memLoad32 M0 (((y1) + BitVec.ofNat 32 0x20) + 0xFFFFFFF4)) 0x61)
-    (side : ∀ i, i < 4 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), (rootp + BitVec.ofNat 32 0x3C)) → ∀ M, PvSide M (memLoad32 M0 (((y1) + BitVec.ofNat 32 0x20) + 0xFFFFFFF4)) (B + 0x21A0 + BitVec.ofNat 32 0x1020) 48 (B + 0x21A0 + BitVec.ofNat 32 0xD0)
+    (pkp_in : ∀ i, i < 4 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), (rootp + BitVec.ofNat 32 0x3C)) → (memLoad32 M0 (y1 + 0xFFFFFFFC)) ≠ 0 → SvIn B (((y1) + BitVec.ofNat 32 0x20) + 0xFFFFFFF4) 4)
+    (apk : ∀ i, i < 4 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), (rootp + BitVec.ofNat 32 0x3C)) → (memLoad32 M0 (y1 + 0xFFFFFFFC)) ≠ 0 → (((y1) + BitVec.ofNat 32 0x20) + 0xFFFFFFF4).toNat % 4 = 0)
+    (pk_in : ∀ i, i < 4 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), (rootp + BitVec.ofNat 32 0x3C)) → (memLoad32 M0 (y1 + 0xFFFFFFFC)) ≠ 0 → SvIn B (memLoad32 M0 (((y1) + BitVec.ofNat 32 0x20) + 0xFFFFFFF4)) 0x61)
+    (side : ∀ i, i < 4 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), (rootp + BitVec.ofNat 32 0x3C)) → (memLoad32 M0 (y1 + 0xFFFFFFFC)) ≠ 0 → ∀ M, PvSide M (memLoad32 M0 (((y1) + BitVec.ofNat 32 0x20) + 0xFFFFFFF4)) (B + 0x21A0 + BitVec.ofNat 32 0x1020) 48 (B + 0x21A0 + BitVec.ofNat 32 0xD0)
       (B + 0x21A0 + BitVec.ofNat 32 0x100))
     (w0_d0 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xD0) = wd0)
     (w0_d4 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0xD4) = wd4)
@@ -631,7 +631,7 @@ theorem sv_seg_cert {B out bp rootp dg lp ll : Word} {v : Nat → Word} {n0 : Ma
   obtain ⟨q4_d1, hx4⟩ := hx4
   obtain ⟨q4_100, hx4⟩ := hx4
   have K4_L := hx4
-  rcases sv_lh F E4 V4 hret hO s4 M0 fR4 r4_2 r4_9 r4_18 r4_19 r4_21 r4_26 r4_27 w4_7c w4_8c b4_d0 q4_d1 q4_100 SH0 KS ((((lc_in).content x1_0).ofNatLen).rawW x1_2) PE0 rfl (pkp_in k_4 x4_0 c'_4 q'_4 x4_2) (apk k_4 x4_0 c'_4 q'_4 x4_2) (pk_in k_4 x4_0 c'_4 q'_4 x4_2) (side k_4 x4_0 c'_4 q'_4 x4_2) with ⟨-, e⟩ | hx5
+  rcases sv_lh F E4 V4 hret hO s4 M0 fR4 r4_2 r4_9 r4_18 r4_19 r4_21 r4_26 r4_27 w4_7c w4_8c b4_d0 q4_d1 q4_100 SH0 KS ((((lc_in).content x1_0).ofNatLen).rawW x1_2) PE0 rfl (pkp_in k_4 x4_0 c'_4 q'_4 x4_2 x4_3) (apk k_4 x4_0 c'_4 q'_4 x4_2 x4_3) (pk_in k_4 x4_0 c'_4 q'_4 x4_2 x4_3) (side k_4 x4_0 c'_4 q'_4 x4_2 x4_3) with ⟨-, e⟩ | hx5
   · exact .inr (.inl (Panics.of_steps (c1.trans (c2.trans (c3.trans (c4)))) e))
   obtain ⟨pv_5, hx5⟩ := hx5
   obtain ⟨x5_0, hx5⟩ := hx5

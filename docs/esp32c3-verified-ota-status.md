@@ -133,11 +133,13 @@ pass to the next. That is how the message digest that the signed
 attributes loop finds, and the five identity-policy slots that the
 extensions loop fills, are slices after their loops.
 
-`sv_verify` takes 128 hypotheses, all about the memory and registers at
-the entry. Most say how `Bundle` and `SigstoreRoot` lie in memory (for
-example, that each of the root's intermediates, logs, and TSAs is a slice
-outside the stack) and that the code and constants are where the image puts
-them. The rest are the inversions' side conditions (`hzi`, `PvSide`), which
+`sv_verify` takes 131 hypotheses, all about the memory and registers at
+the entry. Most say how `Bundle` and `SigstoreRoot` lie in memory and that
+the code and constants are where the image puts them. The root keeps its
+Fulcio intermediates, TSAs, and logs in fixed arrays of 4, 4, and 8 entries,
+where an unused entry has a null pointer, so each hypothesis about an
+entry's bytes holds only for an entry whose pointer isn't null: the code
+reads them only after that check. The rest are the inversions' side conditions (`hzi`, `PvSide`), which
 the P-256 and P-384 models need. The frame's contents at 0x72 are the
 prologue's (`svProMem`), so they need no hypotheses.
 

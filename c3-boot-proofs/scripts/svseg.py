@@ -658,7 +658,16 @@ class Segment:
             bound = next(re.fullmatch(rf"{re.escape(idx)} < (\d+)", canon(strip_exists(x))).group(1)
                          for q, x in self.pieces if q == lt)
             fresh = [f"y{j}" for j in range(len(vs))]
-            body = ty
+            # What the segment knows is nonzero about that state, such as a
+            # listed entry's pointer, guards the fact: the fact holds for
+            # entries that are there.
+            guards = []
+            for gpf, gpiece in self.pieces:
+                gp = canon(strip_parens(strip_exists(gpiece)))
+                gl = set(re.findall(r"(?<![\w.'])([\w']+_\d+)(?![\w'])", gp))
+                if re.fullmatch(r".+ ≠ 0", gp) and gl and gl <= set(vs):
+                    guards.append((gpf, gp))
+            body = " → ".join([g for _, g in guards] + [ty])
             for v, f in zip(vs, fresh):
                 body = re.sub(rf"(?<![\w.']){re.escape(v)}(?![\w'])", f, body)
             nm = p
@@ -667,7 +676,7 @@ class Segment:
             self.hyps.append((nm, f"∀ i, i < {bound} → ∀ {' '.join(fresh)}, ({', '.join(fresh)}) = svIter {m.group(2)} i "
                                   f"{m.group(4)} → {body}"))
             self.lifted.append(nm)
-            return f"({nm} {idx} {lt} {' '.join(vs)} {pf})"
+            return f"({nm} {idx} {lt} {' '.join(vs)} {pf}{''.join(' ' + g for g, _ in guards)})"
         return None
 
     def resolve(self, p, ty, free=()):
