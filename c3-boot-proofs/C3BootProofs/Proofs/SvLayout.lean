@@ -8,9 +8,9 @@ about words and slices at fixed offsets from `a1` and `a2`. The predicates
 here say instead that a `Bundle` and a `SigstoreRoot`, the values that
 `sigstoreVerify` takes, lie at those addresses in the layout `rustc` chose:
 
-- `Bundle` (0x30 bytes): the leaf certificate's slice at 0x0, the
-  timestamp's at 0x8, the inclusion proof's at 0x10, the checkpoint's at
-  0x18, the image signature's at 0x20, and the log index at 0x28.
+- `Bundle` (0x30 bytes): the leaf certificate's slice at 0x0, the image
+  signature's at 0x8, the inclusion proof's at 0x10, the checkpoint's at
+  0x18, the timestamp's at 0x20, and the log index at 0x28.
 - `TrustRoot` (0x238 bytes): the policy's five slices at 0x0, then arrays of
   4 Fulcio intermediates at 0x38, 8 logs at 0xB8, and 4 TSAs at 0x1B8.
   Each entry is 0x20 bytes: its name's slice, its window's two 64-bit
