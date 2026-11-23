@@ -36,7 +36,6 @@ fn main() {
     }
 
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("espidf") {
-        println!("cargo:rustc-link-arg=-Wl,--build-id=sha1");
         embuild::espidf::sysenv::output();
     }
 }
