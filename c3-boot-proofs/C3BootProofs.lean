@@ -334,7 +334,7 @@ import C3BootProofs.Proofs.SvEntry
 import C3BootProofs.Proofs.SvVerify
 import C3BootProofs.Proofs.SvLayout
 import C3BootProofs.Proofs.SvVerifyAt
-import C3BootProofs.Proofs.SvSpecLink
+import C3BootProofs.Proofs.SvDerBridge
 import C3BootProofs.Proofs.SvSegCosig
 import C3BootProofs.Proofs.SvCme
 import C3BootProofs.Proofs.SvCgLoop
