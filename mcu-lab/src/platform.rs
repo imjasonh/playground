@@ -1,7 +1,7 @@
-//! Reusable `McuApp<B: Board>` platform runtime for `mcu-lab` firmware targets.
+//! Reusable `App<B: Board>` platform runtime for `mcu-lab` firmware targets.
 //!
 //! Hardware boards implement [`Board`](crate::boards::Board); applications
-//! implement [`McuApp<B>`]. A flashable firmware binary simply wires one board
+//! implement [`App<B>`]. A flashable firmware binary simply wires one board
 //! and one app together via [`run::<B, A>()`].
 //!
 //! The platform owns boot initialization, Task Watchdog subscription/feeding,
@@ -35,16 +35,16 @@ use crate::protocol::{
 #[link_section = ".rtc.data"]
 static mut RTC_STATE: RtcState = RtcState::new();
 
-/// Execution cadence for an [`McuApp`].
+/// Execution cadence for an [`App`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunMode {
-    /// Execute one [`McuApp::step`], broadcast a BLE burst for `burst_ms`, then enter deep sleep.
+    /// Execute one [`App::step`], broadcast a BLE burst for `burst_ms`, then enter deep sleep.
     DeepSleep { interval_us: u64, burst_ms: u32 },
-    /// Execute [`McuApp::step`] repeatedly in a loop, broadcasting a BLE burst after each step.
+    /// Execute [`App::step`] repeatedly in a loop, broadcasting a BLE burst after each step.
     Continuous { burst_ms: u32, min_step_ms: u64 },
 }
 
-/// Phase durations and metadata returned by a single [`McuApp::step`].
+/// Phase durations and metadata returned by a single [`App::step`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StepOutput {
     pub sensor_us: u32,
@@ -59,7 +59,7 @@ pub struct StepOutput {
     pub post_burst_delay_ms: u64,
 }
 
-/// Per-step runtime context passed into [`McuApp::step`].
+/// Per-step runtime context passed into [`App::step`].
 pub struct StepContext<'a> {
     pub wake_count: u32,
     pub reset_code: i32,
@@ -89,7 +89,7 @@ impl<'a> StepContext<'a> {
 }
 
 /// Trait implemented by every application built on top of a `mcu-lab` [`Board`].
-pub trait McuApp<B: Board>: Sized {
+pub trait App<B: Board>: Sized {
     /// Short app slug (e.g. `"base"`, `"bench"`, `"maze"`). Combined with `B::SPEC.board`
     /// as `<board>-<app>` for OTel `mcu.app` and GHCR symbol lookup.
     const APP_NAME: &'static str;
@@ -129,7 +129,7 @@ fn is_crash_reset(code: i32) -> bool {
 }
 
 /// Boot board `B` and run application `A` on the shared `mcu-lab` platform.
-pub fn run<B: Board, A: McuApp<B>>() -> Result<()> {
+pub fn run<B: Board, A: App<B>>() -> Result<()> {
     let boot_start_us = now_us();
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
@@ -269,7 +269,7 @@ pub fn run<B: Board, A: McuApp<B>>() -> Result<()> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn run_one_step<B: Board, A: McuApp<B>>(
+fn run_one_step<B: Board, A: App<B>>(
     board: &mut B,
     app: &mut A,
     ble: &BleOtaNode,

@@ -1,5 +1,5 @@
 //! Reusable applications built on top of [`crate::boards::Board`] and
-//! [`crate::platform::McuApp`].
+//! [`crate::platform::App`].
 
 pub mod base;
 pub mod bench;

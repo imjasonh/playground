@@ -6,7 +6,7 @@ use esp_idf_svc::hal::delay::FreeRtos;
 use log::info;
 
 use crate::boards::{Board, HasLogicProbe};
-use crate::platform::{McuApp, StepContext, StepOutput};
+use crate::platform::{App, StepContext, StepOutput};
 use crate::profiler::now_us;
 use crate::protocol::{
     simulate_epd_frame, simulate_sensor_filter, EPD_FRAME_BYTES, EPD_FULL_REFRESH_SIM_US,
@@ -16,7 +16,7 @@ use crate::protocol::{
 /// Power & phase-timing benchmark workload for boards with a logic marker pin.
 pub struct BenchApp;
 
-impl<B: Board + HasLogicProbe> McuApp<B> for BenchApp {
+impl<B: Board + HasLogicProbe> App<B> for BenchApp {
     const APP_NAME: &'static str = "bench";
     const FIRMWARE_ID: &'static str = FIRMWARE_ID;
 

@@ -11,7 +11,7 @@ use crate::maze::{
     Layout, Maze, CELLS_PER_TICK, HOLD_COMPLETE_MS, MAZE_COLS, MAZE_FIRMWARE_ID, MAZE_ROWS,
     TICK_MS,
 };
-use crate::platform::{McuApp, RunMode, StepContext, StepOutput};
+use crate::platform::{App, RunMode, StepContext, StepOutput};
 use crate::profiler::now_us;
 use crate::protocol::FLAG_EPD_PARTIAL;
 
@@ -27,7 +27,7 @@ pub struct MazeApp {
     active: Option<ActiveMaze>,
 }
 
-impl<B: Board + HasEpd75> McuApp<B> for MazeApp {
+impl<B: Board + HasEpd75> App<B> for MazeApp {
     const APP_NAME: &'static str = "maze";
     const FIRMWARE_ID: &'static str = MAZE_FIRMWARE_ID;
 

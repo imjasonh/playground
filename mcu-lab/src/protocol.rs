@@ -56,7 +56,7 @@ pub const CHIP_ID_ESP32: u16 = 0x0000;
 /// ESP-IDF `esp_image_header_t.chip_id` for ESP32-C3 (RISC-V).
 pub const CHIP_ID_ESP32C3: u16 = 0x0005;
 
-/// Static hardware board descriptor (independent of which [`McuApp`] is running on it).
+/// Static hardware board descriptor (independent of which [`App`] is running on it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoardSpec {
     pub board_id: u8,

@@ -7,13 +7,13 @@
 use anyhow::Result;
 
 use crate::boards::Board;
-use crate::platform::{McuApp, StepContext, StepOutput};
+use crate::platform::{App, StepContext, StepOutput};
 use crate::protocol::BASE_FIRMWARE_ID;
 
 /// Minimal idle/bootstrap application that works on every board.
 pub struct BaseApp;
 
-impl<B: Board> McuApp<B> for BaseApp {
+impl<B: Board> App<B> for BaseApp {
     const APP_NAME: &'static str = "base";
     const FIRMWARE_ID: &'static str = BASE_FIRMWARE_ID;
 
