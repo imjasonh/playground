@@ -800,4 +800,30 @@ theorem readPositiveInteger_mem {M : Word → BitVec 8} {p l ip il : Word} {t : 
   have hB := derTlv_mem_bound (derElement_tlv h)
   rw [hr, memBytes_content hB, memBytes_rest hB, e1, e2]
 
+theorem find?_at {α : Type} {p : α → Bool} : ∀ {l : List α} {k : Nat} (hk : k < l.length), p l[k] = true →
+    (∀ i (h : i < k), p (l[i]'(by omega)) = false) → l.find? p = some l[k]
+  | [], _, hk, _, _ => absurd hk (Nat.not_lt_zero _)
+  | x :: xs, 0, _, hp, _ => by rw [List.find?_cons_of_pos (show p x = true from hp)]; rfl
+  | x :: xs, k + 1, hk, hp, hprev => by
+    rw [List.find?_cons_of_neg (by rw [show p x = false from hprev 0 (Nat.succ_pos k)]; exact Bool.false_ne_true)]
+    exact find?_at (Nat.lt_of_succ_lt_succ hk) hp fun i h => hprev (i + 1) (Nat.succ_lt_succ h)
+
+/-- A search of an array of `cap` entries, where the listed entries `l` come
+first and the rest are marked unused: the entry `k` it found, used and
+named `target` after `k` entries named otherwise, is `l.find?`'s. -/
+theorem find?_of_search {α : Type} {l : List α} {cap k : Nat} {name : α → Bytes} {target : Bytes}
+    {nameAt : Nat → Bytes} {used : Nat → Prop}
+    (hlist : ∀ i (h : i < l.length), nameAt i = name l[i])
+    (hunused : ∀ i, l.length ≤ i → i < cap → ¬ used i)
+    (hk : k < cap) (hu : used k) (hm : nameAt k = target) (hprev : ∀ i, i < k → nameAt i ≠ target) :
+    ∃ h : k < l.length, l.find? (fun x => name x == target) = some l[k] := by
+  have hkl : k < l.length := by
+    by_cases h : k < l.length
+    · exact h
+    · exact absurd hu (hunused k (by omega) hk)
+  refine ⟨hkl, find?_at hkl ?_ fun i h => ?_⟩
+  · rw [← hlist k hkl, hm]; exact beq_iff_eq.mpr rfl
+  · rw [← hlist i (by omega)]
+    exact Bool.eq_false_iff.mpr fun e => hprev i h (beq_iff_eq.mp e)
+
 end C3.RV32.Sv

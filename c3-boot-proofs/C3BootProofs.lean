@@ -336,6 +336,7 @@ import C3BootProofs.Proofs.SvLayout
 import C3BootProofs.Proofs.SvVerifyAt
 import C3BootProofs.Proofs.SvDerBridge
 import C3BootProofs.Proofs.SvLeafLink
+import C3BootProofs.Proofs.SvExtLink
 import C3BootProofs.Proofs.SvSegCosig
 import C3BootProofs.Proofs.SvCme
 import C3BootProofs.Proofs.SvCgLoop
