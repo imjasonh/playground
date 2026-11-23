@@ -100,6 +100,43 @@ theorem wnafGo_val {N L : Nat} (hN : N < 2 ^ L) :
       · simp only [wval]; omega
       · simp only [wval]; omega
 
+theorem wnafGo_length {N L : Nat} (hN : N < 2 ^ L) :
+    ∀ fuel pos carry, carry ≤ 1 → pos ≤ L → (wnafGo N L fuel pos carry).length ≤ L + 1 - pos := by
+  intro fuel
+  induction fuel with
+  | zero => intro pos carry _ _; exact Nat.zero_le _
+  | succ fuel ih =>
+    intro pos carry hc hp
+    simp only [wnafGo]
+    by_cases hlt : pos < L
+    · rw [ite_eq_left hlt]
+      by_cases he : (carry + N / 2 ^ pos % 32) % 2 = 0
+      · rw [ite_eq_left he, List.length_cons]
+        have := ih (pos + 1) carry hc hlt
+        omega
+      · rw [ite_eq_right he]
+        by_cases hw : carry + N / 2 ^ pos % 32 < 16
+        · simp only [hw, ↓reduceIte, Nat.sub_zero]
+          rw [List.length_append, List.length_cons, List.length_replicate]
+          have := ih (pos + min 5 (L - pos)) 0 (Nat.zero_le _) (by omega)
+          omega
+        · simp only [hw, ↓reduceIte]
+          have ha : N / 2 ^ pos < 2 ^ (L - pos) := by
+            rw [Nat.div_lt_iff_lt_mul (Nat.two_pow_pos pos), ← Nat.pow_add, Nat.sub_add_cancel hp]; exact hN
+          have h15 : 15 ≤ N / 2 ^ pos := by have := Nat.mod_le (N / 2 ^ pos) 32; omega
+          have h4 : 4 ≤ L - pos := by
+            refine Nat.le_of_not_lt fun h => ?_
+            have : 2 ^ (L - pos) ≤ 2 ^ 3 := Nat.pow_le_pow_right (by decide) (by omega)
+            have : (2 : Nat) ^ 3 = 8 := rfl
+            omega
+          rw [List.length_append, List.length_cons, List.length_replicate]
+          have := ih (pos + min 5 (L - 1 - pos)) 1 (Nat.le_refl _) (by omega)
+          omega
+    · rw [ite_eq_right hlt]
+      split
+      · exact Nat.zero_le _
+      · rw [List.length_singleton]; omega
+
 /-- A wNAF digit: zero, or odd with magnitude below 16. -/
 def WDig (d : Int) : Prop := d = 0 ∨ (d.natAbs % 2 = 1 ∧ d.natAbs < 16)
 
