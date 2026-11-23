@@ -1,6 +1,8 @@
-# One Tap Quest (Godot 4.7)
+# One Tap Quest (Unofficial Godot Recreation)
 
-A Godot 4.7 recreation of [shimage.net/one-tap-quest](http://shimage.net/one-tap-quest/), compiled for **Web** (GitHub Pages) and embedded natively in the **Playground iOS app** (`ios/`) via [SwiftGodotKit](https://github.com/migueldeicaza/SwiftGodotKit).
+> **Attribution:** This is an unofficial, AI-built Godot 4.7 recreation of **[One Tap Quest](http://shimage.net/one-tap-quest/)** by **[shimage.net](http://shimage.net)** (2014). The game design, one-tap mechanic, enemy roster, patrol patterns, level curve, item effects, map layout, and 9-crystal boss fight all come directly from shimage.net's original Enchant.js game — please play and support the original at [shimage.net/one-tap-quest](http://shimage.net/one-tap-quest/). All code and pixel-art sprites in this directory were written from scratch for this port.
+
+Compiled for **Web** (GitHub Pages) and embedded natively in the **Playground iOS app** (`ios/`) via [SwiftGodotKit](https://github.com/migueldeicaza/SwiftGodotKit).
 
 ## How the game works
 

@@ -5,7 +5,7 @@ enum OneTapQuestExperiment {
     static let experiment = Experiment(
         id: "one-tap-quest",
         title: "One Tap Quest",
-        summary: "Godot one-tap RPG: drag to aim, release to march north, and topple the boss.",
+        summary: "Unofficial AI-built Godot recreation of One Tap Quest by shimage.net.",
         icon: "figure.walk"
     ) {
         OneTapQuestView()

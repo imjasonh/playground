@@ -166,7 +166,10 @@ platform :ios do
       # Simulator UI tests occasionally lose the app connection under CI load
       # (mach peer unload). Retry the failed test a couple of times before
       # failing the lane — unit tests still fail immediately on a real bug.
-      number_of_retries: 2
+      number_of_retries: 2,
+      # SwiftGodotBinary uses SwiftGodotMacroLibrary; headless CI cannot click
+      # Xcode's interactive macro trust prompt.
+      xcargs: "-skipMacroValidation"
     )
   end
 
@@ -279,6 +282,7 @@ platform :ios do
       # Values containing spaces ("Apple Distribution", profile names) must be
       # quoted — xcargs is passed through a shell.
       xcargs: [
+        "-skipMacroValidation",
         "CURRENT_PROJECT_VERSION=#{build_number}",
         "DEVELOPMENT_TEAM=#{team_id}",
         "CODE_SIGN_STYLE=Manual",

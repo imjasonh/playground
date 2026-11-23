@@ -19,6 +19,7 @@ var _result_layer: Node2D
 var _lv_label: Label
 var _exp_label: Label
 var _hint_label: Label
+var _credit_banner: ColorRect
 
 var player: EntityPlayer
 var enemies: Array[EntityEnemy] = []
@@ -92,6 +93,21 @@ func _build_layers() -> void:
 	_hint_label.text = "TAP TO GO"
 	_hud_layer.add_child(_hint_label)
 
+	_credit_banner = ColorRect.new()
+	_credit_banner.color = Color(0, 0, 0, 0.65)
+	_credit_banner.position = Vector2(10, 260)
+	_credit_banner.size = Vector2(GameData.GAME_WIDTH - 20, 20)
+	_hud_layer.add_child(_credit_banner)
+
+	var credit_lbl := Label.new()
+	credit_lbl.text = "Original: shimage.net/one-tap-quest"
+	credit_lbl.position = Vector2(0, 4)
+	credit_lbl.size = Vector2(GameData.GAME_WIDTH - 20, 14)
+	credit_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	credit_lbl.add_theme_font_size_override("font_size", 8)
+	credit_lbl.add_theme_color_override("font_color", Color(0.85, 0.92, 1.0))
+	_credit_banner.add_child(credit_lbl)
+
 
 func new_game() -> void:
 	_clear_run()
@@ -118,6 +134,7 @@ func new_game() -> void:
 
 	_aim_guide.visible = true
 	_aim_guide.set_aim_x(player.get_center().x)
+	_credit_banner.visible = true
 	_hint_label.text = "DRAG & GO"
 	_update_hud()
 	_emit_state("aiming")
@@ -222,6 +239,7 @@ func _launch_player() -> void:
 	phase = Phase.FIELD
 	player.valid = true
 	_aim_guide.visible = false
+	_credit_banner.visible = false
 	_hint_label.text = "TAP=RETRY"
 	_emit_state("playing")
 
@@ -542,19 +560,22 @@ func _spawn_effect(fx: EntityEffect) -> void:
 
 func _show_result(title: String) -> void:
 	var panel := ColorRect.new()
-	panel.color = Color(0, 0, 0, 0.72)
-	panel.position = Vector2(25, 112)
-	panel.size = Vector2(200, 62)
+	panel.color = Color(0, 0, 0, 0.78)
+	panel.position = Vector2(20, 108)
+	panel.size = Vector2(210, 76)
 	_result_layer.add_child(panel)
 
-	var title_lbl := _make_centered_label(title, 120.0, 14, Color(1.0, 0.92, 0.35) if title == "GAME CLEAR!" else Color(1.0, 0.45, 0.45))
+	var title_lbl := _make_centered_label(title, 114.0, 14, Color(1.0, 0.92, 0.35) if title == "GAME CLEAR!" else Color(1.0, 0.45, 0.45))
 	_result_layer.add_child(title_lbl)
 
-	var score_lbl := _make_centered_label("SCORE %d" % (score * GameData.SCORE_MULTIPLIER), 140.0, 11, Color(1, 1, 1))
+	var score_lbl := _make_centered_label("SCORE %d" % (score * GameData.SCORE_MULTIPLIER), 134.0, 11, Color(1, 1, 1))
 	_result_layer.add_child(score_lbl)
 
-	var retry_lbl := _make_centered_label("TAP TO PLAY AGAIN", 158.0, 8, Color(0.8, 0.85, 0.95))
+	var retry_lbl := _make_centered_label("TAP TO PLAY AGAIN", 152.0, 8, Color(0.8, 0.85, 0.95))
 	_result_layer.add_child(retry_lbl)
+
+	var credit_lbl := _make_centered_label("Original: shimage.net/one-tap-quest", 168.0, 7, Color(0.68, 0.76, 0.88))
+	_result_layer.add_child(credit_lbl)
 
 
 func _show_enemy_level(enemy: EntityEnemy) -> void:

@@ -69,13 +69,29 @@ struct OneTapQuestView: View {
             Color(red: 0.05, green: 0.05, blue: 0.08)
                 .ignoresSafeArea()
 
-            GodotAppView(onReady: { handle in
-                Task { @MainActor in
-                    session.connect(to: handle)
+            VStack(spacing: 0) {
+                GodotAppView(onReady: { handle in
+                    Task { @MainActor in
+                        session.connect(to: handle)
+                    }
+                })
+                .aspectRatio(250.0 / 300.0, contentMode: .fit)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("one-tap-quest-canvas")
+
+                if let originalURL = URL(string: "http://shimage.net/one-tap-quest/") {
+                    Link(destination: originalURL) {
+                        Text("Unofficial AI-built recreation of One Tap Quest by shimage.net")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .underline()
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                    }
+                    .accessibilityIdentifier("one-tap-quest-attribution")
                 }
-            })
-            .aspectRatio(250.0 / 300.0, contentMode: .fit)
-            .accessibilityIdentifier("one-tap-quest-canvas")
+            }
         }
         .environment(\.godotApp, host.app)
         .navigationTitle("One Tap Quest")
