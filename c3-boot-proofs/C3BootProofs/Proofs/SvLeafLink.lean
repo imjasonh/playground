@@ -187,4 +187,29 @@ theorem parseLeaf_code {M : Word → BitVec 8}
   rw [ecdsaSignature_mem h52]
   rfl
 
+/-- The artifact's signature the code parsed, as `ecdsaSignature 32`. -/
+theorem ecdsaSignature32_code {M : Word → BitVec 8} {p0 l0 pc lc p2 l2 : Word} {t te9 te16 : DerTlv} {bs9 bs16 : Bytes}
+    (h64 : derElement 0x30 (memBytes M p0 l0.toNat) = .ok t)
+    (h65 : l0 - BitVec.ofNat 32 (t.header + t.len) = 0)
+    (epc : pc = p0 + BitVec.ofNat 32 t.header) (elc : lc = BitVec.ofNat 32 t.len)
+    (h66 : derScalarOf 32 (memBytes M pc lc.toNat) pc (derElement 2 (memBytes M pc lc.toNat)) = .ok bs9)
+    (h67 : derElement 2 (memBytes M pc lc.toNat) = .ok te9)
+    (ep2 : p2 = pc + BitVec.ofNat 32 (te9.header + te9.len)) (el2 : l2 = lc - BitVec.ofNat 32 (te9.header + te9.len))
+    (h68 : derScalarOf 32 (memBytes M p2 l2.toNat) p2 (derElement 2 (memBytes M p2 l2.toNat)) = .ok bs16)
+    (h69 : derElement 2 (memBytes M p2 l2.toNat) = .ok te16)
+    (h70 : l2 - BitVec.ofNat 32 (te16.header + te16.len) = 0) :
+    ecdsaSignature 32 (memBytes M p0 l0.toNat) = some (bs9, bs16) := by
+  rw [h67] at h66
+  rw [h69] at h68
+  have b2 := derTlv_mem_bound (derElement_tlv h67)
+  have b3 := derTlv_mem_bound (derElement_tlv h69)
+  unfold ecdsaSignature
+  rw [readElem_mem h64, restAt_nil h65]
+  simp only [Option.bind_eq_bind, Option.bind_some, require_isEmpty_nil, elemAt]
+  rw [← epc, ← elc, readSigScalar_tlv h67 h66, memBytes_rest b2]
+  simp only [Option.bind_some, restAt]
+  rw [← ep2, ← el2, readSigScalar_tlv h69 h68, memBytes_rest b3, restAt_nil h70]
+  simp only [Option.bind_some, require_isEmpty_nil]
+  rfl
+
 end C3.RV32.Sv
