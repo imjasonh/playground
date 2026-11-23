@@ -331,4 +331,39 @@ theorem base64_groups {M : Word → BitVec 8} : ∀ (N k : Nat) {p : Word}, 1 �
     rw [memBytes_length, List.length_nil] at this
     omega
 
+/-- A tree size the code accepted, as `treeSize`. -/
+theorem treeSize_code {M : Word → BitVec 8} {p lo hi : Word} {n : Nat} (hn1 : 1 ≤ n) (hn19 : n ≤ 19)
+    (hlead : 1 < n → M p ≠ 0x30)
+    (hdig : (memBytes M p n).all (fun d => 48 ≤ d && d ≤ 57) = true)
+    (hval : pair64 lo hi = (memBytes M p n).foldl (fun acc d => acc * 10 + (d - 48)) 0)
+    (hhi : hi.toNat < 2 ^ 31) :
+    treeSize (memBytes M p n) = some (pair64 lo hi) := by
+  have hlen := memBytes_length M p n
+  obtain ⟨n', rfl⟩ : ∃ n', n = n' + 1 := ⟨n - 1, by omega⟩
+  have hne : (memBytes M p (n' + 1)).isEmpty = false := by rw [memBytes_succ]; rfl
+  have hl19 : decide ((memBytes M p (n' + 1)).length ≤ 19) = true := decide_eq_true (by rw [hlen]; exact hn19)
+  have hz : (!(decide ((memBytes M p (n' + 1)).length > 1) && (memBytes M p (n' + 1)).head? == some 48)) = true := by
+    rw [hlen, memBytes_succ, List.head?_cons]
+    by_cases h1 : n' + 1 > 1
+    · have h0 := hlead h1
+      have : ((M p).toNat == 48) = false := by
+        apply Bool.eq_false_iff.mpr
+        intro e
+        exact h0 (BitVec.eq_of_toNat_eq (by rw [of_decide_eq_true e]; rfl))
+      show (!(decide (n' + 1 > 1) && (some (M p).toNat == some 48))) = true
+      rw [show (some (M p).toNat == some 48) = ((M p).toNat == 48) from rfl, this, Bool.and_false]
+      rfl
+    · rw [decide_eq_false h1]
+      rfl
+  have h63 : decide (pair64 lo hi < 2 ^ 63) = true := by
+    apply decide_eq_true
+    unfold pair64
+    have := lo.isLt
+    omega
+  unfold treeSize
+  rw [hne, hl19, hz, hdig]
+  simp only [Bool.not_false, Bool.true_and, require_true, Option.bind_eq_bind, Option.bind_some]
+  rw [← hval, h63, require_true]
+  rfl
+
 end C3.RV32.Sv
