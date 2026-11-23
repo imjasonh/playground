@@ -1,0 +1,19 @@
+{
+  "name": "read-receipt",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Click through every word of a Markdown doc to get a link that shows you read it",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx --yes serve . -p 3000",
+    "vendor": "node scripts/vendor.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dompurify": "^3.5.0",
+    "marked": "^18.2.1"
+  }
+}
