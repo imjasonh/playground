@@ -1,4 +1,4 @@
-import C3BootProofs.Proofs.SvSpecAux
+import C3BootProofs.Proofs.SvGsSpec
 
 /-!
 # `sigstore::verify` computes `sigstoreVerify`
@@ -91,7 +91,7 @@ theorem sv_verify_spec {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle
     (RK0 : SvRkCode Me)
     (hOk : SvOutOk B (reg n a0))
     (MP384 : SvP384Model Me) (MP256 : SvP256Model Me) (MEd : ∀ sg, SvEdModel (sigMem Me (B + 0x21A0 + BitVec.ofNat 32 0x420) sg))
-    (MGs : SvGsModel Me) (RD : SvRekorData Me) :
+    (RD : SvRekorData Me) :
     SvErrRet B (reg n a0) (fun k => reg n (savedReg k)) n ∨ Panics n ∨
     ∃ v, sigstoreVerify bundle root (memBytes Me (reg n a3) 32) = some v ∧
       SvOkRet B (reg n a0) (fun k => reg n (savedReg k)) n (BitVec.ofNat 32 (v.signedTime % 2 ^ 32))
@@ -144,7 +144,7 @@ theorem sv_verify_spec {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle
   have hext := readExtensions_code (sv_extConsts SD0) c37 c38 c39 c46 c47 c48 c49 c50
   have hleaf := parseLeaf_code c0 c1 rfl rfl c2 rfl rfl c3 rfl rfl c4 c5 c6 rfl rfl c7 rfl rfl c8 c9 c10 rfl rfl c11 c12
     c13 rfl rfl c14 c15 (c16.trans (sv_ecdsa384 SD0)) rfl rfl c17 rfl rfl c18 c19 c20 c21 rfl rfl c22 rfl rfl c23 rfl rfl
-    c24 c25 c26 (c27.trans (sv_prime256 SD0)) (c28.trans (sv_ecpub SD0)) c29 c30 c31 c32 (MGs _ c33 c34) rfl rfl c35 c36
+    c24 c25 c26 (c27.trans (sv_prime256 SD0)) (c28.trans (sv_ecpub SD0)) c29 c30 c31 c32 (gsModel _ c33 c34) rfl rfl c35 c36
     hext c51 c52
   rw [Bd.leaf.2] at hleaf
   have fq : ∀ {i : Nat} {c q : Word}, (c, q) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i

@@ -345,6 +345,7 @@ import C3BootProofs.Proofs.SvWinLink
 import C3BootProofs.Proofs.SvConstsLink
 import C3BootProofs.Proofs.SvModels
 import C3BootProofs.Proofs.SvSpecAux
+import C3BootProofs.Proofs.SvGsSpec
 import C3BootProofs.Proofs.SvSpec
 import C3BootProofs.Proofs.SvSegCosig
 import C3BootProofs.Proofs.SvCme
