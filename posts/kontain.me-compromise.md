@@ -8,12 +8,12 @@ No users of kontain.me (if any) were harmed; no malicious data was served to use
 
 `kontain.me` runs on a number of separate Google Cloud Run services, a Service Account with minimal permissions, a shared Cloud Storage bucket, a load balancer and some GCP-managed DNS entries. The architecture of each of the apps is defined in Terraform in the public https://github.com/imjasonh/kontain.me repo.
 
-To deploy these services automatically, there's a deployer service account, `gha-deployer`, which has permissions to deploy Cloud Run services, manage Service Accounts, buckets, load balancers and DNS entries. That service account can be assumed by a GitHub Actions workflow in the repo, configured using [OIDC Workload Identity Federation](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-google-cloud-platform). The trust relationships were not defined in Terraform, but were instead click-opsed at some point in the forgotten past.
+To deploy these services automatically, there's a deployer service account, `gha-deployer`, which has permissions to deploy Cloud Run services, and manage Service Accounts, buckets, load balancers and DNS entries. That service account can be assumed by a GitHub Actions workflow in the repo, configured using [OIDC Workload Identity Federation](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-google-cloud-platform). The trust relationships were not defined in Terraform, but were instead click-opsed at some point in the forgotten past.
 
 Workload Identity is a Very Good Thing(tm), but like a lot of good things, it's also complicated. It's easy to get wrong, and I got it wrong, in at least two ways:
 
 1. The rule allowing the GitHub Actions workflow to assume the GCP SA was overly broad. It matched only on the workflow path, `.github/workflows/deploy.yaml`, and did not check that the repo matched `imjasonh/kontain.me`. This was a dumb omission on my part; any GitHub repo that minted an OIDC token from `deploy.yaml` could become my deployer service account.
-2. The deployer SA had project-wide `iam.serviceAccounts.actAs` permissions. Though the app's service account had minimal permissions (read/write to the one GCS bucket), the project also had the default GCP service account enabled, which had broad **Editor** access to the project. This is the classic `<project-number>-compute@developer.gserviceaccount.com` account.
+2. The deployer SA had the `iam.serviceAccountAdmin` role project-wide. Though the app's service account had minimal permissions (read/write to the one GCS bucket), the project also had the default GCP service account enabled, which had broad **Editor** access to the project. This is the classic `<project-number>-compute@developer.gserviceaccount.com` account. With the deployer's `serviceAccountAdmin` access, it created a long-lived service account key for the default SA, with Editor access.
 
 So, using (1), the attacker was able to run a GHA workflow in their repo and become my deployer. As my deployer, they were able to `actAs` the default GCP SA, which could do ....._anything_. It could enable APIs, create GKE clusters and VMs, request quota increases, and run Vertex AI training jobs. And it did, all of those.
 
@@ -23,13 +23,13 @@ Upon noticing the fraudulent usage, I immediately disabled the SA being used to 
 
 ## What the attacker did
 
-The attacker seems to have gained access late Tuesday and made some exploratory requests to make sure they could do what they wanted. On Wednesday around noon Eastern they began creating Vertex AI training runs in three regions. The jobs they ran were actually doing crypto mining, contributing to a wallet they presumably own.
+The attacker seems to have gained access late Tuesday and made some exploratory requests to make sure they could do what they wanted. In the wee hours of Wednesday (Eastern) they probed that they were able to create Vertex jobs with GPUs. Around 5 AM Eastern they began creating Vertex AI training runs in six regions. Around noon Eastern they started two more waves totaling 70 GPUs. The jobs they ran were actually doing crypto mining, contributing to a wallet they presumably own.
 
-Spend began relatively slowly, at ~$44/hour worth of GPU usage, but within an hour they had requested more GPU quota and began sending more requests to the tune of more than $300/hour. Luckily, I noticed the anomalous traffic and put a stop to it as quickly as I could.
+Spend began relatively slowly, at ~$44/hour worth of GPU usage, but eventually they sent more requests to the tune of more than $185/hour.
 
 ## Where we got lucky
 
-Because kontain.me doesn't normally cost me much money at all, and because I'm constantly paranoid about me doing something stupid (the only smart thing I regularly do!), I had set up a budget alert on the project at $10. The service costs me under $1/month normally, so spending $10 means something is Going Wrong. That budget alert was tripped quickly after the attack began in earnest, and by the time I saw it they'd already hit >$40 of usage.
+Because kontain.me doesn't normally cost me much money at all, and because I'm constantly paranoid about me doing something stupid (the only smart thing I regularly do!), I had set up a budget alert on the project at $10. The service costs me under $1/month normally, so spending $10 means something is Going Wrong. That budget alert was tripped around 11 AM Eastern, hours after the attack began in earnest, and by the time I saw it they'd already hit >$40 of usage. Once I got the alert I got to work stopping it as quickly as I could.
 
 ## Where we are now
 
