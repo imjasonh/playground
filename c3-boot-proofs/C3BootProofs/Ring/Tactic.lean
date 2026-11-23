@@ -14,10 +14,13 @@ theorem, `Expr.toPoly_sound`, is in `C3BootProofs.Ring.Basic`.
 
 `ring_eq` proves `a = b` over `Int` or `Nat` when the two sides are equal
 as polynomials. The sides can use `+`, `*`, `^` with a numeral exponent,
-numerals, and, over `Int`, `-` and negation. Anything else is an atom:
-a variable, a function application, a named constant, a cast, or a `^`
-whose exponent isn't a numeral. Atoms are identified up to reducible
-definitional equality.
+numerals, and, over `Int`, `-`, negation, and casts of `Nat` terms built
+the same way. Anything else is an atom: a variable, a function
+application, a named constant, `/` or `%`, or a `^` whose exponent is a
+variable. Atoms are identified up to reducible definitional equality. An
+exponent such as `n + 1`, neither a numeral nor a variable, fails with
+`decide` reporting free variables; rewrite `x ^ (n + 1)` as `x ^ n * x`
+first.
 
 ```
 example (x y : Int) : (x - y) ^ 2 = x ^ 2 - 2 * x * y + y ^ 2 := by ring_eq
