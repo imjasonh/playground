@@ -530,3 +530,6 @@ import C3BootProofs.Theorems.Trace
 import C3BootProofs.Spec.TrustRoot
 import C3BootProofs.Theorems.TrustRoot
 import C3BootProofs.Audit
+import C3BootProofs.Ring.Basic
+import C3BootProofs.Ring.Tactic
+import C3BootProofs.Ring.Test
