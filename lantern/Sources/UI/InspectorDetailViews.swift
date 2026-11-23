@@ -31,7 +31,7 @@ struct DevicesView: View {
                         Image(systemName: icon(for: device))
                             .font(.title3)
                             .frame(width: 24)
-                            .foregroundStyle(device.suspiciousPorts.isEmpty ? .secondary : .orange)
+                            .foregroundStyle(device.suspiciousPorts.isEmpty ? Color.secondary : Color.orange)
 
                         VStack(alignment: .leading, spacing: 3) {
                             HStack(spacing: 6) {
@@ -58,7 +58,7 @@ struct DevicesView: View {
                                     .joined(separator: ", ")
                                 Text("Open ports: \(portList)")
                                     .font(.caption)
-                                    .foregroundStyle(device.suspiciousPorts.isEmpty ? .secondary : .orange)
+                                    .foregroundStyle(device.suspiciousPorts.isEmpty ? Color.secondary : Color.orange)
                             }
 
                             if let note = device.classification?.riskNote {
@@ -165,7 +165,7 @@ struct HostTrafficView: View {
                             if proc.bytesOut + proc.bytesIn > 0 {
                                 Text("\(Int((proc.uploadRatio * 100).rounded()))% upload")
                                     .font(.caption2)
-                                    .foregroundStyle(proc.uploadRatio >= 0.65 ? .orange : .secondary)
+                                    .foregroundStyle(proc.uploadRatio >= 0.65 ? Color.orange : Color.secondary)
                             }
                         }
                     }

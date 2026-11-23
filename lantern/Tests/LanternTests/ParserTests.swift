@@ -44,7 +44,7 @@ final class ParserTests: XCTestCase {
         XCTAssertTrue(LANDiscoveryCollector.isBroadcastOrMulticastMAC(entries[2].macAddress))
     }
 
-    func testUPnPParsers() {
+    func testUPnPParsers() throws {
         let ssdp = """
         HTTP/1.1 200 OK\r
         CACHE-CONTROL: max-age=120\r
@@ -62,7 +62,7 @@ final class ParserTests: XCTestCase {
           </service>
         </serviceList></device></root>
         """
-        let baseURL = URL(string: "http://192.168.1.1:5000/rootDesc.xml")!
+        let baseURL = try XCTUnwrap(URL(string: "http://192.168.1.1:5000/rootDesc.xml"))
         let endpoint = UPnPCollector.parseControlEndpoint(xml: descXML, baseURL: baseURL)
         XCTAssertEqual(endpoint?.controlURL.absoluteString, "http://192.168.1.1:5000/ctl/IPConn")
         XCTAssertEqual(endpoint?.serviceType, "urn:schemas-upnp-org:service:WANIPConnection:1")

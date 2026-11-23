@@ -34,7 +34,7 @@ struct MenuBarPopoverView: View {
                 HStack(spacing: 6) {
                     Text(sentinel.connectivity.statusLabel)
                         .font(.caption)
-                        .foregroundStyle(sentinel.connectivity.looksHealthy ? .secondary : .orange)
+                        .foregroundStyle(sentinel.connectivity.looksHealthy ? Color.secondary : Color.orange)
                     if let last = sentinel.lastScanAt {
                         Text("· \(last, style: .relative) ago")
                             .font(.caption)
