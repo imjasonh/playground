@@ -77,7 +77,7 @@ theorem sha256_lt (msg : Bytes) : ∀ b ∈ sha256 msg, b < 256 := by
   have := w.isLt
   simp only [Sha256.wordBytes, List.mem_cons, List.not_mem_nil, or_false] at hw
   rcases hw with rfl | rfl | rfl | rfl
-  · exact Nat.div_lt_of_lt_mul (by omega)
+  · omega
   · exact Nat.mod_lt _ (by decide)
   · exact Nat.mod_lt _ (by decide)
   · exact Nat.mod_lt _ (by decide)
@@ -165,8 +165,7 @@ theorem enc_len {n k : Nat} (h4 : 4 ≤ n) (hn : n < 2 ^ 32) (hk : k + 1 ≤ n -
 
 theorem and3_shr2 {x : Word} (h : x &&& BitVec.ofNat 32 0x3 = 0) : x.toNat = 4 * (x >>> 2).toNat := by
   have h1 := congrArg BitVec.toNat h
-  rw [BitVec.toNat_and, ofNat_toNat_lt (by decide), show (0 : Word).toNat = 0 from rfl,
-    show (3 : Nat) = 2 ^ 2 - 1 from rfl, Nat.and_two_pow_sub_one_eq_mod] at h1
+  rw [BitVec.toNat_and, ofNat_toNat_lt (by decide), show (0 : Word).toNat = 0 from rfl, and3] at h1
   rw [BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow]
   omega
 
@@ -174,5 +173,211 @@ theorem le4_take4 (l : Bytes) : le4 l 0 = le4 (l.take 4) 0 := by
   unfold le4
   simp only [List.getD_eq_getElem?_getD, List.getElem?_take]
   rfl
+
+theorem cosig_cons {origin id L : Bytes} {fuel : Nat} {matched : Option Bytes} (hne : L ≠ []) :
+    checkpointSigs origin id (fuel + 1) L matched = (do
+      let (line, rest) ← splitLine L
+      let afterDash ← readExpect sigLinePrefix line
+      let (name, encoded) ← splitSpace afterDash
+      require (!name.isEmpty && (base64Decode encoded).isSome && !encoded.isEmpty)
+      if name != origin then checkpointSigs origin id fuel rest matched
+      else
+        let value ← base64Decode encoded
+        require (value.length ≤ 96)
+        if value.length < 4 || value.take 4 != id then checkpointSigs origin id fuel rest matched
+        else
+          let sig := value.drop 4
+          require (sig.length == 64 && matched.isNone)
+          checkpointSigs origin id fuel rest (some sig)) := by
+  cases L with
+  | nil => exact absurd rfl hne
+  | cons _ _ => rfl
+
+set_option maxHeartbeats 16000000 in
+/-- The code's loop over the signature lines, a run of `k` passes that reads
+every byte, as `checkpointSigs`: the flag at bit 0 of the state's tenth word
+says whether a signature was kept, and the last word holds it. -/
+theorem cosig_chain {M : Word → BitVec 8} {dp B out bp x26 q : Word} {rt : Bytes}
+    {w14 w18 w20 w24 w34 w3c w44 w48 w4c w50 w54 w58 w60 w64 w68 w6c w70 w78 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 wa20 wa24 wa28 wa2c wa30 wa34 wa38 wa3c waa4 : Word}
+    {v : Nat → Word} {sgp op ol : Word} {idf : Bytes}
+    (hpre : memBytes M (BitVec.ofNat 32 0x3FCC4855) 4 = sigLinePrefix)
+    (hw14 : le4 idf 0 = w14) (hidl : 4 ≤ idf.length) (hidb : ∀ x ∈ idf, x < 256) :
+    ∀ k {c x21 rl rp dg w8 wc w28 w2c w30 w38 w40 w5c c' x21' rl' rp' dg' w8' wc' w28' w2c' w30' w38' w40' : Word}
+      {sg sg' : Bytes} {fuel : Nat} {matched : Option Bytes},
+      svChain (sv_cosigStep dp B out bp x26 q rt w14 w18 w20 w24 w34 w3c w44 w48 w4c w50 w54 w58 w60 w64 w68 w6c w70 w78 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 wa20 wa24 wa28 wa2c wa30 wa34 wa38 wa3c waa4 v sgp op ol M) k
+        (c, x21, rl, rp, dg, w8, wc, w28, w2c, w30, w38, w40, w5c, sg)
+        (c', x21', rl', rp', dg', w8', wc', w28', w2c', w30', w38', w40', 0, sg') →
+      w5c.toNat ≤ fuel → (w30 &&& 1 = 0 → matched = none) → (w30 &&& 1 ≠ 0 → matched = some sg) →
+      ∃ m', checkpointSigs (memBytes M w48 w44.toNat) (idf.take 4) fuel (memBytes M w38 w5c.toNat) matched = some m' ∧
+        (w30' &&& 1 = 0 → m' = none) ∧ (w30' &&& 1 ≠ 0 → m' = some sg') := by
+  intro k
+  induction k with
+  | zero =>
+    intro c x21 rl rp dg w8 wc w28 w2c w30 w38 w40 w5c c' x21' rl' rp' dg' w8' wc' w28' w2c' w30' w38' w40' sg sg'
+      fuel matched h _ h0 h1
+    cases h
+    refine ⟨matched, ?_, h0, h1⟩
+    cases fuel <;> rfl
+  | succ k ih =>
+    intro c x21 rl rp dg w8 wc w28 w2c w30 w38 w40 w5c c' x21' rl' rp' dg' w8' wc' w28' w2c' w30' w38' w40' sg sg'
+      fuel matched h hf h0 h1
+    obtain ⟨m, hm, hc⟩ := h
+    obtain ⟨hne, ix, hix, h4, hpre4, k2, hk2, hsp, c2, pa2, e2, hsp2, ec2, epa2, hc2ne, h3, dg3, pg3, gi3, eg3, hgroups,
+      cmsg, cmw30, hcm, hs⟩ := hm
+    subst hs
+    simp only at hne hix hpre4 hsp hc2ne h3 eg3 hgroups hcm hc
+    have hb := nlScan_bound hix
+    have hw5 := w5c.isLt
+    have hrem : w5c.toNat ≠ 0 := fun e => hne (BitVec.eq_of_toNat_eq e)
+    obtain ⟨fuel', rfl⟩ : ∃ fuel', fuel = fuel' + 1 := ⟨fuel - 1, by omega⟩
+    have hix32 : ix < 2 ^ 32 := by omega
+    rw [sub4_toNat h4 hix32] at hk2
+    rw [zero_add_mul1] at ec2
+    subst ec2
+    have hsp' : ∀ i, i < k2 → M (w38 + BitVec.ofNat 32 0x4 + BitVec.ofNat 32 i) ≠ 0x20 := by
+      intro i hi
+      have := hsp i hi (svIter (fun s => (s.1 + BitVec.ofNat 32 0x1, s.2 + BitVec.ofNat 32 0x1)) i
+        (BitVec.ofNat 32 0x0, w38 + BitVec.ofNat 32 0x4)).1
+        (svIter (fun s => (s.1 + BitVec.ofNat 32 0x1, s.2 + BitVec.ofNat 32 0x1)) i
+        (BitVec.ofNat 32 0x0, w38 + BitVec.ofNat 32 0x4)).2 rfl
+      rwa [svIter_add (F := fun s : Word × Word => (s.1 + BitVec.ofNat 32 0x1, s.2 + BitVec.ofNat 32 0x1)) Prod.snd (d := 1)
+        (fun _ => rfl), Nat.mul_one] at this
+    rw [epa2, Nat.mul_one] at hsp2
+    have hL : memBytes M w38 w5c.toNat ≠ [] := by
+      intro e
+      have := congrArg List.length e
+      rw [memBytes_length, List.length_nil] at this
+      exact hrem this
+    rw [cosig_cons hL, splitLine_scan0 hix]
+    simp only [Option.bind_eq_bind, Option.bind_some]
+    rw [readExpect_prefix (pre := sigLinePrefix) (by rw [show sigLinePrefix.length = 4 from rfl]; exact h4)
+      (by rw [show sigLinePrefix.length = 4 from rfl, hpre4, hpre])]
+    simp only [Option.bind_some, show sigLinePrefix.length = 4 from rfl]
+    rw [splitSpace_search (by omega) hsp' hsp2]
+    simp only [Option.bind_some]
+    have hk2pos : k2 ≠ 0 := fun e => hc2ne (by rw [e]; rfl)
+    have hk32 : k2 < 2 ^ 32 := by omega
+    have hname_ne : (!List.isEmpty (memBytes M (w38 + BitVec.ofNat 32 0x4) k2)) = true := by
+      obtain ⟨n', rfl⟩ : ∃ n', k2 = n' + 1 := ⟨k2 - 1, by omega⟩
+      rw [memBytes_succ]; rfl
+    have henc : memBytes M ((w38 + BitVec.ofNat 32 0x4) + (BitVec.ofNat 32 k2 + BitVec.ofNat 32 0x1))
+        (((BitVec.ofNat 32 ix + BitVec.ofNat 32 0xFFFFFFFC) - (BitVec.ofNat 32 k2 + BitVec.ofNat 32 0x1))).toNat =
+        memBytes M (w38 + BitVec.ofNat 32 0x4 + BitVec.ofNat 32 (k2 + 1)) (ix - 4 - (k2 + 1)) := by
+      rw [add_succ_ofNat, enc_len h4 hix32 hk2]
+    have hencne : ¬ (BitVec.ofNat 32 ix + BitVec.ofNat 32 0xFFFFFFFC = BitVec.ofNat 32 k2 + BitVec.ofNat 32 0x1) →
+        (!List.isEmpty (memBytes M (w38 + BitVec.ofNat 32 0x4 + BitVec.ofNat 32 (k2 + 1)) (ix - 4 - (k2 + 1)))) = true := by
+      intro h
+      have hn : ix - 4 - (k2 + 1) ≠ 0 := by
+        intro e
+        apply h
+        apply BitVec.eq_of_toNat_eq
+        rw [sub4_toNat h4 hix32, show BitVec.ofNat 32 k2 + BitVec.ofNat 32 0x1 = BitVec.ofNat 32 (k2 + 1) from
+          BitVec.ofNat_add_ofNat .., ofNat_toNat_lt (k := k2 + 1) (by omega)]
+        omega
+      obtain ⟨n', hn'⟩ : ∃ n', ix - 4 - (k2 + 1) = n' + 1 := ⟨_, (Nat.succ_pred_eq_of_ne_zero hn).symm⟩
+      rw [hn', memBytes_succ]; rfl
+    have hnamek : memBytes M (w38 + BitVec.ofNat 32 0x4) (BitVec.ofNat 32 k2).toNat =
+        memBytes M (w38 + BitVec.ofNat 32 0x4) k2 := by rw [ofNat_toNat_lt hk32]
+    have hr' : (BitVec.ofNat 32 w5c.toNat - BitVec.ofNat 32 (ix + 1)).toNat = w5c.toNat - (ix + 1) := by
+      rw [BitVec.toNat_sub, ofNat_toNat_lt hw5, ofNat_toNat_lt (k := ix + 1) (by omega)]; omega
+    have hfuel : (BitVec.ofNat 32 w5c.toNat - BitVec.ofNat 32 (ix + 1)).toNat ≤ fuel' := by rw [hr']; omega
+    rcases hcm with hF | hF | hF | ⟨bs, hbs, hne', hname, -, hle96, hlt4, esg, ew30⟩ |
+      ⟨bs, hbs, hne', hname, -, hle96, hnlt4, hle4, hl68, hw30, esg, ew30⟩ | hF |
+      ⟨bs, hbs, hne', hname, -, hle96, hnlt4, hnle4, esg, ew30⟩ | ⟨hne', hnname, esg, ew30⟩
+    · exact hF.elim
+    · exact hF.elim
+    · exact hF.elim
+    · rw [henc] at hbs
+      rw [hnamek] at hname
+      subst esg ew30
+      obtain ⟨m', hm', hm0, hm1⟩ := ih hc hfuel h0 h1
+      rw [hr'] at hm'
+      refine ⟨m', ?_, hm0, hm1⟩
+      rw [hname_ne, hbs, hencne hne', show (true && (some bs).isSome && true) = true from rfl, require_true]
+      simp only [Option.bind_some]
+      rw [hname, show (memBytes M w48 w44.toNat != memBytes M w48 w44.toNat) = false by rw [bne, beq_iff_eq.mpr rfl]; rfl]
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      rw [decide_eq_true (Nat.not_lt.mp hle96), require_true]
+      simp only [Option.bind_some]
+      rw [decide_eq_true hlt4]
+      simp only [Bool.true_or, ↓reduceIte]
+      exact hm'
+    · rw [henc] at hbs
+      rw [hnamek] at hname
+      subst esg ew30
+      have hmn : matched = none := h0 hw30
+      subst hmn
+      have htk : bs.take 4 = idf.take 4 := le4_take (by omega) hidl (base64Decode_lt hbs) hidb (hle4.trans hw14.symm)
+      obtain ⟨m', hm', hm0, hm1⟩ := ih hc hfuel (fun e => absurd e (by decide)) (fun _ => rfl)
+      rw [hr'] at hm'
+      refine ⟨m', ?_, hm0, hm1⟩
+      rw [hname_ne, hbs, hencne hne', show (true && (some bs).isSome && true) = true from rfl, require_true]
+      simp only [Option.bind_some]
+      rw [hname, show (memBytes M w48 w44.toNat != memBytes M w48 w44.toNat) = false by rw [bne, beq_iff_eq.mpr rfl]; rfl]
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      rw [decide_eq_true (Nat.not_lt.mp hle96), require_true]
+      simp only [Option.bind_some]
+      rw [decide_eq_false hnlt4, htk, show (List.take 4 idf != List.take 4 idf) = false by rw [bne, beq_iff_eq.mpr rfl]; rfl]
+      simp only [Bool.false_or, Bool.false_eq_true, ↓reduceIte]
+      rw [List.length_drop, hl68, show ((68 - 4 == 64) && (none : Option Bytes).isNone) = true from rfl, require_true]
+      simp only [Option.bind_some]
+      exact hm'
+    · exact hF.elim
+    · rw [henc] at hbs
+      rw [hnamek] at hname
+      subst esg ew30
+      have hneq : ¬ bs.take 4 = idf.take 4 := fun e => hnle4 (by rw [le4_take4, e, ← le4_take4, hw14])
+      have htk : (bs.take 4 != idf.take 4) = true := by rw [bne, beq_false_of_ne hneq]; rfl
+      obtain ⟨m', hm', hm0, hm1⟩ := ih hc hfuel h0 h1
+      rw [hr'] at hm'
+      refine ⟨m', ?_, hm0, hm1⟩
+      rw [hname_ne, hbs, hencne hne', show (true && (some bs).isSome && true) = true from rfl, require_true]
+      simp only [Option.bind_some]
+      rw [hname, show (memBytes M w48 w44.toNat != memBytes M w48 w44.toNat) = false by rw [bne, beq_iff_eq.mpr rfl]; rfl]
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      rw [decide_eq_true (Nat.not_lt.mp hle96), require_true]
+      simp only [Option.bind_some]
+      rw [htk, Bool.or_true]
+      simp only [↓reduceIte]
+      exact hm'
+    · rw [hnamek] at hnname
+      subst esg ew30
+      obtain ⟨m', hm', hm0, hm1⟩ := ih hc hfuel h0 h1
+      rw [hr'] at hm'
+      refine ⟨m', ?_, hm0, hm1⟩
+      have hlen := and3_shr2 h3
+      rw [enc_len h4 hix32 hk2] at hlen
+      have hdec : (base64Decode (memBytes M (w38 + BitVec.ofNat 32 0x4 + BitVec.ofNat 32 (k2 + 1)) (ix - 4 - (k2 + 1)))).isSome
+          = true := by
+        have hne0 := hencne hne'
+        have hpos : ix - 4 - (k2 + 1) ≠ 0 := by
+          intro e
+          rw [e, memBytes_zero] at hne0
+          exact absurd hne0 (by decide)
+        have hN32 : 0 + ((BitVec.ofNat 32 ix + BitVec.ofNat 32 0xFFFFFFFC - (BitVec.ofNat 32 k2 + BitVec.ofNat 32 0x1)) >>>
+            2).toNat < 2 ^ 32 := by omega
+        have hg := base64_groups (M := M) _ 0
+          (p := (w38 + BitVec.ofNat 32 0x4) + (BitVec.ofNat 32 k2 + BitVec.ofNat 32 0x1)) (by omega) hN32 (fun i hi => by
+            have hgi := hgroups i hi (svIter (fun s : Word × Word × Word => (s.2.1 + BitVec.ofNat 32 0x4, s.2.1 + BitVec.ofNat 32 0x4, s.2.2 + BitVec.ofNat 32 0x1)) i (dg, (w38 + BitVec.ofNat 32 0x4) + (BitVec.ofNat 32 k2 + BitVec.ofNat 32 0x1), BitVec.ofNat 32 0x0)).1 (svIter (fun s : Word × Word × Word => (s.2.1 + BitVec.ofNat 32 0x4, s.2.1 + BitVec.ofNat 32 0x4, s.2.2 + BitVec.ofNat 32 0x1)) i (dg, (w38 + BitVec.ofNat 32 0x4) + (BitVec.ofNat 32 k2 + BitVec.ofNat 32 0x1), BitVec.ofNat 32 0x0)).2.1
+              (svIter (fun s : Word × Word × Word => (s.2.1 + BitVec.ofNat 32 0x4, s.2.1 + BitVec.ofNat 32 0x4, s.2.2 + BitVec.ofNat 32 0x1)) i (dg, (w38 + BitVec.ofNat 32 0x4) + (BitVec.ofNat 32 k2 + BitVec.ofNat 32 0x1), BitVec.ofNat 32 0x0)).2.2 rfl
+            rw [svIter_add (F := fun s : Word × Word × Word => (s.2.1 + BitVec.ofNat 32 0x4, s.2.1 + BitVec.ofNat 32 0x4,
+                s.2.2 + BitVec.ofNat 32 0x1)) (fun s => s.2.1) (d := 4) (fun _ => rfl),
+              svIter_add (F := fun s : Word × Word × Word => (s.2.1 + BitVec.ofNat 32 0x4, s.2.1 + BitVec.ofNat 32 0x4,
+                s.2.2 + BitVec.ofNat 32 0x1)) (fun s => s.2.2) (d := 1) (fun _ => rfl)] at hgi
+            simp only at hgi
+            rw [Nat.mul_comm i 4, Nat.mul_one, BitVec.zero_add, show BitVec.ofNat 32 i = BitVec.ofNat 32 (0 + i) by
+              rw [Nat.zero_add], ← ofNat_toNat_self ((BitVec.ofNat 32 ix + BitVec.ofNat 32 0xFFFFFFFC -
+                (BitVec.ofNat 32 k2 + BitVec.ofNat 32 0x1)) >>> 2), show ((BitVec.ofNat 32 ix + BitVec.ofNat 32 0xFFFFFFFC -
+                (BitVec.ofNat 32 k2 + BitVec.ofNat 32 0x1)) >>> 2).toNat = 0 + ((BitVec.ofNat 32 ix +
+                BitVec.ofNat 32 0xFFFFFFFC - (BitVec.ofNat 32 k2 + BitVec.ofNat 32 0x1)) >>> 2).toNat by rw [Nat.zero_add]] at hgi
+            exact hgi)
+        rw [add_succ_ofNat, ← hlen] at hg
+        exact hg
+      rw [hname_ne, hdec, hencne hne', show (true && true && true) = true from rfl, require_true]
+      simp only [Option.bind_some]
+      rw [show (memBytes M (w38 + BitVec.ofNat 32 0x4) k2 != memBytes M w48 w44.toNat) = true by
+        rw [bne, beq_false_of_ne hnname]; rfl]
+      simp only [↓reduceIte]
+      exact hm'
 
 end C3.RV32.Sv
