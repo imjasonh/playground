@@ -341,6 +341,7 @@ import C3BootProofs.Proofs.SvCkptLink
 import C3BootProofs.Proofs.SvTsaLink
 import C3BootProofs.Proofs.SvExtListLink
 import C3BootProofs.Proofs.SvCosigLink
+import C3BootProofs.Proofs.SvWinLink
 import C3BootProofs.Proofs.SvSegCosig
 import C3BootProofs.Proofs.SvCme
 import C3BootProofs.Proofs.SvCgLoop
