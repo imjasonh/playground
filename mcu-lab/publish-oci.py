@@ -3,7 +3,7 @@
 
 Layer 0 (`application/octet-stream`): raw espflash .bin for BLE OTA from iOS.
 Layer 1 (`application/vnd.mculab.elf.v1+gzip`): gzipped ELF with line-tables-only
-DWARF symbols for automatic server-side symbolization in `xiao-otel`.
+DWARF symbols for automatic server-side symbolization in `mcu-lab-backend`.
 """
 
 import base64

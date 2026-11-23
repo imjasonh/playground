@@ -43,7 +43,7 @@ on:
       - "cloudrun-sqlite/**"
       - "stream-boids/**"
       - "wehadababyitsaboy/terraform/**"
-      - "xiao-otel/**"
+      - "mcu-lab-backend/**"
   workflow_dispatch: {}
 
 # A second push waits. Cancelling an apply can leave state locked.

@@ -40,7 +40,7 @@ resource "google_project_iam_member" "telemetry" {
 }
 
 resource "ko_build" "server" {
-  importpath  = "github.com/imjasonh/playground/xiao-otel"
+  importpath  = "github.com/imjasonh/playground/mcu-lab-backend"
   working_dir = abspath("${path.module}/..")
   base_image  = "cgr.dev/chainguard/static"
   platforms   = ["linux/amd64"]

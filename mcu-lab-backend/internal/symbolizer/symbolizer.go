@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/imjasonh/playground/xiao-otel/internal/otlp"
+	"github.com/imjasonh/playground/mcu-lab-backend/internal/otlp"
 )
 
 const (

@@ -1,6 +1,6 @@
 # Build and push mcu-lab firmware (.bin for BLE OTA + gzipped ELF with
 # line-tables-only DWARF symbols for automatic server-side symbolization in
-# xiao-otel) to ghcr.io/<owner>/playground/<app>.
+# mcu-lab-backend) to ghcr.io/<owner>/playground/<app>.
 
 name: mcu-lab publish
 

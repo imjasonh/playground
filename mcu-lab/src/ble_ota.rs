@@ -565,7 +565,7 @@ impl BleOtaNode {
                     let _ = esp_task_wdt_reset();
                 }
                 waited_ms = waited_ms.saturating_add(50);
-                let mut guard = lock_or_recover(&self.ota_state);
+                let guard = lock_or_recover(&self.ota_state);
                 if guard.reboot_pending {
                     drop(guard);
                     // Give NimBLE 250 ms to flush the final `OK sha256=...` notification before rebooting.

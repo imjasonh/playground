@@ -1,4 +1,4 @@
-/xiao-otel
+/mcu-lab-backend
 /terraform/.terraform/
 /terraform/*.tfstate*
 /terraform/.tofu-plan.*

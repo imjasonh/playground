@@ -14,9 +14,9 @@ import (
 	"cloud.google.com/go/compute/metadata"
 	"github.com/chainguard-dev/clog"
 	_ "github.com/chainguard-dev/clog/gcp/init"
-	"github.com/imjasonh/playground/xiao-otel/internal/attest"
-	"github.com/imjasonh/playground/xiao-otel/internal/otlp"
-	"github.com/imjasonh/playground/xiao-otel/internal/symbolizer"
+	"github.com/imjasonh/playground/mcu-lab-backend/internal/attest"
+	"github.com/imjasonh/playground/mcu-lab-backend/internal/otlp"
+	"github.com/imjasonh/playground/mcu-lab-backend/internal/symbolizer"
 	"github.com/sethvargo/go-envconfig"
 	"golang.org/x/oauth2/google"
 )
@@ -33,7 +33,7 @@ type config struct {
 
 func main() {
 	if err := run(context.Background()); err != nil {
-		clog.Fatal("xiao-otel", "err", err)
+		clog.Fatal("mcu-lab-backend", "err", err)
 	}
 }
 
@@ -49,8 +49,7 @@ func run(ctx context.Context) error {
 
 	var store attest.Store = attest.NewMemoryStore()
 	if env.AttestStoreBucket != "" {
-		ts, err := google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/devstorage.read_write")
-		if err != nil {
+		if ts, err := google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/devstorage.read_write"); err != nil {
 			slog.WarnContext(ctx, "GCS token source unavailable; falling back to in-memory App Attest store", "err", err)
 		} else {
 			store = &attest.GCSStore{

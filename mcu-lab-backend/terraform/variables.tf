@@ -10,7 +10,7 @@ variable "region" {
 }
 
 variable "name" {
-  description = "Name for the service and image repository. Use the app directory name."
+  description = "Name for the Cloud Run service, runtime service account, and image repository. Kept as xiao-otel to preserve the existing GCP service account, Terraform state, and live Cloud Run URL."
   type        = string
   default     = "xiao-otel"
 

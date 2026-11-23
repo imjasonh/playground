@@ -1,5 +1,5 @@
 // Package attest verifies Apple App Attest handshakes and per-request
-// assertions for the xiao-otel Cloud Run service.
+// assertions for the mcu-lab-backend Cloud Run service.
 package attest
 
 import (

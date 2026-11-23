@@ -17,7 +17,7 @@ struct MCULabSample: Identifiable, Equatable {
 /// Scans for MCU Lab BLE Manufacturer Specific Data (`0xFFFF`) bursts,
 /// deduplicates frames per device by sequence number (`seq`), updates the live
 /// performance and e-paper refresh dashboard, forwards OTLP/HTTP JSON payloads
-/// to an OpenTelemetry Collector or the `xiao-otel` Cloud Run service
+/// to an OpenTelemetry Collector or the `mcu-lab-backend` Cloud Run service
 /// (authorized with Apple App Attest), and installs OTA firmware updates over
 /// BLE GATT on the matching board's next wake burst.
 @MainActor
@@ -781,7 +781,7 @@ final class MCULabController: NSObject, ObservableObject {
     }
 
     /// Export `body` to `metricsURL`, optionally performing the App Attest handshake and
-    /// attaching `X-Apple-App-Attest-*` assertion headers for the `xiao-otel` Cloud Run backend.
+    /// attaching `X-Apple-App-Attest-*` assertion headers for the `mcu-lab-backend` Cloud Run backend.
     func postMetrics(
         body: Data,
         metricsURL: URL,

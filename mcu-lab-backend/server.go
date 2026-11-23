@@ -1,4 +1,4 @@
-// Command xiao-otel verifies Apple App Attest assertions from the Playground
+// Command mcu-lab-backend verifies Apple App Attest assertions from the Playground
 // iOS app and forwards XIAO ESP32C3 OTLP/HTTP metrics to Google Cloud Monitoring.
 package main
 
@@ -11,9 +11,9 @@ import (
 	"strings"
 
 	"github.com/chainguard-dev/clog"
-	"github.com/imjasonh/playground/xiao-otel/internal/attest"
-	"github.com/imjasonh/playground/xiao-otel/internal/otlp"
-	"github.com/imjasonh/playground/xiao-otel/internal/symbolizer"
+	"github.com/imjasonh/playground/mcu-lab-backend/internal/attest"
+	"github.com/imjasonh/playground/mcu-lab-backend/internal/otlp"
+	"github.com/imjasonh/playground/mcu-lab-backend/internal/symbolizer"
 )
 
 const maxRequestBodyBytes = 64 * 1024
@@ -43,7 +43,7 @@ func (s *Server) Routes() http.Handler {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"service":         "xiao-otel",
+		"service":         "mcu-lab-backend",
 		"appId":           s.Verifier.AppID,
 		"allowUnattested": s.Verifier.AllowUnattested,
 	})
@@ -263,8 +263,8 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 					TraceID:      traceID,
 					SpanID:       reqSpanID,
 					ParentSpanID: parentSpanID,
-					Name:         "xiao-otel.metrics",
-					Service:      "xiao-otel",
+					Name:         "mcu-lab-backend.metrics",
+					Service:      "mcu-lab-backend",
 					DeviceID:     rec.DeviceID,
 					StartTime:    reqStart,
 					EndTime:      exportEnd,
@@ -277,8 +277,8 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 					TraceID:      traceID,
 					SpanID:       otlp.NewSpanID(),
 					ParentSpanID: reqSpanID,
-					Name:         "xiao-otel.app_attest.verify",
-					Service:      "xiao-otel",
+					Name:         "mcu-lab-backend.app_attest.verify",
+					Service:      "mcu-lab-backend",
 					DeviceID:     rec.DeviceID,
 					StartTime:    verifyStart,
 					EndTime:      verifyEnd,
@@ -290,8 +290,8 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 					TraceID:      traceID,
 					SpanID:       otlp.NewSpanID(),
 					ParentSpanID: reqSpanID,
-					Name:         "xiao-otel.cloud_monitoring.export",
-					Service:      "xiao-otel",
+					Name:         "mcu-lab-backend.cloud_monitoring.export",
+					Service:      "mcu-lab-backend",
 					DeviceID:     rec.DeviceID,
 					StartTime:    exportStart,
 					EndTime:      exportEnd,

@@ -29,7 +29,7 @@ pub fn firmware_build_id() -> String {
     if sha.iter().all(|&b| b == 0) {
         return String::new();
     }
-    // First 20 bytes (40 hex chars) match the 40-char Build ID format used by xiao-otel.
+    // First 20 bytes (40 hex chars) match the 40-char Build ID format used by mcu-lab-backend.
     hex::encode(&sha[..20])
 }
 

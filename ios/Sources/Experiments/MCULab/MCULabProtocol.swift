@@ -111,7 +111,7 @@ struct MCULabPCSample: Equatable, Identifiable, Decodable {
     var id: String { pc }
 }
 
-/// A server-symbolized PC hotspot returned by `xiao-otel` (`POST /v1/traces`).
+/// A server-symbolized PC hotspot returned by `mcu-lab-backend` (`POST /v1/traces`).
 struct MCULabResolvedSymbol: Equatable, Decodable {
     var function: String?
     var file: String?

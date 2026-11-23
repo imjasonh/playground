@@ -22,8 +22,8 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/imjasonh/playground/xiao-otel/internal/attest"
-	"github.com/imjasonh/playground/xiao-otel/internal/otlp"
+	"github.com/imjasonh/playground/mcu-lab-backend/internal/attest"
+	"github.com/imjasonh/playground/mcu-lab-backend/internal/otlp"
 )
 
 const testAppID = "TEAMID1234.com.example.playground"
@@ -359,7 +359,7 @@ func TestTracesEndpointAndServerSideMetricsSpans(t *testing.T) {
 	if len(traceRequests) != 2 {
 		t.Fatalf("expected 2 Cloud Trace batchWrite calls, got %d", len(traceRequests))
 	}
-	if !bytes.Contains(traceRequests[1], []byte(`"xiao-otel.app_attest.verify"`)) {
+	if !bytes.Contains(traceRequests[1], []byte(`"mcu-lab-backend.app_attest.verify"`)) {
 		t.Fatalf("server-side spans missing app_attest.verify: %s", string(traceRequests[1]))
 	}
 }
