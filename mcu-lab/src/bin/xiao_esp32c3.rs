@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use esp_idf_svc::hal::delay::FreeRtos;
-use esp_idf_svc::hal::gpio::{Gpio2, Output, PinDriver};
+use esp_idf_svc::hal::gpio::{Output, PinDriver};
 use esp_idf_svc::hal::peripherals::Peripherals;
 use log::info;
 use mcu_lab::platform::{McuApp, RunMode, StepContext, StepOutput};
@@ -15,7 +15,7 @@ use mcu_lab::protocol::{
 };
 
 struct XiaoApp {
-    probe: PinDriver<'static, Gpio2, Output>,
+    probe: PinDriver<'static, Output>,
 }
 
 impl McuApp for XiaoApp {
@@ -89,10 +89,7 @@ impl McuApp for XiaoApp {
     }
 }
 
-fn measure_phase<T>(
-    probe: &mut PinDriver<'_, Gpio2, Output>,
-    f: impl FnOnce() -> T,
-) -> Result<(T, u32)> {
+fn measure_phase<T>(probe: &mut PinDriver<'_, Output>, f: impl FnOnce() -> T) -> Result<(T, u32)> {
     probe.set_high()?;
     let start_us = now_us();
     let out = f();
