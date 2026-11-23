@@ -225,9 +225,10 @@ them from an XcodeGen `project.yml` that declares `platform: macOS`:
 - **[`hello-macos/`](hello-macos/)** — minimal SwiftUI "Hello Mac" sample (the
   macOS counterpart of static `hello/`). Discovery, CI, notarized Sparkle CD,
   and in-app **Check for Updates…** against the gh-pages appcast.
-- **[`onramp/`](onramp/)** — Onramp offline Mac can’t-get-online triage
-  (playbooks + network toolbox; optional on-device chat). Same Sparkle CD path; see
-  [`docs/onramp-design.md`](docs/onramp-design.md).
+- **[`lantern/`](lantern/)** — Lantern menu-bar macOS local network sentinel
+  (continuous LAN device/UPnP/proxy-port/Mac-socket/connectivity monitoring +
+  narrow on-device Foundation Models explanations; replaces Onramp). Same
+  Sparkle CD path.
 - **[`roll/`](roll/)** is the menu bar app. Click rolls. Right-click lists
   countdowns, a fake phone photo of the screen, updates, and quit. Later menu bar features go here. No Dock icon
   and no window. Same Sparkle CD path.

@@ -1,0 +1,100 @@
+name: Lantern
+
+# Discovery marker for macOS apps: project.yml with platform: macOS
+# (see discover-macos-apps.sh).
+
+options:
+  bundleIdPrefix: io.github.imjasonh
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  minimumXcodeGenVersion: "2.38.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "0.3.0"
+    CURRENT_PROJECT_VERSION: "1"
+    VERSIONING_SYSTEM: apple-generic
+
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.0"
+
+targets:
+  Lantern:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+    dependencies:
+      - package: Sparkle
+        product: Sparkle
+      - sdk: CoreWLAN.framework
+      - sdk: Network.framework
+      - sdk: AppKit.framework
+      - sdk: UserNotifications.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.lantern
+        PRODUCT_NAME: Lantern
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Weak-link so Lantern launches on macOS 14–15 and uses on-device
+        # Foundation Models opportunistically on macOS 26+ with Apple Intelligence.
+        OTHER_LDFLAGS: "$(inherited) -weak_framework FoundationModels"
+    entitlements:
+      path: Lantern.entitlements
+      properties:
+        com.apple.security.cs.disable-library-validation: true
+    info:
+      path: Lantern-Info.plist
+      properties:
+        CFBundleName: Lantern
+        CFBundleDisplayName: Lantern
+        CFBundleIconName: AppIcon
+        CFBundleExecutable: $(EXECUTABLE_NAME)
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleInfoDictionaryVersion: "6.0"
+        CFBundlePackageType: $(PRODUCT_BUNDLE_PACKAGE_TYPE)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
+        LSApplicationCategoryType: public.app-category.utilities
+        NSHighResolutionCapable: true
+        NSPrincipalClass: NSApplication
+        ITSAppUsesNonExemptEncryption: false
+        NSLocalNetworkUsageDescription: Lantern monitors your local network for unknown devices, open proxy ports, UPnP port forwards, and connectivity issues.
+        NSLocationUsageDescription: Optional — used only to label the current Wi‑Fi network name in Lantern.
+        SUFeedURL: https://imjasonh.github.io/playground/macos/lantern/appcast.xml
+        SUPublicEDKey: pFvSb5Quq/HBMc9EvhTTD5zbctf7MCuAks0mXaZiZW0=
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
+
+  LanternTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/LanternTests
+    dependencies:
+      - target: Lantern
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.lantern.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  Lantern:
+    build:
+      targets:
+        Lantern: all
+    test:
+      gatherCoverageData: true
+      targets:
+        - LanternTests
+    run:
+      config: Debug
+    archive:
+      config: Release

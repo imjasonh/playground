@@ -54,7 +54,7 @@ playground/
 ├── hex-sudoku/            # 16×16 sudoku generator in hex digits 0-9 and A-F (JS + Node tests)
 ├── image-diff/            # pixel-by-pixel image comparison (JS + Node tests)
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
-├── onramp/             # offline Mac can’t-get-online triage (Sparkle CD)
+├── lantern/            # menu-bar macOS local network sentinel (Sparkle CD)
 ├── roll/                  # menu bar app: click rolls, right-click countdowns and monitor photos (Sparkle CD)
 ├── esp32-ble/             # Rust/ESP-IDF firmware: BLE GATT LED control
 ├── mcu-lab/               # Rust/ESP-IDF multi-MCU firmware: shared BLE telemetry, BLE GATT OTA & profiling (xiao-esp32c3 + Waveshare 7.5″ epd-maze)
@@ -154,7 +154,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `life-qr/` | no | OpenSCAD Life+QR sculpture; no `index.html` |
 | `ios/` | no | The single "Playground" iOS app (XcodeGen + SwiftUI); no `index.html` |
 | `hello-macos/` | no | Example macOS app (XcodeGen + SwiftUI); no `index.html` |
-| `onramp/` | no | Offline Mac network triage / can’t-get-online playbooks (XcodeGen + SwiftUI + Sparkle); no `index.html` |
+| `lantern/` | no | Menu-bar macOS local network sentinel (XcodeGen + SwiftUI + Sparkle); no `index.html` |
 | `roll/` | no | Menu bar app: click rolls, right-click countdowns and monitor photos (XcodeGen + Sparkle); no `index.html` |
 | `posts/` | no | Human-authored blog posts (`posts/<stub>.md`); built to `/posts/` at deploy time; no `index.html` |
 | `.github/` | no | Infrastructure only |
@@ -1167,16 +1167,14 @@ auto-discover them. Run their local tests when you change them.
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `hello-macos/` | Minimal SwiftUI "Hello Mac" sample; notarized Sparkle CD + in-app updater | XCTest via `fastlane test` |
-| `onramp/` | Onramp — offline can’t-get-online playbooks + network toolbox (+ optional chat); Sparkle CD | XCTest via `fastlane test` |
+| `lantern/` | Lantern — menu-bar macOS local network sentinel (continuous LAN/UPnP/host-socket/connectivity monitoring + narrow on-device Foundation Models); Sparkle CD | XCTest via `fastlane test` |
 | `roll/` | The menu bar app. Click rolls. Right-click lists countdowns and takes a screenshot filtered to look like a phone photo of the monitor. Later menu bar features go here. No Dock icon or window. Sparkle CD | XCTest via `fastlane test` |
 
-> **`onramp` has its own agent guide:** read
-> [`onramp/AGENTS.md`](onramp/AGENTS.md) before working in that
-> directory. Autonomous diagnostic tools **must never take action** — only
-> read and diagnose. Confirmed click-to-run `SuggestedAction` buttons may open
-> Settings/URLs or run allowlisted read-only probes and feed output back into
-> another playbook pass; do not add mutating commands without an explicit
-> product decision. Prefer the install-online → offline Can’t get online golden
-> path over once-online Activity Monitor clones.
+> **`lantern` has its own agent guide:** read
+> [`lantern/AGENTS.md`](lantern/AGENTS.md) before working in that
+> directory. All collectors and Foundation Models tools **must stay strictly
+> read-only** — never mutate system settings, kill processes, or alter router
+> state. Keep the AFM harness narrow (zero-tool single-shot classifiers/explainers
+> and at most 3 tiny read-only tools for scoped investigation).
 
 See each app's `README.md` for app-specific rules and local development.
