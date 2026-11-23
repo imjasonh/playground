@@ -7,8 +7,9 @@ use esp_idf_svc::sys::esp_random;
 use log::info;
 use mcu_lab::epd_display::Panel;
 use mcu_lab::maze::{
-    crop_packed, dirty_rect, generate, layout_for, render_empty, render_progress, solve, Layout,
-    Maze, CELLS_PER_TICK, HOLD_COMPLETE_MS, MAZE_COLS, MAZE_FIRMWARE_ID, MAZE_ROWS, TICK_MS,
+    crop_packed, dirty_rect, generate, layout_for, render_empty, render_progress, solve, Cell,
+    Layout, Maze, CELLS_PER_TICK, HOLD_COMPLETE_MS, MAZE_COLS, MAZE_FIRMWARE_ID, MAZE_ROWS,
+    TICK_MS,
 };
 use mcu_lab::platform::{McuApp, RunMode, StepContext, StepOutput};
 use mcu_lab::profiler::now_us;
@@ -22,7 +23,7 @@ const USB_RAIL_MV: u16 = 5000;
 struct ActiveMaze {
     maze: Maze,
     layout: Layout,
-    path: Vec<usize>,
+    path: Vec<Cell>,
     shown: usize,
 }
 
