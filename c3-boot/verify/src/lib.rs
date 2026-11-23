@@ -21,6 +21,8 @@ pub mod checkpoint;
 pub mod der;
 pub mod error;
 pub mod image;
+#[cfg(feature = "tuf")]
+pub mod json;
 pub mod keys;
 pub mod layout;
 pub mod level;
@@ -30,8 +32,14 @@ mod reader;
 pub mod rekor;
 pub mod sigstore;
 pub mod time;
+#[cfg(feature = "tuf")]
+pub mod trusted_root;
 pub mod trustroot;
 pub mod tsa;
+#[cfg(feature = "tuf")]
+pub mod tuf;
+#[cfg(feature = "tuf")]
+pub mod tuf_slot;
 pub mod x509;
 
 pub use error::Error;

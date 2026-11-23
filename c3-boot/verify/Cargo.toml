@@ -8,6 +8,12 @@ publish.workspace = true
 [dependencies]
 c3-crypto = { path = "../crypto" }
 
+[features]
+# Slot checks that take trust from Sigstore's TUF root. Off in the
+# bootloader: compiling them into this crate changes how its other code
+# optimizes, and so the pinned image digest.
+tuf = []
+
 [dev-dependencies]
 base64 = "0.22"
 ed25519-dalek = { version = "3.0.0", default-features = false }

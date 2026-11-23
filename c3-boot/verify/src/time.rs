@@ -148,10 +148,67 @@ pub fn generalized_time(content: &[u8]) -> Result<u64, Error> {
     }
 }
 
+/// Parses an RFC 3339 UTC time in the form Sigstore's TUF metadata and
+/// trusted roots use, `YYYY-MM-DDTHH:MM:SSZ`, optionally with a fraction of
+/// one or more digits before the `Z`, and returns seconds since the Unix
+/// epoch.
+///
+/// The fraction is dropped. Years before 1970 are rejected.
+pub fn rfc3339(text: &[u8]) -> Result<u64, Error> {
+    let mut rest = text;
+    let year = digits::<4>(&mut rest)?;
+    let mut compact = [0u8; 10];
+    for (pair, separator) in compact.as_chunks_mut::<2>().0.iter_mut().zip(*b"--T::") {
+        let Some((&s, after)) = rest.split_first() else {
+            return Err(Error::BadTime);
+        };
+        let (digits, after) = after.split_first_chunk::<2>().ok_or(Error::BadTime)?;
+        if s != separator {
+            return Err(Error::BadTime);
+        }
+        *pair = *digits;
+        rest = after;
+    }
+    let t = date_time(year, &mut &compact[..])?;
+    match rest.split_first() {
+        Some((b'Z', [])) => Ok(t),
+        Some((b'.', fraction_and_zone)) => match fraction_and_zone.split_last() {
+            Some((b'Z', fraction))
+                if !fraction.is_empty() && fraction.iter().all(u8::is_ascii_digit) =>
+            {
+                Ok(t)
+            }
+            _ => Err(Error::BadTime),
+        },
+        _ => Err(Error::BadTime),
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_rfc3339() {
+        assert_eq!(rfc3339(b"1970-01-01T00:00:00Z"), Ok(0));
+        assert_eq!(rfc3339(b"2025-06-12T12:02:16Z"), Ok(1_749_729_736));
+        assert_eq!(rfc3339(b"2022-12-31T23:59:59.999Z"), Ok(1_672_531_199));
+        assert_eq!(rfc3339(b"2022-12-31T23:59:59.000Z"), Ok(1_672_531_199));
+        for bad in [
+            &b"2025-06-12T12:02:16+01:00"[..],
+            b"2025-06-12T12:02:16",
+            b"2025-06-12T12:02:16.Z",
+            b"2025-06-12 12:02:16Z",
+            b"2025-02-29T00:00:00Z",
+            b"1969-12-31T23:59:59Z",
+            b"2025-06-12T24:00:00Z",
+            b"2025-6-12T12:02:16Z",
+            b"",
+        ] {
+            assert_eq!(rfc3339(bad), Err(Error::BadTime), "{bad:?}");
+        }
+    }
 
     #[test]
     fn converts_known_times() {

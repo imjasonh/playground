@@ -58,6 +58,10 @@ jobs:
             -p c3-verify -p c3-crypto -p c3-bootloader -p c3-demo-app -p c3-rvtest -- -D warnings
           C3_EFUSE_BURN=on cargo clippy --locked --release \
             --target riscv32imc-unknown-none-elf -p c3-bootloader -- -D warnings
+          # The TUF checks build on their own: enabling the feature in the
+          # same command as the bootloader would compile them into it.
+          cargo clippy --locked --release --target riscv32imc-unknown-none-elf \
+            -p c3-verify --features tuf -- -D warnings
           # A key file stands in for production keys, which must burn eFuses.
           if C3_GENESIS="${PWD}/testdata/keys/genesis-dev.pub" cargo build --locked --release \
             --target riscv32imc-unknown-none-elf -p c3-bootloader 2>/dev/null; then

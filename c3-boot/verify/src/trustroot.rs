@@ -98,6 +98,26 @@ pub struct TrustRoot<'a> {
 }
 
 impl<'a> TrustRoot<'a> {
+    /// A trust root with these keys and policy that no blob signed, at level
+    /// 0, as [`crate::trusted_root::extract`] builds it from TUF-verified
+    /// metadata. Entries after the first `None` in each list are ignored.
+    pub fn from_parts(
+        fulcio: [Option<FulcioIntermediate<'a>>; MAX_FULCIO],
+        logs: [Option<LogKey<'a>>; MAX_LOGS],
+        tsas: [Option<TsaSigner<'a>>; MAX_TSAS],
+        policy: Policy<'a>,
+    ) -> Self {
+        TrustRoot {
+            level: 0,
+            fulcio,
+            logs,
+            tsas,
+            policy,
+            body: &[],
+            signatures: &[],
+        }
+    }
+
     /// The Fulcio intermediates the blob lists.
     pub fn fulcio(&self) -> impl Iterator<Item = &FulcioIntermediate<'a>> {
         self.fulcio.iter().map_while(Option::as_ref)
