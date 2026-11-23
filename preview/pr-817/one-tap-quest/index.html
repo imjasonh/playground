@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>One Tap Quest</title>
+  <title>One Tap Quest — Unofficial Godot Recreation</title>
   <style>
     html, body {
       margin: 0;
@@ -15,6 +15,14 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       overflow: hidden;
       touch-action: none;
+      display: flex;
+      flex-direction: column;
+    }
+    #stage {
+      position: relative;
+      flex: 1 1 auto;
+      min-height: 0;
+      width: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -28,7 +36,7 @@
       image-rendering: pixelated;
     }
     #status {
-      position: fixed;
+      position: absolute;
       inset: 0;
       display: flex;
       flex-direction: column;
@@ -59,15 +67,41 @@
       letter-spacing: 0.04em;
       color: #c0cbdc;
     }
+    #attribution {
+      flex: 0 0 auto;
+      padding: 8px 12px;
+      background: #141422;
+      border-top: 1px solid #26263d;
+      font-size: 12px;
+      line-height: 1.4;
+      text-align: center;
+      color: #b8c2d8;
+      touch-action: auto;
+    }
+    #attribution a {
+      color: #73eff7;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    #attribution a:hover {
+      color: #fee761;
+    }
   </style>
   
 </head>
 <body>
-  <canvas id="canvas"></canvas>
-  <div id="status">
-    <div id="status-text">Loading One Tap Quest…</div>
-    <div id="progress-bar"><div id="progress-fill"></div></div>
+  <div id="stage">
+    <canvas id="canvas"></canvas>
+    <div id="status">
+      <div id="status-text">Loading One Tap Quest…</div>
+      <div id="progress-bar"><div id="progress-fill"></div></div>
+    </div>
   </div>
+  <footer id="attribution">
+    Unofficial AI-built Godot recreation of
+    <a href="http://shimage.net/one-tap-quest/" target="_blank" rel="noopener noreferrer">One Tap Quest</a>
+    by <a href="http://shimage.net" target="_blank" rel="noopener noreferrer">shimage.net</a>.
+  </footer>
   <script src="index.js"></script>
   <script>
     (function () {
@@ -80,7 +114,7 @@
         return;
       }
 
-      const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":49792,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+      const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":50224,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
       const engine = new Engine(GODOT_CONFIG);
 
       engine.startGame({
