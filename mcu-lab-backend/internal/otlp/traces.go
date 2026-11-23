@@ -18,7 +18,7 @@ import (
 )
 
 // TracePayload is the subset of OTLP/HTTP v1 ExportTraceServiceRequest JSON
-// accepted by xiao-otel on POST /v1/traces.
+// accepted by mcu-lab-backend on POST /v1/traces.
 type TracePayload struct {
 	ResourceSpans []ResourceSpans `json:"resourceSpans"`
 }

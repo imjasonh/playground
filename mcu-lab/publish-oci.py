@@ -3,7 +3,7 @@
 
 Layer 0 (`application/octet-stream`): raw espflash .bin for BLE OTA from iOS.
 Layer 1 (`application/vnd.mculab.elf.v1+gzip`): gzipped ELF with line-tables-only
-DWARF symbols for automatic server-side symbolization in `xiao-otel`.
+DWARF symbols for automatic server-side symbolization in `mcu-lab-backend`.
 """
 
 import base64
@@ -113,6 +113,8 @@ def main() -> int:
     bin_digest = upload_blob(registry, repo, token, bin_bytes)
     elf_digest = upload_blob(registry, repo, token, elf_gz)
 
+    elf_build_id = hashlib.sha256(elf_bytes).hexdigest()[:40]
+
     manifest = {
         "schemaVersion": 2,
         "mediaType": "application/vnd.oci.image.manifest.v1+json",
@@ -135,6 +137,7 @@ def main() -> int:
                 "annotations": {
                     "org.opencontainers.image.title": f"{app_name}.elf.gz",
                     "org.opencontainers.image.revision": git_sha,
+                    "vnd.mculab.build_id": elf_build_id,
                 },
             },
         ],
@@ -143,6 +146,9 @@ def main() -> int:
 
     digest = put_manifest(registry, repo, token, git_sha, manifest_bytes)
     print(f"published {registry}/{repo}:{git_sha} ({digest})")
+    build_id_tag = f"buildid-{elf_build_id}"
+    put_manifest(registry, repo, token, build_id_tag, manifest_bytes)
+    print(f"published {registry}/{repo}:{build_id_tag} ({digest})")
     return 0
 
 

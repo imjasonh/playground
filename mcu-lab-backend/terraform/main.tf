@@ -40,7 +40,7 @@ resource "google_project_iam_member" "telemetry" {
 }
 
 resource "ko_build" "server" {
-  importpath  = "github.com/imjasonh/playground/xiao-otel"
+  importpath  = "github.com/imjasonh/playground/mcu-lab-backend"
   working_dir = abspath("${path.module}/..")
   base_image  = "cgr.dev/chainguard/static"
   platforms   = ["linux/amd64"]
@@ -50,6 +50,31 @@ resource "ko_build" "server" {
     "CGO_ENABLED=0",
     "GOFLAGS=-buildvcs=false",
   ]
+}
+
+resource "google_storage_bucket" "attest_store" {
+  name                        = "${var.project_id}-${var.name}-attest"
+  location                    = var.region
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+
+  lifecycle_rule {
+    condition {
+      age                   = 1
+      matches_prefix        = ["attest/challenges/"]
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  depends_on = [google_project_service.services]
+}
+
+resource "google_storage_bucket_iam_member" "attest_store" {
+  bucket = google_storage_bucket.attest_store.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${data.google_service_account.service.email}"
 }
 
 resource "google_cloud_run_v2_service" "service" {
@@ -62,9 +87,7 @@ resource "google_cloud_run_v2_service" "service" {
     service_account       = data.google_service_account.service.email
 
     scaling {
-      # Keep a single instance warm/shared so in-memory App Attest challenges
-      # and counters stay on the same instance across the challenge -> POST pair.
-      max_instance_count = 1
+      max_instance_count = 4
     }
 
     containers {
@@ -91,12 +114,17 @@ resource "google_cloud_run_v2_service" "service" {
         name  = "ALLOW_UNATTESTED"
         value = tostring(var.allow_unattested)
       }
+      env {
+        name  = "ATTEST_STORE_BUCKET"
+        value = google_storage_bucket.attest_store.name
+      }
     }
   }
 
   depends_on = [
     google_project_service.services,
     google_project_iam_member.telemetry,
+    google_storage_bucket_iam_member.attest_store,
   ]
 }
 

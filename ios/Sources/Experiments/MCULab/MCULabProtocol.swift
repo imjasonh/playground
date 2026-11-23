@@ -60,11 +60,11 @@ struct MCULabMetrics: Equatable, Identifiable {
         (flags >> 4) & 0x0F
     }
 
-    /// Firmware target inferred from `boardID` when no GATT WakeProfile was pulled.
-    var inferredTarget: MCULabFirmwareTarget {
+    /// Hardware board inferred from `boardID` in the BLE advertisement.
+    var inferredBoard: MCULabBoard {
         switch boardID {
-        case MCULabFirmwareTarget.epdMaze.boardID:
-            return .epdMaze
+        case MCULabBoard.waveshareEPD75.boardID:
+            return .waveshareEPD75
         default:
             return .xiaoESP32C3
         }
@@ -81,7 +81,7 @@ enum MCULabOTACommand: Equatable {
 /// Status notification sent by the MCU on the BLE GATT OTA status characteristic.
 enum MCULabOTAStatus: Equatable {
     case idle
-    case ready(total: UInt32)
+    case ready(total: UInt32, offset: UInt32 = 0)
     case progress(written: UInt32, total: UInt32)
     case ok(sha256: String)
     case error(message: String)
@@ -111,7 +111,7 @@ struct MCULabPCSample: Equatable, Identifiable, Decodable {
     var id: String { pc }
 }
 
-/// A server-symbolized PC hotspot returned by `xiao-otel` (`POST /v1/traces`).
+/// A server-symbolized PC hotspot returned by `mcu-lab-backend` (`POST /v1/traces`).
 struct MCULabResolvedSymbol: Equatable, Decodable {
     var function: String?
     var file: String?
@@ -126,26 +126,38 @@ struct MCULabResolvedSymbol: Equatable, Decodable {
     }
 }
 
-/// Supported `mcu-lab` firmware targets published to GHCR by `.github/workflows/mcu-lab-publish.yml`.
-enum MCULabFirmwareTarget: String, CaseIterable, Identifiable {
+/// Hardware capability declared by a board in `mcu-lab/manifest.json`.
+enum MCULabCapability: String, Hashable {
+    case logicProbe = "logic-probe"
+    case deepSleep = "deep-sleep"
+    case epd75 = "epd75"
+}
+
+/// Physical MCU hardware board (silicon, pinout, power source, and capabilities).
+enum MCULabBoard: String, CaseIterable, Identifiable {
     case xiaoESP32C3 = "xiao-esp32c3"
-    case epdMaze = "epd-maze"
+    case waveshareEPD75 = "waveshare-epd75"
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
         case .xiaoESP32C3: return "XIAO ESP32-C3"
-        case .epdMaze: return "Waveshare EPD-75 Maze (ESP32)"
+        case .waveshareEPD75: return "Waveshare EPD-75 (ESP32)"
         }
     }
 
-    var ghcrRepo: String { "imjasonh/playground/\(rawValue)" }
+    var gapName: String {
+        switch self {
+        case .xiaoESP32C3: return MCULabProtocol.deviceName
+        case .waveshareEPD75: return "EPD-75"
+        }
+    }
 
     var chip: String {
         switch self {
         case .xiaoESP32C3: return "esp32c3"
-        case .epdMaze: return "esp32"
+        case .waveshareEPD75: return "esp32"
         }
     }
 
@@ -153,16 +165,64 @@ enum MCULabFirmwareTarget: String, CaseIterable, Identifiable {
     var chipID: UInt16 {
         switch self {
         case .xiaoESP32C3: return 0x0005
-        case .epdMaze: return 0x0000
+        case .waveshareEPD75: return 0x0000
         }
     }
 
     var boardID: UInt8 {
         switch self {
         case .xiaoESP32C3: return 1
-        case .epdMaze: return 2
+        case .waveshareEPD75: return 2
         }
     }
+
+    var capabilities: Set<MCULabCapability> {
+        switch self {
+        case .xiaoESP32C3: return [.logicProbe, .deepSleep]
+        case .waveshareEPD75: return [.epd75]
+        }
+    }
+
+    var compatibleApps: [MCULabApp] {
+        MCULabApp.allCases.filter { $0.requiredCapabilities.isSubset(of: capabilities) }
+    }
+}
+
+/// Hardware-agnostic application that runs on top of any compatible `MCULabBoard`.
+enum MCULabApp: String, CaseIterable, Identifiable {
+    case base = "base"
+    case bench = "bench"
+    case maze = "maze"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .base: return "Base (OTA + OTel)"
+        case .bench: return "Bench (Power / EPD Sim)"
+        case .maze: return "Maze Animator"
+        }
+    }
+
+    var requiredCapabilities: Set<MCULabCapability> {
+        switch self {
+        case .base: return []
+        case .bench: return [.logicProbe]
+        case .maze: return [.epd75]
+        }
+    }
+}
+
+/// Concrete flashable `(board, app)` pair published to GHCR as `<board>-<app>`.
+struct MCULabFirmwareTarget: Equatable {
+    var board: MCULabBoard
+    var app: MCULabApp
+
+    var binName: String { "\(board.rawValue)-\(app.rawValue)" }
+    var displayName: String { "\(board.displayName) — \(app.displayName)" }
+    var ghcrRepo: String { "imjasonh/playground/\(binName)" }
+    var chipID: UInt16 { board.chipID }
+    var boardID: UInt8 { board.boardID }
 }
 
 /// Detailed per-wake profiling snapshot pulled over BLE GATT (`PROFILE_CHAR_UUID`).
@@ -174,6 +234,7 @@ struct MCULabWakeProfile: Equatable, Decodable {
     var chip: String? = nil
     var app: String? = nil
     var gitSha: String? = nil
+    var buildId: String? = nil
     var freeHeapBytes: UInt32
     var minFreeHeapBytes: UInt32
     var stackHighWaterBytes: UInt32
@@ -189,12 +250,62 @@ struct MCULabWakeProfile: Equatable, Decodable {
         case chip
         case app
         case gitSha = "git_sha"
+        case buildId = "build_id"
         case freeHeapBytes = "free_heap"
         case minFreeHeapBytes = "min_heap"
         case stackHighWaterBytes = "stack_hw"
         case cpuCycles = "cycles"
         case spans
         case pcSamples = "pcs"
+    }
+}
+
+/// Reassembles chunked BLE GATT blob frames (`[0x4D, 0x43, index: u16 LE, total: u16 LE, payload...]`).
+struct MCULabBlobReassembler {
+    private var total: UInt16 = 0
+    private var parts: [Data?] = []
+    private var count: Int = 0
+
+    mutating func reset() {
+        total = 0
+        parts.removeAll(keepingCapacity: false)
+        count = 0
+    }
+
+    /// Push a raw BLE packet. Returns the reassembled payload once all frames arrive.
+    mutating func push(_ raw: Data) -> Data? {
+        guard raw.count >= 6,
+              raw[raw.startIndex] == 0x4D,
+              raw[raw.startIndex + 1] == 0x43
+        else {
+            return nil
+        }
+        let idx = raw.readUInt16LE(at: 2)
+        let frameTotal = raw.readUInt16LE(at: 4)
+        guard frameTotal > 0, idx < frameTotal else {
+            return nil
+        }
+        if total != frameTotal {
+            total = frameTotal
+            parts = Array(repeating: nil, count: Int(frameTotal))
+            count = 0
+        }
+        let slotIdx = Int(idx)
+        if parts[slotIdx] == nil {
+            parts[slotIdx] = raw.subdata(in: 6..<raw.count)
+            count += 1
+        }
+        guard count == Int(total) else {
+            return nil
+        }
+        var out = Data()
+        for part in parts {
+            if let part {
+                out.append(part)
+            }
+        }
+        reset()
+        return out
     }
 }
 
@@ -210,7 +321,8 @@ enum MCULabProtocol {
     static let otaDataUUIDString = "BEB5483E-36E1-4688-B7F5-EA07361BC302"
     static let otaStatusUUIDString = "1A3C0001-36E1-4688-B7F5-EA07361BC303"
     static let profileCharUUIDString = "1A3C0002-36E1-4688-B7F5-EA07361BC303"
-    static let otaSlotBytes: UInt32 = 0x1F_0000
+    static let coredumpCharUUIDString = "1A3C0003-36E1-4688-B7F5-EA07361BC303"
+    static let otaSlotBytes: UInt32 = 0x1E_0000
 
     static let flagDeepSleepWake: UInt8 = 1 << 0
     static let flagEpdAttached: UInt8 = 1 << 1
@@ -228,7 +340,7 @@ enum MCULabProtocol {
         }
         return fallbackOtelEndpoint
     }
-    static let defaultGHCRRepo = MCULabFirmwareTarget.xiaoESP32C3.ghcrRepo
+    static let defaultGHCRRepo = MCULabFirmwareTarget(board: .xiaoESP32C3, app: .base).ghcrRepo
     static let defaultGitHubRepo = "imjasonh/playground"
     static let defaultFirmwarePath = "mcu-lab"
 
@@ -344,8 +456,8 @@ enum MCULabProtocol {
         switch status {
         case .idle:
             return "IDLE"
-        case .ready(let total):
-            return "READY total=\(total)"
+        case .ready(let total, let offset):
+            return offset == 0 ? "READY total=\(total)" : "READY total=\(total) offset=\(offset)"
         case .progress(let written, let total):
             return "PROGRESS written=\(written) total=\(total)"
         case .ok(let sha256):
@@ -367,12 +479,19 @@ enum MCULabProtocol {
         }
         if trimmed.hasPrefix("READY ") {
             let rest = trimmed.dropFirst(6).trimmingCharacters(in: .whitespaces)
-            guard rest.hasPrefix("total="),
-                  let total = UInt32(rest.dropFirst("total=".count))
-            else {
+            var total: UInt32?
+            var offset: UInt32 = 0
+            for part in rest.split(whereSeparator: \.isWhitespace).map(String.init) {
+                if part.hasPrefix("total=") {
+                    total = UInt32(part.dropFirst("total=".count))
+                } else if part.hasPrefix("offset=") {
+                    offset = UInt32(part.dropFirst("offset=".count)) ?? 0
+                }
+            }
+            guard let total else {
                 return nil
             }
-            return .ready(total: total)
+            return .ready(total: total, offset: offset)
         }
         if trimmed.hasPrefix("OK ") {
             let rest = trimmed.dropFirst(3).trimmingCharacters(in: .whitespaces)
@@ -404,6 +523,30 @@ enum MCULabProtocol {
         return nil
     }
 
+    /// Standard IEEE 802.3 CRC32 (polynomial `0xEDB88320`) matching `mcu-lab/src/protocol.rs`.
+    static func crc32(_ data: Data) -> UInt32 {
+        var crc: UInt32 = 0xFFFF_FFFF
+        for byte in data {
+            crc ^= UInt32(byte)
+            for _ in 0..<8 {
+                let mask = UInt32(bitPattern: -Int32(crc & 1))
+                crc = (crc >> 1) ^ (0xEDB8_8320 & mask)
+            }
+        }
+        return ~crc
+    }
+
+    /// Encode a framed OTA data chunk (`[b'O', b'T', offset: u32 LE, crc32: u32 LE, payload...]`).
+    static func encodeOTAChunkFrame(offset: UInt32, payload: Data) -> Data {
+        var out = Data(capacity: 10 + payload.count)
+        out.append(0x4F) // 'O'
+        out.append(0x54) // 'T'
+        out.appendUInt32LE(offset)
+        out.appendUInt32LE(crc32(payload))
+        out.append(payload)
+        return out
+    }
+
     /// Compute the lowercase hex SHA-256 digest of a firmware binary.
     static func sha256Hex(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -421,6 +564,29 @@ enum MCULabProtocol {
             offset = end
         }
         return chunks
+    }
+
+    /// Split a firmware binary starting at `startOffset` into offset+CRC32 framed BLE packets.
+    static func chunkFirmwareFramed(
+        _ data: Data,
+        startingAt startOffset: UInt32 = 0,
+        maxPacketBytes: Int = 480
+    ) -> [(offset: UInt32, frame: Data, payloadCount: Int)] {
+        let payloadLimit = max(maxPacketBytes - 10, 20)
+        let start = min(Int(startOffset), data.count)
+        var out: [(offset: UInt32, frame: Data, payloadCount: Int)] = []
+        var offset = start
+        while offset < data.count {
+            let end = min(offset + payloadLimit, data.count)
+            let slice = data.subdata(in: offset..<end)
+            out.append((
+                offset: UInt32(offset),
+                frame: encodeOTAChunkFrame(offset: UInt32(offset), payload: slice),
+                payloadCount: slice.count
+            ))
+            offset = end
+        }
+        return out
     }
 
     /// Format a single-line summary matching `format_status_line` in `mcu-lab/src/protocol.rs`.
@@ -485,7 +651,7 @@ enum MCULabProtocol {
         if let app = profile?.app, !app.isEmpty {
             return app
         }
-        return metrics.inferredTarget.rawValue
+        return metrics.inferredBoard.rawValue
     }
 
     static func formatOTLPJSON(
@@ -566,6 +732,9 @@ enum MCULabProtocol {
             if let gitSha = profile.gitSha, !gitSha.isEmpty {
                 rootAttrs.append(#"{"key":"mcu.git_sha","value":{"stringValue":"\#(escapeJSONString(gitSha))"}}"#)
             }
+            if let buildId = profile.buildId, !buildId.isEmpty {
+                rootAttrs.append(#"{"key":"mcu.build_id","value":{"stringValue":"\#(escapeJSONString(buildId))"}}"#)
+            }
             rootAttrs.append(#"{"key":"mcu.heap.free_bytes","value":{"intValue":"\#(profile.freeHeapBytes)"}}"#)
             rootAttrs.append(#"{"key":"mcu.heap.min_free_bytes","value":{"intValue":"\#(profile.minFreeHeapBytes)"}}"#)
             rootAttrs.append(#"{"key":"mcu.stack.high_water_bytes","value":{"intValue":"\#(profile.stackHighWaterBytes)"}}"#)
@@ -579,7 +748,7 @@ enum MCULabProtocol {
         }
 
         let resolvedService = serviceName(for: metrics, profile: profile)
-        let rootSpanName = resolvedService == MCULabFirmwareTarget.xiaoESP32C3.rawValue
+        let rootSpanName = resolvedService == MCULabBoard.xiaoESP32C3.rawValue
             ? "xiao.wake #\(metrics.wakeCount)"
             : "\(resolvedService).wake #\(metrics.wakeCount)"
 

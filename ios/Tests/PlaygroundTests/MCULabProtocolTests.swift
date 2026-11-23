@@ -497,19 +497,20 @@ final class MCULabProtocolTests: XCTestCase {
             attestStore: AppAttestMemoryStore(deviceId: "dev-ota", userId: "user-ota"),
             http: http
         )
-        await controller.pullLatestFirmwareFromGHCR(target: .xiaoESP32C3)
+        let target = MCULabFirmwareTarget(board: .xiaoESP32C3, app: .base)
+        await controller.pullLatestFirmwareFromGHCR(target: target)
 
         XCTAssertEqual(controller.stagedFirmwareData, firmwareBytes)
-        XCTAssertTrue(controller.stagedFirmwareName.hasPrefix("xiao-esp32c3@\(shaPublished.prefix(7))"))
+        XCTAssertTrue(controller.stagedFirmwareName.hasPrefix("xiao-esp32c3-base@\(shaPublished.prefix(7))"))
 
-        // Cross-chip safety check: ESP32-C3 binary must be rejected for Waveshare ESP32 target.
-        XCTAssertNotNil(MCULabProtocol.validateESPImageHeader(firmwareBytes, expectedChipID: MCULabFirmwareTarget.epdMaze.chipID))
-        XCTAssertNil(MCULabProtocol.validateESPImageHeader(firmwareBytes, expectedChipID: MCULabFirmwareTarget.xiaoESP32C3.chipID))
+        // Cross-chip safety check: ESP32-C3 binary must be rejected for Waveshare ESP32 board.
+        XCTAssertNotNil(MCULabProtocol.validateESPImageHeader(firmwareBytes, expectedChipID: MCULabBoard.waveshareEPD75.chipID))
+        XCTAssertNil(MCULabProtocol.validateESPImageHeader(firmwareBytes, expectedChipID: MCULabBoard.xiaoESP32C3.chipID))
     }
 
     func testOTLPPayloadsUseBoardSpecificServiceName() {
         let epdFlags: UInt8 = MCULabProtocol.flagEpdAttached
-            | (MCULabFirmwareTarget.epdMaze.boardID << 4)
+            | (MCULabBoard.waveshareEPD75.boardID << 4)
         let epdMetrics = MCULabMetrics(
             seq: 3,
             flags: epdFlags,
@@ -526,7 +527,7 @@ final class MCULabProtocolTests: XCTestCase {
             rssi: -48,
             timeUnixNano: 1_700_000_000_000_000_000
         )
-        XCTAssertTrue(metricsJSON.contains(#""service.name","value":{"stringValue":"epd-maze"}"#))
+        XCTAssertTrue(metricsJSON.contains(#""service.name","value":{"stringValue":"waveshare-epd75"}"#))
         XCTAssertTrue(metricsJSON.contains(#""device.id","value":{"stringValue":"epd-uuid-1"}"#))
 
         let traceJSON = MCULabProtocol.formatOTLPTraceJSON(
@@ -537,8 +538,8 @@ final class MCULabProtocolTests: XCTestCase {
             rssi: -48,
             timeUnixNano: 1_700_000_000_000_000_000
         )
-        XCTAssertTrue(traceJSON.contains(#""service.name","value":{"stringValue":"epd-maze"}"#))
-        XCTAssertTrue(traceJSON.contains(#""name":"epd-maze.wake #11""#))
+        XCTAssertTrue(traceJSON.contains(#""service.name","value":{"stringValue":"waveshare-epd75"}"#))
+        XCTAssertTrue(traceJSON.contains(#""name":"waveshare-epd75.wake #11""#))
     }
 
     @MainActor
@@ -552,17 +553,21 @@ final class MCULabProtocolTests: XCTestCase {
         xiaoImage[0] = 0xE9
         xiaoImage[12] = 0x05 // ESP32-C3 chip_id = 0x0005
 
-        controller.selectedFirmwareTarget = .xiaoESP32C3
-        controller.stageFirmware(data: xiaoImage, name: "xiao-esp32c3.bin")
+        controller.selectedBoard = .xiaoESP32C3
+        controller.selectedApp = .bench
+        controller.stageFirmware(data: xiaoImage, name: "xiao-esp32c3-bench.bin")
         XCTAssertNotNil(controller.stagedFirmwareData)
 
-        // Switching target after staging must prevent arming the wrong chip binary.
-        controller.selectedFirmwareTarget = .epdMaze
+        // Switching board after staging must reset incompatible app to .base and block arming the wrong chip binary.
+        controller.selectedBoard = .waveshareEPD75
+        XCTAssertEqual(controller.selectedApp, .base)
+        XCTAssertEqual(MCULabBoard.waveshareEPD75.compatibleApps, [.base, .maze])
+        XCTAssertEqual(MCULabBoard.xiaoESP32C3.compatibleApps, [.base, .bench])
         controller.armOTAUpdate()
         if case .failed = controller.otaPhase {
             // Expected
         } else {
-            XCTFail("Expected .failed OTA phase when arming ESP32-C3 binary for epd-maze, got \(controller.otaPhase)")
+            XCTFail("Expected .failed OTA phase when arming ESP32-C3 binary for waveshare-epd75, got \(controller.otaPhase)")
         }
     }
 
@@ -582,7 +587,7 @@ final class MCULabProtocolTests: XCTestCase {
         let xiaoMfg = MCULabProtocol.encodeManufacturerData(
             MCULabMetrics(
                 seq: 1,
-                flags: MCULabProtocol.flagDeepSleepWake | (MCULabFirmwareTarget.xiaoESP32C3.boardID << 4),
+                flags: MCULabProtocol.flagDeepSleepWake | (MCULabBoard.xiaoESP32C3.boardID << 4),
                 wakeCount: 1,
                 sensorUs: 1000,
                 computeUs: 2000,
@@ -594,7 +599,7 @@ final class MCULabProtocolTests: XCTestCase {
         let epdMfg = MCULabProtocol.encodeManufacturerData(
             MCULabMetrics(
                 seq: 1,
-                flags: MCULabProtocol.flagEpdAttached | (MCULabFirmwareTarget.epdMaze.boardID << 4),
+                flags: MCULabProtocol.flagEpdAttached | (MCULabBoard.waveshareEPD75.boardID << 4),
                 wakeCount: 1,
                 sensorUs: 100,
                 computeUs: 8000,
@@ -613,6 +618,59 @@ final class MCULabProtocolTests: XCTestCase {
         XCTAssertEqual(controller.history.count, 2)
         XCTAssertEqual(controller.history[0].deviceId, epdId)
         XCTAssertEqual(controller.history[1].deviceId, xiaoId)
+    }
+
+    func testCRC32AndFramedOTAChunksAndResumableReadyStatus() {
+        XCTAssertEqual(MCULabProtocol.crc32(Data("123456789".utf8)), 0xCBF4_3926)
+        XCTAssertEqual(MCULabProtocol.crc32(Data()), 0x0000_0000)
+
+        let readyResumed = MCULabOTAStatus.ready(total: 384_000, offset: 65_536)
+        let formatted = MCULabProtocol.formatOTAStatus(readyResumed)
+        XCTAssertEqual(formatted, "READY total=384000 offset=65536")
+        XCTAssertEqual(MCULabProtocol.parseOTAStatus(formatted), readyResumed)
+
+        let firmware = Data((0..<1000).map { UInt8($0 % 251) })
+        let framed = MCULabProtocol.chunkFirmwareFramed(firmware, startingAt: 500, maxPacketBytes: 210)
+        XCTAssertEqual(framed.count, 3)
+        XCTAssertEqual(framed[0].offset, 500)
+        XCTAssertEqual(framed[0].payloadCount, 200)
+        XCTAssertEqual(framed[0].frame[0], 0x4F) // 'O'
+        XCTAssertEqual(framed[0].frame[1], 0x54) // 'T'
+        XCTAssertEqual(framed.map(\.payloadCount).reduce(0, +), 500)
+    }
+
+    func testBlobReassemblerReassemblesOutOfOrderChunks() {
+        let part0 = Data("hello ".utf8)
+        let part1 = Data("world!".utf8)
+        var frame0 = Data([0x4D, 0x43, 0x00, 0x00, 0x02, 0x00])
+        frame0.append(part0)
+        var frame1 = Data([0x4D, 0x43, 0x01, 0x00, 0x02, 0x00])
+        frame1.append(part1)
+
+        var reasm = MCULabBlobReassembler()
+        XCTAssertNil(reasm.push(frame1))
+        let complete = reasm.push(frame0)
+        XCTAssertEqual(complete, Data("hello world!".utf8))
+    }
+
+    func testWakeProfileBuildIDIncludedInTraceJSON() throws {
+        let json = """
+        {"v":1,"wake":9,"seq":9,"board":"xiao-esp32c3","chip":"esp32c3","app":"xiao-esp32c3","git_sha":"\(String(repeating: "a", count: 40))","build_id":"\(String(repeating: "b", count: 40))","free_heap":200000,"min_heap":190000,"stack_hw":4096,"cycles":1000,"spans":[],"pcs":[]}
+        """
+        let profile = try XCTUnwrap(MCULabProtocol.decodeWakeProfile(Data(json.utf8)))
+        XCTAssertEqual(profile.buildId, String(repeating: "b", count: 40))
+
+        let metrics = MCULabMetrics(seq: 9, flags: 0, wakeCount: 9, sensorUs: 100, computeUs: 200, epdRefreshUs: 300, radioUs: 400, batteryMv: 3850)
+        let trace = MCULabProtocol.formatOTLPTraceJSON(
+            traceId: String(repeating: "1", count: 32),
+            rootSpanId: String(repeating: "2", count: 16),
+            deviceId: "dev-1",
+            metrics: metrics,
+            rssi: -50,
+            timeUnixNano: 1_700_000_000_000_000_000,
+            profile: profile
+        )
+        XCTAssertTrue(trace.contains(#""key":"mcu.build_id","value":{"stringValue":"\#(String(repeating: "b", count: 40))""#))
     }
 
     private static func jsonResponse(_ body: String, status: Int) throws -> (Data, URLResponse) {

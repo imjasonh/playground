@@ -1,4 +1,4 @@
-# xiao-otel
+# mcu-lab-backend
 
 Go service for Cloud Run that authorizes `POST /v1/metrics` requests from the
 Playground iOS **XIAO ESP32C3** experiment using Apple **App Attest** and writes
@@ -16,7 +16,7 @@ The iOS app holds no GCP credentials. Instead:
    `{"action":"metrics","challenge":"…"}`, signs a hardware assertion with
    `DCAppAttestService.generateAssertion`, and sends the OTLP/HTTP v1 JSON
    payload to `POST /v1/metrics` with the `X-Apple-App-Attest-*` headers.
-3. `xiao-otel` verifies the ECDSA P-256 assertion against the stored public key
+3. `mcu-lab-backend` verifies the ECDSA P-256 assertion against the stored public key
    and requires the authenticator counter to increase, then writes the gauge
    points to `monitoring.googleapis.com/v3/projects/{project}/timeSeries` using
    the Cloud Run service account's ambient `roles/monitoring.metricWriter`
@@ -36,7 +36,7 @@ The iOS app holds no GCP credentials. Instead:
 ## Local development and tests
 
 ```bash
-cd xiao-otel
+cd mcu-lab-backend
 bash ../.github/scripts/check-gofmt.sh .
 go build ./...
 go test -race ./...
@@ -44,7 +44,7 @@ go test -race ./...
 
 ## Deploying to Cloud Run
 
-1. Apply [`gcp/terraform`](../gcp/README.md) once so the `xiao-otel` runtime
+1. Apply [`gcp/terraform`](../gcp/README.md) once so the `mcu-lab-backend` runtime
    service account exists in your GCP project.
 2. Push to `main`. `.github/workflows/deploy-gcp.yml` builds the container image
-   with `ko` and applies `xiao-otel/terraform` over GitHub OIDC.
+   with `ko` and applies `mcu-lab-backend/terraform` over GitHub OIDC.

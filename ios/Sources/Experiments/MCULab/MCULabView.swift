@@ -329,13 +329,21 @@ struct MCULabView: View {
             Text("Firmware OTA update over BLE")
                 .font(.subheadline.bold())
 
-            Picker("Firmware target", selection: $controller.selectedFirmwareTarget) {
-                ForEach(MCULabFirmwareTarget.allCases) { target in
-                    Text(target.displayName).tag(target)
+            Picker("Board", selection: $controller.selectedBoard) {
+                ForEach(MCULabBoard.allCases) { board in
+                    Text(board.displayName).tag(board)
                 }
             }
             .pickerStyle(.menu)
             .accessibilityIdentifier("mcuLabTargetPicker")
+
+            Picker("App", selection: $controller.selectedApp) {
+                ForEach(controller.selectedBoard.compatibleApps) { app in
+                    Text(app.displayName).tag(app)
+                }
+            }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("mcuLabAppPicker")
 
             HStack(spacing: 8) {
                 Button {
@@ -424,7 +432,7 @@ struct MCULabView: View {
             .accessibilityIdentifier("mcuLabOtelAutoForwardToggle")
 
             Toggle(
-                "Authorize with Apple App Attest (xiao-otel Cloud Run)",
+                "Authorize with Apple App Attest (mcu-lab-backend Cloud Run)",
                 isOn: Binding(
                     get: { controller.useAppAttest },
                     set: { controller.updateUseAppAttest($0) }
@@ -507,7 +515,7 @@ struct MCULabView: View {
                     + "microsecond phase durations and 1 kHz PC hotspots, then broadcast a BLE "
                     + "Manufacturer Specific Data (0xFFFF) packet with their board ID. This bridge "
                     + "listens to all nearby boards simultaneously, forwards each board's metrics "
-                    + "and traces separately to GCP (xiao-otel/), and when an OTA update is armed, "
+                    + "and traces separately to GCP (mcu-lab-backend/), and when an OTA update is armed, "
                     + "connects only to the matching board ID, verifies the chip_id and SHA-256, "
                     + "and reboots into the new slot with automatic rollback protection. Firmware "
                     + "lives in mcu-lab/."

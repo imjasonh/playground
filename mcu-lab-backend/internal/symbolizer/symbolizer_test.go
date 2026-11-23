@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/imjasonh/playground/xiao-otel/internal/otlp"
+	"github.com/imjasonh/playground/mcu-lab-backend/internal/otlp"
 )
 
 func TestParseELFAndEnrichSpansFromGHCR(t *testing.T) {
@@ -173,7 +173,17 @@ func TestRepoForApp(t *testing.T) {
 	if err != nil || got != "imjasonh/playground/epd-maze" {
 		t.Fatalf("epd-maze: got %q, err=%v", got, err)
 	}
+	got, err = s.repoForApp("soil-sensor-v2")
+	if err != nil || got != "imjasonh/playground/soil-sensor-v2" {
+		t.Fatalf("custom app: got %q, err=%v", got, err)
+	}
 	if _, err := s.repoForApp("../evil"); err == nil {
-		t.Fatalf("expected error for unknown mcu.app")
+		t.Fatalf("expected error for path-traversal mcu.app")
+	}
+	if !isValidTag("buildid-" + strings.Repeat("a", 40)) {
+		t.Fatalf("expected buildid-<40hex> tag to be valid")
+	}
+	if isValidTag("buildid-short") || isValidTag("latest") {
+		t.Fatalf("expected invalid tags to be rejected")
 	}
 }

@@ -58,7 +58,7 @@ playground/
 ├── roll/                  # menu bar app: click rolls, right-click countdowns and monitor photos (Sparkle CD)
 ├── esp32-ble/             # Rust/ESP-IDF firmware: BLE GATT LED control
 ├── mcu-lab/               # Rust/ESP-IDF multi-MCU firmware: shared BLE telemetry, BLE GATT OTA & profiling (xiao-esp32c3 + Waveshare 7.5″ epd-maze)
-├── xiao-otel/             # Go: Cloud Run App Attest OTLP collector + ELF/DWARF symbolizer for mcu-lab → Cloud Monitoring & Cloud Trace
+├── mcu-lab-backend/             # Go: Cloud Run App Attest OTLP collector + ELF/DWARF symbolizer for mcu-lab → Cloud Monitoring & Cloud Trace
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── qr-quine/              # QR symbol that encodes a data URL of itself
@@ -141,7 +141,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
 | `esp32-ble/` | no | Rust/ESP-IDF ESP32 BLE GATT firmware (espup); no `index.html` |
 | `mcu-lab/` | no | Rust/ESP-IDF multi-MCU firmware (`xiao-esp32c3` + Waveshare 7.5″ `epd-maze`) with BLE telemetry, BLE GATT OTA & profiling; no `index.html` |
-| `xiao-otel/` | no | Go server for Cloud Run (App Attest OTLP collector + ELF/DWARF symbolizer → Cloud Monitoring & Cloud Trace + Terraform); no `index.html` |
+| `mcu-lab-backend/` | no | Go server for Cloud Run (App Attest OTLP collector + ELF/DWARF symbolizer → Cloud Monitoring & Cloud Trace + Terraform); no `index.html` |
 | `git-server/` | no | Rust Cloudflare Worker; no `index.html` |
 | `git-fuse/` | no | Rust CLI (FUSE); no `index.html` |
 | `life-stl/` | no | Rust CLI (STL generator); no `index.html` |

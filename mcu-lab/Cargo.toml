@@ -13,14 +13,26 @@ name = "mcu_lab"
 path = "src/lib.rs"
 
 [[bin]]
-name = "xiao-esp32c3"
-path = "src/bin/xiao_esp32c3.rs"
+name = "xiao-esp32c3-base"
+path = "src/bin/xiao_esp32c3_base.rs"
 harness = false
 required-features = ["firmware"]
 
 [[bin]]
-name = "epd-maze"
-path = "src/bin/epd_maze.rs"
+name = "xiao-esp32c3-bench"
+path = "src/bin/xiao_esp32c3_bench.rs"
+harness = false
+required-features = ["firmware"]
+
+[[bin]]
+name = "waveshare-epd75-base"
+path = "src/bin/waveshare_epd75_base.rs"
+harness = false
+required-features = ["firmware"]
+
+[[bin]]
+name = "waveshare-epd75-maze"
+path = "src/bin/waveshare_epd75_maze.rs"
 harness = false
 required-features = ["firmware"]
 

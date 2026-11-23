@@ -1,4 +1,4 @@
-// Command xiao-otel verifies Apple App Attest assertions from the Playground
+// Command mcu-lab-backend verifies Apple App Attest assertions from the Playground
 // iOS app and forwards XIAO ESP32C3 OTLP/HTTP metrics to Google Cloud Monitoring.
 package main
 
@@ -11,9 +11,9 @@ import (
 	"strings"
 
 	"github.com/chainguard-dev/clog"
-	"github.com/imjasonh/playground/xiao-otel/internal/attest"
-	"github.com/imjasonh/playground/xiao-otel/internal/otlp"
-	"github.com/imjasonh/playground/xiao-otel/internal/symbolizer"
+	"github.com/imjasonh/playground/mcu-lab-backend/internal/attest"
+	"github.com/imjasonh/playground/mcu-lab-backend/internal/otlp"
+	"github.com/imjasonh/playground/mcu-lab-backend/internal/symbolizer"
 )
 
 const maxRequestBodyBytes = 64 * 1024
@@ -37,12 +37,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/whoami", s.handleWhoami)
 	mux.HandleFunc("POST /v1/metrics", s.handleMetrics)
 	mux.HandleFunc("POST /v1/traces", s.handleTraces)
+	mux.HandleFunc("POST /v1/coredumps", s.handleCoredumps)
 	return mux
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"service":         "xiao-otel",
+		"service":         "mcu-lab-backend",
 		"appId":           s.Verifier.AppID,
 		"allowUnattested": s.Verifier.AllowUnattested,
 	})
@@ -262,8 +263,8 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 					TraceID:      traceID,
 					SpanID:       reqSpanID,
 					ParentSpanID: parentSpanID,
-					Name:         "xiao-otel.metrics",
-					Service:      "xiao-otel",
+					Name:         "mcu-lab-backend.metrics",
+					Service:      "mcu-lab-backend",
 					DeviceID:     rec.DeviceID,
 					StartTime:    reqStart,
 					EndTime:      exportEnd,
@@ -276,8 +277,8 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 					TraceID:      traceID,
 					SpanID:       otlp.NewSpanID(),
 					ParentSpanID: reqSpanID,
-					Name:         "xiao-otel.app_attest.verify",
-					Service:      "xiao-otel",
+					Name:         "mcu-lab-backend.app_attest.verify",
+					Service:      "mcu-lab-backend",
 					DeviceID:     rec.DeviceID,
 					StartTime:    verifyStart,
 					EndTime:      verifyEnd,
@@ -289,8 +290,8 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 					TraceID:      traceID,
 					SpanID:       otlp.NewSpanID(),
 					ParentSpanID: reqSpanID,
-					Name:         "xiao-otel.cloud_monitoring.export",
-					Service:      "xiao-otel",
+					Name:         "mcu-lab-backend.cloud_monitoring.export",
+					Service:      "mcu-lab-backend",
 					DeviceID:     rec.DeviceID,
 					StartTime:    exportStart,
 					EndTime:      exportEnd,
@@ -404,6 +405,112 @@ func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+const maxCoredumpBodyBytes = 128 * 1024
+
+type coredumpRequest struct {
+	App       string   `json:"app"`
+	Board     string   `json:"board"`
+	DeviceID  string   `json:"deviceId"`
+	GitSHA    string   `json:"gitSha"`
+	BuildID   string   `json:"buildId"`
+	ELFBase64 string   `json:"elfBase64,omitempty"`
+	PCs       []string `json:"pcs,omitempty"`
+}
+
+// handleCoredumps accepts an App Attest-authorized MCU flash coredump upload,
+// extracts instruction pointers from any attached ELF coredump, symbolizes them
+// against the matching firmware ELF, and logs a structured crash report.
+func (s *Server) handleCoredumps(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	log := clog.FromContext(ctx)
+	body, err := readBodyWithLimit(w, r, maxCoredumpBodyBytes)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	keyID := strings.TrimSpace(r.Header.Get("X-Apple-App-Attest-Key-Id"))
+	if keyID == "" {
+		writeError(w, http.StatusUnauthorized, errors.New("App Attest authorization required"))
+		return
+	}
+	assertionB64 := strings.TrimSpace(r.Header.Get("X-Apple-App-Attest-Assertion"))
+	hdrCD := strings.TrimSpace(r.Header.Get("X-Apple-App-Attest-Client-Data"))
+	if hdrCD == "" {
+		writeError(w, http.StatusUnauthorized, errors.New("missing X-Apple-App-Attest-Client-Data header"))
+		return
+	}
+	var cdBytes []byte
+	if strings.HasPrefix(hdrCD, "{") {
+		cdBytes = []byte(hdrCD)
+	} else {
+		cdBytes, err = decodeHeaderBase64(hdrCD)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, errors.New("invalid X-Apple-App-Attest-Client-Data encoding"))
+			return
+		}
+	}
+
+	rec, err := s.Verifier.VerifyAssertion(keyID, assertionB64, cdBytes, body, attest.ActionCoredump)
+	if err != nil {
+		log.Warn("app attest coredump verification failed", "err", err)
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+
+	var req coredumpRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid coredump JSON"))
+		return
+	}
+
+	pcs := append([]string(nil), req.PCs...)
+	var elfBytesLen int
+	if req.ELFBase64 != "" {
+		elfRaw, err := decodeHeaderBase64(req.ELFBase64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, errors.New("invalid elfBase64 encoding"))
+			return
+		}
+		elfBytesLen = len(elfRaw)
+		parsedPCs, err := symbolizer.ParseCoredumpPCs(elfRaw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		pcs = append(pcs, parsedPCs...)
+	}
+
+	resolved, err := s.Symbolizer.ResolvePCs(ctx, req.App, req.BuildID, req.GitSHA, pcs)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	log.Error("mcu coredump received",
+		"app", req.App,
+		"board", req.Board,
+		"mcu_device_id", req.DeviceID,
+		"build_id", req.BuildID,
+		"git_sha", req.GitSHA,
+		"elf_bytes", elfBytesLen,
+		"pcs", len(pcs),
+		"resolved", resolved,
+		"user_id", rec.UserID,
+		"ios_device_id", rec.DeviceID,
+	)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"accepted":        true,
+		"elfBytes":        elfBytesLen,
+		"extractedPCs":    pcs,
+		"resolvedSymbols": resolved,
+		"userId":          rec.UserID,
+		"deviceId":        rec.DeviceID,
+		"counter":         rec.Counter,
+	})
+}
+
 func decodeHeaderBase64(s string) ([]byte, error) {
 	for _, enc := range []*base64.Encoding{
 		base64.StdEncoding,
@@ -419,11 +526,15 @@ func decodeHeaderBase64(s string) ([]byte, error) {
 }
 
 func readBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+	return readBodyWithLimit(w, r, maxRequestBodyBytes)
+}
+
+func readBodyWithLimit(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	defer r.Body.Close()
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		return nil, errors.New("request body is invalid or exceeds 64 KiB")
+		return nil, errors.New("request body is invalid or exceeds size limit")
 	}
 	return body, nil
 }

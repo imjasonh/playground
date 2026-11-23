@@ -1,31 +1,36 @@
-//! Shared BLE Manufacturer Data broadcaster + on-demand BLE GATT OTA server.
+//! Shared BLE Manufacturer Data broadcaster, resumable BLE GATT OTA server,
+//! and flash coredump uploader.
 //!
 //! `BleOtaNode` registers the GATT service once at boot and can be called once
 //! per wake (deep-sleep boards like XIAO ESP32-C3) or repeatedly in a loop
 //! (USB-powered boards like the Waveshare 7.5″ e-Paper ESP32).
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use esp32_nimble::enums::ConnMode;
 use esp32_nimble::utilities::BleUuid;
 use esp32_nimble::{uuid128, BLEAdvertisementData, BLECharacteristic, BLEDevice, NimbleProperties};
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::sys::{
-    esp_ota_abort, esp_ota_begin, esp_ota_end, esp_ota_get_next_update_partition,
-    esp_ota_get_running_partition, esp_ota_get_state_partition, esp_ota_handle_t,
-    esp_ota_img_states_t, esp_ota_img_states_t_ESP_OTA_IMG_PENDING_VERIFY,
+    esp_core_dump_image_check, esp_core_dump_image_erase, esp_core_dump_image_get, esp_ota_abort,
+    esp_ota_begin, esp_ota_end, esp_ota_get_next_update_partition, esp_ota_get_running_partition,
+    esp_ota_get_state_partition, esp_ota_handle_t, esp_ota_img_states_t,
+    esp_ota_img_states_t_ESP_OTA_IMG_PENDING_VERIFY, esp_ota_mark_app_invalid_rollback_and_reboot,
     esp_ota_mark_app_valid_cancel_rollback, esp_ota_set_boot_partition, esp_ota_write,
-    esp_partition_t, esp_restart, ESP_OK,
+    esp_partition_find_first, esp_partition_read,
+    esp_partition_subtype_t_ESP_PARTITION_SUBTYPE_DATA_COREDUMP, esp_partition_t,
+    esp_partition_type_t_ESP_PARTITION_TYPE_DATA, esp_restart, esp_task_wdt_reset, ESP_OK,
 };
 use log::{info, warn};
 use sha2::{Digest, Sha256};
 
 use crate::profiler::{create_profile_char, now_us, update_profile_char, ProfileCharHandle};
 use crate::protocol::{
-    encode_mfg_data, format_ota_status, parse_ota_command, validate_esp_image_header, AdvMetrics,
-    BoardConfig, OtaCommand, OtaStatus, OTA_CONTROL_UUID, OTA_DATA_UUID, OTA_SERVICE_UUID,
-    OTA_SLOT_BYTES, OTA_STATUS_UUID,
+    decode_ota_chunk_frame, encode_blob_frames, encode_mfg_data, format_ota_status,
+    parse_ota_command, validate_esp_image_header, AdvMetrics, BoardSpec, OtaCommand, OtaStatus,
+    COREDUMP_CHAR_UUID, OTA_CONTROL_UUID, OTA_DATA_UUID, OTA_SERVICE_UUID, OTA_SLOT_BYTES,
+    OTA_STATUS_UUID,
 };
 
 /// Maximum time an active BLE OTA connection may keep the board awake before timing out (120 s).
@@ -34,31 +39,108 @@ const OTA_SESSION_TIMEOUT_MS: u32 = 120_000;
 /// Maximum idle time on an open BLE connection without any OTA control/data write (15 s).
 const OTA_IDLE_TIMEOUT_US: u64 = 15_000_000;
 
-/// Check if the running OTA partition is in `ESP_OTA_IMG_PENDING_VERIFY` and mark it valid.
-pub fn mark_ota_slot_valid_if_pending() {
-    // SAFETY: esp_ota_get_running_partition, esp_ota_get_state_partition, and
-    // esp_ota_mark_app_valid_cancel_rollback are thread-safe ESP-IDF C APIs.
+/// Maximum payload bytes per BLE GATT coredump notification frame.
+const COREDUMP_CHUNK_PAYLOAD: usize = 460;
+
+/// Acquire a mutex without panicking inside NimBLE callbacks if a prior panic poisoned it.
+fn lock_or_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Returns `true` if the currently running OTA slot is in `ESP_OTA_IMG_PENDING_VERIFY`.
+pub fn is_ota_slot_pending_verify() -> bool {
+    // SAFETY: ESP-IDF OTA partition query APIs are thread-safe.
     unsafe {
         let part = esp_ota_get_running_partition();
         if part.is_null() {
-            return;
+            return false;
         }
         let mut state: esp_ota_img_states_t = 0;
-        if esp_ota_get_state_partition(part, &mut state) == ESP_OK
+        esp_ota_get_state_partition(part, &mut state) == ESP_OK
             && state == esp_ota_img_states_t_ESP_OTA_IMG_PENDING_VERIFY
-        {
-            let err = esp_ota_mark_app_valid_cancel_rollback();
-            if err == ESP_OK {
-                info!("ota: marked new firmware slot valid (rollback cancelled)");
-            } else {
-                warn!("ota: mark_app_valid failed err={err}");
-            }
+    }
+}
+
+/// Check if the running OTA partition is in `ESP_OTA_IMG_PENDING_VERIFY` and mark it valid.
+pub fn mark_ota_slot_valid_if_pending() {
+    if !is_ota_slot_pending_verify() {
+        return;
+    }
+    // SAFETY: `esp_ota_mark_app_valid_cancel_rollback` is a thread-safe ESP-IDF C API.
+    let err = unsafe { esp_ota_mark_app_valid_cancel_rollback() };
+    if err == ESP_OK {
+        info!("ota: marked new firmware slot valid (rollback cancelled)");
+    } else {
+        warn!("ota: mark_app_valid failed err={err}");
+    }
+}
+
+/// Mark the running `PENDING_VERIFY` slot invalid and reboot into the previous known-good slot.
+pub fn rollback_ota_slot_and_reboot() {
+    if !is_ota_slot_pending_verify() {
+        return;
+    }
+    warn!("ota: marking PENDING_VERIFY slot invalid and rolling back");
+    // SAFETY: transitions otadata back to the previous valid slot and restarts the SoC.
+    unsafe {
+        let err = esp_ota_mark_app_invalid_rollback_and_reboot();
+        warn!("ota: rollback returned unexpectedly err={err}; restarting");
+        esp_restart();
+    }
+}
+
+/// Returns `true` if a valid ELF coredump is stored in the `coredump` flash partition.
+pub fn has_flash_coredump() -> bool {
+    // SAFETY: thread-safe ESP-IDF flash coredump check.
+    unsafe { esp_core_dump_image_check() == ESP_OK }
+}
+
+/// Read the raw ELF coredump bytes from flash, if one is present.
+fn read_flash_coredump() -> Option<Vec<u8>> {
+    // SAFETY: queries coredump address/size and reads from the `coredump` data partition.
+    unsafe {
+        if esp_core_dump_image_check() != ESP_OK {
+            return None;
+        }
+        let mut addr: usize = 0;
+        let mut size: usize = 0;
+        if esp_core_dump_image_get(&mut addr, &mut size) != ESP_OK || size == 0 || size > 65_536 {
+            return None;
+        }
+        let part = esp_partition_find_first(
+            esp_partition_type_t_ESP_PARTITION_TYPE_DATA,
+            esp_partition_subtype_t_ESP_PARTITION_SUBTYPE_DATA_COREDUMP,
+            core::ptr::null(),
+        );
+        if part.is_null() {
+            return None;
+        }
+        let part_addr = (*part).address as usize;
+        let rel_offset = addr.saturating_sub(part_addr);
+        let mut buf = vec![0u8; size];
+        if esp_partition_read(part, rel_offset, buf.as_mut_ptr().cast(), size) != ESP_OK {
+            return None;
+        }
+        Some(buf)
+    }
+}
+
+/// Erase any stored flash coredump after it has been uploaded.
+fn erase_flash_coredump() {
+    // SAFETY: thread-safe ESP-IDF flash coredump erase.
+    unsafe {
+        let err = esp_core_dump_image_erase();
+        if err == ESP_OK {
+            info!("coredump: erased flash coredump partition");
+        } else {
+            warn!("coredump: erase failed err={err}");
         }
     }
 }
 
 struct OtaWriterState {
     expected_chip_id: u16,
+    min_ota_battery_mv: u16,
     handle: Option<esp_ota_handle_t>,
     partition: *const esp_partition_t,
     expected_size: u32,
@@ -74,9 +156,10 @@ struct OtaWriterState {
 unsafe impl Send for OtaWriterState {}
 
 impl OtaWriterState {
-    fn new(expected_chip_id: u16) -> Self {
+    fn new(expected_chip_id: u16, min_ota_battery_mv: u16) -> Self {
         Self {
             expected_chip_id,
+            min_ota_battery_mv,
             handle: None,
             partition: core::ptr::null(),
             expected_size: 0,
@@ -104,14 +187,40 @@ impl OtaWriterState {
         self.hasher = Sha256::new();
     }
 
-    fn begin(&mut self, size: u32, sha256: String) -> OtaStatus {
-        self.abort_active();
+    fn begin(&mut self, size: u32, sha256: String, battery_mv: u16) -> OtaStatus {
         self.last_activity_us = now_us();
+        if self.min_ota_battery_mv > 0 && battery_mv > 0 && battery_mv < self.min_ota_battery_mv {
+            return OtaStatus::Error {
+                message: format!(
+                    "battery too low for OTA: {battery_mv}mV < {}mV",
+                    self.min_ota_battery_mv
+                ),
+            };
+        }
         if size == 0 || size > OTA_SLOT_BYTES {
             return OtaStatus::Error {
                 message: format!("invalid size {size}"),
             };
         }
+        // Resumable OTA: if an in-progress session matches `(size, sha256)` and already
+        // has bytes written, resume from `self.written` without re-erasing flash.
+        if self.handle.is_some()
+            && self.expected_size == size
+            && self.expected_sha256 == sha256
+            && self.written > 0
+            && self.written <= size
+        {
+            info!(
+                "ota: resuming in-progress session at offset {}/{size}",
+                self.written
+            );
+            return OtaStatus::Ready {
+                total: size,
+                offset: self.written,
+            };
+        }
+
+        self.abort_active();
         // SAFETY: queries ESP-IDF's partition table for the inactive OTA app slot and opens it.
         unsafe {
             let part = esp_ota_get_next_update_partition(core::ptr::null());
@@ -135,17 +244,47 @@ impl OtaWriterState {
             self.next_notify_at = 16 * 1024;
             self.hasher = Sha256::new();
             info!("ota: opened inactive partition for {size} bytes");
-            OtaStatus::Ready { total: size }
+            OtaStatus::Ready {
+                total: size,
+                offset: 0,
+            }
         }
     }
 
-    fn write_chunk(&mut self, chunk: &[u8]) -> Option<OtaStatus> {
+    fn write_chunk(&mut self, raw: &[u8]) -> Option<OtaStatus> {
         self.last_activity_us = now_us();
         let Some(handle) = self.handle else {
             return Some(OtaStatus::Error {
                 message: "write before BEGIN".to_string(),
             });
         };
+        if raw.is_empty() {
+            return None;
+        }
+
+        // Decode framed `(offset, crc32, payload)` chunk if present; otherwise accept legacy raw chunk.
+        let chunk: &[u8] = match decode_ota_chunk_frame(raw) {
+            Ok(Some(frame)) => {
+                if frame.offset < self.written {
+                    // Duplicate/retransmitted chunk already written; ignore cleanly.
+                    return None;
+                }
+                if frame.offset > self.written {
+                    return Some(OtaStatus::Error {
+                        message: format!(
+                            "chunk gap: got offset {}, expected {}",
+                            frame.offset, self.written
+                        ),
+                    });
+                }
+                frame.payload
+            }
+            Ok(None) => raw,
+            Err(msg) => {
+                return Some(OtaStatus::Error { message: msg });
+            }
+        };
+
         if chunk.is_empty() {
             return None;
         }
@@ -245,42 +384,44 @@ fn notify_ota_status(
     ch.lock().set_value(line.as_bytes()).notify();
 }
 
-/// Persistent NimBLE peripheral + OTA GATT server initialized once per boot.
+/// Persistent NimBLE peripheral + OTA / Profile / Coredump GATT server initialized once per boot.
 pub struct BleOtaNode {
-    board: BoardConfig,
+    board: BoardSpec,
     connected: Arc<AtomicBool>,
+    last_battery_mv: Arc<AtomicU16>,
     ota_state: Arc<Mutex<OtaWriterState>>,
-    profile_char: ProfileCharHandle,
+    profile_char: Option<ProfileCharHandle>,
 }
 
 impl BleOtaNode {
-    /// Initialize NimBLE and register the OTA + Profile GATT service once.
-    pub fn init(board: BoardConfig) -> Self {
+    /// Initialize NimBLE and register the OTA + Profile + Coredump GATT service once.
+    pub fn init(board: BoardSpec) -> Self {
         let device = BLEDevice::take();
         let _ = device.set_preferred_mtu(512);
         let server = device.get_server();
 
         let connected = Arc::new(AtomicBool::new(false));
-        let ota_state = Arc::new(Mutex::new(OtaWriterState::new(board.chip_id)));
+        let last_battery_mv = Arc::new(AtomicU16::new(0));
+        let ota_state = Arc::new(Mutex::new(OtaWriterState::new(
+            board.chip_id,
+            board.min_ota_battery_mv,
+        )));
 
         let conn_on_connect = Arc::clone(&connected);
         let state_on_connect = Arc::clone(&ota_state);
         server.on_connect(move |server, desc| {
-            state_on_connect.lock().expect("ota_state").last_activity_us = now_us();
+            lock_or_recover(&state_on_connect).last_activity_us = now_us();
             conn_on_connect.store(true, Ordering::SeqCst);
-            info!("ble connected for OTA/profile: {desc:?}");
+            info!("ble connected for OTA/profile/coredump: {desc:?}");
             // Fast 7.5 ms - 15 ms connection interval for high-throughput BLE OTA streaming.
             let _ = server.update_conn_params(desc.conn_handle(), 6, 12, 0, 200);
         });
 
         let conn_on_disconnect = Arc::clone(&connected);
-        let state_on_disconnect = Arc::clone(&ota_state);
         server.on_disconnect(move |_desc, reason| {
+            // Keep any in-progress OTA session open across transient disconnects so the
+            // client can reconnect and resume from `written` via `BEGIN <size> <sha256>`.
             info!("ble disconnected: {reason:?}");
-            state_on_disconnect
-                .lock()
-                .expect("ota_state")
-                .abort_active();
             conn_on_disconnect.store(false, Ordering::SeqCst);
         });
 
@@ -302,14 +443,53 @@ impl BleOtaNode {
 
         let profile_char = create_profile_char(&service);
 
+        // Coredump GATT characteristic: READ/NOTIFY streams flash ELF in `MC` chunks; WRITE `CLEAR` erases it.
+        let coredump_char = service.lock().create_characteristic(
+            uuid_or_panic(COREDUMP_CHAR_UUID),
+            NimbleProperties::READ | NimbleProperties::NOTIFY | NimbleProperties::WRITE,
+        );
+        if has_flash_coredump() {
+            coredump_char.lock().set_value(b"AVAILABLE");
+        } else {
+            coredump_char.lock().set_value(b"NONE");
+        }
+        let cd_char_sub = Arc::clone(&coredump_char);
+        coredump_char
+            .lock()
+            .on_subscribe(move |_ch, _desc, sub_value| {
+                if sub_value.is_empty() {
+                    return;
+                }
+                if let Some(elf_bytes) = read_flash_coredump() {
+                    info!(
+                        "coredump: streaming {} bytes over BLE GATT",
+                        elf_bytes.len()
+                    );
+                    for frame in encode_blob_frames(&elf_bytes, COREDUMP_CHUNK_PAYLOAD) {
+                        cd_char_sub.lock().set_value(&frame).notify();
+                        FreeRtos::delay_ms(5);
+                    }
+                }
+            });
+        let cd_char_wr = Arc::clone(&coredump_char);
+        coredump_char.lock().on_write(move |args| {
+            let cmd = String::from_utf8_lossy(args.recv_data());
+            if cmd.trim().eq_ignore_ascii_case("CLEAR") {
+                erase_flash_coredump();
+                cd_char_wr.lock().set_value(b"NONE");
+            }
+        });
+
         let ctrl_state = Arc::clone(&ota_state);
         let ctrl_status_char = Arc::clone(&status_char);
+        let ctrl_batt = Arc::clone(&last_battery_mv);
         control_char.lock().on_write(move |args| {
             let raw = String::from_utf8_lossy(args.recv_data());
             info!("ota control write: {raw}");
-            let mut guard = ctrl_state.lock().expect("ota_state");
+            let mut guard = lock_or_recover(&ctrl_state);
+            let batt = ctrl_batt.load(Ordering::Relaxed);
             let reply = match parse_ota_command(raw.as_ref()) {
-                Some(OtaCommand::Begin { size, sha256 }) => guard.begin(size, sha256),
+                Some(OtaCommand::Begin { size, sha256 }) => guard.begin(size, sha256, batt),
                 Some(OtaCommand::Commit) => guard.commit(),
                 Some(OtaCommand::Abort) => {
                     guard.abort_active();
@@ -326,7 +506,7 @@ impl BleOtaNode {
         let data_status_char = Arc::clone(&status_char);
         data_char.lock().on_write(move |args| {
             let chunk = args.recv_data();
-            let mut guard = data_state.lock().expect("ota_state");
+            let mut guard = lock_or_recover(&data_state);
             if let Some(status) = guard.write_chunk(chunk) {
                 notify_ota_status(&data_status_char, &status);
             }
@@ -335,15 +515,18 @@ impl BleOtaNode {
         Self {
             board,
             connected,
+            last_battery_mv,
             ota_state,
             profile_char,
         }
     }
 
     /// Broadcast `metrics` inside BLE Manufacturer Specific Data (`0xFFFF`) for `burst_ms`.
-    /// If an iPhone connects during that window to pull the WakeProfile or push an OTA image,
-    /// stay awake until the session finishes, disconnects, or hits the timeout.
+    /// If an iPhone connects during that window to pull the WakeProfile/coredump or push an
+    /// OTA image, stay awake (feeding the Task Watchdog) until the session finishes or times out.
     pub fn broadcast_burst(&self, metrics: &AdvMetrics, profile_json: Option<&str>, burst_ms: u32) {
+        self.last_battery_mv
+            .store(metrics.battery_mv, Ordering::Relaxed);
         update_profile_char(&self.profile_char, profile_json);
 
         let device = BLEDevice::take();
@@ -373,12 +556,16 @@ impl BleOtaNode {
         FreeRtos::delay_ms(burst_ms);
 
         if self.connected.load(Ordering::SeqCst) {
-            info!("ota: iPhone connected during burst; holding awake for BLE OTA/profile");
+            info!("ota: iPhone connected during burst; holding awake for BLE session");
             let mut waited_ms: u32 = 0;
             while self.connected.load(Ordering::SeqCst) && waited_ms < OTA_SESSION_TIMEOUT_MS {
                 FreeRtos::delay_ms(50);
+                // SAFETY: resets the current task's TWDT timer while holding awake for BLE OTA.
+                unsafe {
+                    let _ = esp_task_wdt_reset();
+                }
                 waited_ms = waited_ms.saturating_add(50);
-                let mut guard = self.ota_state.lock().expect("ota_state");
+                let guard = lock_or_recover(&self.ota_state);
                 if guard.reboot_pending {
                     drop(guard);
                     // Give NimBLE 250 ms to flush the final `OK sha256=...` notification before rebooting.
@@ -388,8 +575,7 @@ impl BleOtaNode {
                     }
                 }
                 if now_us().saturating_sub(guard.last_activity_us) > OTA_IDLE_TIMEOUT_US {
-                    warn!("ota: idle timeout on BLE connection; aborting");
-                    guard.abort_active();
+                    warn!("ota: idle timeout on BLE connection; closing wait loop");
                     break;
                 }
             }
@@ -405,6 +591,7 @@ fn uuid_or_panic(text: &str) -> BleUuid {
         OTA_CONTROL_UUID => uuid128!("beb5483e-36e1-4688-b7f5-ea07361bc301"),
         OTA_DATA_UUID => uuid128!("beb5483e-36e1-4688-b7f5-ea07361bc302"),
         OTA_STATUS_UUID => uuid128!("1a3c0001-36e1-4688-b7f5-ea07361bc303"),
+        COREDUMP_CHAR_UUID => uuid128!("1a3c0003-36e1-4688-b7f5-ea07361bc303"),
         other => panic!("unknown UUID {other}"),
     }
 }

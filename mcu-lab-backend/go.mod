@@ -1,4 +1,4 @@
-module github.com/imjasonh/playground/xiao-otel
+module github.com/imjasonh/playground/mcu-lab-backend
 
 go 1.27.0
 

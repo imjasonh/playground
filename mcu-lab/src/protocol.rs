@@ -13,8 +13,11 @@
 /// Advertised GAP short name (placed in scan response when present).
 pub const DEVICE_NAME: &str = "XIAO-C3";
 
-/// On-wire / log identifier. Bump when the binary packet layout changes.
+/// On-wire / log identifier for the XIAO benchmark app. Bump when the binary packet layout changes.
 pub const FIRMWARE_ID: &str = "xiao-esp32c3/0.1";
+
+/// On-wire / log identifier for the universal base OTA + OTel bootstrap firmware.
+pub const BASE_FIRMWARE_ID: &str = "mcu-lab-base/0.1";
 
 /// Bluetooth SIG test / internal-use company identifier (`0xFFFF`).
 pub const COMPANY_ID: u16 = 0xFFFF;
@@ -53,16 +56,17 @@ pub const CHIP_ID_ESP32: u16 = 0x0000;
 /// ESP-IDF `esp_image_header_t.chip_id` for ESP32-C3 (RISC-V).
 pub const CHIP_ID_ESP32C3: u16 = 0x0005;
 
-/// Static board/app descriptor passed into the shared BLE OTA + profiler runtime.
+/// Static hardware board descriptor (independent of which [`App`] is running on it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BoardConfig {
+pub struct BoardSpec {
     pub board_id: u8,
     pub board: &'static str,
     pub chip: &'static str,
-    pub app: &'static str,
     pub gap_name: &'static str,
     pub chip_id: u16,
     pub cpu_mhz: u64,
+    /// Minimum battery voltage (mV) required to accept an OTA `BEGIN` command (`0` disables check).
+    pub min_ota_battery_mv: u16,
 }
 
 /// Encode `board_id` (0..=15) into the upper nibble of `AdvMetrics.flags`.
@@ -105,17 +109,20 @@ pub const OTA_SERVICE_UUID: &str = "4fafc301-1fb5-459e-8fcc-c5c9c331914b";
 /// Write characteristic: iPhone → MCU OTA control (`BEGIN <size> <sha256>`, `COMMIT`, `ABORT`).
 pub const OTA_CONTROL_UUID: &str = "beb5483e-36e1-4688-b7f5-ea07361bc301";
 
-/// Write-without-response characteristic: iPhone → MCU raw firmware binary chunks.
+/// Write-without-response characteristic: iPhone → MCU raw or framed firmware binary chunks.
 pub const OTA_DATA_UUID: &str = "beb5483e-36e1-4688-b7f5-ea07361bc302";
 
 /// Read + notify characteristic: MCU → iPhone OTA status line (`IDLE`, `READY`, `PROGRESS`, `OK`, `ERR`).
 pub const OTA_STATUS_UUID: &str = "1a3c0001-36e1-4688-b7f5-ea07361bc303";
 
-/// Read characteristic: MCU → iPhone latest wake sub-phase spans & profiling JSON.
+/// Read + notify characteristic: MCU → iPhone latest wake sub-phase spans & profiling JSON (chunked if > 480 B).
 pub const PROFILE_CHAR_UUID: &str = "1a3c0002-36e1-4688-b7f5-ea07361bc303";
 
-/// Size of each OTA partition slot (`ota_0` / `ota_1`) in `partitions.csv` (1.9375 MiB).
-pub const OTA_SLOT_BYTES: u32 = 0x1F_0000;
+/// Read + notify + write characteristic: MCU → iPhone chunked flash coredump ELF (`CLEAR` write erases flash).
+pub const COREDUMP_CHAR_UUID: &str = "1a3c0003-36e1-4688-b7f5-ea07361bc303";
+
+/// Size of each OTA partition slot (`ota_0` / `ota_1`) in `partitions.csv` (1.875 MiB, 64 KiB-aligned).
+pub const OTA_SLOT_BYTES: u32 = 0x1E_0000;
 
 /// Typical small SPI e-paper width in pixels (1.54″ / 2.13″ class, 200×200 = 5,000 bytes packed 1-bit).
 pub const EPD_WIDTH: usize = 200;
@@ -413,7 +420,7 @@ pub fn format_otlp_json(device_id: &str, m: &AdvMetrics, rssi: i32, time_unix_na
     let ts = time_unix_nano.to_string();
     let escaped_device_id = escape_json_str(device_id);
     let service_name = match decode_board_id(m.flags) {
-        BOARD_WAVESHARE_EPD75 => "epd-maze",
+        BOARD_WAVESHARE_EPD75 => "waveshare-epd75",
         _ => "xiao-esp32c3",
     };
     format!(
@@ -585,7 +592,7 @@ pub enum OtaCommand {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OtaStatus {
     Idle,
-    Ready { total: u32 },
+    Ready { total: u32, offset: u32 },
     Progress { written: u32, total: u32 },
     Ok { sha256: String },
     Error { message: String },
@@ -632,7 +639,8 @@ pub fn encode_ota_command(cmd: &OtaCommand) -> String {
 pub fn format_ota_status(status: &OtaStatus) -> String {
     match status {
         OtaStatus::Idle => "IDLE".to_string(),
-        OtaStatus::Ready { total } => format!("READY total={total}"),
+        OtaStatus::Ready { total, offset: 0 } => format!("READY total={total}"),
+        OtaStatus::Ready { total, offset } => format!("READY total={total} offset={offset}"),
         OtaStatus::Progress { written, total } => {
             format!("PROGRESS written={written} total={total}")
         }
@@ -653,8 +661,19 @@ pub fn parse_ota_status(raw: &str) -> Option<OtaStatus> {
         });
     }
     if let Some(rest) = raw.strip_prefix("READY ") {
-        let total = rest.trim().strip_prefix("total=")?.parse().ok()?;
-        return Some(OtaStatus::Ready { total });
+        let mut total = None;
+        let mut offset = 0u32;
+        for part in rest.split_whitespace() {
+            if let Some(t) = part.strip_prefix("total=") {
+                total = Some(t.parse().ok()?);
+            } else if let Some(o) = part.strip_prefix("offset=") {
+                offset = o.parse().ok()?;
+            }
+        }
+        return Some(OtaStatus::Ready {
+            total: total?,
+            offset,
+        });
     }
     if let Some(rest) = raw.strip_prefix("OK ") {
         let sha256 = rest.trim().strip_prefix("sha256=")?.to_ascii_lowercase();
@@ -869,7 +888,14 @@ mod tests {
 
         for st in [
             OtaStatus::Idle,
-            OtaStatus::Ready { total: 384_000 },
+            OtaStatus::Ready {
+                total: 384_000,
+                offset: 0,
+            },
+            OtaStatus::Ready {
+                total: 384_000,
+                offset: 65_536,
+            },
             OtaStatus::Progress {
                 written: 65_536,
                 total: 384_000,
@@ -898,6 +924,7 @@ mod tests {
             chip: "esp32".to_string(),
             app: "epd-maze".to_string(),
             git_sha: "a".repeat(40),
+            build_id: "b".repeat(40),
             free_heap_bytes: 210_944,
             min_free_heap_bytes: 198_400,
             stack_high_water_bytes: 3_072,
@@ -920,6 +947,7 @@ mod tests {
         assert!(json.contains(r#""chip":"esp32""#));
         assert!(json.contains(r#""app":"epd-maze""#));
         assert!(json.contains(&format!(r#""git_sha":"{}""#, "a".repeat(40))));
+        assert!(json.contains(&format!(r#""build_id":"{}""#, "b".repeat(40))));
         assert!(json.contains(r#""free_heap":210944"#));
         assert!(json.contains(r#""min_heap":198400"#));
         assert!(json.contains(r#""stack_hw":3072"#));
@@ -1078,6 +1106,7 @@ pub struct WakeProfile {
     pub chip: String,
     pub app: String,
     pub git_sha: String,
+    pub build_id: String,
     pub free_heap_bytes: u32,
     pub min_free_heap_bytes: u32,
     pub stack_high_water_bytes: u32,
@@ -1137,6 +1166,12 @@ pub fn format_wake_profile_json(p: &WakeProfile) -> String {
     if !p.git_sha.is_empty() {
         out.push_str(&format!(r#""git_sha":"{}","#, escape_json_str(&p.git_sha)));
     }
+    if !p.build_id.is_empty() {
+        out.push_str(&format!(
+            r#""build_id":"{}","#,
+            escape_json_str(&p.build_id)
+        ));
+    }
     out.push_str(&format!(
         r#""free_heap":{},"min_heap":{},"stack_hw":{},"cycles":{},"spans":["#,
         p.free_heap_bytes, p.min_free_heap_bytes, p.stack_high_water_bytes, p.cpu_cycles,
@@ -1162,4 +1197,288 @@ pub fn format_wake_profile_json(p: &WakeProfile) -> String {
     }
     out.push_str("]}");
     out
+}
+
+/// Standard IEEE 802.3 CRC32 (polynomial `0xEDB88320`).
+pub fn crc32(data: &[u8]) -> u32 {
+    let mut crc: u32 = 0xFFFF_FFFF;
+    for &byte in data {
+        crc ^= u32::from(byte);
+        for _ in 0..8 {
+            let mask = (crc & 1).wrapping_neg();
+            crc = (crc >> 1) ^ (0xEDB8_8320 & mask);
+        }
+    }
+    !crc
+}
+
+/// Magic tag identifying a valid [`RtcState`] envelope in `.rtc.data`.
+pub const RTC_STATE_MAGIC: u32 = 0x4D43_554C; // "MCUL"
+
+/// Crash-loop threshold: if a `PENDING_VERIFY` image crashes this many times in a
+/// row without completing `self_test()`, trigger immediate bootloader rollback.
+pub const MAX_CRASH_STREAK: u8 = 3;
+
+/// CRC32-protected retained state placed in `.rtc.data` so brownout-corrupted RTC RAM
+/// resets cleanly instead of propagating garbage counters.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(C)]
+pub struct RtcState {
+    pub magic: u32,
+    pub accumulator: PhaseAccumulator,
+    pub crash_streak: u8,
+    pub reserved: [u8; 3],
+    pub checksum: u32,
+}
+
+impl Default for RtcState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RtcState {
+    pub const fn new() -> Self {
+        Self {
+            magic: RTC_STATE_MAGIC,
+            accumulator: PhaseAccumulator::new(),
+            crash_streak: 0,
+            reserved: [0; 3],
+            checksum: 0,
+        }
+    }
+
+    fn compute_crc(&self) -> u32 {
+        let mut buf = [0u8; 48];
+        buf[0..4].copy_from_slice(&self.magic.to_le_bytes());
+        buf[4] = self.accumulator.seq;
+        buf[5] = self.crash_streak;
+        buf[6..10].copy_from_slice(&self.accumulator.wake_count.to_le_bytes());
+        buf[10..14].copy_from_slice(&self.accumulator.last_radio_us.to_le_bytes());
+        buf[14..22].copy_from_slice(&self.accumulator.total_sensor_us.to_le_bytes());
+        buf[22..30].copy_from_slice(&self.accumulator.total_compute_us.to_le_bytes());
+        buf[30..38].copy_from_slice(&self.accumulator.total_epd_refresh_us.to_le_bytes());
+        buf[38..46].copy_from_slice(&self.accumulator.total_radio_us.to_le_bytes());
+        crc32(&buf[..46])
+    }
+
+    /// Validate the magic tag and CRC32. If invalid (e.g., cold boot or brownout),
+    /// reset to a clean state and return `false`.
+    pub fn validate_or_reset(&mut self) -> bool {
+        if self.magic == RTC_STATE_MAGIC && self.checksum == self.compute_crc() {
+            return true;
+        }
+        *self = Self::new();
+        self.seal();
+        false
+    }
+
+    /// Recompute and store the CRC32 after mutating fields.
+    pub fn seal(&mut self) {
+        self.magic = RTC_STATE_MAGIC;
+        self.checksum = self.compute_crc();
+    }
+}
+
+/// Magic header for framed resumable OTA data chunks on [`OTA_DATA_UUID`].
+///
+/// Format: `[b'O', b'T', offset: u32 LE, crc32: u32 LE, payload...]`
+pub const OTA_CHUNK_MAGIC: [u8; 2] = *b"OT";
+
+/// Header size in bytes for a framed OTA data chunk.
+pub const OTA_CHUNK_HEADER_LEN: usize = 10;
+
+/// Decoded framed OTA data chunk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OtaChunkFrame<'a> {
+    pub offset: u32,
+    pub crc32: u32,
+    pub payload: &'a [u8],
+}
+
+/// Encode an offset + CRC32 framed OTA chunk for [`OTA_DATA_UUID`].
+pub fn encode_ota_chunk_frame(offset: u32, payload: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(OTA_CHUNK_HEADER_LEN + payload.len());
+    out.extend_from_slice(&OTA_CHUNK_MAGIC);
+    out.extend_from_slice(&offset.to_le_bytes());
+    out.extend_from_slice(&crc32(payload).to_le_bytes());
+    out.extend_from_slice(payload);
+    out
+}
+
+/// Decode and CRC32-verify a framed OTA chunk.
+///
+/// Returns `Ok(Some(frame))` if the buffer starts with [`OTA_CHUNK_MAGIC`] and passes CRC32,
+/// `Ok(None)` if the buffer does not carry the framed magic (legacy v1 raw chunk), or
+/// `Err(reason)` if the frame is truncated or fails CRC32 verification.
+pub fn decode_ota_chunk_frame(raw: &[u8]) -> Result<Option<OtaChunkFrame<'_>>, String> {
+    if raw.len() < 2 || raw[0..2] != OTA_CHUNK_MAGIC {
+        return Ok(None);
+    }
+    if raw.len() < OTA_CHUNK_HEADER_LEN {
+        return Err(format!("truncated OTA frame ({} bytes)", raw.len()));
+    }
+    let offset = u32::from_le_bytes([raw[2], raw[3], raw[4], raw[5]]);
+    let expected_crc = u32::from_le_bytes([raw[6], raw[7], raw[8], raw[9]]);
+    let payload = &raw[OTA_CHUNK_HEADER_LEN..];
+    let actual_crc = crc32(payload);
+    if actual_crc != expected_crc {
+        return Err(format!(
+            "chunk crc32 mismatch at offset {offset}: got {actual_crc:#010x}, want {expected_crc:#010x}"
+        ));
+    }
+    Ok(Some(OtaChunkFrame {
+        offset,
+        crc32: expected_crc,
+        payload,
+    }))
+}
+
+/// Magic header for chunked BLE GATT blob transfers ([`PROFILE_CHAR_UUID`] and [`COREDUMP_CHAR_UUID`]).
+///
+/// Format: `[b'M', b'C', index: u16 LE, total: u16 LE, payload...]`
+pub const BLOB_FRAME_MAGIC: [u8; 2] = *b"MC";
+
+/// Header size in bytes for a chunked BLE blob frame.
+pub const BLOB_FRAME_HEADER_LEN: usize = 6;
+
+/// Split `data` into BLE GATT frames with 6-byte headers (`"MC"`, `index`, `total`).
+pub fn encode_blob_frames(data: &[u8], max_payload_per_frame: usize) -> Vec<Vec<u8>> {
+    let chunk_size = max_payload_per_frame.max(1);
+    if data.is_empty() {
+        let mut frame = Vec::with_capacity(BLOB_FRAME_HEADER_LEN);
+        frame.extend_from_slice(&BLOB_FRAME_MAGIC);
+        frame.extend_from_slice(&0u16.to_le_bytes());
+        frame.extend_from_slice(&1u16.to_le_bytes());
+        return vec![frame];
+    }
+    let total_chunks = data.len().div_ceil(chunk_size);
+    let total = u16::try_from(total_chunks).unwrap_or(u16::MAX);
+    let mut frames = Vec::with_capacity(total_chunks);
+    for (idx, chunk) in data.chunks(chunk_size).enumerate() {
+        if idx >= usize::from(u16::MAX) {
+            break;
+        }
+        let mut frame = Vec::with_capacity(BLOB_FRAME_HEADER_LEN + chunk.len());
+        frame.extend_from_slice(&BLOB_FRAME_MAGIC);
+        frame.extend_from_slice(&(idx as u16).to_le_bytes());
+        frame.extend_from_slice(&total.to_le_bytes());
+        frame.extend_from_slice(chunk);
+        frames.push(frame);
+    }
+    frames
+}
+
+/// Decode a single chunked BLE blob frame. Returns `(index, total, payload)` if valid.
+pub fn decode_blob_frame(raw: &[u8]) -> Option<(u16, u16, &[u8])> {
+    if raw.len() < BLOB_FRAME_HEADER_LEN || raw[0..2] != BLOB_FRAME_MAGIC {
+        return None;
+    }
+    let idx = u16::from_le_bytes([raw[2], raw[3]]);
+    let total = u16::from_le_bytes([raw[4], raw[5]]);
+    if total == 0 || idx >= total {
+        return None;
+    }
+    Some((idx, total, &raw[BLOB_FRAME_HEADER_LEN..]))
+}
+
+/// Reassembles sequential [`encode_blob_frames`] packets back into the original byte buffer.
+#[derive(Debug, Default)]
+pub struct BlobReassembler {
+    total: u16,
+    received: Vec<Option<Vec<u8>>>,
+    count: usize,
+}
+
+impl BlobReassembler {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Push a frame. Returns `Some(complete_bytes)` once all `total` frames have arrived.
+    pub fn push(&mut self, raw: &[u8]) -> Option<Vec<u8>> {
+        let (idx, total, payload) = decode_blob_frame(raw)?;
+        if self.total != total {
+            self.total = total;
+            self.received = vec![None; usize::from(total)];
+            self.count = 0;
+        }
+        let slot = &mut self.received[usize::from(idx)];
+        if slot.is_none() {
+            *slot = Some(payload.to_vec());
+            self.count += 1;
+        }
+        if self.count == usize::from(self.total) {
+            let mut out = Vec::new();
+            for part in self.received.drain(..).flatten() {
+                out.extend_from_slice(&part);
+            }
+            self.total = 0;
+            self.count = 0;
+            return Some(out);
+        }
+        None
+    }
+}
+
+#[cfg(test)]
+mod hardening_tests {
+    use super::*;
+
+    #[test]
+    fn crc32_matches_standard_ieee_vector() {
+        assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
+        assert_eq!(crc32(b""), 0x0000_0000);
+    }
+
+    #[test]
+    fn rtc_state_validates_and_recovers_from_corruption() {
+        let mut rtc = RtcState::new();
+        assert!(!rtc.validate_or_reset()); // unsealed initial struct resets & seals
+        assert!(rtc.validate_or_reset());
+
+        rtc.accumulator.record_wake(100, 200, 300, 3850, 0);
+        rtc.crash_streak = 2;
+        rtc.seal();
+        assert!(rtc.validate_or_reset());
+        assert_eq!(rtc.accumulator.wake_count, 1);
+        assert_eq!(rtc.crash_streak, 2);
+
+        // Flip a bit to simulate brownout corruption
+        rtc.accumulator.wake_count ^= 0x0001_0000;
+        assert!(!rtc.validate_or_reset());
+        assert_eq!(rtc.accumulator.wake_count, 0);
+        assert_eq!(rtc.crash_streak, 0);
+        assert!(rtc.validate_or_reset());
+    }
+
+    #[test]
+    fn ota_chunk_frame_round_trip_and_crc_rejection() {
+        let payload = b"hello firmware bytes";
+        let framed = encode_ota_chunk_frame(4096, payload);
+        let decoded = decode_ota_chunk_frame(&framed).unwrap().unwrap();
+        assert_eq!(decoded.offset, 4096);
+        assert_eq!(decoded.payload, payload);
+
+        let mut corrupted = framed.clone();
+        *corrupted.last_mut().unwrap() ^= 0xFF;
+        assert!(decode_ota_chunk_frame(&corrupted).is_err());
+
+        // Legacy raw chunk starting with ESP-IDF 0xE9 magic returns Ok(None)
+        let raw = [0xE9, 0x00, 0x01, 0x02];
+        assert_eq!(decode_ota_chunk_frame(&raw), Ok(None));
+    }
+
+    #[test]
+    fn blob_frames_round_trip_through_reassembler() {
+        let data: Vec<u8> = (0..1200).map(|i| (i % 251) as u8).collect();
+        let frames = encode_blob_frames(&data, 470);
+        assert_eq!(frames.len(), 3);
+
+        let mut reasm = BlobReassembler::new();
+        assert!(reasm.push(&frames[0]).is_none());
+        assert!(reasm.push(&frames[2]).is_none()); // out-of-order tolerated
+        let assembled = reasm.push(&frames[1]).expect("complete");
+        assert_eq!(assembled, data);
+    }
 }
