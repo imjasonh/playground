@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>One Tap Quest</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #0d0d14;
+      color: #f0f0f5;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      overflow: hidden;
+      touch-action: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      outline: none;
+      touch-action: none;
+      image-rendering: pixelated;
+    }
+    #status {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: #0d0d14;
+      z-index: 10;
+    }
+    #status.hidden {
+      display: none;
+    }
+    #progress-bar {
+      width: 220px;
+      height: 8px;
+      background: #232336;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    #progress-fill {
+      width: 0%;
+      height: 100%;
+      background: #73eff7;
+      transition: width 120ms linear;
+    }
+    #status-text {
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      color: #c0cbdc;
+    }
+  </style>
+  
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="status">
+    <div id="status-text">Loading One Tap Quest…</div>
+    <div id="progress-bar"><div id="progress-fill"></div></div>
+  </div>
+  <script src="index.js"></script>
+  <script>
+    (function () {
+      const statusEl = document.getElementById('status');
+      const statusText = document.getElementById('status-text');
+      const progressFill = document.getElementById('progress-fill');
+
+      if (typeof Engine === 'undefined') {
+        statusText.textContent = 'Run one-tap-quest/build.sh to export the Godot Web build.';
+        return;
+      }
+
+      const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":49792,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+      const engine = new Engine(GODOT_CONFIG);
+
+      engine.startGame({
+        onProgress: function (current, total) {
+          if (total > 0) {
+            progressFill.style.width = Math.round((current / total) * 100) + '%';
+          }
+        },
+      }).then(function () {
+        statusEl.classList.add('hidden');
+      }).catch(function (err) {
+        statusText.textContent = err && err.message ? err.message : String(err);
+      });
+    })();
+  </script>
+  <script src="whbiab.js" data-app="one-tap-quest"></script>
+</body>
+</html>
+

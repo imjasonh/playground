@@ -1,0 +1,30 @@
+{
+  "key": "northeast-0p005",
+  "note": "NYC / Northeast ~550 m cells",
+  "west": -75.5,
+  "south": 40.0,
+  "north": 42.0,
+  "east": -71.5,
+  "cellDeg": 0.005,
+  "width": 800,
+  "height": 400,
+  "dtype": "float32",
+  "endian": "little",
+  "layout": "row-major",
+  "nodata": 0,
+  "units": "people-per-cell",
+  "totalPopulation": 26781348.0,
+  "nonzeroCells": 191507,
+  "maxCell": 15397.1806640625,
+  "bytesUncompressed": 1280000,
+  "bytesGzip": 730002,
+  "sha256Uncompressed": "375dcf11b6ca0e7abe15b60cc0c654e02b36c57bebd6bddf7f455b8bb3c27845",
+  "source": {
+    "name": "Meta / CIESIN High Resolution Settlement Layer (HRSL)",
+    "url": "https://registry.opendata.aws/dataforgood-fb-hrsl/",
+    "citation": "Meta and Center for International Earth Science Information Network - CIESIN - Columbia University. 2022. High Resolution Settlement Layer (HRSL).",
+    "license": "CC BY 4.0",
+    "aggregation": "sum-resampled from ~30m population-count COGs"
+  },
+  "file": "northeast-0p005.f32.gz"
+}
