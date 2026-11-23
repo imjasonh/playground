@@ -373,4 +373,263 @@ theorem parseTimestamp_code {M : Word → BitVec 8}
   rw [htst]
   rfl
 
+/-- An optional element with tag `tag`, as the code reads it: the bytes left
+after it. -/
+theorem optional_code {M : Word → BitVec 8} {tag : Nat} {p l q ql : Word}
+    (h : ((derOptRes tag (memBytes M p l.toNat) = none) ∧ q = p ∧ ql = l) ∨
+      ((¬ (derOptRes tag (memBytes M p l.toNat) = none)) ∧ ∃ t, derOptRes tag (memBytes M p l.toNat) = some (.ok t) ∧
+        q = p + BitVec.ofNat 32 (t.header + t.len) ∧ ql = l - BitVec.ofNat 32 (t.header + t.len))) :
+    ∃ e, readOptional tag (memBytes M p l.toNat) = some (e, memBytes M q ql.toNat) := by
+  rcases h with ⟨hn, rfl, rfl⟩ | ⟨-, t, ht, rfl, rfl⟩
+  · exact ⟨none, readOptional_none hn⟩
+  · exact ⟨some (elemAt M p t), readOptional_mem ht⟩
+
+/-- The last optional element, `[1]`, after which nothing may follow. -/
+theorem optional_last_code {M : Word → BitVec 8} {tag : Nat} {p l q ql : Word}
+    (h : ((derOptRes tag (memBytes M p l.toNat) = none) ∧ l = 0 ∧ q = p ∧ ql = l) ∨
+      ((¬ (derOptRes tag (memBytes M p l.toNat) = none)) ∧ ∃ t, derOptRes tag (memBytes M p l.toNat) = some (.ok t) ∧
+        (l - BitVec.ofNat 32 (t.header + t.len) = 0) ∧
+        q = p + BitVec.ofNat 32 (t.header + t.len) ∧ ql = l - BitVec.ofNat 32 (t.header + t.len))) :
+    ∃ e, readOptional tag (memBytes M p l.toNat) = some (e, []) := by
+  rcases h with ⟨hn, hz, -, -⟩ | ⟨-, t, ht, hz, -, -⟩
+  · refine ⟨none, ?_⟩
+    rw [readOptional_none hn, hz]
+    rfl
+  · exact ⟨some (elemAt M p t), by rw [readOptional_mem ht, restAt_nil hz]⟩
+
+theorem head_mem {M : Word → BitVec 8} {p l : Word} (h : l ≠ 0) :
+    (memBytes M p l.toNat).head? = some (M p).toNat := by
+  have : l.toNat ≠ 0 := fun e => h (BitVec.eq_of_toNat_eq e)
+  obtain ⟨n, hn⟩ : ∃ n, l.toNat = n + 1 := ⟨_, (Nat.succ_pred_eq_of_ne_zero this).symm⟩
+  rw [hn, memBytes_succ]; rfl
+
+theorem head_beq {M : Word → BitVec 8} {p l : Word} {b : Nat} (hb : b < 256) (h : l ≠ 0) :
+    ((memBytes M p l.toNat).head? == some b) = decide (M p = BitVec.ofNat 8 b) := by
+  rw [head_mem h]
+  by_cases e : M p = BitVec.ofNat 8 b
+  · rw [decide_eq_true e, e, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hb]; exact beq_iff_eq.mpr rfl
+  · rw [decide_eq_false e]
+    apply Bool.eq_false_iff.mpr
+    intro h'
+    apply e
+    have := Option.some.inj (beq_iff_eq.mp h')
+    exact BitVec.eq_of_toNat_eq (by rw [this, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hb])
+
+theorem serial_mag {M : Word → BitVec 8} {ip il : Word} (hl : il.toNat ≠ 0)
+    (h : (il - aluEval .sltu ((M ip).zeroExtend 32) 1).toNat ≤ 20) :
+    (if (memBytes M ip il.toNat).head? = some 0 then (memBytes M ip il.toNat).drop 1 else memBytes M ip il.toNat).length
+      ≤ 20 := by
+  obtain ⟨n, hn⟩ : ∃ n, il.toNat = n + 1 := ⟨_, (Nat.succ_pred_eq_of_ne_zero hl).symm⟩
+  have hz : aluEval .sltu ((M ip).zeroExtend 32) 1 = if M ip = 0 then 1 else 0 := by
+    by_cases e : M ip = 0
+    · rw [e, ite_eq_left rfl]; rfl
+    · rw [ite_eq_right e]
+      simp only [aluEval]
+      refine ite_eq_right fun h' => e ?_
+      have := of_decide_eq_true h'
+      rw [show (1 : Word).toNat = 1 from rfl, byte_zeroExtend_toNat] at this
+      exact BitVec.eq_of_toNat_eq (by rw [show (0 : BitVec 8).toNat = 0 from rfl]; omega)
+  rw [hz] at h
+  rw [hn, memBytes_succ, List.head?_cons]
+  have hil := il.isLt
+  by_cases e : M ip = 0
+  · rw [ite_eq_left e, BitVec.toNat_sub, show (1 : Word).toNat = 1 from rfl] at h
+    rw [e, ite_eq_left (show some (BitVec.toNat (0 : BitVec 8)) = some 0 from rfl), List.drop_one, List.tail_cons, memBytes_length]
+    omega
+  · rw [ite_eq_right e, show il - (0 : Word) = il from BitVec.sub_zero il] at h
+    have hne : (M ip).toNat ≠ 0 := fun h' => e (BitVec.eq_of_toNat_eq h')
+    rw [ite_eq_right (fun h' => hne (Option.some.inj h')), List.length_cons, memBytes_length]
+    omega
+
+theorem nonce_cont {M : Word → BitVec 8} {p l q ql : Word} {β : Type} (cont : Bytes → Option β) (hl : l ≠ 0)
+    (h : ((M p = BitVec.ofNat 8 2) ∧ ∃ ip il, derIntOf (memBytes M p l.toNat) p (derElement 2 (memBytes M p l.toNat)) =
+        .ok (ip, il) ∧ ∃ ti, derElement 2 (memBytes M p l.toNat) = .ok ti ∧
+        q = p + BitVec.ofNat 32 (ti.header + ti.len) ∧ ql = l - BitVec.ofNat 32 (ti.header + ti.len)) ∨
+      ((¬ (M p = BitVec.ofNat 8 2)) ∧ q = p ∧ ql = l)) :
+    (if ((memBytes M p l.toNat).head? == some 2) = true then
+      (Option.map (fun x => x.snd) (readInteger (memBytes M p l.toNat))).bind cont
+    else cont (memBytes M p l.toNat)) = cont (memBytes M q ql.toNat) := by
+  rw [head_beq (by decide) hl]
+  rcases h with ⟨h2, ip, il, hi, ti, hti, rfl, rfl⟩ | ⟨h2, rfl, rfl⟩
+  · rw [decide_eq_true h2, if_pos rfl]
+    rw [hti] at hi
+    rw [(readInteger_mem hti hi).1]
+    rfl
+  · rw [decide_eq_false h2]
+    rfl
+
+theorem ordering_nonce_cont {M : Word → BitVec 8} {B p l r8 q ql : Word} {β : Type} (cont : Bytes → Option β)
+    (h : ((l = 0) ∧ r8 = BitVec.ofNat 32 0x18 ∧ q = p ∧ ql = l) ∨
+      ((¬ (l = 0)) ∧ (M p = BitVec.ofNat 8 1) ∧
+        derBoolOf (memBytes M p l.toNat) (derElement 1 (memBytes M p l.toNat)) = .ok () ∧
+        ∃ tb, derElement 1 (memBytes M p l.toNat) = .ok tb ∧ ∃ qb qbl : Word,
+          ((((l - BitVec.ofNat 32 (tb.header + tb.len)) = 0) ∧ qb = (p + BitVec.ofNat 32 (tb.header + tb.len)) ∧
+            qbl = (l - BitVec.ofNat 32 (tb.header + tb.len))) ∨
+          ((¬ ((l - BitVec.ofNat 32 (tb.header + tb.len)) = 0)) ∧ ∃ qn qnl : Word,
+            (((M (p + BitVec.ofNat 32 (tb.header + tb.len)) = BitVec.ofNat 8 2) ∧ ∃ ip il,
+              derIntOf (memBytes M (p + BitVec.ofNat 32 (tb.header + tb.len)) (l - BitVec.ofNat 32 (tb.header + tb.len)).toNat)
+                (p + BitVec.ofNat 32 (tb.header + tb.len))
+                (derElement 2 (memBytes M (p + BitVec.ofNat 32 (tb.header + tb.len))
+                  (l - BitVec.ofNat 32 (tb.header + tb.len)).toNat)) = .ok (ip, il) ∧
+              ∃ ti, derElement 2 (memBytes M (p + BitVec.ofNat 32 (tb.header + tb.len))
+                (l - BitVec.ofNat 32 (tb.header + tb.len)).toNat) = .ok ti ∧
+              qn = (p + BitVec.ofNat 32 (tb.header + tb.len)) + BitVec.ofNat 32 (ti.header + ti.len) ∧
+              qnl = (l - BitVec.ofNat 32 (tb.header + tb.len)) - BitVec.ofNat 32 (ti.header + ti.len)) ∨
+            ((¬ (M (p + BitVec.ofNat 32 (tb.header + tb.len)) = BitVec.ofNat 8 2)) ∧
+              qn = (p + BitVec.ofNat 32 (tb.header + tb.len)) ∧ qnl = (l - BitVec.ofNat 32 (tb.header + tb.len)))) ∧
+            SvIn B qn qnl.toNat ∧ qb = qn ∧ qbl = qnl)) ∧
+          SvIn B qb qbl.toNat ∧ r8 = BitVec.ofNat 32 0xFFFFFFFF ∧ q = qb ∧ ql = qbl) ∨
+      ((¬ (l = 0)) ∧ (¬ (M p = BitVec.ofNat 8 1)) ∧ ∃ qn qnl : Word,
+        (((M p = BitVec.ofNat 8 2) ∧ ∃ ip il, derIntOf (memBytes M p l.toNat) p (derElement 2 (memBytes M p l.toNat)) =
+          .ok (ip, il) ∧ ∃ ti, derElement 2 (memBytes M p l.toNat) = .ok ti ∧
+          qn = p + BitVec.ofNat 32 (ti.header + ti.len) ∧ qnl = l - BitVec.ofNat 32 (ti.header + ti.len)) ∨
+        ((¬ (M p = BitVec.ofNat 8 2)) ∧ qn = p ∧ qnl = l)) ∧ SvIn B qn qnl.toNat ∧ r8 = BitVec.ofNat 32 0x18 ∧
+        q = qn ∧ ql = qnl)) :
+    (if ((memBytes M p l.toNat).head? == some 1) = true then
+      (readBooleanTrue (memBytes M p l.toNat)).bind fun i =>
+        if (i.head? == some 2) = true then (Option.map (fun x => x.snd) (readInteger i)).bind cont else cont i
+    else if ((memBytes M p l.toNat).head? == some 2) = true then
+      (Option.map (fun x => x.snd) (readInteger (memBytes M p l.toNat))).bind cont
+    else cont (memBytes M p l.toNat)) = cont (memBytes M q ql.toNat) := by
+  rcases h with ⟨hz, -, rfl, rfl⟩ | ⟨hz, h1, hb, tb, htb, qb, qbl, hin, -, -, rfl, rfl⟩ | ⟨hz, h1, qn, qnl, hn, -, -, rfl, rfl⟩
+  · subst hz; rfl
+  · rw [head_beq (by decide) hz, decide_eq_true h1, if_pos rfl, readBooleanTrue_mem htb hb]
+    simp only [Option.bind_some, restAt]
+    rcases hin with ⟨hz2, rfl, rfl⟩ | ⟨hz2, qn, qnl, hn, -, rfl, rfl⟩
+    · rw [hz2]; rfl
+    · exact nonce_cont cont hz2 hn
+  · rw [head_beq (by decide) hz, decide_eq_false h1]
+    simp only [Bool.false_eq_true, ↓reduceIte]
+    exact nonce_cont cont hz hn
+
+set_option maxHeartbeats 8000000 in
+/-- The `TSTInfo` the code parsed, as `readTstInfo`. -/
+theorem readTstInfo_code {M : Word → BitVec 8}
+    {B p0 l0 pc lc pj lj pm lm pi li ps ls pg lg p3 l3 r8 p4 l4 p5 l5 p6 l6 op32 ol32 vp51 vl51 ip2 il2 : Word}
+    {tm : Nat} {tl13 te26 to32 tl36 te45 te51 tl2 tlg : DerTlv}
+    (h148 : derElement 0x30 (memBytes M p0 l0.toNat) = .ok tl13)
+    (h149 : l0 - BitVec.ofNat 32 (tl13.header + tl13.len) = 0)
+    (epc : pc = p0 + BitVec.ofNat 32 tl13.header) (elc : lc = BitVec.ofNat 32 tl13.len)
+    (h150 : derIntIsOf M (memBytes M pc lc.toNat) pc (derElement 2 (memBytes M pc lc.toNat)) ((BitVec.ofNat 32 0x1).extractLsb' 0 8) = .ok true)
+    (h151 : derElement 2 (memBytes M pc lc.toNat) = .ok te26)
+    (epj : pj = pc + BitVec.ofNat 32 (te26.header + te26.len)) (elj : lj = lc - BitVec.ofNat 32 (te26.header + te26.len))
+    (h152 : derContent pj (derOid (memBytes M pj lj.toNat)) = .ok (op32, ol32))
+    (h153 : derOid (memBytes M pj lj.toNat) = .ok to32)
+    (epm : pm = pj + BitVec.ofNat 32 (to32.header + to32.len)) (elm : lm = lj - BitVec.ofNat 32 (to32.header + to32.len))
+    (h154 : derElement 0x30 (memBytes M pm lm.toNat) = .ok tl36)
+    (epi : pi = pm + BitVec.ofNat 32 tl36.header) (eli : li = BitVec.ofNat 32 tl36.len)
+    (h155 : isSha256Of M pi li.toNat = .ok true)
+    (h156 : derElement 0x30 (memBytes M pi li.toNat) = .ok te45)
+    (h157 : derContent (pi + BitVec.ofNat 32 (te45.header + te45.len))
+      (derElement 4 (memBytes M (pi + BitVec.ofNat 32 (te45.header + te45.len)) (li - BitVec.ofNat 32 (te45.header + te45.len)).toNat)) =
+      .ok (vp51, vl51))
+    (h158 : derElement 4 (memBytes M (pi + BitVec.ofNat 32 (te45.header + te45.len)) (li - BitVec.ofNat 32 (te45.header + te45.len)).toNat) =
+      .ok te51)
+    (h159 : vl51 = 32)
+    (h160 : (li - BitVec.ofNat 32 (te45.header + te45.len)) - BitVec.ofNat 32 (te51.header + te51.len) = 0)
+    (eps : ps = pm + BitVec.ofNat 32 (tl36.header + tl36.len)) (els : ls = lm - BitVec.ofNat 32 (tl36.header + tl36.len))
+    (h161 : derElement 2 (memBytes M ps ls.toNat) = .ok tl2)
+    (h162 : derPosIntOf (memBytes M ps ls.toNat) ps (.ok tl2) = .ok (ip2, il2))
+    (h163 : (il2 - aluEval .sltu ((M ip2).zeroExtend 32) 1).toNat ≤ 20)
+    (epg : pg = ps + BitVec.ofNat 32 (tl2.header + tl2.len)) (elg : lg = ls - BitVec.ofNat 32 (tl2.header + tl2.len))
+    (h164 : derElement 0x18 (memBytes M pg lg.toNat) = .ok tlg)
+    (h165 : generalizedTime (memBytes M (pg + BitVec.ofNat 32 tlg.header) (BitVec.ofNat 32 tlg.len).toNat) = some tm)
+    (h166 : ∃ e, readOptional 0x30 (memBytes M (pg + BitVec.ofNat 32 (tlg.header + tlg.len))
+      (lg - BitVec.ofNat 32 (tlg.header + tlg.len)).toNat) = some (e, memBytes M p3 l3.toNat))
+    (h168 : ((l3 = 0) ∧ r8 = BitVec.ofNat 32 0x18 ∧ p4 = p3 ∧ l4 = l3) ∨
+      ((¬ (l3 = 0)) ∧ (M p3 = BitVec.ofNat 8 1) ∧
+        derBoolOf (memBytes M p3 l3.toNat) (derElement 1 (memBytes M p3 l3.toNat)) = .ok () ∧
+        ∃ tb, derElement 1 (memBytes M p3 l3.toNat) = .ok tb ∧ ∃ qb qbl : Word,
+          ((((l3 - BitVec.ofNat 32 (tb.header + tb.len)) = 0) ∧ qb = (p3 + BitVec.ofNat 32 (tb.header + tb.len)) ∧
+            qbl = (l3 - BitVec.ofNat 32 (tb.header + tb.len))) ∨
+          ((¬ ((l3 - BitVec.ofNat 32 (tb.header + tb.len)) = 0)) ∧ ∃ qn qnl : Word,
+            (((M (p3 + BitVec.ofNat 32 (tb.header + tb.len)) = BitVec.ofNat 8 2) ∧ ∃ ip il,
+              derIntOf (memBytes M (p3 + BitVec.ofNat 32 (tb.header + tb.len)) (l3 - BitVec.ofNat 32 (tb.header + tb.len)).toNat)
+                (p3 + BitVec.ofNat 32 (tb.header + tb.len))
+                (derElement 2 (memBytes M (p3 + BitVec.ofNat 32 (tb.header + tb.len))
+                  (l3 - BitVec.ofNat 32 (tb.header + tb.len)).toNat)) = .ok (ip, il) ∧
+              ∃ ti, derElement 2 (memBytes M (p3 + BitVec.ofNat 32 (tb.header + tb.len))
+                (l3 - BitVec.ofNat 32 (tb.header + tb.len)).toNat) = .ok ti ∧
+              qn = (p3 + BitVec.ofNat 32 (tb.header + tb.len)) + BitVec.ofNat 32 (ti.header + ti.len) ∧
+              qnl = (l3 - BitVec.ofNat 32 (tb.header + tb.len)) - BitVec.ofNat 32 (ti.header + ti.len)) ∨
+            ((¬ (M (p3 + BitVec.ofNat 32 (tb.header + tb.len)) = BitVec.ofNat 8 2)) ∧
+              qn = (p3 + BitVec.ofNat 32 (tb.header + tb.len)) ∧ qnl = (l3 - BitVec.ofNat 32 (tb.header + tb.len)))) ∧
+            SvIn B qn qnl.toNat ∧ qb = qn ∧ qbl = qnl)) ∧
+          SvIn B qb qbl.toNat ∧ r8 = BitVec.ofNat 32 0xFFFFFFFF ∧ p4 = qb ∧ l4 = qbl) ∨
+      ((¬ (l3 = 0)) ∧ (¬ (M p3 = BitVec.ofNat 8 1)) ∧ ∃ qn qnl : Word,
+        (((M p3 = BitVec.ofNat 8 2) ∧ ∃ ip il, derIntOf (memBytes M p3 l3.toNat) p3 (derElement 2 (memBytes M p3 l3.toNat)) =
+          .ok (ip, il) ∧ ∃ ti, derElement 2 (memBytes M p3 l3.toNat) = .ok ti ∧
+          qn = p3 + BitVec.ofNat 32 (ti.header + ti.len) ∧ qnl = l3 - BitVec.ofNat 32 (ti.header + ti.len)) ∨
+        ((¬ (M p3 = BitVec.ofNat 8 2)) ∧ qn = p3 ∧ qnl = l3)) ∧ SvIn B qn qnl.toNat ∧ r8 = BitVec.ofNat 32 0x18 ∧
+        p4 = qn ∧ l4 = qnl))
+    (h170 : ∃ e, readOptional 0xa0 (memBytes M p4 l4.toNat) = some (e, memBytes M p5 l5.toNat))
+    (h172 : ∃ e, readOptional 0xa1 (memBytes M p5 l5.toNat) = some (e, [])) :
+    readTstInfo (memBytes M p0 l0.toNat) = some (tm, memBytes M vp51 vl51.toNat) := by
+  rw [h153] at h152
+  obtain ⟨-, -⟩ := derContent_ok rfl h152
+  rw [h158] at h157
+  obtain ⟨e157a, e157b⟩ := derContent_ok rfl h157
+  have hI1 := readIntegerIs_mem h151 h150
+  rw [show ((BitVec.ofNat 32 0x1).extractLsb' 0 8).toNat = 1 by decide] at hI1
+  have hB2 := derTlv_mem_bound (derElement_tlv h161)
+  have hl2 : il2.toNat ≠ 0 := by
+    obtain ⟨-, -, e2⟩ := readPositiveInteger_tlv h161 h162
+    have hlen : tl2.len ≠ 0 := by
+      cases hI : derIntOf (memBytes M ps ls.toNat) ps (.ok tl2) with
+      | error e => rw [derPosIntOf_err hI] at h162; cases h162
+      | ok x => exact derIntOf_len hI
+    rw [e2, ofNat_toNat_lt (by have := ls.isLt; omega)]
+    exact hlen
+  unfold readTstInfo
+  rw [readElem_mem h148, restAt_nil h149]
+  simp only [Option.bind_eq_bind, Option.bind_some, require_isEmpty_nil, elemAt]
+  rw [← epc, ← elc, hI1]
+  simp only [Option.bind_some, restAt]
+  rw [← epj, ← elj, readOid_mem h153]
+  simp only [Option.bind_some, restAt]
+  rw [← epm, ← elm, readElem_mem h154]
+  simp only [Option.bind_some, elemAt]
+  rw [← epi, ← eli, readSha256Alg_code h155 h156]
+  simp only [Option.bind_some, restAt]
+  rw [readOctetString_mem h158, restAt_nil h160]
+  simp only [Option.bind_some]
+  rw [← e157a, ← e157b, memBytes_length, h159, show ((32 : Word).toNat == 32 && ([] : Bytes).isEmpty) = true by decide,
+    require_true]
+  simp only [Option.bind_some, restAt]
+  rw [← eps, ← els, readPositiveInteger_mem h161 h162]
+  simp only [Option.bind_some]
+  have hsm := serial_mag hl2 h163
+  rw [decide_eq_true ?hP, require_true]
+  case hP =>
+    split
+    · rename_i m hm
+      rw [hm, List.head?_cons, ite_eq_left (show some 0 = some 0 from rfl), List.drop_one, List.tail_cons] at hsm
+      exact hsm
+    · rename_i hn
+      have hh : (memBytes M ip2 il2.toNat).head? ≠ some 0 := by
+        intro e
+        cases hc : memBytes M ip2 il2.toNat with
+        | nil => rw [hc] at e; cases e
+        | cons a l =>
+          rw [hc, List.head?_cons] at e
+          cases Option.some.inj e
+          exact hn l hc
+      rw [ite_eq_right hh] at hsm
+      exact hsm
+  simp only [Option.bind_some, restAt]
+  rw [← epg, ← elg, readElem_mem h164]
+  simp only [Option.bind_some, elemAt]
+  rw [h165]
+  simp only [Option.bind_some, restAt]
+  obtain ⟨e3, h3⟩ := h166
+  rw [h3]
+  simp only [Option.bind_some]
+  rw [ordering_nonce_cont _ h168]
+  obtain ⟨e5, h5⟩ := h170
+  rw [h5]
+  simp only [Option.bind_some]
+  obtain ⟨e6, h6⟩ := h172
+  rw [h6]
+  rfl
+
 end C3.RV32.Sv
