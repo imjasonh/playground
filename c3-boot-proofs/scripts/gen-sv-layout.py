@@ -21,7 +21,7 @@ from svchain import groups, strip_parens, top_split  # noqa: E402
 SRC = 'C3BootProofs/Proofs/SvVerify.lean'
 ROOT, BUN = "reg n a2", "reg n a1"
 POLICY = {0x0: 'issuer', 0x8: 'buildSignerUri', 0x10: 'repositoryId', 0x18: 'ownerId', 0x20: 'trigger'}
-FIELDS = {0x0: 'leaf', 0x8: 'timestamp', 0x10: 'inclusionProof', 0x18: 'checkpoint', 0x20: 'imageSignature'}
+FIELDS = {0x0: 'leaf', 0x8: 'imageSignature', 0x10: 'inclusionProof', 0x18: 'checkpoint', 0x20: 'timestamp'}
 # A search's start pointer from the root: the array it walks, that array's
 # offset, and where an entry starts from the search's pointer.
 ARRAYS = {0x3C: ('fulcio', 0x38, -4), 0x98: ('logs', 0xB8, 0x20), 0x198: ('tsas', 0x1B8, 0x20)}

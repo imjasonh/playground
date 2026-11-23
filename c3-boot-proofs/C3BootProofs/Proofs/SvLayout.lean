@@ -71,10 +71,10 @@ structure SvBundleAt (B : Word) (M : Word → BitVec 8) (bp : Word) (b : Bundle)
   al : bp.toNat % 4 = 0
   inn : SvIn B bp 0x30
   leaf : SvBytesAt B M (memLoad32 M bp) (memLoad32 M (bp + 4)) b.leafCertificate
-  timestamp : SvBytesAt B M (memLoad32 M (bp + 0x8)) (memLoad32 M (bp + 0xC)) b.timestamp
+  imageSignature : SvBytesAt B M (memLoad32 M (bp + 0x8)) (memLoad32 M (bp + 0xC)) b.imageSignature
   inclusionProof : SvBytesAt B M (memLoad32 M (bp + 0x10)) (memLoad32 M (bp + 0x14)) b.inclusionProof
   checkpoint : SvBytesAt B M (memLoad32 M (bp + 0x18)) (memLoad32 M (bp + 0x1C)) b.checkpoint
-  imageSignature : SvBytesAt B M (memLoad32 M (bp + 0x20)) (memLoad32 M (bp + 0x24)) b.imageSignature
+  timestamp : SvBytesAt B M (memLoad32 M (bp + 0x20)) (memLoad32 M (bp + 0x24)) b.timestamp
   logIndex : SvU64At M (bp + 0x28) b.logIndex
 
 /-- Bytes inside a slice outside the stack are outside it too. -/
