@@ -42,33 +42,6 @@ def P256PsmOk : Prop := ∀ X, X < C3.p256.n * C3.p256.n → psmVal X = X % C3.p
 def SvP256Model' (M : Word → BitVec 8) : Prop :=
   ∀ bp dg r s, SvP256Facts M bp dg r s → p256Verify (memBytes M bp 65) (memBytes M dg 32) (b32 r) (b32 s) = true
 
-theorem modInv_lt {a m : Nat} (hm : 0 < m) : modInv a m < m := by
-  unfold modInv
-  generalize modInv.go m (a % m) 0 1 (2 * m.log2 + 4) = g
-  have h1 := Int.emod_nonneg g (show (m : Int) ≠ 0 by omega)
-  have h2 := Int.emod_lt_of_pos g (show (0 : Int) < m by omega)
-  omega
-
-/-- An inverse below `m` is the one `modInv` computes. -/
-theorem modInv_unique {a w m : Nat} (hm : 1 < m) (hw : w < m) (h : MEq m ((w : Int) * a) 1) : modInv a m = w := by
-  have hn : w * a % m = 1 := by
-    have := MEq.natCast.mp (show MEq m ((w * a : Nat) : Int) ((1 : Nat) : Int) by rw [Int.natCast_mul]; exact h)
-    rwa [Nat.mod_eq_of_lt hm] at this
-  have hc : Nat.Coprime a m := by
-    have d1 : Nat.gcd a m ∣ w * a := Nat.dvd_trans (Nat.gcd_dvd_left a m) (Nat.dvd_mul_left a w)
-    have d2 : Nat.gcd a m ∣ w * a % m := (Nat.dvd_mod_iff (Nat.gcd_dvd_right a m)).mpr d1
-    rw [hn] at d2
-    exact Nat.dvd_one.mp d2
-  have hs := modInv_spec hm hc
-  have hv := modInv_lt (a := a) (Nat.lt_trans Nat.zero_lt_one hm)
-  have e : w % m = modInv a m % m := by
-    calc w % m = w * (a * modInv a m % m) % m := by rw [hs, Nat.mul_one]
-      _ = w * a * modInv a m % m := by rw [Nat.mul_mod_mod, Nat.mul_assoc]
-      _ = w * a % m * modInv a m % m := by rw [Nat.mod_mul_mod]
-      _ = modInv a m % m := by rw [hn, Nat.one_mul]
-  rw [Nat.mod_eq_of_lt hw, Nat.mod_eq_of_lt hv] at e
-  exact e.symm
-
 theorem gs_eq {M : Word → BitVec 8} {bp : Word} (hg : GsOk M bp) :
     gsVal M bp 0x21 * gsVal M bp 0x21 % RV32.p256 =
       (gsVal M bp 1 * gsVal M bp 1 % RV32.p256 * gsVal M bp 1 + (RV32.p256 - 3) * gsVal M bp 1 + C3.p256.b) %
@@ -166,10 +139,10 @@ theorem p256_model {M : Word → BitVec 8} (hp : IsPrime C3.p256.p) (hc : EC.Add
   have hgx : gsVal M bp 1 < C3.p256.p := p256_p ▸ hgs.2.1
   have hgy : gsVal M bp 0x21 < C3.p256.p := p256_p ▸ hgs.2.2.1
   have hT0 := tbl_rep hp hc ha L (T := tbl2 (C3.p256.gx * 2 ^ 256 % C3.p256.p, C3.p256.gy * 2 ^ 256 % C3.p256.p,
-    2 ^ 256 % C3.p256.p)) (g := ⟨_, hG⟩) rfl (fun _ => rfl) (mont_rep (by decide) (by decide))
+    2 ^ 256 % C3.p256.p)) (g := ⟨_, hG⟩) rfl (fun _ => rfl) (mont_rep (by decide) (by decide) (by decide))
   have hT1 := tbl_rep hp hc ha L (T := tbl2 (gsVal M bp 1 * 2 ^ 256 % C3.p256.p,
     gsVal M bp 0x21 * 2 ^ 256 % C3.p256.p, 2 ^ 256 % C3.p256.p)) (g := ⟨_, hQ⟩) rfl (fun _ => rfl)
-    (mont_rep hgx hgy)
+    (mont_rep hgx hgy (by decide))
   obtain ⟨st', hst, hrep, -⟩ := gLoop_spec hp hc ha L (K := 0x101) (fun j _ => hT0 j) (fun j _ => hT1 j)
     (wnafBytes_digOk (wnafGo_dig _ _ _ (Nat.zero_le _)) 0x101)
     (wnafBytes_digOk (wnafGo_dig _ _ _ (Nat.zero_le _)) 0x101) Lm hLmK (idPt2, false) 0 0 idPt2_rep (fun _ => rfl)

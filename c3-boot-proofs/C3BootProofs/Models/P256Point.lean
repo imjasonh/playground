@@ -1,28 +1,17 @@
-import C3BootProofs.Models.EcdsaLoop
+import C3BootProofs.Models.EcdsaRep
 import C3BootProofs.Proofs.SvEcMl3
 
 /-!
 # P-256 points in the check's main loop
 
-`PRep p P a` says the projective triple `P` represents the affine point
-`a` modulo `p`. Montgomery form scales all three coordinates by the same
-factor, so it doesn't change what a triple represents. `P256AddOk` and
-`P256DblOk` state that the compiled complete formulas represent the curve's
-addition. Given those, `mlLoop2` is `gLoop` over a `LoopOps` instance, and
-the affine `x` comes out of the inversion of `Z`.
+`P256AddOk` and `P256DblOk` state that the compiled complete formulas
+represent the curve's addition. Given those, `mlLoop2` is `gLoop` over a
+`LoopOps` instance, and the affine `x` comes out of the inversion of `Z`.
 -/
 
 namespace C3.Models
 
 open C3.RV32 C3.RV32.Sv C3.RV32.P2 C3.Image
-
-/-- The triple `P` represents `a` modulo `p`: every coordinate is below
-`p`, the point at infinity is `(0 : Y : 0)` with `Y ≠ 0`, and `(x, y)` is
-`(x Z : y Z : Z)` with `Z ≠ 0`. -/
-def PRep (p : Nat) (P : Nat × Nat × Nat) : ECPoint → Prop
-  | none => P.1 < p ∧ P.2.1 < p ∧ P.2.2 < p ∧ P.1 = 0 ∧ P.2.1 ≠ 0 ∧ P.2.2 = 0
-  | some (x, y) => P.1 < p ∧ P.2.1 < p ∧ P.2.2 < p ∧ x < p ∧ y < p ∧ P.2.2 ≠ 0 ∧
-      MEq p P.1 ((x : Int) * P.2.2) ∧ MEq p P.2.1 ((y : Int) * P.2.2)
 
 /-- The compiled addition `ptAdd2` (Renes, Costello, and Batina's complete
 formula for `a = -3`, in Montgomery form) represents P-256's addition on
@@ -117,16 +106,6 @@ theorem mlLoop2_eq (T0 T1 : Nat → Pt2) (D0 D1 : List Nat) :
     congr 1
     funext st'
     exact mlLoop2_eq T0 T1 D0 D1 k st'
-
-/-- An affine point in Montgomery form, with `Z` the Montgomery 1. -/
-theorem mont_rep {x y : Nat} (hx : x < C3.p256.p) (hy : y < C3.p256.p) :
-    PRep C3.p256.p (x * 2 ^ 256 % C3.p256.p, y * 2 ^ 256 % C3.p256.p, 2 ^ 256 % C3.p256.p) (some (x, y)) := by
-  have hp : 0 < C3.p256.p := by decide
-  refine ⟨Nat.mod_lt _ hp, Nat.mod_lt _ hp, Nat.mod_lt _ hp, hx, hy, (show 2 ^ 256 % C3.p256.p ≠ 0 by decide), ?_, ?_⟩ <;>
-  · show MEq _ ((_ % C3.p256.p : Nat) : Int) (_ * ((2 ^ 256 % C3.p256.p : Nat) : Int))
-    refine (natMod _ _).trans (MEq.trans ?_ ((MEq.refl _).mul (natMod _ _)).symm)
-    rw [Int.natCast_mul]
-    exact MEq.refl _
 
 theorem p2fm_eq (a b : Nat) : p2fm a b = a * b * p2RInv % C3.p256.p := by rw [p256_p]; rfl
 
