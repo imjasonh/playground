@@ -11,6 +11,7 @@ use c3_ota::container;
 use c3_ota::image;
 use c3_ota::keys;
 use c3_ota::slot;
+use c3_ota::tuf;
 use c3_verify::bootstate;
 
 const USAGE: &str = "usage: c3-ota <command> [--flag value]...
@@ -30,7 +31,13 @@ commands:
   verify --slot FILE --genesis FILE [--level N]
   record --preferred a|b [--trial a|b --boots N] [--confirmed a,b]
          [--generation N] --out FILE
-  flash --bootloader FILE [--record FILE] [--slot-a FILE] [--slot-b FILE] --out FILE";
+  flash --bootloader FILE [--record FILE] [--slot-a FILE] [--slot-b FILE] --out FILE
+  tuf-root --root FILE --out FILE            canonical root to pin in the bootloader
+  tuf-package [--roots FILE,FILE] --targets FILE --trusted-root FILE --out FILE
+  tuf-verify --pinned FILE --tuf FILE
+  tuf-accept --image FILE --bundle FILE --tuf FILE --pinned FILE --issuer S
+             --build-signer-uri S --repository-id S --owner-id S --trigger S
+             [--level N]";
 
 struct Args {
     flags: HashMap<String, String>,
@@ -86,6 +93,24 @@ fn signers(spec: &str) -> Result<Vec<(u8, ed25519_dalek::SigningKey)>, String> {
             Ok((index, keys::read_signing_key(path)?))
         })
         .collect()
+}
+
+fn policy(a: &Args) -> Result<[String; 5], String> {
+    Ok([
+        a.get("issuer")?.to_string(),
+        a.get("build-signer-uri")?.to_string(),
+        a.get("repository-id")?.to_string(),
+        a.get("owner-id")?.to_string(),
+        a.get("trigger")?.to_string(),
+    ])
+}
+
+fn level(a: &Args) -> Result<u8, String> {
+    if a.opt("level").is_some() {
+        a.number("level")
+    } else {
+        Ok(0)
+    }
 }
 
 fn slot_name(text: &str) -> Result<bootstate::Slot, String> {
@@ -151,13 +176,7 @@ fn run(command: &str, a: &Args) -> Result<(), String> {
         }
         "blob" => {
             let json = String::from_utf8(a.read("trusted-root")?).map_err(|e| e.to_string())?;
-            let policy = [
-                a.get("issuer")?.to_string(),
-                a.get("build-signer-uri")?.to_string(),
-                a.get("repository-id")?.to_string(),
-                a.get("owner-id")?.to_string(),
-                a.get("trigger")?.to_string(),
-            ];
+            let policy = policy(a)?;
             let mut spec =
                 blob::TrustRootSpec::from_trusted_root(&json, a.number("level")?, policy)?;
             if a.opt("sequence").is_some() {
@@ -185,12 +204,7 @@ fn run(command: &str, a: &Args) -> Result<(), String> {
                 .read("genesis")?
                 .try_into()
                 .map_err(|_| "genesis file isn't 128 bytes")?;
-            let level = if a.opt("level").is_some() {
-                a.number("level")?
-            } else {
-                0
-            };
-            let accepted = slot::verify(&a.read("slot")?, &genesis, level)?;
+            let accepted = slot::verify(&a.read("slot")?, &genesis, level(a)?)?;
             println!(
                 "accepted: level {}, entry {:#x}, signed at {}",
                 accepted.level, accepted.header.entry_point, accepted.signed_time
@@ -234,6 +248,44 @@ fn run(command: &str, a: &Args) -> Result<(), String> {
                 sa.as_deref(),
                 sb.as_deref(),
             )?)
+        }
+        "tuf-root" => a.write(&tuf::pinned_root(&a.read("root")?)?),
+        "tuf-package" => {
+            let roots = match a.opt("roots") {
+                Some(list) => list
+                    .split(',')
+                    .map(|p| fs::read(p).map_err(|e| format!("{p}: {e}")))
+                    .collect::<Result<Vec<_>, _>>()?,
+                None => Vec::new(),
+            };
+            a.write(&tuf::package(
+                &roots,
+                &a.read("targets")?,
+                &a.read("trusted-root")?,
+            )?)
+        }
+        "tuf-verify" => {
+            let v = tuf::verify(&a.read("pinned")?, &a.read("tuf")?)?;
+            println!(
+                "verified: root version {}, expires at {}",
+                v.root_version, v.expires
+            );
+            Ok(())
+        }
+        "tuf-accept" => {
+            let accepted = tuf::accept(
+                &a.read("image")?,
+                &a.read("bundle")?,
+                &a.read("tuf")?,
+                &a.read("pinned")?,
+                &policy(a)?,
+                level(a)?,
+            )?;
+            println!(
+                "accepted: level {}, entry {:#x}, signed at {}",
+                accepted.level, accepted.header.entry_point, accepted.signed_time
+            );
+            Ok(())
         }
         "help" | "-h" | "--help" => {
             println!("{USAGE}");
