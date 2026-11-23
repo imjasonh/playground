@@ -110,6 +110,14 @@ theorem elemOf_mem {M : Word → BitVec 8} {p l : Word} {t : DerTlv} (h : t.head
   rw [memBytes_drop_take h, memBytes_take' h, memBytes_dropK' M p h, subK_toNat h, ofNat_toNat_lt (by omega),
     ofNat_toNat_lt (by omega)]
 
+theorem memBytes_content {M : Word → BitVec 8} {p l : Word} {t : DerTlv} (h : t.header + t.len ≤ l.toNat) :
+    t.content (memBytes M p l.toNat) = memBytes M (p + BitVec.ofNat 32 t.header) (BitVec.ofNat 32 t.len).toNat :=
+  congrArg (fun x => x.1.content) (elemOf_mem (M := M) (p := p) h)
+
+theorem memBytes_rest {M : Word → BitVec 8} {p l : Word} {t : DerTlv} (h : t.header + t.len ≤ l.toNat) :
+    (memBytes M p l.toNat).drop (t.header + t.len) = restAt M p l t :=
+  congrArg (fun x => x.2) (elemOf_mem (M := M) (p := p) h)
+
 theorem readTlv_mem {M : Word → BitVec 8} {p l : Word} {t : DerTlv} (h : derTlv (memBytes M p l.toNat) = .ok t) :
     readTlv (memBytes M p l.toNat) = some (elemAt M p t, restAt M p l t) := by
   rw [readTlv_of h, elemOf_mem (derTlv_mem_bound h)]
@@ -761,5 +769,35 @@ theorem readBooleanTrue_mem {M : Word → BitVec 8} {p l : Word} {t : DerTlv}
     rw [hcont]
     rfl
   · rw [ite_eq_right hc] at h; cases h
+
+theorem restAt_nil {M : Word → BitVec 8} {p l : Word} {t : DerTlv} (h : l - BitVec.ofNat 32 (t.header + t.len) = 0) :
+    restAt M p l t = [] := by
+  unfold restAt; rw [h]; rfl
+
+/-- `Der::integer` where `Der::integer_is` found the one byte `v`. -/
+theorem readInteger_is_mem {M : Word → BitVec 8} {p l : Word} {t : DerTlv} {v : BitVec 8}
+    (hE : derElement 2 (memBytes M p l.toNat) = .ok t)
+    (h : derIntIsOf M (memBytes M p l.toNat) p (derElement 2 (memBytes M p l.toNat)) v = .ok true) :
+    readInteger (memBytes M p l.toNat) = some ([v.toNat], restAt M p l t) := by
+  rw [hE] at h
+  unfold derIntIsOf at h
+  cases hI : derIntOf (memBytes M p l.toNat) p (.ok t) with
+  | error e => rw [hI] at h; cases h
+  | ok x =>
+    obtain ⟨ip, il⟩ := x
+    rw [hI] at h
+    simp only at h
+    have hm := of_decide_eq_true (Except.ok.inj h)
+    obtain ⟨hr, -, -⟩ := readInteger_mem hE hI
+    rw [hr, hm]
+
+/-- `Der::positive_integer` over memory. -/
+theorem readPositiveInteger_mem {M : Word → BitVec 8} {p l ip il : Word} {t : DerTlv}
+    (h : derElement 2 (memBytes M p l.toNat) = .ok t)
+    (hp : derPosIntOf (memBytes M p l.toNat) p (.ok t) = .ok (ip, il)) :
+    readPositiveInteger (memBytes M p l.toNat) = some (memBytes M ip il.toNat, restAt M p l t) := by
+  obtain ⟨hr, e1, e2⟩ := readPositiveInteger_tlv h hp
+  have hB := derTlv_mem_bound (derElement_tlv h)
+  rw [hr, memBytes_content hB, memBytes_rest hB, e1, e2]
 
 end C3.RV32.Sv
