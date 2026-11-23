@@ -67,4 +67,13 @@ final class ExperimentCatalogTests: XCTestCase {
     func testIncludesMCULab() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "mcu-lab" })
     }
+
+    func testIncludesOneTapQuest() {
+        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "one-tap-quest" })
+    }
+
+    func testOneTapQuestPackIsBundled() {
+        let packURL = Bundle.main.url(forResource: "one-tap-quest", withExtension: "pck")
+        XCTAssertNotNil(packURL, "one-tap-quest.pck must be bundled in the Playground app")
+    }
 }

@@ -47,6 +47,7 @@ else
     ios=$(bash .github/scripts/discover-ios-apps.sh --all)
     macos=$(bash .github/scripts/discover-macos-apps.sh --all)
     esp32=$(bash .github/scripts/discover-esp32-apps.sh --all)
+    godot=$(bash .github/scripts/discover-godot-apps.sh --all)
     pasta=true
     blog=true
     index=true
@@ -58,6 +59,7 @@ else
       echo "ios=${ios}"
       echo "macos=${macos}"
       echo "esp32=${esp32}"
+      echo "godot=${godot}"
       echo "pasta=${pasta}"
       echo "blog=${blog}"
       echo "index=${index}"
@@ -69,6 +71,7 @@ else
     echo "iOS apps: ${ios}"
     echo "macOS apps: ${macos}"
     echo "ESP32 firmware: ${esp32}"
+    echo "Godot apps: ${godot}"
     echo "pasta: ${pasta}"
     echo "blog: ${blog}"
     echo "index: ${index}"
@@ -86,6 +89,7 @@ if [ -z "$changed" ]; then
   ios='[]'
   macos='[]'
   esp32='[]'
+  godot='[]'
   pasta=false
   blog=false
   index=false
@@ -97,6 +101,7 @@ else
   ios=$(printf '%s\n' "$changed" | bash .github/scripts/discover-ios-apps.sh --from-changes)
   macos=$(printf '%s\n' "$changed" | bash .github/scripts/discover-macos-apps.sh --from-changes)
   esp32=$(printf '%s\n' "$changed" | bash .github/scripts/discover-esp32-apps.sh --from-changes)
+  godot=$(printf '%s\n' "$changed" | bash .github/scripts/discover-godot-apps.sh --from-changes)
   pasta=$(pasta_from_changes "$changed")
   blog=$(blog_from_changes "$changed")
   index=$(index_from_changes "$changed")
@@ -110,6 +115,7 @@ fi
   echo "ios=${ios}"
   echo "macos=${macos}"
   echo "esp32=${esp32}"
+  echo "godot=${godot}"
   echo "pasta=${pasta}"
   echo "blog=${blog}"
   echo "index=${index}"
@@ -124,6 +130,7 @@ echo "Rust apps: ${rust}"
 echo "iOS apps: ${ios}"
 echo "macOS apps: ${macos}"
 echo "ESP32 firmware: ${esp32}"
+echo "Godot apps: ${godot}"
 echo "pasta: ${pasta}"
 echo "blog: ${blog}"
 echo "index: ${index}"

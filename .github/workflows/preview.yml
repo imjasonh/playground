@@ -64,6 +64,16 @@ jobs:
           persist-credentials: false
           fetch-depth: 0   # git history for post published / updated dates
 
+      - name: Restore Godot cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/godot
+            ~/.local/share/godot/export_templates
+          key: godot-${{ runner.os }}-4.7.2-stable-${{ github.sha }}
+          restore-keys: |
+            godot-${{ runner.os }}-4.7.2-stable-
+
       - name: Build preview
         env:
           PR: ${{ github.event.pull_request.number }}
@@ -80,7 +90,11 @@ jobs:
           for dir in */; do
             d="${dir%/}"
             if [ -f "$d/index.html" ]; then
-              cp -rL "$d" "$dest/$d"
+              if [ -f "$d/project.godot" ] && [ -f "$d/export_presets.cfg" ]; then
+                bash .github/scripts/build-godot-web.sh "$d" "$dest/$d"
+              else
+                cp -rL "$d" "$dest/$d"
+              fi
             fi
           done
 

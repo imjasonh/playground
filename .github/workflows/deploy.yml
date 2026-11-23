@@ -22,15 +22,30 @@ jobs:
           persist-credentials: false
           fetch-depth: 0   # git history for post published / updated dates
 
+      - name: Restore Godot cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/godot
+            ~/.local/share/godot/export_templates
+          key: godot-${{ runner.os }}-4.7.2-stable-${{ github.sha }}
+          restore-keys: |
+            godot-${{ runner.os }}-4.7.2-stable-
+
       - name: Build site
         run: |
           mkdir -p dist
 
-          # Copy every top-level directory that contains an index.html
+          # Copy every top-level directory that contains an index.html.
+          # Godot apps (project.godot + export_presets.cfg) are exported to Web.
           for dir in */; do
             d="${dir%/}"
             if [ -f "$d/index.html" ]; then
-              cp -rL "$d" "dist/$d"
+              if [ -f "$d/project.godot" ] && [ -f "$d/export_presets.cfg" ]; then
+                bash .github/scripts/build-godot-web.sh "$d" "dist/$d"
+              else
+                cp -rL "$d" "dist/$d"
+              fi
             fi
           done
 

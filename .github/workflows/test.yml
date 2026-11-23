@@ -43,6 +43,7 @@ jobs:
       ios: ${{ steps.discover.outputs.ios }}
       macos: ${{ steps.discover.outputs.macos }}
       esp32: ${{ steps.discover.outputs.esp32 }}
+      godot: ${{ steps.discover.outputs.godot }}
       nescript: ${{ steps.discover.outputs.nescript }}
       pasta: ${{ steps.discover.outputs.pasta }}
       blog: ${{ steps.discover.outputs.blog }}
@@ -798,15 +799,54 @@ jobs:
           bash .github/scripts/discover-esp32-apps_test.sh
           bash .github/scripts/discover-nescript_test.sh
           bash .github/scripts/discover-go-modules_test.sh
+          bash .github/scripts/discover-godot-apps_test.sh
           bash .github/scripts/check-whbiab-web_test.sh
           bash .github/scripts/check-no-binaries_test.sh
+
+  godot:
+    name: Godot apps
+    needs: discover
+    if: ${{ needs.discover.outputs.godot != '[]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Restore Godot cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/godot
+            ~/.local/share/godot/export_templates
+          key: godot-${{ runner.os }}-4.7.2-stable-${{ github.sha }}
+          restore-keys: |
+            godot-${{ runner.os }}-4.7.2-stable-
+
+      - name: Test and export changed Godot apps
+        env:
+          GODOT_APPS: ${{ needs.discover.outputs.godot }}
+        run: bash .github/scripts/test-godot-apps.sh
+
+      - name: Save Godot cache
+        if: ${{ github.ref == 'refs/heads/main' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: |
+            ~/.cache/godot
+            ~/.local/share/godot/export_templates
+          key: godot-${{ runner.os }}-4.7.2-stable-${{ github.sha }}
+          prefixes: godot-${{ runner.os }}-4.7.2-stable-
+          # 512 MiB. Godot 4.7.2 Linux binary + web templates take ~250 MB.
+          max-bytes: 536870912
+          token: ${{ github.token }}
 
   # The required check. It runs even when a job it needs failed or was
   # skipped, passes when every job passed or was skipped, and fails
   # otherwise. Keep the job id `test`: branch protection and the dependency
   # update's auto-merge wait for a check with that name.
   test:
-    needs: [discover, browser, go, kind, rust, ios, macos, esp32-host, esp32-firmware, nescript, pasta, blog, index, scripts]
+    needs: [discover, browser, go, kind, rust, ios, macos, esp32-host, esp32-firmware, godot, nescript, pasta, blog, index, scripts]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
