@@ -16,8 +16,8 @@ runtime and most grammars natively, which parses about 2.5 times as
 fast. With `CGO_ENABLED=0` or `-tags purego`, pasta runs the same
 runtime and grammars compiled to WASM on
 [wazero](https://github.com/tetratelabs/wazero), from pure Go. The
-WASM module also parses the grammars that have no native build (SQL
-and Dockerfile).
+WASM module also parses the grammars that have no native build (SQL,
+Dockerfile, and Lean 4).
 
 The intention of `pasta` is to be able to declaratively describe rules for ASTs in any supported language, and quickly and reproducibly flag and fix findings. You can hook this up to your editor and/or CI to automatically flag and potentially fix violations of the rules you've specified.
 
@@ -257,6 +257,12 @@ Omitted: rules that need a scope chain, CFG, or ESLint option object (`no-undef`
 |---|---|
 | [terraform_security](./analyzers/terraform_security/terraform_security.cue) | Terraform and OpenTofu security checks inspired by [Checkov](https://github.com/bridgecrewio/checkov): unpinned modules, public RDS, S3, and security groups, missing encryption, IMDSv2, and IAM `*:*` |
 | [terraform_github_oidc](./analyzers/terraform_github_oidc/terraform_github_oidc.cue) | GitHub Actions OIDC trust that's too broad: GCP Workload Identity providers with no repository check, IAM members on a whole pool or a repository name, AWS trust policies without a `sub` condition or with a wildcard owner, and repositories matched by name instead of `repository_id` |
+
+**Lean 4**
+
+| Path | What it does |
+|---|---|
+| [lean_deprecated](./analyzers/lean_deprecated/lean_deprecated.cue) ✏️ | `if_pos` / `if_neg` / `if_true` / `if_false` → `ite_eq_left` / `ite_eq_right` / `ite_true` / `ite_false`, the drop-in replacements that Lean v4.34.0 deprecates them for |
 
 **HTML**
 

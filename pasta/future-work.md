@@ -319,11 +319,13 @@ The remaining ceiling on cold-cache runs is still the parser itself.
 
 ### Native SQL and Dockerfile grammars
 **Effort:** S.
-cgo builds parse 19 grammars natively and fall back to WASM for two:
-the SQL grammar's repository doesn't commit `parser.c`, and the
-Dockerfile grammar's Go module path doesn't match its repository.
-Vendoring the generated sources of both in `csrc/` would move them to
-the native backend too.
+cgo builds parse 19 grammars natively and fall back to WASM for three:
+the SQL grammar's repository doesn't commit `parser.c`, the
+Dockerfile grammar's Go module path doesn't match its repository, and
+the Lean 4 grammar has no Go bindings. Vendoring the generated sources
+of SQL and Dockerfile in `csrc/` would move them to the native backend
+too. Lean's generated `parser.c` is 49 MB, too big to vendor; it would
+need upstream Go bindings.
 
 ### One walk per file, and a smaller node index
 **Effort:** M.
@@ -449,6 +451,22 @@ The node-type index is built once per parse. During fixpoint
 iteration, the underlying tree doesn't change, so the index stays
 valid. If we ever support incremental edits during a Run, the index
 would need to update.
+
+---
+
+## Grammars
+
+### Lean 4 syntax the grammar rejects
+**Effort:** M, upstream.
+pasta skips a file that doesn't parse, and
+[tree-sitter-lean](https://github.com/Julian/tree-sitter-lean) rejects
+three common forms: the `~~~` complement operator, `rcases` and
+`obtain` patterns with `|` alternatives (`obtain rfl | rfl : p := …`),
+and `cases h : e with`. In the c3-boot-proofs Lean project, those
+three account for every one of the 109 files that failed to parse,
+out of 140 that use a name `lean_deprecated` rewrites. `~~~` alone is
+in 108. Fixing them belongs in the grammar, then a new pin in
+`grammars.txt`.
 
 ---
 
