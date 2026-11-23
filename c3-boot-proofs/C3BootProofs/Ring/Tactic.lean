@@ -1,4 +1,3 @@
-import Lean
 import C3BootProofs.Ring.Basic
 
 /-!
@@ -8,16 +7,17 @@ Two tactics that prove polynomial identities over `Int` and `Nat` without
 `Classical.choice`: every proof they build depends only on `propext`. Each
 reifies both sides of the goal into `C3.Ring.Expr`, normalizes them with
 `Expr.toPoly`, and has the kernel check that the normal forms are equal by
-evaluating `Poly.beq` to `true`. The soundness theorem, `toPoly_sound`, is
-in `C3BootProofs.Ring.Basic`.
+evaluating `Poly.beq` to `true`, with `decide +kernel`. The soundness
+theorem, `Expr.toPoly_sound`, is in `C3BootProofs.Ring.Basic`.
 
 ## `ring_eq`
 
 `ring_eq` proves `a = b` over `Int` or `Nat` when the two sides are equal
 as polynomials. The sides can use `+`, `*`, `^` with a numeral exponent,
 numerals, and, over `Int`, `-` and negation. Anything else is an atom:
-a variable, a function application, a cast, or a `^` whose exponent isn't a
-numeral. Atoms are identified up to reducible definitional equality.
+a variable, a function application, a named constant, a cast, or a `^`
+whose exponent isn't a numeral. Atoms are identified up to reducible
+definitional equality.
 
 ```
 example (x y : Int) : (x - y) ^ 2 = x ^ 2 - 2 * x * y + y ^ 2 := by ring_eq
@@ -25,29 +25,36 @@ example (a b : Nat) : (a + b) ^ 2 = a ^ 2 + 2 * a * b + b ^ 2 := by ring_eq
 ```
 
 Over `Nat`, `-` and `/` are atoms, so an identity that needs truncated
-subtraction to cancel fails. To prove one, cast the goal to `Int` first
-(`Int.ofNat.inj`), and state the subtraction there.
+subtraction to cancel fails. To prove one, state it over `Int`.
+
+The tactics don't look through `let`, projections, or definitions. Unfold
+those first with `dsimp only [f, g]`, which adds no axioms.
 
 ## `ring_mod`
 
 `ring_mod` proves `a % n = b % n` or `a % n = 0`, over `Int` or `Nat`,
 when `a - b` is a polynomial whose coefficients are all multiples of `n`.
-It normalizes both sides with coefficients reduced modulo `n`, so `n` has
-to reduce to a numeral: a literal, or a constant defined as one. Large
-constants, such as a 256-bit prime, are fine.
+It normalizes both sides with coefficients reduced modulo `n`, so the
+kernel has to be able to reduce `n` to a numeral: a literal, or a closed
+term such as a constant defined as one. Large moduli, such as a 384-bit
+prime, are fine.
 
 ```
 example (x : Int) : (x + 7) ^ 2 % 7 = x ^ 2 % 7 := by ring_mod
 example (x : Nat) : (x + 7) ^ 2 % 7 = x ^ 2 % 7 := by ring_mod
 ```
 
+A named constant inside `a` or `b`, such as the modulus itself, is an atom,
+so `(x + p) ^ 2 % p = x ^ 2 % p` needs `dsimp only [p]` first, which turns
+`p` into the numeral it is defined as.
+
 Over `Int`, `ring_mod [h₁ * c₁, …, hₖ * cₖ]` also uses hypotheses
 `hᵢ : Eᵢ % n = 0`, such as curve equations, with cofactors `cᵢ`. It proves
-the goal when `a - b - (E₁ * c₁ + … + Eₖ * cₖ)` has all coefficients
-multiples of `n`. Each `hᵢ` is a term at argument precedence (a name, or a
+the goal when `a - b - (E₁ * c₁ + … + Eₖ * cₖ)` has every coefficient a
+multiple of `n`. Each `hᵢ` is a term at argument precedence (a name, or a
 term in parentheses), and each `cᵢ` is any `Int` term over the goal's
 variables. `scripts/ring-cofactors.py` computes cofactors by multivariate
-division modulo `n` and prints them as Lean terms:
+division modulo `n` and prints the `ring_mod […]` call:
 
 ```
 example (x₁ y₁ x₂ y₂ : Int)
@@ -66,259 +73,259 @@ example (x : Int) : (x * 7 + 3) % 7 = 3 % 7 :=
 
 ## Failures and cost
 
-Before calling the kernel, each tactic runs the same normalizer as compiled
-code. When the sides differ, it fails with the normalized difference, in
-terms of the atoms it found. The kernel check is a separate auxiliary
-theorem, added with `mkAuxLemma`, so a repeated check is reused.
+When the sides differ, `decide` fails and prints the reified comparison,
+in which `var i` is the `i`th atom, counting from the left of the goal.
+To see the difference itself, give the two sides to
+`scripts/ring-cofactors.py` with no `--hyp`; it prints the normalized
+difference. With hypotheses, it prints the remainder of the division.
 
-The kernel's cost grows with the number of terms the normal forms and
-their intermediate products reach, and only mildly with coefficient size,
-because the kernel does `Nat` arithmetic with GMP. `C3BootProofs.Ring.Test`
-records timings.
+Reification is type class resolution over the `ReifyInt` instances below,
+so it needs no metaprograms, which would depend on `Classical.choice`
+and fail the axiom audit. It takes about 2 ms for each operation in the
+goal. The kernel's cost grows with the number of terms that the normal
+forms and their intermediate products reach, and only mildly with
+coefficient size, because the kernel does `Nat` arithmetic with GMP.
+`C3BootProofs.Ring.Test` records timings.
+
+Lean elaborates a term with many `x ^ 2` slowly, before any tactic runs,
+because it resolves each exponent's type by default instances; 100 of
+them take about 4 s. Writing `x ^ (2 : Nat)` avoids that, and
+`scripts/ring-cofactors.py` prints cofactors that way.
 -/
 
 namespace C3.Ring
 
-open Lean Meta Elab Tactic
+/-! ## Atoms -/
 
-/-! ## Lean terms for reflected syntax -/
+theorem get_append_length (l s : List Int) (a : Int) : get (l ++ a :: s) l.length = a := by
+  induction l with
+  | nil => rfl
+  | cons x xs ih => exact ih
 
-/-- An `Int` value as constructors applied to raw literals. -/
-def intToLean (c : Int) : Lean.Expr :=
-  match c with
-  | .ofNat n => mkApp (mkConst ``Int.ofNat) (mkRawNatLit n)
-  | .negSucc n => mkApp (mkConst ``Int.negSucc) (mkRawNatLit n)
+/-- `n` is the length of `l`. -/
+class Len (l : List Int) (n : outParam Nat) : Prop where
+  eq : l.length = n
 
-/-- The Lean term for an `Expr`. -/
-def Expr.toLean : Expr → Lean.Expr
-  | .const c => mkApp (mkConst ``Expr.const) (intToLean c)
-  | .var i => mkApp (mkConst ``Expr.var) (mkRawNatLit i)
-  | .add a b => mkApp2 (mkConst ``Expr.add) a.toLean b.toLean
-  | .sub a b => mkApp2 (mkConst ``Expr.sub) a.toLean b.toLean
-  | .neg a => mkApp (mkConst ``Expr.neg) a.toLean
-  | .mul a b => mkApp2 (mkConst ``Expr.mul) a.toLean b.toLean
-  | .pow a k => mkApp2 (mkConst ``Expr.pow) a.toLean (mkRawNatLit k)
+instance lenNil : Len [] 0 := ⟨rfl⟩
 
-/-- The Lean term for an `NExpr`. -/
-def NExpr.toLean : NExpr → Lean.Expr
-  | .const c => mkApp (mkConst ``NExpr.const) (mkRawNatLit c)
-  | .var i => mkApp (mkConst ``NExpr.var) (mkRawNatLit i)
-  | .add a b => mkApp2 (mkConst ``NExpr.add) a.toLean b.toLean
-  | .mul a b => mkApp2 (mkConst ``NExpr.mul) a.toLean b.toLean
-  | .pow a k => mkApp2 (mkConst ``NExpr.pow) a.toLean (mkRawNatLit k)
+instance lenCons (b : Int) (l : List Int) (n : Nat) [h : Len l n] :
+    Len (b :: l) (n + 1) :=
+  ⟨congrArg (· + 1) h.eq⟩
+
+/-- `a` is at index `i` of the reverse of `l`. -/
+class FindAtom (a : Int) (l : List Int) (i : outParam Nat) : Prop where
+  get_eq : ∀ s, get (l.reverse ++ s) i = a
+
+instance findHead (a : Int) (l : List Int) (n : Nat) [h : Len l n] : FindAtom a (a :: l) n :=
+  ⟨fun s => by
+    rw [List.reverse_cons, List.append_assoc, List.singleton_append, ← h.eq,
+      ← List.length_reverse]
+    exact get_append_length _ _ _⟩
+
+instance findTail (a b : Int) (l : List Int) (i : Nat) [h : FindAtom a l i] :
+    FindAtom a (b :: l) i :=
+  ⟨fun s => by
+    rw [List.reverse_cons, List.append_assoc]
+    exact h.get_eq _⟩
 
 /-! ## Reification -/
 
-/-- The atoms found so far. -/
-abbrev ReifyM := StateRefT (Array Lean.Expr) MetaM
+/-- `e` evaluates to `a` in every environment that starts with the reverse
+of `l'`, and `l'` extends `l` at the front. Resolving `ReifyInt a l ?l' ?e`
+reifies `a`, adding its new atoms to `l`. -/
+class ReifyInt (a : Int) (l : List Int) (l' : outParam (List Int)) (e : outParam Expr) :
+    Prop where
+  ext : ∃ t, l' = t ++ l
+  sound : ∀ s, e.eval (l'.reverse ++ s) = a
 
-/-- The index of `e` among the atoms, adding it if it is new. -/
-def atomIndex (e : Lean.Expr) : ReifyM Nat := do
-  let atoms ← getThe (Array Lean.Expr)
-  for h : i in [:atoms.size] do
-    if ← withReducible (isDefEq atoms[i] e) then
-      return i
-  modifyThe (Array Lean.Expr) (·.push e)
-  return atoms.size
+theorem ReifyInt.sound_of_ext {a : Int} {l l' l'' : List Int} {e : Expr} (h : ReifyInt a l l' e)
+    (t : List Int) (ht : l'' = t ++ l') (s : List Int) : e.eval (l''.reverse ++ s) = a := by
+  rw [ht, List.reverse_append, List.append_assoc]
+  exact h.sound _
 
-/-- A raw numeral: a literal, or `OfNat.ofNat` of one. -/
-def rawNat? (e : Lean.Expr) : Option Nat :=
-  match e with
-  | .lit (.natVal n) => some n
-  | _ =>
-    if e.isAppOfArity ``OfNat.ofNat 3 then
-      match e.appFn!.appArg! with
-      | .lit (.natVal n) => some n
-      | _ => none
-    else none
+theorem ext_trans {l l₁ l₂ : List Int} (h₁ : ∃ t, l₁ = t ++ l) (h₂ : ∃ t, l₂ = t ++ l₁) :
+    ∃ t, l₂ = t ++ l := by
+  obtain ⟨t₁, rfl⟩ := h₁
+  obtain ⟨t₂, rfl⟩ := h₂
+  exact ⟨t₂ ++ t₁, (List.append_assoc _ _ _).symm⟩
 
-/-- The value of a closed `Int` or `Nat` term that reduces to a numeral. -/
-partial def evalLit? (e : Lean.Expr) : MetaM (Option Int) := do
-  let e ← whnf e
-  if let .lit (.natVal n) := e then return some n
-  match e.getAppFnArgs with
-  | (``Int.ofNat, #[x]) => return (← evalLit? x).map id
-  | (``Int.negSucc, #[x]) => return (← evalLit? x).map (fun v => -v - 1)
-  | _ => return none
+theorem ReifyInt.binop {a b : Int} {l l₁ l₂ : List Int} {ea eb e : Expr}
+    (ha : ReifyInt a l l₁ ea) (hb : ReifyInt b l₁ l₂ eb) (f : Int → Int → Int) (c : Int)
+    (he : ∀ env, e.eval env = f (ea.eval env) (eb.eval env)) (hc : f a b = c) :
+    ReifyInt c l l₂ e where
+  ext := ext_trans ha.ext hb.ext
+  sound s := by
+    obtain ⟨t, ht⟩ := hb.ext
+    rw [he, ha.sound_of_ext t ht, hb.sound, hc]
 
-/-- An atom, or a numeral when `e` is a global constant that reduces to one. -/
-def atomOrConst (e : Lean.Expr) : ReifyM (Sum Nat Int) := do
-  if e.isConst then
-    if let some v ← evalLit? e then
-      return .inr v
-  return .inl (← atomIndex e)
+theorem ReifyInt.unop {a : Int} {l l₁ : List Int} {ea e : Expr} (ha : ReifyInt a l l₁ ea)
+    (f : Int → Int) (c : Int) (he : ∀ env, e.eval env = f (ea.eval env)) (hc : f a = c) :
+    ReifyInt c l l₁ e where
+  ext := ha.ext
+  sound s := by rw [he, ha.sound, hc]
 
-/-- Whether `inst` is the instance that `cls` synthesizes. -/
-def isStdInst (inst cls : Lean.Expr) : MetaM Bool := do
-  let some std ← synthInstance? cls | return false
-  if inst == std then return true
-  withReducibleAndInstances (isDefEq inst std)
+instance reifyAdd (a b : Int) (l l₁ l₂ : List Int) (ea eb : Expr)
+    [ha : ReifyInt a l l₁ ea] [hb : ReifyInt b l₁ l₂ eb] :
+    ReifyInt (a + b) l l₂ (.add ea eb) :=
+  ha.binop hb (· + ·) _ (fun _ => rfl) rfl
 
-/-- Reifies an `Int` expression. -/
-partial def reifyInt (e : Lean.Expr) : ReifyM Expr := do
-  let int := mkConst ``Int
-  let nat := mkConst ``Nat
-  let binop (cls : Name) (a b : Lean.Expr) (inst : Lean.Expr)
-      (k : Expr → Expr → Expr) : ReifyM Expr := do
-    if ← isStdInst inst (mkApp3 (mkConst cls [0, 0, 0]) int int int) then
-      return k (← reifyInt a) (← reifyInt b)
-    else
-      return .var (← atomIndex e)
-  match e.getAppFnArgs with
-  | (``HAdd.hAdd, #[α, _, _, inst, a, b]) =>
-    if α.isConstOf ``Int then binop ``HAdd a b inst .add else return .var (← atomIndex e)
-  | (``HSub.hSub, #[α, _, _, inst, a, b]) =>
-    if α.isConstOf ``Int then binop ``HSub a b inst .sub else return .var (← atomIndex e)
-  | (``HMul.hMul, #[α, _, _, inst, a, b]) =>
-    if α.isConstOf ``Int then binop ``HMul a b inst .mul else return .var (← atomIndex e)
-  | (``Neg.neg, #[α, inst, a]) =>
-    if α.isConstOf ``Int && (← isStdInst inst (mkApp (mkConst ``Neg [0]) int)) then
-      return .neg (← reifyInt a)
-    else return .var (← atomIndex e)
-  | (``HPow.hPow, #[α, β, _, inst, a, k]) =>
-    match rawNat? k with
-    | some k =>
-      if α.isConstOf ``Int && β.isConstOf ``Nat &&
-          (← isStdInst inst (mkApp3 (mkConst ``HPow [0, 0, 0]) int nat int)) then
-        return .pow (← reifyInt a) k
-      else return .var (← atomIndex e)
-    | none => return .var (← atomIndex e)
-  | (``OfNat.ofNat, #[α, _, inst]) =>
-    match rawNat? e with
-    | some n =>
-      if α.isConstOf ``Int &&
-          (← isStdInst inst (mkApp2 (mkConst ``OfNat [0]) int (mkRawNatLit n))) then
-        return .const n
-      else return .var (← atomIndex e)
-    | none => return .var (← atomIndex e)
-  | _ =>
-    match ← atomOrConst e with
-    | .inl i => return .var i
-    | .inr v => return .const v
+instance reifySub (a b : Int) (l l₁ l₂ : List Int) (ea eb : Expr)
+    [ha : ReifyInt a l l₁ ea] [hb : ReifyInt b l₁ l₂ eb] :
+    ReifyInt (a - b) l l₂ (.sub ea eb) :=
+  ha.binop hb (· - ·) _ (fun _ => rfl) rfl
 
-/-- Reifies a `Nat` expression. -/
-partial def reifyNat (e : Lean.Expr) : ReifyM NExpr := do
-  let nat := mkConst ``Nat
-  let binop (cls : Name) (a b : Lean.Expr) (inst : Lean.Expr)
-      (k : NExpr → NExpr → NExpr) : ReifyM NExpr := do
-    if ← isStdInst inst (mkApp3 (mkConst cls [0, 0, 0]) nat nat nat) then
-      return k (← reifyNat a) (← reifyNat b)
-    else
-      return .var (← atomIndex e)
-  if let .lit (.natVal n) := e then
-    return .const n
-  match e.getAppFnArgs with
-  | (``HAdd.hAdd, #[α, _, _, inst, a, b]) =>
-    if α.isConstOf ``Nat then binop ``HAdd a b inst .add else return .var (← atomIndex e)
-  | (``HMul.hMul, #[α, _, _, inst, a, b]) =>
-    if α.isConstOf ``Nat then binop ``HMul a b inst .mul else return .var (← atomIndex e)
-  | (``HPow.hPow, #[α, β, _, inst, a, k]) =>
-    match rawNat? k with
-    | some k =>
-      if α.isConstOf ``Nat && β.isConstOf ``Nat &&
-          (← isStdInst inst (mkApp3 (mkConst ``HPow [0, 0, 0]) nat nat nat)) then
-        return .pow (← reifyNat a) k
-      else return .var (← atomIndex e)
-    | none => return .var (← atomIndex e)
-  | (``OfNat.ofNat, #[α, _, inst]) =>
-    match rawNat? e with
-    | some n =>
-      if α.isConstOf ``Nat &&
-          (← isStdInst inst (mkApp2 (mkConst ``OfNat [0]) nat (mkRawNatLit n))) then
-        return .const n
-      else return .var (← atomIndex e)
-    | none => return .var (← atomIndex e)
-  | _ =>
-    match ← atomOrConst e with
-    | .inl i => return .var i
-    | .inr v => if 0 ≤ v then return .const v.toNat else return .var (← atomIndex e)
+instance reifyMul (a b : Int) (l l₁ l₂ : List Int) (ea eb : Expr)
+    [ha : ReifyInt a l l₁ ea] [hb : ReifyInt b l₁ l₂ eb] :
+    ReifyInt (a * b) l l₂ (.mul ea eb) :=
+  ha.binop hb (· * ·) _ (fun _ => rfl) rfl
 
-/-! ## Checking -/
+instance reifyNeg (a : Int) (l l₁ : List Int) (ea : Expr) [ha : ReifyInt a l l₁ ea] :
+    ReifyInt (-a) l l₁ (.neg ea) :=
+  ha.unop (- ·) _ (fun _ => rfl) rfl
 
-/-- A polynomial for an error message, with the atoms printed. -/
-def Poly.toMessage (atoms : Array Lean.Expr) (p : Poly) (limit : Nat := 12) : MessageData :=
-  let rec mon : Mon → List MessageData
-    | .one => []
-    | .cons x k m =>
-      let a := m!"{atoms.getD x (mkConst `atom)}"
-      (if k == 1 then a else m!"{a} ^ {k}") :: mon m
-  let rec terms : Poly → Nat → List MessageData
-    | .zero, _ => []
-    | .term _ _ _, 0 => [m!"…"]
-    | .term c m p, fuel + 1 =>
-      let ms := mon m
-      let t := if ms.isEmpty then m!"{c}"
-        else if c == 1 then MessageData.joinSep ms " * "
-        else MessageData.joinSep (m!"{c}" :: ms) " * "
-      t :: terms p fuel
-  let rec count : Poly → Nat
-    | .zero => 0
-    | .term _ _ p => count p + 1
-  match p with
-  | .zero => m!"0"
-  | _ =>
-    let k := count p
-    m!"{MessageData.joinSep (terms p limit) " + "}\n({k} {if k == 1 then "term" else "terms"})"
+/-- `k` is a numeral. The numeral instances here match `0` and `k + 1`, not
+`OfNat.ofNat k`, because unification solves `OfNat.ofNat ?k _ =?= x` for a
+variable `x`, while offset unification solves `?k + 1 =?= x` only for a
+numeral `x`. -/
+class IsNumeral (k : Nat) : Prop
 
-/-- Has the kernel check `Poly.beq lhs rhs = true`, as a new auxiliary
-theorem, and returns that theorem. -/
-def kernelCheck (tactic : String) (lhs rhs : Lean.Expr) : MetaM Lean.Expr := do
-  let bool := mkConst ``Bool
-  let ty := mkApp3 (mkConst ``Eq [1]) bool (mkApp2 (mkConst ``Poly.beq) lhs rhs)
-    (mkConst ``Bool.true)
-  let pf := mkApp2 (mkConst ``Eq.refl [1]) bool (mkConst ``Bool.true)
-  try
-    let name ← withOptions (Elab.async.set · false) (mkAuxLemma [] ty pf)
-    return mkConst name
-  catch ex =>
-    throwError "{tactic} failed: the kernel did not reduce the normal-form \
-      comparison to `true`:{indentD ex.toMessageData}"
+instance isNumeralZero : IsNumeral 0 := ⟨⟩
 
-/-- Fails with the normalized difference when `e₁` and `e₂` don't have
-equal normal forms modulo `n`. -/
-def precheck (tactic : String) (atoms : Array Lean.Expr) (n : Int) (e₁ e₂ : Expr) :
-    MetaM Unit := do
-  unless Poly.beq (e₁.toPoly n) (e₂.toPoly n) do
-    let diff := (Expr.sub e₁ e₂).toPoly n
-    let modulo := if n == 0 then m!"" else m!", modulo {n},"
-    throwError "{tactic} failed: the left side minus the right side{modulo} \
-      normalizes to{indentD (diff.toMessage atoms)}"
+instance isNumeralSucc (k : Nat) : IsNumeral (no_index (k + 1)) := ⟨⟩
 
-/-! ## `ring_eq` -/
+instance reifyPow (a : Int) (k : Nat) (l l₁ : List Int) (ea : Expr) [IsNumeral k]
+    [ha : ReifyInt a l l₁ ea] : ReifyInt (a ^ k) l l₁ (.pow ea k) :=
+  ha.unop (· ^ k) _ (fun _ => rfl) rfl
 
-/-- Proves an `Int` or `Nat` equation `a = b` whose sides are equal as
-polynomials. -/
-syntax (name := ringEq) "ring_eq" : tactic
+instance (priority := low + 1) reifyZero (l : List Int) : ReifyInt 0 l l (.const 0) where
+  ext := ⟨[], rfl⟩
+  sound _ := rfl
 
-@[tactic ringEq] def evalRingEq : Tactic := fun _ => withMainContext do
-  let goal ← getMainGoal
-  let ty ← zetaReduce (← instantiateMVars (← goal.getType'))
-  let some (α, a, b) := ty.eq? | throwError "ring_eq: the goal is not an equation{indentExpr ty}"
-  let zero := intToLean 0
-  if α.isConstOf ``Int then
-    let ((e₁, e₂), atoms) ← (do return (← reifyInt a, ← reifyInt b)).run #[]
-    precheck "ring_eq" atoms 0 e₁ e₂
-    let env ← mkListLit (mkConst ``Int) atoms.toList
-    let l₁ := e₁.toLean
-    let l₂ := e₂.toLean
-    let aux ← kernelCheck "ring_eq"
-      (mkApp2 (mkConst ``Expr.toPoly) zero l₁) (mkApp2 (mkConst ``Expr.toPoly) zero l₂)
-    goal.assign (mkApp4 (mkConst ``eq_of_beq) l₁ l₂ env aux)
-  else if α.isConstOf ``Nat then
-    let ((e₁, e₂), atoms) ← (do return (← reifyNat a, ← reifyNat b)).run #[]
-    precheck "ring_eq" atoms 0 e₁.toExpr e₂.toExpr
-    let env ← mkListLit (mkConst ``Nat) atoms.toList
-    let l₁ := e₁.toLean
-    let l₂ := e₂.toLean
-    let toPoly (l : Lean.Expr) :=
-      mkApp2 (mkConst ``Expr.toPoly) zero (mkApp (mkConst ``NExpr.toExpr) l)
-    let aux ← kernelCheck "ring_eq" (toPoly l₁) (toPoly l₂)
-    goal.assign (mkApp4 (mkConst ``nat_eq_of_beq) l₁ l₂ env aux)
-  else
-    throwError "ring_eq: the goal is an equation in{indentExpr α}\nnot in `Int` or `Nat`"
-  replaceMainGoal []
+instance (priority := low + 1) reifySucc (n : Nat) (l : List Int) :
+    ReifyInt (no_index (OfNat.ofNat (n + 1))) l l (.const (OfNat.ofNat (n + 1))) where
+  ext := ⟨[], rfl⟩
+  sound _ := rfl
 
-/-! ## `ring_mod` -/
+instance reifyNatCastAdd (a b : Nat) (l l₁ l₂ : List Int) (ea eb : Expr)
+    [ha : ReifyInt a l l₁ ea] [hb : ReifyInt b l₁ l₂ eb] :
+    ReifyInt ((a + b : Nat) : Int) l l₂ (.add ea eb) :=
+  ha.binop hb (· + ·) _ (fun _ => rfl) (Int.natCast_add a b).symm
+
+instance reifyNatCastMul (a b : Nat) (l l₁ l₂ : List Int) (ea eb : Expr)
+    [ha : ReifyInt a l l₁ ea] [hb : ReifyInt b l₁ l₂ eb] :
+    ReifyInt ((a * b : Nat) : Int) l l₂ (.mul ea eb) :=
+  ha.binop hb (· * ·) _ (fun _ => rfl) (Int.natCast_mul a b).symm
+
+instance reifyNatCastPow (a : Nat) (k : Nat) (l l₁ : List Int) (ea : Expr) [IsNumeral k]
+    [ha : ReifyInt a l l₁ ea] : ReifyInt ((a ^ k : Nat) : Int) l l₁ (.pow ea k) :=
+  ha.unop (· ^ k) _ (fun _ => rfl) (Int.natCast_pow a k).symm
+
+instance (priority := low + 1) reifyNatCastZero (l : List Int) :
+    ReifyInt ((0 : Nat) : Int) l l (.const 0) where
+  ext := ⟨[], rfl⟩
+  sound _ := rfl
+
+instance (priority := low + 1) reifyNatCastSucc (n : Nat) (l : List Int) :
+    ReifyInt ((no_index (n + 1) : Nat) : Int) l l (.const ((n + 1 : Nat) : Int)) where
+  ext := ⟨[], rfl⟩
+  sound _ := rfl
+
+instance (priority := low) reifyOldAtom (a : Int) (l : List Int) (i : Nat)
+    [h : FindAtom a l i] : ReifyInt a l l (.var i) where
+  ext := ⟨[], rfl⟩
+  sound s := h.get_eq s
+
+instance (priority := low - 1) reifyNewAtom (a : Int) (l : List Int) (n : Nat) [Len l n] :
+    ReifyInt a l (a :: l) (.var n) where
+  ext := ⟨[a], rfl⟩
+  sound s := (findHead a l n).get_eq s
+
+/-! ## Goals -/
+
+/-- `x = y` follows when `e₁` and `e₂` have equal normal forms modulo `m`.
+Resolving `RingEq false x y ?e₁ ?e₂ ?m` reifies an `Int` or `Nat` equation,
+and `RingEq true` a congruence `a % n = b % n` or `a % n = 0`. -/
+class RingEq {α : Type} (mod : Bool) (x y : α) (e₁ e₂ : outParam Expr) (m : outParam Int) :
+    Prop where
+  of_beq : Poly.beq (e₁.toPoly m) (e₂.toPoly m) = true → x = y
+
+theorem RingEq.eq {α : Type} (mod : Bool) {x y : α} {e₁ e₂ : Expr} {m : Int}
+    [h : RingEq mod x y e₁ e₂ m]
+    (hb : Poly.beq (e₁.toPoly m) (e₂.toPoly m) = true) : x = y :=
+  h.of_beq hb
+
+theorem reify_eval {a b : Int} {l₁ l₂ : List Int} {e₁ e₂ : Expr}
+    (h₁ : ReifyInt a [] l₁ e₁) (h₂ : ReifyInt b l₁ l₂ e₂) :
+    e₁.eval l₂.reverse = a ∧ e₂.eval l₂.reverse = b := by
+  obtain ⟨t, ht⟩ := h₂.ext
+  have h₁' := h₁.sound_of_ext t ht []
+  have h₂' := h₂.sound []
+  rw [List.append_nil] at h₁' h₂'
+  exact ⟨h₁', h₂'⟩
+
+instance ringEqInt (a b : Int) (l₁ l₂ : List Int) (e₁ e₂ : Expr)
+    [h₁ : ReifyInt a [] l₁ e₁] [h₂ : ReifyInt b l₁ l₂ e₂] :
+    RingEq false a b e₁ e₂ 0 where
+  of_beq hb := by
+    obtain ⟨ha, hb'⟩ := reify_eval h₁ h₂
+    rw [← ha, ← hb']
+    exact eq_of_beq e₁ e₂ _ hb
+
+instance ringEqNat (a b : Nat) (l₁ l₂ : List Int) (e₁ e₂ : Expr)
+    [h₁ : ReifyInt a [] l₁ e₁] [h₂ : ReifyInt b l₁ l₂ e₂] :
+    RingEq false a b e₁ e₂ 0 where
+  of_beq hb := by
+    obtain ⟨ha, hb'⟩ := reify_eval h₁ h₂
+    apply Int.ofNat.inj
+    rw [Int.ofNat_eq_natCast, Int.ofNat_eq_natCast, ← ha, ← hb']
+    exact eq_of_beq e₁ e₂ _ hb
+
+instance ringModInt (a b n : Int) (l₁ l₂ : List Int) (e₁ e₂ : Expr)
+    [h₁ : ReifyInt a [] l₁ e₁] [h₂ : ReifyInt b l₁ l₂ e₂] :
+    RingEq true (a % n) (b % n) e₁ e₂ n where
+  of_beq hb := by
+    obtain ⟨ha, hb'⟩ := reify_eval h₁ h₂
+    rw [← ha, ← hb']
+    exact emod_eq_of_beq n e₁ e₂ _ hb
+
+instance ringModIntZero (a n : Int) (l₁ : List Int) (e₁ : Expr) [h₁ : ReifyInt a [] l₁ e₁] :
+    RingEq true (a % n) (no_index (OfNat.ofNat 0)) e₁ (.const 0) n where
+  of_beq hb := by
+    have h := emod_eq_of_beq n e₁ (.const 0) l₁.reverse hb
+    have ha := h₁.sound []
+    rw [List.append_nil] at ha
+    rw [ha] at h
+    exact emod_eq_zero_of_emod_eq h
+
+instance ringModNat (a b n : Nat) (l₁ l₂ : List Int) (e₁ e₂ : Expr)
+    [h₁ : ReifyInt a [] l₁ e₁] [h₂ : ReifyInt b l₁ l₂ e₂] :
+    RingEq true (a % n) (b % n) e₁ e₂ (n : Int) where
+  of_beq hb := by
+    obtain ⟨ha, hb'⟩ := reify_eval h₁ h₂
+    apply nat_emod_eq_of_int
+    rw [← ha, ← hb']
+    exact emod_eq_of_beq n e₁ e₂ _ hb
+
+instance ringModNatZero (a n : Nat) (l₁ : List Int) (e₁ : Expr) [h₁ : ReifyInt a [] l₁ e₁] :
+    RingEq true (a % n) (no_index (OfNat.ofNat 0)) e₁ (.const 0) (n : Int) where
+  of_beq hb := by
+    have h := emod_eq_of_beq n e₁ (.const 0) l₁.reverse hb
+    have ha := h₁.sound []
+    rw [List.append_nil] at ha
+    rw [ha] at h
+    apply nat_emod_eq_zero_of_emod_eq
+    apply nat_emod_eq_of_int
+    exact h
+
+/-! ## Tactics -/
+
+/-- Proves an `Int` or `Nat` equation whose sides are equal as polynomials. -/
+macro "ring_eq" : tactic =>
+  `(tactic| (
+    set_option synthInstance.maxSize 1000000 in
+    set_option synthInstance.maxHeartbeats 0 in
+    refine C3.Ring.RingEq.eq false ?_
+    decide +kernel))
 
 /-- A hypothesis `h : E % n = 0` and its cofactor. -/
 syntax ringModCert := term:max " * " term
@@ -328,94 +335,23 @@ less the hypotheses times their cofactors, has every coefficient a multiple
 of `n`. -/
 syntax (name := ringMod) "ring_mod" ("[" ringModCert,* "]")? : tactic
 
-/-- The `a` and `n` of `a % n`, at type `α`. -/
-def emodArgs? (α e : Lean.Expr) : Option (Lean.Expr × Lean.Expr) :=
-  match e.getAppFnArgs with
-  | (``HMod.hMod, #[β, _, _, _, a, n]) => if β == α then some (a, n) else none
-  | _ => none
-
-@[tactic ringMod] def evalRingMod : Tactic := fun stx => withMainContext do
-  let goal ← getMainGoal
-  let ty ← zetaReduce (← instantiateMVars (← goal.getType'))
-  let some (α, lhs, rhs) := ty.eq? |
-    throwError "ring_mod: the goal is not an equation{indentExpr ty}"
-  let some (a, n) := emodArgs? α lhs |
-    throwError "ring_mod: the goal's left side is not of the form `a % n`{indentExpr lhs}"
-  let (b, toZero) ← match emodArgs? α rhs with
-    | some (b, n') =>
-      unless ← isDefEq n n' do
-        throwError "ring_mod: the two sides use different moduli{indentExpr n}\n{indentExpr n'}"
-      pure (b, false)
-    | none =>
-      if rawNat? rhs == some 0 then pure (rhs, true)
-      else throwError "ring_mod: the goal's right side is neither `b % n` nor `0`{indentExpr rhs}"
-  let certs : Array (Syntax × Syntax) :=
-    if stx[1].isNone then #[]
-    else stx[1][1].getSepArgs.map fun c => (c[0], c[2])
-  let nVal? ← evalLit? n
-  if α.isConstOf ``Int then
-    let nLean := match nVal? with
-      | some v => intToLean v
-      | none => n
-    let mut t? : Option (Lean.Expr × Lean.Expr) := none
-    for (hStx, cStx) in certs do
-      let h ← elabTerm hStx none
-      let hTy ← zetaReduce (← instantiateMVars (← whnfR (← inferType h)))
-      let some (_, hl, hr) := hTy.eq? |
-        throwError "ring_mod: the hypothesis is not an equation{indentExpr hTy}"
-      let some (E, n') := emodArgs? α hl |
-        throwError "ring_mod: the hypothesis is not of the form `E % n = 0`{indentExpr hTy}"
-      unless rawNat? hr == some 0 && (← isDefEq n n') do
-        throwError "ring_mod: the hypothesis is not of the form `E % n = 0` for the goal's \
-          modulus{indentExpr hTy}"
-      let c ← elabTerm cStx (some (mkConst ``Int))
-      let c ← instantiateMVars c
-      let Ec ← mkAppM ``HMul.hMul #[E, c]
-      let hEc ← mkAppM ``emod_mul_eq_zero #[h, c]
-      t? ← match t? with
-        | none => pure (some (Ec, hEc))
-        | some (t, ht) => do
-          pure (some (← mkAppM ``HAdd.hAdd #[t, Ec],
-            mkApp5 (mkConst ``emod_add_eq_zero) t Ec n ht hEc))
-    let b' ← match t? with
-      | none => pure b
-      | some (t, _) => mkAppM ``HAdd.hAdd #[b, t]
-    let ((e₁, e₂), atoms) ← (do return (← reifyInt a, ← reifyInt b')).run #[]
-    if let some v := nVal? then
-      precheck "ring_mod" atoms v e₁ e₂
-    let env ← mkListLit (mkConst ``Int) atoms.toList
-    let l₁ := e₁.toLean
-    let l₂ := e₂.toLean
-    let aux ← kernelCheck "ring_mod"
-      (mkApp2 (mkConst ``Expr.toPoly) nLean l₁) (mkApp2 (mkConst ``Expr.toPoly) nLean l₂)
-    let mut pf := mkApp5 (mkConst ``emod_eq_of_beq) n l₁ l₂ env aux
-    if let some (t, ht) := t? then
-      pf := mkApp6 (mkConst ``emod_eq_of_emod_eq_add) a b t n pf ht
-    if toZero then
-      pf := mkApp3 (mkConst ``emod_eq_zero_of_emod_eq) a n pf
-    goal.assign pf
-  else if α.isConstOf ``Nat then
-    unless certs.isEmpty do
-      throwError "ring_mod: hypotheses are supported only for `Int` goals"
-    let nLean := match nVal? with
-      | some v => mkRawNatLit v.toNat
-      | none => n
-    let ((e₁, e₂), atoms) ← (do return (← reifyNat a, ← reifyNat b)).run #[]
-    if let some v := nVal? then
-      precheck "ring_mod" atoms v e₁.toExpr e₂.toExpr
-    let env ← mkListLit (mkConst ``Nat) atoms.toList
-    let l₁ := e₁.toLean
-    let l₂ := e₂.toLean
-    let toPoly (l : Lean.Expr) :=
-      mkApp2 (mkConst ``Expr.toPoly) (mkApp (mkConst ``Int.ofNat) nLean)
-        (mkApp (mkConst ``NExpr.toExpr) l)
-    let aux ← kernelCheck "ring_mod" (toPoly l₁) (toPoly l₂)
-    let mut pf := mkApp5 (mkConst ``nat_emod_eq_of_beq) n l₁ l₂ env aux
-    if toZero then
-      pf := mkApp3 (mkConst ``nat_emod_eq_zero_of_emod_eq) a n pf
-    goal.assign pf
-  else
-    throwError "ring_mod: the goal is an equation in{indentExpr α}\nnot in `Int` or `Nat`"
-  replaceMainGoal []
+macro_rules
+  | `(tactic| ring_mod) =>
+    `(tactic| (
+      set_option synthInstance.maxSize 1000000 in
+      set_option synthInstance.maxHeartbeats 0 in
+      refine C3.Ring.RingEq.eq true ?_
+      decide +kernel))
+  | `(tactic| ring_mod [$cs,*]) => do
+    let hs ← cs.getElems.toList.mapM fun (c : Lean.TSyntax `C3.Ring.ringModCert) =>
+      match c with
+      | `(ringModCert| $h:term * $k:term) => `(C3.Ring.emod_mul_eq_zero $h $k)
+      | _ => Lean.Macro.throwUnsupported
+    let h₀ :: hs := hs | `(tactic| ring_mod)
+    let ht ← hs.foldlM (fun acc h => `(C3.Ring.emod_add_eq_zero $acc $h)) h₀
+    `(tactic| (
+      (try refine C3.Ring.emod_eq_zero_of_emod_eq ?_)
+      refine C3.Ring.emod_eq_of_emod_eq_add ?_ $ht
+      ring_mod))
 
 end C3.Ring

@@ -8,15 +8,15 @@ The reflected syntax, normal forms, and soundness proofs behind the
 `Nat` into an environment. `Expr.toPoly n` normalizes it to a `Poly`: a
 list of terms sorted strictly by a lexicographic monomial order, each with
 a coefficient reduced modulo `n` and not zero. With `n = 0` the
-coefficients are exact, because `c % 0 = c`. `toPoly_sound` proves that the
-normal form evaluates to the same value as the expression, modulo `n`.
+coefficients are exact, because `c % 0 = c`. `Expr.toPoly_sound` proves
+that the normal form evaluates to the same value as the expression, modulo
+`n`.
 
 The kernel evaluates `toPoly`, so the functions it reaches are written
 with recursors (`Mon.rec`, `Poly.rec`, `Nat.rec`, `Bool.rec`) and with
 `Int` and `Nat` operations that reduce to the kernel's accelerated `Nat`
-primitives. Each one names a structural twin with `implemented_by`, so the
-tactic can run the same algorithm as compiled code. The twins are only for
-the tactic's pre-check and error messages; no proof depends on them.
+primitives. The code generator doesn't support recursors, so they're
+`noncomputable`: only the kernel runs them.
 -/
 
 namespace C3.Ring
@@ -72,105 +72,21 @@ noncomputable def Mon.eval (env : List Int) (m : Mon) : Int :=
 noncomputable def Poly.eval (env : List Int) (p : Poly) : Int :=
   Poly.rec (motive := fun _ => Int) 0 (fun c m _ ih => c * m.eval env + ih) p
 
-/-! ## Structural twins
-
-Compiled implementations of the kernel functions below, with the same
-algorithm. -/
-
-namespace Impl
-
-def intBeq : Int → Int → Bool
-  | .ofNat a, .ofNat b => a == b
-  | .negSucc a, .negSucc b => a == b
-  | _, _ => false
-
-def intIsZero : Int → Bool
-  | .ofNat a => a == 0
-  | .negSucc _ => false
-
-def monMul : Mon → Mon → Mon
-  | .one, m => m
-  | m, .one => m
-  | .cons x k m₁, .cons y l m₂ =>
-    if x < y then .cons x k (monMul m₁ (.cons y l m₂))
-    else if y < x then .cons y l (monMul (.cons x k m₁) m₂)
-    else .cons x (k + l) (monMul m₁ m₂)
-
-def monCmp : Mon → Mon → Ordering
-  | .one, .one => .eq
-  | .one, .cons .. => .lt
-  | .cons .., .one => .gt
-  | .cons x k m₁, .cons y l m₂ =>
-    if x < y then .gt else if y < x then .lt
-    else if k < l then .lt else if l < k then .gt else monCmp m₁ m₂
-
-def monBeq : Mon → Mon → Bool
-  | .one, .one => true
-  | .cons x k m₁, .cons y l m₂ => x == y && k == l && monBeq m₁ m₂
-  | _, _ => false
-
-def mkTerm (c : Int) (m : Mon) (p : Poly) : Poly :=
-  if intIsZero c then p else .term c m p
-
-def monomial (n c : Int) (m : Mon) : Poly := mkTerm (c % n) m .zero
-
-def add (n : Int) : Poly → Poly → Poly
-  | .zero, q => q
-  | p, .zero => p
-  | .term c m p, .term d m' q =>
-    match monCmp m m' with
-    | .lt => .term d m' (add n (.term c m p) q)
-    | .eq => mkTerm ((c + d) % n) m (add n p q)
-    | .gt => .term c m (add n p (.term d m' q))
-
-def mulTerm (n c : Int) (m : Mon) : Poly → Poly
-  | .zero => .zero
-  | .term d m' q => mkTerm ((c * d) % n) (monMul m m') (mulTerm n c m q)
-
-def mul (n : Int) : Poly → Poly → Poly
-  | .zero, _ => .zero
-  | .term c m p, q => add n (mulTerm n c m q) (mul n p q)
-
-def neg (n : Int) (p : Poly) : Poly := mulTerm n (-1) .one p
-
-def pow (n : Int) (p : Poly) : Nat → Poly
-  | 0 => monomial n 1 .one
-  | k + 1 => mul n p (pow n p k)
-
-def toPoly (n : Int) : Expr → Poly
-  | .const c => monomial n c .one
-  | .var i => monomial n 1 (.cons i 1 .one)
-  | .add a b => add n (toPoly n a) (toPoly n b)
-  | .sub a b => add n (toPoly n a) (neg n (toPoly n b))
-  | .neg a => neg n (toPoly n a)
-  | .mul a b => mul n (toPoly n a) (toPoly n b)
-  | .pow a k => pow n (toPoly n a) k
-
-def polyBeq : Poly → Poly → Bool
-  | .zero, .zero => true
-  | .term c m p, .term d m' q => intBeq c d && monBeq m m' && polyBeq p q
-  | _, _ => false
-
-end Impl
-
 /-! ## Kernel functions -/
 
 /-- `a == b`, by the constructors. -/
-@[implemented_by Impl.intBeq]
-def intBeq (a b : Int) : Bool :=
+noncomputable def intBeq (a b : Int) : Bool :=
   Int.rec (motive := fun _ => Bool)
     (fun x => Int.rec (motive := fun _ => Bool) (fun y => Nat.beq x y) (fun _ => false) b)
     (fun x => Int.rec (motive := fun _ => Bool) (fun _ => false) (fun y => Nat.beq x y) b) a
 
 /-- `c == 0`, by the constructors. -/
-@[implemented_by Impl.intIsZero]
-def intIsZero (c : Int) : Bool :=
+noncomputable def intIsZero (c : Int) : Bool :=
   Int.rec (motive := fun _ => Bool) (fun x => Nat.beq x 0) (fun _ => false) c
 
 /-- The product of two monomials: their variable lists merged, with the
 exponents of a shared variable added. -/
-@[implemented_by Impl.monMul]
-def Mon.mul (m₁ : Mon) : Mon → Mon :=
+noncomputable def Mon.mul (m₁ : Mon) : Mon → Mon :=
   Mon.rec (motive := fun _ => Mon → Mon) (fun m₂ => m₂)
     (fun x k m₁ ih m₂ =>
       Mon.rec (motive := fun _ => Mon) (Mon.cons x k m₁)
@@ -185,8 +101,7 @@ def Mon.mul (m₁ : Mon) : Mon → Mon :=
 /-- The lexicographic monomial order, with lower-indexed variables more
 significant. It respects multiplication, so `mulTerm` keeps a polynomial
 sorted. -/
-@[implemented_by Impl.monCmp]
-def Mon.cmp (m₁ : Mon) : Mon → Ordering :=
+noncomputable def Mon.cmp (m₁ : Mon) : Mon → Ordering :=
   Mon.rec (motive := fun _ => Mon → Ordering)
     (fun m₂ => Mon.rec (motive := fun _ => Ordering) .eq (fun _ _ _ _ => .lt) m₂)
     (fun x k _ ih m₂ =>
@@ -203,8 +118,7 @@ def Mon.cmp (m₁ : Mon) : Mon → Ordering :=
     m₁
 
 /-- Equality of monomials. -/
-@[implemented_by Impl.monBeq]
-def Mon.beq (m₁ : Mon) : Mon → Bool :=
+noncomputable def Mon.beq (m₁ : Mon) : Mon → Bool :=
   Mon.rec (motive := fun _ => Mon → Bool)
     (fun m₂ => Mon.rec (motive := fun _ => Bool) true (fun _ _ _ _ => false) m₂)
     (fun x k _ ih m₂ =>
@@ -216,17 +130,14 @@ def Mon.beq (m₁ : Mon) : Mon → Bool :=
     m₁
 
 /-- `c * m + p`, or `p` when `c` is zero. -/
-@[implemented_by Impl.mkTerm]
-def Poly.mkTerm (c : Int) (m : Mon) (p : Poly) : Poly :=
+noncomputable def Poly.mkTerm (c : Int) (m : Mon) (p : Poly) : Poly :=
   Bool.rec (motive := fun _ => Poly) (Poly.term c m p) p (intIsZero c)
 
 /-- `c * m` with `c` reduced modulo `n`. -/
-@[implemented_by Impl.monomial]
-def Poly.monomial (n c : Int) (m : Mon) : Poly := Poly.mkTerm (Int.emod c n) m Poly.zero
+noncomputable def Poly.monomial (n c : Int) (m : Mon) : Poly := Poly.mkTerm (Int.emod c n) m Poly.zero
 
 /-- The sum of two polynomials, by merging their terms. -/
-@[implemented_by Impl.add]
-def Poly.add (n : Int) (p : Poly) : Poly → Poly :=
+noncomputable def Poly.add (n : Int) (p : Poly) : Poly → Poly :=
   Poly.rec (motive := fun _ => Poly → Poly) (fun q => q)
     (fun c m p ih q =>
       Poly.rec (motive := fun _ => Poly) (Poly.term c m p)
@@ -240,30 +151,25 @@ def Poly.add (n : Int) (p : Poly) : Poly → Poly :=
     p
 
 /-- `c * m * q`. -/
-@[implemented_by Impl.mulTerm]
-def Poly.mulTerm (n c : Int) (m : Mon) (q : Poly) : Poly :=
+noncomputable def Poly.mulTerm (n c : Int) (m : Mon) (q : Poly) : Poly :=
   Poly.rec (motive := fun _ => Poly) Poly.zero
     (fun d m' _ ih => Poly.mkTerm (Int.emod (Int.mul c d) n) (Mon.mul m m') ih) q
 
 /-- The product of two polynomials. -/
-@[implemented_by Impl.mul]
-def Poly.mul (n : Int) (p q : Poly) : Poly :=
+noncomputable def Poly.mul (n : Int) (p q : Poly) : Poly :=
   Poly.rec (motive := fun _ => Poly) Poly.zero
     (fun c m _ ih => Poly.add n (Poly.mulTerm n c m q) ih) p
 
 /-- `-p`. -/
-@[implemented_by Impl.neg]
-def Poly.neg (n : Int) (p : Poly) : Poly := Poly.mulTerm n (-1) Mon.one p
+noncomputable def Poly.neg (n : Int) (p : Poly) : Poly := Poly.mulTerm n (-1) Mon.one p
 
 /-- `p ^ k`, by `k` multiplications. -/
-@[implemented_by Impl.pow]
-def Poly.pow (n : Int) (p : Poly) (k : Nat) : Poly :=
+noncomputable def Poly.pow (n : Int) (p : Poly) (k : Nat) : Poly :=
   Nat.rec (motive := fun _ => Poly) (Poly.monomial n 1 Mon.one)
     (fun _ ih => Poly.mul n p ih) k
 
 /-- The normal form of an expression, with coefficients modulo `n`. -/
-@[implemented_by Impl.toPoly]
-def Expr.toPoly (n : Int) (e : Expr) : Poly :=
+noncomputable def Expr.toPoly (n : Int) (e : Expr) : Poly :=
   Expr.rec (motive := fun _ => Poly)
     (fun c => Poly.monomial n c Mon.one)
     (fun i => Poly.monomial n 1 (Mon.cons i 1 Mon.one))
@@ -275,8 +181,7 @@ def Expr.toPoly (n : Int) (e : Expr) : Poly :=
     e
 
 /-- Equality of polynomials. -/
-@[implemented_by Impl.polyBeq]
-def Poly.beq (p : Poly) : Poly → Bool :=
+noncomputable def Poly.beq (p : Poly) : Poly → Bool :=
   Poly.rec (motive := fun _ => Poly → Bool)
     (fun q => Poly.rec (motive := fun _ => Bool) true (fun _ _ _ _ => false) q)
     (fun c m _ ih q =>
@@ -618,79 +523,6 @@ theorem eq_of_beq (e₁ e₂ : Expr) (env : List Int)
     (h : Poly.beq (e₁.toPoly 0) (e₂.toPoly 0) = true) : e₁.eval env = e₂.eval env := by
   have := emod_eq_of_beq 0 e₁ e₂ env h
   rwa [Int.emod_zero, Int.emod_zero] at this
-
-/-! ## `Nat` expressions -/
-
-/-- A polynomial expression over `Nat`, without subtraction. -/
-inductive NExpr where
-  | const (c : Nat)
-  | var (i : Nat)
-  | add (a b : NExpr)
-  | mul (a b : NExpr)
-  | pow (a : NExpr) (k : Nat)
-  deriving Inhabited, Repr
-
-/-- The `i`th atom of `env`, or `0` past its end. -/
-noncomputable def getNat (env : List Nat) (i : Nat) : Nat :=
-  List.rec (motive := fun _ => Nat → Nat) (fun _ => 0)
-    (fun x _ ih i => Nat.rec (motive := fun _ => Nat) x (fun j _ => ih j) i) env i
-
-/-- The value of a `Nat` expression. -/
-noncomputable def NExpr.eval (env : List Nat) (e : NExpr) : Nat :=
-  NExpr.rec (motive := fun _ => Nat) (fun c => c) (fun i => getNat env i)
-    (fun _ _ a b => a + b) (fun _ _ a b => a * b) (fun _ k a => a ^ k) e
-
-/-- The same expression over `Int`. -/
-def NExpr.toExpr : NExpr → Expr
-  | .const c => .const (Int.ofNat c)
-  | .var i => .var i
-  | .add a b => .add a.toExpr b.toExpr
-  | .mul a b => .mul a.toExpr b.toExpr
-  | .pow a k => .pow a.toExpr k
-
-theorem get_map_natCast (env : List Nat) (i : Nat) :
-    get (env.map (fun x : Nat => (x : Int))) i = (getNat env i : Int) := by
-  induction env generalizing i with
-  | nil => rfl
-  | cons x xs ih =>
-    cases i with
-    | zero => rfl
-    | succ i => exact ih i
-
-theorem NExpr.eval_toExpr (env : List Nat) (e : NExpr) :
-    e.toExpr.eval (env.map (fun x : Nat => (x : Int))) = (e.eval env : Int) := by
-  induction e with
-  | const c => rfl
-  | var i => exact get_map_natCast env i
-  | add a b iha ihb =>
-    show a.toExpr.eval _ + b.toExpr.eval _ = ((a.eval env + b.eval env : Nat) : Int)
-    rw [iha, ihb, Int.natCast_add]
-  | mul a b iha ihb =>
-    show a.toExpr.eval _ * b.toExpr.eval _ = ((a.eval env * b.eval env : Nat) : Int)
-    rw [iha, ihb, Int.natCast_mul]
-  | pow a k iha =>
-    show a.toExpr.eval _ ^ k = ((a.eval env ^ k : Nat) : Int)
-    rw [iha, Int.natCast_pow]
-
-/-- Two `Nat` expressions with equal normal forms are equal. -/
-theorem nat_eq_of_beq (e₁ e₂ : NExpr) (env : List Nat)
-    (h : Poly.beq (e₁.toExpr.toPoly 0) (e₂.toExpr.toPoly 0) = true) :
-    e₁.eval env = e₂.eval env := by
-  have := eq_of_beq e₁.toExpr e₂.toExpr (env.map (fun x : Nat => (x : Int))) h
-  rw [NExpr.eval_toExpr, NExpr.eval_toExpr] at this
-  exact Int.ofNat.inj this
-
-/-- Two `Nat` expressions with equal normal forms modulo `n` are congruent
-modulo `n`. -/
-theorem nat_emod_eq_of_beq (n : Nat) (e₁ e₂ : NExpr) (env : List Nat)
-    (h : Poly.beq (e₁.toExpr.toPoly (Int.ofNat n)) (e₂.toExpr.toPoly (Int.ofNat n)) = true) :
-    e₁.eval env % n = e₂.eval env % n := by
-  have := emod_eq_of_beq (Int.ofNat n) e₁.toExpr e₂.toExpr
-    (env.map (fun x : Nat => (x : Int))) h
-  rw [NExpr.eval_toExpr, NExpr.eval_toExpr] at this
-  apply Int.ofNat.inj
-  rw [Int.ofNat_eq_natCast, Int.natCast_emod, Int.ofNat_eq_natCast, Int.natCast_emod]
-  exact this
 
 /-! ## Certificates -/
 
