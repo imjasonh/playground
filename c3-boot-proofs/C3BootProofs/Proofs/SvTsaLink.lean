@@ -171,4 +171,206 @@ theorem readSignedAttributes_code {M : Word → BitVec 8} {B p0 L0 dg' flag' cp'
   simp only [Option.bind_some]
   exact hmd' hdg
 
+/-- The optional `certificates` field and the check that no `crls` follow,
+as the code reads them: the bytes left after it. -/
+theorem tsa4_code {M : Word → BitVec 8} {p l q ql : Word}
+    (h : ((derOptRes 0xA0 (memBytes M p l.toNat) = none) ∧ (l = 0 ∨ (M p).toNat ≠ 0xA1) ∧ q = p ∧ ql = l) ∨
+      ((¬ (derOptRes 0xA0 (memBytes M p l.toNat) = none)) ∧ ∃ t, derOptRes 0xA0 (memBytes M p l.toNat) = some (.ok t) ∧
+        (l - BitVec.ofNat 32 (t.header + t.len) = 0 ∨ (M (p + BitVec.ofNat 32 (t.header + t.len))).toNat ≠ 0xA1) ∧
+        q = p + BitVec.ofNat 32 (t.header + t.len) ∧ ql = l - BitVec.ofNat 32 (t.header + t.len))) :
+    ∃ e, readOptional 0xa0 (memBytes M p l.toNat) = some (e, memBytes M q ql.toNat) ∧
+      ((memBytes M q ql.toNat).head? != some 0xa1) = true := by
+  have hd : ∀ {r rl : Word}, (rl = 0 ∨ (M r).toNat ≠ 0xA1) → ((memBytes M r rl.toNat).head? != some 0xa1) = true := by
+    intro r rl hh
+    rcases hh with hz | hn
+    · subst hz; rfl
+    · rcases hc : rl.toNat with _ | n
+      · rfl
+      · rw [memBytes_succ, List.head?_cons, bne]
+        rw [show (some (M r).toNat == some 0xa1) = false from Bool.eq_false_iff.mpr fun e =>
+          hn (Option.some.inj (beq_iff_eq.mp e))]
+        rfl
+  rcases h with ⟨hn, hh, rfl, rfl⟩ | ⟨-, t, ht, hh, rfl, rfl⟩
+  · exact ⟨none, readOptional_none hn, hd hh⟩
+  · exact ⟨some (elemAt M p t), readOptional_mem ht, hd hh⟩
+
+theorem readSha256Alg_code {M : Word → BitVec 8} {p l : Word} {t : DerTlv} (h : isSha256Of M p l.toNat = .ok true)
+    (he : derElement 0x30 (memBytes M p l.toNat) = .ok t) :
+    readSha256Alg (memBytes M p l.toNat) = some (restAt M p l t) := by
+  obtain ⟨t', ht', hr⟩ := readSha256Alg_mem h
+  have e : t' = t := Except.ok.inj (ht'.symm.trans he)
+  subst e
+  rw [hr, memBytes_rest (derTlv_mem_bound (derElement_tlv he))]
+
+set_option maxHeartbeats 8000000 in
+/-- The timestamp token the code parsed, as `parseTimestamp`. The signed
+attributes and the `TSTInfo` are separate hypotheses. -/
+theorem parseTimestamp_code {M : Word → BitVec 8}
+    {p0 l0 pr lr ps ls pa la pc lc pe le pd ld pq lq pg lg pn ln pk lk pt lt pv lv psd lsd q ql pi li pj lj pw lw px lx
+      py ly pz lz op53 ol53 op58 ol58 vp23 vl23 vp19 vl19 : Word} {op8 ol8 gt : Nat}
+    {tl10 tl22 te33 tl41 to53 tl2a tl15 te26 tl32 te41 tl49 to58 tl2b te23 tl2c tl13 te25 tl31 te39 tl45 te8 te19 : DerTlv}
+    {md imp sr ss : Bytes}
+    (hsd : memBytes M (BitVec.ofNat 32 0x3FCC4859) 9 = oidSignedData)
+    (hti : memBytes M (BitVec.ofNat 32 0x3FCC4862) 11 = oidTstInfo)
+    (hes : memBytes M (BitVec.ofNat 32 0x3FCC4818) 8 = oidEcdsaSha256)
+    (h84 : derElement 0x30 (memBytes M p0 l0.toNat) = .ok tl10)
+    (h85 : l0 - BitVec.ofNat 32 (tl10.header + tl10.len) = 0)
+    (epr : pr = p0 + BitVec.ofNat 32 tl10.header) (elr : lr = BitVec.ofNat 32 tl10.len)
+    (h86 : derElement 0x30 (memBytes M pr lr.toNat) = .ok tl22)
+    (eps : ps = pr + BitVec.ofNat 32 tl22.header) (els : ls = BitVec.ofNat 32 tl22.len)
+    (h87 : derIntIsOf M (memBytes M ps ls.toNat) ps (derElement 2 (memBytes M ps ls.toNat)) ((BitVec.ofNat 32 0x0).extractLsb' 0 8) = .ok true)
+    (h88 : derElement 2 (memBytes M ps ls.toNat) = .ok te33)
+    (h89 : ls - BitVec.ofNat 32 (te33.header + te33.len) = 0)
+    (epa : pa = pr + BitVec.ofNat 32 (tl22.header + tl22.len)) (ela : la = lr - BitVec.ofNat 32 (tl22.header + tl22.len))
+    (h90 : derElement 0x30 (memBytes M pa la.toNat) = .ok tl41)
+    (h91 : la - BitVec.ofNat 32 (tl41.header + tl41.len) = 0)
+    (epc : pc = pa + BitVec.ofNat 32 tl41.header) (elc : lc = BitVec.ofNat 32 tl41.len)
+    (h92 : derContent pc (derOid (memBytes M pc lc.toNat)) = .ok (op53, ol53))
+    (h93 : derOid (memBytes M pc lc.toNat) = .ok to53)
+    (h94 : memBytes M op53 ol53.toNat = memBytes M (BitVec.ofNat 32 0x3FCC4859) 9)
+    (epe : pe = pc + BitVec.ofNat 32 (to53.header + to53.len)) (ele : le = lc - BitVec.ofNat 32 (to53.header + to53.len))
+    (h95 : derElement 0xA0 (memBytes M pe le.toNat) = .ok tl2a)
+    (h96 : le - BitVec.ofNat 32 (tl2a.header + tl2a.len) = 0)
+    (epd : pd = pe + BitVec.ofNat 32 tl2a.header) (eld : ld = BitVec.ofNat 32 tl2a.len)
+    (h97 : derElement 0x30 (memBytes M pd ld.toNat) = .ok tl15)
+    (h98 : ld - BitVec.ofNat 32 (tl15.header + tl15.len) = 0)
+    (epq : pq = pd + BitVec.ofNat 32 tl15.header) (elq : lq = BitVec.ofNat 32 tl15.len)
+    (h99 : derIntIsOf M (memBytes M pq lq.toNat) pq (derElement 2 (memBytes M pq lq.toNat)) ((BitVec.ofNat 32 0x3).extractLsb' 0 8) = .ok true)
+    (h100 : derElement 2 (memBytes M pq lq.toNat) = .ok te26)
+    (epg : pg = pq + BitVec.ofNat 32 (te26.header + te26.len)) (elg : lg = lq - BitVec.ofNat 32 (te26.header + te26.len))
+    (h101 : derElement 0x31 (memBytes M pg lg.toNat) = .ok tl32)
+    (h102 : isSha256Of M (pg + BitVec.ofNat 32 tl32.header) (BitVec.ofNat 32 tl32.len).toNat = .ok true)
+    (h103 : derElement 0x30 (memBytes M (pg + BitVec.ofNat 32 tl32.header) (BitVec.ofNat 32 tl32.len).toNat) = .ok te41)
+    (h104 : BitVec.ofNat 32 tl32.len - BitVec.ofNat 32 (te41.header + te41.len) = 0)
+    (epn : pn = pg + BitVec.ofNat 32 (tl32.header + tl32.len)) (eln : ln = lg - BitVec.ofNat 32 (tl32.header + tl32.len))
+    (h105 : derElement 0x30 (memBytes M pn ln.toNat) = .ok tl49)
+    (epk : pk = pn + BitVec.ofNat 32 tl49.header) (elk : lk = BitVec.ofNat 32 tl49.len)
+    (h106 : derContent pk (derOid (memBytes M pk lk.toNat)) = .ok (op58, ol58))
+    (h107 : derOid (memBytes M pk lk.toNat) = .ok to58)
+    (h108 : memBytes M op58 ol58.toNat = memBytes M (BitVec.ofNat 32 0x3FCC4862) 11)
+    (ept : pt = pk + BitVec.ofNat 32 (to58.header + to58.len)) (elt : lt = lk - BitVec.ofNat 32 (to58.header + to58.len))
+    (h109 : derOptRes 0xA0 (memBytes M pt lt.toNat) = some (.ok tl2b))
+    (h110 : lt - BitVec.ofNat 32 (tl2b.header + tl2b.len) = 0)
+    (epv : pv = pt + BitVec.ofNat 32 tl2b.header) (elv : lv = BitVec.ofNat 32 tl2b.len)
+    (h111 : derContent pv (derElement 4 (memBytes M pv lv.toNat)) = .ok (vp23, vl23))
+    (h112 : derElement 4 (memBytes M pv lv.toNat) = .ok te23)
+    (h113 : lv - BitVec.ofNat 32 (te23.header + te23.len) = 0)
+    (epsd : psd = pn + BitVec.ofNat 32 (tl49.header + tl49.len)) (elsd : lsd = ln - BitVec.ofNat 32 (tl49.header + tl49.len))
+    (h114 : ∃ e, readOptional 0xa0 (memBytes M psd lsd.toNat) = some (e, memBytes M q ql.toNat) ∧
+      ((memBytes M q ql.toNat).head? != some 0xa1) = true)
+    (h116 : derElement 0x31 (memBytes M q ql.toNat) = .ok tl2c)
+    (h117 : ql - BitVec.ofNat 32 (tl2c.header + tl2c.len) = 0)
+    (epi : pi = q + BitVec.ofNat 32 tl2c.header) (eli : li = BitVec.ofNat 32 tl2c.len)
+    (h118 : derElement 0x30 (memBytes M pi li.toNat) = .ok tl13)
+    (h119 : li - BitVec.ofNat 32 (tl13.header + tl13.len) = 0)
+    (epj : pj = pi + BitVec.ofNat 32 tl13.header) (elj : lj = BitVec.ofNat 32 tl13.len)
+    (h120 : derIntIsOf M (memBytes M pj lj.toNat) pj (derElement 2 (memBytes M pj lj.toNat)) ((BitVec.ofNat 32 0x1).extractLsb' 0 8) = .ok true)
+    (h121 : derElement 2 (memBytes M pj lj.toNat) = .ok te25)
+    (epw : pw = pj + BitVec.ofNat 32 (te25.header + te25.len)) (elw : lw = lj - BitVec.ofNat 32 (te25.header + te25.len))
+    (h122 : derElement 0x30 (memBytes M pw lw.toNat) = .ok tl31)
+    (h123 : isSha256Of M (pw + BitVec.ofNat 32 (tl31.header + tl31.len)) (lw - BitVec.ofNat 32 (tl31.header + tl31.len)).toNat = .ok true)
+    (h124 : derElement 0x30 (memBytes M (pw + BitVec.ofNat 32 (tl31.header + tl31.len))
+      (lw - BitVec.ofNat 32 (tl31.header + tl31.len)).toNat) = .ok te39)
+    (epx : px = pw + BitVec.ofNat 32 (tl31.header + tl31.len) + BitVec.ofNat 32 (te39.header + te39.len))
+    (elx : lx = lw - BitVec.ofNat 32 (tl31.header + tl31.len) - BitVec.ofNat 32 (te39.header + te39.len))
+    (h125 : derOptRes 0xA0 (memBytes M px lx.toNat) = some (.ok tl45))
+    (hsa : readSignedAttributes (memBytes M (px + BitVec.ofNat 32 tl45.header) (BitVec.ofNat 32 tl45.len).toNat) = some md)
+    (epy : py = px + BitVec.ofNat 32 (tl45.header + tl45.len)) (ely : ly = lx - BitVec.ofNat 32 (tl45.header + tl45.len))
+    (h140 : derAlgOf M py ly.toNat = .ok ((op8, ol8), none))
+    (h141 : derElement 0x30 (memBytes M py ly.toNat) = .ok te8)
+    (h142 : memBytes M op8 ol8 = memBytes M (BitVec.ofNat 32 0x3FCC4818) 8)
+    (epz : pz = py + BitVec.ofNat 32 (te8.header + te8.len)) (elz : lz = ly - BitVec.ofNat 32 (te8.header + te8.len))
+    (h143 : derContent pz (derElement 4 (memBytes M pz lz.toNat)) = .ok (vp19, vl19))
+    (h144 : derElement 4 (memBytes M pz lz.toNat) = .ok te19)
+    (h145 : ecdsaSigOf 48 M vp19 vl19.toNat = .ok (sr, ss))
+    (h146 : lz - BitVec.ofNat 32 (te19.header + te19.len) = 0)
+    (htst : readTstInfo (memBytes M vp23 vl23.toNat) = some (gt, imp)) :
+    parseTimestamp (memBytes M p0 l0.toNat) = some ⟨gt, imp, memBytes M vp23 vl23.toNat, md,
+      memBytes M pw (BitVec.ofNat 32 (tl31.header + tl31.len)).toNat, memBytes M px (BitVec.ofNat 32 (tl45.header + tl45.len)).toNat,
+      sr, ss⟩ := by
+  rw [h93] at h92
+  obtain ⟨e92a, e92b⟩ := derContent_ok rfl h92
+  rw [h107] at h106
+  obtain ⟨e106a, e106b⟩ := derContent_ok rfl h106
+  rw [h112] at h111
+  obtain ⟨e111a, e111b⟩ := derContent_ok rfl h111
+  rw [h144] at h143
+  obtain ⟨e143a, e143b⟩ := derContent_ok rfl h143
+  unfold parseTimestamp
+  rw [readElem_mem h84, restAt_nil h85]
+  simp only [Option.bind_eq_bind, Option.bind_some, require_isEmpty_nil, elemAt]
+  rw [← epr, ← elr, readElem_mem h86]
+  simp only [Option.bind_some, elemAt]
+  have hI0 := readIntegerIs_mem h88 h87
+  rw [show ((BitVec.ofNat 32 0x0).extractLsb' 0 8).toNat = 0 by decide] at hI0
+  have hI3 := readIntegerIs_mem h100 h99
+  rw [show ((BitVec.ofNat 32 0x3).extractLsb' 0 8).toNat = 3 by decide] at hI3
+  have hI1 := readIntegerIs_mem h121 h120
+  rw [show ((BitVec.ofNat 32 0x1).extractLsb' 0 8).toNat = 1 by decide] at hI1
+  rw [← eps, ← els, hI0, restAt_nil h89]
+  simp only [Option.bind_some, require_isEmpty_nil, restAt]
+  rw [← epa, ← ela, readElem_mem h90, restAt_nil h91]
+  simp only [Option.bind_some, require_isEmpty_nil, elemAt]
+  rw [← epc, ← elc, readOid_mem h93]
+  simp only [Option.bind_some, restAt]
+  rw [← e92a, ← e92b, h94, hsd, beq_iff_eq.mpr rfl, require_true]
+  simp only [Option.bind_some]
+  rw [← epe, ← ele, readElem_mem h95, restAt_nil h96]
+  simp only [Option.bind_some, require_isEmpty_nil, elemAt]
+  rw [← epd, ← eld, readElem_mem h97, restAt_nil h98]
+  simp only [Option.bind_some, require_isEmpty_nil, elemAt]
+  rw [← epq, ← elq, hI3]
+  simp only [Option.bind_some, restAt]
+  rw [← epg, ← elg, readElem_mem h101]
+  simp only [Option.bind_some, elemAt]
+  rw [readSha256Alg_code h102 h103, restAt_nil h104]
+  simp only [Option.bind_some, require_isEmpty_nil, restAt]
+  rw [← epn, ← eln, readElem_mem h105]
+  simp only [Option.bind_some, elemAt]
+  rw [← epk, ← elk, readOid_mem h107]
+  simp only [Option.bind_some, restAt]
+  rw [← e106a, ← e106b, h108, hti, beq_iff_eq.mpr rfl, require_true]
+  simp only [Option.bind_some]
+  rw [← ept, ← elt, readOptional_mem h109, restAt_nil h110]
+  simp only [Option.bind_some, require_isEmpty_nil, elemAt]
+  rw [← epv, ← elv, readOctetString_mem h112, restAt_nil h113]
+  simp only [Option.bind_some, require_isEmpty_nil]
+  rw [← e111a, ← e111b]
+  obtain ⟨e114, h114a, h114b⟩ := h114
+  rw [← epsd, ← elsd, h114a]
+  simp only [Option.bind_some]
+  rw [h114b, require_true]
+  simp only [Option.bind_some]
+  rw [readElem_mem h116, restAt_nil h117]
+  simp only [Option.bind_some, require_isEmpty_nil, elemAt]
+  rw [← epi, ← eli, readElem_mem h118, restAt_nil h119]
+  simp only [Option.bind_some, require_isEmpty_nil, elemAt]
+  rw [← epj, ← elj, hI1]
+  simp only [Option.bind_some, restAt]
+  rw [← epw, ← elw, readElem_mem h122]
+  simp only [Option.bind_some, restAt]
+  rw [readSha256Alg_code h123 h124]
+  simp only [Option.bind_some, restAt]
+  rw [← epx, ← elx, readOptional_mem h125]
+  simp only [Option.bind_some, elemAt]
+  rw [hsa]
+  simp only [Option.bind_some, restAt]
+  rw [← epy, ← ely]
+  obtain ⟨t8, prm, ht8, hA, hP⟩ := readAlgorithm_mem h140
+  have e8 : t8 = te8 := Except.ok.inj (ht8.symm.trans h141)
+  subst e8
+  cases prm with
+  | some _ => cases hP
+  | none =>
+  rw [hA, memBytes_rest (derTlv_mem_bound (derElement_tlv h141))]
+  simp only [Option.bind_some]
+  rw [h142, hes, show (oidEcdsaSha256 == oidEcdsaSha256 && (none : Option Elem).isNone) = true by decide, require_true]
+  simp only [Option.bind_some, restAt]
+  rw [← epz, ← elz, readOctetString_mem h144, restAt_nil h146]
+  simp only [Option.bind_some]
+  rw [← e143a, ← e143b, ecdsaSignature_mem h145]
+  simp only [Option.bind_some, require_isEmpty_nil]
+  rw [htst]
+  rfl
+
 end C3.RV32.Sv
