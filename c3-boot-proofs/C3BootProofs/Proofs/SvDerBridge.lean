@@ -4,6 +4,7 @@ import C3BootProofs.Proofs.ListsOid
 import C3BootProofs.Proofs.IntegerIs
 import C3BootProofs.Proofs.X509ReadTime
 import C3BootProofs.Spec.DerRead
+import C3BootProofs.Spec.Tsa
 
 /-!
 # The code's DER results as the `Der` helpers'
@@ -485,5 +486,280 @@ theorem ecdsaSignature_mem {N : Nat} {M : Word → BitVec 8} {p : Word} {n : Nat
                 rfl
               · rw [ite_eq_right hw] at h; cases h
     · rw [ite_eq_right hn] at h; cases h
+
+theorem memBytes_content_nat {M : Word → BitVec 8} {p : Word} {n : Nat} {t : DerTlv} (h : t.header + t.len ≤ n) :
+    t.content (memBytes M p n) = memBytes M (p + BitVec.ofNat 32 t.header) t.len := by
+  unfold DerTlv.content
+  rw [memBytes_drop_take h]
+
+/-- `Der::algorithm`'s OID and parameters as `readAlgorithm`'s; of the
+parameters, `sigstoreVerify` reads only the tag and the contents. -/
+theorem readAlgorithm_mem {M : Word → BitVec 8} {p : Word} {n : Nat} {op : Word} {ol : Nat}
+    {par : Option (Word × DerTlv)} (h : derAlgOf M p n = .ok ((op, ol), par)) :
+    ∃ t prm, derElement 0x30 (memBytes M p n) = .ok t ∧
+      readAlgorithm (memBytes M p n) = some ((memBytes M op ol, prm), (memBytes M p n).drop (t.header + t.len)) ∧
+      prm.map (fun e => (e.tag, e.content)) = par.map (fun x => (x.2.tag, memBytes M (x.1 + BitVec.ofNat 32 x.2.header) x.2.len)) := by
+  unfold derAlgOf at h
+  cases hE : derElement 0x30 (memBytes M p n) with
+  | error e => rw [hE] at h; cases h
+  | ok t =>
+    rw [hE] at h
+    simp only at h
+    have hB : t.header + t.len ≤ n := by have := derElement_bound hE; rwa [memBytes_length] at this
+    have hC := memBytes_content_nat (M := M) (p := p) hB
+    cases hO : derOid (memBytes M (p + BitVec.ofNat 32 t.header) t.len) with
+    | error e => rw [hO] at h; cases h
+    | ok o =>
+      rw [hO] at h
+      simp only at h
+      have hBo : o.header + o.len ≤ t.len := by
+        have := derElement_bound (derOid_ok_elem hO); rwa [memBytes_length] at this
+      have hoid : readOid (t.content (memBytes M p n)) =
+          some (memBytes M (p + BitVec.ofNat 32 t.header + BitVec.ofNat 32 o.header) o.len,
+            memBytes M (p + BitVec.ofNat 32 t.header + BitVec.ofNat 32 (o.header + o.len)) (t.len - (o.header + o.len))) := by
+        rw [hC, readOid_of hO]
+        unfold elemOf
+        simp only
+        rw [memBytes_content_nat (by omega), memBytes_dropK' M _ hBo]
+      refine ⟨t, ?_⟩
+      suffices H : ∃ prm, readAlgorithm (memBytes M p n) =
+          some ((memBytes M op ol, prm), (memBytes M p n).drop (t.header + t.len)) ∧
+          prm.map (fun e => (e.tag, e.content)) =
+            par.map (fun x => (x.2.tag, memBytes M (x.1 + BitVec.ofNat 32 x.2.header) x.2.len)) by
+        obtain ⟨prm, a, b⟩ := H
+        exact ⟨prm, rfl, a, b⟩
+      unfold readAlgorithm
+      rw [readElem_of hE]
+      simp only [Option.bind_eq_bind, Option.bind_some, elemOf]
+      rw [hoid]
+      simp only [Option.bind_some]
+      by_cases hz : t.len - (o.header + o.len) = 0
+      · rw [ite_eq_left hz] at h
+        cases h
+        refine ⟨none, ?_, rfl⟩
+        rw [hz]
+        rfl
+      · rw [ite_eq_right hz] at h
+        cases hU : derTlv (memBytes M (p + BitVec.ofNat 32 t.header + BitVec.ofNat 32 (o.header + o.len))
+            (t.len - (o.header + o.len))) with
+        | error e => rw [hU] at h; cases h
+        | ok u =>
+          rw [hU] at h
+          simp only at h
+          by_cases hu : u.header + u.len = t.len - (o.header + o.len)
+          · rw [ite_eq_left hu] at h
+            cases h
+            have hne : (memBytes M (p + BitVec.ofNat 32 t.header + BitVec.ofNat 32 (o.header + o.len))
+                (t.len - (o.header + o.len))).isEmpty = false := by
+              cases hm : memBytes M (p + BitVec.ofNat 32 t.header + BitVec.ofNat 32 (o.header + o.len))
+                  (t.len - (o.header + o.len)) with
+              | nil =>
+                have := congrArg List.length hm
+                rw [memBytes_length] at this
+                exact absurd this hz
+              | cons _ _ => rfl
+            rw [hne]
+            simp only [Bool.false_eq_true, ↓reduceIte]
+            rw [readTlv_of hU]
+            simp only [Option.bind_some, elemOf]
+            have hae : ((memBytes M (p + BitVec.ofNat 32 t.header + BitVec.ofNat 32 (o.header + o.len))
+                (t.len - (o.header + o.len))).drop (u.header + u.len)).isEmpty = true := by
+              rw [List.isEmpty_iff, ← List.length_eq_zero_iff, List.length_drop, memBytes_length]; omega
+            unfold require
+            rw [ite_eq_left hae]
+            refine ⟨_, rfl, ?_⟩
+            simp only [Option.map_some]
+            rw [memBytes_content_nat (by omega)]
+          · rw [ite_eq_right hu] at h; cases h
+
+theorem derTlv_mem_tag {M : Word → BitVec 8} {q : Word} {m : Nat} {u : DerTlv} (h : derTlv (memBytes M q m) = .ok u) :
+    u.tag < 256 := by
+  have hmem : ∀ b ∈ memBytes M q m, b < 256 := memBytes_mem_lt
+  revert h hmem
+  generalize memBytes M q m = L
+  intro h hmem
+  cases L with
+  | nil => cases h
+  | cons b rest =>
+    rw [derTlv_tag h]
+    exact hmem b (List.mem_cons_self ..)
+
+theorem derAlgOf_tag {M : Word → BitVec 8} {p : Word} {n : Nat} {op : Word} {ol : Nat} {q : Word} {u : DerTlv}
+    (h : derAlgOf M p n = .ok ((op, ol), some (q, u))) : u.tag < 256 := by
+  unfold derAlgOf at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+    · split at h
+      · cases h
+      · split at h
+        · cases h
+        · rename_i u' hu
+          split at h
+          · cases h
+            exact derTlv_mem_tag hu
+          · cases h
+
+theorem listsOid_cons_eq {oid L : Bytes} {k : Nat} (hne : L ≠ []) :
+    listsOid oid (k + 1) L = (do
+      let (seq, r) ← readElem 0x30 L
+      let (o, _) ← readOid seq.content
+      if o == oid then pure true else listsOid oid k r) := by
+  cases L with
+  | nil => exact absurd rfl hne
+  | cons _ _ => rfl
+
+/-- `lists_oid`'s loop as `listsOid`, with at least as much fuel as bytes. -/
+theorem listsOid_loop {M : Word → BitVec 8} {oid : Bytes} :
+    ∀ (k : Nat) {p : Word} {n : Nat} {b : Bool}, n ≤ k → listsOidLoop M oid k p n = .ok b →
+      listsOid oid k (memBytes M p n) = some b := by
+  intro k
+  induction k with
+  | zero =>
+    intro p n b hn h
+    cases h
+    rw [show n = 0 by omega]
+    rfl
+  | succ k ih =>
+    intro p n b hn h
+    unfold listsOidLoop at h
+    by_cases hz : n = 0
+    · rw [ite_eq_left hz] at h
+      cases h
+      subst hz
+      rfl
+    rw [ite_eq_right hz] at h
+    cases hE : derElement 0x30 (memBytes M p n) with
+    | error e => rw [hE] at h; cases h
+    | ok t =>
+      rw [hE] at h
+      simp only at h
+      have hB : t.header + t.len ≤ n := by have := derElement_bound hE; rwa [memBytes_length] at this
+      have h2 := derTlv_header (derElement_tlv hE)
+      cases hO : derOid (memBytes M (p + BitVec.ofNat 32 t.header) t.len) with
+      | error e => rw [hO] at h; cases h
+      | ok o =>
+        rw [hO] at h
+        simp only at h
+        have hBo : o.header + o.len ≤ t.len := by
+          have := derElement_bound (derOid_ok_elem hO); rwa [memBytes_length] at this
+        have hne : memBytes M p n ≠ [] := by
+          intro e
+          have := congrArg List.length e
+          rw [memBytes_length] at this
+          exact hz this
+        rw [listsOid_cons_eq hne, readElem_of hE]
+        simp only [Option.bind_eq_bind, Option.bind_some, elemOf]
+        rw [memBytes_content_nat hB, readOid_of hO]
+        simp only [Option.bind_some, elemOf]
+        rw [memBytes_content_nat hBo]
+        by_cases hm : memBytes M (p + BitVec.ofNat 32 t.header + BitVec.ofNat 32 o.header) o.len = oid
+        · rw [ite_eq_left hm] at h
+          cases h
+          rw [ite_eq_left (beq_iff_eq.mpr hm)]
+          rfl
+        · rw [ite_eq_right hm] at h
+          rw [ite_eq_right (fun e => hm (beq_iff_eq.mp e)), memBytes_dropK' M p hB]
+          exact ih (by omega) h
+
+theorem listsOid_mem {M : Word → BitVec 8} {p : Word} {n : Nat} {oid : Bytes} {b : Bool}
+    (h : listsOidOf M p n oid = .ok b) : listsOid oid n (memBytes M p n) = some b :=
+  listsOid_loop n (Nat.le_refl n) h
+
+/-- `tsa::is_sha256` as `readSha256Alg`. -/
+theorem readSha256Alg_mem {M : Word → BitVec 8} {p : Word} {n : Nat} (h : isSha256Of M p n = .ok true) :
+    ∃ t, derElement 0x30 (memBytes M p n) = .ok t ∧
+      readSha256Alg (memBytes M p n) = some ((memBytes M p n).drop (t.header + t.len)) := by
+  unfold isSha256Of at h
+  cases hA : derAlgOf M p n with
+  | error b => rw [hA] at h; cases h
+  | ok x =>
+    obtain ⟨⟨op, ol⟩, par⟩ := x
+    obtain ⟨t, prm, hE, hR, hP⟩ := readAlgorithm_mem hA
+    refine ⟨t, hE, ?_⟩
+    unfold readSha256Alg
+    rw [hR]
+    simp only [Option.bind_eq_bind, Option.bind_some]
+    rw [hA] at h
+    cases par with
+    | none =>
+      cases prm with
+      | some _ => cases hP
+      | none =>
+        simp only at h
+        have hm := of_decide_eq_true (Except.ok.inj h)
+        unfold require
+        rw [ite_eq_left (by rw [hm]; rfl)]
+        rfl
+    | some qu =>
+      obtain ⟨q, u⟩ := qu
+      cases prm with
+      | none => cases hP
+      | some e =>
+        simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hP
+        simp only at h
+        obtain ⟨hm, ht, hl⟩ := of_decide_eq_true (Except.ok.inj h)
+        have htag := derAlgOf_tag hA
+        have hc : e.content.isEmpty = true := by
+          rw [hP.2, hl]; rfl
+        have he : (e.tag == 5) = true := by
+          rw [hP.1]; exact decide_eq_true (by omega)
+        unfold require
+        rw [ite_eq_left (by rw [hm]; simp only [Option.all_some, he, hc, Bool.and_self]; rfl)]
+        rfl
+
+/-- `Der::integer_is` as `readIntegerIs`. -/
+theorem readIntegerIs_mem {M : Word → BitVec 8} {p l : Word} {t : DerTlv} {v : BitVec 8}
+    (hE : derElement 2 (memBytes M p l.toNat) = .ok t)
+    (h : derIntIsOf M (memBytes M p l.toNat) p (derElement 2 (memBytes M p l.toNat)) v = .ok true) :
+    readIntegerIs v.toNat (memBytes M p l.toNat) = some (restAt M p l t) := by
+  rw [hE] at h
+  unfold derIntIsOf at h
+  cases hI : derIntOf (memBytes M p l.toNat) p (.ok t) with
+  | error e => rw [hI] at h; cases h
+  | ok x =>
+    obtain ⟨ip, il⟩ := x
+    rw [hI] at h
+    simp only at h
+    have hm := of_decide_eq_true (Except.ok.inj h)
+    obtain ⟨hr, -, -⟩ := readInteger_mem hE hI
+    unfold readIntegerIs
+    rw [hr]
+    simp only [Option.bind_eq_bind, Option.bind_some]
+    unfold require
+    rw [ite_eq_left (beq_iff_eq.mpr hm)]
+    rfl
+
+/-- `Der::boolean_true` as `readBooleanTrue`. -/
+theorem readBooleanTrue_mem {M : Word → BitVec 8} {p l : Word} {t : DerTlv}
+    (hE : derElement 1 (memBytes M p l.toNat) = .ok t)
+    (h : derBoolOf (memBytes M p l.toNat) (derElement 1 (memBytes M p l.toNat)) = .ok ()) :
+    readBooleanTrue (memBytes M p l.toNat) = some (restAt M p l t) := by
+  have hB := derTlv_mem_bound (derElement_tlv hE)
+  rw [hE] at h
+  simp only [derBoolOf] at h
+  by_cases hc : t.len = 1 ∧ (memBytes M p l.toNat).getD t.header 0 = 0xFF
+  · have hcont : (elemAt M p t).content = [0xFF] := by
+      have hlen : (elemAt M p t).content.length = 1 := by
+        show (memBytes M (p + BitVec.ofNat 32 t.header) (BitVec.ofNat 32 t.len).toNat).length = 1
+        rw [memBytes_length, ofNat_toNat_lt (by have := l.isLt; omega), hc.1]
+      have h0 := content_getD (M := M) (p := p) hB (i := 0) (by omega)
+      rw [Nat.add_zero, hc.2] at h0
+      revert hlen h0
+      show (memBytes M (p + BitVec.ofNat 32 t.header) (BitVec.ofNat 32 t.len).toNat).length = 1 →
+        (memBytes M (p + BitVec.ofNat 32 t.header) (BitVec.ofNat 32 t.len).toNat).getD 0 0 = 0xFF →
+        (memBytes M (p + BitVec.ofNat 32 t.header) (BitVec.ofNat 32 t.len).toNat) = [0xFF]
+      generalize memBytes M (p + BitVec.ofNat 32 t.header) (BitVec.ofNat 32 t.len).toNat = C
+      intro hlen h0
+      match C, hlen with
+      | [a], _ => rw [show a = 0xFF from h0]
+    unfold readBooleanTrue
+    rw [readElem_mem hE]
+    simp only [Option.bind_eq_bind, Option.bind_some]
+    unfold require
+    rw [hcont]
+    rfl
+  · rw [ite_eq_right hc] at h; cases h
 
 end C3.RV32.Sv
