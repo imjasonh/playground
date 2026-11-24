@@ -148,6 +148,7 @@ struct OtaWriterState {
     written: u32,
     next_notify_at: u32,
     last_activity_us: u64,
+    last_gap_notify_us: u64,
     hasher: Sha256,
     reboot_pending: bool,
 }
@@ -167,6 +168,7 @@ impl OtaWriterState {
             written: 0,
             next_notify_at: 0,
             last_activity_us: 0,
+            last_gap_notify_us: 0,
             hasher: Sha256::new(),
             reboot_pending: false,
         }
@@ -184,11 +186,13 @@ impl OtaWriterState {
         self.expected_sha256.clear();
         self.written = 0;
         self.next_notify_at = 0;
+        self.last_gap_notify_us = 0;
         self.hasher = Sha256::new();
     }
 
     fn begin(&mut self, size: u32, sha256: String, battery_mv: u16) -> OtaStatus {
         self.last_activity_us = now_us();
+        self.last_gap_notify_us = 0;
         if self.min_ota_battery_mv > 0 && battery_mv > 0 && battery_mv < self.min_ota_battery_mv {
             return OtaStatus::Error {
                 message: format!(
@@ -252,7 +256,8 @@ impl OtaWriterState {
     }
 
     fn write_chunk(&mut self, raw: &[u8]) -> Option<OtaStatus> {
-        self.last_activity_us = now_us();
+        let now = now_us();
+        self.last_activity_us = now;
         let Some(handle) = self.handle else {
             return Some(OtaStatus::Error {
                 message: "write before BEGIN".to_string(),
@@ -270,12 +275,21 @@ impl OtaWriterState {
                     return None;
                 }
                 if frame.offset > self.written {
-                    return Some(OtaStatus::Error {
-                        message: format!(
-                            "chunk gap: got offset {}, expected {}",
+                    // A `WRITE_NO_RSP` packet was dropped in flight. Keep the session open and
+                    // ask the client to rewind to `self.written` (rate-limited to avoid flooding
+                    // for subsequent already-queued packets).
+                    if now.saturating_sub(self.last_gap_notify_us) >= 300_000 {
+                        self.last_gap_notify_us = now;
+                        warn!(
+                            "ota: chunk gap got={} expected={}, requesting resume",
                             frame.offset, self.written
-                        ),
-                    });
+                        );
+                        return Some(OtaStatus::Ready {
+                            total: self.expected_size,
+                            offset: self.written,
+                        });
+                    }
+                    return None;
                 }
                 frame.payload
             }
