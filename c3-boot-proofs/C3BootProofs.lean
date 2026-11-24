@@ -556,3 +556,11 @@ import C3BootProofs.Models.P384Model
 import C3BootProofs.Models.EcdsaRcb
 import C3BootProofs.Models.P256Rcb
 import C3BootProofs.Models.P384Rcb
+import C3BootProofs.Models.WeierstrassRing
+import C3BootProofs.Models.WeierstrassClosed
+import C3BootProofs.Models.WeierstrassRcb
+import C3BootProofs.Models.WeierstrassAssocPoly
+import C3BootProofs.Models.WeierstrassAssoc
+import C3BootProofs.Models.WeierstrassFermat
+import C3BootProofs.Models.WeierstrassNoRoot
+import C3BootProofs.Models.WeierstrassNist
