@@ -135,6 +135,9 @@ import C3BootProofs.Proofs.Bytes2Scalar256
 import C3BootProofs.Proofs.ScalarFromSlice256
 import C3BootProofs.Proofs.IsSmallOrder
 import C3BootProofs.Proofs.DateTime
+import C3BootProofs.Proofs.X509ReadTime
+import C3BootProofs.Proofs.TimeRfc3339
+import C3BootProofs.Proofs.ParseSpecCur
 import C3BootProofs.Proofs.Base64Decode
 import C3BootProofs.Proofs.Base64Encode
 import C3BootProofs.Proofs.Sha512UpdateArr32
@@ -166,6 +169,16 @@ import C3BootProofs.Proofs.P2vP256
 import C3BootProofs.Proofs.SvLib
 import C3BootProofs.Models.EcdsaClosed
 import C3BootProofs.Models.Ed25519Closed
+import C3BootProofs.Proofs.TufIndex
+import C3BootProofs.Proofs.TufHex
+import C3BootProofs.Proofs.AsciiDigits
+import C3BootProofs.Proofs.FlashPart
+import C3BootProofs.Proofs.StripPrefix
+import C3BootProofs.Proofs.EfuseRun
+import C3BootProofs.Proofs.TufHexDecode
+import C3BootProofs.Proofs.TufReadDoc
+import C3BootProofs.Proofs.EcdsaSig32
+import C3BootProofs.Proofs.Sha384Fn
 
 /-!
 # Audit
@@ -3080,12 +3093,13 @@ theorem exists_dateTime_machine :
     RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
     (RV32.sep_of_le (by decide) (by decide)).symm, RV32.sep_of_le (by decide) (by decide)⟩
 
-/-- Memory with `time::generalized_time`, `time::date_time`, and
-`time::digits::<2>` where the image loads them, and zeros elsewhere. -/
+/-- Memory with `time::generalized_time` and its callees where the image
+loads them, and zeros elsewhere. -/
 def witnessMemGT : RV32.Word → BitVec 8 :=
   RV32.regionMem
     [(Image.generalizedTimeAddress, Image.generalizedTimeCode), (Image.dateTimeAddress, Image.dateTimeCode),
-    (Image.timeDigits2Address, Image.timeDigits2Code)]
+    (Image.timeDigits2Address, Image.timeDigits2Code), (Image.timeDigits4Address, Image.timeDigits4Code),
+    (Image.allAsciiDigitAddress, Image.allAsciiDigitCode)]
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
@@ -3096,8 +3110,111 @@ def witnessMemXRT : RV32.Word → BitVec 8 :=
   RV32.regionMem
     [(Image.x509ReadTimeAddress, Image.x509ReadTimeCode), (Image.derTlvAddress, Image.derTlvCode),
     (Image.generalizedTimeAddress, Image.generalizedTimeCode), (Image.dateTimeAddress, Image.dateTimeCode),
-    (Image.timeDigits2Address, Image.timeDigits2Code),
+    (Image.timeDigits2Address, Image.timeDigits2Code), (Image.timeDigits4Address, Image.timeDigits4Code),
+    (Image.allAsciiDigitAddress, Image.allAsciiDigitCode),
     (0x3FCC6008, [0x00, 0x70, 0xCC, 0x3F, 0x11, 0x00, 0x00, 0x00])]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `time::generalized_time` on 15 bytes at
+`0x3FCC7000`, with the result at `0x3FCC5000` and the stack at `0x3FCC8000`,
+meets `generalizedTime_correct`'s hypotheses. -/
+theorem exists_generalizedTime_machine :
+    ∃ (m : RV32.Machine) (sp0 out p retAddr : RV32.Word) (n : Nat),
+      RV32.CodeIn m.mem RV32.GNT Image.generalizedTimeCode ∧ RV32.CodeIn m.mem RV32.DT Image.dateTimeCode ∧
+      RV32.CodeIn m.mem RV32.TD Image.timeDigits2Code ∧ RV32.CodeIn m.mem RV32.TD4 Image.timeDigits4Code ∧
+      RV32.CodeIn m.mem RV32.AAD Image.allAsciiDigitCode ∧ m.pc = RV32.GNT ∧ RV32.reg m RV32.a0 = out ∧
+      RV32.reg m RV32.a1 = p ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 4 = 0 ∧ 0x60 ≤ sp0.toNat ∧
+      sp0.toNat ≤ 0x40000000 ∧ out.toNat + 16 ≤ 0x40000000 ∧ out.toNat % 4 = 0 ∧ n < 2 ^ 32 ∧
+      p.toNat + n + 14 ≤ 0x40000000 ∧ 0 < p.toNat ∧ RV32.Sep out 16 (sp0 + 0xFFFFFFA0) 0x60 ∧
+      RV32.Sep p (n + 14) (sp0 + 0xFFFFFFA0) 0x60 := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC7000 15, RV32.GNT, witnessMemGT⟩, 0x3FCC8000, 0x3FCC5000, 0x3FCC7000, 0, 15,
+    by code_in, by code_in, by code_in, by code_in, by code_in, rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide,
+    by decide, by decide, by decide, by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide)⟩
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `x509::read_time` on a DER reader at `0x3FCC6000`
+over 17 bytes, with the result at `0x3FCC5000` and the stack at
+`0x3FCC8000`, meets `x509ReadTime_correct`'s hypotheses. -/
+theorem exists_x509ReadTime_machine :
+    ∃ (m : RV32.Machine) (sp0 out d rp retAddr : RV32.Word) (rl : Nat),
+      RV32.CodeIn m.mem RV32.XRT Image.x509ReadTimeCode ∧ RV32.CodeIn m.mem RV32.TLV Image.derTlvCode ∧
+      RV32.CodeIn m.mem RV32.GNT Image.generalizedTimeCode ∧ RV32.CodeIn m.mem RV32.DT Image.dateTimeCode ∧
+      RV32.CodeIn m.mem RV32.TD Image.timeDigits2Code ∧ RV32.CodeIn m.mem RV32.TD4 Image.timeDigits4Code ∧
+      RV32.CodeIn m.mem RV32.AAD Image.allAsciiDigitCode ∧ m.pc = RV32.XRT ∧ RV32.reg m RV32.a0 = out ∧
+      RV32.reg m RV32.a1 = d ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
+      RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 4 = 0 ∧ 0x60 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧
+      out.toNat + 16 ≤ 0x40000000 ∧ out.toNat % 4 = 0 ∧ d.toNat + 16 ≤ 0x40000000 ∧ d.toNat % 4 = 0 ∧
+      RV32.memLoad32 m.mem (d + 8) = rp ∧ RV32.memLoad32 m.mem (d + 0xC) = BitVec.ofNat 32 rl ∧
+      rp.toNat + rl + 14 ≤ 0x40000000 ∧ 0 < rp.toNat ∧ RV32.Sep out 16 (sp0 + 0xFFFFFFA0) 0x60 ∧
+      RV32.Sep (d + 8) 8 (sp0 + 0xFFFFFFA0) 0x60 ∧ RV32.Sep out 16 (d + 8) 8 ∧
+      RV32.Sep rp (rl + 14) (sp0 + 0xFFFFFFA0) 0x60 ∧ RV32.Sep rp rl (d + 8) 8 := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, RV32.XRT, witnessMemXRT⟩, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000,
+    0x3FCC7000, 0, 17, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, by code_in, rfl, rfl,
+    rfl, rfl, by decide, rfl, by decide, by decide, by decide, by decide, by decide, by decide, by decide,
+    by decide +kernel, by decide +kernel, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm⟩
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- Memory with `time::rfc3339` and its callees where the image loads them,
+and zeros elsewhere. -/
+def witnessMemRFC : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.timeRfc3339Address, Image.timeRfc3339Code), (Image.dateTimeAddress, Image.dateTimeCode),
+    (Image.timeDigits2Address, Image.timeDigits2Code), (Image.timeDigits4Address, Image.timeDigits4Code),
+    (Image.allAsciiDigitAddress, Image.allAsciiDigitCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `time::rfc3339` on 20 bytes at `0x3FCC7000`, with
+the result at `0x3FCC5000` and the stack at `0x3FCC8000`, meets
+`timeRfc3339_correct`'s hypotheses. -/
+theorem exists_timeRfc3339_machine :
+    ∃ (m : RV32.Machine) (sp0 out p retAddr : RV32.Word) (n : Nat),
+      RV32.CodeIn m.mem RV32.RFC Image.timeRfc3339Code ∧ RV32.CodeIn m.mem RV32.DT Image.dateTimeCode ∧
+      RV32.CodeIn m.mem RV32.TD Image.timeDigits2Code ∧ RV32.CodeIn m.mem RV32.TD4 Image.timeDigits4Code ∧
+      RV32.CodeIn m.mem RV32.AAD Image.allAsciiDigitCode ∧ m.pc = RV32.RFC ∧ RV32.reg m RV32.a0 = out ∧
+      RV32.reg m RV32.a1 = p ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 4 = 0 ∧ 0x90 ≤ sp0.toNat ∧
+      sp0.toNat ≤ 0x40000000 ∧ out.toNat + 16 ≤ 0x40000000 ∧ out.toNat % 4 = 0 ∧
+      p.toNat + n + 4 ≤ 0x40000000 ∧ RV32.Sep out 16 (sp0 + 0xFFFFFF70) 0x90 ∧
+      RV32.Sep p (n + 4) (sp0 + 0xFFFFFF70) 0x90 := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC7000 20, RV32.RFC, witnessMemRFC⟩, 0x3FCC8000, 0x3FCC5000, 0x3FCC7000, 0, 20,
+    by code_in, by code_in, by code_in, by code_in, by code_in, rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide,
+    by decide, by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide)⟩
+
+/-- Memory with `manifest::parse` and its callees where the image loads them,
+and zeros elsewhere. -/
+def witnessMemParseCur : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.manifestParseAddress, Image.manifestParseCode), (Image.readerMagicAddress, Image.readerMagicCode),
+    (Image.readerArray4Address, Image.readerArray4Code), (Image.readerBytesAddress, Image.readerBytesCode),
+    (Image.readerU16Address, Image.readerU16Code), (Image.readerReservedAddress, Image.readerReservedCode),
+    (Image.manifestPartAddress, Image.manifestPartCode), (Image.readerU32Address, Image.readerU32Code)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `manifest::parse` on 32 bytes at `0x3FCC6000`, with
+the result at `0x3FCC5000` and the stack at `0x3FCC8000`, meets
+`Cur.manifestParse_correct`'s hypotheses. -/
+theorem exists_manifestParseCur_machine :
+    ∃ (m : RV32.Machine) (sp0 out bp retAddr : RV32.Word),
+      RV32.Cur.MPCode m.mem ∧ m.pc = RV32.Cur.MP ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = bp ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
+      sp0.toNat % 4 = 0 ∧ 0x80 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧ bp ≠ 0 ∧ bp.toNat + 32 ≤ 2 ^ 32 ∧
+      out.toNat % 4 = 0 ∧ out.toNat + 28 ≤ 0x40000000 ∧ RV32.Sep bp 32 (sp0 + 0xFFFFFF80) 0x80 ∧
+      RV32.Sep out 28 (sp0 + 0xFFFFFF80) 0x80 := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, RV32.Cur.MP, witnessMemParseCur⟩, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000,
+    0, ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide,
+    by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide)⟩
+  all_goals code_in
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
@@ -4478,6 +4595,53 @@ theorem exists_timeDigits2_machine :
   refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.timeDigits2Address, witnessMemLeaf2⟩,
     BitVec.ofNat 32 Image.timeDigits2Address, 0, 0x3FCC5000, 0x3FCC6000, 0x3FCC7000, 2, by decide, ?_, rfl, rfl, rfl,
     by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | decide +kernel
+
+/-- Memory with `time::digits::<4>` and `Iter<u8>::all(u8::is_ascii_digit)`
+where the image loads them, a slice reader at `0x3FCC6000` over 4 bytes at
+`0x3FCC7000`, an iterator at `0x3FCC6010` over no bytes at `0x3FCC7000`, and
+zeros elsewhere. -/
+def witnessMemTime : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.timeDigits4Address, Image.timeDigits4Code), (Image.allAsciiDigitAddress, Image.allAsciiDigitCode),
+    (0x3FCC6000, [0x00, 0x70, 0xCC, 0x3F, 0x04, 0x00, 0x00, 0x00]),
+    (0x3FCC6010, [0x00, 0x70, 0xCC, 0x3F, 0x00, 0x70, 0xCC, 0x3F])]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `time::digits::<4>` on a 4-byte slice meets
+`timeDigits4_correct`'s hypotheses. -/
+theorem exists_timeDigits4_machine :
+    ∃ (m : RV32.Machine) (base retAddr out d p : RV32.Word) (n : Nat), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.timeDigits4Code ∧ m.pc = base ∧ RV32.reg m RV32.a0 = out ∧
+      RV32.reg m RV32.a1 = d ∧ d.toNat % 4 = 0 ∧ out.toNat % 4 = 0 ∧ n < 2 ^ 32 ∧ RV32.memLoad32 m.mem d = p ∧
+      RV32.memLoad32 m.mem (d + 4) = BitVec.ofNat 32 n ∧ RV32.Sep out 8 base Image.timeDigits4Code.length ∧
+      RV32.Sep d 8 base Image.timeDigits4Code.length ∧ RV32.Sep d 8 p 4 ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.timeDigits4Address, witnessMemTime⟩,
+    BitVec.ofNat 32 Image.timeDigits4Address, 0, 0x3FCC5000, 0x3FCC6000, 0x3FCC7000, 4, by decide, ?_, rfl, rfl, rfl,
+    by decide, by decide, by decide, ?_, ?_, ?_, ?_, ?_, rfl, by decide⟩
+  all_goals first
+    | code_in
+    | exact RV32.sep_of_le (by decide) (by decide)
+    | decide +kernel
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `Iter<u8>::all(u8::is_ascii_digit)` on an empty
+iterator meets `allAsciiDigit_correct`'s hypotheses. -/
+theorem exists_allAsciiDigit_machine :
+    ∃ (m : RV32.Machine) (base it p retAddr : RV32.Word) (L : Nat), base.toNat % 2 = 0 ∧
+      RV32.CodeIn m.mem base Image.allAsciiDigitCode ∧ m.pc = base ∧ RV32.reg m RV32.a0 = it ∧
+      it.toNat % 4 = 0 ∧ RV32.memLoad32 m.mem it = p ∧ RV32.memLoad32 m.mem (it + 4) = p + BitVec.ofNat 32 L ∧
+      L < 2 ^ 32 ∧ RV32.Sep it 4 base Image.allAsciiDigitCode.length ∧ RV32.Sep it 4 p L ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
+  refine ⟨⟨leafRegs 0x3FCC6010 0 0, BitVec.ofNat 32 Image.allAsciiDigitAddress, witnessMemTime⟩,
+    BitVec.ofNat 32 Image.allAsciiDigitAddress, 0x3FCC6010, 0x3FCC7000, 0, 0, by decide, ?_, rfl, rfl, by decide, ?_,
+    ?_, by decide, ?_, ?_, rfl, by decide⟩
   all_goals first
     | code_in
     | exact RV32.sep_of_le (by decide) (by decide)
@@ -7715,6 +7879,18 @@ end C3
 /-- info: 'C3.exists_timeDigits2_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_timeDigits2_machine
 
+/-- info: 'C3.RV32.timeDigits4_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.timeDigits4_correct
+
+/-- info: 'C3.exists_timeDigits4_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_timeDigits4_machine
+
+/-- info: 'C3.RV32.allAsciiDigit_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.allAsciiDigit_correct
+
+/-- info: 'C3.exists_allAsciiDigit_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_allAsciiDigit_machine
+
 /-- info: 'C3.RV32.derPositiveInteger_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.derPositiveInteger_correct
 
@@ -8152,6 +8328,54 @@ end C3
 
 /-- info: 'C3.RV32.dt_arith' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.dt_arith
+
+/-- info: 'C3.RV32.generalizedTime_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.generalizedTime_correct
+
+/-- info: 'C3.RV32.gtTail_mem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.gtTail_mem
+
+/-- info: 'C3.exists_generalizedTime_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_generalizedTime_machine
+
+/-- info: 'C3.RV32.x509ReadTime_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.x509ReadTime_correct
+
+/-- info: 'C3.RV32.derTlvMem_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.derTlvMem_ok
+
+/-- info: 'C3.RV32.readTime_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.readTime_ok
+
+/-- info: 'C3.exists_x509ReadTime_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_x509ReadTime_machine
+
+/-- info: 'C3.RV32.timeRfc3339_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.timeRfc3339_correct
+
+/-- info: 'C3.RV32.rfc3339_eq' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.rfc3339_eq
+
+/-- info: 'C3.RV32.rfcRest_mem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.rfcRest_mem
+
+/-- info: 'C3.RV32.rfcTail_mem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.rfcTail_mem
+
+/-- info: 'C3.exists_timeRfc3339_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_timeRfc3339_machine
+
+/-- info: 'C3.RV32.Cur.manifestParse_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.manifestParse_correct
+
+/-- info: 'C3.decodeManifest_parse' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.decodeManifest_parse
+
+/-- info: 'C3.RV32.Cur.manifestParse_decodes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.manifestParse_decodes
+
+/-- info: 'C3.exists_manifestParseCur_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_manifestParseCur_machine
 
 /-- info: 'C3.RV32.dt_check' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.dt_check
@@ -8653,3 +8877,38 @@ end C3
 
 /-- info: 'C3.RV32.Sv.sv_err' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Sv.sv_err
+/-- info: 'C3.RV32.tufIndexDocSpec_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufIndexDocSpec_ok
+
+/-- info: 'C3.RV32.tufIndexDoc_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufIndexDoc_correct
+
+/-- info: 'C3.RV32.tufHexValue_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufHexValue_correct
+
+/-- info: 'C3.RV32.allAsciiDigit_exact' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.allAsciiDigit_exact
+
+/-- info: 'C3.RV32.flashPartRead_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.flashPartRead_correct
+
+/-- info: 'C3.RV32.stripPrefix_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.stripPrefix_correct
+
+/-- info: 'C3.RV32.efuseProgramRun_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.efuseProgramRun_correct
+
+/-- info: 'C3.RV32.tufHexDecode_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufHexDecode_correct
+
+/-- info: 'C3.RV32.tufReadDoc_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufReadDoc_correct
+
+/-- info: 'C3.RV32.ecdsaSignature32_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ecdsaSignature32_correct
+
+/-- info: 'C3.sha384_eq_stream' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.sha384_eq_stream
+
+/-- info: 'C3.RV32.sha384Fn_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.sha384Fn_correct

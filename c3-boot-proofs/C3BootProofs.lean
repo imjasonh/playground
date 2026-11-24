@@ -40,6 +40,8 @@ import C3BootProofs.Proofs.U16
 import C3BootProofs.Proofs.Reserved
 import C3BootProofs.Proofs.Parse
 import C3BootProofs.Proofs.ParseSpec
+import C3BootProofs.Proofs.ParseCur
+import C3BootProofs.Proofs.ParseSpecCur
 import C3BootProofs.Proofs.ImageHelpers
 import C3BootProofs.Proofs.ImageParse
 import C3BootProofs.Proofs.ImageCalls
@@ -105,6 +107,11 @@ import C3BootProofs.Proofs.ScalarFromSlice256
 import C3BootProofs.Proofs.EdCall
 import C3BootProofs.Proofs.IsSmallOrder
 import C3BootProofs.Proofs.DateTime
+import C3BootProofs.Proofs.TimeDigits4
+import C3BootProofs.Proofs.AllAsciiDigit
+import C3BootProofs.Proofs.GeneralizedTime
+import C3BootProofs.Proofs.X509ReadTime
+import C3BootProofs.Proofs.TimeRfc3339
 import C3BootProofs.Proofs.Base64Decode
 import C3BootProofs.Proofs.Base64Encode
 import C3BootProofs.Proofs.Sha512Update
@@ -336,3 +343,15 @@ import C3BootProofs.Models.Ed25519SvModel
 import C3BootProofs.Models.Ed25519SvModelPrime
 import C3BootProofs.Models.Ed25519SvModelIsoCmp
 import C3BootProofs.Models.Ed25519Closed
+import C3BootProofs.Proofs.LeafStep
+import C3BootProofs.Proofs.TufIndex
+import C3BootProofs.Proofs.TufHex
+import C3BootProofs.Proofs.AsciiDigits
+import C3BootProofs.Proofs.FlashPart
+import C3BootProofs.Proofs.StripPrefix
+import C3BootProofs.Proofs.EfuseRun
+import C3BootProofs.Proofs.TufHexDecode
+import C3BootProofs.Proofs.TufReadDoc
+import C3BootProofs.Proofs.EcdsaSig32
+import C3BootProofs.Proofs.Sha384FnCall
+import C3BootProofs.Proofs.Sha384Fn
