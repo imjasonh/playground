@@ -9,16 +9,51 @@ concurrency:
   group: test-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# actions: write lets the cache saves on main delete the entries they replace.
+permissions:
+  contents: read
+  actions: write
+
+# Each ecosystem is its own job on its own runner, and a job-level `if` skips
+# the ecosystems a change doesn't touch. The `test` job at the end fans in
+# every result, so it is the one check that branch protection requires.
+#
+# Caches. Each one is restored by key prefix, because the daily dependency
+# update changes every lockfile hash and an exact match would almost never
+# hit. Only pushes to main save, after the tests, so a pull request doesn't
+# spend time uploading a cache that no other run can read.
+#
+# A restore by prefix plus a save of everything on disk grows without bound:
+# every save held all that earlier jobs had added, and the Go archive passed
+# 4 GB and filled a runner's disk while it extracted. So a saved cache is a
+# function of the current commit and a size budget, measured on disk because
+# that is what an extraction has to fit. The key names the commit, a trim or
+# a size check bounds the contents, and the save action deletes the entry it
+# replaces, which leaves one entry per cache and keeps the repository under
+# its quota. Two jobs never save the same family.
 jobs:
-  test:
+  discover:
+    name: Discover changed apps
     runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.discover.outputs.apps }}
+      modules: ${{ steps.discover.outputs.modules }}
+      kind: ${{ steps.kind.outputs.kind }}
+      rust: ${{ steps.discover.outputs.rust }}
+      ios: ${{ steps.discover.outputs.ios }}
+      macos: ${{ steps.discover.outputs.macos }}
+      esp32: ${{ steps.discover.outputs.esp32 }}
+      nescript: ${{ steps.discover.outputs.nescript }}
+      pasta: ${{ steps.discover.outputs.pasta }}
+      blog: ${{ steps.discover.outputs.blog }}
+      index: ${{ steps.discover.outputs.index }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Discover changed browser and Go apps
+      - name: Discover changed apps
         id: discover
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -27,107 +62,761 @@ jobs:
           HEAD_SHA: ${{ github.sha }}
         run: bash .github/scripts/discover-changed-apps.sh
 
-      # Install toolchains sequentially so PATH is ready before the parallel
-      # test group. Each setup stays conditional so unchanged ecosystems pay
-      # nothing. setup-node also runs when Go's node-image module changed
-      # (its conformance tests need node/pnpm on PATH).
+      - name: Check for tracked compiled binaries
+        run: bash .github/scripts/check-no-binaries.sh
+
+      - name: Select the kind tests
+        id: kind
+        env:
+          MODULES: ${{ steps.discover.outputs.modules }}
+        run: |
+          kind=$(jq -c --argjson kind "$(bash .github/scripts/test-kind-e2e.sh --list)" \
+            '[.[] | select(IN($kind[]))]' <<<"$MODULES")
+          echo "kind=${kind}" >>"$GITHUB_OUTPUT"
+          echo "kind e2e: ${kind}"
+
+  browser:
+    name: Browser apps
+    needs: discover
+    if: ${{ needs.discover.outputs.apps != '[]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        if: ${{ steps.discover.outputs.apps != '[]' || contains(steps.discover.outputs.modules, 'node-image') }}
         with:
           node-version: '24'
-          cache: npm
-          cache-dependency-path: '**/package-lock.json'
 
-      # Go toolchain for Go modules and/or the pasta style leg (pasta is a
-      # Go module; the pasta leg builds the CLI even when no other Go app
-      # changed).
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        id: setup-go
-        if: ${{ steps.discover.outputs.modules != '[]' || steps.discover.outputs.pasta == 'true' }}
+      # npm's content-addressed package cache, which `npm ci` reads. The
+      # second restore key reads the family that this job and the Rust job
+      # shared before they split.
+      - name: Restore the npm cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          go-version: 'stable'
-          check-latest: true
-          cache: false
+          path: ~/.npm/_cacache
+          key: npm-browser-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            npm-browser-${{ runner.os }}-
+            npm-cacache-${{ runner.os }}-
 
-      # Go's module and build caches. setup-go's own cache needs an exact
-      # match on every go.sum in the repository, which the daily dependency
-      # update changes, so restore the newest cache with a prefix instead.
-      # Only pushes to main save one, after the tests, so a pull request
-      # doesn't spend time uploading a cache that no other run can read.
-      - name: Restore Go caches
-        id: go-cache
-        if: ${{ steps.setup-go.outcome == 'success' }}
+      - name: Run tests for changed apps
+        env:
+          APPS: ${{ needs.discover.outputs.apps }}
+        run: bash .github/scripts/test-browser-apps.sh
+
+      # An npm cache over its budget is deleted, not saved, because the
+      # packages that older lockfiles needed stay in it. The next run on main
+      # saves a fresh one.
+      - name: Save the npm cache
+        if: ${{ github.ref == 'refs/heads/main' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: ~/.npm/_cacache
+          key: npm-browser-${{ runner.os }}-${{ github.sha }}
+          prefixes: |
+            npm-browser-${{ runner.os }}-
+            npm-cacache-${{ runner.os }}-
+          max-bytes: 1610612736
+          token: ${{ github.token }}
+
+  go:
+    name: Go
+    needs: discover
+    if: ${{ needs.discover.outputs.modules != '[]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # node-image's conformance tests need node and pnpm on PATH.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        if: ${{ contains(fromJSON(needs.discover.outputs.modules), 'node-image') }}
+        with:
+          node-version: '24'
+
+      - uses: ./.github/actions/setup-go-cache
+        id: go
+
+      - name: Format, build, and test changed Go apps
+        env:
+          MODULES: ${{ needs.discover.outputs.modules }}
+        run: bash .github/scripts/test-go-modules.sh
+
+      # This is the only job that saves the Go build cache. The kind and
+      # pasta jobs restore it and don't save.
+      - name: Trim the Go build cache
+        id: trim-go
+        if: ${{ github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        run: bash .github/scripts/trim-go-build-cache.sh
+
+      - name: Save the Go build cache
+        if: ${{ steps.trim-go.outcome == 'success' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ steps.go.outputs.go-version }}-${{ github.sha }}
+          prefixes: |
+            go-build-${{ runner.os }}-
+            go-${{ runner.os }}-
+          max-bytes: 3221225472
+          token: ${{ github.token }}
+
+  kind:
+    name: kind e2e
+    needs: discover
+    if: ${{ needs.discover.outputs.kind != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.discover.outputs.kind) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-go-cache
+
+      - name: kind e2e for ${{ matrix.module }}
+        run: bash .github/scripts/test-kind-e2e.sh "${{ matrix.module }}"
+
+  rust:
+    name: Rust
+    needs: discover
+    if: ${{ needs.discover.outputs.rust != '[]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # npm's package cache, which `npx` reads for the pinned Wrangler. The
+      # extracted _npx directory is not cached, because it is larger than the
+      # packages it comes from.
+      - name: Restore the npm cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm/_cacache
+          key: npm-wrangler-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            npm-wrangler-${{ runner.os }}-
+            npm-cacache-${{ runner.os }}-
+
+      # Rust tools: the binaries each Worker's wrangler.toml installs with
+      # `cargo install`. worker-build takes about half a minute to compile
+      # and the install is a few megabytes.
+      - name: Restore the Rust tools
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/cargo-tools
+          key: cargo-tools-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            cargo-tools-${{ runner.os }}-
+
+      # Rust dependencies: the shared target directory plus the registry
+      # sources those artifacts were built from. The registry has to travel
+      # with the target directory, because a build script reruns when its
+      # source tree is newer than the cached output. prune-cargo-cache.sh
+      # removes the app crates and any dependency the current lockfiles no
+      # longer name before the save.
+      - name: Restore the Rust dependency cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+            ${{ runner.temp }}/cargo-target
+            ~/.cargo/registry
+          key: cargo-deps-${{ runner.os }}-${{ github.sha }}
           restore-keys: |
-            go-${{ runner.os }}-${{ steps.setup-go.outputs.go-version }}-
+            cargo-deps-${{ runner.os }}-
 
-      # Baseline stable toolchain; an app's rust-toolchain.toml (e.g. web-push
-      # pins 1.83) overrides it per directory when cargo runs. Use the
-      # runner's preinstalled rustup instead of dtolnay/rust-toolchain.
+      # Baseline stable toolchain; an app's rust-toolchain.toml overrides it
+      # per directory when cargo runs. Use the runner's preinstalled rustup
+      # instead of dtolnay/rust-toolchain.
       - name: Install Rust stable
-        if: ${{ steps.discover.outputs.rust != '[]' }}
         run: |
           rustup toolchain install stable --profile minimal --no-self-update \
             --component clippy --component rustfmt \
             --target wasm32-unknown-unknown
           rustup default stable
 
-      # Ecosystems are independent; overlap their wall time like deps.yaml.
-      - parallel:
-          - name: Run tests for changed apps
-            if: ${{ steps.discover.outputs.apps != '[]' }}
-            env:
-              APPS: ${{ steps.discover.outputs.apps }}
-            run: bash .github/scripts/test-browser-apps.sh
+      - name: Lint, build, and test changed Rust apps
+        env:
+          RUST_APPS: ${{ needs.discover.outputs.rust }}
+          CARGO_INSTALL_ROOT: ${{ runner.temp }}/cargo-tools
+        run: bash .github/scripts/test-rust-apps.sh
 
-          - name: Format, build, and test changed Go apps
-            if: ${{ steps.discover.outputs.modules != '[]' }}
-            env:
-              MODULES: ${{ steps.discover.outputs.modules }}
-            run: bash .github/scripts/test-go-modules.sh
+      # 512 MiB. Wrangler and the workerd binary it installs.
+      - name: Save the npm cache
+        if: ${{ github.ref == 'refs/heads/main' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: ~/.npm/_cacache
+          key: npm-wrangler-${{ runner.os }}-${{ github.sha }}
+          prefixes: npm-wrangler-${{ runner.os }}-
+          max-bytes: 536870912
+          token: ${{ github.token }}
 
-          # A kind test mostly waits for a cluster and its Pods, so each runs
-          # beside the unit tests instead of after them.
-          - name: kind e2e for git-k8s
-            if: ${{ contains(fromJSON(steps.discover.outputs.modules), 'git-k8s') }}
-            run: bash .github/scripts/test-kind-e2e.sh git-k8s
+      - name: Save the Rust tools
+        if: ${{ github.ref == 'refs/heads/main' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: ${{ runner.temp }}/cargo-tools
+          key: cargo-tools-${{ runner.os }}-${{ github.sha }}
+          prefixes: cargo-tools-${{ runner.os }}-
+          max-bytes: 268435456
+          token: ${{ github.token }}
 
-          - name: kind e2e for kube
-            if: ${{ contains(fromJSON(steps.discover.outputs.modules), 'kube') }}
-            run: bash .github/scripts/test-kind-e2e.sh kube
+      - name: Prune the Rust dependency cache
+        id: prune-cargo
+        if: ${{ github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        run: bash .github/scripts/prune-cargo-cache.sh "$RUNNER_TEMP/cargo-target" "$HOME/.cargo/registry"
 
-          - name: kind e2e for sshapp
-            if: ${{ contains(fromJSON(steps.discover.outputs.modules), 'sshapp') }}
-            run: bash .github/scripts/test-kind-e2e.sh sshapp
-
-          - name: Lint, build, and test changed Rust apps
-            if: ${{ steps.discover.outputs.rust != '[]' }}
-            env:
-              RUST_APPS: ${{ steps.discover.outputs.rust }}
-            run: bash .github/scripts/test-rust-apps.sh
-
-          - name: pasta test and lint
-            if: ${{ steps.discover.outputs.pasta == 'true' }}
-            run: bash .github/scripts/test-pasta.sh
-
-          - name: Test posts catalog
-            if: ${{ steps.discover.outputs.blog == 'true' }}
-            run: bash .github/scripts/test-blog.sh
-
-          - name: Test site index
-            if: ${{ steps.discover.outputs.index == 'true' }}
-            run: bash .github/scripts/test-index.sh
-
-      - name: Save Go caches
-        if: ${{ github.ref == 'refs/heads/main' && steps.go-cache.outcome == 'success' && steps.go-cache.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Save the Rust dependency cache
+        if: ${{ steps.prune-cargo.outcome == 'success' }}
+        uses: ./.github/actions/save-cache
         with:
           path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ steps.go-cache.outputs.cache-primary-key }}
+            ${{ runner.temp }}/cargo-target
+            ~/.cargo/registry
+          key: cargo-deps-${{ runner.os }}-${{ github.sha }}
+          prefixes: cargo-deps-${{ runner.os }}-
+          # 6 GiB. The seven Workers' dependency artifacts were 2.5 GB
+          # with reduced debuginfo. The cap leaves room for the other Rust
+          # apps and the default debuginfo level.
+          max-bytes: 6442450944
+          token: ${{ github.token }}
+
+  ios:
+    name: iOS
+    needs: discover
+    if: ${{ needs.discover.outputs.ios != '[]' }}
+    # The app targets iOS 27, whose SDK is on GitHub's Xcode 27 image.
+    runs-on: xcode-27
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.discover.outputs.ios) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Bundler cache needs the app's committed Gemfile.lock. Cuts ~30-40s of
+      # cold gem resolve + native extension builds on every run.
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: ${{ matrix.app }}
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Test ${{ matrix.app }}
+        env:
+          IOS_APPS: '["${{ matrix.app }}"]'
+        run: bash .github/scripts/ios-ci.sh test
+
+  macos:
+    name: macOS
+    needs: discover
+    if: ${{ needs.discover.outputs.macos != '[]' }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.discover.outputs.macos) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Test ${{ matrix.app }}
+        env:
+          MACOS_APPS: '["${{ matrix.app }}"]'
+        run: bash .github/scripts/macos-ci.sh test
+
+  # ESP32 firmware needs the espup Xtensa toolchain, so the Rust job leaves it
+  # out. Host tests and the cross-build run in parallel, because the
+  # cross-build takes far longer.
+  esp32-host:
+    name: ESP32 host
+    needs: discover
+    if: ${{ needs.discover.outputs.esp32 != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.discover.outputs.esp32) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # The crate and its tools build into APP/target. Like the Rust job's
+      # cache, the registry travels with the target directory.
+      - name: Restore the Cargo cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ matrix.app }}/target
+            ~/.cargo/registry
+          key: cargo-esp32-host-${{ matrix.app }}-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            cargo-esp32-host-${{ matrix.app }}-${{ runner.os }}-
+
+      - name: Format, lint, and test ${{ matrix.app }}
+        run: bash .github/scripts/test-esp32-host.sh "${{ matrix.app }}"
+
+      - name: Prune the Cargo cache
+        id: prune-cargo
+        if: ${{ github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        env:
+          APP: ${{ matrix.app }}
+        run: |
+          locks=(-l "$APP/Cargo.lock")
+          for lock in "$APP"/tools/*/Cargo.lock; do
+            [ -f "$lock" ] && locks+=(-l "$lock")
+          done
+          bash .github/scripts/prune-cargo-cache.sh "${locks[@]}" "$APP/target" "$HOME/.cargo/registry"
+
+      - name: Save the Cargo cache
+        if: ${{ steps.prune-cargo.outcome == 'success' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: |
+            ${{ matrix.app }}/target
+            ~/.cargo/registry
+          key: cargo-esp32-host-${{ matrix.app }}-${{ runner.os }}-${{ github.sha }}
+          prefixes: cargo-esp32-host-${{ matrix.app }}-${{ runner.os }}-
+          # 2 GiB. inkbot-esp32's crate and tools were 1.2 GB after a prune.
+          max-bytes: 2147483648
+          token: ${{ github.token }}
+
+  esp32-firmware:
+    name: ESP32 firmware
+    needs: discover
+    if: ${{ needs.discover.outputs.esp32 != '[]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.discover.outputs.esp32) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install native build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10
+
+      - name: Setup Xtensa toolchain
+        uses: esp-rs/xtensa-toolchain@ec6d36527049a7f4fb2cb0c1a644668c1bb8a2a4 # v1.7
+        env:
+          # espup hits api.github.com; unauthenticated runners 403.
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          default: true
+          buildtargets: esp32,esp32c3
+          ldproxy: true
+
+      # Each image builds into its own directory under APP/target. ESP-IDF
+      # itself, which embuild installs in APP/.embuild, isn't cached.
+      - name: Restore the Cargo cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ matrix.app }}/target
+            ~/.cargo/registry
+          key: cargo-esp32-firmware-${{ matrix.app }}-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            cargo-esp32-firmware-${{ matrix.app }}-${{ runner.os }}-
+
+      - name: Cross-build ${{ matrix.app }}
+        working-directory: ${{ matrix.app }}
+        run: make build
+
+      # `-Z build-std` compiles the standard library and its dependencies
+      # into the target directory, so the prune keeps what the esp
+      # toolchain's library lockfile names too.
+      - name: Prune the Cargo cache
+        id: prune-cargo
+        if: ${{ github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        env:
+          APP: ${{ matrix.app }}
+        run: |
+          std_lock="$(rustc +esp --print sysroot)/lib/rustlib/src/rust/library/Cargo.lock"
+          bash .github/scripts/prune-cargo-cache.sh -l "$APP/Cargo.lock" -l "$std_lock" \
+            "$APP/target" "$HOME/.cargo/registry"
+
+      - name: Save the Cargo cache
+        if: ${{ steps.prune-cargo.outcome == 'success' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: |
+            ${{ matrix.app }}/target
+            ~/.cargo/registry
+          key: cargo-esp32-firmware-${{ matrix.app }}-${{ runner.os }}-${{ github.sha }}
+          prefixes: cargo-esp32-firmware-${{ matrix.app }}-${{ runner.os }}-
+          # 4 GiB. esp-idf-sys's ESP-IDF build tree is most of it, and
+          # inkbot-esp32 builds two images.
+          max-bytes: 4294967296
+          token: ${{ github.token }}
+
+  # The Rust job formats, lints, and tests the compiler. This job checks what
+  # it compiles: the committed ROMs, the jsnes frame and audio goldens, the
+  # README GIFs, and Mesen2's reading of the .dbg file. It uploads the ROMs
+  # it built as the nescript-examples artifact.
+  nescript:
+    name: nescript ROMs
+    needs: discover
+    if: ${{ needs.discover.outputs.nescript == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RUSTFLAGS: "-D warnings"
+      MESEN_VERSION: "2.1.1"
+    defaults:
+      run:
+        working-directory: nescript
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Restore the Cargo cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            nescript/target
+            ~/.cargo/registry
+          key: cargo-nescript-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            cargo-nescript-${{ runner.os }}-
+
+      - name: Install Rust
+        run: rustup toolchain install --no-self-update
+
+      - name: Run compile benches
+        run: cargo test --locked --benches
+
+      - name: Build the release compiler
+        run: cargo build --locked --release
+
+      - name: Verify committed ROMs match their sources
+        id: verify-roms
+        run: |
+          mkdir -p /tmp/reprotest "$RUNNER_TEMP/nescript-examples"
+          fail=0
+          for f in examples/*.ne; do
+            name=$(basename "$f" .ne)
+            ./target/release/nescript build "$f" --output "/tmp/reprotest/$name.nes"
+            cp "/tmp/reprotest/$name.nes" "$RUNNER_TEMP/nescript-examples/$name.nes"
+            if ! cmp -s "examples/$name.nes" "/tmp/reprotest/$name.nes"; then
+              echo "::error file=nescript/examples/$name.ne::committed nescript/examples/$name.nes is stale; rerun \`cargo run --release -- build examples/$name.ne\` from nescript/ and commit the new ROM"
+              fail=1
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            exit 1
+          fi
+
+      # always() so a stale committed ROM still leaves the compiler's
+      # output on the run. The outcome check skips this when the
+      # compiler never ran.
+      - name: Upload example ROMs
+        id: example-roms
+        if: ${{ always() && (steps.verify-roms.outcome == 'success' || steps.verify-roms.outcome == 'failure') }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: nescript-examples
+          path: ${{ runner.temp }}/nescript-examples
+          if-no-files-found: error
+
+      - name: Link the example ROMs
+        if: ${{ always() && steps.example-roms.outcome == 'success' }}
+        env:
+          URL: ${{ steps.example-roms.outputs.artifact-url }}
+        run: |
+          echo "Example ROMs: $URL" >>"$GITHUB_STEP_SUMMARY"
+
+      # Structural validation, not just the magic bytes: the header
+      # has to account for every byte, PRG and CHR bank counts have
+      # to be powers of two (FCEUX rounds the PRG window up, which
+      # would otherwise move the bank the mapper wires to
+      # $E000-$FFFF), the mapper has to be one the compiler emits,
+      # and the reset vector has to point into ROM.
+      - name: Verify ROMs are loadable iNES
+        run: ./target/release/nescript verify examples/*.nes
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+
+      - name: Compile examples with this compiler
+        run: |
+          for f in examples/*.ne; do
+            echo "==> Compiling $f"
+            ./target/release/nescript build "$f"
+          done
+
+      - name: Install emulator dependencies
+        working-directory: nescript/tests/emulator
+        run: npm ci
+
+      - name: Diff each ROM against its golden
+        working-directory: nescript/tests/emulator
+        run: node run_examples.mjs
+
+      - name: Drive the DVD screensaver with both controllers
+        working-directory: nescript/tests/emulator
+        run: node dvd_screensaver_input.mjs
+
+      # Each row is a GIF's ROM name, frame count, stride, and warmup
+      # frames, the arguments record_gif.mjs takes around the output path.
+      - name: Verify the README GIFs are up to date
+        working-directory: nescript/tests/emulator
+        run: |
+          fail=0
+          while read -r name frames stride warmup; do
+            node record_gif.mjs "$name" "$frames" "$stride" "/tmp/$name.gif" "$warmup"
+            if ! cmp -s "../../docs/$name.gif" "/tmp/$name.gif"; then
+              echo "::error file=nescript/docs/$name.gif::committed GIF is stale; rerun \`node tests/emulator/record_gif.mjs $name $frames $stride docs/$name.gif $warmup\` from nescript/ and commit it"
+              fail=1
+            fi
+          done <<'EOF'
+          platformer 360 2 30
+          war 360 2 4
+          pong 360 2 4
+          subway 360 2 30
+          rampart 720 2 16
+          dvd_screensaver 720 2 6402
+          EOF
+          exit "$fail"
+
+      - name: Install Mesen runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libsdl2-2.0-0 xvfb
+
+      # Mesen is a release download, so its version is the whole key.
+      - name: Restore Mesen2
+        id: mesen-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/mesen2
+          key: mesen2-${{ env.MESEN_VERSION }}-linux-x64
+
+      - name: Download Mesen2
+        if: ${{ steps.mesen-cache.outputs.cache-hit != 'true' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/mesen2"
+          cd "$RUNNER_TEMP/mesen2"
+          curl -sSfL -o Mesen.zip \
+            "https://github.com/SourMesen/Mesen2/releases/download/${MESEN_VERSION}/Mesen_${MESEN_VERSION}_Linux_x64.zip"
+          unzip -q Mesen.zip
+          chmod +x Mesen
+          rm Mesen.zip
+
+      - name: Build a ROM with debug info
+        run: |
+          ./target/release/nescript build examples/hello_sprite.ne \
+            --dbg /tmp/hello.dbg \
+            --output /tmp/hello.nes
+
+      - name: Validate .dbg with Mesen2
+        run: |
+          # Mesen opens its first-run wizard before --testRunner when
+          # settings.json is missing. An empty file selects the defaults.
+          touch "$RUNNER_TEMP/mesen2/settings.json"
+          # Invariant globalization keeps Mesen from loading system libstdc++
+          # over the copy bundled in MesenCore.so. xvfb satisfies the X11
+          # connection Avalonia opens before the test runner starts.
+          DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
+            xvfb-run -a "$RUNNER_TEMP/mesen2/Mesen" \
+              --testRunner /tmp/hello.nes tests/mesen/probe.lua \
+              --timeout=15
+
+      - name: Upload screenshot diffs on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: nescript-emulator-diff
+          path: |
+            nescript/tests/emulator/actual/
+            nescript/tests/emulator/goldens/
+            nescript/tests/emulator/report.json
+          if-no-files-found: ignore
+
+      - name: Save Mesen2
+        if: ${{ github.ref == 'refs/heads/main' && steps.mesen-cache.outputs.cache-hit != 'true' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: ${{ runner.temp }}/mesen2
+          key: mesen2-${{ env.MESEN_VERSION }}-linux-x64
+          prefixes: mesen2-
+          max-bytes: 536870912
+          token: ${{ github.token }}
+
+      - name: Prune the Cargo cache
+        id: prune-cargo
+        if: ${{ github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        run: bash ../.github/scripts/prune-cargo-cache.sh -l Cargo.lock target "$HOME/.cargo/registry"
+
+      - name: Save the Cargo cache
+        if: ${{ steps.prune-cargo.outcome == 'success' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: |
+            nescript/target
+            ~/.cargo/registry
+          key: cargo-nescript-${{ runner.os }}-${{ github.sha }}
+          prefixes: cargo-nescript-${{ runner.os }}-
+          # 1 GiB. The benches and the release compiler were 520 MB after
+          # a prune.
+          max-bytes: 1073741824
+          token: ${{ github.token }}
+
+  pasta:
+    name: pasta
+    needs: discover
+    if: ${{ needs.discover.outputs.pasta == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-go-cache
+
+      # pasta: per-file results, parse trees, and the grammars wazero
+      # compiled. pasta keys an entry by the rules and the grammar build but
+      # not by its own code, so the cache key names a hash of pasta's sources
+      # and a change to pasta starts from an empty cache instead of replaying
+      # results the old code produced. The marker dates the start of the run
+      # for trim-pasta-cache.sh.
+      - name: Key the pasta cache
+        id: pasta-key
+        env:
+          SOURCES: ${{ hashFiles('pasta/go.sum', 'pasta/**/*.go', '!pasta/**/*_test.go', 'pasta/**/*.wasm.br', 'pasta/**/cuemod/**') }}
+        run: |
+          echo "prefix=pasta-${RUNNER_OS}-${SOURCES}-" >>"$GITHUB_OUTPUT"
+          touch "$RUNNER_TEMP/pasta-cache-start"
+
+      - name: Restore the pasta cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pasta
+          key: ${{ steps.pasta-key.outputs.prefix }}${{ github.sha }}
+          restore-keys: |
+            ${{ steps.pasta-key.outputs.prefix }}
+
+      - name: pasta test and lint
+        run: bash .github/scripts/test-pasta.sh
+
+      - name: Trim the pasta cache
+        id: trim-pasta
+        if: ${{ github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        run: bash .github/scripts/trim-pasta-cache.sh "$RUNNER_TEMP/pasta-cache-start"
+
+      - name: Save the pasta cache
+        if: ${{ steps.trim-pasta.outcome == 'success' }}
+        uses: ./.github/actions/save-cache
+        with:
+          path: ~/.cache/pasta
+          key: ${{ steps.pasta-key.outputs.prefix }}${{ github.sha }}
+          prefixes: pasta-${{ runner.os }}-
+          # 256 MiB. A lint of the repository leaves about 40 MB.
+          max-bytes: 268435456
+          token: ${{ github.token }}
+
+  blog:
+    name: Posts catalog
+    needs: discover
+    if: ${{ needs.discover.outputs.blog == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          # build-blog_test.py dates posts from git history.
+          fetch-depth: 0
+
+      - name: Test posts catalog
+        run: bash .github/scripts/test-blog.sh
+
+  index:
+    name: Site index
+    needs: discover
+    if: ${{ needs.discover.outputs.index == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Test site index
+        run: bash .github/scripts/test-index.sh
+
+  scripts:
+    name: Cache and discovery scripts
+    needs: discover
+    if: ${{ needs.discover.outputs.pasta == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Test the cache and discovery scripts
+        run: |
+          bash .github/scripts/cache-scripts_test.sh
+          bash .github/scripts/prune-cargo-cache_test.sh
+          bash .github/scripts/discover-rust-apps_test.sh
+          bash .github/scripts/discover-esp32-apps_test.sh
+          bash .github/scripts/discover-nescript_test.sh
+          bash .github/scripts/discover-go-modules_test.sh
+          bash .github/scripts/check-whbiab-web_test.sh
+          bash .github/scripts/check-no-binaries_test.sh
+
+  # The required check. It runs even when a job it needs failed or was
+  # skipped, passes when every job passed or was skipped, and fails
+  # otherwise. Keep the job id `test`: branch protection and the dependency
+  # update's auto-merge wait for a check with that name.
+  test:
+    needs: [discover, browser, go, kind, rust, ios, macos, esp32-host, esp32-firmware, nescript, pasta, blog, index, scripts]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check every job's result
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"$RESULTS"
+          failed=$(jq -r '[to_entries[] | select(.value.result != "success" and .value.result != "skipped") | .key] | join(", ")' <<<"$RESULTS")
+          if [ -n "$failed" ]; then
+            echo "::error title=Test failed::${failed}"
+            exit 1
+          fi

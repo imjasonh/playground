@@ -5,7 +5,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -34,8 +35,8 @@ const InitialEventsEndAnnotation = "k8s.io/initial-events-end"
 // Event is one watch event. Object holds the raw JSON so callers can decode
 // it into their own types.
 type Event struct {
-	Type   string          `json:"type"`
-	Object json.RawMessage `json:"object"`
+	Type   string         `json:"type"`
+	Object jsontext.Value `json:"object"`
 }
 
 // Err converts an ERROR event into an *APIError.
@@ -180,17 +181,17 @@ type ListMeta struct {
 // chose.
 type Items struct {
 	// JSON is called for each item of a JSON list, with dec positioned at
-	// it. It must consume exactly one JSON value, usually with dec.Decode.
-	JSON func(dec *json.Decoder) error
+	// it. It must consume exactly one JSON value, usually with json.UnmarshalDecode.
+	JSON func(dec *jsontext.Decoder) error
 	// Proto is called with each encoded item of a protobuf list.
 	Proto func(raw []byte) error
 }
 
 // List sends one list request and calls item once for each element of the
 // response's items array, with dec positioned at that element. item must
-// consume exactly one JSON value, usually with dec.Decode. List never holds
+// consume exactly one JSON value, usually with json.UnmarshalDecode. List never holds
 // the whole response in memory.
-func (c *Client) List(ctx context.Context, path string, query url.Values, accept string, item func(dec *json.Decoder) error) (ListMeta, error) {
+func (c *Client) List(ctx context.Context, path string, query url.Values, accept string, item func(dec *jsontext.Decoder) error) (ListMeta, error) {
 	return c.listPage(ctx, path, query, accept, Items{JSON: item})
 }
 
@@ -220,56 +221,55 @@ func (c *Client) listPage(ctx context.Context, path string, query url.Values, ac
 		return meta, errors.New("list: the server sent JSON, which this caller can't read")
 	}
 	item := items.JSON
-	dec := json.NewDecoder(resp.Body)
-	if err := expectDelim(dec, '{'); err != nil {
+	dec := jsontext.NewDecoder(resp.Body)
+	if err := expectKind(dec, '{'); err != nil {
 		return meta, err
 	}
-	for dec.More() {
-		tok, err := dec.Token()
+	for dec.PeekKind() != '}' {
+		tok, err := dec.ReadToken()
 		if err != nil {
 			return meta, err
 		}
-		switch tok {
+		switch tok.String() {
 		case "metadata":
-			if err := dec.Decode(&meta); err != nil {
+			if err := json.UnmarshalDecode(dec, &meta); err != nil {
 				return meta, fmt.Errorf("decoding list metadata: %w", err)
 			}
 		case "items":
-			if !dec.More() {
+			switch dec.PeekKind() {
+			case 'n':
+				if _, err := dec.ReadToken(); err != nil {
+					return meta, err
+				}
 				continue
+			case '[':
+			default:
+				return meta, fmt.Errorf("list items: expected '[', got %v", dec.PeekKind())
 			}
-			tok, err := dec.Token()
-			if err != nil {
+			if _, err := dec.ReadToken(); err != nil {
 				return meta, err
 			}
-			if tok == nil {
-				continue
-			}
-			if d, ok := tok.(json.Delim); !ok || d != '[' {
-				return meta, fmt.Errorf("list items: expected '[', got %v", tok)
-			}
-			for dec.More() {
+			for dec.PeekKind() != ']' {
 				if err := item(dec); err != nil {
 					return meta, err
 				}
 			}
-			if err := expectDelim(dec, ']'); err != nil {
+			if err := expectKind(dec, ']'); err != nil {
 				return meta, err
 			}
 		default:
-			var skip json.RawMessage
-			if err := dec.Decode(&skip); err != nil {
+			if _, err := dec.ReadValue(); err != nil {
 				return meta, err
 			}
 		}
 	}
-	return meta, expectDelim(dec, '}')
+	return meta, expectKind(dec, '}')
 }
 
 // ListAll lists every page of the collection at path, pageSize items at a
 // time, and returns the list's resource version. A pageSize of zero asks for
 // everything in one response.
-func (c *Client) ListAll(ctx context.Context, path string, query url.Values, accept string, pageSize int, item func(dec *json.Decoder) error) (string, error) {
+func (c *Client) ListAll(ctx context.Context, path string, query url.Values, accept string, pageSize int, item func(dec *jsontext.Decoder) error) (string, error) {
 	return c.ListItems(ctx, path, query, accept, pageSize, Items{JSON: item})
 }
 
@@ -296,12 +296,12 @@ func (c *Client) ListItems(ctx context.Context, path string, query url.Values, a
 	}
 }
 
-func expectDelim(dec *json.Decoder, want json.Delim) error {
-	tok, err := dec.Token()
+func expectKind(dec *jsontext.Decoder, want jsontext.Kind) error {
+	tok, err := dec.ReadToken()
 	if err != nil {
 		return err
 	}
-	if d, ok := tok.(json.Delim); !ok || d != want {
+	if tok.Kind() != want {
 		return fmt.Errorf("expected %q, got %v", want, tok)
 	}
 	return nil

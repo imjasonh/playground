@@ -2,7 +2,8 @@ package main
 
 import (
 	"encoding/csv"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"strconv"
@@ -101,9 +102,12 @@ func (p *printer) printJSON(w io.Writer, cols []string, rows [][]any) error {
 		}
 		out = append(out, m)
 	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(out)
+	b, err := json.Marshal(out, jsontext.WithIndent("  "), json.Deterministic(true))
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(append(b, '\n'))
+	return err
 }
 
 func (p *printer) printMarkdown(w io.Writer, cols []string, rows [][]any) error {

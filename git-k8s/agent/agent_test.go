@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"maps"
 	"net/http"
@@ -384,7 +384,7 @@ func TestRejectsResultsThatDontCheckOut(t *testing.T) {
 	}{
 		{name: "digest", body: review(Pass), digest: "sha256:" + strings.Repeat("0", 64), want: "its digest doesn't match"},
 		{name: "no digest", body: review(Pass), digest: "done", want: "finished without reporting its result's digest"},
-		{name: "not JSON", body: []byte("pass"), want: "isn't valid: invalid character"},
+		{name: "not JSON", body: []byte("pass"), want: "isn't valid: jsontext: invalid character"},
 		{name: "verdict", body: []byte(`{"verdict":"maybe"}`), want: `its verdict is "maybe"`},
 		{name: "usage", body: []byte(`{"verdict":"pass","usage":{"inputTokens":-1}}`), want: "negative usage"},
 		{name: "charge", body: []byte(`{"verdict":"pass","chargedCents":-1}`), want: "negative usage"},

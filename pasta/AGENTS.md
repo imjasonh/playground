@@ -22,6 +22,15 @@ from the pasta module root. Run it before sending a PR:
 Pass `go test -short ./...` to skip the e2e shallow-clone smoke tests
 during a tight local loop; CI runs the full suite with `-race`.
 
+## Performance pull requests
+
+State a performance win as pasta's throughput in MB/s, before and
+after. Every run prints it on its last line, `scanned N files, R rules,
+X MB/s`, as bytes scanned over wall time in decimal megabytes. Name the
+corpus and its size, the core count, and the cache state (`-nocache`,
+cold, or warm), because each one changes the rate. Wall time, CPU time,
+and peak RSS can follow as supporting numbers.
+
 ## Running everything
 
 ```
@@ -51,17 +60,19 @@ than `go test`.
 | `internal/loader/cuemod/`     | The embedded built-in CUE module: `schema/`, `lang/<name>/`, `patterns/<name>/`. |
 | `internal/remote/`            | Remote rule imports: `pasta.cue` manifest + `pasta.lock` lockfile, git-based fetcher, on-disk cache under `$XDG_CACHE_HOME/pasta/modules/`. Flat deps only — a remote module declaring its own remote imports is rejected. |
 | `internal/lang/`              | Runtime language registry. `grammars.go` maps grammar name → WASM tree-sitter language handle. |
-| `internal/tswasm/`            | Official C tree-sitter + grammars as embedded `ts-core.wasm.br`, hosted by wazero. Rebuild with `internal/tswasm/build.sh`. Compiled code is cached under `os.UserCacheDir()/pasta/wazero/`; a damaged cache is removed and the module recompiled. |
+| `internal/treesitter/`        | Official C tree-sitter + grammars. With cgo (and without `-tags purego`), `native_cgo.go` compiles the runtime vendored in `csrc/vendor/tree-sitter` and the grammars' Go modules; other builds, and grammars without a native build, use the embedded `ts-core.wasm.br` on wazero. `internal/treesitter/grammars.txt` lists the grammars that `build.sh` compiles into the WASM module; most come from the Go module version that `go.mod` requires, so both backends compile the same grammars. Rebuild the module with `build.sh` after changing `grammars.txt` or a grammar's version in `go.mod`; `TestNativeMatchesWasm` fails when the backends produce different trees. `scripts/update-deps.sh`, which the daily dependency update runs, updates `go.mod`, the runtime, and the other grammars to their newest releases and rebuilds the module. Don't edit or restyle the vendored runtime; pasta's default `vendor` skip keeps the monorepo lint and the pre-commit hook off it. Compiled WASM code is cached under `os.UserCacheDir()/pasta/wazero/`; a damaged cache is removed and the module recompiled. |
 | `internal/tsutil/`            | Tree-sitter `Node` wrapper that carries source bytes + language + file-id, so callers don't have to thread them. |
 | `internal/match/`             | Pattern matcher: node unions, fields, adjacent windows, preceding, predicates (positional), checks (named). |
-| `internal/factstore/`         | Per-run fact store with dual indexing — by (kind, file-id, byte-range) and by (kind, identifier-text). The by-name index is file-agnostic so facts propagate across files in a multi-file group. |
+| `internal/factstore/`         | Per-run fact store with dual indexing — by (kind, file-id, byte-range) and by (kind, identifier-text). The by-name index is file-agnostic so facts propagate across files in a multi-file group, and lookups bind to the nearest definition of a name. |
+| `internal/testpath/`          | Whether a path is test code, by language conventions. Shared by the fact store's tie-break and the code facts engine. |
 | `internal/effect/`            | Compiles edits to byte-range ops, handles `@capture` interpolation, comment preservation, and `trim_start`/`trim_end`. |
 | `internal/apply/`             | Applies ops to source bytes with conflict detection. |
 | `internal/engine/`            | Top-level orchestrator. SCC scheduler with fixpoint groups for cyclic rule deps. `Run` is the single-file entry point; `RunGroup` runs a set of files with a shared fact store. The cross-file (in-memory) path parses in parallel and runs each dependency level (`groupLevels`) across files in parallel, then restores schedule order per file. |
 | `internal/runner/`            | Programmatic API used by both the CLI and Go tests. `LoadRules`, `RunFile`, `RunGroup`, `TestDir`. |
 | `analyzers/<name>/`      | A shipped analyzer: a `<name>.cue` rule + `testdata/` (sources and `.golden` files). |
 | `testdata/<name>/`       | Extension/integration demos (e.g. `notgo_alias` showing user-supplied language modules). |
-| `cmd/pasta/`             | CLI. |
+| `internal/codefacts/`         | The agent-facing **code facts** engine behind `pasta facts` and `pasta mcp`. Builds a whole-tree index + call graph on `tsutil`/`treesitter` (no CUE), runs the cleanup sweeps and name queries. Independent of the CUE rule path. |
+| `cmd/pasta/`             | CLI. `facts.go` is the `pasta facts` subcommand; `mcp.go` is the `pasta mcp` stdio JSON-RPC server. |
 | `pasta_test.go`          | One root test that exercises every directory under `analyzers/` and `testdata/`. |
 
 ## Adding an analyzer
@@ -110,13 +121,14 @@ Two cases:
 
 1. **The grammar is already linked in.** Add a CUE file under
    `internal/loader/cuemod/lang/<name>/<name>.cue` declaring the
-   `Config` value (grammar name, extensions, comment node types).
+   `Config` value (grammar name, extensions, comment node types, and
+   the node types of named function definitions).
    No Go change required. See the existing `lang/go/`, `lang/python/`,
    etc. as templates.
 
 2. **The grammar isn't linked in yet.** Rebuild
-   `internal/tswasm/ts-core.wasm.br` with the new grammar in
-   `build.sh`, add an entry to `internal/lang/grammars.go`, then do
+   `internal/treesitter/ts-core.wasm.br` with the new grammar in
+   `grammars.txt`, add an entry to `internal/lang/grammars.go`, then do
    (1). `lang/hcl` plus the `lang/terraform` alias (`.tf` and `.tfvars`
    on the same grammar) is the current example.
 
@@ -144,15 +156,21 @@ and the runner registers them at startup.
   diagnostics/edit ops must stay self-contained anyway — see how
   `effect.Diagnostic` snapshots byte ranges and the line number rather
   than holding a `Node` reference.
-- **By-name fact lookup is scope-blind AND file-blind.** The
-  factstore's secondary index keys facts by identifier text only —
-  no scope, no file. Two functions that both define `x` (in the
-  same file or in different files of a multi-file group) will share
-  facts on `x`. Scope-blindness has always been the case; the
-  file-blindness is deliberate — it's what makes cross-file
-  analysis work via `has_fact` / `not_has_fact`. Testdata uses
-  unique names where bleed would corrupt the test; production
-  precision needs scope-aware fact keys (see future-work.md).
+- **By-name fact lookup binds to the nearest definition.** The
+  factstore's secondary index keys facts by identifier text, with no
+  scope, so facts propagate across files via `has_fact` /
+  `not_has_fact`. The engine also records every function and method
+  definition it parses (the language's `definition_types`). When
+  every fact on a name is anchored on a definition, a lookup binds to
+  the nearest definition of that name in the same language: the same
+  file, then the same directory, then the deepest common directory,
+  with a test file preferring a test file's definition on a tie. The
+  lookup succeeds only if that definition carries the fact, so a local
+  helper shadows a same-named function elsewhere in the monorepo.
+  Facts anchored on other identifiers, such as tainted variables,
+  still match by name alone, and nothing is scoped within a function.
+  Testdata uses unique names where that bleed would corrupt the test;
+  full precision needs scope-aware fact keys (see future-work.md).
 
 ## The `.pasta/` convention
 
@@ -369,6 +387,40 @@ is a literal git ref (tag / branch / full SHA), no semver
 constraints; `git` is the fetcher. The Fetcher interface in
 `internal/remote/remote.go` is the single seam — swap it later for
 OCI / native CUE modules without changing the manifest format.
+
+## Code facts (`pasta facts` / `pasta mcp`)
+
+`internal/codefacts` is the second face of pasta (see the README's
+[Code facts and the MCP server](./README.md#code-facts-and-the-mcp-server)):
+an agent-usable fact finder for non-deterministic cleanups, as opposed to the
+deterministic CUE linter. It does **not** touch the CUE loader, the rule
+engine, or the fact store — it is a self-contained index over the same
+`tsutil`/`treesitter` tree-sitter substrate.
+
+- `codefacts.go` — per-language `langSpec` table (node types for calls, defs,
+  params, receivers, conditions, imports, interface/trait decls), the `Index`
+  type, and `Build` (walks roots, parses, builds the call graph).
+- `walk.go` — the per-file AST walk: definitions, calls, imports, body analysis
+  (idents, returns, branches, structural hash), receiver/qualifier resolution,
+  and `pasta:ignore` scoping. `goImportName` derives a Go import's bound name
+  (version-suffix and `go-`/`-go` conventions) and reports when the name can't
+  be known from the path.
+- `sweeps.go` — the whole-tree cleanup sweeps, each ranked production- and
+  confidence-first, with interface/trait and test/generated awareness.
+- `queries.go` — the per-name / per-tree queries, plus `FindNodes` (the generic
+  escape hatch; there is no tree-sitter query runtime here).
+- `tools.go` — the tool registry shared by both front-ends, so `pasta facts
+  <tool>` and the MCP `tools/list` stay in lockstep. Add a tool here once and
+  both surfaces get it.
+
+Binding is by **name and arity**, not symbol resolution, so every finding is a
+lead to judge. Precision comes from scoping (`--no-tests`, `--no-generated`,
+`--exclude`, vendored-dir skipping), per-definition call counts where a name is
+unique, excluding interface/trait and standard-library-interface methods, and
+refusing to guess where the tree can't decide. When you add or change a sweep,
+add a fixture case to `internal/codefacts/codefacts_test.go` and re-run it
+against the monorepo (`go run ./cmd/pasta facts report ..`) to check the
+signal-to-noise before shipping.
 
 ## Open work
 

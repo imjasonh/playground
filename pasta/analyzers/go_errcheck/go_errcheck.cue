@@ -16,10 +16,12 @@
 // before find_unchecked even though their alphabetical order is
 // reversed.
 //
-// Limitations: name-only fact lookup means a call to any `foo` matches
-// any error-returning `foo`, regardless of scope or package. Real
-// cross-file / cross-package errcheck would need scope-aware fact
-// keys — see future-work.md.
+// A call binds to the nearest definition of its name: one in the same
+// file, then the same directory, then elsewhere. So a test helper
+// `writeFile` that returns nothing shadows an error-returning
+// `writeFile` in another package (testdata/shadow). Methods called
+// through a selector and functions returning (T, error) aren't
+// checked.
 
 package go_errcheck
 

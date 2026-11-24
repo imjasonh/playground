@@ -174,10 +174,10 @@ func (m model) handleGameUpdate(update GameUpdate) (tea.Model, tea.Cmd) {
 	switch update.Type {
 	case "matched":
 		m.gameState = "playing"
-		m.gameSession = GetGameManager().GetGameSession(m.player.ID)
+		m.gameSession = GetGameManager().GameSession(m.player.ID)
 		if m.gameSession != nil {
 			m.game = m.gameSession.Game.Clone()
-			m.opponent = m.gameSession.GetOpponent(m.player.ID)
+			m.opponent = m.gameSession.Opponent(m.player.ID)
 			m.isMyTurn = m.player.Color == White
 		}
 	case "move":
@@ -218,7 +218,7 @@ func (m model) View() tea.View {
 	case "waiting":
 		s.WriteString("Waiting for an opponent...\n")
 		if m.player != nil {
-			if n := GetGameManager().GetQueuePosition(m.player.ID); n > 0 {
+			if n := GetGameManager().QueuePosition(m.player.ID); n > 0 {
 				fmt.Fprintf(&s, "Queue position: %d\n", n)
 			}
 		}

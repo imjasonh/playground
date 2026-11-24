@@ -7,6 +7,8 @@ description: Apply the Google developer documentation style guide when writing o
 
 Apply the [Google developer documentation style guide](https://developers.google.com/style) when you write comments or documentation in this repository.
 
+Code style is a different guide. When you write Go, Rust, JavaScript, or another language listed on the [Google style guide index](https://google.github.io/styleguide/), follow that language's guide. Start at [`.cursor/skills/google-style/SKILL.md`](../google-style/SKILL.md).
+
 This skill is a working subset for comments, READMEs, `AGENTS.md`, other Markdown, HTML copy, API doc comments, and PR prose. When this file and project docs don't cover a question, follow the official guide. When the guide also doesn't cover it, use project-specific style first, then Merriam-Webster for spelling, *The Chicago Manual of Style* for nontechnical questions, and the Microsoft Writing Style Guide for technical style.
 
 These are guidelines, not rules. Prefer clarity over rigid adherence. Don't rewrite existing comments or docs unless you're already editing that prose or the user asked for a style pass.

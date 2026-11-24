@@ -8,3 +8,7 @@ cd "$repo_root"
 echo "::group::build-blog tests"
 python3 .github/scripts/build-blog_test.py
 echo "::endgroup::"
+
+echo "::group::discover-blog tests"
+bash .github/scripts/discover-blog_test.sh
+echo "::endgroup::"

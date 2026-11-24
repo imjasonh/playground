@@ -40,7 +40,10 @@ on:
       - ".github/scripts/deploy-gcp-result_test.sh"
       - ".github/scripts/install-zig.sh"
       - "**/gcp-deploy.json"
-      - "cloudrun-sqlite/terraform/**"
+      - "cloudrun-sqlite/**"
+      - "stream-boids/**"
+      - "wehadababyitsaboy/terraform/**"
+      - "mcu-lab-backend/**"
   workflow_dispatch: {}
 
 # A second push waits. Cancelling an apply can leave state locked.
@@ -122,6 +125,7 @@ jobs:
           tofu_wrapper: false
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: hashFiles(format('{0}/go.mod', matrix.app)) != ''
         with:
           go-version-file: ${{ matrix.app }}/go.mod
           cache-dependency-path: ${{ matrix.app }}/go.sum
@@ -212,6 +216,7 @@ jobs:
           tofu_wrapper: false
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: hashFiles(format('{0}/go.mod', matrix.app)) != ''
         with:
           go-version-file: ${{ matrix.app }}/go.mod
           cache-dependency-path: ${{ matrix.app }}/go.sum

@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Probability bars for one Laya answer. Used by the Laya experiment and by
-/// Army List while a construction step is showing.
+/// Probability bars for one Laya answer.
 struct LayaDecisionBars: View {
     let decision: LayaDecision
 

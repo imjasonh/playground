@@ -3,7 +3,8 @@ package kube
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"maps"
@@ -132,7 +133,7 @@ func (m *Manager) desiredCRD(spec crdSpec) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	b, err := json.Marshal(crd)
+	b, err := json.Marshal(crd, json.Deterministic(true))
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +195,7 @@ func (m *Manager) createCRD(ctx context.Context, ti *typeInfo) error {
 		if err != nil {
 			return err
 		}
-		body, err := json.Marshal(desired)
+		body, err := json.Marshal(desired, json.Deterministic(true))
 		if err != nil {
 			return err
 		}
@@ -237,10 +238,12 @@ func (m *Manager) waitEstablished(ctx context.Context, name string) (*liveCRD, e
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("CustomResourceDefinition %s was not established after a minute", name)
 		}
+		timer := time.NewTimer(100 * time.Millisecond)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return nil, ctx.Err()
-		case <-time.After(100 * time.Millisecond):
+		case <-timer.C:
 		}
 	}
 }
@@ -344,9 +347,9 @@ func (m *Manager) keepData(ctx context.Context, spec crdSpec, live *liveCRD, des
 func (m *Manager) scanObjects(ctx context.Context, spec crdSpec, version string, changes []schemaChange) ([]int, error) {
 	counts := make([]int, len(changes))
 	path := client.Path(spec.ti.group+"/"+version, spec.ti.plural, "", "")
-	_, err := m.client.ListAll(ctx, path, nil, "", 500, func(dec *json.Decoder) error {
+	_, err := m.client.ListAll(ctx, path, nil, "", 500, func(dec *jsontext.Decoder) error {
 		var obj any
-		if err := dec.Decode(&obj); err != nil {
+		if err := json.UnmarshalDecode(dec, &obj); err != nil {
 			return err
 		}
 		for i, ch := range changes {
@@ -381,7 +384,7 @@ func (m *Manager) checkDropped(ctx context.Context, spec crdSpec, live *liveCRD,
 	}
 	n := 0
 	if err := m.eachObject(ctx, spec, live.storage(), func(it crdItem) error {
-		if slices.ContainsFunc(it.Metadata.ManagedFields, func(e json.RawMessage) bool { return stale[entryAPIVersion(e)] }) {
+		if slices.ContainsFunc(it.Metadata.ManagedFields, func(e jsontext.Value) bool { return stale[entryAPIVersion(e)] }) {
 			n++
 		}
 		return nil
@@ -398,10 +401,10 @@ func (m *Manager) checkDropped(ctx context.Context, spec crdSpec, live *liveCRD,
 // returns it.
 type crdItem struct {
 	Metadata struct {
-		Name            string            `json:"name"`
-		Namespace       string            `json:"namespace"`
-		ResourceVersion string            `json:"resourceVersion"`
-		ManagedFields   []json.RawMessage `json:"managedFields"`
+		Name            string           `json:"name"`
+		Namespace       string           `json:"namespace"`
+		ResourceVersion string           `json:"resourceVersion"`
+		ManagedFields   []jsontext.Value `json:"managedFields"`
 	} `json:"metadata"`
 }
 
@@ -409,9 +412,9 @@ type crdItem struct {
 // every namespace, read at version.
 func (m *Manager) eachObject(ctx context.Context, spec crdSpec, version string, fn func(crdItem) error) error {
 	path := client.Path(spec.ti.group+"/"+version, spec.ti.plural, "", "")
-	_, err := m.client.ListAll(ctx, path, nil, listAccept, 500, func(dec *json.Decoder) error {
+	_, err := m.client.ListAll(ctx, path, nil, listAccept, 500, func(dec *jsontext.Decoder) error {
 		var it crdItem
-		if err := dec.Decode(&it); err != nil {
+		if err := json.UnmarshalDecode(dec, &it); err != nil {
 			return err
 		}
 		return fn(it)
@@ -419,7 +422,7 @@ func (m *Manager) eachObject(ctx context.Context, spec crdSpec, version string, 
 	return err
 }
 
-func entryAPIVersion(e json.RawMessage) string {
+func entryAPIVersion(e jsontext.Value) string {
 	var v struct {
 		APIVersion string `json:"apiVersion"`
 	}
@@ -436,10 +439,12 @@ func (c *controller[T, P]) maintainCRD(ctx context.Context) {
 	// Only the replica that holds the shard of the CRD's name does this.
 	// Others wait in case the shard moves to them.
 	for key := (Key{Name: c.crd().name()}); !c.sh.owns(key); {
+		timer := time.NewTimer(5 * time.Second)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-time.After(5 * time.Second):
+		case <-timer.C:
 		}
 	}
 	delay := 5 * time.Second
@@ -453,10 +458,12 @@ func (c *controller[T, P]) maintainCRD(ctx context.Context) {
 			return
 		}
 		c.logger(ctx).Warn("CustomResourceDefinition migration failed; retrying", "crd", c.crd().name(), "err", err, "retry", delay)
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-time.After(delay):
+		case <-timer.C:
 		}
 		delay = min(2*delay, 5*time.Minute)
 	}
@@ -483,7 +490,7 @@ func (m *Manager) migrateCRD(ctx context.Context, spec crdSpec, status bool) err
 	rewritten, cleaned := 0, 0
 	err = m.eachObject(ctx, spec, storage, func(it crdItem) error {
 		path := client.Path(spec.ti.group+"/"+storage, spec.ti.plural, it.Metadata.Namespace, it.Metadata.Name)
-		if slices.ContainsFunc(it.Metadata.ManagedFields, func(e json.RawMessage) bool { return unserved[entryAPIVersion(e)] }) {
+		if slices.ContainsFunc(it.Metadata.ManagedFields, func(e jsontext.Value) bool { return unserved[entryAPIVersion(e)] }) {
 			// Writing the object also stores it in the current version.
 			if err := m.cleanManagedFields(ctx, path, spec.ti.group+"/"+storage, unserved, it); err != nil {
 				errs = append(errs, fmt.Errorf("%s/%s: %w", it.Metadata.Namespace, it.Metadata.Name, err))
@@ -537,8 +544,8 @@ func (m *Manager) migrateCRD(ctx context.Context, spec crdSpec, status bool) err
 // apiVersion is in remove.
 func (m *Manager) cleanManagedFields(ctx context.Context, path, apiVersion string, remove map[string]bool, it crdItem) error {
 	for attempt := 0; ; attempt++ {
-		var keep []json.RawMessage
-		var first json.RawMessage
+		var keep []jsontext.Value
+		var first jsontext.Value
 		for _, e := range it.Metadata.ManagedFields {
 			switch {
 			case !remove[entryAPIVersion(e)]:
@@ -561,7 +568,7 @@ func (m *Manager) cleanManagedFields(ctx context.Context, path, apiVersion strin
 				"time": time.Now().UTC().Format(time.RFC3339), "fieldsType": "FieldsV1",
 				"fieldsV1": map[string]any{"f:metadata": map[string]any{"f:name": map[string]any{}}},
 			})
-			keep = []json.RawMessage{seed}
+			keep = []jsontext.Value{seed}
 		}
 		body, err := json.Marshal([]map[string]any{
 			{"op": "replace", "path": "/metadata/managedFields", "value": keep},

@@ -51,17 +51,9 @@ targets:
     platform: iOS
     sources:
       - path: Sources
-        excludes:
-          - "**/Catalog/Resources/**"
-          - "**/ArmyList/Stress/**"
       - path: Shared/T9
       - path: Shared/RideMonitor
       - path: Shared/Laya
-      # XcodeGen has no target-level `resources:` key — catalog must be a
-      # sources entry with buildPhase: resources or it never reaches the app
-      # bundle (TestFlight then shows "Catalog unavailable").
-      - path: Sources/Experiments/ArmyList/Catalog/Resources/catalog.json
-        buildPhase: resources
     dependencies:
       - target: T9Keyboard
         embed: true
@@ -138,7 +130,11 @@ targets:
         NSPhotoLibraryAddUsageDescription: Wigglecam saves wigglegram GIFs to your photo library when you tap Save. Voxel Eyes saves the current view to your photo library when you tap the camera button.
         NSHealthShareUsageDescription: Ride Monitor uses HealthKit so the Apple Watch companion can stay active during a ride and record heart rate, energy, Watch distance, and cycling cadence/speed/power when a sensor is paired. GPS and jolt data stay in the app; the Watch workout is also saved to Health.
         NSHealthUpdateUsageDescription: Ride Monitor uses HealthKit so the Apple Watch companion can stay active during a ride and record heart rate, energy, Watch distance, and cycling cadence/speed/power when a sensor is paired. GPS and jolt data stay in the app; the Watch workout is also saved to Health.
-        NSBluetoothAlwaysUsageDescription: ESP32 BLE scans for a nearby PlaygroundBLE board so you can send LED commands and read status.
+        NSBluetoothAlwaysUsageDescription: MCU Lab scans for nearby ESP32 and ESP32-C3 boards to collect BLE telemetry advertisements, pull per-wake profiles, stream BLE GATT OTA firmware updates, and forward OTLP metrics and traces.
+        # Default Cloud Run OTLP/HTTP collector URL for the MCU Lab experiment.
+        MCULabOtelEndpoint: https://xiao-otel-965235416369.us-central1.run.app/v1/metrics
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         UIBackgroundModes:
           - location
           - audio
@@ -269,34 +265,12 @@ targets:
     platform: iOS
     sources:
       - Tests/PlaygroundTests
-      - path: Sources/Experiments/ArmyList/Stress
     dependencies:
       - target: Playground
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.tests
         GENERATE_INFOPLIST_FILE: YES
-
-  # macOS CLI that reuses Catalog/Models/Validation and writes stress fixtures.
-  # Legality comes only from ArmyListValidator (no second-language port).
-  ArmyListStress:
-    type: tool
-    platform: macOS
-    deploymentTarget: "13.0"
-    sources:
-      - path: Sources/Experiments/ArmyList/Catalog
-        excludes:
-          - "**/Resources/**"
-      - path: Sources/Experiments/ArmyList/Models
-      - path: Sources/Experiments/ArmyList/Validation
-      - path: Sources/Experiments/ArmyList/Stress
-      - path: Tools/ArmyListStress
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.army-list-stress
-        GENERATE_INFOPLIST_FILE: YES
-        MACOSX_DEPLOYMENT_TARGET: "13.0"
-        SWIFT_VERSION: "5.9"
 
   PlaygroundUITests:
     type: bundle.ui-testing
@@ -328,10 +302,3 @@ schemes:
       config: Debug
     archive:
       config: Release
-
-  ArmyListStress:
-    build:
-      targets:
-        ArmyListStress: all
-    run:
-      config: Debug

@@ -1,0 +1,59 @@
+# gVisor workers for CI runners. Substrate's controller turns each WorkerPool
+# into a Deployment of ateworker pods; each pod hosts actors whose template
+# selects the pool by its labels (workload: ci-runner), so actors land on
+# either pool. The images' tag is the go.ate.dev/substrate version in go.mod;
+# scripts/update-deps.sh moves them together.
+#
+# ci-runner-base runs on the always-on node so the first actors start without
+# waiting for a node. The pool Deployment (pool.yaml) sets ci-runner's
+# replicas. Substrate books each actor's resources (runner-template.yaml)
+# against a worker's limits, so pool.yaml's BASE_SLOTS and ACTORS_PER_WORKER
+# must match the limits here.
+#
+# The API requires ci-runner's replicas, so this file starts it at 0. kubectl
+# apply leaves a field alone while the file's value doesn't change, so
+# applying this file again doesn't reset what the pool set.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ci-substrate-workers
+---
+apiVersion: ate.dev/v1
+kind: WorkerPool
+metadata:
+  name: ci-runner-base
+  namespace: ci-substrate-workers
+  labels:
+    workload: ci-runner
+spec:
+  replicas: 1
+  workerImage: ghcr.io/agent-substrate/substrate/ateworker-gvisor:v1.0.1
+  sandboxClasses:
+    - name: gvisor
+  template:
+    nodeSelector:
+      ci-substrate.imjasonh.com/always-on: "true"
+    tolerations:
+      - key: ci-substrate.imjasonh.com/always-on
+        operator: Exists
+        effect: NoSchedule
+    resources:
+      limits: {cpu: "2", memory: 4Gi}
+---
+apiVersion: ate.dev/v1
+kind: WorkerPool
+metadata:
+  name: ci-runner
+  namespace: ci-substrate-workers
+  labels:
+    workload: ci-runner
+spec:
+  replicas: 0
+  workerImage: ghcr.io/agent-substrate/substrate/ateworker-gvisor:v1.0.1
+  sandboxClasses:
+    - name: gvisor
+  template:
+    nodeSelector:
+      ci-substrate.imjasonh.com/burst: "true"
+    resources:
+      limits: {cpu: "2", memory: 4Gi}

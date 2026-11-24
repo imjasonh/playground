@@ -3,7 +3,7 @@ package kube
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -70,7 +70,7 @@ type widget struct {
 		Size int `json:"size"`
 	} `json:"spec"`
 	Status struct {
-		ObservedGeneration int64       `json:"observedGeneration,omitempty"`
+		ObservedGeneration int64       `json:"observedGeneration,omitzero"`
 		Conditions         []Condition `json:"conditions,omitempty"`
 	} `json:"status,omitzero"`
 }
@@ -585,7 +585,7 @@ type deploymentFull struct {
 	Object `kube:"apiVersion=apps/v1,kind=Deployment"`
 	Spec   struct {
 		Replicas *int32 `json:"replicas,omitempty"`
-		Paused   bool   `json:"paused,omitempty"`
+		Paused   bool   `json:"paused,omitzero"`
 	} `json:"spec"`
 }
 
@@ -778,7 +778,7 @@ func TestFailedReadStopsTheReconcile(t *testing.T) {
 			http.Error(rw, "forbidden", http.StatusForbidden)
 			return
 		}
-		_ = json.NewEncoder(rw).Encode(map[string]any{"metadata": map[string]any{
+		_ = json.MarshalWrite(rw, map[string]any{"metadata": map[string]any{
 			"name": "w1", "namespace": "shop", "uid": "u1", "resourceVersion": "6",
 		}})
 	}))
@@ -861,7 +861,7 @@ func TestRetryAfter(t *testing.T) {
 // permanent error, and with backoff despite RequeueAfter.
 func TestProcessRetryAfter(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(rw).Encode(map[string]any{"metadata": map[string]any{
+		_ = json.MarshalWrite(rw, map[string]any{"metadata": map[string]any{
 			"name": "w1", "namespace": "shop", "uid": "u1", "resourceVersion": "6",
 		}})
 	}))

@@ -149,7 +149,8 @@ pub fn encode_auth_data(app_id: &str, counter: u32) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use p256::ecdsa::{signature::Signer, Signature, SigningKey};
+    use p256::ecdsa::signature::Signer;
+    use p256::ecdsa::{Signature, SigningKey};
     use p256::elliptic_curve::Generate;
 
     const APP_ID: &str = "TEAMIDTEST.io.github.imjasonh.playground";

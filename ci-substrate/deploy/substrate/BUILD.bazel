@@ -1,0 +1,7 @@
+exports_files(
+    [
+        "egress-cas.yaml",
+        "workerpool.yaml",
+    ],
+    visibility = ["//internal/substrate:__pkg__"],
+)

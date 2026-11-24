@@ -8,8 +8,9 @@
 
 use crate::cache::ByteBudgetCache;
 use crate::object::{Commit, ObjType, Oid, TreeEntry};
+use crate::pack::delta::apply_delta;
 use crate::pack::write::{inflate, inflate_unchecked};
-use crate::pack::{delta::apply_delta, EntryRecord, PackIndex};
+use crate::pack::{EntryRecord, PackIndex};
 use crate::storage::Store;
 use std::cell::RefCell;
 use std::collections::HashMap;

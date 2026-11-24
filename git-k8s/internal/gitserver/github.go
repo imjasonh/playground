@@ -1,13 +1,12 @@
 package gitserver
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -236,10 +235,8 @@ func (g *GitHub) exchange(w http.ResponseWriter, r *http.Request) {
 		stsError(w, http.StatusNotFound, fmt.Sprintf("unable to find trust policy for %q", identity))
 		return
 	}
-	d := json.NewDecoder(bytes.NewReader(b))
-	d.DisallowUnknownFields()
 	var p trustPolicy
-	if err := d.Decode(&p); err != nil {
+	if err := json.Unmarshal(b, &p, json.RejectUnknownMembers(true)); err != nil {
 		stsError(w, http.StatusNotFound, fmt.Sprintf("unable to parse trust policy found for %q", identity))
 		return
 	}
@@ -416,7 +413,7 @@ func (g *GitHub) api(w http.ResponseWriter, r *http.Request) {
 // refuses an update that starts a completed check run again.
 func (g *GitHub) writeCheckRun(w http.ResponseWriter, r *http.Request, repo string, app int64, old *CheckRun) {
 	var in checkRunRequest
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+	if err := json.UnmarshalRead(r.Body, &in); err != nil {
 		apiError(w, http.StatusBadRequest, "Problems parsing JSON")
 		return
 	}

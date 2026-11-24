@@ -1,0 +1,15 @@
+function check(x, y) {
+    if (x == 5) {                  // want "use strict equality `===`"
+        return true;
+    }
+    if (y != "ok") {               // want "use strict equality `!==`"
+        return false;
+    }
+    if (y != null) {
+        return false;
+    }
+    if (x === y) {
+        return true;
+    }
+    return false;
+}

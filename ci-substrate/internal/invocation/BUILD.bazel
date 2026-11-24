@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "invocation",
+    srcs = ["invocation.go"],
+    importpath = "github.com/imjasonh/playground/ci-substrate/internal/invocation",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/telemetry",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_metric//:metric",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_test(
+    name = "invocation_test",
+    srcs = ["invocation_test.go"],
+    embed = [":invocation"],
+    deps = ["@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution"],
+)

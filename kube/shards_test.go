@@ -2,7 +2,7 @@ package kube
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -109,30 +109,30 @@ func (a *leaseAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.HasSuffix(r.URL.Path, "/status"):
 		var obj map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&obj); err != nil {
+		if err := json.UnmarshalRead(r.Body, &obj); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		a.statuses = append(a.statuses, obj)
-		_ = json.NewEncoder(w).Encode(obj)
+		_ = json.MarshalWrite(w, obj)
 	case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/leases"):
 		items := []*lease{}
 		if a.lease != nil {
 			items = append(items, a.lease)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"items": items})
+		_ = json.MarshalWrite(w, map[string]any{"items": items})
 	case r.Method == http.MethodGet && a.lease == nil:
 		http.NotFound(w, r)
 	case r.Method == http.MethodGet:
-		_ = json.NewEncoder(w).Encode(a.lease)
+		_ = json.MarshalWrite(w, a.lease)
 	case r.Method == http.MethodPost, r.Method == http.MethodPut:
 		var l lease
-		if err := json.NewDecoder(r.Body).Decode(&l); err != nil {
+		if err := json.UnmarshalRead(r.Body, &l); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		a.lease = &l
-		_ = json.NewEncoder(w).Encode(&l)
+		_ = json.MarshalWrite(w, &l)
 	default:
 		http.Error(w, "unexpected request", http.StatusMethodNotAllowed)
 	}
@@ -335,7 +335,7 @@ func TestFinalizerPatchRequiresTheAppliedResourceVersion(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		switch r.Header.Get("Content-Type") {
 		case client.ApplyPatch:
-			_ = json.NewEncoder(rw).Encode(map[string]any{"metadata": map[string]any{
+			_ = json.MarshalWrite(rw, map[string]any{"metadata": map[string]any{
 				"name": w.Name, "namespace": w.Namespace, "uid": w.UID, "resourceVersion": "6", "finalizers": w.Finalizers,
 			}})
 		case client.JSONPatch:
@@ -389,7 +389,7 @@ func TestConditionalFinalizerWritesShowAtOnce(t *testing.T) {
 	c := triggerable(t, m, resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true}, w)
 	m.caches = map[cacheKey]cache{{ti: c.ti}: c.primary}
 	respond := func(rw http.ResponseWriter, rv string, finalizers []string) {
-		_ = json.NewEncoder(rw).Encode(map[string]any{"metadata": map[string]any{
+		_ = json.MarshalWrite(rw, map[string]any{"metadata": map[string]any{
 			"name": w.Name, "namespace": w.Namespace, "uid": w.UID, "resourceVersion": rv, "finalizers": finalizers,
 		}})
 	}
@@ -456,7 +456,7 @@ func TestFinalizerRemovalShowsTheCacheCaughtUp(t *testing.T) {
 					http.Error(rw, "unexpected request", http.StatusMethodNotAllowed)
 					return
 				}
-				_ = json.NewEncoder(rw).Encode(map[string]any{"metadata": map[string]any{
+				_ = json.MarshalWrite(rw, map[string]any{"metadata": map[string]any{
 					"name": "w1", "namespace": "shop", "uid": "u1", "resourceVersion": "6",
 				}})
 			}))

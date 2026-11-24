@@ -9,7 +9,7 @@ package crsim
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -266,10 +266,12 @@ func (s *Sim) start(ctx context.Context) (*instance, error) {
 			conn.Close()
 			break
 		}
+		timer := time.NewTimer(5 * time.Millisecond)
 		select {
 		case <-inst.exited:
+			timer.Stop()
 			return nil, fmt.Errorf("instance %s exited during startup", id)
-		case <-time.After(5 * time.Millisecond):
+		case <-timer.C:
 		}
 		if time.Now().After(deadline) {
 			inst.kill("killed")
@@ -488,7 +490,7 @@ func (s *Sim) admin(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/_crsim/stats":
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(s.Instances())
+		json.MarshalWrite(w, s.Instances())
 	case "/_crsim/scale-to-zero":
 		s.ScaleToZero()
 	case "/_crsim/crash":

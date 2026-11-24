@@ -60,7 +60,7 @@ The compiler reserves the following:
 - `$80`-`$FD`: IR codegen temp slots (scratch for expression evaluation)
 - `$FE`-`$FF`: pointer for `const` table reads with a 16-bit index
 - `$0200`-`$02FF`: OAM shadow buffer (DMA'd to PPU each frame)
-- `$0300`-`$07E4`: General variables, per-function RAM (parameter spill + locals), state-local storage. Programs that use `nt_set`, `nt_attr`, or `nt_fill_h` start at `$0500`, after the VRAM ring at `$0400`-`$04FF`
+- `$0300`-`$07E4`: General variables, per-function RAM (parameter spill + locals), state-local storage. Programs that use `nt_set`, `nt_attr`, or `nt_fill_h` skip the VRAM ring at `$0400`-`$04FF`: allocations fill `$0300`-`$03FF`, and the first one that would reach `$0400` starts at `$0500`
 - `$07E5`-`$07FF`: Runtime slots. The analyzer never allocates here, even when a program doesn't use the feature behind a slot
 - `$07E5`, `$07EC`: `VRAM_BUF_HEAD` and `VRAM_BUF_TAIL`, the VRAM ring's write and drain offsets
 - `$07E6`-`$07E7`: Previous controller state for `.pressed` and `.released`

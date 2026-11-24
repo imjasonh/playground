@@ -1,7 +1,8 @@
 package main
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"slices"
 	"strings"
@@ -167,8 +168,8 @@ func TestEndToEnd(t *testing.T) {
 	var raw struct {
 		Metadata struct {
 			ManagedFields []struct {
-				Manager  string          `json:"manager"`
-				FieldsV1 json.RawMessage `json:"fieldsV1"`
+				Manager  string         `json:"manager"`
+				FieldsV1 jsontext.Value `json:"fieldsV1"`
 			} `json:"managedFields"`
 		} `json:"metadata"`
 	}

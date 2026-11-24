@@ -263,7 +263,7 @@ type Thing struct {
 		Replicas int `json:"replicas"`
 	} `json:"spec"`
 	Status struct {
-		Seen int `json:"seen,omitempty"`
+		Seen int `json:"seen,omitzero"`
 	} `json:"status,omitzero"`
 }
 
@@ -274,7 +274,7 @@ type ThingV1 struct {
 		Size int `json:"size"`
 	} `json:"spec"`
 	Status struct {
-		Seen int `json:"seen,omitempty"`
+		Seen int `json:"seen,omitzero"`
 	} `json:"status,omitzero"`
 }
 

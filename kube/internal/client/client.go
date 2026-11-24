@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -157,7 +157,7 @@ func (c *Client) Call(ctx context.Context, r Request, out any) error {
 		_, err := io.Copy(io.Discard, resp.Body)
 		return err
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return json.UnmarshalRead(resp.Body, out)
 }
 
 // Get decodes the object at path into out.
@@ -167,7 +167,7 @@ func (c *Client) Get(ctx context.Context, path string, out any) error {
 
 // Create posts obj to the collection at path.
 func (c *Client) Create(ctx context.Context, path string, obj, out any) error {
-	b, err := json.Marshal(obj)
+	b, err := json.Marshal(obj, json.Deterministic(true))
 	if err != nil {
 		return err
 	}
@@ -177,7 +177,7 @@ func (c *Client) Create(ctx context.Context, path string, obj, out any) error {
 // Update replaces the object at path with obj. Set metadata.resourceVersion
 // in obj to make the update conditional.
 func (c *Client) Update(ctx context.Context, path string, obj, out any) error {
-	b, err := json.Marshal(obj)
+	b, err := json.Marshal(obj, json.Deterministic(true))
 	if err != nil {
 		return err
 	}
@@ -202,7 +202,7 @@ func (c *Client) Patch(ctx context.Context, path, patchType string, query url.Va
 // ownership of fields that other managers own instead of failing with a
 // conflict.
 func (c *Client) Apply(ctx context.Context, path, fieldManager string, force bool, obj, out any) error {
-	b, err := json.Marshal(obj)
+	b, err := json.Marshal(obj, json.Deterministic(true))
 	if err != nil {
 		return err
 	}
@@ -240,7 +240,7 @@ func (c *Client) DeleteInto(ctx context.Context, path string, opts DeleteOptions
 	if opts.UID != "" {
 		body["preconditions"] = map[string]string{"uid": opts.UID}
 	}
-	b, err := json.Marshal(body)
+	b, err := json.Marshal(body, json.Deterministic(true))
 	if err != nil {
 		return err
 	}

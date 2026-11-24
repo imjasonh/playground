@@ -3,12 +3,12 @@ package tsutil
 import (
 	"testing"
 
-	"github.com/imjasonh/playground/pasta/internal/tswasm"
+	"github.com/imjasonh/playground/pasta/internal/treesitter"
 )
 
 func parseGo(t *testing.T, src string) (*Tree, Node) {
 	t.Helper()
-	tree, root, err := Parse(t.Context(), &tswasm.Language{Grammar: "go"}, []byte(src), "")
+	tree, root, err := Parse(t.Context(), &treesitter.Language{Grammar: "go"}, []byte(src), "")
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

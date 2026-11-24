@@ -1,9 +1,9 @@
 package kube
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 
@@ -11,6 +11,7 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/imjasonh/playground/kube/internal/jsonnum"
 	"github.com/imjasonh/playground/kube/internal/jsonpatch"
 )
 
@@ -167,12 +168,12 @@ type admissionReview struct {
 }
 
 type admissionRequest struct {
-	UID       string          `json:"uid"`
-	Operation string          `json:"operation"`
-	Namespace string          `json:"namespace,omitempty"`
-	Name      string          `json:"name,omitempty"`
-	Object    json.RawMessage `json:"object,omitempty"`
-	OldObject json.RawMessage `json:"oldObject,omitempty"`
+	UID       string         `json:"uid"`
+	Operation string         `json:"operation"`
+	Namespace string         `json:"namespace,omitempty"`
+	Name      string         `json:"name,omitempty"`
+	Object    jsontext.Value `json:"object,omitempty"`
+	OldObject jsontext.Value `json:"oldObject,omitempty"`
 }
 
 type admissionResponse struct {
@@ -195,7 +196,7 @@ func deny(err error) *admissionResponse {
 
 func serveAdmission(w http.ResponseWriter, r *http.Request, m *Manager, ti *typeInfo, h func(context.Context, *admissionRequest) *admissionResponse) {
 	var review admissionReview
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<20)).Decode(&review); err != nil || review.Request == nil {
+	if err := json.UnmarshalRead(http.MaxBytesReader(w, r.Body, 16<<20), &review); err != nil || review.Request == nil {
 		http.Error(w, "the request body must be an AdmissionReview", http.StatusBadRequest)
 		return
 	}
@@ -223,13 +224,13 @@ func serveAdmission(w http.ResponseWriter, r *http.Request, m *Manager, ti *type
 	m.metrics.inc("kube_webhook_requests_total", "path", r.URL.Path, "result", result)
 	m.metrics.observe("kube_webhook_duration_seconds", time.Since(start).Seconds(), "path", r.URL.Path)
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(admissionReview{APIVersion: review.APIVersion, Kind: review.Kind, Response: resp})
+	_ = json.MarshalWrite(w, admissionReview{APIVersion: review.APIVersion, Kind: review.Kind, Response: resp})
 }
 
 // decodeAs decodes an object from a webhook request into a new T. As caches
 // do, it treats an object with any error as undecodable, because the error
 // may have stopped decoding partway.
-func decodeAs[T any, P Resource[T]](ti *typeInfo, raw json.RawMessage) (*T, error) {
+func decodeAs[T any, P Resource[T]](ti *typeInfo, raw jsontext.Value) (*T, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
 	}
@@ -287,16 +288,14 @@ func mutate[T any, P Resource[T]](ctx context.Context, m *Manager, ti *typeInfo,
 		return deny(err)
 	}
 	var doc any
-	dec := json.NewDecoder(bytes.NewReader(req.Object))
-	dec.UseNumber()
-	if err := dec.Decode(&doc); err != nil {
+	if err := jsonnum.Unmarshal(req.Object, &doc); err != nil {
 		return deny(fmt.Errorf("decoding the object: %w", err))
 	}
 	ops := jsonpatch.Diff(doc, jsonpatch.Overlay(doc, before, after))
 	if len(ops) == 0 {
 		return &admissionResponse{Allowed: true}
 	}
-	patch, err := json.Marshal(ops)
+	patch, err := json.Marshal(ops, json.Deterministic(true))
 	if err != nil {
 		return deny(err)
 	}
@@ -306,12 +305,10 @@ func mutate[T any, P Resource[T]](ctx context.Context, m *Manager, ti *typeInfo,
 // generic encodes v and decodes it into map[string]any and friends, keeping
 // numbers exact.
 func generic(v any) (any, error) {
-	b, err := json.Marshal(v)
+	b, err := json.Marshal(v, json.Deterministic(true))
 	if err != nil {
 		return nil, err
 	}
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.UseNumber()
 	var out any
-	return out, dec.Decode(&out)
+	return out, jsonnum.Unmarshal(b, &out)
 }

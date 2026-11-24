@@ -59,12 +59,14 @@ func TestMatchmakingPairsTwoPlayers(t *testing.T) {
 		t.Fatalf("games=%d", len(gm.activeGames))
 	}
 	for _, ch := range []chan GameUpdate{a.UpdateChan, b.UpdateChan} {
+		timer := time.NewTimer(time.Second)
 		select {
 		case u := <-ch:
+			timer.Stop()
 			if u.Type != "matched" {
 				t.Fatalf("got %q", u.Type)
 			}
-		case <-time.After(time.Second):
+		case <-timer.C:
 			t.Fatal("matched timeout")
 		}
 	}

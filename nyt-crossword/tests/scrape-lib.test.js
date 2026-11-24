@@ -3,13 +3,16 @@ import assert from "node:assert/strict";
 
 import {
   addDays,
+  applyCompleted,
   applyPlayTime,
   chunksNeedingList,
+  completedDates,
   cookieHeader,
   cookieValue,
   dateChunks,
   gameDataOf,
   idBatches,
+  listItemToPuzzle,
   listUrl,
   mergeListed,
   needsGameFetch,
@@ -94,14 +97,106 @@ test("needsGameFetch skips a solved puzzle that already has a time", () => {
   );
 });
 
-test("mergeListed does not refetch a finished game when the list disagrees", () => {
+test("mergeListed drops a stored solve when the list says it is not solved", () => {
   const listed = [
     {
       print_date: solved.date,
       puzzle_id: solved.id,
       publish_type: "Daily",
       solved: false,
-      percent_filled: 15,
+      percent_filled: 3,
+    },
+  ];
+  const { puzzles, fetchList } = mergeListed([solved], listed, {
+    start: "2024-01-01",
+    end: "2024-12-31",
+  });
+  assert.equal(fetchList.length, 0);
+  assert.equal(puzzles[0].solved, false);
+  assert.equal(puzzles[0].percentFilled, 3);
+  assert.equal(puzzles[0].seconds, null);
+});
+
+test("a listing flagged solved with a grid under 100% filled is not a solve", () => {
+  const item = {
+    print_date: "2022-05-01",
+    puzzle_id: 20089,
+    publish_type: "Daily",
+    solved: true,
+    percent_filled: 99,
+  };
+  assert.equal(listItemToPuzzle(item).solved, false);
+  assert.equal(listItemToPuzzle({ ...item, percent_filled: 100 }).solved, true);
+  assert.equal(listItemToPuzzle({ ...item, percent_filled: undefined }).solved, true);
+  const { puzzles } = mergeListed(
+    [{ date: "2022-05-01", id: 20089, solved: true, percentFilled: 99, seconds: 1590 }],
+    [item],
+    { start: "2022-01-01", end: "2022-12-31" },
+  );
+  assert.equal(puzzles[0].solved, false);
+  assert.equal(puzzles[0].seconds, null);
+});
+
+test("completed.json counts a short grid as solved and keeps its time", () => {
+  const dates = completedDates({
+    dates: ["2022-05-01", "nope", "2024-02-31"],
+  });
+  assert.equal(dates.has("2022-05-01"), true);
+  assert.equal(dates.has("2024-02-31"), false);
+  assert.equal(completedDates(null).size, 0);
+  const item = {
+    print_date: "2022-05-01",
+    puzzle_id: 20089,
+    publish_type: "Daily",
+    solved: true,
+    percent_filled: 99,
+  };
+  const prev = {
+    date: "2022-05-01",
+    id: 20089,
+    solved: false,
+    percentFilled: 99,
+    seconds: 1590,
+  };
+  const { puzzles, fetchList } = mergeListed(
+    [prev],
+    [item],
+    { start: "2022-01-01", end: "2022-12-31" },
+    undefined,
+    dates,
+  );
+  assert.equal(puzzles[0].solved, true);
+  assert.equal(puzzles[0].percentFilled, 100);
+  assert.equal(puzzles[0].seconds, 1590);
+  assert.equal(fetchList.length, 0);
+  const open = applyCompleted(
+    [{ ...prev, seconds: null }],
+    dates,
+  );
+  assert.equal(open[0].solved, true);
+  assert.equal(open[0].percentFilled, 100);
+  assert.equal(open[0].seconds, null);
+  const { fetchList: needTime } = mergeListed(
+    [{ ...prev, seconds: null }],
+    [item],
+    { start: "2022-01-01", end: "2022-12-31" },
+    undefined,
+    dates,
+  );
+  assert.deepEqual(
+    needTime.map((puzzle) => puzzle.date),
+    ["2022-05-01"],
+  );
+});
+
+test("mergeListed keeps a stored solve time when the list still says solved", () => {
+  const listed = [
+    {
+      print_date: solved.date,
+      puzzle_id: solved.id,
+      publish_type: "Daily",
+      solved: true,
+      percent_filled: 100,
     },
   ];
   const { puzzles, fetchList } = mergeListed([solved], listed, {
@@ -214,6 +309,13 @@ test("applyPlayTime reads playTimeSeconds and leaves an open puzzle untimed", ()
   );
   assert.equal(done.seconds, 512);
   assert.equal(done.solved, true);
+  const unfinished = applyPlayTime(
+    { ...solved, solved: false, seconds: null, percentFilled: 3 },
+    { playTimeSeconds: 55, firstSolve: 1717200000 },
+  );
+  assert.equal(unfinished.solved, false);
+  assert.equal(unfinished.percentFilled, 3);
+  assert.equal(unfinished.seconds, null);
   assert.deepEqual(gameDataOf({ puzzle_id: 1, game_data: { playTimeSeconds: 12 } }), {
     playTimeSeconds: 12,
   });

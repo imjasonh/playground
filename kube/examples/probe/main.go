@@ -58,7 +58,7 @@ const checkAudience = "probe"
 
 // ProbeStatus is the result of the last check.
 type ProbeStatus struct {
-	Code      int       `json:"code,omitempty" kube:"column=Code" doc:"HTTP status code of the response."`
+	Code      int       `json:"code,omitzero" kube:"column=Code" doc:"HTTP status code of the response."`
 	Message   string    `json:"message,omitempty" doc:"First line of the response, or why there's no response."`
 	CheckedAt time.Time `json:"checkedAt,omitzero"`
 }

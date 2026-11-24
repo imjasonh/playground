@@ -3,9 +3,6 @@ import UIKit
 
 /// Download the Laya ANE bundle, then ask it typed questions about a text.
 ///
-/// Uses ``LayaModelStore/shared`` so a download here is the same graph Army
-/// List uses.
-///
 /// Every stage reports its timing, every failure is copyable with its
 /// underlying error chain, and **Copy report** gathers all of it for a
 /// TestFlight round trip.

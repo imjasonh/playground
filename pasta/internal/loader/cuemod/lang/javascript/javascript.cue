@@ -8,6 +8,7 @@ Config: schema.#Language & {
 	// .jsx shares the JSX-capable JavaScript grammar.
 	extensions: [".js", ".mjs", ".cjs", ".jsx"]
 	comment_types: ["comment"]
+	definition_types: ["function_declaration", "generator_function_declaration", "method_definition"]
 }
 
 Name: Config.grammar

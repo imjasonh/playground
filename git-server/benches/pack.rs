@@ -10,7 +10,8 @@
 use futures::executor::block_on;
 use git_server::object::ObjType;
 use git_server::pack::index::{resolve_pack, NoExternalBases, PackIndex};
-use git_server::pack::write::{test_support::build_pack, PackWriter};
+use git_server::pack::write::test_support::build_pack;
+use git_server::pack::write::PackWriter;
 use git_server::pack::PackScanner;
 use git_server::storage::{MemStore, Store};
 use std::time::Instant;

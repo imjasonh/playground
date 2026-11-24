@@ -19,9 +19,10 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"flag"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -44,7 +45,7 @@ type Event struct {
 	Reason         string          `json:"reason,omitempty"`
 	Message        string          `json:"message,omitempty"`
 	Type           string          `json:"type,omitempty"`
-	Count          int32           `json:"count,omitempty"`
+	Count          int32           `json:"count,omitzero"`
 	LastTimestamp  time.Time       `json:"lastTimestamp,omitzero"`
 }
 
@@ -61,7 +62,7 @@ type Record struct {
 	Reason  string          `json:"reason,omitempty"`
 	Message string          `json:"message,omitempty"`
 	Type    string          `json:"type,omitempty"`
-	Count   int32           `json:"count,omitempty"`
+	Count   int32           `json:"count,omitzero"`
 	Last    time.Time       `json:"last,omitzero"`
 }
 
@@ -184,7 +185,9 @@ func (a *api) events(w http.ResponseWriter, r *http.Request) {
 		return cmp.Or(a.Last.Compare(b.Last), cmp.Compare(a.Name, b.Name))
 	})
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(records)
+	if json.MarshalWrite(w, records) == nil {
+		_, _ = io.WriteString(w, "\n")
+	}
 }
 
 func main() {

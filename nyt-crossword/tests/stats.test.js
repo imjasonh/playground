@@ -2,10 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  bestByWeekday,
   bucketKey,
   bucketLabel,
   bucketSpan,
   chartLayout,
+  completedSince,
+  currentStreak,
+  formatStreak,
   nearestChartPoint,
   overallByBucket,
   placeView,
@@ -13,6 +17,7 @@ import {
   viewIndexes,
   excludedDates,
   formatDate,
+  formatShortDate,
   formatSolveTime,
   formatUnsolvedCount,
   isPartial,
@@ -24,6 +29,7 @@ import {
   solvedYears,
   trendByWeekday,
   weekdayName,
+  yearBreakdown,
 } from "../src/stats.js";
 
 function solved(date, seconds) {
@@ -253,4 +259,109 @@ test("chartLayout places later buckets to the right and slower times higher", ()
   assert.ok(layout.yTicks.length >= 2);
   assert.equal(layout.xTicks[0].anchor, "start");
   assert.equal(layout.xTicks.at(-1).anchor, "end");
+});
+
+function listed(date, isSolved, percentFilled = isSolved ? 100 : 0) {
+  return { date, id: 1, solved: isSolved, percentFilled, seconds: isSolved ? 600 : null };
+}
+
+test("completedSince starts the day after the last puzzle that was not completed", () => {
+  const puzzles = [
+    listed("2023-01-07", false),
+    listed("2023-01-08", false, 40),
+    listed("2023-01-09", true),
+    listed("2023-01-10", true),
+  ];
+  assert.equal(completedSince(puzzles, "2023-02-01"), "2023-01-09");
+});
+
+test("completedSince counts a solve with no stored time", () => {
+  const puzzles = [listed("2023-01-09", true), { ...listed("2023-01-10", true), seconds: null }];
+  assert.equal(completedSince(puzzles, "2023-02-01"), "2023-01-09");
+});
+
+test("completedSince ignores an open puzzle dated today", () => {
+  const puzzles = [listed("2023-01-08", false), listed("2023-01-09", true), listed("2023-01-10", false)];
+  assert.equal(completedSince(puzzles, "2023-01-10"), "2023-01-09");
+  assert.equal(completedSince(puzzles, "2023-01-11"), null);
+});
+
+test("completedSince is the first puzzle when none was missed", () => {
+  const puzzles = [listed("2014-01-02", true), listed("2014-01-01", true)];
+  assert.equal(completedSince(puzzles, "2030-01-01"), "2014-01-01");
+});
+
+test("completedSince skips puzzles before the chart start and handles no data", () => {
+  assert.equal(completedSince([listed("2013-12-31", false), listed("2014-01-01", true)], "2030-01-01"), "2014-01-01");
+  assert.equal(completedSince([], "2030-01-01"), null);
+});
+
+test("currentStreak counts inclusive days and leaves today out when it is open", () => {
+  const puzzles = [
+    listed("2023-02-03", false),
+    listed("2023-02-04", true),
+    listed("2023-02-05", true),
+    listed("2024-02-29", true),
+  ];
+  assert.deepEqual(currentStreak(puzzles, "2024-02-29"), {
+    since: "2023-02-04",
+    days: 391,
+  });
+  assert.deepEqual(currentStreak(puzzles, "2024-03-01"), {
+    since: "2023-02-04",
+    days: 391,
+  });
+  const openToday = [...puzzles, listed("2024-03-01", false)];
+  assert.equal(currentStreak(openToday, "2024-03-01").days, 391);
+  assert.equal(currentStreak(puzzles, "2023-02-04").days, 1);
+  assert.equal(currentStreak([], "2024-03-01"), null);
+  assert.equal(
+    formatStreak(currentStreak(puzzles, "2023-02-04")),
+    "Current streak: 1 day since Saturday, February 4, 2023.",
+  );
+  assert.equal(
+    formatStreak({ since: "2023-02-04", days: 1370 }),
+    "Current streak: 1,370 days since Saturday, February 4, 2023.",
+  );
+  assert.equal(formatStreak(null), "");
+});
+
+test("yearBreakdown counts each year and lists unfinished puzzles oldest first", () => {
+  const rows = yearBreakdown([
+    listed("2013-05-01", false),
+    listed("2015-03-02", false, 25),
+    listed("2014-12-31", true),
+    listed("2015-03-01", false),
+    listed("2015-03-03", true),
+  ]);
+  assert.deepEqual(
+    rows.map((row) => [row.year, row.completed, row.total, row.unfinished.map((p) => p.date)]),
+    [
+      [2014, 1, 1, []],
+      [2015, 1, 3, ["2015-03-01", "2015-03-02"]],
+    ],
+  );
+});
+
+test("formatShortDate is a short calendar date in UTC", () => {
+  assert.equal(formatShortDate("2024-04-18"), "Thu, Apr 18");
+});
+
+test("bestByWeekday is the fastest time for each weekday, earliest date on a tie", () => {
+  const best = bestByWeekday([
+    solved("2024-06-03", 300),
+    solved("2024-06-10", 280),
+    solved("2024-06-17", 280),
+    solved("2024-06-04", 400),
+    { ...solved("2024-06-05", null), solved: false },
+  ]);
+  assert.equal(best.get("Monday").date, "2024-06-10");
+  assert.equal(best.get("Tuesday").seconds, 400);
+  assert.equal(best.has("Wednesday"), false);
+});
+
+test("a time in excluded.json never becomes the best", () => {
+  const puzzles = [solved("2024-06-03", 4), solved("2024-06-10", 280)];
+  const { kept } = selectSolves(puzzles, { excludedDates: new Set(["2024-06-03"]) });
+  assert.equal(bestByWeekday(kept).get("Monday").date, "2024-06-10");
 });

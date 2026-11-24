@@ -1,0 +1,45 @@
+{
+  "boards": {
+    "xiao-esp32c3": {
+      "board_id": 1,
+      "chip": "esp32c3",
+      "target": "riscv32imc-esp-espidf",
+      "sdkconfig": "sdkconfig.defaults.xiao.in",
+      "capabilities": ["logic-probe", "deep-sleep"]
+    },
+    "waveshare-epd75": {
+      "board_id": 2,
+      "chip": "esp32",
+      "target": "xtensa-esp32-espidf",
+      "sdkconfig": "sdkconfig.defaults.epd.in",
+      "capabilities": ["epd75"]
+    }
+  },
+  "apps": {
+    "base": {
+      "requires": [],
+      "firmware_id_file": "src/protocol.rs",
+      "firmware_id_const": "BASE_FIRMWARE_ID"
+    },
+    "bench": {
+      "requires": ["logic-probe"],
+      "firmware_id_file": "src/protocol.rs",
+      "firmware_id_const": "FIRMWARE_ID"
+    },
+    "maze": {
+      "requires": ["epd75"],
+      "firmware_id_file": "src/maze/mod.rs",
+      "firmware_id_const": "MAZE_FIRMWARE_ID"
+    },
+    "gzip-bench": {
+      "requires": [],
+      "firmware_id_file": "src/gzip_bench.rs",
+      "firmware_id_const": "GZIP_BENCH_FIRMWARE_ID"
+    },
+    "grayscale": {
+      "requires": ["epd75"],
+      "firmware_id_file": "src/grayscale/mod.rs",
+      "firmware_id_const": "GRAYSCALE_FIRMWARE_ID"
+    }
+  }
+}

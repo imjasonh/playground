@@ -6,14 +6,33 @@ Using `pasta`, you can express [AST](https://en.wikipedia.org/wiki/Abstract_synt
 
 Rules can also define an automatix fix, in which case `pasta -fix` will make the edit directly.
 
-`pasta` uses tree-sitter for parsing — the official C runtime and
-grammars, compiled to WASM and driven from pure Go via
-[wazero](https://github.com/tetratelabs/wazero) (so `go install` /
-`CGO_ENABLED=0` still work) — and [CUE](https://cuelang.org/) for
-rule schemas. It's heavily inspired by Go's
+`pasta` uses tree-sitter for parsing and [CUE](https://cuelang.org/)
+for rule schemas. It's heavily inspired by Go's
 `golang.org/x/tools/go/analysis`.
 
+pasta has two tree-sitter backends that produce the same trees. When
+cgo is available, `go build` and `go install` compile the official C
+runtime and most grammars natively, which parses about 2.5 times as
+fast. With `CGO_ENABLED=0` or `-tags purego`, pasta runs the same
+runtime and grammars compiled to WASM on
+[wazero](https://github.com/tetratelabs/wazero), from pure Go. The
+WASM module also parses the grammars that have no native build (SQL
+and Dockerfile).
+
 The intention of `pasta` is to be able to declaratively describe rules for ASTs in any supported language, and quickly and reproducibly flag and fix findings. You can hook this up to your editor and/or CI to automatically flag and potentially fix violations of the rules you've specified.
+
+`pasta` has two faces over the same tree-sitter substrate:
+
+- A **deterministic linter and fixer** driven by CUE rules — the `pasta`
+  command, the pre-commit hook, and the `pastals` LSP server. A rule either
+  matches or it doesn't, and a rule with a rewrite fixes in place. This is what
+  you gate CI on.
+- An **agent-facing fact finder** exposed as `pasta facts` and the
+  `pasta mcp` MCP server. It indexes a whole tree and answers questions about
+  the call graph — unused symbols, dead code, constant arguments, duplicate
+  bodies, unexport candidates — that take judgment, not a hard rule, to act on.
+  The findings are ranked and confidence-tagged leads for an agent (or a human)
+  to review, not autofixes. See [Code facts and the MCP server](#code-facts-and-the-mcp-server).
 
 ## Status
 
@@ -237,6 +256,7 @@ Omitted: rules that need a scope chain, CFG, or ESLint option object (`no-undef`
 | Path | What it does |
 |---|---|
 | [terraform_security](./analyzers/terraform_security/terraform_security.cue) | Terraform and OpenTofu security checks inspired by [Checkov](https://github.com/bridgecrewio/checkov): unpinned modules, public RDS, S3, and security groups, missing encryption, IMDSv2, and IAM `*:*` |
+| [terraform_github_oidc](./analyzers/terraform_github_oidc/terraform_github_oidc.cue) | GitHub Actions OIDC trust that's too broad: GCP Workload Identity providers with no repository check, IAM members on a whole pool or a repository name, AWS trust policies without a `sub` condition or with a wildcard owner, and repositories matched by name instead of `repository_id` |
 
 **HTML**
 
@@ -260,20 +280,23 @@ Omitted: rules that need a scope chain, CFG, or ESLint option object (`no-undef`
 Cold runs over large trees are tuned for sparse style rules:
 
 1. **Content-sniff pre-filter** — before parsing, pasta checks cheap
-   substrings inferred from each rule (`eq` / `token_eq` / a single
-   simple `matches` alternation) plus optional `require_substring` on
-   the rule. Rewrite `within` tokens are not inferred (diagnose can
-   fire without them). Files that cannot match any applicable rule
-   skip the parse.
+   substrings inferred from each rule (`eq` / `token_eq` literals and
+   the literals each `matches` regex requires) plus optional
+   `require_substring` on the rule. Rewrite `within` tokens are not inferred (diagnose can
+   fire without them). A rule doesn't run on a file that lacks its
+   substrings, and files that cannot match any applicable rule skip
+   the parse.
 2. **Per-file parse budget** — default 2s (`-parse-timeout`, or
    `parse_timeout_ms` in `pasta.cue`). Timed-out files are reported as
    `skipped (too complex to analyze)` instead of owning the run.
 3. **ERROR-heavy vs degraded** — densely broken trees skip as
    `skipped (parse errors)`. Light `HasError` glitches (e.g. a trailing
-   brace) still analyze (`parse_degraded` in `-stats`) and are not
-   cached. Pass `-stats` for
+   brace) still analyze (`parse_degraded` in `-stats`). The parse cache
+   keeps both outcomes, keyed by the embedded grammar build, so an
+   unchanged broken file isn't parsed again. Pass `-stats` for
    `walked` / `prefilter_skipped` / `parsed` / `parse_errors` /
-   `parse_degraded` / `timed_out` / `memory_skipped` / `cache_hits`.
+   `parse_degraded` / `timed_out` / `memory_skipped` / `cache_hits` /
+   `tree_cache_hits` / `reparsed` / `rebuilt`.
 4. **Memory budget** — optional cumulative parsed-source byte cap
    (`-memory-budget`, or `memory_budget` in `pasta.cue`) across the
    whole CLI run (including multipass `-fix`). Admission is in source
@@ -286,13 +309,47 @@ Cold runs over large trees are tuned for sparse style rules:
    files so the Go GC can reclaim them on big cold runs.
 
 Rules that read facts from other files (`go_errcheck` and the
-`*_deprecated_use` and `*_taint` rules) make pasta hold every parsed
-file in memory instead of streaming. Pasta still parses those files in
-parallel and runs each level of dependent rules across files in
-parallel. Only fixpoint groups, such as taint propagation, run one file
-at a time. Rule files also load in parallel, and pasta keeps wazero's
-compiled tree-sitter code under `$XDG_CACHE_HOME/pasta/wazero/` (about
-7 MB), which saves about 0.6 seconds per run.
+`*_deprecated_use` and `*_taint` rules) make pasta run in passes
+instead of streaming. Pasta parses every file in parallel and runs the
+rules that read no other file's facts as each file is parsed. Each
+later level of dependent rules then runs across files in parallel.
+Fixpoint groups, such as taint propagation, also iterate over files in
+parallel. After the first iteration, each one visits only the files
+that looked up a fact the previous iteration added, so a taint
+propagation on Kubernetes visits about 350 of 13,700 files in its
+second iteration and 7 in its last. A fixpoint group that uses
+`not_has_fact` is the exception:
+its result depends on order, so it visits files in order. Pasta keeps
+the parse trees that later passes need while their estimated size
+stays under `-tree-budget` (default 1 GiB, `0` keeps every tree). It
+releases the trees past the budget and keeps a compact encoding of
+each instead, about 6 bytes per node against about 200, within half
+the budget again. Each later pass rebuilds those trees from their
+encodings, which `rebuilt` in `-stats` counts and which is about 40
+times faster than parsing. Past both limits, pasta reads each tree
+back from the parse cache, or with `-nocache` parses the file again,
+which `reparsed` counts. Unless
+`GOMEMLIMIT` is set, pasta sets Go's memory limit to twice the tree
+budget, and to at least the budget plus 2 GiB, so the collector
+doesn't let garbage double the heap. On the Go module cache (about
+30,000 files), the compact encodings took the run from 162 to 103
+seconds, and peak RSS from 8.6 GB to 3.6 GB. A 4 GiB budget ran
+no faster and peaked at 8.6 GB.
+
+These runs can't reuse a file's results from the parse cache, because
+its diagnostics depend on other files. They store each file's compact
+tree there instead, keyed by its bytes, its language, and the grammar
+build, so the tree survives rule changes. The first pass rebuilds a
+cached tree instead of parsing the file, which `tree_cache_hits`
+counts. On the Go module cache (about 300 MB of source on 8 cores),
+the trees take 330 MB. Throughput rose from 2.6 MB/s with `-nocache`
+to 3.0 MB/s with an empty cache, which already hits on the many copies
+of the same files, and to 3.5 MB/s with every tree cached. A lint of
+this repository (about 19 MB) rose from 5.2 MB/s to 13.6 MB/s. Rule
+files also load in parallel,
+and when the WASM backend parses, pasta keeps wazero's compiled
+tree-sitter code under `$XDG_CACHE_HOME/pasta/wazero/` (about 7 MB),
+which saves about 0.6 seconds per run.
 
 ## Autofix guardrails
 
@@ -564,6 +621,73 @@ The full test, with positive and negative cases (different package,
 different method, already-migrated arity), lives in
 [`analyzers/go_api_migration/testdata/a.go`](./analyzers/go_api_migration/testdata/a.go)
 and its `.golden` counterpart.
+
+## Code facts and the MCP server
+
+The CUE rules above are deterministic: a rule matches or it doesn't. Some
+cleanups aren't that crisp — "is this exported function called from anywhere?",
+"do these two functions have the same body?", "does every caller pass the same
+argument?" They need a whole-tree index and a call graph, and the answer is a
+ranked lead to review, not a mechanical fix. `pasta` serves those as **code
+facts**, over the same tree-sitter substrate, through two front-ends:
+
+```
+# CLI: one tool, JSON on stdout. Paths default to ./...
+pasta facts                       # list the tools
+pasta facts report .              # one-shot cleanup summary across every sweep
+pasta facts unused_symbols --no-tests ./pkg
+pasta facts constant_arguments --min-calls 3 --literals-only
+pasta facts symbol_info --name Build
+pasta facts duplicate_bodies --min-size 12
+pasta facts find_nodes --def-lang go --node-type call_expression --text-regex 'panic'
+
+# MCP: a stdio JSON-RPC server exposing the same tools to an agent.
+pasta mcp --root .
+```
+
+Scope flags are shared: `--lang go,rust`, `--exclude 'vendor/**'`,
+`--no-tests`, and `--no-generated` control what the index covers, matching the
+CLI linter's first-party-only defaults. The index is built once per
+`(roots, options)` and cached across tool calls in one `pasta mcp` session.
+
+The tools fall into two groups. **Sweeps** scan the whole tree for cleanup
+leads:
+
+| Tool | What it finds |
+|---|---|
+| `report` | One-shot summary across every sweep, plus coverage and top high-confidence unused symbols |
+| `unused_symbols` | Definitions nothing references by name (production + high-confidence first; methods and interface/test/entrypoint symbols excluded or down-ranked) |
+| `dead_code` | Transitively unreachable definitions via the call graph (DCE-lite); roots include exports, entrypoints, tests, value- and string-refs, and dynamically dispatched methods |
+| `constant_arguments` | Parameters every call passes the same value (literals rank first) |
+| `constant_returns` | Functions whose every return yields the same literal (interface/trait methods excluded) |
+| `constant_conditions` | Branches with a literal condition (`if true` / `if false`) |
+| `redundant_conditions` | Comparisons to a boolean literal (`x == true`); strict `===` in JS/TS is low-confidence |
+| `unreachable_code` | Statements after a `return`/`break`/`continue`/`throw` in the same block |
+| `unused_parameters` | Parameters never read (skips underscore, self/this/cls, and interface-method params) |
+| `unused_imports` | Imports whose bound name never appears in the file (Go, Python) |
+| `unexport_candidates` | Exported definitions whose every in-tree caller shares the package |
+| `duplicate_bodies` | Functions with identical body structure (a shared-helper signal) |
+
+**Queries** answer a question about one name or the tree:
+
+| Tool | What it answers |
+|---|---|
+| `definitions` / `references` | Definitions with metrics; all occurrences of a name |
+| `symbol_info` | A name's definitions, export status, collisions, call count, value-use estimate |
+| `impact` | Transitive callers of a name (who breaks if it changes) |
+| `hotspots` | Definitions ranked by complexity/size/fan-in |
+| `argument_values` / `call_sites` | Value distribution for one parameter; locations that call a name |
+| `coverage` | What parsed, per language |
+| `find_nodes` | Generic escape hatch: AST nodes by tree-sitter type, optionally filtered by a Go regexp on their text |
+
+The facts engine binds by **name and arity**, not by resolving symbols, so a
+finding is a lead to judge, not a proof. It is deliberately conservative where
+the tree can't decide — a Go import whose package name diverges from its path
+(`palette-swap` → package `palette`) is left to the compiler rather than
+reported — and it tags findings with a confidence and ranks production,
+high-confidence results first. The engine lives in
+[`internal/codefacts`](./internal/codefacts/); `pasta facts` and `pasta mcp`
+are thin front-ends over it.
 
 ## LSP
 

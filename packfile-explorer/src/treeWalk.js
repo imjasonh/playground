@@ -62,6 +62,30 @@ export function walkTree(treeOid, byOid, contentByOid, { maxEntries = 50000 } = 
 }
 
 /**
+ * Map each tree and blob oid under `treeOid` to the first path it appears at,
+ * so a list of oids can show names. The root tree maps to "". Stops after
+ * `maxEntries` paths.
+ */
+export function pathIndex(treeOid, contentByOid, { maxEntries = 200000 } = {}) {
+  const paths = new Map();
+  if (!treeOid) return paths;
+  paths.set(treeOid, "");
+  const queue = [treeOid];
+  for (let q = 0; q < queue.length && paths.size < maxEntries; q += 1) {
+    const oid = queue[q];
+    const content = contentByOid.get(oid);
+    if (!content) continue;
+    const prefix = paths.get(oid);
+    for (const entry of parseTree(content)) {
+      if (paths.has(entry.oid) || entry.type === "commit") continue;
+      paths.set(entry.oid, prefix ? `${prefix}/${entry.name}` : entry.name);
+      if (entry.type === "tree") queue.push(entry.oid);
+    }
+  }
+  return paths;
+}
+
+/**
  * Filter path entries by a query. A `*` is a wildcard; anything else is a
  * case-insensitive substring match against the full path.
  */

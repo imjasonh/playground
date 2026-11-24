@@ -64,12 +64,6 @@ variable "deletion_protection" {
   default     = true
 }
 
-variable "github_repository" {
-  description = "GitHub repository (OWNER/REPO) for Workload Identity Federation. Leave empty to skip WIF resources."
-  type        = string
-  default     = ""
-}
-
 variable "apps" {
   description = "SSH apps to build with ko and deploy. Key is the mux route name (ssh user@ssh.domain <key>)."
   type = map(object({

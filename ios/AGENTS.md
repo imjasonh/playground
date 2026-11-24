@@ -62,7 +62,7 @@ After adding or changing any of these targets, re-run **iOS signing bootstrap** 
 | Info.plist privacy string or `UIBackgroundModes` | **No** |
 | Normal `project.yml` settings / version bumps | **No** |
 | On-device frameworks used from the host app (e.g. Foundation Models) | **No** |
-| macOS CLI / `type: tool` target under `ios/` (e.g. ArmyListStress) | **No** |
+| macOS CLI / `type: tool` target under `ios/` | **No** |
 | **First time** adding/changing an **app extension** target (keyboard, widget, Watch, …) | **Yes** — new Bundle ID + match profile |
 | New App ID **capability / entitlement** on an existing id (Push, HealthKit, App Attest, Sign in with Apple, …) | **Yes** — update App ID + refresh profile |
 | Second top-level iOS app | **Forbidden** |
@@ -141,7 +141,7 @@ ios/
 ├── fastlane/                # match lists host + extension ids
 ├── Shared/T9/               # shared by in-app T9 demo + keyboard extension
 ├── Shared/RideMonitor/      # live snapshot + ActivityAttributes + sparkline view
-├── Shared/Laya/             # typed-decision runtime; Laya experiment + Army List
+├── Shared/Laya/             # typed-decision runtime for the Laya experiment
 ├── T9Keyboard/              # Custom Keyboard appex (own Bundle ID)
 ├── RideMonitorWidget/       # Ride Monitor Live Activity widget (own Bundle ID)
 ├── RideMonitorWatch/        # watchOS companion app (own Bundle ID)
@@ -160,5 +160,6 @@ xcodegen generate
 bundle exec fastlane test
 ```
 
-CI: `.github/workflows/ios.yml`. Setup:
+CI: `.github/workflows/test.yml` tests the app, and `.github/workflows/ios.yml`
+ships it to TestFlight from `main`. Setup:
 [`docs/ios-testflight-setup.md`](../docs/ios-testflight-setup.md).

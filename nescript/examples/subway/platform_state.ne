@@ -6,9 +6,10 @@
 // Controls: left and right walk, up and down step toward or away from
 // the edge. Up at an open door boards the train. Walking off the left
 // end takes the passage to the next station in the complex, and
-// walking off the right end takes it to the previous one. A switches
-// to the other direction on this station. Hold B to wait faster while
-// no train is in.
+// walking off the right end takes it to the previous one. Select
+// switches to the other direction on this station. B punches, A
+// kicks, and fight.ne has the rest. Holding B with no train in and no
+// fight on waits faster.
 
 const BAND_TOP: u8 = 80
 const BAND_BOTTOM: u8 = 144
@@ -59,44 +60,40 @@ var best_i: u8 = 0
 var patterns_ready: bool = false
 
 state Platform {
-    var px: u8 = 120
-    var py: u8 = 160
-    var flip: bool = false
-    var walk: u8 = 0
-
     on enter {
         top_y = 0
         if not patterns_ready {
             reset_patterns()
             patterns_ready = true
         }
-        if resume {
-            resume = false
-            px = save_px
-            py = save_py
-            flip = save_flip
-        } else if on_train {
-            // Stepping off: stand at the door the player used.
-            px = door_px
-            py = PLAYER_MIN_Y
+        var fresh: bool = not resume
+        resume = false
+        if fresh {
+            if on_train {
+                // Stepping off: stand at the door the player used.
+                pl_x = door_px
+                pl_y = PLAYER_MIN_Y
+            }
+            fight_clear()
         }
         on_train = false
         platform_setup()
+        fight_enter(0)
+        if fresh {
+            fight_maybe()
+        }
     }
 
     on frame {
         frame_top()
         frame_count += 1
         if button.start.pressed {
-            save_px = px
-            save_py = py
-            save_flip = flip
             pause_from = 0
             transition PauseMap
         }
 
         var speed: u8 = 1
-        if button.b and tp == TP_NONE {
+        if button.b and tp == TP_NONE and not fight_on() {
             speed = 8
         }
         clock_step(speed)
@@ -118,76 +115,92 @@ state Platform {
         }
         if hud_chunk > 0 {
             hud_arrivals()
+        } else if budget > 0 {
+            fight_hud()
         }
 
         // Walk. Off the left end is the next station in the complex,
         // and you come out at its right end. Off the right end is the
-        // previous station, and you come out at its left end.
-        var moving: bool = false
+        // previous station, and you come out at its left end. Only a
+        // standing Alex turns, takes a passage, or boards.
+        fight_input()
+        var st: u8 = pl_step
+        var ready: bool = pl_act == A_IDLE
+        pl_moving = false
         var changed: bool = false
-        if button.right {
-            if px < 232 {
-                px += 1
-            } else if take_passage(false) {
-                px = 8
+        if button.right and st > 0 {
+            if pl_x < 232 {
+                pl_x += st
+                if pl_x > 232 {
+                    pl_x = 232
+                }
+            } else if ready and take_passage(false) {
+                pl_x = 8
                 changed = true
             }
-            flip = true
-            moving = true
+            if ready {
+                pl_flip = true
+            }
+            pl_moving = true
         }
-        if button.left {
-            if px > 0 {
-                px -= 1
-            } else if take_passage(true) {
-                px = 224
+        if button.left and st > 0 {
+            if pl_x > st {
+                pl_x -= st
+            } else if pl_x > 0 {
+                pl_x = 0
+            } else if ready and take_passage(true) {
+                pl_x = 224
                 changed = true
             }
-            flip = false
-            moving = true
+            if ready {
+                pl_flip = false
+            }
+            pl_moving = true
         }
         if changed {
+            fight_safe = false
+            fight_clear()
             platform_setup()
+            fight_enter(0)
+            fight_maybe()
             return
         }
         if not button.up {
             up_lock = false
         }
-        if button.up {
-            if py > PLAYER_MIN_Y {
-                py -= 1
-                moving = true
-            } else if not up_lock and can_board(px) {
+        if button.up and st > 0 {
+            if pl_y > PLAYER_MIN_Y {
+                pl_y -= 1
+                pl_moving = true
+            } else if ready and not up_lock and can_board(pl_x) {
                 up_lock = true
+                fight_safe = false
                 ride_p = tp_p
                 ride_k = tp_k
-                door_px = px
+                door_px = pl_x
                 transition Riding
             }
         }
-        if button.down and py < PLAYER_MAX_Y {
-            py += 1
-            moving = true
+        if button.down and st > 0 and pl_y < PLAYER_MAX_Y {
+            pl_y += 1
+            pl_moving = true
         }
-        if button.a.pressed {
+        if button.select.pressed {
             cur_dir = cur_dir ^ 1
             platform_setup()
+            fight_enter(0)
             return
         }
-        var f: u8 = S_PLAYER0
-        if moving {
-            walk += 1
-            var phase: u8 = (walk >> 3) & 3
-            if phase == 1 {
-                f = S_PLAYER1
-            } else if phase == 3 {
-                f = S_PLAYER2
-            }
-        } else {
-            walk = 0
-        }
-        draw_player(px, py, f, flip)
+        fight_update()
+        fight_draw(0)
         draw_hud_bullets()
         draw_sign_bullets()
+        // The transfer hints at the edges would compete with the
+        // gang's sprites; hide them for the same reason riding hides
+        // its in-train transfer bullets during a fight.
+        if not fight_on() {
+            draw_transfer_hints()
+        }
     }
 
     on scanline(80) {

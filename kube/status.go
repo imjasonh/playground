@@ -3,13 +3,15 @@ package kube
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"reflect"
 	"strings"
 
 	"github.com/imjasonh/playground/kube/internal/client"
+	"github.com/imjasonh/playground/kube/internal/jsonnum"
 	"github.com/imjasonh/playground/kube/internal/subset"
 )
 
@@ -66,11 +68,11 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 		conds := st.FieldByIndex(c.ti.conditions).Addr().Interface().(*[]Condition)
 		SetCondition(conds, syncedCondition(reconcileErr, m.Generation))
 	}
-	before, err := json.Marshal(reflect.ValueOf(cached).Elem().FieldByIndex(c.ti.status).Interface())
+	before, err := json.Marshal(reflect.ValueOf(cached).Elem().FieldByIndex(c.ti.status).Interface(), json.Deterministic(true))
 	if err != nil {
 		return err
 	}
-	after, err := json.Marshal(st.Interface())
+	after, err := json.Marshal(st.Interface(), json.Deterministic(true))
 	if err != nil {
 		return err
 	}
@@ -108,9 +110,9 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 		"apiVersion": c.ti.apiVersion,
 		"kind":       c.ti.kind,
 		"metadata":   meta,
-		"status":     json.RawMessage(after),
+		"status":     jsontext.Value(after),
 	}
-	var resp json.RawMessage
+	var resp jsontext.Value
 	err = c.m.apply(ctx, c.ti, key, c.res.path(m.Namespace, m.Name, "status"), c.name, body, &resp)
 	if err != nil {
 		if pre.rv != "" && client.IsConflict(err) {
@@ -130,7 +132,7 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 	// with defaults or another manager's fields, so record what it stored.
 	var written T
 	if err := json.Unmarshal(resp, &written); err == nil {
-		if b, err := json.Marshal(reflect.ValueOf(&written).Elem().FieldByIndex(c.ti.status).Interface()); err == nil {
+		if b, err := json.Marshal(reflect.ValueOf(&written).Elem().FieldByIndex(c.ti.status).Interface(), json.Deterministic(true)); err == nil {
 			c.setStatus(key, hashJSON(b), true)
 		}
 	}
@@ -271,9 +273,7 @@ func containsJSON(have, want []byte) bool {
 		b []byte
 		v *any
 	}{{have, &h}, {want, &w}} {
-		dec := json.NewDecoder(bytes.NewReader(d.b))
-		dec.UseNumber()
-		if err := dec.Decode(d.v); err != nil {
+		if err := jsonnum.Unmarshal(d.b, d.v); err != nil {
 			return false
 		}
 	}

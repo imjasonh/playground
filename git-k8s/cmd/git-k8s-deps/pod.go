@@ -5,7 +5,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"maps"
@@ -304,7 +305,7 @@ func (u *updater) pod(b *Branch, repo *gitk8s.Repository, head string, attempt i
 			},
 		}},
 	}
-	spec, _ := json.Marshal(p.Spec)
+	spec, _ := json.Marshal(p.Spec, json.Deterministic(true), jsontext.EscapeForHTML(true))
 	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%s", b.Name, attempt, spec))
 	// The name must have no hyphen, so that no check can create a Pod with
 	// it first under a policy that limits each check's new Pods to names of

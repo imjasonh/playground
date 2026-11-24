@@ -1,7 +1,7 @@
 package gitk8s
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -174,7 +174,7 @@ func TestCheckResultSchemaFields(t *testing.T) {
 		if _, ok := props[name]; !ok {
 			t.Errorf("the schema has no property %s", name)
 		}
-		if opts != "omitempty" {
+		if opts != "omitempty" && opts != "omitzero" {
 			required = append(required, name)
 		}
 	}

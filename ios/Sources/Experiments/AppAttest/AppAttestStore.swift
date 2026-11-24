@@ -23,23 +23,28 @@ enum AppAttestStorageKeys {
 @MainActor
 final class AppAttestUserDefaultsStore: AppAttestStoring {
     private let defaults: UserDefaults
+    private let keychainAccount: String
 
-    init(defaults: UserDefaults? = nil) {
+    init(
+        defaults: UserDefaults? = nil,
+        keychainAccount: String = AppAttestStorageKeys.keychainAccount
+    ) {
         self.defaults = defaults
             ?? UserDefaults(suiteName: AppAttestStorageKeys.suiteName)
             ?? .standard
+        self.keychainAccount = keychainAccount
         if self.defaults.string(forKey: AppAttestStorageKeys.deviceId) == nil {
             self.defaults.set(UUID().uuidString, forKey: AppAttestStorageKeys.deviceId)
         }
     }
 
     var keyId: String? {
-        get { AppAttestKeychain.read(account: AppAttestStorageKeys.keychainAccount) }
+        get { AppAttestKeychain.read(account: keychainAccount) }
         set {
             if let newValue {
-                AppAttestKeychain.write(account: AppAttestStorageKeys.keychainAccount, value: newValue)
+                AppAttestKeychain.write(account: keychainAccount, value: newValue)
             } else {
-                AppAttestKeychain.delete(account: AppAttestStorageKeys.keychainAccount)
+                AppAttestKeychain.delete(account: keychainAccount)
             }
         }
     }

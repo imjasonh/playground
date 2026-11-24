@@ -32,33 +32,56 @@ const state = {
 function questionCard(draft = { kind: "choice", instructions: "", options: "" }) {
   const article = document.createElement("article");
   article.className = "question";
-  article.innerHTML = `
-    <label>
-      <span>Type</span>
-      <select data-field="kind">
-        <option value="choice">Choice</option>
-        <option value="score">Score</option>
-        <option value="noul">Yes / no</option>
-      </select>
-    </label>
-    <label>
-      <span>Instructions</span>
-      <textarea data-field="instructions" rows="2"></textarea>
-    </label>
-    <label data-options>
-      <span>Options or levels, one per line</span>
-      <textarea data-field="options" rows="4"></textarea>
-    </label>
-    <button type="button" class="link" data-remove>Remove</button>
-  `;
-  article.querySelector('[data-field="kind"]').value = draft.kind;
-  article.querySelector('[data-field="instructions"]').value = draft.instructions;
-  article.querySelector('[data-field="options"]').value = draft.options ?? "";
+
+  const kindLabel = document.createElement("label");
+  const kindSpan = document.createElement("span");
+  kindSpan.textContent = "Type";
+  const kindSelect = document.createElement("select");
+  kindSelect.dataset.field = "kind";
+  for (const [value, text] of [
+    ["choice", "Choice"],
+    ["score", "Score"],
+    ["noul", "Yes / no"],
+  ]) {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = text;
+    kindSelect.append(opt);
+  }
+  kindLabel.append(kindSpan, kindSelect);
+
+  const instrLabel = document.createElement("label");
+  const instrSpan = document.createElement("span");
+  instrSpan.textContent = "Instructions";
+  const instrArea = document.createElement("textarea");
+  instrArea.dataset.field = "instructions";
+  instrArea.rows = 2;
+  instrLabel.append(instrSpan, instrArea);
+
+  const optsLabel = document.createElement("label");
+  optsLabel.dataset.options = "";
+  const optsSpan = document.createElement("span");
+  optsSpan.textContent = "Options or levels, one per line";
+  const optsArea = document.createElement("textarea");
+  optsArea.dataset.field = "options";
+  optsArea.rows = 4;
+  optsLabel.append(optsSpan, optsArea);
+
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "link";
+  removeBtn.dataset.remove = "";
+  removeBtn.textContent = "Remove";
+
+  article.append(kindLabel, instrLabel, optsLabel, removeBtn);
+  kindSelect.value = draft.kind;
+  instrArea.value = draft.instructions;
+  optsArea.value = draft.options ?? "";
   syncOptionVisibility(article);
-  article.querySelector('[data-field="kind"]').addEventListener("change", () => {
+  kindSelect.addEventListener("change", () => {
     syncOptionVisibility(article);
   });
-  article.querySelector("[data-remove]").addEventListener("click", () => {
+  removeBtn.addEventListener("click", () => {
     if (questionsEl.querySelectorAll(".question").length === 1) {
       return;
     }

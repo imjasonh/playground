@@ -18,4 +18,8 @@ terraform {
 
 provider "google" {
   project = var.project_id
+
+  # The Budgets API rejects user credentials that don't name a quota project.
+  billing_project       = var.project_id
+  user_project_override = true
 }

@@ -10,7 +10,7 @@
     "vendor": "node scripts/vendor.js"
   },
   "dependencies": {
-    "esptool-js": "^0.7.0",
+    "esptool-js": "^0.7.1",
     "web-serial-polyfill": "^1.0.15"
   },
   "engines": {

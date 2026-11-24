@@ -5,7 +5,7 @@ package e2e_test
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -35,7 +35,7 @@ type Widget struct {
 		Size int `json:"size"`
 	} `json:"spec"`
 	Status struct {
-		Size       int              `json:"size,omitempty"`
+		Size       int              `json:"size,omitzero"`
 		Conditions []kube.Condition `json:"conditions,omitempty"`
 	} `json:"status,omitzero"`
 }
@@ -282,7 +282,7 @@ type Poll struct {
 		Question string `json:"question,omitempty"`
 	} `json:"spec"`
 	Status struct {
-		Total      int              `json:"total,omitempty"`
+		Total      int              `json:"total,omitzero"`
 		Votes      map[string]int   `json:"votes,omitempty"`
 		Conditions []kube.Condition `json:"conditions,omitempty"`
 	} `json:"status,omitzero"`
@@ -498,9 +498,24 @@ func TestStaleFinalizerNeedsPatch(t *testing.T) {
 		}
 	}
 	out := &syncBuffer{}
-	e2e.RunContext(t, clog.WithLogger(t.Context(), clog.NewLogger(slog.New(slog.NewTextHandler(out, nil)))), &kube.Manager{
+	// This test reads the manager's log, so the logger writes to out.
+	ctx, cancel := context.WithCancel(clog.WithLogger(t.Context(), clog.NewLogger(slog.New(slog.NewTextHandler(out, nil)))))
+	m := &kube.Manager{
 		Name: "unfinalized-e2e", Kubeconfig: serviceAccountKubeconfig(t, c, ns, "unfinalized"), Namespace: ns,
-	}, kube.For[settings](unfinalized{}, kube.Named("unfinalized")))
+	}
+	done := make(chan error, 1)
+	go func() { done <- m.Run(ctx, kube.For[settings](unfinalized{}, kube.Named("unfinalized"))) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("manager: %v", err)
+			}
+		case <-time.After(30 * time.Second):
+			t.Error("manager didn't stop within 30s")
+		}
+	})
 	finalizers := func() ([]string, error) {
 		var cm settings
 		err := c.Get(t.Context(), client.Path("v1", "configmaps", ns, "old"), &cm)
@@ -597,9 +612,11 @@ func TestLeaderElectionFailover(t *testing.T) {
 	defer func() {
 		for _, rep := range []*replica{a, b} {
 			rep.cancel()
+			timer := time.NewTimer(30 * time.Second)
 			select {
 			case <-rep.done:
-			case <-time.After(30 * time.Second):
+				timer.Stop()
+			case <-timer.C:
 				t.Error("replica didn't stop")
 			}
 		}

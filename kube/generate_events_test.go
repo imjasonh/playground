@@ -4,7 +4,7 @@ package kube
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"reflect"
 	"strings"
 	"testing"
@@ -39,7 +39,7 @@ func TestPlanGrantsEventsOnlyToProgramsThatRecordThem(t *testing.T) {
 	const rule = `{"apiGroups":["events.k8s.io"],"resources":["events"],"verbs":["create","patch"]}`
 	const website = "github.com/imjasonh/playground/kube/examples/website"
 	rules := func(g grants) string {
-		b, _ := json.Marshal(g.rules())
+		b, _ := json.Marshal(g.rules(), json.Deterministic(true))
 		return string(b)
 	}
 	for _, tc := range []struct {
@@ -86,7 +86,7 @@ func TestManifestsForEventsInDefault(t *testing.T) {
 	p.defaultNS.add("events.k8s.io", "events", "", "create", "patch")
 	byKind := map[string]map[string]any{}
 	for _, d := range o.manifests("ref", p) {
-		b, _ := json.Marshal(d)
+		b, _ := json.Marshal(d, json.Deterministic(true))
 		var m map[string]any
 		_ = json.Unmarshal(b, &m)
 		byKind[m["kind"].(string)] = m
@@ -95,10 +95,10 @@ func TestManifestsForEventsInDefault(t *testing.T) {
 	if role == nil || role["metadata"].(map[string]any)["namespace"] != "default" || binding["metadata"].(map[string]any)["namespace"] != "default" {
 		t.Fatalf("Role = %v, RoleBinding = %v, want them in default", role, binding)
 	}
-	if b, _ := json.Marshal(role["rules"]); string(b) != `[{"apiGroups":["events.k8s.io"],"resources":["events"],"verbs":["create","patch"]}]` {
+	if b, _ := json.Marshal(role["rules"], json.Deterministic(true)); string(b) != `[{"apiGroups":["events.k8s.io"],"resources":["events"],"verbs":["create","patch"]}]` {
 		t.Errorf("Role rules = %s", b)
 	}
-	if b, _ := json.Marshal(binding["subjects"]); string(b) != `[{"kind":"ServiceAccount","name":"app","namespace":"app-system"}]` {
+	if b, _ := json.Marshal(binding["subjects"], json.Deterministic(true)); string(b) != `[{"kind":"ServiceAccount","name":"app","namespace":"app-system"}]` {
 		t.Errorf("RoleBinding subjects = %s", b)
 	}
 }

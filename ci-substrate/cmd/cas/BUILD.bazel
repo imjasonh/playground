@@ -1,0 +1,39 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "cas_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/imjasonh/playground/ci-substrate/cmd/cas",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//api/worker/v1:worker",
+        "//internal/actioncache",
+        "//internal/asset",
+        "//internal/bes",
+        "//internal/blob",
+        "//internal/exec",
+        "//internal/invocation",
+        "//internal/logstream",
+        "//internal/remote",
+        "//internal/telemetry",
+        "//internal/tenant",
+        "//internal/tlscfg",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/asset/v1:asset",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/logstream/v1:logstream",
+        "@com_github_chainguard_dev_clog//gcp/init",
+        "@com_github_sethvargo_go_envconfig//:go-envconfig",
+        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
+        "@org_golang_google_genproto//googleapis/devtools/build/v1:build",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+    ],
+)
+
+go_binary(
+    name = "cas",
+    embed = [":cas_lib"],
+    visibility = ["//visibility:public"],
+)

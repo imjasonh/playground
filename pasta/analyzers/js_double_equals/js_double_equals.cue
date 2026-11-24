@@ -1,7 +1,9 @@
-// js_double_equals rewrites `==` / `!=` to `===` / `!==`. JavaScript's
-// loose equality coerces operand types, which is almost always
-// surprising; the strict variants compare without coercion. ESLint
-// `eqeqeq` covers the same ground; this is a structural auto-fix.
+// js_double_equals rewrites `==` / `!=` to `===` / `!==` in JavaScript
+// and TypeScript. JavaScript's loose equality coerces operand types,
+// which is almost always surprising; the strict variants compare
+// without coercion. ESLint's `eqeqeq` covers the same ground. Google
+// JS and TS style require `===` / `!==`, with `== null` left as the
+// nullish check.
 //
 // Comparisons against `null` / `undefined` are left alone: `x == null`
 // is an idiomatic "nullish" check that is *not* equivalent to
@@ -12,6 +14,8 @@ package js_double_equals
 import (
 	"github.com/imjasonh/pasta/schema"
 	jslang "github.com/imjasonh/pasta/lang/javascript"
+	tslang "github.com/imjasonh/pasta/lang/typescript"
+	tsxlang "github.com/imjasonh/pasta/lang/tsx"
 )
 
 _eqRule: {
@@ -19,7 +23,7 @@ _eqRule: {
 	_to:   "===" | "!=="
 
 	out: {
-		languages: [jslang.Name]
+		languages: [jslang.Name, tslang.Name, tsxlang.Name]
 		requires: []
 		provides: []
 

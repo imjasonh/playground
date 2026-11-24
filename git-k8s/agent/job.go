@@ -4,7 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"slices"
@@ -106,11 +106,11 @@ type Ref struct {
 // to the next call.
 type JobState struct {
 	// Runs counts the runs that RunJob started and didn't give back.
-	Runs int `json:"runs,omitempty"`
+	Runs int `json:"runs,omitzero"`
 	// Pod names the run's Pod, and Attempt counts its attempts at
 	// preparing the source.
 	Pod     string `json:"pod,omitempty"`
-	Attempt int    `json:"attempt,omitempty"`
+	Attempt int    `json:"attempt,omitzero"`
 	// UID is the UID of the run's Pod when RunJob last saw it, so RunJob
 	// can tell when kube created the Pod again.
 	UID string `json:"uid,omitempty"`
@@ -123,7 +123,7 @@ type JobState struct {
 	// and don't declare its Pod. To get the result again from the next
 	// call, such as when acting on it failed, store the state with Done
 	// set to false.
-	Done bool `json:"done,omitempty"`
+	Done bool `json:"done,omitzero"`
 }
 
 // MarshalText encodes all of the state as one value, which UnmarshalText

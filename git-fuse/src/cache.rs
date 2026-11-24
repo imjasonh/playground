@@ -26,7 +26,6 @@
 //! accretes new commits without unshallowing, so tips moving forward keep
 //! extending the cache in either mode).
 
-use crate::vlog;
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};

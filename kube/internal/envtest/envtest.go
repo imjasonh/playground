@@ -205,10 +205,12 @@ func (e *Env) waitReady(ctx context.Context, token string) error {
 			default:
 			}
 		}
+		timer := time.NewTimer(200 * time.Millisecond)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return ctx.Err()
-		case <-time.After(200 * time.Millisecond):
+		case <-timer.C:
 		}
 	}
 	return errors.New("envtest: kube-apiserver wasn't ready after a minute")
@@ -227,9 +229,11 @@ func (e *Env) Stop() {
 	for i := len(e.procs) - 1; i >= 0; i-- {
 		p := e.procs[i]
 		_ = p.cmd.Process.Signal(syscall.SIGTERM)
+		timer := time.NewTimer(10 * time.Second)
 		select {
 		case <-p.exited:
-		case <-time.After(10 * time.Second):
+			timer.Stop()
+		case <-timer.C:
 			_ = p.cmd.Process.Kill()
 			<-p.exited
 		}

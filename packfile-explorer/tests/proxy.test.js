@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  DEFAULT_PROXY,
   infoRefsUrl,
   normalizeRepoUrl,
   proxied,
@@ -25,11 +26,16 @@ test("endpoint helpers build smart-HTTP URLs", () => {
   assert.equal(uploadPackUrl(base), "https://github.com/a/b.git/git-upload-pack");
 });
 
-test("proxied wraps the target and encodes it", () => {
-  const url = proxied("https://proxy.example", "https://github.com/a/b.git/info/refs?service=git-upload-pack");
+test("proxied uses the isomorphic-git path form", () => {
+  const target = "https://github.com/a/b.git/info/refs?service=git-upload-pack";
   assert.equal(
-    url,
-    "https://proxy.example/?url=https%3A%2F%2Fgithub.com%2Fa%2Fb.git%2Finfo%2Frefs%3Fservice%3Dgit-upload-pack",
+    proxied("https://proxy.example", target),
+    "https://proxy.example/github.com/a/b.git/info/refs?service=git-upload-pack",
   );
+  assert.equal(
+    proxied(DEFAULT_PROXY, infoRefsUrl("https://github.com/a/b.git")),
+    "https://cors.isomorphic-git.org/github.com/a/b.git/info/refs?service=git-upload-pack",
+  );
+  assert.equal(proxied("https://example.com/proxy.php?", target), `https://example.com/proxy.php?${target}`);
   assert.equal(proxied("", "https://x"), "https://x");
 });

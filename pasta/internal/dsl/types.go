@@ -3,7 +3,8 @@
 package dsl
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 )
 
@@ -59,8 +60,7 @@ type Rule struct {
 	// must all appear in a file's source for the rule to be worth
 	// running. Used by the content-sniff pre-filter to skip parses on
 	// files that cannot match. The engine also infers substrings from
-	// `eq`/`token_eq` predicates and a single simple `matches`
-	// alternation; rewrite `within` tokens are intentionally not
+	// `eq`/`token_eq` predicates and `matches` regexes; rewrite `within` tokens are intentionally not
 	// inferred (diagnose can fire without them). This field covers
 	// cases inference can't see.
 	RequireSubstring []string       `json:"require_substring,omitempty"`
@@ -96,7 +96,7 @@ type Pattern struct {
 // UnmarshalJSON normalizes string-or-list `node` to a slice.
 func (p *Pattern) UnmarshalJSON(data []byte) error {
 	type raw struct {
-		Node         json.RawMessage  `json:"node"`
+		Node         jsontext.Value   `json:"node"`
 		Fields       map[string]Child `json:"fields,omitempty"`
 		Children     []Child          `json:"children,omitempty"`
 		Where        []Predicate      `json:"where,omitempty"`
@@ -184,7 +184,7 @@ func (c *Child) UnmarshalJSON(data []byte) error {
 	type raw struct {
 		Capture      string           `json:"capture,omitempty"`
 		Pattern      *Pattern         `json:"pattern,omitempty"`
-		Node         json.RawMessage  `json:"node,omitempty"`
+		Node         jsontext.Value   `json:"node,omitempty"`
 		Fields       map[string]Child `json:"fields,omitempty"`
 		Children     []Child          `json:"children,omitempty"`
 		Where        []Predicate      `json:"where,omitempty"`
@@ -312,15 +312,15 @@ type Rewrite struct {
 type Edit struct {
 	Target        string `json:"target,omitempty"`
 	Replacement   string `json:"replacement,omitempty"`
-	TrimStart     int    `json:"trim_start,omitempty"`
-	TrimEnd       int    `json:"trim_end,omitempty"`
+	TrimStart     int    `json:"trim_start,omitzero"`
+	TrimEnd       int    `json:"trim_end,omitzero"`
 	Position      string `json:"position,omitempty"`
 	Anchor        string `json:"anchor,omitempty"`
 	Text          string `json:"text,omitempty"`
 	DeleteFrom    string `json:"delete_from,omitempty"`
-	DeleteFromEnd bool   `json:"delete_from_end,omitempty"`
+	DeleteFromEnd bool   `json:"delete_from_end,omitzero"`
 	DeleteTo      string `json:"delete_to,omitempty"`
-	DeleteToEnd   bool   `json:"delete_to_end,omitempty"`
+	DeleteToEnd   bool   `json:"delete_to_end,omitzero"`
 	Within        string `json:"within,omitempty"`
 	Token         string `json:"token,omitempty"`
 	ReplaceWith   string `json:"replace_with,omitempty"`
@@ -328,7 +328,7 @@ type Edit struct {
 
 // RewriteOpts controls rewrite behavior.
 type RewriteOpts struct {
-	PreserveComments bool `json:"preserve_comments,omitempty"`
+	PreserveComments bool `json:"preserve_comments,omitzero"`
 }
 
 // LanguageDecl is a CUE-side language declaration. The runtime resolves
@@ -340,4 +340,8 @@ type LanguageDecl struct {
 	Grammar      string   `json:"grammar"`
 	Extensions   []string `json:"extensions,omitempty"`
 	CommentTypes []string `json:"comment_types,omitempty"`
+	// DefinitionTypes are the node types of named function and method
+	// definitions, whose `name` field holds the identifier that calls
+	// bind to.
+	DefinitionTypes []string `json:"definition_types,omitempty"`
 }

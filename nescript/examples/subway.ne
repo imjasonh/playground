@@ -11,12 +11,34 @@ include "subway/data_header.ne"
 include "subway/gfx_consts.ne"
 include "subway/gfx_chr.ne"
 include "subway/globals.ne"
+include "subway/fight_vars.ne"
 
 // The two-tone door chime, played when the doors open.
 sfx DoorChime {
     duty: 2
     pitch: [0xA8, 0xA8, 0xA8, 0xA8, 0xA8, 0xA8, 0xA8, 0xA8, 0xA8, 0xA8, 0xA8, 0xA8, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5, 0xD5]
     volume: [12, 11, 10, 10, 9, 9, 8, 8, 7, 7, 6, 6, 12, 11, 10, 9, 9, 8, 8, 7, 7, 6, 6, 5, 5, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 0]
+}
+
+// Fight hits on the noise channel: a stagger, and a knockdown. Noise
+// cuts off the StandClear sample if it is playing.
+sfx Punch {
+    channel: noise
+    pitch: 6
+    volume: [15, 12, 8, 5, 2, 1]
+}
+
+sfx Smack {
+    channel: noise
+    pitch: 10
+    volume: [15, 15, 13, 11, 9, 7, 5, 3, 2, 1]
+}
+
+// A beaten gang member drops his cash.
+sfx Coin {
+    duty: 2
+    pitch: [0x50, 0x50, 0x50, 0x50, 0x3C, 0x3C, 0x3C, 0x3C, 0x3C, 0x3C, 0x3C, 0x3C, 0x3C, 0x3C]
+    volume: [10, 10, 9, 9, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
 }
 
 // "Stand clear of the closing doors, please." Kokoro voice bm_george
@@ -53,6 +75,10 @@ bank Map {
 bank Sim {
     include "subway/platform_logic.ne"
     include "subway/riding_logic.ne"
+}
+
+bank Fight {
+    include "subway/fight.ne"
 }
 
 include "subway/video.ne"

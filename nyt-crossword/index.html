@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Crossword</title>
+    <title>NYT Crossword stats and progress</title>
     <meta
       name="description"
       content="Solve time by weekday for the NYT crossword, and puzzles that were started but not finished."
@@ -29,9 +29,8 @@
     <div class="wrap">
       <header class="mast">
         <div>
-          <h1>Crossword</h1>
-          <p id="generated" class="meta"></p>
-          <p id="unsolved-count" class="meta"></p>
+          <h1>NYT Crossword stats and progress</h1>
+          <p id="completed-since" class="since"></p>
         </div>
       </header>
 
@@ -80,6 +79,7 @@
               <tr>
                 <th scope="col">Weekday</th>
                 <th scope="col" class="num">Median</th>
+                <th scope="col" class="num">Best</th>
                 <th scope="col" class="num">Solves</th>
               </tr>
             </thead>
@@ -120,12 +120,32 @@
       </section>
 
       <section>
+        <h2>Completed by year</h2>
+        <div class="table-scroll">
+          <table>
+            <caption class="visually-hidden">
+              Completed puzzles by year, with links to the ones not completed
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Year</th>
+                <th scope="col">Completed</th>
+                <th scope="col" class="num">Not completed</th>
+              </tr>
+            </thead>
+            <tbody id="year-rows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
         <h2>Unsolved</h2>
+        <p id="unsolved-count" class="unsolved-count"></p>
         <label>
           Sort
           <select id="partial-sort">
-            <option value="date" selected>Date</option>
-            <option value="percent">Filled</option>
+            <option value="date">Date</option>
+            <option value="percent" selected>Filled</option>
             <option value="weekday">Weekday</option>
           </select>
         </label>
@@ -145,7 +165,9 @@
         </div>
         <p id="partial-empty" class="meta" hidden>No unsolved puzzles.</p>
       </section>
+      <p id="generated" class="updated"></p>
     </div>
     <script type="module" src="src/app.js"></script>
+    <script src="whbiab.js" data-app="nyt-crossword"></script>
   </body>
 </html>

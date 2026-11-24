@@ -1,6 +1,9 @@
 // Build the repository endpoints and CORS-proxied URLs the transport fetches.
 
-export const DEFAULT_PROXY = "https://cors-proxy-worker.imjasonh.workers.dev";
+// Same public proxy the in-browser git client uses. It streams the
+// upload-pack body. The playground worker stops at 25 MiB, and a depth-1
+// fetch of playground main is just over that, so the worker returns HTTP 413.
+export const DEFAULT_PROXY = "https://cors.isomorphic-git.org";
 
 /**
  * Normalize a user-typed repository reference into a smart-HTTP base URL.
@@ -41,9 +44,17 @@ export function uploadPackUrl(base) {
   return `${base}/git-upload-pack`;
 }
 
-/** Wrap a target URL in a CORS-proxy request URL. */
+/**
+ * Wrap a target URL the way isomorphic-git's `corsProxify` does.
+ *
+ * A proxy that ends in `?` is a query-string proxy: the target is appended
+ * as-is. Any other proxy is a path proxy. The scheme is stripped and the
+ * remainder is appended, which is what `https://cors.isomorphic-git.org`
+ * expects (`/github.com/owner/repo.git/...`).
+ */
 export function proxied(proxyBase, targetUrl) {
-  const trimmed = (proxyBase || "").trim().replace(/\/+$/, "");
-  if (!trimmed) return targetUrl;
-  return `${trimmed}/?url=${encodeURIComponent(targetUrl)}`;
+  const proxy = (proxyBase || "").trim().replace(/\/+$/, "");
+  if (!proxy) return targetUrl;
+  if (proxy.endsWith("?")) return `${proxy}${targetUrl}`;
+  return `${proxy}/${targetUrl.replace(/^https?:\/\//, "")}`;
 }

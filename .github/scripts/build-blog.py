@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Build the published /posts/ catalog from blog-post.md files.
+"""Build the published /posts/ catalog from posts/<stub>.md files.
 
-Discovers every ``blog-post.md`` in a repository source tree, converts the
+Discovers every ``posts/<stub>.md`` in a repository source tree, converts the
 Markdown to HTML, copies local images the posts reference, and writes a
-reverse-chronological index plus an RSS 2.0 feed. Publication and update
+reverse-chronological index plus an RSS 2.0 feed. The index and each post
+load ``wehadababyitsaboy/web/whbiab.js``. Publication and update
 dates come from git author dates of commits that changed the file's
 contents: the oldest such commit, then the newest. A rename that keeps
 the contents, including a git subtree import, does not move either date.
@@ -35,20 +36,9 @@ INDEX_TEMPLATE_PATH = PAGES_DIR / "blog-index.html.tmpl"
 POST_TEMPLATE_PATH = PAGES_DIR / "blog-post.html.tmpl"
 SHARED_CSS_PATH = PAGES_DIR / "blog-shared.css"
 SOURCE_ROOT = SCRIPT_DIR.parents[1]
+WHBIAB_JS = SOURCE_ROOT / "wehadababyitsaboy" / "web" / "whbiab.js"
 
-POST_FILENAME = "blog-post.md"
-SKIP_DIR_NAMES = {
-    ".git",
-    ".venv",
-    "__pycache__",
-    "node_modules",
-    "target",
-    "dist",
-    "DerivedData",
-    "vendor",
-    "coverage",
-    "test-results",
-}
+POSTS_DIR = "posts"
 
 ALERT_TYPES = {
     "NOTE": "Note",
@@ -84,51 +74,29 @@ class Post:
 
 
 def find_post_paths(root: Path) -> list[Path]:
-    """Return blog-post.md paths under ``root``, skipping generated/hidden trees."""
-    found: list[Path] = []
-    root = root.resolve()
-    for path in root.rglob(POST_FILENAME):
-        if not path.is_file():
-            continue
-        rel_parts = path.relative_to(root).parts
-        if any(part.startswith(".") or part in SKIP_DIR_NAMES for part in rel_parts[:-1]):
-            continue
-        found.append(path)
+    """Return ``posts/<stub>.md`` paths under ``root``, skipping hidden files."""
+    posts_dir = root.resolve() / POSTS_DIR
+    if not posts_dir.is_dir():
+        return []
+    found = [
+        path
+        for path in posts_dir.glob("*.md")
+        if path.is_file() and not path.name.startswith(".")
+    ]
     found.sort()
     return found
 
 
-def assign_slugs(paths: list[Path], root: Path) -> dict[Path, str]:
-    """Map each post path to a URL slug.
+RESERVED_SLUGS = {"index.html", "index.json", "feed.xml", "whbiab.js"}
 
-    The default slug is the parent directory name, or ``home`` when the file
-    sits at the repository root. If two posts share that name, colliding
-    paths use a hyphenated relative-parent slug instead.
-    """
-    root = root.resolve()
-    prelim: dict[Path, str] = {}
-    counts: dict[str, int] = {}
-    for path in paths:
-        if path.parent.resolve() == root:
-            slug = "home"
-        else:
-            slug = path.parent.name
-        prelim[path] = slug
-        counts[slug] = counts.get(slug, 0) + 1
 
+def assign_slugs(paths: list[Path]) -> dict[Path, str]:
+    """Map each ``posts/<stub>.md`` path to its URL slug (``<stub>``)."""
     slugs: dict[Path, str] = {}
-    used: set[str] = set()
     for path in paths:
-        slug = prelim[path]
-        if counts[slug] > 1:
-            rel_parent = path.parent.relative_to(root)
-            slug = "-".join(rel_parent.parts) if rel_parent.parts else slug
-        original = slug
-        n = 2
-        while slug in used:
-            slug = f"{original}-{n}"
-            n += 1
-        used.add(slug)
+        slug = path.stem
+        if slug in RESERVED_SLUGS:
+            raise BuildError(f"post slug {slug!r} conflicts with a generated catalog file")
         slugs[path] = slug
     return slugs
 
@@ -623,8 +591,7 @@ def _consume_autolink(text: str, i: int, out: list[str]) -> int | None:
 
 def load_post(root: Path, path: Path, slug: str) -> Post:
     raw = path.read_text(encoding="utf-8")
-    fallback = "home" if path.parent.resolve() == root.resolve() else path.parent.name
-    title_md, body = extract_title(raw, fallback)
+    title_md, body = extract_title(raw, slug)
     rel = str(path.relative_to(root))
     published, updated = git_author_dates(root, rel)
     return Post(
@@ -675,6 +642,7 @@ def render_post(post: Post, template: str) -> str:
     return (
         template.replace("__TITLE__", html.escape(page_title))
         .replace("__TITLE_HTML__", post.title_html)
+        .replace("__SLUG__", html.escape(post.slug, quote=True))
         .replace("__DATES__", dates_html(post))
         .replace("__BODY__", body)
     )
@@ -835,12 +803,18 @@ def build(
     """Write the catalog into ``dest``. Raises ``BuildError`` on missing images."""
     source = source.resolve()
     dest = dest.resolve()
+    posts_dir = source / POSTS_DIR
+    if dest == posts_dir or posts_dir in dest.parents or dest in posts_dir.parents:
+        raise BuildError(
+            f"output directory {dest} overlaps source posts directory {posts_dir}"
+        )
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True)
+    shutil.copyfile(WHBIAB_JS, dest / "whbiab.js")
 
     paths = find_post_paths(source)
-    slugs = assign_slugs(paths, source)
+    slugs = assign_slugs(paths)
     posts: list[Post] = []
     post_tmpl = post_template if post_template is not None else POST_TEMPLATE_PATH.read_text()
     for path in paths:

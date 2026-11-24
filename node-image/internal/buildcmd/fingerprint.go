@@ -3,7 +3,8 @@ package buildcmd
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,7 +12,6 @@ import (
 	"time"
 
 	"github.com/imjasonh/playground/node-image/internal/config"
-	"github.com/imjasonh/playground/node-image/internal/resolve"
 )
 
 // buildRecord is the on-disk short-circuit cache for a fully identical rebuild.
@@ -52,8 +52,7 @@ type buildFingerprintInput struct {
 
 func (in buildFingerprintInput) digest() string {
 	h := sha256.New()
-	enc := json.NewEncoder(h)
-	_ = enc.Encode(in)
+	_ = json.MarshalWrite(h, in, json.Deterministic(true))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -86,7 +85,7 @@ func storeBuildRecord(cacheRoot string, rec buildRecord) error {
 	if err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(rec, "", "  ")
+	b, err := json.Marshal(rec, jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}
@@ -105,19 +104,6 @@ func lockFileDigest(lockPath string) (string, error) {
 	}
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:]), nil
-}
-
-func closureKeyLines(refs []resolve.PackageRef, integrityKeys map[string]string) []string {
-	lines := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		key := integrityKeys[ref.PackageID]
-		if key == "" {
-			key = ref.Integrity
-		}
-		lines = append(lines, ref.PackageID+"="+key)
-	}
-	sort.Strings(lines)
-	return lines
 }
 
 func appOutputLines(outputs map[string]string) ([]string, error) {

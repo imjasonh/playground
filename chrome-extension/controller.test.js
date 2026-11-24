@@ -25,8 +25,23 @@ function listener() {
   };
 }
 
+function matchesQuery(tab, filter, focusedWindow) {
+  const windowId = tab.windowId ?? 1;
+  if (filter.highlighted !== undefined && (tab.highlighted === true) !== filter.highlighted) {
+    return false;
+  }
+  if (filter.windowId !== undefined && windowId !== filter.windowId) {
+    return false;
+  }
+  if (filter.lastFocusedWindow === true && windowId !== focusedWindow) {
+    return false;
+  }
+  return true;
+}
+
 function fakeChrome(initial) {
   const state = {
+    focusedWindow: 1,
     tabs: initial.map((tab) => ({ ...tab })),
     badge: null,
     color: null,
@@ -40,6 +55,7 @@ function fakeChrome(initial) {
     messages: [],
     offscreenOpen: false,
     offscreenOptions: null,
+    panels: [],
   };
   Object.defineProperty(state, "menu", {
     get() {
@@ -48,10 +64,12 @@ function fakeChrome(initial) {
   });
   const api = {
     tabs: {
-      async query() {
+      async query(filter = {}) {
         state.queries += 1;
         await state.holdQuery.promise;
-        return state.tabs.map((tab) => ({ ...tab }));
+        return state.tabs
+          .filter((tab) => matchesQuery(tab, filter, state.focusedWindow))
+          .map((tab) => ({ ...tab }));
       },
       async remove(ids) {
         state.removed.push(ids);
@@ -64,6 +82,11 @@ function fakeChrome(initial) {
       onReplaced: listener(),
       onAttached: listener(),
       onDetached: listener(),
+      onHighlighted: listener(),
+    },
+    windows: {
+      WINDOW_ID_NONE: -1,
+      onFocusChanged: listener(),
     },
     action: {
       async setBadgeText({ text }) {
@@ -95,6 +118,11 @@ function fakeChrome(initial) {
         state.menus.set(props.id, { ...props });
       },
       onClicked: listener(),
+    },
+    sidePanel: {
+      async open(options) {
+        state.panels.push(options);
+      },
     },
     offscreen: {
       async hasDocument() {
@@ -227,11 +255,12 @@ test("an unsupported tab menu still sets the badge", async () => {
     state.holdQuery.resolve();
     await ready;
     assert.equal(state.badge, "1");
-    assert.equal(errors.length, 2);
+    assert.equal(errors.length, 4);
     const before = state.queries;
     await api.tabs.onCreated.emit();
+    await api.tabs.onHighlighted.emit({ windowId: 1, tabIds: [1, 2] });
     assert.ok(state.queries > before);
-    assert.equal(errors.length, 2);
+    assert.equal(errors.length, 4);
   } finally {
     console.error = original;
   }
@@ -300,7 +329,7 @@ test("a base64 selection shows the decoded text and does not close tabs", async 
   assert.deepEqual(state.offscreenOptions.reasons, ["CLIPBOARD"]);
   assert.equal(
     state.offscreenOptions.justification,
-    "Copy decoded base64 text to the clipboard.",
+    "Copy decoded base64 text and tab URLs to the clipboard.",
   );
 });
 
@@ -373,6 +402,119 @@ test("a non-base64 selection hides a decode item restored after restart", async 
   assert.deepEqual(chrome.state.messages, []);
 });
 
+test("the toolbar button's menu opens tab insights in that window's side panel", async () => {
+  const { api, state } = await started([
+    { id: 1, url: "https://example.com/a", active: true },
+    { id: 2, url: "https://example.com/a" },
+  ]);
+  const item = state.menus.get("tab-insights");
+  assert.equal(item.title, "Tab insights");
+  assert.deepEqual(item.contexts, ["action"]);
+  await api.contextMenus.onClicked.emit({ menuItemId: "tab-insights" }, { id: 1, windowId: 4 });
+  assert.deepEqual(state.panels, [{ windowId: 4 }]);
+  assert.deepEqual(state.removed, []);
+  assert.equal(state.badge, "1");
+});
+
+test("tab insights survives a restart that kept its menu item", async () => {
+  const chrome = fakeChrome([{ id: 1, url: "https://example.com/a" }]);
+  chrome.state.menus.set("tab-insights", { id: "tab-insights", title: "Tab insights", contexts: ["action"] });
+  const errors = [];
+  const original = console.error;
+  console.error = (...args) => {
+    errors.push(args);
+  };
+  try {
+    const ready = start(chrome.api);
+    chrome.state.holdQuery.resolve();
+    await ready;
+  } finally {
+    console.error = original;
+  }
+  assert.deepEqual(errors, []);
+  assert.equal(chrome.state.menus.get("tab-insights").title, "Tab insights");
+});
+
+test("Chrome without the side panel API gets no tab insights item", async () => {
+  const chrome = fakeChrome([{ id: 1, url: "https://example.com/a" }]);
+  delete chrome.api.sidePanel;
+  const ready = start(chrome.api);
+  chrome.state.holdQuery.resolve();
+  await ready;
+  assert.equal(chrome.state.menus.has("tab-insights"), false);
+  await chrome.api.contextMenus.onClicked.emit({ menuItemId: "tab-insights" }, { id: 1, windowId: 4 });
+  assert.deepEqual(chrome.state.panels, []);
+});
+
+function withStorage(chrome, store) {
+  const changed = listener();
+  chrome.api.storage = {
+    local: {
+      async get(keys) {
+        const out = {};
+        for (const key of keys) {
+          if (key in store) {
+            out[key] = store[key];
+          }
+        }
+        return out;
+      },
+    },
+    onChanged: changed,
+  };
+  return changed;
+}
+
+test("an unseen plan turns the badge green and adds to the title until the panel shows it", async () => {
+  const chrome = fakeChrome([
+    { id: 1, url: "https://example.com/a", active: true },
+    { id: 2, url: "https://example.com/a" },
+    { id: 3, url: "https://example.com/b" },
+  ]);
+  const store = {
+    insights: {
+      at: 5,
+      insights: { close: [{ entry: { id: 3 } }, { entry: { id: 9 } }], topics: [] },
+    },
+  };
+  const changed = withStorage(chrome, store);
+  const ready = start(chrome.api);
+  chrome.state.holdQuery.resolve();
+  await ready;
+  assert.equal(chrome.state.title, "Close 1 duplicate tab · grouping ready · 1 likely close");
+  assert.equal(chrome.state.badge, "1");
+  assert.equal(chrome.state.color, "#188038");
+  assert.equal(chrome.state.menu.title, "Close 1 duplicate tab");
+  store.seen = 5;
+  await changed.emit({ seen: { newValue: 5 } }, "local");
+  assert.equal(chrome.state.title, "Close 1 duplicate tab · 1 likely close");
+  assert.equal(chrome.state.color, "#174ea6");
+  store.insights.insights.close = [];
+  await changed.emit({ insights: { newValue: store.insights } }, "local");
+  assert.equal(chrome.state.title, "Close 1 duplicate tab");
+});
+
+test("with no duplicates, a ready plan shows a dot, and a plan with nothing to group shows none", async () => {
+  const chrome = fakeChrome([
+    { id: 1, url: "https://example.com/a", active: true },
+    { id: 2, url: "https://example.com/b", groupId: 40 },
+  ]);
+  const store = {
+    insights: { at: 7, insights: { close: [], topics: [{ name: "A", tabs: [{ id: 1 }, { id: 2 }] }] } },
+  };
+  const changed = withStorage(chrome, store);
+  const ready = start(chrome.api);
+  chrome.state.holdQuery.resolve();
+  await ready;
+  assert.equal(chrome.state.badge, "•");
+  assert.equal(chrome.state.color, "#188038");
+  assert.equal(chrome.state.title, "No duplicate tabs · grouping ready");
+  chrome.state.tabs[0].groupId = 41;
+  await changed.emit({ insights: { newValue: store.insights } }, "local");
+  assert.equal(chrome.state.badge, "");
+  assert.equal(chrome.state.title, "No duplicate tabs");
+});
+
 test("a selection menu click after restart decodes the highlighted text", async () => {
   const { api, state } = await started([{ id: 1, url: "https://example.com/a" }]);
   await api.contextMenus.onClicked.emit({
@@ -386,4 +528,76 @@ test("a selection menu click after restart decodes the highlighted text", async 
       text: "a",
     },
   ]);
+});
+
+function copyMenu(state) {
+  return state.menus.get("copy-tab-urls");
+}
+
+function copied(state) {
+  return state.messages.map((message) => message.text);
+}
+
+test("the copy item counts the selected tabs in the focused window", async () => {
+  const { api, state } = await started([
+    { id: 1, windowId: 1, index: 0, url: "https://example.com/a", highlighted: true },
+    { id: 2, windowId: 1, index: 1, url: "https://example.com/b" },
+    { id: 3, windowId: 2, index: 0, url: "https://example.com/c", highlighted: true },
+    { id: 4, windowId: 2, index: 1, url: "https://example.com/d", highlighted: true },
+    { id: 5, windowId: 2, index: 2, url: "https://example.com/e", highlighted: true },
+  ]);
+  assert.equal(copyMenu(state).title, "Copy tab URL");
+  assert.equal(copyMenu(state).visible, true);
+  assert.deepEqual(copyMenu(state).contexts, ["tab"]);
+  state.tabs[1].highlighted = true;
+  await api.tabs.onHighlighted.emit({ windowId: 1, tabIds: [1, 2] });
+  assert.equal(copyMenu(state).title, "Copy 2 tab URLs");
+  await api.windows.onFocusChanged.emit(2);
+  assert.equal(copyMenu(state).title, "Copy 3 tab URLs");
+  state.tabs[0].highlighted = false;
+  await api.windows.onFocusChanged.emit(1);
+  assert.equal(copyMenu(state).title, "Copy tab URL");
+  await api.windows.onFocusChanged.emit(-1);
+  assert.equal(copyMenu(state).title, "Copy tab URL");
+});
+
+test("a click on a selected tab copies every selected tab in that window in tab order", async () => {
+  const { api, state } = await started([
+    { id: 1, windowId: 1, index: 2, url: "https://example.com/c", highlighted: true },
+    { id: 2, windowId: 1, index: 0, url: "https://example.com/a", highlighted: true },
+    { id: 3, windowId: 1, index: 1, url: "https://example.com/b" },
+    { id: 4, windowId: 2, index: 0, url: "https://example.com/other", highlighted: true },
+    { id: 5, windowId: 1, index: 3, url: "about:blank", pendingUrl: "https://example.com/d", highlighted: true },
+  ]);
+  await api.contextMenus.onClicked.emit(
+    { menuItemId: "copy-tab-urls" },
+    { id: 1, windowId: 1, highlighted: true, url: "https://example.com/c" },
+  );
+  assert.deepEqual(copied(state), [
+    "https://example.com/a\nhttps://example.com/c\nhttps://example.com/d",
+  ]);
+  assert.deepEqual(state.removed, []);
+});
+
+test("a click on a tab outside the selection copies only that tab", async () => {
+  const { api, state } = await started([
+    { id: 1, windowId: 1, index: 0, url: "https://example.com/a", highlighted: true },
+    { id: 2, windowId: 1, index: 1, url: "https://example.com/b", highlighted: true },
+    { id: 3, windowId: 1, index: 2, url: "https://example.com/c" },
+  ]);
+  await api.contextMenus.onClicked.emit(
+    { menuItemId: "copy-tab-urls" },
+    { id: 3, windowId: 1, highlighted: false, url: "https://example.com/c" },
+  );
+  assert.deepEqual(copied(state), ["https://example.com/c"]);
+});
+
+test("a click on a tab with no URL copies nothing", async () => {
+  const { api, state } = await started([{ id: 1, url: "" }]);
+  await api.contextMenus.onClicked.emit(
+    { menuItemId: "copy-tab-urls" },
+    { id: 1, windowId: 1, highlighted: false, url: "" },
+  );
+  await api.contextMenus.onClicked.emit({ menuItemId: "copy-tab-urls" });
+  assert.deepEqual(state.messages, []);
 });

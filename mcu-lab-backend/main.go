@@ -1,0 +1,133 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"cloud.google.com/go/compute/metadata"
+	"github.com/chainguard-dev/clog"
+	_ "github.com/chainguard-dev/clog/gcp/init"
+	"github.com/imjasonh/playground/mcu-lab-backend/internal/attest"
+	"github.com/imjasonh/playground/mcu-lab-backend/internal/otlp"
+	"github.com/imjasonh/playground/mcu-lab-backend/internal/symbolizer"
+	"github.com/sethvargo/go-envconfig"
+	"golang.org/x/oauth2/google"
+)
+
+type config struct {
+	Port              string `env:"PORT, default=8080"`
+	AppID             string `env:"APP_ID, required"`
+	AllowUnattested   bool   `env:"ALLOW_UNATTESTED"`
+	ProjectID         string `env:"GOOGLE_CLOUD_PROJECT"`
+	AttestStoreBucket string `env:"ATTEST_STORE_BUCKET"`
+	SymbolGHCRRepo    string `env:"SYMBOL_GHCR_REPO, default=imjasonh/playground/xiao-esp32c3"`
+	SymbolELFPath     string `env:"SYMBOL_ELF_PATH"`
+}
+
+func main() {
+	if err := run(context.Background()); err != nil {
+		clog.Fatal("mcu-lab-backend", "err", err)
+	}
+}
+
+func run(ctx context.Context) error {
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, os.Interrupt)
+	defer stop()
+	ctx = clog.WithLogger(ctx, clog.NewLogger(slog.Default()))
+
+	var env config
+	if err := envconfig.Process(ctx, &env); err != nil {
+		return err
+	}
+
+	var store attest.Store = attest.NewMemoryStore()
+	if env.AttestStoreBucket != "" {
+		if ts, err := google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/devstorage.read_write"); err != nil {
+			slog.WarnContext(ctx, "GCS token source unavailable; falling back to in-memory App Attest store", "err", err)
+		} else {
+			store = &attest.GCSStore{
+				Bucket:      env.AttestStoreBucket,
+				Prefix:      "attest",
+				TokenSource: ts,
+			}
+			slog.InfoContext(ctx, "durable GCS App Attest store enabled", "bucket", env.AttestStoreBucket)
+		}
+	}
+
+	verifier, err := attest.NewVerifier(env.AppID, env.AllowUnattested, store)
+	if err != nil {
+		return err
+	}
+
+	projectID := env.ProjectID
+	if projectID == "" && os.Getenv("K_SERVICE") != "" {
+		mctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		if detected, err := metadata.ProjectIDWithContext(mctx); err == nil {
+			projectID = detected
+		}
+		cancel()
+	}
+
+	var exporter otlp.Exporter
+	var traceExporter otlp.TraceExporter
+	if projectID != "" {
+		if ts, err := google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/monitoring.write"); err != nil {
+			slog.WarnContext(ctx, "Cloud Monitoring token source unavailable; running in dry-run mode", "err", err)
+		} else {
+			exporter = &otlp.CloudMonitoringExporter{
+				ProjectID:   projectID,
+				TokenSource: ts,
+			}
+			slog.InfoContext(ctx, "Cloud Monitoring export enabled", "project", projectID)
+		}
+		if ts, err := google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/trace.append"); err != nil {
+			slog.WarnContext(ctx, "Cloud Trace token source unavailable; trace export disabled", "err", err)
+		} else {
+			traceExporter = &otlp.CloudTraceExporter{
+				ProjectID:   projectID,
+				TokenSource: ts,
+			}
+			slog.InfoContext(ctx, "Cloud Trace export enabled", "project", projectID)
+		}
+	}
+
+	srv := &Server{
+		Verifier:      verifier,
+		Exporter:      exporter,
+		TraceExporter: traceExporter,
+		Symbolizer: &symbolizer.Symbolizer{
+			Repo:         env.SymbolGHCRRepo,
+			LocalELFPath: env.SymbolELFPath,
+		},
+	}
+	httpSrv := &http.Server{
+		Handler:           srv.Routes(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	ln, err := net.Listen("tcp", ":"+env.Port)
+	if err != nil {
+		return err
+	}
+	go func() {
+		if err := httpSrv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+			slog.ErrorContext(ctx, "serve", "err", err)
+			stop()
+		}
+	}()
+	slog.InfoContext(ctx, "listening", "port", env.Port, "app_id", env.AppID, "allow_unattested", env.AllowUnattested)
+
+	<-ctx.Done()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	return httpSrv.Shutdown(shutdownCtx)
+}

@@ -1,7 +1,7 @@
 package resolve
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"os"
 )
 

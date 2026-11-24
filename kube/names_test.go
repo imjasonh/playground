@@ -1,7 +1,8 @@
 package kube
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"maps"
 	"net/http"
@@ -47,13 +48,13 @@ func (a *namesAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		if strings.HasSuffix(p, "/leases") {
-			items := []json.RawMessage{}
+			items := []jsontext.Value{}
 			for k, obj := range a.objs {
 				if path.Dir(k) == p {
 					items = append(items, obj)
 				}
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"items": items})
+			_ = json.MarshalWrite(w, map[string]any{"items": items})
 			return
 		}
 		obj, ok := a.objs[p]
@@ -79,7 +80,7 @@ func (a *namesAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if name := path.Base(p); len(name) > 253 || !subdomain.MatchString(name) {
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		_ = json.NewEncoder(w).Encode(map[string]any{"kind": "Status", "reason": "Invalid", "message": "invalid name " + name})
+		_ = json.MarshalWrite(w, map[string]any{"kind": "Status", "reason": "Invalid", "message": "invalid name " + name})
 		return
 	}
 	a.objs[p] = body

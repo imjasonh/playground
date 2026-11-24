@@ -9,6 +9,16 @@
 # lock state and does not apply. State records OpenTofu registry
 # provider addresses, so this script runs tofu, not terraform.
 #
+# The plan account can read the state bucket and cannot create objects.
+# The GCS backend writes <prefix>/default.tfstate, and a lock beside it,
+# the first time it loads a prefix that has no state. A pull request
+# cannot do that write. When init fails on that lock, the plan runs
+# from a copy of the module with the backend block removed, so OpenTofu
+# uses an empty local backend and writes nothing to the state bucket.
+# init -backend=false does not work: the next plan still requires the
+# gcs backend from the configuration. Apply on main creates the state
+# and the resources together.
+#
 # Usage:
 #   deploy-gcp.sh --check APP
 #   deploy-gcp.sh --check-plan APP
@@ -34,6 +44,11 @@
 #
 # Identity variables live on the GitHub environment gcp.
 set -euo pipefail
+
+# Add temporary paths to cleanup rather than setting another EXIT trap,
+# which would replace this one.
+cleanup=()
+trap 'rm -rf -- ${cleanup[@]+"${cleanup[@]}"}' EXIT
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=SCRIPTDIR/gcp-app.sh
@@ -158,10 +173,13 @@ if [[ "${DRY_RUN:-}" != "1" ]]; then
     echo "gcp: tofu is not on PATH" >&2
     exit 1
   }
-  command -v go >/dev/null 2>&1 || {
-    echo "gcp: go is not on PATH" >&2
-    exit 1
-  }
+  # The ko provider builds Go apps. A stack without Go doesn't need it.
+  if [[ -f "${root}/${app}/go.mod" ]]; then
+    command -v go >/dev/null 2>&1 || {
+      echo "gcp: go is not on PATH" >&2
+      exit 1
+    }
+  fi
   if [[ "$zig" == "true" ]]; then
     # Last line only. install-zig.sh prints the directory and nothing else,
     # and a stray stdout line would land in PATH ahead of zig.
@@ -178,39 +196,151 @@ tf_vars=(
   -var "project_id=${GCP_PROJECT_ID}"
 )
 
-run tofu -chdir="$tfdir" init \
-  -input=false \
-  -reconfigure \
+gcs_init=(
+  tofu -chdir="$tfdir" init
+  -input=false
+  -reconfigure
   -backend-config="bucket=${GCP_TF_STATE_BUCKET}"
+)
 
-# Comment the plan on the pull request and on the job summary. The fence
-# grows until the plan text cannot close it.
+# Plan against an empty state when this prefix has never been applied.
+# init's GCS backend creates the state object if it is missing, which the
+# plan account cannot do. A second pull request cannot create it either:
+# the object is not a Terraform resource, and apply runs only on main.
+#
+# init -backend=false does not stick: the next plan sees backend "gcs" in
+# the configuration and refuses to run. Plan from a copy with that block
+# removed, so OpenTofu uses an empty local backend and writes nothing to
+# the state bucket. The copy holds every file in the module and sits
+# beside it, so file(), templatefile(), and abspath() calls relative to
+# path.module, such as "${path.module}/../apko.yaml", find the same files.
+plan_dir=$tfdir
+plan_without_state() {
+  local log copy
+  log=$(mktemp)
+  if "${gcs_init[@]}" >"$log" 2>&1; then
+    cat "$log"
+    rm -f "$log"
+    return 0
+  fi
+  cat "$log" >&2
+  if ! grep -q 'default.tflock' "$log" || ! grep -q 'storage.objects.create' "$log"; then
+    rm -f "$log"
+    return 1
+  fi
+  rm -f "$log"
+  # init saved the GCS backend before the lock write failed. Drop that,
+  # or a later command in this directory loads it again.
+  rm -rf "${tfdir}/.terraform"
+  copy=$(mktemp -d "$(dirname "$tfdir")/.tofu-plan.XXXXXX")
+  cleanup+=("$copy")
+  cp -R "${tfdir}/." "$copy/"
+  python3 - "$copy" <<'PY'
+import pathlib, sys
+
+root = pathlib.Path(sys.argv[1])
+for path in root.glob("*.tf"):
+    text = path.read_text()
+    out = []
+    i = 0
+    while True:
+        j = text.find('backend "', i)
+        if j < 0:
+            out.append(text[i:])
+            break
+        line_start = text.rfind("\n", 0, j) + 1
+        if text[line_start:j].strip() != "":
+            out.append(text[i:j + 1])
+            i = j + 1
+            continue
+        brace = text.find("{", j)
+        if brace < 0:
+            out.append(text[i:])
+            break
+        depth = 0
+        k = brace
+        while k < len(text):
+            if text[k] == "{":
+                depth += 1
+            elif text[k] == "}":
+                depth -= 1
+                if depth == 0:
+                    k += 1
+                    break
+            k += 1
+        out.append(text[i:line_start])
+        i = k
+    path.write_text("".join(out))
+PY
+  echo "gcp: ${app} has no state yet. Planning against an empty local backend. Nothing is written to ${GCP_TF_STATE_BUCKET}." >&2
+  tofu -chdir="$copy" init -input=false
+  plan_dir=$copy
+}
+
+if [[ "${DRY_RUN:-}" == "1" ]]; then
+  run "${gcs_init[@]}"
+elif [[ "$plan_mode" == true ]]; then
+  plan_without_state
+else
+  "${gcs_init[@]}"
+fi
+
+# One line per resource action in a `tofu show -json` plan, prefixed with
+# the symbol tofu's plan text uses. No-op entries are left out.
+summarize_plan_json() {
+  jq -r '
+    {
+      "create": "+  ",
+      "delete": "-  ",
+      "update": "~  ",
+      "delete,create": "-/+",
+      "create,delete": "+/-",
+      "read": "<= ",
+      "forget": ".  "
+    } as $symbols
+    | .resource_changes // []
+    | .[]
+    | $symbols[.change.actions | join(",")] as $symbol
+    | select($symbol != null)
+    | "\($symbol) \(.address)\(if .deposed then " (deposed)" else "" end)"
+  '
+}
+
+# Comment the plan on the pull request (when it has changes) and on the job
+# summary: the Plan: line, one line per resource action, and the full plan text
+# in a collapsed section. The fence grows until the plan text cannot close it.
 post_plan() {
-  local text=$1
+  local text=$1 changes=$2
   local marker="<!-- gcp-plan:${app} -->"
   local fence='```'
   local max=48000
-  local body file existing
+  local body file existing totals
+  totals=$(grep -E '^(Plan: |No changes\.)' <<<"$text" | head -n 1 || true)
   if ((${#text} > max)); then
     text="${text:0:max}"$'\n''...[truncated]'
   fi
-  while [[ "$text" == *"$fence"* ]]; do
+  while [[ "$text" == *"$fence"* || "$changes" == *"$fence"* ]]; do
     fence="${fence}\`"
   done
-  # printf does not rescan the plan text, so a $() or backtick in the
+  # Expansion does not rescan the plan text, so a $() or backtick in the
   # plan is not executed.
-  body=$(printf '%s\n' \
-    "$marker" \
-    "### ${app} Terraform plan" \
-    "" \
-    "\`tofu plan -lock=false\` as \`${identity_account}\`. This does not apply." \
-    "" \
-    "$fence" \
-    "$text" \
-    "$fence")
+  body="${marker}"$'\n'"### ${app} Terraform plan"$'\n\n'
+  body+="\`tofu plan -lock=false\` as \`${identity_account}\`. This does not apply."
+  if [[ -n "$totals" ]]; then
+    body+=$'\n\n'"**${totals}**"
+  fi
+  if [[ -n "$changes" ]]; then
+    body+=$'\n\n'"${fence}diff"$'\n'"${changes}"$'\n'"${fence}"
+  fi
+  body+=$'\n\n'"<details><summary>Full plan</summary>"$'\n\n'
+  body+="${fence}"$'\n'"${text}"$'\n'"${fence}"$'\n\n'"</details>"
   printf '%s\n' "$text"
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     printf '%s\n' "$body" >>"$GITHUB_STEP_SUMMARY"
+  fi
+  if [[ -z "$changes" && "$totals" == "No changes."* ]]; then
+    echo "no changes; skipping pull request comment"
+    return 0
   fi
   if [[ -z "${PR_NUMBER:-}" ]]; then
     return 0
@@ -268,20 +398,26 @@ if [[ "$mode" == "plan" ]]; then
       -input=false \
       -no-color \
       -lock=false \
+      -out=PLANFILE \
       "${tf_vars[@]}"
+    run tofu -chdir="$tfdir" show -json PLANFILE
     echo "plan <comment>"
     exit 0
   fi
-  plan_text=$(tofu -chdir="$tfdir" plan \
+  planfile=$(mktemp)
+  cleanup+=("$planfile")
+  plan_text=$(tofu -chdir="$plan_dir" plan \
     -input=false \
     -no-color \
     -lock=false \
+    -out="$planfile" \
     "${tf_vars[@]}" | filter_plan_output)
   if [[ -z "$plan_text" ]]; then
     echo "gcp: tofu plan produced no output" >&2
     exit 1
   fi
-  post_plan "$plan_text"
+  plan_changes=$(tofu -chdir="$plan_dir" show -json "$planfile" | summarize_plan_json)
+  post_plan "$plan_text" "$plan_changes"
   exit 0
 fi
 

@@ -37,6 +37,8 @@ concurrency:
   group: nethack-agent-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions: {}
+
 jobs:
   test:
     runs-on: ubuntu-latest

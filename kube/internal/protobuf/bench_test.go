@@ -2,7 +2,7 @@ package protobuf
 
 import (
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"maps"
 	"reflect"
 	"slices"
@@ -130,7 +130,7 @@ type objectMeta struct {
 	Namespace         string            `json:"namespace,omitempty"`
 	UID               string            `json:"uid,omitempty"`
 	ResourceVersion   string            `json:"resourceVersion,omitempty"`
-	Generation        int64             `json:"generation,omitempty"`
+	Generation        int64             `json:"generation,omitzero"`
 	CreationTimestamp time.Time         `json:"creationTimestamp,omitzero"`
 	DeletionTimestamp *time.Time        `json:"deletionTimestamp,omitempty"`
 	Labels            map[string]string `json:"labels,omitempty"`

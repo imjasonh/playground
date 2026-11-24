@@ -3985,14 +3985,16 @@ start Main
 }
 
 #[test]
-fn vram_buf_bumps_user_ram_past_buffer_when_used() {
-    // When user code touches the buffer, the analyzer should bump
-    // the main-RAM allocator to $0500 so user globals don't alias
-    // the buffer at $0400-$04FF. Force a main-RAM allocation by
-    // declaring a large array (too big for ZP).
+fn vram_buf_allocations_step_over_the_buffer_when_used() {
+    // When user code touches the buffer, main-RAM allocations fill
+    // $0300-$03FF and then skip to $0500, so no user global aliases
+    // the buffer at $0400-$04FF. Arrays are too big for ZP, so both
+    // land in main RAM: the first fits below the buffer, and the
+    // second, which would cross $0400, moves past it.
     let source = r#"
 game "VramBigVar" { mapper: NROM }
-var big: u8[200]
+var low: u8[200]
+var high: u8[200]
 on frame {
     nt_set(0, 0, 1)
 }
@@ -4001,20 +4003,28 @@ start Main
     let (program, _) = nescript::parser::parse(source);
     let program = program.expect("parse should succeed");
     let analysis = analyzer::analyze(&program);
-    let big_alloc = analysis
-        .var_allocations
-        .iter()
-        .find(|a| a.name == "big")
-        .expect("big should be allocated");
-    assert!(
-        big_alloc.address >= 0x0500,
-        "user array should land at $0500+ when VRAM buffer is in use, got ${:04X}",
-        big_alloc.address
+    let alloc = |name: &str| {
+        analysis
+            .var_allocations
+            .iter()
+            .find(|a| a.name == name)
+            .unwrap_or_else(|| panic!("{name} should be allocated"))
+    };
+    let low = alloc("low");
+    let high = alloc("high");
+    assert_eq!(low.address, 0x0300, "the first array should fill page $03");
+    assert_eq!(
+        high.address, 0x0500,
+        "an array that would cross $0400 should move past the buffer"
     );
-    assert!(
-        big_alloc.address + big_alloc.size <= 0x0800,
-        "and should fit in main RAM"
-    );
+    for a in [low, high] {
+        assert!(
+            a.address + a.size <= 0x0400 || a.address >= 0x0500,
+            "${:04X} (+{}) overlaps the VRAM buffer",
+            a.address,
+            a.size
+        );
+    }
 }
 
 #[test]

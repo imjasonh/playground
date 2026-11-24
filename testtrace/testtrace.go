@@ -49,7 +49,7 @@ const instrumentationName = "github.com/imjasonh/playground/testtrace"
 
 // A binding ties a test to the context that holds the test's span.
 type binding struct {
-	ctx context.Context
+	ctx context.Context // pasta:ignore go_context_field (the binding holds the test span's context)
 	// fn is the function that testing.tRunner called for the test, so a
 	// subtest, which inherits its parent's goroutine labels, can tell that
 	// the inherited binding isn't its own.

@@ -32,15 +32,15 @@ type Website struct {
 // WebsiteSpec is what to serve.
 type WebsiteSpec struct {
 	Image    string `json:"image" doc:"Container image that serves the site."`
-	Replicas int32  `json:"replicas,omitempty" kube:"min=0,max=20,default=1"`
-	Port     int32  `json:"port,omitempty" kube:"min=1,max=65535" doc:"Port the container listens on. When set, a Service exposes it on port 80."`
+	Replicas int32  `json:"replicas,omitzero" kube:"min=0,max=20,default=1"`
+	Port     int32  `json:"port,omitzero" kube:"min=1,max=65535" doc:"Port the container listens on. When set, a Service exposes it on port 80."`
 }
 
 // WebsiteStatus is what's running.
 type WebsiteStatus struct {
 	ReadyReplicas      int32            `json:"readyReplicas" kube:"column=Ready"`
 	URL                string           `json:"url,omitempty" kube:"column=URL"`
-	ObservedGeneration int64            `json:"observedGeneration,omitempty"`
+	ObservedGeneration int64            `json:"observedGeneration,omitzero"`
 	Conditions         []kube.Condition `json:"conditions,omitempty"`
 }
 

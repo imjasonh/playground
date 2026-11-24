@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -111,6 +112,35 @@ func TestReplicaClient_WriteLTXFile_ErrorCleanup(t *testing.T) {
 			t.Fatalf("found %d .tmp files after multiple errors: %v", len(tmpFiles), tmpFiles)
 		}
 	})
+}
+
+// TestReplicaClient_WriteLTXFile_Concurrent verifies that two clients writing
+// the same LTX file at once publish one of their files, not a mix of both.
+func TestReplicaClient_WriteLTXFile_Concurrent(t *testing.T) {
+	a := createLTXData(1, 5, bytes.Repeat([]byte("a"), 64<<10))
+	b := createLTXData(1, 5, []byte("b"))
+	for i := 0; i < 100; i++ {
+		dir := t.TempDir()
+		var wg sync.WaitGroup
+		for _, data := range [][]byte{a, b} {
+			c := file.NewReplicaClient(dir)
+			wg.Go(func() {
+				_, _ = c.WriteLTXFile(context.Background(), 1, 1, 5, bytes.NewReader(data))
+			})
+		}
+		wg.Wait()
+
+		got, err := os.ReadFile(file.NewReplicaClient(dir).LTXFilePath(1, 1, 5))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, a) && !bytes.Equal(got, b) {
+			t.Fatalf("iteration %d: published %d bytes that match neither write", i, len(got))
+		}
+		if tmpFiles := findTmpFiles(t, dir); len(tmpFiles) > 0 {
+			t.Fatalf("iteration %d: found .tmp files: %v", i, tmpFiles)
+		}
+	}
 }
 
 // failAfterReader simulates io.Copy failure after reading n bytes

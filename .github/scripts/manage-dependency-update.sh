@@ -9,16 +9,32 @@ BASE="${DEPENDENCY_UPDATE_BASE:-main}"
 DEP_PATHSPECS=(
   ':(glob)*/go.mod'
   ':(glob)*/go.sum'
+  # Library modules in an app's go/ directory (wehadababyitsaboy/go).
+  ':(glob)*/go/go.mod'
+  ':(glob)*/go/go.sum'
   ':(glob)*/package.json'
   ':(glob)*/package-lock.json'
   ':(glob)*/vendor/**'
   ':(glob)*/Cargo.toml'
   ':(glob)*/Cargo.lock'
+  ':(glob)*/rust-toolchain.toml'
+  # A library crate in an app's rust/ directory (wehadababyitsaboy/rust).
+  ':(glob)*/rust/Cargo.toml'
+  ':(glob)*/rust/Cargo.lock'
+  ':(glob)*/rust/rust-toolchain.toml'
   # Nested npm packages that update-js-dependencies.sh updates.
   'git-k8s/agent/runner/package.json'
   'git-k8s/agent/runner/package-lock.json'
   # The Wrangler pin that update-rust-dependencies.sh updates.
   '.github/wrangler/package.json'
+  # The tree-sitter runtime, git grammar refs, and wasm module that
+  # pasta/scripts/update-deps.sh updates.
+  'pasta/internal/treesitter/grammars.txt'
+  'pasta/internal/treesitter/ts-core.wasm.br'
+  ':(glob)pasta/internal/treesitter/csrc/vendor/**'
+  # The ateworker image that ci-substrate/scripts/update-deps.sh moves with
+  # go.ate.dev/substrate.
+  'ci-substrate/deploy/substrate/workerpool.yaml'
 )
 
 _git_identity() {

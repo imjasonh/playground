@@ -2067,9 +2067,9 @@ func TestCheckRunsStayForgotten(t *testing.T) {
 // cluster of the context that it embeds after that, as if the cluster
 // changed while the reconcile waited for the lock.
 type changedWhileWaiting struct {
-	context.Context
-	before context.Context
-	c      *checkRuns
+	context.Context                 // pasta:ignore go_context_field (test double embeds the context it implements)
+	before          context.Context // pasta:ignore go_context_field (cluster seen before the lock)
+	c               *checkRuns
 }
 
 func (ctx *changedWhileWaiting) Value(key any) any {

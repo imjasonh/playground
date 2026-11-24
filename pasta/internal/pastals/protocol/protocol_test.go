@@ -1,7 +1,8 @@
 package protocol
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"testing"
 )
 
@@ -89,7 +90,7 @@ func TestRangeMarshalsEvenAtZero(t *testing.T) {
 func TestDiagnosticDataOmittedWhenNil(t *testing.T) {
 	d := Diagnostic{Severity: SeverityHint, Message: "no fix"}
 	b, _ := json.Marshal(d)
-	var raw map[string]json.RawMessage
+	var raw map[string]jsontext.Value
 	_ = json.Unmarshal(b, &raw)
 	if _, present := raw["data"]; present {
 		t.Errorf("data field present when nil: %s", string(b))

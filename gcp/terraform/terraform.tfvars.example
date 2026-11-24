@@ -1,6 +1,10 @@
 project_id        = "your-gcp-project"
 github_repository = "imjasonh/playground"
 
+# gh api repos/imjasonh/playground --jq '.id, .owner.id'
+github_repository_id       = "1282282910"
+github_repository_owner_id = "210737"
+
 # State bucket, created once and shared with app stacks. Pass the same
 # name to init. This stack uses the prefix "github". The plan account
 # gets read access to this bucket.

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -542,6 +543,9 @@ func TestSnapshotShortensRestorePlan(t *testing.T) {
 	if plan, _ = s.RestorePlan(t.Context()); len(plan) != 1 {
 		t.Fatalf("plan has %d files after snapshot, want 1", len(plan))
 	}
+	if _, err := json.Marshal(s.Stats(t.Context())); err != nil {
+		t.Fatalf("marshal stats after snapshot: %v", err)
+	}
 
 	// The writer keeps working after its page index moved to the snapshot.
 	for range 5 {
@@ -626,6 +630,29 @@ func TestLevelsAboveL0IgnoresFreshFiles(t *testing.T) {
 	}
 	if got := levelsAboveL0(higher); got != 17 {
 		t.Fatalf("L1 files = %d, want 17", got)
+	}
+}
+
+func TestStatsRecordReplicaReads(t *testing.T) {
+	dir := t.TempDir()
+	w := mustOpen(t, testConfig(t, dir))
+	mustWrite(t, w, "CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)")
+	mustWrite(t, w, "INSERT INTO t (v) VALUES ('x')")
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s := mustOpen(t, testConfig(t, dir))
+	defer s.Close()
+	if err := s.Read(t.Context(), func(db *sql.DB) error {
+		var n int
+		return db.QueryRow("SELECT count(*) FROM t").Scan(&n)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	st := s.Stats(t.Context())
+	if st.GCS.List.Count < 1 || st.GCS.Get.Count < 1 {
+		t.Fatalf("replica stats = %+v, want lists and gets", st.GCS)
 	}
 }
 

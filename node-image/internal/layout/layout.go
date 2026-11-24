@@ -5,7 +5,8 @@ import (
 	"compress/gzip"
 	"crypto/md5"
 	"encoding/base32"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"os"
@@ -359,12 +360,12 @@ func linkStoreDeps(root string, parent resolve.PackageRef, deps []namedDep) erro
 }
 
 type packageJSON struct {
-	Name                 string                     `json:"name"`
-	Version              string                     `json:"version"`
-	Bin                  json.RawMessage            `json:"bin"`
-	Directories          *directoriesJSON           `json:"directories"`
-	Scripts              map[string]json.RawMessage `json:"scripts"`
-	OptionalDependencies map[string]string          `json:"optionalDependencies"`
+	Name                 string                    `json:"name"`
+	Version              string                    `json:"version"`
+	Bin                  jsontext.Value            `json:"bin"`
+	Directories          *directoriesJSON          `json:"directories"`
+	Scripts              map[string]jsontext.Value `json:"scripts"`
+	OptionalDependencies map[string]string         `json:"optionalDependencies"`
 }
 
 type directoriesJSON struct {

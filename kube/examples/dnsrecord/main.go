@@ -48,7 +48,7 @@ type DNSRecordSpec struct {
 	Name  string `json:"name" pattern:"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" doc:"Name within the zone."`
 	Type  string `json:"type" kube:"enum=A|AAAA|CNAME|TXT,column=Type"`
 	Value string `json:"value" kube:"minLength=1,column=Value"`
-	TTL   int32  `json:"ttl,omitempty" kube:"min=30,max=86400,default=300"`
+	TTL   int32  `json:"ttl,omitzero" kube:"min=30,max=86400,default=300"`
 }
 
 // DNSRecordStatus is what the provider has.
@@ -57,7 +57,7 @@ type DNSRecordStatus struct {
 	// delete the old record and deletion knows what to remove.
 	Published          *RecordKey       `json:"published,omitempty"`
 	FQDN               string           `json:"fqdn,omitempty" kube:"column=FQDN"`
-	ObservedGeneration int64            `json:"observedGeneration,omitempty"`
+	ObservedGeneration int64            `json:"observedGeneration,omitzero"`
 	Conditions         []kube.Condition `json:"conditions,omitempty"`
 }
 

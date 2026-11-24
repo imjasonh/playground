@@ -10,8 +10,8 @@
 #     type: app-extension, or com.apple.developer.*
 #   - ios/fastlane/Fastfile hunks that wire Bundle IDs / capabilities
 #
-# No for in-app experiments alone, and no for a macOS *tool* target inside
-# ios/project.yml (e.g. ArmyListStress PRODUCT_BUNDLE_IDENTIFIER).
+# No for in-app experiments alone, and no for the PRODUCT_BUNDLE_IDENTIFIER of
+# a macOS *tool* target inside ios/project.yml.
 #
 # Usage:
 #   bash .github/scripts/ios-needs-bootstrap.sh <git-range>

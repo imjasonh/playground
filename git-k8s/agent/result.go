@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -69,7 +69,7 @@ type File struct {
 	// symbolic link, whose Content is its target.
 	Mode    string `json:"mode,omitempty"`
 	Content []byte `json:"content,omitempty"`
-	Deleted bool   `json:"deleted,omitempty"`
+	Deleted bool   `json:"deleted,omitzero"`
 }
 
 // Limits on a result. The runner enforces the same ones.

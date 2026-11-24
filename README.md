@@ -30,6 +30,8 @@ bump when the tests still pass, so old experiments don't rot.
 - **[`packfile-explorer/`](packfile-explorer/)** — fetch a repository's packfile
   through the CORS proxy, index the objects and deltas locally, and click
   through commits, trees, blobs, and delta chains.
+- **[`chrome-ai/`](chrome-ai/)** — chat with the language model built into
+  Chrome. The model runs on your device, so prompts and replies don't leave it.
 - **[`cold-climb/`](cold-climb/)** — a touch-first, two-handle arcade game:
   balance a ball up the wall while avoiding unlit pockets.
 - **[`droneski/`](droneski/)** — pilot an FPV camera drone filming a skier on a
@@ -77,6 +79,9 @@ bump when the tests still pass, so old experiments don't rot.
   grow into a 3D-printable tower (time as the Z axis), and export STL or a
   ready-to-slice Bambu 3MF. Powered by the `life-stl` Rust crate compiled to
   WebAssembly.
+- **[`marptalk/`](marptalk/)** — present a Marp deck with its speaker notes
+  read aloud by the browser's text-to-speech, with subtitles and speed
+  control. Plays three bundled decks or a `.md` file you open.
 
 ## Tools
 
@@ -91,6 +96,10 @@ them:
   via SQLite virtual tables over go-containerregistry (Go CLI).
 - **[`pasta/`](pasta/)** — multi-language linters and fixers described in CUE
   over tree-sitter ASTs (Go CLI).
+- **[`apko-frontend/`](apko-frontend/)** — a BuildKit frontend that builds an
+  image from an apko YAML file with `docker build`. BuildKit fetches the
+  packages, apko's own code lays out the files, and apko's layers become the
+  image's layers (Go, built with ko).
 - **[`liquid/`](liquid/)** — a tank of liquid in the terminal that you push,
   pull into blobs, pour, and tilt with the mouse, simulated as particles
   (Go TUI with Bubble Tea, Lip Gloss, and bubblezone).
@@ -140,6 +149,14 @@ them:
 - **[`esp32-ble/`](esp32-ble/)** — Rust/ESP-IDF firmware that advertises as
   PlaygroundBLE. The Playground iOS **ESP32 BLE** experiment writes LED
   commands and displays status notifications.
+- **[`xiao-esp32c3/`](xiao-esp32c3/)** — Rust/ESP-IDF firmware for the Seeed
+  Studio XIAO ESP32C3: times wake-cycle phases (`sensor`, `compute`,
+  `epd_refresh`, and `radio`), toggles a GPIO logic probe for hardware power
+  profilers, and broadcasts 24-byte BLE Manufacturer Specific Data bursts to
+  the Playground iOS **XIAO ESP32C3** dashboard and OTLP forwarder.
+- **[`mcu-lab-backend/`](mcu-lab-backend/)** — Go service on Cloud Run that verifies Apple
+  App Attest assertions from the Playground iOS app and writes XIAO ESP32C3
+  OTLP/HTTP telemetry to Google Cloud Monitoring (Go + Terraform).
 - **[`git-server/`](git-server/)** — a git smart-HTTP server for Cloudflare
   Workers, in Rust: repositories in R2, refs in Durable Objects, plus
   file/tree/blame APIs and streaming pack ingest.
@@ -218,7 +235,7 @@ them from an XcodeGen `project.yml` that declares `platform: macOS`:
 See [`docs/macos-sparkle-design.md`](docs/macos-sparkle-design.md) for the macOS
 release design (Developer ID + notarization + Sparkle appcast on GitHub Pages).
 
-Human-authored project posts (`blog-post.md` next to an experiment) publish to
+Human-authored posts (`posts/<stub>.md`) publish to
 [`/posts/`](https://imjasonh.github.io/playground/posts/) (with an
 [RSS feed](https://imjasonh.github.io/playground/posts/feed.xml)). The home
 page header links to that catalog.

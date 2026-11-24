@@ -1,0 +1,41 @@
+# syntax=ghcr.io/imjasonh/playground/apko-frontend
+#
+# A Wolfi image with a few language runtimes and tools. Their dependencies
+# span dozens of origins, more than the layering budget. The nine largest
+# origin groups, such as nodejs-24, python-3.13, git, glibc, and openssl, each
+# get a layer, the remaining packages share a tenth, and a top layer holds
+# the accounts and the apk database. A change to one runtime leaves the
+# other layers, and their digests, unchanged.
+contents:
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  repositories:
+    - https://packages.wolfi.dev/os
+  packages:
+    - wolfi-base
+    - bash
+    - curl
+    - git
+    - jq
+    - nodejs-24
+    - openssh-client
+    - python-3.13
+    - py3.13-pip
+entrypoint:
+  command: /bin/bash -l
+accounts:
+  groups:
+    - groupname: nonroot
+      gid: 65532
+  users:
+    - username: nonroot
+      uid: 65532
+      gid: 65532
+  run-as: 65532
+work-dir: /home/nonroot
+archs:
+  - x86_64
+  - aarch64
+layering:
+  strategy: origin
+  budget: 10

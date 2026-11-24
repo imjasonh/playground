@@ -14,7 +14,7 @@ export async function fetchRefs(proxyBase, base) {
     headers: { Accept: "application/x-git-upload-pack-advertisement" },
   });
   if (!res.ok) {
-    throw new Error(`info/refs failed: HTTP ${res.status}`);
+    throw new Error(await formatHttpError("info/refs", res));
   }
   const bytes = new Uint8Array(await res.arrayBuffer());
   const parsed = parseInfoRefs(bytes);
@@ -25,13 +25,16 @@ export async function fetchRefs(proxyBase, base) {
 }
 
 /**
- * Fetch a packfile for the given wants. `deepen` requests a shallow clone.
+ * Fetch a packfile for the given wants. `deepen` requests a shallow clone;
+ * pass `null` for the full history (no `deepen` line).
  *
  * When the response body streams, side-band progress is reported live through
- * `onProgress(text)`; otherwise the whole body is demuxed at once. `wants` must
- * be a non-empty list of oids. Returns `{ pack, progress, control }`.
+ * `onProgress(text)` and received bytes through `onBytes({ received, total })`.
+ * `total` is the Content-Length, or null when the server didn't send one.
+ * Without a stream, the whole body is demuxed at once. `wants` must be a
+ * non-empty list of oids. Returns `{ pack, progress, control }`.
  */
-export async function fetchPack(proxyBase, base, { wants, deepen = 1, onProgress = null }) {
+export async function fetchPack(proxyBase, base, { wants, deepen = 1, onProgress = null, onBytes = null }) {
   const body = buildFetchRequest({ wants, deepen });
   const url = proxied(proxyBase, uploadPackUrl(base));
   const res = await fetch(url, {
@@ -43,21 +46,29 @@ export async function fetchPack(proxyBase, base, { wants, deepen = 1, onProgress
     body,
   });
   if (!res.ok) {
-    throw new Error(`upload-pack failed: HTTP ${res.status}`);
+    throw new Error(await formatHttpError("upload-pack", res));
   }
 
   let result;
+  const declared = Number(res.headers.get("Content-Length"));
+  const totalBytes = Number.isFinite(declared) && declared > 0 ? declared : null;
   if (res.body && typeof res.body.getReader === "function") {
     const reader = createUploadPackReader({ onProgress });
     const streamReader = res.body.getReader();
+    let received = 0;
     for (;;) {
       const { value, done } = await streamReader.read();
       if (done) break;
-      if (value && value.length) reader.push(value instanceof Uint8Array ? value : new Uint8Array(value));
+      if (!value || !value.length) continue;
+      const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+      received += chunk.length;
+      if (onBytes) onBytes({ received, total: totalBytes });
+      reader.push(chunk);
     }
     result = reader.finish();
   } else {
     const bytes = new Uint8Array(await res.arrayBuffer());
+    if (onBytes) onBytes({ received: bytes.length, total: totalBytes ?? bytes.length });
     const { sidebandLines } = splitUploadPackResult(bytes);
     const { pack, progress, error } = demuxSideband(sidebandLines);
     result = { pack, progress, error, control: [] };
@@ -68,4 +79,16 @@ export async function fetchPack(proxyBase, base, { wants, deepen = 1, onProgress
     throw new Error("no pack data returned");
   }
   return { pack: result.pack, progress: result.progress, control: result.control };
+}
+
+/** `what failed: HTTP status` plus a short response body, when there is one. */
+async function formatHttpError(what, res) {
+  let detail = "";
+  try {
+    const text = (await res.text()).replace(/\s+/g, " ").trim();
+    if (text) detail = `: ${text.slice(0, 180)}`;
+  } catch {
+    detail = "";
+  }
+  return `${what} failed: HTTP ${res.status}${detail}`;
 }

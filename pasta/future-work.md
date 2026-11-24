@@ -244,11 +244,15 @@ What's still missing:
 
 ### Scope-aware fact keys
 **Effort:** M. **Surfaced by:** taint analyzers' caveat.
-Today the fact store has a secondary by-name index that's
-scope-blind: a name shadowed in another function still hits a fact
-keyed by that name. The taint testdata works around this by using
-unique variable names per function. Real precision needs facts keyed
-by `(name, scope-id)` where scope-id is derived from the enclosing
+**Status: partly done.** Lookups by name now bind to the nearest
+definition of the name in the same language (same file, then same
+directory, then deepest common directory) when every fact on the
+name is anchored on a definition, so a local function shadows a
+same-named one elsewhere. What's left is scope within a file: a
+variable shadowed in another function still hits a fact keyed by
+that name, and the taint testdata works around this by using unique
+variable names per function. Real precision needs facts keyed by
+`(name, scope-id)` where scope-id is derived from the enclosing
 function or block.
 
 ### Cross-analyzer fact namespacing
@@ -313,13 +317,63 @@ cap shipped together (PR #7). Follow-ups that have also landed:
 
 The remaining ceiling on cold-cache runs is still the parser itself.
 
-### Switch to cgo tree-sitter
-**Status:** Superseded by WASM. pasta now embeds the official C
-tree-sitter runtime + grammars as `internal/tswasm/ts-core.wasm.br`
-and drives them via wazero (`CGO_ENABLED=0`, `go install` still
-works). Native cgo would still be ~2× faster than WASM on raw parse
-(see dvcdsys/code-index PR #81) but is not worth the toolchain
-breakage unless a profile shows parse dominating end-to-end again.
+### Native SQL and Dockerfile grammars
+**Effort:** S.
+cgo builds parse 19 grammars natively and fall back to WASM for two:
+the SQL grammar's repository doesn't commit `parser.c`, and the
+Dockerfile grammar's Go module path doesn't match its repository.
+Vendoring the generated sources of both in `csrc/` would move them to
+the native backend too.
+
+### One walk per file, and a smaller node index
+**Effort:** M.
+After the parse, each file's tree is copied out of guest memory and
+rebuilt as a Go node graph, then walked again by `defineAll`,
+`match.BuildIndex`, and `parseSuppressions`. On the TypeScript run
+above that was about 9% of CPU and 63 GB of allocation. The engine
+already skips `defineAll` when no rule emits a fact and
+`parseSuppressions` when the source has no `pasta:ignore`. What's
+left:
+- `match.BuildIndex` indexes every node type (11.9 GB on that run).
+  Indexing only the types the loaded rules reference would cut most
+  of it.
+- `Children` and `NamedChildren` allocate a new slice on each call
+  (about 16.6 GB). Returning views of the node's own slices would
+  remove that.
+- Merging the remaining walks into one pass over the rebuilt graph.
+
+### Cross-file runs re-parse trees past the compact budget
+**Effort:** S.
+The in-memory path keeps the trees that later passes need within
+`-tree-budget`, and compact encodings of the rest within half of it
+again. A file past both is read back from the parse cache, but with
+`-nocache` it's parsed again for every later pass, and for every
+fixpoint iteration that visits it. Two changes would cut that:
+- Spill compact encodings past the budget to a temporary file when the
+  cache is off.
+- Keep the trees of the files that a fixpoint group applies to ahead
+  of the others, since those passes repeat.
+
+### Prefilter coverage
+**Effort:** S per rule.
+A rule with no inferable substring keeps every file of its language,
+so one unfiltered rule disables the parse skip for that language,
+though each filtered rule still skips the files it can't match. In
+the full JS/TS rule set 99 of 150 rules have no filter, and the
+prefilter skipped no files on the TypeScript run. Adding
+`require_substring` where a rule has a distinctive token is cheap,
+but common tokens appear in nearly every file, so the ceiling is low.
+
+### Parse cache on cross-file runs
+**Effort:** M.
+`RunGroup` takes the in-memory path for the whole rule set when any
+rule has `requires` or a fixpoint group, and that path caches only
+each file's parse tree, not its results. The default rule set has
+cross-file rules (`go_errcheck`, the taint and deprecated-use rules),
+so a full lint of this repository runs every rule on every file on
+every run. Rules that no cross-file group depends on could stream
+through the result cache on their own, and the cross-file groups could
+cache the facts each file emits for the passes that only read them.
 
 ### Parallel warm-cache reads
 **Effort:** S.
@@ -334,11 +388,12 @@ module), so this is polish, not a load-bearing item.
 
 ### Content-sniff pre-filter
 **Status:** Done. `internal/prefilter` infers substrings from
-`eq`/`token_eq` and at most one simple `matches` alternation, and
-honours explicit `require_substring` on `#Rule`. Rewrite `within`
+`eq`/`token_eq` literals and from the literals each `matches` regex
+requires (with `regexp/syntax`), and honours explicit `require_substring` on `#Rule`. Rewrite `within`
 tokens are intentionally not inferred (diagnose can fire without
-them). The streaming and in-memory engine paths skip the parse when
-no applicable rule can match.
+them). The streaming and in-memory engine paths skip a rule on a file
+its filter rejects, and skip the parse when no applicable rule can
+match.
 
 ### Tighter cache encoding than `gob`
 **Effort:** S.
@@ -361,6 +416,25 @@ gain on cold runs (a few percent), zero impact on warm runs.
 **Status:** Done. The streaming path calls `tsutil.DrainArenaPools()`
 every 100 completed files (and once at the end of the run). The
 in-memory path drains on exit.
+
+### Parallel facts index
+**Status:** Done. `pasta facts` used to parse one file at a time from
+the directory walk. `codefacts.Build` now parses files on a worker per
+core and merges each file's index in walk order, so definition IDs and
+output don't depend on scheduling. Call records hold no pointers
+(strings are interned, arguments share one slice), so the collector no
+longer scans millions of them. On the Go module cache (27,500 files,
+2.4 million calls) `facts report` went from 254 s to 60 s, and peak heap
+from 2.0 GB to 1.5 GB.
+
+Merging one file at a time capped the run at about 4 of 8 cores: at most
+32 files could be ahead of the merge, so one slow file stalled every
+worker. Merging is associative over consecutive files, so each worker
+now indexes and merges a chunk of up to 64 consecutive files, and the
+in-order merge takes whole chunks, up to 16 per worker ahead. That run
+went from 58 s to 45 s with the same output, for 100 to 300 MB more
+peak heap. Parsing in the WASM runtime is now about two thirds of its
+CPU time.
 
 ### Early termination per rule
 **Effort:** S.

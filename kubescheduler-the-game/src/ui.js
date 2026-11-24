@@ -37,22 +37,20 @@ export class UI {
   // --- one-time DOM setup --------------------------------------------------
   populateSelects() {
     const scenarioSel = $("#scenario");
-    scenarioSel.innerHTML = Object.values(SCENARIOS)
-      .map((s) => `<option value="${s.id}">${s.name}</option>`)
-      .join("");
+    scenarioSel.replaceChildren(
+      ...Object.values(SCENARIOS).map((s) => new Option(s.name, s.id))
+    );
     scenarioSel.value = this.game.state.scenarioId;
 
     const nodeSel = $("#nodetype");
-    nodeSel.innerHTML = Object.values(INSTANCE_TYPES)
-      .map((t) => {
+    nodeSel.replaceChildren(
+      ...Object.values(INSTANCE_TYPES).map((t) => {
         const gpu = t.gpu ? `, ${t.gpu} GPU` : "";
         const price =
           t.family === "spot" ? `~$${(t.cost * 0.45).toFixed(2)}/hr spot` : `$${t.cost.toFixed(2)}/hr`;
-        return `<option value="${t.key}">${t.key} — ${fmtCpu(t.cpu)} vCPU / ${fmtMem(
-          t.mem
-        )}${gpu} · ${price}</option>`;
+        return new Option(`${t.key} — ${fmtCpu(t.cpu)} vCPU / ${fmtMem(t.mem)}${gpu} · ${price}`, t.key);
       })
-      .join("");
+    );
     nodeSel.value = "c5.2xlarge";
   }
 
@@ -297,9 +295,20 @@ export class UI {
       },
       { l: "SLA breaches", v: s.metrics.slaBreaches, cls: s.metrics.slaBreaches > 0 ? "bad" : "good" },
     ];
-    this.els.kpis.innerHTML = tiles
-      .map((t) => `<div class="kpi ${t.cls}"><div class="v">${t.v}</div><div class="l">${t.l}</div></div>`)
-      .join("");
+    this.els.kpis.replaceChildren(
+      ...tiles.map((t) => {
+        const kpi = document.createElement("div");
+        kpi.className = `kpi ${t.cls}`;
+        const v = document.createElement("div");
+        v.className = "v";
+        v.textContent = String(t.v);
+        const l = document.createElement("div");
+        l.className = "l";
+        l.textContent = t.l;
+        kpi.append(v, l);
+        return kpi;
+      })
+    );
   }
 
   renderNodes() {
@@ -308,11 +317,15 @@ export class UI {
     this.els.nodegrid.parentElement.classList.toggle("selecting", !!selectedPod);
 
     if (g.state.nodes.length === 0) {
-      this.els.nodegrid.innerHTML = `<div class="empty-state">No nodes. Provision one with “+ Add node”.</div>`;
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.textContent = "No nodes. Provision one with “+ Add node”.";
+      this.els.nodegrid.replaceChildren(empty);
     } else {
-      this.els.nodegrid.innerHTML = g.state.nodes
-        .map((node) => this.nodeCard(node, selectedPod))
-        .join("");
+      replaceHtml(
+        this.els.nodegrid,
+        g.state.nodes.map((node) => this.nodeCard(node, selectedPod)).join("")
+      );
     }
     const ready = g.schedulableNodes().length;
     this.els.nodeSummary.textContent = `${ready} schedulable · ${g.state.nodes.length} total`;
@@ -455,10 +468,13 @@ export class UI {
     pods.sort((a, b) => b.priority - a.priority || a.arrivalTick - b.arrivalTick);
     this.els.queueSummary.textContent = `${pods.length} waiting`;
     if (pods.length === 0) {
-      this.els.queuelist.innerHTML = `<div class="empty-state">Queue empty — every pod is scheduled. Nice.</div>`;
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.textContent = "Queue empty — every pod is scheduled. Nice.";
+      this.els.queuelist.replaceChildren(empty);
       return;
     }
-    this.els.queuelist.innerHTML = pods.map((p) => this.podCard(p)).join("");
+    replaceHtml(this.els.queuelist, pods.map((p) => this.podCard(p)).join(""));
   }
 
   podCard(p) {
@@ -496,14 +512,25 @@ export class UI {
 
   renderLog() {
     const ev = this.game.state.events.slice(-60);
-    this.els.eventlog.innerHTML = ev
-      .map((e) => {
+    this.els.eventlog.replaceChildren(
+      ...ev.map((e) => {
         const secs = Math.floor(e.tick / TICKS_PER_SECOND);
         const t = `${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")}`;
-        return `<div class="logline ${e.level}"><span class="t">${t}</span>${escapeHtml(e.msg)}</div>`;
+        const line = document.createElement("div");
+        line.className = `logline ${e.level}`;
+        const ts = document.createElement("span");
+        ts.className = "t";
+        ts.textContent = t;
+        line.append(ts, String(e.msg));
+        return line;
       })
-      .join("");
+    );
   }
+}
+
+function replaceHtml(el, html) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  el.replaceChildren(...doc.body.childNodes);
 }
 
 function shortLabel(k) {
@@ -511,8 +538,4 @@ function shortLabel(k) {
   if (k.includes("/")) return k.split("/").pop();
   if (k.startsWith("topology.kubernetes.io/")) return k.split("/").pop();
   return k;
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 }

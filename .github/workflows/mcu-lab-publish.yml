@@ -1,0 +1,121 @@
+# Build and push mcu-lab firmware (.bin for BLE OTA + gzipped ELF with
+# line-tables-only DWARF symbols for automatic server-side symbolization in
+# mcu-lab-backend) to ghcr.io/<owner>/playground/<board>-<app>.
+
+name: mcu-lab publish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - mcu-lab/**
+      - .github/workflows/mcu-lab-publish.yml
+  workflow_dispatch: {}
+
+concurrency:
+  group: mcu-lab-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  discover:
+    name: Discover mcu-lab board+app targets
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.targets.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - id: targets
+        run: |
+          MATRIX=$(python3 -c '
+          import json
+          m = json.load(open("mcu-lab/manifest.json"))
+          inc = []
+          for b, bd in m["boards"].items():
+              caps = set(bd["capabilities"])
+              for a, ad in m["apps"].items():
+                  if set(ad["requires"]).issubset(caps):
+                      inc.append({
+                          "board": b,
+                          "app": a,
+                          "bin_name": f"{b}-{a}",
+                          "target": bd["target"],
+                          "chip": bd["chip"],
+                      })
+          print(json.dumps({"include": inc}, separators=(",", ":")))
+          ')
+          echo "matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish ${{ matrix.bin_name }} firmware & symbols
+    needs: discover
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.discover.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        working-directory: mcu-lab
+        run: rustup toolchain install --no-self-update
+
+      - name: Install native build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10
+
+      - name: Setup ESP32 / ESP32-C3 toolchain
+        uses: esp-rs/xtensa-toolchain@ec6d36527049a7f4fb2cb0c1a644668c1bb8a2a4 # v1.7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          default: true
+          buildtargets: esp32,esp32c3
+          ldproxy: true
+
+      - name: Restore the firmware Cargo cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            mcu-lab/target
+            ~/.cargo/registry
+          key: cargo-esp32-firmware-mcu-lab-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            cargo-esp32-firmware-mcu-lab-${{ runner.os }}-
+
+      - name: Install espflash
+        working-directory: mcu-lab
+        run: cargo install espflash --locked --version 4.5.0
+
+      - name: Build ${{ matrix.bin_name }} profiling firmware with DWARF line tables
+        working-directory: mcu-lab
+        run: make build-profile BOARD=${{ matrix.board }} APP=${{ matrix.app }}
+
+      - name: Export .bin and push .bin + .elf.gz to GHCR
+        working-directory: mcu-lab
+        env:
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          BOARD: ${{ matrix.board }}
+          BIN_NAME: ${{ matrix.bin_name }}
+          TARGET: ${{ matrix.target }}
+          CHIP: ${{ matrix.chip }}
+        run: |
+          ELF="target/${BOARD}/${TARGET}/release/${BIN_NAME}"
+          BIN="target/${BOARD}/${BIN_NAME}.bin"
+          espflash save-image --chip "${CHIP}" "$ELF" "$BIN"
+          OWNER_LOWER="$(printf '%s' "$REPO_OWNER" | tr '[:upper:]' '[:lower:]')"
+          python3 publish-oci.py "${OWNER_LOWER}/playground/${BIN_NAME}" "${GITHUB_SHA}" "$BIN" "$ELF"

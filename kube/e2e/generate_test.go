@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"context"
 	"debug/buildinfo"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -522,7 +522,7 @@ func TestGenerateOwnedType(t *testing.T) {
 	}
 	want := `[{"apiGroups":["apiextensions.k8s.io"],"resources":["customresourcedefinitions"],"verbs":["create"]},` +
 		`{"apiGroups":["apiextensions.k8s.io"],"resourceNames":["` + crd + `"],"resources":["customresourcedefinitions"],"verbs":["get"]}]`
-	if b, _ := json.Marshal(crdRules); string(b) != want {
+	if b, _ := json.Marshal(crdRules, json.Deterministic(true)); string(b) != want {
 		t.Errorf("rules for CRDs =\n%s\nwant\n%s", b, want)
 	}
 	in.apply(t, c)

@@ -96,8 +96,8 @@ Invalid entries are skipped. Restart Onramp (or switch away and back to Playbook
 
 ## CI / releases
 
-`.github/workflows/macos.yml` discovers this app (`platform: macOS`), tests on
-PRs, and on `main` notarizes + publishes:
+`.github/workflows/test.yml` discovers this app (`platform: macOS`) and tests it,
+and on `main` `.github/workflows/macos.yml` notarizes + publishes:
 
 ```text
 https://imjasonh.github.io/playground/macos/onramp/appcast.xml

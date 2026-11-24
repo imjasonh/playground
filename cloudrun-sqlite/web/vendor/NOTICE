@@ -1,0 +1,7 @@
+web/htmx.js is htmx 2.0.4 (dist/htmx.min.js from tag v2.0.4).
+https://github.com/bigskysoftware/htmx
+
+web/sse.js is htmx-ext-sse 2.2.3 (src/sse/sse.js).
+https://github.com/bigskysoftware/htmx-extensions
+
+Both are under the Zero-Clause BSD license.

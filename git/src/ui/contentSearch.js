@@ -20,7 +20,6 @@ const MAX_RENDERED = 500;
  */
 export function createContentSearch(ctx) {
   const { state, dom } = ctx;
-  let returnFocus = null;
   let activeSignal = null; // { aborted } for the in-flight search
   let rows = []; // flat, navigable list of { el, path, line }
   let activeIndex = -1;
@@ -33,18 +32,40 @@ export function createContentSearch(ctx) {
   dom.contentSearchInput.addEventListener('keydown', onKey);
   dom.csRegex.addEventListener('change', run);
   dom.csCase.addEventListener('change', run);
-  dom.contentSearch.addEventListener('click', (event) => {
-    if (event.target === dom.contentSearch) close();
+  // closedby="any" dismisses the modal on Esc and on a click outside it. Safari
+  // lacks closedby, so there detect an outside pointer press and release instead.
+  if (!('closedBy' in HTMLDialogElement.prototype)) {
+    let pressedOutside = false;
+    const outside = (event) => {
+      const r = dom.contentSearch.getBoundingClientRect();
+      return (
+        event.clientX < r.left ||
+        event.clientX > r.right ||
+        event.clientY < r.top ||
+        event.clientY > r.bottom
+      );
+    };
+    dom.contentSearch.addEventListener('pointerdown', (event) => {
+      pressedOutside = outside(event);
+    });
+    dom.contentSearch.addEventListener('pointerup', (event) => {
+      if (pressedOutside && outside(event)) close();
+    });
+  }
+
+  // Fires however the dialog closes (Esc, outside click, or close()), so the
+  // in-flight search is abandoned in every case.
+  dom.contentSearch.addEventListener('close', () => {
+    if (activeSignal) activeSignal.aborted = true;
   });
 
   function isOpen() {
-    return !dom.contentSearch.hidden;
+    return dom.contentSearch.open;
   }
 
   function open() {
     if (!state.source) return;
-    returnFocus = document.activeElement;
-    dom.contentSearch.hidden = false;
+    dom.contentSearch.showModal();
     dom.contentSearchInput.focus();
     dom.contentSearchInput.select();
     // Warm the trigram index up front so the first keystroke is fast. Building is
@@ -80,18 +101,9 @@ export function createContentSearch(ctx) {
   }
 
   function close() {
-    if (activeSignal) activeSignal.aborted = true;
-    const wasOpen = isOpen();
-    dom.contentSearch.hidden = true;
-    if (
-      wasOpen &&
-      returnFocus &&
-      typeof returnFocus.focus === 'function' &&
-      document.contains(returnFocus)
-    ) {
-      returnFocus.focus();
-    }
-    returnFocus = null;
+    // The 'close' listener abandons the in-flight search, and the native modal
+    // returns focus to the opener.
+    dom.contentSearch.close();
   }
 
   function queryOptions() {
@@ -230,10 +242,7 @@ export function createContentSearch(ctx) {
   }
 
   function onKey(event) {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      close();
-    } else if (event.key === 'ArrowDown') {
+    if (event.key === 'ArrowDown') {
       event.preventDefault();
       setActive(activeIndex + 1);
     } else if (event.key === 'ArrowUp') {

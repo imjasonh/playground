@@ -2,7 +2,7 @@ package kube
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"reflect"
 	"slices"
@@ -230,7 +230,7 @@ func (w *fakeWorld) read(ti *typeInfo) *memSource {
 			if _, ok := s.objs[k]; ok {
 				continue
 			}
-			b, err := json.Marshal(o)
+			b, err := json.Marshal(o, json.Deterministic(true))
 			if err != nil {
 				continue
 			}

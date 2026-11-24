@@ -4,10 +4,11 @@
 // shows how a multi-rule analyzer using fact passing can implement it
 // from scratch.
 //
-// Pass 1: walk function declarations whose immediately-preceding named
-//         sibling is a comment containing `Deprecated:`. Emit a
-//         `deprecated` fact attached to the function's name.
-// Pass 2: walk call expressions; if the callee identifier has a
+// Pass 1: walk function and method declarations whose
+//         immediately-preceding named sibling is a comment containing
+//         `Deprecated:`. Emit a `deprecated` fact attached to the name.
+// Pass 2: walk call expressions; if the callee, or the selected name
+//         in a call such as `pkg.Old()` or `t.Old()`, has a
 //         `deprecated` fact (matched by name), warn.
 
 package go_deprecated_use
@@ -65,6 +66,60 @@ go_deprecated_use: schema.#Analyzer & {
 					function: {
 						capture: "callee"
 						pattern: {node: "identifier"}
+					}
+				}
+				where: [{op: "has_fact", args: ["@callee", "deprecated"]}]
+			}
+
+			diagnose: {
+				message:  "@callee is deprecated"
+				severity: "warning"
+			}
+		}
+
+		mark_deprecated_methods: {
+			name:      "mark_deprecated_methods"
+			doc:       "Tag method declarations whose doc comment contains `Deprecated:`"
+			languages: [golang.Name]
+			requires: []
+			provides: ["deprecated"]
+
+			match: {
+				node: "method_declaration"
+				fields: {
+					name: {capture: "fn_name"}
+				}
+				where: [{
+					op: "prev_sibling_matches"
+					args: ["@_root", "Deprecated:"]
+				}]
+			}
+
+			emit: [{
+				fact:    "deprecated"
+				attach:  "fn_name"
+				payload: {func_name: "@fn_name"}
+			}]
+		}
+
+		find_selector_calls: {
+			name:      "find_selector_calls"
+			doc:       "Flag package-qualified calls and method calls of deprecated functions"
+			languages: [golang.Name]
+			requires: ["deprecated"]
+			provides: []
+
+			match: {
+				node: "call_expression"
+				fields: {
+					function: {
+						node: "selector_expression"
+						fields: {
+							field: {
+								capture: "callee"
+								pattern: {node: "field_identifier"}
+							}
+						}
 					}
 				}
 				where: [{op: "has_fact", args: ["@callee", "deprecated"]}]

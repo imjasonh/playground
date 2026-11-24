@@ -85,7 +85,7 @@ func (c *cidrs) Set(s string) error {
 			return err
 		}
 		if p != p.Masked() {
-			return fmt.Errorf("%s has bits set after its prefix length; did you mean %s?", p, p.Masked())
+			return fmt.Errorf("%s has bits set after its prefix length; did you mean %s", p, p.Masked())
 		}
 		ps = append(ps, p)
 	}

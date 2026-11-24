@@ -51,7 +51,7 @@ function pointerText(input) {
  */
 export function parseLfsPointer(input) {
   const text = pointerText(input);
-  if (!text || text.indexOf(SPEC_PREFIX) === -1) return null;
+  if (!text || !text.includes(SPEC_PREFIX)) return null;
 
   const fields = new Map();
   const lines = text.split('\n');

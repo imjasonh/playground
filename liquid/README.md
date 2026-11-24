@@ -64,12 +64,12 @@ stir the middle.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-scene` | `dam` | Starting scene: `dam`, `double`, `drop`, `pool`, or `blob` |
-| `-theme` | `ocean` | Colors: `ocean`, `lava`, `slime`, `ink`, or `mercury` |
-| `-view` | `liquid` | How to draw the liquid: `liquid`, `particles`, or `heat` |
-| `-particles` | `2200` | About how many particles each scene starts with |
-| `-fps` | `60` | Frames per second, from 10 to 120 |
-| `-seed` | `0` | Seed for the random jitter in scenes; `0` picks one at random |
+| `--scene` | `dam` | Starting scene: `dam`, `double`, `drop`, `pool`, or `blob` |
+| `--theme` | `ocean` | Colors: `ocean`, `lava`, `slime`, `ink`, or `mercury` |
+| `--view` | `liquid` | How to draw the liquid: `liquid`, `particles`, or `heat` |
+| `--particles` | `2200` | About how many particles each scene starts with |
+| `--fps` | `60` | Frames per second, from 10 to 120 |
+| `--seed` | `0` | Seed for the random jitter in scenes; `0` picks one at random |
 
 The simulation takes about 1.5 ms per step for 2,000 particles on one core,
 and runs 180 steps per second. If it can't keep up, it slows down rather than

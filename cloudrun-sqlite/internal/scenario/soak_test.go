@@ -2,7 +2,7 @@ package scenario
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -27,7 +27,7 @@ func TestSoakWithoutSimulator(t *testing.T) {
 			items[id] = string(body)
 			mu.Unlock()
 			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(map[string]any{"id": id})
+			json.MarshalWrite(w, map[string]any{"id": id})
 		case r.Method == http.MethodGet && len(r.URL.Path) > len("/items/"):
 			id, _ := strconv.ParseInt(r.URL.Path[len("/items/"):], 10, 64)
 			mu.Lock()
@@ -37,7 +37,7 @@ func TestSoakWithoutSimulator(t *testing.T) {
 				http.NotFound(w, r)
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]string{"body": body})
+			json.MarshalWrite(w, map[string]string{"body": body})
 		default:
 			http.NotFound(w, r)
 		}

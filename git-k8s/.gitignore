@@ -1,6 +1,10 @@
 # Binaries from go build, in the module root or in a command's directory
 /git-k8s
+/git-k8s-deps
+/go-cache
 /check-*
 /cmd/*/git-k8s
+/cmd/*/git-k8s-deps
+/cmd/*/go-cache
 /cmd/*/check-*
 /e2e/gitserver/gitserver

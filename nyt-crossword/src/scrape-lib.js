@@ -95,17 +95,43 @@ export function listItemToPuzzle(item) {
   const id = Number(item.puzzle_id);
   if (!Number.isInteger(id)) return null;
   const percent = Number(item.percent_filled);
+  // A grid under 100% filled is not a solve, whatever the flag says.
+  // completed.json is the exception, applied in mergeListed.
+  const notFull = Number.isFinite(percent) && percent < 100;
   return {
     date: item.print_date,
     id,
-    solved: item.solved === true,
+    solved: item.solved === true && !notFull,
     percentFilled: Number.isFinite(percent) ? percent : 0,
     seconds: null,
   };
 }
 
-// A stored solve time means the game is finished. It cannot become unsolved,
-// so later runs leave that record alone.
+// Print dates in completed.json. The puzzle list sometimes leaves a finished
+// grid under 100% filled. Those dates count as solved anyway.
+export function completedDates(raw) {
+  const rows = raw && Array.isArray(raw.dates) ? raw.dates : [];
+  const dates = new Set();
+  for (const row of rows) {
+    if (isIsoDate(row)) dates.add(row);
+  }
+  return dates;
+}
+
+// Marks dates in completed.json solved and full. Other puzzles stay as they
+// are. Seconds are left alone.
+export function applyCompleted(puzzles, dates) {
+  if (!dates || dates.size === 0) return puzzles ?? [];
+  return (puzzles ?? []).map((puzzle) => {
+    if (!dates.has(puzzle.date)) return puzzle;
+    if (puzzle.solved === true && puzzle.percentFilled === 100) return puzzle;
+    return { ...puzzle, solved: true, percentFilled: 100 };
+  });
+}
+
+// A stored solve time is kept only while the list still says solved, or the
+// date is in completed.json. A later listing that says not solved replaces
+// the stored solve, and that does not call the state endpoint.
 export function isFinished(puzzle) {
   return Boolean(puzzle && puzzle.solved === true && puzzle.seconds > 0);
 }
@@ -138,7 +164,13 @@ function dateCovered(date, chunks) {
   return chunks.some(([start, end]) => date >= start && date <= end);
 }
 
-export function mergeListed(prevPuzzles, listedItems, range, listedChunks) {
+export function mergeListed(
+  prevPuzzles,
+  listedItems,
+  range,
+  listedChunks,
+  completed,
+) {
   const prevByDate = new Map((prevPuzzles ?? []).map((puzzle) => [puzzle.date, puzzle]));
   const merged = new Map();
   for (const puzzle of prevPuzzles ?? []) {
@@ -151,9 +183,17 @@ export function mergeListed(prevPuzzles, listedItems, range, listedChunks) {
   for (const item of listedItems ?? []) {
     const listed = listItemToPuzzle(item);
     if (!listed) continue;
+    const forced = completed != null && completed.has(listed.date);
+    if (forced) {
+      listed.solved = true;
+      listed.percentFilled = 100;
+    }
     const prev = prevByDate.get(listed.date) ?? null;
-    if (isFinished(prev)) {
-      merged.set(prev.date, { puzzle: prev, fetch: false });
+    if (isFinished(prev) && listed.solved === true) {
+      const puzzle = forced
+        ? { ...prev, solved: true, percentFilled: 100 }
+        : prev;
+      merged.set(prev.date, { puzzle, fetch: false });
       continue;
     }
     const puzzle = {
@@ -161,9 +201,11 @@ export function mergeListed(prevPuzzles, listedItems, range, listedChunks) {
       id: listed.id,
       solved: listed.solved,
       percentFilled: listed.percentFilled,
-      seconds: prev && prev.seconds > 0 ? prev.seconds : null,
+      seconds: listed.solved === true && prev && prev.seconds > 0 ? prev.seconds : null,
     };
-    merged.set(puzzle.date, { puzzle, fetch: needsGameFetch(prev, puzzle) });
+    // Keep a stored time. Ask for one only when this puzzle has none.
+    const fetch = puzzle.seconds > 0 ? false : needsGameFetch(prev, puzzle);
+    merged.set(puzzle.date, { puzzle, fetch });
   }
   const entries = [...merged.values()].sort((a, b) => (a.puzzle.date < b.puzzle.date ? -1 : 1));
   return {
@@ -172,19 +214,13 @@ export function mergeListed(prevPuzzles, listedItems, range, listedChunks) {
   };
 }
 
-function stateSaysSolved(data) {
-  const first = data && data.firstSolve;
-  if (first === true) return true;
-  const stamp = Number(first);
-  return Number.isFinite(stamp) && stamp > 0;
-}
-
-// playTimeSeconds is the running timer. A finished puzzle keeps the time it
-// already has. An open puzzle can have a timer and still no solve time.
+// playTimeSeconds is the running timer. It is a solve time only when the
+// list says the puzzle is solved. An open puzzle can have a timer and a
+// firstSolve stamp and still be unfinished.
 export function applyPlayTime(puzzle, gameData) {
   if (isFinished(puzzle)) return { ...puzzle };
   const data = gameData && typeof gameData === "object" ? gameData : {};
-  const solved = puzzle.solved === true || stateSaysSolved(data);
+  const solved = puzzle.solved === true;
   const spent = Number(data.playTimeSeconds);
   let seconds = null;
   if (solved) {

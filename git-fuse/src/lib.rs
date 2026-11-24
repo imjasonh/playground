@@ -37,7 +37,6 @@ macro_rules! vlog {
         }
     };
 }
-pub(crate) use vlog;
 
 mod cache;
 mod fs;

@@ -3,7 +3,7 @@ package apply
 import (
 	"testing"
 
-	"github.com/imjasonh/playground/pasta/internal/tswasm"
+	"github.com/imjasonh/playground/pasta/internal/treesitter"
 
 	"github.com/imjasonh/playground/pasta/internal/dsl"
 	"github.com/imjasonh/playground/pasta/internal/effect"
@@ -25,7 +25,7 @@ func f(x *int) bool {
 	return true
 }
 `)
-	tree, root, err := tsutil.Parse(t.Context(), &tswasm.Language{Grammar: "go"}, src, "")
+	tree, root, err := tsutil.Parse(t.Context(), &treesitter.Language{Grammar: "go"}, src, "")
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

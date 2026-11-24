@@ -318,7 +318,7 @@ fn resolve_grid(cli: &GenerateArgs) -> Result<(usize, usize, usize), String> {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let (cli, _ping) = whbiab::parse::<Cli>(env!("CARGO_PKG_VERSION"));
     match cli.command {
         Some(Command::Bambu3mf(args)) => run_bambu(&args),
         Some(Command::Generate(args)) => run_generate(&args),

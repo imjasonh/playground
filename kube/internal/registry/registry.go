@@ -9,7 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -294,7 +294,7 @@ func (s *session) token(ctx context.Context, params map[string]string) (string, 
 		Token       string `json:"token"`
 		AccessToken string `json:"access_token"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBody)).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(io.LimitReader(resp.Body, maxBody), &body); err != nil {
 		return "", fmt.Errorf("GET %s: %w", realm.Redacted(), err)
 	}
 	if body.Token == "" {
@@ -316,7 +316,7 @@ func statusError(resp *http.Response) error {
 			Message string `json:"message"`
 		} `json:"errors"`
 	}
-	if json.NewDecoder(io.LimitReader(resp.Body, maxBody)).Decode(&body) == nil {
+	if json.UnmarshalRead(io.LimitReader(resp.Body, maxBody), &body) == nil {
 		for i, e := range body.Errors {
 			sep := ": "
 			if i > 0 {

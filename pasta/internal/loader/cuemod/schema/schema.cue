@@ -46,6 +46,7 @@ package schema
 		"empty" |
 		"named_child_count" |
 		"prev_sibling_matches" |
+		"first_sibling_not_matches" |
 		"parent_field"
 	// Positional args. Each is either a string (capture ref, regex,
 	// literal) or a list of strings (e.g. node-type alternatives).
@@ -138,11 +139,11 @@ package schema
 	// file the language filter accepts".
 	file_match?: [...string]
 
-	// Optional content-sniff filter. When set, the engine skips the
-	// tree-sitter parse for files that lack every listed substring.
-	// Prefer relying on inference from `eq`/`token_eq` and a single
-	// simple `matches` alternation when those already name the sparse
-	// tokens; rewrite `within` tokens are not inferred. Use this for
+	// Optional content-sniff filter. When set, the engine doesn't run
+	// the rule on a file that lacks any listed substring, and skips the
+	// tree-sitter parse when no applicable rule can match the file.
+	// Prefer relying on inference from `eq`/`token_eq` literals and
+	// `matches` regexes when those already name the sparse tokens; rewrite `within` tokens are not inferred. Use this for
 	// cases inference can't see (e.g. comments-only rules).
 	require_substring?: [...string]
 
@@ -209,4 +210,12 @@ package schema
 	// Tree-sitter node types to skip during adjacency matching (for
 	// comment filtering primarily).
 	comment_types: [...string]
+
+	// Tree-sitter node types of named function and method definitions.
+	// Each must have a `name` field holding the defined identifier. When
+	// a rule looks a fact up by an identifier's text, the fact store
+	// binds the identifier to the nearest definition of that text in
+	// the same language, so a local definition shadows a same-named
+	// one elsewhere.
+	definition_types?: [...string]
 }

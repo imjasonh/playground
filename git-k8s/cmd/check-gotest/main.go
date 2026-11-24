@@ -77,7 +77,7 @@ type queued struct {
 	Status      struct {
 		Queued struct {
 			Head     string `json:"head"`
-			Position int32  `json:"position,omitempty"`
+			Position int32  `json:"position,omitzero"`
 		} `json:"queued,omitzero"`
 	} `json:"status,omitzero"`
 }

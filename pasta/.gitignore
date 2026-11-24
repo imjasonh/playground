@@ -1,5 +1,6 @@
 # Go build artifacts
 /pasta
+/pastals
 /dist/
 *.test
 
@@ -13,4 +14,4 @@
 *.swp
 
 # tree-sitter WASM build intermediate (committed artifact is .br)
-internal/tswasm/ts-core.wasm
+internal/treesitter/ts-core.wasm

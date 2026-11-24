@@ -1,7 +1,7 @@
 package pastals
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"os"
 	"path/filepath"
 	"testing"
@@ -21,7 +21,7 @@ func TestParseInitOptions_Defaults(t *testing.T) {
 }
 
 func TestParseInitOptions_Override(t *testing.T) {
-	raw := json.RawMessage(`{"rules":["./foo.cue"],"debounceMs":50,"runOnSave":true}`)
+	raw := jsontext.Value(`{"rules":["./foo.cue"],"debounceMs":50,"runOnSave":true}`)
 	cfg, err := parseInitOptions(&raw)
 	if err != nil {
 		t.Fatal(err)
@@ -39,7 +39,7 @@ func TestParseInitOptions_Override(t *testing.T) {
 
 func TestParseInitOptions_PartialOverride(t *testing.T) {
 	// Only rules supplied — other fields should fall back to defaults.
-	raw := json.RawMessage(`{"rules":["x.cue"]}`)
+	raw := jsontext.Value(`{"rules":["x.cue"]}`)
 	cfg, err := parseInitOptions(&raw)
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +53,7 @@ func TestParseInitOptions_PartialOverride(t *testing.T) {
 }
 
 func TestParseInitOptions_Malformed(t *testing.T) {
-	raw := json.RawMessage(`{not json`)
+	raw := jsontext.Value(`{not json`)
 	if _, err := parseInitOptions(&raw); err == nil {
 		t.Fatal("expected error on malformed JSON")
 	}

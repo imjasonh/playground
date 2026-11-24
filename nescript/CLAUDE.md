@@ -23,7 +23,8 @@ re-derive the project conventions from scratch.
   the exact `cargo run -- build examples/<name>.ne` to run. The
   pre-commit hook under `scripts/pre-commit` catches this locally.
 - **`docs/platformer.gif`, `docs/war.gif`, `docs/pong.gif`,
-  `docs/subway.gif`, and `docs/rampart.gif` are committed** and
+  `docs/subway.gif`, `docs/rampart.gif`, and `docs/dvd_screensaver.gif`
+  are committed** and
   embedded in the top-level README as the project demos. `gifenc` +
   `jsnes` are deterministic, so each gif's bytes are a function of
   the compiler, the runtime, the harness, and the underlying `.ne`
@@ -36,6 +37,7 @@ re-derive the project conventions from scratch.
   node tests/emulator/record_gif.mjs pong       360 2 docs/pong.gif       4
   node tests/emulator/record_gif.mjs subway     360 2 docs/subway.gif     30
   node tests/emulator/record_gif.mjs rampart    720 2 docs/rampart.gif    16
+  node tests/emulator/record_gif.mjs dvd_screensaver 720 2 docs/dvd_screensaver.gif 6402
   ```
 
   The last number is the warmup-frames override. War and pong pass
@@ -44,6 +46,8 @@ re-derive the project conventions from scratch.
   the pattern load. Rampart passes 16 so the thumbnail is the
   painted title, and it records 720 frames (about 12 seconds)
   because the CPU demo starts only after the title has sat idle.
+  The DVD screensaver passes 6402 so the clip ends with the logo's
+  first corner hit, at frame 7062.
   Commit the regenerated gif in the same change. The `nescript`
   workflow renders fresh gifs and fails if any committed copy
   doesn't byte-match. `scripts/pre-commit` rebuilds whichever gif
@@ -52,6 +56,7 @@ re-derive the project conventions from scratch.
   `examples/pong/`, `pong.ne`, `pong.nes`, any file under
   `examples/subway/`, `subway.ne`, `subway.nes`, any file under
   `examples/rampart/`, `rampart.ne`, `rampart.nes`,
+  `dvd_screensaver.ne`, `dvd_screensaver.nes`, `dvd_screensaver.png`,
   `record_gif.mjs`, or `emu.mjs` is staged (and
   `tests/emulator/node_modules` is installed).
 - `docs/future-work.md` lists the remaining gaps. If you implement
@@ -68,12 +73,12 @@ cargo clippy --all-targets -- -D warnings   # mandatory; fix or #[allow]
 ./target/release/nescript verify examples/*.nes            # structural ROM check
 ```
 
-**Always pass `--all-targets` to `cargo test`.** The playground `test`
+**Always pass `--all-targets` to `cargo test`.** The playground Rust
 job runs `cargo test --locked` and does not build benches. The
-`nescript` workflow runs `cargo test --locked --benches`, which
+`nescript` job runs `cargo test --locked --benches`, which
 smoke-runs `benches/compile.rs`. A plain `cargo test` skips that bench.
-A bench that does not compile can pass the shared job and fail
-`nescript.yml`. That happened once before this directory moved
+A bench that does not compile can pass the Rust job and fail
+the `nescript` job. That happened once before this directory moved
 (commit `889074a`).
 
 `scripts/pre-commit` runs `cargo fmt --check`, Clippy, `cargo test
@@ -203,13 +208,13 @@ failing CI — that defeats the entire purpose of the harness.
 
 ### CI integration
 
-The `nescript` workflow at the repository root
-(`.github/workflows/nescript.yml`) builds all examples, then runs the
+The `nescript` job in the repository's test workflow
+(`.github/workflows/test.yml`) builds all examples, then runs the
 harness in Node. It does not install Chrome. The ROMs from that build
 are uploaded as `nescript-examples`, including when the committed copy
 is stale. On failure it also uploads the `actual/` directory and
 `report.json` as an artifact named `nescript-emulator-diff`. The
-workflow does not pass `UPDATE_GOLDENS`. If a golden changes, update it
+job does not pass `UPDATE_GOLDENS`. If a golden changes, update it
 in the same commit and review the diff.
 
 ## Conventions worth knowing

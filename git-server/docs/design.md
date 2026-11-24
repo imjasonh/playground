@@ -282,7 +282,10 @@ are bad at (CPU, memory) and what R2 makes cheap (streaming copies):
   be reading them. The swap moves their ids to a `retired` list; a later run
   deletes the storage after a grace period (longer than any plausible
   request) and sweeps the list.
-* The scheduled handler walks a KV registry of repos (registered on push).
+* The scheduled handler walks a KV registry of repos (registered on push),
+  following KV's `list` cursor across every page (`registry::list_all`) —
+  a deployment with more repos than fit in one page must still reach all of
+  them, not just the first.
 
 ## Block-cached reads: request count is the real currency
 

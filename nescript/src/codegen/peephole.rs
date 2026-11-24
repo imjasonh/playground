@@ -985,7 +985,7 @@ fn is_temp_slot(mode: &AddressingMode) -> bool {
 mod tests {
     use super::*;
     use crate::asm::AddressingMode as AM;
-    use crate::asm::Opcode::*;
+    use crate::asm::Opcode::*; // pasta:ignore rust_glob_import (6502 opcode variants)
 
     #[test]
     fn removes_sta_then_lda_temp() {

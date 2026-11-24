@@ -3,7 +3,8 @@ package main
 import (
 	"bufio"
 	"cmp"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -72,10 +73,10 @@ func loadRun(dir string) (*runData, error) {
 		return nil, err
 	}
 	defer f.Close()
-	dec := json.NewDecoder(bufio.NewReaderSize(f, 1<<20))
+	dec := jsontext.NewDecoder(bufio.NewReaderSize(f, 1<<20))
 	for {
 		var r rec
-		if err := dec.Decode(&r); errors.Is(err, io.EOF) {
+		if err := json.UnmarshalDecode(dec, &r); errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
 			// A run that was killed can leave half a line at the end.

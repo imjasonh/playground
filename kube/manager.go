@@ -146,7 +146,7 @@ type Manager struct {
 	events   *eventWriter
 	tracker  *tracker
 	ids      atomic.Int64
-	runCtx   context.Context
+	runCtx   context.Context // pasta:ignore go_context_field (the manager's run lifetime)
 	started  atomic.Bool
 	sharder  *sharder
 	// self is the user that the program authenticates as, once known.

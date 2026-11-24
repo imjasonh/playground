@@ -13,6 +13,26 @@ variable "github_repository" {
   }
 }
 
+variable "github_repository_id" {
+  description = "Numeric ID of github_repository (gh api repos/OWNER/REPO --jq .id)."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_repository_id))
+    error_message = "github_repository_id must be a numeric GitHub repository ID."
+  }
+}
+
+variable "github_repository_owner_id" {
+  description = "Numeric ID of the account that owns github_repository (gh api repos/OWNER/REPO --jq .owner.id)."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_repository_owner_id))
+    error_message = "github_repository_owner_id must be a numeric GitHub account ID."
+  }
+}
+
 variable "github_workflow" {
   description = "Workflow path that may deploy and plan, relative to the repository root. The pool rejects tokens from any other workflow."
   type        = string
@@ -65,6 +85,48 @@ variable "chrome_webstore_github_environment" {
   validation {
     condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$", var.chrome_webstore_github_environment))
     error_message = "chrome_webstore_github_environment must be a GitHub environment name."
+  }
+}
+
+variable "app_service_accounts" {
+  description = "Runtime service accounts for app stacks: account ID to display name. This stack creates them, and they are the only accounts the deploy account can act as. An app stack reads its account with a google_service_account data source."
+  type        = map(string)
+  default = {
+    "cloudrun-sqlite"        = "cloudrun-sqlite service"
+    "cloudrun-sqlite-reader" = "cloudrun-sqlite read-only replica"
+    "stream-boids"           = "stream-boids VM"
+    "xiao-otel"              = "xiao-otel App Attest OTLP collector"
+  }
+
+  validation {
+    condition     = alltrue([for id in keys(var.app_service_accounts) : can(regex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", id))])
+    error_message = "Each app_service_accounts key must be a service account ID: 6 to 30 characters, lowercase letters, digits, and hyphens."
+  }
+}
+
+variable "app_project_roles" {
+  description = "Project roles the deploy account can grant and revoke, for app runtime accounts. It cannot change a binding for any other role."
+  type        = list(string)
+  default = [
+    "roles/cloudtrace.agent",
+    "roles/logging.logWriter",
+    "roles/monitoring.metricWriter",
+  ]
+
+  validation {
+    condition     = alltrue([for r in var.app_project_roles : can(regex("^roles/[A-Za-z0-9_.]+$", r))])
+    error_message = "Each app_project_roles entry must be a predefined role, such as roles/logging.logWriter."
+  }
+}
+
+variable "monthly_budget_usd" {
+  description = "Monthly budget for every charge in the project, in US dollars. Billing account administrators get an email at 50% and 90% of actual spend and at 100% of forecast spend."
+  type        = number
+  default     = 25
+
+  validation {
+    condition     = var.monthly_budget_usd > 0 && floor(var.monthly_budget_usd) == var.monthly_budget_usd
+    error_message = "monthly_budget_usd must be a positive whole number of dollars."
   }
 }
 

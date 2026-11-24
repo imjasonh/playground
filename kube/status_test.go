@@ -1,7 +1,7 @@
 package kube
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"maps"
 	"net/http"
@@ -220,7 +220,7 @@ func (a *statusAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"resources":[{"name":"configmaps","namespaced":true,"kind":"ConfigMap"}]}`)
 	case r.Method == http.MethodPatch:
 		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := json.UnmarshalRead(r.Body, &body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}

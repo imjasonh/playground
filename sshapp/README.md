@@ -128,7 +128,6 @@ container disk.
 - **Locked-down pods.** Non-root, read-only root, capabilities dropped. Mux RBAC
   is limited to Deployments/Endpoints/Services in the apps namespace.
 - **Public-key auth only** on mux and hello (accept any key for the demo).
-- **Workload Identity Federation for GitHub Actions** behind `github_repository`.
 
 ## Prerequisites
 
@@ -191,8 +190,10 @@ add forwarding rules.
 
 ## GitHub Actions (later)
 
-Set `github_repository = "OWNER/REPO"` and re-apply when you want WIF outputs
-for `google-github-actions/auth`.
+This stack has no GitHub identity of its own. To deploy from GitHub Actions,
+use the project's shared Workload Identity pool and deploy and plan accounts
+in [`gcp/terraform`](../gcp/README.md), which `deploy-gcp.yml` applies app
+stacks with. Don't add a pool or a GitHub service account here.
 
 ## Destroy
 

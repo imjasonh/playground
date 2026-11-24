@@ -377,6 +377,28 @@ func TestResolveParseTimeout(t *testing.T) {
 	}
 }
 
+func TestMemoryLimit(t *testing.T) {
+	cases := []struct {
+		name       string
+		budget     int64
+		gomemlimit string
+		want       int64
+	}{
+		{name: "default budget", budget: -1, want: engine.DefaultTreeBudget + 2<<30},
+		{name: "twice a large budget", budget: 6 << 30, want: 12 << 30},
+		{name: "headroom for a small budget", budget: 256 << 20, want: 256<<20 + 2<<30},
+		{name: "keep every tree", budget: 0, want: 0},
+		{name: "GOMEMLIMIT wins", budget: -1, gomemlimit: "1GiB", want: 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := memoryLimit(tc.budget, tc.gomemlimit); got != tc.want {
+				t.Errorf("got %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 // Local helpers — defined here rather than in main.go because they're
 // test-only.
 

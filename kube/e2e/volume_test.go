@@ -2,7 +2,7 @@ package e2e_test
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -37,7 +37,7 @@ func TestGenerateVolume(t *testing.T) {
 	in := generateExample(t, reg, "examples/eventlog", "eventlog", "-volume-size=2Gi")
 	byKind := map[string]string{}
 	for _, obj := range in.objects {
-		b, _ := json.Marshal(obj)
+		b, _ := json.Marshal(obj, json.Deterministic(true))
 		byKind[obj["kind"].(string)] = string(b)
 	}
 	for kind, want := range map[string]string{

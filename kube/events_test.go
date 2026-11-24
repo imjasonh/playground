@@ -3,7 +3,8 @@ package kube
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -59,14 +60,14 @@ func (s *eventServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	reply := func(code int, reason string) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(code)
-		_ = json.NewEncoder(w).Encode(map[string]any{"kind": "Status", "code": code, "reason": reason})
+		_ = json.MarshalWrite(w, map[string]any{"kind": "Status", "code": code, "reason": reason})
 	}
 	if s.fail != 0 {
 		reply(s.fail, "")
 		return
 	}
 	var body map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.UnmarshalRead(r.Body, &body); err != nil {
 		reply(http.StatusBadRequest, "BadRequest")
 		return
 	}
@@ -84,7 +85,7 @@ func (s *eventServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(body)
+		_ = json.MarshalWrite(w, body)
 	case http.MethodPatch:
 		e, ok := s.events[r.URL.Path]
 		switch {
@@ -94,7 +95,7 @@ func (s *eventServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			reply(http.StatusUnsupportedMediaType, "UnsupportedMediaType")
 		default:
 			maps.Copy(e, body)
-			_ = json.NewEncoder(w).Encode(e)
+			_ = json.MarshalWrite(w, e)
 		}
 	default:
 		reply(http.StatusMethodNotAllowed, "MethodNotAllowed")
@@ -616,7 +617,7 @@ func (eventfValidator) Validate(ctx context.Context, _, _ *configMapMeta) error 
 
 func TestWebhooksCantRecordEvents(t *testing.T) {
 	ti, _ := typeInfoFor[configMapMeta, *configMapMeta]()
-	r := validate[configMapMeta, *configMapMeta](t.Context(), testManager(), ti, eventfValidator{}, &admissionRequest{Operation: "CREATE", Object: json.RawMessage(`{"metadata":{"name":"cm"}}`)})
+	r := validate[configMapMeta, *configMapMeta](t.Context(), testManager(), ti, eventfValidator{}, &admissionRequest{Operation: "CREATE", Object: jsontext.Value(`{"metadata":{"name":"cm"}}`)})
 	if r.Allowed || !strings.Contains(r.Result.Message, "kube.Eventf can't be called in a webhook") {
 		t.Errorf("response = %+v", r.Result)
 	}

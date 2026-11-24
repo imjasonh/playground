@@ -17,9 +17,22 @@
 #                        attribute.chromewebstore_environment = the environment name
 #
 # A pull_request workflow from a fork does not receive an OIDC token.
+#
+# Every provider also matches the repository and owner by numeric ID, so
+# a repository that takes over the name after a rename or deletion is
+# rejected.
+
+locals {
+  github_repository_condition = join(" && ", [
+    "assertion.repository_owner_id == \"${var.github_repository_owner_id}\"",
+    "assertion.repository_id == \"${var.github_repository_id}\"",
+    "assertion.repository == \"${var.github_repository}\"",
+  ])
+}
 
 resource "google_project_service" "services" {
   for_each = toset([
+    "cloudbilling.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
@@ -59,7 +72,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   }
 
   attribute_condition = join(" && ", [
-    "assertion.repository == \"${var.github_repository}\"",
+    local.github_repository_condition,
     "assertion.ref == \"refs/heads/main\"",
     "assertion.ref_type == \"branch\"",
     "assertion.workflow_ref == \"${var.github_repository}/${var.github_workflow}@refs/heads/main\"",
@@ -90,7 +103,7 @@ resource "google_iam_workload_identity_pool_provider" "github_plan" {
   }
 
   attribute_condition = join(" && ", [
-    "assertion.repository == \"${var.github_repository}\"",
+    local.github_repository_condition,
     "assertion.event_name == \"pull_request\"",
     "assertion.ref.startsWith(\"refs/pull/\")",
     "assertion.ref_type == \"branch\"",
@@ -123,7 +136,7 @@ resource "google_iam_workload_identity_pool_provider" "github_chromewebstore" {
   }
 
   attribute_condition = join(" && ", [
-    "assertion.repository == \"${var.github_repository}\"",
+    local.github_repository_condition,
     "assertion.ref == \"refs/heads/main\"",
     "assertion.ref_type == \"branch\"",
     "assertion.workflow_ref == \"${var.github_repository}/${var.chrome_webstore_github_workflow}@refs/heads/main\"",

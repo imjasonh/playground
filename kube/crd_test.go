@@ -2,7 +2,7 @@ package kube
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"io"
 	"log/slog"
@@ -195,7 +195,7 @@ func (a *crdAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (r crdReply) write(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(r.code)
-	_ = json.NewEncoder(w).Encode(r.body)
+	_ = json.MarshalWrite(w, r.body)
 }
 
 func crdError(code int, reason string) crdReply {
@@ -421,11 +421,13 @@ func TestEnsureCRDAfterCanceledCreate(t *testing.T) {
 	defer cancel()
 	first := make(chan error, 1)
 	go func() { first <- m.ensureCRD(ctx, gizmos) }()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
 	for requests.Load() < 3 {
 		select {
 		case err := <-first:
 			t.Fatalf("the first use = %v before its context ended", err)
-		case <-time.After(time.Millisecond):
+		case <-tick.C:
 		}
 	}
 	second := make(chan error, 1)

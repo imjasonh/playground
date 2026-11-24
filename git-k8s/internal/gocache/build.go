@@ -3,7 +3,8 @@ package gocache
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -47,9 +48,9 @@ func Build(ctx context.Context, cacheprog string, stderr io.Writer) (shared []st
 		return nil, 0, err
 	}
 	var pkgs []listedPackage
-	for dec := json.NewDecoder(bytes.NewReader(out)); ; {
+	for dec := jsontext.NewDecoder(bytes.NewReader(out)); ; {
 		var p listedPackage
-		if err := dec.Decode(&p); errors.Is(err, io.EOF) {
+		if err := json.UnmarshalDecode(dec, &p); errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
 			return nil, 0, fmt.Errorf("go list: %w", err)

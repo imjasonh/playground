@@ -1,7 +1,8 @@
 package kube
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"testing"
 
@@ -75,7 +76,7 @@ type benchPodSmall struct {
 
 func BenchmarkDecodeWatchEvent(b *testing.B) {
 	obj := benchPod(1)
-	event, _ := json.Marshal(map[string]any{"type": "ADDED", "object": json.RawMessage(obj)})
+	event, _ := json.Marshal(map[string]any{"type": "ADDED", "object": jsontext.Value(obj)})
 	b.Run("envelope-then-object", func(b *testing.B) {
 		b.SetBytes(int64(len(event)))
 		for b.Loop() {

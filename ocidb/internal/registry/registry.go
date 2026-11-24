@@ -13,7 +13,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"os"
@@ -77,7 +78,7 @@ type Options struct {
 	// a negative value disables expiry (cache never considered stale).
 	TTL time.Duration
 	// Context is passed to all registry requests.
-	Context context.Context
+	Context context.Context // pasta:ignore go_context_field (applied to every request this client makes)
 	// UserAgent is sent on registry requests.
 	UserAgent string
 	// Keychain authenticates requests. Nil uses the default keychain, which
@@ -199,7 +200,7 @@ func (c *Client) fetchManifest(ref name.Reference) (Manifest, error) {
 		Digest:    m.Digest,
 		MediaType: m.MediaType,
 		Size:      m.Size,
-		Raw:       json.RawMessage(m.Raw),
+		Raw:       jsontext.Value(m.Raw),
 	})
 	if _, isDigest := ref.(name.Digest); !isDigest {
 		_ = c.writeJSON(c.cachePath("refs", hashKey(ref.Name())+".json"), refEnvelope{
@@ -458,10 +459,10 @@ type refEnvelope struct {
 }
 
 type manifestEnvelope struct {
-	Digest    string          `json:"digest"`
-	MediaType string          `json:"mediaType"`
-	Size      int64           `json:"size"`
-	Raw       json.RawMessage `json:"raw"`
+	Digest    string         `json:"digest"`
+	MediaType string         `json:"mediaType"`
+	Size      int64          `json:"size"`
+	Raw       jsontext.Value `json:"raw"`
 }
 
 func (c *Client) cachePath(parts ...string) string {
@@ -485,7 +486,7 @@ func (c *Client) readFresh(path string, out any, fetchedAt *time.Time) bool {
 }
 
 func (c *Client) writeJSON(path string, v any) error {
-	b, err := json.MarshalIndent(v, "", "  ")
+	b, err := json.Marshal(v, jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}
@@ -528,7 +529,7 @@ func digestFile(digest string) string {
 var _ Backend = (*remoteBackend)(nil)
 
 type remoteBackend struct {
-	ctx       context.Context
+	ctx       context.Context // pasta:ignore go_context_field (the backend applies this to every request)
 	keychain  authn.Keychain
 	userAgent string
 }

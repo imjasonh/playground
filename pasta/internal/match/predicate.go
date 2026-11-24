@@ -105,26 +105,27 @@ func (r PredicateRegistry) EvalCheck(name string, args map[string]dsl.Arg, env *
 func DefaultRegistry() PredicateRegistry {
 	return PredicateRegistry{
 		Predicates: map[string]PredicateFunc{
-			"eq":                   predEq,
-			"neq":                  predNeq,
-			"matches":              predMatches,
-			"not_matches":          predNotMatches,
-			"token_eq":             predTokenEq,
-			"nil_comparison":       predNilComparison,
-			"last_non_blank":       predLastNonBlank,
-			"same_ident":           predSameIdent,
-			"not_same_ident":       predNotSameIdent,
-			"empty":                predEmptyNamedChildren,
-			"named_child_count":    predNamedChildCount,
-			"prev_sibling_matches": predPrevSiblingMatches,
-			"has_fact":             predHasFact,
-			"not_has_fact":         predNotHasFact,
-			"ancestor_is":          predAncestorIs,
-			"node_is":              predNodeIs,
-			"node_is_not":          predNodeIsNot,
-			"subtree_lacks":        predSubtreeLacks,
-			"stmt_index_delta":     predStmtIndexDelta,
-			"parent_field":         predParentField,
+			"eq":                        predEq,
+			"neq":                       predNeq,
+			"matches":                   predMatches,
+			"not_matches":               predNotMatches,
+			"token_eq":                  predTokenEq,
+			"nil_comparison":            predNilComparison,
+			"last_non_blank":            predLastNonBlank,
+			"same_ident":                predSameIdent,
+			"not_same_ident":            predNotSameIdent,
+			"empty":                     predEmptyNamedChildren,
+			"named_child_count":         predNamedChildCount,
+			"prev_sibling_matches":      predPrevSiblingMatches,
+			"first_sibling_not_matches": predFirstSiblingNotMatches,
+			"has_fact":                  predHasFact,
+			"not_has_fact":              predNotHasFact,
+			"ancestor_is":               predAncestorIs,
+			"node_is":                   predNodeIs,
+			"node_is_not":               predNodeIsNot,
+			"subtree_lacks":             predSubtreeLacks,
+			"stmt_index_delta":          predStmtIndexDelta,
+			"parent_field":              predParentField,
 		},
 		Checks: map[string]CheckFunc{
 			"all_children_type":               checkAllChildrenType,
@@ -141,16 +142,16 @@ func DefaultRegistry() PredicateRegistry {
 // env has no CommentTypes set (e.g. unit tests) it falls through to
 // raw NamedChildren.
 func nonCommentNamedChildren(n tsutil.Node, env *Env) []tsutil.Node {
-	all := n.NamedChildren()
 	if env == nil || env.CommentTypes == nil {
-		return all
+		return n.NamedChildren()
 	}
-	out := make([]tsutil.Node, 0, len(all))
-	for _, c := range all {
+	kids := n.N.NamedChildren()
+	out := make([]tsutil.Node, 0, len(kids))
+	for _, c := range kids {
 		if env.CommentTypes[c.Type()] {
 			continue
 		}
-		out = append(out, c)
+		out = append(out, tsutil.Node{N: c, Src: n.Src, Lang: n.Lang, FileID: n.FileID})
 	}
 	return out
 }
@@ -563,21 +564,10 @@ func predPrevSiblingMatches(args []dsl.Arg, env *Env, caps Captures) bool {
 	if !ok {
 		return false
 	}
-	parent := n.Parent()
-	if !parent.IsValid() {
-		return false
-	}
 	// Note: this predicate intentionally does NOT skip comments. Its
 	// primary use is finding doc comments preceding a declaration
 	// (see analyzers/go_deprecated_use), so comments ARE the target.
-	siblings := parent.NamedChildren()
-	prev := tsutil.Node{}
-	for _, s := range siblings {
-		if s.StartByte() == n.StartByte() && s.EndByte() == n.EndByte() {
-			break
-		}
-		prev = s
-	}
+	prev := n.PrevNamedSibling()
 	if !prev.IsValid() {
 		return false
 	}
@@ -586,6 +576,33 @@ func predPrevSiblingMatches(args []dsl.Arg, env *Env, caps Captures) bool {
 		return false
 	}
 	return re.MatchString(prev.Text())
+}
+
+// predFirstSiblingNotMatches: [@cap, "regex"] — true when the first
+// named sibling of @cap (comments skipped) does not match regex.
+// False when that sibling is missing or the regex matches it, including
+// when @cap itself is the first sibling.
+func predFirstSiblingNotMatches(args []dsl.Arg, env *Env, caps Captures) bool {
+	if len(args) != 2 {
+		return false
+	}
+	n, ok := resolveCapture(posStr(args, 0), caps)
+	if !ok {
+		return false
+	}
+	parent := n.Parent()
+	if !parent.IsValid() {
+		return false
+	}
+	siblings := nonCommentNamedChildren(parent, env)
+	if len(siblings) == 0 {
+		return false
+	}
+	re, err := cachedRegexp(posStr(args, 1))
+	if err != nil {
+		return false
+	}
+	return !re.MatchString(siblings[0].Text())
 }
 
 // predNamedChildCount: [@cap, "N"] — true if @cap has exactly N named

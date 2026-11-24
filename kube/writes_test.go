@@ -2,7 +2,8 @@ package kube
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"log/slog"
@@ -23,7 +24,7 @@ import (
 type counted struct {
 	Object `kube:"apiVersion=v1,kind=ConfigMap,plural=configmaps,scope=Namespaced"`
 	Status struct {
-		Count int `json:"count,omitempty"`
+		Count int `json:"count,omitzero"`
 	} `json:"status,omitzero"`
 }
 
@@ -76,7 +77,7 @@ func TestReconcileSeesItsOwnStatusWrite(t *testing.T) {
 				var body struct {
 					Status any `json:"status"`
 				}
-				if r.Method != http.MethodPatch || r.URL.Path != "/api/v1/namespaces/ns/configmaps/a/status" || json.NewDecoder(r.Body).Decode(&body) != nil {
+				if r.Method != http.MethodPatch || r.URL.Path != "/api/v1/namespaces/ns/configmaps/a/status" || json.UnmarshalRead(r.Body, &body) != nil {
 					http.Error(w, "unexpected write", http.StatusBadRequest)
 					return
 				}
@@ -90,7 +91,7 @@ func TestReconcileSeesItsOwnStatusWrite(t *testing.T) {
 				f.objs["a"] = o
 				b, _ := json.Marshal(map[string]any{"type": client.Modified, "object": o})
 				held = append(held, string(b))
-				_ = json.NewEncoder(w).Encode(o)
+				_ = json.MarshalWrite(w, o)
 			}
 			f.mu.Unlock()
 			writes := func() []string {
@@ -197,7 +198,7 @@ func TestReconcileSeesItsOwnStatusApply(t *testing.T) {
 			Status any `json:"status"`
 		}
 		path, status := strings.CutSuffix(r.URL.Path, "/status")
-		if r.Method != http.MethodPatch || path != "/api/v1/namespaces/ns/configmaps/t" || json.NewDecoder(r.Body).Decode(&body) != nil {
+		if r.Method != http.MethodPatch || path != "/api/v1/namespaces/ns/configmaps/t" || json.UnmarshalRead(r.Body, &body) != nil {
 			http.Error(w, "unexpected write", http.StatusBadRequest)
 			return
 		}
@@ -214,7 +215,7 @@ func TestReconcileSeesItsOwnStatusApply(t *testing.T) {
 			b, _ := json.Marshal(map[string]any{"type": client.Modified, "object": o})
 			held = append(held, string(b))
 		}
-		_ = json.NewEncoder(w).Encode(o)
+		_ = json.MarshalWrite(w, o)
 	}
 	f.mu.Unlock()
 	applies := func() []string {
@@ -516,7 +517,7 @@ func TestStored(t *testing.T) {
 		{"delete of a pod with a grace period", `{"metadata":{"uid":"u","resourceVersion":"3",` + deleting + `,"deletionGracePeriodSeconds":30}}`, true, "object"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			w := stored(json.RawMessage(tc.resp), tc.deleted)
+			w := stored(jsontext.Value(tc.resp), tc.deleted)
 			var got string
 			switch {
 			case w == nil:
@@ -553,7 +554,7 @@ func TestInformerTracksWritesItCanShow(t *testing.T) {
 		t.Error("a cache whose selector it can't evaluate tracks a write")
 	}
 	inf := testInformer[policy](t, resolved{apiVersion: "example.dev/v1", plural: "networkpolicies"}, informerConfig{})
-	inf.begin(Key{"ns", "a"})(stored(json.RawMessage(`{"metadata":{"name":"a","uid":"u","resourceVersion":"1"}}`), false))
+	inf.begin(Key{"ns", "a"})(stored(jsontext.Value(`{"metadata":{"name":"a","uid":"u","resourceVersion":"1"}}`), false))
 	if inf.get(Key{Name: "a"}) == nil {
 		t.Error("a write of a cluster-scoped object doesn't show")
 	}

@@ -218,6 +218,25 @@ export function selectSolves(puzzles, options = {}) {
   return { kept, excluded, fences };
 }
 
+// The fastest solve for each weekday. The caller decides which solves count,
+// so a time listed in excluded.json never wins. Ties go to the earlier date.
+export function bestByWeekday(puzzles) {
+  const best = new Map();
+  for (const puzzle of puzzles) {
+    if (!(puzzle.seconds > 0)) continue;
+    const day = weekdayName(puzzle.date);
+    const current = best.get(day);
+    if (
+      !current ||
+      puzzle.seconds < current.seconds ||
+      (puzzle.seconds === current.seconds && puzzle.date < current.date)
+    ) {
+      best.set(day, puzzle);
+    }
+  }
+  return best;
+}
+
 export function medianByWeekday(puzzles) {
   const groups = new Map(WEEKDAYS.map((day) => [day, []]));
   for (const puzzle of puzzles) {
@@ -385,6 +404,87 @@ export function solvedYears(puzzles) {
     }
   }
   return [...years].sort((a, b) => a - b);
+}
+
+// Finished means the list says solved. The list is the only source for
+// puzzles that were never opened, so this does not look at solve time.
+function isCompleted(puzzle) {
+  return puzzle.solved === true;
+}
+
+function daysBetween(start, end) {
+  const [startYear, startMonth, startDay] = start.split("-").map(Number);
+  const [endYear, endMonth, endDay] = end.split("-").map(Number);
+  const startUtc = Date.UTC(startYear, startMonth - 1, startDay);
+  const endUtc = Date.UTC(endYear, endMonth - 1, endDay);
+  return Math.round((endUtc - startUtc) / 86400000);
+}
+
+// The print date of the first puzzle in the unbroken run of completed
+// puzzles that ends at the latest one. An open puzzle dated today or later
+// does not break the run, because it has not had its day yet. Null when the
+// puzzle after the last miss is itself open.
+export function completedSince(puzzles, today) {
+  const rows = puzzles
+    .filter((puzzle) => puzzle.date >= CHART_START)
+    .sort((a, b) => compareIso(a.date, b.date));
+  let lastMiss = -1;
+  for (let i = 0; i < rows.length; i += 1) {
+    if (!isCompleted(rows[i]) && rows[i].date < today) lastMiss = i;
+  }
+  const first = rows[lastMiss + 1];
+  if (!first || !isCompleted(first)) return null;
+  return first.date;
+}
+
+// Inclusive length of the current run. Today counts only when it is
+// completed. Null when there is no run.
+export function currentStreak(puzzles, today) {
+  const since = completedSince(puzzles, today);
+  if (!since) return null;
+  let end = since;
+  for (const puzzle of puzzles) {
+    if (puzzle.date < since || puzzle.date > today) continue;
+    if (puzzle.date === today && !isCompleted(puzzle)) continue;
+    if (puzzle.date > end) end = puzzle.date;
+  }
+  return { since, days: daysBetween(since, end) + 1 };
+}
+
+export function formatStreak(streak) {
+  if (!streak || !(streak.days > 0)) return "";
+  const days = streak.days === 1
+    ? "1 day"
+    : `${streak.days.toLocaleString("en-US")} days`;
+  return `Current streak: ${days} since ${formatDate(streak.since)}.`;
+}
+
+// One row per calendar year from the chart start. Unfinished puzzles include
+// the ones that were never opened, oldest first.
+export function yearBreakdown(puzzles) {
+  const years = new Map();
+  for (const puzzle of puzzles) {
+    if (puzzle.date < CHART_START) continue;
+    const year = yearOf(puzzle.date);
+    if (!years.has(year)) years.set(year, { year, total: 0, completed: 0, unfinished: [] });
+    const row = years.get(year);
+    row.total += 1;
+    if (isCompleted(puzzle)) row.completed += 1;
+    else row.unfinished.push(puzzle);
+  }
+  const rows = [...years.values()].sort((a, b) => a.year - b.year);
+  for (const row of rows) row.unfinished.sort((a, b) => compareIso(a.date, b.date));
+  return rows;
+}
+
+export function formatShortDate(isoDate) {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
 export function partialPuzzles(puzzles, sort) {

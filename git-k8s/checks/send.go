@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -128,10 +128,12 @@ func (s *sender) send(ctx context.Context, meta *kube.ObjectMeta, res *gitk8s.Ch
 		if attempt == sendAttempts {
 			return err
 		}
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return err
-		case <-time.After(delay):
+		case <-timer.C:
 		}
 		delay = min(2*delay, 2*time.Second)
 	}

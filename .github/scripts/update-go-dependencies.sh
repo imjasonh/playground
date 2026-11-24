@@ -40,6 +40,11 @@ if [ "${#modules[@]}" -eq 0 ]; then
   fi
 fi
 
+# Each module's go line follows the minor release this update runs with, so
+# every module gets that release's language changes and GODEBUG defaults.
+# The repository root has no go.mod, so this is the installed release.
+go_line=$(go env GOVERSION | sed -E 's/^go([0-9]+\.[0-9]+).*/\1.0/')
+
 for module in "${modules[@]}"; do
   if [ "$module" = "litestream" ]; then
     # The fork keeps upstream's dependency versions, so a later pull from
@@ -57,15 +62,31 @@ for module in "${modules[@]}"; do
     goflags="${goflags:+$goflags }-tags=vfs"
   fi
 
+  current=$(cd "$module" && go mod edit -json | jq -r .Go)
+  if [ "$(printf '%s\n%s\n' "$current" "$go_line" | sort -V | tail -n 1)" != "$current" ]; then
+    if (cd "$module" && go mod edit -go="$go_line"); then
+      echo "- ✅ \`${module}\`: go ${current} → ${go_line}" >> "$GITHUB_STEP_SUMMARY"
+    else
+      result=failure
+      echo "::error title=Go version update failed::${module}: go mod edit -go=${go_line}"
+      echo "- ❌ \`${module}\`: go version update failed" >> "$GITHUB_STEP_SUMMARY"
+    fi
+  fi
+
+  # A module with scripts/update-deps.sh updates its own dependencies.
+  update="go get -u ./..."
+  if [ -f "$module/scripts/update-deps.sh" ]; then
+    update="bash scripts/update-deps.sh"
+  fi
   if (
     cd "$module"
     export GOFLAGS="$goflags"
-    go get -u ./...
+    $update
   ); then
     echo "- ✅ \`${module}\`: dependencies updated" >> "$GITHUB_STEP_SUMMARY"
   else
     result=failure
-    echo "::error title=Dependency update failed::${module}: go get -u ./..."
+    echo "::error title=Dependency update failed::${module}: ${update}"
     echo "- ❌ \`${module}\`: dependency update failed" >> "$GITHUB_STEP_SUMMARY"
   fi
 
@@ -102,7 +123,9 @@ for module in "${modules[@]}"; do
     cd "$module"
     export GOFLAGS="$goflags"
     # Match test-go-modules.sh: always race-detect. Heavy modules get more time.
-    if [ "$module" = "node-image" ] || [ "$module" = "pasta" ]; then
+    if [ "$module" = "pasta" ]; then
+      go test -race -timeout 30m ./... && CGO_ENABLED=0 go test ./internal/treesitter/
+    elif [ "$module" = "node-image" ]; then
       go test -race -timeout 30m ./...
     else
       go test -race ./...

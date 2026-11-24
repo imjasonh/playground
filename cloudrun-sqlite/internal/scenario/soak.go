@@ -6,7 +6,7 @@ package scenario
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"log/slog"
@@ -150,7 +150,9 @@ func Soak(ctx context.Context, cfg SoakConfig) (*SoakResult, error) {
 					continue
 				}
 				d := time.Since(start)
-				var out struct{ ID int64 }
+				var out struct {
+					ID int64 `json:"id"`
+				}
 				if err := json.Unmarshal(data, &out); err != nil {
 					violate("bad create response %q", data)
 					continue
@@ -197,7 +199,9 @@ func Soak(ctx context.Context, cfg SoakConfig) (*SoakResult, error) {
 					rec.mu.Lock()
 					rec.reads = append(rec.reads, time.Since(start))
 					rec.mu.Unlock()
-					var out struct{ Body string }
+					var out struct {
+						Body string `json:"body"`
+					}
 					if json.Unmarshal(data, &out) != nil || out.Body != want.body {
 						violate("id %d read back %.40q, want %.40q", id, out.Body, want.body)
 					}
@@ -265,7 +269,9 @@ func Soak(ctx context.Context, cfg SoakConfig) (*SoakResult, error) {
 		vwg.Go(func() {
 			for id := range work {
 				code, data, err := do(ctx, client, http.MethodGet, cfg.URL+"/items/"+strconv.FormatInt(id, 10), "")
-				var out struct{ Body string }
+				var out struct {
+					Body string `json:"body"`
+				}
 				switch {
 				case err != nil || code == http.StatusNotFound:
 					missing.Add(1)
@@ -293,8 +299,8 @@ func Soak(ctx context.Context, cfg SoakConfig) (*SoakResult, error) {
 			return nil, fmt.Errorf("integrity check: %d %v %s", code, err, data)
 		}
 		var check struct {
-			Integrity string
-			Items     int64
+			Integrity string `json:"integrity"`
+			Items     int64  `json:"items"`
 		}
 		if err := json.Unmarshal(data, &check); err != nil {
 			return nil, err

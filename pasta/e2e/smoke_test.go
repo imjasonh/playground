@@ -78,6 +78,7 @@ var diagnoseOnlyRules = []string{
 	"yaml_empty_value",
 	"gha_security",
 	"terraform_security",
+	"terraform_github_oidc",
 	"html_deprecated_tags",
 	"html_img_alt",
 	"html_lang",
@@ -294,12 +295,12 @@ func TestSmokeRealRepos(t *testing.T) {
 			if !repo.autofix {
 				return
 			}
-			runAutofix(t, ctx, dir, specs, analyzers, repo.softExpectFix)
+			runAutofix(ctx, t, dir, specs, analyzers, repo.softExpectFix)
 		})
 	}
 }
 
-func runAutofix(t *testing.T, ctx context.Context, dir string, specs []runner.FileSpec, analyzers []*dsl.Analyzer, softExpectFix bool) {
+func runAutofix(ctx context.Context, t *testing.T, dir string, specs []runner.FileSpec, analyzers []*dsl.Analyzer, softExpectFix bool) {
 	t.Helper()
 	// Apply per-file so one overlapping-edit conflict (common with
 	// nested `var` rewrites on older JS) doesn't abort the whole tree.

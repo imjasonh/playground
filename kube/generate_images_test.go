@@ -4,7 +4,7 @@ package kube
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"flag"
 	"slices"
 	"strings"

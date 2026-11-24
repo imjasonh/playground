@@ -7,6 +7,7 @@ Config: schema.#Language & {
 	grammar:    "java"
 	extensions: [".java"]
 	comment_types: ["line_comment", "block_comment"]
+	definition_types: ["method_declaration"]
 }
 
 Name: Config.grammar

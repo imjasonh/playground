@@ -2,8 +2,9 @@
 package subset
 
 import (
-	"encoding/json"
 	"strconv"
+
+	"github.com/imjasonh/playground/kube/internal/jsonnum"
 )
 
 // Contains reports whether every value set in want is present and equal in
@@ -13,7 +14,7 @@ import (
 // null value in have.
 //
 // Both arguments use the types that encoding/json decodes into an any:
-// map[string]any, []any, string, bool, nil, and float64 or json.Number.
+// map[string]any, []any, string, bool, nil, and float64 or jsonnum.Number.
 func Contains(have, want any) bool {
 	switch w := want.(type) {
 	case nil:
@@ -44,7 +45,7 @@ func Contains(have, want any) bool {
 			}
 		}
 		return true
-	case json.Number:
+	case jsonnum.Number:
 		return numberEqual(have, string(w))
 	case float64:
 		return numberEqual(have, strconv.FormatFloat(w, 'g', -1, 64))
@@ -56,7 +57,7 @@ func Contains(have, want any) bool {
 func numberEqual(have any, want string) bool {
 	var hs string
 	switch h := have.(type) {
-	case json.Number:
+	case jsonnum.Number:
 		hs = string(h)
 	case float64:
 		hs = strconv.FormatFloat(h, 'g', -1, 64)

@@ -58,19 +58,19 @@ gitdb .
 
 | Flag | Description |
 |------|-------------|
-| `-q`, `-query <sql>` | SQL to run |
-| `-file <path>` | read SQL from a file (`-` for stdin) |
-| `-example <name>` | run a built-in example (see `-list-examples`) |
-| `-list-examples` | list the built-in examples and exit |
-| `-schema` | print every table's schema and exit |
-| `-format <fmt>` | `table` (default), `csv`, `tsv`, `json`, `md` |
-| `-max-width <n>` | truncate table cells (0 = unlimited; default 60) |
-| `-cache <dir>` | cache directory (default `<user cache>/gitdb`) |
-| `-update` | fetch new commits for a cached repo before querying |
-| `-offline` | never hit the network; require a cached clone |
-| `-no-renames` | disable rename detection in `commit_files` (faster on large repos) |
-| `-rename-limit <n>` | cap files compared for rename detection per commit (0 = default 200) |
-| `-quiet` | suppress clone/fetch progress |
+| `-q`, `--query <sql>` | SQL to run |
+| `--file <path>` | read SQL from a file (`-` for stdin) |
+| `--example <name>` | run a built-in example (see `--list-examples`) |
+| `--list-examples` | list the built-in examples and exit |
+| `--schema` | print every table's schema and exit |
+| `--format <fmt>` | `table` (default), `csv`, `tsv`, `json`, `md` |
+| `--max-width <n>` | truncate table cells (0 = unlimited; default 60) |
+| `--cache <dir>` | cache directory (default `<user cache>/gitdb`) |
+| `--update` | fetch new commits for a cached repo before querying |
+| `--offline` | never hit the network; require a cached clone |
+| `--no-renames` | disable rename detection in `commit_files` (faster on large repos) |
+| `--rename-limit <n>` | cap files compared for rename detection per commit (0 = default 200) |
+| `--quiet` | suppress clone/fetch progress |
 
 ### Interactive prompt
 
@@ -88,7 +88,7 @@ Statements end with `;`. Dot-commands: `.tables`, `.schema [table]`,
 | `commit_files` | file changed by a commit (`--numstat`) | `commit_hash, path, old_path, change, additions, deletions, binary` |
 | `blame` | line of a file (**requires** `WHERE path = '…'`) | `path, line_no, content, commit_hash, author_name, author_email, author_when, author_unix` |
 
-Run `gitdb -schema` to see the exact `CREATE TABLE` for each.
+Run `gitdb --schema` to see the exact `CREATE TABLE` for each.
 
 ### Hidden `ref` column
 
@@ -162,7 +162,7 @@ below for a shared-commits / ahead-behind example on a real fork.
 ## Examples
 
 The [`queries/`](queries) directory holds the bundled examples (embedded into
-the binary). List them with `gitdb -list-examples` and run one with
+the binary). List them with `gitdb --list-examples` and run one with
 `gitdb --example <name> <repo>`:
 
 | Name | What it shows |

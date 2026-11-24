@@ -2,7 +2,7 @@ package kube
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -159,7 +159,7 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			meta["continue"] = strconv.Itoa(end)
 		}
 		f.unlockAfterList()
-		_ = json.NewEncoder(w).Encode(map[string]any{"kind": "ConfigMapList", "apiVersion": "v1", "metadata": meta, "items": items})
+		_ = json.MarshalWrite(w, map[string]any{"kind": "ConfigMapList", "apiVersion": "v1", "metadata": meta, "items": items})
 		return
 	}
 	f.watches = append(f.watches, q)
@@ -374,9 +374,11 @@ func TestInformerBacksOffWhenWatchesEndEarly(t *testing.T) {
 			ctx, cancel := context.WithCancel(clog.WithLogger(t.Context(), clog.NewLogger(slog.New(slog.DiscardHandler))))
 			t.Cleanup(cancel)
 			go inf.run(ctx)
+			timer := time.NewTimer(10 * time.Second)
 			select {
 			case <-inf.synced:
-			case <-time.After(10 * time.Second):
+				timer.Stop()
+			case <-timer.C:
 				t.Fatalf("the informer didn't sync after %d streaming lists", streams.Load())
 			}
 			if got := keys(inf); !slices.Equal(got, []string{"a"}) {
@@ -506,9 +508,11 @@ func TestInformerDoesntShowWritesThatOverlapAList(t *testing.T) {
 			}
 			f.mu.Unlock()
 			f.drop <- struct{}{}
+			timer := time.NewTimer(5 * time.Second)
 			select {
 			case <-listed:
-			case <-time.After(5 * time.Second):
+				timer.Stop()
+			case <-timer.C:
 				t.Fatal("the informer didn't list again")
 			}
 			waitFor(t, "the list", func() bool { return watched(ka) == "2" })
@@ -604,8 +608,8 @@ func (p *port) UnmarshalJSON(b []byte) error { return json.Unmarshal(b, (*int32)
 type strictMap struct {
 	Object `kube:"apiVersion=v1,kind=ConfigMap,plural=configmaps,scope=Namespaced"`
 	Data   struct {
-		Count   int       `json:"count,omitempty"`
-		Port    port      `json:"port,omitempty"`
+		Count   int       `json:"count,omitzero"`
+		Port    port      `json:"port,omitzero"`
 		Targets []string  `json:"targets,omitempty"`
 		When    time.Time `json:"when,omitzero"`
 	} `json:"data"`

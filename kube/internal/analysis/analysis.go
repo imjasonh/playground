@@ -7,7 +7,8 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"go/ast"
 	"go/constant"
@@ -115,10 +116,10 @@ func Find(ctx context.Context, cfg Config) (uses, unresolved []Use, err error) {
 	}
 	var pkgs []*listedPackage
 	exports := map[string]string{}
-	dec := json.NewDecoder(bytes.NewReader(out))
-	for dec.More() {
+	dec := jsontext.NewDecoder(bytes.NewReader(out))
+	for dec.PeekKind() != 0 {
 		p := &listedPackage{}
-		if err := dec.Decode(p); err != nil {
+		if err := json.UnmarshalDecode(dec, p); err != nil {
 			return nil, nil, fmt.Errorf("analysis: decoding go list output: %w", err)
 		}
 		if p.Error != nil {

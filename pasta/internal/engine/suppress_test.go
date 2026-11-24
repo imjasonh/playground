@@ -5,15 +5,15 @@ import (
 	"testing"
 
 	"github.com/imjasonh/playground/pasta/internal/dsl"
+	"github.com/imjasonh/playground/pasta/internal/treesitter"
 	"github.com/imjasonh/playground/pasta/internal/tsutil"
-	"github.com/imjasonh/playground/pasta/internal/tswasm"
 )
 
 // parseGo parses src as Go and returns the root + a default comment-
 // types map. The grammar emits comment nodes as type "comment".
 func parseGo(t *testing.T, src string) (tsutil.Node, func()) {
 	t.Helper()
-	tree, root, err := tsutil.Parse(t.Context(), &tswasm.Language{Grammar: "go"}, []byte(src), "test.go")
+	tree, root, err := tsutil.Parse(t.Context(), &treesitter.Language{Grammar: "go"}, []byte(src), "test.go")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -149,34 +149,6 @@ func TestParseSuppressions_emptyCommentTypes(t *testing.T) {
 	}
 	if got := parseSuppressions(root, map[string]bool{}); got != nil {
 		t.Errorf("expected nil for empty commentTypes; got %#v", got)
-	}
-}
-
-func TestIsSuppressed(t *testing.T) {
-	m := map[int]suppression{
-		3: {all: true},
-		5: {rules: map[string]bool{"foo": true}},
-	}
-	cases := []struct {
-		rule string
-		line int
-		want bool
-	}{
-		{"foo", 3, true},
-		{"bar", 3, true},
-		{"foo", 5, true},
-		{"bar", 5, false},
-		{"foo", 99, false},
-		{"foo", 0, false},
-	}
-	for _, tc := range cases {
-		got := isSuppressed(m, tc.rule, tc.line)
-		if got != tc.want {
-			t.Errorf("isSuppressed(%q, line=%d) = %v, want %v", tc.rule, tc.line, got, tc.want)
-		}
-	}
-	if isSuppressed(nil, "foo", 1) {
-		t.Errorf("isSuppressed on nil map should be false")
 	}
 }
 

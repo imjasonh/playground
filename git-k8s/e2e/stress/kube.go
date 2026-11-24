@@ -6,7 +6,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -185,7 +186,7 @@ func (k *kubeClient) username(ctx context.Context) (string, error) {
 // watches for changes and calls handle for each event, with the time that
 // the event arrived, until ctx is done. It lists again when the watch's
 // resource version expires. path may have a query string.
-func (k *kubeClient) watch(ctx context.Context, path string, handle func(typ string, obj json.RawMessage, at time.Time)) {
+func (k *kubeClient) watch(ctx context.Context, path string, handle func(typ string, obj jsontext.Value, at time.Time)) {
 	sep := "?"
 	if strings.Contains(path, "?") {
 		sep = "&"
@@ -197,7 +198,7 @@ func (k *kubeClient) watch(ctx context.Context, path string, handle func(typ str
 				Metadata struct {
 					ResourceVersion string `json:"resourceVersion"`
 				} `json:"metadata"`
-				Items []json.RawMessage `json:"items"`
+				Items []jsontext.Value `json:"items"`
 			}
 			if err := k.get(ctx, path, &list); err != nil {
 				slog.Warn("listing", "path", path, "err", err)
@@ -221,7 +222,7 @@ func (k *kubeClient) watch(ctx context.Context, path string, handle func(typ str
 
 // watchOnce reads one watch response and returns the resource version to
 // watch from next, or "" to list again.
-func (k *kubeClient) watchOnce(ctx context.Context, path, rv string, handle func(string, json.RawMessage, time.Time)) (string, error) {
+func (k *kubeClient) watchOnce(ctx context.Context, path, rv string, handle func(string, jsontext.Value, time.Time)) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, k.server+path, nil)
 	if err != nil {
 		return rv, err
@@ -239,13 +240,13 @@ func (k *kubeClient) watchOnce(ctx context.Context, path, rv string, handle func
 		b, _ := io.ReadAll(resp.Body)
 		return rv, &statusError{code: resp.StatusCode, body: string(b)}
 	}
-	dec := json.NewDecoder(resp.Body)
+	dec := jsontext.NewDecoder(resp.Body)
 	for {
 		var ev struct {
-			Type   string          `json:"type"`
-			Object json.RawMessage `json:"object"`
+			Type   string         `json:"type"`
+			Object jsontext.Value `json:"object"`
 		}
-		if err := dec.Decode(&ev); err != nil {
+		if err := json.UnmarshalDecode(dec, &ev); err != nil {
 			if errors.Is(err, io.EOF) || ctx.Err() != nil {
 				return rv, nil
 			}

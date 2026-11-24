@@ -42,10 +42,10 @@ type lease struct {
 	} `json:"metadata"`
 	Spec struct {
 		HolderIdentity       string `json:"holderIdentity,omitempty"`
-		LeaseDurationSeconds int32  `json:"leaseDurationSeconds,omitempty"`
+		LeaseDurationSeconds int32  `json:"leaseDurationSeconds,omitzero"`
 		AcquireTime          string `json:"acquireTime,omitempty"`
 		RenewTime            string `json:"renewTime,omitempty"`
-		LeaseTransitions     int32  `json:"leaseTransitions,omitempty"`
+		LeaseTransitions     int32  `json:"leaseTransitions,omitzero"`
 	} `json:"spec"`
 }
 
@@ -224,10 +224,12 @@ func (s *sharder) run(ctx context.Context) {
 	s.logger(ctx).Info("waiting for shards", "shards", s.n, "namespace", s.ns)
 	for {
 		s.sync(ctx)
+		timer := time.NewTimer(retryPeriod)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-time.After(retryPeriod):
+		case <-timer.C:
 		}
 	}
 }

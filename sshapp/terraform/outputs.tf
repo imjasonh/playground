@@ -47,16 +47,3 @@ output "apps" {
     }
   }
 }
-
-output "github_actions_workload_identity_provider" {
-  description = "WIF provider resource name for google-github-actions/auth. Empty until github_repository is set."
-  value = try(
-    google_iam_workload_identity_pool_provider.github[0].name,
-    "",
-  )
-}
-
-output "github_actions_service_account" {
-  description = "Deploy service account email for GitHub Actions. Empty until github_repository is set."
-  value       = try(google_service_account.github_deploy[0].email, "")
-}

@@ -7,7 +7,7 @@ pub use preprocess::preprocess as preprocess_source;
 
 use crate::errors::{Diagnostic, ErrorCode};
 use crate::lexer::{Span, Token, TokenKind};
-use ast::*;
+use ast::*; // pasta:ignore rust_glob_import (this module is written against the ast names)
 
 pub struct Parser {
     tokens: Vec<Token>,

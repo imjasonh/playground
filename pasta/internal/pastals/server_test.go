@@ -2,7 +2,8 @@ package pastals
 
 import (
 	"bufio"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/url"
@@ -304,7 +305,7 @@ func (c *testClient) request(id int, method string, params any) {
 	if err != nil {
 		c.t.Fatal(err)
 	}
-	idRaw := json.RawMessage(strconv.Itoa(id))
+	idRaw := jsontext.Value(strconv.Itoa(id))
 	c.write(jsonrpc.Message{ID: idRaw, Method: method, Params: raw})
 }
 
@@ -405,12 +406,12 @@ func (c *testClient) expectResponse(id int) jsonrpc.Message {
 
 // ---------- helpers ----------
 
-func rawJSON(v any) *json.RawMessage {
+func rawJSON(v any) *jsontext.Value {
 	b, err := json.Marshal(v)
 	if err != nil {
 		panic(err)
 	}
-	r := json.RawMessage(b)
+	r := jsontext.Value(b)
 	return &r
 }
 

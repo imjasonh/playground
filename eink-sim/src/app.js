@@ -10,19 +10,81 @@ import {
   renderPipeline,
   paletteColorCount,
 } from "./dither.js";
-import { rgbToHex } from "./color.js";
+import { COLOR_METRICS, GRAY_MODES, rgbToHex } from "./color.js";
+import {
+  presetsForPalette,
+  getPreset,
+  autoBoostForPalette,
+} from "./presets.js";
 
 const DITHER_LABELS = {
   none: "None (nearest color)",
   "floyd-steinberg": "Floyd–Steinberg",
+  ostromoukhov: "Ostromoukhov (blue-noise ED)",
   atkinson: "Atkinson",
+  riemersma: "Riemersma (Hilbert curve)",
+  burkes: "Burkes",
   "jarvis-judice-ninke": "Jarvis–Judice–Ninke",
   stucki: "Stucki",
   sierra: "Sierra",
   "sierra-lite": "Sierra Lite",
+  "blue-noise": "Blue Noise (64×64)",
+  yliluoma: "Yliluoma (palette ordered)",
   "bayer-2": "Ordered 2×2 (Bayer)",
   "bayer-4": "Ordered 4×4 (Bayer)",
   "bayer-8": "Ordered 8×8 (Bayer)",
+};
+
+const DITHER_GROUPS = [
+  {
+    label: "Error diffusion",
+    methods: [
+      "floyd-steinberg",
+      "ostromoukhov",
+      "atkinson",
+      "riemersma",
+      "burkes",
+      "jarvis-judice-ninke",
+      "stucki",
+      "sierra",
+      "sierra-lite",
+    ],
+  },
+  {
+    label: "Ordered / positional",
+    methods: ["blue-noise", "yliluoma", "bayer-2", "bayer-4", "bayer-8"],
+  },
+  {
+    label: "Threshold",
+    methods: ["none"],
+  },
+];
+
+const SCANLINE_DIFFUSION = new Set([
+  "floyd-steinberg",
+  "ostromoukhov",
+  "atkinson",
+  "burkes",
+  "jarvis-judice-ninke",
+  "stucki",
+  "sierra",
+  "sierra-lite",
+]);
+
+const METRIC_LABELS = {
+  oklab: "Oklab (perceptual)",
+  photopainter: "PhotoPainter (RGB + Luma)",
+  cielab: "CIELAB (ΔE76)",
+  redmean: "Redmean (fast perceptual)",
+  rgb: "Euclidean RGB",
+};
+
+const GRAY_LABELS = {
+  luma: "Standard luminance (Rec. 709)",
+  red: "Red filter (dramatic skies)",
+  orange: "Orange filter (portraits & contrast)",
+  green: "Green filter (foliage)",
+  blue: "Blue filter (moody / haze)",
 };
 
 const els = {
@@ -31,10 +93,18 @@ const els = {
   dropZone: document.querySelector("#drop-zone"),
   fileInput: document.querySelector("#file-input"),
   sampleRow: document.querySelector("#sample-row"),
+  presetRow: document.querySelector("#preset-row"),
   ditherSelect: document.querySelector("#dither-select"),
+  metricField: document.querySelector("#metric-field"),
+  metricSelect: document.querySelector("#metric-select"),
+  grayField: document.querySelector("#gray-field"),
+  graySelect: document.querySelector("#gray-select"),
+  serpentineLabel: document.querySelector("#serpentine-label"),
   serpentine: document.querySelector("#serpentine"),
+  linearLight: document.querySelector("#linear-light"),
   fitSelect: document.querySelector("#fit-select"),
   rotate: document.querySelector("#rotate"),
+  autoLevels: document.querySelector("#auto-levels"),
   autoBoost: document.querySelector("#auto-boost"),
   resetAdjust: document.querySelector("#reset-adjust"),
   realism: document.querySelector("#realism"),
@@ -55,7 +125,15 @@ const els = {
 const state = {
   source: null, // HTMLImageElement or HTMLCanvasElement
   display: DISPLAYS[0],
-  adjust: { saturation: 1, contrast: 1, brightness: 1, gamma: 1 },
+  activePreset: null,
+  adjust: {
+    saturation: 1,
+    contrast: 1,
+    brightness: 1,
+    gamma: 1,
+    sharpen: 0,
+    autoLevels: false,
+  },
   showOriginal: false,
   // Offscreen native-resolution panel canvas holding the processed pixels.
   panelCanvas: document.createElement("canvas"),
@@ -81,13 +159,99 @@ function populateDisplays() {
 }
 
 function populateDither() {
-  for (const method of DITHER_METHODS) {
-    const opt = document.createElement("option");
-    opt.value = method;
-    opt.textContent = DITHER_LABELS[method] ?? method;
-    els.ditherSelect.appendChild(opt);
+  for (const grp of DITHER_GROUPS) {
+    const group = document.createElement("optgroup");
+    group.label = grp.label;
+    for (const method of grp.methods) {
+      const opt = document.createElement("option");
+      opt.value = method;
+      opt.textContent = DITHER_LABELS[method] ?? method;
+      group.appendChild(opt);
+    }
+    els.ditherSelect.appendChild(group);
   }
   els.ditherSelect.value = "floyd-steinberg";
+}
+
+function populateMetrics() {
+  for (const metric of COLOR_METRICS) {
+    const opt = document.createElement("option");
+    opt.value = metric;
+    opt.textContent = METRIC_LABELS[metric] ?? metric;
+    els.metricSelect.appendChild(opt);
+  }
+  els.metricSelect.value = "oklab";
+}
+
+function populateGrayModes() {
+  for (const mode of GRAY_MODES) {
+    const opt = document.createElement("option");
+    opt.value = mode;
+    opt.textContent = GRAY_LABELS[mode] ?? mode;
+    els.graySelect.appendChild(opt);
+  }
+  els.graySelect.value = "luma";
+}
+
+function updateContextualControls() {
+  const palette = getPalette(state.display);
+  // Color matching applies only to discrete ink list palettes (Spectra 6, ACeP 7, ESL).
+  els.metricField.hidden = palette.kind !== "list";
+  // B&W channel filter applies only to monochrome panels.
+  els.grayField.hidden = !palette.grayscale;
+
+  // Serpentine only applies to scanline error-diffusion methods.
+  const usesSerpentine = SCANLINE_DIFFUSION.has(els.ditherSelect.value);
+  els.serpentine.disabled = !usesSerpentine;
+  els.serpentineLabel.classList.toggle("disabled", !usesSerpentine);
+
+  // Rebuild contextual photo presets for the current display category.
+  const presets = presetsForPalette(palette);
+  els.presetRow.replaceChildren();
+  for (const preset of presets) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.dataset.preset = preset.id;
+    btn.textContent = preset.label;
+    btn.title = preset.description;
+    if (state.activePreset === preset.id) {
+      btn.classList.add("active");
+    }
+    els.presetRow.appendChild(btn);
+  }
+}
+
+function clearActivePreset() {
+  if (!state.activePreset) return;
+  state.activePreset = null;
+  els.presetRow
+    .querySelectorAll("button.active")
+    .forEach((b) => b.classList.remove("active"));
+}
+
+function applyPreset(preset) {
+  if (!preset) return;
+  state.activePreset = preset.id;
+  if (preset.dither) {
+    if (preset.dither.method) els.ditherSelect.value = preset.dither.method;
+    if (preset.dither.serpentine !== undefined) {
+      els.serpentine.checked = preset.dither.serpentine;
+    }
+    if (preset.dither.colorMetric) {
+      els.metricSelect.value = preset.dither.colorMetric;
+    }
+    if (preset.dither.grayMode) {
+      els.graySelect.value = preset.dither.grayMode;
+    }
+    if (preset.dither.linearLight !== undefined) {
+      els.linearLight.checked = preset.dither.linearLight;
+    }
+  }
+  if (preset.adjust) {
+    setAdjust(preset.adjust, { renderNow: false });
+  }
+  updateContextualControls();
+  render();
 }
 
 // ---------------------------------------------------------------------------
@@ -176,7 +340,7 @@ function updateDisplayInfo() {
     ["Palette", paletteSummary(d)],
     ["Refresh", d.refresh],
   ];
-  els.displayInfo.innerHTML = "";
+  els.displayInfo.replaceChildren();
   for (const [k, v] of rows) {
     const key = document.createElement("dt");
     key.textContent = k;
@@ -498,6 +662,9 @@ function render() {
     dither: {
       method: els.ditherSelect.value,
       serpentine: els.serpentine.checked,
+      colorMetric: els.metricSelect.value,
+      grayMode: els.graySelect.value,
+      linearLight: els.linearLight.checked,
     },
     response,
     realism: els.realism.checked,
@@ -658,12 +825,19 @@ function updateRenderCaption(width, height, palette) {
       : palette.grayscale
         ? `${count} gray levels`
         : `${count.toLocaleString()} colors`;
+  const parts = [`${width}×${height}`, colorLabel, method];
+  if (palette.kind === "list") {
+    parts.push(METRIC_LABELS[els.metricSelect.value] ?? els.metricSelect.value);
+  } else if (palette.grayscale && els.graySelect.value !== "luma") {
+    parts.push(GRAY_LABELS[els.graySelect.value] ?? els.graySelect.value);
+  }
+  if (els.linearLight.checked) {
+    parts.push("linear light");
+  }
+  parts.push(els.realism.checked ? "reflective response on" : "ideal colors");
   const zoom = els.zoomSelect.value;
-  const zoomLabel = zoom !== "fit" ? ` · ${zoom}× pixels` : "";
-  els.renderCaption.textContent =
-    `${width}×${height} · ${colorLabel} · ${method}` +
-    (els.realism.checked ? " · reflective response on" : " · ideal colors") +
-    zoomLabel;
+  if (zoom !== "fit") parts.push(`${zoom}× pixels`);
+  els.renderCaption.textContent = parts.join(" · ");
 }
 
 // ---------------------------------------------------------------------------
@@ -686,6 +860,8 @@ function download() {
 function wireEvents() {
   els.displaySelect.addEventListener("change", () => {
     state.display = getDisplay(els.displaySelect.value) ?? DISPLAYS[0];
+    clearActivePreset();
+    updateContextualControls();
     render();
   });
 
@@ -728,8 +904,39 @@ function wireEvents() {
     render();
   });
 
-  els.ditherSelect.addEventListener("change", render);
-  els.serpentine.addEventListener("change", render);
+  els.presetRow.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-preset]");
+    if (!btn) return;
+    const preset = getPreset(getPalette(state.display), btn.dataset.preset);
+    if (preset) applyPreset(preset);
+  });
+
+  els.ditherSelect.addEventListener("change", () => {
+    clearActivePreset();
+    updateContextualControls();
+    render();
+  });
+  els.metricSelect.addEventListener("change", () => {
+    clearActivePreset();
+    render();
+  });
+  els.graySelect.addEventListener("change", () => {
+    clearActivePreset();
+    render();
+  });
+  els.serpentine.addEventListener("change", () => {
+    clearActivePreset();
+    render();
+  });
+  els.linearLight.addEventListener("change", () => {
+    clearActivePreset();
+    render();
+  });
+  els.autoLevels.addEventListener("change", () => {
+    clearActivePreset();
+    state.adjust.autoLevels = els.autoLevels.checked;
+    render();
+  });
   els.fitSelect.addEventListener("change", render);
   els.rotate.addEventListener("change", render);
   els.realism.addEventListener("change", render);
@@ -742,6 +949,7 @@ function wireEvents() {
     const input = slider.querySelector("input");
     const output = slider.querySelector("output");
     input.addEventListener("input", () => {
+      clearActivePreset();
       state.adjust[key] = Number(input.value);
       output.textContent = Number(input.value).toFixed(2);
       scheduleRender();
@@ -749,10 +957,19 @@ function wireEvents() {
   });
 
   els.autoBoost.addEventListener("click", () => {
-    setAdjust({ saturation: 1.7, contrast: 1.15, brightness: 1.02, gamma: 1 });
+    clearActivePreset();
+    setAdjust(autoBoostForPalette(getPalette(state.display)));
   });
   els.resetAdjust.addEventListener("click", () => {
-    setAdjust({ saturation: 1, contrast: 1, brightness: 1, gamma: 1 });
+    clearActivePreset();
+    setAdjust({
+      saturation: 1,
+      contrast: 1,
+      brightness: 1,
+      gamma: 1,
+      sharpen: 0,
+      autoLevels: false,
+    });
   });
 
   // Press-and-hold compare with the original.
@@ -780,24 +997,33 @@ function wireEvents() {
   });
 }
 
-function setAdjust(values) {
-  state.adjust = { ...values };
+function setAdjust(values, { renderNow = true } = {}) {
+  state.adjust = {
+    saturation: 1,
+    contrast: 1,
+    brightness: 1,
+    gamma: 1,
+    sharpen: 0,
+    autoLevels: false,
+    ...values,
+  };
   document.querySelectorAll(".slider").forEach((slider) => {
     const key = slider.dataset.adjust;
     const input = slider.querySelector("input");
     const output = slider.querySelector("output");
-    input.value = String(values[key]);
-    output.textContent = Number(values[key]).toFixed(2);
+    input.value = String(state.adjust[key]);
+    output.textContent = Number(state.adjust[key]).toFixed(2);
   });
-  render();
+  els.autoLevels.checked = Boolean(state.adjust.autoLevels);
+  if (renderNow) render();
 }
 
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 
-// Optional deep-linking: ?device=<id>&sample=<name>&dither=<method> lets you
-// share or bookmark a specific setup (and makes the app easy to smoke-test).
+// Optional deep-linking: ?device=<id>&sample=<name>&dither=<method>&metric=<m>&gray=<g>&linear=1&preset=<id>
+// lets you share or bookmark a specific setup (and makes the app easy to smoke-test).
 function applyUrlParams() {
   const params = new URLSearchParams(window.location.search);
   const device = params.get("device");
@@ -805,9 +1031,25 @@ function applyUrlParams() {
     state.display = getDisplay(device);
     els.displaySelect.value = device;
   }
+  const presetId = params.get("preset");
+  if (presetId) {
+    const preset = getPreset(getPalette(state.display), presetId);
+    if (preset) applyPreset(preset);
+  }
   const dither = params.get("dither");
   if (dither && DITHER_METHODS.includes(dither)) {
     els.ditherSelect.value = dither;
+  }
+  const metric = params.get("metric");
+  if (metric && COLOR_METRICS.includes(metric)) {
+    els.metricSelect.value = metric;
+  }
+  const gray = params.get("gray");
+  if (gray && GRAY_MODES.includes(gray)) {
+    els.graySelect.value = gray;
+  }
+  if (params.get("linear") === "1") {
+    els.linearLight.checked = true;
   }
   const zoom = params.get("zoom");
   if (zoom && [...els.zoomSelect.options].some((o) => o.value === zoom)) {
@@ -818,7 +1060,10 @@ function applyUrlParams() {
 
 populateDisplays();
 populateDither();
+populateMetrics();
+populateGrayModes();
 wireEvents();
 const sample = applyUrlParams();
+updateContextualControls();
 state.source = makeSample(sample || "photo");
 render();

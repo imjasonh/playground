@@ -1,7 +1,8 @@
 package runner_test
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,7 +111,7 @@ flag_pkg: schema.#Analyzer & {
 	}{Modules: map[string]remote.LockedModule{
 		"example.com/alice/rules": {Version: "v1.0.0", Commit: commit, Hash: hash},
 	}}
-	lfBytes, _ := json.MarshalIndent(lf, "", "  ")
+	lfBytes, _ := json.Marshal(lf, jsontext.WithIndent("  "))
 	if err := os.WriteFile(filepath.Join(pastaDir, remote.LockFile), lfBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}

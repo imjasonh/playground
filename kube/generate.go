@@ -10,7 +10,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -196,7 +196,7 @@ func (m *Manager) generate(ctx context.Context, args []string, controllers []Con
 		if i > 0 {
 			out.WriteString("---\n")
 		}
-		b, err := json.Marshal(d)
+		b, err := json.Marshal(d, json.Deterministic(true))
 		if err != nil {
 			return err
 		}
@@ -1055,11 +1055,11 @@ func (o object) MarshalJSON() ([]byte, error) {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		k, err := json.Marshal(f.key)
+		k, err := json.Marshal(f.key, json.Deterministic(true))
 		if err != nil {
 			return nil, err
 		}
-		v, err := json.Marshal(f.value)
+		v, err := json.Marshal(f.value, json.Deterministic(true))
 		if err != nil {
 			return nil, err
 		}

@@ -652,8 +652,20 @@ func (r *Replica) Restore(ctx context.Context, opt RestoreOptions) (err error) {
 				if latestSnapshot.MinTXID > txid {
 					return fmt.Errorf("cannot resume follow mode: saved TXID %s is behind the earliest snapshot (min TXID %s); replica history has been pruned -- delete %s and %s-txid to re-restore", txid, latestSnapshot.MinTXID, opt.OutputPath, opt.OutputPath)
 				}
-				if txid > latestSnapshot.MaxTXID {
-					return fmt.Errorf("cannot resume follow mode: saved TXID %s is ahead of latest snapshot (max TXID %s); delete %s and %s-txid to re-restore", txid, latestSnapshot.MaxTXID, opt.OutputPath, opt.OutputPath)
+
+				// A follow file legitimately runs ahead of the latest snapshot, so bound the check by the newest TXID across all levels.
+				var maxTXID ltx.TXID
+				for level := 0; level <= SnapshotLevel; level++ {
+					info, infoErr := r.MaxLTXFileInfo(ctx, level)
+					if infoErr != nil {
+						return fmt.Errorf("cannot validate saved TXID for crash recovery: %w", infoErr)
+					}
+					if info.MaxTXID > maxTXID {
+						maxTXID = info.MaxTXID
+					}
+				}
+				if txid > maxTXID {
+					return fmt.Errorf("cannot resume follow mode: saved TXID %s is ahead of the replica's latest TXID %s; delete %s and %s-txid to re-restore", txid, maxTXID, opt.OutputPath, opt.OutputPath)
 				}
 			}
 
@@ -705,10 +717,14 @@ func (r *Replica) Restore(ctx context.Context, opt RestoreOptions) (err error) {
 			return fmt.Errorf("invalid ltx file: level=%d min=%s max=%s has size %d bytes (minimum %d)",
 				info.Level, info.MinTXID, info.MaxTXID, info.Size, ltx.HeaderSize)
 		}
+	}
 
-		r.Logger().Debug("opening ltx file for restore", "level", info.Level, "min", info.MinTXID, "max", info.MaxTXID)
-
-		rdrs = append(rdrs, internal.NewResumableReader(ctx, r.Client, info.Level, info.MinTXID, info.MaxTXID, info.Size, nil, r.Logger()))
+	readers, err := r.openRestoreFiles(ctx, infos)
+	if err != nil {
+		return err
+	}
+	for _, rd := range readers {
+		rdrs = append(rdrs, rd)
 	}
 
 	if len(rdrs) == 0 {
@@ -796,6 +812,41 @@ func (r *Replica) Restore(ctx context.Context, opt RestoreOptions) (err error) {
 	}
 
 	return nil
+}
+
+// restoreOpenConcurrency bounds how many restore-plan files are opened at
+// once. The compactor decodes every input's header in plan order before it
+// reads a page, so lazily opened inputs cost one object-store round trip each,
+// in series.
+const restoreOpenConcurrency = 32
+
+// openRestoreFiles opens every file of a restore plan concurrently. A file
+// that fails to open has a nil stream; its ResumableReader retries it on
+// first read.
+func (r *Replica) openRestoreFiles(ctx context.Context, infos []*ltx.FileInfo) ([]*internal.ResumableReader, error) {
+	readers := make([]*internal.ResumableReader, 0, len(infos))
+	sem := semaphore.NewWeighted(restoreOpenConcurrency)
+	var wg sync.WaitGroup
+	for _, info := range infos {
+		rd := internal.NewResumableReader(ctx, r.Client, info.Level, info.MinTXID, info.MaxTXID, info.Size, nil, r.Logger())
+		readers = append(readers, rd)
+		if err := sem.Acquire(ctx, 1); err != nil {
+			wg.Wait()
+			for _, rd := range readers {
+				_ = rd.Close()
+			}
+			return nil, err
+		}
+		wg.Go(func() {
+			defer sem.Release(1)
+			r.Logger().Debug("opening ltx file for restore", "level", info.Level, "min", info.MinTXID, "max", info.MaxTXID)
+			if err := rd.Open(); err != nil {
+				r.Logger().Debug("open ltx file for restore failed; the reader retries it", "level", info.Level, "min", info.MinTXID, "max", info.MaxTXID, "error", err)
+			}
+		})
+	}
+	wg.Wait()
+	return readers, nil
 }
 
 // follow enters a continuous restore loop, polling for new LTX files and

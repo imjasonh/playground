@@ -5,16 +5,36 @@ accounts that GitHub Actions uses for every app in this project. It is
 not an app. Apply it once, before the first app. An app stack does not
 create a pool or a GitHub account.
 
-The pool trusts `.github/workflows/deploy-gcp.yml` in one repository.
+The pool trusts `.github/workflows/deploy-gcp.yml` in one repository,
+matched by name and by the numeric IDs of the repository and its owner.
 Apply from `main` uses the `github` provider. A pull request plan uses
 the `github-plan` provider. `deploy-gcp.yml` selects the GitHub
 environment `gcp`, and these accounts accept only that environment. A
 plan token cannot apply.
 
-The deploy account can change app stacks and can act as any service
-account in the project, so a new app does not need a binding for its
-runtime account. The plan account can read the state bucket and push
-images. It cannot delete images or read replica objects.
+This stack creates each app's runtime service account, listed in
+`app_service_accounts`, and the deploy account can act as those accounts
+and no others. To add an app, add its account there and apply this
+stack before the app's first deploy. The app reads the account with a
+`google_service_account` data source. The deploy account cannot create
+service accounts, set IAM on one, or change custom roles. It can grant
+and revoke only the project roles in `app_project_roles`, so it can't
+grant itself Owner or take over another account. The plan account can
+read the state bucket and push images. It cannot delete images or read
+replica objects.
+
+The stack also sets a monthly budget on the project, $25 by default
+(`monthly_budget_usd`). Billing account administrators get an email at
+50% and 90% of actual spend and when the month's forecast reaches 100%.
+Spend reaches a budget hours after the usage, so treat an alert as a
+backstop.
+
+The deploy account can also create and delete budgets on the project's
+billing account, and the plan account can view that account's budgets
+and costs. The usage-log stack uses this for a $1 monthly budget on its
+logs bucket. Re-apply this stack before that budget can be created. The
+principal that applies it needs permission to set the billing account's
+IAM policy.
 
 This stack also creates a third account, bound to a third provider in
 the same pool, so `chrome-extension.yml` can publish the Chrome
@@ -30,7 +50,7 @@ gcloud storage buckets create gs://BUCKET --location=us-central1 --uniform-bucke
 gcloud storage buckets update gs://BUCKET --versioning
 
 cd terraform
-cp terraform.tfvars.example terraform.tfvars   # set project_id, github_repository, and state_bucket
+cp terraform.tfvars.example terraform.tfvars   # set project_id, the github_repository values, and state_bucket
 tofu init -backend-config="bucket=BUCKET"
 tofu apply
 ```

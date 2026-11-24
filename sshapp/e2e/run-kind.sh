@@ -155,7 +155,15 @@ fi
 
 echo "::group::Create KinD cluster ${CLUSTER_NAME}"
 if ! kind get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}"; then
-  kind create cluster --name "${CLUSTER_NAME}"
+  # kube-proxy's nftables mode works on kernels without the iptables
+  # statistic match, which iptables mode needs for Services with more than
+  # one endpoint. The kube and git-k8s kind clusters use the same setting.
+  kind create cluster --name "${CLUSTER_NAME}" --config - <<EOF
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  kubeProxyMode: nftables
+EOF
   KIND_CREATED=1
 else
   echo "Reusing existing cluster ${CLUSTER_NAME}"
@@ -198,11 +206,27 @@ sed \
   "${ROOT}/e2e/manifests/sshapp.yaml" \
   | kubectl --context "kind-${CLUSTER_NAME}" apply -f -
 
+# The mux's in-cluster dial of the Service ClusterIP times out on the
+# current GitHub-hosted runner (dial tcp 10.96.0.1:443: i/o timeout), so
+# scale never runs and hello stays at zero replicas. Point that dial at
+# the node's apiserver. Kind includes this address on the apiserver certificate.
+node_ip="$(kubectl --context "kind-${CLUSTER_NAME}" get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')"
+if [[ -z "${node_ip}" ]]; then
+  echo "kind node has no InternalIP" >&2
+  exit 1
+fi
+echo "mux apiserver address: ${node_ip}:6443"
+kubectl --context "kind-${CLUSTER_NAME}" -n sshapps set env deployment/ssh-mux \
+  KUBERNETES_SERVICE_HOST="${node_ip}" \
+  KUBERNETES_SERVICE_PORT=6443
+
 kubectl --context "kind-${CLUSTER_NAME}" -n sshapps rollout status deployment/ssh-mux --timeout=180s
 echo "::endgroup::"
 
 dump_debug() {
   kubectl --context "kind-${CLUSTER_NAME}" -n sshapps get pods,deploy,svc -o wide >&2 || true
+  kubectl --context "kind-${CLUSTER_NAME}" -n kube-system get pods -o wide >&2 || true
+  kubectl --context "kind-${CLUSTER_NAME}" -n kube-system logs -l k8s-app=kube-proxy --tail=40 >&2 || true
   kubectl --context "kind-${CLUSTER_NAME}" -n sshapps logs deploy/ssh-mux --tail=120 >&2 || true
   kubectl --context "kind-${CLUSTER_NAME}" -n sshapps logs deploy/hello --tail=80 >&2 || true
   kubectl --context "kind-${CLUSTER_NAME}" -n sshapps logs deploy/chess --tail=80 >&2 || true
@@ -214,9 +238,9 @@ expect_greeting() {
   local out="" attempt
   for attempt in 1 2 3 4 5 6 7 8; do
     out="$("$@" 2>"${WORKDIR}/ssh-stderr.txt" || true)"
-    echo "${label} attempt ${attempt}: ${out}"
+    echo "${label} attempt ${attempt}: ${out}" >&2
     if [[ -s "${WORKDIR}/ssh-stderr.txt" ]]; then
-      echo "${label} stderr: $(cat "${WORKDIR}/ssh-stderr.txt")"
+      echo "${label} stderr: $(cat "${WORKDIR}/ssh-stderr.txt")" >&2
     fi
     if grep -q 'hello,' <<<"${out}"; then
       printf '%s\n' "${out}"

@@ -1,0 +1,31 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "e2e_test",
+    srcs = [
+        "kind_test.go",
+        "rbe_e2e_test.go",
+    ],
+    deps = [
+        "//api/worker/v1:worker",
+        "//internal/cache",
+        "//internal/digest",
+        "//internal/remote",
+        "//internal/tenant",
+        "//internal/tree",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/asset/v1:asset",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/execution/v2:execution",
+        "@com_github_bazelbuild_remote_apis//build/bazel/remote/logstream/v1:logstream",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_klauspost_compress//zstd",
+        "@com_github_sethvargo_go_envconfig//:go-envconfig",
+        "@com_google_cloud_go_longrunning//autogen/longrunningpb",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/durationpb",
+    ],
+)
