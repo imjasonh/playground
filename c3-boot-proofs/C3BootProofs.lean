@@ -556,3 +556,7 @@ import C3BootProofs.Models.P384Model
 import C3BootProofs.Models.EcdsaRcb
 import C3BootProofs.Models.P256Rcb
 import C3BootProofs.Models.P384Rcb
+import C3BootProofs.Models.EcdsaDbl
+import C3BootProofs.Models.P256BarrettChain
+import C3BootProofs.Models.P256Barrett
+import C3BootProofs.Models.EcdsaModels
