@@ -580,3 +580,10 @@ import C3BootProofs.Models.PrimeLucas
 import C3BootProofs.Models.PrimeCerts
 import C3BootProofs.Models.PrimeCurves
 import C3BootProofs.Models.EcdsaClosed
+import C3BootProofs.Models.Ed25519Fermat
+import C3BootProofs.Models.Ed25519Laws
+import C3BootProofs.Models.Ed25519FeArith
+import C3BootProofs.Models.Ed25519FormulasAlg
+import C3BootProofs.Models.Ed25519Formulas
+import C3BootProofs.Models.Ed25519RecoverX
+import C3BootProofs.Models.Ed25519SvModelPrime

@@ -85,14 +85,13 @@ def edPm1Bytes : List Nat :=
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f]
 
 /-- The constants `ed25519_verify` reads, as memory `M` holds them: `L` and
-`p` as 32 little-endian bytes, the encodings of `y = 1` and `y = p - 1` in
-either order, the image's 40-byte field elements `1`, `d`, `sqrt(-1)`, and `2d`, and the
-base point's extended coordinates. -/
+`p` as 32 little-endian bytes, the encodings of `y = 1` and `y = p - 1`, the
+image's 40-byte field elements `1`, `d`, `sqrt(-1)`, and `2d`, and the base
+point's extended coordinates. -/
 structure EdImage (M : Word → BitVec 8) : Prop where
   order : memBytes M (BitVec.ofNat 32 0x3FCC4308) 32 = edLBytes
   prime : memBytes M (BitVec.ofNat 32 0x3FCC4328) 32 = edPBytes
-  xzero : (memBytes M (BitVec.ofNat 32 0x3FCC42E8) 32 = edOneBytes ∧ memBytes M (BitVec.ofNat 32 0x3FCC4388) 32 = edPm1Bytes) ∨
-    (memBytes M (BitVec.ofNat 32 0x3FCC42E8) 32 = edPm1Bytes ∧ memBytes M (BitVec.ofNat 32 0x3FCC4388) 32 = edOneBytes)
+  xzero : memBytes M (BitVec.ofNat 32 0x3FCC42E8) 32 = edOneBytes ∧ memBytes M (BitVec.ofNat 32 0x3FCC4388) 32 = edPm1Bytes
   one : memBytes M (BitVec.ofNat 32 edOneAddress) 40 = edOneData
   d : memBytes M (BitVec.ofNat 32 edDAddress) 40 = edDData
   sqrtM1 : memBytes M (BitVec.ofNat 32 edSqrtM1Address) 40 = edSqrtM1Data
@@ -132,13 +131,9 @@ theorem EdImage.primeN (I : EdImage M) : Ed25519.leNum (memBytes M (BitVec.ofNat
   rw [I.prime]; decide
 
 theorem EdImage.xzeroN (I : EdImage M) :
-    (Ed25519.leNum (memBytes M (BitVec.ofNat 32 0x3FCC42E8) 32) = 1 ∧
-      Ed25519.leNum (memBytes M (BitVec.ofNat 32 0x3FCC4388) 32) = Ed25519.p - 1) ∨
-    (Ed25519.leNum (memBytes M (BitVec.ofNat 32 0x3FCC42E8) 32) = Ed25519.p - 1 ∧
-      Ed25519.leNum (memBytes M (BitVec.ofNat 32 0x3FCC4388) 32) = 1) := by
-  rcases I.xzero with ⟨e1, e2⟩ | ⟨e1, e2⟩
-  · left; rw [e1, e2]; decide
-  · right; rw [e1, e2]; decide
+    Ed25519.leNum (memBytes M (BitVec.ofNat 32 0x3FCC42E8) 32) = 1 ∧
+      Ed25519.leNum (memBytes M (BitVec.ofNat 32 0x3FCC4388) 32) = Ed25519.p - 1 := by
+  rw [I.xzero.1, I.xzero.2]; decide
 
 theorem EdImage.oneOK (I : EdImage M) :
     Lim (2 ^ 26) (feW M (BitVec.ofNat 32 edOneAddress)) ∧ fv (feW M (BitVec.ofNat 32 edOneAddress)) = 1 := by
@@ -267,11 +262,10 @@ theorem pk_point (a : Word) (h : evPk M (memBytes M a 32) = true) :
             clearTop (memBytes M a 32) = memBytes M (BitVec.ofNat 32 0x3FCC4388) 32 := by
           have hc := byt_clearTop hb hB
           have hl : (clearTop (memBytes M a 32)).length = 32 := by rw [clearTop_length, hb]
-          rcases I.xzeroN with ⟨e1, e2⟩ | ⟨e1, e2⟩ <;> rcases hy1 with y1 | y1
+          obtain ⟨e1, e2⟩ := I.xzeroN
+          rcases hy1 with y1 | y1
           · exact Or.inl (eq_of_leNum hc (byt_memBytes _ _ _) hl (memBytes_length _ _ _) (by rw [hct, y1, e1]))
           · exact Or.inr (eq_of_leNum hc (byt_memBytes _ _ _) hl (memBytes_length _ _ _) (by rw [hct, y1, e2]))
-          · exact Or.inr (eq_of_leNum hc (byt_memBytes _ _ _) hl (memBytes_length _ _ _) (by rw [hct, y1, e2]))
-          · exact Or.inl (eq_of_leNum hc (byt_memBytes _ _ _) hl (memBytes_length _ _ _) (by rw [hct, y1, e1]))
         rw [decide_eq_true h128, Bool.true_and] at hnot
         rcases hE with hE | hE
         · rw [decide_eq_true hE, Bool.true_or] at hnot; exact absurd hnot (by decide)
