@@ -2,26 +2,24 @@
 //! outcome.
 //!
 //! The slot holds a 40-byte image signed by fakestore
-//! (`testdata/mutation/`), an empty chain, and a level 0 trust-root blob for
-//! fakestore's trusted root, signed by the development genesis keys. Every
+//! (`testdata/mutation/`) and a TUF part with no new roots, a `targets.json`
+//! from the development TUF repository, and fakestore's trusted root. Every
 //! byte the manifest points to is changed once, flipping one bit.
 //!
-//! A changed manifest, image, chain, or blob must be rejected. A changed
+//! A changed manifest, image, or TUF part must be rejected. A changed
 //! bundle must be rejected, except inside the timestamp authority's embedded
 //! certificate, which nothing reads; a change there must give the same
 //! result.
 
 use std::fs;
+use std::path::Path;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 
-use c3_ota::blob::TrustRootSpec;
-use c3_ota::blob::chain;
-use c3_ota::blob::signed_blob;
 use c3_ota::container::from_bundle_json;
-use c3_ota::keys::read_signing_key;
 use c3_ota::slot;
+use c3_ota::tuf;
 
 const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../testdata");
 
@@ -30,26 +28,20 @@ fn valid_slot() -> Vec<u8> {
     let bundle_json = fs::read_to_string(format!("{ROOT}/mutation/bundle.sigstore.json")).unwrap();
     let root_json = fs::read_to_string(format!("{ROOT}/mutation/trusted_root.json")).unwrap();
     let container = from_bundle_json(&bundle_json, Some(&c3_crypto::sha256(&image))).unwrap();
-    let policy = [
-        "https://token.actions.githubusercontent.com".into(),
-        "https://github.com/imjasonh/playground/.github/workflows/c3-release.yml@refs/heads/main"
-            .into(),
-        "1234".into(),
-        "5678".into(),
-        "push".into(),
-    ];
-    let spec = TrustRootSpec::from_trusted_root(&root_json, 0, policy).unwrap();
-    let k1 = read_signing_key(&format!("{ROOT}/keys/genesis-dev-1.seed")).unwrap();
-    let k2 = read_signing_key(&format!("{ROOT}/keys/genesis-dev-2.seed")).unwrap();
-    let blob = signed_blob(&spec, &[(0, &k1), (1, &k2)]).unwrap();
-    slot::assemble(&image, &container, &chain(&[]).unwrap(), &blob).unwrap()
+    let keys = tuf::DevKeys::read(Path::new(&format!("{ROOT}/keys"))).unwrap();
+    let targets = keys
+        .targets(1, root_json.as_bytes(), tuf::DEV_EXPIRES)
+        .unwrap();
+    let tuf_part = tuf::package(&[], &targets, root_json.as_bytes()).unwrap();
+    slot::assemble(&image, &container, &tuf_part).unwrap()
 }
 
-fn genesis() -> [u8; 128] {
-    fs::read(format!("{ROOT}/keys/genesis-dev.pub"))
-        .unwrap()
-        .try_into()
-        .unwrap()
+fn pinned() -> Vec<u8> {
+    fs::read(format!("{ROOT}/keys/tuf-dev-root.json")).unwrap()
+}
+
+fn policy() -> [String; 5] {
+    c3_ota::policy::parse(&fs::read_to_string(format!("{ROOT}/keys/dev-policy")).unwrap()).unwrap()
 }
 
 /// The slot range of the timestamp authority's certificate, which the
@@ -83,8 +75,9 @@ fn embedded_tsa_certificate(
 #[test]
 fn no_single_byte_change_alters_the_outcome() {
     let slot_bytes = valid_slot();
-    let genesis = genesis();
-    let expected = slot::verify(&slot_bytes, &genesis, 0).expect("the unchanged slot is accepted");
+    let (pinned, policy) = (pinned(), policy());
+    let expected =
+        slot::verify(&slot_bytes, &pinned, &policy, 0).expect("the unchanged slot is accepted");
 
     let manifest =
         c3_verify::manifest::parse(&slot_bytes[..c3_verify::manifest::MANIFEST_LEN]).unwrap();
@@ -93,8 +86,7 @@ fn no_single_byte_change_alters_the_outcome() {
         ("manifest", 0..c3_verify::manifest::MANIFEST_LEN, false),
         ("image", range(manifest.image), false),
         ("bundle", range(manifest.bundle), true),
-        ("chain", range(manifest.chain), false),
-        ("blob", range(manifest.blob), false),
+        ("tuf", range(manifest.tuf), false),
     ];
 
     let mut changed = slot_bytes.clone();
@@ -105,7 +97,7 @@ fn no_single_byte_change_alters_the_outcome() {
         for at in bytes {
             let bit = 1u8 << (at % 8);
             changed[at] ^= bit;
-            match slot::verify(&changed, &genesis, 0) {
+            match slot::verify(&changed, &pinned, &policy, 0) {
                 Err(_) => {}
                 Ok(got) if may_ignore && got == expected => ignored.push(at),
                 Ok(got) => failures.push(format!("{name} byte {at:#x} bit {bit:#04x}: {got:?}")),
@@ -122,7 +114,7 @@ fn no_single_byte_change_alters_the_outcome() {
     );
     // The only bytes nothing checks are the timestamp authority's embedded
     // certificate: the device finds the signer by the issuer and serial
-    // number in the blob and verifies with the blob's key.
+    // number in the trusted root and verifies with the trusted root's key.
     let tsa_cert = embedded_tsa_certificate(&slot_bytes, range(manifest.bundle));
     assert!(
         ignored.iter().all(|at| tsa_cert.contains(at)),
@@ -144,7 +136,7 @@ fn no_single_byte_change_alters_the_outcome() {
     for at in padding {
         changed[at] ^= 0x01;
         assert_eq!(
-            slot::verify(&changed, &genesis, 0),
+            slot::verify(&changed, &pinned, &policy, 0),
             Ok(expected),
             "padding byte {at:#x}"
         );

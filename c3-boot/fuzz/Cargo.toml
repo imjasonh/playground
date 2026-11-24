@@ -25,13 +25,6 @@ doc = false
 bench = false
 
 [[bin]]
-name = "trust"
-path = "fuzz_targets/trust.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
 name = "sigstore"
 path = "fuzz_targets/sigstore.rs"
 test = false

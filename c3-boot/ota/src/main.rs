@@ -6,38 +6,38 @@ use std::collections::HashMap;
 use std::fs;
 use std::process::ExitCode;
 
-use c3_ota::blob;
+use std::path::Path;
+
 use c3_ota::container;
 use c3_ota::image;
-use c3_ota::keys;
 use c3_ota::slot;
+use c3_ota::trusted;
 use c3_ota::tuf;
 use c3_verify::bootstate;
 
 const USAGE: &str = "usage: c3-ota <command> [--flag value]...
 
 commands:
-  pubkey --seed FILE                         print a seed's public key (hex)
   pack --elf FILE --security-version N --out FILE
   bootloader-image --elf FILE --out FILE
   container --bundle FILE [--image FILE] --out FILE
-  link --level N --keys HEX,HEX --signers I=SEED,I=SEED --out FILE
-  chain [--links FILE,FILE] --out FILE
-  blob --trusted-root FILE --level N [--sequence N] --issuer S
-       --build-signer-uri S --repository-id S --owner-id S --trigger S
-       --signers I=SEED,I=SEED --out FILE
-  describe --trusted-root FILE                print what a blob would trust
-  slot --image FILE --bundle FILE --chain FILE --blob FILE --out FILE
-  verify --slot FILE --genesis FILE [--level N]
+  describe --trusted-root FILE               print what a device would trust
+  slot --image FILE --bundle FILE --tuf FILE --out FILE
+  verify --slot FILE --pinned FILE POLICY [--level N]
   record --preferred a|b [--trial a|b --boots N] [--confirmed a,b]
          [--generation N] --out FILE
   flash --bootloader FILE [--record FILE] [--slot-a FILE] [--slot-b FILE] --out FILE
   tuf-root --root FILE --out FILE            canonical root to pin in the bootloader
   tuf-package [--roots FILE,FILE] --targets FILE --trusted-root FILE --out FILE
   tuf-verify --pinned FILE --tuf FILE
-  tuf-accept --image FILE --bundle FILE --tuf FILE --pinned FILE --issuer S
-             --build-signer-uri S --repository-id S --owner-id S --trigger S
-             [--level N]";
+  tuf-accept --image FILE --bundle FILE --tuf FILE --pinned FILE POLICY
+             [--level N]
+  tuf-dev-root --keys DIR --version 1|2 --out FILE
+  tuf-dev-targets --keys DIR --root-version 1|2 --trusted-root FILE
+                  [--expires TIME] --out FILE
+
+POLICY is --policy FILE, or --issuer S --build-signer-uri S
+--repository-id S --owner-id S --trigger S.";
 
 struct Args {
     flags: HashMap<String, String>,
@@ -85,24 +85,13 @@ impl Args {
     }
 }
 
-fn signers(spec: &str) -> Result<Vec<(u8, ed25519_dalek::SigningKey)>, String> {
-    spec.split(',')
-        .map(|item| {
-            let (index, path) = item.split_once('=').ok_or("signers look like I=SEEDFILE")?;
-            let index: u8 = index.parse().map_err(|_| "signer index isn't a number")?;
-            Ok((index, keys::read_signing_key(path)?))
-        })
-        .collect()
-}
-
 fn policy(a: &Args) -> Result<[String; 5], String> {
-    Ok([
-        a.get("issuer")?.to_string(),
-        a.get("build-signer-uri")?.to_string(),
-        a.get("repository-id")?.to_string(),
-        a.get("owner-id")?.to_string(),
-        a.get("trigger")?.to_string(),
-    ])
+    if a.opt("policy").is_some() {
+        let text = String::from_utf8(a.read("policy")?).map_err(|e| e.to_string())?;
+        return c3_ota::policy::parse(&text);
+    }
+    let [i, b, r, o, t] = c3_ota::policy::NAMES.map(|n| a.get(n).map(str::to_string));
+    Ok([i?, b?, r?, o?, t?])
 }
 
 fn level(a: &Args) -> Result<u8, String> {
@@ -123,17 +112,6 @@ fn slot_name(text: &str) -> Result<bootstate::Slot, String> {
 
 fn run(command: &str, a: &Args) -> Result<(), String> {
     match command {
-        "pubkey" => {
-            let key = keys::read_signing_key(a.get("seed")?)?;
-            let hex: String = key
-                .verifying_key()
-                .to_bytes()
-                .iter()
-                .map(|b| format!("{b:02x}"))
-                .collect();
-            println!("{hex}");
-            Ok(())
-        }
         "pack" => a.write(&image::pack(
             &a.read("elf")?,
             a.number("security-version")?,
@@ -147,64 +125,20 @@ fn run(command: &str, a: &Args) -> Result<(), String> {
             };
             a.write(&container::from_bundle_json(&json, digest.as_ref())?)
         }
-        "link" => {
-            let keys: Vec<[u8; 32]> = a
-                .get("keys")?
-                .split(',')
-                .map(|k| {
-                    let mut out = [0u8; 32];
-                    for (i, b) in out.iter_mut().enumerate() {
-                        *b = u8::from_str_radix(k.get(2 * i..2 * i + 2).ok_or("short key")?, 16)
-                            .map_err(|e| e.to_string())?;
-                    }
-                    Ok(out)
-                })
-                .collect::<Result<_, String>>()?;
-            let s = signers(a.get("signers")?)?;
-            let refs: Vec<_> = s.iter().map(|(i, k)| (*i, k)).collect();
-            a.write(&blob::signed_link(a.number("level")?, &keys, &refs)?)
-        }
-        "chain" => {
-            let links = match a.opt("links") {
-                Some(list) => list
-                    .split(',')
-                    .map(|p| fs::read(p).map_err(|e| format!("{p}: {e}")))
-                    .collect::<Result<Vec<_>, _>>()?,
-                None => Vec::new(),
-            };
-            a.write(&blob::chain(&links)?)
-        }
-        "blob" => {
-            let json = String::from_utf8(a.read("trusted-root")?).map_err(|e| e.to_string())?;
-            let policy = policy(a)?;
-            let mut spec =
-                blob::TrustRootSpec::from_trusted_root(&json, a.number("level")?, policy)?;
-            if a.opt("sequence").is_some() {
-                spec.sequence = a.number("sequence")?;
-            }
-            let s = signers(a.get("signers")?)?;
-            let refs: Vec<_> = s.iter().map(|(i, k)| (*i, k)).collect();
-            a.write(&blob::signed_blob(&spec, &refs)?)
-        }
         "describe" => {
             let json = String::from_utf8(a.read("trusted-root")?).map_err(|e| e.to_string())?;
-            let policy = Default::default();
-            let spec = blob::TrustRootSpec::from_trusted_root(&json, 0, policy)?;
+            let spec = trusted::TrustRootSpec::from_trusted_root(&json, Default::default())?;
             print!("{}", spec.describe()?);
             Ok(())
         }
         "slot" => a.write(&slot::assemble(
             &a.read("image")?,
             &a.read("bundle")?,
-            &a.read("chain")?,
-            &a.read("blob")?,
+            &a.read("tuf")?,
         )?),
         "verify" => {
-            let genesis: [u8; 128] = a
-                .read("genesis")?
-                .try_into()
-                .map_err(|_| "genesis file isn't 128 bytes")?;
-            let accepted = slot::verify(&a.read("slot")?, &genesis, level(a)?)?;
+            let accepted =
+                slot::verify(&a.read("slot")?, &a.read("pinned")?, &policy(a)?, level(a)?)?;
             println!(
                 "accepted: level {}, entry {:#x}, signed at {}",
                 accepted.level, accepted.header.entry_point, accepted.signed_time
@@ -286,6 +220,18 @@ fn run(command: &str, a: &Args) -> Result<(), String> {
                 accepted.level, accepted.header.entry_point, accepted.signed_time
             );
             Ok(())
+        }
+        "tuf-dev-root" => {
+            let keys = tuf::DevKeys::read(Path::new(a.get("keys")?))?;
+            a.write(&keys.root(a.number("version")?)?)
+        }
+        "tuf-dev-targets" => {
+            let keys = tuf::DevKeys::read(Path::new(a.get("keys")?))?;
+            a.write(&keys.targets(
+                a.number("root-version")?,
+                &a.read("trusted-root")?,
+                a.opt("expires").unwrap_or(tuf::DEV_EXPIRES),
+            )?)
         }
         "help" | "-h" | "--help" => {
             println!("{USAGE}");

@@ -5,11 +5,11 @@
 //! it may use `std` and parsing libraries. Nothing it produces is trusted by
 //! the device without the device's own checks.
 
-pub mod blob;
 pub mod container;
 pub mod image;
-pub mod keys;
+pub mod policy;
 pub mod slot;
 pub mod time;
+pub mod trusted;
 pub mod tuf;
 pub mod tuf_cases;

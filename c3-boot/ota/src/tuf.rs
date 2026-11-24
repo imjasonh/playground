@@ -1,5 +1,5 @@
 //! Packages Sigstore's TUF metadata for a slot, checks it with the device's
-//! code, and signs synthetic metadata for tests.
+//! code, and signs metadata for the development repository and for tests.
 //!
 //! Sigstore publishes its metadata pretty-printed. The device reads only
 //! canonical JSON, so [`package`] and [`pinned_root`] re-encode each
@@ -8,15 +8,16 @@
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use c3_verify::accept::Accepted;
 use c3_verify::trustroot::Policy;
 use c3_verify::tuf::TufParts;
 use c3_verify::tuf::Verified;
+use c3_verify::tuf_slot::Accepted;
 use c3_verify::tuf_slot::TufSlotParts;
 use ed25519_dalek::Signer;
 use p256::ecdsa::signature::hazmat::PrehashSigner;
 use serde_json::Value;
 use serde_json::json;
+use std::path::Path;
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -220,6 +221,18 @@ impl TestKey {
         TestKey::Ed25519(ed25519_dalek::SigningKey::from_bytes(&[seed; 32]))
     }
 
+    /// A P-256 key from a file that holds its 32-byte scalar in hex.
+    pub fn read_p256(path: &Path) -> Result<Self, String> {
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let text = text.trim();
+        if text.len() != 64 || !text.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(format!("{}: a seed is 64 hex characters", path.display()));
+        }
+        p256::ecdsa::SigningKey::from_slice(&hex_bytes(text))
+            .map(TestKey::P256)
+            .map_err(|e| format!("{}: {e}", path.display()))
+    }
+
     /// The key's TUF key object.
     pub fn key_json(&self) -> Value {
         let (keytype, scheme, public) = match self {
@@ -337,4 +350,93 @@ pub fn sign_metadata(signed: &Value, signers: &[&TestKey]) -> Result<Vec<u8>, St
         .map(|k| json!({"keyid": k.keyid(), "sig": k.sign(&message)}))
         .collect();
     canonical_value(&json!({"signatures": signatures, "signed": signed}))
+}
+
+/// When the development repository's metadata expires.
+pub const DEV_EXPIRES: &str = "2099-12-31T23:59:59Z";
+
+/// The keys of the development TUF repository, which stands in for
+/// Sigstore's in development builds and QEMU runs. Their seeds are public.
+pub struct DevKeys {
+    root: [TestKey; 3],
+    targets: [TestKey; 2],
+}
+
+impl DevKeys {
+    /// Reads `tuf-dev-root-{1,2,3}.seed` and `tuf-dev-targets-{1,2}.seed`
+    /// from `dir`.
+    pub fn read(dir: &Path) -> Result<Self, String> {
+        let key = |name: &str| TestKey::read_p256(&dir.join(format!("tuf-dev-{name}.seed")));
+        Ok(DevKeys {
+            root: [key("root-1")?, key("root-2")?, key("root-3")?],
+            targets: [key("targets-1")?, key("targets-2")?],
+        })
+    }
+
+    fn targets_key(&self, root_version: u64) -> Result<&TestKey, String> {
+        match root_version {
+            1 => Ok(&self.targets[0]),
+            2 => Ok(&self.targets[1]),
+            _ => Err(format!(
+                "the development roots are versions 1 and 2, not {root_version}"
+            )),
+        }
+    }
+
+    /// Root version 1 or 2. Both name the three root keys with threshold
+    /// 2 and are signed by root keys 1 and 2. Version 1 trusts targets key
+    /// 1, and version 2 rotates to targets key 2.
+    pub fn root(&self, version: u64) -> Result<Vec<u8>, String> {
+        let root: Vec<&TestKey> = self.root.iter().collect();
+        let signed = root_signed(
+            version,
+            DEV_EXPIRES,
+            (&root, 2),
+            (&[self.targets_key(version)?], 1),
+        );
+        sign_metadata(&signed, &root[..2])
+    }
+
+    /// A `targets.json` that lists `trusted_root`, signed by the targets key
+    /// that root `root_version` trusts.
+    pub fn targets(
+        &self,
+        root_version: u64,
+        trusted_root: &[u8],
+        expires: &str,
+    ) -> Result<Vec<u8>, String> {
+        let signed = targets_signed(1, expires, trusted_root);
+        sign_metadata(&signed, &[self.targets_key(root_version)?])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const KEYS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../testdata/keys");
+
+    #[test]
+    fn the_committed_development_root_is_current() {
+        let keys = DevKeys::read(Path::new(KEYS)).unwrap();
+        let committed = std::fs::read(Path::new(KEYS).join("tuf-dev-root.json")).unwrap();
+        assert_eq!(keys.root(1).unwrap(), committed, "run c3-ota tuf-dev-root");
+    }
+
+    #[test]
+    fn the_development_repository_rotates_its_targets_key() {
+        let keys = DevKeys::read(Path::new(KEYS)).unwrap();
+        let pinned = keys.root(1).unwrap();
+        let trusted = include_bytes!("../../release/trusted_root.json");
+        let v1 = keys.targets(1, trusted, DEV_EXPIRES).unwrap();
+        let v2 = keys.targets(2, trusted, DEV_EXPIRES).unwrap();
+        let root2 = keys.root(2).unwrap();
+        let check = |roots: &[Vec<u8>], targets: &[u8]| {
+            verify(&pinned, &container(roots, targets, trusted)).map(|v| v.root_version)
+        };
+        assert_eq!(check(&[], &v1), Ok(1));
+        assert_eq!(check(std::slice::from_ref(&root2), &v2), Ok(2));
+        assert_eq!(check(&[], &v2), Err("Threshold".into()));
+        assert_eq!(check(&[root2], &v1), Err("Threshold".into()));
+    }
 }

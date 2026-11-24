@@ -1,8 +1,8 @@
 //! Checks every TUF case against its expected verdict, and checks that the
-//! device reads the same keys from each trusted root as the host's blob
-//! builder.
+//! device reads the same keys from each trusted root as the host's
+//! independent reader.
 
-use c3_ota::blob::TrustRootSpec;
+use c3_ota::trusted::TrustRootSpec;
 use c3_ota::tuf_cases::Input;
 use c3_ota::tuf_cases::cases;
 
@@ -35,7 +35,7 @@ fn real_chain_reaches_root_16() {
 }
 
 #[test]
-fn device_reads_the_keys_the_blob_builder_reads() {
+fn device_reads_the_keys_the_host_reads() {
     let mut compared = 0;
     for case in cases() {
         let Input::Trusted { json } = &case.input else {
@@ -44,10 +44,9 @@ fn device_reads_the_keys_the_blob_builder_reads() {
         if case.expect != Some(true) {
             continue;
         }
-        // The blob builder rejects key types that the device skips.
+        // The host's reader rejects key types that the device skips.
         let Ok(spec) = TrustRootSpec::from_trusted_root(
             std::str::from_utf8(json).unwrap(),
-            0,
             Default::default(),
         ) else {
             continue;

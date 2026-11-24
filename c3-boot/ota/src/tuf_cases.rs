@@ -8,9 +8,18 @@
 //! metadata around the fakestore release in `testdata/mutation/`.
 
 use std::fs;
+use std::str::FromStr;
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use serde_json::Value;
 use serde_json::json;
+use x509_cert::Certificate;
+use x509_cert::der::Decode;
+use x509_cert::der::Encode;
+use x509_cert::der::asn1::BitString;
+use x509_cert::name::Name;
+use x509_cert::serial_number::SerialNumber;
 
 use crate::tuf::TestKey;
 use crate::tuf::canonical;
@@ -343,6 +352,81 @@ fn real_cases(cases: &mut Vec<Case>) {
             let input = Input::Trusted { json };
             cases.push(case(&format!("trusted_conformance_{name}"), input, true));
         }
+    }
+}
+
+/// The chain `entry` holds, with its first certificate's key replaced by
+/// the P-384 key from `seed` and, when `subject` is set, its subject
+/// replaced. The certificate's signature no longer matches, which nothing
+/// in a trusted root checks.
+fn rekeyed(entry: &Value, seed: u8, subject: Option<&str>, serial: Option<u8>) -> Value {
+    let mut entry = entry.clone();
+    let raw = &mut entry["certChain"]["certificates"][0]["rawBytes"];
+    let der = STANDARD
+        .decode(raw.as_str().unwrap_or_default())
+        .expect("base64");
+    let mut cert = Certificate::from_der(&der).expect("certificate");
+    let TestKey::P384(key) = TestKey::p384(seed) else {
+        unreachable!("p384 makes a P-384 key");
+    };
+    let point = key.verifying_key().to_sec1_point(false);
+    let tbs = &mut cert.tbs_certificate;
+    tbs.subject_public_key_info.subject_public_key =
+        BitString::from_bytes(point.as_bytes()).expect("bit string");
+    if let Some(s) = subject {
+        tbs.subject = Name::from_str(s).expect("name");
+    }
+    if let Some(n) = serial {
+        tbs.serial_number = SerialNumber::new(&[n]).expect("serial");
+    }
+    *raw = json!(STANDARD.encode(cert.to_der().expect("encodes")));
+    entry
+}
+
+/// Cases at each list's limit in `c3_verify::trustroot` and one past it.
+fn cap_cases(cases: &mut Vec<Case>) {
+    use c3_verify::trustroot::MAX_FULCIO;
+    use c3_verify::trustroot::MAX_LOGS;
+    use c3_verify::trustroot::MAX_TSAS;
+    for (n, ok) in [(MAX_FULCIO, true), (MAX_FULCIO + 1, false)] {
+        cases.push(edit_trusted(&format!("ca_{n}"), ok, |v| {
+            let ca = v["certificateAuthorities"][1].clone();
+            v["certificateAuthorities"] = (0..n)
+                .map(|i| {
+                    let subject = format!("CN=intermediate-{i},O=sigstore.dev");
+                    rekeyed(&ca, 10 + i as u8, Some(&subject), None)
+                })
+                .collect();
+        }));
+    }
+    for (n, ok) in [(MAX_LOGS, true), (MAX_LOGS + 1, false)] {
+        cases.push(edit_trusted(&format!("log_{n}"), ok, |v| {
+            let log = v["tlogs"][1].clone();
+            let more: Vec<Value> = (0..n)
+                .map(|i| {
+                    let TestKey::Ed25519(key) = TestKey::ed25519(40 + i as u8) else {
+                        unreachable!("ed25519 makes an Ed25519 key");
+                    };
+                    let mut spki = vec![
+                        0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+                    ];
+                    spki.extend_from_slice(&key.verifying_key().to_bytes());
+                    let mut entry = log.clone();
+                    entry["baseUrl"] = json!(format!("https://log{i}.example.com"));
+                    entry["publicKey"]["rawBytes"] = json!(STANDARD.encode(spki));
+                    entry
+                })
+                .collect();
+            v["tlogs"] = std::iter::once(v["tlogs"][0].clone()).chain(more).collect();
+        }));
+    }
+    for (n, ok) in [(MAX_TSAS, true), (MAX_TSAS + 1, false)] {
+        cases.push(edit_trusted(&format!("tsa_{n}"), ok, |v| {
+            let tsa = v["timestampAuthorities"][0].clone();
+            v["timestampAuthorities"] = (0..n)
+                .map(|i| rekeyed(&tsa, 70 + i as u8, None, Some(1 + i as u8)))
+                .collect();
+        }));
     }
 }
 
@@ -922,6 +1006,7 @@ pub fn cases() -> Vec<Case> {
     trusted_cases(&mut cases);
     synthetic_cases(&mut cases);
     accept_cases(&mut cases);
+    cap_cases(&mut cases);
     cases
 }
 

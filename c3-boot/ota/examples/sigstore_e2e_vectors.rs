@@ -3,9 +3,9 @@
 //! with the result. `c3-boot-proofs`'s `sigstore-check` reads the same
 //! lines, runs the Lean specification, and must print identical lines.
 //!
-//! Each case's trusted root becomes a trust-root blob signed with the
-//! development genesis keys, with the conformance beacon's identity as the
-//! policy, as `tests/conformance.rs` builds it. The lines are:
+//! Each case's trusted root becomes the device's trust root, with the
+//! conformance beacon's identity as the policy, as `tests/conformance.rs`
+//! builds it. The lines are:
 //!
 //! - `checkpoint TEXT ROOT | ok ORIGIN SIZE HASH` or `| err`, from
 //!   `checkpoint::verify`
@@ -40,11 +40,9 @@ use std::io::BufWriter;
 use std::io::Write;
 use std::path::Path;
 
-use c3_ota::blob::TrustRootSpec;
-use c3_ota::blob::Window;
-use c3_ota::blob::signed_blob;
 use c3_ota::container::from_bundle_json;
-use c3_ota::keys::read_signing_key;
+use c3_ota::trusted::TrustRootSpec;
+use c3_ota::trusted::Window;
 use c3_verify::trustroot::TrustRoot;
 
 const DATA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../testdata");
@@ -339,8 +337,6 @@ fn mutate_spec(rng: &mut Rng, spec: &TrustRootSpec) -> TrustRootSpec {
 fn main() {
     let mut out = BufWriter::new(std::io::stdout().lock());
     let mut rng = Rng(0x4532_4556_4543_5452);
-    let k1 = read_signing_key(&format!("{DATA}/keys/genesis-dev-1.seed")).unwrap();
-    let k2 = read_signing_key(&format!("{DATA}/keys/genesis-dev-2.seed")).unwrap();
     let base = Path::new(DATA).join("conformance");
     let mut dirs: Vec<_> = fs::read_dir(&base)
         .unwrap()
@@ -353,11 +349,10 @@ fn main() {
         let Ok(container) = from_bundle_json(&bundle_json, None) else {
             continue;
         };
-        let Ok(spec) = TrustRootSpec::from_trusted_root(&root_json, 0, policy()) else {
+        let Ok(spec) = TrustRootSpec::from_trusted_root(&root_json, policy()) else {
             continue;
         };
-        let blob = signed_blob(&spec, &[(0, &k1), (1, &k2)]).unwrap();
-        let root = c3_verify::trustroot::parse(&blob).unwrap();
+        let root = spec.trust_root().unwrap();
         let bundle = c3_verify::bundle::parse(&container).unwrap();
         let token = root_token(&root);
         leaf_lines(&mut out, &mut rng, bundle.leaf_certificate, &root);
@@ -418,10 +413,7 @@ fn main() {
                 }
                 _ => {
                     let s = mutate_spec(&mut rng, &spec);
-                    let Ok(b) = signed_blob(&s, &[(0, &k1), (1, &k2)]) else {
-                        continue;
-                    };
-                    if let Ok(r) = c3_verify::trustroot::parse(&b) {
+                    if let Ok(r) = s.trust_root() {
                         verify_line(&mut out, &container, &r, &digest);
                     }
                 }

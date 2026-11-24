@@ -6,16 +6,14 @@
 
 use std::sync::OnceLock;
 
-use c3_ota::blob::TrustRootSpec;
-use c3_ota::blob::signed_blob;
-use c3_ota::keys::read_signing_key;
+use c3_ota::trusted::TrustRootSpec;
 use libfuzzer_sys::fuzz_target;
 
 const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../testdata");
 
-fn blob() -> &'static [u8] {
-    static BLOB: OnceLock<Vec<u8>> = OnceLock::new();
-    BLOB.get_or_init(|| {
+fn spec() -> &'static TrustRootSpec {
+    static SPEC: OnceLock<TrustRootSpec> = OnceLock::new();
+    SPEC.get_or_init(|| {
         let json = std::fs::read_to_string(format!("{ROOT}/mutation/trusted_root.json"))
             .expect("the fixture trusted root exists");
         let policy = [
@@ -26,10 +24,7 @@ fn blob() -> &'static [u8] {
             "5678".to_string(),
             "push".to_string(),
         ];
-        let spec = TrustRootSpec::from_trusted_root(&json, 0, policy).expect("the root converts");
-        let k1 = read_signing_key(&format!("{ROOT}/keys/genesis-dev-1.seed")).expect("seed 1");
-        let k2 = read_signing_key(&format!("{ROOT}/keys/genesis-dev-2.seed")).expect("seed 2");
-        signed_blob(&spec, &[(0, &k1), (1, &k2)]).expect("the blob signs")
+        TrustRootSpec::from_trusted_root(&json, policy).expect("the root converts")
     })
 }
 
@@ -43,7 +38,7 @@ fn image_digest() -> &'static [u8; 32] {
 }
 
 fuzz_target!(|data: &[u8]| {
-    let Ok(root) = c3_verify::trustroot::parse(blob()) else {
+    let Ok(root) = spec().trust_root() else {
         return;
     };
     let Ok(bundle) = c3_verify::bundle::parse(data) else {
