@@ -157,6 +157,12 @@ jobs:
           python3 scripts/gen-p256-barrett.py
           git diff --exit-code C3BootProofs/Models/P256BarrettChain.lean
 
+      - name: Check the generated Ed25519 scalar Montgomery proof
+        working-directory: c3-boot-proofs
+        run: |
+          python3 scripts/gen-ed25519-kmont.py
+          git diff --exit-code C3BootProofs/Models/Ed25519KMont.lean
+
       - name: Check the generated primality certificates
         working-directory: c3-boot-proofs
         run: |
