@@ -12,7 +12,7 @@ use crate::gzip_bench::{
     parse_gzip_frame, ratio_milli, throughput_bps, BENCH_ITERATIONS, CORPORA,
     GZIP_BENCH_FIRMWARE_ID, MAX_CORPUS_RAW_LEN,
 };
-use crate::platform::{App, StepContext, StepOutput};
+use crate::platform::{App, RunMode, StepContext, StepOutput};
 use crate::profiler::now_us;
 use crate::protocol::AppCommandSpec;
 
@@ -273,6 +273,25 @@ pub struct GzipBenchApp {
 impl<B: Board> App<B> for GzipBenchApp {
     const APP_NAME: &'static str = "gzip-bench";
     const FIRMWARE_ID: &'static str = GZIP_BENCH_FIRMWARE_ID;
+
+    fn run_mode() -> RunMode {
+        match B::default_run_mode() {
+            RunMode::DeepSleep {
+                interval_us,
+                burst_ms,
+            } => RunMode::DeepSleep {
+                interval_us,
+                burst_ms: burst_ms.max(500),
+            },
+            RunMode::Continuous {
+                burst_ms,
+                min_step_ms,
+            } => RunMode::Continuous {
+                burst_ms: burst_ms.max(500),
+                min_step_ms,
+            },
+        }
+    }
 
     fn commands() -> Vec<AppCommandSpec> {
         vec![AppCommandSpec {

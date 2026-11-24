@@ -473,6 +473,7 @@ impl BleOtaNode {
         let device = BLEDevice::take();
         let _ = device.set_preferred_mtu(512);
         let server = device.get_server();
+        server.advertise_on_disconnect(false);
 
         let connected = Arc::new(AtomicBool::new(false));
         let last_battery_mv = Arc::new(AtomicU16::new(0));
@@ -635,6 +636,26 @@ impl BleOtaNode {
         self.app_cmd_char.lock().set_value(status.as_bytes());
     }
 
+    /// Terminate any lingering BLE connections so `CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1`
+    /// is never left occupied across bursts or BLE-quiet command runs.
+    fn disconnect_lingering_peers(&self, device: &BLEDevice) {
+        if !self.connected.load(Ordering::SeqCst) {
+            return;
+        }
+        let server = device.get_server();
+        let handles: Vec<u16> = server.connections().map(|c| c.conn_handle()).collect();
+        for handle in handles {
+            warn!("ble: terminating lingering connection handle={handle}");
+            let _ = server.disconnect(handle);
+        }
+        for _ in 0..20 {
+            if !self.connected.load(Ordering::SeqCst) {
+                break;
+            }
+            FreeRtos::delay_ms(25);
+        }
+    }
+
     /// Broadcast `metrics` inside BLE Manufacturer Specific Data (`0xFFFF`) for `burst_ms`.
     /// If an iPhone connects during that window to pull the WakeProfile/coredump or push an
     /// OTA image, stay awake (feeding the Task Watchdog) until the session finishes or times out.
@@ -644,6 +665,7 @@ impl BleOtaNode {
         update_profile_char(&self.profile_char, profile_json);
 
         let device = BLEDevice::take();
+        self.disconnect_lingering_peers(device);
         let advertising = device.get_advertising();
 
         let mfg = encode_mfg_data(metrics);
@@ -651,6 +673,7 @@ impl BleOtaNode {
         adv.name(self.board.gap_name).manufacturer_data(&mfg);
 
         let mut guard = advertising.lock();
+        let _ = guard.stop();
         guard
             .advertisement_type(ConnMode::Und)
             .scan_response(true)
@@ -696,6 +719,7 @@ impl BleOtaNode {
         }
 
         let _ = advertising.lock().stop();
+        self.disconnect_lingering_peers(device);
     }
 }
 

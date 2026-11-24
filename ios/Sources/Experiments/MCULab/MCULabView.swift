@@ -104,63 +104,71 @@ struct MCULabView: View {
 
     @ViewBuilder
     private var appCommandsPanel: some View {
-        if let sample = controller.latestSample,
-           let commands = sample.profile?.commands,
-           !commands.isEmpty
-        {
+        let deviceGroups = controller.sortedDeviceCommands
+        if !deviceGroups.isEmpty || !controller.appCommandStatus.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("App Controls")
-                        .font(.subheadline.bold())
-                    Spacer()
-                    if let app = sample.profile?.app, !app.isEmpty {
-                        Text(app)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                Text("App Controls")
+                    .font(.subheadline.bold())
 
-                ForEach(commands) { cmd in
-                    let defaultRuns = Int(max(1, cmd.defaultCount))
-                    let runsBinding = Binding<Int>(
-                        get: { commandCounts[cmd.id] ?? defaultRuns },
-                        set: { commandCounts[cmd.id] = $0 }
-                    )
-                    let currentRuns = runsBinding.wrappedValue
-                    VStack(alignment: .leading, spacing: 6) {
-                        if cmd.defaultCount > 1 {
-                            Stepper(
-                                "Runs: \(currentRuns)",
-                                value: runsBinding,
-                                in: 1...Int(MCULabProtocol.maxAppCommandCount)
-                            )
-                            .font(.subheadline)
-                            .accessibilityIdentifier("mcuLabAppCmdStepper-\(cmd.id)")
-                        }
-                        HStack(spacing: 10) {
-                            Button {
-                                controller.armAppCommand(
-                                    cmd,
-                                    count: UInt16(currentRuns),
-                                    deviceId: sample.deviceId
-                                )
-                            } label: {
-                                Label(
-                                    currentRuns > 1 ? "\(cmd.label) (×\(currentRuns))" : cmd.label,
-                                    systemImage: "play.circle.fill"
-                                )
-                                .frame(maxWidth: .infinity, minHeight: 40)
+                ForEach(deviceGroups) { group in
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text(group.deviceName)
+                                .font(.caption.bold())
+                            Spacer()
+                            if !group.app.isEmpty {
+                                Text(group.app)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(controller.otaPhase != .idle)
-                            .accessibilityIdentifier("mcuLabAppCmdButton-\(cmd.id)")
+                        }
 
-                            if controller.pendingAppCommand?.id == cmd.id {
-                                Button("Cancel", role: .cancel) {
-                                    controller.cancelAppCommand()
+                        ForEach(group.commands) { cmd in
+                            let countKey = "\(group.deviceId.uuidString):\(cmd.id)"
+                            let defaultRuns = Int(max(1, cmd.defaultCount))
+                            let runsBinding = Binding<Int>(
+                                get: { commandCounts[countKey] ?? defaultRuns },
+                                set: { commandCounts[countKey] = $0 }
+                            )
+                            let currentRuns = runsBinding.wrappedValue
+                            VStack(alignment: .leading, spacing: 6) {
+                                if cmd.defaultCount > 1 {
+                                    Stepper(
+                                        "Runs: \(currentRuns)",
+                                        value: runsBinding,
+                                        in: 1...Int(MCULabProtocol.maxAppCommandCount)
+                                    )
+                                    .font(.subheadline)
+                                    .accessibilityIdentifier("mcuLabAppCmdStepper-\(cmd.id)")
                                 }
-                                .buttonStyle(.bordered)
-                                .accessibilityIdentifier("mcuLabAppCmdCancel-\(cmd.id)")
+                                HStack(spacing: 10) {
+                                    Button {
+                                        controller.armAppCommand(
+                                            cmd,
+                                            count: UInt16(currentRuns),
+                                            deviceId: group.deviceId
+                                        )
+                                    } label: {
+                                        Label(
+                                            currentRuns > 1 ? "\(cmd.label) (×\(currentRuns))" : cmd.label,
+                                            systemImage: "play.circle.fill"
+                                        )
+                                        .frame(maxWidth: .infinity, minHeight: 40)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .disabled(controller.otaPhase != .idle)
+                                    .accessibilityIdentifier("mcuLabAppCmdButton-\(cmd.id)")
+
+                                    if controller.pendingAppCommand?.deviceId == group.deviceId,
+                                       controller.pendingAppCommand?.id == cmd.id
+                                    {
+                                        Button("Cancel", role: .cancel) {
+                                            controller.cancelAppCommand()
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .accessibilityIdentifier("mcuLabAppCmdCancel-\(cmd.id)")
+                                    }
+                                }
                             }
                         }
                     }
