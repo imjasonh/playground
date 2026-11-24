@@ -199,8 +199,8 @@ theorem PRegs.a0 {h G g0 : Fin 32 → Word} {F p : Word} {n : Nat} {c : Bool} (h
 theorem upd_ne0 {G : Fin 32 → Word} {r x : Fin 32} {v : Word} (hz : G 0 = 0) (hx : x ≠ r) : upd G r v x = G x := by
   rw [upd_app]
   rcases Nat.decEq x.val 0 with h | h
-  · rw [if_neg h, if_neg hx]
-  · rw [if_pos h, show x = 0 from Fin.ext h, hz]
+  · rw [ite_eq_right_of_eq_false _ _ (eq_false h), ite_eq_right_of_eq_false _ _ (eq_false hx)]
+  · rw [ite_eq_left_of_eq_true _ _ (eq_true h), show x = 0 from Fin.ext h, hz]
 
 section
 variable {M : Word → BitVec 8} {base : Word} {Q : Post}
@@ -362,20 +362,20 @@ theorem pa_canon (E : PaEnv M0 base s p out n g0 Mp F) {st l : Nat} (hsl : st + 
   · exfalso; (try rsimp at eb); (try simp only [ev0] at eb)
     rw [h8, nx_q0 hq0 (n := l + 1) (by omega) (by omega)] at eb; exact absurd eb (by decide)
   refine pa_1e0 (x := pb) (y := kl) (by rsimp) (by omega) (by omega)
-    (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact h18) (by (try rsimp); rw [hR.sp]; exact tkl') ?_
+    (by (try rsimp); (try simp only [ev_mv hz]); exact h18) (by (try rsimp); rw [hR.sp]; exact tkl') ?_
   refine WP.alu pa_at_1e8 ?_; wn
   refine WP.alu pa_at_1ea ?_; wn
   refine WP.callMemcmp (tb := base + 0xFFFFF372 + 0xFFFFF616 + 0xC93C)
     (p := p + BitVec.ofNat 32 st + BitVec.ofNat 32 pa) (q := p + BitVec.ofNat 32 st + BitVec.ofNat 32 kp)
     (l := min pb kl) pa_at_1ec pa_at_1f0 (by simp only [BitVec.add_assoc]; rfl)
     (even_at _ (even_at _ (even_at base E.hb _ (by decide)) _ (by decide)) _ (by decide)) (by decide)
-    hc2.get.ri.mc (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact h8)
+    hc2.get.ri.mc (by (try rsimp); (try simp only [ev0]); exact h8)
     (by (try rsimp); (try simp only [ev0]); rw [hR.sp]; exact tkq') (by (try rsimp); try rfl) (by omega)
     fun m3 hcmp => ?_
   have hcl := cmp_lt (by omega) (by omega) hcmp
   rw [kb hpab hFI2.1, kb hkk hFI2.1] at hcl
   refine pa_1f4 (b := bytesLt (slice o pa pb) (slice o kp kl)) (by rsimp)
-    (by (try rsimp); (try simp only [ev0, ev_mv hz]); rw [h18, hR.sp, tkl']; exact hcl) (fun hB h hh => ?_)
+    (by (try rsimp); (try simp only [ev_mv hz]); rw [h18, hR.sp, tkl']; exact hcl) (fun hB h hh => ?_)
     (fun hB h hh => ?_)
   · have hk' : keysCanon o (k + 1) (some (slice o pa pb)) pos = keysCanon o k (some (slice o kp kl)) a := by
       simp only [keysCanon, hnm, hB, ↓reduceIte]
