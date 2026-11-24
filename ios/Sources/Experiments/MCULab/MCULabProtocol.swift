@@ -100,6 +100,7 @@ struct MCULabProfileSpan: Equatable, Identifiable, Decodable {
     var parent: String
     var startUs: UInt32
     var durationUs: UInt32
+    var attrs: [String: String]? = nil
 
     var id: String { "\(parent).\(name).\(startUs)" }
 
@@ -107,6 +108,41 @@ struct MCULabProfileSpan: Equatable, Identifiable, Decodable {
         case name, parent
         case startUs = "start_us"
         case durationUs = "dur_us"
+        case attrs
+    }
+}
+
+/// An application-reported custom OTel gauge metric carried inside `MCULabWakeProfile`.
+struct MCULabAppMetric: Equatable, Identifiable, Decodable {
+    var name: String
+    var value: Int64
+    var unit: String? = nil
+    var attrs: [String: String]? = nil
+
+    var id: String {
+        let attrKey = (attrs ?? [:]).sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",")
+        return attrKey.isEmpty ? name : "\(name){\(attrKey)}"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case value = "val"
+        case unit
+        case attrs
+    }
+}
+
+/// A declarative command advertised by a firmware app inside `MCULabWakeProfile.commands`.
+/// Mirrors `AppCommandSpec` in `mcu-lab/src/protocol.rs`.
+struct MCULabAppCommandSpec: Equatable, Identifiable, Decodable {
+    var id: String
+    var label: String
+    var defaultCount: UInt16
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case label
+        case defaultCount = "count"
     }
 }
 
@@ -200,6 +236,7 @@ enum MCULabApp: String, CaseIterable, Identifiable {
     case base = "base"
     case bench = "bench"
     case maze = "maze"
+    case gzipBench = "gzip-bench"
 
     var id: String { rawValue }
 
@@ -208,6 +245,7 @@ enum MCULabApp: String, CaseIterable, Identifiable {
         case .base: return "Base (OTA + OTel)"
         case .bench: return "Bench (Power / EPD Sim)"
         case .maze: return "Maze Animator"
+        case .gzipBench: return "Gzip Bench (OTel)"
         }
     }
 
@@ -216,6 +254,7 @@ enum MCULabApp: String, CaseIterable, Identifiable {
         case .base: return []
         case .bench: return [.logicProbe]
         case .maze: return [.epd75]
+        case .gzipBench: return []
         }
     }
 }
@@ -248,6 +287,9 @@ struct MCULabWakeProfile: Equatable, Decodable {
     var cpuCycles: UInt64
     var spans: [MCULabProfileSpan]
     var pcSamples: [MCULabPCSample]
+    var attrs: [String: String]? = nil
+    var metrics: [MCULabAppMetric]? = nil
+    var commands: [MCULabAppCommandSpec]? = nil
 
     enum CodingKeys: String, CodingKey {
         case version = "v"
@@ -264,6 +306,9 @@ struct MCULabWakeProfile: Equatable, Decodable {
         case cpuCycles = "cycles"
         case spans
         case pcSamples = "pcs"
+        case attrs
+        case metrics
+        case commands = "cmds"
     }
 }
 
@@ -329,7 +374,17 @@ enum MCULabProtocol {
     static let otaStatusUUIDString = "1A3C0001-36E1-4688-B7F5-EA07361BC303"
     static let profileCharUUIDString = "1A3C0002-36E1-4688-B7F5-EA07361BC303"
     static let coredumpCharUUIDString = "1A3C0003-36E1-4688-B7F5-EA07361BC303"
+    static let appCommandCharUUIDString = "1A3C0004-36E1-4688-B7F5-EA07361BC303"
+    static let maxAppCommandCount: UInt16 = 100
     static let otaSlotBytes: UInt32 = 0x1E_0000
+
+    /// Encode a declarative app command write payload (`"<id>"` or `"<id> <count>"`).
+    /// Mirrors `encode_app_command` in `mcu-lab/src/protocol.rs`.
+    static func encodeAppCommand(id: String, count: UInt16) -> String {
+        let normalized = id.lowercased()
+        let clamped = max(1, min(count, maxAppCommandCount))
+        return clamped == 1 ? normalized : "\(normalized) \(clamped)"
+    }
 
     static let flagDeepSleepWake: UInt8 = 1 << 0
     static let flagEpdAttached: UInt8 = 1 << 1
@@ -696,10 +751,42 @@ enum MCULabProtocol {
             extraMetrics = """
             ,{"name":"mcu.heap.free_bytes","gauge":{"dataPoints":[{"asInt":"\(profile.freeHeapBytes)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.heap.min_free_bytes","gauge":{"dataPoints":[{"asInt":"\(profile.minFreeHeapBytes)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.stack.high_water_bytes","gauge":{"dataPoints":[{"asInt":"\(profile.stackHighWaterBytes)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.cpu.cycles","gauge":{"dataPoints":[{"asInt":"\(profile.cpuCycles)","timeUnixNano":"\(ts)"}]}}
             """
+            if let appMetrics = profile.metrics, !appMetrics.isEmpty {
+                var groupedOrder: [String] = []
+                var groupedPoints: [String: [String]] = [:]
+                for m in appMetrics {
+                    let fullName = m.name.hasPrefix("mcu.app.") ? m.name : "mcu.app.\(m.name)"
+                    if groupedPoints[fullName] == nil {
+                        groupedOrder.append(fullName)
+                        groupedPoints[fullName] = []
+                    }
+                    let dpAttrs = formatStringAttrs(m.attrs)
+                    let dp: String
+                    if dpAttrs.isEmpty {
+                        dp = #"{"asInt":"\#(m.value)","timeUnixNano":"\#(ts)"}"#
+                    } else {
+                        dp = #"{"asInt":"\#(m.value)","timeUnixNano":"\#(ts)","attributes":[\#(dpAttrs.joined(separator: ","))]}"#
+                    }
+                    groupedPoints[fullName]?.append(dp)
+                }
+                for name in groupedOrder {
+                    guard let dps = groupedPoints[name], !dps.isEmpty else { continue }
+                    let safeName = escapeJSONString(name)
+                    extraMetrics += #",{"name":"\#(safeName)","gauge":{"dataPoints":[\#(dps.joined(separator: ","))]}}"#
+                }
+            }
         }
         return """
         {"resourceMetrics":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"\(safeServiceName)"}},{"key":"device.id","value":{"stringValue":"\(safeDeviceId)"}}]},"scopeMetrics":[{"metrics":[{"name":"mcu.wake.count","gauge":{"dataPoints":[{"asInt":"\(metrics.wakeCount)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.phase.duration_us","gauge":{"dataPoints":[{"asInt":"\(metrics.sensorUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"sensor"}}]},{"asInt":"\(metrics.computeUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"compute"}}]},{"asInt":"\(metrics.epdRefreshUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"epd_refresh"}}]},{"asInt":"\(metrics.radioUs)","timeUnixNano":"\(ts)","attributes":[{"key":"phase","value":{"stringValue":"radio"}}]}]}},{"name":"mcu.battery_mv","gauge":{"dataPoints":[{"asInt":"\(metrics.batteryMv)","timeUnixNano":"\(ts)"}]}},{"name":"mcu.ble.rssi","gauge":{"dataPoints":[{"asInt":"\(rssi)","timeUnixNano":"\(ts)"}]}}\(extraMetrics)]}]}]}
         """
+    }
+
+    private static func formatStringAttrs(_ attrs: [String: String]?) -> [String] {
+        guard let attrs, !attrs.isEmpty else { return [] }
+        return attrs.keys.sorted().compactMap { key in
+            guard let val = attrs[key], !key.isEmpty else { return nil }
+            return #"{"key":"\#(escapeJSONString(key))","value":{"stringValue":"\#(escapeJSONString(val))"}}"#
+        }
     }
 
     /// Build a valid OTLP/HTTP v1 JSON trace payload (`ExportTraceServiceRequest`) representing
@@ -766,6 +853,7 @@ enum MCULabProtocol {
             rootAttrs.append(#"{"key":"mcu.heap.min_free_bytes","value":{"intValue":"\#(profile.minFreeHeapBytes)"}}"#)
             rootAttrs.append(#"{"key":"mcu.stack.high_water_bytes","value":{"intValue":"\#(profile.stackHighWaterBytes)"}}"#)
             rootAttrs.append(#"{"key":"mcu.cpu.cycles","value":{"intValue":"\#(profile.cpuCycles)"}}"#)
+            rootAttrs.append(contentsOf: formatStringAttrs(profile.attrs))
             for sample in profile.pcSamples {
                 let safePc = escapeJSONString(sample.pc)
                 rootEvents.append(
@@ -844,7 +932,8 @@ enum MCULabProtocol {
                         parentSpanId: parentId,
                         name: sub.name,
                         startNs: subStart,
-                        endNs: subEnd
+                        endNs: subEnd,
+                        attrs: formatStringAttrs(sub.attrs)
                     )
                 )
             }

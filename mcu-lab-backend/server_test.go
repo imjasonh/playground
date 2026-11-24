@@ -249,7 +249,7 @@ func TestUnattestedSimulatorMetricsFlowAndCloudMonitoringExport(t *testing.T) {
 		t.Fatalf("metrics status=%d", mResp.StatusCode)
 	}
 	_ = receivedAuth
-	if !bytes.Contains(receivedReq, []byte(`"custom.googleapis.com/xiao_esp32c3/mcu/phase/duration_us"`)) {
+	if !bytes.Contains(receivedReq, []byte(`"custom.googleapis.com/mcu_lab/mcu/phase/duration_us"`)) {
 		t.Fatalf("Cloud Monitoring request missing expected metric type: %s", string(receivedReq))
 	}
 	if !bytes.Contains(receivedReq, []byte(`"epd_refresh"`)) {

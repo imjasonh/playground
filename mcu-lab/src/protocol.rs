@@ -121,6 +121,12 @@ pub const PROFILE_CHAR_UUID: &str = "1a3c0002-36e1-4688-b7f5-ea07361bc303";
 /// Read + notify + write characteristic: MCU → iPhone chunked flash coredump ELF (`CLEAR` write erases flash).
 pub const COREDUMP_CHAR_UUID: &str = "1a3c0003-36e1-4688-b7f5-ea07361bc303";
 
+/// Read + notify + write characteristic: iPhone → MCU declarative app command (`<id>` or `<id> <count>`).
+pub const APP_COMMAND_CHAR_UUID: &str = "1a3c0004-36e1-4688-b7f5-ea07361bc303";
+
+/// Maximum repeat count accepted in a single app command request.
+pub const MAX_APP_COMMAND_COUNT: u16 = 100;
+
 /// Size of each OTA partition slot (`ota_0` / `ota_1`) in `partitions.csv` (1.875 MiB, 64 KiB-aligned).
 pub const OTA_SLOT_BYTES: u32 = 0x1E_0000;
 
@@ -1097,7 +1103,13 @@ mod tests {
         let mut rec = SpanRecorder::new(10_000);
         rec.record("boot.init", "wake", 10_000, 10_450);
         rec.record("epd.spi_transfer", "epd_refresh", 12_000, 14_800);
-        rec.record("epd.busy_wait", "epd_refresh", 14_800, 46_800);
+        rec.record_with_attrs(
+            "epd.busy_wait",
+            "epd_refresh",
+            14_800,
+            46_800,
+            &[("mode", "partial")],
+        );
 
         let profile = WakeProfile {
             wake_count: 7,
@@ -1122,6 +1134,18 @@ mod tests {
                     hits: 5,
                 },
             ],
+            attrs: vec![("gzip.impl".to_string(), "esp32_rom".to_string())],
+            metrics: vec![AppMetric {
+                name: "gzip.inflate_bps".to_string(),
+                value: 1_850_000,
+                unit: "By/s".to_string(),
+                attrs: vec![("corpus".to_string(), "json_otel".to_string())],
+            }],
+            commands: vec![AppCommandSpec {
+                id: "run".to_string(),
+                label: "Run Benchmark".to_string(),
+                default_count: 10,
+            }],
         };
         let json = format_wake_profile_json(&profile);
         assert!(json.contains(r#""wake":7"#));
@@ -1135,9 +1159,39 @@ mod tests {
         assert!(json.contains(r#""stack_hw":3072"#));
         assert!(json.contains(r#""cycles":7420000"#));
         assert!(json.contains(
-            r#""name":"epd.busy_wait","parent":"epd_refresh","start_us":4800,"dur_us":32000"#
+            r#""name":"epd.busy_wait","parent":"epd_refresh","start_us":4800,"dur_us":32000,"attrs":{"mode":"partial"}"#
         ));
         assert!(json.contains(r#""pc":"0x400d1a40","hits":14"#));
+        assert!(json.contains(r#""attrs":{"gzip.impl":"esp32_rom"}"#));
+        assert!(json.contains(
+            r#""metrics":[{"name":"gzip.inflate_bps","val":1850000,"unit":"By/s","attrs":{"corpus":"json_otel"}}]"#
+        ));
+        assert!(json.contains(r#""cmds":[{"id":"run","label":"Run Benchmark","count":10}]"#));
+    }
+
+    #[test]
+    fn app_command_parse_and_encode_round_trip() {
+        assert_eq!(encode_app_command("run", 1), "run");
+        assert_eq!(encode_app_command("RUN", 10), "run 10");
+        assert_eq!(
+            parse_app_command("run"),
+            Some(AppCommandRequest {
+                id: "run".to_string(),
+                count: 1
+            })
+        );
+        assert_eq!(
+            parse_app_command("  RUN 10 "),
+            Some(AppCommandRequest {
+                id: "run".to_string(),
+                count: 10
+            })
+        );
+        assert_eq!(parse_app_command(""), None);
+        assert_eq!(parse_app_command("run 0"), None);
+        assert_eq!(parse_app_command("run 101"), None);
+        assert_eq!(parse_app_command("bad/cmd"), None);
+        assert_eq!(parse_app_command("run 1 extra"), None);
     }
 
     #[test]
@@ -1263,6 +1317,78 @@ impl PcHistogram {
     }
 }
 
+/// Declarative command exposed by an app inside [`WakeProfile`] so the iOS
+/// client can dynamically render app controls without per-app Swift code.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppCommandSpec {
+    /// Short machine command ID written to [`APP_COMMAND_CHAR_UUID`] (e.g. `"run"`).
+    pub id: String,
+    /// Human-readable button label rendered by iOS (e.g. `"Run Benchmark"`).
+    pub label: String,
+    /// Default repeat count (`1` for single-shot, `> 1` for multi-run sampling e.g. `10`).
+    pub default_count: u16,
+}
+
+/// Parsed command written by the iPhone to [`APP_COMMAND_CHAR_UUID`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppCommandRequest {
+    pub id: String,
+    pub count: u16,
+}
+
+/// Parse an app command string (`"<id>"` or `"<id> <count>"`).
+///
+/// Command IDs must be 1..=32 lowercase ASCII `[a-z0-9_-]` characters and
+/// `count` must be in `1..=MAX_APP_COMMAND_COUNT`.
+pub fn parse_app_command(raw: &str) -> Option<AppCommandRequest> {
+    let parts: Vec<&str> = raw.split_whitespace().collect();
+    if parts.is_empty() || parts.len() > 2 {
+        return None;
+    }
+    let id = parts[0].to_ascii_lowercase();
+    if id.is_empty()
+        || id.len() > 32
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+    {
+        return None;
+    }
+    let count = if let Some(raw_count) = parts.get(1) {
+        let parsed: u16 = raw_count.parse().ok()?;
+        if parsed == 0 || parsed > MAX_APP_COMMAND_COUNT {
+            return None;
+        }
+        parsed
+    } else {
+        1
+    };
+    Some(AppCommandRequest { id, count })
+}
+
+/// Encode an app command request for [`APP_COMMAND_CHAR_UUID`].
+pub fn encode_app_command(id: &str, count: u16) -> String {
+    let clamped = count.clamp(1, MAX_APP_COMMAND_COUNT);
+    if clamped == 1 {
+        id.to_ascii_lowercase()
+    } else {
+        format!("{} {clamped}", id.to_ascii_lowercase())
+    }
+}
+
+/// An application-reported custom OTel gauge metric carried inside [`WakeProfile`].
+///
+/// The iOS forwarder emits each entry as an OTLP gauge named `mcu.app.<name>`
+/// (or `<name>` directly if it already starts with `mcu.app.`) with `attrs`
+/// attached as OTLP data-point attributes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppMetric {
+    pub name: String,
+    pub value: i64,
+    pub unit: String,
+    pub attrs: Vec<(String, String)>,
+}
+
 /// A single sub-phase timing span recorded on the MCU relative to wake start.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileSpan {
@@ -1270,6 +1396,7 @@ pub struct ProfileSpan {
     pub parent: String,
     pub start_us: u32,
     pub duration_us: u32,
+    pub attrs: Vec<(String, String)>,
 }
 
 /// A sampled program counter hotspot (`pc` address + sample hit count).
@@ -1295,6 +1422,9 @@ pub struct WakeProfile {
     pub cpu_cycles: u64,
     pub spans: Vec<ProfileSpan>,
     pub pc_samples: Vec<PcSample>,
+    pub attrs: Vec<(String, String)>,
+    pub metrics: Vec<AppMetric>,
+    pub commands: Vec<AppCommandSpec>,
 }
 
 /// Lightweight microsecond span recorder anchored to the start of a wake cycle.
@@ -1313,6 +1443,17 @@ impl SpanRecorder {
     }
 
     pub fn record(&mut self, name: &str, parent: &str, start_us: u64, end_us: u64) {
+        self.record_with_attrs(name, parent, start_us, end_us, &[]);
+    }
+
+    pub fn record_with_attrs(
+        &mut self,
+        name: &str,
+        parent: &str,
+        start_us: u64,
+        end_us: u64,
+        attrs: &[(&str, &str)],
+    ) {
         let rel_start =
             u32::try_from(start_us.saturating_sub(self.wake_start_us)).unwrap_or(u32::MAX);
         let dur = u32::try_from(end_us.saturating_sub(start_us)).unwrap_or(u32::MAX);
@@ -1321,12 +1462,31 @@ impl SpanRecorder {
             parent: parent.to_string(),
             start_us: rel_start,
             duration_us: dur,
+            attrs: attrs
+                .iter()
+                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+                .collect(),
         });
     }
 
     pub fn into_spans(self) -> Vec<ProfileSpan> {
         self.spans
     }
+}
+
+fn push_json_attrs_object(out: &mut String, attrs: &[(String, String)]) {
+    out.push('{');
+    for (idx, (k, v)) in attrs.iter().enumerate() {
+        if idx > 0 {
+            out.push(',');
+        }
+        out.push('"');
+        out.push_str(&escape_json_str(k));
+        out.push_str(r#"":""#);
+        out.push_str(&escape_json_str(v));
+        out.push('"');
+    }
+    out.push('}');
 }
 
 /// Serialize a [`WakeProfile`] as compact JSON for BLE GATT transfer (`PROFILE_CHAR_UUID`).
@@ -1363,12 +1523,17 @@ pub fn format_wake_profile_json(p: &WakeProfile) -> String {
             out.push(',');
         }
         out.push_str(&format!(
-            r#"{{"name":"{}","parent":"{}","start_us":{},"dur_us":{}}}"#,
+            r#"{{"name":"{}","parent":"{}","start_us":{},"dur_us":{}"#,
             escape_json_str(&sp.name),
             escape_json_str(&sp.parent),
             sp.start_us,
             sp.duration_us,
         ));
+        if !sp.attrs.is_empty() {
+            out.push_str(r#","attrs":"#);
+            push_json_attrs_object(&mut out, &sp.attrs);
+        }
+        out.push('}');
     }
     out.push_str(r#"],"pcs":["#);
     for (idx, s) in p.pc_samples.iter().enumerate() {
@@ -1377,7 +1542,49 @@ pub fn format_wake_profile_json(p: &WakeProfile) -> String {
         }
         out.push_str(&format!(r#"{{"pc":"0x{:08x}","hits":{}}}"#, s.pc, s.hits));
     }
-    out.push_str("]}");
+    out.push(']');
+    if !p.attrs.is_empty() {
+        out.push_str(r#","attrs":"#);
+        push_json_attrs_object(&mut out, &p.attrs);
+    }
+    if !p.metrics.is_empty() {
+        out.push_str(r#","metrics":["#);
+        for (idx, m) in p.metrics.iter().enumerate() {
+            if idx > 0 {
+                out.push(',');
+            }
+            out.push_str(&format!(
+                r#"{{"name":"{}","val":{}"#,
+                escape_json_str(&m.name),
+                m.value,
+            ));
+            if !m.unit.is_empty() {
+                out.push_str(&format!(r#","unit":"{}""#, escape_json_str(&m.unit)));
+            }
+            if !m.attrs.is_empty() {
+                out.push_str(r#","attrs":"#);
+                push_json_attrs_object(&mut out, &m.attrs);
+            }
+            out.push('}');
+        }
+        out.push(']');
+    }
+    if !p.commands.is_empty() {
+        out.push_str(r#","cmds":["#);
+        for (idx, cmd) in p.commands.iter().enumerate() {
+            if idx > 0 {
+                out.push(',');
+            }
+            out.push_str(&format!(
+                r#"{{"id":"{}","label":"{}","count":{}}}"#,
+                escape_json_str(&cmd.id),
+                escape_json_str(&cmd.label),
+                cmd.default_count.max(1),
+            ));
+        }
+        out.push(']');
+    }
+    out.push('}');
     out
 }
 
