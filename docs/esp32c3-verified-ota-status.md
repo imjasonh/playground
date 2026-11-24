@@ -195,8 +195,8 @@ invariants: the batch matrices' rows have `|u| + |v| ≤ 2^n`, and `d` and
 
 `Models/P256*.lean`, `Models/P384*.lean`, and the shared `Models/Ecdsa*.lean`
 prove corrected forms of the two ECDSA model facts (`p256_model_rcb` and
-`p384_model_rcb`). The facts as `SvModels.lean` states them can't be
-proved: `SvP256Facts` constrains only the first 32 bytes of `r` and `s`,
+`p384_model_rcb`). The facts as `SvModels.lean` first stated them couldn't
+be proved: `SvP256Facts` constrains only the first 32 bytes of `r` and `s`,
 so the corrected form concludes with `b32 r` and `b32 s`, and `SvPvRes`
 doesn't tie the P-384 prehash and scalars to memory, so the corrected form
 also takes `SvPvAt`. `sv_verify_spec` uses the corrected forms
