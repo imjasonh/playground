@@ -44,7 +44,7 @@ image is authentic.
 | Slot offset | Contents |
 | --- | --- |
 | `0x00000` | [Slot manifest](#slot-manifest) |
-| Manifest fields | [Signed image](#signed-image), [bundle container](#bundle-container), [key-set chain](#key-set-chain), and [trust-root blob](#trust-root-blob) |
+| Manifest fields | [Signed image](#signed-image), [bundle container](#bundle-container), and [TUF part](#tuf-part) |
 
 ### Slot manifest
 
@@ -55,22 +55,23 @@ the slot fail.
 | Offset | Size | Field | Rule |
 | --- | --- | --- | --- |
 | 0 | 4 | `magic` | ASCII `C3SL` |
-| 4 | 2 | `format_version` | 1 |
+| 4 | 2 | `format_version` | 2 |
 | 6 | 2 | `reserved` | 0 |
 | 8 | 4 | `image_offset` | `0x10000` |
 | 12 | 4 | `image_length` | 37 through `0x1D0000` |
 | 16 | 4 | `bundle_offset` | See the region rules |
 | 20 | 4 | `bundle_length` | 49 through 16,384 |
-| 24 | 4 | `chain_offset` | See the region rules |
-| 28 | 4 | `chain_length` | 8 through 2,048 |
-| 32 | 4 | `blob_offset` | See the region rules |
-| 36 | 4 | `blob_length` | 443 through 4,096 |
+| 24 | 4 | `tuf_offset` | See the region rules |
+| 28 | 4 | `tuf_length` | 18 through 24,576 |
+
+Version 1 had a key-set chain and a trust-root blob in place of the TUF
+part. The bootloader rejects it.
 
 Region rules:
 
 - Each region's end, computed without overflow, is at most the slot size,
   `0x1E0000`.
-- The regions are in the order image, bundle, chain, blob, and each starts
+- The regions are in the order image, bundle, TUF part, and each starts
   at or after the end of the one before it.
 - The image starts at slot offset `0x10000`, so that its first byte is on a
   64 KiB flash page.
@@ -203,7 +204,8 @@ The checkpoint is a [C2SP signed note](https://c2sp.org/signed-note) whose
 text is a [C2SP checkpoint](https://c2sp.org/tlog-checkpoint). The bootloader
 accepts this shape only:
 
-1. The origin line, equal to the origin of a log key in the trust-root blob.
+1. The origin line, equal to the origin of a log key in the
+   [trust root](#trust-root).
 2. The tree size, in decimal, with no leading zeros unless the value is 0,
    at most 2^63 − 1.
 3. The root hash, standard base64 with padding, decoding to 32 bytes.
@@ -239,7 +241,7 @@ The leaf certificate is an X.509 v3 `Certificate`:
    3. `signature`, the `AlgorithmIdentifier` `ecdsa-with-SHA384`
       (`1.2.840.10045.4.3.3`) with no parameters.
    4. `issuer`, a `Name`. Its whole DER encoding, tag and length included,
-      must equal the `subject` of a Fulcio entry in the blob.
+      must equal the `subject` of a Fulcio intermediate in the trust root.
    5. `validity`, a `SEQUENCE` of `notBefore` and `notAfter`, each a
       `UTCTime` or `GeneralizedTime` in the forms under
       [Times](#times).
@@ -266,7 +268,8 @@ Extension rules:
   (`1.3.6.1.5.5.7.3.3`).
 - `basicConstraints`, if present, doesn't set `cA`.
 - The five identity-policy extensions are required. Each value is a DER
-  `UTF8String` whose contents equal the blob's policy string byte for byte.
+  `UTF8String` whose contents equal the compiled-in
+  [identity policy](#identity-policy) string byte for byte.
 - Other non-critical extensions, such as the embedded SCT list, are ignored.
 
 ### Timestamp profile
@@ -284,12 +287,12 @@ bundles carry it:
       (`1.2.840.113549.1.9.16.1.4`) and `[0]` holding an `OCTET STRING`
       whose contents are the DER `TSTInfo`.
    4. `[0]` certificates, optional. Skipped and never used: the TSA's key
-      comes only from the blob.
+      comes only from the trust root.
    5. No `[1]` CRLs.
    6. `signerInfos`, a `SET` of exactly one `SignerInfo`:
       1. `version`, `INTEGER` 1.
       2. `sid`, an `IssuerAndSerialNumber`. Its whole DER encoding must
-         equal the `signer_id` of a TSA entry in the blob.
+         equal the `signer_id` of a TSA signer in the trust root.
       3. `digestAlgorithm`, `sha256`.
       4. `[0]` signed attributes, required. No attribute OID appears twice.
          `contentType` must be `id-ct-TSTInfo`. `messageDigest` must hold
@@ -327,122 +330,14 @@ An `ECDSA-Sig-Value` is a `SEQUENCE` of two positive, minimally encoded
 `INTEGER`s, `r` and `s`, each in 1 through `n - 1` for the curve's group
 order `n`.
 
-## Key-set chain
-
-The chain is a header followed by zero through 16 links.
-
-| Offset | Size | Field | Rule |
-| --- | --- | --- | --- |
-| 0 | 4 | `magic` | ASCII `C3KC` |
-| 4 | 2 | `format_version` | 1 |
-| 6 | 1 | `link_count` | 0 through 16 |
-| 7 | 1 | `reserved` | 0 |
-| 8 | Varies | Links | `link_count` links, back to back |
-
-The chain ends after the last link. Trailing bytes are rejected.
-
-### Link
-
-| Offset | Size | Field | Rule |
-| --- | --- | --- | --- |
-| 0 | 1 | `level` | 1 through 16, and greater than the previous link's level |
-| 1 | 1 | `key_count` | 1 through 4 |
-| 2 | 32 × `key_count` | `keys` | Ed25519 public keys, pairwise distinct, each a canonical encoding of a curve point that doesn't have small order |
-| Next | 1 | `signature_count` | 2 through 4 |
-| Next | 65 × `signature_count` | `signatures` | Each a 1-byte key index followed by a 64-byte Ed25519 signature |
-
-Each key index refers to the previous key set: the genesis set compiled into
-the bootloader for the first link, and the previous link's `keys` otherwise.
-The indexes must be strictly increasing, so no key counts twice, and each
-must be less than the size of the previous key set. Every listed signature
-must verify. At least two must be listed.
-
-Each signature covers the 21-byte ASCII string `c3-boot chain link v1`, a
-zero byte, and the link from `level` through the last key.
-
-## Trust-root blob
-
-| Offset | Size | Field | Rule |
-| --- | --- | --- | --- |
-| 0 | 4 | `magic` | ASCII `C3TR` |
-| 4 | 2 | `format_version` | 1 |
-| 6 | 4 | `sequence` | Any value. The bootloader ignores it |
-| 10 | 1 | `level` | Equal to the image's `security_version`, at least the last link's level, and at least the security level |
-| 11 | 1 | `reserved` | 0 |
-| 12 | Varies | Fulcio intermediates | `count` (1 byte, 1 through 4), then that many entries |
-| Next | Varies | Log keys | `count` (1 byte, 1 through 8), then that many entries |
-| Next | Varies | TSA signers | `count` (1 byte, 1 through 4), then that many entries |
-| Next | Varies | Identity policy | Five strings, in the order of the identity policy table |
-| Next | 1 | `signature_count` | 2 through 4 |
-| Next | 65 × `signature_count` | `signatures` | Each a 1-byte key index followed by a 64-byte Ed25519 signature |
-
-The blob ends after the last signature. Trailing bytes are rejected.
-
-The key indexes refer to the last link's `keys`, or to the genesis set if the
-chain has no links. They follow the same rules as link signatures. Each
-signature covers the 21-byte ASCII string `c3-boot trust root v1`, a zero
-byte, and the blob from `magic` through the last policy string.
-
-Within each list, entries are pairwise distinct: no two Fulcio entries share
-a subject or a key, no two log entries share an origin or a key, and no two
-TSA entries share a signer ID or a key. A checkpoint therefore matches at
-most one log entry.
-
-Every P-384 key must be an uncompressed SEC1 point on the curve, other than
-the point at infinity. The bootloader rejects a blob with any other value.
-
-A validity window is two unsigned 64-bit integers, `not_before` and
-`not_after`, in seconds since the Unix epoch, with `not_before` at most
-`not_after`. A time `t` is inside the window if
-`not_before <= t <= not_after`.
-
-### Fulcio intermediate entry
-
-| Field | Size | Contents |
-| --- | --- | --- |
-| `subject_length` | 2 | 1 through 512 |
-| `subject` | `subject_length` | The intermediate's subject `Name`, DER. The leaf's issuer must equal it byte for byte |
-| `public_key` | 97 | Uncompressed SEC1 P-384 point |
-| `window` | 16 | Validity window |
-
-### Log key entry
-
-| Field | Size | Contents |
-| --- | --- | --- |
-| `origin_length` | 1 | 1 through 128 |
-| `origin` | `origin_length` | The log's origin string, printable ASCII |
-| `public_key` | 32 | Ed25519 public key: a canonical encoding of a curve point that doesn't have small order |
-| `window` | 16 | Validity window |
-
-### TSA signer entry
-
-| Field | Size | Contents |
-| --- | --- | --- |
-| `signer_id_length` | 2 | 1 through 512 |
-| `signer_id` | `signer_id_length` | The DER `SignerIdentifier` that the token's `SignerInfo` must contain, byte for byte |
-| `public_key` | 97 | Uncompressed SEC1 P-384 point |
-| `window` | 16 | Validity window |
-
-### Identity policy strings
-
-Each string is a 2-byte length (1 through 512) followed by that many bytes
-of printable ASCII.
-
-| Order | Fulcio extension that must equal it |
-| --- | --- |
-| 1 | Issuer (V2), `1.3.6.1.4.1.57264.1.8` |
-| 2 | Build Signer URI, `1.3.6.1.4.1.57264.1.9` |
-| 3 | Source Repository Identifier, `1.3.6.1.4.1.57264.1.15` |
-| 4 | Source Repository Owner Identifier, `1.3.6.1.4.1.57264.1.17` |
-| 5 | Build Trigger, `1.3.6.1.4.1.57264.1.20` |
-
 ## TUF part
 
-The TUF part carries Sigstore's TUF metadata, which `c3-boot/TODO.md`
-plans to use in place of the key-set chain and the trust-root blob. The
-bootloader doesn't read it yet. `c3_verify::tuf_slot::accept_slot`, behind
-the `tuf` feature, checks a slot that has one, and `c3-ota tuf-package`
-builds one.
+The TUF part carries Sigstore's TUF metadata: the roots after the one the
+bootloader pins, `targets.json`, and `trusted_root.json`. `c3-ota
+tuf-package` builds one, and `c3_verify::tuf_slot::accept_slot` checks a
+slot with it. The bootloader holds the whole part in RAM, so a slot can
+carry about two roots after the pinned one. A longer chain needs a
+bootloader that pins a newer root.
 
 | Offset | Size | Field | Rule |
 | --- | --- | --- | --- |
@@ -511,12 +406,12 @@ Times are RFC 3339 UTC in the form `YYYY-MM-DDTHH:MM:SSZ`, from 1970 on,
 optionally with a fraction of one or more digits before the `Z`. The
 fraction is dropped.
 
-### Keys from `trusted_root.json`
+### Trust root
 
 `mediaType` must be
 `application/vnd.dev.sigstore.trustedroot+json;version=0.1`. The keys
-become the lists of a trust-root blob, with the compiled-in identity
-policy:
+become the trust root that the [bundle container](#bundle-container)
+checks use, with the compiled-in [identity policy](#identity-policy):
 
 - Each entry of `certificateAuthorities` whose first certificate has a
   P-384 key becomes a Fulcio intermediate with that certificate's subject.
@@ -530,9 +425,41 @@ policy:
 A certificate authority or timestamp authority entry has 1 through 4
 certificates in `certChain.certificates`, and its window is `validFor`
 intersected with every certificate's validity. A log key's window is its
-`publicKey.validFor`. A missing `end` means the window doesn't close. The
-lists have the same limits and distinctness rules as the trust-root blob's.
-Entries with other key types are skipped.
+`publicKey.validFor`. A missing `end` means the window doesn't close.
+Entries with other key types, and P-384 keys that aren't points on the
+curve, are skipped.
+
+A trust root holds at most 8 Fulcio intermediates, 16 log keys, and 8 TSA
+signers, and a `trusted_root.json` with more usable entries is rejected,
+because skipping one could drop the key an older release needs. Within
+each list, entries are pairwise distinct: no two Fulcio intermediates share
+a subject or a key, no two log keys share an origin or a key, and no two
+TSA signers share a signer ID or a key. A checkpoint therefore matches at
+most one log key. A log origin is printable ASCII, and an Ed25519 log key
+must be a canonical encoding of a curve point that doesn't have small
+order.
+
+A validity window is two unsigned 64-bit integers, `not_before` and
+`not_after`, in seconds since the Unix epoch. A time `t` is inside the
+window if `not_before <= t <= not_after`.
+
+The bootloader holds `trusted_root.json` and its decoded certificates in a
+20,544-byte buffer, enough for a `trusted_root.json` of up to 10,240 bytes.
+
+### Identity policy
+
+The bootloader compiles in five strings of printable ASCII from a policy
+file (`C3_POLICY`), one `name=value` line for each:
+
+| Name | Fulcio extension that must equal it |
+| --- | --- |
+| `issuer` | Issuer (V2), `1.3.6.1.4.1.57264.1.8` |
+| `build-signer-uri` | Build Signer URI, `1.3.6.1.4.1.57264.1.9` |
+| `repository-id` | Source Repository Identifier, `1.3.6.1.4.1.57264.1.15` |
+| `owner-id` | Source Repository Owner Identifier, `1.3.6.1.4.1.57264.1.17` |
+| `trigger` | Build Trigger, `1.3.6.1.4.1.57264.1.20` |
+
+`c3-boot/release/policy` holds the production values.
 
 ## Boot-state record
 
@@ -613,18 +540,24 @@ slot's level first:
    to two more times, then halt.
 3. Repeat until the count equals the slot's level.
 
-It then locks the eFuse controller and jumps.
+It then locks the eFuse controller and jumps. The lock sets region
+permission control's first area to the eFuse controller's registers,
+`0x60008800` through `0x60009000`, leaves the other areas empty, makes the
+first area read-only for World 0, where the bootloader and the application
+run, and locks those settings until reset. Each raise first sets the eFuse
+timing registers to ESP-IDF's values: `DAC_CLK_DIV` 0x28, `DAC_NUM` 0xFF,
+`PWR_ON_NUM` 0x3000, and `PWR_OFF_NUM` 0x190. **(hardware)**
 
 Two build settings change this while boards are being tested, because a
 burn can't be undone:
 
 - Without `C3_EFUSE_BURN=on`, the bootloader has no eFuse programming code.
   It logs the raise it would make and jumps without it.
-- With the development genesis keys (`C3_GENESIS=dev`), a raise that fails
+- With the development TUF root (`C3_TUF_ROOT=dev`), a raise that fails
   logs and jumps without the raise instead of halting, so the board stays
   updatable.
 
-A bootloader with production genesis keys must be built with
+A bootloader with a production root must be built with
 `C3_EFUSE_BURN=on`, and halts on a failed raise as described above.
 
 ## Handing off to the application

@@ -9,7 +9,7 @@ test c3-boot devices and tools end to end without network access.
 
 > **Warning:** fakestore is for tests only. Anyone who can read its directory
 > can sign anything as any identity. Never put a trusted root that fakestore
-> writes, or a trust-root blob built from one, on a production device or in a
+> writes, or TUF metadata that lists one, on a production device or in a
 > production build.
 
 ## What a bundle contains

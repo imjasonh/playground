@@ -44,81 +44,56 @@ This is intentionally deferred until the current proof work in #710 wraps up, so
 
 ## Cutover plan
 
-### Done without changing the bootloader
+### Done
 
-The verifier and its specification exist, and the bootloader image is
-unchanged (`bootloader/dev-image.sha256` still pins
-`7b2964d01ca71f7ad3a86037ace21d98d4aed1af6181fabccb3de7e680464fce`):
+- `c3-verify` has `json` (strict and canonical JSON), `tuf` (the C3TU
+  container, the root chain, and `targets.json`), `trusted_root` (Fulcio,
+  Rekor, and TSA keys into a `TrustRoot`), and `tuf_slot::accept_slot`.
+  The genesis keys, `keys`, `chain`, the trust-root blob decoder, and
+  `accept` are gone, and `TrustRoot` holds up to 8 Fulcio intermediates,
+  16 Ed25519 logs, and 8 TSAs.
+- The slot manifest is version 2, with one `tuf` part of up to 24,576
+  bytes in place of `chain` and `blob`. The QEMU scenarios, the mutation
+  tests, and the fuzz seeds build version 2 slots.
+- `testdata/keys/` holds the seeds of a development TUF repository
+  (`c3-ota tuf-dev-root` and `tuf-dev-targets`), and
+  `tuf-dev-root.json` is its root version 1.
+- The bootloader compiles in the root that `C3_TUF_ROOT` names (`dev` for
+  the development root) and the identity policy file that `C3_POLICY`
+  names (`release/policy` by default), and a production root requires
+  `C3_EFUSE_BURN=on`. It holds the whole TUF part, the bundle, and a
+  20,544-byte key buffer, 61,780 bytes of buffers in all; the QEMU
+  scenarios peak at 77,852 bytes of stack, and the linker requires 80 KiB.
+- `efuse::lock()` makes the eFuse controller read-only with region
+  permission control, and eFuse programming sets ESP-IDF's timing. Both
+  need checking on a board.
+- The pinned image is the production build: Sigstore's root 16
+  (`release/pinned-root.json`), `release/policy`, and eFuse burns.
+  `bootloader/dev-image.sha256` pins its digest.
+- `c3-release.yml` packages the roots after the pinned one, `targets.json`,
+  and `trusted_root.json` from `testdata/tuf/` with
+  `release/package-tuf.sh`, which runs `tuf-verify`, before it signs.
+  `c3-trust-root.yml` refreshes `testdata/tuf/` and `release/`. `c3-ota
+  link`, `blob`, `chain`, and `pubkey` are gone.
 
-- `c3-verify`'s `tuf` feature has `json` (strict and canonical JSON),
-  `tuf` (the C3TU container, the root chain, and `targets.json`),
-  `trusted_root` (Fulcio, Rekor, and TSA keys into a `TrustRoot`), and
-  `tuf_slot::accept_slot`. The feature is off in the bootloader build,
-  because compiling the modules in changes how the existing code is
-  inlined, and so the image digest, even with nothing calling them.
-- `c3-ota` has `tuf-root`, `tuf-package`, `tuf-verify`, and `tuf-accept`,
-  and `testdata/tuf/` pins Sigstore's roots 5 through 16, `targets.json`,
-  and `trusted_root.json` from `sigstore/root-signing` (`fetch.sh`
-  downloads them again).
-- `c3-boot-proofs/C3BootProofs/Spec/{Json,Tuf,TrustedRoot,Accept}.lean`
-  specify the same checks, and `c3-boot-proofs.yml` requires
-  `lake exe tuf-check` to agree with `c3-ota`'s `tuf_vectors` on 3,144
-  cases. `fuzz/` has a `tuf` target.
-- The formats are in `docs/formats.md`, under "TUF part".
+### Remaining
 
-### Steps
-
-Do these as one bootloader change, so the image digest, the extracted
-function bytes, and the proofs change once:
-
-1. **Slot format.** Give the manifest a version 2 that replaces the
-   `chain` and `blob` parts with one `tuf` part. Update
-   `manifest::parse`, `c3-ota slot`, `ota/tests/mutation.rs`, the fuzz
-   seeds, and `qemu/scenarios.sh`.
-2. **Development trust.** Replace the development genesis keys with a
-   development TUF repository: a root and targets signed by seeds in
-   `testdata/keys/`, listing fakestore's `trusted_root.json`. `ota/src/tuf.rs`
-   already builds and signs such metadata for the test cases.
-3. **Build settings.** Replace `C3_GENESIS` with `C3_TUF_ROOT` (`dev`, or
-   the canonical root that `c3-ota tuf-root` writes) and compile the
-   identity policy in from build settings. Keep the rule that a production
-   root requires `C3_EFUSE_BURN=on`.
-4. **Memory.** Bound what the bootloader reads into RAM. Holding the whole
-   TUF part needs room for every root; reading one root at a time from
-   flash needs two root buffers, `targets.json`, `trusted_root.json`, and
-   `trusted_root::buffer_len` of it (about 14 KB for today's file). Cap
-   documents on the device well below `MAX_DOC_LEN`, and measure peak
-   stack in QEMU before choosing sizes. A trial build that called
-   `tuf_slot::accept_slot` from `check_slot` with a 32 KB TUF buffer and a
-   16 KB key buffer grew `.text` from 84,640 to 93,896 bytes (of 147,456)
-   and `.rodata` from 4,704 to 10,912 bytes. Its buffers took about 73 KB
-   of the 89 KB left for the stack, before any stack frames.
-5. **Wire it in.** `check_slot` calls `tuf_slot::accept_slot` with the
-   pinned root and compiled-in policy, logs the `TufError`, and drops
-   `GENESIS`. `Accepted.level` is the image's `security_version`, so
-   `decide` and the level rules don't change.
-6. **Production configuration.** In the same change, implement
-   `efuse::lock()`, fix eFuse programming timing at 160 MHz, build with
-   `C3_EFUSE_BURN=on`, and pin Sigstore's current root and the real
-   repository and owner IDs. Then pin the new digest.
-7. **Proofs.** Regenerate `Image/Bootloader*.lean` with
+1. **Proofs.** Regenerate `Image/Bootloader*.lean` with
    `scripts/extract-functions.py` and the generated proofs with their
    `gen-*.py` scripts, and rework the hand-written machine-code proofs
-   whose functions moved. Retire `Spec/TrustRoot.lean`,
-   `Theorems/TrustRoot.lean`, and the proofs for `chain`, `keys`, and
-   `trustroot`. Prove that the machine code of `json::parse`,
-   `tuf::verify`, `trusted_root::extract`, and `tuf_slot::accept_slot`
-   computes the new specifications, prove properties of the specifications
-   (a canonical document re-encodes to itself; an accepted chain has a
-   threshold of signatures under each root), and restate the headline
-   theorem from the pinned TUF root and the compiled-in policy. Rebuild
-   the boot lockstep scenarios.
-8. **Release and CI.** `c3-release.yml` fetches the TUF metadata with a
-   TUF client, packages the roots after the pinned one with
-   `tuf-package`, and runs `tuf-verify` before it signs. Change
-   `c3-trust-root.yml` to open a pull request that refreshes
-   `testdata/tuf/` when Sigstore publishes a root, then retire `c3-ota link`,
-   `c3-ota blob`, and the genesis keys.
+   whose functions moved. `TrustRoot`'s layout changed with the new caps.
+   Retire `Spec/TrustRoot.lean`, `Theorems/TrustRoot.lean`, the proofs for
+   `chain`, `keys`, and `trustroot`, and `lake exe trust-check`. Update
+   `lake exe spec-vectors` and `decode-check` for manifest version 2, and
+   `tuf-check` and `sigstore-check` for the cases `c3-ota` added. Prove
+   that the machine code of `json::parse`, `tuf::verify`,
+   `trusted_root::extract`, and `tuf_slot::accept_slot` computes the new
+   specifications, prove properties of the specifications (a canonical
+   document re-encodes to itself; an accepted chain has a threshold of
+   signatures under each root), and restate the headline theorem from the
+   pinned TUF root and the compiled-in policy. Rebuild the boot lockstep
+   scenarios.
+2. **Hardware.** Check `efuse::lock()` and the eFuse timing on a board.
 
 ### Decisions
 
