@@ -91,6 +91,58 @@ theorem pa_zero {Q : Post} (E : PaEnv M0 base s p out n g0 Mp F) {fr : Fin 32 �
         show decide (j + 1 = 0) = false from decide_eq_false (Nat.succ_ne_zero j)] at eb
       exact absurd eb (by decide)
 
+/-- `0x50`: the loop's registers, then `pa_loop` with `d.length + 1` passes
+from the start position `s10`. -/
+theorem pa_50 (E : PaEnv M0 base s p out n g0 Mp F) {c : Bool} {M : Word → BitVec 8}
+    (hFI : FInv M0 Mp s F n [] M) (hR : PRegs f g0 F p n c) (h18 : f 18 = out)
+    (h26 : f 26 = BitVec.ofNat 32 (wsIn c (memBytes M0 p n) 0)) :
+    WP jsonParseCode base (PPost M0 s p out g0 (parseModel c (memBytes M0 p n))) M 0x50 f := by
+  have hdl : (memBytes M0 p n).length = n := memBytes_length _ _ _
+  have hst : wsIn c (memBytes M0 p n) 0 ≤ n := by have := wsIn_le c (memBytes M0 p n) 0; omega
+  refine WP.zero fun hz => ?_
+  refine WP.aluImm jpa_at_50 ?_; wn
+  refine WP.aluImm jpa_at_52 ?_; wn
+  refine WP.aluImm jpa_at_54 ?_; wn
+  refine WP.aluImm jpa_at_58 ?_; wn
+  refine WP.alu jpa_at_5a ?_; wn
+  unfold parseModel; rw [hdl]
+  exact pa_loop E hst (n + 1) (Nat.le_refl _) _ _ [] _ hFI (by pregs hR, E.z0)
+    (by (try rsimp); exact h18) (by (try rsimp); rw [hR.s8]; exact pc_inc n) (by (try rsimp); (try simp only [ev0, ev_mv hz]); (try rfl))
+    (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact h26) hst (by (try rsimp); (try simp only [ev0, ev_mv hz]); (try rfl)) (by (try rsimp); exact h26)
+    (by (try rsimp); (try simp only [ev0, ev_mv hz]); (try rw [Nat.sub_self]); (try rfl))
+
+/-- `0x38`: the start position, `0` in canonical mode or past the leading
+whitespace otherwise. -/
+theorem pa_start (E : PaEnv M0 base s p out n g0 Mp F) {c : Bool} {M : Word → BitVec 8}
+    (hFI : FInv M0 Mp s F n [] M) (hR : PRegs f g0 F p n c) (h18 : f 18 = out) :
+    WP jsonParseCode base (PPost M0 s p out g0 (parseModel c (memBytes M0 p n))) M 0x38 f := by
+  have hn := E.hn
+  have hd : memBytes M p n = memBytes M0 p n := hFI.1.bytes E.sP
+  have hc1 : ParseCode M base := E.code.out hFI.1 E.sep
+  refine WP.zero fun hz => ?_
+  refine WP.branch jpa_at_38 (fun eb => ?_) (fun eb => ?_) <;> wn
+  · rw [hR.s3, show f x0 = 0 from hz, pz_mode] at eb
+    cases c
+    · refine WP.alu jpa_at_40 ?_; wn
+      refine WP.alu jpa_at_42 ?_; wn
+      refine WP.aluImm jpa_at_44 ?_; wn
+      refine WP.callSkipWs (tb := base + 0xFFFFF372 + 0xFFFFF616 + 0x288) (p := p) (n := n) (q := 0)
+        jpa_at_46 jpa_at_4a (by simp only [BitVec.add_assoc]; rfl)
+        (even_at _ (even_at _ (even_at base E.hb _ (by decide)) _ (by decide)) _ (by decide)) (by decide)
+        hc1.get.ri.sw (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact hR.s7)
+        (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact hR.s8)
+        (by (try rsimp); (try simp only [ev0, ev_mv hz]); (try rfl)) (by omega) (by decide) fun m2 h0 => ?_
+      refine WP.alu jpa_at_4e ?_; wn
+      exact pa_50 E hFI (by pregs hR, E.z0) (by (try rsimp); exact h18)
+        (by (try rsimp); (try simp only [ev0, ev_mv hz]); rw [h0, hd]; rfl)
+    · exact absurd eb (by decide)
+  rw [hR.s3, show f x0 = 0 from hz, pz_mode] at eb
+  cases c
+  · exact absurd eb (by decide)
+  refine WP.aluImm jpa_at_3c ?_; wn
+  refine WP.jal jpa_at_3e (by decide) ?_; wn
+  exact pa_50 E hFI (by pregs hR, E.z0) (by (try rsimp); exact h18) (by (try rsimp); (try simp only [ev0, ev_mv hz]); (try rfl))
+
 end
 
 end C3.RV32
