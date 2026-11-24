@@ -4,6 +4,7 @@ import C3BootProofs.Proofs.PartCur
 import C3BootProofs.Proofs.ImageHelpers
 import C3BootProofs.Proofs.Crc32
 import C3BootProofs.Proofs.CtInto
+import C3BootProofs.Proofs.FeToBytesDecode
 
 /-!
 # `c3_verify::bootstate::decode`, as compiled

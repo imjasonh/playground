@@ -46,7 +46,7 @@ theorem ip_copyOut (env : IEnv P R G ptr len out) (code0 : ICode M0 P)
       Sep (out + BitVec.ofNat 32 j) n (ipWindow P + BitVec.ofNat 32 i) l :=
     fun j n i l h1 h2 => (env.hOW.sub (c := j) (l := n) h1).subR (c := i) (l := l) h2
   have oP : ∀ j, j + 4 ≤ 0x110 → Sep (out + BitVec.ofNat 32 j) 4 P imageParseCode.length := fun j hj => by
-    have := oW j 4 0x2D2 imageParseCode.length hj (by decide)
+    have := oW j 4 0x2B78 imageParseCode.length hj (by decide)
     rwa [← ip_wP P] at this
   have oo : ∀ j n i l, j + n ≤ i ∨ i + l ≤ j → j + n ≤ 0x110 → i + l ≤ 0x110 →
       Sep (out + BitVec.ofNat 32 j) n (out + BitVec.ofNat 32 i) l :=
