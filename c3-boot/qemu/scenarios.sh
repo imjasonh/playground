@@ -2,8 +2,8 @@
 # Boots c3-boot in Espressif's QEMU through an update's life: first boot,
 # a tampered image, a trial update, the security-level raise, a rollback
 # attempt, a failed trial, metadata signed by a key the root doesn't trust,
-# a TUF root rotation, and power cuts during a trial and during a
-# security-level raise.
+# a TUF root rotation, power cuts during a trial and during a security-level
+# raise, and a slot that carries the longest TUF root chain.
 #
 # Every boot after the first reuses the same flash and eFuse files, so the
 # boot-state writes and eFuse burns carry over, as on a device. Images are
@@ -230,6 +230,16 @@ ota tuf-package --targets "${work}/targets2.json" --trusted-root "${trusted}" \
   --out "${work}/tuf2-unrotated"
 ota tuf-package --targets "${work}/targets-expired.json" --trusted-root "${trusted}" \
   --out "${work}/tuf-expired"
+# The longest chain a slot holds: development roots 2 through 65.
+long_roots=()
+for v in $(seq 2 65); do
+  ota tuf-dev-root --keys "${keys}" --version "${v}" --out "${work}/root${v}.json"
+  long_roots+=("${work}/root${v}.json")
+done
+ota tuf-dev-targets --keys "${keys}" --root-version 65 --trusted-root "${trusted}" \
+  --out "${work}/targets65.json"
+ota tuf-package --roots "$(IFS=,; echo "${long_roots[*]}")" \
+  --targets "${work}/targets65.json" --trusted-root "${trusted}" --out "${work}/tuf-long"
 
 slot() {
   ota slot --image "${work}/app$1.img" --bundle "${work}/app$1.bundle" \
@@ -241,6 +251,7 @@ for bad in wrong-identity stale; do
     --tuf "${work}/tuf1" --out "${work}/slot-v1-${bad}"
 done
 slot 1 tuf-expired slot-v1-expired
+slot 1 tuf-long slot-v1-long
 slot 2 tuf1 slot-v2
 slot 3 tuf2 slot-v3
 slot 3 tuf2-unrotated slot-v3-unrotated
@@ -440,6 +451,15 @@ for bad in wrong-identity stale expired; do
   expect "c3-boot: halt e5"
   expect_not "c3-demo:"
 done
+
+# On a fresh board, a slot whose TUF part holds 64 new roots boots: the
+# bootloader reads them from flash one at a time.
+dd if=/dev/zero of="${work}/long-chain.efuse" bs=1024 count=1 status=none
+ota flash --bootloader "${work}/bootloader-burn-off.bin" --slot-a "${work}/slot-v1-long" \
+  --out "${work}/long-chain.flash"
+boot long-chain "${work}/long-chain.flash" "${work}/long-chain.efuse"
+expect "c3-demo: running from slot 0, version 1"
+expect "c3-demo: confirmed slot 0"
 
 # A bootloader that pins Sigstore's root rejects the development metadata,
 # and boots no further than its halt.

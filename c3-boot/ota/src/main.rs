@@ -32,8 +32,8 @@ commands:
   tuf-verify --pinned FILE --tuf FILE
   tuf-accept --image FILE --bundle FILE --tuf FILE --pinned FILE POLICY
              [--level N]
-  tuf-dev-root --keys DIR --version 1|2 --out FILE
-  tuf-dev-targets --keys DIR --root-version 1|2 --trusted-root FILE
+  tuf-dev-root --keys DIR --version N --out FILE
+  tuf-dev-targets --keys DIR --root-version N --trusted-root FILE
                   [--expires TIME] --out FILE
 
 POLICY is --policy FILE, or --issuer S --build-signer-uri S

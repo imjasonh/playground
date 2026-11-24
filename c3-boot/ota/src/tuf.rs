@@ -440,17 +440,15 @@ impl DevKeys {
 
     fn targets_key(&self, root_version: u64) -> Result<&TestKey, String> {
         match root_version {
+            0 => Err("development roots start at version 1".to_string()),
             1 => Ok(&self.targets[0]),
-            2 => Ok(&self.targets[1]),
-            _ => Err(format!(
-                "the development roots are versions 1 and 2, not {root_version}"
-            )),
+            _ => Ok(&self.targets[1]),
         }
     }
 
-    /// Root version 1 or 2. Both name the three root keys with threshold
-    /// 2 and are signed by root keys 1 and 2. Version 1 trusts targets key
-    /// 1, and version 2 rotates to targets key 2.
+    /// A root of any version. Each names the three root keys with threshold
+    /// 2 and is signed by root keys 1 and 2. Version 1 trusts targets key 1,
+    /// and version 2 and later trust targets key 2.
     pub fn root(&self, version: u64) -> Result<Vec<u8>, String> {
         let root: Vec<&TestKey> = self.root.iter().collect();
         let signed = root_signed(
