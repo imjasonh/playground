@@ -640,11 +640,6 @@ final class MCULabController: NSObject, ObservableObject {
                 central?.cancelPeripheralConnection(peripheral)
             }
         case .error(let message):
-            if let expectedOffset = MCULabProtocol.parseChunkGapExpectedOffset(from: message),
-               attemptOTARewind(to: expectedOffset)
-            {
-                return
-            }
             otaStreamTask?.cancel()
             resumePendingOTAContinuations()
             otaPhase = .failed(message)
