@@ -116,6 +116,13 @@ structure Part where
 structure Manifest where
   image : Part
   bundle : Part
+  tuf : Part
+  deriving DecidableEq, Repr
+
+/-- A version 1 manifest, which the V0 image parses. -/
+structure ManifestV1 where
+  image : Part
+  bundle : Part
   chain : Part
   blob : Part
   deriving DecidableEq, Repr
@@ -131,8 +138,23 @@ def readPart (lo hi : Nat) (bytes : Bytes) : Option (Part × Bytes) := do
 
 def Part.endOf (p : Part) : Nat := p.offset + p.length
 
-/-- Decodes a 40-byte slot manifest. -/
+/-- Decodes a 32-byte version 2 slot manifest. -/
 def decodeManifest (bytes : Bytes) : Option Manifest := do
+  let rest ← readExpect magicManifest bytes
+  let (version, rest) ← readU16 rest
+  require (version == 2)
+  let rest ← readZeros 2 rest
+  let (image, rest) ← readPart 37 0x1D0000 rest
+  let (bundle, rest) ← readPart 49 16384 rest
+  let (tuf, rest) ← readPart 18 0x60000 rest
+  require rest.isEmpty
+  require (image.offset == imageOffset)
+  require ([image, bundle, tuf].all (·.endOf < u32Limit))
+  require (image.endOf ≤ bundle.offset && bundle.endOf ≤ tuf.offset && tuf.endOf ≤ slotSize)
+  pure ⟨image, bundle, tuf⟩
+
+/-- Decodes a 40-byte version 1 slot manifest. -/
+def decodeManifestV1 (bytes : Bytes) : Option ManifestV1 := do
   let rest ← readHeader magicManifest bytes
   let rest ← readZeros 2 rest
   let (image, rest) ← readPart 37 0x1D0000 rest

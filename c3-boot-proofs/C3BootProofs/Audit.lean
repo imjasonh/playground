@@ -6756,11 +6756,11 @@ end C3
 /-- info: 'C3.exists_manifestParse_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_manifestParse_machine
 
-/-- info: 'C3.decodeManifest_bytes' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.decodeManifest_bytes
+/-- info: 'C3.decodeManifestV1_bytes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.decodeManifestV1_bytes
 
-/-- info: 'C3.decodeManifest_parse' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.decodeManifest_parse
+/-- info: 'C3.decodeManifestV1_parse' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.decodeManifestV1_parse
 
 /-- info: 'C3.manifestParse_decodes' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.manifestParse_decodes

@@ -55,13 +55,6 @@ is higher, and the current level otherwise. -/
 def burnTarget (slotLevel : Nat) (confirmed : Bool) (efuseLevel : Nat) : Nat :=
   if confirmed && efuseLevel < slotLevel then slotLevel else efuseLevel
 
-/-- The level rules for one slot: the image's security version is at most
-16 and equals the trust-root blob's level, which is at least the key-set
-chain's level and at least the eFuse level. -/
-def checkSlot (chainLevel blobLevel securityVersion efuseLevel : Nat) : Bool :=
-  securityVersion ≤ maxLevel && securityVersion == blobLevel &&
-    chainLevel ≤ blobLevel && efuseLevel ≤ blobLevel
-
 /-- The field as the bootloader reads it from `SECURE_VERSION`. -/
 def Fuses.ofNat (v : Nat) : Fuses :=
   (List.range maxLevel).map v.testBit

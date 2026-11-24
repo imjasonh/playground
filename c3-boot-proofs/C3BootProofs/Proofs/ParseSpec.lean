@@ -2,10 +2,10 @@ import C3BootProofs.Proofs.Parse
 import C3BootProofs.Spec.Formats
 
 /-!
-# `manifest::parse` agrees with `decodeManifest`
+# `manifest::parse` agrees with `decodeManifestV1`
 
-`decodeManifest_parse` proves that `parseErr`, what the compiled `parse`
-decides, accepts the 40 bytes exactly when the Lean decoder `decodeManifest`
+`decodeManifestV1_parse` proves that `parseErr`, what the compiled `parse`
+decides, accepts the 40 bytes exactly when the Lean decoder `decodeManifestV1`
 does, and that the four parts it returns are the decoder's.
 `manifestParse_decodes` joins that to `manifestParse_correct`: the compiled
 function returns `Ok` with the decoder's manifest, or `Err`, as the decoder
@@ -22,9 +22,9 @@ open RV32
 /-- A little-endian 32-bit word from four bytes. -/
 abbrev le32 (a b c d : Nat) : Nat := a + 256 * (b + 256 * (c + 256 * d))
 
-theorem decodeManifest_bytes (b0 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 b14 b15 b16 b17 b18 b19 b20 b21 b22 b23
+theorem decodeManifestV1_bytes (b0 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 b14 b15 b16 b17 b18 b19 b20 b21 b22 b23
     b24 b25 b26 b27 b28 b29 b30 b31 b32 b33 b34 b35 b36 b37 b38 b39 : Nat) :
-    decodeManifest [b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15, b16, b17, b18, b19, b20,
+    decodeManifestV1 [b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15, b16, b17, b18, b19, b20,
       b21, b22, b23, b24, b25, b26, b27, b28, b29, b30, b31, b32, b33, b34, b35, b36, b37, b38, b39] =
     if ([b0, b1, b2, b3] == [67, 51, 83, 76]) = true ∧ b4 + 256 * b5 = 1 ∧ b6 = 0 ∧ b7 = 0 ∧
         (37 ≤ le32 b12 b13 b14 b15 ∧ le32 b12 b13 b14 b15 ≤ 0x1D0000) ∧
@@ -43,7 +43,7 @@ theorem decodeManifest_bytes (b0 b1 b2 b3 b4 b5 b6 b7 b8 b9 b10 b11 b12 b13 b14 
     then some ⟨⟨le32 b8 b9 b10 b11, le32 b12 b13 b14 b15⟩, ⟨le32 b16 b17 b18 b19, le32 b20 b21 b22 b23⟩,
       ⟨le32 b24 b25 b26 b27, le32 b28 b29 b30 b31⟩, ⟨le32 b32 b33 b34 b35, le32 b36 b37 b38 b39⟩⟩
     else none := by
-  simp only [decodeManifest, readHeader, readExpect, readU16, readZeros, readPart, readU32, magicManifest,
+  simp only [decodeManifestV1, readHeader, readExpect, readU16, readZeros, readPart, readU32, magicManifest,
     List.take, List.drop, List.length, List.all, require, bind, Option.bind,
     Part.endOf, u32Limit, slotSize, imageOffset, List.isEmpty]
   by_cases h1 : ([b0, b1, b2, b3] == [67, 51, 83, 76]) = true <;> simp [h1]
@@ -112,13 +112,13 @@ theorem version_toNat (x4 x5 : BitVec 8) :
   omega
 
 
-theorem decodeManifest_parse (M : Word → BitVec 8) (bp : Word) :
-    decodeManifest (manifestBytes M bp) =
+theorem decodeManifestV1_parse (M : Word → BitVec 8) (bp : Word) :
+    decodeManifestV1 (manifestBytes M bp) =
       match parseErr M bp with
       | some _ => none
       | none => some ⟨⟨(mw M bp 8).toNat, (mw M bp 12).toNat⟩, ⟨(mw M bp 16).toNat, (mw M bp 20).toNat⟩,
           ⟨(mw M bp 24).toNat, (mw M bp 28).toNat⟩, ⟨(mw M bp 32).toNat, (mw M bp 36).toNat⟩⟩ := by
-  rw [manifestBytes_eq, decodeManifest_bytes]
+  rw [manifestBytes_eq, decodeManifestV1_bytes]
   have hb : ∀ i, mb M bp i < 256 := fun i => (M _).isLt
   have h0 := hb 0; have h1 := hb 1; have h2 := hb 2; have h3 := hb 3
   have cm : (mw M bp 0 == 0x4C533343) = ([mb M bp 0, mb M bp 1, mb M bp 2, mb M bp 3] == [67, 51, 83, 76]) := by
@@ -275,7 +275,7 @@ theorem RV32.parseMem_frame {M : Word → BitVec 8} {out bp x : Word} (h : Sep o
 
 /-- **The compiled `manifest::parse` decodes as the Lean spec does.** Under
 `manifestParse_correct`'s hypotheses, `parse` returns with tag 1 (`Err`)
-at `out` when `decodeManifest` rejects the 40 bytes at `bp`, and with tag 0
+at `out` when `decodeManifestV1` rejects the 40 bytes at `bp`, and with tag 0
 (`Ok`) and the decoder's four parts from `out + 4` when it accepts them. It
 changes no memory outside the result and its 144 bytes of stack. -/
 theorem manifestParse_decodes (m : Machine) (P retAddr out bp R G : Word)
@@ -286,7 +286,7 @@ theorem manifestParse_decodes (m : Machine) (P retAddr out bp R G : Word)
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = reg m sp ∧
       (∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ t0 → reg m' r = reg m r) ∧
       (∀ x, Sep R 144 x 1 → Sep out 36 x 1 → m'.mem x = m.mem x) ∧
-      match decodeManifest (manifestBytes m.mem bp) with
+      match decodeManifestV1 (manifestBytes m.mem bp) with
       | none => m'.mem out = 1
       | some man =>
         m'.mem out = 0 ∧
@@ -309,7 +309,7 @@ theorem manifestParse_decodes (m : Machine) (P retAddr out bp R G : Word)
       memLoad32 (parseMem m.mem out bp) (out + BitVec.ofNat 32 j) := fun j hj =>
     memLoad32_congr fun i hi => by rw [add_ofNat_assoc]; exact hO (j + i) (by omega)
   have tw : ∀ x : Word, BitVec.ofNat 32 x.toNat = x := fun x => by rw [BitVec.ofNat_toNat, BitVec.setWidth_eq]
-  rw [decodeManifest_parse]
+  rw [decodeManifestV1_parse]
   cases hp : parseErr m.mem bp with
   | some e =>
     dsimp only

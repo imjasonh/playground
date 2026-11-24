@@ -43,11 +43,6 @@ def main : IO Unit := do
       | some i => toString (2 ^ i)
       | none => "-"
     out.putStrLn s!"level {v} {level f} {mask}"
-  for c in levels do
-    for b in levels do
-      for s in levels do
-        for e in levels do
-          out.putStrLn s!"check {c} {b} {s} {e} {showBool (checkSlot c b s e)}"
   for l in levels do
     for c in [false, true] do
       for e in levels do

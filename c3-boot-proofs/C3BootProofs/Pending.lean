@@ -305,6 +305,7 @@ Six functions changed shape in the cutover: `manifest_parse`,
 `generalized_time`, `sigstore::verify`, `boot`, `boot_main`'s first closure,
 and `boot_main`. Every module here proves something about one of them, or
 imports a module that does:
+imports a module that does:
 
 - `Proofs/Sv*`: the stages of `sigstore::verify`. Its code and its
   read-only data moved; the P-256 check is now a call to

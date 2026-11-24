@@ -50,8 +50,7 @@ def result (tokens : List String) : Option String :=
   | ["manifest", h] => do
     let bytes ← parseHexTok h
     pure <| match decodeManifest bytes with
-      | some m =>
-        s!"ok i={showPart m.image} b={showPart m.bundle} c={showPart m.chain} l={showPart m.blob}"
+      | some m => s!"ok i={showPart m.image} b={showPart m.bundle} t={showPart m.tuf}"
       | none => "err"
   | ["image", len, h] => do
     let n ← len.toNat?
