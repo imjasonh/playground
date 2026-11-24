@@ -40,6 +40,8 @@ import C3BootProofs.Proofs.U16
 import C3BootProofs.Proofs.Reserved
 import C3BootProofs.Proofs.Parse
 import C3BootProofs.Proofs.ParseSpec
+import C3BootProofs.Proofs.ParseCur
+import C3BootProofs.Proofs.ParseSpecCur
 import C3BootProofs.Proofs.ImageHelpers
 import C3BootProofs.Proofs.ImageParse
 import C3BootProofs.Proofs.ImageCalls

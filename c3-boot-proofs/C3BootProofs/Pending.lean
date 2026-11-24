@@ -17,7 +17,6 @@ import C3BootProofs.Models.SafegcdP256
 import C3BootProofs.Models.WeierstrassNist
 import C3BootProofs.Proofs.Boot
 import C3BootProofs.Proofs.BootSpec
-import C3BootProofs.Proofs.ParseCur
 import C3BootProofs.Proofs.SvAt
 import C3BootProofs.Proofs.SvAttrLoop
 import C3BootProofs.Proofs.SvCLoop
@@ -301,15 +300,14 @@ can start from them.
 
 Six functions changed shape in the cutover: `manifest_parse`,
 `generalized_time`, `sigstore::verify`, `boot`, `boot_main`'s first closure,
-and `boot_main`. Every module here proves something about one of them, or
-imports a module that does:
-imports a module that does:
+and `boot_main`. The root module proves `manifest_parse` and
+`generalized_time` again. Every module here proves something about one of
+the other four, or imports a module that does:
 
 - `Proofs/Sv*`: the stages of `sigstore::verify`. Its code and its
   read-only data moved; the P-256 check is now a call to
   `p256_verify_prehash` and the leaf certificate's time check calls
   `generalized_time`.
-- `Proofs/ParseCur`: `manifest_parse`, which now reads manifest version 2.
 - `Proofs/BootSpec` and `Proofs/Boot`: `boot`, `boot_main`, and its first
   closure, which now read the TUF part and burn eFuses.
 - `Models/P256*`, `Models/SafegcdP256`, `Models/P384*`,

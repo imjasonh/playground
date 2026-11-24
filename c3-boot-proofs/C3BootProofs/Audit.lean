@@ -136,6 +136,7 @@ import C3BootProofs.Proofs.ScalarFromSlice256
 import C3BootProofs.Proofs.IsSmallOrder
 import C3BootProofs.Proofs.DateTime
 import C3BootProofs.Proofs.X509ReadTime
+import C3BootProofs.Proofs.ParseSpecCur
 import C3BootProofs.Proofs.Base64Decode
 import C3BootProofs.Proofs.Base64Encode
 import C3BootProofs.Proofs.Sha512UpdateArr32
@@ -3142,6 +3143,33 @@ theorem exists_x509ReadTime_machine :
     by decide +kernel, by decide +kernel, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
     RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
     RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm⟩
+
+/-- Memory with `manifest::parse` and its callees where the image loads them,
+and zeros elsewhere. -/
+def witnessMemParseCur : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.manifestParseAddress, Image.manifestParseCode), (Image.readerMagicAddress, Image.readerMagicCode),
+    (Image.readerArray4Address, Image.readerArray4Code), (Image.readerBytesAddress, Image.readerBytesCode),
+    (Image.readerU16Address, Image.readerU16Code), (Image.readerReservedAddress, Image.readerReservedCode),
+    (Image.manifestPartAddress, Image.manifestPartCode), (Image.readerU32Address, Image.readerU32Code)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `manifest::parse` on 32 bytes at `0x3FCC6000`, with
+the result at `0x3FCC5000` and the stack at `0x3FCC8000`, meets
+`Cur.manifestParse_correct`'s hypotheses. -/
+theorem exists_manifestParseCur_machine :
+    ∃ (m : RV32.Machine) (sp0 out bp retAddr : RV32.Word),
+      RV32.Cur.MPCode m.mem ∧ m.pc = RV32.Cur.MP ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = bp ∧
+      RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
+      sp0.toNat % 4 = 0 ∧ 0x80 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧ bp ≠ 0 ∧ bp.toNat + 32 ≤ 2 ^ 32 ∧
+      out.toNat % 4 = 0 ∧ out.toNat + 28 ≤ 0x40000000 ∧ RV32.Sep bp 32 (sp0 + 0xFFFFFF80) 0x80 ∧
+      RV32.Sep out 28 (sp0 + 0xFFFFFF80) 0x80 := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, RV32.Cur.MP, witnessMemParseCur⟩, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000,
+    0, ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide,
+    by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide)⟩
+  all_goals code_in
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
@@ -8276,6 +8304,18 @@ end C3
 
 /-- info: 'C3.exists_x509ReadTime_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_x509ReadTime_machine
+
+/-- info: 'C3.RV32.Cur.manifestParse_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.manifestParse_correct
+
+/-- info: 'C3.decodeManifest_parse' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.decodeManifest_parse
+
+/-- info: 'C3.RV32.Cur.manifestParse_decodes' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Cur.manifestParse_decodes
+
+/-- info: 'C3.exists_manifestParseCur_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_manifestParseCur_machine
 
 /-- info: 'C3.RV32.dt_check' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.dt_check
