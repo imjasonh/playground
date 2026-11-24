@@ -171,6 +171,7 @@ import C3BootProofs.Proofs.JsonMembers
 import C3BootProofs.Proofs.JsonLiteralEnd
 import C3BootProofs.Proofs.JsonU64
 import C3BootProofs.Proofs.JsonReadItem
+import C3BootProofs.Proofs.JsonNextElement
 
 /-!
 # Audit
@@ -8670,3 +8671,6 @@ end C3
 
 /-- info: 'C3.RV32.jsonReadItem_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.jsonReadItem_correct
+
+/-- info: 'C3.RV32.jsonNextElement_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonNextElement_correct
