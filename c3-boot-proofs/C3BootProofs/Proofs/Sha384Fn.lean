@@ -1006,6 +1006,155 @@ theorem hf_rd (C : HfCtx M0 F out p len) {M : Word → BitVec 8} {n : Machine} (
     fun q hq h9 h8 h26 => by rw [k3 q hq h9 h8 h26, k2 q hq], hb3, fr3⟩
 
 
+/-- From 0xD6 to 0x22E, the inlined `finalize`: with the hasher at
+`F + 0xD0` holding `h`, the function writes the SHA-384 stream's 64 bytes to
+`F + 0x1D0`, the first 48 of which are `sha384 h`. -/
+theorem hf_final (C : HfCtx M0 F out p len) {M : Word → BitVec 8} {n : Machine} (D : HfSt M0 Ms F r0 M n 0xD6)
+    (h20 : reg n 20 = F + BitVec.ofNat 32 0xD0) (h26 : reg n 26 = F + BitVec.ofNat 32 0x150)
+    (h8 : reg n 8 = F + BitVec.ofNat 32 0x1D0) {h : Bytes} (H : Hasher3At M (F + BitVec.ofNat 32 0xD0) h) :
+    ∃ n' M', Steps n n' ∧ HfSt M0 Ms F r0 M' n' 0x22E ∧ reg n' 18 = reg n 18 ∧
+      memBytes M' (F + BitVec.ofNat 32 0x1D0) 48 = sha384 h := by
+  obtain ⟨n1, c1, D1, k1, g21, g22, g23, g24, g19, g25, ga0, ga1⟩ := hf_flen C D h20 H
+  obtain ⟨n2, M2, c2, D2, k2, E2, -⟩ := hf_fpad C D1 H ga0 ga1 g19
+    (by rw [k1 26 (by decide) (by decide), h26])
+  have p2 : ∀ q : Fin 32, q.val ∈ evKeep → reg n2 q = reg n1 q := k2
+  obtain ⟨n3, M3, c3, D3, k3, E3, -⟩ := hf_fend C D2
+    (by rw [p2 26 (by decide), k1 26 (by decide) (by decide), h26]) (Nat.mod_lt _ (by decide))
+    (by rw [p2 21 (by decide), g21]) (by rw [p2 22 (by decide), g22]) (by rw [p2 23 (by decide), g23])
+    (by rw [p2 24 (by decide), g24])
+  obtain ⟨n4, M4, c4, D4, k4, E4, -⟩ := hf_rd C D3
+    (by rw [k3 8 (by decide), p2 8 (by decide), k1 8 (by decide) (by decide), h8])
+    (by rw [k3 26 (by decide), p2 26 (by decide), k1 26 (by decide) (by decide), h26])
+  have hlo : (BitVec.ofNat 32 (h.length / 128)).toNat = h.length / 128 := by
+    have := H.hlen; rw [BitVec.toNat_ofNat]; omega
+  rw [hlo, Nat.div_add_mod] at E3
+  have E : memBytes M4 (F + BitVec.ofNat 32 0x1D0) 64 =
+      ((fullBlocks5 h ++ Sha512.blocks ((padTail5 h).length / 128) (padTail5 h)).foldl Sha512.compress
+        Sha512.h0384).flatMap Sha512.wordBytes := by
+    rw [E4, E3, ← E2]
+  refine ⟨n4, M4, c1.trans (c2.trans (c3.trans c4)), D4, ?_, ?_⟩
+  · rw [k4 18 (by decide) (by decide) (by decide) (by decide), k3 18 (by decide), p2 18 (by decide),
+      k1 18 (by decide) (by decide)]
+  · rw [sha384_eq_stream, ← E, show (64 : Nat) = 48 + 16 from rfl, memBytes_split,
+      List.take_left' (memBytes_length _ _ _)]
+
+theorem hf_mb_ext {M M' : Word → BitVec 8} {a b : Word} {n : Nat}
+    (h : ∀ i, i < n → M' (a + BitVec.ofNat 32 i) = M (b + BitVec.ofNat 32 i)) : memBytes M' a n = memBytes M b n := by
+  unfold memBytes
+  exact List.map_congr_left fun i hi => congrArg BitVec.toNat (h i (List.mem_range.mp hi))
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 8000000 in
+/-- The call of `memcpy(out, F + 0x1A0, 48)` at 0x246. It writes outside the
+stack, so the result is a plain `St`, and the bytes the callees' stack holds
+are `copyBytes` of the memory before. -/
+theorem hf_out (C : HfCtx M0 F out p len) {M : Word → BitVec 8} {n : Machine} (D : HfSt M0 Ms F r0 M n 0x246)
+    (ha0 : reg n a0 = out) (ha1 : reg n a1 = F + BitVec.ofNat 32 0x1A0) (ha2 : reg n a2 = BitVec.ofNat 32 48) :
+    ∃ n', Steps n n' ∧ St n'.mem HF n' 0x24E (reg n') ∧ reg n' sp = F ∧ reg n' 3 = r0 3 ∧ reg n' 4 = r0 4 ∧
+      CodeIn n'.mem HF sha384FnCode ∧
+      ∀ x, Sep (hfG F) 0x420 x 1 → n'.mem x = copyBytes M out (F + BitVec.ofNat 32 0x1A0) 48 x := by
+  have hc := D.code C
+  obtain ⟨n1, c1, pc1, mem1, regs1⟩ := D.st.callRa (cb := BitVec.ofNat 32 memcpyStubAddress) hc hf_at_246 hf_at_24a
+    (by decide) (by decide)
+  have r1 := PEnv.reg1 regs1 D.st.zero
+  have sp1 : reg n1 sp = F := by rw [r1 _ (by decide), D.hsp]
+  have hz : (0xFFFFFFF0 : Word).toNat = 2 ^ 32 - 16 := rfl
+  have hi := D.hiM C
+  have hout := C.hout
+  have E : McEnv n1.mem (BitVec.ofNat 32 memcpyStubAddress + 8) out (F + BitVec.ofNat 32 0x1A0)
+      (reg n1 sp + 0xFFFFFFF0) 48 := by
+    rw [mem1, sp1]
+    exact { code := C.env.mcb.hi hi (by decide) (by decide)
+            hDC := sep_of_le (Nat.le_trans hout (by decide)) (by decide)
+            hFC := (C.zone hz (by decide) (C.hiG (by decide) (by decide)).symm).symm
+            hdF := C.zone hz (by decide) C.sOut
+            hsF := C.zoneF hz (by decide) (by decide)
+            hsep := (C.fS C.sOut (by decide)).symm
+            hF := by rw [C.f16 hz (by decide)]; have := C.hF; have := C.hlo; omega
+            hFw := by rw [C.f16 hz (by decide)]; have := C.hhi; omega
+            hdw := by omega
+            hsw := by rw [C.fN (by decide)]; have := C.hhi; omega }
+  obtain ⟨n2, c2, pc2, sp2, _, f2, k2⟩ := memcpy_correct n1 (BitVec.ofNat 32 memcpyStubAddress)
+    (HF + BitVec.ofNat 32 (0x246 + 8)) out (F + BitVec.ofNat 32 0x1A0) 48
+    (fun i hi' => by rw [mem1]; exact C.env.mcs.hi hi (by decide) (by decide) i hi') (by decide)
+    pc1 (by rw [r1 _ (by decide), ha0]) (by rw [r1 _ (by decide), ha1]) (by rw [r1 _ (by decide), ha2])
+    (by rw [regs1]; exact hf_ra) (even_clear _ (even_at HF (by decide) (0x246 + 8) (by decide))) E
+  rw [mem1, sp1] at f2
+  have k2' : ∀ q : Fin 32, q.val ∈ evKeep → reg n2 q = reg n q := fun q hq => by
+    obtain ⟨e1, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15, e16, e17, e18⟩ := hfKeep hq
+    rw [k2 q e7 e8 e9 e10 e11 e12 e13 e3 e4 e5 e14 e15 e16 e18, r1 q e1]
+  have fz : ∀ x, Sep (hfG F) 0x420 x 1 → n2.mem x = copyBytes M out (F + BitVec.ofNat 32 0x1A0) 48 x :=
+    fun x hx => f2 x (C.zoneIn hz (by decide) hx)
+  have hi2 : ∀ x : Word, 0x40000000 ≤ x.toNat → n2.mem x = M0 x := fun x hx => by
+    rw [fz x (C.zG (C.hiG hx (by have := x.isLt; omega))),
+      copyBytes_sep (sep_of_le (by omega) (by have := x.isLt; omega)) (Nat.le_refl _), hi x hx]
+  exact ⟨n2, c1.trans c2, ⟨pc2, rfl, fun _ => rfl⟩, by rw [sp2, sp1], by rw [k2' 3 (by decide), D.gp],
+    by rw [k2' 4 (by decide), D.tp], C.env.cod.hi hi2 (by decide) (by rw [hf_len]; decide), fz⟩
+
 end
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 64000000 in
+/-- **`sha384`, as compiled**: from its entry to its return, it writes
+`sha384` of the `len` bytes at `p` to the 48 bytes at `out`, restores `sp`,
+`gp`, `tp`, and the registers it saved, and leaves memory outside its stack
+and `out` as it was. -/
+theorem sha384Fn_correct (m : Machine) {F out p : Word} {len : Nat} (C : HfCtx m.mem F out p len)
+    (hpc : m.pc = HF) (hsp : reg m sp = F + BitVec.ofNat 32 0x240) (ha0 : reg m a0 = out) (ha1 : reg m a1 = p)
+    (ha2 : reg m a2 = BitVec.ofNat 32 len) (hret : reg m ra &&& ~~~1 = reg m ra) :
+    ∃ m', Steps m m' ∧ m'.pc = reg m ra ∧ reg m' sp = reg m sp ∧ (∀ r o, (r, o) ∈ hfPs → reg m' r = reg m r) ∧
+      reg m' 3 = reg m 3 ∧ reg m' 4 = reg m 4 ∧ memBytes m'.mem out 48 = sha384 (memBytes m.mem p len) ∧
+      ∀ x, Sep (hfG F) 0x660 x 1 → Sep out 48 x 1 → m'.mem x = m.mem x := by
+  obtain ⟨n0, Ms, c0, D0, hsl, k0⟩ := hf_pro m C hpc hsp
+  obtain ⟨n1, M1, c1, D1, -, r8, r9, r18, r19, ra2, -, hv, q0, q1, q2, q3⟩ := hf_init C D0
+    (by rw [k0 a0 (by decide) (by decide), ha0]) (by rw [k0 a1 (by decide) (by decide), ha1])
+    (by rw [k0 a2 (by decide) (by decide), ha2])
+  obtain ⟨n2, c2, D2, r18b, H2⟩ := hf_absorb C D1 r8 r9 r19 ra2 hv q0 q1 q2 q3
+  obtain ⟨n3, c3, D3, r18c, h20, h26, h8, H3⟩ := hf_copy C D2 H2
+  obtain ⟨n4, M4, c4, D4, r18d, E4⟩ := hf_final C D3 h20 h26 h8 H3
+  have vo : reg n4 18 = out := by rw [r18d, r18c, r18b, r18]
+  obtain ⟨n5, c5, D5, hr5⟩ := D4.block C (off' := 0x236)
+    [.aluImm .add a0 sp 0x1A0, .aluImm .add a1 sp 0x1D0, .aluImm .add a2 x0 0x30]
+    (blockEnd_cons' hf_at_22e rfl (blockEnd_cons' hf_at_230 rfl (blockEnd_cons' hf_at_232 rfl rfl)))
+    ⟨trivial, trivial, trivial, trivial⟩ rfl
+    (fun q hq => by rcases hq with rfl | rfl | rfl <;> simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
+  obtain ⟨n6, c6, D6, k6, fz6⟩ := D5.memcpy C (d := 0x1A0) (N := 0x30) (s := F + BitVec.ofNat 32 0x1D0)
+    hf_at_236 hf_at_23a (by decide) (by decide)
+    (by rw [hr5]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D4.hsp]; rfl)
+    (by rw [hr5]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D4.hsp]; rfl)
+    (by rw [hr5]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; (try rw [D4.st.zero]); try rfl)
+    (by decide) (C.zF (by decide)).symm (C.offs (Or.inl (by decide)) (by decide) (by decide))
+    (by rw [C.fN (by decide)]; have := C.hhi; omega)
+  have v18 : reg n6 18 = out := by rw [k6 18 (by decide), hr5, evb_reg 18 D4.st.zero (by decide), vo]
+  obtain ⟨n7, c7, D7, hr7⟩ := D6.block C (off' := 0x246)
+    [.aluImm .add a1 sp 0x1A0, .aluImm .add a2 x0 0x30, .alu .add a0 x0 (18 : Fin 32)]
+    (blockEnd_cons' hf_at_23e rfl (blockEnd_cons' hf_at_240 rfl (blockEnd_cons' hf_at_244 rfl rfl)))
+    ⟨trivial, trivial, trivial, trivial⟩ rfl
+    (fun q hq => by rcases hq with rfl | rfl | rfl <;> simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
+  obtain ⟨n8, c8, s8, sp8, g8, t8, cod8, fz8⟩ := hf_out C D7
+    (by rw [hr7]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; (try rw [D6.st.zero]); rw [v18]
+        exact BitVec.zero_add _)
+    (by rw [hr7]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D6.hsp]; rfl)
+    (by rw [hr7]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; (try rw [D6.st.zero]); try rfl)
+  have oS : ∀ i, i < 48 → Sep (hfG F) 0x420 (out + BitVec.ofNat 32 i) 1 := fun i hi =>
+    C.zG (C.sOut.sub (c := i) (l := 1) (by omega)).symm
+  have fS : ∀ c, c < 0x240 → Sep out 48 (F + BitVec.ofNat 32 c) 1 := fun c hc => (C.fS C.sOut (by omega)).symm
+  have hsl8 : ∀ r o, (r, o) ∈ hfPs → memLoad32 n8.mem (F + BitVec.ofNat 32 0x200 + o) = reg m r := fun r o hm => by
+    have hr := hfPs_mem hm
+    rw [← hsl r o hm]
+    refine vk_ld2 fun j hj => ?_
+    rw [hfSl F o (by omega), add_ofNat_assoc, fz8 _ (C.zF (by omega)), copyBytes_sep (fS _ (by omega)) (Nat.le_refl _),
+      D7.slots _ (by omega) (by omega)]
+  obtain ⟨m', c', pc', sp', rs', ks', mem'⟩ := hf_fin cod8 s8 sp8 C.hF hsl8 hret
+  refine ⟨m', c0.trans (c1.trans (c2.trans (c3.trans (c4.trans (c5.trans (c6.trans (c7.trans (c8.trans c')))))))),
+    pc', by rw [sp', hsp], rs', ?_, ?_, ?_, fun x hx ho => ?_⟩
+  · rw [ks' 3 (by decide) (by decide) (by decide) (by decide), g8]
+  · rw [ks' 4 (by decide) (by decide) (by decide) (by decide), t8]
+  · rw [mem', ← E4]
+    refine hf_mb_ext fun i hi => ?_
+    rw [fz8 _ (oS i hi), copyBytes_in hi (by decide),
+      fz6 (F + BitVec.ofNat 32 0x1A0 + BitVec.ofNat 32 i) (by rw [add_ofNat_assoc]; exact C.zF (by omega)),
+      copyBytes_in hi (by decide)]
+  · rw [mem', fz8 x (C.zG hx), copyBytes_sep ho (Nat.le_refl _), D7.agree x hx]
 
 end C3.RV32
