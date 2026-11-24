@@ -573,3 +573,4 @@ import C3BootProofs.Models.Ed25519RecoverX
 import C3BootProofs.Models.Ed25519SvModelPrime
 import C3BootProofs.Models.Ed25519Bytes2
 import C3BootProofs.Models.Ed25519Compress
+import C3BootProofs.Models.Ed25519Iso
