@@ -199,7 +199,7 @@ theorem kL_comp1 {f g : Fin 32 → Word} (hg : ∀ x, x ∉ itL → g x = f x) :
   fun x hx => hg x fun h => hx (List.mem_append_left _ h)
 
 /-- The registers `literal_end` changes before its epilogue restores the saved ones. -/
-abbrev leL : List (Fin 32) := jClob ++ [ra, sp, 8, 9, 18, 19, 20, 21, 22]
+abbrev litL : List (Fin 32) := jClob ++ [ra, sp, 8, 9, 18, 19, 20, 21, 22]
 
 /-- The frame offsets of the saved registers. -/
 abbrev leCs : List Nat := [0x20, 0x24, 0x28, 0x2C, 0x30, 0x34, 0x38, 0x3C]
@@ -270,7 +270,7 @@ variable {M M1 M2 : Word → BitVec 8} {base out s F p : Word} {f g0 : Fin 32 �
 
 theorem le_epi {Mf : Word → BitVec 8} {r : Option Nat} (hsp : f sp = F) (hS : Slots leCs F M1 Mf)
     (hv : LeSaved F g0 M1) (hsp0 : g0 sp = F + BitVec.ofNat 32 0x40) (hret : g0 ra &&& ~~~1 = g0 ra)
-    (hal : F.toNat % 4 = 0) (hz0 : g0 0 = 0) (hfr : ∀ x, x ∉ leL → f x = g0 x)
+    (hal : F.toNat % 4 = 0) (hz0 : g0 0 = 0) (hfr : ∀ x, x ∉ litL → f x = g0 x)
     (hR : UsizeResF M Mf out s 68 r) :
     WP jsonLiteralEndCode base (FPost (g0 ra) M out s 68 r g0) Mf 0x20 f := by
   obtain ⟨v1, v2, v3, v4, v5, v6, v7, v8⟩ := hv
@@ -308,7 +308,7 @@ theorem le_epi {Mf : Word → BitVec 8} {r : Option Nat} (hsp : f sp = F) (hS : 
 
 theorem le_err (h18 : f 18 = out) (hsp : f sp = F) (hO : Out M M2 s 68) (hS : Slots leCs F M1 M2)
     (hv : LeSaved F g0 M1) (hsp0 : g0 sp = F + BitVec.ofNat 32 0x40) (hret : g0 ra &&& ~~~1 = g0 ra)
-    (hal : F.toNat % 4 = 0) (halo : out.toNat % 4 = 0) (hz0 : g0 0 = 0) (hfr : ∀ x, x ∉ leL → f x = g0 x)
+    (hal : F.toNat % 4 = 0) (halo : out.toNat % 4 = 0) (hz0 : g0 0 = 0) (hfr : ∀ x, x ∉ litL → f x = g0 x)
     (hsoF : Sep out 8 F 64) (hsc : Sep out 8 base jsonLiteralEndCode.length) :
     WP jsonLiteralEndCode base (FPost (g0 ra) M out s 68 none g0) M2 0x18 f := by
   refine WP.zero fun hz => ?_
@@ -327,7 +327,7 @@ theorem le_err (h18 : f 18 = out) (hsp : f sp = F) (hO : Out M M2 s 68) (hS : Sl
 theorem le_found {v pos : Nat} (h18 : f 18 = out) (hsp : f sp = F) (h8 : f 8 = BitVec.ofNat 32 v)
     (h19 : f 19 = BitVec.ofNat 32 pos) (hO : Out M M2 s 68) (hS : Slots leCs F M1 M2)
     (hv : LeSaved F g0 M1) (hsp0 : g0 sp = F + BitVec.ofNat 32 0x40) (hret : g0 ra &&& ~~~1 = g0 ra)
-    (hal : F.toNat % 4 = 0) (halo : out.toNat % 4 = 0) (hz0 : g0 0 = 0) (hfr : ∀ x, x ∉ leL → f x = g0 x)
+    (hal : F.toNat % 4 = 0) (halo : out.toNat % 4 = 0) (hz0 : g0 0 = 0) (hfr : ∀ x, x ∉ litL → f x = g0 x)
     (hsoF : Sep out 8 F 64) (hsc : Sep out 8 base jsonLiteralEndCode.length) :
     WP jsonLiteralEndCode base (FPost (g0 ra) M out s 68 (some (pos + v)) g0) M2 0x90 f := by
   refine WP.zero fun hz => ?_
@@ -354,7 +354,7 @@ theorem le_it {w : Bytes} {ws : List Bytes} {q wp : Word} {n pos : Nat}
     (hO : Out M M2 s 68) (hSp : Sep s 68 p n) (hSw : Sep s 68 wp w.length)
     (hS : Slots leCs F M1 M2) (hv : LeSaved F g0 M1) (hsp0 : g0 sp = F + BitVec.ofNat 32 0x40)
     (hret : g0 ra &&& ~~~1 = g0 ra) (hal : F.toNat % 4 = 0) (halo : out.toNat % 4 = 0) (hz0 : g0 0 = 0)
-    (hfr : ∀ x, x ∉ leL → f x = g0 x) (hsoF : Sep out 8 F 64)
+    (hfr : ∀ x, x ∉ litL → f x = g0 x) (hsoF : Sep out 8 F 64)
     (hsc : Sep out 8 base jsonLiteralEndCode.length) (hb : base.toNat % 2 = 0)
     (hce : CodeIn M (base + 0xFFFFF400) equalSameLengthCode) (hcm : CodeIn M (base + 0xC7BE) memcmpCode)
     (sC : Sep s 68 (base + 0xFFFFF400) equalSameLengthCode.length)
@@ -433,7 +433,7 @@ theorem le_step {Q : Post} {v : Word} (h22 : f 22 = v) (hv : branchTaken .bne (v
 theorem le_last (h22 : f 22 = 1) (h18 : f 18 = out) (hsp : f sp = F) (hO : Out M M2 s 68)
     (hS : Slots leCs F M1 M2) (hv : LeSaved F g0 M1) (hsp0 : g0 sp = F + BitVec.ofNat 32 0x40)
     (hret : g0 ra &&& ~~~1 = g0 ra) (hal : F.toNat % 4 = 0) (halo : out.toNat % 4 = 0) (hz0 : g0 0 = 0)
-    (hfr : ∀ x, x ∉ leL → f x = g0 x) (hsoF : Sep out 8 F 64) (hsc : Sep out 8 base jsonLiteralEndCode.length) :
+    (hfr : ∀ x, x ∉ litL → f x = g0 x) (hsoF : Sep out 8 F 64) (hsc : Sep out 8 base jsonLiteralEndCode.length) :
     WP jsonLiteralEndCode base (FPost (g0 ra) M out s 68 none g0) M2 0x86 f := by
   refine WP.zero fun hz => ?_
   refine WP.aluImm le_at_86 ?_; wn
@@ -455,7 +455,7 @@ theorem le_loop {n pos : Nat} (h18 : f 18 = out) (h19 : f 19 = BitVec.ofNat 32 p
     (hlit : LitData M) (hO : Out M M2 s 68) (hSp : Sep s 68 p n) (hSn : Sep s 68 0x3FCC4766 8)
     (hSf : Sep s 68 0x3FCC48F2 5) (hS : Slots leCs F M1 M2) (hv : LeSaved F g0 M1)
     (hsp0 : g0 sp = F + BitVec.ofNat 32 0x40) (hret : g0 ra &&& ~~~1 = g0 ra) (hal : F.toNat % 4 = 0)
-    (halo : out.toNat % 4 = 0) (hz0 : g0 0 = 0) (hfr : ∀ x, x ∉ leL → f x = g0 x) (hsoF : Sep out 8 F 64)
+    (halo : out.toNat % 4 = 0) (hz0 : g0 0 = 0) (hfr : ∀ x, x ∉ litL → f x = g0 x) (hsoF : Sep out 8 F 64)
     (hsc : Sep out 8 base jsonLiteralEndCode.length) (hb : base.toNat % 2 = 0)
     (hce : CodeIn M (base + 0xFFFFF400) equalSameLengthCode) (hcm : CodeIn M (base + 0xC7BE) memcmpCode)
     (sC : Sep s 68 (base + 0xFFFFF400) equalSameLengthCode.length)
@@ -467,7 +467,7 @@ theorem le_loop {n pos : Nat} (h18 : f 18 = out) (h19 : f 19 = BitVec.ofNat 32 p
   have hST : Sep s 68 0x3FCC476A 4 := eT ▸ hSn.subR (c := 4) (l := 4) (by decide)
   have hSN : Sep s 68 0x3FCC4766 4 := by
     have := hSn.subR (c := 0) (l := 4) (by decide); rwa [add_ofNat_zero] at this
-  have hfrk : ∀ g : Fin 32 → Word, (∀ x, x ∉ kL → g x = f x) → ∀ x, x ∉ leL → g x = g0 x :=
+  have hfrk : ∀ g : Fin 32 → Word, (∀ x, x ∉ kL → g x = f x) → ∀ x, x ∉ litL → g x = g0 x :=
     fun g hg x hx => (hg x fun h => hx (kL_sub x h)).trans (hfr x hx)
   have hOk : ∀ M3 : Word → BitVec 8, Out M2 M3 s 4 → Out M M3 s 68 := fun M3 h3 =>
     hO.trans (Out.widen (d := 0) (by rw [add_ofNat_zero]; exact h3) (by decide))
