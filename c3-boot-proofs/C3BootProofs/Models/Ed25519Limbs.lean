@@ -62,8 +62,9 @@ theorem feNeg_ok : FeNegOK := by
   have e9 := negZ_at l 9 0x1FFFFFF0 (by decide) (by omega) (by decide)
   unfold negL
   rw [e0, e1, e2, e3, e4, e5, e6, e7, e8, e9]
-  obtain ⟨hL, hv⟩ := feReduce_val (0x3FFFFED0 - l.getD 0 0) (0x1FFFFFF0 - l.getD 1 0) (0x3FFFFFF0 - l.getD 2 0) (0x1FFFFFF0 - l.getD 3 0) (0x3FFFFFF0 - l.getD 4 0)
-    (0x1FFFFFF0 - l.getD 5 0) (0x3FFFFFF0 - l.getD 6 0) (0x1FFFFFF0 - l.getD 7 0) (0x3FFFFFF0 - l.getD 8 0) (0x1FFFFFF0 - l.getD 9 0)
+  obtain ⟨hL, hv⟩ := feReduce_val (0x3FFFFED0 - l.getD 0 0) (0x1FFFFFF0 - l.getD 1 0) (0x3FFFFFF0 - l.getD 2 0)
+    (0x1FFFFFF0 - l.getD 3 0) (0x3FFFFFF0 - l.getD 4 0) (0x1FFFFFF0 - l.getD 5 0) (0x3FFFFFF0 - l.getD 6 0)
+    (0x1FFFFFF0 - l.getD 7 0) (0x3FFFFFF0 - l.getD 8 0) (0x1FFFFFF0 - l.getD 9 0)
     (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega)
   refine ⟨hL, ?_⟩
   rw [hv]

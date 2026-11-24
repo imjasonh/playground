@@ -203,7 +203,8 @@ theorem pow_succ_int (k : Nat) : ((2 ^ (k + 1) : Nat) : Int) = 2 * ((2 ^ k : Nat
 /-- The passes for digit indices `k - 1` down to 0. -/
 theorem ladder_rep (TA TB : Nat → Pt) (QA QB : Nat × Nat) (hA : OnCurve QA) (hB : OnCurve QB)
     (hTA : ∀ j, NRep (TA j) (nsmul (2 * j + 1) QA)) (hTB : ∀ j, NRep (TB j) (nsmul (2 * j + 1) QB))
-    (aN bN : Nat → BitVec 8) (ha : ∀ k, aN k = 0 ∨ (aN k).toNat % 2 = 1) (ha' : ∀ k, (aN k).toNat ≤ 15 ∨ 241 ≤ (aN k).toNat)
+    (aN bN : Nat → BitVec 8) (ha : ∀ k, aN k = 0 ∨ (aN k).toNat % 2 = 1)
+    (ha' : ∀ k, (aN k).toNat ≤ 15 ∨ 241 ≤ (aN k).toNat)
     (hb : ∀ k, bN k = 0 ∨ (bN k).toNat % 2 = 1) (hb' : ∀ k, (bN k).toNat ≤ 15 ∨ 241 ≤ (bN k).toNat) :
     ∀ k (r : Pr) (u v : Int), PRep r (Ed25519.add (zs u QA) (zs v QB)) →
       PRep (ladder TA TB aN bN k r)
