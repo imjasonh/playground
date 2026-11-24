@@ -142,6 +142,13 @@ pub fn package(roots: &[Vec<u8>], targets: &[u8], trusted_root: &[u8]) -> Result
         .map(|r| canonical(r))
         .collect::<Result<Vec<_>, _>>()?;
     let out = container(&roots, &canonical(targets)?, trusted_root);
+    let max = c3_verify::manifest::MAX_TUF_LEN as usize;
+    if out.len() > max {
+        return Err(format!(
+            "the TUF part is {} bytes, and a slot holds at most {max}",
+            out.len()
+        ));
+    }
     c3_verify::tuf::parse_parts(&out).map_err(|e| format!("TUF part: {e:?}"))?;
     Ok(out)
 }
@@ -449,6 +456,17 @@ mod tests {
             canonical(include_bytes!("../../testdata/tuf/16.root.json")).unwrap(),
             pinned
         );
+    }
+
+    #[test]
+    fn refuses_a_tuf_part_larger_than_a_slot_holds() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../testdata/tuf");
+        let read = |name: &str| std::fs::read(dir.join(name)).unwrap();
+        let roots: Vec<_> = (14..=16).map(|v| read(&format!("{v}.root.json"))).collect();
+        let (targets, trusted) = (read("targets.json"), read("trusted_root.json"));
+        assert!(package(&roots[1..], &targets, &trusted).is_ok());
+        let err = package(&roots, &targets, &trusted).unwrap_err();
+        assert!(err.contains("at most 24576"), "{err}");
     }
 
     #[test]
