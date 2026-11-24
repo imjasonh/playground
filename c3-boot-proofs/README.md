@@ -31,6 +31,13 @@ either checked mechanically or trusted, as follows:
    `C3BootProofs/Image/BootloaderData.lean` instead, so that adding an entry
    rebuilds only the proofs that import it. The proofs workflow rebuilds the
    image, extracts again, and fails if either committed file differs.
+   `scripts/image-facts.py` regenerates the facts that the proofs state
+   about those bytes: the decode lemmas (`fetchRel CODE OFF = some ...`),
+   the byte chunks they fetch from, and the literal `blockEnd` lists and end
+   offsets. The workflow runs it on the fresh extraction and fails if any
+   proof file changes. On a new image it rewrites the instructions and
+   bytes in place, and stops at a fact whose offset no longer starts an
+   instruction or a straight-line block.
 3. **Bytes to behavior: trusted, and tested.** A theorem says that if
    memory holds exactly those bytes at that address, running them on the
    RV32IMC model in `Model/RV32.lean` reaches the return address with the
@@ -360,7 +367,7 @@ The bytes come from `C3BootProofs/Image/Bootloader.lean` and
 `scripts/extract-functions.py` generates from the bootloader image whose
 digest `c3-boot/bootloader/dev-image.sha256` pins; CI regenerates them and
 fails on any difference, and `c3-boot/bootloader/check-digest.sh --update`
-rewrites the digest and both files. `C3BootProofs/Proof/Code.lean` has the proof tools: `CodeAt`
+rewrites the digest, those files, and the image facts in the proofs. `C3BootProofs/Proof/Code.lean` has the proof tools: `CodeAt`
 (memory holds a function's bytes), `fetch_code` (a fetch decodes from those
 bytes, so the kernel computes each instruction), and `Steps`.
 `C3BootProofs/Proof/Step.lean` runs one instruction at a time on a

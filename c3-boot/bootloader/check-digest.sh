@@ -7,7 +7,8 @@
 # The pinned image is the default test build: the public development genesis
 # keys and no eFuse burns. --update also regenerates the function bytes that
 # c3-boot-proofs' machine-code proofs are about (it needs the llvm-tools
-# component); a proof whose function's bytes changed then needs redoing.
+# component) and the facts the proofs state about those bytes; a proof whose
+# function's code changed shape then needs redoing.
 #
 # Usage: bootloader/check-digest.sh [--update]
 
@@ -31,12 +32,16 @@ if [[ "${1:-}" == "--update" ]]; then
   echo "pinned ${digest}"
   # The machine-code proofs are about function bytes from this image.
   nm="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-nm"
-  python3 "${root}/../c3-boot-proofs/scripts/extract-functions.py" "${work}/bootloader.bin" \
+  proofs="${root}/../c3-boot-proofs"
+  python3 "${proofs}/scripts/extract-functions.py" "${work}/bootloader.bin" \
     target/riscv32imc-unknown-none-elf/release/c3-bootloader "${nm}" \
-    "${root}/../c3-boot-proofs/C3BootProofs/Image/Bootloader.lean" \
-    "${root}/../c3-boot-proofs/C3BootProofs/Image/BootloaderData.lean" \
-    "${root}/../c3-boot-proofs/C3BootProofs/Image/BootloaderData2.lean"
-  echo "regenerated c3-boot-proofs/C3BootProofs/Image/Bootloader.lean, BootloaderData.lean, and BootloaderData2.lean"
+    "${proofs}/C3BootProofs/Image/Bootloader.lean" \
+    "${proofs}"/C3BootProofs/Image/BootloaderData{,2,3,4,5,6}.lean
+  echo "regenerated c3-boot-proofs/C3BootProofs/Image/Bootloader.lean and BootloaderData*.lean"
+  # The proofs' decode lemmas, code chunks, and straight-line blocks follow
+  # from those bytes.
+  (cd "${proofs}" && python3 scripts/image-facts.py)
+  echo "regenerated the image facts in c3-boot-proofs/C3BootProofs/Proofs"
   exit 0
 fi
 if [[ "${digest}" != "$(cat "${pinned}")" ]]; then
