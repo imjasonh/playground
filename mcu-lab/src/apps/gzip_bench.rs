@@ -214,8 +214,9 @@ mod backend {
     pub const IMPL_NAME: &str = "miniz_oxide";
 
     /// `miniz_oxide::deflate::core::CompressorOxide` allocates ~308 KiB across
-    /// HashBuffers (160 KiB), LZOxide (64 KiB), and LocalBuf (83 KiB).
+    /// HashBuffers (160 KiB contiguous), LZOxide (64 KiB), and LocalBuf (83 KiB).
     const MINIZ_OXIDE_DEFLATE_MIN_HEAP: usize = 340 * 1024;
+    const MINIZ_OXIDE_DEFLATE_MIN_LARGEST_BLOCK: usize = 170 * 1024;
 
     pub struct GzipBackend {
         decomp: Box<miniz_oxide::inflate::core::DecompressorOxide>,
@@ -243,7 +244,9 @@ mod backend {
                     heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
                 )
             };
-            if free_heap < MINIZ_OXIDE_DEFLATE_MIN_HEAP {
+            if free_heap < MINIZ_OXIDE_DEFLATE_MIN_HEAP
+                || largest_block < MINIZ_OXIDE_DEFLATE_MIN_LARGEST_BLOCK
+            {
                 return DeflateAttempt::Oom {
                     needed_bytes: MINIZ_OXIDE_DEFLATE_MIN_HEAP,
                     free_heap,
@@ -333,15 +336,14 @@ impl<B: Board> App<B> for GzipBenchApp {
     fn run_command(
         &mut self,
         cmd_id: &str,
-        run_index: u16,
-        total_runs: u16,
+        _run_index: u16,
+        _total_runs: u16,
         board: &mut B,
         ctx: &mut StepContext<'_>,
     ) -> Result<StepOutput> {
         match cmd_id {
             "run" => {
                 ctx.record_attr("gzip.state", "run");
-                ctx.record_attr("gzip.run", &format!("{run_index}/{total_runs}"));
                 self.run_benchmark(board, ctx)
             }
             other => anyhow::bail!("unknown gzip-bench command: {other}"),

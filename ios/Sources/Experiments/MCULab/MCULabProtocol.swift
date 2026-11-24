@@ -381,8 +381,9 @@ enum MCULabProtocol {
     /// Encode a declarative app command write payload (`"<id>"` or `"<id> <count>"`).
     /// Mirrors `encode_app_command` in `mcu-lab/src/protocol.rs`.
     static func encodeAppCommand(id: String, count: UInt16) -> String {
+        let normalized = id.lowercased()
         let clamped = max(1, min(count, maxAppCommandCount))
-        return clamped == 1 ? id : "\(id) \(clamped)"
+        return clamped == 1 ? normalized : "\(normalized) \(clamped)"
     }
 
     static let flagDeepSleepWake: UInt8 = 1 << 0

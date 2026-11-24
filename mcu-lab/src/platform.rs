@@ -378,7 +378,11 @@ fn execute_pending_commands<B: Board, A: App<B>>(
                 base_flags,
                 burst_ms.max(500),
                 ota_verified,
-                |app, board, ctx| app.run_command(&req.id, run_idx, req.count, board, ctx),
+                |app, board, ctx| {
+                    ctx.record_attr("mcu.cmd", &req.id);
+                    ctx.record_attr("mcu.cmd.run", &format!("{run_idx}/{}", req.count));
+                    app.run_command(&req.id, run_idx, req.count, board, ctx)
+                },
             );
             if let Err(err) = step_res {
                 warn!(

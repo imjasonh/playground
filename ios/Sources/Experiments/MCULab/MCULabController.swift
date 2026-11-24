@@ -1064,24 +1064,21 @@ final class MCULabController: NSObject, ObservableObject {
             beginOTAConnection(to: peripheral)
         }
 
-        // If a declarative app command is armed for this device, connect immediately during
-        // its wake window even if we already recorded this burst's `seq`.
-        let hasArmedCommand = pendingAppCommand?.deviceId == deviceId
-        if hasArmedCommand,
-           otaPhase == .idle,
-           profilePeripheral == nil,
-           let peripheral = peripherals[deviceId]
-        {
-            beginProfileConnection(
-                to: peripheral,
-                deviceId: deviceId,
-                sampleId: latestSample?.id ?? UUID()
-            )
-        }
-
         // Deduplicate repeated frames from the same advertisement burst before
         // recording history or initiating a GATT profile pull.
+        let hasArmedCommand = pendingAppCommand?.deviceId == deviceId
         if lastSeqByDevice[deviceId] == metrics.seq {
+            // If a declarative app command was armed after we recorded this burst's `seq`,
+            // still connect during its wake window, attaching any profile to *this device's*
+            // sample for that burst (new bursts take the normal path below).
+            if hasArmedCommand,
+               otaPhase == .idle,
+               profilePeripheral == nil,
+               let peripheral = peripherals[deviceId],
+               let burstSample = history.first(where: { $0.deviceId == deviceId })
+            {
+                beginProfileConnection(to: peripheral, deviceId: deviceId, sampleId: burstSample.id)
+            }
             return false
         }
         lastSeqByDevice[deviceId] = metrics.seq
@@ -1113,6 +1110,10 @@ final class MCULabController: NSObject, ObservableObject {
             initiatedProfilePull = true
         }
 
+        if let profile {
+            updateCommandProgress(from: profile)
+        }
+
         if forwardingEnabled, !initiatedProfilePull {
             forwardToOtel(sample: sample)
         }
@@ -1136,6 +1137,19 @@ final class MCULabController: NSObject, ObservableObject {
         central.connect(peripheral, options: nil)
     }
 
+    private func updateCommandProgress(from profile: MCULabWakeProfile) {
+        guard let runAttr = profile.attrs?["mcu.cmd.run"], !runAttr.isEmpty else {
+            return
+        }
+        let cmdName = profile.attrs?["mcu.cmd"] ?? "command"
+        let parts = runAttr.split(separator: "/")
+        if parts.count == 2, let cur = Int(parts[0]), let total = Int(parts[1]), cur >= total {
+            appCommandStatus = "Completed '\(cmdName)' (\(cur)/\(total))."
+        } else {
+            appCommandStatus = "Received run \(runAttr) of '\(cmdName)'…"
+        }
+    }
+
     private func attachWakeProfile(_ profile: MCULabWakeProfile, deviceId: UUID) {
         var updatedSample: MCULabSample?
         if let targetId = profileTargetSampleId,
@@ -1154,6 +1168,7 @@ final class MCULabController: NSObject, ObservableObject {
             latestSample = latest
             updatedSample = latest
         }
+        updateCommandProgress(from: profile)
         if forwardingEnabled, let updatedSample {
             forwardToOtel(sample: updatedSample)
         }
@@ -1933,7 +1948,7 @@ extension MCULabController: CBPeripheralDelegate {
                     self.appCommandStatus = "Command write failed: \(errDesc)"
                 }
                 if !self.awaitingProfileRead {
-                    self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: false)
+                    self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
                 }
             }
             return

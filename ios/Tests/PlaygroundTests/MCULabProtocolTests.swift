@@ -950,8 +950,63 @@ final class MCULabProtocolTests: XCTestCase {
         )
         XCTAssertTrue(controller.appCommandStatus.contains("Run Benchmark"))
 
+        XCTAssertEqual(MCULabProtocol.encodeAppCommand(id: "RUN", count: 10), "run 10")
+        XCTAssertEqual(MCULabProtocol.encodeAppCommand(id: "RUN", count: 1), "run")
+
         controller.cancelAppCommand()
         XCTAssertNil(controller.pendingAppCommand)
+
+        let runMetrics = MCULabMetrics(
+            seq: 2,
+            flags: MCULabProtocol.flagDeepSleepWake,
+            wakeCount: 2,
+            sensorUs: 100,
+            computeUs: 5_000,
+            epdRefreshUs: 0,
+            radioUs: 200_000,
+            batteryMv: 4_100
+        )
+        let runData = MCULabProtocol.encodeManufacturerData(runMetrics)
+        var midProfile = profile
+        midProfile.wakeCount = 2
+        midProfile.seq = 2
+        midProfile.attrs = ["mcu.cmd": "run", "mcu.cmd.run": "3/10"]
+        XCTAssertTrue(
+            controller.ingestManufacturerData(
+                runData,
+                deviceId: devId,
+                deviceName: "MCU-LAB",
+                rssi: -55,
+                profile: midProfile
+            )
+        )
+        XCTAssertEqual(controller.appCommandStatus, "Received run 3/10 of 'run'…")
+
+        let finalMetrics = MCULabMetrics(
+            seq: 3,
+            flags: MCULabProtocol.flagDeepSleepWake,
+            wakeCount: 3,
+            sensorUs: 100,
+            computeUs: 5_000,
+            epdRefreshUs: 0,
+            radioUs: 200_000,
+            batteryMv: 4_100
+        )
+        let finalData = MCULabProtocol.encodeManufacturerData(finalMetrics)
+        var finalProfile = profile
+        finalProfile.wakeCount = 3
+        finalProfile.seq = 3
+        finalProfile.attrs = ["mcu.cmd": "run", "mcu.cmd.run": "10/10"]
+        XCTAssertTrue(
+            controller.ingestManufacturerData(
+                finalData,
+                deviceId: devId,
+                deviceName: "MCU-LAB",
+                rssi: -55,
+                profile: finalProfile
+            )
+        )
+        XCTAssertEqual(controller.appCommandStatus, "Completed 'run' (10/10).")
     }
 
     private static func jsonResponse(_ body: String, status: Int) throws -> (Data, URLResponse) {

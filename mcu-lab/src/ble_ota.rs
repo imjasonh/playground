@@ -563,24 +563,19 @@ impl BleOtaNode {
         );
         app_cmd_char.lock().set_value(b"IDLE");
         let cmd_queue_wr = Arc::clone(&pending_cmd);
-        let cmd_char_wr = Arc::clone(&app_cmd_char);
         let cmd_state_wr = Arc::clone(&ota_state);
         app_cmd_char.lock().on_write(move |args| {
             let raw = String::from_utf8_lossy(args.recv_data());
             lock_or_recover(&cmd_state_wr).last_activity_us = now_us();
-            let reply = match parse_app_command(raw.as_ref()) {
+            match parse_app_command(raw.as_ref()) {
                 Some(req) => {
-                    let msg = format!("QUEUED {} {}", req.id, req.count);
                     info!("app command queued: {} x{}", req.id, req.count);
                     *lock_or_recover(&cmd_queue_wr) = Some(req);
-                    msg
                 }
                 None => {
                     warn!("app command rejected: {raw:?}");
-                    "ERR invalid app command".to_string()
                 }
-            };
-            cmd_char_wr.lock().set_value(reply.as_bytes()).notify();
+            }
         });
 
         let ctrl_state = Arc::clone(&ota_state);
