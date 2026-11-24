@@ -93,10 +93,10 @@ theorem readItem_after_le {d : Bytes} {v : Nat} {x : Nat × Nat} (h : readItem d
     exact Nat.le_trans this (by omega)
 
 /-- A member starts before the end, ends after its start and inside the
-object, and has its key inside the object. -/
+object, and has its key and value inside the object. -/
 theorem nextMember_lt {d : Bytes} {pos kp kl vp vl a : Nat}
     (h : nextMember d pos = some (some (kp, kl, vp, vl, a))) :
-    pos < d.length ∧ pos < a ∧ kp + kl ≤ d.length ∧ a ≤ d.length := by
+    pos < d.length ∧ pos < a ∧ kp + kl ≤ d.length ∧ a ≤ d.length ∧ vp < d.length ∧ vp + vl ≤ d.length := by
   unfold nextMember at h
   split at h
   · cases h
@@ -127,7 +127,7 @@ theorem nextMember_lt {d : Bytes} {pos kp kl vp vl a : Nat}
         have hc1 : ¬e - 1 ≤ pos := fun h' => hc (Or.inr (Or.inl h'))
         have hc2 : ¬d.length < e - 1 := fun h' => hc (Or.inr (Or.inr h'))
         have h4 := readItem_after_le hr
-        exact ⟨hlt, by omega, by omega, h4⟩
+        exact ⟨hlt, by omega, by omega, h4, by omega, by omega⟩
 
 end C3.Json
 
@@ -720,7 +720,7 @@ theorem gt_loop (M0 : Word → BitVec 8) (hF : s + BitVec.ofNat 32 164 = F) (hb 
     simp only [getFrom, hnm, getOut]
     exact ⟨M2, hO2, get_none M2 out⟩
   obtain ⟨-, t1, tkq, tkl, tvq, tvl, ta⟩ := hMR
-  obtain ⟨-, hpa, hkk, han⟩ := nextMember_lt hnm
+  obtain ⟨-, hpa, hkk, han, -⟩ := nextMember_lt hnm
   rw [hlen] at hkk han
   have tkq' : memLoad32 M2 (F + 0x10) = p + BitVec.ofNat 32 kp := by
     rw [show F + 0x10 = F + 0xC + 4 by rw [BitVec.add_assoc]; rfl]; exact tkq
