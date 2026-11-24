@@ -28,13 +28,13 @@ use sha2::{Digest, Sha256};
 use crate::profiler::{create_profile_char, now_us, update_profile_char, ProfileCharHandle};
 use crate::protocol::{
     decode_ota_chunk_frame, encode_blob_frames, encode_mfg_data, format_ota_status,
-    parse_ota_command, validate_esp_image_header, AdvMetrics, BoardSpec, OtaCommand, OtaStatus,
-    COREDUMP_CHAR_UUID, OTA_CONTROL_UUID, OTA_DATA_UUID, OTA_SERVICE_UUID, OTA_SLOT_BYTES,
-    OTA_STATUS_UUID,
+    parse_ota_command, validate_esp_image_header, AdvMetrics, BoardSpec, OtaCommand,
+    OtaCompression, OtaDeflateDecoder, OtaStatus, COREDUMP_CHAR_UUID, OTA_CONTROL_UUID,
+    OTA_DATA_UUID, OTA_SERVICE_UUID, OTA_SLOT_BYTES, OTA_STATUS_UUID,
 };
 
-/// Maximum time an active BLE OTA connection may keep the board awake before timing out (120 s).
-const OTA_SESSION_TIMEOUT_MS: u32 = 120_000;
+/// Maximum time an active BLE OTA connection may keep the board awake before timing out (300 s).
+const OTA_SESSION_TIMEOUT_MS: u32 = 300_000;
 
 /// Maximum idle time on an open BLE connection without any OTA control/data write (15 s).
 const OTA_IDLE_TIMEOUT_US: u64 = 15_000_000;
@@ -145,7 +145,15 @@ struct OtaWriterState {
     partition: *const esp_partition_t,
     expected_size: u32,
     expected_sha256: String,
+    compression: OtaCompression,
+    /// Uncompressed firmware bytes written to flash and hashed.
     written: u32,
+    /// Wire payload bytes accepted so far (equals `written` when uncompressed).
+    wire_written: u32,
+    /// First 14 uncompressed bytes buffered for `esp_image_header_t` validation.
+    header_buf: [u8; 14],
+    header_len: usize,
+    deflate: Option<OtaDeflateDecoder>,
     next_notify_at: u32,
     last_activity_us: u64,
     last_gap_notify_us: u64,
@@ -165,7 +173,12 @@ impl OtaWriterState {
             partition: core::ptr::null(),
             expected_size: 0,
             expected_sha256: String::new(),
+            compression: OtaCompression::None,
             written: 0,
+            wire_written: 0,
+            header_buf: [0u8; 14],
+            header_len: 0,
+            deflate: None,
             next_notify_at: 0,
             last_activity_us: 0,
             last_gap_notify_us: 0,
@@ -184,13 +197,23 @@ impl OtaWriterState {
         self.partition = core::ptr::null();
         self.expected_size = 0;
         self.expected_sha256.clear();
+        self.compression = OtaCompression::None;
         self.written = 0;
+        self.wire_written = 0;
+        self.header_len = 0;
+        self.deflate = None;
         self.next_notify_at = 0;
         self.last_gap_notify_us = 0;
         self.hasher = Sha256::new();
     }
 
-    fn begin(&mut self, size: u32, sha256: String, battery_mv: u16) -> OtaStatus {
+    fn begin(
+        &mut self,
+        size: u32,
+        sha256: String,
+        compression: OtaCompression,
+        battery_mv: u16,
+    ) -> OtaStatus {
         self.last_activity_us = now_us();
         self.last_gap_notify_us = 0;
         if self.min_ota_battery_mv > 0 && battery_mv > 0 && battery_mv < self.min_ota_battery_mv {
@@ -206,21 +229,22 @@ impl OtaWriterState {
                 message: format!("invalid size {size}"),
             };
         }
-        // Resumable OTA: if an in-progress session matches `(size, sha256)` and already
-        // has bytes written, resume from `self.written` without re-erasing flash.
+        // Resumable OTA: if an in-progress session matches `(size, sha256, compression)` and
+        // already has bytes written, resume from `self.wire_written` without re-erasing flash.
         if self.handle.is_some()
             && self.expected_size == size
             && self.expected_sha256 == sha256
-            && self.written > 0
+            && self.compression == compression
+            && self.wire_written > 0
             && self.written <= size
         {
             info!(
-                "ota: resuming in-progress session at offset {}/{size}",
-                self.written
+                "ota: resuming in-progress session at wire offset {} (written {}/{size})",
+                self.wire_written, self.written
             );
             return OtaStatus::Ready {
                 total: size,
-                offset: self.written,
+                offset: self.wire_written,
             };
         }
 
@@ -244,15 +268,46 @@ impl OtaWriterState {
             self.partition = part;
             self.expected_size = size;
             self.expected_sha256 = sha256;
+            self.compression = compression;
             self.written = 0;
+            self.wire_written = 0;
+            self.header_len = 0;
+            self.deflate = (compression == OtaCompression::Deflate).then(OtaDeflateDecoder::new);
             self.next_notify_at = 16 * 1024;
             self.hasher = Sha256::new();
-            info!("ota: opened inactive partition for {size} bytes");
+            info!("ota: opened inactive partition for {size} bytes (compression={compression:?})");
             OtaStatus::Ready {
                 total: size,
                 offset: 0,
             }
         }
+    }
+
+    /// Validate header (on the first 14 bytes), write uncompressed firmware bytes to flash,
+    /// and feed them into the running SHA-256 hasher.
+    fn write_plain_bytes(&mut self, handle: esp_ota_handle_t, plain: &[u8]) -> Result<(), String> {
+        if plain.is_empty() {
+            return Ok(());
+        }
+        if self.header_len < self.header_buf.len() {
+            let take = (self.header_buf.len() - self.header_len).min(plain.len());
+            self.header_buf[self.header_len..self.header_len + take]
+                .copy_from_slice(&plain[..take]);
+            self.header_len += take;
+            validate_esp_image_header(&self.header_buf[..self.header_len], self.expected_chip_id)?;
+        }
+        let next_written = self.written.saturating_add(plain.len() as u32);
+        if next_written > self.expected_size {
+            return Err(format!("overflow: {next_written} > {}", self.expected_size));
+        }
+        // SAFETY: `handle` is an active OTA handle and `plain` is valid for `plain.len()` bytes.
+        let err = unsafe { esp_ota_write(handle, plain.as_ptr().cast(), plain.len()) };
+        if err != ESP_OK {
+            return Err(format!("esp_ota_write err={err}"));
+        }
+        self.hasher.update(plain);
+        self.written = next_written;
+        Ok(())
     }
 
     fn write_chunk(&mut self, raw: &[u8]) -> Option<OtaStatus> {
@@ -270,23 +325,20 @@ impl OtaWriterState {
         // Decode framed `(offset, crc32, payload)` chunk if present; otherwise accept legacy raw chunk.
         let chunk: &[u8] = match decode_ota_chunk_frame(raw) {
             Ok(Some(frame)) => {
-                if frame.offset < self.written {
+                if frame.offset < self.wire_written {
                     // Duplicate/retransmitted chunk already written; ignore cleanly.
                     return None;
                 }
-                if frame.offset > self.written {
-                    // A `WRITE_NO_RSP` packet was dropped in flight. Keep the session open and
-                    // ask the client to rewind to `self.written` (rate-limited to avoid flooding
-                    // for subsequent already-queued packets).
+                if frame.offset > self.wire_written {
                     if now.saturating_sub(self.last_gap_notify_us) >= 300_000 {
                         self.last_gap_notify_us = now;
                         warn!(
                             "ota: chunk gap got={} expected={}, requesting resume",
-                            frame.offset, self.written
+                            frame.offset, self.wire_written
                         );
                         return Some(OtaStatus::Ready {
                             total: self.expected_size,
-                            offset: self.written,
+                            offset: self.wire_written,
                         });
                     }
                     return None;
@@ -302,29 +354,21 @@ impl OtaWriterState {
         if chunk.is_empty() {
             return None;
         }
-        if self.written == 0 {
-            if let Err(msg) = validate_esp_image_header(chunk, self.expected_chip_id) {
-                self.abort_active();
-                return Some(OtaStatus::Error { message: msg });
-            }
-        }
-        let next_written = self.written.saturating_add(chunk.len() as u32);
-        if next_written > self.expected_size {
+
+        let write_result = if let Some(mut decoder) = self.deflate.take() {
+            let res = decoder.push(chunk, |plain| self.write_plain_bytes(handle, plain));
+            self.deflate = Some(decoder);
+            res
+        } else {
+            self.write_plain_bytes(handle, chunk)
+        };
+
+        if let Err(message) = write_result {
             self.abort_active();
-            return Some(OtaStatus::Error {
-                message: format!("overflow: {next_written} > {}", self.expected_size),
-            });
+            return Some(OtaStatus::Error { message });
         }
-        // SAFETY: `handle` is an active OTA handle and `chunk` is valid for `chunk.len()` bytes.
-        let err = unsafe { esp_ota_write(handle, chunk.as_ptr().cast(), chunk.len()) };
-        if err != ESP_OK {
-            self.abort_active();
-            return Some(OtaStatus::Error {
-                message: format!("esp_ota_write err={err}"),
-            });
-        }
-        self.hasher.update(chunk);
-        self.written = next_written;
+
+        self.wire_written = self.wire_written.saturating_add(chunk.len() as u32);
         if self.written >= self.next_notify_at || self.written == self.expected_size {
             self.next_notify_at = self.written.saturating_add(16 * 1024);
             return Some(OtaStatus::Progress {
@@ -342,6 +386,16 @@ impl OtaWriterState {
                 message: "commit before BEGIN".to_string(),
             };
         };
+        if let Some(mut decoder) = self.deflate.take() {
+            if let Err(message) = decoder.finish(|plain| self.write_plain_bytes(handle, plain)) {
+                // SAFETY: `handle` was just taken and is still open.
+                unsafe {
+                    let _ = esp_ota_abort(handle);
+                }
+                self.abort_active();
+                return OtaStatus::Error { message };
+            }
+        }
         if self.written != self.expected_size {
             // SAFETY: `handle` was just taken and is still open.
             unsafe {
@@ -503,7 +557,11 @@ impl BleOtaNode {
             let mut guard = lock_or_recover(&ctrl_state);
             let batt = ctrl_batt.load(Ordering::Relaxed);
             let reply = match parse_ota_command(raw.as_ref()) {
-                Some(OtaCommand::Begin { size, sha256 }) => guard.begin(size, sha256, batt),
+                Some(OtaCommand::Begin {
+                    size,
+                    sha256,
+                    compression,
+                }) => guard.begin(size, sha256, compression, batt),
                 Some(OtaCommand::Commit) => guard.commit(),
                 Some(OtaCommand::Abort) => {
                     guard.abort_active();
