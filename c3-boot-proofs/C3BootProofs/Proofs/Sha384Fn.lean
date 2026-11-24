@@ -1,0 +1,256 @@
+import C3BootProofs.Proofs.Sha384FnCall
+import C3BootProofs.Proofs.LincombShiftMod12
+
+/-!
+# `sha384`: the compiled function computes SHA-384
+
+`sha384(out, p, len)` builds a SHA-384 hasher on its stack from the
+`len` bytes at `p`, finalizes a copy of it, and writes the 48-byte digest to
+`out`. The proof follows the function from its entry to its return.
+-/
+
+namespace C3
+
+open Sha512
+
+/-- FIPS 180-4's SHA-384 digest: SHA-512's computation from SHA-384's initial
+hash value over the full blocks, then the padded buffer's one or two blocks,
+truncated to 48 bytes. -/
+theorem sha384_eq_stream (msg : Bytes) :
+    sha384 msg = (((fullBlocks5 msg ++ blocks ((padTail5 msg).length / 128) (padTail5 msg)).foldl compress
+      h0384).flatMap wordBytes).take 48 := by
+  have hpad : pad msg = msg.take (128 * (msg.length / 128)) ++ padTail5 msg := by
+    unfold pad padTail5 tailBytes5 padZeros5
+    simp only [← List.append_assoc, List.take_append_drop]
+  have hA := take_full5_length msg
+  have hT := padTail5_length msg
+  have hP : (pad msg).length = 128 * (msg.length / 128 + (padTail5 msg).length / 128) := by
+    rw [hpad, List.length_append, hA, hT]; unfold padZeros5; omega
+  unfold sha384
+  simp only
+  rw [blocks5_fuel _ _ _ hP (by omega), hpad, blocks5_append _ _ _ _ hA, ← blocks5_take]
+  rfl
+
+end C3
+
+namespace C3.RV32
+
+open C3.Image
+
+/-- The 0xD0 bytes at `S` hold the compiled SHA-384 hasher after it has
+absorbed `msg`: the bytes after `msg`'s full blocks in the buffer, their
+count in the buffer's last byte, the hash of the full blocks from SHA-384's
+initial value, and the 128-bit count of blocks. -/
+structure Hasher3At (M : Word → BitVec 8) (S : Word) (msg : Bytes) : Prop where
+  hlen : msg.length < 2 ^ 32
+  pos : M (S + 0x7F) = BitVec.ofNat 8 (msg.length % 128)
+  buf : memBytes M S (msg.length % 128) = tailBytes5 msg
+  hash : (s5Hv M (S + 0x80)).toList = (fullBlocks5 msg).foldl Sha512.compress Sha512.h0384
+  lo : memLoad32 M (S + 0xC0) = BitVec.ofNat 32 (msg.length / 128)
+  hi : memLoad32 M (S + 0xC4) = 0
+  hi2 : memLoad32 M (S + 0xC8) = 0
+  hi3 : memLoad32 M (S + 0xCC) = 0
+
+theorem hasher3_copy {M M' : Word → BitVec 8} {S S' : Word} {h : Bytes} (H : Hasher3At M S h)
+    (hc : ∀ j, j < 0xD0 → M' (S' + BitVec.ofNat 32 j) = M (S + BitVec.ofNat 32 j)) : Hasher3At M' S' h := by
+  have ld : ∀ c, c + 4 ≤ 0xD0 → memLoad32 M' (S' + BitVec.ofNat 32 c) = memLoad32 M (S + BitVec.ofNat 32 c) :=
+    fun c hc' => vk_ld2 fun j hj => by rw [add_ofNat_assoc, add_ofNat_assoc]; exact hc _ (by omega)
+  exact ⟨H.hlen, (hc 0x7F (by decide)).trans H.pos,
+    by rw [← H.buf]; unfold memBytes
+       exact List.map_congr_left fun i hi => by
+         rw [hc i (by have := List.mem_range.mp hi; have := Nat.mod_lt h.length (show 128 > 0 by decide); omega)],
+    by rw [← H.hash]; congr 1; exact s5Hv_copy fun i hi => by
+         rw [show S' + 0x80 = S' + BitVec.ofNat 32 0x80 from rfl, show S + 0x80 = S + BitVec.ofNat 32 0x80 from rfl,
+           add_ofNat_assoc, add_ofNat_assoc]; exact hc _ (by omega),
+    (ld 0xC0 (by decide)).trans H.lo, (ld 0xC4 (by decide)).trans H.hi, (ld 0xC8 (by decide)).trans H.hi2,
+    (ld 0xCC (by decide)).trans H.hi3⟩
+
+set_option maxRecDepth 100000 in
+/-- The 64 bytes of SHA-384's initial hash value. -/
+theorem hf_iv {M : Word → BitVec 8} {stp : Word}
+    (h : ∀ j, j < 64 → M (stp + BitVec.ofNat 32 j) = byteAt sha384IVData j) :
+    (s5Hv M stp).toList = Sha512.h0384 := by
+  rw [s5Hv_copy (M := fun x => byteAt sha384IVData x.toNat) (b := 0) fun i hi => by
+    rw [h i hi]; simp only [BitVec.toNat_add, BitVec.toNat_ofNat, show (0 : Word).toNat = 0 from rfl]; congr 1; omega]
+  decide
+
+/-- The full blocks of `len` bytes at `p`. -/
+theorem hf_fullBlocks (M : Word → BitVec 8) (p : Word) (len : Nat) :
+    fullBlocks5 (memBytes M p len) = blockList128 M p (len / 128) := by
+  unfold fullBlocks5
+  rw [memBytes_length, blocks5_take, memBytes_take' (by omega), S5U.blocks128_memBytes M _ _ _ (Nat.le_refl _)]
+
+/-- The bytes after the full blocks of `len` bytes at `p`. -/
+theorem hf_tailBytes (M : Word → BitVec 8) (p : Word) (len : Nat) :
+    tailBytes5 (memBytes M p len) = memBytes M (p + BitVec.ofNat 32 (128 * (len / 128))) (len % 128) := by
+  unfold tailBytes5
+  rw [memBytes_length]
+  rw [show memBytes M p len = memBytes M p (128 * (len / 128) + len % 128) by rw [Nat.div_add_mod],
+    memBytes_split, List.drop_left' (memBytes_length _ _ _)]
+
+theorem hf_and_ff80 (x : Nat) (hx : x < 2 ^ 31) : x &&& 0x7FFFFF80 = 2 ^ 7 * (x / 2 ^ 7) :=
+  Nat.eq_of_testBit_eq fun i => by
+    rw [Nat.testBit_and, show (0x7FFFFF80 : Nat) = 2 ^ 7 * (2 ^ 24 - 1) from rfl, Nat.testBit_two_pow_mul,
+      Nat.testBit_two_pow_mul, tb_pow_sub_one, Nat.testBit_div_two_pow]
+    by_cases h7 : 7 ≤ i
+    · rw [Nat.sub_add_cancel h7]
+      by_cases h31 : i < 31
+      · simp [h7, show i - 7 < 24 by omega]
+      · rw [Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le hx (Nat.pow_le_pow_right (by decide) (by omega)))]
+        simp
+    · simp [h7]
+
+theorem hf_ff80 (len : Nat) (h : len < 2 ^ 31) :
+    BitVec.ofNat 32 0x7FFFFF80 &&& BitVec.ofNat 32 len = BitVec.ofNat 32 (128 * (len / 128)) := by
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_and, BitVec.toNat_ofNat, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+    Nat.mod_eq_of_lt (by omega : len < 2 ^ 32), show 0x7FFFFF80 % 2 ^ 32 = 0x7FFFFF80 from rfl, Nat.and_comm,
+    hf_and_ff80 _ h, Nat.mod_eq_of_lt (by omega)]
+
+theorem hf_7f (len : Nat) : BitVec.ofNat 32 len &&& 0x7F = BitVec.ofNat 32 (len % 128) := by
+  apply BitVec.eq_of_toNat_eq
+  rw [and_mask_word (j := 7) rfl, BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_mod_of_dvd _ (by decide),
+    Nat.mod_eq_of_lt (by omega : len % 128 < 2 ^ 32)]
+
+theorem hf_ext8 (x : Nat) : (BitVec.ofNat 32 x).extractLsb' 0 8 = BitVec.ofNat 8 x := by
+  apply BitVec.eq_of_toNat_eq
+  rw [byte_toNat, BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.pow_zero, Nat.div_one,
+    Nat.mod_mod_of_dvd _ (by decide)]
+
+theorem hf_srl7 (len : Nat) (h : len < 2 ^ 32) :
+    aluEval .srl (BitVec.ofNat 32 len) 0x7 = BitVec.ofNat 32 (len / 128) := by
+  apply BitVec.eq_of_toNat_eq
+  show (BitVec.ofNat 32 len >>> ((0x7 : Word).toNat % 32)).toNat = _
+  rw [BitVec.toNat_ushiftRight, BitVec.toNat_ofNat, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h,
+    show (0x7 : Word).toNat % 32 = 7 from rfl, Nat.shiftRight_eq_div_pow, Nat.mod_eq_of_lt (by omega)]
+
+theorem hf_ofNat_eq_zero {n : Nat} (h : n < 2 ^ 32) (e : BitVec.ofNat 32 n = 0) : n = 0 := by
+  have := congrArg BitVec.toNat e; rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt h] at this; exact this
+
+section
+variable {M0 Ms : Word → BitVec 8} {F out p : Word} {len : Nat} {r0 : Fin 32 → Word}
+
+theorem HfCtx.len31 (C : HfCtx M0 F out p len) : len < 2 ^ 31 := by have := C.hp; omega
+
+/-- A frame byte that a word store at `F + d` leaves. -/
+theorem hf_sw_out (C : HfCtx M0 F out p len) {M : Word → BitVec 8} {d c : Nat} {v : Word} (hd : d + 4 ≤ 0x240)
+    (hc : c < 0x240) (h : c < d ∨ d + 4 ≤ c) :
+    memStore32 M (F + BitVec.ofNat 32 d) v (F + BitVec.ofNat 32 c) = M (F + BitVec.ofNat 32 c) :=
+  st32_frame (C.offs (by omega) hd (by omega))
+
+/-- A frame byte that a byte store at `F + d` leaves. -/
+theorem hf_sb_out (C : HfCtx M0 F out p len) {M : Word → BitVec 8} {d c : Nat} {v : BitVec 8} (hd : d < 0x240)
+    (hc : c < 0x240) (h : c ≠ d) :
+    memStore8 M (F + BitVec.ofNat 32 d) v (F + BitVec.ofNat 32 c) = M (F + BitVec.ofNat 32 c) :=
+  st8_frame (C.offs (by omega) (by omega) (by omega))
+
+set_option maxRecDepth 40000 in
+set_option maxHeartbeats 16000000 in
+/-- From offset 0x32 to the branch at 0x62: the arguments moved to `s0`,
+`s1`, and `s2`, the hasher's buffer count cleared, SHA-384's initial value
+copied into its hash value, and its block count cleared. -/
+theorem hf_init (C : HfCtx M0 F out p len) {M : Word → BitVec 8} {n : Machine} (D : HfSt M0 Ms F r0 M n 0x32)
+    (ha0 : reg n a0 = out) (ha1 : reg n a1 = p) (ha2 : reg n a2 = BitVec.ofNat 32 len) :
+    ∃ n' M', Steps n n' ∧ HfSt M0 Ms F r0 M' n' 0x62 ∧
+      (∀ q : Fin 32, q.val ∈ evKeep → q.val ∉ [8, 9, 18, 19] → reg n' q = reg n q) ∧
+      reg n' 8 = p ∧ reg n' 9 = BitVec.ofNat 32 len ∧ reg n' 18 = out ∧ reg n' 19 = F + BitVec.ofNat 32 0x80 ∧
+      reg n' a2 = BitVec.ofNat 32 (len / 128) ∧
+      M' (F + BitVec.ofNat 32 0x7F) = 0 ∧ (s5Hv M' (F + BitVec.ofNat 32 0x80)).toList = Sha512.h0384 ∧
+      memLoad32 M' (F + BitVec.ofNat 32 0xC0) = 0 ∧ memLoad32 M' (F + BitVec.ofNat 32 0xC4) = 0 ∧
+      memLoad32 M' (F + BitVec.ofNat 32 0xC8) = 0 ∧ memLoad32 M' (F + BitVec.ofNat 32 0xCC) = 0 := by
+  have z0 := D.st.zero
+  obtain ⟨n1, c1, D1, hr1⟩ := D.block C (off' := 0x38) [.alu .add (9 : Fin 32) x0 a2, .alu .add (8 : Fin 32) x0 a1,
+      .alu .add (18 : Fin 32) x0 a0]
+    (blockEnd_cons' hf_at_32 rfl (blockEnd_cons' hf_at_34 rfl (blockEnd_cons' hf_at_36 rfl rfl)))
+    ⟨trivial, trivial, trivial, trivial⟩ rfl
+    (fun q hq => by rcases hq with rfl | rfl | rfl <;> simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
+  have k1 : ∀ q : Fin 32, q.val ∉ [8, 9, 18] → reg n1 q = reg n q := fun q hq => by
+    rw [hr1, evb_reg q z0 (by revert hq; revert q; decide)]
+  have v19 : reg n1 9 = BitVec.ofNat 32 len := by
+    rw [hr1]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; (try rw [z0]); rw [ha2]; exact BitVec.zero_add _
+  have v18 : reg n1 8 = p := by
+    rw [hr1]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; (try rw [z0]); rw [ha1]; exact BitVec.zero_add _
+  have v118 : reg n1 18 = out := by
+    rw [hr1]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; (try rw [z0]); rw [ha0]; exact BitVec.zero_add _
+  -- sb zero, 0x7F(sp)
+  obtain ⟨n2, d2, D2, k2⟩ := D1.sb C hf_at_38 (off' := 0x3C) rfl (c := 0x7F) (by rw [D1.hsp]; rfl) (by decide)
+  rw [D1.st.zero] at D2
+  obtain ⟨M2, hM2, D2⟩ : ∃ M2, M2 = memStore8 M (F + BitVec.ofNat 32 0x7F) ((0 : Word).extractLsb' 0 8) ∧
+    HfSt M0 Ms F r0 M2 n2 0x3C := ⟨_, rfl, D2⟩
+  -- the memcpy's arguments
+  obtain ⟨n3, c3, D3, hr3⟩ := D2.block C (off' := 0x4E) [.aluImm .add (19 : Fin 32) sp 0x80, .lui a1 0x3FCC4000,
+      .aluImm .add a1 a1 0x430, .aluImm .add a2 x0 0x40, .alu .add a0 x0 (19 : Fin 32)]
+    (blockEnd_cons' hf_at_3c rfl (blockEnd_cons' hf_at_40 rfl (blockEnd_cons' hf_at_44 rfl
+      (blockEnd_cons' hf_at_48 rfl (blockEnd_cons' hf_at_4c rfl rfl)))))
+    ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩ rfl
+    (fun q hq => by rcases hq with rfl | rfl | rfl <;> simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
+  have z2 := D2.st.zero
+  have k3 : ∀ q : Fin 32, q.val ∉ [19, 11, 12, 10] → reg n3 q = reg n2 q := fun q hq => by
+    rw [hr3, evb_reg q z2 (by revert hq; revert q; decide)]
+  have v319 : reg n3 19 = F + BitVec.ofNat 32 0x80 := by
+    rw [hr3]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [k2, D1.hsp]; rfl
+  have hIV : Sep (BitVec.ofNat 32 sha384IVAddress) 64 (hfG F) 0x660 := C.ro (by decide) (by decide)
+  -- memcpy(sp + 0x80, IV, 64)
+  obtain ⟨n4, c4, D4, k4, cp4⟩ := D3.memcpy C (d := 0x80) (N := 64) (s := BitVec.ofNat 32 sha384IVAddress)
+    hf_at_4e hf_at_52 (by decide) (by decide)
+    (by rw [hr3]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [k2, D1.hsp]; exact BitVec.zero_add _)
+    (by rw [hr3]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
+    (by rw [hr3]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
+    (by decide) (C.zS hIV) (C.fS hIV (by decide)) (by decide)
+  -- srli a2, s1, 7
+  obtain ⟨n5, c5, D5, hr5⟩ := D4.block C (off' := 0x5A) [.aluImm .srl a2 (9 : Fin 32) 0x7] (bEnd1 hf_at_56 rfl)
+    ⟨trivial, trivial⟩ rfl
+    (fun q hq => by rcases hq with rfl | rfl | rfl <;> simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
+  have z4 := D4.st.zero
+  have k5 : ∀ q : Fin 32, q ≠ a2 → reg n5 q = reg n4 q := fun q hq => by
+    rw [hr5, evb_reg q z4 (by revert hq; revert q; decide)]
+  have r9 : reg n4 9 = BitVec.ofNat 32 len := by
+    rw [k4 9 (by decide), k3 9 (by decide), k2, v19]
+  have va2 : reg n5 a2 = BitVec.ofNat 32 (len / 128) := by
+    rw [hr5]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [r9]
+    exact hf_srl7 len (by have := C.len31; omega)
+  -- the block count cleared
+  obtain ⟨n6, d6, D6, k6⟩ := D5.sw C hf_at_5a (off' := 0x5C) rfl (c := 0xC0) (by rw [D5.hsp]; rfl) (by decide)
+    (by decide)
+  obtain ⟨n7, d7, D7, k7⟩ := D6.sw C hf_at_5c (off' := 0x5E) rfl (c := 0xC4) (by rw [D6.hsp]; rfl) (by decide)
+    (by decide)
+  obtain ⟨n8, d8, D8, k8⟩ := D7.sw C hf_at_5e (off' := 0x60) rfl (c := 0xC8) (by rw [D7.hsp]; rfl) (by decide)
+    (by decide)
+  obtain ⟨n9, d9, D9, k9⟩ := D8.sw C hf_at_60 (off' := 0x62) rfl (c := 0xCC) (by rw [D8.hsp]; rfl) (by decide)
+    (by decide)
+  simp only [k8, k7, k6, D5.st.zero] at D9
+  have kk : ∀ q, reg n9 q = reg n5 q := fun q => by rw [k9, k8, k7, k6]
+  -- the frame bytes
+  have m4 : ∀ c, c < 0x240 → n4.mem (F + BitVec.ofNat 32 c) =
+      copyBytes M2 (F + BitVec.ofNat 32 0x80) (BitVec.ofNat 32 sha384IVAddress) 64 (F + BitVec.ofNat 32 c) :=
+    fun c hc => cp4 _ (C.zF (c := c) (l := 1) (by omega))
+  have st : ∀ c, c < 0x240 → (c < 0xC0 ∨ 0xD0 ≤ c) →
+      memStore32 (memStore32 (memStore32 (memStore32 n4.mem (F + BitVec.ofNat 32 0xC0) 0) (F + BitVec.ofNat 32 0xC4) 0)
+        (F + BitVec.ofNat 32 0xC8) 0) (F + BitVec.ofNat 32 0xCC) 0 (F + BitVec.ofNat 32 c) =
+        n4.mem (F + BitVec.ofNat 32 c) := fun c hc h => by
+    rw [hf_sw_out C (by decide) hc (by omega), hf_sw_out C (by decide) hc (by omega),
+      hf_sw_out C (by decide) hc (by omega), hf_sw_out C (by decide) hc (by omega)]
+  have ivc : CodeIn M2 (BitVec.ofNat 32 sha384IVAddress) sha384IVData := D2.codeRo C C.env.iv (by decide) (by decide)
+  refine ⟨n9, _, c1.trans ((Steps.single d2).trans (c3.trans (c4.trans (c5.trans ((Steps.single d6).trans
+    ((Steps.single d7).trans ((Steps.single d8).trans (Steps.single d9)))))))), D9, fun q hq hn => ?_,
+    by rw [kk, k5 _ (by decide), k4 8 (by decide), k3 8 (by decide), k2, v18],
+    by rw [kk, k5 _ (by decide), r9],
+    by rw [kk, k5 _ (by decide), k4 18 (by decide), k3 18 (by decide), k2, v118],
+    by rw [kk, k5 _ (by decide), k4 19 (by decide), v319],
+    by rw [kk, va2], ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [kk, k5 q (by revert hn; revert hq; revert q; decide), k4 q hq, k3 q (by revert hn; revert hq; revert q; decide),
+      k2, k1 q (by revert hn; revert hq; revert q; decide)]
+  · rw [st _ (by decide) (Or.inl (by decide)), m4 _ (by decide),
+      copyBytes_sep (C.offs (Or.inr (by decide)) (by decide) (by decide)) (Nat.le_refl _), hM2, memStore8_same]; rfl
+  · refine hf_iv fun j hj => ?_
+    rw [add_ofNat_assoc, st _ (by omega) (Or.inl (by omega)), m4 _ (by omega), ← add_ofNat_assoc,
+      copyBytes_in hj (by decide)]
+    exact ivc j (by rw [show sha384IVData.length = 64 by decide +kernel]; exact hj)
+  · rw [memLoad32_store32_sep (C.offs (c := 0xcc) (d := 0xc0) (by decide) (by decide) (by decide)), memLoad32_store32_sep (C.offs (c := 0xc8) (d := 0xc0) (by decide) (by decide) (by decide)), memLoad32_store32_sep (C.offs (c := 0xc4) (d := 0xc0) (by decide) (by decide) (by decide)), memLoad32_store32_same]
+  · rw [memLoad32_store32_sep (C.offs (c := 0xcc) (d := 0xc4) (by decide) (by decide) (by decide)), memLoad32_store32_sep (C.offs (c := 0xc8) (d := 0xc4) (by decide) (by decide) (by decide)), memLoad32_store32_same]
+  · rw [memLoad32_store32_sep (C.offs (c := 0xcc) (d := 0xc8) (by decide) (by decide) (by decide)), memLoad32_store32_same]
+  · rw [memLoad32_store32_same]
+
+end
+
+end C3.RV32
