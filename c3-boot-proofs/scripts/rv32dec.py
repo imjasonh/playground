@@ -23,7 +23,7 @@ def sext(v, bits):
 
 ALU = {(0, 0): 'add', (0, 0x20): 'sub', (1, 0): 'sll', (2, 0): 'slt', (3, 0): 'sltu', (4, 0): 'xor',
        (5, 0): 'srl', (5, 0x20): 'sra', (6, 0): 'or', (7, 0): 'and', (0, 1): 'mul', (1, 1): 'mulh',
-       (3, 1): 'mulhu'}
+       (3, 1): 'mulhu', (4, 1): 'div', (5, 1): 'divu', (6, 1): 'rem', (7, 1): 'remu'}
 ALUI = {0: 'add', 2: 'slt', 3: 'sltu', 4: 'xor', 6: 'or', 7: 'and'}
 BR = {0: 'beq', 1: 'bne', 4: 'blt', 5: 'bge', 6: 'bltu', 7: 'bgeu'}
 
