@@ -42,6 +42,8 @@ structure SvCode (M : Word → BitVec 8) : Prop where
   generalizedTime : CodeIn M (BitVec.ofNat 32 generalizedTimeAddress) generalizedTimeCode
   dateTime : CodeIn M (BitVec.ofNat 32 dateTimeAddress) dateTimeCode
   timeDigits2 : CodeIn M (BitVec.ofNat 32 timeDigits2Address) timeDigits2Code
+  timeDigits4 : CodeIn M (BitVec.ofNat 32 timeDigits4Address) timeDigits4Code
+  allAsciiDigit : CodeIn M (BitVec.ofNat 32 allAsciiDigitAddress) allAsciiDigitCode
   derBooleanTrue : CodeIn M (BitVec.ofNat 32 derBooleanTrueAddress) derBooleanTrueCode
   derOctetString : CodeIn M (BitVec.ofNat 32 derOctetStringAddress) derOctetStringCode
   listsOid : CodeIn M (BitVec.ofNat 32 listsOidAddress) listsOidCode
@@ -75,6 +77,8 @@ theorem SvCode.hi {M M' : Word → BitVec 8} (C : SvCode M) (h : ∀ x : Word, 0
     codeHi C.generalizedTime (by decide) (by decide) h,
     codeHi C.dateTime (by decide) (by decide) h,
     codeHi C.timeDigits2 (by decide) (by decide) h,
+    codeHi C.timeDigits4 (by decide) (by decide) h,
+    codeHi C.allAsciiDigit (by decide) (by decide) h,
     codeHi C.derBooleanTrue (by decide) (by decide) h,
     codeHi C.derOctetString (by decide) (by decide) h,
     codeHi C.listsOid (by decide) (by decide) h,
@@ -90,20 +94,20 @@ theorem SvCode.hi {M M' : Word → BitVec 8} (C : SvCode M) (h : ∀ x : Word, 0
 /-- Bytes that `sigstore::verify` reads but no step writes: outside the
 stack, and not wrapping around. -/
 structure SvIn (B rp : Word) (rl : Nat) : Prop where
-  sep14 : Sep rp (rl + 14) (B + 0xFFFFFE60) 0x39D0
+  sep14 : Sep rp (rl + 14) (B + 0xFFFFEA70) 0x3BF0
   pos : 0 < rp.toNat
   lo : rp.toNat + rl + 14 ≤ 0x40000000
 
-theorem SvIn.sep {B rp : Word} {rl : Nat} (h : SvIn B rp rl) : Sep rp rl (B + 0xFFFFFE60) 0x39D0 := by
+theorem SvIn.sep {B rp : Word} {rl : Nat} (h : SvIn B rp rl) : Sep rp rl (B + 0xFFFFEA70) 0x3BF0 := by
   have := h.sep14.sub (c := 0) (l := rl) (by omega); rwa [add_ofNat_zero] at this
 
 theorem SvIn.fit {B rp : Word} {rl : Nat} (h : SvIn B rp rl) : rp.toNat + rl < 2 ^ 32 := by
   have := h.lo; omega
 
-theorem SvIn.sepLo {B rp : Word} {rl : Nat} (h : SvIn B rp rl) {c n : Nat} (hc : c + n ≤ 0x3830) :
+theorem SvIn.sepLo {B rp : Word} {rl : Nat} (h : SvIn B rp rl) {c n : Nat} (hc : c + n ≤ 0x2660) :
     Sep rp rl (B + BitVec.ofNat 32 c) n := by
-  have := h.sep.symm.sub (c := 0x1A0 + c) (l := n) (by omega)
-  rw [show B + 0xFFFFFE60 + BitVec.ofNat 32 (0x1A0 + c) = B + BitVec.ofNat 32 c by
+  have := h.sep.symm.sub (c := 0x1590 + c) (l := n) (by omega)
+  rw [show B + 0xFFFFEA70 + BitVec.ofNat 32 (0x1590 + c) = B + BitVec.ofNat 32 c by
     rw [BitVec.add_assoc]; congr 1; apply BitVec.eq_of_toNat_eq; simp; omega] at this
   exact this.symm
 
@@ -120,14 +124,14 @@ set_option maxHeartbeats 4000000 in
 /-- **A call to `Der::sequence`** with the result at `B + oc` and the
 reader at `B + dc`, whose unread bytes are `rl` bytes at `rp`. -/
 theorem sv_seqB {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o rp rl : Word} {oc dc : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 derSequenceAddress)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + BitVec.ofNat 32 oc) (ha1 : reg n a1 = B + BitVec.ofNat 32 dc)
-    (ho1 : 0x21A0 ≤ oc) (ho2 : oc + 16 ≤ 0x3830) (ho3 : oc % 4 = 0)
-    (hd1 : 0x21A0 ≤ dc) (hd2 : dc + 16 ≤ 0x3830) (hd3 : dc % 4 = 0)
+    (ho1 : 0x21A0 ≤ oc) (ho2 : oc + 16 ≤ 0x2660) (ho3 : oc % 4 = 0)
+    (hd1 : 0x21A0 ≤ dc) (hd2 : dc + 16 ≤ 0x2660) (hd3 : dc % 4 = 0)
     (hrp : memLoad32 M (B + BitVec.ofNat 32 (dc + 8)) = rp) (hrl : memLoad32 M (B + BitVec.ofNat 32 (dc + 12)) = rl)
     (hin : SvIn B rp rl.toNat) :
     ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
@@ -174,14 +178,14 @@ theorem sv_base' (B : Word) (c : Nat) : B + BitVec.ofNat 32 (0x21A0 + c) = B + 0
 /-- **A call to `Der::sequence`**, with the result and the reader at
 offsets `oc` and `dc` of the frame. -/
 theorem sv_seq {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o rp rl : Word} {oc dc : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 derSequenceAddress)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 oc)
     (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 dc)
-    (ho2 : oc + 16 ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (ho2 : oc + 16 ≤ 0x4C0) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp)
     (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = rl)
     (hin : SvIn B rp rl.toNat) :

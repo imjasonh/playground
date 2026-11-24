@@ -193,9 +193,9 @@ theorem SvIn.algOid {B p op : Word} {n ol : Nat} {M : Word → BitVec 8} {w : Op
           · cases hq
 
 /-- A constant's bytes are outside the stack. -/
-theorem dataR {B q : Word} {ql : Nat} (F : Fr B 0x3830) (h1 : (img% dataWindowAddress) ≤ q.toNat) (h2 : q.toNat + ql ≤ (img% dataWindowAddress + dataWindowSize))
+theorem dataR {B q : Word} {ql : Nat} (FW : Fr (B + 0xFFFFEC10) 0x3A50) (h1 : (img% dataWindowAddress) ≤ q.toNat) (h2 : q.toNat + ql ≤ (img% dataWindowAddress + dataWindowSize))
     (i : Nat) (hi : i < ql) : SvR B (q + BitVec.ofNat 32 i) := by
-  have hs := F.dsep.subR (c := q.toNat - (img% dataWindowAddress) + i) (l := 1) (by omega)
+  have hs := (sv_dsepW FW).subR (c := q.toNat - (img% dataWindowAddress) + i) (l := 1) (by omega)
   have e : (img% dataWindowAddress : Word) + BitVec.ofNat 32 (q.toNat - (img% dataWindowAddress) + i) = q + BitVec.ofNat 32 i := by
     apply BitVec.eq_of_toNat_eq
     rw [BitVec.toNat_add, BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
@@ -207,11 +207,11 @@ theorem dataR {B q : Word} {ql : Nat} (F : Fr B 0x3830) (h1 : (img% dataWindowAd
 
 /-- Constants and bundle bytes read the same in two memories that agree
 outside the stack. -/
-theorem sv_mbRo {B q : Word} {ql : Nat} {M M0 : Word → BitVec 8} (F : Fr B 0x3830)
+theorem sv_mbRo {B q : Word} {ql : Nat} {M M0 : Word → BitVec 8} (FW : Fr (B + 0xFFFFEC10) 0x3A50)
     (fR : ∀ x, SvR B x → M x = M0 x) (h : SvRo B q ql) : memBytes M q ql = memBytes M0 q ql := by
   rcases h with h | ⟨h1, h2⟩
   · exact sv_mb fR h
-  · exact memBytes_congr fun i hi => fR _ (dataR F h1 h2 i hi)
+  · exact memBytes_congr fun i hi => fR _ (dataR FW h1 h2 i hi)
 
 /-- The parameters `Der::algorithm` finds in bytes outside the stack start
 at a nonzero address. -/

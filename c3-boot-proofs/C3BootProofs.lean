@@ -355,3 +355,11 @@ import C3BootProofs.Proofs.TufReadDoc
 import C3BootProofs.Proofs.EcdsaSig32
 import C3BootProofs.Proofs.Sha384FnCall
 import C3BootProofs.Proofs.Sha384Fn
+import C3BootProofs.Proofs.SvCalls
+import C3BootProofs.Proofs.SvLib2
+import C3BootProofs.Proofs.SvDer
+import C3BootProofs.Proofs.SvDer2
+import C3BootProofs.Proofs.SvDer3
+import C3BootProofs.Proofs.SvDer4
+import C3BootProofs.Proofs.SvDerBridge
+import C3BootProofs.Proofs.SvCongr

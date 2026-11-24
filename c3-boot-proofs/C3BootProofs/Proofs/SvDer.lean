@@ -18,7 +18,7 @@ set_option maxRecDepth 20000
 
 /-- `M'` agrees with `M` on the frame, except for the ranges in `L`. -/
 def SvKeepL (B : Word) (M M' : Word → BitVec 8) (L : List (Nat × Nat)) : Prop :=
-  ∀ e, e + 1 ≤ 0x1690 → (∀ p ∈ L, e < p.1 ∨ p.1 + p.2 ≤ e) →
+  ∀ e, e + 1 ≤ 0x4C0 → (∀ p ∈ L, e < p.1 ∨ p.1 + p.2 ≤ e) →
     M' (B + 0x21A0 + BitVec.ofNat 32 e) = M (B + 0x21A0 + BitVec.ofNat 32 e)
 
 theorem SvKeepL.refl {B : Word} {M : Word → BitVec 8} : SvKeepL B M M [] := fun _ _ _ => rfl
@@ -34,25 +34,25 @@ theorem SvKeep.toL {B : Word} {M M' : Word → BitVec 8} {c w : Nat} (h : SvKeep
     SvKeepL B M M' [(c, w)] := fun e he hL => h e he (hL _ (List.mem_singleton_self _))
 
 theorem SvKeepL.w32 {B : Word} {M M' : Word → BitVec 8} {L : List (Nat × Nat)} {e : Nat} (K : SvKeepL B M M' L)
-    (he : e + 4 ≤ 0x1690) (h : ∀ p ∈ L, e + 4 ≤ p.1 ∨ p.1 + p.2 ≤ e) :
+    (he : e + 4 ≤ 0x4C0) (h : ∀ p ∈ L, e + 4 ≤ p.1 ∨ p.1 + p.2 ≤ e) :
     memLoad32 M' (B + 0x21A0 + BitVec.ofNat 32 e) = memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 e) :=
   memLoad32_congr fun j hj => by
     rw [add_ofNat_assoc]; exact K _ (by omega) fun p hp => by have := h p hp; omega
 
 theorem SvKeepL.b8 {B : Word} {M M' : Word → BitVec 8} {L : List (Nat × Nat)} {e : Nat} (K : SvKeepL B M M' L)
-    (he : e + 1 ≤ 0x1690) (h : ∀ p ∈ L, e + 1 ≤ p.1 ∨ p.1 + p.2 ≤ e) :
+    (he : e + 1 ≤ 0x4C0) (h : ∀ p ∈ L, e + 1 ≤ p.1 ∨ p.1 + p.2 ≤ e) :
     M' (B + 0x21A0 + BitVec.ofNat 32 e) = M (B + 0x21A0 + BitVec.ofNat 32 e) :=
   K _ he fun p hp => by have := h p hp; omega
 
 /-- A range of frame bytes that an `SvKeepL` keeps. -/
 theorem SvKeepL.range {B : Word} {M M' : Word → BitVec 8} {L : List (Nat × Nat)} {s n : Nat} (K : SvKeepL B M M' L)
-    (hs : s + n ≤ 0x1690) (h : ∀ p ∈ L, s + n ≤ p.1 ∨ p.1 + p.2 ≤ s) :
+    (hs : s + n ≤ 0x4C0) (h : ∀ p ∈ L, s + n ≤ p.1 ∨ p.1 + p.2 ≤ s) :
     ∀ j, j < n → M' (B + 0x21A0 + BitVec.ofNat 32 (s + j)) = M (B + 0x21A0 + BitVec.ofNat 32 (s + j)) :=
   fun j hj => K _ (by omega) fun p hp => by have := h p hp; omega
 
 theorem SvSaves.keepL {B : Word} {M M' : Word → BitVec 8} {v : Nat → Word} {L : List (Nat × Nat)}
-    (V : SvSaves B M v) (K : SvKeepL B M M' L) (h : ∀ p ∈ L, p.1 + p.2 ≤ 0x165C) : SvSaves B M' v := fun k hk => by
-  rw [← V k hk, show 0x382C - 4 * k = 0x21A0 + (0x168C - 4 * k) by omega, sv_base]
+    (V : SvSaves B M v) (K : SvKeepL B M M' L) (h : ∀ p ∈ L, p.1 + p.2 ≤ 0x48C) : SvSaves B M' v := fun k hk => by
+  rw [← V k hk, show 0x265C - 4 * k = 0x21A0 + (0x4BC - 4 * k) by omega, sv_base]
   exact K.w32 (by omega) fun p hp => by have := h p hp; omega
 
 theorem lit4 (S : Word) (c : Nat) (hc : c + 4 < 2 ^ 32) : S + BitVec.ofNat 32 c + 4 = S + BitVec.ofNat 32 (c + 4) :=
@@ -79,19 +79,19 @@ def DerErrW (M : Word → BitVec 8) (B : Word) (oc : Nat) (e : DerError) : Prop 
 set_option maxHeartbeats 8000000 in
 /-- What `derNestedMem` leaves on the frame. -/
 theorem dnm_facts {B : Word} {M M' : Word → BitVec 8} {oc dc : Nat} {rp rl : Word} (r : Except DerError DerTlv)
-    (ho2 : oc + 16 ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (ho2 : oc + 16 ≤ 0x4C0) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hs : oc + 16 ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (f : ∀ x, Sep (B + BitVec.ofNat 32 0x2180) 0x20 x 1 →
       M' x = derNestedMem (derAdvance M (B + 0x21A0 + BitVec.ofNat 32 dc) rp rl r) (B + 0x21A0 + BitVec.ofNat 32 oc)
         rp r x) :
     SvKeepL B M M' [(oc, 16), (dc + 8, 8)] ∧ (∀ t, r = .ok t → DerOkW M' B oc dc rp rl t) ∧
       (∀ e, r = .error e → DerErrW M' B oc e) ∧ (∀ x, SvR B x → M' x = M x) := by
-  have fS : ∀ e, e + 1 ≤ 0x1690 → Sep (B + BitVec.ofNat 32 0x2180) 0x20 (B + 0x21A0 + BitVec.ofNat 32 e) 1 :=
+  have fS : ∀ e, e + 1 ≤ 0x4C0 → Sep (B + BitVec.ofNat 32 0x2180) 0x20 (B + 0x21A0 + BitVec.ofNat 32 e) 1 :=
     fun e he => by rw [← sv_base]; exact sepS B (by omega) (by omega) (by omega)
-  have fS4 : ∀ e, e + 4 ≤ 0x1690 → ∀ j, j < 4 →
+  have fS4 : ∀ e, e + 4 ≤ 0x4C0 → ∀ j, j < 4 →
       Sep (B + BitVec.ofNat 32 0x2180) 0x20 (B + 0x21A0 + BitVec.ofNat 32 e + BitVec.ofNat 32 j) 1 :=
     fun e he j hj => by rw [add_ofNat_assoc]; exact fS _ (by omega)
-  have ld : ∀ e, e + 4 ≤ 0x1690 → memLoad32 M' (B + 0x21A0 + BitVec.ofNat 32 e) =
+  have ld : ∀ e, e + 4 ≤ 0x4C0 → memLoad32 M' (B + 0x21A0 + BitVec.ofNat 32 e) =
       memLoad32 (derNestedMem (derAdvance M (B + 0x21A0 + BitVec.ofNat 32 dc) rp rl r)
         (B + 0x21A0 + BitVec.ofNat 32 oc) rp r) (B + 0x21A0 + BitVec.ofNat 32 e) :=
     fun e he => memLoad32_congr fun j hj => f _ (fS4 e he j hj)
@@ -100,16 +100,16 @@ theorem dnm_facts {B : Word} {M M' : Word → BitVec 8} {oc dc : Nat} {rp rl : W
   have o12 := lit12 (B + 0x21A0) oc (by omega)
   have d8 := lit8 (B + 0x21A0) dc (by omega)
   have d12 := lit12 (B + 0x21A0) dc (by omega)
-  have st : ∀ (N : Word → BitVec 8) (a e : Nat) (v : Word), a + 4 ≤ 0x1690 → e + 1 ≤ 0x1690 → (a + 4 ≤ e ∨ e + 1 ≤ a) →
+  have st : ∀ (N : Word → BitVec 8) (a e : Nat) (v : Word), a + 4 ≤ 0x4C0 → e + 1 ≤ 0x4C0 → (a + 4 ≤ e ∨ e + 1 ≤ a) →
       memStore32 N (B + 0x21A0 + BitVec.ofNat 32 a) v (B + 0x21A0 + BitVec.ofNat 32 e) =
         N (B + 0x21A0 + BitVec.ofNat 32 e) :=
     fun N a e v ha he h => memStore32_get_sep (sepS (B + 0x21A0) (by omega) (by omega) (by omega))
-  have st8 : ∀ (N : Word → BitVec 8) (a e : Nat) (v : BitVec 8), a + 1 ≤ 0x1690 → e + 1 ≤ 0x1690 → a ≠ e →
+  have st8 : ∀ (N : Word → BitVec 8) (a e : Nat) (v : BitVec 8), a + 1 ≤ 0x4C0 → e + 1 ≤ 0x4C0 → a ≠ e →
       memStore8 N (B + 0x21A0 + BitVec.ofNat 32 a) v (B + 0x21A0 + BitVec.ofNat 32 e) =
         N (B + 0x21A0 + BitVec.ofNat 32 e) :=
     fun N a e v ha he h => memStore8_ne (add_ofNat_ne _ (by omega) (by omega) (Ne.symm h))
-  have ldst : ∀ (N : Word → BitVec 8) (a e : Nat) (v : Word), a % 4 = 0 → e % 4 = 0 → a + 4 ≤ 0x1690 →
-      e + 4 ≤ 0x1690 → memLoad32 (memStore32 N (B + 0x21A0 + BitVec.ofNat 32 a) v) (B + 0x21A0 + BitVec.ofNat 32 e) =
+  have ldst : ∀ (N : Word → BitVec 8) (a e : Nat) (v : Word), a % 4 = 0 → e % 4 = 0 → a + 4 ≤ 0x4C0 →
+      e + 4 ≤ 0x4C0 → memLoad32 (memStore32 N (B + 0x21A0 + BitVec.ofNat 32 a) v) (B + 0x21A0 + BitVec.ofNat 32 e) =
         if a = e then v else memLoad32 N (B + 0x21A0 + BitVec.ofNat 32 e) :=
     fun N a e v h1 h2 h3 h4 => ld_st_sv h1 h2 (by omega) (by omega)
   refine ⟨fun e he hL => ?_, fun t ht => ?_, fun er he => ?_, fun x hx => ?_⟩
@@ -138,12 +138,12 @@ theorem dnm_facts {B : Word} {M M' : Word → BitVec 8} {oc dc : Nat} {rp rl : W
     · rw [ld _ (by omega)]; simp only [derNestedMem]; rw [memLoad32_store32_same]
     · rw [f _ (fS _ (by omega))]; simp only [derNestedMem, derAdvance]
       rw [o4, st _ oc (oc + 4) _ (by omega) (by omega) (by omega), memStore8_same]
-  · have hx' : ∀ c, c + 1 ≤ 0x1690 → Sep (B + 0x21A0 + BitVec.ofNat 32 c) 1 x 1 := fun c hc => svR_hi hx hc
+  · have hx' : ∀ c, c + 1 ≤ 0x4C0 → Sep (B + 0x21A0 + BitVec.ofNat 32 c) 1 x 1 := fun c hc => svR_hi hx hc
     have hxF : Sep (B + BitVec.ofNat 32 0x2180) 0x20 x 1 := by
       have := svR_lo (k := 0x20) hx (by decide) (by decide)
       rwa [show B + 0x21A0 + BitVec.ofNat 32 (2 ^ 32 - 0x20) = B + BitVec.ofNat 32 0x2180 by
         rw [BitVec.add_assoc]; rfl] at this
-    have s4 : ∀ (N : Word → BitVec 8) (a : Nat) (v : Word), a + 4 ≤ 0x1690 →
+    have s4 : ∀ (N : Word → BitVec 8) (a : Nat) (v : Word), a + 4 ≤ 0x4C0 →
         memStore32 N (B + 0x21A0 + BitVec.ofNat 32 a) v x = N x := fun N a v ha =>
       memStore32_get_sep (svR_hi hx ha)
     rw [f x hxF]
@@ -165,7 +165,7 @@ theorem br_bne_f {a b : Word} (h : a = b) : branchTaken .bne a b = false := by s
 /-- Where `sigstore::verify` writes its result: two bytes outside the stack
 and the code. -/
 structure SvOut (B out : Word) : Prop where
-  stk : Sep out 2 (B + 0xFFFFFE60) 0x39D0
+  stk : Sep out 2 (B + 0xFFFFEA70) 0x3BF0
   code : Sep out 2 SV sigstoreVerifyCode.length
   al : out.toNat % 2 = 0
 
@@ -174,19 +174,19 @@ return address with the stack and the callee-saved registers restored,
 `Err`'s discriminant 1 at `out`, and memory outside the stack unchanged
 except for the result. -/
 def SvErrRet (B out : Word) (v : Nat → Word) (n0 : Machine) : Prop :=
-  ∃ n', Steps n0 n' ∧ n'.pc = v 0 ∧ reg n' sp = B + 0x3830 ∧ (∀ k, k < 13 → reg n' (savedReg k) = v k) ∧
+  ∃ n', Steps n0 n' ∧ n'.pc = v 0 ∧ reg n' sp = B + 0x2660 ∧ (∀ k, k < 13 → reg n' (savedReg k) = v k) ∧
     reg n' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧ reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧ n'.mem out = 1 ∧
     ∀ x, SvR B x → x ≠ out → x ≠ out + 1 → n'.mem x = n0.mem x
 
-/-- **The failing exit**: from a step at 0x966, `sigstore::verify` returns `Err`. -/
-theorem sv_fail {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr B 0x3830) (E : SvCode n.mem)
-    (s : St n.mem SV n 0x966 (reg n)) (t : Steps n0 n) (fR : ∀ x, SvR B x → n.mem x = n0.mem x)
+/-- **The failing exit**: from a step at 0x7A4, `sigstore::verify` returns `Err`. -/
+theorem sv_fail {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr B 0x2660) (E : SvCode n.mem)
+    (s : St n.mem SV n 0x7A4 (reg n)) (t : Steps n0 n) (fR : ∀ x, SvR B x → n.mem x = n0.mem x)
     (V : SvSaves B n.mem v) (hret : v 0 &&& ~~~1 = v 0) (rsp : reg n sp = B + 0x21A0)
     (hout : reg n (18 : Fin 32) = out) (hO : SvOut B out) (r3 : reg n (3 : Fin 32) = reg n0 (3 : Fin 32))
     (r4 : reg n (4 : Fin 32) = reg n0 (4 : Fin 32)) : SvErrRet B out v n0 := by
-  have sOS : Sep out 2 (B + BitVec.ofNat 32 0x37FC) 0x34 := by
-    have := hO.stk.symm.sub (c := 0x1A0 + 0x37FC) (l := 0x34) (by decide)
-    rw [show B + 0xFFFFFE60 + BitVec.ofNat 32 (0x1A0 + 0x37FC) = B + BitVec.ofNat 32 0x37FC by
+  have sOS : Sep out 2 (B + BitVec.ofNat 32 0x262C) 0x34 := by
+    have := hO.stk.symm.sub (c := 0x1590 + 0x262C) (l := 0x34) (by decide)
+    rw [show B + 0xFFFFEA70 + BitVec.ofNat 32 (0x1590 + 0x262C) = B + BitVec.ofNat 32 0x262C by
       rw [BitVec.add_assoc]; rfl] at this
     exact this.symm
   obtain ⟨n', c', pc', mem', sp', sv', g', t'⟩ := sv_err E.self F s rsp hout V hret sOS hO.code
@@ -236,14 +236,14 @@ theorem rest_len {rp rl : Word} {M : Word → BitVec 8} {tag : Nat} {t : DerTlv}
 
 /-- **A call to `Der::sequence`**, as the generated stages track it. -/
 theorem sv_seqF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o rp rl : Word} {oc dc : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 derSequenceAddress)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 oc)
     (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 dc)
-    (ho2 : oc + 16 ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (ho2 : oc + 16 ≤ 0x4C0) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hs : oc + 16 ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp)
     (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = rl)
@@ -273,7 +273,7 @@ def DerTlvW (M : Word → BitVec 8) (B : Word) (oc dc : Nat) (rp rl : Word) (t :
 set_option maxHeartbeats 8000000 in
 /-- What `derTlvMem` leaves on the frame. -/
 theorem dtm_facts {B : Word} {M : Word → BitVec 8} {oc dc : Nat} {rp rl : Word} (r : Except DerError DerTlv)
-    (ho2 : oc + 20 ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (ho2 : oc + 20 ≤ 0x4C0) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hs : oc + 20 ≤ dc + 8 ∨ dc + 16 ≤ oc) :
     SvKeepL B M (derTlvMem M (B + 0x21A0 + BitVec.ofNat 32 oc) (B + 0x21A0 + BitVec.ofNat 32 dc) rp rl r)
         [(oc, 17), (dc + 8, 8)] ∧
@@ -290,19 +290,19 @@ theorem dtm_facts {B : Word} {M : Word → BitVec 8} {oc dc : Nat} {rp rl : Word
     frame_lit _ (by simpa using (show oc + 16 < 2 ^ 32 by omega))
   have d8 := lit8 (B + 0x21A0) dc (by omega)
   have d12 := lit12 (B + 0x21A0) dc (by omega)
-  have st : ∀ (N : Word → BitVec 8) (a e : Nat) (v : Word), a + 4 ≤ 0x1690 → e + 1 ≤ 0x1690 → (a + 4 ≤ e ∨ e + 1 ≤ a) →
+  have st : ∀ (N : Word → BitVec 8) (a e : Nat) (v : Word), a + 4 ≤ 0x4C0 → e + 1 ≤ 0x4C0 → (a + 4 ≤ e ∨ e + 1 ≤ a) →
       memStore32 N (B + 0x21A0 + BitVec.ofNat 32 a) v (B + 0x21A0 + BitVec.ofNat 32 e) =
         N (B + 0x21A0 + BitVec.ofNat 32 e) :=
     fun N a e v ha he h => memStore32_get_sep (sepS (B + 0x21A0) (by omega) (by omega) (by omega))
-  have st8 : ∀ (N : Word → BitVec 8) (a e : Nat) (v : BitVec 8), a + 1 ≤ 0x1690 → e + 1 ≤ 0x1690 → a ≠ e →
+  have st8 : ∀ (N : Word → BitVec 8) (a e : Nat) (v : BitVec 8), a + 1 ≤ 0x4C0 → e + 1 ≤ 0x4C0 → a ≠ e →
       memStore8 N (B + 0x21A0 + BitVec.ofNat 32 a) v (B + 0x21A0 + BitVec.ofNat 32 e) =
         N (B + 0x21A0 + BitVec.ofNat 32 e) :=
     fun N a e v ha he h => memStore8_ne (add_ofNat_ne _ (by omega) (by omega) (Ne.symm h))
-  have ldst : ∀ (N : Word → BitVec 8) (a e : Nat) (v : Word), a % 4 = 0 → e % 4 = 0 → a + 4 ≤ 0x1690 →
-      e + 4 ≤ 0x1690 → memLoad32 (memStore32 N (B + 0x21A0 + BitVec.ofNat 32 a) v) (B + 0x21A0 + BitVec.ofNat 32 e) =
+  have ldst : ∀ (N : Word → BitVec 8) (a e : Nat) (v : Word), a % 4 = 0 → e % 4 = 0 → a + 4 ≤ 0x4C0 →
+      e + 4 ≤ 0x4C0 → memLoad32 (memStore32 N (B + 0x21A0 + BitVec.ofNat 32 a) v) (B + 0x21A0 + BitVec.ofNat 32 e) =
         if a = e then v else memLoad32 N (B + 0x21A0 + BitVec.ofNat 32 e) :=
     fun N a e v h1 h2 h3 h4 => ld_st_sv h1 h2 (by omega) (by omega)
-  have ld8 : ∀ (N : Word → BitVec 8) (a e : Nat) (v : BitVec 8), a + 1 ≤ 0x1690 → e + 4 ≤ 0x1690 → (a < e ∨ e + 4 ≤ a) →
+  have ld8 : ∀ (N : Word → BitVec 8) (a e : Nat) (v : BitVec 8), a + 1 ≤ 0x4C0 → e + 4 ≤ 0x4C0 → (a < e ∨ e + 4 ≤ a) →
       memLoad32 (memStore8 N (B + 0x21A0 + BitVec.ofNat 32 a) v) (B + 0x21A0 + BitVec.ofNat 32 e) =
         memLoad32 N (B + 0x21A0 + BitVec.ofNat 32 e) :=
     fun N a e v h1 h2 h3 => memLoad32_store8_sep (sepS (B + 0x21A0) (by omega) (by omega) (by omega))
@@ -329,8 +329,8 @@ theorem dtm_facts {B : Word} {M : Word → BitVec 8} {oc dc : Nat} {rp rl : Word
     simp only [DerErrW, derTlvMem]
     rw [o4, memStore8_same, ld8 _ (oc + 4) oc _ (by omega) (by omega) (by omega), memLoad32_store32_same]
     exact ⟨rfl, rfl⟩
-  · have hx' : ∀ c, c + 1 ≤ 0x1690 → Sep (B + 0x21A0 + BitVec.ofNat 32 c) 1 x 1 := fun c hc => svR_hi hx hc
-    have s4 : ∀ (N : Word → BitVec 8) (a : Nat) (v : Word), a + 4 ≤ 0x1690 →
+  · have hx' : ∀ c, c + 1 ≤ 0x4C0 → Sep (B + 0x21A0 + BitVec.ofNat 32 c) 1 x 1 := fun c hc => svR_hi hx hc
+    have s4 : ∀ (N : Word → BitVec 8) (a : Nat) (v : Word), a + 4 ≤ 0x4C0 →
         memStore32 N (B + 0x21A0 + BitVec.ofNat 32 a) v x = N x := fun N a v ha =>
       memStore32_get_sep (svR_hi hx ha)
     cases r with
@@ -347,14 +347,14 @@ set_option maxHeartbeats 4000000 in
 /-- **A call to `Der::element`** with tag `tag`, the result at offset `oc`
 of the frame, and the reader at offset `dc`. -/
 theorem sv_elemF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o rp rl : Word} {oc dc tag : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 derElementAddress)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 oc) (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 dc)
     (ha2 : reg n a2 = BitVec.ofNat 32 tag) (htag : tag < 256)
-    (ho2 : oc + 20 ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (ho2 : oc + 20 ≤ 0x4C0) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hs : oc + 20 ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp)
     (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = rl) :

@@ -328,14 +328,21 @@ Six functions changed shape: `manifest_parse`, `generalized_time`, `sigstore::ve
 
 | Pending modules | Why |
 |-----------------|-----|
-| `Proofs/Sv*` | `sigstore::verify` moved, and its read-only data with it. The P-256 check is now a call to `p256_verify_prehash`, and the leaf certificate's time check calls `generalized_time`. |
+| `Proofs/Sv*` | `sigstore::verify` moved, and its read-only data with it. The P-256 check is now a call to `p256_verify_prehash`, and the leaf certificate's time check calls `generalized_time`. `SvAt`, `SvLib`, the call lemmas (`SvCalls`, `SvLib2`, `SvDer` through `SvDer4`, `SvDerBridge`, and `SvCongr`), `SvModels`, `SvGsSpec`, and `SvPvModel` build again, for the 0x4C0-byte frame. The stages and `sv_verify_spec` don't yet. |
 | `Proofs/ParseCur` | `manifest_parse` reads version 2. |
 | `Proofs/GeneralizedTime`, `Proofs/X509ReadTime` | `generalized_time` changed. |
 | `Proofs/BootSpec`, `Proofs/Boot` | `boot`, `boot_main`, and its first closure now read the TUF part and burn eFuses. |
-| `Models/P256*`, `Models/SafegcdP256`, `Models/P384*`, `Models/WeierstrassNist`, `Models/EcdsaModels`, `Models/EcdsaClosed` | The elliptic-curve models of `sigstore::verify`'s P-256 and P-384 stages. |
-| `Models/Ed25519SvModel*`, `Models/Ed25519Closed` | The Ed25519 model of `sigstore::verify`'s signature stage. |
 
 `C3BootProofs/AuditPending.lean` keeps their axiom checks.
+
+`p256VerifyPrehash_correct` proves `p256_verify_prehash`: on a call with the
+public key, the digest, and the signature's `r` and `s` outside the stack, it
+panics, returns 0, or returns 1, and it returns 1 only when the signature
+holds for the key and the digest (`SvP256Facts`). The elliptic-curve and
+Ed25519 models no longer import the old `sigstore::verify` stages, so the root
+module builds them again, and `Audit` checks that `p256_model_closed`,
+`p384_model_closed`, and `svEdModel_closed` depend only on `propext` and
+`Quot.sound`.
 
 ## Next steps on Nov 16, 2026
 

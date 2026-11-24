@@ -78,7 +78,7 @@ set_option maxHeartbeats 16000000 in
 /-- What `derOptMem` leaves on the frame, seen outside the callee's 0x30 bytes. -/
 theorem dom_facts {B : Word} {M M' : Word → BitVec 8} {oc dc : Nat} {rp rl : Word}
     (r : Option (Except DerError DerTlv))
-    (ho2 : oc + 0x18 ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (ho2 : oc + 0x18 ≤ 0x4C0) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hs : oc + 0x18 ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (f : ∀ x, Sep (B + BitVec.ofNat 32 0x2170) 0x30 x 1 →
       M' x = derOptMem M (B + 0x21A0 + BitVec.ofNat 32 oc) (B + BitVec.ofNat 32 0x2180)
@@ -88,17 +88,17 @@ theorem dom_facts {B : Word} {M M' : Word → BitVec 8} {oc dc : Nat} {rp rl : W
   have eo : B + 0x21A0 + BitVec.ofNat 32 oc = B + BitVec.ofNat 32 (0x21A0 + oc) := (sv_base' B oc).symm
   have ed : B + 0x21A0 + BitVec.ofNat 32 dc = B + BitVec.ofNat 32 (0x21A0 + dc) := (sv_base' B dc).symm
   have ee : ∀ e, B + 0x21A0 + BitVec.ofNat 32 e = B + BitVec.ofNat 32 (0x21A0 + e) := fun e => (sv_base' B e).symm
-  have st : ∀ (N : Word → BitVec 8) (a e : Nat) (v : Word), a + 4 ≤ 0x3830 → e + 1 ≤ 0x3830 → (a + 4 ≤ e ∨ e + 1 ≤ a) →
+  have st : ∀ (N : Word → BitVec 8) (a e : Nat) (v : Word), a + 4 ≤ 0x2660 → e + 1 ≤ 0x2660 → (a + 4 ≤ e ∨ e + 1 ≤ a) →
       memStore32 N (B + BitVec.ofNat 32 a) v (B + BitVec.ofNat 32 e) = N (B + BitVec.ofNat 32 e) :=
     fun N a e v ha he h => memStore32_get_sep (sepS B (by omega) (by omega) (by omega))
-  have st8 : ∀ (N : Word → BitVec 8) (a e : Nat) (v : BitVec 8), a + 1 ≤ 0x3830 → e + 1 ≤ 0x3830 → a ≠ e →
+  have st8 : ∀ (N : Word → BitVec 8) (a e : Nat) (v : BitVec 8), a + 1 ≤ 0x2660 → e + 1 ≤ 0x2660 → a ≠ e →
       memStore8 N (B + BitVec.ofNat 32 a) v (B + BitVec.ofNat 32 e) = N (B + BitVec.ofNat 32 e) :=
     fun N a e v ha he h => memStore8_ne (add_ofNat_ne _ (by omega) (by omega) (Ne.symm h))
-  have cp : ∀ (N : Word → BitVec 8) (a s e n : Nat), a + n ≤ 0x3830 → e + 1 ≤ 0x3830 → (a + n ≤ e ∨ e + 1 ≤ a) →
+  have cp : ∀ (N : Word → BitVec 8) (a s e n : Nat), a + n ≤ 0x2660 → e + 1 ≤ 0x2660 → (a + n ≤ e ∨ e + 1 ≤ a) →
       copyBytes N (B + BitVec.ofNat 32 a) (B + BitVec.ofNat 32 s) n (B + BitVec.ofNat 32 e) = N (B + BitVec.ofNat 32 e) :=
     fun N a s e n ha he h => copyBytes_sep (sepS B (by omega) (by omega) (by omega)) (Nat.le_refl _)
   -- `derTlvMem` at the callee's result, at a frame byte.
-  have dtm : ∀ (t : DerTlv) e, e + 1 ≤ 0x3830 → 0x21A0 ≤ e → (e + 1 ≤ 0x21A0 + dc + 8 ∨ 0x21A0 + dc + 16 ≤ e) →
+  have dtm : ∀ (t : DerTlv) e, e + 1 ≤ 0x2660 → 0x21A0 ≤ e → (e + 1 ≤ 0x21A0 + dc + 8 ∨ 0x21A0 + dc + 16 ≤ e) →
       derTlvMem M (B + BitVec.ofNat 32 0x2184) (B + BitVec.ofNat 32 (0x21A0 + dc)) rp rl (.ok t)
         (B + BitVec.ofNat 32 e) = M (B + BitVec.ofNat 32 e) := fun t e he h0 h => by
     simp only [derTlvMem]
@@ -107,17 +107,17 @@ theorem dom_facts {B : Word} {M M' : Word → BitVec 8} {oc dc : Nat} {rp rl : W
       lb4 B 0x2184 (by decide), st _ _ e _ (by decide) he (by omega), st _ _ e _ (by decide) he (by omega),
       lb12 B (0x21A0 + dc) (by omega), st _ _ e _ (by omega) he (by omega), lb8 B (0x21A0 + dc) (by omega),
       st _ _ e _ (by omega) he (by omega)]
-  have fS : ∀ e, 0x21A0 ≤ e → e + 1 ≤ 0x3830 → Sep (B + BitVec.ofNat 32 0x2170) 0x30 (B + BitVec.ofNat 32 e) 1 :=
+  have fS : ∀ e, 0x21A0 ≤ e → e + 1 ≤ 0x2660 → Sep (B + BitVec.ofNat 32 0x2170) 0x30 (B + BitVec.ofNat 32 e) 1 :=
     fun e h1 h2 => sepS B (by omega) (by omega) (by omega)
-  have ldS : ∀ e, 0x21A0 ≤ e → e + 4 ≤ 0x3830 → memLoad32 M' (B + BitVec.ofNat 32 e) =
+  have ldS : ∀ e, 0x21A0 ≤ e → e + 4 ≤ 0x2660 → memLoad32 M' (B + BitVec.ofNat 32 e) =
       memLoad32 (derOptMem M (B + BitVec.ofNat 32 (0x21A0 + oc)) (B + BitVec.ofNat 32 0x2180)
         (B + BitVec.ofNat 32 (0x21A0 + dc)) rp rl r) (B + BitVec.ofNat 32 e) := fun e h1 h2 =>
     memLoad32_congr fun j hj => by rw [add_ofNat_assoc, f _ (fS _ (by omega) (by omega)), eo, ed]
-  have ldst : ∀ (N : Word → BitVec 8) (a e : Nat) (v : Word), a % 4 = 0 → e % 4 = 0 → a + 4 ≤ 0x3830 →
-      e + 4 ≤ 0x3830 → memLoad32 (memStore32 N (B + BitVec.ofNat 32 a) v) (B + BitVec.ofNat 32 e) =
+  have ldst : ∀ (N : Word → BitVec 8) (a e : Nat) (v : Word), a % 4 = 0 → e % 4 = 0 → a + 4 ≤ 0x2660 →
+      e + 4 ≤ 0x2660 → memLoad32 (memStore32 N (B + BitVec.ofNat 32 a) v) (B + BitVec.ofNat 32 e) =
         if a = e then v else memLoad32 N (B + BitVec.ofNat 32 e) :=
     fun N a e v h1 h2 h3 h4 => ld_st_sv h1 h2 (by omega) (by omega)
-  have ld8 : ∀ (N : Word → BitVec 8) (a e : Nat) (v : BitVec 8), a + 1 ≤ 0x3830 → e + 4 ≤ 0x3830 → (a < e ∨ e + 4 ≤ a) →
+  have ld8 : ∀ (N : Word → BitVec 8) (a e : Nat) (v : BitVec 8), a + 1 ≤ 0x2660 → e + 4 ≤ 0x2660 → (a < e ∨ e + 4 ≤ a) →
       memLoad32 (memStore8 N (B + BitVec.ofNat 32 a) v) (B + BitVec.ofNat 32 e) = memLoad32 N (B + BitVec.ofNat 32 e) :=
     fun N a e v h1 h2 h3 => memLoad32_store8_sep (sepS B (by omega) (by omega) (by omega))
   have F4 : B + BitVec.ofNat 32 0x2180 + 4 = B + BitVec.ofNat 32 0x2184 := lb4 B 0x2180 (by decide)
@@ -184,7 +184,7 @@ theorem dom_facts {B : Word} {M M' : Word → BitVec 8} {oc dc : Nat} {rp rl : W
   · have hxF : Sep (B + BitVec.ofNat 32 0x2170) 0x30 x 1 := by
       have := svR_lo (k := 0x30) hx (by decide) (by decide)
       rwa [sv_lo B 0x30 (by decide)] at this
-    have hx' : ∀ c n, 0x21A0 ≤ c → c + n ≤ 0x3830 → Sep (B + BitVec.ofNat 32 c) n x 1 := fun c n h1 h2 => by
+    have hx' : ∀ c n, 0x21A0 ≤ c → c + n ≤ 0x2660 → Sep (B + BitVec.ofNat 32 c) n x 1 := fun c n h1 h2 => by
       have := svR_hi (c := c - 0x21A0) (l := n) hx (by omega)
       rwa [← sv_base', show 0x21A0 + (c - 0x21A0) = c by omega] at this
     have hxL : ∀ c n, 0x2170 ≤ c → c + n ≤ 0x21A0 → Sep (B + BitVec.ofNat 32 c) n x 1 := fun c n h1 h2 => by
@@ -215,14 +215,14 @@ set_option maxHeartbeats 8000000 in
 /-- **A call to `Der::optional`** with tag `tag`, the result at offset `oc`
 and the reader at offset `dc`. -/
 theorem sv_optF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o rp rl : Word} {oc dc tag : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 derOptionalAddress)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 oc)
     (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 dc) (ha2 : reg n a2 = BitVec.ofNat 32 tag) (htag : tag < 256)
-    (ho2 : oc + 0x18 ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (ho2 : oc + 0x18 ≤ 0x4C0) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hs : oc + 0x18 ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp)
     (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = rl)
@@ -276,15 +276,15 @@ set_option maxHeartbeats 8000000 in
 /-- What `derAdvance` leaves on the frame, seen outside a callee frame `kf`
 bytes below the base. -/
 theorem dad_facts {B : Word} {M M' : Word → BitVec 8} {dc kf : Nat} {rp rl : Word}
-    (r : Except DerError DerTlv) (hkf : kf ≤ 0x200) (hkf0 : 0 < kf) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (r : Except DerError DerTlv) (hkf : kf ≤ 0x200) (hkf0 : 0 < kf) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (f : ∀ x, Sep (B + BitVec.ofNat 32 (0x21A0 - kf)) kf x 1 →
       M' x = derAdvance M (B + 0x21A0 + BitVec.ofNat 32 dc) rp rl r x) :
     SvKeepL B M M' [(dc + 8, 8)] ∧ (∀ t, r = .ok t → DerAdvW M' B dc rp rl t) ∧ (∀ x, SvR B x → M' x = M x) := by
-  have fS : ∀ e, e + 1 ≤ 0x1690 → Sep (B + BitVec.ofNat 32 (0x21A0 - kf)) kf (B + 0x21A0 + BitVec.ofNat 32 e) 1 :=
+  have fS : ∀ e, e + 1 ≤ 0x4C0 → Sep (B + BitVec.ofNat 32 (0x21A0 - kf)) kf (B + 0x21A0 + BitVec.ofNat 32 e) 1 :=
     fun e he => by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega)
   have d8 := lit8 (B + 0x21A0) dc (by omega)
   have d12 := lit12 (B + 0x21A0) dc (by omega)
-  have st : ∀ (N : Word → BitVec 8) (a e : Nat) (v : Word), a + 4 ≤ 0x1690 → e + 1 ≤ 0x1690 → (a + 4 ≤ e ∨ e + 1 ≤ a) →
+  have st : ∀ (N : Word → BitVec 8) (a e : Nat) (v : Word), a + 4 ≤ 0x4C0 → e + 1 ≤ 0x4C0 → (a + 4 ≤ e ∨ e + 1 ≤ a) →
       memStore32 N (B + 0x21A0 + BitVec.ofNat 32 a) v (B + 0x21A0 + BitVec.ofNat 32 e) =
         N (B + 0x21A0 + BitVec.ofNat 32 e) :=
     fun N a e v ha he h => memStore32_get_sep (sepS (B + 0x21A0) (by omega) (by omega) (by omega))
@@ -297,7 +297,7 @@ theorem dad_facts {B : Word} {M M' : Word → BitVec 8} {dc kf : Nat} {rp rl : W
     | ok t => simp only [derAdvance]; rw [d12, st _ (dc + 12) e _ (by omega) he (by omega), d8,
         st _ (dc + 8) e _ (by omega) he (by omega)]
   · subst ht
-    have ld : ∀ e, e + 4 ≤ 0x1690 → memLoad32 M' (B + 0x21A0 + BitVec.ofNat 32 e) =
+    have ld : ∀ e, e + 4 ≤ 0x4C0 → memLoad32 M' (B + 0x21A0 + BitVec.ofNat 32 e) =
         memLoad32 (derAdvance M (B + 0x21A0 + BitVec.ofNat 32 dc) rp rl (.ok t)) (B + 0x21A0 + BitVec.ofNat 32 e) :=
       fun e he => memLoad32_congr fun j hj => f _ (by rw [add_ofNat_assoc]; exact fS _ (by omega))
     refine ⟨?_, ?_⟩
@@ -321,13 +321,13 @@ set_option maxHeartbeats 8000000 in
 /-- **A call to `Der::integer_is`** with the reader at offset `dc` and the
 expected value in `a1`. -/
 theorem sv_iiF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o rp rl : Word} {dc : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 derIntegerIsAddress)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 dc)
-    (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp)
     (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = rl)
     (hin : SvIn B rp rl.toNat) :
@@ -391,14 +391,14 @@ set_option maxHeartbeats 16000000 in
 /-- **A call to `Der::algorithm`** with the result at offset `oc` and the
 reader at offset `dc`, whose unread bytes are `n` bytes at `p`. -/
 theorem sv_algF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o p : Word} {oc dc nl : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 derAlgorithmAddress)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 oc)
     (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 dc)
-    (ho2 : oc + 0x1C ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (ho2 : oc + 0x1C ≤ 0x4C0) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hs : oc + 0x1C ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = p)
     (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = BitVec.ofNat 32 nl)
@@ -456,7 +456,7 @@ theorem sv_algF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {im
     | ok t => simp only [derAdvance]; rw [d12, memStore32_get_sep (sepS (B + 0x21A0) (by omega) (by omega) (by omega)),
         d8, memStore32_get_sep (sepS (B + 0x21A0) (by omega) (by omega) (by omega))]
   · intro t ht
-    have ld : ∀ e, e + 4 ≤ 0x1690 → (e + 4 ≤ oc ∨ oc + 0x1C ≤ e) → memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 e) =
+    have ld : ∀ e, e + 4 ≤ 0x4C0 → (e + 4 ≤ oc ∨ oc + 0x1C ≤ e) → memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 e) =
         memLoad32 (derAdvance M (B + 0x21A0 + BitVec.ofNat 32 dc) p (BitVec.ofNat 32 nl) (.ok t))
           (B + 0x21A0 + BitVec.ofNat 32 e) := fun e he h => by
       rw [← ht]; exact memLoad32_congr fun j hj => f2' _

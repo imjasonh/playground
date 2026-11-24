@@ -23,7 +23,7 @@ the constants between `dataWindowAddress` and 0x3FCC4E60. -/
 def SvRo (B q : Word) (ql : Nat) : Prop :=
   SvIn B q ql ∨ ((img% dataWindowAddress) ≤ q.toNat ∧ q.toNat + ql ≤ (img% dataWindowAddress + dataWindowSize))
 
-theorem SvRo.sep {B q : Word} {ql : Nat} (F : Fr B 0x3830) (h : SvRo B q ql) {c n : Nat} (hc : c + n ≤ 0x3830) :
+theorem SvRo.sep {B q : Word} {ql : Nat} (F : Fr B 0x2660) (h : SvRo B q ql) {c n : Nat} (hc : c + n ≤ 0x2660) :
     Sep (B + BitVec.ofNat 32 c) n q ql := by
   rcases h with h | ⟨h1, h2⟩
   · exact (h.sepLo hc).symm
@@ -37,7 +37,7 @@ theorem SvRo.fit {B q : Word} {ql : Nat} (h : SvRo B q ql) : q.toNat + ql < 2 ^ 
 set_option maxHeartbeats 8000000 in
 /-- **A call to `<[u8]>::ne`** of `pl` bytes at `p` and `ql` bytes at `q`. -/
 theorem sv_sneF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o p q : Word} {pl ql : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 sliceNeAddress)
@@ -92,14 +92,14 @@ set_option maxHeartbeats 8000000 in
 /-- **A call to `x509::read_time`** with the result at offset `oc` and the
 reader at offset `dc`, whose unread bytes are `rl` bytes at `rp`. -/
 theorem sv_rtF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o rp : Word} {oc dc rl : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 x509ReadTimeAddress)
     (hev : (SV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 oc)
     (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 dc)
-    (ho2 : oc + 16 ≤ 0x1690) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x1690) (hd3 : dc % 4 = 0)
+    (ho2 : oc + 16 ≤ 0x4C0) (ho3 : oc % 4 = 0) (hd2 : dc + 16 ≤ 0x4C0) (hd3 : dc % 4 = 0)
     (hs : oc + 16 ≤ dc + 8 ∨ dc + 16 ≤ oc)
     (hrp : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 8)) = rp)
     (hrl : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 (dc + 12)) = BitVec.ofNat 32 rl)
@@ -120,7 +120,8 @@ theorem sv_rtF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm
   have hS : (B + (0x21A0 : Word)).toNat = B.toNat + 0x21A0 := F.at 0x21A0 (by decide)
   obtain ⟨n2, c2, pc2, sp2, k2, Ok, Er, f2⟩ := x509ReadTime_correct n1 (rp := rp) (rl := rl)
     (by rw [mem1]; exact C.x509ReadTime) (by rw [mem1]; exact C.tlv) (by rw [mem1]; exact C.generalizedTime)
-    (by rw [mem1]; exact C.dateTime) (by rw [mem1]; exact C.timeDigits2) pc1
+    (by rw [mem1]; exact C.dateTime) (by rw [mem1]; exact C.timeDigits2) (by rw [mem1]; exact C.timeDigits4)
+    (by rw [mem1]; exact C.allAsciiDigit) pc1
     (by rw [r1 a0 (by decide), ha0]) (by rw [r1 a1 (by decide), ha1]) (by rw [regs1]; simp +decide [upd])
     (even_clear _ hev) (by rw [r1 sp (by decide), rsp]) (by rw [hS]; omega) (by rw [hS]; omega)
     (by rw [hS]; omega) (by rw [sv_at F _ (by omega)]; omega) (sv_al F (by omega) ho3)
@@ -129,8 +130,8 @@ theorem sv_rtF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm
     (by rw [sv_sp60, ← sv_base']; exact sepS B (by omega) (by omega) (by omega))
     (by rw [sv_sp60, d8, ← sv_base']; exact sepS B (by omega) (by omega) (by omega))
     (by rw [d8]; exact sepS (B + 0x21A0) (by omega) (by omega) (by omega))
-    (by rw [sv_sp60]; exact (hin.sep14.symm.sub (c := 0x1A0 + 0x2140) (l := 0x60) (by decide) |> fun h => by
-      rw [show B + 0xFFFFFE60 + BitVec.ofNat 32 (0x1A0 + 0x2140) = B + BitVec.ofNat 32 0x2140 by
+    (by rw [sv_sp60]; exact (hin.sep14.symm.sub (c := 0x1590 + 0x2140) (l := 0x60) (by decide) |> fun h => by
+      rw [show B + 0xFFFFEA70 + BitVec.ofNat 32 (0x1590 + 0x2140) = B + BitVec.ofNat 32 0x2140 by
         rw [BitVec.add_assoc]; rfl] at h; exact h.symm))
     (by rw [d8, ← sv_base']; exact (hin.sepLo (by omega)))
   rw [mem1] at Ok Er f2
@@ -156,7 +157,7 @@ theorem sv_sp4 (B : Word) : B + 0x21A0 + 0xFFFFFFFC = B + BitVec.ofNat 32 0x219C
 set_option maxHeartbeats 8000000 in
 /-- **A call to `<[u8]>::eq`** of `pl` bytes at `p` and `ql` bytes at `q`. -/
 theorem sv_seqEqF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {imm o p q : Word} {pl ql : Nat}
-    (F : Fr B 0x3830) (C : SvCode M) (s : St M SV n off (reg n))
+    (F : Fr B 0x2660) (C : SvCode M) (s : St M SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : SV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 sliceEqAddress)
