@@ -556,3 +556,6 @@ import C3BootProofs.Models.P384Model
 import C3BootProofs.Models.EcdsaRcb
 import C3BootProofs.Models.P256Rcb
 import C3BootProofs.Models.P384Rcb
+import C3BootProofs.Models.PrimeLucas
+import C3BootProofs.Models.PrimeCerts
+import C3BootProofs.Models.PrimeCurves
