@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.ReaderArray
+import C3BootProofs.Proofs.ReaderArrayV0
 import C3BootProofs.Image.BootloaderV0
 
 /-!
@@ -262,7 +263,7 @@ theorem readerU32_correct (m : Machine) (base retAddr out self : Word)
     rwa [add_ofNat_zero] at this
   have hpc7 : m7.pc = base + 0xFFFFFADE := by
     rw [pc7]; simp +decide only [upd, ite_true, ite_false]; rw [hsum, even_clear _ hev]
-  obtain ⟨m8, c8, pc8, sp8, fr8, mem8⟩ := readerArray4_correct m7 (base + 0xFFFFFADE)
+  obtain ⟨m8, c8, pc8, sp8, fr8, mem8⟩ := V0.readerArray4_correct m7 (base + 0xFFFFFADE)
     (base + 0xFFFFFADE + 0xFFFFFF96) (base + BitVec.ofNat 32 0x12) G self
     (fun i hi => by rw [mem7]; exact hcA i hi) (fun i hi => by rw [mem7]; exact hcB i hi) rfl hev
     hpc7 (by rw [r7]; simp +decide) (by rw [r7]; simp +decide [ha1]) (by rw [r7]; simp +decide)

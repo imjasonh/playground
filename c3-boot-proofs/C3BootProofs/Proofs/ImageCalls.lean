@@ -1,5 +1,6 @@
 import C3BootProofs.Proofs.ImageParse
 import C3BootProofs.Proofs.Parse
+import C3BootProofs.Proofs.ImageHelpersV0
 import C3BootProofs.Image.BootloaderV0
 
 /-!
@@ -102,7 +103,7 @@ theorem ip_version {P R G ptr len out : Word} (env : IEnv P R G ptr len out) {Mx
   have WB : P + 0xFFFFFD94 + 0x126 + 0xFFFFFFDA = ipWindow P + BitVec.ofNat 32 0x142 := by
     rw [BitVec.add_assoc (P + 0xFFFFFD94) 0x126 0xFFFFFFDA, BitVec.add_assoc P]
     exact ip_wq P _ 0x142 (by decide)
-  obtain ⟨m2, c2, pc2, sp2, a02, fr2, mem2⟩ := readerVersion1_correct m1 (P + 0xFFFFFD94)
+  obtain ⟨m2, c2, pc2, sp2, a02, fr2, mem2⟩ := V0.readerVersion1_correct m1 (P + 0xFFFFFD94)
     (P + BitVec.ofNat 32 (off + 8)) (G + 0x18)
     (fun i hi => by rw [mem1]; exact code.version i hi)
     (fun i hi => by rw [mem1, show P + 0xFFFFFD94 + 0x126 = P + 0xFFFFFEBA by
@@ -150,7 +151,7 @@ theorem ip_u16 {P R G ptr len out : Word} (env : IEnv P R G ptr len out) {Mx : W
   have WU : P + 0xFFFFFEBA = ipWindow P + BitVec.ofNat 32 0x168 := ip_wq P _ 0x168 (by decide)
   have WB : P + 0xFFFFFEBA + 0xFFFFFFDA = ipWindow P + BitVec.ofNat 32 0x142 := by
     rw [BitVec.add_assoc]; exact ip_wq P _ 0x142 (by decide)
-  obtain ⟨m2, c2, pc2, sp2, a02, fr2, mem2⟩ := readerU16_correct m1 (P + 0xFFFFFEBA)
+  obtain ⟨m2, c2, pc2, sp2, a02, fr2, mem2⟩ := V0.readerU16_correct m1 (P + 0xFFFFFEBA)
     (P + BitVec.ofNat 32 (off + 8)) (G + 0x18)
     (fun i hi => by rw [mem1]; exact code.u16 i hi)
     (fun i hi => by rw [mem1, show P + 0xFFFFFEBA + 0xFFFFFFDA = P + 0xFFFFFE94 by
@@ -193,7 +194,7 @@ theorem ip_u8 {P R G ptr len out : Word} (env : IEnv P R G ptr len out) {Mx : Wo
   have WU : P + 0xFFFFFDBE = ipWindow P + BitVec.ofNat 32 0x6C := ip_wq P _ 0x6C (by decide)
   have WB : P + 0xFFFFFDBE + 0xD6 = ipWindow P + BitVec.ofNat 32 0x142 := by
     rw [BitVec.add_assoc]; exact ip_wq P _ 0x142 (by decide)
-  obtain ⟨m2, c2, pc2, sp2, a02, a12, fr2, mem2⟩ := readerU8_correct m1 (P + 0xFFFFFDBE)
+  obtain ⟨m2, c2, pc2, sp2, a02, a12, fr2, mem2⟩ := V0.readerU8_correct m1 (P + 0xFFFFFDBE)
     (P + BitVec.ofNat 32 (off + 8)) (G + 0x18)
     (fun i hi => by rw [mem1]; exact code.u8 i hi)
     (fun i hi => by rw [mem1, show P + 0xFFFFFDBE + 0xD6 = P + 0xFFFFFE94 by
@@ -237,7 +238,7 @@ theorem ip_reserved {P R G ptr len out : Word} (env : IEnv P R G ptr len out) {M
   have WR : P + 0xFFFFFDF8 = ipWindow P + BitVec.ofNat 32 0xA6 := ip_wq P _ 0xA6 (by decide)
   have WB : P + 0xFFFFFDF8 + 0x9C = ipWindow P + BitVec.ofNat 32 0x142 := by
     rw [BitVec.add_assoc]; exact ip_wq P _ 0x142 (by decide)
-  obtain ⟨m2, c2, pc2, sp2, a02, fr2, mem2⟩ := readerReserved_correct m1 (P + 0xFFFFFDF8)
+  obtain ⟨m2, c2, pc2, sp2, a02, fr2, mem2⟩ := V0.readerReserved_correct m1 (P + 0xFFFFFDF8)
     (P + BitVec.ofNat 32 (off + 8)) (G + 0x18) n
     (fun i hi => by rw [mem1]; exact code.reserved i hi)
     (fun i hi => by rw [mem1, show P + 0xFFFFFDF8 + 0x9C = P + 0xFFFFFE94 by

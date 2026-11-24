@@ -1,6 +1,8 @@
 import C3BootProofs.Proofs.Part
 import C3BootProofs.Proofs.Reserved
 import C3BootProofs.Proofs.Block
+import C3BootProofs.Proofs.U16V0
+import C3BootProofs.Proofs.ReservedV0
 import C3BootProofs.Image.BootloaderV0
 
 /-!
@@ -286,7 +288,7 @@ theorem parse_version {P R G bp out : Word} (env : PEnv P R G bp out) {Mx : Word
   have WB : P + 0xFFFFC422 + 0x126 + 0xFFFFFFDA = parseWindow P + BitVec.ofNat 32 0x142 := by
     rw [BitVec.add_assoc (P + 0xFFFFC422) 0x126 0xFFFFFFDA, BitVec.add_assoc P]
     exact wq P _ 0x142 (by decide)
-  obtain ⟨m2, c2, pc2, sp2, a02, fr2, mem2⟩ := readerVersion1_correct m1 (P + 0xFFFFC422)
+  obtain ⟨m2, c2, pc2, sp2, a02, fr2, mem2⟩ := V0.readerVersion1_correct m1 (P + 0xFFFFC422)
     (P + BitVec.ofNat 32 (off + 8)) (G + 8)
     (fun i hi => by rw [mem1]; exact code.version i hi)
     (fun i hi => by rw [mem1, show P + 0xFFFFC422 + 0x126 = P + 0xFFFFC548 by
@@ -335,7 +337,7 @@ theorem parse_reserved {P R G bp out : Word} (env : PEnv P R G bp out) {Mx : Wor
   have WR : P + 0xFFFFC486 = parseWindow P + BitVec.ofNat 32 0xA6 := wq P _ 0xA6 (by decide)
   have WB : P + 0xFFFFC486 + 0x9C = parseWindow P + BitVec.ofNat 32 0x142 := by
     rw [BitVec.add_assoc]; exact wq P _ 0x142 (by decide)
-  obtain ⟨m2, c2, pc2, sp2, a02, fr2, mem2⟩ := readerReserved_correct m1 (P + 0xFFFFC486)
+  obtain ⟨m2, c2, pc2, sp2, a02, fr2, mem2⟩ := V0.readerReserved_correct m1 (P + 0xFFFFC486)
     (P + BitVec.ofNat 32 (off + 8)) (G + 8) 2
     (fun i hi => by rw [mem1]; exact code.reserved i hi)
     (fun i hi => by rw [mem1, show P + 0xFFFFC486 + 0x9C = P + 0xFFFFC522 by

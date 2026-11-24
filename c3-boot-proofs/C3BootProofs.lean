@@ -27,6 +27,10 @@ import C3BootProofs.Proof.Mem
 import C3BootProofs.Proofs.Crc32
 import C3BootProofs.Proofs.Reader
 import C3BootProofs.Proofs.ReaderArray
+import C3BootProofs.Proofs.ReaderArrayV0
+import C3BootProofs.Proofs.U16V0
+import C3BootProofs.Proofs.ReservedV0
+import C3BootProofs.Proofs.ImageHelpersV0
 import C3BootProofs.Proofs.ReaderU32
 import C3BootProofs.Proofs.Outlined
 import C3BootProofs.Proofs.Block

@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.Outlined
+import C3BootProofs.Proofs.ReaderArrayV0
 import C3BootProofs.Image.BootloaderV0
 
 /-!
@@ -276,7 +277,7 @@ theorem readerMagic_correct (m : Machine) (base retAddr self k : Word)
   have cB : CodeIn M2 (base + 0x1AC + 0xFFFFFF96) readerBytesCode := fun i hi => by
     rw [M2out _ (hSb.subR (c := i) (l := 1) (by omega))]; exact hbcode i hi
   have hm8 : m8.mem = M2 := mem8
-  obtain ⟨m9, c9, pc9, sp9, fr9, mem9⟩ := readerArray4_correct m8 (base + 0x1AC)
+  obtain ⟨m9, c9, pc9, sp9, fr9, mem9⟩ := V0.readerArray4_correct m8 (base + 0x1AC)
     (base + 0x1AC + 0xFFFFFF96) (base + BitVec.ofNat 32 0x14) G self
     (fun i hi => by rw [hm8]; exact cA i hi) (fun i hi => by rw [hm8]; exact cB i hi) rfl hev
     hpc8 (by rw [r8]; simp +decide) (by rw [r8]; simp +decide) (by rw [r8]; simp +decide)
