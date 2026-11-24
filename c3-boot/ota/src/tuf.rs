@@ -1,5 +1,5 @@
 //! Packages Sigstore's TUF metadata for a slot, checks it with the device's
-//! code, and signs synthetic metadata for tests.
+//! code, and signs metadata for the development repository and for tests.
 //!
 //! Sigstore publishes its metadata pretty-printed. The device reads only
 //! canonical JSON, so [`package`] and [`pinned_root`] re-encode each
@@ -8,15 +8,15 @@
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use c3_verify::accept::Accepted;
 use c3_verify::trustroot::Policy;
-use c3_verify::tuf::TufParts;
 use c3_verify::tuf::Verified;
+use c3_verify::tuf_slot::Accepted;
 use c3_verify::tuf_slot::TufSlotParts;
 use ed25519_dalek::Signer;
 use p256::ecdsa::signature::hazmat::PrehashSigner;
 use serde_json::Value;
 use serde_json::json;
+use std::path::Path;
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -77,10 +77,33 @@ pub fn canonical_value(v: &Value) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// Re-encodes the JSON document `json` as canonical JSON.
+/// Re-encodes the JSON document `json`, ordinary or already canonical, as
+/// canonical JSON.
 pub fn canonical(json: &[u8]) -> Result<Vec<u8>, String> {
-    let v: Value = serde_json::from_slice(json).map_err(|e| e.to_string())?;
+    let v: Value = serde_json::from_slice(&escape_controls(json)).map_err(|e| e.to_string())?;
     canonical_value(&v)
+}
+
+/// Escapes the raw control characters, such as a PEM key's newlines, that
+/// canonical JSON leaves in strings and ordinary JSON doesn't allow.
+fn escape_controls(json: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(json.len());
+    let (mut in_string, mut escaped) = (false, false);
+    for &b in json {
+        if in_string && b < 0x20 {
+            out.extend_from_slice(format!("\\u{b:04x}").as_bytes());
+            continue;
+        }
+        out.push(b);
+        if escaped {
+            escaped = false;
+        } else if in_string && b == b'\\' {
+            escaped = true;
+        } else if b == b'"' {
+            in_string = !in_string;
+        }
+    }
+    out
 }
 
 /// The canonical form of a root to compile into the bootloader.
@@ -91,21 +114,29 @@ pub fn pinned_root(json: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 /// Builds the TUF part of a slot from documents already in their final
-/// form: the magic `C3TU`, version 1, the root count, then each root,
-/// `targets.json`, and `trusted_root.json`, each after its 4-byte length.
+/// form: the magic `C3TU`, version 2, the root count, an index of 4-byte
+/// lengths for each root, `targets.json`, and `trusted_root.json`, then the
+/// documents in that order.
 pub fn container(roots: &[Vec<u8>], targets: &[u8], trusted_root: &[u8]) -> Vec<u8> {
-    let mut out = c3_verify::tuf::TUF_MAGIC.to_vec();
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&(roots.len() as u16).to_le_bytes());
-    for doc in roots
+    let docs: Vec<&[u8]> = roots
         .iter()
         .map(Vec::as_slice)
         .chain([targets, trusted_root])
-    {
+        .collect();
+    let mut out = c3_verify::tuf::TUF_MAGIC.to_vec();
+    out.extend_from_slice(&2u16.to_le_bytes());
+    out.extend_from_slice(&(roots.len() as u16).to_le_bytes());
+    for doc in &docs {
         out.extend_from_slice(&(doc.len() as u32).to_le_bytes());
+    }
+    for doc in docs {
         out.extend_from_slice(doc);
     }
     out
+}
+
+fn tuf_len(tuf: &[u8]) -> Result<u32, String> {
+    u32::try_from(tuf.len()).map_err(|e| e.to_string())
 }
 
 /// Builds the TUF part of a slot from metadata as Sigstore publishes it:
@@ -117,18 +148,51 @@ pub fn package(roots: &[Vec<u8>], targets: &[u8], trusted_root: &[u8]) -> Result
         .iter()
         .map(|r| canonical(r))
         .collect::<Result<Vec<_>, _>>()?;
-    let out = container(&roots, &canonical(targets)?, trusted_root);
-    c3_verify::tuf::parse_parts(&out).map_err(|e| format!("TUF part: {e:?}"))?;
+    if roots.len() > c3_verify::tuf::MAX_ROOTS {
+        return Err(format!(
+            "{} new roots, and a slot holds at most {}",
+            roots.len(),
+            c3_verify::tuf::MAX_ROOTS
+        ));
+    }
+    let targets = canonical(targets)?;
+    let max_doc = c3_verify::tuf::MAX_DOC_LEN as usize;
+    for (name, doc) in roots
+        .iter()
+        .enumerate()
+        .map(|(i, r)| (format!("root {}", i + 1), r.as_slice()))
+        .chain([
+            ("targets.json".to_string(), targets.as_slice()),
+            ("trusted_root.json".to_string(), trusted_root),
+        ])
+    {
+        if doc.len() > max_doc {
+            return Err(format!(
+                "{name} is {} bytes, and the device reads at most {max_doc}",
+                doc.len()
+            ));
+        }
+    }
+    let out = container(&roots, &targets, trusted_root);
+    let max = c3_verify::tuf::MAX_TUF_LEN as usize;
+    if out.len() > max {
+        return Err(format!(
+            "the TUF part is {} bytes, and a slot holds at most {max}",
+            out.len()
+        ));
+    }
+    c3_verify::tuf::read_index(&mut out.as_slice(), tuf_len(&out)?)
+        .map_err(|e| format!("TUF part: {e:?}"))?;
     Ok(out)
 }
 
-fn parts(tuf: &[u8]) -> Result<TufParts<'_>, String> {
-    c3_verify::tuf::parse_parts(tuf).map_err(|e| format!("TUF part: {e:?}"))
-}
-
-/// Checks the TUF part of a slot from `pinned` with the device's code.
+/// Checks the TUF part of a slot from `pinned` with the device's code,
+/// reading one document at a time as the bootloader does.
 pub fn verify(pinned: &[u8], tuf: &[u8]) -> Result<Verified, String> {
-    c3_verify::tuf::verify(pinned, &parts(tuf)?).map_err(|e| format!("{e:?}"))
+    let mut doc = vec![0u8; c3_verify::tuf::MAX_DOC_LEN as usize];
+    let (verified, _) = c3_verify::tuf::verify(pinned, &mut &tuf[..], tuf_len(tuf)?, &mut doc)
+        .map_err(|e| format!("{e:?}"))?;
+    Ok(verified)
 }
 
 /// Checks a slot's image, bundle container, and TUF part with the device's
@@ -142,7 +206,6 @@ pub fn accept(
     policy: &[String; 5],
     efuse_level: u8,
 ) -> Result<Accepted, String> {
-    let p = parts(tuf)?;
     let [issuer, build_signer_uri, repository_id, owner_id, trigger] = policy;
     let policy = Policy {
         issuer: issuer.as_bytes(),
@@ -157,9 +220,12 @@ pub fn accept(
         image_digest: c3_crypto::sha256(image),
         bundle,
         tuf,
+        tuf_length: tuf_len(tuf)?,
     };
-    let mut buf = vec![0u8; c3_verify::trusted_root::buffer_len(p.trusted_root.len())];
-    c3_verify::tuf_slot::accept_slot(&slot, pinned, &policy, efuse_level, &mut buf)
+    let max_doc = c3_verify::tuf::MAX_DOC_LEN as usize;
+    let mut doc = vec![0u8; max_doc];
+    let mut buf = vec![0u8; c3_verify::trusted_root::buffer_len(max_doc)];
+    c3_verify::tuf_slot::accept_slot(slot, pinned, &policy, efuse_level, &mut doc, &mut buf)
         .map_err(|e| format!("{e:?}"))
 }
 
@@ -218,6 +284,18 @@ impl TestKey {
     /// An Ed25519 key from `seed`.
     pub fn ed25519(seed: u8) -> Self {
         TestKey::Ed25519(ed25519_dalek::SigningKey::from_bytes(&[seed; 32]))
+    }
+
+    /// A P-256 key from a file that holds its 32-byte scalar in hex.
+    pub fn read_p256(path: &Path) -> Result<Self, String> {
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let text = text.trim();
+        if text.len() != 64 || !text.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(format!("{}: a seed is 64 hex characters", path.display()));
+        }
+        p256::ecdsa::SigningKey::from_slice(&hex_bytes(text))
+            .map(TestKey::P256)
+            .map_err(|e| format!("{}: {e}", path.display()))
     }
 
     /// The key's TUF key object.
@@ -337,4 +415,118 @@ pub fn sign_metadata(signed: &Value, signers: &[&TestKey]) -> Result<Vec<u8>, St
         .map(|k| json!({"keyid": k.keyid(), "sig": k.sign(&message)}))
         .collect();
     canonical_value(&json!({"signatures": signatures, "signed": signed}))
+}
+
+/// When the development repository's metadata expires.
+pub const DEV_EXPIRES: &str = "2099-12-31T23:59:59Z";
+
+/// The keys of the development TUF repository, which stands in for
+/// Sigstore's in development builds and QEMU runs. Their seeds are public.
+pub struct DevKeys {
+    root: [TestKey; 3],
+    targets: [TestKey; 2],
+}
+
+impl DevKeys {
+    /// Reads `tuf-dev-root-{1,2,3}.seed` and `tuf-dev-targets-{1,2}.seed`
+    /// from `dir`.
+    pub fn read(dir: &Path) -> Result<Self, String> {
+        let key = |name: &str| TestKey::read_p256(&dir.join(format!("tuf-dev-{name}.seed")));
+        Ok(DevKeys {
+            root: [key("root-1")?, key("root-2")?, key("root-3")?],
+            targets: [key("targets-1")?, key("targets-2")?],
+        })
+    }
+
+    fn targets_key(&self, root_version: u64) -> Result<&TestKey, String> {
+        match root_version {
+            0 => Err("development roots start at version 1".to_string()),
+            1 => Ok(&self.targets[0]),
+            _ => Ok(&self.targets[1]),
+        }
+    }
+
+    /// A root of any version. Each names the three root keys with threshold
+    /// 2 and is signed by root keys 1 and 2. Version 1 trusts targets key 1,
+    /// and version 2 and later trust targets key 2.
+    pub fn root(&self, version: u64) -> Result<Vec<u8>, String> {
+        let root: Vec<&TestKey> = self.root.iter().collect();
+        let signed = root_signed(
+            version,
+            DEV_EXPIRES,
+            (&root, 2),
+            (&[self.targets_key(version)?], 1),
+        );
+        sign_metadata(&signed, &root[..2])
+    }
+
+    /// A `targets.json` that lists `trusted_root`, signed by the targets key
+    /// that root `root_version` trusts.
+    pub fn targets(
+        &self,
+        root_version: u64,
+        trusted_root: &[u8],
+        expires: &str,
+    ) -> Result<Vec<u8>, String> {
+        let signed = targets_signed(1, expires, trusted_root);
+        sign_metadata(&signed, &[self.targets_key(root_version)?])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const KEYS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../testdata/keys");
+
+    #[test]
+    fn canonical_json_reencodes_to_itself() {
+        let root = std::fs::read(Path::new(KEYS).join("tuf-dev-root.json")).unwrap();
+        assert!(root.contains(&b'\n'));
+        assert_eq!(canonical(&root).unwrap(), root);
+        let pinned = include_bytes!("../../release/pinned-root.json");
+        assert_eq!(
+            canonical(include_bytes!("../../testdata/tuf/16.root.json")).unwrap(),
+            pinned
+        );
+    }
+
+    #[test]
+    fn package_enforces_the_device_limits() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../testdata/tuf");
+        let read = |name: &str| std::fs::read(dir.join(name)).unwrap();
+        let roots: Vec<_> = (5..=16).map(|v| read(&format!("{v}.root.json"))).collect();
+        let (targets, trusted) = (read("targets.json"), read("trusted_root.json"));
+        assert!(package(&roots, &targets, &trusted).is_ok());
+        let many = vec![roots[0].clone(); c3_verify::tuf::MAX_ROOTS + 1];
+        let err = package(&many, &targets, &trusted).unwrap_err();
+        assert!(err.contains("at most 64"), "{err}");
+        let long = format!(r#"{{"pad":"{}"}}"#, "x".repeat(10_240));
+        let err = package(&[long.into_bytes()], &targets, &trusted).unwrap_err();
+        assert!(err.contains("root 1 is 10250 bytes"), "{err}");
+    }
+
+    #[test]
+    fn the_committed_development_root_is_current() {
+        let keys = DevKeys::read(Path::new(KEYS)).unwrap();
+        let committed = std::fs::read(Path::new(KEYS).join("tuf-dev-root.json")).unwrap();
+        assert_eq!(keys.root(1).unwrap(), committed, "run c3-ota tuf-dev-root");
+    }
+
+    #[test]
+    fn the_development_repository_rotates_its_targets_key() {
+        let keys = DevKeys::read(Path::new(KEYS)).unwrap();
+        let pinned = keys.root(1).unwrap();
+        let trusted = include_bytes!("../../release/trusted_root.json");
+        let v1 = keys.targets(1, trusted, DEV_EXPIRES).unwrap();
+        let v2 = keys.targets(2, trusted, DEV_EXPIRES).unwrap();
+        let root2 = keys.root(2).unwrap();
+        let check = |roots: &[Vec<u8>], targets: &[u8]| {
+            verify(&pinned, &container(roots, targets, trusted)).map(|v| v.root_version)
+        };
+        assert_eq!(check(&[], &v1), Ok(1));
+        assert_eq!(check(std::slice::from_ref(&root2), &v2), Ok(2));
+        assert_eq!(check(&[], &v2), Err("Threshold".into()));
+        assert_eq!(check(&[root2], &v1), Err("Threshold".into()));
+    }
 }

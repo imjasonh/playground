@@ -1,8 +1,4 @@
-//! The security level: one unary eFuse counter shared by image anti-rollback
-//! and trust-root rotation.
-
-use crate::error::Error;
-use crate::image::MAX_SECURITY_VERSION;
+//! The security level: a unary eFuse counter for image anti-rollback.
 
 /// The security level stored in the 16-bit `SECURE_VERSION` field: the
 /// number of set bits.
@@ -15,24 +11,6 @@ pub fn level_of(secure_version: u16) -> u8 {
 pub fn next_bit(secure_version: u16) -> Option<u16> {
     let mask = !secure_version & secure_version.wrapping_add(1);
     if mask == 0 { None } else { Some(mask) }
-}
-
-/// Checks the level rules for one slot.
-///
-/// The image's security version must be at most 16 and equal the blob's
-/// level. The blob's level must be at least the chain's last link level and
-/// at least the eFuse level.
-pub fn check_slot(
-    chain_level: u8,
-    blob_level: u8,
-    security_version: u8,
-    efuse_level: u8,
-) -> Result<(), Error> {
-    let ok = security_version <= MAX_SECURITY_VERSION
-        && security_version == blob_level
-        && blob_level >= chain_level
-        && blob_level >= efuse_level;
-    if ok { Ok(()) } else { Err(Error::BadLevel) }
 }
 
 /// The level the bootloader must reach before it jumps to a slot.
@@ -70,17 +48,6 @@ mod tests {
             v |= next_bit(v).unwrap();
             assert_eq!(level_of(v), expected);
         }
-    }
-
-    #[test]
-    fn slot_rules() {
-        assert_eq!(check_slot(2, 3, 3, 3), Ok(()));
-        assert_eq!(check_slot(0, 0, 0, 0), Ok(()));
-        assert_eq!(check_slot(2, 3, 4, 3), Err(Error::BadLevel));
-        assert_eq!(check_slot(4, 3, 3, 3), Err(Error::BadLevel));
-        assert_eq!(check_slot(2, 3, 3, 4), Err(Error::BadLevel));
-        assert_eq!(check_slot(2, 2, 2, 3), Err(Error::BadLevel));
-        assert_eq!(check_slot(0, 17, 17, 0), Err(Error::BadLevel));
     }
 
     #[test]

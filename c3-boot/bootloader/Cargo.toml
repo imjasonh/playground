@@ -14,6 +14,9 @@ bench = false
 c3-crypto = { path = "../crypto" }
 c3-verify = { path = "../verify" }
 
+[build-dependencies]
+c3-verify = { path = "../verify" }
+
 [lints.rust]
 unused = { level = "deny", priority = -1 }
 unsafe_op_in_unsafe_fn = "deny"

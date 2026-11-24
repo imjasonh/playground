@@ -1,19 +1,16 @@
 //! Runs the Sigstore conformance bundles through the device's checks.
 //!
-//! Each case's trusted root becomes a trust-root blob signed with the
-//! development genesis keys, with the conformance beacon's identity as the
-//! policy. A case whose directory ends in `_fail` must be rejected, either
+//! Each case's trusted root becomes the device's trust root, with the
+//! conformance beacon's identity as the policy. A case whose directory ends in `_fail` must be rejected, either
 //! while building the bundle container or by `c3_verify::sigstore::verify`.
 //! Every other case must be accepted.
 
 use std::fs;
 use std::path::Path;
 
-use c3_ota::blob::TrustRootSpec;
-use c3_ota::blob::Window;
-use c3_ota::blob::signed_blob;
 use c3_ota::container::from_bundle_json;
-use c3_ota::keys::read_signing_key;
+use c3_ota::trusted::TrustRootSpec;
+use c3_ota::trusted::Window;
 
 const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../testdata");
 
@@ -32,11 +29,8 @@ fn run_case(dir: &Path, digest: &[u8; 32]) -> Result<u64, String> {
         fs::read_to_string(dir.join("bundle.sigstore.json")).map_err(|e| e.to_string())?;
     let root_json = fs::read_to_string(dir.join("trusted_root.json")).map_err(|e| e.to_string())?;
     let container = from_bundle_json(&bundle_json, None)?;
-    let spec = TrustRootSpec::from_trusted_root(&root_json, 0, policy())?;
-    let k1 = read_signing_key(&format!("{ROOT}/keys/genesis-dev-1.seed"))?;
-    let k2 = read_signing_key(&format!("{ROOT}/keys/genesis-dev-2.seed"))?;
-    let blob = signed_blob(&spec, &[(0, &k1), (1, &k2)])?;
-    let root = c3_verify::trustroot::parse(&blob).map_err(|e| format!("blob: {e:?}"))?;
+    let spec = TrustRootSpec::from_trusted_root(&root_json, policy())?;
+    let root = spec.trust_root()?;
     let bundle = c3_verify::bundle::parse(&container).map_err(|e| format!("container: {e:?}"))?;
     let verified =
         c3_verify::sigstore::verify(&bundle, &root, digest).map_err(|e| format!("{e:?}"))?;
@@ -80,16 +74,13 @@ fn conformance_cases() {
     );
 }
 
-/// Verifies the happy-path bundle against a blob built from `spec`.
+/// Verifies the happy-path bundle against the trust root `spec` describes.
 fn verify_with(spec: &TrustRootSpec) -> Result<u64, String> {
     let dir = Path::new(ROOT).join("conformance/rekor2-happy-path");
     let digest = c3_crypto::sha256(&fs::read(Path::new(ROOT).join("conformance/a.txt")).unwrap());
     let bundle_json = fs::read_to_string(dir.join("bundle.sigstore.json")).unwrap();
     let container = from_bundle_json(&bundle_json, None)?;
-    let k1 = read_signing_key(&format!("{ROOT}/keys/genesis-dev-1.seed"))?;
-    let k2 = read_signing_key(&format!("{ROOT}/keys/genesis-dev-2.seed"))?;
-    let blob = signed_blob(spec, &[(0, &k1), (1, &k2)])?;
-    let root = c3_verify::trustroot::parse(&blob).map_err(|e| format!("{e:?}"))?;
+    let root = spec.trust_root()?;
     let bundle = c3_verify::bundle::parse(&container).map_err(|e| format!("{e:?}"))?;
     c3_verify::sigstore::verify(&bundle, &root, &digest)
         .map(|v| v.signed_time)
@@ -101,7 +92,7 @@ fn rejects_identity_and_window_changes() {
     let root_json =
         fs::read_to_string(Path::new(ROOT).join("conformance/rekor2-happy-path/trusted_root.json"))
             .unwrap();
-    let base = TrustRootSpec::from_trusted_root(&root_json, 0, policy()).unwrap();
+    let base = TrustRootSpec::from_trusted_root(&root_json, policy()).unwrap();
     let t = verify_with(&base).expect("the happy path verifies");
 
     for i in 0..5 {

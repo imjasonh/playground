@@ -1,9 +1,7 @@
 //! Assembles slots and whole flash images, and checks a slot on the host.
 
-use c3_verify::accept::Accepted;
-use c3_verify::accept::SlotParts;
-use c3_verify::keys::KeySet;
 use c3_verify::layout;
+use c3_verify::tuf_slot::Accepted;
 
 /// The flash size the layout assumes.
 pub const FLASH_SIZE: usize = 0x40_0000;
@@ -12,15 +10,14 @@ fn align4(n: usize) -> usize {
     n.div_ceil(4) * 4
 }
 
-/// Lays out a slot: the manifest, the image at `0x10000`, then the bundle,
-/// chain, and blob, each on a 4-byte boundary. Unused bytes are `0xFF`, as
+/// Lays out a slot: the manifest, the image at `0x10000`, then the bundle
+/// and the TUF part, each on a 4-byte boundary. Unused bytes are `0xFF`, as
 /// erased flash reads.
-pub fn assemble(image: &[u8], bundle: &[u8], chain: &[u8], blob: &[u8]) -> Result<Vec<u8>, String> {
+pub fn assemble(image: &[u8], bundle: &[u8], tuf: &[u8]) -> Result<Vec<u8>, String> {
     let image_off = layout::IMAGE_OFFSET as usize;
     let bundle_off = align4(image_off + image.len());
-    let chain_off = align4(bundle_off + bundle.len());
-    let blob_off = align4(chain_off + chain.len());
-    let end = blob_off + blob.len();
+    let tuf_off = align4(bundle_off + bundle.len());
+    let end = tuf_off + tuf.len();
     if end > layout::SLOT_SIZE as usize {
         return Err(format!(
             "slot needs {end:#x} bytes, more than {:#x}",
@@ -29,14 +26,9 @@ pub fn assemble(image: &[u8], bundle: &[u8], chain: &[u8], blob: &[u8]) -> Resul
     }
     let mut out = vec![0xFF; end];
     let mut manifest = b"C3SL".to_vec();
-    manifest.extend_from_slice(&1u16.to_le_bytes());
+    manifest.extend_from_slice(&c3_verify::manifest::VERSION.to_le_bytes());
     manifest.extend_from_slice(&[0, 0]);
-    for (off, part) in [
-        (image_off, image),
-        (bundle_off, bundle),
-        (chain_off, chain),
-        (blob_off, blob),
-    ] {
+    for (off, part) in [(image_off, image), (bundle_off, bundle), (tuf_off, tuf)] {
         manifest.extend_from_slice(&(off as u32).to_le_bytes());
         manifest.extend_from_slice(&(part.len() as u32).to_le_bytes());
         out[off..off + part.len()].copy_from_slice(part);
@@ -47,8 +39,14 @@ pub fn assemble(image: &[u8], bundle: &[u8], chain: &[u8], blob: &[u8]) -> Resul
     Ok(out)
 }
 
-/// Checks `slot` with the same `c3-verify` code the bootloader runs.
-pub fn verify(slot: &[u8], genesis: &[u8; 128], efuse_level: u8) -> Result<Accepted, String> {
+/// Checks `slot` with the same `c3-verify` code the bootloader runs, from
+/// the canonical root `pinned`, with the release identity `policy`.
+pub fn verify(
+    slot: &[u8],
+    pinned: &[u8],
+    policy: &[String; 5],
+    efuse_level: u8,
+) -> Result<Accepted, String> {
     let raw = slot
         .get(..c3_verify::manifest::MANIFEST_LEN)
         .ok_or("slot too short")?;
@@ -57,19 +55,14 @@ pub fn verify(slot: &[u8], genesis: &[u8; 128], efuse_level: u8) -> Result<Accep
         slot.get(p.offset as usize..(p.offset + p.length) as usize)
             .ok_or_else(|| "part past end of slot".to_string())
     };
-    let image = part(m.image)?;
-    let parts = SlotParts {
-        image_header: image,
-        image_length: m.image.length,
-        image_digest: c3_crypto::sha256(image),
-        bundle: part(m.bundle)?,
-        chain: part(m.chain)?,
-        blob: part(m.blob)?,
-    };
-    let genesis = KeySet::new(genesis).map_err(|e| format!("genesis keys: {e:?}"))?;
-    let mut scratch = vec![0u8; 4_120];
-    c3_verify::accept::accept_slot(&parts, genesis, efuse_level, &mut scratch)
-        .map_err(|e| format!("{e:?}"))
+    crate::tuf::accept(
+        part(m.image)?,
+        part(m.bundle)?,
+        part(m.tuf)?,
+        pinned,
+        policy,
+        efuse_level,
+    )
 }
 
 /// Builds a whole flash image: the bootloader at 0, an optional boot-state

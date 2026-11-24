@@ -285,25 +285,25 @@ This branch's history was rewritten on Nov 11 to drop a committed `.pyc` file; `
 
 Nothing a test does should stop a board from taking updates, so:
 - The bootloader burns no eFuses unless it was built with `C3_EFUSE_BURN=on`. Without that setting, the eFuse programming code isn't compiled in. The bootloader logs the raise it would have made and boots the slot.
-- A development-key build (`C3_GENESIS=dev`) with burns on doesn't halt on a failed raise. It boots the slot instead.
+- A build with the development TUF root (`C3_TUF_ROOT=dev`) and burns on doesn't halt on a failed raise. It boots the slot instead.
 - It never enables Secure Boot or flash encryption, and never disables USB download mode.
-- A production-key build fails unless `C3_EFUSE_BURN=on`, and keeps the plan's halt. The `c3_*` build flags can't come from `RUSTFLAGS`.
+- A build with a production root fails unless `C3_EFUSE_BURN=on`, and keeps the plan's halt. The `c3_*` build flags can't come from `RUSTFLAGS`.
 
 QEMU tests both settings, including a board whose `SECURE_VERSION` is write-disabled.
 
 ### Decisions
 
-- Retired trust-root keys are destroyed, the genesis keys included after the first rotation. The device keeps no record of key sets, so surviving keys could still sign trust roots.
+- The bootloader pins Sigstore's TUF root version 16 and takes every key from TUF metadata in the slot (`c3-boot/TODO.md`). There are no operator-held signing keys.
+- The bootloader reads a slot's TUF part from flash one document at a time, keeping only the trusted root's root keys between roots, so its RAM doesn't grow with the chain. A slot carries up to 64 new roots, decades of Sigstore's rotations; only a longer chain needs a USB re-pin.
 - Demo builds signed under the release identity are valid releases for now. Once a simple demo has been tested on hardware, devices will accept only released images.
 - The RV32 model makes misaligned loads and stores trap, accepts only the FENCE encodings compilers emit, and leaves out SYSTEM instructions for now. Each choice can only make a proof harder, never let a false one through.
-- Machine-code proofs are about the pinned image, the default test build with development keys. A build with other keys is covered only where its function bytes are the same.
+- Machine-code proofs are about the pinned image. After the TUF cutover, that is the production build: Sigstore's root, the release identity policy, and eFuse burns on. The proofs in this PR still cover the image before the cutover, the default test build with development keys, until they are regenerated. A build with another root or policy is covered only where its function bytes are the same.
 - Three code changes that make proofs easier landed together on Nov 11, as one image change, right after P-384's squaring was proved: `root_from_inclusion` as its own function, `sha2`'s compact backend for SHA-256 and SHA-512 (one setting covers both), and no LLVM machine outliner (`c3-boot/.cargo/config.toml`). The image went from 133,392 to 89,296 bytes and a boot runs 2.2 percent more instructions. Proofs written against the earlier image are kept, about its bytes, until each is redone.
 - The model treats SRAM's instruction-bus and data-bus addresses as separate memory, while the chip aliases them. Proofs hold on the chip as long as no store reaches code through the data-bus alias. The platform model will make that an explicit obligation.
 
 ### Release blockers
 
-- The eFuse controller lock is a no-op until a board shows which protection unit can lock it.
-- Production genesis keys and offline signing tooling don't exist yet.
+- The eFuse controller lock (region permission control) and the eFuse timing values are untested on a board.
 - The release identity must stop signing demo builds, once the hardware demo passes.
 
 ### Gaps and feasibility
@@ -321,23 +321,23 @@ QEMU tests both settings, including a board whose `SECURE_VERSION` is write-disa
 1. Phase 5, next: the seven unproved functions left in `sigstore::verify`'s reach, 9,590 instructions: `ed25519_verify` (started; 1,400 of its 2,099 instructions are an inlined `Scalar::reduce`, which needs a generator like `montgomery_mul`'s), `p384_verify_prehash`, `from_sec1_bytes` and point decompression for P-256 and P-384, and `sigstore::verify` itself; then `boot_main`. Then `update`, `finalize`, and `sha256` on top of `kcCompress_correct`, the parsers, and the Merkle check.
 1. Phase 7: prove that `ptAddSpec` is the P-256 group law in projective coordinates, so `pointAdd_correct` says the compiled code adds points.
 1. Phase 4: state the ROM functions, eFuse reads, and the SRAM alias as contracts and obligations, matching the `boot-sim` hooks the lockstep test checks.
-1. Phase 3: a Lean decoder for the trust-root blob's byte format, so the whole of `accept_slot` has a specification.
+1. Phase 3: regenerate the specification and proofs for the TUF cutover: manifest version 2, `tuf_slot::accept_slot` with the streamed TUF part, and the new `TrustRoot` layout.
 1. On hardware **(hardware)**: flash the burns-off bootloader and a signed demo, then run the update, fallback, and trial scenarios.
 
 ## What's in the PR
 
 - `docs/esp32c3-verified-ota-plan.md`: the five theorems, the trusted base, the machine model, the crypto proofs, the agent campaign, feasibility, risks, ten phases, and an appendix with the OTA and Sigstore design.
 - `c3-boot/`: the Cargo workspace.
-  - `c3-verify`: every slot check as `no_std` code with no heap or `unsafe`, composed by `accept::accept_slot`. `boot::decide` is the bootloader's slot choice.
+  - `c3-verify`: every slot check as `no_std` code with no heap or `unsafe`, composed by `tuf_slot::accept_slot`. `boot::decide` is the bootloader's slot choice.
   - `c3-crypto`: SHA-256, SHA-384, ECDSA P-256 and P-384, and strict Ed25519 verification.
-  - `c3-bootloader`: the RISC-V bootloader. The build requires `C3_GENESIS`, and burns eFuses only with `C3_EFUSE_BURN=on`. `check-digest.sh` pins the default test image's digest and regenerates the proofs' function bytes.
-  - `c3-ota`: the host tool. It packs images, converts bundles, signs chain links and blobs, builds slots, and describes trusted roots.
+  - `c3-bootloader`: the RISC-V bootloader. The build compiles in the TUF root that `C3_TUF_ROOT` names and the identity policy that `C3_POLICY` names, and burns eFuses only with `C3_EFUSE_BURN=on`. `check-digest.sh` pins the production image's digest and regenerates the proofs' function bytes.
+  - `c3-ota`: the host tool. It packs images, converts bundles, packages TUF metadata, builds slots, and runs a development TUF repository.
   - `c3-demo-app`: an untrusted app that confirms its slot.
   - `c3-rvtest`: firmware that runs generated instruction sequences in QEMU for the RV32 lockstep test.
-  - `fuzz/`: cargo-fuzz targets for the format decoders, the chain and trust root, the Sigstore checks, and whole slots.
+  - `fuzz/`: cargo-fuzz targets for the format decoders, the TUF metadata, the Sigstore checks, and whole slots.
   - `fakestore/`: a test-only Go Sigstore.
   - `qemu/`: the scenario runner, the RV32 lockstep runner, and the boot lockstep runner with its GDB-protocol tracer.
-  - `release/`: the pinned production trusted root and Rekor v2 signing configuration.
+  - `release/`: the pinned Sigstore TUF root, release identity policy, trusted root, and Rekor v2 signing configuration.
   - `docs/formats.md` and `docs/measurements.md`.
 - `c3-boot-proofs/`: the Lean project.
   - The specification and byte-format decoders, plus SHA-256, SHA-512, SHA-384, RFC 9162 Merkle inclusion, and the Sigstore check with ECDSA and Ed25519.

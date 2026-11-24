@@ -8,7 +8,7 @@ publish.workspace = true
 [dependencies]
 base64 = "0.22"
 c3-crypto = { path = "../crypto" }
-c3-verify = { path = "../verify", features = ["tuf"] }
+c3-verify = { path = "../verify" }
 ed25519-dalek = { version = "3.0.0", default-features = false }
 object = { version = "0.36", default-features = false, features = ["read_core", "elf", "std"] }
 p256 = { version = "0.14.0", default-features = false, features = ["ecdsa"] }

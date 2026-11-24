@@ -1,8 +1,9 @@
-# Checks Sigstore's production trusted root and signing configuration every
-# week, and opens a pull request that updates c3-boot's pinned copies in
-# c3-boot/release/ when they change. The pull request lists the entries a
-# trust-root blob built from the new root would hold, for review before the
-# current key set signs one offline. It doesn't merge itself.
+# Checks Sigstore's production TUF metadata, trusted root, and signing
+# configuration every week, and opens a pull request that updates c3-boot's
+# copies in c3-boot/testdata/tuf/ and c3-boot/release/ when they change. The
+# pull request shows the TUF part that the next release would carry, checked
+# from the root that production bootloaders pin, and the entries the device
+# would read from the trusted root. It doesn't merge itself.
 
 name: c3-trust-root
 
@@ -44,13 +45,23 @@ jobs:
           GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
         run: bash .github/scripts/update-c3-trust-root.sh fetch
 
-      - name: Describe the new trusted root
+      - name: Check and describe the new metadata
         if: ${{ steps.fetch.outputs.result == 'changed' }}
         working-directory: c3-boot
         run: |
           rustup show active-toolchain || rustup toolchain install
-          cargo run --locked -q -p c3-ota -- describe \
-            --trusted-root release/trusted_root.json > "${RUNNER_TEMP}/description.md"
+          {
+            echo '```'
+            if bash release/package-tuf.sh "${RUNNER_TEMP}/tuf.bin" 2>&1; then
+              echo "TUF part: $(stat -c %s "${RUNNER_TEMP}/tuf.bin") bytes"
+            else
+              echo "The TUF check failed, so c3-release.yml won't sign a release."
+            fi
+            echo '```'
+            echo
+            cargo run --locked -q -p c3-ota -- describe \
+              --trusted-root release/trusted_root.json
+          } > "${RUNNER_TEMP}/description.md"
 
       - name: Open a pull request
         if: ${{ steps.fetch.outputs.result == 'changed' }}

@@ -4,8 +4,9 @@
 # bootloader, c3-verify, c3-crypto, a dependency, or the toolchain changes
 # this digest on purpose and must update the file.
 #
-# The pinned image is the default test build: the public development genesis
-# keys and no eFuse burns. --update also regenerates the function bytes that
+# The pinned image is the production build: Sigstore's root from
+# release/pinned-root.json, the identity policy in release/policy, and eFuse
+# burns on. --update also regenerates the function bytes that
 # c3-boot-proofs' machine-code proofs are about (it needs the llvm-tools
 # component) and the facts the proofs state about those bytes; a proof whose
 # function's code changed shape then needs redoing.
@@ -21,7 +22,7 @@ trap 'rm -rf "${work}"' EXIT
 
 cd "${root}"
 cargo build -q --locked -p c3-ota
-C3_GENESIS=dev C3_EFUSE_BURN=off cargo build -q --locked --release \
+C3_TUF_ROOT=release/pinned-root.json C3_EFUSE_BURN=on cargo build -q --locked --release \
   --target riscv32imc-unknown-none-elf -p c3-bootloader
 target/debug/c3-ota bootloader-image \
   --elf target/riscv32imc-unknown-none-elf/release/c3-bootloader --out "${work}/bootloader.bin"

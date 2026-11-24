@@ -7,7 +7,7 @@
 //!
 //! - `record HEX | ok STATE` or `record HEX | err`
 //! - `read HEX HEX | STATE copy=A`, `copy=B`, or `copy=-`
-//! - `manifest HEX | ok i=OFF,LEN b=OFF,LEN c=OFF,LEN l=OFF,LEN` or `| err`
+//! - `manifest HEX | ok i=OFF,LEN b=OFF,LEN t=OFF,LEN` or `| err`
 //! - `image LEN HEX | ok sv=N e=N segs=K@ADDR+OFF:LEN,...` or `| err`
 //! - `sha256 HEX | HEX`, the digest from `c3_crypto::sha256`
 //! - `merkle INDEX SIZE HEX HEX | ok HEX` or `| err`, the leaf hash, the
@@ -222,16 +222,21 @@ fn manifest(rng: &mut Rng) -> Vec<u8> {
     let image_len = 37 + rng.below(0x2_0000) as u32;
     let bundle_off = 0x1_0000 + image_len + rng.below(8) as u32;
     let bundle_len = 49 + rng.below(16_000) as u32;
-    let chain_off = bundle_off + bundle_len + rng.below(8) as u32;
-    let chain_len = 8 + rng.below(2_000) as u32;
-    let blob_off = chain_off + chain_len + rng.below(8) as u32;
-    let blob_len = 443 + rng.below(3_600) as u32;
+    let tuf_off = bundle_off + bundle_len + rng.below(8) as u32;
+    let tuf_len = 18 + rng.below(0x6_0000) as u32;
     let mut fields = [
-        0x1_0000, image_len, bundle_off, bundle_len, chain_off, chain_len, blob_off, blob_len,
+        0x1_0000, image_len, bundle_off, bundle_len, tuf_off, tuf_len,
     ];
-    let bounds = [37, 0x1D_0000, 49, 16_384, 8, 2_048, 443, 4_096];
+    let bounds = [
+        37,
+        0x1D_0000,
+        49,
+        16_384,
+        18,
+        c3_verify::manifest::MAX_TUF_LEN,
+    ];
     if rng.chance(50) {
-        let i = rng.below(8) as usize;
+        let i = rng.below(6) as usize;
         fields[i] = if i % 2 == 1 && rng.chance(50) {
             let (lo, hi) = (bounds[i - 1], bounds[i]);
             [lo - 1, lo, hi, hi + 1][rng.below(4) as usize]
@@ -240,7 +245,7 @@ fn manifest(rng: &mut Rng) -> Vec<u8> {
         };
     }
     let mut out = b"C3SL".to_vec();
-    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&c3_verify::manifest::VERSION.to_le_bytes());
     out.extend_from_slice(&[0, 0]);
     for f in fields {
         out.extend_from_slice(&f.to_le_bytes());
@@ -249,7 +254,7 @@ fn manifest(rng: &mut Rng) -> Vec<u8> {
         let at = rng.below(8) as usize;
         out[at] ^= 1 << rng.below(8);
     }
-    // A manifest is exactly 40 bytes.
+    // A manifest is exactly 32 bytes.
     match rng.below(40) {
         0 => out.push(0),
         1 => {
@@ -449,15 +454,13 @@ fn main() -> std::io::Result<()> {
             |_| "err".to_string(),
             |m| {
                 format!(
-                    "ok i={},{} b={},{} c={},{} l={},{}",
+                    "ok i={},{} b={},{} t={},{}",
                     m.image.offset,
                     m.image.length,
                     m.bundle.offset,
                     m.bundle.length,
-                    m.chain.offset,
-                    m.chain.length,
-                    m.blob.offset,
-                    m.blob.length
+                    m.tuf.offset,
+                    m.tuf.length
                 )
             },
         );

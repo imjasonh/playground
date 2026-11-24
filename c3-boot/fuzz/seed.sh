@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Writes seed inputs for each fuzz target into corpus/, built from the
-# mutation test's fixtures: a valid slot, its bundle container, its empty
-# chain and trust-root blob, its manifest and image header, and two
-# boot-state records. The TUF target's seeds are Sigstore's TUF metadata
-# from testdata/tuf/ and its trusted_root.json.
+# mutation test's fixtures: a valid slot with a development TUF part, its
+# bundle container, its manifest and image header, and two boot-state
+# records. The TUF target's seeds are Sigstore's TUF metadata from
+# testdata/tuf/ and its trusted_root.json.
 
 set -euo pipefail
 
@@ -12,7 +12,7 @@ root="$(cd "${fuzz}/.." && pwd)"
 data="${root}/testdata"
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
-mkdir -p "${fuzz}"/corpus/{formats,trust,sigstore,slot,tuf}
+mkdir -p "${fuzz}"/corpus/{formats,sigstore,slot,tuf}
 
 (cd "${root}" && cargo build -q --locked -p c3-ota)
 ota() {
@@ -21,15 +21,12 @@ ota() {
 
 ota container --bundle "${data}/mutation/bundle.sigstore.json" \
   --image "${data}/mutation/image.bin" --out "${work}/bundle"
-ota chain --out "${work}/chain"
-ota blob --trusted-root "${data}/mutation/trusted_root.json" --level 0 \
-  --issuer https://token.actions.githubusercontent.com \
-  --build-signer-uri https://github.com/imjasonh/playground/.github/workflows/c3-release.yml@refs/heads/main \
-  --repository-id 1234 --owner-id 5678 --trigger push \
-  --signers "0=${data}/keys/genesis-dev-1.seed,1=${data}/keys/genesis-dev-2.seed" \
-  --out "${work}/blob"
+ota tuf-dev-targets --keys "${data}/keys" --root-version 1 \
+  --trusted-root "${data}/mutation/trusted_root.json" --out "${work}/targets"
+ota tuf-package --targets "${work}/targets" \
+  --trusted-root "${data}/mutation/trusted_root.json" --out "${work}/dev-tuf"
 ota slot --image "${data}/mutation/image.bin" --bundle "${work}/bundle" \
-  --chain "${work}/chain" --blob "${work}/blob" --out "${fuzz}/corpus/slot/valid"
+  --tuf "${work}/dev-tuf" --out "${fuzz}/corpus/slot/valid"
 cp "${work}/bundle" "${fuzz}/corpus/sigstore/valid"
 roots=()
 for v in $(seq 6 16); do
@@ -51,11 +48,8 @@ work, image_path, corpus = sys.argv[1:]
 read = lambda name: open(f"{work}/{name}", "rb").read()
 image = open(image_path, "rb").read()
 slot = open(f"{corpus}/slot/valid", "rb").read()
-chain = read("chain")
-with open(f"{corpus}/trust/valid", "wb") as f:
-    f.write(struct.pack("<H", len(chain)) + chain + read("blob"))
 with open(f"{corpus}/formats/manifest", "wb") as f:
-    f.write(b"\x00" + slot[:40])
+    f.write(b"\x00" + slot[:32])
 with open(f"{corpus}/formats/image", "wb") as f:
     f.write(b"\x01" + struct.pack("<I", len(image)) + image)
 with open(f"{corpus}/formats/records", "wb") as f:

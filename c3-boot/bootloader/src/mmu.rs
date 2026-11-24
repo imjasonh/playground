@@ -17,6 +17,7 @@ const EXTMEM_ICACHE_CTRL1: usize = 0x600C_4004;
 const SHUT_IBUS: u32 = 1 << 0;
 const SHUT_DBUS: u32 = 1 << 1;
 
+#[unsafe(link_section = ".text_boot")]
 fn write_entry(index: usize, value: u32) {
     if index < MMU_ENTRIES {
         // SAFETY: `index` is below the table size, so the address is one of
@@ -30,6 +31,7 @@ fn write_entry(index: usize, value: u32) {
 /// `image_flash` is the flash address of the image's first byte. Every
 /// segment passed the image checks, so each is page-aligned and inside its
 /// window, and no two flash segments share an MMU entry.
+#[unsafe(link_section = ".text_boot")]
 pub fn map(image_flash: u32, segments: &[Segment]) -> bool {
     let autoload = crate::rom::cache_suspend();
     for i in 0..MMU_ENTRIES {

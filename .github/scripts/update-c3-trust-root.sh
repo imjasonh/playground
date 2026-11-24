@@ -3,27 +3,32 @@
 # workflow, and opens, updates, or closes its pull request.
 #
 #   update-c3-trust-root.sh fetch
-#     Copies Sigstore's production trusted root and Rekor v2 signing
-#     configuration from sigstore/root-signing into c3-boot/release/, drops
-#     every log except Rekor v2 logs from the signing configuration, and
-#     records the source commit in c3-boot/release/README.md. Commits any
+#     Copies Sigstore's production TUF metadata from sigstore/root-signing
+#     into c3-boot/testdata/tuf/ (every root from the oldest already there
+#     through the newest, targets.json, and the trusted_root.json target),
+#     and the trusted root and Rekor v2 signing configuration into
+#     c3-boot/release/. Drops every log except Rekor v2 logs from the
+#     signing configuration, and records the source commit in
+#     c3-boot/release/README.md and c3-boot/testdata/tuf/COMMIT. Commits any
 #     change on a fresh automation branch. Writes the outputs result
 #     (unchanged, changed, or skipped when someone else pushed to the
 #     branch), remote, and commit.
 #   update-c3-trust-root.sh open-pr
 #     Pushes the branch and opens or updates its pull request. Reads COMMIT,
 #     REMOTE (the branch's commit when fetch ran, or empty), and DESCRIPTION,
-#     a file with the c3-ota describe output, from the environment.
+#     a file with the TUF check and c3-ota describe output, from the
+#     environment.
 #   update-c3-trust-root.sh close-stale
 #
-# C3_ROOT_SIGNING_DIR, when set, names a local directory with
-# trusted_root.json and signing_config_rekor_v2.v0.2.json to use instead of
-# the GitHub API, with C3_ROOT_SIGNING_COMMIT as their commit. Tests set it.
+# C3_ROOT_SIGNING_DIR, when set, names a local copy of sigstore/root-signing
+# (metadata/ and targets/) to use instead of the GitHub API, with
+# C3_ROOT_SIGNING_COMMIT as its commit. Tests set it.
 set -euo pipefail
 
 BRANCH="${C3_TRUST_ROOT_BRANCH:-automation/c3-trust-root}"
 BASE="${C3_TRUST_ROOT_BASE:-main}"
 RELEASE="${C3_RELEASE_DIR:-c3-boot/release}"
+TUF="${C3_TUF_DIR:-c3-boot/testdata/tuf}"
 SOURCE_REPO="sigstore/root-signing"
 BOT_NAME="github-actions[bot]"
 BOT_EMAIL="41898282+github-actions[bot]@users.noreply.github.com"
@@ -38,14 +43,19 @@ _configure_auth() {
   fi
 }
 
-# _download COMMIT NAME OUT copies targets/NAME at COMMIT to OUT.
+# _download COMMIT PATH OUT copies PATH at COMMIT to OUT.
 _download() {
   if [[ -n "${C3_ROOT_SIGNING_DIR:-}" ]]; then
     cp "${C3_ROOT_SIGNING_DIR}/$2" "$3"
   else
     gh api -H "Accept: application/vnd.github.raw" \
-      "repos/${SOURCE_REPO}/contents/targets/$2?ref=$1" >"$3"
+      "repos/${SOURCE_REPO}/contents/$2?ref=$1" >"$3"
   fi
+}
+
+# _version FILE prints the version of the TUF metadata in FILE.
+_version() {
+  python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["signed"]["version"])' "$1"
 }
 
 # _rekor_v2_only IN OUT writes IN's signing configuration with only its
@@ -71,7 +81,7 @@ EOF
 case "${1:-}" in
   fetch)
     # Don't overwrite a branch that someone else pushed to, for example to
-    # add a trust-root blob they signed.
+    # re-pin the bootloader's root.
     _configure_auth
     remote=""
     if git fetch --quiet origin "refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}" 2>/dev/null; then
@@ -92,11 +102,30 @@ case "${1:-}" in
     fi
     tmp=$(mktemp -d)
     trap 'rm -rf "${tmp}"' EXIT
-    _download "${commit}" trusted_root.json "${tmp}/trusted_root.json"
-    _download "${commit}" signing_config_rekor_v2.v0.2.json "${tmp}/signing_config.json"
+    _download "${commit}" targets/trusted_root.json "${tmp}/trusted_root.json"
+    _download "${commit}" targets/signing_config_rekor_v2.v0.2.json "${tmp}/signing_config.json"
     python3 -c 'import json, sys; json.load(open(sys.argv[1]))' "${tmp}/trusted_root.json"
+    mkdir "${tmp}/tuf"
+    _download "${commit}" metadata/root.json "${tmp}/root.json"
+    _download "${commit}" metadata/targets.json "${tmp}/tuf/targets.json"
+    first=$(find "${TUF}" -name '*.root.json' -printf '%f\n' | sort -n | head -1)
+    first="${first%%.*}"
+    newest=$(_version "${tmp}/root.json")
+    for ((v = ${first:-5}; v <= newest; v++)); do
+      _download "${commit}" "metadata/root_history/${v}.root.json" "${tmp}/tuf/${v}.root.json"
+    done
+    cp "${tmp}/trusted_root.json" "${tmp}/tuf/trusted_root.json"
 
-    if cmp -s "${tmp}/trusted_root.json" "${RELEASE}/trusted_root.json" &&
+    tuf_unchanged() {
+      for f in "${tmp}"/tuf/*.json; do
+        cmp -s "${f}" "${TUF}/$(basename "${f}")" || return 1
+      done
+      for f in "${TUF}"/*.json; do
+        [[ -e "${tmp}/tuf/$(basename "${f}")" ]] || return 1
+      done
+    }
+    if tuf_unchanged &&
+      cmp -s "${tmp}/trusted_root.json" "${RELEASE}/trusted_root.json" &&
       _rekor_v2_only "${tmp}/signing_config.json" "${tmp}/filtered.json" &&
       cmp -s "${tmp}/filtered.json" "${RELEASE}/signing_config.json"; then
       _output result unchanged
@@ -104,6 +133,9 @@ case "${1:-}" in
     fi
 
     git checkout -B "${BRANCH}"
+    rm -f "${TUF}"/*.json
+    cp "${tmp}"/tuf/*.json "${TUF}/"
+    echo "${commit}" >"${TUF}/COMMIT"
     cp "${tmp}/trusted_root.json" "${RELEASE}/trusted_root.json"
     _rekor_v2_only "${tmp}/signing_config.json" "${RELEASE}/signing_config.json"
     sum=$(sha256sum "${RELEASE}/trusted_root.json" | cut -d' ' -f1)
@@ -123,8 +155,8 @@ with open(path, "w") as f:
 EOF
     git config user.name "${BOT_NAME}"
     git config user.email "${BOT_EMAIL}"
-    git add "${RELEASE}"
-    git commit -q -m "c3-boot: update the pinned Sigstore trusted root
+    git add "${RELEASE}" "${TUF}"
+    git commit -q -m "c3-boot: update Sigstore's TUF metadata and trusted root
 
 From ${SOURCE_REPO}@${commit}."
     _output result changed
@@ -137,15 +169,17 @@ From ${SOURCE_REPO}@${commit}."
     # The lease fails the push if anyone pushed after fetch checked the
     # branch. An empty REMOTE means the branch must still not exist.
     git push --force-with-lease="refs/heads/${BRANCH}:${REMOTE:-}" origin "HEAD:refs/heads/${BRANCH}"
-    title="c3-boot: update the pinned Sigstore trusted root"
-    body="Sigstore's production trusted root or signing configuration changed in
-[\`${SOURCE_REPO}@${COMMIT:0:12}\`](https://github.com/${SOURCE_REPO}/tree/${COMMIT}/targets).
-This updates the copies in \`${RELEASE}/\` that \`c3-release.yml\` signs and
-checks with.
+    title="c3-boot: update Sigstore's TUF metadata and trusted root"
+    body="Sigstore's production TUF metadata, trusted root, or signing configuration
+changed in
+[\`${SOURCE_REPO}@${COMMIT:0:12}\`](https://github.com/${SOURCE_REPO}/tree/${COMMIT}).
+This updates the copies in \`${TUF}/\` that \`c3-release.yml\` packages
+into each slot's TUF part, and in \`${RELEASE}/\` that it signs with.
 
-Devices don't trust the new root until the current key set signs a
-trust-root blob for it offline. Review these entries, which a blob built
-from this root with \`c3-ota blob\` would hold, before signing one:
+Devices follow a new Sigstore root through the root chain in the next
+release's TUF part, from the root their bootloader pins. Review the check
+from that pinned root and the entries the device will read from the
+trusted root before merging:
 
 $(cat "${DESCRIPTION}")"
     existing=$(gh pr list --head "${BRANCH}" --base "${BASE}" --state open --json number --jq '.[0].number // empty')

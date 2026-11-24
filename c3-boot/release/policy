@@ -1,0 +1,7 @@
+# The identity of c3-release.yml on main. Every production bootloader
+# compiles this in, and accepts only images that this workflow signed.
+issuer=https://token.actions.githubusercontent.com
+build-signer-uri=https://github.com/imjasonh/playground/.github/workflows/c3-release.yml@refs/heads/main
+repository-id=1282282910
+owner-id=210737
+trigger=push

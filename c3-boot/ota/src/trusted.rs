@@ -1,11 +1,11 @@
-//! Builds and signs key-set chain links and trust-root blobs.
+//! Reads a Sigstore `trusted_root.json` into the keys and policy a device
+//! trusts, with X.509 and JSON libraries, independently of the device's
+//! reader in `c3_verify::trusted_root`.
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use c3_verify::chain::LINK_DOMAIN;
-use c3_verify::trustroot::BLOB_DOMAIN;
-use ed25519_dalek::Signer;
-use ed25519_dalek::SigningKey;
+use c3_verify::trustroot;
+use c3_verify::trustroot::TrustRoot;
 use serde_json::Value;
 use std::fmt::Write;
 
@@ -27,13 +27,9 @@ impl Window {
     }
 }
 
-/// The values of a trust-root blob before signing.
+/// The keys and identity policy a device trusts.
 #[derive(Clone, Debug, Default)]
 pub struct TrustRootSpec {
-    /// The blob's level.
-    pub level: u8,
-    /// An audit sequence number the device ignores.
-    pub sequence: u32,
     /// Fulcio intermediates: subject DER, P-384 point, window.
     pub fulcio: Vec<(Vec<u8>, [u8; 97], Window)>,
     /// Log keys: origin, Ed25519 key, window.
@@ -95,10 +91,9 @@ impl TrustRootSpec {
     /// `validFor` intersected with the validity of every certificate in
     /// that entry's chain. Logs with non-Ed25519 keys are skipped, because
     /// the device verifies only Rekor v2 checkpoints.
-    pub fn from_trusted_root(json: &str, level: u8, policy: [String; 5]) -> Result<Self, String> {
+    pub fn from_trusted_root(json: &str, policy: [String; 5]) -> Result<Self, String> {
         let root: Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
         let mut spec = TrustRootSpec {
-            level,
             policy,
             ..Default::default()
         };
@@ -167,7 +162,7 @@ impl TrustRootSpec {
     }
 
     /// Describes the entries a device would trust, as Markdown, for people
-    /// who review a trust root before they sign its blob.
+    /// who review a Sigstore root before devices trust it.
     pub fn describe(&self) -> Result<String, String> {
         let window = |w: &Window| {
             let end = if w.1 == u64::MAX {
@@ -211,62 +206,59 @@ impl TrustRootSpec {
         Ok(out)
     }
 
-    /// The blob without signatures, as `docs/formats.md` lays it out.
-    pub fn encode_body(&self) -> Result<Vec<u8>, String> {
-        let mut out = b"C3TR".to_vec();
-        out.extend_from_slice(&1u16.to_le_bytes());
-        out.extend_from_slice(&self.sequence.to_le_bytes());
-        out.push(self.level);
-        out.push(0);
-        out.push(count(self.fulcio.len(), 4)?);
-        for (subject, key, w) in &self.fulcio {
-            push_u16_string(&mut out, subject)?;
-            out.extend_from_slice(key);
-            push_window(&mut out, *w);
-        }
-        out.push(count(self.logs.len(), 8)?);
-        for (origin, key, w) in &self.logs {
-            out.push(u8::try_from(origin.len()).map_err(|_| "origin too long")?);
-            out.extend_from_slice(origin.as_bytes());
-            out.extend_from_slice(key);
-            push_window(&mut out, *w);
-        }
-        out.push(count(self.tsas.len(), 4)?);
-        for (signer_id, key, w) in &self.tsas {
-            push_u16_string(&mut out, signer_id)?;
-            out.extend_from_slice(key);
-            push_window(&mut out, *w);
-        }
-        for s in &self.policy {
-            push_u16_string(&mut out, s.as_bytes())?;
-        }
-        Ok(out)
+    /// The device's view of these keys and policy. Fails when a list holds
+    /// more entries than the device keeps.
+    pub fn trust_root(&self) -> Result<TrustRoot<'_>, String> {
+        let window = |w: &Window| trustroot::Window {
+            not_before: w.0,
+            not_after: w.1,
+        };
+        let fulcio = fill(&self.fulcio, |(subject, key, w)| {
+            trustroot::FulcioIntermediate {
+                subject,
+                public_key: key,
+                window: window(w),
+            }
+        })?;
+        let logs = fill(&self.logs, |(origin, key, w)| trustroot::LogKey {
+            origin: origin.as_bytes(),
+            public_key: key,
+            window: window(w),
+        })?;
+        let tsas = fill(&self.tsas, |(signer_id, key, w)| trustroot::TsaSigner {
+            signer_id,
+            public_key: key,
+            window: window(w),
+        })?;
+        let [issuer, build_signer_uri, repository_id, owner_id, trigger] =
+            self.policy.each_ref().map(|s| s.as_bytes());
+        let policy = trustroot::Policy {
+            issuer,
+            build_signer_uri,
+            repository_id,
+            owner_id,
+            trigger,
+        };
+        Ok(TrustRoot::from_parts(fulcio, logs, tsas, policy))
     }
 }
 
-fn count(n: usize, max: usize) -> Result<u8, String> {
-    if n == 0 || n > max {
-        return Err(format!("need 1 through {max} entries, have {n}"));
+/// The first entries of a fixed-size list, or an error when `items` don't
+/// fit.
+fn fill<'a, T, U: Copy, const N: usize>(
+    items: &'a [T],
+    f: impl Fn(&'a T) -> U,
+) -> Result<[Option<U>; N], String> {
+    if items.len() > N {
+        return Err(format!("at most {N} entries, have {}", items.len()));
     }
-    u8::try_from(n).map_err(|e| e.to_string())
+    let mut out = [None; N];
+    for (slot, item) in out.iter_mut().zip(items) {
+        *slot = Some(f(item));
+    }
+    Ok(out)
 }
 
-fn push_u16_string(out: &mut Vec<u8>, s: &[u8]) -> Result<(), String> {
-    out.extend_from_slice(
-        &u16::try_from(s.len())
-            .map_err(|_| "string too long")?
-            .to_le_bytes(),
-    );
-    out.extend_from_slice(s);
-    Ok(())
-}
-
-fn push_window(out: &mut Vec<u8>, w: Window) {
-    out.extend_from_slice(&w.0.to_le_bytes());
-    out.extend_from_slice(&w.1.to_le_bytes());
-}
-
-/// Wraps `body` in a DER `SEQUENCE`.
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -279,6 +271,7 @@ fn signer_parts(der: &[u8]) -> Result<(Name, SerialNumber), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Wraps `body` in a DER `SEQUENCE`.
 fn der_sequence(body: &[u8]) -> Vec<u8> {
     let mut out = vec![0x30];
     let n = body.len();
@@ -293,55 +286,6 @@ fn der_sequence(body: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Appends the signature list for `body` under `domain`: a count, then each
-/// signer's key index and signature. `signers` must be in increasing index
-/// order.
-pub fn sign(body: &[u8], domain: &[u8], signers: &[(u8, &SigningKey)]) -> Result<Vec<u8>, String> {
-    if !(2..=4).contains(&signers.len()) || signers.windows(2).any(|w| w[0].0 >= w[1].0) {
-        return Err("need two to four signers in increasing index order".into());
-    }
-    let mut message = domain.to_vec();
-    message.push(0);
-    message.extend_from_slice(body);
-    let mut out = body.to_vec();
-    out.push(signers.len() as u8);
-    for (index, key) in signers {
-        out.push(*index);
-        out.extend_from_slice(&key.sign(&message).to_bytes());
-    }
-    Ok(out)
-}
-
-/// Builds and signs a trust-root blob.
-pub fn signed_blob(spec: &TrustRootSpec, signers: &[(u8, &SigningKey)]) -> Result<Vec<u8>, String> {
-    sign(&spec.encode_body()?, BLOB_DOMAIN, signers)
-}
-
-/// Builds and signs one chain link that names `keys` at `level`.
-pub fn signed_link(
-    level: u8,
-    keys: &[[u8; 32]],
-    signers: &[(u8, &SigningKey)],
-) -> Result<Vec<u8>, String> {
-    let mut body = vec![level, count(keys.len(), 4)?];
-    for k in keys {
-        body.extend_from_slice(k);
-    }
-    sign(&body, LINK_DOMAIN, signers)
-}
-
-/// Builds a chain from already signed links.
-pub fn chain(links: &[Vec<u8>]) -> Result<Vec<u8>, String> {
-    let mut out = b"C3KC".to_vec();
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.push(u8::try_from(links.len()).map_err(|_| "too many links")?);
-    out.push(0);
-    for l in links {
-        out.extend_from_slice(l);
-    }
-    Ok(out)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -349,7 +293,7 @@ mod tests {
     #[test]
     fn describes_the_production_trusted_root() {
         let json = include_str!("../../release/trusted_root.json");
-        let spec = TrustRootSpec::from_trusted_root(json, 0, Default::default()).unwrap();
+        let spec = TrustRootSpec::from_trusted_root(json, Default::default()).unwrap();
         let text = spec.describe().unwrap();
         assert!(text.contains("- `CN=sigstore-intermediate,O=sigstore.dev`, P-384 key SHA-256 `"));
         assert!(text.contains("- `log2025-1.rekor.sigstore.dev`, Ed25519 key `"));
@@ -360,5 +304,19 @@ mod tests {
             1,
             "only the Rekor v2 log has an Ed25519 key"
         );
+        let root = spec.trust_root().unwrap();
+        assert_eq!(root.fulcio().count(), spec.fulcio.len());
+        assert_eq!(root.tsas().count(), spec.tsas.len());
+    }
+
+    #[test]
+    fn refuses_more_entries_than_the_device_keeps() {
+        let json = include_str!("../../release/trusted_root.json");
+        let mut spec = TrustRootSpec::from_trusted_root(json, Default::default()).unwrap();
+        let log = spec.logs[0].clone();
+        spec.logs = vec![log; trustroot::MAX_LOGS];
+        assert!(spec.trust_root().is_ok());
+        spec.logs.push(spec.logs[0].clone());
+        assert!(spec.trust_root().is_err());
     }
 }

@@ -1,0 +1,7 @@
+# The identity that fakestore puts in its certificates. Development
+# bootloaders compile this in.
+issuer=https://token.actions.githubusercontent.com
+build-signer-uri=https://github.com/imjasonh/playground/.github/workflows/c3-release.yml@refs/heads/main
+repository-id=1234
+owner-id=5678
+trigger=push

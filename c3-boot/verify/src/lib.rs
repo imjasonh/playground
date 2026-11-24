@@ -11,19 +11,15 @@
 
 #![cfg_attr(not(test), no_std)]
 
-pub mod accept;
 pub mod base64;
 pub mod boot;
 pub mod bootstate;
 pub mod bundle;
-pub mod chain;
 pub mod checkpoint;
 pub mod der;
 pub mod error;
 pub mod image;
-#[cfg(feature = "tuf")]
 pub mod json;
-pub mod keys;
 pub mod layout;
 pub mod level;
 pub mod manifest;
@@ -32,13 +28,10 @@ mod reader;
 pub mod rekor;
 pub mod sigstore;
 pub mod time;
-#[cfg(feature = "tuf")]
 pub mod trusted_root;
 pub mod trustroot;
 pub mod tsa;
-#[cfg(feature = "tuf")]
 pub mod tuf;
-#[cfg(feature = "tuf")]
 pub mod tuf_slot;
 pub mod x509;
 

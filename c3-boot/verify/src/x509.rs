@@ -82,7 +82,9 @@ pub struct Leaf<'a> {
 }
 
 /// Reads a `UTCTime` or `GeneralizedTime`.
-fn read_time(d: &mut Der<'_>) -> Result<u64, Error> {
+// c3-boot-proofs proves this function as compiled, so it needs its own symbol.
+#[inline(never)]
+pub(crate) fn read_time(d: &mut Der<'_>) -> Result<u64, Error> {
     match d.peek_tag() {
         Some(UTC_TIME) => time::utc_time(d.tlv()?.content),
         Some(GENERALIZED_TIME) => time::generalized_time(d.tlv()?.content),

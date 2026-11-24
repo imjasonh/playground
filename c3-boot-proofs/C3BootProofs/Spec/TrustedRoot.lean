@@ -16,8 +16,8 @@ in the `SigstoreRoot` form that `sigstoreVerify` takes:
   number.
 
 Each window is the entry's `validFor` intersected with every certificate
-in its chain. Entries with other key types are skipped. At most 4 Fulcio
-keys, 8 logs, and 4 TSAs, with no subject, origin, `SignerIdentifier`, or
+in its chain. Entries with other key types are skipped. At most 8 Fulcio
+keys, 16 logs, and 8 TSAs, with no subject, origin, `SignerIdentifier`, or
 key listed twice.
 -/
 
@@ -138,7 +138,7 @@ def extractTrustedRoot (json : Bytes) (policy : Policy) : Option SigstoreRoot :=
   let fulcio := fulcio.filterMap id
   let logs := logs.filterMap id
   let tsas := tsas.filterMap id
-  require (fulcio.length ≤ 4 && logs.length ≤ 8 && tsas.length ≤ 4)
+  require (fulcio.length ≤ 8 && logs.length ≤ 16 && tsas.length ≤ 8)
   require (distinct (fulcio.map (·.subject)) && distinct (fulcio.map (·.publicKey)) &&
     distinct (logs.map (·.origin)) && distinct (logs.map (·.publicKey)) &&
     distinct (tsas.map (·.signerId)) && distinct (tsas.map (·.publicKey)))

@@ -12,7 +12,7 @@ fuzz="$(cd "$(dirname "$0")" && pwd)"
 seconds="${FUZZ_SECONDS:-30}"
 targets=("$@")
 if ((${#targets[@]} == 0)); then
-  targets=(formats trust sigstore slot tuf)
+  targets=(formats sigstore slot tuf)
 fi
 
 bash "${fuzz}/seed.sh"

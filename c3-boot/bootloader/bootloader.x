@@ -19,6 +19,9 @@ SECTIONS
   {
     KEEP(*(.text._start))
     *(.text .text.*)
+    /* The bootloader crate's own functions, after the libraries', so that
+     * a change confined to the crate moves no library function. */
+    *(.text_boot)
     /* Last, so that changing the clock and watchdog setup moves no other
      * function. */
     *(.text_setup)
@@ -28,6 +31,8 @@ SECTIONS
   {
     *(.srodata .srodata.*)
     *(.rodata .rodata.*)
+    /* The bootloader crate's log messages, pinned TUF root, and policy. */
+    *(.rodata_boot)
   } > DRAM
 
   .data : ALIGN(4)
@@ -53,7 +58,9 @@ SECTIONS
     _stack_top = .;
   } > DRAM
 
-  ASSERT(_stack_top - _stack_bottom >= 0xC000, "bootloader stack is under 48 KiB")
+  /* The QEMU scenarios peak at 0x106AC bytes of stack, 47,444 of them the
+   * slot buffers, with no new roots and with 64. */
+  ASSERT(_stack_top - _stack_bottom >= 0x14000, "bootloader stack is under 80 KiB")
 
   /DISCARD/ : { *(.eh_frame) *(.eh_frame_hdr) }
 }

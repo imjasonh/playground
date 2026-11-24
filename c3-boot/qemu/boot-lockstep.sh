@@ -27,7 +27,7 @@ mkdir -p "${out}"
 # The ELF behind the scenarios' burns-off image, for the halt address.
 cd "${root}"
 cargo build -q --locked -p c3-ota
-C3_GENESIS=dev C3_EFUSE_BURN=off cargo build -q --locked --release \
+C3_TUF_ROOT=dev C3_EFUSE_BURN=off cargo build -q --locked --release \
   --target riscv32imc-unknown-none-elf -p c3-bootloader
 elf="${root}/target/riscv32imc-unknown-none-elf/release/c3-bootloader"
 ota() {

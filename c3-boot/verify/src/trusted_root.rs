@@ -19,11 +19,9 @@
 
 use crate::der::CONTEXT_0;
 use crate::der::Der;
-use crate::der::GENERALIZED_TIME;
 use crate::der::INTEGER;
 use crate::der::OID;
 use crate::der::SEQUENCE;
-use crate::der::UTC_TIME;
 use crate::error::Error;
 use crate::json::Mode;
 use crate::json::Value;
@@ -38,6 +36,7 @@ use crate::trustroot::TrustRoot;
 use crate::trustroot::TsaSigner;
 use crate::trustroot::Window;
 use crate::tuf::TufError;
+use crate::x509::read_time;
 
 /// The media type `trusted_root.json` must declare.
 pub const MEDIA_TYPE: &[u8] = b"application/vnd.dev.sigstore.trustedroot+json;version=0.1";
@@ -72,15 +71,6 @@ struct Cert<'a> {
     window: Window,
     /// The subject's key, if it is a P-384 point on the curve.
     p384: Option<&'a [u8; P384_POINT_LEN]>,
-}
-
-fn read_time(d: &mut Der<'_>) -> Result<u64, Error> {
-    match d.peek_tag() {
-        Some(UTC_TIME) => crate::time::utc_time(d.tlv()?.content),
-        Some(GENERALIZED_TIME) => crate::time::generalized_time(d.tlv()?.content),
-        Some(_) => Err(Error::BadDer),
-        None => Err(Error::Truncated),
-    }
 }
 
 /// The P-384 point in a `SubjectPublicKeyInfo`, if it holds one on the

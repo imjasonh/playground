@@ -8,9 +8,18 @@
 //! metadata around the fakestore release in `testdata/mutation/`.
 
 use std::fs;
+use std::str::FromStr;
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use serde_json::Value;
 use serde_json::json;
+use x509_cert::Certificate;
+use x509_cert::der::Decode;
+use x509_cert::der::Encode;
+use x509_cert::der::asn1::BitString;
+use x509_cert::name::Name;
+use x509_cert::serial_number::SerialNumber;
 
 use crate::tuf::TestKey;
 use crate::tuf::canonical;
@@ -346,6 +355,81 @@ fn real_cases(cases: &mut Vec<Case>) {
     }
 }
 
+/// The chain `entry` holds, with its first certificate's key replaced by
+/// the P-384 key from `seed` and, when `subject` is set, its subject
+/// replaced. The certificate's signature no longer matches, which nothing
+/// in a trusted root checks.
+fn rekeyed(entry: &Value, seed: u8, subject: Option<&str>, serial: Option<u8>) -> Value {
+    let mut entry = entry.clone();
+    let raw = &mut entry["certChain"]["certificates"][0]["rawBytes"];
+    let der = STANDARD
+        .decode(raw.as_str().unwrap_or_default())
+        .expect("base64");
+    let mut cert = Certificate::from_der(&der).expect("certificate");
+    let TestKey::P384(key) = TestKey::p384(seed) else {
+        unreachable!("p384 makes a P-384 key");
+    };
+    let point = key.verifying_key().to_sec1_point(false);
+    let tbs = &mut cert.tbs_certificate;
+    tbs.subject_public_key_info.subject_public_key =
+        BitString::from_bytes(point.as_bytes()).expect("bit string");
+    if let Some(s) = subject {
+        tbs.subject = Name::from_str(s).expect("name");
+    }
+    if let Some(n) = serial {
+        tbs.serial_number = SerialNumber::new(&[n]).expect("serial");
+    }
+    *raw = json!(STANDARD.encode(cert.to_der().expect("encodes")));
+    entry
+}
+
+/// Cases at each list's limit in `c3_verify::trustroot` and one past it.
+fn cap_cases(cases: &mut Vec<Case>) {
+    use c3_verify::trustroot::MAX_FULCIO;
+    use c3_verify::trustroot::MAX_LOGS;
+    use c3_verify::trustroot::MAX_TSAS;
+    for (n, ok) in [(MAX_FULCIO, true), (MAX_FULCIO + 1, false)] {
+        cases.push(edit_trusted(&format!("ca_{n}"), ok, |v| {
+            let ca = v["certificateAuthorities"][1].clone();
+            v["certificateAuthorities"] = (0..n)
+                .map(|i| {
+                    let subject = format!("CN=intermediate-{i},O=sigstore.dev");
+                    rekeyed(&ca, 10 + i as u8, Some(&subject), None)
+                })
+                .collect();
+        }));
+    }
+    for (n, ok) in [(MAX_LOGS, true), (MAX_LOGS + 1, false)] {
+        cases.push(edit_trusted(&format!("log_{n}"), ok, |v| {
+            let log = v["tlogs"][1].clone();
+            let more: Vec<Value> = (0..n)
+                .map(|i| {
+                    let TestKey::Ed25519(key) = TestKey::ed25519(40 + i as u8) else {
+                        unreachable!("ed25519 makes an Ed25519 key");
+                    };
+                    let mut spki = vec![
+                        0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+                    ];
+                    spki.extend_from_slice(&key.verifying_key().to_bytes());
+                    let mut entry = log.clone();
+                    entry["baseUrl"] = json!(format!("https://log{i}.example.com"));
+                    entry["publicKey"]["rawBytes"] = json!(STANDARD.encode(spki));
+                    entry
+                })
+                .collect();
+            v["tlogs"] = std::iter::once(v["tlogs"][0].clone()).chain(more).collect();
+        }));
+    }
+    for (n, ok) in [(MAX_TSAS, true), (MAX_TSAS + 1, false)] {
+        cases.push(edit_trusted(&format!("tsa_{n}"), ok, |v| {
+            let tsa = v["timestampAuthorities"][0].clone();
+            v["timestampAuthorities"] = (0..n)
+                .map(|i| rekeyed(&tsa, 70 + i as u8, None, Some(1 + i as u8)))
+                .collect();
+        }));
+    }
+}
+
 fn append<const N: usize>(array: &mut Value, items: [Value; N]) {
     if let Some(a) = array.as_array_mut() {
         a.extend(items);
@@ -504,6 +588,21 @@ impl Synth {
 
     fn good_v2(&self) -> Vec<u8> {
         self.sign(&self.v2(), &[0, 2, 3, 7])
+    }
+
+    /// Root `v` with root keys 2, 3, and 6, signed by `ids`, padded with an
+    /// extra `signed` member to exactly `len` bytes.
+    fn padded_root(&self, v: u64, ids: &[usize], len: usize) -> Vec<u8> {
+        let mut signed = self.root_value(v, &[2, 3, 6], 2);
+        let mut pad = 0usize;
+        loop {
+            signed["pad"] = json!("x".repeat(pad));
+            let doc = self.sign(&signed, ids);
+            if doc.len() == len {
+                return doc;
+            }
+            pad = (pad + len).checked_sub(doc.len()).expect("room to pad");
+        }
     }
 
     fn tuf(&self, roots: Vec<Vec<u8>>, targets: Vec<u8>) -> Input {
@@ -807,48 +906,97 @@ fn synthetic_cases(cases: &mut Vec<Case>) {
         false,
     );
 
-    let too_many: Vec<Vec<u8>> = (2..=34)
-        .map(|v| s.sign(&s.root_value(v, &[0, 1, 2], 2), &[0, 1, 2]))
-        .collect();
+    // Long chains rotate to Ed25519 root keys 2, 3, and 6 so that only the
+    // first new root needs an ECDSA signature.
+    let chain = |n: u64| -> Vec<Vec<u8>> {
+        (2..n + 2)
+            .map(|v| s.sign(&s.root_value(v, &[2, 3, 6], 2), long_signers(v)))
+            .collect()
+    };
+    let max = c3_verify::tuf::MAX_ROOTS as u64;
+    add("forty_roots", s.tuf(chain(40), s.targets()), true);
     add(
-        "thirty_three_roots",
-        s.tuf(too_many.clone(), s.targets()),
+        &format!("roots_{max}"),
+        s.tuf(chain(max), s.targets()),
+        true,
+    );
+    add(
+        &format!("roots_{}", max + 1),
+        s.tuf(chain(max + 1), s.targets()),
         false,
     );
-    let max = too_many[..32].to_vec();
-    add("thirty_two_roots", s.tuf(max, s.targets()), true);
+
+    let max_doc = c3_verify::tuf::MAX_DOC_LEN as usize;
+    let padded = |n: u64, len: usize| -> Vec<Vec<u8>> {
+        (2..n + 2)
+            .map(|v| s.padded_root(v, long_signers(v), len))
+            .collect()
+    };
+    add(
+        "root_at_doc_limit",
+        s.tuf(padded(1, max_doc), s.targets()),
+        true,
+    );
+    add(
+        "root_over_doc_limit",
+        s.tuf(padded(1, max_doc + 1), s.targets()),
+        false,
+    );
+    // 37 roots of the longest length fit in a TUF part, and 38 don't.
+    add(
+        "part_at_size_limit",
+        s.tuf(padded(37, max_doc), s.targets()),
+        true,
+    );
+    add(
+        "part_over_size_limit",
+        s.tuf(padded(38, max_doc), s.targets()),
+        false,
+    );
 
     let good = container(&[s.good_v2()], &s.targets(), &s.trusted);
+    let mut edits: Vec<(&str, Vec<u8>)> = Vec::new();
     let mut short = good.clone();
     short.pop();
-    add(
-        "container_truncated",
-        Input::Tuf {
-            pinned: s.pinned(),
-            tuf: short,
-        },
-        false,
-    );
+    edits.push(("container_truncated", short));
     let mut trailing = good.clone();
     trailing.push(0);
-    add(
-        "container_trailing",
-        Input::Tuf {
-            pinned: s.pinned(),
-            tuf: trailing,
-        },
-        false,
-    );
-    let mut magic = good;
+    edits.push(("container_trailing", trailing));
+    let mut magic = good.clone();
     magic[0] = b'X';
-    add(
-        "container_magic",
-        Input::Tuf {
-            pinned: s.pinned(),
-            tuf: magic,
-        },
-        false,
-    );
+    edits.push(("container_magic", magic));
+    let mut version = good.clone();
+    version[4] = 1;
+    edits.push(("container_version_1", version));
+    let mut empty = good.clone();
+    empty[8..12].copy_from_slice(&0u32.to_le_bytes());
+    edits.push(("container_empty_document", empty));
+    // Moving a byte from the root to `targets.json` keeps the total length.
+    let mut shifted = good.clone();
+    let root_len = u32::from_le_bytes(shifted[8..12].try_into().expect("4 bytes"));
+    let targets_len = u32::from_le_bytes(shifted[12..16].try_into().expect("4 bytes"));
+    shifted[8..12].copy_from_slice(&(root_len - 1).to_le_bytes());
+    shifted[12..16].copy_from_slice(&(targets_len + 1).to_le_bytes());
+    edits.push(("container_shifted_index", shifted));
+    let mut count = good;
+    count[6..8].copy_from_slice(&0u16.to_le_bytes());
+    edits.push(("container_wrong_count", count));
+    for (name, tuf) in edits {
+        add(
+            name,
+            Input::Tuf {
+                pinned: s.pinned(),
+                tuf,
+            },
+            false,
+        );
+    }
+}
+
+/// The keys that sign root `v` of a long chain: a threshold of the pinned
+/// root's keys 0, 1, and 2 for version 2, and keys 2 and 3 after it.
+fn long_signers(v: u64) -> &'static [usize] {
+    if v == 2 { &[0, 2, 3] } else { &[2, 3] }
 }
 
 fn accept_cases(cases: &mut Vec<Case>) {
@@ -922,6 +1070,7 @@ pub fn cases() -> Vec<Case> {
     trusted_cases(&mut cases);
     synthetic_cases(&mut cases);
     accept_cases(&mut cases);
+    cap_cases(&mut cases);
     cases
 }
 
