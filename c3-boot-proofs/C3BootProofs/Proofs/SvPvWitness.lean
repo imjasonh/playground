@@ -117,7 +117,7 @@ theorem off_of_sep {B a : Word} {n : Nat} (hs : Sep a n (B + 0xFFFFFE60) 0x39D0)
 
 theorem isrn_off {B : Word} (RS : SvRoSep B) :
     ∀ i, i < 48 → 0x1690 ≤ (ISRN + BitVec.ofNat 32 i - (B + 0x21A0)).toNat :=
-  off_of_sep fun i hi j hj e => RS.symm (0x470 + i) (by omega) j hj (by rw [← e]; unfold ISRN; bv_omega)
+  off_of_sep fun i hi j hj e => RS.symm ((img% p384OrderBeAddress - roWindowAddress) + i) (by omega) j hj (by rw [← e]; unfold ISRN; bv_omega)
 
 /-- The caller's memory with the prehash `h`, `r`, and `s` in three stack
 slots that don't overlap, at `e1`, `e2`, and `e3` from `B + 0x21A0`, is a
