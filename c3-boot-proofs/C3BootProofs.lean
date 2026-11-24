@@ -537,3 +537,4 @@ import C3BootProofs.Models.Ed25519Bytes
 import C3BootProofs.Models.Ed25519Ladder
 import C3BootProofs.Models.Ed25519Limbs
 import C3BootProofs.Models.Ed25519Model
+import C3BootProofs.Models.Ed25519SvModel
