@@ -33,8 +33,8 @@ theorem xrt_at_14 : fetchRel x509ReadTimeCode 0x14 = some (.branch .beq a0 a2 0x
 theorem xrt_at_18 : fetchRel x509ReadTimeCode 0x18 = some (.aluImm .add a2 x0 0x18, 2) := by decide
 theorem xrt_at_1a : fetchRel x509ReadTimeCode 0x1A = some (.branch .bne a0 a2 0x54, 4) := by decide
 theorem xrt_at_1e : fetchRel x509ReadTimeCode 0x1E = some (.aluImm .add a0 sp 0x8, 2) := by decide
-theorem xrt_at_20 : fetchRel x509ReadTimeCode 0x20 = some (.auipc ra 0xFFFFF000, 4) := by decide
-theorem xrt_at_24 : fetchRel x509ReadTimeCode 0x24 = some (.jalr ra ra 0x1BE, 4) := by decide
+theorem xrt_at_20 : fetchRel x509ReadTimeCode 0x20 = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem xrt_at_24 : fetchRel x509ReadTimeCode 0x24 = some (.jalr ra ra 0x30A, 4) := by decide
 theorem xrt_at_28 : fetchRel x509ReadTimeCode 0x28 = some (.load .lw a1 sp 0x8, 2) := by decide
 theorem xrt_at_2a : fetchRel x509ReadTimeCode 0x2A = some (.branch .beq a1 x0 0x50, 2) := by decide
 theorem xrt_at_2c : fetchRel x509ReadTimeCode 0x2C = some (.load .lw a2 sp 0xC, 2) := by decide
@@ -43,12 +43,12 @@ theorem xrt_at_30 : fetchRel x509ReadTimeCode 0x30 = some (.load .lw ra sp 0x2C,
 theorem xrt_at_32 : fetchRel x509ReadTimeCode 0x32 = some (.load .lw (8 : Fin 32) sp 0x28, 2) := by decide
 theorem xrt_at_34 : fetchRel x509ReadTimeCode 0x34 = some (.aluImm .add sp sp 0x30, 2) := by decide
 theorem xrt_at_36 : fetchRel x509ReadTimeCode 0x36 = some (.auipc (6 : Fin 32) 0x0, 4) := by decide
-theorem xrt_at_3a : fetchRel x509ReadTimeCode 0x3A = some (.jalr x0 (6 : Fin 32) 0xFFFFFB92, 4) := by decide
+theorem xrt_at_3a : fetchRel x509ReadTimeCode 0x3A = some (.jalr x0 (6 : Fin 32) 0x1F8, 4) := by decide
 theorem xrt_at_3e : fetchRel x509ReadTimeCode 0x3E = some (.aluImm .add a0 x0 0x1, 2) := by decide
 theorem xrt_at_40 : fetchRel x509ReadTimeCode 0x40 = some (.jal x0 0x34, 2) := by decide
 theorem xrt_at_42 : fetchRel x509ReadTimeCode 0x42 = some (.aluImm .add a0 sp 0x8, 2) := by decide
-theorem xrt_at_44 : fetchRel x509ReadTimeCode 0x44 = some (.auipc ra 0xFFFFF000, 4) := by decide
-theorem xrt_at_48 : fetchRel x509ReadTimeCode 0x48 = some (.jalr ra ra 0x19A, 4) := by decide
+theorem xrt_at_44 : fetchRel x509ReadTimeCode 0x44 = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem xrt_at_48 : fetchRel x509ReadTimeCode 0x48 = some (.jalr ra ra 0x2E6, 4) := by decide
 theorem xrt_at_4c : fetchRel x509ReadTimeCode 0x4C = some (.load .lw a0 sp 0x8, 2) := by decide
 theorem xrt_at_4e : fetchRel x509ReadTimeCode 0x4E = some (.branch .beq a0 x0 0x2C, 2) := by decide
 theorem xrt_at_50 : fetchRel x509ReadTimeCode 0x50 = some (.load .lw a1 sp 0xC, 2) := by decide
@@ -57,7 +57,7 @@ theorem xrt_at_54 : fetchRel x509ReadTimeCode 0x54 = some (.store .sw sp a1 0x24
 theorem xrt_at_56 : fetchRel x509ReadTimeCode 0x56 = some (.aluImm .add a0 sp 0x8, 2) := by decide
 theorem xrt_at_58 : fetchRel x509ReadTimeCode 0x58 = some (.aluImm .add a1 sp 0x20, 2) := by decide
 theorem xrt_at_5a : fetchRel x509ReadTimeCode 0x5A = some (.auipc ra 0x0, 4) := by decide
-theorem xrt_at_5e : fetchRel x509ReadTimeCode 0x5E = some (.jalr ra ra 0xFFFFFEE0, 4) := by decide
+theorem xrt_at_5e : fetchRel x509ReadTimeCode 0x5E = some (.jalr ra ra 0xFFFFFEA2, 4) := by decide
 theorem xrt_at_62 : fetchRel x509ReadTimeCode 0x62 = some (.load .lbu a0 sp 0x8, 4) := by decide
 theorem xrt_at_66 : fetchRel x509ReadTimeCode 0x66 = some (.branch .beq a0 x0 0x24, 2) := by decide
 theorem xrt_at_68 : fetchRel x509ReadTimeCode 0x68 = some (.load .lbu a0 sp 0x9, 4) := by decide
@@ -90,7 +90,7 @@ theorem xrt_at_b6 : fetchRel x509ReadTimeCode 0xB6 = some (.jalr x0 ra 0x0, 2) :
 theorem xrt_at_b8 : fetchRel x509ReadTimeCode 0xB8 = some (.aluImm .add a0 sp 0x8, 2) := by decide
 theorem xrt_at_ba : fetchRel x509ReadTimeCode 0xBA = some (.aluImm .add a2 sp 0x20, 2) := by decide
 theorem xrt_at_bc : fetchRel x509ReadTimeCode 0xBC = some (.auipc ra 0x0, 4) := by decide
-theorem xrt_at_c0 : fetchRel x509ReadTimeCode 0xC0 = some (.jalr ra ra 0xFFFFFC62, 4) := by decide
+theorem xrt_at_c0 : fetchRel x509ReadTimeCode 0xC0 = some (.jalr ra ra 0xFFFFFC24, 4) := by decide
 theorem xrt_at_c4 : fetchRel x509ReadTimeCode 0xC4 = some (.load .lbu a0 sp 0x8, 4) := by decide
 theorem xrt_at_c8 : fetchRel x509ReadTimeCode 0xC8 = some (.branch .bne a0 x0 0xFFFFFFA0, 2) := by decide
 theorem xrt_at_ca : fetchRel x509ReadTimeCode 0xCA = some (.load .lw a1 sp 0x24, 2) := by decide
@@ -355,7 +355,8 @@ stack below `sp`. -/
 theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : Nat}
     (hcR : CodeIn m.mem XRT x509ReadTimeCode) (hcL : CodeIn m.mem TLV derTlvCode)
     (hcG : CodeIn m.mem GNT generalizedTimeCode) (hcD : CodeIn m.mem DT dateTimeCode)
-    (hcT : CodeIn m.mem TD timeDigits2Code) (hpc : m.pc = XRT) (ha0 : reg m a0 = out) (ha1 : reg m a1 = d)
+    (hcT : CodeIn m.mem TD timeDigits2Code) (hcF : CodeIn m.mem TD4 timeDigits4Code)
+    (hcA : CodeIn m.mem AAD allAsciiDigitCode) (hpc : m.pc = XRT) (ha0 : reg m a0 = out) (ha1 : reg m a1 = d)
     (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr) (hsp : reg m sp = sp0)
     (hsa : sp0.toNat % 4 = 0) (hsl : 0x60 ≤ sp0.toNat) (hsw : sp0.toNat ≤ 0x40000000)
     (how : out.toNat + 16 ≤ 0x40000000) (hoa : out.toNat % 4 = 0) (hdw : d.toNat + 16 ≤ 0x40000000)
@@ -866,11 +867,15 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
       have hGn : GNT.toNat = (img% generalizedTimeAddress) := by decide
       have hDn : DT.toNat = (img% dateTimeAddress) := by decide
       have hTDn : TD.toNat = (img% timeDigits2Address) := by decide
+      have hTD4n : TD4.toNat = (img% timeDigits4Address) := by decide
+      have hAADn : AAD.toNat = (img% allAsciiDigitAddress) := by decide
       have hpw' : (rp + BitVec.ofNat 32 t.header).toNat + t.len + 14 ≤ 0x40000000 := by rw [hch]; omega
       obtain ⟨mf, cf, pcf, spf, Kf, hSf, hNf, frf⟩ := generalizedTime_correct m16 (sp0 := sp0) (out := out)
         (p := rp + BitVec.ofNat 32 t.header) (n := t.len) (retAddr := retAddr)
         (hcode hcG (by rw [hGn]; decide) (by rw [hGn]; decide)) (hcode hcD (by rw [hDn]; decide) (by rw [hDn]; decide))
-        (hcode hcT (by rw [hTDn]; decide) (by rw [hTDn]; decide)) pc16'
+        (hcode hcT (by rw [hTDn]; decide) (by rw [hTDn]; decide))
+        (hcode hcF (by rw [hTD4n]; decide) (by rw [hTD4n]; decide))
+        (hcode hcA (by rw [hAADn]; decide) (by rw [hAADn]; decide)) pc16'
         (by rw [r16 a0 (by decide), v14a0]) (by rw [r16 a1 (by decide), v14a1]) (by rw [r16 a2 (by decide), v14a2])
         (by rw [r16 ra (by decide), v14ra]) hret (by rw [r16 sp (by decide), v14sp]) hsa hsl hsw how hoa (by omega)
         hpw' (by rw [hch]; omega) (by rw [hR]; exact sOG)

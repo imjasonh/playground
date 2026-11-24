@@ -105,6 +105,10 @@ import C3BootProofs.Proofs.ScalarFromSlice256
 import C3BootProofs.Proofs.EdCall
 import C3BootProofs.Proofs.IsSmallOrder
 import C3BootProofs.Proofs.DateTime
+import C3BootProofs.Proofs.TimeDigits4
+import C3BootProofs.Proofs.AllAsciiDigit
+import C3BootProofs.Proofs.GeneralizedTime
+import C3BootProofs.Proofs.X509ReadTime
 import C3BootProofs.Proofs.Base64Decode
 import C3BootProofs.Proofs.Base64Encode
 import C3BootProofs.Proofs.Sha512Update
