@@ -34,10 +34,18 @@ syntax "imgVal% " ident : term
 /-- `(img% e)` is the numeral that `e` evaluates to. -/
 syntax "img% " term : term
 
+/-- The name `i` without the namespace `C3.Image`, when it has no other
+prefix. It avoids `Lean.Name.toString`, which uses `Classical.choice`. -/
+def imgName (i : Lean.TSyntax `ident) : Option String :=
+  match i.getId with
+  | .str .anonymous s => some s
+  | .str p s => if p == `C3.Image then some s else none
+  | _ => none
+
 /-- The value that `names` gives the name `i`, as a numeral, for an
 `imgVal%` rule. -/
 def imgLookup (names : List (String × Nat)) (i : Lean.TSyntax `ident) : Lean.MacroM Lean.Syntax :=
-  match names.lookup (i.getId.replacePrefix `C3.Image .anonymous).toString with
+  match imgName i >>= (names.lookup ·) with
   | some n => return Lean.Syntax.mkNumLit (toString n)
   | none => Lean.Macro.throwUnsupported
 
@@ -51,10 +59,10 @@ partial def imgEval : Lean.Syntax → Lean.MacroM Nat
   | `($n:num) => return n.getNat
   | `($i:ident) => do
     let some v ← Lean.Macro.expandMacro? (← `(imgVal% $i))
-      | Lean.Macro.throwErrorAt i s!"img%: the image defines no address {i.getId}"
+      | Lean.Macro.throwErrorAt i s!"img%: the image defines no address {(imgName i).getD ""}"
     match v.isNatLit? with
     | some n => return n
-    | none => Lean.Macro.throwErrorAt i s!"img%: {i.getId} is not a numeral"
+    | none => Lean.Macro.throwErrorAt i s!"img%: {(imgName i).getD ""} is not a numeral"
   | e => Lean.Macro.throwErrorAt e "img%: expected numerals, names, +, -, hi20, lo12, or parentheses"
 
 macro_rules
