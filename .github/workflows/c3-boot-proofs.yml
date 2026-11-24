@@ -54,14 +54,19 @@ jobs:
       - uses: leanprover/lean-action@ba3fdfe5c4476c925da13bf11a005ddb47e47aee # v1.7.1
         with:
           lake-package-directory: c3-boot-proofs
-          leanchecker: true
-          # Without arguments, leanchecker looks for modules named after the
-          # package, c3-boot-proofs, and finds none.
-          leanchecker-args: C3BootProofs
           axiom-audit: true
           axiom-audit-allow: propext,Quot.sound
           # The audit root is a module prefix, not a namespace.
           axiom-audit-root: C3BootProofs
+
+      # leanchecker replays each module in its own task, and each task imports
+      # that module's whole dependency closure. Four tasks at once need more
+      # memory than the runner has, so two run at a time.
+      - name: Recheck the proofs with leanchecker
+        working-directory: c3-boot-proofs
+        env:
+          LEAN_NUM_THREADS: "2"
+        run: lake env leanchecker C3BootProofs
 
       - name: Compare the specification with c3-verify
         run: |
