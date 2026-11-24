@@ -58,7 +58,9 @@ SECTIONS
     _stack_top = .;
   } > DRAM
 
-  ASSERT(_stack_top - _stack_bottom >= 0xC000, "bootloader stack is under 48 KiB")
+  /* The QEMU scenarios peak at 0x1301C bytes of stack, 61,780 of them the
+   * slot buffers. */
+  ASSERT(_stack_top - _stack_bottom >= 0x14000, "bootloader stack is under 80 KiB")
 
   /DISCARD/ : { *(.eh_frame) *(.eh_frame_hdr) }
 }
