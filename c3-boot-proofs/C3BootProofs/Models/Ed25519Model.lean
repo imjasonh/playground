@@ -328,7 +328,7 @@ theorem evSpec_sound {M : Word → BitVec 8} (I : EdImage M) (G : EdGroupLaws) (
     have hver := verify_rearrange G A Ed25519.B r hAon onCurve_B K S hrP
     unfold ed25519Verify
     rw [memBytes_take M sig (show 32 ≤ 64 by decide), hdecA, hdecR, memBytes_drop M sig (show 32 ≤ 64 by decide)]
-    simp only [memBytes_length, beq_self_eq_true, Bool.true_and, show 64 - 32 = 32 from rfl, decide_eq_true hS,
+    simp only [memBytes_length, show ((64 : Nat) == 64) = true from rfl, Bool.true_and, show 64 - 32 = 32 from rfl, decide_eq_true hS,
       hAsm, hrsm, Bool.not_false, Bool.true_and]
     exact beq_iff_eq.mpr hver
 

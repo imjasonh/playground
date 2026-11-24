@@ -48,7 +48,7 @@ theorem div_pow_succ (X pos : Nat) : X / 2 ^ (pos + 1) = X / 2 ^ pos / 2 := by
   rw [Nat.div_div_eq_div_mul, Nat.pow_succ]
 
 theorem div_pow_add5 (X pos : Nat) : X / 2 ^ (pos + 5) = X / 2 ^ pos / 32 := by
-  rw [Nat.div_div_eq_div_mul, Nat.pow_add]; rfl
+  rw [Nat.div_div_eq_div_mul, Nat.pow_add]
 
 /-- The digit an odd window `w` stores. -/
 theorem sval_digit (w : Nat) (hw : w < 32) :
@@ -91,7 +91,7 @@ theorem even_bound (V pos : Nat) (heven : V % 2 = 0) (hV : V * 2 ^ pos ≤ 2 ^ 2
     V / 2 * 2 ^ (pos + 1) ≤ 2 ^ 255 := by
   have : V / 2 * 2 ^ (pos + 1) = V * 2 ^ pos := by
     rw [Nat.pow_succ, ← Nat.mul_assoc, Nat.mul_comm (V / 2) (2 ^ pos), Nat.mul_assoc, Nat.mul_comm (2 ^ pos)]
-    rw [Nat.mul_comm (V / 2 * 2), Nat.div_mul_cancel (Nat.dvd_of_mod_eq_zero heven)]
+    rw [Nat.mul_comm (V / 2 * 2), Nat.div_mul_cancel (Nat.dvd_of_mod_eq_zero heven), Nat.mul_comm]
   rw [this]; exact hV
 
 /-- `nafGo`'s invariant: the digits so far plus the rest of the scalar make
@@ -110,8 +110,7 @@ theorem nafGo_val (X : Nat) :
       have h1 : (carry + X / 2 ^ pos) * 2 ^ pos < 1 * 2 ^ pos :=
         Nat.lt_of_le_of_lt hb (by rw [Nat.one_mul]; exact Nat.lt_of_lt_of_le (Nat.pow_lt_pow_right (by decide)
           (by decide : 255 < 256)) this)
-      have := Nat.lt_of_mul_lt_mul_right h1
-      rw [show carry + X / 2 ^ pos = 0 by omega, Nat.zero_mul]
+      rw [Nat.lt_one_iff.mp (Nat.lt_of_mul_lt_mul_right h1), Nat.zero_mul]
     rw [h0] at hv
     simpa only [nafGo, Int.natCast_zero, Int.add_zero] using hv
   | succ n ih =>

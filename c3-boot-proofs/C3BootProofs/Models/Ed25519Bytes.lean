@@ -26,7 +26,7 @@ theorem getD_of_ge {l : List Nat} {i : Nat} (h : l.length ≤ i) : l.getD i 0 = 
 
 theorem byt_memBytes (M : Word → BitVec 8) (a : Word) (n : Nat) : Byt (memBytes M a n) := fun i => by
   by_cases h : i < n
-  · exact memBytes_lt M a h
+  · rw [memBytes_getD h]; exact BitVec.isLt _
   · rw [getD_of_ge (by rw [memBytes_length]; omega)]; decide
 
 theorem lv_lt {l : List Nat} (h : Byt l) : ∀ k, lv k l < 256 ^ k
@@ -119,7 +119,7 @@ theorem lv_clearTop (b : List Nat) (hb : b.length = 32) (h : Byt b) :
   have hb31 := h 31
   have u : ∀ l, lv 32 l = lv 31 l + l.getD 31 0 * 256 ^ 31 := fun _ => rfl
   rw [u, u, e, clearTop_getD b hb, ite_eq_left rfl]
-  omega
+  exact ⟨by omega, by omega⟩
 
 /-- `clearTop` keeps the low 255 bits; the top bit is bit 7 of byte 31. -/
 theorem leNum_clearTop (b : List Nat) (hb : b.length = 32) (h : Byt b) :
@@ -131,7 +131,7 @@ theorem leNum_clearTop (b : List Nat) (hb : b.length = 32) (h : Byt b) :
 theorem decode_of_recoverX (b : List Nat) (hb : b.length = 32) (hy : Ed25519.leNum b % 2 ^ 255 < Ed25519.p) (x : Nat)
     (hx : Ed25519.recoverX (Ed25519.leNum b % 2 ^ 255) (Ed25519.leNum b / 2 ^ 255) = some x) :
     Ed25519.decode b = some (x, Ed25519.leNum b % 2 ^ 255) := by
-  simp only [Ed25519.decode, hb, beq_self_eq_true, require, ↓reduceIte, hy, decide_true, hx]
+  simp only [Ed25519.decode, hb, show ((32 : Nat) == 32) = true from rfl, decide_eq_true hy, hx]
   rfl
 
 end C3.RV32.EdM
