@@ -94,8 +94,24 @@ final class MCULabController: NSObject, ObservableObject {
         let label: String
         let count: UInt16
     }
+    struct DeviceCommands: Equatable, Identifiable {
+        let deviceId: UUID
+        let deviceName: String
+        let app: String
+        let commands: [MCULabAppCommandSpec]
+        var id: UUID { deviceId }
+    }
     @Published var pendingAppCommand: PendingAppCommand?
     @Published var appCommandStatus = ""
+    @Published var deviceCommands: [UUID: DeviceCommands] = [:]
+
+    var sortedDeviceCommands: [DeviceCommands] {
+        deviceCommands.values.sorted {
+            if $0.deviceName != $1.deviceName { return $0.deviceName < $1.deviceName }
+            if $0.app != $1.app { return $0.app < $1.app }
+            return $0.deviceId.uuidString < $1.deviceId.uuidString
+        }
+    }
 
     private struct OTASessionTracker {
         let deviceId: UUID
@@ -138,8 +154,10 @@ final class MCULabController: NSObject, ObservableObject {
     private var profilePeripheral: CBPeripheral?
     private var profileTargetDeviceId: UUID?
     private var profileTargetSampleId: UUID?
+    private var profileConnectionTimeoutTask: Task<Void, Never>?
     private var awaitingProfileRead = false
     private var pendingCommandWritePeripheralId: UUID?
+    private var inFlightAppCommand: PendingAppCommand?
     private var profileReassembler = MCULabBlobReassembler()
     private var coredumpReassembler = MCULabBlobReassembler()
     private var coredumpChar: CBCharacteristic?
@@ -1111,6 +1129,7 @@ final class MCULabController: NSObject, ObservableObject {
         }
 
         if let profile {
+            updateDeviceCommands(from: profile, deviceId: deviceId, deviceName: deviceName)
             updateCommandProgress(from: profile)
         }
 
@@ -1129,12 +1148,48 @@ final class MCULabController: NSObject, ObservableObject {
         guard let central, central.state == .poweredOn else {
             return
         }
+        profileConnectionTimeoutTask?.cancel()
         profilePeripheral = peripheral
         profileTargetDeviceId = deviceId
         profileTargetSampleId = sampleId
         awaitingProfileRead = false
         peripheral.delegate = self
         central.connect(peripheral, options: nil)
+        // Guard against missed wake windows or dropped profile notification chunks so a
+        // stalled connection never holds the board's single MAX_CONNECTIONS=1 slot open.
+        profileConnectionTimeoutTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard let self,
+                  !Task.isCancelled,
+                  self.profilePeripheral?.identifier == peripheral.identifier
+            else {
+                return
+            }
+            if self.pendingAppCommand?.deviceId == deviceId {
+                self.appCommandStatus = "Missed wake window — still armed for next wake…"
+            }
+            self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
+        }
+    }
+
+    private func updateDeviceCommands(
+        from profile: MCULabWakeProfile,
+        deviceId: UUID,
+        deviceName: String
+    ) {
+        if let commands = profile.commands, !commands.isEmpty {
+            let entry = DeviceCommands(
+                deviceId: deviceId,
+                deviceName: deviceName,
+                app: profile.app ?? "",
+                commands: commands
+            )
+            if deviceCommands[deviceId] != entry {
+                deviceCommands[deviceId] = entry
+            }
+        } else {
+            deviceCommands.removeValue(forKey: deviceId)
+        }
     }
 
     private func updateCommandProgress(from profile: MCULabWakeProfile) {
@@ -1168,6 +1223,10 @@ final class MCULabController: NSObject, ObservableObject {
             latestSample = latest
             updatedSample = latest
         }
+        let resolvedName = updatedSample?.deviceName
+            ?? history.first(where: { $0.deviceId == deviceId })?.deviceName
+            ?? "MCU-LAB"
+        updateDeviceCommands(from: profile, deviceId: deviceId, deviceName: resolvedName)
         updateCommandProgress(from: profile)
         if forwardingEnabled, let updatedSample {
             forwardToOtel(sample: updatedSample)
@@ -1178,6 +1237,8 @@ final class MCULabController: NSObject, ObservableObject {
         guard profilePeripheral?.identifier == peripheral.identifier else {
             return
         }
+        profileConnectionTimeoutTask?.cancel()
+        profileConnectionTimeoutTask = nil
         let targetDeviceId = profileTargetDeviceId
         let targetSampleId = profileTargetSampleId
         profilePeripheral = nil
@@ -1186,6 +1247,13 @@ final class MCULabController: NSObject, ObservableObject {
         awaitingProfileRead = false
         if pendingCommandWritePeripheralId == peripheral.identifier {
             pendingCommandWritePeripheralId = nil
+        }
+        if let inFlight = inFlightAppCommand, inFlight.deviceId == peripheral.identifier {
+            inFlightAppCommand = nil
+            if pendingAppCommand == nil {
+                pendingAppCommand = inFlight
+                appCommandStatus = "BLE link closed before ack — retrying '\(inFlight.label)' on next wake…"
+            }
         }
         if otaPeripheral?.identifier != peripheral.identifier {
             central?.cancelPeripheralConnection(peripheral)
@@ -1786,30 +1854,38 @@ extension MCULabController: CBPeripheralDelegate {
             self.profileReassembler.reset()
             self.coredumpReassembler.reset()
             if isProfileOnly {
-                for ch in chars {
-                    if ch.uuid == self.profileCharUUID, self.collectDetailedProfile {
-                        foundProfileChar = true
-                        self.awaitingProfileRead = true
-                        if ch.properties.contains(.notify) {
-                            peripheral.setNotifyValue(true, for: ch)
-                        } else {
+                // When an app command is armed for this board, deliver ONLY the command
+                // write and disconnect immediately on ack so the board begins BLE-quiet
+                // execution right away without ATT contention from profile notifications.
+                if let pending = self.pendingAppCommand,
+                   pending.deviceId == peripheral.identifier,
+                   let cmdChar = chars.first(where: { $0.uuid == self.appCommandCharUUID })
+                {
+                    let wire = MCULabProtocol.encodeAppCommand(id: pending.id, count: pending.count)
+                    if let payload = wire.data(using: .utf8) {
+                        self.inFlightAppCommand = pending
+                        self.pendingAppCommand = nil
+                        self.pendingCommandWritePeripheralId = peripheral.identifier
+                        self.awaitingProfileRead = false
+                        peripheral.writeValue(payload, for: cmdChar, type: .withResponse)
+                        let suffix = pending.count > 1 ? " ×\(pending.count)" : ""
+                        self.appCommandStatus = "Sending '\(pending.label)'\(suffix)…"
+                        wroteAppCommand = true
+                    }
+                }
+                if !wroteAppCommand {
+                    for ch in chars {
+                        if ch.uuid == self.profileCharUUID, self.collectDetailedProfile {
+                            foundProfileChar = true
+                            self.awaitingProfileRead = true
+                            if ch.properties.contains(.notify) {
+                                peripheral.setNotifyValue(true, for: ch)
+                            } else {
+                                peripheral.readValue(for: ch)
+                            }
+                        } else if ch.uuid == self.coredumpCharUUID {
+                            self.coredumpChar = ch
                             peripheral.readValue(for: ch)
-                        }
-                    } else if ch.uuid == self.coredumpCharUUID {
-                        self.coredumpChar = ch
-                        peripheral.readValue(for: ch)
-                    } else if ch.uuid == self.appCommandCharUUID,
-                              let pending = self.pendingAppCommand,
-                              pending.deviceId == peripheral.identifier
-                    {
-                        let wire = MCULabProtocol.encodeAppCommand(id: pending.id, count: pending.count)
-                        if let payload = wire.data(using: .utf8) {
-                            peripheral.writeValue(payload, for: ch, type: .withResponse)
-                            self.pendingAppCommand = nil
-                            self.pendingCommandWritePeripheralId = peripheral.identifier
-                            let suffix = pending.count > 1 ? " ×\(pending.count)" : ""
-                            self.appCommandStatus = "Sent '\(pending.label)'\(suffix) — disconnecting so board runs BLE-quiet…"
-                            wroteAppCommand = true
                         }
                     }
                 }
@@ -1944,8 +2020,22 @@ extension MCULabController: CBPeripheralDelegate {
                 if self.pendingCommandWritePeripheralId == peripheral.identifier {
                     self.pendingCommandWritePeripheralId = nil
                 }
+                let inFlight = (self.inFlightAppCommand?.deviceId == peripheral.identifier)
+                    ? self.inFlightAppCommand
+                    : nil
+                if inFlight != nil {
+                    self.inFlightAppCommand = nil
+                }
                 if let errDesc {
-                    self.appCommandStatus = "Command write failed: \(errDesc)"
+                    if let inFlight, self.pendingAppCommand == nil {
+                        self.pendingAppCommand = inFlight
+                        self.appCommandStatus = "Command write failed (\(errDesc)) — retrying on next wake…"
+                    } else {
+                        self.appCommandStatus = "Command write failed: \(errDesc)"
+                    }
+                } else if let inFlight {
+                    let suffix = inFlight.count > 1 ? " ×\(inFlight.count)" : ""
+                    self.appCommandStatus = "Queued '\(inFlight.label)'\(suffix) — board running BLE-quiet…"
                 }
                 if !self.awaitingProfileRead {
                     self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)

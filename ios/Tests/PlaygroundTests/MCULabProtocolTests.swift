@@ -1007,6 +1007,68 @@ final class MCULabProtocolTests: XCTestCase {
             )
         )
         XCTAssertEqual(controller.appCommandStatus, "Completed 'run' (10/10).")
+        XCTAssertEqual(controller.deviceCommands[devId]?.commands.map(\.id), ["run"])
+
+        // A subsequent wake without a profile (e.g. missed GATT pull) or from a second board
+        // must NOT wipe out the first board's sticky App Controls.
+        let noProfileMetrics = MCULabMetrics(
+            seq: 4,
+            flags: MCULabProtocol.flagDeepSleepWake,
+            wakeCount: 4,
+            sensorUs: 100,
+            computeUs: 0,
+            epdRefreshUs: 0,
+            radioUs: 200_000,
+            batteryMv: 4_100
+        )
+        XCTAssertTrue(
+            controller.ingestManufacturerData(
+                MCULabProtocol.encodeManufacturerData(noProfileMetrics),
+                deviceId: devId,
+                deviceName: "MCU-LAB",
+                rssi: -55,
+                profile: nil
+            )
+        )
+        let otherDevice = UUID()
+        XCTAssertTrue(
+            controller.ingestManufacturerData(
+                MCULabProtocol.encodeManufacturerData(noProfileMetrics),
+                deviceId: otherDevice,
+                deviceName: "EPD-75",
+                rssi: -50,
+                profile: nil
+            )
+        )
+        XCTAssertEqual(controller.sortedDeviceCommands.count, 1)
+        XCTAssertEqual(controller.sortedDeviceCommands.first?.deviceId, devId)
+
+        // When the same device later advertises a profile with no commands (e.g. after OTA
+        // to another app), its commands are cleared.
+        var emptyCmdProfile = profile
+        emptyCmdProfile.wakeCount = 5
+        emptyCmdProfile.seq = 5
+        emptyCmdProfile.commands = nil
+        let afterOTAMetrics = MCULabMetrics(
+            seq: 5,
+            flags: MCULabProtocol.flagDeepSleepWake,
+            wakeCount: 5,
+            sensorUs: 100,
+            computeUs: 0,
+            epdRefreshUs: 0,
+            radioUs: 200_000,
+            batteryMv: 4_100
+        )
+        XCTAssertTrue(
+            controller.ingestManufacturerData(
+                MCULabProtocol.encodeManufacturerData(afterOTAMetrics),
+                deviceId: devId,
+                deviceName: "MCU-LAB",
+                rssi: -55,
+                profile: emptyCmdProfile
+            )
+        )
+        XCTAssertTrue(controller.deviceCommands.isEmpty)
     }
 
     private static func jsonResponse(_ body: String, status: Int) throws -> (Data, URLResponse) {
