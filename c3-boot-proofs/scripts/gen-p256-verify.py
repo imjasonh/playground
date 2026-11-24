@@ -391,7 +391,7 @@ def stage_ivb():
     g.block(0x5EC, 0x600)
     g.mc(0x600, 0x980, 0xCA4, 0x24)
     g.block(0x608, 0x60C)
-    stmt, proof = finish(g, 0x60C, [2, 3, 4, 8, 9, 19, 21, 22, 23, 24, 27], set(g.words), set(g.bytes))
+    stmt, proof = finish(g, 0x60C, [2, 3, 4, 8, 9, 19, 21, 22, 23, 24, 26, 27], set(g.words), set(g.bytes))
     info = {"name": "p2v_ivb", "title": "the end of a batch of the inversion of `s`",
             "doc": "From the divstep loop's exit at 0x51E to 0x60C: the batch's matrix is stored at 0xF80, "
             "`update_fg` applies it to `f` and `g` and `update_de` to `d` and `e`, and the steps left drop by "

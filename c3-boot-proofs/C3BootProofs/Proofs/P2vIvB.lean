@@ -184,6 +184,7 @@ theorem p2v_ivb {B dlo dhi rem ulo uhi vlo vhi qlo qhi rlo rhi : Word} {ns : Nat
         reg n' (22 : Fin 32) = BitVec.ofNat 32 0x1 ∧
         reg n' (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xCA4 ∧
         reg n' (24 : Fin 32) = (rem) - (BitVec.ofNat 32 ns) ∧
+        reg n' (26 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x920 ∧
         reg n' (27 : Fin 32) = BitVec.ofNat 32 0x7 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x50) = BitVec.ofNat 32 0x332E3755 ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x54) = BitVec.ofNat 32 0x11FF43B1 ∧
@@ -1917,6 +1918,6 @@ theorem p2v_ivb {B dlo dhi rem ulo uhi vlo vhi qlo qhi rlo rhi : Word} {ns : Nat
   have a26_ca4 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0xCA4) 8 = (lrsm8 σ21b A21b ((BitVec.ofNat 32 0x11FF43B1).toNat + 2 ^ 32 * (BitVec.ofNat 32 0x332E3755).toNat) ns (accV M0 (BitVec.ofNat 32 (img% b2sOrder256Address)) 8)).2 := by rw [m26]; exact a25_ca4
   have a26_fe4 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0xFE4) 8 = (lrsm8 σ21a A21a ((BitVec.ofNat 32 0x11FF43B1).toNat + 2 ^ 32 * (BitVec.ofNat 32 0x332E3755).toNat) ns (accV M0 (BitVec.ofNat 32 (img% b2sOrder256Address)) 8)).2 := by rw [m26]; exact a25_fe4
   clear a25_980 a25_fe4 a25_ca4 a25_c80 a25_900 a25_200 a25_1c0 a25_1a0 a25_180 a25_160 a25_140 a25_120 b25_9a0 b25_1004 b25_cc4 b25_ca0 b25_920 b25_220 w25_f9c w25_f98 w25_f94 w25_f90 w25_f8c w25_f88 w25_f84 w25_f80 w25_54 w25_50 g25_27 g25_26 g25_25 g25_24 g25_23 g25_22 g25_21 g25_19 g25_18 g25_9 g25_8 g25_4 g25_3 g25_2 V25 E25 fR25 t25 fr25 s25 X25 K25 P25
-  exact .inr ⟨σ11a, A11a, e0_11, hσ0_11, σ11b, A11b, e1_11, hσ1_11, σ21a, A21a, e0_21, hσ0_21, σ21b, A21b, e1_21, hσ1_21, n26, t26, s26, E26, V26, fR26, g26_2, g26_3, g26_4, g26_8, g26_9, g26_19, g26_21, g26_22, g26_23, g26_24, g26_27, w26_50, w26_54, w26_f80, w26_f84, w26_f88, w26_f8c, w26_f90, w26_f94, w26_f98, w26_f9c, b26_220, b26_920, b26_9a0, b26_ca0, b26_cc4, b26_1004, a26_120, a26_140, a26_160, a26_180, a26_1a0, a26_1c0, a26_200, a26_900, a26_980, a26_c80, a26_ca4, a26_fe4, keep_kk26.mono (by decide)⟩
+  exact .inr ⟨σ11a, A11a, e0_11, hσ0_11, σ11b, A11b, e1_11, hσ1_11, σ21a, A21a, e0_21, hσ0_21, σ21b, A21b, e1_21, hσ1_21, n26, t26, s26, E26, V26, fR26, g26_2, g26_3, g26_4, g26_8, g26_9, g26_19, g26_21, g26_22, g26_23, g26_24, g26_26, g26_27, w26_50, w26_54, w26_f80, w26_f84, w26_f88, w26_f8c, w26_f90, w26_f94, w26_f98, w26_f9c, b26_220, b26_920, b26_9a0, b26_ca0, b26_cc4, b26_1004, a26_120, a26_140, a26_160, a26_180, a26_1a0, a26_1c0, a26_200, a26_900, a26_980, a26_c80, a26_ca4, a26_fe4, keep_kk26.mono (by decide)⟩
 
 end C3.RV32.P2v
