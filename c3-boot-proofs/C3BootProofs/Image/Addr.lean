@@ -10,15 +10,14 @@ values and the proofs follow them.
 numerals, names the extractor defines, `+`, `-` (truncated, as on `Nat`),
 `hi20`, `lo12`, and parentheses. It extends as far as it can, so the proofs
 always write the form in parentheses, as in `(img% p256GAddress + 0x20)`.
-The kernel sees the same literal that the proof would have written by hand,
-so naming an address changes neither what is proved nor how fast it checks,
-and `rw`, `simp`, `omega`, and `decide` treat it as the literal they always
-did.
+The kernel sees the literal that the proof would have written by hand, so
+naming an address changes neither what is proved nor what the kernel checks,
+and `rw`, `simp`, `omega`, and `decide` treat it as that literal.
 
 Each image file ends with a table of its names and an `imgVal%` rule that
-looks a name up in it. A macro keeps this file and
-the image files free of `import Lean`, which would add about a gigabyte to
-every module's imports.
+looks a name up in it. Macros keep this file and the image files free of
+`import Lean`, which costs every module that imports them about a gigabyte
+of memory.
 -/
 
 namespace C3.Image
