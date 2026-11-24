@@ -398,7 +398,7 @@ theorem RfcInv.move {m : Machine} {Ms : Word → BitVec 8} {G H out q : Word} {L
     r9 := by rw [s.regs]; exact I.r9, r18 := by rw [s.regs]; exact I.r18,
     kk := fun r hr => by rw [s.regs]; exact I.kk r hr }
 
-theorem rfc_wsub (a d : Nat) (c : Word) (hc : c.toNat = 2 ^ 32 - d) (h1 : d ≤ a) (h2 : a < 2 ^ 32) (h3 : 0 < d) :
+theorem rfc_wsub (a d : Nat) (c : Word) (hc : c.toNat = 2 ^ 32 - d) (h1 : d ≤ a) (h2 : a < 2 ^ 32) :
     aluEval .add (BitVec.ofNat 32 a) c = BitVec.ofNat 32 (a - d) := by
   apply BitVec.eq_of_toNat_eq; rw [dn_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat, hc]; omega
 
@@ -831,14 +831,14 @@ theorem timeRfc3339_correct (m : Machine) {sp0 out p retAddr : Word} {n : Nat}
       rw [s1v, rfc_addk _ _ 3 (3 : Word) rfl, show 3 * k + 3 = 3 * (k + 1) by omega]
     have v15 : (runBlock rfcL2 (Mt, reg n4)).2 a5 = BitVec.ofNat 32 (L - 3 * (k + 1)) := by
       simp +decide only [runBlock, BInstr.run, rfcL2, upd_app, ↓reduceIte]
-      rw [r4, K3 a5 (by decide), I.ra5, rfc_wsub (L - 3 * k) 3 0xFFFFFFFD rfl (by omega) (by omega) (by omega),
+      rw [r4, K3 a5 (by decide), I.ra5, rfc_wsub (L - 3 * k) 3 0xFFFFFFFD rfl (by omega) (by omega),
         show L - 3 * k - 3 = L - 3 * (k + 1) by omega]
     have v10 : (runBlock rfcL2 (Mt, reg n4)).2 a0 = G + BitVec.ofNat 32 (0x28 + (k + 1)) := by
       simp +decide only [runBlock, BInstr.run, rfcL2, upd_app, ↓reduceIte]
       rw [r4, K3 a0 (by decide), I.ra0, rfc_addk _ _ 1 (1 : Word) rfl, Nat.add_assoc]
     have v12 : (runBlock rfcL2 (Mt, reg n4)).2 a2 = BitVec.ofNat 32 (10 - 2 * (k + 1)) := by
       simp +decide only [runBlock, BInstr.run, rfcL2, upd_app, ↓reduceIte]
-      rw [r4, K3 a2 (by decide), I.ra2, rfc_wsub (10 - 2 * k) 2 0xFFFFFFFE rfl (by omega) (by omega) (by omega),
+      rw [r4, K3 a2 (by decide), I.ra2, rfc_wsub (10 - 2 * k) 2 0xFFFFFFFE rfl (by omega) (by omega),
         show 10 - 2 * k - 2 = 10 - 2 * (k + 1) by omega]
     have v13 : (runBlock rfcL2 (Mt, reg n4)).2 a3 = G + BitVec.ofNat 32 (0xC + 2 * (k + 1)) := by
       simp +decide only [runBlock, BInstr.run, rfcL2, upd_app, ↓reduceIte]
@@ -1335,7 +1335,7 @@ theorem timeRfc3339_correct (m : Machine) {sp0 out p retAddr : Word} {n : Nat}
     simp +decide only [R19, runBlock, BInstr.run, rfcE, upd_app, ↓reduceIte]
     simp only [add_lit_zero]
     rw [sp18, s1_18, bz, e20, e24, tlo, thi, u18.regs, k17 18 (by decide), kk14 18 (by decide), I5.r18]
-    exact ⟨rfl, rfl, rfl, rfl, rfc_wsub L 16 _ rfl hL16 (by omega) (by decide)⟩
+    exact ⟨rfl, rfl, rfl, rfl, rfc_wsub L 16 _ rfl hL16 (by omega)⟩
   obtain ⟨v19a2, v19a1, v19s4, v19s3, v19a0⟩ := v19
   have k19 : ∀ r, r.val ∈ [2, 3, 4, 9, 18, 21, 22, 23, 24, 25, 26, 27] → reg m19 r = reg m14 r := fun r hr => by
     have hd' : r ∉ rfcE.filterMap BInstr.dst := by
@@ -1407,7 +1407,7 @@ theorem timeRfc3339_correct (m : Machine) {sp0 out p retAddr : Word} {n : Nat}
   have a022 : reg m22 a0 = BitVec.ofNat 32 (L - 17) := by
     rw [u22.regs]; simp +decide only [upd_app, ↓reduceIte]
     rw [u21.regs, u20.regs, k19 18 (by decide), kk14 18 (by decide), I5.r18]
-    exact rfc_wsub L 17 _ rfl (by omega) (by omega) (by decide)
+    exact rfc_wsub L 17 _ rfl (by omega) (by omega)
   have k22 : ∀ r, r ≠ a0 → reg m22 r = reg m19 r := fun r hr => by
     rw [u22.regs, upd_ne' hr u21.self.zero, u21.regs, u20.regs]
   have pre22 : Steps m m22 := pre20.trans (.cons d21 (.single d22))
@@ -1419,6 +1419,127 @@ theorem timeRfc3339_correct (m : Machine) {sp0 out p retAddr : Word} {n : Nat}
       (fun h => by rcases h with ⟨h, _⟩ | ⟨h, _⟩ <;> omega)
   obtain ⟨m23, d23, u23⟩ := u22.self.notTaken hc14 0xF6 rfc_at_f4 (by decide) (by
     rw [a022, u22.self.zero, dn_beq0 _ (by omega)]; exact decide_eq_false hL17)
-  sorry
+  -- 0xF6: the last byte must be `Z`
+  have s1_23 : reg m23 9 = q + BitVec.ofNat 32 15 := by
+    rw [u23.regs, k22 9 (by decide), k19 9 (by decide), kk14 9 (by decide), I5.r9]
+  have a0_23 : reg m23 a0 = BitVec.ofNat 32 (L - 17) := by rw [u23.regs, a022]
+  obtain ⟨m24, c24, u24⟩ := St.block rfcF u23.self hc14 rfcF_end (by simp only [BlockOk, BInstr.ok, rfcF, and_self])
+  have R24 : ∀ r, reg m24 r = (runBlock rfcF (m14.mem, reg m23)).2 r := u24.regs
+  have u24' : St m14.mem RFC m24 0x102 (reg m24) := ⟨u24.pc, by rw [u24.mem]; rfl, fun _ => rfl⟩
+  have eA : BitVec.ofNat 32 (L - 17) + (q + BitVec.ofNat 32 (15 + 1)) = q + BitVec.ofNat 32 (L - 1) := by
+    rw [BitVec.add_comm, add_ofNat_assoc]; congr 2; omega
+  have v24 : reg m24 9 = q + BitVec.ofNat 32 16 ∧ reg m24 a0 = q + BitVec.ofNat 32 (L - 1) ∧
+      reg m24 a1 = aluEval .add ((m.mem (q + BitVec.ofNat 32 (L - 1))).zeroExtend 32) 0xFFFFFFA6 := by
+    simp +decide only [R24, runBlock, BInstr.run, rfcF, upd_app, ↓reduceIte]
+    simp only [ev_add, add_lit_zero]
+    rw [s1_23, a0_23, rfc_add1, eA, hQm I14 _ (by omega)]
+    exact ⟨rfl, rfl, rfl⟩
+  obtain ⟨v24s1, v24a0, v24a1⟩ := v24
+  have k24 : ∀ r, r.val ∈ [2, 3, 4, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m24 r = reg m19 r := fun r hr => by
+    have hd' : r ∉ rfcF.filterMap BInstr.dst := by
+      simp only [rfcF, List.filterMap_cons, List.filterMap_nil, BInstr.dst]; revert hr; revert r; decide
+    rw [R24, runBlock_reg _ _ _ r u23.self.zero hd', u23.regs, k22 r (by revert hr; revert r; decide)]
+  have pre24 : Steps m m24 := pre22.trans (.cons d23 c24)
+  have eLast : q + BitVec.ofNat 32 15 + BitVec.ofNat 32 (L - 15 - 1) = q + BitVec.ofNat 32 (L - 1) := by
+    rw [add_ofNat_assoc]; congr 2; omega
+  by_cases hz : (m.mem (q + BitVec.ofNat 32 (L - 1))).toNat = 0x5A
+  rotate_left
+  · obtain ⟨m25, d25, u25⟩ := u24'.taken hc14 0x120 rfc_at_102 (by decide) (by
+      rw [v24a1, u24'.zero, gnt_isZ, decide_eq_false hz]; rfl)
+    exact bad (pre24.trans (.single d25)) u25.self I14 S14
+      (fun r hr => by rw [u25.regs, k24 r (by revert hr; revert r; decide), k19 r (by revert hr; revert r; decide)])
+      (fun h => by
+        rcases h with ⟨h, _⟩ | ⟨_, _, h, _⟩
+        · omega
+        · rw [eLast] at h; exact hz h)
+  obtain ⟨m25, d25, u25⟩ := u24'.notTaken hc14 0x104 rfc_at_102 (by decide) (by
+    rw [v24a1, u24'.zero, gnt_isZ, decide_eq_true hz]; rfl)
+  -- 0x104: the fraction's iterator at `G + 0x18`, and `all_ascii_digit`
+  have sp25 : reg m25 sp = G := by rw [u25.regs, k24 sp (by decide), k19 sp (by decide), sp14]
+  have s1_25 : reg m25 9 = q + BitVec.ofNat 32 16 := by rw [u25.regs, v24s1]
+  have a0_25 : reg m25 a0 = q + BitVec.ofNat 32 (L - 1) := by rw [u25.regs, v24a0]
+  obtain ⟨m26, c26, u26⟩ := St.block rfcG u25.self hc14 rfcG_end (by
+    simp +decide only [BlockOk, BInstr.ok, BInstr.run, rfcG, and_true]
+    rw [sp25]
+    exact ⟨⟨aligned_add hGa (by decide), sGC (by decide)⟩, aligned_add hGa (by decide), sGC (by decide)⟩)
+  have R26 : ∀ r, reg m26 r = (runBlock rfcG (m14.mem, reg m25)).2 r := u26.regs
+  obtain ⟨Mg, hMg⟩ : ∃ Mg, memStore32 (memStore32 m14.mem (G + 0x18) (q + BitVec.ofNat 32 16)) (G + 0x1C)
+      (q + BitVec.ofNat 32 (L - 1)) = Mg := ⟨_, rfl⟩
+  have eMg : (runBlock rfcG (m14.mem, reg m25)).1 = Mg := by
+    simp +decide only [runBlock, BInstr.run, rfcG]
+    rw [sp25, s1_25, a0_25, ← hMg]
+  have u26' : St Mg RFC m26 0x10A (reg m26) := ⟨u26.pc, by rw [u26.mem, eMg], fun _ => rfl⟩
+  have IMg : ∀ x, Sep H 0x90 x 1 → Mg x = m.mem x := fun x hx => by
+    rw [← hMg, memStore32_get_sep (sGw (o := 0x1C) (by decide) hx), memStore32_get_sep (sGw (o := 0x18) (by decide) hx),
+      I14 x hx]
+  have SMg : ∀ c', 0x74 ≤ c' → c' < 0x90 → Mg (H + BitVec.ofNat 32 c') = Ms (H + BitVec.ofNat 32 c') :=
+    fun c' h1 h2 => by
+      rw [← hMg, memStore32_get_sep (sGv (o := 0x1C) (by decide) h1 h2),
+        memStore32_get_sep (sGv (o := 0x18) (by decide) h1 h2), S14 c' h1 h2]
+  have a026 : reg m26 a0 = G + 0x18 := by
+    rw [R26]; simp +decide only [runBlock, BInstr.run, rfcG, upd_app, ↓reduceIte]; rw [sp25]; rfl
+  have k26 : ∀ r, r ≠ a0 → reg m26 r = reg m25 r := fun r hr => by
+    have hd' : r ∉ rfcG.filterMap BInstr.dst := by
+      simp only [rfcG, List.filterMap_cons, List.filterMap_nil, BInstr.dst, List.mem_cons, List.mem_nil_iff,
+        or_false]; exact hr
+    rw [R26, runBlock_reg _ _ _ r u25.self.zero hd']
+  obtain ⟨m27, c27, pc27, mem27, regs27⟩ := u26'.callRa (cdR IMg) rfc_at_10a rfc_at_10e (cb := AAD) (by decide)
+    (by decide)
+  have r27 := PEnv.reg1 regs27 u26'.zero
+  have hAADn : AAD.toNat = (img% allAsciiDigitAddress) := by decide
+  have e1C : G + 0x18 + 4 = G + 0x1C := by rw [BitVec.add_assoc]; rfl
+  have sIP : Sep (G + 0x18) 4 (q + BitVec.ofNat 32 16) (L - 17) := by
+    rw [show G + 0x18 = H + BitVec.ofNat 32 0x48 from eGk 0x18]
+    exact (sQH.sub (c := 16) (l := L - 17) (by omega)).symm.sub (c := 0x48) (l := 4) (by omega)
+  obtain ⟨m28, c28, pc28, a028, K28, F28⟩ := allAsciiDigit_correct m27 (base := AAD) (it := G + 0x18)
+    (p := q + BitVec.ofNat 32 16) (L := L - 17) (retAddr := RFC + BitVec.ofNat 32 (0x10A + 8)) (by decide)
+    (by rw [mem27]; exact cd hcA (by rw [hAADn]; decide) (by rw [hAADn]; decide) IMg) pc27
+    (by rw [r27 a0 (by decide), a026]) (aligned_add hGa (by decide))
+    (by rw [mem27, ← hMg, memLoad32_store32_sep (sGG (o := 0x1C) (o' := 0x18) (by decide) (by decide) (by decide)),
+      memLoad32_store32_same])
+    (by rw [mem27, e1C, ← hMg, memLoad32_store32_same, add_ofNat_assoc]; congr 2; omega) (by omega)
+    (sGX (o := 0x18) (l := 4) (by decide) (by rw [hAADn]; decide) (by rw [hAADn]; decide)) sIP
+    (by rw [regs27]; simp +decide only [upd_app, ↓reduceIte]) (even_clear _ (even_at RFC (by decide) _ (by decide)))
+  rw [mem27, dn_memBytes_eq (hQm IMg) (c := 16) (l := L - 17) (by omega)] at a028
+  rw [mem27] at F28
+  have IM28 : ∀ x, Sep H 0x90 x 1 → m28.mem x = m.mem x := fun x hx => by
+    rw [F28 x (sGw (o := 0x18) (by decide) hx), IMg x hx]
+  have SM28 : ∀ c', 0x74 ≤ c' → c' < 0x90 → m28.mem (H + BitVec.ofNat 32 c') = Ms (H + BitVec.ofNat 32 c') :=
+    fun c' h1 h2 => by rw [F28 _ (sGv (o := 0x18) (by decide) h1 h2), SMg c' h1 h2]
+  have hc28 := cdR IM28
+  have u28 : St m28.mem RFC m28 0x112 (reg m28) := ⟨by rw [pc28], rfl, fun _ => rfl⟩
+  have k28 : ∀ r, r.val ∈ [2, 3, 4, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m28 r = reg m19 r := fun r hr => by
+    rw [K28 r (by revert hr; revert r; decide), r27 r (by revert hr; revert r; decide),
+      k26 r (by revert hr; revert r; decide), u25.regs, k24 r hr]
+  have pre28 : Steps m m28 := pre24.trans (.cons d25 (c26.trans (c27.trans c28)))
+  have hdig : (memBytes m.mem (q + BitVec.ofNat 32 16) (L - 17)).all (fun d => 48 ≤ d && d ≤ 57) = true ↔
+      ∀ i, i < L - 15 - 2 → 48 ≤ (m.mem (q + BitVec.ofNat 32 15 + BitVec.ofNat 32 (1 + i))).toNat ∧
+        (m.mem (q + BitVec.ofNat 32 15 + BitVec.ofNat 32 (1 + i))).toNat ≤ 57 := by
+    rw [memBytes_all]
+    have e : ∀ i, q + BitVec.ofNat 32 15 + BitVec.ofNat 32 (1 + i) = q + BitVec.ofNat 32 16 + BitVec.ofNat 32 i :=
+      fun i => by rw [add_ofNat_assoc, add_ofNat_assoc]; congr 2; omega
+    simp only [e, Bool.and_eq_true, decide_eq_true_eq, show L - 15 - 2 = L - 17 by omega]
+  by_cases hall : (memBytes m.mem (q + BitVec.ofNat 32 16) (L - 17)).all (fun d => 48 ≤ d && d ≤ 57) = true
+  · rw [if_pos hall] at a028
+    obtain ⟨m29, d29, u29⟩ := u28.notTaken hc28 0x114 rfc_at_112 (by decide) (by rw [a028, u28.zero]; rfl)
+    obtain ⟨m30, d30, u30⟩ := u29.self.aluImm hc28 rfc_at_114 (off' := 0x116) (by decide)
+    have k30 : ∀ r, r ≠ a0 → reg m30 r = reg m28 r := fun r hr => by
+      rw [u30.regs, upd_ne' hr u29.self.zero, u29.regs]
+    exact good (pre28.trans (.cons d29 (.single d30))) u30.self IM28 SM28
+      (fun r hr => by
+        rw [k30 r (by revert hr; revert r; decide), k28 r (by revert hr; revert r; decide),
+          k19 r (by revert hr; revert r; decide)])
+      (by rw [u30.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [u29.self.zero]; rfl)
+      (by rw [k30 20 (by decide), k28 20 (by decide), v19s4]) (by rw [k30 19 (by decide), k28 19 (by decide), v19s3])
+      (.inr ⟨by omega, hdot, by rw [eLast]; exact hz, hdig.mp hall⟩)
+  · rw [if_neg hall] at a028
+    obtain ⟨m29, d29, u29⟩ := u28.taken hc28 0x120 rfc_at_112 (by decide) (by rw [a028, u28.zero]; rfl)
+    exact bad (pre28.trans (.single d29)) u29.self IM28 SM28
+      (fun r hr => by
+        rw [u29.regs, k28 r (by revert hr; revert r; decide), k19 r (by revert hr; revert r; decide)])
+      (fun h => by
+        rcases h with ⟨h, _⟩ | ⟨_, _, _, h⟩
+        · omega
+        · exact hall (hdig.mpr h))
 
 end C3.RV32
