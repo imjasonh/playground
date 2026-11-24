@@ -9,8 +9,7 @@ use crate::reader::Reader;
 pub const MANIFEST_LEN: usize = 32;
 /// The manifest format version.
 pub const VERSION: u16 = 2;
-/// The longest TUF part the bootloader reads.
-pub const MAX_TUF_LEN: u32 = 24_576;
+pub use crate::tuf::MAX_TUF_LEN;
 
 /// A region inside a slot, as an offset and a length.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,8 +48,8 @@ const MAX_IMAGE_LEN: u32 = 0x1D_0000;
 /// The smallest bundle container: the header, six length prefixes, and the
 /// minimum length of each field.
 const MIN_BUNDLE_LEN: u32 = 49;
-/// The smallest TUF part: the header with no roots and two one-byte
-/// documents.
+/// The smallest TUF part: the header, an index with no roots, and two
+/// one-byte documents.
 const MIN_TUF_LEN: u32 = 18;
 
 fn part(r: &mut Reader<'_>, min: u32, max: u32) -> Result<Part, Error> {

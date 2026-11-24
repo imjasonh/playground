@@ -50,10 +50,20 @@ fuzz_target!(|data: &[u8]| {
         }
         return;
     }
-    let Ok(parts) = c3_verify::tuf::parse_parts(rest) else {
+    let Ok(len) = u32::try_from(rest.len()) else {
         return;
     };
-    let _ = c3_verify::tuf::verify(PINNED, &parts);
-    let mut buf = vec![0u8; c3_verify::trusted_root::buffer_len(parts.trusted_root.len())];
-    let _ = c3_verify::trusted_root::extract(parts.trusted_root, POLICY, &mut buf);
+    let Ok(index) = c3_verify::tuf::read_index(&mut &rest[..], len) else {
+        return;
+    };
+    let mut doc = vec![0u8; c3_verify::tuf::MAX_DOC_LEN as usize];
+    let _ = c3_verify::tuf::verify(PINNED, &mut &rest[..], len, &mut doc);
+    let Ok((offset, len)) = index.doc(index.roots() + 1) else {
+        return;
+    };
+    let Some(trusted_root) = rest.get(offset as usize..(offset + len) as usize) else {
+        return;
+    };
+    let mut buf = vec![0u8; c3_verify::trusted_root::buffer_len(trusted_root.len())];
+    let _ = c3_verify::trusted_root::extract(trusted_root, POLICY, &mut buf);
 });

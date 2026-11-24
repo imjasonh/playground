@@ -223,11 +223,18 @@ fn manifest(rng: &mut Rng) -> Vec<u8> {
     let bundle_off = 0x1_0000 + image_len + rng.below(8) as u32;
     let bundle_len = 49 + rng.below(16_000) as u32;
     let tuf_off = bundle_off + bundle_len + rng.below(8) as u32;
-    let tuf_len = 18 + rng.below(24_000) as u32;
+    let tuf_len = 18 + rng.below(0x6_0000) as u32;
     let mut fields = [
         0x1_0000, image_len, bundle_off, bundle_len, tuf_off, tuf_len,
     ];
-    let bounds = [37, 0x1D_0000, 49, 16_384, 18, 24_576];
+    let bounds = [
+        37,
+        0x1D_0000,
+        49,
+        16_384,
+        18,
+        c3_verify::manifest::MAX_TUF_LEN,
+    ];
     if rng.chance(50) {
         let i = rng.below(6) as usize;
         fields[i] = if i % 2 == 1 && rng.chance(50) {

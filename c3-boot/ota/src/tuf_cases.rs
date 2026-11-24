@@ -590,6 +590,21 @@ impl Synth {
         self.sign(&self.v2(), &[0, 2, 3, 7])
     }
 
+    /// Root `v` with root keys 2, 3, and 6, signed by `ids`, padded with an
+    /// extra `signed` member to exactly `len` bytes.
+    fn padded_root(&self, v: u64, ids: &[usize], len: usize) -> Vec<u8> {
+        let mut signed = self.root_value(v, &[2, 3, 6], 2);
+        let mut pad = 0usize;
+        loop {
+            signed["pad"] = json!("x".repeat(pad));
+            let doc = self.sign(&signed, ids);
+            if doc.len() == len {
+                return doc;
+            }
+            pad = (pad + len).checked_sub(doc.len()).expect("room to pad");
+        }
+    }
+
     fn tuf(&self, roots: Vec<Vec<u8>>, targets: Vec<u8>) -> Input {
         Input::Tuf {
             pinned: self.pinned(),
@@ -891,48 +906,97 @@ fn synthetic_cases(cases: &mut Vec<Case>) {
         false,
     );
 
-    let too_many: Vec<Vec<u8>> = (2..=34)
-        .map(|v| s.sign(&s.root_value(v, &[0, 1, 2], 2), &[0, 1, 2]))
-        .collect();
+    // Long chains rotate to Ed25519 root keys 2, 3, and 6 so that only the
+    // first new root needs an ECDSA signature.
+    let chain = |n: u64| -> Vec<Vec<u8>> {
+        (2..n + 2)
+            .map(|v| s.sign(&s.root_value(v, &[2, 3, 6], 2), long_signers(v)))
+            .collect()
+    };
+    let max = c3_verify::tuf::MAX_ROOTS as u64;
+    add("forty_roots", s.tuf(chain(40), s.targets()), true);
     add(
-        "thirty_three_roots",
-        s.tuf(too_many.clone(), s.targets()),
+        &format!("roots_{max}"),
+        s.tuf(chain(max), s.targets()),
+        true,
+    );
+    add(
+        &format!("roots_{}", max + 1),
+        s.tuf(chain(max + 1), s.targets()),
         false,
     );
-    let max = too_many[..32].to_vec();
-    add("thirty_two_roots", s.tuf(max, s.targets()), true);
+
+    let max_doc = c3_verify::tuf::MAX_DOC_LEN as usize;
+    let padded = |n: u64, len: usize| -> Vec<Vec<u8>> {
+        (2..n + 2)
+            .map(|v| s.padded_root(v, long_signers(v), len))
+            .collect()
+    };
+    add(
+        "root_at_doc_limit",
+        s.tuf(padded(1, max_doc), s.targets()),
+        true,
+    );
+    add(
+        "root_over_doc_limit",
+        s.tuf(padded(1, max_doc + 1), s.targets()),
+        false,
+    );
+    // 37 roots of the longest length fit in a TUF part, and 38 don't.
+    add(
+        "part_at_size_limit",
+        s.tuf(padded(37, max_doc), s.targets()),
+        true,
+    );
+    add(
+        "part_over_size_limit",
+        s.tuf(padded(38, max_doc), s.targets()),
+        false,
+    );
 
     let good = container(&[s.good_v2()], &s.targets(), &s.trusted);
+    let mut edits: Vec<(&str, Vec<u8>)> = Vec::new();
     let mut short = good.clone();
     short.pop();
-    add(
-        "container_truncated",
-        Input::Tuf {
-            pinned: s.pinned(),
-            tuf: short,
-        },
-        false,
-    );
+    edits.push(("container_truncated", short));
     let mut trailing = good.clone();
     trailing.push(0);
-    add(
-        "container_trailing",
-        Input::Tuf {
-            pinned: s.pinned(),
-            tuf: trailing,
-        },
-        false,
-    );
-    let mut magic = good;
+    edits.push(("container_trailing", trailing));
+    let mut magic = good.clone();
     magic[0] = b'X';
-    add(
-        "container_magic",
-        Input::Tuf {
-            pinned: s.pinned(),
-            tuf: magic,
-        },
-        false,
-    );
+    edits.push(("container_magic", magic));
+    let mut version = good.clone();
+    version[4] = 1;
+    edits.push(("container_version_1", version));
+    let mut empty = good.clone();
+    empty[8..12].copy_from_slice(&0u32.to_le_bytes());
+    edits.push(("container_empty_document", empty));
+    // Moving a byte from the root to `targets.json` keeps the total length.
+    let mut shifted = good.clone();
+    let root_len = u32::from_le_bytes(shifted[8..12].try_into().expect("4 bytes"));
+    let targets_len = u32::from_le_bytes(shifted[12..16].try_into().expect("4 bytes"));
+    shifted[8..12].copy_from_slice(&(root_len - 1).to_le_bytes());
+    shifted[12..16].copy_from_slice(&(targets_len + 1).to_le_bytes());
+    edits.push(("container_shifted_index", shifted));
+    let mut count = good;
+    count[6..8].copy_from_slice(&0u16.to_le_bytes());
+    edits.push(("container_wrong_count", count));
+    for (name, tuf) in edits {
+        add(
+            name,
+            Input::Tuf {
+                pinned: s.pinned(),
+                tuf,
+            },
+            false,
+        );
+    }
+}
+
+/// The keys that sign root `v` of a long chain: a threshold of the pinned
+/// root's keys 0, 1, and 2 for version 2, and keys 2 and 3 after it.
+fn long_signers(v: u64) -> &'static [usize] {
+    if v == 2 { &[0, 2, 3] } else { &[2, 3] }
 }
 
 fn accept_cases(cases: &mut Vec<Case>) {

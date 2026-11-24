@@ -104,14 +104,14 @@ def parseMeta (doc kind : Bytes) : Option Meta := do
 
 /-- `tuf::threshold_met`: whether at least the threshold of distinct keys
 that `delegator`, a root's `signed` value, lists for `role` signed `md`, the metadata.
-A role lists at most 8 keys. -/
+A role lists at most 8 key IDs of at most 64 bytes. -/
 def thresholdMet (md : Meta) (delegator : Json) (role : Bytes) : Option Bool := do
   let r ← delegator.field (ascii!"roles") >>= Json.field role
   let threshold ← r.field (ascii!"threshold") >>= Json.asNum
   require (threshold ≥ 1)
   let keys ← delegator.field (ascii!"keys") >>= Json.asObj
   let ids ← (← r.field (ascii!"keyids") >>= Json.asArr).mapM Json.asStr
-  require (ids.length ≤ 8)
+  require (ids.length ≤ 8 && ids.all (·.length ≤ 64))
   let msg := encode md.signed
   let good := ids.filterMap fun id => do
     let key ← keys.lookup id >>= decodeKey
@@ -161,29 +161,45 @@ structure TufParts where
   targets : Bytes
   trustedRoot : Bytes
 
-def readDoc (bytes : Bytes) : Option (Bytes × Bytes) := do
-  let (len, rest) ← readU32 bytes
-  require (1 ≤ len && len ≤ 0x10000 && len ≤ rest.length)
-  pure (rest.take len, rest.drop len)
+/-- `tuf::MAX_ROOTS`, `tuf::MAX_DOC_LEN`, and `tuf::MAX_TUF_LEN`. -/
+def maxRoots : Nat := 64
+def maxDocLen : Nat := 10240
+def maxTufLen : Nat := 0x60000
 
-def readDocs : Nat → Bytes → Option (List Bytes × Bytes)
+/-- The index: `n` lengths of 4 bytes, each from 1 to `maxDocLen`. -/
+def readLengths : Nat → Bytes → Option (List Nat × Bytes)
   | 0, bytes => some ([], bytes)
   | n + 1, bytes => do
-    let (doc, rest) ← readDoc bytes
-    let (docs, rest) ← readDocs n rest
-    pure (doc :: docs, rest)
+    let (len, rest) ← readU32 bytes
+    require (1 ≤ len && len ≤ maxDocLen)
+    let (lens, rest) ← readLengths n rest
+    pure (len :: lens, rest)
 
-/-- `tuf::parse_parts`: the magic `C3TU`, version 1, at most 32 roots, then
-`targets.json` and `trusted_root.json`. -/
+/-- Splits documents of the given lengths off the front of `bytes`. -/
+def splitDocs : List Nat → Bytes → Option (List Bytes × Bytes)
+  | [], bytes => some ([], bytes)
+  | len :: lens, bytes => do
+    require (len ≤ bytes.length)
+    let (docs, rest) ← splitDocs lens (bytes.drop len)
+    pure (bytes.take len :: docs, rest)
+
+/-- `tuf::read_index` and the documents it locates: at most `maxTufLen`
+bytes, the magic `C3TU`, version 2, at most 64 roots, an index of each
+root's, `targets.json`'s, and `trusted_root.json`'s length, then those
+documents with nothing after them. -/
 def decodeTufParts (bytes : Bytes) : Option TufParts := do
-  let rest ← readHeader (ascii!"C3TU") bytes
+  require (bytes.length ≤ maxTufLen)
+  let rest ← readExpect (ascii!"C3TU") bytes
+  let (version, rest) ← readU16 rest
+  require (version == 2)
   let (count, rest) ← readU16 rest
-  require (count ≤ 32)
-  let (roots, rest) ← readDocs count rest
-  let (targets, rest) ← readDoc rest
-  let (trustedRoot, rest) ← readDoc rest
+  require (count ≤ maxRoots)
+  let (lens, rest) ← readLengths (count + 2) rest
+  let (docs, rest) ← splitDocs lens rest
   require rest.isEmpty
-  pure ⟨roots, targets, trustedRoot⟩
+  match docs.reverse with
+  | trustedRoot :: targets :: roots => pure ⟨roots.reverse, targets, trustedRoot⟩
+  | _ => none
 
 /-- `tuf::verify`: the last root's version and the earlier expiry time. -/
 def verifyTuf (pinned : Bytes) (parts : TufParts) : Option (Nat × Nat) := do

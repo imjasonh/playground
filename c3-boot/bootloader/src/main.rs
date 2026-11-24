@@ -29,7 +29,8 @@ use c3_verify::bootstate::Slot;
 use c3_verify::bootstate::State;
 use c3_verify::image::SegmentKind;
 use c3_verify::layout;
-use c3_verify::manifest::MAX_TUF_LEN;
+use c3_verify::tuf::MAX_DOC_LEN;
+use c3_verify::tuf::Source;
 use c3_verify::tuf::TufError;
 use c3_verify::tuf_slot::Accepted;
 use c3_verify::tuf_slot::TufSlotParts;
@@ -46,10 +47,10 @@ mod pinned {
 
 const MAX_HEADER: usize = 20 + 16 * c3_verify::image::MAX_SEGMENTS;
 const MAX_BUNDLE: usize = 16_384;
-const MAX_TUF: usize = MAX_TUF_LEN as usize;
-/// `trusted_root::buffer_len(10_240)`: room for the keys of a
-/// `trusted_root.json` of up to 10,240 bytes.
-const KEYS: usize = 2 * 10_240 + 64;
+const DOC: usize = MAX_DOC_LEN as usize;
+/// `trusted_root::buffer_len(MAX_DOC_LEN)`: room for the keys of the
+/// longest `trusted_root.json`.
+const KEYS: usize = 2 * DOC + 64;
 
 core::arch::global_asm!(
     r#"
@@ -72,13 +73,36 @@ _start:
 );
 
 /// Buffers for one slot's parts. They live on the stack, inside the
-/// bootloader's own memory. `tuf` also holds each chunk of the image while
-/// it is hashed, before the TUF part is read.
+/// bootloader's own memory. `doc` holds each chunk of the image while it is
+/// hashed, then each document of the TUF part in turn.
 struct Buffers {
     header: [u8; MAX_HEADER],
     bundle: [u8; MAX_BUNDLE],
-    tuf: [u8; MAX_TUF],
+    doc: [u8; DOC],
     keys: [u8; KEYS],
+}
+
+/// A slot's TUF part in flash, which `c3-verify` reads one document at a
+/// time.
+#[derive(Clone, Copy)]
+struct FlashPart {
+    addr: u32,
+    length: u32,
+}
+
+impl Source for FlashPart {
+    #[unsafe(link_section = ".text_boot")]
+    fn read(&mut self, offset: u32, out: &mut [u8]) -> bool {
+        let Ok(n) = u32::try_from(out.len()) else {
+            return false;
+        };
+        let in_part = offset.checked_add(n).is_some_and(|end| end <= self.length);
+        in_part
+            && self
+                .addr
+                .checked_add(offset)
+                .is_some_and(|addr| flash::read(addr, out))
+    }
 }
 
 #[unsafe(link_section = ".text_boot")]
@@ -140,6 +164,7 @@ fn reason(e: TufError) -> u32 {
         TufError::Threshold => 0x103,
         TufError::Target => 0x104,
         TufError::Expired => 0x105,
+        TufError::Read => 0x106,
         TufError::Check(e) => e as u32,
     }
 }
@@ -164,8 +189,8 @@ fn check_slot(slot: Slot, efuse_level: u8, b: &mut Buffers) -> Option<(Accepted,
     let mut hasher = c3_crypto::Sha256::new();
     let mut done = 0u32;
     while done < m.image.length {
-        let n = (m.image.length - done).min(MAX_TUF as u32);
-        let chunk = b.tuf.get_mut(..n as usize)?;
+        let n = (m.image.length - done).min(DOC as u32);
+        let chunk = b.doc.get_mut(..n as usize)?;
         if !flash::read(image_flash.checked_add(done)?, chunk) {
             return None;
         }
@@ -175,19 +200,24 @@ fn check_slot(slot: Slot, efuse_level: u8, b: &mut Buffers) -> Option<(Accepted,
     let image_digest = hasher.finish();
 
     let bundle = read_part(base, m.bundle, &mut b.bundle)?;
-    let tuf = read_part(base, m.tuf, &mut b.tuf)?;
+    let tuf = FlashPart {
+        addr: base.checked_add(m.tuf.offset)?,
+        length: m.tuf.length,
+    };
     let parts = TufSlotParts {
         image_header: b.header.get(..header_len)?,
         image_length: m.image.length,
         image_digest,
         bundle,
         tuf,
+        tuf_length: m.tuf.length,
     };
     match c3_verify::tuf_slot::accept_slot(
-        &parts,
+        parts,
         &pinned::ROOT,
         &pinned::POLICY,
         efuse_level,
+        &mut b.doc,
         &mut b.keys,
     ) {
         Ok(accepted) => Some((accepted, image_flash)),
@@ -309,7 +339,7 @@ extern "C" fn boot_main() -> ! {
     let mut buffers = Buffers {
         header: [0; MAX_HEADER],
         bundle: [0; MAX_BUNDLE],
-        tuf: [0; MAX_TUF],
+        doc: [0; DOC],
         keys: [0; KEYS],
     };
     let outcome = decide(

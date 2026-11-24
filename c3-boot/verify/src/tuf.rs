@@ -43,6 +43,8 @@ pub enum TufError {
     Target,
     /// The signed time is after the root or targets metadata expired.
     Expired,
+    /// The TUF part couldn't be read from where it's stored.
+    Read,
     /// A check shared with the other slot formats failed.
     Check(Error),
 }
@@ -55,12 +57,21 @@ impl From<Error> for TufError {
 
 /// The most keys a role can list.
 pub const MAX_ROLE_KEYS: usize = 8;
+/// The longest key ID a role can list.
+pub const MAX_KEYID_LEN: usize = 64;
 /// The most new roots one slot can carry.
-pub const MAX_ROOTS: usize = 32;
-/// The longest metadata document or `trusted_root.json`.
-pub const MAX_DOC_LEN: u32 = 0x1_0000;
+pub const MAX_ROOTS: usize = 64;
+/// The longest document in the TUF part: a root, `targets.json`, or
+/// `trusted_root.json`.
+pub const MAX_DOC_LEN: u32 = 10_240;
+/// The longest TUF part: room for [`MAX_ROOTS`] roots of 5,600 bytes and
+/// the other documents, rounded up to a 64 KiB multiple.
+pub const MAX_TUF_LEN: u32 = 0x6_0000;
 /// The magic number of the TUF part of a slot.
 pub const TUF_MAGIC: &[u8; 4] = b"C3TU";
+const TUF_VERSION: u16 = 2;
+/// The length of the TUF part's header: the magic, version, and root count.
+const HEADER_LEN: u32 = 8;
 /// The target that holds Sigstore's trusted root.
 pub const TRUSTED_ROOT_TARGET: &[u8] = b"trusted_root.json";
 
@@ -244,48 +255,96 @@ pub fn parse_metadata<'a>(doc: &'a [u8], kind: &[u8]) -> Result<Metadata<'a>, Tu
     Ok(Metadata { signed, signatures })
 }
 
+/// A role's threshold and keys, read from a root so that later checks don't
+/// need the root's bytes.
+#[derive(Clone, Copy, Debug)]
+pub struct RoleKeys {
+    threshold: u64,
+    listed: usize,
+    ids: [[u8; MAX_KEYID_LEN]; MAX_ROLE_KEYS],
+    id_lens: [usize; MAX_ROLE_KEYS],
+    /// Each listed key, or `None` if it doesn't decode.
+    keys: [Option<Key>; MAX_ROLE_KEYS],
+}
+
+impl RoleKeys {
+    /// Reads `role` from `root`, a root's `signed` object. A role lists at
+    /// most [`MAX_ROLE_KEYS`] key IDs of at most [`MAX_KEYID_LEN`] bytes, and
+    /// its threshold is at least 1.
+    pub fn read(root: Value<'_>, role: &[u8]) -> Result<Self, TufError> {
+        let role = root.field(b"roles")?.field(role)?;
+        let threshold = role.field(b"threshold")?.u64()?;
+        if threshold == 0 {
+            return Err(TufError::Schema);
+        }
+        let keys = root.field(b"keys")?;
+        keys.members()?;
+        let mut out = RoleKeys {
+            threshold,
+            listed: 0,
+            ids: [[0; MAX_KEYID_LEN]; MAX_ROLE_KEYS],
+            id_lens: [0; MAX_ROLE_KEYS],
+            keys: [None; MAX_ROLE_KEYS],
+        };
+        let mut ids = role.field(b"keyids")?.elements()?;
+        while let Some(id) = ids.next_element()? {
+            let id = id.str()?;
+            let i = out.listed;
+            let dst = out.ids.get_mut(i).ok_or(TufError::Schema)?;
+            dst.get_mut(..id.len())
+                .ok_or(TufError::Schema)?
+                .copy_from_slice(id);
+            *out.id_lens.get_mut(i).ok_or(TufError::Schema)? = id.len();
+            *out.keys.get_mut(i).ok_or(TufError::Schema)? = keys.get(id)?.and_then(decode_key);
+            out.listed = i.checked_add(1).ok_or(TufError::Schema)?;
+        }
+        Ok(out)
+    }
+
+    /// Reports whether at least the threshold of distinct listed keys signed
+    /// `meta`. A listed key counts when it decodes, `meta` has a signature
+    /// with its key ID, and that signature verifies over the `signed` bytes.
+    /// Keys with equal values count once.
+    pub fn met(&self, meta: &Metadata<'_>) -> Result<bool, TufError> {
+        let message = meta.signed.bytes();
+        let mut counted = [0usize; MAX_ROLE_KEYS];
+        let mut count = 0usize;
+        for i in 0..self.listed {
+            let Some(Some(key)) = self.keys.get(i) else {
+                continue;
+            };
+            let len = self.id_lens.get(i).copied().unwrap_or(0);
+            let id = self
+                .ids
+                .get(i)
+                .and_then(|id| id.get(..len))
+                .ok_or(TufError::Schema)?;
+            let Some(sig) = meta.signature(id)? else {
+                continue;
+            };
+            let seen = counted
+                .get(..count)
+                .ok_or(TufError::Schema)?
+                .iter()
+                .any(|&j| self.keys.get(j) == Some(&Some(*key)));
+            if seen || !signature_valid(key, message, sig) {
+                continue;
+            }
+            *counted.get_mut(count).ok_or(TufError::Schema)? = i;
+            count = count.checked_add(1).ok_or(TufError::Schema)?;
+        }
+        Ok(u64::try_from(count).map_err(|_| TufError::Schema)? >= self.threshold)
+    }
+}
+
 /// Reports whether `meta` is signed by at least the threshold of distinct
-/// keys that `delegator` lists for `role`.
-///
-/// `delegator` is a root's `signed` object. A listed key counts when it
-/// decodes, `meta` has a signature with its key ID, and that signature
-/// verifies over the `signed` bytes. Keys with equal values count once.
+/// keys that `delegator`, a root's `signed` object, lists for `role`.
 pub fn threshold_met(
     meta: &Metadata<'_>,
     delegator: Value<'_>,
     role: &[u8],
 ) -> Result<bool, TufError> {
-    let role = delegator.field(b"roles")?.field(role)?;
-    let threshold = role.field(b"threshold")?.u64()?;
-    if threshold == 0 {
-        return Err(TufError::Schema);
-    }
-    let keys = delegator.field(b"keys")?;
-    keys.members()?;
-    let message = meta.signed.bytes();
-    let mut counted: [Option<Key>; MAX_ROLE_KEYS] = [None; MAX_ROLE_KEYS];
-    let mut count = 0usize;
-    let mut listed = 0usize;
-    let mut ids = role.field(b"keyids")?.elements()?;
-    while let Some(id) = ids.next_element()? {
-        let id = id.str()?;
-        listed = listed.checked_add(1).ok_or(TufError::Schema)?;
-        if listed > MAX_ROLE_KEYS {
-            return Err(TufError::Schema);
-        }
-        let Some(key) = keys.get(id)?.and_then(decode_key) else {
-            continue;
-        };
-        let Some(sig) = meta.signature(id)? else {
-            continue;
-        };
-        if counted.contains(&Some(key)) || !signature_valid(&key, message, sig) {
-            continue;
-        }
-        *counted.get_mut(count).ok_or(TufError::Schema)? = Some(key);
-        count = count.checked_add(1).ok_or(TufError::Schema)?;
-    }
-    Ok(u64::try_from(count).map_err(|_| TufError::Schema)? >= threshold)
+    RoleKeys::read(delegator, role)?.met(meta)
 }
 
 /// A root whose structure has been checked.
@@ -307,72 +366,135 @@ pub fn parse_root(doc: &[u8]) -> Result<Root<'_>, TufError> {
     Ok(Root { meta, version })
 }
 
-/// The TUF part of a slot: the new roots in order, `targets.json`, and
-/// `trusted_root.json`.
-#[derive(Clone, Copy, Debug)]
-pub struct TufParts<'a> {
-    roots: &'a [u8],
-    root_count: usize,
-    /// `targets.json`, canonical JSON.
-    pub targets: &'a [u8],
-    /// `trusted_root.json`, as Sigstore publishes it.
-    pub trusted_root: &'a [u8],
+/// Where the verifier reads a slot's TUF part from.
+pub trait Source {
+    /// Fills `out` with the bytes that start `offset` bytes into the TUF
+    /// part, or returns `false` if they can't be read.
+    fn read(&mut self, offset: u32, out: &mut [u8]) -> bool;
 }
 
-fn read_doc<'a>(r: &mut Reader<'a>) -> Result<&'a [u8], Error> {
-    let len = r.u32()?;
-    if len == 0 || len > MAX_DOC_LEN {
-        return Err(Error::OutOfRange);
-    }
-    r.bytes(usize::try_from(len).map_err(|_| Error::Overflow)?)
-}
-
-/// Parses the TUF part of a slot: the magic `C3TU`, version 1, the number
-/// of roots as a 2-byte count, then each root, `targets.json`, and
-/// `trusted_root.json`, each with a 4-byte length. Integers are little
-/// endian.
-pub fn parse_parts(bytes: &[u8]) -> Result<TufParts<'_>, Error> {
-    let mut r = Reader::new(bytes);
-    r.magic(TUF_MAGIC)?;
-    r.version_1()?;
-    let root_count = usize::from(r.u16()?);
-    if root_count > MAX_ROOTS {
-        return Err(Error::OutOfRange);
-    }
-    let start = r.position();
-    for _ in 0..root_count {
-        read_doc(&mut r)?;
-    }
-    let roots = r.since(start)?;
-    let targets = read_doc(&mut r)?;
-    let trusted_root = read_doc(&mut r)?;
-    r.finish()?;
-    Ok(TufParts {
-        roots,
-        root_count,
-        targets,
-        trusted_root,
-    })
-}
-
-/// Follows the root chain from the pinned root through each new root in
-/// `parts`, and returns the last one.
-pub fn verify_roots<'a>(pinned: &'a [u8], parts: &TufParts<'a>) -> Result<Root<'a>, TufError> {
-    let mut trusted = parse_root(pinned)?;
-    let mut r = Reader::new(parts.roots);
-    for _ in 0..parts.root_count {
-        let next = parse_root(read_doc(&mut r)?)?;
-        if Some(next.version) != trusted.version.checked_add(1) {
-            return Err(TufError::Version);
-        }
-        if !threshold_met(&next.meta, trusted.meta.signed, b"root")?
-            || !threshold_met(&next.meta, next.meta.signed, b"root")?
+impl Source for &[u8] {
+    fn read(&mut self, offset: u32, out: &mut [u8]) -> bool {
+        let Ok(start) = usize::try_from(offset) else {
+            return false;
+        };
+        match start
+            .checked_add(out.len())
+            .and_then(|end| self.get(start..end))
         {
-            return Err(TufError::Threshold);
+            Some(src) => {
+                out.copy_from_slice(src);
+                true
+            }
+            None => false,
         }
-        trusted = next;
     }
-    Ok(trusted)
+}
+
+/// The index of a TUF part: the number of roots and the length of each
+/// document, the roots first, then `targets.json` and `trusted_root.json`.
+#[derive(Clone, Copy, Debug)]
+pub struct Index {
+    roots: usize,
+    lengths: [u32; MAX_ROOTS + 2],
+}
+
+impl Index {
+    /// The number of new roots.
+    pub fn roots(&self) -> usize {
+        self.roots
+    }
+
+    /// The offset and length of document `i`: root `i` for `i` below
+    /// [`Index::roots`], then `targets.json`, then `trusted_root.json`.
+    pub fn doc(&self, i: usize) -> Result<(u32, u32), Error> {
+        let count = self.roots.checked_add(2).ok_or(Error::Overflow)?;
+        let index_len = u32::try_from(count.checked_mul(4).ok_or(Error::Overflow)?)
+            .map_err(|_| Error::Overflow)?;
+        let mut offset = HEADER_LEN.checked_add(index_len).ok_or(Error::Overflow)?;
+        for len in self.lengths.get(..i).ok_or(Error::OutOfRange)? {
+            offset = offset.checked_add(*len).ok_or(Error::Overflow)?;
+        }
+        let len = self
+            .lengths
+            .get(..count)
+            .and_then(|l| l.get(i))
+            .ok_or(Error::OutOfRange)?;
+        Ok((offset, *len))
+    }
+}
+
+/// Reads and checks the header and index of a TUF part `part_len` bytes
+/// long: the magic `C3TU`, version 2, the number of roots as a 2-byte
+/// count of at most [`MAX_ROOTS`], then a 4-byte length for each root,
+/// `targets.json`, and `trusted_root.json`, each from 1 to
+/// [`MAX_DOC_LEN`]. The documents follow the index in that order with
+/// nothing between or after them, and the part is at most
+/// [`MAX_TUF_LEN`] bytes. Integers are little endian.
+pub fn read_index<S: Source>(src: &mut S, part_len: u32) -> Result<Index, TufError> {
+    if part_len > MAX_TUF_LEN {
+        return Err(Error::OutOfRange.into());
+    }
+    let mut head = [0u8; 8];
+    if !src.read(0, &mut head) {
+        return Err(TufError::Read);
+    }
+    let mut r = Reader::new(&head);
+    r.magic(TUF_MAGIC)?;
+    if r.u16()? != TUF_VERSION {
+        return Err(Error::BadVersion.into());
+    }
+    let roots = usize::from(r.u16()?);
+    if roots > MAX_ROOTS {
+        return Err(Error::OutOfRange.into());
+    }
+    let count = roots.checked_add(2).ok_or(Error::Overflow)?;
+    let mut raw = [0u8; 4 * (MAX_ROOTS + 2)];
+    let raw = raw
+        .get_mut(..count.checked_mul(4).ok_or(Error::Overflow)?)
+        .ok_or(Error::Overflow)?;
+    if part_len < HEADER_LEN {
+        return Err(Error::Truncated.into());
+    }
+    if !src.read(HEADER_LEN, raw) {
+        return Err(TufError::Read);
+    }
+    let mut index = Index {
+        roots,
+        lengths: [0; MAX_ROOTS + 2],
+    };
+    let mut r = Reader::new(raw);
+    for len in index.lengths.get_mut(..count).ok_or(Error::Overflow)? {
+        *len = r.u32()?;
+        if *len == 0 || *len > MAX_DOC_LEN {
+            return Err(Error::OutOfRange.into());
+        }
+    }
+    let (offset, len) = index.doc(count.checked_sub(1).ok_or(Error::Overflow)?)?;
+    let end = offset.checked_add(len).ok_or(Error::Overflow)?;
+    if end > part_len {
+        return Err(Error::Truncated.into());
+    }
+    if end < part_len {
+        return Err(Error::TrailingBytes.into());
+    }
+    Ok(index)
+}
+
+/// Reads document `i` of the part into the start of `buf`.
+fn read_doc<'b, S: Source>(
+    src: &mut S,
+    index: &Index,
+    i: usize,
+    buf: &'b mut [u8],
+) -> Result<&'b [u8], TufError> {
+    let (offset, len) = index.doc(i)?;
+    let len = usize::try_from(len).map_err(|_| Error::Overflow)?;
+    let dst = buf.get_mut(..len).ok_or(Error::ScratchTooSmall)?;
+    if !src.read(offset, dst) {
+        return Err(TufError::Read);
+    }
+    Ok(dst)
 }
 
 /// What verified TUF metadata establishes.
@@ -389,14 +511,54 @@ fn expires(meta: &Metadata<'_>) -> Result<u64, TufError> {
     Ok(crate::time::rfc3339(meta.signed.field(b"expires")?.str()?)?)
 }
 
-/// Verifies the TUF part of a slot from the pinned root: the root chain,
-/// `targets.json` under the final root, and `trusted_root.json` against
-/// its entry in `targets.json`.
-pub fn verify(pinned: &[u8], parts: &TufParts<'_>) -> Result<Verified, TufError> {
-    let root = verify_roots(pinned, parts)?;
-    let root_expires = expires(&root.meta)?;
-    let targets = parse_metadata(parts.targets, b"targets")?;
-    if !threshold_met(&targets, root.meta.signed, b"targets")? {
+/// Verifies the TUF part of a slot, `part_len` bytes read from `src`, from
+/// the pinned root: the root chain, `targets.json` under the final root, and
+/// `trusted_root.json` against its entry in `targets.json`. Returns what the
+/// metadata establishes and `trusted_root.json`, which is left at the start
+/// of `buf`.
+///
+/// The documents are read into `buf` one at a time, so `buf` needs room for
+/// the longest one, at most [`MAX_DOC_LEN`] bytes, however many roots the
+/// part holds. Only the threshold and keys of the trusted root's root role,
+/// and of the final root's targets role, are kept between documents.
+pub fn verify<'b, S: Source>(
+    pinned: &[u8],
+    src: &mut S,
+    part_len: u32,
+    buf: &'b mut [u8],
+) -> Result<(Verified, &'b [u8]), TufError> {
+    let index = read_index(src, part_len)?;
+    let roots = index.roots();
+    let pinned = parse_root(pinned)?;
+    let mut version = pinned.version;
+    // The trusted root's root role. A malformed role fails the chain only
+    // when another root follows it.
+    let mut trusted = RoleKeys::read(pinned.meta.signed, b"root");
+    let mut targets_role = RoleKeys::read(pinned.meta.signed, b"targets");
+    let mut root_expires = expires(&pinned.meta);
+    for i in 0..roots {
+        let next = parse_root(read_doc(src, &index, i, buf)?)?;
+        if Some(next.version) != version.checked_add(1) {
+            return Err(TufError::Version);
+        }
+        if !trusted?.met(&next.meta)? {
+            return Err(TufError::Threshold);
+        }
+        let own = RoleKeys::read(next.meta.signed, b"root")?;
+        if !own.met(&next.meta)? {
+            return Err(TufError::Threshold);
+        }
+        if i.checked_add(1) == Some(roots) {
+            targets_role = RoleKeys::read(next.meta.signed, b"targets");
+            root_expires = expires(&next.meta);
+        }
+        version = next.version;
+        trusted = Ok(own);
+    }
+    let root_expires = root_expires?;
+
+    let targets = parse_metadata(read_doc(src, &index, roots, buf)?, b"targets")?;
+    if !targets_role?.met(&targets)? {
         return Err(TufError::Threshold);
     }
     let targets_expires = expires(&targets)?;
@@ -406,16 +568,29 @@ pub fn verify(pinned: &[u8], parts: &TufParts<'_>) -> Result<Verified, TufError>
         .get(TRUSTED_ROOT_TARGET)?
         .ok_or(TufError::Target)?;
     let length = entry.field(b"length")?.u64()?;
-    let sha256 = entry.field(b"hashes")?.field(b"sha256")?.str()?;
-    let actual = hex_digest(&c3_crypto::sha256(parts.trusted_root));
-    let length_ok = usize::try_from(length).is_ok_and(|l| l == parts.trusted_root.len());
-    if !length_ok || sha256 != actual {
+    let sha256: Option<[u8; 64]> = entry
+        .field(b"hashes")?
+        .field(b"sha256")?
+        .str()?
+        .try_into()
+        .ok();
+
+    let trusted_root = read_doc(
+        src,
+        &index,
+        roots.checked_add(1).ok_or(Error::Overflow)?,
+        buf,
+    )?;
+    let actual = hex_digest(&c3_crypto::sha256(trusted_root));
+    let length_ok = usize::try_from(length).is_ok_and(|l| l == trusted_root.len());
+    if !length_ok || sha256 != Some(actual) {
         return Err(TufError::Target);
     }
-    Ok(Verified {
-        root_version: root.version,
+    let verified = Verified {
+        root_version: version,
         expires: root_expires.min(targets_expires),
-    })
+    };
+    Ok((verified, trusted_root))
 }
 
 #[cfg(test)]
@@ -462,22 +637,67 @@ mod tests {
         assert_eq!(pem_spki(&pem[..pem.len() - 1], &mut out), None);
     }
 
-    #[test]
-    fn container_limits_roots_and_lengths() {
+    fn part(roots: &[&[u8]], targets: &[u8], trusted: &[u8]) -> Vec<u8> {
         let mut tuf = TUF_MAGIC.to_vec();
-        tuf.extend_from_slice(&1u16.to_le_bytes());
-        tuf.extend_from_slice(&0u16.to_le_bytes());
-        for doc in [&b"{}"[..], b"x"] {
+        tuf.extend_from_slice(&TUF_VERSION.to_le_bytes());
+        tuf.extend_from_slice(&(roots.len() as u16).to_le_bytes());
+        let docs: Vec<&[u8]> = roots.iter().copied().chain([targets, trusted]).collect();
+        for doc in &docs {
             tuf.extend_from_slice(&(doc.len() as u32).to_le_bytes());
+        }
+        for doc in &docs {
             tuf.extend_from_slice(doc);
         }
-        let parts = parse_parts(&tuf).unwrap();
-        assert_eq!((parts.targets, parts.trusted_root), (&b"{}"[..], &b"x"[..]));
-        let mut many = tuf.clone();
-        many[6..8].copy_from_slice(&33u16.to_le_bytes());
-        assert_eq!(parse_parts(&many).unwrap_err(), Error::OutOfRange);
-        let mut empty = tuf.clone();
-        empty[8..12].copy_from_slice(&0u32.to_le_bytes());
-        assert_eq!(parse_parts(&empty).unwrap_err(), Error::OutOfRange);
+        tuf
+    }
+
+    fn index(tuf: &[u8]) -> Result<Index, TufError> {
+        read_index(&mut &tuf[..], tuf.len() as u32)
+    }
+
+    #[test]
+    fn index_locates_each_document() {
+        let tuf = part(&[b"ab", b"cde"], b"{}", b"x");
+        let index = index(&tuf).unwrap();
+        assert_eq!(index.roots(), 2);
+        let docs: Vec<&[u8]> = (0..4)
+            .map(|i| {
+                let (offset, len) = index.doc(i).unwrap();
+                &tuf[offset as usize..][..len as usize]
+            })
+            .collect();
+        assert_eq!(docs, [&b"ab"[..], b"cde", b"{}", b"x"]);
+        assert_eq!(index.doc(4), Err(Error::OutOfRange));
+    }
+
+    #[test]
+    fn index_limits_roots_and_lengths() {
+        let tuf = part(&[], b"{}", b"x");
+        assert!(index(&tuf).is_ok());
+        let mut version = tuf.clone();
+        version[4] = 1;
+        assert_eq!(index(&version).unwrap_err(), Error::BadVersion.into());
+        let many = part(&vec![&b"r"[..]; MAX_ROOTS + 1], b"{}", b"x");
+        assert_eq!(index(&many).unwrap_err(), Error::OutOfRange.into());
+        assert!(index(&part(&vec![&b"r"[..]; MAX_ROOTS], b"{}", b"x")).is_ok());
+        let empty = part(&[], b"", b"x");
+        assert_eq!(index(&empty).unwrap_err(), Error::OutOfRange.into());
+        let long = vec![b' '; MAX_DOC_LEN as usize + 1];
+        assert_eq!(
+            index(&part(&[], &long, b"x")).unwrap_err(),
+            Error::OutOfRange.into()
+        );
+        assert_eq!(
+            index(&tuf[..tuf.len() - 1]).unwrap_err(),
+            Error::Truncated.into()
+        );
+        let mut trailing = tuf.clone();
+        trailing.push(0);
+        assert_eq!(index(&trailing).unwrap_err(), Error::TrailingBytes.into());
+        assert_eq!(
+            read_index(&mut &tuf[..], MAX_TUF_LEN + 1).unwrap_err(),
+            Error::OutOfRange.into()
+        );
+        assert_eq!(read_index(&mut &tuf[..4], 4).unwrap_err(), TufError::Read);
     }
 }

@@ -14,16 +14,6 @@ impl<'a> Reader<'a> {
         Reader { buf, pos: 0 }
     }
 
-    /// The number of bytes read so far.
-    pub(crate) fn position(&self) -> usize {
-        self.pos
-    }
-
-    /// The bytes from `start` up to the current position.
-    pub(crate) fn since(&self, start: usize) -> Result<&'a [u8], Error> {
-        self.buf.get(start..self.pos).ok_or(Error::Truncated)
-    }
-
     pub(crate) fn bytes(&mut self, n: usize) -> Result<&'a [u8], Error> {
         let end = self.pos.checked_add(n).ok_or(Error::Truncated)?;
         let out = self.buf.get(self.pos..end).ok_or(Error::Truncated)?;
@@ -95,7 +85,6 @@ mod tests {
         assert_eq!(r.u8(), Ok(1));
         assert_eq!(r.u16(), Ok(2));
         assert_eq!(r.u32(), Err(Error::Truncated));
-        assert_eq!(r.position(), 3);
         assert_eq!(r.finish(), Err(Error::TrailingBytes));
     }
 
