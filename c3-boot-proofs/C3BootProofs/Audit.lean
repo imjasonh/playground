@@ -166,6 +166,7 @@ import C3BootProofs.Proofs.JsonSkipWs
 import C3BootProofs.Proofs.JsonStringEnd
 import C3BootProofs.Proofs.JsonNumberEnd
 import C3BootProofs.Proofs.JsonKeyEnd
+import C3BootProofs.Proofs.JsonStr
 
 /-!
 # Audit
@@ -8644,3 +8645,6 @@ end C3
 
 /-- info: 'C3.RV32.jsonKeyEnd_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.jsonKeyEnd_correct
+
+/-- info: 'C3.RV32.jsonStr_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonStr_correct
