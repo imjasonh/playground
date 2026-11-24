@@ -297,7 +297,7 @@ QEMU tests both settings, including a board whose `SECURE_VERSION` is write-disa
 - The bootloader reads a slot's TUF part from flash one document at a time, keeping only the trusted root's root keys between roots, so its RAM doesn't grow with the chain. A slot carries up to 64 new roots, decades of Sigstore's rotations; only a longer chain needs a USB re-pin.
 - Demo builds signed under the release identity are valid releases for now. Once a simple demo has been tested on hardware, devices will accept only released images.
 - The RV32 model makes misaligned loads and stores trap, accepts only the FENCE encodings compilers emit, and leaves out SYSTEM instructions for now. Each choice can only make a proof harder, never let a false one through.
-- Machine-code proofs are about the pinned image. After the TUF cutover, that is the production build: Sigstore's root, the release identity policy, and eFuse burns on. The proofs in this PR still cover the image before the cutover, the default test build with development keys, until they are regenerated. A build with another root or policy is covered only where its function bytes are the same.
+- Machine-code proofs are about the pinned image. After the TUF cutover, that is the production build: Sigstore's root, the release identity policy, and eFuse burns on. Proofs of the functions that kept their shape now cover it, and the rest are pending (see "Proofs after the TUF cutover"). A build with another root or policy is covered only where its function bytes are the same.
 - Three code changes that make proofs easier landed together on Nov 11, as one image change, right after P-384's squaring was proved: `root_from_inclusion` as its own function, `sha2`'s compact backend for SHA-256 and SHA-512 (one setting covers both), and no LLVM machine outliner (`c3-boot/.cargo/config.toml`). The image went from 133,392 to 89,296 bytes and a boot runs 2.2 percent more instructions. Proofs written against the earlier image are kept, about its bytes, until each is redone.
 - The model treats SRAM's instruction-bus and data-bus addresses as separate memory, while the chip aliases them. Proofs hold on the chip as long as no store reaches code through the data-bus alias. The platform model will make that an explicit obligation.
 
@@ -315,6 +315,27 @@ QEMU tests both settings, including a board whose `SECURE_VERSION` is write-disa
 - The earlier image's `sha256Compress_correct` doesn't claim that `gp` is preserved, though the function never writes it. `kcCompress_correct`, for the current image, does.
 - This PR is large. It stays one PR, by decision, and grows as the proofs do.
 - Covering every call costs more than covering one caller: `memcpy`'s misaligned path took 20 proof lines per instruction, the most so far.
+
+## Proofs after the TUF cutover
+
+The function bytes and image facts now come from the production image that `c3-boot/bootloader/dev-image.sha256` pins (`fe413a32…`). Proofs of functions whose code didn't change moved to the new layout: only call distances, `auipc` and `jalr` immediates, and code-window offsets changed. The V0 image's proofs stay about the V0 image, and `Proofs/ReaderArrayV0`, `U16V0`, `ReservedV0`, and `ImageHelpersV0` keep the V0 forms of the reader lemmas they call.
+
+The key-set chain and trust-root blob are gone from the code, so their specification and proofs are retired: `Spec/TrustRoot`, `Theorems/TrustRoot`, `Proofs/TrustRoot`, `KeySet`, `Keys`, `CheckSigs`, `ReadPart`, `ReadString`, `ReaderU64`, `Rp384`, and `Window`, and the `trust-check` harness. No theorem in `Theorems/` depended on them.
+
+The specification follows c3-verify's version 2 manifest, whose third part is the TUF part, and drops `checkSlot`. The V0 image's `manifest::parse` proofs keep the version 1 format as `decodeManifestV1`.
+
+Six functions changed shape: `manifest_parse`, `generalized_time`, `sigstore::verify`, `boot`, `boot_main`'s first closure, and `boot_main`. The modules that prove something about them, or import a module that does, are pending. `C3BootProofs/Pending.lean` imports them, the root module doesn't, and CI doesn't build them. They are unchanged, for the next proofs to start from:
+
+| Pending modules | Why |
+|-----------------|-----|
+| `Proofs/Sv*` | `sigstore::verify` moved, and its read-only data with it. The P-256 check is now a call to `p256_verify_prehash`, and the leaf certificate's time check calls `generalized_time`. |
+| `Proofs/ParseCur` | `manifest_parse` reads version 2. |
+| `Proofs/GeneralizedTime`, `Proofs/X509ReadTime` | `generalized_time` changed. |
+| `Proofs/BootSpec`, `Proofs/Boot` | `boot`, `boot_main`, and its first closure now read the TUF part and burn eFuses. |
+| `Models/P256*`, `Models/SafegcdP256`, `Models/P384*`, `Models/WeierstrassNist`, `Models/EcdsaModels`, `Models/EcdsaClosed` | The elliptic-curve models of `sigstore::verify`'s P-256 and P-384 stages. |
+| `Models/Ed25519SvModel*`, `Models/Ed25519Closed` | The Ed25519 model of `sigstore::verify`'s signature stage. |
+
+`C3BootProofs/AuditPending.lean` keeps their axiom checks.
 
 ## Next steps on Nov 16, 2026
 

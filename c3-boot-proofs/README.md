@@ -177,8 +177,8 @@ ends inside the signed image.
 | `readerU16_correct`, `readerVersion1_correct` | The compiled `Reader::u16` returns its `Result` packed in `a0` (error flag in bit 0, error in bits 8 to 15, value in bits 16 to 31). `Reader::version_1`, through it, returns 0xFFFFFFFF when the version is 1, `BadVersion` (3) when it isn't, and `Truncated` (0) when fewer than 2 bytes remain |
 | `reserved_loop`, `readerReserved_correct` | The compiled `Reader::reserved(n)`, for `n` other than 0, through `Reader::bytes` and a loop proved by induction on the bytes left, returns 0xFF when the `n` bytes are zero, `NonzeroReserved` (4) when one isn't, and `Truncated` (0) when fewer than `n` remain |
 | `manifestParse_correct` | The compiled `manifest::parse`, through `magic`, `version_1`, `reserved(2)`, four calls to `part`, and its outlined helpers, returns to its caller with `sp` and every register but `a0` through `a5` and `t0` restored, and leaves memory outside its 144 bytes of stack as `parseMem` says: tag 1 and the error that `parseErr` gives, or tag 0 and the four parts |
-| `decodeManifest_parse` | `parseErr`, which states the compiled checks in the code's own word arithmetic, accepts the 40 bytes exactly when the Lean decoder `decodeManifest` does, and the parts are the decoder's |
-| `manifestParse_decodes` | The two joined: the compiled `parse` returns `Err` when `decodeManifest` rejects the manifest, and `Ok` with the decoder's manifest at `out + 4` when it accepts |
+| `decodeManifestV1_parse` | `parseErr`, which states the compiled checks in the code's own word arithmetic, accepts the 40 bytes exactly when the Lean decoder `decodeManifestV1` does, and the parts are the decoder's |
+| `manifestParse_decodes` | The two joined: the compiled `parse` returns `Err` when `decodeManifestV1` rejects the manifest, and `Ok` with the decoder's manifest at `out + 4` when it accepts |
 | `readerU8_correct` | The compiled `Reader::u8`, through `Reader::bytes`, returns the error flag in `a0` and the byte or `Truncated` (0) in `a1`, and advances the position by 1 when a byte was left |
 | `segmentPhysical_correct` | The compiled `Segment::physical` writes a segment's address space and start, or `BadSegment` (9) when the address is below its region's base, as `physResult` says |
 | `memcpy_aligned` | The compiled `memcpy`, called with 4-byte-aligned buffers that don't overlap and a length of at least 16 bytes that is a multiple of 4, copies the words through its word loop (`copyWords`), proved by induction |
@@ -320,9 +320,9 @@ the four parts end at byte 40, and the proof shows that branch isn't taken.
 `parseErr` lists the checks in the order the
 code makes them, so the error `parse` returns is the first check that fails.
 
-`C3BootProofs/Proofs/ParseSpec.lean` proves `decodeManifest_parse` by
-flattening `decodeManifest` on 40 symbolic bytes into one condition on
-natural numbers (`decodeManifest_bytes`) and translating each of `parse`'s
+`C3BootProofs/Proofs/ParseSpec.lean` proves `decodeManifestV1_parse` by
+flattening `decodeManifestV1` on 40 symbolic bytes into one condition on
+natural numbers (`decodeManifestV1_bytes`) and translating each of `parse`'s
 word comparisons into it. A sum that wraps past 2^32 is how the compiled
 code detects overflow, and the translation turns each wrap test into the
 decoder's `endOf < 2^32`. `omega`'s proof of a conjunction or an `↔`
