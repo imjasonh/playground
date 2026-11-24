@@ -34,6 +34,15 @@ final class MCULabController: NSObject, ObservableObject {
         case committing
         case completed(sha256: String)
         case failed(String)
+
+        var isActive: Bool {
+            switch self {
+            case .armed, .connecting, .erasing, .streaming, .committing:
+                return true
+            case .idle, .completed, .failed:
+                return false
+            }
+        }
     }
 
     // Preserve legacy UserDefaults / Keychain keys so existing installs keep their
@@ -104,8 +113,14 @@ final class MCULabController: NSObject, ObservableObject {
     private var otaControlChar: CBCharacteristic?
     private var otaDataChar: CBCharacteristic?
     private var otaStatusChar: CBCharacteristic?
+    private var otaStatusSubscribed = false
     private var otaStreamTask: Task<Void, Never>?
     private var otaWriteAckContinuation: CheckedContinuation<Error?, Never>?
+    private var otaWriteAckToken: UInt64 = 0
+    private var otaWriteAckTimeoutTask: Task<Void, Never>?
+    private var otaPhaseTimeoutTask: Task<Void, Never>?
+    private var otaAutoResumeCount = 0
+    private static let maxOTAAutoResumes = 2
     private var otaWirePayload: Data?
     private var otaWireCompression: MCULabOTACompression = .none
     private var otaSession: OTASessionTracker?
@@ -443,6 +458,26 @@ final class MCULabController: NSObject, ObservableObject {
             otaStatusText = "Staged image does not match \(selectedFirmwareTarget.displayName): \(err)"
             return
         }
+        // Tear down any lingering profile or prior OTA connection before arming.
+        if let profileP = profilePeripheral {
+            finishProfileOnlyConnectionIfNeeded(for: profileP, fallbackForward: true)
+        }
+        otaStreamTask?.cancel()
+        otaStreamTask = nil
+        otaPhaseTimeoutTask?.cancel()
+        otaPhaseTimeoutTask = nil
+        resumePendingOTAContinuations()
+        restorePhoneBatteryMonitoringIfNeeded()
+        otaSession = nil
+        otaStatusSubscribed = false
+        otaAutoResumeCount = 0
+        if let peripheral = otaPeripheral {
+            central?.cancelPeripheralConnection(peripheral)
+            otaPeripheral = nil
+            otaControlChar = nil
+            otaDataChar = nil
+            otaStatusChar = nil
+        }
         otaPhase = .armed
         otaStatusText = "Armed (\(data.count) B). Waiting for the next \(selectedFirmwareTarget.displayName) wake burst to connect…"
         if !isScanning, isBluetoothUsable {
@@ -454,9 +489,13 @@ final class MCULabController: NSObject, ObservableObject {
     func cancelOTAUpdate() {
         otaStreamTask?.cancel()
         otaStreamTask = nil
+        otaPhaseTimeoutTask?.cancel()
+        otaPhaseTimeoutTask = nil
         resumePendingOTAContinuations()
         restorePhoneBatteryMonitoringIfNeeded()
         otaSession = nil
+        otaStatusSubscribed = false
+        otaAutoResumeCount = 0
         if let peripheral = otaPeripheral {
             if let ctrl = otaControlChar,
                let abortData = MCULabProtocol.encodeOTACommand(.abort).data(using: .utf8)
@@ -664,27 +703,57 @@ final class MCULabController: NSObject, ObservableObject {
     }
 
     private func resumePendingOTAContinuations() {
+        otaWriteAckTimeoutTask?.cancel()
+        otaWriteAckTimeoutTask = nil
+        otaWriteAckToken &+= 1
         if let ack = otaWriteAckContinuation {
             otaWriteAckContinuation = nil
             ack.resume(returning: nil)
         }
     }
 
+    private func armOTAPhaseTimeout(seconds: Int, message: String) {
+        otaPhaseTimeoutTask?.cancel()
+        otaPhaseTimeoutTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard let self, !Task.isCancelled else { return }
+            self.otaPhaseTimeoutTask = nil
+            self.otaStreamTask?.cancel()
+            self.otaStreamTask = nil
+            self.resumePendingOTAContinuations()
+            self.finalizeOTASession(outcome: "error: \(message)")
+            self.otaPhase = .failed(message)
+            self.otaStatusText = "OTA timed out: \(message)"
+            if let peripheral = self.otaPeripheral {
+                self.central?.cancelPeripheralConnection(peripheral)
+            }
+        }
+    }
+
     private func waitForOTAWriteAck() async -> Error? {
         await withCheckedContinuation { (continuation: CheckedContinuation<Error?, Never>) in
+            otaWriteAckTimeoutTask?.cancel()
+            otaWriteAckToken &+= 1
+            let token = otaWriteAckToken
             otaWriteAckContinuation?.resume(returning: nil)
             otaWriteAckContinuation = continuation
-            Task { @MainActor [weak self] in
+            otaWriteAckTimeoutTask = Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .seconds(5))
-                if let pending = self?.otaWriteAckContinuation {
-                    self?.otaWriteAckContinuation = nil
-                    let timeout = NSError(
-                        domain: "MCULabOTA",
-                        code: 1,
-                        userInfo: [NSLocalizedDescriptionKey: "Timed out waiting for BLE write acknowledgement."]
-                    )
-                    pending.resume(returning: timeout)
+                guard let self,
+                      !Task.isCancelled,
+                      self.otaWriteAckToken == token,
+                      let pending = self.otaWriteAckContinuation
+                else {
+                    return
                 }
+                self.otaWriteAckContinuation = nil
+                self.otaWriteAckTimeoutTask = nil
+                let timeout = NSError(
+                    domain: "MCULabOTA",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Timed out waiting for BLE write acknowledgement."]
+                )
+                pending.resume(returning: timeout)
             }
         }
     }
@@ -692,6 +761,9 @@ final class MCULabController: NSObject, ObservableObject {
     private func beginOTAConnection(to peripheral: CBPeripheral) {
         guard let central, central.state == .poweredOn else {
             return
+        }
+        if let profileP = profilePeripheral {
+            finishProfileOnlyConnectionIfNeeded(for: profileP, fallbackForward: true)
         }
         restorePhoneBatteryMonitoringIfNeeded()
         let prevBatteryMon = enablePhoneBatteryMonitoring()
@@ -708,6 +780,7 @@ final class MCULabController: NSObject, ObservableObject {
             phoneBatteryStartPct: readPhoneBatteryPercent(),
             previousBatteryMonitoringEnabled: prevBatteryMon
         )
+        otaStatusSubscribed = false
         otaWirePayload = nil
         otaWireCompression = .none
         otaPeripheral = peripheral
@@ -722,6 +795,7 @@ final class MCULabController: NSObject, ObservableObject {
               let ctrl = otaControlChar,
               otaDataChar != nil,
               otaStatusChar != nil,
+              otaStatusSubscribed,
               let firmware = stagedFirmwareData
         else {
             return
@@ -746,7 +820,8 @@ final class MCULabController: NSObject, ObservableObject {
             sha256: stagedFirmwareSHA256,
             compression: otaWireCompression
         )
-        otaStatusText = "Erasing inactive OTA partition for \(firmware.count) bytes…"
+        otaStatusText = "Starting OTA session for \(firmware.count) bytes…"
+        armOTAPhaseTimeout(seconds: 15, message: "No READY response from board after BEGIN.")
         if let encoded = MCULabProtocol.encodeOTACommand(cmd).data(using: .utf8) {
             peripheral.writeValue(encoded, for: ctrl, type: .withResponse)
         }
@@ -760,6 +835,8 @@ final class MCULabController: NSObject, ObservableObject {
         else {
             return
         }
+        otaPhaseTimeoutTask?.cancel()
+        otaPhaseTimeoutTask = nil
         otaStreamTask?.cancel()
         resumePendingOTAContinuations()
         let wirePayload = otaWirePayload ?? firmware
@@ -796,6 +873,15 @@ final class MCULabController: NSObject, ObservableObject {
                 peripheral.writeValue(item.frame, for: dataChar, type: .withResponse)
                 if let writeError = await self.waitForOTAWriteAck() {
                     if Task.isCancelled { return }
+                    if sentWireBytes > startOffset, self.otaAutoResumeCount < Self.maxOTAAutoResumes {
+                        self.otaAutoResumeCount += 1
+                        self.restorePhoneBatteryMonitoringIfNeeded()
+                        self.otaSession = nil
+                        self.otaPhase = .armed
+                        self.otaStatusText = "BLE write hiccup (\(writeError.localizedDescription)); auto-resuming on next wake (\(self.otaAutoResumeCount)/\(Self.maxOTAAutoResumes))…"
+                        self.central?.cancelPeripheralConnection(peripheral)
+                        return
+                    }
                     self.finalizeOTASession(outcome: "error: \(writeError.localizedDescription)")
                     self.otaPhase = .failed(writeError.localizedDescription)
                     self.otaStatusText = "OTA write failed: \(writeError.localizedDescription)"
@@ -815,6 +901,7 @@ final class MCULabController: NSObject, ObservableObject {
             self.otaSession?.commitSentAt = Date()
             self.otaPhase = .committing
             self.otaStatusText = "Verifying SHA-256 on \(self.selectedFirmwareTarget.displayName) and switching active OTA slot…"
+            self.armOTAPhaseTimeout(seconds: 15, message: "No OK confirmation from board after COMMIT.")
             if let commitData = MCULabProtocol.encodeOTACommand(.commit).data(using: .utf8) {
                 peripheral.writeValue(commitData, for: ctrlChar, type: .withResponse)
             }
@@ -835,12 +922,19 @@ final class MCULabController: NSObject, ObservableObject {
             }
             startStreamingOTAChunks(fromOffset: offset)
         case .progress(let written, let total):
+            guard case .streaming = otaPhase else {
+                // Ignore trailing PROGRESS notifications after we have already entered `.committing`.
+                return
+            }
             otaPhase = .streaming(written: written, total: total)
             let pct = total > 0 ? Int((Double(written) / Double(total) * 100).rounded()) : 0
             otaStatusText = "Flashing inactive slot: \(written)/\(total) bytes (\(pct)%)."
         case .ok(let sha256):
+            otaPhaseTimeoutTask?.cancel()
+            otaPhaseTimeoutTask = nil
             otaStreamTask?.cancel()
             resumePendingOTAContinuations()
+            otaAutoResumeCount = 0
             finalizeOTASession(outcome: "ok")
             otaPhase = .completed(sha256: sha256)
             otaStatusText = "Update verified (\(sha256.prefix(12))…). \(selectedFirmwareTarget.displayName) is rebooting into the new slot."
@@ -848,8 +942,11 @@ final class MCULabController: NSObject, ObservableObject {
                 central?.cancelPeripheralConnection(peripheral)
             }
         case .error(let message):
+            otaPhaseTimeoutTask?.cancel()
+            otaPhaseTimeoutTask = nil
             otaStreamTask?.cancel()
             resumePendingOTAContinuations()
+            otaAutoResumeCount = 0
             finalizeOTASession(outcome: "error: \(message)")
             otaPhase = .failed(message)
             otaStatusText = "OTA error: \(message)"
@@ -1514,7 +1611,10 @@ extension MCULabController: CBCentralManagerDelegate {
             }
             self.otaStreamTask?.cancel()
             self.otaStreamTask = nil
+            self.otaPhaseTimeoutTask?.cancel()
+            self.otaPhaseTimeoutTask = nil
             self.resumePendingOTAContinuations()
+            self.otaStatusSubscribed = false
             self.otaPeripheral = nil
             self.otaControlChar = nil
             self.otaDataChar = nil
@@ -1523,6 +1623,17 @@ extension MCULabController: CBCentralManagerDelegate {
                 return
             }
             if case .failed = self.otaPhase {
+                return
+            }
+            if case .streaming(let written, _) = self.otaPhase,
+               written > 0,
+               self.otaAutoResumeCount < Self.maxOTAAutoResumes
+            {
+                self.otaAutoResumeCount += 1
+                self.restorePhoneBatteryMonitoringIfNeeded()
+                self.otaSession = nil
+                self.otaPhase = .armed
+                self.otaStatusText = "BLE link dropped at \(written) B; auto-resuming on next wake (\(self.otaAutoResumeCount)/\(Self.maxOTAAutoResumes))…"
                 return
             }
             if self.otaPhase != .idle && self.otaPhase != .armed {
@@ -1597,33 +1708,68 @@ extension MCULabController: CBPeripheralDelegate {
             var foundProfileChar = false
             self.profileReassembler.reset()
             self.coredumpReassembler.reset()
-            for ch in chars {
-                if ch.uuid == self.profileCharUUID, self.collectDetailedProfile {
-                    foundProfileChar = true
-                    if ch.properties.contains(.notify) {
-                        peripheral.setNotifyValue(true, for: ch)
-                    } else {
+            if isProfileOnly {
+                for ch in chars {
+                    if ch.uuid == self.profileCharUUID, self.collectDetailedProfile {
+                        foundProfileChar = true
+                        if ch.properties.contains(.notify) {
+                            peripheral.setNotifyValue(true, for: ch)
+                        } else {
+                            peripheral.readValue(for: ch)
+                        }
+                    } else if ch.uuid == self.coredumpCharUUID {
+                        self.coredumpChar = ch
                         peripheral.readValue(for: ch)
                     }
-                } else if ch.uuid == self.coredumpCharUUID {
-                    self.coredumpChar = ch
-                    peripheral.readValue(for: ch)
                 }
-                if !isProfileOnly {
+                if !foundProfileChar {
+                    // Production firmware without profiling enabled does not expose PROFILE_CHAR_UUID.
+                    self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
+                }
+            } else {
+                // During OTA, only touch OTA characteristics so profile/coredump notifications
+                // cannot contend with NimBLE's ATT queue or stall the OTA stream.
+                for ch in chars {
                     if ch.uuid == self.otaControlUUID {
                         self.otaControlChar = ch
                     } else if ch.uuid == self.otaDataUUID {
                         self.otaDataChar = ch
                     } else if ch.uuid == self.otaStatusUUID {
                         self.otaStatusChar = ch
-                        peripheral.setNotifyValue(true, for: ch)
+                        if ch.isNotifying {
+                            self.otaStatusSubscribed = true
+                        } else {
+                            peripheral.setNotifyValue(true, for: ch)
+                        }
                     }
                 }
+                self.sendOTABeginIfReady()
             }
-            if isProfileOnly, !foundProfileChar {
-                // Production firmware without profiling enabled does not expose PROFILE_CHAR_UUID.
-                self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
-            } else if !isProfileOnly {
+        }
+    }
+
+    nonisolated func peripheral(
+        _ peripheral: CBPeripheral,
+        didUpdateNotificationStateFor characteristic: CBCharacteristic,
+        error: Error?
+    ) {
+        let statusUUID = CBUUID(string: MCULabProtocol.otaStatusUUIDString)
+        guard characteristic.uuid == statusUUID else {
+            return
+        }
+        Task { @MainActor in
+            guard self.otaPeripheral?.identifier == peripheral.identifier else {
+                return
+            }
+            if let error {
+                self.finalizeOTASession(outcome: "error: \(error.localizedDescription)")
+                self.otaPhase = .failed("Failed to subscribe to OTA status: \(error.localizedDescription)")
+                self.otaStatusText = "OTA status subscribe failed: \(error.localizedDescription)"
+                self.central?.cancelPeripheralConnection(peripheral)
+                return
+            }
+            if characteristic.isNotifying {
+                self.otaStatusSubscribed = true
                 self.sendOTABeginIfReady()
             }
         }
@@ -1704,6 +1850,9 @@ extension MCULabController: CBPeripheralDelegate {
             else {
                 return
             }
+            self.otaWriteAckTimeoutTask?.cancel()
+            self.otaWriteAckTimeoutTask = nil
+            self.otaWriteAckToken &+= 1
             self.otaWriteAckContinuation = nil
             pending.resume(returning: error)
         }

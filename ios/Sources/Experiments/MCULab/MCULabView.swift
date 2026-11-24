@@ -384,11 +384,11 @@ struct MCULabView: View {
                     .accessibilityIdentifier("mcuLabOtaProgressView")
             }
 
-            if controller.otaPhase == .armed || controller.otaPhase == .connecting || controller.otaPhase == .erasing {
+            if controller.otaPhase.isActive {
                 Button(role: .destructive) {
                     controller.cancelOTAUpdate()
                 } label: {
-                    Label("Cancel Armed OTA", systemImage: "xmark.circle.fill")
+                    Label("Cancel OTA Update", systemImage: "xmark.circle.fill")
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
