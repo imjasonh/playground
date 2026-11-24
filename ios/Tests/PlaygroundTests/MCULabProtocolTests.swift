@@ -673,6 +673,118 @@ final class MCULabProtocolTests: XCTestCase {
         XCTAssertTrue(trace.contains(#""key":"mcu.build_id","value":{"stringValue":"\#(String(repeating: "b", count: 40))""#))
     }
 
+    @MainActor
+    func testPullLatestFirmwareFromGHCRPrefersPublishWorkflowRuns() async throws {
+        let suite = "mcu-lab.ghcr-workflow.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let mergeSHA = String(repeating: "e", count: 40)
+        var hdr = [UInt8](repeating: 0, count: 24)
+        hdr[0] = 0xE9
+        hdr[12] = 0x00 // CHIP_ID_ESP32 = 0x0000
+        hdr[13] = 0x00
+        let firmwareBytes = Data(hdr) + Data(repeating: 0x3C, count: 64)
+        let expectedDigest = "sha256:\(MCULabProtocol.sha256Hex(firmwareBytes))"
+
+        let http = FakeMCULabHTTP()
+        http.onRequest = { request in
+            let urlString = request.url?.absoluteString ?? ""
+            if urlString.contains("actions/workflows/mcu-lab-publish.yml/runs") {
+                return try Self.jsonResponse(
+                    #"{"workflow_runs":[{"head_sha":"\#(mergeSHA)"},{"head_sha":"\#(mergeSHA)"}]}"#,
+                    status: 200
+                )
+            }
+            if urlString.contains("ghcr.io/token") {
+                return try Self.jsonResponse(#"{"token":"anon-tok"}"#, status: 200)
+            }
+            if urlString.hasSuffix("/manifests/\(mergeSHA)") {
+                return try Self.jsonResponse(
+                    #"{"layers":[{"mediaType":"application/octet-stream","digest":"\#(expectedDigest)"}]}"#,
+                    status: 200
+                )
+            }
+            if urlString.hasSuffix("/blobs/\(expectedDigest)") {
+                let url = try XCTUnwrap(request.url)
+                let resp = try XCTUnwrap(HTTPURLResponse(
+                    url: url,
+                    statusCode: 200,
+                    httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/octet-stream"]
+                ))
+                return (firmwareBytes, resp)
+            }
+            return try Self.jsonResponse(#"{"error":"unexpected \(urlString)"}"#, status: 500)
+        }
+
+        let controller = MCULabController(
+            defaults: defaults,
+            attestKeys: FakeMCULabAttestKeys(generatedKeys: []),
+            attestStore: AppAttestMemoryStore(deviceId: "dev-ota", userId: "user-ota"),
+            http: http
+        )
+        let target = MCULabFirmwareTarget(board: .waveshareEPD75, app: .maze)
+        await controller.pullLatestFirmwareFromGHCR(target: target)
+
+        XCTAssertEqual(controller.stagedFirmwareData, firmwareBytes)
+        XCTAssertTrue(controller.stagedFirmwareName.hasPrefix("waveshare-epd75-maze@\(mergeSHA.prefix(7))"))
+    }
+
+    @MainActor
+    func testAutoForwardThrottlesPerDeviceWithinMinInterval() async throws {
+        let suite = "mcu-lab.otel-throttle.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let metricsPostCount = LockedInt()
+        let http = FakeMCULabHTTP()
+        http.onRequest = { request in
+            let urlString = request.url?.absoluteString ?? ""
+            if urlString.hasSuffix("/v1/metrics") {
+                _ = metricsPostCount.next()
+                return try Self.jsonResponse(#"{}"#, status: 200)
+            }
+            if urlString.hasSuffix("/v1/traces") {
+                return try Self.jsonResponse(#"{"resolvedSymbols":{}}"#, status: 200)
+            }
+            return try Self.jsonResponse(#"{"error":"unexpected \(urlString)"}"#, status: 500)
+        }
+
+        let controller = MCULabController(
+            defaults: defaults,
+            attestKeys: FakeMCULabAttestKeys(generatedKeys: []),
+            attestStore: AppAttestMemoryStore(deviceId: "dev-throttle", userId: "user-throttle"),
+            http: http
+        )
+        controller.updateEndpoint("https://xiao-otel.example.test/v1/metrics")
+        controller.updateUseAppAttest(false)
+        controller.updateForwardingEnabled(true)
+
+        let devA = UUID()
+        let devB = UUID()
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let m1 = MCULabMetrics(seq: 1, flags: 0x20, wakeCount: 1, sensorUs: 10, computeUs: 0, epdRefreshUs: 0, radioUs: 500, batteryMv: 5000)
+        let m2 = MCULabMetrics(seq: 2, flags: 0x20, wakeCount: 2, sensorUs: 10, computeUs: 0, epdRefreshUs: 0, radioUs: 500, batteryMv: 5000)
+        let m3 = MCULabMetrics(seq: 3, flags: 0x20, wakeCount: 3, sensorUs: 10, computeUs: 0, epdRefreshUs: 0, radioUs: 500, batteryMv: 5000)
+
+        // First wake from devA forwards.
+        XCTAssertTrue(controller.ingestManufacturerData(MCULabProtocol.encodeManufacturerData(m1), deviceId: devA, deviceName: "EPD-75", rssi: -50, now: t0))
+        // Second wake from devA only 2 s later is throttled (< 5.5 s).
+        XCTAssertTrue(controller.ingestManufacturerData(MCULabProtocol.encodeManufacturerData(m2), deviceId: devA, deviceName: "EPD-75", rssi: -50, now: t0.addingTimeInterval(2.0)))
+        // Wake from devB at +2 s is NOT throttled by devA.
+        XCTAssertTrue(controller.ingestManufacturerData(MCULabProtocol.encodeManufacturerData(m1), deviceId: devB, deviceName: "XIAO-C3", rssi: -55, now: t0.addingTimeInterval(2.0)))
+        // Third wake from devA at +6 s forwards again.
+        XCTAssertTrue(controller.ingestManufacturerData(MCULabProtocol.encodeManufacturerData(m3), deviceId: devA, deviceName: "EPD-75", rssi: -50, now: t0.addingTimeInterval(6.0)))
+
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(controller.forwardedCount, 3)
+        XCTAssertEqual(metricsPostCount.current, 3)
+    }
+
     private static func jsonResponse(_ body: String, status: Int) throws -> (Data, URLResponse) {
         let url = try XCTUnwrap(URL(string: "https://xiao-otel.example.test"))
         let response = try XCTUnwrap(HTTPURLResponse(
@@ -750,6 +862,12 @@ private final class LockedInt: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         value += 1
+        return value
+    }
+
+    var current: Int {
+        lock.lock()
+        defer { lock.unlock() }
         return value
     }
 }

@@ -88,7 +88,11 @@ final class MCULabController: NSObject, ObservableObject {
     private var coredumpReassembler = MCULabBlobReassembler()
     private var coredumpChar: CBCharacteristic?
 
+    /// Google Cloud Monitoring rejects custom metric points written more often than once every 5 s per series.
+    static let minAutoForwardInterval: TimeInterval = 5.5
+
     private var lastSeqByDevice: [UUID: UInt8] = [:]
+    private var lastAutoForwardByDevice: [UUID: Date] = [:]
     private var simulatedSeq: UInt8 = 0
     private var simulatedWakeCount: UInt32 = 0
     private let defaults: UserDefaults
@@ -346,8 +350,30 @@ final class MCULabController: NSObject, ObservableObject {
 
     private func resolveRecentFirmwareCommitSHAs() async throws -> [String] {
         let ghRepo = MCULabProtocol.defaultGitHubRepo
-        let fwPath = MCULabProtocol.defaultFirmwarePath
-        guard let url = URL(string: "https://api.github.com/repos/\(ghRepo)/commits?sha=main&path=\(fwPath)&per_page=5") else {
+        let workflow = MCULabProtocol.defaultPublishWorkflow
+
+        // Prefer successful `mcu-lab-publish.yml` workflow runs on `main`: CI tags GHCR
+        // manifests with `${GITHUB_SHA}` (typically a PR merge commit), whereas GitHub's
+        // `commits?path=mcu-lab` API omits merge commits and only returns branch commits.
+        if let runsURL = URL(
+            string: "https://api.github.com/repos/\(ghRepo)/actions/workflows/\(workflow)/runs?branch=main&status=success&per_page=5"
+        ) {
+            var req = URLRequest(url: runsURL)
+            req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+            if let (data, resp) = try? await http.data(for: req),
+               (resp as? HTTPURLResponse)?.statusCode == 200,
+               let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let runs = payload["workflow_runs"] as? [[String: Any]]
+            {
+                let shas = Self.deduplicatedValidSHAs(runs.compactMap { $0["head_sha"] as? String })
+                if !shas.isEmpty {
+                    return shas
+                }
+            }
+        }
+
+        // Fallback: recent commits on `main` without a `path=` filter so merge commits are included.
+        guard let url = URL(string: "https://api.github.com/repos/\(ghRepo)/commits?sha=main&per_page=15") else {
             return []
         }
         var req = URLRequest(url: url)
@@ -358,12 +384,20 @@ final class MCULabController: NSObject, ObservableObject {
         else {
             return []
         }
-        return commits.compactMap { entry -> String? in
-            guard let sha = entry["sha"] as? String, sha.count == 40 else {
-                return nil
+        return Self.deduplicatedValidSHAs(commits.compactMap { $0["sha"] as? String })
+    }
+
+    private static func deduplicatedValidSHAs(_ raw: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for entry in raw {
+            let sha = entry.lowercased()
+            guard sha.count == 40, seen.insert(sha).inserted else {
+                continue
             }
-            return sha.lowercased()
+            result.append(sha)
         }
+        return result
     }
 
     /// Arm the iPhone to connect on the very next matching board BLE wake burst and stream the staged firmware.
@@ -702,10 +736,18 @@ final class MCULabController: NSObject, ObservableObject {
             lastForwardStatus = "Receive or simulate a wake packet before forwarding."
             return
         }
-        forwardToOtel(sample: sample)
+        forwardToOtel(sample: sample, isManual: true)
     }
 
-    private func forwardToOtel(sample: MCULabSample) {
+    private func forwardToOtel(sample: MCULabSample, isManual: Bool = false) {
+        if !isManual,
+           let lastForwarded = lastAutoForwardByDevice[sample.deviceId],
+           sample.receivedAt.timeIntervalSince(lastForwarded) < Self.minAutoForwardInterval
+        {
+            return
+        }
+        lastAutoForwardByDevice[sample.deviceId] = sample.receivedAt
+
         let trimmed = otelEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let metricsURL = Self.resolveMetricsURL(from: trimmed),
               let baseURL = Self.resolveBaseURL(from: metricsURL)

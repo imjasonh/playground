@@ -343,6 +343,7 @@ enum MCULabProtocol {
     static let defaultGHCRRepo = MCULabFirmwareTarget(board: .xiaoESP32C3, app: .base).ghcrRepo
     static let defaultGitHubRepo = "imjasonh/playground"
     static let defaultFirmwarePath = "mcu-lab"
+    static let defaultPublishWorkflow = "mcu-lab-publish.yml"
 
     /// Validate an ESP-IDF app binary header (`0xE9` magic + little-endian `chip_id` at bytes 12..14).
     /// Returns nil when valid, or an error message if the image does not match `expectedChipID`.

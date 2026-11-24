@@ -30,7 +30,8 @@ impl Board for WaveshareEpd75 {
     fn default_run_mode() -> RunMode {
         RunMode::Continuous {
             burst_ms: 500,
-            min_step_ms: 2_000,
+            // Pace wakes above Cloud Monitoring's 5 s minimum sampling period for custom metrics.
+            min_step_ms: 5_500,
         }
     }
 
