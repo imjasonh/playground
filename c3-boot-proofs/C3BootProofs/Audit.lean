@@ -164,6 +164,7 @@ import C3BootProofs.Image.BootloaderData5
 import C3BootProofs.Image.BootloaderData7
 import C3BootProofs.Proofs.JsonSkipWs
 import C3BootProofs.Proofs.JsonStringEnd
+import C3BootProofs.Proofs.JsonNumberEnd
 
 /-!
 # Audit
@@ -8636,3 +8637,6 @@ end C3
 
 /-- info: 'C3.RV32.jsonStringEnd_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.jsonStringEnd_correct
+
+/-- info: 'C3.RV32.jsonNumberEnd_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonNumberEnd_correct

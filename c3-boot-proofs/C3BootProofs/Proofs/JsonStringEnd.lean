@@ -83,7 +83,7 @@ theorem sen_err (h0 : f a0 = out) (hra : f ra = ret) (hret : ret &&& ~~~1 = ret)
   refine WP.ret sen_at_52 ⟨?_, ?_, ?_⟩
   · rsimp; rw [hra, add_lit_zero, hret]
   · rw [h0, hz, add_lit_zero]; exact usizeRes_err M out
-  · keep
+  · keep hz
 
 theorem sen_ok {i pos : Nat} (h0 : f a0 = out) (hra : f ra = ret) (hret : ret &&& ~~~1 = ret)
     (hal : out.toNat % 4 = 0) (hsep : Sep out 8 base jsonStringEndCode.length)
@@ -108,7 +108,7 @@ theorem sen_ok {i pos : Nat} (h0 : f a0 = out) (hra : f ra = ret) (hret : ret &&
     refine WP.ret sen_at_52 ⟨?_, ?_, ?_⟩
     · rsimp; rw [hra, add_lit_zero, hret]
     · rw [h0, add_lit_zero, hv, ev_add, cl_succ]; exact usizeRes_ok M out _
-    · keep
+    · keep hz
   · rsimp at e
     rw [hv, ev_add, cl_succ, br_bne0 (by omega)] at e
     exact absurd (not_dec_false e) (by omega)
@@ -137,7 +137,7 @@ theorem sen_loop {c : Bool} {pos R : Nat} (hret : ret &&& ~~~1 = ret) (hal : out
     · rsimp at e
       rw [sen_q] at e
       simp only [strScan, e, ↓reduceIte, Option.map_some]
-      exact sen_ok (by rsimp; exact h0) (by rsimp; exact hra) hret hal hsep (by keep) (by rsimp; exact ht1)
+      exact sen_ok (by rsimp; exact h0) (by rsimp; exact hra) hret hal hsep (by keep hz) (by rsimp; exact ht1)
         (by rsimp; exact h6) (by rsimp; exact h3) (by omega)
     rsimp at e
     rw [sen_q] at e
@@ -146,7 +146,7 @@ theorem sen_loop {c : Bool} {pos R : Nat} (hret : ret &&& ~~~1 = ret) (hal : out
     · rsimp at e2
       rw [sen_bs] at e2
       simp only [strScan, e, e2, Bool.false_eq_true, ↓reduceIte, Option.map_none]
-      exact sen_err (by rsimp; exact h0) (by rsimp; exact hra) hret hsep (by keep)
+      exact sen_err (by rsimp; exact h0) (by rsimp; exact hra) hret hsep (by keep hz)
     rsimp at e2
     rw [sen_bs] at e2
     refine WP.aluImm sen_at_2c ?_; wn
@@ -164,7 +164,7 @@ theorem sen_loop {c : Bool} {pos R : Nat} (hret : ret &&& ~~~1 = ret) (hal : out
       subst e3
       simp only [strScan, e, e2, Bool.false_eq_true, ↓reduceIte, Bool.not_true, Bool.false_and]
       refine hnext _ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ <;>
-        first | (keep; done) | (rsimp; first | assumption | (rw [ht1]; exact cl_succ i) | (rw [h1]; rfl))
+        first | (keep hz; done) | (rsimp; first | assumption | (rw [ht1]; exact cl_succ i) | (rw [h1]; rfl))
     rsimp at e3
     rw [h4, br_mode] at e3
     subst e3
@@ -173,13 +173,13 @@ theorem sen_loop {c : Bool} {pos R : Nat} (hret : ret &&& ~~~1 = ret) (hal : out
       rw [h7, sen_ctl] at e4
       simp only [strScan, e, e2, Bool.false_eq_true, ↓reduceIte, Bool.not_false, Bool.true_and,
         decide_eq_true_eq.mp e4, decide_true, Option.map_none]
-      exact sen_err (by rsimp; exact h0) (by rsimp; exact hra) hret hsep (by keep)
+      exact sen_err (by rsimp; exact h0) (by rsimp; exact hra) hret hsep (by keep hz)
     rsimp at e4
     rw [h7, sen_ctl] at e4
     refine WP.jal sen_at_36 (by decide) ?_; wn
     simp only [strScan, e, e2, Bool.false_eq_true, ↓reduceIte, Bool.not_false, Bool.true_and, e4]
     refine hnext _ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ <;>
-      first | (keep; done) | (rsimp; first | assumption | (rw [ht1]; exact cl_succ i) | (rw [h1]; rfl))
+      first | (keep hz; done) | (rsimp; first | assumption | (rw [ht1]; exact cl_succ i) | (rw [h1]; rfl))
 
 theorem sen_wp {c : Bool} {p : Word} {n pos : Nat} (hn : n < 2 ^ 32) (hpos : pos < 2 ^ 32)
     (h0 : f a0 = out) (h1 : f a1 = p) (h2 : f a2 = BitVec.ofNat 32 n) (h3 : f a3 = BitVec.ofNat 32 pos)
@@ -199,13 +199,13 @@ theorem sen_wp {c : Bool} {p : Word} {n pos : Nat} (hn : n < 2 ^ 32) (hpos : pos
       · omega
     have hle : (memBytes M p n).length ≤ pos := by omega
     simp only [stringEnd, hle, ↓reduceIte]
-    exact sen_err (by rsimp; exact h0) (by rsimp; exact hra) hret hsep (by keep)
+    exact sen_err (by rsimp; exact h0) (by rsimp; exact hra) hret hsep (by keep hz)
   refine WP.branch sen_at_8 (fun e => ?_) (fun e => ?_) <;> wn
   · rsimp at e
     rw [h3, h2, br_bgeu hpos hn] at e
     have hle : (memBytes M p n).length ≤ pos := by have := not_dec_true e; omega
     simp only [stringEnd, hle, ↓reduceIte]
-    exact sen_err (by rsimp; exact h0) (by rsimp; exact hra) hret hsep (by keep)
+    exact sen_err (by rsimp; exact h0) (by rsimp; exact hra) hret hsep (by keep hz)
   rsimp at e
   rw [h3, h2, br_bgeu hpos hn] at e
   have hlt : pos < n := not_dec_false e
@@ -219,7 +219,7 @@ theorem sen_wp {c : Bool} {p : Word} {n pos : Nat} (hn : n < 2 ^ 32) (hpos : pos
   rw [jmemBytes_drop]
   refine sen_loop hret hal hsep (R := n - (pos + 1)) (by omega) (n - (pos + 1)) 0 _ _ (by omega)
     (by rsimp) (by rsimp; rw [h1, h3, ev_add, ev_add, cl_succ]) (by rsimp; exact h0) (by rsimp; exact hra)
-    (by rsimp; rw [h3, ev_add, cl_succ]) (by rsimp; exact h3) (by rsimp; exact h4) ?_ (by rsimp) (by keep)
+    (by rsimp; rw [h3, ev_add, cl_succ]) (by rsimp; exact h3) (by rsimp; exact h4) ?_ (by rsimp) (by keep hz)
   rsimp
   rw [h3, h2, not_add_ofNat hlt hn, Nat.sub_sub]
 

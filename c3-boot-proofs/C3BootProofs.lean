@@ -318,3 +318,4 @@ import C3BootProofs.Proofs.JsonWp
 import C3BootProofs.Proofs.JsonModel
 import C3BootProofs.Proofs.JsonSkipWs
 import C3BootProofs.Proofs.JsonStringEnd
+import C3BootProofs.Proofs.JsonNumberEnd

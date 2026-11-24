@@ -66,4 +66,38 @@ theorem strScan_lt {c : Bool} : ∀ {l : Bytes} {i k : Nat}, strScan c l i = som
         · cases h
         · have := strScan_lt h; simp only [List.length_cons]; omega
 
+/-- How many decimal digits `l` starts with. -/
+def digLen : Bytes → Nat
+  | [] => 0
+  | b :: l => if isDigit b then digLen l + 1 else 0
+
+theorem digLen_le : ∀ l : Bytes, digLen l ≤ l.length
+  | [] => Nat.le_refl _
+  | b :: l => by
+    cases h : isDigit b
+    · simp only [digLen, h, Bool.false_eq_true, ↓reduceIte]; exact Nat.zero_le _
+    · simp only [digLen, h, ↓reduceIte, List.length_cons]; exact Nat.succ_le_succ (digLen_le l)
+
+/-- `number_end`: the position after the number at `pos`, of 1 to 19
+digits with no leading zero. -/
+def numberEnd (d : Bytes) (pos : Nat) : Option Nat :=
+  if d.length < pos then none
+  else if digLen (d.drop pos) = 0 then none
+  else if 19 < digLen (d.drop pos) then none
+  else if (d.drop pos).head? = some 48 then (if digLen (d.drop pos) = 1 then some (pos + 1) else none)
+  else some (pos + digLen (d.drop pos))
+
+theorem numberEnd_nil {d : Bytes} {pos : Nat} (hd : d.drop pos = []) : numberEnd d pos = none := by
+  unfold numberEnd
+  rw [hd]
+  split
+  · rfl
+  · rfl
+
+theorem numberEnd_cons {d l : Bytes} {pos b : Nat} (hlen : ¬d.length < pos) (hd : d.drop pos = b :: l) :
+    numberEnd d pos = if digLen (b :: l) = 0 then none else if 19 < digLen (b :: l) then none
+      else if b = 48 then (if digLen (b :: l) = 1 then some (pos + 1) else none)
+      else some (pos + digLen (b :: l)) := by
+  simp only [numberEnd, hlen, hd, ↓reduceIte, List.head?_cons, Option.some.injEq]
+
 end C3.Json

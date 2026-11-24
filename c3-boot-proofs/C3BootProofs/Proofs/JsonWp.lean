@@ -311,8 +311,17 @@ theorem keepUpd {f g0 : Fin 32 → Word} {cl : List (Fin 32)} {rd : Fin 32} {v :
 
 /-- Proves `∀ x, x ∉ cl → g x = g0 x` for `g` a chain of `upd`s, each to a
 register in `cl`, over a register file that the context says it of. -/
-macro "keep" : tactic =>
-  `(tactic| ((repeat refine keepUpd (by first | rfl | assumption) (by decide) ?_); try assumption))
+theorem frame_trans {g F f : Fin 32 → Word} {cl1 cl2 : List (Fin 32)} (hsub : ∀ x, x ∈ cl1 → x ∈ cl2)
+    (h1 : ∀ x, x ∉ cl1 → g x = F x) (h2 : ∀ x, x ∉ cl2 → F x = f x) : ∀ x, x ∉ cl2 → g x = f x :=
+  fun x hx => (h1 x fun h => hx (hsub x h)).trans (h2 x hx)
+
+syntax "keep" (ppSpace term)? : tactic
+
+macro_rules
+  | `(tactic| keep) =>
+    `(tactic| ((repeat refine keepUpd (by first | assumption | rfl) (by decide) ?_); try first | assumption | exact fun _ _ => rfl))
+  | `(tactic| keep $hz) =>
+    `(tactic| ((repeat refine keepUpd (by first | exact $hz | rfl) (by decide) ?_); try first | assumption | exact fun _ _ => rfl))
 
 /-- Reduces the literal offsets that a step leaves, and the register
 reads inside the new register values. -/
@@ -356,6 +365,12 @@ theorem sep_byte1 {x out : Word} {n : Nat} (h : Sep x 1 out n) (hn : 1 < n) : x 
   sep_byte h hn
 
 theorem ne_add_one (out : Word) : out + 1 ≠ out := add_ofNat_ne_self out (k := 1) (by decide) (by decide)
+
+/-- A function that stores a `Result<usize, TufError>` returned to `ret`
+with `r` at `out` and kept every register outside `cl`. -/
+def ResPost (cl : List (Fin 32)) (ret : Word) (M : Word → BitVec 8) (out : Word) (r : Option Nat)
+    (g0 : Fin 32 → Word) : Post :=
+  fun pc M' g => pc = ret ∧ UsizeRes M M' out r ∧ ∀ x, x ∉ cl → g x = g0 x
 
 theorem usizeRes_ok (M : Word → BitVec 8) (out : Word) (v : Nat) :
     UsizeRes M (memStore8 (memStore32 M (out + 4) (BitVec.ofNat 32 v)) out 0) out (some v) := by
