@@ -698,7 +698,8 @@ impl OtaDeflateDecoder {
     where
         F: FnMut(&[u8]) -> Result<(), String>,
     {
-        use miniz_oxide::inflate::core::{decompress, inflate_flags::TINFL_FLAG_HAS_MORE_INPUT};
+        use miniz_oxide::inflate::core::decompress;
+        use miniz_oxide::inflate::core::inflate_flags::TINFL_FLAG_HAS_MORE_INPUT;
         use miniz_oxide::inflate::TINFLStatus;
 
         if self.finished {
