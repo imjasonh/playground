@@ -26,6 +26,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	workerv1 "github.com/imjasonh/playground/ci-substrate/api/worker/v1"
 	"github.com/imjasonh/playground/ci-substrate/internal/cache"
 	"github.com/imjasonh/playground/ci-substrate/internal/digest"
 	"github.com/imjasonh/playground/ci-substrate/internal/remote"
@@ -34,15 +35,17 @@ import (
 )
 
 type e2eConfig struct {
-	OriginAddr  string        `env:"CI_SUBSTRATE_E2E_ORIGIN_ADDR"`
-	CacheAddr   string        `env:"CI_SUBSTRATE_E2E_CACHE_ADDR"`
-	MetricsURL  string        `env:"CI_SUBSTRATE_E2E_CACHE_METRICS_URL"`
-	InstanceA   string        `env:"CI_SUBSTRATE_E2E_INSTANCE_A, default=tenant-a"`
-	Shared      string        `env:"CI_SUBSTRATE_E2E_SHARED, default=shared"`
-	TokenA      string        `env:"CI_SUBSTRATE_E2E_TOKEN_A, default=tok-a"`
-	TokenARO    string        `env:"CI_SUBSTRATE_E2E_TOKEN_A_RO, default=tok-a-ro"`
-	TokenB      string        `env:"CI_SUBSTRATE_E2E_TOKEN_B, default=tok-b"`
-	ExecTimeout time.Duration `env:"CI_SUBSTRATE_E2E_EXEC_TIMEOUT, default=3m"`
+	OriginAddr      string        `env:"CI_SUBSTRATE_E2E_ORIGIN_ADDR"`
+	CacheAddr       string        `env:"CI_SUBSTRATE_E2E_CACHE_ADDR"`
+	MetricsURL      string        `env:"CI_SUBSTRATE_E2E_CACHE_METRICS_URL"`
+	InstanceA       string        `env:"CI_SUBSTRATE_E2E_INSTANCE_A, default=tenant-a"`
+	Shared          string        `env:"CI_SUBSTRATE_E2E_SHARED, default=shared"`
+	TokenA          string        `env:"CI_SUBSTRATE_E2E_TOKEN_A, default=tok-a"`
+	TokenARO        string        `env:"CI_SUBSTRATE_E2E_TOKEN_A_RO, default=tok-a-ro"`
+	TokenB          string        `env:"CI_SUBSTRATE_E2E_TOKEN_B, default=tok-b"`
+	ExecTimeout     time.Duration `env:"CI_SUBSTRATE_E2E_EXEC_TIMEOUT, default=3m"`
+	WorkerPrefix    string        `env:"CI_SUBSTRATE_E2E_WORKER_PREFIX"`
+	ExpectInputMode string        `env:"CI_SUBSTRATE_E2E_EXPECT_INPUT_MODE"`
 }
 
 type e2eEnv struct {
@@ -433,6 +436,12 @@ func TestE2EExecuteGetTreeTimeoutAndCancel(t *testing.T) {
 	if ar.GetExecutionMetadata().GetVirtualExecutionDuration().AsDuration() <= 0 {
 		t.Error("ExecutionMetadata.VirtualExecutionDuration was not populated")
 	}
+	if worker := ar.GetExecutionMetadata().GetWorker(); !strings.HasPrefix(worker, e.WorkerPrefix) {
+		t.Errorf("worker = %q, want prefix %q", worker, e.WorkerPrefix)
+	}
+	if mode := runnerInputMode(ar); e.ExpectInputMode != "" && mode != e.ExpectInputMode {
+		t.Errorf("runner input mode = %q, want %q", mode, e.ExpectInputMode)
+	}
 	if got := mustFetchString(ctxA, t, e.cacheClient, e.InstanceA, ar.GetStdoutDigest()); got != "done\n" {
 		t.Errorf("stdout = %q, want %q", got, "done\n")
 	}
@@ -619,4 +628,14 @@ func fetchCacheStats(metricsURL string) (cache.Stats, error) {
 	}
 	err = json.NewDecoder(resp.Body).Decode(&s)
 	return s, err
+}
+
+func runnerInputMode(ar *repb.ActionResult) string {
+	for _, a := range ar.GetExecutionMetadata().GetAuxiliaryMetadata() {
+		md := &workerv1.RunnerMetadata{}
+		if a.MessageIs(md) && a.UnmarshalTo(md) == nil {
+			return md.GetInputMode()
+		}
+	}
+	return ""
 }

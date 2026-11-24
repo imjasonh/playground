@@ -25,7 +25,6 @@ Dockerfiles and no Helm charts.
 | `runner` | The bot. Leases actions from `cas`, builds the exec root (a `mkdir` on the inputs volume a Substrate actor gets from its node, a FUSE mount of `casfs` where the runner has `/dev/fuse`, or a copy from `cascache` otherwise), runs the command, uploads the outputs `cas` is missing, and reports the `ActionResult` with the input mode it used. It starts each command through `bash`, because a child that enters a FUSE mount the runner serves before it calls `execve` can deadlock the runner during garbage collection. Small output blobs share one `BatchUpdateBlobs` call. Runs as a Deployment per tenant (`deploy/40-runner.yaml`) or as a Substrate actor. |
 | `casfs-csi` | CSI driver (DaemonSet, `deploy/substrate/casfs-csi.yaml`) that mounts a `casfs` inputs volume for each actor on the actor's node and serves it from that node's `cascache` with the tenant's token. The runner in the sandbox never fetches an input and never holds the token. |
 | `pool` | Per-tenant actor pool for Substrate. Reads the tenant's queue from `cas` and keeps that many actors running, warm ones suspended, and crashed ones replaced. |
-| `cictl` | Demo driver. Uploads a shared blob as tenant A, warms the cache, reads it as tenant B, asserts tenant B cannot reach tenant A's instance, action cache, or queue, then runs an action through `Execute`, checks its outputs, and shows the second `Execute` is a cache hit. |
 
 Tenant identity is a token on the `x-ci-substrate-tenant` gRPC metadata header.
 Each token is allowed a set of Remote Execution instance names. Blobs are
@@ -43,7 +42,7 @@ with Substrate's components and ci-substrate's in separate groups:
 
 ```mermaid
 flowchart TB
-  ci["CI frontend / cictl"]
+  ci["CI frontend / Bazel"]
 
   subgraph substrate["Agent Substrate system infra"]
     router["atenet-router<br/>ingress, resume on request"]
@@ -168,7 +167,7 @@ from `cas`, verifies it, and stores it.
    serves each file on its first read, and a file the command never opens is
    never fetched. A runner with neither copies the tree. The `ActionResult`
    records which mode ran the action (`worker.v1.RunnerMetadata` in
-   `auxiliary_metadata`), and `cictl -expect-input-mode` checks it.
+   `auxiliary_metadata`), and the Go e2e suite (`CI_SUBSTRATE_E2E_EXPECT_INPUT_MODE`) checks it.
 4. The runner runs the command, collects the output paths (files as blobs,
    directories as a `Tree`), asks `cas` which blobs are missing with
    `FindMissingBlobs`, uploads those, and calls `Complete` with the
@@ -323,8 +322,8 @@ bash e2e/run-kind.sh
 
 Set `CI_SUBSTRATE_KIND_KEEP=1` to leave the cluster up afterwards.
 
-The script drives `cictl` from the host over `kubectl port-forward`, so the
-demo does not depend on ClusterIP routing (some nested kind environments
+The script runs the Go e2e suite (`e2e/rbe_e2e_test.go`) from the host over
+`kubectl port-forward`, so the checks do not depend on ClusterIP routing (some nested kind environments
 cannot program kube-proxy iptables rules). What it asserts:
 
 1. Tenant A uploads a shared blob to `cas`.
@@ -338,7 +337,7 @@ cannot program kube-proxy iptables rules). What it asserts:
 6. Tenant B is `PermissionDenied` calling `Execute` in tenant A's instance.
 7. Tenant A executes an action (`tr a-z A-Z < input.txt > out/upper.txt`,
    plus a copy into `out/tree/`). A `runner` pod leases it, mounts the input
-   with FUSE, runs it, and uploads the outputs. `cictl` reads stdout,
+   with FUSE, runs it, and uploads the outputs. The test reads stdout,
    `out/upper.txt`, and the `out/tree` `Tree` back through `cascache`.
 8. The same `Execute` again returns `cached_result` without a runner.
 
@@ -362,7 +361,7 @@ ends with the hostname of the runner that ran it. The script fails unless:
 5. Tenant A's token is `PermissionDenied` building in tenant B's instance.
 
 A shared action cache and an instance-blind in-flight merge each pass the
-`cictl` checks above. The Bazel checks fail on both. CI runs this script in
+Go e2e checks above. The Bazel checks fail on both. CI runs this script in
 the kind e2e, so it blocks a pull request that breaks tenant isolation. It
 runs against any cluster with runners for both tenants:
 `bash e2e/run-bazel.sh <cas host:port>`.
@@ -376,8 +375,6 @@ ci-substrate itself with Bazel on the cluster, as tenant A (see
 [Build with Bazel](#build-with-bazel)). Set `CI_SUBSTRATE_DOGFOOD=0` to skip
 it.
 
-`deploy/30-cictl-job.yaml` is the same demo as an in-cluster Job for clusters
-where Service DNS works.
 
 ## Build with Bazel
 
@@ -489,7 +486,6 @@ kubectl apply -f deploy/05-telemetry.yaml   # or deploy/gke/05-telemetry.yaml
 ko apply -f deploy/10-cas.yaml
 ko apply -f deploy/20-cascache.yaml
 ko apply -f deploy/40-runner.yaml
-ko apply -f deploy/30-cictl-job.yaml
 ```
 
 `.ko.yaml` gives the runner the `chainguard/bash` base, so actions have
@@ -721,7 +717,7 @@ The script creates the atespace, token Secret, credential grant,
 `WorkerPool`, the `casfs-csi` driver and `tenant-a`'s `StorageClass`, the
 `ActorTemplate`, and the pool for `tenant-a`, turns on the `ExternalVolumes`
 preview gate in `ate-api-server`, scales the runner Deployment to zero so
-actors do the work, then runs `cictl` and checks that the worker that ran
+actors do the work, then runs the Go e2e suite and checks that the worker that ran
 the action is a `ci-runner-N` actor and that it reported input mode
 `volume`. On the test cluster the pool created one actor at start, an
 `Execute` against the empty queue ran 40 ms after the actor was up with its

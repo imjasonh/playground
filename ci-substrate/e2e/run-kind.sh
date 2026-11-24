@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Spin up a KinD cluster, ko-apply the cas, cascache, and runner control
-# plane, and run cictl against them over port-forwards to prove multi-tenant
-# isolation, node-local cache reuse, and remote execution. Then build with
+# plane, and run the Go e2e test suite against them over port-forwards to prove
+# multi-tenant isolation, node-local cache reuse, production RBE APIs, and
+# remote execution. Then build with
 # stock Bazel as two users in two tenants (run-bazel.sh) to prove neither can
 # see or change the other's results. Last, build and test ci-substrate itself
 # with Bazel on the cluster (run-dogfood.sh; set CI_SUBSTRATE_DOGFOOD=0 to

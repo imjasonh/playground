@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build e2e/bazel with stock Bazel as two users in two tenants against one
 # cas, and fail if either tenant can see or change the other's results.
-# run-kind.sh runs it after cictl, so it gates CI; it also runs against any
-# cluster that serves cas and has runners for both tenants.
+# run-kind.sh runs it after the Go e2e tests, so it gates CI; it also runs
+# against any cluster that serves cas and has runners for both tenants.
 #
 #   bash e2e/run-bazel.sh 127.0.0.1:18980
 #

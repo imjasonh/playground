@@ -22,8 +22,8 @@ caching, and remote execution with the runner Deployment in
 | `runner-template.yaml` | The `ActorTemplate` for a runner actor: the `runner` bot with the tenant's instance, a placeholder token, its actor name as its bot id, and an external `inputs` volume of the tenant's `StorageClass` mounted at `/inputs`. |
 | `pool.yaml` | The `pool` Deployment for the tenant. It runs in `ate-system` as the `ate-client` ServiceAccount, sizes the tenant's actors to its queue, and sizes the burst `WorkerPool` to its actors. A Role lets `ate-client` change only that `WorkerPool`'s scale, and a NetworkPolicy admits the pool to Substrate's API, which `ate-system` otherwise closes to all but Substrate's own components. |
 
-`../../e2e/run-substrate.sh` applies all of it for `tenant-a` and runs
-`cictl` against the result. `../../e2e/run-substrate-kind.sh` builds a
+`../../e2e/run-substrate.sh` applies all of it for `tenant-a` and runs the
+Go e2e tests (`e2e/`) against the result. `../../e2e/run-substrate-kind.sh` builds a
 two-node kind cluster with the [node pools](#node-pools) below, installs
 Substrate, and runs it there. By hand, for each CI tenant:
 
