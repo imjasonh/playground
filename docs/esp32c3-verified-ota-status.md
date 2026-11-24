@@ -170,14 +170,17 @@ and others), and the constants in the image's data are the spec's
 stated in [`SvModels.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvModels.lean):
 that the Ed25519 check accepts only signatures that `ed25519Verify`
 accepts. For the P-384 and P-256 checks it uses the corrected ECDSA models
-described below, so it takes their assumptions instead. That a key the code
+described below, which take no mathematical hypotheses. That a key the code
 decodes is on P-256 is proved (`gsModel` in
 [`SvGsSpec.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvGsSpec.lean)):
 the code checks the curve equation in Montgomery form, and `2^256` is
 invertible modulo `p`.
 
-Left: the Ed25519 model fact and the ECDSA models' assumptions; the code
-and constants hypotheses from the image the ROM loads; and `boot_main`.
+Left: the Ed25519 model fact (`svEdModel_closed` in
+`Models/Ed25519Closed.lean` proves it from the image's constants and four
+facts about the compiled routines: decoding, encoding, the small-order
+check, and the reduction of `k` modulo `L`); the code and constants
+hypotheses from the image the ROM loads; and `boot_main`.
 
 The model facts need polynomial identities modulo the curves' primes.
 `grind` depends on `Classical.choice`, so
