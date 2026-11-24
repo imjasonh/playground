@@ -58,6 +58,14 @@ theorem tbl_lo (M : Word → BitVec 8) (hc : CodeIn M (img% regionStartsAddress)
   · rw [show aluEval .add ((3 : BitVec 8).zeroExtend 32 <<< 2) (aluEval .add (img% hi20 regionStartsAddress) (img% lo12 regionStartsAddress)) + 0 =
       (img% regionStartsAddress : Word) + BitVec.ofNat 32 12 from rfl, tbl_word M _ _ hc 12 (by decide)]; decide
 
+theorem tbl_al_hi : ∀ k : BitVec 8, (3 : BitVec 8).ult k = false →
+    (aluEval .add (aluEval .add (img% hi20 regionEndsAddress) (img% lo12 regionEndsAddress)) (k.zeroExtend 32 <<< 2) + 0).toNat % 4 = 0 := by
+  decide
+
+theorem tbl_al_lo : ∀ k : BitVec 8, (3 : BitVec 8).ult k = false →
+    (aluEval .add (k.zeroExtend 32 <<< 2) (aluEval .add (img% hi20 regionStartsAddress) (img% lo12 regionStartsAddress)) + 0).toNat % 4 = 0 := by
+  decide
+
 theorem ArrInv.push {M : Word → BitVec 8} {G : Word} {segs : List SegW} (a : ArrInv M G segs)
     (hi : segs.length < 16) (s : SegW) (vk : Word) (hk : vk.extractLsb' 0 8 = s.kind) :
     ArrInv (pushMem M G segs.length s vk) G (segs ++ [s]) := by
