@@ -48,14 +48,14 @@ theorem u8e_at_42 : fetchRel uint8CtEqCode 0x42 = some (.jalr ra ra 0xFFFFFCA8, 
 theorem u8e_at_46 : fetchRel uint8CtEqCode 0x46 = some (.aluImm .and (9 : Fin 32) a0 0xFF, 4) := by decide
 theorem u8e_at_4a : fetchRel uint8CtEqCode 0x4A = some (.alu .add a0 x0 (19 : Fin 32), 2) := by decide
 theorem u8e_at_4c : fetchRel uint8CtEqCode 0x4C = some (.alu .add a1 x0 (20 : Fin 32), 2) := by decide
-theorem u8e_at_4e : fetchRel uint8CtEqCode 0x4E = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem u8e_at_52 : fetchRel uint8CtEqCode 0x52 = some (.jalr ra ra 0x2A0, 4) := by decide
+theorem u8e_at_4e : fetchRel uint8CtEqCode 0x4E = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem u8e_at_52 : fetchRel uint8CtEqCode 0x52 = some (.jalr ra ra 0x490, 4) := by decide
 theorem u8e_at_56 : fetchRel uint8CtEqCode 0x56 = some (.aluImm .and a0 a0 0xFF, 4) := by decide
 theorem u8e_at_5a : fetchRel uint8CtEqCode 0x5A = some (.alu .and (9 : Fin 32) (9 : Fin 32) a0, 2) := by decide
 theorem u8e_at_5c : fetchRel uint8CtEqCode 0x5C = some (.alu .add a0 x0 (8 : Fin 32), 2) := by decide
 theorem u8e_at_5e : fetchRel uint8CtEqCode 0x5E = some (.alu .add a1 x0 (21 : Fin 32), 2) := by decide
-theorem u8e_at_60 : fetchRel uint8CtEqCode 0x60 = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem u8e_at_64 : fetchRel uint8CtEqCode 0x64 = some (.jalr ra ra 0x28E, 4) := by decide
+theorem u8e_at_60 : fetchRel uint8CtEqCode 0x60 = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem u8e_at_64 : fetchRel uint8CtEqCode 0x64 = some (.jalr ra ra 0x47E, 4) := by decide
 theorem u8e_at_68 : fetchRel uint8CtEqCode 0x68 = some (.aluImm .and a0 a0 0xFF, 4) := by decide
 theorem u8e_at_6c : fetchRel uint8CtEqCode 0x6C = some (.alu .and a0 a0 (9 : Fin 32), 2) := by decide
 theorem u8e_at_6e : fetchRel uint8CtEqCode 0x6E = some (.load .lw ra sp 0x2C, 2) := by decide

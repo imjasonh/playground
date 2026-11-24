@@ -800,110 +800,110 @@ theorem psm_at_9ca : fetchRel p256ScalarMulCode 0x9CA = some (.alu .add a2 a2 (2
 theorem psm_at_9cc : fetchRel p256ScalarMulCode 0x9CC = some (.alu .add a2 a2 a3, 2) := by decide
 theorem psm_at_9ce : fetchRel p256ScalarMulCode 0x9CE = some (.store .sw sp a2 0x4, 2) := by decide
 theorem psm_at_9d0 : fetchRel p256ScalarMulCode 0x9D0 = some (.aluImm .add a2 x0 0x0, 2) := by decide
-theorem psm_at_9d2 : fetchRel p256ScalarMulCode 0x9D2 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem psm_at_9d6 : fetchRel p256ScalarMulCode 0x9D6 = some (.jalr ra ra 0x7FC, 4) := by decide
+theorem psm_at_9d2 : fetchRel p256ScalarMulCode 0x9D2 = some (.auipc ra 0xFFFEE000, 4) := by decide
+theorem psm_at_9d6 : fetchRel p256ScalarMulCode 0x9D6 = some (.jalr ra ra 0xFFFFF9EC, 4) := by decide
 theorem psm_at_9da : fetchRel p256ScalarMulCode 0x9DA = some (.store .sw sp a0 0x0, 2) := by decide
 theorem psm_at_9dc : fetchRel p256ScalarMulCode 0x9DC = some (.alu .add a2 x0 a1, 2) := by decide
 theorem psm_at_9de : fetchRel p256ScalarMulCode 0x9DE = some (.alu .add a0 x0 (9 : Fin 32), 2) := by decide
 theorem psm_at_9e0 : fetchRel p256ScalarMulCode 0x9E0 = some (.load .lw a1 sp 0x1C, 2) := by decide
-theorem psm_at_9e2 : fetchRel p256ScalarMulCode 0x9E2 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem psm_at_9e6 : fetchRel p256ScalarMulCode 0x9E6 = some (.jalr ra ra 0x7EC, 4) := by decide
+theorem psm_at_9e2 : fetchRel p256ScalarMulCode 0x9E2 = some (.auipc ra 0xFFFEE000, 4) := by decide
+theorem psm_at_9e6 : fetchRel p256ScalarMulCode 0x9E6 = some (.jalr ra ra 0xFFFFF9DC, 4) := by decide
 theorem psm_at_9ea : fetchRel p256ScalarMulCode 0x9EA = some (.alu .add (9 : Fin 32) x0 a0, 2) := by decide
 theorem psm_at_9ec : fetchRel p256ScalarMulCode 0x9EC = some (.alu .add a2 x0 a1, 2) := by decide
 theorem psm_at_9ee : fetchRel p256ScalarMulCode 0x9EE = some (.alu .add a0 x0 (8 : Fin 32), 2) := by decide
 theorem psm_at_9f0 : fetchRel p256ScalarMulCode 0x9F0 = some (.load .lw a1 sp 0x18, 2) := by decide
-theorem psm_at_9f2 : fetchRel p256ScalarMulCode 0x9F2 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem psm_at_9f6 : fetchRel p256ScalarMulCode 0x9F6 = some (.jalr ra ra 0x7DC, 4) := by decide
+theorem psm_at_9f2 : fetchRel p256ScalarMulCode 0x9F2 = some (.auipc ra 0xFFFEE000, 4) := by decide
+theorem psm_at_9f6 : fetchRel p256ScalarMulCode 0x9F6 = some (.jalr ra ra 0xFFFFF9CC, 4) := by decide
 theorem psm_at_9fa : fetchRel p256ScalarMulCode 0x9FA = some (.alu .add (20 : Fin 32) x0 a0, 2) := by decide
 theorem psm_at_9fc : fetchRel p256ScalarMulCode 0x9FC = some (.alu .add a2 x0 a1, 2) := by decide
 theorem psm_at_9fe : fetchRel p256ScalarMulCode 0x9FE = some (.alu .add a0 x0 (19 : Fin 32), 2) := by decide
 theorem psm_at_a00 : fetchRel p256ScalarMulCode 0xA00 = some (.load .lw a1 sp 0x14, 2) := by decide
-theorem psm_at_a02 : fetchRel p256ScalarMulCode 0xA02 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem psm_at_a06 : fetchRel p256ScalarMulCode 0xA06 = some (.jalr ra ra 0x7CC, 4) := by decide
+theorem psm_at_a02 : fetchRel p256ScalarMulCode 0xA02 = some (.auipc ra 0xFFFEE000, 4) := by decide
+theorem psm_at_a06 : fetchRel p256ScalarMulCode 0xA06 = some (.jalr ra ra 0xFFFFF9BC, 4) := by decide
 theorem psm_at_a0a : fetchRel p256ScalarMulCode 0xA0A = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
 theorem psm_at_a0c : fetchRel p256ScalarMulCode 0xA0C = some (.alu .add a2 x0 a1, 2) := by decide
 theorem psm_at_a0e : fetchRel p256ScalarMulCode 0xA0E = some (.alu .add a0 x0 (26 : Fin 32), 2) := by decide
 theorem psm_at_a10 : fetchRel p256ScalarMulCode 0xA10 = some (.load .lw a1 sp 0x10, 2) := by decide
-theorem psm_at_a12 : fetchRel p256ScalarMulCode 0xA12 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem psm_at_a16 : fetchRel p256ScalarMulCode 0xA16 = some (.jalr ra ra 0x7BC, 4) := by decide
+theorem psm_at_a12 : fetchRel p256ScalarMulCode 0xA12 = some (.auipc ra 0xFFFEE000, 4) := by decide
+theorem psm_at_a16 : fetchRel p256ScalarMulCode 0xA16 = some (.jalr ra ra 0xFFFFF9AC, 4) := by decide
 theorem psm_at_a1a : fetchRel p256ScalarMulCode 0xA1A = some (.alu .add (26 : Fin 32) x0 a0, 2) := by decide
 theorem psm_at_a1c : fetchRel p256ScalarMulCode 0xA1C = some (.alu .add a2 x0 a1, 2) := by decide
 theorem psm_at_a1e : fetchRel p256ScalarMulCode 0xA1E = some (.alu .add a0 x0 (27 : Fin 32), 2) := by decide
 theorem psm_at_a20 : fetchRel p256ScalarMulCode 0xA20 = some (.load .lw a1 sp 0xC, 2) := by decide
-theorem psm_at_a22 : fetchRel p256ScalarMulCode 0xA22 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem psm_at_a26 : fetchRel p256ScalarMulCode 0xA26 = some (.jalr ra ra 0x7AC, 4) := by decide
+theorem psm_at_a22 : fetchRel p256ScalarMulCode 0xA22 = some (.auipc ra 0xFFFEE000, 4) := by decide
+theorem psm_at_a26 : fetchRel p256ScalarMulCode 0xA26 = some (.jalr ra ra 0xFFFFF99C, 4) := by decide
 theorem psm_at_a2a : fetchRel p256ScalarMulCode 0xA2A = some (.store .sw sp a0 0x18, 2) := by decide
 theorem psm_at_a2c : fetchRel p256ScalarMulCode 0xA2C = some (.alu .add a2 x0 a1, 2) := by decide
 theorem psm_at_a2e : fetchRel p256ScalarMulCode 0xA2E = some (.load .lw a0 sp 0x8, 2) := by decide
 theorem psm_at_a30 : fetchRel p256ScalarMulCode 0xA30 = some (.alu .add a1 x0 (18 : Fin 32), 2) := by decide
-theorem psm_at_a32 : fetchRel p256ScalarMulCode 0xA32 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem psm_at_a36 : fetchRel p256ScalarMulCode 0xA36 = some (.jalr ra ra 0x79C, 4) := by decide
+theorem psm_at_a32 : fetchRel p256ScalarMulCode 0xA32 = some (.auipc ra 0xFFFEE000, 4) := by decide
+theorem psm_at_a36 : fetchRel p256ScalarMulCode 0xA36 = some (.jalr ra ra 0xFFFFF98C, 4) := by decide
 theorem psm_at_a3a : fetchRel p256ScalarMulCode 0xA3A = some (.alu .add (27 : Fin 32) x0 a0, 2) := by decide
 theorem psm_at_a3c : fetchRel p256ScalarMulCode 0xA3C = some (.alu .add a2 x0 a1, 2) := by decide
 theorem psm_at_a3e : fetchRel p256ScalarMulCode 0xA3E = some (.load .lw a0 sp 0x24, 2) := by decide
 theorem psm_at_a40 : fetchRel p256ScalarMulCode 0xA40 = some (.alu .add a1 x0 (25 : Fin 32), 2) := by decide
-theorem psm_at_a42 : fetchRel p256ScalarMulCode 0xA42 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem psm_at_a46 : fetchRel p256ScalarMulCode 0xA46 = some (.jalr ra ra 0x78C, 4) := by decide
+theorem psm_at_a42 : fetchRel p256ScalarMulCode 0xA42 = some (.auipc ra 0xFFFEE000, 4) := by decide
+theorem psm_at_a46 : fetchRel p256ScalarMulCode 0xA46 = some (.jalr ra ra 0xFFFFF97C, 4) := by decide
 theorem psm_at_a4a : fetchRel p256ScalarMulCode 0xA4A = some (.store .sw sp a0 0x1C, 2) := by decide
 theorem psm_at_a4c : fetchRel p256ScalarMulCode 0xA4C = some (.alu .add a2 x0 a1, 2) := by decide
 theorem psm_at_a4e : fetchRel p256ScalarMulCode 0xA4E = some (.load .lw a0 sp 0x20, 2) := by decide
 theorem psm_at_a50 : fetchRel p256ScalarMulCode 0xA50 = some (.load .lw a1 sp 0x4, 2) := by decide
-theorem psm_at_a52 : fetchRel p256ScalarMulCode 0xA52 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem psm_at_a56 : fetchRel p256ScalarMulCode 0xA56 = some (.jalr ra ra 0x77C, 4) := by decide
+theorem psm_at_a52 : fetchRel p256ScalarMulCode 0xA52 = some (.auipc ra 0xFFFEE000, 4) := by decide
+theorem psm_at_a56 : fetchRel p256ScalarMulCode 0xA56 = some (.jalr ra ra 0xFFFFF96C, 4) := by decide
 theorem psm_at_a5a : fetchRel p256ScalarMulCode 0xA5A = some (.store .sw sp a0 0x20, 2) := by decide
 theorem psm_at_a5c : fetchRel p256ScalarMulCode 0xA5C = some (.load .lw a0 sp 0x0, 2) := by decide
 theorem psm_at_a5e : fetchRel p256ScalarMulCode 0xA5E = some (.alu .add a1 x0 (24 : Fin 32), 2) := by decide
 theorem psm_at_a60 : fetchRel p256ScalarMulCode 0xA60 = some (.aluImm .add a2 x0 0x0, 2) := by decide
-theorem psm_at_a62 : fetchRel p256ScalarMulCode 0xA62 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem psm_at_a66 : fetchRel p256ScalarMulCode 0xA66 = some (.jalr ra ra 0x76C, 4) := by decide
+theorem psm_at_a62 : fetchRel p256ScalarMulCode 0xA62 = some (.auipc ra 0xFFFEE000, 4) := by decide
+theorem psm_at_a66 : fetchRel p256ScalarMulCode 0xA66 = some (.jalr ra ra 0xFFFFF95C, 4) := by decide
 theorem psm_at_a6a : fetchRel p256ScalarMulCode 0xA6A = some (.store .sw sp a0 0x24, 2) := by decide
 theorem psm_at_a6c : fetchRel p256ScalarMulCode 0xA6C = some (.alu .add a2 x0 a1, 2) := by decide
 theorem psm_at_a6e : fetchRel p256ScalarMulCode 0xA6E = some (.alu .add a0 x0 (9 : Fin 32), 2) := by decide
 theorem psm_at_a70 : fetchRel p256ScalarMulCode 0xA70 = some (.alu .add a1 x0 (23 : Fin 32), 2) := by decide
-theorem psm_at_a72 : fetchRel p256ScalarMulCode 0xA72 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem psm_at_a76 : fetchRel p256ScalarMulCode 0xA76 = some (.jalr ra ra 0x75C, 4) := by decide
+theorem psm_at_a72 : fetchRel p256ScalarMulCode 0xA72 = some (.auipc ra 0xFFFEE000, 4) := by decide
+theorem psm_at_a76 : fetchRel p256ScalarMulCode 0xA76 = some (.jalr ra ra 0xFFFFF94C, 4) := by decide
 theorem psm_at_a7a : fetchRel p256ScalarMulCode 0xA7A = some (.alu .add (19 : Fin 32) x0 a0, 2) := by decide
 theorem psm_at_a7c : fetchRel p256ScalarMulCode 0xA7C = some (.alu .add a2 x0 a1, 2) := by decide
 theorem psm_at_a7e : fetchRel p256ScalarMulCode 0xA7E = some (.alu .add a0 x0 (20 : Fin 32), 2) := by decide
 theorem psm_at_a80 : fetchRel p256ScalarMulCode 0xA80 = some (.alu .add a1 x0 (21 : Fin 32), 2) := by decide
-theorem psm_at_a82 : fetchRel p256ScalarMulCode 0xA82 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem psm_at_a86 : fetchRel p256ScalarMulCode 0xA86 = some (.jalr ra ra 0x74C, 4) := by decide
+theorem psm_at_a82 : fetchRel p256ScalarMulCode 0xA82 = some (.auipc ra 0xFFFEE000, 4) := by decide
+theorem psm_at_a86 : fetchRel p256ScalarMulCode 0xA86 = some (.jalr ra ra 0xFFFFF93C, 4) := by decide
 theorem psm_at_a8a : fetchRel p256ScalarMulCode 0xA8A = some (.alu .add (25 : Fin 32) x0 a0, 2) := by decide
 theorem psm_at_a8c : fetchRel p256ScalarMulCode 0xA8C = some (.alu .add a2 x0 a1, 2) := by decide
 theorem psm_at_a8e : fetchRel p256ScalarMulCode 0xA8E = some (.alu .add a0 x0 (8 : Fin 32), 2) := by decide
 theorem psm_at_a90 : fetchRel p256ScalarMulCode 0xA90 = some (.alu .add a1 x0 (22 : Fin 32), 2) := by decide
-theorem psm_at_a92 : fetchRel p256ScalarMulCode 0xA92 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem psm_at_a96 : fetchRel p256ScalarMulCode 0xA96 = some (.jalr ra ra 0x73C, 4) := by decide
+theorem psm_at_a92 : fetchRel p256ScalarMulCode 0xA92 = some (.auipc ra 0xFFFEE000, 4) := by decide
+theorem psm_at_a96 : fetchRel p256ScalarMulCode 0xA96 = some (.jalr ra ra 0xFFFFF92C, 4) := by decide
 theorem psm_at_a9a : fetchRel p256ScalarMulCode 0xA9A = some (.store .sw sp a0 0x14, 2) := by decide
 theorem psm_at_a9c : fetchRel p256ScalarMulCode 0xA9C = some (.alu .add a2 x0 a1, 2) := by decide
 theorem psm_at_a9e : fetchRel p256ScalarMulCode 0xA9E = some (.aluImm .add a1 x0 0xFFFFFFFF, 2) := by decide
 theorem psm_at_aa0 : fetchRel p256ScalarMulCode 0xAA0 = some (.alu .add a0 x0 (26 : Fin 32), 2) := by decide
-theorem psm_at_aa2 : fetchRel p256ScalarMulCode 0xAA2 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem psm_at_aa6 : fetchRel p256ScalarMulCode 0xAA6 = some (.jalr ra ra 0x72C, 4) := by decide
+theorem psm_at_aa2 : fetchRel p256ScalarMulCode 0xAA2 = some (.auipc ra 0xFFFEE000, 4) := by decide
+theorem psm_at_aa6 : fetchRel p256ScalarMulCode 0xAA6 = some (.jalr ra ra 0xFFFFF91C, 4) := by decide
 theorem psm_at_aaa : fetchRel p256ScalarMulCode 0xAAA = some (.alu .add (26 : Fin 32) x0 a0, 2) := by decide
 theorem psm_at_aac : fetchRel p256ScalarMulCode 0xAAC = some (.alu .add a2 x0 a1, 2) := by decide
 theorem psm_at_aae : fetchRel p256ScalarMulCode 0xAAE = some (.aluImm .add a1 x0 0xFFFFFFFF, 2) := by decide
 theorem psm_at_ab0 : fetchRel p256ScalarMulCode 0xAB0 = some (.load .lw a0 sp 0x18, 2) := by decide
-theorem psm_at_ab2 : fetchRel p256ScalarMulCode 0xAB2 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem psm_at_ab6 : fetchRel p256ScalarMulCode 0xAB6 = some (.jalr ra ra 0x71C, 4) := by decide
+theorem psm_at_ab2 : fetchRel p256ScalarMulCode 0xAB2 = some (.auipc ra 0xFFFEE000, 4) := by decide
+theorem psm_at_ab6 : fetchRel p256ScalarMulCode 0xAB6 = some (.jalr ra ra 0xFFFFF90C, 4) := by decide
 theorem psm_at_aba : fetchRel p256ScalarMulCode 0xABA = some (.alu .add (20 : Fin 32) x0 a0, 2) := by decide
 theorem psm_at_abc : fetchRel p256ScalarMulCode 0xABC = some (.alu .add a2 x0 a1, 2) := by decide
 theorem psm_at_abe : fetchRel p256ScalarMulCode 0xABE = some (.alu .add a0 x0 (27 : Fin 32), 2) := by decide
 theorem psm_at_ac0 : fetchRel p256ScalarMulCode 0xAC0 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem psm_at_ac2 : fetchRel p256ScalarMulCode 0xAC2 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem psm_at_ac6 : fetchRel p256ScalarMulCode 0xAC6 = some (.jalr ra ra 0x70C, 4) := by decide
+theorem psm_at_ac2 : fetchRel p256ScalarMulCode 0xAC2 = some (.auipc ra 0xFFFEE000, 4) := by decide
+theorem psm_at_ac6 : fetchRel p256ScalarMulCode 0xAC6 = some (.jalr ra ra 0xFFFFF8FC, 4) := by decide
 theorem psm_at_aca : fetchRel p256ScalarMulCode 0xACA = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
 theorem psm_at_acc : fetchRel p256ScalarMulCode 0xACC = some (.alu .add a2 x0 a1, 2) := by decide
 theorem psm_at_ace : fetchRel p256ScalarMulCode 0xACE = some (.aluImm .add a1 x0 0xFFFFFFFF, 2) := by decide
 theorem psm_at_ad0 : fetchRel p256ScalarMulCode 0xAD0 = some (.load .lw a0 sp 0x1C, 2) := by decide
-theorem psm_at_ad2 : fetchRel p256ScalarMulCode 0xAD2 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem psm_at_ad6 : fetchRel p256ScalarMulCode 0xAD6 = some (.jalr ra ra 0x6FC, 4) := by decide
+theorem psm_at_ad2 : fetchRel p256ScalarMulCode 0xAD2 = some (.auipc ra 0xFFFEE000, 4) := by decide
+theorem psm_at_ad6 : fetchRel p256ScalarMulCode 0xAD6 = some (.jalr ra ra 0xFFFFF8EC, 4) := by decide
 theorem psm_at_ada : fetchRel p256ScalarMulCode 0xADA = some (.alu .add (27 : Fin 32) x0 a0, 2) := by decide
 theorem psm_at_adc : fetchRel p256ScalarMulCode 0xADC = some (.alu .add a2 x0 a1, 2) := by decide
 theorem psm_at_ade : fetchRel p256ScalarMulCode 0xADE = some (.load .lw a0 sp 0x20, 2) := by decide
 theorem psm_at_ae0 : fetchRel p256ScalarMulCode 0xAE0 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem psm_at_ae2 : fetchRel p256ScalarMulCode 0xAE2 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem psm_at_ae6 : fetchRel p256ScalarMulCode 0xAE6 = some (.jalr ra ra 0x6EC, 4) := by decide
+theorem psm_at_ae2 : fetchRel p256ScalarMulCode 0xAE2 = some (.auipc ra 0xFFFEE000, 4) := by decide
+theorem psm_at_ae6 : fetchRel p256ScalarMulCode 0xAE6 = some (.jalr ra ra 0xFFFFF8DC, 4) := by decide
 theorem psm_at_aea : fetchRel p256ScalarMulCode 0xAEA = some (.alu .and a0 a1 (24 : Fin 32), 4) := by decide
 theorem psm_at_aee : fetchRel p256ScalarMulCode 0xAEE = some (.alu .and a2 a1 (23 : Fin 32), 4) := by decide
 theorem psm_at_af2 : fetchRel p256ScalarMulCode 0xAF2 = some (.load .lw a6 sp 0x24, 2) := by decide

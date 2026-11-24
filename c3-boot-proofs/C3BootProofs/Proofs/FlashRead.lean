@@ -19,8 +19,8 @@ set_option maxRecDepth 20000
 theorem rfw_at_0 : fetchRel romFlashReadWordsCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFF0, 2) := by decide
 theorem rfw_at_2 : fetchRel romFlashReadWordsCode 0x2 = some (.store .sw sp ra 0xC, 2) := by decide
 theorem rfw_at_4 : fetchRel romFlashReadWordsCode 0x4 = some (.aluImm .sll a2 a2 0x2, 2) := by decide
-theorem rfw_at_6 : fetchRel romFlashReadWordsCode 0x6 = some (.auipc ra 0xFFC5F000, 4) := by decide
-theorem rfw_at_a : fetchRel romFlashReadWordsCode 0xA = some (.jalr ra ra 0xFFFFF9FA, 4) := by decide
+theorem rfw_at_6 : fetchRel romFlashReadWordsCode 0x6 = some (.auipc ra 0xFFC49000, 4) := by decide
+theorem rfw_at_a : fetchRel romFlashReadWordsCode 0xA = some (.jalr ra ra 0x4C8, 4) := by decide
 theorem rfw_at_e : fetchRel romFlashReadWordsCode 0xE = some (.aluImm .sltu a0 a0 0x1, 4) := by decide
 theorem rfw_at_12 : fetchRel romFlashReadWordsCode 0x12 = some (.load .lw ra sp 0xC, 2) := by decide
 theorem rfw_at_14 : fetchRel romFlashReadWordsCode 0x14 = some (.aluImm .add sp sp 0x10, 2) := by decide
@@ -48,8 +48,8 @@ theorem frd_at_38 : fetchRel flashReadCode 0x38 = some (.aluImm .add a0 sp 0xC, 
 theorem frd_at_3a : fetchRel flashReadCode 0x3A = some (.aluImm .add a2 x0 0x100, 4) := by decide
 theorem frd_at_3e : fetchRel flashReadCode 0x3E = some (.aluImm .add (22 : Fin 32) sp 0xC, 4) := by decide
 theorem frd_at_42 : fetchRel flashReadCode 0x42 = some (.aluImm .add (20 : Fin 32) x0 0x100, 4) := by decide
-theorem frd_at_46 : fetchRel flashReadCode 0x46 = some (.auipc ra 0x13000, 4) := by decide
-theorem frd_at_4a : fetchRel flashReadCode 0x4A = some (.jalr ra ra 0x58, 4) := by decide
+theorem frd_at_46 : fetchRel flashReadCode 0x46 = some (.auipc ra 0x0, 4) := by decide
+theorem frd_at_4a : fetchRel flashReadCode 0x4A = some (.jalr ra ra 0xFFFFFA94, 4) := by decide
 theorem frd_at_4e : fetchRel flashReadCode 0x4E = some (.aluImm .add (23 : Fin 32) x0 0x0, 2) := by decide
 theorem frd_at_50 : fetchRel flashReadCode 0x50 = some (.alu .add (9 : Fin 32) (19 : Fin 32) (21 : Fin 32), 4) := by decide
 theorem frd_at_54 : fetchRel flashReadCode 0x54 = some (.aluImm .add (24 : Fin 32) x0 0xFF, 4) := by decide

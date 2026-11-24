@@ -29,7 +29,7 @@ theorem mg_at_06 : fetchRel readerMagicCode 0x06 = some (.alu .add s0 x0 a1, 2) 
 theorem mg_at_08 : fetchRel readerMagicCode 0x08 = some (.alu .add a1 x0 a0, 2) := by decide
 theorem mg_at_0a : fetchRel readerMagicCode 0x0A = some (.alu .add a0 x0 sp, 2) := by decide
 theorem mg_at_0c : fetchRel readerMagicCode 0x0C = some (.auipc ra 0, 4) := by decide
-theorem mg_at_10 : fetchRel readerMagicCode 0x10 = some (.jalr ra ra 0x1B0, 4) := by decide
+theorem mg_at_10 : fetchRel readerMagicCode 0x10 = some (.jalr ra ra 0xFFFFFFAE, 4) := by decide
 theorem mg_at_14 : fetchRel readerMagicCode 0x14 = some (.load .lbu a0 sp 0, 4) := by decide
 theorem mg_at_18 : fetchRel readerMagicCode 0x18 = some (.branch .beq a0 x0 8, 2) := by decide
 theorem mg_at_1a : fetchRel readerMagicCode 0x1A = some (.load .lbu a0 sp 1, 4) := by decide

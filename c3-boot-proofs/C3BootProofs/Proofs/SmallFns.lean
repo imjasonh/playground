@@ -22,8 +22,8 @@ open C3.Image
 theorem eq_at_0 : fetchRel eqArr97Code 0x0 = some (.aluImm .add sp sp 0xFFFFFFF0, 2) := by decide
 theorem eq_at_2 : fetchRel eqArr97Code 0x2 = some (.store .sw sp ra 0xC, 2) := by decide
 theorem eq_at_4 : fetchRel eqArr97Code 0x4 = some (.aluImm .add a2 x0 0x61, 4) := by decide
-theorem eq_at_8 : fetchRel eqArr97Code 0x8 = some (.auipc ra 0x8000, 4) := by decide
-theorem eq_at_c : fetchRel eqArr97Code 0xC = some (.jalr ra ra 0xFFFFFAD4, 4) := by decide
+theorem eq_at_8 : fetchRel eqArr97Code 0x8 = some (.auipc ra 0xC000, 4) := by decide
+theorem eq_at_c : fetchRel eqArr97Code 0xC = some (.jalr ra ra 0x44, 4) := by decide
 theorem eq_at_10 : fetchRel eqArr97Code 0x10 = some (.aluImm .sltu a0 a0 0x1, 4) := by decide
 theorem eq_at_14 : fetchRel eqArr97Code 0x14 = some (.load .lw ra sp 0xC, 2) := by decide
 theorem eq_at_16 : fetchRel eqArr97Code 0x16 = some (.aluImm .add sp sp 0x10, 2) := by decide
@@ -249,7 +249,7 @@ theorem fe_at_2 : fetchRel fulcioEnumNextCode 0x2 = some (.store .sw sp ra 0xC, 
 theorem fe_at_4 : fetchRel fulcioEnumNextCode 0x4 = some (.store .sw sp (8 : Fin 32) 0x8, 2) := by decide
 theorem fe_at_6 : fetchRel fulcioEnumNextCode 0x6 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
 theorem fe_at_8 : fetchRel fulcioEnumNextCode 0x8 = some (.auipc ra 0x0, 4) := by decide
-theorem fe_at_c : fetchRel fulcioEnumNextCode 0xC = some (.jalr ra ra 0x1C0, 4) := by decide
+theorem fe_at_c : fetchRel fulcioEnumNextCode 0xC = some (.jalr ra ra 0x4A, 4) := by decide
 theorem fe_at_10 : fetchRel fulcioEnumNextCode 0x10 = some (.alu .add a1 x0 a0, 2) := by decide
 theorem fe_at_12 : fetchRel fulcioEnumNextCode 0x12 = some (.branch .beq a0 x0 0xC, 2) := by decide
 theorem fe_at_14 : fetchRel fulcioEnumNextCode 0x14 = some (.load .lw a0 (8 : Fin 32) 0x8, 2) := by decide
@@ -502,7 +502,7 @@ theorem fh_at_1e : fetchRel fulcioIterNthCode 0x1E = some (.branch .beq a1 x0 0x
 theorem fh_at_20 : fetchRel fulcioIterNthCode 0x20 = some (.aluImm .add a0 x0 0x0, 2) := by decide
 theorem fh_at_22 : fetchRel fulcioIterNthCode 0x22 = some (.jalr x0 ra 0x0, 2) := by decide
 theorem fh_at_24 : fetchRel fulcioIterNthCode 0x24 = some (.auipc (6 : Fin 32) 0x0, 4) := by decide
-theorem fh_at_28 : fetchRel fulcioIterNthCode 0x28 = some (.jalr x0 (6 : Fin 32) 0x17E, 4) := by decide
+theorem fh_at_28 : fetchRel fulcioIterNthCode 0x28 = some (.jalr x0 (6 : Fin 32) 0x8, 4) := by decide
 
 set_option maxRecDepth 20000 in
 /-- **`nth` of the `map_while(Option::as_ref)` iterator, as compiled**: for

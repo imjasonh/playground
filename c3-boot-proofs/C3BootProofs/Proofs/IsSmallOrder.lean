@@ -68,7 +68,7 @@ theorem iso_at_8c : fetchRel isSmallOrderCode 0x8C = some (.auipc ra 0x4000, 4) 
 theorem iso_at_90 : fetchRel isSmallOrderCode 0x90 = some (.jalr ra ra 0xFFFFFE5C, 4) := by decide
 theorem iso_at_94 : fetchRel isSmallOrderCode 0x94 = some (.aluImm .add (18 : Fin 32) sp 0x1E4, 4) := by decide
 theorem iso_at_98 : fetchRel isSmallOrderCode 0x98 = some (.lui (9 : Fin 32) 0x3FCC5000, 4) := by decide
-theorem iso_at_9c : fetchRel isSmallOrderCode 0x9C = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFF948, 4) := by decide
+theorem iso_at_9c : fetchRel isSmallOrderCode 0x9C = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFF9B0, 4) := by decide
 theorem iso_at_a0 : fetchRel isSmallOrderCode 0xA0 = some (.aluImm .add a2 x0 0x28, 4) := by decide
 theorem iso_at_a4 : fetchRel isSmallOrderCode 0xA4 = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
 theorem iso_at_a6 : fetchRel isSmallOrderCode 0xA6 = some (.alu .add a1 x0 (9 : Fin 32), 2) := by decide
@@ -223,7 +223,7 @@ end
 
 def isoF1 : List BInstr := [.aluImm .add a0 sp 0x1BC, .aluImm .add a2 x0 0x28, .aluImm .add a1 x0 0x0]
 def isoF2 : List BInstr := [.aluImm .add (18 : Fin 32) sp 0x1E4, .lui (9 : Fin 32) 0x3FCC5000,
-  .aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFF948, .aluImm .add a2 x0 0x28, .alu .add a0 x0 (18 : Fin 32),
+  .aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFF9B0, .aluImm .add a2 x0 0x28, .alu .add a0 x0 (18 : Fin 32),
   .alu .add a1 x0 (9 : Fin 32)]
 def isoF3 : List BInstr := [.aluImm .add (19 : Fin 32) sp 0x20C, .aluImm .add a2 x0 0x28, .alu .add a0 x0 (19 : Fin 32),
   .alu .add a1 x0 (9 : Fin 32)]

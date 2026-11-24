@@ -27,10 +27,10 @@ theorem os_at_c : fetchRel sha256FnCode 0xC = some (.alu .add (9 : Fin 32) x0 a1
 theorem os_at_e : fetchRel sha256FnCode 0xE = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
 theorem os_at_10 : fetchRel sha256FnCode 0x10 = some (.aluImm .add a0 sp 0x40, 2) := by decide
 theorem os_at_12 : fetchRel sha256FnCode 0x12 = some (.lui a1 0x3FCC4000, 4) := by decide
-theorem os_at_16 : fetchRel sha256FnCode 0x16 = some (.aluImm .add a1 a1 0x2A8, 4) := by decide
+theorem os_at_16 : fetchRel sha256FnCode 0x16 = some (.aluImm .add a1 a1 0x118, 4) := by decide
 theorem os_at_1a : fetchRel sha256FnCode 0x1A = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem os_at_1e : fetchRel sha256FnCode 0x1E = some (.auipc ra 0xE000, 4) := by decide
-theorem os_at_22 : fetchRel sha256FnCode 0x22 = some (.jalr ra ra 0xFFFFFC36, 4) := by decide
+theorem os_at_1e : fetchRel sha256FnCode 0x1E = some (.auipc ra 0x10000, 4) := by decide
+theorem os_at_22 : fetchRel sha256FnCode 0x22 = some (.jalr ra ra 0xFFFFFA46, 4) := by decide
 theorem os_at_26 : fetchRel sha256FnCode 0x26 = some (.store .sb sp x0 0x3F, 4) := by decide
 theorem os_at_2a : fetchRel sha256FnCode 0x2A = some (.store .sw sp x0 0x60, 2) := by decide
 theorem os_at_2c : fetchRel sha256FnCode 0x2C = some (.store .sw sp x0 0x64, 2) := by decide
@@ -42,8 +42,8 @@ theorem os_at_38 : fetchRel sha256FnCode 0x38 = some (.jalr ra ra 0xFFFFFE92, 4)
 theorem os_at_3c : fetchRel sha256FnCode 0x3C = some (.aluImm .add a0 sp 0x68, 2) := by decide
 theorem os_at_3e : fetchRel sha256FnCode 0x3E = some (.alu .add a1 x0 sp, 2) := by decide
 theorem os_at_40 : fetchRel sha256FnCode 0x40 = some (.aluImm .add a2 x0 0x68, 4) := by decide
-theorem os_at_44 : fetchRel sha256FnCode 0x44 = some (.auipc ra 0xE000, 4) := by decide
-theorem os_at_48 : fetchRel sha256FnCode 0x48 = some (.jalr ra ra 0xFFFFFC10, 4) := by decide
+theorem os_at_44 : fetchRel sha256FnCode 0x44 = some (.auipc ra 0x10000, 4) := by decide
+theorem os_at_48 : fetchRel sha256FnCode 0x48 = some (.jalr ra ra 0xFFFFFA20, 4) := by decide
 theorem os_at_4c : fetchRel sha256FnCode 0x4C = some (.aluImm .add a1 sp 0x68, 2) := by decide
 theorem os_at_4e : fetchRel sha256FnCode 0x4E = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
 theorem os_at_50 : fetchRel sha256FnCode 0x50 = some (.auipc ra 0x0, 4) := by decide
@@ -57,7 +57,7 @@ theorem os_at_62 : fetchRel sha256FnCode 0x62 = some (.jalr x0 ra 0x0, 2) := by 
 
 def ssInit : List BInstr :=
   [.alu .add (8 : Fin 32) x0 a2, .alu .add (9 : Fin 32) x0 a1, .alu .add (18 : Fin 32) x0 a0, .aluImm .add a0 sp 0x40,
-    .lui a1 0x3FCC4000, .aluImm .add a1 a1 0x2A8, .aluImm .add a2 x0 0x20]
+    .lui a1 0x3FCC4000, .aluImm .add a1 a1 0x118, .aluImm .add a2 x0 0x20]
 
 theorem ssInit_end : blockEnd sha256FnCode 0xA ssInit = some 0x1E := by decide
 

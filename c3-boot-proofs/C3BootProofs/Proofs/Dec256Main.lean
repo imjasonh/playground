@@ -287,9 +287,9 @@ theorem gd_stA {M : Word → BitVec 8} {n : Machine} {S inp : Word} (C : GdCode 
 
 def gdB1 : List BInstr := [.aluImm .add a0 sp 0x43C, .aluImm .add a1 sp 0x84, .aluImm .add a2 sp 0x84, .aluImm .add (8 : Fin 32) sp 0x43C]
 def gdB2 : List BInstr := [.aluImm .add a0 sp 0x21C, .aluImm .add a1 sp 0x43C, .aluImm .add a2 sp 0x84]
-def gdB3 : List BInstr := [.lui a1 0x3FCC4000, .aluImm .add a1 a1 0x2C8, .aluImm .add a0 sp 0x43C, .aluImm .add a2 sp 0x84]
+def gdB3 : List BInstr := [.lui a1 0x3FCC4000, .aluImm .add a1 a1 0x138, .aluImm .add a0 sp 0x43C, .aluImm .add a2 sp 0x84]
 def gdB4 : List BInstr := [.aluImm .add a0 sp 0x1DC, .aluImm .add a1 sp 0x21C, .aluImm .add a2 sp 0x43C]
-def gdB5 : List BInstr := [.lui a2 0x3FCC4000, .aluImm .add a2 a2 0x368, .aluImm .add a0 sp 0xC4, .aluImm .add a1 sp 0x1DC]
+def gdB5 : List BInstr := [.lui a2 0x3FCC4000, .aluImm .add a2 a2 0x1D8, .aluImm .add a0 sp 0xC4, .aluImm .add a1 sp 0x1DC]
 
 theorem gdB1_end : blockEnd p256DecompressCode 0x6E gdB1 = some 0x7A := by decide
 theorem gdB2_end : blockEnd p256DecompressCode 0x82 gdB2 = some 0x8A := by decide
@@ -450,13 +450,13 @@ theorem gd_stB {M : Word → BitVec 8} {n : Machine} {S : Word} {X : Nat} (C : G
 /-! ## Copying the constants -/
 
 def gdC1 : List BInstr :=
-  [.aluImm .add a0 sp 0xE4, .lui (24 : Fin 32) 0x3FCC5000, .aluImm .add (24 : Fin 32) (24 : Fin 32) 0xFFFFFB38,
+  [.aluImm .add a0 sp 0xE4, .lui (24 : Fin 32) 0x3FCC5000, .aluImm .add (24 : Fin 32) (24 : Fin 32) 0xFFFFFBA0,
    .aluImm .add a2 x0 0x6C, .alu .add a1 x0 (24 : Fin 32)]
 def gdC2 : List BInstr :=
   [.aluImm .add (9 : Fin 32) x0 0x100, .alu .sub (18 : Fin 32) (9 : Fin 32) (8 : Fin 32), .aluImm .add a0 sp 0x1DC,
    .aluImm .add a1 sp 0xC4, .aluImm .add a2 x0 0x20]
 def gdC3 : List BInstr :=
-  [.aluImm .add a0 sp 0x1FC, .lui (22 : Fin 32) 0x3FCC5000, .aluImm .add (22 : Fin 32) (22 : Fin 32) 0xFFFFFBCC,
+  [.aluImm .add a0 sp 0x1FC, .lui (22 : Fin 32) 0x3FCC5000, .aluImm .add (22 : Fin 32) (22 : Fin 32) 0xFFFFFC34,
    .aluImm .add a2 x0 0x20, .alu .add a1 x0 (22 : Fin 32)]
 
 theorem gdC1_end : blockEnd p256DecompressCode 0xCC gdC1 = some 0xDC := by decide

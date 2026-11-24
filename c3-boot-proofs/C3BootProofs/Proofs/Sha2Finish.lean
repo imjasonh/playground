@@ -14,8 +14,8 @@ open C3.Image
 
 section
 set_option maxRecDepth 20000
-theorem shf_at_e : fetchRel shaFinishCode 0xE = some (.auipc ra 0xE000, 4) := by decide
-theorem shf_at_12 : fetchRel shaFinishCode 0x12 = some (.jalr ra ra 0xFFFFFF10, 4) := by decide
+theorem shf_at_e : fetchRel shaFinishCode 0xE = some (.auipc ra 0x10000, 4) := by decide
+theorem shf_at_12 : fetchRel shaFinishCode 0x12 = some (.jalr ra ra 0xFFFFFD20, 4) := by decide
 theorem shf_at_1a : fetchRel shaFinishCode 0x1A = some (.auipc ra 0x0, 4) := by decide
 theorem shf_at_1e : fetchRel shaFinishCode 0x1E = some (.jalr ra ra 0x10, 4) := by decide
 theorem shf_at_28 : fetchRel shaFinishCode 0x28 = some (.jalr x0 ra 0x0, 2) := by decide

@@ -41,7 +41,7 @@ theorem bf_at_38 : fetchRel scalarFromSlice384Code 0x38 = some (.auipc ra 0x0, 4
 theorem bf_at_3c : fetchRel scalarFromSlice384Code 0x3C = some (.jalr ra ra 0x144, 4) := by decide
 theorem bf_at_40 : fetchRel scalarFromSlice384Code 0x40 = some (.aluImm .add (19 : Fin 32) x0 0x0, 2) := by decide
 theorem bf_at_42 : fetchRel scalarFromSlice384Code 0x42 = some (.lui (9 : Fin 32) 0x3FCC5000, 4) := by decide
-theorem bf_at_46 : fetchRel scalarFromSlice384Code 0x46 = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFFDC4, 4) := by decide
+theorem bf_at_46 : fetchRel scalarFromSlice384Code 0x46 = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFFE2C, 4) := by decide
 theorem bf_at_4a : fetchRel scalarFromSlice384Code 0x4A = some (.aluImm .add (8 : Fin 32) x0 0xC, 2) := by decide
 theorem bf_at_4c : fetchRel scalarFromSlice384Code 0x4C = some (.branch .beq (8 : Fin 32) x0 0x1C, 2) := by decide
 theorem bf_at_4e : fetchRel scalarFromSlice384Code 0x4E = some (.load .lw a0 (20 : Fin 32) 0x0, 4) := by decide
@@ -55,7 +55,7 @@ theorem bf_at_62 : fetchRel scalarFromSlice384Code 0x62 = some (.aluImm .add (9 
 theorem bf_at_64 : fetchRel scalarFromSlice384Code 0x64 = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFFFF, 2) := by decide
 theorem bf_at_66 : fetchRel scalarFromSlice384Code 0x66 = some (.branch .bne (8 : Fin 32) x0 0xFFFFFFE8, 2) := by decide
 theorem bf_at_68 : fetchRel scalarFromSlice384Code 0x68 = some (.lui a0 0x3FCC5000, 4) := by decide
-theorem bf_at_6c : fetchRel scalarFromSlice384Code 0x6C = some (.aluImm .add a0 a0 0xFFFFFDF4, 4) := by decide
+theorem bf_at_6c : fetchRel scalarFromSlice384Code 0x6C = some (.aluImm .add a0 a0 0xFFFFFE5C, 4) := by decide
 theorem bf_at_70 : fetchRel scalarFromSlice384Code 0x70 = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem bf_at_72 : fetchRel scalarFromSlice384Code 0x72 = some (.auipc ra 0x0, 4) := by decide
 theorem bf_at_76 : fetchRel scalarFromSlice384Code 0x76 = some (.jalr ra ra 0xEC, 4) := by decide
@@ -70,16 +70,16 @@ theorem bf_at_90 : fetchRel scalarFromSlice384Code 0x90 = some (.aluImm .xor a0 
 theorem bf_at_94 : fetchRel scalarFromSlice384Code 0x94 = some (.alu .and a0 (19 : Fin 32) a0, 4) := by decide
 theorem bf_at_98 : fetchRel scalarFromSlice384Code 0x98 = some (.aluImm .and a0 a0 0x1, 2) := by decide
 theorem bf_at_9a : fetchRel scalarFromSlice384Code 0x9A = some (.alu .or a0 a0 (8 : Fin 32), 2) := by decide
-theorem bf_at_9c : fetchRel scalarFromSlice384Code 0x9C = some (.auipc ra 0xB000, 4) := by decide
-theorem bf_at_a0 : fetchRel scalarFromSlice384Code 0xA0 = some (.jalr ra ra 0xFFFFFB9A, 4) := by decide
+theorem bf_at_9c : fetchRel scalarFromSlice384Code 0x9C = some (.auipc ra 0xD000, 4) := by decide
+theorem bf_at_a0 : fetchRel scalarFromSlice384Code 0xA0 = some (.jalr ra ra 0xFFFFF9AA, 4) := by decide
 theorem bf_at_a4 : fetchRel scalarFromSlice384Code 0xA4 = some (.aluImm .add a1 x0 0x1, 2) := by decide
 theorem bf_at_a6 : fetchRel scalarFromSlice384Code 0xA6 = some (.aluImm .and a0 a0 0xFF, 4) := by decide
 theorem bf_at_aa : fetchRel scalarFromSlice384Code 0xAA = some (.branch .bne a0 a1 0x18, 4) := by decide
 theorem bf_at_ae : fetchRel scalarFromSlice384Code 0xAE = some (.aluImm .add a0 (18 : Fin 32) 0x4, 4) := by decide
 theorem bf_at_b2 : fetchRel scalarFromSlice384Code 0xB2 = some (.aluImm .add a1 sp 0x38, 2) := by decide
 theorem bf_at_b4 : fetchRel scalarFromSlice384Code 0xB4 = some (.aluImm .add a2 x0 0x30, 4) := by decide
-theorem bf_at_b8 : fetchRel scalarFromSlice384Code 0xB8 = some (.auipc ra 0x12000, 4) := by decide
-theorem bf_at_bc : fetchRel scalarFromSlice384Code 0xBC = some (.jalr ra ra 0xFFFFFC88, 4) := by decide
+theorem bf_at_b8 : fetchRel scalarFromSlice384Code 0xB8 = some (.auipc ra 0x14000, 4) := by decide
+theorem bf_at_bc : fetchRel scalarFromSlice384Code 0xBC = some (.jalr ra ra 0xFFFFFA98, 4) := by decide
 theorem bf_at_c0 : fetchRel scalarFromSlice384Code 0xC0 = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem bf_at_c2 : fetchRel scalarFromSlice384Code 0xC2 = some (.store .sw (18 : Fin 32) a1 0x0, 4) := by decide
 theorem bf_at_c6 : fetchRel scalarFromSlice384Code 0xC6 = some (.load .lw ra sp 0x7C, 2) := by decide
@@ -377,9 +377,9 @@ def bfS2 : List BInstr :=
   [.aluImm .add a0 sp 0x38, .aluImm .add a1 sp 0x8, .aluImm .add a2 x0 0x30, .aluImm .add a3 x0 0x180,
    .aluImm .add (20 : Fin 32) sp 0x38]
 def bfS3 : List BInstr :=
-  [.aluImm .add (19 : Fin 32) x0 0x0, .lui (9 : Fin 32) 0x3FCC5000, .aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFFDC4,
+  [.aluImm .add (19 : Fin 32) x0 0x0, .lui (9 : Fin 32) 0x3FCC5000, .aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFFE2C,
    .aluImm .add (8 : Fin 32) x0 0xC]
-def bfS4 : List BInstr := [.lui a0 0x3FCC5000, .aluImm .add a0 a0 0xFFFFFDF4, .aluImm .add a1 x0 0x0]
+def bfS4 : List BInstr := [.lui a0 0x3FCC5000, .aluImm .add a0 a0 0xFFFFFE5C, .aluImm .add a1 x0 0x0]
 def bfS5 : List BInstr :=
   [.aluImm .add a1 sp 0x68, .aluImm .and (8 : Fin 32) a0 0xFF, .alu .add a0 x0 a1, .aluImm .add a1 x0 0x0]
 def bfS6 : List BInstr :=

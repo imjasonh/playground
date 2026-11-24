@@ -109,8 +109,8 @@ theorem lsm8_at_ca : fetchRel lincombShiftMod8Code 0xCA = some (.auipc ra 0x0, 4
 theorem lsm8_at_ce : fetchRel lincombShiftMod8Code 0xCE = some (.jalr ra ra 0xFFFFFD18, 4) := by decide
 theorem lsm8_at_d2 : fetchRel lincombShiftMod8Code 0xD2 = some (.alu .add (20 : Fin 32) x0 a0, 2) := by decide
 theorem lsm8_at_d4 : fetchRel lincombShiftMod8Code 0xD4 = some (.alu .add (8 : Fin 32) x0 a1, 2) := by decide
-theorem lsm8_at_d6 : fetchRel lincombShiftMod8Code 0xD6 = some (.lui a0 0x3FCC5000, 4) := by decide
-theorem lsm8_at_da : fetchRel lincombShiftMod8Code 0xDA = some (.aluImm .add a0 a0 0xFFFFF838, 4) := by decide
+theorem lsm8_at_d6 : fetchRel lincombShiftMod8Code 0xD6 = some (.lui a0 0x3FCC4000, 4) := by decide
+theorem lsm8_at_da : fetchRel lincombShiftMod8Code 0xDA = some (.aluImm .add a0 a0 0x728, 4) := by decide
 theorem lsm8_at_de : fetchRel lincombShiftMod8Code 0xDE = some (.aluImm .add a1 x0 0x2, 2) := by decide
 theorem lsm8_at_e0 : fetchRel lincombShiftMod8Code 0xE0 = some (.alu .add a2 x0 (21 : Fin 32), 2) := by decide
 theorem lsm8_at_e2 : fetchRel lincombShiftMod8Code 0xE2 = some (.auipc ra 0x0, 4) := by decide
@@ -185,8 +185,8 @@ theorem lsm8_at_18c : fetchRel lincombShiftMod8Code 0x18C = some (.branch .beq (
 theorem lsm8_at_18e : fetchRel lincombShiftMod8Code 0x18E = some (.load .lw a0 (9 : Fin 32) 0x0, 2) := by decide
 theorem lsm8_at_190 : fetchRel lincombShiftMod8Code 0x190 = some (.load .lw a1 (24 : Fin 32) 0x0, 4) := by decide
 theorem lsm8_at_194 : fetchRel lincombShiftMod8Code 0x194 = some (.alu .add a2 x0 (20 : Fin 32), 2) := by decide
-theorem lsm8_at_196 : fetchRel lincombShiftMod8Code 0x196 = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem lsm8_at_19a : fetchRel lincombShiftMod8Code 0x19A = some (.jalr ra ra 0xFFFFFE58, 4) := by decide
+theorem lsm8_at_196 : fetchRel lincombShiftMod8Code 0x196 = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem lsm8_at_19a : fetchRel lincombShiftMod8Code 0x19A = some (.jalr ra ra 0x48, 4) := by decide
 theorem lsm8_at_19e : fetchRel lincombShiftMod8Code 0x19E = some (.alu .add (20 : Fin 32) x0 a1, 2) := by decide
 theorem lsm8_at_1a0 : fetchRel lincombShiftMod8Code 0x1A0 = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0x4, 2) := by decide
 theorem lsm8_at_1a2 : fetchRel lincombShiftMod8Code 0x1A2 = some (.store .sw (25 : Fin 32) a0 0x0, 4) := by decide
@@ -208,8 +208,8 @@ theorem lsm8_at_1ca : fetchRel lincombShiftMod8Code 0x1CA = some (.branch .beq (
 theorem lsm8_at_1cc : fetchRel lincombShiftMod8Code 0x1CC = some (.load .lw a0 (24 : Fin 32) 0x0, 4) := by decide
 theorem lsm8_at_1d0 : fetchRel lincombShiftMod8Code 0x1D0 = some (.load .lw a1 (21 : Fin 32) 0x0, 4) := by decide
 theorem lsm8_at_1d4 : fetchRel lincombShiftMod8Code 0x1D4 = some (.alu .add a2 x0 (20 : Fin 32), 2) := by decide
-theorem lsm8_at_1d6 : fetchRel lincombShiftMod8Code 0x1D6 = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem lsm8_at_1da : fetchRel lincombShiftMod8Code 0x1DA = some (.jalr ra ra 0xFFFFFE18, 4) := by decide
+theorem lsm8_at_1d6 : fetchRel lincombShiftMod8Code 0x1D6 = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem lsm8_at_1da : fetchRel lincombShiftMod8Code 0x1DA = some (.jalr ra ra 0x8, 4) := by decide
 theorem lsm8_at_1de : fetchRel lincombShiftMod8Code 0x1DE = some (.alu .add (20 : Fin 32) x0 a1, 2) := by decide
 theorem lsm8_at_1e0 : fetchRel lincombShiftMod8Code 0x1E0 = some (.aluImm .add (24 : Fin 32) (24 : Fin 32) 0x4, 2) := by decide
 theorem lsm8_at_1e2 : fetchRel lincombShiftMod8Code 0x1E2 = some (.store .sw (9 : Fin 32) a0 0x0, 2) := by decide
@@ -248,8 +248,8 @@ theorem lsm8_at_232 : fetchRel lincombShiftMod8Code 0x232 = some (.aluImm .add (
 theorem lsm8_at_234 : fetchRel lincombShiftMod8Code 0x234 = some (.branch .beq (9 : Fin 32) x0 0x20, 2) := by decide
 theorem lsm8_at_236 : fetchRel lincombShiftMod8Code 0x236 = some (.load .lw a0 (21 : Fin 32) 0x0, 4) := by decide
 theorem lsm8_at_23a : fetchRel lincombShiftMod8Code 0x23A = some (.load .lw a1 (23 : Fin 32) 0x0, 4) := by decide
-theorem lsm8_at_23e : fetchRel lincombShiftMod8Code 0x23E = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem lsm8_at_242 : fetchRel lincombShiftMod8Code 0x242 = some (.jalr ra ra 0xFFFFFDB0, 4) := by decide
+theorem lsm8_at_23e : fetchRel lincombShiftMod8Code 0x23E = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem lsm8_at_242 : fetchRel lincombShiftMod8Code 0x242 = some (.jalr ra ra 0xFFFFFFA0, 4) := by decide
 theorem lsm8_at_246 : fetchRel lincombShiftMod8Code 0x246 = some (.alu .add a2 x0 a1, 2) := by decide
 theorem lsm8_at_248 : fetchRel lincombShiftMod8Code 0x248 = some (.aluImm .add (21 : Fin 32) (21 : Fin 32) 0x4, 2) := by decide
 theorem lsm8_at_24a : fetchRel lincombShiftMod8Code 0x24A = some (.store .sw (8 : Fin 32) a0 0x0, 2) := by decide
@@ -270,8 +270,8 @@ theorem lsm8_at_26c : fetchRel lincombShiftMod8Code 0x26C = some (.alu .xor (8 :
 theorem lsm8_at_270 : fetchRel lincombShiftMod8Code 0x270 = some (.alu .and a2 a2 a0, 2) := by decide
 theorem lsm8_at_272 : fetchRel lincombShiftMod8Code 0x272 = some (.alu .add a0 x0 (19 : Fin 32), 2) := by decide
 theorem lsm8_at_274 : fetchRel lincombShiftMod8Code 0x274 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem lsm8_at_276 : fetchRel lincombShiftMod8Code 0x276 = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem lsm8_at_27a : fetchRel lincombShiftMod8Code 0x27A = some (.jalr ra ra 0xFFFFFD78, 4) := by decide
+theorem lsm8_at_276 : fetchRel lincombShiftMod8Code 0x276 = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem lsm8_at_27a : fetchRel lincombShiftMod8Code 0x27A = some (.jalr ra ra 0xFFFFFF68, 4) := by decide
 theorem lsm8_at_27e : fetchRel lincombShiftMod8Code 0x27E = some (.aluImm .add a0 sp 0x28, 2) := by decide
 theorem lsm8_at_280 : fetchRel lincombShiftMod8Code 0x280 = some (.aluImm .add a1 sp 0xA8, 2) := by decide
 theorem lsm8_at_282 : fetchRel lincombShiftMod8Code 0x282 = some (.alu .add a2 x0 sp, 2) := by decide
@@ -805,7 +805,7 @@ def lm8K1 : List BInstr :=
 /-- From 0xEC to `trailing`'s call at 0xE2: keep the buffer, and pass
 `Uint<2>::MAX`. -/
 def lm8K2 : List BInstr :=
-  [.alu .add (20 : Fin 32) x0 a0, .alu .add (8 : Fin 32) x0 a1, .lui a0 0x3FCC5000, .aluImm .add a0 a0 0xFFFFF838,
+  [.alu .add (20 : Fin 32) x0 a0, .alu .add (8 : Fin 32) x0 a1, .lui a0 0x3FCC4000, .aluImm .add a0 a0 0x728,
    .aluImm .add a1 x0 2, .alu .add a2 x0 (21 : Fin 32)]
 
 /-- From 0x108 to the branch at 0xF6: `xa`'s high limbs, and the copy's

@@ -22,7 +22,7 @@ def pvC2a636 : List BInstr :=
 theorem pvC2a636_end : blockEnd p384VerifyPrehashCode 0x636 pvC2a636 = some 0x648 := by decide
 
 def pvC2a650 : List BInstr :=
-  [.lui a1 0x3FCC5000, .aluImm .add a1 a1 0xFFFFFC5C, .lui a0 0x1000, .aluImm .add a0 a0 0x714, .alu .add a0 a0 sp]
+  [.lui a1 0x3FCC5000, .aluImm .add a1 a1 0xFFFFFCC4, .lui a0 0x1000, .aluImm .add a0 a0 0x714, .alu .add a0 a0 sp]
 theorem pvC2a650_end : blockEnd p384VerifyPrehashCode 0x650 pvC2a650 = some 0x660 := by decide
 
 set_option maxHeartbeats 0 in

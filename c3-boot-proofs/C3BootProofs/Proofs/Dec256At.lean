@@ -35,50 +35,50 @@ theorem gd_at_46 : fetchRel p256DecompressCode 0x46 = some (.jalr ra ra 0x7D0, 4
 theorem gd_at_4a : fetchRel p256DecompressCode 0x4A = some (.aluImm .add a0 sp 0x64, 2) := by decide
 theorem gd_at_4c : fetchRel p256DecompressCode 0x4C = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem gd_at_50 : fetchRel p256DecompressCode 0x50 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem gd_at_52 : fetchRel p256DecompressCode 0x52 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_56 : fetchRel p256DecompressCode 0x56 = some (.jalr ra ra 0x7B8, 4) := by decide
+theorem gd_at_52 : fetchRel p256DecompressCode 0x52 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_56 : fetchRel p256DecompressCode 0x56 = some (.jalr ra ra 0x5C8, 4) := by decide
 theorem gd_at_5a : fetchRel p256DecompressCode 0x5A = some (.load .lbu (26 : Fin 32) sp 0x60, 4) := by decide
 theorem gd_at_5e : fetchRel p256DecompressCode 0x5E = some (.aluImm .add a0 sp 0x84, 2) := by decide
 theorem gd_at_60 : fetchRel p256DecompressCode 0x60 = some (.aluImm .add a1 sp 0x64, 2) := by decide
 theorem gd_at_62 : fetchRel p256DecompressCode 0x62 = some (.aluImm .add a2 sp 0x40, 2) := by decide
 theorem gd_at_64 : fetchRel p256DecompressCode 0x64 = some (.alu .add a3 x0 (26 : Fin 32), 2) := by decide
-theorem gd_at_66 : fetchRel p256DecompressCode 0x66 = some (.auipc ra 0xB000, 4) := by decide
-theorem gd_at_6a : fetchRel p256DecompressCode 0x6A = some (.jalr ra ra 0x5CE, 4) := by decide
+theorem gd_at_66 : fetchRel p256DecompressCode 0x66 = some (.auipc ra 0xD000, 4) := by decide
+theorem gd_at_6a : fetchRel p256DecompressCode 0x6A = some (.jalr ra ra 0x3DE, 4) := by decide
 theorem gd_at_6e : fetchRel p256DecompressCode 0x6E = some (.aluImm .add a0 sp 0x43C, 4) := by decide
 theorem gd_at_72 : fetchRel p256DecompressCode 0x72 = some (.aluImm .add a1 sp 0x84, 2) := by decide
 theorem gd_at_74 : fetchRel p256DecompressCode 0x74 = some (.aluImm .add a2 sp 0x84, 2) := by decide
 theorem gd_at_76 : fetchRel p256DecompressCode 0x76 = some (.aluImm .add (8 : Fin 32) sp 0x43C, 4) := by decide
-theorem gd_at_7a : fetchRel p256DecompressCode 0x7A = some (.auipc ra 0xB000, 4) := by decide
-theorem gd_at_7e : fetchRel p256DecompressCode 0x7E = some (.jalr ra ra 0x606, 4) := by decide
+theorem gd_at_7a : fetchRel p256DecompressCode 0x7A = some (.auipc ra 0xD000, 4) := by decide
+theorem gd_at_7e : fetchRel p256DecompressCode 0x7E = some (.jalr ra ra 0x416, 4) := by decide
 theorem gd_at_82 : fetchRel p256DecompressCode 0x82 = some (.aluImm .add a0 sp 0x21C, 2) := by decide
 theorem gd_at_84 : fetchRel p256DecompressCode 0x84 = some (.aluImm .add a1 sp 0x43C, 4) := by decide
 theorem gd_at_88 : fetchRel p256DecompressCode 0x88 = some (.aluImm .add a2 sp 0x84, 2) := by decide
-theorem gd_at_8a : fetchRel p256DecompressCode 0x8A = some (.auipc ra 0xB000, 4) := by decide
-theorem gd_at_8e : fetchRel p256DecompressCode 0x8E = some (.jalr ra ra 0x5F6, 4) := by decide
+theorem gd_at_8a : fetchRel p256DecompressCode 0x8A = some (.auipc ra 0xD000, 4) := by decide
+theorem gd_at_8e : fetchRel p256DecompressCode 0x8E = some (.jalr ra ra 0x406, 4) := by decide
 theorem gd_at_92 : fetchRel p256DecompressCode 0x92 = some (.lui a1 0x3FCC4000, 4) := by decide
-theorem gd_at_96 : fetchRel p256DecompressCode 0x96 = some (.aluImm .add a1 a1 0x2C8, 4) := by decide
+theorem gd_at_96 : fetchRel p256DecompressCode 0x96 = some (.aluImm .add a1 a1 0x138, 4) := by decide
 theorem gd_at_9a : fetchRel p256DecompressCode 0x9A = some (.aluImm .add a0 sp 0x43C, 4) := by decide
 theorem gd_at_9e : fetchRel p256DecompressCode 0x9E = some (.aluImm .add a2 sp 0x84, 2) := by decide
-theorem gd_at_a0 : fetchRel p256DecompressCode 0xA0 = some (.auipc ra 0xB000, 4) := by decide
-theorem gd_at_a4 : fetchRel p256DecompressCode 0xA4 = some (.jalr ra ra 0x5E0, 4) := by decide
+theorem gd_at_a0 : fetchRel p256DecompressCode 0xA0 = some (.auipc ra 0xD000, 4) := by decide
+theorem gd_at_a4 : fetchRel p256DecompressCode 0xA4 = some (.jalr ra ra 0x3F0, 4) := by decide
 theorem gd_at_a8 : fetchRel p256DecompressCode 0xA8 = some (.aluImm .add a0 sp 0x1DC, 2) := by decide
 theorem gd_at_aa : fetchRel p256DecompressCode 0xAA = some (.aluImm .add a1 sp 0x21C, 2) := by decide
 theorem gd_at_ac : fetchRel p256DecompressCode 0xAC = some (.aluImm .add a2 sp 0x43C, 4) := by decide
-theorem gd_at_b0 : fetchRel p256DecompressCode 0xB0 = some (.auipc ra 0xC000, 4) := by decide
-theorem gd_at_b4 : fetchRel p256DecompressCode 0xB4 = some (.jalr ra ra 0xFFFFFD96, 4) := by decide
+theorem gd_at_b0 : fetchRel p256DecompressCode 0xB0 = some (.auipc ra 0xE000, 4) := by decide
+theorem gd_at_b4 : fetchRel p256DecompressCode 0xB4 = some (.jalr ra ra 0xFFFFFBA6, 4) := by decide
 theorem gd_at_b8 : fetchRel p256DecompressCode 0xB8 = some (.lui a2 0x3FCC4000, 4) := by decide
-theorem gd_at_bc : fetchRel p256DecompressCode 0xBC = some (.aluImm .add a2 a2 0x368, 4) := by decide
+theorem gd_at_bc : fetchRel p256DecompressCode 0xBC = some (.aluImm .add a2 a2 0x1D8, 4) := by decide
 theorem gd_at_c0 : fetchRel p256DecompressCode 0xC0 = some (.aluImm .add a0 sp 0xC4, 2) := by decide
 theorem gd_at_c2 : fetchRel p256DecompressCode 0xC2 = some (.aluImm .add a1 sp 0x1DC, 2) := by decide
-theorem gd_at_c4 : fetchRel p256DecompressCode 0xC4 = some (.auipc ra 0xC000, 4) := by decide
-theorem gd_at_c8 : fetchRel p256DecompressCode 0xC8 = some (.jalr ra ra 0xFFFFFD82, 4) := by decide
+theorem gd_at_c4 : fetchRel p256DecompressCode 0xC4 = some (.auipc ra 0xE000, 4) := by decide
+theorem gd_at_c8 : fetchRel p256DecompressCode 0xC8 = some (.jalr ra ra 0xFFFFFB92, 4) := by decide
 theorem gd_at_cc : fetchRel p256DecompressCode 0xCC = some (.aluImm .add a0 sp 0xE4, 2) := by decide
 theorem gd_at_ce : fetchRel p256DecompressCode 0xCE = some (.lui (24 : Fin 32) 0x3FCC5000, 4) := by decide
-theorem gd_at_d2 : fetchRel p256DecompressCode 0xD2 = some (.aluImm .add (24 : Fin 32) (24 : Fin 32) 0xFFFFFB38, 4) := by decide
+theorem gd_at_d2 : fetchRel p256DecompressCode 0xD2 = some (.aluImm .add (24 : Fin 32) (24 : Fin 32) 0xFFFFFBA0, 4) := by decide
 theorem gd_at_d6 : fetchRel p256DecompressCode 0xD6 = some (.aluImm .add a2 x0 0x6C, 4) := by decide
 theorem gd_at_da : fetchRel p256DecompressCode 0xDA = some (.alu .add a1 x0 (24 : Fin 32), 2) := by decide
-theorem gd_at_dc : fetchRel p256DecompressCode 0xDC = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_e0 : fetchRel p256DecompressCode 0xE0 = some (.jalr ra ra 0x796, 4) := by decide
+theorem gd_at_dc : fetchRel p256DecompressCode 0xDC = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_e0 : fetchRel p256DecompressCode 0xE0 = some (.jalr ra ra 0x5A6, 4) := by decide
 theorem gd_at_e4 : fetchRel p256DecompressCode 0xE4 = some (.aluImm .add a0 x0 0x0, 2) := by decide
 theorem gd_at_e6 : fetchRel p256DecompressCode 0xE6 = some (.lui a1 0x40000000, 4) := by decide
 theorem gd_at_ea : fetchRel p256DecompressCode 0xEA = some (.aluImm .add a2 x0 0x10, 2) := by decide
@@ -114,15 +114,15 @@ theorem gd_at_148 : fetchRel p256DecompressCode 0x148 = some (.alu .sub (18 : Fi
 theorem gd_at_14c : fetchRel p256DecompressCode 0x14C = some (.aluImm .add a0 sp 0x1DC, 2) := by decide
 theorem gd_at_14e : fetchRel p256DecompressCode 0x14E = some (.aluImm .add a1 sp 0xC4, 2) := by decide
 theorem gd_at_150 : fetchRel p256DecompressCode 0x150 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem gd_at_154 : fetchRel p256DecompressCode 0x154 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_158 : fetchRel p256DecompressCode 0x158 = some (.jalr ra ra 0x71E, 4) := by decide
+theorem gd_at_154 : fetchRel p256DecompressCode 0x154 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_158 : fetchRel p256DecompressCode 0x158 = some (.jalr ra ra 0x52E, 4) := by decide
 theorem gd_at_15c : fetchRel p256DecompressCode 0x15C = some (.aluImm .add a0 sp 0x1FC, 2) := by decide
 theorem gd_at_15e : fetchRel p256DecompressCode 0x15E = some (.lui (22 : Fin 32) 0x3FCC5000, 4) := by decide
-theorem gd_at_162 : fetchRel p256DecompressCode 0x162 = some (.aluImm .add (22 : Fin 32) (22 : Fin 32) 0xFFFFFBCC, 4) := by decide
+theorem gd_at_162 : fetchRel p256DecompressCode 0x162 = some (.aluImm .add (22 : Fin 32) (22 : Fin 32) 0xFFFFFC34, 4) := by decide
 theorem gd_at_166 : fetchRel p256DecompressCode 0x166 = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem gd_at_16a : fetchRel p256DecompressCode 0x16A = some (.alu .add a1 x0 (22 : Fin 32), 2) := by decide
-theorem gd_at_16c : fetchRel p256DecompressCode 0x16C = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_170 : fetchRel p256DecompressCode 0x170 = some (.jalr ra ra 0x706, 4) := by decide
+theorem gd_at_16c : fetchRel p256DecompressCode 0x16C = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_170 : fetchRel p256DecompressCode 0x170 = some (.jalr ra ra 0x516, 4) := by decide
 theorem gd_at_174 : fetchRel p256DecompressCode 0x174 = some (.branch .bltu (18 : Fin 32) (9 : Fin 32) 0x8, 4) := by decide
 theorem gd_at_178 : fetchRel p256DecompressCode 0x178 = some (.aluImm .add (18 : Fin 32) x0 0x100, 4) := by decide
 theorem gd_at_17c : fetchRel p256DecompressCode 0x17C = some (.aluImm .add a0 (8 : Fin 32) 0xFFFFFF00, 4) := by decide
@@ -130,8 +130,8 @@ theorem gd_at_180 : fetchRel p256DecompressCode 0x180 = some (.branch .bne a0 x0
 theorem gd_at_182 : fetchRel p256DecompressCode 0x182 = some (.aluImm .add a1 (24 : Fin 32) 0x20, 4) := by decide
 theorem gd_at_186 : fetchRel p256DecompressCode 0x186 = some (.aluImm .add a0 sp 0x150, 2) := by decide
 theorem gd_at_188 : fetchRel p256DecompressCode 0x188 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem gd_at_18c : fetchRel p256DecompressCode 0x18C = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_190 : fetchRel p256DecompressCode 0x190 = some (.jalr ra ra 0x6E6, 4) := by decide
+theorem gd_at_18c : fetchRel p256DecompressCode 0x18C = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_190 : fetchRel p256DecompressCode 0x190 = some (.jalr ra ra 0x4F6, 4) := by decide
 theorem gd_at_194 : fetchRel p256DecompressCode 0x194 = some (.jal x0 0x3BA, 2) := by decide
 theorem gd_at_196 : fetchRel p256DecompressCode 0x196 = some (.aluImm .add (8 : Fin 32) sp 0x21C, 2) := by decide
 theorem gd_at_198 : fetchRel p256DecompressCode 0x198 = some (.aluImm .add (9 : Fin 32) x0 0x10, 2) := by decide
@@ -139,8 +139,8 @@ theorem gd_at_19a : fetchRel p256DecompressCode 0x19A = some (.branch .beq (9 : 
 theorem gd_at_19c : fetchRel p256DecompressCode 0x19C = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem gd_at_1a0 : fetchRel p256DecompressCode 0x1A0 = some (.alu .add a0 x0 (8 : Fin 32), 2) := by decide
 theorem gd_at_1a2 : fetchRel p256DecompressCode 0x1A2 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem gd_at_1a4 : fetchRel p256DecompressCode 0x1A4 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_1a8 : fetchRel p256DecompressCode 0x1A8 = some (.jalr ra ra 0x666, 4) := by decide
+theorem gd_at_1a4 : fetchRel p256DecompressCode 0x1A4 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_1a8 : fetchRel p256DecompressCode 0x1A8 = some (.jalr ra ra 0x476, 4) := by decide
 theorem gd_at_1ac : fetchRel p256DecompressCode 0x1AC = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0x20, 4) := by decide
 theorem gd_at_1b0 : fetchRel p256DecompressCode 0x1B0 = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFFFFF, 2) := by decide
 theorem gd_at_1b2 : fetchRel p256DecompressCode 0x1B2 = some (.branch .bne (9 : Fin 32) x0 0xFFFFFFEA, 2) := by decide
@@ -148,18 +148,18 @@ theorem gd_at_1b4 : fetchRel p256DecompressCode 0x1B4 = some (.aluImm .add a0 sp
 theorem gd_at_1b8 : fetchRel p256DecompressCode 0x1B8 = some (.aluImm .add a1 sp 0x21C, 2) := by decide
 theorem gd_at_1ba : fetchRel p256DecompressCode 0x1BA = some (.aluImm .add a2 x0 0x200, 4) := by decide
 theorem gd_at_1be : fetchRel p256DecompressCode 0x1BE = some (.aluImm .add (9 : Fin 32) sp 0x43C, 4) := by decide
-theorem gd_at_1c2 : fetchRel p256DecompressCode 0x1C2 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_1c6 : fetchRel p256DecompressCode 0x1C6 = some (.jalr ra ra 0x6B0, 4) := by decide
+theorem gd_at_1c2 : fetchRel p256DecompressCode 0x1C2 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_1c6 : fetchRel p256DecompressCode 0x1C6 = some (.jalr ra ra 0x4C0, 4) := by decide
 theorem gd_at_1ca : fetchRel p256DecompressCode 0x1CA = some (.aluImm .add a0 sp 0x63C, 4) := by decide
 theorem gd_at_1ce : fetchRel p256DecompressCode 0x1CE = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem gd_at_1d2 : fetchRel p256DecompressCode 0x1D2 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem gd_at_1d4 : fetchRel p256DecompressCode 0x1D4 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_1d8 : fetchRel p256DecompressCode 0x1D8 = some (.jalr ra ra 0x636, 4) := by decide
+theorem gd_at_1d4 : fetchRel p256DecompressCode 0x1D4 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_1d8 : fetchRel p256DecompressCode 0x1D8 = some (.jalr ra ra 0x446, 4) := by decide
 theorem gd_at_1dc : fetchRel p256DecompressCode 0x1DC = some (.aluImm .add a0 sp 0x21C, 2) := by decide
 theorem gd_at_1de : fetchRel p256DecompressCode 0x1DE = some (.aluImm .add a1 sp 0x43C, 4) := by decide
 theorem gd_at_1e2 : fetchRel p256DecompressCode 0x1E2 = some (.aluImm .add a2 x0 0x220, 4) := by decide
-theorem gd_at_1e6 : fetchRel p256DecompressCode 0x1E6 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_1ea : fetchRel p256DecompressCode 0x1EA = some (.jalr ra ra 0x68C, 4) := by decide
+theorem gd_at_1e6 : fetchRel p256DecompressCode 0x1E6 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_1ea : fetchRel p256DecompressCode 0x1EA = some (.jalr ra ra 0x49C, 4) := by decide
 theorem gd_at_1ee : fetchRel p256DecompressCode 0x1EE = some (.aluImm .add (19 : Fin 32) sp 0x45C, 4) := by decide
 theorem gd_at_1f2 : fetchRel p256DecompressCode 0x1F2 = some (.aluImm .add (8 : Fin 32) x0 0x10, 2) := by decide
 theorem gd_at_1f4 : fetchRel p256DecompressCode 0x1F4 = some (.aluImm .add (24 : Fin 32) (24 : Fin 32) 0x20, 4) := by decide
@@ -167,16 +167,16 @@ theorem gd_at_1f8 : fetchRel p256DecompressCode 0x1F8 = some (.branch .beq (8 : 
 theorem gd_at_1fa : fetchRel p256DecompressCode 0x1FA = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem gd_at_1fe : fetchRel p256DecompressCode 0x1FE = some (.alu .add a0 x0 (9 : Fin 32), 2) := by decide
 theorem gd_at_200 : fetchRel p256DecompressCode 0x200 = some (.alu .add a1 x0 (24 : Fin 32), 2) := by decide
-theorem gd_at_202 : fetchRel p256DecompressCode 0x202 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_206 : fetchRel p256DecompressCode 0x206 = some (.jalr ra ra 0x670, 4) := by decide
+theorem gd_at_202 : fetchRel p256DecompressCode 0x202 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_206 : fetchRel p256DecompressCode 0x206 = some (.jalr ra ra 0x480, 4) := by decide
 theorem gd_at_20a : fetchRel p256DecompressCode 0x20A = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0x20, 4) := by decide
 theorem gd_at_20e : fetchRel p256DecompressCode 0x20E = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFFFF, 2) := by decide
 theorem gd_at_210 : fetchRel p256DecompressCode 0x210 = some (.branch .bne (8 : Fin 32) x0 0xFFFFFFEA, 2) := by decide
 theorem gd_at_212 : fetchRel p256DecompressCode 0x212 = some (.aluImm .add a1 sp 0xC4, 2) := by decide
 theorem gd_at_214 : fetchRel p256DecompressCode 0x214 = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem gd_at_218 : fetchRel p256DecompressCode 0x218 = some (.alu .add a0 x0 (19 : Fin 32), 2) := by decide
-theorem gd_at_21a : fetchRel p256DecompressCode 0x21A = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_21e : fetchRel p256DecompressCode 0x21E = some (.jalr ra ra 0x658, 4) := by decide
+theorem gd_at_21a : fetchRel p256DecompressCode 0x21A = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_21e : fetchRel p256DecompressCode 0x21E = some (.jalr ra ra 0x468, 4) := by decide
 theorem gd_at_222 : fetchRel p256DecompressCode 0x222 = some (.aluImm .add (8 : Fin 32) x0 0xE, 2) := by decide
 theorem gd_at_224 : fetchRel p256DecompressCode 0x224 = some (.branch .beq (8 : Fin 32) x0 0x32, 2) := by decide
 theorem gd_at_226 : fetchRel p256DecompressCode 0x226 = some (.aluImm .add (9 : Fin 32) (19 : Fin 32) 0x20, 4) := by decide
@@ -185,13 +185,13 @@ theorem gd_at_22e : fetchRel p256DecompressCode 0x22E = some (.aluImm .add a2 sp
 theorem gd_at_230 : fetchRel p256DecompressCode 0x230 = some (.aluImm .add a4 x0 0x1, 2) := by decide
 theorem gd_at_232 : fetchRel p256DecompressCode 0x232 = some (.alu .add a1 x0 (19 : Fin 32), 2) := by decide
 theorem gd_at_234 : fetchRel p256DecompressCode 0x234 = some (.aluImm .add a3 sp 0xE4, 2) := by decide
-theorem gd_at_236 : fetchRel p256DecompressCode 0x236 = some (.auipc ra 0xB000, 4) := by decide
-theorem gd_at_23a : fetchRel p256DecompressCode 0x23A = some (.jalr ra ra 0xFFFFF92C, 4) := by decide
+theorem gd_at_236 : fetchRel p256DecompressCode 0x236 = some (.auipc ra 0xC000, 4) := by decide
+theorem gd_at_23a : fetchRel p256DecompressCode 0x23A = some (.jalr ra ra 0x73C, 4) := by decide
 theorem gd_at_23e : fetchRel p256DecompressCode 0x23E = some (.aluImm .add a1 sp 0x6BC, 4) := by decide
 theorem gd_at_242 : fetchRel p256DecompressCode 0x242 = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem gd_at_246 : fetchRel p256DecompressCode 0x246 = some (.alu .add a0 x0 (9 : Fin 32), 2) := by decide
-theorem gd_at_248 : fetchRel p256DecompressCode 0x248 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_24c : fetchRel p256DecompressCode 0x24C = some (.jalr ra ra 0x62A, 4) := by decide
+theorem gd_at_248 : fetchRel p256DecompressCode 0x248 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_24c : fetchRel p256DecompressCode 0x24C = some (.jalr ra ra 0x43A, 4) := by decide
 theorem gd_at_250 : fetchRel p256DecompressCode 0x250 = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFFFF, 2) := by decide
 theorem gd_at_252 : fetchRel p256DecompressCode 0x252 = some (.alu .add (19 : Fin 32) x0 (9 : Fin 32), 2) := by decide
 theorem gd_at_254 : fetchRel p256DecompressCode 0x254 = some (.branch .bne (8 : Fin 32) x0 0xFFFFFFD2, 2) := by decide
@@ -201,13 +201,13 @@ theorem gd_at_25a : fetchRel p256DecompressCode 0x25A = some (.store .sw sp (25 
 theorem gd_at_25c : fetchRel p256DecompressCode 0x25C = some (.aluImm .add a0 sp 0x21C, 2) := by decide
 theorem gd_at_25e : fetchRel p256DecompressCode 0x25E = some (.aluImm .add a1 sp 0x43C, 4) := by decide
 theorem gd_at_262 : fetchRel p256DecompressCode 0x262 = some (.aluImm .add a2 x0 0x200, 4) := by decide
-theorem gd_at_266 : fetchRel p256DecompressCode 0x266 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_26a : fetchRel p256DecompressCode 0x26A = some (.jalr ra ra 0x60C, 4) := by decide
+theorem gd_at_266 : fetchRel p256DecompressCode 0x266 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_26a : fetchRel p256DecompressCode 0x26A = some (.jalr ra ra 0x41C, 4) := by decide
 theorem gd_at_26e : fetchRel p256DecompressCode 0x26E = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem gd_at_272 : fetchRel p256DecompressCode 0x272 = some (.aluImm .add a0 sp 0x41C, 4) := by decide
 theorem gd_at_276 : fetchRel p256DecompressCode 0x276 = some (.alu .add a1 x0 (22 : Fin 32), 2) := by decide
-theorem gd_at_278 : fetchRel p256DecompressCode 0x278 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_27c : fetchRel p256DecompressCode 0x27C = some (.jalr ra ra 0x5FA, 4) := by decide
+theorem gd_at_278 : fetchRel p256DecompressCode 0x278 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_27c : fetchRel p256DecompressCode 0x27C = some (.jalr ra ra 0x40A, 4) := by decide
 theorem gd_at_280 : fetchRel p256DecompressCode 0x280 = some (.aluImm .add (18 : Fin 32) (18 : Fin 32) 0xFFFFFFFF, 2) := by decide
 theorem gd_at_282 : fetchRel p256DecompressCode 0x282 = some (.aluImm .srl (9 : Fin 32) (18 : Fin 32) 0x5, 4) := by decide
 theorem gd_at_286 : fetchRel p256DecompressCode 0x286 = some (.aluImm .and a0 (18 : Fin 32) 0x3, 4) := by decide
@@ -219,8 +219,8 @@ theorem gd_at_296 : fetchRel p256DecompressCode 0x296 = some (.aluImm .add (18 :
 theorem gd_at_29a : fetchRel p256DecompressCode 0x29A = some (.aluImm .add a0 sp 0x65C, 4) := by decide
 theorem gd_at_29e : fetchRel p256DecompressCode 0x29E = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem gd_at_2a2 : fetchRel p256DecompressCode 0x2A2 = some (.alu .add a1 x0 (24 : Fin 32), 2) := by decide
-theorem gd_at_2a4 : fetchRel p256DecompressCode 0x2A4 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_2a8 : fetchRel p256DecompressCode 0x2A8 = some (.jalr ra ra 0x5CE, 4) := by decide
+theorem gd_at_2a4 : fetchRel p256DecompressCode 0x2A4 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_2a8 : fetchRel p256DecompressCode 0x2A8 = some (.jalr ra ra 0x3DE, 4) := by decide
 theorem gd_at_2ac : fetchRel p256DecompressCode 0x2AC = some (.store .sw sp (9 : Fin 32) 0x34, 2) := by decide
 theorem gd_at_2ae : fetchRel p256DecompressCode 0x2AE = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0x1, 2) := by decide
 theorem gd_at_2b0 : fetchRel p256DecompressCode 0x2B0 = some (.store .sw sp (8 : Fin 32) 0x30, 2) := by decide
@@ -258,8 +258,8 @@ theorem gd_at_304 : fetchRel p256DecompressCode 0x304 = some (.store .sw sp a3 0
 theorem gd_at_306 : fetchRel p256DecompressCode 0x306 = some (.aluImm .add a0 sp 0x67C, 4) := by decide
 theorem gd_at_30a : fetchRel p256DecompressCode 0x30A = some (.aluImm .add a1 sp 0x65C, 4) := by decide
 theorem gd_at_30e : fetchRel p256DecompressCode 0x30E = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem gd_at_312 : fetchRel p256DecompressCode 0x312 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_316 : fetchRel p256DecompressCode 0x316 = some (.jalr ra ra 0x560, 4) := by decide
+theorem gd_at_312 : fetchRel p256DecompressCode 0x312 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_316 : fetchRel p256DecompressCode 0x316 = some (.jalr ra ra 0x370, 4) := by decide
 theorem gd_at_31a : fetchRel p256DecompressCode 0x31A = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem gd_at_31c : fetchRel p256DecompressCode 0x31C = some (.aluImm .add a0 x0 0x4, 2) := by decide
 theorem gd_at_31e : fetchRel p256DecompressCode 0x31E = some (.branch .beq a1 a0 0x19C, 4) := by decide
@@ -267,13 +267,13 @@ theorem gd_at_322 : fetchRel p256DecompressCode 0x322 = some (.store .sw sp a1 0
 theorem gd_at_324 : fetchRel p256DecompressCode 0x324 = some (.aluImm .add a0 sp 0x69C, 4) := by decide
 theorem gd_at_328 : fetchRel p256DecompressCode 0x328 = some (.aluImm .add a1 sp 0x67C, 4) := by decide
 theorem gd_at_32c : fetchRel p256DecompressCode 0x32C = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem gd_at_330 : fetchRel p256DecompressCode 0x330 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_334 : fetchRel p256DecompressCode 0x334 = some (.jalr ra ra 0x542, 4) := by decide
+theorem gd_at_330 : fetchRel p256DecompressCode 0x330 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_334 : fetchRel p256DecompressCode 0x334 = some (.jalr ra ra 0x352, 4) := by decide
 theorem gd_at_338 : fetchRel p256DecompressCode 0x338 = some (.aluImm .add a0 sp 0x67C, 4) := by decide
 theorem gd_at_33c : fetchRel p256DecompressCode 0x33C = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem gd_at_340 : fetchRel p256DecompressCode 0x340 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem gd_at_342 : fetchRel p256DecompressCode 0x342 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_346 : fetchRel p256DecompressCode 0x346 = some (.jalr ra ra 0x4C8, 4) := by decide
+theorem gd_at_342 : fetchRel p256DecompressCode 0x342 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_346 : fetchRel p256DecompressCode 0x346 = some (.jalr ra ra 0x2D8, 4) := by decide
 theorem gd_at_34a : fetchRel p256DecompressCode 0x34A = some (.aluImm .add (20 : Fin 32) x0 0x0, 2) := by decide
 theorem gd_at_34c : fetchRel p256DecompressCode 0x34C = some (.aluImm .add (17 : Fin 32) x0 0x0, 2) := by decide
 theorem gd_at_34e : fetchRel p256DecompressCode 0x34E = some (.load .lw a6 sp 0x69C, 4) := by decide
@@ -339,8 +339,8 @@ theorem gd_at_404 : fetchRel p256DecompressCode 0x404 = some (.aluImm .add a0 sp
 theorem gd_at_408 : fetchRel p256DecompressCode 0x408 = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem gd_at_40c : fetchRel p256DecompressCode 0x40C = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem gd_at_40e : fetchRel p256DecompressCode 0x40E = some (.aluImm .add (24 : Fin 32) sp 0x43C, 4) := by decide
-theorem gd_at_412 : fetchRel p256DecompressCode 0x412 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_416 : fetchRel p256DecompressCode 0x416 = some (.jalr ra ra 0x3F8, 4) := by decide
+theorem gd_at_412 : fetchRel p256DecompressCode 0x412 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_416 : fetchRel p256DecompressCode 0x416 = some (.jalr ra ra 0x208, 4) := by decide
 theorem gd_at_41a : fetchRel p256DecompressCode 0x41A = some (.aluImm .add (26 : Fin 32) x0 0x0, 2) := by decide
 theorem gd_at_41c : fetchRel p256DecompressCode 0x41C = some (.aluImm .add (8 : Fin 32) sp 0x67C, 4) := by decide
 theorem gd_at_420 : fetchRel p256DecompressCode 0x420 = some (.aluImm .add (9 : Fin 32) x0 0x8, 2) := by decide
@@ -361,8 +361,8 @@ theorem gd_at_446 : fetchRel p256DecompressCode 0x446 = some (.branch .bne (9 : 
 theorem gd_at_448 : fetchRel p256DecompressCode 0x448 = some (.aluImm .add a0 sp 0x6BC, 4) := by decide
 theorem gd_at_44c : fetchRel p256DecompressCode 0x44C = some (.aluImm .add a1 sp 0x43C, 4) := by decide
 theorem gd_at_450 : fetchRel p256DecompressCode 0x450 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem gd_at_454 : fetchRel p256DecompressCode 0x454 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_458 : fetchRel p256DecompressCode 0x458 = some (.jalr ra ra 0x41E, 4) := by decide
+theorem gd_at_454 : fetchRel p256DecompressCode 0x454 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_458 : fetchRel p256DecompressCode 0x458 = some (.jalr ra ra 0x22E, 4) := by decide
 theorem gd_at_45c : fetchRel p256DecompressCode 0x45C = some (.store .sw sp (20 : Fin 32) 0x43C, 4) := by decide
 theorem gd_at_460 : fetchRel p256DecompressCode 0x460 = some (.aluImm .add a1 sp 0x43C, 4) := by decide
 theorem gd_at_464 : fetchRel p256DecompressCode 0x464 = some (.load .lw a0 sp 0x43C, 4) := by decide
@@ -380,21 +380,21 @@ theorem gd_at_48a : fetchRel p256DecompressCode 0x48A = some (.aluImm .add a0 sp
 theorem gd_at_48e : fetchRel p256DecompressCode 0x48E = some (.aluImm .add a1 sp 0x6BC, 4) := by decide
 theorem gd_at_492 : fetchRel p256DecompressCode 0x492 = some (.aluImm .add a2 sp 0x67C, 4) := by decide
 theorem gd_at_496 : fetchRel p256DecompressCode 0x496 = some (.alu .add a3 x0 (24 : Fin 32), 2) := by decide
-theorem gd_at_498 : fetchRel p256DecompressCode 0x498 = some (.auipc ra 0xB000, 4) := by decide
-theorem gd_at_49c : fetchRel p256DecompressCode 0x49C = some (.jalr ra ra 0xFFFFF858, 4) := by decide
+theorem gd_at_498 : fetchRel p256DecompressCode 0x498 = some (.auipc ra 0xC000, 4) := by decide
+theorem gd_at_49c : fetchRel p256DecompressCode 0x49C = some (.jalr ra ra 0x668, 4) := by decide
 theorem gd_at_4a0 : fetchRel p256DecompressCode 0x4A0 = some (.aluImm .add a0 sp 0x67C, 4) := by decide
 theorem gd_at_4a4 : fetchRel p256DecompressCode 0x4A4 = some (.aluImm .add a1 sp 0x43C, 4) := by decide
 theorem gd_at_4a8 : fetchRel p256DecompressCode 0x4A8 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem gd_at_4ac : fetchRel p256DecompressCode 0x4AC = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_4b0 : fetchRel p256DecompressCode 0x4B0 = some (.jalr ra ra 0x3C6, 4) := by decide
+theorem gd_at_4ac : fetchRel p256DecompressCode 0x4AC = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_4b0 : fetchRel p256DecompressCode 0x4B0 = some (.jalr ra ra 0x1D6, 4) := by decide
 theorem gd_at_4b4 : fetchRel p256DecompressCode 0x4B4 = some (.load .lw a1 sp 0x3C, 2) := by decide
 theorem gd_at_4b6 : fetchRel p256DecompressCode 0x4B6 = some (.aluImm .add a1 a1 0x1, 2) := by decide
 theorem gd_at_4b8 : fetchRel p256DecompressCode 0x4B8 = some (.jal x0 0xFFFFFE64, 2) := by decide
 theorem gd_at_4ba : fetchRel p256DecompressCode 0x4BA = some (.aluImm .add a0 sp 0x65C, 4) := by decide
 theorem gd_at_4be : fetchRel p256DecompressCode 0x4BE = some (.aluImm .add a1 sp 0x67C, 4) := by decide
 theorem gd_at_4c2 : fetchRel p256DecompressCode 0x4C2 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem gd_at_4c6 : fetchRel p256DecompressCode 0x4C6 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_4ca : fetchRel p256DecompressCode 0x4CA = some (.jalr ra ra 0x3AC, 4) := by decide
+theorem gd_at_4c6 : fetchRel p256DecompressCode 0x4C6 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_4ca : fetchRel p256DecompressCode 0x4CA = some (.jalr ra ra 0x1BC, 4) := by decide
 theorem gd_at_4ce : fetchRel p256DecompressCode 0x4CE = some (.load .lw a3 sp 0x20, 2) := by decide
 theorem gd_at_4d0 : fetchRel p256DecompressCode 0x4D0 = some (.load .lw a0 sp 0x2C, 2) := by decide
 theorem gd_at_4d2 : fetchRel p256DecompressCode 0x4D2 = some (.aluImm .add a1 x0 0x9, 2) := by decide
@@ -422,13 +422,13 @@ theorem gd_at_506 : fetchRel p256DecompressCode 0x506 = some (.aluImm .add a1 sp
 theorem gd_at_50a : fetchRel p256DecompressCode 0x50A = some (.aluImm .add a4 x0 0x1, 2) := by decide
 theorem gd_at_50c : fetchRel p256DecompressCode 0x50C = some (.alu .add (8 : Fin 32) x0 a3, 2) := by decide
 theorem gd_at_50e : fetchRel p256DecompressCode 0x50E = some (.aluImm .add a3 sp 0xE4, 2) := by decide
-theorem gd_at_510 : fetchRel p256DecompressCode 0x510 = some (.auipc ra 0xA000, 4) := by decide
-theorem gd_at_514 : fetchRel p256DecompressCode 0x514 = some (.jalr ra ra 0x652, 4) := by decide
+theorem gd_at_510 : fetchRel p256DecompressCode 0x510 = some (.auipc ra 0xC000, 4) := by decide
+theorem gd_at_514 : fetchRel p256DecompressCode 0x514 = some (.jalr ra ra 0x462, 4) := by decide
 theorem gd_at_518 : fetchRel p256DecompressCode 0x518 = some (.aluImm .add a0 sp 0x65C, 4) := by decide
 theorem gd_at_51c : fetchRel p256DecompressCode 0x51C = some (.aluImm .add a1 sp 0x43C, 4) := by decide
 theorem gd_at_520 : fetchRel p256DecompressCode 0x520 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem gd_at_524 : fetchRel p256DecompressCode 0x524 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_528 : fetchRel p256DecompressCode 0x528 = some (.jalr ra ra 0x34E, 4) := by decide
+theorem gd_at_524 : fetchRel p256DecompressCode 0x524 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_528 : fetchRel p256DecompressCode 0x528 = some (.jalr ra ra 0x15E, 4) := by decide
 theorem gd_at_52c : fetchRel p256DecompressCode 0x52C = some (.alu .add a3 x0 (8 : Fin 32), 2) := by decide
 theorem gd_at_52e : fetchRel p256DecompressCode 0x52E = some (.jal x0 0xFFFFFDC2, 2) := by decide
 theorem gd_at_530 : fetchRel p256DecompressCode 0x530 = some (.load .lw (9 : Fin 32) sp 0x38, 2) := by decide
@@ -436,24 +436,24 @@ theorem gd_at_532 : fetchRel p256DecompressCode 0x532 = some (.branch .bne (9 : 
 theorem gd_at_536 : fetchRel p256DecompressCode 0x536 = some (.aluImm .add a0 sp 0x150, 2) := by decide
 theorem gd_at_538 : fetchRel p256DecompressCode 0x538 = some (.aluImm .add a1 sp 0x65C, 4) := by decide
 theorem gd_at_53c : fetchRel p256DecompressCode 0x53C = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem gd_at_540 : fetchRel p256DecompressCode 0x540 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_544 : fetchRel p256DecompressCode 0x544 = some (.jalr ra ra 0x332, 4) := by decide
+theorem gd_at_540 : fetchRel p256DecompressCode 0x540 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_544 : fetchRel p256DecompressCode 0x544 = some (.jalr ra ra 0x142, 4) := by decide
 theorem gd_at_548 : fetchRel p256DecompressCode 0x548 = some (.load .lw (25 : Fin 32) sp 0x18, 2) := by decide
 theorem gd_at_54a : fetchRel p256DecompressCode 0x54A = some (.load .lw (26 : Fin 32) sp 0x14, 2) := by decide
 theorem gd_at_54c : fetchRel p256DecompressCode 0x54C = some (.load .lw (27 : Fin 32) sp 0x10, 2) := by decide
 theorem gd_at_54e : fetchRel p256DecompressCode 0x54E = some (.aluImm .add (20 : Fin 32) sp 0x170, 4) := by decide
 theorem gd_at_552 : fetchRel p256DecompressCode 0x552 = some (.lui a1 0x3FCC5000, 4) := by decide
-theorem gd_at_556 : fetchRel p256DecompressCode 0x556 = some (.aluImm .add a1 a1 0xFFFFFB38, 4) := by decide
+theorem gd_at_556 : fetchRel p256DecompressCode 0x556 = some (.aluImm .add a1 a1 0xFFFFFBA0, 4) := by decide
 theorem gd_at_55a : fetchRel p256DecompressCode 0x55A = some (.aluImm .add a2 x0 0x6C, 4) := by decide
 theorem gd_at_55e : fetchRel p256DecompressCode 0x55E = some (.alu .add a0 x0 (20 : Fin 32), 2) := by decide
-theorem gd_at_560 : fetchRel p256DecompressCode 0x560 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_564 : fetchRel p256DecompressCode 0x564 = some (.jalr ra ra 0x312, 4) := by decide
+theorem gd_at_560 : fetchRel p256DecompressCode 0x560 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_564 : fetchRel p256DecompressCode 0x564 = some (.jalr ra ra 0x122, 4) := by decide
 theorem gd_at_568 : fetchRel p256DecompressCode 0x568 = some (.load .lw (18 : Fin 32) sp 0x1D0, 4) := by decide
 theorem gd_at_56c : fetchRel p256DecompressCode 0x56C = some (.aluImm .add a0 sp 0x1DC, 2) := by decide
 theorem gd_at_56e : fetchRel p256DecompressCode 0x56E = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem gd_at_572 : fetchRel p256DecompressCode 0x572 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem gd_at_574 : fetchRel p256DecompressCode 0x574 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_578 : fetchRel p256DecompressCode 0x578 = some (.jalr ra ra 0x296, 4) := by decide
+theorem gd_at_574 : fetchRel p256DecompressCode 0x574 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_578 : fetchRel p256DecompressCode 0x578 = some (.jalr ra ra 0xA6, 4) := by decide
 theorem gd_at_57c : fetchRel p256DecompressCode 0x57C = some (.aluImm .add (19 : Fin 32) x0 0x0, 2) := by decide
 theorem gd_at_57e : fetchRel p256DecompressCode 0x57E = some (.aluImm .add (29 : Fin 32) x0 0x0, 2) := by decide
 theorem gd_at_580 : fetchRel p256DecompressCode 0x580 = some (.aluImm .add (30 : Fin 32) x0 0x0, 2) := by decide
@@ -526,8 +526,8 @@ theorem gd_at_650 : fetchRel p256DecompressCode 0x650 = some (.aluImm .add a0 sp
 theorem gd_at_652 : fetchRel p256DecompressCode 0x652 = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem gd_at_656 : fetchRel p256DecompressCode 0x656 = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem gd_at_658 : fetchRel p256DecompressCode 0x658 = some (.aluImm .add (18 : Fin 32) sp 0x21C, 4) := by decide
-theorem gd_at_65c : fetchRel p256DecompressCode 0x65C = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_660 : fetchRel p256DecompressCode 0x660 = some (.jalr ra ra 0x1AE, 4) := by decide
+theorem gd_at_65c : fetchRel p256DecompressCode 0x65C = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_660 : fetchRel p256DecompressCode 0x660 = some (.jalr ra ra 0xFFFFFFBE, 4) := by decide
 theorem gd_at_664 : fetchRel p256DecompressCode 0x664 = some (.aluImm .add a2 x0 0x0, 2) := by decide
 theorem gd_at_666 : fetchRel p256DecompressCode 0x666 = some (.aluImm .add (9 : Fin 32) sp 0x1DC, 2) := by decide
 theorem gd_at_668 : fetchRel p256DecompressCode 0x668 = some (.aluImm .add (8 : Fin 32) x0 0x8, 2) := by decide
@@ -561,56 +561,56 @@ theorem gd_at_6b8 : fetchRel p256DecompressCode 0x6B8 = some (.aluImm .add a0 sp
 theorem gd_at_6bc : fetchRel p256DecompressCode 0x6BC = some (.aluImm .add a1 sp 0x21C, 2) := by decide
 theorem gd_at_6be : fetchRel p256DecompressCode 0x6BE = some (.aluImm .add a2 sp 0x1DC, 2) := by decide
 theorem gd_at_6c0 : fetchRel p256DecompressCode 0x6C0 = some (.alu .add a3 x0 (8 : Fin 32), 2) := by decide
-theorem gd_at_6c2 : fetchRel p256DecompressCode 0x6C2 = some (.auipc ra 0xA000, 4) := by decide
-theorem gd_at_6c6 : fetchRel p256DecompressCode 0x6C6 = some (.jalr ra ra 0x62E, 4) := by decide
+theorem gd_at_6c2 : fetchRel p256DecompressCode 0x6C2 = some (.auipc ra 0xC000, 4) := by decide
+theorem gd_at_6c6 : fetchRel p256DecompressCode 0x6C6 = some (.jalr ra ra 0x43E, 4) := by decide
 theorem gd_at_6ca : fetchRel p256DecompressCode 0x6CA = some (.aluImm .add a0 sp 0x45C, 4) := by decide
 theorem gd_at_6ce : fetchRel p256DecompressCode 0x6CE = some (.lui a1 0x3FCC5000, 4) := by decide
-theorem gd_at_6d2 : fetchRel p256DecompressCode 0x6D2 = some (.aluImm .add a1 a1 0xFFFFFB38, 4) := by decide
+theorem gd_at_6d2 : fetchRel p256DecompressCode 0x6D2 = some (.aluImm .add a1 a1 0xFFFFFBA0, 4) := by decide
 theorem gd_at_6d6 : fetchRel p256DecompressCode 0x6D6 = some (.aluImm .add a2 x0 0x6C, 4) := by decide
-theorem gd_at_6da : fetchRel p256DecompressCode 0x6DA = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_6de : fetchRel p256DecompressCode 0x6DE = some (.jalr ra ra 0x198, 4) := by decide
+theorem gd_at_6da : fetchRel p256DecompressCode 0x6DA = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_6de : fetchRel p256DecompressCode 0x6DE = some (.jalr ra ra 0xFFFFFFA8, 4) := by decide
 theorem gd_at_6e2 : fetchRel p256DecompressCode 0x6E2 = some (.aluImm .add a0 sp 0x43C, 4) := by decide
 theorem gd_at_6e6 : fetchRel p256DecompressCode 0x6E6 = some (.aluImm .add a1 sp 0xC4, 2) := by decide
-theorem gd_at_6e8 : fetchRel p256DecompressCode 0x6E8 = some (.auipc ra 0xB000, 4) := by decide
-theorem gd_at_6ec : fetchRel p256DecompressCode 0x6EC = some (.jalr ra ra 0x374, 4) := by decide
+theorem gd_at_6e8 : fetchRel p256DecompressCode 0x6E8 = some (.auipc ra 0xD000, 4) := by decide
+theorem gd_at_6ec : fetchRel p256DecompressCode 0x6EC = some (.jalr ra ra 0x184, 4) := by decide
 theorem gd_at_6f0 : fetchRel p256DecompressCode 0x6F0 = some (.aluImm .and a0 a0 0xFF, 4) := by decide
-theorem gd_at_6f4 : fetchRel p256DecompressCode 0x6F4 = some (.auipc ra 0x7000, 4) := by decide
-theorem gd_at_6f8 : fetchRel p256DecompressCode 0x6F8 = some (.jalr ra ra 0x74, 4) := by decide
+theorem gd_at_6f4 : fetchRel p256DecompressCode 0x6F4 = some (.auipc ra 0x9000, 4) := by decide
+theorem gd_at_6f8 : fetchRel p256DecompressCode 0x6F8 = some (.jalr ra ra 0xFFFFFE84, 4) := by decide
 theorem gd_at_6fc : fetchRel p256DecompressCode 0x6FC = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
 theorem gd_at_6fe : fetchRel p256DecompressCode 0x6FE = some (.aluImm .add a0 sp 0x43C, 4) := by decide
 theorem gd_at_702 : fetchRel p256DecompressCode 0x702 = some (.aluImm .add a1 sp 0x150, 2) := by decide
 theorem gd_at_704 : fetchRel p256DecompressCode 0x704 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem gd_at_708 : fetchRel p256DecompressCode 0x708 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_70c : fetchRel p256DecompressCode 0x70C = some (.jalr ra ra 0x16A, 4) := by decide
+theorem gd_at_708 : fetchRel p256DecompressCode 0x708 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_70c : fetchRel p256DecompressCode 0x70C = some (.jalr ra ra 0xFFFFFF7A, 4) := by decide
 theorem gd_at_710 : fetchRel p256DecompressCode 0x710 = some (.store .sb sp (8 : Fin 32) 0x45C, 4) := by decide
 theorem gd_at_714 : fetchRel p256DecompressCode 0x714 = some (.aluImm .add a0 sp 0x21C, 2) := by decide
 theorem gd_at_716 : fetchRel p256DecompressCode 0x716 = some (.aluImm .add a1 sp 0x43C, 4) := by decide
-theorem gd_at_71a : fetchRel p256DecompressCode 0x71A = some (.auipc ra 0xB000, 4) := by decide
-theorem gd_at_71e : fetchRel p256DecompressCode 0x71E = some (.jalr ra ra 0x300, 4) := by decide
+theorem gd_at_71a : fetchRel p256DecompressCode 0x71A = some (.auipc ra 0xD000, 4) := by decide
+theorem gd_at_71e : fetchRel p256DecompressCode 0x71E = some (.jalr ra ra 0x110, 4) := by decide
 theorem gd_at_722 : fetchRel p256DecompressCode 0x722 = some (.aluImm .add a0 sp 0x1DC, 2) := by decide
 theorem gd_at_724 : fetchRel p256DecompressCode 0x724 = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem gd_at_728 : fetchRel p256DecompressCode 0x728 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem gd_at_72a : fetchRel p256DecompressCode 0x72A = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_72e : fetchRel p256DecompressCode 0x72E = some (.jalr ra ra 0xE0, 4) := by decide
+theorem gd_at_72a : fetchRel p256DecompressCode 0x72A = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_72e : fetchRel p256DecompressCode 0x72E = some (.jalr ra ra 0xFFFFFEF0, 4) := by decide
 theorem gd_at_732 : fetchRel p256DecompressCode 0x732 = some (.load .lbu (8 : Fin 32) sp 0x23C, 4) := by decide
 theorem gd_at_736 : fetchRel p256DecompressCode 0x736 = some (.aluImm .add a0 sp 0xA4, 2) := by decide
 theorem gd_at_738 : fetchRel p256DecompressCode 0x738 = some (.aluImm .add a1 sp 0x1DC, 2) := by decide
 theorem gd_at_73a : fetchRel p256DecompressCode 0x73A = some (.aluImm .add a2 sp 0x21C, 2) := by decide
 theorem gd_at_73c : fetchRel p256DecompressCode 0x73C = some (.alu .add a3 x0 (8 : Fin 32), 2) := by decide
-theorem gd_at_73e : fetchRel p256DecompressCode 0x73E = some (.auipc ra 0xB000, 4) := by decide
-theorem gd_at_742 : fetchRel p256DecompressCode 0x742 = some (.jalr ra ra 0xFFFFFEF6, 4) := by decide
+theorem gd_at_73e : fetchRel p256DecompressCode 0x73E = some (.auipc ra 0xD000, 4) := by decide
+theorem gd_at_742 : fetchRel p256DecompressCode 0x742 = some (.jalr ra ra 0xFFFFFD06, 4) := by decide
 theorem gd_at_746 : fetchRel p256DecompressCode 0x746 = some (.aluImm .add a0 sp 0xC4, 2) := by decide
 theorem gd_at_748 : fetchRel p256DecompressCode 0x748 = some (.aluImm .add a1 sp 0xA4, 2) := by decide
-theorem gd_at_74a : fetchRel p256DecompressCode 0x74A = some (.auipc ra 0xC000, 4) := by decide
-theorem gd_at_74e : fetchRel p256DecompressCode 0x74E = some (.jalr ra ra 0xFFFFF80C, 4) := by decide
+theorem gd_at_74a : fetchRel p256DecompressCode 0x74A = some (.auipc ra 0xD000, 4) := by decide
+theorem gd_at_74e : fetchRel p256DecompressCode 0x74E = some (.jalr ra ra 0x61C, 4) := by decide
 theorem gd_at_752 : fetchRel p256DecompressCode 0x752 = some (.aluImm .add a0 sp 0x43C, 4) := by decide
 theorem gd_at_756 : fetchRel p256DecompressCode 0x756 = some (.aluImm .add a1 sp 0xA4, 2) := by decide
-theorem gd_at_758 : fetchRel p256DecompressCode 0x758 = some (.auipc ra 0xC000, 4) := by decide
-theorem gd_at_75c : fetchRel p256DecompressCode 0x75C = some (.jalr ra ra 0xFFFFF904, 4) := by decide
+theorem gd_at_758 : fetchRel p256DecompressCode 0x758 = some (.auipc ra 0xD000, 4) := by decide
+theorem gd_at_75c : fetchRel p256DecompressCode 0x75C = some (.jalr ra ra 0x714, 4) := by decide
 theorem gd_at_760 : fetchRel p256DecompressCode 0x760 = some (.load .lw a0 sp 0x43C, 4) := by decide
 theorem gd_at_764 : fetchRel p256DecompressCode 0x764 = some (.aluImm .and a0 a0 0x1, 2) := by decide
-theorem gd_at_766 : fetchRel p256DecompressCode 0x766 = some (.auipc ra 0x7000, 4) := by decide
-theorem gd_at_76a : fetchRel p256DecompressCode 0x76A = some (.jalr ra ra 0x2, 4) := by decide
+theorem gd_at_766 : fetchRel p256DecompressCode 0x766 = some (.auipc ra 0x9000, 4) := by decide
+theorem gd_at_76a : fetchRel p256DecompressCode 0x76A = some (.jalr ra ra 0xFFFFFE12, 4) := by decide
 theorem gd_at_76e : fetchRel p256DecompressCode 0x76E = some (.alu .add a1 x0 (27 : Fin 32), 2) := by decide
 theorem gd_at_770 : fetchRel p256DecompressCode 0x770 = some (.auipc ra 0xFFFFF000, 4) := by decide
 theorem gd_at_774 : fetchRel p256DecompressCode 0x774 = some (.jalr ra ra 0x38A, 4) := by decide
@@ -619,23 +619,23 @@ theorem gd_at_77c : fetchRel p256DecompressCode 0x77C = some (.aluImm .and a3 a0
 theorem gd_at_780 : fetchRel p256DecompressCode 0x780 = some (.aluImm .add a1 sp 0xC4, 2) := by decide
 theorem gd_at_782 : fetchRel p256DecompressCode 0x782 = some (.aluImm .add a2 sp 0xA4, 2) := by decide
 theorem gd_at_784 : fetchRel p256DecompressCode 0x784 = some (.alu .add a0 x0 a4, 2) := by decide
-theorem gd_at_786 : fetchRel p256DecompressCode 0x786 = some (.auipc ra 0xB000, 4) := by decide
-theorem gd_at_78a : fetchRel p256DecompressCode 0x78A = some (.jalr ra ra 0xFFFFFEAE, 4) := by decide
+theorem gd_at_786 : fetchRel p256DecompressCode 0x786 = some (.auipc ra 0xD000, 4) := by decide
+theorem gd_at_78a : fetchRel p256DecompressCode 0x78A = some (.jalr ra ra 0xFFFFFCBE, 4) := by decide
 theorem gd_at_78e : fetchRel p256DecompressCode 0x78E = some (.aluImm .add a0 sp 0x43C, 4) := by decide
 theorem gd_at_792 : fetchRel p256DecompressCode 0x792 = some (.aluImm .add a1 sp 0x84, 2) := by decide
 theorem gd_at_794 : fetchRel p256DecompressCode 0x794 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem gd_at_798 : fetchRel p256DecompressCode 0x798 = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_79c : fetchRel p256DecompressCode 0x79C = some (.jalr ra ra 0xDA, 4) := by decide
+theorem gd_at_798 : fetchRel p256DecompressCode 0x798 = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_79c : fetchRel p256DecompressCode 0x79C = some (.jalr ra ra 0xFFFFFEEA, 4) := by decide
 theorem gd_at_7a0 : fetchRel p256DecompressCode 0x7A0 = some (.store .sb sp x0 0x47C, 4) := by decide
 theorem gd_at_7a4 : fetchRel p256DecompressCode 0x7A4 = some (.alu .and a0 (8 : Fin 32) (26 : Fin 32), 4) := by decide
-theorem gd_at_7a8 : fetchRel p256DecompressCode 0x7A8 = some (.auipc ra 0x7000, 4) := by decide
-theorem gd_at_7ac : fetchRel p256DecompressCode 0x7AC = some (.jalr ra ra 0xFFFFFFC0, 4) := by decide
+theorem gd_at_7a8 : fetchRel p256DecompressCode 0x7A8 = some (.auipc ra 0x9000, 4) := by decide
+theorem gd_at_7ac : fetchRel p256DecompressCode 0x7AC = some (.jalr ra ra 0xFFFFFDD0, 4) := by decide
 theorem gd_at_7b0 : fetchRel p256DecompressCode 0x7B0 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
 theorem gd_at_7b2 : fetchRel p256DecompressCode 0x7B2 = some (.aluImm .add a1 sp 0x43C, 4) := by decide
 theorem gd_at_7b6 : fetchRel p256DecompressCode 0x7B6 = some (.aluImm .add a2 x0 0x44, 4) := by decide
 theorem gd_at_7ba : fetchRel p256DecompressCode 0x7BA = some (.alu .add a0 x0 (25 : Fin 32), 2) := by decide
-theorem gd_at_7bc : fetchRel p256DecompressCode 0x7BC = some (.auipc ra 0xE000, 4) := by decide
-theorem gd_at_7c0 : fetchRel p256DecompressCode 0x7C0 = some (.jalr ra ra 0xB6, 4) := by decide
+theorem gd_at_7bc : fetchRel p256DecompressCode 0x7BC = some (.auipc ra 0x10000, 4) := by decide
+theorem gd_at_7c0 : fetchRel p256DecompressCode 0x7C0 = some (.jalr ra ra 0xFFFFFEC6, 4) := by decide
 theorem gd_at_7c4 : fetchRel p256DecompressCode 0x7C4 = some (.store .sb (25 : Fin 32) (8 : Fin 32) 0x44, 4) := by decide
 theorem gd_at_7c8 : fetchRel p256DecompressCode 0x7C8 = some (.aluImm .add a0 sp 0x700, 4) := by decide
 theorem gd_at_7cc : fetchRel p256DecompressCode 0x7CC = some (.load .lw ra a0 0xC, 4) := by decide
@@ -656,7 +656,7 @@ theorem gd_at_800 : fetchRel p256DecompressCode 0x800 = some (.aluImm .add sp sp
 theorem gd_at_804 : fetchRel p256DecompressCode 0x804 = some (.jalr x0 ra 0x0, 2) := by decide
 theorem gd_at_806 : fetchRel p256DecompressCode 0x806 = some (.aluImm .add a1 x0 0x8, 2) := by decide
 theorem gd_at_808 : fetchRel p256DecompressCode 0x808 = some (.load .lw a0 sp 0x38, 2) := by decide
-theorem gd_at_80a : fetchRel p256DecompressCode 0x80A = some (.auipc ra 0x7000, 4) := by decide
-theorem gd_at_80e : fetchRel p256DecompressCode 0x80E = some (.jalr ra ra 0xFFFFFAC2, 4) := by decide
+theorem gd_at_80a : fetchRel p256DecompressCode 0x80A = some (.auipc ra 0x9000, 4) := by decide
+theorem gd_at_80e : fetchRel p256DecompressCode 0x80E = some (.jalr ra ra 0xFFFFF8D2, 4) := by decide
 
 end C3.RV32.Gd

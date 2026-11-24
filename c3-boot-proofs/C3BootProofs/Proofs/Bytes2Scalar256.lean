@@ -28,12 +28,12 @@ theorem by_at_10 : fetchRel bytes2scalar256Code 0x10 = some (.store .sw sp (22 :
 theorem by_at_12 : fetchRel bytes2scalar256Code 0x12 = some (.alu .add (19 : Fin 32) x0 a1, 2) := by decide
 theorem by_at_14 : fetchRel bytes2scalar256Code 0x14 = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
 theorem by_at_16 : fetchRel bytes2scalar256Code 0x16 = some (.lui (21 : Fin 32) 0x3FCC4000, 4) := by decide
-theorem by_at_1a : fetchRel bytes2scalar256Code 0x1A = some (.aluImm .add (21 : Fin 32) (21 : Fin 32) 0x268, 4) := by decide
+theorem by_at_1a : fetchRel bytes2scalar256Code 0x1A = some (.aluImm .add (21 : Fin 32) (21 : Fin 32) 0xD8, 4) := by decide
 theorem by_at_1e : fetchRel bytes2scalar256Code 0x1E = some (.aluImm .add a1 x0 0x8, 2) := by decide
 theorem by_at_20 : fetchRel bytes2scalar256Code 0x20 = some (.alu .add a0 x0 (21 : Fin 32), 2) := by decide
 theorem by_at_22 : fetchRel bytes2scalar256Code 0x22 = some (.aluImm .add (22 : Fin 32) x0 0x8, 2) := by decide
-theorem by_at_24 : fetchRel bytes2scalar256Code 0x24 = some (.auipc ra 0xA000, 4) := by decide
-theorem by_at_28 : fetchRel bytes2scalar256Code 0x28 = some (.jalr ra ra 0x2D2, 4) := by decide
+theorem by_at_24 : fetchRel bytes2scalar256Code 0x24 = some (.auipc ra 0xC000, 4) := by decide
+theorem by_at_28 : fetchRel bytes2scalar256Code 0x28 = some (.jalr ra ra 0xE2, 4) := by decide
 theorem by_at_2c : fetchRel bytes2scalar256Code 0x2C = some (.aluImm .add a1 x0 0x100, 4) := by decide
 theorem by_at_30 : fetchRel bytes2scalar256Code 0x30 = some (.alu .sub (20 : Fin 32) a1 a0, 4) := by decide
 theorem by_at_34 : fetchRel bytes2scalar256Code 0x34 = some (.aluImm .and a0 (20 : Fin 32) 0x7, 4) := by decide
@@ -59,8 +59,8 @@ theorem by_at_70 : fetchRel bytes2scalar256Code 0x70 = some (.alu .add a0 x0 sp,
 theorem by_at_72 : fetchRel bytes2scalar256Code 0x72 = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem by_at_76 : fetchRel bytes2scalar256Code 0x76 = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem by_at_78 : fetchRel bytes2scalar256Code 0x78 = some (.alu .add (8 : Fin 32) x0 sp, 2) := by decide
-theorem by_at_7a : fetchRel bytes2scalar256Code 0x7A = some (.auipc ra 0x11000, 4) := by decide
-theorem by_at_7e : fetchRel bytes2scalar256Code 0x7E = some (.jalr ra ra 0x762, 4) := by decide
+theorem by_at_7a : fetchRel bytes2scalar256Code 0x7A = some (.auipc ra 0x13000, 4) := by decide
+theorem by_at_7e : fetchRel bytes2scalar256Code 0x7E = some (.jalr ra ra 0x572, 4) := by decide
 theorem by_at_82 : fetchRel bytes2scalar256Code 0x82 = some (.aluImm .add a2 x0 0x0, 2) := by decide
 theorem by_at_84 : fetchRel bytes2scalar256Code 0x84 = some (.branch .beq (22 : Fin 32) x0 0x22, 4) := by decide
 theorem by_at_88 : fetchRel bytes2scalar256Code 0x88 = some (.load .lw a0 (9 : Fin 32) 0x0, 2) := by decide
@@ -75,11 +75,11 @@ theorem by_at_9e : fetchRel bytes2scalar256Code 0x9E = some (.aluImm .add (8 : F
 theorem by_at_a0 : fetchRel bytes2scalar256Code 0xA0 = some (.aluImm .add (22 : Fin 32) (22 : Fin 32) 0xFFFFFFFF, 2) := by decide
 theorem by_at_a2 : fetchRel bytes2scalar256Code 0xA2 = some (.branch .bne (22 : Fin 32) x0 0xFFFFFFE6, 4) := by decide
 theorem by_at_a6 : fetchRel bytes2scalar256Code 0xA6 = some (.aluImm .srl a0 a2 0x1F, 4) := by decide
-theorem by_at_aa : fetchRel bytes2scalar256Code 0xAA = some (.auipc ra 0xA000, 4) := by decide
-theorem by_at_ae : fetchRel bytes2scalar256Code 0xAE = some (.jalr ra ra 0x690, 4) := by decide
+theorem by_at_aa : fetchRel bytes2scalar256Code 0xAA = some (.auipc ra 0xC000, 4) := by decide
+theorem by_at_ae : fetchRel bytes2scalar256Code 0xAE = some (.jalr ra ra 0x4A0, 4) := by decide
 theorem by_at_b2 : fetchRel bytes2scalar256Code 0xB2 = some (.aluImm .and a0 a0 0xFF, 4) := by decide
-theorem by_at_b6 : fetchRel bytes2scalar256Code 0xB6 = some (.auipc ra 0xF000, 4) := by decide
-theorem by_at_ba : fetchRel bytes2scalar256Code 0xBA = some (.jalr ra ra 0xFFFFF896, 4) := by decide
+theorem by_at_b6 : fetchRel bytes2scalar256Code 0xB6 = some (.auipc ra 0x10000, 4) := by decide
+theorem by_at_ba : fetchRel bytes2scalar256Code 0xBA = some (.jalr ra ra 0x6A6, 4) := by decide
 theorem by_at_be : fetchRel bytes2scalar256Code 0xBE = some (.aluImm .and a4 a0 0xFF, 4) := by decide
 theorem by_at_c2 : fetchRel bytes2scalar256Code 0xC2 = some (.aluImm .add a0 sp 0x20, 2) := by decide
 theorem by_at_c4 : fetchRel bytes2scalar256Code 0xC4 = some (.aluImm .add a1 x0 0x8, 2) := by decide
@@ -87,14 +87,14 @@ theorem by_at_c6 : fetchRel bytes2scalar256Code 0xC6 = some (.alu .add a2 x0 sp,
 theorem by_at_c8 : fetchRel bytes2scalar256Code 0xC8 = some (.aluImm .add a3 x0 0x8, 2) := by decide
 theorem by_at_ca : fetchRel bytes2scalar256Code 0xCA = some (.aluImm .add (19 : Fin 32) sp 0x20, 4) := by decide
 theorem by_at_ce : fetchRel bytes2scalar256Code 0xCE = some (.aluImm .add (9 : Fin 32) x0 0x8, 2) := by decide
-theorem by_at_d0 : fetchRel bytes2scalar256Code 0xD0 = some (.auipc ra 0xA000, 4) := by decide
-theorem by_at_d4 : fetchRel bytes2scalar256Code 0xD4 = some (.jalr ra ra 0x5AC, 4) := by decide
+theorem by_at_d0 : fetchRel bytes2scalar256Code 0xD0 = some (.auipc ra 0xC000, 4) := by decide
+theorem by_at_d4 : fetchRel bytes2scalar256Code 0xD4 = some (.jalr ra ra 0x3BC, 4) := by decide
 theorem by_at_d8 : fetchRel bytes2scalar256Code 0xD8 = some (.aluImm .add a0 sp 0x40, 2) := by decide
 theorem by_at_da : fetchRel bytes2scalar256Code 0xDA = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem by_at_de : fetchRel bytes2scalar256Code 0xDE = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem by_at_e0 : fetchRel bytes2scalar256Code 0xE0 = some (.aluImm .add (8 : Fin 32) sp 0x40, 2) := by decide
-theorem by_at_e2 : fetchRel bytes2scalar256Code 0xE2 = some (.auipc ra 0x11000, 4) := by decide
-theorem by_at_e6 : fetchRel bytes2scalar256Code 0xE6 = some (.jalr ra ra 0x6FA, 4) := by decide
+theorem by_at_e2 : fetchRel bytes2scalar256Code 0xE2 = some (.auipc ra 0x13000, 4) := by decide
+theorem by_at_e6 : fetchRel bytes2scalar256Code 0xE6 = some (.jalr ra ra 0x50A, 4) := by decide
 theorem by_at_ea : fetchRel bytes2scalar256Code 0xEA = some (.branch .beq (9 : Fin 32) x0 0x10, 2) := by decide
 theorem by_at_ec : fetchRel bytes2scalar256Code 0xEC = some (.load .lw a0 (19 : Fin 32) 0x0, 4) := by decide
 theorem by_at_f0 : fetchRel bytes2scalar256Code 0xF0 = some (.aluImm .add (19 : Fin 32) (19 : Fin 32) 0x4, 2) := by decide
@@ -105,8 +105,8 @@ theorem by_at_f8 : fetchRel bytes2scalar256Code 0xF8 = some (.branch .bne (9 : F
 theorem by_at_fa : fetchRel bytes2scalar256Code 0xFA = some (.aluImm .add a1 sp 0x40, 2) := by decide
 theorem by_at_fc : fetchRel bytes2scalar256Code 0xFC = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem by_at_100 : fetchRel bytes2scalar256Code 0x100 = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
-theorem by_at_102 : fetchRel bytes2scalar256Code 0x102 = some (.auipc ra 0x11000, 4) := by decide
-theorem by_at_106 : fetchRel bytes2scalar256Code 0x106 = some (.jalr ra ra 0x742, 4) := by decide
+theorem by_at_102 : fetchRel bytes2scalar256Code 0x102 = some (.auipc ra 0x13000, 4) := by decide
+theorem by_at_106 : fetchRel bytes2scalar256Code 0x106 = some (.jalr ra ra 0x552, 4) := by decide
 theorem by_at_10a : fetchRel bytes2scalar256Code 0x10A = some (.load .lw ra sp 0x7C, 2) := by decide
 theorem by_at_10c : fetchRel bytes2scalar256Code 0x10C = some (.load .lw (8 : Fin 32) sp 0x78, 2) := by decide
 theorem by_at_10e : fetchRel bytes2scalar256Code 0x10E = some (.load .lw (9 : Fin 32) sp 0x74, 2) := by decide
@@ -464,7 +464,7 @@ abbrev byPs : List (Fin 32 × Word) :=
 
 def byA : List BInstr :=
   [.alu .add (19 : Fin 32) x0 a1, .alu .add (18 : Fin 32) x0 a0, .lui (21 : Fin 32) 0x3FCC4000,
-   .aluImm .add (21 : Fin 32) (21 : Fin 32) 0x268, .aluImm .add a1 x0 0x8, .alu .add a0 x0 (21 : Fin 32),
+   .aluImm .add (21 : Fin 32) (21 : Fin 32) 0xD8, .aluImm .add a1 x0 0x8, .alu .add a0 x0 (21 : Fin 32),
    .aluImm .add (22 : Fin 32) x0 0x8]
 def byB : List BInstr :=
   [.aluImm .add a1 x0 0x100, .alu .sub (20 : Fin 32) a1 a0, .aluImm .and a0 (20 : Fin 32) 0x7,

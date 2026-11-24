@@ -39,8 +39,8 @@ theorem gs_at_4c : fetchRel p256FromSec1Code 0x4C = some (.branch .beq a0 (8 : F
 theorem gs_at_50 : fetchRel p256FromSec1Code 0x50 = some (.aluImm .add a1 sp 0x91, 4) := by decide
 theorem gs_at_54 : fetchRel p256FromSec1Code 0x54 = some (.aluImm .add a0 sp 0x160, 2) := by decide
 theorem gs_at_56 : fetchRel p256FromSec1Code 0x56 = some (.aluImm .add a2 x0 0x2F, 4) := by decide
-theorem gs_at_5a : fetchRel p256FromSec1Code 0x5A = some (.auipc ra 0xF000, 4) := by decide
-theorem gs_at_5e : fetchRel p256FromSec1Code 0x5E = some (.jalr ra ra 0xFFFFFCFA, 4) := by decide
+theorem gs_at_5a : fetchRel p256FromSec1Code 0x5A = some (.auipc ra 0x11000, 4) := by decide
+theorem gs_at_5e : fetchRel p256FromSec1Code 0x5E = some (.jalr ra ra 0xFFFFFB0A, 4) := by decide
 theorem gs_at_62 : fetchRel p256FromSec1Code 0x62 = some (.jal x0 0x41E, 2) := by decide
 theorem gs_at_64 : fetchRel p256FromSec1Code 0x64 = some (.load .lbu a0 sp 0x90, 4) := by decide
 theorem gs_at_68 : fetchRel p256FromSec1Code 0x68 = some (.aluImm .add a1 x0 0x20, 4) := by decide
@@ -68,8 +68,8 @@ theorem gs_at_b2 : fetchRel p256FromSec1Code 0xB2 = some (.store .sh sp a0 0x264
 theorem gs_at_b6 : fetchRel p256FromSec1Code 0xB6 = some (.store .sb sp a2 0x266, 4) := by decide
 theorem gs_at_ba : fetchRel p256FromSec1Code 0xBA = some (.aluImm .add a0 sp 0x160, 2) := by decide
 theorem gs_at_bc : fetchRel p256FromSec1Code 0xBC = some (.aluImm .add a2 x0 0x2F, 4) := by decide
-theorem gs_at_c0 : fetchRel p256FromSec1Code 0xC0 = some (.auipc ra 0xF000, 4) := by decide
-theorem gs_at_c4 : fetchRel p256FromSec1Code 0xC4 = some (.jalr ra ra 0xFFFFFC94, 4) := by decide
+theorem gs_at_c0 : fetchRel p256FromSec1Code 0xC0 = some (.auipc ra 0x11000, 4) := by decide
+theorem gs_at_c4 : fetchRel p256FromSec1Code 0xC4 = some (.jalr ra ra 0xFFFFFAA4, 4) := by decide
 theorem gs_at_c8 : fetchRel p256FromSec1Code 0xC8 = some (.load .lbu a0 (9 : Fin 32) 0x40, 4) := by decide
 theorem gs_at_cc : fetchRel p256FromSec1Code 0xCC = some (.load .lbu a1 (9 : Fin 32) 0x3F, 4) := by decide
 theorem gs_at_d0 : fetchRel p256FromSec1Code 0xD0 = some (.load .lbu a2 (9 : Fin 32) 0x38, 4) := by decide
@@ -109,24 +109,24 @@ theorem gs_at_13a : fetchRel p256FromSec1Code 0x13A = some (.store .sb sp (22 : 
 theorem gs_at_13e : fetchRel p256FromSec1Code 0x13E = some (.aluImm .add a0 sp 0xA, 4) := by decide
 theorem gs_at_142 : fetchRel p256FromSec1Code 0x142 = some (.aluImm .add a1 sp 0x160, 2) := by decide
 theorem gs_at_144 : fetchRel p256FromSec1Code 0x144 = some (.aluImm .add a2 x0 0x2F, 4) := by decide
-theorem gs_at_148 : fetchRel p256FromSec1Code 0x148 = some (.auipc ra 0xF000, 4) := by decide
-theorem gs_at_14c : fetchRel p256FromSec1Code 0x14C = some (.jalr ra ra 0xFFFFFC0C, 4) := by decide
+theorem gs_at_148 : fetchRel p256FromSec1Code 0x148 = some (.auipc ra 0x11000, 4) := by decide
+theorem gs_at_14c : fetchRel p256FromSec1Code 0x14C = some (.jalr ra ra 0xFFFFFA1C, 4) := by decide
 theorem gs_at_150 : fetchRel p256FromSec1Code 0x150 = some (.aluImm .add a0 sp 0x39, 4) := by decide
 theorem gs_at_154 : fetchRel p256FromSec1Code 0x154 = some (.aluImm .add a1 sp 0x11C, 2) := by decide
 theorem gs_at_156 : fetchRel p256FromSec1Code 0x156 = some (.aluImm .add a2 x0 0xA, 2) := by decide
-theorem gs_at_158 : fetchRel p256FromSec1Code 0x158 = some (.auipc ra 0xF000, 4) := by decide
-theorem gs_at_15c : fetchRel p256FromSec1Code 0x15C = some (.jalr ra ra 0xFFFFFBFC, 4) := by decide
+theorem gs_at_158 : fetchRel p256FromSec1Code 0x158 = some (.auipc ra 0x11000, 4) := by decide
+theorem gs_at_15c : fetchRel p256FromSec1Code 0x15C = some (.jalr ra ra 0xFFFFFA0C, 4) := by decide
 theorem gs_at_160 : fetchRel p256FromSec1Code 0x160 = some (.load .lbu (22 : Fin 32) sp 0x2, 4) := by decide
 theorem gs_at_164 : fetchRel p256FromSec1Code 0x164 = some (.alu .add a0 x0 (22 : Fin 32), 2) := by decide
 theorem gs_at_166 : fetchRel p256FromSec1Code 0x166 = some (.auipc ra 0xFFFFF000, 4) := by decide
 theorem gs_at_16a : fetchRel p256FromSec1Code 0x16A = some (.jalr ra ra 0x57E, 4) := by decide
 theorem gs_at_16e : fetchRel p256FromSec1Code 0x16E = some (.branch .beq a0 x0 0x20, 2) := by decide
 theorem gs_at_170 : fetchRel p256FromSec1Code 0x170 = some (.lui a1 0x3FCC4000, 4) := by decide
-theorem gs_at_174 : fetchRel p256FromSec1Code 0x174 = some (.aluImm .add a1 a1 0x42C, 4) := by decide
+theorem gs_at_174 : fetchRel p256FromSec1Code 0x174 = some (.aluImm .add a1 a1 0x29C, 4) := by decide
 theorem gs_at_178 : fetchRel p256FromSec1Code 0x178 = some (.aluImm .add a0 sp 0x44, 2) := by decide
 theorem gs_at_17a : fetchRel p256FromSec1Code 0x17A = some (.aluImm .add a2 x0 0x44, 4) := by decide
-theorem gs_at_17e : fetchRel p256FromSec1Code 0x17E = some (.auipc ra 0xF000, 4) := by decide
-theorem gs_at_182 : fetchRel p256FromSec1Code 0x182 = some (.jalr ra ra 0xFFFFFBD6, 4) := by decide
+theorem gs_at_17e : fetchRel p256FromSec1Code 0x17E = some (.auipc ra 0x11000, 4) := by decide
+theorem gs_at_182 : fetchRel p256FromSec1Code 0x182 = some (.jalr ra ra 0xFFFFF9E6, 4) := by decide
 theorem gs_at_186 : fetchRel p256FromSec1Code 0x186 = some (.aluImm .add a0 x0 0x1, 2) := by decide
 theorem gs_at_188 : fetchRel p256FromSec1Code 0x188 = some (.store .sb sp a0 0x88, 4) := by decide
 theorem gs_at_18c : fetchRel p256FromSec1Code 0x18C = some (.jal x0 0x2BE, 2) := by decide
@@ -142,8 +142,8 @@ theorem gs_at_1aa : fetchRel p256FromSec1Code 0x1AA = some (.aluImm .add a1 x0 0
 theorem gs_at_1ac : fetchRel p256FromSec1Code 0x1AC = some (.aluImm .and a0 a0 0xFF, 4) := by decide
 theorem gs_at_1b0 : fetchRel p256FromSec1Code 0x1B0 = some (.branch .bne (8 : Fin 32) a1 0x20, 4) := by decide
 theorem gs_at_1b4 : fetchRel p256FromSec1Code 0x1B4 = some (.aluImm .and a0 a0 0x1, 2) := by decide
-theorem gs_at_1b6 : fetchRel p256FromSec1Code 0x1B6 = some (.auipc ra 0x8000, 4) := by decide
-theorem gs_at_1ba : fetchRel p256FromSec1Code 0x1BA = some (.jalr ra ra 0xFFFFFA94, 4) := by decide
+theorem gs_at_1b6 : fetchRel p256FromSec1Code 0x1B6 = some (.auipc ra 0xA000, 4) := by decide
+theorem gs_at_1ba : fetchRel p256FromSec1Code 0x1BA = some (.jalr ra ra 0xFFFFF8A4, 4) := by decide
 theorem gs_at_1be : fetchRel p256FromSec1Code 0x1BE = some (.aluImm .and a2 a0 0xFF, 4) := by decide
 theorem gs_at_1c2 : fetchRel p256FromSec1Code 0x1C2 = some (.aluImm .add a0 sp 0xD4, 2) := by decide
 theorem gs_at_1c4 : fetchRel p256FromSec1Code 0x1C4 = some (.alu .add a1 x0 (19 : Fin 32), 2) := by decide
@@ -153,8 +153,8 @@ theorem gs_at_1ce : fetchRel p256FromSec1Code 0x1CE = some (.jal x0 0x270, 2) :=
 theorem gs_at_1d0 : fetchRel p256FromSec1Code 0x1D0 = some (.aluImm .add a1 x0 0x5, 2) := by decide
 theorem gs_at_1d2 : fetchRel p256FromSec1Code 0x1D2 = some (.branch .bne a0 a1 0x140, 4) := by decide
 theorem gs_at_1d6 : fetchRel p256FromSec1Code 0x1D6 = some (.aluImm .add a0 x0 0x0, 2) := by decide
-theorem gs_at_1d8 : fetchRel p256FromSec1Code 0x1D8 = some (.auipc ra 0x8000, 4) := by decide
-theorem gs_at_1dc : fetchRel p256FromSec1Code 0x1DC = some (.jalr ra ra 0xFFFFFA72, 4) := by decide
+theorem gs_at_1d8 : fetchRel p256FromSec1Code 0x1D8 = some (.auipc ra 0xA000, 4) := by decide
+theorem gs_at_1dc : fetchRel p256FromSec1Code 0x1DC = some (.jalr ra ra 0xFFFFF882, 4) := by decide
 theorem gs_at_1e0 : fetchRel p256FromSec1Code 0x1E0 = some (.aluImm .and a2 a0 0xFF, 4) := by decide
 theorem gs_at_1e4 : fetchRel p256FromSec1Code 0x1E4 = some (.aluImm .add a0 sp 0xD4, 2) := by decide
 theorem gs_at_1e6 : fetchRel p256FromSec1Code 0x1E6 = some (.alu .add a1 x0 (19 : Fin 32), 2) := by decide
@@ -162,19 +162,19 @@ theorem gs_at_1e8 : fetchRel p256FromSec1Code 0x1E8 = some (.auipc ra 0x0, 4) :=
 theorem gs_at_1ec : fetchRel p256FromSec1Code 0x1EC = some (.jalr ra ra 0x2FA, 4) := by decide
 theorem gs_at_1f0 : fetchRel p256FromSec1Code 0x1F0 = some (.load .lbu (19 : Fin 32) sp 0x118, 4) := by decide
 theorem gs_at_1f4 : fetchRel p256FromSec1Code 0x1F4 = some (.lui (9 : Fin 32) 0x3FCC4000, 4) := by decide
-theorem gs_at_1f8 : fetchRel p256FromSec1Code 0x1F8 = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0x42C, 4) := by decide
+theorem gs_at_1f8 : fetchRel p256FromSec1Code 0x1F8 = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0x29C, 4) := by decide
 theorem gs_at_1fc : fetchRel p256FromSec1Code 0x1FC = some (.aluImm .add a0 sp 0x1A4, 2) := by decide
 theorem gs_at_1fe : fetchRel p256FromSec1Code 0x1FE = some (.aluImm .add a2 sp 0xD4, 2) := by decide
 theorem gs_at_200 : fetchRel p256FromSec1Code 0x200 = some (.alu .add a1 x0 (9 : Fin 32), 2) := by decide
 theorem gs_at_202 : fetchRel p256FromSec1Code 0x202 = some (.alu .add a3 x0 (19 : Fin 32), 2) := by decide
-theorem gs_at_204 : fetchRel p256FromSec1Code 0x204 = some (.auipc ra 0xC000, 4) := by decide
-theorem gs_at_208 : fetchRel p256FromSec1Code 0x208 = some (.jalr ra ra 0xFFFFF912, 4) := by decide
+theorem gs_at_204 : fetchRel p256FromSec1Code 0x204 = some (.auipc ra 0xD000, 4) := by decide
+theorem gs_at_208 : fetchRel p256FromSec1Code 0x208 = some (.jalr ra ra 0x722, 4) := by decide
 theorem gs_at_20c : fetchRel p256FromSec1Code 0x20C = some (.aluImm .add a2 sp 0xF4, 2) := by decide
 theorem gs_at_20e : fetchRel p256FromSec1Code 0x20E = some (.aluImm .add a0 sp 0x1C4, 2) := by decide
 theorem gs_at_210 : fetchRel p256FromSec1Code 0x210 = some (.aluImm .add a1 (9 : Fin 32) 0x20, 4) := by decide
 theorem gs_at_214 : fetchRel p256FromSec1Code 0x214 = some (.alu .add a3 x0 (19 : Fin 32), 2) := by decide
-theorem gs_at_216 : fetchRel p256FromSec1Code 0x216 = some (.auipc ra 0xC000, 4) := by decide
-theorem gs_at_21a : fetchRel p256FromSec1Code 0x21A = some (.jalr ra ra 0xFFFFF900, 4) := by decide
+theorem gs_at_216 : fetchRel p256FromSec1Code 0x216 = some (.auipc ra 0xD000, 4) := by decide
+theorem gs_at_21a : fetchRel p256FromSec1Code 0x21A = some (.jalr ra ra 0x710, 4) := by decide
 theorem gs_at_21e : fetchRel p256FromSec1Code 0x21E = some (.load .lbu a0 sp 0x114, 4) := by decide
 theorem gs_at_222 : fetchRel p256FromSec1Code 0x222 = some (.alu .sub a1 x0 (19 : Fin 32), 4) := by decide
 theorem gs_at_226 : fetchRel p256FromSec1Code 0x226 = some (.aluImm .xor a0 a0 0x1, 4) := by decide
@@ -183,31 +183,31 @@ theorem gs_at_22c : fetchRel p256FromSec1Code 0x22C = some (.aluImm .xor (23 : F
 theorem gs_at_230 : fetchRel p256FromSec1Code 0x230 = some (.aluImm .add a0 sp 0x11C, 2) := by decide
 theorem gs_at_232 : fetchRel p256FromSec1Code 0x232 = some (.aluImm .add a1 sp 0x1A4, 2) := by decide
 theorem gs_at_234 : fetchRel p256FromSec1Code 0x234 = some (.aluImm .add a2 x0 0x40, 4) := by decide
-theorem gs_at_238 : fetchRel p256FromSec1Code 0x238 = some (.auipc ra 0xF000, 4) := by decide
-theorem gs_at_23c : fetchRel p256FromSec1Code 0x23C = some (.jalr ra ra 0xFFFFFB1C, 4) := by decide
+theorem gs_at_238 : fetchRel p256FromSec1Code 0x238 = some (.auipc ra 0x11000, 4) := by decide
+theorem gs_at_23c : fetchRel p256FromSec1Code 0x23C = some (.jalr ra ra 0xFFFFF92C, 4) := by decide
 theorem gs_at_240 : fetchRel p256FromSec1Code 0x240 = some (.store .sb sp (23 : Fin 32) 0x15C, 4) := by decide
 theorem gs_at_244 : fetchRel p256FromSec1Code 0x244 = some (.aluImm .add (20 : Fin 32) sp 0x13C, 4) := by decide
 theorem gs_at_248 : fetchRel p256FromSec1Code 0x248 = some (.aluImm .add (21 : Fin 32) sp 0x180, 4) := by decide
 theorem gs_at_24c : fetchRel p256FromSec1Code 0x24C = some (.alu .add a0 x0 (21 : Fin 32), 2) := by decide
 theorem gs_at_24e : fetchRel p256FromSec1Code 0x24E = some (.alu .add a1 x0 (18 : Fin 32), 2) := by decide
-theorem gs_at_250 : fetchRel p256FromSec1Code 0x250 = some (.auipc ra 0xC000, 4) := by decide
-theorem gs_at_254 : fetchRel p256FromSec1Code 0x254 = some (.jalr ra ra 0x1E8, 4) := by decide
+theorem gs_at_250 : fetchRel p256FromSec1Code 0x250 = some (.auipc ra 0xE000, 4) := by decide
+theorem gs_at_254 : fetchRel p256FromSec1Code 0x254 = some (.jalr ra ra 0xFFFFFFF8, 4) := by decide
 theorem gs_at_258 : fetchRel p256FromSec1Code 0x258 = some (.aluImm .add a0 sp 0x160, 2) := by decide
 theorem gs_at_25a : fetchRel p256FromSec1Code 0x25A = some (.aluImm .add a1 sp 0x1A4, 2) := by decide
 theorem gs_at_25c : fetchRel p256FromSec1Code 0x25C = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem gs_at_260 : fetchRel p256FromSec1Code 0x260 = some (.auipc ra 0xF000, 4) := by decide
-theorem gs_at_264 : fetchRel p256FromSec1Code 0x264 = some (.jalr ra ra 0xFFFFFAF4, 4) := by decide
+theorem gs_at_260 : fetchRel p256FromSec1Code 0x260 = some (.auipc ra 0x11000, 4) := by decide
+theorem gs_at_264 : fetchRel p256FromSec1Code 0x264 = some (.jalr ra ra 0xFFFFF904, 4) := by decide
 theorem gs_at_268 : fetchRel p256FromSec1Code 0x268 = some (.store .sb sp (23 : Fin 32) 0x1A0, 4) := by decide
 theorem gs_at_26c : fetchRel p256FromSec1Code 0x26C = some (.aluImm .add a0 sp 0x264, 2) := by decide
 theorem gs_at_26e : fetchRel p256FromSec1Code 0x26E = some (.alu .add a1 x0 (20 : Fin 32), 2) := by decide
 theorem gs_at_270 : fetchRel p256FromSec1Code 0x270 = some (.aluImm .add (25 : Fin 32) sp 0x264, 4) := by decide
-theorem gs_at_274 : fetchRel p256FromSec1Code 0x274 = some (.auipc ra 0xC000, 4) := by decide
-theorem gs_at_278 : fetchRel p256FromSec1Code 0x278 = some (.jalr ra ra 0x2CA, 4) := by decide
+theorem gs_at_274 : fetchRel p256FromSec1Code 0x274 = some (.auipc ra 0xE000, 4) := by decide
+theorem gs_at_278 : fetchRel p256FromSec1Code 0x278 = some (.jalr ra ra 0xDA, 4) := by decide
 theorem gs_at_27c : fetchRel p256FromSec1Code 0x27C = some (.aluImm .add a0 sp 0x8C, 2) := by decide
 theorem gs_at_27e : fetchRel p256FromSec1Code 0x27E = some (.alu .add a1 x0 (21 : Fin 32), 2) := by decide
 theorem gs_at_280 : fetchRel p256FromSec1Code 0x280 = some (.aluImm .add (9 : Fin 32) sp 0x8C, 2) := by decide
-theorem gs_at_282 : fetchRel p256FromSec1Code 0x282 = some (.auipc ra 0xC000, 4) := by decide
-theorem gs_at_286 : fetchRel p256FromSec1Code 0x286 = some (.jalr ra ra 0x2BC, 4) := by decide
+theorem gs_at_282 : fetchRel p256FromSec1Code 0x282 = some (.auipc ra 0xE000, 4) := by decide
+theorem gs_at_286 : fetchRel p256FromSec1Code 0x286 = some (.jalr ra ra 0xCC, 4) := by decide
 theorem gs_at_28a : fetchRel p256FromSec1Code 0x28A = some (.aluImm .add (18 : Fin 32) x0 0x0, 2) := by decide
 theorem gs_at_28c : fetchRel p256FromSec1Code 0x28C = some (.aluImm .add (8 : Fin 32) x0 0x8, 2) := by decide
 theorem gs_at_28e : fetchRel p256FromSec1Code 0x28E = some (.branch .beq (8 : Fin 32) x0 0x1C, 2) := by decide
@@ -236,20 +236,20 @@ theorem gs_at_2cc : fetchRel p256FromSec1Code 0x2CC = some (.aluImm .xor a0 a0 0
 theorem gs_at_2d0 : fetchRel p256FromSec1Code 0x2D0 = some (.alu .and a0 (18 : Fin 32) a0, 4) := by decide
 theorem gs_at_2d4 : fetchRel p256FromSec1Code 0x2D4 = some (.aluImm .and a0 a0 0x1, 2) := by decide
 theorem gs_at_2d6 : fetchRel p256FromSec1Code 0x2D6 = some (.alu .or a0 a0 (8 : Fin 32), 2) := by decide
-theorem gs_at_2d8 : fetchRel p256FromSec1Code 0x2D8 = some (.auipc ra 0x8000, 4) := by decide
-theorem gs_at_2dc : fetchRel p256FromSec1Code 0x2DC = some (.jalr ra ra 0xFFFFF972, 4) := by decide
+theorem gs_at_2d8 : fetchRel p256FromSec1Code 0x2D8 = some (.auipc ra 0x9000, 4) := by decide
+theorem gs_at_2dc : fetchRel p256FromSec1Code 0x2DC = some (.jalr ra ra 0x782, 4) := by decide
 theorem gs_at_2e0 : fetchRel p256FromSec1Code 0x2E0 = some (.aluImm .add a1 sp 0xAC, 2) := by decide
 theorem gs_at_2e2 : fetchRel p256FromSec1Code 0x2E2 = some (.aluImm .and a3 a0 0xFF, 4) := by decide
 theorem gs_at_2e6 : fetchRel p256FromSec1Code 0x2E6 = some (.alu .add a0 x0 a1, 2) := by decide
 theorem gs_at_2e8 : fetchRel p256FromSec1Code 0x2E8 = some (.alu .add a1 x0 (20 : Fin 32), 2) := by decide
 theorem gs_at_2ea : fetchRel p256FromSec1Code 0x2EA = some (.alu .add a2 x0 (21 : Fin 32), 2) := by decide
-theorem gs_at_2ec : fetchRel p256FromSec1Code 0x2EC = some (.auipc ra 0xC000, 4) := by decide
-theorem gs_at_2f0 : fetchRel p256FromSec1Code 0x2F0 = some (.jalr ra ra 0xFFFFF82A, 4) := by decide
+theorem gs_at_2ec : fetchRel p256FromSec1Code 0x2EC = some (.auipc ra 0xD000, 4) := by decide
+theorem gs_at_2f0 : fetchRel p256FromSec1Code 0x2F0 = some (.jalr ra ra 0x63A, 4) := by decide
 theorem gs_at_2f4 : fetchRel p256FromSec1Code 0x2F4 = some (.aluImm .add a0 sp 0x8C, 2) := by decide
 theorem gs_at_2f6 : fetchRel p256FromSec1Code 0x2F6 = some (.aluImm .add a1 sp 0x1A4, 2) := by decide
 theorem gs_at_2f8 : fetchRel p256FromSec1Code 0x2F8 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem gs_at_2fc : fetchRel p256FromSec1Code 0x2FC = some (.auipc ra 0xF000, 4) := by decide
-theorem gs_at_300 : fetchRel p256FromSec1Code 0x300 = some (.jalr ra ra 0xFFFFFA58, 4) := by decide
+theorem gs_at_2fc : fetchRel p256FromSec1Code 0x2FC = some (.auipc ra 0x11000, 4) := by decide
+theorem gs_at_300 : fetchRel p256FromSec1Code 0x300 = some (.jalr ra ra 0xFFFFF868, 4) := by decide
 theorem gs_at_304 : fetchRel p256FromSec1Code 0x304 = some (.store .sb sp (23 : Fin 32) 0xCC, 4) := by decide
 theorem gs_at_308 : fetchRel p256FromSec1Code 0x308 = some (.store .sb sp (19 : Fin 32) 0xD0, 4) := by decide
 theorem gs_at_30c : fetchRel p256FromSec1Code 0x30C = some (.aluImm .add a0 sp 0x44, 2) := by decide
@@ -262,15 +262,15 @@ theorem gs_at_31c : fetchRel p256FromSec1Code 0x31C = some (.jalr ra ra 0xFFFFF9
 theorem gs_at_320 : fetchRel p256FromSec1Code 0x320 = some (.aluImm .add a0 sp 0x1E4, 2) := by decide
 theorem gs_at_322 : fetchRel p256FromSec1Code 0x322 = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem gs_at_326 : fetchRel p256FromSec1Code 0x326 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem gs_at_328 : fetchRel p256FromSec1Code 0x328 = some (.auipc ra 0xF000, 4) := by decide
-theorem gs_at_32c : fetchRel p256FromSec1Code 0x32C = some (.jalr ra ra 0xFFFFF9C4, 4) := by decide
+theorem gs_at_328 : fetchRel p256FromSec1Code 0x328 = some (.auipc ra 0x10000, 4) := by decide
+theorem gs_at_32c : fetchRel p256FromSec1Code 0x32C = some (.jalr ra ra 0x7D4, 4) := by decide
 theorem gs_at_330 : fetchRel p256FromSec1Code 0x330 = some (.load .lbu (18 : Fin 32) sp 0x180, 4) := by decide
 theorem gs_at_334 : fetchRel p256FromSec1Code 0x334 = some (.aluImm .add a0 sp 0x244, 2) := by decide
 theorem gs_at_336 : fetchRel p256FromSec1Code 0x336 = some (.aluImm .add a1 sp 0x1E4, 2) := by decide
 theorem gs_at_338 : fetchRel p256FromSec1Code 0x338 = some (.aluImm .add a2 sp 0x160, 2) := by decide
 theorem gs_at_33a : fetchRel p256FromSec1Code 0x33A = some (.alu .add a3 x0 (18 : Fin 32), 2) := by decide
-theorem gs_at_33c : fetchRel p256FromSec1Code 0x33C = some (.auipc ra 0xB000, 4) := by decide
-theorem gs_at_340 : fetchRel p256FromSec1Code 0x340 = some (.jalr ra ra 0x7DA, 4) := by decide
+theorem gs_at_33c : fetchRel p256FromSec1Code 0x33C = some (.auipc ra 0xD000, 4) := by decide
+theorem gs_at_340 : fetchRel p256FromSec1Code 0x340 = some (.jalr ra ra 0x5EA, 4) := by decide
 theorem gs_at_344 : fetchRel p256FromSec1Code 0x344 = some (.aluImm .add a0 sp 0xD4, 2) := by decide
 theorem gs_at_346 : fetchRel p256FromSec1Code 0x346 = some (.alu .add a1 x0 (19 : Fin 32), 2) := by decide
 theorem gs_at_348 : fetchRel p256FromSec1Code 0x348 = some (.auipc ra 0x1000, 4) := by decide
@@ -278,76 +278,76 @@ theorem gs_at_34c : fetchRel p256FromSec1Code 0x34C = some (.jalr ra ra 0xFFFFF9
 theorem gs_at_350 : fetchRel p256FromSec1Code 0x350 = some (.aluImm .add a0 sp 0x204, 2) := by decide
 theorem gs_at_352 : fetchRel p256FromSec1Code 0x352 = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem gs_at_356 : fetchRel p256FromSec1Code 0x356 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem gs_at_358 : fetchRel p256FromSec1Code 0x358 = some (.auipc ra 0xF000, 4) := by decide
-theorem gs_at_35c : fetchRel p256FromSec1Code 0x35C = some (.jalr ra ra 0xFFFFF994, 4) := by decide
+theorem gs_at_358 : fetchRel p256FromSec1Code 0x358 = some (.auipc ra 0x10000, 4) := by decide
+theorem gs_at_35c : fetchRel p256FromSec1Code 0x35C = some (.jalr ra ra 0x7A4, 4) := by decide
 theorem gs_at_360 : fetchRel p256FromSec1Code 0x360 = some (.load .lbu (19 : Fin 32) sp 0xF4, 4) := by decide
 theorem gs_at_364 : fetchRel p256FromSec1Code 0x364 = some (.aluImm .add a0 sp 0x284, 2) := by decide
 theorem gs_at_366 : fetchRel p256FromSec1Code 0x366 = some (.aluImm .add a1 sp 0x204, 2) := by decide
 theorem gs_at_368 : fetchRel p256FromSec1Code 0x368 = some (.aluImm .add a2 sp 0xD4, 2) := by decide
 theorem gs_at_36a : fetchRel p256FromSec1Code 0x36A = some (.alu .add a3 x0 (19 : Fin 32), 2) := by decide
-theorem gs_at_36c : fetchRel p256FromSec1Code 0x36C = some (.auipc ra 0xB000, 4) := by decide
-theorem gs_at_370 : fetchRel p256FromSec1Code 0x370 = some (.jalr ra ra 0x7AA, 4) := by decide
+theorem gs_at_36c : fetchRel p256FromSec1Code 0x36C = some (.auipc ra 0xD000, 4) := by decide
+theorem gs_at_370 : fetchRel p256FromSec1Code 0x370 = some (.jalr ra ra 0x5BA, 4) := by decide
 theorem gs_at_374 : fetchRel p256FromSec1Code 0x374 = some (.aluImm .add a0 sp 0x224, 2) := by decide
 theorem gs_at_376 : fetchRel p256FromSec1Code 0x376 = some (.aluImm .add a1 sp 0x244, 2) := by decide
 theorem gs_at_378 : fetchRel p256FromSec1Code 0x378 = some (.aluImm .add a2 sp 0x244, 2) := by decide
-theorem gs_at_37a : fetchRel p256FromSec1Code 0x37A = some (.auipc ra 0xB000, 4) := by decide
-theorem gs_at_37e : fetchRel p256FromSec1Code 0x37E = some (.jalr ra ra 0x7E8, 4) := by decide
+theorem gs_at_37a : fetchRel p256FromSec1Code 0x37A = some (.auipc ra 0xD000, 4) := by decide
+theorem gs_at_37e : fetchRel p256FromSec1Code 0x37E = some (.jalr ra ra 0x5F8, 4) := by decide
 theorem gs_at_382 : fetchRel p256FromSec1Code 0x382 = some (.aluImm .add a0 sp 0x8C, 2) := by decide
 theorem gs_at_384 : fetchRel p256FromSec1Code 0x384 = some (.aluImm .add a1 sp 0x284, 2) := by decide
 theorem gs_at_386 : fetchRel p256FromSec1Code 0x386 = some (.aluImm .add a2 sp 0x284, 2) := by decide
-theorem gs_at_388 : fetchRel p256FromSec1Code 0x388 = some (.auipc ra 0xB000, 4) := by decide
-theorem gs_at_38c : fetchRel p256FromSec1Code 0x38C = some (.jalr ra ra 0x7DA, 4) := by decide
+theorem gs_at_388 : fetchRel p256FromSec1Code 0x388 = some (.auipc ra 0xD000, 4) := by decide
+theorem gs_at_38c : fetchRel p256FromSec1Code 0x38C = some (.jalr ra ra 0x5EA, 4) := by decide
 theorem gs_at_390 : fetchRel p256FromSec1Code 0x390 = some (.aluImm .add a0 sp 0x11C, 2) := by decide
 theorem gs_at_392 : fetchRel p256FromSec1Code 0x392 = some (.aluImm .add a1 sp 0x8C, 2) := by decide
 theorem gs_at_394 : fetchRel p256FromSec1Code 0x394 = some (.aluImm .add a2 sp 0x284, 2) := by decide
-theorem gs_at_396 : fetchRel p256FromSec1Code 0x396 = some (.auipc ra 0xB000, 4) := by decide
-theorem gs_at_39a : fetchRel p256FromSec1Code 0x39A = some (.jalr ra ra 0x7CC, 4) := by decide
+theorem gs_at_396 : fetchRel p256FromSec1Code 0x396 = some (.auipc ra 0xD000, 4) := by decide
+theorem gs_at_39a : fetchRel p256FromSec1Code 0x39A = some (.jalr ra ra 0x5DC, 4) := by decide
 theorem gs_at_39e : fetchRel p256FromSec1Code 0x39E = some (.lui a1 0x3FCC4000, 4) := by decide
-theorem gs_at_3a2 : fetchRel p256FromSec1Code 0x3A2 = some (.aluImm .add a1 a1 0x2C8, 4) := by decide
+theorem gs_at_3a2 : fetchRel p256FromSec1Code 0x3A2 = some (.aluImm .add a1 a1 0x138, 4) := by decide
 theorem gs_at_3a6 : fetchRel p256FromSec1Code 0x3A6 = some (.aluImm .add a0 sp 0x8C, 2) := by decide
 theorem gs_at_3a8 : fetchRel p256FromSec1Code 0x3A8 = some (.aluImm .add a2 sp 0x284, 2) := by decide
-theorem gs_at_3aa : fetchRel p256FromSec1Code 0x3AA = some (.auipc ra 0xB000, 4) := by decide
-theorem gs_at_3ae : fetchRel p256FromSec1Code 0x3AE = some (.jalr ra ra 0x7B8, 4) := by decide
+theorem gs_at_3aa : fetchRel p256FromSec1Code 0x3AA = some (.auipc ra 0xD000, 4) := by decide
+theorem gs_at_3ae : fetchRel p256FromSec1Code 0x3AE = some (.jalr ra ra 0x5C8, 4) := by decide
 theorem gs_at_3b2 : fetchRel p256FromSec1Code 0x3B2 = some (.aluImm .add a0 sp 0x264, 2) := by decide
 theorem gs_at_3b4 : fetchRel p256FromSec1Code 0x3B4 = some (.aluImm .add a1 sp 0x11C, 2) := by decide
 theorem gs_at_3b6 : fetchRel p256FromSec1Code 0x3B6 = some (.aluImm .add a2 sp 0x8C, 2) := by decide
-theorem gs_at_3b8 : fetchRel p256FromSec1Code 0x3B8 = some (.auipc ra 0xC000, 4) := by decide
-theorem gs_at_3bc : fetchRel p256FromSec1Code 0x3BC = some (.jalr ra ra 0xFFFFFF70, 4) := by decide
+theorem gs_at_3b8 : fetchRel p256FromSec1Code 0x3B8 = some (.auipc ra 0xE000, 4) := by decide
+theorem gs_at_3bc : fetchRel p256FromSec1Code 0x3BC = some (.jalr ra ra 0xFFFFFD80, 4) := by decide
 theorem gs_at_3c0 : fetchRel p256FromSec1Code 0x3C0 = some (.lui a2 0x3FCC4000, 4) := by decide
-theorem gs_at_3c4 : fetchRel p256FromSec1Code 0x3C4 = some (.aluImm .add a2 a2 0x368, 4) := by decide
+theorem gs_at_3c4 : fetchRel p256FromSec1Code 0x3C4 = some (.aluImm .add a2 a2 0x1D8, 4) := by decide
 theorem gs_at_3c8 : fetchRel p256FromSec1Code 0x3C8 = some (.aluImm .add a0 sp 0x11C, 2) := by decide
 theorem gs_at_3ca : fetchRel p256FromSec1Code 0x3CA = some (.aluImm .add a1 sp 0x264, 2) := by decide
-theorem gs_at_3cc : fetchRel p256FromSec1Code 0x3CC = some (.auipc ra 0xC000, 4) := by decide
-theorem gs_at_3d0 : fetchRel p256FromSec1Code 0x3D0 = some (.jalr ra ra 0xFFFFFF5C, 4) := by decide
+theorem gs_at_3cc : fetchRel p256FromSec1Code 0x3CC = some (.auipc ra 0xE000, 4) := by decide
+theorem gs_at_3d0 : fetchRel p256FromSec1Code 0x3D0 = some (.jalr ra ra 0xFFFFFD6C, 4) := by decide
 theorem gs_at_3d4 : fetchRel p256FromSec1Code 0x3D4 = some (.aluImm .add a0 sp 0x8C, 2) := by decide
 theorem gs_at_3d6 : fetchRel p256FromSec1Code 0x3D6 = some (.aluImm .add a1 sp 0x284, 2) := by decide
 theorem gs_at_3d8 : fetchRel p256FromSec1Code 0x3D8 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem gs_at_3dc : fetchRel p256FromSec1Code 0x3DC = some (.auipc ra 0xF000, 4) := by decide
-theorem gs_at_3e0 : fetchRel p256FromSec1Code 0x3E0 = some (.jalr ra ra 0xFFFFF978, 4) := by decide
+theorem gs_at_3dc : fetchRel p256FromSec1Code 0x3DC = some (.auipc ra 0x10000, 4) := by decide
+theorem gs_at_3e0 : fetchRel p256FromSec1Code 0x3E0 = some (.jalr ra ra 0x788, 4) := by decide
 theorem gs_at_3e4 : fetchRel p256FromSec1Code 0x3E4 = some (.aluImm .add a0 sp 0xAC, 2) := by decide
 theorem gs_at_3e6 : fetchRel p256FromSec1Code 0x3E6 = some (.aluImm .add a1 sp 0x244, 2) := by decide
 theorem gs_at_3e8 : fetchRel p256FromSec1Code 0x3E8 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem gs_at_3ec : fetchRel p256FromSec1Code 0x3EC = some (.auipc ra 0xF000, 4) := by decide
-theorem gs_at_3f0 : fetchRel p256FromSec1Code 0x3F0 = some (.jalr ra ra 0xFFFFF968, 4) := by decide
+theorem gs_at_3ec : fetchRel p256FromSec1Code 0x3EC = some (.auipc ra 0x10000, 4) := by decide
+theorem gs_at_3f0 : fetchRel p256FromSec1Code 0x3F0 = some (.jalr ra ra 0x778, 4) := by decide
 theorem gs_at_3f4 : fetchRel p256FromSec1Code 0x3F4 = some (.aluImm .add a0 sp 0x224, 2) := by decide
 theorem gs_at_3f6 : fetchRel p256FromSec1Code 0x3F6 = some (.aluImm .add a1 sp 0x11C, 2) := by decide
-theorem gs_at_3f8 : fetchRel p256FromSec1Code 0x3F8 = some (.auipc ra 0xC000, 4) := by decide
-theorem gs_at_3fc : fetchRel p256FromSec1Code 0x3FC = some (.jalr ra ra 0xFFFFFA72, 4) := by decide
+theorem gs_at_3f8 : fetchRel p256FromSec1Code 0x3F8 = some (.auipc ra 0xE000, 4) := by decide
+theorem gs_at_3fc : fetchRel p256FromSec1Code 0x3FC = some (.jalr ra ra 0xFFFFF882, 4) := by decide
 theorem gs_at_400 : fetchRel p256FromSec1Code 0x400 = some (.aluImm .and a0 a0 0xFF, 4) := by decide
-theorem gs_at_404 : fetchRel p256FromSec1Code 0x404 = some (.auipc ra 0x8000, 4) := by decide
-theorem gs_at_408 : fetchRel p256FromSec1Code 0x408 = some (.jalr ra ra 0xFFFFF846, 4) := by decide
+theorem gs_at_404 : fetchRel p256FromSec1Code 0x404 = some (.auipc ra 0x9000, 4) := by decide
+theorem gs_at_408 : fetchRel p256FromSec1Code 0x408 = some (.jalr ra ra 0x656, 4) := by decide
 theorem gs_at_40c : fetchRel p256FromSec1Code 0x40C = some (.alu .and a0 (19 : Fin 32) a0, 4) := by decide
-theorem gs_at_410 : fetchRel p256FromSec1Code 0x410 = some (.auipc ra 0x8000, 4) := by decide
-theorem gs_at_414 : fetchRel p256FromSec1Code 0x414 = some (.jalr ra ra 0xFFFFF83A, 4) := by decide
+theorem gs_at_410 : fetchRel p256FromSec1Code 0x410 = some (.auipc ra 0x9000, 4) := by decide
+theorem gs_at_414 : fetchRel p256FromSec1Code 0x414 = some (.jalr ra ra 0x64A, 4) := by decide
 theorem gs_at_418 : fetchRel p256FromSec1Code 0x418 = some (.alu .and a0 (18 : Fin 32) a0, 4) := by decide
-theorem gs_at_41c : fetchRel p256FromSec1Code 0x41C = some (.auipc ra 0x8000, 4) := by decide
-theorem gs_at_420 : fetchRel p256FromSec1Code 0x420 = some (.jalr ra ra 0xFFFFF82E, 4) := by decide
+theorem gs_at_41c : fetchRel p256FromSec1Code 0x41C = some (.auipc ra 0x9000, 4) := by decide
+theorem gs_at_420 : fetchRel p256FromSec1Code 0x420 = some (.jalr ra ra 0x63E, 4) := by decide
 theorem gs_at_424 : fetchRel p256FromSec1Code 0x424 = some (.alu .add (9 : Fin 32) x0 a0, 2) := by decide
 theorem gs_at_426 : fetchRel p256FromSec1Code 0x426 = some (.aluImm .add a0 sp 0xD4, 2) := by decide
 theorem gs_at_428 : fetchRel p256FromSec1Code 0x428 = some (.aluImm .add a1 sp 0x8C, 2) := by decide
 theorem gs_at_42a : fetchRel p256FromSec1Code 0x42A = some (.aluImm .add a2 x0 0x40, 4) := by decide
-theorem gs_at_42e : fetchRel p256FromSec1Code 0x42E = some (.auipc ra 0xF000, 4) := by decide
-theorem gs_at_432 : fetchRel p256FromSec1Code 0x432 = some (.jalr ra ra 0xFFFFF926, 4) := by decide
+theorem gs_at_42e : fetchRel p256FromSec1Code 0x42E = some (.auipc ra 0x10000, 4) := by decide
+theorem gs_at_432 : fetchRel p256FromSec1Code 0x432 = some (.jalr ra ra 0x736, 4) := by decide
 theorem gs_at_436 : fetchRel p256FromSec1Code 0x436 = some (.store .sb sp x0 0x114, 4) := by decide
 theorem gs_at_43a : fetchRel p256FromSec1Code 0x43A = some (.store .sb sp (9 : Fin 32) 0x118, 4) := by decide
 theorem gs_at_43e : fetchRel p256FromSec1Code 0x43E = some (.aluImm .add a0 sp 0x44, 2) := by decide
@@ -368,8 +368,8 @@ theorem gs_at_468 : fetchRel p256FromSec1Code 0x468 = some (.branch .beq a0 x0 0
 theorem gs_at_46a : fetchRel p256FromSec1Code 0x46A = some (.aluImm .add a0 (24 : Fin 32) 0x4, 4) := by decide
 theorem gs_at_46e : fetchRel p256FromSec1Code 0x46E = some (.aluImm .add a1 sp 0x44, 2) := by decide
 theorem gs_at_470 : fetchRel p256FromSec1Code 0x470 = some (.aluImm .add a2 x0 0x44, 4) := by decide
-theorem gs_at_474 : fetchRel p256FromSec1Code 0x474 = some (.auipc ra 0xF000, 4) := by decide
-theorem gs_at_478 : fetchRel p256FromSec1Code 0x478 = some (.jalr ra ra 0xFFFFF8E0, 4) := by decide
+theorem gs_at_474 : fetchRel p256FromSec1Code 0x474 = some (.auipc ra 0x10000, 4) := by decide
+theorem gs_at_478 : fetchRel p256FromSec1Code 0x478 = some (.jalr ra ra 0x6F0, 4) := by decide
 theorem gs_at_47c : fetchRel p256FromSec1Code 0x47C = some (.aluImm .add a0 x0 0x0, 2) := by decide
 theorem gs_at_47e : fetchRel p256FromSec1Code 0x47E = some (.jal x0 0x4, 2) := by decide
 theorem gs_at_480 : fetchRel p256FromSec1Code 0x480 = some (.aluImm .add a0 x0 0x1, 2) := by decide

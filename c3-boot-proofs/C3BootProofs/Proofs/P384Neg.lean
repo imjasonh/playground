@@ -28,18 +28,18 @@ theorem ng_at_e : fetchRel p384NegCode 0xE = some (.store .sw sp (21 : Fin 32) 0
 theorem ng_at_10 : fetchRel p384NegCode 0x10 = some (.alu .add (20 : Fin 32) x0 a1, 2) := by decide
 theorem ng_at_12 : fetchRel p384NegCode 0x12 = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
 theorem ng_at_14 : fetchRel p384NegCode 0x14 = some (.alu .add a0 x0 a1, 2) := by decide
-theorem ng_at_16 : fetchRel p384NegCode 0x16 = some (.auipc ra 0x11000, 4) := by decide
-theorem ng_at_1a : fetchRel p384NegCode 0x1A = some (.jalr ra ra 0x286, 4) := by decide
+theorem ng_at_16 : fetchRel p384NegCode 0x16 = some (.auipc ra 0x13000, 4) := by decide
+theorem ng_at_1a : fetchRel p384NegCode 0x1A = some (.jalr ra ra 0x96, 4) := by decide
 theorem ng_at_1e : fetchRel p384NegCode 0x1E = some (.aluImm .and (19 : Fin 32) a0 0xFF, 4) := by decide
 theorem ng_at_22 : fetchRel p384NegCode 0x22 = some (.alu .add a0 x0 sp, 2) := by decide
 theorem ng_at_24 : fetchRel p384NegCode 0x24 = some (.aluImm .add a2 x0 0x30, 4) := by decide
 theorem ng_at_28 : fetchRel p384NegCode 0x28 = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem ng_at_2a : fetchRel p384NegCode 0x2A = some (.alu .add (21 : Fin 32) x0 sp, 2) := by decide
-theorem ng_at_2c : fetchRel p384NegCode 0x2C = some (.auipc ra 0x12000, 4) := by decide
-theorem ng_at_30 : fetchRel p384NegCode 0x30 = some (.jalr ra ra 0xFFFFFF40, 4) := by decide
+theorem ng_at_2c : fetchRel p384NegCode 0x2C = some (.auipc ra 0x14000, 4) := by decide
+theorem ng_at_30 : fetchRel p384NegCode 0x30 = some (.jalr ra ra 0xFFFFFD50, 4) := by decide
 theorem ng_at_34 : fetchRel p384NegCode 0x34 = some (.aluImm .add a2 x0 0x0, 2) := by decide
 theorem ng_at_36 : fetchRel p384NegCode 0x36 = some (.lui (9 : Fin 32) 0x3FCC5000, 4) := by decide
-theorem ng_at_3a : fetchRel p384NegCode 0x3A = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFFC8C, 4) := by decide
+theorem ng_at_3a : fetchRel p384NegCode 0x3A = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFFCF4, 4) := by decide
 theorem ng_at_3e : fetchRel p384NegCode 0x3E = some (.aluImm .add (8 : Fin 32) x0 0xC, 2) := by decide
 theorem ng_at_40 : fetchRel p384NegCode 0x40 = some (.branch .beq (8 : Fin 32) x0 0x20, 2) := by decide
 theorem ng_at_42 : fetchRel p384NegCode 0x42 = some (.load .lw a0 (9 : Fin 32) 0x0, 2) := by decide
@@ -70,8 +70,8 @@ theorem ng_at_82 : fetchRel p384NegCode 0x82 = some (.branch .bne a2 x0 0xFFFFFF
 theorem ng_at_84 : fetchRel p384NegCode 0x84 = some (.alu .add a1 x0 sp, 2) := by decide
 theorem ng_at_86 : fetchRel p384NegCode 0x86 = some (.aluImm .add a2 x0 0x30, 4) := by decide
 theorem ng_at_8a : fetchRel p384NegCode 0x8A = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
-theorem ng_at_8c : fetchRel p384NegCode 0x8C = some (.auipc ra 0x12000, 4) := by decide
-theorem ng_at_90 : fetchRel p384NegCode 0x90 = some (.jalr ra ra 0xFFFFFF48, 4) := by decide
+theorem ng_at_8c : fetchRel p384NegCode 0x8C = some (.auipc ra 0x14000, 4) := by decide
+theorem ng_at_90 : fetchRel p384NegCode 0x90 = some (.jalr ra ra 0xFFFFFD58, 4) := by decide
 theorem ng_at_94 : fetchRel p384NegCode 0x94 = some (.load .lw ra sp 0x4C, 2) := by decide
 theorem ng_at_96 : fetchRel p384NegCode 0x96 = some (.load .lw (8 : Fin 32) sp 0x48, 2) := by decide
 theorem ng_at_98 : fetchRel p384NegCode 0x98 = some (.load .lw (9 : Fin 32) sp 0x44, 2) := by decide
@@ -82,8 +82,8 @@ theorem ng_at_a0 : fetchRel p384NegCode 0xA0 = some (.load .lw (21 : Fin 32) sp 
 theorem ng_at_a2 : fetchRel p384NegCode 0xA2 = some (.aluImm .add sp sp 0x50, 2) := by decide
 theorem ng_at_a4 : fetchRel p384NegCode 0xA4 = some (.jalr x0 ra 0x0, 2) := by decide
 theorem unz_at_0 : fetchRel uint12IsNonzeroCode 0x0 = some (.aluImm .add a1 x0 0xC, 2) := by decide
-theorem unz_at_2 : fetchRel uint12IsNonzeroCode 0x2 = some (.auipc (6 : Fin 32) 0xFFFEF000, 4) := by decide
-theorem unz_at_6 : fetchRel uint12IsNonzeroCode 0x6 = some (.jalr x0 (6 : Fin 32) 0x154, 4) := by decide
+theorem unz_at_2 : fetchRel uint12IsNonzeroCode 0x2 = some (.auipc (6 : Fin 32) 0xFFFED000, 4) := by decide
+theorem unz_at_6 : fetchRel uint12IsNonzeroCode 0x6 = some (.jalr x0 (6 : Fin 32) 0x344, 4) := by decide
 end
 
 /-- **The compiled `Uint<12>::is_nonzero`** returns 0 when the 12 limbs at
@@ -531,7 +531,7 @@ def ngPre : List BInstr :=
 
 /-- From 0x34 to 0x40: the borrow, the modulus's address, and the count. -/
 def ngInit : List BInstr :=
-  [.aluImm .add a2 x0 0x0, .lui (9 : Fin 32) 0x3FCC5000, .aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFFC8C,
+  [.aluImm .add a2 x0 0x0, .lui (9 : Fin 32) 0x3FCC5000, .aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFFCF4,
    .aluImm .add (8 : Fin 32) x0 0xC]
 
 /-- From 0x60 to 0x6C: the choice byte (1 when `x` is zero), the buffer, and

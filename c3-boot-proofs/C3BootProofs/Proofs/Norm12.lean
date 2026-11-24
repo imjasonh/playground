@@ -49,8 +49,8 @@ theorem nm12_at_48 : fetchRel norm12Code 0x48 = some (.alu .add (8 : Fin 32) x0 
 theorem nm12_at_4a : fetchRel norm12Code 0x4A = some (.branch .beq (9 : Fin 32) x0 0x20, 2) := by decide
 theorem nm12_at_4c : fetchRel norm12Code 0x4C = some (.load .lw a0 (23 : Fin 32) 0x0, 4) := by decide
 theorem nm12_at_50 : fetchRel norm12Code 0x50 = some (.load .lw a1 (8 : Fin 32) 0x0, 2) := by decide
-theorem nm12_at_52 : fetchRel norm12Code 0x52 = some (.auipc ra 0xFFFEE000, 4) := by decide
-theorem nm12_at_56 : fetchRel norm12Code 0x56 = some (.jalr ra ra 0x79E, 4) := by decide
+theorem nm12_at_52 : fetchRel norm12Code 0x52 = some (.auipc ra 0xFFFED000, 4) := by decide
+theorem nm12_at_56 : fetchRel norm12Code 0x56 = some (.jalr ra ra 0xFFFFF98E, 4) := by decide
 theorem nm12_at_5a : fetchRel norm12Code 0x5A = some (.alu .add a2 x0 a1, 2) := by decide
 theorem nm12_at_5c : fetchRel norm12Code 0x5C = some (.aluImm .add (23 : Fin 32) (23 : Fin 32) 0x4, 2) := by decide
 theorem nm12_at_5e : fetchRel norm12Code 0x5E = some (.store .sw (24 : Fin 32) a0 0x0, 4) := by decide

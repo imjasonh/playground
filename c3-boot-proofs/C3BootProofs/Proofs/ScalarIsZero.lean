@@ -27,16 +27,16 @@ theorem siz_at_a : fetchRel scalarIsZero384Code 0xA = some (.alu .add (8 : Fin 3
 theorem siz_at_c : fetchRel scalarIsZero384Code 0xC = some (.alu .add a0 x0 sp, 2) := by decide
 theorem siz_at_e : fetchRel scalarIsZero384Code 0xE = some (.aluImm .add a2 x0 0x30, 4) := by decide
 theorem siz_at_12 : fetchRel scalarIsZero384Code 0x12 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem siz_at_14 : fetchRel scalarIsZero384Code 0x14 = some (.auipc ra 0x12000, 4) := by decide
-theorem siz_at_18 : fetchRel scalarIsZero384Code 0x18 = some (.jalr ra ra 0xFFFFFBEE, 4) := by decide
+theorem siz_at_14 : fetchRel scalarIsZero384Code 0x14 = some (.auipc ra 0x14000, 4) := by decide
+theorem siz_at_18 : fetchRel scalarIsZero384Code 0x18 = some (.jalr ra ra 0xFFFFF9FE, 4) := by decide
 theorem siz_at_1c : fetchRel scalarIsZero384Code 0x1C = some (.aluImm .add (9 : Fin 32) (8 : Fin 32) 0x30, 4) := by decide
 theorem siz_at_20 : fetchRel scalarIsZero384Code 0x20 = some (.aluImm .add (18 : Fin 32) sp 0x30, 4) := by decide
 theorem siz_at_24 : fetchRel scalarIsZero384Code 0x24 = some (.aluImm .add a1 x0 0xC, 2) := by decide
 theorem siz_at_26 : fetchRel scalarIsZero384Code 0x26 = some (.alu .add a2 x0 sp, 2) := by decide
 theorem siz_at_28 : fetchRel scalarIsZero384Code 0x28 = some (.aluImm .add a3 x0 0xC, 2) := by decide
 theorem siz_at_2a : fetchRel scalarIsZero384Code 0x2A = some (.alu .add a0 x0 (8 : Fin 32), 2) := by decide
-theorem siz_at_2c : fetchRel scalarIsZero384Code 0x2C = some (.auipc ra 0xB000, 4) := by decide
-theorem siz_at_30 : fetchRel scalarIsZero384Code 0x30 = some (.jalr ra ra 0xFFFFFA3A, 4) := by decide
+theorem siz_at_2c : fetchRel scalarIsZero384Code 0x2C = some (.auipc ra 0xD000, 4) := by decide
+theorem siz_at_30 : fetchRel scalarIsZero384Code 0x30 = some (.jalr ra ra 0xFFFFF84A, 4) := by decide
 theorem siz_at_34 : fetchRel scalarIsZero384Code 0x34 = some (.aluImm .and (8 : Fin 32) a0 0xFF, 4) := by decide
 theorem siz_at_38 : fetchRel scalarIsZero384Code 0x38 = some (.alu .add a0 x0 (9 : Fin 32), 2) := by decide
 theorem siz_at_3a : fetchRel scalarIsZero384Code 0x3A = some (.aluImm .add a1 x0 0x0, 2) := by decide
@@ -55,8 +55,8 @@ theorem siz_at_5e : fetchRel scalarIsZero384Code 0x5E = some (.load .lw (8 : Fin
 theorem siz_at_60 : fetchRel scalarIsZero384Code 0x60 = some (.load .lw (9 : Fin 32) sp 0x34, 2) := by decide
 theorem siz_at_62 : fetchRel scalarIsZero384Code 0x62 = some (.load .lw (18 : Fin 32) sp 0x30, 2) := by decide
 theorem siz_at_64 : fetchRel scalarIsZero384Code 0x64 = some (.aluImm .add sp sp 0x40, 2) := by decide
-theorem siz_at_66 : fetchRel scalarIsZero384Code 0x66 = some (.auipc (6 : Fin 32) 0xB000, 4) := by decide
-theorem siz_at_6a : fetchRel scalarIsZero384Code 0x6A = some (.jalr x0 (6 : Fin 32) 0xFFFFFAFA, 4) := by decide
+theorem siz_at_66 : fetchRel scalarIsZero384Code 0x66 = some (.auipc (6 : Fin 32) 0xD000, 4) := by decide
+theorem siz_at_6a : fetchRel scalarIsZero384Code 0x6A = some (.jalr x0 (6 : Fin 32) 0xFFFFF90A, 4) := by decide
 end
 
 /-- Where `ScalarValue<NistP384>::is_zero` runs: its code and its callees',

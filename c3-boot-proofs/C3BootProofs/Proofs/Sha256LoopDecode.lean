@@ -88,7 +88,7 @@ theorem kc_at_ae : fetchRel sha256CompressCode 0xAE = some (.auipc ra 0x0, 4) :=
 theorem kc_at_b2 : fetchRel sha256CompressCode 0xB2 = some (.jalr ra ra 0x76E, 4) := by decide
 theorem kc_at_b6 : fetchRel sha256CompressCode 0xB6 = some (.aluImm .add (8 : Fin 32) x0 0x0, 2) := by decide
 theorem kc_at_b8 : fetchRel sha256CompressCode 0xB8 = some (.lui (7 : Fin 32) 0x3FCC5000, 4) := by decide
-theorem kc_at_bc : fetchRel sha256CompressCode 0xBC = some (.aluImm .add (7 : Fin 32) (7 : Fin 32) 0xFFFFFEBC, 4) := by decide
+theorem kc_at_bc : fetchRel sha256CompressCode 0xBC = some (.aluImm .add (7 : Fin 32) (7 : Fin 32) 0xFFFFFF24, 4) := by decide
 theorem kc_at_c0 : fetchRel sha256CompressCode 0xC0 = some (.store .sw sp (26 : Fin 32) 0x10, 2) := by decide
 theorem kc_at_c2 : fetchRel sha256CompressCode 0xC2 = some (.alu .add a0 x0 (26 : Fin 32), 2) := by decide
 theorem kc_at_c4 : fetchRel sha256CompressCode 0xC4 = some (.store .sw sp (23 : Fin 32) 0x18, 2) := by decide

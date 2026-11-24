@@ -284,7 +284,7 @@ def pvGa92 : List BInstr := [.aluImm .add a1 x0 0x1]
 theorem pvGa92_end : blockEnd p384VerifyPrehashCode 0xA92 pvGa92 = some 0xA94 := by decide
 def pvGa88 : List BInstr := [.aluImm .and a1 a1 0x1]
 theorem pvGa88_end : blockEnd p384VerifyPrehashCode 0xA88 pvGa88 = some 0xA8A := by decide
-def pvGa96 : List BInstr := [.lui a1 0x3FCC4000, .aluImm .add a1 a1 0x4D0, .aluImm .add a0 sp 0x7FF,
+def pvGa96 : List BInstr := [.lui a1 0x3FCC4000, .aluImm .add a1 a1 0x340, .aluImm .add a0 sp 0x7FF,
   .aluImm .add a0 a0 0x611, .aluImm .add a2 x0 0x90, .aluImm .add (20 : Fin 32) x0 0x90]
 theorem pvGa96_end : blockEnd p384VerifyPrehashCode 0xA96 pvGa96 = some 0xAAE := by decide
 def pvGab6 : List BInstr := [.aluImm .add (21 : Fin 32) x0 0x0, .lui a0 0x2000, .aluImm .add a0 a0 0xFFFFF924,

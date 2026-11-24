@@ -51,8 +51,8 @@ theorem rf_at_48 : fetchRel rootFromInclusionCode 0x48 = some (.aluImm .add (22 
 theorem rf_at_4c : fetchRel rootFromInclusionCode 0x4C = some (.alu .add a0 x0 sp, 2) := by decide
 theorem rf_at_4e : fetchRel rootFromInclusionCode 0x4E = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem rf_at_52 : fetchRel rootFromInclusionCode 0x52 = some (.alu .add a1 x0 a5, 2) := by decide
-theorem rf_at_54 : fetchRel rootFromInclusionCode 0x54 = some (.auipc ra 0x8000, 4) := by decide
-theorem rf_at_58 : fetchRel rootFromInclusionCode 0x58 = some (.jalr ra ra 0xFFFFFE1E, 4) := by decide
+theorem rf_at_54 : fetchRel rootFromInclusionCode 0x54 = some (.auipc ra 0x9000, 4) := by decide
+theorem rf_at_58 : fetchRel rootFromInclusionCode 0x58 = some (.jalr ra ra 0x57C, 4) := by decide
 theorem rf_at_5c : fetchRel rootFromInclusionCode 0x5C = some (.alu .add (20 : Fin 32) (20 : Fin 32) (19 : Fin 32), 2) := by decide
 theorem rf_at_5e : fetchRel rootFromInclusionCode 0x5E = some (.alu .or a0 (22 : Fin 32) (21 : Fin 32), 4) := by decide
 theorem rf_at_62 : fetchRel rootFromInclusionCode 0x62 = some (.branch .beq (19 : Fin 32) (20 : Fin 32) 0x9C, 4) := by decide
@@ -71,8 +71,8 @@ theorem rf_at_84 : fetchRel rootFromInclusionCode 0x84 = some (.jalr ra ra 0xB8,
 theorem rf_at_88 : fetchRel rootFromInclusionCode 0x88 = some (.alu .add a0 x0 sp, 2) := by decide
 theorem rf_at_8a : fetchRel rootFromInclusionCode 0x8A = some (.aluImm .add a1 sp 0x20, 2) := by decide
 theorem rf_at_8c : fetchRel rootFromInclusionCode 0x8C = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem rf_at_90 : fetchRel rootFromInclusionCode 0x90 = some (.auipc ra 0x8000, 4) := by decide
-theorem rf_at_94 : fetchRel rootFromInclusionCode 0x94 = some (.jalr ra ra 0xFFFFFDE2, 4) := by decide
+theorem rf_at_90 : fetchRel rootFromInclusionCode 0x90 = some (.auipc ra 0x9000, 4) := by decide
+theorem rf_at_94 : fetchRel rootFromInclusionCode 0x94 = some (.jalr ra ra 0x540, 4) := by decide
 theorem rf_at_98 : fetchRel rootFromInclusionCode 0x98 = some (.aluImm .add (19 : Fin 32) (19 : Fin 32) 0x20, 4) := by decide
 theorem rf_at_9c : fetchRel rootFromInclusionCode 0x9C = some (.aluImm .srl (9 : Fin 32) (9 : Fin 32) 0x1, 2) := by decide
 theorem rf_at_9e : fetchRel rootFromInclusionCode 0x9E = some (.aluImm .sll a0 (8 : Fin 32) 0x1F, 4) := by decide
@@ -91,8 +91,8 @@ theorem rf_at_c2 : fetchRel rootFromInclusionCode 0xC2 = some (.jalr ra ra 0x7A,
 theorem rf_at_c6 : fetchRel rootFromInclusionCode 0xC6 = some (.alu .add a0 x0 sp, 2) := by decide
 theorem rf_at_c8 : fetchRel rootFromInclusionCode 0xC8 = some (.aluImm .add a1 sp 0x20, 2) := by decide
 theorem rf_at_ca : fetchRel rootFromInclusionCode 0xCA = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem rf_at_ce : fetchRel rootFromInclusionCode 0xCE = some (.auipc ra 0x8000, 4) := by decide
-theorem rf_at_d2 : fetchRel rootFromInclusionCode 0xD2 = some (.jalr ra ra 0xFFFFFDA4, 4) := by decide
+theorem rf_at_ce : fetchRel rootFromInclusionCode 0xCE = some (.auipc ra 0x9000, 4) := by decide
+theorem rf_at_d2 : fetchRel rootFromInclusionCode 0xD2 = some (.jalr ra ra 0x502, 4) := by decide
 theorem rf_at_d6 : fetchRel rootFromInclusionCode 0xD6 = some (.alu .or a0 (9 : Fin 32) (8 : Fin 32), 4) := by decide
 theorem rf_at_da : fetchRel rootFromInclusionCode 0xDA = some (.branch .beq a0 x0 0xFFFFFFBE, 2) := by decide
 theorem rf_at_dc : fetchRel rootFromInclusionCode 0xDC = some (.aluImm .and a0 (9 : Fin 32) 0x1, 4) := by decide
@@ -124,8 +124,8 @@ theorem rf_at_11e : fetchRel rootFromInclusionCode 0x11E = some (.jalr x0 ra 0x0
 theorem rf_at_120 : fetchRel rootFromInclusionCode 0x120 = some (.aluImm .add a0 (18 : Fin 32) 0x1, 4) := by decide
 theorem rf_at_124 : fetchRel rootFromInclusionCode 0x124 = some (.alu .add a1 x0 sp, 2) := by decide
 theorem rf_at_126 : fetchRel rootFromInclusionCode 0x126 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem rf_at_12a : fetchRel rootFromInclusionCode 0x12A = some (.auipc ra 0x8000, 4) := by decide
-theorem rf_at_12e : fetchRel rootFromInclusionCode 0x12E = some (.jalr ra ra 0xFFFFFD48, 4) := by decide
+theorem rf_at_12a : fetchRel rootFromInclusionCode 0x12A = some (.auipc ra 0x9000, 4) := by decide
+theorem rf_at_12e : fetchRel rootFromInclusionCode 0x12E = some (.jalr ra ra 0x4A6, 4) := by decide
 theorem rf_at_132 : fetchRel rootFromInclusionCode 0x132 = some (.store .sb (18 : Fin 32) x0 0x0, 4) := by decide
 theorem rf_at_136 : fetchRel rootFromInclusionCode 0x136 = some (.jal x0 0xFFFFFFD6, 2) := by decide
 

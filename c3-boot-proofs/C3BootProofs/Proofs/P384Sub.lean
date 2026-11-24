@@ -32,8 +32,8 @@ theorem ps3_at_16 : fetchRel p384SubCode 0x16 = some (.aluImm .add a0 sp 0x4, 2)
 theorem ps3_at_18 : fetchRel p384SubCode 0x18 = some (.aluImm .add a2 x0 0x30, 4) := by decide
 theorem ps3_at_1c : fetchRel p384SubCode 0x1C = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem ps3_at_1e : fetchRel p384SubCode 0x1E = some (.aluImm .add (8 : Fin 32) sp 0x4, 2) := by decide
-theorem ps3_at_20 : fetchRel p384SubCode 0x20 = some (.auipc ra 0x12000, 4) := by decide
-theorem ps3_at_24 : fetchRel p384SubCode 0x24 = some (.jalr ra ra 0x57C, 4) := by decide
+theorem ps3_at_20 : fetchRel p384SubCode 0x20 = some (.auipc ra 0x14000, 4) := by decide
+theorem ps3_at_24 : fetchRel p384SubCode 0x24 = some (.jalr ra ra 0x38C, 4) := by decide
 theorem ps3_at_28 : fetchRel p384SubCode 0x28 = some (.aluImm .add (19 : Fin 32) x0 0x0, 2) := by decide
 theorem ps3_at_2a : fetchRel p384SubCode 0x2A = some (.aluImm .add (9 : Fin 32) x0 0xC, 2) := by decide
 theorem ps3_at_2c : fetchRel p384SubCode 0x2C = some (.branch .beq (9 : Fin 32) x0 0x22, 2) := by decide
@@ -53,10 +53,10 @@ theorem ps3_at_4e : fetchRel p384SubCode 0x4E = some (.aluImm .add a0 sp 0x64, 2
 theorem ps3_at_50 : fetchRel p384SubCode 0x50 = some (.aluImm .add a2 x0 0x30, 4) := by decide
 theorem ps3_at_54 : fetchRel p384SubCode 0x54 = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem ps3_at_56 : fetchRel p384SubCode 0x56 = some (.aluImm .add (8 : Fin 32) sp 0x64, 2) := by decide
-theorem ps3_at_58 : fetchRel p384SubCode 0x58 = some (.auipc ra 0x12000, 4) := by decide
-theorem ps3_at_5c : fetchRel p384SubCode 0x5C = some (.jalr ra ra 0x544, 4) := by decide
+theorem ps3_at_58 : fetchRel p384SubCode 0x58 = some (.auipc ra 0x14000, 4) := by decide
+theorem ps3_at_5c : fetchRel p384SubCode 0x5C = some (.jalr ra ra 0x354, 4) := by decide
 theorem ps3_at_60 : fetchRel p384SubCode 0x60 = some (.lui a0 0x3FCC5000, 4) := by decide
-theorem ps3_at_64 : fetchRel p384SubCode 0x64 = some (.aluImm .add a0 a0 0xFFFFFC8C, 4) := by decide
+theorem ps3_at_64 : fetchRel p384SubCode 0x64 = some (.aluImm .add a0 a0 0xFFFFFCF4, 4) := by decide
 theorem ps3_at_68 : fetchRel p384SubCode 0x68 = some (.aluImm .add a1 x0 0xC, 2) := by decide
 theorem ps3_at_6a : fetchRel p384SubCode 0x6A = some (.branch .beq a1 x0 0x12, 2) := by decide
 theorem ps3_at_6c : fetchRel p384SubCode 0x6C = some (.load .lw a2 a0 0x0, 2) := by decide
@@ -69,8 +69,8 @@ theorem ps3_at_7a : fetchRel p384SubCode 0x7A = some (.branch .bne a1 x0 0xFFFFF
 theorem ps3_at_7c : fetchRel p384SubCode 0x7C = some (.aluImm .add a0 sp 0x34, 2) := by decide
 theorem ps3_at_7e : fetchRel p384SubCode 0x7E = some (.aluImm .add a2 x0 0x30, 4) := by decide
 theorem ps3_at_82 : fetchRel p384SubCode 0x82 = some (.aluImm .add (8 : Fin 32) sp 0x34, 2) := by decide
-theorem ps3_at_84 : fetchRel p384SubCode 0x84 = some (.auipc ra 0x12000, 4) := by decide
-theorem ps3_at_88 : fetchRel p384SubCode 0x88 = some (.jalr ra ra 0x518, 4) := by decide
+theorem ps3_at_84 : fetchRel p384SubCode 0x84 = some (.auipc ra 0x14000, 4) := by decide
+theorem ps3_at_88 : fetchRel p384SubCode 0x88 = some (.jalr ra ra 0x328, 4) := by decide
 theorem ps3_at_8c : fetchRel p384SubCode 0x8C = some (.aluImm .add a3 x0 0x0, 2) := by decide
 theorem ps3_at_8e : fetchRel p384SubCode 0x8E = some (.aluImm .add a0 sp 0x4, 2) := by decide
 theorem ps3_at_90 : fetchRel p384SubCode 0x90 = some (.aluImm .add a1 sp 0x64, 2) := by decide
@@ -92,8 +92,8 @@ theorem ps3_at_b2 : fetchRel p384SubCode 0xB2 = some (.branch .bne a2 x0 0xFFFFF
 theorem ps3_at_b4 : fetchRel p384SubCode 0xB4 = some (.aluImm .add a1 sp 0x34, 2) := by decide
 theorem ps3_at_b6 : fetchRel p384SubCode 0xB6 = some (.aluImm .add a2 x0 0x30, 4) := by decide
 theorem ps3_at_ba : fetchRel p384SubCode 0xBA = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
-theorem ps3_at_bc : fetchRel p384SubCode 0xBC = some (.auipc ra 0x12000, 4) := by decide
-theorem ps3_at_c0 : fetchRel p384SubCode 0xC0 = some (.jalr ra ra 0x548, 4) := by decide
+theorem ps3_at_bc : fetchRel p384SubCode 0xBC = some (.auipc ra 0x14000, 4) := by decide
+theorem ps3_at_c0 : fetchRel p384SubCode 0xC0 = some (.jalr ra ra 0x358, 4) := by decide
 theorem ps3_at_c4 : fetchRel p384SubCode 0xC4 = some (.load .lw ra sp 0xAC, 2) := by decide
 theorem ps3_at_c6 : fetchRel p384SubCode 0xC6 = some (.load .lw (8 : Fin 32) sp 0xA8, 2) := by decide
 theorem ps3_at_c8 : fetchRel p384SubCode 0xC8 = some (.load .lw (9 : Fin 32) sp 0xA4, 2) := by decide
@@ -140,7 +140,7 @@ def psMid1 : List BInstr :=
   [.aluImm .add a0 sp 0x64, .aluImm .add a2 x0 0x30, .aluImm .add a1 x0 0x0, .aluImm .add (8 : Fin 32) sp 0x64]
 
 def psMaskInit : List BInstr :=
-  [.lui a0 0x3FCC5000, .aluImm .add a0 a0 0xFFFFFC8C, .aluImm .add a1 x0 0xC]
+  [.lui a0 0x3FCC5000, .aluImm .add a0 a0 0xFFFFFCF4, .aluImm .add a1 x0 0xC]
 
 /-- One limb of the masked modulus, from 0x6C to 0x7A. -/
 def psMaskBody : List BInstr :=

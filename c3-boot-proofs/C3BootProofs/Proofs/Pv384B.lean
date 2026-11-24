@@ -39,7 +39,7 @@ def pvB1de : List BInstr :=
 theorem pvB1de_end : blockEnd p384VerifyPrehashCode 0x1DE pvB1de = some 0x1EC := by decide
 
 def pvB1f4 : List BInstr :=
-  [.lui a0 0x1000, .aluImm .add a0 a0 0x2F4, .alu .add (22 : Fin 32) sp a0, .lui a1 0x3FCC4000, .aluImm .add a1 a1 0x4A0, .aluImm .add a2 x0 0x30, .alu .add a0 x0 (22 : Fin 32)]
+  [.lui a0 0x1000, .aluImm .add a0 a0 0x2F4, .alu .add (22 : Fin 32) sp a0, .lui a1 0x3FCC4000, .aluImm .add a1 a1 0x310, .aluImm .add a2 x0 0x30, .alu .add a0 x0 (22 : Fin 32)]
 theorem pvB1f4_end : blockEnd p384VerifyPrehashCode 0x1F4 pvB1f4 = some 0x20C := by decide
 
 def pvB214 : List BInstr :=
@@ -47,7 +47,7 @@ def pvB214 : List BInstr :=
 theorem pvB214_end : blockEnd p384VerifyPrehashCode 0x214 pvB214 = some 0x216 := by decide
 
 def pvB21e : List BInstr :=
-  [.aluImm .and (9 : Fin 32) a0 0xFF, .lui (18 : Fin 32) 0x3FCC4000, .aluImm .add (18 : Fin 32) (18 : Fin 32) 0x4D0, .aluImm .add a0 sp 0x120, .lui a1 0x1000, .aluImm .add a1 a1 0x294, .alu .add a1 a1 sp, .alu .add a2 x0 (18 : Fin 32), .alu .add a3 x0 (9 : Fin 32)]
+  [.aluImm .and (9 : Fin 32) a0 0xFF, .lui (18 : Fin 32) 0x3FCC4000, .aluImm .add (18 : Fin 32) (18 : Fin 32) 0x340, .aluImm .add a0 sp 0x120, .lui a1 0x1000, .aluImm .add a1 a1 0x294, .alu .add a1 a1 sp, .alu .add a2 x0 (18 : Fin 32), .alu .add a3 x0 (9 : Fin 32)]
 theorem pvB21e_end : blockEnd p384VerifyPrehashCode 0x21E pvB21e = some 0x238 := by decide
 
 def pvB240 : List BInstr :=
@@ -95,7 +95,7 @@ def pvB314 : List BInstr :=
 theorem pvB314_end : blockEnd p384VerifyPrehashCode 0x314 pvB314 = some 0x31A := by decide
 
 def pvB322 : List BInstr :=
-  [.lui (18 : Fin 32) 0x3FCC5000, .aluImm .add (18 : Fin 32) (18 : Fin 32) 0xFFFFFD28, .aluImm .add a0 sp 0x7FF, .aluImm .add a0 a0 0x611, .aluImm .add a2 x0 0x30, .alu .add a1 x0 (18 : Fin 32)]
+  [.lui (18 : Fin 32) 0x3FCC5000, .aluImm .add (18 : Fin 32) (18 : Fin 32) 0xFFFFFD90, .aluImm .add a0 sp 0x7FF, .aluImm .add a0 a0 0x611, .aluImm .add a2 x0 0x30, .alu .add a1 x0 (18 : Fin 32)]
 theorem pvB322_end : blockEnd p384VerifyPrehashCode 0x322 pvB322 = some 0x338 := by decide
 
 def pvB340 : List BInstr :=

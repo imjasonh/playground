@@ -47,7 +47,7 @@ def pvI01114 : List BInstr :=
 theorem pvI01114_end : blockEnd p384VerifyPrehashCode 0x1114 pvI01114 = some 0x1126 := by decide
 
 def pvI01136 : List BInstr :=
-  [.lui a2 0x3FCC4000, .aluImm .add a2 a2 0x3C8, .aluImm .add a0 sp 0x7FF, .aluImm .add a0 a0 0x611, .lui a1 0x1000, .aluImm .add a1 a1 0x294, .alu .add a1 a1 sp]
+  [.lui a2 0x3FCC4000, .aluImm .add a2 a2 0x238, .aluImm .add a0 sp 0x7FF, .aluImm .add a0 a0 0x611, .lui a1 0x1000, .aluImm .add a1 a1 0x294, .alu .add a1 a1 sp]
 theorem pvI01136_end : blockEnd p384VerifyPrehashCode 0x1136 pvI01136 = some 0x114E := by decide
 
 def pvI01156 : List BInstr :=

@@ -18,7 +18,7 @@ set_option maxRecDepth 20000
 theorem esl_at_0 : fetchRel equalSameLengthCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFF0, 2) := by decide
 theorem esl_at_2 : fetchRel equalSameLengthCode 0x2 = some (.store .sw sp ra 0xC, 2) := by decide
 theorem esl_at_4 : fetchRel equalSameLengthCode 0x4 = some (.auipc ra 0xD000, 4) := by decide
-theorem esl_at_8 : fetchRel equalSameLengthCode 0x8 = some (.jalr ra ra 0xFFFFF90E, 4) := by decide
+theorem esl_at_8 : fetchRel equalSameLengthCode 0x8 = some (.jalr ra ra 0x3BA, 4) := by decide
 theorem esl_at_c : fetchRel equalSameLengthCode 0xC = some (.aluImm .sltu a0 a0 0x1, 4) := by decide
 theorem esl_at_10 : fetchRel equalSameLengthCode 0x10 = some (.load .lw ra sp 0xC, 2) := by decide
 theorem esl_at_12 : fetchRel equalSameLengthCode 0x12 = some (.aluImm .add sp sp 0x10, 2) := by decide
@@ -28,7 +28,7 @@ theorem seq_at_4 : fetchRel sliceEqCode 0x4 = some (.alu .add a4 x0 a1, 2) := by
 theorem seq_at_6 : fetchRel sliceEqCode 0x6 = some (.alu .add a1 x0 a2, 2) := by decide
 theorem seq_at_8 : fetchRel sliceEqCode 0x8 = some (.alu .add a2 x0 a4, 2) := by decide
 theorem seq_at_a : fetchRel sliceEqCode 0xA = some (.auipc (6 : Fin 32) 0xFFFFF000, 4) := by decide
-theorem seq_at_e : fetchRel sliceEqCode 0xE = some (.jalr x0 (6 : Fin 32) 0x76C, 4) := by decide
+theorem seq_at_e : fetchRel sliceEqCode 0xE = some (.jalr x0 (6 : Fin 32) 0xFFFFFBA0, 4) := by decide
 theorem seq_at_12 : fetchRel sliceEqCode 0x12 = some (.aluImm .add a0 x0 0x0, 2) := by decide
 theorem seq_at_14 : fetchRel sliceEqCode 0x14 = some (.jalr x0 ra 0x0, 2) := by decide
 end

@@ -67,7 +67,7 @@ def pvA1 : List BInstr :=
   [.aluImm .add sp sp 0xFFFFFF00, .sw sp ra 0xFC, .sw sp (8 : Fin 32) 0xF8, .sw sp (9 : Fin 32) 0xF4, .sw sp (18 : Fin 32) 0xF0, .sw sp (19 : Fin 32) 0xEC, .sw sp (20 : Fin 32) 0xE8, .sw sp (21 : Fin 32) 0xE4, .sw sp (22 : Fin 32) 0xE0, .sw sp (23 : Fin 32) 0xDC, .sw sp (24 : Fin 32) 0xD8, .sw sp (25 : Fin 32) 0xD4, .sw sp (26 : Fin 32) 0xD0, .sw sp (27 : Fin 32) 0xCC,
    .lui a5 0x2000, .aluImm .add a5 a5 0xFFFFFC80, .alu .sub sp sp a5, .alu .add (21 : Fin 32) x0 a4,
    .alu .add (9 : Fin 32) x0 a3, .alu .add (19 : Fin 32) x0 a2, .alu .add (20 : Fin 32) x0 a1,
-   .alu .add (8 : Fin 32) x0 a0, .lui a2 0x3FCC4000, .aluImm .add a2 a2 0x470, .aluImm .add a1 x0 0x30,
+   .alu .add (8 : Fin 32) x0 a0, .lui a2 0x3FCC4000, .aluImm .add a2 a2 0x2E0, .aluImm .add a1 x0 0x30,
    .aluImm .add a3 x0 0x30, .alu .add a0 x0 (9 : Fin 32)]
 
 theorem pvA1_end : blockEnd p384VerifyPrehashCode 0 pvA1 = some 0x42 := by decide
@@ -218,7 +218,7 @@ theorem pv_epi {M : Word → BitVec 8} {n : Machine} {B : Word} {v : Nat → Wor
 /-! ## The checks -/
 
 def pvA2 : List BInstr :=
-  [.lui a2 0x3FCC4000, .aluImm .add a2 a2 0x470, .aluImm .add a1 x0 0x30, .aluImm .add a3 x0 0x30,
+  [.lui a2 0x3FCC4000, .aluImm .add a2 a2 0x2E0, .aluImm .add a1 x0 0x30, .aluImm .add a3 x0 0x30,
    .alu .add a0 x0 (21 : Fin 32)]
 def pvA3 : List BInstr := [.alu .add a1 x0 a0, .aluImm .add a0 x0 0x0]
 def pvA4 : List BInstr := [.aluImm .add a0 sp 0xB8, .alu .add a1 x0 (8 : Fin 32)]

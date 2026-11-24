@@ -20,14 +20,14 @@ theorem cce_at_0 : fetchRel choiceCtEqCode 0x0 = some (.aluImm .add sp sp 0xFFFF
 theorem cce_at_2 : fetchRel choiceCtEqCode 0x2 = some (.store .sw sp ra 0xC, 2) := by decide
 theorem cce_at_4 : fetchRel choiceCtEqCode 0x4 = some (.alu .xor a0 a0 a1, 2) := by decide
 theorem cce_at_6 : fetchRel choiceCtEqCode 0x6 = some (.aluImm .and a0 a0 0xFF, 4) := by decide
-theorem cce_at_a : fetchRel choiceCtEqCode 0xA = some (.auipc ra 0x8000, 4) := by decide
-theorem cce_at_e : fetchRel choiceCtEqCode 0xE = some (.jalr ra ra 0xFFFFFC64, 4) := by decide
+theorem cce_at_a : fetchRel choiceCtEqCode 0xA = some (.auipc ra 0xA000, 4) := by decide
+theorem cce_at_e : fetchRel choiceCtEqCode 0xE = some (.jalr ra ra 0xFFFFFA74, 4) := by decide
 theorem cce_at_12 : fetchRel choiceCtEqCode 0x12 = some (.aluImm .xor a0 a0 0xFFFFFFFF, 4) := by decide
 theorem cce_at_16 : fetchRel choiceCtEqCode 0x16 = some (.aluImm .and a0 a0 0x1, 2) := by decide
 theorem cce_at_18 : fetchRel choiceCtEqCode 0x18 = some (.load .lw ra sp 0xC, 2) := by decide
 theorem cce_at_1a : fetchRel choiceCtEqCode 0x1A = some (.aluImm .add sp sp 0x10, 2) := by decide
-theorem cce_at_1c : fetchRel choiceCtEqCode 0x1C = some (.auipc (6 : Fin 32) 0x8000, 4) := by decide
-theorem cce_at_20 : fetchRel choiceCtEqCode 0x20 = some (.jalr x0 (6 : Fin 32) 0xFFFFFC52, 4) := by decide
+theorem cce_at_1c : fetchRel choiceCtEqCode 0x1C = some (.auipc (6 : Fin 32) 0xA000, 4) := by decide
+theorem cce_at_20 : fetchRel choiceCtEqCode 0x20 = some (.jalr x0 (6 : Fin 32) 0xFFFFFA62, 4) := by decide
 theorem msc_at_0 : fetchRel montyScalarCtEq384Code 0x0 = some (.aluImm .add sp sp 0xFFFFFFF0, 2) := by decide
 theorem msc_at_2 : fetchRel montyScalarCtEq384Code 0x2 = some (.store .sw sp ra 0xC, 2) := by decide
 theorem msc_at_4 : fetchRel montyScalarCtEq384Code 0x4 = some (.auipc ra 0x0, 4) := by decide

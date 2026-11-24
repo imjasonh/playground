@@ -35,20 +35,20 @@ theorem cu4_at_2 : fetchRel ctUnwrap384Code 0x2 = some (.load .lbu a2 a1 0x30, 4
 theorem cu4_at_6 : fetchRel ctUnwrap384Code 0x6 = some (.aluImm .add a3 x0 0x1, 2) := by decide
 theorem cu4_at_8 : fetchRel ctUnwrap384Code 0x8 = some (.store .sb sp a2 0xF, 4) := by decide
 theorem cu4_at_c : fetchRel ctUnwrap384Code 0xC = some (.branch .bne a2 a3 0x12, 4) := by decide
-theorem cu4_at_16 : fetchRel ctUnwrap384Code 0x16 = some (.auipc (6 : Fin 32) 0x11000, 4) := by decide
-theorem cu4_at_1a : fetchRel ctUnwrap384Code 0x1A = some (.jalr x0 (6 : Fin 32) 0x6B2, 4) := by decide
+theorem cu4_at_16 : fetchRel ctUnwrap384Code 0x16 = some (.auipc (6 : Fin 32) 0x13000, 4) := by decide
+theorem cu4_at_1a : fetchRel ctUnwrap384Code 0x1A = some (.jalr x0 (6 : Fin 32) 0x4C2, 4) := by decide
 theorem cu4_at_1e : fetchRel ctUnwrap384Code 0x1E = some (.aluImm .add a0 sp 0xF, 4) := by decide
-theorem cu4_at_22 : fetchRel ctUnwrap384Code 0x22 = some (.auipc ra 0x10000, 4) := by decide
-theorem cu4_at_26 : fetchRel ctUnwrap384Code 0x26 = some (.jalr ra ra 0x682, 4) := by decide
+theorem cu4_at_22 : fetchRel ctUnwrap384Code 0x22 = some (.auipc ra 0x12000, 4) := by decide
+theorem cu4_at_26 : fetchRel ctUnwrap384Code 0x26 = some (.jalr ra ra 0x492, 4) := by decide
 theorem cu2_at_2 : fetchRel ctUnwrap256Code 0x2 = some (.load .lbu a2 a1 0x20, 4) := by decide
 theorem cu2_at_6 : fetchRel ctUnwrap256Code 0x6 = some (.aluImm .add a3 x0 0x1, 2) := by decide
 theorem cu2_at_8 : fetchRel ctUnwrap256Code 0x8 = some (.store .sb sp a2 0xF, 4) := by decide
 theorem cu2_at_c : fetchRel ctUnwrap256Code 0xC = some (.branch .bne a2 a3 0x12, 4) := by decide
-theorem cu2_at_16 : fetchRel ctUnwrap256Code 0x16 = some (.auipc (6 : Fin 32) 0x11000, 4) := by decide
-theorem cu2_at_1a : fetchRel ctUnwrap256Code 0x1A = some (.jalr x0 (6 : Fin 32) 0x62A, 4) := by decide
+theorem cu2_at_16 : fetchRel ctUnwrap256Code 0x16 = some (.auipc (6 : Fin 32) 0x13000, 4) := by decide
+theorem cu2_at_1a : fetchRel ctUnwrap256Code 0x1A = some (.jalr x0 (6 : Fin 32) 0x43A, 4) := by decide
 theorem cu2_at_1e : fetchRel ctUnwrap256Code 0x1E = some (.aluImm .add a0 sp 0xF, 4) := by decide
-theorem cu2_at_22 : fetchRel ctUnwrap256Code 0x22 = some (.auipc ra 0x10000, 4) := by decide
-theorem cu2_at_26 : fetchRel ctUnwrap256Code 0x26 = some (.jalr ra ra 0x5FA, 4) := by decide
+theorem cu2_at_22 : fetchRel ctUnwrap256Code 0x22 = some (.auipc ra 0x12000, 4) := by decide
+theorem cu2_at_26 : fetchRel ctUnwrap256Code 0x26 = some (.jalr ra ra 0x40A, 4) := by decide
 
 def cuA (k : Word) : List BInstr := [.aluImm .add sp sp 0xFFFFFFF0, .lbu a2 a1 k, .aluImm .add a3 x0 0x1, .sb sp a2 0xF]
 def cuB (k : Word) : List BInstr := [.aluImm .add a2 x0 k, .aluImm .add sp sp 0x10]

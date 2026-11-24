@@ -49,7 +49,7 @@ theorem dt_at_4c : fetchRel derScalar32Code 0x4C = some (.aluImm .add a2 x0 0x20
 theorem dt_at_50 : fetchRel derScalar32Code 0x50 = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem dt_at_52 : fetchRel derScalar32Code 0x52 = some (.aluImm .add (20 : Fin 32) sp 0xC, 4) := by decide
 theorem dt_at_56 : fetchRel derScalar32Code 0x56 = some (.auipc ra 0xD000, 4) := by decide
-theorem dt_at_5a : fetchRel derScalar32Code 0x5A = some (.jalr ra ra 0xFFFFF8BA, 4) := by decide
+theorem dt_at_5a : fetchRel derScalar32Code 0x5A = some (.jalr ra ra 0x22C, 4) := by decide
 theorem dt_at_5e : fetchRel derScalar32Code 0x5E = some (.aluImm .add a0 sp 0x2C, 2) := by decide
 theorem dt_at_60 : fetchRel derScalar32Code 0x60 = some (.alu .add a1 (9 : Fin 32) (8 : Fin 32), 4) := by decide
 theorem dt_at_64 : fetchRel derScalar32Code 0x64 = some (.store .sw sp (20 : Fin 32) 0x2C, 2) := by decide
@@ -70,7 +70,7 @@ theorem dt_at_88 : fetchRel derScalar32Code 0x88 = some (.aluImm .add a0 (18 : F
 theorem dt_at_8c : fetchRel derScalar32Code 0x8C = some (.aluImm .add a1 sp 0xC, 2) := by decide
 theorem dt_at_8e : fetchRel derScalar32Code 0x8E = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem dt_at_92 : fetchRel derScalar32Code 0x92 = some (.auipc ra 0xD000, 4) := by decide
-theorem dt_at_96 : fetchRel derScalar32Code 0x96 = some (.jalr ra ra 0xFFFFF8E6, 4) := by decide
+theorem dt_at_96 : fetchRel derScalar32Code 0x96 = some (.jalr ra ra 0x258, 4) := by decide
 theorem dt_at_9a : fetchRel derScalar32Code 0x9A = some (.store .sb (18 : Fin 32) x0 0x0, 4) := by decide
 theorem dt_at_9e : fetchRel derScalar32Code 0x9E = some (.jal x0 0xE, 2) := by decide
 theorem dt_at_a0 : fetchRel derScalar32Code 0xA0 = some (.aluImm .add a0 x0 0x5, 2) := by decide

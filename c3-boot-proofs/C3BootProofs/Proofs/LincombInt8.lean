@@ -94,8 +94,8 @@ theorem lc8_at_b0 : fetchRel lincomb8Code 0xB0 = some (.branch .beq (9 : Fin 32)
 theorem lc8_at_b2 : fetchRel lincomb8Code 0xB2 = some (.load .lw a0 (22 : Fin 32) 0x0, 4) := by decide
 theorem lc8_at_b6 : fetchRel lincomb8Code 0xB6 = some (.load .lw a1 (23 : Fin 32) 0x0, 4) := by decide
 theorem lc8_at_ba : fetchRel lincomb8Code 0xBA = some (.alu .add a2 x0 (24 : Fin 32), 2) := by decide
-theorem lc8_at_bc : fetchRel lincomb8Code 0xBC = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem lc8_at_c0 : fetchRel lincomb8Code 0xC0 = some (.jalr ra ra 0x4C2, 4) := by decide
+theorem lc8_at_bc : fetchRel lincomb8Code 0xBC = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem lc8_at_c0 : fetchRel lincomb8Code 0xC0 = some (.jalr ra ra 0x6B2, 4) := by decide
 theorem lc8_at_c4 : fetchRel lincomb8Code 0xC4 = some (.alu .add (24 : Fin 32) x0 a1, 2) := by decide
 theorem lc8_at_c6 : fetchRel lincomb8Code 0xC6 = some (.aluImm .add (22 : Fin 32) (22 : Fin 32) 0x4, 2) := by decide
 theorem lc8_at_c8 : fetchRel lincomb8Code 0xC8 = some (.store .sw (8 : Fin 32) a0 0x0, 2) := by decide
@@ -118,8 +118,8 @@ theorem lc8_at_f2 : fetchRel lincomb8Code 0xF2 = some (.branch .beq (9 : Fin 32)
 theorem lc8_at_f4 : fetchRel lincomb8Code 0xF4 = some (.load .lw a0 (22 : Fin 32) 0x0, 4) := by decide
 theorem lc8_at_f8 : fetchRel lincomb8Code 0xF8 = some (.load .lw a1 (23 : Fin 32) 0x0, 4) := by decide
 theorem lc8_at_fc : fetchRel lincomb8Code 0xFC = some (.alu .add a2 x0 (24 : Fin 32), 2) := by decide
-theorem lc8_at_fe : fetchRel lincomb8Code 0xFE = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem lc8_at_102 : fetchRel lincomb8Code 0x102 = some (.jalr ra ra 0x480, 4) := by decide
+theorem lc8_at_fe : fetchRel lincomb8Code 0xFE = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem lc8_at_102 : fetchRel lincomb8Code 0x102 = some (.jalr ra ra 0x670, 4) := by decide
 theorem lc8_at_106 : fetchRel lincomb8Code 0x106 = some (.alu .add (24 : Fin 32) x0 a1, 2) := by decide
 theorem lc8_at_108 : fetchRel lincomb8Code 0x108 = some (.aluImm .add (22 : Fin 32) (22 : Fin 32) 0x4, 2) := by decide
 theorem lc8_at_10a : fetchRel lincomb8Code 0x10A = some (.store .sw (8 : Fin 32) a0 0x0, 2) := by decide

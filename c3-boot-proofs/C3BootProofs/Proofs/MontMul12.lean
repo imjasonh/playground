@@ -130,8 +130,8 @@ theorem mm_at_11a : fetchRel mulMont12Code 0x11A = some (.aluImm .add (8 : Fin 3
 theorem mm_at_11c : fetchRel mulMont12Code 0x11C = some (.branch .beq (8 : Fin 32) x0 0x20, 2) := by decide
 theorem mm_at_11e : fetchRel mulMont12Code 0x11E = some (.load .lw a0 (9 : Fin 32) 0x0, 2) := by decide
 theorem mm_at_120 : fetchRel mulMont12Code 0x120 = some (.load .lw a1 (23 : Fin 32) 0x0, 4) := by decide
-theorem mm_at_124 : fetchRel mulMont12Code 0x124 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem mm_at_128 : fetchRel mulMont12Code 0x128 = some (.jalr ra ra 0x522, 4) := by decide
+theorem mm_at_124 : fetchRel mulMont12Code 0x124 = some (.auipc ra 0xFFFED000, 4) := by decide
+theorem mm_at_128 : fetchRel mulMont12Code 0x128 = some (.jalr ra ra 0x712, 4) := by decide
 theorem mm_at_12c : fetchRel mulMont12Code 0x12C = some (.alu .add a2 x0 a1, 2) := by decide
 theorem mm_at_12e : fetchRel mulMont12Code 0x12E = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0x4, 2) := by decide
 theorem mm_at_130 : fetchRel mulMont12Code 0x130 = some (.store .sw (19 : Fin 32) a0 0x0, 4) := by decide
@@ -151,8 +151,8 @@ theorem mm_at_152 : fetchRel mulMont12Code 0x152 = some (.aluImm .add a0 a0 0xFF
 theorem mm_at_154 : fetchRel mulMont12Code 0x154 = some (.alu .and a2 a2 a0, 2) := by decide
 theorem mm_at_156 : fetchRel mulMont12Code 0x156 = some (.alu .add a0 x0 (22 : Fin 32), 2) := by decide
 theorem mm_at_158 : fetchRel mulMont12Code 0x158 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem mm_at_15a : fetchRel mulMont12Code 0x15A = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem mm_at_15e : fetchRel mulMont12Code 0x15E = some (.jalr ra ra 0x4EC, 4) := by decide
+theorem mm_at_15a : fetchRel mulMont12Code 0x15A = some (.auipc ra 0xFFFED000, 4) := by decide
+theorem mm_at_15e : fetchRel mulMont12Code 0x15E = some (.jalr ra ra 0x6DC, 4) := by decide
 theorem mm_at_162 : fetchRel mulMont12Code 0x162 = some (.aluImm .add a1 sp 0x3C, 2) := by decide
 theorem mm_at_164 : fetchRel mulMont12Code 0x164 = some (.aluImm .add a2 sp 0xC, 2) := by decide
 theorem mm_at_166 : fetchRel mulMont12Code 0x166 = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide

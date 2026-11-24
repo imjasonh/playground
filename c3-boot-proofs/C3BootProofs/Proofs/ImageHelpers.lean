@@ -30,8 +30,8 @@ theorem u8_at_6 : fetchRel readerU8Code 0x6 = some (.alu .add a1 x0 a0, 2) := by
 theorem u8_at_8 : fetchRel readerU8Code 0x8 = some (.alu .add a0 x0 sp, 2) := by decide
 theorem u8_at_a : fetchRel readerU8Code 0xA = some (.aluImm .add a2 x0 0x1, 2) := by decide
 theorem u8_at_c : fetchRel readerU8Code 0xC = some (.aluImm .add s0 x0 0x1, 2) := by decide
-theorem u8_at_e : fetchRel readerU8Code 0xE = some (.auipc ra 0x0, 4) := by decide
-theorem u8_at_12 : fetchRel readerU8Code 0x12 = some (.jalr ra ra 0xC8, 4) := by decide
+theorem u8_at_e : fetchRel readerU8Code 0xE = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem u8_at_12 : fetchRel readerU8Code 0x12 = some (.jalr ra ra 0x60, 4) := by decide
 theorem u8_at_16 : fetchRel readerU8Code 0x16 = some (.load .lw a0 sp 0x0, 2) := by decide
 theorem u8_at_18 : fetchRel readerU8Code 0x18 = some (.branch .beq a0 x0 0x10, 2) := by decide
 theorem u8_at_1a : fetchRel readerU8Code 0x1A = some (.load .lw a1 sp 0x4, 2) := by decide

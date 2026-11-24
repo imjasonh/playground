@@ -121,8 +121,8 @@ theorem sq_at_11a : fetchRel sqMont12Code 0x11A = some (.aluImm .add (8 : Fin 32
 theorem sq_at_11c : fetchRel sqMont12Code 0x11C = some (.branch .beq (8 : Fin 32) x0 0x20, 2) := by decide
 theorem sq_at_11e : fetchRel sqMont12Code 0x11E = some (.load .lw a0 (9 : Fin 32) 0x0, 2) := by decide
 theorem sq_at_120 : fetchRel sqMont12Code 0x120 = some (.load .lw a1 (22 : Fin 32) 0x0, 4) := by decide
-theorem sq_at_124 : fetchRel sqMont12Code 0x124 = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem sq_at_128 : fetchRel sqMont12Code 0x128 = some (.jalr ra ra 0xFFFFF874, 4) := by decide
+theorem sq_at_124 : fetchRel sqMont12Code 0x124 = some (.auipc ra 0xFFFED000, 4) := by decide
+theorem sq_at_128 : fetchRel sqMont12Code 0x128 = some (.jalr ra ra 0xFFFFFA64, 4) := by decide
 theorem sq_at_12c : fetchRel sqMont12Code 0x12C = some (.alu .add a2 x0 a1, 2) := by decide
 theorem sq_at_12e : fetchRel sqMont12Code 0x12E = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0x4, 2) := by decide
 theorem sq_at_130 : fetchRel sqMont12Code 0x130 = some (.store .sw (19 : Fin 32) a0 0x0, 4) := by decide
@@ -142,8 +142,8 @@ theorem sq_at_152 : fetchRel sqMont12Code 0x152 = some (.aluImm .add a0 a0 0xFFF
 theorem sq_at_154 : fetchRel sqMont12Code 0x154 = some (.alu .and a2 a2 a0, 2) := by decide
 theorem sq_at_156 : fetchRel sqMont12Code 0x156 = some (.alu .add a0 x0 (21 : Fin 32), 2) := by decide
 theorem sq_at_158 : fetchRel sqMont12Code 0x158 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem sq_at_15a : fetchRel sqMont12Code 0x15A = some (.auipc ra 0xFFFEF000, 4) := by decide
-theorem sq_at_15e : fetchRel sqMont12Code 0x15E = some (.jalr ra ra 0xFFFFF83E, 4) := by decide
+theorem sq_at_15a : fetchRel sqMont12Code 0x15A = some (.auipc ra 0xFFFED000, 4) := by decide
+theorem sq_at_15e : fetchRel sqMont12Code 0x15E = some (.jalr ra ra 0xFFFFFA2E, 4) := by decide
 theorem sq_at_162 : fetchRel sqMont12Code 0x162 = some (.aluImm .add a1 sp 0x3C, 2) := by decide
 theorem sq_at_164 : fetchRel sqMont12Code 0x164 = some (.aluImm .add a2 sp 0xC, 2) := by decide
 theorem sq_at_166 : fetchRel sqMont12Code 0x166 = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide

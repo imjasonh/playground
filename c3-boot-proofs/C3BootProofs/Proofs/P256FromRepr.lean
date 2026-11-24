@@ -29,14 +29,14 @@ theorem frq_at_c : fetchRel p256FromReprCode 0xC = some (.store .sw sp (20 : Fin
 theorem frq_at_e : fetchRel p256FromReprCode 0xE = some (.alu .add (9 : Fin 32) x0 a1, 2) := by decide
 theorem frq_at_10 : fetchRel p256FromReprCode 0x10 = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
 theorem frq_at_12 : fetchRel p256FromReprCode 0x12 = some (.aluImm .add a0 sp 0x28, 2) := by decide
-theorem frq_at_14 : fetchRel p256FromReprCode 0x14 = some (.auipc ra 0x7000, 4) := by decide
-theorem frq_at_18 : fetchRel p256FromReprCode 0x18 = some (.jalr ra ra 0xFFFFFF18, 4) := by decide
+theorem frq_at_14 : fetchRel p256FromReprCode 0x14 = some (.auipc ra 0x9000, 4) := by decide
+theorem frq_at_18 : fetchRel p256FromReprCode 0x18 = some (.jalr ra ra 0xFFFFFD28, 4) := by decide
 theorem frq_at_1c : fetchRel p256FromReprCode 0x1C = some (.aluImm .add a0 sp 0x48, 2) := by decide
 theorem frq_at_1e : fetchRel p256FromReprCode 0x1E = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem frq_at_22 : fetchRel p256FromReprCode 0x22 = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem frq_at_24 : fetchRel p256FromReprCode 0x24 = some (.aluImm .add (19 : Fin 32) sp 0x48, 4) := by decide
-theorem frq_at_28 : fetchRel p256FromReprCode 0x28 = some (.auipc ra 0xE000, 4) := by decide
-theorem frq_at_2c : fetchRel p256FromReprCode 0x2C = some (.jalr ra ra 0xFFFFFFD0, 4) := by decide
+theorem frq_at_28 : fetchRel p256FromReprCode 0x28 = some (.auipc ra 0x10000, 4) := by decide
+theorem frq_at_2c : fetchRel p256FromReprCode 0x2C = some (.jalr ra ra 0xFFFFFDE0, 4) := by decide
 theorem frq_at_30 : fetchRel p256FromReprCode 0x30 = some (.aluImm .add a0 x0 0x0, 2) := by decide
 theorem frq_at_32 : fetchRel p256FromReprCode 0x32 = some (.store .sw sp x0 0x4, 2) := by decide
 theorem frq_at_34 : fetchRel p256FromReprCode 0x34 = some (.lui a2 0x10000, 2) := by decide
@@ -73,7 +73,7 @@ theorem frq_at_80 : fetchRel p256FromReprCode 0x80 = some (.branch .bne a0 a6 0x
 theorem frq_at_84 : fetchRel p256FromReprCode 0x84 = some (.aluImm .add (19 : Fin 32) x0 0x0, 2) := by decide
 theorem frq_at_86 : fetchRel p256FromReprCode 0x86 = some (.aluImm .add (20 : Fin 32) sp 0x48, 4) := by decide
 theorem frq_at_8a : fetchRel p256FromReprCode 0x8A = some (.lui (9 : Fin 32) 0x3FCC5000, 4) := by decide
-theorem frq_at_8e : fetchRel p256FromReprCode 0x8E = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFFB38, 4) := by decide
+theorem frq_at_8e : fetchRel p256FromReprCode 0x8E = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFFBA0, 4) := by decide
 theorem frq_at_92 : fetchRel p256FromReprCode 0x92 = some (.aluImm .add (8 : Fin 32) x0 0x8, 2) := by decide
 theorem frq_at_94 : fetchRel p256FromReprCode 0x94 = some (.branch .beq (8 : Fin 32) x0 0x1C, 2) := by decide
 theorem frq_at_96 : fetchRel p256FromReprCode 0x96 = some (.load .lw a0 (20 : Fin 32) 0x0, 4) := by decide
@@ -87,7 +87,7 @@ theorem frq_at_aa : fetchRel p256FromReprCode 0xAA = some (.aluImm .add (9 : Fin
 theorem frq_at_ac : fetchRel p256FromReprCode 0xAC = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFFFF, 2) := by decide
 theorem frq_at_ae : fetchRel p256FromReprCode 0xAE = some (.branch .bne (8 : Fin 32) x0 0xFFFFFFE8, 2) := by decide
 theorem frq_at_b0 : fetchRel p256FromReprCode 0xB0 = some (.lui (8 : Fin 32) 0x3FCC5000, 4) := by decide
-theorem frq_at_b4 : fetchRel p256FromReprCode 0xB4 = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFB38, 4) := by decide
+theorem frq_at_b4 : fetchRel p256FromReprCode 0xB4 = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFBA0, 4) := by decide
 theorem frq_at_b8 : fetchRel p256FromReprCode 0xB8 = some (.aluImm .add a0 (8 : Fin 32) 0x20, 4) := by decide
 theorem frq_at_bc : fetchRel p256FromReprCode 0xBC = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem frq_at_be : fetchRel p256FromReprCode 0xBE = some (.auipc ra 0xFFFFC000, 4) := by decide
@@ -108,24 +108,24 @@ theorem frq_at_ec : fetchRel p256FromReprCode 0xEC = some (.aluImm .add a0 sp 0x
 theorem frq_at_ee : fetchRel p256FromReprCode 0xEE = some (.aluImm .add a1 sp 0x48, 2) := by decide
 theorem frq_at_f0 : fetchRel p256FromReprCode 0xF0 = some (.aluImm .add a4 x0 0x1, 2) := by decide
 theorem frq_at_f2 : fetchRel p256FromReprCode 0xF2 = some (.alu .add a3 x0 (8 : Fin 32), 2) := by decide
-theorem frq_at_f4 : fetchRel p256FromReprCode 0xF4 = some (.auipc ra 0xA000, 4) := by decide
-theorem frq_at_f8 : fetchRel p256FromReprCode 0xF8 = some (.jalr ra ra 0x25C, 4) := by decide
+theorem frq_at_f4 : fetchRel p256FromReprCode 0xF4 = some (.auipc ra 0xC000, 4) := by decide
+theorem frq_at_f8 : fetchRel p256FromReprCode 0xF8 = some (.jalr ra ra 0x6C, 4) := by decide
 theorem frq_at_fc : fetchRel p256FromReprCode 0xFC = some (.alu .add a0 x0 (9 : Fin 32), 2) := by decide
-theorem frq_at_fe : fetchRel p256FromReprCode 0xFE = some (.auipc ra 0x7000, 4) := by decide
-theorem frq_at_102 : fetchRel p256FromReprCode 0x102 = some (.jalr ra ra 0xFFFFFE58, 4) := by decide
+theorem frq_at_fe : fetchRel p256FromReprCode 0xFE = some (.auipc ra 0x9000, 4) := by decide
+theorem frq_at_102 : fetchRel p256FromReprCode 0x102 = some (.jalr ra ra 0xFFFFFC68, 4) := by decide
 theorem frq_at_106 : fetchRel p256FromReprCode 0x106 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
 theorem frq_at_108 : fetchRel p256FromReprCode 0x108 = some (.store .sb sp a0 0x24, 4) := by decide
 theorem frq_at_10c : fetchRel p256FromReprCode 0x10C = some (.aluImm .add a0 sp 0x28, 2) := by decide
 theorem frq_at_10e : fetchRel p256FromReprCode 0x10E = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem frq_at_112 : fetchRel p256FromReprCode 0x112 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem frq_at_114 : fetchRel p256FromReprCode 0x114 = some (.auipc ra 0xE000, 4) := by decide
-theorem frq_at_118 : fetchRel p256FromReprCode 0x118 = some (.jalr ra ra 0xFFFFFEE4, 4) := by decide
+theorem frq_at_114 : fetchRel p256FromReprCode 0x114 = some (.auipc ra 0x10000, 4) := by decide
+theorem frq_at_118 : fetchRel p256FromReprCode 0x118 = some (.jalr ra ra 0xFFFFFCF4, 4) := by decide
 theorem frq_at_11c : fetchRel p256FromReprCode 0x11C = some (.aluImm .and a3 (8 : Fin 32) 0xFF, 4) := by decide
 theorem frq_at_120 : fetchRel p256FromReprCode 0x120 = some (.aluImm .add a1 sp 0x28, 2) := by decide
 theorem frq_at_122 : fetchRel p256FromReprCode 0x122 = some (.aluImm .add a2 sp 0x4, 2) := by decide
 theorem frq_at_124 : fetchRel p256FromReprCode 0x124 = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
-theorem frq_at_126 : fetchRel p256FromReprCode 0x126 = some (.auipc ra 0xB000, 4) := by decide
-theorem frq_at_12a : fetchRel p256FromReprCode 0x12A = some (.jalr ra ra 0xFFFFFCFC, 4) := by decide
+theorem frq_at_126 : fetchRel p256FromReprCode 0x126 = some (.auipc ra 0xD000, 4) := by decide
+theorem frq_at_12a : fetchRel p256FromReprCode 0x12A = some (.jalr ra ra 0xFFFFFB0C, 4) := by decide
 theorem frq_at_12e : fetchRel p256FromReprCode 0x12E = some (.store .sb (18 : Fin 32) (8 : Fin 32) 0x20, 4) := by decide
 theorem frq_at_132 : fetchRel p256FromReprCode 0x132 = some (.load .lw ra sp 0x7C, 2) := by decide
 theorem frq_at_134 : fetchRel p256FromReprCode 0x134 = some (.load .lw (8 : Fin 32) sp 0x78, 2) := by decide
@@ -757,7 +757,7 @@ structure FRQEnv (M : Word → BitVec 8) : Prop where
   r2lt : accV M (p256Np + 0x40) 8 < accV M p256Np 8
 
 def frqT1 : List BInstr :=
-  [.lui (8 : Fin 32) 0x3FCC5000, .aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFB38, .aluImm .add a0 (8 : Fin 32) 0x20,
+  [.lui (8 : Fin 32) 0x3FCC5000, .aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFBA0, .aluImm .add a0 (8 : Fin 32) 0x20,
    .aluImm .add a1 x0 0]
 def frqT2 : List BInstr :=
   [.aluImm .add a1 sp 0x68, .aluImm .and (9 : Fin 32) a0 0xFF, .alu .add a0 x0 a1, .aluImm .add a1 x0 0]
@@ -1240,7 +1240,7 @@ theorem frq_tailB {M0 : Word → BitVec 8} (E : FRQEnv M0) (n : Machine) {S out 
 
 def frqCmp0 : List BInstr :=
   [.aluImm .add (19 : Fin 32) x0 0, .aluImm .add (20 : Fin 32) sp 0x48, .lui (9 : Fin 32) 0x3FCC5000,
-   .aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFFB38, .aluImm .add (8 : Fin 32) x0 8]
+   .aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFFBA0, .aluImm .add (8 : Fin 32) x0 8]
 
 section
 set_option maxRecDepth 20000

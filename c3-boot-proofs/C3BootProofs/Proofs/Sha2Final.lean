@@ -42,13 +42,13 @@ theorem sk_at_4 : fetchRel shaFinBlockCode 0x4 = some (.store .sw sp (8 : Fin 32
 theorem sk_at_6 : fetchRel shaFinBlockCode 0x6 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
 theorem sk_at_8 : fetchRel shaFinBlockCode 0x8 = some (.aluImm .add a0 sp 0x8, 2) := by decide
 theorem sk_at_a : fetchRel shaFinBlockCode 0xA = some (.aluImm .add a2 x0 0x40, 4) := by decide
-theorem sk_at_e : fetchRel shaFinBlockCode 0xE = some (.auipc ra 0xE000, 4) := by decide
-theorem sk_at_12 : fetchRel shaFinBlockCode 0x12 = some (.jalr ra ra 0xFFFFFDAC, 4) := by decide
+theorem sk_at_e : fetchRel shaFinBlockCode 0xE = some (.auipc ra 0x10000, 4) := by decide
+theorem sk_at_12 : fetchRel shaFinBlockCode 0x12 = some (.jalr ra ra 0xFFFFFBBC, 4) := by decide
 theorem sk_at_16 : fetchRel shaFinBlockCode 0x16 = some (.aluImm .add a1 sp 0x8, 2) := by decide
 theorem sk_at_18 : fetchRel shaFinBlockCode 0x18 = some (.aluImm .add a2 x0 0x1, 2) := by decide
 theorem sk_at_1a : fetchRel shaFinBlockCode 0x1A = some (.alu .add a0 x0 (8 : Fin 32), 2) := by decide
-theorem sk_at_1c : fetchRel shaFinBlockCode 0x1C = some (.auipc ra 0xD000, 4) := by decide
-theorem sk_at_20 : fetchRel shaFinBlockCode 0x20 = some (.jalr ra ra 0x582, 4) := by decide
+theorem sk_at_1c : fetchRel shaFinBlockCode 0x1C = some (.auipc ra 0xF000, 4) := by decide
+theorem sk_at_20 : fetchRel shaFinBlockCode 0x20 = some (.jalr ra ra 0x392, 4) := by decide
 theorem sk_at_24 : fetchRel shaFinBlockCode 0x24 = some (.load .lw ra sp 0x4C, 2) := by decide
 theorem sk_at_26 : fetchRel shaFinBlockCode 0x26 = some (.load .lw (8 : Fin 32) sp 0x48, 2) := by decide
 theorem sk_at_28 : fetchRel shaFinBlockCode 0x28 = some (.aluImm .add sp sp 0x50, 2) := by decide
@@ -65,13 +65,13 @@ theorem sf_at_10 : fetchRel shaFinalizeCode 0x10 = some (.store .sw sp (22 : Fin
 theorem sf_at_12 : fetchRel shaFinalizeCode 0x12 = some (.alu .add (20 : Fin 32) x0 a1, 2) := by decide
 theorem sf_at_14 : fetchRel shaFinalizeCode 0x14 = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
 theorem sf_at_16 : fetchRel shaFinalizeCode 0x16 = some (.alu .add a0 x0 sp, 2) := by decide
-theorem sf_at_18 : fetchRel shaFinalizeCode 0x18 = some (.auipc ra 0x7000, 4) := by decide
-theorem sf_at_1c : fetchRel shaFinalizeCode 0x1C = some (.jalr ra ra 0xFFFFFDA8, 4) := by decide
+theorem sf_at_18 : fetchRel shaFinalizeCode 0x18 = some (.auipc ra 0x9000, 4) := by decide
+theorem sf_at_1c : fetchRel shaFinalizeCode 0x1C = some (.jalr ra ra 0xFFFFFBB8, 4) := by decide
 theorem sf_at_20 : fetchRel shaFinalizeCode 0x20 = some (.aluImm .add (9 : Fin 32) (20 : Fin 32) 0x40, 4) := by decide
 theorem sf_at_24 : fetchRel shaFinalizeCode 0x24 = some (.aluImm .add a0 sp 0x20, 2) := by decide
 theorem sf_at_26 : fetchRel shaFinalizeCode 0x26 = some (.aluImm .add (8 : Fin 32) sp 0x20, 2) := by decide
-theorem sf_at_28 : fetchRel shaFinalizeCode 0x28 = some (.auipc ra 0x7000, 4) := by decide
-theorem sf_at_2c : fetchRel shaFinalizeCode 0x2C = some (.jalr ra ra 0xFFFFFD98, 4) := by decide
+theorem sf_at_28 : fetchRel shaFinalizeCode 0x28 = some (.auipc ra 0x9000, 4) := by decide
+theorem sf_at_2c : fetchRel shaFinalizeCode 0x2C = some (.jalr ra ra 0xFFFFFBA8, 4) := by decide
 theorem sf_at_30 : fetchRel shaFinalizeCode 0x30 = some (.load .lw a0 (20 : Fin 32) 0x60, 4) := by decide
 theorem sf_at_34 : fetchRel shaFinalizeCode 0x34 = some (.load .lw a6 (20 : Fin 32) 0x64, 4) := by decide
 theorem sf_at_38 : fetchRel shaFinalizeCode 0x38 = some (.load .lbu a2 (20 : Fin 32) 0x3F, 4) := by decide
@@ -108,8 +108,8 @@ theorem sf_at_94 : fetchRel shaFinalizeCode 0x94 = some (.store .sb a0 a1 0x0, 4
 theorem sf_at_98 : fetchRel shaFinalizeCode 0x98 = some (.aluImm .add a0 a0 0x1, 2) := by decide
 theorem sf_at_9a : fetchRel shaFinalizeCode 0x9A = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem sf_at_9c : fetchRel shaFinalizeCode 0x9C = some (.alu .add a2 x0 (19 : Fin 32), 2) := by decide
-theorem sf_at_9e : fetchRel shaFinalizeCode 0x9E = some (.auipc ra 0xE000, 4) := by decide
-theorem sf_at_a2 : fetchRel shaFinalizeCode 0xA2 = some (.jalr ra ra 0xFFFFFDEE, 4) := by decide
+theorem sf_at_9e : fetchRel shaFinalizeCode 0x9E = some (.auipc ra 0x10000, 4) := by decide
+theorem sf_at_a2 : fetchRel shaFinalizeCode 0xA2 = some (.jalr ra ra 0xFFFFFBFE, 4) := by decide
 theorem sf_at_a6 : fetchRel shaFinalizeCode 0xA6 = some (.aluImm .add a0 x0 0x7, 2) := by decide
 theorem sf_at_a8 : fetchRel shaFinalizeCode 0xA8 = some (.branch .bltu a0 (19 : Fin 32) 0x20, 4) := by decide
 theorem sf_at_ac : fetchRel shaFinalizeCode 0xAC = some (.alu .add a0 x0 (9 : Fin 32), 2) := by decide
@@ -119,8 +119,8 @@ theorem sf_at_b4 : fetchRel shaFinalizeCode 0xB4 = some (.jalr ra ra 0x8A, 4) :=
 theorem sf_at_b8 : fetchRel shaFinalizeCode 0xB8 = some (.aluImm .add a2 x0 0x38, 4) := by decide
 theorem sf_at_bc : fetchRel shaFinalizeCode 0xBC = some (.alu .add a0 x0 (20 : Fin 32), 2) := by decide
 theorem sf_at_be : fetchRel shaFinalizeCode 0xBE = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem sf_at_c0 : fetchRel shaFinalizeCode 0xC0 = some (.auipc ra 0xE000, 4) := by decide
-theorem sf_at_c4 : fetchRel shaFinalizeCode 0xC4 = some (.jalr ra ra 0xFFFFFDCC, 4) := by decide
+theorem sf_at_c0 : fetchRel shaFinalizeCode 0xC0 = some (.auipc ra 0x10000, 4) := by decide
+theorem sf_at_c4 : fetchRel shaFinalizeCode 0xC4 = some (.jalr ra ra 0xFFFFFBDC, 4) := by decide
 theorem sf_at_c8 : fetchRel shaFinalizeCode 0xC8 = some (.store .sw (20 : Fin 32) (22 : Fin 32) 0x38, 4) := by decide
 theorem sf_at_cc : fetchRel shaFinalizeCode 0xCC = some (.store .sw (20 : Fin 32) (21 : Fin 32) 0x3C, 4) := by decide
 theorem sf_at_d0 : fetchRel shaFinalizeCode 0xD0 = some (.alu .add a0 x0 (9 : Fin 32), 2) := by decide
@@ -144,13 +144,13 @@ theorem sf_at_104 : fetchRel shaFinalizeCode 0x104 = some (.branch .bne a0 x0 0x
 theorem sf_at_106 : fetchRel shaFinalizeCode 0x106 = some (.alu .add a0 x0 sp, 2) := by decide
 theorem sf_at_108 : fetchRel shaFinalizeCode 0x108 = some (.aluImm .add a1 sp 0x20, 2) := by decide
 theorem sf_at_10a : fetchRel shaFinalizeCode 0x10A = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem sf_at_10e : fetchRel shaFinalizeCode 0x10E = some (.auipc ra 0xE000, 4) := by decide
-theorem sf_at_112 : fetchRel shaFinalizeCode 0x112 = some (.jalr ra ra 0xFFFFFDE6, 4) := by decide
+theorem sf_at_10e : fetchRel shaFinalizeCode 0x10E = some (.auipc ra 0x10000, 4) := by decide
+theorem sf_at_112 : fetchRel shaFinalizeCode 0x112 = some (.jalr ra ra 0xFFFFFBF6, 4) := by decide
 theorem sf_at_116 : fetchRel shaFinalizeCode 0x116 = some (.alu .add a1 x0 sp, 2) := by decide
 theorem sf_at_118 : fetchRel shaFinalizeCode 0x118 = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem sf_at_11c : fetchRel shaFinalizeCode 0x11C = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
-theorem sf_at_11e : fetchRel shaFinalizeCode 0x11E = some (.auipc ra 0xE000, 4) := by decide
-theorem sf_at_122 : fetchRel shaFinalizeCode 0x122 = some (.jalr ra ra 0xFFFFFDD6, 4) := by decide
+theorem sf_at_11e : fetchRel shaFinalizeCode 0x11E = some (.auipc ra 0x10000, 4) := by decide
+theorem sf_at_122 : fetchRel shaFinalizeCode 0x122 = some (.jalr ra ra 0xFFFFFBE6, 4) := by decide
 theorem sf_at_126 : fetchRel shaFinalizeCode 0x126 = some (.load .lw ra sp 0x5C, 2) := by decide
 theorem sf_at_128 : fetchRel shaFinalizeCode 0x128 = some (.load .lw (8 : Fin 32) sp 0x58, 2) := by decide
 theorem sf_at_12a : fetchRel shaFinalizeCode 0x12A = some (.load .lw (9 : Fin 32) sp 0x54, 2) := by decide

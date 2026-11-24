@@ -174,7 +174,7 @@ theorem psm_g21 {M0 Mi : Word → BitVec 8} {B F outp G3 G4 : Word} {n : Machine
       aluEval .add v877 v876 = v879 := by
   have hz0 : reg n 0 = 0 := s.zero
   obtain ⟨n840, d840, u840, ca840, cb840, cs840, ck840, cm840⟩ := s.bsubCall hc
-    (psm_code3 hbs sFB sF4B sOB fr) (by rw [psmBsub]; exact even_at B hB 0xFFFF01CE (by decide))
+    (psm_code3 hbs sFB sF4B sOB fr) (by rw [psmBsub]; exact even_at B hB 0xFFFEE3BE (by decide))
     psm_at_a92 psm_at_a96 (by rw [psmBsub, BitVec.add_assoc, BitVec.add_assoc]; rfl)
     (even_at B hB (0xA92 + 8) (by decide)) (by simp +decide only [upd, ↓reduceIte, hz0, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11, q12, q15, q16, q17, q18, q19, q20, q21, q22, q23, q24, q25, q26, q27, q28, q29, q30, q31]) hF sF4B
   simp +decide only [upd, ↓reduceIte, hz0, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11, q12, q15, q16, q17, q18, q19, q20, q21, q22, q23, q24, q25, q26, q27, q28, q29, q30, q31] at ca840 cb840
@@ -227,7 +227,7 @@ theorem psm_g21 {M0 Mi : Word → BitVec 8} {B F outp G3 G4 : Word} {n : Machine
   obtain ⟨n845, d845, u845⟩ := u844.aluE hc842 psm_at_aa0 (off' := 0xAA2) (by decide) (v := v792)
     (by simp +decide only [upd, ↓reduceIte, z840, ca840, cb840, qc840_2, qc840_3, qc840_4, qc840_5, qc840_6, qc840_7, qc840_8, qc840_9, qc840_15, qc840_16, qc840_17, qc840_18, qc840_19, qc840_20, qc840_21, qc840_22, qc840_23, qc840_24, qc840_25, qc840_26, qc840_27, qc840_28, qc840_29, qc840_30, qc840_31]; first | exact BitVec.zero_add _ | exact BitVec.add_zero _)
   obtain ⟨n846, d846, u846, ca846, cb846, cs846, ck846, cm846⟩ := u845.bsubCall hc842
-    (psm_code3 hbs sFB sF4B sOB fr842) (by rw [psmBsub]; exact even_at B hB 0xFFFF01CE (by decide))
+    (psm_code3 hbs sFB sF4B sOB fr842) (by rw [psmBsub]; exact even_at B hB 0xFFFEE3BE (by decide))
     psm_at_aa2 psm_at_aa6 (by rw [psmBsub, BitVec.add_assoc, BitVec.add_assoc]; rfl)
     (even_at B hB (0xAA2 + 8) (by decide)) (by simp +decide only [upd, ↓reduceIte, z840, ca840, cb840, qc840_2, qc840_3, qc840_4, qc840_5, qc840_6, qc840_7, qc840_8, qc840_9, qc840_15, qc840_16, qc840_17, qc840_18, qc840_19, qc840_20, qc840_21, qc840_22, qc840_23, qc840_24, qc840_25, qc840_26, qc840_27, qc840_28, qc840_29, qc840_30, qc840_31]) hF sF4B
   simp +decide only [upd, ↓reduceIte, z840, ca840, cb840, qc840_2, qc840_3, qc840_4, qc840_5, qc840_6, qc840_7, qc840_8, qc840_9, qc840_15, qc840_16, qc840_17, qc840_18, qc840_19, qc840_20, qc840_21, qc840_22, qc840_23, qc840_24, qc840_25, qc840_26, qc840_27, qc840_28, qc840_29, qc840_30, qc840_31] at ca846 cb846
@@ -275,7 +275,7 @@ theorem psm_g21 {M0 Mi : Word → BitVec 8} {B F outp G3 G4 : Word} {n : Machine
     (by simp +decide only [upd, ↓reduceIte, z846, ca846, cb846, qc846_2, qc846_3, qc846_4, qc846_5, qc846_6, qc846_7, qc846_8, qc846_9, qc846_15, qc846_16, qc846_17, qc846_18, qc846_19, qc846_20, qc846_21, qc846_22, qc846_23, qc846_24, qc846_25, qc846_26, qc846_27, qc846_28, qc846_29, qc846_30, qc846_31]; exact aligned_add hF (k := 24) (by decide)) (v := v798)
     (by simp +decide only [upd, ↓reduceIte, z846, ca846, cb846, qc846_2, qc846_3, qc846_4, qc846_5, qc846_6, qc846_7, qc846_8, qc846_9, qc846_15, qc846_16, qc846_17, qc846_18, qc846_19, qc846_20, qc846_21, qc846_22, qc846_23, qc846_24, qc846_25, qc846_26, qc846_27, qc846_28, qc846_29, qc846_30, qc846_31]; rw [psm_slotS (show Sep (F + 0x18) 4 (F + 0xFFFFFFFC) 4 from sep_offsets F (c := 24) (n := 4) (d := 0xFFFFFFFC) (k := 4) (.inl (by decide)) (by decide) (by decide)) cm846, ← hM842, memLoad32_store32_sep (show Sep (F + 0x14) 4 (F + 0x18) 4 from sep_offsets F (c := 20) (n := 4) (d := 24) (k := 4) (by decide) (by decide) (by decide)), psm_slotS (show Sep (F + 0x18) 4 (F + 0xFFFFFFFC) 4 from sep_offsets F (c := 24) (n := 4) (d := 0xFFFFFFFC) (k := 4) (.inl (by decide)) (by decide) (by decide)) cm840, sl18])
   obtain ⟨n852, d852, u852, ca852, cb852, cs852, ck852, cm852⟩ := u851.bsubCall hc846
-    (psm_code3 hbs sFB sF4B sOB fr846) (by rw [psmBsub]; exact even_at B hB 0xFFFF01CE (by decide))
+    (psm_code3 hbs sFB sF4B sOB fr846) (by rw [psmBsub]; exact even_at B hB 0xFFFEE3BE (by decide))
     psm_at_ab2 psm_at_ab6 (by rw [psmBsub, BitVec.add_assoc, BitVec.add_assoc]; rfl)
     (even_at B hB (0xAB2 + 8) (by decide)) (by simp +decide only [upd, ↓reduceIte, z846, ca846, cb846, qc846_2, qc846_3, qc846_4, qc846_5, qc846_6, qc846_7, qc846_8, qc846_9, qc846_15, qc846_16, qc846_17, qc846_18, qc846_19, qc846_20, qc846_21, qc846_22, qc846_23, qc846_24, qc846_25, qc846_26, qc846_27, qc846_28, qc846_29, qc846_30, qc846_31]) hF sF4B
   simp +decide only [upd, ↓reduceIte, z846, ca846, cb846, qc846_2, qc846_3, qc846_4, qc846_5, qc846_6, qc846_7, qc846_8, qc846_9, qc846_15, qc846_16, qc846_17, qc846_18, qc846_19, qc846_20, qc846_21, qc846_22, qc846_23, qc846_24, qc846_25, qc846_26, qc846_27, qc846_28, qc846_29, qc846_30, qc846_31] at ca852 cb852
@@ -322,7 +322,7 @@ theorem psm_g21 {M0 Mi : Word → BitVec 8} {B F outp G3 G4 : Word} {n : Machine
   obtain ⟨n857, v857, d857, hv857, u857⟩ := u856.aluImmG hc852 psm_at_ac0 (off' := 0xAC2) (by decide)
   simp +decide only [upd, ↓reduceIte, z852, ca852, cb852, qc852_2, qc852_3, qc852_4, qc852_5, qc852_6, qc852_7, qc852_8, qc852_9, qc852_15, qc852_16, qc852_17, qc852_18, qc852_19, qc852_20, qc852_21, qc852_22, qc852_23, qc852_24, qc852_25, qc852_26, qc852_27, qc852_28, qc852_29, qc852_30, qc852_31] at hv857
   obtain ⟨n858, d858, u858, ca858, cb858, cs858, ck858, cm858⟩ := u857.bsubCall hc852
-    (psm_code3 hbs sFB sF4B sOB fr852) (by rw [psmBsub]; exact even_at B hB 0xFFFF01CE (by decide))
+    (psm_code3 hbs sFB sF4B sOB fr852) (by rw [psmBsub]; exact even_at B hB 0xFFFEE3BE (by decide))
     psm_at_ac2 psm_at_ac6 (by rw [psmBsub, BitVec.add_assoc, BitVec.add_assoc]; rfl)
     (even_at B hB (0xAC2 + 8) (by decide)) (by simp +decide only [upd, ↓reduceIte, z852, ca852, cb852, qc852_2, qc852_3, qc852_4, qc852_5, qc852_6, qc852_7, qc852_8, qc852_9, qc852_15, qc852_16, qc852_17, qc852_18, qc852_19, qc852_20, qc852_21, qc852_22, qc852_23, qc852_24, qc852_25, qc852_26, qc852_27, qc852_28, qc852_29, qc852_30, qc852_31]) hF sF4B
   simp +decide only [upd, ↓reduceIte, z852, ca852, cb852, qc852_2, qc852_3, qc852_4, qc852_5, qc852_6, qc852_7, qc852_8, qc852_9, qc852_15, qc852_16, qc852_17, qc852_18, qc852_19, qc852_20, qc852_21, qc852_22, qc852_23, qc852_24, qc852_25, qc852_26, qc852_27, qc852_28, qc852_29, qc852_30, qc852_31] at ca858 cb858
@@ -370,7 +370,7 @@ theorem psm_g21 {M0 Mi : Word → BitVec 8} {B F outp G3 G4 : Word} {n : Machine
     (by simp +decide only [upd, ↓reduceIte, z858, ca858, cb858, qc858_2, qc858_3, qc858_4, qc858_5, qc858_6, qc858_7, qc858_8, qc858_9, qc858_15, qc858_16, qc858_17, qc858_18, qc858_19, qc858_20, qc858_21, qc858_22, qc858_23, qc858_24, qc858_25, qc858_26, qc858_27, qc858_28, qc858_29, qc858_30, qc858_31]; exact aligned_add hF (k := 28) (by decide)) (v := v810)
     (by simp +decide only [upd, ↓reduceIte, z858, ca858, cb858, qc858_2, qc858_3, qc858_4, qc858_5, qc858_6, qc858_7, qc858_8, qc858_9, qc858_15, qc858_16, qc858_17, qc858_18, qc858_19, qc858_20, qc858_21, qc858_22, qc858_23, qc858_24, qc858_25, qc858_26, qc858_27, qc858_28, qc858_29, qc858_30, qc858_31]; rw [psm_slotS (show Sep (F + 0x1C) 4 (F + 0xFFFFFFFC) 4 from sep_offsets F (c := 28) (n := 4) (d := 0xFFFFFFFC) (k := 4) (.inl (by decide)) (by decide) (by decide)) cm858, psm_slotS (show Sep (F + 0x1C) 4 (F + 0xFFFFFFFC) 4 from sep_offsets F (c := 28) (n := 4) (d := 0xFFFFFFFC) (k := 4) (.inl (by decide)) (by decide) (by decide)) cm852, psm_slotS (show Sep (F + 0x1C) 4 (F + 0xFFFFFFFC) 4 from sep_offsets F (c := 28) (n := 4) (d := 0xFFFFFFFC) (k := 4) (.inl (by decide)) (by decide) (by decide)) cm846, ← hM842, memLoad32_store32_sep (show Sep (F + 0x14) 4 (F + 0x1C) 4 from sep_offsets F (c := 20) (n := 4) (d := 28) (k := 4) (by decide) (by decide) (by decide)), psm_slotS (show Sep (F + 0x1C) 4 (F + 0xFFFFFFFC) 4 from sep_offsets F (c := 28) (n := 4) (d := 0xFFFFFFFC) (k := 4) (.inl (by decide)) (by decide) (by decide)) cm840, sl1C])
   obtain ⟨n864, d864, u864, ca864, cb864, cs864, ck864, cm864⟩ := u863.bsubCall hc858
-    (psm_code3 hbs sFB sF4B sOB fr858) (by rw [psmBsub]; exact even_at B hB 0xFFFF01CE (by decide))
+    (psm_code3 hbs sFB sF4B sOB fr858) (by rw [psmBsub]; exact even_at B hB 0xFFFEE3BE (by decide))
     psm_at_ad2 psm_at_ad6 (by rw [psmBsub, BitVec.add_assoc, BitVec.add_assoc]; rfl)
     (even_at B hB (0xAD2 + 8) (by decide)) (by simp +decide only [upd, ↓reduceIte, z858, ca858, cb858, qc858_2, qc858_3, qc858_4, qc858_5, qc858_6, qc858_7, qc858_8, qc858_9, qc858_15, qc858_16, qc858_17, qc858_18, qc858_19, qc858_20, qc858_21, qc858_22, qc858_23, qc858_24, qc858_25, qc858_26, qc858_27, qc858_28, qc858_29, qc858_30, qc858_31]) hF sF4B
   simp +decide only [upd, ↓reduceIte, z858, ca858, cb858, qc858_2, qc858_3, qc858_4, qc858_5, qc858_6, qc858_7, qc858_8, qc858_9, qc858_15, qc858_16, qc858_17, qc858_18, qc858_19, qc858_20, qc858_21, qc858_22, qc858_23, qc858_24, qc858_25, qc858_26, qc858_27, qc858_28, qc858_29, qc858_30, qc858_31] at ca864 cb864
@@ -418,7 +418,7 @@ theorem psm_g21 {M0 Mi : Word → BitVec 8} {B F outp G3 G4 : Word} {n : Machine
   obtain ⟨n869, v869, d869, hv869, u869⟩ := u868.aluImmG hc864 psm_at_ae0 (off' := 0xAE2) (by decide)
   simp +decide only [upd, ↓reduceIte, z864, ca864, cb864, qc864_2, qc864_3, qc864_4, qc864_5, qc864_6, qc864_7, qc864_8, qc864_9, qc864_15, qc864_16, qc864_17, qc864_18, qc864_19, qc864_20, qc864_21, qc864_22, qc864_23, qc864_24, qc864_25, qc864_26, qc864_27, qc864_28, qc864_29, qc864_30, qc864_31] at hv869
   obtain ⟨n870, d870, u870, ca870, cb870, cs870, ck870, cm870⟩ := u869.bsubCall hc864
-    (psm_code3 hbs sFB sF4B sOB fr864) (by rw [psmBsub]; exact even_at B hB 0xFFFF01CE (by decide))
+    (psm_code3 hbs sFB sF4B sOB fr864) (by rw [psmBsub]; exact even_at B hB 0xFFFEE3BE (by decide))
     psm_at_ae2 psm_at_ae6 (by rw [psmBsub, BitVec.add_assoc, BitVec.add_assoc]; rfl)
     (even_at B hB (0xAE2 + 8) (by decide)) (by simp +decide only [upd, ↓reduceIte, z864, ca864, cb864, qc864_2, qc864_3, qc864_4, qc864_5, qc864_6, qc864_7, qc864_8, qc864_9, qc864_15, qc864_16, qc864_17, qc864_18, qc864_19, qc864_20, qc864_21, qc864_22, qc864_23, qc864_24, qc864_25, qc864_26, qc864_27, qc864_28, qc864_29, qc864_30, qc864_31]) hF sF4B
   simp +decide only [upd, ↓reduceIte, z864, ca864, cb864, qc864_2, qc864_3, qc864_4, qc864_5, qc864_6, qc864_7, qc864_8, qc864_9, qc864_15, qc864_16, qc864_17, qc864_18, qc864_19, qc864_20, qc864_21, qc864_22, qc864_23, qc864_24, qc864_25, qc864_26, qc864_27, qc864_28, qc864_29, qc864_30, qc864_31] at ca870 cb870

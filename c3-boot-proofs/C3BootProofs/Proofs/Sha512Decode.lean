@@ -182,7 +182,7 @@ theorem sh5_at_1ec : fetchRel sha512CompressCode 0x1EC = some (.branch .bne a6 x
 theorem sh5_at_1f0 : fetchRel sha512CompressCode 0x1F0 = some (.aluImm .add (30 : Fin 32) sp 0xD8, 4) := by decide
 theorem sh5_at_1f4 : fetchRel sha512CompressCode 0x1F4 = some (.aluImm .add (29 : Fin 32) x0 0x50, 4) := by decide
 theorem sh5_at_1f8 : fetchRel sha512CompressCode 0x1F8 = some (.lui (25 : Fin 32) 0x3FCC5000, 4) := by decide
-theorem sh5_at_1fc : fetchRel sha512CompressCode 0x1FC = some (.aluImm .add (25 : Fin 32) (25 : Fin 32) 0xFFFFFFC0, 4) := by decide
+theorem sh5_at_1fc : fetchRel sha512CompressCode 0x1FC = some (.aluImm .add (25 : Fin 32) (25 : Fin 32) 0x28, 4) := by decide
 theorem sh5_at_200 : fetchRel sha512CompressCode 0x200 = some (.store .sw sp (20 : Fin 32) 0x14, 2) := by decide
 theorem sh5_at_202 : fetchRel sha512CompressCode 0x202 = some (.alu .add a2 x0 (20 : Fin 32), 2) := by decide
 theorem sh5_at_204 : fetchRel sha512CompressCode 0x204 = some (.load .lw a3 sp 0x4C, 2) := by decide

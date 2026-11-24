@@ -69,7 +69,7 @@ theorem ssub_at_30 : fetchRel scalar29SubCode 0x30 = some (.aluImm .add (8 : Fin
 theorem ssub_at_32 : fetchRel scalar29SubCode 0x32 = some (.aluImm .add (24 : Fin 32) x0 0x0, 2) := by decide
 theorem ssub_at_34 : fetchRel scalar29SubCode 0x34 = some (.aluImm .add (22 : Fin 32) x0 0x9, 2) := by decide
 theorem ssub_at_36 : fetchRel scalar29SubCode 0x36 = some (.lui (19 : Fin 32) 0x3FCC5000, 4) := by decide
-theorem ssub_at_3a : fetchRel scalar29SubCode 0x3A = some (.aluImm .add (19 : Fin 32) (19 : Fin 32) 0xFFFFFA08, 4) := by decide
+theorem ssub_at_3a : fetchRel scalar29SubCode 0x3A = some (.aluImm .add (19 : Fin 32) (19 : Fin 32) 0xFFFFFA70, 4) := by decide
 theorem ssub_at_3e : fetchRel scalar29SubCode 0x3E = some (.branch .beq (22 : Fin 32) x0 0x46, 4) := by decide
 theorem ssub_at_42 : fetchRel scalar29SubCode 0x42 = some (.aluImm .add (23 : Fin 32) (8 : Fin 32) 0x1, 4) := by decide
 theorem ssub_at_46 : fetchRel scalar29SubCode 0x46 = some (.alu .add a0 x0 (21 : Fin 32), 2) := by decide
@@ -102,7 +102,7 @@ theorem ssub_at_94 : fetchRel scalar29SubCode 0x94 = some (.aluImm .and a0 a0 0x
 theorem ssub_at_98 : fetchRel scalar29SubCode 0x98 = some (.alu .sub (22 : Fin 32) x0 a0, 4) := by decide
 theorem ssub_at_9c : fetchRel scalar29SubCode 0x9C = some (.aluImm .add (21 : Fin 32) x0 0x9, 2) := by decide
 theorem ssub_at_9e : fetchRel scalar29SubCode 0x9E = some (.lui (19 : Fin 32) 0x3FCC5000, 4) := by decide
-theorem ssub_at_a2 : fetchRel scalar29SubCode 0xA2 = some (.aluImm .add (19 : Fin 32) (19 : Fin 32) 0xFFFFFA08, 4) := by decide
+theorem ssub_at_a2 : fetchRel scalar29SubCode 0xA2 = some (.aluImm .add (19 : Fin 32) (19 : Fin 32) 0xFFFFFA70, 4) := by decide
 theorem ssub_at_a6 : fetchRel scalar29SubCode 0xA6 = some (.branch .beq (21 : Fin 32) x0 0x48, 4) := by decide
 theorem ssub_at_aa : fetchRel scalar29SubCode 0xAA = some (.aluImm .add (23 : Fin 32) (9 : Fin 32) 0x1, 4) := by decide
 theorem ssub_at_ae : fetchRel scalar29SubCode 0xAE = some (.alu .add a0 x0 (19 : Fin 32), 2) := by decide
@@ -817,7 +817,7 @@ def ssPro : List BInstr :=
 /-- From 0x30 to 0x3E: the first loop's index, borrow, count, and `&L`. -/
 def ssM1 : List BInstr :=
   [.aluImm .add (8 : Fin 32) x0 0x0, .aluImm .add (24 : Fin 32) x0 0x0, .aluImm .add (22 : Fin 32) x0 0x9,
-   .lui (19 : Fin 32) 0x3FCC5000, .aluImm .add (19 : Fin 32) (19 : Fin 32) 0xFFFFFA08]
+   .lui (19 : Fin 32) 0x3FCC5000, .aluImm .add (19 : Fin 32) (19 : Fin 32) 0xFFFFFA70]
 
 section
 set_option maxRecDepth 20000
@@ -950,7 +950,7 @@ def ssS : List BInstr := [.aluImm .srl a0 (24 : Fin 32) 0x1F]
 def ssM2 : List BInstr :=
   [.aluImm .add (9 : Fin 32) x0 0x0, .aluImm .add (8 : Fin 32) x0 0x0, .aluImm .and a0 a0 0xFF,
    .alu .sub (22 : Fin 32) x0 a0, .aluImm .add (21 : Fin 32) x0 0x9, .lui (19 : Fin 32) 0x3FCC5000,
-   .aluImm .add (19 : Fin 32) (19 : Fin 32) 0xFFFFFA08]
+   .aluImm .add (19 : Fin 32) (19 : Fin 32) 0xFFFFFA70]
 /-- From 0xEE to 0xF6: `memcpy(out, difference, 36)`'s arguments. -/
 def ssT : List BInstr := [.aluImm .add a1 sp 0x4, .aluImm .add a2 x0 0x24, .alu .add a0 x0 (18 : Fin 32)]
 

@@ -1023,7 +1023,7 @@ theorem gf_sq_post {M : Word → BitVec 8} {S : Word} {n : Machine} (C : GdCode 
 def gfQ1 : List BInstr := [.aluImm .add a0 sp 0x150, .aluImm .add a1 sp 0x65C, .aluImm .add a2 x0 0x20]
 def gfQ2 : List BInstr :=
   [.lw (25 : Fin 32) sp 0x18, .lw (26 : Fin 32) sp 0x14, .lw (27 : Fin 32) sp 0x10, .aluImm .add (20 : Fin 32) sp 0x170,
-   .lui a1 0x3FCC5000, .aluImm .add a1 a1 0xFFFFFB38, .aluImm .add a2 x0 0x6C, .alu .add a0 x0 (20 : Fin 32)]
+   .lui a1 0x3FCC5000, .aluImm .add a1 a1 0xFFFFFBA0, .aluImm .add a2 x0 0x6C, .alu .add a0 x0 (20 : Fin 32)]
 def gfQ3 : List BInstr :=
   [.lw (18 : Fin 32) sp 0x1D0, .aluImm .add a0 sp 0x1DC, .aluImm .add a2 x0 0x20, .aluImm .add a1 x0 0x0]
 def gfQ4 : List BInstr :=

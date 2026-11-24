@@ -55,7 +55,7 @@ theorem eq12_iff {M : Word → BitVec 8} {p q : Word} :
 def dqG1 : List BInstr := [.aluImm .add a0 sp 0x1D0, .aluImm .add a1 sp 0x7FF, .aluImm .add a1 a1 0x15D, .aluImm .add a2 x0 0x30]
 def dqG2 : List BInstr := [.lw (19 : Fin 32) sp 0x18, .lw (20 : Fin 32) sp 0x14, .lw (21 : Fin 32) sp 0x10]
 def dqG3 : List BInstr :=
-  [.aluImm .add (8 : Fin 32) sp 0x200, .lui (9 : Fin 32) 0x3FCC5000, .aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFFC8C,
+  [.aluImm .add (8 : Fin 32) sp 0x200, .lui (9 : Fin 32) 0x3FCC5000, .aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFFCF4,
    .aluImm .add a2 x0 0x9C, .alu .add a0 x0 (8 : Fin 32), .alu .add a1 x0 (9 : Fin 32)]
 def dqG4 : List BInstr :=
   [.lw a0 sp 0x290, .alu .sub a3 x0 a0, .aluImm .add a0 sp 0x62C, .aluImm .add a1 sp 0x1D0, .alu .add a2 x0 (8 : Fin 32)]

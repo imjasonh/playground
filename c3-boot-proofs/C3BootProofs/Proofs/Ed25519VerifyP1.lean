@@ -35,7 +35,7 @@ theorem EvCtx.sig32 (C : EvCtx M0 F pk sig msg len) : Sep (sig + BitVec.ofNat 32
 /-- The moves at offsets 0x40 to 0x56. -/
 def evB40 : List BInstr :=
   [.alu .add (8 : Fin 32) x0 a3, .alu .add (18 : Fin 32) x0 a2, .alu .add (21 : Fin 32) x0 a1,
-   .alu .add (9 : Fin 32) x0 a0, .aluImm .add (19 : Fin 32) a3 0x20, .lui a1 0x3FCC4000, .aluImm .add a1 a1 0x308,
+   .alu .add (9 : Fin 32) x0 a0, .aluImm .add (19 : Fin 32) a3 0x20, .lui a1 0x3FCC4000, .aluImm .add a1 a1 0x178,
    .alu .add a0 x0 (19 : Fin 32)]
 
 theorem evB40_end : blockEnd ed25519VerifyCode 0x40 evB40 = some 0x56 :=

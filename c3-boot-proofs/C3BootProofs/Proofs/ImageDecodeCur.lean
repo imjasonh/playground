@@ -31,20 +31,20 @@ theorem ipc_at_3c : fetchRel imageParseCode 0x3C = some (.store .sw sp x0 0x20, 
 theorem ipc_at_3e : fetchRel imageParseCode 0x3E = some (.lui a1 0x4D493000, 4) := by decide
 theorem ipc_at_42 : fetchRel imageParseCode 0x42 = some (.aluImm .add a1 a1 0x343, 4) := by decide
 theorem ipc_at_46 : fetchRel imageParseCode 0x46 = some (.aluImm .add a0 sp 0x18, 2) := by decide
-theorem ipc_at_48 : fetchRel imageParseCode 0x48 = some (.auipc ra 0x0, 4) := by decide
-theorem ipc_at_4c : fetchRel imageParseCode 0x4C = some (.jalr ra ra 0xFFFFFCE6, 4) := by decide
+theorem ipc_at_48 : fetchRel imageParseCode 0x48 = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem ipc_at_4c : fetchRel imageParseCode 0x4C = some (.jalr ra ra 0x540, 4) := by decide
 theorem ipc_at_50 : fetchRel imageParseCode 0x50 = some (.aluImm .and a1 a0 0xFF, 4) := by decide
 theorem ipc_at_54 : fetchRel imageParseCode 0x54 = some (.aluImm .add a1 a1 0xFFFFFF01, 4) := by decide
 theorem ipc_at_58 : fetchRel imageParseCode 0x58 = some (.branch .bne a1 x0 0x5E, 2) := by decide
 theorem ipc_at_5a : fetchRel imageParseCode 0x5A = some (.aluImm .add a0 sp 0x18, 2) := by decide
 theorem ipc_at_5c : fetchRel imageParseCode 0x5C = some (.auipc ra 0x0, 4) := by decide
-theorem ipc_at_60 : fetchRel imageParseCode 0x60 = some (.jalr ra ra 0xFFFFFD24, 4) := by decide
+theorem ipc_at_60 : fetchRel imageParseCode 0x60 = some (.jalr ra ra 0x3D8, 4) := by decide
 theorem ipc_at_64 : fetchRel imageParseCode 0x64 = some (.aluImm .and a1 a0 0xFF, 4) := by decide
 theorem ipc_at_68 : fetchRel imageParseCode 0x68 = some (.aluImm .add a1 a1 0xFFFFFF01, 4) := by decide
 theorem ipc_at_6c : fetchRel imageParseCode 0x6C = some (.branch .bne a1 x0 0x4A, 2) := by decide
 theorem ipc_at_6e : fetchRel imageParseCode 0x6E = some (.aluImm .add a0 sp 0x18, 2) := by decide
-theorem ipc_at_70 : fetchRel imageParseCode 0x70 = some (.auipc ra 0x0, 4) := by decide
-theorem ipc_at_74 : fetchRel imageParseCode 0x74 = some (.jalr ra ra 0xFFFFFE36, 4) := by decide
+theorem ipc_at_70 : fetchRel imageParseCode 0x70 = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem ipc_at_74 : fetchRel imageParseCode 0x74 = some (.jalr ra ra 0x418, 4) := by decide
 theorem ipc_at_78 : fetchRel imageParseCode 0x78 = some (.aluImm .and a1 a0 0x1, 4) := by decide
 theorem ipc_at_7c : fetchRel imageParseCode 0x7C = some (.branch .beq a1 x0 0x6, 2) := by decide
 theorem ipc_at_7e : fetchRel imageParseCode 0x7E = some (.aluImm .srl a0 a0 0x8, 2) := by decide
@@ -54,7 +54,7 @@ theorem ipc_at_84 : fetchRel imageParseCode 0x84 = some (.aluImm .add a1 x0 0x5,
 theorem ipc_at_86 : fetchRel imageParseCode 0x86 = some (.branch .bne a0 a1 0x20, 4) := by decide
 theorem ipc_at_8a : fetchRel imageParseCode 0x8A = some (.aluImm .add a0 sp 0x18, 2) := by decide
 theorem ipc_at_8c : fetchRel imageParseCode 0x8C = some (.auipc ra 0x0, 4) := by decide
-theorem ipc_at_90 : fetchRel imageParseCode 0x90 = some (.jalr ra ra 0xFFFFFD1E, 4) := by decide
+theorem ipc_at_90 : fetchRel imageParseCode 0x90 = some (.jalr ra ra 0x3D2, 4) := by decide
 theorem ipc_at_94 : fetchRel imageParseCode 0x94 = some (.aluImm .and a0 a0 0x1, 2) := by decide
 theorem ipc_at_96 : fetchRel imageParseCode 0x96 = some (.alu .add (18 : Fin 32) x0 a1, 2) := by decide
 theorem ipc_at_98 : fetchRel imageParseCode 0x98 = some (.branch .beq a0 x0 0x12, 2) := by decide
@@ -89,7 +89,7 @@ theorem ipc_at_f2 : fetchRel imageParseCode 0xF2 = some (.aluImm .add sp sp 0x16
 theorem ipc_at_f4 : fetchRel imageParseCode 0xF4 = some (.jalr x0 ra 0x0, 2) := by decide
 theorem ipc_at_f6 : fetchRel imageParseCode 0xF6 = some (.aluImm .add a0 sp 0x18, 2) := by decide
 theorem ipc_at_f8 : fetchRel imageParseCode 0xF8 = some (.auipc ra 0x0, 4) := by decide
-theorem ipc_at_fc : fetchRel imageParseCode 0xFC = some (.jalr ra ra 0xFFFFFCB2, 4) := by decide
+theorem ipc_at_fc : fetchRel imageParseCode 0xFC = some (.jalr ra ra 0x366, 4) := by decide
 theorem ipc_at_100 : fetchRel imageParseCode 0x100 = some (.aluImm .and a0 a0 0x1, 2) := by decide
 theorem ipc_at_102 : fetchRel imageParseCode 0x102 = some (.alu .add (19 : Fin 32) x0 a1, 2) := by decide
 theorem ipc_at_104 : fetchRel imageParseCode 0x104 = some (.branch .beq a0 x0 0xA, 2) := by decide
@@ -103,21 +103,21 @@ theorem ipc_at_11a : fetchRel imageParseCode 0x11A = some (.branch .bgeu a1 a0 0
 theorem ipc_at_11e : fetchRel imageParseCode 0x11E = some (.aluImm .add a0 sp 0x18, 2) := by decide
 theorem ipc_at_120 : fetchRel imageParseCode 0x120 = some (.aluImm .add a1 x0 0x2, 2) := by decide
 theorem ipc_at_122 : fetchRel imageParseCode 0x122 = some (.auipc ra 0x0, 4) := by decide
-theorem ipc_at_126 : fetchRel imageParseCode 0x126 = some (.jalr ra ra 0xFFFFFCC2, 4) := by decide
+theorem ipc_at_126 : fetchRel imageParseCode 0x126 = some (.jalr ra ra 0x376, 4) := by decide
 theorem ipc_at_12a : fetchRel imageParseCode 0x12A = some (.aluImm .and a1 a0 0xFF, 4) := by decide
 theorem ipc_at_12e : fetchRel imageParseCode 0x12E = some (.aluImm .add a1 a1 0xFFFFFF01, 4) := by decide
 theorem ipc_at_132 : fetchRel imageParseCode 0x132 = some (.branch .bne a1 x0 0xFFFFFF84, 2) := by decide
 theorem ipc_at_134 : fetchRel imageParseCode 0x134 = some (.aluImm .add a0 sp 0x24, 2) := by decide
 theorem ipc_at_136 : fetchRel imageParseCode 0x136 = some (.aluImm .add a1 sp 0x18, 2) := by decide
-theorem ipc_at_138 : fetchRel imageParseCode 0x138 = some (.auipc ra 0x0, 4) := by decide
-theorem ipc_at_13c : fetchRel imageParseCode 0x13C = some (.jalr ra ra 0x2FC, 4) := by decide
+theorem ipc_at_138 : fetchRel imageParseCode 0x138 = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem ipc_at_13c : fetchRel imageParseCode 0x13C = some (.jalr ra ra 0x3BA, 4) := by decide
 theorem ipc_at_140 : fetchRel imageParseCode 0x140 = some (.load .lbu a0 sp 0x24, 4) := by decide
 theorem ipc_at_144 : fetchRel imageParseCode 0x144 = some (.branch .bne a0 x0 0x16, 2) := by decide
 theorem ipc_at_146 : fetchRel imageParseCode 0x146 = some (.load .lw (20 : Fin 32) sp 0x28, 2) := by decide
 theorem ipc_at_148 : fetchRel imageParseCode 0x148 = some (.aluImm .add a0 sp 0x24, 2) := by decide
 theorem ipc_at_14a : fetchRel imageParseCode 0x14A = some (.aluImm .add a1 sp 0x18, 2) := by decide
-theorem ipc_at_14c : fetchRel imageParseCode 0x14C = some (.auipc ra 0x0, 4) := by decide
-theorem ipc_at_150 : fetchRel imageParseCode 0x150 = some (.jalr ra ra 0x2E8, 4) := by decide
+theorem ipc_at_14c : fetchRel imageParseCode 0x14C = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem ipc_at_150 : fetchRel imageParseCode 0x150 = some (.jalr ra ra 0x3A6, 4) := by decide
 theorem ipc_at_154 : fetchRel imageParseCode 0x154 = some (.load .lbu a0 sp 0x24, 4) := by decide
 theorem ipc_at_158 : fetchRel imageParseCode 0x158 = some (.branch .beq a0 x0 0x8, 2) := by decide
 theorem ipc_at_15a : fetchRel imageParseCode 0x15A = some (.load .lbu a0 sp 0x25, 4) := by decide
@@ -153,7 +153,7 @@ theorem ipc_at_1a4 : fetchRel imageParseCode 0x1A4 = some (.branch .beq a0 x0 0x
 theorem ipc_at_1a8 : fetchRel imageParseCode 0x1A8 = some (.branch .beq (24 : Fin 32) x0 0x154, 4) := by decide
 theorem ipc_at_1ac : fetchRel imageParseCode 0x1AC = some (.aluImm .add a0 sp 0x18, 2) := by decide
 theorem ipc_at_1ae : fetchRel imageParseCode 0x1AE = some (.auipc ra 0x0, 4) := by decide
-theorem ipc_at_1b2 : fetchRel imageParseCode 0x1B2 = some (.jalr ra ra 0xFFFFFBFC, 4) := by decide
+theorem ipc_at_1b2 : fetchRel imageParseCode 0x1B2 = some (.jalr ra ra 0x2B0, 4) := by decide
 theorem ipc_at_1b6 : fetchRel imageParseCode 0x1B6 = some (.aluImm .and a0 a0 0x1, 2) := by decide
 theorem ipc_at_1b8 : fetchRel imageParseCode 0x1B8 = some (.branch .bne a0 x0 0x6E, 2) := by decide
 theorem ipc_at_1ba : fetchRel imageParseCode 0x1BA = some (.aluImm .add a1 a1 0xFFFFFFFF, 2) := by decide
@@ -165,30 +165,30 @@ theorem ipc_at_1c8 : fetchRel imageParseCode 0x1C8 = some (.jal x0 0x5E, 2) := b
 theorem ipc_at_1ca : fetchRel imageParseCode 0x1CA = some (.aluImm .add a0 sp 0x18, 2) := by decide
 theorem ipc_at_1cc : fetchRel imageParseCode 0x1CC = some (.aluImm .add a1 x0 0x3, 2) := by decide
 theorem ipc_at_1ce : fetchRel imageParseCode 0x1CE = some (.auipc ra 0x0, 4) := by decide
-theorem ipc_at_1d2 : fetchRel imageParseCode 0x1D2 = some (.jalr ra ra 0xFFFFFC16, 4) := by decide
+theorem ipc_at_1d2 : fetchRel imageParseCode 0x1D2 = some (.jalr ra ra 0x2CA, 4) := by decide
 theorem ipc_at_1d6 : fetchRel imageParseCode 0x1D6 = some (.alu .add a1 x0 a0, 2) := by decide
 theorem ipc_at_1d8 : fetchRel imageParseCode 0x1D8 = some (.aluImm .and a0 a0 0xFF, 4) := by decide
 theorem ipc_at_1dc : fetchRel imageParseCode 0x1DC = some (.aluImm .add a0 a0 0xFFFFFF01, 4) := by decide
 theorem ipc_at_1e0 : fetchRel imageParseCode 0x1E0 = some (.branch .bne a0 x0 0x46, 2) := by decide
 theorem ipc_at_1e2 : fetchRel imageParseCode 0x1E2 = some (.aluImm .add a0 sp 0x124, 2) := by decide
 theorem ipc_at_1e4 : fetchRel imageParseCode 0x1E4 = some (.aluImm .add a1 sp 0x18, 2) := by decide
-theorem ipc_at_1e6 : fetchRel imageParseCode 0x1E6 = some (.auipc ra 0x0, 4) := by decide
-theorem ipc_at_1ea : fetchRel imageParseCode 0x1EA = some (.jalr ra ra 0x24E, 4) := by decide
+theorem ipc_at_1e6 : fetchRel imageParseCode 0x1E6 = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem ipc_at_1ea : fetchRel imageParseCode 0x1EA = some (.jalr ra ra 0x30C, 4) := by decide
 theorem ipc_at_1ee : fetchRel imageParseCode 0x1EE = some (.load .lbu a0 sp 0x124, 4) := by decide
 theorem ipc_at_1f2 : fetchRel imageParseCode 0x1F2 = some (.branch .bne a0 x0 0x30, 2) := by decide
 theorem ipc_at_1f4 : fetchRel imageParseCode 0x1F4 = some (.load .lw (23 : Fin 32) sp 0x128, 4) := by decide
 theorem ipc_at_1f8 : fetchRel imageParseCode 0x1F8 = some (.aluImm .add a0 sp 0x124, 2) := by decide
 theorem ipc_at_1fa : fetchRel imageParseCode 0x1FA = some (.aluImm .add a1 sp 0x18, 2) := by decide
-theorem ipc_at_1fc : fetchRel imageParseCode 0x1FC = some (.auipc ra 0x0, 4) := by decide
-theorem ipc_at_200 : fetchRel imageParseCode 0x200 = some (.jalr ra ra 0x238, 4) := by decide
+theorem ipc_at_1fc : fetchRel imageParseCode 0x1FC = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem ipc_at_200 : fetchRel imageParseCode 0x200 = some (.jalr ra ra 0x2F6, 4) := by decide
 theorem ipc_at_204 : fetchRel imageParseCode 0x204 = some (.load .lbu a0 sp 0x124, 4) := by decide
 theorem ipc_at_208 : fetchRel imageParseCode 0x208 = some (.branch .bne a0 x0 0x1A, 2) := by decide
 theorem ipc_at_20a : fetchRel imageParseCode 0x20A = some (.load .lw a0 sp 0x128, 4) := by decide
 theorem ipc_at_20e : fetchRel imageParseCode 0x20E = some (.store .sw sp a0 0x4, 2) := by decide
 theorem ipc_at_210 : fetchRel imageParseCode 0x210 = some (.aluImm .add a0 sp 0x124, 2) := by decide
 theorem ipc_at_212 : fetchRel imageParseCode 0x212 = some (.aluImm .add a1 sp 0x18, 2) := by decide
-theorem ipc_at_214 : fetchRel imageParseCode 0x214 = some (.auipc ra 0x0, 4) := by decide
-theorem ipc_at_218 : fetchRel imageParseCode 0x218 = some (.jalr ra ra 0x220, 4) := by decide
+theorem ipc_at_214 : fetchRel imageParseCode 0x214 = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem ipc_at_218 : fetchRel imageParseCode 0x218 = some (.jalr ra ra 0x2DE, 4) := by decide
 theorem ipc_at_21c : fetchRel imageParseCode 0x21C = some (.load .lbu a0 sp 0x124, 4) := by decide
 theorem ipc_at_220 : fetchRel imageParseCode 0x220 = some (.branch .beq a0 x0 0xBE, 2) := by decide
 theorem ipc_at_222 : fetchRel imageParseCode 0x222 = some (.load .lbu a1 sp 0x125, 4) := by decide
@@ -205,7 +205,7 @@ theorem ipc_at_246 : fetchRel imageParseCode 0x246 = some (.branch .bltu (9 : Fi
 theorem ipc_at_24a : fetchRel imageParseCode 0x24A = some (.aluImm .sll a4 (26 : Fin 32) 0x18, 4) := by decide
 theorem ipc_at_24e : fetchRel imageParseCode 0x24E = some (.aluImm .srl a4 a4 0x16, 2) := by decide
 theorem ipc_at_250 : fetchRel imageParseCode 0x250 = some (.lui a3 0x3FCC5000, 4) := by decide
-theorem ipc_at_254 : fetchRel imageParseCode 0x254 = some (.aluImm .add a3 a3 0x240, 4) := by decide
+theorem ipc_at_254 : fetchRel imageParseCode 0x254 = some (.aluImm .add a3 a3 0xFFFFF980, 4) := by decide
 theorem ipc_at_258 : fetchRel imageParseCode 0x258 = some (.alu .add a3 a3 a4, 2) := by decide
 theorem ipc_at_25a : fetchRel imageParseCode 0x25A = some (.load .lw a0 a3 0x0, 2) := by decide
 theorem ipc_at_25c : fetchRel imageParseCode 0x25C = some (.load .lw a3 sp 0x10, 2) := by decide
@@ -216,7 +216,7 @@ theorem ipc_at_266 : fetchRel imageParseCode 0x266 = some (.alu .add a5 a3 (19 :
 theorem ipc_at_26a : fetchRel imageParseCode 0x26A = some (.branch .bltu a0 a5 0x1C2, 4) := by decide
 theorem ipc_at_26e : fetchRel imageParseCode 0x26E = some (.branch .bltu a5 a3 0x1BE, 4) := by decide
 theorem ipc_at_272 : fetchRel imageParseCode 0x272 = some (.lui a0 0x3FCC5000, 4) := by decide
-theorem ipc_at_276 : fetchRel imageParseCode 0x276 = some (.aluImm .add a0 a0 0x250, 4) := by decide
+theorem ipc_at_276 : fetchRel imageParseCode 0x276 = some (.aluImm .add a0 a0 0xFFFFF990, 4) := by decide
 theorem ipc_at_27a : fetchRel imageParseCode 0x27A = some (.alu .add a4 a4 a0, 2) := by decide
 theorem ipc_at_27c : fetchRel imageParseCode 0x27C = some (.load .lw a0 a4 0x0, 2) := by decide
 theorem ipc_at_27e : fetchRel imageParseCode 0x27E = some (.branch .bltu a3 a0 0x1AE, 4) := by decide
@@ -288,7 +288,7 @@ theorem ipc_at_336 : fetchRel imageParseCode 0x336 = some (.load .lw a1 (21 : Fi
 theorem ipc_at_33a : fetchRel imageParseCode 0x33A = some (.load .lbu a2 (21 : Fin 32) 0xC, 4) := by decide
 theorem ipc_at_33e : fetchRel imageParseCode 0x33E = some (.aluImm .add a0 sp 0x124, 2) := by decide
 theorem ipc_at_340 : fetchRel imageParseCode 0x340 = some (.auipc ra 0x0, 4) := by decide
-theorem ipc_at_344 : fetchRel imageParseCode 0x344 = some (.jalr ra ra 0x144, 4) := by decide
+theorem ipc_at_344 : fetchRel imageParseCode 0x344 = some (.jalr ra ra 0x190, 4) := by decide
 theorem ipc_at_348 : fetchRel imageParseCode 0x348 = some (.load .lbu (23 : Fin 32) sp 0x124, 4) := by decide
 theorem ipc_at_34c : fetchRel imageParseCode 0x34C = some (.branch .beq (23 : Fin 32) (22 : Fin 32) 0xDC, 4) := by decide
 theorem ipc_at_350 : fetchRel imageParseCode 0x350 = some (.load .lw (25 : Fin 32) sp 0x128, 4) := by decide
@@ -305,7 +305,7 @@ theorem ipc_at_36e : fetchRel imageParseCode 0x36E = some (.load .lw a1 (26 : Fi
 theorem ipc_at_372 : fetchRel imageParseCode 0x372 = some (.load .lbu a2 (26 : Fin 32) 0xC, 4) := by decide
 theorem ipc_at_376 : fetchRel imageParseCode 0x376 = some (.aluImm .add a0 sp 0x124, 2) := by decide
 theorem ipc_at_378 : fetchRel imageParseCode 0x378 = some (.auipc ra 0x0, 4) := by decide
-theorem ipc_at_37c : fetchRel imageParseCode 0x37C = some (.jalr ra ra 0x10C, 4) := by decide
+theorem ipc_at_37c : fetchRel imageParseCode 0x37C = some (.jalr ra ra 0x158, 4) := by decide
 theorem ipc_at_380 : fetchRel imageParseCode 0x380 = some (.load .lbu a0 sp 0x124, 4) := by decide
 theorem ipc_at_384 : fetchRel imageParseCode 0x384 = some (.branch .beq a0 (22 : Fin 32) 0xA4, 4) := by decide
 theorem ipc_at_388 : fetchRel imageParseCode 0x388 = some (.aluImm .add a1 x0 0x0, 2) := by decide
@@ -353,8 +353,8 @@ theorem ipc_at_400 : fetchRel imageParseCode 0x400 = some (.branch .bgeu a2 a1 0
 theorem ipc_at_404 : fetchRel imageParseCode 0x404 = some (.aluImm .add a1 sp 0x24, 2) := by decide
 theorem ipc_at_406 : fetchRel imageParseCode 0x406 = some (.aluImm .add a2 x0 0x100, 4) := by decide
 theorem ipc_at_40a : fetchRel imageParseCode 0x40A = some (.alu .add a0 x0 (8 : Fin 32), 2) := by decide
-theorem ipc_at_40c : fetchRel imageParseCode 0x40C = some (.auipc ra 0xB000, 4) := by decide
-theorem ipc_at_410 : fetchRel imageParseCode 0x410 = some (.jalr ra ra 0x1DA, 4) := by decide
+theorem ipc_at_40c : fetchRel imageParseCode 0x40C = some (.auipc ra 0x9000, 4) := by decide
+theorem ipc_at_410 : fetchRel imageParseCode 0x410 = some (.jalr ra ra 0x76A, 4) := by decide
 theorem ipc_at_414 : fetchRel imageParseCode 0x414 = some (.load .lw a0 sp 0x8, 2) := by decide
 theorem ipc_at_416 : fetchRel imageParseCode 0x416 = some (.aluImm .add a1 (8 : Fin 32) 0x100, 4) := by decide
 theorem ipc_at_41a : fetchRel imageParseCode 0x41A = some (.store .sw a1 a0 0x0, 2) := by decide

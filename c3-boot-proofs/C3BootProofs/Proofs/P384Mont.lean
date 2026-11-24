@@ -18,12 +18,12 @@ open C3.Image
 section
 set_option maxRecDepth 20000
 theorem p3m_at_0 : fetchRel p384MulCode 0x0 = some (.lui a3 0x3FCC5000, 4) := by decide
-theorem p3m_at_4 : fetchRel p384MulCode 0x4 = some (.aluImm .add a3 a3 0xFFFFFC8C, 4) := by decide
+theorem p3m_at_4 : fetchRel p384MulCode 0x4 = some (.aluImm .add a3 a3 0xFFFFFCF4, 4) := by decide
 theorem p3m_at_8 : fetchRel p384MulCode 0x8 = some (.aluImm .add a4 x0 0x1, 2) := by decide
 theorem p3m_at_a : fetchRel p384MulCode 0xA = some (.auipc (6 : Fin 32) 0xFFFFF000, 4) := by decide
 theorem p3m_at_e : fetchRel p384MulCode 0xE = some (.jalr x0 (6 : Fin 32) 0x454, 4) := by decide
 theorem p3q_at_0 : fetchRel p384SqrCode 0x0 = some (.lui a2 0x3FCC5000, 4) := by decide
-theorem p3q_at_4 : fetchRel p384SqrCode 0x4 = some (.aluImm .add a2 a2 0xFFFFFC8C, 4) := by decide
+theorem p3q_at_4 : fetchRel p384SqrCode 0x4 = some (.aluImm .add a2 a2 0xFFFFFCF4, 4) := by decide
 theorem p3q_at_8 : fetchRel p384SqrCode 0x8 = some (.aluImm .add a3 x0 0x1, 2) := by decide
 theorem p3q_at_a : fetchRel p384SqrCode 0xA = some (.auipc (6 : Fin 32) 0x0, 4) := by decide
 theorem p3q_at_e : fetchRel p384SqrCode 0xE = some (.jalr x0 (6 : Fin 32) 0xFFFFF95E, 4) := by decide

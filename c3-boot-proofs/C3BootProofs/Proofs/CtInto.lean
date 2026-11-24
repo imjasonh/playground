@@ -25,7 +25,7 @@ theorem cia_at_6 : fetchRel ctIntoAffine384Code 0x6 = some (.store .sw sp (9 : F
 theorem cia_at_8 : fetchRel ctIntoAffine384Code 0x8 = some (.load .lbu (9 : Fin 32) a1 0x64, 4) := by decide
 theorem cia_at_c : fetchRel ctIntoAffine384Code 0xC = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
 theorem cia_at_e : fetchRel ctIntoAffine384Code 0xE = some (.lui a2 0x3FCC4000, 4) := by decide
-theorem cia_at_12 : fetchRel ctIntoAffine384Code 0x12 = some (.aluImm .add a2 a2 0x3C8, 4) := by decide
+theorem cia_at_12 : fetchRel ctIntoAffine384Code 0x12 = some (.aluImm .add a2 a2 0x238, 4) := by decide
 theorem cia_at_16 : fetchRel ctIntoAffine384Code 0x16 = some (.auipc ra 0xFFFFE000, 4) := by decide
 theorem cia_at_1a : fetchRel ctIntoAffine384Code 0x1A = some (.jalr ra ra 0xFFFFFEDC, 4) := by decide
 theorem cia_at_1e : fetchRel ctIntoAffine384Code 0x1E = some (.store .sb (8 : Fin 32) (9 : Fin 32) 0x64, 4) := by decide
@@ -41,7 +41,7 @@ theorem cib_at_6 : fetchRel ctIntoAffine256Code 0x6 = some (.store .sw sp (9 : F
 theorem cib_at_8 : fetchRel ctIntoAffine256Code 0x8 = some (.load .lbu (9 : Fin 32) a1 0x44, 4) := by decide
 theorem cib_at_c : fetchRel ctIntoAffine256Code 0xC = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
 theorem cib_at_e : fetchRel ctIntoAffine256Code 0xE = some (.lui a2 0x3FCC4000, 4) := by decide
-theorem cib_at_12 : fetchRel ctIntoAffine256Code 0x12 = some (.aluImm .add a2 a2 0x42C, 4) := by decide
+theorem cib_at_12 : fetchRel ctIntoAffine256Code 0x12 = some (.aluImm .add a2 a2 0x29C, 4) := by decide
 theorem cib_at_16 : fetchRel ctIntoAffine256Code 0x16 = some (.auipc ra 0xFFFFD000, 4) := by decide
 theorem cib_at_1a : fetchRel ctIntoAffine256Code 0x1A = some (.jalr ra ra 0x1EA, 4) := by decide
 theorem cib_at_1e : fetchRel ctIntoAffine256Code 0x1E = some (.store .sb (8 : Fin 32) (9 : Fin 32) 0x44, 4) := by decide
@@ -65,7 +65,7 @@ theorem CodeIn.hi {M M' : Word → BitVec 8} {b : Word} {code : List Nat} (hc : 
 
 def ciaPro : List BInstr :=
   [.aluImm .add sp sp 0xFFFFFFF0, .sw sp ra 0xC, .sw sp (8 : Fin 32) 0x8, .sw sp (9 : Fin 32) 0x4,
-    .lbu (9 : Fin 32) a1 0x64, .alu .add (8 : Fin 32) x0 a0, .lui a2 0x3FCC4000, .aluImm .add a2 a2 0x3C8]
+    .lbu (9 : Fin 32) a1 0x64, .alu .add (8 : Fin 32) x0 a0, .lui a2 0x3FCC4000, .aluImm .add a2 a2 0x238]
 def ciaEpi : List BInstr :=
   [.lw ra sp 0xC, .lw (8 : Fin 32) sp 0x8, .lw (9 : Fin 32) sp 0x4, .aluImm .add sp sp 0x10]
 
@@ -300,7 +300,7 @@ theorem ctIntoAffine384_correct (m : Machine) {out s sp0 retAddr : Word}
 
 def cibPro : List BInstr :=
   [.aluImm .add sp sp 0xFFFFFFF0, .sw sp ra 0xC, .sw sp (8 : Fin 32) 0x8, .sw sp (9 : Fin 32) 0x4,
-    .lbu (9 : Fin 32) a1 0x44, .alu .add (8 : Fin 32) x0 a0, .lui a2 0x3FCC4000, .aluImm .add a2 a2 0x42C]
+    .lbu (9 : Fin 32) a1 0x44, .alu .add (8 : Fin 32) x0 a0, .lui a2 0x3FCC4000, .aluImm .add a2 a2 0x29C]
 def cibEpi : List BInstr :=
   [.lw ra sp 0xC, .lw (8 : Fin 32) sp 0x8, .lw (9 : Fin 32) sp 0x4, .aluImm .add sp sp 0x10]
 

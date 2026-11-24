@@ -115,8 +115,8 @@ theorem s5u_at_58 : fetchRel sha512UpdateCode 0x58 = some (.jalr ra ra 0xFFFFFD6
 theorem s5u_at_5c : fetchRel sha512UpdateCode 0x5C = some (.aluImm .add a2 x0 0x1, 2) := by decide
 theorem s5u_at_5e : fetchRel sha512UpdateCode 0x5E = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
 theorem s5u_at_60 : fetchRel sha512UpdateCode 0x60 = some (.alu .add a1 x0 (20 : Fin 32), 2) := by decide
-theorem s5u_at_62 : fetchRel sha512UpdateCode 0x62 = some (.auipc ra 0xFFFF6000, 4) := by decide
-theorem s5u_at_66 : fetchRel sha512UpdateCode 0x66 = some (.jalr ra ra 0x170, 4) := by decide
+theorem s5u_at_62 : fetchRel sha512UpdateCode 0x62 = some (.auipc ra 0xFFFF4000, 4) := by decide
+theorem s5u_at_66 : fetchRel sha512UpdateCode 0x66 = some (.jalr ra ra 0x5E2, 4) := by decide
 theorem s5u_at_6a : fetchRel sha512UpdateCode 0x6A = some (.store .sb (20 : Fin 32) x0 0x7F, 4) := by decide
 theorem s5u_at_6e : fetchRel sha512UpdateCode 0x6E = some (.alu .add a1 x0 (19 : Fin 32), 2) := by decide
 theorem s5u_at_70 : fetchRel sha512UpdateCode 0x70 = some (.lui a0 0x80000000, 4) := by decide
@@ -127,8 +127,8 @@ theorem s5u_at_7e : fetchRel sha512UpdateCode 0x7E = some (.aluImm .and (9 : Fin
 theorem s5u_at_82 : fetchRel sha512UpdateCode 0x82 = some (.alu .add (19 : Fin 32) a1 a0, 4) := by decide
 theorem s5u_at_86 : fetchRel sha512UpdateCode 0x86 = some (.branch .beq a2 x0 0xC, 2) := by decide
 theorem s5u_at_88 : fetchRel sha512UpdateCode 0x88 = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
-theorem s5u_at_8a : fetchRel sha512UpdateCode 0x8A = some (.auipc ra 0xFFFF6000, 4) := by decide
-theorem s5u_at_8e : fetchRel sha512UpdateCode 0x8E = some (.jalr ra ra 0x148, 4) := by decide
+theorem s5u_at_8a : fetchRel sha512UpdateCode 0x8A = some (.auipc ra 0xFFFF4000, 4) := by decide
+theorem s5u_at_8e : fetchRel sha512UpdateCode 0x8E = some (.jalr ra ra 0x5BA, 4) := by decide
 theorem s5u_at_92 : fetchRel sha512UpdateCode 0x92 = some (.alu .add a0 x0 (20 : Fin 32), 2) := by decide
 theorem s5u_at_94 : fetchRel sha512UpdateCode 0x94 = some (.alu .add a1 x0 (19 : Fin 32), 2) := by decide
 theorem s5u_at_96 : fetchRel sha512UpdateCode 0x96 = some (.alu .add a2 x0 (9 : Fin 32), 2) := by decide

@@ -49,8 +49,8 @@ theorem ds_at_4a : fetchRel derScalar48Code 0x4A = some (.aluImm .add a0 sp 0xC,
 theorem ds_at_4c : fetchRel derScalar48Code 0x4C = some (.aluImm .add a2 x0 0x30, 4) := by decide
 theorem ds_at_50 : fetchRel derScalar48Code 0x50 = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem ds_at_52 : fetchRel derScalar48Code 0x52 = some (.aluImm .add (20 : Fin 32) sp 0xC, 4) := by decide
-theorem ds_at_56 : fetchRel derScalar48Code 0x56 = some (.auipc ra 0xC000, 4) := by decide
-theorem ds_at_5a : fetchRel derScalar48Code 0x5A = some (.jalr ra ra 0x510, 4) := by decide
+theorem ds_at_56 : fetchRel derScalar48Code 0x56 = some (.auipc ra 0xD000, 4) := by decide
+theorem ds_at_5a : fetchRel derScalar48Code 0x5A = some (.jalr ra ra 0xFFFFFE82, 4) := by decide
 theorem ds_at_5e : fetchRel derScalar48Code 0x5E = some (.aluImm .add a0 sp 0x3C, 2) := by decide
 theorem ds_at_60 : fetchRel derScalar48Code 0x60 = some (.alu .add a1 (9 : Fin 32) (8 : Fin 32), 4) := by decide
 theorem ds_at_64 : fetchRel derScalar48Code 0x64 = some (.store .sw sp (20 : Fin 32) 0x3C, 2) := by decide
@@ -70,8 +70,8 @@ theorem ds_at_86 : fetchRel derScalar48Code 0x86 = some (.jal x0 0xFFFFFFEC, 2) 
 theorem ds_at_88 : fetchRel derScalar48Code 0x88 = some (.aluImm .add a0 (18 : Fin 32) 0x1, 4) := by decide
 theorem ds_at_8c : fetchRel derScalar48Code 0x8C = some (.aluImm .add a1 sp 0xC, 2) := by decide
 theorem ds_at_8e : fetchRel derScalar48Code 0x8E = some (.aluImm .add a2 x0 0x30, 4) := by decide
-theorem ds_at_92 : fetchRel derScalar48Code 0x92 = some (.auipc ra 0xC000, 4) := by decide
-theorem ds_at_96 : fetchRel derScalar48Code 0x96 = some (.jalr ra ra 0x53C, 4) := by decide
+theorem ds_at_92 : fetchRel derScalar48Code 0x92 = some (.auipc ra 0xD000, 4) := by decide
+theorem ds_at_96 : fetchRel derScalar48Code 0x96 = some (.jalr ra ra 0xFFFFFEAE, 4) := by decide
 theorem ds_at_9a : fetchRel derScalar48Code 0x9A = some (.store .sb (18 : Fin 32) x0 0x0, 4) := by decide
 theorem ds_at_9e : fetchRel derScalar48Code 0x9E = some (.jal x0 0xE, 2) := by decide
 theorem ds_at_a0 : fetchRel derScalar48Code 0xA0 = some (.aluImm .add a0 x0 0x5, 2) := by decide

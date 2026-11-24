@@ -17,7 +17,7 @@ section
 set_option maxRecDepth 20000
 theorem pn_at_0 : fetchRel p256FieldNegCode 0x0 = some (.alu .add a2 x0 a1, 2) := by decide
 theorem pn_at_2 : fetchRel p256FieldNegCode 0x2 = some (.lui a1 0x3FCC4000, 4) := by decide
-theorem pn_at_6 : fetchRel p256FieldNegCode 0x6 = some (.aluImm .add a1 a1 0x348, 4) := by decide
+theorem pn_at_6 : fetchRel p256FieldNegCode 0x6 = some (.aluImm .add a1 a1 0x1B8, 4) := by decide
 theorem pn_at_a : fetchRel p256FieldNegCode 0xA = some (.auipc (6 : Fin 32) 0x0, 4) := by decide
 theorem pn_at_e : fetchRel p256FieldNegCode 0xE = some (.jalr x0 (6 : Fin 32) 0x8, 4) := by decide
 end

@@ -56,7 +56,7 @@ registers and the frame into the working variables' registers, and the
 constants' and the schedule's addresses. -/
 def s5Pre : List BInstr :=
   [.aluImm .add (30 : Fin 32) sp 0xD8, .aluImm .add (29 : Fin 32) x0 0x50, .lui (25 : Fin 32) 0x3FCC5000,
-   .aluImm .add (25 : Fin 32) (25 : Fin 32) 0xFFFFFFC0, .sw sp (20 : Fin 32) 0x14,
+   .aluImm .add (25 : Fin 32) (25 : Fin 32) 0x28, .sw sp (20 : Fin 32) 0x14,
    .alu .add a2 x0 (20 : Fin 32), .lw a3 sp 0x4C, .sw sp (23 : Fin 32) 0x30, .sw sp (19 : Fin 32) 0x1C,
    .alu .add a0 x0 (19 : Fin 32), .lw ra sp 0x40, .lw a6 sp 0x38, .lw (17 : Fin 32) sp 0x48,
    .lw (21 : Fin 32) sp 0x3C, .lw (6 : Fin 32) sp 0x50, .lw (5 : Fin 32) sp 0x44, .sw sp (18 : Fin 32) 0x24,

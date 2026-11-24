@@ -59,8 +59,8 @@ theorem sb_at_8 : fetchRel shaUpdateBlocksCode 0x8 = some (.alu .sltu a3 a5 a3, 
 theorem sb_at_c : fetchRel shaUpdateBlocksCode 0xC = some (.alu .add a3 a3 a4, 2) := by decide
 theorem sb_at_e : fetchRel shaUpdateBlocksCode 0xE = some (.store .sw a0 a5 0x20, 2) := by decide
 theorem sb_at_10 : fetchRel shaUpdateBlocksCode 0x10 = some (.store .sw a0 a3 0x24, 2) := by decide
-theorem sb_at_12 : fetchRel shaUpdateBlocksCode 0x12 = some (.auipc (6 : Fin 32) 0xD000, 4) := by decide
-theorem sb_at_16 : fetchRel shaUpdateBlocksCode 0x16 = some (.jalr x0 (6 : Fin 32) 0x4AE, 4) := by decide
+theorem sb_at_12 : fetchRel shaUpdateBlocksCode 0x12 = some (.auipc (6 : Fin 32) 0xF000, 4) := by decide
+theorem sb_at_16 : fetchRel shaUpdateBlocksCode 0x16 = some (.jalr x0 (6 : Fin 32) 0x2BE, 4) := by decide
 
 end
 
@@ -233,8 +233,8 @@ theorem su_at_1a : fetchRel shaUpdateCode 0x1A = some (.alu .sub a2 a2 (8 : Fin 
 theorem su_at_1c : fetchRel shaUpdateCode 0x1C = some (.branch .bgeu (9 : Fin 32) a2 0x28, 4) := by decide
 theorem su_at_20 : fetchRel shaUpdateCode 0x20 = some (.alu .add a0 (20 : Fin 32) (8 : Fin 32), 4) := by decide
 theorem su_at_24 : fetchRel shaUpdateCode 0x24 = some (.alu .add a2 x0 (9 : Fin 32), 2) := by decide
-theorem su_at_26 : fetchRel shaUpdateCode 0x26 = some (.auipc ra 0xE000, 4) := by decide
-theorem su_at_2a : fetchRel shaUpdateCode 0x2A = some (.jalr ra ra 0xFFFFFD68, 4) := by decide
+theorem su_at_26 : fetchRel shaUpdateCode 0x26 = some (.auipc ra 0x10000, 4) := by decide
+theorem su_at_2a : fetchRel shaUpdateCode 0x2A = some (.jalr ra ra 0xFFFFFB78, 4) := by decide
 theorem su_at_2e : fetchRel shaUpdateCode 0x2E = some (.alu .add (8 : Fin 32) (8 : Fin 32) (9 : Fin 32), 2) := by decide
 theorem su_at_30 : fetchRel shaUpdateCode 0x30 = some (.store .sb (20 : Fin 32) (8 : Fin 32) 0x3F, 4) := by decide
 theorem su_at_34 : fetchRel shaUpdateCode 0x34 = some (.load .lw ra sp 0x1C, 2) := by decide
@@ -250,8 +250,8 @@ theorem su_at_48 : fetchRel shaUpdateCode 0x48 = some (.branch .beq (8 : Fin 32)
 theorem su_at_4a : fetchRel shaUpdateCode 0x4A = some (.alu .add (19 : Fin 32) a1 a2, 4) := by decide
 theorem su_at_4e : fetchRel shaUpdateCode 0x4E = some (.alu .sub (9 : Fin 32) (9 : Fin 32) a2, 2) := by decide
 theorem su_at_50 : fetchRel shaUpdateCode 0x50 = some (.alu .add a0 (20 : Fin 32) (8 : Fin 32), 4) := by decide
-theorem su_at_54 : fetchRel shaUpdateCode 0x54 = some (.auipc ra 0xE000, 4) := by decide
-theorem su_at_58 : fetchRel shaUpdateCode 0x58 = some (.jalr ra ra 0xFFFFFD3A, 4) := by decide
+theorem su_at_54 : fetchRel shaUpdateCode 0x54 = some (.auipc ra 0x10000, 4) := by decide
+theorem su_at_58 : fetchRel shaUpdateCode 0x58 = some (.jalr ra ra 0xFFFFFB4A, 4) := by decide
 theorem su_at_5c : fetchRel shaUpdateCode 0x5C = some (.aluImm .add a2 x0 0x1, 2) := by decide
 theorem su_at_5e : fetchRel shaUpdateCode 0x5E = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
 theorem su_at_60 : fetchRel shaUpdateCode 0x60 = some (.alu .add a1 x0 (20 : Fin 32), 2) := by decide
@@ -280,8 +280,8 @@ theorem su_at_a2 : fetchRel shaUpdateCode 0xA2 = some (.load .lw (18 : Fin 32) s
 theorem su_at_a4 : fetchRel shaUpdateCode 0xA4 = some (.load .lw (19 : Fin 32) sp 0xC, 2) := by decide
 theorem su_at_a6 : fetchRel shaUpdateCode 0xA6 = some (.load .lw (20 : Fin 32) sp 0x8, 2) := by decide
 theorem su_at_a8 : fetchRel shaUpdateCode 0xA8 = some (.aluImm .add sp sp 0x20, 2) := by decide
-theorem su_at_aa : fetchRel shaUpdateCode 0xAA = some (.auipc (6 : Fin 32) 0xE000, 4) := by decide
-theorem su_at_ae : fetchRel shaUpdateCode 0xAE = some (.jalr x0 (6 : Fin 32) 0xFFFFFCE4, 4) := by decide
+theorem su_at_aa : fetchRel shaUpdateCode 0xAA = some (.auipc (6 : Fin 32) 0x10000, 4) := by decide
+theorem su_at_ae : fetchRel shaUpdateCode 0xAE = some (.jalr x0 (6 : Fin 32) 0xFFFFFAF4, 4) := by decide
 end
 
 theorem memBytes_take (M : Word → BitVec 8) (p : Word) {k n : Nat} (h : k ≤ n) :

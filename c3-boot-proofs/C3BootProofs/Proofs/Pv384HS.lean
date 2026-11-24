@@ -19,7 +19,7 @@ def pvHSbee : List BInstr :=
 theorem pvHSbee_end : blockEnd p384VerifyPrehashCode 0xBEE pvHSbee = some 0xC02 := by decide
 
 def pvHSc0a : List BInstr :=
-  [.lui a0 0x2000, .aluImm .add a0 a0 0xFFFFFCE8, .alu .add (18 : Fin 32) sp a0, .lui (9 : Fin 32) 0x3FCC5000, .aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFFC8C, .aluImm .add a0 sp 0x7FF, .aluImm .add a0 a0 0x611, .aluImm .add a2 x0 0x30, .alu .add a1 x0 (9 : Fin 32)]
+  [.lui a0 0x2000, .aluImm .add a0 a0 0xFFFFFCE8, .alu .add (18 : Fin 32) sp a0, .lui (9 : Fin 32) 0x3FCC5000, .aluImm .add (9 : Fin 32) (9 : Fin 32) 0xFFFFFCF4, .aluImm .add a0 sp 0x7FF, .aluImm .add a0 a0 0x611, .aluImm .add a2 x0 0x30, .alu .add a1 x0 (9 : Fin 32)]
 theorem pvHSc0a_end : blockEnd p384VerifyPrehashCode 0xC0A pvHSc0a = some 0xC2A := by decide
 
 def pvHSc32 : List BInstr :=

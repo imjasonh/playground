@@ -1331,9 +1331,9 @@ theorem fs_decX {M : Word → BitVec 8} {n : Machine} {S : Word} (C : FsCode M) 
 def fsF1 : List BInstr := [.aluImm .add a0 sp 0x334, .aluImm .add a1 sp 0x364, .aluImm .add a2 sp 0x364]
 def fsF2 : List BInstr := [.aluImm .add a0 sp 0xDC, .aluImm .add a1 sp 0x3C4, .aluImm .add a2 sp 0x3C4]
 def fsF3 : List BInstr := [.aluImm .add a0 sp 0x1AC, .aluImm .add a1 sp 0xDC, .aluImm .add a2 sp 0x3C4]
-def fsF4 : List BInstr := [.lui a1 0x3FCC4000, .aluImm .add a1 a1 0x204, .aluImm .add a0 sp 0xDC, .aluImm .add a2 sp 0x3C4]
+def fsF4 : List BInstr := [.lui a1 0x3FCC4000, .aluImm .add a1 a1 0x74, .aluImm .add a0 sp 0xDC, .aluImm .add a2 sp 0x3C4]
 def fsF5 : List BInstr := [.aluImm .add a0 sp 0x394, .aluImm .add a1 sp 0x1AC, .aluImm .add a2 sp 0xDC]
-def fsF6 : List BInstr := [.lui a2 0x3FCC4000, .aluImm .add a2 a2 0x234, .aluImm .add a0 sp 0x1AC, .aluImm .add a1 sp 0x394]
+def fsF6 : List BInstr := [.lui a2 0x3FCC4000, .aluImm .add a2 a2 0xA4, .aluImm .add a0 sp 0x1AC, .aluImm .add a1 sp 0x394]
 def fsF7 : List BInstr := [.aluImm .add a0 sp 0xDC, .aluImm .add a1 sp 0x3C4, .aluImm .add a2 x0 0x30]
 def fsF8 : List BInstr := [.aluImm .add a0 sp 0x10C, .aluImm .add a1 sp 0x364, .aluImm .add a2 x0 0x30]
 theorem fsF1_end : blockEnd p384FromSec1Code 0x33E fsF1 = some 0x344 := by decide

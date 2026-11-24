@@ -17,13 +17,13 @@ open C3.Image
 section
 set_option maxRecDepth 20000
 theorem nsm_at_0 : fetchRel p384ScalarMulCode 0x0 = some (.lui a3 0x3FCC5000, 4) := by decide
-theorem nsm_at_4 : fetchRel p384ScalarMulCode 0x4 = some (.aluImm .add a3 a3 0xFFFFFD28, 4) := by decide
+theorem nsm_at_4 : fetchRel p384ScalarMulCode 0x4 = some (.aluImm .add a3 a3 0xFFFFFD90, 4) := by decide
 theorem nsm_at_8 : fetchRel p384ScalarMulCode 0x8 = some (.lui a4 0xE88FE000, 4) := by decide
 theorem nsm_at_c : fetchRel p384ScalarMulCode 0xC = some (.aluImm .add a4 a4 0xFFFFFC45, 4) := by decide
 theorem nsm_at_10 : fetchRel p384ScalarMulCode 0x10 = some (.auipc (6 : Fin 32) 0xFFFFF000, 4) := by decide
 theorem nsm_at_14 : fetchRel p384ScalarMulCode 0x14 = some (.jalr x0 (6 : Fin 32) 0xFFFFFF48, 4) := by decide
 theorem nsn_at_0 : fetchRel p384ScalarNewCode 0x0 = some (.lui a3 0x3FCC5000, 4) := by decide
-theorem nsn_at_4 : fetchRel p384ScalarNewCode 0x4 = some (.aluImm .add a3 a3 0xFFFFFD28, 4) := by decide
+theorem nsn_at_4 : fetchRel p384ScalarNewCode 0x4 = some (.aluImm .add a3 a3 0xFFFFFD90, 4) := by decide
 theorem nsn_at_8 : fetchRel p384ScalarNewCode 0x8 = some (.aluImm .add a2 a3 0x60, 4) := by decide
 theorem nsn_at_c : fetchRel p384ScalarNewCode 0xC = some (.lui a4 0xE88FE000, 4) := by decide
 theorem nsn_at_10 : fetchRel p384ScalarNewCode 0x10 = some (.aluImm .add a4 a4 0xFFFFFC45, 4) := by decide

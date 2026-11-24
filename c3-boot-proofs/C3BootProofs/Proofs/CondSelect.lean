@@ -91,14 +91,14 @@ theorem uo4_at_14 : fetchRel unwrapOr384Code 0x14 = some (.alu .add (19 : Fin 32
 theorem uo4_at_16 : fetchRel unwrapOr384Code 0x16 = some (.alu .add a1 x0 a2, 2) := by decide
 theorem uo4_at_18 : fetchRel unwrapOr384Code 0x18 = some (.alu .add a2 x0 (9 : Fin 32), 2) := by decide
 theorem uo4_at_1a : fetchRel unwrapOr384Code 0x1A = some (.alu .add a3 x0 (8 : Fin 32), 2) := by decide
-theorem uo4_at_1c : fetchRel unwrapOr384Code 0x1C = some (.auipc ra 0x10000, 4) := by decide
-theorem uo4_at_20 : fetchRel unwrapOr384Code 0x20 = some (.jalr ra ra 0x6F0, 4) := by decide
+theorem uo4_at_1c : fetchRel unwrapOr384Code 0x1C = some (.auipc ra 0x12000, 4) := by decide
+theorem uo4_at_20 : fetchRel unwrapOr384Code 0x20 = some (.jalr ra ra 0x500, 4) := by decide
 theorem uo4_at_24 : fetchRel unwrapOr384Code 0x24 = some (.aluImm .add a1 (18 : Fin 32) 0x30, 4) := by decide
 theorem uo4_at_28 : fetchRel unwrapOr384Code 0x28 = some (.aluImm .add a2 (9 : Fin 32) 0x30, 4) := by decide
 theorem uo4_at_2c : fetchRel unwrapOr384Code 0x2C = some (.aluImm .add a0 (19 : Fin 32) 0x30, 4) := by decide
 theorem uo4_at_30 : fetchRel unwrapOr384Code 0x30 = some (.alu .add a3 x0 (8 : Fin 32), 2) := by decide
-theorem uo4_at_32 : fetchRel unwrapOr384Code 0x32 = some (.auipc ra 0x10000, 4) := by decide
-theorem uo4_at_36 : fetchRel unwrapOr384Code 0x36 = some (.jalr ra ra 0x6DA, 4) := by decide
+theorem uo4_at_32 : fetchRel unwrapOr384Code 0x32 = some (.auipc ra 0x12000, 4) := by decide
+theorem uo4_at_36 : fetchRel unwrapOr384Code 0x36 = some (.jalr ra ra 0x4EA, 4) := by decide
 theorem uo4_at_3a : fetchRel unwrapOr384Code 0x3A = some (.load .lbu a0 (18 : Fin 32) 0x60, 4) := by decide
 theorem uo4_at_3e : fetchRel unwrapOr384Code 0x3E = some (.load .lbu a1 (9 : Fin 32) 0x60, 4) := by decide
 theorem uo4_at_42 : fetchRel unwrapOr384Code 0x42 = some (.alu .sub a2 x0 (8 : Fin 32), 4) := by decide
@@ -126,14 +126,14 @@ theorem uo2_at_14 : fetchRel unwrapOr256Code 0x14 = some (.alu .add (19 : Fin 32
 theorem uo2_at_16 : fetchRel unwrapOr256Code 0x16 = some (.alu .add a1 x0 a2, 2) := by decide
 theorem uo2_at_18 : fetchRel unwrapOr256Code 0x18 = some (.alu .add a2 x0 (9 : Fin 32), 2) := by decide
 theorem uo2_at_1a : fetchRel unwrapOr256Code 0x1A = some (.alu .add a3 x0 (8 : Fin 32), 2) := by decide
-theorem uo2_at_1c : fetchRel unwrapOr256Code 0x1C = some (.auipc ra 0xE000, 4) := by decide
-theorem uo2_at_20 : fetchRel unwrapOr256Code 0x20 = some (.jalr ra ra 0x444, 4) := by decide
+theorem uo2_at_1c : fetchRel unwrapOr256Code 0x1C = some (.auipc ra 0x10000, 4) := by decide
+theorem uo2_at_20 : fetchRel unwrapOr256Code 0x20 = some (.jalr ra ra 0x254, 4) := by decide
 theorem uo2_at_24 : fetchRel unwrapOr256Code 0x24 = some (.aluImm .add a1 (18 : Fin 32) 0x20, 4) := by decide
 theorem uo2_at_28 : fetchRel unwrapOr256Code 0x28 = some (.aluImm .add a2 (9 : Fin 32) 0x20, 4) := by decide
 theorem uo2_at_2c : fetchRel unwrapOr256Code 0x2C = some (.aluImm .add a0 (19 : Fin 32) 0x20, 4) := by decide
 theorem uo2_at_30 : fetchRel unwrapOr256Code 0x30 = some (.alu .add a3 x0 (8 : Fin 32), 2) := by decide
-theorem uo2_at_32 : fetchRel unwrapOr256Code 0x32 = some (.auipc ra 0xE000, 4) := by decide
-theorem uo2_at_36 : fetchRel unwrapOr256Code 0x36 = some (.jalr ra ra 0x42E, 4) := by decide
+theorem uo2_at_32 : fetchRel unwrapOr256Code 0x32 = some (.auipc ra 0x10000, 4) := by decide
+theorem uo2_at_36 : fetchRel unwrapOr256Code 0x36 = some (.jalr ra ra 0x23E, 4) := by decide
 theorem uo2_at_3a : fetchRel unwrapOr256Code 0x3A = some (.load .lbu a0 (18 : Fin 32) 0x40, 4) := by decide
 theorem uo2_at_3e : fetchRel unwrapOr256Code 0x3E = some (.load .lbu a1 (9 : Fin 32) 0x40, 4) := by decide
 theorem uo2_at_42 : fetchRel unwrapOr256Code 0x42 = some (.alu .sub a2 x0 (8 : Fin 32), 4) := by decide

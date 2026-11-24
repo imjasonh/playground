@@ -26,7 +26,7 @@ theorem nz4_at_8 : fetchRel nonZero384Code 0x8 = some (.store .sw sp (18 : Fin 3
 theorem nz4_at_a : fetchRel nonZero384Code 0xA = some (.alu .add (8 : Fin 32) x0 a1, 2) := by decide
 theorem nz4_at_c : fetchRel nonZero384Code 0xC = some (.alu .add (9 : Fin 32) x0 a0, 2) := by decide
 theorem nz4_at_e : fetchRel nonZero384Code 0xE = some (.lui a1 0x3FCC5000, 4) := by decide
-theorem nz4_at_12 : fetchRel nonZero384Code 0x12 = some (.aluImm .add a1 a1 0xFFFFFC2C, 4) := by decide
+theorem nz4_at_12 : fetchRel nonZero384Code 0x12 = some (.aluImm .add a1 a1 0xFFFFFC94, 4) := by decide
 theorem nz4_at_16 : fetchRel nonZero384Code 0x16 = some (.alu .add a0 x0 (8 : Fin 32), 2) := by decide
 theorem nz4_at_18 : fetchRel nonZero384Code 0x18 = some (.auipc ra 0x0, 4) := by decide
 theorem nz4_at_1c : fetchRel nonZero384Code 0x1C = some (.jalr ra ra 0xFFFFFEDE, 4) := by decide

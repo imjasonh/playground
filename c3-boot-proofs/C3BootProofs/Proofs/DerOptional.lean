@@ -26,15 +26,15 @@ theorem dopt_at_c : fetchRel derOptionalCode 0xC = some (.load .lw a0 a1 0x8, 2)
 theorem dopt_at_e : fetchRel derOptionalCode 0xE = some (.load .lbu a0 a0 0x0, 4) := by decide
 theorem dopt_at_12 : fetchRel derOptionalCode 0x12 = some (.branch .bne a0 a2 0x26, 4) := by decide
 theorem dopt_at_16 : fetchRel derOptionalCode 0x16 = some (.aluImm .add a0 sp 0x4, 2) := by decide
-theorem dopt_at_18 : fetchRel derOptionalCode 0x18 = some (.auipc ra 0xFFFFF000, 4) := by decide
-theorem dopt_at_1c : fetchRel derOptionalCode 0x1C = some (.jalr ra ra 0x7F8, 4) := by decide
+theorem dopt_at_18 : fetchRel derOptionalCode 0x18 = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem dopt_at_1c : fetchRel derOptionalCode 0x1C = some (.jalr ra ra 0x36A, 4) := by decide
 theorem dopt_at_20 : fetchRel derOptionalCode 0x20 = some (.load .lw a0 sp 0x4, 2) := by decide
 theorem dopt_at_22 : fetchRel derOptionalCode 0x22 = some (.branch .beq a0 x0 0x20, 2) := by decide
 theorem dopt_at_24 : fetchRel derOptionalCode 0x24 = some (.aluImm .add a0 (8 : Fin 32) 0x4, 4) := by decide
 theorem dopt_at_28 : fetchRel derOptionalCode 0x28 = some (.aluImm .add a1 sp 0x4, 2) := by decide
 theorem dopt_at_2a : fetchRel derOptionalCode 0x2A = some (.aluImm .add a2 x0 0x14, 2) := by decide
-theorem dopt_at_2c : fetchRel derOptionalCode 0x2C = some (.auipc ra 0xC000, 4) := by decide
-theorem dopt_at_30 : fetchRel derOptionalCode 0x30 = some (.jalr ra ra 0xFFFFFFAA, 4) := by decide
+theorem dopt_at_2c : fetchRel derOptionalCode 0x2C = some (.auipc ra 0xA000, 4) := by decide
+theorem dopt_at_30 : fetchRel derOptionalCode 0x30 = some (.jalr ra ra 0x48E, 4) := by decide
 theorem dopt_at_34 : fetchRel derOptionalCode 0x34 = some (.aluImm .add a0 x0 0x0, 2) := by decide
 theorem dopt_at_36 : fetchRel derOptionalCode 0x36 = some (.jal x0 0x16, 2) := by decide
 theorem dopt_at_38 : fetchRel derOptionalCode 0x38 = some (.store .sb (8 : Fin 32) x0 0x0, 4) := by decide

@@ -50,8 +50,8 @@ theorem nm8_at_48 : fetchRel norm8Code 0x48 = some (.alu .add (8 : Fin 32) x0 (2
 theorem nm8_at_4a : fetchRel norm8Code 0x4A = some (.branch .beq (9 : Fin 32) x0 0x20, 2) := by decide
 theorem nm8_at_4c : fetchRel norm8Code 0x4C = some (.load .lw a0 (23 : Fin 32) 0x0, 4) := by decide
 theorem nm8_at_50 : fetchRel norm8Code 0x50 = some (.load .lw a1 (8 : Fin 32) 0x0, 2) := by decide
-theorem nm8_at_52 : fetchRel norm8Code 0x52 = some (.auipc ra 0xFFFF0000, 4) := by decide
-theorem nm8_at_56 : fetchRel norm8Code 0x56 = some (.jalr ra ra 0x714, 4) := by decide
+theorem nm8_at_52 : fetchRel norm8Code 0x52 = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem nm8_at_56 : fetchRel norm8Code 0x56 = some (.jalr ra ra 0xFFFFF904, 4) := by decide
 theorem nm8_at_5a : fetchRel norm8Code 0x5A = some (.alu .add a2 x0 a1, 2) := by decide
 theorem nm8_at_5c : fetchRel norm8Code 0x5C = some (.aluImm .add (23 : Fin 32) (23 : Fin 32) 0x4, 2) := by decide
 theorem nm8_at_5e : fetchRel norm8Code 0x5E = some (.store .sw (24 : Fin 32) a0 0x0, 4) := by decide
@@ -79,8 +79,8 @@ theorem nm8_at_92 : fetchRel norm8Code 0x92 = some (.load .lw (24 : Fin 32) sp 0
 theorem nm8_at_94 : fetchRel norm8Code 0x94 = some (.aluImm .add sp sp 0x50, 2) := by decide
 theorem nm8_at_96 : fetchRel norm8Code 0x96 = some (.jalr x0 ra 0x0, 2) := by decide
 theorem u8nz_at_0 : fetchRel uint8IsNonzeroCode 0x0 = some (.aluImm .add a1 x0 0x8, 2) := by decide
-theorem u8nz_at_2 : fetchRel uint8IsNonzeroCode 0x2 = some (.auipc (6 : Fin 32) 0xFFFF1000, 4) := by decide
-theorem u8nz_at_6 : fetchRel uint8IsNonzeroCode 0x6 = some (.jalr x0 (6 : Fin 32) 0x20C, 4) := by decide
+theorem u8nz_at_2 : fetchRel uint8IsNonzeroCode 0x2 = some (.auipc (6 : Fin 32) 0xFFFEF000, 4) := by decide
+theorem u8nz_at_6 : fetchRel uint8IsNonzeroCode 0x6 = some (.jalr x0 (6 : Fin 32) 0x3FC, 4) := by decide
 end
 
 /-- **The compiled `Uint<8>::is_nonzero`** returns 0 when the 8 limbs at

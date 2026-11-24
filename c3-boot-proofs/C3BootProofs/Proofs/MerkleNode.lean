@@ -16,11 +16,11 @@ open C3.Image
 section
 set_option maxRecDepth 20000
 theorem nh_at_22 : fetchRel merkleNodeHashCode 0x22 = some (.auipc ra 0xFFFFA000, 4) := by decide
-theorem nh_at_26 : fetchRel merkleNodeHashCode 0x26 = some (.jalr ra ra 0x56, 4) := by decide
+theorem nh_at_26 : fetchRel merkleNodeHashCode 0x26 = some (.jalr ra ra 0xFFFFF9A4, 4) := by decide
 theorem nh_at_2e : fetchRel merkleNodeHashCode 0x2E = some (.jalr x0 ra 0x0, 2) := by decide
 
 def nhA : List BInstr :=
-  [.aluImm .add sp sp 0xFFFFFFE0, .sw sp ra 0x1C, .lui a3 0x3FCC4000, .aluImm .add a3 a3 0x7D7, .aluImm .add a4 x0 0x1,
+  [.aluImm .add sp sp 0xFFFFFFE0, .sw sp ra 0x1C, .lui a3 0x3FCC4000, .aluImm .add a3 a3 0x647, .aluImm .add a4 x0 0x1,
     .aluImm .add a5 x0 0x20, .sw sp a3 0x4, .sw sp a4 0x8, .sw sp a1 0xC, .sw sp a5 0x10, .sw sp a2 0x14,
     .sw sp a5 0x18, .aluImm .add a1 sp 0x4, .aluImm .add a2 x0 0x3]
 

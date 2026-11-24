@@ -104,7 +104,7 @@ theorem is_at_a : fetchRel isSha256Code 0xA = some (.store .sw sp (19 : Fin 32) 
 theorem is_at_c : fetchRel isSha256Code 0xC = some (.alu .add a1 x0 a0, 2) := by decide
 theorem is_at_e : fetchRel isSha256Code 0xE = some (.alu .add a0 x0 sp, 2) := by decide
 theorem is_at_10 : fetchRel isSha256Code 0x10 = some (.auipc ra 0x0, 4) := by decide
-theorem is_at_14 : fetchRel isSha256Code 0x14 = some (.jalr ra ra 0x17A, 4) := by decide
+theorem is_at_14 : fetchRel isSha256Code 0x14 = some (.jalr ra ra 0xFFFFFD9C, 4) := by decide
 theorem is_at_18 : fetchRel isSha256Code 0x18 = some (.load .lw (8 : Fin 32) sp 0x0, 2) := by decide
 theorem is_at_1a : fetchRel isSha256Code 0x1A = some (.branch .beq (8 : Fin 32) x0 0x32, 2) := by decide
 theorem is_at_1c : fetchRel isSha256Code 0x1C = some (.load .lw a1 sp 0x4, 2) := by decide
@@ -112,11 +112,11 @@ theorem is_at_1e : fetchRel isSha256Code 0x1E = some (.load .lw (9 : Fin 32) sp 
 theorem is_at_20 : fetchRel isSha256Code 0x20 = some (.load .lw (18 : Fin 32) sp 0xC, 2) := by decide
 theorem is_at_22 : fetchRel isSha256Code 0x22 = some (.load .lbu (19 : Fin 32) sp 0x18, 4) := by decide
 theorem is_at_26 : fetchRel isSha256Code 0x26 = some (.lui a2 0x3FCC5000, 4) := by decide
-theorem is_at_2a : fetchRel isSha256Code 0x2A = some (.aluImm .add a2 a2 0xFFFFF880, 4) := by decide
+theorem is_at_2a : fetchRel isSha256Code 0x2A = some (.aluImm .add a2 a2 0xFFFFF868, 4) := by decide
 theorem is_at_2e : fetchRel isSha256Code 0x2E = some (.aluImm .add a3 x0 0x9, 2) := by decide
 theorem is_at_30 : fetchRel isSha256Code 0x30 = some (.alu .add a0 x0 (8 : Fin 32), 2) := by decide
-theorem is_at_32 : fetchRel isSha256Code 0x32 = some (.auipc ra 0x0, 4) := by decide
-theorem is_at_36 : fetchRel isSha256Code 0x36 = some (.jalr ra ra 0xFFFFFEFE, 4) := by decide
+theorem is_at_32 : fetchRel isSha256Code 0x32 = some (.auipc ra 0xFFFFE000, 4) := by decide
+theorem is_at_36 : fetchRel isSha256Code 0x36 = some (.jalr ra ra 0x100, 4) := by decide
 theorem is_at_3a : fetchRel isSha256Code 0x3A = some (.branch .beq a0 x0 0x18, 2) := by decide
 theorem is_at_3c : fetchRel isSha256Code 0x3C = some (.branch .beq (9 : Fin 32) x0 0x1A, 2) := by decide
 theorem is_at_3e : fetchRel isSha256Code 0x3E = some (.aluImm .xor a0 (19 : Fin 32) 0x5, 4) := by decide

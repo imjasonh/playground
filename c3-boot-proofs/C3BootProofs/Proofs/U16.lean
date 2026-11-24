@@ -57,7 +57,7 @@ theorem u16_at_08 : fetchRel readerU16Code 0x08 = some (.alu .add a0 x0 sp, 2) :
 theorem u16_at_0a : fetchRel readerU16Code 0x0A = some (.aluImm .add a2 x0 2, 2) := by decide
 theorem u16_at_0c : fetchRel readerU16Code 0x0C = some (.aluImm .add s0 x0 2, 2) := by decide
 theorem u16_at_0e : fetchRel readerU16Code 0x0E = some (.auipc ra 0, 4) := by decide
-theorem u16_at_12 : fetchRel readerU16Code 0x12 = some (.jalr ra ra 0xFFFFFFCC, 4) := by decide
+theorem u16_at_12 : fetchRel readerU16Code 0x12 = some (.jalr ra ra 0x36, 4) := by decide
 theorem u16_at_16 : fetchRel readerU16Code 0x16 = some (.load .lw a0 sp 0, 2) := by decide
 theorem u16_at_18 : fetchRel readerU16Code 0x18 = some (.branch .beq a0 x0 0x18, 2) := by decide
 theorem u16_at_1a : fetchRel readerU16Code 0x1A = some (.load .lw a1 sp 4, 2) := by decide
@@ -411,8 +411,8 @@ def version1Result (M : Word → BitVec 8) (self : Word) : Word :=
 
 theorem v1_at_00 : fetchRel readerVersion1Code 0x00 = some (.aluImm .add sp sp 0xFFFFFFF0, 2) := by decide
 theorem v1_at_02 : fetchRel readerVersion1Code 0x02 = some (.store .sw sp ra 0x0C, 2) := by decide
-theorem v1_at_04 : fetchRel readerVersion1Code 0x04 = some (.auipc ra 0, 4) := by decide
-theorem v1_at_08 : fetchRel readerVersion1Code 0x08 = some (.jalr ra ra 0x122, 4) := by decide
+theorem v1_at_04 : fetchRel readerVersion1Code 0x04 = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem v1_at_08 : fetchRel readerVersion1Code 0x08 = some (.jalr ra ra 0x50, 4) := by decide
 theorem v1_at_0c : fetchRel readerVersion1Code 0x0C = some (.aluImm .and a1 a0 1, 4) := by decide
 theorem v1_at_10 : fetchRel readerVersion1Code 0x10 = some (.branch .bne a1 x0 0x12, 2) := by decide
 theorem v1_at_12 : fetchRel readerVersion1Code 0x12 = some (.aluImm .srl a0 a0 0x10, 2) := by decide

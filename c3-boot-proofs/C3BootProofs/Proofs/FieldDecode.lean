@@ -34,72 +34,72 @@ theorem si_at_20 : fetchRel subInnerCode 0x20 = some (.load .lw a1 (9 : Fin 32) 
 theorem si_at_22 : fetchRel subInnerCode 0x22 = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
 theorem si_at_24 : fetchRel subInnerCode 0x24 = some (.alu .add a0 x0 a2, 2) := by decide
 theorem si_at_26 : fetchRel subInnerCode 0x26 = some (.aluImm .add a2 x0 0x0, 2) := by decide
-theorem si_at_28 : fetchRel subInnerCode 0x28 = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem si_at_2c : fetchRel subInnerCode 0x2C = some (.jalr ra ra 0xFFFFF890, 4) := by decide
+theorem si_at_28 : fetchRel subInnerCode 0x28 = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem si_at_2c : fetchRel subInnerCode 0x2C = some (.jalr ra ra 0xFFFFFA80, 4) := by decide
 theorem si_at_30 : fetchRel subInnerCode 0x30 = some (.alu .add (19 : Fin 32) x0 a0, 2) := by decide
 theorem si_at_32 : fetchRel subInnerCode 0x32 = some (.load .lw a0 (8 : Fin 32) 0x4, 2) := by decide
 theorem si_at_34 : fetchRel subInnerCode 0x34 = some (.load .lw a2 (9 : Fin 32) 0x4, 2) := by decide
 theorem si_at_36 : fetchRel subInnerCode 0x36 = some (.alu .add a3 x0 a1, 2) := by decide
 theorem si_at_38 : fetchRel subInnerCode 0x38 = some (.alu .add a1 x0 a2, 2) := by decide
 theorem si_at_3a : fetchRel subInnerCode 0x3A = some (.alu .add a2 x0 a3, 2) := by decide
-theorem si_at_3c : fetchRel subInnerCode 0x3C = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem si_at_40 : fetchRel subInnerCode 0x40 = some (.jalr ra ra 0xFFFFF87C, 4) := by decide
+theorem si_at_3c : fetchRel subInnerCode 0x3C = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem si_at_40 : fetchRel subInnerCode 0x40 = some (.jalr ra ra 0xFFFFFA6C, 4) := by decide
 theorem si_at_44 : fetchRel subInnerCode 0x44 = some (.alu .add (20 : Fin 32) x0 a0, 2) := by decide
 theorem si_at_46 : fetchRel subInnerCode 0x46 = some (.load .lw a0 (8 : Fin 32) 0x8, 2) := by decide
 theorem si_at_48 : fetchRel subInnerCode 0x48 = some (.load .lw a2 (9 : Fin 32) 0x8, 2) := by decide
 theorem si_at_4a : fetchRel subInnerCode 0x4A = some (.alu .add a3 x0 a1, 2) := by decide
 theorem si_at_4c : fetchRel subInnerCode 0x4C = some (.alu .add a1 x0 a2, 2) := by decide
 theorem si_at_4e : fetchRel subInnerCode 0x4E = some (.alu .add a2 x0 a3, 2) := by decide
-theorem si_at_50 : fetchRel subInnerCode 0x50 = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem si_at_54 : fetchRel subInnerCode 0x54 = some (.jalr ra ra 0xFFFFF868, 4) := by decide
+theorem si_at_50 : fetchRel subInnerCode 0x50 = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem si_at_54 : fetchRel subInnerCode 0x54 = some (.jalr ra ra 0xFFFFFA58, 4) := by decide
 theorem si_at_58 : fetchRel subInnerCode 0x58 = some (.alu .add (21 : Fin 32) x0 a0, 2) := by decide
 theorem si_at_5a : fetchRel subInnerCode 0x5A = some (.load .lw a0 (8 : Fin 32) 0xC, 2) := by decide
 theorem si_at_5c : fetchRel subInnerCode 0x5C = some (.load .lw a2 (9 : Fin 32) 0xC, 2) := by decide
 theorem si_at_5e : fetchRel subInnerCode 0x5E = some (.alu .add a3 x0 a1, 2) := by decide
 theorem si_at_60 : fetchRel subInnerCode 0x60 = some (.alu .add a1 x0 a2, 2) := by decide
 theorem si_at_62 : fetchRel subInnerCode 0x62 = some (.alu .add a2 x0 a3, 2) := by decide
-theorem si_at_64 : fetchRel subInnerCode 0x64 = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem si_at_68 : fetchRel subInnerCode 0x68 = some (.jalr ra ra 0xFFFFF854, 4) := by decide
+theorem si_at_64 : fetchRel subInnerCode 0x64 = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem si_at_68 : fetchRel subInnerCode 0x68 = some (.jalr ra ra 0xFFFFFA44, 4) := by decide
 theorem si_at_6c : fetchRel subInnerCode 0x6C = some (.alu .add (22 : Fin 32) x0 a0, 2) := by decide
 theorem si_at_6e : fetchRel subInnerCode 0x6E = some (.load .lw a0 (8 : Fin 32) 0x10, 2) := by decide
 theorem si_at_70 : fetchRel subInnerCode 0x70 = some (.load .lw a2 (9 : Fin 32) 0x10, 2) := by decide
 theorem si_at_72 : fetchRel subInnerCode 0x72 = some (.alu .add a3 x0 a1, 2) := by decide
 theorem si_at_74 : fetchRel subInnerCode 0x74 = some (.alu .add a1 x0 a2, 2) := by decide
 theorem si_at_76 : fetchRel subInnerCode 0x76 = some (.alu .add a2 x0 a3, 2) := by decide
-theorem si_at_78 : fetchRel subInnerCode 0x78 = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem si_at_7c : fetchRel subInnerCode 0x7C = some (.jalr ra ra 0xFFFFF840, 4) := by decide
+theorem si_at_78 : fetchRel subInnerCode 0x78 = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem si_at_7c : fetchRel subInnerCode 0x7C = some (.jalr ra ra 0xFFFFFA30, 4) := by decide
 theorem si_at_80 : fetchRel subInnerCode 0x80 = some (.alu .add (24 : Fin 32) x0 a0, 2) := by decide
 theorem si_at_82 : fetchRel subInnerCode 0x82 = some (.load .lw a0 (8 : Fin 32) 0x14, 2) := by decide
 theorem si_at_84 : fetchRel subInnerCode 0x84 = some (.load .lw a2 (9 : Fin 32) 0x14, 2) := by decide
 theorem si_at_86 : fetchRel subInnerCode 0x86 = some (.alu .add a3 x0 a1, 2) := by decide
 theorem si_at_88 : fetchRel subInnerCode 0x88 = some (.alu .add a1 x0 a2, 2) := by decide
 theorem si_at_8a : fetchRel subInnerCode 0x8A = some (.alu .add a2 x0 a3, 2) := by decide
-theorem si_at_8c : fetchRel subInnerCode 0x8C = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem si_at_90 : fetchRel subInnerCode 0x90 = some (.jalr ra ra 0xFFFFF82C, 4) := by decide
+theorem si_at_8c : fetchRel subInnerCode 0x8C = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem si_at_90 : fetchRel subInnerCode 0x90 = some (.jalr ra ra 0xFFFFFA1C, 4) := by decide
 theorem si_at_94 : fetchRel subInnerCode 0x94 = some (.alu .add (23 : Fin 32) x0 a0, 2) := by decide
 theorem si_at_96 : fetchRel subInnerCode 0x96 = some (.load .lw a0 (8 : Fin 32) 0x18, 2) := by decide
 theorem si_at_98 : fetchRel subInnerCode 0x98 = some (.load .lw a2 (9 : Fin 32) 0x18, 2) := by decide
 theorem si_at_9a : fetchRel subInnerCode 0x9A = some (.alu .add a3 x0 a1, 2) := by decide
 theorem si_at_9c : fetchRel subInnerCode 0x9C = some (.alu .add a1 x0 a2, 2) := by decide
 theorem si_at_9e : fetchRel subInnerCode 0x9E = some (.alu .add a2 x0 a3, 2) := by decide
-theorem si_at_a0 : fetchRel subInnerCode 0xA0 = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem si_at_a4 : fetchRel subInnerCode 0xA4 = some (.jalr ra ra 0xFFFFF818, 4) := by decide
+theorem si_at_a0 : fetchRel subInnerCode 0xA0 = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem si_at_a4 : fetchRel subInnerCode 0xA4 = some (.jalr ra ra 0xFFFFFA08, 4) := by decide
 theorem si_at_a8 : fetchRel subInnerCode 0xA8 = some (.alu .add (25 : Fin 32) x0 a0, 2) := by decide
 theorem si_at_aa : fetchRel subInnerCode 0xAA = some (.load .lw a0 (8 : Fin 32) 0x1C, 2) := by decide
 theorem si_at_ac : fetchRel subInnerCode 0xAC = some (.load .lw a2 (9 : Fin 32) 0x1C, 2) := by decide
 theorem si_at_ae : fetchRel subInnerCode 0xAE = some (.alu .add a3 x0 a1, 2) := by decide
 theorem si_at_b0 : fetchRel subInnerCode 0xB0 = some (.alu .add a1 x0 a2, 2) := by decide
 theorem si_at_b2 : fetchRel subInnerCode 0xB2 = some (.alu .add a2 x0 a3, 2) := by decide
-theorem si_at_b4 : fetchRel subInnerCode 0xB4 = some (.auipc ra 0xFFFF1000, 4) := by decide
-theorem si_at_b8 : fetchRel subInnerCode 0xB8 = some (.jalr ra ra 0xFFFFF804, 4) := by decide
+theorem si_at_b4 : fetchRel subInnerCode 0xB4 = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem si_at_b8 : fetchRel subInnerCode 0xB8 = some (.jalr ra ra 0xFFFFF9F4, 4) := by decide
 theorem si_at_bc : fetchRel subInnerCode 0xBC = some (.alu .add (26 : Fin 32) x0 a0, 2) := by decide
 theorem si_at_be : fetchRel subInnerCode 0xBE = some (.load .lw a0 (8 : Fin 32) 0x20, 2) := by decide
 theorem si_at_c0 : fetchRel subInnerCode 0xC0 = some (.load .lw a2 (9 : Fin 32) 0x20, 2) := by decide
 theorem si_at_c2 : fetchRel subInnerCode 0xC2 = some (.alu .add a3 x0 a1, 2) := by decide
 theorem si_at_c4 : fetchRel subInnerCode 0xC4 = some (.alu .add a1 x0 a2, 2) := by decide
 theorem si_at_c6 : fetchRel subInnerCode 0xC6 = some (.alu .add a2 x0 a3, 2) := by decide
-theorem si_at_c8 : fetchRel subInnerCode 0xC8 = some (.auipc ra 0xFFFF0000, 4) := by decide
-theorem si_at_cc : fetchRel subInnerCode 0xCC = some (.jalr ra ra 0x7F0, 4) := by decide
+theorem si_at_c8 : fetchRel subInnerCode 0xC8 = some (.auipc ra 0xFFFEF000, 4) := by decide
+theorem si_at_cc : fetchRel subInnerCode 0xCC = some (.jalr ra ra 0xFFFFF9E0, 4) := by decide
 theorem si_at_d0 : fetchRel subInnerCode 0xD0 = some (.alu .add (19 : Fin 32) (19 : Fin 32) a1, 2) := by decide
 theorem si_at_d2 : fetchRel subInnerCode 0xD2 = some (.alu .add (20 : Fin 32) (20 : Fin 32) a1, 2) := by decide
 theorem si_at_d4 : fetchRel subInnerCode 0xD4 = some (.alu .sltu a0 (19 : Fin 32) a1, 4) := by decide

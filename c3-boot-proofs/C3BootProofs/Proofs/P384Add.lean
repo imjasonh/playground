@@ -34,8 +34,8 @@ theorem pa3_at_16 : fetchRel p384AddCode 0x16 = some (.alu .add a0 x0 sp, 2) := 
 theorem pa3_at_18 : fetchRel p384AddCode 0x18 = some (.aluImm .add a2 x0 0x30, 4) := by decide
 theorem pa3_at_1c : fetchRel p384AddCode 0x1C = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem pa3_at_1e : fetchRel p384AddCode 0x1E = some (.alu .add (8 : Fin 32) x0 sp, 2) := by decide
-theorem pa3_at_20 : fetchRel p384AddCode 0x20 = some (.auipc ra 0x12000, 4) := by decide
-theorem pa3_at_24 : fetchRel p384AddCode 0x24 = some (.jalr ra ra 0x692, 4) := by decide
+theorem pa3_at_20 : fetchRel p384AddCode 0x20 = some (.auipc ra 0x14000, 4) := by decide
+theorem pa3_at_24 : fetchRel p384AddCode 0x24 = some (.jalr ra ra 0x4A2, 4) := by decide
 theorem pa3_at_28 : fetchRel p384AddCode 0x28 = some (.aluImm .add (19 : Fin 32) x0 0x0, 2) := by decide
 theorem pa3_at_2a : fetchRel p384AddCode 0x2A = some (.aluImm .add a0 x0 0xC, 2) := by decide
 theorem pa3_at_2c : fetchRel p384AddCode 0x2C = some (.branch .beq a0 x0 0x22, 2) := by decide
@@ -56,12 +56,12 @@ theorem pa3_at_4e : fetchRel p384AddCode 0x4E = some (.aluImm .add a0 sp 0x30, 2
 theorem pa3_at_50 : fetchRel p384AddCode 0x50 = some (.aluImm .add a2 x0 0x30, 4) := by decide
 theorem pa3_at_54 : fetchRel p384AddCode 0x54 = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem pa3_at_56 : fetchRel p384AddCode 0x56 = some (.aluImm .add (20 : Fin 32) sp 0x30, 4) := by decide
-theorem pa3_at_5a : fetchRel p384AddCode 0x5A = some (.auipc ra 0x12000, 4) := by decide
-theorem pa3_at_5e : fetchRel p384AddCode 0x5E = some (.jalr ra ra 0x658, 4) := by decide
+theorem pa3_at_5a : fetchRel p384AddCode 0x5A = some (.auipc ra 0x14000, 4) := by decide
+theorem pa3_at_5e : fetchRel p384AddCode 0x5E = some (.jalr ra ra 0x468, 4) := by decide
 theorem pa3_at_62 : fetchRel p384AddCode 0x62 = some (.aluImm .add a2 x0 0x0, 2) := by decide
 theorem pa3_at_64 : fetchRel p384AddCode 0x64 = some (.alu .add (21 : Fin 32) x0 sp, 2) := by decide
 theorem pa3_at_66 : fetchRel p384AddCode 0x66 = some (.lui (8 : Fin 32) 0x3FCC5000, 4) := by decide
-theorem pa3_at_6a : fetchRel p384AddCode 0x6A = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFC8C, 4) := by decide
+theorem pa3_at_6a : fetchRel p384AddCode 0x6A = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFCF4, 4) := by decide
 theorem pa3_at_6e : fetchRel p384AddCode 0x6E = some (.aluImm .add (9 : Fin 32) x0 0xC, 2) := by decide
 theorem pa3_at_70 : fetchRel p384AddCode 0x70 = some (.branch .beq (9 : Fin 32) x0 0x20, 2) := by decide
 theorem pa3_at_72 : fetchRel p384AddCode 0x72 = some (.load .lw a0 (21 : Fin 32) 0x0, 4) := by decide
@@ -92,8 +92,8 @@ theorem pa3_at_b2 : fetchRel p384AddCode 0xB2 = some (.jalr ra ra 0x13E, 4) := b
 theorem pa3_at_b6 : fetchRel p384AddCode 0xB6 = some (.aluImm .add a0 sp 0x60, 2) := by decide
 theorem pa3_at_b8 : fetchRel p384AddCode 0xB8 = some (.aluImm .add a2 x0 0x30, 4) := by decide
 theorem pa3_at_bc : fetchRel p384AddCode 0xBC = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem pa3_at_be : fetchRel p384AddCode 0xBE = some (.auipc ra 0x12000, 4) := by decide
-theorem pa3_at_c2 : fetchRel p384AddCode 0xC2 = some (.jalr ra ra 0x5F4, 4) := by decide
+theorem pa3_at_be : fetchRel p384AddCode 0xBE = some (.auipc ra 0x14000, 4) := by decide
+theorem pa3_at_c2 : fetchRel p384AddCode 0xC2 = some (.jalr ra ra 0x404, 4) := by decide
 theorem pa3_at_c6 : fetchRel p384AddCode 0xC6 = some (.aluImm .add a0 sp 0x30, 2) := by decide
 theorem pa3_at_c8 : fetchRel p384AddCode 0xC8 = some (.alu .add a1 x0 sp, 2) := by decide
 theorem pa3_at_ca : fetchRel p384AddCode 0xCA = some (.aluImm .add a2 x0 0xC, 2) := by decide
@@ -116,8 +116,8 @@ theorem pa3_at_f2 : fetchRel p384AddCode 0xF2 = some (.branch .bne a2 x0 0xFFFFF
 theorem pa3_at_f4 : fetchRel p384AddCode 0xF4 = some (.aluImm .add a1 sp 0x60, 2) := by decide
 theorem pa3_at_f6 : fetchRel p384AddCode 0xF6 = some (.aluImm .add a2 x0 0x30, 4) := by decide
 theorem pa3_at_fa : fetchRel p384AddCode 0xFA = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
-theorem pa3_at_fc : fetchRel p384AddCode 0xFC = some (.auipc ra 0x12000, 4) := by decide
-theorem pa3_at_100 : fetchRel p384AddCode 0x100 = some (.jalr ra ra 0x61E, 4) := by decide
+theorem pa3_at_fc : fetchRel p384AddCode 0xFC = some (.auipc ra 0x14000, 4) := by decide
+theorem pa3_at_100 : fetchRel p384AddCode 0x100 = some (.jalr ra ra 0x42E, 4) := by decide
 theorem pa3_at_104 : fetchRel p384AddCode 0x104 = some (.load .lw ra sp 0xAC, 2) := by decide
 theorem pa3_at_106 : fetchRel p384AddCode 0x106 = some (.load .lw (8 : Fin 32) sp 0xA8, 2) := by decide
 theorem pa3_at_108 : fetchRel p384AddCode 0x108 = some (.load .lw (9 : Fin 32) sp 0xA4, 2) := by decide
@@ -169,7 +169,7 @@ def p3Mid : List BInstr :=
 
 def p3SubInit : List BInstr :=
   [.aluImm .add a2 x0 0x0, .alu .add (21 : Fin 32) x0 sp, .lui (8 : Fin 32) 0x3FCC5000,
-   .aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFC8C, .aluImm .add (9 : Fin 32) x0 0xC]
+   .aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFCF4, .aluImm .add (9 : Fin 32) x0 0xC]
 
 def p3SubHead : List BInstr := [.lw a0 (21 : Fin 32) 0x0, .lw a1 (8 : Fin 32) 0x0]
 

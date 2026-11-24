@@ -53,15 +53,15 @@ theorem part_at_10 : fetchRel manifestPartCode 0x10 = some (.alu .add (19 : Fin 
 theorem part_at_12 : fetchRel manifestPartCode 0x12 = some (.alu .add (9 : Fin 32) x0 a1, 2) := by decide
 theorem part_at_14 : fetchRel manifestPartCode 0x14 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
 theorem part_at_16 : fetchRel manifestPartCode 0x16 = some (.alu .add a0 x0 sp, 2) := by decide
-theorem part_at_18 : fetchRel manifestPartCode 0x18 = some (.auipc ra 0xFFFFC000, 4) := by decide
-theorem part_at_1c : fetchRel manifestPartCode 0x1C = some (.jalr ra ra 0x69A, 4) := by decide
+theorem part_at_18 : fetchRel manifestPartCode 0x18 = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem part_at_1c : fetchRel manifestPartCode 0x1C = some (.jalr ra ra 0xFFFFFC8E, 4) := by decide
 theorem part_at_20 : fetchRel manifestPartCode 0x20 = some (.load .lbu a0 sp 0x0, 4) := by decide
 theorem part_at_24 : fetchRel manifestPartCode 0x24 = some (.branch .bne a0 x0 0x16, 2) := by decide
 theorem part_at_26 : fetchRel manifestPartCode 0x26 = some (.load .lw (20 : Fin 32) sp 0x4, 2) := by decide
 theorem part_at_28 : fetchRel manifestPartCode 0x28 = some (.alu .add a0 x0 sp, 2) := by decide
 theorem part_at_2a : fetchRel manifestPartCode 0x2A = some (.alu .add a1 x0 (9 : Fin 32), 2) := by decide
-theorem part_at_2c : fetchRel manifestPartCode 0x2C = some (.auipc ra 0xFFFFC000, 4) := by decide
-theorem part_at_30 : fetchRel manifestPartCode 0x30 = some (.jalr ra ra 0x686, 4) := by decide
+theorem part_at_2c : fetchRel manifestPartCode 0x2C = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem part_at_30 : fetchRel manifestPartCode 0x30 = some (.jalr ra ra 0xFFFFFC7A, 4) := by decide
 theorem part_at_34 : fetchRel manifestPartCode 0x34 = some (.load .lbu a0 sp 0x0, 4) := by decide
 theorem part_at_38 : fetchRel manifestPartCode 0x38 = some (.branch .beq a0 x0 0x20, 2) := by decide
 theorem part_at_3a : fetchRel manifestPartCode 0x3A = some (.load .lbu a0 sp 0x1, 4) := by decide

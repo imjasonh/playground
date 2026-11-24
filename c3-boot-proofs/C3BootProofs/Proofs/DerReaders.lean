@@ -16,16 +16,16 @@ open C3.Image
 section
 set_option maxRecDepth 20000
 theorem dset_at_0 : fetchRel derSetCode 0x0 = some (.aluImm .add a2 x0 0x31, 4) := by decide
-theorem dset_at_4 : fetchRel derSetCode 0x4 = some (.auipc (6 : Fin 32) 0x0, 4) := by decide
-theorem dset_at_8 : fetchRel derSetCode 0x8 = some (.jalr x0 (6 : Fin 32) 0xFFFFF93C, 4) := by decide
+theorem dset_at_4 : fetchRel derSetCode 0x4 = some (.auipc (6 : Fin 32) 0xFFFFD000, 4) := by decide
+theorem dset_at_8 : fetchRel derSetCode 0x8 = some (.jalr x0 (6 : Fin 32) 0xAC, 4) := by decide
 theorem dos_at_0 : fetchRel derOctetStringCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFE0, 2) := by decide
 theorem dos_at_2 : fetchRel derOctetStringCode 0x2 = some (.store .sw sp ra 0x1C, 2) := by decide
 theorem dos_at_4 : fetchRel derOctetStringCode 0x4 = some (.store .sw sp (8 : Fin 32) 0x18, 2) := by decide
 theorem dos_at_6 : fetchRel derOctetStringCode 0x6 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
 theorem dos_at_8 : fetchRel derOctetStringCode 0x8 = some (.aluImm .add a0 sp 0x4, 2) := by decide
 theorem dos_at_a : fetchRel derOctetStringCode 0xA = some (.aluImm .add a2 x0 0x4, 2) := by decide
-theorem dos_at_c : fetchRel derOctetStringCode 0xC = some (.auipc ra 0xFFFFF000, 4) := by decide
-theorem dos_at_10 : fetchRel derOctetStringCode 0x10 = some (.jalr ra ra 0x786, 4) := by decide
+theorem dos_at_c : fetchRel derOctetStringCode 0xC = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem dos_at_10 : fetchRel derOctetStringCode 0x10 = some (.jalr ra ra 0xFFFFFF4E, 4) := by decide
 theorem dos_at_14 : fetchRel derOctetStringCode 0x14 = some (.load .lw a0 sp 0x4, 2) := by decide
 theorem dos_at_16 : fetchRel derOctetStringCode 0x16 = some (.branch .beq a0 x0 0x8, 2) := by decide
 theorem dos_at_18 : fetchRel derOctetStringCode 0x18 = some (.load .lw a1 sp 0x8, 2) := by decide
@@ -44,8 +44,8 @@ theorem dbs_at_4 : fetchRel derBitStringCode 0x4 = some (.store .sw sp (8 : Fin 
 theorem dbs_at_6 : fetchRel derBitStringCode 0x6 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
 theorem dbs_at_8 : fetchRel derBitStringCode 0x8 = some (.aluImm .add a0 sp 0x4, 2) := by decide
 theorem dbs_at_a : fetchRel derBitStringCode 0xA = some (.aluImm .add a2 x0 0x3, 2) := by decide
-theorem dbs_at_c : fetchRel derBitStringCode 0xC = some (.auipc ra 0xFFFFF000, 4) := by decide
-theorem dbs_at_10 : fetchRel derBitStringCode 0x10 = some (.jalr ra ra 0x1F0, 4) := by decide
+theorem dbs_at_c : fetchRel derBitStringCode 0xC = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem dbs_at_10 : fetchRel derBitStringCode 0x10 = some (.jalr ra ra 0x394, 4) := by decide
 theorem dbs_at_14 : fetchRel derBitStringCode 0x14 = some (.load .lw a0 sp 0x4, 2) := by decide
 theorem dbs_at_16 : fetchRel derBitStringCode 0x16 = some (.branch .beq a0 x0 0x10, 2) := by decide
 theorem dbs_at_18 : fetchRel derBitStringCode 0x18 = some (.load .lw a1 sp 0x8, 2) := by decide
@@ -108,8 +108,8 @@ theorem dbt_at_6 : fetchRel derBooleanTrueCode 0x6 = some (.alu .add a1 x0 a0, 2
 theorem dbt_at_8 : fetchRel derBooleanTrueCode 0x8 = some (.aluImm .add a0 sp 0x4, 2) := by decide
 theorem dbt_at_a : fetchRel derBooleanTrueCode 0xA = some (.aluImm .add a2 x0 0x1, 2) := by decide
 theorem dbt_at_c : fetchRel derBooleanTrueCode 0xC = some (.aluImm .add (8 : Fin 32) x0 0x1, 2) := by decide
-theorem dbt_at_e : fetchRel derBooleanTrueCode 0xE = some (.auipc ra 0xFFFFF000, 4) := by decide
-theorem dbt_at_12 : fetchRel derBooleanTrueCode 0x12 = some (.jalr ra ra 0x4E4, 4) := by decide
+theorem dbt_at_e : fetchRel derBooleanTrueCode 0xE = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem dbt_at_12 : fetchRel derBooleanTrueCode 0x12 = some (.jalr ra ra 0xFFFFFE84, 4) := by decide
 theorem dbt_at_16 : fetchRel derBooleanTrueCode 0x16 = some (.load .lw a1 sp 0x4, 2) := by decide
 theorem dbt_at_18 : fetchRel derBooleanTrueCode 0x18 = some (.load .lbu a0 sp 0x8, 4) := by decide
 theorem dbt_at_1c : fetchRel derBooleanTrueCode 0x1C = some (.branch .beq a1 x0 0x34, 2) := by decide

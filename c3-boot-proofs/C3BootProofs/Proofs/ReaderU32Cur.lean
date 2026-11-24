@@ -56,7 +56,7 @@ theorem u32_at_04 : fetchRel readerU32Code 0x04 = some (.store .sw sp s0 8, 2) :
 theorem u32_at_06 : fetchRel readerU32Code 0x06 = some (.alu .add s0 x0 a0, 2) := by decide
 theorem u32_at_08 : fetchRel readerU32Code 0x08 = some (.alu .add a0 x0 sp, 2) := by decide
 theorem u32_at_0a : fetchRel readerU32Code 0x0A = some (.auipc ra 0, 4) := by decide
-theorem u32_at_0e : fetchRel readerU32Code 0x0E = some (.jalr ra ra 0xFFFFFAAC, 4) := by decide
+theorem u32_at_0e : fetchRel readerU32Code 0x0E = some (.jalr ra ra 0x46, 4) := by decide
 theorem u32_at_12 : fetchRel readerU32Code 0x12 = some (.load .lbu a0 sp 0, 4) := by decide
 theorem u32_at_16 : fetchRel readerU32Code 0x16 = some (.branch .beq a0 x0 0x0E, 2) := by decide
 theorem u32_at_18 : fetchRel readerU32Code 0x18 = some (.load .lbu a0 sp 1, 4) := by decide

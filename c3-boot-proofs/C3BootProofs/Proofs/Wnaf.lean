@@ -44,14 +44,14 @@ theorem wf_at_24 : fetchRel wnafFormCode 0x24 = some (.store .sw sp a3 0x14, 2) 
 theorem wf_at_26 : fetchRel wnafFormCode 0x26 = some (.aluImm .add a0 sp 0x18, 2) := by decide
 theorem wf_at_28 : fetchRel wnafFormCode 0x28 = some (.aluImm .add a2 x0 0x14, 2) := by decide
 theorem wf_at_2a : fetchRel wnafFormCode 0x2A = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem wf_at_2c : fetchRel wnafFormCode 0x2C = some (.auipc ra 0x12000, 4) := by decide
-theorem wf_at_30 : fetchRel wnafFormCode 0x30 = some (.jalr ra ra 0xFFFFFE76, 4) := by decide
+theorem wf_at_2c : fetchRel wnafFormCode 0x2C = some (.auipc ra 0x14000, 4) := by decide
+theorem wf_at_30 : fetchRel wnafFormCode 0x30 = some (.jalr ra ra 0xFFFFFC86, 4) := by decide
 theorem wf_at_34 : fetchRel wnafFormCode 0x34 = some (.aluImm .add a0 sp 0x10, 2) := by decide
-theorem wf_at_36 : fetchRel wnafFormCode 0x36 = some (.auipc ra 0x12000, 4) := by decide
-theorem wf_at_3a : fetchRel wnafFormCode 0x3A = some (.jalr ra ra 0xFFFFFDAC, 4) := by decide
+theorem wf_at_36 : fetchRel wnafFormCode 0x36 = some (.auipc ra 0x14000, 4) := by decide
+theorem wf_at_3a : fetchRel wnafFormCode 0x3A = some (.jalr ra ra 0xFFFFFBBC, 4) := by decide
 theorem wf_at_3e : fetchRel wnafFormCode 0x3E = some (.aluImm .add a0 sp 0x10, 2) := by decide
-theorem wf_at_40 : fetchRel wnafFormCode 0x40 = some (.auipc ra 0x12000, 4) := by decide
-theorem wf_at_44 : fetchRel wnafFormCode 0x44 = some (.jalr ra ra 0xFFFFFDA2, 4) := by decide
+theorem wf_at_40 : fetchRel wnafFormCode 0x40 = some (.auipc ra 0x14000, 4) := by decide
+theorem wf_at_44 : fetchRel wnafFormCode 0x44 = some (.jalr ra ra 0xFFFFFBB2, 4) := by decide
 theorem wf_at_48 : fetchRel wnafFormCode 0x48 = some (.aluImm .add (26 : Fin 32) x0 0x0, 2) := by decide
 theorem wf_at_4a : fetchRel wnafFormCode 0x4A = some (.store .sw sp x0 0xC, 2) := by decide
 theorem wf_at_4c : fetchRel wnafFormCode 0x4C = some (.aluImm .add (23 : Fin 32) x0 0x0, 2) := by decide
@@ -78,21 +78,21 @@ theorem wf_at_84 : fetchRel wnafFormCode 0x84 = some (.aluImm .add a3 a3 0xFFFFF
 theorem wf_at_86 : fetchRel wnafFormCode 0x86 = some (.branch .bne a4 a1 0xFFFFFFF6, 4) := by decide
 theorem wf_at_8a : fetchRel wnafFormCode 0x8A = some (.branch .bgeu a0 a1 0xE, 4) := by decide
 theorem wf_at_8e : fetchRel wnafFormCode 0x8E = some (.aluImm .add a0 sp 0x10, 2) := by decide
-theorem wf_at_90 : fetchRel wnafFormCode 0x90 = some (.auipc ra 0x12000, 4) := by decide
-theorem wf_at_94 : fetchRel wnafFormCode 0x94 = some (.jalr ra ra 0xFFFFFD52, 4) := by decide
+theorem wf_at_90 : fetchRel wnafFormCode 0x90 = some (.auipc ra 0x14000, 4) := by decide
+theorem wf_at_94 : fetchRel wnafFormCode 0x94 = some (.jalr ra ra 0xFFFFFB62, 4) := by decide
 theorem wf_at_98 : fetchRel wnafFormCode 0x98 = some (.load .lw a0 sp 0x18, 2) := by decide
 theorem wf_at_9a : fetchRel wnafFormCode 0x9A = some (.load .lw a1 sp 0x1C, 2) := by decide
 theorem wf_at_9c : fetchRel wnafFormCode 0x9C = some (.alu .add a2 x0 (9 : Fin 32), 2) := by decide
-theorem wf_at_9e : fetchRel wnafFormCode 0x9E = some (.auipc ra 0x12000, 4) := by decide
-theorem wf_at_a2 : fetchRel wnafFormCode 0xA2 = some (.jalr ra ra 0x1E, 4) := by decide
+theorem wf_at_9e : fetchRel wnafFormCode 0x9E = some (.auipc ra 0x14000, 4) := by decide
+theorem wf_at_a2 : fetchRel wnafFormCode 0xA2 = some (.jalr ra ra 0xFFFFFE2E, 4) := by decide
 theorem wf_at_a6 : fetchRel wnafFormCode 0xA6 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
 theorem wf_at_a8 : fetchRel wnafFormCode 0xA8 = some (.branch .bltu (9 : Fin 32) (24 : Fin 32) 0x1A, 4) := by decide
 theorem wf_at_ac : fetchRel wnafFormCode 0xAC = some (.load .lw a0 sp 0x20, 2) := by decide
 theorem wf_at_ae : fetchRel wnafFormCode 0xAE = some (.load .lw a1 sp 0x24, 2) := by decide
 theorem wf_at_b0 : fetchRel wnafFormCode 0xB0 = some (.alu .sub a2 x0 (23 : Fin 32), 4) := by decide
 theorem wf_at_b4 : fetchRel wnafFormCode 0xB4 = some (.aluImm .and a2 a2 0x3F, 4) := by decide
-theorem wf_at_b8 : fetchRel wnafFormCode 0xB8 = some (.auipc ra 0x12000, 4) := by decide
-theorem wf_at_bc : fetchRel wnafFormCode 0xBC = some (.jalr ra ra 0xFFFFFFE0, 4) := by decide
+theorem wf_at_b8 : fetchRel wnafFormCode 0xB8 = some (.auipc ra 0x14000, 4) := by decide
+theorem wf_at_bc : fetchRel wnafFormCode 0xBC = some (.jalr ra ra 0xFFFFFDF0, 4) := by decide
 theorem wf_at_c0 : fetchRel wnafFormCode 0xC0 = some (.alu .or (8 : Fin 32) (8 : Fin 32) a0, 2) := by decide
 theorem wf_at_c2 : fetchRel wnafFormCode 0xC2 = some (.aluImm .and (8 : Fin 32) (8 : Fin 32) 0x1F, 2) := by decide
 theorem wf_at_c4 : fetchRel wnafFormCode 0xC4 = some (.alu .add a0 (8 : Fin 32) (26 : Fin 32), 4) := by decide
@@ -173,14 +173,14 @@ theorem wf_at_196 : fetchRel wnafFormCode 0x196 = some (.load .lw (26 : Fin 32) 
 theorem wf_at_198 : fetchRel wnafFormCode 0x198 = some (.load .lw (27 : Fin 32) sp 0x3C, 2) := by decide
 theorem wf_at_19a : fetchRel wnafFormCode 0x19A = some (.aluImm .add sp sp 0x70, 2) := by decide
 theorem wf_at_19c : fetchRel wnafFormCode 0x19C = some (.jalr x0 ra 0x0, 2) := by decide
-theorem wf_at_19e : fetchRel wnafFormCode 0x19E = some (.auipc ra 0xA000, 4) := by decide
-theorem wf_at_1a2 : fetchRel wnafFormCode 0x1A2 = some (.jalr ra ra 0x7B6, 4) := by decide
+theorem wf_at_19e : fetchRel wnafFormCode 0x19E = some (.auipc ra 0xC000, 4) := by decide
+theorem wf_at_1a2 : fetchRel wnafFormCode 0x1A2 = some (.jalr ra ra 0x5C6, 4) := by decide
 theorem wf_at_1a6 : fetchRel wnafFormCode 0x1A6 = some (.alu .add a0 x0 (22 : Fin 32), 2) := by decide
 theorem wf_at_1a8 : fetchRel wnafFormCode 0x1A8 = some (.jal x0 0x4, 2) := by decide
 theorem wf_at_1aa : fetchRel wnafFormCode 0x1AA = some (.alu .add a0 x0 (21 : Fin 32), 2) := by decide
 theorem wf_at_1ac : fetchRel wnafFormCode 0x1AC = some (.alu .add a1 x0 (19 : Fin 32), 2) := by decide
-theorem wf_at_1ae : fetchRel wnafFormCode 0x1AE = some (.auipc ra 0xA000, 4) := by decide
-theorem wf_at_1b2 : fetchRel wnafFormCode 0x1B2 = some (.jalr ra ra 0x7B6, 4) := by decide
+theorem wf_at_1ae : fetchRel wnafFormCode 0x1AE = some (.auipc ra 0xC000, 4) := by decide
+theorem wf_at_1b2 : fetchRel wnafFormCode 0x1B2 = some (.jalr ra ra 0x5C6, 4) := by decide
 end
 
 abbrev WF : Word := BitVec.ofNat 32 wnafFormAddress

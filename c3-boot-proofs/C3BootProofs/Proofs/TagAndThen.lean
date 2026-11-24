@@ -19,8 +19,8 @@ theorem tat_at_0 : fetchRel tagAndThenCode 0x0 = some (.load .lw a2 a1 0x0, 2) :
 theorem tat_at_2 : fetchRel tagAndThenCode 0x2 = some (.aluImm .add a3 x0 0xFFFFFFFF, 2) := by decide
 theorem tat_at_4 : fetchRel tagAndThenCode 0x4 = some (.branch .beq a2 a3 0x10, 4) := by decide
 theorem tat_at_8 : fetchRel tagAndThenCode 0x8 = some (.aluImm .add a2 x0 0x34, 4) := by decide
-theorem tat_at_c : fetchRel tagAndThenCode 0xC = some (.auipc (6 : Fin 32) 0x12000, 4) := by decide
-theorem tat_at_10 : fetchRel tagAndThenCode 0x10 = some (.jalr x0 (6 : Fin 32) 0xFFFFF9A8, 4) := by decide
+theorem tat_at_c : fetchRel tagAndThenCode 0xC = some (.auipc (6 : Fin 32) 0x13000, 4) := by decide
+theorem tat_at_10 : fetchRel tagAndThenCode 0x10 = some (.jalr x0 (6 : Fin 32) 0x7B8, 4) := by decide
 theorem tat_at_14 : fetchRel tagAndThenCode 0x14 = some (.load .lbu a1 a1 0x4, 4) := by decide
 theorem tat_at_18 : fetchRel tagAndThenCode 0x18 = some (.auipc (6 : Fin 32) 0x0, 4) := by decide
 theorem tat_at_1c : fetchRel tagAndThenCode 0x1C = some (.jalr x0 (6 : Fin 32) 0x26, 4) := by decide

@@ -23,8 +23,8 @@ theorem vkb_at_8 : fetchRel edVerifyingKeyFromBytesCode 0x8 = some (.store .sw s
 theorem vkb_at_a : fetchRel edVerifyingKeyFromBytesCode 0xA = some (.alu .add (9 : Fin 32) x0 a1, 2) := by decide
 theorem vkb_at_c : fetchRel edVerifyingKeyFromBytesCode 0xC = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
 theorem vkb_at_e : fetchRel edVerifyingKeyFromBytesCode 0xE = some (.aluImm .add a0 sp 0xC, 2) := by decide
-theorem vkb_at_10 : fetchRel edVerifyingKeyFromBytesCode 0x10 = some (.auipc ra 0xB000, 4) := by decide
-theorem vkb_at_14 : fetchRel edVerifyingKeyFromBytesCode 0x14 = some (.jalr ra ra 0x2E6, 4) := by decide
+theorem vkb_at_10 : fetchRel edVerifyingKeyFromBytesCode 0x10 = some (.auipc ra 0xD000, 4) := by decide
+theorem vkb_at_14 : fetchRel edVerifyingKeyFromBytesCode 0x14 = some (.jalr ra ra 0xF6, 4) := by decide
 theorem vkb_at_18 : fetchRel edVerifyingKeyFromBytesCode 0x18 = some (.load .lw a0 sp 0xC, 2) := by decide
 theorem vkb_at_1a : fetchRel edVerifyingKeyFromBytesCode 0x1A = some (.branch .beq a0 x0 0x3C, 2) := by decide
 theorem vkb_at_1c : fetchRel edVerifyingKeyFromBytesCode 0x1C = some (.load .lw a0 sp 0x14, 2) := by decide
@@ -37,13 +37,13 @@ theorem vkb_at_28 : fetchRel edVerifyingKeyFromBytesCode 0x28 = some (.store .sw
 theorem vkb_at_2a : fetchRel edVerifyingKeyFromBytesCode 0x2A = some (.aluImm .add a1 sp 0x20, 2) := by decide
 theorem vkb_at_2c : fetchRel edVerifyingKeyFromBytesCode 0x2C = some (.aluImm .add a0 (8 : Fin 32) 0x34, 4) := by decide
 theorem vkb_at_30 : fetchRel edVerifyingKeyFromBytesCode 0x30 = some (.aluImm .add a2 x0 0x90, 4) := by decide
-theorem vkb_at_34 : fetchRel edVerifyingKeyFromBytesCode 0x34 = some (.auipc ra 0x10000, 4) := by decide
-theorem vkb_at_38 : fetchRel edVerifyingKeyFromBytesCode 0x38 = some (.jalr ra ra 0xFFFFFB40, 4) := by decide
+theorem vkb_at_34 : fetchRel edVerifyingKeyFromBytesCode 0x34 = some (.auipc ra 0x12000, 4) := by decide
+theorem vkb_at_38 : fetchRel edVerifyingKeyFromBytesCode 0x38 = some (.jalr ra ra 0xFFFFF950, 4) := by decide
 theorem vkb_at_3c : fetchRel edVerifyingKeyFromBytesCode 0x3C = some (.aluImm .add a0 (8 : Fin 32) 0x4, 4) := by decide
 theorem vkb_at_40 : fetchRel edVerifyingKeyFromBytesCode 0x40 = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem vkb_at_44 : fetchRel edVerifyingKeyFromBytesCode 0x44 = some (.alu .add a1 x0 (9 : Fin 32), 2) := by decide
-theorem vkb_at_46 : fetchRel edVerifyingKeyFromBytesCode 0x46 = some (.auipc ra 0x10000, 4) := by decide
-theorem vkb_at_4a : fetchRel edVerifyingKeyFromBytesCode 0x4A = some (.jalr ra ra 0xFFFFFB2E, 4) := by decide
+theorem vkb_at_46 : fetchRel edVerifyingKeyFromBytesCode 0x46 = some (.auipc ra 0x12000, 4) := by decide
+theorem vkb_at_4a : fetchRel edVerifyingKeyFromBytesCode 0x4A = some (.jalr ra ra 0xFFFFF93E, 4) := by decide
 theorem vkb_at_4e : fetchRel edVerifyingKeyFromBytesCode 0x4E = some (.aluImm .add a0 x0 0x0, 2) := by decide
 theorem vkb_at_50 : fetchRel edVerifyingKeyFromBytesCode 0x50 = some (.store .sw (8 : Fin 32) (18 : Fin 32) 0x24, 4) := by decide
 theorem vkb_at_54 : fetchRel edVerifyingKeyFromBytesCode 0x54 = some (.jal x0 0x4, 2) := by decide

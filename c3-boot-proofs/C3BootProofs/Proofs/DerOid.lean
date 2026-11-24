@@ -28,8 +28,8 @@ theorem oid_at_4 : fetchRel derOidCode 0x4 = some (.store .sw sp (8 : Fin 32) 0x
 theorem oid_at_6 : fetchRel derOidCode 0x6 = some (.alu .add (8 : Fin 32) x0 a0, 2) := by decide
 theorem oid_at_8 : fetchRel derOidCode 0x8 = some (.aluImm .add a0 sp 0x4, 2) := by decide
 theorem oid_at_a : fetchRel derOidCode 0xA = some (.aluImm .add a2 x0 0x6, 2) := by decide
-theorem oid_at_c : fetchRel derOidCode 0xC = some (.auipc ra 0x0, 4) := by decide
-theorem oid_at_10 : fetchRel derOidCode 0x10 = some (.jalr ra ra 0xFFFFF8BC, 4) := by decide
+theorem oid_at_c : fetchRel derOidCode 0xC = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem oid_at_10 : fetchRel derOidCode 0x10 = some (.jalr ra ra 0x132, 4) := by decide
 theorem oid_at_14 : fetchRel derOidCode 0x14 = some (.load .lw a0 sp 0x4, 2) := by decide
 theorem oid_at_16 : fetchRel derOidCode 0x16 = some (.branch .beq a0 x0 0x3E, 2) := by decide
 theorem oid_at_18 : fetchRel derOidCode 0x18 = some (.load .lw a6 sp 0x8, 2) := by decide

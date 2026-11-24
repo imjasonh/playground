@@ -26,7 +26,7 @@ def pvD75a : List BInstr :=
 theorem pvD75a_end : blockEnd p384VerifyPrehashCode 0x75A pvD75a = some 0x766 := by decide
 
 def pvD76e : List BInstr :=
-  [.lui (23 : Fin 32) 0x3FCC4000, .aluImm .add (23 : Fin 32) (23 : Fin 32) 0x600, .aluImm .add a0 sp 0x7FF, .aluImm .add a0 a0 0x611, .aluImm .add a2 x0 0x90, .alu .add a1 x0 (23 : Fin 32)]
+  [.lui (23 : Fin 32) 0x3FCC4000, .aluImm .add (23 : Fin 32) (23 : Fin 32) 0x470, .aluImm .add a0 sp 0x7FF, .aluImm .add a0 a0 0x611, .aluImm .add a2 x0 0x90, .alu .add a1 x0 (23 : Fin 32)]
 theorem pvD76e_end : blockEnd p384VerifyPrehashCode 0x76E pvD76e = some 0x784 := by decide
 
 def pvD78c : List BInstr :=

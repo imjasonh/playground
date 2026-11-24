@@ -171,8 +171,8 @@ def bwBlk : List BInstr :=
    .lbu a4 (9 : Fin 32) 0x7,
    .lbu a5 (9 : Fin 32) 0x6,
    .sb sp a2 0x26,
-   .lui a2 0x3FCC5000,
-   .aluImm .add a2 a2 0xFFFFF851,
+   .lui a2 0x3FCC4000,
+   .aluImm .add a2 a2 0x75E,
    .sw sp a3 0x20,
    .aluImm .add (9 : Fin 32) sp 0x38,
    .sb sp a4 0x24,
@@ -184,7 +184,7 @@ def bwBlk : List BInstr :=
    .sw sp a1 0x38,
    .sw sp a1 0x3C,
    .lui a2 0x3FCC4000,
-   .aluImm .add a2 a2 0x201,
+   .aluImm .add a2 a2 0x6B6,
    .aluImm .add a3 x0 0x8,
    .aluImm .add a4 sp 0x20,
    .sw sp a2 0x40,
@@ -229,8 +229,8 @@ theorem bw_at_14 : fetchRel bootMainClosure1Code 0x14 = some (.alu .add a0 x0 sp
 theorem bw_at_16 : fetchRel bootMainClosure1Code 0x16 = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem bw_at_1a : fetchRel bootMainClosure1Code 0x1A = some (.alu .add (19 : Fin 32) x0 sp, 2) := by decide
 theorem bw_at_1c : fetchRel bootMainClosure1Code 0x1C = some (.aluImm .add (20 : Fin 32) x0 0x20, 4) := by decide
-theorem bw_at_20 : fetchRel bootMainClosure1Code 0x20 = some (.auipc ra 0x13000, 4) := by decide
-theorem bw_at_24 : fetchRel bootMainClosure1Code 0x24 = some (.jalr ra ra 0x3EA, 4) := by decide
+theorem bw_at_20 : fetchRel bootMainClosure1Code 0x20 = some (.auipc ra 0x15000, 4) := by decide
+theorem bw_at_24 : fetchRel bootMainClosure1Code 0x24 = some (.jalr ra ra 0xFFFFFB8E, 4) := by decide
 theorem bw_at_28 : fetchRel bootMainClosure1Code 0x28 = some (.load .lbu a1 (9 : Fin 32) 0x4, 4) := by decide
 theorem bw_at_2c : fetchRel bootMainClosure1Code 0x2C = some (.load .lbu a2 (9 : Fin 32) 0x5, 4) := by decide
 theorem bw_at_30 : fetchRel bootMainClosure1Code 0x30 = some (.aluImm .add a0 a1 0xFFFFFFFE, 4) := by decide
@@ -244,8 +244,8 @@ theorem bw_at_48 : fetchRel bootMainClosure1Code 0x48 = some (.load .lw a3 (9 : 
 theorem bw_at_4a : fetchRel bootMainClosure1Code 0x4A = some (.load .lbu a4 (9 : Fin 32) 0x7, 4) := by decide
 theorem bw_at_4e : fetchRel bootMainClosure1Code 0x4E = some (.load .lbu a5 (9 : Fin 32) 0x6, 4) := by decide
 theorem bw_at_52 : fetchRel bootMainClosure1Code 0x52 = some (.store .sb sp a2 0x26, 4) := by decide
-theorem bw_at_56 : fetchRel bootMainClosure1Code 0x56 = some (.lui a2 0x3FCC5000, 4) := by decide
-theorem bw_at_5a : fetchRel bootMainClosure1Code 0x5A = some (.aluImm .add a2 a2 0xFFFFF851, 4) := by decide
+theorem bw_at_56 : fetchRel bootMainClosure1Code 0x56 = some (.lui a2 0x3FCC4000, 4) := by decide
+theorem bw_at_5a : fetchRel bootMainClosure1Code 0x5A = some (.aluImm .add a2 a2 0x75E, 4) := by decide
 theorem bw_at_5e : fetchRel bootMainClosure1Code 0x5E = some (.store .sw sp a3 0x20, 2) := by decide
 theorem bw_at_60 : fetchRel bootMainClosure1Code 0x60 = some (.aluImm .add (9 : Fin 32) sp 0x38, 2) := by decide
 theorem bw_at_62 : fetchRel bootMainClosure1Code 0x62 = some (.store .sb sp a4 0x24, 4) := by decide
@@ -257,7 +257,7 @@ theorem bw_at_72 : fetchRel bootMainClosure1Code 0x72 = some (.store .sw sp a2 0
 theorem bw_at_74 : fetchRel bootMainClosure1Code 0x74 = some (.store .sw sp a1 0x38, 2) := by decide
 theorem bw_at_76 : fetchRel bootMainClosure1Code 0x76 = some (.store .sw sp a1 0x3C, 2) := by decide
 theorem bw_at_78 : fetchRel bootMainClosure1Code 0x78 = some (.lui a2 0x3FCC4000, 4) := by decide
-theorem bw_at_7c : fetchRel bootMainClosure1Code 0x7C = some (.aluImm .add a2 a2 0x201, 4) := by decide
+theorem bw_at_7c : fetchRel bootMainClosure1Code 0x7C = some (.aluImm .add a2 a2 0x6B6, 4) := by decide
 theorem bw_at_80 : fetchRel bootMainClosure1Code 0x80 = some (.aluImm .add a3 x0 0x8, 2) := by decide
 theorem bw_at_82 : fetchRel bootMainClosure1Code 0x82 = some (.aluImm .add a4 sp 0x20, 2) := by decide
 theorem bw_at_84 : fetchRel bootMainClosure1Code 0x84 = some (.store .sw sp a2 0x40, 2) := by decide
@@ -294,15 +294,15 @@ theorem bw_at_ce : fetchRel bootMainClosure1Code 0xCE = some (.alu .or a4 a4 a0,
 theorem bw_at_d0 : fetchRel bootMainClosure1Code 0xD0 = some (.branch .bltu (20 : Fin 32) a4 0x14, 4) := by decide
 theorem bw_at_d4 : fetchRel bootMainClosure1Code 0xD4 = some (.alu .add a0 (19 : Fin 32) a1, 4) := by decide
 theorem bw_at_d8 : fetchRel bootMainClosure1Code 0xD8 = some (.alu .sub a1 a4 a1, 4) := by decide
-theorem bw_at_dc : fetchRel bootMainClosure1Code 0xDC = some (.auipc ra 0xC000, 4) := by decide
-theorem bw_at_e0 : fetchRel bootMainClosure1Code 0xE0 = some (.jalr ra ra 0xFFFFFD78, 4) := by decide
+theorem bw_at_dc : fetchRel bootMainClosure1Code 0xDC = some (.auipc ra 0xD000, 4) := by decide
+theorem bw_at_e0 : fetchRel bootMainClosure1Code 0xE0 = some (.jalr ra ra 0x51C, 4) := by decide
 theorem bw_at_e4 : fetchRel bootMainClosure1Code 0xE4 = some (.aluImm .add (9 : Fin 32) (9 : Fin 32) 0xC, 2) := by decide
 theorem bw_at_e6 : fetchRel bootMainClosure1Code 0xE6 = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFFFF, 2) := by decide
 theorem bw_at_e8 : fetchRel bootMainClosure1Code 0xE8 = some (.branch .bne (8 : Fin 32) x0 0xFFFFFFCE, 2) := by decide
 theorem bw_at_ea : fetchRel bootMainClosure1Code 0xEA = some (.alu .add a0 x0 sp, 2) := by decide
 theorem bw_at_ec : fetchRel bootMainClosure1Code 0xEC = some (.alu .add (8 : Fin 32) x0 sp, 2) := by decide
-theorem bw_at_ee : fetchRel bootMainClosure1Code 0xEE = some (.auipc ra 0xC000, 4) := by decide
-theorem bw_at_f2 : fetchRel bootMainClosure1Code 0xF2 = some (.jalr ra ra 0xFFFFFD2A, 4) := by decide
+theorem bw_at_ee : fetchRel bootMainClosure1Code 0xEE = some (.auipc ra 0xD000, 4) := by decide
+theorem bw_at_f2 : fetchRel bootMainClosure1Code 0xF2 = some (.jalr ra ra 0x4CE, 4) := by decide
 theorem bw_at_f6 : fetchRel bootMainClosure1Code 0xF6 = some (.aluImm .srl a1 a0 0x18, 4) := by decide
 theorem bw_at_fa : fetchRel bootMainClosure1Code 0xFA = some (.aluImm .srl a2 a0 0x10, 4) := by decide
 theorem bw_at_fe : fetchRel bootMainClosure1Code 0xFE = some (.aluImm .srl a3 a0 0x8, 4) := by decide
@@ -314,8 +314,8 @@ theorem bw_at_112 : fetchRel bootMainClosure1Code 0x112 = some (.aluImm .add a0 
 theorem bw_at_114 : fetchRel bootMainClosure1Code 0x114 = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem bw_at_118 : fetchRel bootMainClosure1Code 0x118 = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem bw_at_11a : fetchRel bootMainClosure1Code 0x11A = some (.aluImm .add (9 : Fin 32) sp 0x28, 2) := by decide
-theorem bw_at_11c : fetchRel bootMainClosure1Code 0x11C = some (.auipc ra 0x13000, 4) := by decide
-theorem bw_at_120 : fetchRel bootMainClosure1Code 0x120 = some (.jalr ra ra 0x2EE, 4) := by decide
+theorem bw_at_11c : fetchRel bootMainClosure1Code 0x11C = some (.auipc ra 0x15000, 4) := by decide
+theorem bw_at_120 : fetchRel bootMainClosure1Code 0x120 = some (.jalr ra ra 0xFFFFFA92, 4) := by decide
 theorem bw_at_124 : fetchRel bootMainClosure1Code 0x124 = some (.aluImm .add a0 x0 0x8, 2) := by decide
 theorem bw_at_126 : fetchRel bootMainClosure1Code 0x126 = some (.branch .beq a0 x0 0x28, 2) := by decide
 theorem bw_at_128 : fetchRel bootMainClosure1Code 0x128 = some (.load .lbu a1 (8 : Fin 32) 0x1, 4) := by decide
@@ -337,27 +337,27 @@ theorem bw_at_14e : fetchRel bootMainClosure1Code 0x14E = some (.aluImm .and a0 
 theorem bw_at_152 : fetchRel bootMainClosure1Code 0x152 = some (.lui (8 : Fin 32) 0x29000, 4) := by decide
 theorem bw_at_156 : fetchRel bootMainClosure1Code 0x156 = some (.branch .beq a0 x0 0x6, 2) := by decide
 theorem bw_at_158 : fetchRel bootMainClosure1Code 0x158 = some (.lui (8 : Fin 32) 0x28000, 4) := by decide
-theorem bw_at_15c : fetchRel bootMainClosure1Code 0x15C = some (.auipc ra 0xFFC5F000, 4) := by decide
-theorem bw_at_160 : fetchRel bootMainClosure1Code 0x160 = some (.jalr ra ra 0xFFFFFC08, 4) := by decide
+theorem bw_at_15c : fetchRel bootMainClosure1Code 0x15C = some (.auipc ra 0xFFC5E000, 4) := by decide
+theorem bw_at_160 : fetchRel bootMainClosure1Code 0x160 = some (.jalr ra ra 0x43E, 4) := by decide
 theorem bw_at_164 : fetchRel bootMainClosure1Code 0x164 = some (.branch .bne a0 x0 0x2C, 2) := by decide
 theorem bw_at_166 : fetchRel bootMainClosure1Code 0x166 = some (.aluImm .srl a0 (8 : Fin 32) 0xC, 4) := by decide
-theorem bw_at_16a : fetchRel bootMainClosure1Code 0x16A = some (.auipc ra 0xFFC5F000, 4) := by decide
-theorem bw_at_16e : fetchRel bootMainClosure1Code 0x16E = some (.jalr ra ra 0xFFFFFBE2, 4) := by decide
+theorem bw_at_16a : fetchRel bootMainClosure1Code 0x16A = some (.auipc ra 0xFFC5E000, 4) := by decide
+theorem bw_at_16e : fetchRel bootMainClosure1Code 0x16E = some (.jalr ra ra 0x418, 4) := by decide
 theorem bw_at_172 : fetchRel bootMainClosure1Code 0x172 = some (.branch .bne a0 x0 0x1E, 2) := by decide
-theorem bw_at_174 : fetchRel bootMainClosure1Code 0x174 = some (.auipc ra 0xFFC5F000, 4) := by decide
-theorem bw_at_178 : fetchRel bootMainClosure1Code 0x178 = some (.jalr ra ra 0xFFFFFBF0, 4) := by decide
+theorem bw_at_174 : fetchRel bootMainClosure1Code 0x174 = some (.auipc ra 0xFFC5E000, 4) := by decide
+theorem bw_at_178 : fetchRel bootMainClosure1Code 0x178 = some (.jalr ra ra 0x426, 4) := by decide
 theorem bw_at_17c : fetchRel bootMainClosure1Code 0x17C = some (.branch .bne a0 x0 0x14, 2) := by decide
 theorem bw_at_17e : fetchRel bootMainClosure1Code 0x17E = some (.aluImm .add a1 sp 0x28, 2) := by decide
 theorem bw_at_180 : fetchRel bootMainClosure1Code 0x180 = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem bw_at_184 : fetchRel bootMainClosure1Code 0x184 = some (.alu .add a0 x0 (8 : Fin 32), 2) := by decide
-theorem bw_at_186 : fetchRel bootMainClosure1Code 0x186 = some (.auipc ra 0xFFC5F000, 4) := by decide
-theorem bw_at_18a : fetchRel bootMainClosure1Code 0x18A = some (.jalr ra ra 0xFFFFFBCA, 4) := by decide
+theorem bw_at_186 : fetchRel bootMainClosure1Code 0x186 = some (.auipc ra 0xFFC5E000, 4) := by decide
+theorem bw_at_18a : fetchRel bootMainClosure1Code 0x18A = some (.jalr ra ra 0x400, 4) := by decide
 theorem bw_at_18e : fetchRel bootMainClosure1Code 0x18E = some (.branch .beq a0 x0 0x14, 2) := by decide
-theorem bw_at_190 : fetchRel bootMainClosure1Code 0x190 = some (.lui a0 0x3FCC4000, 4) := by decide
-theorem bw_at_194 : fetchRel bootMainClosure1Code 0x194 = some (.aluImm .add a0 a0 0x80, 4) := by decide
+theorem bw_at_190 : fetchRel bootMainClosure1Code 0x190 = some (.lui a0 0x3FCC6000, 4) := by decide
+theorem bw_at_194 : fetchRel bootMainClosure1Code 0x194 = some (.aluImm .add a0 a0 0x671, 4) := by decide
 theorem bw_at_198 : fetchRel bootMainClosure1Code 0x198 = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem bw_at_19a : fetchRel bootMainClosure1Code 0x19A = some (.auipc ra 0xFFC5F000, 4) := by decide
-theorem bw_at_19e : fetchRel bootMainClosure1Code 0x19E = some (.jalr ra ra 0xFFFFFACA, 4) := by decide
+theorem bw_at_19a : fetchRel bootMainClosure1Code 0x19A = some (.auipc ra 0xFFC5E000, 4) := by decide
+theorem bw_at_19e : fetchRel bootMainClosure1Code 0x19E = some (.jalr ra ra 0x300, 4) := by decide
 theorem bw_at_1a2 : fetchRel bootMainClosure1Code 0x1A2 = some (.load .lw ra sp 0x8C, 2) := by decide
 theorem bw_at_1a4 : fetchRel bootMainClosure1Code 0x1A4 = some (.load .lw (8 : Fin 32) sp 0x88, 2) := by decide
 theorem bw_at_1a6 : fetchRel bootMainClosure1Code 0x1A6 = some (.load .lw (9 : Fin 32) sp 0x84, 2) := by decide

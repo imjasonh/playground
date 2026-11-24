@@ -102,14 +102,14 @@ theorem dec_at_e2 : fetchRel edDecompressCode 0xE2 = some (.aluImm .add a1 sp 0x
 theorem dec_at_e4 : fetchRel edDecompressCode 0xE4 = some (.auipc ra 0xFFFFE000, 4) := by decide
 theorem dec_at_e8 : fetchRel edDecompressCode 0xE8 = some (.jalr ra ra 0x502, 4) := by decide
 theorem dec_at_ec : fetchRel edDecompressCode 0xEC = some (.lui (8 : Fin 32) 0x3FCC5000, 4) := by decide
-theorem dec_at_f0 : fetchRel edDecompressCode 0xF0 = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFF948, 4) := by decide
+theorem dec_at_f0 : fetchRel edDecompressCode 0xF0 = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFF9B0, 4) := by decide
 theorem dec_at_f4 : fetchRel edDecompressCode 0xF4 = some (.aluImm .add a0 sp 0x144, 2) := by decide
 theorem dec_at_f6 : fetchRel edDecompressCode 0xF6 = some (.aluImm .add a1 sp 0x11C, 2) := by decide
 theorem dec_at_f8 : fetchRel edDecompressCode 0xF8 = some (.alu .add a2 x0 (8 : Fin 32), 2) := by decide
 theorem dec_at_fa : fetchRel edDecompressCode 0xFA = some (.auipc ra 0xFFFFF000, 4) := by decide
 theorem dec_at_fe : fetchRel edDecompressCode 0xFE = some (.jalr ra ra 0xFFFFFA4A, 4) := by decide
 theorem dec_at_102 : fetchRel edDecompressCode 0x102 = some (.lui a2 0x3FCC5000, 4) := by decide
-theorem dec_at_106 : fetchRel edDecompressCode 0x106 = some (.aluImm .add a2 a2 0xFFFFF970, 4) := by decide
+theorem dec_at_106 : fetchRel edDecompressCode 0x106 = some (.aluImm .add a2 a2 0xFFFFF9D8, 4) := by decide
 theorem dec_at_10a : fetchRel edDecompressCode 0x10A = some (.aluImm .add a0 sp 0x50, 2) := by decide
 theorem dec_at_10c : fetchRel edDecompressCode 0x10C = some (.aluImm .add a1 sp 0x11C, 2) := by decide
 theorem dec_at_10e : fetchRel edDecompressCode 0x10E = some (.auipc ra 0xFFFFD000, 4) := by decide
@@ -194,7 +194,7 @@ theorem dec_at_1ee : fetchRel edDecompressCode 0x1EE = some (.aluImm .add a1 sp 
 theorem dec_at_1f0 : fetchRel edDecompressCode 0x1F0 = some (.auipc ra 0x0, 4) := by decide
 theorem dec_at_1f4 : fetchRel edDecompressCode 0x1F4 = some (.jalr ra ra 0xFFFFFD12, 4) := by decide
 theorem dec_at_1f8 : fetchRel edDecompressCode 0x1F8 = some (.lui (21 : Fin 32) 0x3FCC5000, 4) := by decide
-theorem dec_at_1fc : fetchRel edDecompressCode 0x1FC = some (.aluImm .add (21 : Fin 32) (21 : Fin 32) 0xFFFFF998, 4) := by decide
+theorem dec_at_1fc : fetchRel edDecompressCode 0x1FC = some (.aluImm .add (21 : Fin 32) (21 : Fin 32) 0xFFFFFA00, 4) := by decide
 theorem dec_at_200 : fetchRel edDecompressCode 0x200 = some (.aluImm .add a0 sp 0x234, 2) := by decide
 theorem dec_at_202 : fetchRel edDecompressCode 0x202 = some (.aluImm .add a1 sp 0x50, 2) := by decide
 theorem dec_at_204 : fetchRel edDecompressCode 0x204 = some (.alu .add a2 x0 (21 : Fin 32), 2) := by decide
@@ -279,7 +279,7 @@ theorem dec_at_2fe : fetchRel edDecompressCode 0x2FE = some (.auipc ra 0x4000, 4
 theorem dec_at_302 : fetchRel edDecompressCode 0x302 = some (.jalr ra ra 0x580, 4) := by decide
 theorem dec_at_306 : fetchRel edDecompressCode 0x306 = some (.aluImm .add a0 sp 0xA0, 2) := by decide
 theorem dec_at_308 : fetchRel edDecompressCode 0x308 = some (.lui a1 0x3FCC5000, 4) := by decide
-theorem dec_at_30c : fetchRel edDecompressCode 0x30C = some (.aluImm .add a1 a1 0xFFFFF948, 4) := by decide
+theorem dec_at_30c : fetchRel edDecompressCode 0x30C = some (.aluImm .add a1 a1 0xFFFFF9B0, 4) := by decide
 theorem dec_at_310 : fetchRel edDecompressCode 0x310 = some (.aluImm .add a2 x0 0x28, 4) := by decide
 theorem dec_at_314 : fetchRel edDecompressCode 0x314 = some (.auipc ra 0x4000, 4) := by decide
 theorem dec_at_318 : fetchRel edDecompressCode 0x318 = some (.jalr ra ra 0x56A, 4) := by decide

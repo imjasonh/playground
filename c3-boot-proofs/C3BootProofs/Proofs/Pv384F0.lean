@@ -18,7 +18,7 @@ def pvF0908 : List BInstr :=
 theorem pvF0908_end : blockEnd p384VerifyPrehashCode 0x908 pvF0908 = some 0x920 := by decide
 
 def pvF0928 : List BInstr :=
-  [.aluImm .add (9 : Fin 32) x0 0x0, .lui a0 0x1000, .aluImm .add a0 a0 0x298, .alu .add (19 : Fin 32) sp a0, .aluImm .add (22 : Fin 32) x0 0x2, .lui a0 0xE88FE000, .lui (18 : Fin 32) 0x3FCC5000, .aluImm .add (18 : Fin 32) (18 : Fin 32) 0xFFFFFD28, .aluImm .add (20 : Fin 32) a0 0xFFFFFC45, .aluImm .add (23 : Fin 32) x0 0x188, .lui a0 0x2000, .aluImm .add a0 a0 0xFFFFF924, .alu .add (24 : Fin 32) sp a0]
+  [.aluImm .add (9 : Fin 32) x0 0x0, .lui a0 0x1000, .aluImm .add a0 a0 0x298, .alu .add (19 : Fin 32) sp a0, .aluImm .add (22 : Fin 32) x0 0x2, .lui a0 0xE88FE000, .lui (18 : Fin 32) 0x3FCC5000, .aluImm .add (18 : Fin 32) (18 : Fin 32) 0xFFFFFD90, .aluImm .add (20 : Fin 32) a0 0xFFFFFC45, .aluImm .add (23 : Fin 32) x0 0x188, .lui a0 0x2000, .aluImm .add a0 a0 0xFFFFF924, .alu .add (24 : Fin 32) sp a0]
 theorem pvF0928_end : blockEnd p384VerifyPrehashCode 0x928 pvF0928 = some 0x954 := by decide
 
 def pvF0958 : List BInstr :=

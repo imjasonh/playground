@@ -334,9 +334,9 @@ theorem dqAlpha_lt (X : Nat) : dqAlpha X < p384 := by
 
 def dqB1 : List BInstr := [.aluImm .add a0 sp 0x62C, .aluImm .add a1 sp 0xA4, .aluImm .add a2 sp 0xA4, .aluImm .add (8 : Fin 32) sp 0x62C]
 def dqB2 : List BInstr := [.aluImm .add a0 sp 0x2FC, .aluImm .add a1 sp 0x62C, .aluImm .add a2 sp 0xA4]
-def dqB3 : List BInstr := [.lui a1 0x3FCC4000, .aluImm .add a1 a1 0x204, .aluImm .add a0 sp 0x62C, .aluImm .add a2 sp 0xA4]
+def dqB3 : List BInstr := [.lui a1 0x3FCC4000, .aluImm .add a1 a1 0x74, .aluImm .add a0 sp 0x62C, .aluImm .add a2 sp 0xA4]
 def dqB4 : List BInstr := [.aluImm .add a0 sp 0x29C, .aluImm .add a1 sp 0x2FC, .aluImm .add a2 sp 0x62C]
-def dqB5 : List BInstr := [.lui a2 0x3FCC4000, .aluImm .add a2 a2 0x234, .aluImm .add a0 sp 0x104, .aluImm .add a1 sp 0x29C]
+def dqB5 : List BInstr := [.lui a2 0x3FCC4000, .aluImm .add a2 a2 0xA4, .aluImm .add a0 sp 0x104, .aluImm .add a1 sp 0x29C]
 
 theorem dqB1_end : blockEnd p384DecompressCode 0x76 dqB1 = some 0x82 := by decide
 theorem dqB2_end : blockEnd p384DecompressCode 0x8A dqB2 = some 0x92 := by decide
@@ -527,13 +527,13 @@ theorem dq_stB {M : Word → BitVec 8} {n : Machine} {S : Word} (C : DqCode M) (
 /-! ## Copying the constants -/
 
 def dqC1 : List BInstr :=
-  [.aluImm .add a0 sp 0x134, .lui (24 : Fin 32) 0x3FCC5000, .aluImm .add (24 : Fin 32) (24 : Fin 32) 0xFFFFFC8C,
+  [.aluImm .add a0 sp 0x134, .lui (24 : Fin 32) 0x3FCC5000, .aluImm .add (24 : Fin 32) (24 : Fin 32) 0xFFFFFCF4,
    .aluImm .add a2 x0 0x9C, .alu .add a1 x0 (24 : Fin 32)]
 def dqC2 : List BInstr :=
   [.aluImm .add (9 : Fin 32) x0 0x180, .alu .sub (18 : Fin 32) (9 : Fin 32) (8 : Fin 32), .aluImm .add a0 sp 0x29C,
    .aluImm .add a1 sp 0x104, .aluImm .add a2 x0 0x30]
 def dqC3 : List BInstr :=
-  [.aluImm .add a0 sp 0x2CC, .lui (22 : Fin 32) 0x3FCC5000, .aluImm .add (22 : Fin 32) (22 : Fin 32) 0xFFFFFE2C,
+  [.aluImm .add a0 sp 0x2CC, .lui (22 : Fin 32) 0x3FCC5000, .aluImm .add (22 : Fin 32) (22 : Fin 32) 0xFFFFFE94,
    .aluImm .add a2 x0 0x30, .alu .add a1 x0 (22 : Fin 32)]
 
 theorem dqC1_end : blockEnd p384DecompressCode 0xD4 dqC1 = some 0xE4 := by decide

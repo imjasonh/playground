@@ -40,8 +40,8 @@ theorem es_at_2a : fetchRel ecdsaSignature48Code 0x2A = some (.branch .beq (8 : 
 theorem es_at_2c : fetchRel ecdsaSignature48Code 0x2C = some (.aluImm .add a1 sp 0x5D, 4) := by decide
 theorem es_at_30 : fetchRel ecdsaSignature48Code 0x30 = some (.aluImm .add a0 sp 0x1D, 4) := by decide
 theorem es_at_34 : fetchRel ecdsaSignature48Code 0x34 = some (.aluImm .add a2 x0 0xB, 2) := by decide
-theorem es_at_36 : fetchRel ecdsaSignature48Code 0x36 = some (.auipc ra 0xC000, 4) := by decide
-theorem es_at_3a : fetchRel ecdsaSignature48Code 0x3A = some (.jalr ra ra 0x6A4, 4) := by decide
+theorem es_at_36 : fetchRel ecdsaSignature48Code 0x36 = some (.auipc ra 0xD000, 4) := by decide
+theorem es_at_3a : fetchRel ecdsaSignature48Code 0x3A = some (.jalr ra ra 0x16, 4) := by decide
 theorem es_at_3e : fetchRel ecdsaSignature48Code 0x3E = some (.load .lw a2 sp 0x14, 2) := by decide
 theorem es_at_40 : fetchRel ecdsaSignature48Code 0x40 = some (.store .sw sp (8 : Fin 32) 0x18, 2) := by decide
 theorem es_at_42 : fetchRel ecdsaSignature48Code 0x42 = some (.store .sb sp (9 : Fin 32) 0x1C, 4) := by decide
@@ -75,8 +75,8 @@ theorem es_at_86 : fetchRel ecdsaSignature48Code 0x86 = some (.jalr x0 ra 0x0, 2
 theorem es_at_88 : fetchRel ecdsaSignature48Code 0x88 = some (.aluImm .add a1 sp 0x5A, 4) := by decide
 theorem es_at_8c : fetchRel ecdsaSignature48Code 0x8C = some (.aluImm .add a0 sp 0x29, 4) := by decide
 theorem es_at_90 : fetchRel ecdsaSignature48Code 0x90 = some (.aluImm .add a2 x0 0x2F, 4) := by decide
-theorem es_at_94 : fetchRel ecdsaSignature48Code 0x94 = some (.auipc ra 0xC000, 4) := by decide
-theorem es_at_98 : fetchRel ecdsaSignature48Code 0x98 = some (.jalr ra ra 0x646, 4) := by decide
+theorem es_at_94 : fetchRel ecdsaSignature48Code 0x94 = some (.auipc ra 0xD000, 4) := by decide
+theorem es_at_98 : fetchRel ecdsaSignature48Code 0x98 = some (.jalr ra ra 0xFFFFFFB8, 4) := by decide
 theorem es_at_9c : fetchRel ecdsaSignature48Code 0x9C = some (.aluImm .add a0 sp 0x58, 2) := by decide
 theorem es_at_9e : fetchRel ecdsaSignature48Code 0x9E = some (.aluImm .add a1 sp 0x18, 2) := by decide
 theorem es_at_a0 : fetchRel ecdsaSignature48Code 0xA0 = some (.auipc ra 0x0, 4) := by decide
@@ -90,8 +90,8 @@ theorem es_at_b6 : fetchRel ecdsaSignature48Code 0xB6 = some (.jal x0 0xFFFFFFB6
 theorem es_at_b8 : fetchRel ecdsaSignature48Code 0xB8 = some (.aluImm .add a1 sp 0x5A, 4) := by decide
 theorem es_at_bc : fetchRel ecdsaSignature48Code 0xBC = some (.aluImm .add a0 sp 0x89, 4) := by decide
 theorem es_at_c0 : fetchRel ecdsaSignature48Code 0xC0 = some (.aluImm .add a2 x0 0x2F, 4) := by decide
-theorem es_at_c4 : fetchRel ecdsaSignature48Code 0xC4 = some (.auipc ra 0xC000, 4) := by decide
-theorem es_at_c8 : fetchRel ecdsaSignature48Code 0xC8 = some (.jalr ra ra 0x616, 4) := by decide
+theorem es_at_c4 : fetchRel ecdsaSignature48Code 0xC4 = some (.auipc ra 0xD000, 4) := by decide
+theorem es_at_c8 : fetchRel ecdsaSignature48Code 0xC8 = some (.jalr ra ra 0xFFFFFF88, 4) := by decide
 theorem es_at_cc : fetchRel ecdsaSignature48Code 0xCC = some (.load .lw a2 sp 0x24, 2) := by decide
 theorem es_at_ce : fetchRel ecdsaSignature48Code 0xCE = some (.aluImm .add a0 x0 0x1, 2) := by decide
 theorem es_at_d0 : fetchRel ecdsaSignature48Code 0xD0 = some (.aluImm .add (9 : Fin 32) x0 0x1, 2) := by decide
@@ -100,13 +100,13 @@ theorem es_at_d4 : fetchRel ecdsaSignature48Code 0xD4 = some (.branch .bne a2 x0
 theorem es_at_d6 : fetchRel ecdsaSignature48Code 0xD6 = some (.aluImm .add a0 (20 : Fin 32) 0x2, 4) := by decide
 theorem es_at_da : fetchRel ecdsaSignature48Code 0xDA = some (.aluImm .add a1 sp 0x29, 4) := by decide
 theorem es_at_de : fetchRel ecdsaSignature48Code 0xDE = some (.aluImm .add a2 x0 0x2F, 4) := by decide
-theorem es_at_e2 : fetchRel ecdsaSignature48Code 0xE2 = some (.auipc ra 0xC000, 4) := by decide
-theorem es_at_e6 : fetchRel ecdsaSignature48Code 0xE6 = some (.jalr ra ra 0x5F8, 4) := by decide
+theorem es_at_e2 : fetchRel ecdsaSignature48Code 0xE2 = some (.auipc ra 0xD000, 4) := by decide
+theorem es_at_e6 : fetchRel ecdsaSignature48Code 0xE6 = some (.jalr ra ra 0xFFFFFF6A, 4) := by decide
 theorem es_at_ea : fetchRel ecdsaSignature48Code 0xEA = some (.aluImm .add a0 (20 : Fin 32) 0x32, 4) := by decide
 theorem es_at_ee : fetchRel ecdsaSignature48Code 0xEE = some (.aluImm .add a1 sp 0x89, 4) := by decide
 theorem es_at_f2 : fetchRel ecdsaSignature48Code 0xF2 = some (.aluImm .add a2 x0 0x2F, 4) := by decide
-theorem es_at_f6 : fetchRel ecdsaSignature48Code 0xF6 = some (.auipc ra 0xC000, 4) := by decide
-theorem es_at_fa : fetchRel ecdsaSignature48Code 0xFA = some (.jalr ra ra 0x5E4, 4) := by decide
+theorem es_at_f6 : fetchRel ecdsaSignature48Code 0xF6 = some (.auipc ra 0xD000, 4) := by decide
+theorem es_at_fa : fetchRel ecdsaSignature48Code 0xFA = some (.jalr ra ra 0xFFFFFF56, 4) := by decide
 theorem es_at_fe : fetchRel ecdsaSignature48Code 0xFE = some (.aluImm .add a1 x0 0x0, 2) := by decide
 theorem es_at_100 : fetchRel ecdsaSignature48Code 0x100 = some (.store .sb (20 : Fin 32) (19 : Fin 32) 0x1, 4) := by decide
 theorem es_at_104 : fetchRel ecdsaSignature48Code 0x104 = some (.aluImm .add a0 x0 0x31, 4) := by decide

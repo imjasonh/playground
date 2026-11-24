@@ -37,8 +37,8 @@ theorem rs_at_02 : fetchRel readerReservedCode 0x02 = some (.store .sw sp ra 0x0
 theorem rs_at_04 : fetchRel readerReservedCode 0x04 = some (.alu .add a2 x0 a1, 2) := by decide
 theorem rs_at_06 : fetchRel readerReservedCode 0x06 = some (.alu .add a1 x0 a0, 2) := by decide
 theorem rs_at_08 : fetchRel readerReservedCode 0x08 = some (.aluImm .add a0 sp 4, 2) := by decide
-theorem rs_at_0a : fetchRel readerReservedCode 0x0A = some (.auipc ra 0, 4) := by decide
-theorem rs_at_0e : fetchRel readerReservedCode 0x0E = some (.jalr ra ra 0x92, 4) := by decide
+theorem rs_at_0a : fetchRel readerReservedCode 0x0A = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem rs_at_0e : fetchRel readerReservedCode 0x0E = some (.jalr ra ra 0x2A, 4) := by decide
 theorem rs_at_12 : fetchRel readerReservedCode 0x12 = some (.load .lw a0 sp 4, 2) := by decide
 theorem rs_at_14 : fetchRel readerReservedCode 0x14 = some (.branch .beq a0 x0 0x14, 2) := by decide
 theorem rs_at_16 : fetchRel readerReservedCode 0x16 = some (.load .lw a1 sp 8, 2) := by decide

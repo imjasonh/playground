@@ -72,10 +72,10 @@ theorem cn_at_74 : fetchRel condNeg12Code 0x74 = some (.aluImm .add a0 a0 0x4, 2
 theorem cn_at_76 : fetchRel condNeg12Code 0x76 = some (.aluImm .add a1 a1 0xFFFFFFFF, 2) := by decide
 theorem cn_at_78 : fetchRel condNeg12Code 0x78 = some (.branch .bne a1 x0 0xFFFFFFF2, 2) := by decide
 theorem cn_at_7a : fetchRel condNeg12Code 0x7A = some (.aluImm .and a3 (9 : Fin 32) 0xFF, 4) := by decide
-theorem cn_at_7e : fetchRel condNeg12Code 0x7E = some (.lui a1 0x3FCC5000, 4) := by decide
-theorem cn_at_82 : fetchRel condNeg12Code 0x82 = some (.aluImm .add a1 a1 0xFFFFF830, 4) := by decide
-theorem cn_at_86 : fetchRel condNeg12Code 0x86 = some (.lui a2 0x3FCC5000, 4) := by decide
-theorem cn_at_8a : fetchRel condNeg12Code 0x8A = some (.aluImm .add a2 a2 0xFFFFF828, 4) := by decide
+theorem cn_at_7e : fetchRel condNeg12Code 0x7E = some (.lui a1 0x3FCC4000, 4) := by decide
+theorem cn_at_82 : fetchRel condNeg12Code 0x82 = some (.aluImm .add a1 a1 0x720, 4) := by decide
+theorem cn_at_86 : fetchRel condNeg12Code 0x86 = some (.lui a2 0x3FCC4000, 4) := by decide
+theorem cn_at_8a : fetchRel condNeg12Code 0x8A = some (.aluImm .add a2 a2 0x718, 4) := by decide
 theorem cn_at_8e : fetchRel condNeg12Code 0x8E = some (.aluImm .add a0 sp 0x48, 2) := by decide
 theorem cn_at_90 : fetchRel condNeg12Code 0x90 = some (.aluImm .add (9 : Fin 32) sp 0x48, 2) := by decide
 theorem cn_at_92 : fetchRel condNeg12Code 0x92 = some (.auipc ra 0x0, 4) := by decide
@@ -192,8 +192,8 @@ def cnNot : List BInstr :=
 
 /-- From 0x7A to 0x92: `Uint<2>::select(ZERO, ONE, carry)`'s arguments. -/
 def cnSel1 : List BInstr :=
-  [.aluImm .and a3 (9 : Fin 32) 0xFF, .lui a1 0x3FCC5000, .aluImm .add a1 a1 0xFFFFF830, .lui a2 0x3FCC5000,
-   .aluImm .add a2 a2 0xFFFFF828, .aluImm .add a0 sp 0x48, .aluImm .add (9 : Fin 32) sp 0x48]
+  [.aluImm .and a3 (9 : Fin 32) 0xFF, .lui a1 0x3FCC4000, .aluImm .add a1 a1 0x720, .lui a2 0x3FCC4000,
+   .aluImm .add a2 a2 0x718, .aluImm .add a0 sp 0x48, .aluImm .add (9 : Fin 32) sp 0x48]
 
 def cnAddInit : List BInstr :=
   [.aluImm .add a1 x0 0x0, .sw sp x0 0x40, .sw sp x0 0x44, .aluImm .add a0 sp 0x38, .aluImm .add a2 sp 0x40,

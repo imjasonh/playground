@@ -74,7 +74,7 @@ theorem bee_at_1c : fetchRel base64EncodeToCode 0x1C = some (.alu .divu (20 : Fi
 theorem bee_at_20 : fetchRel base64EncodeToCode 0x20 = some (.aluImm .sll (21 : Fin 32) (20 : Fin 32) 0x1, 4) := by decide
 theorem bee_at_24 : fetchRel base64EncodeToCode 0x24 = some (.alu .add (8 : Fin 32) (21 : Fin 32) (20 : Fin 32), 4) := by decide
 theorem bee_at_28 : fetchRel base64EncodeToCode 0x28 = some (.lui (23 : Fin 32) 0x3FCC4000, 4) := by decide
-theorem bee_at_2c : fetchRel base64EncodeToCode 0x2C = some (.aluImm .add (23 : Fin 32) (23 : Fin 32) 0x7D8, 4) := by decide
+theorem bee_at_2c : fetchRel base64EncodeToCode 0x2C = some (.aluImm .add (23 : Fin 32) (23 : Fin 32) 0x6B8, 4) := by decide
 theorem bee_at_30 : fetchRel base64EncodeToCode 0x30 = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
 theorem bee_at_32 : fetchRel base64EncodeToCode 0x32 = some (.branch .beq (8 : Fin 32) x0 0x66, 2) := by decide
 theorem bee_at_34 : fetchRel base64EncodeToCode 0x34 = some (.load .lbu a1 a0 0x0, 4) := by decide
@@ -106,8 +106,8 @@ theorem bee_at_80 : fetchRel base64EncodeToCode 0x80 = some (.store .sb sp a4 0x
 theorem bee_at_84 : fetchRel base64EncodeToCode 0x84 = some (.alu .add a1 x0 sp, 2) := by decide
 theorem bee_at_86 : fetchRel base64EncodeToCode 0x86 = some (.aluImm .add a2 x0 0x4, 2) := by decide
 theorem bee_at_88 : fetchRel base64EncodeToCode 0x88 = some (.alu .add a0 x0 (22 : Fin 32), 2) := by decide
-theorem bee_at_8a : fetchRel base64EncodeToCode 0x8A = some (.auipc ra 0xFFFFE000, 4) := by decide
-theorem bee_at_8e : fetchRel base64EncodeToCode 0x8E = some (.jalr ra ra 0x6FA, 4) := by decide
+theorem bee_at_8a : fetchRel base64EncodeToCode 0x8A = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem bee_at_8e : fetchRel base64EncodeToCode 0x8E = some (.jalr ra ra 0x25C, 4) := by decide
 theorem bee_at_92 : fetchRel base64EncodeToCode 0x92 = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFFFFD, 2) := by decide
 theorem bee_at_94 : fetchRel base64EncodeToCode 0x94 = some (.alu .add a0 x0 (9 : Fin 32), 2) := by decide
 theorem bee_at_96 : fetchRel base64EncodeToCode 0x96 = some (.branch .bne (8 : Fin 32) x0 0xFFFFFF9E, 2) := by decide
@@ -157,8 +157,8 @@ theorem bee_at_11a : fetchRel base64EncodeToCode 0x11A = some (.store .sb sp a3 
 theorem bee_at_11e : fetchRel base64EncodeToCode 0x11E = some (.aluImm .add a1 sp 0x8, 2) := by decide
 theorem bee_at_120 : fetchRel base64EncodeToCode 0x120 = some (.aluImm .add a2 x0 0x4, 2) := by decide
 theorem bee_at_122 : fetchRel base64EncodeToCode 0x122 = some (.alu .add a0 x0 (22 : Fin 32), 2) := by decide
-theorem bee_at_124 : fetchRel base64EncodeToCode 0x124 = some (.auipc ra 0xFFFFE000, 4) := by decide
-theorem bee_at_128 : fetchRel base64EncodeToCode 0x128 = some (.jalr ra ra 0x660, 4) := by decide
+theorem bee_at_124 : fetchRel base64EncodeToCode 0x124 = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem bee_at_128 : fetchRel base64EncodeToCode 0x128 = some (.jalr ra ra 0x1C2, 4) := by decide
 theorem bee_at_12c : fetchRel base64EncodeToCode 0x12C = some (.load .lw ra sp 0x2C, 2) := by decide
 theorem bee_at_12e : fetchRel base64EncodeToCode 0x12E = some (.load .lw (8 : Fin 32) sp 0x28, 2) := by decide
 theorem bee_at_130 : fetchRel base64EncodeToCode 0x130 = some (.load .lw (9 : Fin 32) sp 0x24, 2) := by decide
@@ -173,7 +173,7 @@ theorem bee_at_140 : fetchRel base64EncodeToCode 0x140 = some (.jalr x0 ra 0x0, 
 end
 
 def beeI : List BInstr :=
-  [.alu .add (22 : Fin 32) x0 a2, .alu .add (19 : Fin 32) x0 a1, .alu .add (18 : Fin 32) x0 a0, .aluImm .add a0 x0 0x3, .alu .divu (20 : Fin 32) a1 a0, .aluImm .sll (21 : Fin 32) (20 : Fin 32) 0x1, .alu .add (8 : Fin 32) (21 : Fin 32) (20 : Fin 32), .lui (23 : Fin 32) 0x3FCC4000, .aluImm .add (23 : Fin 32) (23 : Fin 32) 0x7D8, .alu .add a0 x0 (18 : Fin 32)]
+  [.alu .add (22 : Fin 32) x0 a2, .alu .add (19 : Fin 32) x0 a1, .alu .add (18 : Fin 32) x0 a0, .aluImm .add a0 x0 0x3, .alu .divu (20 : Fin 32) a1 a0, .aluImm .sll (21 : Fin 32) (20 : Fin 32) 0x1, .alu .add (8 : Fin 32) (21 : Fin 32) (20 : Fin 32), .lui (23 : Fin 32) 0x3FCC4000, .aluImm .add (23 : Fin 32) (23 : Fin 32) 0x6B8, .alu .add a0 x0 (18 : Fin 32)]
 def beeG : List BInstr :=
   [.lbu a1 a0 0x0, .lbu a2 a0 0x1, .lbu a3 a0 0x2, .aluImm .sll a4 a1 0x10, .aluImm .sll a2 a2 0x8, .aluImm .srl a1 a1 0x2, .aluImm .and a5 a3 0x3F, .alu .or a3 a3 a2, .alu .or a2 a2 a4, .alu .add a1 a1 (23 : Fin 32), .alu .add a5 a5 (23 : Fin 32), .aluImm .sll a2 a2 0xE, .aluImm .sll a3 a3 0x14, .aluImm .srl a2 a2 0x1A, .aluImm .srl a3 a3 0x1A, .alu .add a2 a2 (23 : Fin 32), .alu .add a3 a3 (23 : Fin 32), .lbu a1 a1 0x0, .lbu a2 a2 0x0, .lbu a3 a3 0x0, .lbu a4 a5 0x0, .aluImm .add (9 : Fin 32) a0 0x3, .sb sp a1 0x0, .sb sp a2 0x1, .sb sp a3 0x2, .sb sp a4 0x3, .alu .add a1 x0 sp, .aluImm .add a2 x0 0x4, .alu .add a0 x0 (22 : Fin 32)]
 def beeT : List BInstr :=

@@ -26,7 +26,7 @@ def gdY (A : Nat) (yodd : Word) : Nat :=
   if p2fm (gdY0 A) 1 % 2 = yodd.toNat % 2 then gdY0 A else subGen 0 (gdY0 A)
 
 def gdG1 : List BInstr :=
-  [.aluImm .add a0 sp 0x45C, .lui a1 0x3FCC5000, .aluImm .add a1 a1 0xFFFFFB38, .aluImm .add a2 x0 0x6C]
+  [.aluImm .add a0 sp 0x45C, .lui a1 0x3FCC5000, .aluImm .add a1 a1 0xFFFFFBA0, .aluImm .add a2 x0 0x6C]
 def gdG2 : List BInstr := [.aluImm .add a0 sp 0x43C, .aluImm .add a1 sp 0xC4]
 def gdG3 : List BInstr := [.aluImm .and a0 a0 0xFF]
 def gdG4 : List BInstr :=

@@ -23,7 +23,7 @@ def pvHP100a : List BInstr :=
 theorem pvHP100a_end : blockEnd p384VerifyPrehashCode 0x100A pvHP100a = some 0x101C := by decide
 
 def pvHP1024 : List BInstr :=
-  [.lui a1 0x3FCC5000, .aluImm .add a1 a1 0xFFFFFC5C, .lui a0 0x1000, .aluImm .add a0 a0 0x714, .alu .add a0 a0 sp]
+  [.lui a1 0x3FCC5000, .aluImm .add a1 a1 0xFFFFFCC4, .lui a0 0x1000, .aluImm .add a0 a0 0x714, .alu .add a0 a0 sp]
 theorem pvHP1024_end : blockEnd p384VerifyPrehashCode 0x1024 pvHP1024 = some 0x1034 := by decide
 
 def pvHP103c : List BInstr :=

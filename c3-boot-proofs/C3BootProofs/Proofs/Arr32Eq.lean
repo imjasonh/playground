@@ -18,7 +18,7 @@ theorem aeq_at_0 : fetchRel arr32EqCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFF
 theorem aeq_at_2 : fetchRel arr32EqCode 0x2 = some (.store .sw sp ra 0xC, 2) := by decide
 theorem aeq_at_4 : fetchRel arr32EqCode 0x4 = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem aeq_at_8 : fetchRel arr32EqCode 0x8 = some (.auipc ra 0xC000, 4) := by decide
-theorem aeq_at_c : fetchRel arr32EqCode 0xC = some (.jalr ra ra 0xE8, 4) := by decide
+theorem aeq_at_c : fetchRel arr32EqCode 0xC = some (.jalr ra ra 0x2A, 4) := by decide
 theorem aeq_at_10 : fetchRel arr32EqCode 0x10 = some (.aluImm .sltu a0 a0 0x1, 4) := by decide
 theorem aeq_at_14 : fetchRel arr32EqCode 0x14 = some (.load .lw ra sp 0xC, 2) := by decide
 theorem aeq_at_16 : fetchRel arr32EqCode 0x16 = some (.aluImm .add sp sp 0x10, 2) := by decide
@@ -26,16 +26,16 @@ theorem aeq_at_18 : fetchRel arr32EqCode 0x18 = some (.jalr x0 ra 0x0, 2) := by 
 theorem ane_at_0 : fetchRel arr32NeCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFF0, 2) := by decide
 theorem ane_at_2 : fetchRel arr32NeCode 0x2 = some (.store .sw sp ra 0xC, 2) := by decide
 theorem ane_at_4 : fetchRel arr32NeCode 0x4 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem ane_at_8 : fetchRel arr32NeCode 0x8 = some (.auipc ra 0xC000, 4) := by decide
-theorem ane_at_c : fetchRel arr32NeCode 0xC = some (.jalr ra ra 0xFFFFF972, 4) := by decide
+theorem ane_at_8 : fetchRel arr32NeCode 0x8 = some (.auipc ra 0xA000, 4) := by decide
+theorem ane_at_c : fetchRel arr32NeCode 0xC = some (.jalr ra ra 0xFFFFFF08, 4) := by decide
 theorem ane_at_10 : fetchRel arr32NeCode 0x10 = some (.alu .sltu a0 x0 a0, 4) := by decide
 theorem ane_at_14 : fetchRel arr32NeCode 0x14 = some (.load .lw ra sp 0xC, 2) := by decide
 theorem ane_at_16 : fetchRel arr32NeCode 0x16 = some (.aluImm .add sp sp 0x10, 2) := by decide
 theorem ane_at_18 : fetchRel arr32NeCode 0x18 = some (.jalr x0 ra 0x0, 2) := by decide
 theorem sne_at_0 : fetchRel sliceNeCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFF0, 2) := by decide
 theorem sne_at_2 : fetchRel sliceNeCode 0x2 = some (.store .sw sp ra 0xC, 2) := by decide
-theorem sne_at_4 : fetchRel sliceNeCode 0x4 = some (.auipc ra 0x0, 4) := by decide
-theorem sne_at_8 : fetchRel sliceNeCode 0x8 = some (.jalr ra ra 0x12, 4) := by decide
+theorem sne_at_4 : fetchRel sliceNeCode 0x4 = some (.auipc ra 0xFFFFF000, 4) := by decide
+theorem sne_at_8 : fetchRel sliceNeCode 0x8 = some (.jalr ra ra 0x36E, 4) := by decide
 theorem sne_at_c : fetchRel sliceNeCode 0xC = some (.aluImm .xor a0 a0 0x1, 4) := by decide
 theorem sne_at_10 : fetchRel sliceNeCode 0x10 = some (.load .lw ra sp 0xC, 2) := by decide
 theorem sne_at_12 : fetchRel sliceNeCode 0x12 = some (.aluImm .add sp sp 0x10, 2) := by decide
@@ -43,8 +43,8 @@ theorem sne_at_14 : fetchRel sliceNeCode 0x14 = some (.jalr x0 ra 0x0, 2) := by 
 theorem aec_at_0 : fetchRel arr32EqCryptoCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFF0, 2) := by decide
 theorem aec_at_2 : fetchRel arr32EqCryptoCode 0x2 = some (.store .sw sp ra 0xC, 2) := by decide
 theorem aec_at_4 : fetchRel arr32EqCryptoCode 0x4 = some (.aluImm .add a2 x0 0x20, 4) := by decide
-theorem aec_at_8 : fetchRel arr32EqCryptoCode 0x8 = some (.auipc ra 0x10000, 4) := by decide
-theorem aec_at_c : fetchRel arr32EqCryptoCode 0xC = some (.jalr ra ra 0xFFFFFA7E, 4) := by decide
+theorem aec_at_8 : fetchRel arr32EqCryptoCode 0x8 = some (.auipc ra 0x12000, 4) := by decide
+theorem aec_at_c : fetchRel arr32EqCryptoCode 0xC = some (.jalr ra ra 0xFFFFF88E, 4) := by decide
 theorem aec_at_10 : fetchRel arr32EqCryptoCode 0x10 = some (.aluImm .sltu a0 a0 0x1, 4) := by decide
 theorem aec_at_14 : fetchRel arr32EqCryptoCode 0x14 = some (.load .lw ra sp 0xC, 2) := by decide
 theorem aec_at_16 : fetchRel arr32EqCryptoCode 0x16 = some (.aluImm .add sp sp 0x10, 2) := by decide

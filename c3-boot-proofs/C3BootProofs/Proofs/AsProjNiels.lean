@@ -50,7 +50,7 @@ theorem apn_at_3e : fetchRel asProjNielsCode 0x3E = some (.jalr ra ra 0x2C8, 4) 
 theorem apn_at_42 : fetchRel asProjNielsCode 0x42 = some (.aluImm .add a1 (8 : Fin 32) 0x78, 4) := by decide
 theorem apn_at_46 : fetchRel asProjNielsCode 0x46 = some (.aluImm .add a0 (9 : Fin 32) 0x78, 4) := by decide
 theorem apn_at_4a : fetchRel asProjNielsCode 0x4A = some (.lui a2 0x3FCC5000, 4) := by decide
-theorem apn_at_4e : fetchRel asProjNielsCode 0x4E = some (.aluImm .add a2 a2 0xFFFFFA2C, 4) := by decide
+theorem apn_at_4e : fetchRel asProjNielsCode 0x4E = some (.aluImm .add a2 a2 0xFFFFFA94, 4) := by decide
 theorem apn_at_52 : fetchRel asProjNielsCode 0x52 = some (.load .lw ra sp 0xC, 2) := by decide
 theorem apn_at_54 : fetchRel asProjNielsCode 0x54 = some (.load .lw (8 : Fin 32) sp 0x8, 2) := by decide
 theorem apn_at_56 : fetchRel asProjNielsCode 0x56 = some (.load .lw (9 : Fin 32) sp 0x4, 2) := by decide

@@ -23,8 +23,8 @@ theorem ii_at_6 : fetchRel derIntegerIsCode 0x6 = some (.store .sw sp (9 : Fin 3
 theorem ii_at_8 : fetchRel derIntegerIsCode 0x8 = some (.alu .add (9 : Fin 32) x0 a1, 2) := by decide
 theorem ii_at_a : fetchRel derIntegerIsCode 0xA = some (.alu .add a1 x0 a0, 2) := by decide
 theorem ii_at_c : fetchRel derIntegerIsCode 0xC = some (.aluImm .add a0 sp 0x8, 2) := by decide
-theorem ii_at_e : fetchRel derIntegerIsCode 0xE = some (.auipc ra 0x0, 4) := by decide
-theorem ii_at_12 : fetchRel derIntegerIsCode 0x12 = some (.jalr ra ra 0xFFFFF8A2, 4) := by decide
+theorem ii_at_e : fetchRel derIntegerIsCode 0xE = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem ii_at_12 : fetchRel derIntegerIsCode 0x12 = some (.jalr ra ra 0xFFFFFFAA, 4) := by decide
 theorem ii_at_16 : fetchRel derIntegerIsCode 0x16 = some (.load .lw (8 : Fin 32) sp 0x8, 2) := by decide
 theorem ii_at_18 : fetchRel derIntegerIsCode 0x18 = some (.branch .beq (8 : Fin 32) x0 0x1C, 2) := by decide
 theorem ii_at_1a : fetchRel derIntegerIsCode 0x1A = some (.load .lw a1 sp 0xC, 2) := by decide
@@ -32,8 +32,8 @@ theorem ii_at_1c : fetchRel derIntegerIsCode 0x1C = some (.store .sb sp (9 : Fin
 theorem ii_at_20 : fetchRel derIntegerIsCode 0x20 = some (.aluImm .add a2 sp 0x13, 4) := by decide
 theorem ii_at_24 : fetchRel derIntegerIsCode 0x24 = some (.aluImm .add a3 x0 0x1, 2) := by decide
 theorem ii_at_26 : fetchRel derIntegerIsCode 0x26 = some (.alu .add a0 x0 (8 : Fin 32), 2) := by decide
-theorem ii_at_28 : fetchRel derIntegerIsCode 0x28 = some (.auipc ra 0x0, 4) := by decide
-theorem ii_at_2c : fetchRel derIntegerIsCode 0x2C = some (.jalr ra ra 0xFFFFFFC2, 4) := by decide
+theorem ii_at_28 : fetchRel derIntegerIsCode 0x28 = some (.auipc ra 0xFFFFE000, 4) := by decide
+theorem ii_at_2c : fetchRel derIntegerIsCode 0x2C = some (.jalr ra ra 0x15C, 4) := by decide
 theorem ii_at_30 : fetchRel derIntegerIsCode 0x30 = some (.alu .add a1 x0 a0, 2) := by decide
 theorem ii_at_32 : fetchRel derIntegerIsCode 0x32 = some (.jal x0 0x6, 2) := by decide
 theorem ii_at_34 : fetchRel derIntegerIsCode 0x34 = some (.load .lbu a1 sp 0xC, 4) := by decide

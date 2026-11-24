@@ -47,29 +47,29 @@ theorem lo_at_20 : fetchRel listsOidCode 0x20 = some (.aluImm .add (19 : Fin 32)
 theorem lo_at_24 : fetchRel listsOidCode 0x24 = some (.branch .beq a1 x0 0x4E, 2) := by decide
 theorem lo_at_26 : fetchRel listsOidCode 0x26 = some (.aluImm .add a0 sp 0x34, 2) := by decide
 theorem lo_at_28 : fetchRel listsOidCode 0x28 = some (.aluImm .add a1 sp 0xC, 2) := by decide
-theorem lo_at_2a : fetchRel listsOidCode 0x2A = some (.auipc ra 0xFFFFF000, 4) := by decide
-theorem lo_at_2e : fetchRel listsOidCode 0x2E = some (.jalr ra ra 0x5A0, 4) := by decide
+theorem lo_at_2a : fetchRel listsOidCode 0x2A = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem lo_at_2e : fetchRel listsOidCode 0x2E = some (.jalr ra ra 0xFFFFFD68, 4) := by decide
 theorem lo_at_32 : fetchRel listsOidCode 0x32 = some (.load .lw (9 : Fin 32) sp 0x34, 2) := by decide
 theorem lo_at_34 : fetchRel listsOidCode 0x34 = some (.load .lbu (8 : Fin 32) sp 0x38, 4) := by decide
 theorem lo_at_38 : fetchRel listsOidCode 0x38 = some (.branch .beq (9 : Fin 32) x0 0x44, 2) := by decide
 theorem lo_at_3a : fetchRel listsOidCode 0x3A = some (.aluImm .add a2 x0 0xB, 2) := by decide
 theorem lo_at_3c : fetchRel listsOidCode 0x3C = some (.alu .add a0 x0 (19 : Fin 32), 2) := by decide
 theorem lo_at_3e : fetchRel listsOidCode 0x3E = some (.alu .add a1 x0 (18 : Fin 32), 2) := by decide
-theorem lo_at_40 : fetchRel listsOidCode 0x40 = some (.auipc ra 0xC000, 4) := by decide
-theorem lo_at_44 : fetchRel listsOidCode 0x44 = some (.jalr ra ra 0xFFFFFF0E, 4) := by decide
+theorem lo_at_40 : fetchRel listsOidCode 0x40 = some (.auipc ra 0xA000, 4) := by decide
+theorem lo_at_44 : fetchRel listsOidCode 0x44 = some (.jalr ra ra 0x48, 4) := by decide
 theorem lo_at_48 : fetchRel listsOidCode 0x48 = some (.store .sw sp (9 : Fin 32) 0x24, 2) := by decide
 theorem lo_at_4a : fetchRel listsOidCode 0x4A = some (.store .sb sp (8 : Fin 32) 0x28, 4) := by decide
 theorem lo_at_4e : fetchRel listsOidCode 0x4E = some (.aluImm .add a0 sp 0x1C, 2) := by decide
 theorem lo_at_50 : fetchRel listsOidCode 0x50 = some (.aluImm .add a1 sp 0x24, 2) := by decide
 theorem lo_at_52 : fetchRel listsOidCode 0x52 = some (.auipc ra 0x0, 4) := by decide
-theorem lo_at_56 : fetchRel listsOidCode 0x56 = some (.jalr ra ra 0xFFFFFE48, 4) := by decide
+theorem lo_at_56 : fetchRel listsOidCode 0x56 = some (.jalr ra ra 0xFFFFFD9A, 4) := by decide
 theorem lo_at_5a : fetchRel listsOidCode 0x5A = some (.load .lw a0 sp 0x1C, 2) := by decide
 theorem lo_at_5c : fetchRel listsOidCode 0x5C = some (.branch .beq a0 x0 0x1C, 2) := by decide
 theorem lo_at_5e : fetchRel listsOidCode 0x5E = some (.load .lw a1 sp 0x20, 2) := by decide
 theorem lo_at_60 : fetchRel listsOidCode 0x60 = some (.alu .add a2 x0 (21 : Fin 32), 2) := by decide
 theorem lo_at_62 : fetchRel listsOidCode 0x62 = some (.alu .add a3 x0 (20 : Fin 32), 2) := by decide
-theorem lo_at_64 : fetchRel listsOidCode 0x64 = some (.auipc ra 0x0, 4) := by decide
-theorem lo_at_68 : fetchRel listsOidCode 0x68 = some (.jalr ra ra 0xFFFFFDDA, 4) := by decide
+theorem lo_at_64 : fetchRel listsOidCode 0x64 = some (.auipc ra 0xFFFFE000, 4) := by decide
+theorem lo_at_68 : fetchRel listsOidCode 0x68 = some (.jalr ra ra 0x34, 4) := by decide
 theorem lo_at_6c : fetchRel listsOidCode 0x6C = some (.branch .bne a0 x0 0x14, 2) := by decide
 theorem lo_at_6e : fetchRel listsOidCode 0x6E = some (.load .lw a1 sp 0x18, 2) := by decide
 theorem lo_at_70 : fetchRel listsOidCode 0x70 = some (.branch .bne a1 x0 0xFFFFFFB6, 2) := by decide

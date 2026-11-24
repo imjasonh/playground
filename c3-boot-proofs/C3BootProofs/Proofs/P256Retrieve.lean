@@ -35,7 +35,7 @@ theorem pr_at_22 : fetchRel p256FieldRetrieveCode 0x22 = some (.aluImm .add a6 s
 theorem pr_at_26 : fetchRel p256FieldRetrieveCode 0x26 = some (.aluImm .add (5 : Fin 32) x0 0x8, 2) := by decide
 theorem pr_at_28 : fetchRel p256FieldRetrieveCode 0x28 = some (.aluImm .add (17 : Fin 32) x0 0xFFFFFFFF, 2) := by decide
 theorem pr_at_2a : fetchRel p256FieldRetrieveCode 0x2A = some (.lui (6 : Fin 32) 0x3FCC5000, 4) := by decide
-theorem pr_at_2e : fetchRel p256FieldRetrieveCode 0x2E = some (.aluImm .add (6 : Fin 32) (6 : Fin 32) 0xFFFFFB3C, 4) := by decide
+theorem pr_at_2e : fetchRel p256FieldRetrieveCode 0x2E = some (.aluImm .add (6 : Fin 32) (6 : Fin 32) 0xFFFFFBA4, 4) := by decide
 theorem pr_at_32 : fetchRel p256FieldRetrieveCode 0x32 = some (.branch .beq (5 : Fin 32) x0 0x5E, 4) := by decide
 theorem pr_at_36 : fetchRel p256FieldRetrieveCode 0x36 = some (.aluImm .sll a1 (7 : Fin 32) 0x2, 4) := by decide
 theorem pr_at_3a : fetchRel p256FieldRetrieveCode 0x3A = some (.alu .add a1 a1 (19 : Fin 32), 2) := by decide
@@ -562,7 +562,7 @@ pass bound, `2^32 - 1`, and the pointer to the modulus's limb 1. -/
 def prSetup : List BInstr :=
   [.aluImm .add (7 : Fin 32) x0 0, .aluImm .add a6 sp 0x10, .aluImm .add (5 : Fin 32) x0 8,
    .aluImm .add (17 : Fin 32) x0 0xFFFFFFFF, .lui (6 : Fin 32) 0x3FCC5000,
-   .aluImm .add (6 : Fin 32) (6 : Fin 32) 0xFFFFFB3C]
+   .aluImm .add (6 : Fin 32) (6 : Fin 32) 0xFFFFFBA4]
 
 /-- From 0x90: set up the call to `memcpy`. -/
 def prArgs : List BInstr :=

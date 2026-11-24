@@ -53,7 +53,7 @@ theorem kcK_lit : (img% hi20 shaKAddress : Word) + (img% lo12 shaKAddress) = kcK
 /-- The round setup, from 0xB6 to 0xD4: `e`, `a`, and `d` into the frame,
 `b`, `c`, `f`, and `g` out of it, and the round constants' address. -/
 def kcPre : List BInstr :=
-  [.aluImm .add (8 : Fin 32) x0 0x0, .lui (7 : Fin 32) 0x3FCC5000, .aluImm .add (7 : Fin 32) (7 : Fin 32) 0xFFFFFEBC,
+  [.aluImm .add (8 : Fin 32) x0 0x0, .lui (7 : Fin 32) 0x3FCC5000, .aluImm .add (7 : Fin 32) (7 : Fin 32) 0xFFFFFF24,
    .sw sp (26 : Fin 32) 0x10, .alu .add a0 x0 (26 : Fin 32), .sw sp (23 : Fin 32) 0x18, .alu .add a2 x0 (23 : Fin 32),
    .alu .add (26 : Fin 32) x0 (24 : Fin 32), .lw (17 : Fin 32) sp 0x1C, .lw (5 : Fin 32) sp 0x20,
    .sw sp (25 : Fin 32) 0x14, .lw a6 sp 0x24, .lw (29 : Fin 32) sp 0x28]

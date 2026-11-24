@@ -27,22 +27,22 @@ theorem alg_at_c : fetchRel derAlgorithmCode 0xC = some (.store .sw sp (20 : Fin
 theorem alg_at_e : fetchRel derAlgorithmCode 0xE = some (.store .sw sp (21 : Fin 32) 0x34, 2) := by decide
 theorem alg_at_10 : fetchRel derAlgorithmCode 0x10 = some (.alu .add (21 : Fin 32) x0 a0, 2) := by decide
 theorem alg_at_12 : fetchRel derAlgorithmCode 0x12 = some (.aluImm .add a0 sp 0x20, 2) := by decide
-theorem alg_at_14 : fetchRel derAlgorithmCode 0x14 = some (.auipc ra 0xFFFFF000, 4) := by decide
-theorem alg_at_18 : fetchRel derAlgorithmCode 0x18 = some (.jalr ra ra 0x51E, 4) := by decide
+theorem alg_at_14 : fetchRel derAlgorithmCode 0x14 = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem alg_at_18 : fetchRel derAlgorithmCode 0x18 = some (.jalr ra ra 0x6C, 4) := by decide
 theorem alg_at_1c : fetchRel derAlgorithmCode 0x1C = some (.load .lw (8 : Fin 32) sp 0x20, 2) := by decide
 theorem alg_at_1e : fetchRel derAlgorithmCode 0x1E = some (.load .lbu (9 : Fin 32) sp 0x24, 4) := by decide
 theorem alg_at_22 : fetchRel derAlgorithmCode 0x22 = some (.branch .beq (8 : Fin 32) x0 0x60, 2) := by decide
 theorem alg_at_24 : fetchRel derAlgorithmCode 0x24 = some (.aluImm .add a1 sp 0x25, 4) := by decide
 theorem alg_at_28 : fetchRel derAlgorithmCode 0x28 = some (.aluImm .add a0 sp 0x5, 4) := by decide
 theorem alg_at_2c : fetchRel derAlgorithmCode 0x2C = some (.aluImm .add a2 x0 0xB, 2) := by decide
-theorem alg_at_2e : fetchRel derAlgorithmCode 0x2E = some (.auipc ra 0xC000, 4) := by decide
-theorem alg_at_32 : fetchRel derAlgorithmCode 0x32 = some (.jalr ra ra 0xFFFFFE88, 4) := by decide
+theorem alg_at_2e : fetchRel derAlgorithmCode 0x2E = some (.auipc ra 0xA000, 4) := by decide
+theorem alg_at_32 : fetchRel derAlgorithmCode 0x32 = some (.jalr ra ra 0x348, 4) := by decide
 theorem alg_at_36 : fetchRel derAlgorithmCode 0x36 = some (.store .sw sp (8 : Fin 32) 0x0, 2) := by decide
 theorem alg_at_38 : fetchRel derAlgorithmCode 0x38 = some (.store .sb sp (9 : Fin 32) 0x4, 4) := by decide
 theorem alg_at_3c : fetchRel derAlgorithmCode 0x3C = some (.aluImm .add a0 sp 0x20, 2) := by decide
 theorem alg_at_3e : fetchRel derAlgorithmCode 0x3E = some (.alu .add a1 x0 sp, 2) := by decide
 theorem alg_at_40 : fetchRel derAlgorithmCode 0x40 = some (.auipc ra 0x0, 4) := by decide
-theorem alg_at_44 : fetchRel derAlgorithmCode 0x44 = some (.jalr ra ra 0xFFFFFDC2, 4) := by decide
+theorem alg_at_44 : fetchRel derAlgorithmCode 0x44 = some (.jalr ra ra 0x9A, 4) := by decide
 theorem alg_at_48 : fetchRel derAlgorithmCode 0x48 = some (.load .lw (9 : Fin 32) sp 0x20, 2) := by decide
 theorem alg_at_4a : fetchRel derAlgorithmCode 0x4A = some (.branch .beq (9 : Fin 32) x0 0x42, 2) := by decide
 theorem alg_at_4c : fetchRel derAlgorithmCode 0x4C = some (.load .lw a0 sp 0xC, 2) := by decide
@@ -50,16 +50,16 @@ theorem alg_at_4e : fetchRel derAlgorithmCode 0x4E = some (.load .lw (18 : Fin 3
 theorem alg_at_50 : fetchRel derAlgorithmCode 0x50 = some (.branch .beq a0 x0 0x4A, 2) := by decide
 theorem alg_at_52 : fetchRel derAlgorithmCode 0x52 = some (.aluImm .add a0 sp 0x20, 2) := by decide
 theorem alg_at_54 : fetchRel derAlgorithmCode 0x54 = some (.alu .add a1 x0 sp, 2) := by decide
-theorem alg_at_56 : fetchRel derAlgorithmCode 0x56 = some (.auipc ra 0xFFFFF000, 4) := by decide
-theorem alg_at_5a : fetchRel derAlgorithmCode 0x5A = some (.jalr ra ra 0x69A, 4) := by decide
+theorem alg_at_56 : fetchRel derAlgorithmCode 0x56 = some (.auipc ra 0xFFFFD000, 4) := by decide
+theorem alg_at_5a : fetchRel derAlgorithmCode 0x5A = some (.jalr ra ra 0x1E8, 4) := by decide
 theorem alg_at_5e : fetchRel derAlgorithmCode 0x5E = some (.load .lw (20 : Fin 32) sp 0x20, 2) := by decide
 theorem alg_at_60 : fetchRel derAlgorithmCode 0x60 = some (.load .lbu (19 : Fin 32) sp 0x24, 4) := by decide
 theorem alg_at_64 : fetchRel derAlgorithmCode 0x64 = some (.branch .beq (20 : Fin 32) x0 0x5C, 4) := by decide
 theorem alg_at_68 : fetchRel derAlgorithmCode 0x68 = some (.aluImm .add a1 sp 0x25, 4) := by decide
 theorem alg_at_6c : fetchRel derAlgorithmCode 0x6C = some (.aluImm .add a0 sp 0x11, 4) := by decide
 theorem alg_at_70 : fetchRel derAlgorithmCode 0x70 = some (.aluImm .add a2 x0 0xF, 2) := by decide
-theorem alg_at_72 : fetchRel derAlgorithmCode 0x72 = some (.auipc ra 0xC000, 4) := by decide
-theorem alg_at_76 : fetchRel derAlgorithmCode 0x76 = some (.jalr ra ra 0xFFFFFE44, 4) := by decide
+theorem alg_at_72 : fetchRel derAlgorithmCode 0x72 = some (.auipc ra 0xA000, 4) := by decide
+theorem alg_at_76 : fetchRel derAlgorithmCode 0x76 = some (.jalr ra ra 0x304, 4) := by decide
 theorem alg_at_7a : fetchRel derAlgorithmCode 0x7A = some (.load .lw a0 sp 0xC, 2) := by decide
 theorem alg_at_7c : fetchRel derAlgorithmCode 0x7C = some (.branch .beq a0 x0 0x20, 2) := by decide
 theorem alg_at_7e : fetchRel derAlgorithmCode 0x7E = some (.aluImm .add a0 x0 0x1, 2) := by decide
@@ -75,8 +75,8 @@ theorem alg_at_9a : fetchRel derAlgorithmCode 0x9A = some (.aluImm .add (20 : Fi
 theorem alg_at_9c : fetchRel derAlgorithmCode 0x9C = some (.aluImm .add a0 (21 : Fin 32) 0xD, 4) := by decide
 theorem alg_at_a0 : fetchRel derAlgorithmCode 0xA0 = some (.aluImm .add a1 sp 0x11, 4) := by decide
 theorem alg_at_a4 : fetchRel derAlgorithmCode 0xA4 = some (.aluImm .add a2 x0 0xF, 2) := by decide
-theorem alg_at_a6 : fetchRel derAlgorithmCode 0xA6 = some (.auipc ra 0xC000, 4) := by decide
-theorem alg_at_aa : fetchRel derAlgorithmCode 0xAA = some (.jalr ra ra 0xFFFFFE10, 4) := by decide
+theorem alg_at_a6 : fetchRel derAlgorithmCode 0xA6 = some (.auipc ra 0xA000, 4) := by decide
+theorem alg_at_aa : fetchRel derAlgorithmCode 0xAA = some (.jalr ra ra 0x2D0, 4) := by decide
 theorem alg_at_ae : fetchRel derAlgorithmCode 0xAE = some (.store .sw (21 : Fin 32) (9 : Fin 32) 0x0, 4) := by decide
 theorem alg_at_b2 : fetchRel derAlgorithmCode 0xB2 = some (.store .sw (21 : Fin 32) (18 : Fin 32) 0x4, 4) := by decide
 theorem alg_at_b6 : fetchRel derAlgorithmCode 0xB6 = some (.store .sw (21 : Fin 32) (20 : Fin 32) 0x8, 4) := by decide

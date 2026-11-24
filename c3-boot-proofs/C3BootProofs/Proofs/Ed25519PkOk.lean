@@ -30,13 +30,13 @@ theorem pko_at_c : fetchRel ed25519PublicKeyOkCode 0xC = some (.alu .add (8 : Fi
 theorem pko_at_e : fetchRel ed25519PublicKeyOkCode 0xE = some (.alu .add a0 x0 sp, 2) := by decide
 theorem pko_at_10 : fetchRel ed25519PublicKeyOkCode 0x10 = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem pko_at_14 : fetchRel ed25519PublicKeyOkCode 0x14 = some (.alu .add a1 x0 (8 : Fin 32), 2) := by decide
-theorem pko_at_16 : fetchRel ed25519PublicKeyOkCode 0x16 = some (.auipc ra 0x10000, 4) := by decide
-theorem pko_at_1a : fetchRel ed25519PublicKeyOkCode 0x1A = some (.jalr ra ra 0xFFFFFC08, 4) := by decide
+theorem pko_at_16 : fetchRel ed25519PublicKeyOkCode 0x16 = some (.auipc ra 0x12000, 4) := by decide
+theorem pko_at_1a : fetchRel ed25519PublicKeyOkCode 0x1A = some (.jalr ra ra 0xFFFFFA18, 4) := by decide
 theorem pko_at_1e : fetchRel ed25519PublicKeyOkCode 0x1E = some (.load .lb (9 : Fin 32) sp 0x1F, 4) := by decide
 theorem pko_at_22 : fetchRel ed25519PublicKeyOkCode 0x22 = some (.aluImm .and a0 (9 : Fin 32) 0x7F, 4) := by decide
 theorem pko_at_26 : fetchRel ed25519PublicKeyOkCode 0x26 = some (.store .sb sp a0 0x1F, 4) := by decide
 theorem pko_at_2a : fetchRel ed25519PublicKeyOkCode 0x2A = some (.lui a1 0x3FCC4000, 4) := by decide
-theorem pko_at_2e : fetchRel ed25519PublicKeyOkCode 0x2E = some (.aluImm .add a1 a1 0x328, 4) := by decide
+theorem pko_at_2e : fetchRel ed25519PublicKeyOkCode 0x2E = some (.aluImm .add a1 a1 0x198, 4) := by decide
 theorem pko_at_32 : fetchRel ed25519PublicKeyOkCode 0x32 = some (.alu .add a0 x0 sp, 2) := by decide
 theorem pko_at_34 : fetchRel ed25519PublicKeyOkCode 0x34 = some (.auipc ra 0x0, 4) := by decide
 theorem pko_at_38 : fetchRel ed25519PublicKeyOkCode 0x38 = some (.jalr ra ra 0xFFFFFFA8, 4) := by decide
@@ -51,21 +51,21 @@ theorem pko_at_50 : fetchRel ed25519PublicKeyOkCode 0x50 = some (.branch .bne a0
 theorem pko_at_52 : fetchRel ed25519PublicKeyOkCode 0x52 = some (.aluImm .add a1 sp 0x4, 2) := by decide
 theorem pko_at_54 : fetchRel ed25519PublicKeyOkCode 0x54 = some (.aluImm .add a0 sp 0xC4, 2) := by decide
 theorem pko_at_56 : fetchRel ed25519PublicKeyOkCode 0x56 = some (.aluImm .add a2 x0 0xC0, 4) := by decide
-theorem pko_at_5a : fetchRel ed25519PublicKeyOkCode 0x5A = some (.auipc ra 0x10000, 4) := by decide
-theorem pko_at_5e : fetchRel ed25519PublicKeyOkCode 0x5E = some (.jalr ra ra 0xFFFFFBC4, 4) := by decide
+theorem pko_at_5a : fetchRel ed25519PublicKeyOkCode 0x5A = some (.auipc ra 0x12000, 4) := by decide
+theorem pko_at_5e : fetchRel ed25519PublicKeyOkCode 0x5E = some (.jalr ra ra 0xFFFFF9D4, 4) := by decide
 theorem pko_at_62 : fetchRel ed25519PublicKeyOkCode 0x62 = some (.aluImm .add a0 sp 0xE4, 2) := by decide
-theorem pko_at_64 : fetchRel ed25519PublicKeyOkCode 0x64 = some (.auipc ra 0xC000, 4) := by decide
-theorem pko_at_68 : fetchRel ed25519PublicKeyOkCode 0x68 = some (.jalr ra ra 0xFFFFFC6A, 4) := by decide
+theorem pko_at_64 : fetchRel ed25519PublicKeyOkCode 0x64 = some (.auipc ra 0xE000, 4) := by decide
+theorem pko_at_68 : fetchRel ed25519PublicKeyOkCode 0x68 = some (.jalr ra ra 0xFFFFFA7A, 4) := by decide
 theorem pko_at_6c : fetchRel ed25519PublicKeyOkCode 0x6C = some (.aluImm .xor a0 a0 0x1, 4) := by decide
 theorem pko_at_70 : fetchRel ed25519PublicKeyOkCode 0x70 = some (.jal x0 0x2C, 2) := by decide
 theorem pko_at_72 : fetchRel ed25519PublicKeyOkCode 0x72 = some (.lui a1 0x3FCC4000, 4) := by decide
-theorem pko_at_76 : fetchRel ed25519PublicKeyOkCode 0x76 = some (.aluImm .add a1 a1 0x2E8, 4) := by decide
+theorem pko_at_76 : fetchRel ed25519PublicKeyOkCode 0x76 = some (.aluImm .add a1 a1 0x158, 4) := by decide
 theorem pko_at_7a : fetchRel ed25519PublicKeyOkCode 0x7A = some (.alu .add a0 x0 sp, 2) := by decide
 theorem pko_at_7c : fetchRel ed25519PublicKeyOkCode 0x7C = some (.auipc ra 0x0, 4) := by decide
 theorem pko_at_80 : fetchRel ed25519PublicKeyOkCode 0x80 = some (.jalr ra ra 0x94, 4) := by decide
 theorem pko_at_84 : fetchRel ed25519PublicKeyOkCode 0x84 = some (.branch .bne a0 x0 0x16, 2) := by decide
 theorem pko_at_86 : fetchRel ed25519PublicKeyOkCode 0x86 = some (.lui a1 0x3FCC4000, 4) := by decide
-theorem pko_at_8a : fetchRel ed25519PublicKeyOkCode 0x8A = some (.aluImm .add a1 a1 0x388, 4) := by decide
+theorem pko_at_8a : fetchRel ed25519PublicKeyOkCode 0x8A = some (.aluImm .add a1 a1 0x1F8, 4) := by decide
 theorem pko_at_8e : fetchRel ed25519PublicKeyOkCode 0x8E = some (.alu .add a0 x0 sp, 2) := by decide
 theorem pko_at_90 : fetchRel ed25519PublicKeyOkCode 0x90 = some (.auipc ra 0x0, 4) := by decide
 theorem pko_at_94 : fetchRel ed25519PublicKeyOkCode 0x94 = some (.jalr ra ra 0x80, 4) := by decide

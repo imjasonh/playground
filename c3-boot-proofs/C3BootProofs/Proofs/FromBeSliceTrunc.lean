@@ -64,23 +64,23 @@ theorem fb_at_12 : fetchRel fromBeSliceTrunc12Code 0x12 = some (.alu .add (18 : 
 theorem fb_at_14 : fetchRel fromBeSliceTrunc12Code 0x14 = some (.aluImm .add a0 sp 0xC, 2) := by decide
 theorem fb_at_16 : fetchRel fromBeSliceTrunc12Code 0x16 = some (.aluImm .add a2 x0 0x30, 4) := by decide
 theorem fb_at_1a : fetchRel fromBeSliceTrunc12Code 0x1A = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem fb_at_1c : fetchRel fromBeSliceTrunc12Code 0x1C = some (.auipc ra 0x12000, 4) := by decide
-theorem fb_at_20 : fetchRel fromBeSliceTrunc12Code 0x20 = some (.jalr ra ra 0xFFFFFB40, 4) := by decide
+theorem fb_at_1c : fetchRel fromBeSliceTrunc12Code 0x1C = some (.auipc ra 0x14000, 4) := by decide
+theorem fb_at_20 : fetchRel fromBeSliceTrunc12Code 0x20 = some (.jalr ra ra 0xFFFFF950, 4) := by decide
 theorem fb_at_24 : fetchRel fromBeSliceTrunc12Code 0x24 = some (.aluImm .add a2 sp 0xC, 2) := by decide
 theorem fb_at_26 : fetchRel fromBeSliceTrunc12Code 0x26 = some (.aluImm .add a3 x0 0xC, 2) := by decide
 theorem fb_at_28 : fetchRel fromBeSliceTrunc12Code 0x28 = some (.alu .add a0 x0 (9 : Fin 32), 2) := by decide
 theorem fb_at_2a : fetchRel fromBeSliceTrunc12Code 0x2A = some (.alu .add a1 x0 (8 : Fin 32), 2) := by decide
 theorem fb_at_2c : fetchRel fromBeSliceTrunc12Code 0x2C = some (.alu .add a4 x0 (19 : Fin 32), 2) := by decide
-theorem fb_at_2e : fetchRel fromBeSliceTrunc12Code 0x2E = some (.auipc ra 0xB000, 4) := by decide
-theorem fb_at_32 : fetchRel fromBeSliceTrunc12Code 0x32 = some (.jalr ra ra 0xFFFFF86C, 4) := by decide
+theorem fb_at_2e : fetchRel fromBeSliceTrunc12Code 0x2E = some (.auipc ra 0xC000, 4) := by decide
+theorem fb_at_32 : fetchRel fromBeSliceTrunc12Code 0x32 = some (.jalr ra ra 0x67C, 4) := by decide
 theorem fb_at_36 : fetchRel fromBeSliceTrunc12Code 0x36 = some (.aluImm .and a0 a0 0xFF, 4) := by decide
 theorem fb_at_3a : fetchRel fromBeSliceTrunc12Code 0x3A = some (.aluImm .add a0 a0 0xFFFFFF01, 4) := by decide
 theorem fb_at_3e : fetchRel fromBeSliceTrunc12Code 0x3E = some (.branch .bne a0 x0 0x20, 2) := by decide
 theorem fb_at_40 : fetchRel fromBeSliceTrunc12Code 0x40 = some (.aluImm .add a1 sp 0xC, 2) := by decide
 theorem fb_at_42 : fetchRel fromBeSliceTrunc12Code 0x42 = some (.aluImm .add a2 x0 0x30, 4) := by decide
 theorem fb_at_46 : fetchRel fromBeSliceTrunc12Code 0x46 = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
-theorem fb_at_48 : fetchRel fromBeSliceTrunc12Code 0x48 = some (.auipc ra 0x12000, 4) := by decide
-theorem fb_at_4c : fetchRel fromBeSliceTrunc12Code 0x4C = some (.jalr ra ra 0xFFFFFB7C, 4) := by decide
+theorem fb_at_48 : fetchRel fromBeSliceTrunc12Code 0x48 = some (.auipc ra 0x14000, 4) := by decide
+theorem fb_at_4c : fetchRel fromBeSliceTrunc12Code 0x4C = some (.jalr ra ra 0xFFFFF98C, 4) := by decide
 theorem fb_at_50 : fetchRel fromBeSliceTrunc12Code 0x50 = some (.load .lw ra sp 0x4C, 2) := by decide
 theorem fb_at_52 : fetchRel fromBeSliceTrunc12Code 0x52 = some (.load .lw (8 : Fin 32) sp 0x48, 2) := by decide
 theorem fb_at_54 : fetchRel fromBeSliceTrunc12Code 0x54 = some (.load .lw (9 : Fin 32) sp 0x44, 2) := by decide
@@ -88,8 +88,8 @@ theorem fb_at_56 : fetchRel fromBeSliceTrunc12Code 0x56 = some (.load .lw (18 : 
 theorem fb_at_58 : fetchRel fromBeSliceTrunc12Code 0x58 = some (.load .lw (19 : Fin 32) sp 0x3C, 2) := by decide
 theorem fb_at_5a : fetchRel fromBeSliceTrunc12Code 0x5A = some (.aluImm .add sp sp 0x50, 2) := by decide
 theorem fb_at_5c : fetchRel fromBeSliceTrunc12Code 0x5C = some (.jalr x0 ra 0x0, 2) := by decide
-theorem fb_at_5e : fetchRel fromBeSliceTrunc12Code 0x5E = some (.auipc ra 0xA000, 4) := by decide
-theorem fb_at_62 : fetchRel fromBeSliceTrunc12Code 0x62 = some (.jalr ra ra 0x576, 4) := by decide
+theorem fb_at_5e : fetchRel fromBeSliceTrunc12Code 0x5E = some (.auipc ra 0xC000, 4) := by decide
+theorem fb_at_62 : fetchRel fromBeSliceTrunc12Code 0x62 = some (.jalr ra ra 0x386, 4) := by decide
 end
 
 abbrev FB : Word := BitVec.ofNat 32 fromBeSliceTrunc12Address
@@ -445,23 +445,23 @@ theorem fc_at_12 : fetchRel fromBeSliceTrunc8Code 0x12 = some (.alu .add (18 : F
 theorem fc_at_14 : fetchRel fromBeSliceTrunc8Code 0x14 = some (.aluImm .add a0 sp 0xC, 2) := by decide
 theorem fc_at_16 : fetchRel fromBeSliceTrunc8Code 0x16 = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem fc_at_1a : fetchRel fromBeSliceTrunc8Code 0x1A = some (.aluImm .add a1 x0 0x0, 2) := by decide
-theorem fc_at_1c : fetchRel fromBeSliceTrunc8Code 0x1C = some (.auipc ra 0x12000, 4) := by decide
-theorem fc_at_20 : fetchRel fromBeSliceTrunc8Code 0x20 = some (.jalr ra ra 0xFFFFF996, 4) := by decide
+theorem fc_at_1c : fetchRel fromBeSliceTrunc8Code 0x1C = some (.auipc ra 0x13000, 4) := by decide
+theorem fc_at_20 : fetchRel fromBeSliceTrunc8Code 0x20 = some (.jalr ra ra 0x7A6, 4) := by decide
 theorem fc_at_24 : fetchRel fromBeSliceTrunc8Code 0x24 = some (.aluImm .add a2 sp 0xC, 2) := by decide
 theorem fc_at_26 : fetchRel fromBeSliceTrunc8Code 0x26 = some (.aluImm .add a3 x0 0x8, 2) := by decide
 theorem fc_at_28 : fetchRel fromBeSliceTrunc8Code 0x28 = some (.alu .add a0 x0 (9 : Fin 32), 2) := by decide
 theorem fc_at_2a : fetchRel fromBeSliceTrunc8Code 0x2A = some (.alu .add a1 x0 (8 : Fin 32), 2) := by decide
 theorem fc_at_2c : fetchRel fromBeSliceTrunc8Code 0x2C = some (.alu .add a4 x0 (19 : Fin 32), 2) := by decide
-theorem fc_at_2e : fetchRel fromBeSliceTrunc8Code 0x2E = some (.auipc ra 0xA000, 4) := by decide
-theorem fc_at_32 : fetchRel fromBeSliceTrunc8Code 0x32 = some (.jalr ra ra 0x6C2, 4) := by decide
+theorem fc_at_2e : fetchRel fromBeSliceTrunc8Code 0x2E = some (.auipc ra 0xC000, 4) := by decide
+theorem fc_at_32 : fetchRel fromBeSliceTrunc8Code 0x32 = some (.jalr ra ra 0x4D2, 4) := by decide
 theorem fc_at_36 : fetchRel fromBeSliceTrunc8Code 0x36 = some (.aluImm .and a0 a0 0xFF, 4) := by decide
 theorem fc_at_3a : fetchRel fromBeSliceTrunc8Code 0x3A = some (.aluImm .add a0 a0 0xFFFFFF01, 4) := by decide
 theorem fc_at_3e : fetchRel fromBeSliceTrunc8Code 0x3E = some (.branch .bne a0 x0 0x20, 2) := by decide
 theorem fc_at_40 : fetchRel fromBeSliceTrunc8Code 0x40 = some (.aluImm .add a1 sp 0xC, 2) := by decide
 theorem fc_at_42 : fetchRel fromBeSliceTrunc8Code 0x42 = some (.aluImm .add a2 x0 0x20, 4) := by decide
 theorem fc_at_46 : fetchRel fromBeSliceTrunc8Code 0x46 = some (.alu .add a0 x0 (18 : Fin 32), 2) := by decide
-theorem fc_at_48 : fetchRel fromBeSliceTrunc8Code 0x48 = some (.auipc ra 0x12000, 4) := by decide
-theorem fc_at_4c : fetchRel fromBeSliceTrunc8Code 0x4C = some (.jalr ra ra 0xFFFFF9D2, 4) := by decide
+theorem fc_at_48 : fetchRel fromBeSliceTrunc8Code 0x48 = some (.auipc ra 0x13000, 4) := by decide
+theorem fc_at_4c : fetchRel fromBeSliceTrunc8Code 0x4C = some (.jalr ra ra 0x7E2, 4) := by decide
 theorem fc_at_50 : fetchRel fromBeSliceTrunc8Code 0x50 = some (.load .lw ra sp 0x3C, 2) := by decide
 theorem fc_at_52 : fetchRel fromBeSliceTrunc8Code 0x52 = some (.load .lw (8 : Fin 32) sp 0x38, 2) := by decide
 theorem fc_at_54 : fetchRel fromBeSliceTrunc8Code 0x54 = some (.load .lw (9 : Fin 32) sp 0x34, 2) := by decide
@@ -469,8 +469,8 @@ theorem fc_at_56 : fetchRel fromBeSliceTrunc8Code 0x56 = some (.load .lw (18 : F
 theorem fc_at_58 : fetchRel fromBeSliceTrunc8Code 0x58 = some (.load .lw (19 : Fin 32) sp 0x2C, 2) := by decide
 theorem fc_at_5a : fetchRel fromBeSliceTrunc8Code 0x5A = some (.aluImm .add sp sp 0x40, 2) := by decide
 theorem fc_at_5c : fetchRel fromBeSliceTrunc8Code 0x5C = some (.jalr x0 ra 0x0, 2) := by decide
-theorem fc_at_5e : fetchRel fromBeSliceTrunc8Code 0x5E = some (.auipc ra 0xA000, 4) := by decide
-theorem fc_at_62 : fetchRel fromBeSliceTrunc8Code 0x62 = some (.jalr ra ra 0x3CC, 4) := by decide
+theorem fc_at_5e : fetchRel fromBeSliceTrunc8Code 0x5E = some (.auipc ra 0xC000, 4) := by decide
+theorem fc_at_62 : fetchRel fromBeSliceTrunc8Code 0x62 = some (.jalr ra ra 0x1DC, 4) := by decide
 end
 
 abbrev FC : Word := BitVec.ofNat 32 fromBeSliceTrunc8Address

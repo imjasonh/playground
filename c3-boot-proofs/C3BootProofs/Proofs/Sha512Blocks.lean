@@ -51,8 +51,8 @@ theorem ub5_at_28 : fetchRel sha384UpdateBlocksCode 0x28 = some (.store .sw a0 a
 theorem ub5_at_2a : fetchRel sha384UpdateBlocksCode 0x2A = some (.alu .add a4 a4 a6, 2) := by decide
 theorem ub5_at_2c : fetchRel sha384UpdateBlocksCode 0x2C = some (.store .sw a0 a3 0x48, 2) := by decide
 theorem ub5_at_2e : fetchRel sha384UpdateBlocksCode 0x2E = some (.store .sw a0 a4 0x4C, 2) := by decide
-theorem ub5_at_30 : fetchRel sha384UpdateBlocksCode 0x30 = some (.auipc (6 : Fin 32) 0xD000, 4) := by decide
-theorem ub5_at_34 : fetchRel sha384UpdateBlocksCode 0x34 = some (.jalr x0 (6 : Fin 32) 0x614, 4) := by decide
+theorem ub5_at_30 : fetchRel sha384UpdateBlocksCode 0x30 = some (.auipc (6 : Fin 32) 0xF000, 4) := by decide
+theorem ub5_at_34 : fetchRel sha384UpdateBlocksCode 0x34 = some (.jalr x0 (6 : Fin 32) 0x1A2, 4) := by decide
 end
 
 theorem s5Hv_congr {M M' : Word → BitVec 8} {stp : Word}

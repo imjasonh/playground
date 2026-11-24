@@ -24,15 +24,15 @@ open C3.Image
 section
 set_option maxRecDepth 20000
 theorem hlt_at_0 : fetchRel haltCode 0x0 = some (.aluImm .add sp sp 0xFFFFFFF0, 2) := by decide
-theorem hlt_at_e : fetchRel haltCode 0xE = some (.auipc ra 0xFFC5F000, 4) := by decide
-theorem hlt_at_12 : fetchRel haltCode 0x12 = some (.jalr ra ra 0xFFFFF956, 4) := by decide
+theorem hlt_at_e : fetchRel haltCode 0xE = some (.auipc ra 0xFFC49000, 4) := by decide
+theorem hlt_at_12 : fetchRel haltCode 0x12 = some (.jalr ra ra 0x3EC, 4) := by decide
 theorem hlt_at_16 : fetchRel haltCode 0x16 = some (.fence, 4) := by decide
 theorem hlt_at_1a : fetchRel haltCode 0x1A = some (.jal x0 0xFFFFFFFC, 2) := by decide
 theorem unw_at_0 : fetchRel beginUnwindCode 0x0 = some (.aluImm .add a0 x0 0xEF, 4) := by decide
 theorem unw_at_4 : fetchRel beginUnwindCode 0x4 = some (.auipc ra 0x0, 4) := by decide
-theorem unw_at_8 : fetchRel beginUnwindCode 0x8 = some (.jalr ra ra 0x14A, 4) := by decide
-theorem pfm_at_8 : fetchRel panicFmtCode 0x8 = some (.auipc ra 0xFFFF4000, 4) := by decide
-theorem pfm_at_c : fetchRel panicFmtCode 0xC = some (.jalr ra ra 0x328, 4) := by decide
+theorem unw_at_8 : fetchRel beginUnwindCode 0x8 = some (.jalr ra ra 0x2B0, 4) := by decide
+theorem pfm_at_8 : fetchRel panicFmtCode 0x8 = some (.auipc ra 0x7000, 4) := by decide
+theorem pfm_at_c : fetchRel panicFmtCode 0xC = some (.jalr ra ra 0x7BE, 4) := by decide
 theorem afi_at_8 : fetchRel assertFailedInnerCode 0x8 = some (.auipc ra 0x0, 4) := by decide
 theorem afi_at_c : fetchRel assertFailedInnerCode 0xC = some (.jalr ra ra 0x8, 4) := by decide
 theorem cpn_at_8 : fetchRel corePanicCode 0x8 = some (.auipc ra 0x0, 4) := by decide
@@ -57,22 +57,22 @@ theorem exu_at_4 : fetchRel expectUsizeCode 0x4 = some (.branch .bne a1 x0 0x6, 
 theorem exu_at_6 : fetchRel expectUsizeCode 0x6 = some (.load .lw a0 a0 0x4, 2) := by decide
 theorem exu_at_8 : fetchRel expectUsizeCode 0x8 = some (.jalr x0 ra 0x0, 2) := by decide
 theorem exu_at_a : fetchRel expectUsizeCode 0xA = some (.aluImm .add a0 x0 0x8, 2) := by decide
-theorem exu_at_c : fetchRel expectUsizeCode 0xC = some (.auipc ra 0xA000, 4) := by decide
-theorem exu_at_10 : fetchRel expectUsizeCode 0x10 = some (.jalr ra ra 0x7C2, 4) := by decide
+theorem exu_at_c : fetchRel expectUsizeCode 0xC = some (.auipc ra 0xC000, 4) := by decide
+theorem exu_at_10 : fetchRel expectUsizeCode 0x10 = some (.jalr ra ra 0x5D2, 4) := by decide
 theorem ext_at_0 : fetchRel expectTagCode 0x0 = some (.load .lw a1 a0 0x0, 2) := by decide
 theorem ext_at_2 : fetchRel expectTagCode 0x2 = some (.aluImm .add a2 x0 0xFFFFFFFF, 2) := by decide
 theorem ext_at_4 : fetchRel expectTagCode 0x4 = some (.branch .bne a1 a2 0xA, 4) := by decide
 theorem ext_at_8 : fetchRel expectTagCode 0x8 = some (.load .lbu a0 a0 0x4, 4) := by decide
 theorem ext_at_c : fetchRel expectTagCode 0xC = some (.jalr x0 ra 0x0, 2) := by decide
 theorem ext_at_e : fetchRel expectTagCode 0xE = some (.aluImm .add a0 x0 0xB, 2) := by decide
-theorem ext_at_10 : fetchRel expectTagCode 0x10 = some (.auipc ra 0x8000, 4) := by decide
-theorem ext_at_14 : fetchRel expectTagCode 0x14 = some (.jalr ra ra 0x9A, 4) := by decide
+theorem ext_at_10 : fetchRel expectTagCode 0x10 = some (.auipc ra 0xA000, 4) := by decide
+theorem ext_at_14 : fetchRel expectTagCode 0x14 = some (.jalr ra ra 0xFFFFFEAA, 4) := by decide
 
 def pushFrame : List BInstr :=
   [.aluImm .add sp sp 0xFFFFFFF0, .sw sp ra 0xC, .sw sp (8 : Fin 32) 0x8, .aluImm .add (8 : Fin 32) sp 0x10]
 
 def hltA : List BInstr :=
-  [.aluImm .add sp sp 0xFFFFFFF0, .sw sp ra 0xC, .alu .add a1 x0 a0, .lui a0 0x3FCC4000, .aluImm .add a0 a0 0x1EF]
+  [.aluImm .add sp sp 0xFFFFFFF0, .sw sp ra 0xC, .alu .add a1 x0 a0, .lui a0 0x3FCC6000, .aluImm .add a0 a0 0x6AE]
 
 def afzA : List BInstr := pushFrame ++ [.alu .add a1 x0 a2, .lui a0 (img% hi20 (svRekorLeafAddress + 0x1)), .aluImm .add a0 a0 (img% lo12 (svRekorLeafAddress + 0x1))]
 
