@@ -171,6 +171,7 @@ import C3BootProofs.Proofs.EfuseRun
 import C3BootProofs.Proofs.TufHexDecode
 import C3BootProofs.Proofs.TufReadDoc
 import C3BootProofs.Proofs.EcdsaSig32
+import C3BootProofs.Proofs.Sha384Fn
 
 /-!
 # Audit
@@ -8667,3 +8668,9 @@ end C3
 
 /-- info: 'C3.RV32.ecdsaSignature32_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.ecdsaSignature32_correct
+
+/-- info: 'C3.sha384_eq_stream' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.sha384_eq_stream
+
+/-- info: 'C3.RV32.sha384Fn_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.sha384Fn_correct

@@ -324,3 +324,5 @@ import C3BootProofs.Proofs.EfuseRun
 import C3BootProofs.Proofs.TufHexDecode
 import C3BootProofs.Proofs.TufReadDoc
 import C3BootProofs.Proofs.EcdsaSig32
+import C3BootProofs.Proofs.Sha384FnCall
+import C3BootProofs.Proofs.Sha384Fn
