@@ -281,21 +281,50 @@ FUNCTIONS = [
     ("fulcioIterNext", "<core::iter::adapters::map_while::MapWhile<core::slice::iter::Iter<core::option::Option<c3_verify::trustroot::FulcioIntermediate>>, <core::option::Option<c3_verify::trustroot::FulcioIntermediate>>::as_ref> as core::iter::traits::iterator::Iterator>::next"),
     ("fulcioIterNth", "<core::iter::adapters::map_while::MapWhile<core::slice::iter::Iter<core::option::Option<c3_verify::trustroot::FulcioIntermediate>>, <core::option::Option<c3_verify::trustroot::FulcioIntermediate>>::as_ref> as core::iter::traits::iterator::Iterator>::nth"),
     ("fulcioEnumNext", "<core::iter::adapters::enumerate::Enumerate<core::iter::adapters::map_while::MapWhile<core::slice::iter::Iter<core::option::Option<c3_verify::trustroot::FulcioIntermediate>>, <core::option::Option<c3_verify::trustroot::FulcioIntermediate>>::as_ref>> as core::iter::traits::iterator::Iterator>::next"),
-    ("readPart", "c3_bootloader::read_part"),
-    ("readCount", "c3_verify::trustroot::read_count"),
-    ("readerU64", "<c3_verify::reader::Reader>::u64"),
     ("bootstateDecode", "c3_verify::bootstate::decode"),
     ("bundleField", "c3_verify::bundle::field"),
-    ("readString", "c3_verify::trustroot::read_string"),
-    ("readWindow", "c3_verify::trustroot::read_window"),
-    ("readP384Point", "c3_verify::trustroot::read_p384_point"),
-    ("keySetNew", "<c3_verify::keys::KeySet>::new"),
-    ("readSignatures", "c3_verify::keys::read_signatures"),
-    ("checkSignatures", "c3_verify::keys::check_signatures"),
     ("bootFn", "c3_bootloader::boot"),
     ("bootMainClosure0", "c3_bootloader::boot_main::{closure#0}"),
     ("bootMainClosure1", "c3_bootloader::boot_main::{closure#1}"),
     ("bootMain", "boot_main"),
+    ("sha384Fn", "c3_crypto::sha::sha384"),
+    ("p256VerifyPrehash", "c3_crypto::ecdsa::p256_verify_prehash"),
+    ("stripPrefix", "<[u8]>::strip_prefix::<[u8]>"),
+    ("ecdsaSignature32", "c3_verify::der::ecdsa_signature::<32>"),
+    ("allAsciiDigit", "<core::slice::iter::Iter<u8> as core::iter::traits::iterator::Iterator>"
+     "::all::<<u8>::is_ascii_digit>"),
+    ("timeDigits4", "c3_verify::time::digits::<4>"),
+    ("timeRfc3339", "c3_verify::time::rfc3339"),
+    ("jsonSkipWs", "c3_verify::json::skip_ws"),
+    ("jsonStringEnd", "c3_verify::json::string_end"),
+    ("jsonKeyEnd", "c3_verify::json::key_end"),
+    ("jsonLiteralEnd", "c3_verify::json::literal_end"),
+    ("jsonNumberEnd", "c3_verify::json::number_end"),
+    ("jsonReadItem", "c3_verify::json::read_item"),
+    ("jsonNextMember", "<c3_verify::json::Members>::next_member"),
+    ("jsonNextElement", "<c3_verify::json::Elements>::next_element"),
+    ("jsonMembers", "<c3_verify::json::Value>::members"),
+    ("jsonElements", "<c3_verify::json::Value>::elements"),
+    ("jsonGet", "<c3_verify::json::Value>::get"),
+    ("jsonField", "<c3_verify::json::Value>::field"),
+    ("jsonStr", "<c3_verify::json::Value>::str"),
+    ("jsonU64", "<c3_verify::json::Value>::u64"),
+    ("jsonParse", "c3_verify::json::parse"),
+    ("tufHexValue", "c3_verify::tuf::hex_value"),
+    ("tufHexDecode", "c3_verify::tuf::hex_decode"),
+    ("tufPemSpki", "c3_verify::tuf::pem_spki"),
+    ("tufIndexDoc", "<c3_verify::tuf::Index>::doc"),
+    ("tufReadDoc", "c3_verify::tuf::read_doc::<c3_bootloader::FlashPart>"),
+    ("tufParseMetadata", "c3_verify::tuf::parse_metadata"),
+    ("tufParseRoot", "c3_verify::tuf::parse_root"),
+    ("tufExpires", "c3_verify::tuf::expires"),
+    ("tufRoleKeysRead", "<c3_verify::tuf::RoleKeys>::read"),
+    ("tufRoleKeysMet", "<c3_verify::tuf::RoleKeys>::met"),
+    ("trustedRootDecode", "c3_verify::trusted_root::decode"),
+    ("trustedRootValidFor", "c3_verify::trusted_root::valid_for"),
+    ("trustedRootReadChain", "c3_verify::trusted_root::read_chain"),
+    ("flashPartRead", "<c3_bootloader::FlashPart as c3_verify::tuf::Source>::read"),
+    ("efuseProgramRun", "c3_bootloader::efuse::program::run"),
 ]
 
 # Lean name, then the Lean name of an extracted function, the offset of a
@@ -365,35 +394,41 @@ DATA_EXTRA2 = [
 # Data for `sigstore::verify`, written to the fourth output. Same fields as
 # `DATA`.
 DATA_EXTRA3 = [
-    ("svConst", "sigstoreVerify", 0x24C, 0x130, -0x28),
+    ("svConst", "sigstoreVerify", 0x102C, 0x28),
+    ("svOidEcdsaSha384", "sigstoreVerify", 0x1B0, 8),
+    ("svOidPrime256v1", "sigstoreVerify", 0x2C8, 8),
+    ("svOidEcPublicKey", "sigstoreVerify", 0x2DE, 7),
+    ("svConstCms", "sigstoreVerify", 0xB5C, 0x30),
+    ("svConstExt", "sigstoreVerify", 0x4E8, 0x89),
+    ("svNewline", "sigstoreVerify", 0x15F8, 1),
+    ("svDash", "sigstoreVerify", 0x1676, 4),
 ]
 
-# More data for `sigstore::verify`, written to the fifth output, so that
-# adding an entry leaves the proofs of its earlier stages alone. Same fields as
-# `DATA`.
+# Data for `sha384`, written to the fifth output. Same fields as `DATA`.
 DATA_EXTRA4 = [
-    ("sha384IV", "sigstoreVerify", 0xB60, 64),
+    ("sha384IV", "sha384Fn", 0x40, 64),
 ]
 
-# Data for the P-256 check's main loop in `sigstore::verify`, written to the
-# sixth output. Same fields as `DATA`.
+# Data for the P-256 check in `p256_verify_prehash`, written to the sixth
+# output. Same fields as `DATA`.
 DATA_EXTRA5 = [
-    ("p256Identity", "sigstoreVerify", 0x1918, 0x60),
-    ("p256InvParams", "sigstoreVerify", 0x1A98, 0x60),
-    ("p256MontOne", "sigstoreVerify", 0x116E, 0x20),
-    ("p256One", "sigstoreVerify", 0x12EE, 0x20),
-    ("p256GMont", "sigstoreVerify", 0x1610, 0x60),
-    ("p256AffineIdX", "sigstoreVerify", 0x1F8E, 0x20),
+    ("p256Identity", "p256VerifyPrehash", 0x244, 0x60),
+    ("p256InvParams", "p256VerifyPrehash", 0xB26, 0x60),
+    ("p256MontOne", "p256VerifyPrehash", 0x220, 0x20),
+    ("p256One", "p256VerifyPrehash", 0x39E, 0x20),
+    ("p256GMont", "p256VerifyPrehash", 0x6CE, 0x60),
+    ("p256AffineIdX", "p256VerifyPrehash", 0x1032, 0x20),
+    ("p256OrderLe", "p256VerifyPrehash", 0x354, 0x20),
 ]
 
 # The Rekor entry's constant pieces in `sigstore::verify`, written to the
 # seventh output. Same fields as `DATA`.
 DATA_EXTRA6 = [
-    ("svRekorLeaf", "sigstoreVerify", 0x3032, 1),
-    ("svRekorPre", "sigstoreVerify", 0x3048, 0x71),
-    ("svRekorMid1", "sigstoreVerify", 0x3072, 0x1B),
-    ("svRekorMid2", "sigstoreVerify", 0x309A, 0x54),
-    ("svRekorPost", "sigstoreVerify", 0x30C2, 7),
+    ("svRekorLeaf", "sigstoreVerify", 0x18BE, 1),
+    ("svRekorPre", "sigstoreVerify", 0x18D4, 0x71),
+    ("svRekorMid1", "sigstoreVerify", 0x18FE, 0x1B),
+    ("svRekorMid2", "sigstoreVerify", 0x1926, 0x54),
+    ("svRekorPost", "sigstoreVerify", 0x194E, 7),
 ]
 
 # The Ed25519 constants that `ed25519_verify` and `ed25519_public_key_ok`
@@ -726,13 +761,12 @@ def main():
             "import C3BootProofs.Image.Bootloader",
             "",
             "/-!",
-            "# More bootloader data for `sigstore::verify`",
+            "# Bootloader data for `sha384`",
             "",
             "Generated by `scripts/extract-functions.py` from the bootloader image with",
             f"SHA-256 `{digest}`",
-            "(`c3-boot/bootloader/dev-image.sha256`). Do not edit. The constants that",
-            "the later stages of `sigstore::verify` read, starting with SHA-384's",
-            "initial hash value.",
+            "(`c3-boot/bootloader/dev-image.sha256`). Do not edit. SHA-384's initial",
+            "hash value.",
             "-/",
             "",
             "namespace C3.Image",
@@ -747,13 +781,14 @@ def main():
             "import C3BootProofs.Image.Bootloader",
             "",
             "/-!",
-            "# Bootloader data for the P-256 check in `sigstore::verify`",
+            "# Bootloader data for `p256_verify_prehash`",
             "",
             "Generated by `scripts/extract-functions.py` from the bootloader image with",
             f"SHA-256 `{digest}`",
             "(`c3-boot/bootloader/dev-image.sha256`). Do not edit. The point at",
-            "infinity that the main loop of the P-256 check starts from, and the",
-            "field's constants that the inversion of the sum's `Z` copies.",
+            "infinity that the main loop of the P-256 check starts from, the field's",
+            "constants that the inversion of the sum's `Z` copies, and the group order",
+            "in little-endian order.",
             "-/",
             "",
             "namespace C3.Image",
