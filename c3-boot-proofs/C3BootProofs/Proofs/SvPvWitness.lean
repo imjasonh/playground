@@ -74,8 +74,8 @@ theorem derScalarOf_bytes {N : Nat} {L : Bytes} {rp : Word} {r : Except DerError
       · exact List.mem_of_mem_drop (List.mem_of_mem_take (List.mem_of_mem_drop hb))
       · exact List.mem_of_mem_drop (List.mem_of_mem_take hb)
     by_cases hn : N < c.length
-    · rw [if_pos hn] at h; cases h
-    · rw [if_neg hn] at h
+    · rw [ite_eq_left hn] at h; cases h
+    · rw [ite_eq_right hn] at h
       cases h
       have hle := Nat.le_of_not_lt hn
       refine ⟨?_, fun b hb => ?_⟩
@@ -132,7 +132,7 @@ theorem svPvAt_frame {M : Word → BitVec 8} {B pk : Word} {len e1 e2 e3 : Nat} 
       (B + 0x21A0 + BitVec.ofNat 32 e3) sr ss := by
   have hoff : ∀ e j, e + j < 2 ^ 32 →
       (B + 0x21A0 + BitVec.ofNat 32 e + BitVec.ofNat 32 j - (B + 0x21A0)).toNat = e + j := fun e j hej => by
-    rw [BitVec.add_assoc, BitVec.add_sub_cancel_left, ← BitVec.ofNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hej]
+    rw [BitVec.add_assoc, BitVec.add_comm, BitVec.add_sub_cancel, ← BitVec.ofNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hej]
   have n12 : ∀ j, j < 48 → ¬ (e1 ≤ e2 + j ∧ e2 + j < e1 + 48) := by
     intro j hj ⟨x1, x2⟩; rcases d12 with d | d <;> omega
   have n13 : ∀ j, j < 48 → ¬ (e1 ≤ e3 + j ∧ e3 + j < e1 + 48) := by
@@ -152,7 +152,7 @@ theorem svPvAt_frame {M : Word → BitVec 8} {B pk : Word} {len e1 e2 e3 : Nat} 
     have c2 : ¬ (e2 ≤ (x - (B + 0x21A0)).toNat ∧ (x - (B + 0x21A0)).toNat < e2 + 48) := fun ⟨_, h2⟩ => by omega
     have c3 : ¬ (e3 ≤ (x - (B + 0x21A0)).toNat ∧ (x - (B + 0x21A0)).toNat < e3 + 48) := fun ⟨_, h2⟩ => by omega
     show (if _ then _ else _) = _
-    rw [if_neg c1, if_neg c2, if_neg c3]
+    rw [ite_eq_right c1, ite_eq_right c2, ite_eq_right c3]
   refine ⟨M', ?_, ?_, ?_, ?_, ?_⟩
   · unfold memBytes
     exact List.map_congr_left fun i hi => by rw [hout _ (hk i (List.mem_range.mp hi))]
@@ -163,16 +163,16 @@ theorem svPvAt_frame {M : Word → BitVec 8} {B pk : Word} {len e1 e2 e3 : Nat} 
     have ho := hoff e1 j (by omega)
     have c1 : e1 ≤ e1 + j ∧ e1 + j < e1 + 48 := ⟨Nat.le_add_right _ _, by omega⟩
     show (if _ then _ else _) = _
-    rw [ho, if_pos c1, Nat.add_sub_cancel_left]
+    rw [ho, ite_eq_left c1, Nat.add_sub_cancel_left]
   · refine memBytes_svBytes fun j hj => ?_
     have ho := hoff e2 j (by omega)
     have c2 : e2 ≤ e2 + j ∧ e2 + j < e2 + 48 := ⟨Nat.le_add_right _ _, by omega⟩
     show (if _ then _ else _) = _
-    rw [ho, if_neg (n12 j hj), if_pos c2, Nat.add_sub_cancel_left]
+    rw [ho, ite_eq_right (n12 j hj), ite_eq_left c2, Nat.add_sub_cancel_left]
   · refine memBytes_svBytes fun j hj => ?_
     have ho := hoff e3 j (by omega)
     have c3 : e3 ≤ e3 + j ∧ e3 + j < e3 + 48 := ⟨Nat.le_add_right _ _, by omega⟩
     show (if _ then _ else _) = _
-    rw [ho, if_neg (n13 j hj), if_neg (n23 j hj), if_pos c3, Nat.add_sub_cancel_left]
+    rw [ho, ite_eq_right (n13 j hj), ite_eq_right (n23 j hj), ite_eq_left c3, Nat.add_sub_cancel_left]
 
 end C3.RV32.Sv
