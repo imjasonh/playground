@@ -522,4 +522,297 @@ theorem WP.callSliceNe {hi lo tb p q : Word} {pl ql : Nat}
 
 end
 
+theorem pa_sll3 : ∀ i : Nat, i < 17 → aluEval .sll (BitVec.ofNat 32 i) 3 = BitVec.ofNat 32 (8 * i) := by decide
+
+/-- The code `parse` runs, at its offsets from `parse`'s address `b`: `get`
+at `b + 0xFFFFF372` brings every callee but `slice_ne`. -/
+structure ParseCode (M : Word → BitVec 8) (b : Word) : Prop where
+  parse : CodeIn M b jsonParseCode
+  get : GetCode M (b + 0xFFFFF372)
+  ne : CodeIn M (b + 0xFFFFFFEA) sliceNeCode
+
+/-- The `k` bytes at `s` are apart from `ParseCode M b`. -/
+structure ParseSep (s : Word) (k : Nat) (b : Word) : Prop where
+  parse : Sep s k b jsonParseCode.length
+  get : GetSep s k (b + 0xFFFFF372)
+  ne : Sep s k (b + 0xFFFFFFEA) sliceNeCode.length
+
+theorem ParseSep.sub {s b : Word} {k : Nat} (h : ParseSep s k b) {c l : Nat} (hcl : c + l ≤ k) :
+    ParseSep (s + BitVec.ofNat 32 c) l b :=
+  ⟨h.parse.sub hcl, h.get.sub hcl, h.ne.sub hcl⟩
+
+theorem ParseCode.out {M M' : Word → BitVec 8} {b s : Word} {k : Nat} (h : ParseCode M b) (hO : Out M M' s k)
+    (hs : ParseSep s k b) : ParseCode M' b :=
+  ⟨hO.codeIn h.parse hs.parse, h.get.out hO hs.get, hO.codeIn h.ne hs.ne⟩
+
+/-- The registers `parse` changes before its epilogue restores the saved ones. -/
+abbrev paE : List (Fin 32) := jClob ++ [ra, sp, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]
+
+abbrev paCs : List Nat := [0xBC, 0xC0, 0xC4, 0xC8, 0xCC, 0xD0, 0xD4, 0xD8, 0xDC, 0xE0, 0xE4, 0xE8, 0xEC]
+
+/-- The saved registers in the frame at `F`. -/
+def PaSaved (F : Word) (g0 : Fin 32 → Word) (M1 : Word → BitVec 8) : Prop :=
+  memLoad32 M1 (F + BitVec.ofNat 32 0xEC) = g0 ra ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0xE8) = g0 8 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0xE4) = g0 9 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0xE0) = g0 18 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0xDC) = g0 19 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0xD8) = g0 20 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0xD4) = g0 21 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0xD0) = g0 22 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0xCC) = g0 23 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0xC8) = g0 24 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0xC4) = g0 25 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0xC0) = g0 26 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0xBC) = g0 27
+
+/-- Memory after the prologue. -/
+def paM1 (M : Word → BitVec 8) (F : Word) (g0 : Fin 32 → Word) : Word → BitVec 8 :=
+  memStore32 (memStore32 (memStore32 (memStore32 (memStore32 (memStore32 (memStore32 (memStore32 (memStore32 (memStore32 (memStore32 (memStore32 (memStore32 M (F + 0xEC) (g0 ra))
+    (F + 0xE8) (g0 8))
+    (F + 0xE4) (g0 9))
+    (F + 0xE0) (g0 18))
+    (F + 0xDC) (g0 19))
+    (F + 0xD8) (g0 20))
+    (F + 0xD4) (g0 21))
+    (F + 0xD0) (g0 22))
+    (F + 0xCC) (g0 23))
+    (F + 0xC8) (g0 24))
+    (F + 0xC4) (g0 25))
+    (F + 0xC0) (g0 26))
+    (F + 0xBC) (g0 27)
+
+theorem pa_ld {M : Word → BitVec 8} {F v : Word} (c : Nat) (hc : c + 4 ≤ 240) (ds : List Nat)
+    (hd : ∀ d, d ∈ ds → c + 4 ≤ d ∨ d + 4 ≤ c) (hds : ∀ d, d ∈ ds → d + 4 ≤ 240)
+    (h : memLoad32 M (F + BitVec.ofNat 32 c) = v) (ws : List Word) :
+    memLoad32 ((ds.zip ws).foldl (fun M' x => memStore32 M' (F + BitVec.ofNat 32 x.1) x.2) M)
+      (F + BitVec.ofNat 32 c) = v := by
+  induction ds generalizing M ws with
+  | nil => exact h
+  | cons d ds ih =>
+    cases ws with
+    | nil => exact h
+    | cons w ws =>
+      exact ih (fun d hd' => hd d (List.mem_cons_of_mem _ hd')) (fun d hd' => hds d (List.mem_cons_of_mem _ hd'))
+        (ld_skip c d (hd d (List.mem_cons_self ..)) (by omega) (by have := hds d (List.mem_cons_self ..); omega) h) ws
+
+theorem pa_pro (M : Word → BitVec 8) (F : Word) (g0 : Fin 32 → Word) :
+    Out M (paM1 M F g0) F 240 ∧ PaSaved F g0 (paM1 M F g0) := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · exact ((((((((((((((out_store32 _ _ _).widen (d := 0xEC) (by decide)).trans
+      ((out_store32 _ _ _).widen (d := 0xE8) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0xE4) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0xE0) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0xDC) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0xD8) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0xD4) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0xD0) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0xCC) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0xC8) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0xC4) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0xC0) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0xBC) (by decide)))
+  · exact pa_ld 0xEC (by decide) [0xE8, 0xE4, 0xE0, 0xDC, 0xD8, 0xD4, 0xD0, 0xCC, 0xC8, 0xC4, 0xC0, 0xBC] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 8, g0 9, g0 18, g0 19, g0 20, g0 21, g0 22, g0 23, g0 24, g0 25, g0 26, g0 27]
+  · exact pa_ld 0xE8 (by decide) [0xE4, 0xE0, 0xDC, 0xD8, 0xD4, 0xD0, 0xCC, 0xC8, 0xC4, 0xC0, 0xBC] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 9, g0 18, g0 19, g0 20, g0 21, g0 22, g0 23, g0 24, g0 25, g0 26, g0 27]
+  · exact pa_ld 0xE4 (by decide) [0xE0, 0xDC, 0xD8, 0xD4, 0xD0, 0xCC, 0xC8, 0xC4, 0xC0, 0xBC] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 18, g0 19, g0 20, g0 21, g0 22, g0 23, g0 24, g0 25, g0 26, g0 27]
+  · exact pa_ld 0xE0 (by decide) [0xDC, 0xD8, 0xD4, 0xD0, 0xCC, 0xC8, 0xC4, 0xC0, 0xBC] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 19, g0 20, g0 21, g0 22, g0 23, g0 24, g0 25, g0 26, g0 27]
+  · exact pa_ld 0xDC (by decide) [0xD8, 0xD4, 0xD0, 0xCC, 0xC8, 0xC4, 0xC0, 0xBC] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 20, g0 21, g0 22, g0 23, g0 24, g0 25, g0 26, g0 27]
+  · exact pa_ld 0xD8 (by decide) [0xD4, 0xD0, 0xCC, 0xC8, 0xC4, 0xC0, 0xBC] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 21, g0 22, g0 23, g0 24, g0 25, g0 26, g0 27]
+  · exact pa_ld 0xD4 (by decide) [0xD0, 0xCC, 0xC8, 0xC4, 0xC0, 0xBC] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 22, g0 23, g0 24, g0 25, g0 26, g0 27]
+  · exact pa_ld 0xD0 (by decide) [0xCC, 0xC8, 0xC4, 0xC0, 0xBC] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 23, g0 24, g0 25, g0 26, g0 27]
+  · exact pa_ld 0xCC (by decide) [0xC8, 0xC4, 0xC0, 0xBC] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 24, g0 25, g0 26, g0 27]
+  · exact pa_ld 0xC8 (by decide) [0xC4, 0xC0, 0xBC] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 25, g0 26, g0 27]
+  · exact pa_ld 0xC4 (by decide) [0xC0, 0xBC] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 26, g0 27]
+  · exact pa_ld 0xC0 (by decide) [0xBC] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 27]
+  · exact memLoad32_store32_same _ _ _
+
+section
+variable {M1 Mf : Word → BitVec 8} {base F : Word} {f g0 : Fin 32 → Word}
+
+theorem pa_epi {R : (Word → BitVec 8) → Prop} (hsp : f sp = F)
+    (hS : Slots paCs F M1 Mf) (hv : PaSaved F g0 M1) (hsp0 : g0 sp = F + BitVec.ofNat 32 0xF0)
+    (hret : g0 ra &&& ~~~1 = g0 ra) (hal : F.toNat % 4 = 0) (hz0 : g0 0 = 0)
+    (hfr : ∀ x, x ∉ paE → f x = g0 x) (hR : R Mf) :
+    WP jsonParseCode base (RPost (g0 ra) R g0) Mf 0x30A f := by
+  obtain ⟨v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12⟩ := hv
+  have e0 : memLoad32 Mf (F + 0xEC) = g0 ra := (hS 0xEC (by decide)).trans v0
+  have e1 : memLoad32 Mf (F + 0xE8) = g0 8 := (hS 0xE8 (by decide)).trans v1
+  have e2 : memLoad32 Mf (F + 0xE4) = g0 9 := (hS 0xE4 (by decide)).trans v2
+  have e3 : memLoad32 Mf (F + 0xE0) = g0 18 := (hS 0xE0 (by decide)).trans v3
+  have e4 : memLoad32 Mf (F + 0xDC) = g0 19 := (hS 0xDC (by decide)).trans v4
+  have e5 : memLoad32 Mf (F + 0xD8) = g0 20 := (hS 0xD8 (by decide)).trans v5
+  have e6 : memLoad32 Mf (F + 0xD4) = g0 21 := (hS 0xD4 (by decide)).trans v6
+  have e7 : memLoad32 Mf (F + 0xD0) = g0 22 := (hS 0xD0 (by decide)).trans v7
+  have e8 : memLoad32 Mf (F + 0xCC) = g0 23 := (hS 0xCC (by decide)).trans v8
+  have e9 : memLoad32 Mf (F + 0xC8) = g0 24 := (hS 0xC8 (by decide)).trans v9
+  have e10 : memLoad32 Mf (F + 0xC4) = g0 25 := (hS 0xC4 (by decide)).trans v10
+  have e11 : memLoad32 Mf (F + 0xC0) = g0 26 := (hS 0xC0 (by decide)).trans v11
+  have e12 : memLoad32 Mf (F + 0xBC) = g0 27 := (hS 0xBC (by decide)).trans v12
+  refine WP.lw pa_at_30a (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xEC) (by decide)) ?_; wn
+  refine WP.lw pa_at_30c (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xE8) (by decide)) ?_; wn
+  refine WP.lw pa_at_30e (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xE4) (by decide)) ?_; wn
+  refine WP.lw pa_at_310 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xE0) (by decide)) ?_; wn
+  refine WP.lw pa_at_312 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xDC) (by decide)) ?_; wn
+  refine WP.lw pa_at_314 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xD8) (by decide)) ?_; wn
+  refine WP.lw pa_at_316 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xD4) (by decide)) ?_; wn
+  refine WP.lw pa_at_318 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xD0) (by decide)) ?_; wn
+  refine WP.lw pa_at_31a (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xCC) (by decide)) ?_; wn
+  refine WP.lw pa_at_31c (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xC8) (by decide)) ?_; wn
+  refine WP.lw pa_at_31e (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xC4) (by decide)) ?_; wn
+  refine WP.lw pa_at_320 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xC0) (by decide)) ?_; wn
+  refine WP.lw pa_at_322 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xBC) (by decide)) ?_; wn
+  refine WP.aluImm pa_at_324 ?_; wn
+  refine WP.ret pa_at_326 ⟨?_, hR, ?_⟩
+  · rsimp; rw [hsp, e0, add_lit_zero, hret]
+  refine frame_of (L2 := [ra, sp, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]) (by keepz hz0) fun x hx => ?_
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
+  rcases hx with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> rsimp
+  · rw [hsp, e0]
+  · rw [hsp, hsp0]; rfl
+  · rw [hsp, e1]
+  · rw [hsp, e2]
+  · rw [hsp, e3]
+  · rw [hsp, e4]
+  · rw [hsp, e5]
+  · rw [hsp, e6]
+  · rw [hsp, e7]
+  · rw [hsp, e8]
+  · rw [hsp, e9]
+  · rw [hsp, e10]
+  · rw [hsp, e11]
+  · rw [hsp, e12]
+
+end
+
+theorem pa_err_res (M : Word → BitVec 8) (out : Word) (b : BitVec 8) (e : Nat) (hv : b = BitVec.ofNat 8 e) :
+    FieldRes M (memStore8 (memStore32 M out 0) (out + 4) b) out (.error e) := by
+  have h4 : Sep (out + BitVec.ofNat 32 4) 1 out 4 := by
+    have := sep_offsets out (c := 4) (n := 1) (d := 0) (k := 4) (Or.inr (by decide)) (by decide) (by decide)
+    rwa [add_ofNat_zero] at this
+  refine ⟨fun x hx => ?_, ?_, ?_⟩
+  · have h0 : Sep x 1 out 4 := by
+      have := hx.subR (c := 0) (l := 4) (by decide); rwa [add_ofNat_zero] at this
+    exact (out_store8 _ _ _ x (hx.subR (c := 4) (l := 1) (by decide))).trans (out_store32 _ _ _ x h0)
+  · exact (memLoad32_store8_sep h4).trans (memLoad32_store32_same _ _ _)
+  · rw [memStore8_same, hv]
+
+theorem pa_ok_res (M : Word → BitVec 8) (out q : Word) (l : Nat) :
+    FieldRes M (memStore32 (memStore32 M out q) (out + 4) (BitVec.ofNat 32 l)) out (.ok (q, l)) := by
+  have h4 : Sep (out + BitVec.ofNat 32 4) 4 (out + BitVec.ofNat 32 0) 4 :=
+    sep_offsets out (Or.inr (by decide)) (by decide) (by decide)
+  rw [add_ofNat_zero] at h4
+  refine ⟨fun x hx => ?_, ?_, memLoad32_store32_same _ _ _⟩
+  · have h0 : Sep x 1 out 4 := by
+      have := hx.subR (c := 0) (l := 4) (by decide); rwa [add_ofNat_zero] at this
+    exact (out_store32 _ _ _ x (hx.subR (c := 4) (l := 4) (by decide))).trans (out_store32 _ _ _ x h0)
+  · exact (memLoad32_store32_sep h4).trans (memLoad32_store32_same _ _ _)
+
+/-- What `parse` gets from its caller: the code, the stack region `[s, s + 404)`
+with the frame at `F = s + 164`, the document `p`, `n`, and `out`. `Mp` is the
+memory after the prologue saved the callee-saved registers. -/
+structure PaEnv (M0 : Word → BitVec 8) (base s p out : Word) (n : Nat) (g0 : Fin 32 → Word)
+    (Mp : Word → BitVec 8) (F : Word) : Prop where
+  hF : s + BitVec.ofNat 32 164 = F
+  hb : base.toNat % 2 = 0
+  hal : s.toNat % 4 = 0
+  halo : out.toNat % 4 = 0
+  hn : n < 2 ^ 31
+  hp0 : p.toNat ≠ 0
+  hpn : p.toNat + n < 2 ^ 32
+  hsw : s.toNat + 404 < 2 ^ 32
+  code : ParseCode M0 base
+  sep : ParseSep s 404 base
+  sP : Sep s 404 p n
+  so : Sep out 8 s 404
+  sc : Sep out 8 base jsonParseCode.length
+  saved : PaSaved F g0 Mp
+  sp0 : g0 sp = F + BitVec.ofNat 32 0xF0
+  ret : g0 ra &&& ~~~1 = g0 ra
+  z0 : g0 0 = 0
+
+/-- `parse` returned to its caller with `r`'s word-level form at `out`. -/
+def PPost (M0 : Word → BitVec 8) (s p out : Word) (g0 : Fin 32 → Word) (r : Except Nat (Nat × Nat)) : Post :=
+  RPost (g0 ra) (fun M' => FieldResF M0 M' out s 404 (fieldRes p r)) g0
+
+section
+variable {M0 Mp Mf : Word → BitVec 8} {base s p out F : Word} {n : Nat} {f g0 : Fin 32 → Word}
+
+theorem PaEnv.halF (E : PaEnv M0 base s p out n g0 Mp F) : F.toNat % 4 = 0 := by
+  rw [← E.hF]; exact aligned_add E.hal (k := 164) (by decide)
+
+theorem PaEnv.soF (E : PaEnv M0 base s p out n g0 Mp F) : Sep out 8 F 240 := by
+  rw [← E.hF]; exact E.so.subR (by decide)
+
+theorem PaEnv.sc4 (E : PaEnv M0 base s p out n g0 Mp F) : Sep out 4 base jsonParseCode.length := by
+  have := E.sc.sub (c := 0) (l := 4) (by decide); rwa [add_ofNat_zero] at this
+
+theorem PaEnv.slots_out (E : PaEnv M0 base s p out n g0 Mp F) {c l : Nat} (hcl : c + l ≤ 8) :
+    ∀ x, x ∈ paCs → Sep (out + BitVec.ofNat 32 c) l (F + BitVec.ofNat 32 x) 4 :=
+  slots_sep_out (E.soF.sub hcl) (by decide)
+
+theorem PaEnv.slots_out0 (E : PaEnv M0 base s p out n g0 Mp F) :
+    ∀ x, x ∈ paCs → Sep out 4 (F + BitVec.ofNat 32 x) 4 := by
+  have := E.slots_out (c := 0) (l := 4) (by decide); rwa [add_ofNat_zero] at this
+
+/-- The error exit at `0x302`, with `out` in `s2` and the error byte in `a0`. -/
+theorem pa_302 {e : Nat} (E : PaEnv M0 base s p out n g0 Mp F) (hsp : f sp = F) (h18 : f 18 = out)
+    (ha0 : (f a0).extractLsb' 0 8 = BitVec.ofNat 8 e) (hO : Out M0 Mf s 404) (hS : Slots paCs F Mp Mf)
+    (hfr : ∀ x, x ∉ paE → f x = g0 x) :
+    WP jsonParseCode base (PPost M0 s p out g0 (.error e)) Mf 0x302 f := by
+  refine WP.zero fun hz => ?_
+  refine WP.sw pa_at_302 (by (try rsimp); rw [h18, add_lit_zero]; exact E.halo)
+    (by (try rsimp); rw [h18, add_lit_zero]; exact E.sc4) ?_; wn
+  refine WP.sb pa_at_306 (by (try rsimp); rw [h18]; exact E.sc.sub (c := 4) (l := 1) (by decide)) ?_; wn
+  rw [h18, add_lit_zero, hz]
+  exact pa_epi hsp ((hS.out (out_store32 _ _ _) E.slots_out0).out (out_store8 _ _ _)
+    (E.slots_out (c := 4) (l := 1) (by decide))) E.saved E.sp0 E.ret E.halF E.z0 hfr
+    ⟨Mf, hO, pa_err_res Mf out _ e ha0⟩
+
+/-- The error exit at `0x2F4`, with `out` in `a1` and the error byte in `a0`. -/
+theorem pa_2f4 {e : Nat} (E : PaEnv M0 base s p out n g0 Mp F) (hsp : f sp = F) (ha1 : f a1 = out)
+    (ha0 : (f a0).extractLsb' 0 8 = BitVec.ofNat 8 e) (hO : Out M0 Mf s 404) (hS : Slots paCs F Mp Mf)
+    (hfr : ∀ x, x ∉ paE → f x = g0 x) :
+    WP jsonParseCode base (PPost M0 s p out g0 (.error e)) Mf 0x2F4 f := by
+  refine WP.zero fun hz => ?_
+  refine WP.sw pa_at_2f4 (by (try rsimp); rw [ha1, add_lit_zero]; exact E.halo)
+    (by (try rsimp); rw [ha1, add_lit_zero]; exact E.sc4) ?_; wn
+  refine WP.sb pa_at_2f8 (by (try rsimp); rw [ha1]; exact E.sc.sub (c := 4) (l := 1) (by decide)) ?_; wn
+  refine WP.jal pa_at_2fc (by decide) ?_; wn
+  rw [ha1, add_lit_zero, hz]
+  exact pa_epi hsp ((hS.out (out_store32 _ _ _) E.slots_out0).out (out_store8 _ _ _)
+    (E.slots_out (c := 4) (l := 1) (by decide))) E.saved E.sp0 E.ret E.halF E.z0 hfr
+    ⟨Mf, hO, pa_err_res Mf out _ e ha0⟩
+
+/-- The error exit at `0x2C0`, with `out` at `F + 0xC` and the error byte in
+`s2`. -/
+theorem pa_2c0 {e : Nat} (E : PaEnv M0 base s p out n g0 Mp F) (hsp : f sp = F)
+    (hC : memLoad32 Mf (F + 0xC) = out) (h18 : (f 18).extractLsb' 0 8 = BitVec.ofNat 8 e)
+    (hO : Out M0 Mf s 404) (hS : Slots paCs F Mp Mf) (hfr : ∀ x, x ∉ paE → f x = g0 x) :
+    WP jsonParseCode base (PPost M0 s p out g0 (.error e)) Mf 0x2C0 f := by
+  refine WP.zero fun hz => ?_
+  refine WP.lw pa_at_2c0 (by (try rsimp); rw [hsp]; exact aligned_add E.halF (k := 0xC) (by decide)) ?_; wn
+  rw [hsp, hC]
+  refine WP.sw pa_at_2c2 (by (try rsimp); rw [add_lit_zero]; exact E.halo)
+    (by (try rsimp); rw [add_lit_zero]; exact E.sc4) ?_; wn
+  refine WP.sb pa_at_2c6 (by (try rsimp); exact E.sc.sub (c := 4) (l := 1) (by decide)) ?_; wn
+  refine WP.jal pa_at_2ca (by decide) ?_; wn
+  try rw [add_lit_zero]
+  exact pa_epi (by (try rsimp); exact hsp) ((hS.out (out_store32 _ _ _) E.slots_out0).out (out_store8 _ _ _)
+    (E.slots_out (c := 4) (l := 1) (by decide))) E.saved E.sp0 E.ret E.halF E.z0 (by keepz E.z0)
+    ⟨Mf, hO, pa_err_res Mf out _ e (by (try rsimp); exact h18)⟩
+
+end
+
 end C3.RV32
