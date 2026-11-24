@@ -99,17 +99,19 @@ theorem scaled_sn {c : Curve} (hp3 : 3 ≤ c.p) (hca : c.a = c.p - 3) (hr : NoRo
   have r1 := onC_eq ha'
   refine ⟨y1, y_ne hr ha', ?_, ?_, ?_⟩ <;> simp only [rcbAdd, crep] <;> curve_mod [r1, ha] []
 
+theorem opp_rule {p y1 y2 : Nat} (hs : (y1 + y2) % p = 0) : MEq p ((y2 : Int) ^ 1) (-(y1 : Int)) := by
+  have e := MEq.natCast.mpr (show (y1 + y2) % p = 0 % p by rw [hs, Nat.zero_mod])
+  rw [Int.natCast_add, Int.natCast_zero] at e
+  refine meq_pow_one (MEq.trans ?_ ((e.sub (MEq.refl (y1 : Int))).trans (MEq.of_eq (Int.zero_sub _))))
+  exact MEq.of_eq (by omega)
+
 /-- At `b = -a`, algorithm 4's `y` is `(2 y₁)³ y'`, where `(x', y') = 2 a`. -/
 theorem scaled_opp {c : Curve} (hp : IsPrime c.p) (hp3 : 3 ≤ c.p) (hca : c.a = c.p - 3) (hr : NoRoot c)
     {x1 y1 y2 : Nat} (ha' : OnC c (some (x1, y1))) (hs : (y1 + y2) % c.p = 0) :
     Scaled c.p (rcbAddI c.b x1 y1 1 x1 y2 1) none := by
   have ha := a_rule hp3 hca
   have r1 := onC_eq ha'
-  have ry2 : MEq c.p ((y2 : Int) ^ 1) (-(y1 : Int)) := by
-    have e := MEq.natCast.mpr (show (y1 + y2) % c.p = 0 % c.p by rw [hs, Nat.zero_mod])
-    rw [Int.natCast_add, Int.natCast_zero] at e
-    refine meq_pow_one (MEq.trans ?_ ((e.sub (MEq.refl (y1 : Int))).trans (MEq.of_eq (Int.zero_sub _))))
-    exact MEq.of_eq (by omega)
+  have ry2 := opp_rule hs
   have hl := tangent_slope (x1 := x1) hp (two_y_ne hp hp3 hr ha')
   have hq := onC_tangent hp ha' hl
   generalize (3 * x1 * x1 + c.a) * c.inv (2 * y1 % c.p) % c.p = l at hl hq

@@ -59,6 +59,10 @@ noncomputable def Poly.loPart (k d : Nat) (p : Poly) : Poly :=
   Poly.rec (motive := fun _ => Poly) Poly.zero
     (fun c m _ ih => Bool.rec (motive := fun _ => Poly) (Poly.term c m ih) ih (Mon.geExp k d m)) p
 
+/-- Whether `get env k ^ d` divides some term. -/
+noncomputable def Poly.anyGe (k d : Nat) (p : Poly) : Bool :=
+  Poly.rec (motive := fun _ => Bool) false (fun _ m _ ih => Bool.or (Mon.geExp k d m) ih) p
+
 /-- A rewrite rule: atom `k` to the power `d` is congruent to `f`. -/
 structure Rule where
   k : Nat
@@ -67,7 +71,8 @@ structure Rule where
 
 /-- One application of a rule to every term. -/
 noncomputable def Poly.redStep (r : Rule) (p : Poly) : Poly :=
-  Poly.add 0 (Poly.loPart r.k r.d p) (Poly.mul 0 r.f (Poly.hiPart r.k r.d p))
+  Bool.rec (motive := fun _ => Poly) p (Poly.add 0 (Poly.loPart r.k r.d p) (Poly.mul 0 r.f (Poly.hiPart r.k r.d p)))
+    (Poly.anyGe r.k r.d p)
 
 /-- Each rule once, in order. -/
 noncomputable def Poly.redRules (rs : List Rule) (p : Poly) : Poly :=
@@ -76,6 +81,26 @@ noncomputable def Poly.redRules (rs : List Rule) (p : Poly) : Poly :=
 /-- `fuel` rounds of the rules. -/
 noncomputable def Poly.red (rs : List Rule) (fuel : Nat) (p : Poly) : Poly :=
   Nat.rec (motive := fun _ => Poly) p (fun _ ih => Poly.redRules rs ih) fuel
+
+/-- Each term of `p` times `q`. -/
+noncomputable def Poly.mulTerms (p q : Poly) : List Poly :=
+  Poly.rec (motive := fun _ => List Poly) [] (fun c m _ ih => Poly.mulTerm 0 c m q :: ih) p
+
+/-- `o` and the polynomials of `l`, with adjacent pairs added. -/
+noncomputable def pairUp (l : List Poly) (o : Option Poly) : List Poly :=
+  List.rec (motive := fun _ => Option Poly → List Poly)
+    (fun o => Option.rec (motive := fun _ => List Poly) [] (fun x => [x]) o)
+    (fun x _ ih o => Option.rec (motive := fun _ => List Poly) (ih (some x)) (fun y => Poly.add 0 y x :: ih none) o)
+    l o
+
+/-- The sum of a list of polynomials. -/
+noncomputable def sumAll (l : List Poly) : Poly :=
+  List.rec (motive := fun _ => Poly) Poly.zero (fun x _ ih => Poly.add 0 x ih) l
+
+/-- The product, with the partial products added in a balanced tree, so
+that each term is merged about `log₂ |p|` times rather than `|p|` times. -/
+noncomputable def Poly.mulB (p q : Poly) : Poly :=
+  sumAll (Nat.rec (motive := fun _ => List Poly) (Poly.mulTerms p q) (fun _ ih => pairUp ih none) 24)
 
 /-- The normal form of an expression with exact coefficients, reduced by
 the rules after every product and power. -/
@@ -86,7 +111,7 @@ noncomputable def Expr.toPolyR (rs : List Rule) (fuel : Nat) (e : Expr) : Poly :
     (fun _ _ a b => Poly.add 0 a b)
     (fun _ _ a b => Poly.add 0 a (Poly.neg 0 b))
     (fun _ a => Poly.neg 0 a)
-    (fun _ _ a b => Poly.red rs fuel (Poly.mul 0 a b))
+    (fun _ _ a b => Poly.red rs fuel (Poly.mulB a b))
     (fun _ k a => Poly.red rs fuel (Poly.pow 0 a k))
     e
 
@@ -149,6 +174,52 @@ theorem expr_toPoly_eval (env : List Int) (e : Expr) : (e.toPoly 0).eval env = e
   have := Expr.toPoly_sound env 0 e
   rwa [Int.emod_zero, Int.emod_zero] at this
 
+theorem sumAll_pairUp (env : List Int) (l : List Poly) (o : Option Poly) :
+    (sumAll (pairUp l o)).eval env =
+      (sumAll l).eval env + Option.rec (motive := fun _ => Int) 0 (fun x => x.eval env) o := by
+  induction l generalizing o with
+  | nil =>
+    cases o with
+    | none => rfl
+    | some x =>
+      show (Poly.add 0 x Poly.zero).eval env = 0 + x.eval env
+      rw [poly_eval_add, Poly.eval_zero, Int.add_zero, Int.zero_add]
+  | cons x l ih =>
+    cases o with
+    | none =>
+      show (sumAll (pairUp l (some x))).eval env = (Poly.add 0 x (sumAll l)).eval env + 0
+      rw [ih, poly_eval_add]
+      show (sumAll l).eval env + x.eval env = x.eval env + (sumAll l).eval env + 0
+      omega
+    | some y =>
+      show (Poly.add 0 (Poly.add 0 y x) (sumAll (pairUp l none))).eval env =
+        (Poly.add 0 x (sumAll l)).eval env + y.eval env
+      rw [poly_eval_add, poly_eval_add, poly_eval_add, ih]
+      show y.eval env + x.eval env + ((sumAll l).eval env + 0) = x.eval env + (sumAll l).eval env + y.eval env
+      omega
+
+theorem sumAll_mulTerms (env : List Int) (p q : Poly) :
+    (sumAll (Poly.mulTerms p q)).eval env = p.eval env * q.eval env := by
+  induction p with
+  | zero => rw [Poly.eval_zero, Int.zero_mul]; rfl
+  | term c m p ih =>
+    show (Poly.add 0 (Poly.mulTerm 0 c m q) (sumAll (Poly.mulTerms p q))).eval env = _
+    have e := Poly.eval_mulTerm env 0 c m q
+    rw [Int.emod_zero, Int.emod_zero] at e
+    rw [poly_eval_add, ih, e, Poly.eval_term, Int.add_mul]
+
+theorem poly_eval_mulB (env : List Int) (p q : Poly) : (Poly.mulB p q).eval env = p.eval env * q.eval env := by
+  unfold Poly.mulB
+  rw [← sumAll_mulTerms env p q]
+  generalize Poly.mulTerms p q = l
+  generalize 24 = n
+  induction n with
+  | zero => rfl
+  | succ n ih =>
+    show (sumAll (pairUp _ none)).eval env = _
+    rw [sumAll_pairUp, ih]
+    exact Int.add_zero _
+
 theorem Mon.eval_divExp (env : List Int) (k d : Nat) (m : Mon) (h : Mon.geExp k d m = true) :
     m.eval env = get env k ^ d * (Mon.divExp k d m).eval env := by
   induction m with
@@ -205,8 +276,12 @@ def RulesHold (p : Nat) (env : List Int) : List Rule → Prop
 theorem redStep_sound {p : Nat} {env : List Int} {r : Rule} (h : MEq p (get env r.k ^ r.d) (r.f.eval env))
     (q : Poly) : MEq p ((Poly.redStep r q).eval env) (q.eval env) := by
   unfold Poly.redStep
-  rw [poly_eval_add, poly_eval_mul, Poly.eval_split env r.k r.d q]
-  exact (MEq.refl _).add ((h.symm).mul (MEq.refl _))
+  generalize Poly.anyGe r.k r.d q = t
+  cases t
+  · exact MEq.refl _
+  · show MEq p ((Poly.add 0 (Poly.loPart r.k r.d q) (Poly.mul 0 r.f (Poly.hiPart r.k r.d q))).eval env) _
+    rw [poly_eval_add, poly_eval_mul, Poly.eval_split env r.k r.d q]
+    exact (MEq.refl _).add ((h.symm).mul (MEq.refl _))
 
 theorem redRules_sound {p : Nat} {env : List Int} :
     ∀ {rs : List Rule}, RulesHold p env rs → ∀ q : Poly, MEq p ((Poly.redRules rs q).eval env) (q.eval env)
@@ -239,9 +314,9 @@ theorem toPolyR_sound {p : Nat} {env : List Int} {rs : List Rule} (h : RulesHold
     show MEq p ((Poly.neg 0 _).eval env) (-a.eval env)
     rw [poly_eval_neg]; exact iha.neg
   | mul a b iha ihb =>
-    show MEq p ((Poly.red rs fuel (Poly.mul 0 _ _)).eval env) (a.eval env * b.eval env)
+    show MEq p ((Poly.red rs fuel (Poly.mulB _ _)).eval env) (a.eval env * b.eval env)
     refine (red_sound h fuel _).trans ?_
-    rw [poly_eval_mul]; exact iha.mul ihb
+    rw [poly_eval_mulB]; exact iha.mul ihb
   | pow a k iha =>
     show MEq p ((Poly.red rs fuel (Poly.pow 0 _ k)).eval env) (a.eval env ^ k)
     refine (red_sound h fuel _).trans ?_
