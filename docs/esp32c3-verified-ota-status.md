@@ -166,21 +166,24 @@ loop the code runs is restated as the spec's function by a lemma in the
 and others), and the constants in the image's data are the spec's
 (`SvConstsLink.lean`), as are the Rekor entry's pieces, which
 `BootloaderData6.lean` extracts (`SvRekorData`). It depends only on
-`propext` and `Quot.sound`. It assumes one fact about the Ed25519 model,
-stated in [`SvModels.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvModels.lean):
-that the Ed25519 check accepts only signatures that `ed25519Verify`
-accepts. For the P-384 and P-256 checks it uses the corrected ECDSA models
-described below, which take no mathematical hypotheses. That a key the code
+`propext` and `Quot.sound`. That the Ed25519 check accepts only signatures
+that `ed25519Verify` accepts (`SvEdModel` in
+[`SvModels.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvModels.lean)) is
+proved by `svEdModel_closed` in `Models/Ed25519Closed.lean` from the
+image's Ed25519 constants. `BootloaderData7.lean` extracts the constants
+that no earlier file holds, and
+[`SvEdImage.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvEdImage.lean)
+derives the model's constants from those bytes and carries them to the
+memory the check reads, where the signature sits in the frame. For the
+P-384 and P-256 checks it uses the corrected ECDSA models described below,
+which take no mathematical hypotheses. That a key the code
 decodes is on P-256 is proved (`gsModel` in
 [`SvGsSpec.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvGsSpec.lean)):
 the code checks the curve equation in Montgomery form, and `2^256` is
 invertible modulo `p`.
 
-Left: the Ed25519 model fact (`svEdModel_closed` in
-`Models/Ed25519Closed.lean` proves it from the image's constants and four
-facts about the compiled routines: decoding, encoding, the small-order
-check, and the reduction of `k` modulo `L`); the code and constants
-hypotheses from the image the ROM loads; and `boot_main`.
+Left: the code and constants hypotheses from the image the ROM loads, and
+`boot_main`.
 
 The model facts need polynomial identities modulo the curves' primes.
 `grind` depends on `Classical.choice`, so
