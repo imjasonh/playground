@@ -70,7 +70,7 @@ theorem litScan_bd {rest : Bytes} {pos e : Nat} :
     · rename_i hw
       cases h
       have : w.length ≠ 0 := fun h0 => hne w (List.mem_cons_self ..) (List.eq_nil_of_length_eq_zero h0)
-      omega
+      exact ⟨by omega, by omega⟩
     · exact litScan_bd (fun w' hw' => hne w' (List.mem_cons_of_mem _ hw')) h
 
 theorem literalEnd_bd {d : Bytes} {pos e : Nat} (h : literalEnd d pos = some e) : pos < e ∧ e ≤ d.length := by
@@ -79,7 +79,7 @@ theorem literalEnd_bd {d : Bytes} {pos e : Nat} (h : literalEnd d pos = some e) 
   · cases h
   · have := litScan_bd (ws := litWords) (by decide) h
     rw [List.length_drop] at this
-    omega
+    exact ⟨by omega, by omega⟩
 
 theorem numberEnd_bd {d : Bytes} {pos e : Nat} (h : numberEnd d pos = some e) : pos < e ∧ e ≤ d.length := by
   have hl := digLen_le (d.drop pos)
@@ -93,9 +93,9 @@ theorem numberEnd_bd {d : Bytes} {pos e : Nat} (h : numberEnd d pos = some e) : 
       · cases h
       · split at h
         · split at h
-          · cases h; omega
+          · cases h; exact ⟨by omega, by omega⟩
           · cases h
-        · cases h; omega
+        · cases h; exact ⟨by omega, by omega⟩
 
 theorem cScan_bd {d : Bytes} : ∀ {k depth i e : Nat}, cScan d k depth i = some e → i < e ∧ e ≤ d.length
   | 0, _, _, _, h => by cases h
@@ -107,16 +107,16 @@ theorem cScan_bd {d : Bytes} : ∀ {k depth i e : Nat}, cScan d k depth i = some
     · obtain ⟨j, hj, h⟩ := Option.bind_eq_some_iff.mp h
       have := stringEnd_gt hj
       have := cScan_bd h
-      omega
+      exact ⟨by omega, by omega⟩
     split at h
-    · have := cScan_bd h; omega
+    · have := cScan_bd h; exact ⟨by omega, by omega⟩
     split at h
     · split at h
       · cases h
       split at h
-      · cases h; omega
-      · have := cScan_bd h; omega
-    · have := cScan_bd h; omega
+      · cases h; exact ⟨by omega, by omega⟩
+      · have := cScan_bd h; exact ⟨by omega, by omega⟩
+    · have := cScan_bd h; exact ⟨by omega, by omega⟩
 
 theorem valueEnd_bd {d : Bytes} {pos e : Nat} (h : valueEnd d pos = some e) : pos < e ∧ e ≤ d.length := by
   unfold valueEnd at h
@@ -1075,3 +1075,108 @@ theorem ri_disp {n pos : Nat} (hn : n < 2 ^ 32) (hpos : pos < 2 ^ 32) (hF : s + 
     (hS.out hU.out (slots_sep F (d := 4) (l := 8) (by decide) (by decide))) (by have h := hU.resAt; rwa [hO.bytes hSp] at h) (by keepz hz0)
 
 end
+
+theorem ri_sub : ∀ x : Fin 32, x ∈ riLp → x ∈ riE := by decide
+
+section
+variable {M : Word → BitVec 8} {base out s p : Word} {f : Fin 32 → Word}
+
+theorem ri_wp {n pos : Nat} (h0 : f a0 = out) (h1 : f a1 = p) (h2 : f a2 = BitVec.ofNat 32 n)
+    (h3 : f a3 = BitVec.ofNat 32 pos) (hsp : f sp = s + BitVec.ofNat 32 116) (hn : n < 2 ^ 32)
+    (hpos : pos < 2 ^ 32) (hret : f ra &&& ~~~1 = f ra) (hal : s.toNat % 4 = 0) (halo : out.toNat % 4 = 0)
+    (hb : base.toNat % 2 = 0) (hlit : LitData M)
+    (hcse : CodeIn M (base + 0xFFFFFF0C) jsonStringEndCode) (hcle : CodeIn M (base + 0x17E) jsonLiteralEndCode)
+    (hce : CodeIn M (base + 0xFFFFF57E) equalSameLengthCode) (hcm : CodeIn M (base + 0xC93C) memcmpCode)
+    (hcne : CodeIn M (base + 0x21A) jsonNumberEndCode) (hcw : CodeIn M (base + 0x288) jsonSkipWsCode)
+    (hSc : Sep s 116 base jsonReadItemCode.length)
+    (hSse : Sep s 116 (base + 0xFFFFFF0C) jsonStringEndCode.length)
+    (hSle : Sep s 116 (base + 0x17E) jsonLiteralEndCode.length)
+    (hSe : Sep s 116 (base + 0xFFFFF57E) equalSameLengthCode.length)
+    (hSm : Sep s 116 (base + 0xC93C) memcmpCode.length)
+    (hSne : Sep s 116 (base + 0x21A) jsonNumberEndCode.length)
+    (hSw : Sep s 116 (base + 0x288) jsonSkipWsCode.length) (hSp : Sep s 116 p n)
+    (hSn : Sep s 116 0x3FCC4766 8) (hSf : Sep s 116 0x3FCC48F2 5) (hso : Sep out 12 s 116)
+    (hsc : Sep out 12 base jsonReadItemCode.length) :
+    WP jsonReadItemCode base (RiPost (f ra) M out s (itemRes p pos (readItem (memBytes M p n) pos)) f) M 0 f := by
+  refine WP.zero fun hz => ?_
+  have esp : aluEval .add (f sp) 0xFFFFFFD0 = s + 68 := by rw [hsp, ev_add, BitVec.add_assoc]; rfl
+  refine WP.aluImm ri_at_0 ?_; wn
+  rw [esp]
+  generalize hF : s + 68 = F
+  have hF' : s + BitVec.ofNat 32 68 = F := hF
+  have halF : F.toNat % 4 = 0 := by rw [← hF]; exact aligned_add hal (k := 68) (by decide)
+  have hsp0 : f sp = F + BitVec.ofNat 32 0x30 := by rw [hsp, ← hF, BitVec.add_assoc]; rfl
+  refine WP.sw ri_at_2 (by rsimp; exact aligned_add halF (k := 0x2C) (by decide))
+    (by rsimp; exact riSepF hF' hSc (by decide)) ?_; wn
+  refine WP.sw ri_at_4 (by rsimp; exact aligned_add halF (k := 0x28) (by decide))
+    (by rsimp; exact riSepF hF' hSc (by decide)) ?_; wn
+  refine WP.sw ri_at_6 (by rsimp; exact aligned_add halF (k := 0x24) (by decide))
+    (by rsimp; exact riSepF hF' hSc (by decide)) ?_; wn
+  refine WP.sw ri_at_8 (by rsimp; exact aligned_add halF (k := 0x20) (by decide))
+    (by rsimp; exact riSepF hF' hSc (by decide)) ?_; wn
+  refine WP.sw ri_at_a (by rsimp; exact aligned_add halF (k := 0x1C) (by decide))
+    (by rsimp; exact riSepF hF' hSc (by decide)) ?_; wn
+  refine WP.sw ri_at_c (by rsimp; exact aligned_add halF (k := 0x18) (by decide))
+    (by rsimp; exact riSepF hF' hSc (by decide)) ?_; wn
+  refine WP.sw ri_at_e (by rsimp; exact aligned_add halF (k := 0x14) (by decide))
+    (by rsimp; exact riSepF hF' hSc (by decide)) ?_; wn
+  change WP jsonReadItemCode base _ (riM1 M F f) 0x10 _
+  obtain ⟨hO1, hv⟩ := ri_pro M F f
+  have hO1' : Out M (riM1 M F f) s 116 := Out.upK hF' hO1 (by decide)
+  refine WP.alu ri_at_10 ?_; wn
+  refine WP.alu ri_at_12 ?_; wn
+  refine WP.alu ri_at_14 ?_; wn
+  refine WP.alu ri_at_16 ?_; wn
+  refine WP.alu ri_at_18 ?_; wn
+  have hbd : ∀ e, valueEnd (memBytes M p n) pos = some e → pos < e ∧ e ≤ n := fun e h => by
+    have := valueEnd_bd h; rw [memBytes_length] at this; exact this
+  unfold readItem
+  refine ri_disp hn hpos hF' hb hal halF hlit hcse hcle hce hcm hcne hSc hSse hSle hSe hSm hSne hSp hSn hSf hO1'
+    (by rsimp; (try simp only [ev0, ev_mv hz]); exact h1) (by rsimp; (try simp only [ev0, ev_mv hz]); exact h2)
+    (by rsimp; (try simp only [ev0, ev_mv hz]); exact h3) (by rsimp; rw [ev_add, h1, h3])
+    (by rsimp; exact h2) (by rsimp; exact h3) (by rsimp) (by rsimp; (try exact hz)) ?_
+  intro M3 g hO3 hS3 hA hg
+  have hfr : ∀ x, x ∉ riE → g x = f x := by
+    intro x hx
+    rw [hg x (fun h => hx (ri_sub x h))]
+    revert x
+    keepz hz
+  exact ri_tail (by rw [hg 8 (by decide)]; rsimp; (try simp only [ev0, ev_mv hz]); exact h1)
+    (by rw [hg 9 (by decide)]; rsimp; (try simp only [ev0, ev_mv hz]); exact h2)
+    (by rw [hg 18 (by decide)]; rsimp; (try simp only [ev0, ev_mv hz]); exact h0)
+    (by rw [hg 19 (by decide)]; rsimp; (try simp only [ev0, ev_mv hz]); exact h3)
+    (by rw [hg 20 (by decide)]; rsimp; rw [ev_add, h1, h3]) (by rw [hg sp (by decide)]; rsimp) hF' hn hbd hO3 hS3
+    hv hA hsp0 hret halF halo hz hfr hb hcw hSw hSp hso hsc
+
+end
+
+/-- `read_item(doc, pos)` for the `n` bytes at `p`, with `sp = s + 116`,
+returns with `out` holding `itemRes p pos (readItem doc pos)`: the slice
+`(p + pos, end - pos)` and the position after it, or the error byte `0x20`.
+It changes memory only in the 116 bytes at `s` and the 12 bytes at `out`,
+and keeps every register outside `jClob`. -/
+theorem jsonReadItem_correct (m : Machine) {base retAddr out s p : Word} {n pos : Nat}
+    (hb : base.toNat % 2 = 0) (hc : CodeIn m.mem base jsonReadItemCode)
+    (hcse : CodeIn m.mem (base + 0xFFFFFF0C) jsonStringEndCode)
+    (hcle : CodeIn m.mem (base + 0x17E) jsonLiteralEndCode)
+    (hce : CodeIn m.mem (base + 0xFFFFF57E) equalSameLengthCode) (hcm : CodeIn m.mem (base + 0xC93C) memcmpCode)
+    (hcne : CodeIn m.mem (base + 0x21A) jsonNumberEndCode) (hcw : CodeIn m.mem (base + 0x288) jsonSkipWsCode)
+    (hlit : LitData m.mem) (hpc : m.pc = base) (ha0 : reg m a0 = out) (ha1 : reg m a1 = p)
+    (ha2 : reg m a2 = BitVec.ofNat 32 n) (ha3 : reg m a3 = BitVec.ofNat 32 pos)
+    (hsp : reg m sp = s + BitVec.ofNat 32 116) (hn : n < 2 ^ 32) (hpos : pos < 2 ^ 32)
+    (hal : s.toNat % 4 = 0) (halo : out.toNat % 4 = 0) (hra : reg m ra = retAddr)
+    (hret : retAddr &&& ~~~1 = retAddr) (hSc : Sep s 116 base jsonReadItemCode.length)
+    (hSse : Sep s 116 (base + 0xFFFFFF0C) jsonStringEndCode.length)
+    (hSle : Sep s 116 (base + 0x17E) jsonLiteralEndCode.length)
+    (hSe : Sep s 116 (base + 0xFFFFF57E) equalSameLengthCode.length)
+    (hSm : Sep s 116 (base + 0xC93C) memcmpCode.length)
+    (hSne : Sep s 116 (base + 0x21A) jsonNumberEndCode.length)
+    (hSw : Sep s 116 (base + 0x288) jsonSkipWsCode.length) (hSp : Sep s 116 p n)
+    (hSn : Sep s 116 0x3FCC4766 8) (hSf : Sep s 116 0x3FCC48F2 5) (hso : Sep out 12 s 116)
+    (hsc : Sep out 12 base jsonReadItemCode.length) :
+    ∃ m', Steps m m' ∧ m'.pc = retAddr ∧
+      CurResF m.mem m'.mem out s 116 0x20 (itemRes p pos (readItem (memBytes m.mem p n) pos)) ∧
+      ∀ r, r ∉ jClob → reg m' r = reg m r := by
+  obtain ⟨m', st, hpc', hR, hfr⟩ := WP.run (ri_wp ha0 ha1 ha2 ha3 hsp hn hpos (by rw [hra]; exact hret) hal halo
+    hb hlit hcse hcle hce hcm hcne hcw hSc hSse hSle hSe hSm hSne hSw hSp hSn hSf hso hsc) hb hc hpc
+  exact ⟨m', st, hpc'.trans hra, hR, hfr⟩
