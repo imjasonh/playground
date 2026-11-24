@@ -15,13 +15,17 @@ Usage: extract-functions.py ESP_IMAGE ELF NM OUT
 """
 
 import hashlib
+import re
 import struct
 import subprocess
 import sys
 
 # Lean name, then the demangled symbol, the mangled one when two functions
 # demangle alike, or the Lean name of an earlier function and the offset of a
-# call in it.
+# call in it. A demangled symbol leaves out the ` (.N)` that LLVM appends to
+# local copies, because N changes whenever a copy is added or removed
+# anywhere in the program. When copies with different code share a name, a
+# third element picks one by the start of its shape hash (see `shape_hash`).
 FUNCTIONS = [
     ("crc32", "c3_verify::bootstate::crc32"),
     ("readerBytes", "<c3_verify::reader::Reader>::bytes"),
@@ -75,7 +79,7 @@ FUNCTIONS = [
     ("flashRead", "c3_bootloader::flash::read"),
     ("romFlashReadWords", "c3_bootloader::rom::flash_read_words"),
     ("feAdd", "<&curve25519_dalek::backend::serial::u32::field::FieldElement2625 as core::ops::arith::Add>::add"),
-    ("selectI64", "<ctutils::choice::Choice>::select_i64 (.170)"),
+    ("selectI64", "<ctutils::choice::Choice>::select_i64"),
     ("feSub", "<&curve25519_dalek::backend::serial::u32::field::FieldElement2625 as core::ops::arith::Sub>::sub"),
     ("wideMul12x2", "crypto_bigint::uint::mul::karatsuba::widening_mul_fixed::<12, 2>"),
     ("wideMul8x2", "crypto_bigint::uint::mul::karatsuba::widening_mul_fixed::<8, 2>"),
@@ -152,11 +156,11 @@ FUNCTIONS = [
     ("inScalarRange", "c3_crypto::ecdsa::in_scalar_range"),
     ("p384ScalarMul", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<p384::arithmetic::scalar::ScalarParams, 12>>::mul"),
     ("p384ScalarNew", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<p384::arithmetic::scalar::ScalarParams, 12>>::new"),
-    ("u32Min", "crypto_bigint::primitives::u32_min (.169)"),
+    ("u32Min", "crypto_bigint::primitives::u32_min"),
     ("sliceReverse", "<[u8]>::reverse"),
     ("uintRefIsZero", "<crypto_bigint::uint::ref_type::UintRef>::is_zero"),
-    ("choiceNot", "<subtle::Choice as core::ops::bit::Not>::not (.164)"),
-    ("splitAt12", "<crypto_bigint::uint::ref_type::UintRef>::split_at (.238)"),
+    ("choiceNot", "<subtle::Choice as core::ops::bit::Not>::not"),
+    ("splitAt12", "<crypto_bigint::uint::ref_type::UintRef>::split_at", "932627e48b26"),
     ("limbCtEq", "<[crypto_bigint::limb::Limb] as ctutils::traits::ct_eq::CtEq>::ct_eq"),
     ("uint12CtEq", "<crypto_bigint::uint::Uint<12> as ctutils::traits::ct_eq::CtEq>::ct_eq"),
     ("montRetrieve12", "crypto_bigint::modular::reduction::montgomery_retrieve::<12>"),
@@ -184,7 +188,7 @@ FUNCTIONS = [
     ("arr32Eq", "_RNvXNtNtCs2opbmDwVT5n_4core5array8equalityAhj20_NtNtB6_3cmp9PartialEq2eqCslBQrogs5cN1_9c3_verify"),
     ("arr32Ne", "<[u8; 32] as core::cmp::PartialEq>::ne"),
     ("choiceCtEq", "<subtle::Choice as subtle::ConstantTimeEq>::ct_eq"),
-    ("splitAt8", "<crypto_bigint::uint::ref_type::UintRef>::split_at (.165)"),
+    ("splitAt8", "<crypto_bigint::uint::ref_type::UintRef>::split_at", "0d950e4d6222"),
     ("tagAndThen", "<core::result::Result<u8, sec1::error::Error>>::and_then::<sec1::point::Tag, <sec1::point::Tag>::from_u8>"),
     ("montyScalarCtEq384", "<crypto_bigint::modular::const_monty_form::ConstMontyForm<p384::arithmetic::scalar::ScalarParams, 12> as subtle::ConstantTimeEq>::ct_eq"),
     ("ashldi3", "__ashldi3"),
@@ -423,6 +427,34 @@ def lui_addi(code, addr, off):
     return ((lui & 0xFFFFF000) + imm) & 0xFFFFFFFF
 
 
+def shape_hash(code):
+    """The SHA-256, in hex, of `code` with the immediates that depend on
+    where code and data sit cleared: those of `lui`, `auipc`, `jal`, and
+    `c.jal`, and of an instruction right after `lui` or `auipc` that uses
+    its result as the base."""
+    out = bytearray(code)
+    off, base = 0, None
+    while off + 2 <= len(code):
+        if code[off] & 3 != 3:
+            half = int.from_bytes(code[off : off + 2], "little")
+            if half & 0xE003 == 0x2001:
+                out[off : off + 2] = (half & 0xE003).to_bytes(2, "little")
+            off, base = off + 2, None
+            continue
+        word = int.from_bytes(code[off : off + 4], "little")
+        op, rd, rs1 = word & 0x7F, (word >> 7) & 31, (word >> 15) & 31
+        if op in (0x37, 0x17, 0x6F):
+            word &= 0xFFF
+        elif op in (0x67, 0x13, 0x03) and rs1 == base:
+            word &= 0xFFFFF
+        elif op == 0x23 and rs1 == base:
+            word &= 0x1FFF07F
+        out[off : off + 4] = word.to_bytes(4, "little")
+        base = rd if op in (0x37, 0x17) else None
+        off += 4
+    return hashlib.sha256(out).hexdigest()
+
+
 def segments(image):
     count = image[1]
     pos = 24
@@ -473,14 +505,15 @@ def main():
         parts = line.split(None, 3)
         if len(parts) == 4 and parts[2] in ("t", "T"):
             entry = (int(parts[0], 16), int(parts[1], 16))
-            symbols.setdefault(parts[3], []).append(entry)
+            symbols.setdefault(re.sub(r" \(\.\d+\)$", "", parts[3]), {}).setdefault(entry, parts[3])
             at.setdefault(entry[0], []).append((parts[3], entry[1]))
     for line in subprocess.run(
         [nm, "-S", elf], check=True, capture_output=True, text=True
     ).stdout.splitlines():
         parts = line.split(None, 3)
         if len(parts) == 4 and parts[2] in ("t", "T") and parts[3].startswith("_R"):
-            symbols.setdefault(parts[3], []).append((int(parts[0], 16), int(parts[1], 16)))
+            entry = (int(parts[0], 16), int(parts[1], 16))
+            symbols.setdefault(parts[3], {}).setdefault(entry, parts[3])
     segs = segments(image)
     lines = [
         "/-!",
@@ -497,7 +530,7 @@ def main():
         f'def imageSha256 : String := "{digest}"',
     ]
     extracted = {}
-    for name, source in FUNCTIONS:
+    for name, source, *shape in FUNCTIONS:
         if isinstance(source, tuple):
             caller, off = source
             caddr, ccode = extracted[caller]
@@ -508,12 +541,18 @@ def main():
             symbol, size = found[0]
             what = f"`{symbol}`, which `{caller}` calls at offset {off:#x},"
         else:
-            symbol = source
-            if symbol not in symbols:
-                sys.exit(f"no symbol {symbol}")
-            if len(set(symbols[symbol])) != 1:
-                sys.exit(f"{symbol} names more than one function: {symbols[symbol]}")
-            addr, size = symbols[symbol][0]
+            if source not in symbols:
+                sys.exit(f"no symbol {source}")
+            found = symbols[source]
+            match = list(found)
+            if shape or len(match) > 1:
+                hashes = {e: shape_hash(bytes_at(segs, *e)) for e in found}
+                match = [e for e in found if shape and hashes[e].startswith(shape[0])]
+            if len(match) != 1:
+                listing = ", ".join(f"{a:#x} ({hashes[(a, n)][:12]})" for a, n in sorted(found))
+                sys.exit(f"{name}: {len(match)} of the functions named {source} match: {listing}")
+            addr, size = match[0]
+            symbol = found[match[0]]
             what = f"`{symbol}`,"
         code = bytes_at(segs, addr, size)
         extracted[name] = (addr, code)
