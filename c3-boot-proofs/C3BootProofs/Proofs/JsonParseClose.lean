@@ -254,4 +254,153 @@ theorem pa_obj (E : PaEnv M0 base s p out n g0 Mp F) {st l : Nat} (hsl : st + l 
 
 end
 
+/-- What `parse` needs to go on with its value loop at `0x5C`: `next` for the
+open arrays and objects `stk'` and the position `pos'`. -/
+def PNext (M0 Mp : Word → BitVec 8) (base s p out F : Word) (n : Nat) (c : Bool) (g0 : Fin 32 → Word)
+    (w26 w27 : Word) (next : List (Bool × Nat) → Nat → Except Nat (Nat × Nat)) : Prop :=
+  ∀ (M' : Word → BitVec 8) (g : Fin 32 → Word) (stk' : List (Bool × Nat)) (pos' : Nat),
+    FInv M0 Mp s F n stk' M' → PRegs g g0 F p n c → g 18 = out → g 20 = BitVec.ofNat 32 (n + 1) →
+    g 21 = 15 → g 25 = BitVec.ofNat 32 pos' → pos' ≤ n → g 8 = BitVec.ofNat 32 stk'.length → g 26 = w26 →
+    g 27 = w27 → WP jsonParseCode base (PPost M0 s p out g0 (next stk' pos')) M' 0x5C g
+
+theorem pc_ad_se (b : Word) : b + 0xFFFFF57C + 0xFFFFFFA6 = b + 0xFFFFF616 + 0xFFFFFF0C := by
+  rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
+
+theorem pc_ad_sw (b : Word) : b + 0xFFFFF57C + 0x322 = b + 0xFFFFF616 + 0x288 := by
+  rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
+
+section
+variable {M0 Mp Mf : Word → BitVec 8} {base s p out F : Word} {n : Nat} {g0 f : Fin 32 → Word}
+
+/-- The error exit at `0x2EE`, with `out` at `F + 0xC`. -/
+theorem pa_2ee (E : PaEnv M0 base s p out n g0 Mp F) (hsp : f sp = F) (hC : memLoad32 Mf (F + 0xC) = out)
+    (hO : Out M0 Mf s 404) (hS : Slots paCs F Mp Mf) (hfr : ∀ x, x ∉ paE → f x = g0 x) :
+    WP jsonParseCode base (PPost M0 s p out g0 (.error 0x20)) Mf 0x2EE f := by
+  refine WP.zero fun hz => ?_
+  refine WP.aluImm pa_at_2ee ?_; wn
+  refine WP.lw pa_at_2f2 (by (try rsimp); rw [hsp]; exact E.alF (d := 0xC) (by decide)) ?_; wn
+  exact pa_2f4 E (by (try rsimp); exact hsp) (by (try rsimp); rw [hsp]; exact hC)
+    (by (try rsimp); (try simp only [ev0, ev_mv hz]); try rfl) hO hS (by keepz E.z0)
+
+/-- The end of the document at `0x2D2`, once no array or object is open:
+the value from `st` to `pos` when only whitespace follows it. -/
+theorem pa_top (E : PaEnv M0 base s p out n g0 Mp F) {c : Bool} {w pos st : Nat}
+    {next : List (Bool × Nat) → Nat → Except Nat (Nat × Nat)} (hR : PRegs f g0 F p n c)
+    (ha0 : f a0 = BitVec.ofNat 32 w) (hw : w ≤ n) (h25 : f 25 = BitVec.ofNat 32 pos) (hpos : pos ≤ n)
+    (h26 : f 26 = BitVec.ofNat 32 st) (hst : st ≤ n) (hC : memLoad32 Mf (F + 0xC) = out)
+    (hO : Out M0 Mf s 404) (hS : Slots paCs F Mp Mf) :
+    WP jsonParseCode base (PPost M0 s p out g0
+      (afterClose (if w ≠ n ∨ pos < st ∨ n < pos then .error 0x20 else .ok (.done st pos)) next)) Mf 0x2D2 f := by
+  have hfr := hR.fr
+  have hn := E.hn
+  refine WP.zero fun hz => ?_
+  refine WP.branch pa_at_2d2 (fun eb => ?_) (fun eb => ?_) <;> wn
+  · rw [ha0, hR.s8, br_bne (by omega) (by omega)] at eb
+    rw [ite_eq_left_of_eq_true _ _ (eq_true (Or.inl (not_dec_true eb)))]
+    exact pa_2ee E hR.sp hC hO hS hfr
+  rw [ha0, hR.s8, br_bne (by omega) (by omega)] at eb
+  have hwn := not_dec_false eb
+  refine WP.lw pa_at_2d6 (by (try rsimp); rw [hR.sp]; exact E.alF (d := 0xC) (by decide)) ?_; wn
+  rw [hR.sp, hC]
+  refine WP.branch pa_at_2d8 (fun eb => ?_) (fun eb => ?_) <;> wn
+  · (try rsimp at eb); rw [h25, h26, br_bltu (by omega) (by omega)] at eb
+    rw [ite_eq_left_of_eq_true _ _ (eq_true (Or.inr (Or.inl (of_decide_eq_true eb))))]
+    refine WP.aluImm pa_at_32e ?_; wn
+    refine WP.jal pa_at_332 (by decide) ?_; wn
+    exact pa_2f4 E (by (try rsimp); exact hR.sp) (by (try rsimp); try rfl)
+      (by (try rsimp); (try simp only [ev0, ev_mv hz]); try rfl) hO hS (by keepz E.z0)
+  (try rsimp at eb); rw [h25, h26, br_bltu (by omega) (by omega)] at eb
+  have hps := of_decide_eq_false eb
+  refine WP.branch pa_at_2dc (fun eb => ?_) (fun eb => ?_) <;> wn
+  · exfalso; (try rsimp at eb); rw [h25, hR.s8, br_bltu (by omega) (by omega)] at eb
+    exact absurd (of_decide_eq_true eb) (by omega)
+  rw [ite_eq_right_of_eq_false _ _ (eq_false (fun h => by
+    rcases h with h | h | h
+    · exact h hwn
+    · exact hps h
+    · omega))]
+  refine WP.alu pa_at_2e0 ?_; wn
+  refine WP.alu pa_at_2e2 ?_; wn
+  refine WP.sw pa_at_2e6 (by (try rsimp); rw [add_lit_zero]; exact E.halo)
+    (by (try rsimp); rw [add_lit_zero]; exact E.sc4) ?_; wn
+  refine WP.sw pa_at_2ea (by (try rsimp); exact aligned_add E.halo (k := 4) (by decide))
+    (by (try rsimp); exact E.sc.sub (c := 4) (l := 4) (by decide)) ?_; wn
+  refine WP.jal pa_at_2ec (by decide) ?_; wn
+  (try rsimp); rw [add_lit_zero, hR.s7, h25, h26, ev_add, show aluEval .sub (BitVec.ofNat 32 pos) (BitVec.ofNat 32 st) = BitVec.ofNat 32 (pos - st) from
+    sub_ofNat_le (by omega) (by omega)]
+  exact pa_epi (by (try rsimp); exact hR.sp) ((hS.out (out_store32 _ _ _) E.slots_out0).out (out_store32 _ _ _)
+    (E.slots_out (c := 4) (l := 4) (by decide))) E.saved E.sp0 E.ret E.halF E.z0 (by keepz E.z0)
+    ⟨Mf, hO, pa_ok_res Mf out _ _⟩
+
+/-- The call to `key_end` at `0x2A0`, after an object opens or after a comma
+in one, and the jump back to the value loop. -/
+theorem pa_2a0 (E : PaEnv M0 base s p out n g0 Mp F) {c : Bool} {q : Nat} {stk : List (Bool × Nat)}
+    {w26 w27 : Word} {next : List (Bool × Nat) → Nat → Except Nat (Nat × Nat)} {M : Word → BitVec 8}
+    (hnext : PNext M0 Mp base s p out F n c g0 w26 w27 next) (hFI : FInv M0 Mp s F n stk M)
+    (hR : PRegs f g0 F p n c) (h18 : f 18 = out) (h20 : f 20 = BitVec.ofNat 32 (n + 1)) (h21 : f 21 = 15)
+    (h25 : f 25 = BitVec.ofNat 32 q) (hq : q ≤ n) (h8 : f 8 = BitVec.ofNat 32 stk.length) (h26 : f 26 = w26)
+    (h27 : f 27 = w27) :
+    WP jsonParseCode base (PPost M0 s p out g0 (match keyEnd c (memBytes M0 p n) q with
+      | none => .error 0x20
+      | some v => next stk v)) M 0x2A0 f := by
+  have hfr := hR.fr
+  have hn := E.hn
+  have hc1 : ParseCode M base := E.code.out hFI.1 E.sep
+  have hd : memBytes M p n = memBytes M0 p n := hFI.1.bytes E.sP
+  have hFA8 : F + 0xA8 = s + BitVec.ofNat 32 332 := by rw [← E.hF, BitVec.add_assoc]; rfl
+  have m1 : Sep (F + 0xA8) 8 (s + BitVec.ofNat 32 132) 32 := by
+    rw [hFA8]; exact sep_offsets s (c := 332) (n := 8) (d := 132) (k := 32) (Or.inr (by decide)) (by decide)
+      (by decide)
+  refine WP.zero fun hz => ?_
+  refine WP.aluImm pa_at_2a0 ?_; wn
+  refine WP.alu pa_at_2a2 ?_; wn
+  refine WP.alu pa_at_2a4 ?_; wn
+  refine WP.alu pa_at_2a6 ?_; wn
+  refine WP.alu pa_at_2a8 ?_; wn
+  refine WP.callKeyEnd (tb := base + 0xFFFFF372 + 0xFFFFF57C) (out := F + 0xA8) (s := s + BitVec.ofNat 32 132)
+    (p := p) (n := n) (pos := q) (cm := c) pa_at_2aa pa_at_2ae (by simp only [BitVec.add_assoc]; rfl)
+    (even_at _ (even_at base E.hb _ (by decide)) _ (by decide)) (by decide) hc1.get.ke
+    (by rw [pc_ad_se]; exact hc1.get.ri.se) (by rw [pc_ad_sw]; exact hc1.get.ri.sw)
+    (by (try rsimp); rw [hR.sp, ev_add])
+    (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact hR.s7)
+    (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact hR.s8)
+    (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact h25)
+    (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact hR.s3)
+    (by (try rsimp); rw [hR.sp, ← E.hF, BitVec.add_assoc]; rfl) (by omega) (by omega)
+    (aligned_add E.hal (k := 132) (by decide)) (E.alF (d := 0xA8) (by decide))
+    (E.sep.get.ke.sub (by decide)) (by rw [pc_ad_se]; exact E.sep.get.ri.se.sub (by decide))
+    (by rw [pc_ad_sw]; exact E.sep.get.ri.sw.sub (by decide)) (E.sP.sub (by decide)) m1
+    (E.sepF E.sep.get.ke (d := 0xA8) (w := 8) (by decide)) (E.sep.parse.sub (by decide))
+    (E.sepF E.sep.parse (d := 0xA8) (w := 8) (by decide)) fun m2 hU => ?_
+  rw [hd] at hU
+  obtain ⟨Ma, hOa, hU⟩ := hU
+  generalize m2.mem = M2 at hU
+  have hFI2 : FInv M0 Mp s F n stk M2 :=
+    (hFI.out E.hF hOa (Or.inl (by decide))).outF E.hF (d := 0xA8) hU.out (Or.inr ⟨by decide, by decide⟩)
+  refine WP.zero fun hz2 => ?_
+  refine WP.lbu pa_at_2b2 ?_; wn
+  rcases hk : keyEnd c (memBytes M0 p n) q with _ | v <;> rw [hk] at hU
+  · obtain ⟨-, t1, t2⟩ := hU
+    have t2' : M2 (F + 0xA9) = 0x20 := by
+      rw [show F + 0xA9 = F + 0xA8 + 1 by rw [BitVec.add_assoc]; rfl]; exact t2
+    refine WP.branch pa_at_2b6 (fun _ => ?_) (fun eb => ?_) <;> wn
+    rotate_left
+    · exfalso; (try rsimp at eb); rw [hR.sp, t1] at eb; exact absurd eb (by decide)
+    refine WP.lbu pa_at_2fe ?_; wn
+    exact pa_302 E (by (try rsimp); exact hR.sp) (by (try rsimp); exact h18)
+      (by (try rsimp); rw [hR.sp, t2', ri_ze]; try rfl) hFI2.1 hFI2.2.1 (by keepz E.z0)
+  obtain ⟨-, t1, t2⟩ := hU
+  have hv : v ≤ n := by have := keyEnd_le hk; rwa [memBytes_length] at this
+  have t2' : memLoad32 M2 (F + 0xAC) = BitVec.ofNat 32 v := by
+    rw [show F + 0xAC = F + 0xA8 + 4 by rw [BitVec.add_assoc]; rfl]; exact t2
+  refine WP.branch pa_at_2b6 (fun eb => ?_) (fun _ => ?_) <;> wn
+  · exfalso; (try rsimp at eb); rw [hR.sp, t1] at eb; exact absurd eb (by decide)
+  refine WP.lw pa_at_2b8 (by (try rsimp); rw [hR.sp]; exact E.alF (d := 0xAC) (by decide)) ?_; wn
+  refine WP.jal pa_at_2ba (by decide) ?_; wn
+  exact hnext M2 _ stk v hFI2 (by pregs hR, E.z0) (by (try rsimp); exact h18) (by (try rsimp); exact h20)
+    (by (try rsimp); exact h21) (by (try rsimp); rw [hR.sp, t2']) hv (by (try rsimp); exact h8)
+    (by (try rsimp); exact h26) (by (try rsimp); exact h27)
+
+end
+
 end C3.RV32
