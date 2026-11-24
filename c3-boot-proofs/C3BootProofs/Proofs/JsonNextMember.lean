@@ -547,4 +547,104 @@ theorem nm_tail {n pos e v : Nat} (hF : s + BitVec.ofNat 32 116 = F) (hb : base.
 
 end
 
+section
+variable {M M1 Mp : Word → BitVec 8} {base out c s p F : Word} {g g0 : Fin 32 → Word}
+
+theorem nm_92 {M0 : Word → BitVec 8} (hsp : g sp = F) (h18 : g 18 = out) (hO : Out M0 M1 s 164)
+    (hS : Slots nmCs F Mp M1) (hv : NmSaved F g0 Mp) (hsp0 : g0 sp = F + BitVec.ofNat 32 0x30)
+    (hret : g0 ra &&& ~~~1 = g0 ra) (hal : F.toNat % 4 = 0) (hz0 : g0 0 = 0)
+    (hfr : ∀ x, x ∉ nmE → g x = g0 x) (hsoF : Sep out 20 F 48) (hsc : Sep out 20 base jsonNextMemberCode.length) :
+    WP jsonNextMemberCode base (RPost (g0 ra) (fun M' => MemResF M0 M' out c s 164 none) g0) M1 0x92 g := by
+  refine WP.zero fun hz => ?_
+  refine WP.aluImm nm_at_92 ?_; wn
+  exact nm_96 (by (try rsimp); exact hsp) (by (try rsimp); exact h18)
+    (by (try rsimp); (try simp only [ev0, ev_mv hz]); decide) hO hS hv hsp0 hret hal hz0 (by keepz hz0) hsoF hsc
+
+theorem nm_ad1 (base : Word) : base + 0x144 + 0xFFFFFFA6 = base + 0x1DE + 0xFFFFFF0C := by
+  rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
+
+theorem nm_ad2 (base : Word) : base + 0x144 + 0x322 = base + 0x1DE + 0x288 := by
+  rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
+
+theorem nm_ad0 (base : Word) : base + 0xEA = base + 0x1DE + 0xFFFFFF0C := by
+  rw [BitVec.add_assoc]; rfl
+
+/-- The call to `key_end` at `0x74` and the rest of the function. -/
+theorem nm_key {n pos e : Nat} (hF : s + BitVec.ofNat 32 116 = F) (hb : base.toNat % 2 = 0)
+    (hal : s.toNat % 4 = 0) (halo : out.toNat % 4 = 0) (halc : c.toNat % 4 = 0) (hn : n < 2 ^ 32)
+    (hp0 : p.toNat ≠ 0) (hpn : p.toNat + n ≤ 2 ^ 32) (hpe : pos < e - 1) (hen : e - 1 ≤ n)
+    (hrc : RiCode M (base + 0x1DE)) (hrs : RiSep s 164 (base + 0x1DE)) (hck : CodeIn M (base + 0x144) jsonKeyEndCode)
+    (hks : Sep s 164 (base + 0x144) jsonKeyEndCode.length)
+    (hSc : Sep s 164 base jsonNextMemberCode.length) (hSp : Sep s 164 p n) (hso : Sep out 20 s 164)
+    (hcs : Sep c 12 s 164) (hoc : Sep out 20 c 12) (hsc : Sep out 20 base jsonNextMemberCode.length)
+    (hcc : Sep c 12 base jsonNextMemberCode.length) (hO1 : Out M M1 s 164) (hS : Slots nmCs F Mp M1)
+    (hv : NmSaved F g0 Mp) (h8 : g 8 = BitVec.ofNat 32 pos) (h9 : g 9 = c) (h18 : g 18 = out) (h19 : g 19 = p)
+    (h20 : g 20 = BitVec.ofNat 32 n) (h22 : g 22 = BitVec.ofNat 32 (e - 1)) (hsp : g sp = F)
+    (hsp0 : g0 sp = F + BitVec.ofNat 32 0x30) (hret : g0 ra &&& ~~~1 = g0 ra) (hz0 : g0 0 = 0)
+    (hfr : ∀ x, x ∉ nmE → g x = g0 x) :
+    WP jsonNextMemberCode base (RPost (g0 ra) (fun M' => MemResF M M' out c s 164 (memRes p
+      (memberKey (memBytes M p n) pos (e - 1 - (pos + 1))))) g0) M1 0x74 g := by
+  refine WP.zero fun hz => ?_
+  have halF : F.toNat % 4 = 0 := by rw [← hF]; exact aligned_add hal (k := 116) (by decide)
+  have hF4 : F + 4 = s + BitVec.ofNat 32 120 := by rw [← hF, BitVec.add_assoc]; rfl
+  have hd : memBytes M1 p n = memBytes M p n := hO1.bytes hSp
+  have rc1 : RiCode M1 (base + 0x1DE) := hrc.out hO1 hrs
+  have hsoF : Sep out 20 F 48 := by rw [← hF]; exact hso.subR (by decide)
+  have hso4 : Sep (F + 4) 8 (s + BitVec.ofNat 32 84) 32 := by
+    rw [hF4]; exact sep_offsets s (c := 120) (n := 8) (d := 84) (k := 32) (Or.inr (by decide)) (by decide) (by decide)
+  refine WP.aluImm nm_at_74 ?_; wn
+  refine WP.alu nm_at_76 ?_; wn
+  refine WP.alu nm_at_78 ?_; wn
+  refine WP.alu nm_at_7a ?_; wn
+  refine WP.aluImm nm_at_7c ?_; wn
+  refine WP.callKeyEnd (tb := base + 0x144) (out := F + 4) (s := s + BitVec.ofNat 32 84) (p := p) (n := n)
+    (pos := pos) (cm := false) nm_at_7e nm_at_82 (by simp only [BitVec.add_assoc]; rfl)
+    (even_at base hb 0x144 (by decide)) (by decide) (hO1.codeIn hck hks) (by rw [nm_ad1]; exact rc1.se)
+    (by rw [nm_ad2]; exact rc1.sw) (by (try rsimp); rw [hsp, ev_add])
+    (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact h19)
+    (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact h20)
+    (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact h8)
+    (by (try rsimp); (try simp only [ev0, ev_mv hz]); try rfl)
+    (by (try rsimp); rw [hsp, ← hF, BitVec.add_assoc]; rfl) hn (by omega) (aligned_add hal (k := 84) (by decide))
+    (aligned_add halF (k := 4) (by decide)) (hks.sub (by decide)) (by rw [nm_ad1]; exact hrs.se.sub (by decide))
+    (by rw [nm_ad2]; exact hrs.sw.sub (by decide)) (hSp.sub (by decide))
+    hso4
+    (by rw [hF4]; exact hks.sub (by decide)) (hSc.sub (by decide)) (by rw [hF4]; exact hSc.sub (by decide))
+    fun m2 hR => ?_
+  rw [hd] at hR
+  obtain ⟨Ma, hOa, hU⟩ := hR
+  have hOa' : Out M1 Ma s 164 := Out.upK (c := 84) rfl hOa (by decide)
+  have hO2 : Out M m2.mem s 164 := hO1.trans (hOa'.trans (Out.upK (c := 120) hF4.symm hU.out (by decide)))
+  have hcs1 : ∀ c, c ∈ nmCs → 116 + c + 4 ≤ 2 ^ 32 := by decide
+  have hcs2 : ∀ c, c ∈ nmCs → (c + 4 ≤ 4 ∨ 4 + 8 ≤ c) ∧ c + 4 ≤ 2 ^ 32 := by decide
+  have hS2 : Slots nmCs F Mp m2.mem :=
+    (hS.out hOa (fun c hc => sep_ke hF (hcs1 c hc))).out hU.out (slots_sep F hcs2 (by decide))
+  refine WP.zero fun hz2 => ?_
+  refine WP.lbu nm_at_86 ?_; wn
+  unfold memberKey
+  rcases hk : keyEnd false (memBytes M p n) pos with _ | v
+  · rw [hk] at hU
+    obtain ⟨_, t1, t2⟩ := hU
+    have t2' : m2.mem (F + 5) = 0x20 := by
+      rw [show F + 5 = F + 4 + 1 by rw [BitVec.add_assoc]; rfl]; exact t2
+    refine WP.branch nm_at_8a (fun eb => ?_) (fun _ => ?_) <;> wn
+    · exfalso; (try rsimp at eb); rw [hsp, t1] at eb; exact absurd eb (by decide)
+    refine WP.lbu nm_at_8c ?_; wn
+    refine WP.jal nm_at_90 (by decide) ?_; wn
+    exact nm_96 (by (try rsimp); exact hsp) (by (try rsimp); exact h18) (by (try rsimp); rw [hsp, t2', ri_ze]) hO2 hS2 hv
+      hsp0 hret halF hz0 (by keepz hz0) hsoF hsc
+  rw [hk] at hU
+  obtain ⟨_, t1, t2⟩ := hU
+  have hvn : v ≤ n := by have := keyEnd_le hk; rwa [memBytes_length] at this
+  have t2' : memLoad32 m2.mem (F + 8) = BitVec.ofNat 32 v := by
+    rw [show F + 8 = F + 4 + 4 by rw [BitVec.add_assoc]; rfl]; exact t2
+  refine WP.branch nm_at_8a (fun _ => ?_) (fun eb => ?_) <;> wn
+  · exact nm_tail hF hb hal halo halc hn hp0 hpn hpe hen hvn hrc hrs hSc hSp hso hcs hoc hsc hcc hO2 hS2 hv t2'
+      (by (try rsimp); exact h8) (by (try rsimp); exact h9) (by (try rsimp); exact h18) (by (try rsimp); exact h19)
+      (by (try rsimp); exact h20) (by (try rsimp); exact h22) (by (try rsimp); exact hsp) hsp0 hret hz0
+      (by keepz hz0)
+  · exfalso; (try rsimp at eb); rw [hsp, t1] at eb; exact absurd eb (by decide)
+
+end
+
 end C3.RV32
