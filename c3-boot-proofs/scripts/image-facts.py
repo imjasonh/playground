@@ -362,48 +362,47 @@ class Facts:
     def chunks(self, path, src):
         """Regenerates the code chunks of one file."""
         local = byte_lists(src)
-
-        def piece(m, name, k, n, new):
-            code = self.code(name, src, local)
-            if code is None:
-                self.fail(path, src, m.start(), f'no code {name}')
-            if n is None:
-                n = len(code) - k
-            if len(code) < k + n:
-                self.fail(path, src, m.start(), f'{m.group(2)} runs past the end of {name}')
-            self.count('code chunks')
-            text = new(code[k:k + n])
-            if text != m.group(3):
-                self.differs(path, src, m.start(), m.group(2))
-            return m.group(1) + text + m.group(4)
-
-        src = CHUNK.sub(lambda m: piece(m, m.group(6), int(m.group(5), 0),
-                                        len(local[m.group(2)]), chunk_rows), src)
-        return WINDOW.sub(lambda m: piece(
-            m, m.group(5) or m.group(8), int(m.group(6) or m.group(9), 0),
+        src = CHUNK.sub(lambda m: self.chunk(
+            path, src, local, m, m.group(6), int(m.group(5), 0), len(local[m.group(2)]),
+            chunk_rows), src)
+        return WINDOW.sub(lambda m: self.chunk(
+            path, src, local, m, m.group(5) or m.group(8), int(m.group(6) or m.group(9), 0),
             int(m.group(7), 0) if m.group(7) else None,
             lambda data: ', '.join(str(b) for b in data)), src)
+
+    def chunk(self, path, src, local, m, name, k, n, spell):
+        code = self.code(name, src, local)
+        if code is None:
+            self.fail(path, src, m.start(), f'no code {name}')
+        if n is None:
+            n = len(code) - k
+        if len(code) < k + n:
+            self.fail(path, src, m.start(), f'{m.group(2)} runs past the end of {name}')
+        self.count('code chunks')
+        text = spell(code[k:k + n])
+        if text != m.group(3):
+            self.differs(path, src, m.start(), m.group(2))
+        return m.group(1) + text + m.group(4)
 
     def decodes(self, path, src):
         """Regenerates the decode lemmas of one file."""
         local = byte_lists(src)
+        return FETCH.sub(lambda m: self.decode(path, src, local, m), src)
 
-        def one(m):
-            code = self.code(m.group(1), src, local)
-            old = parse(m.group(3))
-            if code is None or old is None:
-                self.count('decode statements left alone')
-                return m.group(0)
-            self.count('decode lemmas')
-            got = fetch(code, int(m.group(2), 0))
-            if got is None:
-                self.fail(path, src, m.start(), f'no instruction at {m.group(2)}')
-            if got == (old, int(m.group(4))):
-                return m.group(0)
-            self.differs(path, src, m.start(), m.group(0))
-            return f'fetchRel {m.group(1)} {m.group(2)} = some ({render(got[0])}, {got[1]})'
-
-        return FETCH.sub(one, src)
+    def decode(self, path, src, local, m):
+        code = self.code(m.group(1), src, local)
+        old = parse(m.group(3))
+        if code is None or old is None:
+            self.count('decode statements left alone')
+            return m.group(0)
+        self.count('decode lemmas')
+        got = fetch(code, int(m.group(2), 0))
+        if got is None:
+            self.fail(path, src, m.start(), f'no instruction at {m.group(2)}')
+        if got == (old, int(m.group(4))):
+            return m.group(0)
+        self.differs(path, src, m.start(), m.group(0))
+        return f'fetchRel {m.group(1)} {m.group(2)} = some ({render(got[0])}, {got[1]})'
 
     def blocks(self, files):
         """Regenerates the straight-line block facts of all files. A named
@@ -415,46 +414,46 @@ class Facts:
         want = {}
         for path, src in files.items():
             local = byte_lists(src)
-
-            def use(m):
-                lst, key = m.group(3), None
-                if lst[0] not in '[(':
-                    where = [d for d in defs.get(lst, []) if d[0] == path] or defs.get(lst, [])
-                    if len(where) != 1:
-                        self.count('block facts left alone')
-                        return m.group(0)
-                    key, lst = (where[0][0], m.group(3)), where[0][1]
-                code = self.code(m.group(1), src, local)
-                old = literal_block(lst)
-                if code is None or old is None:
-                    self.count('block facts left alone')
-                    return m.group(0)
-                self.count('block facts')
-                got, end = [], int(m.group(2), 0)
-                for _ in old:
-                    ins = fetch(code, end)
-                    if ins is None or to_block(ins[0]) is None:
-                        self.fail(path, src, m.start(), f'{m.group(0)}: the code there is not '
-                                  f'{len(old)} straight-line instructions')
-                    got.append(ins[0])
-                    end += ins[1]
-                out = m.group(0)
-                if got != old:
-                    self.differs(path, src, m.start(), m.group(0))
-                    if key is None:
-                        out = out.replace(lst, rewrite_block(lst, got), 1)
-                    elif want.setdefault(key, got) != got:
-                        self.fail(path, src, m.start(), f'{key[1]} stands for two blocks')
-                if int(m.group(4), 0) != end:
-                    self.differs(path, src, m.start(), f'end of {m.group(0)}')
-                    out = out[:out.rindex('some ') + 5] + imm(end)
-                return out
-
-            files[path] = BLOCK_USE.sub(use, src)
+            files[path] = BLOCK_USE.sub(
+                lambda m: self.block(path, src, local, defs, want, m), src)
         for (path, name), got in want.items():
             files[path] = BLOCK_DEF.sub(
                 lambda d: d.group(0).replace(d.group(2), rewrite_block(d.group(2), got))
                 if d.group(1) == name else d.group(0), files[path])
+
+    def block(self, path, src, local, defs, want, m):
+        lst, key = m.group(3), None
+        if lst[0] not in '[(':
+            where = [d for d in defs.get(lst, []) if d[0] == path] or defs.get(lst, [])
+            if len(where) != 1:
+                self.count('block facts left alone')
+                return m.group(0)
+            key, lst = (where[0][0], m.group(3)), where[0][1]
+        code = self.code(m.group(1), src, local)
+        old = literal_block(lst)
+        if code is None or old is None:
+            self.count('block facts left alone')
+            return m.group(0)
+        self.count('block facts')
+        got, end = [], int(m.group(2), 0)
+        for _ in old:
+            ins = fetch(code, end)
+            if ins is None or to_block(ins[0]) is None:
+                self.fail(path, src, m.start(), f'{m.group(0)}: the code there is not '
+                          f'{len(old)} straight-line instructions')
+            got.append(ins[0])
+            end += ins[1]
+        out = m.group(0)
+        if got != old:
+            self.differs(path, src, m.start(), m.group(0))
+            if key is None:
+                out = out.replace(lst, rewrite_block(lst, got), 1)
+            elif want.setdefault(key, got) != got:
+                self.fail(path, src, m.start(), f'{key[1]} stands for two blocks')
+        if int(m.group(4), 0) != end:
+            self.differs(path, src, m.start(), f'end of {m.group(0)}')
+            out = out[:out.rindex('some ') + 5] + imm(end)
+        return out
 
 
 def main():
