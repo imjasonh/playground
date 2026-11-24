@@ -92,8 +92,8 @@ theorem SvKeepL.wider {B : Word} {M M' : Word → BitVec 8} {L L' : List (Nat ×
 /-- SHA-384's initial hash value sits apart from the stack. -/
 theorem sv_ivIn {B : Word} (F : Fr B 0x3830) : SvIn B IV5 64 :=
   ⟨by
-    have := F.dsep.subR (c := 0x3C0) (l := 78) (by decide)
-    rw [show (img% dataWindowAddress : Word) + BitVec.ofNat 32 0x3C0 = IV5 from rfl] at this
+    have := F.dsep.subR (c := (img% sha384IVAddress - dataWindowAddress)) (l := 78) (by decide)
+    rw [show (img% dataWindowAddress : Word) + BitVec.ofNat 32 (img% sha384IVAddress - dataWindowAddress) = IV5 from rfl] at this
     exact this.symm, by decide, by decide⟩
 
 set_option maxRecDepth 100000 in
