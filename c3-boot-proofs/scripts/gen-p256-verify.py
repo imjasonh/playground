@@ -456,6 +456,20 @@ def stage_ecd():
     """From 0x690 to the table loop's head at 0x754: `u₁ = z·s⁻¹` and
     `u₂ = r·s⁻¹`, and the two pairs `(G, u₁)` and `(Q, u₂)` laid out for the
     tables."""
+    g, params = ecd_gen()
+    stmt, proof = finish(g, 0x754, [2, 3, 4, 10, 18, 19, 20, 21, 22, 23, 24, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "p2v_ecd", "title": "`u₁` and `u₂`, and the pairs of the linear combination",
+            "doc": "From 0x690 to the table loop at 0x754: `u₁ = z·s⁻¹` and `u₂ = r·s⁻¹` with the scalar field's "
+            "`mul`, and the pairs `(G, u₁)` and `(Q, u₂)` copied to offset 0xFE4.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": ECD_BINDERS,
+            "start": 0x690, "import": "C3BootProofs.Proofs.P2vEcPt"}
+    return g, info
+
+
+ECD_BINDERS = IV_BINDERS.replace("{fs gs ds es : BitVec 8}", "{fs gs ds es : BitVec 8} {wv : Nat}")
+
+
+def ecd_gen():
     g = Gen("EcD")
     g.generic_alu = True
     params = iv_start(g, {18: ("S", 0xFE4), 26: ("S", 0x920)})
@@ -481,19 +495,98 @@ def stage_ecd():
     g.block(0x72E, 0x73C)
     g.mc(0x73C, 0xFE4, 0x200, 0x100)
     g.block(0x744, 0x754)
-    stmt, proof = finish(g, 0x754, [2, 3, 4, 18, 19, 20, 21, 22, 23, 24, 26, 27], set(g.words), set(g.bytes))
-    info = {"name": "p2v_ecd", "title": "`u₁` and `u₂`, and the pairs of the linear combination",
-            "doc": "From 0x690 to the table loop at 0x754: `u₁ = z·s⁻¹` and `u₂ = r·s⁻¹` with the scalar field's "
-            "`mul`, and the pairs `(G, u₁)` and `(Q, u₂)` copied to offset 0xFE4.",
-            "params": params, "stmt": stmt, "proof": proof,
-            "binders": IV_BINDERS.replace("{fs gs ds es : BitVec 8}", "{fs gs ds es : BitVec 8} {wv : Nat}"),
-            "start": 0x690, "import": "C3BootProofs.Proofs.P2vEcPt"}
-    return g, info
+    return g, params
+
+
+def restart(g, name, params):
+    h, out = gsv.restart(g, name, params)
+    h.__class__ = Gen
+    return h, out
+
+
+ECT_KEEP = {2, 3, 4, 10, 18, 19, 20, 21, 22, 23, 24, 26, 27}
+ECT_PARAMS = ["(hP0 : Pt2Lt P0)", "(hP1 : Pt2Lt P1)", "(RS : P2vRoSep B)", "(PT0 : P2vPtCode M0)"]
+ECT_BINDERS = ECD_BINDERS.replace("{wv : Nat}", "{wv U1 U2 : Nat} {P0 P1 : Pt2}")
+
+
+def stage_ect(want):
+    """The table loop from 0x754 to 0x862, in six parts `want`: for each
+    pair's point `P`, the table `P, 3P, …, 15P`, stored at 0x300 and 0x600."""
+    g, params = ecd_gen()
+    g.regs = {r: v for r, v in g.regs.items() if r in ECT_KEEP}
+    g.ranges = {}
+    for d in list(g.acc):
+        if 0x200 <= d < 0x300 or 0xFE4 <= d < 0x10E4:
+            del g.acc[d]
+    g.pt = {0x200: "P0", 0x280: "P1", 0xFE4: "P0", 0x1064: "P1"}
+    g.acc.update({0x260: (8, "U1"), 0x2E0: (8, "U2"), 0x1044: (8, "U1"), 0x10C4: (8, "U2")})
+    g.pt_lts = {"P0": "hP0", "P1": "hP1"}
+    keep = [p for p in params if not p.startswith(gsv.FACT_PARAMS) and not p.startswith(("(PM0 ", "(WM0 "))]
+    g, params = restart(g, "EcT0a", keep + ECT_PARAMS)
+    parts = {}
+    imports = {"0a": "C3BootProofs.Proofs.P2vEcPt", "0c": "C3BootProofs.Proofs.P2vEcT0a",
+               "0b": "C3BootProofs.Proofs.P2vEcT0c", "1a": "C3BootProofs.Proofs.P2vEcT0b",
+               "1c": "C3BootProofs.Proofs.P2vEcT1a", "1b": "C3BootProofs.Proofs.P2vEcT1c"}
+
+    def cut(g, params, label, off, nxt):
+        stmt, proof = finish(g, off, sorted(g.regs), set(g.words), set(g.bytes))
+        parts[label] = (g, {"name": f"p2v_ect{label.lower()}", "title": f"the tables of the linear combination, part {label}",
+                            "doc": f"Part {label} of the table loop from 0x754 to 0x862: the odd multiples `P + j·2P` of "
+                            "`G` and of `Q`, stored at offsets 0x300 and 0x600.",
+                            "params": params, "stmt": stmt, "proof": proof, "binders": ECT_BINDERS,
+                            "start": g.start_off, "import": imports[label]})
+        return restart(g, f"EcT{nxt}", params)
+    g.start_off = 0x754
+    for i in range(2):
+        Pn = f"P{i}"
+        g.branch(0x754, False, f"by rw [g{g.k}_19, g{g.k}_20]; decide")
+        g.block(0x758, 0x762)
+        g.mc(0x762, 0x900, 0xFE4 + 0x80 * i, 0x80)
+        g.block(0x76A, 0x774)
+        g.branch(0x774, False, f"by rw [g{g.k}_9, s{g.k}.zero]; decide")
+        for j in range(8):
+            g.block(0x776, 0x77E)
+            g.mcRo(0x77E, 0xC80 + 0x60 * j, GMONT, 0x60, RO)
+            g.block(0x786, 0x78C)
+            g.branch(0x78C, j < 7, f"by rw [g{g.k}_9, s{g.k}.zero]; decide")
+        g.block(0x78E, 0x7AE)
+        g.mc(0x7AE, 0x980, 0xC80, 0x300)
+        g, params = cut(g, params, f"{i}a", 0x7B6, f"{i}c")
+        g.start_off = 0x7B6
+        g.block(0x7B6, 0x7C6)
+        g.pd2(0x7C6, 0xF80, 0x900)
+        g.block(0x7CE, 0x7E2)
+        g.mc(0x7E2, 0xC80, 0x900, 0x60)
+        g.pt[0xC80] = f"tbl2 {Pn} 0"
+        g.branch(0x7EA, False, f"by rw [g{g.k}_9, s{g.k}.zero]; decide")
+        for j in range(8):
+            if j == 4:
+                g, params = cut(g, params, f"{i}c", 0x7EC, f"{i}b")
+                g.start_off = 0x7EC
+            g.block(0x7EC, 0x7FA)
+            g.mc(0x7FA, 0x980 + 0x60 * j, 0xC80, 0x60)
+            g.block(0x802, 0x812)
+            g.pa2(0x812, 0xC80, 0xF80, f"tbl2 {Pn} {j + 1}")
+            g.block(0x81A, 0x822)
+            g.branch(0x822, j < 7, f"by rw [g{g.k}_9, s{g.k}.zero]; decide")
+        g.block(0x824, 0x83C)
+        g.mc(0x83C, 0xC80, 0x980, 0x300)
+        g.block(0x844, 0x856)
+        g.mc(0x856, 0x300 + 0x300 * i, 0xC80, 0x300)
+        g.block(0x85E, 0x860)
+        g.jump(0x860)
+        g.block(0x750, 0x754)
+        if i == 0:
+            g, params = cut(g, params, "0b", 0x754, "1a")
+            g.start_off = 0x754
+    g.branch(0x754, True, f"by rw [g{g.k}_19, g{g.k}_20]; decide")
+    cut(g, params, "1b", 0x862, "x")
+    return parts[want]
 
 
 def stages():
     return {"A1": stage_a1, "A2": stage_a2, "A3": stage_a3, "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive,
-            "EcD": stage_ecd}
+            "EcD": stage_ecd, **{f"EcT{w}": (lambda w=w: stage_ect(w)) for w in ("0a", "0c", "0b", "1a", "1c", "1b")}}
 
 
 HEADER = """import {imp}

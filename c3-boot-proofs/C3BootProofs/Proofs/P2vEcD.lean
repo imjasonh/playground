@@ -147,6 +147,7 @@ theorem p2v_ecd {B dlo dhi rem : Word} {fs gs ds es : BitVec 8} {wv : Nat} {qx q
         reg n' sp = B + 0x21A0 ∧
         reg n' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧
         reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧
+        reg n' a0 = B + 0x21A0 + BitVec.ofNat 32 0x7FF ∧
         reg n' (18 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xFE4 ∧
         reg n' (19 : Fin 32) = BitVec.ofNat 32 0x0 ∧
         reg n' (20 : Fin 32) = BitVec.ofNat 32 0x2 ∧
@@ -1241,6 +1242,6 @@ theorem p2v_ecd {B dlo dhi rem : Word} {fs gs ds es : BitVec 8} {wv : Nat} {qx q
   have a17_10a4 : accV n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x10A4) 8 = qz := by rw [m17]; exact a16_10a4
   have a17_10c4 : accV n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x10C4) 8 = psmVal ((rv) * (wv)) := by rw [m17]; exact a16_10c4
   clear q16_fe4 a16_10c4 a16_10a4 a16_1084 a16_1064 a16_1044 a16_1024 a16_1004 a16_fe4 a16_ce0 a16_cc0 a16_ca0 a16_c80 a16_9e0 a16_9c0 a16_9a0 a16_980 a16_900 a16_2e0 a16_2c0 a16_2a0 a16_280 a16_260 a16_240 a16_220 a16_200 a16_1e0 a16_1c0 a16_1a0 a16_180 a16_160 a16_140 a16_120 q16_980 q16_200 b16_920 g16_27 g16_26 g16_24 g16_23 g16_22 g16_21 g16_19 g16_18 g16_4 g16_3 g16_2 V16 E16 fR16 t16 fr16 s16 X16 K16 P16
-  exact .inr ⟨n17, t17, s17, E17, V17, fR17, g17_2, g17_3, g17_4, g17_18, g17_19, g17_20, g17_21, g17_22, g17_23, g17_24, g17_26, g17_27, b17_920, q17_200, q17_980, q17_fe4, a17_120, a17_140, a17_160, a17_180, a17_1a0, a17_1c0, a17_1e0, a17_200, a17_220, a17_240, a17_260, a17_280, a17_2a0, a17_2c0, a17_2e0, a17_900, a17_980, a17_9a0, a17_9c0, a17_9e0, a17_c80, a17_ca0, a17_cc0, a17_ce0, a17_fe4, a17_1004, a17_1024, a17_1044, a17_1064, a17_1084, a17_10a4, a17_10c4, keep_kk17.mono (by decide)⟩
+  exact .inr ⟨n17, t17, s17, E17, V17, fR17, g17_2, g17_3, g17_4, g17_10, g17_18, g17_19, g17_20, g17_21, g17_22, g17_23, g17_24, g17_26, g17_27, b17_920, q17_200, q17_980, q17_fe4, a17_120, a17_140, a17_160, a17_180, a17_1a0, a17_1c0, a17_1e0, a17_200, a17_220, a17_240, a17_260, a17_280, a17_2a0, a17_2c0, a17_2e0, a17_900, a17_980, a17_9a0, a17_9c0, a17_9e0, a17_c80, a17_ca0, a17_cc0, a17_ce0, a17_fe4, a17_1004, a17_1024, a17_1044, a17_1064, a17_1084, a17_10a4, a17_10c4, keep_kk17.mono (by decide)⟩
 
 end C3.RV32.P2v
