@@ -56,6 +56,9 @@ echo "==> Building //:fanout as invocation ${INVOCATION_ID} (trace ${TRACE_ID})"
     --remote_executor="grpc://${CAS_ADDR}" --spawn_strategy=remote \
     --remote_instance_name=tenant-a \
     --remote_header=x-ci-substrate-tenant=tok-a \
+    --bes_backend="grpc://${CAS_ADDR}" \
+    --bes_instance_name=tenant-a \
+    --bes_header=x-ci-substrate-tenant=tok-a \
     --remote_timeout=120 --jobs=32 --color=no --curses=no
 ) >"${WORKDIR}/build.log" 2>&1 || {
   cat "${WORKDIR}/build.log" >&2
@@ -77,10 +80,12 @@ procs = {k: v["serviceName"] for t in data for k, v in t["processes"].items()}
 services = {procs[s["processID"]] for s in spans}
 names = {s["operationName"] for s in spans}
 missing = [f"service {s}" for s in ("cas", "runner") if s not in services]
-missing += [f"span {n!r}" for n in ("bazel invocation", "scheduler.queue", "runner.execute", "runner.run") if n not in names]
+missing += [f"span {n!r}" for n in ("bazel invocation", "bes.invocation", "scheduler.queue", "runner.execute", "runner.run") if n not in names]
 executes = [s for s in spans if s["operationName"] == "runner.execute"]
 if executes and not all(any(t["key"] == "ci_substrate.reads.prepare.blobs" for t in s["tags"]) for s in executes):
     missing.append("ci_substrate.reads.prepare.blobs on every runner.execute")
+if executes and not all(any(t["key"] == "ci_substrate.rusage.user_seconds" for t in s["tags"]) for s in executes):
+    missing.append("ci_substrate.rusage.user_seconds on every runner.execute")
 reads = [n for n in names if n.endswith("/BatchReadBlobs") or n.endswith("/Read")]
 if reads:
     print(f"FATAL: blob read spans {reads} were sampled")
@@ -107,7 +112,8 @@ echo "==> Checking metrics on the collector"
 want=(cas_blob_bytes cas_action_cache_requests cas_find_missing_digests scheduler_executions
   scheduler_queue_duration runner_actions runner_stage_duration runner_blob_read_duration
   cascache_requests cascache_bytes
-  bazel_invocations bazel_invocation_cache_hit_ratio rpc_server_call_duration)
+  bazel_invocations bazel_invocation_cache_hit_ratio bazel_bep_builds bazel_bep_wall_time
+  rpc_server_call_duration)
 deadline=$((SECONDS + 60))
 while :; do
   curl -fsS "http://${PROM_ADDR}/metrics" >"${WORKDIR}/metrics.txt" 2>/dev/null || true

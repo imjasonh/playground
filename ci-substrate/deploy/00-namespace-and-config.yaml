@@ -17,4 +17,8 @@ metadata:
 type: Opaque
 stringData:
   TENANTS: |
-    {"tok-a":["tenant-a","shared"],"tok-b":["tenant-b","shared"]}
+    {
+      "tok-a": ["tenant-a", "shared"],
+      "tok-a-ro": {"instances": ["tenant-a", "shared"], "action_cache_read_only": true},
+      "tok-b": ["tenant-b", "shared"]
+    }

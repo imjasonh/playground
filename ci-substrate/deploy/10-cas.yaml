@@ -47,15 +47,22 @@ spec:
               value: service.instance.id=$(POD_NAME),k8s.pod.name=$(POD_NAME),k8s.node.name=$(NODE_NAME),k8s.namespace.name=ci-substrate
             - name: ADDR
               value: ":8980"
+            - name: HTTP_ADDR
+              value: ":8080"
             - name: LEASE_DURATION
               value: 10s
             - name: STORE_DIR
               value: /data
+            - name: CAS_MAX_BYTES
+              value: "16106127360"
+            - name: MAX_CAS_BLOB_SIZE_BYTES
+              value: "1073741824"
             - name: TENANTS
               valueFrom:
                 secretKeyRef: {name: tenants, key: TENANTS}
           ports:
             - {name: grpc, containerPort: 8980}
+            - {name: http, containerPort: 8080}
           securityContext:
             runAsNonRoot: true
             runAsUser: 65532
@@ -87,3 +94,4 @@ spec:
   selector: {app: cas}
   ports:
     - {name: grpc, port: 8980, targetPort: 8980}
+    - {name: http, port: 8080, targetPort: 8080}

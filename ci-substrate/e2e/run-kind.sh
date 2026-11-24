@@ -231,11 +231,12 @@ kubectl -n ci-substrate rollout status deployment/runner-tenant-b --timeout=300s
 
 # Port-forward Services, not pods: a rollout replaces DaemonSet pod names.
 LOCAL_ORIGIN_PORT=18980
+LOCAL_HTTP_PORT=18080
 LOCAL_CACHE_PORT=19092
 LOCAL_METRICS_PORT=19090
 LOCAL_JAEGER_PORT=16686
 LOCAL_PROM_PORT=18889
-kubectl -n ci-substrate port-forward svc/cas "${LOCAL_ORIGIN_PORT}:8980" >/dev/null &
+kubectl -n ci-substrate port-forward svc/cas "${LOCAL_ORIGIN_PORT}:8980" "${LOCAL_HTTP_PORT}:8080" >/dev/null &
 PORT_FORWARD_PIDS+=($!)
 kubectl -n ci-substrate port-forward svc/cascache "${LOCAL_CACHE_PORT}:9092" "${LOCAL_METRICS_PORT}:9090" >/dev/null &
 PORT_FORWARD_PIDS+=($!)
@@ -257,7 +258,7 @@ await_tcp_port() {
   return 1
 }
 
-for port in "${LOCAL_ORIGIN_PORT}" "${LOCAL_CACHE_PORT}" "${LOCAL_METRICS_PORT}" "${LOCAL_JAEGER_PORT}" "${LOCAL_PROM_PORT}"; do
+for port in "${LOCAL_ORIGIN_PORT}" "${LOCAL_HTTP_PORT}" "${LOCAL_CACHE_PORT}" "${LOCAL_METRICS_PORT}" "${LOCAL_JAEGER_PORT}" "${LOCAL_PROM_PORT}"; do
   await_tcp_port "${port}"
 done
 
@@ -268,13 +269,14 @@ go build -o "${WORKDIR}/cictl" ./cmd/cictl
   -cache-addr="127.0.0.1:${LOCAL_CACHE_PORT}" \
   -cache-metrics-url="http://127.0.0.1:${LOCAL_METRICS_PORT}" \
   -token-a=tok-a \
+  -token-a-ro=tok-a-ro \
   -token-b=tok-b \
   -instance-a=tenant-a \
   -shared=shared \
   -exec-timeout=3m
 
 echo "Building with stock Bazel as two tenants"
-bash "${ROOT}/e2e/run-bazel.sh" "127.0.0.1:${LOCAL_ORIGIN_PORT}"
+bash "${ROOT}/e2e/run-bazel.sh" "127.0.0.1:${LOCAL_ORIGIN_PORT}" "127.0.0.1:${LOCAL_HTTP_PORT}"
 
 echo "Checking a Bazel build's trace and metrics"
 bash "${ROOT}/e2e/run-telemetry.sh" "127.0.0.1:${LOCAL_ORIGIN_PORT}" \

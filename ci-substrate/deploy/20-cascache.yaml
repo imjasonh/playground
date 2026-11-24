@@ -41,6 +41,8 @@ spec:
               value: ":9090"
             - name: STORE_DIR
               value: /var/lib/ci-substrate-cache
+            - name: CACHE_MAX_BYTES
+              value: "8589934592"
             - name: ORIGIN_ADDR
               value: cas.ci-substrate.svc.cluster.local:8980
             - name: TENANTS
@@ -65,10 +67,8 @@ spec:
             - {name: cache, mountPath: /var/lib/ci-substrate-cache}
       volumes:
         # emptyDir keeps the warm set for the life of the node-local pod and is
-        # writable by the non-root static user. The cache does not evict, so
-        # the kubelet evicts the pod (and with it the warm set) when the cache
-        # passes sizeLimit. A production install would mount node-local NVMe
-        # and evict to a byte budget.
+        # writable by the non-root static user. CACHE_MAX_BYTES evicts the
+        # least-recently-used blobs before disk usage reaches sizeLimit.
         - name: cache
           emptyDir: {sizeLimit: 10Gi}
 ---

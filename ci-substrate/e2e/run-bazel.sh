@@ -31,13 +31,15 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CAS_ADDR="${1:?usage: run-bazel.sh <cas host:port>}"
+CAS_ADDR="${1:?usage: run-bazel.sh <cas host:port> [cas http host:port]}"
+CAS_HTTP_ADDR="${2:-}"
 BAZEL_VERSION="$(cat "${ROOT}/e2e/bazel/.bazelversion")"
 RUNNER_A="${CI_SUBSTRATE_BAZEL_RUNNER_A:-runner-tenant-a-}"
 RUNNER_B="${CI_SUBSTRATE_BAZEL_RUNNER_B:-runner-tenant-b-}"
 INSTANCE_A="${CI_SUBSTRATE_BAZEL_INSTANCE_A:-tenant-a}"
 INSTANCE_B="${CI_SUBSTRATE_BAZEL_INSTANCE_B:-tenant-b}"
 TOKEN_A="${CI_SUBSTRATE_BAZEL_TOKEN_A:-tok-a}"
+TOKEN_A_RO="${CI_SUBSTRATE_BAZEL_TOKEN_A_RO:-tok-a-ro}"
 TOKEN_B="${CI_SUBSTRATE_BAZEL_TOKEN_B:-tok-b}"
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/ci-substrate-bazel-XXXXXX")"
 BAZEL_PIDS=()
@@ -220,4 +222,59 @@ expect_ran_on "$(bin a clock.txt)" "${RUNNER_A}"
 second="$(sed -n 2p "$(bin a clock.txt)")"
 [[ "${second}" > "${first}" ]] || fail "the no-cache action did not run again: ${first}, then ${second}"
 
-echo "==> Bazel tenant isolation held"
+echo "--> 7. Zstd compression + Build without the Bytes (--remote_download_minimal)"
+(cd "${WORKDIR}/a/ws" && "${BAZEL}" --output_user_root="${WORKDIR}/a/root" clean) >/dev/null 2>&1
+remote a "${WORKDIR}/7a.log" build //:whoami //:fanout \
+  --remote_cache_compression \
+  --remote_download_minimal
+expect_cache_hits "${WORKDIR}/7a.log" "$((fanout + 1))"
+
+if [[ -n "${TOKEN_A_RO}" ]]; then
+  echo "--> 8. Read-only AC token reads warm cache hits without write access"
+  (cd "${WORKDIR}/a/ws" && "${BAZEL}" --output_user_root="${WORKDIR}/a/root" clean) >/dev/null 2>&1
+  bz a "${INSTANCE_A}" "${TOKEN_A_RO}" "${WORKDIR}/8a.log" build //:whoami \
+    --remote_executor="grpc://${CAS_ADDR}" --spawn_strategy=remote ||
+    { cat "${WORKDIR}/8a.log" >&2; fail "read-only token failed to read warm cache"; }
+  expect_cache_hits "${WORKDIR}/8a.log" 1
+fi
+
+if [[ -n "${CAS_HTTP_ADDR}" ]]; then
+  echo "--> 9. BES streaming, JSON trace profile, and tenant-isolated HTTP /invocations/{id}"
+  BES_INV_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+  remote a "${WORKDIR}/9a.log" test //:whoami_test \
+    --invocation_id="${BES_INV_ID}" \
+    --bes_backend="grpc://${CAS_ADDR}" \
+    --bes_instance_name="${INSTANCE_A}" \
+    --bes_header="x-ci-substrate-tenant=${TOKEN_A}" \
+    --profile="${WORKDIR}/command.profile.gz"
+  grep -q '//:whoami_test .*PASSED' "${WORKDIR}/9a.log" || { cat "${WORKDIR}/9a.log" >&2; fail "//:whoami_test did not pass with BES"; }
+
+  status_b="$(curl -sS -o /dev/null -w '%{http_code}' \
+    -H "x-ci-substrate-tenant: ${TOKEN_B}" \
+    "http://${CAS_HTTP_ADDR}/invocations/${BES_INV_ID}")"
+  [[ "${status_b}" == "404" ]] || fail "tenant B GET /invocations/${BES_INV_ID} returned HTTP ${status_b}, want 404"
+
+  curl -fsS -H "x-ci-substrate-tenant: ${TOKEN_A}" \
+    "http://${CAS_HTTP_ADDR}/invocations/${BES_INV_ID}" >"${WORKDIR}/bes.json" ||
+    fail "tenant A GET /invocations/${BES_INV_ID} failed"
+
+  python3 - "${WORKDIR}/bes.json" "${BES_INV_ID}" "${INSTANCE_A}" <<'PY'
+import json, sys
+path, want_id, want_inst = sys.argv[1], sys.argv[2], sys.argv[3]
+rec = json.load(open(path))
+assert rec["invocation_id"] == want_id, f"invocation_id={rec.get('invocation_id')}"
+assert rec["instance"] == want_inst, f"instance={rec.get('instance')}"
+assert rec.get("command") == "test", f"command={rec.get('command')}"
+assert rec.get("success") is True, f"success={rec.get('success')}"
+assert rec.get("exit_code") == 0, f"exit_code={rec.get('exit_code')}"
+bm = rec.get("build_metrics") or {}
+assert bm.get("actions_created", 0) > 0, f"build_metrics={bm}"
+tests = rec.get("tests") or []
+assert any(t.get("label") == "//:whoami_test" and t.get("status") == "PASSED" for t in tests), f"tests={tests}"
+profiles = rec.get("profiles") or []
+assert any("profile" in p.get("name", "") for p in profiles), f"profiles={profiles}"
+print(f"BES invocation verified: events={rec.get('event_count')} actions_created={bm.get('actions_created')} profiles={len(profiles)} tests={len(tests)}")
+PY
+fi
+
+echo "==> Bazel tenant isolation and production RBE features held"
