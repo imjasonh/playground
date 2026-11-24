@@ -47,9 +47,10 @@ jobs:
       - name: Build and lint for riscv32imc-unknown-none-elf
         working-directory: c3-boot
         env:
-          # CI builds check the code, not a release. Releases name the
-          # production genesis key file instead.
-          C3_GENESIS: dev
+          # CI builds check the code with the public development TUF root.
+          # The pinned image that check-digest.sh builds is the production
+          # configuration.
+          C3_TUF_ROOT: dev
         run: |
           rustup show active-toolchain || rustup toolchain install
           cargo build --locked --release --target riscv32imc-unknown-none-elf \
@@ -58,14 +59,12 @@ jobs:
             -p c3-verify -p c3-crypto -p c3-bootloader -p c3-demo-app -p c3-rvtest -- -D warnings
           C3_EFUSE_BURN=on cargo clippy --locked --release \
             --target riscv32imc-unknown-none-elf -p c3-bootloader -- -D warnings
-          # The TUF checks build on their own: enabling the feature in the
-          # same command as the bootloader would compile them into it.
-          cargo clippy --locked --release --target riscv32imc-unknown-none-elf \
-            -p c3-verify --features tuf -- -D warnings
-          # A key file stands in for production keys, which must burn eFuses.
-          if C3_GENESIS="${PWD}/testdata/keys/genesis-dev.pub" cargo build --locked --release \
+          C3_TUF_ROOT=release/pinned-root.json C3_EFUSE_BURN=on cargo clippy --locked --release \
+            --target riscv32imc-unknown-none-elf -p c3-bootloader -- -D warnings
+          # A production root must burn eFuses.
+          if C3_TUF_ROOT=release/pinned-root.json cargo build --locked --release \
             --target riscv32imc-unknown-none-elf -p c3-bootloader 2>/dev/null; then
-            echo "::error::a production-key bootloader built without C3_EFUSE_BURN=on"
+            echo "::error::a production-root bootloader built without C3_EFUSE_BURN=on"
             exit 1
           fi
 
