@@ -162,6 +162,10 @@ import C3BootProofs.Proofs.Dec256End
 import C3BootProofs.Proofs.Pv384Main
 import C3BootProofs.Image.BootloaderData5
 import C3BootProofs.Image.BootloaderData7
+import C3BootProofs.Proofs.P2vP256
+import C3BootProofs.Proofs.SvLib
+import C3BootProofs.Models.EcdsaClosed
+import C3BootProofs.Models.Ed25519Closed
 
 /-!
 # Audit
@@ -8628,3 +8632,24 @@ end C3
 
 /-- info: 'C3.RV32.Pv.p384VerifyPrehash_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Pv.p384VerifyPrehash_correct
+
+/-- info: 'C3.RV32.P2v.p256VerifyPrehash_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.P2v.p256VerifyPrehash_correct
+
+/-- info: 'C3.Models.p256_model_closed' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Models.p256_model_closed
+
+/-- info: 'C3.Models.p384_model_closed' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.Models.p384_model_closed
+
+/-- info: 'C3.RV32.EdM.svEdModel_closed' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.EdM.svEdModel_closed
+
+/-- info: 'C3.RV32.Sv.sv_pro' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Sv.sv_pro
+
+/-- info: 'C3.RV32.Sv.sv_ret' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Sv.sv_ret
+
+/-- info: 'C3.RV32.Sv.sv_err' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.Sv.sv_err
