@@ -138,6 +138,37 @@ length, or the error byte. -/
 def parseModel (c : Bool) (d : Bytes) : Except Nat (Nat × Nat) :=
   parseLoop c d (wsIn c d 0) (d.length + 1) [] (wsIn c d 0)
 
+/-- `bytesLt` at the first position where `a` and `b` differ. -/
+theorem bytesLt_first : ∀ (a b : Bytes) (i : Nat), i < a.length → i < b.length →
+    (∀ j, j < i → a.getD j 0 = b.getD j 0) → a.getD i 0 ≠ b.getD i 0 →
+    bytesLt a b = decide (a.getD i 0 < b.getD i 0)
+  | [], _, _, h, _, _, _ => absurd h (Nat.not_lt_zero _)
+  | _ :: _, [], _, _, h, _, _ => absurd h (Nat.not_lt_zero _)
+  | x :: as, y :: bs, 0, _, _, _, hne => by
+    simp only [List.getD_cons_zero] at hne
+    simp only [bytesLt, List.getD_cons_zero]
+    rw [show (x == y) = false from beq_eq_false_iff_ne.mpr hne, Bool.false_and, Bool.or_false]
+  | x :: as, y :: bs, i + 1, ha, hb, heq, hne => by
+    have h0 : x = y := heq 0 (Nat.zero_lt_succ _)
+    subst h0
+    simp only [List.getD_cons_succ] at hne ⊢
+    simp only [bytesLt, Nat.lt_irrefl, decide_false, beq_self_eq_true, Bool.true_and, Bool.false_or]
+    exact bytesLt_first as bs i (Nat.lt_of_succ_lt_succ ha) (Nat.lt_of_succ_lt_succ hb)
+      (fun j hj => heq (j + 1) (Nat.succ_lt_succ hj)) hne
+
+/-- `bytesLt` when one of `a` and `b` is a prefix of the other. -/
+theorem bytesLt_prefix : ∀ (a b : Bytes), (∀ j, j < min a.length b.length → a.getD j 0 = b.getD j 0) →
+    bytesLt a b = decide (a.length < b.length)
+  | [], [], _ => rfl
+  | [], _ :: _, _ => by simp [bytesLt]
+  | _ :: _, [], _ => by simp [bytesLt]
+  | x :: as, y :: bs, heq => by
+    have h0 : x = y := heq 0 (by simp)
+    subst h0
+    simp only [bytesLt, Nat.lt_irrefl, decide_false, beq_self_eq_true, Bool.true_and, Bool.false_or,
+      List.length_cons, Nat.add_lt_add_iff_right]
+    exact bytesLt_prefix as bs fun j hj => heq (j + 1) (by simp only [List.length_cons]; omega)
+
 open C3 in
 #guard (parseModel true (ascii!"{\"a\":[1,true,null],\"b\":\"x\"}")).toOption == some (0, 27)
 open C3 in
