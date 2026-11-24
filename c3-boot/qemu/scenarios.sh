@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Boots c3-boot in Espressif's QEMU through an update's life: first boot,
 # a tampered image, a trial update, the security-level raise, a rollback
-# attempt, a failed trial, a stale key set, a key rotation, and power cuts
-# during a trial and during a security-level raise.
+# attempt, a failed trial, metadata signed by a key the root doesn't trust,
+# a TUF root rotation, and power cuts during a trial and during a
+# security-level raise.
 #
 # Every boot after the first reuses the same flash and eFuse files, so the
 # boot-state writes and eFuse burns carry over, as on a device. Images are
-# signed by fakestore and the trust roots by the public development genesis
-# keys, so nothing here is fit for a real device.
+# signed by fakestore and the TUF metadata by the public development TUF
+# repository, so nothing here is fit for a real device.
 #
 # Usage: qemu/scenarios.sh [WORK_DIR]
 # Set QEMU to the qemu-system-riscv32 binary if it isn't on PATH.
@@ -69,16 +70,23 @@ expect_not() {
 }
 
 # The bootloader logs a rejection as the c3_verify::Error variant's index
-# in hexadecimal.
+# in hexadecimal, or as 0x100 plus the TufError variant's index.
 error_code() {
   awk '/^pub enum Error/,/^}/' "${root}/verify/src/error.rs" |
     grep -E '^    [A-Z][A-Za-z0-9]*,' | grep -n "^    $1," | cut -d: -f1 |
     { read -r n; printf '%x' "$((n - 1))"; }
 }
+tuf_error_code() {
+  awk '/^pub enum TufError/,/^}/' "${root}/verify/src/tuf.rs" |
+    grep -E '^    [A-Z][A-Za-z0-9]*(,|\()' | grep -n "^    $1," | cut -d: -f1 |
+    { read -r n; printf '%x' "$((0x100 + n - 1))"; }
+}
 bad_signature="$(error_code BadSignature)"
 bad_level="$(error_code BadLevel)"
 policy_mismatch="$(error_code PolicyMismatch)"
 outside_window="$(error_code OutsideWindow)"
+threshold="$(tuf_error_code Threshold)"
+expired="$(tuf_error_code Expired)"
 
 # cut NAME DELAY_MS starts a boot and kills QEMU after DELAY_MS
 # milliseconds, as a power cut would stop the chip.
@@ -155,13 +163,17 @@ record() {
 # Build.
 (cd "${root}" && cargo build -q --locked -p c3-ota)
 # The QEMU eFuse file is disposable, so these scenarios burn eFuses. A second
-# bootloader, built the default way, never does.
+# bootloader, built the default way, never does. A third pins Sigstore's
+# root, as a production bootloader does.
 for burn in off on; do
-  (cd "${root}" && C3_GENESIS=dev C3_EFUSE_BURN="${burn}" cargo build -q --locked --release \
+  (cd "${root}" && C3_TUF_ROOT=dev C3_EFUSE_BURN="${burn}" cargo build -q --locked --release \
     --target riscv32imc-unknown-none-elf -p c3-bootloader)
   ota bootloader-image --elf "${target}/c3-bootloader" --out "${work}/bootloader-burn-${burn}.bin"
 done
 cp "${work}/bootloader-burn-on.bin" "${work}/bootloader.bin"
+(cd "${root}" && C3_TUF_ROOT="${root}/release/pinned-root.json" C3_EFUSE_BURN=on cargo build -q \
+  --locked --release --target riscv32imc-unknown-none-elf -p c3-bootloader)
+ota bootloader-image --elf "${target}/c3-bootloader" --out "${work}/bootloader-production.bin"
 # Version 5 jumps from level 3 to 6, so its raise burns three bits.
 # Version 6 never confirms itself, so its trial expires.
 security_versions=(0 0 1 2 3 6 6)
@@ -197,47 +209,44 @@ for bad in wrong-identity stale; do
     --out "${work}/app1-${bad}.bundle"
 done
 
-# Trust roots. Level 0 and 1 use the genesis keys. Level 2 rotates to a new
-# key set, authorized by two genesis keys.
-genesis="0=${keys}/genesis-dev-1.seed,1=${keys}/genesis-dev-2.seed"
-rotated_hex=()
-for i in 1 2 3 4; do
-  printf '%064x\n' "$((0x5100 + i))" >"${work}/rotated-${i}.seed"
-  rotated_hex+=("$(ota pubkey --seed "${work}/rotated-${i}.seed")")
-done
-rotated="0=${work}/rotated-1.seed,1=${work}/rotated-2.seed"
-policy=(
-  --trusted-root "${work}/fakestore/trusted_root.json"
-  --issuer https://token.actions.githubusercontent.com
-  --build-signer-uri https://github.com/imjasonh/playground/.github/workflows/c3-release.yml@refs/heads/main
-  --repository-id 1234 --owner-id 5678 --trigger push
-)
-ota chain --out "${work}/chain0"
-ota link --level 2 --keys "$(IFS=,; echo "${rotated_hex[*]}")" --signers "${genesis}" \
-  --out "${work}/link2"
-ota chain --links "${work}/link2" --out "${work}/chain2"
-ota blob "${policy[@]}" --level 0 --signers "${genesis}" --out "${work}/blob0"
-ota blob "${policy[@]}" --level 1 --signers "${genesis}" --out "${work}/blob1"
-ota blob "${policy[@]}" --level 2 --signers "${rotated}" --out "${work}/blob2"
-ota blob "${policy[@]}" --level 2 --signers "${genesis}" --out "${work}/blob2-stale"
-ota blob "${policy[@]}" --level 3 --signers "${rotated}" --out "${work}/blob3"
-ota blob "${policy[@]}" --level 6 --signers "${rotated}" --out "${work}/blob6"
+# TUF parts over fakestore's trusted root: the development root version 1
+# pinned in the bootloader with targets signed by targets key 1; root
+# version 2, which rotates to targets key 2, with targets signed by that
+# key; targets signed by key 2 without root version 2; and targets that
+# expired before fakestore signed anything.
+trusted="${work}/fakestore/trusted_root.json"
+ota tuf-dev-root --keys "${keys}" --version 2 --out "${work}/root2.json"
+ota tuf-dev-targets --keys "${keys}" --root-version 1 --trusted-root "${trusted}" \
+  --out "${work}/targets1.json"
+ota tuf-dev-targets --keys "${keys}" --root-version 2 --trusted-root "${trusted}" \
+  --out "${work}/targets2.json"
+ota tuf-dev-targets --keys "${keys}" --root-version 1 --trusted-root "${trusted}" \
+  --expires 2020-01-01T00:00:00Z --out "${work}/targets-expired.json"
+ota tuf-package --targets "${work}/targets1.json" --trusted-root "${trusted}" \
+  --out "${work}/tuf1"
+ota tuf-package --roots "${work}/root2.json" --targets "${work}/targets2.json" \
+  --trusted-root "${trusted}" --out "${work}/tuf2"
+ota tuf-package --targets "${work}/targets2.json" --trusted-root "${trusted}" \
+  --out "${work}/tuf2-unrotated"
+ota tuf-package --targets "${work}/targets-expired.json" --trusted-root "${trusted}" \
+  --out "${work}/tuf-expired"
 
 slot() {
   ota slot --image "${work}/app$1.img" --bundle "${work}/app$1.bundle" \
-    --chain "${work}/$2" --blob "${work}/$3" --out "${work}/$4"
+    --tuf "${work}/$2" --out "${work}/$3"
 }
-slot 1 chain0 blob0 slot-v1
+slot 1 tuf1 slot-v1
 for bad in wrong-identity stale; do
   ota slot --image "${work}/app1.img" --bundle "${work}/app1-${bad}.bundle" \
-    --chain "${work}/chain0" --blob "${work}/blob0" --out "${work}/slot-v1-${bad}"
+    --tuf "${work}/tuf1" --out "${work}/slot-v1-${bad}"
 done
-slot 2 chain0 blob1 slot-v2
-slot 3 chain2 blob2 slot-v3
-slot 3 chain2 blob2-stale slot-v3-stale
-slot 4 chain2 blob3 slot-v4
-slot 5 chain2 blob6 slot-v5
-slot 6 chain2 blob6 slot-v6
+slot 1 tuf-expired slot-v1-expired
+slot 2 tuf1 slot-v2
+slot 3 tuf2 slot-v3
+slot 3 tuf2-unrotated slot-v3-unrotated
+slot 4 tuf2 slot-v4
+slot 5 tuf2 slot-v5
+slot 6 tuf2 slot-v6
 cp "${work}/slot-v3" "${work}/slot-v3-tampered"
 flip "${work}/slot-v3-tampered" 0x10100
 
@@ -247,6 +256,7 @@ ota flash --bootloader "${work}/bootloader.bin" --slot-a "${work}/slot-v1" \
   --out "${work}/flash.bin"
 
 boot first-boot
+expect "c3-boot: WARNING: built with the public development TUF root"
 expect "c3-boot: security level 0"
 expect "c3-demo: running from slot 0, version 1"
 expect "c3-demo: flash mapping ok"
@@ -287,24 +297,24 @@ boot failed-trial
 expect "c3-boot: slot rejected ${bad_signature}"
 expect "c3-demo: running from slot 1, version 2"
 
-patch "${work}/flash.bin" 0x30000 "${work}/slot-v3-stale"
+patch "${work}/flash.bin" 0x30000 "${work}/slot-v3-unrotated"
 record --preferred a --trial a --boots 3 --confirmed b --generation 40
-boot stale-keys
-expect "c3-boot: slot rejected ${bad_signature}"
+boot untrusted-targets-key
+expect "c3-boot: slot rejected ${threshold}"
 expect "c3-demo: running from slot 1, version 2"
 
 patch "${work}/flash.bin" 0x30000 "${work}/slot-v3"
 record --preferred a --trial a --boots 3 --confirmed b --generation 50
-boot rotation-trial
+boot root-rotation-trial
 expect "c3-demo: running from slot 0, version 3"
 expect "c3-demo: confirmed slot 0"
 expect_not "raising security level"
 
-boot rotation-raise
+boot root-rotation-raise
 expect "c3-boot: raising security level to 2"
 expect "c3-demo: running from slot 0, version 3"
 
-boot after-rotation
+boot after-root-rotation
 expect "c3-boot: security level 2"
 expect "c3-demo: running from slot 0, version 3"
 
@@ -414,9 +424,10 @@ expect "c3-demo: running from slot 0, version 5"
 [[ "$(secure_version_bits "${work}/write-disabled.efuse")" == "0 1 2" ]] ||
   fail "write-disabled: SECURE_VERSION bits $(secure_version_bits "${work}/write-disabled.efuse")"
 
-# On a fresh board, an image signed by another workflow and an image with a
-# stale timestamp are both rejected, and nothing else boots.
-for bad in wrong-identity stale; do
+# On a fresh board, an image signed by another workflow, an image with a
+# stale timestamp, and an image whose targets metadata expired before it
+# was signed are all rejected, and nothing else boots.
+for bad in wrong-identity stale expired; do
   dd if=/dev/zero of="${work}/${bad}.efuse" bs=1024 count=1 status=none
   ota flash --bootloader "${work}/bootloader-burn-off.bin" --slot-a "${work}/slot-v1-${bad}" \
     --out "${work}/${bad}.flash"
@@ -424,9 +435,21 @@ for bad in wrong-identity stale; do
   case "${bad}" in
     wrong-identity) expect "c3-boot: slot rejected ${policy_mismatch}" ;;
     stale) expect "c3-boot: slot rejected ${outside_window}" ;;
+    expired) expect "c3-boot: slot rejected ${expired}" ;;
   esac
   expect "c3-boot: halt e5"
   expect_not "c3-demo:"
 done
+
+# A bootloader that pins Sigstore's root rejects the development metadata,
+# and boots no further than its halt.
+dd if=/dev/zero of="${work}/production.efuse" bs=1024 count=1 status=none
+ota flash --bootloader "${work}/bootloader-production.bin" --slot-a "${work}/slot-v1" \
+  --out "${work}/production.flash"
+boot production "${work}/production.flash" "${work}/production.efuse"
+expect_not "c3-boot: WARNING"
+expect "c3-boot: slot rejected ${threshold}"
+expect "c3-boot: halt e5"
+expect_not "c3-demo:"
 
 echo "all scenarios passed (${work})"
