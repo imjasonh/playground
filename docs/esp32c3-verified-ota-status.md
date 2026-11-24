@@ -199,13 +199,21 @@ proved: `SvP256Facts` constrains only the first 32 bytes of `r` and `s`,
 so the corrected form concludes with `b32 r` and `b32 s`, and `SvPvRes`
 doesn't tie the P-384 prehash and scalars to memory, so the corrected form
 also takes `SvPvAt`. `sv_verify_spec` still takes the old facts until it is
-rewired to the corrected ones. The corrected models assume:
-- that `p` is prime, and that the affine group law is closed and
-  associative;
-- `RcbAddOk`: the complete addition formulas compute the group law, which
-  needs the completeness argument, not just a polynomial identity;
-- `RcbDblPoly`: the doubling formula's identity, a `ring_eq` job;
-- `P256PsmOk`: the compiled Barrett reduction modulo `n` is correct.
+rewired to the corrected ones.
+
+The corrected models now assume only that the field prime is prime
+(`p256_model_prime` and `p384_model_prime`, with the image's P-256
+constants as `P256Consts`):
+- `Models/Weierstrass*.lean` prove that the affine group law of any curve
+  with `a = -3` and no point of order 2 is closed and associative, and that
+  the complete addition formulas compute it (`RcbAddOk`). Associativity
+  reduces to two polynomial identities over the line slopes, which take
+  about 38 seconds each in the kernel. A certificate checked by the kernel
+  shows that neither curve has a point of order 2.
+- `Models/EcdsaDbl.lean` proves the doubling formula's identity with
+  `ring_eq`.
+- `Models/P256Barrett*.lean` prove the compiled Barrett reduction modulo
+  `n`. `gen-p256-barrett.py` writes the carry-chain identities.
 
 `_start` and the clock and watchdog `setup` that runs before `boot_main`
 aren't among the extracted functions, so they are trusted.
