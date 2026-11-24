@@ -630,4 +630,19 @@ theorem p2v_scan {Mx : Word → BitVec 8} {B : Word} (F : Fr B 0x3590) (hc : Cod
       exact ⟨m4, .cons d1 (c2.trans (.cons d3 (.single d4))), fun q h0' h1' h2' => by
         rw [u4.regs, u3.regs, k2 q h0' h1' h2'], .inr ⟨fun h => hw (h i hi), u4.self⟩⟩
 
+/-- **The panic at 0x10C8**: `s` has no inverse, and `CtOption::unwrap`'s
+assertion fails. -/
+theorem p2v_panic_10c8 {B : Word} {n : Machine} (F : Fr B 0x3590) (E : P2vCode n.mem)
+    (s : St n.mem P2V n 0x10C8 (reg n)) (rsp : reg n sp = B + 0x21A0) : Panics n := by
+  have FS : Fr (B + 0x21A0) 0x13F0 := F.sub (c := 0x21A0) (by decide) (by decide)
+  obtain ⟨n1, c1, u1⟩ := s.block (off' := 0x10D0) [.aluImm .add a0 sp 0x7FF, .aluImm .add a0 a0 0x481] E.self
+    (by decide) ⟨trivial, trivial, trivial⟩
+  have s1 : St n.mem P2V n1 0x10D0 (reg n1) := ⟨u1.pc, u1.mem.trans (by simp only [runBlock, BInstr.run]), fun _ => rfl⟩
+  have sp1 : reg n1 sp = B + 0x21A0 := by
+    rw [u1.regs]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; exact rsp
+  obtain ⟨n2, c2, pc2, mem2, regs2⟩ := s1.callRa E.self p2v_at_10d0 p2v_at_10d4
+    (cb := BitVec.ofNat 32 assertFailedU8Address) (by decide) (by decide)
+  exact Panics.of_steps (c1.trans c2) (assertFailedU8_panics n2 (by rw [mem2]; exact E.K.panic) pc2
+    (by rw [regs2, upd_ne (by decide) (by decide), sp1]; exact FS.room (by decide)))
+
 end C3.RV32.P2v

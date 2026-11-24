@@ -38,7 +38,7 @@ def port(text):
     """Renames the engine's `sigstore::verify` names to this function's."""
     text = text.replace("sigstoreVerifyCode", "p256VerifyPrehashCode")
     text = re.sub(r"\bSV\b", "P2V", text)
-    text = text.replace("gsVal_sv ", "gsVal_p2v ")
+    text = text.replace("gsVal_sv ", "gsVal_p2v ").replace("codeIn_sv ", "codeIn_p2v ")
 
     def ident(m):
         w = m.group(0)
@@ -55,9 +55,12 @@ def port(text):
 
 class Gen(gsv.Gen):
     def fail(self, why_not, exit_lemma="p2v_fail"):
-        """Closes a failing case at 0x142, or with `p2v_fail0` at 0x144 with 0
-        in `a0`."""
+        """Closes a failing case at 0x142, with `p2v_fail0` at 0x144 with 0
+        in `a0`, or with `p2v_panic_10c8` at the panic at 0x10C8."""
         k = self.k
+        if exit_lemma == "p2v_panic_10c8":
+            self.emit(f"  exact .inl ⟨({why_not}), Panics.of_steps t{k} (p2v_panic_10c8 F E{k} s{k} g{k}_2)⟩")
+            return
         extra = f" g{k}_10" if exit_lemma == "p2v_fail0" else ""
         self.emit(f"  exact .inl ⟨({why_not}), {exit_lemma} F E{k} s{k} t{k} "
                   f"(fun x hx => (fR{k} x hx).trans (fM x hx).symm) V{k} hret g{k}_2 g{k}_3 g{k}_4{extra}⟩")
@@ -402,8 +405,51 @@ def stage_ivb():
     return g, info
 
 
+def stage_ive():
+    """From the inversion's exit at 0x610 to 0x690: `d` normalized by `f`'s
+    sign into the inverse of `s`, and `f` checked to be 1."""
+    g = Gen("IvE")
+    g.generic_alu = True
+    g.panics = True
+    params = iv_start(g, {8: ("C", 0x11FF43B1), 9: ("C", 0x332E3755), 26: ("S", 0x920)})
+    params += ["(UC0 : P2vUpCode M0)", "(EC0 : P2vEcCode M0)",
+               "(UE0 : CodeIn M0 (BitVec.ofNat 32 uint8EqAddress) uint8EqCode)",
+               "(N80 : CodeIn M0 (BitVec.ofNat 32 norm8Address) norm8Code)", "(hfs : fs.toNat ≤ 1)", "(hds : ds.toNat ≤ 1)"]
+    g.sign_le = {0x1004: "hds"}
+    g.load(0x610, "lbu")
+    g.block(0x614, 0x634)
+    g.nrm8(0x634, 0xC80, 0xFE4, "(zext_01 hfs)", "BitVec.ofNat 32 (img% b2sOrder256Address)")
+    g.block(0x63C, 0x64C)
+    k = g.ueq8(0x64C, 0x900, "BitVec.ofNat 32 (img% p256OneAddress)")
+    prop = "fv = accV M0 (BitVec.ofNat 32 (img% p256OneAddress)) 8"
+
+    def tail(sub, taken):
+        sub.block(0x654, 0x65C)
+        sub.bb(0x65C)
+        sub.block(0x664, 0x67E)
+        sub.mc(0x67E, 0x980, 0xC80, 0x20)
+        sub.block(0x686, 0x688)
+        sub.store(0x688, "sb")
+        sub.branch(0x68C, taken, f"by rw [g{sub.k}_9, g{sub.k}_10]; decide")
+
+    def bad(sub, k=k):
+        sub.set_a0(k, 0, "ite_eq_right hf1")
+        tail(sub, True)
+        sub.fail(sub.fail_proof(("prop", "hf1")), "p2v_panic_10c8")
+    g.prop_check(prop, "hf1", bad)
+    g.set_a0(k, 1, "ite_eq_left hf1")
+    tail(g, False)
+    stmt, proof = finish(g, 0x690, [2, 3, 4, 8, 9, 18, 19, 21, 22, 23, 24, 26, 27], set(g.words), set(g.bytes))
+    info = {"name": "p2v_ive", "title": "the end of the inversion of `s`",
+            "doc": "From the inversion's exit at 0x610 to 0x690: `d`, normalized by `f`'s sign, is the inverse "
+            "of `s` at offset 0x980, provided `f` is 1; otherwise `CtOption::unwrap` panics.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": IV_BINDERS, "start": 0x610,
+            "import": "C3BootProofs.Proofs.P2vIvLib"}
+    return g, info
+
+
 def stages():
-    return {"A1": stage_a1, "A2": stage_a2, "A3": stage_a3, "IvA": stage_iva, "IvB": stage_ivb}
+    return {"A1": stage_a1, "A2": stage_a2, "A3": stage_a3, "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive}
 
 
 HEADER = """import {imp}
