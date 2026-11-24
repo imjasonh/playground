@@ -262,18 +262,17 @@ for port in "${LOCAL_ORIGIN_PORT}" "${LOCAL_HTTP_PORT}" "${LOCAL_CACHE_PORT}" "$
   await_tcp_port "${port}"
 done
 
-echo "Running cictl demo against port-forwards"
-go build -o "${WORKDIR}/cictl" ./cmd/cictl
-"${WORKDIR}/cictl" \
-  -origin-addr="127.0.0.1:${LOCAL_ORIGIN_PORT}" \
-  -cache-addr="127.0.0.1:${LOCAL_CACHE_PORT}" \
-  -cache-metrics-url="http://127.0.0.1:${LOCAL_METRICS_PORT}" \
-  -token-a=tok-a \
-  -token-a-ro=tok-a-ro \
-  -token-b=tok-b \
-  -instance-a=tenant-a \
-  -shared=shared \
-  -exec-timeout=3m
+echo "Running Go e2e tests against port-forwards"
+CI_SUBSTRATE_E2E_ORIGIN_ADDR="127.0.0.1:${LOCAL_ORIGIN_PORT}" \
+CI_SUBSTRATE_E2E_CACHE_ADDR="127.0.0.1:${LOCAL_CACHE_PORT}" \
+CI_SUBSTRATE_E2E_CACHE_METRICS_URL="http://127.0.0.1:${LOCAL_METRICS_PORT}" \
+CI_SUBSTRATE_E2E_TOKEN_A=tok-a \
+CI_SUBSTRATE_E2E_TOKEN_A_RO=tok-a-ro \
+CI_SUBSTRATE_E2E_TOKEN_B=tok-b \
+CI_SUBSTRATE_E2E_INSTANCE_A=tenant-a \
+CI_SUBSTRATE_E2E_SHARED=shared \
+CI_SUBSTRATE_E2E_EXEC_TIMEOUT=3m \
+  go test -v -count=1 -run '^TestE2E' ./e2e
 
 echo "Building with stock Bazel as two tenants"
 bash "${ROOT}/e2e/run-bazel.sh" "127.0.0.1:${LOCAL_ORIGIN_PORT}" "127.0.0.1:${LOCAL_HTTP_PORT}"
