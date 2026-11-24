@@ -100,4 +100,40 @@ theorem numberEnd_cons {d l : Bytes} {pos b : Nat} (hlen : ¬d.length < pos) (hd
       else some (pos + digLen (b :: l)) := by
   simp only [numberEnd, hlen, hd, ↓reduceIte, List.head?_cons, Option.some.injEq]
 
+theorem skipWs_le (d : Bytes) (pos : Nat) : skipWs d pos ≤ pos + (d.length - pos) := by
+  have := wsLen_le (d.drop pos)
+  rw [List.length_drop] at this
+  unfold skipWs; omega
+
+theorem stringEnd_le {c : Bool} {d : Bytes} {pos e : Nat} (h : stringEnd c d pos = some e) : e ≤ d.length := by
+  unfold stringEnd at h
+  split at h
+  · cases h
+  · obtain ⟨i, hi, rfl⟩ := Option.map_eq_some_iff.mp h
+    have := strScan_lt hi
+    rw [List.length_drop] at this
+    omega
+
+/-- `skip_ws_in`: strict mode skips whitespace, and canonical mode allows
+none. -/
+def wsIn (c : Bool) (d : Bytes) (pos : Nat) : Nat := if c then pos else skipWs d pos
+
+theorem wsIn_le (c : Bool) (d : Bytes) (pos : Nat) : wsIn c d pos ≤ pos + (d.length - pos) := by
+  unfold wsIn; cases c
+  · exact skipWs_le d pos
+  · exact Nat.le_add_right _ _
+
+/-- `key_end`: with the quote of an object key at `pos`, the position
+after the key, its colon, and in strict mode the whitespace around the
+colon. -/
+def keyEnd (c : Bool) (d : Bytes) (pos : Nat) : Option Nat :=
+  if d.length ≤ pos then none
+  else if d.getD pos 0 ≠ 34 then none
+  else match stringEnd c d pos with
+    | none => none
+    | some e =>
+      if d.length ≤ wsIn c d e then none
+      else if d.getD (wsIn c d e) 0 ≠ 58 then none
+      else some (wsIn c d (wsIn c d e + 1))
+
 end C3.Json
