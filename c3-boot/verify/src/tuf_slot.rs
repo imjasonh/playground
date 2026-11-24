@@ -1,13 +1,9 @@
-//! Every check on one slot whose trust comes from Sigstore's TUF root,
-//! composed into one decision.
-//!
-//! This replaces the key-set chain and trust-root blob of
-//! [`crate::accept`] with TUF metadata that the device checks from a pinned
-//! root, and the release identity with a compiled-in policy. The bootloader
-//! doesn't call it yet; the cutover plan is in c3-boot's task list.
+//! Every check on one slot, composed into one decision. Trust comes from
+//! Sigstore's TUF root, which the bootloader pins, and the release identity
+//! from a compiled-in policy.
 
-use crate::accept::Accepted;
 use crate::error::Error;
+use crate::image::Header;
 use crate::trustroot::Policy;
 use crate::tuf::TufError;
 
@@ -25,6 +21,17 @@ pub struct TufSlotParts<'a> {
     pub bundle: &'a [u8],
     /// The TUF part, which [`crate::tuf::parse_parts`] reads.
     pub tuf: &'a [u8],
+}
+
+/// A slot that passed every check.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Accepted {
+    /// The checked image header.
+    pub header: Header,
+    /// The slot's level: the image's security version.
+    pub level: u8,
+    /// The TSA's signed time for the image signature.
+    pub signed_time: u64,
 }
 
 /// Checks one slot: the image header, the image's security version against

@@ -47,10 +47,6 @@ impl<'a> Reader<'a> {
         Ok(u32::from_le_bytes(*self.array::<4>()?))
     }
 
-    pub(crate) fn u64(&mut self) -> Result<u64, Error> {
-        Ok(u64::from_le_bytes(*self.array::<8>()?))
-    }
-
     /// Reads a magic number and fails unless it equals `magic`.
     pub(crate) fn magic(&mut self, magic: &[u8; 4]) -> Result<(), Error> {
         if self.array::<4>()? == magic {

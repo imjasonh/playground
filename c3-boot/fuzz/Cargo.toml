@@ -14,7 +14,7 @@ cargo-fuzz = true
 [dependencies]
 c3-crypto = { path = "../crypto" }
 c3-ota = { path = "../ota" }
-c3-verify = { path = "../verify", features = ["tuf"] }
+c3-verify = { path = "../verify" }
 libfuzzer-sys = "0.4"
 
 [[bin]]

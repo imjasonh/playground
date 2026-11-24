@@ -11,7 +11,6 @@ use c3_verify::bootstate::Slot;
 use c3_verify::bootstate::State;
 use c3_verify::bootstate::Trial;
 use c3_verify::level::burn_target;
-use c3_verify::level::check_slot;
 use c3_verify::level::level_of;
 use c3_verify::level::next_bit;
 
@@ -49,16 +48,6 @@ fn main() -> std::io::Result<()> {
     for v in 0..=u16::MAX {
         let mask = next_bit(v).map_or_else(|| "-".to_string(), |m| m.to_string());
         writeln!(out, "level {v} {} {mask}", level_of(v))?;
-    }
-    for c in 0..=16u8 {
-        for b in 0..=16u8 {
-            for s in 0..=16u8 {
-                for e in 0..=16u8 {
-                    let ok = u8::from(check_slot(c, b, s, e).is_ok());
-                    writeln!(out, "check {c} {b} {s} {e} {ok}")?;
-                }
-            }
-        }
     }
     for l in 0..=16u8 {
         for c in [false, true] {
