@@ -12,7 +12,7 @@ with a borrow, and what a call to `borrowing_sub` leaves of the frame.
 namespace C3.RV32
 
 /-- Where `Scalar::mul` at `B` calls `borrowing_sub`. -/
-def psmBsub (B : Word) : Word := B + 0xFFFF01CE
+def psmBsub (B : Word) : Word := B + (img% borrowingSubAddress + 0x100000000 - p256ScalarMulAddress)
 
 /-- Limb `i` of the 16 that `widening_mul_fixed::<8, 8>` leaves in the frame
 at `F + 0x2C`, and zero past them: `barrett_reduce`'s input. -/

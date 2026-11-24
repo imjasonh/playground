@@ -242,7 +242,7 @@ theorem nonZero384_correct (m : Machine) {P sp0 out x retAddr : Word} (env : NZE
     (off' := 0xE) (by decide) (by simp [BlockOk, BInstr.ok])
   simp only [runBlock, BInstr.run] at u3
   obtain ⟨m4, d4, u4⟩ := u3.self.lui hc2 nz4_at_e (off' := 0x12) (by decide)
-  obtain ⟨m5, c5, u5⟩ := St.block [.aluImm .add a1 a1 0xFFFFFC2C, .alu .add a0 x0 (8 : Fin 32)] u4.self hc2
+  obtain ⟨m5, c5, u5⟩ := St.block [.aluImm .add a1 a1 (img% lo12 scalarZero384Address), .alu .add a0 x0 (8 : Fin 32)] u4.self hc2
     (off' := 0x18) (by decide) (by simp [BlockOk, BInstr.ok])
   simp only [runBlock, BInstr.run] at u5
   have v38 : reg m3 8 = x := by

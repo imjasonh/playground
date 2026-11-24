@@ -66,7 +66,7 @@ theorem readPart_correct {flash : Nat → BitVec 8} {R : Nat} {romBase : Word} {
     (hsp : reg m sp = G + BitVec.ofNat 32 (0x160 + R)) (hGt : G.toNat + 0x160 + R ≤ 2 ^ 32)
     (sFP : Sep (G + BitVec.ofNat 32 (0x150 + R)) 16 (img% readPartAddress) readPartCode.length)
     (sFC : Sep (G + BitVec.ofNat 32 (0x150 + R)) 16 (img% flashReadAddress) flashReadCode.length)
-    (sFM : Sep (G + BitVec.ofNat 32 (0x150 + R)) 16 ((img% flashReadAddress) + 0x1309E) memsetCode.length)
+    (sFM : Sep (G + BitVec.ofNat 32 (0x150 + R)) 16 ((img% flashReadAddress) + (img% memsetAddress - flashReadAddress)) memsetCode.length)
     (sFW : Sep (G + BitVec.ofNat 32 (0x150 + R)) 16 ((img% flashReadAddress) + 0xFFFFFFE8) romFlashReadWordsCode.length)
     (sFR : Sep (G + BitVec.ofNat 32 (0x150 + R)) 16 romBase romCode.length)
     (sOF : Sep buf buflen.toNat (G + BitVec.ofNat 32 (0x150 + R)) 16)
