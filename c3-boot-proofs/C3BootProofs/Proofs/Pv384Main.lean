@@ -96,7 +96,7 @@ theorem pvCk1_out {B pk rp sp' : Word} {M M' : Word → BitVec 8} (F : Fr B 0x21
     (sPK : Sep pk 0x61 (B + 0xFFFFFE60) 0x2340) (sR : Sep rp 48 (B + 0xFFFFFE60) 0x2340)
     (sS : Sep sp' 48 (B + 0xFFFFFE60) 0x2340) : PvCk1 M' pk rp sp' ↔ PvCk1 M pk rp sp' := by
   have sI : Sep ISRN 48 (B + 0xFFFFFE60) 0x2340 := by
-    have := F.dsep.subR (c := 0x270) (l := 48) (by decide); exact this.symm
+    have := F.dsep.subR (c := (img% p384OrderBeAddress - dataWindowAddress)) (l := 48) (by decide); exact this.symm
   have e1 : ∀ o, o + 48 ≤ 0x61 → Fs.fsVal M' pk o = Fs.fsVal M pk o := fun o ho => by
     unfold Fs.fsVal; rw [h.bytes (sPK.sub (c := o) (l := 48) ho)]
   have e0 : M' pk = M pk := h pk (by
