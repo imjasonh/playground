@@ -152,7 +152,8 @@ theorem bytesLt_first : ∀ (a b : Bytes) (i : Nat), i < a.length → i < b.leng
     have h0 : x = y := heq 0 (Nat.zero_lt_succ _)
     subst h0
     simp only [List.getD_cons_succ] at hne ⊢
-    simp only [bytesLt, Nat.lt_irrefl, decide_false, beq_self_eq_true, Bool.true_and, Bool.false_or]
+    simp only [bytesLt]
+    rw [decide_eq_false (Nat.lt_irrefl _), show (x == x) = true from beq_iff_eq.mpr rfl, Bool.true_and, Bool.false_or]
     exact bytesLt_first as bs i (Nat.lt_of_succ_lt_succ ha) (Nat.lt_of_succ_lt_succ hb)
       (fun j hj => heq (j + 1) (Nat.succ_lt_succ hj)) hne
 
@@ -160,14 +161,15 @@ theorem bytesLt_first : ∀ (a b : Bytes) (i : Nat), i < a.length → i < b.leng
 theorem bytesLt_prefix : ∀ (a b : Bytes), (∀ j, j < min a.length b.length → a.getD j 0 = b.getD j 0) →
     bytesLt a b = decide (a.length < b.length)
   | [], [], _ => rfl
-  | [], _ :: _, _ => by simp [bytesLt]
-  | _ :: _, [], _ => by simp [bytesLt]
+  | [], _ :: _, _ => (decide_eq_true (by simp only [List.length_cons, List.length_nil]; omega)).symm
+  | _ :: _, [], _ => (decide_eq_false (by simp only [List.length_cons, List.length_nil]; omega)).symm
   | x :: as, y :: bs, heq => by
-    have h0 : x = y := heq 0 (by simp)
+    have h0 : x = y := heq 0 (by simp only [List.length_cons]; omega)
     subst h0
-    simp only [bytesLt, Nat.lt_irrefl, decide_false, beq_self_eq_true, Bool.true_and, Bool.false_or,
-      List.length_cons, Nat.add_lt_add_iff_right]
-    exact bytesLt_prefix as bs fun j hj => heq (j + 1) (by simp only [List.length_cons]; omega)
+    simp only [bytesLt, List.length_cons]
+    rw [decide_eq_false (Nat.lt_irrefl _), show (x == x) = true from beq_iff_eq.mpr rfl, Bool.true_and, Bool.false_or,
+      bytesLt_prefix as bs fun j hj => heq (j + 1) (by simp only [List.length_cons]; omega)]
+    exact decide_eq_decide.mpr ⟨fun h => by omega, fun h => by omega⟩
 
 open C3 in
 #guard (parseModel true (ascii!"{\"a\":[1,true,null],\"b\":\"x\"}")).toOption == some (0, 27)

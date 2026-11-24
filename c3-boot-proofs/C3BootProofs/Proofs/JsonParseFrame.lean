@@ -936,7 +936,10 @@ theorem FInv.out (hF : s + BitVec.ofNat 32 164 = F) (h : FInv M0 Mp s F n stk M)
 theorem FInv.outF (hF : s + BitVec.ofNat 32 164 = F) (h : FInv M0 Mp s F n stk M)
     (hO : Out M M' (F + BitVec.ofNat 32 d) k) (hdk : d + k ≤ 16 ∨ 144 ≤ d ∧ d + k ≤ 188) :
     FInv M0 Mp s F n stk M' :=
-  h.out hF (c := 164 + d) (by rw [← add_ofNat_assoc, hF]; exact hO) (by omega)
+  h.out hF (c := 164 + d) (by rw [← add_ofNat_assoc, hF]; exact hO)
+    (by rcases hdk with h | ⟨h1, h2⟩
+        · exact Or.inl (by omega)
+        · exact Or.inr ⟨by omega, by omega⟩)
 
 theorem FInv.out0 (hF : s + BitVec.ofNat 32 164 = F) (h : FInv M0 Mp s F n [] M)
     (hO : Out M M' (s + BitVec.ofNat 32 c) k) (hck : c + k ≤ 352) : FInv M0 Mp s F n [] M' :=
