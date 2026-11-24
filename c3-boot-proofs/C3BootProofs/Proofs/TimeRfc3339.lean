@@ -1152,6 +1152,118 @@ theorem timeRfc3339_correct (m : Machine) {sp0 out p retAddr : Word} {n : Nat}
   have sQH : Sep (p + 4) (n - 4) H 0x90 := sPG.sub (c := 4) (l := n - 4) (by omega)
   rcases loop (q := p + 4) (L := n - 4) (v := v) (by omega) sQH hred0 5 0 Me m11 rfl I0 with h | ⟨Mt, nn, I5⟩
   · exact h
+  obtain ⟨q, hq⟩ : ∃ q, p + 4 = q := ⟨_, rfl⟩
+  obtain ⟨L, hLd⟩ : ∃ L, n - 4 = L := ⟨_, rfl⟩
+  rw [hq, hLd] at I5 sQH hred0
+  have hLb : L < 2 ^ 30 := by omega
+  have hsep : sepOk m.mem q L := ⟨by have := I5.hL; omega, fun k hk => I5.seen k hk⟩
+  have hred := hred0.trans ((rfcRest_mem m.mem q L v).1 hsep)
+  have hc96 := cdR I5.fr
+  -- 0x96: the slice of the ten digits at `G + 0x3C`, then `date_time`
+  obtain ⟨m12, c12, u12⟩ := St.block rfcD I5.st hc96 rfcD_end (by
+    simp +decide only [BlockOk, BInstr.ok, BInstr.run, rfcD, upd_app, ↓reduceIte, and_true, true_and]
+    rw [I5.rsp]
+    exact ⟨⟨aligned_add hGa (by decide), sGC (by decide)⟩, aligned_add hGa (by decide), sGC (by decide)⟩)
+  obtain ⟨Mf, hMf⟩ : ∃ Mf, memStore32 (memStore32 Mt (G + 0x3C) (G + 0xC)) (G + 0x40) 10 = Mf := ⟨_, rfl⟩
+  have eMf : (runBlock rfcD (Mt, reg nn)).1 = Mf := by
+    simp +decide only [runBlock, BInstr.run, rfcD, upd_app, ↓reduceIte]; rw [I5.rsp, ← hMf]; rfl
+  have u12' : St Mf RFC m12 0xA2 (reg m12) := ⟨u12.pc, by rw [u12.mem, eMf], fun _ => rfl⟩
+  have R12 : ∀ q, reg m12 q = (runBlock rfcD (Mt, reg nn)).2 q := u12.regs
+  have v12 : reg m12 a0 = G + 0x18 ∧ reg m12 a1 = BitVec.ofNat 32 v ∧ reg m12 a2 = G + 0x3C := by
+    simp +decide only [R12, runBlock, BInstr.run, rfcD, upd_app, ↓reduceIte]
+    rw [I5.rsp, I5.ra1]; exact ⟨rfl, rfl, rfl⟩
+  have K12 : ∀ q, q.val ∉ [10, 12] → reg m12 q = reg nn q := fun q hq => by
+    have hd : q ∉ rfcD.filterMap BInstr.dst := by
+      simp only [rfcD, List.filterMap_cons, List.filterMap_nil, BInstr.dst]
+      revert hq; revert q; decide
+    rw [R12, runBlock_reg _ _ _ q I5.st.zero hd]
+  have IMf : ∀ x, Sep H 0x90 x 1 → Mf x = m.mem x := fun x hx => by
+    rw [← hMf, memStore32_get_sep (sGw (o := 0x40) (by decide) hx), memStore32_get_sep (sGw (o := 0x3C) (by decide) hx),
+      I5.fr x hx]
+  have SMf : ∀ c', 0x74 ≤ c' → c' < 0x90 → Mf (H + BitVec.ofNat 32 c') = Ms (H + BitVec.ofNat 32 c') :=
+    fun c' h1 h2 => by
+      rw [← hMf, memStore32_get_sep (sGv (o := 0x40) (by decide) h1 h2),
+        memStore32_get_sep (sGv (o := 0x3C) (by decide) h1 h2), I5.sv c' h1 h2]
+  obtain ⟨m13, c13, pc13, mem13, regs13⟩ := u12'.callRa (cdR IMf) rfc_at_a2 rfc_at_a6 (cb := DT) (by decide)
+    (by decide)
+  have r13 := PEnv.reg1 regs13 u12'.zero
+  have hDTn : DT.toNat = (img% dateTimeAddress) := by decide
+  have hTDn : TD.toNat = (img% timeDigits2Address) := by decide
+  have hGo : ∀ o, o ≤ 0x60 → (G + BitVec.ofNat 32 o).toNat = G.toNat + o := fun o h => by
+    rw [eGk, hHc _ (by omega)]; omega
+  have sGH : ∀ {o : Word} {l : Nat}, o.toNat + l ≤ 0x60 → Sep (G + o) l H 0x30 := fun {o l} h => by
+    rw [slotO]
+    have := offs (c := 0x30 + o.toNat) (n := l) (e := 0) (k := 0x30) (Or.inr (by omega)) (by omega) (by decide)
+    rwa [add_ofNat_zero] at this
+  have e3C4 : G + 0x3C + 4 = G + 0x40 := by rw [BitVec.add_assoc]; rfl
+  have hcmp : memBytes Mf (G + 0xC) 10 = compactOf m.mem q := by
+    show (List.range 10).map _ = (List.range 10).map _
+    apply List.map_congr_left
+    intro i hi
+    rw [List.mem_range] at hi
+    have hi' : (BitVec.ofNat 32 (0xC + i)).toNat = 0xC + i := by rw [BitVec.toNat_ofNat]; omega
+    have e : G + 0xC + BitVec.ofNat 32 i = G + BitVec.ofNat 32 (0xC + i) := add_ofNat_assoc G 0xC i
+    rw [e, ← hMf, memStore32_get_sep (sGG (o := 0x40) (l := 4) (l' := 1)
+        (by rw [hi']; right; show 0xC + i + 1 ≤ 0x40; omega) (by decide) (by rw [hi']; show 0xC + i + 1 ≤ 0x60; omega)),
+      memStore32_get_sep (sGG (o := 0x3C) (l := 4) (l' := 1)
+        (by rw [hi']; right; show 0xC + i + 1 ≤ 0x3C; omega) (by decide) (by rw [hi']; show 0xC + i + 1 ≤ 0x60; omega)),
+      I5.cmp i (by omega)]
+  obtain ⟨m14, c14, pc14, sp14, K14, hS14, hN14, fr14⟩ := dateTime_correct m13 (sp0 := G) (out := G + 0x18)
+    (d := G + 0x3C) (p := G + 0xC) (Y := BitVec.ofNat 32 v) (retAddr := RFC + BitVec.ofNat 32 (0xA2 + 8)) (n := 10)
+    (by rw [mem13]; exact cd hcD (by rw [hDTn]; decide) (by rw [hDTn]; decide) IMf)
+    (by rw [mem13]; exact cd hcT (by rw [hTDn]; decide) (by rw [hTDn]; decide) IMf) pc13
+    (by rw [r13 a0 (by decide), v12.1]) (by rw [r13 a1 (by decide), v12.2.1]) (by rw [r13 a2 (by decide), v12.2.2])
+    (by rw [regs13]; simp +decide only [upd_app, ↓reduceIte]) (even_clear _ (even_at RFC (by decide) _ (by decide)))
+    (by rw [r13 sp (by decide), K12 sp (by decide), I5.rsp]) hGa (by omega) (by omega)
+    (by show (G + BitVec.ofNat 32 0x18).toNat + 16 ≤ 0x40000000; rw [hGo _ (by decide)]; omega)
+    (aligned_add hGa (by decide))
+    (by show (G + BitVec.ofNat 32 0x3C).toNat + 8 ≤ 0x40000000; rw [hGo _ (by decide)]; omega)
+    (aligned_add hGa (by decide)) (by decide)
+    (by rw [mem13, ← hMf, memLoad32_store32_sep (sGG (o := 0x40) (o' := 0x3C) (by decide) (by decide) (by decide)),
+      memLoad32_store32_same])
+    (by rw [mem13, e3C4, ← hMf, memLoad32_store32_same]; rfl)
+    (by rw [eG0]; exact sGH (by decide)) (by rw [eG0]; exact sGH (by decide))
+    (sGG (by decide) (by decide) (by decide))
+    (by rw [eG0]; exact sGH (by decide)) (sGG (by decide) (by decide) (by decide))
+    (sGG (by decide) (by decide) (by decide))
+  rw [mem13, hcmp] at hS14 hN14
+  rw [mem13] at fr14
+  rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega : v < 2 ^ 32)] at hS14 hN14
+  -- back from `date_time`
+  have I14 : ∀ x, Sep H 0x90 x 1 → m14.mem x = m.mem x := fun x hx => by
+    have h1 : Sep (G + 0xFFFFFFD0) 0x30 x 1 := by
+      rw [eG0]; have := inH (c := 0) (l := 0x30) hx (by decide); rwa [add_ofNat_zero] at this
+    rw [fr14 x h1 (sGw (o := 0x18) (by decide) hx) (sGw (o := 0x3C) (by decide) hx), IMf x hx]
+  have S14 : ∀ c', 0x74 ≤ c' → c' < 0x90 → m14.mem (H + BitVec.ofNat 32 c') = Ms (H + BitVec.ofNat 32 c') :=
+    fun c' h1 h2 => by
+      have e1 : Sep (G + 0xFFFFFFD0) 0x30 (H + BitVec.ofNat 32 c') 1 := by
+        rw [eG0]; have := offs (c := 0) (n := 0x30) (e := c') (k := 1) (by omega) (by omega) (by omega)
+        rwa [add_ofNat_zero] at this
+      rw [fr14 _ e1 (sGv (o := 0x18) (by decide) h1 h2) (sGv (o := 0x3C) (by decide) h1 h2), SMf c' h1 h2]
+  have hc14 := cdR I14
+  have u14 : St m14.mem RFC m14 0xAA (reg m14) := ⟨by rw [pc14], rfl, fun _ => rfl⟩
+  have kk14 : ∀ q, q.val ∈ [3, 4, 22, 23, 24, 25, 26, 27, 9, 18, 21] → reg m14 q = reg nn q := fun q hq => by
+    rw [K14 q (by revert hq; revert q; decide), r13 q (by revert hq; revert q; decide),
+      K12 q (by revert hq; revert q; decide)]
+  have pre14 : Steps m m14 := I5.pre.trans (c12.trans (c13.trans c14))
+  obtain ⟨m15, d15, u15⟩ := u14.lbu hc14 rfc_at_aa (off' := 0xAE) (by decide)
+  have a015 : reg m15 a0 = (m14.mem (G + 0x18)).zeroExtend 32 := by
+    rw [u15.regs]; simp +decide only [upd_app, ↓reduceIte]; rw [sp14]
+  have K15 : ∀ q, q ≠ a0 → reg m15 q = reg m14 q := fun q hq => by rw [u15.regs, upd_ne' hq u14.zero]
+  have kk15 : ∀ q, q.val ∈ [3, 4, 22, 23, 24, 25, 26, 27] → reg m15 q = reg m q := fun q hq => by
+    rw [K15 q (by revert hq; revert q; decide), kk14 q (by revert hq; revert q; decide), I5.kk q hq]
+  have sp15 : reg m15 sp = G := by rw [K15 sp (by decide), sp14]
+  have r21_15 : reg m15 21 = out := by rw [K15 21 (by decide), kk14 21 (by decide), I5.r21]
+  cases hd : readDateTime v (compactOf m.mem q) with
+  | none =>
+    obtain ⟨t1, t19⟩ := hN14 hd
+    obtain ⟨m16, d16, u16⟩ := u15.self.taken hc14 0x28 rfc_at_ae (by decide) (by rw [a015, t1, u15.self.zero]; rfl)
+    exact fin28 (pre14.trans (.cons d15 (.single d16))) u16.self I14 S14 (by rw [u16.regs, sp15])
+      (by rw [u16.regs, r21_15]) (fun q hq => by rw [u16.regs, kk15 q hq]) (by rw [hred, hd]; rfl) t19
+  | some tr =>
+  obtain ⟨t, rest2⟩ := tr
+  obtain ⟨ht, t0', tlo, thi, -, -, -⟩ := hS14 t rest2 hd
+  obtain ⟨m16, d16, u16⟩ := u15.self.notTaken hc14 0xB0 rfc_at_ae (by decide) (by rw [a015, t0', u15.self.zero]; rfl)
   sorry
 
 end C3.RV32
