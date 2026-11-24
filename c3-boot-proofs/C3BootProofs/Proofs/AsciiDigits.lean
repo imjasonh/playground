@@ -140,7 +140,7 @@ in `a0` when all `n` bytes are ASCII digits and 0 otherwise. It leaves the
 iterator's current pointer `adNext` bytes past `p`, just past the first byte
 that isn't a digit, and writes no other memory and only `a0` through `a5`.
 The iterator's first word must be apart from the bytes and the code. -/
-theorem allAsciiDigit_correct (m : Machine) {base retAddr it p : Word} {n : Nat}
+theorem allAsciiDigit_exact (m : Machine) {base retAddr it p : Word} {n : Nat}
     (hc : CodeIn m.mem base allAsciiDigitCode) (hpc : m.pc = base) (ha0 : reg m a0 = it)
     (hit : it.toNat % 4 = 0) (hcur : memLoad32 m.mem it = p) (hend : memLoad32 m.mem (it + 4) = p + BitVec.ofNat 32 n)
     (hn : n < 2 ^ 32) (sIC : Sep it 4 base allAsciiDigitCode.length) (sIP : Sep it 4 p n)

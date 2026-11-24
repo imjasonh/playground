@@ -8862,8 +8862,8 @@ end C3
 /-- info: 'C3.RV32.tufHexValue_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.tufHexValue_correct
 
-/-- info: 'C3.RV32.allAsciiDigit_correct' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.allAsciiDigit_correct
+/-- info: 'C3.RV32.allAsciiDigit_exact' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.allAsciiDigit_exact
 
 /-- info: 'C3.RV32.flashPartRead_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.flashPartRead_correct
