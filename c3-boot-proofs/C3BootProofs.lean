@@ -530,3 +530,10 @@ import C3BootProofs.Theorems.Trace
 import C3BootProofs.Spec.TrustRoot
 import C3BootProofs.Theorems.TrustRoot
 import C3BootProofs.Audit
+import C3BootProofs.Models.Ed25519Group
+import C3BootProofs.Models.Ed25519Field
+import C3BootProofs.Models.Ed25519Naf
+import C3BootProofs.Models.Ed25519Bytes
+import C3BootProofs.Models.Ed25519Ladder
+import C3BootProofs.Models.Ed25519Limbs
+import C3BootProofs.Models.Ed25519Model
