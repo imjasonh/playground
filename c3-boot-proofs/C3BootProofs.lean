@@ -591,3 +591,7 @@ import C3BootProofs.Models.Ed25519SvModelPrime
 import C3BootProofs.Models.Ed25519Closed
 import C3BootProofs.Models.Ed25519K
 import C3BootProofs.Models.Ed25519Dec
+import C3BootProofs.Models.Ed25519Bytes2
+import C3BootProofs.Models.Ed25519Compress
+import C3BootProofs.Models.Ed25519Iso
+import C3BootProofs.Models.Ed25519SvModelIsoCmp
