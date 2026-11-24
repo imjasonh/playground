@@ -576,3 +576,6 @@ import C3BootProofs.Models.WeierstrassAssoc
 import C3BootProofs.Models.WeierstrassFermat
 import C3BootProofs.Models.WeierstrassNoRoot
 import C3BootProofs.Models.WeierstrassNist
+import C3BootProofs.Models.PrimeLucas
+import C3BootProofs.Models.PrimeCerts
+import C3BootProofs.Models.PrimeCurves
