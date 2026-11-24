@@ -323,3 +323,4 @@ import C3BootProofs.Proofs.StripPrefix
 import C3BootProofs.Proofs.EfuseRun
 import C3BootProofs.Proofs.TufHexDecode
 import C3BootProofs.Proofs.TufReadDoc
+import C3BootProofs.Proofs.EcdsaSig32

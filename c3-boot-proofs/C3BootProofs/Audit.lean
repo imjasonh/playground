@@ -170,6 +170,7 @@ import C3BootProofs.Proofs.StripPrefix
 import C3BootProofs.Proofs.EfuseRun
 import C3BootProofs.Proofs.TufHexDecode
 import C3BootProofs.Proofs.TufReadDoc
+import C3BootProofs.Proofs.EcdsaSig32
 
 /-!
 # Audit
@@ -8663,3 +8664,6 @@ end C3
 
 /-- info: 'C3.RV32.tufReadDoc_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.tufReadDoc_correct
+
+/-- info: 'C3.RV32.ecdsaSignature32_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.ecdsaSignature32_correct
