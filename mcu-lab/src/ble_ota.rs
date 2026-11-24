@@ -21,6 +21,7 @@ use esp_idf_svc::sys::{
     esp_partition_find_first, esp_partition_read,
     esp_partition_subtype_t_ESP_PARTITION_SUBTYPE_DATA_COREDUMP, esp_partition_t,
     esp_partition_type_t_ESP_PARTITION_TYPE_DATA, esp_restart, esp_task_wdt_reset, ESP_OK,
+    OTA_WITH_SEQUENTIAL_WRITES,
 };
 use log::{info, warn};
 use sha2::{Digest, Sha256};
@@ -258,7 +259,9 @@ impl OtaWriterState {
                 };
             }
             let mut handle: esp_ota_handle_t = 0;
-            let err = esp_ota_begin(part, size as usize, &mut handle);
+            // Erase sectors incrementally on each `esp_ota_write` (~30 ms/sector) instead of
+            // blocking the NimBLE host task for 3+ seconds erasing the full slot upfront.
+            let err = esp_ota_begin(part, OTA_WITH_SEQUENTIAL_WRITES as usize, &mut handle);
             if err != ESP_OK {
                 return OtaStatus::Error {
                     message: format!("esp_ota_begin err={err}"),
@@ -481,8 +484,9 @@ impl BleOtaNode {
             lock_or_recover(&state_on_connect).last_activity_us = now_us();
             conn_on_connect.store(true, Ordering::SeqCst);
             info!("ble connected for OTA/profile/coredump: {desc:?}");
-            // Fast 7.5 ms - 15 ms connection interval for high-throughput BLE OTA streaming.
-            let _ = server.update_conn_params(desc.conn_handle(), 6, 12, 0, 200);
+            // Fast 7.5 ms - 15 ms connection interval for high-throughput BLE OTA streaming,
+            // with a 6 s supervision timeout (600 * 10 ms) to tolerate flash sector erases.
+            let _ = server.update_conn_params(desc.conn_handle(), 6, 12, 0, 600);
         });
 
         let conn_on_disconnect = Arc::clone(&connected);
