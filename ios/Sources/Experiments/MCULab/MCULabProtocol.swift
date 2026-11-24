@@ -904,6 +904,180 @@ enum MCULabProtocol {
         return out
     }
 
+    /// Build an OTLP/HTTP v1 JSON metrics payload for a completed (or failed) BLE OTA update.
+    static func formatOTAOTLPMetricsJSON(
+        deviceId: String,
+        report: MCULabOTAReport,
+        timeUnixNano: UInt64
+    ) -> String {
+        let ts = String(timeUnixNano)
+        let safeDeviceId = escapeJSONString(deviceId)
+        let safeService = escapeJSONString(report.board.rawValue)
+        let safeApp = escapeJSONString(report.app.rawValue)
+        let safeCompression = escapeJSONString(report.compression.rawValue)
+        let safeOutcome = escapeJSONString(report.isSuccess ? "ok" : "error")
+        let commonAttrs = """
+        {"key":"app","value":{"stringValue":"\(safeApp)"}},\
+        {"key":"compression","value":{"stringValue":"\(safeCompression)"}},\
+        {"key":"outcome","value":{"stringValue":"\(safeOutcome)"}}
+        """
+
+        func phasePoint(_ phase: String, _ ms: Int) -> String {
+            #"{"asInt":"\#(ms)","timeUnixNano":"\#(ts)","attributes":[{"key":"phase","value":{"stringValue":"\#(phase)"}},\#(commonAttrs)]}"#
+        }
+
+        var metrics: [String] = [
+            """
+            {"name":"mcu.ota.duration_ms","gauge":{"dataPoints":[\
+            \(phasePoint("total", report.totalMs)),\
+            \(phasePoint("connect", report.connectMs)),\
+            \(phasePoint("erase", report.eraseMs)),\
+            \(phasePoint("stream", report.streamMs)),\
+            \(phasePoint("commit", report.commitMs))\
+            ]}}
+            """,
+            """
+            {"name":"mcu.ota.throughput_bps","gauge":{"dataPoints":[\
+            {"asInt":"\(report.effectiveBytesPerSec)","timeUnixNano":"\(ts)","attributes":[{"key":"kind","value":{"stringValue":"effective"}},\(commonAttrs)]},\
+            {"asInt":"\(report.wireBytesPerSec)","timeUnixNano":"\(ts)","attributes":[{"key":"kind","value":{"stringValue":"wire"}},\(commonAttrs)]}\
+            ]}}
+            """,
+            """
+            {"name":"mcu.ota.bytes","gauge":{"dataPoints":[\
+            {"asInt":"\(report.rawBytes)","timeUnixNano":"\(ts)","attributes":[{"key":"kind","value":{"stringValue":"raw"}},\(commonAttrs)]},\
+            {"asInt":"\(report.wireBytes)","timeUnixNano":"\(ts)","attributes":[{"key":"kind","value":{"stringValue":"wire"}},\(commonAttrs)]}\
+            ]}}
+            """,
+            """
+            {"name":"mcu.ota.rtt_ms","gauge":{"dataPoints":[\
+            {"asInt":"\(Int(report.avgRttMs.rounded()))","timeUnixNano":"\(ts)","attributes":[\(commonAttrs)]}\
+            ]}}
+            """,
+            """
+            {"name":"mcu.ota.energy_mj","gauge":{"dataPoints":[\
+            {"asInt":"\(report.estimatedMcuEnergyMj)","timeUnixNano":"\(ts)","attributes":[\(commonAttrs)]}\
+            ]}}
+            """,
+        ]
+
+        if let deltaMv = report.mcuBatteryDeltaMv {
+            metrics.append(
+                """
+                {"name":"mcu.ota.battery_delta_mv","gauge":{"dataPoints":[\
+                {"asInt":"\(deltaMv)","timeUnixNano":"\(ts)","attributes":[\(commonAttrs)]}\
+                ]}}
+                """
+            )
+        }
+        if let phoneDelta = report.phoneBatteryDeltaPct {
+            metrics.append(
+                """
+                {"name":"mcu.ota.phone_battery_pct","gauge":{"dataPoints":[\
+                {"asInt":"\(phoneDelta)","timeUnixNano":"\(ts)","attributes":[\(commonAttrs)]}\
+                ]}}
+                """
+            )
+        }
+
+        return """
+        {"resourceMetrics":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"\(safeService)"}},{"key":"device.id","value":{"stringValue":"\(safeDeviceId)"}}]},"scopeMetrics":[{"metrics":[\(metrics.joined(separator: ","))]}]}]}
+        """
+    }
+
+    /// Build an OTLP/HTTP v1 JSON trace payload for a BLE OTA update with connect/erase/stream/commit child spans.
+    static func formatOTAOTLPTraceJSON(
+        traceId: String,
+        rootSpanId: String,
+        deviceId: String,
+        report: MCULabOTAReport
+    ) -> String {
+        let startNs = UInt64(max(0, report.startedAt.timeIntervalSince1970) * 1_000_000_000)
+        let connectEnd = startNs + UInt64(max(0, report.connectMs)) * 1_000_000
+        let eraseEnd = connectEnd + UInt64(max(0, report.eraseMs)) * 1_000_000
+        let streamEnd = eraseEnd + UInt64(max(0, report.streamMs)) * 1_000_000
+        let commitEnd = streamEnd + UInt64(max(0, report.commitMs)) * 1_000_000
+        let totalEnd = max(commitEnd, startNs + UInt64(max(1, report.totalMs)) * 1_000_000)
+
+        var rootAttrs: [String] = [
+            #"{"key":"ota.board","value":{"stringValue":"\#(escapeJSONString(report.board.rawValue))"}}"#,
+            #"{"key":"ota.app","value":{"stringValue":"\#(escapeJSONString(report.app.rawValue))"}}"#,
+            #"{"key":"ota.image","value":{"stringValue":"\#(escapeJSONString(report.imageName))"}}"#,
+            #"{"key":"ota.sha256","value":{"stringValue":"\#(escapeJSONString(report.sha256))"}}"#,
+            #"{"key":"ota.compression","value":{"stringValue":"\#(escapeJSONString(report.compression.rawValue))"}}"#,
+            #"{"key":"ota.outcome","value":{"stringValue":"\#(escapeJSONString(report.outcome))"}}"#,
+            #"{"key":"ota.raw_bytes","value":{"intValue":"\#(report.rawBytes)"}}"#,
+            #"{"key":"ota.wire_bytes","value":{"intValue":"\#(report.wireBytes)"}}"#,
+            #"{"key":"ota.packets","value":{"intValue":"\#(report.packetCount)"}}"#,
+            #"{"key":"ota.chunk_bytes","value":{"intValue":"\#(report.chunkSize)"}}"#,
+            #"{"key":"ota.effective_bps","value":{"intValue":"\#(report.effectiveBytesPerSec)"}}"#,
+            #"{"key":"ota.wire_bps","value":{"intValue":"\#(report.wireBytesPerSec)"}}"#,
+            #"{"key":"ota.avg_rtt_ms","value":{"intValue":"\#(Int(report.avgRttMs.rounded()))"}}"#,
+            #"{"key":"ota.mcu_energy_mj","value":{"intValue":"\#(report.estimatedMcuEnergyMj)"}}"#,
+        ]
+        if let startMv = report.mcuBatteryStartMv {
+            rootAttrs.append(#"{"key":"ota.mcu_battery_start_mv","value":{"intValue":"\#(startMv)"}}"#)
+        }
+        if let endMv = report.mcuBatteryEndMv {
+            rootAttrs.append(#"{"key":"ota.mcu_battery_end_mv","value":{"intValue":"\#(endMv)"}}"#)
+        }
+        if let startPct = report.phoneBatteryStartPct {
+            rootAttrs.append(#"{"key":"ota.phone_battery_start_pct","value":{"intValue":"\#(startPct)"}}"#)
+        }
+        if let endPct = report.phoneBatteryEndPct {
+            rootAttrs.append(#"{"key":"ota.phone_battery_end_pct","value":{"intValue":"\#(endPct)"}}"#)
+        }
+
+        let spans: [String] = [
+            formatSpanJSON(
+                traceId: traceId,
+                spanId: rootSpanId,
+                parentSpanId: nil,
+                name: "ota.update \(report.board.rawValue)-\(report.app.rawValue)",
+                startNs: startNs,
+                endNs: totalEnd,
+                attrs: rootAttrs
+            ),
+            formatSpanJSON(
+                traceId: traceId,
+                spanId: randomHex(byteCount: 8),
+                parentSpanId: rootSpanId,
+                name: "ota.connect",
+                startNs: startNs,
+                endNs: connectEnd
+            ),
+            formatSpanJSON(
+                traceId: traceId,
+                spanId: randomHex(byteCount: 8),
+                parentSpanId: rootSpanId,
+                name: "ota.erase",
+                startNs: connectEnd,
+                endNs: eraseEnd
+            ),
+            formatSpanJSON(
+                traceId: traceId,
+                spanId: randomHex(byteCount: 8),
+                parentSpanId: rootSpanId,
+                name: "ota.stream",
+                startNs: eraseEnd,
+                endNs: streamEnd
+            ),
+            formatSpanJSON(
+                traceId: traceId,
+                spanId: randomHex(byteCount: 8),
+                parentSpanId: rootSpanId,
+                name: "ota.commit",
+                startNs: streamEnd,
+                endNs: commitEnd
+            ),
+        ]
+
+        let safeDeviceId = escapeJSONString(deviceId)
+        let safeService = escapeJSONString(report.board.rawValue)
+        return """
+        {"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"\(safeService)"}},{"key":"device.id","value":{"stringValue":"\(safeDeviceId)"}}]},"scopeSpans":[{"spans":[\(spans.joined(separator: ","))]}]}]}
+        """
+    }
+
     /// Format a microsecond duration for display (`1,450 µs` or `320.5 ms`).
     static func formatDurationUs(_ us: UInt32) -> String {
         if us >= 10_000 {
@@ -911,6 +1085,82 @@ enum MCULabProtocol {
             return String(format: "%.1f ms", ms)
         }
         return "\(us) µs"
+    }
+}
+
+/// Performance and battery-drain telemetry recorded for a single BLE OTA update.
+struct MCULabOTAReport: Equatable {
+    var board: MCULabBoard
+    var app: MCULabApp
+    var imageName: String
+    var sha256: String
+    var compression: MCULabOTACompression
+    var outcome: String
+    var rawBytes: Int
+    var wireBytes: Int
+    var packetCount: Int
+    var chunkSize: Int
+    var startedAt: Date
+    var completedAt: Date
+    var connectMs: Int
+    var eraseMs: Int
+    var streamMs: Int
+    var commitMs: Int
+    var totalMs: Int
+    var mcuBatteryStartMv: UInt16?
+    var mcuBatteryEndMv: UInt16?
+    var phoneBatteryStartPct: Int?
+    var phoneBatteryEndPct: Int?
+
+    var isSuccess: Bool {
+        outcome == "ok"
+    }
+
+    /// Effective flashing speed in uncompressed bytes/sec during the streaming phase.
+    var effectiveBytesPerSec: Int {
+        guard streamMs > 0 else { return 0 }
+        return Int((Double(rawBytes) / (Double(streamMs) / 1_000.0)).rounded())
+    }
+
+    /// Wire throughput in BLE bytes/sec during the streaming phase.
+    var wireBytesPerSec: Int {
+        guard streamMs > 0 else { return 0 }
+        return Int((Double(wireBytes) / (Double(streamMs) / 1_000.0)).rounded())
+    }
+
+    /// Average per-packet round-trip time (ms) for ACKed `.withResponse` writes.
+    var avgRttMs: Double {
+        guard packetCount > 0 else { return 0 }
+        return Double(streamMs) / Double(packetCount)
+    }
+
+    /// Percentage of wire bytes saved by compression (`0` when uncompressed).
+    var compressionSavedPct: Int {
+        guard rawBytes > 0, wireBytes < rawBytes else { return 0 }
+        return Int(((1.0 - Double(wireBytes) / Double(rawBytes)) * 100.0).rounded())
+    }
+
+    /// Estimated MCU energy consumed during OTA in millijoules (~95 mA average BLE RX + flash write).
+    var estimatedMcuEnergyMj: Int {
+        let vMv = Int64((mcuBatteryStartMv ?? 0) > 0 ? (mcuBatteryStartMv ?? 3700) : 3700)
+        // P(mW) = V(mV) * I(mA) / 1000; E(mJ) = P(mW) * t(s) = V(mV) * I(mA) * t(ms) / 1_000_000.
+        return Int((Int64(max(0, totalMs)) * 95 * vMv) / 1_000_000)
+    }
+
+    /// Measured MCU battery voltage change (mV) from pre-OTA wake to first post-reboot wake.
+    var mcuBatteryDeltaMv: Int? {
+        guard let start = mcuBatteryStartMv, let end = mcuBatteryEndMv, start > 0, end > 0 else {
+            return nil
+        }
+        return Int(end) - Int(start)
+    }
+
+    /// Measured iPhone battery percentage change during the OTA transfer.
+    var phoneBatteryDeltaPct: Int? {
+        guard let start = phoneBatteryStartPct, let end = phoneBatteryEndPct else {
+            return nil
+        }
+        return end - start
     }
 }
 

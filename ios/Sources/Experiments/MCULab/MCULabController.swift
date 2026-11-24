@@ -2,6 +2,9 @@ import Combine
 @preconcurrency import CoreBluetooth
 import DeviceCheck
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// A single received BLE telemetry frame from an MCU Lab board.
 struct MCULabSample: Identifiable, Equatable {
@@ -73,6 +76,27 @@ final class MCULabController: NSObject, ObservableObject {
     @Published var stagedFirmwareName = ""
     @Published var stagedFirmwareSHA256 = ""
     @Published var otaStatusText = "Choose a board and app to pull from GHCR (or pick a .bin) to arm an update."
+    @Published var lastOTAReport: MCULabOTAReport?
+
+    private struct OTASessionTracker {
+        let deviceId: UUID
+        let board: MCULabBoard
+        let app: MCULabApp
+        let imageName: String
+        let sha256: String
+        let startedAt: Date
+        var beginSentAt: Date?
+        var streamStartedAt: Date?
+        var commitSentAt: Date?
+        var rawBytes: Int = 0
+        var wireBytes: Int = 0
+        var packetCount: Int = 0
+        var chunkSize: Int = 0
+        var compression: MCULabOTACompression = .none
+        var mcuBatteryStartMv: UInt16?
+        var phoneBatteryStartPct: Int?
+        var previousBatteryMonitoringEnabled: Bool = false
+    }
 
     private var central: CBCentralManager?
     private var peripherals: [UUID: CBPeripheral] = [:]
@@ -84,6 +108,8 @@ final class MCULabController: NSObject, ObservableObject {
     private var otaWriteAckContinuation: CheckedContinuation<Error?, Never>?
     private var otaWirePayload: Data?
     private var otaWireCompression: MCULabOTACompression = .none
+    private var otaSession: OTASessionTracker?
+    private var pendingPostOTABatteryDeviceId: UUID?
     private var profilePeripheral: CBPeripheral?
     private var profileTargetDeviceId: UUID?
     private var profileTargetSampleId: UUID?
@@ -429,6 +455,8 @@ final class MCULabController: NSObject, ObservableObject {
         otaStreamTask?.cancel()
         otaStreamTask = nil
         resumePendingOTAContinuations()
+        restorePhoneBatteryMonitoringIfNeeded()
+        otaSession = nil
         if let peripheral = otaPeripheral {
             if let ctrl = otaControlChar,
                let abortData = MCULabProtocol.encodeOTACommand(.abort).data(using: .utf8)
@@ -452,9 +480,187 @@ final class MCULabController: NSObject, ObservableObject {
         }
         let total = UInt32(data.count)
         let sha = stagedFirmwareSHA256
+        let compressed = MCULabProtocol.deflateCompress(data)
+        let useDeflate = compressed != nil && (compressed?.count ?? data.count) < data.count
+        let wireBytes = useDeflate ? (compressed?.count ?? data.count) : data.count
+        let packets = max(1, (wireBytes + 469) / 470)
+        let streamMs = packets * 30
+        let totalMs = 350 + 6_200 + streamMs + 280
+        let now = Date()
+        let startMv = latestSample?.metrics.batteryMv ?? 3_840
+        let report = MCULabOTAReport(
+            board: selectedBoard,
+            app: selectedApp,
+            imageName: stagedFirmwareName,
+            sha256: sha,
+            compression: useDeflate ? .deflate : .none,
+            outcome: "ok",
+            rawBytes: data.count,
+            wireBytes: wireBytes,
+            packetCount: packets,
+            chunkSize: 480,
+            startedAt: now.addingTimeInterval(-Double(totalMs) / 1_000.0),
+            completedAt: now,
+            connectMs: 350,
+            eraseMs: 6_200,
+            streamMs: streamMs,
+            commitMs: 280,
+            totalMs: totalMs,
+            mcuBatteryStartMv: startMv,
+            mcuBatteryEndMv: startMv > 25 ? startMv - 22 : startMv,
+            phoneBatteryStartPct: readPhoneBatteryPercent(),
+            phoneBatteryEndPct: readPhoneBatteryPercent()
+        )
+        lastOTAReport = report
         otaPhase = .streaming(written: total, total: total)
         otaPhase = .completed(sha256: sha)
         otaStatusText = "Installed \(stagedFirmwareName) (\(total) B, sha256 \(sha.prefix(12))…)."
+        if forwardingEnabled {
+            forwardOTAReportToOtel(report, deviceId: simulatedDeviceId)
+        }
+    }
+
+    private func readPhoneBatteryPercent() -> Int? {
+        #if canImport(UIKit)
+        let level = UIDevice.current.batteryLevel
+        guard level >= 0 else { return nil }
+        return Int((level * 100.0).rounded())
+        #else
+        return nil
+        #endif
+    }
+
+    private func enablePhoneBatteryMonitoring() -> Bool {
+        #if canImport(UIKit)
+        let prev = UIDevice.current.isBatteryMonitoringEnabled
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        return prev
+        #else
+        return false
+        #endif
+    }
+
+    private func restorePhoneBatteryMonitoringIfNeeded() {
+        #if canImport(UIKit)
+        if let session = otaSession {
+            UIDevice.current.isBatteryMonitoringEnabled = session.previousBatteryMonitoringEnabled
+        }
+        #endif
+    }
+
+    private func finalizeOTASession(outcome: String) {
+        guard let session = otaSession else {
+            return
+        }
+        let endPct = readPhoneBatteryPercent()
+        restorePhoneBatteryMonitoringIfNeeded()
+        otaSession = nil
+
+        let now = Date()
+        let beginAt = session.beginSentAt ?? now
+        let streamAt = session.streamStartedAt ?? now
+        let commitAt = session.commitSentAt ?? now
+        let connectMs = max(0, Int((beginAt.timeIntervalSince(session.startedAt) * 1_000.0).rounded()))
+        let eraseMs = session.beginSentAt != nil
+            ? max(0, Int((streamAt.timeIntervalSince(beginAt) * 1_000.0).rounded()))
+            : 0
+        let streamMs = session.streamStartedAt != nil
+            ? max(0, Int((commitAt.timeIntervalSince(streamAt) * 1_000.0).rounded()))
+            : 0
+        let commitMs = session.commitSentAt != nil
+            ? max(0, Int((now.timeIntervalSince(commitAt) * 1_000.0).rounded()))
+            : 0
+        let totalMs = max(1, Int((now.timeIntervalSince(session.startedAt) * 1_000.0).rounded()))
+
+        let report = MCULabOTAReport(
+            board: session.board,
+            app: session.app,
+            imageName: session.imageName,
+            sha256: session.sha256,
+            compression: session.compression,
+            outcome: outcome,
+            rawBytes: session.rawBytes,
+            wireBytes: session.wireBytes,
+            packetCount: session.packetCount,
+            chunkSize: session.chunkSize,
+            startedAt: session.startedAt,
+            completedAt: now,
+            connectMs: connectMs,
+            eraseMs: eraseMs,
+            streamMs: streamMs,
+            commitMs: commitMs,
+            totalMs: totalMs,
+            mcuBatteryStartMv: session.mcuBatteryStartMv,
+            mcuBatteryEndMv: nil,
+            phoneBatteryStartPct: session.phoneBatteryStartPct,
+            phoneBatteryEndPct: endPct
+        )
+        lastOTAReport = report
+        if outcome == "ok" {
+            pendingPostOTABatteryDeviceId = session.deviceId
+        }
+        if forwardingEnabled {
+            forwardOTAReportToOtel(report, deviceId: session.deviceId)
+        }
+    }
+
+    private func forwardOTAReportToOtel(_ report: MCULabOTAReport, deviceId: UUID) {
+        let trimmed = otelEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let metricsURL = Self.resolveMetricsURL(from: trimmed),
+              let baseURL = Self.resolveBaseURL(from: metricsURL)
+        else {
+            return
+        }
+        let tracesURL = Self.resolveTracesURL(from: baseURL)
+        let timeNs = UInt64(report.completedAt.timeIntervalSince1970 * 1_000_000_000)
+        let traceId = MCULabProtocol.randomHex(byteCount: 16)
+        let rootSpanId = MCULabProtocol.randomHex(byteCount: 8)
+        let traceparent = "00-\(traceId)-\(rootSpanId)-01"
+        latestTraceId = traceId
+
+        let metricsJSON = MCULabProtocol.formatOTAOTLPMetricsJSON(
+            deviceId: deviceId.uuidString,
+            report: report,
+            timeUnixNano: timeNs
+        )
+        let traceJSON = MCULabProtocol.formatOTAOTLPTraceJSON(
+            traceId: traceId,
+            rootSpanId: rootSpanId,
+            deviceId: deviceId.uuidString,
+            report: report
+        )
+        guard let metricsBody = metricsJSON.data(using: .utf8),
+              let traceBody = traceJSON.data(using: .utf8)
+        else {
+            return
+        }
+        let shouldAttest = useAppAttest
+        Task { @MainActor in
+            do {
+                let metricsResult = try await self.postOTLP(
+                    body: metricsBody,
+                    url: metricsURL,
+                    baseURL: baseURL,
+                    action: "metrics",
+                    authorizeWithAppAttest: shouldAttest,
+                    traceparent: traceparent
+                )
+                let traceResult = try await self.postOTLP(
+                    body: traceBody,
+                    url: tracesURL,
+                    baseURL: baseURL,
+                    action: "traces",
+                    authorizeWithAppAttest: shouldAttest,
+                    traceparent: nil
+                )
+                if (200..<300).contains(metricsResult.status) {
+                    self.forwardedCount += 1
+                    self.lastForwardStatus = "Exported OTA report (\(String(format: "%.1f", Double(report.totalMs) / 1000.0)) s, trace \(traceId.prefix(8))…, HTTP \(traceResult.status))."
+                }
+            } catch {
+                self.lastForwardStatus = "OTA report export failed: \(error.localizedDescription)"
+            }
+        }
     }
 
     private func resumePendingOTAContinuations() {
@@ -487,6 +693,21 @@ final class MCULabController: NSObject, ObservableObject {
         guard let central, central.state == .poweredOn else {
             return
         }
+        restorePhoneBatteryMonitoringIfNeeded()
+        let prevBatteryMon = enablePhoneBatteryMonitoring()
+        let preMcuMv = history.first(where: { $0.deviceId == peripheral.identifier })?.metrics.batteryMv
+            ?? latestSample?.metrics.batteryMv
+        otaSession = OTASessionTracker(
+            deviceId: peripheral.identifier,
+            board: selectedBoard,
+            app: selectedApp,
+            imageName: stagedFirmwareName,
+            sha256: stagedFirmwareSHA256,
+            startedAt: Date(),
+            mcuBatteryStartMv: (preMcuMv ?? 0) > 0 ? preMcuMv : nil,
+            phoneBatteryStartPct: readPhoneBatteryPercent(),
+            previousBatteryMonitoringEnabled: prevBatteryMon
+        )
         otaWirePayload = nil
         otaWireCompression = .none
         otaPeripheral = peripheral
@@ -516,6 +737,10 @@ final class MCULabController: NSObject, ObservableObject {
             otaWirePayload = firmware
             otaWireCompression = .none
         }
+        otaSession?.beginSentAt = Date()
+        otaSession?.rawBytes = firmware.count
+        otaSession?.wireBytes = otaWirePayload?.count ?? firmware.count
+        otaSession?.compression = otaWireCompression
         let cmd = MCULabOTACommand.begin(
             size: UInt32(firmware.count),
             sha256: stagedFirmwareSHA256,
@@ -545,6 +770,9 @@ final class MCULabController: NSObject, ObservableObject {
             startingAt: startOffset,
             maxPacketBytes: chunkSize
         )
+        otaSession?.streamStartedAt = Date()
+        otaSession?.packetCount = chunks.count
+        otaSession?.chunkSize = chunkSize
         let total = UInt32(firmware.count)
         let wireTotal = UInt32(max(wirePayload.count, 1))
         let initialWritten = otaWireCompression == .deflate
@@ -568,6 +796,7 @@ final class MCULabController: NSObject, ObservableObject {
                 peripheral.writeValue(item.frame, for: dataChar, type: .withResponse)
                 if let writeError = await self.waitForOTAWriteAck() {
                     if Task.isCancelled { return }
+                    self.finalizeOTASession(outcome: "error: \(writeError.localizedDescription)")
                     self.otaPhase = .failed(writeError.localizedDescription)
                     self.otaStatusText = "OTA write failed: \(writeError.localizedDescription)"
                     self.central?.cancelPeripheralConnection(peripheral)
@@ -583,6 +812,7 @@ final class MCULabController: NSObject, ObservableObject {
                 self.otaPhase = .streaming(written: progressWritten, total: total)
             }
             guard let self, !Task.isCancelled else { return }
+            self.otaSession?.commitSentAt = Date()
             self.otaPhase = .committing
             self.otaStatusText = "Verifying SHA-256 on \(self.selectedFirmwareTarget.displayName) and switching active OTA slot…"
             if let commitData = MCULabProtocol.encodeOTACommand(.commit).data(using: .utf8) {
@@ -611,6 +841,7 @@ final class MCULabController: NSObject, ObservableObject {
         case .ok(let sha256):
             otaStreamTask?.cancel()
             resumePendingOTAContinuations()
+            finalizeOTASession(outcome: "ok")
             otaPhase = .completed(sha256: sha256)
             otaStatusText = "Update verified (\(sha256.prefix(12))…). \(selectedFirmwareTarget.displayName) is rebooting into the new slot."
             if let peripheral = otaPeripheral {
@@ -619,6 +850,7 @@ final class MCULabController: NSObject, ObservableObject {
         case .error(let message):
             otaStreamTask?.cancel()
             resumePendingOTAContinuations()
+            finalizeOTASession(outcome: "error: \(message)")
             otaPhase = .failed(message)
             otaStatusText = "OTA error: \(message)"
             if let peripheral = otaPeripheral {
@@ -681,6 +913,12 @@ final class MCULabController: NSObject, ObservableObject {
     ) -> Bool {
         guard let metrics = MCULabProtocol.decodeManufacturerData(mfgData) else {
             return false
+        }
+        // Capture post-reboot MCU battery voltage from the first wake burst after a completed OTA.
+        if pendingPostOTABatteryDeviceId == deviceId, metrics.batteryMv > 0, var report = lastOTAReport {
+            pendingPostOTABatteryDeviceId = nil
+            report.mcuBatteryEndMv = metrics.batteryMv
+            lastOTAReport = report
         }
         // If an OTA update is armed and this advertisement comes from the matching board
         // (`boardID == 0` is legacy XIAO ESP32-C3), connect immediately during its wake window,
@@ -1255,6 +1493,8 @@ extension MCULabController: CBCentralManagerDelegate {
             self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
             if self.otaPeripheral?.identifier == peripheral.identifier, self.otaPhase == .connecting {
                 // Re-arm for the next wake burst if the wake window closed before connection completed.
+                self.restorePhoneBatteryMonitoringIfNeeded()
+                self.otaSession = nil
                 self.otaPeripheral = nil
                 self.otaPhase = .armed
                 self.otaStatusText = "Missed wake window (\(detail)); still armed for next wake…"
@@ -1286,6 +1526,7 @@ extension MCULabController: CBCentralManagerDelegate {
                 return
             }
             if self.otaPhase != .idle && self.otaPhase != .armed {
+                self.finalizeOTASession(outcome: "error: BLE link dropped")
                 self.otaPhase = .failed("BLE link dropped during OTA transfer.")
                 self.otaStatusText = "Disconnected before OTA commit completed."
             }

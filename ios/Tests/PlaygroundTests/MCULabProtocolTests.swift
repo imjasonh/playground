@@ -225,6 +225,69 @@ final class MCULabProtocolTests: XCTestCase {
         }
     }
 
+    func testOTAReportMetricsAndOTLPFormatting() throws {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let end = start.addingTimeInterval(35.0)
+        let report = MCULabOTAReport(
+            board: .waveshareEPD75,
+            app: .maze,
+            imageName: "waveshare-epd75-maze@deadbee",
+            sha256: String(repeating: "b", count: 64),
+            compression: .deflate,
+            outcome: "ok",
+            rawBytes: 775_328,
+            wireBytes: 440_000,
+            packetCount: 937,
+            chunkSize: 480,
+            startedAt: start,
+            completedAt: end,
+            connectMs: 400,
+            eraseMs: 6_200,
+            streamMs: 28_100,
+            commitMs: 300,
+            totalMs: 35_000,
+            mcuBatteryStartMv: 3_840,
+            mcuBatteryEndMv: 3_815,
+            phoneBatteryStartPct: 52,
+            phoneBatteryEndPct: 51
+        )
+        XCTAssertTrue(report.isSuccess)
+        XCTAssertEqual(report.compressionSavedPct, 43)
+        XCTAssertGreaterThan(report.effectiveBytesPerSec, 27_000)
+        XCTAssertGreaterThan(report.wireBytesPerSec, 15_000)
+        XCTAssertEqual(report.avgRttMs, 28_100.0 / 937.0, accuracy: 0.01)
+        XCTAssertEqual(report.mcuBatteryDeltaMv, -25)
+        XCTAssertEqual(report.phoneBatteryDeltaPct, -1)
+        XCTAssertGreaterThan(report.estimatedMcuEnergyMj, 10_000)
+
+        let metricsJSON = MCULabProtocol.formatOTAOTLPMetricsJSON(
+            deviceId: "epd75-01",
+            report: report,
+            timeUnixNano: 1_700_000_035_000_000_000
+        )
+        let metricsObj = try JSONSerialization.jsonObject(with: Data(metricsJSON.utf8)) as? [String: Any]
+        XCTAssertNotNil(metricsObj?["resourceMetrics"])
+        XCTAssertTrue(metricsJSON.contains("mcu.ota.duration_ms"))
+        XCTAssertTrue(metricsJSON.contains("mcu.ota.throughput_bps"))
+        XCTAssertTrue(metricsJSON.contains("mcu.ota.energy_mj"))
+        XCTAssertTrue(metricsJSON.contains("mcu.ota.battery_delta_mv"))
+        XCTAssertTrue(metricsJSON.contains("mcu.ota.phone_battery_pct"))
+
+        let traceJSON = MCULabProtocol.formatOTAOTLPTraceJSON(
+            traceId: String(repeating: "1", count: 32),
+            rootSpanId: String(repeating: "2", count: 16),
+            deviceId: "epd75-01",
+            report: report
+        )
+        let traceObj = try JSONSerialization.jsonObject(with: Data(traceJSON.utf8)) as? [String: Any]
+        XCTAssertNotNil(traceObj?["resourceSpans"])
+        XCTAssertTrue(traceJSON.contains("ota.update waveshare-epd75-maze"))
+        XCTAssertTrue(traceJSON.contains("ota.connect"))
+        XCTAssertTrue(traceJSON.contains("ota.erase"))
+        XCTAssertTrue(traceJSON.contains("ota.stream"))
+        XCTAssertTrue(traceJSON.contains("ota.commit"))
+    }
+
     @MainActor
     func testArmedOTATransferOnSimulatedWake() {
         let suite = "xiao-esp32c3.ota-tests.\(UUID().uuidString)"
