@@ -1,5 +1,7 @@
 import C3BootProofs.Proofs.RomCalls
 import C3BootProofs.Proofs.BsDecode
+import C3BootProofs.Proofs.Sha2Final
+import C3BootProofs.Proofs.EdDecompress
 import C3BootProofs.Image.BootloaderData
 
 /-!
