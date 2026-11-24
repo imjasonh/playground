@@ -409,11 +409,106 @@ struct MCULabView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("mcuLabOtaStatusText")
+
+            if let report = controller.lastOTAReport {
+                otaReportCard(report)
+            }
         }
         .padding(12)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("mcuLabOtaPanel")
+    }
+
+    private func otaReportCard(_ report: MCULabOTAReport) -> some View {
+        let totalSec = Double(report.totalMs) / 1_000.0
+        let effKBps = Double(report.effectiveBytesPerSec) / 1_024.0
+        let wireKBps = Double(report.wireBytesPerSec) / 1_024.0
+        let energyJ = Double(report.estimatedMcuEnergyMj) / 1_000.0
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label(
+                    report.isSuccess ? "Last OTA Performance" : "Last OTA Failed",
+                    systemImage: report.isSuccess ? "speedometer" : "exclamationmark.triangle.fill"
+                )
+                .font(.caption.bold())
+                .foregroundStyle(report.isSuccess ? Color.primary : Color.red)
+                Spacer()
+                Text(String(format: "%.1f s", totalSec))
+                    .font(.caption.monospacedDigit().bold())
+            }
+
+            LabeledContent(
+                "Throughput",
+                value: String(format: "%.1f KB/s eff (%.1f KB/s wire)", effKBps, wireKBps)
+            )
+            .font(.caption2.monospacedDigit())
+
+            if report.compression == .deflate {
+                LabeledContent(
+                    "Transfer",
+                    value: "\(report.wireBytes / 1_024) KB / \(report.rawBytes / 1_024) KB (-\(report.compressionSavedPct)%, \(report.packetCount) pkts)"
+                )
+                .font(.caption2.monospacedDigit())
+            } else {
+                LabeledContent(
+                    "Transfer",
+                    value: "\(report.wireBytes / 1_024) KB raw (\(report.packetCount) pkts)"
+                )
+                .font(.caption2.monospacedDigit())
+            }
+
+            LabeledContent(
+                "Phases",
+                value: String(
+                    format: "conn %.1fs · erase %.1fs · stream %.1fs · commit %.1fs",
+                    Double(report.connectMs) / 1_000.0,
+                    Double(report.eraseMs) / 1_000.0,
+                    Double(report.streamMs) / 1_000.0,
+                    Double(report.commitMs) / 1_000.0
+                )
+            )
+            .font(.caption2.monospacedDigit())
+
+            LabeledContent(
+                "BLE RTT",
+                value: String(format: "%.1f ms/pkt", report.avgRttMs)
+            )
+            .font(.caption2.monospacedDigit())
+
+            LabeledContent("MCU energy", value: mcuBatterySummary(report, energyJ: energyJ))
+                .font(.caption2.monospacedDigit())
+
+            if let phoneSummary = phoneBatterySummary(report) {
+                LabeledContent("iPhone battery", value: phoneSummary)
+                    .font(.caption2.monospacedDigit())
+            }
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityIdentifier("mcuLabOtaReportCard")
+    }
+
+    private func mcuBatterySummary(_ report: MCULabOTAReport, energyJ: Double) -> String {
+        let energyText = String(format: "~%.1f J", energyJ)
+        if let start = report.mcuBatteryStartMv, let end = report.mcuBatteryEndMv, start > 0, end > 0 {
+            let delta = Int(end) - Int(start)
+            let sign = delta >= 0 ? "+" : ""
+            return "\(energyText) (\(start)→\(end) mV, \(sign)\(delta) mV)"
+        }
+        if let start = report.mcuBatteryStartMv, start > 0 {
+            return "\(energyText) (start \(start) mV)"
+        }
+        return energyText
+    }
+
+    private func phoneBatterySummary(_ report: MCULabOTAReport) -> String? {
+        guard let start = report.phoneBatteryStartPct, let end = report.phoneBatteryEndPct else {
+            return nil
+        }
+        let delta = end - start
+        let sign = delta >= 0 ? "+" : ""
+        return "\(start)% → \(end)% (\(sign)\(delta)%)"
     }
 
     private var otelForwarderPanel: some View {

@@ -96,6 +96,13 @@ var allowedMetrics = map[string]string{
 	"mcu.heap.min_free_bytes":    "custom.googleapis.com/xiao_esp32c3/mcu/heap/min_free_bytes",
 	"mcu.stack.high_water_bytes": "custom.googleapis.com/xiao_esp32c3/mcu/stack/high_water_bytes",
 	"mcu.cpu.cycles":             "custom.googleapis.com/xiao_esp32c3/mcu/cpu/cycles",
+	"mcu.ota.duration_ms":        "custom.googleapis.com/xiao_esp32c3/mcu/ota/duration_ms",
+	"mcu.ota.throughput_bps":     "custom.googleapis.com/xiao_esp32c3/mcu/ota/throughput_bps",
+	"mcu.ota.bytes":              "custom.googleapis.com/xiao_esp32c3/mcu/ota/bytes",
+	"mcu.ota.rtt_ms":             "custom.googleapis.com/xiao_esp32c3/mcu/ota/rtt_ms",
+	"mcu.ota.energy_mj":          "custom.googleapis.com/xiao_esp32c3/mcu/ota/energy_mj",
+	"mcu.ota.battery_delta_mv":   "custom.googleapis.com/xiao_esp32c3/mcu/ota/battery_delta_mv",
+	"mcu.ota.phone_battery_pct":  "custom.googleapis.com/xiao_esp32c3/mcu/ota/phone_battery_pct",
 }
 
 // Parse extracts normalized Cloud Monitoring points from an OTLP/HTTP v1 JSON body.
