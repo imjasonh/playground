@@ -4,6 +4,7 @@ import C3BootProofs.Models.SafegcdP384
 import C3BootProofs.Models.EcdsaClosed
 import C3BootProofs.Models.P256Consts
 import C3BootProofs.Proofs.SvPvWitness
+import C3BootProofs.Proofs.SvEdImage
 
 /-!
 # `sigstore::verify` computes `sigstoreVerify`
@@ -91,7 +92,16 @@ theorem sv_verify_spec {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle
     (hOk : SvOutOk B (reg n a0))
     (ND : CodeIn Me (BitVec.ofNat 32 b2sOrder256Address) b2sOrder256Data)
     (UD : CodeIn Me (BitVec.ofNat 32 p256OneAddress) p256OneData)
-    (MEd : ∀ sg, SvEdModel (sigMem Me (B + 0x21A0 + BitVec.ofNat 32 0x420) sg))
+    (LD : CodeIn Me (BitVec.ofNat 32 edOrderAddress) edOrderData)
+    (PD : CodeIn Me (BitVec.ofNat 32 edPrimeAddress) edPrimeData)
+    (PmD : CodeIn Me (BitVec.ofNat 32 edPm1Address) edPm1Data)
+    (E1D : CodeIn Me (BitVec.ofNat 32 edOneAddress) edOneData)
+    (EdD : CodeIn Me (BitVec.ofNat 32 edDAddress) edDData)
+    (SmD : CodeIn Me (BitVec.ofNat 32 edSqrtM1Address) edSqrtM1Data)
+    (D2D : CodeIn Me (BitVec.ofNat 32 edwardsD2Address) edwardsD2Data)
+    (BsD : CodeIn Me (BitVec.ofNat 32 edBaseAddress) edBaseData)
+    (KRD : CodeIn Me (BitVec.ofNat 32 edMontRAddress) edMontRData)
+    (KRRD : CodeIn Me (BitVec.ofNat 32 edMontRRAddress) edMontRRData)
     (RD : SvRekorData Me) :
     SvErrRet B (reg n a0) (fun k => reg n (savedReg k)) n ∨ Panics n ∨
     ∃ v, sigstoreVerify bundle root (memBytes Me (reg n a3) 32) = some v ∧
@@ -335,7 +345,8 @@ theorem sv_verify_spec {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle
   have hsg := checkpointSigs_sig _ hm' (fun s0 e => by cases e)
   have hlen := notAdd_toNat hsl
   rw [hS] at hlen
-  have hed := MEd sg'_5_4 _ _ _ _ c204
+  have hed := svEdModel_sigMem RS (EdM.EdImage.ofCode LD PD UD PmD E1D EdD SmD D2D BsD)
+    (EdK.KImage.ofCode KRD KRRD) sg'_5_4 _ _ _ _ c204
   rw [hlen, memBytes_sigMem_in Elg.keyIn (Nat.le_refl _), memBytes_sigMem_in Bd.checkpoint.1 (Nat.le_trans (Nat.sub_le _ _) (Nat.sub_le _ _)),
     memBytes_sigMem_sig hsg.1 hsg.2, Elg.key] at hed
   rw [← Bd.checkpoint.2]
