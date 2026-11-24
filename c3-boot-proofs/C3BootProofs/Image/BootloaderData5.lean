@@ -54,4 +54,25 @@ def p256AffineIdXAddress : Nat := 0x3fcc442c
 def p256AffineIdXData : List Nat :=
   [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
 
+set_option maxRecDepth 40000 in
+/-- The names above with their values, for `img%`. -/
+def imgNamesData5 : List (String × Nat) :=
+  [("p256IdentityAddress", 0x3fcc4560),
+   ("p256InvParamsAddress", 0x3fcc4b38),
+   ("p256MontOneAddress", 0x3fcc43a8),
+   ("p256OneAddress", 0x3fcc42e8),
+   ("p256GMontAddress", 0x3fcc4690),
+   ("p256AffineIdXAddress", 0x3fcc442c)]
+
+set_option maxRecDepth 40000 in
+theorem imgNamesData5_eq : imgNamesData5 =
+    [("p256IdentityAddress", p256IdentityAddress),
+     ("p256InvParamsAddress", p256InvParamsAddress),
+     ("p256MontOneAddress", p256MontOneAddress),
+     ("p256OneAddress", p256OneAddress),
+     ("p256GMontAddress", p256GMontAddress),
+     ("p256AffineIdXAddress", p256AffineIdXAddress)] := rfl
+
+macro_rules | `(imgVal% $i) => imgLookup imgNamesData5 i
+
 end C3.Image

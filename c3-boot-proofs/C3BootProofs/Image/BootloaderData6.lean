@@ -47,4 +47,23 @@ def svRekorPostAddress : Nat := 0x3fcc47d0
 def svRekorPostData : List Nat :=
   [0x22, 0x7d, 0x7d, 0x7d, 0x7d, 0x7d, 0x7d]
 
+set_option maxRecDepth 40000 in
+/-- The names above with their values, for `img%`. -/
+def imgNamesData6 : List (String × Nat) :=
+  [("svRekorLeafAddress", 0x3fcc4106),
+   ("svRekorPreAddress", 0x3fcc46f0),
+   ("svRekorMid1Address", 0x3fcc4761),
+   ("svRekorMid2Address", 0x3fcc477c),
+   ("svRekorPostAddress", 0x3fcc47d0)]
+
+set_option maxRecDepth 40000 in
+theorem imgNamesData6_eq : imgNamesData6 =
+    [("svRekorLeafAddress", svRekorLeafAddress),
+     ("svRekorPreAddress", svRekorPreAddress),
+     ("svRekorMid1Address", svRekorMid1Address),
+     ("svRekorMid2Address", svRekorMid2Address),
+     ("svRekorPostAddress", svRekorPostAddress)] := rfl
+
+macro_rules | `(imgVal% $i) => imgLookup imgNamesData6 i
+
 end C3.Image

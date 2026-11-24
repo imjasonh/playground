@@ -300,7 +300,8 @@ FUNCTIONS = [
 
 # Lean name, then the Lean name of an extracted function, the offset of a
 # `lui; addi` pair in it that forms an address, the data's size, and,
-# optionally, the data's offset from that address.
+# optionally, the data's offset from that address. A size of 0 names an
+# address without data.
 DATA = [
     ("curveB", "pointAdd", 0x12E, 32),
     ("u2Max", "lincombShiftMod12", 0xF0, 8),
@@ -330,6 +331,10 @@ DATA = [
     ("b64Alphabet", "base64EncodeTo", 0x28, 64),
     ("regionEnds", "imageParse", 0x250, 16),
     ("regionStarts", "imageParse", 0x272, 16),
+    ("p256OrderBe", "scalarFromSlice256", 0x68, 32),
+    ("p384OrderBe", "p384VerifyPrehash", 0x30, 48),
+    ("sha512IV", "ed25519Verify", 0x1062, 64),
+    ("sfs384Empty", "scalarFromSlice384", 0x68, 0),
 ]
 
 # Data written to the second output instead, so that adding an entry rebuilds
@@ -402,6 +407,12 @@ DATA_EXTRA7 = [
     ("edMontRR", "ed25519Verify", 0x14C2, 36),
     ("edBase", "ed25519Verify", 0x164C, 160),
 ]
+
+
+# The data that the P-256 and P-384 proofs don't read. The data window spans
+# the rest, rounded out to 0x20 bytes, and those proofs show that the stack
+# stays clear of it.
+OUTSIDE_DATA_WINDOW = {"svRekorLeaf", "shaK", "sha512K", "regionEnds", "regionStarts"}
 
 
 def call_target(code, addr, off):
@@ -485,13 +496,24 @@ def bytes_at(segs, addr, size):
     sys.exit(f"no segment holds {size} bytes at {addr:#x}")
 
 
+def data_addr(entry, extracted):
+    name, func, off, size, *rest = entry
+    faddr, fcode = extracted[func]
+    return lui_addi(fcode, faddr, off) + (rest[0] if rest else 0)
+
+
 def data_lines(entries, extracted, segs):
     lines = []
     for name, func, off, size, *rest in entries:
-        faddr, fcode = extracted[func]
-        base = lui_addi(fcode, faddr, off)
+        addr = data_addr((name, func, off, size, *rest), extracted)
         delta = rest[0] if rest else 0
-        addr = base + delta
+        if not size:
+            lines += [
+                "",
+                f"/-- The address `{addr:#x}`, which `{func}` forms at offset {off:#x}. -/",
+                f"def {name}Address : Nat := {addr:#x}",
+            ]
+            continue
         data = bytes_at(segs, addr, size)
         where = f"forms at\noffset {off:#x}" if not delta else f"forms, plus {delta:#x}, at\noffset {off:#x}"
         lines += [
@@ -503,6 +525,55 @@ def data_lines(entries, extracted, segs):
             "  [" + ", ".join(f"0x{b:02x}" for b in data) + "]",
         ]
     return lines
+
+
+def window_lines(extracted):
+    """The data window and the read-only window, from where the data sits."""
+    spans = [
+        (data_addr(e, extracted), e[3], e[0])
+        for e in DATA + DATA_EXTRA + DATA_EXTRA2 + DATA_EXTRA3 + DATA_EXTRA4
+        + DATA_EXTRA5 + DATA_EXTRA6 + DATA_EXTRA7
+    ]
+    inside = [(a, n) for a, n, name in spans if name not in OUTSIDE_DATA_WINDOW]
+    lo = min(a for a, _ in inside) & ~0x1F
+    hi = (max(a + n for a, n in inside) + 0x1F) & ~0x1F
+    ro_lo = min(a for a, _, _ in spans) & ~0xFFF
+    ro_hi = (max(a + n for a, n, _ in spans) + 0x3FF) & ~0x3FF
+    return [
+        "",
+        "/-- The start of the data window: the data that the P-256 and P-384 proofs",
+        "read, rounded out to 0x20 bytes. -/",
+        f"def dataWindowAddress : Nat := {lo:#x}",
+        "",
+        "/-- The data window's size in bytes. -/",
+        f"def dataWindowSize : Nat := {hi - lo:#x}",
+        "",
+        "/-- The start of the read-only window: all the data the proofs name, rounded",
+        "down to 0x1000 bytes and up to 0x400. -/",
+        f"def roWindowAddress : Nat := {ro_lo:#x}",
+        "",
+        "/-- The read-only window's size in bytes. -/",
+        f"def roWindowSize : Nat := {ro_hi - ro_lo:#x}",
+    ]
+
+
+def name_table(suffix, lines):
+    """The `img%` table of the names that `lines` defines as numerals."""
+    names = re.findall(r"^def (\w+) : Nat := (0x[0-9a-f]+)$", "\n".join(lines), re.M)
+    table = f"imgNames{suffix}"
+    return [
+        "",
+        "set_option maxRecDepth 40000 in",
+        "/-- The names above with their values, for `img%`. -/",
+        f"def {table} : List (String × Nat) :=",
+        "  [" + ",\n   ".join(f'("{n}", {v})' for n, v in names) + "]",
+        "",
+        "set_option maxRecDepth 40000 in",
+        f"theorem {table}_eq : {table} =",
+        "    [" + ",\n     ".join(f'("{n}", {n})' for n, _ in names) + "] := rfl",
+        "",
+        f"macro_rules | `(imgVal% $i) => imgLookup {table} i",
+    ]
 
 
 def main():
@@ -528,6 +599,8 @@ def main():
             symbols.setdefault(parts[3], {}).setdefault(entry, parts[3])
     segs = segments(image)
     lines = [
+        "import C3BootProofs.Image.Addr",
+        "",
         "/-!",
         "# Bootloader functions",
         "",
@@ -582,6 +655,8 @@ def main():
             "  [" + ",\n".join(rows).lstrip() + "]",
         ]
     lines += data_lines(DATA, extracted, segs)
+    lines += window_lines(extracted)
+    lines += name_table("", lines)
     lines += ["", "end C3.Image", ""]
     with open(out, "w") as f:
         f.write("\n".join(lines))
@@ -602,6 +677,7 @@ def main():
             "namespace C3.Image",
         ]
         more += data_lines(DATA_EXTRA, extracted, segs)
+        more += name_table("Data", more)
         more += ["", "end C3.Image", ""]
         with open(extra[0], "w") as f:
             f.write("\n".join(more))
@@ -621,6 +697,7 @@ def main():
             "namespace C3.Image",
         ]
         more += data_lines(DATA_EXTRA2, extracted, segs)
+        more += name_table("Data2", more)
         more += ["", "end C3.Image", ""]
         with open(extra[1], "w") as f:
             f.write("\n".join(more))
@@ -640,6 +717,7 @@ def main():
             "namespace C3.Image",
         ]
         more += data_lines(DATA_EXTRA3, extracted, segs)
+        more += name_table("Data3", more)
         more += ["", "end C3.Image", ""]
         with open(extra[2], "w") as f:
             f.write("\n".join(more))
@@ -660,6 +738,7 @@ def main():
             "namespace C3.Image",
         ]
         more += data_lines(DATA_EXTRA4, extracted, segs)
+        more += name_table("Data4", more)
         more += ["", "end C3.Image", ""]
         with open(extra[3], "w") as f:
             f.write("\n".join(more))
@@ -680,6 +759,7 @@ def main():
             "namespace C3.Image",
         ]
         more += data_lines(DATA_EXTRA5, extracted, segs)
+        more += name_table("Data5", more)
         more += ["", "end C3.Image", ""]
         with open(extra[4], "w") as f:
             f.write("\n".join(more))
@@ -700,6 +780,7 @@ def main():
             "namespace C3.Image",
         ]
         more += data_lines(DATA_EXTRA6, extracted, segs)
+        more += name_table("Data6", more)
         more += ["", "end C3.Image", ""]
         with open(extra[5], "w") as f:
             f.write("\n".join(more))
@@ -721,6 +802,7 @@ def main():
             "namespace C3.Image",
         ]
         more += data_lines(DATA_EXTRA7, extracted, segs)
+        more += name_table("Data7", more)
         more += ["", "end C3.Image", ""]
         with open(extra[6], "w") as f:
             f.write("\n".join(more))

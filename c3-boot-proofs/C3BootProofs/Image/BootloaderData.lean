@@ -75,4 +75,31 @@ def p256BAddress : Nat := 0x3fcc4368
 def p256BData : List Nat :=
   [0xdf, 0xbd, 0xc4, 0x29, 0x62, 0xdf, 0x9c, 0xd8, 0x90, 0x30, 0x84, 0x78, 0xcd, 0x05, 0xf0, 0xac, 0xd6, 0x2e, 0x21, 0xf7, 0xab, 0x20, 0xa2, 0xe5, 0x34, 0x48, 0x87, 0x04, 0x1d, 0x06, 0x30, 0xdc]
 
+set_option maxRecDepth 40000 in
+/-- The names above with their values, for `img%`. -/
+def imgNamesData : List (String × Nat) :=
+  [("bsMagicAddress", 0x3fcc4851),
+   ("bsVersionAddress", 0x3fcc4201),
+   ("p384CurveAAddress", 0x3fcc4204),
+   ("p384ParamsAddress", 0x3fcc4c8c),
+   ("p384SqrtExpAddress", 0x3fcc4e2c),
+   ("p256ParamsAddress", 0x3fcc4b38),
+   ("p256SqrtExpAddress", 0x3fcc4bcc),
+   ("p256CurveAAddress", 0x3fcc42c8),
+   ("p256BAddress", 0x3fcc4368)]
+
+set_option maxRecDepth 40000 in
+theorem imgNamesData_eq : imgNamesData =
+    [("bsMagicAddress", bsMagicAddress),
+     ("bsVersionAddress", bsVersionAddress),
+     ("p384CurveAAddress", p384CurveAAddress),
+     ("p384ParamsAddress", p384ParamsAddress),
+     ("p384SqrtExpAddress", p384SqrtExpAddress),
+     ("p256ParamsAddress", p256ParamsAddress),
+     ("p256SqrtExpAddress", p256SqrtExpAddress),
+     ("p256CurveAAddress", p256CurveAAddress),
+     ("p256BAddress", p256BAddress)] := rfl
+
+macro_rules | `(imgVal% $i) => imgLookup imgNamesData i
+
 end C3.Image
