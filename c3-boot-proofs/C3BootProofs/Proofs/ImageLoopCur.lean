@@ -135,10 +135,10 @@ theorem lp_rd32 (env : IEnv P R G ptr len out) (code0 : ICode M0 P)
     {pos o : Word} (hpos : memLoad32 Mx (G + 0x18 + 8) = pos)
     (i1 : fetchRel imageParseCode off = some (.aluImm .add a0 sp 0x124, 2))
     (i2 : fetchRel imageParseCode (off + 2) = some (.aluImm .add a1 sp 0x18, 2))
-    (i3 : fetchRel imageParseCode (off + 4) = some (.auipc ra 0, 4))
+    (i3 : fetchRel imageParseCode (off + 4) = some (.auipc ra 0xFFFFD000, 4))
     (i4 : fetchRel imageParseCode (off + 4 + 4) = some (.jalr ra ra o, 4))
     (i5 : fetchRel imageParseCode (off + 4 + 8) = some (.load .lbu a0 sp 0x124, 4))
-    (hb : P + BitVec.ofNat 32 (off + 4) + 0 + o = P + 0x434) (hoff : off % 2 = 0) :
+    (hb : P + BitVec.ofNat 32 (off + 4) + 0xFFFFD000 + o = P + 0xFFFFD4F2) (hoff : off % 2 = 0) :
     ∃ m' My g', Steps m m' ∧ St My P m' (off + 4 + 8 + 4) g' ∧ IInv R G ptr len out ilen M0 f0 My g' ∧
       (∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ ra → g' r = g r) ∧
       CallFr My Mx G ∧

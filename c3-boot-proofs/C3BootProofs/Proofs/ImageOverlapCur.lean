@@ -181,7 +181,7 @@ theorem ov_phys (env : IEnv P R G ptr len out) (code0 : ICode M0 P)
     (i3 : fetchRel imageParseCode (off + 4 + 4) = some (.aluImm .add a0 sp 0x124, 2))
     (i4 : fetchRel imageParseCode (off + 4 + 4 + 2) = some (.auipc ra 0, 4))
     (i5 : fetchRel imageParseCode (off + 4 + 4 + 2 + 4) = some (.jalr ra ra o, 4))
-    (hb : P + BitVec.ofNat 32 (off + 4 + 4 + 2) + 0 + o = P + 0x484) (hoff : off % 2 = 0) :
+    (hb : P + BitVec.ofNat 32 (off + 4 + 4 + 2) + 0 + o = P + 0x4D0) (hoff : off % 2 = 0) :
     ∃ m' g', Steps m m' ∧ St (physMem Mx (G + 0x124) s.kind s.addr) P m' (off + 4 + 4 + 2 + 8) g' ∧
       ∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ ra → g' r = g r := by
   have hc := (inv.code env code0).parse
