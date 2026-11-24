@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1140" height="748" viewBox="0 0 1140 748">
+<style>
+  text { font-family: -apple-system, BlinkMacSystemFont, "SF Mono", Menlo, monospace; }
+  .title { font-size: 17px; font-weight: 700; fill: #1a1f2c; }
+  .sub { font-size: 12px; fill: #556070; }
+  .ptitle { font-size: 12.5px; font-weight: 700; fill: #1a1f2c; }
+  .lbl { font-size: 10.5px; fill: #ffffff; font-weight: 600; }
+</style>
+<rect width="1140" height="748" fill="#fafbfc" rx="8"/>
+<text x="24" y="30" class="title">ESP32 Silicon Mask-ROM miniz (240 MHz Xtensa LX6) — 2 kHz PC Flame Chart</text>
+<text x="24" y="49" class="sub">Symbolized directly against esp32_rev300_rom.elf — authentic Mask-ROM tinfl, tdefl, and mz_crc32</text>
+<text x="24" y="74" class="ptitle">1. Mask-ROM tinfl_decompress @ 240 MHz  [n=1459 samples]</text>
+<rect x="24" y="81" width="1092" height="22" fill="#2d3748" rx="3"/>
+<text x="32" y="96" class="lbl">rom_tinfl_240m (100%)</text>
+<rect x="24.0" y="107" width="717.5" height="24" fill="#d9534f" rx="2"><title>ROM:tinfl_decompress: 960 (65.8%)</title></rect>
+<text x="29.0" y="123" class="lbl">ROM:tinfl_decompress (66%)</text>
+<rect x="742.5" y="107" width="309.6" height="24" fill="#9aa5b1" rx="2"><title>(other ROM tail PCs): 415 (28.4%)</title></rect>
+<text x="747.5" y="123" class="lbl">(other ROM tail PCs) (28%)</text>
+<rect x="1053.1" y="107" width="28.9" height="24" fill="#5cb85c" rx="2"><title>ROM:memset: 40 (2.7%)</title></rect>
+<rect x="1083.1" y="107" width="21.5" height="24" fill="#428bca" rx="2"><title>vTaskDelay: 30 (2.1%)</title></rect>
+<rect x="1105.5" y="107" width="9.5" height="24" fill="#8e6cc0" rx="2"><title>xt_utils_get_core_id: 14 (1.0%)</title></rect>
+<text x="24" y="168" class="ptitle">2. Mask-ROM tdefl_compress (probes=1 greedy) @ 240 MHz  [n=1874 samples]</text>
+<rect x="24" y="175" width="1092" height="22" fill="#2d3748" rx="3"/>
+<text x="32" y="190" class="lbl">rom_tdefl_p1_greedy (100%)</text>
+<rect x="24.0" y="201" width="519.9" height="24" fill="#9aa5b1" rx="2"><title>(other ROM tail PCs): 894 (47.7%)</title></rect>
+<text x="29.0" y="217" class="lbl">(other ROM tail PCs) (48%)</text>
+<rect x="544.9" y="201" width="483.2" height="24" fill="#f0ad4e" rx="2"><title>ROM:tdefl_compress: 831 (44.3%)</title></rect>
+<text x="549.9" y="217" class="lbl">ROM:tdefl_compress (44%)</text>
+<rect x="1029.2" y="201" width="44.5" height="24" fill="#5cb85c" rx="2"><title>ROM:tdefl_compress_block: 78 (4.2%)</title></rect>
+<rect x="1074.6" y="201" width="14.2" height="24" fill="#428bca" rx="2"><title>vTaskDelay: 26 (1.4%)</title></rect>
+<rect x="1089.8" y="201" width="11.8" height="24" fill="#8e6cc0" rx="2"><title>ROM:tdefl_optimize_huffman_table: 22 (1.2%)</title></rect>
+<rect x="1102.6" y="201" width="6.0" height="24" fill="#3aa6a6" rx="2"><title>ROM:tdefl_flush_block: 12 (0.6%)</title></rect>
+<rect x="1109.6" y="201" width="5.4" height="24" fill="#d96b98" rx="2"><title>ROM:tdefl_start_dynamic_block: 11 (0.6%)</title></rect>
+<text x="24" y="262" class="ptitle">3. Mask-ROM tdefl_compress (probes=16 lazy) @ 240 MHz  [n=1200 samples]</text>
+<rect x="24" y="269" width="1092" height="22" fill="#2d3748" rx="3"/>
+<text x="32" y="284" class="lbl">rom_tdefl_p16_fast (100%)</text>
+<rect x="24.0" y="295" width="515.0" height="24" fill="#9aa5b1" rx="2"><title>(other ROM tail PCs): 567 (47.2%)</title></rect>
+<text x="29.0" y="311" class="lbl">(other ROM tail PCs) (47%)</text>
+<rect x="540.0" y="295" width="514.1" height="24" fill="#f0ad4e" rx="2"><title>ROM:tdefl_compress: 566 (47.2%)</title></rect>
+<text x="545.0" y="311" class="lbl">ROM:tdefl_compress (47%)</text>
+<rect x="1055.0" y="295" width="33.6" height="24" fill="#5cb85c" rx="2"><title>ROM:tdefl_compress_block: 38 (3.2%)</title></rect>
+<rect x="1089.6" y="295" width="25.4" height="24" fill="#428bca" rx="2"><title>vTaskDelay: 29 (2.4%)</title></rect>
+<text x="24" y="356" class="ptitle">4. Mask-ROM tdefl_compress (probes=128 default) @ 240 MHz  [n=1010 samples]</text>
+<rect x="24" y="363" width="1092" height="22" fill="#2d3748" rx="3"/>
+<text x="32" y="378" class="lbl">rom_tdefl_p128_default (100%)</text>
+<rect x="24.0" y="389" width="592.6" height="24" fill="#d9534f" rx="2"><title>ROM:tdefl_compress: 549 (54.4%)</title></rect>
+<text x="29.0" y="405" class="lbl">ROM:tdefl_compress (54%)</text>
+<rect x="617.6" y="389" width="410.9" height="24" fill="#9aa5b1" rx="2"><title>(other ROM tail PCs): 381 (37.7%)</title></rect>
+<text x="622.6" y="405" class="lbl">(other ROM tail PCs) (38%)</text>
+<rect x="1029.5" y="389" width="46.6" height="24" fill="#5cb85c" rx="2"><title>vTaskDelay: 44 (4.4%)</title></rect>
+<rect x="1077.1" y="389" width="31.4" height="24" fill="#428bca" rx="2"><title>ROM:tdefl_compress_block: 30 (3.0%)</title></rect>
+<rect x="1109.5" y="389" width="5.5" height="24" fill="#8e6cc0" rx="2"><title>ROM:tdefl_flush_block: 6 (0.6%)</title></rect>
+<text x="24" y="450" class="ptitle">5. Mask-ROM tdefl_compress (probes=4095 max) @ 240 MHz  [n=490 samples]</text>
+<rect x="24" y="457" width="1092" height="22" fill="#2d3748" rx="3"/>
+<text x="32" y="472" class="lbl">rom_tdefl_p4095_max (100%)</text>
+<rect x="24.0" y="483" width="625.2" height="24" fill="#d9534f" rx="2"><title>ROM:tdefl_compress: 281 (57.3%)</title></rect>
+<text x="29.0" y="499" class="lbl">ROM:tdefl_compress (57%)</text>
+<rect x="650.2" y="483" width="304.3" height="24" fill="#9aa5b1" rx="2"><title>(other ROM tail PCs): 137 (28.0%)</title></rect>
+<text x="655.2" y="499" class="lbl">(other ROM tail PCs) (28%)</text>
+<rect x="955.5" y="483" width="97.1" height="24" fill="#5cb85c" rx="2"><title>vTaskDelay: 44 (9.0%)</title></rect>
+<text x="960.5" y="499" class="lbl">vTaskDelay (…</text>
+<rect x="1053.6" y="483" width="32.4" height="24" fill="#428bca" rx="2"><title>ROM:tdefl_compress_block: 15 (3.1%)</title></rect>
+<rect x="1087.0" y="483" width="14.6" height="24" fill="#8e6cc0" rx="2"><title>ROM:tdefl_flush_block: 7 (1.4%)</title></rect>
+<rect x="1102.6" y="483" width="7.9" height="24" fill="#3aa6a6" rx="2"><title>ROM:mz_crc32: 4 (0.8%)</title></rect>
+<rect x="1111.5" y="483" width="3.5" height="24" fill="#d96b98" rx="2"><title>ROM:tdefl_optimize_huffman_table: 2 (0.4%)</title></rect>
+<text x="24" y="544" class="ptitle">6. Mask-ROM tdefl_compress (probes=0 Huffman-only) @ 240 MHz  [n=6239 samples]</text>
+<rect x="24" y="551" width="1092" height="22" fill="#2d3748" rx="3"/>
+<text x="32" y="566" class="lbl">rom_tdefl_p0_huff (100%)</text>
+<rect x="24.0" y="577" width="615.1" height="24" fill="#d9534f" rx="2"><title>ROM:tdefl_compress: 3520 (56.4%)</title></rect>
+<text x="29.0" y="593" class="lbl">ROM:tdefl_compress (56%)</text>
+<rect x="640.1" y="577" width="382.0" height="24" fill="#9aa5b1" rx="2"><title>(other ROM tail PCs): 2188 (35.1%)</title></rect>
+<text x="645.1" y="593" class="lbl">(other ROM tail PCs) (35%)</text>
+<rect x="1023.1" y="577" width="91.9" height="24" fill="#5cb85c" rx="2"><title>ROM:tdefl_compress_block: 531 (8.5%)</title></rect>
+<text x="1028.1" y="593" class="lbl">ROM:tdefl_c…</text>
+<text x="24" y="638" class="ptitle">7. Mask-ROM mz_crc32 @ 240 MHz  [n=2954 samples]</text>
+<rect x="24" y="645" width="1092" height="22" fill="#2d3748" rx="3"/>
+<text x="32" y="660" class="lbl">rom_crc32_240m (100%)</text>
+<rect x="24.0" y="671" width="1069.6" height="24" fill="#d9534f" rx="2"><title>ROM:mz_crc32: 2896 (98.0%)</title></rect>
+<text x="29.0" y="687" class="lbl">ROM:mz_crc32 (98%)</text>
+<rect x="1094.6" y="671" width="12.7" height="24" fill="#f0ad4e" rx="2"><title>vTaskDelay: 37 (1.3%)</title></rect>
+<rect x="1108.2" y="671" width="6.0" height="24" fill="#5cb85c" rx="2"><title>ROM:_xtos_set_intlevel: 19 (0.6%)</title></rect>
+</svg>

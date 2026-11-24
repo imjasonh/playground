@@ -64,16 +64,20 @@ PYTHON_SHIM   := $(CURDIR)/.embuild/python-shim
 export PATH := $(PYTHON_SHIM):$(PATH)
 export ESP_IDF_TOOLS_INSTALL_DIR := custom:$(CURDIR)/.embuild
 
-.PHONY: help list-targets build build-app build-profile check-firmware symbolize flash flash-all monitor run clean test \
+.PHONY: help list-targets build build-app build-profile build-gzip-bench flash-gzip-bench \
+	profile-gzip-bench check-firmware symbolize flash flash-all monitor run clean test \
 	ensure-python-shim
 
 help:
 	@echo "Targets (compatible BOARD:APP pairs from manifest.json: $(COMPATIBLE_PAIRS)):"
 	@echo "  make test                                        Host-side protocol and maze unit tests"
 	@echo "  make list-targets                                Print all compatible BOARD:APP pairs"
-	@echo "  make build                                       Cross-compile all compatible BOARD:APP pairs"
+	@echo "  make build                                       Cross-compile all compatible BOARD:APP pairs + standalone gzip-bench"
 	@echo "  make build-app BOARD=<b> APP=<a>                 Cross-compile one board+app target"
 	@echo "  make build-profile BOARD=<b> APP=<a>             Cross-compile with profiling + DWARF line tables"
+	@echo "  make build-gzip-bench                            Cross-compile standalone 240 MHz no-BT ESP32 Mask-ROM gzip-bench"
+	@echo "  make flash-gzip-bench                            Flash standalone gzip-bench over USB-C to $(PORT)"
+	@echo "  make profile-gzip-bench                          Reset $(PORT), capture benchmarks + 2 kHz PC profiles, emit SVG flame chart"
 	@echo "  make symbolize BOARD=<b> APP=<a> PC='0x...'      Resolve PC hotspot addresses against $(BIN)"
 	@echo "  make flash-all BOARD=<b> APP=base                One-time USB erase + bootloader + partitions + base OTA app"
 	@echo "  make flash BOARD=<b> APP=<a> [PROFILING=1]       Fast USB app-only flash"
@@ -95,6 +99,35 @@ build:
 	  b=$${pair%%:*}; a=$${pair#*:}; \
 	  $(MAKE) --no-print-directory build-app BOARD=$$b APP=$$a PROFILING=$(PROFILING) || exit 1; \
 	done
+	@$(MAKE) --no-print-directory build-gzip-bench
+
+GZIP_BENCH_TARGET_DIR := $(CURDIR)/target/waveshare-epd75-nobt
+GZIP_BENCH_BIN := $(GZIP_BENCH_TARGET_DIR)/xtensa-esp32-espidf/release/waveshare-epd75-gzip-bench
+GZIP_BENCH_SDKCONFIG_DEFAULTS := $(GZIP_BENCH_TARGET_DIR)/sdkconfig.defaults
+GZIP_BENCH_SDKCONFIG := $(GZIP_BENCH_TARGET_DIR)/sdkconfig
+
+$(GZIP_BENCH_SDKCONFIG_DEFAULTS): sdkconfig.defaults.epd-nobt.in partitions.csv
+	@mkdir -p $(GZIP_BENCH_TARGET_DIR)
+	@sed 's|@PROJECT_DIR@|$(CURDIR)|g' sdkconfig.defaults.epd-nobt.in > $@
+
+build-gzip-bench: ensure-python-shim $(GZIP_BENCH_SDKCONFIG_DEFAULTS)
+	$(PROFILE_CARGO_ENV) \
+	MCU=esp32 \
+	CARGO_TARGET_DIR=$(GZIP_BENCH_TARGET_DIR) \
+	ESP_IDF_SDKCONFIG_DEFAULTS=$(GZIP_BENCH_SDKCONFIG_DEFAULTS) \
+	ESP_IDF_SDKCONFIG=$(GZIP_BENCH_SDKCONFIG) \
+	  cargo +$(ESP_TOOLCHAIN) build --release \
+	    --features standalone \
+	    --bin waveshare-epd75-gzip-bench \
+	    --target xtensa-esp32-espidf \
+	    -Z build-std=std,panic_abort
+	@echo "firmware waveshare-epd75-gzip-bench -> $(GZIP_BENCH_BIN) ($$(wc -c < "$(GZIP_BENCH_BIN)") bytes ELF)"
+
+flash-gzip-bench: build-gzip-bench
+	espflash flash --port $(PORT) --partition-table partitions.csv $(GZIP_BENCH_BIN)
+
+profile-gzip-bench:
+	python3 scripts/gzip-bench-profile.py --port $(PORT) --elf $(GZIP_BENCH_BIN) --svg docs/esp32-rom-miniz-flamegraph.svg
 
 build-app: ensure-python-shim $(SDKCONFIG_DEFAULTS)
 	@if [ -z "$(FIRMWARE_ID)" ]; then \

@@ -25,12 +25,6 @@ harness = false
 required-features = ["firmware"]
 
 [[bin]]
-name = "xiao-esp32c3-gzip-bench"
-path = "src/bin/xiao_esp32c3_gzip_bench.rs"
-harness = false
-required-features = ["firmware"]
-
-[[bin]]
 name = "waveshare-epd75-base"
 path = "src/bin/waveshare_epd75_base.rs"
 harness = false
@@ -46,12 +40,14 @@ required-features = ["firmware"]
 name = "waveshare-epd75-gzip-bench"
 path = "src/bin/waveshare_epd75_gzip_bench.rs"
 harness = false
-required-features = ["firmware"]
+required-features = ["standalone"]
 
 [features]
 default = []
 # Device firmware (esp-idf HAL + NimBLE). Host `cargo test` leaves this off.
-firmware = []
+firmware = ["dep:esp32-nimble"]
+# Standalone no-BLE USB-C benchmark firmware (reclaims lower DRAM for ROM tdefl).
+standalone = []
 # Enable fine-grained sub-phase spans, heap/stack/cycle telemetry, 1 kHz PC
 # hotspot sampling, and the BLE GATT PROFILE_CHAR_UUID endpoint. Debug builds
 # enable this automatically; production `--release --features firmware` strips
@@ -64,7 +60,7 @@ miniz_oxide = { version = "0.9", default-features = false, features = ["with-all
 [target.'cfg(target_os = "espidf")'.dependencies]
 anyhow = "1"
 esp-idf-svc = { version = "0.53", features = ["std", "native", "binstart"] }
-esp32-nimble = "0.13"
+esp32-nimble = { version = "0.13", optional = true }
 hex = "0.4"
 log = "0.4"
 sha2 = "0.11"
