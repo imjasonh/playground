@@ -791,6 +791,221 @@ theorem hf_fend (C : HfCtx M0 F out p len) {M : Word → BitVec 8} {n : Machine}
   · rw [hc6, hs4, hb4]
   · rcases hh with hh | hh <;> rw [fr6' c hc (by omega), fr4 c hc (by omega)]
 
+set_option maxHeartbeats 16000000 in
+/-- One pass of the loop at offset 0x1E6: hash word `k` stored big-endian
+at `F + 0x1D0 + 8k`. -/
+theorem hf_rd_body (C : HfCtx M0 F out p len) {M : Word → BitVec 8} {n : Machine} {k : Nat} (hk : k < 8)
+    (D : HfSt M0 Ms F r0 M n 0x1E6) (h8 : reg n 8 = F + BitVec.ofNat 32 (0x1D0 + 8 * k))
+    (h26 : reg n 26 = F + BitVec.ofNat 32 (0x150 + 8 * k)) (h16 : reg n 16 = BitVec.ofNat 32 (8 - k)) :
+    ∃ n' M', Steps n n' ∧ (k + 1 < 8 → HfSt M0 Ms F r0 M' n' 0x1E6) ∧ (k + 1 = 8 → HfSt M0 Ms F r0 M' n' 0x22E) ∧
+      reg n' 8 = F + BitVec.ofNat 32 (0x1D0 + 8 * (k + 1)) ∧ reg n' 26 = F + BitVec.ofNat 32 (0x150 + 8 * (k + 1)) ∧
+      reg n' 16 = BitVec.ofNat 32 (8 - (k + 1)) ∧
+      (∀ q : Fin 32, q.val ∈ evKeep → q ≠ 9 → q ≠ 8 → q ≠ 26 → reg n' q = reg n q) ∧
+      memBytes M' (F + BitVec.ofNat 32 (0x1D0 + 8 * k)) 8 = Sha512.wordBytes (hvW M (F + BitVec.ofNat 32 0x150) k) ∧
+      ∀ c, c < 0x240 → (c < 0x1D0 + 8 * k ∨ 0x1D0 + 8 * k + 8 ≤ c) →
+        M' (F + BitVec.ofNat 32 c) = M (F + BitVec.ofNat 32 c) := by
+  have z0 := D.st.zero
+  have hA : aluEval .add (reg n x0) (reg n 26) = F + BitVec.ofNat 32 (0x150 + 8 * k) := by
+    rw [z0, h26]; exact BitVec.zero_add _
+  have e1 : (F + BitVec.ofNat 32 (0x150 + 8 * k) + 4).toNat % 4 = 0 := by
+    rw [show F + BitVec.ofNat 32 (0x150 + 8 * k) + 4 = F + BitVec.ofNat 32 (0x150 + 8 * k + 4) from
+      add_ofNat_assoc F _ 4]; exact C.al (by omega)
+  have e2 : (F + BitVec.ofNat 32 (0x150 + 8 * k) + 0).toNat % 4 = 0 := by
+    rw [show F + BitVec.ofNat 32 (0x150 + 8 * k) + 0 = F + BitVec.ofNat 32 (0x150 + 8 * k + 0) from
+      add_ofNat_assoc F _ 0]; exact C.al (by omega)
+  obtain ⟨n1, c1, D1, hr1⟩ := D.block C (off' := 0x204)
+    ((.alu .add a0 x0 (26 : Fin 32)) :: (.lw a1 a0 0x4) :: (.lw a2 a0 0x0) :: (.aluImm .srl (17 : Fin 32) a1 0x18) ::
+      (.aluImm .srl a4 a2 0x18) :: (.aluImm .srl a5 a2 0x8) :: (.aluImm .srl (9 : Fin 32) a2 0x10) ::
+      (.aluImm .srl a0 a1 0x8) :: (.aluImm .srl a3 a1 0x10) :: [])
+    (blockEnd_cons' (off' := 0x1E8) hf_at_1e6 rfl (blockEnd_cons' (off' := 0x1EA) hf_at_1e8 rfl
+      (blockEnd_cons' (off' := 0x1EC) hf_at_1ea rfl (blockEnd_cons' (off' := 0x1F0) hf_at_1ec rfl
+      (blockEnd_cons' (off' := 0x1F4) hf_at_1f0 rfl (blockEnd_cons' (off' := 0x1F8) hf_at_1f4 rfl
+      (blockEnd_cons' (off' := 0x1FC) hf_at_1f8 rfl (blockEnd_cons' (off' := 0x200) hf_at_1fc rfl
+      (blockEnd_cons' (off' := 0x204) hf_at_200 rfl rfl)))))))))
+    (by simp +decide only [BlockOk, BInstr.ok, BInstr.run, upd, ↓reduceIte, and_true, true_and]
+        rw [hA]; exact ⟨e1, e2⟩)
+    rfl (fun q hq => by rcases hq with rfl | rfl | rfl <;> simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
+  have v91 : reg n1 8 = F + BitVec.ofNat 32 (0x1D0 + 8 * k) := by rw [hr1, evb_reg 8 z0 (by decide), h8]
+  have v241 : reg n1 26 = F + BitVec.ofNat 32 (0x150 + 8 * k) := by rw [hr1, evb_reg 26 z0 (by decide), h26]
+  have v161 : reg n1 16 = BitVec.ofNat 32 (8 - k) := by rw [hr1, evb_reg 16 z0 (by decide), h16]
+  have kk1 : ∀ q : Fin 32, q.val ∈ evKeep → q ≠ 9 → reg n1 q = reg n q := fun q hq h8 => by
+    rw [hr1, evb_reg q z0 (by revert h8; revert hq; revert q; decide)]
+  -- the bytes the stores take
+  have bt : ∀ (r : Fin 32) (x : Word) (s : Nat), s < 32 → reg n1 r = aluEval .srl x (BitVec.ofNat 32 s) →
+      ((reg n1 r).extractLsb' 0 8).toNat = x.toNat / 2 ^ s % 256 := fun r x s hs h => by rw [h]; exact srl_byte x s hs
+  have t17 := bt 17 (memLoad32 M (F + BitVec.ofNat 32 (0x150 + 8 * k) + 4)) 24 (by decide)
+    (by rw [hr1]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [hA]; rfl)
+  have ta3 := bt a3 (memLoad32 M (F + BitVec.ofNat 32 (0x150 + 8 * k) + 4)) 16 (by decide)
+    (by rw [hr1]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [hA]; rfl)
+  have ta0 := bt a0 (memLoad32 M (F + BitVec.ofNat 32 (0x150 + 8 * k) + 4)) 8 (by decide)
+    (by rw [hr1]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [hA]; rfl)
+  have ta4 := bt a4 (memLoad32 M (F + BitVec.ofNat 32 (0x150 + 8 * k) + 0)) 24 (by decide)
+    (by rw [hr1]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [hA]; rfl)
+  have t8 := bt 9 (memLoad32 M (F + BitVec.ofNat 32 (0x150 + 8 * k) + 0)) 16 (by decide)
+    (by rw [hr1]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [hA]; rfl)
+  have ta5 := bt a5 (memLoad32 M (F + BitVec.ofNat 32 (0x150 + 8 * k) + 0)) 8 (by decide)
+    (by rw [hr1]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [hA]; rfl)
+  have ta1 : ((reg n1 a1).extractLsb' 0 8).toNat = (memLoad32 M (F + BitVec.ofNat 32 (0x150 + 8 * k) + 4)).toNat % 256 := by
+    rw [hr1]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [hA, byte_toNat, Nat.pow_zero, Nat.div_one]
+  have ta2 : ((reg n1 a2).extractLsb' 0 8).toNat = (memLoad32 M (F + BitVec.ofNat 32 (0x150 + 8 * k) + 0)).toNat % 256 := by
+    rw [hr1]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [hA, byte_toNat, Nat.pow_zero, Nat.div_one]
+  -- the 8 byte stores
+  have sa : ∀ (j : Nat) (r : Machine), reg r 8 = reg n1 8 →
+      reg r 8 + BitVec.ofNat 32 j = F + BitVec.ofNat 32 (0x1D0 + 8 * k + j) := fun j r h => by
+    rw [h, v91]; exact add_ofNat_assoc F _ j
+  obtain ⟨n2, d2, D2, k2⟩ := D1.sb C hf_at_204 (off' := 0x208) rfl (c := 0x1D0 + 8 * k + 4) (sa 4 n1 rfl) (by omega)
+  obtain ⟨n3, d3, D3, k3⟩ := D2.sb C hf_at_208 (off' := 0x20C) rfl (c := 0x1D0 + 8 * k + 5) (sa 5 n2 (k2 8)) (by omega)
+  obtain ⟨n4, d4, D4, k4⟩ := D3.sb C hf_at_20c (off' := 0x210) rfl (c := 0x1D0 + 8 * k + 6)
+    (sa 6 n3 (by rw [k3, k2])) (by omega)
+  obtain ⟨n5, d5, D5, k5⟩ := D4.sb C hf_at_210 (off' := 0x214) rfl (c := 0x1D0 + 8 * k + 7)
+    (sa 7 n4 (by rw [k4, k3, k2])) (by omega)
+  obtain ⟨n6, d6, D6, k6⟩ := D5.sb C hf_at_214 (off' := 0x218) rfl (c := 0x1D0 + 8 * k + 0)
+    (sa 0 n5 (by rw [k5, k4, k3, k2])) (by omega)
+  obtain ⟨n7, d7, D7, k7⟩ := D6.sb C hf_at_218 (off' := 0x21C) rfl (c := 0x1D0 + 8 * k + 1)
+    (sa 1 n6 (by rw [k6, k5, k4, k3, k2])) (by omega)
+  obtain ⟨n8, d8, D8, k8⟩ := D7.sb C hf_at_21c (off' := 0x220) rfl (c := 0x1D0 + 8 * k + 2)
+    (sa 2 n7 (by rw [k7, k6, k5, k4, k3, k2])) (by omega)
+  obtain ⟨n9, d9, D9, k9⟩ := D8.sb C hf_at_220 (off' := 0x224) rfl (c := 0x1D0 + 8 * k + 3)
+    (sa 3 n8 (by rw [k8, k7, k6, k5, k4, k3, k2])) (by omega)
+  simp only [k8, k7, k6, k5, k4, k3, k2] at D9
+  have kk9 : ∀ q, reg n9 q = reg n1 q := fun q => by rw [k9, k8, k7, k6, k5, k4, k3, k2]
+  obtain ⟨M9, hM9, D9⟩ : ∃ M9, M9 = memStore8 (memStore8 (memStore8 (memStore8 (memStore8 (memStore8 (memStore8
+      (memStore8 M (F + BitVec.ofNat 32 (0x1D0 + 8 * k + 4)) ((reg n1 a4).extractLsb' 0 8))
+      (F + BitVec.ofNat 32 (0x1D0 + 8 * k + 5)) ((reg n1 9).extractLsb' 0 8))
+      (F + BitVec.ofNat 32 (0x1D0 + 8 * k + 6)) ((reg n1 a5).extractLsb' 0 8))
+      (F + BitVec.ofNat 32 (0x1D0 + 8 * k + 7)) ((reg n1 a2).extractLsb' 0 8))
+      (F + BitVec.ofNat 32 (0x1D0 + 8 * k + 0)) ((reg n1 17).extractLsb' 0 8))
+      (F + BitVec.ofNat 32 (0x1D0 + 8 * k + 1)) ((reg n1 a3).extractLsb' 0 8))
+      (F + BitVec.ofNat 32 (0x1D0 + 8 * k + 2)) ((reg n1 a0).extractLsb' 0 8))
+      (F + BitVec.ofNat 32 (0x1D0 + 8 * k + 3)) ((reg n1 a1).extractLsb' 0 8) ∧
+      HfSt M0 Ms F r0 M9 n9 0x224 := ⟨_, rfl, D9⟩
+  -- addi s1, s1, 8; addi s8, s8, 8; addi a6, a6, -1
+  obtain ⟨n10, c10, D10, hr10⟩ := D9.block C (off' := 0x22A)
+    [.aluImm .add (8 : Fin 32) (8 : Fin 32) 0x8, .aluImm .add (26 : Fin 32) (26 : Fin 32) 0x8, .aluImm .add a6 a6 0xFFFFFFFF]
+    (blockEnd_cons' hf_at_224 rfl (blockEnd_cons' hf_at_226 rfl (blockEnd_cons' hf_at_228 rfl rfl)))
+    ⟨trivial, trivial, trivial, trivial⟩ rfl
+    (fun q hq => by rcases hq with rfl | rfl | rfl <;> simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
+  have v9 : reg n10 8 = F + BitVec.ofNat 32 (0x1D0 + 8 * (k + 1)) := by
+    rw [hr10]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [kk9, v91]; exact add_sp F (b := 8) (by omega)
+  have v24 : reg n10 26 = F + BitVec.ofNat 32 (0x150 + 8 * (k + 1)) := by
+    rw [hr10]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [kk9, v241]; exact add_sp F (b := 8) (by omega)
+  have v16 : reg n10 16 = BitVec.ofNat 32 (8 - (k + 1)) := by
+    rw [hr10]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [kk9, v161]
+    apply BitVec.eq_of_toNat_eq
+    show (BitVec.ofNat 32 (8 - k) + 0xFFFFFFFF).toNat = _
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat, show (0xFFFFFFFF : Word).toNat = 4294967295 from rfl]
+    omega
+  have kk10 : ∀ q : Fin 32, q.val ∈ evKeep → q ≠ 9 → q ≠ 8 → q ≠ 26 → reg n10 q = reg n q := fun q hq h8 h9 h24 => by
+    rw [hr10, evb_reg q D9.st.zero (by revert h24; revert h9; revert hq; revert q; decide), kk9, kk1 q hq h8]
+  -- the bytes and the frame
+  have hw : memBytes M9 (F + BitVec.ofNat 32 (0x1D0 + 8 * k)) 8 = Sha512.wordBytes (hvW M (F + BitVec.ofNat 32 0x150) k) := by
+    unfold hvW
+    rw [show F + BitVec.ofNat 32 0x150 + BitVec.ofNat 32 (8 * k) = F + BitVec.ofNat 32 (0x150 + 8 * k) + 0 from
+        (add_ofNat_assoc F _ _).trans (add_ofNat_assoc F (0x150 + 8 * k) 0).symm,
+      show F + BitVec.ofNat 32 0x150 + BitVec.ofNat 32 (8 * k + 4) = F + BitVec.ofNat 32 (0x150 + 8 * k) + 4 from by
+        rw [add_ofNat_assoc, ← Nat.add_assoc]; exact (add_ofNat_assoc F (0x150 + 8 * k) 4).symm,
+      wordBytes_pk, hM9]
+    simp only [← add_ofNat_assoc F (0x1D0 + 8 * k)]
+    rw [rd8, t17, ta3, ta0, ta1, ta4, t8, ta5, ta2]
+  have fr9 : ∀ c, c < 0x240 → (c < 0x1D0 + 8 * k ∨ 0x1D0 + 8 * k + 8 ≤ c) →
+      M9 (F + BitVec.ofNat 32 c) = M (F + BitVec.ofNat 32 c) := fun c hc hh => by
+    rw [hM9]
+    rcases hh with hh | hh <;>
+      rw [hf_sb_out C (by omega) hc (by omega), hf_sb_out C (by omega) hc (by omega), hf_sb_out C (by omega) hc (by omega),
+        hf_sb_out C (by omega) hc (by omega), hf_sb_out C (by omega) hc (by omega), hf_sb_out C (by omega) hc (by omega),
+        hf_sb_out C (by omega) hc (by omega), hf_sb_out C (by omega) hc (by omega)]
+  have cs : Steps n n10 := c1.trans ((Steps.single d2).trans ((Steps.single d3).trans ((Steps.single d4).trans
+    ((Steps.single d5).trans ((Steps.single d6).trans ((Steps.single d7).trans ((Steps.single d8).trans
+    ((Steps.single d9).trans c10))))))))
+  by_cases hk1 : k + 1 < 8
+  · obtain ⟨n11, d11, u11⟩ := D10.st.taken (D10.code C) 0x1E6 hf_at_22a rfl (by
+      rw [v16, D10.st.zero]
+      show (BitVec.ofNat 32 (8 - (k + 1)) != 0) = true
+      simp only [bne_iff_ne, ne_eq]
+      intro e
+      have := congrArg BitVec.toNat e
+      rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)] at this
+      exact absurd this (by show 8 - (k + 1) ≠ 0; omega))
+    exact ⟨n11, M9, cs.trans (Steps.single d11), fun _ => D10.jmp u11, fun h => absurd h (by omega),
+      by rw [u11.regs, v9], by rw [u11.regs, v24], by rw [u11.regs, v16],
+      fun q hq h8 h9 h24 => by rw [u11.regs, kk10 q hq h8 h9 h24], hw, fr9⟩
+  · obtain ⟨n11, d11, u11⟩ := D10.st.notTaken (D10.code C) 0x22E hf_at_22a rfl (by
+      rw [v16, D10.st.zero, show 8 - (k + 1) = 0 by omega]; rfl)
+    exact ⟨n11, M9, cs.trans (Steps.single d11), fun h => absurd h hk1, fun _ => D10.jmp u11,
+      by rw [u11.regs, v9], by rw [u11.regs, v24], by rw [u11.regs, v16],
+      fun q hq h8 h9 h24 => by rw [u11.regs, kk10 q hq h8 h9 h24], hw, fr9⟩
+
+/-- The loop at offset 0x1E6 from pass `k` on. -/
+theorem hf_rd_loop (C : HfCtx M0 F out p len) {Mst : Word → BitVec 8} {R : Fin 32 → Word} :
+    ∀ d k, k + d = 8 → k < 8 → ∀ (M : Word → BitVec 8) (n : Machine), HfSt M0 Ms F r0 M n 0x1E6 →
+      reg n 8 = F + BitVec.ofNat 32 (0x1D0 + 8 * k) → reg n 26 = F + BitVec.ofNat 32 (0x150 + 8 * k) →
+      reg n 16 = BitVec.ofNat 32 (8 - k) → (∀ q : Fin 32, q.val ∈ evKeep → q ≠ 9 → q ≠ 8 → q ≠ 26 → reg n q = R q) →
+      memBytes M (F + BitVec.ofNat 32 0x1D0) (8 * k) =
+        ((List.range k).map (hvW Mst (F + BitVec.ofNat 32 0x150))).flatMap Sha512.wordBytes →
+      (∀ c, c < 0x240 → (c < 0x1D0 ∨ 0x210 ≤ c) → M (F + BitVec.ofNat 32 c) = Mst (F + BitVec.ofNat 32 c)) →
+      ∃ n' M', Steps n n' ∧ HfSt M0 Ms F r0 M' n' 0x22E ∧
+        (∀ q : Fin 32, q.val ∈ evKeep → q ≠ 9 → q ≠ 8 → q ≠ 26 → reg n' q = R q) ∧
+        memBytes M' (F + BitVec.ofNat 32 0x1D0) 64 =
+          (s5Hv Mst (F + BitVec.ofNat 32 0x150)).toList.flatMap Sha512.wordBytes ∧
+        ∀ c, c < 0x240 → (c < 0x1D0 ∨ 0x210 ≤ c) → M' (F + BitVec.ofNat 32 c) = Mst (F + BitVec.ofNat 32 c) := by
+  intro d
+  induction d with
+  | zero => intro k hk hk8; exact absurd hk (by omega)
+  | succ d ih =>
+    intro k hk hk8 M n D h9 h24 h16 hR hM hfr
+    obtain ⟨n1, M1, c1, D1a, D1b, v9, v24, v16, kk, hw, fr⟩ := hf_rd_body C hk8 D h9 h24 h16
+    have hW : hvW M (F + BitVec.ofNat 32 0x150) k = hvW Mst (F + BitVec.ofNat 32 0x150) k := by
+      unfold hvW
+      have e : ∀ o, o + 4 ≤ 64 → memLoad32 M (F + BitVec.ofNat 32 0x150 + BitVec.ofNat 32 o) =
+          memLoad32 Mst (F + BitVec.ofNat 32 0x150 + BitVec.ofNat 32 o) := fun o ho =>
+        vk_ld2 fun j hj => by
+          rw [add_ofNat_assoc, add_ofNat_assoc]; exact hfr _ (by omega) (Or.inl (by omega))
+      rw [e _ (by omega), e _ (by omega)]
+    have hM1 : memBytes M1 (F + BitVec.ofNat 32 0x1D0) (8 * (k + 1)) =
+        ((List.range (k + 1)).map (hvW Mst (F + BitVec.ofNat 32 0x150))).flatMap Sha512.wordBytes := by
+      rw [show 8 * (k + 1) = 8 * k + 8 by omega, memBytes_split, flatMap_range_succ, ← hM, ← hW, ← hw,
+        add_ofNat_assoc, memBytes_congr (M' := M1) (M := M) (p := F + BitVec.ofNat 32 0x1D0) (n := 8 * k)
+          fun i hi => by rw [add_ofNat_assoc, fr _ (by omega) (Or.inl (by omega))]]
+    have hfr1 : ∀ c, c < 0x240 → (c < 0x1D0 ∨ 0x210 ≤ c) → M1 (F + BitVec.ofNat 32 c) = Mst (F + BitVec.ofNat 32 c) :=
+      fun c hc hh => by
+        rcases hh with hh | hh
+        · rw [fr c hc (Or.inl (by omega)), hfr c hc (Or.inl hh)]
+        · rw [fr c hc (Or.inr (by omega)), hfr c hc (Or.inr hh)]
+    have hR1 : ∀ q : Fin 32, q.val ∈ evKeep → q ≠ 9 → q ≠ 8 → q ≠ 26 → reg n1 q = R q := fun q hq h8 h9 h24 => by
+      rw [kk q hq h8 h9 h24, hR q hq h8 h9 h24]
+    by_cases hk1 : k + 1 < 8
+    · obtain ⟨n2, M2, c2, rest⟩ := ih (k + 1) (by omega) hk1 M1 n1 (D1a hk1) v9 v24 v16 hR1 hM1 hfr1
+      exact ⟨n2, M2, c1.trans c2, rest⟩
+    · have h8 : k + 1 = 8 := by omega
+      rw [h8, ← s5Hv_toList, show 8 * 8 = 64 from rfl] at hM1
+      exact ⟨n1, M1, c1, D1b h8, hR1, hM1, hfr1⟩
+
+
+set_option maxRecDepth 20000 in
+set_option maxHeartbeats 16000000 in
+/-- From 0x1E0 to 0x22E: the 8 hash words written big-endian to
+`F + 0x1D0`. -/
+theorem hf_rd (C : HfCtx M0 F out p len) {M : Word → BitVec 8} {n : Machine} (D : HfSt M0 Ms F r0 M n 0x1E0)
+    (h8 : reg n 8 = F + BitVec.ofNat 32 0x1D0) (h26 : reg n 26 = F + BitVec.ofNat 32 0x150) :
+    ∃ n' M', Steps n n' ∧ HfSt M0 Ms F r0 M' n' 0x22E ∧
+      (∀ q : Fin 32, q.val ∈ evKeep → q ≠ 9 → q ≠ 8 → q ≠ 26 → reg n' q = reg n q) ∧
+      memBytes M' (F + BitVec.ofNat 32 0x1D0) 64 = (s5Hv M (F + BitVec.ofNat 32 0x150)).toList.flatMap Sha512.wordBytes ∧
+      ∀ c, c < 0x240 → (c < 0x1D0 ∨ 0x210 ≤ c) → M' (F + BitVec.ofNat 32 c) = M (F + BitVec.ofNat 32 c) := by
+  obtain ⟨n1, c1, D1, hr1⟩ := D.block C (off' := 0x1E2) [.aluImm .add a6 x0 0x8] (bEnd1 hf_at_1e0 rfl)
+    ⟨trivial, trivial⟩ rfl (fun q hq => by rcases hq with rfl | rfl | rfl <;> simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
+  have v16 : reg n1 16 = 8 := by
+    rw [hr1]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D.st.zero]; rfl
+  obtain ⟨n2, d2, u2⟩ := D1.st.notTaken (D1.code C) 0x1E6 hf_at_1e2 rfl (by rw [v16, D1.st.zero]; rfl)
+  have D2 := D1.jmp u2
+  have k2 : ∀ q : Fin 32, q.val ∈ evKeep → reg n2 q = reg n q := fun q hq => by
+    rw [u2.regs, hr1, evb_reg q D.st.zero (by revert hq; revert q; decide)]
+  obtain ⟨n3, M3, c3, D3, k3, hb3, fr3⟩ := hf_rd_loop C (Mst := M) (R := reg n2) 8 0 rfl (by decide) M n2 D2
+    (by rw [k2 8 (by decide), h8]) (by rw [k2 26 (by decide), h26])
+    (by rw [u2.regs, v16]; rfl) (fun q _ _ _ _ => rfl) rfl (fun _ _ _ => rfl)
+  exact ⟨n3, M3, c1.trans ((Steps.single d2).trans c3), D3,
+    fun q hq h9 h8 h26 => by rw [k3 q hq h9 h8 h26, k2 q hq], hb3, fr3⟩
+
+
 end
 
 end C3.RV32
