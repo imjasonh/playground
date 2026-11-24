@@ -158,7 +158,7 @@ theorem sv_csx {B out bp x21 x26 dg c q rl rp sgp op ol : Word} {rt sg : Bytes} 
     (hrem0 : w5c = 0)
     (EE0 : EvEnv M0)
     (RS : SvRoSep B)
-    (hiv : (s5Hv M0 (BitVec.ofNat 32 0x3FCC4AF8)).toList = Sha512.h0)
+    (hiv : (s5Hv M0 (BitVec.ofNat 32 (img% sha512IVAddress))).toList = Sha512.h0)
     (pk_in : SvIn B w34 32)
     (msg_in : SvIn B w24 w20.toNat)
     (hlen : w20.toNat < 2 ^ 31) :

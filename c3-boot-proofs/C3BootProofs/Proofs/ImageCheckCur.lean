@@ -31,32 +31,32 @@ theorem tbl_word (M : Word → BitVec 8) (base : Word) (code : List Nat) (hc : C
     show M (base + BitVec.ofNat 32 i) = byteAt code i from hc i (by omega)]
 
 /-- The region table entry the loop reads for kind `k`: the region's end. -/
-theorem tbl_hi (M : Word → BitVec 8) (hc : CodeIn M 0x3FCC5240 regionEndsData) (k : BitVec 8)
+theorem tbl_hi (M : Word → BitVec 8) (hc : CodeIn M (img% regionEndsAddress) regionEndsData) (k : BitVec 8)
     (hk : (3 : BitVec 8).ult k = false) :
-    memLoad32 M (aluEval .add (aluEval .add 0x3FCC5000 0x240) (k.zeroExtend 32 <<< 2) + 0) = regionHi k := by
+    memLoad32 M (aluEval .add (aluEval .add (img% hi20 regionEndsAddress) (img% lo12 regionEndsAddress)) (k.zeroExtend 32 <<< 2) + 0) = regionHi k := by
   rcases kind4 k hk with rfl | rfl | rfl | rfl
-  · rw [show aluEval .add (aluEval .add 0x3FCC5000 0x240) ((0 : BitVec 8).zeroExtend 32 <<< 2) + 0 =
-      (0x3FCC5240 : Word) + BitVec.ofNat 32 0 from rfl, tbl_word M _ _ hc 0 (by decide)]; decide
-  · rw [show aluEval .add (aluEval .add 0x3FCC5000 0x240) ((1 : BitVec 8).zeroExtend 32 <<< 2) + 0 =
-      (0x3FCC5240 : Word) + BitVec.ofNat 32 4 from rfl, tbl_word M _ _ hc 4 (by decide)]; decide
-  · rw [show aluEval .add (aluEval .add 0x3FCC5000 0x240) ((2 : BitVec 8).zeroExtend 32 <<< 2) + 0 =
-      (0x3FCC5240 : Word) + BitVec.ofNat 32 8 from rfl, tbl_word M _ _ hc 8 (by decide)]; decide
-  · rw [show aluEval .add (aluEval .add 0x3FCC5000 0x240) ((3 : BitVec 8).zeroExtend 32 <<< 2) + 0 =
-      (0x3FCC5240 : Word) + BitVec.ofNat 32 12 from rfl, tbl_word M _ _ hc 12 (by decide)]; decide
+  · rw [show aluEval .add (aluEval .add (img% hi20 regionEndsAddress) (img% lo12 regionEndsAddress)) ((0 : BitVec 8).zeroExtend 32 <<< 2) + 0 =
+      (img% regionEndsAddress : Word) + BitVec.ofNat 32 0 from rfl, tbl_word M _ _ hc 0 (by decide)]; decide
+  · rw [show aluEval .add (aluEval .add (img% hi20 regionEndsAddress) (img% lo12 regionEndsAddress)) ((1 : BitVec 8).zeroExtend 32 <<< 2) + 0 =
+      (img% regionEndsAddress : Word) + BitVec.ofNat 32 4 from rfl, tbl_word M _ _ hc 4 (by decide)]; decide
+  · rw [show aluEval .add (aluEval .add (img% hi20 regionEndsAddress) (img% lo12 regionEndsAddress)) ((2 : BitVec 8).zeroExtend 32 <<< 2) + 0 =
+      (img% regionEndsAddress : Word) + BitVec.ofNat 32 8 from rfl, tbl_word M _ _ hc 8 (by decide)]; decide
+  · rw [show aluEval .add (aluEval .add (img% hi20 regionEndsAddress) (img% lo12 regionEndsAddress)) ((3 : BitVec 8).zeroExtend 32 <<< 2) + 0 =
+      (img% regionEndsAddress : Word) + BitVec.ofNat 32 12 from rfl, tbl_word M _ _ hc 12 (by decide)]; decide
 
 /-- The region table entry for kind `k`: the region's start. -/
-theorem tbl_lo (M : Word → BitVec 8) (hc : CodeIn M 0x3FCC5250 regionStartsData) (k : BitVec 8)
+theorem tbl_lo (M : Word → BitVec 8) (hc : CodeIn M (img% regionStartsAddress) regionStartsData) (k : BitVec 8)
     (hk : (3 : BitVec 8).ult k = false) :
-    memLoad32 M (aluEval .add (k.zeroExtend 32 <<< 2) (aluEval .add 0x3FCC5000 0x250) + 0) = regionLo k := by
+    memLoad32 M (aluEval .add (k.zeroExtend 32 <<< 2) (aluEval .add (img% hi20 regionStartsAddress) (img% lo12 regionStartsAddress)) + 0) = regionLo k := by
   rcases kind4 k hk with rfl | rfl | rfl | rfl
-  · rw [show aluEval .add ((0 : BitVec 8).zeroExtend 32 <<< 2) (aluEval .add 0x3FCC5000 0x250) + 0 =
-      (0x3FCC5250 : Word) + BitVec.ofNat 32 0 from rfl, tbl_word M _ _ hc 0 (by decide)]; decide
-  · rw [show aluEval .add ((1 : BitVec 8).zeroExtend 32 <<< 2) (aluEval .add 0x3FCC5000 0x250) + 0 =
-      (0x3FCC5250 : Word) + BitVec.ofNat 32 4 from rfl, tbl_word M _ _ hc 4 (by decide)]; decide
-  · rw [show aluEval .add ((2 : BitVec 8).zeroExtend 32 <<< 2) (aluEval .add 0x3FCC5000 0x250) + 0 =
-      (0x3FCC5250 : Word) + BitVec.ofNat 32 8 from rfl, tbl_word M _ _ hc 8 (by decide)]; decide
-  · rw [show aluEval .add ((3 : BitVec 8).zeroExtend 32 <<< 2) (aluEval .add 0x3FCC5000 0x250) + 0 =
-      (0x3FCC5250 : Word) + BitVec.ofNat 32 12 from rfl, tbl_word M _ _ hc 12 (by decide)]; decide
+  · rw [show aluEval .add ((0 : BitVec 8).zeroExtend 32 <<< 2) (aluEval .add (img% hi20 regionStartsAddress) (img% lo12 regionStartsAddress)) + 0 =
+      (img% regionStartsAddress : Word) + BitVec.ofNat 32 0 from rfl, tbl_word M _ _ hc 0 (by decide)]; decide
+  · rw [show aluEval .add ((1 : BitVec 8).zeroExtend 32 <<< 2) (aluEval .add (img% hi20 regionStartsAddress) (img% lo12 regionStartsAddress)) + 0 =
+      (img% regionStartsAddress : Word) + BitVec.ofNat 32 4 from rfl, tbl_word M _ _ hc 4 (by decide)]; decide
+  · rw [show aluEval .add ((2 : BitVec 8).zeroExtend 32 <<< 2) (aluEval .add (img% hi20 regionStartsAddress) (img% lo12 regionStartsAddress)) + 0 =
+      (img% regionStartsAddress : Word) + BitVec.ofNat 32 8 from rfl, tbl_word M _ _ hc 8 (by decide)]; decide
+  · rw [show aluEval .add ((3 : BitVec 8).zeroExtend 32 <<< 2) (aluEval .add (img% hi20 regionStartsAddress) (img% lo12 regionStartsAddress)) + 0 =
+      (img% regionStartsAddress : Word) + BitVec.ofNat 32 12 from rfl, tbl_word M _ _ hc 12 (by decide)]; decide
 
 theorem ArrInv.push {M : Word → BitVec 8} {G : Word} {segs : List SegW} (a : ArrInv M G segs)
     (hi : segs.length < 16) (s : SegW) (vk : Word) (hk : vk.extractLsb' 0 8 = s.kind) :
@@ -491,18 +491,18 @@ theorem lp_ck2 (env : IEnv P R G ptr len out) (code0 : ICode M0 P)
   obtain ⟨m4, d4, u4⟩ := u3.aluImm hc ipc_at_254 (off' := 0x258) (by decide)
   obtain ⟨m5, d5, u5⟩ := u4.alu hc ipc_at_258 (off' := 0x25A) (by decide)
   have r5a3 : upd (upd (upd (upd (upd g a4 (aluEval .sll (g s10) 0x18)) a4
-      (aluEval .srl (upd g a4 (aluEval .sll (g s10) 0x18) a4) 0x16)) a3 0x3FCC5000) a3
+      (aluEval .srl (upd g a4 (aluEval .sll (g s10) 0x18) a4) 0x16)) a3 (img% hi20 regionEndsAddress)) a3
       (aluEval .add (upd (upd (upd g a4 (aluEval .sll (g s10) 0x18)) a4
-        (aluEval .srl (upd g a4 (aluEval .sll (g s10) 0x18) a4) 0x16)) a3 0x3FCC5000 a3) 0x240)) a3
+        (aluEval .srl (upd g a4 (aluEval .sll (g s10) 0x18) a4) 0x16)) a3 (img% hi20 regionEndsAddress) a3) (img% lo12 regionEndsAddress))) a3
       (aluEval .add (upd (upd (upd (upd g a4 (aluEval .sll (g s10) 0x18)) a4
-        (aluEval .srl (upd g a4 (aluEval .sll (g s10) 0x18) a4) 0x16)) a3 0x3FCC5000) a3
+        (aluEval .srl (upd g a4 (aluEval .sll (g s10) 0x18) a4) 0x16)) a3 (img% hi20 regionEndsAddress)) a3
         (aluEval .add (upd (upd (upd g a4 (aluEval .sll (g s10) 0x18)) a4
-          (aluEval .srl (upd g a4 (aluEval .sll (g s10) 0x18) a4) 0x16)) a3 0x3FCC5000 a3) 0x240) a3)
+          (aluEval .srl (upd g a4 (aluEval .sll (g s10) 0x18) a4) 0x16)) a3 (img% hi20 regionEndsAddress) a3) (img% lo12 regionEndsAddress)) a3)
         (upd (upd (upd (upd g a4 (aluEval .sll (g s10) 0x18)) a4
-          (aluEval .srl (upd g a4 (aluEval .sll (g s10) 0x18) a4) 0x16)) a3 0x3FCC5000) a3
+          (aluEval .srl (upd g a4 (aluEval .sll (g s10) 0x18) a4) 0x16)) a3 (img% hi20 regionEndsAddress)) a3
           (aluEval .add (upd (upd (upd g a4 (aluEval .sll (g s10) 0x18)) a4
-            (aluEval .srl (upd g a4 (aluEval .sll (g s10) 0x18) a4) 0x16)) a3 0x3FCC5000 a3) 0x240) a4)) a3 =
-      aluEval .add (aluEval .add 0x3FCC5000 0x240) (s.kind.zeroExtend 32 <<< 2) := by
+            (aluEval .srl (upd g a4 (aluEval .sll (g s10) 0x18) a4) 0x16)) a3 (img% hi20 regionEndsAddress) a3) (img% lo12 regionEndsAddress)) a4)) a3 =
+      aluEval .add (aluEval .add (img% hi20 regionEndsAddress) (img% lo12 regionEndsAddress)) (s.kind.zeroExtend 32 <<< 2) := by
     simp +decide only [upd, ↓reduceIte]; rw [hs10, s10_idx]
   obtain ⟨m6, d6, u6⟩ := u5.lw hc ipc_at_25a (off' := 0x25C) (by decide)
     (by rw [r5a3]; exact tbl_al_hi _ ctx.kd)
@@ -563,10 +563,10 @@ theorem lp_ck2 (env : IEnv P R G ptr len out) (code0 : ICode M0 P)
   obtain ⟨m14, d14, u14⟩ := u13.lui hc11 ipc_at_272 (off' := 0x276) (by decide)
   obtain ⟨m15, d15, u15⟩ := u14.aluImm hc11 ipc_at_276 (off' := 0x27A) (by decide)
   obtain ⟨m16, d16, u16⟩ := u15.alu hc11 ipc_at_27a (off' := 0x27C) (by decide)
-  have r16a4 : upd (upd (upd (reg m11) a0 0x3FCC5000) a0 (aluEval .add (upd (reg m11) a0 0x3FCC5000 a0) 0x250)) a4
-      (aluEval .add (upd (upd (reg m11) a0 0x3FCC5000) a0 (aluEval .add (upd (reg m11) a0 0x3FCC5000 a0) 0x250) a4)
-        (upd (upd (reg m11) a0 0x3FCC5000) a0 (aluEval .add (upd (reg m11) a0 0x3FCC5000 a0) 0x250) a0)) a4 =
-      aluEval .add (s.kind.zeroExtend 32 <<< 2) (aluEval .add 0x3FCC5000 0x250) := by
+  have r16a4 : upd (upd (upd (reg m11) a0 (img% hi20 regionStartsAddress)) a0 (aluEval .add (upd (reg m11) a0 (img% hi20 regionStartsAddress) a0) (img% lo12 regionStartsAddress))) a4
+      (aluEval .add (upd (upd (reg m11) a0 (img% hi20 regionStartsAddress)) a0 (aluEval .add (upd (reg m11) a0 (img% hi20 regionStartsAddress) a0) (img% lo12 regionStartsAddress)) a4)
+        (upd (upd (reg m11) a0 (img% hi20 regionStartsAddress)) a0 (aluEval .add (upd (reg m11) a0 (img% hi20 regionStartsAddress) a0) (img% lo12 regionStartsAddress)) a0)) a4 =
+      aluEval .add (s.kind.zeroExtend 32 <<< 2) (aluEval .add (img% hi20 regionStartsAddress) (img% lo12 regionStartsAddress)) := by
     rw [upd_same (by decide), upd_a0, updz (by simp) (by decide), updz c11.inv.zero (by decide), upd_a0,
       r11 a4 (by decide) (by decide), r6a4]
   obtain ⟨m17, d17, u17⟩ := u16.lw hc11 ipc_at_27c (off' := 0x27E) (by decide)

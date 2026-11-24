@@ -303,7 +303,7 @@ theorem isSmallOrder_correct (m : Machine) {sp0 p retAddr : Word} (E : ISOEnv m.
     fun hM h1 h2 => feW_frame fun i hi => memLoad32_congr fun j hj => by
       rw [add_ofNat_assoc]
       exact hM _ (h1.sub (c := 4 * i + j) (l := 1) (by omega)).symm (h2.sub (c := 4 * i + j) (l := 1) (by omega)).symm
-  have hISn : ISO.toNat = 0x403b08fe := by decide
+  have hISn : ISO.toNat = (img% isSmallOrderAddress) := by decide
   have hc := E.cod
   have st0 : St m.mem ISO m 0 (reg m) := ⟨by rw [hpc, add_ofNat_zero], rfl, fun _ => rfl⟩
   have hz := st0.zero

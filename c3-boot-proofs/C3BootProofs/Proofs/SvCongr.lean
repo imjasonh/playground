@@ -193,14 +193,14 @@ theorem SvIn.algOid {B p op : Word} {n ol : Nat} {M : Word → BitVec 8} {w : Op
           · cases hq
 
 /-- A constant's bytes are outside the stack. -/
-theorem dataR {B q : Word} {ql : Nat} (F : Fr B 0x3830) (h1 : 0x3FCC4200 ≤ q.toNat) (h2 : q.toNat + ql ≤ 0x3FCC4E60)
+theorem dataR {B q : Word} {ql : Nat} (F : Fr B 0x3830) (h1 : (img% dataWindowAddress) ≤ q.toNat) (h2 : q.toNat + ql ≤ (img% dataWindowAddress + dataWindowSize))
     (i : Nat) (hi : i < ql) : SvR B (q + BitVec.ofNat 32 i) := by
-  have hs := F.dsep.subR (c := q.toNat - 0x3FCC4200 + i) (l := 1) (by omega)
-  have e : (0x3FCC4200 : Word) + BitVec.ofNat 32 (q.toNat - 0x3FCC4200 + i) = q + BitVec.ofNat 32 i := by
+  have hs := F.dsep.subR (c := q.toNat - (img% dataWindowAddress) + i) (l := 1) (by omega)
+  have e : (img% dataWindowAddress : Word) + BitVec.ofNat 32 (q.toNat - (img% dataWindowAddress) + i) = q + BitVec.ofNat 32 i := by
     apply BitVec.eq_of_toNat_eq
     rw [BitVec.toNat_add, BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
     have := q.isLt
-    rw [show (0x3FCC4200 : Word).toNat = 1070350848 from rfl]
+    rw [show (img% dataWindowAddress : Word).toNat = (img% dataWindowAddress) from rfl]
     omega
   rw [e] at hs
   exact hs

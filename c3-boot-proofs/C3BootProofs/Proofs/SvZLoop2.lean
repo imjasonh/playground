@@ -52,9 +52,9 @@ structure ZvInv (B : Word) (m : Machine) (v : Nat → Word) (r3 r4 out bp x26 nz
   w460 : memLoad32 m.mem (B + 0x21A0 + BitVec.ofNat 32 0x460) = BitVec.ofNat 32 0xFFFFFFFF
   w464 : memLoad32 m.mem (B + 0x21A0 + BitVec.ofNat 32 0x464) = BitVec.ofNat 32 0xFFFFFFFF
   a420 : accV m.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = P
-  aP : accV m.mem (BitVec.ofNat 32 0x3FCC4B38) 8 = P
+  aP : accV m.mem (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 = P
   a440 : accV m.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = R2
-  aR : accV m.mem (BitVec.ofNat 32 0x3FCC4B78) 8 = R2
+  aR : accV m.mem (BitVec.ofNat 32 (img% p256R2Address)) 8 = R2
   a2a0 : accV m.mem (B + 0x21A0 + BitVec.ofNat 32 0x2A0) 8 = rv
   a2c0 : accV m.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv
   a2e0 : accV m.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv
@@ -125,7 +125,7 @@ theorem zv_iter {B r3 r4 out bp x26 nzw : Word} {rv sv zv X Y P R2 : Nat} {W v :
   obtain ⟨Zd, -, -, Zu, Zv, Zq, Zr⟩ := Z2
   have CH3 : ∀ x, SvR B x → n3.mem x = m.mem x := fun x hx => by rw [fR3 x hx, fr2 x hx, fR1 x hx]
   have CH2 : ∀ x, SvR B x → n2.mem x = m.mem x := (fun x hx => (fr2 x hx).trans (fR1 x hx))
-  have hM : accV n2.mem (BitVec.ofNat 32 0x3FCC4B38) 8 = P := by rw [accV_dataR F CH2 (by decide) (by decide), I.aP]
+  have hM : accV n2.mem (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 = P := by rw [accV_dataR F CH2 (by decide) (by decide), I.aP]
   have eu : i64Val ((reg n2 (24 : Fin 32)).toNat + 2 ^ 32 *
       (memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x3C)).toNat) = i64Val (dsIter (min st.rem 62) ⟨st.δ, lowestI st.f, lowestI st.g, 1, 0, 0, 1⟩).u := by
     rw [← Zu]; rfl

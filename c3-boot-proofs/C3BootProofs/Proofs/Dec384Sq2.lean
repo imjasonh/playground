@@ -80,7 +80,7 @@ structure DqFrame (S : Word) : Prop where
   al : S.toNat % 16 = 0
   lo : 0x1A0 ≤ S.toNat
   hi : S.toNat + 0xA50 ≤ 0x40000000
-  dsep : Sep (S + 0xFFFFFE60) 0xBF0 (0x3FCC4200 : Word) 0xC60
+  dsep : Sep (S + 0xFFFFFE60) 0xBF0 (img% dataWindowAddress : Word) (img% dataWindowSize)
 
 theorem DqFrame.at {S : Word} (F : DqFrame S) (c : Nat) (hc : c ≤ 0xA50) : (S + BitVec.ofNat 32 c).toNat = S.toNat + c := by
   have := F.hi; rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
@@ -251,7 +251,7 @@ theorem dq_sq_pre {M : Word → BitVec 8} {S : Word} {n : Machine} {j : Nat} (C 
   have dW : (S + BitVec.ofNat 32 0x9BC).toNat + 48 < 2 ^ 32 := by rw [F.at 0x9BC (by decide)]; omega
   have sW : (S + BitVec.ofNat 32 0x98C).toNat + 48 < 2 ^ 32 := by rw [F.at 0x98C (by decide)]; omega
   have hFC : Sep (S + 0xFFFFFFF0) 16 (MCS + 8) memcpyBodyCode.length :=
-    sep_of_le (by rw [hb16, show (MCS + 8).toNat = 0x403b4856 from rfl]; omega) (by decide)
+    sep_of_le (by rw [hb16, show (MCS + 8).toNat = (img% memcpyBodyAddress) from rfl]; omega) (by decide)
   have hdF : Sep (S + BitVec.ofNat 32 0x9BC) 48 (S + 0xFFFFFFF0) 16 :=
     (sep_of_le (by rw [hb16, F.at 0x9BC (by decide)]; omega) (by omega)).symm
   have hsF : Sep (S + BitVec.ofNat 32 0x98C) 48 (S + 0xFFFFFFF0) 16 :=
@@ -503,9 +503,9 @@ theorem dq_sq_post {M : Word → BitVec 8} {S : Word} {n : Machine} (C : DqCode 
       have hb : q ∉ dqP2.filterMap BInstr.dst := by simp only [dqP2]; revert h8 h9 h18 h20; revert q; decide
       rw [u4.regs, r3, runBlock_reg _ _ _ q u2.zero hb]
   have sB : Sep (S + 0xFFFFFFFC) 4 BSUB borrowingSubCode.length :=
-    sep_of_le (by rw [hb4, show BSUB.toNat = 0x403a2320 from rfl]; omega) (by decide)
+    sep_of_le (by rw [hb4, show BSUB.toNat = (img% borrowingSubAddress) from rfl]; omega) (by decide)
   have sFC : Sep (S + 0xFFFFFFFC) 4 DP p384DecompressCode.length :=
-    sep_of_le (by rw [hb4, show DP.toNat = 0x403a5262 from rfl]; omega) (by decide)
+    sep_of_le (by rw [hb4, show DP.toNat = (img% p384DecompressAddress) from rfl]; omega) (by decide)
   obtain ⟨n5, M5, c5, u5, hc5, hbs5, fr5, hm5, hv5, sp5, k5⟩ := dq_sub_loop (F := S) (acc := S + BitVec.ofNat 32 0x98C)
     (np := S + BitVec.ofNat 32 0x134) (D := S + BitVec.ofNat 32 0x62C) (M0 := M2) (by omega)
     (by rw [F.at _ (by decide)]; omega) (by rw [F.at _ (by decide)]; omega) (by rw [F.at _ (by decide)]; omega)
@@ -543,7 +543,7 @@ theorem dq_sq_post {M : Word → BitVec 8} {S : Word} {n : Machine} (C : DqCode 
   have fA : (S + 0xFFFFFFF0).toNat % 4 = 0 := by rw [hb16]; omega
   have fW : (S + 0xFFFFFFF0).toNat + 16 ≤ 2 ^ 32 := by rw [hb16]; omega
   have hFC : Sep (S + 0xFFFFFFF0) 16 (MCS + 8) memcpyBodyCode.length :=
-    sep_of_le (by rw [hb16, show (MCS + 8).toNat = 0x403b4856 from rfl]; omega) (by decide)
+    sep_of_le (by rw [hb16, show (MCS + 8).toNat = (img% memcpyBodyAddress) from rfl]; omega) (by decide)
   have b16 : ∀ c, c + 48 ≤ 0xA50 → Sep (S + BitVec.ofNat 32 c) 48 (S + 0xFFFFFFF0) 16 := fun c hc =>
     (sep_of_le (by rw [hb16, F.at c (by omega)]; omega) (by rw [F.at c (by omega)]; omega)).symm
   have w48 : ∀ c, c + 48 ≤ 0xA50 → (S + BitVec.ofNat 32 c).toNat + 48 < 2 ^ 32 := fun c hc => by

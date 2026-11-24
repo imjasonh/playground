@@ -1,6 +1,8 @@
 import C3BootProofs.Proofs.Ed25519VerifyCall
 import C3BootProofs.Proofs.Arr32Eq
 import C3BootProofs.Proofs.SmallFns
+import C3BootProofs.Image.BootloaderData5
+import C3BootProofs.Image.BootloaderData7
 
 /-!
 # `c3_verify::keys::KeySet::new`
@@ -20,8 +22,8 @@ abbrev KSN : Word := BitVec.ofNat 32 keySetNewAddress
 
 /-- Whether `ed25519_public_key_ok` accepts the key at `p`. -/
 def pkOkAt (M : Word → BitVec 8) (p : Word) : Bool :=
-  pkOkSpec (memBytes M (BitVec.ofNat 32 0x3FCC4328) 32) (memBytes M (BitVec.ofNat 32 0x3FCC42E8) 32)
-    (memBytes M (BitVec.ofNat 32 0x3FCC4388) 32) (feW M (BitVec.ofNat 32 edOneAddress))
+  pkOkSpec (memBytes M (BitVec.ofNat 32 (img% edPrimeAddress)) 32) (memBytes M (BitVec.ofNat 32 (img% p256OneAddress)) 32)
+    (memBytes M (BitVec.ofNat 32 (img% edPm1Address)) 32) (feW M (BitVec.ofNat 32 edOneAddress))
     (feW M (BitVec.ofNat 32 edDAddress)) (feW M (BitVec.ofNat 32 edSqrtM1Address)) (memBytes M p 32)
 
 /-- Whether the key at `a` equals one of the `k` keys after `p`. -/
@@ -294,9 +296,9 @@ theorem keySetNew_correct (m : Machine) {retAddr out keys len : Word} (E : PkEnv
     (sOne : Sep (BitVec.ofNat 32 edOneAddress) 40 (reg m sp + 0xFFFFF690) 0x970)
     (sD : Sep (BitVec.ofNat 32 edDAddress) 40 (reg m sp + 0xFFFFF690) 0x970)
     (sS : Sep (BitVec.ofNat 32 edSqrtM1Address) 40 (reg m sp + 0xFFFFF690) 0x970)
-    (sPc : Sep (BitVec.ofNat 32 0x3FCC4328) 32 (reg m sp + 0xFFFFF690) 0x970)
-    (sE1 : Sep (BitVec.ofNat 32 0x3FCC42E8) 32 (reg m sp + 0xFFFFF690) 0x970)
-    (sE2 : Sep (BitVec.ofNat 32 0x3FCC4388) 32 (reg m sp + 0xFFFFF690) 0x970) :
+    (sPc : Sep (BitVec.ofNat 32 (img% edPrimeAddress)) 32 (reg m sp + 0xFFFFF690) 0x970)
+    (sE1 : Sep (BitVec.ofNat 32 (img% p256OneAddress)) 32 (reg m sp + 0xFFFFF690) 0x970)
+    (sE2 : Sep (BitVec.ofNat 32 (img% edPm1Address)) 32 (reg m sp + 0xFFFFF690) 0x970) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧
       (∀ q, q.val ∈ [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
       ∀ x, Sep (reg m sp + 0xFFFFF690) 0x970 x 1 → m'.mem x = keySetMem m.mem out keys len x := by
@@ -790,8 +792,8 @@ theorem keySetNew_correct (m : Machine) {retAddr out keys len : Word} (E : PkEnv
       (E.hi (fun x hx => fin n2.mem hR2 x (hiS x hx)) (fwEq n2.mem hR2 _ sOne)) pc2 a02 ra2
       (even_clear _ (by decide)) sp2 hGa hGl hGw (by omega) (s940 hqS) (s940 sOne) (s940 sD) (s940 sS) (s940 sPc)
       (s940 sE1) (s940 sE2)
-    have hpk : pkOkSpec (memBytes n2.mem (BitVec.ofNat 32 0x3FCC4328) 32) (memBytes n2.mem (BitVec.ofNat 32 0x3FCC42E8) 32)
-        (memBytes n2.mem (BitVec.ofNat 32 0x3FCC4388) 32) (feW n2.mem (BitVec.ofNat 32 edOneAddress))
+    have hpk : pkOkSpec (memBytes n2.mem (BitVec.ofNat 32 (img% edPrimeAddress)) 32) (memBytes n2.mem (BitVec.ofNat 32 (img% p256OneAddress)) 32)
+        (memBytes n2.mem (BitVec.ofNat 32 (img% edPm1Address)) 32) (feW n2.mem (BitVec.ofNat 32 edOneAddress))
         (feW n2.mem (BitVec.ofNat 32 edDAddress)) (feW n2.mem (BitVec.ofNat 32 edSqrtM1Address)) (memBytes n2.mem q 32) =
         pkOkAt m.mem q := by
       unfold pkOkAt

@@ -173,9 +173,9 @@ theorem sv_dbc1 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl
     (val_in : SvIn B (vp) (vl).toNat)
     (oid_in : SvIn B (op) (ol).toNat)
     (SD0 : SvData M0)
-    (hku : ¬ memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4889) 3)
-    (heku : ¬ memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4892) 3)
-    (hbc : memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC488F) 3) :
+    (hku : ¬ memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x71)) 3)
+    (heku : ¬ memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x7A)) 3)
+    (hbc : memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x77)) 3) :
     (¬ (∃ tl24, derElement 0x30 (memBytes M0 (vp) (vl).toNat) = .ok tl24 ∧ ((vl) - BitVec.ofNat 32 (tl24.header + tl24.len) = 0) ∧ True) ∧ SvErrRet B out v n0) ∨
     (∃ tl24, derElement 0x30 (memBytes M0 (vp) (vl).toNat) = .ok tl24 ∧
     ((vl) - BitVec.ofNat 32 (tl24.header + tl24.len) = 0) ∧
@@ -415,7 +415,7 @@ theorem sv_dbc1 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl
     rw [rb3, runBlock_reg _ _ _ (26 : Fin 32) s2.zero (by decide), g2_26]
   have g3_27 : reg n3 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb3, runBlock_reg _ _ _ (27 : Fin 32) s2.zero (by decide), g2_27]
-  have g3_12 : reg n3 a2 = BitVec.ofNat 32 0x3FCC4889 := by
+  have g3_12 : reg n3 a2 = BitVec.ofNat 32 (img% svConstAddress + 0x71) := by
     rw [rb3]; simp +decide only [runBlock, BInstr.run, svDbc1614, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g2_2, g2_3, g2_4, g2_8, g2_9, g2_10, g2_11, g2_13, g2_18, g2_19, g2_21, g2_25, g2_26, g2_27, s2.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -758,7 +758,7 @@ theorem sv_dbc1 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl
     rw [rb8, runBlock_reg _ _ _ (26 : Fin 32) s7.zero (by decide), g7_26]
   have g8_27 : reg n8 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb8, runBlock_reg _ _ _ (27 : Fin 32) s7.zero (by decide), g7_27]
-  have g8_12 : reg n8 a2 = BitVec.ofNat 32 0x3FCC4892 := by
+  have g8_12 : reg n8 a2 = BitVec.ofNat 32 (img% svConstAddress + 0x7A) := by
     rw [rb8]; simp +decide only [runBlock, BInstr.run, svDbc16c2, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g7_2, g7_3, g7_4, g7_8, g7_9, g7_10, g7_11, g7_13, g7_18, g7_19, g7_21, g7_25, g7_26, g7_27, s7.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -1101,7 +1101,7 @@ theorem sv_dbc1 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl
     rw [rb13, runBlock_reg _ _ _ (26 : Fin 32) s12.zero (by decide), g12_26]
   have g13_27 : reg n13 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb13, runBlock_reg _ _ _ (27 : Fin 32) s12.zero (by decide), g12_27]
-  have g13_12 : reg n13 a2 = BitVec.ofNat 32 0x3FCC488F := by
+  have g13_12 : reg n13 a2 = BitVec.ofNat 32 (img% svConstAddress + 0x77) := by
     rw [rb13]; simp +decide only [runBlock, BInstr.run, svDbc1794, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g12_2, g12_3, g12_4, g12_8, g12_9, g12_10, g12_11, g12_13, g12_18, g12_19, g12_21, g12_25, g12_26, g12_27, s12.zero])
     all_goals first | with_reducible rfl | sv_addr | decide

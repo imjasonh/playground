@@ -182,7 +182,7 @@ theorem fl_copy {Mb : Word → BitVec 8} {E Tm : Word} {c : Nat}
       show (4 - (r + 1)) % 2 ^ 32 ≤ 3; omega)
     have hcx0 := hc Mx hag
     have hTi : Sep (Tm + BitVec.ofNat 32 (4 - (r + 1))) 1 FL fillLimbsBeTruncCode.length :=
-      sep_of_le (by rw [BitVec.toNat_add, BitVec.toNat_ofNat, show FL.toNat = 0x403ad524 by decide]; omega)
+      sep_of_le (by rw [BitVec.toNat_add, BitVec.toNat_ofNat, show FL.toNat = (img% fillLimbsBeTruncAddress) by decide]; omega)
         (by decide)
     obtain ⟨n1, c1, u1⟩ := St.block flCopy u0.self hcx0 flCopy_end (by
       simp +decide only [BlockOk, BInstr.ok, BInstr.run, flCopy, upd_app, ↓reduceIte, and_true, true_and]
@@ -485,7 +485,7 @@ theorem fl_outer {Mb : Word → BitVec 8} {E0 Lp G : Word} {m K : Nat}
     have hT : (G + 0xC).toNat = G.toNat + 12 := by
       show (G + BitVec.ofNat 32 12).toNat = _; rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
     have hTc : Sep (G + 0xC) 4 FL fillLimbsBeTruncCode.length :=
-      sep_of_le (by rw [BitVec.toNat_add, show FL.toNat = 0x403ad524 by decide]; have : (0xC : Word).toNat = 0xC := rfl
+      sep_of_le (by rw [BitVec.toNat_add, show FL.toNat = (img% fillLimbsBeTruncAddress) by decide]; have : (0xC : Word).toNat = 0xC := rfl
                     omega) (by decide)
     obtain ⟨n5, c5, u5⟩ := St.block flSet u4.self hcx flSet_end (by
       simp +decide only [BlockOk, BInstr.ok, BInstr.run, flSet, upd_app, ↓reduceIte, and_true, true_and]
@@ -567,7 +567,7 @@ theorem fl_outer {Mb : Word → BitVec 8} {E0 Lp G : Word} {m K : Nat}
         K7 _ (by decide) (by decide) (by decide) (by decide), u6.regs, t65, add_lit_zero]
       exact ⟨by rw [show G + 0xC = G + BitVec.ofNat 32 0xC from rfl]; exact aligned_add hGa (by decide),
         aligned_add hLa (by omega),
-        sep_of_le (by rw [hLk, show FL.toNat = 0x403ad524 by decide]; omega) (by decide)⟩)
+        sep_of_le (by rw [hLk, show FL.toNat = (img% fillLimbsBeTruncAddress) by decide]; omega) (by decide)⟩)
     have hW : (bswap32 (memLoad32 M7 (G + 0xC))).toNat =
         beNat (memBytes Mb (E0 - BitVec.ofNat 32 (4 * k) - BitVec.ofNat 32 (flLen m k)) (flLen m k)) := by
       rw [frp_bswap_toNat, fl_bytes hc4 hb7, beNat_zeros]
@@ -735,7 +735,7 @@ theorem fillLimbs_correct (m : Machine) {sp0 b Lp retAddr : Word} {n L bits mm :
   have hGa : G.toNat % 4 = 0 := by omega
   have hGc : ∀ c, c ≤ 0x20 → (G + BitVec.ofNat 32 c).toNat = G.toNat + c := fun c hc => by
     rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
-  have hFLn : FL.toNat = 0x403ad524 := by decide
+  have hFLn : FL.toNat = (img% fillLimbsBeTruncAddress) := by decide
   have hiC : ∀ {c l : Nat}, c + l ≤ 0x20 → Sep (G + BitVec.ofNat 32 c) l FL fillLimbsBeTruncCode.length :=
     fun h => sep_of_le (by rw [hGc _ (by omega), hFLn]; omega) (by decide)
   obtain ⟨K, hK⟩ : ∃ K, K = (mm + 3) / 4 := ⟨_, rfl⟩

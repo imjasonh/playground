@@ -1,5 +1,7 @@
 import C3BootProofs.Proofs.Ed25519VerifyC
 import C3BootProofs.Proofs.KeySet
+import C3BootProofs.Image.BootloaderData5
+import C3BootProofs.Image.BootloaderData7
 
 /-!
 # `c3_verify::keys::check_signatures`
@@ -19,32 +21,32 @@ open C3.Image
 
 /-- `M` and `M'` agree on `ed25519_verify`'s read-only constants. -/
 def RoAgree (M M' : Word → BitVec 8) : Prop :=
-  ∀ i, i < 0x1400 → M (BitVec.ofNat 32 (0x3FCC4000 + i)) = M' (BitVec.ofNat 32 (0x3FCC4000 + i))
+  ∀ i, i < (img% roWindowSize) → M (BitVec.ofNat 32 ((img% roWindowAddress) + i)) = M' (BitVec.ofNat 32 ((img% roWindowAddress) + i))
 
-theorem ro_mb {M M' : Word → BitVec 8} (h : RoAgree M M') (A n : Nat) (h1 : 0x3FCC4000 ≤ A)
+theorem ro_mb {M M' : Word → BitVec 8} (h : RoAgree M M') (A n : Nat) (h1 : (img% roWindowAddress) ≤ A)
     (h2 : A + n ≤ 0x3FCC5400) : memBytes M (BitVec.ofNat 32 A) n = memBytes M' (BitVec.ofNat 32 A) n :=
   memBytes_eq_of fun i hi => by
-    rw [ofNat_add_ofNat, show A + i = 0x3FCC4000 + (A - 0x3FCC4000 + i) by omega]
-    exact h (A - 0x3FCC4000 + i) (by omega)
+    rw [ofNat_add_ofNat, show A + i = (img% roWindowAddress) + (A - (img% roWindowAddress) + i) by omega]
+    exact h (A - (img% roWindowAddress) + i) (by omega)
 
-theorem ro_ld {M M' : Word → BitVec 8} (h : RoAgree M M') (A : Nat) (h1 : 0x3FCC4000 ≤ A)
+theorem ro_ld {M M' : Word → BitVec 8} (h : RoAgree M M') (A : Nat) (h1 : (img% roWindowAddress) ≤ A)
     (h2 : A + 4 ≤ 0x3FCC5400) : memLoad32 M (BitVec.ofNat 32 A) = memLoad32 M' (BitVec.ofNat 32 A) :=
   (memLoad32_congr fun j hj => by
-    rw [ofNat_add_ofNat, show A + j = 0x3FCC4000 + (A - 0x3FCC4000 + j) by omega]
-    exact h (A - 0x3FCC4000 + j) (by omega))
+    rw [ofNat_add_ofNat, show A + j = (img% roWindowAddress) + (A - (img% roWindowAddress) + j) by omega]
+    exact h (A - (img% roWindowAddress) + j) (by omega))
 
-theorem ro_feW {M M' : Word → BitVec 8} (h : RoAgree M M') (A : Nat) (h1 : 0x3FCC4000 ≤ A)
+theorem ro_feW {M M' : Word → BitVec 8} (h : RoAgree M M') (A : Nat) (h1 : (img% roWindowAddress) ≤ A)
     (h2 : A + 40 ≤ 0x3FCC5400) : feW M (BitVec.ofNat 32 A) = feW M' (BitVec.ofNat 32 A) :=
   (feW_eq2 fun i hi => by rw [ofNat_add_ofNat]; exact (ro_ld h (A + 4 * i) (by omega) (by omega)).symm).symm
 
-theorem ro_smm {M M' : Word → BitVec 8} (h : RoAgree M M') (A : Nat) (h1 : 0x3FCC4000 ≤ A)
+theorem ro_smm {M M' : Word → BitVec 8} (h : RoAgree M M') (A : Nat) (h1 : (img% roWindowAddress) ≤ A)
     (h2 : A + 36 ≤ 0x3FCC5400) : smmIn M (BitVec.ofNat 32 A) = smmIn M' (BitVec.ofNat 32 A) := by
   funext i; unfold smmIn limbAt
   split
   · rw [ofNat_add_ofNat, ro_ld h (A + 4 * i) (by omega) (by omega)]
   · rfl
 
-theorem ro_pt {M M' : Word → BitVec 8} (h : RoAgree M M') (A : Nat) (h1 : 0x3FCC4000 ≤ A)
+theorem ro_pt {M M' : Word → BitVec 8} (h : RoAgree M M') (A : Nat) (h1 : (img% roWindowAddress) ≤ A)
     (h2 : A + 160 ≤ 0x3FCC5400) : ptAt M (BitVec.ofNat 32 A) = ptAt M' (BitVec.ofNat 32 A) := by
   unfold ptAt
   rw [ofNat_add_ofNat, ofNat_add_ofNat, ofNat_add_ofNat, ro_feW h A h1 (by omega), ro_feW h (A + 40) (by omega) (by omega),
@@ -74,10 +76,10 @@ theorem evSpecA_congr {M M' : Word → BitVec 8} {pk sig : Word} (hro : RoAgree 
       rw [leAcc_congr' (M := M) (M' := M') (b := sig + BitVec.ofNat 32 (32 + 4 * i)) 4 fun j hj => by
         rw [add_ofNat_assoc]; exact hsig (32 + 4 * i + j) (by omega)]
     · rfl
-  have e1 := ro_mb hro 0x3FCC4308 32 (by omega) (by omega)
-  have e2 := ro_mb hro 0x3FCC4328 32 (by omega) (by omega)
-  have e3 := ro_mb hro 0x3FCC42E8 32 (by omega) (by omega)
-  have e4 := ro_mb hro 0x3FCC4388 32 (by omega) (by omega)
+  have e1 := ro_mb hro (img% edOrderAddress) 32 (by omega) (by omega)
+  have e2 := ro_mb hro (img% edPrimeAddress) 32 (by omega) (by omega)
+  have e3 := ro_mb hro (img% p256OneAddress) 32 (by omega) (by omega)
+  have e4 := ro_mb hro (img% edPm1Address) 32 (by omega) (by omega)
   have f1 := ro_feW hro edOneAddress (by decide) (by decide)
   have f2 := ro_feW hro edDAddress (by decide) (by decide)
   have f3 := ro_feW hro edSqrtM1Address (by decide) (by decide)
@@ -102,11 +104,11 @@ theorem evSpec_congr {M M' : Word → BitVec 8} {pk sig msg : Word} {len : Nat} 
   have msig2 : memBytes M (sig + BitVec.ofNat 32 32) 32 = memBytes M' (sig + BitVec.ofNat 32 32) 32 :=
     memBytes_eq_of fun i hi => by rw [add_ofNat_assoc]; exact hsig _ (by omega)
   have mmsg : memBytes M msg len = memBytes M' msg len := memBytes_eq_of hmsg
-  have f4 : feW M apnD = feW M' apnD := ro_feW hro 0x3FCC4A2C (by omega) (by omega)
-  have f5 := ro_feW hro 0x3FCC4948 (by omega) (by omega)
-  have s1 := ro_smm hro 0x3FCC49E4 (by omega) (by omega)
-  have s2 := ro_smm hro 0x3FCC49C0 (by omega) (by omega)
-  have p1 := ro_pt hro 0x3FCC4A54 (by omega) (by omega)
+  have f4 : feW M apnD = feW M' apnD := ro_feW hro (img% edwardsD2Address) (by omega) (by omega)
+  have f5 := ro_feW hro (img% edOneAddress) (by omega) (by omega)
+  have s1 := ro_smm hro (img% edMontRAddress) (by omega) (by omega)
+  have s2 := ro_smm hro (img% edMontRRAddress) (by omega) (by omega)
+  have p1 := ro_pt hro (img% edBaseAddress) (by omega) (by omega)
   unfold evSpec
   simp only [evSpecA_congr hro hpk hsig, s1, s2, msig, mpk, mmsg, msig2, f4, p1, f5]
 
@@ -144,11 +146,11 @@ set_option maxRecDepth 200000 in
 /-- `EvEnv` survives any change that keeps the code and the read-only data. -/
 theorem EvEnv.congr {M M' : Word → BitVec 8} (E : EvEnv M) (h : ∀ x : Word, 0x40000000 ≤ x.toNat → M' x = M x)
     (hro : RoAgree M' M) : EvEnv M' := by
-  have roC : ∀ {A : Nat} {code : List Nat}, 0x3FCC4000 ≤ A → A + code.length ≤ 0x3FCC5400 →
+  have roC : ∀ {A : Nat} {code : List Nat}, (img% roWindowAddress) ≤ A → A + code.length ≤ 0x3FCC5400 →
       CodeIn M (BitVec.ofNat 32 A) code → CodeIn M' (BitVec.ofNat 32 A) code := by
     intro A code h1 h2 hc i hi
-    have := hro (A - 0x3FCC4000 + i) (by omega)
-    rw [show 0x3FCC4000 + (A - 0x3FCC4000 + i) = A + i by omega] at this
+    have := hro (A - (img% roWindowAddress) + i) (by omega)
+    rw [show (img% roWindowAddress) + (A - (img% roWindowAddress) + i) = A + i by omega] at this
     rw [ofNat_add_ofNat, this, ← ofNat_add_ofNat]; exact hc i hi
   exact ⟨E.pk.hi h (ro_feW hro edOneAddress (by decide) (by decide)), E.cod.hi h (by decide) (by decide),
     E.s29s.hi h (by decide) (by decide), E.s29i.hi h (by decide) (by decide), E.s29im.hi h (by decide) (by decide),
@@ -161,41 +163,41 @@ theorem EvEnv.congr {M M' : Word → BitVec 8} (E : EvEnv M) (h : ∀ x : Word, 
     E.nsel.hi h (by decide) (by decide), E.panic.hi' h⟩
 
 theorem s5Hv_ro {M M' : Word → BitVec 8} (hro : RoAgree M M') :
-    s5Hv M (BitVec.ofNat 32 0x3FCC4AF8) = s5Hv M' (BitVec.ofNat 32 0x3FCC4AF8) := by
-  have L : ∀ c, c + 4 ≤ 0x40 → memLoad32 M (BitVec.ofNat 32 0x3FCC4AF8 + BitVec.ofNat 32 c) =
-      memLoad32 M' (BitVec.ofNat 32 0x3FCC4AF8 + BitVec.ofNat 32 c) := fun c hc => by
+    s5Hv M (BitVec.ofNat 32 (img% sha512IVAddress)) = s5Hv M' (BitVec.ofNat 32 (img% sha512IVAddress)) := by
+  have L : ∀ c, c + 4 ≤ 0x40 → memLoad32 M (BitVec.ofNat 32 (img% sha512IVAddress) + BitVec.ofNat 32 c) =
+      memLoad32 M' (BitVec.ofNat 32 (img% sha512IVAddress) + BitVec.ofNat 32 c) := fun c hc => by
     rw [ofNat_add_ofNat]; exact ro_ld hro _ (by omega) (by omega)
-  have L0 : memLoad32 M (BitVec.ofNat 32 0x3FCC4AF8 + 0x0) = memLoad32 M' (BitVec.ofNat 32 0x3FCC4AF8 + 0x0) :=
+  have L0 : memLoad32 M (BitVec.ofNat 32 (img% sha512IVAddress) + 0x0) = memLoad32 M' (BitVec.ofNat 32 (img% sha512IVAddress) + 0x0) :=
     L 0 (by omega)
-  have L4 : memLoad32 M (BitVec.ofNat 32 0x3FCC4AF8 + 0x4) = memLoad32 M' (BitVec.ofNat 32 0x3FCC4AF8 + 0x4) :=
+  have L4 : memLoad32 M (BitVec.ofNat 32 (img% sha512IVAddress) + 0x4) = memLoad32 M' (BitVec.ofNat 32 (img% sha512IVAddress) + 0x4) :=
     L 4 (by omega)
-  have L8 : memLoad32 M (BitVec.ofNat 32 0x3FCC4AF8 + 0x8) = memLoad32 M' (BitVec.ofNat 32 0x3FCC4AF8 + 0x8) :=
+  have L8 : memLoad32 M (BitVec.ofNat 32 (img% sha512IVAddress) + 0x8) = memLoad32 M' (BitVec.ofNat 32 (img% sha512IVAddress) + 0x8) :=
     L 8 (by omega)
-  have L12 : memLoad32 M (BitVec.ofNat 32 0x3FCC4AF8 + 0xC) = memLoad32 M' (BitVec.ofNat 32 0x3FCC4AF8 + 0xC) :=
+  have L12 : memLoad32 M (BitVec.ofNat 32 (img% sha512IVAddress) + 0xC) = memLoad32 M' (BitVec.ofNat 32 (img% sha512IVAddress) + 0xC) :=
     L 12 (by omega)
-  have L16 : memLoad32 M (BitVec.ofNat 32 0x3FCC4AF8 + 0x10) = memLoad32 M' (BitVec.ofNat 32 0x3FCC4AF8 + 0x10) :=
+  have L16 : memLoad32 M (BitVec.ofNat 32 (img% sha512IVAddress) + 0x10) = memLoad32 M' (BitVec.ofNat 32 (img% sha512IVAddress) + 0x10) :=
     L 16 (by omega)
-  have L20 : memLoad32 M (BitVec.ofNat 32 0x3FCC4AF8 + 0x14) = memLoad32 M' (BitVec.ofNat 32 0x3FCC4AF8 + 0x14) :=
+  have L20 : memLoad32 M (BitVec.ofNat 32 (img% sha512IVAddress) + 0x14) = memLoad32 M' (BitVec.ofNat 32 (img% sha512IVAddress) + 0x14) :=
     L 20 (by omega)
-  have L24 : memLoad32 M (BitVec.ofNat 32 0x3FCC4AF8 + 0x18) = memLoad32 M' (BitVec.ofNat 32 0x3FCC4AF8 + 0x18) :=
+  have L24 : memLoad32 M (BitVec.ofNat 32 (img% sha512IVAddress) + 0x18) = memLoad32 M' (BitVec.ofNat 32 (img% sha512IVAddress) + 0x18) :=
     L 24 (by omega)
-  have L28 : memLoad32 M (BitVec.ofNat 32 0x3FCC4AF8 + 0x1C) = memLoad32 M' (BitVec.ofNat 32 0x3FCC4AF8 + 0x1C) :=
+  have L28 : memLoad32 M (BitVec.ofNat 32 (img% sha512IVAddress) + 0x1C) = memLoad32 M' (BitVec.ofNat 32 (img% sha512IVAddress) + 0x1C) :=
     L 28 (by omega)
-  have L32 : memLoad32 M (BitVec.ofNat 32 0x3FCC4AF8 + 0x20) = memLoad32 M' (BitVec.ofNat 32 0x3FCC4AF8 + 0x20) :=
+  have L32 : memLoad32 M (BitVec.ofNat 32 (img% sha512IVAddress) + 0x20) = memLoad32 M' (BitVec.ofNat 32 (img% sha512IVAddress) + 0x20) :=
     L 32 (by omega)
-  have L36 : memLoad32 M (BitVec.ofNat 32 0x3FCC4AF8 + 0x24) = memLoad32 M' (BitVec.ofNat 32 0x3FCC4AF8 + 0x24) :=
+  have L36 : memLoad32 M (BitVec.ofNat 32 (img% sha512IVAddress) + 0x24) = memLoad32 M' (BitVec.ofNat 32 (img% sha512IVAddress) + 0x24) :=
     L 36 (by omega)
-  have L40 : memLoad32 M (BitVec.ofNat 32 0x3FCC4AF8 + 0x28) = memLoad32 M' (BitVec.ofNat 32 0x3FCC4AF8 + 0x28) :=
+  have L40 : memLoad32 M (BitVec.ofNat 32 (img% sha512IVAddress) + 0x28) = memLoad32 M' (BitVec.ofNat 32 (img% sha512IVAddress) + 0x28) :=
     L 40 (by omega)
-  have L44 : memLoad32 M (BitVec.ofNat 32 0x3FCC4AF8 + 0x2C) = memLoad32 M' (BitVec.ofNat 32 0x3FCC4AF8 + 0x2C) :=
+  have L44 : memLoad32 M (BitVec.ofNat 32 (img% sha512IVAddress) + 0x2C) = memLoad32 M' (BitVec.ofNat 32 (img% sha512IVAddress) + 0x2C) :=
     L 44 (by omega)
-  have L48 : memLoad32 M (BitVec.ofNat 32 0x3FCC4AF8 + 0x30) = memLoad32 M' (BitVec.ofNat 32 0x3FCC4AF8 + 0x30) :=
+  have L48 : memLoad32 M (BitVec.ofNat 32 (img% sha512IVAddress) + 0x30) = memLoad32 M' (BitVec.ofNat 32 (img% sha512IVAddress) + 0x30) :=
     L 48 (by omega)
-  have L52 : memLoad32 M (BitVec.ofNat 32 0x3FCC4AF8 + 0x34) = memLoad32 M' (BitVec.ofNat 32 0x3FCC4AF8 + 0x34) :=
+  have L52 : memLoad32 M (BitVec.ofNat 32 (img% sha512IVAddress) + 0x34) = memLoad32 M' (BitVec.ofNat 32 (img% sha512IVAddress) + 0x34) :=
     L 52 (by omega)
-  have L56 : memLoad32 M (BitVec.ofNat 32 0x3FCC4AF8 + 0x38) = memLoad32 M' (BitVec.ofNat 32 0x3FCC4AF8 + 0x38) :=
+  have L56 : memLoad32 M (BitVec.ofNat 32 (img% sha512IVAddress) + 0x38) = memLoad32 M' (BitVec.ofNat 32 (img% sha512IVAddress) + 0x38) :=
     L 56 (by omega)
-  have L60 : memLoad32 M (BitVec.ofNat 32 0x3FCC4AF8 + 0x3C) = memLoad32 M' (BitVec.ofNat 32 0x3FCC4AF8 + 0x3C) :=
+  have L60 : memLoad32 M (BitVec.ofNat 32 (img% sha512IVAddress) + 0x3C) = memLoad32 M' (BitVec.ofNat 32 (img% sha512IVAddress) + 0x3C) :=
     L 60 (by omega)
   unfold s5Hv
   rw [L0, L4, L8, L12, L16, L20, L24, L28, L32, L36, L40, L44, L48, L52, L56, L60]
@@ -287,8 +289,8 @@ the result. -/
 theorem cs_loop {F keys buf : Word} {mlen nkeys : Nat} {M1 : Word → BitVec 8}
     (E1 : EvEnv M1) (hc1 : CodeIn M1 CSG checkSignaturesCode)
     (hF : F.toNat % 16 = 0) (hlo : 0xA10 ≤ F.toNat) (hhi : F.toNat + 0x16A0 ≤ 0x40000000)
-    (sRo : Sep (BitVec.ofNat 32 0x3FCC4000) 0x1400 (evG F) 0x20B0)
-    (iv1 : (s5Hv M1 (BitVec.ofNat 32 0x3FCC4AF8)).toList = Sha512.h0)
+    (sRo : Sep (BitVec.ofNat 32 (img% roWindowAddress)) (img% roWindowSize) (evG F) 0x20B0)
+    (iv1 : (s5Hv M1 (BitVec.ofNat 32 (img% sha512IVAddress))).toList = Sha512.h0)
     (sK : Sep keys (32 * nkeys) (evG F) 0x20B0) (hkw : keys.toNat + 32 * nkeys < 2 ^ 32)
     (sB : Sep buf mlen (evG F) 0x20B0) (hbw : buf.toNat + mlen ≤ 0x40000000) (hml : mlen < 2 ^ 31) :
     ∀ (k : Nat) (mx : Machine) (s : Word) (last : Nat),
@@ -603,8 +605,8 @@ theorem checkSignatures_correct (m : Machine) {retAddr sigs slen keys klen pre p
     (ha3 : reg m a3 = klen) (ha4 : reg m a4 = pre) (ha5 : reg m a5 = pay) (ha6 : reg m a6 = plen)
     (ha7 : reg m 17 = buf) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
     (hsp : (reg m sp).toNat % 16 = 0) (hsl : 0x20E0 ≤ (reg m sp).toNat) (hsw : (reg m sp).toNat ≤ 0x40000000)
-    (sRo : Sep (BitVec.ofNat 32 0x3FCC4000) 0x1400 (reg m sp + 0xFFFFDF20) 0x20E0)
-    (iv : (s5Hv m.mem (BitVec.ofNat 32 0x3FCC4AF8)).toList = Sha512.h0)
+    (sRo : Sep (BitVec.ofNat 32 (img% roWindowAddress)) (img% roWindowSize) (reg m sp + 0xFFFFDF20) 0x20E0)
+    (iv : (s5Hv m.mem (BitVec.ofNat 32 (img% sha512IVAddress))).toList = Sha512.h0)
     (sSig : Sep sigs slen.toNat (reg m sp + 0xFFFFDF20) 0x20E0) (hsigw : sigs.toNat + slen.toNat < 2 ^ 32)
     (sK : Sep keys (32 * (klen.toNat / 32)) (reg m sp + 0xFFFFDF20) 0x20E0)
     (hkw : keys.toNat + 32 * (klen.toNat / 32) < 2 ^ 32)
@@ -613,7 +615,7 @@ theorem checkSignatures_correct (m : Machine) {retAddr sigs slen keys klen pre p
     (hpayw : plen.toNat ≤ 0x1002 → pay.toNat + plen.toNat < 2 ^ 32)
     (sBuf : Sep buf 0x1018 (reg m sp + 0xFFFFDF20) 0x20E0) (hbw : buf.toNat + 0x1018 ≤ 0x40000000)
     (bPre : Sep buf 21 pre 21) (bPay : plen.toNat ≤ 0x1002 → Sep (buf + 0x16) plen.toNat pay plen.toNat)
-    (bRo : Sep buf 0x1018 (BitVec.ofNat 32 0x3FCC4000) 0x1400) :
+    (bRo : Sep buf 0x1018 (BitVec.ofNat 32 (img% roWindowAddress)) (img% roWindowSize)) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧
       (∀ q, q.val ∈ [2, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
       reg m' a0 = (csResult m.mem sigs slen keys klen pre pay plen buf).zeroExtend 32 ∧

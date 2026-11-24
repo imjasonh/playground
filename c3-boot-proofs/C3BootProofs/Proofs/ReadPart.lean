@@ -59,19 +59,19 @@ callee-saved registers restored and `len` in `a1`. `a0` is null, or it is
 flash from `part + off`. Memory outside the stack and `buf` is unchanged. -/
 theorem readPart_correct {flash : Nat → BitVec 8} {R : Nat} {romBase : Word} {romCode : List Nat}
     (hROM : RomRead flash R romBase romCode) (m : Machine) {G partOff rel len buf buflen retAddr : Word}
-    (env : FRdEnv m.mem 0x403A1748 G buf buflen R romBase romCode)
-    (hc : CodeIn m.mem 0x403A16F8 readPartCode) (hpc : m.pc = 0x403A16F8)
+    (env : FRdEnv m.mem (img% flashReadAddress) G buf buflen R romBase romCode)
+    (hc : CodeIn m.mem (img% readPartAddress) readPartCode) (hpc : m.pc = (img% readPartAddress))
     (ha0 : reg m a0 = partOff) (ha1 : reg m a1 = rel) (ha2 : reg m a2 = len) (ha3 : reg m a3 = buf)
     (ha4 : reg m a4 = buflen) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
     (hsp : reg m sp = G + BitVec.ofNat 32 (0x160 + R)) (hGt : G.toNat + 0x160 + R ≤ 2 ^ 32)
-    (sFP : Sep (G + BitVec.ofNat 32 (0x150 + R)) 16 0x403A16F8 readPartCode.length)
-    (sFC : Sep (G + BitVec.ofNat 32 (0x150 + R)) 16 0x403A1748 flashReadCode.length)
-    (sFM : Sep (G + BitVec.ofNat 32 (0x150 + R)) 16 (0x403A1748 + 0x1309E) memsetCode.length)
-    (sFW : Sep (G + BitVec.ofNat 32 (0x150 + R)) 16 (0x403A1748 + 0xFFFFFFE8) romFlashReadWordsCode.length)
+    (sFP : Sep (G + BitVec.ofNat 32 (0x150 + R)) 16 (img% readPartAddress) readPartCode.length)
+    (sFC : Sep (G + BitVec.ofNat 32 (0x150 + R)) 16 (img% flashReadAddress) flashReadCode.length)
+    (sFM : Sep (G + BitVec.ofNat 32 (0x150 + R)) 16 ((img% flashReadAddress) + 0x1309E) memsetCode.length)
+    (sFW : Sep (G + BitVec.ofNat 32 (0x150 + R)) 16 ((img% flashReadAddress) + 0xFFFFFFE8) romFlashReadWordsCode.length)
     (sFR : Sep (G + BitVec.ofNat 32 (0x150 + R)) 16 romBase romCode.length)
     (sOF : Sep buf buflen.toNat (G + BitVec.ofNat 32 (0x150 + R)) 16)
-    (sOP : Sep buf buflen.toNat 0x403A16F8 readPartCode.length)
-    (sGP : Sep G (0x150 + R) 0x403A16F8 readPartCode.length) :
+    (sOP : Sep buf buflen.toNat (img% readPartAddress) readPartCode.length)
+    (sGP : Sep G (0x150 + R) (img% readPartAddress) readPartCode.length) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ (∀ q, romKeep q = true → reg m' q = reg m q) ∧ reg m' a1 = len ∧
       (reg m' a0 = 0 ∨ (reg m' a0 = buf ∧ len.toNat ≤ buflen.toNat ∧ partOff.toNat + rel.toNat < 2 ^ 32 ∧
         ∀ i, i < len.toNat → m'.mem (buf + BitVec.ofNat 32 i) = flash (partOff.toNat + rel.toNat + i))) ∧
@@ -91,7 +91,7 @@ theorem readPart_correct {flash : Nat → BitVec 8} {R : Nat} {romBase : Word} {
     rw [← hF]; exact hx.sub (c := 0x150 + R) (l := 16) (by omega)
   have fr : ∀ c l, c + l ≤ 16 → ∀ (x : Word) (n : Nat), Sep F 16 x n → Sep (F + BitVec.ofNat 32 c) l x n :=
     fun c l h x n hx => hx.sub (c := c) (l := l) h
-  have s0 : St m.mem 0x403A16F8 m 0 (reg m) := ⟨by rw [hpc]; rfl, rfl, fun _ => rfl⟩
+  have s0 : St m.mem (img% readPartAddress) m 0 (reg m) := ⟨by rw [hpc]; rfl, rfl, fun _ => rfl⟩
   have hz := s0.zero
   obtain ⟨m1, e1, t1⟩ := s0.aluImm hc rp_at_0 (off' := 2) (by decide)
   rw [show aluEval .add (reg m sp) 0xFFFFFFF0 = F from hFsp] at t1
@@ -126,8 +126,8 @@ theorem readPart_correct {flash : Nat → BitVec 8} {R : Nat} {romBase : Word} {
       (memLoad32_store32_same _ _ _)
   have fC : memLoad32 M3 (F + 4) = reg m 9 := by rw [← hM3]; exact memLoad32_store32_same _ _ _
   obtain ⟨m5, e5, t5⟩ := t4.alu hc4 rp_at_8 (off' := 0xA) (by decide)
-  have tail : ∀ (Mx : Word → BitVec 8) (mx : Machine) (fx : Fin 32 → Word), St Mx 0x403A16F8 mx 0x2C fx →
-      CodeIn Mx 0x403A16F8 readPartCode → fx sp = F → fx 8 = len →
+  have tail : ∀ (Mx : Word → BitVec 8) (mx : Machine) (fx : Fin 32 → Word), St Mx (img% readPartAddress) mx 0x2C fx →
+      CodeIn Mx (img% readPartAddress) readPartCode → fx sp = F → fx 8 = len →
       memLoad32 Mx (F + 0xC) = reg m ra → memLoad32 Mx (F + 8) = reg m 8 → memLoad32 Mx (F + 4) = reg m 9 →
       (∀ q, romKeep q = true → q ≠ sp → q ≠ 8 → q ≠ 9 → fx q = reg m q) →
       ∃ m', Steps mx m' ∧ m'.pc = retAddr ∧ (∀ q, romKeep q = true → reg m' q = reg m q) ∧ reg m' a1 = len ∧
@@ -174,7 +174,7 @@ theorem readPart_correct {flash : Nat → BitVec 8} {R : Nat} {romBase : Word} {
       upd (upd (reg m) sp F) 8 (aluEval .add (upd (reg m) sp F x0) (upd (reg m) sp F a2)) q = reg m q := fun q hq h1 h2 => by
     rw [updz t4.zero h2, updz hz h1]
   have pre5 : Steps m m5 := .cons e1 (.cons e2 (.cons e3 (.cons e4 (.single e5))))
-  have from14 : ∀ (mx : Machine) (fx : Fin 32 → Word), Steps m mx → St M3 0x403A16F8 mx 0x14 fx → fx sp = F →
+  have from14 : ∀ (mx : Machine) (fx : Fin 32 → Word), Steps m mx → St M3 (img% readPartAddress) mx 0x14 fx → fx sp = F →
       fx 8 = len → (∀ q, romKeep q = true → q ≠ sp → q ≠ 8 → q ≠ 9 → fx q = reg m q) →
       ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ (∀ q, romKeep q = true → reg m' q = reg m q) ∧ reg m' a1 = len ∧
         (reg m' a0 = 0 ∨ (reg m' a0 = buf ∧ len.toNat ≤ buflen.toNat ∧ partOff.toNat + rel.toNat < 2 ^ 32 ∧
@@ -241,25 +241,25 @@ theorem readPart_correct {flash : Nat → BitVec 8} {R : Nat} {romBase : Word} {
   obtain ⟨m9, e9, t9⟩ := t8.alu hc4 rp_at_18 (off' := 0x1A) (by decide)
   obtain ⟨m10, e10, t10⟩ := t9.alu hc4 rp_at_1a (off' := 0x1C) (by decide)
   obtain ⟨m11, e11, t11⟩ := t10.alu hc4 rp_at_1c (off' := 0x1E) (by decide)
-  obtain ⟨m12, c12, pc12, mem12, regs12⟩ := t11.callRa (cb := 0x403A1748) hc4 rp_at_1e rp_at_22 (by decide) (by decide)
+  obtain ⟨m12, c12, pc12, mem12, regs12⟩ := t11.callRa (cb := (img% flashReadAddress)) hc4 rp_at_1e rp_at_22 (by decide) (by decide)
   have a012 : reg m12 a0 = partOff + rel := by rw [regs12]; simp +decide [upd, aluEval, ha0, ha1]
   have a112 : reg m12 a1 = buf := by rw [regs12]; simp +decide [upd, aluEval, ha3]
   have a212 : reg m12 a2 = len := by rw [regs12]; simp +decide [upd, aluEval, ha2]
-  have ra12 : reg m12 ra = 0x403A16F8 + BitVec.ofNat 32 (0x1E + 8) := by rw [regs12]; simp +decide [upd]
+  have ra12 : reg m12 ra = (img% readPartAddress) + BitVec.ofNat 32 (0x1E + 8) := by rw [regs12]; simp +decide [upd]
   have sp12 : reg m12 sp = F := by rw [regs12]; simp +decide [upd]
   have s012 : reg m12 8 = len := by rw [regs12]; simp +decide [upd, aluEval, ha2]
   have s112 : reg m12 9 = buf := by rw [regs12]; simp +decide [upd, aluEval, ha3]
-  have envM3 : FRdEnv M3 0x403A1748 G buf buflen R romBase romCode :=
+  have envM3 : FRdEnv M3 (img% flashReadAddress) G buf buflen R romBase romCode :=
     ⟨env.hP, codeOut sFC env.code, codeOut sFM env.mset, codeOut sFW env.fw, env.hG, env.hR, env.hGt, env.hlen,
       env.sGC, env.sGM, env.sGW, env.sOC, env.sOW, env.sOG, codeOut sFR env.rom, env.sGR, env.sOR⟩
-  have env12 : FRdEnv m12.mem 0x403A1748 G buf len R romBase romCode := by rw [mem12]; exact envM3.shrink hle
+  have env12 : FRdEnv m12.mem (img% flashReadAddress) G buf len R romBase romCode := by rw [mem12]; exact envM3.shrink hle
   obtain ⟨m13, c13, pc13, sp13, k13, a013, by13, mem13⟩ := flashRead_correct hROM m12 env12 pc12 a012 a112 a212 ra12
     (even_clear _ (by decide)) (by rw [sp12, ← hF])
   have shr : ∀ {b : Word} {k : Nat}, Sep buf buflen.toNat b k → Sep buf len.toNat b k := fun hs => by
     have := hs.sub (c := 0) (l := len.toNat) (by omega); rwa [add_ofNat_zero] at this
   have shrG : ∀ x, Sep G (0x160 + R) x 1 → Sep G (0x150 + R) x 1 := fun x hx => by
     have := hx.sub (c := 0) (l := 0x150 + R) (by omega); rwa [add_ofNat_zero] at this
-  have hc13 : CodeIn m13.mem 0x403A16F8 readPartCode := fun i hi => by
+  have hc13 : CodeIn m13.mem (img% readPartAddress) readPartCode := fun i hi => by
     rw [mem13 _ (sGP.subR (c := i) (l := 1) (by omega)) ((shr sOP).subR (c := i) (l := 1) (by omega)), mem12]
     exact hc4 i hi
   have fr13 : ∀ c, 4 ≤ c → c + 4 ≤ 16 → memLoad32 m13.mem (F + BitVec.ofNat 32 c) = memLoad32 M3 (F + BitVec.ofNat 32 c) :=
@@ -269,7 +269,7 @@ theorem readPart_correct {flash : Nat → BitVec 8} {R : Nat} {romBase : Word} {
       have := sep_offsets G (c := 0) (n := 0x150 + R) (d := 0x150 + R + (c + j)) (k := 1) (Or.inl (by omega))
         (by omega) (by omega)
       rwa [add_ofNat_zero] at this
-  have t13 : St m13.mem 0x403A16F8 m13 0x26 (reg m13) := ⟨by rw [pc13], rfl, fun _ => rfl⟩
+  have t13 : St m13.mem (img% readPartAddress) m13 0x26 (reg m13) := ⟨by rw [pc13], rfl, fun _ => rfl⟩
   obtain ⟨m14, e14, t14⟩ := t13.alu hc13 rp_at_26 (off' := 0x2A) (by decide)
   obtain ⟨m15, e15, t15⟩ := t14.alu hc13 rp_at_2a (off' := 0x2C) (by decide)
   have hz13 := t13.zero

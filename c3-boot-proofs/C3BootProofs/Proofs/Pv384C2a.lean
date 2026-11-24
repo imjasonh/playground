@@ -280,7 +280,7 @@ theorem pv_stC2a {B : Word} {sd sf : BitVec 8} {QX QY QZ RM SM ZM Ad Af : Nat} {
   have g5_10 : reg n5 a0 = B + 0x420 + BitVec.ofNat 32 0x1714 := by
     rw [rb5]; simp +decide only [runBlock, BInstr.run, pvC2a650, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g4_2, g4_3, g4_4, g4_9, g4_24, s4.zero, BitVec.zero_add]) <;> pv_val
-  have g5_11 : reg n5 a1 = BitVec.ofNat 32 0x3FCC4C5C := by
+  have g5_11 : reg n5 a1 = BitVec.ofNat 32 (img% u12OneAddress) := by
     rw [rb5]; simp +decide only [runBlock, BInstr.run, pvC2a650, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g4_2, g4_3, g4_4, g4_9, g4_24, s4.zero, BitVec.zero_add]) <;> pv_val
   have a5_120 : accV n5.mem (B + 0x420 + BitVec.ofNat 32 0x120) 12 = QX :=
@@ -351,8 +351,8 @@ theorem pv_stC2a {B : Word} {sd sf : BitVec 8} {QX QY QZ RM SM ZM Ad Af : Nat} {
   have keep_eq : reg n6 a0 = (if Af = 1 then 1 else 0) := by
     rw [V6]
     by_cases h : Af = 1
-    · rw [ite_eq_left h, ite_eq_left ((pv_eq_one (K := BitVec.ofNat 32 0x3FCC4C5C) keep_u6).2 (by rw [keep_a6]; exact h))]
-    · rw [ite_eq_right h, ite_eq_right (fun h' => h (by rw [← keep_a6]; exact (pv_eq_one (K := BitVec.ofNat 32 0x3FCC4C5C) keep_u6).1 h'))]
+    · rw [ite_eq_left h, ite_eq_left ((pv_eq_one (K := BitVec.ofNat 32 (img% u12OneAddress)) keep_u6).2 (by rw [keep_a6]; exact h))]
+    · rw [ite_eq_right h, ite_eq_right (fun h' => h (by rw [← keep_a6]; exact (pv_eq_one (K := BitVec.ofNat 32 (img% u12OneAddress)) keep_u6).1 h'))]
   exact ⟨n6, t6, s6, E6, fR6, g6_2, g6_3, g6_4, g6_9, g6_24, keep_eq, a6_120, a6_150, a6_180, a6_1b0, a6_1e0, a6_210, a6_1294, b6_2a0, b6_1744⟩
 
 end C3.RV32.Pv

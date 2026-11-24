@@ -987,7 +987,7 @@ theorem pv_stI0 {B : Word} {RM INV PX PY : Nat} {n0 : Machine}
   have g22_11 : reg n22 a1 = B + 0x420 + BitVec.ofNat 32 0x1294 := by
     rw [rb22]; simp +decide only [runBlock, BInstr.run, pvI01136, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g21_2, g21_3, g21_4, g21_8, g21_9, g21_19, s21.zero, BitVec.zero_add]) <;> pv_val
-  have g22_12 : reg n22 a2 = BitVec.ofNat 32 0x3FCC43C8 := by
+  have g22_12 : reg n22 a2 = BitVec.ofNat 32 (img% p384AffineIdentityAddress) := by
     rw [rb22]; simp +decide only [runBlock, BInstr.run, pvI01136, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g21_2, g21_3, g21_4, g21_8, g21_9, g21_19, s21.zero, BitVec.zero_add]) <;> pv_val
   have a22_1b0 : accV n22.mem (B + 0x420 + BitVec.ofNat 32 0x1B0) 12 = RM :=

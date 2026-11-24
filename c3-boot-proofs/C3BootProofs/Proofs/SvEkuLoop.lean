@@ -15,7 +15,7 @@ open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv C3.RV32.Gs C3.RV32.P2
 set_option linter.unusedVariables false in
 /-- One more `ExtKeyUsage` OID, from state `s` to `s'`: there are bytes left, and the next entry is an OID. -/
 def sv_ekuStep (B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4 sl5 sl6 sl7 sl8 sl9 w4c w50 w54 w58 w5c w60 w64 w68 w6c w70 w74 w78 w7c w80 w84 rest : Word) (v : Nat → Word) (M0 : Word → BitVec 8) : Word × Word × Word → Word × Word × Word → Prop :=
-  fun s s' => s.2.2 ≠ 0 ∧ ∃ op4 ol4, derContent ((s.2.1)) (derOid (memBytes M0 ((s.2.1)) ((s.2.2)).toNat)) = .ok (op4, ol4) ∧ ∃ to4, derOid (memBytes M0 ((s.2.1)) ((s.2.2)).toNat) = .ok to4 ∧ s' = (((s.1)) ||| (if memBytes M0 op4 ol4.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4820) 8 then BitVec.ofNat 32 1 else BitVec.ofNat 32 0), ((s.2.1)) + BitVec.ofNat 32 (to4.header + to4.len), ((s.2.2)) - BitVec.ofNat 32 (to4.header + to4.len))
+  fun s s' => s.2.2 ≠ 0 ∧ ∃ op4 ol4, derContent ((s.2.1)) (derOid (memBytes M0 ((s.2.1)) ((s.2.2)).toNat)) = .ok (op4, ol4) ∧ ∃ to4, derOid (memBytes M0 ((s.2.1)) ((s.2.2)).toNat) = .ok to4 ∧ s' = (((s.1)) ||| (if memBytes M0 op4 ol4.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x8)) 8 then BitVec.ofNat 32 1 else BitVec.ofNat 32 0), ((s.2.1)) + BitVec.ofNat 32 (to4.header + to4.len), ((s.2.2)) - BitVec.ofNat 32 (to4.header + to4.len))
 
 set_option linter.unusedVariables false in
 /-- How `sv_deku3` ends once `cl` is 0. -/

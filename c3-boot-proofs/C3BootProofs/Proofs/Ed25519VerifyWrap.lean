@@ -1,6 +1,8 @@
 import C3BootProofs.Proofs.Ed25519VerifyCall
 import C3BootProofs.Proofs.Scalar29Sub
 import C3BootProofs.Proofs.Scalar29Pack
+import C3BootProofs.Image.BootloaderData5
+import C3BootProofs.Image.BootloaderData7
 
 /-!
 # `ed25519_verify`'s calls
@@ -18,8 +20,8 @@ open C3.Image
 
 /-- `ed25519_public_key_ok` with the constants as `M` holds them. -/
 def evPk (M : Word → BitVec 8) (b : Bytes) : Bool :=
-  pkOkSpec (memBytes M (BitVec.ofNat 32 0x3FCC4328) 32) (memBytes M (BitVec.ofNat 32 0x3FCC42E8) 32)
-    (memBytes M (BitVec.ofNat 32 0x3FCC4388) 32) (feW M (BitVec.ofNat 32 edOneAddress))
+  pkOkSpec (memBytes M (BitVec.ofNat 32 (img% edPrimeAddress)) 32) (memBytes M (BitVec.ofNat 32 (img% p256OneAddress)) 32)
+    (memBytes M (BitVec.ofNat 32 (img% edPm1Address)) 32) (feW M (BitVec.ofNat 32 edOneAddress))
     (feW M (BitVec.ofNat 32 edDAddress)) (feW M (BitVec.ofNat 32 edSqrtM1Address)) b
 
 /-- `decompress` of the bytes `b` with the constants as `M` holds them. -/
@@ -43,8 +45,8 @@ theorem ev_ra {off : Nat} {f : Fin 32 → Word} :
     upd f ra (EV + BitVec.ofNat 32 (off + 8)) ra = EV + BitVec.ofNat 32 (off + 8) := by simp +decide [upd]
 
 theorem EvSt.pkSpec (C : EvCtx M0 F pk sig msg len) (D : EvSt M0 Ms F r0 M n off) (b : Bytes) :
-    pkOkSpec (memBytes M (BitVec.ofNat 32 0x3FCC4328) 32) (memBytes M (BitVec.ofNat 32 0x3FCC42E8) 32)
-      (memBytes M (BitVec.ofNat 32 0x3FCC4388) 32) (feW M (BitVec.ofNat 32 edOneAddress))
+    pkOkSpec (memBytes M (BitVec.ofNat 32 (img% edPrimeAddress)) 32) (memBytes M (BitVec.ofNat 32 (img% p256OneAddress)) 32)
+      (memBytes M (BitVec.ofNat 32 (img% edPm1Address)) 32) (feW M (BitVec.ofNat 32 edOneAddress))
       (feW M (BitVec.ofNat 32 edDAddress)) (feW M (BitVec.ofNat 32 edSqrtM1Address)) b = evPk M0 b := by
   unfold evPk
   rw [D.bytesRo C (by decide) (by decide), D.bytesRo C (by decide) (by decide), D.bytesRo C (by decide) (by decide),

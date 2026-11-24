@@ -18,7 +18,7 @@ set_option maxRecDepth 20000
 
 /-- The read-only region `ed25519_verify`'s constants live in lies outside
 the frame's region. -/
-def SvRoSep (B : Word) : Prop := Sep (B + 0xFFFFFE60) 0x39D0 (BitVec.ofNat 32 0x3FCC4000) 0x1400
+def SvRoSep (B : Word) : Prop := Sep (B + 0xFFFFFE60) 0x39D0 (BitVec.ofNat 32 (img% roWindowAddress)) (img% roWindowSize)
 
 /-- `M0` with the 64 bytes `L` at `sig`. -/
 def sigMem (M0 : Word → BitVec 8) (sig : Word) (L : Bytes) : Word → BitVec 8 :=
@@ -44,7 +44,7 @@ set_option maxHeartbeats 1000000 in
 `msg`, and the signature `L` at offset `oc` of the frame. -/
 theorem sv_edF {n : Machine} {B : Word} {off : Nat} {imm o pk msg : Word} {oc len : Nat} {L : Bytes}
     {M0 : Word → BitVec 8} (F : Fr B 0x3830) (C : SvCode n.mem) (EE : EvEnv M0) (RS : SvRoSep B)
-    (hiv : (s5Hv M0 (BitVec.ofNat 32 0x3FCC4AF8)).toList = Sha512.h0)
+    (hiv : (s5Hv M0 (BitVec.ofNat 32 (img% sha512IVAddress))).toList = Sha512.h0)
     (fR : ∀ x, SvR B x → n.mem x = M0 x) (s : St n.mem SV n off (reg n))
     (h1 : fetchRel sigstoreVerifyCode off = some (.auipc ra imm, 4))
     (h2 : fetchRel sigstoreVerifyCode (off + 4) = some (.jalr ra ra o, 4))
@@ -72,10 +72,10 @@ theorem sv_edF {n : Machine} {B : Word} {off : Nat} {imm o pk msg : Word} {oc le
       rw [BitVec.add_assoc]; rfl] at this
   have hsS : Sep (B + 0x21A0 + BitVec.ofNat 32 oc) 64 (B + BitVec.ofNat 32 0xF0) 0x20B0 := by
     rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega)
-  have hro : ∀ i, i < 0x1400 → SvR B (BitVec.ofNat 32 (0x3FCC4000 + i)) := fun i hi => by
+  have hro : ∀ i, i < (img% roWindowSize) → SvR B (BitVec.ofNat 32 ((img% roWindowAddress) + i)) := fun i hi => by
     have := RS.symm.sub (c := i) (l := 1) (by omega)
     rw [ofNat_add_ofNat] at this; exact this.symm
-  have hroS : Sep (BitVec.ofNat 32 0x3FCC4000) 0x1400 (B + BitVec.ofNat 32 0xF0) 0x20B0 := by
+  have hroS : Sep (BitVec.ofNat 32 (img% roWindowAddress)) (img% roWindowSize) (B + BitVec.ofNat 32 0xF0) 0x20B0 := by
     have := RS.symm.subR (c := 0x1A0 + 0xF0) (l := 0x20B0) (by decide)
     rwa [show B + 0xFFFFFE60 + BitVec.ofNat 32 (0x1A0 + 0xF0) = B + BitVec.ofNat 32 0xF0 by
       rw [BitVec.add_assoc]; rfl] at this

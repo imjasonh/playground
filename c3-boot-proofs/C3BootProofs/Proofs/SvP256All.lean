@@ -18,11 +18,11 @@ set_option maxRecDepth 100000
 
 /-- The inversion of `s`'s state after its 10 batches. -/
 def p256Sf (M0 : Word → BitVec 8) (es : Bytes) : Iv :=
-  ivLoop8 (accV M0 (BitVec.ofNat 32 0x3FCC4268) 8) 10 (p256Iv0 M0 es)
+  ivLoop8 (accV M0 (BitVec.ofNat 32 (img% b2sOrder256Address)) 8) 10 (p256Iv0 M0 es)
 
 /-- The inversion of `Z`'s state after its 10 batches. -/
 def p256Sz (M0 : Word → BitVec 8) (Z : Nat) : Iv :=
-  zvLoop (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8) 10 (p256Zv0 M0 Z)
+  zvLoop (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8) 10 (p256Zv0 M0 Z)
 
 theorem p256_zx (b : BitVec 8) : (b.zeroExtend 32).toNat = b.toNat := by
   rw [BitVec.toNat_setWidth, Nat.mod_eq_of_lt (by have := b.isLt; omega)]
@@ -61,14 +61,14 @@ theorem sv_p256 {B out bp x21 x26 : Word} {er es : Bytes} {v : Nat → Word} {n0
     (OD : CodeIn M0 (BitVec.ofNat 32 p256MontOneAddress) p256MontOneData)
     (AD : CodeIn M0 (BitVec.ofNat 32 p256AffineIdXAddress) p256AffineIdXData)
     (hzi : ∀ Z τd τf Dz Fz, τd ≤ 1 → τf ≤ 1 → sgnVal τf Fz = (p256Sz M0 Z).f → sgnVal τd Dz = (p256Sz M0 Z).d →
-        normVal8 τd τf Dz (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8) < p256) :
-    (¬ (((inScalarRange (b32 er) (memBytes M0 (BitVec.ofNat 32 0x3FCC4288) 32) = true) ∧ (inScalarRange (b32 es) (memBytes M0 (BitVec.ofNat 32 0x3FCC4288) 32) = true) ∧ (M0 x21 = 4) ∧ True) ∧ ((GsOk M0 x21) ∧ (beNat (b32 er) < C3.p256.n) ∧ (beNat (b32 es) < C3.p256.n) ∧ (beNat (b32 er) ≠ 0) ∧ (beNat (b32 es) ≠ 0) ∧ True)) ∧ SvErrRet B out v n0) ∨ Panics n0 ∨
-    ((((inScalarRange (b32 er) (memBytes M0 (BitVec.ofNat 32 0x3FCC4288) 32) = true) ∧ (inScalarRange (b32 es) (memBytes M0 (BitVec.ofNat 32 0x3FCC4288) 32) = true) ∧ (M0 x21 = 4) ∧ True) ∧ ((GsOk M0 x21) ∧ (beNat (b32 er) < C3.p256.n) ∧ (beNat (b32 es) < C3.p256.n) ∧ (beNat (b32 er) ≠ 0) ∧ (beNat (b32 es) ≠ 0) ∧ True)) ∧
+        normVal8 τd τf Dz (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8) < p256) :
+    (¬ (((inScalarRange (b32 er) (memBytes M0 (BitVec.ofNat 32 (img% p256OrderBeAddress)) 32) = true) ∧ (inScalarRange (b32 es) (memBytes M0 (BitVec.ofNat 32 (img% p256OrderBeAddress)) 32) = true) ∧ (M0 x21 = 4) ∧ True) ∧ ((GsOk M0 x21) ∧ (beNat (b32 er) < C3.p256.n) ∧ (beNat (b32 es) < C3.p256.n) ∧ (beNat (b32 er) ≠ 0) ∧ (beNat (b32 es) ≠ 0) ∧ True)) ∧ SvErrRet B out v n0) ∨ Panics n0 ∨
+    ((((inScalarRange (b32 er) (memBytes M0 (BitVec.ofNat 32 (img% p256OrderBeAddress)) 32) = true) ∧ (inScalarRange (b32 es) (memBytes M0 (BitVec.ofNat 32 (img% p256OrderBeAddress)) 32) = true) ∧ (M0 x21 = 4) ∧ True) ∧ ((GsOk M0 x21) ∧ (beNat (b32 er) < C3.p256.n) ∧ (beNat (b32 es) < C3.p256.n) ∧ (beNat (b32 er) ≠ 0) ∧ (beNat (b32 es) ≠ 0) ∧ True)) ∧
       ∃ σd σf Dv Fv, σd ≤ 1 ∧ σf ≤ 1 ∧ sgnVal σf Fv = (p256Sf M0 es).f ∧ sgnVal σd Dv = (p256Sf M0 es).d ∧
-      (((Fv = accV M0 (BitVec.ofNat 32 0x3FCC42E8) 8)) ∧ True) ∧ ∃ stm, mlMain2 (tbl2 (accV M0 (BitVec.ofNat 32 0x3FCC4690 + BitVec.ofNat 32 0x0) 8, accV M0 (BitVec.ofNat 32 0x3FCC4690 + BitVec.ofNat 32 0x20) 8, accV M0 (BitVec.ofNat 32 0x3FCC4690 + BitVec.ofNat 32 0x40) 8)) (tbl2 ((gsVal M0 x21 1 * 2 ^ 256 % p256), (gsVal M0 x21 0x21 * 2 ^ 256 % p256), (accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8))) (wnafBytes (wnafGo ((psmVal (((beNat (memBytes M0 (memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x84)) 32) % C3.p256.n)) * ((normVal8 σd σf Dv (accV M0 (BitVec.ofNat 32 0x3FCC4268) 8)))))) 0x100 0x101 0 0) 0x101) (wnafBytes (wnafGo ((psmVal (((beNat (b32 er))) * ((normVal8 σd σf Dv (accV M0 (BitVec.ofNat 32 0x3FCC4268) 8)))))) 0x100 0x101 0 0) 0x101) (max (wnafGo ((psmVal (((beNat (memBytes M0 (memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x84)) 32) % C3.p256.n)) * ((normVal8 σd σf Dv (accV M0 (BitVec.ofNat 32 0x3FCC4268) 8)))))) 0x100 0x101 0 0).length (wnafGo ((psmVal (((beNat (b32 er))) * ((normVal8 σd σf Dv (accV M0 (BitVec.ofNat 32 0x3FCC4268) 8)))))) 0x100 0x101 0 0).length) = some stm ∧
+      (((Fv = accV M0 (BitVec.ofNat 32 (img% p256OneAddress)) 8)) ∧ True) ∧ ∃ stm, mlMain2 (tbl2 (accV M0 (BitVec.ofNat 32 (img% p256GMontAddress) + BitVec.ofNat 32 0x0) 8, accV M0 (BitVec.ofNat 32 (img% p256GMontAddress) + BitVec.ofNat 32 0x20) 8, accV M0 (BitVec.ofNat 32 (img% p256GMontAddress) + BitVec.ofNat 32 0x40) 8)) (tbl2 ((gsVal M0 x21 1 * 2 ^ 256 % p256), (gsVal M0 x21 0x21 * 2 ^ 256 % p256), (accV M0 (BitVec.ofNat 32 (img% p256MontOneAddress)) 8))) (wnafBytes (wnafGo ((psmVal (((beNat (memBytes M0 (memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x84)) 32) % C3.p256.n)) * ((normVal8 σd σf Dv (accV M0 (BitVec.ofNat 32 (img% b2sOrder256Address)) 8)))))) 0x100 0x101 0 0) 0x101) (wnafBytes (wnafGo ((psmVal (((beNat (b32 er))) * ((normVal8 σd σf Dv (accV M0 (BitVec.ofNat 32 (img% b2sOrder256Address)) 8)))))) 0x100 0x101 0 0) 0x101) (max (wnafGo ((psmVal (((beNat (memBytes M0 (memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x84)) 32) % C3.p256.n)) * ((normVal8 σd σf Dv (accV M0 (BitVec.ofNat 32 (img% b2sOrder256Address)) 8)))))) 0x100 0x101 0 0).length (wnafGo ((psmVal (((beNat (b32 er))) * ((normVal8 σd σf Dv (accV M0 (BitVec.ofNat 32 (img% b2sOrder256Address)) 8)))))) 0x100 0x101 0 0).length) = some stm ∧
       ∃ τd τf Dz Fz, τd ≤ 1 ∧ τf ≤ 1 ∧ sgnVal τf Fz = (p256Sz M0 stm.1.2.2).f ∧ sgnVal τd Dz = (p256Sz M0 stm.1.2.2).d ∧
-      ((¬ ((((beNat (b32 er)) = (p2fm ((if (((((((((if stm.1.2.2 = 0 then 0 else 1 : Word)) &&& BitVec.ofNat 32 0xFF))) &&& (((if Fz = accV M0 (BitVec.ofNat 32 0x3FCC42E8) 8 then 1 else 0 : Word)) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32).extractLsb' 0 8) = 1 then p2fm ((stm.1.1)) ((if ((((((((((if stm.1.2.2 = 0 then 0 else 1 : Word)) &&& BitVec.ofNat 32 0xFF))) &&& (((if Fz = accV M0 (BitVec.ofNat 32 0x3FCC42E8) 8 then 1 else 0 : Word)) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32).extractLsb' 0 8).zeroExtend 32) = 1 then (if (((((((((if stm.1.2.2 = 0 then 0 else 1 : Word)) &&& BitVec.ofNat 32 0xFF))) &&& (((if Fz = accV M0 (BitVec.ofNat 32 0x3FCC42E8) 8 then 1 else 0 : Word)) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32).extractLsb' 0 8) = 1 then (if (((((((((if stm.1.2.2 = 0 then 0 else 1 : Word)) &&& BitVec.ofNat 32 0xFF))) &&& (((if Fz = accV M0 (BitVec.ofNat 32 0x3FCC42E8) 8 then 1 else 0 : Word)) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32) &&& BitVec.ofNat 32 0xFF) = 1 then normVal8 τd τf Dz (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8) else 0) else 0) else 0)) else accV M0 (BitVec.ofNat 32 0x3FCC442C) 8)) 1) % C3.p256.n)) ∧ True) ∧ SvErrRet B out v n0) ∨
-       (((((beNat (b32 er)) = (p2fm ((if (((((((((if stm.1.2.2 = 0 then 0 else 1 : Word)) &&& BitVec.ofNat 32 0xFF))) &&& (((if Fz = accV M0 (BitVec.ofNat 32 0x3FCC42E8) 8 then 1 else 0 : Word)) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32).extractLsb' 0 8) = 1 then p2fm ((stm.1.1)) ((if ((((((((((if stm.1.2.2 = 0 then 0 else 1 : Word)) &&& BitVec.ofNat 32 0xFF))) &&& (((if Fz = accV M0 (BitVec.ofNat 32 0x3FCC42E8) 8 then 1 else 0 : Word)) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32).extractLsb' 0 8).zeroExtend 32) = 1 then (if (((((((((if stm.1.2.2 = 0 then 0 else 1 : Word)) &&& BitVec.ofNat 32 0xFF))) &&& (((if Fz = accV M0 (BitVec.ofNat 32 0x3FCC42E8) 8 then 1 else 0 : Word)) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32).extractLsb' 0 8) = 1 then (if (((((((((if stm.1.2.2 = 0 then 0 else 1 : Word)) &&& BitVec.ofNat 32 0xFF))) &&& (((if Fz = accV M0 (BitVec.ofNat 32 0x3FCC42E8) 8 then 1 else 0 : Word)) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32) &&& BitVec.ofNat 32 0xFF) = 1 then normVal8 τd τf Dz (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8) else 0) else 0) else 0)) else accV M0 (BitVec.ofNat 32 0x3FCC442C) 8)) 1) % C3.p256.n)) ∧ True) ∧ ∃ m', Steps n0 m' ∧ (∀ x, SvR B x → m'.mem x = M0 x) ∧ St m'.mem SV m' 0x2034 (reg m') ∧
+      ((¬ ((((beNat (b32 er)) = (p2fm ((if (((((((((if stm.1.2.2 = 0 then 0 else 1 : Word)) &&& BitVec.ofNat 32 0xFF))) &&& (((if Fz = accV M0 (BitVec.ofNat 32 (img% p256OneAddress)) 8 then 1 else 0 : Word)) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32).extractLsb' 0 8) = 1 then p2fm ((stm.1.1)) ((if ((((((((((if stm.1.2.2 = 0 then 0 else 1 : Word)) &&& BitVec.ofNat 32 0xFF))) &&& (((if Fz = accV M0 (BitVec.ofNat 32 (img% p256OneAddress)) 8 then 1 else 0 : Word)) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32).extractLsb' 0 8).zeroExtend 32) = 1 then (if (((((((((if stm.1.2.2 = 0 then 0 else 1 : Word)) &&& BitVec.ofNat 32 0xFF))) &&& (((if Fz = accV M0 (BitVec.ofNat 32 (img% p256OneAddress)) 8 then 1 else 0 : Word)) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32).extractLsb' 0 8) = 1 then (if (((((((((if stm.1.2.2 = 0 then 0 else 1 : Word)) &&& BitVec.ofNat 32 0xFF))) &&& (((if Fz = accV M0 (BitVec.ofNat 32 (img% p256OneAddress)) 8 then 1 else 0 : Word)) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32) &&& BitVec.ofNat 32 0xFF) = 1 then normVal8 τd τf Dz (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8) else 0) else 0) else 0)) else accV M0 (BitVec.ofNat 32 (img% p256AffineIdXAddress)) 8)) 1) % C3.p256.n)) ∧ True) ∧ SvErrRet B out v n0) ∨
+       (((((beNat (b32 er)) = (p2fm ((if (((((((((if stm.1.2.2 = 0 then 0 else 1 : Word)) &&& BitVec.ofNat 32 0xFF))) &&& (((if Fz = accV M0 (BitVec.ofNat 32 (img% p256OneAddress)) 8 then 1 else 0 : Word)) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32).extractLsb' 0 8) = 1 then p2fm ((stm.1.1)) ((if ((((((((((if stm.1.2.2 = 0 then 0 else 1 : Word)) &&& BitVec.ofNat 32 0xFF))) &&& (((if Fz = accV M0 (BitVec.ofNat 32 (img% p256OneAddress)) 8 then 1 else 0 : Word)) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32).extractLsb' 0 8).zeroExtend 32) = 1 then (if (((((((((if stm.1.2.2 = 0 then 0 else 1 : Word)) &&& BitVec.ofNat 32 0xFF))) &&& (((if Fz = accV M0 (BitVec.ofNat 32 (img% p256OneAddress)) 8 then 1 else 0 : Word)) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32).extractLsb' 0 8) = 1 then (if (((((((((if stm.1.2.2 = 0 then 0 else 1 : Word)) &&& BitVec.ofNat 32 0xFF))) &&& (((if Fz = accV M0 (BitVec.ofNat 32 (img% p256OneAddress)) 8 then 1 else 0 : Word)) &&& BitVec.ofNat 32 0xFF)).extractLsb' 0 8).zeroExtend 32) &&& BitVec.ofNat 32 0xFF) = 1 then normVal8 τd τf Dz (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8) else 0) else 0) else 0)) else accV M0 (BitVec.ofNat 32 (img% p256AffineIdXAddress)) 8)) 1) % C3.p256.n)) ∧ True) ∧ ∃ m', Steps n0 m' ∧ (∀ x, SvR B x → m'.mem x = M0 x) ∧ St m'.mem SV m' 0x2034 (reg m') ∧
         SvCode m'.mem ∧ SvSaves B m'.mem v ∧ reg m' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧
         reg m' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧
         reg m' sp = B + 0x21A0 ∧
@@ -138,27 +138,27 @@ theorem sv_p256 {B out bp x21 x26 : Word} {er es : Bytes} {v : Nat → Word} {n0
         accV m'.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = (beNat (memBytes M0 (memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x84)) 32) % C3.p256.n) ∧
         accV m'.mem (B + 0x21A0 + BitVec.ofNat 32 0x15A8) 8 = (stm.1.1) ∧
         accV m'.mem (B + 0x21A0 + BitVec.ofNat 32 0x15C8) 8 = (stm.1.2.1)))) := by
-  have hN : 0 < accV M0 (BitVec.ofNat 32 0x3FCC4268) 8 := by
+  have hN : 0 < accV M0 (BitVec.ofNat 32 (img% b2sOrder256Address)) 8 := by
     show 0 < accV M0 BYO 8; rw [BY0.ord]; decide
-  have hP : 0 < accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by
+  have hP : 0 < accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by
     have h := code_accV D0.params 0 8 (by decide)
     rw [add_ofNat_zero] at h
     show 0 < accV M0 P2N 8; rw [h]; decide
-  have hG : Pt2Lt (accV M0 (BitVec.ofNat 32 0x3FCC4690 + BitVec.ofNat 32 0x0) 8, accV M0 (BitVec.ofNat 32 0x3FCC4690 + BitVec.ofNat 32 0x20) 8, accV M0 (BitVec.ofNat 32 0x3FCC4690 + BitVec.ofNat 32 0x40) 8) := by
-    have g0 : accV M0 (BitVec.ofNat 32 0x3FCC4690 + BitVec.ofNat 32 0x0) 8 = dataVal p256GMontData 0 8 :=
+  have hG : Pt2Lt (accV M0 (BitVec.ofNat 32 (img% p256GMontAddress) + BitVec.ofNat 32 0x0) 8, accV M0 (BitVec.ofNat 32 (img% p256GMontAddress) + BitVec.ofNat 32 0x20) 8, accV M0 (BitVec.ofNat 32 (img% p256GMontAddress) + BitVec.ofNat 32 0x40) 8) := by
+    have g0 : accV M0 (BitVec.ofNat 32 (img% p256GMontAddress) + BitVec.ofNat 32 0x0) 8 = dataVal p256GMontData 0 8 :=
       code_accV GD 0 8 (by decide)
-    have g1 : accV M0 (BitVec.ofNat 32 0x3FCC4690 + BitVec.ofNat 32 0x20) 8 = dataVal p256GMontData 0x20 8 :=
+    have g1 : accV M0 (BitVec.ofNat 32 (img% p256GMontAddress) + BitVec.ofNat 32 0x20) 8 = dataVal p256GMontData 0x20 8 :=
       code_accV GD 0x20 8 (by decide)
-    have g2 : accV M0 (BitVec.ofNat 32 0x3FCC4690 + BitVec.ofNat 32 0x40) 8 = dataVal p256GMontData 0x40 8 :=
+    have g2 : accV M0 (BitVec.ofNat 32 (img% p256GMontAddress) + BitVec.ofNat 32 0x40) 8 = dataVal p256GMontData 0x40 8 :=
       code_accV GD 0x40 8 (by decide)
     rw [g0, g1, g2]; exact ⟨by decide, by decide, by decide⟩
-  have hQ : Pt2Lt ((gsVal M0 x21 1 * 2 ^ 256 % p256), (gsVal M0 x21 0x21 * 2 ^ 256 % p256), (accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8)) := by
-    have z : accV M0 (BitVec.ofNat 32 0x3FCC43A8 + BitVec.ofNat 32 0) 8 = dataVal p256MontOneData 0 8 :=
+  have hQ : Pt2Lt ((gsVal M0 x21 1 * 2 ^ 256 % p256), (gsVal M0 x21 0x21 * 2 ^ 256 % p256), (accV M0 (BitVec.ofNat 32 (img% p256MontOneAddress)) 8)) := by
+    have z : accV M0 (BitVec.ofNat 32 (img% p256MontOneAddress) + BitVec.ofNat 32 0) 8 = dataVal p256MontOneData 0 8 :=
       code_accV OD 0 8 (by decide)
     rw [add_ofNat_zero] at z
-    exact ⟨Nat.mod_lt _ p256_pos, Nat.mod_lt _ p256_pos, by show accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8 < p256; rw [z]; decide⟩
-  have hidR : accV M0 (BitVec.ofNat 32 0x3FCC442C) 8 < p256 := by
-    have z : accV M0 (BitVec.ofNat 32 0x3FCC442C + BitVec.ofNat 32 0) 8 = dataVal p256AffineIdXData 0 8 :=
+    exact ⟨Nat.mod_lt _ p256_pos, Nat.mod_lt _ p256_pos, by show accV M0 (BitVec.ofNat 32 (img% p256MontOneAddress)) 8 < p256; rw [z]; decide⟩
+  have hidR : accV M0 (BitVec.ofNat 32 (img% p256AffineIdXAddress)) 8 < p256 := by
+    have z : accV M0 (BitVec.ofNat 32 (img% p256AffineIdXAddress) + BitVec.ofNat 32 0) 8 = dataVal p256AffineIdXData 0 8 :=
       code_accV AD 0 8 (by decide)
     rw [add_ofNat_zero] at z
     rw [z]; decide

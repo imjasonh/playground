@@ -1930,10 +1930,10 @@ theorem wf_pro (m : Machine) {F wp cp : Word} {wl cn L : Nat} (C : WfCtx m.mem F
   obtain ⟨m1, d1, u1⟩ := s0.aluImm C.cod wf_at_0 (off' := 2) (by decide)
   have sp1 : upd (reg m) sp (aluEval .add (reg m sp) 0xFFFFFF90) sp = F := by
     simp +decide only [upd_app, ↓reduceIte]; exact hsp
-  have hWF : WF.toNat = 0x403a2944 := by decide
+  have hWF : WF.toNat = (img% wnafFormAddress) := by decide
   have sFC : Sep F 0x70 WF wnafFormCode.length := sep_of_le (by rw [hWF]; omega) (by decide)
   have sFM : Sep F 0x70 (BitVec.ofNat 32 memsetAddress) memsetCode.length :=
-    sep_of_le (by rw [show (BitVec.ofNat 32 memsetAddress).toNat = 0x403b47e6 by decide]; omega) (by decide)
+    sep_of_le (by rw [show (BitVec.ofNat 32 memsetAddress).toNat = (img% memsetAddress) by decide]; omega) (by decide)
   obtain ⟨m2, c2, u2⟩ := St.block (saveBlock wfPs) u1 C.cod wfSave_end (saveBlock_ok _ wfPs _ fun p hp => by
     rw [sp1]
     exact ⟨fr_al' hFa (wfPs_range p hp).1, frm_sep' sFC (by have := wfPs_range p hp; omega)⟩)

@@ -39,8 +39,8 @@ structure ICode (M : Word → BitVec 8) (P : Word) : Prop where
   physical : CodeIn M (P + 0x484) segmentPhysicalCode
   stub : CodeIn M (P + 0xB5E6) memcpyStubCode
   body : CodeIn M (P + 0xB5EE) memcpyBodyCode
-  ends : CodeIn M 0x3FCC5240 regionEndsData
-  starts : CodeIn M 0x3FCC5250 regionStartsData
+  ends : CodeIn M (img% regionEndsAddress) regionEndsData
+  starts : CodeIn M (img% regionStartsAddress) regionStartsData
 
 theorem ip_wq (P x : Word) (c : Nat) (h : x = 0xFFFFFD2E + BitVec.ofNat 32 c) :
     P + x = ipWindow P + BitVec.ofNat 32 c := by rw [h, ← BitVec.add_assoc]
@@ -62,7 +62,7 @@ set_option maxRecDepth 8000 in
 /-- `ICode` holds in any memory that agrees on the code window and the tables. -/
 theorem ICode.of_agree {M M' : Word → BitVec 8} {P : Word} (hc : ICode M P)
     (h : ∀ k, k < ipWindowLen → M' (ipWindow P + BitVec.ofNat 32 k) = M (ipWindow P + BitVec.ofNat 32 k))
-    (ht : ∀ k, k < 32 → M' (0x3FCC5240 + BitVec.ofNat 32 k) = M (0x3FCC5240 + BitVec.ofNat 32 k)) :
+    (ht : ∀ k, k < 32 → M' ((img% regionEndsAddress) + BitVec.ofNat 32 k) = M ((img% regionEndsAddress) + BitVec.ofNat 32 k)) :
     ICode M' P where
   parse := codeIn_of_ipWindow 0x2D2 (ip_wP P) (by decide) hc.parse h
   magic := codeIn_of_ipWindow 0 (ip_wq P _ _ (by decide)) (by decide) hc.magic h
@@ -93,7 +93,7 @@ structure IEnv (P R G ptr len out : Word) : Prop where
   hwrap : out.toNat + 0x110 ≤ 2 ^ 32
   hbuf : ptr ≠ 0 ∧ ptr.toNat + len.toNat ≤ 2 ^ 32
   hSW : Sep R 0x190 (ipWindow P) ipWindowLen
-  hST : Sep R 0x190 0x3FCC5240 32
+  hST : Sep R 0x190 (img% regionEndsAddress) 32
   hOW : Sep out 0x110 (ipWindow P) ipWindowLen
   hOS : Sep out 0x110 R 0x190
   hBS : Sep ptr len.toNat R 0x190

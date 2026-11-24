@@ -2,6 +2,8 @@ import C3BootProofs.Proofs.EdVerifyingKey
 import C3BootProofs.Proofs.IsSmallOrder
 import C3BootProofs.Proofs.ByteCompare
 import C3BootProofs.Proofs.Arr32Eq
+import C3BootProofs.Image.BootloaderData5
+import C3BootProofs.Image.BootloaderData7
 
 /-!
 # `c3_crypto::ed25519_public_key_ok`, as compiled
@@ -305,7 +307,7 @@ theorem pk_from {M0 Ms G pk r0 M n} (E : PkEnv M0) (D : PkSt M0 Ms G pk r0 M n 0
       pko_at_5e (by decide) (by decide)
     have r10 := PEnv.reg1 regs10 u9.self.zero
     have eFp : G + BitVec.ofNat 32 0x7B0 + 0xFFFFFFF0 = G + BitVec.ofNat 32 0x7A0 := by rw [BitVec.add_assoc]; rfl
-    have hst : (BitVec.ofNat 32 memcpyStubAddress + 8 : Word).toNat = 0x403b4856 := by decide
+    have hst : (BitVec.ofNat 32 memcpyStubAddress + 8 : Word).toNat = (img% memcpyBodyAddress) := by decide
     obtain ⟨n11, c11, pc11, sp11, _, f11, k11⟩ := memcpy_correct n10 (BitVec.ofNat 32 memcpyStubAddress)
       (PKO + BitVec.ofNat 32 (0x5A + 8)) (G + BitVec.ofNat 32 0x874) (G + BitVec.ofNat 32 0x7B4) 0xC0
       (fun i hi => by rw [mem10]; exact E.iso.mcs.hi (fun x hx => I4 x (codeG x hx)) (by decide) (by decide) i hi)
@@ -483,8 +485,8 @@ set_option maxRecDepth 100000 in
 set_option maxHeartbeats 32000000 in
 /-- **The compiled `c3_crypto::ed25519_public_key_ok`.** For the 32 key
 bytes at `pk` it returns `pkOkSpec` of them in `a0`, with `p` and the two
-encodings with `x = 0` as the image holds them at `0x3FCC4328`,
-`0x3FCC42E8`, and `0x3FCC4388`. It returns with `sp` and the callee-saved
+encodings with `x = 0` as the image holds them at `edPrimeAddress`,
+`p256OneAddress`, and `edPm1Address`. It returns with `sp` and the callee-saved
 registers restored and writes nothing outside the 0x940 bytes of stack
 below `sp`. -/
 theorem pkOk_correct (m : Machine) {sp0 pk retAddr : Word} (E : PkEnv m.mem) (hpc : m.pc = PKO)
@@ -494,13 +496,13 @@ theorem pkOk_correct (m : Machine) {sp0 pk retAddr : Word} (E : PkEnv m.mem) (hp
     (sO : Sep (BitVec.ofNat 32 edOneAddress) 40 (sp0 + 0xFFFFF6C0) 0x940)
     (sD : Sep (BitVec.ofNat 32 edDAddress) 40 (sp0 + 0xFFFFF6C0) 0x940)
     (sS : Sep (BitVec.ofNat 32 edSqrtM1Address) 40 (sp0 + 0xFFFFF6C0) 0x940)
-    (sPc : Sep (BitVec.ofNat 32 0x3FCC4328) 32 (sp0 + 0xFFFFF6C0) 0x940)
-    (sE1 : Sep (BitVec.ofNat 32 0x3FCC42E8) 32 (sp0 + 0xFFFFF6C0) 0x940)
-    (sE2 : Sep (BitVec.ofNat 32 0x3FCC4388) 32 (sp0 + 0xFFFFF6C0) 0x940) :
+    (sPc : Sep (BitVec.ofNat 32 (img% edPrimeAddress)) 32 (sp0 + 0xFFFFF6C0) 0x940)
+    (sE1 : Sep (BitVec.ofNat 32 (img% p256OneAddress)) 32 (sp0 + 0xFFFFF6C0) 0x940)
+    (sE2 : Sep (BitVec.ofNat 32 (img% edPm1Address)) 32 (sp0 + 0xFFFFF6C0) 0x940) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
       (∀ q, q.val ∈ [1, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
-      reg m' a0 = (if pkOkSpec (memBytes m.mem (BitVec.ofNat 32 0x3FCC4328) 32)
-        (memBytes m.mem (BitVec.ofNat 32 0x3FCC42E8) 32) (memBytes m.mem (BitVec.ofNat 32 0x3FCC4388) 32)
+      reg m' a0 = (if pkOkSpec (memBytes m.mem (BitVec.ofNat 32 (img% edPrimeAddress)) 32)
+        (memBytes m.mem (BitVec.ofNat 32 (img% p256OneAddress)) 32) (memBytes m.mem (BitVec.ofNat 32 (img% edPm1Address)) 32)
         (feW m.mem (BitVec.ofNat 32 edOneAddress)) (feW m.mem (BitVec.ofNat 32 edDAddress))
         (feW m.mem (BitVec.ofNat 32 edSqrtM1Address)) (memBytes m.mem pk 32) then 1 else 0) ∧
       ∀ x, Sep (sp0 + 0xFFFFF6C0) 0x940 x 1 → m'.mem x = m.mem x := by
@@ -572,7 +574,7 @@ theorem pkOk_correct (m : Machine) {sp0 pk retAddr : Word} (E : PkEnv m.mem) (hp
     pko_at_1a (by decide) (by decide)
   have r8 := PEnv.reg1 regs8 u7.self.zero
   have eFp : G + BitVec.ofNat 32 0x7B0 + 0xFFFFFFF0 = G + BitVec.ofNat 32 0x7A0 := by rw [BitVec.add_assoc]; rfl
-  have hst : (BitVec.ofNat 32 memcpyStubAddress + 8 : Word).toNat = 0x403b4856 := by decide
+  have hst : (BitVec.ofNat 32 memcpyStubAddress + 8 : Word).toNat = (img% memcpyBodyAddress) := by decide
   have hiS : ∀ x : Word, 0x40000000 ≤ x.toNat → Ms x = m.mem x := fun x hx => IMs x (codeG x hx)
   obtain ⟨m9, c9, pc9, sp9, _, f9, k9⟩ := memcpy_correct m8 (BitVec.ofNat 32 memcpyStubAddress)
     (PKO + BitVec.ofNat 32 (0x16 + 8)) (G + BitVec.ofNat 32 0x7B0) pk 32
@@ -662,7 +664,7 @@ theorem pkOk_correct (m : Machine) {sp0 pk retAddr : Word} (E : PkEnv m.mem) (hp
     pko_at_38 (by decide) (by decide)
   have r16 := PEnv.reg1 regs16 u15.self.zero
   obtain ⟨m17, c17, pc17, a17, k17, mem17⟩ := lessThanLe_correct m16 (a := G + BitVec.ofNat 32 0x7B0)
-    (b := BitVec.ofNat 32 0x3FCC4328)
+    (b := BitVec.ofNat 32 (img% edPrimeAddress))
     (by rw [mem16]; exact E.ltl.hi (fun x hx => I2 x (codeG x hx)) (by decide) (by decide)) pc16
     (by rw [r16 _ (by decide), u15.upd_eq (by decide), u14.self.zero, u14.upd_ne u13.self.zero _ (by decide),
       u13.upd_ne u11.self.zero _ (by decide), sp11]; exact BitVec.zero_add _)
@@ -730,7 +732,7 @@ theorem pkOk_correct (m : Machine) {sp0 pk retAddr : Word} (E : PkEnv m.mem) (hp
   have hcOf : ∀ {M n off}, PkSt m.mem Ms G pk (reg m) M n off → CodeIn M PKO ed25519PublicKeyOkCode := fun {M n off} D =>
     hc.hi (fun x hx => D.agree x (codeG x hx)) (by decide) (by decide)
   have hy17 : memBytes M2 (G + BitVec.ofNat 32 0x7B0) 32 = clearTop (memBytes m.mem pk 32) := yB
-  cases hl : ltLEb (clearTop (memBytes m.mem pk 32)) (memBytes m.mem (BitVec.ofNat 32 0x3FCC4328) 32) 32 with
+  cases hl : ltLEb (clearTop (memBytes m.mem pk 32)) (memBytes m.mem (BitVec.ofNat 32 (img% edPrimeAddress)) 32) 32 with
   | false =>
     obtain ⟨n1, e1, v1⟩ := D17.st.taken hc2 0x9A pko_at_3c (by decide) (by rw [a17, hl, D17.st.zero]; decide)
     obtain ⟨m', c', a, b, c, a0', f⟩ := end0 (D17.jmp v1)
@@ -760,7 +762,7 @@ theorem pkOk_correct (m : Machine) {sp0 pk retAddr : Word} (E : PkEnv m.mem) (hp
       have x_sp4 : reg x_4 sp = G + BitVec.ofNat 32 0x7B0 := by
         rw [x_r4 _ (by decide) (by decide) (by decide), Dx.hsp]
       obtain ⟨x_5, x_c5, x_pc5, x_a5, x_k5, x_f5⟩ := arr32EqCrypto_correct x_4 (p := G + BitVec.ofNat 32 0x7B0)
-        (q := BitVec.ofNat 32 0x3FCC42E8) (by decide)
+        (q := BitVec.ofNat 32 (img% p256OneAddress)) (by decide)
         (by rw [x_mem4]; exact E.aeq.hi (fun x hx => Dx.agree x (codeG x hx)) (by decide) (by decide))
         (by rw [x_mem4]; exact E.mcmp.hi (fun x hx => Dx.agree x (codeG x hx)) (by decide) (by decide)) x_pc4
         (by rw [PEnv.reg1 x_regs4 x_u3.self.zero _ (by decide), x_u3.upd_eq (by decide), x_u2.self.zero,
@@ -791,7 +793,7 @@ theorem pkOk_correct (m : Machine) {sp0 pk retAddr : Word} (E : PkEnv m.mem) (hp
         rw [← hy17]
         exact memBytes_congr fun i hi => by
           rw [x_f5 _ (by rw [spk]; exact offs (Or.inl (by omega)) (by decide) (by omega))]
-      cases he1 : decide (clearTop (memBytes m.mem pk 32) = memBytes m.mem (BitVec.ofNat 32 0x3FCC42E8) 32) with
+      cases he1 : decide (clearTop (memBytes m.mem pk 32) = memBytes m.mem (BitVec.ofNat 32 (img% p256OneAddress)) 32) with
       | true =>
         obtain ⟨n3, e3, v3⟩ := Dx_.st.taken (hcOf Dx_) 0x9A pko_at_84 (by decide) (by rw [x_a5, ite_eq_left_of_eq_true _ _ (eq_true (of_decide_eq_true he1)), Dx_.st.zero]; decide)
         obtain ⟨m', c', a, b, c, a0', f⟩ := end0 (Dx_.jmp v3)
@@ -811,7 +813,7 @@ theorem pkOk_correct (m : Machine) {sp0 pk retAddr : Word} (E : PkEnv m.mem) (hp
         have y_sp4 : reg y_4 sp = G + BitVec.ofNat 32 0x7B0 := by
           rw [y_r4 _ (by decide) (by decide) (by decide), Dy.hsp]
         obtain ⟨y_5, y_c5, y_pc5, y_a5, y_k5, y_f5⟩ := arr32EqCrypto_correct y_4 (p := G + BitVec.ofNat 32 0x7B0)
-          (q := BitVec.ofNat 32 0x3FCC4388) (by decide)
+          (q := BitVec.ofNat 32 (img% edPm1Address)) (by decide)
           (by rw [y_mem4]; exact E.aeq.hi (fun x hx => Dy.agree x (codeG x hx)) (by decide) (by decide))
           (by rw [y_mem4]; exact E.mcmp.hi (fun x hx => Dy.agree x (codeG x hx)) (by decide) (by decide)) y_pc4
           (by rw [PEnv.reg1 y_regs4 y_u3.self.zero _ (by decide), y_u3.upd_eq (by decide), y_u2.self.zero,
@@ -842,7 +844,7 @@ theorem pkOk_correct (m : Machine) {sp0 pk retAddr : Word} (E : PkEnv m.mem) (hp
           rw [← hyx_]
           exact memBytes_congr fun i hi => by
             rw [y_f5 _ (by rw [spk]; exact offs (Or.inl (by omega)) (by decide) (by omega))]
-        cases he2 : decide (clearTop (memBytes m.mem pk 32) = memBytes m.mem (BitVec.ofNat 32 0x3FCC4388) 32) with
+        cases he2 : decide (clearTop (memBytes m.mem pk 32) = memBytes m.mem (BitVec.ofNat 32 (img% edPm1Address)) 32) with
         | true =>
           obtain ⟨n4, e4, v4⟩ := Dy_.st.notTaken (hcOf Dy_) 0x9A pko_at_98 (by decide) (by rw [y_a5, ite_eq_left_of_eq_true _ _ (eq_true (of_decide_eq_true he2)), Dy_.st.zero]; decide)
           obtain ⟨m', c', a, b, c, a0', f⟩ := end0 (Dy_.jmp v4)

@@ -114,7 +114,7 @@ theorem sv_cs2F {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {im
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 co)
     (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 ca) (ha2 : reg n a2 = b) (ha3 : reg n a3 = c)
     (hc : c = 0 ∨ c = 1) (hco : co + 32 ≤ 0x1690) (hca : ca + 32 ≤ 0x1690)
-    (hb1 : 0x3FCC4200 ≤ b.toNat) (hb2 : b.toNat + 32 ≤ 0x3FCC4E60) (hb4 : b.toNat % 4 = 0) :
+    (hb1 : (img% dataWindowAddress) ≤ b.toNat) (hb2 : b.toNat + 32 ≤ (img% dataWindowAddress + dataWindowSize)) (hb4 : b.toNat % 4 = 0) :
     ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
       (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧
       (∀ i, i < 8 → memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 co + BitVec.ofNat 32 (4 * i)) =
@@ -285,11 +285,11 @@ theorem _root_.C3.RV32.FCEnv.hi {M M' : Word → BitVec 8} (E : FCEnv M)
 /-- A word in the image's constants survives a change to memory outside the
 stack. -/
 theorem ld_dataR {M M0 : Word → BitVec 8} {B q : Word} (F : Fr B 0x3830) (fR : ∀ x, SvR B x → M x = M0 x)
-    (h1 : 0x3FCC4200 ≤ q.toNat) (h2 : q.toNat + 4 ≤ 0x3FCC4E60) : memLoad32 M q = memLoad32 M0 q :=
+    (h1 : (img% dataWindowAddress) ≤ q.toNat) (h2 : q.toNat + 4 ≤ (img% dataWindowAddress + dataWindowSize)) : memLoad32 M q = memLoad32 M0 q :=
   (memLoad32_congr fun j hj => (fR _ (dataR F h1 h2 j hj)).symm).symm
 
 theorem accV_dataR {M M0 : Word → BitVec 8} {B q : Word} {k : Nat} (F : Fr B 0x3830)
-    (fR : ∀ x, SvR B x → M x = M0 x) (h1 : 0x3FCC4200 ≤ q.toNat) (h2 : q.toNat + 4 * k ≤ 0x3FCC4E60) :
+    (fR : ∀ x, SvR B x → M x = M0 x) (h1 : (img% dataWindowAddress) ≤ q.toNat) (h2 : q.toNat + 4 * k ≤ (img% dataWindowAddress + dataWindowSize)) :
     accV M q k = accV M0 q k :=
   accV_congr k fun i hi => by
     have e : (q + BitVec.ofNat 32 (4 * i)).toNat = q.toNat + 4 * i := by
@@ -315,7 +315,7 @@ theorem _root_.C3.RV32.BYEnv.sv {M M0 : Word → BitVec 8} {B : Word} (F : Fr B 
     codeHi D.sca (by decide) (by decide) hx, ?_, ?_⟩
   · rw [accV_dataR F fR (by decide) (by decide)]; exact D.ord
   · rw [lzLimbs_congr 8 fun i hi => by
-      have e : (BYO + BitVec.ofNat 32 (4 * i)).toNat = 0x3FCC4268 + 4 * i := by
+      have e : (BYO + BitVec.ofNat 32 (4 * i)).toNat = (img% b2sOrder256Address) + 4 * i := by
         rw [BitVec.toNat_add, BitVec.toNat_ofNat]; simp only [b2sOrder256Address, BitVec.toNat_ofNat]; omega
       exact ld_dataR F fR (by omega) (by omega)]
     exact D.ordLz
@@ -510,7 +510,7 @@ theorem sv_fail_24a4 {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr 
   · intro x hx h0 h1; rw [M3, memStore8_ne h1, memStore8_ne h0, fR x hx]
 
 theorem mb_dataR {M M0 : Word → BitVec 8} {B q : Word} {k : Nat} (F : Fr B 0x3830)
-    (fR : ∀ x, SvR B x → M x = M0 x) (h1 : 0x3FCC4200 ≤ q.toNat) (h2 : q.toNat + k ≤ 0x3FCC4E60) :
+    (fR : ∀ x, SvR B x → M x = M0 x) (h1 : (img% dataWindowAddress) ≤ q.toNat) (h2 : q.toNat + k ≤ (img% dataWindowAddress + dataWindowSize)) :
     memBytes M q k = memBytes M0 q k :=
   memBytes_congr fun i hi => fR _ (dataR F h1 h2 i hi)
 

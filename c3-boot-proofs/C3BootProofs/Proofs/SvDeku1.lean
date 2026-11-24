@@ -164,8 +164,8 @@ theorem sv_deku1 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 s
     (val_in : SvIn B (vp) (vl).toNat)
     (oid_in : SvIn B (op) (ol).toNat)
     (SD0 : SvData M0)
-    (hku : ¬ memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4889) 3)
-    (heku : memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4892) 3) :
+    (hku : ¬ memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x71)) 3)
+    (heku : memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x7A)) 3) :
     (¬ (∃ tl19, derElement 0x30 (memBytes M0 (vp) (vl).toNat) = .ok tl19 ∧ ((vl) - BitVec.ofNat 32 (tl19.header + tl19.len) = 0) ∧ True) ∧ SvErrRet B out v n0) ∨
     (∃ tl19, derElement 0x30 (memBytes M0 (vp) (vl).toNat) = .ok tl19 ∧
     ((vl) - BitVec.ofNat 32 (tl19.header + tl19.len) = 0) ∧
@@ -405,7 +405,7 @@ theorem sv_deku1 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 s
     rw [rb3, runBlock_reg _ _ _ (26 : Fin 32) s2.zero (by decide), g2_26]
   have g3_27 : reg n3 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb3, runBlock_reg _ _ _ (27 : Fin 32) s2.zero (by decide), g2_27]
-  have g3_12 : reg n3 a2 = BitVec.ofNat 32 0x3FCC4889 := by
+  have g3_12 : reg n3 a2 = BitVec.ofNat 32 (img% svConstAddress + 0x71) := by
     rw [rb3]; simp +decide only [runBlock, BInstr.run, svDeku1614, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g2_2, g2_3, g2_4, g2_8, g2_9, g2_10, g2_11, g2_13, g2_18, g2_19, g2_21, g2_25, g2_26, g2_27, s2.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -748,7 +748,7 @@ theorem sv_deku1 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 s
     rw [rb8, runBlock_reg _ _ _ (26 : Fin 32) s7.zero (by decide), g7_26]
   have g8_27 : reg n8 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb8, runBlock_reg _ _ _ (27 : Fin 32) s7.zero (by decide), g7_27]
-  have g8_12 : reg n8 a2 = BitVec.ofNat 32 0x3FCC4892 := by
+  have g8_12 : reg n8 a2 = BitVec.ofNat 32 (img% svConstAddress + 0x7A) := by
     rw [rb8]; simp +decide only [runBlock, BInstr.run, svDeku16c2, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g7_2, g7_3, g7_4, g7_8, g7_9, g7_10, g7_11, g7_13, g7_18, g7_19, g7_21, g7_25, g7_26, g7_27, s7.zero])
     all_goals first | with_reducible rfl | sv_addr | decide

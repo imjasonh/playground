@@ -3,6 +3,7 @@ import C3BootProofs.Proofs.P256FromRepr
 import C3BootProofs.Proofs.FieldMul
 import C3BootProofs.Proofs.FieldAdd
 import C3BootProofs.Proofs.Uint8CtEq
+import C3BootProofs.Image.BootloaderData5
 
 /-!
 # Calls to the P-256 field functions, from any caller
@@ -77,14 +78,14 @@ structure P2Data (M : Word → BitVec 8) : Prop where
   cb : CodeIn M P2B p256BData
 
 theorem P2Data.ofR {M M' : Word → BitVec 8} (D : P2Data M)
-    (h : ∀ i, i < 0xC60 → M' ((0x3FCC4200 : Word) + BitVec.ofNat 32 i) = M ((0x3FCC4200 : Word) + BitVec.ofNat 32 i)) :
+    (h : ∀ i, i < (img% dataWindowSize) → M' ((img% dataWindowAddress : Word) + BitVec.ofNat 32 i) = M ((img% dataWindowAddress : Word) + BitVec.ofNat 32 i)) :
     P2Data M' := by
-  have cd : ∀ (b : Word) (d : List Nat), CodeIn M b d → 0x3FCC4200 ≤ b.toNat → b.toNat + d.length ≤ 0x3FCC4E60 →
+  have cd : ∀ (b : Word) (d : List Nat), CodeIn M b d → (img% dataWindowAddress) ≤ b.toNat → b.toNat + d.length ≤ (img% dataWindowAddress + dataWindowSize) →
       CodeIn M' b d := fun b d hc h1 h2 i hi => by
-    have e : b + BitVec.ofNat 32 i = (0x3FCC4200 : Word) + BitVec.ofNat 32 (b.toNat - 0x3FCC4200 + i) := by
+    have e : b + BitVec.ofNat 32 i = (img% dataWindowAddress : Word) + BitVec.ofNat 32 (b.toNat - (img% dataWindowAddress) + i) := by
       apply BitVec.eq_of_toNat_eq
       rw [BitVec.toNat_add, BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
-        show (0x3FCC4200 : Word).toNat = 0x3FCC4200 from rfl]
+        show (img% dataWindowAddress : Word).toNat = (img% dataWindowAddress) from rfl]
       omega
     rw [e, h _ (by omega), ← e]
     exact hc i hi
@@ -345,7 +346,7 @@ abbrev UOR2 : Word := BitVec.ofNat 32 unwrapOr256Address
 theorem uor2_cs : UOR2 + 0xE460 = CS2 := by decide
 
 /-- A call to `CtOption<AffinePoint<NistP256>>::into`: the point at `s` when
-its choice byte at `s + 0x44` is 1, else the identity at `0x3FCC442C`, then
+its choice byte at `s + 0x44` is 1, else the identity at `p256AffineIdXAddress`, then
 the choice. -/
 theorem c2_into {base : Word} {code : List Nat} {N : Nat} {Mx : Word → BitVec 8} {n : Machine} {off : Nat}
     {g : Fin 32 → Word} {imm o out sv S : Word}
@@ -360,11 +361,11 @@ theorem c2_into {base : Word} {code : List Nat} {N : Nat} {Mx : Word → BitVec 
     ∃ n', Steps n n' ∧ St n'.mem base n' (off + 8) (reg n') ∧
       (∀ i, i < 8 → memLoad32 n'.mem (out + BitVec.ofNat 32 (4 * i)) =
         if Mx (sv + 0x44) = 1 then memLoad32 Mx (sv + BitVec.ofNat 32 (4 * i))
-        else memLoad32 Mx (0x3FCC442C + BitVec.ofNat 32 (4 * i))) ∧
+        else memLoad32 Mx ((img% p256AffineIdXAddress) + BitVec.ofNat 32 (4 * i))) ∧
       (∀ i, i < 8 → memLoad32 n'.mem (out + 0x20 + BitVec.ofNat 32 (4 * i)) =
         if Mx (sv + 0x44) = 1 then memLoad32 Mx (sv + 0x20 + BitVec.ofNat 32 (4 * i))
-        else memLoad32 Mx (0x3FCC442C + 0x20 + BitVec.ofNat 32 (4 * i))) ∧
-      n'.mem (out + 0x40) = (if Mx (sv + 0x44) = 1 then Mx (sv + 0x40) else Mx (0x3FCC442C + 0x40)) ∧
+        else memLoad32 Mx ((img% p256AffineIdXAddress) + 0x20 + BitVec.ofNat 32 (4 * i))) ∧
+      n'.mem (out + 0x40) = (if Mx (sv + 0x44) = 1 then Mx (sv + 0x40) else Mx ((img% p256AffineIdXAddress) + 0x40)) ∧
       n'.mem (out + 0x44) = Mx (sv + 0x44) ∧ reg n' sp = S ∧
       (∀ q, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = g q) ∧
       ∀ y, Sep (S + 0xFFFFFF80) 0x80 y 1 → Sep out 0x45 y 1 → n'.mem y = Mx y := by
@@ -380,9 +381,9 @@ theorem c2_into {base : Word} {code : List Nat} {N : Nat} {Mx : Word → BitVec 
     rw [eG]; exact sep_of_le (by rw [hb80]; omega) hl
   have oT : (out).toNat = S.toNat + co := by rw [eo, F.at co (by omega)]
   have sT : (sv).toNat = S.toNat + cs := by rw [es, F.at cs (by omega)]
-  have hID : Sep (S + 0xFFFFFF80) 0x80 (0x3FCC442C : Word) 0x41 :=
+  have hID : Sep (S + 0xFFFFFF80) 0x80 (img% p256AffineIdXAddress : Word) 0x41 :=
     F.lowData (c := 0x80) (by decide) rfl (by decide) (by decide)
-  have E : UO2Env n1.mem UOR2 (S + 0xFFFFFFF0) out sv 0x3FCC442C := by
+  have E : UO2Env n1.mem UOR2 (S + 0xFFFFFFF0) out sv (img% p256AffineIdXAddress) := by
     rw [mem1]
     refine ⟨by decide, K.uor2, by rw [uor2_cs]; exact K.csel2, by rw [uor2_cs, cs2_stub]; exact K.K.stub,
       by rw [uor2_cs, cs2_body]; exact K.K.body, by rw [uor2_cs, cs2_sca]; exact K.K.sca, by rw [hb16]; omega,

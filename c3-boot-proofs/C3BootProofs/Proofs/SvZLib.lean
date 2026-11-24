@@ -58,13 +58,13 @@ theorem sv_ude8Fs {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {
   have hG : (B + BitVec.ofNat 32 0x1ED0).toNat = B.toNat + 0x1ED0 := F.at 0x1ED0 (by decide)
   have gH : ∀ {b : Word} {len : Nat}, 0x40000000 ≤ b.toNat → b.toNat + len ≤ 2 ^ 32 →
       Sep (B + BitVec.ofNat 32 0x1ED0) 0x2D0 b len := fun h1 h2 => F.sepHi (by decide) h1 h2
-  have gD : ∀ {b : Word} {len : Nat}, 0x3FCC4200 ≤ b.toNat → b.toNat + len ≤ 0x3FCC4E60 →
+  have gD : ∀ {b : Word} {len : Nat}, (img% dataWindowAddress) ≤ b.toNat → b.toNat + len ≤ (img% dataWindowAddress + dataWindowSize) →
       Sep (B + BitVec.ofNat 32 0x1ED0) 0x2D0 b len := fun h1 h2 => F.bufData (by decide) h1 h2
   have gF : ∀ {c l : Nat}, c + l ≤ 0x1690 → Sep (B + 0x21A0 + BitVec.ofNat 32 c) l (B + BitVec.ofNat 32 0x1ED0) 0x2D0 :=
     fun h => by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega)
   have oH : ∀ {b : Word} {len : Nat}, 0x40000000 ≤ b.toNat → b.toNat + len ≤ 2 ^ 32 →
       Sep (B + 0x21A0 + BitVec.ofNat 32 co) 0x45 b len := fun h1 h2 => FS.sepHi hco h1 h2
-  have oD : ∀ {b : Word} {len : Nat}, 0x3FCC4200 ≤ b.toNat → b.toNat + len ≤ 0x3FCC4E60 →
+  have oD : ∀ {b : Word} {len : Nat}, (img% dataWindowAddress) ≤ b.toNat → b.toNat + len ≤ (img% dataWindowAddress + dataWindowSize) →
       Sep (B + 0x21A0 + BitVec.ofNat 32 co) 0x45 b len := fun h1 h2 => FS.bufData hco h1 h2
   have EN : UD8Env n1.mem (BitVec.ofNat 32 updateDe8Address) (B + BitVec.ofNat 32 0x1ED0)
       (B + 0x21A0 + BitVec.ofNat 32 co) (B + 0x21A0 + BitVec.ofNat 32 ca) (B + 0x21A0 + BitVec.ofNat 32 cb)

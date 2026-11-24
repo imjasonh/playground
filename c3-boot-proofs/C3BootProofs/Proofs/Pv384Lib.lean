@@ -166,8 +166,8 @@ theorem pv_mcK {B K : Word} {m : Machine} {off : Nat} {imm o : Word} {c N : Nat}
     (h2 : fetchRel p384VerifyPrehashCode (off + 4) = some (.jalr ra ra o, 4))
     (hb : PV + BitVec.ofNat 32 off + imm + o = MCS) (he8 : (PV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (hsp : reg m sp = B + 0x420) (ha0 : reg m a0 = B + 0x420 + BitVec.ofNat 32 c) (ha1 : reg m a1 = K)
-    (ha2 : reg m a2 = BitVec.ofNat 32 N) (hc : c + N ≤ 0x1D4C) (hK : 0x3FCC4200 ≤ K.toNat)
-    (hK' : K.toNat + N ≤ 0x3FCC4E60) :
+    (ha2 : reg m a2 = BitVec.ofNat 32 N) (hc : c + N ≤ 0x1D4C) (hK : (img% dataWindowAddress) ≤ K.toNat)
+    (hK' : K.toNat + N ≤ (img% dataWindowAddress + dataWindowSize)) :
     ∃ m', PvPost B m m' (off + 8) ∧ PvKeep B m.mem m'.mem c N ∧
       ∀ j, j < N → m'.mem (B + 0x420 + BitVec.ofNat 32 (c + j)) = m.mem (K + BitVec.ofNat 32 j) := by
   have FS : Fr (B + 0x420) 0x1D80 := F.sub (c := 0x420) (by decide) (by decide)
@@ -208,8 +208,8 @@ theorem pv_lowS {B : Word} (F : Fr B 0x21A0) {c n k : Nat} (h : c + n ≤ 0x1D80
     (k := n) (by rw [pv_below F hk hk', e]; omega) (by rw [e]; omega)).symm
 
 /-- Words below `sp`, apart from a constant. -/
-theorem pv_lowK {B K : Word} (F : Fr B 0x21A0) {n k : Nat} (hk : k ≤ 0x420) (hK : 0x3FCC4200 ≤ K.toNat)
-    (hK' : K.toNat + n ≤ 0x3FCC4E60) : Sep K n (B + 0x420 + BitVec.ofNat 32 (2 ^ 32 - k)) k := by
+theorem pv_lowK {B K : Word} (F : Fr B 0x21A0) {n k : Nat} (hk : k ≤ 0x420) (hK : (img% dataWindowAddress) ≤ K.toNat)
+    (hK' : K.toNat + n ≤ (img% dataWindowAddress + dataWindowSize)) : Sep K n (B + 0x420 + BitVec.ofNat 32 (2 ^ 32 - k)) k := by
   have h := F.bufData (c := 0x420 - k) (n := k) (by omega) hK hK'
   rw [show B + BitVec.ofNat 32 (0x420 - k) = B + 0x420 + BitVec.ofNat 32 (2 ^ 32 - k) by
     rw [BitVec.add_assoc]; congr 1; apply BitVec.eq_of_toNat_eq

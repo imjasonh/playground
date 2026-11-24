@@ -69,7 +69,7 @@ theorem gd_sq_pre {M : Word → BitVec 8} {S : Word} {n : Machine} {j : Nat} (C 
   have dW : (S + BitVec.ofNat 32 0x69C).toNat + 32 < 2 ^ 32 := by rw [F.at 0x69C (by decide)]; omega
   have sW : (S + BitVec.ofNat 32 0x67C).toNat + 32 < 2 ^ 32 := by rw [F.at 0x67C (by decide)]; omega
   have hFC : Sep (S + 0xFFFFFFF0) 16 (MCS + 8) memcpyBodyCode.length :=
-    sep_of_le (by rw [hb16, show (MCS + 8).toNat = 0x403b4856 from rfl]; omega) (by decide)
+    sep_of_le (by rw [hb16, show (MCS + 8).toNat = (img% memcpyBodyAddress) from rfl]; omega) (by decide)
   have hdF : Sep (S + BitVec.ofNat 32 0x69C) 32 (S + 0xFFFFFFF0) 16 :=
     (sep_of_le (by rw [hb16, F.at 0x69C (by decide)]; omega) (by omega)).symm
   have hsF : Sep (S + BitVec.ofNat 32 0x67C) 32 (S + 0xFFFFFFF0) 16 :=
@@ -265,9 +265,9 @@ theorem gd_sq_post {M : Word → BitVec 8} {S : Word} {n : Machine} (C : GdCode 
       have hb : q ∉ gdP2.filterMap BInstr.dst := by simp only [gdP2]; revert h8 h9 h18 h20; revert q; decide
       rw [u4.regs, r3, runBlock_reg _ _ _ q u2.zero hb]
   have sB : Sep (S + 0xFFFFFFFC) 4 BSUB borrowingSubCode.length :=
-    sep_of_le (by rw [hb4, show BSUB.toNat = 0x403a2320 from rfl]; omega) (by decide)
+    sep_of_le (by rw [hb4, show BSUB.toNat = (img% borrowingSubAddress) from rfl]; omega) (by decide)
   have sFC : Sep (S + 0xFFFFFFFC) 4 GD p256DecompressCode.length :=
-    sep_of_le (by rw [hb4, show GD.toNat = 0x403a5fdc from rfl]; omega) (by decide)
+    sep_of_le (by rw [hb4, show GD.toNat = (img% p256DecompressAddress) from rfl]; omega) (by decide)
   obtain ⟨n5, M5, c5, u5, hc5, hbs5, fr5, hm5, hv5, sp5, k5⟩ := gd_sub_loop (F := S) (acc := S + BitVec.ofNat 32 0x67C)
     (np := S + BitVec.ofNat 32 0xE4) (D := S + BitVec.ofNat 32 0x43C) (M0 := M2) (by omega)
     (by rw [F.at _ (by decide)]; omega) (by rw [F.at _ (by decide)]; omega) (by rw [F.at _ (by decide)]; omega)
@@ -305,7 +305,7 @@ theorem gd_sq_post {M : Word → BitVec 8} {S : Word} {n : Machine} (C : GdCode 
   have fA : (S + 0xFFFFFFF0).toNat % 4 = 0 := by rw [hb16]; omega
   have fW : (S + 0xFFFFFFF0).toNat + 16 ≤ 2 ^ 32 := by rw [hb16]; omega
   have hFC : Sep (S + 0xFFFFFFF0) 16 (MCS + 8) memcpyBodyCode.length :=
-    sep_of_le (by rw [hb16, show (MCS + 8).toNat = 0x403b4856 from rfl]; omega) (by decide)
+    sep_of_le (by rw [hb16, show (MCS + 8).toNat = (img% memcpyBodyAddress) from rfl]; omega) (by decide)
   have b16 : ∀ c, c + 32 ≤ 0x710 → Sep (S + BitVec.ofNat 32 c) 32 (S + 0xFFFFFFF0) 16 := fun c hc =>
     (sep_of_le (by rw [hb16, F.at c (by omega)]; omega) (by rw [F.at c (by omega)]; omega)).symm
   have w48 : ∀ c, c + 32 ≤ 0x710 → (S + BitVec.ofNat 32 c).toNat + 32 < 2 ^ 32 := fun c hc => by

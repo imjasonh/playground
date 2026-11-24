@@ -585,7 +585,7 @@ theorem bytes2scalar384_correct (m : Machine) {sp0 out b retAddr : Word} {n : Na
       have hb := panicFns_hi p hp
       exact cd (E.pan p hp) (by rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]; exact hb.1)
         (by rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]; omega) hM
-  have hBSn : BS.toNat = 0x403a2ef0 := by decide
+  have hBSn : BS.toNat = (img% bytes2scalar384Address) := by decide
   have hc := E.cod
   have st0 : St m.mem BS m 0 (reg m) := ⟨by rw [hpc, add_ofNat_zero], rfl, fun _ => rfl⟩
   have hz := st0.zero

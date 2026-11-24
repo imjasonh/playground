@@ -252,7 +252,7 @@ theorem p384PtDouble_correct (m : Machine) {P sp0 out sf retAddr : Word}
   have s27_d0 : limbVal (wordsAt M27 (d3G sp0 + BitVec.ofNat 32 0xD0) 12) = v2 := ((congrArg limbVal (d3slot_keep f27 ⟨by decide, by decide, by decide⟩ ⟨by decide, by decide, by decide⟩ (by decide))).trans s24_d0)
   have s27_130 : limbVal (wordsAt M27 (d3G sp0 + BitVec.ofNat 32 0x130) 12) = v7 := (w27.trans hv7)
   obtain ⟨n28, d28, I28', e28⟩ := d3_luiK env I27 p3pd_at_9e (off' := 0xA2) (by decide) (by decide)
-  obtain ⟨V5, hV5⟩ : ∃ V, upd V4 (21 : Fin 32) 0x3FCC4000 = V := ⟨_, rfl⟩
+  obtain ⟨V5, hV5⟩ : ∃ V, upd V4 (21 : Fin 32) (img% hi20 p384BAddress) = V := ⟨_, rfl⟩
   rw [hV5] at I28'
   have I28 := I28'
   have vk28_2 : V5 sp = d3G sp0 := (by rw [← hV5, upd_ne (by decide) (by decide)]; exact vk20_2)
@@ -262,9 +262,9 @@ theorem p384PtDouble_correct (m : Machine) {P sp0 out sf retAddr : Word}
   have vk28_19 : V5 (19 : Fin 32) = d3G sp0 + BitVec.ofNat 32 0x70 := (by rw [← hV5, upd_ne (by decide) (by decide)]; exact vk20_19)
   have vk28_22 : V5 (22 : Fin 32) = sf + BitVec.ofNat 32 0x30 := (by rw [← hV5, upd_ne (by decide) (by decide)]; exact vk20_22)
   have vk28_8 : V5 (8 : Fin 32) = sf + BitVec.ofNat 32 0x60 := (by rw [← hV5, upd_ne (by decide) (by decide)]; exact vk20_8)
-  have vk28_21 : V5 (21 : Fin 32) = 0x3FCC4000 := (by rw [← hV5, upd_same (by decide)])
+  have vk28_21 : V5 (21 : Fin 32) = (img% hi20 p384BAddress) := (by rw [← hV5, upd_same (by decide)])
   obtain ⟨n29, d29, I29', e29, o29⟩ := d3_addiK env I28 p3pd_at_a2 (off' := 0xA6) (by decide) (by decide)
-  obtain ⟨V6, hV6⟩ : ∃ V, upd V5 (21 : Fin 32) (reg n28 (21 : Fin 32) + 0x234) = V := ⟨_, rfl⟩
+  obtain ⟨V6, hV6⟩ : ∃ V, upd V5 (21 : Fin 32) (reg n28 (21 : Fin 32) + (img% lo12 p384BAddress)) = V := ⟨_, rfl⟩
   rw [hV6] at I29'
   have I29 := I29'
   have vk29_2 : V6 sp = d3G sp0 := (by rw [← hV6, upd_ne (by decide) (by decide)]; exact vk28_2)

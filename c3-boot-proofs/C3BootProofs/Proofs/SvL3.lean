@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.SvCongr
+import C3BootProofs.Image.BootloaderData3
 
 /-!
 # `sigstore::verify`: the serial number and the signature algorithm
@@ -91,13 +92,13 @@ theorem sv_l3 {B out bp rootp dg lp ll rp rl sgl orl orp trl trp tcl sgp : Word}
     (w0_180 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x180) = rp)
     (w0_184 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x184) = rl)
     (tb_in : SvIn B (rp) (rl).toNat) :
-    (¬ (∃ tl2, derElement 2 (memBytes M0 (rp) (rl).toNat) = .ok tl2 ∧ ∃ ip2 il2, derPosIntOf (memBytes M0 (rp) (rl).toNat) (rp) (.ok tl2) = .ok (ip2, il2) ∧ ((il2).toNat ≤ 20) ∧ ∃ tl9, derElement 0x30 (memBytes M0 ((rp) + BitVec.ofNat 32 (tl2.header + tl2.len)) ((rl) - BitVec.ofNat 32 (tl2.header + tl2.len)).toNat) = .ok tl9 ∧ ∃ op19 ol19, derAlgOf M0 ((rp) + BitVec.ofNat 32 (tl2.header + tl2.len)) (tl9.header + tl9.len) = .ok ((op19, ol19), none) ∧ (memBytes M0 op19 ol19 = memBytes M0 (BitVec.ofNat 32 0x3FCC4840) 8) ∧ True) ∧ SvErrRet B out v n0) ∨
+    (¬ (∃ tl2, derElement 2 (memBytes M0 (rp) (rl).toNat) = .ok tl2 ∧ ∃ ip2 il2, derPosIntOf (memBytes M0 (rp) (rl).toNat) (rp) (.ok tl2) = .ok (ip2, il2) ∧ ((il2).toNat ≤ 20) ∧ ∃ tl9, derElement 0x30 (memBytes M0 ((rp) + BitVec.ofNat 32 (tl2.header + tl2.len)) ((rl) - BitVec.ofNat 32 (tl2.header + tl2.len)).toNat) = .ok tl9 ∧ ∃ op19 ol19, derAlgOf M0 ((rp) + BitVec.ofNat 32 (tl2.header + tl2.len)) (tl9.header + tl9.len) = .ok ((op19, ol19), none) ∧ (memBytes M0 op19 ol19 = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x28)) 8) ∧ True) ∧ SvErrRet B out v n0) ∨
     (∃ tl2, derElement 2 (memBytes M0 (rp) (rl).toNat) = .ok tl2 ∧
     ∃ ip2 il2, derPosIntOf (memBytes M0 (rp) (rl).toNat) (rp) (.ok tl2) = .ok (ip2, il2) ∧
     ((il2).toNat ≤ 20) ∧
     ∃ tl9, derElement 0x30 (memBytes M0 ((rp) + BitVec.ofNat 32 (tl2.header + tl2.len)) ((rl) - BitVec.ofNat 32 (tl2.header + tl2.len)).toNat) = .ok tl9 ∧
     ∃ op19 ol19, derAlgOf M0 ((rp) + BitVec.ofNat 32 (tl2.header + tl2.len)) (tl9.header + tl9.len) = .ok ((op19, ol19), none) ∧
-    (memBytes M0 op19 ol19 = memBytes M0 (BitVec.ofNat 32 0x3FCC4840) 8) ∧
+    (memBytes M0 op19 ol19 = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x28)) 8) ∧
     ∃ n', Steps n0 n' ∧
         St n'.mem SV n' 0x266 (reg n') ∧
         SvCode n'.mem ∧
@@ -1807,7 +1808,7 @@ theorem sv_l3 {B out bp rootp dg lp ll rp rl sgl orl orp trl trp tcl sgp : Word}
       rw [rb27, runBlock_reg _ _ _ (26 : Fin 32) s26.zero (by decide), g26_26]
     have g27_27 : reg n27 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
       rw [rb27, runBlock_reg _ _ _ (27 : Fin 32) s26.zero (by decide), g26_27]
-    have g27_12 : reg n27 a2 = BitVec.ofNat 32 0x3FCC4840 := by
+    have g27_12 : reg n27 a2 = BitVec.ofNat 32 (img% svConstAddress + 0x28) := by
       rw [rb27]; simp +decide only [runBlock, BInstr.run, svL324c, upd, ↓reduceIte, aluEval]
       all_goals (try simp only [g26_2, g26_3, g26_4, g26_8, g26_9, g26_10, g26_11, g26_12, g26_18, g26_19, g26_21, g26_22, g26_23, g26_24, g26_25, g26_26, g26_27, s26.zero])
       all_goals first | with_reducible rfl | sv_addr | decide
@@ -1870,7 +1871,7 @@ theorem sv_l3 {B out bp rootp dg lp ll rp rl sgl orl orp trl trp tcl sgp : Word}
     have w28_1020 : memLoad32 n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = (rp) + BitVec.ofNat 32 (tl2.header + tl2.len) := (K28.w32 (by decide) (by decide)).trans w27_1020
     have w28_1024 : memLoad32 n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = BitVec.ofNat 32 (tl9.header + tl9.len) := (K28.w32 (by decide) (by decide)).trans w27_1024
     clear w27_1024 w27_1020 w27_a28 w27_a24 w27_a20 w27_184 w27_180 w27_84 w27_80 w27_7c w27_78 w27_74 w27_70 g27_13 g27_12 g27_27 g27_26 g27_25 g27_24 g27_23 g27_22 g27_21 g27_19 g27_18 g27_11 g27_10 g27_9 g27_8 g27_4 g27_3 g27_2 V27 E27 fR27 t27 fr27 rb27 s27 m27 u27 c27
-    by_cases ho_28 : memBytes M0 op19 ol19 = memBytes M0 (BitVec.ofNat 32 0x3FCC4840) 8
+    by_cases ho_28 : memBytes M0 op19 ol19 = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x28)) 8
     · have g28_10 : reg n28 a0 = BitVec.ofNat 32 0 := by rw [a0_28, ite_eq_left ho_28]; rfl
       -- 0x25E: branch, not taken
       obtain ⟨n29, d29, u29⟩ := s28.notTaken E28.self 0x262 sv_at_25e
@@ -2363,7 +2364,7 @@ theorem sv_l3 {B out bp rootp dg lp ll rp rl sgl orl orp trl trp tcl sgp : Word}
     rw [rb27, runBlock_reg _ _ _ (26 : Fin 32) s26.zero (by decide), g26_26]
   have g27_27 : reg n27 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb27, runBlock_reg _ _ _ (27 : Fin 32) s26.zero (by decide), g26_27]
-  have g27_12 : reg n27 a2 = BitVec.ofNat 32 0x3FCC4840 := by
+  have g27_12 : reg n27 a2 = BitVec.ofNat 32 (img% svConstAddress + 0x28) := by
     rw [rb27]; simp +decide only [runBlock, BInstr.run, svL324c, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g26_2, g26_3, g26_4, g26_8, g26_9, g26_10, g26_11, g26_12, g26_18, g26_19, g26_21, g26_22, g26_23, g26_24, g26_25, g26_26, g26_27, s26.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -2426,7 +2427,7 @@ theorem sv_l3 {B out bp rootp dg lp ll rp rl sgl orl orp trl trp tcl sgp : Word}
   have w28_1020 : memLoad32 n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) = (rp) + BitVec.ofNat 32 (tl2.header + tl2.len) := (K28.w32 (by decide) (by decide)).trans w27_1020
   have w28_1024 : memLoad32 n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x1024) = BitVec.ofNat 32 (tl9.header + tl9.len) := (K28.w32 (by decide) (by decide)).trans w27_1024
   clear w27_1024 w27_1020 w27_a28 w27_a24 w27_a20 w27_184 w27_180 w27_84 w27_80 w27_7c w27_78 w27_74 w27_70 g27_13 g27_12 g27_27 g27_26 g27_25 g27_24 g27_23 g27_22 g27_21 g27_19 g27_18 g27_11 g27_10 g27_9 g27_8 g27_4 g27_3 g27_2 V27 E27 fR27 t27 fr27 rb27 s27 m27 u27 c27
-  by_cases hz_28 : memBytes M0 op19 ol19 = memBytes M0 (BitVec.ofNat 32 0x3FCC4840) 8
+  by_cases hz_28 : memBytes M0 op19 ol19 = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x28)) 8
   rotate_left
   · have g28_10 : reg n28 a0 = BitVec.ofNat 32 1 := by rw [a0_28, ite_eq_right hz_28]; rfl
     -- 0x25E: branch, taken

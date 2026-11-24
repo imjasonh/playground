@@ -146,14 +146,14 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     (val_in : SvIn B (vp) (vl).toNat)
     (oid_in : SvIn B (op) (ol).toNat)
     (SD0 : SvData M0)
-    (hku : ¬ memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4889) 3)
-    (heku : ¬ memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4892) 3)
-    (hbc : ¬ memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC488F) 3)
-    (hp0 : ¬ memBytes M0 (BitVec.ofNat 32 0x3FCC48B8) 10 = memBytes M0 op ol.toNat)
-    (hp1 : ¬ memBytes M0 (BitVec.ofNat 32 0x3FCC48C2) 10 = memBytes M0 op ol.toNat)
-    (hp2 : ¬ memBytes M0 (BitVec.ofNat 32 0x3FCC48CC) 10 = memBytes M0 op ol.toNat)
-    (hp3 : ¬ memBytes M0 (BitVec.ofNat 32 0x3FCC48D6) 10 = memBytes M0 op ol.toNat)
-    (hp4 : ¬ memBytes M0 (BitVec.ofNat 32 0x3FCC48E0) 10 = memBytes M0 op ol.toNat) :
+    (hku : ¬ memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x71)) 3)
+    (heku : ¬ memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x7A)) 3)
+    (hbc : ¬ memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x77)) 3)
+    (hp0 : ¬ memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0xA0)) 10 = memBytes M0 op ol.toNat)
+    (hp1 : ¬ memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0xAA)) 10 = memBytes M0 op ol.toNat)
+    (hp2 : ¬ memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0xB4)) 10 = memBytes M0 op ol.toNat)
+    (hp3 : ¬ memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0xBE)) 10 = memBytes M0 op ol.toNat)
+    (hp4 : ¬ memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0xC8)) 10 = memBytes M0 op ol.toNat) :
     (¬ (True) ∧ SvErrRet B out v n0) ∨
     (∃ n', Steps n0 n' ∧
         St n'.mem SV n' 0x4EA (reg n') ∧
@@ -387,7 +387,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb3, runBlock_reg _ _ _ (26 : Fin 32) s2.zero (by decide), g2_26]
   have g3_27 : reg n3 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb3, runBlock_reg _ _ _ (27 : Fin 32) s2.zero (by decide), g2_27]
-  have g3_12 : reg n3 a2 = BitVec.ofNat 32 0x3FCC4889 := by
+  have g3_12 : reg n3 a2 = BitVec.ofNat 32 (img% svConstAddress + 0x71) := by
     rw [rb3]; simp +decide only [runBlock, BInstr.run, svDp5614, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g2_2, g2_3, g2_4, g2_8, g2_9, g2_10, g2_11, g2_13, g2_18, g2_19, g2_21, g2_25, g2_26, g2_27, s2.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -730,7 +730,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb8, runBlock_reg _ _ _ (26 : Fin 32) s7.zero (by decide), g7_26]
   have g8_27 : reg n8 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb8, runBlock_reg _ _ _ (27 : Fin 32) s7.zero (by decide), g7_27]
-  have g8_12 : reg n8 a2 = BitVec.ofNat 32 0x3FCC4892 := by
+  have g8_12 : reg n8 a2 = BitVec.ofNat 32 (img% svConstAddress + 0x7A) := by
     rw [rb8]; simp +decide only [runBlock, BInstr.run, svDp56c2, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g7_2, g7_3, g7_4, g7_8, g7_9, g7_10, g7_11, g7_13, g7_18, g7_19, g7_21, g7_25, g7_26, g7_27, s7.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -1073,7 +1073,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb13, runBlock_reg _ _ _ (26 : Fin 32) s12.zero (by decide), g12_26]
   have g13_27 : reg n13 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb13, runBlock_reg _ _ _ (27 : Fin 32) s12.zero (by decide), g12_27]
-  have g13_12 : reg n13 a2 = BitVec.ofNat 32 0x3FCC488F := by
+  have g13_12 : reg n13 a2 = BitVec.ofNat 32 (img% svConstAddress + 0x77) := by
     rw [rb13]; simp +decide only [runBlock, BInstr.run, svDp5794, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g12_2, g12_3, g12_4, g12_8, g12_9, g12_10, g12_11, g12_13, g12_18, g12_19, g12_21, g12_25, g12_26, g12_27, s12.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -1273,7 +1273,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb16]; simp +decide only [runBlock, BInstr.run, svDp589c, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g15_2, g15_3, g15_4, g15_8, g15_9, g15_10, g15_18, g15_19, g15_21, g15_25, g15_26, g15_27, s15.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
-  have g16_23 : reg n16 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48EC := by
+  have g16_23 : reg n16 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xD4) := by
     rw [rb16]; simp +decide only [runBlock, BInstr.run, svDp589c, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g15_2, g15_3, g15_4, g15_8, g15_9, g15_10, g15_18, g15_19, g15_21, g15_25, g15_26, g15_27, s15.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -1344,7 +1344,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb17, runBlock_reg _ _ _ (21 : Fin 32) s16.zero (by decide), g16_21]
   have g17_22 : reg n17 (22 : Fin 32) = BitVec.ofNat 32 0xFFFFFFFF := by
     rw [rb17, runBlock_reg _ _ _ (22 : Fin 32) s16.zero (by decide), g16_22]
-  have g17_23 : reg n17 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48EC := by
+  have g17_23 : reg n17 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xD4) := by
     rw [rb17, runBlock_reg _ _ _ (23 : Fin 32) s16.zero (by decide), g16_23]
   have g17_25 : reg n17 (25 : Fin 32) = x25 := by
     rw [rb17, runBlock_reg _ _ _ (25 : Fin 32) s16.zero (by decide), g16_25]
@@ -1414,7 +1414,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g18_19 : reg n18 (19 : Fin 32) = bp := by rw [u18.regs, g17_19]
   have g18_21 : reg n18 (21 : Fin 32) = x21 := by rw [u18.regs, g17_21]
   have g18_22 : reg n18 (22 : Fin 32) = BitVec.ofNat 32 0xFFFFFFFF := by rw [u18.regs, g17_22]
-  have g18_23 : reg n18 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48EC := by rw [u18.regs, g17_23]
+  have g18_23 : reg n18 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xD4) := by rw [u18.regs, g17_23]
   have g18_25 : reg n18 (25 : Fin 32) = x25 := by rw [u18.regs, g17_25]
   have g18_26 : reg n18 (26 : Fin 32) = x26 := by rw [u18.regs, g17_26]
   have g18_27 : reg n18 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u18.regs, g17_27]
@@ -1475,13 +1475,13 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g19_19 : reg n19 (19 : Fin 32) = bp := by rw [u19.regs, upd_ne (by decide) (by decide), g18_19]
   have g19_21 : reg n19 (21 : Fin 32) = x21 := by rw [u19.regs, upd_ne (by decide) (by decide), g18_21]
   have g19_22 : reg n19 (22 : Fin 32) = BitVec.ofNat 32 0xFFFFFFFF := by rw [u19.regs, upd_ne (by decide) (by decide), g18_22]
-  have g19_23 : reg n19 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48EC := by rw [u19.regs, upd_ne (by decide) (by decide), g18_23]
+  have g19_23 : reg n19 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xD4) := by rw [u19.regs, upd_ne (by decide) (by decide), g18_23]
   have g19_25 : reg n19 (25 : Fin 32) = x25 := by rw [u19.regs, upd_ne (by decide) (by decide), g18_25]
   have g19_26 : reg n19 (26 : Fin 32) = x26 := by rw [u19.regs, upd_ne (by decide) (by decide), g18_26]
   have g19_27 : reg n19 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u19.regs, upd_ne (by decide) (by decide), g18_27]
-  have g19_10 : reg n19 a0 = BitVec.ofNat 32 0x3FCC48B8 := by
+  have g19_10 : reg n19 a0 = BitVec.ofNat 32 (img% svConstAddress + 0xA0) := by
     rw [u19.regs]; simp +decide only [upd, ↓reduceIte]
-    rw [g18_23, show BitVec.ofNat 32 0x3FCC48EC + 0x0 = SVK + BitVec.ofNat 32 0xD4 by decide]
+    rw [g18_23, show BitVec.ofNat 32 (img% svConstAddress + 0xD4) + 0x0 = SVK + BitVec.ofNat 32 0xD4 by decide]
     exact (SvData.sv F SD0 fR18).w32 (by decide) (by decide)
   have keep_kk19 : SvKeepL B n0.mem n19.mem [] := by rw [m19]; exact keep_kk18
   clear keep_kk18
@@ -1542,7 +1542,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb20, runBlock_reg _ _ _ (8 : Fin 32) s19.zero (by decide), g19_8]
   have g20_9 : reg n20 (9 : Fin 32) = x9 := by
     rw [rb20, runBlock_reg _ _ _ (9 : Fin 32) s19.zero (by decide), g19_9]
-  have g20_10 : reg n20 a0 = BitVec.ofNat 32 0x3FCC48B8 := by
+  have g20_10 : reg n20 a0 = BitVec.ofNat 32 (img% svConstAddress + 0xA0) := by
     rw [rb20, runBlock_reg _ _ _ a0 s19.zero (by decide), g19_10]
   have g20_18 : reg n20 (18 : Fin 32) = out := by
     rw [rb20, runBlock_reg _ _ _ (18 : Fin 32) s19.zero (by decide), g19_18]
@@ -1552,7 +1552,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb20, runBlock_reg _ _ _ (21 : Fin 32) s19.zero (by decide), g19_21]
   have g20_22 : reg n20 (22 : Fin 32) = BitVec.ofNat 32 0xFFFFFFFF := by
     rw [rb20, runBlock_reg _ _ _ (22 : Fin 32) s19.zero (by decide), g19_22]
-  have g20_23 : reg n20 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48EC := by
+  have g20_23 : reg n20 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xD4) := by
     rw [rb20, runBlock_reg _ _ _ (23 : Fin 32) s19.zero (by decide), g19_23]
   have g20_25 : reg n20 (25 : Fin 32) = x25 := by
     rw [rb20, runBlock_reg _ _ _ (25 : Fin 32) s19.zero (by decide), g19_25]
@@ -1621,14 +1621,14 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g21_4 : reg n21 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [u21.regs, upd_ne (by decide) (by decide), g20_4]
   have g21_8 : reg n21 (8 : Fin 32) = op := by rw [u21.regs, upd_ne (by decide) (by decide), g20_8]
   have g21_9 : reg n21 (9 : Fin 32) = x9 := by rw [u21.regs, upd_ne (by decide) (by decide), g20_9]
-  have g21_10 : reg n21 a0 = BitVec.ofNat 32 0x3FCC48B8 := by rw [u21.regs, upd_ne (by decide) (by decide), g20_10]
+  have g21_10 : reg n21 a0 = BitVec.ofNat 32 (img% svConstAddress + 0xA0) := by rw [u21.regs, upd_ne (by decide) (by decide), g20_10]
   have g21_11 : reg n21 a1 = BitVec.ofNat 32 0xA := by rw [u21.regs, upd_ne (by decide) (by decide), g20_11]
   have g21_12 : reg n21 a2 = op := by rw [u21.regs, upd_ne (by decide) (by decide), g20_12]
   have g21_18 : reg n21 (18 : Fin 32) = out := by rw [u21.regs, upd_ne (by decide) (by decide), g20_18]
   have g21_19 : reg n21 (19 : Fin 32) = bp := by rw [u21.regs, upd_ne (by decide) (by decide), g20_19]
   have g21_21 : reg n21 (21 : Fin 32) = x21 := by rw [u21.regs, upd_ne (by decide) (by decide), g20_21]
   have g21_22 : reg n21 (22 : Fin 32) = BitVec.ofNat 32 0xFFFFFFFF := by rw [u21.regs, upd_ne (by decide) (by decide), g20_22]
-  have g21_23 : reg n21 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48EC := by rw [u21.regs, upd_ne (by decide) (by decide), g20_23]
+  have g21_23 : reg n21 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xD4) := by rw [u21.regs, upd_ne (by decide) (by decide), g20_23]
   have g21_25 : reg n21 (25 : Fin 32) = x25 := by rw [u21.regs, upd_ne (by decide) (by decide), g20_25]
   have g21_26 : reg n21 (26 : Fin 32) = x26 := by rw [u21.regs, upd_ne (by decide) (by decide), g20_26]
   have g21_27 : reg n21 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u21.regs, upd_ne (by decide) (by decide), g20_27]
@@ -1691,7 +1691,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g22_19 : reg n22 (19 : Fin 32) = bp := by rw [rk22 (19 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g21_19]
   have g22_21 : reg n22 (21 : Fin 32) = x21 := by rw [rk22 (21 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g21_21]
   have g22_22 : reg n22 (22 : Fin 32) = BitVec.ofNat 32 0xFFFFFFFF := by rw [rk22 (22 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g21_22]
-  have g22_23 : reg n22 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48EC := by rw [rk22 (23 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g21_23]
+  have g22_23 : reg n22 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xD4) := by rw [rk22 (23 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g21_23]
   have g22_25 : reg n22 (25 : Fin 32) = x25 := by rw [rk22 (25 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g21_25]
   have g22_26 : reg n22 (26 : Fin 32) = x26 := by rw [rk22 (26 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g21_26]
   have g22_27 : reg n22 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rk22 (27 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g21_27]
@@ -1773,7 +1773,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb23]; simp +decide only [runBlock, BInstr.run, svDp58be, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g22_2, g22_3, g22_4, g22_8, g22_9, g22_10, g22_18, g22_19, g22_21, g22_22, g22_23, g22_25, g22_26, g22_27, s22.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
-  have g23_23 : reg n23 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48F4 := by
+  have g23_23 : reg n23 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xDC) := by
     rw [rb23]; simp +decide only [runBlock, BInstr.run, svDp58be, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g22_2, g22_3, g22_4, g22_8, g22_9, g22_10, g22_18, g22_19, g22_21, g22_22, g22_23, g22_25, g22_26, g22_27, s22.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -1835,7 +1835,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g24_19 : reg n24 (19 : Fin 32) = bp := by rw [u24.regs, g23_19]
   have g24_21 : reg n24 (21 : Fin 32) = x21 := by rw [u24.regs, g23_21]
   have g24_22 : reg n24 (22 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [u24.regs, g23_22]
-  have g24_23 : reg n24 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48F4 := by rw [u24.regs, g23_23]
+  have g24_23 : reg n24 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xDC) := by rw [u24.regs, g23_23]
   have g24_25 : reg n24 (25 : Fin 32) = x25 := by rw [u24.regs, g23_25]
   have g24_26 : reg n24 (26 : Fin 32) = x26 := by rw [u24.regs, g23_26]
   have g24_27 : reg n24 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u24.regs, g23_27]
@@ -1906,7 +1906,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb25, runBlock_reg _ _ _ (21 : Fin 32) s24.zero (by decide), g24_21]
   have g25_22 : reg n25 (22 : Fin 32) = BitVec.ofNat 32 0x0 := by
     rw [rb25, runBlock_reg _ _ _ (22 : Fin 32) s24.zero (by decide), g24_22]
-  have g25_23 : reg n25 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48F4 := by
+  have g25_23 : reg n25 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xDC) := by
     rw [rb25, runBlock_reg _ _ _ (23 : Fin 32) s24.zero (by decide), g24_23]
   have g25_25 : reg n25 (25 : Fin 32) = x25 := by
     rw [rb25, runBlock_reg _ _ _ (25 : Fin 32) s24.zero (by decide), g24_25]
@@ -1976,7 +1976,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g26_19 : reg n26 (19 : Fin 32) = bp := by rw [u26.regs, g25_19]
   have g26_21 : reg n26 (21 : Fin 32) = x21 := by rw [u26.regs, g25_21]
   have g26_22 : reg n26 (22 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [u26.regs, g25_22]
-  have g26_23 : reg n26 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48F4 := by rw [u26.regs, g25_23]
+  have g26_23 : reg n26 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xDC) := by rw [u26.regs, g25_23]
   have g26_25 : reg n26 (25 : Fin 32) = x25 := by rw [u26.regs, g25_25]
   have g26_26 : reg n26 (26 : Fin 32) = x26 := by rw [u26.regs, g25_26]
   have g26_27 : reg n26 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u26.regs, g25_27]
@@ -2037,13 +2037,13 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g27_19 : reg n27 (19 : Fin 32) = bp := by rw [u27.regs, upd_ne (by decide) (by decide), g26_19]
   have g27_21 : reg n27 (21 : Fin 32) = x21 := by rw [u27.regs, upd_ne (by decide) (by decide), g26_21]
   have g27_22 : reg n27 (22 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [u27.regs, upd_ne (by decide) (by decide), g26_22]
-  have g27_23 : reg n27 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48F4 := by rw [u27.regs, upd_ne (by decide) (by decide), g26_23]
+  have g27_23 : reg n27 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xDC) := by rw [u27.regs, upd_ne (by decide) (by decide), g26_23]
   have g27_25 : reg n27 (25 : Fin 32) = x25 := by rw [u27.regs, upd_ne (by decide) (by decide), g26_25]
   have g27_26 : reg n27 (26 : Fin 32) = x26 := by rw [u27.regs, upd_ne (by decide) (by decide), g26_26]
   have g27_27 : reg n27 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u27.regs, upd_ne (by decide) (by decide), g26_27]
-  have g27_10 : reg n27 a0 = BitVec.ofNat 32 0x3FCC48C2 := by
+  have g27_10 : reg n27 a0 = BitVec.ofNat 32 (img% svConstAddress + 0xAA) := by
     rw [u27.regs]; simp +decide only [upd, ↓reduceIte]
-    rw [g26_23, show BitVec.ofNat 32 0x3FCC48F4 + 0x0 = SVK + BitVec.ofNat 32 0xDC by decide]
+    rw [g26_23, show BitVec.ofNat 32 (img% svConstAddress + 0xDC) + 0x0 = SVK + BitVec.ofNat 32 0xDC by decide]
     exact (SvData.sv F SD0 fR26).w32 (by decide) (by decide)
   have keep_kk27 : SvKeepL B n0.mem n27.mem [] := by rw [m27]; exact keep_kk26
   clear keep_kk26
@@ -2104,7 +2104,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb28, runBlock_reg _ _ _ (8 : Fin 32) s27.zero (by decide), g27_8]
   have g28_9 : reg n28 (9 : Fin 32) = x9 := by
     rw [rb28, runBlock_reg _ _ _ (9 : Fin 32) s27.zero (by decide), g27_9]
-  have g28_10 : reg n28 a0 = BitVec.ofNat 32 0x3FCC48C2 := by
+  have g28_10 : reg n28 a0 = BitVec.ofNat 32 (img% svConstAddress + 0xAA) := by
     rw [rb28, runBlock_reg _ _ _ a0 s27.zero (by decide), g27_10]
   have g28_18 : reg n28 (18 : Fin 32) = out := by
     rw [rb28, runBlock_reg _ _ _ (18 : Fin 32) s27.zero (by decide), g27_18]
@@ -2114,7 +2114,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb28, runBlock_reg _ _ _ (21 : Fin 32) s27.zero (by decide), g27_21]
   have g28_22 : reg n28 (22 : Fin 32) = BitVec.ofNat 32 0x0 := by
     rw [rb28, runBlock_reg _ _ _ (22 : Fin 32) s27.zero (by decide), g27_22]
-  have g28_23 : reg n28 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48F4 := by
+  have g28_23 : reg n28 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xDC) := by
     rw [rb28, runBlock_reg _ _ _ (23 : Fin 32) s27.zero (by decide), g27_23]
   have g28_25 : reg n28 (25 : Fin 32) = x25 := by
     rw [rb28, runBlock_reg _ _ _ (25 : Fin 32) s27.zero (by decide), g27_25]
@@ -2183,14 +2183,14 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g29_4 : reg n29 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [u29.regs, upd_ne (by decide) (by decide), g28_4]
   have g29_8 : reg n29 (8 : Fin 32) = op := by rw [u29.regs, upd_ne (by decide) (by decide), g28_8]
   have g29_9 : reg n29 (9 : Fin 32) = x9 := by rw [u29.regs, upd_ne (by decide) (by decide), g28_9]
-  have g29_10 : reg n29 a0 = BitVec.ofNat 32 0x3FCC48C2 := by rw [u29.regs, upd_ne (by decide) (by decide), g28_10]
+  have g29_10 : reg n29 a0 = BitVec.ofNat 32 (img% svConstAddress + 0xAA) := by rw [u29.regs, upd_ne (by decide) (by decide), g28_10]
   have g29_11 : reg n29 a1 = BitVec.ofNat 32 0xA := by rw [u29.regs, upd_ne (by decide) (by decide), g28_11]
   have g29_12 : reg n29 a2 = op := by rw [u29.regs, upd_ne (by decide) (by decide), g28_12]
   have g29_18 : reg n29 (18 : Fin 32) = out := by rw [u29.regs, upd_ne (by decide) (by decide), g28_18]
   have g29_19 : reg n29 (19 : Fin 32) = bp := by rw [u29.regs, upd_ne (by decide) (by decide), g28_19]
   have g29_21 : reg n29 (21 : Fin 32) = x21 := by rw [u29.regs, upd_ne (by decide) (by decide), g28_21]
   have g29_22 : reg n29 (22 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [u29.regs, upd_ne (by decide) (by decide), g28_22]
-  have g29_23 : reg n29 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48F4 := by rw [u29.regs, upd_ne (by decide) (by decide), g28_23]
+  have g29_23 : reg n29 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xDC) := by rw [u29.regs, upd_ne (by decide) (by decide), g28_23]
   have g29_25 : reg n29 (25 : Fin 32) = x25 := by rw [u29.regs, upd_ne (by decide) (by decide), g28_25]
   have g29_26 : reg n29 (26 : Fin 32) = x26 := by rw [u29.regs, upd_ne (by decide) (by decide), g28_26]
   have g29_27 : reg n29 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u29.regs, upd_ne (by decide) (by decide), g28_27]
@@ -2253,7 +2253,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g30_19 : reg n30 (19 : Fin 32) = bp := by rw [rk30 (19 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g29_19]
   have g30_21 : reg n30 (21 : Fin 32) = x21 := by rw [rk30 (21 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g29_21]
   have g30_22 : reg n30 (22 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [rk30 (22 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g29_22]
-  have g30_23 : reg n30 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48F4 := by rw [rk30 (23 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g29_23]
+  have g30_23 : reg n30 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xDC) := by rw [rk30 (23 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g29_23]
   have g30_25 : reg n30 (25 : Fin 32) = x25 := by rw [rk30 (25 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g29_25]
   have g30_26 : reg n30 (26 : Fin 32) = x26 := by rw [rk30 (26 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g29_26]
   have g30_27 : reg n30 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rk30 (27 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g29_27]
@@ -2335,7 +2335,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb31]; simp +decide only [runBlock, BInstr.run, svDp58be, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g30_2, g30_3, g30_4, g30_8, g30_9, g30_10, g30_18, g30_19, g30_21, g30_22, g30_23, g30_25, g30_26, g30_27, s30.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
-  have g31_23 : reg n31 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48FC := by
+  have g31_23 : reg n31 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xE4) := by
     rw [rb31]; simp +decide only [runBlock, BInstr.run, svDp58be, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g30_2, g30_3, g30_4, g30_8, g30_9, g30_10, g30_18, g30_19, g30_21, g30_22, g30_23, g30_25, g30_26, g30_27, s30.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -2397,7 +2397,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g32_19 : reg n32 (19 : Fin 32) = bp := by rw [u32.regs, g31_19]
   have g32_21 : reg n32 (21 : Fin 32) = x21 := by rw [u32.regs, g31_21]
   have g32_22 : reg n32 (22 : Fin 32) = BitVec.ofNat 32 0x1 := by rw [u32.regs, g31_22]
-  have g32_23 : reg n32 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48FC := by rw [u32.regs, g31_23]
+  have g32_23 : reg n32 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xE4) := by rw [u32.regs, g31_23]
   have g32_25 : reg n32 (25 : Fin 32) = x25 := by rw [u32.regs, g31_25]
   have g32_26 : reg n32 (26 : Fin 32) = x26 := by rw [u32.regs, g31_26]
   have g32_27 : reg n32 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u32.regs, g31_27]
@@ -2468,7 +2468,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb33, runBlock_reg _ _ _ (21 : Fin 32) s32.zero (by decide), g32_21]
   have g33_22 : reg n33 (22 : Fin 32) = BitVec.ofNat 32 0x1 := by
     rw [rb33, runBlock_reg _ _ _ (22 : Fin 32) s32.zero (by decide), g32_22]
-  have g33_23 : reg n33 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48FC := by
+  have g33_23 : reg n33 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xE4) := by
     rw [rb33, runBlock_reg _ _ _ (23 : Fin 32) s32.zero (by decide), g32_23]
   have g33_25 : reg n33 (25 : Fin 32) = x25 := by
     rw [rb33, runBlock_reg _ _ _ (25 : Fin 32) s32.zero (by decide), g32_25]
@@ -2538,7 +2538,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g34_19 : reg n34 (19 : Fin 32) = bp := by rw [u34.regs, g33_19]
   have g34_21 : reg n34 (21 : Fin 32) = x21 := by rw [u34.regs, g33_21]
   have g34_22 : reg n34 (22 : Fin 32) = BitVec.ofNat 32 0x1 := by rw [u34.regs, g33_22]
-  have g34_23 : reg n34 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48FC := by rw [u34.regs, g33_23]
+  have g34_23 : reg n34 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xE4) := by rw [u34.regs, g33_23]
   have g34_25 : reg n34 (25 : Fin 32) = x25 := by rw [u34.regs, g33_25]
   have g34_26 : reg n34 (26 : Fin 32) = x26 := by rw [u34.regs, g33_26]
   have g34_27 : reg n34 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u34.regs, g33_27]
@@ -2599,13 +2599,13 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g35_19 : reg n35 (19 : Fin 32) = bp := by rw [u35.regs, upd_ne (by decide) (by decide), g34_19]
   have g35_21 : reg n35 (21 : Fin 32) = x21 := by rw [u35.regs, upd_ne (by decide) (by decide), g34_21]
   have g35_22 : reg n35 (22 : Fin 32) = BitVec.ofNat 32 0x1 := by rw [u35.regs, upd_ne (by decide) (by decide), g34_22]
-  have g35_23 : reg n35 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48FC := by rw [u35.regs, upd_ne (by decide) (by decide), g34_23]
+  have g35_23 : reg n35 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xE4) := by rw [u35.regs, upd_ne (by decide) (by decide), g34_23]
   have g35_25 : reg n35 (25 : Fin 32) = x25 := by rw [u35.regs, upd_ne (by decide) (by decide), g34_25]
   have g35_26 : reg n35 (26 : Fin 32) = x26 := by rw [u35.regs, upd_ne (by decide) (by decide), g34_26]
   have g35_27 : reg n35 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u35.regs, upd_ne (by decide) (by decide), g34_27]
-  have g35_10 : reg n35 a0 = BitVec.ofNat 32 0x3FCC48CC := by
+  have g35_10 : reg n35 a0 = BitVec.ofNat 32 (img% svConstAddress + 0xB4) := by
     rw [u35.regs]; simp +decide only [upd, ↓reduceIte]
-    rw [g34_23, show BitVec.ofNat 32 0x3FCC48FC + 0x0 = SVK + BitVec.ofNat 32 0xE4 by decide]
+    rw [g34_23, show BitVec.ofNat 32 (img% svConstAddress + 0xE4) + 0x0 = SVK + BitVec.ofNat 32 0xE4 by decide]
     exact (SvData.sv F SD0 fR34).w32 (by decide) (by decide)
   have keep_kk35 : SvKeepL B n0.mem n35.mem [] := by rw [m35]; exact keep_kk34
   clear keep_kk34
@@ -2666,7 +2666,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb36, runBlock_reg _ _ _ (8 : Fin 32) s35.zero (by decide), g35_8]
   have g36_9 : reg n36 (9 : Fin 32) = x9 := by
     rw [rb36, runBlock_reg _ _ _ (9 : Fin 32) s35.zero (by decide), g35_9]
-  have g36_10 : reg n36 a0 = BitVec.ofNat 32 0x3FCC48CC := by
+  have g36_10 : reg n36 a0 = BitVec.ofNat 32 (img% svConstAddress + 0xB4) := by
     rw [rb36, runBlock_reg _ _ _ a0 s35.zero (by decide), g35_10]
   have g36_18 : reg n36 (18 : Fin 32) = out := by
     rw [rb36, runBlock_reg _ _ _ (18 : Fin 32) s35.zero (by decide), g35_18]
@@ -2676,7 +2676,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb36, runBlock_reg _ _ _ (21 : Fin 32) s35.zero (by decide), g35_21]
   have g36_22 : reg n36 (22 : Fin 32) = BitVec.ofNat 32 0x1 := by
     rw [rb36, runBlock_reg _ _ _ (22 : Fin 32) s35.zero (by decide), g35_22]
-  have g36_23 : reg n36 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48FC := by
+  have g36_23 : reg n36 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xE4) := by
     rw [rb36, runBlock_reg _ _ _ (23 : Fin 32) s35.zero (by decide), g35_23]
   have g36_25 : reg n36 (25 : Fin 32) = x25 := by
     rw [rb36, runBlock_reg _ _ _ (25 : Fin 32) s35.zero (by decide), g35_25]
@@ -2745,14 +2745,14 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g37_4 : reg n37 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [u37.regs, upd_ne (by decide) (by decide), g36_4]
   have g37_8 : reg n37 (8 : Fin 32) = op := by rw [u37.regs, upd_ne (by decide) (by decide), g36_8]
   have g37_9 : reg n37 (9 : Fin 32) = x9 := by rw [u37.regs, upd_ne (by decide) (by decide), g36_9]
-  have g37_10 : reg n37 a0 = BitVec.ofNat 32 0x3FCC48CC := by rw [u37.regs, upd_ne (by decide) (by decide), g36_10]
+  have g37_10 : reg n37 a0 = BitVec.ofNat 32 (img% svConstAddress + 0xB4) := by rw [u37.regs, upd_ne (by decide) (by decide), g36_10]
   have g37_11 : reg n37 a1 = BitVec.ofNat 32 0xA := by rw [u37.regs, upd_ne (by decide) (by decide), g36_11]
   have g37_12 : reg n37 a2 = op := by rw [u37.regs, upd_ne (by decide) (by decide), g36_12]
   have g37_18 : reg n37 (18 : Fin 32) = out := by rw [u37.regs, upd_ne (by decide) (by decide), g36_18]
   have g37_19 : reg n37 (19 : Fin 32) = bp := by rw [u37.regs, upd_ne (by decide) (by decide), g36_19]
   have g37_21 : reg n37 (21 : Fin 32) = x21 := by rw [u37.regs, upd_ne (by decide) (by decide), g36_21]
   have g37_22 : reg n37 (22 : Fin 32) = BitVec.ofNat 32 0x1 := by rw [u37.regs, upd_ne (by decide) (by decide), g36_22]
-  have g37_23 : reg n37 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48FC := by rw [u37.regs, upd_ne (by decide) (by decide), g36_23]
+  have g37_23 : reg n37 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xE4) := by rw [u37.regs, upd_ne (by decide) (by decide), g36_23]
   have g37_25 : reg n37 (25 : Fin 32) = x25 := by rw [u37.regs, upd_ne (by decide) (by decide), g36_25]
   have g37_26 : reg n37 (26 : Fin 32) = x26 := by rw [u37.regs, upd_ne (by decide) (by decide), g36_26]
   have g37_27 : reg n37 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u37.regs, upd_ne (by decide) (by decide), g36_27]
@@ -2815,7 +2815,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g38_19 : reg n38 (19 : Fin 32) = bp := by rw [rk38 (19 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g37_19]
   have g38_21 : reg n38 (21 : Fin 32) = x21 := by rw [rk38 (21 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g37_21]
   have g38_22 : reg n38 (22 : Fin 32) = BitVec.ofNat 32 0x1 := by rw [rk38 (22 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g37_22]
-  have g38_23 : reg n38 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC48FC := by rw [rk38 (23 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g37_23]
+  have g38_23 : reg n38 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xE4) := by rw [rk38 (23 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g37_23]
   have g38_25 : reg n38 (25 : Fin 32) = x25 := by rw [rk38 (25 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g37_25]
   have g38_26 : reg n38 (26 : Fin 32) = x26 := by rw [rk38 (26 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g37_26]
   have g38_27 : reg n38 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rk38 (27 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g37_27]
@@ -2897,7 +2897,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb39]; simp +decide only [runBlock, BInstr.run, svDp58be, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g38_2, g38_3, g38_4, g38_8, g38_9, g38_10, g38_18, g38_19, g38_21, g38_22, g38_23, g38_25, g38_26, g38_27, s38.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
-  have g39_23 : reg n39 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4904 := by
+  have g39_23 : reg n39 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xEC) := by
     rw [rb39]; simp +decide only [runBlock, BInstr.run, svDp58be, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g38_2, g38_3, g38_4, g38_8, g38_9, g38_10, g38_18, g38_19, g38_21, g38_22, g38_23, g38_25, g38_26, g38_27, s38.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -2959,7 +2959,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g40_19 : reg n40 (19 : Fin 32) = bp := by rw [u40.regs, g39_19]
   have g40_21 : reg n40 (21 : Fin 32) = x21 := by rw [u40.regs, g39_21]
   have g40_22 : reg n40 (22 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [u40.regs, g39_22]
-  have g40_23 : reg n40 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4904 := by rw [u40.regs, g39_23]
+  have g40_23 : reg n40 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xEC) := by rw [u40.regs, g39_23]
   have g40_25 : reg n40 (25 : Fin 32) = x25 := by rw [u40.regs, g39_25]
   have g40_26 : reg n40 (26 : Fin 32) = x26 := by rw [u40.regs, g39_26]
   have g40_27 : reg n40 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u40.regs, g39_27]
@@ -3030,7 +3030,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb41, runBlock_reg _ _ _ (21 : Fin 32) s40.zero (by decide), g40_21]
   have g41_22 : reg n41 (22 : Fin 32) = BitVec.ofNat 32 0x2 := by
     rw [rb41, runBlock_reg _ _ _ (22 : Fin 32) s40.zero (by decide), g40_22]
-  have g41_23 : reg n41 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4904 := by
+  have g41_23 : reg n41 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xEC) := by
     rw [rb41, runBlock_reg _ _ _ (23 : Fin 32) s40.zero (by decide), g40_23]
   have g41_25 : reg n41 (25 : Fin 32) = x25 := by
     rw [rb41, runBlock_reg _ _ _ (25 : Fin 32) s40.zero (by decide), g40_25]
@@ -3100,7 +3100,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g42_19 : reg n42 (19 : Fin 32) = bp := by rw [u42.regs, g41_19]
   have g42_21 : reg n42 (21 : Fin 32) = x21 := by rw [u42.regs, g41_21]
   have g42_22 : reg n42 (22 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [u42.regs, g41_22]
-  have g42_23 : reg n42 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4904 := by rw [u42.regs, g41_23]
+  have g42_23 : reg n42 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xEC) := by rw [u42.regs, g41_23]
   have g42_25 : reg n42 (25 : Fin 32) = x25 := by rw [u42.regs, g41_25]
   have g42_26 : reg n42 (26 : Fin 32) = x26 := by rw [u42.regs, g41_26]
   have g42_27 : reg n42 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u42.regs, g41_27]
@@ -3161,13 +3161,13 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g43_19 : reg n43 (19 : Fin 32) = bp := by rw [u43.regs, upd_ne (by decide) (by decide), g42_19]
   have g43_21 : reg n43 (21 : Fin 32) = x21 := by rw [u43.regs, upd_ne (by decide) (by decide), g42_21]
   have g43_22 : reg n43 (22 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [u43.regs, upd_ne (by decide) (by decide), g42_22]
-  have g43_23 : reg n43 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4904 := by rw [u43.regs, upd_ne (by decide) (by decide), g42_23]
+  have g43_23 : reg n43 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xEC) := by rw [u43.regs, upd_ne (by decide) (by decide), g42_23]
   have g43_25 : reg n43 (25 : Fin 32) = x25 := by rw [u43.regs, upd_ne (by decide) (by decide), g42_25]
   have g43_26 : reg n43 (26 : Fin 32) = x26 := by rw [u43.regs, upd_ne (by decide) (by decide), g42_26]
   have g43_27 : reg n43 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u43.regs, upd_ne (by decide) (by decide), g42_27]
-  have g43_10 : reg n43 a0 = BitVec.ofNat 32 0x3FCC48D6 := by
+  have g43_10 : reg n43 a0 = BitVec.ofNat 32 (img% svConstAddress + 0xBE) := by
     rw [u43.regs]; simp +decide only [upd, ↓reduceIte]
-    rw [g42_23, show BitVec.ofNat 32 0x3FCC4904 + 0x0 = SVK + BitVec.ofNat 32 0xEC by decide]
+    rw [g42_23, show BitVec.ofNat 32 (img% svConstAddress + 0xEC) + 0x0 = SVK + BitVec.ofNat 32 0xEC by decide]
     exact (SvData.sv F SD0 fR42).w32 (by decide) (by decide)
   have keep_kk43 : SvKeepL B n0.mem n43.mem [] := by rw [m43]; exact keep_kk42
   clear keep_kk42
@@ -3228,7 +3228,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb44, runBlock_reg _ _ _ (8 : Fin 32) s43.zero (by decide), g43_8]
   have g44_9 : reg n44 (9 : Fin 32) = x9 := by
     rw [rb44, runBlock_reg _ _ _ (9 : Fin 32) s43.zero (by decide), g43_9]
-  have g44_10 : reg n44 a0 = BitVec.ofNat 32 0x3FCC48D6 := by
+  have g44_10 : reg n44 a0 = BitVec.ofNat 32 (img% svConstAddress + 0xBE) := by
     rw [rb44, runBlock_reg _ _ _ a0 s43.zero (by decide), g43_10]
   have g44_18 : reg n44 (18 : Fin 32) = out := by
     rw [rb44, runBlock_reg _ _ _ (18 : Fin 32) s43.zero (by decide), g43_18]
@@ -3238,7 +3238,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb44, runBlock_reg _ _ _ (21 : Fin 32) s43.zero (by decide), g43_21]
   have g44_22 : reg n44 (22 : Fin 32) = BitVec.ofNat 32 0x2 := by
     rw [rb44, runBlock_reg _ _ _ (22 : Fin 32) s43.zero (by decide), g43_22]
-  have g44_23 : reg n44 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4904 := by
+  have g44_23 : reg n44 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xEC) := by
     rw [rb44, runBlock_reg _ _ _ (23 : Fin 32) s43.zero (by decide), g43_23]
   have g44_25 : reg n44 (25 : Fin 32) = x25 := by
     rw [rb44, runBlock_reg _ _ _ (25 : Fin 32) s43.zero (by decide), g43_25]
@@ -3307,14 +3307,14 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g45_4 : reg n45 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [u45.regs, upd_ne (by decide) (by decide), g44_4]
   have g45_8 : reg n45 (8 : Fin 32) = op := by rw [u45.regs, upd_ne (by decide) (by decide), g44_8]
   have g45_9 : reg n45 (9 : Fin 32) = x9 := by rw [u45.regs, upd_ne (by decide) (by decide), g44_9]
-  have g45_10 : reg n45 a0 = BitVec.ofNat 32 0x3FCC48D6 := by rw [u45.regs, upd_ne (by decide) (by decide), g44_10]
+  have g45_10 : reg n45 a0 = BitVec.ofNat 32 (img% svConstAddress + 0xBE) := by rw [u45.regs, upd_ne (by decide) (by decide), g44_10]
   have g45_11 : reg n45 a1 = BitVec.ofNat 32 0xA := by rw [u45.regs, upd_ne (by decide) (by decide), g44_11]
   have g45_12 : reg n45 a2 = op := by rw [u45.regs, upd_ne (by decide) (by decide), g44_12]
   have g45_18 : reg n45 (18 : Fin 32) = out := by rw [u45.regs, upd_ne (by decide) (by decide), g44_18]
   have g45_19 : reg n45 (19 : Fin 32) = bp := by rw [u45.regs, upd_ne (by decide) (by decide), g44_19]
   have g45_21 : reg n45 (21 : Fin 32) = x21 := by rw [u45.regs, upd_ne (by decide) (by decide), g44_21]
   have g45_22 : reg n45 (22 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [u45.regs, upd_ne (by decide) (by decide), g44_22]
-  have g45_23 : reg n45 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4904 := by rw [u45.regs, upd_ne (by decide) (by decide), g44_23]
+  have g45_23 : reg n45 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xEC) := by rw [u45.regs, upd_ne (by decide) (by decide), g44_23]
   have g45_25 : reg n45 (25 : Fin 32) = x25 := by rw [u45.regs, upd_ne (by decide) (by decide), g44_25]
   have g45_26 : reg n45 (26 : Fin 32) = x26 := by rw [u45.regs, upd_ne (by decide) (by decide), g44_26]
   have g45_27 : reg n45 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u45.regs, upd_ne (by decide) (by decide), g44_27]
@@ -3377,7 +3377,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g46_19 : reg n46 (19 : Fin 32) = bp := by rw [rk46 (19 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g45_19]
   have g46_21 : reg n46 (21 : Fin 32) = x21 := by rw [rk46 (21 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g45_21]
   have g46_22 : reg n46 (22 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [rk46 (22 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g45_22]
-  have g46_23 : reg n46 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4904 := by rw [rk46 (23 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g45_23]
+  have g46_23 : reg n46 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xEC) := by rw [rk46 (23 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g45_23]
   have g46_25 : reg n46 (25 : Fin 32) = x25 := by rw [rk46 (25 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g45_25]
   have g46_26 : reg n46 (26 : Fin 32) = x26 := by rw [rk46 (26 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g45_26]
   have g46_27 : reg n46 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rk46 (27 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g45_27]
@@ -3459,7 +3459,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb47]; simp +decide only [runBlock, BInstr.run, svDp58be, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g46_2, g46_3, g46_4, g46_8, g46_9, g46_10, g46_18, g46_19, g46_21, g46_22, g46_23, g46_25, g46_26, g46_27, s46.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
-  have g47_23 : reg n47 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC490C := by
+  have g47_23 : reg n47 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xF4) := by
     rw [rb47]; simp +decide only [runBlock, BInstr.run, svDp58be, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g46_2, g46_3, g46_4, g46_8, g46_9, g46_10, g46_18, g46_19, g46_21, g46_22, g46_23, g46_25, g46_26, g46_27, s46.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -3521,7 +3521,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g48_19 : reg n48 (19 : Fin 32) = bp := by rw [u48.regs, g47_19]
   have g48_21 : reg n48 (21 : Fin 32) = x21 := by rw [u48.regs, g47_21]
   have g48_22 : reg n48 (22 : Fin 32) = BitVec.ofNat 32 0x3 := by rw [u48.regs, g47_22]
-  have g48_23 : reg n48 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC490C := by rw [u48.regs, g47_23]
+  have g48_23 : reg n48 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xF4) := by rw [u48.regs, g47_23]
   have g48_25 : reg n48 (25 : Fin 32) = x25 := by rw [u48.regs, g47_25]
   have g48_26 : reg n48 (26 : Fin 32) = x26 := by rw [u48.regs, g47_26]
   have g48_27 : reg n48 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u48.regs, g47_27]
@@ -3592,7 +3592,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb49, runBlock_reg _ _ _ (21 : Fin 32) s48.zero (by decide), g48_21]
   have g49_22 : reg n49 (22 : Fin 32) = BitVec.ofNat 32 0x3 := by
     rw [rb49, runBlock_reg _ _ _ (22 : Fin 32) s48.zero (by decide), g48_22]
-  have g49_23 : reg n49 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC490C := by
+  have g49_23 : reg n49 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xF4) := by
     rw [rb49, runBlock_reg _ _ _ (23 : Fin 32) s48.zero (by decide), g48_23]
   have g49_25 : reg n49 (25 : Fin 32) = x25 := by
     rw [rb49, runBlock_reg _ _ _ (25 : Fin 32) s48.zero (by decide), g48_25]
@@ -3662,7 +3662,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g50_19 : reg n50 (19 : Fin 32) = bp := by rw [u50.regs, g49_19]
   have g50_21 : reg n50 (21 : Fin 32) = x21 := by rw [u50.regs, g49_21]
   have g50_22 : reg n50 (22 : Fin 32) = BitVec.ofNat 32 0x3 := by rw [u50.regs, g49_22]
-  have g50_23 : reg n50 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC490C := by rw [u50.regs, g49_23]
+  have g50_23 : reg n50 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xF4) := by rw [u50.regs, g49_23]
   have g50_25 : reg n50 (25 : Fin 32) = x25 := by rw [u50.regs, g49_25]
   have g50_26 : reg n50 (26 : Fin 32) = x26 := by rw [u50.regs, g49_26]
   have g50_27 : reg n50 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u50.regs, g49_27]
@@ -3723,13 +3723,13 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g51_19 : reg n51 (19 : Fin 32) = bp := by rw [u51.regs, upd_ne (by decide) (by decide), g50_19]
   have g51_21 : reg n51 (21 : Fin 32) = x21 := by rw [u51.regs, upd_ne (by decide) (by decide), g50_21]
   have g51_22 : reg n51 (22 : Fin 32) = BitVec.ofNat 32 0x3 := by rw [u51.regs, upd_ne (by decide) (by decide), g50_22]
-  have g51_23 : reg n51 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC490C := by rw [u51.regs, upd_ne (by decide) (by decide), g50_23]
+  have g51_23 : reg n51 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xF4) := by rw [u51.regs, upd_ne (by decide) (by decide), g50_23]
   have g51_25 : reg n51 (25 : Fin 32) = x25 := by rw [u51.regs, upd_ne (by decide) (by decide), g50_25]
   have g51_26 : reg n51 (26 : Fin 32) = x26 := by rw [u51.regs, upd_ne (by decide) (by decide), g50_26]
   have g51_27 : reg n51 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u51.regs, upd_ne (by decide) (by decide), g50_27]
-  have g51_10 : reg n51 a0 = BitVec.ofNat 32 0x3FCC48E0 := by
+  have g51_10 : reg n51 a0 = BitVec.ofNat 32 (img% svConstAddress + 0xC8) := by
     rw [u51.regs]; simp +decide only [upd, ↓reduceIte]
-    rw [g50_23, show BitVec.ofNat 32 0x3FCC490C + 0x0 = SVK + BitVec.ofNat 32 0xF4 by decide]
+    rw [g50_23, show BitVec.ofNat 32 (img% svConstAddress + 0xF4) + 0x0 = SVK + BitVec.ofNat 32 0xF4 by decide]
     exact (SvData.sv F SD0 fR50).w32 (by decide) (by decide)
   have keep_kk51 : SvKeepL B n0.mem n51.mem [] := by rw [m51]; exact keep_kk50
   clear keep_kk50
@@ -3790,7 +3790,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb52, runBlock_reg _ _ _ (8 : Fin 32) s51.zero (by decide), g51_8]
   have g52_9 : reg n52 (9 : Fin 32) = x9 := by
     rw [rb52, runBlock_reg _ _ _ (9 : Fin 32) s51.zero (by decide), g51_9]
-  have g52_10 : reg n52 a0 = BitVec.ofNat 32 0x3FCC48E0 := by
+  have g52_10 : reg n52 a0 = BitVec.ofNat 32 (img% svConstAddress + 0xC8) := by
     rw [rb52, runBlock_reg _ _ _ a0 s51.zero (by decide), g51_10]
   have g52_18 : reg n52 (18 : Fin 32) = out := by
     rw [rb52, runBlock_reg _ _ _ (18 : Fin 32) s51.zero (by decide), g51_18]
@@ -3800,7 +3800,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb52, runBlock_reg _ _ _ (21 : Fin 32) s51.zero (by decide), g51_21]
   have g52_22 : reg n52 (22 : Fin 32) = BitVec.ofNat 32 0x3 := by
     rw [rb52, runBlock_reg _ _ _ (22 : Fin 32) s51.zero (by decide), g51_22]
-  have g52_23 : reg n52 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC490C := by
+  have g52_23 : reg n52 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xF4) := by
     rw [rb52, runBlock_reg _ _ _ (23 : Fin 32) s51.zero (by decide), g51_23]
   have g52_25 : reg n52 (25 : Fin 32) = x25 := by
     rw [rb52, runBlock_reg _ _ _ (25 : Fin 32) s51.zero (by decide), g51_25]
@@ -3869,14 +3869,14 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g53_4 : reg n53 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [u53.regs, upd_ne (by decide) (by decide), g52_4]
   have g53_8 : reg n53 (8 : Fin 32) = op := by rw [u53.regs, upd_ne (by decide) (by decide), g52_8]
   have g53_9 : reg n53 (9 : Fin 32) = x9 := by rw [u53.regs, upd_ne (by decide) (by decide), g52_9]
-  have g53_10 : reg n53 a0 = BitVec.ofNat 32 0x3FCC48E0 := by rw [u53.regs, upd_ne (by decide) (by decide), g52_10]
+  have g53_10 : reg n53 a0 = BitVec.ofNat 32 (img% svConstAddress + 0xC8) := by rw [u53.regs, upd_ne (by decide) (by decide), g52_10]
   have g53_11 : reg n53 a1 = BitVec.ofNat 32 0xA := by rw [u53.regs, upd_ne (by decide) (by decide), g52_11]
   have g53_12 : reg n53 a2 = op := by rw [u53.regs, upd_ne (by decide) (by decide), g52_12]
   have g53_18 : reg n53 (18 : Fin 32) = out := by rw [u53.regs, upd_ne (by decide) (by decide), g52_18]
   have g53_19 : reg n53 (19 : Fin 32) = bp := by rw [u53.regs, upd_ne (by decide) (by decide), g52_19]
   have g53_21 : reg n53 (21 : Fin 32) = x21 := by rw [u53.regs, upd_ne (by decide) (by decide), g52_21]
   have g53_22 : reg n53 (22 : Fin 32) = BitVec.ofNat 32 0x3 := by rw [u53.regs, upd_ne (by decide) (by decide), g52_22]
-  have g53_23 : reg n53 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC490C := by rw [u53.regs, upd_ne (by decide) (by decide), g52_23]
+  have g53_23 : reg n53 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xF4) := by rw [u53.regs, upd_ne (by decide) (by decide), g52_23]
   have g53_25 : reg n53 (25 : Fin 32) = x25 := by rw [u53.regs, upd_ne (by decide) (by decide), g52_25]
   have g53_26 : reg n53 (26 : Fin 32) = x26 := by rw [u53.regs, upd_ne (by decide) (by decide), g52_26]
   have g53_27 : reg n53 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u53.regs, upd_ne (by decide) (by decide), g52_27]
@@ -3939,7 +3939,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g54_19 : reg n54 (19 : Fin 32) = bp := by rw [rk54 (19 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g53_19]
   have g54_21 : reg n54 (21 : Fin 32) = x21 := by rw [rk54 (21 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g53_21]
   have g54_22 : reg n54 (22 : Fin 32) = BitVec.ofNat 32 0x3 := by rw [rk54 (22 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g53_22]
-  have g54_23 : reg n54 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC490C := by rw [rk54 (23 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g53_23]
+  have g54_23 : reg n54 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xF4) := by rw [rk54 (23 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g53_23]
   have g54_25 : reg n54 (25 : Fin 32) = x25 := by rw [rk54 (25 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g53_25]
   have g54_26 : reg n54 (26 : Fin 32) = x26 := by rw [rk54 (26 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g53_26]
   have g54_27 : reg n54 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rk54 (27 : Fin 32) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide), g53_27]
@@ -4021,7 +4021,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb55]; simp +decide only [runBlock, BInstr.run, svDp58be, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g54_2, g54_3, g54_4, g54_8, g54_9, g54_10, g54_18, g54_19, g54_21, g54_22, g54_23, g54_25, g54_26, g54_27, s54.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
-  have g55_23 : reg n55 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4914 := by
+  have g55_23 : reg n55 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xFC) := by
     rw [rb55]; simp +decide only [runBlock, BInstr.run, svDp58be, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g54_2, g54_3, g54_4, g54_8, g54_9, g54_10, g54_18, g54_19, g54_21, g54_22, g54_23, g54_25, g54_26, g54_27, s54.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -4083,7 +4083,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g56_19 : reg n56 (19 : Fin 32) = bp := by rw [u56.regs, g55_19]
   have g56_21 : reg n56 (21 : Fin 32) = x21 := by rw [u56.regs, g55_21]
   have g56_22 : reg n56 (22 : Fin 32) = BitVec.ofNat 32 0x4 := by rw [u56.regs, g55_22]
-  have g56_23 : reg n56 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4914 := by rw [u56.regs, g55_23]
+  have g56_23 : reg n56 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xFC) := by rw [u56.regs, g55_23]
   have g56_25 : reg n56 (25 : Fin 32) = x25 := by rw [u56.regs, g55_25]
   have g56_26 : reg n56 (26 : Fin 32) = x26 := by rw [u56.regs, g55_26]
   have g56_27 : reg n56 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u56.regs, g55_27]
@@ -4154,7 +4154,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
     rw [rb57, runBlock_reg _ _ _ (21 : Fin 32) s56.zero (by decide), g56_21]
   have g57_22 : reg n57 (22 : Fin 32) = BitVec.ofNat 32 0x4 := by
     rw [rb57, runBlock_reg _ _ _ (22 : Fin 32) s56.zero (by decide), g56_22]
-  have g57_23 : reg n57 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4914 := by
+  have g57_23 : reg n57 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xFC) := by
     rw [rb57, runBlock_reg _ _ _ (23 : Fin 32) s56.zero (by decide), g56_23]
   have g57_25 : reg n57 (25 : Fin 32) = x25 := by
     rw [rb57, runBlock_reg _ _ _ (25 : Fin 32) s56.zero (by decide), g56_25]
@@ -4224,7 +4224,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g58_19 : reg n58 (19 : Fin 32) = bp := by rw [u58.regs, g57_19]
   have g58_21 : reg n58 (21 : Fin 32) = x21 := by rw [u58.regs, g57_21]
   have g58_22 : reg n58 (22 : Fin 32) = BitVec.ofNat 32 0x4 := by rw [u58.regs, g57_22]
-  have g58_23 : reg n58 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4914 := by rw [u58.regs, g57_23]
+  have g58_23 : reg n58 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xFC) := by rw [u58.regs, g57_23]
   have g58_25 : reg n58 (25 : Fin 32) = x25 := by rw [u58.regs, g57_25]
   have g58_26 : reg n58 (26 : Fin 32) = x26 := by rw [u58.regs, g57_26]
   have g58_27 : reg n58 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u58.regs, g57_27]
@@ -4285,7 +4285,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g59_19 : reg n59 (19 : Fin 32) = bp := by rw [u59.regs, upd_ne (by decide) (by decide), g58_19]
   have g59_21 : reg n59 (21 : Fin 32) = x21 := by rw [u59.regs, upd_ne (by decide) (by decide), g58_21]
   have g59_22 : reg n59 (22 : Fin 32) = BitVec.ofNat 32 0x4 := by rw [u59.regs, upd_ne (by decide) (by decide), g58_22]
-  have g59_23 : reg n59 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4914 := by rw [u59.regs, upd_ne (by decide) (by decide), g58_23]
+  have g59_23 : reg n59 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xFC) := by rw [u59.regs, upd_ne (by decide) (by decide), g58_23]
   have g59_25 : reg n59 (25 : Fin 32) = x25 := by rw [u59.regs, upd_ne (by decide) (by decide), g58_25]
   have g59_26 : reg n59 (26 : Fin 32) = x26 := by rw [u59.regs, upd_ne (by decide) (by decide), g58_26]
   have g59_27 : reg n59 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u59.regs, upd_ne (by decide) (by decide), g58_27]
@@ -4347,7 +4347,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g60_19 : reg n60 (19 : Fin 32) = bp := by rw [rg60 (19 : Fin 32), g59_19]
   have g60_21 : reg n60 (21 : Fin 32) = x21 := by rw [rg60 (21 : Fin 32), g59_21]
   have g60_22 : reg n60 (22 : Fin 32) = BitVec.ofNat 32 0x4 := by rw [rg60 (22 : Fin 32), g59_22]
-  have g60_23 : reg n60 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4914 := by rw [rg60 (23 : Fin 32), g59_23]
+  have g60_23 : reg n60 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xFC) := by rw [rg60 (23 : Fin 32), g59_23]
   have g60_25 : reg n60 (25 : Fin 32) = x25 := by rw [rg60 (25 : Fin 32), g59_25]
   have g60_26 : reg n60 (26 : Fin 32) = x26 := by rw [rg60 (26 : Fin 32), g59_26]
   have g60_27 : reg n60 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rg60 (27 : Fin 32), g59_27]
@@ -4409,7 +4409,7 @@ theorem sv_dp5 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 sl4
   have g61_19 : reg n61 (19 : Fin 32) = bp := by rw [u61.regs, g60_19]
   have g61_21 : reg n61 (21 : Fin 32) = x21 := by rw [u61.regs, g60_21]
   have g61_22 : reg n61 (22 : Fin 32) = BitVec.ofNat 32 0x4 := by rw [u61.regs, g60_22]
-  have g61_23 : reg n61 (23 : Fin 32) = BitVec.ofNat 32 0x3FCC4914 := by rw [u61.regs, g60_23]
+  have g61_23 : reg n61 (23 : Fin 32) = BitVec.ofNat 32 (img% svConstAddress + 0xFC) := by rw [u61.regs, g60_23]
   have g61_25 : reg n61 (25 : Fin 32) = x25 := by rw [u61.regs, g60_25]
   have g61_26 : reg n61 (26 : Fin 32) = x26 := by rw [u61.regs, g60_26]
   have g61_27 : reg n61 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u61.regs, g60_27]

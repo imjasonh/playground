@@ -52,14 +52,14 @@ structure GdData (M : Word → BitVec 8) : Prop where
   zero : CodeIn M ZERO2 p256ZeroData
 
 theorem GdData.ofR {M M' : Word → BitVec 8} (G : GdData M)
-    (h : ∀ i, i < 0xC60 → M' ((0x3FCC4200 : Word) + BitVec.ofNat 32 i) = M ((0x3FCC4200 : Word) + BitVec.ofNat 32 i)) :
+    (h : ∀ i, i < (img% dataWindowSize) → M' ((img% dataWindowAddress : Word) + BitVec.ofNat 32 i) = M ((img% dataWindowAddress : Word) + BitVec.ofNat 32 i)) :
     GdData M' := by
-  have cd : ∀ (b : Word) (d : List Nat), CodeIn M b d → 0x3FCC4200 ≤ b.toNat → b.toNat + d.length ≤ 0x3FCC4E60 →
+  have cd : ∀ (b : Word) (d : List Nat), CodeIn M b d → (img% dataWindowAddress) ≤ b.toNat → b.toNat + d.length ≤ (img% dataWindowAddress + dataWindowSize) →
       CodeIn M' b d := fun b d hc h1 h2 i hi => by
-    have e : b + BitVec.ofNat 32 i = (0x3FCC4200 : Word) + BitVec.ofNat 32 (b.toNat - 0x3FCC4200 + i) := by
+    have e : b + BitVec.ofNat 32 i = (img% dataWindowAddress : Word) + BitVec.ofNat 32 (b.toNat - (img% dataWindowAddress) + i) := by
       apply BitVec.eq_of_toNat_eq
       rw [BitVec.toNat_add, BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
-        show (0x3FCC4200 : Word).toNat = 0x3FCC4200 from rfl]
+        show (img% dataWindowAddress : Word).toNat = (img% dataWindowAddress) from rfl]
       omega
     rw [e, h _ (by omega), ← e]
     exact hc i hi

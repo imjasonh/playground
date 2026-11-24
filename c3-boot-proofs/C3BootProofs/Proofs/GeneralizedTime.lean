@@ -647,7 +647,7 @@ theorem generalizedTime_correct (m : Machine) {sp0 out p retAddr : Word} {n : Na
   have cd : ∀ {M' : Word → BitVec 8} {c : Word} {code : List Nat}, CodeIn m.mem c code → 0x40000000 ≤ c.toNat →
       c.toNat + code.length ≤ 2 ^ 32 → (∀ x, Sep H 0x60 x 1 → M' x = m.mem x) → CodeIn M' c code :=
     fun hc h1 h2 hM i hi' => by rw [hM _ (hiH _ (dn_code_hi h1 h2 hi'))]; exact hc i hi'
-  have hGTn : GNT.toNat = 0x403a8a72 := by decide
+  have hGTn : GNT.toNat = (img% generalizedTimeAddress) := by decide
   have cdG : ∀ {M' : Word → BitVec 8}, (∀ x, Sep H 0x60 x 1 → M' x = m.mem x) → CodeIn M' GNT generalizedTimeCode :=
     fun hM => cd hcG (by rw [hGTn]; decide) (by rw [hGTn]; decide) hM
   have hiC : ∀ {c l : Nat} {a : Word} {len : Nat}, c + l ≤ 0x60 → 0x40000000 ≤ a.toNat → a.toNat + len ≤ 2 ^ 32 →
@@ -1040,8 +1040,8 @@ theorem generalizedTime_correct (m : Machine) {sp0 out p retAddr : Word} {n : Na
     rw [R7, runBlock_reg _ _ _ q u6.zero hd]
   obtain ⟨m8, c8, pc8, mem8, regs8⟩ := u7'.callRa hc5 gnt_at_76 gnt_at_7a (cb := DT) (by decide) (by decide)
   have r8 := PEnv.reg1 regs8 u7'.zero
-  have hDTn : DT.toNat = 0x403a8bc8 := by decide
-  have hTDn : TD.toNat = 0x403a8de4 := by decide
+  have hDTn : DT.toNat = (img% dateTimeAddress) := by decide
+  have hTDn : TD.toNat = (img% timeDigits2Address) := by decide
   have eG : ∀ k, k ≤ 0x30 → (G + BitVec.ofNat 32 k).toNat = G.toNat + k := fun k hk => by
     rw [eGk, hHc _ (by omega)]; omega
   have sGH : ∀ {c l : Nat}, 0x30 ≤ c → c + l ≤ 0x60 → Sep (H + BitVec.ofNat 32 c) l H 0x30 := fun h1 h2 => by

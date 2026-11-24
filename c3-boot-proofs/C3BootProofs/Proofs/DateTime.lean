@@ -1226,8 +1226,8 @@ theorem dateTime_correct (m : Machine) {sp0 out d p Y retAddr : Word} {n : Nat}
       c.toNat + code.length ≤ 2 ^ 32 → (∀ x, Sep F 0x30 x 1 → Sep d 8 x 1 → M' x = m.mem x) → CodeIn M' c code :=
     fun hc h1 h2 hM i hi' => by
       rw [hM _ (hiF _ (dn_code_hi h1 h2 hi')) (hiD _ (dn_code_hi h1 h2 hi'))]; exact hc i hi'
-  have hDTn : DT.toNat = 0x403a8bc8 := by decide
-  have hTDn : TD.toNat = 0x403a8de4 := by decide
+  have hDTn : DT.toNat = (img% dateTimeAddress) := by decide
+  have hTDn : TD.toNat = (img% timeDigits2Address) := by decide
   have cdDT : ∀ {M' : Word → BitVec 8}, (∀ x, Sep F 0x30 x 1 → Sep d 8 x 1 → M' x = m.mem x) →
       CodeIn M' DT dateTimeCode := fun hM => cd hc0 (by rw [hDTn]; decide) (by rw [hDTn]; decide) hM
   have cdTD : ∀ {M' : Word → BitVec 8}, (∀ x, Sep F 0x30 x 1 → Sep d 8 x 1 → M' x = m.mem x) →

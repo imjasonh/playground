@@ -4,7 +4,7 @@ import C3BootProofs.Spec.Sigstore
 /-!
 # `sigstore::verify`'s constants as the specification's
 
-The OIDs and strings in `SvData`, the 304 bytes from 0x3FCC4818, as the
+The OIDs and strings in `SvData`, the 304 bytes from `svConstAddress`, as the
 values `Spec/X509.lean`, `Spec/Tsa.lean`, and `Spec/Checkpoint.lean` name.
 -/
 
@@ -19,28 +19,28 @@ theorem sv_const {M : Word → BitVec 8} (D : SvData M) {a : Word} (i n : Nat) {
 
 set_option maxRecDepth 100000
 
-theorem sv_ecdsa384 {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 0x3FCC4840) 8 = oidEcdsaSha384 :=
+theorem sv_ecdsa384 {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x28)) 8 = oidEcdsaSha384 :=
   sv_const D 0x28 8 (by decide) (by decide) (by decide)
-theorem sv_prime256 {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 0x3FCC4848) 8 = oidPrime256v1 :=
+theorem sv_prime256 {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x30)) 8 = oidPrime256v1 :=
   sv_const D 0x30 8 (by decide) (by decide) (by decide)
-theorem sv_ecpub {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 0x3FCC4914) 7 = oidEcPublicKey :=
+theorem sv_ecpub {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0xFC)) 7 = oidEcPublicKey :=
   sv_const D 0xFC 7 (by decide) (by decide) (by decide)
-theorem sv_signedData {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 0x3FCC4859) 9 = oidSignedData :=
+theorem sv_signedData {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x41)) 9 = oidSignedData :=
   sv_const D 0x41 9 (by decide) (by decide) (by decide)
-theorem sv_tstInfo {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 0x3FCC4862) 11 = oidTstInfo :=
+theorem sv_tstInfo {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x4A)) 11 = oidTstInfo :=
   sv_const D 0x4A 11 (by decide) (by decide) (by decide)
-theorem sv_ecdsa256 {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 0x3FCC4818) 8 = oidEcdsaSha256 :=
+theorem sv_ecdsa256 {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 (img% svConstAddress)) 8 = oidEcdsaSha256 :=
   sv_const D 0 8 (by decide) (by decide) (by decide)
-theorem sv_contentType {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 0x3FCC486E) 9 = oidContentType :=
+theorem sv_contentType {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x56)) 9 = oidContentType :=
   sv_const D 0x56 9 (by decide) (by decide) (by decide)
 theorem sv_messageDigest {M : Word → BitVec 8} (D : SvData M) :
-    memBytes M (BitVec.ofNat 32 0x3FCC4877) 9 = oidMessageDigest :=
+    memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x5F)) 9 = oidMessageDigest :=
   sv_const D 0x5F 9 (by decide) (by decide) (by decide)
-theorem sv_sigPrefix {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 0x3FCC4855) 4 = sigLinePrefix :=
+theorem sv_sigPrefix {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x3D)) 4 = sigLinePrefix :=
   sv_const D 0x3D 4 (by decide) (by decide) (by decide)
-theorem sv_newline {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 0x3FCC4850) 1 = [0x0A] :=
+theorem sv_newline {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x38)) 1 = [0x0A] :=
   sv_const D 0x38 1 (by decide) (by decide) (by decide)
-theorem sv_setTag {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 0x3FCC486D) 1 = [0x31] :=
+theorem sv_setTag {M : Word → BitVec 8} (D : SvData M) : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x55)) 1 = [0x31] :=
   sv_const D 0x55 1 (by decide) (by decide) (by decide)
 
 theorem sv_extConsts {M : Word → BitVec 8} (D : SvData M) : ExtConsts M where

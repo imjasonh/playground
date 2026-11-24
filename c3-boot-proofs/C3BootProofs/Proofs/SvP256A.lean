@@ -21,7 +21,7 @@ set_option maxRecDepth 100000
 /-- The inversion of `s`'s starting state: `f` is the order `n`, `g` is `s`, `d` is 0, `e` is 1, and
 591 divsteps are left. -/
 def p256Iv0 (M0 : Word → BitVec 8) (es : Bytes) : Iv :=
-  ⟨1, (accV M0 (BitVec.ofNat 32 0x3FCC4268) 8 : Int), (beNat (b32 es) : Int), 0, (accV M0 (BitVec.ofNat 32 0x3FCC42E8) 8 : Int), 0x24F⟩
+  ⟨1, (accV M0 (BitVec.ofNat 32 (img% b2sOrder256Address)) 8 : Int), (beNat (b32 es) : Int), 0, (accV M0 (BitVec.ofNat 32 (img% p256OneAddress)) 8 : Int), 0x24F⟩
 
 set_option maxHeartbeats 64000000 in
 /-- **The P-256 check up to the inversion of `s`**: from 0xFBA to 0x1328, or an error return when `r` or
@@ -44,17 +44,17 @@ theorem sv_p256_inv {B out bp x21 x26 : Word} {er es : Bytes} {v : Nat → Word}
     (EC0 : SvEcCode M0)
     (IC0 : SvIvCode M0) (UC0 : SvUpCode M0) (D0 : P2Data M0) (BG0 : BGEnv M0) (RS : SvRoSep B) (BY0 : BYEnv M0)
     (k1 : SvIn B x21 1) (k41 : SvIn B x21 0x41) (dg_in : SvIn B (memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x84)) 32) :
-    (¬ (((inScalarRange (b32 er) (memBytes M0 (BitVec.ofNat 32 0x3FCC4288) 32) = true) ∧ (inScalarRange (b32 es) (memBytes M0 (BitVec.ofNat 32 0x3FCC4288) 32) = true) ∧ (M0 x21 = 4) ∧ True) ∧ ((GsOk M0 x21) ∧ (beNat (b32 er) < C3.p256.n) ∧ (beNat (b32 es) < C3.p256.n) ∧ (beNat (b32 er) ≠ 0) ∧ (beNat (b32 es) ≠ 0) ∧ True)) ∧ SvErrRet B out v n0) ∨
-    (((inScalarRange (b32 er) (memBytes M0 (BitVec.ofNat 32 0x3FCC4288) 32) = true) ∧ (inScalarRange (b32 es) (memBytes M0 (BitVec.ofNat 32 0x3FCC4288) 32) = true) ∧ (M0 x21 = 4) ∧ True) ∧ ((GsOk M0 x21) ∧ (beNat (b32 er) < C3.p256.n) ∧ (beNat (b32 es) < C3.p256.n) ∧ (beNat (b32 er) ≠ 0) ∧ (beNat (b32 es) ≠ 0) ∧ True) ∧
+    (¬ (((inScalarRange (b32 er) (memBytes M0 (BitVec.ofNat 32 (img% p256OrderBeAddress)) 32) = true) ∧ (inScalarRange (b32 es) (memBytes M0 (BitVec.ofNat 32 (img% p256OrderBeAddress)) 32) = true) ∧ (M0 x21 = 4) ∧ True) ∧ ((GsOk M0 x21) ∧ (beNat (b32 er) < C3.p256.n) ∧ (beNat (b32 es) < C3.p256.n) ∧ (beNat (b32 er) ≠ 0) ∧ (beNat (b32 es) ≠ 0) ∧ True)) ∧ SvErrRet B out v n0) ∨
+    (((inScalarRange (b32 er) (memBytes M0 (BitVec.ofNat 32 (img% p256OrderBeAddress)) 32) = true) ∧ (inScalarRange (b32 es) (memBytes M0 (BitVec.ofNat 32 (img% p256OrderBeAddress)) 32) = true) ∧ (M0 x21 = 4) ∧ True) ∧ ((GsOk M0 x21) ∧ (beNat (b32 er) < C3.p256.n) ∧ (beNat (b32 es) < C3.p256.n) ∧ (beNat (b32 er) ≠ 0) ∧ (beNat (b32 es) ≠ 0) ∧ True) ∧
       ∃ m, Steps n0 m ∧ (∀ x, SvR B x → m.mem x = M0 x) ∧ St m.mem SV m 0x1328 (reg m) ∧
         IvInv B m v (reg n0 (3 : Fin 32)) (reg n0 (4 : Fin 32)) out bp (BitVec.ofNat 32 0x1) x26
           (gsVal M0 x21 1 * 2 ^ 256 % p256) (gsVal M0 x21 0x21 * 2 ^ 256 % p256)
-          (accV M0 (BitVec.ofNat 32 0x3FCC43A8) 8) (beNat (b32 er)) (beNat (b32 es))
-          (beNat (memBytes M0 (memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x84)) 32) % C3.p256.n) (accV M0 (BitVec.ofNat 32 0x3FCC4268) 8)
+          (accV M0 (BitVec.ofNat 32 (img% p256MontOneAddress)) 8) (beNat (b32 er)) (beNat (b32 es))
+          (beNat (memBytes M0 (memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x84)) 32) % C3.p256.n) (accV M0 (BitVec.ofNat 32 (img% b2sOrder256Address)) 8)
           (fun e => memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 e)) (p256Iv0 M0 es)) := by
   rcases sv_eca1 F E0 V0 hret hO s0 M0 fM g0_2 g0_18 g0_19 g0_20 g0_21 g0_26 g0_27 rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl b0_138 q0_139 b0_158 q0_159 EC0 k1 with ⟨hn, e⟩ | ⟨x1_0, x1_1, x1_2, n1, c1, s1, E1, V1, fR1, r1_2, r1_3, r1_4, r1_18, r1_19, r1_20, r1_21, r1_26, r1_27, w1_24, w1_28, w1_2c, w1_30, w1_34, w1_38, w1_3c, w1_40, w1_44, w1_48, w1_4c, w1_50, w1_54, w1_58, w1_5c, w1_60, w1_64, w1_68, w1_6c, w1_70, w1_7c, w1_80, w1_84, w1_88, w1_8c, w1_90, w1_94, w1_98, w1_9c, w1_a0, w1_a4, w1_a8, w1_ac, w1_b0, w1_b4, w1_b8, w1_bc, w1_c0, w1_c4, w1_c8, w1_cc, w1_d0, w1_d4, w1_d8, w1_dc, w1_e0, w1_e4, w1_e8, w1_ec, w1_f0, w1_f4, w1_f8, w1_fc, w1_100, w1_104, w1_108, w1_10c, w1_110, w1_114, w1_118, w1_11c, w1_120, w1_124, w1_128, w1_12c, w1_130, b1_138, b1_158, q1_139, q1_159, K1_L⟩
   · exact .inl ⟨fun h => hn h.1, e⟩
-  have h1 : (inScalarRange (b32 er) (memBytes M0 (BitVec.ofNat 32 0x3FCC4288) 32) = true) ∧ (inScalarRange (b32 es) (memBytes M0 (BitVec.ofNat 32 0x3FCC4288) 32) = true) ∧ (M0 x21 = 4) ∧ True := ⟨x1_0, x1_1, x1_2, trivial⟩
+  have h1 : (inScalarRange (b32 er) (memBytes M0 (BitVec.ofNat 32 (img% p256OrderBeAddress)) 32) = true) ∧ (inScalarRange (b32 es) (memBytes M0 (BitVec.ofNat 32 (img% p256OrderBeAddress)) 32) = true) ∧ (M0 x21 = 4) ∧ True := ⟨x1_0, x1_1, x1_2, trivial⟩
   have CH1 : ∀ x, SvR B x → n1.mem x = n0.mem x := fun x hx => (fR1 x hx).trans (fM x hx).symm
   rcases sv_eca2 F E1 V1 hret hO s1 M0 fR1 r1_2 r1_18 r1_19 r1_20 r1_21 r1_26 r1_27 w1_24 w1_28 w1_2c w1_30 w1_34 w1_38 w1_3c w1_40 w1_44 w1_48 w1_4c w1_50 w1_54 w1_58 w1_5c w1_60 w1_64 w1_68 w1_6c w1_70 w1_7c w1_80 w1_84 w1_88 w1_8c w1_90 w1_94 w1_98 w1_9c w1_a0 w1_a4 w1_a8 w1_ac w1_b0 w1_b4 w1_b8 w1_bc w1_c0 w1_c4 w1_c8 w1_cc w1_d0 w1_d4 w1_d8 w1_dc w1_e0 w1_e4 w1_e8 w1_ec w1_f0 w1_f4 w1_f8 w1_fc w1_100 w1_104 w1_108 w1_10c w1_110 w1_114 w1_118 w1_11c w1_120 w1_124 w1_128 w1_12c w1_130 b1_138 q1_139 b1_158 q1_159 EC0 D0 BG0 k41 with ⟨hn, e⟩ | ⟨x2_0, x2_1, x2_2, x2_3, x2_4, n2, c2, s2, E2, V2, fR2, r2_2, r2_3, r2_4, r2_18, r2_19, r2_20, r2_21, r2_22, r2_26, r2_27, w2_24, w2_28, w2_2c, w2_30, w2_34, w2_38, w2_3c, w2_40, w2_44, w2_48, w2_4c, w2_50, w2_54, w2_58, w2_5c, w2_60, w2_64, w2_68, w2_6c, w2_70, w2_7c, w2_80, w2_84, w2_88, w2_8c, w2_90, w2_94, w2_98, w2_9c, w2_a0, w2_a4, w2_a8, w2_ac, w2_b0, w2_b4, w2_b8, w2_bc, w2_c0, w2_c4, w2_c8, w2_cc, w2_d0, w2_d4, w2_d8, w2_dc, w2_e0, w2_e4, w2_e8, w2_ec, w2_f0, w2_f4, w2_f8, w2_fc, w2_100, w2_104, w2_108, w2_10c, w2_110, w2_114, w2_118, w2_11c, w2_120, w2_124, w2_128, w2_12c, w2_130, w2_1b8, w2_a20, b2_138, b2_158, b2_1fc, q2_139, q2_159, a2_178, a2_198, a2_1bc, a2_1dc, a2_a24, a2_1020, a2_1480, K2_L⟩
   · exact .inl ⟨fun h => hn h.2, SvErrRet.pre c1 r1_3 r1_4 CH1 e⟩

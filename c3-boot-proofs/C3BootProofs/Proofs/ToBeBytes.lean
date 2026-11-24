@@ -157,7 +157,7 @@ theorem tb12_loop {Mz M0 : Word → BitVec 8} {s G : Word}
           (BitVec.ofNat 32 toBeBytes12Address) toBeBytes12Code.length := fun c hc =>
         sep_of_le (by
           rw [add_ofNat_assoc, BitVec.toNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (a := 4 * j + c) (by omega),
-            show (BitVec.ofNat 32 toBeBytes12Address).toNat = 0x403b3ef2 by decide]
+            show (BitVec.ofNat 32 toBeBytes12Address).toNat = (img% toBeBytes12Address) by decide]
           omega) (by decide)
       exact ⟨aligned_add hsa (by omega), sc 0 (by omega), sc 1 (by omega), sc 2 (by omega), sc 3 (by omega)⟩)
     obtain ⟨v, hv⟩ : ∃ v, memLoad32 Mx (s + BitVec.ofNat 32 (4 * (11 - j))) = v := ⟨_, rfl⟩
@@ -268,7 +268,7 @@ theorem toBeBytes12_correct (m : Machine) {out s sp0 retAddr : Word}
   have hGn : G.toNat = sp0.toNat - 0x40 := by rw [hGR, hRc _ (by omega), hRn]; omega
   have hGa : G.toNat % 16 = 0 := by rw [hGn]; omega
   have hGa4 : G.toNat % 4 = 0 := by omega
-  have hQn : Q.toNat = 0x403b3ef2 := by decide
+  have hQn : Q.toNat = (img% toBeBytes12Address) := by decide
   have Rd : ∀ c l, c + l ≤ 0x90 → ∀ (b : Word) (k : Nat), 0x40000000 ≤ b.toNat → b.toNat + k ≤ 2 ^ 32 →
       Sep (R + BitVec.ofNat 32 c) l b k := fun c l h b k hb hbk => sep_of_le (by rw [hRc _ (by omega)]; omega) hbk
   have st0 : St M0 Q m 0 (reg m) := ⟨by rw [hpc, add_ofNat_zero], rfl, fun _ => rfl⟩
@@ -435,7 +435,7 @@ theorem toBeBytes12_correct (m : Machine) {out s sp0 retAddr : Word}
   have sp8 : reg n8 sp = G := by rw [r8 sp (by decide), k7 sp (by decide) (by decide) (by decide), sp6]
   have eF : G + 0xFFFFFFF0 = R + BitVec.ofNat 32 0x40 := by rw [hGR, BitVec.add_assoc]; rfl
   have hF : (G + 0xFFFFFFF0).toNat = R.toNat + 0x40 := by rw [eF, hRc _ (by omega)]
-  have hBn : (BitVec.ofNat 32 memcpyStubAddress + 8 : Word).toNat = 0x403b4856 := by decide
+  have hBn : (BitVec.ofNat 32 memcpyStubAddress + 8 : Word).toNat = (img% memcpyBodyAddress) := by decide
   obtain ⟨n9, c9, pc9, sp9, _, mem9, K9⟩ := memcpy_correct n8 (BitVec.ofNat 32 memcpyStubAddress)
     (Q + BitVec.ofNat 32 (0x52 + 8)) out G 48
     (fun i hi => by
@@ -584,7 +584,7 @@ theorem tb8_loop {Mz M0 : Word → BitVec 8} {s G : Word}
           (BitVec.ofNat 32 toBeBytes8Address) toBeBytes8Code.length := fun c hc =>
         sep_of_le (by
           rw [add_ofNat_assoc, BitVec.toNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (a := 4 * j + c) (by omega),
-            show (BitVec.ofNat 32 toBeBytes8Address).toNat = 0x403b1fd4 by decide]
+            show (BitVec.ofNat 32 toBeBytes8Address).toNat = (img% toBeBytes8Address) by decide]
           omega) (by decide)
       exact ⟨aligned_add hsa (by omega), sc 0 (by omega), sc 1 (by omega), sc 2 (by omega), sc 3 (by omega)⟩)
     obtain ⟨v, hv⟩ : ∃ v, memLoad32 Mx (s + BitVec.ofNat 32 (4 * (7 - j))) = v := ⟨_, rfl⟩
@@ -696,7 +696,7 @@ theorem toBeBytes8_correct (m : Machine) {out s sp0 retAddr : Word}
   have hGn : G.toNat = sp0.toNat - 0x30 := by rw [hGR, hRc _ (by omega), hRn]; omega
   have hGa : G.toNat % 16 = 0 := by rw [hGn]; omega
   have hGa4 : G.toNat % 4 = 0 := by omega
-  have hQn : Q.toNat = 0x403b1fd4 := by decide
+  have hQn : Q.toNat = (img% toBeBytes8Address) := by decide
   have Rd : ∀ c l, c + l ≤ 0x70 → ∀ (b : Word) (k : Nat), 0x40000000 ≤ b.toNat → b.toNat + k ≤ 2 ^ 32 →
       Sep (R + BitVec.ofNat 32 c) l b k := fun c l h b k hb hbk => sep_of_le (by rw [hRc _ (by omega)]; omega) hbk
   have st0 : St M0 Q m 0 (reg m) := ⟨by rw [hpc, add_ofNat_zero], rfl, fun _ => rfl⟩
@@ -863,7 +863,7 @@ theorem toBeBytes8_correct (m : Machine) {out s sp0 retAddr : Word}
   have sp8 : reg n8 sp = G := by rw [r8 sp (by decide), k7 sp (by decide) (by decide) (by decide), sp6]
   have eF : G + 0xFFFFFFF0 = R + BitVec.ofNat 32 0x30 := by rw [hGR, BitVec.add_assoc]; rfl
   have hF : (G + 0xFFFFFFF0).toNat = R.toNat + 0x30 := by rw [eF, hRc _ (by omega)]
-  have hBn : (BitVec.ofNat 32 memcpyStubAddress + 8 : Word).toNat = 0x403b4856 := by decide
+  have hBn : (BitVec.ofNat 32 memcpyStubAddress + 8 : Word).toNat = (img% memcpyBodyAddress) := by decide
   obtain ⟨n9, c9, pc9, sp9, _, mem9, K9⟩ := memcpy_correct n8 (BitVec.ofNat 32 memcpyStubAddress)
     (Q + BitVec.ofNat 32 (0x50 + 8)) out G 32
     (fun i hi => by

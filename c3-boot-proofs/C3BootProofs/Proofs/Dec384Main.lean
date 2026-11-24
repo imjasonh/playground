@@ -548,7 +548,7 @@ theorem DqFrame.mc {S : Word} (F : DqFrame S) :
   have hb16 : (S + 0xFFFFFFF0).toNat = S.toNat - 16 := F.below 16 (by decide) (by decide)
   have := F.lo; have := F.hi; have := F.al
   refine ⟨by rw [hb16]; omega, by rw [hb16]; omega,
-    sep_of_le (by rw [hb16, show (MCS + 8).toNat = 0x403b4856 from rfl]; omega) (by decide), fun c hc => ?_⟩
+    sep_of_le (by rw [hb16, show (MCS + 8).toNat = (img% memcpyBodyAddress) from rfl]; omega) (by decide), fun c hc => ?_⟩
   exact (sep_of_le (by rw [hb16, F.at c (by omega)]; omega) (by rw [F.at c (by omega)]; omega)).symm
 
 theorem DqFrame.mcN {S : Word} (F : DqFrame S) {c n : Nat} (h : c + n ≤ 0xA50) :

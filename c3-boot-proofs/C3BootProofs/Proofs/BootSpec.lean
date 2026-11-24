@@ -965,8 +965,8 @@ theorem bt_copy (C : BtCtx M0 top acc imgf R romStack romBase romCode) (hROM : R
         (w := sgLen M0 acc j >>> 2) (src := sgSrc M0 acc imgf j) (retAddr := BT + BitVec.ofNat 32 (0x78 + 8))
         ⟨rfl, by rw [mem7]; exact hiKeep C.rfw hH (by decide) (by decide), by rw [hGn]; omega, hR4,
           by rw [hGn]; omega, hda, by omega,
-          sep_of_le (by rw [hGn, show (BitVec.ofNat 32 romFlashReadWordsAddress).toNat = 0x403A1730 from rfl]; omega) (by decide),
-          sep_of_le (by show _ ≤ (BitVec.ofNat 32 romFlashReadWordsAddress).toNat; rw [show (BitVec.ofNat 32 romFlashReadWordsAddress).toNat = 0x403A1730 from rfl]; omega) (by decide),
+          sep_of_le (by rw [hGn, show (BitVec.ofNat 32 romFlashReadWordsAddress).toNat = (img% romFlashReadWordsAddress) from rfl]; omega) (by decide),
+          sep_of_le (by show _ ≤ (BitVec.ofNat 32 romFlashReadWordsAddress).toNat; rw [show (BitVec.ofNat 32 romFlashReadWordsAddress).toNat = (img% romFlashReadWordsAddress) from rfl]; omega) (by decide),
           sDS.subR (c := romStack) (l := 16 + R) (by rw [hKv]; omega) |> fun h => by rwa [hGS] at h⟩
         pc7 (by rw [k7 a0 (by decide)]; exact w0) (by rw [k7 a1 (by decide)]; exact w1)
         (by rw [k7 a2 (by decide)]; exact w2) (by rw [regs7]; simp +decide only [upd, ↓reduceIte])

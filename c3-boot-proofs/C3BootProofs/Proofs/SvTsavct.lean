@@ -146,11 +146,11 @@ theorem sv_tsavct {B out bp x21 x26 dg p0 L0 cp rem op ol vcp vcl x20 : Word} {w
     (g0_25 : reg n0 (25 : Fin 32) = L0)
     (oid_in : SvIn B op ol.toNat)
     (vc_in : SvIn B vcp vcl.toNat)
-    (hct : memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC486E) 9) :
-    (¬ (∃ op5 ol5, derContent (vcp) (derOid (memBytes M0 (vcp) (vcl).toNat)) = .ok (op5, ol5) ∧ ∃ to5, derOid (memBytes M0 (vcp) (vcl).toNat) = .ok to5 ∧ (memBytes M0 op5 ol5.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4862) 11) ∧ ((vcl) - BitVec.ofNat 32 (to5.header + to5.len) = 0) ∧ True) ∧ SvErrRet B out v n0) ∨
+    (hct : memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x56)) 9) :
+    (¬ (∃ op5 ol5, derContent (vcp) (derOid (memBytes M0 (vcp) (vcl).toNat)) = .ok (op5, ol5) ∧ ∃ to5, derOid (memBytes M0 (vcp) (vcl).toNat) = .ok to5 ∧ (memBytes M0 op5 ol5.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x4A)) 11) ∧ ((vcl) - BitVec.ofNat 32 (to5.header + to5.len) = 0) ∧ True) ∧ SvErrRet B out v n0) ∨
     (∃ op5 ol5, derContent (vcp) (derOid (memBytes M0 (vcp) (vcl).toNat)) = .ok (op5, ol5) ∧
     ∃ to5, derOid (memBytes M0 (vcp) (vcl).toNat) = .ok to5 ∧
-    (memBytes M0 op5 ol5.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4862) 11) ∧
+    (memBytes M0 op5 ol5.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x4A)) 11) ∧
     ((vcl) - BitVec.ofNat 32 (to5.header + to5.len) = 0) ∧
     ∃ n', Steps n0 n' ∧
         St n'.mem SV n' 0x267A (reg n') ∧
@@ -295,7 +295,7 @@ theorem sv_tsavct {B out bp x21 x26 dg p0 L0 cp rem op ol vcp vcl x20 : Word} {w
     rw [rb1]; simp +decide only [runBlock, BInstr.run, svTsavct25da, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g0_2, g0_3, g0_4, g0_9, g0_18, g0_19, g0_20, g0_21, g0_22, g0_23, g0_24, g0_25, g0_26, g0_27, s0.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
-  have g1_12 : reg n1 a2 = BitVec.ofNat 32 0x3FCC486E := by
+  have g1_12 : reg n1 a2 = BitVec.ofNat 32 (img% svConstAddress + 0x56) := by
     rw [rb1]; simp +decide only [runBlock, BInstr.run, svTsavct25da, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g0_2, g0_3, g0_4, g0_9, g0_18, g0_19, g0_20, g0_21, g0_22, g0_23, g0_24, g0_25, g0_26, g0_27, s0.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -1655,7 +1655,7 @@ theorem sv_tsavct {B out bp x21 x26 dg p0 L0 cp rem op ol vcp vcl x20 : Word} {w
     rw [rb9, runBlock_reg _ _ _ (26 : Fin 32) s8.zero (by decide), g8_26]
   have g9_27 : reg n9 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb9, runBlock_reg _ _ _ (27 : Fin 32) s8.zero (by decide), g8_27]
-  have g9_12 : reg n9 a2 = BitVec.ofNat 32 0x3FCC4862 := by
+  have g9_12 : reg n9 a2 = BitVec.ofNat 32 (img% svConstAddress + 0x4A) := by
     rw [rb9]; simp +decide only [runBlock, BInstr.run, svTsavct2612, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g8_2, g8_3, g8_4, g8_9, g8_10, g8_11, g8_18, g8_19, g8_20, g8_21, g8_22, g8_23, g8_24, g8_25, g8_26, g8_27, s8.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -1844,7 +1844,7 @@ theorem sv_tsavct {B out bp x21 x26 dg p0 L0 cp rem op ol vcp vcl x20 : Word} {w
   have w10_1388 : memLoad32 n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x1388) = (vcp) + BitVec.ofNat 32 (to5.header + to5.len) := (K10.w32 (by decide) (by decide)).trans w9_1388
   have w10_138c : memLoad32 n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x138C) = (vcl) - BitVec.ofNat 32 (to5.header + to5.len) := (K10.w32 (by decide) (by decide)).trans w9_138c
   clear w9_138c w9_1388 w9_132c w9_1328 w9_1324 w9_1320 w9_424 w9_420 w9_130 w9_12c w9_128 w9_124 w9_120 w9_11c w9_118 w9_114 w9_110 w9_10c w9_108 w9_104 w9_100 w9_fc w9_f8 w9_f4 w9_f0 w9_ec w9_e8 w9_e4 w9_e0 w9_dc w9_d8 w9_d4 w9_d0 w9_cc w9_c8 w9_c4 w9_c0 w9_bc w9_b8 w9_b4 w9_b0 w9_ac w9_a8 w9_a4 w9_a0 w9_9c w9_98 w9_94 w9_90 w9_8c w9_88 w9_84 w9_80 w9_7c w9_78 w9_74 w9_70 w9_6c w9_68 w9_64 w9_60 w9_5c w9_58 w9_54 w9_50 w9_4c w9_48 w9_44 w9_40 w9_3c w9_38 w9_34 w9_30 w9_2c w9_28 w9_24 g9_13 g9_12 g9_27 g9_26 g9_25 g9_24 g9_23 g9_22 g9_21 g9_20 g9_19 g9_18 g9_11 g9_10 g9_9 g9_4 g9_3 g9_2 V9 E9 fR9 t9 fr9 rb9 s9 m9 u9 c9
-  by_cases htst : memBytes M0 op5 ol5.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4862) 11
+  by_cases htst : memBytes M0 op5 ol5.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x4A)) 11
   rotate_left
   · have g10_10 : reg n10 a0 = BitVec.ofNat 32 1 := by rw [a0_10, ite_eq_right htst]; rfl
     -- 0x2624: branch, taken

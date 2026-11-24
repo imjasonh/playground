@@ -1,5 +1,7 @@
 import C3BootProofs.Proofs.CondSelect
 import C3BootProofs.Proofs.DerTlv
+import C3BootProofs.Image.BootloaderData2
+import C3BootProofs.Image.BootloaderData5
 
 /-!
 # `CtOption<AffinePoint>` into `ctutils::CtOption`, as compiled
@@ -82,21 +84,21 @@ It changes no memory outside the result and 0x90 bytes of stack below
 `sp`. -/
 theorem ctIntoAffine384_correct (m : Machine) {out s sp0 retAddr : Word}
     (hc : CodeIn m.mem (BitVec.ofNat 32 ctIntoAffine384Address) ctIntoAffine384Code)
-    (env : UOEnv m.mem (BitVec.ofNat 32 unwrapOr384Address) (sp0 + 0xFFFFFFF0) out s 0x3FCC43C8)
+    (env : UOEnv m.mem (BitVec.ofNat 32 unwrapOr384Address) (sp0 + 0xFFFFFFF0) out s (img% p384AffineIdentityAddress))
     (hpc : m.pc = BitVec.ofNat 32 ctIntoAffine384Address) (hsp : reg m sp = sp0) (ha0 : reg m a0 = out)
     (ha1 : reg m a1 = s) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
     (hch : m.mem (s + 0x64) = 0 ∨ m.mem (s + 0x64) = 1)
     (hspl : 0x90 ≤ sp0.toNat) (hspw : sp0.toNat ≤ 0x40000000) (how : out.toNat + 0x65 ≤ 0x40000000)
     (sOW : Sep out 0x65 (sp0 + 0xFFFFFFF0) 16) (sSW : Sep s 0x65 (sp0 + 0xFFFFFFF0) 16)
-    (sDW : Sep (0x3FCC43C8 : Word) 0x61 (sp0 + 0xFFFFFFF0) 16) :
+    (sDW : Sep (img% p384AffineIdentityAddress : Word) 0x61 (sp0 + 0xFFFFFFF0) 16) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
       (∀ i, i < 12 → memLoad32 m'.mem (out + BitVec.ofNat 32 (4 * i)) =
         if m.mem (s + 0x64) = 1 then memLoad32 m.mem (s + BitVec.ofNat 32 (4 * i))
-        else memLoad32 m.mem (0x3FCC43C8 + BitVec.ofNat 32 (4 * i))) ∧
+        else memLoad32 m.mem ((img% p384AffineIdentityAddress) + BitVec.ofNat 32 (4 * i))) ∧
       (∀ i, i < 12 → memLoad32 m'.mem (out + 0x30 + BitVec.ofNat 32 (4 * i)) =
         if m.mem (s + 0x64) = 1 then memLoad32 m.mem (s + 0x30 + BitVec.ofNat 32 (4 * i))
-        else memLoad32 m.mem (0x3FCC43C8 + 0x30 + BitVec.ofNat 32 (4 * i))) ∧
-      m'.mem (out + 0x60) = (if m.mem (s + 0x64) = 1 then m.mem (s + 0x60) else m.mem (0x3FCC43C8 + 0x60)) ∧
+        else memLoad32 m.mem ((img% p384AffineIdentityAddress) + 0x30 + BitVec.ofNat 32 (4 * i))) ∧
+      m'.mem (out + 0x60) = (if m.mem (s + 0x64) = 1 then m.mem (s + 0x60) else m.mem ((img% p384AffineIdentityAddress) + 0x60)) ∧
       m'.mem (out + 0x64) = m.mem (s + 0x64) ∧
       (∀ q, q.val ∈ [1, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
       ∀ y, Sep (sp0 + 0xFFFFFF70) 0x90 y 1 → Sep out 0x65 y 1 → m'.mem y = m.mem y := by
@@ -109,7 +111,7 @@ theorem ctIntoAffine384_correct (m : Machine) {out s sp0 retAddr : Word}
   have hGa : G.toNat % 4 = 0 := env.hsp
   have hGc : ∀ c, c ≤ 16 → (G + BitVec.ofNat 32 c).toNat = G.toNat + c := fun c hc => by
     rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
-  have hQn : Q.toNat = 0x403a5236 := by decide
+  have hQn : Q.toNat = (img% ctIntoAffine384Address) := by decide
   have st0 : St m.mem Q m 0 (reg m) := ⟨by rw [hpc, add_ofNat_zero], rfl, fun _ => rfl⟩
   have hz := st0.zero
   have slotP : ∀ (o : Nat), o + 4 ≤ 16 → o % 4 = 0 →
@@ -144,13 +146,13 @@ theorem ctIntoAffine384_correct (m : Machine) {out s sp0 retAddr : Word}
   have s11 : reg n1 s1 = (m.mem (s + 0x64)).zeroExtend 32 := by
     rw [R1]; simp +decide only [runBlock, BInstr.run, ciaPro, upd_app, ↓reduceIte]; simp only [ev_add]
     rw [ha1, hsp, hG, hra, hM1, hb]
-  have a21 : reg n1 a2 = 0x3FCC43C8 := by
+  have a21 : reg n1 a2 = (img% p384AffineIdentityAddress) := by
     rw [R1]; simp +decide only [runBlock, BInstr.run, ciaPro, upd_app, ↓reduceIte]
   have K1 : ∀ q, q ≠ sp → q ≠ s0 → q ≠ s1 → q ≠ a2 → reg n1 q = reg m q := fun q h2 h8 h9 h12 => by
     rw [R1]; simp only [runBlock, BInstr.run, ciaPro]
     rw [updz (by simp [upd]) h12, updz (by simp [upd]) h12, updz (by simp [upd]) h8, updz (by simp [upd]) h9,
       updz hz h2]
-  have env1 : UOEnv M1 P G out s 0x3FCC43C8 :=
+  have env1 : UOEnv M1 P G out s (img% p384AffineIdentityAddress) :=
     { env with
       cod := env.cod.hi M1hi (by decide) (by decide)
       cs := env.cs.hi M1hi (by decide) (by decide)
@@ -253,8 +255,8 @@ theorem ctIntoAffine384_correct (m : Machine) {out s sp0 retAddr : Word}
   -- From `M1`'s and `M3`'s view back to `m.mem`.
   have L1s : ∀ c, c + 4 ≤ 0x65 → memLoad32 M1 (s + BitVec.ofNat 32 c) = memLoad32 m.mem (s + BitVec.ofNat 32 c) :=
     fun c hc => memLoad32_congr fun j hj => by rw [add_ofNat_assoc]; exact M1o _ (sSW.sub (c := c + j) (l := 1) (by omega)).symm
-  have L1d : ∀ c, c + 4 ≤ 0x61 → memLoad32 M1 ((0x3FCC43C8 : Word) + BitVec.ofNat 32 c) =
-      memLoad32 m.mem ((0x3FCC43C8 : Word) + BitVec.ofNat 32 c) :=
+  have L1d : ∀ c, c + 4 ≤ 0x61 → memLoad32 M1 ((img% p384AffineIdentityAddress : Word) + BitVec.ofNat 32 c) =
+      memLoad32 m.mem ((img% p384AffineIdentityAddress : Word) + BitVec.ofNat 32 c) :=
     fun c hc => memLoad32_congr fun j hj => by rw [add_ofNat_assoc]; exact M1o _ (sDW.sub (c := c + j) (l := 1) (by omega)).symm
   have L3 : ∀ c, c + 4 ≤ 0x64 → memLoad32 M3 (out + BitVec.ofNat 32 c) = memLoad32 M2 (out + BitVec.ofNat 32 c) :=
     fun c hc => by
@@ -270,11 +272,11 @@ theorem ctIntoAffine384_correct (m : Machine) {out s sp0 retAddr : Word}
       (add_ofNat_assoc out 0x30 (4 * i)).symm, w2 i hi, hb,
       show s + (0x30 : Word) + BitVec.ofNat 32 (4 * i) = s + BitVec.ofNat 32 (0x30 + 4 * i) from
       add_ofNat_assoc s 0x30 (4 * i), L1s _ (by omega),
-      show (0x3FCC43C8 : Word) + 0x30 + BitVec.ofNat 32 (4 * i) = (0x3FCC43C8 : Word) + BitVec.ofNat 32 (0x30 + 4 * i)
+      show (img% p384AffineIdentityAddress : Word) + 0x30 + BitVec.ofNat 32 (4 * i) = (img% p384AffineIdentityAddress : Word) + BitVec.ofNat 32 (0x30 + 4 * i)
       from add_ofNat_assoc _ 0x30 (4 * i), L1d _ (by omega)]
   · rw [mem6, ← hM3, memStore8_ne (show out + (0x60 : Word) ≠ out + 0x64 from add_ofNat_ne out (by decide) (by decide)
       (by decide)), b60, hb, M1o (s + 0x60) (sSW.sub (c := 0x60) (l := 1) (by omega)).symm,
-      M1o ((0x3FCC43C8 : Word) + 0x60) (sDW.sub (c := 0x60) (l := 1) (by omega)).symm]
+      M1o ((img% p384AffineIdentityAddress : Word) + 0x60) (sDW.sub (c := 0x60) (l := 1) (by omega)).symm]
   · rw [mem6, ← hM3, memStore8_same]
   · rw [regs6]
     by_cases q1 : q = ra
@@ -317,21 +319,21 @@ It changes no memory outside the result and 0x80 bytes of stack below
 `sp`. -/
 theorem ctIntoAffine256_correct (m : Machine) {out s sp0 retAddr : Word}
     (hc : CodeIn m.mem (BitVec.ofNat 32 ctIntoAffine256Address) ctIntoAffine256Code)
-    (env : UO2Env m.mem (BitVec.ofNat 32 unwrapOr256Address) (sp0 + 0xFFFFFFF0) out s 0x3FCC442C)
+    (env : UO2Env m.mem (BitVec.ofNat 32 unwrapOr256Address) (sp0 + 0xFFFFFFF0) out s (img% p256AffineIdXAddress))
     (hpc : m.pc = BitVec.ofNat 32 ctIntoAffine256Address) (hsp : reg m sp = sp0) (ha0 : reg m a0 = out)
     (ha1 : reg m a1 = s) (hra : reg m ra = retAddr) (hret : retAddr &&& ~~~1 = retAddr)
     (hch : m.mem (s + 0x44) = 0 ∨ m.mem (s + 0x44) = 1)
     (hspl : 0x80 ≤ sp0.toNat) (hspw : sp0.toNat ≤ 0x40000000) (how : out.toNat + 0x45 ≤ 0x40000000)
     (sOW : Sep out 0x45 (sp0 + 0xFFFFFFF0) 16) (sSW : Sep s 0x45 (sp0 + 0xFFFFFFF0) 16)
-    (sDW : Sep (0x3FCC442C : Word) 0x41 (sp0 + 0xFFFFFFF0) 16) :
+    (sDW : Sep (img% p256AffineIdXAddress : Word) 0x41 (sp0 + 0xFFFFFFF0) 16) :
     ∃ m', Steps m m' ∧ m'.pc = retAddr ∧ reg m' sp = sp0 ∧
       (∀ i, i < 8 → memLoad32 m'.mem (out + BitVec.ofNat 32 (4 * i)) =
         if m.mem (s + 0x44) = 1 then memLoad32 m.mem (s + BitVec.ofNat 32 (4 * i))
-        else memLoad32 m.mem (0x3FCC442C + BitVec.ofNat 32 (4 * i))) ∧
+        else memLoad32 m.mem ((img% p256AffineIdXAddress) + BitVec.ofNat 32 (4 * i))) ∧
       (∀ i, i < 8 → memLoad32 m'.mem (out + 0x20 + BitVec.ofNat 32 (4 * i)) =
         if m.mem (s + 0x44) = 1 then memLoad32 m.mem (s + 0x20 + BitVec.ofNat 32 (4 * i))
-        else memLoad32 m.mem (0x3FCC442C + 0x20 + BitVec.ofNat 32 (4 * i))) ∧
-      m'.mem (out + 0x40) = (if m.mem (s + 0x44) = 1 then m.mem (s + 0x40) else m.mem (0x3FCC442C + 0x40)) ∧
+        else memLoad32 m.mem ((img% p256AffineIdXAddress) + 0x20 + BitVec.ofNat 32 (4 * i))) ∧
+      m'.mem (out + 0x40) = (if m.mem (s + 0x44) = 1 then m.mem (s + 0x40) else m.mem ((img% p256AffineIdXAddress) + 0x40)) ∧
       m'.mem (out + 0x44) = m.mem (s + 0x44) ∧
       (∀ q, q.val ∈ [1, 3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
       ∀ y, Sep (sp0 + 0xFFFFFF80) 0x80 y 1 → Sep out 0x45 y 1 → m'.mem y = m.mem y := by
@@ -344,7 +346,7 @@ theorem ctIntoAffine256_correct (m : Machine) {out s sp0 retAddr : Word}
   have hGa : G.toNat % 4 = 0 := env.hsp
   have hGc : ∀ c, c ≤ 16 → (G + BitVec.ofNat 32 c).toNat = G.toNat + c := fun c hc => by
     rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
-  have hQn : Q.toNat = 0x403a5fb0 := by decide
+  have hQn : Q.toNat = (img% ctIntoAffine256Address) := by decide
   have st0 : St m.mem Q m 0 (reg m) := ⟨by rw [hpc, add_ofNat_zero], rfl, fun _ => rfl⟩
   have hz := st0.zero
   have slotP : ∀ (o : Nat), o + 4 ≤ 16 → o % 4 = 0 →
@@ -379,13 +381,13 @@ theorem ctIntoAffine256_correct (m : Machine) {out s sp0 retAddr : Word}
   have s11 : reg n1 s1 = (m.mem (s + 0x44)).zeroExtend 32 := by
     rw [R1]; simp +decide only [runBlock, BInstr.run, cibPro, upd_app, ↓reduceIte]; simp only [ev_add]
     rw [ha1, hsp, hG, hra, hM1, hb]
-  have a21 : reg n1 a2 = 0x3FCC442C := by
+  have a21 : reg n1 a2 = (img% p256AffineIdXAddress) := by
     rw [R1]; simp +decide only [runBlock, BInstr.run, cibPro, upd_app, ↓reduceIte]
   have K1 : ∀ q, q ≠ sp → q ≠ s0 → q ≠ s1 → q ≠ a2 → reg n1 q = reg m q := fun q h2 h8 h9 h12 => by
     rw [R1]; simp only [runBlock, BInstr.run, cibPro]
     rw [updz (by simp [upd]) h12, updz (by simp [upd]) h12, updz (by simp [upd]) h8, updz (by simp [upd]) h9,
       updz hz h2]
-  have env1 : UO2Env M1 P G out s 0x3FCC442C :=
+  have env1 : UO2Env M1 P G out s (img% p256AffineIdXAddress) :=
     { env with
       cod := env.cod.hi M1hi (by decide) (by decide)
       cs := env.cs.hi M1hi (by decide) (by decide)
@@ -487,8 +489,8 @@ theorem ctIntoAffine256_correct (m : Machine) {out s sp0 retAddr : Word}
   -- From `M1`'s and `M3`'s view back to `m.mem`.
   have L1s : ∀ c, c + 4 ≤ 0x45 → memLoad32 M1 (s + BitVec.ofNat 32 c) = memLoad32 m.mem (s + BitVec.ofNat 32 c) :=
     fun c hc => memLoad32_congr fun j hj => by rw [add_ofNat_assoc]; exact M1o _ (sSW.sub (c := c + j) (l := 1) (by omega)).symm
-  have L1d : ∀ c, c + 4 ≤ 0x41 → memLoad32 M1 ((0x3FCC442C : Word) + BitVec.ofNat 32 c) =
-      memLoad32 m.mem ((0x3FCC442C : Word) + BitVec.ofNat 32 c) :=
+  have L1d : ∀ c, c + 4 ≤ 0x41 → memLoad32 M1 ((img% p256AffineIdXAddress : Word) + BitVec.ofNat 32 c) =
+      memLoad32 m.mem ((img% p256AffineIdXAddress : Word) + BitVec.ofNat 32 c) :=
     fun c hc => memLoad32_congr fun j hj => by rw [add_ofNat_assoc]; exact M1o _ (sDW.sub (c := c + j) (l := 1) (by omega)).symm
   have L3 : ∀ c, c + 4 ≤ 0x44 → memLoad32 M3 (out + BitVec.ofNat 32 c) = memLoad32 M2 (out + BitVec.ofNat 32 c) :=
     fun c hc => by
@@ -504,11 +506,11 @@ theorem ctIntoAffine256_correct (m : Machine) {out s sp0 retAddr : Word}
       (add_ofNat_assoc out 0x20 (4 * i)).symm, w2 i hi, hb,
       show s + (0x20 : Word) + BitVec.ofNat 32 (4 * i) = s + BitVec.ofNat 32 (0x20 + 4 * i) from
       add_ofNat_assoc s 0x20 (4 * i), L1s _ (by omega),
-      show (0x3FCC442C : Word) + 0x20 + BitVec.ofNat 32 (4 * i) = (0x3FCC442C : Word) + BitVec.ofNat 32 (0x20 + 4 * i)
+      show (img% p256AffineIdXAddress : Word) + 0x20 + BitVec.ofNat 32 (4 * i) = (img% p256AffineIdXAddress : Word) + BitVec.ofNat 32 (0x20 + 4 * i)
       from add_ofNat_assoc _ 0x20 (4 * i), L1d _ (by omega)]
   · rw [mem6, ← hM3, memStore8_ne (show out + (0x40 : Word) ≠ out + 0x44 from add_ofNat_ne out (by decide) (by decide)
       (by decide)), b60, hb, M1o (s + 0x40) (sSW.sub (c := 0x40) (l := 1) (by omega)).symm,
-      M1o ((0x3FCC442C : Word) + 0x40) (sDW.sub (c := 0x40) (l := 1) (by omega)).symm]
+      M1o ((img% p256AffineIdXAddress : Word) + 0x40) (sDW.sub (c := 0x40) (l := 1) (by omega)).symm]
   · rw [mem6, ← hM3, memStore8_same]
   · rw [regs6]
     by_cases q1 : q = ra

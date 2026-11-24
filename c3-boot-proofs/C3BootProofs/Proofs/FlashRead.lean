@@ -201,7 +201,7 @@ pc-relative call reaches the ROM only from there), `16 + romStack` bytes of
 stack at `G`, its own 16 at the top and the ROM's below, and the
 destination's `4 w` bytes. -/
 structure RFWEnv (M : Word → BitVec 8) (P G dst w : Word) (romStack : Nat) : Prop where
-  hP : P = 0x403A1730
+  hP : P = (img% romFlashReadWordsAddress)
   code : CodeIn M P romFlashReadWordsCode
   hG : G.toNat % 4 = 0
   hR : romStack % 4 = 0
@@ -588,7 +588,7 @@ bytes of stack at `G` (from the top: its 0x140-byte frame,
 `out`, apart from all of those. -/
 structure FRdEnv (M : Word → BitVec 8) (P G out len : Word) (romStack : Nat) (romBase : Word)
     (romCode : List Nat) : Prop where
-  hP : P = 0x403A1748
+  hP : P = (img% flashReadAddress)
   code : CodeIn M P flashReadCode
   mset : CodeIn M (P + 0x1309E) memsetCode
   fw : CodeIn M (P + 0xFFFFFFE8) romFlashReadWordsCode

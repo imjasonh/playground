@@ -923,7 +923,7 @@ theorem bdi_copy {Ms : Word → BitVec 8} (hc : CodeIn Ms BDI base64DecodeIntoCo
   have K3 : ∀ q, q.val ≠ 8 → reg n3 q = reg nn q := fun q hq => by rw [u3.regs, K2 q hq]
   have z3 := u3.self.zero
   have rsp3 : reg n3 sp = F := by rw [K3 sp (by decide), rsp]
-  have hBn : BDI.toNat = 0x403a847e := by decide
+  have hBn : BDI.toNat = (img% base64DecodeIntoAddress) := by decide
   have hBl : base64DecodeIntoCode.length = 0x1A0 := by decide
   have eF4 : (F + 4).toNat = F.toNat + 4 := by rw [BitVec.toNat_add]; rw [show (4 : Word).toNat = 4 from rfl]; omega
   have sF4C : Sep (F + 4) 4 BDI base64DecodeIntoCode.length :=
@@ -969,7 +969,7 @@ theorem bdi_copy {Ms : Word → BitVec 8} (hc : CodeIn Ms BDI base64DecodeIntoCo
   have eF4' : F + 4 = R + BitVec.ofNat 32 20 := by rw [← hR, BitVec.add_assoc]; rfl
   have eD : (out + BitVec.ofNat 32 w).toNat = out.toNat + w := by
     rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
-  have hBMB : BMB.toNat = 0x403b4856 := by decide
+  have hBMB : BMB.toNat = (img% memcpyBodyAddress) := by decide
   have hBMl : memcpyBodyCode.length ≤ 0x1000 := by decide
   have sR0 : Sep (out + BitVec.ofNat 32 w) keep R 16 := by
     have := (sOF.sub (c := w) (l := keep) (by omega)).subR (c := 0) (l := 16) (by decide)
@@ -1429,7 +1429,7 @@ theorem bdi_group {m : Machine} {Ms0 : Word → BitVec 8} {res t out F : Word} {
     have eF8 : F + 8 = R + BitVec.ofNat 32 0x18 := by rw [← hR, BitVec.add_assoc]; rfl
     have hRc : ∀ c, c ≤ 0x50 → (R + BitVec.ofNat 32 c).toNat = R.toNat + c := fun c hc' => by
       rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
-    have hBn : BDI.toNat = 0x403a847e := by decide
+    have hBn : BDI.toNat = (img% base64DecodeIntoAddress) := by decide
     have hBl : base64DecodeIntoCode.length = 0x1A0 := by decide
     obtain ⟨Ms, hMs, hcMs, EB, OB⟩ := bdi_bytes hc u2 hb24 hp2 a32 (by rw [K2 a2 (by decide), a21])
       (by rw [K12 25 (by decide), r25]) (by rw [K12 6 (by decide), r6]) (by rw [K12 sp (by decide), rsp])
@@ -1699,7 +1699,7 @@ theorem base64DecodeInto_correct (m : Machine) {sp0 res t out retAddr : Word} {n
   have hFS : F + 0x40 = sp0 := by rw [← hF, BitVec.add_assoc]; exact BitVec.add_zero sp0
   rw [← hRS] at sOG sTG sRG
   have hFa : F.toNat % 4 = 0 := by omega
-  have hBn : BDI.toNat = 0x403a847e := by decide
+  have hBn : BDI.toNat = (img% base64DecodeIntoAddress) := by decide
   have hBl : base64DecodeIntoCode.length = 0x1A0 := by decide
   have hps : ∀ p ∈ bdiPs, p.2.toNat ≤ 0x3C ∧ p.2.toNat % 4 = 0 ∧ 0xC ≤ p.2.toNat := by decide
   have hps0 : ∀ p ∈ bdiPs, p.1 ≠ sp ∧ p.1.val ≠ 0 := by decide

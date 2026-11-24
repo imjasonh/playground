@@ -320,7 +320,7 @@ theorem encodedPointIsIdentity_correct (m : Machine) {retAddr : Word} {t : BitVe
     rw [BitVec.toNat_add, show (0xFFFFFFC0 : Word).toNat = 4294967232 from rfl]; omega
   have hFG : ∀ c, c < 16 → Sep (G + 0xFFFFFFC0) 0x40 (G + BitVec.ofNat 32 c) 1 := fun c hc =>
     sep_of_le (by rw [hGl, hGc _ (by omega)]; omega) (by rw [hGc _ (by omega)]; omega)
-  have hQn : Q.toNat = 0x403a51de := by decide
+  have hQn : Q.toNat = (img% encodedPointIsIdentityAddress) := by decide
   have hc4 : CodeIn M4 Q encodedPointIsIdentityCode := fun i hi => by
     rw [fr4 _ ((sep_of_le (b := Q) (k := encodedPointIsIdentityCode.length) (by rw [hGl, hQn]; omega)
       (by rw [hQn]; decide)).subR (c := i) (l := 1) hi)]

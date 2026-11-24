@@ -1141,7 +1141,7 @@ theorem nafTable_correct (m : Machine) {sp0 out A retAddr : Word} (E : NtEnv m.m
     nt_at_ec (by decide) (by decide)
   have r37 := PEnv.reg1 regs37 u36.self.zero
   have eFp : R + BitVec.ofNat 32 0x270 + 0xFFFFFFF0 = R + BitVec.ofNat 32 0x260 := by rw [BitVec.add_assoc]; rfl
-  have hst : (BitVec.ofNat 32 memcpyStubAddress + 8 : Word).toNat = 0x403b4856 := by decide
+  have hst : (BitVec.ofNat 32 memcpyStubAddress + 8 : Word).toNat = (img% memcpyBodyAddress) := by decide
   have sp37 : reg n37 sp = R + BitVec.ofNat 32 0x270 := by
     rw [r37 _ (by decide), r36 _ (by decide) (by decide) (by decide), D33.hsp]
   obtain ⟨n38, c38, pc38, sp38, _, f38, k38⟩ := memcpy_correct n37 (BitVec.ofNat 32 memcpyStubAddress)

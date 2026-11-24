@@ -110,7 +110,7 @@ theorem sv_deku2 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 s
         reg n' (18 : Fin 32) = out ∧
         reg n' (19 : Fin 32) = bp ∧
         reg n' (21 : Fin 32) = x21 ∧
-        reg n' (22 : Fin 32) = (found) ||| (if memBytes M0 op4 ol4.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4820) 8 then BitVec.ofNat 32 1 else BitVec.ofNat 32 0) ∧
+        reg n' (22 : Fin 32) = (found) ||| (if memBytes M0 op4 ol4.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x8)) 8 then BitVec.ofNat 32 1 else BitVec.ofNat 32 0) ∧
         reg n' (25 : Fin 32) = x25 ∧
         reg n' (26 : Fin 32) = x26 ∧
         reg n' (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 ∧
@@ -1092,7 +1092,7 @@ theorem sv_deku2 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 s
     rw [rb8, runBlock_reg _ _ _ (26 : Fin 32) s7.zero (by decide), g7_26]
   have g8_27 : reg n8 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb8, runBlock_reg _ _ _ (27 : Fin 32) s7.zero (by decide), g7_27]
-  have g8_12 : reg n8 a2 = BitVec.ofNat 32 0x3FCC4820 := by
+  have g8_12 : reg n8 a2 = BitVec.ofNat 32 (img% svConstAddress + 0x8) := by
     rw [rb8]; simp +decide only [runBlock, BInstr.run, svDeku2776, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g7_2, g7_3, g7_4, g7_8, g7_9, g7_10, g7_11, g7_18, g7_19, g7_21, g7_22, g7_25, g7_26, g7_27, s7.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -1199,7 +1199,7 @@ theorem sv_deku2 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 s
   have w9_1488 : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x1488) = (cp) + BitVec.ofNat 32 (to4.header + to4.len) := (K9.w32 (by decide) (by decide)).trans w8_1488
   have w9_148c : memLoad32 n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x148C) = (cl) - BitVec.ofNat 32 (to4.header + to4.len) := (K9.w32 (by decide) (by decide)).trans w8_148c
   clear w8_148c w8_1488 w8_1024 w8_1020 w8_a44 w8_a40 w8_a3c w8_a38 w8_a34 w8_a30 w8_a2c w8_a28 w8_a24 w8_a20 w8_94 w8_90 w8_8c w8_88 w8_84 w8_80 w8_7c w8_78 w8_74 w8_70 w8_6c w8_68 w8_64 w8_60 w8_5c w8_58 w8_54 w8_50 w8_4c w8_40 w8_34 w8_30 g8_13 g8_12 g8_27 g8_26 g8_25 g8_22 g8_21 g8_19 g8_18 g8_11 g8_10 g8_9 g8_8 g8_4 g8_3 g8_2 V8 E8 fR8 t8 fr8 rb8 s8 m8 u8 c8
-  have g9_10 : reg n9 a0 = if memBytes M0 op4 ol4.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4820) 8 then BitVec.ofNat 32 1 else BitVec.ofNat 32 0 := a0_9
+  have g9_10 : reg n9 a0 = if memBytes M0 op4 ol4.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x8)) 8 then BitVec.ofNat 32 1 else BitVec.ofNat 32 0 := a0_9
   -- 0x788
   obtain ⟨n10, c10, u10⟩ := s9.block svDeku2788 E9.self svDeku2788_end
     ⟨trivial, trivial⟩
@@ -1221,7 +1221,7 @@ theorem sv_deku2 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 s
     rw [rb10, runBlock_reg _ _ _ (8 : Fin 32) s9.zero (by decide), g9_8]
   have g10_9 : reg n10 (9 : Fin 32) = x9 := by
     rw [rb10, runBlock_reg _ _ _ (9 : Fin 32) s9.zero (by decide), g9_9]
-  have g10_10 : reg n10 a0 = if memBytes M0 op4 ol4.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4820) 8 then BitVec.ofNat 32 1 else BitVec.ofNat 32 0 := by
+  have g10_10 : reg n10 a0 = if memBytes M0 op4 ol4.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x8)) 8 then BitVec.ofNat 32 1 else BitVec.ofNat 32 0 := by
     rw [rb10, runBlock_reg _ _ _ a0 s9.zero (by decide), g9_10]
   have g10_18 : reg n10 (18 : Fin 32) = out := by
     rw [rb10, runBlock_reg _ _ _ (18 : Fin 32) s9.zero (by decide), g9_18]
@@ -1235,7 +1235,7 @@ theorem sv_deku2 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 s
     rw [rb10, runBlock_reg _ _ _ (26 : Fin 32) s9.zero (by decide), g9_26]
   have g10_27 : reg n10 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb10, runBlock_reg _ _ _ (27 : Fin 32) s9.zero (by decide), g9_27]
-  have g10_22 : reg n10 (22 : Fin 32) = (found) ||| (if memBytes M0 op4 ol4.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4820) 8 then BitVec.ofNat 32 1 else BitVec.ofNat 32 0) := by
+  have g10_22 : reg n10 (22 : Fin 32) = (found) ||| (if memBytes M0 op4 ol4.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x8)) 8 then BitVec.ofNat 32 1 else BitVec.ofNat 32 0) := by
     rw [rb10, ← g9_22, ← g9_10]; rfl
   have keep_kk10 : SvKeepL B n0.mem n10.mem [(0x1020, 0x8), (0x1488, 0x8)] := by rw [m10]; exact keep_kk9
   clear keep_kk9
@@ -1291,11 +1291,11 @@ theorem sv_deku2 {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3 s
   have g11_4 : reg n11 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [u11.regs, g10_4]
   have g11_8 : reg n11 (8 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1320 := by rw [u11.regs, g10_8]
   have g11_9 : reg n11 (9 : Fin 32) = x9 := by rw [u11.regs, g10_9]
-  have g11_10 : reg n11 a0 = if memBytes M0 op4 ol4.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4820) 8 then BitVec.ofNat 32 1 else BitVec.ofNat 32 0 := by rw [u11.regs, g10_10]
+  have g11_10 : reg n11 a0 = if memBytes M0 op4 ol4.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x8)) 8 then BitVec.ofNat 32 1 else BitVec.ofNat 32 0 := by rw [u11.regs, g10_10]
   have g11_18 : reg n11 (18 : Fin 32) = out := by rw [u11.regs, g10_18]
   have g11_19 : reg n11 (19 : Fin 32) = bp := by rw [u11.regs, g10_19]
   have g11_21 : reg n11 (21 : Fin 32) = x21 := by rw [u11.regs, g10_21]
-  have g11_22 : reg n11 (22 : Fin 32) = (found) ||| (if memBytes M0 op4 ol4.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4820) 8 then BitVec.ofNat 32 1 else BitVec.ofNat 32 0) := by rw [u11.regs, g10_22]
+  have g11_22 : reg n11 (22 : Fin 32) = (found) ||| (if memBytes M0 op4 ol4.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x8)) 8 then BitVec.ofNat 32 1 else BitVec.ofNat 32 0) := by rw [u11.regs, g10_22]
   have g11_25 : reg n11 (25 : Fin 32) = x25 := by rw [u11.regs, g10_25]
   have g11_26 : reg n11 (26 : Fin 32) = x26 := by rw [u11.regs, g10_26]
   have g11_27 : reg n11 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u11.regs, g10_27]

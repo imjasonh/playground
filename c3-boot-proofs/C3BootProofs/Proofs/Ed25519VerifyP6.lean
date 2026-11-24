@@ -1,5 +1,6 @@
 import C3BootProofs.Proofs.Ed25519VerifyWrap4
 import C3BootProofs.Proofs.DerTlv
+import C3BootProofs.Image.BootloaderData7
 
 /-!
 # `ed25519_verify`, offsets 0x158E to 0x16CC: the multiplication's setup
@@ -79,13 +80,13 @@ section
 variable {M0 Ms : Word → BitVec 8} {F pk sig msg : Word} {len : Nat} {r0 : Fin 32 → Word}
 
 theorem fwRo (C : EvCtx M0 F pk sig msg len) {Mx : Word → BitVec 8} {nx : Machine} {ox : Nat}
-    (Dx : EvSt M0 Ms F r0 Mx nx ox) {a : Nat} (h1 : 0x3FCC4000 ≤ a) (h2 : a + 40 ≤ 0x3FCC5400) :
+    (Dx : EvSt M0 Ms F r0 Mx nx ox) {a : Nat} (h1 : (img% roWindowAddress) ≤ a) (h2 : a + 40 ≤ 0x3FCC5400) :
     feW Mx (BitVec.ofNat 32 a) = feW M0 (BitVec.ofNat 32 a) :=
   feW_eq2 fun i hi => vk_ld2 fun j hj => by
     simp only [add_ofNat_assoc]; exact Dx.roM C (a := a) (k := 40) h1 h2 _ (by omega)
 
 theorem ptRo (C : EvCtx M0 F pk sig msg len) {Mx : Word → BitVec 8} {nx : Machine} {ox : Nat}
-    (Dx : EvSt M0 Ms F r0 Mx nx ox) {a : Nat} (h1 : 0x3FCC4000 ≤ a) (h2 : a + 160 ≤ 0x3FCC5400) :
+    (Dx : EvSt M0 Ms F r0 Mx nx ox) {a : Nat} (h1 : (img% roWindowAddress) ≤ a) (h2 : a + 160 ≤ 0x3FCC5400) :
     ptAt Mx (BitVec.ofNat 32 a) = ptAt M0 (BitVec.ofNat 32 a) := by
   unfold ptAt
   simp only [BitVec.ofNat_add_ofNat]
@@ -367,10 +368,10 @@ theorem ev_p6c (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Mach
       (∀ j, j < 8 → ptAt M' (F + BitVec.ofNat 32 (0x9F0 + 160 * j)) =
         nafTab (ptAt M (F + BitVec.ofNat 32 0x540)) (feW M0 apnD) j) ∧
       (∀ j, j < 8 → ptAt M' (F + BitVec.ofNat 32 (0xEF0 + 160 * j)) =
-        nafTab (ptAt M0 (BitVec.ofNat 32 0x3FCC4A54)) (feW M0 apnD) j) ∧
+        nafTab (ptAt M0 (BitVec.ofNat 32 (img% edBaseAddress))) (feW M0 apnD) j) ∧
       (∀ j, j < 40 → M' (F + BitVec.ofNat 32 (0x13F0 + j)) = 0) ∧
-      feW M' (F + BitVec.ofNat 32 0x1418) = feW M0 (BitVec.ofNat 32 0x3FCC4948) ∧
-      feW M' (F + BitVec.ofNat 32 0x1440) = feW M0 (BitVec.ofNat 32 0x3FCC4948) ∧
+      feW M' (F + BitVec.ofNat 32 0x1418) = feW M0 (BitVec.ofNat 32 (img% edOneAddress)) ∧
+      feW M' (F + BitVec.ofNat 32 0x1440) = feW M0 (BitVec.ofNat 32 (img% edOneAddress)) ∧
       ∀ c, c < 0x16A0 → (c < 0x9F0 ∨ 0x1468 ≤ c) → M' (F + BitVec.ofNat 32 c) = M (F + BitVec.ofNat 32 c) := by
   obtain ⟨n1, c1, D1, hr1⟩ := D.block C (off' := 0x1644)
     [.aluImm .add a0 sp 0x7FF, .aluImm .add a0 a0 0x1F1, .aluImm .add a1 sp 0x540]
@@ -384,12 +385,12 @@ theorem ev_p6c (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Mach
     (by rw [hr1]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D.hsp]; rfl)
     (by decide) (by decide) (C.al (by decide)) (by rw [C.fN (by decide)]; have := C.hhi; omega) (C.zF (by decide)).symm
   obtain ⟨n3, c3, D3, hr3⟩ := D2.block C (off' := 0x165C)
-    [.lui a1 0x3FCC5000, .aluImm .add a1 a1 0xFFFFFA54, .aluImm .add a0 sp 0x7FF, .aluImm .add a0 a0 0x6F1]
+    [.lui a1 (img% hi20 edBaseAddress), .aluImm .add a1 a1 (img% lo12 edBaseAddress), .aluImm .add a0 sp 0x7FF, .aluImm .add a0 a0 0x6F1]
     (blockEnd_cons' (off' := 0x1650) ev_at_164c rfl (blockEnd_cons' (off' := 0x1654) ev_at_1650 rfl
       (blockEnd_cons' (off' := 0x1658) ev_at_1654 rfl (blockEnd_cons' (off' := 0x165C) ev_at_1658 rfl rfl))))
     ⟨trivial, trivial, trivial, trivial, trivial⟩ rfl
     (fun q hq => by rcases hq with rfl | rfl | rfl <;> simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
-  obtain ⟨n4, c4, D4, k4, w4, f4⟩ := D3.nafTbl C (d := 0xEF0) (A := BitVec.ofNat 32 0x3FCC4A54) ev_at_165c ev_at_1660
+  obtain ⟨n4, c4, D4, k4, w4, f4⟩ := D3.nafTbl C (d := 0xEF0) (A := BitVec.ofNat 32 (img% edBaseAddress)) ev_at_165c ev_at_1660
     (by decide) (by decide)
     (by rw [hr3]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]
         rw [D2.hsp, show aluEval .add F 0x7FF = F + BitVec.ofNat 32 0x7FF from rfl]; exact add_sp F rfl)
@@ -407,8 +408,8 @@ theorem ev_p6c (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Mach
     (by rw [hr5]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; (try rw [D4.st.zero]); try rfl)
     (by decide)
   obtain ⟨n7, c7, D7, hr7⟩ := D6.block C (off' := 0x1694)
-    [.lui a0 0x1000, .aluImm .add a0 a0 0x418, .alu .add (18 : Fin 32) sp a0, .lui (8 : Fin 32) 0x3FCC5000,
-      .aluImm .add (8 : Fin 32) (8 : Fin 32) 0xFFFFF948, .aluImm .add a2 x0 0x28, .alu .add a0 x0 (18 : Fin 32),
+    [.lui a0 0x1000, .aluImm .add a0 a0 0x418, .alu .add (18 : Fin 32) sp a0, .lui (8 : Fin 32) (img% hi20 edOneAddress),
+      .aluImm .add (8 : Fin 32) (8 : Fin 32) (img% lo12 edOneAddress), .aluImm .add a2 x0 0x28, .alu .add a0 x0 (18 : Fin 32),
       .alu .add a1 x0 (8 : Fin 32)]
     (blockEnd_cons' (off' := 0x167C) ev_at_167a rfl (blockEnd_cons' (off' := 0x1680) ev_at_167c rfl
       (blockEnd_cons' (off' := 0x1684) ev_at_1680 rfl (blockEnd_cons' (off' := 0x1688) ev_at_1684 rfl
@@ -416,7 +417,7 @@ theorem ev_p6c (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Mach
       (blockEnd_cons' (off' := 0x1692) ev_at_1690 rfl (blockEnd_cons' (off' := 0x1694) ev_at_1692 rfl rfl))))))))
     ⟨trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial, trivial⟩ rfl
     (fun q hq => by rcases hq with rfl | rfl | rfl <;> simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
-  obtain ⟨n8, c8, D8, k8, fz8⟩ := D7.memcpy C (d := 0x1418) (s := BitVec.ofNat 32 0x3FCC4948) (N := 0x28)
+  obtain ⟨n8, c8, D8, k8, fz8⟩ := D7.memcpy C (d := 0x1418) (s := BitVec.ofNat 32 (img% edOneAddress)) (N := 0x28)
     ev_at_1694 ev_at_1698 (by decide) (by decide)
     (by rw [hr7]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D6.hsp]; exact (BitVec.zero_add _).trans rfl)
     (by rw [hr7]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; try rfl)
@@ -430,9 +431,9 @@ theorem ev_p6c (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Mach
       (blockEnd_cons' (off' := 0x16AC) ev_at_16aa rfl (blockEnd_cons' (off' := 0x16AE) ev_at_16ac rfl rfl))))))
     ⟨trivial, trivial, trivial, trivial, trivial, trivial, trivial⟩ rfl
     (fun q hq => by rcases hq with rfl | rfl | rfl <;> simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
-  have v8 : reg n8 8 = BitVec.ofNat 32 0x3FCC4948 := by
+  have v8 : reg n8 8 = BitVec.ofNat 32 (img% edOneAddress) := by
     rw [k8 8 (by decide), hr7]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]
-  obtain ⟨n10, c10, D10, k10, fz10⟩ := D9.memcpy C (d := 0x1440) (s := BitVec.ofNat 32 0x3FCC4948) (N := 0x28)
+  obtain ⟨n10, c10, D10, k10, fz10⟩ := D9.memcpy C (d := 0x1440) (s := BitVec.ofNat 32 (img% edOneAddress)) (N := 0x28)
     ev_at_16ae ev_at_16b2 (by decide) (by decide)
     (by rw [hr9]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D8.hsp]; exact (BitVec.zero_add _).trans rfl)
     (by rw [hr9]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [v8]; exact BitVec.zero_add _)
@@ -493,19 +494,19 @@ theorem ev_p6c (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Mach
   · rw [ptB (M := n2.mem) (c := 0x9F0 + 160 * j) (e := 0x9F0 + 160 * j) fun b hb => by
         rw [g64 _ (by omega) (by omega), g4 _ (by omega) (Or.inl (by omega))],
       ← add_ofNat_assoc, w2 j hj]
-    congr 1; exact fwRo C D (a := 0x3FCC4A2C) (by decide) (by decide)
+    congr 1; exact fwRo C D (a := (img% edwardsD2Address)) (by decide) (by decide)
   · rw [ptB (M := n4.mem) (c := 0xEF0 + 160 * j) (e := 0xEF0 + 160 * j) fun b hb => g64 _ (by omega) (by omega),
       ← add_ofNat_assoc, w4 j hj, ptRo C D2 (by decide) (by decide)]
-    congr 1; exact fwRo C D2 (a := 0x3FCC4A2C) (by decide) (by decide)
+    congr 1; exact fwRo C D2 (a := (img% edwardsD2Address)) (by decide) (by decide)
   · rw [g10 _ (by omega) (Or.inl (by omega)), cp_out C fz8 (by decide) (by omega) (Or.inl (by omega)), ← add_ofNat_assoc,
       fb_in hj (by decide)]; rfl
   · rw [feW_eq2 (M := n8.mem) (M' := n10.mem) (a := F + BitVec.ofNat 32 0x1418) (b := F + BitVec.ofNat 32 0x1418)
       fun i hi => vk_ld2 fun j hj => by
         simp only [add_ofNat_assoc]; exact g10 _ (by omega) (Or.inl (by omega))]
-    rw [← fwRo C D7 (a := 0x3FCC4948) (by decide) (by decide)]
+    rw [← fwRo C D7 (a := (img% edOneAddress)) (by decide) (by decide)]
     exact feW_eq2 fun i hi => vk_ld2 fun j hj => by
       simp only [add_ofNat_assoc, Nat.add_assoc]; exact cp_at C fz8 (j := 4 * i + j) (by decide) (by omega)
-  · rw [← fwRo C D9 (a := 0x3FCC4948) (by decide) (by decide)]
+  · rw [← fwRo C D9 (a := (img% edOneAddress)) (by decide) (by decide)]
     exact feW_eq2 fun i hi => vk_ld2 fun j hj => by
       simp only [add_ofNat_assoc, Nat.add_assoc]; exact cp_at C fz10 (j := 4 * i + j) (by decide) (by omega)
   · rcases hh with hh | hh
@@ -532,10 +533,10 @@ theorem ev_p6 (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Machi
         nafTab (negL (feW M (F + BitVec.ofNat 32 0x600)), feW M (F + BitVec.ofNat 32 0x628),
           feW M (F + BitVec.ofNat 32 0x650), negL (feW M (F + BitVec.ofNat 32 0x678))) (feW M0 apnD) j) ∧
       (∀ j, j < 8 → ptAt M' (F + BitVec.ofNat 32 (0xEF0 + 160 * j)) =
-        nafTab (ptAt M0 (BitVec.ofNat 32 0x3FCC4A54)) (feW M0 apnD) j) ∧
+        nafTab (ptAt M0 (BitVec.ofNat 32 (img% edBaseAddress))) (feW M0 apnD) j) ∧
       (∀ j, j < 40 → M' (F + BitVec.ofNat 32 (0x13F0 + j)) = 0) ∧
-      feW M' (F + BitVec.ofNat 32 0x1418) = feW M0 (BitVec.ofNat 32 0x3FCC4948) ∧
-      feW M' (F + BitVec.ofNat 32 0x1440) = feW M0 (BitVec.ofNat 32 0x3FCC4948) ∧
+      feW M' (F + BitVec.ofNat 32 0x1418) = feW M0 (BitVec.ofNat 32 (img% edOneAddress)) ∧
+      feW M' (F + BitVec.ofNat 32 0x1440) = feW M0 (BitVec.ofNat 32 (img% edOneAddress)) ∧
       ∀ c, c < 0x16A0 → (c < 0x540 ∨ (0x5E0 ≤ c ∧ c < 0x7F0) ∨ 0x1468 ≤ c) →
         M' (F + BitVec.ofNat 32 c) = M (F + BitVec.ofNat 32 c) := by
   obtain ⟨n1, M1, c1, D1, k1, v8, hA, ha, hb, fr1⟩ := ev_p6a C D

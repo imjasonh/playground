@@ -1007,7 +1007,7 @@ theorem p3_pro (m : Machine) {P sp0 out lp rp : Word} (env : P3Env m.mem P sp0 o
 /-- The registers from the sum loop's exit to the subtraction loop leave alone. -/
 def p3MidKeep (q : Fin 32) : Bool := q.val ∉ [0, 1, 8, 9, 10, 11, 12, 13, 14, 15, 16, 20, 21]
 
-theorem p3M_lit : (0x3FCC5000 : Word) + 0xFFFFFC8C = p3M := by decide
+theorem p3M_lit : (img% hi20 p384ModulusAddress : Word) + (img% lo12 p384ModulusAddress) = p3M := by decide
 
 set_option maxRecDepth 20000 in
 set_option maxHeartbeats 8000000 in

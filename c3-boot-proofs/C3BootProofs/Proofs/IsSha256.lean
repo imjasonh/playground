@@ -6,7 +6,7 @@ import C3BootProofs.Proofs.SliceEq
 
 `is_sha256` reads an `AlgorithmIdentifier` with the proved `Der::algorithm`,
 compares its OID with SHA-256's, `2.16.840.1.101.3.4.2.1`, which the image
-keeps at `0x3FCC4880`, through the proved `[u8]` comparison, and accepts
+keeps at `sha256OidAddress`, through the proved `[u8]` comparison, and accepts
 absent parameters or a `NULL`.
 -/
 
@@ -141,7 +141,7 @@ theorem isRestore_end : blockEnd isSha256Code 0x5C (restoreBlock isPs) = some 0x
 end
 
 /-- SHA-256's OID's address in the image. -/
-abbrev isOid : Word := 0x3FCC4880
+abbrev isOid : Word := (img% sha256OidAddress)
 
 /-- `is_sha256`'s result for the reader whose unread bytes are the `n` at
 `p`: the error byte, or whether the `AlgorithmIdentifier` there names
@@ -510,8 +510,8 @@ theorem isSha256_correct (m : Machine) {P sp0 d p retAddr : Word} {n : Nat} (env
       (by rw [v6, hcom.1, z6]; exact beq_false_of_ne hop0)
     have sp7 : reg m7 sp = F := by rw [u7.regs, sp6]
     obtain ⟨m8, c8, u8⟩ := St.block [.lw a1 sp 0x4, .lw (9 : Fin 32) sp 0x8,
-        .lw (18 : Fin 32) sp 0xC, .lbu (19 : Fin 32) sp 0x18, .lui a2 0x3FCC5000,
-        .aluImm .add a2 a2 0xFFFFF880, .aluImm .add a3 x0 0x9, .alu .add a0 x0 (8 : Fin 32)] u7.self hc5
+        .lw (18 : Fin 32) sp 0xC, .lbu (19 : Fin 32) sp 0x18, .lui a2 (img% hi20 sha256OidAddress),
+        .aluImm .add a2 a2 (img% lo12 sha256OidAddress), .aluImm .add a3 x0 0x9, .alu .add a0 x0 (8 : Fin 32)] u7.self hc5
       (off' := 0x32) (by decide) (by
         simp +decide only [BlockOk, BInstr.ok, BInstr.run, upd_app, ↓reduceIte, and_true]
         rw [sp7]

@@ -453,7 +453,7 @@ theorem p384PtAdd_correct (m : Machine) {P sp0 lhs rhs retAddr : Word}
   have s76_274 : limbVal (wordsAt M76 (a3G sp0 + BitVec.ofNat 32 0x274) 12) = v13 := ((congrArg limbVal (a3slot_keep f76 ⟨by decide, by decide, by decide⟩ ⟨by decide, by decide, by decide⟩ (by decide))).trans s72_274)
   have s76_34 : limbVal (wordsAt M76 (a3G sp0 + BitVec.ofNat 32 0x34) 12) = v18 := (w76.trans hv18)
   obtain ⟨n77, d77, I77', e77⟩ := a3_luiK env I76 (by decide) p3pa_at_12e (off' := 0x132) (by decide) (by decide)
-  obtain ⟨V5, hV5⟩ : ∃ V, upd V4 (8 : Fin 32) 0x3FCC4000 = V := ⟨_, rfl⟩
+  obtain ⟨V5, hV5⟩ : ∃ V, upd V4 (8 : Fin 32) (img% hi20 p384BAddress) = V := ⟨_, rfl⟩
   rw [hV5] at I77'
   have I77 := I77'
   have vk77_2 : V5 sp = a3G sp0 := (by rw [← hV5, upd_ne (by decide) (by decide)]; exact vk12_2)
@@ -462,9 +462,9 @@ theorem p384PtAdd_correct (m : Machine) {P sp0 lhs rhs retAddr : Word}
   have vk77_19 : V5 (19 : Fin 32) = lhs + BitVec.ofNat 32 0x30 := (by rw [← hV5, upd_ne (by decide) (by decide)]; exact vk12_19)
   have vk77_21 : V5 (21 : Fin 32) = rhs + BitVec.ofNat 32 0x30 := (by rw [← hV5, upd_ne (by decide) (by decide)]; exact vk12_21)
   have vk77_18 : V5 (18 : Fin 32) = lhs + BitVec.ofNat 32 0x60 := (by rw [← hV5, upd_ne (by decide) (by decide)]; exact vk12_18)
-  have vk77_8 : V5 (8 : Fin 32) = 0x3FCC4000 := (by rw [← hV5, upd_same (by decide)])
+  have vk77_8 : V5 (8 : Fin 32) = (img% hi20 p384BAddress) := (by rw [← hV5, upd_same (by decide)])
   obtain ⟨n78, d78, I78', e78, o78⟩ := a3_addiK env I77 (by decide) p3pa_at_132 (off' := 0x136) (by decide) (by decide)
-  obtain ⟨V6, hV6⟩ : ∃ V, upd V5 (8 : Fin 32) (reg n77 (8 : Fin 32) + 0x234) = V := ⟨_, rfl⟩
+  obtain ⟨V6, hV6⟩ : ∃ V, upd V5 (8 : Fin 32) (reg n77 (8 : Fin 32) + (img% lo12 p384BAddress)) = V := ⟨_, rfl⟩
   rw [hV6] at I78'
   have I78 := I78'
   have vk78_2 : V6 sp = a3G sp0 := (by rw [← hV6, upd_ne (by decide) (by decide)]; exact vk77_2)

@@ -173,6 +173,8 @@ import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main
 import C3BootProofs.Proofs.Dec256End
 import C3BootProofs.Proofs.Pv384Main
+import C3BootProofs.Image.BootloaderData5
+import C3BootProofs.Image.BootloaderData7
 
 /-!
 # Audit
@@ -3003,9 +3005,9 @@ theorem exists_pkOk_machine :
       RV32.Sep (BitVec.ofNat 32 Image.edOneAddress) 40 (sp0 + 0xFFFFF6C0) 0x940 ∧
       RV32.Sep (BitVec.ofNat 32 Image.edDAddress) 40 (sp0 + 0xFFFFF6C0) 0x940 ∧
       RV32.Sep (BitVec.ofNat 32 Image.edSqrtM1Address) 40 (sp0 + 0xFFFFF6C0) 0x940 ∧
-      RV32.Sep (BitVec.ofNat 32 0x3FCC4328) 32 (sp0 + 0xFFFFF6C0) 0x940 ∧
-      RV32.Sep (BitVec.ofNat 32 0x3FCC42E8) 32 (sp0 + 0xFFFFF6C0) 0x940 ∧
-      RV32.Sep (BitVec.ofNat 32 0x3FCC4388) 32 (sp0 + 0xFFFFF6C0) 0x940 := by
+      RV32.Sep (BitVec.ofNat 32 (img% edPrimeAddress)) 32 (sp0 + 0xFFFFF6C0) 0x940 ∧
+      RV32.Sep (BitVec.ofNat 32 (img% p256OneAddress)) 32 (sp0 + 0xFFFFF6C0) 0x940 ∧
+      RV32.Sep (BitVec.ofNat 32 (img% edPm1Address)) 32 (sp0 + 0xFFFFF6C0) 0x940 := by
   refine ⟨⟨leafRegs 0x3FCC6100 0 0, RV32.PKO, witnessMemPkOk⟩, 0x3FCC8000, 0x3FCC6100, 0,
     ?_, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide, by decide,
     RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
@@ -5843,12 +5845,12 @@ the stack at `0x3FCC8000`, meets `ctIntoAffine384_correct`'s hypotheses. -/
 theorem exists_ctIntoAffine384_machine :
     ∃ (m : RV32.Machine) (out s sp0 retAddr : RV32.Word),
       RV32.CodeIn m.mem (BitVec.ofNat 32 Image.ctIntoAffine384Address) Image.ctIntoAffine384Code ∧
-      RV32.UOEnv m.mem (BitVec.ofNat 32 Image.unwrapOr384Address) (sp0 + 0xFFFFFFF0) out s 0x3FCC43C8 ∧
+      RV32.UOEnv m.mem (BitVec.ofNat 32 Image.unwrapOr384Address) (sp0 + 0xFFFFFFF0) out s (img% p384AffineIdentityAddress) ∧
       m.pc = BitVec.ofNat 32 Image.ctIntoAffine384Address ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧
       RV32.reg m RV32.a1 = s ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
       (m.mem (s + 0x64) = 0 ∨ m.mem (s + 0x64) = 1) ∧ 0x90 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧
       out.toNat + 0x65 ≤ 0x40000000 ∧ RV32.Sep out 0x65 (sp0 + 0xFFFFFFF0) 16 ∧
-      RV32.Sep s 0x65 (sp0 + 0xFFFFFFF0) 16 ∧ RV32.Sep (0x3FCC43C8 : RV32.Word) 0x61 (sp0 + 0xFFFFFFF0) 16 := by
+      RV32.Sep s 0x65 (sp0 + 0xFFFFFFF0) 16 ∧ RV32.Sep (img% p384AffineIdentityAddress : RV32.Word) 0x61 (sp0 + 0xFFFFFFF0) 16 := by
   refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.ctIntoAffine384Address, witnessMemSel⟩,
     0x3FCC5000, 0x3FCC6000, 0x3FCC8000, 0, by code_in, ?_, rfl, rfl, rfl, rfl, rfl, by decide,
     .inl (by decide +kernel), by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
@@ -5869,12 +5871,12 @@ the stack at `0x3FCC8000`, meets `ctIntoAffine256_correct`'s hypotheses. -/
 theorem exists_ctIntoAffine256_machine :
     ∃ (m : RV32.Machine) (out s sp0 retAddr : RV32.Word),
       RV32.CodeIn m.mem (BitVec.ofNat 32 Image.ctIntoAffine256Address) Image.ctIntoAffine256Code ∧
-      RV32.UO2Env m.mem (BitVec.ofNat 32 Image.unwrapOr256Address) (sp0 + 0xFFFFFFF0) out s 0x3FCC442C ∧
+      RV32.UO2Env m.mem (BitVec.ofNat 32 Image.unwrapOr256Address) (sp0 + 0xFFFFFFF0) out s (img% p256AffineIdXAddress) ∧
       m.pc = BitVec.ofNat 32 Image.ctIntoAffine256Address ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧
       RV32.reg m RV32.a1 = s ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
       (m.mem (s + 0x44) = 0 ∨ m.mem (s + 0x44) = 1) ∧ 0x80 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧
       out.toNat + 0x45 ≤ 0x40000000 ∧ RV32.Sep out 0x45 (sp0 + 0xFFFFFFF0) 16 ∧
-      RV32.Sep s 0x45 (sp0 + 0xFFFFFFF0) 16 ∧ RV32.Sep (0x3FCC442C : RV32.Word) 0x41 (sp0 + 0xFFFFFFF0) 16 := by
+      RV32.Sep s 0x45 (sp0 + 0xFFFFFFF0) 16 ∧ RV32.Sep (img% p256AffineIdXAddress : RV32.Word) 0x41 (sp0 + 0xFFFFFFF0) 16 := by
   refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.ctIntoAffine256Address, witnessMemSel⟩,
     0x3FCC5000, 0x3FCC6000, 0x3FCC8000, 0, by code_in, ?_, rfl, rfl, rfl, rfl, rfl, by decide,
     .inl (by decide +kernel), by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),

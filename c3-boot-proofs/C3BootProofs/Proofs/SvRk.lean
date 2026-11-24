@@ -57,17 +57,17 @@ theorem sv_fail_3122 {B out : Word} {v : Nat → Word} {n0 n : Machine} (F : Fr 
 /-- Bytes `sigstore::verify` reads outside the stack: the bundle's, or the
 image's read-only constants. -/
 def SvRo2 (B q : Word) (ql : Nat) : Prop :=
-  SvIn B q ql ∨ (0x3FCC4000 ≤ q.toNat ∧ q.toNat + ql ≤ 0x3FCC5400)
+  SvIn B q ql ∨ ((img% roWindowAddress) ≤ q.toNat ∧ q.toNat + ql ≤ 0x3FCC5400)
 
-theorem roSep {B b : Word} {len c n : Nat} (RS : SvRoSep B) (h : c + n ≤ 0x3830) (hb : 0x3FCC4000 ≤ b.toNat)
+theorem roSep {B b : Word} {len c n : Nat} (RS : SvRoSep B) (h : c + n ≤ 0x3830) (hb : (img% roWindowAddress) ≤ b.toNat)
     (hb2 : b.toNat + len ≤ 0x3FCC5400) : Sep (B + BitVec.ofNat 32 c) n b len := by
   have h1 := RS.sub (c := 0x1A0 + c) (l := n) (by omega)
-  have h2 := h1.subR (c := b.toNat - 0x3FCC4000) (l := len) (by omega)
+  have h2 := h1.subR (c := b.toNat - (img% roWindowAddress)) (l := len) (by omega)
   rw [BitVec.add_assoc, show (0xFFFFFE60 : Word) + BitVec.ofNat 32 (0x1A0 + c) = BitVec.ofNat 32 c by
     apply BitVec.eq_of_toNat_eq
     rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat, show (0xFFFFFE60 : Word).toNat = 0xFFFFFE60 from rfl]
     omega] at h2
-  rwa [show BitVec.ofNat 32 0x3FCC4000 + BitVec.ofNat 32 (b.toNat - 0x3FCC4000) = b by
+  rwa [show BitVec.ofNat 32 (img% roWindowAddress) + BitVec.ofNat 32 (b.toNat - (img% roWindowAddress)) = b by
     apply BitVec.eq_of_toNat_eq
     rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
     have := b.isLt; omega] at h2
@@ -87,8 +87,8 @@ theorem SvRo2.r {B q : Word} {ql i : Nat} (RS : SvRoSep B) (h : SvRo2 B q ql) (h
     SvR B (q + BitVec.ofNat 32 i) := by
   rcases h with h | ⟨h1, h2⟩
   · exact h.r hi
-  · have := RS.subR (c := q.toNat - 0x3FCC4000 + i) (l := 1) (by omega)
-    rwa [show BitVec.ofNat 32 0x3FCC4000 + BitVec.ofNat 32 (q.toNat - 0x3FCC4000 + i) = q + BitVec.ofNat 32 i by
+  · have := RS.subR (c := q.toNat - (img% roWindowAddress) + i) (l := 1) (by omega)
+    rwa [show BitVec.ofNat 32 (img% roWindowAddress) + BitVec.ofNat 32 (q.toNat - (img% roWindowAddress) + i) = q + BitVec.ofNat 32 i by
       apply BitVec.eq_of_toNat_eq
       rw [BitVec.toNat_add, BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
       have := q.isLt; omega] at this
@@ -460,7 +460,7 @@ initial words copied to 0x460, a zero position at 0x45F, and a zero count. -/
 theorem hasher_init_f {M M0 : Word → BitVec 8} {B : Word}
     (hpos : M (B + 0x21A0 + BitVec.ofNat 32 0x45F) = (BitVec.ofNat 32 0x0).extractLsb' 0 8)
     (hiv : ∀ j, j < 32 → M (B + 0x21A0 + BitVec.ofNat 32 (0x460 + j)) =
-      M0 (BitVec.ofNat 32 0x3FCC42A8 + BitVec.ofNat 32 j))
+      M0 (BitVec.ofNat 32 (img% shaIVAddress) + BitVec.ofNat 32 j))
     (cIV : CodeIn M0 (BitVec.ofNat 32 shaIVAddress) shaIVData)
     (hlo : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 0x480) = BitVec.ofNat 32 0x0)
     (hhi : memLoad32 M (B + 0x21A0 + BitVec.ofNat 32 0x484) = BitVec.ofNat 32 0x0) :

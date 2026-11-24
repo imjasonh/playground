@@ -6,7 +6,7 @@ import C3BootProofs.Proofs.RegionMem
 
 Memory with `ed25519_verify`, every function it calls, the panic code, the
 tables of `L` and SHA-512's round constants where the image loads them,
-SHA-512's initial hash value at `0x3FCC4AF8`, and zeros elsewhere.
+SHA-512's initial hash value at `sha512IVAddress`, and zeros elsewhere.
 -/
 
 namespace C3.RV32
@@ -49,7 +49,7 @@ def witnessRegionsEv : List (Nat × List Nat) :=
     (feIsNegativeAddress, feIsNegativeCode), (feCondNegAddress, feCondNegCode),
     (memcpyStubAddress, memcpyStubCode), (memcpyBodyAddress, memcpyBodyCode),
     (edOneAddress, edOneData), (edDAddress, edDData), (edSqrtM1Address, edSqrtM1Data),
-    (0x3FCC4AF8, sha512IvBytes)]
+    ((img% sha512IVAddress), sha512IvBytes)]
 
 def witnessMemEv : Word → BitVec 8 := regionMem witnessRegionsEv
 

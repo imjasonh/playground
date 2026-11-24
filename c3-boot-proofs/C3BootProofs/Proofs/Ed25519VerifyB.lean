@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.Ed25519VerifyA
+import C3BootProofs.Image.BootloaderData7
 
 /-!
 # `ed25519_verify`, offsets 0x104C to 0x158E: the challenge scalar
@@ -129,8 +130,8 @@ theorem ev_stageB (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : M
     (hk : memLoad32 M (F + BitVec.ofNat 32 0x10) = BitVec.ofNat 32 len) :
     ∃ n' M', Steps n n' ∧ EvSt M0 Ms F r0 M' n' 0x158E ∧ reg n' 18 = F + BitVec.ofNat 32 0x7F0 ∧
       reg n' 23 = F + BitVec.ofNat 32 0x1508 ∧
-      memBytes M' (F + BitVec.ofNat 32 0x520) 32 = kOf (smmIn M0 (BitVec.ofNat 32 0x3FCC49E4))
-        (smmIn M0 (BitVec.ofNat 32 0x3FCC49C0)) (sha512 (memBytes M (F + BitVec.ofNat 32 0x228) 32 ++
+      memBytes M' (F + BitVec.ofNat 32 0x520) 32 = kOf (smmIn M0 (BitVec.ofNat 32 (img% edMontRAddress)))
+        (smmIn M0 (BitVec.ofNat 32 (img% edMontRRAddress))) (sha512 (memBytes M (F + BitVec.ofNat 32 0x228) 32 ++
           memBytes M (F + BitVec.ofNat 32 0x128) 32 ++ memBytes M0 msg len)) ∧
       (∀ j, j < 0xC0 → M' (F + BitVec.ofNat 32 (0x5E0 + j)) = M (F + BitVec.ofNat 32 (0x128 + j))) ∧
       (∀ j, j < 0x40 → M' (F + BitVec.ofNat 32 (0x6A0 + j)) = M (F + BitVec.ofNat 32 (0x228 + j))) ∧

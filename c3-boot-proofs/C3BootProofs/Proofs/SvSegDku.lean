@@ -72,7 +72,7 @@ theorem sv_seg_dku {B out bp x9 x21 x25 x26 f30 f34 rem p0 L cur sl0 sl1 sl2 sl3
     (val_in : SvIn B (vp) (vl).toNat)
     (oid_in : SvIn B (op) (ol).toNat)
     (SD0 : SvData M0)
-    (hku : memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4889) 3) :
+    (hku : memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x71)) 3) :
     SvErrRet B out v n0 ∨
     (∃ tl16_1, derElement 0x3 (memBytes M0 (vp) (vl).toNat) = .ok tl16_1 ∧
       (2 ≤ (BitVec.ofNat 32 tl16_1.len).toNat) ∧

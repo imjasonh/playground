@@ -72,24 +72,24 @@ theorem PvCode.hi {M M' : Word → BitVec 8} (C : PvCode M) (h : ∀ x : Word, 0
   ⟨codeHi C.self (by decide) (by decide) h, C.K.hi h, C.fs.hi h, codeHi C.isr (by decide) (by decide) h,
     codeHi C.bf (by decide) (by decide) h, C.fb.hi h, codeHi C.sz (by decide) (by decide) h⟩
 
-/-- The constants `p384_verify_prehash` reads, between 0x3FCC4200 and 0x3FCC4E60. -/
+/-- The constants `p384_verify_prehash` reads, between `dataWindowAddress` and 0x3FCC4E60. -/
 structure PvData (M : Word → BitVec 8) : Prop where
   D : P3Data M
   ord : CodeIn M BZO b2sOrder384Data
 
-/-- A constant between 0x3FCC4200 and 0x3FCC4E60 survives a change to memory
+/-- A constant between `dataWindowAddress` and `dataWindowAddress + dataWindowSize` survives a change to memory
 that keeps outside a frame. -/
 theorem _root_.C3.RV32.P3.Fr.dataIn {S : Word} {N : Nat} (F : Fr S N) {M M' : Word → BitVec 8}
     (h : ∀ x, Sep (S + 0xFFFFFE60) (N + 0x1A0) x 1 → M' x = M x) {b : Word} {d : List Nat} (hc : CodeIn M b d)
-    (h1 : 0x3FCC4200 ≤ b.toNat) (h2 : b.toNat + d.length ≤ 0x3FCC4E60) : CodeIn M' b d := fun i hi => by
+    (h1 : (img% dataWindowAddress) ≤ b.toNat) (h2 : b.toNat + d.length ≤ (img% dataWindowAddress + dataWindowSize)) : CodeIn M' b d := fun i hi => by
   have hd := F.dsep
-  rw [h _ (hd.subR (c := (b + BitVec.ofNat 32 i).toNat - 0x3FCC4200) (l := 1) (by
+  rw [h _ (hd.subR (c := (b + BitVec.ofNat 32 i).toNat - (img% dataWindowAddress)) (l := 1) (by
     rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega) |> fun s => by
-      rwa [show (0x3FCC4200 : Word) + BitVec.ofNat 32 ((b + BitVec.ofNat 32 i).toNat - 0x3FCC4200) =
+      rwa [show (img% dataWindowAddress : Word) + BitVec.ofNat 32 ((b + BitVec.ofNat 32 i).toNat - (img% dataWindowAddress)) =
         b + BitVec.ofNat 32 i from by
           apply BitVec.eq_of_toNat_eq
           rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_add, BitVec.toNat_ofNat,
-            show (0x3FCC4200 : Word).toNat = 0x3FCC4200 from rfl]
+            show (img% dataWindowAddress : Word).toNat = (img% dataWindowAddress) from rfl]
           omega] at s)]
   exact hc i hi
 

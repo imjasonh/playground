@@ -126,7 +126,7 @@ def s5PreMem (M : Word → BitVec 8) (F : Word) (f : Fin 32 → Word) : Word →
 def s5PreKeep (q : Fin 32) : Bool :=
   q.val ∉ [0, 1, 5, 6, 7, 10, 12, 13, 16, 17, 18, 19, 20, 21, 25, 28, 29, 30]
 
-theorem s5K_lit : (0x3FCC5000 : Word) + 0xFFFFFFC0 = s5K := by decide
+theorem s5K_lit : (img% hi20 sha512KAddress : Word) + (img% lo12 sha512KAddress) = s5K := by decide
 
 set_option maxRecDepth 100000 in
 set_option maxHeartbeats 8000000 in

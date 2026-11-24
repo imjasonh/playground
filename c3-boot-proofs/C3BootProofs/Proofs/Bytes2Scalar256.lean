@@ -583,7 +583,7 @@ theorem bytes2scalar256_correct (m : Machine) {sp0 out b retAddr : Word} (E : BY
       have hb := panicFns_hi p hp
       exact cd (E.pan p hp) (by rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]; exact hb.1)
         (by rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]; omega) hM
-  have hBSn : BY.toNat = 0x403a300a := by decide
+  have hBSn : BY.toNat = (img% bytes2scalar256Address) := by decide
   have hc := E.cod
   have st0 : St m.mem BY m 0 (reg m) := ⟨by rw [hpc, add_ofNat_zero], rfl, fun _ => rfl⟩
   have hz := st0.zero

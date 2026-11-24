@@ -4,13 +4,14 @@ import C3BootProofs.Proofs.Sec1Tag
 import C3BootProofs.Proofs.EncodedPoint
 import C3BootProofs.Proofs.CtEq
 import C3BootProofs.Proofs.CtInto
+import C3BootProofs.Image.BootloaderData2
 
 /-!
 # Calls to the P-384 field and SEC1 functions, from any caller
 
 Each `c_` theorem steps over one call, from a caller whose code is `code` at
 `base`, with its frame `Fr S N`: `N` bytes at `S` in DRAM and 0x1A0 bytes
-below for the callee, apart from the constants at `0x3FCC4200`.
+below for the callee, apart from the constants at `dataWindowAddress`.
 -/
 
 namespace C3.RV32.P3
@@ -25,7 +26,7 @@ structure Fr (S : Word) (N : Nat) : Prop where
   al : S.toNat % 16 = 0
   lo : 0x3FC801A0 ≤ S.toNat
   hi : S.toNat + N ≤ 0x3FCE0000
-  dsep : Sep (S + 0xFFFFFE60) (N + 0x1A0) (0x3FCC4200 : Word) 0xC60
+  dsep : Sep (S + 0xFFFFFE60) (N + 0x1A0) (img% dataWindowAddress : Word) (img% dataWindowSize)
 
 theorem Fr.at {S : Word} {N : Nat} (F : Fr S N) (c : Nat) (hc : c ≤ N) : (S + BitVec.ofNat 32 c).toNat = S.toNat + c := by
   have := F.hi; rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
@@ -43,26 +44,26 @@ theorem Fr.hiOut {S : Word} {N : Nat} (F : Fr S N) {c n : Nat} (h : c + n ≤ N)
 
 theorem Fr.lowData {S : Word} {N : Nat} (F : Fr S N) {k : Word} {c : Nat} (hc : c ≤ 0x1A0)
     (hk : (0xFFFFFE60 : Word) + BitVec.ofNat 32 (0x1A0 - c) = k) {b : Word} {len : Nat}
-    (hb : 0x3FCC4200 ≤ b.toNat) (hb2 : b.toNat + len ≤ 0x3FCC4E60) : Sep (S + k) c b len := by
+    (hb : (img% dataWindowAddress) ≤ b.toNat) (hb2 : b.toNat + len ≤ (img% dataWindowAddress + dataWindowSize)) : Sep (S + k) c b len := by
   have h1 := F.dsep.sub (c := 0x1A0 - c) (l := c) (by omega)
-  have h2 := h1.subR (c := b.toNat - 0x3FCC4200) (l := len) (by omega)
+  have h2 := h1.subR (c := b.toNat - (img% dataWindowAddress)) (l := len) (by omega)
   rw [BitVec.add_assoc, hk] at h2
-  rwa [show (0x3FCC4200 : Word) + BitVec.ofNat 32 (b.toNat - 0x3FCC4200) = b by
+  rwa [show (img% dataWindowAddress : Word) + BitVec.ofNat 32 (b.toNat - (img% dataWindowAddress)) = b by
     apply BitVec.eq_of_toNat_eq
-    rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (0x3FCC4200 : Word).toNat = 0x3FCC4200 from rfl]
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (img% dataWindowAddress : Word).toNat = (img% dataWindowAddress) from rfl]
     have := b.isLt; omega] at h2
 
 theorem Fr.bufData {S : Word} {N : Nat} (F : Fr S N) {c n : Nat} (h : c + n ≤ N) {b : Word} {len : Nat}
-    (hb : 0x3FCC4200 ≤ b.toNat) (hb2 : b.toNat + len ≤ 0x3FCC4E60) : Sep (S + BitVec.ofNat 32 c) n b len := by
+    (hb : (img% dataWindowAddress) ≤ b.toNat) (hb2 : b.toNat + len ≤ (img% dataWindowAddress + dataWindowSize)) : Sep (S + BitVec.ofNat 32 c) n b len := by
   have h1 := F.dsep.sub (c := 0x1A0 + c) (l := n) (by omega)
-  have h2 := h1.subR (c := b.toNat - 0x3FCC4200) (l := len) (by omega)
+  have h2 := h1.subR (c := b.toNat - (img% dataWindowAddress)) (l := len) (by omega)
   rw [BitVec.add_assoc, show (0xFFFFFE60 : Word) + BitVec.ofNat 32 (0x1A0 + c) = BitVec.ofNat 32 c by
     apply BitVec.eq_of_toNat_eq
     rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat, show (0xFFFFFE60 : Word).toNat = 0xFFFFFE60 from rfl]
     omega] at h2
-  rwa [show (0x3FCC4200 : Word) + BitVec.ofNat 32 (b.toNat - 0x3FCC4200) = b by
+  rwa [show (img% dataWindowAddress : Word) + BitVec.ofNat 32 (b.toNat - (img% dataWindowAddress)) = b by
     apply BitVec.eq_of_toNat_eq
-    rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (0x3FCC4200 : Word).toNat = 0x3FCC4200 from rfl]
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (img% dataWindowAddress : Word).toNat = (img% dataWindowAddress) from rfl]
     have := b.isLt; omega] at h2
 
 theorem Fr.lowHi {S : Word} {N : Nat} (F : Fr S N) {k : Word} {c : Nat} (hc : c ≤ 0x1A0) (hk : k.toNat = 2 ^ 32 - c)
@@ -75,7 +76,7 @@ theorem Fr.mc {S : Word} {N : Nat} (F : Fr S N) :
   have hb16 : (S + 0xFFFFFFF0).toNat = S.toNat - 16 := F.below 16 (by decide) (by decide)
   have := F.lo; have := F.hi; have := F.al
   exact ⟨by rw [hb16]; omega, by rw [hb16]; omega,
-    sep_of_le (by rw [hb16, show (MCS + 8).toNat = 0x403b4856 from rfl]; omega) (by decide)⟩
+    sep_of_le (by rw [hb16, show (MCS + 8).toNat = (img% memcpyBodyAddress) from rfl]; omega) (by decide)⟩
 
 theorem Fr.mcN {S : Word} {N : Nat} (F : Fr S N) {c n : Nat} (h : c + n ≤ N) :
     Sep (S + BitVec.ofNat 32 c) n (S + 0xFFFFFFF0) 16 := by
@@ -154,15 +155,15 @@ structure P3Data (M : Word → BitVec 8) : Prop where
 theorem P3Data.of {M M' : Word → BitVec 8} {S : Word} {N : Nat} (F : Fr S N) (D : P3Data M)
     (h : ∀ x, Sep (S + 0xFFFFFE60) (N + 0x1A0) x 1 → M' x = M x) : P3Data M' := by
   have hd := F.dsep
-  have cd : ∀ (b : Word) (d : List Nat), CodeIn M b d → 0x3FCC4200 ≤ b.toNat → b.toNat + d.length ≤ 0x3FCC4E60 →
+  have cd : ∀ (b : Word) (d : List Nat), CodeIn M b d → (img% dataWindowAddress) ≤ b.toNat → b.toNat + d.length ≤ (img% dataWindowAddress + dataWindowSize) →
       CodeIn M' b d := fun b d hc h1 h2 i hi => by
-    rw [h _ (hd.subR (c := (b + BitVec.ofNat 32 i).toNat - 0x3FCC4200) (l := 1) (by
+    rw [h _ (hd.subR (c := (b + BitVec.ofNat 32 i).toNat - (img% dataWindowAddress)) (l := 1) (by
       rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega) |> fun s => by
-        rwa [show (0x3FCC4200 : Word) + BitVec.ofNat 32 ((b + BitVec.ofNat 32 i).toNat - 0x3FCC4200) =
+        rwa [show (img% dataWindowAddress : Word) + BitVec.ofNat 32 ((b + BitVec.ofNat 32 i).toNat - (img% dataWindowAddress)) =
           b + BitVec.ofNat 32 i from by
             apply BitVec.eq_of_toNat_eq
             rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_add, BitVec.toNat_ofNat,
-              show (0x3FCC4200 : Word).toNat = 0x3FCC4200 from rfl]
+              show (img% dataWindowAddress : Word).toNat = (img% dataWindowAddress) from rfl]
             omega] at s)]
     exact hc i hi
   exact ⟨cd _ _ D.params (by decide) (by decide), cd _ _ D.ca (by decide) (by decide),
@@ -578,7 +579,7 @@ theorem uor_cta : UOR + 0x1070C + 0x2EC = BitVec.ofNat 32 uint12CtAssignAddress 
 theorem uor_sca : UOR + 0x1070C + 0x2EC + 0xFFFF9B66 = BitVec.ofNat 32 sliceCtAssignAddress := by decide
 
 /-- A call to `CtOption<AffinePoint<NistP384>>::into`: the point at `s` when
-its choice byte at `s + 0x64` is 1, else the identity at `0x3FCC43C8`, then
+its choice byte at `s + 0x64` is 1, else the identity at `p384AffineIdentityAddress`, then
 the choice. -/
 theorem c_into {base : Word} {code : List Nat} {N : Nat} {Mx : Word → BitVec 8} {n : Machine} {off : Nat}
     {g : Fin 32 → Word} {imm o out sv S : Word}
@@ -593,11 +594,11 @@ theorem c_into {base : Word} {code : List Nat} {N : Nat} {Mx : Word → BitVec 8
     ∃ n', Steps n n' ∧ St n'.mem base n' (off + 8) (reg n') ∧
       (∀ i, i < 12 → memLoad32 n'.mem (out + BitVec.ofNat 32 (4 * i)) =
         if Mx (sv + 0x64) = 1 then memLoad32 Mx (sv + BitVec.ofNat 32 (4 * i))
-        else memLoad32 Mx (0x3FCC43C8 + BitVec.ofNat 32 (4 * i))) ∧
+        else memLoad32 Mx ((img% p384AffineIdentityAddress) + BitVec.ofNat 32 (4 * i))) ∧
       (∀ i, i < 12 → memLoad32 n'.mem (out + 0x30 + BitVec.ofNat 32 (4 * i)) =
         if Mx (sv + 0x64) = 1 then memLoad32 Mx (sv + 0x30 + BitVec.ofNat 32 (4 * i))
-        else memLoad32 Mx (0x3FCC43C8 + 0x30 + BitVec.ofNat 32 (4 * i))) ∧
-      n'.mem (out + 0x60) = (if Mx (sv + 0x64) = 1 then Mx (sv + 0x60) else Mx (0x3FCC43C8 + 0x60)) ∧
+        else memLoad32 Mx ((img% p384AffineIdentityAddress) + 0x30 + BitVec.ofNat 32 (4 * i))) ∧
+      n'.mem (out + 0x60) = (if Mx (sv + 0x64) = 1 then Mx (sv + 0x60) else Mx ((img% p384AffineIdentityAddress) + 0x60)) ∧
       n'.mem (out + 0x64) = Mx (sv + 0x64) ∧ reg n' sp = S ∧
       (∀ q, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = g q) ∧
       ∀ y, Sep (S + 0xFFFFFF70) 0x90 y 1 → Sep out 0x65 y 1 → n'.mem y = Mx y := by
@@ -613,9 +614,9 @@ theorem c_into {base : Word} {code : List Nat} {N : Nat} {Mx : Word → BitVec 8
     rw [eG]; exact sep_of_le (by rw [hb90]; omega) hl
   have oT : (out).toNat = S.toNat + co := by rw [eo, F.at co (by omega)]
   have sT : (sv).toNat = S.toNat + cs := by rw [es, F.at cs (by omega)]
-  have hID : Sep (S + 0xFFFFFF70) 0x90 (0x3FCC43C8 : Word) 0x61 :=
+  have hID : Sep (S + 0xFFFFFF70) 0x90 (img% p384AffineIdentityAddress : Word) 0x61 :=
     F.lowData (c := 0x90) (by decide) rfl (by decide) (by decide)
-  have E : UOEnv n1.mem UOR (S + 0xFFFFFFF0) out sv 0x3FCC43C8 := by
+  have E : UOEnv n1.mem UOR (S + 0xFFFFFFF0) out sv (img% p384AffineIdentityAddress) := by
     rw [mem1]
     refine ⟨by decide, K.uor, by rw [uor_cs]; exact K.csel, by rw [uor_stub]; exact K.stub, by rw [uor_body]; exact K.body,
       by rw [uor_cta]; exact K.cta, by rw [uor_sca]; exact K.sca, by rw [hb16]; omega, by rw [hb16]; omega,

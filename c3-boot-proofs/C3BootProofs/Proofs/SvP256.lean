@@ -26,7 +26,7 @@ theorem gsOk_congr {M M0 : Word → BitVec 8} {inp : Word}
 theorem P2Data.sv {M M0 : Word → BitVec 8} {B : Word} (F : Fr B 0x3830) (D : P2Data M0)
     (fR : ∀ x, SvR B x → M x = M0 x) : P2Data M :=
   D.ofR fun i hi => fR _ (by
-    have := dataR (q := (0x3FCC4200 : Word)) (ql := 0xC60) F (by decide) (by decide) i hi
+    have := dataR (q := (img% dataWindowAddress : Word)) (ql := (img% dataWindowSize)) F (by decide) (by decide) i hi
     exact this)
 
 theorem sv_sp2d0 (B : Word) : B + 0x21A0 = B + BitVec.ofNat 32 0x1ED0 + 0x2D0 := by

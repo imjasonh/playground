@@ -24,15 +24,15 @@ open C3.RV32 C3.RV32.Sv C3.RV32.Pv C3.RV32.P2 C3.RV32.Gs C3.Image
 order `n`, 1, the prime `p`, `R² mod p`, `G` and 1 in Montgomery form, and
 the affine `x` the check uses for the point at infinity. -/
 structure P256Consts (M : Word → BitVec 8) : Prop where
-  n : accV M (BitVec.ofNat 32 0x3FCC4268) 8 = C3.p256.n
-  one : accV M (BitVec.ofNat 32 0x3FCC42E8) 8 = 1
-  p : accV M (BitVec.ofNat 32 0x3FCC4B38) 8 = C3.p256.p
-  r2 : accV M (BitVec.ofNat 32 0x3FCC4B78) 8 = 2 ^ 512 % C3.p256.p
-  gx : accV M (BitVec.ofNat 32 0x3FCC4690 + BitVec.ofNat 32 0x0) 8 = C3.p256.gx * 2 ^ 256 % C3.p256.p
-  gy : accV M (BitVec.ofNat 32 0x3FCC4690 + BitVec.ofNat 32 0x20) 8 = C3.p256.gy * 2 ^ 256 % C3.p256.p
-  gz : accV M (BitVec.ofNat 32 0x3FCC4690 + BitVec.ofNat 32 0x40) 8 = 2 ^ 256 % C3.p256.p
-  mone : accV M (BitVec.ofNat 32 0x3FCC43A8) 8 = 2 ^ 256 % C3.p256.p
-  idx : accV M (BitVec.ofNat 32 0x3FCC442C) 8 = 0
+  n : accV M (BitVec.ofNat 32 (img% b2sOrder256Address)) 8 = C3.p256.n
+  one : accV M (BitVec.ofNat 32 (img% p256OneAddress)) 8 = 1
+  p : accV M (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 = C3.p256.p
+  r2 : accV M (BitVec.ofNat 32 (img% p256R2Address)) 8 = 2 ^ 512 % C3.p256.p
+  gx : accV M (BitVec.ofNat 32 (img% p256GMontAddress) + BitVec.ofNat 32 0x0) 8 = C3.p256.gx * 2 ^ 256 % C3.p256.p
+  gy : accV M (BitVec.ofNat 32 (img% p256GMontAddress) + BitVec.ofNat 32 0x20) 8 = C3.p256.gy * 2 ^ 256 % C3.p256.p
+  gz : accV M (BitVec.ofNat 32 (img% p256GMontAddress) + BitVec.ofNat 32 0x40) 8 = 2 ^ 256 % C3.p256.p
+  mone : accV M (BitVec.ofNat 32 (img% p256MontOneAddress)) 8 = 2 ^ 256 % C3.p256.p
+  idx : accV M (BitVec.ofNat 32 (img% p256AffineIdXAddress)) 8 = 0
 
 /-- The scalar field's compiled `mul` (Barrett reduction) reduces a product
 of two scalars below `n` modulo `n`. -/

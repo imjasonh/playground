@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.Ed25519VerifyWrap3
+import C3BootProofs.Image.BootloaderData7
 
 /-!
 # `ed25519_verify`, offsets 0x1356 onward: `Scalar::from_bytes_wide`
@@ -174,7 +175,7 @@ theorem ev_fbw2 (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Mac
       (limbAt M' (F + BitVec.ofNat 32 0x15A8) 7 = ((memLoad32 Mo (F + BitVec.ofNat 32 0xA28)).toNat / 2 ^ 16 + (memLoad32 Mo (F + BitVec.ofNat 32 0xA2C)).toNat * 2 ^ 16) % 2 ^ 29) ∧
       (limbAt M' (F + BitVec.ofNat 32 0x15A8) 8 = (memLoad32 Mo (F + BitVec.ofNat 32 0xA2C)).toNat / 2 ^ 13)) ∧
       reg n' a0 = F + BitVec.ofNat 32 0x7F0 ∧ reg n' a1 = F + BitVec.ofNat 32 0x1508 ∧
-      reg n' a2 = BitVec.ofNat 32 0x3FCC49E4 ∧
+      reg n' a2 = BitVec.ofNat 32 (img% edMontRAddress) ∧
       ∀ c, c < 0x16A0 → (c < 0x15A8 ∨ 0x15CC ≤ c) → M' (F + BitVec.ofNat 32 c) = M (F + BitVec.ofNat 32 c) := by
   have hal : ∀ c, c % 4 = 0 → (F + BitVec.ofNat 32 c).toNat % 4 = 0 := fun c h => C.al h
   have hcs : ∀ c, c + 4 ≤ 0x16A0 → Sep (F + BitVec.ofNat 32 c) 4 EV ed25519VerifyCode.length :=
@@ -248,20 +249,20 @@ set_option maxHeartbeats 16000000 in
 `F + 0x7F0` cleared. -/
 theorem ev_mm (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Machine} (D : EvSt M0 Ms F r0 M n 0x14A2)
     (ha0 : reg n a0 = F + BitVec.ofNat 32 0x7F0) (ha1 : reg n a1 = F + BitVec.ofNat 32 0x1508)
-    (ha2 : reg n a2 = BitVec.ofNat 32 0x3FCC49E4) :
+    (ha2 : reg n a2 = BitVec.ofNat 32 (img% edMontRAddress)) :
     ∃ n' M', Steps n n' ∧ EvSt M0 Ms F r0 M' n' 0x1508 ∧ (∀ q : Fin 32, q.val ∈ evKeep → reg n' q = reg n q) ∧
       (∀ j, j < 9 → limbAt M' (F + BitVec.ofNat 32 0x1508) j =
-        s29Out (smmRed (smmIn M (F + BitVec.ofNat 32 0x1508)) (smmIn M0 (BitVec.ofNat 32 0x3FCC49E4))) j) ∧
+        s29Out (smmRed (smmIn M (F + BitVec.ofNat 32 0x1508)) (smmIn M0 (BitVec.ofNat 32 (img% edMontRAddress)))) j) ∧
       (∀ j, j < 9 → limbAt M' (F + BitVec.ofNat 32 0x15A8) j =
-        s29Out (smmRed (smmIn M (F + BitVec.ofNat 32 0x15A8)) (smmIn M0 (BitVec.ofNat 32 0x3FCC49C0))) j) ∧
+        s29Out (smmRed (smmIn M (F + BitVec.ofNat 32 0x15A8)) (smmIn M0 (BitVec.ofNat 32 (img% edMontRRAddress)))) j) ∧
       (∀ j, j < 36 → M' (F + BitVec.ofNat 32 (0x7F0 + j)) = 0) ∧
       ∀ c, c < 0x16A0 → (c < 0x7F0 ∨ (0x814 ≤ c ∧ c < 0x1508) ∨ (0x152C ≤ c ∧ c < 0x15A8) ∨ 0x15CC ≤ c) →
         M' (F + BitVec.ofNat 32 c) = M (F + BitVec.ofNat 32 c) := by
-  have ro : ∀ (Mx : Word → BitVec 8) {nx : Machine} {ox : Nat}, EvSt M0 Ms F r0 Mx nx ox → ∀ c, 0x3FCC4000 ≤ c →
+  have ro : ∀ (Mx : Word → BitVec 8) {nx : Machine} {ox : Nat}, EvSt M0 Ms F r0 Mx nx ox → ∀ c, (img% roWindowAddress) ≤ c →
       c + 36 ≤ 0x3FCC5400 → smmIn Mx (BitVec.ofNat 32 c) = smmIn M0 (BitVec.ofNat 32 c) := fun Mx _ _ Dx c h1 h2 =>
     smmIn_congr fun i hi => by
       exact Dx.roM C (a := c) (k := 36) h1 h2 i hi
-  obtain ⟨n1, c1, D1, k1, o1, fz1⟩ := D.montMul C (d := 0x7F0) (e := 0x1508) (c := 0x3FCC49E4) ev_at_14a2 ev_at_14a6
+  obtain ⟨n1, c1, D1, k1, o1, fz1⟩ := D.montMul C (d := 0x7F0) (e := 0x1508) (c := (img% edMontRAddress)) ev_at_14a2 ev_at_14a6
     (by decide) (by decide) ha0 ha1 ha2 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)
   rw [ro M D _ (by decide) (by decide)] at o1
   obtain ⟨n2, c2, D2, hr2⟩ := D1.block C (off' := 0x14BA)
@@ -280,14 +281,14 @@ theorem ev_mm (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Machi
     (by decide) (C.zF (by decide)).symm (C.offs (by decide) (by decide) (by decide))
     (by rw [C.fN (by decide)]; have := C.hhi; omega)
   obtain ⟨n4, c4, D4, hr4⟩ := D3.block C (off' := 0x14D6)
-    ((.lui a2 0x3FCC5000) :: (.aluImm .add a2 a2 0xFFFFF9C0) :: (.aluImm .add a0 sp 0x7F0) :: (.lui a1 0x1000) ::
+    ((.lui a2 (img% hi20 edMontRRAddress)) :: (.aluImm .add a2 a2 (img% lo12 edMontRRAddress)) :: (.aluImm .add a0 sp 0x7F0) :: (.lui a1 0x1000) ::
       (.aluImm .add a1 a1 0x5A8) :: (.alu .add a1 a1 sp) :: [])
     (blockEnd_cons' (off' := 0x14C6) ev_at_14c2 rfl (blockEnd_cons' (off' := 0x14CA) ev_at_14c6 rfl
       (blockEnd_cons' (off' := 0x14CE) ev_at_14ca rfl (blockEnd_cons' (off' := 0x14D0) ev_at_14ce rfl
       (blockEnd_cons' (off' := 0x14D4) ev_at_14d0 rfl (blockEnd_cons' (off' := 0x14D6) ev_at_14d4 rfl rfl))))))
     ⟨trivial, trivial, trivial, trivial, trivial, trivial, trivial⟩ rfl
     (fun q hq => by rcases hq with rfl | rfl | rfl <;> simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte])
-  obtain ⟨n5, c5, D5, k5, o5, fz5⟩ := D4.montMul C (d := 0x7F0) (e := 0x15A8) (c := 0x3FCC49C0) ev_at_14d6 ev_at_14da
+  obtain ⟨n5, c5, D5, k5, o5, fz5⟩ := D4.montMul C (d := 0x7F0) (e := 0x15A8) (c := (img% edMontRRAddress)) ev_at_14d6 ev_at_14da
     (by decide) (by decide)
     (by rw [hr4]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D3.hsp]; rfl)
     (by rw [hr4]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]; rw [D3.hsp]; exact BitVec.add_comm _ _)

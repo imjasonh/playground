@@ -93,7 +93,7 @@ theorem SvKeepL.wider {B : Word} {M M' : Word → BitVec 8} {L L' : List (Nat ×
 theorem sv_ivIn {B : Word} (F : Fr B 0x3830) : SvIn B IV5 64 :=
   ⟨by
     have := F.dsep.subR (c := 0x3C0) (l := 78) (by decide)
-    rw [show (0x3FCC4200 : Word) + BitVec.ofNat 32 0x3C0 = IV5 from rfl] at this
+    rw [show (img% dataWindowAddress : Word) + BitVec.ofNat 32 0x3C0 = IV5 from rfl] at this
     exact this.symm, by decide, by decide⟩
 
 set_option maxRecDepth 100000 in

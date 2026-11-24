@@ -26,7 +26,7 @@ open C3.Image
 `bAddr`. -/
 def bMont : Nat := 0xdc30061d04874834e5a220abf7212ed6acf005cd78843090d89cdf6229c4bddf
 
-abbrev bAddr : Word := 0x3FCC4368
+abbrev bAddr : Word := (img% curveBAddress)
 
 /-- Where the point addition runs: its code at `P`, its callees where the
 image puts them, `b` at `bAddr`, `lhs` (the first point and the result) and

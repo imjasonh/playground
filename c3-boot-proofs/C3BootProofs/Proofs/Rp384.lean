@@ -267,14 +267,14 @@ theorem fsOk_congr {M M' : Word → BitVec 8} {p : Word} (h : ∀ j, j < 0x61 �
 
 /-- The constants survive changes to memory apart from them. -/
 theorem _root_.C3.RV32.P3.P3Data.ofR {M M' : Word → BitVec 8} (D : P3Data M)
-    (h : ∀ i, i < 0xC60 → M' ((0x3FCC4200 : Word) + BitVec.ofNat 32 i) = M ((0x3FCC4200 : Word) + BitVec.ofNat 32 i)) :
+    (h : ∀ i, i < (img% dataWindowSize) → M' ((img% dataWindowAddress : Word) + BitVec.ofNat 32 i) = M ((img% dataWindowAddress : Word) + BitVec.ofNat 32 i)) :
     P3Data M' := by
-  have cd : ∀ (b : Word) (d : List Nat), CodeIn M b d → 0x3FCC4200 ≤ b.toNat → b.toNat + d.length ≤ 0x3FCC4E60 →
+  have cd : ∀ (b : Word) (d : List Nat), CodeIn M b d → (img% dataWindowAddress) ≤ b.toNat → b.toNat + d.length ≤ (img% dataWindowAddress + dataWindowSize) →
       CodeIn M' b d := fun b d hc h1 h2 i hi => by
-    have e : b + BitVec.ofNat 32 i = (0x3FCC4200 : Word) + BitVec.ofNat 32 (b.toNat - 0x3FCC4200 + i) := by
+    have e : b + BitVec.ofNat 32 i = (img% dataWindowAddress : Word) + BitVec.ofNat 32 (b.toNat - (img% dataWindowAddress) + i) := by
       apply BitVec.eq_of_toNat_eq
       rw [BitVec.toNat_add, BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
-        show (0x3FCC4200 : Word).toNat = 0x3FCC4200 from rfl]
+        show (img% dataWindowAddress : Word).toNat = (img% dataWindowAddress) from rfl]
       omega
     rw [e, h _ (by omega), ← e]
     exact hc i hi
@@ -344,7 +344,7 @@ theorem readP384Point_correct (m : Machine) {S out self : Word} (C : RpCode m.me
     (sB : Sep (memLoad32 m.mem self) (memLoad32 m.mem (self + 4)).toNat (S + 0xFFFFFE60) 0x640)
     (sBO : Sep (memLoad32 m.mem self) (memLoad32 m.mem (self + 4)).toNat out 8)
     (sBS : Sep (memLoad32 m.mem self) (memLoad32 m.mem (self + 4)).toNat (self + 8) 4)
-    (sSD : Sep self 12 (0x3FCC4200 : Word) 0xC60) :
+    (sSD : Sep self 12 (img% dataWindowAddress : Word) (img% dataWindowSize)) :
     ∃ m', Steps m m' ∧ m'.pc = reg m ra ∧ reg m' sp = S + 0x4A0 ∧
       (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg m' q = reg m q) ∧
       (∀ x, Sep (S + 0xFFFFFE60) 0x640 x 1 → Sep out 8 x 1 → Sep (self + 8) 4 x 1 → m'.mem x = m.mem x) ∧
@@ -557,8 +557,8 @@ theorem readP384Point_correct (m : Machine) {S out self : Word} (C : RpCode m.me
       fun x h1 h2 => by rw [mem3, bytesMem_outside h1, hres']; exact memStore32_get_sep h2
     have n3b : ∀ j, j < 0x61 → n3.mem (p + BitVec.ofNat 32 j) = m.mem (p + BitVec.ofNat 32 j) := fun j hj => by
       rw [n3x _ (sF (bF j hj)) (bS j hj), rpSaves_out (sSav (bF j hj))]
-    have dR : ∀ i, i < 0xC60 → ((0x3FCC4200 : Word) + BitVec.ofNat 32 i).toNat = 0x3FCC4200 + i := fun i hi => by
-      rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (0x3FCC4200 : Word).toNat = 0x3FCC4200 from rfl]; omega
+    have dR : ∀ i, i < (img% dataWindowSize) → ((img% dataWindowAddress : Word) + BitVec.ofNat 32 i).toNat = (img% dataWindowAddress) + i := fun i hi => by
+      rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (img% dataWindowAddress : Word).toNat = (img% dataWindowAddress) from rfl]; omega
     have D3 : P3Data n3.mem := D.ofR fun i hi => by
       rw [n3x _ (F.bufData (by decide) (by rw [dR i hi]; omega) (by rw [dR i hi]; omega))
         (sSD.sub (c := 8) (l := 4) (by decide) |>.subR (c := i) (l := 1) hi),

@@ -76,7 +76,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
     (g0_19 : reg n0 (19 : Fin 32) = bp)
     (g0_20 : reg n0 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20)
     (g0_21 : reg n0 (21 : Fin 32) = BitVec.ofNat 32 0x2)
-    (g0_22 : reg n0 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690)
+    (g0_22 : reg n0 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress))
     (g0_23 : reg n0 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480)
     (g0_24 : reg n0 (24 : Fin 32) = BitVec.ofNat 32 0x0)
     (g0_25 : reg n0 (25 : Fin 32) = BitVec.ofNat 32 0x300)
@@ -151,22 +151,22 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
     (w0_130 : memLoad32 n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x130) = w130)
     (b0_13a0 : n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs)
     (b0_14a0 : n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs)
-    (q0_420 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x420 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j))
-    (q0_480 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j))
-    (q0_4e0 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j))
-    (q0_540 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j))
-    (q0_5a0 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j))
-    (q0_600 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j))
-    (q0_660 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j))
-    (q0_6c0 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j))
-    (q0_1020 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1020 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j))
-    (q0_1080 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j))
-    (q0_10e0 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j))
-    (q0_1140 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j))
-    (q0_11a0 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j))
-    (q0_1200 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j))
-    (q0_1260 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j))
-    (q0_12c0 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j))
+    (q0_420 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x420 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j))
+    (q0_480 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j))
+    (q0_4e0 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j))
+    (q0_540 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j))
+    (q0_5a0 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j))
+    (q0_600 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j))
+    (q0_660 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j))
+    (q0_6c0 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j))
+    (q0_1020 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1020 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j))
+    (q0_1080 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j))
+    (q0_10e0 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j))
+    (q0_1140 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j))
+    (q0_11a0 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j))
+    (q0_1200 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j))
+    (q0_1260 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j))
+    (q0_12c0 : ∀ j, j < 96 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j))
     (a0_240 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx)
     (a0_260 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy)
     (a0_280 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz)
@@ -204,7 +204,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
         reg n' (19 : Fin 32) = bp ∧
         reg n' (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 ∧
         reg n' (21 : Fin 32) = BitVec.ofNat 32 0x2 ∧
-        reg n' (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 ∧
+        reg n' (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) ∧
         reg n' (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 ∧
         reg n' (24 : Fin 32) = BitVec.ofNat 32 0x0 ∧
         reg n' (25 : Fin 32) = BitVec.ofNat 32 0x300 ∧
@@ -280,17 +280,17 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs ∧
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs ∧
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs ∧
-        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j)) ∧
-        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j)) ∧
-        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j)) ∧
-        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j)) ∧
-        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j)) ∧
-        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j)) ∧
-        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j)) ∧
-        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j)) ∧
-        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j)) ∧
-        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j)) ∧
-        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j)) ∧
+        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j)) ∧
+        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j)) ∧
+        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j)) ∧
+        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j)) ∧
+        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j)) ∧
+        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j)) ∧
+        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j)) ∧
+        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j)) ∧
+        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j)) ∧
+        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j)) ∧
+        (∀ j, j < 96 → n'.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j)) ∧
         accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx ∧
         accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy ∧
         accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz ∧
@@ -347,7 +347,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
     rw [rb1, runBlock_reg _ _ _ (20 : Fin 32) s0.zero (by decide), g0_20]
   have g1_21 : reg n1 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by
     rw [rb1, runBlock_reg _ _ _ (21 : Fin 32) s0.zero (by decide), g0_21]
-  have g1_22 : reg n1 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by
+  have g1_22 : reg n1 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by
     rw [rb1, runBlock_reg _ _ _ (22 : Fin 32) s0.zero (by decide), g0_22]
   have g1_23 : reg n1 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by
     rw [rb1, runBlock_reg _ _ _ (23 : Fin 32) s0.zero (by decide), g0_23]
@@ -437,22 +437,22 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have w1_130 : memLoad32 n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x130) = w130 := by rw [m1]; exact w0_130
   have b1_13a0 : n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m1]; exact b0_13a0
   have b1_14a0 : n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m1]; exact b0_14a0
-  have q1_420 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x420 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_420 j hj
-  have q1_480 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_480 j hj
-  have q1_4e0 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_4e0 j hj
-  have q1_540 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_540 j hj
-  have q1_5a0 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_5a0 j hj
-  have q1_600 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_600 j hj
-  have q1_660 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_660 j hj
-  have q1_6c0 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_6c0 j hj
-  have q1_1020 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1020 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_1020 j hj
-  have q1_1080 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_1080 j hj
-  have q1_10e0 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_10e0 j hj
-  have q1_1140 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_1140 j hj
-  have q1_11a0 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_11a0 j hj
-  have q1_1200 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_1200 j hj
-  have q1_1260 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_1260 j hj
-  have q1_12c0 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_12c0 j hj
+  have q1_420 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x420 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_420 j hj
+  have q1_480 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_480 j hj
+  have q1_4e0 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_4e0 j hj
+  have q1_540 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_540 j hj
+  have q1_5a0 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_5a0 j hj
+  have q1_600 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_600 j hj
+  have q1_660 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_660 j hj
+  have q1_6c0 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_6c0 j hj
+  have q1_1020 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1020 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_1020 j hj
+  have q1_1080 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_1080 j hj
+  have q1_10e0 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_10e0 j hj
+  have q1_1140 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_1140 j hj
+  have q1_11a0 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_11a0 j hj
+  have q1_1200 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_1200 j hj
+  have q1_1260 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_1260 j hj
+  have q1_12c0 : ∀ j, j < 96 → n1.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m1]; exact q0_12c0 j hj
   have a1_240 : accV n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m1]; exact a0_240
   have a1_260 : accV n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m1]; exact a0_260
   have a1_280 : accV n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m1]; exact a0_280
@@ -486,7 +486,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have g2_19 : reg n2 (19 : Fin 32) = bp := by rw [rk2 (19 : Fin 32) (by decide), g1_19]
   have g2_20 : reg n2 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rk2 (20 : Fin 32) (by decide), g1_20]
   have g2_21 : reg n2 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [rk2 (21 : Fin 32) (by decide), g1_21]
-  have g2_22 : reg n2 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [rk2 (22 : Fin 32) (by decide), g1_22]
+  have g2_22 : reg n2 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by rw [rk2 (22 : Fin 32) (by decide), g1_22]
   have g2_23 : reg n2 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by rw [rk2 (23 : Fin 32) (by decide), g1_23]
   have g2_24 : reg n2 (24 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [rk2 (24 : Fin 32) (by decide), g1_24]
   have g2_25 : reg n2 (25 : Fin 32) = BitVec.ofNat 32 0x300 := by rw [rk2 (25 : Fin 32) (by decide), g1_25]
@@ -564,22 +564,22 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have w2_130 : memLoad32 n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x130) = w130 := (K2.w32 (by decide) (by decide)).trans w1_130
   have b2_13a0 : n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := (K2.b8 (by decide) (by decide)).trans b1_13a0
   have b2_14a0 : n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := (K2.b8 (by decide) (by decide)).trans b1_14a0
-  have q2_420 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x420 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_420 j hj)
-  have q2_480 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_480 j hj)
-  have q2_4e0 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_4e0 j hj)
-  have q2_540 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_540 j hj)
-  have q2_5a0 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_5a0 j hj)
-  have q2_600 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_600 j hj)
-  have q2_660 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_660 j hj)
-  have q2_6c0 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_6c0 j hj)
-  have q2_1020 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1020 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_1020 j hj)
-  have q2_1080 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_1080 j hj)
-  have q2_10e0 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_10e0 j hj)
-  have q2_1140 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_1140 j hj)
-  have q2_11a0 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_11a0 j hj)
-  have q2_1200 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_1200 j hj)
-  have q2_1260 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_1260 j hj)
-  have q2_12c0 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_12c0 j hj)
+  have q2_420 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x420 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_420 j hj)
+  have q2_480 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_480 j hj)
+  have q2_4e0 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_4e0 j hj)
+  have q2_540 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_540 j hj)
+  have q2_5a0 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_5a0 j hj)
+  have q2_600 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_600 j hj)
+  have q2_660 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_660 j hj)
+  have q2_6c0 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_6c0 j hj)
+  have q2_1020 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1020 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_1020 j hj)
+  have q2_1080 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_1080 j hj)
+  have q2_10e0 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_10e0 j hj)
+  have q2_1140 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_1140 j hj)
+  have q2_11a0 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_11a0 j hj)
+  have q2_1200 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_1200 j hj)
+  have q2_1260 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_1260 j hj)
+  have q2_12c0 : ∀ j, j < 96 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K2.range (by decide) (by decide) j hj).trans (q1_12c0 j hj)
   have a2_240 : accV n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := (K2.acc (by decide) (by decide)).trans a1_240
   have a2_260 : accV n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := (K2.acc (by decide) (by decide)).trans a1_260
   have a2_280 : accV n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := (K2.acc (by decide) (by decide)).trans a1_280
@@ -627,7 +627,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
     rw [rb3, runBlock_reg _ _ _ (20 : Fin 32) s2.zero (by decide), g2_20]
   have g3_21 : reg n3 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by
     rw [rb3, runBlock_reg _ _ _ (21 : Fin 32) s2.zero (by decide), g2_21]
-  have g3_22 : reg n3 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by
+  have g3_22 : reg n3 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by
     rw [rb3, runBlock_reg _ _ _ (22 : Fin 32) s2.zero (by decide), g2_22]
   have g3_23 : reg n3 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by
     rw [rb3, runBlock_reg _ _ _ (23 : Fin 32) s2.zero (by decide), g2_23]
@@ -722,22 +722,22 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have w3_130 : memLoad32 n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x130) = w130 := by rw [m3]; exact w2_130
   have b3_13a0 : n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m3]; exact b2_13a0
   have b3_14a0 : n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m3]; exact b2_14a0
-  have q3_420 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x420 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_420 j hj
-  have q3_480 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_480 j hj
-  have q3_4e0 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_4e0 j hj
-  have q3_540 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_540 j hj
-  have q3_5a0 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_5a0 j hj
-  have q3_600 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_600 j hj
-  have q3_660 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_660 j hj
-  have q3_6c0 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_6c0 j hj
-  have q3_1020 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1020 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_1020 j hj
-  have q3_1080 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_1080 j hj
-  have q3_10e0 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_10e0 j hj
-  have q3_1140 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_1140 j hj
-  have q3_11a0 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_11a0 j hj
-  have q3_1200 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_1200 j hj
-  have q3_1260 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_1260 j hj
-  have q3_12c0 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_12c0 j hj
+  have q3_420 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x420 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_420 j hj
+  have q3_480 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_480 j hj
+  have q3_4e0 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_4e0 j hj
+  have q3_540 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_540 j hj
+  have q3_5a0 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_5a0 j hj
+  have q3_600 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_600 j hj
+  have q3_660 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_660 j hj
+  have q3_6c0 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_6c0 j hj
+  have q3_1020 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1020 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_1020 j hj
+  have q3_1080 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_1080 j hj
+  have q3_10e0 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_10e0 j hj
+  have q3_1140 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_1140 j hj
+  have q3_11a0 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_11a0 j hj
+  have q3_1200 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_1200 j hj
+  have q3_1260 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_1260 j hj
+  have q3_12c0 : ∀ j, j < 96 → n3.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m3]; exact q2_12c0 j hj
   have a3_240 : accV n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m3]; exact a2_240
   have a3_260 : accV n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m3]; exact a2_260
   have a3_280 : accV n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m3]; exact a2_280
@@ -775,7 +775,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have g4_19 : reg n4 (19 : Fin 32) = bp := by rw [P4.regs (19 : Fin 32) (by decide), g3_19]
   have g4_20 : reg n4 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [P4.regs (20 : Fin 32) (by decide), g3_20]
   have g4_21 : reg n4 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [P4.regs (21 : Fin 32) (by decide), g3_21]
-  have g4_22 : reg n4 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [P4.regs (22 : Fin 32) (by decide), g3_22]
+  have g4_22 : reg n4 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by rw [P4.regs (22 : Fin 32) (by decide), g3_22]
   have g4_23 : reg n4 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by rw [P4.regs (23 : Fin 32) (by decide), g3_23]
   have g4_24 : reg n4 (24 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [P4.regs (24 : Fin 32) (by decide), g3_24]
   have g4_25 : reg n4 (25 : Fin 32) = BitVec.ofNat 32 0x300 := by rw [P4.regs (25 : Fin 32) (by decide), g3_25]
@@ -853,21 +853,21 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b4_13a0 : n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := (K4.b8 (by decide) (by decide)).trans b3_13a0
   have b4_14a0 : n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := (K4.b8 (by decide) (by decide)).trans b3_14a0
   have b4_440 : n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) = gs := by rw [show 0x440 = 0x420 + 0x20 from rfl, X4 0x20 (by decide)]; exact b3_13a0
-  have q4_480 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_480 j hj)
-  have q4_4e0 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_4e0 j hj)
-  have q4_540 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_540 j hj)
-  have q4_5a0 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_5a0 j hj)
-  have q4_600 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_600 j hj)
-  have q4_660 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_660 j hj)
-  have q4_6c0 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_6c0 j hj)
-  have q4_1020 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1020 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_1020 j hj)
-  have q4_1080 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_1080 j hj)
-  have q4_10e0 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_10e0 j hj)
-  have q4_1140 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_1140 j hj)
-  have q4_11a0 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_11a0 j hj)
-  have q4_1200 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_1200 j hj)
-  have q4_1260 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_1260 j hj)
-  have q4_12c0 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_12c0 j hj)
+  have q4_480 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_480 j hj)
+  have q4_4e0 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_4e0 j hj)
+  have q4_540 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_540 j hj)
+  have q4_5a0 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_5a0 j hj)
+  have q4_600 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_600 j hj)
+  have q4_660 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_660 j hj)
+  have q4_6c0 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_6c0 j hj)
+  have q4_1020 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1020 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_1020 j hj)
+  have q4_1080 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_1080 j hj)
+  have q4_10e0 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_10e0 j hj)
+  have q4_1140 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_1140 j hj)
+  have q4_11a0 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_11a0 j hj)
+  have q4_1200 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_1200 j hj)
+  have q4_1260 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_1260 j hj)
+  have q4_12c0 : ∀ j, j < 96 → n4.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K4.range (by decide) (by decide) j hj).trans (q3_12c0 j hj)
   have a4_240 : accV n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := (K4.acc (by decide) (by decide)).trans a3_240
   have a4_260 : accV n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := (K4.acc (by decide) (by decide)).trans a3_260
   have a4_280 : accV n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := (K4.acc (by decide) (by decide)).trans a3_280
@@ -906,7 +906,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have g5_19 : reg n5 (19 : Fin 32) = bp := by rw [u5.regs, g4_19]
   have g5_20 : reg n5 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u5.regs, g4_20]
   have g5_21 : reg n5 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [u5.regs, g4_21]
-  have g5_22 : reg n5 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [u5.regs, g4_22]
+  have g5_22 : reg n5 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by rw [u5.regs, g4_22]
   have g5_23 : reg n5 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by rw [u5.regs, g4_23]
   have g5_24 : reg n5 (24 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [u5.regs, g4_24]
   have g5_25 : reg n5 (25 : Fin 32) = BitVec.ofNat 32 0x300 := by rw [u5.regs, g4_25]
@@ -984,21 +984,21 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b5_440 : n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) = gs := by rw [m5]; exact b4_440
   have b5_13a0 : n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m5]; exact b4_13a0
   have b5_14a0 : n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m5]; exact b4_14a0
-  have q5_480 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_480 j hj
-  have q5_4e0 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_4e0 j hj
-  have q5_540 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_540 j hj
-  have q5_5a0 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_5a0 j hj
-  have q5_600 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_600 j hj
-  have q5_660 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_660 j hj
-  have q5_6c0 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_6c0 j hj
-  have q5_1020 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1020 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_1020 j hj
-  have q5_1080 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_1080 j hj
-  have q5_10e0 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_10e0 j hj
-  have q5_1140 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_1140 j hj
-  have q5_11a0 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_11a0 j hj
-  have q5_1200 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_1200 j hj
-  have q5_1260 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_1260 j hj
-  have q5_12c0 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_12c0 j hj
+  have q5_480 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_480 j hj
+  have q5_4e0 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_4e0 j hj
+  have q5_540 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_540 j hj
+  have q5_5a0 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_5a0 j hj
+  have q5_600 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_600 j hj
+  have q5_660 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_660 j hj
+  have q5_6c0 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_6c0 j hj
+  have q5_1020 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1020 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_1020 j hj
+  have q5_1080 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_1080 j hj
+  have q5_10e0 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_10e0 j hj
+  have q5_1140 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_1140 j hj
+  have q5_11a0 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_11a0 j hj
+  have q5_1200 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_1200 j hj
+  have q5_1260 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_1260 j hj
+  have q5_12c0 : ∀ j, j < 96 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m5]; exact q4_12c0 j hj
   have a5_240 : accV n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m5]; exact a4_240
   have a5_260 : accV n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m5]; exact a4_260
   have a5_280 : accV n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m5]; exact a4_280
@@ -1047,7 +1047,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
     rw [rb6, runBlock_reg _ _ _ (20 : Fin 32) s5.zero (by decide), g5_20]
   have g6_21 : reg n6 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by
     rw [rb6, runBlock_reg _ _ _ (21 : Fin 32) s5.zero (by decide), g5_21]
-  have g6_22 : reg n6 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by
+  have g6_22 : reg n6 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by
     rw [rb6, runBlock_reg _ _ _ (22 : Fin 32) s5.zero (by decide), g5_22]
   have g6_23 : reg n6 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by
     rw [rb6, runBlock_reg _ _ _ (23 : Fin 32) s5.zero (by decide), g5_23]
@@ -1143,21 +1143,21 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b6_440 : n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) = gs := by rw [m6]; exact b5_440
   have b6_13a0 : n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m6]; exact b5_13a0
   have b6_14a0 : n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m6]; exact b5_14a0
-  have q6_480 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_480 j hj
-  have q6_4e0 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_4e0 j hj
-  have q6_540 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_540 j hj
-  have q6_5a0 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_5a0 j hj
-  have q6_600 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_600 j hj
-  have q6_660 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_660 j hj
-  have q6_6c0 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_6c0 j hj
-  have q6_1020 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1020 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_1020 j hj
-  have q6_1080 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_1080 j hj
-  have q6_10e0 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_10e0 j hj
-  have q6_1140 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_1140 j hj
-  have q6_11a0 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_11a0 j hj
-  have q6_1200 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_1200 j hj
-  have q6_1260 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_1260 j hj
-  have q6_12c0 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_12c0 j hj
+  have q6_480 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_480 j hj
+  have q6_4e0 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_4e0 j hj
+  have q6_540 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_540 j hj
+  have q6_5a0 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_5a0 j hj
+  have q6_600 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_600 j hj
+  have q6_660 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_660 j hj
+  have q6_6c0 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_6c0 j hj
+  have q6_1020 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1020 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_1020 j hj
+  have q6_1080 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_1080 j hj
+  have q6_10e0 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_10e0 j hj
+  have q6_1140 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_1140 j hj
+  have q6_11a0 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_11a0 j hj
+  have q6_1200 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_1200 j hj
+  have q6_1260 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_1260 j hj
+  have q6_12c0 : ∀ j, j < 96 → n6.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m6]; exact q5_12c0 j hj
   have a6_240 : accV n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m6]; exact a5_240
   have a6_260 : accV n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m6]; exact a5_260
   have a6_280 : accV n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m6]; exact a5_280
@@ -1196,7 +1196,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have g7_19 : reg n7 (19 : Fin 32) = bp := by rw [P7.regs (19 : Fin 32) (by decide), g6_19]
   have g7_20 : reg n7 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [P7.regs (20 : Fin 32) (by decide), g6_20]
   have g7_21 : reg n7 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [P7.regs (21 : Fin 32) (by decide), g6_21]
-  have g7_22 : reg n7 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [P7.regs (22 : Fin 32) (by decide), g6_22]
+  have g7_22 : reg n7 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by rw [P7.regs (22 : Fin 32) (by decide), g6_22]
   have g7_23 : reg n7 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by rw [P7.regs (23 : Fin 32) (by decide), g6_23]
   have g7_24 : reg n7 (24 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [P7.regs (24 : Fin 32) (by decide), g6_24]
   have g7_25 : reg n7 (25 : Fin 32) = BitVec.ofNat 32 0x300 := by rw [P7.regs (25 : Fin 32) (by decide), g6_25]
@@ -1275,20 +1275,20 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b7_13a0 : n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := (K7.b8 (by decide) (by decide)).trans b6_13a0
   have b7_14a0 : n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := (K7.b8 (by decide) (by decide)).trans b6_14a0
   have b7_1040 : n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := by rw [show 0x1040 = 0x1020 + 0x20 from rfl, X7 0x20 (by decide)]; exact b6_440
-  have q7_480 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_480 j hj)
-  have q7_4e0 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_4e0 j hj)
-  have q7_540 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_540 j hj)
-  have q7_5a0 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_5a0 j hj)
-  have q7_600 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_600 j hj)
-  have q7_660 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_660 j hj)
-  have q7_6c0 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_6c0 j hj)
-  have q7_1080 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_1080 j hj)
-  have q7_10e0 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_10e0 j hj)
-  have q7_1140 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_1140 j hj)
-  have q7_11a0 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_11a0 j hj)
-  have q7_1200 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_1200 j hj)
-  have q7_1260 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_1260 j hj)
-  have q7_12c0 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_12c0 j hj)
+  have q7_480 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_480 j hj)
+  have q7_4e0 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_4e0 j hj)
+  have q7_540 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_540 j hj)
+  have q7_5a0 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_5a0 j hj)
+  have q7_600 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_600 j hj)
+  have q7_660 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_660 j hj)
+  have q7_6c0 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_6c0 j hj)
+  have q7_1080 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_1080 j hj)
+  have q7_10e0 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_10e0 j hj)
+  have q7_1140 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_1140 j hj)
+  have q7_11a0 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_11a0 j hj)
+  have q7_1200 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_1200 j hj)
+  have q7_1260 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_1260 j hj)
+  have q7_12c0 : ∀ j, j < 96 → n7.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K7.range (by decide) (by decide) j hj).trans (q6_12c0 j hj)
   have a7_240 : accV n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := (K7.acc (by decide) (by decide)).trans a6_240
   have a7_260 : accV n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := (K7.acc (by decide) (by decide)).trans a6_260
   have a7_280 : accV n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := (K7.acc (by decide) (by decide)).trans a6_280
@@ -1338,7 +1338,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
     rw [rb8, runBlock_reg _ _ _ (20 : Fin 32) s7.zero (by decide), g7_20]
   have g8_21 : reg n8 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by
     rw [rb8, runBlock_reg _ _ _ (21 : Fin 32) s7.zero (by decide), g7_21]
-  have g8_22 : reg n8 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by
+  have g8_22 : reg n8 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by
     rw [rb8, runBlock_reg _ _ _ (22 : Fin 32) s7.zero (by decide), g7_22]
   have g8_23 : reg n8 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by
     rw [rb8, runBlock_reg _ _ _ (23 : Fin 32) s7.zero (by decide), g7_23]
@@ -1431,20 +1431,20 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b8_1040 : n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := by rw [m8]; exact b7_1040
   have b8_13a0 : n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m8]; exact b7_13a0
   have b8_14a0 : n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m8]; exact b7_14a0
-  have q8_480 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_480 j hj
-  have q8_4e0 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_4e0 j hj
-  have q8_540 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_540 j hj
-  have q8_5a0 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_5a0 j hj
-  have q8_600 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_600 j hj
-  have q8_660 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_660 j hj
-  have q8_6c0 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_6c0 j hj
-  have q8_1080 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_1080 j hj
-  have q8_10e0 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_10e0 j hj
-  have q8_1140 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_1140 j hj
-  have q8_11a0 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_11a0 j hj
-  have q8_1200 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_1200 j hj
-  have q8_1260 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_1260 j hj
-  have q8_12c0 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_12c0 j hj
+  have q8_480 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_480 j hj
+  have q8_4e0 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_4e0 j hj
+  have q8_540 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_540 j hj
+  have q8_5a0 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_5a0 j hj
+  have q8_600 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_600 j hj
+  have q8_660 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_660 j hj
+  have q8_6c0 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_6c0 j hj
+  have q8_1080 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_1080 j hj
+  have q8_10e0 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_10e0 j hj
+  have q8_1140 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_1140 j hj
+  have q8_11a0 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_11a0 j hj
+  have q8_1200 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_1200 j hj
+  have q8_1260 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_1260 j hj
+  have q8_12c0 : ∀ j, j < 96 → n8.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m8]; exact q7_12c0 j hj
   have a8_240 : accV n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m8]; exact a7_240
   have a8_260 : accV n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m8]; exact a7_260
   have a8_280 : accV n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m8]; exact a7_280
@@ -1482,7 +1482,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have g9_19 : reg n9 (19 : Fin 32) = bp := by rw [rk9 (19 : Fin 32) (by decide), g8_19]
   have g9_20 : reg n9 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rk9 (20 : Fin 32) (by decide), g8_20]
   have g9_21 : reg n9 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [rk9 (21 : Fin 32) (by decide), g8_21]
-  have g9_22 : reg n9 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [rk9 (22 : Fin 32) (by decide), g8_22]
+  have g9_22 : reg n9 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by rw [rk9 (22 : Fin 32) (by decide), g8_22]
   have g9_23 : reg n9 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by rw [rk9 (23 : Fin 32) (by decide), g8_23]
   have g9_24 : reg n9 (24 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [rk9 (24 : Fin 32) (by decide), g8_24]
   have g9_25 : reg n9 (25 : Fin 32) = BitVec.ofNat 32 0x300 := by rw [rk9 (25 : Fin 32) (by decide), g8_25]
@@ -1561,20 +1561,20 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b9_1040 : n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := (K9.b8 (by decide) (by decide)).trans b8_1040
   have b9_13a0 : n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := (K9.b8 (by decide) (by decide)).trans b8_13a0
   have b9_14a0 : n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := (K9.b8 (by decide) (by decide)).trans b8_14a0
-  have q9_480 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_480 j hj)
-  have q9_4e0 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_4e0 j hj)
-  have q9_540 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_540 j hj)
-  have q9_5a0 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_5a0 j hj)
-  have q9_600 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_600 j hj)
-  have q9_660 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_660 j hj)
-  have q9_6c0 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_6c0 j hj)
-  have q9_1080 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_1080 j hj)
-  have q9_10e0 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_10e0 j hj)
-  have q9_1140 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_1140 j hj)
-  have q9_11a0 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_11a0 j hj)
-  have q9_1200 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_1200 j hj)
-  have q9_1260 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_1260 j hj)
-  have q9_12c0 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_12c0 j hj)
+  have q9_480 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_480 j hj)
+  have q9_4e0 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_4e0 j hj)
+  have q9_540 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_540 j hj)
+  have q9_5a0 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_5a0 j hj)
+  have q9_600 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_600 j hj)
+  have q9_660 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_660 j hj)
+  have q9_6c0 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_6c0 j hj)
+  have q9_1080 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_1080 j hj)
+  have q9_10e0 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_10e0 j hj)
+  have q9_1140 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_1140 j hj)
+  have q9_11a0 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_11a0 j hj)
+  have q9_1200 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_1200 j hj)
+  have q9_1260 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_1260 j hj)
+  have q9_12c0 : ∀ j, j < 96 → n9.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K9.range (by decide) (by decide) j hj).trans (q8_12c0 j hj)
   have a9_240 : accV n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := (K9.acc (by decide) (by decide)).trans a8_240
   have a9_260 : accV n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := (K9.acc (by decide) (by decide)).trans a8_260
   have a9_280 : accV n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := (K9.acc (by decide) (by decide)).trans a8_280
@@ -1620,7 +1620,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
     rw [rb10, runBlock_reg _ _ _ (20 : Fin 32) s9.zero (by decide), g9_20]
   have g10_21 : reg n10 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by
     rw [rb10, runBlock_reg _ _ _ (21 : Fin 32) s9.zero (by decide), g9_21]
-  have g10_22 : reg n10 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by
+  have g10_22 : reg n10 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by
     rw [rb10, runBlock_reg _ _ _ (22 : Fin 32) s9.zero (by decide), g9_22]
   have g10_23 : reg n10 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by
     rw [rb10, runBlock_reg _ _ _ (23 : Fin 32) s9.zero (by decide), g9_23]
@@ -1712,20 +1712,20 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b10_1040 : n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := by rw [m10]; exact b9_1040
   have b10_13a0 : n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m10]; exact b9_13a0
   have b10_14a0 : n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m10]; exact b9_14a0
-  have q10_480 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_480 j hj
-  have q10_4e0 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_4e0 j hj
-  have q10_540 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_540 j hj
-  have q10_5a0 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_5a0 j hj
-  have q10_600 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_600 j hj
-  have q10_660 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_660 j hj
-  have q10_6c0 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_6c0 j hj
-  have q10_1080 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_1080 j hj
-  have q10_10e0 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_10e0 j hj
-  have q10_1140 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_1140 j hj
-  have q10_11a0 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_11a0 j hj
-  have q10_1200 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_1200 j hj
-  have q10_1260 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_1260 j hj
-  have q10_12c0 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_12c0 j hj
+  have q10_480 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_480 j hj
+  have q10_4e0 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_4e0 j hj
+  have q10_540 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_540 j hj
+  have q10_5a0 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_5a0 j hj
+  have q10_600 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_600 j hj
+  have q10_660 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_660 j hj
+  have q10_6c0 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_6c0 j hj
+  have q10_1080 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_1080 j hj
+  have q10_10e0 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_10e0 j hj
+  have q10_1140 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_1140 j hj
+  have q10_11a0 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_11a0 j hj
+  have q10_1200 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_1200 j hj
+  have q10_1260 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_1260 j hj
+  have q10_12c0 : ∀ j, j < 96 → n10.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m10]; exact q9_12c0 j hj
   have a10_240 : accV n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m10]; exact a9_240
   have a10_260 : accV n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m10]; exact a9_260
   have a10_280 : accV n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m10]; exact a9_280
@@ -1765,7 +1765,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have g11_19 : reg n11 (19 : Fin 32) = bp := by rw [u11.regs, g10_19]
   have g11_20 : reg n11 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u11.regs, g10_20]
   have g11_21 : reg n11 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [u11.regs, g10_21]
-  have g11_22 : reg n11 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [u11.regs, g10_22]
+  have g11_22 : reg n11 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by rw [u11.regs, g10_22]
   have g11_23 : reg n11 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by rw [u11.regs, g10_23]
   have g11_24 : reg n11 (24 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [u11.regs, g10_24]
   have g11_25 : reg n11 (25 : Fin 32) = BitVec.ofNat 32 0x300 := by rw [u11.regs, g10_25]
@@ -1843,20 +1843,20 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b11_1040 : n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := by rw [m11]; exact b10_1040
   have b11_13a0 : n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m11]; exact b10_13a0
   have b11_14a0 : n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m11]; exact b10_14a0
-  have q11_480 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_480 j hj
-  have q11_4e0 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_4e0 j hj
-  have q11_540 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_540 j hj
-  have q11_5a0 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_5a0 j hj
-  have q11_600 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_600 j hj
-  have q11_660 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_660 j hj
-  have q11_6c0 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_6c0 j hj
-  have q11_1080 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_1080 j hj
-  have q11_10e0 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_10e0 j hj
-  have q11_1140 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_1140 j hj
-  have q11_11a0 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_11a0 j hj
-  have q11_1200 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_1200 j hj
-  have q11_1260 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_1260 j hj
-  have q11_12c0 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_12c0 j hj
+  have q11_480 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_480 j hj
+  have q11_4e0 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_4e0 j hj
+  have q11_540 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_540 j hj
+  have q11_5a0 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_5a0 j hj
+  have q11_600 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_600 j hj
+  have q11_660 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_660 j hj
+  have q11_6c0 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_6c0 j hj
+  have q11_1080 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_1080 j hj
+  have q11_10e0 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_10e0 j hj
+  have q11_1140 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_1140 j hj
+  have q11_11a0 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_11a0 j hj
+  have q11_1200 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_1200 j hj
+  have q11_1260 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_1260 j hj
+  have q11_12c0 : ∀ j, j < 96 → n11.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m11]; exact q10_12c0 j hj
   have a11_240 : accV n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m11]; exact a10_240
   have a11_260 : accV n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m11]; exact a10_260
   have a11_280 : accV n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m11]; exact a10_280
@@ -1906,7 +1906,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
     rw [rb12, runBlock_reg _ _ _ (20 : Fin 32) s11.zero (by decide), g11_20]
   have g12_21 : reg n12 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by
     rw [rb12, runBlock_reg _ _ _ (21 : Fin 32) s11.zero (by decide), g11_21]
-  have g12_22 : reg n12 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by
+  have g12_22 : reg n12 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by
     rw [rb12, runBlock_reg _ _ _ (22 : Fin 32) s11.zero (by decide), g11_22]
   have g12_23 : reg n12 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by
     rw [rb12, runBlock_reg _ _ _ (23 : Fin 32) s11.zero (by decide), g11_23]
@@ -2002,20 +2002,20 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b12_1040 : n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := by rw [m12]; exact b11_1040
   have b12_13a0 : n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m12]; exact b11_13a0
   have b12_14a0 : n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m12]; exact b11_14a0
-  have q12_480 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_480 j hj
-  have q12_4e0 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_4e0 j hj
-  have q12_540 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_540 j hj
-  have q12_5a0 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_5a0 j hj
-  have q12_600 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_600 j hj
-  have q12_660 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_660 j hj
-  have q12_6c0 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_6c0 j hj
-  have q12_1080 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_1080 j hj
-  have q12_10e0 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_10e0 j hj
-  have q12_1140 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_1140 j hj
-  have q12_11a0 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_11a0 j hj
-  have q12_1200 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_1200 j hj
-  have q12_1260 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_1260 j hj
-  have q12_12c0 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_12c0 j hj
+  have q12_480 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_480 j hj
+  have q12_4e0 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_4e0 j hj
+  have q12_540 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_540 j hj
+  have q12_5a0 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_5a0 j hj
+  have q12_600 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_600 j hj
+  have q12_660 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_660 j hj
+  have q12_6c0 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_6c0 j hj
+  have q12_1080 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1080 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_1080 j hj
+  have q12_10e0 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_10e0 j hj
+  have q12_1140 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_1140 j hj
+  have q12_11a0 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_11a0 j hj
+  have q12_1200 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_1200 j hj
+  have q12_1260 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_1260 j hj
+  have q12_12c0 : ∀ j, j < 96 → n12.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m12]; exact q11_12c0 j hj
   have a12_240 : accV n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m12]; exact a11_240
   have a12_260 : accV n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m12]; exact a11_260
   have a12_280 : accV n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m12]; exact a11_280
@@ -2055,7 +2055,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have g13_19 : reg n13 (19 : Fin 32) = bp := by rw [P13.regs (19 : Fin 32) (by decide), g12_19]
   have g13_20 : reg n13 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [P13.regs (20 : Fin 32) (by decide), g12_20]
   have g13_21 : reg n13 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [P13.regs (21 : Fin 32) (by decide), g12_21]
-  have g13_22 : reg n13 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [P13.regs (22 : Fin 32) (by decide), g12_22]
+  have g13_22 : reg n13 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by rw [P13.regs (22 : Fin 32) (by decide), g12_22]
   have g13_23 : reg n13 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by rw [P13.regs (23 : Fin 32) (by decide), g12_23]
   have g13_24 : reg n13 (24 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [P13.regs (24 : Fin 32) (by decide), g12_24]
   have g13_25 : reg n13 (25 : Fin 32) = BitVec.ofNat 32 0x300 := by rw [P13.regs (25 : Fin 32) (by decide), g12_25]
@@ -2133,19 +2133,19 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b13_1040 : n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := (K13.b8 (by decide) (by decide)).trans b12_1040
   have b13_13a0 : n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := (K13.b8 (by decide) (by decide)).trans b12_13a0
   have b13_14a0 : n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := (K13.b8 (by decide) (by decide)).trans b12_14a0
-  have q13_480 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_480 j hj)
-  have q13_4e0 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_4e0 j hj)
-  have q13_540 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_540 j hj)
-  have q13_5a0 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_5a0 j hj)
-  have q13_600 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_600 j hj)
-  have q13_660 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_660 j hj)
-  have q13_6c0 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_6c0 j hj)
-  have q13_10e0 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_10e0 j hj)
-  have q13_1140 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_1140 j hj)
-  have q13_11a0 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_11a0 j hj)
-  have q13_1200 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_1200 j hj)
-  have q13_1260 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_1260 j hj)
-  have q13_12c0 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_12c0 j hj)
+  have q13_480 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_480 j hj)
+  have q13_4e0 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_4e0 j hj)
+  have q13_540 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_540 j hj)
+  have q13_5a0 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_5a0 j hj)
+  have q13_600 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_600 j hj)
+  have q13_660 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_660 j hj)
+  have q13_6c0 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_6c0 j hj)
+  have q13_10e0 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_10e0 j hj)
+  have q13_1140 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_1140 j hj)
+  have q13_11a0 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_11a0 j hj)
+  have q13_1200 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_1200 j hj)
+  have q13_1260 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_1260 j hj)
+  have q13_12c0 : ∀ j, j < 96 → n13.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K13.range (by decide) (by decide) j hj).trans (q12_12c0 j hj)
   have a13_240 : accV n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := (K13.acc (by decide) (by decide)).trans a12_240
   have a13_260 : accV n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := (K13.acc (by decide) (by decide)).trans a12_260
   have a13_280 : accV n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := (K13.acc (by decide) (by decide)).trans a12_280
@@ -2196,7 +2196,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
     rw [rb14, runBlock_reg _ _ _ (20 : Fin 32) s13.zero (by decide), g13_20]
   have g14_21 : reg n14 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by
     rw [rb14, runBlock_reg _ _ _ (21 : Fin 32) s13.zero (by decide), g13_21]
-  have g14_22 : reg n14 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by
+  have g14_22 : reg n14 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by
     rw [rb14, runBlock_reg _ _ _ (22 : Fin 32) s13.zero (by decide), g13_22]
   have g14_23 : reg n14 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by
     rw [rb14, runBlock_reg _ _ _ (23 : Fin 32) s13.zero (by decide), g13_23]
@@ -2288,19 +2288,19 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b14_1040 : n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := by rw [m14]; exact b13_1040
   have b14_13a0 : n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m14]; exact b13_13a0
   have b14_14a0 : n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m14]; exact b13_14a0
-  have q14_480 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_480 j hj
-  have q14_4e0 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_4e0 j hj
-  have q14_540 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_540 j hj
-  have q14_5a0 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_5a0 j hj
-  have q14_600 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_600 j hj
-  have q14_660 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_660 j hj
-  have q14_6c0 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_6c0 j hj
-  have q14_10e0 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_10e0 j hj
-  have q14_1140 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_1140 j hj
-  have q14_11a0 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_11a0 j hj
-  have q14_1200 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_1200 j hj
-  have q14_1260 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_1260 j hj
-  have q14_12c0 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_12c0 j hj
+  have q14_480 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_480 j hj
+  have q14_4e0 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_4e0 j hj
+  have q14_540 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_540 j hj
+  have q14_5a0 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_5a0 j hj
+  have q14_600 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_600 j hj
+  have q14_660 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_660 j hj
+  have q14_6c0 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_6c0 j hj
+  have q14_10e0 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_10e0 j hj
+  have q14_1140 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_1140 j hj
+  have q14_11a0 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_11a0 j hj
+  have q14_1200 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_1200 j hj
+  have q14_1260 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_1260 j hj
+  have q14_12c0 : ∀ j, j < 96 → n14.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m14]; exact q13_12c0 j hj
   have a14_240 : accV n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m14]; exact a13_240
   have a14_260 : accV n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m14]; exact a13_260
   have a14_280 : accV n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m14]; exact a13_280
@@ -2339,7 +2339,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have g15_19 : reg n15 (19 : Fin 32) = bp := by rw [rk15 (19 : Fin 32) (by decide), g14_19]
   have g15_20 : reg n15 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rk15 (20 : Fin 32) (by decide), g14_20]
   have g15_21 : reg n15 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [rk15 (21 : Fin 32) (by decide), g14_21]
-  have g15_22 : reg n15 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [rk15 (22 : Fin 32) (by decide), g14_22]
+  have g15_22 : reg n15 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by rw [rk15 (22 : Fin 32) (by decide), g14_22]
   have g15_23 : reg n15 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by rw [rk15 (23 : Fin 32) (by decide), g14_23]
   have g15_24 : reg n15 (24 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [rk15 (24 : Fin 32) (by decide), g14_24]
   have g15_25 : reg n15 (25 : Fin 32) = BitVec.ofNat 32 0x300 := by rw [rk15 (25 : Fin 32) (by decide), g14_25]
@@ -2418,19 +2418,19 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b15_1040 : n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := (K15.b8 (by decide) (by decide)).trans b14_1040
   have b15_13a0 : n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := (K15.b8 (by decide) (by decide)).trans b14_13a0
   have b15_14a0 : n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := (K15.b8 (by decide) (by decide)).trans b14_14a0
-  have q15_480 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_480 j hj)
-  have q15_4e0 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_4e0 j hj)
-  have q15_540 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_540 j hj)
-  have q15_5a0 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_5a0 j hj)
-  have q15_600 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_600 j hj)
-  have q15_660 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_660 j hj)
-  have q15_6c0 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_6c0 j hj)
-  have q15_10e0 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_10e0 j hj)
-  have q15_1140 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_1140 j hj)
-  have q15_11a0 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_11a0 j hj)
-  have q15_1200 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_1200 j hj)
-  have q15_1260 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_1260 j hj)
-  have q15_12c0 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_12c0 j hj)
+  have q15_480 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_480 j hj)
+  have q15_4e0 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_4e0 j hj)
+  have q15_540 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_540 j hj)
+  have q15_5a0 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_5a0 j hj)
+  have q15_600 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_600 j hj)
+  have q15_660 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_660 j hj)
+  have q15_6c0 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_6c0 j hj)
+  have q15_10e0 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_10e0 j hj)
+  have q15_1140 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_1140 j hj)
+  have q15_11a0 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_11a0 j hj)
+  have q15_1200 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_1200 j hj)
+  have q15_1260 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_1260 j hj)
+  have q15_12c0 : ∀ j, j < 96 → n15.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K15.range (by decide) (by decide) j hj).trans (q14_12c0 j hj)
   have a15_240 : accV n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := (K15.acc (by decide) (by decide)).trans a14_240
   have a15_260 : accV n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := (K15.acc (by decide) (by decide)).trans a14_260
   have a15_280 : accV n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := (K15.acc (by decide) (by decide)).trans a14_280
@@ -2477,7 +2477,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
     rw [rb16, runBlock_reg _ _ _ (20 : Fin 32) s15.zero (by decide), g15_20]
   have g16_21 : reg n16 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by
     rw [rb16, runBlock_reg _ _ _ (21 : Fin 32) s15.zero (by decide), g15_21]
-  have g16_22 : reg n16 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by
+  have g16_22 : reg n16 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by
     rw [rb16, runBlock_reg _ _ _ (22 : Fin 32) s15.zero (by decide), g15_22]
   have g16_23 : reg n16 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by
     rw [rb16, runBlock_reg _ _ _ (23 : Fin 32) s15.zero (by decide), g15_23]
@@ -2569,19 +2569,19 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b16_1040 : n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := by rw [m16]; exact b15_1040
   have b16_13a0 : n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m16]; exact b15_13a0
   have b16_14a0 : n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m16]; exact b15_14a0
-  have q16_480 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_480 j hj
-  have q16_4e0 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_4e0 j hj
-  have q16_540 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_540 j hj
-  have q16_5a0 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_5a0 j hj
-  have q16_600 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_600 j hj
-  have q16_660 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_660 j hj
-  have q16_6c0 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_6c0 j hj
-  have q16_10e0 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_10e0 j hj
-  have q16_1140 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_1140 j hj
-  have q16_11a0 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_11a0 j hj
-  have q16_1200 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_1200 j hj
-  have q16_1260 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_1260 j hj
-  have q16_12c0 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_12c0 j hj
+  have q16_480 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_480 j hj
+  have q16_4e0 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_4e0 j hj
+  have q16_540 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_540 j hj
+  have q16_5a0 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_5a0 j hj
+  have q16_600 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_600 j hj
+  have q16_660 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_660 j hj
+  have q16_6c0 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_6c0 j hj
+  have q16_10e0 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_10e0 j hj
+  have q16_1140 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_1140 j hj
+  have q16_11a0 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_11a0 j hj
+  have q16_1200 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_1200 j hj
+  have q16_1260 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_1260 j hj
+  have q16_12c0 : ∀ j, j < 96 → n16.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m16]; exact q15_12c0 j hj
   have a16_240 : accV n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m16]; exact a15_240
   have a16_260 : accV n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m16]; exact a15_260
   have a16_280 : accV n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m16]; exact a15_280
@@ -2622,7 +2622,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have g17_19 : reg n17 (19 : Fin 32) = bp := by rw [u17.regs, g16_19]
   have g17_20 : reg n17 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u17.regs, g16_20]
   have g17_21 : reg n17 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [u17.regs, g16_21]
-  have g17_22 : reg n17 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [u17.regs, g16_22]
+  have g17_22 : reg n17 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by rw [u17.regs, g16_22]
   have g17_23 : reg n17 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by rw [u17.regs, g16_23]
   have g17_24 : reg n17 (24 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [u17.regs, g16_24]
   have g17_25 : reg n17 (25 : Fin 32) = BitVec.ofNat 32 0x300 := by rw [u17.regs, g16_25]
@@ -2700,19 +2700,19 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b17_1040 : n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := by rw [m17]; exact b16_1040
   have b17_13a0 : n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m17]; exact b16_13a0
   have b17_14a0 : n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m17]; exact b16_14a0
-  have q17_480 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_480 j hj
-  have q17_4e0 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_4e0 j hj
-  have q17_540 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_540 j hj
-  have q17_5a0 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_5a0 j hj
-  have q17_600 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_600 j hj
-  have q17_660 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_660 j hj
-  have q17_6c0 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_6c0 j hj
-  have q17_10e0 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_10e0 j hj
-  have q17_1140 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_1140 j hj
-  have q17_11a0 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_11a0 j hj
-  have q17_1200 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_1200 j hj
-  have q17_1260 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_1260 j hj
-  have q17_12c0 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_12c0 j hj
+  have q17_480 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_480 j hj
+  have q17_4e0 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_4e0 j hj
+  have q17_540 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_540 j hj
+  have q17_5a0 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_5a0 j hj
+  have q17_600 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_600 j hj
+  have q17_660 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_660 j hj
+  have q17_6c0 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_6c0 j hj
+  have q17_10e0 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_10e0 j hj
+  have q17_1140 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_1140 j hj
+  have q17_11a0 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_11a0 j hj
+  have q17_1200 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_1200 j hj
+  have q17_1260 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_1260 j hj
+  have q17_12c0 : ∀ j, j < 96 → n17.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m17]; exact q16_12c0 j hj
   have a17_240 : accV n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m17]; exact a16_240
   have a17_260 : accV n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m17]; exact a16_260
   have a17_280 : accV n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m17]; exact a16_280
@@ -2763,7 +2763,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
     rw [rb18, runBlock_reg _ _ _ (20 : Fin 32) s17.zero (by decide), g17_20]
   have g18_21 : reg n18 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by
     rw [rb18, runBlock_reg _ _ _ (21 : Fin 32) s17.zero (by decide), g17_21]
-  have g18_22 : reg n18 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by
+  have g18_22 : reg n18 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by
     rw [rb18, runBlock_reg _ _ _ (22 : Fin 32) s17.zero (by decide), g17_22]
   have g18_23 : reg n18 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by
     rw [rb18, runBlock_reg _ _ _ (23 : Fin 32) s17.zero (by decide), g17_23]
@@ -2859,19 +2859,19 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b18_1040 : n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := by rw [m18]; exact b17_1040
   have b18_13a0 : n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m18]; exact b17_13a0
   have b18_14a0 : n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m18]; exact b17_14a0
-  have q18_480 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_480 j hj
-  have q18_4e0 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_4e0 j hj
-  have q18_540 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_540 j hj
-  have q18_5a0 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_5a0 j hj
-  have q18_600 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_600 j hj
-  have q18_660 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_660 j hj
-  have q18_6c0 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_6c0 j hj
-  have q18_10e0 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_10e0 j hj
-  have q18_1140 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_1140 j hj
-  have q18_11a0 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_11a0 j hj
-  have q18_1200 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_1200 j hj
-  have q18_1260 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_1260 j hj
-  have q18_12c0 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_12c0 j hj
+  have q18_480 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_480 j hj
+  have q18_4e0 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_4e0 j hj
+  have q18_540 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_540 j hj
+  have q18_5a0 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_5a0 j hj
+  have q18_600 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_600 j hj
+  have q18_660 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_660 j hj
+  have q18_6c0 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_6c0 j hj
+  have q18_10e0 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x10E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_10e0 j hj
+  have q18_1140 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_1140 j hj
+  have q18_11a0 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_11a0 j hj
+  have q18_1200 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_1200 j hj
+  have q18_1260 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_1260 j hj
+  have q18_12c0 : ∀ j, j < 96 → n18.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m18]; exact q17_12c0 j hj
   have a18_240 : accV n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m18]; exact a17_240
   have a18_260 : accV n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m18]; exact a17_260
   have a18_280 : accV n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m18]; exact a17_280
@@ -2912,7 +2912,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have g19_19 : reg n19 (19 : Fin 32) = bp := by rw [P19.regs (19 : Fin 32) (by decide), g18_19]
   have g19_20 : reg n19 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [P19.regs (20 : Fin 32) (by decide), g18_20]
   have g19_21 : reg n19 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [P19.regs (21 : Fin 32) (by decide), g18_21]
-  have g19_22 : reg n19 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [P19.regs (22 : Fin 32) (by decide), g18_22]
+  have g19_22 : reg n19 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by rw [P19.regs (22 : Fin 32) (by decide), g18_22]
   have g19_23 : reg n19 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by rw [P19.regs (23 : Fin 32) (by decide), g18_23]
   have g19_24 : reg n19 (24 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [P19.regs (24 : Fin 32) (by decide), g18_24]
   have g19_25 : reg n19 (25 : Fin 32) = BitVec.ofNat 32 0x300 := by rw [P19.regs (25 : Fin 32) (by decide), g18_25]
@@ -2990,18 +2990,18 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b19_1040 : n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := (K19.b8 (by decide) (by decide)).trans b18_1040
   have b19_13a0 : n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := (K19.b8 (by decide) (by decide)).trans b18_13a0
   have b19_14a0 : n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := (K19.b8 (by decide) (by decide)).trans b18_14a0
-  have q19_480 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_480 j hj)
-  have q19_4e0 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_4e0 j hj)
-  have q19_540 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_540 j hj)
-  have q19_5a0 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_5a0 j hj)
-  have q19_600 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_600 j hj)
-  have q19_660 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_660 j hj)
-  have q19_6c0 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_6c0 j hj)
-  have q19_1140 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_1140 j hj)
-  have q19_11a0 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_11a0 j hj)
-  have q19_1200 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_1200 j hj)
-  have q19_1260 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_1260 j hj)
-  have q19_12c0 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_12c0 j hj)
+  have q19_480 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_480 j hj)
+  have q19_4e0 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_4e0 j hj)
+  have q19_540 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_540 j hj)
+  have q19_5a0 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_5a0 j hj)
+  have q19_600 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_600 j hj)
+  have q19_660 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_660 j hj)
+  have q19_6c0 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_6c0 j hj)
+  have q19_1140 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_1140 j hj)
+  have q19_11a0 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_11a0 j hj)
+  have q19_1200 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_1200 j hj)
+  have q19_1260 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_1260 j hj)
+  have q19_12c0 : ∀ j, j < 96 → n19.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K19.range (by decide) (by decide) j hj).trans (q18_12c0 j hj)
   have a19_240 : accV n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := (K19.acc (by decide) (by decide)).trans a18_240
   have a19_260 : accV n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := (K19.acc (by decide) (by decide)).trans a18_260
   have a19_280 : accV n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := (K19.acc (by decide) (by decide)).trans a18_280
@@ -3053,7 +3053,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
     rw [rb20, runBlock_reg _ _ _ (20 : Fin 32) s19.zero (by decide), g19_20]
   have g20_21 : reg n20 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by
     rw [rb20, runBlock_reg _ _ _ (21 : Fin 32) s19.zero (by decide), g19_21]
-  have g20_22 : reg n20 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by
+  have g20_22 : reg n20 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by
     rw [rb20, runBlock_reg _ _ _ (22 : Fin 32) s19.zero (by decide), g19_22]
   have g20_23 : reg n20 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by
     rw [rb20, runBlock_reg _ _ _ (23 : Fin 32) s19.zero (by decide), g19_23]
@@ -3145,18 +3145,18 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b20_1040 : n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := by rw [m20]; exact b19_1040
   have b20_13a0 : n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m20]; exact b19_13a0
   have b20_14a0 : n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m20]; exact b19_14a0
-  have q20_480 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_480 j hj
-  have q20_4e0 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_4e0 j hj
-  have q20_540 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_540 j hj
-  have q20_5a0 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_5a0 j hj
-  have q20_600 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_600 j hj
-  have q20_660 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_660 j hj
-  have q20_6c0 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_6c0 j hj
-  have q20_1140 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_1140 j hj
-  have q20_11a0 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_11a0 j hj
-  have q20_1200 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_1200 j hj
-  have q20_1260 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_1260 j hj
-  have q20_12c0 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_12c0 j hj
+  have q20_480 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_480 j hj
+  have q20_4e0 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_4e0 j hj
+  have q20_540 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_540 j hj
+  have q20_5a0 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_5a0 j hj
+  have q20_600 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_600 j hj
+  have q20_660 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_660 j hj
+  have q20_6c0 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_6c0 j hj
+  have q20_1140 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_1140 j hj
+  have q20_11a0 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_11a0 j hj
+  have q20_1200 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_1200 j hj
+  have q20_1260 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_1260 j hj
+  have q20_12c0 : ∀ j, j < 96 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m20]; exact q19_12c0 j hj
   have a20_240 : accV n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m20]; exact a19_240
   have a20_260 : accV n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m20]; exact a19_260
   have a20_280 : accV n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m20]; exact a19_280
@@ -3196,7 +3196,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have g21_19 : reg n21 (19 : Fin 32) = bp := by rw [rk21 (19 : Fin 32) (by decide), g20_19]
   have g21_20 : reg n21 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rk21 (20 : Fin 32) (by decide), g20_20]
   have g21_21 : reg n21 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [rk21 (21 : Fin 32) (by decide), g20_21]
-  have g21_22 : reg n21 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [rk21 (22 : Fin 32) (by decide), g20_22]
+  have g21_22 : reg n21 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by rw [rk21 (22 : Fin 32) (by decide), g20_22]
   have g21_23 : reg n21 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by rw [rk21 (23 : Fin 32) (by decide), g20_23]
   have g21_24 : reg n21 (24 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [rk21 (24 : Fin 32) (by decide), g20_24]
   have g21_25 : reg n21 (25 : Fin 32) = BitVec.ofNat 32 0x300 := by rw [rk21 (25 : Fin 32) (by decide), g20_25]
@@ -3275,18 +3275,18 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b21_1040 : n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := (K21.b8 (by decide) (by decide)).trans b20_1040
   have b21_13a0 : n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := (K21.b8 (by decide) (by decide)).trans b20_13a0
   have b21_14a0 : n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := (K21.b8 (by decide) (by decide)).trans b20_14a0
-  have q21_480 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_480 j hj)
-  have q21_4e0 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_4e0 j hj)
-  have q21_540 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_540 j hj)
-  have q21_5a0 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_5a0 j hj)
-  have q21_600 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_600 j hj)
-  have q21_660 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_660 j hj)
-  have q21_6c0 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_6c0 j hj)
-  have q21_1140 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_1140 j hj)
-  have q21_11a0 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_11a0 j hj)
-  have q21_1200 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_1200 j hj)
-  have q21_1260 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_1260 j hj)
-  have q21_12c0 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_12c0 j hj)
+  have q21_480 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_480 j hj)
+  have q21_4e0 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_4e0 j hj)
+  have q21_540 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_540 j hj)
+  have q21_5a0 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_5a0 j hj)
+  have q21_600 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_600 j hj)
+  have q21_660 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_660 j hj)
+  have q21_6c0 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_6c0 j hj)
+  have q21_1140 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_1140 j hj)
+  have q21_11a0 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_11a0 j hj)
+  have q21_1200 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_1200 j hj)
+  have q21_1260 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_1260 j hj)
+  have q21_12c0 : ∀ j, j < 96 → n21.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K21.range (by decide) (by decide) j hj).trans (q20_12c0 j hj)
   have a21_240 : accV n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := (K21.acc (by decide) (by decide)).trans a20_240
   have a21_260 : accV n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := (K21.acc (by decide) (by decide)).trans a20_260
   have a21_280 : accV n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := (K21.acc (by decide) (by decide)).trans a20_280
@@ -3334,7 +3334,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
     rw [rb22, runBlock_reg _ _ _ (20 : Fin 32) s21.zero (by decide), g21_20]
   have g22_21 : reg n22 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by
     rw [rb22, runBlock_reg _ _ _ (21 : Fin 32) s21.zero (by decide), g21_21]
-  have g22_22 : reg n22 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by
+  have g22_22 : reg n22 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by
     rw [rb22, runBlock_reg _ _ _ (22 : Fin 32) s21.zero (by decide), g21_22]
   have g22_23 : reg n22 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by
     rw [rb22, runBlock_reg _ _ _ (23 : Fin 32) s21.zero (by decide), g21_23]
@@ -3426,18 +3426,18 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b22_1040 : n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := by rw [m22]; exact b21_1040
   have b22_13a0 : n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m22]; exact b21_13a0
   have b22_14a0 : n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m22]; exact b21_14a0
-  have q22_480 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_480 j hj
-  have q22_4e0 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_4e0 j hj
-  have q22_540 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_540 j hj
-  have q22_5a0 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_5a0 j hj
-  have q22_600 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_600 j hj
-  have q22_660 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_660 j hj
-  have q22_6c0 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_6c0 j hj
-  have q22_1140 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_1140 j hj
-  have q22_11a0 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_11a0 j hj
-  have q22_1200 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_1200 j hj
-  have q22_1260 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_1260 j hj
-  have q22_12c0 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_12c0 j hj
+  have q22_480 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_480 j hj
+  have q22_4e0 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_4e0 j hj
+  have q22_540 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_540 j hj
+  have q22_5a0 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_5a0 j hj
+  have q22_600 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_600 j hj
+  have q22_660 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_660 j hj
+  have q22_6c0 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_6c0 j hj
+  have q22_1140 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_1140 j hj
+  have q22_11a0 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_11a0 j hj
+  have q22_1200 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_1200 j hj
+  have q22_1260 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_1260 j hj
+  have q22_12c0 : ∀ j, j < 96 → n22.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m22]; exact q21_12c0 j hj
   have a22_240 : accV n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m22]; exact a21_240
   have a22_260 : accV n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m22]; exact a21_260
   have a22_280 : accV n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m22]; exact a21_280
@@ -3479,7 +3479,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have g23_19 : reg n23 (19 : Fin 32) = bp := by rw [u23.regs, g22_19]
   have g23_20 : reg n23 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u23.regs, g22_20]
   have g23_21 : reg n23 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [u23.regs, g22_21]
-  have g23_22 : reg n23 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [u23.regs, g22_22]
+  have g23_22 : reg n23 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by rw [u23.regs, g22_22]
   have g23_23 : reg n23 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by rw [u23.regs, g22_23]
   have g23_24 : reg n23 (24 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [u23.regs, g22_24]
   have g23_25 : reg n23 (25 : Fin 32) = BitVec.ofNat 32 0x300 := by rw [u23.regs, g22_25]
@@ -3557,18 +3557,18 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b23_1040 : n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := by rw [m23]; exact b22_1040
   have b23_13a0 : n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m23]; exact b22_13a0
   have b23_14a0 : n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m23]; exact b22_14a0
-  have q23_480 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_480 j hj
-  have q23_4e0 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_4e0 j hj
-  have q23_540 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_540 j hj
-  have q23_5a0 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_5a0 j hj
-  have q23_600 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_600 j hj
-  have q23_660 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_660 j hj
-  have q23_6c0 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_6c0 j hj
-  have q23_1140 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_1140 j hj
-  have q23_11a0 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_11a0 j hj
-  have q23_1200 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_1200 j hj
-  have q23_1260 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_1260 j hj
-  have q23_12c0 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_12c0 j hj
+  have q23_480 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_480 j hj
+  have q23_4e0 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_4e0 j hj
+  have q23_540 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_540 j hj
+  have q23_5a0 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_5a0 j hj
+  have q23_600 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_600 j hj
+  have q23_660 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_660 j hj
+  have q23_6c0 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_6c0 j hj
+  have q23_1140 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_1140 j hj
+  have q23_11a0 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_11a0 j hj
+  have q23_1200 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_1200 j hj
+  have q23_1260 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_1260 j hj
+  have q23_12c0 : ∀ j, j < 96 → n23.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m23]; exact q22_12c0 j hj
   have a23_240 : accV n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m23]; exact a22_240
   have a23_260 : accV n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m23]; exact a22_260
   have a23_280 : accV n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m23]; exact a22_280
@@ -3620,7 +3620,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
     rw [rb24, runBlock_reg _ _ _ (20 : Fin 32) s23.zero (by decide), g23_20]
   have g24_21 : reg n24 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by
     rw [rb24, runBlock_reg _ _ _ (21 : Fin 32) s23.zero (by decide), g23_21]
-  have g24_22 : reg n24 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by
+  have g24_22 : reg n24 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by
     rw [rb24, runBlock_reg _ _ _ (22 : Fin 32) s23.zero (by decide), g23_22]
   have g24_23 : reg n24 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by
     rw [rb24, runBlock_reg _ _ _ (23 : Fin 32) s23.zero (by decide), g23_23]
@@ -3716,18 +3716,18 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b24_1040 : n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := by rw [m24]; exact b23_1040
   have b24_13a0 : n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m24]; exact b23_13a0
   have b24_14a0 : n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m24]; exact b23_14a0
-  have q24_480 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_480 j hj
-  have q24_4e0 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_4e0 j hj
-  have q24_540 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_540 j hj
-  have q24_5a0 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_5a0 j hj
-  have q24_600 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_600 j hj
-  have q24_660 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_660 j hj
-  have q24_6c0 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_6c0 j hj
-  have q24_1140 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_1140 j hj
-  have q24_11a0 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_11a0 j hj
-  have q24_1200 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_1200 j hj
-  have q24_1260 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_1260 j hj
-  have q24_12c0 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_12c0 j hj
+  have q24_480 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_480 j hj
+  have q24_4e0 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_4e0 j hj
+  have q24_540 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_540 j hj
+  have q24_5a0 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_5a0 j hj
+  have q24_600 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_600 j hj
+  have q24_660 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_660 j hj
+  have q24_6c0 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_6c0 j hj
+  have q24_1140 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1140 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_1140 j hj
+  have q24_11a0 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_11a0 j hj
+  have q24_1200 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_1200 j hj
+  have q24_1260 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_1260 j hj
+  have q24_12c0 : ∀ j, j < 96 → n24.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m24]; exact q23_12c0 j hj
   have a24_240 : accV n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m24]; exact a23_240
   have a24_260 : accV n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m24]; exact a23_260
   have a24_280 : accV n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m24]; exact a23_280
@@ -3769,7 +3769,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have g25_19 : reg n25 (19 : Fin 32) = bp := by rw [P25.regs (19 : Fin 32) (by decide), g24_19]
   have g25_20 : reg n25 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [P25.regs (20 : Fin 32) (by decide), g24_20]
   have g25_21 : reg n25 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [P25.regs (21 : Fin 32) (by decide), g24_21]
-  have g25_22 : reg n25 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [P25.regs (22 : Fin 32) (by decide), g24_22]
+  have g25_22 : reg n25 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by rw [P25.regs (22 : Fin 32) (by decide), g24_22]
   have g25_23 : reg n25 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by rw [P25.regs (23 : Fin 32) (by decide), g24_23]
   have g25_24 : reg n25 (24 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [P25.regs (24 : Fin 32) (by decide), g24_24]
   have g25_25 : reg n25 (25 : Fin 32) = BitVec.ofNat 32 0x300 := by rw [P25.regs (25 : Fin 32) (by decide), g24_25]
@@ -3847,17 +3847,17 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b25_1040 : n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := (K25.b8 (by decide) (by decide)).trans b24_1040
   have b25_13a0 : n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := (K25.b8 (by decide) (by decide)).trans b24_13a0
   have b25_14a0 : n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := (K25.b8 (by decide) (by decide)).trans b24_14a0
-  have q25_480 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_480 j hj)
-  have q25_4e0 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_4e0 j hj)
-  have q25_540 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_540 j hj)
-  have q25_5a0 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_5a0 j hj)
-  have q25_600 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_600 j hj)
-  have q25_660 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_660 j hj)
-  have q25_6c0 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_6c0 j hj)
-  have q25_11a0 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_11a0 j hj)
-  have q25_1200 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_1200 j hj)
-  have q25_1260 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_1260 j hj)
-  have q25_12c0 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_12c0 j hj)
+  have q25_480 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_480 j hj)
+  have q25_4e0 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_4e0 j hj)
+  have q25_540 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_540 j hj)
+  have q25_5a0 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_5a0 j hj)
+  have q25_600 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_600 j hj)
+  have q25_660 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_660 j hj)
+  have q25_6c0 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_6c0 j hj)
+  have q25_11a0 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_11a0 j hj)
+  have q25_1200 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_1200 j hj)
+  have q25_1260 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_1260 j hj)
+  have q25_12c0 : ∀ j, j < 96 → n25.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K25.range (by decide) (by decide) j hj).trans (q24_12c0 j hj)
   have a25_240 : accV n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := (K25.acc (by decide) (by decide)).trans a24_240
   have a25_260 : accV n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := (K25.acc (by decide) (by decide)).trans a24_260
   have a25_280 : accV n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := (K25.acc (by decide) (by decide)).trans a24_280
@@ -3910,7 +3910,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
     rw [rb26, runBlock_reg _ _ _ (20 : Fin 32) s25.zero (by decide), g25_20]
   have g26_21 : reg n26 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by
     rw [rb26, runBlock_reg _ _ _ (21 : Fin 32) s25.zero (by decide), g25_21]
-  have g26_22 : reg n26 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by
+  have g26_22 : reg n26 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by
     rw [rb26, runBlock_reg _ _ _ (22 : Fin 32) s25.zero (by decide), g25_22]
   have g26_23 : reg n26 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by
     rw [rb26, runBlock_reg _ _ _ (23 : Fin 32) s25.zero (by decide), g25_23]
@@ -4002,17 +4002,17 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b26_1040 : n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := by rw [m26]; exact b25_1040
   have b26_13a0 : n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m26]; exact b25_13a0
   have b26_14a0 : n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m26]; exact b25_14a0
-  have q26_480 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_480 j hj
-  have q26_4e0 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_4e0 j hj
-  have q26_540 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_540 j hj
-  have q26_5a0 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_5a0 j hj
-  have q26_600 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_600 j hj
-  have q26_660 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_660 j hj
-  have q26_6c0 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_6c0 j hj
-  have q26_11a0 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_11a0 j hj
-  have q26_1200 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_1200 j hj
-  have q26_1260 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_1260 j hj
-  have q26_12c0 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_12c0 j hj
+  have q26_480 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_480 j hj
+  have q26_4e0 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_4e0 j hj
+  have q26_540 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_540 j hj
+  have q26_5a0 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_5a0 j hj
+  have q26_600 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_600 j hj
+  have q26_660 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_660 j hj
+  have q26_6c0 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_6c0 j hj
+  have q26_11a0 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_11a0 j hj
+  have q26_1200 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_1200 j hj
+  have q26_1260 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_1260 j hj
+  have q26_12c0 : ∀ j, j < 96 → n26.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m26]; exact q25_12c0 j hj
   have a26_240 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m26]; exact a25_240
   have a26_260 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m26]; exact a25_260
   have a26_280 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m26]; exact a25_280
@@ -4053,7 +4053,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have g27_19 : reg n27 (19 : Fin 32) = bp := by rw [rk27 (19 : Fin 32) (by decide), g26_19]
   have g27_20 : reg n27 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [rk27 (20 : Fin 32) (by decide), g26_20]
   have g27_21 : reg n27 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [rk27 (21 : Fin 32) (by decide), g26_21]
-  have g27_22 : reg n27 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [rk27 (22 : Fin 32) (by decide), g26_22]
+  have g27_22 : reg n27 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by rw [rk27 (22 : Fin 32) (by decide), g26_22]
   have g27_23 : reg n27 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by rw [rk27 (23 : Fin 32) (by decide), g26_23]
   have g27_24 : reg n27 (24 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [rk27 (24 : Fin 32) (by decide), g26_24]
   have g27_25 : reg n27 (25 : Fin 32) = BitVec.ofNat 32 0x300 := by rw [rk27 (25 : Fin 32) (by decide), g26_25]
@@ -4132,17 +4132,17 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b27_1040 : n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := (K27.b8 (by decide) (by decide)).trans b26_1040
   have b27_13a0 : n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := (K27.b8 (by decide) (by decide)).trans b26_13a0
   have b27_14a0 : n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := (K27.b8 (by decide) (by decide)).trans b26_14a0
-  have q27_480 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_480 j hj)
-  have q27_4e0 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_4e0 j hj)
-  have q27_540 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_540 j hj)
-  have q27_5a0 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_5a0 j hj)
-  have q27_600 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_600 j hj)
-  have q27_660 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_660 j hj)
-  have q27_6c0 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_6c0 j hj)
-  have q27_11a0 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_11a0 j hj)
-  have q27_1200 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_1200 j hj)
-  have q27_1260 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_1260 j hj)
-  have q27_12c0 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_12c0 j hj)
+  have q27_480 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_480 j hj)
+  have q27_4e0 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_4e0 j hj)
+  have q27_540 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_540 j hj)
+  have q27_5a0 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_5a0 j hj)
+  have q27_600 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_600 j hj)
+  have q27_660 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_660 j hj)
+  have q27_6c0 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_6c0 j hj)
+  have q27_11a0 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_11a0 j hj)
+  have q27_1200 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_1200 j hj)
+  have q27_1260 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_1260 j hj)
+  have q27_12c0 : ∀ j, j < 96 → n27.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => (K27.range (by decide) (by decide) j hj).trans (q26_12c0 j hj)
   have a27_240 : accV n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := (K27.acc (by decide) (by decide)).trans a26_240
   have a27_260 : accV n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := (K27.acc (by decide) (by decide)).trans a26_260
   have a27_280 : accV n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := (K27.acc (by decide) (by decide)).trans a26_280
@@ -4191,7 +4191,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
     rw [rb28, runBlock_reg _ _ _ (20 : Fin 32) s27.zero (by decide), g27_20]
   have g28_21 : reg n28 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by
     rw [rb28, runBlock_reg _ _ _ (21 : Fin 32) s27.zero (by decide), g27_21]
-  have g28_22 : reg n28 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by
+  have g28_22 : reg n28 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by
     rw [rb28, runBlock_reg _ _ _ (22 : Fin 32) s27.zero (by decide), g27_22]
   have g28_23 : reg n28 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by
     rw [rb28, runBlock_reg _ _ _ (23 : Fin 32) s27.zero (by decide), g27_23]
@@ -4283,17 +4283,17 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b28_1040 : n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := by rw [m28]; exact b27_1040
   have b28_13a0 : n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m28]; exact b27_13a0
   have b28_14a0 : n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m28]; exact b27_14a0
-  have q28_480 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_480 j hj
-  have q28_4e0 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_4e0 j hj
-  have q28_540 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_540 j hj
-  have q28_5a0 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_5a0 j hj
-  have q28_600 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_600 j hj
-  have q28_660 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_660 j hj
-  have q28_6c0 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_6c0 j hj
-  have q28_11a0 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_11a0 j hj
-  have q28_1200 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_1200 j hj
-  have q28_1260 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_1260 j hj
-  have q28_12c0 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_12c0 j hj
+  have q28_480 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_480 j hj
+  have q28_4e0 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_4e0 j hj
+  have q28_540 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_540 j hj
+  have q28_5a0 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_5a0 j hj
+  have q28_600 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_600 j hj
+  have q28_660 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_660 j hj
+  have q28_6c0 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_6c0 j hj
+  have q28_11a0 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_11a0 j hj
+  have q28_1200 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_1200 j hj
+  have q28_1260 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_1260 j hj
+  have q28_12c0 : ∀ j, j < 96 → n28.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m28]; exact q27_12c0 j hj
   have a28_240 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m28]; exact a27_240
   have a28_260 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m28]; exact a27_260
   have a28_280 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m28]; exact a27_280
@@ -4336,7 +4336,7 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have g29_19 : reg n29 (19 : Fin 32) = bp := by rw [u29.regs, g28_19]
   have g29_20 : reg n29 (20 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by rw [u29.regs, g28_20]
   have g29_21 : reg n29 (21 : Fin 32) = BitVec.ofNat 32 0x2 := by rw [u29.regs, g28_21]
-  have g29_22 : reg n29 (22 : Fin 32) = BitVec.ofNat 32 0x3FCC4690 := by rw [u29.regs, g28_22]
+  have g29_22 : reg n29 (22 : Fin 32) = BitVec.ofNat 32 (img% p256GMontAddress) := by rw [u29.regs, g28_22]
   have g29_23 : reg n29 (23 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0x1480 := by rw [u29.regs, g28_23]
   have g29_24 : reg n29 (24 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [u29.regs, g28_24]
   have g29_25 : reg n29 (25 : Fin 32) = BitVec.ofNat 32 0x300 := by rw [u29.regs, g28_25]
@@ -4414,17 +4414,17 @@ theorem sv_ect0c {B out bp x21 x26 s5v s8v dlo dhi rem : Word} {er es : Bytes} {
   have b29_1040 : n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = gs := by rw [m29]; exact b28_1040
   have b29_13a0 : n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = gs := by rw [m29]; exact b28_13a0
   have b29_14a0 : n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = gs := by rw [m29]; exact b28_14a0
-  have q29_480 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_480 j hj
-  have q29_4e0 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_4e0 j hj
-  have q29_540 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_540 j hj
-  have q29_5a0 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_5a0 j hj
-  have q29_600 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_600 j hj
-  have q29_660 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_660 j hj
-  have q29_6c0 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_6c0 j hj
-  have q29_11a0 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_11a0 j hj
-  have q29_1200 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_1200 j hj
-  have q29_1260 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_1260 j hj
-  have q29_12c0 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 0x3FCC4690) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_12c0 j hj
+  have q29_480 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x480 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_480 j hj
+  have q29_4e0 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x4E0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_4e0 j hj
+  have q29_540 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x540 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_540 j hj
+  have q29_5a0 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x5A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_5a0 j hj
+  have q29_600 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x600 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_600 j hj
+  have q29_660 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x660 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_660 j hj
+  have q29_6c0 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x6C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_6c0 j hj
+  have q29_11a0 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x11A0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_11a0 j hj
+  have q29_1200 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1200 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_1200 j hj
+  have q29_1260 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1260 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_1260 j hj
+  have q29_12c0 : ∀ j, j < 96 → n29.mem (B + 0x21A0 + BitVec.ofNat 32 (0x12C0 + j)) = M0 ((BitVec.ofNat 32 (img% p256GMontAddress)) + BitVec.ofNat 32 j) := fun j hj => by rw [m29]; exact q28_12c0 j hj
   have a29_240 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx := by rw [m29]; exact a28_240
   have a29_260 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy := by rw [m29]; exact a28_260
   have a29_280 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz := by rw [m29]; exact a28_280

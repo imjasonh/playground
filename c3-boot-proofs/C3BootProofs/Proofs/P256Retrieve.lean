@@ -8,7 +8,7 @@ specialized to P-256's field modulus and inlined. Because the modulus's low
 limb is `2^32 - 1`, `-n⁻¹ mod 2^32` is 1, so each pass's factor `u` is the
 low word itself, and the code forms `u · (2^32 - 1)` from `mulhu` and a
 nonzero test. The modulus's other limbs are read from the image at
-`0x3FCC4B3C`.
+`p256ModulusAddress + 0x4`.
 -/
 
 namespace C3.RV32
@@ -578,7 +578,7 @@ theorem prRestore_end : blockEnd p256FieldRetrieveCode 0xA0 (restoreBlock prPs) 
 end
 
 /-- The P-256 field modulus's limbs, where the image keeps them. -/
-abbrev p256Np : Word := 0x3FCC4B38
+abbrev p256Np : Word := (img% p256ModulusAddress)
 
 /-- Where the specialized retrieve runs: its code and its callees', the 0x40
 bytes of stack below `sp0`, and the result and input, aligned and apart from

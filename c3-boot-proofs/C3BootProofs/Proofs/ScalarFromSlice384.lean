@@ -307,7 +307,7 @@ theorem bf_copy {Mb : Word → BitVec 8} {src C : Word}
     have hcx := hc Mx hag
     have hz := st.zero
     have hTj : Sep (C + BitVec.ofNat 32 j) 1 BF scalarFromSlice384Code.length :=
-      sep_of_le (by rw [BitVec.toNat_add, BitVec.toNat_ofNat, show BF.toNat = 0x403a2b0e by decide]; omega)
+      sep_of_le (by rw [BitVec.toNat_add, BitVec.toNat_ofNat, show BF.toNat = (img% scalarFromSlice384Address) by decide]; omega)
         (by decide)
     obtain ⟨n1, c1, u1⟩ := St.block bfCopy st hcx bfCopy_end (by
       simp +decide only [BlockOk, BInstr.ok, BInstr.run, bfCopy, upd_app, ↓reduceIte, and_true, true_and]
@@ -460,7 +460,7 @@ theorem scalarFromSlice384_correct (m : Machine) {sp0 out b retAddr : Word} (E :
       c.toNat + code.length ≤ 2 ^ 32 → (∀ x, Sep G 0xF0 x 1 → M' x = m.mem x) → CodeIn M' c code :=
     fun hc h1 h2 hM i hi' => by
       rw [hM _ (hiG _ (code_hi h1 h2 hi'))]; exact hc i hi'
-  have hBFn : BF.toNat = 0x403a2b0e := by decide
+  have hBFn : BF.toNat = (img% scalarFromSlice384Address) := by decide
   have hc := E.cod
   have st0 : St m.mem BF m 0 (reg m) := ⟨by rw [hpc, add_ofNat_zero], rfl, fun _ => rfl⟩
   have hz := st0.zero
@@ -691,7 +691,7 @@ theorem scalarFromSlice384_correct (m : Machine) {sp0 out b retAddr : Word} (E :
   have K12 : ∀ q, q ≠ a0 → q ≠ a1 → reg m12 q = reg n11 q := fun q h0 h1 => by
     rw [R12]; refine runBlock_reg _ _ _ q u11.zero ?_
     simp only [bfS4, List.filterMap_cons, List.filterMap_nil, BInstr.dst]; simp [h0, h1]
-  have v12 : reg m12 a0 = 0x3FCC4DF4 ∧ reg m12 a1 = 0 := by
+  have v12 : reg m12 a0 = (img% sfs384EmptyAddress) ∧ reg m12 a1 = 0 := by
     simp +decide only [R12, runBlock, BInstr.run, bfS4, upd_app, ↓reduceIte]
   obtain ⟨n13, c13, u13, a013, k13, fr13⟩ := u12'.nzCall0 hc11'
     (cd E.nz (by rw [hNZa]; decide) (by rw [hNZa]; decide) IM11) bf_at_72 bf_at_76 (by decide) (by decide)

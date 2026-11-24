@@ -97,17 +97,17 @@ theorem pv_smul {B : Word} {m : Machine} {off : Nat} {imm o : Word} {co cx cy : 
   · rw [k2 q (by revert hq h; revert q; decide), r1 q (by revert hq; revert q; decide)]
 
 /-- Constants against the stack below `sp`, as far as the frame reaches. -/
-theorem pv_lowD {B K : Word} (F : Fr B 0x21A0) {n k : Nat} (hk : k ≤ 0x5C0) (hK : 0x3FCC4200 ≤ K.toNat)
-    (hK' : K.toNat + n ≤ 0x3FCC4E60) : Sep K n (B + 0x420 + BitVec.ofNat 32 (2 ^ 32 - k)) k := by
+theorem pv_lowD {B K : Word} (F : Fr B 0x21A0) {n k : Nat} (hk : k ≤ 0x5C0) (hK : (img% dataWindowAddress) ≤ K.toNat)
+    (hK' : K.toNat + n ≤ (img% dataWindowAddress + dataWindowSize)) : Sep K n (B + 0x420 + BitVec.ofNat 32 (2 ^ 32 - k)) k := by
   have h1 := F.dsep.sub (c := 0x5C0 - k) (l := k) (by omega)
-  have h2 := h1.subR (c := K.toNat - 0x3FCC4200) (l := n) (by omega)
+  have h2 := h1.subR (c := K.toNat - (img% dataWindowAddress)) (l := n) (by omega)
   rw [show B + 0xFFFFFE60 + BitVec.ofNat 32 (0x5C0 - k) = B + 0x420 + BitVec.ofNat 32 (2 ^ 32 - k) by
     rw [BitVec.add_assoc, BitVec.add_assoc]; congr 1; apply BitVec.eq_of_toNat_eq
     rw [BitVec.toNat_add, BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
       show (0xFFFFFE60 : Word).toNat = 0xFFFFFE60 from rfl, show (0x420 : Word).toNat = 0x420 from rfl]
-    omega, show (0x3FCC4200 : Word) + BitVec.ofNat 32 (K.toNat - 0x3FCC4200) = K by
+    omega, show (img% dataWindowAddress : Word) + BitVec.ofNat 32 (K.toNat - (img% dataWindowAddress)) = K by
     apply BitVec.eq_of_toNat_eq
-    rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (0x3FCC4200 : Word).toNat = 0x3FCC4200 from rfl]
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (img% dataWindowAddress : Word).toNat = (img% dataWindowAddress) from rfl]
     omega] at h2
   exact h2.symm
 

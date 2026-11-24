@@ -101,8 +101,8 @@ ends with `f = ±1`, and a panic otherwise. -/
 theorem pv_stC {B ph : Word} {len X Y R Sg : Nat} {n0 : Machine}
     (F : Fr B 0x21A0) (E0 : PvEnv3 n0.mem) (s0 : St n0.mem PV n0 0x3B0 (reg n0))
     (g0_2 : reg n0 sp = B + 0x420) (g0_8 : reg n0 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80)
-    (g0_9 : reg n0 (9 : Fin 32) = BitVec.ofNat 32 0x3FCC4D88)
-    (g0_18 : reg n0 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC4D28) (g0_19 : reg n0 (19 : Fin 32) = BitVec.ofNat 32 len)
+    (g0_9 : reg n0 (9 : Fin 32) = BitVec.ofNat 32 (img% p384ScalarR2Address))
+    (g0_18 : reg n0 (18 : Fin 32) = BitVec.ofNat 32 (img% p384OrderAddress)) (g0_19 : reg n0 (19 : Fin 32) = BitVec.ofNat 32 len)
     (g0_20 : reg n0 (20 : Fin 32) = BitVec.ofNat 32 0x177023BB)
     (g0_21 : reg n0 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4)
     (g0_22 : reg n0 (22 : Fin 32) = BitVec.ofNat 32 0x912B9F76)

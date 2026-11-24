@@ -151,10 +151,10 @@ theorem ekuGo_nil {fuel : Nat} {found : Bool} : extKeyUsageCodeSigning.go fuel [
 /-- The `ExtKeyUsage` loop: a run of `k` steps over the OIDs from `cp`, each
 an OID, that ends with no bytes left. -/
 theorem ekuGo_chain {M : Word → BitVec 8} {R : Word × Word × Word → Word × Word × Word → Prop}
-    (hcs : memBytes M (BitVec.ofNat 32 0x3FCC4820) 8 = oidCodeSigning)
+    (hcs : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x8)) 8 = oidCodeSigning)
     (hR : ∀ s s', R s s' → s.2.2 ≠ 0 ∧ ∃ op ol, derContent s.2.1 (derOid (memBytes M s.2.1 s.2.2.toNat)) = .ok (op, ol) ∧
       ∃ to, derOid (memBytes M s.2.1 s.2.2.toNat) = .ok to ∧
-        s' = (s.1 ||| (if memBytes M op ol.toNat = memBytes M (BitVec.ofNat 32 0x3FCC4820) 8 then 1 else 0),
+        s' = (s.1 ||| (if memBytes M op ol.toNat = memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x8)) 8 then 1 else 0),
           s.2.1 + BitVec.ofNat 32 (to.header + to.len), s.2.2 - BitVec.ofNat 32 (to.header + to.len))) :
     ∀ k {f cp cl f' cp' : Word} {fuel : Nat}, svChain R k (f, cp, cl) (f', cp', 0) → cl.toNat ≤ fuel →
       extKeyUsageCodeSigning.go fuel (memBytes M cp cl.toNat) (decide (f &&& 1 ≠ 0)) = some (decide (f' &&& 1 ≠ 0)) := by
@@ -188,10 +188,10 @@ theorem ekuGo_chain {M : Word → BitVec 8} {R : Word × Word × Word → Word �
 /-- An `ExtKeyUsage` value that lists `codeSigning`, as the code checks it. -/
 theorem extKeyUsageCodeSigning_code {M : Word → BitVec 8} {R : Word × Word × Word → Word × Word × Word → Prop}
     {vp vl found' cp' cl' : Word} {tl : DerTlv} {k : Nat}
-    (hcs : memBytes M (BitVec.ofNat 32 0x3FCC4820) 8 = oidCodeSigning)
+    (hcs : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x8)) 8 = oidCodeSigning)
     (hR : ∀ s s', R s s' → s.2.2 ≠ 0 ∧ ∃ op ol, derContent s.2.1 (derOid (memBytes M s.2.1 s.2.2.toNat)) = .ok (op, ol) ∧
       ∃ to, derOid (memBytes M s.2.1 s.2.2.toNat) = .ok to ∧
-        s' = (s.1 ||| (if memBytes M op ol.toNat = memBytes M (BitVec.ofNat 32 0x3FCC4820) 8 then 1 else 0),
+        s' = (s.1 ||| (if memBytes M op ol.toNat = memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x8)) 8 then 1 else 0),
           s.2.1 + BitVec.ofNat 32 (to.header + to.len), s.2.2 - BitVec.ofNat 32 (to.header + to.len)))
     (h0 : derElement 0x30 (memBytes M vp vl.toNat) = .ok tl)
     (h1 : vl - BitVec.ofNat 32 (tl.header + tl.len) = 0)

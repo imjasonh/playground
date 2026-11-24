@@ -291,7 +291,7 @@ theorem dec_none (C : DecCtx M0 R) (D : DecSt M0 Ms R r0 M nm 0x332) {out : Word
   obtain ⟨n1, c1, D1, v1, k1⟩ := D.aluImmS C dec_at_332 (off' := 0x334) (by decide) (by decide)
   obtain ⟨m', c', pc', sp', sv', kp', mem'⟩ := dec_tail (C.code D1.agree C.E.cod (by decide) (by decide)) D1.st
     D1.hsp (by rw [k1 _ (by decide), hs2]) v1 hout C.hR
-    (sep_of_le (by have : DEC.toNat = 0x403affd0 := by decide
+    (sep_of_le (by have : DEC.toNat = (img% edDecompressAddress) := by decide
                    omega) (by decide))
     (fun r o hm => by
       obtain ⟨c, hc, h1, h2⟩ := decPs_off (R := R) r o hm
@@ -336,7 +336,7 @@ theorem dec_some (C : DecCtx M0 R) (D : DecSt M0 Ms R r0 M nm 0x31C) {out : Word
   have ho4 : (out + BitVec.ofNat 32 4).toNat = out.toNat + 4 := by
     rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
   have sO4 : Sep (out + BitVec.ofNat 32 4) 160 R 0x6F0 := sOR.sub (by decide)
-  have hst : (BitVec.ofNat 32 memcpyStubAddress + 8 : Word).toNat = 0x403b4856 := by decide
+  have hst : (BitVec.ofNat 32 memcpyStubAddress + 8 : Word).toNat = (img% memcpyBodyAddress) := by decide
   have E : McEnv n4.mem (BitVec.ofNat 32 memcpyStubAddress + 8) (out + BitVec.ofNat 32 4) (R + BitVec.ofNat 32 0x4A0)
       (reg n4 sp + 0xFFFFFFF0) 160 := by
     rw [mem4, r4 sp (by decide), D3.hsp, eF]
@@ -375,7 +375,7 @@ theorem dec_some (C : DecCtx M0 R) (D : DecSt M0 Ms R r0 M nm 0x31C) {out : Word
       r4 _ (by decide), s2_3]
   have a07 : reg n7 a0 = 1 := by rw [u7.upd_eq (by decide), u5.zero]; rfl
   obtain ⟨m', c', pc', sp', sv', kp', mem'⟩ := dec_tail hc5 u7.self sp7 s27 a07 hout C.hR
-    (sep_of_le (by have : DEC.toNat = 0x403affd0 := by decide
+    (sep_of_le (by have : DEC.toNat = (img% edDecompressAddress) := by decide
                    omega) (by decide))
     (fun r o hm => by
       obtain ⟨c, hc', h1, h2⟩ := decPs_off (R := R) r o hm

@@ -87,7 +87,7 @@ theorem sv_verify_spec {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle
     (KS' : SvK2Sep B)
     (CK0 : SvCkCode Me)
     (EE0 : EvEnv Me)
-    (hiv : (s5Hv Me (BitVec.ofNat 32 0x3FCC4AF8)).toList = Sha512.h0)
+    (hiv : (s5Hv Me (BitVec.ofNat 32 (img% sha512IVAddress))).toList = Sha512.h0)
     (RK0 : SvRkCode Me)
     (hOk : SvOutOk B (reg n a0))
     (ND : CodeIn Me (BitVec.ofNat 32 b2sOrder256Address) b2sOrder256Data)

@@ -209,8 +209,8 @@ theorem pv_cmap {B : Word} {m : Machine} {off : Nat} {imm o : Word} {co cx : Nat
   · rw [k2 q (by revert hq h; revert q; decide), r1 q (by revert hq; revert q; decide)]
 
 /-- Frame bytes against a constant. -/
-theorem pv_dat {B K : Word} (F : Fr B 0x21A0) {c n len : Nat} (h : c + n ≤ 0x1D80) (hK : 0x3FCC4200 ≤ K.toNat)
-    (hK' : K.toNat + len ≤ 0x3FCC4E60) : Sep (B + 0x420 + BitVec.ofNat 32 c) n K len := by
+theorem pv_dat {B K : Word} (F : Fr B 0x21A0) {c n len : Nat} (h : c + n ≤ 0x1D80) (hK : (img% dataWindowAddress) ≤ K.toNat)
+    (hK' : K.toNat + len ≤ (img% dataWindowAddress + dataWindowSize)) : Sep (B + 0x420 + BitVec.ofNat 32 c) n K len := by
   have := F.bufData (c := 0x420 + c) (n := n) (by omega) hK hK'
   rwa [← add_ofNat_assoc] at this
 

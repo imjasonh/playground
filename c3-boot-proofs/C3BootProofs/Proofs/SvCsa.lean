@@ -178,10 +178,10 @@ theorem sv_csa {B out bp x21 x26 dg c q rl rp sgp op ol : Word} {rt sg : Bytes} 
     (hrem : w5c ≠ 0)
     (sg_in : SvIn B w38 w5c.toNat)
     (CK0 : SvCkCode M0) :
-    (¬ (∃ ix9, nlScan M0 (w38) 0 ((w5c).toNat) = some ix9 ∧ (4 ≤ ix9) ∧ (memBytes M0 w38 4 = memBytes M0 (BitVec.ofNat 32 0x3FCC4855) 4) ∧ True) ∧ SvErrRet B out v n0) ∨
+    (¬ (∃ ix9, nlScan M0 (w38) 0 ((w5c).toNat) = some ix9 ∧ (4 ≤ ix9) ∧ (memBytes M0 w38 4 = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x3D)) 4) ∧ True) ∧ SvErrRet B out v n0) ∨
     (∃ ix9, nlScan M0 (w38) 0 ((w5c).toNat) = some ix9 ∧
     (4 ≤ ix9) ∧
-    (memBytes M0 w38 4 = memBytes M0 (BitVec.ofNat 32 0x3FCC4855) 4) ∧
+    (memBytes M0 w38 4 = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x3D)) 4) ∧
     ∃ n', Steps n0 n' ∧
         St n'.mem SV n' 0x2DCC (reg n') ∧
         SvCode n'.mem ∧
@@ -3408,7 +3408,7 @@ theorem sv_csa {B out bp x21 x26 dg c q rl rp sgp op ol : Word} {rt sg : Bytes} 
     rw [rb19]; simp +decide only [runBlock, BInstr.run, svCsa2da8, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g18_2, g18_3, g18_4, g18_8, g18_9, g18_10, g18_18, g18_19, g18_21, g18_22, g18_23, g18_24, g18_25, g18_26, g18_27, s18.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
-  have g19_11 : reg n19 a1 = BitVec.ofNat 32 0x3FCC4855 := by
+  have g19_11 : reg n19 a1 = BitVec.ofNat 32 (img% svConstAddress + 0x3D) := by
     rw [rb19]; simp +decide only [runBlock, BInstr.run, svCsa2da8, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g18_2, g18_3, g18_4, g18_8, g18_9, g18_10, g18_18, g18_19, g18_21, g18_22, g18_23, g18_24, g18_25, g18_26, g18_27, s18.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -3625,7 +3625,7 @@ theorem sv_csa {B out bp x21 x26 dg c q rl rp sgp op ol : Word} {rt sg : Bytes} 
   have q20_320 : ∀ j, j < 31 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x320 + j)) = BitVec.ofNat 8 (rt.getD (1 + j) 0) := fun j hj => (K20.range (by decide) (by decide) j hj).trans (q19_320 j hj)
   have q20_1480 : ∀ j, j < 63 → n20.mem (B + 0x21A0 + BitVec.ofNat 32 (0x1480 + j)) = BitVec.ofNat 8 (sg.getD (1 + j) 0) := fun j hj => (K20.range (by decide) (by decide) j hj).trans (q19_1480 j hj)
   clear q19_1480 q19_320 b19_10 w19_aa4 w19_aa0 w19_a3c w19_a38 w19_a34 w19_a30 w19_a2c w19_a28 w19_a24 w19_a20 w19_42c w19_428 w19_424 w19_420 w19_130 w19_12c w19_128 w19_124 w19_120 w19_11c w19_118 w19_114 w19_110 w19_10c w19_108 w19_104 w19_100 w19_fc w19_f8 w19_f4 w19_f0 w19_ec w19_e8 w19_e4 w19_e0 w19_dc w19_d8 w19_d4 w19_d0 w19_cc w19_c8 w19_c4 w19_c0 w19_bc w19_b8 w19_b4 w19_b0 w19_ac w19_a8 w19_a4 w19_a0 w19_9c w19_98 w19_94 w19_90 w19_8c w19_88 w19_84 w19_80 w19_7c w19_78 w19_70 w19_6c w19_68 w19_64 w19_60 w19_5c w19_58 w19_54 w19_50 w19_4c w19_48 w19_44 w19_40 w19_3c w19_38 w19_34 w19_30 w19_2c w19_28 w19_24 w19_20 w19_1c w19_18 w19_14 w19_c w19_8 g19_12 g19_11 g19_10 g19_27 g19_26 g19_25 g19_24 g19_23 g19_22 g19_21 g19_19 g19_18 g19_9 g19_8 g19_4 g19_3 g19_2 V19 E19 fR19 t19 fr19 rb19 s19 m19 u19 c19
-  by_cases hdash : memBytes M0 w38 4 = memBytes M0 (BitVec.ofNat 32 0x3FCC4855) 4
+  by_cases hdash : memBytes M0 w38 4 = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x3D)) 4
   rotate_left
   · have g20_10 : reg n20 a0 = BitVec.ofNat 32 0 := by rw [a0_20, ite_eq_right hdash]; rfl
     -- 0x2DBC: branch, taken

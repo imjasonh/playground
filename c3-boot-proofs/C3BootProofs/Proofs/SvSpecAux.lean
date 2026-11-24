@@ -37,27 +37,27 @@ structure SvRekorData (M : Word → BitVec 8) : Prop where
   post : CodeIn M (BitVec.ofNat 32 svRekorPostAddress) svRekorPostData
 
 theorem SvRekorData.leaf' {M : Word → BitVec 8} (D : SvRekorData M) :
-    memBytes M (BitVec.ofNat 32 0x3FCC4106) 1 = [0x00] :=
+    memBytes M (BitVec.ofNat 32 (img% svRekorLeafAddress)) 1 = [0x00] :=
   codeIn_memBytes D.leaf (by decide)
 
 theorem SvRekorData.pre' {M : Word → BitVec 8} (D : SvRekorData M) :
-    memBytes M (BitVec.ofNat 32 0x3FCC46F0) 0x71 = rekorPre :=
+    memBytes M (BitVec.ofNat 32 (img% svRekorPreAddress)) 0x71 = rekorPre :=
   (codeIn_memBytes D.pre (by decide)).trans (by decide)
 
 theorem SvRekorData.mid1' {M : Word → BitVec 8} (D : SvRekorData M) :
-    memBytes M (BitVec.ofNat 32 0x3FCC4761) 0x1B = rekorMid1 :=
+    memBytes M (BitVec.ofNat 32 (img% svRekorMid1Address)) 0x1B = rekorMid1 :=
   (codeIn_memBytes D.mid1 (by decide)).trans (by decide)
 
 theorem SvRekorData.mid2' {M : Word → BitVec 8} (D : SvRekorData M) :
-    memBytes M (BitVec.ofNat 32 0x3FCC477C) 0x54 = rekorMid2 :=
+    memBytes M (BitVec.ofNat 32 (img% svRekorMid2Address)) 0x54 = rekorMid2 :=
   (codeIn_memBytes D.mid2 (by decide)).trans (by decide)
 
 theorem SvRekorData.post' {M : Word → BitVec 8} (D : SvRekorData M) :
-    memBytes M (BitVec.ofNat 32 0x3FCC47D0) 7 = rekorPost :=
+    memBytes M (BitVec.ofNat 32 (img% svRekorPostAddress)) 7 = rekorPost :=
   (codeIn_memBytes D.post (by decide)).trans (by decide)
 
 /-- The `0x01` of the key ID, which `merkleNodeHash` also prefixes. -/
-theorem keyIdOne {M : Word → BitVec 8} (D : SvRkCode M) : memBytes M (BitVec.ofNat 32 0x3FCC47D7) 1 = [0x01] :=
+theorem keyIdOne {M : Word → BitVec 8} (D : SvRkCode M) : memBytes M (BitVec.ofNat 32 (img% merklePrefixAddress)) 1 = [0x01] :=
   codeIn_memBytes D.pre (by decide)
 
 theorem round_length (w : Array Sha256.W32) (v : List Sha256.W32) (t : Nat) : (Sha256.round w v t).length = v.length := by

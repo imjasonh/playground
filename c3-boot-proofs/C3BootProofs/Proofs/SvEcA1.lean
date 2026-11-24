@@ -127,9 +127,9 @@ theorem sv_eca1 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
     (q0_159 : ∀ j, j < 31 → n0.mem (B + 0x21A0 + BitVec.ofNat 32 (0x159 + j)) = BitVec.ofNat 8 (es.getD (1 + j) 0))
     (EC0 : SvEcCode M0)
     (k_in : SvIn B x21 1) :
-    (¬ ((inScalarRange (b32 er) (memBytes M0 (BitVec.ofNat 32 0x3FCC4288) 32) = true) ∧ (inScalarRange (b32 es) (memBytes M0 (BitVec.ofNat 32 0x3FCC4288) 32) = true) ∧ (M0 x21 = 4) ∧ True) ∧ SvErrRet B out v n0) ∨
-    ((inScalarRange (b32 er) (memBytes M0 (BitVec.ofNat 32 0x3FCC4288) 32) = true) ∧
-    (inScalarRange (b32 es) (memBytes M0 (BitVec.ofNat 32 0x3FCC4288) 32) = true) ∧
+    (¬ ((inScalarRange (b32 er) (memBytes M0 (BitVec.ofNat 32 (img% p256OrderBeAddress)) 32) = true) ∧ (inScalarRange (b32 es) (memBytes M0 (BitVec.ofNat 32 (img% p256OrderBeAddress)) 32) = true) ∧ (M0 x21 = 4) ∧ True) ∧ SvErrRet B out v n0) ∨
+    ((inScalarRange (b32 er) (memBytes M0 (BitVec.ofNat 32 (img% p256OrderBeAddress)) 32) = true) ∧
+    (inScalarRange (b32 es) (memBytes M0 (BitVec.ofNat 32 (img% p256OrderBeAddress)) 32) = true) ∧
     (M0 x21 = 4) ∧
     ∃ n', Steps n0 n' ∧
         St n'.mem SV n' 0x1008 (reg n') ∧
@@ -257,7 +257,7 @@ theorem sv_eca1 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
     rw [rb1]; simp +decide only [runBlock, BInstr.run, svEcA1fba, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g0_2, g0_3, g0_4, g0_18, g0_19, g0_20, g0_21, g0_26, g0_27, s0.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
-  have g1_12 : reg n1 a2 = BitVec.ofNat 32 0x3FCC4288 := by
+  have g1_12 : reg n1 a2 = BitVec.ofNat 32 (img% p256OrderBeAddress) := by
     rw [rb1]; simp +decide only [runBlock, BInstr.run, svEcA1fba, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g0_2, g0_3, g0_4, g0_18, g0_19, g0_20, g0_21, g0_26, g0_27, s0.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -427,7 +427,7 @@ theorem sv_eca1 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have q2_139 : ∀ j, j < 31 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x139 + j)) = BitVec.ofNat 8 (er.getD (1 + j) 0) := fun j hj => by rw [m2]; exact q1_139 j hj
   have q2_159 : ∀ j, j < 31 → n2.mem (B + 0x21A0 + BitVec.ofNat 32 (0x159 + j)) = BitVec.ofNat 8 (es.getD (1 + j) 0) := fun j hj => by rw [m2]; exact q1_159 j hj
   clear q1_159 q1_139 b1_158 b1_138 w1_130 w1_12c w1_128 w1_124 w1_120 w1_11c w1_118 w1_114 w1_110 w1_10c w1_108 w1_104 w1_100 w1_fc w1_f8 w1_f4 w1_f0 w1_ec w1_e8 w1_e4 w1_e0 w1_dc w1_d8 w1_d4 w1_d0 w1_cc w1_c8 w1_c4 w1_c0 w1_bc w1_b8 w1_b4 w1_b0 w1_ac w1_a8 w1_a4 w1_a0 w1_9c w1_98 w1_94 w1_90 w1_8c w1_88 w1_84 w1_80 w1_7c w1_70 w1_6c w1_68 w1_64 w1_60 w1_5c w1_58 w1_54 w1_50 w1_4c w1_48 w1_44 w1_40 w1_3c w1_38 w1_34 w1_30 w1_2c w1_28 w1_24 g1_13 g1_12 g1_11 g1_10 g1_27 g1_26 g1_21 g1_20 g1_19 g1_18 g1_4 g1_3 g1_2 V1 E1 fR1 t1 fr1 rb1 s1 m1 u1 c1 g0_4 g0_3 fR0 t0
-  by_cases hr : inScalarRange (b32 er) (memBytes M0 (BitVec.ofNat 32 0x3FCC4288) 32) = true
+  by_cases hr : inScalarRange (b32 er) (memBytes M0 (BitVec.ofNat 32 (img% p256OrderBeAddress)) 32) = true
   rotate_left
   · have g2_10 : reg n2 a0 = BitVec.ofNat 32 0 := by rw [a0_2, ite_eq_right hr]; rfl
     -- 0xFD4: branch, not taken
@@ -748,7 +748,7 @@ theorem sv_eca1 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
     rw [rb4]; simp +decide only [runBlock, BInstr.run, svEcA1fda, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g3_2, g3_3, g3_4, g3_10, g3_18, g3_19, g3_20, g3_21, g3_26, g3_27, s3.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
-  have g4_12 : reg n4 a2 = BitVec.ofNat 32 0x3FCC4288 := by
+  have g4_12 : reg n4 a2 = BitVec.ofNat 32 (img% p256OrderBeAddress) := by
     rw [rb4]; simp +decide only [runBlock, BInstr.run, svEcA1fda, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g3_2, g3_3, g3_4, g3_10, g3_18, g3_19, g3_20, g3_21, g3_26, g3_27, s3.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -920,7 +920,7 @@ theorem sv_eca1 {B out bp x21 x26 : Word} {er es : Bytes} {w24 w28 w2c w30 w34 w
   have q5_139 : ∀ j, j < 31 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x139 + j)) = BitVec.ofNat 8 (er.getD (1 + j) 0) := fun j hj => by rw [m5]; exact q4_139 j hj
   have q5_159 : ∀ j, j < 31 → n5.mem (B + 0x21A0 + BitVec.ofNat 32 (0x159 + j)) = BitVec.ofNat 8 (es.getD (1 + j) 0) := fun j hj => by rw [m5]; exact q4_159 j hj
   clear q4_159 q4_139 b4_158 b4_138 w4_130 w4_12c w4_128 w4_124 w4_120 w4_11c w4_118 w4_114 w4_110 w4_10c w4_108 w4_104 w4_100 w4_fc w4_f8 w4_f4 w4_f0 w4_ec w4_e8 w4_e4 w4_e0 w4_dc w4_d8 w4_d4 w4_d0 w4_cc w4_c8 w4_c4 w4_c0 w4_bc w4_b8 w4_b4 w4_b0 w4_ac w4_a8 w4_a4 w4_a0 w4_9c w4_98 w4_94 w4_90 w4_8c w4_88 w4_84 w4_80 w4_7c w4_70 w4_6c w4_68 w4_64 w4_60 w4_5c w4_58 w4_54 w4_50 w4_4c w4_48 w4_44 w4_40 w4_3c w4_38 w4_34 w4_30 w4_2c w4_28 w4_24 g4_13 g4_12 g4_11 g4_10 g4_27 g4_26 g4_21 g4_20 g4_19 g4_18 g4_4 g4_3 g4_2 V4 E4 fR4 t4 fr4 rb4 s4 m4 u4 c4
-  by_cases hs : inScalarRange (b32 es) (memBytes M0 (BitVec.ofNat 32 0x3FCC4288) 32) = true
+  by_cases hs : inScalarRange (b32 es) (memBytes M0 (BitVec.ofNat 32 (img% p256OrderBeAddress)) 32) = true
   rotate_left
   · have g5_10 : reg n5 a0 = BitVec.ofNat 32 0 := by rw [a0_5, ite_eq_right hs]; rfl
     -- 0xFF4: branch, not taken

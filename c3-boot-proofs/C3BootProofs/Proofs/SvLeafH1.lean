@@ -91,7 +91,7 @@ theorem sv_lh1 {B p : Word} {len : Nat} {n : Machine} (F : Fr B 0x3830) (E : SvC
     (by rw [k1 sp (by decide), rsp]; rfl) (by decide)
   have E2 : SvCode n2.mem := E1.fr F fr2
   -- 0xB5C: the memcpy's arguments
-  obtain ⟨n3, c3, u3⟩ := s2.block (off' := 0xB6E) [.aluImm .add 20 sp 0x4A0, .lui a1 0x3FCC4000, .aluImm .add a1 a1 0x5C0,
+  obtain ⟨n3, c3, u3⟩ := s2.block (off' := 0xB6E) [.aluImm .add 20 sp 0x4A0, .lui a1 (img% hi20 sha384IVAddress), .aluImm .add a1 a1 (img% lo12 sha384IVAddress),
     .aluImm .add a2 x0 0x40, .alu .add a0 x0 20] E2.self (by decide) ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩
   have m3 : n3.mem = n2.mem := u3.mem
   have s3 : St n3.mem SV n3 0xB6E (reg n3) := ⟨u3.pc, rfl, fun _ => rfl⟩

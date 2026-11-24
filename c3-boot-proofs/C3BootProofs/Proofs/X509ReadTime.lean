@@ -399,7 +399,7 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
       CodeIn M' c code :=
     fun hc h1 h2 hM i hi' => by
       rw [hM _ (hiR _ (dn_code_hi h1 h2 hi')) (hiD _ (dn_code_hi h1 h2 hi'))]; exact hc i hi'
-  have hXn : XRT.toNat = 0x403a8eaa := by decide
+  have hXn : XRT.toNat = (img% x509ReadTimeAddress) := by decide
   have cdX : ∀ {M' : Word → BitVec 8}, (∀ x, Sep R 0x60 x 1 → Sep (d + 8) 8 x 1 → M' x = m.mem x) →
       CodeIn M' XRT x509ReadTimeCode := fun hM => cd hcR (by rw [hXn]; decide) (by rw [hXn]; decide) hM
   have hiC : ∀ {c l : Nat} {a : Word} {len : Nat}, c + l ≤ 0x60 → 0x40000000 ≤ a.toNat → a.toNat + len ≤ 2 ^ 32 →
@@ -753,7 +753,7 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
       rw [show (8 : Word) = BitVec.ofNat 32 8 from rfl, eFk, hRc _ (by decide)]; omega
     obtain ⟨m10, c10, pc10, mem10, regs10⟩ := u9.self.callRa hc2 xrt_at_20 xrt_at_24 (cb := TLV) (by decide) (by decide)
     have r10 := PEnv.reg1 regs10 u9.self.zero
-    have hTn : TLV.toNat = 0x403a8088 := by decide
+    have hTn : TLV.toNat = (img% derTlvAddress) := by decide
     have sF8T : Sep (F + 8) 17 TLV derTlvCode.length := by
       rw [show (8 : Word) = BitVec.ofNat 32 8 from rfl, eFk]; exact hiC (by decide) (by rw [hTn]; decide) (by rw [hTn]; decide)
     have sDT : Sep (d + 8) 8 TLV derTlvCode.length := sep_of_le (by rw [hd8, hTn]; omega) (by rw [hTn]; decide)
@@ -863,9 +863,9 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
         rw [pc16]; simp +decide only [upd_app, ↓reduceIte]
       have hcode : ∀ {c : Word} {code : List Nat}, CodeIn m.mem c code → 0x40000000 ≤ c.toNat →
           c.toNat + code.length ≤ 2 ^ 32 → CodeIn m16.mem c code := fun hc h1 h2 => by rw [mem16]; exact cd hc h1 h2 I11
-      have hGn : GNT.toNat = 0x403a8a72 := by decide
-      have hDn : DT.toNat = 0x403a8bc8 := by decide
-      have hTDn : TD.toNat = 0x403a8de4 := by decide
+      have hGn : GNT.toNat = (img% generalizedTimeAddress) := by decide
+      have hDn : DT.toNat = (img% dateTimeAddress) := by decide
+      have hTDn : TD.toNat = (img% timeDigits2Address) := by decide
       have hpw' : (rp + BitVec.ofNat 32 t.header).toNat + t.len + 14 ≤ 0x40000000 := by rw [hch]; omega
       obtain ⟨mf, cf, pcf, spf, Kf, hSf, hNf, frf⟩ := generalizedTime_correct m16 (sp0 := sp0) (out := out)
         (p := rp + BitVec.ofNat 32 t.header) (n := t.len) (retAddr := retAddr)
@@ -930,7 +930,7 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
     rw [show (8 : Word) = BitVec.ofNat 32 8 from rfl, eFk, hRc _ (by decide)]; omega
   obtain ⟨m10, c10, pc10, mem10, regs10⟩ := u9.self.callRa hc2 xrt_at_44 xrt_at_48 (cb := TLV) (by decide) (by decide)
   have r10 := PEnv.reg1 regs10 u9.self.zero
-  have hTn : TLV.toNat = 0x403a8088 := by decide
+  have hTn : TLV.toNat = (img% derTlvAddress) := by decide
   have sF8T : Sep (F + 8) 17 TLV derTlvCode.length := by
     rw [show (8 : Word) = BitVec.ofNat 32 8 from rfl, eFk]; exact hiC (by decide) (by rw [hTn]; decide) (by rw [hTn]; decide)
   have sDT : Sep (d + 8) 8 TLV derTlvCode.length := sep_of_le (by rw [hd8, hTn]; omega) (by rw [hTn]; decide)
@@ -1059,7 +1059,7 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
   -- 0x5A: the two-digit year
   obtain ⟨m15, c15, pc15, mem15, regs15⟩ := u14'.callRa hc14 xrt_at_5a xrt_at_5e (cb := TD) (by decide) (by decide)
   have r15 := PEnv.reg1 regs15 u14'.zero
-  have hTDn : TD.toNat = 0x403a8de4 := by decide
+  have hTDn : TD.toNat = (img% timeDigits2Address) := by decide
   have sF8TD : Sep (F + 8) 8 TD timeDigits2Code.length := by
     rw [show (8 : Word) = BitVec.ofNat 32 8 from rfl, eFk]; exact hiC (by decide) (by rw [hTDn]; decide) (by rw [hTDn]; decide)
   have sF20TD : Sep (F + 0x20) 8 TD timeDigits2Code.length := by
@@ -1212,7 +1212,7 @@ theorem x509ReadTime_correct (m : Machine) {sp0 out d rp retAddr : Word} {rl : N
       (by intro h; apply hq; rw [h]; decide)]
   obtain ⟨m25, c25, pc25, mem25, regs25⟩ := u24'.callRa hc16 xrt_at_bc xrt_at_c0 (cb := DT) (by decide) (by decide)
   have r25 := PEnv.reg1 regs25 u24'.zero
-  have hDn : DT.toNat = 0x403a8bc8 := by decide
+  have hDn : DT.toNat = (img% dateTimeAddress) := by decide
   have hc2' : (c + 2).toNat = rp.toNat + t.header + 2 := by
     rw [show (2 : Word) = BitVec.ofNat 32 2 from rfl, BitVec.toNat_add, BitVec.toNat_ofNat, hcn]; omega
   have sPc2 : Sep (c + 2) (t.len - 2) R 0x60 := by

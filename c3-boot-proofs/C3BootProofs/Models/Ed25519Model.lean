@@ -1,6 +1,8 @@
 import C3BootProofs.Models.Ed25519Limbs
 import C3BootProofs.Models.Ed25519Bytes
 import C3BootProofs.Proofs.Ed25519VerifyC
+import C3BootProofs.Image.BootloaderData5
+import C3BootProofs.Image.BootloaderData7
 
 /-!
 # `evSpec` accepts only signatures `ed25519Verify` accepts
@@ -58,10 +60,10 @@ point it represents. -/
 def CompressOK : Prop := ∀ (r : Pr) (P : Nat × Nat), OnCurve P → PRep r P → evCompress r = encode P
 
 /-- `Scalar::from_bytes_mod_order_wide`, with the Montgomery constants as `M`
-holds them at `0x3FCC49E4` and `0x3FCC49C0`: the little-endian bytes of a
+holds them at `edMontRAddress` and `edMontRRAddress`: the little-endian bytes of a
 SHA-512 digest reduced modulo `L`. -/
 def KOK (M : Word → BitVec 8) : Prop :=
-  ∀ m : Bytes, leL (kOf (smmIn M (BitVec.ofNat 32 0x3FCC49E4)) (smmIn M (BitVec.ofNat 32 0x3FCC49C0)) (sha512 m)) 0 32 =
+  ∀ m : Bytes, leL (kOf (smmIn M (BitVec.ofNat 32 (img% edMontRAddress))) (smmIn M (BitVec.ofNat 32 (img% edMontRRAddress))) (sha512 m)) 0 32 =
     Ed25519.leNum (sha512 m) % Ed25519.L
 
 /-- `L`, 32 bytes little-endian. -/
@@ -89,14 +91,14 @@ def edPm1Bytes : List Nat :=
 image's 40-byte field elements `1`, `d`, `sqrt(-1)`, and `2d`, and the base
 point's extended coordinates. -/
 structure EdImage (M : Word → BitVec 8) : Prop where
-  order : memBytes M (BitVec.ofNat 32 0x3FCC4308) 32 = edLBytes
-  prime : memBytes M (BitVec.ofNat 32 0x3FCC4328) 32 = edPBytes
-  xzero : memBytes M (BitVec.ofNat 32 0x3FCC42E8) 32 = edOneBytes ∧ memBytes M (BitVec.ofNat 32 0x3FCC4388) 32 = edPm1Bytes
+  order : memBytes M (BitVec.ofNat 32 (img% edOrderAddress)) 32 = edLBytes
+  prime : memBytes M (BitVec.ofNat 32 (img% edPrimeAddress)) 32 = edPBytes
+  xzero : memBytes M (BitVec.ofNat 32 (img% p256OneAddress)) 32 = edOneBytes ∧ memBytes M (BitVec.ofNat 32 (img% edPm1Address)) 32 = edPm1Bytes
   one : memBytes M (BitVec.ofNat 32 edOneAddress) 40 = edOneData
   d : memBytes M (BitVec.ofNat 32 edDAddress) 40 = edDData
   sqrtM1 : memBytes M (BitVec.ofNat 32 edSqrtM1Address) 40 = edSqrtM1Data
   d2 : memBytes M apnD 40 = edwardsD2Data
-  base : ERep (ptAt M (BitVec.ofNat 32 0x3FCC4A54)) Ed25519.B
+  base : ERep (ptAt M (BitVec.ofNat 32 (img% edBaseAddress))) Ed25519.B
 
 /-- A field element's limbs, from its 40 bytes. -/
 def limbsOf (data : List Nat) : List Nat :=
@@ -124,15 +126,15 @@ theorem feW_bytes {M : Word → BitVec 8} {a : Word} {data : List Nat} (h : memB
 section
 variable {M : Word → BitVec 8}
 
-theorem EdImage.orderN (I : EdImage M) : Ed25519.leNum (memBytes M (BitVec.ofNat 32 0x3FCC4308) 32) = Ed25519.L := by
+theorem EdImage.orderN (I : EdImage M) : Ed25519.leNum (memBytes M (BitVec.ofNat 32 (img% edOrderAddress)) 32) = Ed25519.L := by
   rw [I.order]; decide
 
-theorem EdImage.primeN (I : EdImage M) : Ed25519.leNum (memBytes M (BitVec.ofNat 32 0x3FCC4328) 32) = Ed25519.p := by
+theorem EdImage.primeN (I : EdImage M) : Ed25519.leNum (memBytes M (BitVec.ofNat 32 (img% edPrimeAddress)) 32) = Ed25519.p := by
   rw [I.prime]; decide
 
 theorem EdImage.xzeroN (I : EdImage M) :
-    Ed25519.leNum (memBytes M (BitVec.ofNat 32 0x3FCC42E8) 32) = 1 ∧
-      Ed25519.leNum (memBytes M (BitVec.ofNat 32 0x3FCC4388) 32) = Ed25519.p - 1 := by
+    Ed25519.leNum (memBytes M (BitVec.ofNat 32 (img% p256OneAddress)) 32) = 1 ∧
+      Ed25519.leNum (memBytes M (BitVec.ofNat 32 (img% edPm1Address)) 32) = Ed25519.p - 1 := by
   rw [I.xzero.1, I.xzero.2]; decide
 
 theorem EdImage.oneOK (I : EdImage M) :
@@ -258,8 +260,8 @@ theorem pk_point (a : Word) (h : evPk M (memBytes M a 32) = true) :
       · exfalso
         have h31 := hB 31
         have h128 : 128 ≤ (memBytes M a 32).getD 31 0 := by omega
-        have hE : clearTop (memBytes M a 32) = memBytes M (BitVec.ofNat 32 0x3FCC42E8) 32 ∨
-            clearTop (memBytes M a 32) = memBytes M (BitVec.ofNat 32 0x3FCC4388) 32 := by
+        have hE : clearTop (memBytes M a 32) = memBytes M (BitVec.ofNat 32 (img% p256OneAddress)) 32 ∨
+            clearTop (memBytes M a 32) = memBytes M (BitVec.ofNat 32 (img% edPm1Address)) 32 := by
           have hc := byt_clearTop hb hB
           have hl : (clearTop (memBytes M a 32)).length = 32 := by rw [clearTop_length, hb]
           obtain ⟨e1, e2⟩ := I.xzeroN
@@ -305,20 +307,20 @@ theorem evSpec_sound {M : Word → BitVec 8} (I : EdImage M) (G : EdGroupLaws) (
     have hd2 := I.d2OK
     have hTA := tab_rep G F _ hd2.1 hd2.2 _ _ (onCurve_neg _ hAon) (erep_neg feNeg_ok hAon hAE)
     have hTB := tab_rep G F _ hd2.1 hd2.2 _ _ onCurve_B I.base
-    have hr0 : PRep (feZ, feW M (BitVec.ofNat 32 0x3FCC4948), feW M (BitVec.ofNat 32 0x3FCC4948))
+    have hr0 : PRep (feZ, feW M (BitVec.ofNat 32 (img% edOneAddress)), feW M (BitVec.ofNat 32 (img% edOneAddress)))
         (Ed25519.add (zs 0 (neg A)) (zs 0 Ed25519.B)) := by
       rw [show zs (0 : Int) (neg A) = Ed25519.zero from rfl, show zs (0 : Int) Ed25519.B = Ed25519.zero from rfl,
         zero_add' _ onCurve_zero]
-      have h1 : Lim (2 ^ 26) (feW M (BitVec.ofNat 32 0x3FCC4948)) ∧ fv (feW M (BitVec.ofNat 32 0x3FCC4948)) = 1 :=
+      have h1 : Lim (2 ^ 26) (feW M (BitVec.ofNat 32 (img% edOneAddress))) ∧ fv (feW M (BitVec.ofNat 32 (img% edOneAddress))) = 1 :=
         I.oneOK
       refine ⟨?_, h1.1, h1.1, ?_, ?_, ?_⟩
       · show Lim (2 ^ 26) feZ
         rw [feZ_eq]; unfold Lim; decide
-      · show fv (feW M (BitVec.ofNat 32 0x3FCC4948)) ≠ 0
+      · show fv (feW M (BitVec.ofNat 32 (img% edOneAddress))) ≠ 0
         rw [h1.2]; decide
-      · show fv feZ = 0 * fv (feW M (BitVec.ofNat 32 0x3FCC4948)) % Ed25519.p
+      · show fv feZ = 0 * fv (feW M (BitVec.ofNat 32 (img% edOneAddress))) % Ed25519.p
         rw [feZ_eq, h1.2]; decide
-      · show fv (feW M (BitVec.ofNat 32 0x3FCC4948)) = 1 * fv (feW M (BitVec.ofNat 32 0x3FCC4948)) % Ed25519.p
+      · show fv (feW M (BitVec.ofNat 32 (img% edOneAddress))) = 1 * fv (feW M (BitVec.ofNat 32 (img% edOneAddress))) % Ed25519.p
         rw [h1.2]; decide
     rw [hk, leNum_memBytes] at h
     generalize hKdef : Ed25519.leNum (sha512 (memBytes M sig 32 ++ memBytes M pk 32 ++ memBytes M msg len)) %

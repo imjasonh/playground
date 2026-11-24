@@ -173,7 +173,7 @@ theorem fromBeSliceTrunc12_correct (m : Machine) {sp0 out b retAddr : Word} {n b
   have cd : ∀ {M' : Word → BitVec 8} {c : Word} {code : List Nat}, CodeIn m.mem c code → 0x40000000 ≤ c.toNat →
       c.toNat + code.length ≤ 2 ^ 32 → (∀ x, Sep G 0x70 x 1 → M' x = m.mem x) → CodeIn M' c code :=
     fun hc h1 h2 hM i hi' => by rw [hM _ (hiG _ (code_hi h1 h2 hi'))]; exact hc i hi'
-  have hFBn : FB.toNat = 0x403a2c8a := by decide
+  have hFBn : FB.toNat = (img% fromBeSliceTrunc12Address) := by decide
   have hc := E.cod
   have st0 : St m.mem FB m 0 (reg m) := ⟨by rw [hpc, add_ofNat_zero], rfl, fun _ => rfl⟩
   have hz := st0.zero
@@ -263,7 +263,7 @@ theorem fromBeSliceTrunc12_correct (m : Machine) {sp0 out b retAddr : Word} {n b
     simp only [ev_add, hFT, true_and]
     exact ⟨zw _, zw _, zw _⟩
   obtain ⟨v5a2, v5a3, v5a0, v5a1, v5a4⟩ := v5
-  have hFLn : FL.toNat = 0x403ad524 := by decide
+  have hFLn : FL.toNat = (img% fillLimbsBeTruncAddress) := by decide
   obtain ⟨m6, c6, pc6, mem6, regs6⟩ := u5'.callRa hc4 fb_at_2e fb_at_32 (cb := FL) (by decide) (by decide)
   have r6 := PEnv.reg1 regs6 u5'.zero
   have sp6 : reg m6 sp = F := by
@@ -554,7 +554,7 @@ theorem fromBeSliceTrunc8_correct (m : Machine) {sp0 out b retAddr : Word} {n bi
   have cd : ∀ {M' : Word → BitVec 8} {c : Word} {code : List Nat}, CodeIn m.mem c code → 0x40000000 ≤ c.toNat →
       c.toNat + code.length ≤ 2 ^ 32 → (∀ x, Sep G 0x60 x 1 → M' x = m.mem x) → CodeIn M' c code :=
     fun hc h1 h2 hM i hi' => by rw [hM _ (hiG _ (code_hi h1 h2 hi'))]; exact hc i hi'
-  have hFCn : FC.toNat = 0x403a2e34 := by decide
+  have hFCn : FC.toNat = (img% fromBeSliceTrunc8Address) := by decide
   have hc := E.cod
   have st0 : St m.mem FC m 0 (reg m) := ⟨by rw [hpc, add_ofNat_zero], rfl, fun _ => rfl⟩
   have hz := st0.zero
@@ -644,7 +644,7 @@ theorem fromBeSliceTrunc8_correct (m : Machine) {sp0 out b retAddr : Word} {n bi
     simp only [ev_add, hFT, true_and]
     exact ⟨zw _, zw _, zw _⟩
   obtain ⟨v5a2, v5a3, v5a0, v5a1, v5a4⟩ := v5
-  have hFLn : FL.toNat = 0x403ad524 := by decide
+  have hFLn : FL.toNat = (img% fillLimbsBeTruncAddress) := by decide
   obtain ⟨m6, c6, pc6, mem6, regs6⟩ := u5'.callRa hc4 fc_at_2e fc_at_32 (cb := FL) (by decide) (by decide)
   have r6 := PEnv.reg1 regs6 u5'.zero
   have sp6 : reg m6 sp = F := by

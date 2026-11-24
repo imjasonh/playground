@@ -140,8 +140,8 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
       reg n' (3 : Fin 32) = reg n0 (3 : Fin 32) ∧
       reg n' (4 : Fin 32) = reg n0 (4 : Fin 32) ∧
       reg n' (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 ∧
-      reg n' (9 : Fin 32) = BitVec.ofNat 32 0x3FCC4D88 ∧
-      reg n' (18 : Fin 32) = BitVec.ofNat 32 0x3FCC4D28 ∧
+      reg n' (9 : Fin 32) = BitVec.ofNat 32 (img% p384ScalarR2Address) ∧
+      reg n' (18 : Fin 32) = BitVec.ofNat 32 (img% p384OrderAddress) ∧
       reg n' (19 : Fin 32) = BitVec.ofNat 32 len ∧
       reg n' (20 : Fin 32) = BitVec.ofNat 32 0x177023BB ∧
       reg n' (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 ∧
@@ -819,7 +819,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g13_10 : reg n13 a0 = B + 0x420 + BitVec.ofNat 32 0x12F4 := by
     rw [rb13]; simp +decide only [runBlock, BInstr.run, pvB1f4, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g12_2, g12_3, g12_4, g12_8, g12_18, g12_19, g12_20, g12_21, g12_23, g12_25, g12_26, g12_27, s12.zero, BitVec.zero_add]) <;> pv_val
-  have g13_11 : reg n13 a1 = BitVec.ofNat 32 0x3FCC44A0 := by
+  have g13_11 : reg n13 a1 = BitVec.ofNat 32 (img% p384MontOneAddress) := by
     rw [rb13]; simp +decide only [runBlock, BInstr.run, pvB1f4, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g12_2, g12_3, g12_4, g12_8, g12_18, g12_19, g12_20, g12_21, g12_23, g12_25, g12_26, g12_27, s12.zero, BitVec.zero_add]) <;> pv_val
   have g13_12 : reg n13 a2 = BitVec.ofNat 32 0x30 := by
@@ -891,7 +891,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have a14_17a4 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = Sg :=
     (K14.acc (by decide) (by decide)).trans a13_17a4
   have a14_12f4 : accV n14.mem (B + 0x420 + BitVec.ofNat 32 0x12F4) 12 = dataVal p384MontOneData 0 12 := by
-    rw [show BitVec.ofNat 32 0x3FCC44A0 = BitVec.ofNat 32 0x3FCC44A0 + BitVec.ofNat 32 0 from (add_ofNat_zero _).symm] at V14
+    rw [show BitVec.ofNat 32 (img% p384MontOneAddress) = BitVec.ofNat 32 (img% p384MontOneAddress) + BitVec.ofNat 32 0 from (add_ofNat_zero _).symm] at V14
     rw [accV_K 12 fun q hq => V14 q (by omega)]
     exact code_accV (d := p384MontOneData) E13.D2.one 0 12 (by decide)
   clear a13_17a4 a13_12c4 a13_1294 a13_e40 a13_e10 a13_420 a13_3f0 a13_270 a13_88 a13_58 g13_22 g13_12 g13_11 g13_10 g13_27 g13_26 g13_25 g13_23 g13_21 g13_20 g13_19 g13_18 g13_8 g13_4 g13_3 g13_2 fR13 t13 K13 fr13 rb13 E13 s13 m13 u13 c13
@@ -1047,13 +1047,13 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g17_11 : reg n17 a1 = B + 0x420 + BitVec.ofNat 32 0x1294 := by
     rw [rb17]; simp +decide only [runBlock, BInstr.run, pvB21e, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g16_2, g16_3, g16_4, g16_8, g16_10, g16_18, g16_19, g16_20, g16_21, g16_22, g16_23, g16_25, g16_26, g16_27, s16.zero, BitVec.zero_add]) <;> pv_val
-  have g17_12 : reg n17 a2 = BitVec.ofNat 32 0x3FCC44D0 := by
+  have g17_12 : reg n17 a2 = BitVec.ofNat 32 (img% p384IdentityAddress) := by
     rw [rb17]; simp +decide only [runBlock, BInstr.run, pvB21e, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g16_2, g16_3, g16_4, g16_8, g16_10, g16_18, g16_19, g16_20, g16_21, g16_22, g16_23, g16_25, g16_26, g16_27, s16.zero, BitVec.zero_add]) <;> pv_val
   have g17_13 : reg n17 a3 = BitVec.ofNat 32 0x0 := by
     rw [rb17]; simp +decide only [runBlock, BInstr.run, pvB21e, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g16_2, g16_3, g16_4, g16_8, g16_10, g16_18, g16_19, g16_20, g16_21, g16_22, g16_23, g16_25, g16_26, g16_27, s16.zero, BitVec.zero_add]) <;> pv_val
-  have g17_18 : reg n17 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by
+  have g17_18 : reg n17 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by
     rw [rb17]; simp +decide only [runBlock, BInstr.run, pvB21e, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g16_2, g16_3, g16_4, g16_8, g16_10, g16_18, g16_19, g16_20, g16_21, g16_22, g16_23, g16_25, g16_26, g16_27, s16.zero, BitVec.zero_add]) <;> pv_val
   have a17_58 : accV n17.mem (B + 0x420 + BitVec.ofNat 32 0x58) 12 = X :=
@@ -1095,7 +1095,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g18_4 : reg n18 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P18.regs (4 : Fin 32) (by decide), g17_4]
   have g18_8 : reg n18 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P18.regs (8 : Fin 32) (by decide), g17_8]
   have g18_9 : reg n18 (9 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [P18.regs (9 : Fin 32) (by decide), g17_9]
-  have g18_18 : reg n18 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by rw [P18.regs (18 : Fin 32) (by decide), g17_18]
+  have g18_18 : reg n18 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by rw [P18.regs (18 : Fin 32) (by decide), g17_18]
   have g18_19 : reg n18 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [P18.regs (19 : Fin 32) (by decide), g17_19]
   have g18_20 : reg n18 (20 : Fin 32) = ph := by rw [P18.regs (20 : Fin 32) (by decide), g17_20]
   have g18_21 : reg n18 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P18.regs (21 : Fin 32) (by decide), g17_21]
@@ -1150,7 +1150,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
     rw [rb19, runBlock_reg _ _ _ (8 : Fin 32) s18.zero (by decide), g18_8]
   have g19_9 : reg n19 (9 : Fin 32) = BitVec.ofNat 32 0x0 := by
     rw [rb19, runBlock_reg _ _ _ (9 : Fin 32) s18.zero (by decide), g18_9]
-  have g19_18 : reg n19 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by
+  have g19_18 : reg n19 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by
     rw [rb19, runBlock_reg _ _ _ (18 : Fin 32) s18.zero (by decide), g18_18]
   have g19_19 : reg n19 (19 : Fin 32) = BitVec.ofNat 32 len := by
     rw [rb19, runBlock_reg _ _ _ (19 : Fin 32) s18.zero (by decide), g18_19]
@@ -1174,7 +1174,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g19_11 : reg n19 a1 = B + 0x420 + BitVec.ofNat 32 0x12C4 := by
     rw [rb19]; simp +decide only [runBlock, BInstr.run, pvB240, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g18_2, g18_3, g18_4, g18_8, g18_9, g18_18, g18_19, g18_20, g18_21, g18_22, g18_23, g18_25, g18_26, g18_27, s18.zero, BitVec.zero_add]) <;> pv_val
-  have g19_12 : reg n19 a2 = BitVec.ofNat 32 0x3FCC4500 := by
+  have g19_12 : reg n19 a2 = BitVec.ofNat 32 (img% p384IdentityAddress + 0x30) := by
     rw [rb19]; simp +decide only [runBlock, BInstr.run, pvB240, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g18_2, g18_3, g18_4, g18_8, g18_9, g18_18, g18_19, g18_20, g18_21, g18_22, g18_23, g18_25, g18_26, g18_27, s18.zero, BitVec.zero_add]) <;> pv_val
   have g19_13 : reg n19 a3 = BitVec.ofNat 32 0x0 := by
@@ -1221,7 +1221,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g20_4 : reg n20 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P20.regs (4 : Fin 32) (by decide), g19_4]
   have g20_8 : reg n20 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P20.regs (8 : Fin 32) (by decide), g19_8]
   have g20_9 : reg n20 (9 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [P20.regs (9 : Fin 32) (by decide), g19_9]
-  have g20_18 : reg n20 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by rw [P20.regs (18 : Fin 32) (by decide), g19_18]
+  have g20_18 : reg n20 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by rw [P20.regs (18 : Fin 32) (by decide), g19_18]
   have g20_19 : reg n20 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [P20.regs (19 : Fin 32) (by decide), g19_19]
   have g20_20 : reg n20 (20 : Fin 32) = ph := by rw [P20.regs (20 : Fin 32) (by decide), g19_20]
   have g20_21 : reg n20 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P20.regs (21 : Fin 32) (by decide), g19_21]
@@ -1278,7 +1278,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
     rw [rb21, runBlock_reg _ _ _ (8 : Fin 32) s20.zero (by decide), g20_8]
   have g21_9 : reg n21 (9 : Fin 32) = BitVec.ofNat 32 0x0 := by
     rw [rb21, runBlock_reg _ _ _ (9 : Fin 32) s20.zero (by decide), g20_9]
-  have g21_18 : reg n21 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by
+  have g21_18 : reg n21 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by
     rw [rb21, runBlock_reg _ _ _ (18 : Fin 32) s20.zero (by decide), g20_18]
   have g21_19 : reg n21 (19 : Fin 32) = BitVec.ofNat 32 len := by
     rw [rb21, runBlock_reg _ _ _ (19 : Fin 32) s20.zero (by decide), g20_19]
@@ -1302,7 +1302,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g21_11 : reg n21 a1 = B + 0x420 + BitVec.ofNat 32 0x12F4 := by
     rw [rb21]; simp +decide only [runBlock, BInstr.run, pvB252, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g20_2, g20_3, g20_4, g20_8, g20_9, g20_18, g20_19, g20_20, g20_21, g20_22, g20_23, g20_25, g20_26, g20_27, s20.zero, BitVec.zero_add]) <;> pv_val
-  have g21_12 : reg n21 a2 = BitVec.ofNat 32 0x3FCC4530 := by
+  have g21_12 : reg n21 a2 = BitVec.ofNat 32 (img% p384IdentityAddress + 0x60) := by
     rw [rb21]; simp +decide only [runBlock, BInstr.run, pvB252, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g20_2, g20_3, g20_4, g20_8, g20_9, g20_18, g20_19, g20_20, g20_21, g20_22, g20_23, g20_25, g20_26, g20_27, s20.zero, BitVec.zero_add]) <;> pv_val
   have g21_13 : reg n21 a3 = BitVec.ofNat 32 0x0 := by
@@ -1351,7 +1351,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g22_4 : reg n22 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P22.regs (4 : Fin 32) (by decide), g21_4]
   have g22_8 : reg n22 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P22.regs (8 : Fin 32) (by decide), g21_8]
   have g22_9 : reg n22 (9 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [P22.regs (9 : Fin 32) (by decide), g21_9]
-  have g22_18 : reg n22 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by rw [P22.regs (18 : Fin 32) (by decide), g21_18]
+  have g22_18 : reg n22 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by rw [P22.regs (18 : Fin 32) (by decide), g21_18]
   have g22_19 : reg n22 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [P22.regs (19 : Fin 32) (by decide), g21_19]
   have g22_20 : reg n22 (20 : Fin 32) = ph := by rw [P22.regs (20 : Fin 32) (by decide), g21_20]
   have g22_21 : reg n22 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P22.regs (21 : Fin 32) (by decide), g21_21]
@@ -1410,7 +1410,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
     rw [rb23, runBlock_reg _ _ _ (8 : Fin 32) s22.zero (by decide), g22_8]
   have g23_9 : reg n23 (9 : Fin 32) = BitVec.ofNat 32 0x0 := by
     rw [rb23, runBlock_reg _ _ _ (9 : Fin 32) s22.zero (by decide), g22_9]
-  have g23_18 : reg n23 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by
+  have g23_18 : reg n23 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by
     rw [rb23, runBlock_reg _ _ _ (18 : Fin 32) s22.zero (by decide), g22_18]
   have g23_19 : reg n23 (19 : Fin 32) = BitVec.ofNat 32 len := by
     rw [rb23, runBlock_reg _ _ _ (19 : Fin 32) s22.zero (by decide), g22_19]
@@ -1476,7 +1476,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g24_4 : reg n24 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P24.regs (4 : Fin 32) (by decide), g23_4]
   have g24_8 : reg n24 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P24.regs (8 : Fin 32) (by decide), g23_8]
   have g24_9 : reg n24 (9 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [P24.regs (9 : Fin 32) (by decide), g23_9]
-  have g24_18 : reg n24 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by rw [P24.regs (18 : Fin 32) (by decide), g23_18]
+  have g24_18 : reg n24 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by rw [P24.regs (18 : Fin 32) (by decide), g23_18]
   have g24_19 : reg n24 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [P24.regs (19 : Fin 32) (by decide), g23_19]
   have g24_20 : reg n24 (20 : Fin 32) = ph := by rw [P24.regs (20 : Fin 32) (by decide), g23_20]
   have g24_21 : reg n24 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P24.regs (21 : Fin 32) (by decide), g23_21]
@@ -1535,7 +1535,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
     rw [rb25, runBlock_reg _ _ _ (8 : Fin 32) s24.zero (by decide), g24_8]
   have g25_9 : reg n25 (9 : Fin 32) = BitVec.ofNat 32 0x0 := by
     rw [rb25, runBlock_reg _ _ _ (9 : Fin 32) s24.zero (by decide), g24_9]
-  have g25_18 : reg n25 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by
+  have g25_18 : reg n25 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by
     rw [rb25, runBlock_reg _ _ _ (18 : Fin 32) s24.zero (by decide), g24_18]
   have g25_19 : reg n25 (19 : Fin 32) = BitVec.ofNat 32 len := by
     rw [rb25, runBlock_reg _ _ _ (19 : Fin 32) s24.zero (by decide), g24_19]
@@ -1603,7 +1603,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g26_4 : reg n26 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P26.regs (4 : Fin 32) (by decide), g25_4]
   have g26_8 : reg n26 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P26.regs (8 : Fin 32) (by decide), g25_8]
   have g26_9 : reg n26 (9 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [P26.regs (9 : Fin 32) (by decide), g25_9]
-  have g26_18 : reg n26 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by rw [P26.regs (18 : Fin 32) (by decide), g25_18]
+  have g26_18 : reg n26 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by rw [P26.regs (18 : Fin 32) (by decide), g25_18]
   have g26_19 : reg n26 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [P26.regs (19 : Fin 32) (by decide), g25_19]
   have g26_20 : reg n26 (20 : Fin 32) = ph := by rw [P26.regs (20 : Fin 32) (by decide), g25_20]
   have g26_21 : reg n26 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P26.regs (21 : Fin 32) (by decide), g25_21]
@@ -1666,7 +1666,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
     rw [rb27, runBlock_reg _ _ _ (8 : Fin 32) s26.zero (by decide), g26_8]
   have g27_9 : reg n27 (9 : Fin 32) = BitVec.ofNat 32 0x0 := by
     rw [rb27, runBlock_reg _ _ _ (9 : Fin 32) s26.zero (by decide), g26_9]
-  have g27_18 : reg n27 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by
+  have g27_18 : reg n27 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by
     rw [rb27, runBlock_reg _ _ _ (18 : Fin 32) s26.zero (by decide), g26_18]
   have g27_19 : reg n27 (19 : Fin 32) = BitVec.ofNat 32 len := by
     rw [rb27, runBlock_reg _ _ _ (19 : Fin 32) s26.zero (by decide), g26_19]
@@ -1732,7 +1732,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g28_4 : reg n28 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P28.regs (4 : Fin 32) (by decide), g27_4]
   have g28_8 : reg n28 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P28.regs (8 : Fin 32) (by decide), g27_8]
   have g28_9 : reg n28 (9 : Fin 32) = BitVec.ofNat 32 0x0 := by rw [P28.regs (9 : Fin 32) (by decide), g27_9]
-  have g28_18 : reg n28 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by rw [P28.regs (18 : Fin 32) (by decide), g27_18]
+  have g28_18 : reg n28 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by rw [P28.regs (18 : Fin 32) (by decide), g27_18]
   have g28_19 : reg n28 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [P28.regs (19 : Fin 32) (by decide), g27_19]
   have g28_20 : reg n28 (20 : Fin 32) = ph := by rw [P28.regs (20 : Fin 32) (by decide), g27_20]
   have g28_21 : reg n28 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P28.regs (21 : Fin 32) (by decide), g27_21]
@@ -1793,7 +1793,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
     rw [rb29, runBlock_reg _ _ _ (4 : Fin 32) s28.zero (by decide), g28_4]
   have g29_8 : reg n29 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by
     rw [rb29, runBlock_reg _ _ _ (8 : Fin 32) s28.zero (by decide), g28_8]
-  have g29_18 : reg n29 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by
+  have g29_18 : reg n29 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by
     rw [rb29, runBlock_reg _ _ _ (18 : Fin 32) s28.zero (by decide), g28_18]
   have g29_19 : reg n29 (19 : Fin 32) = BitVec.ofNat 32 len := by
     rw [rb29, runBlock_reg _ _ _ (19 : Fin 32) s28.zero (by decide), g28_19]
@@ -1862,7 +1862,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g30_4 : reg n30 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P30.regs (4 : Fin 32) (by decide), g29_4]
   have g30_8 : reg n30 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P30.regs (8 : Fin 32) (by decide), g29_8]
   have g30_9 : reg n30 (9 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P30.regs (9 : Fin 32) (by decide), g29_9]
-  have g30_18 : reg n30 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by rw [P30.regs (18 : Fin 32) (by decide), g29_18]
+  have g30_18 : reg n30 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by rw [P30.regs (18 : Fin 32) (by decide), g29_18]
   have g30_19 : reg n30 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [P30.regs (19 : Fin 32) (by decide), g29_19]
   have g30_20 : reg n30 (20 : Fin 32) = ph := by rw [P30.regs (20 : Fin 32) (by decide), g29_20]
   have g30_21 : reg n30 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P30.regs (21 : Fin 32) (by decide), g29_21]
@@ -1921,7 +1921,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
     rw [rb31, runBlock_reg _ _ _ (8 : Fin 32) s30.zero (by decide), g30_8]
   have g31_9 : reg n31 (9 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by
     rw [rb31, runBlock_reg _ _ _ (9 : Fin 32) s30.zero (by decide), g30_9]
-  have g31_18 : reg n31 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by
+  have g31_18 : reg n31 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by
     rw [rb31, runBlock_reg _ _ _ (18 : Fin 32) s30.zero (by decide), g30_18]
   have g31_19 : reg n31 (19 : Fin 32) = BitVec.ofNat 32 len := by
     rw [rb31, runBlock_reg _ _ _ (19 : Fin 32) s30.zero (by decide), g30_19]
@@ -1989,7 +1989,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g32_4 : reg n32 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P32.regs (4 : Fin 32) (by decide), g31_4]
   have g32_8 : reg n32 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P32.regs (8 : Fin 32) (by decide), g31_8]
   have g32_9 : reg n32 (9 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P32.regs (9 : Fin 32) (by decide), g31_9]
-  have g32_18 : reg n32 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by rw [P32.regs (18 : Fin 32) (by decide), g31_18]
+  have g32_18 : reg n32 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by rw [P32.regs (18 : Fin 32) (by decide), g31_18]
   have g32_19 : reg n32 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [P32.regs (19 : Fin 32) (by decide), g31_19]
   have g32_20 : reg n32 (20 : Fin 32) = ph := by rw [P32.regs (20 : Fin 32) (by decide), g31_20]
   have g32_21 : reg n32 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P32.regs (21 : Fin 32) (by decide), g31_21]
@@ -2052,7 +2052,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
     rw [rb33, runBlock_reg _ _ _ (8 : Fin 32) s32.zero (by decide), g32_8]
   have g33_9 : reg n33 (9 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by
     rw [rb33, runBlock_reg _ _ _ (9 : Fin 32) s32.zero (by decide), g32_9]
-  have g33_18 : reg n33 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by
+  have g33_18 : reg n33 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by
     rw [rb33, runBlock_reg _ _ _ (18 : Fin 32) s32.zero (by decide), g32_18]
   have g33_19 : reg n33 (19 : Fin 32) = BitVec.ofNat 32 len := by
     rw [rb33, runBlock_reg _ _ _ (19 : Fin 32) s32.zero (by decide), g32_19]
@@ -2118,7 +2118,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g34_4 : reg n34 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P34.regs (4 : Fin 32) (by decide), g33_4]
   have g34_8 : reg n34 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P34.regs (8 : Fin 32) (by decide), g33_8]
   have g34_9 : reg n34 (9 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P34.regs (9 : Fin 32) (by decide), g33_9]
-  have g34_18 : reg n34 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by rw [P34.regs (18 : Fin 32) (by decide), g33_18]
+  have g34_18 : reg n34 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by rw [P34.regs (18 : Fin 32) (by decide), g33_18]
   have g34_19 : reg n34 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [P34.regs (19 : Fin 32) (by decide), g33_19]
   have g34_20 : reg n34 (20 : Fin 32) = ph := by rw [P34.regs (20 : Fin 32) (by decide), g33_20]
   have g34_21 : reg n34 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P34.regs (21 : Fin 32) (by decide), g33_21]
@@ -2181,7 +2181,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
     rw [rb35, runBlock_reg _ _ _ (8 : Fin 32) s34.zero (by decide), g34_8]
   have g35_9 : reg n35 (9 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by
     rw [rb35, runBlock_reg _ _ _ (9 : Fin 32) s34.zero (by decide), g34_9]
-  have g35_18 : reg n35 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by
+  have g35_18 : reg n35 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by
     rw [rb35, runBlock_reg _ _ _ (18 : Fin 32) s34.zero (by decide), g34_18]
   have g35_19 : reg n35 (19 : Fin 32) = BitVec.ofNat 32 len := by
     rw [rb35, runBlock_reg _ _ _ (19 : Fin 32) s34.zero (by decide), g34_19]
@@ -2250,7 +2250,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g36_4 : reg n36 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P36.regs (4 : Fin 32) (by decide), g35_4]
   have g36_8 : reg n36 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P36.regs (8 : Fin 32) (by decide), g35_8]
   have g36_9 : reg n36 (9 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P36.regs (9 : Fin 32) (by decide), g35_9]
-  have g36_18 : reg n36 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by rw [P36.regs (18 : Fin 32) (by decide), g35_18]
+  have g36_18 : reg n36 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by rw [P36.regs (18 : Fin 32) (by decide), g35_18]
   have g36_19 : reg n36 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [P36.regs (19 : Fin 32) (by decide), g35_19]
   have g36_20 : reg n36 (20 : Fin 32) = ph := by rw [P36.regs (20 : Fin 32) (by decide), g35_20]
   have g36_21 : reg n36 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P36.regs (21 : Fin 32) (by decide), g35_21]
@@ -2315,7 +2315,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
     rw [rb37, runBlock_reg _ _ _ (8 : Fin 32) s36.zero (by decide), g36_8]
   have g37_9 : reg n37 (9 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by
     rw [rb37, runBlock_reg _ _ _ (9 : Fin 32) s36.zero (by decide), g36_9]
-  have g37_18 : reg n37 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by
+  have g37_18 : reg n37 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by
     rw [rb37, runBlock_reg _ _ _ (18 : Fin 32) s36.zero (by decide), g36_18]
   have g37_19 : reg n37 (19 : Fin 32) = BitVec.ofNat 32 len := by
     rw [rb37, runBlock_reg _ _ _ (19 : Fin 32) s36.zero (by decide), g36_19]
@@ -2386,7 +2386,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g38_4 : reg n38 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P38.regs (4 : Fin 32) (by decide), g37_4]
   have g38_8 : reg n38 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P38.regs (8 : Fin 32) (by decide), g37_8]
   have g38_9 : reg n38 (9 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P38.regs (9 : Fin 32) (by decide), g37_9]
-  have g38_18 : reg n38 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by rw [P38.regs (18 : Fin 32) (by decide), g37_18]
+  have g38_18 : reg n38 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by rw [P38.regs (18 : Fin 32) (by decide), g37_18]
   have g38_19 : reg n38 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [P38.regs (19 : Fin 32) (by decide), g37_19]
   have g38_20 : reg n38 (20 : Fin 32) = ph := by rw [P38.regs (20 : Fin 32) (by decide), g37_20]
   have g38_21 : reg n38 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P38.regs (21 : Fin 32) (by decide), g37_21]
@@ -2453,7 +2453,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
     rw [rb39, runBlock_reg _ _ _ (8 : Fin 32) s38.zero (by decide), g38_8]
   have g39_9 : reg n39 (9 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by
     rw [rb39, runBlock_reg _ _ _ (9 : Fin 32) s38.zero (by decide), g38_9]
-  have g39_18 : reg n39 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by
+  have g39_18 : reg n39 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by
     rw [rb39, runBlock_reg _ _ _ (18 : Fin 32) s38.zero (by decide), g38_18]
   have g39_19 : reg n39 (19 : Fin 32) = BitVec.ofNat 32 len := by
     rw [rb39, runBlock_reg _ _ _ (19 : Fin 32) s38.zero (by decide), g38_19]
@@ -2526,7 +2526,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g40_4 : reg n40 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P40.regs (4 : Fin 32) (by decide), g39_4]
   have g40_8 : reg n40 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P40.regs (8 : Fin 32) (by decide), g39_8]
   have g40_9 : reg n40 (9 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P40.regs (9 : Fin 32) (by decide), g39_9]
-  have g40_18 : reg n40 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC44D0 := by rw [P40.regs (18 : Fin 32) (by decide), g39_18]
+  have g40_18 : reg n40 (18 : Fin 32) = BitVec.ofNat 32 (img% p384IdentityAddress) := by rw [P40.regs (18 : Fin 32) (by decide), g39_18]
   have g40_19 : reg n40 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [P40.regs (19 : Fin 32) (by decide), g39_19]
   have g40_20 : reg n40 (20 : Fin 32) = ph := by rw [P40.regs (20 : Fin 32) (by decide), g39_20]
   have g40_21 : reg n40 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P40.regs (21 : Fin 32) (by decide), g39_21]
@@ -2610,13 +2610,13 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g41_10 : reg n41 a0 = B + 0x420 + BitVec.ofNat 32 0xE10 := by
     rw [rb41]; simp +decide only [runBlock, BInstr.run, pvB322, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g40_2, g40_3, g40_4, g40_8, g40_9, g40_18, g40_19, g40_20, g40_21, g40_22, g40_23, g40_25, g40_26, g40_27, s40.zero, BitVec.zero_add]) <;> pv_val
-  have g41_11 : reg n41 a1 = BitVec.ofNat 32 0x3FCC4D28 := by
+  have g41_11 : reg n41 a1 = BitVec.ofNat 32 (img% p384OrderAddress) := by
     rw [rb41]; simp +decide only [runBlock, BInstr.run, pvB322, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g40_2, g40_3, g40_4, g40_8, g40_9, g40_18, g40_19, g40_20, g40_21, g40_22, g40_23, g40_25, g40_26, g40_27, s40.zero, BitVec.zero_add]) <;> pv_val
   have g41_12 : reg n41 a2 = BitVec.ofNat 32 0x30 := by
     rw [rb41]; simp +decide only [runBlock, BInstr.run, pvB322, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g40_2, g40_3, g40_4, g40_8, g40_9, g40_18, g40_19, g40_20, g40_21, g40_22, g40_23, g40_25, g40_26, g40_27, s40.zero, BitVec.zero_add]) <;> pv_val
-  have g41_18 : reg n41 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC4D28 := by
+  have g41_18 : reg n41 (18 : Fin 32) = BitVec.ofNat 32 (img% p384OrderAddress) := by
     rw [rb41]; simp +decide only [runBlock, BInstr.run, pvB322, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g40_2, g40_3, g40_4, g40_8, g40_9, g40_18, g40_19, g40_20, g40_21, g40_22, g40_23, g40_25, g40_26, g40_27, s40.zero, BitVec.zero_add]) <;> pv_val
   have a41_58 : accV n41.mem (B + 0x420 + BitVec.ofNat 32 0x58) 12 = X :=
@@ -2667,7 +2667,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g42_4 : reg n42 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P42.regs (4 : Fin 32) (by decide), g41_4]
   have g42_8 : reg n42 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P42.regs (8 : Fin 32) (by decide), g41_8]
   have g42_9 : reg n42 (9 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P42.regs (9 : Fin 32) (by decide), g41_9]
-  have g42_18 : reg n42 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC4D28 := by rw [P42.regs (18 : Fin 32) (by decide), g41_18]
+  have g42_18 : reg n42 (18 : Fin 32) = BitVec.ofNat 32 (img% p384OrderAddress) := by rw [P42.regs (18 : Fin 32) (by decide), g41_18]
   have g42_19 : reg n42 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [P42.regs (19 : Fin 32) (by decide), g41_19]
   have g42_20 : reg n42 (20 : Fin 32) = ph := by rw [P42.regs (20 : Fin 32) (by decide), g41_20]
   have g42_21 : reg n42 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P42.regs (21 : Fin 32) (by decide), g41_21]
@@ -2707,7 +2707,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have a42_17a4 : accV n42.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = Sg * 2 ^ 384 % n384 :=
     (K42.acc (by decide) (by decide)).trans a41_17a4
   have a42_e10 : accV n42.mem (B + 0x420 + BitVec.ofNat 32 0xE10) 12 = dataVal p384OrderData 0 12 := by
-    rw [show BitVec.ofNat 32 0x3FCC4D28 = BitVec.ofNat 32 0x3FCC4D28 + BitVec.ofNat 32 0 from (add_ofNat_zero _).symm] at V42
+    rw [show BitVec.ofNat 32 (img% p384OrderAddress) = BitVec.ofNat 32 (img% p384OrderAddress) + BitVec.ofNat 32 0 from (add_ofNat_zero _).symm] at V42
     rw [accV_K 12 fun q hq => V42 q (by omega)]
     exact code_accV (d := p384OrderData) E41.D2.nmod 0 12 (by decide)
   have b42_e40 : n42.mem (B + 0x420 + BitVec.ofNat 32 0xE40) = 1 := by
@@ -2734,7 +2734,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
     rw [rb43, runBlock_reg _ _ _ (8 : Fin 32) s42.zero (by decide), g42_8]
   have g43_9 : reg n43 (9 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by
     rw [rb43, runBlock_reg _ _ _ (9 : Fin 32) s42.zero (by decide), g42_9]
-  have g43_18 : reg n43 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC4D28 := by
+  have g43_18 : reg n43 (18 : Fin 32) = BitVec.ofNat 32 (img% p384OrderAddress) := by
     rw [rb43, runBlock_reg _ _ _ (18 : Fin 32) s42.zero (by decide), g42_18]
   have g43_19 : reg n43 (19 : Fin 32) = BitVec.ofNat 32 len := by
     rw [rb43, runBlock_reg _ _ _ (19 : Fin 32) s42.zero (by decide), g42_19]
@@ -2807,7 +2807,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g44_9 : reg n44 (9 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [rg44 (9 : Fin 32), g43_9]
   have g44_10 : reg n44 a0 = BitVec.ofNat 32 0x17702000 := by rw [rg44 a0, g43_10]
   have g44_11 : reg n44 a1 = BitVec.ofNat 32 0x912BA000 := by rw [rg44 a1, g43_11]
-  have g44_18 : reg n44 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC4D28 := by rw [rg44 (18 : Fin 32), g43_18]
+  have g44_18 : reg n44 (18 : Fin 32) = BitVec.ofNat 32 (img% p384OrderAddress) := by rw [rg44 (18 : Fin 32), g43_18]
   have g44_19 : reg n44 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [rg44 (19 : Fin 32), g43_19]
   have g44_20 : reg n44 (20 : Fin 32) = BitVec.ofNat 32 0x177023BB := by rw [rg44 (20 : Fin 32), g43_20]
   have g44_21 : reg n44 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [rg44 (21 : Fin 32), g43_21]
@@ -2865,7 +2865,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g45_9 : reg n45 (9 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [rg45 (9 : Fin 32), g44_9]
   have g45_10 : reg n45 a0 = BitVec.ofNat 32 0x17702000 := by rw [rg45 a0, g44_10]
   have g45_11 : reg n45 a1 = BitVec.ofNat 32 0x912BA000 := by rw [rg45 a1, g44_11]
-  have g45_18 : reg n45 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC4D28 := by rw [rg45 (18 : Fin 32), g44_18]
+  have g45_18 : reg n45 (18 : Fin 32) = BitVec.ofNat 32 (img% p384OrderAddress) := by rw [rg45 (18 : Fin 32), g44_18]
   have g45_19 : reg n45 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [rg45 (19 : Fin 32), g44_19]
   have g45_20 : reg n45 (20 : Fin 32) = BitVec.ofNat 32 0x177023BB := by rw [rg45 (20 : Fin 32), g44_20]
   have g45_21 : reg n45 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [rg45 (21 : Fin 32), g44_21]
@@ -2933,7 +2933,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
     rw [rb46, runBlock_reg _ _ _ (4 : Fin 32) s45.zero (by decide), g45_4]
   have g46_8 : reg n46 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by
     rw [rb46, runBlock_reg _ _ _ (8 : Fin 32) s45.zero (by decide), g45_8]
-  have g46_18 : reg n46 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC4D28 := by
+  have g46_18 : reg n46 (18 : Fin 32) = BitVec.ofNat 32 (img% p384OrderAddress) := by
     rw [rb46, runBlock_reg _ _ _ (18 : Fin 32) s45.zero (by decide), g45_18]
   have g46_19 : reg n46 (19 : Fin 32) = BitVec.ofNat 32 len := by
     rw [rb46, runBlock_reg _ _ _ (19 : Fin 32) s45.zero (by decide), g45_19]
@@ -2951,13 +2951,13 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
     rw [rb46, runBlock_reg _ _ _ (26 : Fin 32) s45.zero (by decide), g45_26]
   have g46_27 : reg n46 (27 : Fin 32) = reg n0 (27 : Fin 32) := by
     rw [rb46, runBlock_reg _ _ _ (27 : Fin 32) s45.zero (by decide), g45_27]
-  have g46_9 : reg n46 (9 : Fin 32) = BitVec.ofNat 32 0x3FCC4D88 := by
+  have g46_9 : reg n46 (9 : Fin 32) = BitVec.ofNat 32 (img% p384ScalarR2Address) := by
     rw [rb46]; simp +decide only [runBlock, BInstr.run, pvB358, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g45_2, g45_3, g45_4, g45_8, g45_9, g45_10, g45_11, g45_18, g45_19, g45_20, g45_21, g45_22, g45_23, g45_25, g45_26, g45_27, s45.zero, BitVec.zero_add]) <;> pv_val
   have g46_10 : reg n46 a0 = B + 0x420 + BitVec.ofNat 32 0xE40 := by
     rw [rb46]; simp +decide only [runBlock, BInstr.run, pvB358, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g45_2, g45_3, g45_4, g45_8, g45_9, g45_10, g45_11, g45_18, g45_19, g45_20, g45_21, g45_22, g45_23, g45_25, g45_26, g45_27, s45.zero, BitVec.zero_add]) <;> pv_val
-  have g46_11 : reg n46 a1 = BitVec.ofNat 32 0x3FCC4D88 := by
+  have g46_11 : reg n46 a1 = BitVec.ofNat 32 (img% p384ScalarR2Address) := by
     rw [rb46]; simp +decide only [runBlock, BInstr.run, pvB358, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g45_2, g45_3, g45_4, g45_8, g45_9, g45_10, g45_11, g45_18, g45_19, g45_20, g45_21, g45_22, g45_23, g45_25, g45_26, g45_27, s45.zero, BitVec.zero_add]) <;> pv_val
   have g46_12 : reg n46 a2 = BitVec.ofNat 32 0x30 := by
@@ -3016,8 +3016,8 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g47_3 : reg n47 (3 : Fin 32) = reg n0 (3 : Fin 32) := by rw [P47.regs (3 : Fin 32) (by decide), g46_3]
   have g47_4 : reg n47 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P47.regs (4 : Fin 32) (by decide), g46_4]
   have g47_8 : reg n47 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P47.regs (8 : Fin 32) (by decide), g46_8]
-  have g47_9 : reg n47 (9 : Fin 32) = BitVec.ofNat 32 0x3FCC4D88 := by rw [P47.regs (9 : Fin 32) (by decide), g46_9]
-  have g47_18 : reg n47 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC4D28 := by rw [P47.regs (18 : Fin 32) (by decide), g46_18]
+  have g47_9 : reg n47 (9 : Fin 32) = BitVec.ofNat 32 (img% p384ScalarR2Address) := by rw [P47.regs (9 : Fin 32) (by decide), g46_9]
+  have g47_18 : reg n47 (18 : Fin 32) = BitVec.ofNat 32 (img% p384OrderAddress) := by rw [P47.regs (18 : Fin 32) (by decide), g46_18]
   have g47_19 : reg n47 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [P47.regs (19 : Fin 32) (by decide), g46_19]
   have g47_20 : reg n47 (20 : Fin 32) = BitVec.ofNat 32 0x177023BB := by rw [P47.regs (20 : Fin 32) (by decide), g46_20]
   have g47_21 : reg n47 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P47.regs (21 : Fin 32) (by decide), g46_21]
@@ -3059,7 +3059,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have a47_17a4 : accV n47.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = Sg * 2 ^ 384 % n384 :=
     (K47.acc (by decide) (by decide)).trans a46_17a4
   have a47_e40 : accV n47.mem (B + 0x420 + BitVec.ofNat 32 0xE40) 12 = dataVal p384ScalarR2Data 0 12 := by
-    rw [show BitVec.ofNat 32 0x3FCC4D88 = BitVec.ofNat 32 0x3FCC4D88 + BitVec.ofNat 32 0 from (add_ofNat_zero _).symm] at V47
+    rw [show BitVec.ofNat 32 (img% p384ScalarR2Address) = BitVec.ofNat 32 (img% p384ScalarR2Address) + BitVec.ofNat 32 0 from (add_ofNat_zero _).symm] at V47
     rw [accV_K 12 fun q hq => V47 q (by omega)]
     exact code_accV (d := p384ScalarR2Data) E46.D2.r2 0 12 (by decide)
   have w47_e70 : memLoad32 n47.mem (B + 0x420 + BitVec.ofNat 32 0xE70) = BitVec.ofNat 32 0x177023BB := by
@@ -3088,9 +3088,9 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
     rw [rb48, runBlock_reg _ _ _ (4 : Fin 32) s47.zero (by decide), g47_4]
   have g48_8 : reg n48 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by
     rw [rb48, runBlock_reg _ _ _ (8 : Fin 32) s47.zero (by decide), g47_8]
-  have g48_9 : reg n48 (9 : Fin 32) = BitVec.ofNat 32 0x3FCC4D88 := by
+  have g48_9 : reg n48 (9 : Fin 32) = BitVec.ofNat 32 (img% p384ScalarR2Address) := by
     rw [rb48, runBlock_reg _ _ _ (9 : Fin 32) s47.zero (by decide), g47_9]
-  have g48_18 : reg n48 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC4D28 := by
+  have g48_18 : reg n48 (18 : Fin 32) = BitVec.ofNat 32 (img% p384OrderAddress) := by
     rw [rb48, runBlock_reg _ _ _ (18 : Fin 32) s47.zero (by decide), g47_18]
   have g48_19 : reg n48 (19 : Fin 32) = BitVec.ofNat 32 len := by
     rw [rb48, runBlock_reg _ _ _ (19 : Fin 32) s47.zero (by decide), g47_19]
@@ -3166,8 +3166,8 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g49_3 : reg n49 (3 : Fin 32) = reg n0 (3 : Fin 32) := by rw [P49.regs (3 : Fin 32) (by decide), g48_3]
   have g49_4 : reg n49 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P49.regs (4 : Fin 32) (by decide), g48_4]
   have g49_8 : reg n49 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P49.regs (8 : Fin 32) (by decide), g48_8]
-  have g49_9 : reg n49 (9 : Fin 32) = BitVec.ofNat 32 0x3FCC4D88 := by rw [P49.regs (9 : Fin 32) (by decide), g48_9]
-  have g49_18 : reg n49 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC4D28 := by rw [P49.regs (18 : Fin 32) (by decide), g48_18]
+  have g49_9 : reg n49 (9 : Fin 32) = BitVec.ofNat 32 (img% p384ScalarR2Address) := by rw [P49.regs (9 : Fin 32) (by decide), g48_9]
+  have g49_18 : reg n49 (18 : Fin 32) = BitVec.ofNat 32 (img% p384OrderAddress) := by rw [P49.regs (18 : Fin 32) (by decide), g48_18]
   have g49_19 : reg n49 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [P49.regs (19 : Fin 32) (by decide), g48_19]
   have g49_20 : reg n49 (20 : Fin 32) = BitVec.ofNat 32 0x177023BB := by rw [P49.regs (20 : Fin 32) (by decide), g48_20]
   have g49_21 : reg n49 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P49.regs (21 : Fin 32) (by decide), g48_21]
@@ -3237,9 +3237,9 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
     rw [rb50, runBlock_reg _ _ _ (4 : Fin 32) s49.zero (by decide), g49_4]
   have g50_8 : reg n50 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by
     rw [rb50, runBlock_reg _ _ _ (8 : Fin 32) s49.zero (by decide), g49_8]
-  have g50_9 : reg n50 (9 : Fin 32) = BitVec.ofNat 32 0x3FCC4D88 := by
+  have g50_9 : reg n50 (9 : Fin 32) = BitVec.ofNat 32 (img% p384ScalarR2Address) := by
     rw [rb50, runBlock_reg _ _ _ (9 : Fin 32) s49.zero (by decide), g49_9]
-  have g50_18 : reg n50 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC4D28 := by
+  have g50_18 : reg n50 (18 : Fin 32) = BitVec.ofNat 32 (img% p384OrderAddress) := by
     rw [rb50, runBlock_reg _ _ _ (18 : Fin 32) s49.zero (by decide), g49_18]
   have g50_19 : reg n50 (19 : Fin 32) = BitVec.ofNat 32 len := by
     rw [rb50, runBlock_reg _ _ _ (19 : Fin 32) s49.zero (by decide), g49_19]
@@ -3260,7 +3260,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g50_10 : reg n50 a0 = B + 0x420 + BitVec.ofNat 32 0x1714 := by
     rw [rb50]; simp +decide only [runBlock, BInstr.run, pvB37c, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g49_2, g49_3, g49_4, g49_8, g49_9, g49_10, g49_18, g49_19, g49_20, g49_21, g49_22, g49_23, g49_25, g49_26, g49_27, s49.zero, BitVec.zero_add]) <;> pv_val
-  have g50_11 : reg n50 a1 = BitVec.ofNat 32 0x3FCC4D28 := by
+  have g50_11 : reg n50 a1 = BitVec.ofNat 32 (img% p384OrderAddress) := by
     rw [rb50]; simp +decide only [runBlock, BInstr.run, pvB37c, upd, ↓reduceIte, aluEval] <;>
     (try simp only [g49_2, g49_3, g49_4, g49_8, g49_9, g49_10, g49_18, g49_19, g49_20, g49_21, g49_22, g49_23, g49_25, g49_26, g49_27, s49.zero, BitVec.zero_add]) <;> pv_val
   have g50_12 : reg n50 a2 = BitVec.ofNat 32 0x30 := by
@@ -3322,8 +3322,8 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g51_3 : reg n51 (3 : Fin 32) = reg n0 (3 : Fin 32) := by rw [P51.regs (3 : Fin 32) (by decide), g50_3]
   have g51_4 : reg n51 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P51.regs (4 : Fin 32) (by decide), g50_4]
   have g51_8 : reg n51 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P51.regs (8 : Fin 32) (by decide), g50_8]
-  have g51_9 : reg n51 (9 : Fin 32) = BitVec.ofNat 32 0x3FCC4D88 := by rw [P51.regs (9 : Fin 32) (by decide), g50_9]
-  have g51_18 : reg n51 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC4D28 := by rw [P51.regs (18 : Fin 32) (by decide), g50_18]
+  have g51_9 : reg n51 (9 : Fin 32) = BitVec.ofNat 32 (img% p384ScalarR2Address) := by rw [P51.regs (9 : Fin 32) (by decide), g50_9]
+  have g51_18 : reg n51 (18 : Fin 32) = BitVec.ofNat 32 (img% p384OrderAddress) := by rw [P51.regs (18 : Fin 32) (by decide), g50_18]
   have g51_19 : reg n51 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [P51.regs (19 : Fin 32) (by decide), g50_19]
   have g51_20 : reg n51 (20 : Fin 32) = BitVec.ofNat 32 0x177023BB := by rw [P51.regs (20 : Fin 32) (by decide), g50_20]
   have g51_21 : reg n51 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P51.regs (21 : Fin 32) (by decide), g50_21]
@@ -3368,7 +3368,7 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have a51_17a4 : accV n51.mem (B + 0x420 + BitVec.ofNat 32 0x17A4) 12 = Sg * 2 ^ 384 % n384 :=
     (K51.acc (by decide) (by decide)).trans a50_17a4
   have a51_1714 : accV n51.mem (B + 0x420 + BitVec.ofNat 32 0x1714) 12 = dataVal p384OrderData 0 12 := by
-    rw [show BitVec.ofNat 32 0x3FCC4D28 = BitVec.ofNat 32 0x3FCC4D28 + BitVec.ofNat 32 0 from (add_ofNat_zero _).symm] at V51
+    rw [show BitVec.ofNat 32 (img% p384OrderAddress) = BitVec.ofNat 32 (img% p384OrderAddress) + BitVec.ofNat 32 0 from (add_ofNat_zero _).symm] at V51
     rw [accV_K 12 fun q hq => V51 q (by omega)]
     exact code_accV (d := p384OrderData) E50.D2.nmod 0 12 (by decide)
   have w51_e70 : memLoad32 n51.mem (B + 0x420 + BitVec.ofNat 32 0xE70) = BitVec.ofNat 32 0x177023BB := by
@@ -3387,8 +3387,8 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g52_3 : reg n52 (3 : Fin 32) = reg n0 (3 : Fin 32) := by rw [rg52 (3 : Fin 32), g51_3]
   have g52_4 : reg n52 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [rg52 (4 : Fin 32), g51_4]
   have g52_8 : reg n52 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [rg52 (8 : Fin 32), g51_8]
-  have g52_9 : reg n52 (9 : Fin 32) = BitVec.ofNat 32 0x3FCC4D88 := by rw [rg52 (9 : Fin 32), g51_9]
-  have g52_18 : reg n52 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC4D28 := by rw [rg52 (18 : Fin 32), g51_18]
+  have g52_9 : reg n52 (9 : Fin 32) = BitVec.ofNat 32 (img% p384ScalarR2Address) := by rw [rg52 (9 : Fin 32), g51_9]
+  have g52_18 : reg n52 (18 : Fin 32) = BitVec.ofNat 32 (img% p384OrderAddress) := by rw [rg52 (18 : Fin 32), g51_18]
   have g52_19 : reg n52 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [rg52 (19 : Fin 32), g51_19]
   have g52_20 : reg n52 (20 : Fin 32) = BitVec.ofNat 32 0x177023BB := by rw [rg52 (20 : Fin 32), g51_20]
   have g52_21 : reg n52 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [rg52 (21 : Fin 32), g51_21]
@@ -3462,9 +3462,9 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
     rw [rb53, runBlock_reg _ _ _ (4 : Fin 32) s52.zero (by decide), g52_4]
   have g53_8 : reg n53 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by
     rw [rb53, runBlock_reg _ _ _ (8 : Fin 32) s52.zero (by decide), g52_8]
-  have g53_9 : reg n53 (9 : Fin 32) = BitVec.ofNat 32 0x3FCC4D88 := by
+  have g53_9 : reg n53 (9 : Fin 32) = BitVec.ofNat 32 (img% p384ScalarR2Address) := by
     rw [rb53, runBlock_reg _ _ _ (9 : Fin 32) s52.zero (by decide), g52_9]
-  have g53_18 : reg n53 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC4D28 := by
+  have g53_18 : reg n53 (18 : Fin 32) = BitVec.ofNat 32 (img% p384OrderAddress) := by
     rw [rb53, runBlock_reg _ _ _ (18 : Fin 32) s52.zero (by decide), g52_18]
   have g53_19 : reg n53 (19 : Fin 32) = BitVec.ofNat 32 len := by
     rw [rb53, runBlock_reg _ _ _ (19 : Fin 32) s52.zero (by decide), g52_19]
@@ -3550,8 +3550,8 @@ theorem pv_stB {n0 : Machine} {B ph : Word} {len X Y R Sg : Nat} (F : Fr B 0x21A
   have g54_3 : reg n54 (3 : Fin 32) = reg n0 (3 : Fin 32) := by rw [P54.regs (3 : Fin 32) (by decide), g53_3]
   have g54_4 : reg n54 (4 : Fin 32) = reg n0 (4 : Fin 32) := by rw [P54.regs (4 : Fin 32) (by decide), g53_4]
   have g54_8 : reg n54 (8 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0xD80 := by rw [P54.regs (8 : Fin 32) (by decide), g53_8]
-  have g54_9 : reg n54 (9 : Fin 32) = BitVec.ofNat 32 0x3FCC4D88 := by rw [P54.regs (9 : Fin 32) (by decide), g53_9]
-  have g54_18 : reg n54 (18 : Fin 32) = BitVec.ofNat 32 0x3FCC4D28 := by rw [P54.regs (18 : Fin 32) (by decide), g53_18]
+  have g54_9 : reg n54 (9 : Fin 32) = BitVec.ofNat 32 (img% p384ScalarR2Address) := by rw [P54.regs (9 : Fin 32) (by decide), g53_9]
+  have g54_18 : reg n54 (18 : Fin 32) = BitVec.ofNat 32 (img% p384OrderAddress) := by rw [P54.regs (18 : Fin 32) (by decide), g53_18]
   have g54_19 : reg n54 (19 : Fin 32) = BitVec.ofNat 32 len := by rw [P54.regs (19 : Fin 32) (by decide), g53_19]
   have g54_20 : reg n54 (20 : Fin 32) = BitVec.ofNat 32 0x177023BB := by rw [P54.regs (20 : Fin 32) (by decide), g53_20]
   have g54_21 : reg n54 (21 : Fin 32) = B + 0x420 + BitVec.ofNat 32 0x12C4 := by rw [P54.regs (21 : Fin 32) (by decide), g53_21]

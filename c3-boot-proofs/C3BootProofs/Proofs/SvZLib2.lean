@@ -202,7 +202,7 @@ theorem sv_uorF {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {im
     (rsp : reg n sp = B + 0x21A0) (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 co)
     (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 cs) (ha2 : reg n a2 = d)
     (hco : co + 0x41 ≤ 0x1690) (hcs : cs + 0x45 ≤ 0x1690) (acs : cs % 4 = 0)
-    (hsd : co + 0x41 ≤ cs ∨ cs + 0x45 ≤ co) (hd1 : 0x3FCC4200 ≤ d.toNat) (hd2 : d.toNat + 0x41 ≤ 0x3FCC4E60)
+    (hsd : co + 0x41 ≤ cs ∨ cs + 0x45 ≤ co) (hd1 : (img% dataWindowAddress) ≤ d.toNat) (hd2 : d.toNat + 0x41 ≤ (img% dataWindowAddress + dataWindowSize))
     (hc : M (B + 0x21A0 + BitVec.ofNat 32 (cs + 0x44)) = 0 ∨ M (B + 0x21A0 + BitVec.ofNat 32 (cs + 0x44)) = 1) :
     ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
       (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧

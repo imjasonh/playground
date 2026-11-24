@@ -192,8 +192,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
     (a0_2c0 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv)
     (a0_2e0 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv)
     (a0_320 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv)
-    (a0_420 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)
-    (a0_440 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8)
+    (a0_420 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)
+    (a0_440 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8)
     (a0_1020 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev)
     (a0_1380 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv)
     (a0_1480 : accV n0.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv)
@@ -318,22 +318,22 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1338) = rlo ∧
         memLoad32 n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x133C) = rhi ∧
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x340) = BitVec.ofNat 8 σ20a ∧
-        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 ∧
-        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 ∧
-        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 ∧
+        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 ∧
+        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 ∧
+        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 ∧
         n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = BitVec.ofNat 8 σ20b ∧
-        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 ∧
+        n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 ∧
         accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x2A0) 8 = rv ∧
         accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv ∧
         accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv ∧
         accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = A20a / 2 ^ ns % 2 ^ 256 ∧
-        accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 ∧
-        accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 ∧
-        accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 ∧
-        accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 ∧
-        accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 ∧
+        accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 ∧
+        accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 ∧
+        accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 ∧
+        accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 ∧
+        accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 ∧
         accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = A20b / 2 ^ ns % 2 ^ 256 ∧
-        accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 ∧
+        accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 ∧
         accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x15A8) 8 = X ∧
         accV n'.mem (B + 0x21A0 + BitVec.ofNat 32 0x15C8) 8 = Y ∧
         SvKeepL B n0.mem n'.mem [(0x1320, 0x4), (0x1324, 0x4), (0x1328, 0x4), (0x132C, 0x4), (0x1330, 0x4), (0x1334, 0x4), (0x1338, 0x4), (0x133C, 0x4), (0xA20, 0x45), (0x320, 0x24), (0x1380, 0x24), (0xA20, 0x45), (0x1480, 0x24), (0x1020, 0x24), (0x78, 0x4)]) := by
@@ -448,8 +448,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a1_2c0 : accV n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m1]; exact a0_2c0
   have a1_2e0 : accV n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m1]; exact a0_2e0
   have a1_320 : accV n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := by rw [m1]; exact a0_320
-  have a1_420 : accV n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m1]; exact a0_420
-  have a1_440 : accV n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m1]; exact a0_440
+  have a1_420 : accV n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m1]; exact a0_420
+  have a1_440 : accV n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m1]; exact a0_440
   have a1_1020 : accV n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := by rw [m1]; exact a0_1020
   have a1_1380 : accV n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := by rw [m1]; exact a0_1380
   have a1_1480 : accV n1.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := by rw [m1]; exact a0_1480
@@ -549,8 +549,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a2_2c0 : accV n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := (K2.acc (by decide) (by decide)).trans a1_2c0
   have a2_2e0 : accV n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := (K2.acc (by decide) (by decide)).trans a1_2e0
   have a2_320 : accV n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := (K2.acc (by decide) (by decide)).trans a1_320
-  have a2_420 : accV n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := (K2.acc (by decide) (by decide)).trans a1_420
-  have a2_440 : accV n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := (K2.acc (by decide) (by decide)).trans a1_440
+  have a2_420 : accV n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := (K2.acc (by decide) (by decide)).trans a1_420
+  have a2_440 : accV n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := (K2.acc (by decide) (by decide)).trans a1_440
   have a2_1020 : accV n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := (K2.acc (by decide) (by decide)).trans a1_1020
   have a2_1380 : accV n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := (K2.acc (by decide) (by decide)).trans a1_1380
   have a2_1480 : accV n2.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := (K2.acc (by decide) (by decide)).trans a1_1480
@@ -657,8 +657,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a3_2c0 : accV n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m3]; exact a2_2c0
   have a3_2e0 : accV n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m3]; exact a2_2e0
   have a3_320 : accV n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := by rw [m3]; exact a2_320
-  have a3_420 : accV n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m3]; exact a2_420
-  have a3_440 : accV n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m3]; exact a2_440
+  have a3_420 : accV n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m3]; exact a2_420
+  have a3_440 : accV n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m3]; exact a2_440
   have a3_1020 : accV n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := by rw [m3]; exact a2_1020
   have a3_1380 : accV n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := by rw [m3]; exact a2_1380
   have a3_1480 : accV n3.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := by rw [m3]; exact a2_1480
@@ -761,8 +761,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a4_2c0 : accV n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := (K4.acc (by decide) (by decide)).trans a3_2c0
   have a4_2e0 : accV n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := (K4.acc (by decide) (by decide)).trans a3_2e0
   have a4_320 : accV n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := (K4.acc (by decide) (by decide)).trans a3_320
-  have a4_420 : accV n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := (K4.acc (by decide) (by decide)).trans a3_420
-  have a4_440 : accV n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := (K4.acc (by decide) (by decide)).trans a3_440
+  have a4_420 : accV n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := (K4.acc (by decide) (by decide)).trans a3_420
+  have a4_440 : accV n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := (K4.acc (by decide) (by decide)).trans a3_440
   have a4_1020 : accV n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := (K4.acc (by decide) (by decide)).trans a3_1020
   have a4_1380 : accV n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := (K4.acc (by decide) (by decide)).trans a3_1380
   have a4_1480 : accV n4.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := (K4.acc (by decide) (by decide)).trans a3_1480
@@ -870,8 +870,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a5_2c0 : accV n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m5]; exact a4_2c0
   have a5_2e0 : accV n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m5]; exact a4_2e0
   have a5_320 : accV n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := by rw [m5]; exact a4_320
-  have a5_420 : accV n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m5]; exact a4_420
-  have a5_440 : accV n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m5]; exact a4_440
+  have a5_420 : accV n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m5]; exact a4_420
+  have a5_440 : accV n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m5]; exact a4_440
   have a5_1020 : accV n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := by rw [m5]; exact a4_1020
   have a5_1380 : accV n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := by rw [m5]; exact a4_1380
   have a5_1480 : accV n5.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := by rw [m5]; exact a4_1480
@@ -975,8 +975,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a6_2c0 : accV n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := (K6.acc (by decide) (by decide)).trans a5_2c0
   have a6_2e0 : accV n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := (K6.acc (by decide) (by decide)).trans a5_2e0
   have a6_320 : accV n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := (K6.acc (by decide) (by decide)).trans a5_320
-  have a6_420 : accV n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := (K6.acc (by decide) (by decide)).trans a5_420
-  have a6_440 : accV n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := (K6.acc (by decide) (by decide)).trans a5_440
+  have a6_420 : accV n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := (K6.acc (by decide) (by decide)).trans a5_420
+  have a6_440 : accV n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := (K6.acc (by decide) (by decide)).trans a5_440
   have a6_1020 : accV n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := (K6.acc (by decide) (by decide)).trans a5_1020
   have a6_1380 : accV n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := (K6.acc (by decide) (by decide)).trans a5_1380
   have a6_1480 : accV n6.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := (K6.acc (by decide) (by decide)).trans a5_1480
@@ -1085,8 +1085,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a7_2c0 : accV n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m7]; exact a6_2c0
   have a7_2e0 : accV n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m7]; exact a6_2e0
   have a7_320 : accV n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := by rw [m7]; exact a6_320
-  have a7_420 : accV n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m7]; exact a6_420
-  have a7_440 : accV n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m7]; exact a6_440
+  have a7_420 : accV n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m7]; exact a6_420
+  have a7_440 : accV n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m7]; exact a6_440
   have a7_1020 : accV n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := by rw [m7]; exact a6_1020
   have a7_1380 : accV n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := by rw [m7]; exact a6_1380
   have a7_1480 : accV n7.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := by rw [m7]; exact a6_1480
@@ -1191,8 +1191,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a8_2c0 : accV n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := (K8.acc (by decide) (by decide)).trans a7_2c0
   have a8_2e0 : accV n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := (K8.acc (by decide) (by decide)).trans a7_2e0
   have a8_320 : accV n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := (K8.acc (by decide) (by decide)).trans a7_320
-  have a8_420 : accV n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := (K8.acc (by decide) (by decide)).trans a7_420
-  have a8_440 : accV n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := (K8.acc (by decide) (by decide)).trans a7_440
+  have a8_420 : accV n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := (K8.acc (by decide) (by decide)).trans a7_420
+  have a8_440 : accV n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := (K8.acc (by decide) (by decide)).trans a7_440
   have a8_1020 : accV n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := (K8.acc (by decide) (by decide)).trans a7_1020
   have a8_1380 : accV n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := (K8.acc (by decide) (by decide)).trans a7_1380
   have a8_1480 : accV n8.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := (K8.acc (by decide) (by decide)).trans a7_1480
@@ -1302,8 +1302,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a9_2c0 : accV n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m9]; exact a8_2c0
   have a9_2e0 : accV n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m9]; exact a8_2e0
   have a9_320 : accV n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := by rw [m9]; exact a8_320
-  have a9_420 : accV n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m9]; exact a8_420
-  have a9_440 : accV n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m9]; exact a8_440
+  have a9_420 : accV n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m9]; exact a8_420
+  have a9_440 : accV n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m9]; exact a8_440
   have a9_1020 : accV n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := by rw [m9]; exact a8_1020
   have a9_1380 : accV n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := by rw [m9]; exact a8_1380
   have a9_1480 : accV n9.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := by rw [m9]; exact a8_1480
@@ -1409,8 +1409,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a10_2c0 : accV n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := (K10.acc (by decide) (by decide)).trans a9_2c0
   have a10_2e0 : accV n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := (K10.acc (by decide) (by decide)).trans a9_2e0
   have a10_320 : accV n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := (K10.acc (by decide) (by decide)).trans a9_320
-  have a10_420 : accV n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := (K10.acc (by decide) (by decide)).trans a9_420
-  have a10_440 : accV n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := (K10.acc (by decide) (by decide)).trans a9_440
+  have a10_420 : accV n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := (K10.acc (by decide) (by decide)).trans a9_420
+  have a10_440 : accV n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := (K10.acc (by decide) (by decide)).trans a9_440
   have a10_1020 : accV n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := (K10.acc (by decide) (by decide)).trans a9_1020
   have a10_1380 : accV n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := (K10.acc (by decide) (by decide)).trans a9_1380
   have a10_1480 : accV n10.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := (K10.acc (by decide) (by decide)).trans a9_1480
@@ -1521,8 +1521,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a11_2c0 : accV n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m11]; exact a10_2c0
   have a11_2e0 : accV n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m11]; exact a10_2e0
   have a11_320 : accV n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := by rw [m11]; exact a10_320
-  have a11_420 : accV n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m11]; exact a10_420
-  have a11_440 : accV n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m11]; exact a10_440
+  have a11_420 : accV n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m11]; exact a10_420
+  have a11_440 : accV n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m11]; exact a10_440
   have a11_1020 : accV n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := by rw [m11]; exact a10_1020
   have a11_1380 : accV n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := by rw [m11]; exact a10_1380
   have a11_1480 : accV n11.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := by rw [m11]; exact a10_1480
@@ -1629,8 +1629,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a12_2c0 : accV n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := (K12.acc (by decide) (by decide)).trans a11_2c0
   have a12_2e0 : accV n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := (K12.acc (by decide) (by decide)).trans a11_2e0
   have a12_320 : accV n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := (K12.acc (by decide) (by decide)).trans a11_320
-  have a12_420 : accV n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := (K12.acc (by decide) (by decide)).trans a11_420
-  have a12_440 : accV n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := (K12.acc (by decide) (by decide)).trans a11_440
+  have a12_420 : accV n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := (K12.acc (by decide) (by decide)).trans a11_420
+  have a12_440 : accV n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := (K12.acc (by decide) (by decide)).trans a11_440
   have a12_1020 : accV n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := (K12.acc (by decide) (by decide)).trans a11_1020
   have a12_1380 : accV n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := (K12.acc (by decide) (by decide)).trans a11_1380
   have a12_1480 : accV n12.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := (K12.acc (by decide) (by decide)).trans a11_1480
@@ -1742,8 +1742,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a13_2c0 : accV n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m13]; exact a12_2c0
   have a13_2e0 : accV n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m13]; exact a12_2e0
   have a13_320 : accV n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := by rw [m13]; exact a12_320
-  have a13_420 : accV n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m13]; exact a12_420
-  have a13_440 : accV n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m13]; exact a12_440
+  have a13_420 : accV n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m13]; exact a12_420
+  have a13_440 : accV n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m13]; exact a12_440
   have a13_1020 : accV n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := by rw [m13]; exact a12_1020
   have a13_1380 : accV n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := by rw [m13]; exact a12_1380
   have a13_1480 : accV n13.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := by rw [m13]; exact a12_1480
@@ -1851,8 +1851,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a14_2c0 : accV n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := (K14.acc (by decide) (by decide)).trans a13_2c0
   have a14_2e0 : accV n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := (K14.acc (by decide) (by decide)).trans a13_2e0
   have a14_320 : accV n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := (K14.acc (by decide) (by decide)).trans a13_320
-  have a14_420 : accV n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := (K14.acc (by decide) (by decide)).trans a13_420
-  have a14_440 : accV n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := (K14.acc (by decide) (by decide)).trans a13_440
+  have a14_420 : accV n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := (K14.acc (by decide) (by decide)).trans a13_420
+  have a14_440 : accV n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := (K14.acc (by decide) (by decide)).trans a13_440
   have a14_1020 : accV n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := (K14.acc (by decide) (by decide)).trans a13_1020
   have a14_1380 : accV n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := (K14.acc (by decide) (by decide)).trans a13_1380
   have a14_1480 : accV n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := (K14.acc (by decide) (by decide)).trans a13_1480
@@ -1965,8 +1965,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a15_2c0 : accV n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m15]; exact a14_2c0
   have a15_2e0 : accV n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m15]; exact a14_2e0
   have a15_320 : accV n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := by rw [m15]; exact a14_320
-  have a15_420 : accV n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m15]; exact a14_420
-  have a15_440 : accV n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m15]; exact a14_440
+  have a15_420 : accV n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m15]; exact a14_420
+  have a15_440 : accV n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m15]; exact a14_440
   have a15_1020 : accV n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := by rw [m15]; exact a14_1020
   have a15_1380 : accV n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := by rw [m15]; exact a14_1380
   have a15_1480 : accV n15.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := by rw [m15]; exact a14_1480
@@ -2075,8 +2075,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a16_2c0 : accV n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := (K16.acc (by decide) (by decide)).trans a15_2c0
   have a16_2e0 : accV n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := (K16.acc (by decide) (by decide)).trans a15_2e0
   have a16_320 : accV n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := (K16.acc (by decide) (by decide)).trans a15_320
-  have a16_420 : accV n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := (K16.acc (by decide) (by decide)).trans a15_420
-  have a16_440 : accV n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := (K16.acc (by decide) (by decide)).trans a15_440
+  have a16_420 : accV n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := (K16.acc (by decide) (by decide)).trans a15_420
+  have a16_440 : accV n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := (K16.acc (by decide) (by decide)).trans a15_440
   have a16_1020 : accV n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := (K16.acc (by decide) (by decide)).trans a15_1020
   have a16_1380 : accV n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := (K16.acc (by decide) (by decide)).trans a15_1380
   have a16_1480 : accV n16.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := (K16.acc (by decide) (by decide)).trans a15_1480
@@ -2211,8 +2211,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a17_2c0 : accV n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m17]; exact a16_2c0
   have a17_2e0 : accV n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m17]; exact a16_2e0
   have a17_320 : accV n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := by rw [m17]; exact a16_320
-  have a17_420 : accV n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m17]; exact a16_420
-  have a17_440 : accV n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m17]; exact a16_440
+  have a17_420 : accV n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m17]; exact a16_420
+  have a17_440 : accV n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m17]; exact a16_440
   have a17_1020 : accV n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := by rw [m17]; exact a16_1020
   have a17_1380 : accV n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := by rw [m17]; exact a16_1380
   have a17_1480 : accV n17.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := by rw [m17]; exact a16_1480
@@ -2329,8 +2329,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a18_2c0 : accV n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m18]; exact a17_2c0
   have a18_2e0 : accV n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m18]; exact a17_2e0
   have a18_320 : accV n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := by rw [m18]; exact a17_320
-  have a18_420 : accV n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m18]; exact a17_420
-  have a18_440 : accV n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m18]; exact a17_440
+  have a18_420 : accV n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m18]; exact a17_420
+  have a18_440 : accV n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m18]; exact a17_440
   have a18_1020 : accV n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := by rw [m18]; exact a17_1020
   have a18_1380 : accV n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := by rw [m18]; exact a17_1380
   have a18_1480 : accV n18.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := by rw [m18]; exact a17_1480
@@ -2463,8 +2463,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a19_2c0 : accV n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m19]; exact a18_2c0
   have a19_2e0 : accV n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m19]; exact a18_2e0
   have a19_320 : accV n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := by rw [m19]; exact a18_320
-  have a19_420 : accV n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m19]; exact a18_420
-  have a19_440 : accV n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m19]; exact a18_440
+  have a19_420 : accV n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m19]; exact a18_420
+  have a19_440 : accV n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m19]; exact a18_440
   have a19_1020 : accV n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := by rw [m19]; exact a18_1020
   have a19_1380 : accV n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := by rw [m19]; exact a18_1380
   have a19_1480 : accV n19.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := by rw [m19]; exact a18_1480
@@ -2586,8 +2586,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a20_2c0 : accV n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := (K20.acc (by decide) (by decide)).trans a19_2c0
   have a20_2e0 : accV n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := (K20.acc (by decide) (by decide)).trans a19_2e0
   have a20_320 : accV n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := (K20.acc (by decide) (by decide)).trans a19_320
-  have a20_420 : accV n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := (K20.acc (by decide) (by decide)).trans a19_420
-  have a20_440 : accV n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := (K20.acc (by decide) (by decide)).trans a19_440
+  have a20_420 : accV n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := (K20.acc (by decide) (by decide)).trans a19_420
+  have a20_440 : accV n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := (K20.acc (by decide) (by decide)).trans a19_440
   have a20_1020 : accV n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := (K20.acc (by decide) (by decide)).trans a19_1020
   have a20_1380 : accV n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = gv := (K20.acc (by decide) (by decide)).trans a19_1380
   have a20_1480 : accV n20.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := (K20.acc (by decide) (by decide)).trans a19_1480
@@ -2726,8 +2726,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a21_2c0 : accV n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m21]; exact a20_2c0
   have a21_2e0 : accV n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m21]; exact a20_2e0
   have a21_320 : accV n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = fv := by rw [m21]; exact a20_320
-  have a21_420 : accV n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m21]; exact a20_420
-  have a21_440 : accV n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m21]; exact a20_440
+  have a21_420 : accV n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m21]; exact a20_420
+  have a21_440 : accV n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m21]; exact a20_440
   have a21_a20 : accV n21.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = A20a / 2 ^ ns % 2 ^ 256 := by rw [m21]; exact a20_a20
   have a21_a44 : accV n21.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = A20b / 2 ^ ns % 2 ^ 256 := by rw [m21]; exact a20_a44
   have a21_1020 : accV n21.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := by rw [m21]; exact a20_1020
@@ -2841,8 +2841,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a22_2a0 : accV n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x2A0) 8 = rv := (K22.acc (by decide) (by decide)).trans a21_2a0
   have a22_2c0 : accV n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := (K22.acc (by decide) (by decide)).trans a21_2c0
   have a22_2e0 : accV n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := (K22.acc (by decide) (by decide)).trans a21_2e0
-  have a22_420 : accV n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := (K22.acc (by decide) (by decide)).trans a21_420
-  have a22_440 : accV n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := (K22.acc (by decide) (by decide)).trans a21_440
+  have a22_420 : accV n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := (K22.acc (by decide) (by decide)).trans a21_420
+  have a22_440 : accV n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := (K22.acc (by decide) (by decide)).trans a21_440
   have a22_a20 : accV n22.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = A20a / 2 ^ ns % 2 ^ 256 := (K22.acc (by decide) (by decide)).trans a21_a20
   have a22_a44 : accV n22.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = A20b / 2 ^ ns % 2 ^ 256 := (K22.acc (by decide) (by decide)).trans a21_a44
   have a22_1020 : accV n22.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := (K22.acc (by decide) (by decide)).trans a21_1020
@@ -2982,8 +2982,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a23_2c0 : accV n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m23]; exact a22_2c0
   have a23_2e0 : accV n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m23]; exact a22_2e0
   have a23_320 : accV n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = A20a / 2 ^ ns % 2 ^ 256 := by rw [m23]; exact a22_320
-  have a23_420 : accV n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m23]; exact a22_420
-  have a23_440 : accV n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m23]; exact a22_440
+  have a23_420 : accV n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m23]; exact a22_420
+  have a23_440 : accV n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m23]; exact a22_440
   have a23_a20 : accV n23.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = A20a / 2 ^ ns % 2 ^ 256 := by rw [m23]; exact a22_a20
   have a23_a44 : accV n23.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = A20b / 2 ^ ns % 2 ^ 256 := by rw [m23]; exact a22_a44
   have a23_1020 : accV n23.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := by rw [m23]; exact a22_1020
@@ -3098,8 +3098,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a24_2c0 : accV n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := (K24.acc (by decide) (by decide)).trans a23_2c0
   have a24_2e0 : accV n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := (K24.acc (by decide) (by decide)).trans a23_2e0
   have a24_320 : accV n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = A20a / 2 ^ ns % 2 ^ 256 := (K24.acc (by decide) (by decide)).trans a23_320
-  have a24_420 : accV n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := (K24.acc (by decide) (by decide)).trans a23_420
-  have a24_440 : accV n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := (K24.acc (by decide) (by decide)).trans a23_440
+  have a24_420 : accV n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := (K24.acc (by decide) (by decide)).trans a23_420
+  have a24_440 : accV n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := (K24.acc (by decide) (by decide)).trans a23_440
   have a24_a20 : accV n24.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = A20a / 2 ^ ns % 2 ^ 256 := (K24.acc (by decide) (by decide)).trans a23_a20
   have a24_a44 : accV n24.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = A20b / 2 ^ ns % 2 ^ 256 := (K24.acc (by decide) (by decide)).trans a23_a44
   have a24_1020 : accV n24.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := (K24.acc (by decide) (by decide)).trans a23_1020
@@ -3258,8 +3258,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a25_2c0 : accV n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m25]; exact a24_2c0
   have a25_2e0 : accV n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m25]; exact a24_2e0
   have a25_320 : accV n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = A20a / 2 ^ ns % 2 ^ 256 := by rw [m25]; exact a24_320
-  have a25_420 : accV n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m25]; exact a24_420
-  have a25_440 : accV n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m25]; exact a24_440
+  have a25_420 : accV n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m25]; exact a24_420
+  have a25_440 : accV n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m25]; exact a24_440
   have a25_a20 : accV n25.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = A20a / 2 ^ ns % 2 ^ 256 := by rw [m25]; exact a24_a20
   have a25_a44 : accV n25.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = A20b / 2 ^ ns % 2 ^ 256 := by rw [m25]; exact a24_a44
   have a25_1020 : accV n25.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := by rw [m25]; exact a24_1020
@@ -3384,17 +3384,17 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a26_2c0 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := (K26.acc (by decide) (by decide)).trans a25_2c0
   have a26_2e0 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := (K26.acc (by decide) (by decide)).trans a25_2e0
   have a26_320 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = A20a / 2 ^ ns % 2 ^ 256 := (K26.acc (by decide) (by decide)).trans a25_320
-  have a26_420 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := (K26.acc (by decide) (by decide)).trans a25_420
-  have a26_440 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := (K26.acc (by decide) (by decide)).trans a25_440
+  have a26_420 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := (K26.acc (by decide) (by decide)).trans a25_420
+  have a26_440 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := (K26.acc (by decide) (by decide)).trans a25_440
   have a26_1020 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := (K26.acc (by decide) (by decide)).trans a25_1020
   have a26_1380 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = A20b / 2 ^ ns % 2 ^ 256 := (K26.acc (by decide) (by decide)).trans a25_1380
   have a26_1480 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := (K26.acc (by decide) (by decide)).trans a25_1480
   have a26_15a8 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x15A8) 8 = X := (K26.acc (by decide) (by decide)).trans a25_15a8
   have a26_15c8 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0x15C8) 8 = Y := (K26.acc (by decide) (by decide)).trans a25_15c8
-  have a26_a20 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := vv0_26
-  have a26_a44 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := vv1_26
-  have b26_a40 : n26.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := byte_of_toNat bb0_26
-  have b26_a64 : n26.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := byte_of_toNat bb1_26
+  have a26_a20 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := vv0_26
+  have a26_a44 : accV n26.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := vv1_26
+  have b26_a40 : n26.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := byte_of_toNat bb0_26
+  have b26_a64 : n26.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := byte_of_toNat bb1_26
   clear a25_15c8 a25_15a8 a25_1480 a25_1380 a25_1020 a25_a44 a25_a20 a25_440 a25_420 a25_320 a25_2e0 a25_2c0 a25_2a0 b25_14a0 b25_13a0 b25_1040 b25_a64 b25_a40 b25_340 w25_133c w25_1338 w25_1334 w25_1330 w25_132c w25_1328 w25_1324 w25_1320 w25_464 w25_460 w25_130 w25_12c w25_128 w25_124 w25_120 w25_11c w25_118 w25_114 w25_110 w25_10c w25_108 w25_104 w25_100 w25_fc w25_f8 w25_f4 w25_f0 w25_ec w25_e8 w25_e4 w25_e0 w25_dc w25_d8 w25_d4 w25_d0 w25_cc w25_c8 w25_c4 w25_c0 w25_bc w25_b8 w25_b4 w25_b0 w25_ac w25_a8 w25_a4 w25_a0 w25_9c w25_98 w25_94 w25_90 w25_8c w25_88 w25_84 w25_80 w25_7c w25_78 w25_74 w25_70 w25_6c w25_68 w25_64 w25_60 w25_5c w25_58 w25_54 w25_50 w25_4c w25_44 w25_40 w25_3c w25_38 w25_34 w25_20 w25_1c g25_17 g25_16 g25_15 g25_14 g25_13 g25_12 g25_11 g25_10 g25_27 g25_26 g25_24 g25_19 g25_18 g25_8 g25_4 g25_3 g25_2 V25 E25 fR25 t25 fr25 rb25 s25 m25 u25 c25
   -- 0x1E14
   obtain ⟨n27, c27, u27⟩ := s26.block svZB1e14 E26.self svZB1e14_end
@@ -3515,8 +3515,8 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have w27_1338 : memLoad32 n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x1338) = rlo := by rw [m27]; exact w26_1338
   have w27_133c : memLoad32 n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x133C) = rhi := by rw [m27]; exact w26_133c
   have b27_340 : n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x340) = BitVec.ofNat 8 σ20a := by rw [m27]; exact b26_340
-  have b27_a40 : n27.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [m27]; exact b26_a40
-  have b27_a64 : n27.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [m27]; exact b26_a64
+  have b27_a40 : n27.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [m27]; exact b26_a40
+  have b27_a64 : n27.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [m27]; exact b26_a64
   have b27_1040 : n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = es := by rw [m27]; exact b26_1040
   have b27_13a0 : n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = BitVec.ofNat 8 σ20b := by rw [m27]; exact b26_13a0
   have b27_14a0 : n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = ds := by rw [m27]; exact b26_14a0
@@ -3524,10 +3524,10 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have a27_2c0 : accV n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m27]; exact a26_2c0
   have a27_2e0 : accV n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m27]; exact a26_2e0
   have a27_320 : accV n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = A20a / 2 ^ ns % 2 ^ 256 := by rw [m27]; exact a26_320
-  have a27_420 : accV n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m27]; exact a26_420
-  have a27_440 : accV n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m27]; exact a26_440
-  have a27_a20 : accV n27.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := by rw [m27]; exact a26_a20
-  have a27_a44 : accV n27.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := by rw [m27]; exact a26_a44
+  have a27_420 : accV n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m27]; exact a26_420
+  have a27_440 : accV n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m27]; exact a26_440
+  have a27_a20 : accV n27.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := by rw [m27]; exact a26_a20
+  have a27_a44 : accV n27.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := by rw [m27]; exact a26_a44
   have a27_1020 : accV n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := by rw [m27]; exact a26_1020
   have a27_1380 : accV n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = A20b / 2 ^ ns % 2 ^ 256 := by rw [m27]; exact a26_1380
   have a27_1480 : accV n27.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = dv := by rw [m27]; exact a26_1480
@@ -3631,24 +3631,24 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have w28_1338 : memLoad32 n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x1338) = rlo := (K28.w32 (by decide) (by decide)).trans w27_1338
   have w28_133c : memLoad32 n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x133C) = rhi := (K28.w32 (by decide) (by decide)).trans w27_133c
   have b28_340 : n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x340) = BitVec.ofNat 8 σ20a := (K28.b8 (by decide) (by decide)).trans b27_340
-  have b28_a40 : n28.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := (K28.b8 (by decide) (by decide)).trans b27_a40
-  have b28_a64 : n28.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := (K28.b8 (by decide) (by decide)).trans b27_a64
+  have b28_a40 : n28.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := (K28.b8 (by decide) (by decide)).trans b27_a40
+  have b28_a64 : n28.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := (K28.b8 (by decide) (by decide)).trans b27_a64
   have b28_1040 : n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = es := (K28.b8 (by decide) (by decide)).trans b27_1040
   have b28_13a0 : n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = BitVec.ofNat 8 σ20b := (K28.b8 (by decide) (by decide)).trans b27_13a0
-  have b28_14a0 : n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [show 0x14A0 = 0x1480 + 0x20 from rfl, X28 0x20 (by decide)]; exact b27_a40
+  have b28_14a0 : n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [show 0x14A0 = 0x1480 + 0x20 from rfl, X28 0x20 (by decide)]; exact b27_a40
   have a28_2a0 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x2A0) 8 = rv := (K28.acc (by decide) (by decide)).trans a27_2a0
   have a28_2c0 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := (K28.acc (by decide) (by decide)).trans a27_2c0
   have a28_2e0 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := (K28.acc (by decide) (by decide)).trans a27_2e0
   have a28_320 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = A20a / 2 ^ ns % 2 ^ 256 := (K28.acc (by decide) (by decide)).trans a27_320
-  have a28_420 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := (K28.acc (by decide) (by decide)).trans a27_420
-  have a28_440 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := (K28.acc (by decide) (by decide)).trans a27_440
-  have a28_a20 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := (K28.acc (by decide) (by decide)).trans a27_a20
-  have a28_a44 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := (K28.acc (by decide) (by decide)).trans a27_a44
+  have a28_420 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := (K28.acc (by decide) (by decide)).trans a27_420
+  have a28_440 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := (K28.acc (by decide) (by decide)).trans a27_440
+  have a28_a20 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := (K28.acc (by decide) (by decide)).trans a27_a20
+  have a28_a44 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := (K28.acc (by decide) (by decide)).trans a27_a44
   have a28_1020 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := (K28.acc (by decide) (by decide)).trans a27_1020
   have a28_1380 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = A20b / 2 ^ ns % 2 ^ 256 := (K28.acc (by decide) (by decide)).trans a27_1380
   have a28_15a8 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x15A8) 8 = X := (K28.acc (by decide) (by decide)).trans a27_15a8
   have a28_15c8 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x15C8) 8 = Y := (K28.acc (by decide) (by decide)).trans a27_15c8
-  have a28_1480 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := (accV_S 8 fun q hq => by
+  have a28_1480 : accV n28.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := (accV_S 8 fun q hq => by
     rw [show 0x1480 + q = 0x1480 + (0x0 + q) by omega, X28 (0x0 + q) (by omega),
       show 0xA20 + (0x0 + q) = 0xA20 + q by omega]).trans a27_a20
   clear a27_15c8 a27_15a8 a27_1480 a27_1380 a27_1020 a27_a44 a27_a20 a27_440 a27_420 a27_320 a27_2e0 a27_2c0 a27_2a0 b27_14a0 b27_13a0 b27_1040 b27_a64 b27_a40 b27_340 w27_133c w27_1338 w27_1334 w27_1330 w27_132c w27_1328 w27_1324 w27_1320 w27_464 w27_460 w27_130 w27_12c w27_128 w27_124 w27_120 w27_11c w27_118 w27_114 w27_110 w27_10c w27_108 w27_104 w27_100 w27_fc w27_f8 w27_f4 w27_f0 w27_ec w27_e8 w27_e4 w27_e0 w27_dc w27_d8 w27_d4 w27_d0 w27_cc w27_c8 w27_c4 w27_c0 w27_bc w27_b8 w27_b4 w27_b0 w27_ac w27_a8 w27_a4 w27_a0 w27_9c w27_98 w27_94 w27_90 w27_8c w27_88 w27_84 w27_80 w27_7c w27_78 w27_74 w27_70 w27_6c w27_68 w27_64 w27_60 w27_5c w27_58 w27_54 w27_50 w27_4c w27_44 w27_40 w27_3c w27_38 w27_34 w27_20 w27_1c g27_12 g27_11 g27_10 g27_27 g27_26 g27_24 g27_19 g27_18 g27_8 g27_4 g27_3 g27_2 V27 E27 fR27 t27 fr27 rb27 s27 m27 u27 c27
@@ -3771,22 +3771,22 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have w29_1338 : memLoad32 n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x1338) = rlo := by rw [m29]; exact w28_1338
   have w29_133c : memLoad32 n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x133C) = rhi := by rw [m29]; exact w28_133c
   have b29_340 : n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x340) = BitVec.ofNat 8 σ20a := by rw [m29]; exact b28_340
-  have b29_a40 : n29.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [m29]; exact b28_a40
-  have b29_a64 : n29.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [m29]; exact b28_a64
+  have b29_a40 : n29.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [m29]; exact b28_a40
+  have b29_a64 : n29.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [m29]; exact b28_a64
   have b29_1040 : n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = es := by rw [m29]; exact b28_1040
   have b29_13a0 : n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = BitVec.ofNat 8 σ20b := by rw [m29]; exact b28_13a0
-  have b29_14a0 : n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [m29]; exact b28_14a0
+  have b29_14a0 : n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [m29]; exact b28_14a0
   have a29_2a0 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x2A0) 8 = rv := by rw [m29]; exact a28_2a0
   have a29_2c0 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m29]; exact a28_2c0
   have a29_2e0 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m29]; exact a28_2e0
   have a29_320 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = A20a / 2 ^ ns % 2 ^ 256 := by rw [m29]; exact a28_320
-  have a29_420 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m29]; exact a28_420
-  have a29_440 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m29]; exact a28_440
-  have a29_a20 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := by rw [m29]; exact a28_a20
-  have a29_a44 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := by rw [m29]; exact a28_a44
+  have a29_420 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m29]; exact a28_420
+  have a29_440 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m29]; exact a28_440
+  have a29_a20 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := by rw [m29]; exact a28_a20
+  have a29_a44 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := by rw [m29]; exact a28_a44
   have a29_1020 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = ev := by rw [m29]; exact a28_1020
   have a29_1380 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = A20b / 2 ^ ns % 2 ^ 256 := by rw [m29]; exact a28_1380
-  have a29_1480 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := by rw [m29]; exact a28_1480
+  have a29_1480 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := by rw [m29]; exact a28_1480
   have a29_15a8 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x15A8) 8 = X := by rw [m29]; exact a28_15a8
   have a29_15c8 : accV n29.mem (B + 0x21A0 + BitVec.ofNat 32 0x15C8) 8 = Y := by rw [m29]; exact a28_15c8
   clear a28_1480 a28_15c8 a28_15a8 a28_1380 a28_1020 a28_a44 a28_a20 a28_440 a28_420 a28_320 a28_2e0 a28_2c0 a28_2a0 b28_14a0 b28_13a0 b28_1040 b28_a64 b28_a40 b28_340 w28_133c w28_1338 w28_1334 w28_1330 w28_132c w28_1328 w28_1324 w28_1320 w28_464 w28_460 w28_130 w28_12c w28_128 w28_124 w28_120 w28_11c w28_118 w28_114 w28_110 w28_10c w28_108 w28_104 w28_100 w28_fc w28_f8 w28_f4 w28_f0 w28_ec w28_e8 w28_e4 w28_e0 w28_dc w28_d8 w28_d4 w28_d0 w28_cc w28_c8 w28_c4 w28_c0 w28_bc w28_b8 w28_b4 w28_b0 w28_ac w28_a8 w28_a4 w28_a0 w28_9c w28_98 w28_94 w28_90 w28_8c w28_88 w28_84 w28_80 w28_7c w28_78 w28_74 w28_70 w28_6c w28_68 w28_64 w28_60 w28_5c w28_58 w28_54 w28_50 w28_4c w28_44 w28_40 w28_3c w28_38 w28_34 w28_20 w28_1c g28_27 g28_26 g28_24 g28_19 g28_18 g28_8 g28_4 g28_3 g28_2 V28 E28 fR28 t28 fr28 s28 X28 K28 P28
@@ -3887,24 +3887,24 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have w30_1338 : memLoad32 n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x1338) = rlo := (K30.w32 (by decide) (by decide)).trans w29_1338
   have w30_133c : memLoad32 n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x133C) = rhi := (K30.w32 (by decide) (by decide)).trans w29_133c
   have b30_340 : n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x340) = BitVec.ofNat 8 σ20a := (K30.b8 (by decide) (by decide)).trans b29_340
-  have b30_a40 : n30.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := (K30.b8 (by decide) (by decide)).trans b29_a40
-  have b30_a64 : n30.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := (K30.b8 (by decide) (by decide)).trans b29_a64
+  have b30_a40 : n30.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := (K30.b8 (by decide) (by decide)).trans b29_a40
+  have b30_a64 : n30.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := (K30.b8 (by decide) (by decide)).trans b29_a64
   have b30_13a0 : n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = BitVec.ofNat 8 σ20b := (K30.b8 (by decide) (by decide)).trans b29_13a0
-  have b30_14a0 : n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := (K30.b8 (by decide) (by decide)).trans b29_14a0
-  have b30_1040 : n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [show 0x1040 = 0x1020 + 0x20 from rfl, X30 0x20 (by decide)]; exact b29_a64
+  have b30_14a0 : n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := (K30.b8 (by decide) (by decide)).trans b29_14a0
+  have b30_1040 : n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [show 0x1040 = 0x1020 + 0x20 from rfl, X30 0x20 (by decide)]; exact b29_a64
   have a30_2a0 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x2A0) 8 = rv := (K30.acc (by decide) (by decide)).trans a29_2a0
   have a30_2c0 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := (K30.acc (by decide) (by decide)).trans a29_2c0
   have a30_2e0 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := (K30.acc (by decide) (by decide)).trans a29_2e0
   have a30_320 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = A20a / 2 ^ ns % 2 ^ 256 := (K30.acc (by decide) (by decide)).trans a29_320
-  have a30_420 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := (K30.acc (by decide) (by decide)).trans a29_420
-  have a30_440 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := (K30.acc (by decide) (by decide)).trans a29_440
-  have a30_a20 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := (K30.acc (by decide) (by decide)).trans a29_a20
-  have a30_a44 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := (K30.acc (by decide) (by decide)).trans a29_a44
+  have a30_420 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := (K30.acc (by decide) (by decide)).trans a29_420
+  have a30_440 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := (K30.acc (by decide) (by decide)).trans a29_440
+  have a30_a20 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := (K30.acc (by decide) (by decide)).trans a29_a20
+  have a30_a44 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := (K30.acc (by decide) (by decide)).trans a29_a44
   have a30_1380 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = A20b / 2 ^ ns % 2 ^ 256 := (K30.acc (by decide) (by decide)).trans a29_1380
-  have a30_1480 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := (K30.acc (by decide) (by decide)).trans a29_1480
+  have a30_1480 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := (K30.acc (by decide) (by decide)).trans a29_1480
   have a30_15a8 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x15A8) 8 = X := (K30.acc (by decide) (by decide)).trans a29_15a8
   have a30_15c8 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x15C8) 8 = Y := (K30.acc (by decide) (by decide)).trans a29_15c8
-  have a30_1020 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := (accV_S 8 fun q hq => by
+  have a30_1020 : accV n30.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := (accV_S 8 fun q hq => by
     rw [show 0x1020 + q = 0x1020 + (0x0 + q) by omega, X30 (0x0 + q) (by omega),
       show 0xA44 + (0x0 + q) = 0xA44 + q by omega]).trans a29_a44
   clear a29_15c8 a29_15a8 a29_1480 a29_1380 a29_1020 a29_a44 a29_a20 a29_440 a29_420 a29_320 a29_2e0 a29_2c0 a29_2a0 b29_14a0 b29_13a0 b29_1040 b29_a64 b29_a40 b29_340 w29_133c w29_1338 w29_1334 w29_1330 w29_132c w29_1328 w29_1324 w29_1320 w29_464 w29_460 w29_130 w29_12c w29_128 w29_124 w29_120 w29_11c w29_118 w29_114 w29_110 w29_10c w29_108 w29_104 w29_100 w29_fc w29_f8 w29_f4 w29_f0 w29_ec w29_e8 w29_e4 w29_e0 w29_dc w29_d8 w29_d4 w29_d0 w29_cc w29_c8 w29_c4 w29_c0 w29_bc w29_b8 w29_b4 w29_b0 w29_ac w29_a8 w29_a4 w29_a0 w29_9c w29_98 w29_94 w29_90 w29_8c w29_88 w29_84 w29_80 w29_7c w29_78 w29_74 w29_70 w29_6c w29_68 w29_64 w29_60 w29_5c w29_58 w29_54 w29_50 w29_4c w29_44 w29_40 w29_3c w29_38 w29_34 w29_20 w29_1c g29_12 g29_11 g29_10 g29_27 g29_26 g29_24 g29_19 g29_18 g29_8 g29_4 g29_3 g29_2 V29 E29 fR29 t29 fr29 rb29 s29 m29 u29 c29
@@ -4008,22 +4008,22 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have w31_1338 : memLoad32 n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x1338) = rlo := by rw [m31]; exact w30_1338
   have w31_133c : memLoad32 n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x133C) = rhi := by rw [m31]; exact w30_133c
   have b31_340 : n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x340) = BitVec.ofNat 8 σ20a := by rw [m31]; exact b30_340
-  have b31_a40 : n31.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [m31]; exact b30_a40
-  have b31_a64 : n31.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [m31]; exact b30_a64
-  have b31_1040 : n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [m31]; exact b30_1040
+  have b31_a40 : n31.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [m31]; exact b30_a40
+  have b31_a64 : n31.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [m31]; exact b30_a64
+  have b31_1040 : n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [m31]; exact b30_1040
   have b31_13a0 : n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = BitVec.ofNat 8 σ20b := by rw [m31]; exact b30_13a0
-  have b31_14a0 : n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [m31]; exact b30_14a0
+  have b31_14a0 : n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [m31]; exact b30_14a0
   have a31_2a0 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x2A0) 8 = rv := by rw [m31]; exact a30_2a0
   have a31_2c0 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m31]; exact a30_2c0
   have a31_2e0 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m31]; exact a30_2e0
   have a31_320 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = A20a / 2 ^ ns % 2 ^ 256 := by rw [m31]; exact a30_320
-  have a31_420 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m31]; exact a30_420
-  have a31_440 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m31]; exact a30_440
-  have a31_a20 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := by rw [m31]; exact a30_a20
-  have a31_a44 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := by rw [m31]; exact a30_a44
-  have a31_1020 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := by rw [m31]; exact a30_1020
+  have a31_420 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m31]; exact a30_420
+  have a31_440 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m31]; exact a30_440
+  have a31_a20 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := by rw [m31]; exact a30_a20
+  have a31_a44 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := by rw [m31]; exact a30_a44
+  have a31_1020 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := by rw [m31]; exact a30_1020
   have a31_1380 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = A20b / 2 ^ ns % 2 ^ 256 := by rw [m31]; exact a30_1380
-  have a31_1480 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := by rw [m31]; exact a30_1480
+  have a31_1480 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := by rw [m31]; exact a30_1480
   have a31_15a8 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x15A8) 8 = X := by rw [m31]; exact a30_15a8
   have a31_15c8 : accV n31.mem (B + 0x21A0 + BitVec.ofNat 32 0x15C8) 8 = Y := by rw [m31]; exact a30_15c8
   clear a30_1020 a30_15c8 a30_15a8 a30_1480 a30_1380 a30_a44 a30_a20 a30_440 a30_420 a30_320 a30_2e0 a30_2c0 a30_2a0 b30_1040 b30_14a0 b30_13a0 b30_a64 b30_a40 b30_340 w30_133c w30_1338 w30_1334 w30_1330 w30_132c w30_1328 w30_1324 w30_1320 w30_464 w30_460 w30_130 w30_12c w30_128 w30_124 w30_120 w30_11c w30_118 w30_114 w30_110 w30_10c w30_108 w30_104 w30_100 w30_fc w30_f8 w30_f4 w30_f0 w30_ec w30_e8 w30_e4 w30_e0 w30_dc w30_d8 w30_d4 w30_d0 w30_cc w30_c8 w30_c4 w30_c0 w30_bc w30_b8 w30_b4 w30_b0 w30_ac w30_a8 w30_a4 w30_a0 w30_9c w30_98 w30_94 w30_90 w30_8c w30_88 w30_84 w30_80 w30_7c w30_78 w30_74 w30_70 w30_6c w30_68 w30_64 w30_60 w30_5c w30_58 w30_54 w30_50 w30_4c w30_44 w30_40 w30_3c w30_38 w30_34 w30_20 w30_1c g30_27 g30_26 g30_24 g30_19 g30_18 g30_8 g30_4 g30_3 g30_2 V30 E30 fR30 t30 fr30 s30 X30 K30 P30
@@ -4138,22 +4138,22 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have w32_1338 : memLoad32 n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x1338) = rlo := by rw [m32]; exact w31_1338
   have w32_133c : memLoad32 n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x133C) = rhi := by rw [m32]; exact w31_133c
   have b32_340 : n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x340) = BitVec.ofNat 8 σ20a := by rw [m32]; exact b31_340
-  have b32_a40 : n32.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [m32]; exact b31_a40
-  have b32_a64 : n32.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [m32]; exact b31_a64
-  have b32_1040 : n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [m32]; exact b31_1040
+  have b32_a40 : n32.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [m32]; exact b31_a40
+  have b32_a64 : n32.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [m32]; exact b31_a64
+  have b32_1040 : n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [m32]; exact b31_1040
   have b32_13a0 : n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = BitVec.ofNat 8 σ20b := by rw [m32]; exact b31_13a0
-  have b32_14a0 : n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [m32]; exact b31_14a0
+  have b32_14a0 : n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [m32]; exact b31_14a0
   have a32_2a0 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x2A0) 8 = rv := by rw [m32]; exact a31_2a0
   have a32_2c0 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m32]; exact a31_2c0
   have a32_2e0 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m32]; exact a31_2e0
   have a32_320 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = A20a / 2 ^ ns % 2 ^ 256 := by rw [m32]; exact a31_320
-  have a32_420 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m32]; exact a31_420
-  have a32_440 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m32]; exact a31_440
-  have a32_a20 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := by rw [m32]; exact a31_a20
-  have a32_a44 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := by rw [m32]; exact a31_a44
-  have a32_1020 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := by rw [m32]; exact a31_1020
+  have a32_420 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m32]; exact a31_420
+  have a32_440 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m32]; exact a31_440
+  have a32_a20 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := by rw [m32]; exact a31_a20
+  have a32_a44 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := by rw [m32]; exact a31_a44
+  have a32_1020 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := by rw [m32]; exact a31_1020
   have a32_1380 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = A20b / 2 ^ ns % 2 ^ 256 := by rw [m32]; exact a31_1380
-  have a32_1480 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := by rw [m32]; exact a31_1480
+  have a32_1480 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := by rw [m32]; exact a31_1480
   have a32_15a8 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x15A8) 8 = X := by rw [m32]; exact a31_15a8
   have a32_15c8 : accV n32.mem (B + 0x21A0 + BitVec.ofNat 32 0x15C8) 8 = Y := by rw [m32]; exact a31_15c8
   clear a31_15c8 a31_15a8 a31_1480 a31_1380 a31_1020 a31_a44 a31_a20 a31_440 a31_420 a31_320 a31_2e0 a31_2c0 a31_2a0 b31_14a0 b31_13a0 b31_1040 b31_a64 b31_a40 b31_340 w31_133c w31_1338 w31_1334 w31_1330 w31_132c w31_1328 w31_1324 w31_1320 w31_464 w31_460 w31_130 w31_12c w31_128 w31_124 w31_120 w31_11c w31_118 w31_114 w31_110 w31_10c w31_108 w31_104 w31_100 w31_fc w31_f8 w31_f4 w31_f0 w31_ec w31_e8 w31_e4 w31_e0 w31_dc w31_d8 w31_d4 w31_d0 w31_cc w31_c8 w31_c4 w31_c0 w31_bc w31_b8 w31_b4 w31_b0 w31_ac w31_a8 w31_a4 w31_a0 w31_9c w31_98 w31_94 w31_90 w31_8c w31_88 w31_84 w31_80 w31_7c w31_78 w31_74 w31_70 w31_6c w31_68 w31_64 w31_60 w31_5c w31_58 w31_54 w31_50 w31_4c w31_44 w31_40 w31_3c w31_38 w31_34 w31_20 w31_1c g31_10 g31_27 g31_26 g31_24 g31_19 g31_18 g31_8 g31_4 g31_3 g31_2 V31 E31 fR31 t31 fr31 m31 s31 u31 d31
@@ -4255,22 +4255,22 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have w33_1338 : memLoad32 n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x1338) = rlo := by rw [m33]; exact w32_1338
   have w33_133c : memLoad32 n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x133C) = rhi := by rw [m33]; exact w32_133c
   have b33_340 : n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x340) = BitVec.ofNat 8 σ20a := by rw [m33]; exact b32_340
-  have b33_a40 : n33.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [m33]; exact b32_a40
-  have b33_a64 : n33.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [m33]; exact b32_a64
-  have b33_1040 : n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [m33]; exact b32_1040
+  have b33_a40 : n33.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [m33]; exact b32_a40
+  have b33_a64 : n33.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [m33]; exact b32_a64
+  have b33_1040 : n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [m33]; exact b32_1040
   have b33_13a0 : n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = BitVec.ofNat 8 σ20b := by rw [m33]; exact b32_13a0
-  have b33_14a0 : n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := by rw [m33]; exact b32_14a0
+  have b33_14a0 : n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := by rw [m33]; exact b32_14a0
   have a33_2a0 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x2A0) 8 = rv := by rw [m33]; exact a32_2a0
   have a33_2c0 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := by rw [m33]; exact a32_2c0
   have a33_2e0 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := by rw [m33]; exact a32_2e0
   have a33_320 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = A20a / 2 ^ ns % 2 ^ 256 := by rw [m33]; exact a32_320
-  have a33_420 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := by rw [m33]; exact a32_420
-  have a33_440 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := by rw [m33]; exact a32_440
-  have a33_a20 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := by rw [m33]; exact a32_a20
-  have a33_a44 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := by rw [m33]; exact a32_a44
-  have a33_1020 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := by rw [m33]; exact a32_1020
+  have a33_420 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [m33]; exact a32_420
+  have a33_440 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := by rw [m33]; exact a32_440
+  have a33_a20 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := by rw [m33]; exact a32_a20
+  have a33_a44 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := by rw [m33]; exact a32_a44
+  have a33_1020 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := by rw [m33]; exact a32_1020
   have a33_1380 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = A20b / 2 ^ ns % 2 ^ 256 := by rw [m33]; exact a32_1380
-  have a33_1480 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := by rw [m33]; exact a32_1480
+  have a33_1480 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := by rw [m33]; exact a32_1480
   have a33_15a8 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x15A8) 8 = X := by rw [m33]; exact a32_15a8
   have a33_15c8 : accV n33.mem (B + 0x21A0 + BitVec.ofNat 32 0x15C8) 8 = Y := by rw [m33]; exact a32_15c8
   clear a32_15c8 a32_15a8 a32_1480 a32_1380 a32_1020 a32_a44 a32_a20 a32_440 a32_420 a32_320 a32_2e0 a32_2c0 a32_2a0 b32_14a0 b32_13a0 b32_1040 b32_a64 b32_a40 b32_340 w32_133c w32_1338 w32_1334 w32_1330 w32_132c w32_1328 w32_1324 w32_1320 w32_464 w32_460 w32_130 w32_12c w32_128 w32_124 w32_120 w32_11c w32_118 w32_114 w32_110 w32_10c w32_108 w32_104 w32_100 w32_fc w32_f8 w32_f4 w32_f0 w32_ec w32_e8 w32_e4 w32_e0 w32_dc w32_d8 w32_d4 w32_d0 w32_cc w32_c8 w32_c4 w32_c0 w32_bc w32_b8 w32_b4 w32_b0 w32_ac w32_a8 w32_a4 w32_a0 w32_9c w32_98 w32_94 w32_90 w32_8c w32_88 w32_84 w32_80 w32_7c w32_78 w32_74 w32_70 w32_6c w32_68 w32_64 w32_60 w32_5c w32_58 w32_54 w32_50 w32_4c w32_44 w32_40 w32_3c w32_38 w32_34 w32_20 w32_1c g32_10 g32_27 g32_26 g32_24 g32_19 g32_18 g32_8 g32_4 g32_3 g32_2 V32 E32 fR32 t32 fr32 rb32 s32 m32 u32 c32
@@ -4368,23 +4368,23 @@ theorem sv_zb {B out bp x26 dlo dhi rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Wo
   have w34_1338 : memLoad32 n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x1338) = rlo := (K34.w32 (by decide) (by decide)).trans w33_1338
   have w34_133c : memLoad32 n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x133C) = rhi := (K34.w32 (by decide) (by decide)).trans w33_133c
   have b34_340 : n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x340) = BitVec.ofNat 8 σ20a := (K34.b8 (by decide) (by decide)).trans b33_340
-  have b34_a40 : n34.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := (K34.b8 (by decide) (by decide)).trans b33_a40
-  have b34_a64 : n34.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := (K34.b8 (by decide) (by decide)).trans b33_a64
-  have b34_1040 : n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := (K34.b8 (by decide) (by decide)).trans b33_1040
+  have b34_a40 : n34.mem (B + 0x21A0 + BitVec.ofNat 32 0xA40) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := (K34.b8 (by decide) (by decide)).trans b33_a40
+  have b34_a64 : n34.mem (B + 0x21A0 + BitVec.ofNat 32 0xA64) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := (K34.b8 (by decide) (by decide)).trans b33_a64
+  have b34_1040 : n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x1040) = BitVec.ofNat 8 (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := (K34.b8 (by decide) (by decide)).trans b33_1040
   have b34_13a0 : n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x13A0) = BitVec.ofNat 8 σ20b := (K34.b8 (by decide) (by decide)).trans b33_13a0
-  have b34_14a0 : n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).1 := (K34.b8 (by decide) (by decide)).trans b33_14a0
+  have b34_14a0 : n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x14A0) = BitVec.ofNat 8 (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).1 := (K34.b8 (by decide) (by decide)).trans b33_14a0
   have w34_78 : memLoad32 n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x78) = (rem) - (BitVec.ofNat 32 ns) := by rw [W34, g33_10]
   have a34_2a0 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x2A0) 8 = rv := (K34.acc (by decide) (by decide)).trans a33_2a0
   have a34_2c0 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x2C0) 8 = sv := (K34.acc (by decide) (by decide)).trans a33_2c0
   have a34_2e0 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x2E0) 8 = zv := (K34.acc (by decide) (by decide)).trans a33_2e0
   have a34_320 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x320) 8 = A20a / 2 ^ ns % 2 ^ 256 := (K34.acc (by decide) (by decide)).trans a33_320
-  have a34_420 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8 := (K34.acc (by decide) (by decide)).trans a33_420
-  have a34_440 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 0x3FCC4B78) 8 := (K34.acc (by decide) (by decide)).trans a33_440
-  have a34_a20 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := (K34.acc (by decide) (by decide)).trans a33_a20
-  have a34_a44 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := (K34.acc (by decide) (by decide)).trans a33_a44
-  have a34_1020 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := (K34.acc (by decide) (by decide)).trans a33_1020
+  have a34_420 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x420) 8 = accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := (K34.acc (by decide) (by decide)).trans a33_420
+  have a34_440 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x440) 8 = accV M0 (BitVec.ofNat 32 (img% p256R2Address)) 8 := (K34.acc (by decide) (by decide)).trans a33_440
+  have a34_a20 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0xA20) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := (K34.acc (by decide) (by decide)).trans a33_a20
+  have a34_a44 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0xA44) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := (K34.acc (by decide) (by decide)).trans a33_a44
+  have a34_1020 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x1020) 8 = (lrsm8 σ26b A26b ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := (K34.acc (by decide) (by decide)).trans a33_1020
   have a34_1380 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x1380) 8 = A20b / 2 ^ ns % 2 ^ 256 := (K34.acc (by decide) (by decide)).trans a33_1380
-  have a34_1480 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 0x3FCC4B38) 8)).2 := (K34.acc (by decide) (by decide)).trans a33_1480
+  have a34_1480 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x1480) 8 = (lrsm8 σ26a A26a ((BitVec.ofNat 32 0xFFFFFFFF).toNat + 2 ^ 32 * (BitVec.ofNat 32 0xFFFFFFFF).toNat) ns (accV M0 (BitVec.ofNat 32 (img% p256ModulusAddress)) 8)).2 := (K34.acc (by decide) (by decide)).trans a33_1480
   have a34_15a8 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x15A8) 8 = X := (K34.acc (by decide) (by decide)).trans a33_15a8
   have a34_15c8 : accV n34.mem (B + 0x21A0 + BitVec.ofNat 32 0x15C8) 8 = Y := (K34.acc (by decide) (by decide)).trans a33_15c8
   clear a33_15c8 a33_15a8 a33_1480 a33_1380 a33_1020 a33_a44 a33_a20 a33_440 a33_420 a33_320 a33_2e0 a33_2c0 a33_2a0 b33_14a0 b33_13a0 b33_1040 b33_a64 b33_a40 b33_340 w33_133c w33_1338 w33_1334 w33_1330 w33_132c w33_1328 w33_1324 w33_1320 w33_464 w33_460 w33_130 w33_12c w33_128 w33_124 w33_120 w33_11c w33_118 w33_114 w33_110 w33_10c w33_108 w33_104 w33_100 w33_fc w33_f8 w33_f4 w33_f0 w33_ec w33_e8 w33_e4 w33_e0 w33_dc w33_d8 w33_d4 w33_d0 w33_cc w33_c8 w33_c4 w33_c0 w33_bc w33_b8 w33_b4 w33_b0 w33_ac w33_a8 w33_a4 w33_a0 w33_9c w33_98 w33_94 w33_90 w33_8c w33_88 w33_84 w33_80 w33_7c w33_78 w33_74 w33_70 w33_6c w33_68 w33_64 w33_60 w33_5c w33_58 w33_54 w33_50 w33_4c w33_44 w33_40 w33_3c w33_38 w33_34 w33_20 w33_1c g33_27 g33_26 g33_24 g33_19 g33_18 g33_10 g33_8 g33_4 g33_3 g33_2 V33 E33 fR33 t33 fr33 m33 s33 u33 d33

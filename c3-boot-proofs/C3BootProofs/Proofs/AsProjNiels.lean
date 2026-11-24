@@ -8,7 +8,7 @@ import C3BootProofs.Proofs.AsProjective
 `as_projective_niels` turns the extended point `(X, Y, Z, T)` into the
 projective Niels point `(Y + X, Y - X, Z, 2d T)`: the proved field `add` and
 `sub`, a 40-byte `memcpy` of `Z`, and a tail call to the proved `mul` with
-the constant `2d` that the image keeps at `0x3FCC4A2C`.
+the constant `2d` that the image keeps at `edwardsD2Address`.
 -/
 
 namespace C3.RV32
@@ -64,7 +64,7 @@ theorem apnRestore_end : blockEnd asProjNielsCode 0x52 (restoreBlock apnPs) = so
 end
 
 /-- `2d`'s address in the image. -/
-abbrev apnD : Word := 0x3FCC4A2C
+abbrev apnD : Word := (img% edwardsD2Address)
 
 /-- Where `as_projective_niels` runs: its code and its callees', the 0x140
 bytes of stack below `sp0` that the tail call to `mul` uses, the 160-byte
@@ -377,14 +377,14 @@ theorem asProjNiels_correct (m : Machine) {P sp0 out ip retAddr : Word} (env : A
         upd_ne h16 h1]
   -- `mul(out + 0x78, T, 2d)`, as a tail call
   obtain ⟨n12, c12, u12⟩ := St.block [.aluImm .add a1 (8 : Fin 32) 0x78, .aluImm .add a0 (9 : Fin 32) 0x78,
-    .lui a2 0x3FCC5000, .aluImm .add a2 a2 0xFFFFFA2C] u11 hc11 (off' := 0x52) (by decide)
+    .lui a2 (img% hi20 edwardsD2Address), .aluImm .add a2 a2 (img% lo12 edwardsD2Address)] u11 hc11 (off' := 0x52) (by decide)
     (by simp [BlockOk, BInstr.ok])
   simp only [runBlock, BInstr.run] at u12
   simp +decide only [upd_app, ↓reduceIte] at u12
   have sp11' : reg n11 sp = F := by rw [sp11, sp10]
   have hpsp : ∀ p ∈ apnPs, p.1 ≠ sp := by decide
   have rsp12 : upd (upd (upd (upd (reg n11) a1 (aluEval .add (reg n11 8) 0x78)) a0 (aluEval .add (reg n11 9) 0x78)) a2
-      0x3FCC5000) a2 (aluEval .add 0x3FCC5000 0xFFFFFA2C) sp = F := by simp +decide only [upd_app, ↓reduceIte]; exact sp11'
+      (img% hi20 edwardsD2Address)) a2 (aluEval .add (img% hi20 edwardsD2Address) (img% lo12 edwardsD2Address)) sp = F := by simp +decide only [upd_app, ↓reduceIte]; exact sp11'
   obtain ⟨n13, c13, u13⟩ := St.block (restoreBlock apnPs) u12 hc11 apnRestore_end
     (restoreBlock_ok n11.mem F apnPs _ rsp12 hpsp fun q hq => by
       simp only [apnPs, List.mem_cons, List.mem_nil_iff, or_false] at hq
@@ -401,7 +401,7 @@ theorem asProjNiels_correct (m : Machine) {P sp0 out ip retAddr : Word} (env : A
     apply memLoad32_congr; intro j hj
     rw [← ofNat_toNat_self o, add_ofNat_assoc, slot11 _ (by omega)]
   obtain ⟨R, hR⟩ : ∃ R, restoreRegs n11.mem F (upd (upd (upd (upd (reg n11) a1 (aluEval .add (reg n11 8) 0x78)) a0
-      (aluEval .add (reg n11 9) 0x78)) a2 0x3FCC5000) a2 (aluEval .add 0x3FCC5000 0xFFFFFA2C)) apnPs = R := ⟨_, rfl⟩
+      (aluEval .add (reg n11 9) 0x78)) a2 (img% hi20 edwardsD2Address)) a2 (aluEval .add (img% hi20 edwardsD2Address) (img% lo12 edwardsD2Address))) apnPs = R := ⟨_, rfl⟩
   rw [hR] at u14
   have rrG : ∀ (f : Fin 32 → Word) (ps : List (Fin 32 × Word)) (q : Fin 32), q.val ≠ 0 → (∀ p ∈ ps, p.1 ≠ q) →
       restoreRegs n11.mem F f ps q = f q := by
@@ -413,8 +413,8 @@ theorem asProjNiels_correct (m : Machine) {P sp0 out ip retAddr : Word} (env : A
       simp only [restoreRegs]
       rw [ih _ (fun p' hp' => h p' (List.mem_cons_of_mem _ hp')), upd_ne h0 (fun e => h p List.mem_cons_self e.symm)]
   have rr : ∀ q, (∀ p ∈ apnPs, p.1 ≠ q) → q.val ≠ 0 → R q = upd (upd (upd (upd (reg n11) a1
-      (aluEval .add (reg n11 8) 0x78)) a0 (aluEval .add (reg n11 9) 0x78)) a2 0x3FCC5000) a2
-      (aluEval .add 0x3FCC5000 0xFFFFFA2C) q := fun q h h0 => by rw [← hR]; exact rrG _ _ q h0 h
+      (aluEval .add (reg n11 8) 0x78)) a0 (aluEval .add (reg n11 9) 0x78)) a2 (img% hi20 edwardsD2Address)) a2
+      (aluEval .add (img% hi20 edwardsD2Address) (img% lo12 edwardsD2Address)) q := fun q h h0 => by rw [← hR]; exact rrG _ _ q h0 h
   have Rsv : ∀ r o, (r, o) ∈ apnPs → R r = reg m r := fun r o hm => by
     rw [← hR]
     simp only [apnPs, List.mem_cons, List.mem_nil_iff, or_false, Prod.mk.injEq] at hm

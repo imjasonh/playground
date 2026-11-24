@@ -200,7 +200,7 @@ says whether a signature was kept, and the last word holds it. -/
 theorem cosig_chain {M : Word → BitVec 8} {dp B out bp x26 q : Word} {rt : Bytes}
     {w14 w18 w20 w24 w34 w3c w44 w48 w4c w50 w54 w58 w60 w64 w68 w6c w70 w78 w7c w80 w84 w88 w8c w90 w94 w98 w9c wa0 wa4 wa8 wac wb0 wb4 wb8 wbc wc0 wc4 wc8 wcc wd0 wd4 wd8 wdc we0 we4 we8 wec wf0 wf4 wf8 wfc w100 w104 w108 w10c w110 w114 w118 w11c w120 w124 w128 w12c w130 wa20 wa24 wa28 wa2c wa30 wa34 wa38 wa3c waa4 : Word}
     {v : Nat → Word} {sgp op ol : Word} {idf : Bytes}
-    (hpre : memBytes M (BitVec.ofNat 32 0x3FCC4855) 4 = sigLinePrefix)
+    (hpre : memBytes M (BitVec.ofNat 32 (img% svConstAddress + 0x3D)) 4 = sigLinePrefix)
     (hw14 : le4 idf 0 = w14) (hidl : 4 ≤ idf.length) (hidb : ∀ x ∈ idf, x < 256) :
     ∀ k {c x21 rl rp dg w8 wc w28 w2c w30 w38 w40 w5c c' x21' rl' rp' dg' w8' wc' w28' w2c' w30' w38' w40' : Word}
       {sg sg' : Bytes} {fuel : Nat} {matched : Option Bytes},

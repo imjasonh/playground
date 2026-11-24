@@ -160,7 +160,7 @@ theorem boot_correct {flash : Nat → BitVec 8} {R romStack : Nat} {romBase : Wo
         (top + 0xFFFFFFD0 + c).toNat % 4 = 0 ∧ Sep (top + 0xFFFFFFD0 + c) 4 BT bootFnCode.length := fun c h1 h2 => by
       have e : (top + 0xFFFFFFD0 + c).toNat = top.toNat - 0x30 + c.toNat := by
         rw [BitVec.toNat_add, hsp1]; omega
-      exact ⟨by rw [e]; omega, sep_of_le (by rw [e, show BT.toNat = 0x403a159a from rfl]; omega) (by decide)⟩
+      exact ⟨by rw [e]; omega, sep_of_le (by rw [e, show BT.toNat = (img% bootFnAddress) from rfl]; omega) (by decide)⟩
     rcases hp with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
       exact al _ (by decide) (by decide))
   have hr2 : runBlock btPro (M0, upd (reg m) sp (top + 0xFFFFFFD0)) =

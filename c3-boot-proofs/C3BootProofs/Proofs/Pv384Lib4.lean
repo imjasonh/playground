@@ -53,7 +53,7 @@ theorem pv_mr {B : Word} {m : Machine} {off : Nat} {imm o : Word} {co cx : Nat} 
     (hb : PV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 montRetrieve12Address)
     (he8 : (PV + BitVec.ofNat 32 (off + 8)).toNat % 2 = 0)
     (hsp : reg m sp = B + 0x420) (ha0 : reg m a0 = B + 0x420 + BitVec.ofNat 32 co)
-    (ha1 : reg m a1 = B + 0x420 + BitVec.ofNat 32 cx) (ha2 : reg m a2 = BitVec.ofNat 32 0x3FCC4D28)
+    (ha1 : reg m a1 = B + 0x420 + BitVec.ofNat 32 cx) (ha2 : reg m a2 = BitVec.ofNat 32 (img% p384OrderAddress))
     (ha3 : reg m a3 = BitVec.ofNat 32 0xE88FDC45) (hco : co + 48 ≤ 0x1D4C) (hcx : cx + 48 ≤ 0x1D4C)
     (aco : co % 4 = 0) (acx : cx % 4 = 0) (hX : accV m.mem (B + 0x420 + BitVec.ofNat 32 cx) 12 < n384) :
     ∃ m', PvPost B m m' (off + 8) ∧ PvKeep B m.mem m'.mem co 48 ∧

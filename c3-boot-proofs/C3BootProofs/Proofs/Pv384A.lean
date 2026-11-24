@@ -82,7 +82,7 @@ theorem pv_pro {M : Word → BitVec 8} {n : Machine} {B : Word} (C : PvCode M) (
     ∃ n', Steps n n' ∧ St (pvSaves M B n) PV n' 0x42 (reg n') ∧
       reg n' sp = B + 0x420 ∧ reg n' (8 : Fin 32) = reg n a0 ∧ reg n' (20 : Fin 32) = reg n a1 ∧
       reg n' (19 : Fin 32) = reg n a2 ∧ reg n' (9 : Fin 32) = reg n a3 ∧ reg n' (21 : Fin 32) = reg n a4 ∧
-      reg n' a0 = reg n a3 ∧ reg n' a1 = 0x30 ∧ reg n' a2 = 0x3FCC4470 ∧ reg n' a3 = 0x30 ∧
+      reg n' a0 = reg n a3 ∧ reg n' a1 = 0x30 ∧ reg n' a2 = (img% p384OrderBeAddress) ∧ reg n' a3 = 0x30 ∧
       ∀ q, q.val ∈ [3, 4] → reg n' q = reg n q := by
   have hz := s.zero
   have hSl := F.lo; have hSh := F.hi; have hSa := F.al
@@ -227,7 +227,7 @@ theorem pvA2_end : blockEnd p384VerifyPrehashCode 0x4C pvA2 = some 0x5E := by de
 theorem pvA3_end : blockEnd p384VerifyPrehashCode 0x66 pvA3 = some 0x6A := by decide
 theorem pvA4_end : blockEnd p384VerifyPrehashCode 0x76 pvA4 = some 0x7A := by decide
 
-abbrev ISRN : Word := 0x3FCC4470
+abbrev ISRN : Word := (img% p384OrderBeAddress)
 
 /-- A region of the frame at `S = B + 0x420` lies inside the 0x230C bytes
 from `B - 0x1A0` that `p384_verify_prehash` may write. -/

@@ -398,7 +398,7 @@ theorem edVkFromBytes_correct (m : Machine) {sp0 out bp retAddr : Word} (E : Dec
         st32_frame (hx.sub (c := 0) (l := 4) (by decide) |> fun h => by rwa [add_ofNat_zero] at h)]
     have hOn : ∀ c, c ≤ 0xC4 → (out + BitVec.ofNat 32 c).toNat = out.toNat + c := fun c hc' => by
       rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
-    have hst : (BitVec.ofNat 32 memcpyStubAddress + 8 : Word).toNat = 0x403b4856 := by decide
+    have hst : (BitVec.ofNat 32 memcpyStubAddress + 8 : Word).toNat = (img% memcpyBodyAddress) := by decide
     have eFp : G + BitVec.ofNat 32 0x6F0 + 0xFFFFFFF0 = G + BitVec.ofNat 32 0x6E0 := by rw [BitVec.add_assoc]; rfl
     have hiM3 : ∀ x : Word, 0x40000000 ≤ x.toNat → M3 x = m.mem x := fun x hx => by
       rw [I3 x (sep_of_le (by rw [hOn _ (by decide)]; omega) (by have := x.isLt; omega)), I8 x (codeG x hx)]

@@ -850,9 +850,9 @@ theorem gf_sq_post {M : Word → BitVec 8} {S : Word} {n : Machine} (C : GdCode 
       have hb : q ∉ gfP2.filterMap BInstr.dst := by simp only [gfP2]; revert h12 h9 h8; revert q; decide
       rw [u4.regs, r3, runBlock_reg _ _ _ q u2.zero hb]
   have sB : Sep (S + 0xFFFFFFFC) 4 BSUB borrowingSubCode.length :=
-    sep_of_le (by rw [hb4, show BSUB.toNat = 0x403a2320 from rfl]; omega) (by decide)
+    sep_of_le (by rw [hb4, show BSUB.toNat = (img% borrowingSubAddress) from rfl]; omega) (by decide)
   have sFC : Sep (S + 0xFFFFFFFC) 4 GD p256DecompressCode.length :=
-    sep_of_le (by rw [hb4, show GD.toNat = 0x403a5fdc from rfl]; omega) (by decide)
+    sep_of_le (by rw [hb4, show GD.toNat = (img% p256DecompressAddress) from rfl]; omega) (by decide)
   obtain ⟨n5, M5, c5, u5, hc5, hbs5, fr5, hm5, hv5, sp5, k5⟩ := gf_sub_loop (F := S) (acc := S + BitVec.ofNat 32 0x1DC)
     (np := S + BitVec.ofNat 32 0x170) (D := S + BitVec.ofNat 32 0x21C) (M0 := M2) (by omega)
     (by rw [F.at _ (by decide)]; omega) (by rw [F.at _ (by decide)]; omega) (by rw [F.at _ (by decide)]; omega)

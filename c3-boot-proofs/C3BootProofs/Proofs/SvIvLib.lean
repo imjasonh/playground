@@ -107,7 +107,7 @@ theorem sv_ufg8F {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {i
   have hG : (B + BitVec.ofNat 32 0x1F70).toNat = B.toNat + 0x1F70 := F.at 0x1F70 (by decide)
   have gH : ∀ {b : Word} {len : Nat}, 0x40000000 ≤ b.toNat → b.toNat + len ≤ 2 ^ 32 →
       Sep (B + BitVec.ofNat 32 0x1F70) 0x230 b len := fun h1 h2 => F.sepHi (by decide) h1 h2
-  have gD : ∀ {b : Word} {len : Nat}, 0x3FCC4200 ≤ b.toNat → b.toNat + len ≤ 0x3FCC4E60 →
+  have gD : ∀ {b : Word} {len : Nat}, (img% dataWindowAddress) ≤ b.toNat → b.toNat + len ≤ (img% dataWindowAddress + dataWindowSize) →
       Sep (B + BitVec.ofNat 32 0x1F70) 0x230 b len := fun h1 h2 => F.bufData (by decide) h1 h2
   have gF : ∀ {c l : Nat}, c + l ≤ 0x1690 → Sep (B + 0x21A0 + BitVec.ofNat 32 c) l (B + BitVec.ofNat 32 0x1F70) 0x230 :=
     fun h => by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega)
@@ -196,7 +196,7 @@ theorem sv_ude8F {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {i
     (hco : co + 0x45 ≤ 0x1690) (hca : ca + 33 ≤ 0x1690) (hcb : cb + 33 ≤ 0x1690) (hct : ct + 32 ≤ 0x1690)
     (aco : co % 4 = 0) (aca : ca % 4 = 0) (acb : cb % 4 = 0) (act : ct % 4 = 0)
     (sa : ca + 33 ≤ co ∨ co + 0x45 ≤ ca) (sb : cb + 33 ≤ co ∨ co + 0x45 ≤ cb) (stt : ct + 32 ≤ co ∨ co + 0x45 ≤ ct)
-    (hm1 : 0x3FCC4200 ≤ mp.toNat) (hm2 : mp.toNat + 32 ≤ 0x3FCC4E60) (hm4 : mp.toNat % 4 = 0)
+    (hm1 : (img% dataWindowAddress) ≤ mp.toNat) (hm2 : mp.toNat + 32 ≤ (img% dataWindowAddress + dataWindowSize)) (hm4 : mp.toNat % 4 = 0)
     (hσa : (M (B + 0x21A0 + BitVec.ofNat 32 (ca + 0x20))).toNat ≤ 1)
     (hσb : (M (B + 0x21A0 + BitVec.ofNat 32 (cb + 0x20))).toNat ≤ 1) :
     ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
@@ -218,13 +218,13 @@ theorem sv_ude8F {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {i
   have hG : (B + BitVec.ofNat 32 0x1ED0).toNat = B.toNat + 0x1ED0 := F.at 0x1ED0 (by decide)
   have gH : ∀ {b : Word} {len : Nat}, 0x40000000 ≤ b.toNat → b.toNat + len ≤ 2 ^ 32 →
       Sep (B + BitVec.ofNat 32 0x1ED0) 0x2D0 b len := fun h1 h2 => F.sepHi (by decide) h1 h2
-  have gD : ∀ {b : Word} {len : Nat}, 0x3FCC4200 ≤ b.toNat → b.toNat + len ≤ 0x3FCC4E60 →
+  have gD : ∀ {b : Word} {len : Nat}, (img% dataWindowAddress) ≤ b.toNat → b.toNat + len ≤ (img% dataWindowAddress + dataWindowSize) →
       Sep (B + BitVec.ofNat 32 0x1ED0) 0x2D0 b len := fun h1 h2 => F.bufData (by decide) h1 h2
   have gF : ∀ {c l : Nat}, c + l ≤ 0x1690 → Sep (B + 0x21A0 + BitVec.ofNat 32 c) l (B + BitVec.ofNat 32 0x1ED0) 0x2D0 :=
     fun h => by rw [← sv_base']; exact sepS B (by omega) (by omega) (by omega)
   have oH : ∀ {b : Word} {len : Nat}, 0x40000000 ≤ b.toNat → b.toNat + len ≤ 2 ^ 32 →
       Sep (B + 0x21A0 + BitVec.ofNat 32 co) 0x45 b len := fun h1 h2 => FS.sepHi hco h1 h2
-  have oD : ∀ {b : Word} {len : Nat}, 0x3FCC4200 ≤ b.toNat → b.toNat + len ≤ 0x3FCC4E60 →
+  have oD : ∀ {b : Word} {len : Nat}, (img% dataWindowAddress) ≤ b.toNat → b.toNat + len ≤ (img% dataWindowAddress + dataWindowSize) →
       Sep (B + 0x21A0 + BitVec.ofNat 32 co) 0x45 b len := fun h1 h2 => FS.bufData hco h1 h2
   have EN : UD8Env n1.mem (BitVec.ofNat 32 updateDe8Address) (B + BitVec.ofNat 32 0x1ED0)
       (B + 0x21A0 + BitVec.ofNat 32 co) (B + 0x21A0 + BitVec.ofNat 32 ca) (B + 0x21A0 + BitVec.ofNat 32 cb) mp
@@ -377,7 +377,7 @@ theorem sv_nrm8F {M : Word → BitVec 8} {n : Machine} {B : Word} {off : Nat} {i
     (ha0 : reg n a0 = B + 0x21A0 + BitVec.ofNat 32 co) (ha1 : reg n a1 = B + 0x21A0 + BitVec.ofNat 32 cx)
     (ha2 : reg n a2 = fs) (hfs : fs = 0 ∨ fs = 1) (ha3 : reg n a3 = np)
     (hco : co + 32 ≤ 0x1690) (hcx : cx + 33 ≤ 0x1690) (aco : co % 4 = 0) (acx : cx % 4 = 0)
-    (hn1 : 0x3FCC4200 ≤ np.toNat) (hn2 : np.toNat + 32 ≤ 0x3FCC4E60) (hn4 : np.toNat % 4 = 0)
+    (hn1 : (img% dataWindowAddress) ≤ np.toNat) (hn2 : np.toNat + 32 ≤ (img% dataWindowAddress + dataWindowSize)) (hn4 : np.toNat % 4 = 0)
     (hσ : (M (B + 0x21A0 + BitVec.ofNat 32 (cx + 0x20))).toNat ≤ 1) :
     ∃ n', Steps n n' ∧ St n'.mem SV n' (off + 8) (reg n') ∧ reg n' sp = B + 0x21A0 ∧
       (∀ q : Fin 32, q.val ∈ [3, 4, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27] → reg n' q = reg n q) ∧

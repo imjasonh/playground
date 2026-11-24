@@ -19,9 +19,9 @@ theorem sv_sp14 (B : Word) : B + 0x21A0 + 0xFFFFFFEC = B + BitVec.ofNat 32 0x218
   rw [BitVec.add_assoc]; rfl
 
 /-- Bytes a step of `sigstore::verify` doesn't write: outside the stack, or
-the constants between 0x3FCC4200 and 0x3FCC4E60. -/
+the constants between `dataWindowAddress` and 0x3FCC4E60. -/
 def SvRo (B q : Word) (ql : Nat) : Prop :=
-  SvIn B q ql ∨ (0x3FCC4200 ≤ q.toNat ∧ q.toNat + ql ≤ 0x3FCC4E60)
+  SvIn B q ql ∨ ((img% dataWindowAddress) ≤ q.toNat ∧ q.toNat + ql ≤ (img% dataWindowAddress + dataWindowSize))
 
 theorem SvRo.sep {B q : Word} {ql : Nat} (F : Fr B 0x3830) (h : SvRo B q ql) {c n : Nat} (hc : c + n ≤ 0x3830) :
     Sep (B + BitVec.ofNat 32 c) n q ql := by

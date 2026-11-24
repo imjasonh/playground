@@ -1,4 +1,5 @@
 import C3BootProofs.Proofs.FeCall
+import C3BootProofs.Image.BootloaderData6
 
 /-!
 # Panics, as compiled
@@ -73,7 +74,7 @@ def pushFrame : List BInstr :=
 def hltA : List BInstr :=
   [.aluImm .add sp sp 0xFFFFFFF0, .sw sp ra 0xC, .alu .add a1 x0 a0, .lui a0 0x3FCC4000, .aluImm .add a0 a0 0x1EF]
 
-def afzA : List BInstr := pushFrame ++ [.alu .add a1 x0 a2, .lui a0 0x3FCC4000, .aluImm .add a0 a0 0x107]
+def afzA : List BInstr := pushFrame ++ [.alu .add a1 x0 a2, .lui a0 (img% hi20 (svRekorLeafAddress + 0x1)), .aluImm .add a0 a0 (img% lo12 (svRekorLeafAddress + 0x1))]
 
 theorem hltA_end : blockEnd haltCode 0 hltA = some 0xE := by decide
 theorem pfm_end : blockEnd panicFmtCode 0 pushFrame = some 8 := by decide

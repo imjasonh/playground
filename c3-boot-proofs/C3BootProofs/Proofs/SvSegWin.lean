@@ -10,6 +10,7 @@ import C3BootProofs.Proofs.SvWin4
 import C3BootProofs.Proofs.SvWin5
 import C3BootProofs.Proofs.SvWin6
 import C3BootProofs.Proofs.SvWin7
+import C3BootProofs.Image.BootloaderData6
 
 /-!
 # `sigstore::verify`: The entry's index and the validity windows
@@ -170,7 +171,7 @@ theorem sv_seg_win {dp B out bp x21 x26 dg c q rl rp : Word} {lih lil : Word} {r
     (at5l : (w74 + 0x10).toNat % 4 = 0) :
     SvErrRet B out v n0 ∨
     ((((lih = w70) ∧ (aluEval .sltu (lil) (w60) ≠ 0)) ∨ ((¬ (lih = w70)) ∧ (aluEval .sltu (lih) (w70) ≠ 0))) ∧
-      ∃ root6_3, rootFromInclusion (pair64 (lil) (lih)) (pair64 (w60) (w70)) ((sha256 ([] ++ memBytes M0 (BitVec.ofNat 32 0x3FCC4106) (0x1) ++ memBytes M0 (BitVec.ofNat 32 0x3FCC46F0) (0x71) ++ base64Encode (memBytes M0 (w84) (32)) ++ memBytes M0 (BitVec.ofNat 32 0x3FCC4761) (0x1B) ++ base64Encode (memBytes M0 (w68) ((w64).toNat)) ++ memBytes M0 (BitVec.ofNat 32 0x3FCC477C) (0x54) ++ base64Encode (memBytes M0 (w6c) ((x26).toNat)) ++ memBytes M0 (BitVec.ofNat 32 0x3FCC47D0) (0x7)))) (memBytes M0 ((memLoad32 M0 (bp + 0x10))) (((memLoad32 M0 (bp + 0x14))).toNat)) = some root6_3 ∧
+      ∃ root6_3, rootFromInclusion (pair64 (lil) (lih)) (pair64 (w60) (w70)) ((sha256 ([] ++ memBytes M0 (BitVec.ofNat 32 (img% svRekorLeafAddress)) (0x1) ++ memBytes M0 (BitVec.ofNat 32 (img% svRekorPreAddress)) (0x71) ++ base64Encode (memBytes M0 (w84) (32)) ++ memBytes M0 (BitVec.ofNat 32 (img% svRekorMid1Address)) (0x1B) ++ base64Encode (memBytes M0 (w68) ((w64).toNat)) ++ memBytes M0 (BitVec.ofNat 32 (img% svRekorMid2Address)) (0x54) ++ base64Encode (memBytes M0 (w6c) ((x26).toNat)) ++ memBytes M0 (BitVec.ofNat 32 (img% svRekorPostAddress)) (0x7)))) (memBytes M0 ((memLoad32 M0 (bp + 0x10))) (((memLoad32 M0 (bp + 0x14))).toNat)) = some root6_3 ∧
       (b32 root6_3 = b32 rt) ∧
       (((w54 = w78) ∧ (aluEval .sltu (w3c) (w58) = 0)) ∨ ((¬ (w54 = w78)) ∧ (aluEval .sltu (w78) (w54) = 0))) ∧
       (((w78 = w4c) ∧ (aluEval .sltu (w50) (w3c) = 0)) ∨ ((¬ (w78 = w4c)) ∧ (aluEval .sltu (w4c) (w78) = 0))) ∧

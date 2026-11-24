@@ -174,11 +174,11 @@ theorem sv_tsax {B out bp x21 x26 dg p0 L0 cp rem sip sil flag : Word} {w24 w28 
     (si_in : SvIn B (sip) (sil).toNat)
     (hrem : rem = 0)
     (hflag : flag = 0 ∨ flag = 1) :
-    (¬ ((dg ≠ 0 ∧ flag = 1) ∧ ∃ op8 ol8, derAlgOf M0 (sip) ((sil).toNat) = .ok ((op8, ol8), none) ∧ ∃ te8, derElement 0x30 (memBytes M0 (sip) (sil).toNat) = .ok te8 ∧ (memBytes M0 op8 ol8 = memBytes M0 (BitVec.ofNat 32 0x3FCC4818) 8) ∧ ∃ vp19 vl19, derContent ((sip) + BitVec.ofNat 32 (te8.header + te8.len)) (derElement 4 (memBytes M0 ((sip) + BitVec.ofNat 32 (te8.header + te8.len)) ((sil) - BitVec.ofNat 32 (te8.header + te8.len)).toNat)) = .ok (vp19, vl19) ∧ ∃ te19, derElement 4 (memBytes M0 ((sip) + BitVec.ofNat 32 (te8.header + te8.len)) ((sil) - BitVec.ofNat 32 (te8.header + te8.len)).toNat) = .ok te19 ∧ ∃ sr24 ss24, ecdsaSigOf 48 M0 (vp19) ((vl19).toNat) = .ok (sr24, ss24) ∧ True) ∧ SvErrRet B out v n0) ∨
+    (¬ ((dg ≠ 0 ∧ flag = 1) ∧ ∃ op8 ol8, derAlgOf M0 (sip) ((sil).toNat) = .ok ((op8, ol8), none) ∧ ∃ te8, derElement 0x30 (memBytes M0 (sip) (sil).toNat) = .ok te8 ∧ (memBytes M0 op8 ol8 = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress)) 8) ∧ ∃ vp19 vl19, derContent ((sip) + BitVec.ofNat 32 (te8.header + te8.len)) (derElement 4 (memBytes M0 ((sip) + BitVec.ofNat 32 (te8.header + te8.len)) ((sil) - BitVec.ofNat 32 (te8.header + te8.len)).toNat)) = .ok (vp19, vl19) ∧ ∃ te19, derElement 4 (memBytes M0 ((sip) + BitVec.ofNat 32 (te8.header + te8.len)) ((sil) - BitVec.ofNat 32 (te8.header + te8.len)).toNat) = .ok te19 ∧ ∃ sr24 ss24, ecdsaSigOf 48 M0 (vp19) ((vl19).toNat) = .ok (sr24, ss24) ∧ True) ∧ SvErrRet B out v n0) ∨
     ((dg ≠ 0 ∧ flag = 1) ∧
     ∃ op8 ol8, derAlgOf M0 (sip) ((sil).toNat) = .ok ((op8, ol8), none) ∧
     ∃ te8, derElement 0x30 (memBytes M0 (sip) (sil).toNat) = .ok te8 ∧
-    (memBytes M0 op8 ol8 = memBytes M0 (BitVec.ofNat 32 0x3FCC4818) 8) ∧
+    (memBytes M0 op8 ol8 = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress)) 8) ∧
     ∃ vp19 vl19, derContent ((sip) + BitVec.ofNat 32 (te8.header + te8.len)) (derElement 4 (memBytes M0 ((sip) + BitVec.ofNat 32 (te8.header + te8.len)) ((sil) - BitVec.ofNat 32 (te8.header + te8.len)).toNat)) = .ok (vp19, vl19) ∧
     ∃ te19, derElement 4 (memBytes M0 ((sip) + BitVec.ofNat 32 (te8.header + te8.len)) ((sil) - BitVec.ofNat 32 (te8.header + te8.len)).toNat) = .ok te19 ∧
     ∃ sr24 ss24, ecdsaSigOf 48 M0 (vp19) ((vl19).toNat) = .ok (sr24, ss24) ∧
@@ -2348,7 +2348,7 @@ theorem sv_tsax {B out bp x21 x26 dg p0 L0 cp rem sip sil flag : Word} {w24 w28 
       rw [rb13, runBlock_reg _ _ _ (26 : Fin 32) s12.zero (by decide), g12_26]
     have g13_27 : reg n13 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
       rw [rb13, runBlock_reg _ _ _ (27 : Fin 32) s12.zero (by decide), g12_27]
-    have g13_12 : reg n13 a2 = BitVec.ofNat 32 0x3FCC4818 := by
+    have g13_12 : reg n13 a2 = BitVec.ofNat 32 (img% svConstAddress) := by
       rw [rb13]; simp +decide only [runBlock, BInstr.run, svTsax26ac, upd, ↓reduceIte, aluEval]
       all_goals (try simp only [g12_2, g12_3, g12_4, g12_9, g12_10, g12_11, g12_18, g12_19, g12_20, g12_21, g12_24, g12_26, g12_27, s12.zero])
       all_goals first | with_reducible rfl | sv_addr | decide
@@ -2530,7 +2530,7 @@ theorem sv_tsax {B out bp x21 x26 dg p0 L0 cp rem sip sil flag : Word} {w24 w28 
     have w14_1328 : memLoad32 n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x1328) = cp := (K14.w32 (by decide) (by decide)).trans w13_1328
     have w14_132c : memLoad32 n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x132C) = rem := (K14.w32 (by decide) (by decide)).trans w13_132c
     clear w13_132c w13_1328 w13_1324 w13_1320 w13_428 w13_424 w13_420 w13_130 w13_12c w13_128 w13_124 w13_120 w13_11c w13_118 w13_114 w13_110 w13_10c w13_108 w13_104 w13_100 w13_fc w13_f8 w13_f4 w13_f0 w13_ec w13_e8 w13_e4 w13_e0 w13_dc w13_d8 w13_d4 w13_d0 w13_cc w13_c8 w13_c4 w13_c0 w13_bc w13_b8 w13_b4 w13_b0 w13_ac w13_a8 w13_a4 w13_a0 w13_9c w13_98 w13_94 w13_90 w13_8c w13_88 w13_84 w13_80 w13_7c w13_78 w13_70 w13_6c w13_68 w13_64 w13_60 w13_5c w13_58 w13_54 w13_50 w13_4c w13_48 w13_44 w13_40 w13_3c w13_38 w13_34 w13_30 w13_2c w13_28 w13_24 g13_13 g13_12 g13_27 g13_26 g13_24 g13_21 g13_20 g13_19 g13_18 g13_11 g13_10 g13_9 g13_4 g13_3 g13_2 V13 E13 fR13 t13 fr13 rb13 s13 m13 u13 c13
-    by_cases hoq : memBytes M0 op8 ol8 = memBytes M0 (BitVec.ofNat 32 0x3FCC4818) 8
+    by_cases hoq : memBytes M0 op8 ol8 = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress)) 8
     · have g14_10 : reg n14 a0 = BitVec.ofNat 32 0 := by rw [a0_14, ite_eq_left hoq]; rfl
       -- 0x26BE
       obtain ⟨n15, c15, u15⟩ := s14.block svTsax26be E14.self svTsax26be_end
@@ -3600,7 +3600,7 @@ theorem sv_tsax {B out bp x21 x26 dg p0 L0 cp rem sip sil flag : Word} {w24 w28 
     rw [rb13, runBlock_reg _ _ _ (26 : Fin 32) s12.zero (by decide), g12_26]
   have g13_27 : reg n13 (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20 := by
     rw [rb13, runBlock_reg _ _ _ (27 : Fin 32) s12.zero (by decide), g12_27]
-  have g13_12 : reg n13 a2 = BitVec.ofNat 32 0x3FCC4818 := by
+  have g13_12 : reg n13 a2 = BitVec.ofNat 32 (img% svConstAddress) := by
     rw [rb13]; simp +decide only [runBlock, BInstr.run, svTsax26ac, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g12_2, g12_3, g12_4, g12_9, g12_10, g12_11, g12_18, g12_19, g12_20, g12_21, g12_24, g12_26, g12_27, s12.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -3786,7 +3786,7 @@ theorem sv_tsax {B out bp x21 x26 dg p0 L0 cp rem sip sil flag : Word} {w24 w28 
   have w14_1328 : memLoad32 n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x1328) = cp := (K14.w32 (by decide) (by decide)).trans w13_1328
   have w14_132c : memLoad32 n14.mem (B + 0x21A0 + BitVec.ofNat 32 0x132C) = rem := (K14.w32 (by decide) (by decide)).trans w13_132c
   clear w13_132c w13_1328 w13_1324 w13_1320 w13_428 w13_424 w13_420 w13_20c w13_208 w13_130 w13_12c w13_128 w13_124 w13_120 w13_11c w13_118 w13_114 w13_110 w13_10c w13_108 w13_104 w13_100 w13_fc w13_f8 w13_f4 w13_f0 w13_ec w13_e8 w13_e4 w13_e0 w13_dc w13_d8 w13_d4 w13_d0 w13_cc w13_c8 w13_c4 w13_c0 w13_bc w13_b8 w13_b4 w13_b0 w13_ac w13_a8 w13_a4 w13_a0 w13_9c w13_98 w13_94 w13_90 w13_8c w13_88 w13_84 w13_80 w13_7c w13_78 w13_70 w13_6c w13_68 w13_64 w13_60 w13_5c w13_58 w13_54 w13_50 w13_4c w13_48 w13_44 w13_40 w13_3c w13_38 w13_34 w13_30 w13_2c w13_28 w13_24 g13_13 g13_12 g13_27 g13_26 g13_24 g13_21 g13_20 g13_19 g13_18 g13_11 g13_10 g13_9 g13_4 g13_3 g13_2 V13 E13 fR13 t13 fr13 rb13 s13 m13 u13 c13
-  by_cases hoid : memBytes M0 op8 ol8 = memBytes M0 (BitVec.ofNat 32 0x3FCC4818) 8
+  by_cases hoid : memBytes M0 op8 ol8 = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress)) 8
   rotate_left
   · have g14_10 : reg n14 a0 = BitVec.ofNat 32 1 := by rw [a0_14, ite_eq_right hoid]; rfl
     -- 0x26BE

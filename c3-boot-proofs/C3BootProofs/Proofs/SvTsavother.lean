@@ -131,8 +131,8 @@ theorem sv_tsavother {B out bp x21 x26 dg p0 L0 cp rem op ol vcp vcl x20 : Word}
     (g0_25 : reg n0 (25 : Fin 32) = L0)
     (oid_in : SvIn B op ol.toNat)
     (vc_in : SvIn B vcp vcl.toNat)
-    (hct : ¬ memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC486E) 9)
-    (hmd : ¬ memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 0x3FCC4877) 9) :
+    (hct : ¬ memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x56)) 9)
+    (hmd : ¬ memBytes M0 op ol.toNat = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x5F)) 9) :
     (¬ (True) ∧ SvErrRet B out v n0) ∨
     (∃ n', Steps n0 n' ∧
         St n'.mem SV n' 0x267A (reg n') ∧
@@ -277,7 +277,7 @@ theorem sv_tsavother {B out bp x21 x26 dg p0 L0 cp rem op ol vcp vcl x20 : Word}
     rw [rb1]; simp +decide only [runBlock, BInstr.run, svTsavother25da, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g0_2, g0_3, g0_4, g0_9, g0_18, g0_19, g0_20, g0_21, g0_22, g0_23, g0_24, g0_25, g0_26, g0_27, s0.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
-  have g1_12 : reg n1 a2 = BitVec.ofNat 32 0x3FCC486E := by
+  have g1_12 : reg n1 a2 = BitVec.ofNat 32 (img% svConstAddress + 0x56) := by
     rw [rb1]; simp +decide only [runBlock, BInstr.run, svTsavother25da, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g0_2, g0_3, g0_4, g0_9, g0_18, g0_19, g0_20, g0_21, g0_22, g0_23, g0_24, g0_25, g0_26, g0_27, s0.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
@@ -610,7 +610,7 @@ theorem sv_tsavother {B out bp x21 x26 dg p0 L0 cp rem op ol vcp vcl x20 : Word}
     rw [rb4]; simp +decide only [runBlock, BInstr.run, svTsavother2634, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g3_2, g3_3, g3_4, g3_9, g3_10, g3_18, g3_19, g3_20, g3_21, g3_22, g3_23, g3_24, g3_25, g3_26, g3_27, s3.zero])
     all_goals first | with_reducible rfl | sv_addr | decide
-  have g4_12 : reg n4 a2 = BitVec.ofNat 32 0x3FCC4877 := by
+  have g4_12 : reg n4 a2 = BitVec.ofNat 32 (img% svConstAddress + 0x5F) := by
     rw [rb4]; simp +decide only [runBlock, BInstr.run, svTsavother2634, upd, ↓reduceIte, aluEval]
     all_goals (try simp only [g3_2, g3_3, g3_4, g3_9, g3_10, g3_18, g3_19, g3_20, g3_21, g3_22, g3_23, g3_24, g3_25, g3_26, g3_27, s3.zero])
     all_goals first | with_reducible rfl | sv_addr | decide

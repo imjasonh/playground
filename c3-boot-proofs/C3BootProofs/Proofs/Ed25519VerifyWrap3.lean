@@ -23,7 +23,7 @@ theorem EvSt.montMul (C : EvCtx M0 F pk sig msg len) (D : EvSt M0 Ms F r0 M n of
     (hb : EV + BitVec.ofNat 32 off + imm + o = BitVec.ofNat 32 scalar29MontMulAddress) (hoff : (off + 8) % 2 = 0)
     (ha0 : reg n a0 = F + BitVec.ofNat 32 d) (ha1 : reg n a1 = F + BitVec.ofNat 32 e) (ha2 : reg n a2 = BitVec.ofNat 32 c)
     (hd : d + 36 ≤ 0x166C) (hd4 : d % 4 = 0) (he : e + 36 ≤ 0x16A0) (he4 : e % 4 = 0)
-    (hc1 : 0x3FCC4000 ≤ c) (hc2 : c + 36 ≤ 0x3FCC5400) (hc4 : c % 4 = 0) :
+    (hc1 : (img% roWindowAddress) ≤ c) (hc2 : c + 36 ≤ 0x3FCC5400) (hc4 : c % 4 = 0) :
     ∃ n', Steps n n' ∧ EvSt M0 Ms F r0 n'.mem n' (off + 8) ∧ (∀ q : Fin 32, q.val ∈ evKeep → reg n' q = reg n q) ∧
       (∀ j, j < 9 → memLoad32 n'.mem (F + BitVec.ofNat 32 d + BitVec.ofNat 32 (4 * j)) =
         BitVec.ofNat 32 (s29Out (smmRed (smmIn M (F + BitVec.ofNat 32 e)) (smmIn M (BitVec.ofNat 32 c))) j)) ∧

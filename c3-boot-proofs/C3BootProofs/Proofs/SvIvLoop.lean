@@ -66,7 +66,7 @@ structure IvInv (B : Word) (m : Machine) (v : Nat → Word) (r3 r4 out bp s5v x2
   g18 : reg m (18 : Fin 32) = out
   g19 : reg m (19 : Fin 32) = bp
   g21 : reg m (21 : Fin 32) = s5v
-  g24 : reg m (24 : Fin 32) = BitVec.ofNat 32 0x3FCC4268
+  g24 : reg m (24 : Fin 32) = BitVec.ofNat 32 (img% b2sOrder256Address)
   g26 : reg m (26 : Fin 32) = x26
   g27 : reg m (27 : Fin 32) = B + 0x21A0 + BitVec.ofNat 32 0xA20
   wd : W64 (reg m (23 : Fin 32)) (reg m (25 : Fin 32)) = st.δ
@@ -74,7 +74,7 @@ structure IvInv (B : Word) (m : Machine) (v : Nat → Word) (r3 r4 out bp s5v x2
   rem : st.rem < 2 ^ 32
   w60 : memLoad32 m.mem (B + 0x21A0 + BitVec.ofNat 32 0x60) = BitVec.ofNat 32 0x332E3755
   w70 : memLoad32 m.mem (B + 0x21A0 + BitVec.ofNat 32 0x70) = BitVec.ofNat 32 0x11FF43B1
-  aN : accV m.mem (BitVec.ofNat 32 0x3FCC4268) 8 = N
+  aN : accV m.mem (BitVec.ofNat 32 (img% b2sOrder256Address)) 8 = N
   a240 : accV m.mem (B + 0x21A0 + BitVec.ofNat 32 0x240) 8 = qx
   a260 : accV m.mem (B + 0x21A0 + BitVec.ofNat 32 0x260) 8 = qy
   a280 : accV m.mem (B + 0x21A0 + BitVec.ofNat 32 0x280) 8 = qz
@@ -280,7 +280,7 @@ theorem iv_iter {B r3 r4 out bp s5v x26 : Word} {qx qy qz rv sv zv N : Nat} {W v
       σd, Ad, ed, ld, n5, c5, s5, E5, V5, fR5, r5_2, r5_3, r5_4, r5_18, r5_19, r5_21, r5_23, r5_24, r5_25, r5_26, r5_27, w5_24, w5_28, w5_2c, w5_30, w5_34, w5_38, w5_3c, w5_40, w5_44, w5_48, w5_4c, w5_50, w5_54, w5_58, w5_5c, w5_60, w5_64, w5_68, w5_6c, w5_70, w5_78, w5_7c, w5_80, w5_84, w5_88, w5_8c, w5_90, w5_94, w5_98, w5_9c, w5_a0, w5_a4, w5_a8, w5_ac, w5_b0, w5_b4, w5_b8, w5_bc, w5_c0, w5_c4, w5_c8, w5_cc, w5_d0, w5_d4, w5_d8, w5_dc, w5_e0, w5_e4, w5_e8, w5_ec, w5_f0, w5_f4, w5_f8, w5_fc, w5_100, w5_104, w5_108, w5_10c, w5_110, w5_114, w5_118, w5_11c, w5_120, w5_124, w5_128, w5_12c, w5_130, w5_320, w5_324, w5_328, w5_32c, w5_330, w5_334, w5_338, w5_33c, b5_440, b5_a40, b5_a64, b5_1040, b5_13a0, b5_14a0, a5_240, a5_260, a5_280, a5_2a0, a5_2c0, a5_2e0, a5_420, a5_a20, a5_a44, a5_1020, a5_1380, a5_1480, K5_L⟩
   · exact absurd (sc4 _ _ _ _) h
   have CH5 : ∀ x, SvR B x → n5.mem x = m.mem x := fun x hx => by rw [fR5 x hx, CH4 x hx]
-  have hNv : accV n4.mem (BitVec.ofNat 32 0x3FCC4268) 8 = N := by
+  have hNv : accV n4.mem (BitVec.ofNat 32 (img% b2sOrder256Address)) 8 = N := by
     rw [accV_dataR F CH4 (by decide) (by decide), I.aN]
   have hMI : (BitVec.ofNat 32 0x11FF43B1 : Word).toNat + 2 ^ 32 * (BitVec.ofNat 32 0x332E3755 : Word).toNat = ivMI :=
     rfl

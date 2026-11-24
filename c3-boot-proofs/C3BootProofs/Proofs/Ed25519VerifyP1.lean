@@ -1,11 +1,12 @@
 import C3BootProofs.Proofs.Ed25519VerifyWrap
+import C3BootProofs.Image.BootloaderData7
 
 /-!
 # `ed25519_verify`, offsets 0x40 to 0x7E: the checks before decoding
 
 The function rejects the signature unless `s`, its last 32 bytes, is
 below the group order (`less_than_le` against the 32 bytes at
-`0x3FCC4308`), and `ed25519_public_key_ok` accepts both the key and `R`,
+`edOrderAddress`), and `ed25519_public_key_ok` accepts both the key and `R`,
 the signature's first 32 bytes.
 -/
 
@@ -15,7 +16,7 @@ open C3.Image
 
 /-- `s` below the group order. -/
 def evLt (M : Word → BitVec 8) (sig : Word) : Bool :=
-  ltLEb (memBytes M (sig + BitVec.ofNat 32 32) 32) (memBytes M (BitVec.ofNat 32 0x3FCC4308) 32) 32
+  ltLEb (memBytes M (sig + BitVec.ofNat 32 32) 32) (memBytes M (BitVec.ofNat 32 (img% edOrderAddress)) 32) 32
 
 /-- The checks of offsets 0x40 to 0x7E: `s` below the group order, and the
 key and `R` accepted. -/
@@ -98,7 +99,7 @@ theorem ev_lt (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Machi
     rw [hr1]; simp +decide only [evB40, runBlock, BInstr.run, upd, ↓reduceIte]; rw [ha3]; rfl
   have va0 : reg n1 a0 = sig + BitVec.ofNat 32 32 := by
     rw [hr1]; simp +decide only [evB40, runBlock, BInstr.run, upd, ↓reduceIte]; rw [ha3]; exact BitVec.zero_add _
-  have va1 : reg n1 a1 = BitVec.ofNat 32 0x3FCC4308 := by
+  have va1 : reg n1 a1 = BitVec.ofNat 32 (img% edOrderAddress) := by
     rw [hr1]; simp +decide only [evB40, runBlock, BInstr.run, upd, ↓reduceIte]
   obtain ⟨n2, c2, D2, k2, a02⟩ := D1.ltLe C ev_at_56 ev_at_5a (by decide) (by decide) va0 va1
   rw [D1.bytesOut C.sig32, D1.bytesRo C (by decide) (by decide)] at a02

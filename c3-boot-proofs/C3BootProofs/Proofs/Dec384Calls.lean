@@ -50,15 +50,15 @@ theorem code_accV {M : Word → BitVec 8} {addr : Word} {d : List Nat} (h : Code
 theorem DqData.of {M M' : Word → BitVec 8} {S : Word} (F : DqFrame S) (D : DqData M)
     (h : ∀ x, Sep (S + 0xFFFFFE60) 0xBF0 x 1 → M' x = M x) : DqData M' := by
   have hd := F.dsep
-  have cd : ∀ (b : Word) (d : List Nat), CodeIn M b d → 0x3FCC4200 ≤ b.toNat → b.toNat + d.length ≤ 0x3FCC4E60 →
+  have cd : ∀ (b : Word) (d : List Nat), CodeIn M b d → (img% dataWindowAddress) ≤ b.toNat → b.toNat + d.length ≤ (img% dataWindowAddress + dataWindowSize) →
       CodeIn M' b d := fun b d hc h1 h2 i hi => by
-    rw [h _ (hd.subR (c := (b + BitVec.ofNat 32 i).toNat - 0x3FCC4200) (l := 1) (by
+    rw [h _ (hd.subR (c := (b + BitVec.ofNat 32 i).toNat - (img% dataWindowAddress)) (l := 1) (by
       rw [BitVec.toNat_add, BitVec.toNat_ofNat]; omega) |> fun s => by
-        rwa [show (0x3FCC4200 : Word) + BitVec.ofNat 32 ((b + BitVec.ofNat 32 i).toNat - 0x3FCC4200) =
+        rwa [show (img% dataWindowAddress : Word) + BitVec.ofNat 32 ((b + BitVec.ofNat 32 i).toNat - (img% dataWindowAddress)) =
           b + BitVec.ofNat 32 i from by
             apply BitVec.eq_of_toNat_eq
             rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_add, BitVec.toNat_ofNat,
-              show (0x3FCC4200 : Word).toNat = 0x3FCC4200 from rfl]
+              show (img% dataWindowAddress : Word).toNat = (img% dataWindowAddress) from rfl]
             omega] at s)]
     exact hc i hi
   exact ⟨cd _ _ D.params (by decide) (by decide), cd _ _ D.exp (by decide) (by decide),
@@ -103,27 +103,27 @@ theorem DqData.ex {M : Word → BitVec 8} (D : DqData M) (j : Nat) (hj : j < 12)
 /-- A stack region below the frame is apart from the constants. -/
 theorem DqFrame.lowData {S : Word} (F : DqFrame S) {k : Word} {c : Nat} (hc : c ≤ 0x1A0)
     (hk : (0xFFFFFE60 : Word) + BitVec.ofNat 32 (0x1A0 - c) = k) {b : Word} {len : Nat}
-    (hb : 0x3FCC4200 ≤ b.toNat) (hb2 : b.toNat + len ≤ 0x3FCC4E60) : Sep (S + k) c b len := by
+    (hb : (img% dataWindowAddress) ≤ b.toNat) (hb2 : b.toNat + len ≤ (img% dataWindowAddress + dataWindowSize)) : Sep (S + k) c b len := by
   have h1 := F.dsep.sub (c := 0x1A0 - c) (l := c) (by omega)
-  have h2 := h1.subR (c := b.toNat - 0x3FCC4200) (l := len) (by omega)
+  have h2 := h1.subR (c := b.toNat - (img% dataWindowAddress)) (l := len) (by omega)
   rw [BitVec.add_assoc, hk] at h2
-  rwa [show (0x3FCC4200 : Word) + BitVec.ofNat 32 (b.toNat - 0x3FCC4200) = b by
+  rwa [show (img% dataWindowAddress : Word) + BitVec.ofNat 32 (b.toNat - (img% dataWindowAddress)) = b by
     apply BitVec.eq_of_toNat_eq
-    rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (0x3FCC4200 : Word).toNat = 0x3FCC4200 from rfl]
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (img% dataWindowAddress : Word).toNat = (img% dataWindowAddress) from rfl]
     have := b.isLt; omega] at h2
 
 /-- A buffer in the frame is apart from the constants. -/
 theorem DqFrame.bufData {S : Word} (F : DqFrame S) {c n : Nat} (h : c + n ≤ 0xA50) {b : Word} {len : Nat}
-    (hb : 0x3FCC4200 ≤ b.toNat) (hb2 : b.toNat + len ≤ 0x3FCC4E60) : Sep (S + BitVec.ofNat 32 c) n b len := by
+    (hb : (img% dataWindowAddress) ≤ b.toNat) (hb2 : b.toNat + len ≤ (img% dataWindowAddress + dataWindowSize)) : Sep (S + BitVec.ofNat 32 c) n b len := by
   have h1 := F.dsep.sub (c := 0x1A0 + c) (l := n) (by omega)
-  have h2 := h1.subR (c := b.toNat - 0x3FCC4200) (l := len) (by omega)
+  have h2 := h1.subR (c := b.toNat - (img% dataWindowAddress)) (l := len) (by omega)
   rw [BitVec.add_assoc, show (0xFFFFFE60 : Word) + BitVec.ofNat 32 (0x1A0 + c) = BitVec.ofNat 32 c by
     apply BitVec.eq_of_toNat_eq
     rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat, show (0xFFFFFE60 : Word).toNat = 0xFFFFFE60 from rfl]
     omega] at h2
-  rwa [show (0x3FCC4200 : Word) + BitVec.ofNat 32 (b.toNat - 0x3FCC4200) = b by
+  rwa [show (img% dataWindowAddress : Word) + BitVec.ofNat 32 (b.toNat - (img% dataWindowAddress)) = b by
     apply BitVec.eq_of_toNat_eq
-    rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (0x3FCC4200 : Word).toNat = 0x3FCC4200 from rfl]
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat, show (img% dataWindowAddress : Word).toNat = (img% dataWindowAddress) from rfl]
     have := b.isLt; omega] at h2
 
 abbrev P3MUL : Word := BitVec.ofNat 32 p384MulAddress

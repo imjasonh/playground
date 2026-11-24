@@ -62,15 +62,15 @@ structure EvEnv (M : Word → BitVec 8) : Prop where
 
 /-- Where `ed25519_verify` runs: its frame at `F`, 16-aligned, with the
 0xA10 bytes below it, all below the code and apart from the read-only data
-at `0x3FCC4000`, the key `pk`, the signature `sig`, and the `len` bytes of
+at `roWindowAddress`, the key `pk`, the signature `sig`, and the `len` bytes of
 message at `msg`, each apart from that stack, and SHA-512's initial hash
-value at `0x3FCC4AF8`. -/
+value at `sha512IVAddress`. -/
 structure EvCtx (M0 : Word → BitVec 8) (F pk sig msg : Word) (len : Nat) : Prop where
   env : EvEnv M0
   hF : F.toNat % 16 = 0
   hlo : 0xA10 ≤ F.toNat
   hhi : F.toNat + 0x16A0 ≤ 0x40000000
-  sRo : Sep (BitVec.ofNat 32 0x3FCC4000) 0x1400 (evG F) 0x20B0
+  sRo : Sep (BitVec.ofNat 32 (img% roWindowAddress)) (img% roWindowSize) (evG F) 0x20B0
   sPk : Sep pk 32 (evG F) 0x20B0
   sSig : Sep sig 64 (evG F) 0x20B0
   sMsg : Sep msg len (evG F) 0x20B0
@@ -79,7 +79,7 @@ structure EvCtx (M0 : Word → BitVec 8) (F pk sig msg : Word) (len : Nat) : Pro
   hmsg : msg.toNat + len ≤ 2 ^ 32
   hmsgW : msg.toNat + len ≤ 0x40000000
   hlen : len < 2 ^ 31
-  iv : (s5Hv M0 (BitVec.ofNat 32 0x3FCC4AF8)).toList = Sha512.h0
+  iv : (s5Hv M0 (BitVec.ofNat 32 (img% sha512IVAddress))).toList = Sha512.h0
 
 /-- Between calls: `sp` at `F`, `gp` and `tp` as in `r0`, memory outside
 the stack as `M0`, and the saved registers' slots as `Ms`. -/
@@ -147,10 +147,10 @@ theorem EvCtx.hiG (C : EvCtx M0 F pk sig msg len) {b : Word} {k : Nat} (h1 : 0x4
   sep_of_le (by rw [C.gN]; have := C.hhi; omega) h2
 
 /-- A read-only datum is apart from the stack. -/
-theorem EvCtx.ro (C : EvCtx M0 F pk sig msg len) {a k : Nat} (h1 : 0x3FCC4000 ≤ a) (h2 : a + k ≤ 0x3FCC5400) :
+theorem EvCtx.ro (C : EvCtx M0 F pk sig msg len) {a k : Nat} (h1 : (img% roWindowAddress) ≤ a) (h2 : a + k ≤ 0x3FCC5400) :
     Sep (BitVec.ofNat 32 a) k (evG F) 0x20B0 := by
-  have := C.sRo.sub (c := a - 0x3FCC4000) (l := k) (by omega)
-  rwa [BitVec.ofNat_add_ofNat, show 0x3FCC4000 + (a - 0x3FCC4000) = a by omega] at this
+  have := C.sRo.sub (c := a - (img% roWindowAddress)) (l := k) (by omega)
+  rwa [BitVec.ofNat_add_ofNat, show (img% roWindowAddress) + (a - (img% roWindowAddress)) = a by omega] at this
 
 /-- A range apart from the stack is apart from a callee's frame of `S`
 bytes below `F`. -/
@@ -193,16 +193,16 @@ theorem EvSt.hiM (C : EvCtx M0 F pk sig msg len) (D : EvSt M0 Ms F r0 M n off) :
     ∀ x : Word, 0x40000000 ≤ x.toNat → M x = M0 x :=
   fun x hx => D.agree x (C.hiG hx (by have := x.isLt; omega))
 
-theorem EvSt.roM (C : EvCtx M0 F pk sig msg len) (D : EvSt M0 Ms F r0 M n off) {a k : Nat} (h1 : 0x3FCC4000 ≤ a)
+theorem EvSt.roM (C : EvCtx M0 F pk sig msg len) (D : EvSt M0 Ms F r0 M n off) {a k : Nat} (h1 : (img% roWindowAddress) ≤ a)
     (h2 : a + k ≤ 0x3FCC5400) : ∀ i, i < k → M (BitVec.ofNat 32 a + BitVec.ofNat 32 i) = M0 (BitVec.ofNat 32 a + BitVec.ofNat 32 i) :=
   fun i hi => D.agree _ ((C.ro h1 h2).sub (c := i) (l := 1) (by omega)).symm
 
-theorem EvSt.feRo (C : EvCtx M0 F pk sig msg len) (D : EvSt M0 Ms F r0 M n off) {a : Nat} (h1 : 0x3FCC4000 ≤ a)
+theorem EvSt.feRo (C : EvCtx M0 F pk sig msg len) (D : EvSt M0 Ms F r0 M n off) {a : Nat} (h1 : (img% roWindowAddress) ≤ a)
     (h2 : a + 40 ≤ 0x3FCC5400) : feW M (BitVec.ofNat 32 a) = feW M0 (BitVec.ofNat 32 a) :=
   feW_frame fun i hi => memLoad32_congr fun j hj => by
     rw [add_ofNat_assoc]; exact D.agree _ ((C.ro h1 h2).sub (c := 4 * i + j) (l := 1) (by omega)).symm
 
-theorem EvSt.bytesRo (C : EvCtx M0 F pk sig msg len) (D : EvSt M0 Ms F r0 M n off) {a k : Nat} (h1 : 0x3FCC4000 ≤ a)
+theorem EvSt.bytesRo (C : EvCtx M0 F pk sig msg len) (D : EvSt M0 Ms F r0 M n off) {a k : Nat} (h1 : (img% roWindowAddress) ≤ a)
     (h2 : a + k ≤ 0x3FCC5400) : memBytes M (BitVec.ofNat 32 a) k = memBytes M0 (BitVec.ofNat 32 a) k :=
   memBytes_congr fun i hi => D.roM C h1 h2 i hi
 
@@ -214,7 +214,7 @@ theorem EvSt.code (C : EvCtx M0 F pk sig msg len) (D : EvSt M0 Ms F r0 M n off) 
   C.env.cod.hi (D.hiM C) (by decide) (by rw [ev_len]; decide)
 
 theorem EvSt.codeRo (C : EvCtx M0 F pk sig msg len) (D : EvSt M0 Ms F r0 M n off) {a : Nat} {code : List Nat}
-    (h : CodeIn M0 (BitVec.ofNat 32 a) code) (h1 : 0x3FCC4000 ≤ a) (h2 : a + code.length ≤ 0x3FCC5400) :
+    (h : CodeIn M0 (BitVec.ofNat 32 a) code) (h1 : (img% roWindowAddress) ≤ a) (h2 : a + code.length ≤ 0x3FCC5400) :
     CodeIn M (BitVec.ofNat 32 a) code :=
   fun i hi => by rw [D.roM C h1 h2 i hi]; exact h i hi
 

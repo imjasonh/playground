@@ -170,7 +170,7 @@ theorem frq_inner {Mb : Word → BitVec 8} {src T : Word}
     have hcx := hc Mx hag
     have hz := st.zero
     have hTj : Sep (T + BitVec.ofNat 32 j) 1 FRQ p256FromReprCode.length :=
-      sep_of_le (by rw [BitVec.toNat_add, BitVec.toNat_ofNat, show FRQ.toNat = 0x403a67ee by decide]; omega)
+      sep_of_le (by rw [BitVec.toNat_add, BitVec.toNat_ofNat, show FRQ.toNat = (img% p256FromReprAddress) by decide]; omega)
         (by decide)
     obtain ⟨n1, c1, u1⟩ := St.block frqInner st hcx frqInner_end (by
       simp +decide only [BlockOk, BInstr.ok, BInstr.run, frqInner, upd_app, ↓reduceIte, and_true, true_and]
@@ -313,7 +313,7 @@ theorem frq_outer {Mb : Word → BitVec 8} {inp T X G : Word}
     have r3 : ∀ q, q ≠ a2 → q ≠ a3 → q ≠ a4 → q ≠ a5 → reg n3 q = reg n q := fun q h2 h3 h4 h5 => by
       rw [K3 q h2 h3 h4 h5, u2.regs, K1 q h3 h4 h5]
     have hX7 : Sep (X + BitVec.ofNat 32 (4 * (7 - i))) 4 FRQ p256FromReprCode.length :=
-      sep_of_le (by rw [BitVec.toNat_add, BitVec.toNat_ofNat, show FRQ.toNat = 0x403a67ee by decide]; omega)
+      sep_of_le (by rw [BitVec.toNat_add, BitVec.toNat_ofNat, show FRQ.toNat = (img% p256FromReprAddress) by decide]; omega)
         (by decide)
     obtain ⟨n4, c4, u4⟩ := St.block frqOuterB u3 hc3 frqOuterB_end (by
       simp +decide only [BlockOk, BInstr.ok, BInstr.run, frqOuterB, upd_app, ↓reduceIte, and_true, true_and]
@@ -449,7 +449,7 @@ theorem frq_cmp {Mb : Word → BitVec 8} {X N G : Word}
     have hsepB : Sep (G + 0xFFFFFFFC) 4 (BitVec.ofNat 32 borrowingSubAddress) borrowingSubCode.length :=
       sep_of_le (by
         rw [BitVec.toNat_add, show (0xFFFFFFFC : Word).toNat = 2 ^ 32 - 4 from rfl,
-          show (BitVec.ofNat 32 borrowingSubAddress).toNat = 0x403a2320 by decide]; omega) (by decide)
+          show (BitVec.ofNat 32 borrowingSubAddress).toNat = (img% borrowingSubAddress) by decide]; omega) (by decide)
     obtain ⟨n2, c2, u2, a02, a12, sp2, K2, mem2⟩ := u1'.bsubCall hcx (hb Mx hag) (by decide) frq_at_9e frq_at_a2
       (by decide) (by decide) (by rw [K1 sp (by decide) (by decide) (by decide), hsp]) hGa hsepB
     rw [a01, a11, a21] at a02 a12
@@ -570,7 +570,7 @@ theorem frq_pro (m : Machine) {sp0 out inp : Word} (hcF : CodeIn m.mem FRQ p256F
       Sep (S + BitVec.ofNat 32 c) l b k := fun b k h h1 h2 => sep_of_le (by rw [hSc _ (by omega)]; omega) h2
   have Shi : ∀ x : Word, 0x40000000 ≤ x.toNat → Sep S 0x140 x 1 := fun x hx =>
     sep_of_le (by omega) (by have := x.isLt; omega)
-  have hFRn : FRQ.toNat = 0x403a67ee := by decide
+  have hFRn : FRQ.toNat = (img% p256FromReprAddress) := by decide
   have Gc : ∀ c, S + BitVec.ofNat 32 0xC0 + BitVec.ofNat 32 c = S + BitVec.ofNat 32 (0xC0 + c) :=
     fun c => add_ofNat_assoc _ _ _
   have st0 : St m.mem FRQ m 0 (reg m) := ⟨by rw [hpc, add_ofNat_zero], rfl, fun _ => rfl⟩
@@ -800,7 +800,7 @@ theorem frq_tailA {M0 : Word → BitVec 8} (E : FRQEnv M0) (n : Machine) {S b : 
       Sep (S + BitVec.ofNat 32 c) l b k := fun b k h h1 h2 => sep_of_le (by rw [hSc _ (by omega)]; omega) h2
   have Shi : ∀ x : Word, 0x40000000 ≤ x.toNat → Sep S 0x140 x 1 := fun x hx =>
     sep_of_le (by omega) (by have := x.isLt; omega)
-  have hFRn : FRQ.toNat = 0x403a67ee := by decide
+  have hFRn : FRQ.toNat = (img% p256FromReprAddress) := by decide
   have cd : ∀ {M' : Word → BitVec 8} {b : Word} {code : List Nat}, CodeIn M0 b code → 0x40000000 ≤ b.toNat →
       b.toNat + code.length ≤ 2 ^ 32 → (∀ x, Sep S 0x140 x 1 → M' x = M0 x) → CodeIn M' b code :=
     fun hc h1 h2 hM i hi => by rw [hM _ (Shi _ (code_hi h1 h2 hi))]; exact hc i hi
@@ -1010,7 +1010,7 @@ theorem frq_tailB {M0 : Word → BitVec 8} (E : FRQEnv M0) (n : Machine) {S out 
     sep_of_le (by omega) (by have := x.isLt; omega)
   have Ohi : ∀ x : Word, 0x40000000 ≤ x.toNat → Sep out 33 x 1 := fun x hx =>
     sep_of_le (by omega) (by have := x.isLt; omega)
-  have hFRn : FRQ.toNat = 0x403a67ee := by decide
+  have hFRn : FRQ.toNat = (img% p256FromReprAddress) := by decide
   have cd : ∀ {M' : Word → BitVec 8} {b : Word} {code : List Nat}, CodeIn M0 b code → 0x40000000 ≤ b.toNat →
       b.toNat + code.length ≤ 2 ^ 32 → (∀ x, Sep S 0x140 x 1 → Sep out 33 x 1 → M' x = M0 x) → CodeIn M' b code :=
     fun hc h1 h2 hM i hi => by rw [hM _ (Shi _ (code_hi h1 h2 hi)) (Ohi _ (code_hi h1 h2 hi))]; exact hc i hi
@@ -1290,7 +1290,7 @@ theorem p256FromRepr_correct (m : Machine) {sp0 out inp retAddr : Word} (E : FRQ
       Sep (S + BitVec.ofNat 32 c) l b k := fun b k h h1 h2 => sep_of_le (by rw [hSc _ (by omega)]; omega) h2
   have Shi : ∀ x : Word, 0x40000000 ≤ x.toNat → Sep S 0x140 x 1 := fun x hx =>
     sep_of_le (by omega) (by have := x.isLt; omega)
-  have hFRn : FRQ.toNat = 0x403a67ee := by decide
+  have hFRn : FRQ.toNat = (img% p256FromReprAddress) := by decide
   have Gc : ∀ c, S + BitVec.ofNat 32 0xC0 + BitVec.ofNat 32 c = S + BitVec.ofNat 32 (0xC0 + c) :=
     fun c => add_ofNat_assoc _ _ _
   have cdx : ∀ {M' : Word → BitVec 8} {b : Word} {code : List Nat}, CodeIn m.mem b code → 0x40000000 ≤ b.toNat →

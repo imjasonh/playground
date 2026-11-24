@@ -2,13 +2,14 @@ import C3BootProofs.Models.Ed25519KSub
 import C3BootProofs.Models.Ed25519KPack
 import C3BootProofs.Models.Ed25519KDigest
 import C3BootProofs.Models.Ed25519KAdd
+import C3BootProofs.Image.BootloaderData7
 
 /-!
 # The challenge scalar's reduction
 
 `kOK` proves `KOK M` for any memory that holds the two Montgomery constants
-`from_bytes_wide` reads (`KImage`): `R = 2^261 mod L` at `0x3FCC49E4` and
-`R² = 2^522 mod L` at `0x3FCC49C0`, each as nine 32-bit limbs of 29 bits.
+`from_bytes_wide` reads (`KImage`): `R = 2^261 mod L` at `edMontRAddress` and
+`R² = 2^522 mod L` at `edMontRRAddress`, each as nine 32-bit limbs of 29 bits.
 -/
 
 namespace C3.RV32.EdK
@@ -27,8 +28,8 @@ def edRRData : List Nat :=
 
 /-- The constants `from_bytes_wide` reads. -/
 structure KImage (M : Word → BitVec 8) : Prop where
-  r : memBytes M (BitVec.ofNat 32 0x3FCC49E4) 36 = edRData
-  rr : memBytes M (BitVec.ofNat 32 0x3FCC49C0) 36 = edRRData
+  r : memBytes M (BitVec.ofNat 32 (img% edMontRAddress)) 36 = edRData
+  rr : memBytes M (BitVec.ofNat 32 (img% edMontRRAddress)) 36 = edRRData
 
 theorem limbAt_bytes36 (M : Word → BitVec 8) (a : Word) {i : Nat} (hi : i < 9) :
     limbAt M a i = le32 ((memBytes M a 36).getD (4 * i) 0) ((memBytes M a 36).getD (4 * i + 1) 0)
@@ -67,14 +68,14 @@ theorem smmIn_const {M : Word → BitVec 8} {a : Word} {data : List Nat} (h : me
   exact hv
 
 theorem KImage.rLimbs {M : Word → BitVec 8} (K : KImage M) :
-    (∀ i, i < 9 → smmIn M (BitVec.ofNat 32 0x3FCC49E4) i < 2 ^ 29) ∧
-      sv9 (smmIn M (BitVec.ofNat 32 0x3FCC49E4)) =
+    (∀ i, i < 9 → smmIn M (BitVec.ofNat 32 (img% edMontRAddress)) i < 2 ^ 29) ∧
+      sv9 (smmIn M (BitVec.ofNat 32 (img% edMontRAddress))) =
         7237005577332262213973186563042994226653049657365262595645758789353026222573 :=
   smmIn_const K.r _ (by decide) (by decide)
 
 theorem KImage.rrLimbs {M : Word → BitVec 8} (K : KImage M) :
-    (∀ i, i < 9 → smmIn M (BitVec.ofNat 32 0x3FCC49C0) i < 2 ^ 29) ∧
-      sv9 (smmIn M (BitVec.ofNat 32 0x3FCC49C0)) =
+    (∀ i, i < 9 → smmIn M (BitVec.ofNat 32 (img% edMontRRAddress)) i < 2 ^ 29) ∧
+      sv9 (smmIn M (BitVec.ofNat 32 (img% edMontRRAddress))) =
         2269390412388210757387596145591141548687583832901957660833925789855294397714 :=
   smmIn_const K.rr _ (by decide) (by decide)
 
@@ -149,15 +150,15 @@ theorem kOK {M : Word → BitVec 8} (K : KImage M) : KOK M := by
   rw [hRv] at hY
   have sx := s29Out_val hXl hXv
   have sy := s29Out_val hYl hYv
-  have mx := Nat.mod_lt (sv9 (smmRed (hi9 w) (smmIn M (BitVec.ofNat 32 0x3FCC49C0)))) (show 0 < Ed25519.L by omega)
-  have my := Nat.mod_lt (sv9 (smmRed (lo9 w) (smmIn M (BitVec.ofNat 32 0x3FCC49E4)))) (show 0 < Ed25519.L by omega)
-  obtain ⟨hSl, hSv⟩ := add9 (X := s29Out (smmRed (hi9 w) (smmIn M (BitVec.ofNat 32 0x3FCC49C0))))
-    (Y := s29Out (smmRed (lo9 w) (smmIn M (BitVec.ofNat 32 0x3FCC49E4)))) (by rw [sx, sy]; omega)
+  have mx := Nat.mod_lt (sv9 (smmRed (hi9 w) (smmIn M (BitVec.ofNat 32 (img% edMontRRAddress))))) (show 0 < Ed25519.L by omega)
+  have my := Nat.mod_lt (sv9 (smmRed (lo9 w) (smmIn M (BitVec.ofNat 32 (img% edMontRAddress))))) (show 0 < Ed25519.L by omega)
+  obtain ⟨hSl, hSv⟩ := add9 (X := s29Out (smmRed (hi9 w) (smmIn M (BitVec.ofNat 32 (img% edMontRRAddress)))))
+    (Y := s29Out (smmRed (lo9 w) (smmIn M (BitVec.ofNat 32 (img% edMontRAddress))))) (by rw [sx, sy]; omega)
   have so := s29Out_val hSl (by rw [hSv, sx, sy]; omega)
-  have hO8 : s29Out (fun j => s29AddC (s29Out (smmRed (hi9 w) (smmIn M (BitVec.ofNat 32 0x3FCC49C0))))
-      (s29Out (smmRed (lo9 w) (smmIn M (BitVec.ofNat 32 0x3FCC49E4)))) (j + 1) % 2 ^ 29) 8 < 2 ^ 24 := by
-    have := Nat.mod_lt (sv9 (fun j => s29AddC (s29Out (smmRed (hi9 w) (smmIn M (BitVec.ofNat 32 0x3FCC49C0))))
-      (s29Out (smmRed (lo9 w) (smmIn M (BitVec.ofNat 32 0x3FCC49E4)))) (j + 1) % 2 ^ 29))
+  have hO8 : s29Out (fun j => s29AddC (s29Out (smmRed (hi9 w) (smmIn M (BitVec.ofNat 32 (img% edMontRRAddress)))))
+      (s29Out (smmRed (lo9 w) (smmIn M (BitVec.ofNat 32 (img% edMontRAddress))))) (j + 1) % 2 ^ 29) 8 < 2 ^ 24 := by
+    have := Nat.mod_lt (sv9 (fun j => s29AddC (s29Out (smmRed (hi9 w) (smmIn M (BitVec.ofNat 32 (img% edMontRRAddress)))))
+      (s29Out (smmRed (lo9 w) (smmIn M (BitVec.ofNat 32 (img% edMontRAddress))))) (j + 1) % 2 ^ 29))
       (show 0 < Ed25519.L by omega)
     rw [← so] at this
     unfold sv9 at this

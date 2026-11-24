@@ -130,7 +130,7 @@ theorem sv_seg_cosig {B out bp x21 x26 dg c q rl rp : Word} {rt sg : Bytes} {w8 
     SvErrRet B out v n0 ∨
     (∃ ix9_1, nlScan M0 (w38) 0 ((w5c).toNat) = some ix9_1 ∧
       (4 ≤ ix9_1) ∧
-      (memBytes M0 w38 4 = memBytes M0 (BitVec.ofNat 32 0x3FCC4855) 4) ∧
+      (memBytes M0 w38 4 = memBytes M0 (BitVec.ofNat 32 (img% svConstAddress + 0x3D)) 4) ∧
       ∃ k_2, k_2 < ((BitVec.ofNat 32 ix9_1) + BitVec.ofNat 32 0xFFFFFFFC).toNat ∧
       (∀ i, i < k_2 → ∀ c'_2 pa'_2, (c'_2, pa'_2) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0x1, ((s.2)) + BitVec.ofNat 32 0x1)) i ((BitVec.ofNat 32 0x0), ((w38) + BitVec.ofNat 32 0x4)) → ¬ (M0 pa'_2 = 0x20)) ∧
       ∃ c'_2 pa'_2, (c'_2, pa'_2) = svIter (fun s => (((s.1)) + BitVec.ofNat 32 0x1, ((s.2)) + BitVec.ofNat 32 0x1)) k_2 ((BitVec.ofNat 32 0x0), ((w38) + BitVec.ofNat 32 0x4)) ∧ (M0 pa'_2 = 0x20) ∧

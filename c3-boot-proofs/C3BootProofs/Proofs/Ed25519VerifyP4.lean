@@ -5,7 +5,7 @@ import C3BootProofs.Proofs.Ed25519VerifyWrap2
 # `ed25519_verify`, offsets 0x104C to 0x115A: SHA-512 of `R ‖ A ‖ M`
 
 The function starts a SHA-512 hasher at `F + 0xEF0` (the initial hash value
-from `0x3FCC4AF8`, zero counts), feeds it `R` and the key's encoding, copies
+from `sha512IVAddress`, zero counts), feeds it `R` and the key's encoding, copies
 it to `F + 0x450` and feeds that the message, then copies it back.
 -/
 
@@ -144,8 +144,8 @@ theorem ev_h1 (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Machi
   have c5 : Steps n4 n5 := Steps.single d5
   -- s8 and the arguments of memcpy(F + 0xF70, IV, 64)
   obtain ⟨n6, c6, D6, hr6⟩ := D5.block C (off' := 0x1070)
-    [.aluImm .add (24 : Fin 32) sp 0x7FF, .aluImm .add (24 : Fin 32) (24 : Fin 32) 0x771, .lui a1 0x3FCC5000,
-      .aluImm .add a1 a1 0xFFFFFAF8, .aluImm .add a2 x0 0x40, .alu .add a0 x0 (24 : Fin 32)]
+    [.aluImm .add (24 : Fin 32) sp 0x7FF, .aluImm .add (24 : Fin 32) (24 : Fin 32) 0x771, .lui a1 (img% hi20 sha512IVAddress),
+      .aluImm .add a1 a1 (img% lo12 sha512IVAddress), .aluImm .add a2 x0 0x40, .alu .add a0 x0 (24 : Fin 32)]
     (blockEnd_cons' ev_at_105a rfl (blockEnd_cons' ev_at_105e rfl (blockEnd_cons' ev_at_1062 rfl
       (blockEnd_cons' ev_at_1066 rfl (blockEnd_cons' ev_at_106a rfl (blockEnd_cons' ev_at_106e rfl rfl))))))
     ⟨trivial, trivial, trivial, trivial, trivial, trivial, trivial⟩ rfl
@@ -155,7 +155,7 @@ theorem ev_h1 (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Machi
     rw [D5.hsp, show aluEval .add F 0x7FF = F + BitVec.ofNat 32 0x7FF from rfl]; exact add_sp F rfl
   have k6 : ∀ q : Fin 32, q.val ∈ evKeep → q ≠ 24 → reg n6 q = reg n5 q := fun q hq h24 => by
     rw [hr6]; exact evb_reg q D5.st.zero (by revert h24; revert hq; revert q; decide)
-  obtain ⟨n7, c7, D7, k7, fz7⟩ := D6.memcpy C (d := 0xF70) (s := BitVec.ofNat 32 0x3FCC4AF8) (N := 64)
+  obtain ⟨n7, c7, D7, k7, fz7⟩ := D6.memcpy C (d := 0xF70) (s := BitVec.ofNat 32 (img% sha512IVAddress)) (N := 64)
     ev_at_1070 ev_at_1074 (by decide) (by decide)
     (by rw [hr6]; simp +decide only [runBlock, BInstr.run, upd, ↓reduceIte]
         rw [D5.hsp, show aluEval .add F 0x7FF = F + BitVec.ofNat 32 0x7FF from rfl]
@@ -220,14 +220,14 @@ theorem ev_h1 (C : EvCtx M0 F pk sig msg len) {M : Word → BitVec 8} {n : Machi
     · rw [show F + BitVec.ofNat 32 0xEF0 + 0x7F = F + BitVec.ofNat 32 0xF6F from add_ofNat_assoc F 0xEF0 0x7F, hM12,
         memStore8_same]; rfl
     · rw [show F + BitVec.ofNat 32 0xEF0 + 0x80 = F + BitVec.ofNat 32 0xF70 from add_ofNat_assoc F 0xEF0 0x80,
-        s5Hv_copy (M := M0) (b := BitVec.ofNat 32 0x3FCC4AF8) fun i hi => ?_, C.iv]
+        s5Hv_copy (M := M0) (b := BitVec.ofNat 32 (img% sha512IVAddress)) fun i hi => ?_, C.iv]
       · rfl
       rw [add_ofNat_assoc, hM12, sb_out C (d := 0xF6F) (by decide) (by omega) (by omega),
         sw_out C (d := 0xFBC) (by decide) (by omega) (Or.inl (by omega)),
         sw_out C (d := 0xFB8) (by decide) (by omega) (Or.inl (by omega)),
         sw_out C (d := 0xFB4) (by decide) (by omega) (Or.inl (by omega)),
         sw_out C (d := 0xFB0) (by decide) (by omega) (Or.inl (by omega)), cp_at C fz7 (by decide) hi]
-      rw [← hM5]; exact D6'.roM C (a := 0x3FCC4AF8) (k := 64) (by decide) (by decide) i hi
+      rw [← hM5]; exact D6'.roM C (a := (img% sha512IVAddress)) (k := 64) (by decide) (by decide) i hi
     · rw [show F + BitVec.ofNat 32 0xEF0 + 0xC0 = F + BitVec.ofNat 32 (0xFB0 + 4 * 0) from add_ofNat_assoc F 0xEF0 0xC0, zl 0 (by decide)]; rfl
     · rw [show F + BitVec.ofNat 32 0xEF0 + 0xC4 = F + BitVec.ofNat 32 (0xFB0 + 4 * 1) from add_ofNat_assoc F 0xEF0 0xC4, zl 1 (by decide)]
     · rw [show F + BitVec.ofNat 32 0xEF0 + 0xC8 = F + BitVec.ofNat 32 (0xFB0 + 4 * 2) from add_ofNat_assoc F 0xEF0 0xC8, zl 2 (by decide)]

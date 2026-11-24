@@ -48,7 +48,7 @@ theorem st_get_sep {M : Word → BitVec 8} {a v c x : Word} {n : Nat} (hs : Sep 
 
 theorem zero_lit_add (a : Word) : (0 : Word) + a = a := BitVec.zero_add a
 
-theorem kcK_lit : (0x3FCC5000 : Word) + 0xFFFFFEBC = kcK := by decide
+theorem kcK_lit : (img% hi20 shaKAddress : Word) + (img% lo12 shaKAddress) = kcK := by decide
 
 /-- The round setup, from 0xB6 to 0xD4: `e`, `a`, and `d` into the frame,
 `b`, `c`, `f`, and `g` out of it, and the round constants' address. -/
