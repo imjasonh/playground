@@ -1,3 +1,4 @@
+import C3BootProofs.Theorems.Trace
 import C3BootProofs.Theorems.Formats
 import C3BootProofs.Proofs.Crc32
 import C3BootProofs.Proofs.Reader
@@ -946,14 +947,14 @@ def witnessMemPoint : RV32.Word → BitVec 8 :=
 as the image stores it, and a block count of zero. -/
 def emptyHasherBytes : List Nat := List.replicate 64 0 ++ Image.shaIVData ++ List.replicate 8 0
 
-/-- Memory with the empty hasher at `0x3FCC5000`, and the current image's
+/-- Memory with the empty hasher at `0x3FCC5100`, and the current image's
 `update`, `finalize`, `sha256`, their helpers, the zeroing `from_fn`s, both `to_be_byte_array`s, `node_hash`,
 `root_from_inclusion`, `compress256` with its
 helpers, `memset`, `memcpy`, the initial hash value, and the round constants
 where the image loads them, and zeros elsewhere. -/
 def witnessMemSha2 : RV32.Word → BitVec 8 :=
   RV32.regionMem
-    [(0x3FCC5000, emptyHasherBytes),
+    [(0x3FCC5100, emptyHasherBytes),
     (Image.shaUpdateAddress, Image.shaUpdateCode),
     (Image.shaUpdateBlocksAddress, Image.shaUpdateBlocksCode),
     (Image.shaFinalizeAddress, Image.shaFinalizeCode),
@@ -981,7 +982,7 @@ def witnessMemSha2 : RV32.Word → BitVec 8 :=
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
 /-- A machine that calls `update` with 100 bytes at `0x3FCC6000`, the empty
-hasher at `0x3FCC5000`, and the stack at `0x3FCC8000` meets
+hasher at `0x3FCC5100`, and the stack at `0x3FCC8000` meets
 `shaUpdate_correct`'s hypotheses. -/
 theorem exists_shaUpdate_machine :
     ∃ (m : RV32.Machine) (S D sp0 retAddr : RV32.Word) (n : Nat) (msg : List Nat),
@@ -989,10 +990,10 @@ theorem exists_shaUpdate_machine :
       RV32.reg m RV32.a0 = S ∧ RV32.reg m RV32.a1 = D ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧
       RV32.HasherAt m.mem S msg ∧ n < 2 ^ 31 ∧ msg.length + n < 2 ^ 32 := by
-  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 100
+  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC5100 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 100
       else if r = RV32.sp then 0x3FCC8000 else 0), BitVec.ofNat 32 Image.shaUpdateAddress,
       witnessMemSha2⟩,
-    0x3FCC5000, 0x3FCC6000, 0x3FCC8000, 0, 100, [], ?_, rfl, rfl, rfl, rfl, rfl, by decide, rfl,
+    0x3FCC5100, 0x3FCC6000, 0x3FCC8000, 0, 100, [], ?_, rfl, rfl, rfl, rfl, rfl, by decide, rfl,
     ⟨by decide, ?_, rfl, ?_, ?_, ?_⟩, by decide, by decide⟩
   case refine_1 =>
     constructor
@@ -1006,7 +1007,7 @@ theorem exists_shaUpdate_machine :
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
-/-- A machine that calls `finalize` with the empty hasher at `0x3FCC5000`,
+/-- A machine that calls `finalize` with the empty hasher at `0x3FCC5100`,
 the output at `0x3FCC6000`, and the stack at `0x3FCC8000` meets
 `shaFinalize_correct`'s hypotheses. -/
 theorem exists_shaFinalize_machine :
@@ -1014,10 +1015,10 @@ theorem exists_shaFinalize_machine :
       RV32.FinEnv m.mem S out sp0 ∧ m.pc = BitVec.ofNat 32 Image.shaFinalizeAddress ∧
       RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = S ∧ RV32.reg m RV32.ra = retAddr ∧
       retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.HasherAt m.mem S msg := by
-  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC5000 else if r = RV32.a2 then 0
+  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC5100 else if r = RV32.a2 then 0
       else if r = RV32.sp then 0x3FCC8000 else 0), BitVec.ofNat 32 Image.shaFinalizeAddress,
       witnessMemSha2⟩,
-    0x3FCC5000, 0x3FCC6000, 0x3FCC8000, 0, [], ?_, rfl, rfl, rfl, rfl, by decide, rfl,
+    0x3FCC5100, 0x3FCC6000, 0x3FCC8000, 0, [], ?_, rfl, rfl, rfl, rfl, by decide, rfl,
     ⟨by decide, ?_, rfl, ?_, ?_, ?_⟩⟩
   case refine_1 =>
     constructor
@@ -1054,16 +1055,16 @@ theorem exists_sha256Fn_machine :
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
 /-- A machine that calls `Sha256::finish` with the empty hasher at
-`0x3FCC5000`, the output at `0x3FCC6000`, and the stack at `0x3FCC8000`
+`0x3FCC5100`, the output at `0x3FCC6000`, and the stack at `0x3FCC8000`
 meets `shaFinish_correct`'s hypotheses. -/
 theorem exists_shaFinish_machine :
     ∃ (m : RV32.Machine) (S out sp0 retAddr : RV32.Word) (msg : List Nat),
       RV32.FinishEnv m.mem S out sp0 ∧ m.pc = BitVec.ofNat 32 Image.shaFinishAddress ∧
       RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = S ∧ RV32.reg m RV32.ra = retAddr ∧
       retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.HasherAt m.mem S msg := by
-  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC5000
+  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC5100
       else if r = RV32.sp then 0x3FCC8000 else 0), BitVec.ofNat 32 Image.shaFinishAddress, witnessMemSha2⟩,
-    0x3FCC5000, 0x3FCC6000, 0x3FCC8000, 0, [], ?_, rfl, rfl, rfl, rfl, by decide, rfl,
+    0x3FCC5100, 0x3FCC6000, 0x3FCC8000, 0, [], ?_, rfl, rfl, rfl, rfl, by decide, rfl,
     ⟨by decide, ?_, rfl, ?_, ?_, ?_⟩⟩
   case refine_1 =>
     constructor
@@ -1104,18 +1105,18 @@ theorem exists_sha256Parts_machine :
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
-/-- A machine that calls `node_hash` with the hashes at `0x3FCC5100` and
-`0x3FCC5200`, the output at `0x3FCC6000`, and the stack at `0x3FCC8000`
+/-- A machine that calls `node_hash` with the hashes at `0x3FCC5200` and
+`0x3FCC5300`, the output at `0x3FCC6000`, and the stack at `0x3FCC8000`
 meets `merkleNodeHash_correct`'s hypotheses. -/
 theorem exists_merkleNodeHash_machine :
     ∃ (m : RV32.Machine) (out L Rt sp0 retAddr : RV32.Word),
       RV32.NodeEnv m.mem out L Rt sp0 ∧ m.pc = BitVec.ofNat 32 Image.merkleNodeHashAddress ∧
       RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = L ∧ RV32.reg m RV32.a2 = Rt ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 := by
-  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC5100
-      else if r = RV32.a2 then 0x3FCC5200 else if r = RV32.sp then 0x3FCC8000 else 0),
+  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC5200
+      else if r = RV32.a2 then 0x3FCC5300 else if r = RV32.sp then 0x3FCC8000 else 0),
       BitVec.ofNat 32 Image.merkleNodeHashAddress, witnessMemSha2⟩,
-    0x3FCC6000, 0x3FCC5100, 0x3FCC5200, 0x3FCC8000, 0, ?_, rfl, rfl, rfl, rfl, rfl, by decide, rfl⟩
+    0x3FCC6000, 0x3FCC5200, 0x3FCC5300, 0x3FCC8000, 0, ?_, rfl, rfl, rfl, rfl, rfl, by decide, rfl⟩
   constructor
   all_goals first
     | code_in
@@ -1127,7 +1128,7 @@ theorem exists_merkleNodeHash_machine :
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
 /-- A machine that calls `root_from_inclusion` for index 0 of a 2-leaf tree,
-with the leaf hash at `0x3FCC5100`, one 32-byte proof hash at `0x3FCC5200`,
+with the leaf hash at `0x3FCC5200`, one 32-byte proof hash at `0x3FCC5300`,
 the result at `0x3FCC6000`, and the stack at `0x3FCC8000`, meets
 `rootFromInclusion_correct`'s hypotheses. -/
 theorem exists_rootFromInclusion_machine :
@@ -1137,10 +1138,10 @@ theorem exists_rootFromInclusion_machine :
       RV32.reg m RV32.a7 = BitVec.ofNat 32 n ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
       RV32.reg m RV32.sp = sp0 := by
   refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a3 then 2
-      else if r = RV32.a5 then 0x3FCC5100 else if r = RV32.a6 then 0x3FCC5200 else if r = RV32.a7 then 32
+      else if r = RV32.a5 then 0x3FCC5200 else if r = RV32.a6 then 0x3FCC5300 else if r = RV32.a7 then 32
       else if r = RV32.sp then 0x3FCC8000 else 0),
       BitVec.ofNat 32 Image.rootFromInclusionAddress, witnessMemSha2⟩,
-    0x3FCC6000, 0x3FCC5100, 0x3FCC5200, 0x3FCC8000, 0, 32, ?_, rfl, rfl, rfl, rfl, rfl, rfl, by decide, rfl⟩
+    0x3FCC6000, 0x3FCC5200, 0x3FCC5300, 0x3FCC8000, 0, 32, ?_, rfl, rfl, rfl, rfl, rfl, rfl, by decide, rfl⟩
   constructor
   all_goals first
     | code_in
@@ -1185,7 +1186,7 @@ theorem exists_zeroArray64_machine :
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
-/-- A machine that encodes the 12 limbs at `0x3FCC5000` big-endian to
+/-- A machine that encodes the 12 limbs at `0x3FCC5100` big-endian to
 `0x3FCC6000` with the stack at `0x3FCC8000` meets `toBeBytes12_correct`'s
 hypotheses. -/
 theorem exists_toBeBytes12_machine :
@@ -1199,15 +1200,15 @@ theorem exists_toBeBytes12_machine :
       sp0.toNat % 16 = 0 ∧ 0x90 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧ s.toNat % 4 = 0 ∧
       s.toNat + 48 ≤ 0x40000000 ∧ out.toNat + 48 ≤ 0x40000000 ∧ RV32.Sep s 48 (sp0 + 0xFFFFFF70) 0x90 ∧
       RV32.Sep out 48 (sp0 + 0xFFFFFF70) 0x90 :=
-  ⟨⟨fun r => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC5000 else if r = RV32.sp then 0x3FCC8000
-      else 0, BitVec.ofNat 32 Image.toBeBytes12Address, witnessMemSha2⟩, 0x3FCC6000, 0x3FCC5000, 0x3FCC8000, 0,
+  ⟨⟨fun r => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC5100 else if r = RV32.sp then 0x3FCC8000
+      else 0, BitVec.ofNat 32 Image.toBeBytes12Address, witnessMemSha2⟩, 0x3FCC6000, 0x3FCC5100, 0x3FCC8000, 0,
     by code_in, by code_in, by code_in, by code_in, rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide,
     by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
     RV32.sep_of_le (by decide) (by decide)⟩
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
-/-- A machine that encodes the 8 limbs at `0x3FCC5000` big-endian to
+/-- A machine that encodes the 8 limbs at `0x3FCC5100` big-endian to
 `0x3FCC6000` with the stack at `0x3FCC8000` meets `toBeBytes8_correct`'s
 hypotheses. -/
 theorem exists_toBeBytes8_machine :
@@ -1221,8 +1222,8 @@ theorem exists_toBeBytes8_machine :
       sp0.toNat % 16 = 0 ∧ 0x70 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧ s.toNat % 4 = 0 ∧
       s.toNat + 32 ≤ 0x40000000 ∧ out.toNat + 32 ≤ 0x40000000 ∧ RV32.Sep s 32 (sp0 + 0xFFFFFF90) 0x70 ∧
       RV32.Sep out 32 (sp0 + 0xFFFFFF90) 0x70 :=
-  ⟨⟨fun r => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC5000 else if r = RV32.sp then 0x3FCC8000
-      else 0, BitVec.ofNat 32 Image.toBeBytes8Address, witnessMemSha2⟩, 0x3FCC6000, 0x3FCC5000, 0x3FCC8000, 0,
+  ⟨⟨fun r => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 0x3FCC5100 else if r = RV32.sp then 0x3FCC8000
+      else 0, BitVec.ofNat 32 Image.toBeBytes8Address, witnessMemSha2⟩, 0x3FCC6000, 0x3FCC5100, 0x3FCC8000, 0,
     by code_in, by code_in, by code_in, by code_in, rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide,
     by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
     RV32.sep_of_le (by decide) (by decide)⟩
@@ -1479,7 +1480,7 @@ def witnessMemKC : RV32.Word → BitVec 8 :=
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 4000000 in
 /-- A machine that calls the compact `compress256` on 2 blocks (`n = 2`) with
-the state at `0x3FCC5000`, the blocks at `0x3FCC6000`, and the stack at
+the state at `0x3FCC5100`, the blocks at `0x3FCC6000`, and the stack at
 `0x3FCC8000` meets `kcCompress_correct`'s hypotheses. -/
 theorem exists_kcCompress_machine :
     ∃ (m : RV32.Machine) (P sp0 stp bp retAddr : RV32.Word) (n : Nat),
@@ -1487,10 +1488,10 @@ theorem exists_kcCompress_machine :
       RV32.reg m RV32.a0 = stp ∧ RV32.reg m RV32.a1 = bp ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ 0 < n := by
   let regs : Fin 32 → RV32.Word := fun r =>
-    if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 2
+    if r = RV32.a0 then 0x3FCC5100 else if r = RV32.a1 then 0x3FCC6000 else if r = RV32.a2 then 2
     else if r = RV32.sp then 0x3FCC8000 else 0
   refine ⟨⟨regs, BitVec.ofNat 32 Image.sha256CompressAddress, witnessMemKC⟩,
-    BitVec.ofNat 32 Image.sha256CompressAddress, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, 2,
+    BitVec.ofNat 32 Image.sha256CompressAddress, 0x3FCC8000, 0x3FCC5100, 0x3FCC6000, 0, 2,
     ⟨by decide, ?_, ?_, ?_, ?_, ?_, by decide, by decide, by decide, by decide,
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
       RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
@@ -3134,11 +3135,11 @@ theorem exists_base64DecodeInto_machine :
 
 /-- Memory with `base64::encode_to::<Sha256>`, the alphabet, `update` and the
 code it runs, and the round constants where the image loads them, the empty
-hasher at `0x3FCC5000`, the bytes `hello` at `0x3FCC6000`, and zeros
+hasher at `0x3FCC5100`, the bytes `hello` at `0x3FCC6000`, and zeros
 elsewhere. -/
 def witnessMemBEE : RV32.Word → BitVec 8 :=
   RV32.regionMem
-    [(0x3FCC5000, emptyHasherBytes),
+    [(0x3FCC5100, emptyHasherBytes),
     (Image.base64EncodeToAddress, Image.base64EncodeToCode),
     (Image.b64AlphabetAddress, Image.b64AlphabetData),
     (Image.shaUpdateAddress, Image.shaUpdateCode),
@@ -3153,7 +3154,7 @@ def witnessMemBEE : RV32.Word → BitVec 8 :=
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
 /-- A machine that calls `base64::encode_to::<Sha256>` with the 5 bytes at
-`0x3FCC6000`, the empty hasher at `0x3FCC5000`, and the stack at
+`0x3FCC6000`, the empty hasher at `0x3FCC5100`, and the stack at
 `0x3FCC8000` meets `base64EncodeTo_correct`'s hypotheses. -/
 theorem exists_base64EncodeTo_machine :
     ∃ (m : RV32.Machine) (sp0 S D retAddr : RV32.Word) (n : Nat) (msg : List Nat),
@@ -3161,9 +3162,9 @@ theorem exists_base64EncodeTo_machine :
       RV32.reg m RV32.a1 = BitVec.ofNat 32 n ∧ RV32.reg m RV32.a2 = S ∧ RV32.reg m RV32.ra = retAddr ∧
       retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ RV32.HasherAt m.mem S msg ∧
       msg.length + 4 * (n / 3) + 4 < 2 ^ 32 := by
-  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 5 else if r = RV32.a2 then 0x3FCC5000
+  refine ⟨⟨(fun r : Fin 32 => if r = RV32.a0 then 0x3FCC6000 else if r = RV32.a1 then 5 else if r = RV32.a2 then 0x3FCC5100
       else if r = RV32.sp then 0x3FCC8000 else 0), RV32.BEE, witnessMemBEE⟩,
-    0x3FCC8000, 0x3FCC5000, 0x3FCC6000, 0, 5, [], ?_, rfl, rfl, rfl, rfl, rfl, by decide, rfl,
+    0x3FCC8000, 0x3FCC5100, 0x3FCC6000, 0, 5, [], ?_, rfl, rfl, rfl, rfl, rfl, by decide, rfl,
     ⟨by decide, ?_, rfl, ?_, ?_, ?_⟩, by decide⟩
   case refine_1 =>
     constructor
@@ -3426,9 +3427,9 @@ hypotheses. -/
 theorem exists_uint12IsNonzero_machine :
     ∃ (m : RV32.Machine) (base retAddr ptr : RV32.Word), base.toNat % 2 = 0 ∧
       RV32.CodeIn m.mem base Image.uint12IsNonzeroCode ∧
-      RV32.CodeIn m.mem (base + 0xFFFEF156) Image.uintRefIsNonzeroCode ∧ m.pc = base ∧
+      RV32.CodeIn m.mem (base + 0xFFFED346) Image.uintRefIsNonzeroCode ∧ m.pc = base ∧
       RV32.reg m RV32.a0 = ptr ∧ ptr.toNat % 4 = 0 ∧ (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xFFFEF156) Image.uintRefIsNonzeroCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xFFFED346) Image.uintRefIsNonzeroCode.length ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
   refine ⟨⟨leafRegs 0x3FCC5000 0 0, BitVec.ofNat 32 Image.uint12IsNonzeroAddress, witnessMemP384Neg⟩,
     BitVec.ofNat 32 Image.uint12IsNonzeroAddress, 0, 0x3FCC5000, by decide, ?_, ?_, rfl, rfl, by decide,
@@ -3617,7 +3618,7 @@ reader at `0x3FCC6000`, and the stack at `0x3FCC8000` meets
 `derSet_correct`'s hypotheses. -/
 theorem exists_derSet_machine :
     ∃ (m : RV32.Machine) (Q sp0 out d retAddr : RV32.Word), Q.toNat % 2 = 0 ∧
-      RV32.CodeIn m.mem Q Image.derSetCode ∧ RV32.NestEnv m.mem (Q + 0xFFFFF940) sp0 out d ∧ m.pc = Q ∧
+      RV32.CodeIn m.mem Q Image.derSetCode ∧ RV32.NestEnv m.mem (Q + 0xFFFFD0B0) sp0 out d ∧ m.pc = Q ∧
       RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = d ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
   refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.derSetAddress, witnessMemDer3⟩,
@@ -3638,7 +3639,7 @@ set_option maxHeartbeats 8000000 in
 meets `derOctetString_correct`'s hypotheses. -/
 theorem exists_derOctetString_machine :
     ∃ (m : RV32.Machine) (P sp0 out d retAddr : RV32.Word),
-      RV32.DerCallEnv m.mem Image.derOctetStringCode P 0xFFFFF792 sp0 out d 8 ∧ m.pc = P ∧
+      RV32.DerCallEnv m.mem Image.derOctetStringCode P 0xFFFFCF5A sp0 out d 8 ∧ m.pc = P ∧
       RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = d ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
   refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.derOctetStringAddress, witnessMemDer3⟩,
@@ -3659,7 +3660,7 @@ the reader at `0x3FCC6000`, and the stack at `0x3FCC8000` meets
 `derBitString_correct`'s hypotheses. -/
 theorem exists_derBitString_machine :
     ∃ (m : RV32.Machine) (P sp0 out d retAddr : RV32.Word),
-      RV32.DerCallEnv m.mem Image.derBitStringCode P 0xFFFFF1FC sp0 out d 8 ∧
+      RV32.DerCallEnv m.mem Image.derBitStringCode P 0xFFFFD3A0 sp0 out d 8 ∧
       RV32.Sep (d + 8) 8 (RV32.memLoad32 m.mem (d + 8)) (RV32.memLoad32 m.mem (d + 0xC)).toNat ∧ m.pc = P ∧
       RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = d ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
@@ -3709,7 +3710,7 @@ set_option maxHeartbeats 8000000 in
 hypotheses. -/
 theorem exists_derBooleanTrue_machine :
     ∃ (m : RV32.Machine) (P sp0 d retAddr : RV32.Word),
-      RV32.DerCallEnv m.mem Image.derBooleanTrueCode P 0xFFFFF4F2 sp0 d d 0 ∧
+      RV32.DerCallEnv m.mem Image.derBooleanTrueCode P 0xFFFFCE92 sp0 d d 0 ∧
       RV32.Sep (d + 8) 8 (RV32.memLoad32 m.mem (d + 8)) (RV32.memLoad32 m.mem (d + 0xC)).toNat ∧ m.pc = P ∧
       RV32.reg m RV32.sp = sp0 ∧ RV32.reg m RV32.a0 = d ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
@@ -4484,12 +4485,12 @@ set_option maxHeartbeats 8000000 in
 stack at `0x3FCC8000`, meets `equalSameLength_correct`'s hypotheses. -/
 theorem exists_equalSameLength_machine :
     ∃ (m : RV32.Machine) (base retAddr p q : RV32.Word) (n : Nat), base.toNat % 2 = 0 ∧
-      RV32.CodeIn m.mem base Image.equalSameLengthCode ∧ RV32.CodeIn m.mem (base + 0xC912) Image.memcmpCode ∧
+      RV32.CodeIn m.mem base Image.equalSameLengthCode ∧ RV32.CodeIn m.mem (base + 0xD3BE) Image.memcmpCode ∧
       m.pc = base ∧ RV32.reg m RV32.a0 = p ∧ RV32.reg m RV32.a1 = q ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧
       n < 2 ^ 32 ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
       (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
       RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 base Image.equalSameLengthCode.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xC912) Image.memcmpCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xD3BE) Image.memcmpCode.length ∧
       RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 p n ∧ RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 q n := by
   refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.equalSameLengthAddress,
     witnessMemDer2⟩, BitVec.ofNat 32 Image.equalSameLengthAddress, 0, 0x3FCC5000, 0x3FCC6000, 0, by decide, ?_, ?_,
@@ -4507,13 +4508,13 @@ set_option maxHeartbeats 8000000 in
 with the stack at `0x3FCC8000`, meets `sliceEq_correct`'s hypotheses. -/
 theorem exists_sliceEq_machine :
     ∃ (m : RV32.Machine) (base retAddr p q : RV32.Word) (pl ql : Nat), base.toNat % 2 = 0 ∧
-      RV32.CodeIn m.mem base Image.sliceEqCode ∧ RV32.CodeIn m.mem (base + 0xFFFFF776) Image.equalSameLengthCode ∧
-      RV32.CodeIn m.mem (base + 0xC088) Image.memcmpCode ∧ m.pc = base ∧ RV32.reg m RV32.a0 = p ∧
+      RV32.CodeIn m.mem base Image.sliceEqCode ∧ RV32.CodeIn m.mem (base + 0xFFFFEBAA) Image.equalSameLengthCode ∧
+      RV32.CodeIn m.mem (base + 0xBF68) Image.memcmpCode ∧ m.pc = base ∧ RV32.reg m RV32.a0 = p ∧
       RV32.reg m RV32.a1 = BitVec.ofNat 32 pl ∧ RV32.reg m RV32.a2 = q ∧ RV32.reg m RV32.a3 = BitVec.ofNat 32 ql ∧
       pl < 2 ^ 32 ∧ ql < 2 ^ 32 ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
       (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xFFFFF776) Image.equalSameLengthCode.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xC088) Image.memcmpCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xFFFFEBAA) Image.equalSameLengthCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xBF68) Image.memcmpCode.length ∧
       RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 p pl ∧ RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 q ql := by
   refine ⟨⟨leafRegs 0x3FCC5000 0 0x3FCC6000, BitVec.ofNat 32 Image.sliceEqAddress, witnessMemDer2⟩,
     BitVec.ofNat 32 Image.sliceEqAddress, 0, 0x3FCC5000, 0x3FCC6000, 0, 0, by decide, ?_, ?_, ?_, rfl, rfl, rfl, rfl,
@@ -5008,9 +5009,9 @@ hypotheses. -/
 theorem exists_uint8IsNonzero_machine :
     ∃ (m : RV32.Machine) (base retAddr ptr : RV32.Word), base.toNat % 2 = 0 ∧
       RV32.CodeIn m.mem base Image.uint8IsNonzeroCode ∧
-      RV32.CodeIn m.mem (base + 0xFFFF120E) Image.uintRefIsNonzeroCode ∧ m.pc = base ∧
+      RV32.CodeIn m.mem (base + 0xFFFEF3FE) Image.uintRefIsNonzeroCode ∧ m.pc = base ∧
       RV32.reg m RV32.a0 = ptr ∧ ptr.toNat % 4 = 0 ∧ (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xFFFF120E) Image.uintRefIsNonzeroCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xFFFEF3FE) Image.uintRefIsNonzeroCode.length ∧
       RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr := by
   refine ⟨⟨leafRegs 0x3FCC5000 0 0, BitVec.ofNat 32 Image.uint8IsNonzeroAddress, witnessMemNorm8⟩,
     BitVec.ofNat 32 Image.uint8IsNonzeroAddress, 0, 0x3FCC5000, by decide, ?_, ?_, rfl, rfl, by decide,
@@ -5507,11 +5508,11 @@ set_option maxHeartbeats 8000000 in
 hypotheses. -/
 theorem exists_arr32Eq_machine :
     ∃ (m : RV32.Machine) (base retAddr p q : RV32.Word), base.toNat % 2 = 0 ∧
-      RV32.CodeIn m.mem base Image.arr32EqCode ∧ RV32.CodeIn m.mem (base + 0xC0F0) Image.memcmpCode ∧ m.pc = base ∧
+      RV32.CodeIn m.mem base Image.arr32EqCode ∧ RV32.CodeIn m.mem (base + 0xC032) Image.memcmpCode ∧ m.pc = base ∧
       RV32.reg m RV32.a0 = p ∧ RV32.reg m RV32.a1 = q ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
       (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
       RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 base Image.arr32EqCode.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xC0F0) Image.memcmpCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xC032) Image.memcmpCode.length ∧
       RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 p 32 ∧ RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 q 32 := by
   refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.arr32EqAddress, witnessMemWrap⟩,
     BitVec.ofNat 32 Image.arr32EqAddress, 0, 0x3FCC5000, 0x3FCC6000, by decide, ?_, ?_, rfl, rfl, rfl, rfl, by decide,
@@ -5530,11 +5531,11 @@ set_option maxHeartbeats 8000000 in
 hypotheses. -/
 theorem exists_arr32Ne_machine :
     ∃ (m : RV32.Machine) (base retAddr p q : RV32.Word), base.toNat % 2 = 0 ∧
-      RV32.CodeIn m.mem base Image.arr32NeCode ∧ RV32.CodeIn m.mem (base + 0xB97A) Image.memcmpCode ∧ m.pc = base ∧
+      RV32.CodeIn m.mem base Image.arr32NeCode ∧ RV32.CodeIn m.mem (base + 0x9F10) Image.memcmpCode ∧ m.pc = base ∧
       RV32.reg m RV32.a0 = p ∧ RV32.reg m RV32.a1 = q ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
       (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
       RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 base Image.arr32NeCode.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xB97A) Image.memcmpCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0x9F10) Image.memcmpCode.length ∧
       RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 p 32 ∧ RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 q 32 := by
   refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.arr32NeAddress, witnessMemWrap⟩,
     BitVec.ofNat 32 Image.arr32NeAddress, 0, 0x3FCC5000, 0x3FCC6000, by decide, ?_, ?_, rfl, rfl, rfl, rfl, by decide,
@@ -5552,16 +5553,16 @@ set_option maxHeartbeats 8000000 in
 the stack at `0x3FCC8000` meets `sliceNe_correct`'s hypotheses. -/
 theorem exists_sliceNe_machine :
     ∃ (m : RV32.Machine) (base retAddr p q : RV32.Word) (pl ql : Nat), base.toNat % 2 = 0 ∧
-      RV32.CodeIn m.mem base Image.sliceNeCode ∧ RV32.CodeIn m.mem (base + 0x16) Image.sliceEqCode ∧
-      RV32.CodeIn m.mem (base + 0xFFFFF78C) Image.equalSameLengthCode ∧
-      RV32.CodeIn m.mem (base + 0xC09E) Image.memcmpCode ∧ m.pc = base ∧ RV32.reg m RV32.a0 = p ∧
+      RV32.CodeIn m.mem base Image.sliceNeCode ∧ RV32.CodeIn m.mem (base + 0xFFFFF372) Image.sliceEqCode ∧
+      RV32.CodeIn m.mem (base + 0xFFFFDF1C) Image.equalSameLengthCode ∧
+      RV32.CodeIn m.mem (base + 0xB2DA) Image.memcmpCode ∧ m.pc = base ∧ RV32.reg m RV32.a0 = p ∧
       RV32.reg m RV32.a1 = BitVec.ofNat 32 pl ∧ RV32.reg m RV32.a2 = q ∧ RV32.reg m RV32.a3 = BitVec.ofNat 32 ql ∧
       pl < 2 ^ 32 ∧ ql < 2 ^ 32 ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
       (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
       RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEC) 0x14 base Image.sliceNeCode.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEC) 0x14 (base + 0x16) Image.sliceEqCode.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEC) 0x14 (base + 0xFFFFF78C) Image.equalSameLengthCode.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEC) 0x14 (base + 0xC09E) Image.memcmpCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEC) 0x14 (base + 0xFFFFF372) Image.sliceEqCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEC) 0x14 (base + 0xFFFFDF1C) Image.equalSameLengthCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEC) 0x14 (base + 0xB2DA) Image.memcmpCode.length ∧
       RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEC) 0x14 p pl ∧ RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEC) 0x14 q ql := by
   let regs : Fin 32 → RV32.Word := fun r =>
     if r = RV32.a0 then 0x3FCC5000 else if r = RV32.a1 then 2 else if r = RV32.a2 then 0x3FCC6000
@@ -5582,11 +5583,11 @@ set_option maxHeartbeats 8000000 in
 at `0x3FCC8000` meets `choiceCtEq_correct`'s hypotheses. -/
 theorem exists_choiceCtEq_machine :
     ∃ (m : RV32.Machine) (base retAddr a b : RV32.Word), base.toNat % 2 = 0 ∧
-      RV32.CodeIn m.mem base Image.choiceCtEqCode ∧ RV32.CodeIn m.mem (base + 0x7C6E) Image.blackBoxU8Code ∧
+      RV32.CodeIn m.mem base Image.choiceCtEqCode ∧ RV32.CodeIn m.mem (base + 0x9A7E) Image.blackBoxU8Code ∧
       m.pc = base ∧ RV32.reg m RV32.a0 = a ∧ RV32.reg m RV32.a1 = b ∧ RV32.reg m RV32.ra = retAddr ∧
       retAddr &&& ~~~1 = retAddr ∧ (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
       RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEF) 0x11 base Image.choiceCtEqCode.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEF) 0x11 (base + 0x7C6E) Image.blackBoxU8Code.length := by
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFEF) 0x11 (base + 0x9A7E) Image.blackBoxU8Code.length := by
   refine ⟨⟨leafRegs 1 0 0, BitVec.ofNat 32 Image.choiceCtEqAddress, witnessMemWrap⟩,
     BitVec.ofNat 32 Image.choiceCtEqAddress, 0, 1, 0, by decide, ?_, ?_, rfl, rfl, rfl, rfl, by decide, by decide,
     ?_, ?_⟩
@@ -5643,8 +5644,8 @@ with the result at `0x3FCC5000`, the input at `0x3FCC6000`, and the stack at
 theorem exists_tagAndThen_machine :
     ∃ (m : RV32.Machine) (base retAddr out rp : RV32.Word), base.toNat % 2 = 0 ∧
       RV32.CodeIn m.mem base Image.tagAndThenCode ∧ RV32.CodeIn m.mem (base + 0x3E) Image.tagFromU8Code ∧
-      RV32.CodeIn m.mem (base + 0x119B4) Image.memcpyStubCode ∧
-      RV32.McEnv m.mem (base + 0x119B4 + 8) out rp (RV32.reg m RV32.sp + 0xFFFFFFF0) 0x34 ∧
+      RV32.CodeIn m.mem (base + 0x137C4) Image.memcpyStubCode ∧
+      RV32.McEnv m.mem (base + 0x137C4 + 8) out rp (RV32.reg m RV32.sp + 0xFFFFFFF0) 0x34 ∧
       m.pc = base ∧ RV32.reg m RV32.a0 = out ∧ RV32.reg m RV32.a1 = rp ∧ out.toNat % 4 = 0 ∧ rp.toNat % 4 = 0 ∧
       RV32.Sep out 8 (base + 0x3E) Image.tagFromU8Code.length ∧ RV32.reg m RV32.ra = retAddr ∧
       retAddr &&& ~~~1 = retAddr := by
@@ -5960,11 +5961,11 @@ set_option maxHeartbeats 8000000 in
 `arr32EqCrypto_correct`'s hypotheses. -/
 theorem exists_arr32EqCrypto_machine :
     ∃ (m : RV32.Machine) (base retAddr p q : RV32.Word), base.toNat % 2 = 0 ∧
-      RV32.CodeIn m.mem base Image.arr32EqCryptoCode ∧ RV32.CodeIn m.mem (base + 0xFA86) Image.memcmpCode ∧
+      RV32.CodeIn m.mem base Image.arr32EqCryptoCode ∧ RV32.CodeIn m.mem (base + 0x11896) Image.memcmpCode ∧
       m.pc = base ∧ RV32.reg m RV32.a0 = p ∧ RV32.reg m RV32.a1 = q ∧ RV32.reg m RV32.ra = retAddr ∧
       retAddr &&& ~~~1 = retAddr ∧ (RV32.reg m RV32.sp).toNat % 4 = 0 ∧
       RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 base Image.arr32EqCryptoCode.length ∧
-      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0xFA86) Image.memcmpCode.length ∧
+      RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 (base + 0x11896) Image.memcmpCode.length ∧
       RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 p 32 ∧ RV32.Sep (RV32.reg m RV32.sp + 0xFFFFFFFC) 4 q 32 := by
   refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, BitVec.ofNat 32 Image.arr32EqCryptoAddress, witnessMemB4⟩,
     BitVec.ofNat 32 Image.arr32EqCryptoAddress, 0, 0x3FCC5000, 0x3FCC6000, by decide, ?_, ?_, rfl, rfl, rfl, rfl,
