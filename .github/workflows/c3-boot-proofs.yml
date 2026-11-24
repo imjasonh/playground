@@ -157,6 +157,12 @@ jobs:
           python3 scripts/gen-p256-barrett.py
           git diff --exit-code C3BootProofs/Models/P256BarrettChain.lean
 
+      - name: Check the generated primality certificates
+        working-directory: c3-boot-proofs
+        run: |
+          python3 scripts/gen-prime-certs.py
+          git diff --exit-code C3BootProofs/Models/PrimeCerts.lean
+
       - name: Check the generated P-384 point doubling proof
         working-directory: c3-boot-proofs
         run: |
