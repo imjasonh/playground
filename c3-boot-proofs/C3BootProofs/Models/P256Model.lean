@@ -38,7 +38,8 @@ structure P256Consts (M : Word → BitVec 8) : Prop where
 of two scalars below `n` modulo `n`. -/
 def P256PsmOk : Prop := ∀ X, X < C3.p256.n * C3.p256.n → psmVal X = X % C3.p256.n
 
-/-- `SvP256Model` for the 32-byte `r` and `s` the check reads. -/
+/-- The P-256 check accepts only signatures that `p256Verify` accepts, for
+the 32-byte `r` and `s` it reads. -/
 def SvP256Model' (M : Word → BitVec 8) : Prop :=
   ∀ bp dg r s, SvP256Facts M bp dg r s → p256Verify (memBytes M bp 65) (memBytes M dg 32) (b32 r) (b32 s) = true
 

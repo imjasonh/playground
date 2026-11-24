@@ -23,8 +23,9 @@ namespace C3.Models
 
 open C3.RV32 C3.RV32.Pv C3.RV32.P3 C3.RV32.Dq C3.RV32.Fs C3.RV32.Sv C3.Image
 
-/-- `SvP384Model` for a memory that `SvPvAt` describes, and the 48-byte `r`
-and `s` that `p384_verify_prehash` reads. -/
+/-- `p384_verify_prehash` accepts only signatures that `p384Verify` accepts,
+for a memory that `SvPvAt` describes, and the 48-byte `r` and `s` that it
+reads. -/
 def SvP384Model' (M : Word → BitVec 8) : Prop :=
   ∀ (pk ph : Word) (len : Nat) (h : Bytes) (rp sp' : Word) (sr ss : Bytes) (pv : Word),
     (∃ M', SvPvAt M M' pk ph len h rp sp' sr ss) → SvPvRes M pk ph len h rp sp' sr ss (some pv) → pv ≠ 0 →
@@ -260,8 +261,7 @@ theorem p384_model_mem {M : Word → BitVec 8} {pk ph rp sp' : Word} {len : Nat}
   simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, memBytes_length]
   exact ⟨⟨⟨⟨⟨⟨rfl, rfl⟩, by omega⟩, hrn⟩, by omega⟩, hsn⟩, hfin⟩
 
-/-- **`SvP384Model`**, for a memory that `SvPvAt` describes and the 48-byte
-`r` and `s` the check reads. -/
+/-- **`SvP384Model'`**: the P-384 check computes `p384Verify`. -/
 theorem p384_model {M : Word → BitVec 8} (hp : IsPrime C3.p384.p) (hc : EC.AddClosed C3.p384)
     (ha : EC.AddAssoc C3.p384) (hadd : P384AddOk) (hdbl : P384DblOk) : SvP384Model' M := by
   intro pk ph len h rp sp' sr ss pv ⟨M', hM⟩ hres hpv

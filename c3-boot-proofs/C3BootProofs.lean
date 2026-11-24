@@ -322,6 +322,7 @@ import C3BootProofs.Proofs.SvD
 import C3BootProofs.Proofs.SvSegExt
 import C3BootProofs.Proofs.SvExtLoop
 import C3BootProofs.Proofs.SvPvModel
+import C3BootProofs.Proofs.SvPvWitness
 import C3BootProofs.Proofs.SvLh
 import C3BootProofs.Proofs.SvSegCert
 import C3BootProofs.Proofs.SvTp
