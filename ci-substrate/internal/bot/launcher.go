@@ -2,8 +2,12 @@ package bot
 
 import (
 	"context"
+	"errors"
+	"os"
 	"os/exec"
 	"strings"
+	"syscall"
+	"time"
 )
 
 // command returns the command that runs args in dir.
@@ -15,6 +19,10 @@ import (
 // collection that is stopping the world never lets the server answer, so
 // the process deadlocks. The child execs bash instead, which is not on the
 // mount, and bash enters the exec root as a process of its own.
+//
+// Each action runs in its own process group so timeout or lease cancellation
+// terminates the entire process tree instead of leaving grandchild processes
+// behind.
 //
 // A program name with no slash is looked up on the bot's PATH, as
 // exec.Command does; a relative path is relative to dir.
@@ -32,5 +40,18 @@ func (b *Bot) command(ctx context.Context, dir string, args []string) (*exec.Cmd
 	// runner image's shell is bash.
 	const script = `cd "$1" || exit 127; shift; name=$1; shift; prog=$1; shift; exec -a "$name" "$prog" "$@"`
 	argv := append([]string{"-c", script, "bash", dir, args[0], path}, args[1:]...)
-	return exec.CommandContext(ctx, b.shell, argv...), nil
+	cmd := exec.CommandContext(ctx, b.shell, argv...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil || cmd.Process.Pid <= 0 {
+			return nil
+		}
+		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
+	}
+	cmd.WaitDelay = 5 * time.Second
+	return cmd, nil
 }

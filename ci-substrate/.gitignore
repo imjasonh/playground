@@ -12,14 +12,12 @@
 /cas
 /cascache
 /casfs-csi
-/cictl
 /pool
 /rbe-run
 /runner
 /cmd/cas/cas
 /cmd/cascache/cascache
 /cmd/casfs-csi/casfs-csi
-/cmd/cictl/cictl
 /cmd/pool/pool
 /cmd/rbe-run/rbe-run
 /cmd/runner/runner

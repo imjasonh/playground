@@ -25,7 +25,7 @@
 # atespace, the WorkerPools, the casfs CSI driver with tenant-a's
 # StorageClass, the runner ActorTemplate, and the pool Deployment. External
 # volumes are behind Substrate's ExternalVolumes preview gate, so it turns
-# that on in ate-api-server. Then it runs cictl against cas and checks that
+# that on in ate-api-server. Then it runs the Go e2e tests against cas and checks that
 # an actor executed the action (the ActionResult's worker is an actor name,
 # not a Deployment runner) and read its inputs from the casfs volume. Last,
 # it checks that the pool sizes the burst WorkerPool: zero workers while the
@@ -188,7 +188,7 @@ if kubectl ate get actor-templates -a "${ATESPACE}" -o json | grep -q '"name": *
   kubectl ate delete actor-template ci-runner -a "${ATESPACE}"
 fi
 kubectl ate --preview create actor-template -f "${WORKDIR}/runner-template.yaml"
-# The cictl run below starts before a golden snapshot would be ready, so it
+# The e2e test run below starts before a golden snapshot would be ready, so it
 # can't see an actor restored from one reporting the golden actor's name.
 golden="$(kubectl ate get actor-templates -a "${ATESPACE}" -o json | python3 -c '
 import json, sys
@@ -240,7 +240,12 @@ PORT_FORWARD_PIDS+=("$!")
 kubectl -n ci-substrate port-forward svc/cascache 19092:9092 >/dev/null 2>&1 &
 PORT_FORWARD_PIDS+=("$!")
 sleep 2
-go run "${ROOT}/cmd/cictl" -origin-addr=localhost:18980 -cache-addr=localhost:19092 -exec-timeout=5m -worker-prefix=ci-runner- -expect-input-mode=volume run || {
+CI_SUBSTRATE_E2E_ORIGIN_ADDR=localhost:18980 \
+CI_SUBSTRATE_E2E_CACHE_ADDR=localhost:19092 \
+CI_SUBSTRATE_E2E_EXEC_TIMEOUT=5m \
+CI_SUBSTRATE_E2E_WORKER_PREFIX=ci-runner- \
+CI_SUBSTRATE_E2E_EXPECT_INPUT_MODE=volume \
+  go test -v -count=1 -run '^TestE2E' "${ROOT}/e2e" || {
   pool_diagnostics
   exit 1
 }

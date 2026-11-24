@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	workerv1 "github.com/imjasonh/playground/ci-substrate/api/worker/v1"
@@ -60,9 +62,12 @@ const (
 // runner that keeps dying mid-action should not hold a job forever.
 const maxAttempts = 3
 
-// Scheduler implements the Execution and WorkerService servers.
+var emptyBlobHash = digest.FromBytes(nil).GetHash()
+
+// Scheduler implements the Execution, Operations, and WorkerService servers.
 type Scheduler struct {
 	repb.UnimplementedExecutionServer
+	longrunning.UnimplementedOperationsServer
 	workerv1.UnimplementedWorkerServiceServer
 
 	store         *blob.Store
@@ -87,6 +92,7 @@ type job struct {
 	instance   string
 	action     *repb.Digest
 	doNotCache bool
+	priority   int32
 	enqueued   time.Time
 
 	// parent is the span of the Execute call that queued the job, and
@@ -244,6 +250,9 @@ func (s *Scheduler) Execute(req *repb.ExecuteRequest, stream repb.Execution_Exec
 	if err := s.tenants.Authorize(ctx, req.GetInstanceName()); err != nil {
 		return err
 	}
+	if fn := req.GetDigestFunction(); fn != repb.DigestFunction_UNKNOWN && fn != repb.DigestFunction_SHA256 {
+		return status.Errorf(codes.Unimplemented, "digest function %v not supported", fn)
+	}
 	if err := digest.Validate(req.GetActionDigest()); err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -253,7 +262,7 @@ func (s *Scheduler) Execute(req *repb.ExecuteRequest, stream repb.Execution_Exec
 	}
 	if !req.GetSkipCacheLookup() && !action.GetDoNotCache() {
 		ar, err := s.actions.Get(req.GetInstanceName(), req.GetActionDigest())
-		if err == nil {
+		if err == nil && s.actionResultComplete(ar) {
 			s.recordExecute(ctx, req.GetInstanceName(), "cached")
 			op, err := operation(uuid.NewString(), req.GetActionDigest(), repb.ExecutionStage_COMPLETED, &repb.ExecuteResponse{Result: ar, CachedResult: true})
 			if err != nil {
@@ -261,19 +270,49 @@ func (s *Scheduler) Execute(req *repb.ExecuteRequest, stream repb.Execution_Exec
 			}
 			return stream.Send(op)
 		}
-		if !errors.Is(err, actioncache.ErrNotFound) {
+		if err != nil && !errors.Is(err, actioncache.ErrNotFound) {
 			return status.Error(codes.Internal, err.Error())
 		}
 	}
-	j, merged := s.submit(ctx, req.GetInstanceName(), req.GetActionDigest(), action.GetDoNotCache())
+	priority := req.GetExecutionPolicy().GetPriority()
+	j, merged := s.submit(ctx, req.GetInstanceName(), req.GetActionDigest(), action.GetDoNotCache(), priority)
 	result := "queued"
 	if merged {
 		result = "merged"
 		trace.SpanFromContext(ctx).AddLink(trace.Link{SpanContext: j.parent})
 	}
 	s.recordExecute(ctx, req.GetInstanceName(), result)
-	trace.SpanFromContext(ctx).SetAttributes(attribute.String("ci_substrate.operation", j.id))
+	trace.SpanFromContext(ctx).SetAttributes(
+		attribute.String("ci_substrate.operation", j.id),
+		attribute.Int64("ci_substrate.priority", int64(priority)),
+	)
 	return s.watch(ctx, j, stream.Send)
+}
+
+func (s *Scheduler) actionResultComplete(ar *repb.ActionResult) bool {
+	has := func(d *repb.Digest) bool {
+		if d == nil {
+			return true
+		}
+		if d.GetSizeBytes() == 0 && d.GetHash() == emptyBlobHash {
+			return true
+		}
+		return s.store.Has(d)
+	}
+	if !has(ar.GetStdoutDigest()) || !has(ar.GetStderrDigest()) {
+		return false
+	}
+	for _, f := range ar.GetOutputFiles() {
+		if !has(f.GetDigest()) {
+			return false
+		}
+	}
+	for _, dir := range ar.GetOutputDirectories() {
+		if !has(dir.GetTreeDigest()) || !has(dir.GetRootDirectoryDigest()) {
+			return false
+		}
+	}
+	return true
 }
 
 // recordExecute counts an Execute call by how it was served.
@@ -304,6 +343,58 @@ func (s *Scheduler) WaitExecution(req *repb.WaitExecutionRequest, stream repb.Ex
 	return s.watch(stream.Context(), j, stream.Send)
 }
 
+// GetOperation returns the current state of an in-flight or recently completed
+// execution operation for the caller's tenant.
+func (s *Scheduler) GetOperation(ctx context.Context, req *longrunning.GetOperationRequest) (*longrunning.Operation, error) {
+	s.mu.Lock()
+	j, ok := s.jobs[req.GetName()]
+	if !ok {
+		s.mu.Unlock()
+		return nil, status.Error(codes.NotFound, "operation not found")
+	}
+	instance, action, stage, resp := j.instance, j.action, j.stage, j.response
+	s.mu.Unlock()
+	if err := s.tenants.Authorize(ctx, instance); err != nil {
+		return nil, err
+	}
+	return operation(req.GetName(), action, stage, resp)
+}
+
+// CancelOperation cancels a queued or running operation. Any runner holding
+// the job's lease observes Cancelled=true on its next Heartbeat and stops the
+// action's process tree.
+func (s *Scheduler) CancelOperation(ctx context.Context, req *longrunning.CancelOperationRequest) (*emptypb.Empty, error) {
+	s.mu.Lock()
+	j, ok := s.jobs[req.GetName()]
+	if !ok {
+		s.mu.Unlock()
+		return nil, status.Error(codes.NotFound, "operation not found")
+	}
+	instance := j.instance
+	s.mu.Unlock()
+	if err := s.tenants.Authorize(ctx, instance); err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	j, ok = s.jobs[req.GetName()]
+	if !ok || j.stage == repb.ExecutionStage_COMPLETED {
+		return &emptypb.Empty{}, nil
+	}
+	for i, qj := range s.queue {
+		if qj == j {
+			s.queue = append(s.queue[:i], s.queue[i+1:]...)
+			break
+		}
+	}
+	j.botID = ""
+	s.finishLocked(j, &repb.ExecuteResponse{
+		Status: status.New(codes.Canceled, "operation cancelled").Proto(),
+	})
+	return &emptypb.Empty{}, nil
+}
+
 func (s *Scheduler) loadAction(d *repb.Digest) (*repb.Action, error) {
 	b, err := s.store.Get(d)
 	if errors.Is(err, blob.ErrNotFound) {
@@ -327,7 +418,7 @@ func (s *Scheduler) loadAction(d *repb.Digest) (*repb.Action, error) {
 // run, and reports whether it joined one. Jobs never merge across
 // instances: that would let one tenant's queue position reveal another
 // tenant's actions.
-func (s *Scheduler) submit(ctx context.Context, instance string, action *repb.Digest, doNotCache bool) (*job, bool) {
+func (s *Scheduler) submit(ctx context.Context, instance string, action *repb.Digest, doNotCache bool, priority int32) (*job, bool) {
 	carrier := propagation.MapCarrier{}
 	otel.GetTextMapPropagator().Inject(ctx, carrier)
 	md := telemetry.RequestMetadata(ctx)
@@ -344,6 +435,7 @@ func (s *Scheduler) submit(ctx context.Context, instance string, action *repb.Di
 		instance:             instance,
 		action:               action,
 		doNotCache:           doNotCache,
+		priority:             priority,
 		enqueued:             time.Now(),
 		parent:               trace.SpanContextFromContext(ctx),
 		traceContext:         carrier,
@@ -374,7 +466,16 @@ func (s *Scheduler) enqueueLocked(j *job) {
 			}
 		}
 	}
-	s.queue = append(s.queue, j)
+	// Insert in priority order (lower numeric priority is more urgent),
+	// preserving FIFO order among jobs of equal priority.
+	pos := len(s.queue)
+	for i, existing := range s.queue {
+		if j.priority < existing.priority {
+			pos = i
+			break
+		}
+	}
+	s.queue = slices.Insert(s.queue, pos, j)
 }
 
 // leaseLocked marks j executing by botID. A job handed to a waiting Lease
@@ -430,10 +531,14 @@ func (s *Scheduler) finishLocked(j *job, resp *repb.ExecuteResponse) {
 // recordFinish accounts a finished job to the metrics and its invocation.
 func (s *Scheduler) recordFinish(j *job) {
 	outcome := "ok"
-	switch {
-	case status.FromProto(j.response.GetStatus()).Code() == codes.Unavailable:
+	switch code := status.FromProto(j.response.GetStatus()).Code(); {
+	case code == codes.Unavailable:
 		outcome = "lease_expired"
-	case j.response.GetStatus().GetCode() != 0:
+	case code == codes.DeadlineExceeded:
+		outcome = "timeout"
+	case code == codes.Canceled:
+		outcome = "cancelled"
+	case code != codes.OK:
 		outcome = "error"
 	case j.response.GetResult().GetExitCode() != 0:
 		outcome = "exit_nonzero"
@@ -540,8 +645,10 @@ func (s *Scheduler) Lease(ctx context.Context, req *workerv1.LeaseRequest) (*wor
 		select {
 		case j := <-w.ch:
 			s.mu.Lock()
-			j.botID = ""
-			s.enqueueLocked(j)
+			if j.stage != repb.ExecutionStage_COMPLETED {
+				j.botID = ""
+				s.enqueueLocked(j)
+			}
 			s.mu.Unlock()
 		default:
 		}
@@ -549,6 +656,9 @@ func (s *Scheduler) Lease(ctx context.Context, req *workerv1.LeaseRequest) (*wor
 	case j := <-w.ch:
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		if j.stage == repb.ExecutionStage_COMPLETED {
+			return &workerv1.LeaseResponse{}, nil
+		}
 		if ctx.Err() != nil {
 			// The runner went away while the job was handed over, as a
 			// stopping pod does. Requeue now instead of waiting for the
@@ -619,7 +729,25 @@ func (s *Scheduler) Complete(ctx context.Context, req *workerv1.CompleteRequest)
 	// The runner can't tell a transient failure from a bad action, so an
 	// error is final; only a runner that stops heartbeating is retried.
 	if msg := req.GetErrorMessage(); msg != "" {
-		s.finishLocked(j, &repb.ExecuteResponse{Status: status.New(codes.Internal, msg).Proto()})
+		code := codes.Internal
+		if strings.HasPrefix(msg, "deadline exceeded:") {
+			code = codes.DeadlineExceeded
+		}
+		var ar *repb.ActionResult
+		if req.GetActionResult() != nil {
+			cand := &repb.ActionResult{}
+			if err := req.GetActionResult().UnmarshalTo(cand); err == nil {
+				if cand.ExecutionMetadata == nil {
+					cand.ExecutionMetadata = &repb.ExecutedActionMetadata{}
+				}
+				cand.ExecutionMetadata.QueuedTimestamp = timestamppb.New(j.enqueued)
+				ar = cand
+			}
+		}
+		s.finishLocked(j, &repb.ExecuteResponse{
+			Result: ar,
+			Status: status.New(code, msg).Proto(),
+		})
 		return &workerv1.CompleteResponse{}, nil
 	}
 	ar := &repb.ActionResult{}

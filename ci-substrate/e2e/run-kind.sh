@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Spin up a KinD cluster, ko-apply the cas, cascache, and runner control
-# plane, and run cictl against them over port-forwards to prove multi-tenant
-# isolation, node-local cache reuse, and remote execution. Then build with
+# plane, and run the Go e2e test suite against them over port-forwards to prove
+# multi-tenant isolation, node-local cache reuse, production RBE APIs, and
+# remote execution. Then build with
 # stock Bazel as two users in two tenants (run-bazel.sh) to prove neither can
 # see or change the other's results. Last, build and test ci-substrate itself
 # with Bazel on the cluster (run-dogfood.sh; set CI_SUBSTRATE_DOGFOOD=0 to
@@ -231,11 +232,12 @@ kubectl -n ci-substrate rollout status deployment/runner-tenant-b --timeout=300s
 
 # Port-forward Services, not pods: a rollout replaces DaemonSet pod names.
 LOCAL_ORIGIN_PORT=18980
+LOCAL_HTTP_PORT=18080
 LOCAL_CACHE_PORT=19092
 LOCAL_METRICS_PORT=19090
 LOCAL_JAEGER_PORT=16686
 LOCAL_PROM_PORT=18889
-kubectl -n ci-substrate port-forward svc/cas "${LOCAL_ORIGIN_PORT}:8980" >/dev/null &
+kubectl -n ci-substrate port-forward svc/cas "${LOCAL_ORIGIN_PORT}:8980" "${LOCAL_HTTP_PORT}:8080" >/dev/null &
 PORT_FORWARD_PIDS+=($!)
 kubectl -n ci-substrate port-forward svc/cascache "${LOCAL_CACHE_PORT}:9092" "${LOCAL_METRICS_PORT}:9090" >/dev/null &
 PORT_FORWARD_PIDS+=($!)
@@ -257,24 +259,24 @@ await_tcp_port() {
   return 1
 }
 
-for port in "${LOCAL_ORIGIN_PORT}" "${LOCAL_CACHE_PORT}" "${LOCAL_METRICS_PORT}" "${LOCAL_JAEGER_PORT}" "${LOCAL_PROM_PORT}"; do
+for port in "${LOCAL_ORIGIN_PORT}" "${LOCAL_HTTP_PORT}" "${LOCAL_CACHE_PORT}" "${LOCAL_METRICS_PORT}" "${LOCAL_JAEGER_PORT}" "${LOCAL_PROM_PORT}"; do
   await_tcp_port "${port}"
 done
 
-echo "Running cictl demo against port-forwards"
-go build -o "${WORKDIR}/cictl" ./cmd/cictl
-"${WORKDIR}/cictl" \
-  -origin-addr="127.0.0.1:${LOCAL_ORIGIN_PORT}" \
-  -cache-addr="127.0.0.1:${LOCAL_CACHE_PORT}" \
-  -cache-metrics-url="http://127.0.0.1:${LOCAL_METRICS_PORT}" \
-  -token-a=tok-a \
-  -token-b=tok-b \
-  -instance-a=tenant-a \
-  -shared=shared \
-  -exec-timeout=3m
+echo "Running Go e2e tests against port-forwards"
+CI_SUBSTRATE_E2E_ORIGIN_ADDR="127.0.0.1:${LOCAL_ORIGIN_PORT}" \
+CI_SUBSTRATE_E2E_CACHE_ADDR="127.0.0.1:${LOCAL_CACHE_PORT}" \
+CI_SUBSTRATE_E2E_CACHE_METRICS_URL="http://127.0.0.1:${LOCAL_METRICS_PORT}" \
+CI_SUBSTRATE_E2E_TOKEN_A=tok-a \
+CI_SUBSTRATE_E2E_TOKEN_A_RO=tok-a-ro \
+CI_SUBSTRATE_E2E_TOKEN_B=tok-b \
+CI_SUBSTRATE_E2E_INSTANCE_A=tenant-a \
+CI_SUBSTRATE_E2E_SHARED=shared \
+CI_SUBSTRATE_E2E_EXEC_TIMEOUT=3m \
+  go test -v -count=1 -run '^TestE2E' ./e2e
 
 echo "Building with stock Bazel as two tenants"
-bash "${ROOT}/e2e/run-bazel.sh" "127.0.0.1:${LOCAL_ORIGIN_PORT}"
+bash "${ROOT}/e2e/run-bazel.sh" "127.0.0.1:${LOCAL_ORIGIN_PORT}" "127.0.0.1:${LOCAL_HTTP_PORT}"
 
 echo "Checking a Bazel build's trace and metrics"
 bash "${ROOT}/e2e/run-telemetry.sh" "127.0.0.1:${LOCAL_ORIGIN_PORT}" \

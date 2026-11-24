@@ -22,14 +22,19 @@ import (
 // MetadataKey is the gRPC metadata header that carries a tenant token.
 const MetadataKey = "x-ci-substrate-tenant"
 
-// Registry maps tokens to the instance names they may use.
+// Registry maps tokens to the instance names they may use and tracks whether
+// each token may write to the ActionCache directly.
 type Registry struct {
-	allow map[string]map[string]bool
+	allow      map[string]map[string]bool
+	acReadOnly map[string]bool
 }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
-	return &Registry{allow: map[string]map[string]bool{}}
+	return &Registry{
+		allow:      map[string]map[string]bool{},
+		acReadOnly: map[string]bool{},
+	}
 }
 
 // Allow grants token access to each named instance. Calling it again for the
@@ -43,6 +48,14 @@ func (r *Registry) Allow(token string, instances ...string) {
 	for _, name := range instances {
 		set[name] = true
 	}
+}
+
+// AllowReadOnlyAC grants token access to each named instance while denying
+// direct ActionCache updates (UpdateActionResult). Developers can use such a
+// token to read CI-populated results without poisoning the shared action cache.
+func (r *Registry) AllowReadOnlyAC(token string, instances ...string) {
+	r.Allow(token, instances...)
+	r.acReadOnly[token] = true
 }
 
 // TokenFor returns a token that may use instanceName, for a component that
@@ -105,6 +118,18 @@ func (r *Registry) Authorize(ctx context.Context, instanceName string) error {
 	}
 	if !set[instanceName] {
 		return status.Errorf(codes.PermissionDenied, "%v: %q", errUnauthorized, instanceName)
+	}
+	return nil
+}
+
+// AuthorizeActionCacheWrite authorizes an ActionCache write for instanceName.
+// Tokens configured with AllowReadOnlyAC receive PermissionDenied.
+func (r *Registry) AuthorizeActionCacheWrite(ctx context.Context, instanceName string) error {
+	if err := r.Authorize(ctx, instanceName); err != nil {
+		return err
+	}
+	if r.acReadOnly[Token(ctx)] {
+		return status.Errorf(codes.PermissionDenied, "token is read-only for action cache on instance %q", instanceName)
 	}
 	return nil
 }

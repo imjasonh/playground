@@ -33,6 +33,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	workerv1 "github.com/imjasonh/playground/ci-substrate/api/worker/v1"
@@ -43,6 +44,11 @@ import (
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
 	"github.com/imjasonh/playground/ci-substrate/internal/tree"
 )
+
+// errActionTimedOut signals that the action exceeded Action.timeout. The
+// scheduler maps the "deadline exceeded:" prefix to codes.DeadlineExceeded
+// while preserving any partial ActionResult (stdout, stderr, outputs).
+var errActionTimedOut = errors.New("deadline exceeded: action timed out")
 
 // InputMode selects how the exec root is built.
 type InputMode string
@@ -293,22 +299,36 @@ func (b *Bot) RunJob(ctx context.Context, job *workerv1.Job) {
 	span.SetAttributes(fetcher.attributes()...)
 	req := &workerv1.CompleteRequest{BotId: b.cfg.BotID, JobId: job.GetId()}
 	outcome := "ok"
-	if err != nil {
+	switch {
+	case errors.Is(err, errActionTimedOut):
+		outcome = "timeout"
+		clog.WarnContext(ctx, "action timed out", "took", time.Since(start))
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, err.Error())
+		req.ErrorMessage = err.Error()
+		if ar != nil {
+			if anyAR, aerr := anypb.New(ar); aerr == nil {
+				req.ActionResult = anyAR
+			}
+		}
+	case err != nil:
 		outcome = "error"
 		clog.ErrorContext(ctx, "action failed to run", "err", err)
 		span.RecordError(err)
 		span.SetStatus(otelcodes.Error, err.Error())
 		req.ErrorMessage = err.Error()
-	} else if anyAR, err := anypb.New(ar); err != nil {
-		outcome = "error"
-		req.ErrorMessage = err.Error()
-	} else {
-		req.ActionResult = anyAR
-		if ar.GetExitCode() != 0 {
-			outcome = "exit_nonzero"
+	default:
+		if anyAR, aerr := anypb.New(ar); aerr != nil {
+			outcome = "error"
+			req.ErrorMessage = aerr.Error()
+		} else {
+			req.ActionResult = anyAR
+			if ar.GetExitCode() != 0 {
+				outcome = "exit_nonzero"
+			}
+			span.SetAttributes(attribute.Int("ci_substrate.exit_code", int(ar.GetExitCode())))
+			clog.InfoContext(ctx, "action ran", "exitCode", ar.GetExitCode(), "took", time.Since(start))
 		}
-		span.SetAttributes(attribute.Int("ci_substrate.exit_code", int(ar.GetExitCode())))
-		clog.InfoContext(ctx, "action ran", "exitCode", ar.GetExitCode(), "took", time.Since(start))
 	}
 	// Report with a context that outlives a cancelled lease, so a result
 	// is not lost to the cancel that stopped the heartbeat.
@@ -423,19 +443,30 @@ func (b *Bot) execute(ctx context.Context, job *workerv1.Job, f tree.Fetcher) (*
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	md.ExecutionStartTimestamp = timestamppb.Now()
+	execStart := time.Now()
+	md.ExecutionStartTimestamp = timestamppb.New(execStart)
 	_, end = b.stage(ctx, "run")
 	runErr := cmd.Run()
+	execEnd := time.Now()
 	end(nil)
-	md.ExecutionCompletedTimestamp = timestamppb.Now()
+	md.ExecutionCompletedTimestamp = timestamppb.New(execEnd)
+	md.VirtualExecutionDuration = durationpb.New(execEnd.Sub(execStart))
+	if ruAttrs := rusageAttributes(cmd.ProcessState); len(ruAttrs) > 0 {
+		trace.SpanFromContext(ctx).SetAttributes(ruAttrs...)
+	}
+
 	ar := &repb.ActionResult{ExecutionMetadata: md}
+	timedOut := false
 	var exitErr *exec.ExitError
 	switch {
 	case runErr == nil:
+	case runCtx.Err() != nil && ctx.Err() == nil:
+		timedOut = true
+		if errors.As(runErr, &exitErr) {
+			ar.ExitCode = int32(exitErr.ExitCode())
+		}
 	case errors.As(runErr, &exitErr):
 		ar.ExitCode = int32(exitErr.ExitCode())
-	case runCtx.Err() != nil && ctx.Err() == nil:
-		return nil, status.Error(codes.DeadlineExceeded, "action timed out")
 	default:
 		return nil, fmt.Errorf("starting command: %w", runErr)
 	}
@@ -445,10 +476,16 @@ func (b *Bot) execute(ctx context.Context, job *workerv1.Job, f tree.Fetcher) (*
 	err = b.collectOutputs(uploadCtx, instance, workDir, command, ar, stdout.Bytes(), stderr.Bytes())
 	end(err)
 	if err != nil {
+		if timedOut {
+			return ar, errActionTimedOut
+		}
 		return nil, fmt.Errorf("uploading outputs: %w", err)
 	}
 	md.OutputUploadCompletedTimestamp = timestamppb.Now()
 	md.WorkerCompletedTimestamp = md.OutputUploadCompletedTimestamp
+	if timedOut {
+		return ar, errActionTimedOut
+	}
 	return ar, nil
 }
 
@@ -636,7 +673,15 @@ func (b *Bot) collectOutputs(ctx context.Context, instance, workDir string, comm
 			for k, v := range out.Blobs {
 				blobs[k] = v
 			}
-			ar.OutputDirectories = append(ar.OutputDirectories, &repb.OutputDirectory{Path: p, TreeDigest: add(tree.Marshal(out.Tree))})
+			rootDigest := add(tree.Marshal(out.Tree.GetRoot()))
+			for _, child := range out.Tree.GetChildren() {
+				add(tree.Marshal(child))
+			}
+			ar.OutputDirectories = append(ar.OutputDirectories, &repb.OutputDirectory{
+				Path:                p,
+				TreeDigest:          add(tree.Marshal(out.Tree)),
+				RootDirectoryDigest: rootDigest,
+			})
 		default:
 			data, err := os.ReadFile(full)
 			if err != nil {

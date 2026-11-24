@@ -55,11 +55,16 @@ func (s *CacheServer) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlo
 	}
 	var total int64
 	for _, d := range req.GetDigests() {
-		total += d.GetSizeBytes()
+		sz := d.GetSizeBytes()
+		if sz <= 0 {
+			continue
+		}
+		if sz > MaxBatchBytes || total > MaxBatchBytes-sz {
+			return nil, status.Errorf(codes.InvalidArgument, "batch exceeds %d bytes; use ByteStream", MaxBatchBytes)
+		}
+		total += sz
 	}
-	if total > MaxBatchBytes {
-		return nil, status.Errorf(codes.InvalidArgument, "batch of %d bytes exceeds %d; use ByteStream", total, MaxBatchBytes)
-	}
+	comp := selectCompressor(req.GetAcceptableCompressors())
 	resp := &repb.BatchReadBlobsResponse{}
 	var hits, misses int
 	var hitBytes, missBytes int64
@@ -69,8 +74,11 @@ func (s *CacheServer) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlo
 			r.Status = status.New(codes.InvalidArgument, err.Error()).Proto()
 		} else if b, local, err := s.cache.Get(s.originCtx(ctx), req.GetInstanceName(), d); err != nil {
 			r.Status = status.Convert(err).Proto()
+		} else if payload, cerr := compressBytes(comp, b); cerr != nil {
+			r.Status = status.New(codes.Internal, cerr.Error()).Proto()
 		} else {
-			r.Data = b
+			r.Data = payload
+			r.Compressor = comp
 			r.Status = status.New(codes.OK, "").Proto()
 			if local {
 				hits++
@@ -91,14 +99,18 @@ func (s *CacheServer) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlo
 	return resp, nil
 }
 
-// Read serves a blob from the verified cache over ByteStream.
+// Read serves a blob from the verified cache over ByteStream, optionally
+// compressed.
 func (s *CacheServer) Read(req *bytestream.ReadRequest, stream bytestream.ByteStream_ReadServer) error {
-	instance, d, err := ParseReadResource(req.GetResourceName())
+	instance, d, comp, err := ParseReadResourceCompressed(req.GetResourceName())
 	if err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
 	if err := s.tenants.Authorize(stream.Context(), instance); err != nil {
 		return err
+	}
+	if comp != repb.Compressor_IDENTITY && req.GetReadLimit() != 0 {
+		return status.Error(codes.InvalidArgument, "read_limit must be 0 for compressed-blobs reads")
 	}
 	b, local, err := s.cache.Get(s.originCtx(stream.Context()), instance, d)
 	if err != nil {
@@ -108,7 +120,7 @@ func (s *CacheServer) Read(req *bytestream.ReadRequest, stream bytestream.ByteSt
 		attribute.Bool("ci_substrate.cache.hit", local),
 		attribute.Int64("ci_substrate.bytes", int64(len(b))),
 	)
-	_, err = streamBytes(b, req.GetReadOffset(), req.GetReadLimit(), stream)
+	_, err = streamBytes(b, req.GetReadOffset(), req.GetReadLimit(), comp, stream)
 	return err
 }
 

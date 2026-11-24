@@ -1,0 +1,24 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "tlscfg",
+    srcs = ["tlscfg.go"],
+    importpath = "github.com/imjasonh/playground/ci-substrate/internal/tlscfg",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//credentials/insecure",
+    ],
+)
+
+go_test(
+    name = "tlscfg_test",
+    srcs = ["tlscfg_test.go"],
+    embed = [":tlscfg"],
+    deps = [
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+    ],
+)

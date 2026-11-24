@@ -22,7 +22,6 @@ import (
 	"github.com/sethvargo/go-envconfig"
 	"google.golang.org/genproto/googleapis/bytestream"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
@@ -31,6 +30,7 @@ import (
 	"github.com/imjasonh/playground/ci-substrate/internal/remote"
 	"github.com/imjasonh/playground/ci-substrate/internal/telemetry"
 	"github.com/imjasonh/playground/ci-substrate/internal/tenant"
+	"github.com/imjasonh/playground/ci-substrate/internal/tlscfg"
 )
 
 type config struct {
@@ -38,9 +38,21 @@ type config struct {
 	MetricsAddr string `env:"METRICS_ADDR, default=:9090"`
 	StoreDir    string `env:"STORE_DIR, default=/cache"`
 	OriginAddr  string `env:"ORIGIN_ADDR, required"`
-	// Tenants is a JSON object mapping tokens to instance names. Empty means
-	// the demo default of one token that may use the empty instance name.
+	// Tenants is a JSON object mapping tokens to instance names or grant
+	// objects. Empty means the demo default of one token that may use the
+	// empty instance name.
 	Tenants string `env:"TENANTS"`
+	// CacheMaxBytes enables LRU eviction on local disk when positive.
+	CacheMaxBytes int64 `env:"CACHE_MAX_BYTES"`
+	// Optional TLS/mTLS for serving cascache.
+	TLSCertFile     string `env:"TLS_CERT_FILE"`
+	TLSKeyFile      string `env:"TLS_KEY_FILE"`
+	TLSClientCAFile string `env:"TLS_CLIENT_CA_FILE"`
+	// Optional TLS/mTLS when dialing origin cas.
+	OriginTLS         bool   `env:"ORIGIN_TLS"`
+	OriginTLSCAFile   string `env:"ORIGIN_TLS_CA_FILE"`
+	OriginTLSCertFile string `env:"ORIGIN_TLS_CERT_FILE"`
+	OriginTLSKeyFile  string `env:"ORIGIN_TLS_KEY_FILE"`
 }
 
 func main() {
@@ -54,7 +66,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	store, err := blob.NewStore(c.StoreDir)
+	store, err := blob.NewStoreWithLimit(c.StoreDir, c.CacheMaxBytes)
 	if err != nil {
 		slog.Error("opening local cache store", "dir", c.StoreDir, "err", err)
 		os.Exit(1)
@@ -70,7 +82,17 @@ func main() {
 	}
 
 	telemetry.ObserveDisk(c.StoreDir)
-	conn, err := grpc.NewClient(c.OriginAddr, append(telemetry.DialOptions(), grpc.WithTransportCredentials(insecure.NewCredentials()))...)
+	dialCreds, err := (tlscfg.ClientConfig{
+		Enabled:  c.OriginTLS,
+		CAFile:   c.OriginTLSCAFile,
+		CertFile: c.OriginTLSCertFile,
+		KeyFile:  c.OriginTLSKeyFile,
+	}).DialOption()
+	if err != nil {
+		slog.Error("configuring origin TLS", "err", err)
+		os.Exit(1)
+	}
+	conn, err := grpc.NewClient(c.OriginAddr, append(telemetry.DialOptions(), dialCreds)...)
 	if err != nil {
 		slog.Error("dialing origin", "addr", c.OriginAddr, "err", err)
 		os.Exit(1)
@@ -81,7 +103,20 @@ func main() {
 	rtc := cache.New(store, originClient)
 	cs := remote.NewCacheServer(rtc, originClient, tenants)
 
-	srv := grpc.NewServer(telemetry.ServerOptions()...)
+	opts := telemetry.ServerOptions()
+	tlsOpt, err := (tlscfg.ServerConfig{
+		CertFile:     c.TLSCertFile,
+		KeyFile:      c.TLSKeyFile,
+		ClientCAFile: c.TLSClientCAFile,
+	}).ServerOption()
+	if err != nil {
+		slog.Error("configuring server TLS", "err", err)
+		os.Exit(1)
+	}
+	if tlsOpt != nil {
+		opts = append(opts, tlsOpt)
+	}
+	srv := grpc.NewServer(opts...)
 	repb.RegisterContentAddressableStorageServer(srv, cs)
 	bytestream.RegisterByteStreamServer(srv, cs)
 	hs := health.NewServer()
