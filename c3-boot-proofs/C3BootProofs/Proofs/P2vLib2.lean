@@ -421,25 +421,6 @@ theorem p2v_mcRo2 {B : Word} {m : Machine} {off : Nat} {imm o p : Word} {c N : N
   · rw [← add_ofNat_assoc, fr2 _ (by rw [add_ofNat_assoc]; exact FS.lowB hb16 (by decide) (by omega)),
       C3.RV32.Dq.cp_at hj (by omega)]
 
-/-- The first 32 bytes of `L`, each cut to a byte. -/
-def b32 (L : Bytes) : Bytes := (List.range 32).map fun j => (BitVec.ofNat 8 (L.getD j 0)).toNat
-
-/-- 32 bytes of the frame that hold the first 32 bytes of `L`. -/
-theorem join32 {M : Word → BitVec 8} {B : Word} {L : Bytes} {c : Nat}
-    (h0 : M (B + 0x21A0 + BitVec.ofNat 32 c) = BitVec.ofNat 8 (L.getD 0 0))
-    (h1 : ∀ j, j < 31 → M (B + 0x21A0 + BitVec.ofNat 32 (c + 1 + j)) = BitVec.ofNat 8 (L.getD (1 + j) 0)) :
-    memBytes M (B + 0x21A0 + BitVec.ofNat 32 c) 32 = b32 L := by
-  unfold memBytes b32
-  apply List.map_congr_left
-  intro j hj
-  rw [List.mem_range] at hj
-  rw [add_ofNat_assoc]
-  rcases j with _ | j
-  · rw [Nat.add_zero, h0]
-  · have := h1 j (by omega)
-    rw [show c + 1 + j = c + (j + 1) by omega, show 1 + j = j + 1 by omega] at this
-    rw [this]
-
 theorem P2vRo.lo {B q : Word} {ql : Nat} (h : P2vRo B q ql) : q.toNat + ql ≤ 0x40000000 := by
   rcases h with h | ⟨_, h2⟩
   · have := h.lo; omega
