@@ -819,15 +819,104 @@ def stage_zb():
     return g, info
 
 
+RET_PF = "rw [rb{k}]; simp +decide only [runBlock, BInstr.run, svZE10bc, upd, ↓reduceIte]; rw [g{p}_10]; decide"
+
+
+def stage_ze():
+    """From the inversion's exit at 0xF00 to the jump to the epilogue at
+    0x10C4: `d` normalized into `Z⁻¹`, kept when `f` is 1 and `Z` is nonzero,
+    the affine point `(X·Z⁻¹, Y·Z⁻¹)` or the identity, its `x` as a scalar,
+    and the comparison with `r`, which jumps to the epilogue with 0 in `a0`
+    when they differ."""
+    g = Gen("ZE")
+    g.generic_alu = True
+    params = zi_start(g, {14: ("S", 0x920)}, {})
+    params += ["(UC0 : P2vUpCode M0)", "(EC0 : P2vEcCode M0)",
+               "(UE0 : CodeIn M0 (BitVec.ofNat 32 uint8EqAddress) uint8EqCode)",
+               "(N80 : CodeIn M0 (BitVec.ofNat 32 norm8Address) norm8Code)", "(P2C0 : P2Code M0)",
+               "(GDC0 : C3.RV32.Gd.GdCode M0)", "(P2D0 : P2Data M0)",
+               "(SC0 : CodeIn M0 (BitVec.ofNat 32 p256ScalarCtEqAddress) p256ScalarCtEqCode)",
+               "(BY0 : BYEnv M0)", "(WN0 : P2vWnCode M0)", "(hfs : fs.toNat ≤ 1)", "(hds : ds.toNat ≤ 1)",
+               "(hnz : nzw = 0 ∨ nzw = 1)", "(hX : X < p256)", "(hY : Y < p256)",
+               f"(hid : accV M0 ({gsv.ID_AFFINE}) 8 < p256)"]
+    g.sign_le = {0x220: "hds"}
+    g.load(0xF00, "lbu")
+    g.block(0xF04, 0xF18)
+    g.nrm8(0xF18, 0x12F4, 0x200, "(zext_01 hfs)", None, cm=0x980)
+    zi = g.acc[0x12F4][1]
+    params.append(f"(hzi : {zi} < p256)")
+    g.block(0xF20, 0xF30)
+    k = g.ueq8(0xF30, 0xF80, gsv.ONE256)
+    eq = f"(if fv = accV M0 ({gsv.ONE256}) 8 then 1 else 0 : Word)"
+    g.emit(f"  have g{k}_10 : reg n{k} a0 = {eq} := a0_{k}")
+    g.regs[10] = ("U", eq)
+    g.block(0xF38, 0xF3C)
+    g.load(0xF3C, "lw")
+    g.block(0xF3E, 0xF40)
+    g.bb(0xF40)
+    g.block(0xF48, 0xF5E)
+    g.mc(0xF5E, 0xC80, 0x12F4, 0x20)
+    g.store(0xF66, "sb")
+    g.block(0xF6A, 0xF78)
+    g.ms0(0xF78, 0xFE4, 0x20, accs=(0xFE4,))
+    g.block(0xF80, 0xF9C)
+    g.csel(0xF9C, 0x980, 0xFE4, 0xC80, "(ch01 hnz)")
+    g.store(0xFA4, "sb")
+    g.block(0xFA8, 0xFB8)
+    g.cmap(0xFB8, 0xFE4, 0x980, "(ch01b hnz)")
+    g.block(0xFC0, 0xFCE)
+    g.ms0(0xFCE, 0x980, 0x20, accs=(0x980,))
+    g.load(0xFD6, "lbu")
+    g.block(0xFDA, 0xFEE)
+    g.csel(0xFEE, 0x200, 0x980, 0xFE4, "(zext_01b (ch01b hnz))")
+    lt0 = "(by repeat' (first | exact hzi | exact p256_pos | apply ite_lt))"
+    g.block(0xFF6, 0x1008)
+    g.fmul(0x1008, 0xC80, 0x1338, 0x200, "hX", lt0)
+    g.block(0x1010, 0x1022)
+    g.fmul(0x1022, 0xCA0, 0x1358, 0x200, "hY", lt0)
+    g.store(0x102A, "sb")
+    g.store(0x102E, "sb")
+    g.block(0x1032, 0x104A)
+    g.uor(0x104A, 0x980, 0xC80, gsv.ID_AFFINE, "(ch01b hnz)")
+    g.block(0x1052, 0x105A)
+    g.z32(0x105A, 0x1398)
+    g.block(0x1062, 0x1072)
+    g.fret(0x1072, 0xC80, 0x980, "(ite_lt (p2fm_lt _ _) hid)")
+    g.block(0x107A, 0x108A)
+    g.tbb8(0x108A, 0x1398, 0xC80)
+    g.block(0x1092, 0x10A2)
+    g.by2s(0x10A2, 0xC80, 0x1398)
+    g.block(0x10AA, 0x10B4)
+    k = g.sct(0x10B4, 0x180, 0xC80)
+    prop = f"rv = {g.acc[0xC80][1]}"
+
+    def bad(sub, k=k):
+        sub.set_a0(k, 0, "ite_eq_right hxr")
+        sub.block(0x10BC, 0x10C4, {10: ("0", RET_PF)})
+        sub.jump(0x10C4)
+        sub.fail(sub.fail_proof(("prop", "hxr")), "p2v_fail0")
+    g.prop_check(prop, "hxr", bad)
+    g.set_a0(k, 1, "ite_eq_left hxr")
+    g.block(0x10BC, 0x10C4, {10: ("1", RET_PF)})
+    stmt, proof = finish(g, 0x10C4, [2, 3, 4, 10], set(), set())
+    info = {"name": "p2v_ze", "title": "the end of the check",
+            "doc": "From the inversion's exit at 0xF00 to 0x10C4: `d`, normalized by `f`'s sign, is `Z⁻¹` when "
+            "`f` is 1 and `Z` is nonzero; the affine `x` of the sum, or the identity's, becomes a scalar, and "
+            "the check returns 0 unless it equals `r`.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": ZI_BINDERS, "start": 0xF00,
+            "import": "C3BootProofs.Proofs.P2vZLib2"}
+    return g, info
+
+
 def stages():
     return {"A1": stage_a1, "A2": stage_a2, "A3": stage_a3, "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive,
             "EcD": stage_ecd, **{f"EcT{w}": (lambda w=w: stage_ect(w)) for w in ("0a", "0c", "0b", "1a", "1c", "1b")},
             "EcW2": lambda: stage_ecw("2"), "EcW3": lambda: stage_ecw("3"), "ZS": stage_zs, "ZA": stage_za,
-            "ZB": stage_zb}
+            "ZB": stage_zb, "ZE": stage_ze}
 
 
 # Imports that don't reach the `C3.RV32.Sv` namespace.
-NO_SV = {"P2vEc", "P2vMs0", "P2vIvLib", "P2vZLib"}
+NO_SV = {"P2vEc", "P2vMs0", "P2vIvLib", "P2vZLib", "P2vZLib2"}
 
 HEADER = """import {imp}
 
