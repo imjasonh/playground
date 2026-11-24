@@ -63,7 +63,7 @@ This is intentionally deferred until the current proof work in #710 wraps up, so
   names (`release/policy` by default), and a production root requires
   `C3_EFUSE_BURN=on`. It holds the whole TUF part, the bundle, and a
   20,544-byte key buffer, 61,780 bytes of buffers in all; the QEMU
-  scenarios peak at 77,852 bytes of stack, and the linker requires 80 KiB.
+  scenarios peak at 78,540 bytes of stack, and the linker requires 80 KiB.
 - `efuse::lock()` makes the eFuse controller read-only with region
   permission control, and eFuse programming sets ESP-IDF's timing. Both
   need checking on a board.

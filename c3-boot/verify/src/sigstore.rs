@@ -28,6 +28,8 @@ fn require(ok: bool, err: Error) -> Result<(), Error> {
 /// timestamped that signature, a listed log's checkpoint includes the
 /// rebuilt entry, and the signed time is inside every validity window that
 /// took part.
+// c3-boot-proofs proves this function as compiled, so it needs its own symbol.
+#[inline(never)]
 pub fn verify(
     bundle: &Bundle<'_>,
     root: &TrustRoot<'_>,
