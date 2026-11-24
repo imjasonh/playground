@@ -58,8 +58,8 @@ SECTIONS
     _stack_top = .;
   } > DRAM
 
-  /* The QEMU scenarios peak at 0x132CC bytes of stack, 61,780 of them the
-   * slot buffers. */
+  /* The QEMU scenarios peak at 0x106AC bytes of stack, 47,444 of them the
+   * slot buffers, with no new roots and with 64. */
   ASSERT(_stack_top - _stack_bottom >= 0x14000, "bootloader stack is under 80 KiB")
 
   /DISCARD/ : { *(.eh_frame) *(.eh_frame_hdr) }

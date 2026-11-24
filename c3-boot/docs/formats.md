@@ -62,7 +62,7 @@ the slot fail.
 | 16 | 4 | `bundle_offset` | See the region rules |
 | 20 | 4 | `bundle_length` | 49 through 16,384 |
 | 24 | 4 | `tuf_offset` | See the region rules |
-| 28 | 4 | `tuf_length` | 18 through 24,576 |
+| 28 | 4 | `tuf_length` | 18 through 393,216 (`0x60000`) |
 
 Version 1 had a key-set chain and a trust-root blob in place of the TUF
 part. The bootloader rejects it.
@@ -335,21 +335,37 @@ order `n`.
 The TUF part carries Sigstore's TUF metadata: the roots after the one the
 bootloader pins, `targets.json`, and `trusted_root.json`. `c3-ota
 tuf-package` builds one, and `c3_verify::tuf_slot::accept_slot` checks a
-slot with it. The bootloader holds the whole part in RAM, so a slot can
-carry about two roots after the pinned one. A longer chain needs a
-bootloader that pins a newer root.
+slot with it. The bootloader never holds the whole part. It reads the
+header and index, then reads each document from flash into one buffer of
+10,240 bytes, so its RAM doesn't grow with the number of roots.
 
 | Offset | Size | Field | Rule |
 | --- | --- | --- | --- |
 | 0 | 4 | `magic` | ASCII `C3TU` |
-| 4 | 2 | `format_version` | 1 |
-| 6 | 2 | `root_count` | 0 through 32 |
-| 8 | Varies | Roots | `root_count` documents, oldest first |
-| Next | Varies | `targets.json` | One document |
-| Next | Varies | `trusted_root.json` | One document |
+| 4 | 2 | `format_version` | 2 |
+| 6 | 2 | `root_count` | 0 through 64 |
+| 8 | 4 × (`root_count` + 2) | Index | The length of each root, oldest first, then of `targets.json` and `trusted_root.json` |
+| Next | Varies | Documents | The roots, `targets.json`, and `trusted_root.json`, in index order |
 
-Each document is a 4-byte length (1 through 65,536) followed by that many
-bytes. Integers are little endian. The part ends after `trusted_root.json`.
+Integers are little endian. Each length in the index is 1 through 10,240.
+The documents follow the index back to back, so document `i` starts at
+`8 + 4 × (root_count + 2)` plus the lengths before it, and the part ends
+after `trusted_root.json`. The whole part is at most 393,216 bytes
+(`0x60000`).
+
+Version 1 put each document's length before it, with at most 32 roots of
+up to 65,536 bytes, and the bootloader read the whole part into RAM. The
+bootloader rejects it.
+
+The limits come from Sigstore's metadata. Roots 5 through 16 are 4,672
+through 6,090 bytes in canonical JSON, `targets.json` is about 4,000, and
+`trusted_root.json` about 6,800. The part's size limit is 64 roots of 5,600
+bytes plus the other two documents at their longest, rounded up to a
+multiple of 64 KiB. Sigstore publishes a root every four to six months, so
+64 roots last decades. A part at the limit leaves 1,490,944 bytes
+(`0x16C000`) for the image after a full bundle. A longer chain, or one
+whose roots average much more than 5,600 bytes, needs a bootloader that
+pins a newer root.
 
 ### Root chain
 
@@ -367,7 +383,8 @@ with exactly the members `signatures` and `signed`. `signed._type` is
 signature has a string `keyid` and `sig`, and no key ID appears twice.
 Signatures cover the bytes of the `signed` value.
 
-A role lists at most 8 key IDs, and its threshold is at least 1. A listed
+A role lists at most 8 key IDs, each at most 64 bytes, and its threshold
+is at least 1. A listed
 key counts toward the threshold when it decodes, the document has a
 signature with its key ID, and the signature verifies. Two key IDs with
 the same key count once. A key decodes when it's one of these:

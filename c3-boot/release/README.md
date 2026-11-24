@@ -53,8 +53,9 @@ both files, drops any log but Rekor v2 from the signing configuration,
 updates the commit and hash above, and opens a pull request that shows the
 TUF check from `pinned-root.json` (`c3-ota tuf-verify`) and the entries the
 device would read from the new trusted root (`c3-ota describe`). Devices
-follow a new Sigstore root through the TUF part of the next release, so
-`pinned-root.json` changes only with a bootloader reflash over USB. To test
+follow a new Sigstore root through the TUF part of the next release, which
+carries up to 64 roots after `pinned-root.json`. `pinned-root.json` changes
+only with a bootloader reflash over USB, which a longer chain needs. To test
 the script, run `bash .github/scripts/update-c3-trust-root_test.sh`.
 
 ## Check a release locally

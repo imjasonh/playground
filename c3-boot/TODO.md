@@ -47,13 +47,16 @@ This is intentionally deferred until the current proof work in #710 wraps up, so
 ### Done
 
 - `c3-verify` has `json` (strict and canonical JSON), `tuf` (the C3TU
-  container, the root chain, and `targets.json`), `trusted_root` (Fulcio,
+  part's index, the root chain read one root at a time, and
+  `targets.json`), `trusted_root` (Fulcio,
   Rekor, and TSA keys into a `TrustRoot`), and `tuf_slot::accept_slot`.
   The genesis keys, `keys`, `chain`, the trust-root blob decoder, and
   `accept` are gone, and `TrustRoot` holds up to 8 Fulcio intermediates,
   16 Ed25519 logs, and 8 TSAs.
-- The slot manifest is version 2, with one `tuf` part of up to 24,576
-  bytes in place of `chain` and `blob`. The QEMU scenarios, the mutation
+- The slot manifest is version 2, with one `tuf` part of up to 393,216
+  bytes in place of `chain` and `blob`. The TUF part is version 2: an index
+  of document lengths, then up to 64 roots, `targets.json`, and
+  `trusted_root.json`, each at most 10,240 bytes. The QEMU scenarios, the mutation
   tests, and the fuzz seeds build version 2 slots.
 - `testdata/keys/` holds the seeds of a development TUF repository
   (`c3-ota tuf-dev-root` and `tuf-dev-targets`), and
@@ -61,9 +64,12 @@ This is intentionally deferred until the current proof work in #710 wraps up, so
 - The bootloader compiles in the root that `C3_TUF_ROOT` names (`dev` for
   the development root) and the identity policy file that `C3_POLICY`
   names (`release/policy` by default), and a production root requires
-  `C3_EFUSE_BURN=on`. It holds the whole TUF part, the bundle, and a
-  20,544-byte key buffer, 61,780 bytes of buffers in all; the QEMU
-  scenarios peak at 78,540 bytes of stack, and the linker requires 80 KiB.
+  `C3_EFUSE_BURN=on`. It reads the TUF part from flash one document at a
+  time into a 10,240-byte buffer, and keeps only the trusted root's root
+  keys and threshold between roots. With the bundle and a 20,544-byte key
+  buffer, that's 47,444 bytes of buffers. The QEMU scenarios peak at
+  67,244 bytes of stack whether the slot carries no new roots or 64, and
+  the linker requires 80 KiB.
 - `efuse::lock()` makes the eFuse controller read-only with region
   permission control, and eFuse programming sets ESP-IDF's timing. Both
   need checking on a board.
@@ -84,7 +90,8 @@ This is intentionally deferred until the current proof work in #710 wraps up, so
    whose functions moved. `TrustRoot`'s layout changed with the new caps.
    Retire `Spec/TrustRoot.lean`, `Theorems/TrustRoot.lean`, the proofs for
    `chain`, `keys`, and `trustroot`, and `lake exe trust-check`. Update
-   `lake exe spec-vectors` and `decode-check` for manifest version 2, and
+   `lake exe spec-vectors` and `decode-check` for manifest version 2 and the
+   TUF part's new size limit, and
    `tuf-check` and `sigstore-check` for the cases `c3-ota` added. Prove
    that the machine code of `json::parse`, `tuf::verify`,
    `trusted_root::extract`, and `tuf_slot::accept_slot` computes the new
@@ -97,9 +104,11 @@ This is intentionally deferred until the current proof work in #710 wraps up, so
 
 ### Decisions
 
-- **Chain growth.** When the root chain in a slot grows too long, re-pin a
-  newer root with a USB bootloader reflash. The device keeps no writable
-  trusted root.
+- **Chain growth.** Chain growth is now handled by streaming with a 64-root
+  cap: the bootloader reads one root at a time from flash, so RAM doesn't
+  grow with the chain, and a slot carries up to 64 roots after the pinned
+  one. A USB re-pin of a newer root is needed only past that. The device
+  keeps no writable trusted root.
 - **Expiry.** Keep the current rule: only the final root's and
   `targets.json`'s expiry count, and a slot signed before expiry stays
   bootable.
@@ -108,7 +117,7 @@ This is intentionally deferred until the current proof work in #710 wraps up, so
   proofs anyway, and keep rejecting a trusted root that exceeds them.
   Skipping entries could drop the one an older release needs. Sigstore
   keeps rotated-out entries listed, so the count only grows; exceeding the
-  new caps calls for a USB reflash, like a long chain.
+  new caps calls for a USB reflash, like a chain of more than 64 roots.
 - **Development root.** Use generated seeds, as in step 2.
 
 Key types remain a known limit: roots 1 through 4 use hex ECDSA keys,

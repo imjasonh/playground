@@ -12,7 +12,7 @@ Every byte the bootloader reads is defined in
 
 | Crate | Contents |
 | --- | --- |
-| `verify` (`c3-verify`) | Every slot check, composed by `tuf_slot::accept_slot`: the slot manifest, image header and segment rules, boot-state record, strict and canonical JSON, Sigstore's TUF root chain and targets from a pinned root, the keys in `trusted_root.json`, the identity policy, security-level rules, bundle container, leaf certificate, timestamp token, checkpoint, Merkle inclusion proof, and Rekor entry. Pure `no_std` functions with no heap, no `unsafe`, and checked arithmetic and indexing |
+| `verify` (`c3-verify`) | Every slot check, composed by `tuf_slot::accept_slot`: the slot manifest, image header and segment rules, boot-state record, strict and canonical JSON, Sigstore's TUF root chain (read through a `Source` one root at a time) and targets from a pinned root, the keys in `trusted_root.json`, the identity policy, security-level rules, bundle container, leaf certificate, timestamp token, checkpoint, Merkle inclusion proof, and Rekor entry. Pure `no_std` functions with no heap, no `unsafe`, and checked arithmetic and indexing |
 | `crypto` (`c3-crypto`) | SHA-256, SHA-384, ECDSA P-256 and P-384 verification, and strict Ed25519 verification. The rules are enforced explicitly on top of provisional backends (`sha2`, `p256`, `p384`, `ed25519-dalek`), until phase 0 picks the implementation that phase 7 proves |
 | `bootloader` (`c3-bootloader`) | The second-stage bootloader for `riscv32imc-unknown-none-elf`: the pinned TUF root and identity policy, ROM flash and cache hooks, image hashing, boot-state writes, the security-level burn, the eFuse lock, RAM loading, MMU mapping, and the jump |
 | `ota` (`c3-ota`) | The host tool: packs images, converts Sigstore bundles, assembles slots and flash images, and checks a slot with `verify`. `tuf-root`, `tuf-package`, `tuf-verify`, and `tuf-accept` pin a TUF root, package Sigstore's TUF metadata (`testdata/tuf/fetch.sh` downloads it), and check it with the device's code. `tuf-dev-root` and `tuf-dev-targets` sign metadata for the development TUF repository in `testdata/keys/` |
@@ -157,6 +157,8 @@ scenarios, keeping one flash file and one eFuse file across boots:
 1. On a fresh board, slots signed by another workflow, with a stale
    timestamp, or with `targets.json` that expired before signing are
    rejected.
+1. On a fresh board, a slot whose TUF part holds 64 new roots, the most a
+   slot can carry, boots.
 1. A bootloader that pins Sigstore's root rejects the development
    metadata and halts.
 

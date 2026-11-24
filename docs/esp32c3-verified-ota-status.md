@@ -294,6 +294,7 @@ QEMU tests both settings, including a board whose `SECURE_VERSION` is write-disa
 ### Decisions
 
 - The bootloader pins Sigstore's TUF root version 16 and takes every key from TUF metadata in the slot (`c3-boot/TODO.md`). There are no operator-held signing keys.
+- The bootloader reads a slot's TUF part from flash one document at a time, keeping only the trusted root's root keys between roots, so its RAM doesn't grow with the chain. A slot carries up to 64 new roots, decades of Sigstore's rotations; only a longer chain needs a USB re-pin.
 - Demo builds signed under the release identity are valid releases for now. Once a simple demo has been tested on hardware, devices will accept only released images.
 - The RV32 model makes misaligned loads and stores trap, accepts only the FENCE encodings compilers emit, and leaves out SYSTEM instructions for now. Each choice can only make a proof harder, never let a false one through.
 - Machine-code proofs are about the pinned image. After the TUF cutover, that is the production build: Sigstore's root, the release identity policy, and eFuse burns on. The proofs in this PR still cover the image before the cutover, the default test build with development keys, until they are regenerated. A build with another root or policy is covered only where its function bytes are the same.
@@ -320,7 +321,7 @@ QEMU tests both settings, including a board whose `SECURE_VERSION` is write-disa
 1. Phase 5, next: the seven unproved functions left in `sigstore::verify`'s reach, 9,590 instructions: `ed25519_verify` (started; 1,400 of its 2,099 instructions are an inlined `Scalar::reduce`, which needs a generator like `montgomery_mul`'s), `p384_verify_prehash`, `from_sec1_bytes` and point decompression for P-256 and P-384, and `sigstore::verify` itself; then `boot_main`. Then `update`, `finalize`, and `sha256` on top of `kcCompress_correct`, the parsers, and the Merkle check.
 1. Phase 7: prove that `ptAddSpec` is the P-256 group law in projective coordinates, so `pointAdd_correct` says the compiled code adds points.
 1. Phase 4: state the ROM functions, eFuse reads, and the SRAM alias as contracts and obligations, matching the `boot-sim` hooks the lockstep test checks.
-1. Phase 3: regenerate the specification and proofs for the TUF cutover: manifest version 2, `tuf_slot::accept_slot`, and the new `TrustRoot` layout.
+1. Phase 3: regenerate the specification and proofs for the TUF cutover: manifest version 2, `tuf_slot::accept_slot` with the streamed TUF part, and the new `TrustRoot` layout.
 1. On hardware **(hardware)**: flash the burns-off bootloader and a signed demo, then run the update, fallback, and trial scenarios.
 
 ## What's in the PR
