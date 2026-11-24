@@ -654,11 +654,180 @@ def stage_ecw(want):
     return g, info
 
 
+P256P = "BitVec.ofNat 32 (img% p256ModulusAddress)"
+P256R2 = "BitVec.ofNat 32 (img% p256R2Address)"
+RO = "(Or.inr ⟨by decide, by decide⟩)"
+Z_BINDERS = "{B : Word} {rv X Y Z : Nat} {v : Nat → Word} {n0 : Machine}"
+
+
+def stage_zs():
+    """From 0xB00 to the inversion's head at 0xBEE: the sum copied to 0x1338,
+    the field's modulus at 0x980, whether `Z` is nonzero, and the inversion
+    of `Z` set up with `f = p`, `g = Z`, `d = 0`, `e = R²`, `δ = 1`, and 591
+    steps left."""
+    g = Gen("ZS")
+    g.generic_alu = True
+    params = start(g, {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)")}, {})
+    for d, nm in ((0x180, "rv"), (0x980, "X"), (0x9A0, "Y"), (0x9C0, "Z")):
+        g.acc[d] = (8, nm)
+        params.append(f"(a0_{d:x} : accV n0.mem ({gsv.fa(d)}) 8 = {nm})")
+    params += ["(RS : P2vRoSep B)", "(EC0 : P2vEcCode M0)"]
+    g.block(0xB00, 0xB14)
+    g.mc(0xB14, 0x1338, 0x980, 0x60)
+    g.block(0xB1C, 0xB3C)
+    g.mcRo(0xB3C, 0x980, P256P, 0x20, RO, acc=True)
+    g.block(0xB44, 0xB4E)
+    g.store(0xB4E, "sw")
+    g.store(0xB52, "sw")
+    g.block(0xB56, 0xB68)
+    g.mcRo(0xB68, 0x9A0, P256R2, 0x20, RO, acc=True)
+    g.block(0xB70, 0xB72)
+    k = g.unz8(0xB72, 0x1378)
+    nz = "(if Z = 0 then 0 else 1 : Word)"
+    g.emit(f"  have g{k}_10 : reg n{k} a0 = {nz} := a0_{k}")
+    g.regs[10] = ("U", nz)
+    g.block(0xB7A, 0xB7E)
+    g.store(0xB7E, "sw")
+    g.block(0xB80, 0xB8E)
+    g.mcRo(0xB8E, 0xF80, P256P, 0x20, RO, acc=True)
+    g.store(0xB96, "sb")
+    g.block(0xB9A, 0xBA8)
+    g.mc(0xBA8, 0x900, 0x1378, 0x20)
+    g.store(0xBB0, "sb")
+    g.block(0xBB4, 0xBBC)
+    g.ms0(0xBBC, 0x200, 0x24, accs=(0x200,), byts=(0x220,))
+    g.block(0xBC4, 0xBD2)
+    g.mcRo(0xBD2, 0xFE4, P256R2, 0x20, RO, acc=True)
+    g.block(0xBDA, 0xBDE)
+    g.store(0xBDE, "sb")
+    g.block(0xBE2, 0xBE4)
+    g.store(0xBE4, "sw")
+    g.block(0xBE6, 0xBEA)
+    g.branch(0xBEA, False, f"by rw [g{g.k}_10, s{g.k}.zero]; decide")
+    words = {e for e in g.words if e not in (0x9C0, 0x9C4)}
+    stmt, proof = finish(g, 0xBEE, [2, 3, 4, 10, 14, 24], words, set(g.bytes))
+    info = {"name": "p2v_zs", "title": "the start of the inversion of `Z`",
+            "doc": "From 0xB00 to the inversion's head at 0xBEE: the sum moves to 0x1338, the word at 0x10 records "
+            "whether its `Z` is nonzero, and the inversion of `Z` starts from `f = p`, `g = Z`, `d = 0`, `e = R²`, "
+            "and `δ = 1`, with 591 steps left.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": Z_BINDERS, "start": 0xB00,
+            "import": "C3BootProofs.Proofs.P2vMs0"}
+    return g, info
+
+
+ZI_ACC = {0x180: "rv", 0x1338: "X", 0x1358: "Y", 0xF80: "fv", 0x900: "gv", 0x200: "dv", 0xFE4: "ev"}
+ZI_SIGN = {0xFA0: "fs", 0x920: "gs", 0x220: "ds", 0x1004: "es"}
+ZI_BINDERS = ("{B dlo dhi rem nzw : Word} {fs gs ds es : BitVec 8} {" + " ".join(ZI_ACC.values()) + " : Nat} "
+              "{v : Nat → Word} {n0 : Machine}")
+
+
+def zi_start(g, regs, words):
+    """The inversion of `Z`: `f`, `g`, `d`, and `e`, each 8 limbs with a sign
+    byte after them, the modulus at 0x980, `δ` in 0x40 and `s8`, and `Z`'s
+    nonzero flag at 0x10, with the given registers and words on top."""
+    base = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"), 24: ("U", "dhi")}
+    base.update(regs)
+    params = start(g, base, {0x10: "nzw", 0x40: "dlo", **words})
+    for d, nm in sorted({**ZI_ACC, 0x980: f"accV M0 ({P256P}) 8"}.items()):
+        g.acc[d] = (8, nm)
+        params.append(f"(a0_{d:x} : accV n0.mem ({gsv.fa(d)}) 8 = {nm})")
+    for e, nm in sorted(ZI_SIGN.items()):
+        g.bytes[e] = nm
+        params.append(f"(b0_{e:x} : n0.mem ({gsv.fa(e)}) = {nm})")
+    return params
+
+
+def stage_za():
+    """From the inversion's head at 0xBEE to the divstep loop at 0xC3C: the
+    batch's size `min rem 62`, the low words of `f` and `g`, and the identity
+    matrix."""
+    g = Gen("ZA")
+    g.generic_alu = True
+    params = zi_start(g, {10: ("U", "rem"), 14: ("S", 0x920)}, {})
+    params += ["(IC0 : P2vIvCode M0)", "(hrem : rem ≠ 0)", "(hfs : fs.toNat ≤ 1)", "(hgs : gs.toNat ≤ 1)"]
+    g.store(0xBEE, "sw")
+    g.block(0xBF0, 0xBF2)
+    g.umin(0xBF2)
+    g.block(0xBFA, 0xC04)
+    g.low8(0xC04, 0xF80, "hfs")
+    g.store(0xC0C, "sw")
+    g.store(0xC0E, "sw")
+    g.block(0xC10, 0xC18)
+    g.low8(0xC18, 0x900, "hgs")
+    g.store(0xC20, "sw")
+    g.store(0xC22, "sw")
+    g.block(0xC24, 0xC26)
+    g.store(0xC26, "sw")
+    g.block(0xC28, 0xC34)
+    g.store(0xC34, "sw")
+    g.block(0xC36, 0xC38)
+    g.branch(0xC38, False, f"by rw [g{g.k}_9, s{g.k}.zero]; exact br_beq_f (by split; exact hrem; decide)")
+    stmt, proof = finish(g, 0xC3C, [2, 3, 4, 8, 9, 13, 14, 18, 20, 22, 23, 24, 25, 26], set(g.words),
+                         set(g.bytes))
+    info = {"name": "p2v_za", "title": "the start of a batch of the inversion of `Z`",
+            "doc": "From the inversion's head at 0xBEE to the divstep loop at 0xC3C: the batch runs `min rem 62` "
+            "steps, on the low 64 bits of `f` and `g` as signed words, starting from the identity matrix.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": ZI_BINDERS, "start": 0xBEE,
+            "import": "C3BootProofs.Proofs.P2vZLib"}
+    return g, info
+
+
+def stage_zb():
+    """From the divstep loop's exit at 0xE06 to the batch's branch at 0xEFC:
+    the batch's matrix stored, applied to `f` and `g` and to `d` and `e`, and
+    the steps left reduced by the batch's size."""
+    g = Gen("ZB")
+    g.generic_alu = True
+    regs = {8: ("S", 0x920), 23: ("U", "ulo"), 26: ("U", "uhi"), 20: ("U", "vlo"), 25: ("U", "vhi"),
+            18: ("U", "qhi"), 22: ("U", "rlo"), 13: ("U", "rhi")}
+    params = zi_start(g, regs, {0x14: "BitVec.ofNat 32 ns", 0x18: "rem", 0x54: "qlo"})
+    params += ["(UC0 : P2vUpCode M0)", "(hns1 : 1 ≤ ns)", "(hns2 : ns ≤ 62)", "(hfs : fs.toNat ≤ 1)",
+               "(hgs : gs.toNat ≤ 1)", "(hds : ds.toNat ≤ 1)", "(hes : es.toNat ≤ 1)"]
+    g.block(0xE06, 0xE0E)
+    for o in (0xE0E, 0xE12, 0xE16, 0xE1A):
+        g.store(o, "sw")
+    g.load(0xE1E, "lw")
+    for o in (0xE20, 0xE24, 0xE28, 0xE2C):
+        g.store(o, "sw")
+    g.block(0xE30, 0xE50)
+    g.load(0xE50, "lw")
+    g.block(0xE52, 0xE54)
+    g.upd8(0xE54, "fg", 0xC80, 0xF80, 0x900, 0x1318, "ns", "hns1 (by omega)", "hfs", "hgs")
+    g.block(0xE5C, 0xE70)
+    g.mc(0xE70, 0xF80, 0xC80, 0x24)
+    g.block(0xE78, 0xE8C)
+    g.mc(0xE8C, 0x900, 0xCA4, 0x24)
+    g.block(0xE94, 0xEBC)
+    g.upd8(0xEBC, "de", 0xC80, 0x200, 0xFE4, 0x1318, "ns", "hns1 (by omega)", "hds", "hes",
+           extra="(by decide) (by decide) (by decide)", cm=0x980)
+    g.block(0xEC4, 0xED2)
+    g.mc(0xED2, 0x200, 0xC80, 0x24)
+    g.block(0xEDA, 0xEEE)
+    g.mc(0xEEE, 0xFE4, 0xCA4, 0x24)
+    g.block(0xEF6, 0xEF8)
+    g.load(0xEF8, "lw")
+    g.block(0xEFA, 0xEFC)
+    words = {e for e in g.words if e in (0x10, 0x40)}
+    stmt, proof = finish(g, 0xEFC, [2, 3, 4, 10, 14, 24], words, set(g.bytes))
+    info = {"name": "p2v_zb", "title": "the end of a batch of the inversion of `Z`",
+            "doc": "From the divstep loop's exit at 0xE06 to the batch's branch at 0xEFC: the batch's matrix is "
+            "stored at 0x1318, `update_fg` applies it to `f` and `g` and `update_de` to `d` and `e` modulo the "
+            "field's modulus at 0x980, and the steps left drop by the batch's size.",
+            "params": params, "stmt": stmt, "proof": proof,
+            "binders": ZI_BINDERS.replace("rem nzw : Word}", "rem nzw ulo uhi vlo vhi qlo qhi rlo rhi : Word} {ns : Nat}"),
+            "start": 0xE06, "import": "C3BootProofs.Proofs.P2vZLib"}
+    return g, info
+
+
 def stages():
     return {"A1": stage_a1, "A2": stage_a2, "A3": stage_a3, "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive,
             "EcD": stage_ecd, **{f"EcT{w}": (lambda w=w: stage_ect(w)) for w in ("0a", "0c", "0b", "1a", "1c", "1b")},
-            "EcW2": lambda: stage_ecw("2"), "EcW3": lambda: stage_ecw("3")}
+            "EcW2": lambda: stage_ecw("2"), "EcW3": lambda: stage_ecw("3"), "ZS": stage_zs, "ZA": stage_za,
+            "ZB": stage_zb}
 
+
+# Imports that don't reach the `C3.RV32.Sv` namespace.
+NO_SV = {"P2vEc", "P2vMs0", "P2vIvLib", "P2vZLib"}
 
 HEADER = """import {imp}
 
@@ -670,7 +839,7 @@ HEADER = """import {imp}
 
 namespace C3.RV32.P2v
 
-open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv C3.RV32.Gs C3.RV32.P2 C3.RV32.Sv
+open C3.Image C3.RV32.P3 C3.RV32.Dq C3.RV32.Pv C3.RV32.Gs C3.RV32.P2{sv}
 
 set_option maxRecDepth 20000
 set_option linter.unusedSimpArgs false
@@ -684,7 +853,8 @@ def main():
         print("\n".join(stages()))
         return
     g, info = stages()[stage]()
-    print(HEADER.format(imp=info["import"], title=info["title"], doc=info["doc"]))
+    sv = "" if info["import"].rsplit(".", 1)[1] in NO_SV else " C3.RV32.Sv"
+    print(HEADER.format(imp=info["import"], title=info["title"], doc=info["doc"], sv=sv))
     print("\n".join(g.block_defs()))
     print("set_option maxHeartbeats 0 in")
     print(f"theorem {info['name']} " + info["binders"])
