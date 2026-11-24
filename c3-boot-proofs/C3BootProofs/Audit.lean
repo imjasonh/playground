@@ -8687,5 +8687,23 @@ end C3
 /-- info: 'C3.RV32.jsonField_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.jsonField_correct
 
+/-- info: 'C3.RV32.pa_canon' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.pa_canon
+
+/-- info: 'C3.RV32.pa_strict' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.pa_strict
+
+/-- info: 'C3.RV32.pa_keys' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.pa_keys
+
+/-- info: 'C3.RV32.pa_close' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.pa_close
+
+/-- info: 'C3.RV32.pa_loop' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.pa_loop
+
+/-- info: 'C3.RV32.jsonParse_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.jsonParse_correct
+
 /-- info: 'C3.Json.objGet_val' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.Json.objGet_val
