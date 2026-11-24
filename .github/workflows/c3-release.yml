@@ -1,6 +1,6 @@
-# Builds the c3-boot demo application, signs it keylessly with production
-# Sigstore (Fulcio, Rekor v2, and the Sigstore timestamp authority), and checks
-# the result the way a device would, in QEMU.
+# Builds the c3-boot demo application and the TUF part of its slot, signs the
+# image keylessly with production Sigstore (Fulcio, Rekor v2, and the Sigstore
+# timestamp authority), and checks the result the way a device would, in QEMU.
 #
 # Only the sign job asks for id-token: write, and it runs no repository code
 # besides reading the pinned files in c3-boot/release/: any step in that job
@@ -15,10 +15,12 @@
 # policy pins refs/heads/main and push, which only a reviewed merge to the
 # protected main branch can produce.
 #
-# The check job's trust-root blob pins the identity of the run that signed,
-# so a pull request's signature is checked against the pull request's
-# identity. Both the blob and the bootloader use the public development
-# genesis keys, so nothing here is fit for a real device.
+# The build job packages Sigstore's TUF metadata from c3-boot/testdata/tuf
+# and checks it from the pinned root before anything is signed. The check
+# job's bootloader pins Sigstore's root and the identity of the run that
+# signed, so a pull request's signature is checked against the pull
+# request's identity, and its slot boots only on a bootloader built for that
+# run.
 
 name: c3-release
 
@@ -62,10 +64,20 @@ jobs:
             --security-version 0 --out "${RUNNER_TEMP}/app.img"
           sha256sum "${RUNNER_TEMP}/app.img"
 
+      - name: Package and check the TUF metadata
+        working-directory: c3-boot
+        run: bash release/package-tuf.sh "${RUNNER_TEMP}/tuf.bin"
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: image
           path: ${{ runner.temp }}/app.img
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: tuf
+          path: ${{ runner.temp }}/tuf.bin
           if-no-files-found: error
 
   sign:
@@ -158,7 +170,7 @@ jobs:
           bash release/check.sh \
             "${RUNNER_TEMP}/release/image/app.img" \
             "${RUNNER_TEMP}/release/bundle/app.sigstore.json" \
-            release/trusted_root.json \
+            "${RUNNER_TEMP}/release/tuf/tuf.bin" \
             "${RUNNER_TEMP}/check"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -168,6 +180,7 @@ jobs:
           path: |
             ${{ runner.temp }}/release/image/app.img
             ${{ runner.temp }}/release/bundle/app.sigstore.json
+            ${{ runner.temp }}/release/tuf/tuf.bin
             ${{ runner.temp }}/check/container.bin
             ${{ runner.temp }}/check/slot.bin
             ${{ runner.temp }}/check/boot.log

@@ -1,55 +1,62 @@
 #!/usr/bin/env bash
 # Checks a signed release the way a device would: converts the Sigstore
-# bundle to the bootloader's container, builds a trust-root blob that pins
-# the signer's identity, assembles a slot, runs the device's checks on the
-# host, and boots the slot in Espressif's QEMU.
+# bundle to the bootloader's container, assembles a slot with the TUF part,
+# runs the device's checks on the host, and boots the slot in Espressif's
+# QEMU with a bootloader that pins the same root and the signer's identity.
 #
-# The trust-root blob is signed by the public development genesis keys, and
-# the bootloader is built with them, so the slot this writes is for tests
-# only. A production blob is signed offline by the genesis or rotated keys.
+# The bootloader pins C3_TUF_ROOT, which defaults to Sigstore's root in
+# release/pinned-root.json. Set C3_TUF_ROOT=dev to check an image that
+# fakestore signed, with a TUF part from the development repository.
 #
-# Usage: release/check.sh IMAGE BUNDLE TRUSTED_ROOT WORK_DIR
+# Usage: release/check.sh IMAGE BUNDLE TUF WORK_DIR
 #
-# The signer's identity comes from these environment variables, which must
-# match the Fulcio certificate exactly:
+# TUF is the slot's TUF part, as release/package-tuf.sh or c3-ota
+# tuf-package writes it. The signer's identity comes from these environment
+# variables, which must match the Fulcio certificate exactly:
 #   C3_ISSUER, C3_BUILD_SIGNER_URI, C3_REPOSITORY_ID, C3_OWNER_ID, C3_TRIGGER
 # Set QEMU to the qemu-system-riscv32 binary if it isn't on PATH.
 
 set -euo pipefail
 
 if (($# != 4)); then
-  echo "usage: $0 IMAGE BUNDLE TRUSTED_ROOT WORK_DIR" >&2
+  echo "usage: $0 IMAGE BUNDLE TUF WORK_DIR" >&2
   exit 2
 fi
 image="$1"
 bundle="$2"
-trusted_root="$3"
-work="$4"
+tuf="$3"
+mkdir -p "$4"
+work="$(cd "$4" && pwd)"
 root="$(cd "$(dirname "$0")/.." && pwd)"
-keys="${root}/testdata/keys"
-mkdir -p "${work}"
 
 : "${C3_ISSUER:?}" "${C3_BUILD_SIGNER_URI:?}" "${C3_REPOSITORY_ID:?}"
 : "${C3_OWNER_ID:?}" "${C3_TRIGGER:?}"
+tuf_root="${C3_TUF_ROOT:-release/pinned-root.json}"
+if [[ "${tuf_root}" == dev ]]; then
+  pinned="${root}/testdata/keys/tuf-dev-root.json"
+else
+  pinned="$(cd "${root}" && realpath "${tuf_root}")"
+fi
+cat >"${work}/policy" <<EOF
+issuer=${C3_ISSUER}
+build-signer-uri=${C3_BUILD_SIGNER_URI}
+repository-id=${C3_REPOSITORY_ID}
+owner-id=${C3_OWNER_ID}
+trigger=${C3_TRIGGER}
+EOF
 
+# QEMU's eFuse file is disposable, and a production root requires burns.
 (cd "${root}" && cargo build -q --locked -p c3-ota)
-(cd "${root}" && C3_GENESIS=dev cargo build -q --locked --release \
-  --target riscv32imc-unknown-none-elf -p c3-bootloader)
+(cd "${root}" && C3_TUF_ROOT="${tuf_root}" C3_POLICY="${work}/policy" C3_EFUSE_BURN=on \
+  cargo build -q --locked --release --target riscv32imc-unknown-none-elf -p c3-bootloader)
 ota() {
   "${root}/target/debug/c3-ota" "$@"
 }
 
 ota container --bundle "${bundle}" --image "${image}" --out "${work}/container.bin"
-ota chain --out "${work}/chain.bin"
-ota blob --trusted-root "${trusted_root}" --level 0 \
-  --issuer "${C3_ISSUER}" --build-signer-uri "${C3_BUILD_SIGNER_URI}" \
-  --repository-id "${C3_REPOSITORY_ID}" --owner-id "${C3_OWNER_ID}" \
-  --trigger "${C3_TRIGGER}" \
-  --signers "0=${keys}/genesis-dev-1.seed,1=${keys}/genesis-dev-2.seed" \
-  --out "${work}/blob.bin"
-ota slot --image "${image}" --bundle "${work}/container.bin" \
-  --chain "${work}/chain.bin" --blob "${work}/blob.bin" --out "${work}/slot.bin"
-ota verify --slot "${work}/slot.bin" --genesis "${keys}/genesis-dev.pub"
+ota slot --image "${image}" --bundle "${work}/container.bin" --tuf "${tuf}" \
+  --out "${work}/slot.bin"
+ota verify --slot "${work}/slot.bin" --pinned "${pinned}" --policy "${work}/policy"
 
 ota bootloader-image \
   --elf "${root}/target/riscv32imc-unknown-none-elf/release/c3-bootloader" \
