@@ -404,4 +404,168 @@ theorem WP.callSliceEq {hi lo tb p q : Word} {pl ql : Nat}
 
 end
 
+/-- The code `get` runs, at its offsets from `get`'s address `b`. -/
+structure GetCode (M : Word → BitVec 8) (b : Word) : Prop where
+  get : CodeIn M b jsonGetCode
+  me : CodeIn M (b + 0xA6) jsonMembersCode
+  stub : CodeIn M (b + 0xBFDA) memcpyStubCode
+  mc : CodeIn M (b + 0xBFE2) memcpyBodyCode
+  nm : CodeIn M (b + 0xFFFFF438) jsonNextMemberCode
+  ke : CodeIn M (b + 0xFFFFF57C) jsonKeyEndCode
+  eq : CodeIn M (b + 0xFFFFFFEA) sliceEqCode
+  ri : RiCode M (b + 0xFFFFF616)
+
+/-- The `k` bytes at `s` are apart from `GetCode M b`. -/
+structure GetSep (s : Word) (k : Nat) (b : Word) : Prop where
+  get : Sep s k b jsonGetCode.length
+  me : Sep s k (b + 0xA6) jsonMembersCode.length
+  stub : Sep s k (b + 0xBFDA) memcpyStubCode.length
+  mc : Sep s k (b + 0xBFE2) memcpyBodyCode.length
+  nm : Sep s k (b + 0xFFFFF438) jsonNextMemberCode.length
+  ke : Sep s k (b + 0xFFFFF57C) jsonKeyEndCode.length
+  eq : Sep s k (b + 0xFFFFFFEA) sliceEqCode.length
+  ri : RiSep s k (b + 0xFFFFF616)
+
+theorem GetSep.sub {s b : Word} {k : Nat} (h : GetSep s k b) {c l : Nat} (hcl : c + l ≤ k) :
+    GetSep (s + BitVec.ofNat 32 c) l b :=
+  ⟨h.get.sub hcl, h.me.sub hcl, h.stub.sub hcl, h.mc.sub hcl, h.nm.sub hcl, h.ke.sub hcl, h.eq.sub hcl,
+    h.ri.sub hcl⟩
+
+theorem GetSep.low {s b : Word} {k : Nat} (h : GetSep s k b) {l : Nat} (hl : l ≤ k) : GetSep s l b := by
+  have := h.sub (c := 0) (l := l) (by omega)
+  rwa [add_ofNat_zero] at this
+
+theorem GetCode.out {M M' : Word → BitVec 8} {b s : Word} {k : Nat} (h : GetCode M b) (hO : Out M M' s k)
+    (hs : GetSep s k b) : GetCode M' b :=
+  ⟨hO.codeIn h.get hs.get, hO.codeIn h.me hs.me, hO.codeIn h.stub hs.stub, hO.codeIn h.mc hs.mc,
+    hO.codeIn h.nm hs.nm, hO.codeIn h.ke hs.ke, hO.codeIn h.eq hs.eq, h.ri.out hO hs.ri⟩
+
+theorem gt_ad_sw (b : Word) : b + 0xA6 + 0xFFFFF7F8 = b + 0xFFFFF616 + 0x288 := by
+  rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
+
+theorem gt_ad_mc (b : Word) : b + 0xBFDA + 8 = b + 0xBFE2 := by rw [BitVec.add_assoc]; rfl
+
+theorem gt_ad_ri (b : Word) : b + 0xFFFFF438 + 0x1DE = b + 0xFFFFF616 := by rw [BitVec.add_assoc]; rfl
+
+theorem gt_ad_ke (b : Word) : b + 0xFFFFF438 + 0x144 = b + 0xFFFFF57C := by rw [BitVec.add_assoc]; rfl
+
+theorem gt_ad_es (b : Word) : b + 0xFFFFFFEA + 0xFFFFEBAA = b + 0xFFFFF616 + 0xFFFFF57E := by
+  rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
+
+theorem gt_ad_mm (b : Word) : b + 0xFFFFFFEA + 0xBF68 = b + 0xFFFFF616 + 0xC93C := by
+  rw [BitVec.add_assoc, BitVec.add_assoc]; rfl
+
+/-- The registers `get` changes before its epilogue restores the saved ones. -/
+abbrev gtE : List (Fin 32) := jClob ++ [ra, sp, 8, 9, 18, 19, 20, 21, 22]
+
+abbrev gtCs : List Nat := [0x20, 0x24, 0x28, 0x2C, 0x30, 0x34, 0x38, 0x3C]
+
+/-- The saved registers in the frame at `F`. -/
+def GtSaved (F : Word) (g0 : Fin 32 → Word) (M1 : Word → BitVec 8) : Prop :=
+  memLoad32 M1 (F + BitVec.ofNat 32 0x3C) = g0 ra ∧ memLoad32 M1 (F + BitVec.ofNat 32 0x38) = g0 8 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0x34) = g0 9 ∧ memLoad32 M1 (F + BitVec.ofNat 32 0x30) = g0 18 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0x2C) = g0 19 ∧ memLoad32 M1 (F + BitVec.ofNat 32 0x28) = g0 20 ∧
+    memLoad32 M1 (F + BitVec.ofNat 32 0x24) = g0 21 ∧ memLoad32 M1 (F + BitVec.ofNat 32 0x20) = g0 22
+
+/-- Memory after the prologue. -/
+def gtM1 (M : Word → BitVec 8) (F : Word) (g0 : Fin 32 → Word) : Word → BitVec 8 :=
+  memStore32 (memStore32 (memStore32 (memStore32 (memStore32 (memStore32 (memStore32 (memStore32 M
+    (F + 0x3C) (g0 ra)) (F + 0x38) (g0 8)) (F + 0x34) (g0 9)) (F + 0x30) (g0 18)) (F + 0x2C) (g0 19))
+    (F + 0x28) (g0 20)) (F + 0x24) (g0 21)) (F + 0x20) (g0 22)
+
+theorem gt_ld {M : Word → BitVec 8} {F v : Word} (c : Nat) (hc : c ∈ gtCs) (ds : List Nat)
+    (hd : ∀ d, d ∈ ds → c + 4 ≤ d ∨ d + 4 ≤ c) (hds : ∀ d, d ∈ ds → d + 4 ≤ 64)
+    (h : memLoad32 M (F + BitVec.ofNat 32 c) = v) (ws : List Word) :
+    memLoad32 ((ds.zip ws).foldl (fun M' x => memStore32 M' (F + BitVec.ofNat 32 x.1) x.2) M)
+      (F + BitVec.ofNat 32 c) = v := by
+  induction ds generalizing M ws with
+  | nil => exact h
+  | cons d ds ih =>
+    cases ws with
+    | nil => exact h
+    | cons w ws =>
+      have h1 : c + 4 ≤ 64 := by
+        simp only [gtCs, List.mem_cons, List.not_mem_nil, or_false] at hc
+        rcases hc with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
+      exact ih (fun d hd' => hd d (List.mem_cons_of_mem _ hd')) (fun d hd' => hds d (List.mem_cons_of_mem _ hd'))
+        (ld_skip c d (hd d (List.mem_cons_self ..)) (by omega) (by have := hds d (List.mem_cons_self ..); omega) h) ws
+
+theorem gt_pro (M : Word → BitVec 8) (F : Word) (g0 : Fin 32 → Word) :
+    Out M (gtM1 M F g0) F 64 ∧ GtSaved F g0 (gtM1 M F g0) := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · exact (((((((((out_store32 _ _ _).widen (d := 0x3C) (by decide)).trans
+      ((out_store32 _ _ _).widen (d := 0x38) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0x34) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0x30) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0x2C) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0x28) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0x24) (by decide))).trans
+      ((out_store32 _ _ _).widen (d := 0x20) (by decide)))
+  · exact gt_ld 0x3C (by decide) [0x38, 0x34, 0x30, 0x2C, 0x28, 0x24, 0x20] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 8, g0 9, g0 18, g0 19, g0 20, g0 21, g0 22]
+  · exact gt_ld 0x38 (by decide) [0x34, 0x30, 0x2C, 0x28, 0x24, 0x20] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 9, g0 18, g0 19, g0 20, g0 21, g0 22]
+  · exact gt_ld 0x34 (by decide) [0x30, 0x2C, 0x28, 0x24, 0x20] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 18, g0 19, g0 20, g0 21, g0 22]
+  · exact gt_ld 0x30 (by decide) [0x2C, 0x28, 0x24, 0x20] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 19, g0 20, g0 21, g0 22]
+  · exact gt_ld 0x2C (by decide) [0x28, 0x24, 0x20] (by decide) (by decide)
+      (memLoad32_store32_same _ _ _) [g0 20, g0 21, g0 22]
+  · exact gt_ld 0x28 (by decide) [0x24, 0x20] (by decide) (by decide) (memLoad32_store32_same _ _ _) [g0 21, g0 22]
+  · exact gt_ld 0x24 (by decide) [0x20] (by decide) (by decide) (memLoad32_store32_same _ _ _) [g0 22]
+  · exact memLoad32_store32_same _ _ _
+
+section
+variable {M1 Mf : Word → BitVec 8} {base F : Word} {f g0 : Fin 32 → Word}
+
+theorem gt_epi {R : (Word → BitVec 8) → Prop} (hsp : f sp = F)
+    (hS : Slots gtCs F M1 Mf) (hv : GtSaved F g0 M1) (hsp0 : g0 sp = F + BitVec.ofNat 32 0x40)
+    (hret : g0 ra &&& ~~~1 = g0 ra) (hal : F.toNat % 4 = 0) (hz0 : g0 0 = 0)
+    (hfr : ∀ x, x ∉ gtE → f x = g0 x) (hR : R Mf) :
+    WP jsonGetCode base (RPost (g0 ra) R g0) Mf 0x92 f := by
+  obtain ⟨v1, v2, v3, v4, v5, v6, v7, v8⟩ := hv
+  have e1 : memLoad32 Mf (F + 0x3C) = g0 ra := (hS 0x3C (by decide)).trans v1
+  have e2 : memLoad32 Mf (F + 0x38) = g0 8 := (hS 0x38 (by decide)).trans v2
+  have e3 : memLoad32 Mf (F + 0x34) = g0 9 := (hS 0x34 (by decide)).trans v3
+  have e4 : memLoad32 Mf (F + 0x30) = g0 18 := (hS 0x30 (by decide)).trans v4
+  have e5 : memLoad32 Mf (F + 0x2C) = g0 19 := (hS 0x2C (by decide)).trans v5
+  have e6 : memLoad32 Mf (F + 0x28) = g0 20 := (hS 0x28 (by decide)).trans v6
+  have e7 : memLoad32 Mf (F + 0x24) = g0 21 := (hS 0x24 (by decide)).trans v7
+  have e8 : memLoad32 Mf (F + 0x20) = g0 22 := (hS 0x20 (by decide)).trans v8
+  refine WP.lw gt_at_92 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x3C) (by decide)) ?_; wn
+  refine WP.lw gt_at_94 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x38) (by decide)) ?_; wn
+  refine WP.lw gt_at_96 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x34) (by decide)) ?_; wn
+  refine WP.lw gt_at_98 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x30) (by decide)) ?_; wn
+  refine WP.lw gt_at_9a (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x2C) (by decide)) ?_; wn
+  refine WP.lw gt_at_9c (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x28) (by decide)) ?_; wn
+  refine WP.lw gt_at_9e (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x24) (by decide)) ?_; wn
+  refine WP.lw gt_at_a0 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0x20) (by decide)) ?_; wn
+  refine WP.aluImm gt_at_a2 ?_; wn
+  refine WP.ret gt_at_a4 ⟨?_, hR, ?_⟩
+  · rsimp; rw [hsp, e1, add_lit_zero, hret]
+  refine frame_of (L2 := [ra, sp, 8, 9, 18, 19, 20, 21, 22]) (by keepz hz0) fun x hx => ?_
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
+  rcases hx with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> rsimp
+  · rw [hsp, e1]
+  · rw [hsp, hsp0]; rfl
+  · rw [hsp, e2]
+  · rw [hsp, e3]
+  · rw [hsp, e4]
+  · rw [hsp, e5]
+  · rw [hsp, e6]
+  · rw [hsp, e7]
+  · rw [hsp, e8]
+
+theorem gt_8e {R : (Word → BitVec 8) → Prop} {out : Word} (hsp : f sp = F) (h18 : f 18 = out)
+    (hS : Slots gtCs F M1 Mf) (hv : GtSaved F g0 M1) (hsp0 : g0 sp = F + BitVec.ofNat 32 0x40)
+    (hret : g0 ra &&& ~~~1 = g0 ra) (hal : F.toNat % 4 = 0) (hz0 : g0 0 = 0)
+    (hfr : ∀ x, x ∉ gtE → f x = g0 x) (hsoF : Sep out 1 F 64) (hso1 : Sep out 1 base jsonGetCode.length)
+    (hR : R (memStore8 Mf out ((f a0).extractLsb' 0 8))) :
+    WP jsonGetCode base (RPost (g0 ra) R g0) Mf 0x8E f := by
+  refine WP.sb gt_at_8e (by (try rsimp); rw [h18, add_lit_zero]; exact hso1) ?_; wn
+  rw [h18, add_lit_zero]
+  exact gt_epi hsp (hS.out (out_store8 _ _ _) (slots_sep_out hsoF (by decide))) hv hsp0 hret hal hz0 hfr hR
+
+end
+
 end C3.RV32
