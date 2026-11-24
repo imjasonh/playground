@@ -237,3 +237,24 @@ tracked for future work.
   tenant previously uploaded a known hash. Strict multi-tenant environments
   that require hiding blob existence need per-tenant presence indexes or
   tenant-salted CAS namespaces.
+
+### Disruption, failure-mode, and upgrade e2e testing
+
+The KinD e2e suite (`e2e/rbe_e2e_test.go`, `e2e/run-bazel.sh`, and
+`e2e/run-telemetry.sh`) verifies happy paths, tenant isolation, action timeouts,
+and cancellation on a single-node cluster. Future e2e work should cover:
+
+- **Runner pod and worker node disappearance:** Run a multi-node KinD cluster
+  and force-kill runner pods or drain/stop a worker node mid-action to verify
+  lease expiration, automatic re-queueing onto surviving runners, and
+  transparent Bazel build completion.
+- **Control-plane and cache restarts and upgrades:** Rolling-restart `cas` to
+  verify CAS blobs, ActionCache entries, Remote Assets, and BES invocation
+  records persist across restarts and that clients recover cleanly; restart
+  `cascache` mid-build and corrupt a cached blob on disk to verify
+  `PoisonRejected` recovery in-cluster; test cluster and control-plane upgrades.
+- **Protocol and configuration error paths in KinD:** Exercise non-zero action
+  exit codes (uncached), digest mismatches, missing inputs,
+  `MAX_CAS_BLOB_SIZE_BYTES` rejections, `ExecutionPolicy.priority` ordering
+  under contention, `CAS_MAX_BYTES` eviction triggering clean ActionCache
+  misses, TLS/mTLS deployment manifests, and end-to-end `bazel coverage`.
