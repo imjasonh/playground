@@ -26,6 +26,9 @@ func TestLoadJSONBad(t *testing.T) {
 	if _, err := LoadJSON([]byte("not json")); err == nil {
 		t.Error("LoadJSON accepted invalid JSON")
 	}
+	if _, err := LoadJSON([]byte(`{"tok-a": null}`)); err == nil {
+		t.Error("LoadJSON accepted null grant")
+	}
 }
 
 func TestLoadJSONActionCacheReadOnly(t *testing.T) {

@@ -128,4 +128,7 @@ func TestMTLSHandshake(t *testing.T) {
 	if _, err := healthpb.NewHealthClient(badConn).Check(t.Context(), &healthpb.HealthCheckRequest{}); err == nil {
 		t.Fatal("client without cert passed mTLS check")
 	}
+	if _, err := (ServerConfig{ClientCAFile: caPath}).ServerOption(); err == nil {
+		t.Error("ServerConfig with ClientCAFile but no CertFile/KeyFile succeeded")
+	}
 }

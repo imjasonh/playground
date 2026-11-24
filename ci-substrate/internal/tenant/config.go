@@ -1,6 +1,7 @@
 package tenant
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -27,6 +28,9 @@ func LoadJSON(data []byte) (*Registry, error) {
 	}
 	r := NewRegistry()
 	for tok, v := range raw {
+		if bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+			return nil, fmt.Errorf("parsing tenant config for token: null grant")
+		}
 		var instances []string
 		if err := json.Unmarshal(v, &instances); err == nil {
 			r.Allow(tok, instances...)

@@ -271,32 +271,34 @@ func decodeBuildFinished(b []byte) finishedEvent {
 				return f
 			}
 			f.HasExitCode = true
+		exitCode:
 			for len(v) > 0 {
 				en, et, k := protowire.ConsumeTag(v)
 				if k < 0 {
 					break
 				}
 				v = v[k:]
+				// A bare break inside this switch would only leave the switch
+				// and spin forever on truncated input, so break the loop by label.
 				switch {
 				case en == 1 && et == protowire.BytesType:
 					name, l := protowire.ConsumeString(v)
 					if l < 0 {
-						break
+						break exitCode
 					}
 					f.ExitCodeName = name
 					v = v[l:]
 				case en == 2 && et == protowire.VarintType:
 					code, l := protowire.ConsumeVarint(v)
 					if l < 0 {
-						break
+						break exitCode
 					}
 					f.ExitCode = int32(code)
 					v = v[l:]
 				default:
 					l := protowire.ConsumeFieldValue(en, et, v)
 					if l < 0 {
-						v = nil
-						break
+						break exitCode
 					}
 					v = v[l:]
 				}

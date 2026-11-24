@@ -55,10 +55,14 @@ func (s *CacheServer) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlo
 	}
 	var total int64
 	for _, d := range req.GetDigests() {
-		total += d.GetSizeBytes()
-	}
-	if total > MaxBatchBytes {
-		return nil, status.Errorf(codes.InvalidArgument, "batch of %d bytes exceeds %d; use ByteStream", total, MaxBatchBytes)
+		sz := d.GetSizeBytes()
+		if sz <= 0 {
+			continue
+		}
+		if sz > MaxBatchBytes || total > MaxBatchBytes-sz {
+			return nil, status.Errorf(codes.InvalidArgument, "batch exceeds %d bytes; use ByteStream", MaxBatchBytes)
+		}
+		total += sz
 	}
 	comp := selectCompressor(req.GetAcceptableCompressors())
 	resp := &repb.BatchReadBlobsResponse{}

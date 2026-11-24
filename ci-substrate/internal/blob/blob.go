@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -54,6 +55,9 @@ func NewStoreWithLimit(root string, maxBytes int64) (*Store, error) {
 	s := &Store{root: root, maxBytes: maxBytes}
 	if maxBytes > 0 {
 		s.scanUsage()
+		if s.usage.Load() > maxBytes {
+			_, _, _ = s.Evict()
+		}
 	}
 	return s, nil
 }
@@ -168,6 +172,9 @@ func (s *Store) PutReader(d *repb.Digest, r io.Reader) error {
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 
+	if d.GetSizeBytes() == math.MaxInt64 {
+		return fmt.Errorf("size %d exceeds limit", d.GetSizeBytes())
+	}
 	h := sha256.New()
 	limited := io.LimitReader(r, d.GetSizeBytes()+1)
 	n, err := io.Copy(io.MultiWriter(tmp, h), limited)
@@ -223,6 +230,10 @@ func (s *Store) Open(d *repb.Digest) (*os.File, int64, error) {
 	if err != nil {
 		f.Close()
 		return nil, 0, err
+	}
+	if fi.Size() != d.GetSizeBytes() {
+		f.Close()
+		return nil, 0, ErrNotFound
 	}
 	s.touch(p)
 	return f, fi.Size(), nil

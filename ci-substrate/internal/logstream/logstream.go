@@ -28,6 +28,12 @@ const (
 	defaultMaxStreamBytes = 64 << 20
 	// defaultTTL is how long a finished log stream remains readable.
 	defaultTTL = 15 * time.Minute
+	// defaultIdleTTL is how long an unfinished log stream may go without writes
+	// before being closed and evicted so crashed producers don't leak memory.
+	defaultIdleTTL = time.Hour
+	// maxReadChunkBytes bounds each ByteStream ReadResponse message so reading
+	// a large buffered log stream never exceeds gRPC's 4 MiB message limit.
+	maxReadChunkBytes = 1 << 20
 )
 
 // Server implements LogStreamServiceServer and serves ByteStream reads and
@@ -38,6 +44,7 @@ type Server struct {
 	tenants        *tenant.Registry
 	maxStreamBytes int64
 	ttl            time.Duration
+	idleTTL        time.Duration
 
 	mu      sync.Mutex
 	streams map[string]*streamState // keyed by read Name
@@ -61,6 +68,7 @@ func New(tenants *tenant.Registry) *Server {
 		tenants:        tenants,
 		maxStreamBytes: defaultMaxStreamBytes,
 		ttl:            defaultTTL,
+		idleTTL:        defaultIdleTTL,
 		streams:        map[string]*streamState{},
 	}
 }
@@ -106,7 +114,13 @@ func (s *Server) CreateLogStream(ctx context.Context, req *logstreampb.CreateLog
 func (s *Server) gcLocked(now time.Time) {
 	for name, st := range s.streams {
 		st.mu.Lock()
-		expired := st.finished && now.Sub(st.updatedAt) > s.ttl
+		age := now.Sub(st.updatedAt)
+		expired := (st.finished && age > s.ttl) || (!st.finished && s.idleTTL > 0 && age > s.idleTTL)
+		if expired && !st.finished {
+			st.finished = true
+			close(st.notify)
+			st.notify = make(chan struct{})
+		}
 		st.mu.Unlock()
 		if expired {
 			delete(s.streams, name)
@@ -170,7 +184,7 @@ func (s *Server) Read(req *bytestream.ReadRequest, stream bytestream.ByteStream_
 		ch := st.notify
 		var chunk []byte
 		if offset < n {
-			end := n
+			end := min(n, offset+maxReadChunkBytes)
 			if limit > 0 && offset+(limit-sent) < end {
 				end = offset + (limit - sent)
 			}

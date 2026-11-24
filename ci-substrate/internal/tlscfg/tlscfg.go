@@ -27,6 +27,9 @@ type ServerConfig struct {
 // plaintext is configured.
 func (c ServerConfig) ServerOption() (grpc.ServerOption, error) {
 	if c.CertFile == "" && c.KeyFile == "" {
+		if c.ClientCAFile != "" {
+			return nil, fmt.Errorf("client CA file requires TLS cert and key files")
+		}
 		return nil, nil
 	}
 	if c.CertFile == "" || c.KeyFile == "" {

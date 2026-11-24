@@ -163,10 +163,14 @@ func (o *Origin) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsReq
 	}
 	var total int64
 	for _, d := range req.GetDigests() {
-		total += d.GetSizeBytes()
-	}
-	if total > MaxBatchBytes {
-		return nil, status.Errorf(codes.InvalidArgument, "batch of %d bytes exceeds %d; use ByteStream", total, MaxBatchBytes)
+		sz := d.GetSizeBytes()
+		if sz <= 0 {
+			continue
+		}
+		if sz > MaxBatchBytes || total > MaxBatchBytes-sz {
+			return nil, status.Errorf(codes.InvalidArgument, "batch exceeds %d bytes; use ByteStream", MaxBatchBytes)
+		}
+		total += sz
 	}
 	comp := selectCompressor(req.GetAcceptableCompressors())
 	resp := &repb.BatchReadBlobsResponse{}
@@ -181,7 +185,7 @@ func (o *Origin) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsReq
 		}
 		b, err := o.store.Get(d)
 		switch {
-		case err == blob.ErrNotFound:
+		case err == blob.ErrNotFound || (err == nil && int64(len(b)) != d.GetSizeBytes()):
 			r.Status = status.New(codes.NotFound, "blob not found").Proto()
 		case err != nil:
 			r.Status = status.New(codes.Internal, err.Error()).Proto()
@@ -432,6 +436,10 @@ func (o *Origin) UpdateActionResult(ctx context.Context, req *repb.UpdateActionR
 // GetCapabilities advertises SHA-256 CAS with Zstd/Deflate compression, a
 // writable action cache, execution priorities, and remote execution.
 func (o *Origin) GetCapabilities(ctx context.Context, req *repb.GetCapabilitiesRequest) (*repb.ServerCapabilities, error) {
+	updateEnabled := true
+	if o.tenants.Authorize(ctx, req.GetInstanceName()) == nil {
+		updateEnabled = o.tenants.AuthorizeActionCacheWrite(ctx, req.GetInstanceName()) == nil
+	}
 	return &repb.ServerCapabilities{
 		ExecutionCapabilities: &repb.ExecutionCapabilities{
 			DigestFunction:  repb.DigestFunction_SHA256,
@@ -443,7 +451,7 @@ func (o *Origin) GetCapabilities(ctx context.Context, req *repb.GetCapabilitiesR
 		},
 		CacheCapabilities: &repb.CacheCapabilities{
 			DigestFunctions:               []repb.DigestFunction_Value{repb.DigestFunction_SHA256},
-			ActionCacheUpdateCapabilities: &repb.ActionCacheUpdateCapabilities{UpdateEnabled: true},
+			ActionCacheUpdateCapabilities: &repb.ActionCacheUpdateCapabilities{UpdateEnabled: updateEnabled},
 			MaxBatchTotalSizeBytes:        MaxBatchBytes,
 			MaxCasBlobSizeBytes:           o.maxBlobBytes,
 			SymlinkAbsolutePathStrategy:   repb.SymlinkAbsolutePathStrategy_DISALLOWED,
@@ -487,7 +495,9 @@ func (o *Origin) Read(req *bytestream.ReadRequest, stream bytestream.ByteStream_
 	defer f.Close()
 
 	n, err := streamReader(f, size, req.GetReadOffset(), req.GetReadLimit(), comp, stream)
-	o.moved(stream.Context(), instance, "read", "bytestream", n)
+	if err == nil {
+		o.moved(stream.Context(), instance, "read", "bytestream", n)
+	}
 	return err
 }
 
@@ -545,6 +555,7 @@ func (o *Origin) Write(stream bytestream.ByteStream_WriteServer) error {
 
 	var wireOffset int64
 	finished := false
+	pipeClosed := false
 	req := first
 	var streamErr error
 	for {
@@ -561,6 +572,7 @@ func (o *Origin) Write(stream bytestream.ByteStream_WriteServer) error {
 			if _, werr := pw.Write(data); werr != nil {
 				// The consumer side (decompressor or PutReader) closed early;
 				// wait for its concrete error below.
+				pipeClosed = true
 				break
 			}
 			wireOffset += int64(len(data))
@@ -584,6 +596,13 @@ func (o *Origin) Write(stream bytestream.ByteStream_WriteServer) error {
 		pw.CloseWithError(streamErr)
 		<-putDone
 		return streamErr
+	}
+	if pipeClosed {
+		pw.Close()
+		if err := <-putDone; err != nil {
+			return status.Error(codes.InvalidArgument, err.Error())
+		}
+		return status.Error(codes.InvalidArgument, "write aborted")
 	}
 	if !finished {
 		err := status.Error(codes.InvalidArgument, "write stream closed before finish_write")
@@ -646,6 +665,9 @@ func (f *firstReqWriteServer) Recv() (*bytestream.WriteRequest, error) {
 // offset, limit, and optional compression, returning how many bytes were sent
 // over the stream.
 func streamReader(r io.ReadSeeker, size, offset, limit int64, comp repb.Compressor_Value, stream bytestream.ByteStream_ReadServer) (int64, error) {
+	if limit < 0 {
+		return 0, status.Errorf(codes.InvalidArgument, "negative read_limit %d", limit)
+	}
 	if offset < 0 || offset > size {
 		return 0, status.Errorf(codes.OutOfRange, "offset %d out of range for %d bytes", offset, size)
 	}
@@ -732,6 +754,9 @@ func (w *chunkStreamWriter) flush() error {
 // streamBytes writes b to the stream honoring offset, limit, and optional
 // compression, returning how many bytes were sent.
 func streamBytes(b []byte, offset, limit int64, comp repb.Compressor_Value, stream bytestream.ByteStream_ReadServer) (int64, error) {
+	if limit < 0 {
+		return 0, status.Errorf(codes.InvalidArgument, "negative read_limit %d", limit)
+	}
 	if offset < 0 || offset > int64(len(b)) {
 		return 0, status.Errorf(codes.OutOfRange, "offset %d out of range for %d bytes", offset, len(b))
 	}

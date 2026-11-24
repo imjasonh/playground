@@ -367,4 +367,44 @@ func TestActionCacheCompletenessInliningReadOnlyAndLogStream(t *testing.T) {
 	if string(resp.GetData()) != "live log" {
 		t.Errorf("LogStream Read = %q, want %q", resp.GetData(), "live log")
 	}
+
+	// GetCapabilities reflects read-only AC for devCtx vs writable for ciCtx.
+	caps := repb.NewCapabilitiesClient(conn)
+	devCaps, err := caps.GetCapabilities(devCtx, &repb.GetCapabilitiesRequest{InstanceName: "tenant-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if devCaps.GetCacheCapabilities().GetActionCacheUpdateCapabilities().GetUpdateEnabled() {
+		t.Error("GetCapabilities reported UpdateEnabled=true for read-only AC token")
+	}
+	ciCaps, err := caps.GetCapabilities(ciCtx, &repb.GetCapabilitiesRequest{InstanceName: "tenant-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ciCaps.GetCacheCapabilities().GetActionCacheUpdateCapabilities().GetUpdateEnabled() {
+		t.Error("GetCapabilities reported UpdateEnabled=false for writable AC token")
+	}
+
+	// ByteStream.Read with negative read_limit returns InvalidArgument, and
+	// requesting a stored hash with the wrong declared size returns NotFound.
+	negStream, err := bs.Read(devCtx, &bytestream.ReadRequest{
+		ResourceName: remote.ReadResourceName("tenant-a", stdoutD),
+		ReadLimit:    -1,
+	})
+	if err == nil {
+		_, err = negStream.Recv()
+	}
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("negative read_limit code = %v, want InvalidArgument", status.Code(err))
+	}
+	wrongSizeD := &repb.Digest{Hash: stdoutD.GetHash(), SizeBytes: stdoutD.GetSizeBytes() + 99}
+	wrongStream, err := bs.Read(devCtx, &bytestream.ReadRequest{
+		ResourceName: remote.ReadResourceName("tenant-a", wrongSizeD),
+	})
+	if err == nil {
+		_, err = wrongStream.Recv()
+	}
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("wrong declared size Read code = %v, want NotFound", status.Code(err))
+	}
 }

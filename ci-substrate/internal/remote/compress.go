@@ -5,6 +5,7 @@ import (
 	"compress/flate"
 	"fmt"
 	"io"
+	"math"
 
 	repb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/klauspost/compress/zstd"
@@ -32,7 +33,7 @@ func compressBytes(comp repb.Compressor_Value, data []byte) ([]byte, error) {
 		return data, nil
 	case repb.Compressor_ZSTD:
 		var buf bytes.Buffer
-		w, err := zstd.NewWriter(&buf)
+		w, err := zstd.NewWriter(&buf, zstd.WithEncoderConcurrency(1))
 		if err != nil {
 			return nil, err
 		}
@@ -73,6 +74,9 @@ func decompressBytes(comp repb.Compressor_Value, data []byte, maxSize int64) ([]
 	}
 	defer r.Close()
 	if maxSize >= 0 {
+		if maxSize == math.MaxInt64 {
+			return nil, fmt.Errorf("declared size %d exceeds limit", maxSize)
+		}
 		out, err := io.ReadAll(io.LimitReader(r, maxSize+1))
 		if err != nil {
 			return nil, err
@@ -90,7 +94,7 @@ func newDecompressReader(comp repb.Compressor_Value, r io.Reader) (io.ReadCloser
 	case repb.Compressor_IDENTITY:
 		return io.NopCloser(r), nil
 	case repb.Compressor_ZSTD:
-		dec, err := zstd.NewReader(r)
+		dec, err := zstd.NewReader(r, zstd.WithDecoderConcurrency(1))
 		if err != nil {
 			return nil, err
 		}
@@ -105,7 +109,7 @@ func newDecompressReader(comp repb.Compressor_Value, r io.Reader) (io.ReadCloser
 func newCompressWriter(comp repb.Compressor_Value, w io.Writer) (io.WriteCloser, error) {
 	switch comp {
 	case repb.Compressor_ZSTD:
-		return zstd.NewWriter(w)
+		return zstd.NewWriter(w, zstd.WithEncoderConcurrency(1))
 	case repb.Compressor_DEFLATE:
 		return flate.NewWriter(w, flate.DefaultCompression)
 	default:

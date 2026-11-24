@@ -140,10 +140,18 @@ func (s *Server) push(ctx context.Context, kind, instance string, uris []string,
 	if err := digest.Validate(d); err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
+	sorted, err := normalizeQualifiers(qs)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+	for _, uri := range uris {
+		if uri == "" {
+			return status.Error(codes.InvalidArgument, "empty URI")
+		}
+	}
 	if !s.blobs.Has(d) {
 		return status.Errorf(codes.FailedPrecondition, "digest %s not in CAS", digest.Key(d))
 	}
-	sorted := normalizeQualifiers(qs)
 	now := s.now()
 	var exp *time.Time
 	if expireAt != nil {
@@ -151,9 +159,6 @@ func (s *Server) push(ctx context.Context, kind, instance string, uris []string,
 		exp = &t
 	}
 	for _, uri := range uris {
-		if uri == "" {
-			return status.Error(codes.InvalidArgument, "empty URI")
-		}
 		rec := record{
 			URI:        uri,
 			Qualifiers: sorted,
@@ -179,7 +184,15 @@ func (s *Server) fetch(ctx context.Context, kind, instance string, uris []string
 	if len(uris) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "at least one URI is required")
 	}
-	sorted := normalizeQualifiers(qs)
+	sorted, err := normalizeQualifiers(qs)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	for _, uri := range uris {
+		if uri == "" {
+			return nil, status.Error(codes.InvalidArgument, "empty URI")
+		}
+	}
 	now := s.now()
 	for _, uri := range uris {
 		rec, err := s.readRecord(instance, kind, uri, sorted)
@@ -211,9 +224,9 @@ func checkDigestFunction(fn repb.DigestFunction_Value) error {
 	return nil
 }
 
-func normalizeQualifiers(qs []*assetpb.Qualifier) []qualifier {
+func normalizeQualifiers(qs []*assetpb.Qualifier) ([]qualifier, error) {
 	if len(qs) == 0 {
-		return nil
+		return nil, nil
 	}
 	out := make([]qualifier, len(qs))
 	for i, q := range qs {
@@ -225,7 +238,12 @@ func normalizeQualifiers(qs []*assetpb.Qualifier) []qualifier {
 		}
 		return strings.Compare(a.Value, b.Value)
 	})
-	return out
+	for i := 1; i < len(out); i++ {
+		if out[i].Name == out[i-1].Name {
+			return nil, errors.New("duplicate qualifier name")
+		}
+	}
+	return out, nil
 }
 
 func toProtoQualifiers(qs []qualifier) []*assetpb.Qualifier {

@@ -54,6 +54,15 @@ func TestParseRejectsGarbage(t *testing.T) {
 	if _, _, err := ParseReadResource("tenant-a/blobs/../../etc/passwd/1"); err == nil {
 		t.Error("ParseReadResource accepted a path-traversal hash")
 	}
+	if _, _, err := ParseReadResource("tenant-a/blobs/" + digest.FromBytes(nil).GetHash() + "/0/extra"); err == nil {
+		t.Error("ParseReadResource accepted trailing segments")
+	}
+	if _, _, _, err := ParseReadResourceCompressed("tenant-a/compressed-blobs/zstd/" + digest.FromBytes(nil).GetHash() + "/0/extra"); err == nil {
+		t.Error("ParseReadResourceCompressed accepted trailing segments")
+	}
+	if _, _, err := ParseWriteResource("tenant-a/uploads//blobs/" + digest.FromBytes(nil).GetHash() + "/0"); err == nil {
+		t.Error("ParseWriteResource accepted an empty upload UUID")
+	}
 }
 
 func TestCompressedResources(t *testing.T) {

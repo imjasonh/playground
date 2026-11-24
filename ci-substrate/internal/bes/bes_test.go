@@ -243,3 +243,22 @@ func TestBESStreamMetricsProfileCoverageAndIsolation(t *testing.T) {
 		t.Errorf("tests = %+v, want PASSED //pkg:foo_test", got.Tests)
 	}
 }
+
+func TestDecodeMalformedBuildFinished(t *testing.T) {
+	// Field 3 (ExitCode) containing a truncated string (field 1, declared len 50,
+	// only 2 bytes present) and a truncated varint (field 2, continuation bit set).
+	// Previously caused an infinite loop in decodeBuildFinished.
+	badExit := encodeString(1, "ab")
+	badExit[1] = 50 // corrupt declared length
+	ev := encodeMsg(14, encodeMsg(3, badExit))
+	parsed := decodeBazelEvent(ev)
+	if parsed.finished == nil || !parsed.finished.HasExitCode {
+		t.Errorf("expected finished event with HasExitCode, got %+v", parsed.finished)
+	}
+
+	// Truncated varint inside ExitCode.code (field 2).
+	var badVarint []byte
+	badVarint = protowire.AppendTag(badVarint, 2, protowire.VarintType)
+	badVarint = append(badVarint, 0x80)
+	_ = decodeBazelEvent(encodeMsg(14, encodeMsg(3, badVarint)))
+}

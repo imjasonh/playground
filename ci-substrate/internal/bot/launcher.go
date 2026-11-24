@@ -2,6 +2,8 @@ package bot
 
 import (
 	"context"
+	"errors"
+	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -41,10 +43,14 @@ func (b *Bot) command(ctx context.Context, dir string, args []string) (*exec.Cmd
 	cmd := exec.CommandContext(ctx, b.shell, argv...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
-		if cmd.Process == nil {
+		if cmd.Process == nil || cmd.Process.Pid <= 0 {
 			return nil
 		}
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
 	}
 	cmd.WaitDelay = 5 * time.Second
 	return cmd, nil

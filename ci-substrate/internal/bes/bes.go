@@ -59,7 +59,36 @@ type InvocationRecord struct {
 	ToolLogs         []FileRef           `json:"tool_logs,omitempty"`
 	CoverageFiles    []FileRef           `json:"coverage_files,omitempty"`
 	Tests            []TestResultSummary `json:"tests,omitempty"`
+
+	// emitted reports whether telemetry was already recorded for this
+	// invocation. Records reloaded from disk were finalized, so they set it.
+	emitted bool
+	// touched is when the record last received an event, for evicting
+	// streams that never finish.
+	touched time.Time
 }
+
+// clone returns a deep copy of r safe to read without holding Server.mu.
+func (r *InvocationRecord) clone() *InvocationRecord {
+	cp := *r
+	if r.Metrics != nil {
+		m := *r.Metrics
+		cp.Metrics = &m
+	}
+	cp.Profiles = slices.Clone(r.Profiles)
+	cp.ToolLogs = slices.Clone(r.ToolLogs)
+	cp.CoverageFiles = slices.Clone(r.CoverageFiles)
+	cp.Tests = slices.Clone(r.Tests)
+	for i := range cp.Tests {
+		cp.Tests[i].Outputs = slices.Clone(cp.Tests[i].Outputs)
+	}
+	return &cp
+}
+
+// staleAfter is how long an unfinished invocation may go without events
+// before the server persists and evicts it, so streams that fail and never
+// retry don't hold memory forever.
+const staleAfter = time.Hour
 
 // Server implements buildpb.PublishBuildEventServer and serves invocation
 // summaries over HTTP.
@@ -71,9 +100,9 @@ type Server struct {
 	invocations *invocation.Tracker
 	metrics     besMetrics
 
-	mu      sync.Mutex
-	active  map[string]*InvocationRecord // keyed by instance + "\x00" + invocationID
-	emitted map[string]bool
+	mu        sync.Mutex
+	active    map[string]*InvocationRecord // keyed by instance + "\x00" + invocationID
+	lastSweep time.Time
 }
 
 type besMetrics struct {
@@ -132,7 +161,6 @@ func New(root string, tenants *tenant.Registry, invocations *invocation.Tracker)
 		invocations: invocations,
 		metrics:     newBESMetrics(),
 		active:      map[string]*InvocationRecord{},
-		emitted:     map[string]bool{},
 	}, nil
 }
 
@@ -227,7 +255,11 @@ func (s *Server) PublishBuildToolEventStream(stream buildpb.PublishBuildEvent_Pu
 			return status.Error(codes.InvalidArgument, "missing ordered_build_event.stream_id")
 		}
 		sid := obe.GetStreamId()
+		if authed && !sameStream(sid, invID, buildID) {
+			return status.Error(codes.InvalidArgument, "stream_id changed within a single event stream")
+		}
 		if !authed {
+			s.sweepStale(ctx, time.Now())
 			instance, err = s.resolveInstance(ctx, req.GetProjectId())
 			if err != nil {
 				return err
@@ -259,6 +291,37 @@ func (s *Server) PublishBuildToolEventStream(stream buildpb.PublishBuildEvent_Pu
 	return nil
 }
 
+// sameStream reports whether sid names the invocation a stream started with.
+func sameStream(sid *buildpb.StreamId, invID, buildID string) bool {
+	got := sid.GetInvocationId()
+	if got == "" {
+		got = sid.GetBuildId()
+	}
+	return got == invID && (sid.GetBuildId() == "" || buildID == "" || sid.GetBuildId() == buildID)
+}
+
+// sweepStale persists and evicts active invocations that received no events
+// for staleAfter. It scans at most once per minute.
+func (s *Server) sweepStale(ctx context.Context, now time.Time) {
+	s.mu.Lock()
+	if now.Sub(s.lastSweep) < time.Minute {
+		s.mu.Unlock()
+		return
+	}
+	s.lastSweep = now
+	var stale []*InvocationRecord
+	for _, rec := range s.active {
+		if now.Sub(rec.touched) > staleAfter {
+			stale = append(stale, rec)
+		}
+	}
+	s.mu.Unlock()
+	for _, rec := range stale {
+		slog.WarnContext(ctx, "evicting unfinished BES invocation", "invocation", rec.InvocationID, "instance", rec.Instance)
+		s.finalize(ctx, rec.Instance, rec.InvocationID, rec)
+	}
+}
+
 func (s *Server) getOrCreate(instance, invID, buildID string) *InvocationRecord {
 	key := instance + "\x00" + invID
 	s.mu.Lock()
@@ -267,6 +330,7 @@ func (s *Server) getOrCreate(instance, invID, buildID string) *InvocationRecord 
 		if rec.BuildID == "" && buildID != "" {
 			rec.BuildID = buildID
 		}
+		rec.touched = time.Now()
 		return rec
 	}
 	// If the stream already persisted this invocation, reload it so a
@@ -278,6 +342,8 @@ func (s *Server) getOrCreate(instance, invID, buildID string) *InvocationRecord 
 			if existing.BuildID == "" && buildID != "" {
 				existing.BuildID = buildID
 			}
+			existing.emitted = true
+			existing.touched = time.Now()
 			s.active[key] = &existing
 			return &existing
 		}
@@ -287,6 +353,7 @@ func (s *Server) getOrCreate(instance, invID, buildID string) *InvocationRecord 
 		BuildID:      buildID,
 		Instance:     instance,
 		StartedAt:    time.Now().UTC(),
+		touched:      time.Now(),
 	}
 	s.active[key] = rec
 	return rec
@@ -298,6 +365,7 @@ func (s *Server) applyEvent(ctx context.Context, instance string, rec *Invocatio
 	}
 	s.mu.Lock()
 	rec.EventCount++
+	rec.touched = time.Now()
 	s.mu.Unlock()
 
 	bazelAny := ev.GetBazelEvent()
@@ -353,38 +421,51 @@ func (s *Server) applyEvent(ctx context.Context, instance string, rec *Invocatio
 		))
 		for _, f := range parsed.testResult.Outputs {
 			if isCoverageFile(f) {
-				rec.CoverageFiles = append(rec.CoverageFiles, f)
+				rec.CoverageFiles = appendUnique(rec.CoverageFiles, f)
 			}
 		}
 	}
 	for _, f := range parsed.namedFiles {
 		if isCoverageFile(f) {
-			rec.CoverageFiles = append(rec.CoverageFiles, f)
+			rec.CoverageFiles = appendUnique(rec.CoverageFiles, f)
 		}
 	}
+}
+
+// appendUnique appends f unless files already holds the same artifact: a
+// coverage report appears both in its TestResult and in a NamedSetOfFiles.
+func appendUnique(files []FileRef, f FileRef) []FileRef {
+	for _, g := range files {
+		if g.URI == f.URI && g.Name == f.Name {
+			return files
+		}
+	}
+	return append(files, f)
 }
 
 func (s *Server) finalize(ctx context.Context, instance, invID string, rec *InvocationRecord) {
 	key := instance + "\x00" + invID
 	s.mu.Lock()
-	snap := *rec
+	snap := rec.clone()
 	if snap.FinishedAt == nil {
 		now := time.Now().UTC()
 		snap.FinishedAt = &now
 	}
-	shouldEmit := !s.emitted[key]
-	s.emitted[key] = true
-	delete(s.active, key)
+	shouldEmit := !rec.emitted
+	rec.emitted = true
+	if s.active[key] == rec {
+		delete(s.active, key)
+	}
 	s.mu.Unlock()
 
-	if err := s.persist(&snap); err != nil {
+	if err := s.persist(snap); err != nil {
 		slog.ErrorContext(ctx, "persisting BES invocation", "invocation", invID, "instance", instance, "err", err)
 	}
 	if !shouldEmit {
 		return
 	}
-	s.emitTelemetry(ctx, &snap)
-	s.invocations.Finish(ctx, invID)
+	s.emitTelemetry(ctx, snap)
+	s.invocations.Finish(ctx, instance, invID)
 }
 
 func (s *Server) emitTelemetry(ctx context.Context, rec *InvocationRecord) {
@@ -495,9 +576,9 @@ func (s *Server) Get(instance, invID string) (*InvocationRecord, error) {
 	}
 	s.mu.Lock()
 	if rec, ok := s.active[instance+"\x00"+invID]; ok {
-		cp := *rec
+		cp := rec.clone()
 		s.mu.Unlock()
-		return &cp, nil
+		return cp, nil
 	}
 	s.mu.Unlock()
 

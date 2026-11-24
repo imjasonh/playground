@@ -250,6 +250,9 @@ func (s *Scheduler) Execute(req *repb.ExecuteRequest, stream repb.Execution_Exec
 	if err := s.tenants.Authorize(ctx, req.GetInstanceName()); err != nil {
 		return err
 	}
+	if fn := req.GetDigestFunction(); fn != repb.DigestFunction_UNKNOWN && fn != repb.DigestFunction_SHA256 {
+		return status.Errorf(codes.Unimplemented, "digest function %v not supported", fn)
+	}
 	if err := digest.Validate(req.GetActionDigest()); err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -642,8 +645,10 @@ func (s *Scheduler) Lease(ctx context.Context, req *workerv1.LeaseRequest) (*wor
 		select {
 		case j := <-w.ch:
 			s.mu.Lock()
-			j.botID = ""
-			s.enqueueLocked(j)
+			if j.stage != repb.ExecutionStage_COMPLETED {
+				j.botID = ""
+				s.enqueueLocked(j)
+			}
 			s.mu.Unlock()
 		default:
 		}
@@ -651,6 +656,9 @@ func (s *Scheduler) Lease(ctx context.Context, req *workerv1.LeaseRequest) (*wor
 	case j := <-w.ch:
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		if j.stage == repb.ExecutionStage_COMPLETED {
+			return &workerv1.LeaseResponse{}, nil
+		}
 		if ctx.Err() != nil {
 			// The runner went away while the job was handed over, as a
 			// stopping pod does. Requeue now instead of waiting for the

@@ -94,8 +94,9 @@ bazel build //... --remote_cache_compression
   `inline_output_files` for blobs up to 1 MiB.
 - **Read-only ActionCache tokens:** In the `TENANTS` JSON configuration, you
   can grant developer tokens read access to an instance while denying
-  `UpdateActionResult` and Remote Asset `Push` calls so workstations cannot
-  poison CI-populated caches:
+  `UpdateActionResult` and Remote Asset `Push` calls (and advertising
+  `action_cache_update_capabilities.update_enabled = false` in
+  `GetCapabilities`) so workstations cannot poison CI-populated caches:
 
 ```json
 {

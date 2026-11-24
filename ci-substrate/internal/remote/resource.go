@@ -38,7 +38,8 @@ func parseDigest(hash, size string) (*repb.Digest, error) {
 }
 
 // parseDigestParts parses "{digest_function/}{hash}/{size}" starting at parts.
-func parseDigestParts(parts []string) (*repb.Digest, error) {
+// When allowTrailing is false, extra trailing segments are rejected.
+func parseDigestParts(parts []string, allowTrailing bool) (*repb.Digest, error) {
 	if len(parts) < 2 {
 		return nil, fmt.Errorf("incomplete digest path")
 	}
@@ -46,7 +47,13 @@ func parseDigestParts(parts []string) (*repb.Digest, error) {
 		if len(parts) < 3 {
 			return nil, fmt.Errorf("incomplete sha256 digest path")
 		}
+		if !allowTrailing && len(parts) != 3 {
+			return nil, fmt.Errorf("unexpected trailing segments in digest path")
+		}
 		return parseDigest(parts[1], parts[2])
+	}
+	if !allowTrailing && len(parts) != 2 {
+		return nil, fmt.Errorf("unexpected trailing segments in digest path")
 	}
 	return parseDigest(parts[0], parts[1])
 }
@@ -94,7 +101,7 @@ func ParseReadResourceCompressed(name string) (instance string, d *repb.Digest, 
 	for i := 0; i < len(parts); i++ {
 		switch parts[i] {
 		case "blobs":
-			d, err := parseDigestParts(parts[i+1:])
+			d, err := parseDigestParts(parts[i+1:], false)
 			if err != nil {
 				return "", nil, repb.Compressor_IDENTITY, err
 			}
@@ -107,7 +114,7 @@ func ParseReadResourceCompressed(name string) (instance string, d *repb.Digest, 
 			if err != nil {
 				return "", nil, repb.Compressor_IDENTITY, err
 			}
-			d, err := parseDigestParts(parts[i+2:])
+			d, err := parseDigestParts(parts[i+2:], false)
 			if err != nil {
 				return "", nil, repb.Compressor_IDENTITY, err
 			}
@@ -140,9 +147,12 @@ func ParseWriteResourceCompressed(name string) (instance string, d *repb.Digest,
 		if parts[i] != "uploads" {
 			continue
 		}
+		if parts[i+1] == "" {
+			return "", nil, repb.Compressor_IDENTITY, fmt.Errorf("empty upload uuid in %q", name)
+		}
 		switch parts[i+2] {
 		case "blobs":
-			d, err := parseDigestParts(parts[i+3:])
+			d, err := parseDigestParts(parts[i+3:], true)
 			if err != nil {
 				return "", nil, repb.Compressor_IDENTITY, err
 			}
@@ -155,7 +165,7 @@ func ParseWriteResourceCompressed(name string) (instance string, d *repb.Digest,
 			if err != nil {
 				return "", nil, repb.Compressor_IDENTITY, err
 			}
-			d, err := parseDigestParts(parts[i+4:])
+			d, err := parseDigestParts(parts[i+4:], true)
 			if err != nil {
 				return "", nil, repb.Compressor_IDENTITY, err
 			}

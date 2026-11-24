@@ -177,4 +177,23 @@ func TestPushFetchDirectoryAndEvictedCAS(t *testing.T) {
 	}); status.Code(err) != codes.NotFound {
 		t.Errorf("FetchDirectory after CAS eviction = %v, want NotFound", err)
 	}
+
+	// Duplicate qualifier names and empty URIs are rejected.
+	if _, err := srv.PushBlob(ctxA, &assetpb.PushBlobRequest{
+		InstanceName: "tenant-a",
+		Uris:         []string{"https://example.com/dup"},
+		Qualifiers: []*assetpb.Qualifier{
+			{Name: "checksum.sri", Value: "a"},
+			{Name: "checksum.sri", Value: "b"},
+		},
+		BlobDigest: d,
+	}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("duplicate qualifier PushBlob = %v, want InvalidArgument", err)
+	}
+	if _, err := srv.FetchBlob(ctxA, &assetpb.FetchBlobRequest{
+		InstanceName: "tenant-a",
+		Uris:         []string{""},
+	}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("empty URI FetchBlob = %v, want InvalidArgument", err)
+	}
 }
