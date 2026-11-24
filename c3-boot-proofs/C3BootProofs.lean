@@ -572,3 +572,4 @@ import C3BootProofs.Models.Ed25519Formulas
 import C3BootProofs.Models.Ed25519RecoverX
 import C3BootProofs.Models.Ed25519SvModelPrime
 import C3BootProofs.Models.Ed25519K
+import C3BootProofs.Models.Ed25519Dec
