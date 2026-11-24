@@ -108,6 +108,72 @@ impl Panel {
         Ok(())
     }
 
+    /// Full-refresh a packed 1-bit framebuffer (MSB first, 1 = white) streamed in
+    /// small chunks from flash so no 48 KiB heap buffer is needed. Leaves the panel awake.
+    pub fn show_bw_stream<F>(&mut self, mut read_at: F) -> Result<()>
+    where
+        F: FnMut(usize, &mut [u8]) -> Result<()>,
+    {
+        self.init_full()?;
+        let mut buf = [0u8; 4096];
+
+        self.cmd(CMD_DTM1)?;
+        let mut offset = 0usize;
+        while offset < FRAME_BYTES {
+            let len = (FRAME_BYTES - offset).min(buf.len());
+            read_at(offset, &mut buf[..len])?;
+            self.data(&buf[..len])?;
+            offset += len;
+        }
+
+        self.cmd(CMD_DTM2)?;
+        offset = 0;
+        while offset < FRAME_BYTES {
+            let len = (FRAME_BYTES - offset).min(buf.len());
+            read_at(offset, &mut buf[..len])?;
+            for b in &mut buf[..len] {
+                *b = !*b;
+            }
+            self.data(&buf[..len])?;
+            offset += len;
+        }
+
+        self.refresh()?;
+        Ok(())
+    }
+
+    /// Full-refresh a 4-level grayscale (2-bit) image stored as two contiguous
+    /// 48,000-byte planes (`DTM1` at `0..48_000`, `DTM2` at `48_000..96_000`) streamed
+    /// in 4 KiB chunks from flash. Leaves the panel awake.
+    pub fn show_4gray_stream<F>(&mut self, mut read_at: F) -> Result<()>
+    where
+        F: FnMut(usize, &mut [u8]) -> Result<()>,
+    {
+        self.init_4gray()?;
+        let mut buf = [0u8; 4096];
+
+        self.cmd(CMD_DTM1)?;
+        let mut offset = 0usize;
+        while offset < FRAME_BYTES {
+            let len = (FRAME_BYTES - offset).min(buf.len());
+            read_at(offset, &mut buf[..len])?;
+            self.data(&buf[..len])?;
+            offset += len;
+        }
+
+        self.cmd(CMD_DTM2)?;
+        offset = 0;
+        while offset < FRAME_BYTES {
+            let len = (FRAME_BYTES - offset).min(buf.len());
+            read_at(FRAME_BYTES + offset, &mut buf[..len])?;
+            self.data(&buf[..len])?;
+            offset += len;
+        }
+
+        self.refresh()?;
+        Ok(())
+    }
+
     /// Switch to Waveshare's partial-refresh LUT (temperature-select hack).
     pub fn enter_partial_mode(&mut self) -> Result<()> {
         self.init_part()
@@ -177,6 +243,20 @@ impl Panel {
         self.cmd_data(CMD_DUAL_SPI, &[0x00])?;
         self.cmd_data(CMD_VCOM, &[0x10, 0x07])?;
         self.cmd_data(CMD_TCON, &[0x22])?;
+        Ok(())
+    }
+
+    /// Waveshare 7.5″ V2 4-Gray OTP LUT initialization (`epd7in5_V2.py: init_4Gray`).
+    fn init_4gray(&mut self) -> Result<()> {
+        self.hardware_reset();
+        self.cmd_data(CMD_PANEL_SETTING, &[0x1F])?;
+        self.cmd_data(CMD_VCOM, &[0x10, 0x07])?;
+        self.cmd(CMD_POWER_ON)?;
+        FreeRtos::delay_ms(100);
+        self.wait_idle()?;
+        self.cmd_data(CMD_BOOSTER, &[0x27, 0x27, 0x18, 0x17])?;
+        self.cmd_data(CMD_TEMP_SEL, &[0x02])?;
+        self.cmd_data(CMD_TEMP_LUT, &[0x5F])?;
         Ok(())
     }
 

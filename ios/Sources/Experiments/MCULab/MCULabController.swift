@@ -87,6 +87,14 @@ final class MCULabController: NSObject, ObservableObject {
     @Published var otaStatusText = "Choose a board and app to pull from GHCR (or pick a .bin) to arm an update."
     @Published var lastOTAReport: MCULabOTAReport?
 
+    // Declarative app coa board and app to pull from GHCR (or pick a .bin) to arm an update."
+    @Published var lastOTAReport: MCULabOTAReport?
+    private var otaTargetBoard: MCULabBoard?
+
+    var activeTransferBoard: MCULabBoard {
+        otaTargetBoard ?? selectedBoard
+    }
+
     // Declarative app command state (zero app-specific hardcoding)
     struct PendingAppCommand: Equatable {
         let deviceId: UUID
@@ -800,10 +808,12 @@ final class MCULabController: NSObject, ObservableObject {
         let prevBatteryMon = enablePhoneBatteryMonitoring()
         let preMcuMv = history.first(where: { $0.deviceId == peripheral.identifier })?.metrics.batteryMv
             ?? latestSample?.metrics.batteryMv
+        let targetBoard = activeTransferBoard
+        let targetApp: MCULabApp = otaTransferKind == .dataBlob ? .photo : selectedApp
         otaSession = OTASessionTracker(
             deviceId: peripheral.identifier,
-            board: selectedBoard,
-            app: selectedApp,
+            board: targetBoard,
+            app: targetApp,
             imageName: stagedFirmwareName,
             sha256: stagedFirmwareSHA256,
             startedAt: Date(),
@@ -817,7 +827,8 @@ final class MCULabController: NSObject, ObservableObject {
         otaPeripheral = peripheral
         peripheral.delegate = self
         otaPhase = .connecting
-        otaStatusText = "Caught wake burst! Connecting to \(peripheral.name ?? MCULabProtocol.deviceName) for OTA…"
+        let label = otaTransferKind == .dataBlob ? "photo transfer" : "OTA"
+        otaStatusText = "Caught wake burst! Connecting to \(peripheral.name ?? targetBoard.gapName) for \(label)…"
         central.connect(peripheral, options: nil)
     }
 
@@ -846,12 +857,22 @@ final class MCULabController: NSObject, ObservableObject {
         otaSession?.rawBytes = firmware.count
         otaSession?.wireBytes = otaWirePayload?.count ?? firmware.count
         otaSession?.compression = otaWireCompression
-        let cmd = MCULabOTACommand.begin(
-            size: UInt32(firmware.count),
-            sha256: stagedFirmwareSHA256,
-            compression: otaWireCompression
-        )
-        otaStatusText = "Starting OTA session for \(firmware.count) bytes…"
+        let cmd: MCULabOTACommand = switch otaTransferKind {
+        case .firmware:
+            .begin(
+                size: UInt32(firmware.count),
+                sha256: stagedFirmwareSHA256,
+                compression: otaWireCompression
+            )
+        case .dataBlob:
+            .beginData(
+                size: UInt32(firmware.count),
+                sha256: stagedFirmwareSHA256,
+                compression: otaWireCompression
+            )
+        }
+        let kindLabel = otaTransferKind == .dataBlob ? "photo transfer" : "OTA session"
+        otaStatusText = "Starting \(kindLabel) for \(firmware.count) bytes…"
         armOTAPhaseTimeout(seconds: 15, message: "No READY response from board after BEGIN.")
         if let encoded = MCULabProtocol.encodeOTACommand(cmd).data(using: .utf8) {
             peripheral.writeValue(encoded, for: ctrl, type: .withResponse)
@@ -931,7 +952,11 @@ final class MCULabController: NSObject, ObservableObject {
             guard let self, !Task.isCancelled else { return }
             self.otaSession?.commitSentAt = Date()
             self.otaPhase = .committing
-            self.otaStatusText = "Verifying SHA-256 on \(self.selectedFirmwareTarget.displayName) and switching active OTA slot…"
+            if self.otaTransferKind == .dataBlob {
+                self.otaStatusText = "Verifying SHA-256 on \(self.activeTransferBoard.displayName) and restarting to display…"
+            } else {
+                self.otaStatusText = "Verifying SHA-256 on \(self.selectedFirmwareTarget.displayName) and switching active OTA slot…"
+            }
             self.armOTAPhaseTimeout(seconds: 15, message: "No OK confirmation from board after COMMIT.")
             if let commitData = MCULabProtocol.encodeOTACommand(.commit).data(using: .utf8) {
                 peripheral.writeValue(commitData, for: ctrlChar, type: .withResponse)
@@ -968,7 +993,11 @@ final class MCULabController: NSObject, ObservableObject {
             otaAutoResumeCount = 0
             finalizeOTASession(outcome: "ok")
             otaPhase = .completed(sha256: sha256)
-            otaStatusText = "Update verified (\(sha256.prefix(12))…). \(selectedFirmwareTarget.displayName) is rebooting into the new slot."
+            if otaTransferKind == .dataBlob {
+                otaStatusText = "Photos verified (\(sha256.prefix(12))…). \(activeTransferBoard.displayName) is restarting to display."
+            } else {
+                otaStatusText = "Update verified (\(sha256.prefix(12))…). \(selectedFirmwareTarget.displayName) is rebooting into the new slot."
+            }
             if let peripheral = otaPeripheral {
                 central?.cancelPeripheralConnection(peripheral)
             }
@@ -1076,8 +1105,9 @@ final class MCULabController: NSObject, ObservableObject {
         // (`boardID == 0` is legacy XIAO ESP32-C3), connect immediately during its wake window,
         // even if we already saw an earlier advertisement packet from this same burst!
         let advBoardID = metrics.boardID
-        let matchesOTATarget = advBoardID == selectedBoard.boardID
-            || (advBoardID == 0 && selectedBoard == .xiaoESP32C3)
+        let targetBoard = activeTransferBoard
+        let matchesOTATarget = advBoardID == targetBoard.boardID
+            || (advBoardID == 0 && targetBoard == .xiaoESP32C3)
         if otaPhase == .armed, matchesOTATarget, let peripheral = peripherals[deviceId] {
             beginOTAConnection(to: peripheral)
         }
@@ -1536,6 +1566,27 @@ final class MCULabController: NSObject, ObservableObject {
     }
 
     private func ensureBackendAttested(api: AppAttestAPI, baseURL: URL) async throws -> String {
+        let hostKey = baseURL.absoluteString
+        if defaults.string(forKey: Self.registeredHostDefaultsKey) == hostKey,
+           let existingKey = attestStore.keyId,
+           !existingKey.isEmpty
+        {
+            return existingKey
+        }
+
+        let challenge = try await api.fetchChallenge()
+        let userId = attestStore.userId.isEmpty ? "xiao-ios-\(attestStore.deviceId)" : attestStore.userId
+        let clientData = AppAttestClientData(
+            challenge: challenge.challenge,
+            userId: userId,
+            deviceId: attestStore.deviceId
+        )
+        let clientJSON = try clientData.jsonBytes()
+        let registered: AppAttestRegisterResponse
+        if attestKeys.isSupported {
+            let hash = AppAttestHashing.sha256(clientJSON)
+            // DCAppAttestService.attestKey is a one-time operation per keyId: calling it on a
+ ensureBackendAttested(api: AppAttestAPI, baseURL: URL) async throws -> String {
         let hostKey = baseURL.absoluteString
         if defaults.string(forKey: Self.registeredHostDefaultsKey) == hostKey,
            let existingKey = attestStore.keyId,

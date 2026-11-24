@@ -596,16 +596,24 @@ pub enum OtaCompression {
 /// Control command written by the iPhone to [`OTA_CONTROL_UUID`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OtaCommand {
-    /// Erase and open the inactive OTA partition for `size` uncompressed bytes with expected
-    /// lowercase hex `sha256` (of the uncompressed image) and optional wire `compression`.
+    /// Erase and open the inactive OTA partition for `size` uncompressed firmware bytes with
+    /// expected lowercase hex `sha256` and optional wire `compression`.
     Begin {
         size: u32,
         sha256: String,
         compression: OtaCompression,
     },
-    /// Finalize the OTA image, verify the SHA-256 digest, switch the boot partition, and reboot.
+    /// Open the inactive OTA partition for `size` uncompressed app data blob bytes (e.g. a
+    /// `MCUP` photo album) with expected lowercase hex `sha256` and optional wire `compression`.
+    /// On `COMMIT`, verifies SHA-256 and restarts without changing the active boot slot.
+    BeginData {
+        size: u32,
+        sha256: String,
+        compression: OtaCompression,
+    },
+    /// Finalize the active firmware or data transfer, verify SHA-256, and reboot.
     Commit,
-    /// Cancel an in-progress OTA transfer.
+    /// Cancel an in-progress OTA or data transfer.
     Abort,
 }
 
@@ -629,7 +637,7 @@ pub fn parse_ota_command(raw: &str) -> Option<OtaCommand> {
     match head.as_str() {
         "COMMIT" if parts.len() == 1 => Some(OtaCommand::Commit),
         "ABORT" if parts.len() == 1 => Some(OtaCommand::Abort),
-        "BEGIN" if parts.len() == 3 || parts.len() == 4 => {
+        "BEGIN" | "BEGIN_DATA" if parts.len() == 3 || parts.len() == 4 => {
             let size: u32 = parts[1].parse().ok()?;
             if size == 0 || size > OTA_SLOT_BYTES {
                 return None;
@@ -646,11 +654,19 @@ pub fn parse_ota_command(raw: &str) -> Option<OtaCommand> {
                 Some("deflate") => OtaCompression::Deflate,
                 Some(_) => return None,
             };
-            Some(OtaCommand::Begin {
-                size,
-                sha256: sha,
-                compression,
-            })
+            if head == "BEGIN_DATA" {
+                Some(OtaCommand::BeginData {
+                    size,
+                    sha256: sha,
+                    compression,
+                })
+            } else {
+                Some(OtaCommand::Begin {
+                    size,
+                    sha256: sha,
+                    compression,
+                })
+            }
         }
         _ => None,
     }
@@ -669,6 +685,16 @@ pub fn encode_ota_command(cmd: &OtaCommand) -> String {
             sha256,
             compression: OtaCompression::Deflate,
         } => format!("BEGIN {size} {sha256} deflate"),
+        OtaCommand::BeginData {
+            size,
+            sha256,
+            compression: OtaCompression::None,
+        } => format!("BEGIN_DATA {size} {sha256}"),
+        OtaCommand::BeginData {
+            size,
+            sha256,
+            compression: OtaCompression::Deflate,
+        } => format!("BEGIN_DATA {size} {sha256} deflate"),
         OtaCommand::Commit => "COMMIT".to_string(),
         OtaCommand::Abort => "ABORT".to_string(),
     }
@@ -1045,6 +1071,32 @@ mod tests {
         assert_eq!(
             parse_ota_command(&encode_ota_command(&begin_deflate)),
             Some(begin_deflate)
+        );
+        let begin_data = OtaCommand::BeginData {
+            size: 96_020,
+            sha256: sha.clone(),
+            compression: OtaCompression::None,
+        };
+        assert_eq!(
+            encode_ota_command(&begin_data),
+            format!("BEGIN_DATA 96020 {sha}")
+        );
+        assert_eq!(
+            parse_ota_command(&encode_ota_command(&begin_data)),
+            Some(begin_data)
+        );
+        let begin_data_deflate = OtaCommand::BeginData {
+            size: 288_020,
+            sha256: sha.clone(),
+            compression: OtaCompression::Deflate,
+        };
+        assert_eq!(
+            encode_ota_command(&begin_data_deflate),
+            format!("BEGIN_DATA 288020 {sha} deflate")
+        );
+        assert_eq!(
+            parse_ota_command(&encode_ota_command(&begin_data_deflate)),
+            Some(begin_data_deflate)
         );
         assert_eq!(
             parse_ota_command(&format!("begin 384000 sha256:{sha}")),

@@ -14,6 +14,7 @@ struct MCULabView: View {
                 availabilityBanner
                 scanControls
                 appCommandsPanel
+                MCULabPhotoFramePanel(controller: controller)
                 metricsDashboard
                 phaseBreakdownPanel
                 profileAndTracesPanel

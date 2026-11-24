@@ -48,6 +48,12 @@ path = "src/bin/waveshare_epd75_gzip_bench.rs"
 harness = false
 required-features = ["firmware"]
 
+[[bin]]
+name = "waveshare-epd75-photo"
+path = "src/bin/waveshare_epd75_photo.rs"
+harness = false
+required-features = ["firmware"]
+
 [features]
 default = []
 # Device firmware (esp-idf HAL + NimBLE). Host `cargo test` leaves this off.

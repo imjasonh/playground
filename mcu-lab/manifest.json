@@ -35,6 +35,11 @@
       "requires": [],
       "firmware_id_file": "src/gzip_bench.rs",
       "firmware_id_const": "GZIP_BENCH_FIRMWARE_ID"
+    },
+    "photo": {
+      "requires": ["epd75"],
+      "firmware_id_file": "src/photo.rs",
+      "firmware_id_const": "PHOTO_FIRMWARE_ID"
     }
   }
 }

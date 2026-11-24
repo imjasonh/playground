@@ -5,3 +5,4 @@ pub mod base;
 pub mod bench;
 pub mod gzip_bench;
 pub mod maze;
+pub mod photo;
