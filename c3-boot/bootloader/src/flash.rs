@@ -5,6 +5,7 @@
 const BOUNCE_WORDS: usize = 64;
 
 /// Reads `out.len()` bytes from flash at `addr`, which needn't be aligned.
+#[unsafe(link_section = ".text_boot")]
 pub fn read(addr: u32, out: &mut [u8]) -> bool {
     let mut bounce = [0u32; BOUNCE_WORDS];
     let mut done = 0usize;
@@ -42,6 +43,7 @@ pub fn read(addr: u32, out: &mut [u8]) -> bool {
 ///
 /// `dest..dest + len` must be RAM that nothing else uses, outside the
 /// bootloader's own memory.
+#[unsafe(link_section = ".text_boot")]
 pub unsafe fn copy_to_ram(src: u32, dest: u32, len: u32) -> bool {
     let words = (len / 4) as usize;
     // SAFETY: the caller guarantees the destination range is unused RAM, and
@@ -51,6 +53,7 @@ pub unsafe fn copy_to_ram(src: u32, dest: u32, len: u32) -> bool {
 }
 
 /// Erases the sector at `addr` and writes `record` at its start.
+#[unsafe(link_section = ".text_boot")]
 pub fn write_record(addr: u32, record: &[u8; c3_verify::bootstate::RECORD_LEN]) -> bool {
     let mut words = [0u32; c3_verify::bootstate::RECORD_LEN / 4];
     for (w, chunk) in words.iter_mut().zip(record.as_chunks::<4>().0) {

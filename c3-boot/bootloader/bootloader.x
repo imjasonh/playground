@@ -19,6 +19,9 @@ SECTIONS
   {
     KEEP(*(.text._start))
     *(.text .text.*)
+    /* The bootloader crate's own functions, after the libraries', so that
+     * a change confined to the crate moves no library function. */
+    *(.text_boot)
     /* Last, so that changing the clock and watchdog setup moves no other
      * function. */
     *(.text_setup)
@@ -28,6 +31,8 @@ SECTIONS
   {
     *(.srodata .srodata.*)
     *(.rodata .rodata.*)
+    /* The bootloader crate's log messages, pinned TUF root, and policy. */
+    *(.rodata_boot)
   } > DRAM
 
   .data : ALIGN(4)

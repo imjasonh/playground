@@ -1,10 +1,16 @@
 //! The c3-boot second-stage bootloader for the ESP32-C3.
 //!
 //! The ROM loads this image into SRAM and jumps to `_start`. The bootloader
-//! reads the boot-state record, checks slots with `c3-verify`, raises the
-//! security level for a confirmed slot, loads and maps the chosen image, and
-//! jumps to it. Every decision comes from `c3-verify`; this crate only moves
-//! bytes and touches hardware.
+//! reads the boot-state record, checks slots with `c3-verify` from the
+//! pinned Sigstore TUF root and the release identity policy compiled into
+//! it, raises the security level for a confirmed slot, loads and maps the
+//! chosen image, and jumps to it. Every decision comes from `c3-verify`;
+//! this crate only moves bytes and touches hardware.
+//!
+//! The crate's functions and constants are in `.text_boot` and
+//! `.rodata_boot`, which `bootloader.x` links after the libraries' code and
+//! constants, so that a change confined to this crate moves no library
+//! function or constant.
 
 #![no_std]
 #![no_main]
@@ -16,26 +22,34 @@ mod mmu;
 mod rom;
 mod watchdog;
 
-use c3_verify::accept::Accepted;
-use c3_verify::accept::SlotParts;
 use c3_verify::boot::Outcome;
 use c3_verify::boot::decide;
 use c3_verify::bootstate::Current;
 use c3_verify::bootstate::Slot;
 use c3_verify::bootstate::State;
 use c3_verify::image::SegmentKind;
-use c3_verify::keys::KeySet;
 use c3_verify::layout;
+use c3_verify::manifest::MAX_TUF_LEN;
+use c3_verify::tuf::TufError;
+use c3_verify::tuf_slot::Accepted;
+use c3_verify::tuf_slot::TufSlotParts;
 
-/// The four genesis trust-root public keys, embedded at build time.
-static GENESIS: [u8; 128] = *include_bytes!(concat!(env!("OUT_DIR"), "/genesis.bin"));
+use rom::log;
+
+/// The pinned Sigstore TUF root, in canonical JSON, and the release
+/// identity policy `POLICY`, from `build.rs`.
+mod pinned {
+    use c3_verify::trustroot::Policy;
+
+    include!(concat!(env!("OUT_DIR"), "/pinned.rs"));
+}
 
 const MAX_HEADER: usize = 20 + 16 * c3_verify::image::MAX_SEGMENTS;
 const MAX_BUNDLE: usize = 16_384;
-const MAX_CHAIN: usize = 2_048;
-const MAX_BLOB: usize = 4_096;
-const SCRATCH: usize = 4_120;
-const CHUNK: usize = 4_096;
+const MAX_TUF: usize = MAX_TUF_LEN as usize;
+/// `trusted_root::buffer_len(10_240)`: room for the keys of a
+/// `trusted_root.json` of up to 10,240 bytes.
+const KEYS: usize = 2 * 10_240 + 64;
 
 core::arch::global_asm!(
     r#"
@@ -58,16 +72,16 @@ _start:
 );
 
 /// Buffers for one slot's parts. They live on the stack, inside the
-/// bootloader's own memory.
+/// bootloader's own memory. `tuf` also holds each chunk of the image while
+/// it is hashed, before the TUF part is read.
 struct Buffers {
     header: [u8; MAX_HEADER],
     bundle: [u8; MAX_BUNDLE],
-    chain: [u8; MAX_CHAIN],
-    blob: [u8; MAX_BLOB],
-    chunk: [u8; CHUNK],
-    scratch: [u8; SCRATCH],
+    tuf: [u8; MAX_TUF],
+    keys: [u8; KEYS],
 }
 
+#[unsafe(link_section = ".text_boot")]
 fn slot_base(slot: Slot) -> u32 {
     match slot {
         Slot::A => layout::SLOT_A_OFFSET,
@@ -75,6 +89,7 @@ fn slot_base(slot: Slot) -> u32 {
     }
 }
 
+#[unsafe(link_section = ".text_boot")]
 fn record_addr(copy: c3_verify::bootstate::Copy) -> u32 {
     match copy {
         c3_verify::bootstate::Copy::A => layout::BOOT_STATE_A_OFFSET,
@@ -82,14 +97,16 @@ fn record_addr(copy: c3_verify::bootstate::Copy) -> u32 {
     }
 }
 
+#[unsafe(link_section = ".text_boot")]
 fn halt(code: u32) -> ! {
-    rom::log(c"c3-boot: halt %x\n", code);
+    log!("c3-boot: halt %x\n", code);
     loop {
         core::hint::spin_loop();
     }
 }
 
 /// Reads one region of a slot into `buf` and returns the filled prefix.
+#[unsafe(link_section = ".text_boot")]
 fn read_part(base: u32, part: c3_verify::manifest::Part, buf: &mut [u8]) -> Option<&[u8]> {
     let len = usize::try_from(part.length).ok()?;
     let dst = buf.get_mut(..len)?;
@@ -99,6 +116,7 @@ fn read_part(base: u32, part: c3_verify::manifest::Part, buf: &mut [u8]) -> Opti
 
 /// Checks one slot and returns what `c3-verify` accepted, with the flash
 /// address of the image. Logs when the slot can't be booted.
+#[unsafe(link_section = ".text_boot")]
 fn check(slot: Slot, efuse_level: u8, b: &mut Buffers) -> Option<(Accepted, u32)> {
     let result = check_slot(slot, efuse_level, b);
     if result.is_none() {
@@ -106,12 +124,28 @@ fn check(slot: Slot, efuse_level: u8, b: &mut Buffers) -> Option<(Accepted, u32)
             Slot::A => 0xA,
             Slot::B => 0xB,
         };
-        rom::log(c"c3-boot: slot %x not bootable\n", index);
+        log!("c3-boot: slot %x not bootable\n", index);
     }
     result
 }
 
+/// The number a rejection logs: the `c3_verify::Error` index for a shared
+/// check, or 0x100 plus the variant's index for a TUF error.
+#[unsafe(link_section = ".text_boot")]
+fn reason(e: TufError) -> u32 {
+    match e {
+        TufError::Json => 0x100,
+        TufError::Schema => 0x101,
+        TufError::Version => 0x102,
+        TufError::Threshold => 0x103,
+        TufError::Target => 0x104,
+        TufError::Expired => 0x105,
+        TufError::Check(e) => e as u32,
+    }
+}
+
 /// Reads and hashes one slot from flash and passes it to `c3-verify`.
+#[unsafe(link_section = ".text_boot")]
 fn check_slot(slot: Slot, efuse_level: u8, b: &mut Buffers) -> Option<(Accepted, u32)> {
     let base = slot_base(slot);
     let mut raw = [0u8; c3_verify::manifest::MANIFEST_LEN];
@@ -130,8 +164,8 @@ fn check_slot(slot: Slot, efuse_level: u8, b: &mut Buffers) -> Option<(Accepted,
     let mut hasher = c3_crypto::Sha256::new();
     let mut done = 0u32;
     while done < m.image.length {
-        let n = (m.image.length - done).min(CHUNK as u32);
-        let chunk = b.chunk.get_mut(..n as usize)?;
+        let n = (m.image.length - done).min(MAX_TUF as u32);
+        let chunk = b.tuf.get_mut(..n as usize)?;
         if !flash::read(image_flash.checked_add(done)?, chunk) {
             return None;
         }
@@ -141,21 +175,24 @@ fn check_slot(slot: Slot, efuse_level: u8, b: &mut Buffers) -> Option<(Accepted,
     let image_digest = hasher.finish();
 
     let bundle = read_part(base, m.bundle, &mut b.bundle)?;
-    let chain = read_part(base, m.chain, &mut b.chain)?;
-    let blob = read_part(base, m.blob, &mut b.blob)?;
-    let parts = SlotParts {
+    let tuf = read_part(base, m.tuf, &mut b.tuf)?;
+    let parts = TufSlotParts {
         image_header: b.header.get(..header_len)?,
         image_length: m.image.length,
         image_digest,
         bundle,
-        chain,
-        blob,
+        tuf,
     };
-    let genesis = KeySet::new(&GENESIS).ok()?;
-    match c3_verify::accept::accept_slot(&parts, genesis, efuse_level, &mut b.scratch) {
+    match c3_verify::tuf_slot::accept_slot(
+        &parts,
+        &pinned::ROOT,
+        &pinned::POLICY,
+        efuse_level,
+        &mut b.keys,
+    ) {
         Ok(accepted) => Some((accepted, image_flash)),
         Err(e) => {
-            rom::log(c"c3-boot: slot rejected %x\n", e as u32);
+            log!("c3-boot: slot rejected %x\n", reason(e));
             None
         }
     }
@@ -163,41 +200,42 @@ fn check_slot(slot: Slot, efuse_level: u8, b: &mut Buffers) -> Option<(Accepted,
 
 /// Writes `state` to the copy not in use. A failed write leaves the record
 /// as it was, which the next boot reads again.
+#[unsafe(link_section = ".text_boot")]
 fn write_state(current: &Current, state: &State) {
     let record = c3_verify::bootstate::encode(state);
     if !flash::write_record(record_addr(current.write_target()), &record) {
-        rom::log(c"c3-boot: boot-state write failed %x\n", 0);
+        log!("c3-boot: boot-state write failed %x\n", 0);
     }
 }
 
 /// Raises the eFuse level to `target`, which can't be undone.
 #[cfg(c3_efuse_burn)]
+#[unsafe(link_section = ".text_boot")]
 fn raise(target: u8) {
-    rom::log(
-        c"c3-boot: raising security level to %x\n",
-        u32::from(target),
-    );
+    log!("c3-boot: raising security level to %x\n", u32::from(target));
     if efuse::raise_level(target) {
         return;
     }
     // A test board must stay updatable, so a development build boots the
     // accepted slot without the raise rather than halting on every boot.
-    #[cfg(c3_dev_genesis)]
-    rom::log(c"c3-boot: raise failed; booting without it %x\n", 0);
-    #[cfg(not(c3_dev_genesis))]
+    #[cfg(c3_dev_root)]
+    log!("c3-boot: raise failed; booting without it %x\n", 0);
+    #[cfg(not(c3_dev_root))]
     halt(0xE1);
 }
 
 /// Logs the raise that a build with `C3_EFUSE_BURN=on` would make.
 #[cfg(not(c3_efuse_burn))]
+#[unsafe(link_section = ".text_boot")]
 fn raise(target: u8) {
-    rom::log(
-        c"c3-boot: eFuse burns off; not raising security level to %x\n",
-        u32::from(target),
+    log!(
+        "c3-boot: eFuse burns off; not raising security level to %x\n",
+        u32::from(target)
     );
 }
 
 /// Raises the level if needed, loads and maps the image, and jumps to it.
+#[unsafe(link_section = ".text_boot")]
 fn boot(slot: Slot, accepted: &Accepted, image_flash: u32, target: u8, efuse_level: u8) -> ! {
     if target > efuse_level {
         raise(target);
@@ -221,7 +259,7 @@ fn boot(slot: Slot, accepted: &Accepted, image_flash: u32, target: u8, efuse_lev
     if !mmu::map(image_flash, segments) {
         halt(0xE3);
     }
-    rom::log(c"c3-boot: jumping to %x\n", accepted.header.entry_point);
+    log!("c3-boot: jumping to %x\n", accepted.header.entry_point);
     let slot_index = match slot {
         Slot::A => 0,
         Slot::B => 1,
@@ -248,12 +286,13 @@ extern "C" fn setup() -> ! {
 }
 
 #[unsafe(no_mangle)]
+#[unsafe(link_section = ".text_boot")]
 extern "C" fn boot_main() -> ! {
-    rom::log(c"c3-boot: start %x\n", 0);
-    #[cfg(c3_dev_genesis)]
-    rom::log(
-        c"c3-boot: WARNING: built with the public development genesis keys %x\n",
-        0,
+    log!("c3-boot: start %x\n", 0);
+    #[cfg(c3_dev_root)]
+    log!(
+        "c3-boot: WARNING: built with the public development TUF root %x\n",
+        0
     );
     rom::set_flash_size(layout::FLASH_SIZE);
     let mut a = [0u8; c3_verify::bootstate::RECORD_LEN];
@@ -265,15 +304,13 @@ extern "C" fn boot_main() -> ! {
     }
     let current = c3_verify::bootstate::read(&a, &b);
     let efuse_level = c3_verify::level::level_of(efuse::secure_version());
-    rom::log(c"c3-boot: security level %x\n", u32::from(efuse_level));
+    log!("c3-boot: security level %x\n", u32::from(efuse_level));
 
     let mut buffers = Buffers {
         header: [0; MAX_HEADER],
         bundle: [0; MAX_BUNDLE],
-        chain: [0; MAX_CHAIN],
-        blob: [0; MAX_BLOB],
-        chunk: [0; CHUNK],
-        scratch: [0; SCRATCH],
+        tuf: [0; MAX_TUF],
+        keys: [0; KEYS],
     };
     let outcome = decide(
         &current.state,
@@ -292,6 +329,7 @@ extern "C" fn boot_main() -> ! {
 }
 
 #[panic_handler]
+#[unsafe(link_section = ".text_boot")]
 fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
     halt(0xEF)
 }
