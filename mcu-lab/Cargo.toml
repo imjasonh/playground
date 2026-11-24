@@ -46,6 +46,9 @@ firmware = []
 # profiling to 0 bytes / 0 µs.
 profiling = []
 
+[dependencies]
+miniz_oxide = { version = "0.9", default-features = false, features = ["with-alloc"] }
+
 [target.'cfg(target_os = "espidf")'.dependencies]
 anyhow = "1"
 esp-idf-svc = { version = "0.53", features = ["std", "native", "binstart"] }

@@ -174,6 +174,20 @@ final class MCULabProtocolTests: XCTestCase {
             MCULabProtocol.parseOTACommand("begin 384000 sha256:\(sha)"),
             begin
         )
+        let beginDeflate = MCULabOTACommand.begin(size: 775_328, sha256: sha, compression: .deflate)
+        XCTAssertEqual(
+            MCULabProtocol.encodeOTACommand(beginDeflate),
+            "BEGIN 775328 \(sha) deflate"
+        )
+        XCTAssertEqual(
+            MCULabProtocol.parseOTACommand(MCULabProtocol.encodeOTACommand(beginDeflate)),
+            beginDeflate
+        )
+        XCTAssertEqual(
+            MCULabProtocol.parseOTACommand("BEGIN 775328 \(sha) DEFLATE"),
+            beginDeflate
+        )
+        XCTAssertNil(MCULabProtocol.parseOTACommand("BEGIN 775328 \(sha) lz4"))
         XCTAssertEqual(
             MCULabProtocol.parseOTACommand(MCULabProtocol.encodeOTACommand(.commit)),
             .commit
@@ -200,6 +214,15 @@ final class MCULabProtocolTests: XCTestCase {
         let sampleData = Data(repeating: 0x5A, count: 550)
         let chunks = MCULabProtocol.chunkFirmware(sampleData, chunkSize: 240)
         XCTAssertEqual(chunks.map(\.count), [240, 240, 70])
+
+        let compressible = Data((0..<4096).map { UInt8($0 % 37) })
+        let deflated = MCULabProtocol.deflateCompress(compressible)
+        XCTAssertNotNil(deflated)
+        XCTAssertLessThan(deflated?.count ?? compressible.count, compressible.count / 2)
+        if let deflated {
+            let restored = try? (deflated as NSData).decompressed(using: .zlib) as Data
+            XCTAssertEqual(restored, compressible)
+        }
     }
 
     @MainActor

@@ -71,9 +71,16 @@ struct MCULabMetrics: Equatable, Identifiable {
     }
 }
 
+/// Wire compression mode for a BLE OTA transfer.
+enum MCULabOTACompression: String, Equatable {
+    case none
+    /// Raw DEFLATE (RFC 1951, no zlib header/trailer) matching `NSData.compressed(using: .zlib)`.
+    case deflate
+}
+
 /// Control command written by the iPhone to the MCU Lab BLE GATT OTA control characteristic.
 enum MCULabOTACommand: Equatable {
-    case begin(size: UInt32, sha256: String)
+    case begin(size: UInt32, sha256: String, compression: MCULabOTACompression = .none)
     case commit
     case abort
 }
@@ -412,11 +419,19 @@ enum MCULabProtocol {
         return out
     }
 
+    /// Compress bytes using raw DEFLATE (RFC 1951, no zlib header/trailer),
+    /// matching `OtaDeflateDecoder` in `mcu-lab/src/protocol.rs`.
+    static func deflateCompress(_ data: Data) -> Data? {
+        try? (data as NSData).compressed(using: .zlib) as Data
+    }
+
     /// Encode an OTA control command matching `encode_ota_command` in `mcu-lab/src/protocol.rs`.
     static func encodeOTACommand(_ command: MCULabOTACommand) -> String {
         switch command {
-        case .begin(let size, let sha256):
+        case .begin(let size, let sha256, .none):
             return "BEGIN \(size) \(sha256.lowercased())"
+        case .begin(let size, let sha256, .deflate):
+            return "BEGIN \(size) \(sha256.lowercased()) deflate"
         case .commit:
             return "COMMIT"
         case .abort:
@@ -435,7 +450,7 @@ enum MCULabProtocol {
             return .commit
         case "ABORT" where parts.count == 1:
             return .abort
-        case "BEGIN" where parts.count == 3:
+        case "BEGIN" where parts.count == 3 || parts.count == 4:
             guard let size = UInt32(parts[1]), size > 0, size <= otaSlotBytes else {
                 return nil
             }
@@ -446,7 +461,18 @@ enum MCULabProtocol {
             guard sha.count == 64, sha.allSatisfy(\.isHexDigit) else {
                 return nil
             }
-            return .begin(size: size, sha256: sha)
+            let compression: MCULabOTACompression
+            if parts.count == 4 {
+                switch parts[3].lowercased() {
+                case "deflate":
+                    compression = .deflate
+                default:
+                    return nil
+                }
+            } else {
+                compression = .none
+            }
+            return .begin(size: size, sha256: sha, compression: compression)
         default:
             return nil
         }

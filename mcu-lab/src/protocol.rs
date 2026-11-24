@@ -577,11 +577,26 @@ pub fn reset_reason_name(code: i32) -> &'static str {
     }
 }
 
+/// Wire compression mode for an OTA transfer.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum OtaCompression {
+    /// Raw uncompressed firmware binary bytes.
+    #[default]
+    None,
+    /// Raw DEFLATE (RFC 1951, no zlib/gzip wrapper) matching iOS `NSData.compressed(using: .zlib)`.
+    Deflate,
+}
+
 /// Control command written by the iPhone to [`OTA_CONTROL_UUID`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OtaCommand {
-    /// Erase and open the inactive OTA partition for `size` bytes with expected lowercase hex `sha256`.
-    Begin { size: u32, sha256: String },
+    /// Erase and open the inactive OTA partition for `size` uncompressed bytes with expected
+    /// lowercase hex `sha256` (of the uncompressed image) and optional wire `compression`.
+    Begin {
+        size: u32,
+        sha256: String,
+        compression: OtaCompression,
+    },
     /// Finalize the OTA image, verify the SHA-256 digest, switch the boot partition, and reboot.
     Commit,
     /// Cancel an in-progress OTA transfer.
@@ -608,7 +623,7 @@ pub fn parse_ota_command(raw: &str) -> Option<OtaCommand> {
     match head.as_str() {
         "COMMIT" if parts.len() == 1 => Some(OtaCommand::Commit),
         "ABORT" if parts.len() == 1 => Some(OtaCommand::Abort),
-        "BEGIN" if parts.len() == 3 => {
+        "BEGIN" if parts.len() == 3 || parts.len() == 4 => {
             let size: u32 = parts[1].parse().ok()?;
             if size == 0 || size > OTA_SLOT_BYTES {
                 return None;
@@ -620,7 +635,16 @@ pub fn parse_ota_command(raw: &str) -> Option<OtaCommand> {
             if sha.len() != 64 || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
                 return None;
             }
-            Some(OtaCommand::Begin { size, sha256: sha })
+            let compression = match parts.get(3).map(|s| s.to_ascii_lowercase()).as_deref() {
+                None => OtaCompression::None,
+                Some("deflate") => OtaCompression::Deflate,
+                Some(_) => return None,
+            };
+            Some(OtaCommand::Begin {
+                size,
+                sha256: sha,
+                compression,
+            })
         }
         _ => None,
     }
@@ -629,9 +653,142 @@ pub fn parse_ota_command(raw: &str) -> Option<OtaCommand> {
 /// Encode an [`OtaCommand`] into its wire string.
 pub fn encode_ota_command(cmd: &OtaCommand) -> String {
     match cmd {
-        OtaCommand::Begin { size, sha256 } => format!("BEGIN {size} {sha256}"),
+        OtaCommand::Begin {
+            size,
+            sha256,
+            compression: OtaCompression::None,
+        } => format!("BEGIN {size} {sha256}"),
+        OtaCommand::Begin {
+            size,
+            sha256,
+            compression: OtaCompression::Deflate,
+        } => format!("BEGIN {size} {sha256} deflate"),
         OtaCommand::Commit => "COMMIT".to_string(),
         OtaCommand::Abort => "ABORT".to_string(),
+    }
+}
+
+/// 32 KiB sliding-window dictionary required by RFC 1951 raw DEFLATE.
+const OTA_DEFLATE_DICT_LEN: usize = 32_768;
+
+/// Streaming raw DEFLATE (RFC 1951) decompressor for BLE OTA.
+///
+/// Allocates both the `DecompressorOxide` state and the 32 KiB sliding-window
+/// ring buffer on the heap so the NimBLE GATT callback stack stays tiny.
+pub struct OtaDeflateDecoder {
+    decompressor: Box<miniz_oxide::inflate::core::DecompressorOxide>,
+    dict: Box<[u8]>,
+    dict_pos: usize,
+    finished: bool,
+}
+
+impl OtaDeflateDecoder {
+    /// Allocate a fresh streaming raw-DEFLATE decoder on the heap.
+    pub fn new() -> Self {
+        Self {
+            decompressor: Box::new(miniz_oxide::inflate::core::DecompressorOxide::new()),
+            dict: vec![0u8; OTA_DEFLATE_DICT_LEN].into_boxed_slice(),
+            dict_pos: 0,
+            finished: false,
+        }
+    }
+
+    /// Feed compressed bytes and invoke `on_output` for each decompressed slice.
+    pub fn push<F>(&mut self, mut input: &[u8], mut on_output: F) -> Result<(), String>
+    where
+        F: FnMut(&[u8]) -> Result<(), String>,
+    {
+        use miniz_oxide::inflate::core::{decompress, inflate_flags::TINFL_FLAG_HAS_MORE_INPUT};
+        use miniz_oxide::inflate::TINFLStatus;
+
+        if self.finished {
+            return if input.is_empty() {
+                Ok(())
+            } else {
+                Err("unexpected trailing bytes after deflate stream end".to_string())
+            };
+        }
+
+        loop {
+            let (status, consumed, written) = decompress(
+                &mut self.decompressor,
+                input,
+                &mut self.dict,
+                self.dict_pos,
+                TINFL_FLAG_HAS_MORE_INPUT,
+            );
+            if written > 0 {
+                let slice = &self.dict[self.dict_pos..self.dict_pos + written];
+                on_output(slice)?;
+                self.dict_pos = (self.dict_pos + written) & (OTA_DEFLATE_DICT_LEN - 1);
+            }
+            input = &input[consumed..];
+
+            match status {
+                TINFLStatus::Done => {
+                    self.finished = true;
+                    return Ok(());
+                }
+                TINFLStatus::NeedsMoreInput => {
+                    if input.is_empty() {
+                        return Ok(());
+                    }
+                    if consumed == 0 && written == 0 {
+                        return Err("deflate stalled waiting for input".to_string());
+                    }
+                }
+                TINFLStatus::HasMoreOutput => {
+                    // Output ring buffer wrapped or filled; continue draining even if input is empty.
+                }
+                other => {
+                    return Err(format!("deflate decode error: {other:?}"));
+                }
+            }
+        }
+    }
+
+    /// Flush any remaining buffered symbols at end-of-stream and verify the deflate
+    /// stream terminated cleanly.
+    pub fn finish<F>(&mut self, mut on_output: F) -> Result<(), String>
+    where
+        F: FnMut(&[u8]) -> Result<(), String>,
+    {
+        use miniz_oxide::inflate::core::decompress;
+        use miniz_oxide::inflate::TINFLStatus;
+
+        if self.finished {
+            return Ok(());
+        }
+        loop {
+            let (status, _consumed, written) = decompress(
+                &mut self.decompressor,
+                &[],
+                &mut self.dict,
+                self.dict_pos,
+                0,
+            );
+            if written > 0 {
+                let slice = &self.dict[self.dict_pos..self.dict_pos + written];
+                on_output(slice)?;
+                self.dict_pos = (self.dict_pos + written) & (OTA_DEFLATE_DICT_LEN - 1);
+            }
+            match status {
+                TINFLStatus::Done => {
+                    self.finished = true;
+                    return Ok(());
+                }
+                TINFLStatus::HasMoreOutput => {}
+                other => {
+                    return Err(format!("truncated deflate stream at COMMIT: {other:?}"));
+                }
+            }
+        }
+    }
+}
+
+impl Default for OtaDeflateDecoder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -866,15 +1023,39 @@ mod tests {
         let begin = OtaCommand::Begin {
             size: 384_000,
             sha256: sha.clone(),
+            compression: OtaCompression::None,
         };
         assert_eq!(parse_ota_command(&encode_ota_command(&begin)), Some(begin));
+        let begin_deflate = OtaCommand::Begin {
+            size: 775_328,
+            sha256: sha.clone(),
+            compression: OtaCompression::Deflate,
+        };
+        assert_eq!(
+            encode_ota_command(&begin_deflate),
+            format!("BEGIN 775328 {sha} deflate")
+        );
+        assert_eq!(
+            parse_ota_command(&encode_ota_command(&begin_deflate)),
+            Some(begin_deflate)
+        );
         assert_eq!(
             parse_ota_command(&format!("begin 384000 sha256:{sha}")),
             Some(OtaCommand::Begin {
                 size: 384_000,
                 sha256: sha.clone(),
+                compression: OtaCompression::None,
             })
         );
+        assert_eq!(
+            parse_ota_command(&format!("BEGIN 384000 {sha} DEFLATE")),
+            Some(OtaCommand::Begin {
+                size: 384_000,
+                sha256: sha.clone(),
+                compression: OtaCompression::Deflate,
+            })
+        );
+        assert_eq!(parse_ota_command(&format!("BEGIN 384000 {sha} lz4")), None);
         assert_eq!(
             parse_ota_command(&encode_ota_command(&OtaCommand::Commit)),
             Some(OtaCommand::Commit)
@@ -1480,5 +1661,91 @@ mod hardening_tests {
         assert!(reasm.push(&frames[2]).is_none()); // out-of-order tolerated
         let assembled = reasm.push(&frames[1]).expect("complete");
         assert_eq!(assembled, data);
+    }
+
+    #[test]
+    fn ota_deflate_decoder_streams_across_multiple_ring_wraps() {
+        // 100 KiB pseudo-firmware payload (> 3x the 32 KiB deflate dictionary window)
+        // with repetitive code-like patterns plus high-entropy runs.
+        let mut original = Vec::with_capacity(100 * 1024);
+        original.push(0xE9); // ESP-IDF image header magic
+        for i in 1..(100 * 1024usize) {
+            let b = if (i / 256) % 3 == 0 {
+                (i & 0x3F) as u8
+            } else {
+                ((i.wrapping_mul(31) ^ (i >> 7)) & 0xFF) as u8
+            };
+            original.push(b);
+        }
+
+        let compressed = miniz_oxide::deflate::compress_to_vec(&original, 6);
+        assert!(
+            compressed.len() < original.len() / 2,
+            "expected >50% compression, got {} -> {}",
+            original.len(),
+            compressed.len()
+        );
+
+        // Stream in 470-byte BLE packet chunks (exact BLE OTA chunk size).
+        let mut decoder = OtaDeflateDecoder::new();
+        let mut out = Vec::with_capacity(original.len());
+        for chunk in compressed.chunks(470) {
+            decoder
+                .push(chunk, |slice| {
+                    out.extend_from_slice(slice);
+                    Ok(())
+                })
+                .expect("chunk inflate");
+        }
+        decoder
+            .finish(|slice| {
+                out.extend_from_slice(slice);
+                Ok(())
+            })
+            .expect("finish inflate");
+        assert_eq!(out, original);
+
+        // Also test byte-by-byte streaming on a smaller buffer.
+        let small = b"ESP32 firmware image header and repeated patterns repeated patterns!";
+        let small_comp = miniz_oxide::deflate::compress_to_vec(small, 6);
+        let mut byte_decoder = OtaDeflateDecoder::new();
+        let mut small_out = Vec::new();
+        for b in &small_comp {
+            byte_decoder
+                .push(std::slice::from_ref(b), |s| {
+                    small_out.extend_from_slice(s);
+                    Ok(())
+                })
+                .expect("byte inflate");
+        }
+        byte_decoder
+            .finish(|s| {
+                small_out.extend_from_slice(s);
+                Ok(())
+            })
+            .expect("byte finish");
+        assert_eq!(small_out, small);
+
+        // Truncated stream must fail at finish().
+        let mut trunc_decoder = OtaDeflateDecoder::new();
+        let _ = trunc_decoder.push(&compressed[..compressed.len() / 2], |_| Ok(()));
+        assert!(trunc_decoder.finish(|_| Ok(())).is_err());
+
+        // Corrupt stream must fail on push().
+        let mut corrupt = compressed.clone();
+        corrupt[10] ^= 0xFF;
+        corrupt[11] ^= 0xAA;
+        let mut bad_decoder = OtaDeflateDecoder::new();
+        let mut saw_err = false;
+        for chunk in corrupt.chunks(470) {
+            if bad_decoder.push(chunk, |_| Ok(())).is_err() {
+                saw_err = true;
+                break;
+            }
+        }
+        if !saw_err {
+            saw_err = bad_decoder.finish(|_| Ok(())).is_err();
+        }
+        assert!(saw_err, "corrupt deflate stream should be rejected");
     }
 }
