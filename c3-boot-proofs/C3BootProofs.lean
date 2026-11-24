@@ -111,6 +111,7 @@ import C3BootProofs.Proofs.TimeDigits4
 import C3BootProofs.Proofs.AllAsciiDigit
 import C3BootProofs.Proofs.GeneralizedTime
 import C3BootProofs.Proofs.X509ReadTime
+import C3BootProofs.Proofs.TimeRfc3339
 import C3BootProofs.Proofs.Base64Decode
 import C3BootProofs.Proofs.Base64Encode
 import C3BootProofs.Proofs.Sha512Update

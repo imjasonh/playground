@@ -136,6 +136,7 @@ import C3BootProofs.Proofs.ScalarFromSlice256
 import C3BootProofs.Proofs.IsSmallOrder
 import C3BootProofs.Proofs.DateTime
 import C3BootProofs.Proofs.X509ReadTime
+import C3BootProofs.Proofs.TimeRfc3339
 import C3BootProofs.Proofs.ParseSpecCur
 import C3BootProofs.Proofs.Base64Decode
 import C3BootProofs.Proofs.Base64Encode
@@ -3143,6 +3144,36 @@ theorem exists_x509ReadTime_machine :
     by decide +kernel, by decide +kernel, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
     RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
     RV32.sep_of_le (by decide) (by decide), (RV32.sep_of_le (by decide) (by decide)).symm⟩
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- Memory with `time::rfc3339` and its callees where the image loads them,
+and zeros elsewhere. -/
+def witnessMemRFC : RV32.Word → BitVec 8 :=
+  RV32.regionMem
+    [(Image.timeRfc3339Address, Image.timeRfc3339Code), (Image.dateTimeAddress, Image.dateTimeCode),
+    (Image.timeDigits2Address, Image.timeDigits2Code), (Image.timeDigits4Address, Image.timeDigits4Code),
+    (Image.allAsciiDigitAddress, Image.allAsciiDigitCode)]
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- A machine that calls `time::rfc3339` on 20 bytes at `0x3FCC7000`, with
+the result at `0x3FCC5000` and the stack at `0x3FCC8000`, meets
+`timeRfc3339_correct`'s hypotheses. -/
+theorem exists_timeRfc3339_machine :
+    ∃ (m : RV32.Machine) (sp0 out p retAddr : RV32.Word) (n : Nat),
+      RV32.CodeIn m.mem RV32.RFC Image.timeRfc3339Code ∧ RV32.CodeIn m.mem RV32.DT Image.dateTimeCode ∧
+      RV32.CodeIn m.mem RV32.TD Image.timeDigits2Code ∧ RV32.CodeIn m.mem RV32.TD4 Image.timeDigits4Code ∧
+      RV32.CodeIn m.mem RV32.AAD Image.allAsciiDigitCode ∧ m.pc = RV32.RFC ∧ RV32.reg m RV32.a0 = out ∧
+      RV32.reg m RV32.a1 = p ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧ RV32.reg m RV32.ra = retAddr ∧
+      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 4 = 0 ∧ 0x90 ≤ sp0.toNat ∧
+      sp0.toNat ≤ 0x40000000 ∧ out.toNat + 16 ≤ 0x40000000 ∧ out.toNat % 4 = 0 ∧
+      p.toNat + n + 4 ≤ 0x40000000 ∧ RV32.Sep out 16 (sp0 + 0xFFFFFF70) 0x90 ∧
+      RV32.Sep p (n + 4) (sp0 + 0xFFFFFF70) 0x90 := by
+  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC7000 20, RV32.RFC, witnessMemRFC⟩, 0x3FCC8000, 0x3FCC5000, 0x3FCC7000, 0, 20,
+    by code_in, by code_in, by code_in, by code_in, by code_in, rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide,
+    by decide, by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
+    RV32.sep_of_le (by decide) (by decide)⟩
 
 /-- Memory with `manifest::parse` and its callees where the image loads them,
 and zeros elsewhere. -/
@@ -8304,6 +8335,21 @@ end C3
 
 /-- info: 'C3.exists_x509ReadTime_machine' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_x509ReadTime_machine
+
+/-- info: 'C3.RV32.timeRfc3339_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.timeRfc3339_correct
+
+/-- info: 'C3.RV32.rfc3339_eq' depends on axioms: [propext] -/
+#guard_msgs in #print axioms C3.RV32.rfc3339_eq
+
+/-- info: 'C3.RV32.rfcRest_mem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.rfcRest_mem
+
+/-- info: 'C3.RV32.rfcTail_mem' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.rfcTail_mem
+
+/-- info: 'C3.exists_timeRfc3339_machine' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.exists_timeRfc3339_machine
 
 /-- info: 'C3.RV32.Cur.manifestParse_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.manifestParse_correct
