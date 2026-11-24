@@ -579,3 +579,4 @@ import C3BootProofs.Models.WeierstrassNist
 import C3BootProofs.Models.PrimeLucas
 import C3BootProofs.Models.PrimeCerts
 import C3BootProofs.Models.PrimeCurves
+import C3BootProofs.Models.EcdsaClosed
