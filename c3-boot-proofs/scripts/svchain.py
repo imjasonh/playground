@@ -71,10 +71,11 @@ class Fact:
 def fact_key(l):
     if l.startswith("Steps"):
         return 'STEPS'
-    if re.match(r"St n'\.mem SV n' 0x", l):
+    if re.match(r"St n'\.mem (SV|P2V) n' 0x", l):
         return 'ST'
     for pre, nm in (("SvCode", 'E'), ("SvSaves", 'V'), ("(∀ x, SvR", 'FR'), ("reg n' sp", 'r2'),
-                    ("SvKeepL B n0.mem n'.mem", 'KL')):
+                    ("SvKeepL B n0.mem n'.mem", 'KL'), ("P2vCode", 'E'), ("P2vSaves", 'V'), ("(∀ x, P2vR", 'FR'),
+                    ("P2vKeepL B n0.mem n'.mem", 'KL')):
         if l.startswith(pre):
             return nm
     m = re.match(r"reg n' \((\d+) : Fin 32\)", l) or re.match(r"reg n' (a\d)", l)
@@ -145,7 +146,8 @@ class Stage:
         if '\n    (¬' in st:
             k = st.index('\n    (¬')
             neg = st[k + len('\n    (¬ ('):]
-            e = min(x for x in (neg.find(') ∧ SvErrRet'), neg.find(') ∧ Panics')) if x >= 0)
+            e = min(x for x in (neg.find(') ∧ SvErrRet'), neg.find(') ∧ P2vRet'), neg.find(') ∧ Panics'))
+                    if x >= 0)
             self.sc = neg[:e]
             self.fail = 'Panics' if neg[e:].startswith(') ∧ Panics') else 'SvErrRet'
         else:
