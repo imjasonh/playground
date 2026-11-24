@@ -635,7 +635,7 @@ theorem resAt_err (M : Word → BitVec 8) (a : Word) :
   decide
 
 /-- The registers the dispatch and the scan change before `0xDE`. -/
-abbrev riLp : List (Fin 32) := [ra, 21, a0, a1, a2, a3, a4, a5, a6, a7, t0, t1]
+abbrev riLp : List (Fin 32) := jClob ++ [ra, 21]
 
 /-- The rest of the function from `0xDE`, for every memory and registers
 that hold `r` in the slot at `F + 4`. -/
@@ -844,5 +844,234 @@ theorem ri_loop {n : Nat} (hn : n < 2 ^ 32) (hF : s + BitVec.ofNat 32 68 = F) (h
       rw [show F + 0x10 = F + 0xC + 4 from by rw [BitVec.add_assoc]; rfl]; exact hU.2.2
     exact ih depth j m2.mem _ (by keepz hz0) (by (try rsimp); exact h21) (by (try rsimp); rw [fsp, hj])
       (by omega) (by omega) hj2 hO2 hS2 hK'
+
+end
+
+theorem riS68 {s a : Word} {l : Nat} (h : Sep s 116 a l) : Sep s 68 a l := by
+  have := h.sub (c := 0) (l := 68) (by decide)
+  rwa [add_ofNat_zero] at this
+
+theorem LitData.out {M M' : Word → BitVec 8} {s : Word} {k : Nat} (h : LitData M) (hO : Out M M' s k)
+    (h1 : Sep s k 0x3FCC4766 8) (h2 : Sep s k 0x3FCC48F2 5) : LitData M' := by
+  have ht : Sep s k 0x3FCC476A 4 := by
+    have := h1.subR (c := 4) (l := 4) (by decide)
+    rwa [show (0x3FCC4766 : Word) + BitVec.ofNat 32 4 = 0x3FCC476A from by decide] at this
+  have hn : Sep s k 0x3FCC4766 4 := by
+    have := h1.subR (c := 0) (l := 4) (by decide)
+    rwa [add_ofNat_zero] at this
+  exact ⟨(hO.bytes ht).trans h.1, (hO.bytes h2).trans h.2.1, (hO.bytes hn).trans h.2.2⟩
+
+section
+variable {code : List Nat} {base : Word} {Q : Post} {M : Word → BitVec 8} {off : Nat}
+  {f : Fin 32 → Word}
+
+/-- A call to `literal_end(doc, pos)` with the code at `tb`, its frame in the
+68 bytes at `s`, storing its result at `out`. -/
+theorem WP.callLiteralEnd {hi lo tb p out s : Word} {n pos : Nat}
+    (h1 : fetchRel code off = some (.auipc ra hi, 4)) (h2 : fetchRel code (off + 4) = some (.jalr ra ra lo, 4))
+    (htgt : base + BitVec.ofNat 32 off + hi + lo = tb) (htb : tb.toNat % 2 = 0) (hev : (off + 8) % 2 = 0)
+    (hct : CodeIn M tb jsonLiteralEndCode) (hce : CodeIn M (tb + 0xFFFFF400) equalSameLengthCode)
+    (hcm : CodeIn M (tb + 0xC7BE) memcmpCode) (hlit : LitData M)
+    (h0 : f a0 = out) (ha1 : f a1 = p) (ha2 : f a2 = BitVec.ofNat 32 n) (ha3 : f a3 = BitVec.ofNat 32 pos)
+    (hsp : f sp = s + BitVec.ofNat 32 68) (hn : n < 2 ^ 32) (hpos : pos < 2 ^ 32) (hal : s.toNat % 4 = 0)
+    (halo : out.toNat % 4 = 0) (hSc : Sep s 68 tb jsonLiteralEndCode.length)
+    (hSe : Sep s 68 (tb + 0xFFFFF400) equalSameLengthCode.length)
+    (hSm : Sep s 68 (tb + 0xC7BE) memcmpCode.length) (hSp : Sep s 68 p n)
+    (hSn : Sep s 68 0x3FCC4766 8) (hSf : Sep s 68 0x3FCC48F2 5) (hso : Sep out 8 s 68)
+    (hsc : Sep out 8 tb jsonLiteralEndCode.length) (hSb : Sep s 68 base code.length)
+    (hsb : Sep out 8 base code.length)
+    (k : ∀ m2 : Machine, UsizeResF M m2.mem out s 68 (literalEnd (memBytes M p n) pos) →
+      WP code base Q m2.mem (off + 8) (clob (upd f ra (base + BitVec.ofNat 32 (off + 8))) m2 jClob)) :
+    WP code base Q M off f := by
+  refine WP.callGen (tb := tb) (cl := jClob)
+    (P := fun m2 => UsizeResF M m2.mem out s 68 (literalEnd (memBytes M p n) pos))
+    h1 h2 (by rw [htgt]; exact even_clear _ htb) (fun m1 hpc1 hmem1 hreg1 hb => ?_)
+    (fun m2 hP hc => by
+      obtain ⟨M1, hO, hU⟩ := hP
+      exact hU.out.codeIn (hO.codeIn hc hSb) hsb) k
+  obtain ⟨m2, c2, pc2, hU, hfr⟩ := jsonLiteralEnd_correct m1 (base := tb) (out := out) (s := s) (p := p) (n := n)
+    (pos := pos) htb (by rw [hmem1]; exact hct) (by rw [hmem1]; exact hce) (by rw [hmem1]; exact hcm)
+    (by rw [hmem1]; exact hlit) hpc1 (by rw [hreg1]; rsimp; exact h0) (by rw [hreg1]; rsimp; exact ha1)
+    (by rw [hreg1]; rsimp; exact ha2) (by rw [hreg1]; rsimp; exact ha3) (by rw [hreg1]; rsimp; exact hsp)
+    hn hpos hal halo (retAddr := base + BitVec.ofNat 32 (off + 8)) (by rw [hreg1]; rsimp)
+    (even_clear _ (even_at base hb _ hev)) hSc hSe hSm hSp hSn hSf hso hsc
+  rw [hmem1] at hU
+  exact ⟨m2, c2, pc2, hU, hfr⟩
+
+end
+
+theorem ri_cs : ∀ c, c ∈ riCs → 68 + c + 4 ≤ 2 ^ 32 := by decide
+
+section
+variable {M Mp : Word → BitVec 8} {base s F p : Word} {f : Fin 32 → Word} {Q : Post}
+
+theorem ri_disp {n pos : Nat} (hn : n < 2 ^ 32) (hpos : pos < 2 ^ 32) (hF : s + BitVec.ofNat 32 68 = F)
+    (hb : base.toNat % 2 = 0) (hal : s.toNat % 4 = 0) (halF : F.toNat % 4 = 0) (hlit : LitData M)
+    (hcse : CodeIn M (base + 0xFFFFFF0C) jsonStringEndCode) (hcle : CodeIn M (base + 0x17E) jsonLiteralEndCode)
+    (hce : CodeIn M (base + 0xFFFFF57E) equalSameLengthCode) (hcm : CodeIn M (base + 0xC93C) memcmpCode)
+    (hcne : CodeIn M (base + 0x21A) jsonNumberEndCode) (hSc : Sep s 116 base jsonReadItemCode.length)
+    (hSse : Sep s 116 (base + 0xFFFFFF0C) jsonStringEndCode.length)
+    (hSle : Sep s 116 (base + 0x17E) jsonLiteralEndCode.length)
+    (hSe : Sep s 116 (base + 0xFFFFF57E) equalSameLengthCode.length)
+    (hSm : Sep s 116 (base + 0xC93C) memcmpCode.length)
+    (hSne : Sep s 116 (base + 0x21A) jsonNumberEndCode.length) (hSp : Sep s 116 p n)
+    (hSn : Sep s 116 0x3FCC4766 8) (hSf : Sep s 116 0x3FCC48F2 5) (hO : Out M Mp s 116)
+    (h8 : f 8 = p) (h9 : f 9 = BitVec.ofNat 32 n) (h19 : f 19 = BitVec.ofNat 32 pos)
+    (h20 : f 20 = p + BitVec.ofNat 32 pos) (ha2 : f a2 = BitVec.ofNat 32 n) (ha3 : f a3 = BitVec.ofNat 32 pos)
+    (hsp : f sp = F) (hz0 : f 0 = 0) (hK : RiK base Q M s F Mp f (valueEnd (memBytes M p n) pos)) :
+    WP jsonReadItemCode base Q Mp 0x1C f := by
+  have hlen : (memBytes M p n).length = n := memBytes_length M p n
+  have hS : Slots riCs F Mp Mp := Slots.refl _ _ _
+  refine WP.zero fun hz => ?_
+  refine WP.branch ri_at_1c (fun e => ?_) (fun e => ?_) <;> wn
+  · (try rsimp at e); rw [ha3, ha2, br_bgeu hpos hn] at e
+    have hge : ¬ pos < n := not_dec_true e
+    rw [valueEnd, hlen, ite_eq_left_of_eq_true _ _ (eq_true (show n ≤ pos by omega))] at hK
+    exact ri_d6 hsp (fun _ _ => rfl) hF halF hSc hO hS hz0 hK
+  (try rsimp at e); rw [ha3, ha2, br_bgeu hpos hn] at e
+  have hlt : pos < n := not_dec_false e
+  have hbyte : Mp (p + BitVec.ofNat 32 pos) = M (p + BitVec.ofNat 32 pos) := hO.byte hSp hlt
+  have hgd : (memBytes M p n).getD pos 0 = (M (p + BitVec.ofNat 32 pos)).toNat := memBytes_getD hlt
+  generalize hB : M (p + BitVec.ofNat 32 pos) = B at hbyte hgd
+  rw [valueEnd, hlen, ite_eq_right_of_eq_false _ _ (eq_false (show ¬ n ≤ pos by omega)), hgd] at hK
+  have hcont : ∀ g : Fin 32 → Word, (∀ x, x ∉ riLp → g x = f x) →
+      RiK base Q M s F Mp f (cScan (memBytes M p n) (n + 1) 0 pos) → WP jsonReadItemCode base Q Mp 0x4A g := by
+    intro g hg hK'
+    refine WP.zero fun hz' => ?_
+    refine WP.aluImm ri_at_4a ?_; wn
+    refine WP.alu ri_at_4c ?_; wn
+    exact ri_loop hn hF hb halF hcse hSse hSc hSp h8 h9 hsp hz0 (n + 1) 0 pos Mp _ (by keepz hz0)
+      (by (try rsimp); (try rw [hz']); first | rfl | decide)
+      (by (try rsimp); (try simp only [ev0, ev_mv hz']); rw [hg 19 (by decide), h19])
+      (by omega) (Nat.zero_le _) (by omega) hO hS hK'
+  have hlitp : ∀ g : Fin 32 → Word, (∀ x, x ∉ riLp → g x = f x) →
+      RiK base Q M s F Mp f (literalEnd (memBytes M p n) pos) → WP jsonReadItemCode base Q Mp 0xA8 g := by
+    intro g hg hK'
+    refine WP.zero fun hz' => ?_
+    have g8 : g 8 = p := (hg 8 (by decide)).trans h8
+    have g9 : g 9 = BitVec.ofNat 32 n := (hg 9 (by decide)).trans h9
+    have g19 : g 19 = BitVec.ofNat 32 pos := (hg 19 (by decide)).trans h19
+    have gsp : g sp = F := (hg sp (by decide)).trans hsp
+    refine WP.aluImm ri_at_a8 ?_; wn
+    refine WP.alu ri_at_aa ?_; wn
+    refine WP.alu ri_at_ac ?_; wn
+    refine WP.alu ri_at_ae ?_; wn
+    have e1 : base + 0x17E + 0xFFFFF400 = base + 0xFFFFF57E := by rw [BitVec.add_assoc]; rfl
+    have e2 : base + 0x17E + 0xC7BE = base + 0xC93C := by rw [BitVec.add_assoc]; rfl
+    refine WP.callLiteralEnd (tb := base + 0x17E) (out := F + 4) (s := s) (p := p) (n := n) (pos := pos)
+      ri_at_b0 ri_at_b4 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hb 0x17E (by decide))
+      (by decide) (hO.codeIn hcle hSle) (by rw [e1]; exact hO.codeIn hce hSe) (by rw [e2]; exact hO.codeIn hcm hSm)
+      (hlit.out hO hSn hSf) (by (try rsimp); rw [gsp, ev_add])
+      (by (try rsimp); (try simp only [ev0, ev_mv hz']); exact g8)
+      (by (try rsimp); (try simp only [ev0, ev_mv hz']); exact g9)
+      (by (try rsimp); (try simp only [ev0, ev_mv hz']); exact g19)
+      (by (try rsimp); rw [gsp, ← hF]) hn hpos hal (aligned_add halF (k := 4) (by decide)) (riS68 hSle)
+      (by rw [e1]; exact riS68 hSe) (by rw [e2]; exact riS68 hSm) (riS68 hSp) (riS68 hSn) (riS68 hSf)
+      (sep_below68 hF (c := 4) (w := 8) (by decide)).symm (riSepF hF hSle (by decide)) (riS68 hSc)
+      (riSepF hF hSc (by decide)) fun m2 hU => ?_
+    refine WP.jal ri_at_b8 (by decide) ?_; wn
+    obtain ⟨M1, hO1, hU1⟩ := hU
+    exact hK' _ _ (hO.trans ((hO1.mono (by decide)).trans
+        (Out.upK (c := 72) (by rw [← hF, BitVec.add_assoc]; rfl) hU1.out (by decide))))
+      ((hS.out hO1 (fun c hc => sep_below68 hF (ri_cs c hc))).out hU1.out
+        (slots_sep F (d := 4) (l := 8) (by decide) (by decide))) (by have h := hU1.resAt; rwa [hO.bytes hSp] at h) (by keepz hz0)
+  refine WP.lbu ri_at_20 ?_; wn
+  rw [h20, add_lit_zero, hbyte]
+  refine WP.aluImm ri_at_24 ?_; wn
+  refine WP.branch ri_at_28 (fun e => ?_) (fun e => ?_) <;> wn
+  · (try rsimp at e); (try rw [hz] at e); rw [ri_q] at e
+    have hq : B.toNat = 34 := beq_iff_eq.mp e
+    rw [ite_eq_left_of_eq_true _ _ (eq_true hq)] at hK
+    refine WP.aluImm ri_at_152 ?_; wn
+    refine WP.aluImm ri_at_154 ?_; wn
+    refine WP.alu ri_at_156 ?_; wn
+    refine WP.alu ri_at_158 ?_; wn
+    refine WP.alu ri_at_15a ?_; wn
+    refine WP.callStringEnd (tb := base + 0xFFFFFF0C) (out := F + 4) (p := p) (n := n) (pos := pos) (c := true)
+      ri_at_15c ri_at_160 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hb 0xFFFFFF0C (by decide))
+      (by decide) (hO.codeIn hcse hSse) (by (try rsimp); rw [hsp, ev_add])
+      (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact h8)
+      (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact h9)
+      (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact h19)
+      (by (try rsimp); (try simp only [ev0, ev_mv hz])) hn hpos (aligned_add halF (k := 4) (by decide))
+      (riSepF hF hSse (by decide)) (riSepF hF hSc (by decide)) fun m2 hU => ?_
+    refine WP.jal ri_at_164 (by decide) ?_; wn
+    exact hK _ _ (hO.trans (Out.upK (c := 72) (by rw [← hF, BitVec.add_assoc]; rfl) hU.out (by decide)))
+      (hS.out hU.out (slots_sep F (d := 4) (l := 8) (by decide) (by decide))) (by have h := hU.resAt; rwa [hO.bytes hSp] at h) (by keepz hz0)
+  (try rsimp at e); (try rw [hz] at e); rw [ri_q] at e
+  have hq : B.toNat ≠ 34 := fun h => by rw [h] at e; exact absurd e (by decide)
+  rw [ite_eq_right_of_eq_false _ _ (eq_false hq)] at hK
+  refine WP.aluImm ri_at_2c ?_; wn
+  refine WP.branch ri_at_30 (fun e => ?_) (fun e => ?_) <;> wn
+  · (try rsimp at e); (try rw [hz] at e); rw [ri_lb] at e
+    rw [ite_eq_left_of_eq_true _ _ (eq_true (Or.inl (beq_iff_eq.mp e)))] at hK
+    exact hcont _ (by keepz hz0) hK
+  (try rsimp at e); (try rw [hz] at e); rw [ri_lb] at e
+  have h91 : B.toNat ≠ 91 := fun h => by rw [h] at e; exact absurd e (by decide)
+  refine WP.aluImm ri_at_32 ?_; wn
+  refine WP.branch ri_at_36 (fun e => ?_) (fun e => ?_) <;> wn
+  · (try rsimp at e); (try rw [hz] at e); rw [ri_f] at e
+    have h : B.toNat = 102 := beq_iff_eq.mp e
+    rw [ite_eq_right_of_eq_false _ _ (eq_false (by omega)), ite_eq_left_of_eq_true _ _ (eq_true (Or.inl h))] at hK
+    exact hlitp _ (by keepz hz0) hK
+  (try rsimp at e); (try rw [hz] at e); rw [ri_f] at e
+  have h102 : B.toNat ≠ 102 := fun h => by rw [h] at e; exact absurd e (by decide)
+  refine WP.aluImm ri_at_38 ?_; wn
+  refine WP.branch ri_at_3c (fun e => ?_) (fun e => ?_) <;> wn
+  · (try rsimp at e); (try rw [hz] at e); rw [ri_n] at e
+    have h : B.toNat = 110 := beq_iff_eq.mp e
+    rw [ite_eq_right_of_eq_false _ _ (eq_false (by omega)),
+      ite_eq_left_of_eq_true _ _ (eq_true (Or.inr (Or.inl h)))] at hK
+    exact hlitp _ (by keepz hz0) hK
+  (try rsimp at e); (try rw [hz] at e); rw [ri_n] at e
+  have h110 : B.toNat ≠ 110 := fun h => by rw [h] at e; exact absurd e (by decide)
+  refine WP.aluImm ri_at_3e ?_; wn
+  refine WP.branch ri_at_42 (fun e => ?_) (fun e => ?_) <;> wn
+  · (try rsimp at e); (try rw [hz] at e); rw [ri_t] at e
+    have h : B.toNat = 116 := beq_iff_eq.mp e
+    rw [ite_eq_right_of_eq_false _ _ (eq_false (by omega)),
+      ite_eq_left_of_eq_true _ _ (eq_true (Or.inr (Or.inr h)))] at hK
+    exact hlitp _ (by keepz hz0) hK
+  (try rsimp at e); (try rw [hz] at e); rw [ri_t] at e
+  have h116 : B.toNat ≠ 116 := fun h => by rw [h] at e; exact absurd e (by decide)
+  refine WP.aluImm ri_at_44 ?_; wn
+  refine WP.branch ri_at_48 (fun e => ?_) (fun e => ?_) <;> wn
+  rotate_left
+  · (try rsimp at e); (try rw [hz] at e); rw [ri_lc'] at e
+    rw [ite_eq_left_of_eq_true _ _ (eq_true (Or.inr (nbeq_false e)))] at hK
+    exact hcont _ (by keepz hz0) hK
+  (try rsimp at e); (try rw [hz] at e); rw [ri_lc'] at e
+  have h123 : B.toNat ≠ 123 := nbeq_true e
+  rw [ite_eq_right_of_eq_false _ _ (eq_false (by omega)), ite_eq_right_of_eq_false _ _ (eq_false (by omega))] at hK
+  refine WP.aluImm ri_at_ba ?_; wn
+  refine WP.aluImm ri_at_be ?_; wn
+  refine WP.branch ri_at_c0 (fun e => ?_) (fun e => ?_) <;> wn
+  · (try rsimp at e); (try rw [hz] at e); (try simp only [ev0] at e); rw [ri_dg] at e
+    have hd : isDigit B.toNat = false := by
+      cases h : isDigit B.toNat
+      · rfl
+      · rw [h] at e; exact absurd e (by decide)
+    rw [ite_eq_right_of_eq_false _ _ (eq_false (by rw [hd]; decide))] at hK
+    exact ri_d6 (by (try rsimp); exact hsp) (by keepz hz0) hF halF hSc hO hS hz0 hK
+  (try rsimp at e); (try rw [hz] at e); (try simp only [ev0] at e); rw [ri_dg] at e
+  have hd : isDigit B.toNat = true := by
+    cases h : isDigit B.toNat
+    · rw [h] at e; exact absurd e (by decide)
+    · rfl
+  rw [ite_eq_left_of_eq_true _ _ (eq_true hd)] at hK
+  refine WP.aluImm ri_at_c4 ?_; wn
+  refine WP.alu ri_at_c6 ?_; wn
+  refine WP.alu ri_at_c8 ?_; wn
+  refine WP.alu ri_at_ca ?_; wn
+  refine WP.callNumberEnd (tb := base + 0x21A) (out := F + 4) (p := p) (n := n) (pos := pos)
+    ri_at_cc ri_at_d0 (by rw [BitVec.add_assoc, BitVec.add_assoc]; rfl) (even_at base hb 0x21A (by decide))
+    (by decide) (hO.codeIn hcne hSne) (by (try rsimp); rw [hsp, ev_add])
+    (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact h8)
+    (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact h9)
+    (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact h19) hn hpos (aligned_add halF (k := 4) (by decide))
+    (riSepF hF hSne (by decide)) (riSepF hF hSc (by decide)) fun m2 hU => ?_
+  refine WP.jal ri_at_d4 (by decide) ?_; wn
+  exact hK _ _ (hO.trans (Out.upK (c := 72) (by rw [← hF, BitVec.add_assoc]; rfl) hU.out (by decide)))
+    (hS.out hU.out (slots_sep F (d := 4) (l := 8) (by decide) (by decide))) (by have h := hU.resAt; rwa [hO.bytes hSp] at h) (by keepz hz0)
 
 end
