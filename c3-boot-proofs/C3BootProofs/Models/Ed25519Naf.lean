@@ -108,9 +108,10 @@ theorem nafGo_val (X : Nat) :
     have h0 : (carry + X / 2 ^ pos) * 2 ^ pos = 0 := by
       have : 2 ^ 256 ≤ 2 ^ pos := Nat.pow_le_pow_right (by decide) (by omega)
       have h1 : (carry + X / 2 ^ pos) * 2 ^ pos < 1 * 2 ^ pos :=
-        Nat.lt_of_le_of_lt hb (by rw [Nat.one_mul]; exact Nat.lt_of_lt_of_le (Nat.pow_lt_pow_right (by decide)
-          (by decide : 255 < 256)) this)
-      rw [Nat.lt_one_iff.mp (Nat.lt_of_mul_lt_mul_right h1), Nat.zero_mul]
+        Nat.lt_of_le_of_lt hb (by rw [Nat.one_mul]; exact Nat.lt_of_lt_of_le (by decide : 2 ^ 255 < 2 ^ 256) this)
+      rcases Nat.eq_zero_or_pos (carry + X / 2 ^ pos) with e | e
+      · rw [e, Nat.zero_mul]
+      · exact absurd (Nat.mul_le_mul_right (2 ^ pos) e) (Nat.not_le.mpr h1)
     rw [h0] at hv
     simpa only [nafGo, Int.natCast_zero, Int.add_zero] using hv
   | succ n ih =>

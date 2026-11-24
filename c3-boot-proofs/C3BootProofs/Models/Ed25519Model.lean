@@ -142,19 +142,19 @@ theorem EdImage.xzeroN (I : EdImage M) :
 
 theorem EdImage.oneOK (I : EdImage M) :
     Lim (2 ^ 26) (feW M (BitVec.ofNat 32 edOneAddress)) ∧ fv (feW M (BitVec.ofNat 32 edOneAddress)) = 1 := by
-  rw [feW_bytes I.one]; decide +kernel
+  rw [feW_bytes I.one]; unfold Lim; decide +kernel
 
 theorem EdImage.dOK (I : EdImage M) :
     Lim (2 ^ 26) (feW M (BitVec.ofNat 32 edDAddress)) ∧ fv (feW M (BitVec.ofNat 32 edDAddress)) = Ed25519.d := by
-  rw [feW_bytes I.d]; decide +kernel
+  rw [feW_bytes I.d]; unfold Lim; decide +kernel
 
 theorem EdImage.smOK (I : EdImage M) :
     Lim (2 ^ 26) (feW M (BitVec.ofNat 32 edSqrtM1Address)) ∧
       fv (feW M (BitVec.ofNat 32 edSqrtM1Address)) = Ed25519.sqrtM1 := by
-  rw [feW_bytes I.sqrtM1, sqrtM1_eq]; decide +kernel
+  rw [feW_bytes I.sqrtM1, sqrtM1_eq]; unfold Lim; decide +kernel
 
 theorem EdImage.d2OK (I : EdImage M) : Lim (2 ^ 26) (feW M apnD) ∧ fv (feW M apnD) = 2 * Ed25519.d % Ed25519.p := by
-  rw [feW_bytes I.d2]; decide +kernel
+  rw [feW_bytes I.d2]; unfold Lim; decide +kernel
 
 end
 
@@ -172,10 +172,23 @@ theorem encode_getD (P : Nat × Nat) {i : Nat} (hi : i < 32) :
     (encode P).getD i 0 = (P.2 + 2 ^ 255 * (P.1 % 2)) / 256 ^ i % 256 := by
   simp [encode, List.getD, List.getElem?_map, List.getElem?_range hi]
 
+theorem mod_mul_256 (a B : Nat) (hB : 0 < B) : a % (B * 256) = a % B + B * (a / B % 256) := by
+  have h1 := Nat.div_add_mod a B
+  have h3 : a % B < B := Nat.mod_lt _ hB
+  have hm : B * (a / B % 256) ≤ B * 255 := Nat.mul_le_mul_left B (Nat.le_of_lt_succ (Nat.mod_lt _ (by decide)))
+  have h5 : a % B + B * (a / B % 256) < B * 256 := by omega
+  have hq : B * (a / B) = B * 256 * (a / B / 256) + B * (a / B % 256) := by
+    calc B * (a / B) = B * (256 * (a / B / 256) + a / B % 256) := by rw [Nat.div_add_mod]
+      _ = B * 256 * (a / B / 256) + B * (a / B % 256) := by rw [Nat.mul_add, Nat.mul_assoc]
+  have e : a = a % B + B * (a / B % 256) + B * 256 * (a / B / 256) := by omega
+  calc a % (B * 256) = (a % B + B * (a / B % 256) + B * 256 * (a / B / 256)) % (B * 256) := by rw [← e]
+    _ = a % B + B * (a / B % 256) := by rw [Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt h5]
+
 theorem lv_encode (P : Nat × Nat) : ∀ k, k ≤ 32 → lv k (encode P) = (P.2 + 2 ^ 255 * (P.1 % 2)) % 256 ^ k
   | 0, _ => by simp only [lv, Nat.pow_zero, Nat.mod_one]
   | k + 1, h => by
-    rw [lv, lv_encode P k (by omega), encode_getD P (by omega), Nat.mod_pow_succ, Nat.mul_comm (256 ^ k)]
+    rw [lv, lv_encode P k (by omega), encode_getD P (by omega), show 256 ^ (k + 1) = 256 ^ k * 256 from Nat.pow_succ _ _,
+      mod_mul_256 _ _ (Nat.pow_pos (by decide)), Nat.mul_comm (256 ^ k)]
 
 theorem encode_length (P : Nat × Nat) : (encode P).length = 32 := by simp [encode]
 
@@ -259,7 +272,10 @@ theorem pk_point (a : Word) (h : evPk M (memBytes M a 32) = true) :
           · exact Or.inr (eq_of_leNum hc (byt_memBytes _ _ _) hl (memBytes_length _ _ _) (by rw [hct, y1, e2]))
           · exact Or.inr (eq_of_leNum hc (byt_memBytes _ _ _) hl (memBytes_length _ _ _) (by rw [hct, y1, e2]))
           · exact Or.inl (eq_of_leNum hc (byt_memBytes _ _ _) hl (memBytes_length _ _ _) (by rw [hct, y1, e1]))
-        rcases hE with hE | hE <;> simp [h128, hE] at hnot
+        rw [decide_eq_true h128, Bool.true_and] at hnot
+        rcases hE with hE | hE
+        · rw [decide_eq_true hE, Bool.true_or] at hnot; exact absurd hnot (by decide)
+        · rw [decide_eq_true hE, Bool.or_true] at hnot; exact absurd hnot (by decide)
     refine ⟨_, hdecode, hon, hiso _ _ hon hrep hres, fun E hE => ?_⟩
     cases hE
     exact hrep
@@ -290,8 +306,8 @@ theorem evSpec_sound {M : Word → BitVec 8} (I : EdImage M) (G : EdGroupLaws) (
     obtain ⟨r, hdecR, hron, hrsm, -⟩ := pk_point I hdec hiso sig hR
     have hAE := hArep _ hdA
     have hS : Ed25519.leNum (memBytes M (sig + BitVec.ofNat 32 32) 32) < Ed25519.L := by
-      have := ltLEb_lt (byt_memBytes _ _ _) (byt_memBytes _ _ _) 32 hlt
-      rwa [← leNum_lv, ← I.orderN, ← leNum_lv] at this
+      rw [leNum_lv, memBytes_length, ← I.orderN, leNum_lv, memBytes_length]
+      exact ltLEb_lt (byt_memBytes _ _ _) (byt_memBytes _ _ _) 32 hlt
     have hd2 := I.d2OK
     have hTA := tab_rep G F _ hd2.1 hd2.2 _ _ (onCurve_neg _ hAon) (erep_neg feNeg_ok hAon hAE)
     have hTB := tab_rep G F _ hd2.1 hd2.2 _ _ onCurve_B I.base
@@ -299,37 +315,46 @@ theorem evSpec_sound {M : Word → BitVec 8} (I : EdImage M) (G : EdGroupLaws) (
         (Ed25519.add (zs 0 (neg A)) (zs 0 Ed25519.B)) := by
       rw [show zs (0 : Int) (neg A) = Ed25519.zero from rfl, show zs (0 : Int) Ed25519.B = Ed25519.zero from rfl,
         zero_add' _ onCurve_zero]
-      have h1 := I.oneOK
-      refine ⟨by rw [feZ_eq]; decide, h1.1, h1.1, by rw [h1.2]; decide, by rw [feZ_eq]; decide, ?_⟩
-      rw [h1.2]; rfl
-    let K := Ed25519.leNum (sha512 (memBytes M sig 32 ++ memBytes M pk 32 ++ memBytes M msg len)) % Ed25519.L
-    let S := Ed25519.leNum (memBytes M (sig + BitVec.ofNat 32 32) 32)
-    have hK : K < Ed25519.L := Nat.mod_lt _ (by decide)
-    have hl := ladder_rep G F _ _ _ _ (onCurve_neg _ hAon) onCurve_B hTA hTB _ _
-      (fun k => (nafSpec_shape _ k).imp id (·.1)) (fun k => nafSpec_range _ k)
-      (fun k => (nafSpec_shape _ k).imp id (·.1)) (fun k => nafSpec_range _ k) _ _ 0 0 hr0
-    rw [Int.zero_mul, Int.zero_add, Int.zero_mul, Int.zero_add] at hl
-    have htop := nafTop_le (nafSpec (leL (kOf (smmIn M (BitVec.ofNat 32 0x3FCC49E4))
-      (smmIn M (BitVec.ofNat 32 0x3FCC49C0)) (sha512 (memBytes M sig 32 ++ memBytes M pk 32 ++ memBytes M msg len))) 0 32))
-      (nafSpec (leL (memBytes M (sig + BitVec.ofNat 32 32) 32) 0 32)) 256
-    rw [nafVal_zero_above _ _ 256 (by omega) (fun j h1 h2 => (nafTop_zero _ _ 256 j (by omega) h2).1),
-      nafVal_zero_above _ _ 256 (by omega) (fun j h1 h2 => (nafTop_zero _ _ 256 j (by omega) h2).2),
-      nafVal_nafSpec _ (by rw [hk]; exact Nat.lt_trans hK L_lt), hk,
-      nafVal_nafSpec _ (by rw [leNum_memBytes]; exact Nat.lt_trans hS L_lt), leNum_memBytes,
-      zs_ofNat, zs_ofNat] at hl
+      have h1 : Lim (2 ^ 26) (feW M (BitVec.ofNat 32 0x3FCC4948)) ∧ fv (feW M (BitVec.ofNat 32 0x3FCC4948)) = 1 :=
+        I.oneOK
+      refine ⟨?_, h1.1, h1.1, ?_, ?_, ?_⟩
+      · show Lim (2 ^ 26) feZ
+        rw [feZ_eq]; unfold Lim; decide
+      · show fv (feW M (BitVec.ofNat 32 0x3FCC4948)) ≠ 0
+        rw [h1.2]; decide
+      · show fv feZ = 0 * fv (feW M (BitVec.ofNat 32 0x3FCC4948)) % Ed25519.p
+        rw [feZ_eq, h1.2]; decide
+      · show fv (feW M (BitVec.ofNat 32 0x3FCC4948)) = 1 * fv (feW M (BitVec.ofNat 32 0x3FCC4948)) % Ed25519.p
+        rw [h1.2]; decide
+    rw [hk, leNum_memBytes] at h
+    generalize hKdef : Ed25519.leNum (sha512 (memBytes M sig 32 ++ memBytes M pk 32 ++ memBytes M msg len)) %
+      Ed25519.L = K at h
+    generalize hSdef : Ed25519.leNum (memBytes M (sig + BitVec.ofNat 32 32) 32) = S at h hS
+    have hK : K < Ed25519.L := hKdef ▸ Nat.mod_lt _ (by decide)
+    have hl := ladder_rep G F _ _ _ _ (onCurve_neg _ hAon) onCurve_B hTA hTB (nafSpec K) (nafSpec S)
+      (fun k => (nafSpec_shape K k).imp id (·.1)) (fun k => nafSpec_range K k)
+      (fun k => (nafSpec_shape S k).imp id (·.1)) (fun k => nafSpec_range S k)
+      (nafTop (nafSpec K) (nafSpec S) 256 + 1) _ 0 0 hr0
+    have htop : nafTop (nafSpec K) (nafSpec S) 256 + 1 ≤ 256 :=
+      Nat.succ_le_of_lt (Nat.lt_of_le_of_lt (nafTop_le _ _ 256) (by decide))
+    simp only [Int.zero_mul, Int.zero_add] at hl
+    rw [← nafVal_zero_above (nafSpec K) _ 256 htop
+        (fun j h1 h2 => (nafTop_zero _ _ 256 j (Nat.lt_of_succ_le h1) h2).1),
+      ← nafVal_zero_above (nafSpec S) _ 256 htop
+        (fun j h1 h2 => (nafTop_zero _ _ 256 j (Nat.lt_of_succ_le h1) h2).2),
+      nafVal_nafSpec K (Nat.lt_trans hK L_lt), nafVal_nafSpec S (Nat.lt_trans hS L_lt), zs_ofNat, zs_ofNat] at hl
     have hPf := G.closed _ _ (nsmul_on G _ (onCurve_neg _ hAon) K) (nsmul_on G _ onCurve_B S)
-    have hc := hcmp _ _ hPf hl
     have heq := of_decide_eq_true h
-    rw [hc] at heq
+    rw [hcmp _ _ hPf hl] at heq
     have hrP : Ed25519.add (nsmul K (neg A)) (nsmul S Ed25519.B) = r := by
       have := decode_encode hrx _ hPf
       rw [heq, hdecR] at this
       exact (Option.some.inj this).symm
     have hver := verify_rearrange G A Ed25519.B r hAon onCurve_B K S hrP
     unfold ed25519Verify
-    rw [memBytes_take M sig (show 32 ≤ 64 by decide), hdecA, hdecR, memBytes_drop M sig (show 32 ≤ 64 by decide)]
-    simp only [memBytes_length, show ((64 : Nat) == 64) = true from rfl, Bool.true_and, show 64 - 32 = 32 from rfl, decide_eq_true hS,
-      hAsm, hrsm, Bool.not_false, Bool.true_and]
-    exact beq_iff_eq.mpr hver
+    rw [memBytes_take M sig (show 32 ≤ 64 by decide), hdecA, hdecR, memBytes_drop M sig (show 32 ≤ 64 by decide),
+      show 64 - 32 = 32 from rfl, hKdef, hSdef]
+    simp only [memBytes_length, show ((64 : Nat) == 64) = true from rfl, Bool.true_and, decide_eq_true hS, hAsm,
+      hrsm, Bool.not_false, beq_iff_eq.mpr hver]
 
 end C3.RV32.EdM

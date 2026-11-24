@@ -107,7 +107,7 @@ theorem erep_neg (hn : FeNegOK) {X Y Z T : List Nat} {P : Nat × Nat} (hP : OnCu
     rw [eX, ex, ← Nat.mod_eq_of_lt hP.1, neg_mul_mod, Nat.mod_eq_of_lt hP.1]
   · show fv (negL X) * fv Y % Ed25519.p = fv Z * fv (negL T) % Ed25519.p
     rw [eX, eT, ← Nat.mod_eq_of_lt (fv_lt X), neg_mul_mod, Nat.mul_comm (fv Z), ← Nat.mod_eq_of_lt (fv_lt T),
-      neg_mul_mod, Nat.mod_mod, Nat.mod_mod, et, Nat.mul_comm (fv T)]
+      neg_mul_mod, Nat.mul_comm (fv T), ← et]
 
 section
 variable (G : EdGroupLaws) (F : EdFormulas)
@@ -125,7 +125,7 @@ theorem tab_rep (d2 : List Nat) (hd2 : Lim (2 ^ 26) d2) (hd2v : fv d2 = 2 * Ed25
     have hj := nsmul_on G Q hQ (2 * j + 1)
     have ha := F.addN _ _ _ _ h2 hj he (tab_rep d2 hd2 hd2v A Q hQ hA j)
     have hs : Ed25519.add (Ed25519.add Q Q) (nsmul (2 * j + 1) Q) = nsmul (2 * (j + 1) + 1) Q := by
-      rw [show 2 * (j + 1) + 1 = 2 + (2 * j + 1) by omega, nsmul_add G Q hQ,
+      rw [show 2 * (j + 1) + 1 = 2 + (2 * j + 1) by omega, nsmul_add G Q hQ 2 (2 * j + 1),
         show nsmul 2 Q = Ed25519.add Q Q by rw [nsmul_succ, nsmul_one Q hQ]]
     rw [hs] at ha
     have hon := nsmul_on G Q hQ (2 * (j + 1) + 1)
@@ -147,15 +147,17 @@ theorem dig_rep (T : Nat → Pt) (Q : Nat × Nat) (hQ : OnCurve Q) (hT : ∀ j, 
     · rw [ite_eq_left h15]
       have e : 2 * (b.toNat / 2) + 1 = b.toNat := by omega
       have hs : sval b = ((b.toNat : Nat) : Int) := by unfold sval; rw [ite_eq_left (by omega)]
-      rw [hs, zs_ofNat, ← e]
-      exact F.addN _ _ _ _ hX (nsmul_on G Q hQ _) (F.ext _ _ hX ht) (hT _)
+      rw [hs, zs_ofNat]
+      have := F.addN _ _ _ _ hX (nsmul_on G Q hQ _) (F.ext _ _ hX ht) (hT (b.toNat / 2))
+      rwa [e] at this
     · rw [ite_eq_right h15]
       have h241 : 241 ≤ b.toNat := hr.resolve_left h15
       have hlt : b.toNat < 256 := b.isLt
       have e : 2 * ((256 - b.toNat) / 2) + 1 = 256 - b.toNat := by omega
       have hs : sval b = -((256 - b.toNat : Nat) : Int) := by unfold sval; rw [ite_eq_right (by omega)]; omega
-      rw [hs, zs_negPt, ← e]
-      exact F.subN _ _ _ _ hX (nsmul_on G Q hQ _) (F.ext _ _ hX ht) (hT _)
+      rw [hs, zs_negPt]
+      have := F.subN _ _ _ _ hX (nsmul_on G Q hQ _) (F.ext _ _ hX ht) (hT ((256 - b.toNat) / 2))
+      rwa [e] at this
 
 omit F in
 theorem add_right_swap (a b c : Nat × Nat) (ha : OnCurve a) (hb : OnCurve b) (hc : OnCurve c) :
@@ -194,6 +196,7 @@ theorem step_rep (TA TB : Nat → Pt) (QA QB : Nat × Nat) (hA : OnCurve QA) (hB
   rw [e] at c3
   exact F.proj _ _ (G.closed _ _ (zs_on G QA hA _) (zs_on G QB hB _)) c3
 
+omit G F in
 theorem pow_succ_int (k : Nat) : ((2 ^ (k + 1) : Nat) : Int) = 2 * ((2 ^ k : Nat) : Int) := by
   rw [Nat.pow_succ, Nat.mul_comm, Int.natCast_mul]; rfl
 

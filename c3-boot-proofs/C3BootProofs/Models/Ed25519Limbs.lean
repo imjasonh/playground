@@ -35,6 +35,13 @@ theorem negZ_toNat (c v : Nat) (hc : c < 2 ^ 32) (hv : v ≤ c) :
     Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt hv hc)]
   omega
 
+theorem negZ_at (l : List Nat) (i c : Nat) (hc : c < 2 ^ 32) (hv : l.getD i 0 ≤ c)
+    (hk : (if i = 0 then (0x3FFFFED0 : Word) else if i % 2 = 0 then 0x3FFFFFF0 else 0x1FFFFFF0) = BitVec.ofNat 32 c) :
+    (feNegZ (limbF l) i).toNat = c - l.getD i 0 := by
+  unfold feNegZ limbF
+  rw [hk]
+  exact negZ_toNat c _ hc hv
+
 /-- **`FieldElement2625::neg`** computes `-x` with limbs below 2^26. -/
 theorem feNeg_ok : FeNegOK := by
   intro l hl
@@ -43,22 +50,21 @@ theorem feNeg_ok : FeNegOK := by
   have b3 := hb 3 (by decide); have b4 := hb 4 (by decide); have b5 := hb 5 (by decide)
   have b6 := hb 6 (by decide); have b7 := hb 7 (by decide); have b8 := hb 8 (by decide)
   have b9 := hb 9 (by decide)
-  have e : ∀ i, i < 10 → (feNegZ (limbF l) i).toNat =
-      (if i = 0 then 0x3FFFFED0 else if i % 2 = 0 then 0x3FFFFFF0 else 0x1FFFFFF0) - l.getD i 0 := by
-    intro i hi
-    unfold feNegZ limbF
-    have := hb i hi
-    split
-    · exact negZ_toNat _ _ (by decide) (by omega)
-    · split
-      · exact negZ_toNat _ _ (by decide) (by omega)
-      · exact negZ_toNat _ _ (by decide) (by omega)
+  have e0 := negZ_at l 0 0x3FFFFED0 (by decide) (by omega) (by decide)
+  have e1 := negZ_at l 1 0x1FFFFFF0 (by decide) (by omega) (by decide)
+  have e2 := negZ_at l 2 0x3FFFFFF0 (by decide) (by omega) (by decide)
+  have e3 := negZ_at l 3 0x1FFFFFF0 (by decide) (by omega) (by decide)
+  have e4 := negZ_at l 4 0x3FFFFFF0 (by decide) (by omega) (by decide)
+  have e5 := negZ_at l 5 0x1FFFFFF0 (by decide) (by omega) (by decide)
+  have e6 := negZ_at l 6 0x3FFFFFF0 (by decide) (by omega) (by decide)
+  have e7 := negZ_at l 7 0x1FFFFFF0 (by decide) (by omega) (by decide)
+  have e8 := negZ_at l 8 0x3FFFFFF0 (by decide) (by omega) (by decide)
+  have e9 := negZ_at l 9 0x1FFFFFF0 (by decide) (by omega) (by decide)
   unfold negL
-  rw [e 0 (by decide), e 1 (by decide), e 2 (by decide), e 3 (by decide), e 4 (by decide), e 5 (by decide),
-    e 6 (by decide), e 7 (by decide), e 8 (by decide), e 9 (by decide)]
-  simp only [Nat.reduceMod, Nat.zero_ne_one, Nat.succ_ne_zero, ↓reduceIte, OfNat.ofNat_ne_zero, Nat.reduceEqDiff]
-  obtain ⟨hL, hv⟩ := feReduce_val _ _ _ _ _ _ _ _ _ _ (by omega) (by omega) (by omega) (by omega) (by omega)
-    (by omega) (by omega) (by omega) (by omega) (by omega)
+  rw [e0, e1, e2, e3, e4, e5, e6, e7, e8, e9]
+  obtain ⟨hL, hv⟩ := feReduce_val (0x3FFFFED0 - l.getD 0 0) (0x1FFFFFF0 - l.getD 1 0) (0x3FFFFFF0 - l.getD 2 0) (0x1FFFFFF0 - l.getD 3 0) (0x3FFFFFF0 - l.getD 4 0)
+    (0x1FFFFFF0 - l.getD 5 0) (0x3FFFFFF0 - l.getD 6 0) (0x1FFFFFF0 - l.getD 7 0) (0x3FFFFFF0 - l.getD 8 0) (0x1FFFFFF0 - l.getD 9 0)
+    (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega) (by omega)
   refine ⟨hL, ?_⟩
   rw [hv]
   unfold fv Ed25519.p
