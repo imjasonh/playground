@@ -25,6 +25,12 @@ harness = false
 required-features = ["firmware"]
 
 [[bin]]
+name = "xiao-esp32c3-gzip-bench"
+path = "src/bin/xiao_esp32c3_gzip_bench.rs"
+harness = false
+required-features = ["firmware"]
+
+[[bin]]
 name = "waveshare-epd75-base"
 path = "src/bin/waveshare_epd75_base.rs"
 harness = false
@@ -33,6 +39,12 @@ required-features = ["firmware"]
 [[bin]]
 name = "waveshare-epd75-maze"
 path = "src/bin/waveshare_epd75_maze.rs"
+harness = false
+required-features = ["firmware"]
+
+[[bin]]
+name = "waveshare-epd75-gzip-bench"
+path = "src/bin/waveshare_epd75_gzip_bench.rs"
 harness = false
 required-features = ["firmware"]
 

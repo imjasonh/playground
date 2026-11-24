@@ -6,12 +6,14 @@ import UniformTypeIdentifiers
 struct MCULabView: View {
     @StateObject private var controller = MCULabController()
     @State private var isImportingFirmware = false
+    @State private var commandCounts: [String: Int] = [:]
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
                 availabilityBanner
                 scanControls
+                appCommandsPanel
                 metricsDashboard
                 phaseBreakdownPanel
                 profileAndTracesPanel
@@ -97,6 +99,84 @@ struct MCULabView: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
                 .accessibilityIdentifier("mcuLabStatusMessage")
+        }
+    }
+
+    @ViewBuilder
+    private var appCommandsPanel: some View {
+        if let sample = controller.latestSample,
+           let commands = sample.profile?.commands,
+           !commands.isEmpty
+        {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("App Controls")
+                        .font(.subheadline.bold())
+                    Spacer()
+                    if let app = sample.profile?.app, !app.isEmpty {
+                        Text(app)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                ForEach(commands) { cmd in
+                    let defaultRuns = Int(max(1, cmd.defaultCount))
+                    let runsBinding = Binding<Int>(
+                        get: { commandCounts[cmd.id] ?? defaultRuns },
+                        set: { commandCounts[cmd.id] = $0 }
+                    )
+                    let currentRuns = runsBinding.wrappedValue
+                    VStack(alignment: .leading, spacing: 6) {
+                        if cmd.defaultCount > 1 {
+                            Stepper(
+                                "Runs: \(currentRuns)",
+                                value: runsBinding,
+                                in: 1...Int(MCULabProtocol.maxAppCommandCount)
+                            )
+                            .font(.subheadline)
+                            .accessibilityIdentifier("mcuLabAppCmdStepper-\(cmd.id)")
+                        }
+                        HStack(spacing: 10) {
+                            Button {
+                                controller.armAppCommand(
+                                    cmd,
+                                    count: UInt16(currentRuns),
+                                    deviceId: sample.deviceId
+                                )
+                            } label: {
+                                Label(
+                                    currentRuns > 1 ? "\(cmd.label) (×\(currentRuns))" : cmd.label,
+                                    systemImage: "play.circle.fill"
+                                )
+                                .frame(maxWidth: .infinity, minHeight: 40)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(controller.otaPhase != .idle)
+                            .accessibilityIdentifier("mcuLabAppCmdButton-\(cmd.id)")
+
+                            if controller.pendingAppCommand?.id == cmd.id {
+                                Button("Cancel", role: .cancel) {
+                                    controller.cancelAppCommand()
+                                }
+                                .buttonStyle(.bordered)
+                                .accessibilityIdentifier("mcuLabAppCmdCancel-\(cmd.id)")
+                            }
+                        }
+                    }
+                }
+
+                if !controller.appCommandStatus.isEmpty {
+                    Text(controller.appCommandStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("mcuLabAppCmdStatus")
+                }
+            }
+            .padding(12)
+            .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("mcuLabAppControlsPanel")
         }
     }
 
@@ -285,6 +365,23 @@ struct MCULabView: View {
                             }
                             ProgressView(value: min(max(Double(sp.durationUs) / maxEnd, 0), 1))
                                 .tint(.indigo)
+                        }
+                    }
+                }
+
+                if let appMetrics = profile.metrics, !appMetrics.isEmpty {
+                    Text("App metrics")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                    ForEach(appMetrics.prefix(10)) { m in
+                        HStack {
+                            Text(m.id)
+                                .font(.caption2.monospaced())
+                                .lineLimit(1)
+                            Spacer()
+                            Text(m.unit.map { "\($0.isEmpty ? "\(m.value)" : "\(m.value) \($0)")" } ?? "\(m.value)")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }

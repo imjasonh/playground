@@ -82,27 +82,30 @@ type Point struct {
 }
 
 const (
-	maxPointsPerPayload = 32
+	maxPointsPerPayload = 64
 	maxLabelsPerPoint   = 8
 	maxLabelValueChars  = 128
+	appMetricPrefix     = "mcu.app."
+	maxAppMetricSuffix  = 64
+	maxAppMetricSegs    = 4
 )
 
 var allowedMetrics = map[string]string{
-	"mcu.wake.count":             "custom.googleapis.com/xiao_esp32c3/mcu/wake/count",
-	"mcu.phase.duration_us":      "custom.googleapis.com/xiao_esp32c3/mcu/phase/duration_us",
-	"mcu.battery_mv":             "custom.googleapis.com/xiao_esp32c3/mcu/battery_mv",
-	"mcu.ble.rssi":               "custom.googleapis.com/xiao_esp32c3/mcu/ble/rssi",
-	"mcu.heap.free_bytes":        "custom.googleapis.com/xiao_esp32c3/mcu/heap/free_bytes",
-	"mcu.heap.min_free_bytes":    "custom.googleapis.com/xiao_esp32c3/mcu/heap/min_free_bytes",
-	"mcu.stack.high_water_bytes": "custom.googleapis.com/xiao_esp32c3/mcu/stack/high_water_bytes",
-	"mcu.cpu.cycles":             "custom.googleapis.com/xiao_esp32c3/mcu/cpu/cycles",
-	"mcu.ota.duration_ms":        "custom.googleapis.com/xiao_esp32c3/mcu/ota/duration_ms",
-	"mcu.ota.throughput_bps":     "custom.googleapis.com/xiao_esp32c3/mcu/ota/throughput_bps",
-	"mcu.ota.bytes":              "custom.googleapis.com/xiao_esp32c3/mcu/ota/bytes",
-	"mcu.ota.rtt_ms":             "custom.googleapis.com/xiao_esp32c3/mcu/ota/rtt_ms",
-	"mcu.ota.energy_mj":          "custom.googleapis.com/xiao_esp32c3/mcu/ota/energy_mj",
-	"mcu.ota.battery_delta_mv":   "custom.googleapis.com/xiao_esp32c3/mcu/ota/battery_delta_mv",
-	"mcu.ota.phone_battery_pct":  "custom.googleapis.com/xiao_esp32c3/mcu/ota/phone_battery_pct",
+	"mcu.wake.count":             "custom.googleapis.com/mcu_lab/mcu/wake/count",
+	"mcu.phase.duration_us":      "custom.googleapis.com/mcu_lab/mcu/phase/duration_us",
+	"mcu.battery_mv":             "custom.googleapis.com/mcu_lab/mcu/battery_mv",
+	"mcu.ble.rssi":               "custom.googleapis.com/mcu_lab/mcu/ble/rssi",
+	"mcu.heap.free_bytes":        "custom.googleapis.com/mcu_lab/mcu/heap/free_bytes",
+	"mcu.heap.min_free_bytes":    "custom.googleapis.com/mcu_lab/mcu/heap/min_free_bytes",
+	"mcu.stack.high_water_bytes": "custom.googleapis.com/mcu_lab/mcu/stack/high_water_bytes",
+	"mcu.cpu.cycles":             "custom.googleapis.com/mcu_lab/mcu/cpu/cycles",
+	"mcu.ota.duration_ms":        "custom.googleapis.com/mcu_lab/mcu/ota/duration_ms",
+	"mcu.ota.throughput_bps":     "custom.googleapis.com/mcu_lab/mcu/ota/throughput_bps",
+	"mcu.ota.bytes":              "custom.googleapis.com/mcu_lab/mcu/ota/bytes",
+	"mcu.ota.rtt_ms":             "custom.googleapis.com/mcu_lab/mcu/ota/rtt_ms",
+	"mcu.ota.energy_mj":          "custom.googleapis.com/mcu_lab/mcu/ota/energy_mj",
+	"mcu.ota.battery_delta_mv":   "custom.googleapis.com/mcu_lab/mcu/ota/battery_delta_mv",
+	"mcu.ota.phone_battery_pct":  "custom.googleapis.com/mcu_lab/mcu/ota/phone_battery_pct",
 }
 
 // Parse extracts normalized Cloud Monitoring points from an OTLP/HTTP v1 JSON body.
@@ -186,7 +189,34 @@ func toCloudMonitoringType(otlpName string) (string, error) {
 	if mapped, ok := allowedMetrics[clean]; ok {
 		return mapped, nil
 	}
+	if suffix, ok := strings.CutPrefix(clean, appMetricPrefix); ok {
+		if path, valid := validateAppMetricSuffix(suffix); valid {
+			return "custom.googleapis.com/mcu_lab/mcu/app/" + path, nil
+		}
+	}
 	return "", fmt.Errorf("unsupported metric name %q", otlpName)
+}
+
+func validateAppMetricSuffix(suffix string) (string, bool) {
+	if suffix == "" || len(suffix) > maxAppMetricSuffix {
+		return "", false
+	}
+	segs := strings.Split(suffix, ".")
+	if len(segs) == 0 || len(segs) > maxAppMetricSegs {
+		return "", false
+	}
+	for _, seg := range segs {
+		if seg == "" {
+			return "", false
+		}
+		for i := 0; i < len(seg); i++ {
+			c := seg[i]
+			if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_') {
+				return "", false
+			}
+		}
+	}
+	return strings.Join(segs, "/"), true
 }
 
 func sanitizeLabelKey(k string) string {
@@ -292,7 +322,7 @@ type cmValue struct {
 	Int64Value string `json:"int64Value"`
 }
 
-// Export formats points as custom.googleapis.com/xiao_esp32c3/* time series and
+// Export formats points as custom.googleapis.com/mcu_lab/* time series and
 // POSTs them to Cloud Monitoring.
 func (e *CloudMonitoringExporter) Export(ctx context.Context, attestedUserID, attestedDeviceID string, points []Point) error {
 	if e.ProjectID == "" {

@@ -26,9 +26,13 @@ use crate::ble_ota::{
 use crate::boards::Board;
 use crate::profiler::{now_us, WakeProfiler};
 use crate::protocol::{
-    encode_board_flags, format_status_line, reset_reason_name, RtcState, FLAG_BROWNOUT_RESET,
-    FLAG_DEEP_SLEEP_WAKE, MAX_CRASH_STREAK,
+    encode_board_flags, format_status_line, reset_reason_name, AppCommandSpec, RtcState,
+    FLAG_BROWNOUT_RESET, FLAG_DEEP_SLEEP_WAKE, MAX_CRASH_STREAK,
 };
+
+/// Minimum delay between multi-run app command iterations so every run's OTel metrics
+/// clear Google Cloud Monitoring's 5 s custom-metric sampling interval.
+const COMMAND_RUN_PACING_MS: u64 = 5_500;
 
 /// Persistent CRC32-guarded state placed in RTC slow RAM so wake counters and
 /// crash-streak tracking survive deep sleep and recover cleanly from brownouts.
@@ -72,6 +76,19 @@ impl<'a> StepContext<'a> {
         self.profiler.record(name, parent, start_us, end_us);
     }
 
+    /// Record a sub-phase profiling span with string attributes (`name` under `parent`).
+    pub fn record_span_with_attrs(
+        &mut self,
+        name: &str,
+        parent: &str,
+        start_us: u64,
+        end_us: u64,
+        attrs: &[(&str, &str)],
+    ) {
+        self.profiler
+            .record_with_attrs(name, parent, start_us, end_us, attrs);
+    }
+
     /// Measure a closure, returning `(result, elapsed_us)` and recording a profiling span.
     pub fn measure_span<T>(&mut self, name: &str, parent: &str, f: impl FnOnce() -> T) -> (T, u32) {
         let start = now_us();
@@ -80,6 +97,33 @@ impl<'a> StepContext<'a> {
         self.profiler.record(name, parent, start, end);
         let elapsed_us = u32::try_from(end.saturating_sub(start)).unwrap_or(u32::MAX);
         (out, elapsed_us)
+    }
+
+    /// Measure a closure, returning `(result, elapsed_us)` and recording a profiling span with attributes.
+    pub fn measure_span_with_attrs<T>(
+        &mut self,
+        name: &str,
+        parent: &str,
+        attrs: &[(&str, &str)],
+        f: impl FnOnce() -> T,
+    ) -> (T, u32) {
+        let start = now_us();
+        let out = f();
+        let end = now_us();
+        self.profiler
+            .record_with_attrs(name, parent, start, end, attrs);
+        let elapsed_us = u32::try_from(end.saturating_sub(start)).unwrap_or(u32::MAX);
+        (out, elapsed_us)
+    }
+
+    /// Attach a string attribute to this wake's root OTel trace span.
+    pub fn record_attr(&mut self, key: &str, value: &str) {
+        self.profiler.record_attr(key, value);
+    }
+
+    /// Record an application-specific OTel gauge metric (emitted as `mcu.app.<name>`).
+    pub fn record_metric(&mut self, name: &str, value: i64, unit: &str, attrs: &[(&str, &str)]) {
+        self.profiler.record_metric(name, value, unit, attrs);
     }
 
     /// Feed the ESP-IDF Task Watchdog during long hardware operations (e.g. full e-paper refresh).
@@ -102,6 +146,12 @@ pub trait App<B: Board>: Sized {
         B::default_run_mode()
     }
 
+    /// Declarative commands advertised in `WakeProfile.commands` so the iOS app can
+    /// render generic UI controls without any per-app Swift hardcoding.
+    fn commands() -> Vec<AppCommandSpec> {
+        Vec::new()
+    }
+
     /// Initialize application state using the already-initialized `board`.
     fn init(board: &mut B) -> Result<Self>;
 
@@ -112,6 +162,20 @@ pub trait App<B: Board>: Sized {
 
     /// Execute one wake or animation step and return its phase durations and flags.
     fn step(&mut self, board: &mut B, ctx: &mut StepContext<'_>) -> Result<StepOutput>;
+
+    /// Execute one iteration of a declarative command queued over `APP_COMMAND_CHAR_UUID`.
+    /// Called only after BLE advertising and any GATT connection have stopped so the
+    /// workload runs with zero BLE radio interference.
+    fn run_command(
+        &mut self,
+        cmd_id: &str,
+        _run_index: u16,
+        _total_runs: u16,
+        _board: &mut B,
+        _ctx: &mut StepContext<'_>,
+    ) -> Result<StepOutput> {
+        anyhow::bail!("unsupported app command: {cmd_id}")
+    }
 }
 
 /// Feed the ESP-IDF Task Watchdog for the current task.
@@ -228,6 +292,16 @@ pub fn run<B: Board, A: App<B>>() -> Result<()> {
                 burst_ms,
                 &mut ota_verified,
             )?;
+            execute_pending_commands(
+                &mut board,
+                &mut app,
+                &ble,
+                &target_name,
+                reset_code,
+                base_flags,
+                burst_ms,
+                &mut ota_verified,
+            );
 
             info!("entering deep sleep for {} ms", interval_us / 1_000);
             unsafe {
@@ -254,6 +328,16 @@ pub fn run<B: Board, A: App<B>>() -> Result<()> {
                 &mut ota_verified,
             ) {
                 Ok(post_delay_ms) => {
+                    execute_pending_commands(
+                        &mut board,
+                        &mut app,
+                        &ble,
+                        &target_name,
+                        reset_code,
+                        base_flags,
+                        burst_ms,
+                        &mut ota_verified,
+                    );
                     let min_wait =
                         Duration::from_millis(min_step_ms).saturating_sub(tick.elapsed());
                     let total_wait = min_wait.max(Duration::from_millis(post_delay_ms));
@@ -269,6 +353,49 @@ pub fn run<B: Board, A: App<B>>() -> Result<()> {
 }
 
 #[allow(clippy::too_many_arguments)]
+fn execute_pending_commands<B: Board, A: App<B>>(
+    board: &mut B,
+    app: &mut A,
+    ble: &BleOtaNode,
+    target_name: &str,
+    reset_code: i32,
+    base_flags: u8,
+    burst_ms: u32,
+    ota_verified: &mut bool,
+) {
+    while let Some(req) = ble.take_pending_command() {
+        info!("cmd: executing '{}' x{} (BLE quiet)", req.id, req.count);
+        for run_idx in 1..=req.count {
+            ble.set_app_command_status(&format!("RUNNING {} {run_idx}/{}", req.id, req.count));
+            let cycle_start = now_us();
+            let step_res = run_step_with(
+                board,
+                app,
+                ble,
+                target_name,
+                cycle_start,
+                reset_code,
+                base_flags,
+                burst_ms.max(500),
+                ota_verified,
+                |app, board, ctx| app.run_command(&req.id, run_idx, req.count, board, ctx),
+            );
+            if let Err(err) = step_res {
+                warn!(
+                    "cmd: '{}' run {run_idx}/{} failed: {err:#}",
+                    req.id, req.count
+                );
+                break;
+            }
+            if run_idx < req.count {
+                sleep_feeding_wdt(Duration::from_millis(COMMAND_RUN_PACING_MS));
+            }
+        }
+        ble.set_app_command_status("IDLE");
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn run_one_step<B: Board, A: App<B>>(
     board: &mut B,
     app: &mut A,
@@ -280,8 +407,40 @@ fn run_one_step<B: Board, A: App<B>>(
     burst_ms: u32,
     ota_verified: &mut bool,
 ) -> Result<u64> {
+    run_step_with(
+        board,
+        app,
+        ble,
+        target_name,
+        cycle_start_us,
+        reset_code,
+        base_flags,
+        burst_ms,
+        ota_verified,
+        |app, board, ctx| app.step(board, ctx),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_step_with<B: Board, A: App<B>>(
+    board: &mut B,
+    app: &mut A,
+    ble: &BleOtaNode,
+    target_name: &str,
+    cycle_start_us: u64,
+    reset_code: i32,
+    base_flags: u8,
+    burst_ms: u32,
+    ota_verified: &mut bool,
+    work: impl FnOnce(&mut A, &mut B, &mut StepContext<'_>) -> Result<StepOutput>,
+) -> Result<u64> {
     feed_task_watchdog();
-    let mut prof = WakeProfiler::start(B::SPEC, target_name.to_string(), cycle_start_us);
+    let mut prof = WakeProfiler::start(
+        B::SPEC,
+        target_name.to_string(),
+        cycle_start_us,
+        A::commands(),
+    );
     let next_wake = unsafe {
         let rtc = &*core::ptr::addr_of!(RTC_STATE);
         rtc.accumulator.wake_count.saturating_add(1)
@@ -292,7 +451,7 @@ fn run_one_step<B: Board, A: App<B>>(
         reset_code,
         profiler: &mut prof,
     };
-    let out = app.step(board, &mut ctx)?;
+    let out = work(app, board, &mut ctx)?;
     feed_task_watchdog();
 
     let battery_mv = if out.battery_mv > 0 {

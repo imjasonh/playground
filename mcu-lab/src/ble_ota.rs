@@ -29,9 +29,10 @@ use sha2::{Digest, Sha256};
 use crate::profiler::{create_profile_char, now_us, update_profile_char, ProfileCharHandle};
 use crate::protocol::{
     decode_ota_chunk_frame, encode_blob_frames, encode_mfg_data, format_ota_status,
-    parse_ota_command, validate_esp_image_header, AdvMetrics, BoardSpec, OtaCommand,
-    OtaCompression, OtaDeflateDecoder, OtaStatus, COREDUMP_CHAR_UUID, OTA_CONTROL_UUID,
-    OTA_DATA_UUID, OTA_SERVICE_UUID, OTA_SLOT_BYTES, OTA_STATUS_UUID,
+    parse_app_command, parse_ota_command, validate_esp_image_header, AdvMetrics, AppCommandRequest,
+    BoardSpec, OtaCommand, OtaCompression, OtaDeflateDecoder, OtaStatus, APP_COMMAND_CHAR_UUID,
+    COREDUMP_CHAR_UUID, OTA_CONTROL_UUID, OTA_DATA_UUID, OTA_SERVICE_UUID, OTA_SLOT_BYTES,
+    OTA_STATUS_UUID,
 };
 
 /// Maximum time an active BLE OTA connection may keep the board awake before timing out (300 s).
@@ -455,17 +456,19 @@ fn notify_ota_status(
     ch.lock().set_value(line.as_bytes()).notify();
 }
 
-/// Persistent NimBLE peripheral + OTA / Profile / Coredump GATT server initialized once per boot.
+/// Persistent NimBLE peripheral + OTA / Profile / Coredump / App-Command GATT server initialized once per boot.
 pub struct BleOtaNode {
     board: BoardSpec,
     connected: Arc<AtomicBool>,
     last_battery_mv: Arc<AtomicU16>,
     ota_state: Arc<Mutex<OtaWriterState>>,
     profile_char: Option<ProfileCharHandle>,
+    pending_cmd: Arc<Mutex<Option<AppCommandRequest>>>,
+    app_cmd_char: Arc<esp32_nimble::utilities::mutex::Mutex<BLECharacteristic>>,
 }
 
 impl BleOtaNode {
-    /// Initialize NimBLE and register the OTA + Profile + Coredump GATT service once.
+    /// Initialize NimBLE and register the OTA + Profile + Coredump + App-Command GATT service once.
     pub fn init(board: BoardSpec) -> Self {
         let device = BLEDevice::take();
         let _ = device.set_preferred_mtu(512);
@@ -477,6 +480,7 @@ impl BleOtaNode {
             board.chip_id,
             board.min_ota_battery_mv,
         )));
+        let pending_cmd: Arc<Mutex<Option<AppCommandRequest>>> = Arc::new(Mutex::new(None));
 
         let conn_on_connect = Arc::clone(&connected);
         let state_on_connect = Arc::clone(&ota_state);
@@ -552,6 +556,33 @@ impl BleOtaNode {
             }
         });
 
+        // Declarative app command characteristic: WRITE `<id>` or `<id> <count>`; READ/NOTIFY status.
+        let app_cmd_char = service.lock().create_characteristic(
+            uuid_or_panic(APP_COMMAND_CHAR_UUID),
+            NimbleProperties::READ | NimbleProperties::NOTIFY | NimbleProperties::WRITE,
+        );
+        app_cmd_char.lock().set_value(b"IDLE");
+        let cmd_queue_wr = Arc::clone(&pending_cmd);
+        let cmd_char_wr = Arc::clone(&app_cmd_char);
+        let cmd_state_wr = Arc::clone(&ota_state);
+        app_cmd_char.lock().on_write(move |args| {
+            let raw = String::from_utf8_lossy(args.recv_data());
+            lock_or_recover(&cmd_state_wr).last_activity_us = now_us();
+            let reply = match parse_app_command(raw.as_ref()) {
+                Some(req) => {
+                    let msg = format!("QUEUED {} {}", req.id, req.count);
+                    info!("app command queued: {} x{}", req.id, req.count);
+                    *lock_or_recover(&cmd_queue_wr) = Some(req);
+                    msg
+                }
+                None => {
+                    warn!("app command rejected: {raw:?}");
+                    "ERR invalid app command".to_string()
+                }
+            };
+            cmd_char_wr.lock().set_value(reply.as_bytes()).notify();
+        });
+
         let ctrl_state = Arc::clone(&ota_state);
         let ctrl_status_char = Arc::clone(&status_char);
         let ctrl_batt = Arc::clone(&last_battery_mv);
@@ -594,7 +625,19 @@ impl BleOtaNode {
             last_battery_mv,
             ota_state,
             profile_char,
+            pending_cmd,
+            app_cmd_char,
         }
+    }
+
+    /// Take the most recently queued app command (if any) after the BLE burst has stopped.
+    pub fn take_pending_command(&self) -> Option<AppCommandRequest> {
+        lock_or_recover(&self.pending_cmd).take()
+    }
+
+    /// Update the readable status on `APP_COMMAND_CHAR_UUID` (e.g. `"RUNNING run 3/10"` or `"IDLE"`).
+    pub fn set_app_command_status(&self, status: &str) {
+        self.app_cmd_char.lock().set_value(status.as_bytes());
     }
 
     /// Broadcast `metrics` inside BLE Manufacturer Specific Data (`0xFFFF`) for `burst_ms`.
@@ -668,6 +711,7 @@ fn uuid_or_panic(text: &str) -> BleUuid {
         OTA_DATA_UUID => uuid128!("beb5483e-36e1-4688-b7f5-ea07361bc302"),
         OTA_STATUS_UUID => uuid128!("1a3c0001-36e1-4688-b7f5-ea07361bc303"),
         COREDUMP_CHAR_UUID => uuid128!("1a3c0003-36e1-4688-b7f5-ea07361bc303"),
+        APP_COMMAND_CHAR_UUID => uuid128!("1a3c0004-36e1-4688-b7f5-ea07361bc303"),
         other => panic!("unknown UUID {other}"),
     }
 }

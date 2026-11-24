@@ -50,8 +50,8 @@ mod inner {
     use log::info;
 
     use crate::protocol::{
-        encode_blob_frames, format_wake_profile_json, AdvMetrics, BoardSpec, PcHistogram,
-        SpanRecorder, WakeProfile,
+        encode_blob_frames, format_wake_profile_json, AdvMetrics, AppCommandSpec, AppMetric,
+        BoardSpec, PcHistogram, SpanRecorder, WakeProfile,
     };
 
     use super::{firmware_build_id, now_us};
@@ -159,12 +159,20 @@ mod inner {
         target_app: String,
         wake_start_us: u64,
         spans: SpanRecorder,
+        attrs: Vec<(String, String)>,
+        metrics: Vec<AppMetric>,
+        commands: Vec<AppCommandSpec>,
         timer: esp_timer_handle_t,
         sampler: *mut PcSamplerState,
     }
 
     impl WakeProfiler {
-        pub fn start(board: BoardSpec, target_app: String, wake_start_us: u64) -> Self {
+        pub fn start(
+            board: BoardSpec,
+            target_app: String,
+            wake_start_us: u64,
+            commands: Vec<AppCommandSpec>,
+        ) -> Self {
             let target_task = unsafe { xTaskGetCurrentTaskHandle() };
             let sampler = Box::into_raw(Box::new(PcSamplerState {
                 target_task,
@@ -190,6 +198,9 @@ mod inner {
                 target_app,
                 wake_start_us,
                 spans: SpanRecorder::new(wake_start_us),
+                attrs: Vec::new(),
+                metrics: Vec::new(),
+                commands,
                 timer,
                 sampler,
             }
@@ -197,6 +208,40 @@ mod inner {
 
         pub fn record(&mut self, name: &str, parent: &str, start_us: u64, end_us: u64) {
             self.spans.record(name, parent, start_us, end_us);
+        }
+
+        pub fn record_with_attrs(
+            &mut self,
+            name: &str,
+            parent: &str,
+            start_us: u64,
+            end_us: u64,
+            attrs: &[(&str, &str)],
+        ) {
+            self.spans
+                .record_with_attrs(name, parent, start_us, end_us, attrs);
+        }
+
+        pub fn record_attr(&mut self, key: &str, value: &str) {
+            self.attrs.push((key.to_string(), value.to_string()));
+        }
+
+        pub fn record_metric(
+            &mut self,
+            name: &str,
+            value: i64,
+            unit: &str,
+            attrs: &[(&str, &str)],
+        ) {
+            self.metrics.push(AppMetric {
+                name: name.to_string(),
+                value,
+                unit: unit.to_string(),
+                attrs: attrs
+                    .iter()
+                    .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+                    .collect(),
+            });
         }
 
         pub fn finish_json(mut self, metrics: &AdvMetrics) -> Option<String> {
@@ -223,13 +268,17 @@ mod inner {
                 Vec::new()
             };
             info!(
-                "profile({}): free_heap={free_heap_bytes} min_heap={min_free_heap_bytes} stack_hw={stack_high_water_bytes} pc_hotspots={}",
+                "profile({}): free_heap={free_heap_bytes} min_heap={min_free_heap_bytes} stack_hw={stack_high_water_bytes} pc_hotspots={} app_metrics={}",
                 self.target_app,
-                pc_samples.len()
+                pc_samples.len(),
+                self.metrics.len()
             );
             let git_sha = option_env!("MCU_LAB_GIT_SHA").unwrap_or("").to_string();
             let build_id = firmware_build_id();
             let spans = core::mem::take(&mut self.spans).into_spans();
+            let attrs = core::mem::take(&mut self.attrs);
+            let app_metrics = core::mem::take(&mut self.metrics);
+            let commands = core::mem::take(&mut self.commands);
             let profile = WakeProfile {
                 wake_count: metrics.wake_count,
                 seq: metrics.seq,
@@ -244,6 +293,9 @@ mod inner {
                 cpu_cycles,
                 spans,
                 pc_samples,
+                attrs,
+                metrics: app_metrics,
+                commands,
             };
             Some(format_wake_profile_json(&profile))
         }
@@ -330,7 +382,7 @@ mod inner {
     use esp32_nimble::utilities::mutex::Mutex as NimbleMutex;
     use esp32_nimble::BLEService;
 
-    use crate::protocol::{AdvMetrics, BoardSpec};
+    use crate::protocol::{AdvMetrics, AppCommandSpec, BoardSpec};
 
     pub type ProfileCharHandle = ();
 
@@ -339,12 +391,41 @@ mod inner {
 
     impl WakeProfiler {
         #[inline(always)]
-        pub fn start(_board: BoardSpec, _target_app: String, _wake_start_us: u64) -> Self {
+        pub fn start(
+            _board: BoardSpec,
+            _target_app: String,
+            _wake_start_us: u64,
+            _commands: Vec<AppCommandSpec>,
+        ) -> Self {
             Self
         }
 
         #[inline(always)]
         pub fn record(&mut self, _name: &str, _parent: &str, _start_us: u64, _end_us: u64) {}
+
+        #[inline(always)]
+        pub fn record_with_attrs(
+            &mut self,
+            _name: &str,
+            _parent: &str,
+            _start_us: u64,
+            _end_us: u64,
+            _attrs: &[(&str, &str)],
+        ) {
+        }
+
+        #[inline(always)]
+        pub fn record_attr(&mut self, _key: &str, _value: &str) {}
+
+        #[inline(always)]
+        pub fn record_metric(
+            &mut self,
+            _name: &str,
+            _value: i64,
+            _unit: &str,
+            _attrs: &[(&str, &str)],
+        ) {
+        }
 
         #[inline(always)]
         pub fn finish_json(self, _metrics: &AdvMetrics) -> Option<String> {

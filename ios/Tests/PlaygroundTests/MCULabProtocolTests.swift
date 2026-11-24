@@ -647,8 +647,8 @@ final class MCULabProtocolTests: XCTestCase {
         // Switching board after staging must reset incompatible app to .base and block arming the wrong chip binary.
         controller.selectedBoard = .waveshareEPD75
         XCTAssertEqual(controller.selectedApp, .base)
-        XCTAssertEqual(MCULabBoard.waveshareEPD75.compatibleApps, [.base, .maze])
-        XCTAssertEqual(MCULabBoard.xiaoESP32C3.compatibleApps, [.base, .bench])
+        XCTAssertEqual(MCULabBoard.waveshareEPD75.compatibleApps, [.base, .maze, .gzipBench])
+        XCTAssertEqual(MCULabBoard.xiaoESP32C3.compatibleApps, [.base, .bench, .gzipBench])
         controller.armOTAUpdate()
         if case .failed = controller.otaPhase {
             // Expected
@@ -869,6 +869,89 @@ final class MCULabProtocolTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(150))
         XCTAssertEqual(controller.forwardedCount, 3)
         XCTAssertEqual(metricsPostCount.current, 3)
+    }
+
+    func testGzipBenchTargetsAndAppOTelMetricsAndAttrs() throws {
+        XCTAssertTrue(MCULabBoard.xiaoESP32C3.compatibleApps.contains(.gzipBench))
+        XCTAssertTrue(MCULabBoard.waveshareEPD75.compatibleApps.contains(.gzipBench))
+        XCTAssertEqual(
+            MCULabFirmwareTarget(board: .xiaoESP32C3, app: .gzipBench).ghcrRepo,
+            "imjasonh/playground/xiao-esp32c3-gzip-bench"
+        )
+        XCTAssertEqual(
+            MCULabFirmwareTarget(board: .waveshareEPD75, app: .gzipBench).ghcrRepo,
+            "imjasonh/playground/waveshare-epd75-gzip-bench"
+        )
+
+        let rawJSON = """
+        {"v":1,"wake":4,"seq":4,"board":"waveshare-epd75","chip":"esp32","app":"waveshare-epd75-gzip-bench","free_heap":205000,"min_heap":192000,"stack_hw":4096,"cycles":12000000,"spans":[{"name":"gzip.inflate.json_otel","parent":"compute","start_us":100,"dur_us":3200,"attrs":{"corpus":"json_otel","impl":"esp32_rom_miniz"}}],"pcs":[{"pc":"0x40060050","hits":12}],"attrs":{"gzip.impl":"esp32_rom_miniz","gzip.deflate_status":"oom"},"metrics":[{"name":"gzip.inflate_bps","val":2100000,"unit":"By/s","attrs":{"corpus":"json_otel","impl":"esp32_rom_miniz"}},{"name":"gzip.inflate_bps","val":5400000,"unit":"By/s","attrs":{"corpus":"rle_epd","impl":"esp32_rom_miniz"}},{"name":"gzip.deflate_oom","val":1,"unit":"1","attrs":{"impl":"esp32_rom_miniz"}}]}
+        """
+        let profile = try XCTUnwrap(MCULabProtocol.decodeWakeProfile(Data(rawJSON.utf8)))
+        XCTAssertEqual(profile.attrs?["gzip.impl"], "esp32_rom_miniz")
+        XCTAssertEqual(profile.spans.first?.attrs?["corpus"], "json_otel")
+        XCTAssertEqual(profile.metrics?.count, 3)
+
+        let m = MCULabMetrics(seq: 4, flags: 0x20, wakeCount: 4, sensorUs: 50, computeUs: 50_000, epdRefreshUs: 0, radioUs: 500, batteryMv: 5000)
+        let metricsJSON = MCULabProtocol.formatOTLPJSON(
+            deviceId: "epd-01",
+            metrics: m,
+            rssi: -52,
+            timeUnixNano: 1_700_000_000_000_000_000,
+            profile: profile
+        )
+        XCTAssertTrue(metricsJSON.contains(#""name":"mcu.app.gzip.inflate_bps""#))
+        XCTAssertTrue(metricsJSON.contains(#""asInt":"2100000""#))
+        XCTAssertTrue(metricsJSON.contains(#""asInt":"5400000""#))
+        XCTAssertTrue(metricsJSON.contains(#""name":"mcu.app.gzip.deflate_oom""#))
+        XCTAssertTrue(metricsJSON.contains(#""key":"impl","value":{"stringValue":"esp32_rom_miniz"}"#))
+        _ = try JSONSerialization.jsonObject(with: Data(metricsJSON.utf8))
+
+        let traceJSON = MCULabProtocol.formatOTLPTraceJSON(
+            traceId: String(repeating: "a", count: 32),
+            rootSpanId: String(repeating: "b", count: 16),
+            deviceId: "epd-01",
+            metrics: m,
+            rssi: -52,
+            timeUnixNano: 1_700_000_000_000_000_000,
+            profile: profile
+        )
+        XCTAssertTrue(traceJSON.contains(#""key":"gzip.impl","value":{"stringValue":"esp32_rom_miniz"}"#))
+        XCTAssertTrue(traceJSON.contains(#""key":"gzip.deflate_status","value":{"stringValue":"oom"}"#))
+        XCTAssertTrue(traceJSON.contains(#""key":"corpus","value":{"stringValue":"json_otel"}"#))
+        _ = try JSONSerialization.jsonObject(with: Data(traceJSON.utf8))
+    }
+
+    @MainActor
+    func testDeclarativeAppCommandsDecodeEncodeAndArm() throws {
+        let rawJSON = """
+        {"v":1,"wake":2,"seq":2,"board":"xiao-esp32c3","chip":"esp32c3","app":"xiao-esp32c3-gzip-bench","free_heap":220000,"min_heap":210000,"stack_hw":4096,"cycles":1000,"spans":[],"pcs":[],"cmds":[{"id":"run","label":"Run Benchmark","count":10}]}
+        """
+        let profile = try XCTUnwrap(MCULabProtocol.decodeWakeProfile(Data(rawJSON.utf8)))
+        XCTAssertEqual(profile.commands, [
+            MCULabAppCommandSpec(id: "run", label: "Run Benchmark", defaultCount: 10),
+        ])
+
+        XCTAssertEqual(MCULabProtocol.encodeAppCommand(id: "run", count: 1), "run")
+        XCTAssertEqual(MCULabProtocol.encodeAppCommand(id: "run", count: 10), "run 10")
+        XCTAssertEqual(MCULabProtocol.encodeAppCommand(id: "run", count: 0), "run")
+        XCTAssertEqual(MCULabProtocol.encodeAppCommand(id: "run", count: 999), "run 100")
+
+        let suite = "mcu-lab.app-cmd.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let controller = MCULabController(defaults: defaults)
+        let devId = UUID()
+        let cmd = try XCTUnwrap(profile.commands?.first)
+        controller.armAppCommand(cmd, count: 15, deviceId: devId)
+        XCTAssertEqual(
+            controller.pendingAppCommand,
+            MCULabController.PendingAppCommand(deviceId: devId, id: "run", label: "Run Benchmark", count: 15)
+        )
+        XCTAssertTrue(controller.appCommandStatus.contains("Run Benchmark"))
+
+        controller.cancelAppCommand()
+        XCTAssertNil(controller.pendingAppCommand)
     }
 
     private static func jsonResponse(_ body: String, status: Int) throws -> (Data, URLResponse) {

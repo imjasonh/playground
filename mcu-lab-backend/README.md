@@ -3,7 +3,7 @@
 Go service for Cloud Run that authorizes `POST /v1/metrics` requests from the
 Playground iOS **XIAO ESP32C3** experiment using Apple **App Attest** and writes
 the incoming OTLP/HTTP v1 metrics to **Google Cloud Monitoring**
-(`custom.googleapis.com/xiao_esp32c3/*`).
+(`custom.googleapis.com/mcu_lab/*`).
 
 The iOS app holds no GCP credentials. Instead:
 

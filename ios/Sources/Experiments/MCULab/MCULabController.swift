@@ -87,6 +87,16 @@ final class MCULabController: NSObject, ObservableObject {
     @Published var otaStatusText = "Choose a board and app to pull from GHCR (or pick a .bin) to arm an update."
     @Published var lastOTAReport: MCULabOTAReport?
 
+    // Declarative app command state (zero app-specific hardcoding)
+    struct PendingAppCommand: Equatable {
+        let deviceId: UUID
+        let id: String
+        let label: String
+        let count: UInt16
+    }
+    @Published var pendingAppCommand: PendingAppCommand?
+    @Published var appCommandStatus = ""
+
     private struct OTASessionTracker {
         let deviceId: UUID
         let board: MCULabBoard
@@ -128,6 +138,8 @@ final class MCULabController: NSObject, ObservableObject {
     private var profilePeripheral: CBPeripheral?
     private var profileTargetDeviceId: UUID?
     private var profileTargetSampleId: UUID?
+    private var awaitingProfileRead = false
+    private var pendingCommandWritePeripheralId: UUID?
     private var profileReassembler = MCULabBlobReassembler()
     private var coredumpReassembler = MCULabBlobReassembler()
     private var coredumpChar: CBCharacteristic?
@@ -151,6 +163,7 @@ final class MCULabController: NSObject, ObservableObject {
     private let otaStatusUUID = CBUUID(string: MCULabProtocol.otaStatusUUIDString)
     private let profileCharUUID = CBUUID(string: MCULabProtocol.profileCharUUIDString)
     private let coredumpCharUUID = CBUUID(string: MCULabProtocol.coredumpCharUUIDString)
+    private let appCommandCharUUID = CBUUID(string: MCULabProtocol.appCommandCharUUIDString)
 
     init(
         defaults: UserDefaults = .standard,
@@ -997,6 +1010,30 @@ final class MCULabController: NSObject, ObservableObject {
         }
     }
 
+    /// Arm a declarative app command to be written to `APP_COMMAND_CHAR_UUID` on the next
+    /// BLE wake burst from `deviceId`, after which iOS disconnects so the board executes
+    /// the command with BLE radio completely quiet.
+    func armAppCommand(_ spec: MCULabAppCommandSpec, count: UInt16, deviceId: UUID) {
+        let clamped = max(1, min(count, MCULabProtocol.maxAppCommandCount))
+        pendingAppCommand = PendingAppCommand(
+            deviceId: deviceId,
+            id: spec.id,
+            label: spec.label,
+            count: clamped
+        )
+        let suffix = clamped > 1 ? " ×\(clamped)" : ""
+        appCommandStatus = "Armed '\(spec.label)'\(suffix). Waiting for next wake burst…"
+        if !isScanning, isBluetoothUsable {
+            startScan()
+        }
+    }
+
+    /// Cancel an armed app command before it is sent to the board.
+    func cancelAppCommand() {
+        pendingAppCommand = nil
+        appCommandStatus = "Command cancelled."
+    }
+
     /// Parse a raw `CBAdvertisementDataManufacturerDataKey` buffer, deduplicate by `seq`,
     /// append to history, and optionally forward to the configured OTLP/HTTP endpoint.
     @discardableResult
@@ -1027,6 +1064,21 @@ final class MCULabController: NSObject, ObservableObject {
             beginOTAConnection(to: peripheral)
         }
 
+        // If a declarative app command is armed for this device, connect immediately during
+        // its wake window even if we already recorded this burst's `seq`.
+        let hasArmedCommand = pendingAppCommand?.deviceId == deviceId
+        if hasArmedCommand,
+           otaPhase == .idle,
+           profilePeripheral == nil,
+           let peripheral = peripherals[deviceId]
+        {
+            beginProfileConnection(
+                to: peripheral,
+                deviceId: deviceId,
+                sampleId: latestSample?.id ?? UUID()
+            )
+        }
+
         // Deduplicate repeated frames from the same advertisement burst before
         // recording history or initiating a GATT profile pull.
         if lastSeqByDevice[deviceId] == metrics.seq {
@@ -1051,7 +1103,7 @@ final class MCULabController: NSObject, ObservableObject {
         statusMessage = "Wake #\(metrics.wakeCount) (seq \(metrics.seq)) from \(deviceName) at \(rssi) dBm."
 
         var initiatedProfilePull = false
-        if collectDetailedProfile,
+        if (collectDetailedProfile || hasArmedCommand),
            profile == nil,
            otaPhase == .idle,
            profilePeripheral == nil,
@@ -1079,6 +1131,7 @@ final class MCULabController: NSObject, ObservableObject {
         profilePeripheral = peripheral
         profileTargetDeviceId = deviceId
         profileTargetSampleId = sampleId
+        awaitingProfileRead = false
         peripheral.delegate = self
         central.connect(peripheral, options: nil)
     }
@@ -1115,6 +1168,10 @@ final class MCULabController: NSObject, ObservableObject {
         profilePeripheral = nil
         profileTargetDeviceId = nil
         profileTargetSampleId = nil
+        awaitingProfileRead = false
+        if pendingCommandWritePeripheralId == peripheral.identifier {
+            pendingCommandWritePeripheralId = nil
+        }
         if otaPeripheral?.identifier != peripheral.identifier {
             central?.cancelPeripheralConnection(peripheral)
         }
@@ -1663,6 +1720,7 @@ extension MCULabController: CBPeripheralDelegate {
         let statusUUID = CBUUID(string: MCULabProtocol.otaStatusUUIDString)
         let profileUUID = CBUUID(string: MCULabProtocol.profileCharUUIDString)
         let coredumpUUID = CBUUID(string: MCULabProtocol.coredumpCharUUIDString)
+        let appCommandUUID = CBUUID(string: MCULabProtocol.appCommandCharUUIDString)
         guard let services = peripheral.services else {
             Task { @MainActor in
                 self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
@@ -1672,7 +1730,10 @@ extension MCULabController: CBPeripheralDelegate {
         var foundService = false
         for service in services where service.uuid == serviceUUID {
             foundService = true
-            peripheral.discoverCharacteristics([ctrlUUID, dataUUID, statusUUID, profileUUID, coredumpUUID], for: service)
+            peripheral.discoverCharacteristics(
+                [ctrlUUID, dataUUID, statusUUID, profileUUID, coredumpUUID, appCommandUUID],
+                for: service
+            )
         }
         if !foundService {
             Task { @MainActor in
@@ -1706,12 +1767,14 @@ extension MCULabController: CBPeripheralDelegate {
             let isProfileOnly = self.profilePeripheral?.identifier == peripheral.identifier
                 && self.otaPeripheral?.identifier != peripheral.identifier
             var foundProfileChar = false
+            var wroteAppCommand = false
             self.profileReassembler.reset()
             self.coredumpReassembler.reset()
             if isProfileOnly {
                 for ch in chars {
                     if ch.uuid == self.profileCharUUID, self.collectDetailedProfile {
                         foundProfileChar = true
+                        self.awaitingProfileRead = true
                         if ch.properties.contains(.notify) {
                             peripheral.setNotifyValue(true, for: ch)
                         } else {
@@ -1720,9 +1783,22 @@ extension MCULabController: CBPeripheralDelegate {
                     } else if ch.uuid == self.coredumpCharUUID {
                         self.coredumpChar = ch
                         peripheral.readValue(for: ch)
+                    } else if ch.uuid == self.appCommandCharUUID,
+                              let pending = self.pendingAppCommand,
+                              pending.deviceId == peripheral.identifier
+                    {
+                        let wire = MCULabProtocol.encodeAppCommand(id: pending.id, count: pending.count)
+                        if let payload = wire.data(using: .utf8) {
+                            peripheral.writeValue(payload, for: ch, type: .withResponse)
+                            self.pendingAppCommand = nil
+                            self.pendingCommandWritePeripheralId = peripheral.identifier
+                            let suffix = pending.count > 1 ? " ×\(pending.count)" : ""
+                            self.appCommandStatus = "Sent '\(pending.label)'\(suffix) — disconnecting so board runs BLE-quiet…"
+                            wroteAppCommand = true
+                        }
                     }
                 }
-                if !foundProfileChar {
+                if !foundProfileChar, !wroteAppCommand {
                     // Production firmware without profiling enabled does not expose PROFILE_CHAR_UUID.
                     self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
                 }
@@ -1788,7 +1864,10 @@ extension MCULabController: CBPeripheralDelegate {
             let deviceId = peripheral.identifier
             Task { @MainActor in
                 guard let raw = rawValue else {
-                    self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
+                    self.awaitingProfileRead = false
+                    if self.pendingCommandWritePeripheralId != peripheral.identifier {
+                        self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
+                    }
                     return
                 }
                 let payload: Data
@@ -1800,10 +1879,13 @@ extension MCULabController: CBPeripheralDelegate {
                 } else {
                     payload = raw
                 }
+                self.awaitingProfileRead = false
                 if let decoded = MCULabProtocol.decodeWakeProfile(payload) {
                     self.attachWakeProfile(decoded, deviceId: deviceId)
-                    self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: false)
-                } else {
+                    if self.pendingCommandWritePeripheralId != peripheral.identifier {
+                        self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: false)
+                    }
+                } else if self.pendingCommandWritePeripheralId != peripheral.identifier {
                     self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: true)
                 }
             }
@@ -1840,6 +1922,22 @@ extension MCULabController: CBPeripheralDelegate {
         didWriteValueFor characteristic: CBCharacteristic,
         error: Error?
     ) {
+        let appCommandUUID = CBUUID(string: MCULabProtocol.appCommandCharUUIDString)
+        if characteristic.uuid == appCommandUUID {
+            let errDesc = error?.localizedDescription
+            Task { @MainActor in
+                if self.pendingCommandWritePeripheralId == peripheral.identifier {
+                    self.pendingCommandWritePeripheralId = nil
+                }
+                if let errDesc {
+                    self.appCommandStatus = "Command write failed: \(errDesc)"
+                }
+                if !self.awaitingProfileRead {
+                    self.finishProfileOnlyConnectionIfNeeded(for: peripheral, fallbackForward: false)
+                }
+            }
+            return
+        }
         let dataUUID = CBUUID(string: MCULabProtocol.otaDataUUIDString)
         guard characteristic.uuid == dataUUID else {
             return
