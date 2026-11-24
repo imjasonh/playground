@@ -27,6 +27,7 @@ def P256DblOk : Prop :=
 
 theorem p256_p : C3.p256.p = RV32.p256 := by unfold RV32.p256; decide
 
+set_option exponentiation.threshold 300 in
 theorem negPt2_rep {A : Pt2} {a : ECPoint} (h : PRep C3.p256.p A a) : PRep C3.p256.p (negPt2 A) (EC.neg C3.p256 a) := by
   obtain ⟨X, Y, Z⟩ := A
   have hp : 0 < C3.p256.p := by decide

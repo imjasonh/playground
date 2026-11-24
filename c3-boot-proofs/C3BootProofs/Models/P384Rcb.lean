@@ -15,12 +15,12 @@ open C3.RV32 C3.RV32.Pv C3.RV32.P3
 
 set_option exponentiation.threshold 800
 
-theorem ptAddT_rcb (A B : Pt) :
+theorem ptAddT_rcb (A B : Pv.Pt) :
     ptAddT A B = rcbAdd (mm C3.p384.p p3RInv) (ma C3.p384.p) (ms C3.p384.p) (md C3.p384.p) p3B A.1 A.2.1 A.2.2
       B.1 B.2.1 B.2.2 := by
   rw [p384_p]; rfl
 
-theorem ptDblT_rcb (A : Pt) :
+theorem ptDblT_rcb (A : Pv.Pt) :
     ptDblT A = rcbDbl (mm C3.p384.p p3RInv) (ma C3.p384.p) (ms C3.p384.p) (md C3.p384.p) p3B A.1 A.2.1 A.2.2 := by
   rw [p384_p]; rfl
 
