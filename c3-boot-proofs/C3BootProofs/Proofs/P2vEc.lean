@@ -305,7 +305,7 @@ theorem lzLimbs_congr {M M0 : Word → BitVec 8} {q : Word} :
     simp only [lzLimbs]
     rw [h k (by omega), lzLimbs_congr k fun i hi => h i (by omega)]
 
-theorem _root_.C3.RV32.PanicCode.hi' {M M' : Word → BitVec 8} (h : PanicCode M)
+theorem _root_.C3.RV32.PanicCode.hiP {M M' : Word → BitVec 8} (h : PanicCode M)
     (hx : ∀ x : Word, 0x40000000 ≤ x.toNat → M' x = M x) : PanicCode M' := fun p hp => by
   have hb : 0x40000000 ≤ p.1 ∧ p.1 + p.2.length < 2 ^ 32 := by revert p; decide
   exact codeHi (h p hp) (by rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]; omega)
@@ -316,7 +316,7 @@ theorem _root_.C3.RV32.BYEnv.p2v {M M0 : Word → BitVec 8} {B : Word} (F : Fr B
   have hx : ∀ x : Word, 0x40000000 ≤ x.toNat → M x = M0 x := fun x hx => fR x (sep_of_le (by
     have hb : (B + 0xFFFFFE60).toNat = B.toNat - 0x1A0 := F.below 0x1A0 (by decide) (by decide)
     have := F.hi; rw [hb]; omega) (by have := x.isLt; omega))
-  refine ⟨codeHi D.cod (by decide) (by decide) hx, codeHi D.lz (by decide) (by decide) hx, D.pan.hi' hx,
+  refine ⟨codeHi D.cod (by decide) (by decide) hx, codeHi D.lz (by decide) (by decide) hx, D.pan.hiP hx,
     codeHi D.exu (by decide) (by decide) hx, D.fc.hi hx, codeHi D.bsb (by decide) (by decide) hx,
     codeHi D.bb (by decide) (by decide) hx, codeHi D.cn (by decide) (by decide) hx,
     codeHi D.sca (by decide) (by decide) hx, ?_, ?_⟩

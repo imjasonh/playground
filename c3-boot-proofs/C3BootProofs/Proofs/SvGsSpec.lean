@@ -1,4 +1,4 @@
-import C3BootProofs.Proofs.SvSpecAux
+import C3BootProofs.Proofs.SvModels
 
 /-!
 # A point `from_sec1_bytes` accepts is on P-256
@@ -70,6 +70,14 @@ theorem cancelR {u v : Nat} (h : u * 2 ^ 256 % p256 = v * 2 ^ 256 % p256) : u % 
   have e : ∀ w, w % p256 = w * 2 ^ 256 % p256 * p2RInv % p256 := fun w => by
     rw [Nat.mod_mul_mod, Nat.mul_assoc, ← Nat.mul_mod_mod, p2_rinv, Nat.mul_one]
   rw [e u, e v, h]
+
+theorem memBytes_dropK' (M : Word → BitVec 8) (p : Word) {k n : Nat} (h : k ≤ n) :
+    (memBytes M p n).drop k = memBytes M (p + BitVec.ofNat 32 k) (n - k) := by
+  have := memBytes_split M p k (n - k)
+  rw [show k + (n - k) = n by omega] at this
+  rw [this, List.drop_left' (memBytes_length M p k)]
+
+theorem require_true : require true = some () := rfl
 
 theorem gsModel {M : Word → BitVec 8} : SvGsModel M := by
   intro bp h4 hg

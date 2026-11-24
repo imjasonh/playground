@@ -1,5 +1,5 @@
 import C3BootProofs.Models.EcdsaInv
-import C3BootProofs.Proofs.SvIvLoop
+import C3BootProofs.Proofs.P256Defs
 
 /-!
 # The P-256 check's inversions

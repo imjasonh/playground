@@ -1,5 +1,5 @@
 import C3BootProofs.Models.EcdsaRep
-import C3BootProofs.Proofs.SvEcMl3
+import C3BootProofs.Proofs.P2vP256
 
 /-!
 # P-256 points in the check's main loop
