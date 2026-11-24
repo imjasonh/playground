@@ -317,7 +317,7 @@ def emit_def(name, doc, f):
     emit('def %s (a : Nat → Nat) : Nat :=\n  %s\n' % (name, f))
 
 
-def emit_lt(name, atoms, bound, proofs):
+def emit_lt(name, atoms, bound):
     emit('theorem %s_lt (a : Nat → Nat)%s : %s a < %d := by' % (
         name, ' (ha : ∀ i, a i < 2 ^ 32)' if any(k[0] == 'a' for k in atoms) else '', name, bound))
     emit('  unfold %s' % name)
@@ -444,11 +444,11 @@ emit_def('bHiB', 'The rest of `q3 * n`, over `2 ^ 288`.', hiBt)
 emit_def('bU', 'The first difference, `r1 - r2` modulo `2 ^ 288`.', sum_txt(ud))
 emit_def('bV8', 'The low eight words of the second difference.', sum_txt(vd[:8]))
 emit_def('bOut', 'The result\'s eight words.', sum_txt(outs))
-emit_lt('bLowA', lowAk, B ** 9, None)
-emit_lt('bR2', r2, B ** 9, None)
-emit_lt('bU', ud, B ** 9, None)
-emit_lt('bV8', vd[:8], B ** 8, None)
-emit_lt('bOut', outs, B ** 8, None)
+emit_lt('bLowA', lowAk, B ** 9)
+emit_lt('bR2', r2, B ** 9)
+emit_lt('bU', ud, B ** 9)
+emit_lt('bV8', vd[:8], B ** 8)
+emit_lt('bOut', outs, B ** 8)
 
 LIMBS = ' (ha : ∀ i, a i < 2 ^ 32)'
 emit_stage('barrettA', 'The product of `q1` and `⌊2 ^ 512 / n⌋`.', '', eqsA, csA, PA, QA,
