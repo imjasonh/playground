@@ -314,3 +314,10 @@ import C3BootProofs.Models.Ed25519Dec
 import C3BootProofs.Models.Ed25519Bytes2
 import C3BootProofs.Models.Ed25519Compress
 import C3BootProofs.Models.Ed25519Iso
+import C3BootProofs.Proofs.LeafStep
+import C3BootProofs.Proofs.TufIndex
+import C3BootProofs.Proofs.TufHex
+import C3BootProofs.Proofs.AsciiDigits
+import C3BootProofs.Proofs.FlashPart
+import C3BootProofs.Proofs.StripPrefix
+import C3BootProofs.Proofs.EfuseRun

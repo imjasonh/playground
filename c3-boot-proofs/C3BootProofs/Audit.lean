@@ -162,6 +162,12 @@ import C3BootProofs.Proofs.Dec256End
 import C3BootProofs.Proofs.Pv384Main
 import C3BootProofs.Image.BootloaderData5
 import C3BootProofs.Image.BootloaderData7
+import C3BootProofs.Proofs.TufIndex
+import C3BootProofs.Proofs.TufHex
+import C3BootProofs.Proofs.AsciiDigits
+import C3BootProofs.Proofs.FlashPart
+import C3BootProofs.Proofs.StripPrefix
+import C3BootProofs.Proofs.EfuseRun
 
 /-!
 # Audit
@@ -8628,3 +8634,24 @@ end C3
 
 /-- info: 'C3.RV32.Pv.p384VerifyPrehash_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Pv.p384VerifyPrehash_correct
+
+/-- info: 'C3.RV32.tufIndexDocSpec_ok' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufIndexDocSpec_ok
+
+/-- info: 'C3.RV32.tufIndexDoc_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufIndexDoc_correct
+
+/-- info: 'C3.RV32.tufHexValue_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.tufHexValue_correct
+
+/-- info: 'C3.RV32.allAsciiDigit_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.allAsciiDigit_correct
+
+/-- info: 'C3.RV32.flashPartRead_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.flashPartRead_correct
+
+/-- info: 'C3.RV32.stripPrefix_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.stripPrefix_correct
+
+/-- info: 'C3.RV32.efuseProgramRun_correct' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in #print axioms C3.RV32.efuseProgramRun_correct
