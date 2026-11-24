@@ -533,3 +533,6 @@ import C3BootProofs.Audit
 import C3BootProofs.Ring.Basic
 import C3BootProofs.Ring.Tactic
 import C3BootProofs.Ring.Test
+import C3BootProofs.Models.Safegcd
+import C3BootProofs.Models.SafegcdP384
+import C3BootProofs.Models.SafegcdP256
