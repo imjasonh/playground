@@ -159,11 +159,11 @@ theorem c_sz {base : Word} {code : List Nat} {N : Nat} {Mx : Word → BitVec 8} 
   have sp1 : reg n1 sp = S := by rw [r1 sp (by decide)]; exact hsp
   have hSa := F.al; have hSl := F.lo; have hSh := F.hi
   obtain ⟨n2, c2, pc2, sp2, a02, k2, fr2⟩ := scalarIsZero384_correct n1 (P := SZ) (sp0 := S) (x := x)
-    (by rw [mem1]; exact ⟨by decide, C.sz, by rw [show SZ + 0x11C02 = MSET by decide]; exact C.K.mset,
-      by rw [show SZ + 0xAA66 = BitVec.ofNat 32 limbCtEqAddress by decide]; exact C.K.lce,
+    (by rw [mem1]; exact ⟨by decide, C.sz, by rw [show SZ + 0x13A12 = MSET by decide]; exact C.K.mset,
+      by rw [show SZ + 0xC876 = BitVec.ofNat 32 limbCtEqAddress by decide]; exact C.K.lce,
       by rw [show SZ + 0x6E = BitVec.ofNat 32 uintRefIsZeroAddress by decide]; exact C.K.uiz,
       by rw [show SZ + 0x6E + 0x1A = BitVec.ofNat 32 uintRefIsNonzeroAddress by decide]; exact C.K.refnz,
-      by rw [show SZ + 0xAB60 = BitVec.ofNat 32 blackBoxU8Address by decide]; exact C.K.bb,
+      by rw [show SZ + 0xC970 = BitVec.ofNat 32 blackBoxU8Address by decide]; exact C.K.bb,
       by omega, by omega, by rw [ex, F.at _ (by omega)]; omega, by rw [ex, F.at _ (by omega)]; omega,
       F.lowHi (by decide) rfl (by decide) (by decide), F.lowHi (by decide) rfl (by decide) (by decide),
       F.lowHi (by decide) rfl (by decide) (by decide), F.lowHi (by decide) rfl (by decide) (by decide),

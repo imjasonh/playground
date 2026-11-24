@@ -307,8 +307,8 @@ theorem c2_fadd {base : Word} {code : List Nat} {N : Nat} {Mx : Word → BitVec 
 abbrev U8CE : Word := BitVec.ofNat 32 uint8CtEqAddress
 theorem u8_spl : U8CE + 0x80 = BitVec.ofNat 32 splitAt8Address := by decide
 theorem u8_lce : U8CE + 0xFFFFBCE6 = BitVec.ofNat 32 limbCtEqAddress := by decide
-theorem u8_uiz : U8CE + 0xFFFF12EE = BitVec.ofNat 32 uintRefIsZeroAddress := by decide
-theorem u8_unz : U8CE + 0xFFFF12EE + 0x1A = BitVec.ofNat 32 uintRefIsNonzeroAddress := by decide
+theorem u8_uiz : U8CE + 0xFFFEF4DE = BitVec.ofNat 32 uintRefIsZeroAddress := by decide
+theorem u8_unz : U8CE + 0xFFFEF4DE + 0x1A = BitVec.ofNat 32 uintRefIsNonzeroAddress := by decide
 
 /-- A call to `Uint<8>::ct_eq`. -/
 theorem c2_uce {base : Word} {code : List Nat} {N : Nat} {Mx : Word → BitVec 8} {n : Machine} {off : Nat}

@@ -197,10 +197,10 @@ structure LcLoopAt (o : Nat) (imm jo : Word) : Prop where
 
 section
 set_option maxRecDepth 20000
-theorem lcLoop1 : LcLoopAt 0xB2 0xFFFEF000 0x326 :=
+theorem lcLoop1 : LcLoopAt 0xB2 0xFFFED000 0x516 :=
   ⟨by decide, lc12_at_bc, lc12_at_c0, by decide, by decide, lc12_at_d0, by decide, by decide,
     by decide⟩
-theorem lcLoop2 : LcLoopAt 0xF4 0xFFFEF000 0x2E4 :=
+theorem lcLoop2 : LcLoopAt 0xF4 0xFFFED000 0x4D4 :=
   ⟨by decide, lc12_at_fe, lc12_at_102, by decide, by decide, lc12_at_112, by decide,
     by decide, by decide⟩
 end

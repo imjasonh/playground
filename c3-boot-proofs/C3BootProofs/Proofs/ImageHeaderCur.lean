@@ -77,7 +77,7 @@ theorem HPost.pre {m m' : Machine} (c : Steps m m') :
 /-- A range of the stack region is apart from `image::parse`'s code. -/
 theorem IEnv.stack_parse (env : IEnv P R G ptr len out) (c n : Nat) (hn : c + n ≤ 0x190) :
     Sep (R + BitVec.ofNat 32 c) n P imageParseCode.length := by
-  have := env.stack_code c n hn 0x2D2 imageParseCode.length (by decide)
+  have := env.stack_code c n hn 0x2B78 imageParseCode.length (by decide)
   rwa [← ip_wP P] at this
 
 /-- Offset 0x146: `Reader::u32` failed, with the error byte at `G + 0x25`. -/
@@ -175,10 +175,10 @@ theorem ip_rd32 (env : IEnv P R G ptr len out) (code0 : ICode M0 P)
     {pos o : Word} (hpos : memLoad32 Mx (G + 0x18 + 8) = pos)
     (i1 : fetchRel imageParseCode off = some (.aluImm .add a0 sp 0x24, 2))
     (i2 : fetchRel imageParseCode (off + 2) = some (.aluImm .add a1 sp 0x18, 2))
-    (i3 : fetchRel imageParseCode (off + 4) = some (.auipc ra 0, 4))
+    (i3 : fetchRel imageParseCode (off + 4) = some (.auipc ra 0xFFFFD000, 4))
     (i4 : fetchRel imageParseCode (off + 4 + 4) = some (.jalr ra ra o, 4))
     (i5 : fetchRel imageParseCode (off + 4 + 8) = some (.load .lbu a0 sp 0x24, 4))
-    (hb : P + BitVec.ofNat 32 (off + 4) + 0 + o = P + 0x434) (hoff : off % 2 = 0) :
+    (hb : P + BitVec.ofNat 32 (off + 4) + 0xFFFFD000 + o = P + 0xFFFFD4F2) (hoff : off % 2 = 0) :
     ∃ m' My g', Steps m m' ∧ St My P m' (off + 4 + 8 + 4) g' ∧ IInv R G ptr len out ilen M0 f0 My g' ∧
       (∀ r, r ≠ a0 → r ≠ a1 → r ≠ a2 → r ≠ a3 → r ≠ a4 → r ≠ a5 → r ≠ ra → g' r = g r) ∧
       match bytesResult ptr len pos 4 with

@@ -320,10 +320,10 @@ theorem pv_nz {B : Word} {m : Machine} {off : Nat} {imm o : Word} {co cx : Nat} 
     · rw [show BitVec.ofNat 32 nonZero384Address + 0xFFFFFEF6 + 0xFFFFFAF4 + 0xFFFF9DBC = BitVec.ofNat 32 limbCtEqAddress
         by decide]
       exact E.C.K.lce
-    · rw [show BitVec.ofNat 32 nonZero384Address + 0xFFFFFEF6 + 0xFFFFFAF4 + 0xFFFEF3C4 =
+    · rw [show BitVec.ofNat 32 nonZero384Address + 0xFFFFFEF6 + 0xFFFFFAF4 + 0xFFFED5B4 =
         BitVec.ofNat 32 uintRefIsZeroAddress by decide]
       exact E.C.K.uiz
-    · rw [show BitVec.ofNat 32 nonZero384Address + 0xFFFFFEF6 + 0xFFFFFAF4 + 0xFFFEF3C4 + 0x1A =
+    · rw [show BitVec.ofNat 32 nonZero384Address + 0xFFFFFEF6 + 0xFFFFFAF4 + 0xFFFED5B4 + 0x1A =
         BitVec.ofNat 32 uintRefIsNonzeroAddress by decide]
       exact E.C.K.refnz
     · rw [show BitVec.ofNat 32 nonZero384Address + 0xFFFFFEF6 + 0xFFFF99AA = BitVec.ofNat 32 blackBoxU8Address by decide]

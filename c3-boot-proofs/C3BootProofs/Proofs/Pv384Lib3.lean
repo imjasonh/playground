@@ -168,11 +168,11 @@ theorem pv_pd {B : Word} {m : Machine} {off : Nat} {imm o : Word} {co cx : Nat} 
       (pv_lowD F (k := 0x540) (by decide) (by decide) (by decide)).symm,
       pv_lowS F (k := 0x540) (by omega) (by decide) (by decide), pv_lowS F (k := 0x540) (by omega) (by decide) (by decide),
       oh _ _ (by decide) (by decide), oh _ _ (by decide) (by decide)⟩
-    · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x11C82 = BitVec.ofNat 32 p384MulAddress by decide]
+    · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x13A92 = BitVec.ofNat 32 p384MulAddress by decide]
       exact E.E.E.C.K.p3mul
     · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x14236 = BitVec.ofNat 32 p384SqrAddress by decide]
       exact E.C4.sqr
-    · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x110E0 = MM by decide]; exact E.E.E.C.K.mm
+    · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x12EF0 = MM by decide]; exact E.E.E.C.K.mm
     · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x13B9E = BitVec.ofNat 32 sqMont12Address by decide]
       exact E.C4.sqm
     · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x53A = BitVec.ofNat 32 p384AddAddress by decide]
@@ -181,11 +181,11 @@ theorem pv_pd {B : Word} {m : Machine} {off : Nat} {imm o : Word} {co cx : Nat} 
       exact E.C4.sub
     · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x1416E = BitVec.ofNat 32 p384DoubleAddress by decide]
       exact E.C4.dbl
-    · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x12BEC = MSET by decide]; exact E.E.E.C.K.mset
+    · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x149FC = MSET by decide]; exact E.E.E.C.K.mset
     · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x726 = BSUB by decide]; exact E.E.E.C.K.bsub
-    · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x1126E = SEL by decide]; exact E.E.E.C.K.sel
-    · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x12C54 = MCS by decide]; exact E.E.E.C.K.stub
-    · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x12C5C = MCS + 8 by decide]; exact E.E.E.C.K.body
+    · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x1307E = SEL by decide]; exact E.E.E.C.K.sel
+    · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x14A64 = MCS by decide]; exact E.E.E.C.K.stub
+    · rw [show BitVec.ofNat 32 p384PtDoubleAddress + 0x14A6C = MCS + 8 by decide]; exact E.E.E.C.K.body
   obtain ⟨n2, c2, pc2, sp2, k2, val2, fr2⟩ := p384PtDouble_correct n1 EN pc1 (by rw [r1 a0 (by decide)]; exact ha0)
     (by rw [r1 a1 (by decide)]; exact ha1) (by rw [regs1]; simp +decide [upd])
     (even_clear _ he8) (by rw [r1 sp (by decide)]; exact hsp)
@@ -255,20 +255,20 @@ theorem pv_pa {B : Word} {m : Machine} {off : Nat} {imm o : Word} {cl cr : Nat} 
       oh _ _ (by decide) (by decide), oh _ _ (by decide) (by decide), oh _ _ (by decide) (by decide),
       oh _ _ (by decide) (by decide), oh _ _ (by decide) (by decide),
       FS.bufData (by omega) (by decide) (by decide), FS.bufData (by omega) (by decide) (by decide)⟩
-    · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x11A24 = BitVec.ofNat 32 p384MulAddress by decide]
+    · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x13834 = BitVec.ofNat 32 p384MulAddress by decide]
       exact E.E.E.C.K.p3mul
-    · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x10E82 = MM by decide]; exact E.E.E.C.K.mm
+    · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x12C92 = MM by decide]; exact E.E.E.C.K.mm
     · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x2DC = BitVec.ofNat 32 p384AddAddress by decide]
       exact E.E.E.C.K.p3add
     · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x3F2 = BitVec.ofNat 32 p384SubAddress by decide]
       exact E.C4.sub
     · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x13F10 = BitVec.ofNat 32 p384DoubleAddress by decide]
       exact E.C4.dbl
-    · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x1298E = MSET by decide]; exact E.E.E.C.K.mset
+    · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x1479E = MSET by decide]; exact E.E.E.C.K.mset
     · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x4C8 = BSUB by decide]; exact E.E.E.C.K.bsub
-    · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x11010 = SEL by decide]; exact E.E.E.C.K.sel
-    · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x129F6 = MCS by decide]; exact E.E.E.C.K.stub
-    · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x129FE = MCS + 8 by decide]; exact E.E.E.C.K.body
+    · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x12E20 = SEL by decide]; exact E.E.E.C.K.sel
+    · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x14806 = MCS by decide]; exact E.E.E.C.K.stub
+    · rw [show BitVec.ofNat 32 p384PtAddAddress + 0x1480E = MCS + 8 by decide]; exact E.E.E.C.K.body
   obtain ⟨n2, c2, pc2, sp2, k2, val2, fr2⟩ := p384PtAdd_correct n1 EN pc1 (by rw [r1 a0 (by decide)]; exact ha0)
     (by rw [r1 a1 (by decide)]; exact ha1) (by rw [regs1]; simp +decide [upd])
     (even_clear _ he8) (by rw [r1 sp (by decide)]; exact hsp)

@@ -75,14 +75,14 @@ theorem pv_neg {B : Word} {m : Machine} {off : Nat} {imm o : Word} {co cx : Nat}
       lh _ _ (by decide) (by decide), (pv_lowK F (n := 48) (k := 0x54) (by decide) (by decide) (by decide)).symm,
       oh _ _ (by decide) (by decide), oh _ _ (by decide) (by decide),
       FS.lowN (k := 0x54) (by decide) (by decide) (by omega), FS.lowN (k := 0x54) (by decide) (by decide) (by omega)⟩
-    · rw [show BitVec.ofNat 32 p384NegAddress + 0x1129C = BitVec.ofNat 32 uint12IsNonzeroAddress by decide]
+    · rw [show BitVec.ofNat 32 p384NegAddress + 0x130AC = BitVec.ofNat 32 uint12IsNonzeroAddress by decide]
       exact E.E.E.E.E.C2.unz
     · rw [show BitVec.ofNat 32 p384NegAddress + 0x3F2 = BitVec.ofNat 32 uintRefIsNonzeroAddress by decide]
       exact E.E.E.E.E.C.K.refnz
-    · rw [show BitVec.ofNat 32 p384NegAddress + 0x11F6C = MSET by decide]; exact E.E.E.E.E.C.K.mset
+    · rw [show BitVec.ofNat 32 p384NegAddress + 0x13D7C = MSET by decide]; exact E.E.E.E.E.C.K.mset
     · rw [show ngBsub (BitVec.ofNat 32 p384NegAddress) = BSUB by decide]; exact E.E.E.E.E.C.K.bsub
-    · rw [show BitVec.ofNat 32 p384NegAddress + 0x11FD4 = MCS by decide]; exact E.E.E.E.E.C.K.stub
-    · rw [show BitVec.ofNat 32 p384NegAddress + 0x11FDC = MCS + 8 by decide]; exact E.E.E.E.E.C.K.body
+    · rw [show BitVec.ofNat 32 p384NegAddress + 0x13DE4 = MCS by decide]; exact E.E.E.E.E.C.K.stub
+    · rw [show BitVec.ofNat 32 p384NegAddress + 0x13DEC = MCS + 8 by decide]; exact E.E.E.E.E.C.K.body
   obtain ⟨n2, c2, pc2, sp2, k2, val2, fr2⟩ := p384Neg_correct n1 EN pc1 (by rw [r1 sp (by decide)]; exact hsp)
     (by rw [r1 a0 (by decide)]; exact ha0) (by rw [r1 a1 (by decide)]; exact ha1)
     (by rw [regs1]; simp +decide [upd]) (even_clear _ he8)

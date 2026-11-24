@@ -229,11 +229,11 @@ theorem accV_ite {M M' : Word → BitVec 8} {b b' d : Word} {c : Prop} [Decidabl
 
 abbrev UOR : Word := BitVec.ofNat 32 unwrapOr384Address
 abbrev AID : Word := BitVec.ofNat 32 p384AffineIdentityAddress
-theorem uor_cs : UOR + 0x1070C = CSEL := by decide
-theorem uor_stub : UOR + 0x1070C + 0x101A = MCS := by decide
-theorem uor_body : UOR + 0x1070C + 0x101A + 8 = MCS + 8 := by decide
-theorem uor_cta : UOR + 0x1070C + 0x2EC = BitVec.ofNat 32 uint12CtAssignAddress := by decide
-theorem uor_sca : UOR + 0x1070C + 0x2EC + 0xFFFF9B66 = BitVec.ofNat 32 sliceCtAssignAddress := by decide
+theorem uor_cs : UOR + 0x1251C = CSEL := by decide
+theorem uor_stub : UOR + 0x1251C + 0x101A = MCS := by decide
+theorem uor_body : UOR + 0x1251C + 0x101A + 8 = MCS + 8 := by decide
+theorem uor_cta : UOR + 0x1251C + 0x2EC = BitVec.ofNat 32 uint12CtAssignAddress := by decide
+theorem uor_sca : UOR + 0x1251C + 0x2EC + 0xFFFF9B66 = BitVec.ofNat 32 sliceCtAssignAddress := by decide
 
 theorem aid_x {M : Word → BitVec 8} (h : CodeIn M AID p384AffineIdentityData) : accV M AID 12 = 0 := by
   rw [show AID = AID + BitVec.ofNat 32 0 from (add_ofNat_zero _).symm, code_accV h 0 12 (by decide)]; decide
@@ -297,8 +297,8 @@ abbrev MCE : Word := BitVec.ofNat 32 montyScalarCtEq384Address
 theorem mce_uce : MCE + 0xFFFFFAF4 = BitVec.ofNat 32 uint12CtEqAddress := by decide
 theorem mce_spl : MCE + 0xFFFFFAF4 + 0x80 = BitVec.ofNat 32 splitAt12Address := by decide
 theorem mce_lce : MCE + 0xFFFFFAF4 + 0xFFFF9DBC = BitVec.ofNat 32 limbCtEqAddress := by decide
-theorem mce_uiz : MCE + 0xFFFFFAF4 + 0xFFFEF3C4 = BitVec.ofNat 32 uintRefIsZeroAddress := by decide
-theorem mce_unz : MCE + 0xFFFFFAF4 + 0xFFFEF3C4 + 0x1A = BitVec.ofNat 32 uintRefIsNonzeroAddress := by decide
+theorem mce_uiz : MCE + 0xFFFFFAF4 + 0xFFFED5B4 = BitVec.ofNat 32 uintRefIsZeroAddress := by decide
+theorem mce_unz : MCE + 0xFFFFFAF4 + 0xFFFED5B4 + 0x1A = BitVec.ofNat 32 uintRefIsNonzeroAddress := by decide
 theorem mce_bb : MCE + 0xFFFF99AA = BitVec.ofNat 32 blackBoxU8Address := by decide
 
 set_option maxHeartbeats 8000000 in

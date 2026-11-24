@@ -493,7 +493,7 @@ theorem pv_norm {B : Word} {m : Machine} {off : Nat} {imm o : Word} {co cx cn : 
       pv_lowS F (k := 0xB0) (by omega) (by decide) (by decide)⟩
     · rw [show BitVec.ofNat 32 norm12Address + 0xFFFFFFE6 = BitVec.ofNat 32 uint12IsNonzeroAddress by decide]
       exact E.E.C2.unz
-    · rw [show BitVec.ofNat 32 norm12Address + 0xFFFEF13C = BitVec.ofNat 32 uintRefIsNonzeroAddress by decide]
+    · rw [show BitVec.ofNat 32 norm12Address + 0xFFFED32C = BitVec.ofNat 32 uintRefIsNonzeroAddress by decide]
       exact E.E.C.K.refnz
     · rw [show BitVec.ofNat 32 norm12Address + 0xCB6 = MSET by decide]; exact E.E.C.K.mset
     · rw [show nmBsub (BitVec.ofNat 32 norm12Address) = BSUB by decide]; exact E.E.C.K.bsub

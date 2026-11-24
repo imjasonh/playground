@@ -178,10 +178,10 @@ theorem dq_p3mul {Mx : Word → BitVec 8} {n : Machine} {off : Nat} {g : Fin 32 
     fun q hq => by rw [k2 q (by revert hq; revert q; decide), r1 q (by revert hq; revert q; decide)]⟩
 
 abbrev P3ADD : Word := BitVec.ofNat 32 p384AddAddress
-theorem p3add_mset : P3ADD + 0x126B2 = MSET := by decide
+theorem p3add_mset : P3ADD + 0x144C2 = MSET := by decide
 theorem p3add_bsub : p3Bsub P3ADD = BSUB := by decide
-theorem p3add_stub : P3ADD + 0x1271A = MCS := by decide
-theorem p3add_body : P3ADD + 0x12722 = MCS + 8 := by decide
+theorem p3add_stub : P3ADD + 0x1452A = MCS := by decide
+theorem p3add_body : P3ADD + 0x14532 = MCS + 8 := by decide
 
 /-- A call to `ConstMontyForm<p384::FieldParams>::add` from `decompress`. -/
 theorem dq_p3add {Mx : Word → BitVec 8} {n : Machine} {off : Nat} {g : Fin 32 → Word} {imm o out lp rp S : Word}
@@ -341,12 +341,12 @@ theorem dq_cmap {Mx : Word → BitVec 8} {n : Machine} {off : Nat} {g : Fin 32 �
     fun q hq => by rw [k2 q (by revert hq; revert q; decide), r1 q (by revert hq; revert q; decide)]⟩
 
 abbrev NEG : Word := BitVec.ofNat 32 p384NegAddress
-theorem neg_nz : NEG + 0x1129C = BitVec.ofNat 32 uint12IsNonzeroAddress := by decide
+theorem neg_nz : NEG + 0x130AC = BitVec.ofNat 32 uint12IsNonzeroAddress := by decide
 theorem neg_ref : NEG + 0x3F2 = BitVec.ofNat 32 uintRefIsNonzeroAddress := by decide
-theorem neg_mset : NEG + 0x11F6C = MSET := by decide
+theorem neg_mset : NEG + 0x13D7C = MSET := by decide
 theorem neg_bsub : ngBsub NEG = BSUB := by decide
-theorem neg_stub : NEG + 0x11FD4 = MCS := by decide
-theorem neg_body : NEG + 0x11FDC = MCS + 8 := by decide
+theorem neg_stub : NEG + 0x13DE4 = MCS := by decide
+theorem neg_body : NEG + 0x13DEC = MCS + 8 := by decide
 
 /-- A call to `ConstMontyForm<p384::FieldParams>::neg` from `decompress`. -/
 theorem dq_neg {Mx : Word → BitVec 8} {n : Machine} {off : Nat} {g : Fin 32 → Word} {imm o out xp S : Word}
@@ -557,7 +557,7 @@ theorem dq_bb {Mx : Word → BitVec 8} {n : Machine} {off : Nat} {g : Fin 32 →
   exact ⟨n2, c1.trans c2, ⟨by rw [pc2], rfl, fun _ => rfl⟩, by rw [a02, r1 a0 (by decide)], fr2,
     fun q h0 hr => by rw [k2 q h0, r1 q hr]⟩
 
-theorem cte_bb : BitVec.ofNat 32 choiceCtEqAddress + 0x7C6E = BitVec.ofNat 32 blackBoxU8Address := by decide
+theorem cte_bb : BitVec.ofNat 32 choiceCtEqAddress + 0x9A7E = BitVec.ofNat 32 blackBoxU8Address := by decide
 
 /-- A call to `<Choice as ConstantTimeEq>::ct_eq` from `decompress`. -/
 theorem dq_cte {Mx : Word → BitVec 8} {n : Machine} {off : Nat} {g : Fin 32 → Word} {imm o a b S : Word}

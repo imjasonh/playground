@@ -199,10 +199,10 @@ structure LcLoopAt8 (o : Nat) (imm jo : Word) : Prop where
 
 section
 set_option maxRecDepth 20000
-theorem lcLoop18 : LcLoopAt8 0xB2 0xFFFF1000 0x4C2 :=
+theorem lcLoop18 : LcLoopAt8 0xB2 0xFFFEF000 0x6B2 :=
   ⟨by decide, lc8_at_bc, lc8_at_c0, by decide, by decide, lc8_at_d0, by decide, by decide,
     by decide⟩
-theorem lcLoop28 : LcLoopAt8 0xF4 0xFFFF1000 0x480 :=
+theorem lcLoop28 : LcLoopAt8 0xF4 0xFFFEF000 0x670 :=
   ⟨by decide, lc8_at_fe, lc8_at_102, by decide, by decide, lc8_at_112, by decide,
     by decide, by decide⟩
 end

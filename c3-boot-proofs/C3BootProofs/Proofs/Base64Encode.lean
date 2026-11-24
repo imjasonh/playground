@@ -371,9 +371,9 @@ set_option maxRecDepth 20000 in
 /-- A call of `update` from `encode_to` on the 4 characters at `sp + o`. -/
 theorem bee_call {M0 M : Word → BitVec 8} {S D sp0 : Word} {n : Nat} (E : BeeEnv M0 S D sp0 n)
     (fr : BeeFrame M M0 S (sp0 + 0xFFFFFED0)) {nn : Machine} {off o : Nat} {imm : Word} {msg : Bytes} (ho : o ≤ 8) (hoff : off % 2 = 0)
-    (st : St M BEE nn off (reg nn)) (h1 : fetchRel base64EncodeToCode off = some (.auipc ra 0xFFFFE000, 4))
+    (st : St M BEE nn off (reg nn)) (h1 : fetchRel base64EncodeToCode off = some (.auipc ra 0xFFFFD000, 4))
     (h2 : fetchRel base64EncodeToCode (off + 4) = some (.jalr ra ra imm, 4))
-    (hb : BEE + BitVec.ofNat 32 off + 0xFFFFE000 + imm = BitVec.ofNat 32 shaUpdateAddress)
+    (hb : BEE + BitVec.ofNat 32 off + 0xFFFFD000 + imm = BitVec.ofNat 32 shaUpdateAddress)
     (ra0 : reg nn a0 = S) (ra1 : reg nn a1 = sp0 + 0xFFFFFFD0 + BitVec.ofNat 32 o) (ra2 : reg nn a2 = BitVec.ofNat 32 4)
     (rsp : reg nn sp = sp0 + 0xFFFFFFD0) (H : HasherAt M S msg) (hlen : msg.length + 4 < 2 ^ 32) :
     ∃ nn', Steps nn nn' ∧ St nn'.mem BEE nn' (off + 8) (reg nn') ∧ BeeFrame nn'.mem M0 S (sp0 + 0xFFFFFED0) ∧
