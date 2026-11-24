@@ -201,9 +201,12 @@ doesn't tie the P-384 prehash and scalars to memory, so the corrected form
 also takes `SvPvAt`. `sv_verify_spec` still takes the old facts until it is
 rewired to the corrected ones.
 
-The corrected models now assume only that the field prime is prime
-(`p256_model_prime` and `p384_model_prime`, with the image's P-256
-constants as `P256Consts`):
+The corrected models need no mathematical hypotheses: `p256_model_closed`
+and `p384_model_closed` in `Models/EcdsaClosed.lean`, with the image's
+P-256 constants as `P256Consts`. They combine:
+- `Models/Prime*.lean`: Pratt certificates, checked by the kernel with
+  Lucas's test, that the P-256 and P-384 field primes and group orders and
+  Ed25519's `p` and `L` are prime. `gen-prime-certs.py` writes them.
 - `Models/Weierstrass*.lean` prove that the affine group law of any curve
   with `a = -3` and no point of order 2 is closed and associative, and that
   the complete addition formulas compute it (`RcbAddOk`). Associativity
