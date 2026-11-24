@@ -35,6 +35,11 @@ def address(name):
     return NAMES[name + "Address"]
 
 
+def callees(caller, names):
+    """Maps the distance from `caller` to each function in `names` to its key."""
+    return {(address(f) - address(caller)) % 2 ** 32: k for k, f in names.items()}
+
+
 def data_expr(a):
     """`(img% item + off)` for an address in a data item, or None."""
     cands = [(a != s, a - s, k, n) for k, (n, s, size) in enumerate(DATA) if s <= a < s + size or a == s]

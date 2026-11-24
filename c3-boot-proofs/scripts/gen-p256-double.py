@@ -45,7 +45,9 @@ src = open(ROOT + 'P256PtEnv.lean').read()
 PD = decode(src, 'p2pd', 'p256PtDoubleCode')
 offs = sorted(PD)
 G = "d2G sp0"
-CALLEES = {0xF312: 'mul', 0xFDFE: 'sqr', 0xFAD8: 'add', 0xFBFA: 'sub', 0xFDF4: 'dbl', 0x12504: 'cpy'}
+CALLEES = imgnames.callees('p256PtDouble', {'mul': 'fieldMul', 'sqr': 'fieldSquare',
+                                            'add': 'fieldAdd', 'sub': 'fieldSub',
+                                            'dbl': 'fieldDouble', 'cpy': 'memcpyStub'})
 OPF = {'mul': 'fm', 'sqr': 'fm', 'add': 'fa', 'sub': 'fs', 'dbl': 'fd'}
 KEPT = {2, 8, 9, 18, 19, 20, 21, 22}
 BNAME = 'curveB'

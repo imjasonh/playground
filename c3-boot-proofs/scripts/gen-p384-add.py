@@ -45,7 +45,8 @@ src = open(ROOT + 'P384PtAddEnv.lean').read()
 PA = decode(src, 'p3pa', 'p384PtAddCode')
 offs = sorted(PA)
 G = "a3G sp0"
-CALLEES = {0x11A24: 'mul', 0x2DC: 'add', 0x3F2: 'sub', 0x12100: 'dbl', 0x129F6: 'cpy'}
+CALLEES = imgnames.callees('p384PtAdd', {'mul': 'p384Mul', 'add': 'p384Add', 'sub': 'p384Sub',
+                                         'dbl': 'p384Double', 'cpy': 'memcpyStub'})
 OPF = {'mul': 'p3fm', 'add': 'p3fa', 'sub': 'p3fs', 'dbl': 'p3fd'}
 BNAME = 'p384B'
 BADDR = imgnames.address(BNAME)

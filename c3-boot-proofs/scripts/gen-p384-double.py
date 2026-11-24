@@ -45,7 +45,9 @@ src = open(ROOT + 'P384PtEnv.lean').read()
 PD = decode(src, 'p3pd', 'p384PtDoubleCode')
 offs = sorted(PD)
 G = "d3G sp0"
-CALLEES = {0x11C82: 'mul', 0x12426: 'sqr', 0x53A: 'add', 0x650: 'sub', 0x1235E: 'dbl', 0x12C54: 'cpy'}
+CALLEES = imgnames.callees('p384PtDouble', {'mul': 'p384Mul', 'sqr': 'p384Sqr', 'add': 'p384Add',
+                                            'sub': 'p384Sub', 'dbl': 'p384Double',
+                                            'cpy': 'memcpyStub'})
 OPF = {'mul': 'p3fm', 'sqr': 'p3fm', 'add': 'p3fa', 'sub': 'p3fs', 'dbl': 'p3fd'}
 KEPT = {2, 8, 9, 18, 19, 20, 21, 22}
 BNAME = 'p384B'

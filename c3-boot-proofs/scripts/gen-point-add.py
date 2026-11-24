@@ -45,7 +45,8 @@ src = open(ROOT + 'PointDecode.lean').read()
 PA = decode(src, 'pa', 'pointAddCode')
 offs = sorted(PA)
 G = "sp0 + 0xFFFFFDC0"
-CALLEES = {0xF0BE: 'mul', 0xF884: 'add', 0xF9A6: 'sub', 0xFBA0: 'dbl', 0x122B0: 'cpy'}
+CALLEES = imgnames.callees('pointAdd', {'mul': 'fieldMul', 'add': 'fieldAdd', 'sub': 'fieldSub',
+                                        'dbl': 'fieldDouble', 'cpy': 'memcpyStub'})
 OPF = {'mul': 'fm', 'add': 'fa', 'sub': 'fs', 'dbl': 'fd'}
 BNAME = 'curveB'
 BADDR = imgnames.address(BNAME)
