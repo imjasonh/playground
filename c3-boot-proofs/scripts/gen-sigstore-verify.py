@@ -2386,12 +2386,13 @@ class Gen:
         self.regs[11] = ("U", f"BitVec.ofNat 32 (({Lv}) / 2 ^ 32)")
         self.frame_after(k, [], {})
 
-    def upd8(self, off, kind, co, ca, cb, ct, s, hs, sla, slb, extra="", cm=None):
+    def upd8(self, off, kind, co, ca, cb, ct, s, hs, sla, slb, extra="", cm=None, mi_regs=False):
         """`update_fg::<8>` (`kind` "fg") or `update_de::<8>` ("de") of the
         values at offsets `ca` and `cb` with the matrix at `ct`, into `co` and
         `co + 0x24`; `update_de` reduces modulo the limbs at frame offset `cm`
-        when it is given. The results' signs and magnitudes become checks with
-        binders."""
+        when it is given, with `-n⁻¹ mod 2^64` from `a5:a4` when `cm` is given
+        or `mi_regs` is set, and otherwise from the frame words 0x60 and 0x70.
+        The results' signs and magnitudes become checks with binders."""
         k = self.k = self.k + 1
         wrapper = "sv_ufg8F" if kind == "fg" else ("sv_ude8Fs" if cm is not None else "sv_ude8F")
         self.call_head(k, off, wrapper, f"(co := 0x{co:X}) (ca := 0x{ca:X}) (cb := 0x{cb:X}) (ct := 0x{ct:X}) (s := {s})",
@@ -2408,7 +2409,9 @@ class Gen:
         nb, vb = self.acc[cb]
         sa, sb = self.bytes[ca + 0x20], self.bytes[cb + 0x20]
         w = [lean_val(self.words[ct + i]) for i in range(0, 0x20, 4)]
-        if cm is None:
+        if kind == "fg":
+            mi = None
+        elif cm is None and not mi_regs:
             mi = f"(({lean_val(self.words[0x70])}).toNat + 2 ^ 32 * ({lean_val(self.words[0x60])}).toNat)"
         else:
             mi = f"(({lean_val(self.regs[14])}).toNat + 2 ^ 32 * ({lean_val(self.regs[15])}).toNat)"

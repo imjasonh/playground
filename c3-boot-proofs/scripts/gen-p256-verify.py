@@ -305,8 +305,105 @@ def stage_a3():
     return g, info
 
 
+IV_ACC = {0x120: "qx", 0x140: "qy", 0x160: "qz", 0x180: "rv", 0x1A0: "sv", 0x1C0: "zv",
+          0x200: "gv", 0x900: "fv", 0x980: "ev", 0xFE4: "dv"}
+IV_SIGN = {0x220: "gs", 0x920: "fs", 0x9A0: "es", 0x1004: "ds"}
+IV_BINDERS = ("{B dlo dhi rem : Word} {fs gs ds es : BitVec 8} {qx qy qz rv sv zv fv gv dv ev : Nat} "
+              "{v : Nat → Word} {n0 : Machine}")
+
+
+def iv_start(g, regs):
+    """The inversion of `s`: `f`, `g`, `d`, and `e`, each 8 limbs with a sign
+    byte after them, the steps left in `s8`, and `δ` in `s3:s5`, with the
+    given registers on top."""
+    base = {2: ("S", 0), 3: ("U", "reg n0 (3 : Fin 32)"), 4: ("U", "reg n0 (4 : Fin 32)"),
+            19: ("U", "dlo"), 21: ("U", "dhi"), 22: ("C", 1), 23: ("S", 0xCA4), 24: ("U", "rem"), 27: ("C", 7)}
+    base.update(regs)
+    words = {0x50: ("C", 0x332E3755), 0x54: ("C", 0x11FF43B1)} if 26 not in regs else {}
+    params = start(g, base, words)
+    for d, nm in sorted(IV_ACC.items()):
+        g.acc[d] = (8, nm)
+        params.append(f"(a0_{d:x} : accV n0.mem ({gsv.fa(d)}) 8 = {nm})")
+    for e, nm in sorted(IV_SIGN.items()):
+        g.bytes[e] = nm
+        params.append(f"(b0_{e:x} : n0.mem ({gsv.fa(e)}) = {nm})")
+    return params
+
+
+def stage_iva():
+    """From the scan's end at 0x3F8 to the divstep loop at 0x43C: the batch's
+    size `min rem 62`, the low words of `f` and `g`, and the identity
+    matrix."""
+    g = Gen("IvA")
+    g.generic_alu = True
+    params = iv_start(g, {8: ("C", 0x11FF43B1), 9: ("C", 0x332E3755), 26: ("S", 0x920)})
+    params += ["(IC0 : P2vIvCode M0)", "(hrem : rem ≠ 0)", "(hfs : fs.toNat ≤ 1)", "(hgs : gs.toNat ≤ 1)"]
+    g.store(0x3F8, "sw")
+    g.store(0x3FA, "sw")
+    g.block(0x3FC, 0x3FE)
+    g.umin(0x3FE)
+    g.block(0x406, 0x410)
+    g.low8(0x410, 0x900, "hfs")
+    g.block(0x418, 0x41E)
+    g.low8(0x41E, 0x200, "hgs")
+    g.block(0x426, 0x438)
+    g.branch(0x438, False, f"by rw [g{g.k}_18, s{g.k}.zero]; exact br_beq_f (umin_ne0 hrem)")
+    stmt, proof = finish(g, 0x43C, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+                                    26, 27, 30], set(g.words), set(g.bytes))
+    info = {"name": "p2v_iva", "title": "the start of a batch of the inversion of `s`",
+            "doc": "From the scan's end at 0x3F8 to the divstep loop at 0x43C: the batch runs `min rem 62` steps, "
+            "on the low 64 bits of `f` and `g` as signed words, starting from the identity matrix.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": IV_BINDERS, "start": 0x3F8,
+            "import": "C3BootProofs.Proofs.P2vIvLib"}
+    return g, info
+
+
+def stage_ivb():
+    """From the divstep loop's exit at 0x51E to the batch's end at 0x60C: the
+    batch's matrix stored, applied to `f` and `g` and to `d` and `e`, and the
+    steps left reduced by the batch's size."""
+    g = Gen("IvB")
+    g.generic_alu = True
+    mat = {9: "ulo", 17: "uhi", 12: "vlo", 16: "vhi", 25: "qlo", 7: "qhi", 30: "rlo", 6: "rhi"}
+    regs = {r: ("U", nm) for r, nm in mat.items()}
+    regs[18] = ("U", "BitVec.ofNat 32 ns")
+    params = iv_start(g, regs)
+    params += ["(hns1 : 1 ≤ ns)", "(hns2 : ns ≤ 62)", "(UC0 : P2vUpCode M0)", "(hfs : fs.toNat ≤ 1)",
+               "(hgs : gs.toNat ≤ 1)", "(hds : ds.toNat ≤ 1)", "(hes : es.toNat ≤ 1)"]
+    g.block(0x51E, 0x526)
+    for o in range(0x526, 0x546, 4):
+        g.store(o, "sw")
+    g.block(0x546, 0x562)
+    g.upd8(0x562, "fg", 0xC80, 0x900, 0x200, 0xF80, "ns", "hns1 (by omega)", "hfs", "hgs")
+    g.block(0x56A, 0x57E)
+    g.mc(0x57E, 0x900, 0xC80, 0x24)
+    g.block(0x586, 0x58E)
+    g.mc(0x58E, 0x200, 0xCA4, 0x24)
+    g.block(0x596, 0x5BE)
+    g.load(0x5BE, "lw")
+    g.block(0x5C0, 0x5C2)
+    g.load(0x5C2, "lw")
+    g.block(0x5C4, 0x5C8)
+    g.upd8(0x5C8, "de", 0xC80, 0xFE4, 0x980, 0xF80, "ns", "hns1 (by omega)", "hds", "hes",
+           extra="(by decide) (by decide) (by decide)", mi_regs=True)
+    g.block(0x5D0, 0x5E4)
+    g.mc(0x5E4, 0xFE4, 0xC80, 0x24)
+    g.block(0x5EC, 0x600)
+    g.mc(0x600, 0x980, 0xCA4, 0x24)
+    g.block(0x608, 0x60C)
+    stmt, proof = finish(g, 0x60C, [2, 3, 4, 8, 9, 19, 21, 22, 23, 24, 27], set(g.words), set(g.bytes))
+    info = {"name": "p2v_ivb", "title": "the end of a batch of the inversion of `s`",
+            "doc": "From the divstep loop's exit at 0x51E to 0x60C: the batch's matrix is stored at 0xF80, "
+            "`update_fg` applies it to `f` and `g` and `update_de` to `d` and `e`, and the steps left drop by "
+            "the batch's size.",
+            "params": params, "stmt": stmt, "proof": proof,
+            "binders": IV_BINDERS.replace("rem : Word}", "rem ulo uhi vlo vhi qlo qhi rlo rhi : Word} {ns : Nat}"),
+            "start": 0x51E, "import": "C3BootProofs.Proofs.P2vIvLib"}
+    return g, info
+
+
 def stages():
-    return {"A1": stage_a1, "A2": stage_a2, "A3": stage_a3}
+    return {"A1": stage_a1, "A2": stage_a2, "A3": stage_a3, "IvA": stage_iva, "IvB": stage_ivb}
 
 
 HEADER = """import {imp}
