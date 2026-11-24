@@ -166,7 +166,7 @@ theorem skw_len_le {n pos : Nat} (h : pos ≤ n) (hn : n < 2 ^ 32) :
       decide_false, Bool.false_eq_true, ↓reduceIte]
   rw [hs, hl]
   show (0 + 0xFFFFFFFF) &&& BitVec.ofNat 32 (n - pos) = _
-  rw [zw, ones_and]
+  rw [zw, jones_and]
 
 theorem skw_len_gt {n pos : Nat} (h : n < pos) (hpos : pos < 2 ^ 32) :
     aluEval .and (aluEval .add (aluEval .sltu (BitVec.ofNat 32 n) (aluEval .sub (BitVec.ofNat 32 n)
@@ -233,7 +233,7 @@ theorem skw_mid {M : Word → BitVec 8} {base ret p : Word} {f g0 : Fin 32 → W
     · rsimp
     · rsimp
     · have hd : (memBytes M p n).drop pos = memBytes M (p + BitVec.ofNat 32 pos) (n - pos) :=
-        memBytes_drop M pos p n
+        jmemBytes_drop M pos p n
       have hw := wsLen_le (memBytes M (p + BitVec.ofNat 32 pos) (n - pos))
       rw [memBytes_length] at hw
       refine skw_tail (pos := pos) (x := wsLen (memBytes M (p + BitVec.ofNat 32 pos) (n - pos))) ?_ (by

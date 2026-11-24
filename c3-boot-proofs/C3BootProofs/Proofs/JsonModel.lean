@@ -42,4 +42,28 @@ theorem drop_wsLen : ∀ l : Bytes, l.drop (wsLen l) = l.dropWhile isWs
     · rw [wsLen_cons_not h, List.drop_zero, List.dropWhile_cons, h]; rfl
     · rw [wsLen_cons_ws h, List.drop_succ_cons, drop_wsLen l, List.dropWhile_cons, h]; rfl
 
+/-- The index, counting from `i`, of the quote that closes a string whose
+body starts at `l`. `none` at a backslash, at the end, or, in strict mode,
+at a control byte. -/
+def strScan (c : Bool) : Bytes → Nat → Option Nat
+  | [], _ => none
+  | b :: l, i =>
+    if b == 34 then some i else if b == 92 then none else if !c && b < 32 then none else strScan c l (i + 1)
+
+/-- `string_end`: the position after the string whose quote is at `pos`. -/
+def stringEnd (c : Bool) (d : Bytes) (pos : Nat) : Option Nat :=
+  if d.length ≤ pos then none else (strScan c (d.drop (pos + 1)) 0).map fun i => pos + 1 + i + 1
+
+theorem strScan_lt {c : Bool} : ∀ {l : Bytes} {i k : Nat}, strScan c l i = some k → k < i + l.length
+  | [], _, _, h => by simp [strScan] at h
+  | b :: l, i, k, h => by
+    simp only [strScan] at h
+    split at h
+    · cases h; simp
+    · split at h
+      · cases h
+      · split at h
+        · cases h
+        · have := strScan_lt h; simp only [List.length_cons]; omega
+
 end C3.Json

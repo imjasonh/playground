@@ -2,6 +2,9 @@ import C3BootProofs.Proofs.SliceEq
 import C3BootProofs.Proofs.Arr32Eq
 import C3BootProofs.Proofs.CheckpointLine
 import C3BootProofs.Proofs.Block
+import C3BootProofs.Proofs.ImageHelpers
+import C3BootProofs.Proofs.Outlined
+import C3BootProofs.Proofs.CondNeg12
 
 /-!
 # Steps toward a postcondition
@@ -226,6 +229,14 @@ theorem br_beq0 {a : Nat} (ha : a < 2 ^ 32) :
 theorem br_bne0 {a : Nat} (ha : a < 2 ^ 32) :
     branchTaken .bne (BitVec.ofNat 32 a) 0 = !decide (a = 0) := br_bne ha (by decide)
 
+theorem not_dec_true {p : Prop} [Decidable p] (h : (!decide p) = true) : ¬p := fun hp => by
+  rw [decide_eq_true hp] at h; cases h
+
+theorem not_dec_false {p : Prop} [Decidable p] (h : (!decide p) = false) : p := by
+  cases hd : decide p with
+  | true => exact of_decide_eq_true hd
+  | false => rw [hd] at h; cases h
+
 theorem br_bltu {a b : Nat} (ha : a < 2 ^ 32) (hb : b < 2 ^ 32) :
     branchTaken .bltu (BitVec.ofNat 32 a) (BitVec.ofNat 32 b) = decide (a < b) := by
   simp only [branchTaken, BitVec.ult, ofNat_tn ha, ofNat_tn hb]
@@ -245,7 +256,7 @@ theorem sub_ofNat_gt {a b : Nat} (h : a < b) (hb : b < 2 ^ 32) :
   rw [BitVec.toNat_sub, ofNat_tn hb, ofNat_tn (by omega)]
   omega
 
-theorem ones_and (x : Word) : (0xFFFFFFFF : Word) &&& x = x := by
+theorem jones_and (x : Word) : (0xFFFFFFFF : Word) &&& x = x := by
   have h : ∀ i : Fin 32, (0xFFFFFFFF : Word).getLsbD i.val = true := by decide
   apply BitVec.eq_of_getLsbD_eq
   intro i hi
@@ -254,12 +265,12 @@ theorem ones_and (x : Word) : (0xFFFFFFFF : Word) &&& x = x := by
 theorem one_add_ofNat (i : Nat) : (1 : Word) + BitVec.ofNat 32 i = BitVec.ofNat 32 (i + 1) := by
   rw [show (1 : Word) = BitVec.ofNat 32 1 from rfl, ofNat_add_ofNat, Nat.add_comm]
 
-theorem memBytes_drop (M : Word → BitVec 8) :
+theorem jmemBytes_drop (M : Word → BitVec 8) :
     ∀ (k : Nat) (p : Word) (n : Nat), (memBytes M p n).drop k = memBytes M (p + BitVec.ofNat 32 k) (n - k)
   | 0, p, n => by rw [List.drop_zero, add_ofNat_zero, Nat.sub_zero]
   | k + 1, p, 0 => by rw [memBytes_zero, List.drop_nil, Nat.zero_sub, memBytes_zero]
   | k + 1, p, n + 1 => by
-    rw [memBytes_succ, List.drop_succ_cons, memBytes_drop M k (p + 1) n, Nat.add_sub_add_right,
+    rw [memBytes_succ, List.drop_succ_cons, jmemBytes_drop M k (p + 1) n, Nat.add_sub_add_right,
       BitVec.add_assoc, one_add_ofNat]
 
 /-- Registers after a call: `cl` holds whatever the callee left, and the
@@ -273,8 +284,8 @@ theorem clob_app (f : Fin 32 → Word) (m : Machine) (cl : List (Fin 32)) (r : F
 theorem ite_val_zero {f : Fin 32 → Word} {r : Fin 32} (hz : f 0 = 0) :
     (if r.val = 0 then (0 : Word) else f r) = f r := by
   by_cases h : r.val = 0
-  · rw [if_pos h, ← hz, show r = 0 from Fin.ext h]
-  · rw [if_neg h]
+  · simp only [h, ↓reduceIte]; rw [← hz, show r = 0 from Fin.ext h]
+  · simp only [h, ↓reduceIte]
 
 theorem upd_upd_same (f : Fin 32 → Word) (rd : Fin 32) (v w : Word) :
     upd (upd f rd v) rd w = upd f rd w := by
@@ -291,9 +302,85 @@ macro "rsimp" : tactic => `(tactic| simp +decide only [upd_app, clob_app, ↓red
 macro "rsimp" " at " h:ident : tactic =>
   `(tactic| simp +decide only [upd_app, clob_app, ↓reduceIte] at $h:ident)
 
+theorem keepUpd {f g0 : Fin 32 → Word} {cl : List (Fin 32)} {rd : Fin 32} {v : Word} (hz : f 0 = 0)
+    (hrd : rd ∈ cl) (hfr : ∀ x, x ∉ cl → f x = g0 x) : ∀ x, x ∉ cl → upd f rd v x = g0 x := by
+  intro x hx
+  have hne : x ≠ rd := fun e => hx (by rw [e]; exact hrd)
+  rw [upd_ne' hne hz]
+  exact hfr x hx
+
+/-- Proves `∀ x, x ∉ cl → g x = g0 x` for `g` a chain of `upd`s, each to a
+register in `cl`, over a register file that the context says it of. -/
+macro "keep" : tactic =>
+  `(tactic| ((repeat refine keepUpd (by first | rfl | assumption) (by decide) ?_); try assumption))
+
 /-- Reduces the literal offsets that a step leaves, and the register
 reads inside the new register values. -/
 macro "wn" : tactic => `(tactic| try simp +decide only [upd_app, clob_app, upd_upd_same, ↓reduceIte,
   Nat.reduceAdd, Nat.reduceMod, Nat.reducePow, BitVec.reduceToNat])
+
+abbrev t2 : Fin 32 := 7
+
+/-- `~a + b` is `b - a - 1` when `a < b`. -/
+theorem not_add_ofNat {a b : Nat} (h : a < b) (hb : b < 2 ^ 32) :
+    aluEval .add (aluEval .xor (BitVec.ofNat 32 a) 0xFFFFFFFF) (BitVec.ofNat 32 b) =
+      BitVec.ofNat 32 (b - a - 1) := by
+  have hx := xor_ones_toNat (BitVec.ofNat 32 a)
+  rw [ofNat_tn (by omega)] at hx
+  apply BitVec.eq_of_toNat_eq
+  rw [ev_add, BitVec.toNat_add, ofNat_tn hb, ofNat_tn (by omega)]
+  omega
+
+theorem add_ofNat_ne_self (out : Word) {k : Nat} (h0 : 0 < k) (hk : k < 2 ^ 32) :
+    out + BitVec.ofNat 32 k ≠ out := by
+  have := add_ofNat_ne out (c := k) (d := 0) hk (by decide) (by omega)
+  rwa [add_ofNat_zero] at this
+
+theorem sep_byte {x out : Word} {n j : Nat} (h : Sep x 1 out n) (hj : j < n) :
+    x ≠ out + BitVec.ofNat 32 j := by
+  have := h 0 (by decide) j hj
+  rwa [add_ofNat_zero] at this
+
+/-- `out` holds `Ok(v)` (`some v`) or `Err(TufError::Json)` (`none`) as
+a `Result<usize, TufError>`: the tag byte at `out`, the error byte after
+it, and the value in the word at `out + 4`. No byte outside the 8 at `out`
+changed. -/
+def UsizeRes (M M' : Word → BitVec 8) (out : Word) : Option Nat → Prop
+  | some v => (∀ x, Sep x 1 out 8 → M' x = M x) ∧ M' out = 0 ∧ memLoad32 M' (out + 4) = BitVec.ofNat 32 v
+  | none => (∀ x, Sep x 1 out 8 → M' x = M x) ∧ M' out = 1 ∧ M' (out + 1) = 0x20
+
+theorem sep_byte0 {x out : Word} {n : Nat} (h : Sep x 1 out n) (hn : 0 < n) : x ≠ out := by
+  have := sep_byte h hn; rwa [add_ofNat_zero] at this
+
+theorem sep_byte1 {x out : Word} {n : Nat} (h : Sep x 1 out n) (hn : 1 < n) : x ≠ out + 1 :=
+  sep_byte h hn
+
+theorem ne_add_one (out : Word) : out + 1 ≠ out := add_ofNat_ne_self out (k := 1) (by decide) (by decide)
+
+theorem usizeRes_ok (M : Word → BitVec 8) (out : Word) (v : Nat) :
+    UsizeRes M (memStore8 (memStore32 M (out + 4) (BitVec.ofNat 32 v)) out 0) out (some v) := by
+  have h4 : Sep out 1 (out + 4) 4 := by
+    have := sep_offsets out (c := 0) (n := 1) (d := 4) (k := 4) (Or.inl (by decide)) (by decide) (by decide)
+    rwa [add_ofNat_zero] at this
+  refine ⟨fun x hx => ?_, memStore8_same _ _ _, ?_⟩
+  · rw [memStore8_ne (sep_byte0 hx (by decide)), memStore32_get_sep]
+    intro i hi j hj e
+    obtain rfl : j = 0 := by omega
+    rw [add_ofNat_zero, show (4 : Word) = BitVec.ofNat 32 4 from rfl, add_ofNat_assoc] at e
+    exact sep_byte hx (j := 4 + i) (by omega) e.symm
+  · rw [memLoad32_store8_sep h4, memLoad32_store32_same]
+
+theorem usizeRes_err (M : Word → BitVec 8) (out : Word) :
+    UsizeRes M (memStore8 (memStore8 M (out + 1) 0x20) out 1) out none := by
+  refine ⟨fun x hx => ?_, memStore8_same _ _ _, ?_⟩
+  · rw [memStore8_ne (sep_byte0 hx (by decide)), memStore8_ne (sep_byte1 hx (by decide))]
+  · rw [memStore8_ne (ne_add_one out), memStore8_same]
+
+theorem usizeRes_err16 (M : Word → BitVec 8) (out : Word) : UsizeRes M (memStore16 M out 0x2001) out none := by
+  unfold memStore16
+  refine ⟨fun x hx => ?_, ?_, memStore8_same _ _ _⟩
+  · rw [memStore8_ne (sep_byte1 hx (by decide)), memStore8_ne (sep_byte0 hx (by decide))]
+  · rw [memStore8_ne (Ne.symm (ne_add_one out)), memStore8_same]
+    rfl
 
 end C3.RV32
