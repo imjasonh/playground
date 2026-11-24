@@ -1,4 +1,6 @@
 import C3BootProofs.Proofs.SvGsSpec
+import C3BootProofs.Models.SafegcdP256
+import C3BootProofs.Models.SafegcdP384
 
 /-!
 # `sigstore::verify` computes `sigstoreVerify`
@@ -56,8 +58,6 @@ theorem sv_verify_spec {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle
     (SH0 : SvShaCode Me)
     (KS : SvKSep B)
     (PE0 : PvEnv7 Me)
-    (side : ∀ i, i < 4 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), ((reg n a2) + BitVec.ofNat 32 0x3C)) → (memLoad32 Me (y1 + 0xFFFFFFFC)) ≠ 0 → ∀ M, PvSide M (memLoad32 Me (((y1) + BitVec.ofNat 32 0x20) + 0xFFFFFFF4)) (B + 0x21A0 + BitVec.ofNat 32 0x1020) 48 (B + 0x21A0 + BitVec.ofNat 32 0xD0)
-      (B + 0x21A0 + BitVec.ofNat 32 0x100))
     (EC0 : SvEcCode Me)
     (IC0 : SvIvCode Me)
     (UC0 : SvUpCode Me)
@@ -79,12 +79,8 @@ theorem sv_verify_spec {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle
     (GD : CodeIn Me (BitVec.ofNat 32 p256GMontAddress) p256GMontData)
     (OD : CodeIn Me (BitVec.ofNat 32 p256MontOneAddress) p256MontOneData)
     (AD : CodeIn Me (BitVec.ofNat 32 p256AffineIdXAddress) p256AffineIdXData)
-    (hzi : ∀ Z τd_2 τf_2 Dz_2 Fz_2, τd_2 ≤ 1 → τf_2 ≤ 1 → sgnVal τf_2 Fz_2 = (p256Sz Me Z).f → sgnVal τd_2 Dz_2 = (p256Sz Me Z).d →
-        normVal8 τd_2 τf_2 Dz_2 (accV Me (BitVec.ofNat 32 0x3FCC4B38) 8) < p256)
     (S2 : SvSha2Code Me)
     (KS' : SvK2Sep B)
-    (side' : ∀ i, i < 4 → ∀ y0 y1, (y0, y1) = svIter (fun s => (s.1 + BitVec.ofNat 32 0xFFFFFFE0, s.2 + BitVec.ofNat 32 0x20)) i ((BitVec.ofNat 32 0x80), ((reg n a2) + BitVec.ofNat 32 0x198)) → (memLoad32 Me (y1 + 0x20)) ≠ 0 → ∀ M, PvSide M (memLoad32 Me (((y1) + BitVec.ofNat 32 0x20) + 0x18)) (B + 0x21A0 + BitVec.ofNat 32 0x420) 32 (B + 0x21A0 + BitVec.ofNat 32 0xA40)
-      (B + 0x21A0 + BitVec.ofNat 32 0xA70))
     (CK0 : SvCkCode Me)
     (EE0 : EvEnv Me)
     (hiv : (s5Hv Me (BitVec.ofNat 32 0x3FCC4AF8)).toList = Sha512.h0)
@@ -97,7 +93,10 @@ theorem sv_verify_spec {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle
       SvOkRet B (reg n a0) (fun k => reg n (savedReg k)) n (BitVec.ofNat 32 (v.signedTime % 2 ^ 32))
         (BitVec.ofNat 32 (v.signedTime / 2 ^ 32)) (BitVec.ofNat 32 (v.logIndex % 2 ^ 32))
         (BitVec.ofNat 32 (v.logIndex / 2 ^ 32)) := by
-  rcases sv_verify_at Bd R C E F s rsp hret hO D0 SD0 SH0 KS PE0 side EC0 IC0 UC0 BG0 RS BY0 dg_in UE0 N80 PM0 WM0 PT0 WN0 ME P2C0 GDC0 SC0 hidC GD OD AD hzi S2 KS' side' CK0 EE0 hiv RK0 hOk with e | p | hsc
+  rcases sv_verify_at Bd R C E F s rsp hret hO D0 SD0 SH0 KS PE0
+    (fun _ _ _ _ _ _ M => C3.RV32.Safegcd.pvSide_holds M _ _ _ _ _) EC0 IC0 UC0 BG0 RS BY0 dg_in UE0 N80 PM0 WM0 PT0 WN0
+    ME P2C0 GDC0 SC0 hidC GD OD AD (C3.RV32.Safegcd.hzi_holds D0) S2 KS'
+    (fun _ _ _ _ _ _ M => C3.RV32.Safegcd.pvSide_holds M _ _ _ _ _) CK0 EE0 hiv RK0 hOk with e | p | hsc
   · exact .inl e
   · exact .inr (.inl p)
   refine .inr (.inr ?_)
