@@ -1,5 +1,6 @@
 import C3BootProofs.Models.Safegcd
-import C3BootProofs.Proofs.SvP256All
+import C3BootProofs.Proofs.P256Defs
+import C3BootProofs.Proofs.P2Lib
 
 /-!
 # Safegcd: the range bound on `sigstore::verify`'s inversion of `Z`
@@ -54,14 +55,15 @@ inverse that `normVal8` takes from the inversion's `d` is below `p`, for every `
 theorem hzi_holds {Me : Word → BitVec 8} (D0 : P2Data Me) :
     ∀ Z τd τf Dz Fz, τd ≤ 1 → τf ≤ 1 → sgnVal τf Fz = (p256Sz Me Z).f → sgnVal τd Dz = (p256Sz Me Z).d →
       normVal8 τd τf Dz (accV Me (BitVec.ofNat 32 (img% p256ModulusAddress)) 8) < p256 := by
-  intro Z τd τf Dz Fz hτd _ _ hd
+  intro Z τd τf Dz Fz _ _ _ hd
   have hP : accV Me (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 = p256 := D0.N
   have hR : accV Me (BitVec.ofNat 32 (img% p256R2Address)) 8 < accV Me (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := D0.r2lt
   have h0 : 0 < accV Me (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 := by rw [hP]; unfold p256; decide
   have hW : accV Me (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 ≤ 2 ^ 256 := by rw [hP]; exact p256_le
   have hdb : (p256Sz Me Z).d.natAbs < accV Me (BitVec.ofNat 32 (img% p256ModulusAddress)) 8 :=
     (zvLoop_deB h0 hW 10 (p256Zv0 Me Z) (deB_init hR)).1
-  rw [sv_abs hτd hd]
+  have e : Dz = (p256Sz Me Z).d.natAbs := by rw [← hd, sgnVal_natAbs]
+  rw [e]
   rw [hP] at hdb ⊢
   exact normVal8_lt hdb p256_le
 
