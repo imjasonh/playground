@@ -78,10 +78,33 @@ pub fn canonical_value(v: &Value) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// Re-encodes the JSON document `json` as canonical JSON.
+/// Re-encodes the JSON document `json`, ordinary or already canonical, as
+/// canonical JSON.
 pub fn canonical(json: &[u8]) -> Result<Vec<u8>, String> {
-    let v: Value = serde_json::from_slice(json).map_err(|e| e.to_string())?;
+    let v: Value = serde_json::from_slice(&escape_controls(json)).map_err(|e| e.to_string())?;
     canonical_value(&v)
+}
+
+/// Escapes the raw control characters, such as a PEM key's newlines, that
+/// canonical JSON leaves in strings and ordinary JSON doesn't allow.
+fn escape_controls(json: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(json.len());
+    let (mut in_string, mut escaped) = (false, false);
+    for &b in json {
+        if in_string && b < 0x20 {
+            out.extend_from_slice(format!("\\u{b:04x}").as_bytes());
+            continue;
+        }
+        out.push(b);
+        if escaped {
+            escaped = false;
+        } else if in_string && b == b'\\' {
+            escaped = true;
+        } else if b == b'"' {
+            in_string = !in_string;
+        }
+    }
+    out
 }
 
 /// The canonical form of a root to compile into the bootloader.
@@ -415,6 +438,18 @@ mod tests {
     use super::*;
 
     const KEYS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../testdata/keys");
+
+    #[test]
+    fn canonical_json_reencodes_to_itself() {
+        let root = std::fs::read(Path::new(KEYS).join("tuf-dev-root.json")).unwrap();
+        assert!(root.contains(&b'\n'));
+        assert_eq!(canonical(&root).unwrap(), root);
+        let pinned = include_bytes!("../../release/pinned-root.json");
+        assert_eq!(
+            canonical(include_bytes!("../../testdata/tuf/16.root.json")).unwrap(),
+            pinned
+        );
+    }
 
     #[test]
     fn the_committed_development_root_is_current() {
