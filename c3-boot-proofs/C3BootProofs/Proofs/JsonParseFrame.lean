@@ -15,301 +15,301 @@ open C3.Image C3.Json
 
 set_option maxRecDepth 20000
 
-theorem pa_at_0 : fetchRel jsonParseCode 0x0 = some (.aluImm .add sp sp 0xFFFFFF10, 2) := by decide
-theorem pa_at_2 : fetchRel jsonParseCode 0x2 = some (.store .sw sp ra 0xEC, 2) := by decide
-theorem pa_at_4 : fetchRel jsonParseCode 0x4 = some (.store .sw sp (8 : Fin 32) 0xE8, 2) := by decide
-theorem pa_at_6 : fetchRel jsonParseCode 0x6 = some (.store .sw sp (9 : Fin 32) 0xE4, 2) := by decide
-theorem pa_at_8 : fetchRel jsonParseCode 0x8 = some (.store .sw sp (18 : Fin 32) 0xE0, 2) := by decide
-theorem pa_at_a : fetchRel jsonParseCode 0xA = some (.store .sw sp (19 : Fin 32) 0xDC, 2) := by decide
-theorem pa_at_c : fetchRel jsonParseCode 0xC = some (.store .sw sp (20 : Fin 32) 0xD8, 2) := by decide
-theorem pa_at_e : fetchRel jsonParseCode 0xE = some (.store .sw sp (21 : Fin 32) 0xD4, 2) := by decide
-theorem pa_at_10 : fetchRel jsonParseCode 0x10 = some (.store .sw sp (22 : Fin 32) 0xD0, 2) := by decide
-theorem pa_at_12 : fetchRel jsonParseCode 0x12 = some (.store .sw sp (23 : Fin 32) 0xCC, 2) := by decide
-theorem pa_at_14 : fetchRel jsonParseCode 0x14 = some (.store .sw sp (24 : Fin 32) 0xC8, 2) := by decide
-theorem pa_at_16 : fetchRel jsonParseCode 0x16 = some (.store .sw sp (25 : Fin 32) 0xC4, 2) := by decide
-theorem pa_at_18 : fetchRel jsonParseCode 0x18 = some (.store .sw sp (26 : Fin 32) 0xC0, 2) := by decide
-theorem pa_at_1a : fetchRel jsonParseCode 0x1A = some (.store .sw sp (27 : Fin 32) 0xBC, 2) := by decide
-theorem pa_at_1c : fetchRel jsonParseCode 0x1C = some (.alu .add (19 : Fin 32) x0 a3, 2) := by decide
-theorem pa_at_1e : fetchRel jsonParseCode 0x1E = some (.alu .add (24 : Fin 32) x0 a2, 2) := by decide
-theorem pa_at_20 : fetchRel jsonParseCode 0x20 = some (.alu .add (23 : Fin 32) x0 a1, 2) := by decide
-theorem pa_at_22 : fetchRel jsonParseCode 0x22 = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
-theorem pa_at_24 : fetchRel jsonParseCode 0x24 = some (.aluImm .add a0 x0 0x10, 2) := by decide
-theorem pa_at_26 : fetchRel jsonParseCode 0x26 = some (.aluImm .add a1 sp 0x14, 2) := by decide
-theorem pa_at_28 : fetchRel jsonParseCode 0x28 = some (.branch .beq a0 x0 0x10, 2) := by decide
-theorem pa_at_2a : fetchRel jsonParseCode 0x2A = some (.store .sw a1 x0 0xFFFFFFFC, 4) := by decide
-theorem pa_at_2e : fetchRel jsonParseCode 0x2E = some (.store .sb a1 x0 0x0, 4) := by decide
-theorem pa_at_32 : fetchRel jsonParseCode 0x32 = some (.aluImm .add a1 a1 0x8, 2) := by decide
-theorem pa_at_34 : fetchRel jsonParseCode 0x34 = some (.aluImm .add a0 a0 0xFFFFFFFF, 2) := by decide
-theorem pa_at_36 : fetchRel jsonParseCode 0x36 = some (.branch .bne a0 x0 0xFFFFFFF4, 2) := by decide
-theorem pa_at_38 : fetchRel jsonParseCode 0x38 = some (.branch .beq (19 : Fin 32) x0 0x8, 4) := by decide
-theorem pa_at_3c : fetchRel jsonParseCode 0x3C = some (.aluImm .add (26 : Fin 32) x0 0x0, 2) := by decide
-theorem pa_at_3e : fetchRel jsonParseCode 0x3E = some (.jal x0 0x12, 2) := by decide
-theorem pa_at_40 : fetchRel jsonParseCode 0x40 = some (.alu .add a0 x0 (23 : Fin 32), 2) := by decide
-theorem pa_at_42 : fetchRel jsonParseCode 0x42 = some (.alu .add a1 x0 (24 : Fin 32), 2) := by decide
-theorem pa_at_44 : fetchRel jsonParseCode 0x44 = some (.aluImm .add a2 x0 0x0, 2) := by decide
-theorem pa_at_46 : fetchRel jsonParseCode 0x46 = some (.auipc ra 0xFFFFF000, 4) := by decide
-theorem pa_at_4a : fetchRel jsonParseCode 0x4A = some (.jalr ra ra 0xFFFFFBCA, 4) := by decide
-theorem pa_at_4e : fetchRel jsonParseCode 0x4E = some (.alu .add (26 : Fin 32) x0 a0, 2) := by decide
-theorem pa_at_50 : fetchRel jsonParseCode 0x50 = some (.aluImm .add (27 : Fin 32) x0 0x0, 2) := by decide
-theorem pa_at_52 : fetchRel jsonParseCode 0x52 = some (.aluImm .add (8 : Fin 32) x0 0x0, 2) := by decide
-theorem pa_at_54 : fetchRel jsonParseCode 0x54 = some (.aluImm .add (20 : Fin 32) (24 : Fin 32) 0x1, 4) := by decide
-theorem pa_at_58 : fetchRel jsonParseCode 0x58 = some (.aluImm .add (21 : Fin 32) x0 0xF, 2) := by decide
-theorem pa_at_5a : fetchRel jsonParseCode 0x5A = some (.alu .add (25 : Fin 32) x0 (26 : Fin 32), 2) := by decide
-theorem pa_at_5c : fetchRel jsonParseCode 0x5C = some (.branch .beq (27 : Fin 32) (20 : Fin 32) 0x270, 4) := by decide
-theorem pa_at_60 : fetchRel jsonParseCode 0x60 = some (.branch .bgeu (25 : Fin 32) (24 : Fin 32) 0x26C, 4) := by decide
-theorem pa_at_64 : fetchRel jsonParseCode 0x64 = some (.alu .add a0 (23 : Fin 32) (25 : Fin 32), 4) := by decide
-theorem pa_at_68 : fetchRel jsonParseCode 0x68 = some (.load .lbu a0 a0 0x0, 4) := by decide
-theorem pa_at_6c : fetchRel jsonParseCode 0x6C = some (.aluImm .add a1 a0 0xFFFFFFDE, 4) := by decide
-theorem pa_at_70 : fetchRel jsonParseCode 0x70 = some (.aluImm .add (27 : Fin 32) (27 : Fin 32) 0x1, 2) := by decide
-theorem pa_at_72 : fetchRel jsonParseCode 0x72 = some (.branch .beq a1 x0 0x96, 2) := by decide
-theorem pa_at_74 : fetchRel jsonParseCode 0x74 = some (.aluImm .add a1 a0 0xFFFFFFA5, 4) := by decide
-theorem pa_at_78 : fetchRel jsonParseCode 0x78 = some (.aluImm .add (9 : Fin 32) a0 0xFFFFFF85, 4) := by decide
-theorem pa_at_7c : fetchRel jsonParseCode 0x7C = some (.branch .beq a1 x0 0x16, 2) := by decide
-theorem pa_at_7e : fetchRel jsonParseCode 0x7E = some (.aluImm .add a1 a0 0xFFFFFF9A, 4) := by decide
-theorem pa_at_82 : fetchRel jsonParseCode 0x82 = some (.branch .beq a1 x0 0x58, 2) := by decide
-theorem pa_at_84 : fetchRel jsonParseCode 0x84 = some (.aluImm .add a1 a0 0xFFFFFF92, 4) := by decide
-theorem pa_at_88 : fetchRel jsonParseCode 0x88 = some (.branch .beq a1 x0 0x52, 2) := by decide
-theorem pa_at_8a : fetchRel jsonParseCode 0x8A = some (.aluImm .add a1 a0 0xFFFFFF8C, 4) := by decide
-theorem pa_at_8e : fetchRel jsonParseCode 0x8E = some (.branch .beq a1 x0 0x4C, 2) := by decide
-theorem pa_at_90 : fetchRel jsonParseCode 0x90 = some (.branch .bne (9 : Fin 32) x0 0x5C, 2) := by decide
-theorem pa_at_92 : fetchRel jsonParseCode 0x92 = some (.branch .bltu (21 : Fin 32) (8 : Fin 32) 0x23A, 4) := by decide
-theorem pa_at_96 : fetchRel jsonParseCode 0x96 = some (.aluImm .sll a0 (8 : Fin 32) 0x3, 4) := by decide
-theorem pa_at_9a : fetchRel jsonParseCode 0x9A = some (.aluImm .add a1 sp 0x10, 2) := by decide
-theorem pa_at_9c : fetchRel jsonParseCode 0x9C = some (.alu .add a0 a0 a1, 2) := by decide
-theorem pa_at_9e : fetchRel jsonParseCode 0x9E = some (.aluImm .sltu a1 (9 : Fin 32) 0x1, 4) := by decide
-theorem pa_at_a2 : fetchRel jsonParseCode 0xA2 = some (.store .sw a0 (25 : Fin 32) 0x0, 4) := by decide
-theorem pa_at_a6 : fetchRel jsonParseCode 0xA6 = some (.store .sb a0 a1 0x4, 4) := by decide
-theorem pa_at_aa : fetchRel jsonParseCode 0xAA = some (.aluImm .add (25 : Fin 32) (25 : Fin 32) 0x1, 2) := by decide
-theorem pa_at_ac : fetchRel jsonParseCode 0xAC = some (.branch .bne (19 : Fin 32) x0 0x14, 4) := by decide
-theorem pa_at_b0 : fetchRel jsonParseCode 0xB0 = some (.alu .add a0 x0 (23 : Fin 32), 2) := by decide
-theorem pa_at_b2 : fetchRel jsonParseCode 0xB2 = some (.alu .add a1 x0 (24 : Fin 32), 2) := by decide
-theorem pa_at_b4 : fetchRel jsonParseCode 0xB4 = some (.alu .add a2 x0 (25 : Fin 32), 2) := by decide
-theorem pa_at_b6 : fetchRel jsonParseCode 0xB6 = some (.auipc ra 0xFFFFF000, 4) := by decide
-theorem pa_at_ba : fetchRel jsonParseCode 0xBA = some (.jalr ra ra 0xFFFFFB5A, 4) := by decide
-theorem pa_at_be : fetchRel jsonParseCode 0xBE = some (.alu .add (25 : Fin 32) x0 a0, 2) := by decide
-theorem pa_at_c0 : fetchRel jsonParseCode 0xC0 = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0x1, 2) := by decide
-theorem pa_at_c2 : fetchRel jsonParseCode 0xC2 = some (.alu .add a0 (23 : Fin 32) (25 : Fin 32), 4) := by decide
-theorem pa_at_c6 : fetchRel jsonParseCode 0xC6 = some (.branch .bne (9 : Fin 32) x0 0x192, 4) := by decide
-theorem pa_at_ca : fetchRel jsonParseCode 0xCA = some (.branch .bgeu (25 : Fin 32) (24 : Fin 32) 0x1D6, 4) := by decide
-theorem pa_at_ce : fetchRel jsonParseCode 0xCE = some (.load .lbu a0 a0 0x0, 4) := by decide
-theorem pa_at_d2 : fetchRel jsonParseCode 0xD2 = some (.aluImm .add a0 a0 0xFFFFFF83, 4) := by decide
-theorem pa_at_d6 : fetchRel jsonParseCode 0xD6 = some (.branch .beq a0 x0 0x4E, 2) := by decide
-theorem pa_at_d8 : fetchRel jsonParseCode 0xD8 = some (.jal x0 0x1C8, 2) := by decide
-theorem pa_at_da : fetchRel jsonParseCode 0xDA = some (.aluImm .add a0 sp 0xA8, 2) := by decide
-theorem pa_at_dc : fetchRel jsonParseCode 0xDC = some (.alu .add a1 x0 (23 : Fin 32), 2) := by decide
-theorem pa_at_de : fetchRel jsonParseCode 0xDE = some (.alu .add a2 x0 (24 : Fin 32), 2) := by decide
-theorem pa_at_e0 : fetchRel jsonParseCode 0xE0 = some (.alu .add a3 x0 (25 : Fin 32), 2) := by decide
-theorem pa_at_e2 : fetchRel jsonParseCode 0xE2 = some (.auipc ra 0xFFFFF000, 4) := by decide
-theorem pa_at_e6 : fetchRel jsonParseCode 0xE6 = some (.jalr ra ra 0xFFFFFA24, 4) := by decide
-theorem pa_at_ea : fetchRel jsonParseCode 0xEA = some (.jal x0 0x30, 2) := by decide
-theorem pa_at_ec : fetchRel jsonParseCode 0xEC = some (.aluImm .add a0 a0 0xFFFFFFD0, 4) := by decide
-theorem pa_at_f0 : fetchRel jsonParseCode 0xF0 = some (.aluImm .add a1 x0 0xA, 2) := by decide
-theorem pa_at_f2 : fetchRel jsonParseCode 0xF2 = some (.branch .bgeu a0 a1 0x1DA, 4) := by decide
-theorem pa_at_f6 : fetchRel jsonParseCode 0xF6 = some (.aluImm .add a0 sp 0xA8, 2) := by decide
-theorem pa_at_f8 : fetchRel jsonParseCode 0xF8 = some (.alu .add a1 x0 (23 : Fin 32), 2) := by decide
-theorem pa_at_fa : fetchRel jsonParseCode 0xFA = some (.alu .add a2 x0 (24 : Fin 32), 2) := by decide
-theorem pa_at_fc : fetchRel jsonParseCode 0xFC = some (.alu .add a3 x0 (25 : Fin 32), 2) := by decide
-theorem pa_at_fe : fetchRel jsonParseCode 0xFE = some (.auipc ra 0xFFFFF000, 4) := by decide
-theorem pa_at_102 : fetchRel jsonParseCode 0x102 = some (.jalr ra ra 0xFFFFFAA4, 4) := by decide
-theorem pa_at_106 : fetchRel jsonParseCode 0x106 = some (.jal x0 0x14, 2) := by decide
-theorem pa_at_108 : fetchRel jsonParseCode 0x108 = some (.aluImm .add a0 sp 0xA8, 2) := by decide
-theorem pa_at_10a : fetchRel jsonParseCode 0x10A = some (.alu .add a1 x0 (23 : Fin 32), 2) := by decide
-theorem pa_at_10c : fetchRel jsonParseCode 0x10C = some (.alu .add a2 x0 (24 : Fin 32), 2) := by decide
-theorem pa_at_10e : fetchRel jsonParseCode 0x10E = some (.alu .add a3 x0 (25 : Fin 32), 2) := by decide
-theorem pa_at_110 : fetchRel jsonParseCode 0x110 = some (.alu .add a4 x0 (19 : Fin 32), 2) := by decide
-theorem pa_at_112 : fetchRel jsonParseCode 0x112 = some (.auipc ra 0xFFFFE000, 4) := by decide
-theorem pa_at_116 : fetchRel jsonParseCode 0x116 = some (.jalr ra ra 0x782, 4) := by decide
-theorem pa_at_11a : fetchRel jsonParseCode 0x11A = some (.load .lbu a0 sp 0xA8, 4) := by decide
-theorem pa_at_11e : fetchRel jsonParseCode 0x11E = some (.branch .bne a0 x0 0x1E0, 4) := by decide
-theorem pa_at_122 : fetchRel jsonParseCode 0x122 = some (.load .lw (25 : Fin 32) sp 0xAC, 2) := by decide
-theorem pa_at_124 : fetchRel jsonParseCode 0x124 = some (.alu .add (22 : Fin 32) x0 (8 : Fin 32), 2) := by decide
-theorem pa_at_126 : fetchRel jsonParseCode 0x126 = some (.store .sw sp (18 : Fin 32) 0xC, 2) := by decide
-theorem pa_at_128 : fetchRel jsonParseCode 0x128 = some (.aluImm .add (21 : Fin 32) x0 0x0, 2) := by decide
-theorem pa_at_12a : fetchRel jsonParseCode 0x12A = some (.alu .add (8 : Fin 32) x0 (22 : Fin 32), 2) := by decide
-theorem pa_at_12c : fetchRel jsonParseCode 0x12C = some (.aluImm .add a0 x0 0x11, 2) := by decide
-theorem pa_at_12e : fetchRel jsonParseCode 0x12E = some (.branch .beq (21 : Fin 32) a0 0x13E, 4) := by decide
-theorem pa_at_132 : fetchRel jsonParseCode 0x132 = some (.alu .add a0 x0 (25 : Fin 32), 2) := by decide
-theorem pa_at_134 : fetchRel jsonParseCode 0x134 = some (.branch .bne (19 : Fin 32) x0 0x12, 4) := by decide
-theorem pa_at_138 : fetchRel jsonParseCode 0x138 = some (.alu .add a0 x0 (23 : Fin 32), 2) := by decide
-theorem pa_at_13a : fetchRel jsonParseCode 0x13A = some (.alu .add a1 x0 (24 : Fin 32), 2) := by decide
-theorem pa_at_13c : fetchRel jsonParseCode 0x13C = some (.alu .add a2 x0 (25 : Fin 32), 2) := by decide
-theorem pa_at_13e : fetchRel jsonParseCode 0x13E = some (.auipc ra 0xFFFFF000, 4) := by decide
-theorem pa_at_142 : fetchRel jsonParseCode 0x142 = some (.jalr ra ra 0xFFFFFAD2, 4) := by decide
-theorem pa_at_146 : fetchRel jsonParseCode 0x146 = some (.branch .beq (8 : Fin 32) x0 0x18C, 4) := by decide
-theorem pa_at_14a : fetchRel jsonParseCode 0x14A = some (.aluImm .add a1 x0 0x10, 2) := by decide
-theorem pa_at_14c : fetchRel jsonParseCode 0x14C = some (.branch .bltu a1 (22 : Fin 32) 0x1A2, 4) := by decide
-theorem pa_at_150 : fetchRel jsonParseCode 0x150 = some (.branch .bgeu a0 (24 : Fin 32) 0x19E, 4) := by decide
-theorem pa_at_154 : fetchRel jsonParseCode 0x154 = some (.aluImm .add (20 : Fin 32) (8 : Fin 32) 0xFFFFFFFF, 4) := by decide
-theorem pa_at_158 : fetchRel jsonParseCode 0x158 = some (.alu .add a1 (23 : Fin 32) a0, 4) := by decide
-theorem pa_at_15c : fetchRel jsonParseCode 0x15C = some (.aluImm .sll a3 (20 : Fin 32) 0x3, 4) := by decide
-theorem pa_at_160 : fetchRel jsonParseCode 0x160 = some (.load .lbu a2 a1 0x0, 4) := by decide
-theorem pa_at_164 : fetchRel jsonParseCode 0x164 = some (.aluImm .add a1 sp 0x10, 2) := by decide
-theorem pa_at_166 : fetchRel jsonParseCode 0x166 = some (.alu .add a1 a1 a3, 2) := by decide
-theorem pa_at_168 : fetchRel jsonParseCode 0x168 = some (.load .lbu (9 : Fin 32) a1 0x4, 4) := by decide
-theorem pa_at_16c : fetchRel jsonParseCode 0x16C = some (.aluImm .add a3 a2 0xFFFFFFA3, 4) := by decide
-theorem pa_at_170 : fetchRel jsonParseCode 0x170 = some (.aluImm .add (21 : Fin 32) (21 : Fin 32) 0x1, 2) := by decide
-theorem pa_at_172 : fetchRel jsonParseCode 0x172 = some (.branch .beq a3 x0 0xCA, 2) := by decide
-theorem pa_at_174 : fetchRel jsonParseCode 0x174 = some (.aluImm .add a3 a2 0xFFFFFF83, 4) := by decide
-theorem pa_at_178 : fetchRel jsonParseCode 0x178 = some (.branch .bne a3 x0 0xFE, 2) := by decide
-theorem pa_at_17a : fetchRel jsonParseCode 0x17A = some (.branch .beq (9 : Fin 32) x0 0x174, 4) := by decide
-theorem pa_at_17e : fetchRel jsonParseCode 0x17E = some (.load .lw a1 a1 0x0, 2) := by decide
-theorem pa_at_180 : fetchRel jsonParseCode 0x180 = some (.aluImm .add (25 : Fin 32) a0 0x1, 4) := by decide
-theorem pa_at_184 : fetchRel jsonParseCode 0x184 = some (.branch .bltu (25 : Fin 32) a1 0x16A, 4) := by decide
-theorem pa_at_188 : fetchRel jsonParseCode 0x188 = some (.alu .sub a2 (25 : Fin 32) a1, 4) := by decide
-theorem pa_at_18c : fetchRel jsonParseCode 0x18C = some (.alu .add a1 a1 (23 : Fin 32), 2) := by decide
-theorem pa_at_18e : fetchRel jsonParseCode 0x18E = some (.aluImm .add a0 sp 0xA8, 2) := by decide
-theorem pa_at_190 : fetchRel jsonParseCode 0x190 = some (.auipc ra 0xFFFFF000, 4) := by decide
-theorem pa_at_194 : fetchRel jsonParseCode 0x194 = some (.jalr ra ra 0x288, 4) := by decide
-theorem pa_at_198 : fetchRel jsonParseCode 0x198 = some (.load .lw (9 : Fin 32) sp 0xA8, 2) := by decide
-theorem pa_at_19a : fetchRel jsonParseCode 0x19A = some (.load .lbu (18 : Fin 32) sp 0xAC, 4) := by decide
-theorem pa_at_19e : fetchRel jsonParseCode 0x19E = some (.branch .beq (9 : Fin 32) x0 0xA8, 2) := by decide
-theorem pa_at_1a0 : fetchRel jsonParseCode 0x1A0 = some (.store .sw sp (26 : Fin 32) 0x8, 2) := by decide
-theorem pa_at_1a2 : fetchRel jsonParseCode 0x1A2 = some (.aluImm .add a2 x0 0x7, 2) := by decide
-theorem pa_at_1a4 : fetchRel jsonParseCode 0x1A4 = some (.aluImm .add a0 sp 0x95, 4) := by decide
-theorem pa_at_1a8 : fetchRel jsonParseCode 0x1A8 = some (.aluImm .add a1 sp 0xAD, 4) := by decide
-theorem pa_at_1ac : fetchRel jsonParseCode 0x1AC = some (.auipc ra 0xB000, 4) := by decide
-theorem pa_at_1b0 : fetchRel jsonParseCode 0x1B0 = some (.jalr ra ra 0x1A0, 4) := by decide
-theorem pa_at_1b4 : fetchRel jsonParseCode 0x1B4 = some (.aluImm .add (8 : Fin 32) x0 0x0, 2) := by decide
-theorem pa_at_1b6 : fetchRel jsonParseCode 0x1B6 = some (.store .sw sp (9 : Fin 32) 0x90, 2) := by decide
-theorem pa_at_1b8 : fetchRel jsonParseCode 0x1B8 = some (.store .sb sp (18 : Fin 32) 0x94, 4) := by decide
-theorem pa_at_1bc : fetchRel jsonParseCode 0x1BC = some (.alu .add (9 : Fin 32) x0 (18 : Fin 32), 2) := by decide
-theorem pa_at_1be : fetchRel jsonParseCode 0x1BE = some (.alu .add (26 : Fin 32) x0 (8 : Fin 32), 2) := by decide
-theorem pa_at_1c0 : fetchRel jsonParseCode 0x1C0 = some (.aluImm .add a0 sp 0xA8, 2) := by decide
-theorem pa_at_1c2 : fetchRel jsonParseCode 0x1C2 = some (.aluImm .add a1 sp 0x90, 2) := by decide
-theorem pa_at_1c4 : fetchRel jsonParseCode 0x1C4 = some (.auipc ra 0xFFFFE000, 4) := by decide
-theorem pa_at_1c8 : fetchRel jsonParseCode 0x1C8 = some (.jalr ra ra 0x5E6, 4) := by decide
-theorem pa_at_1cc : fetchRel jsonParseCode 0x1CC = some (.load .lbu a0 sp 0xA8, 4) := by decide
-theorem pa_at_1d0 : fetchRel jsonParseCode 0x1D0 = some (.branch .bne a0 x0 0xEC, 2) := by decide
-theorem pa_at_1d2 : fetchRel jsonParseCode 0x1D2 = some (.load .lw (8 : Fin 32) sp 0xAC, 2) := by decide
-theorem pa_at_1d4 : fetchRel jsonParseCode 0x1D4 = some (.branch .beq (8 : Fin 32) x0 0x7E, 2) := by decide
-theorem pa_at_1d6 : fetchRel jsonParseCode 0x1D6 = some (.load .lw (18 : Fin 32) sp 0xB0, 2) := by decide
-theorem pa_at_1d8 : fetchRel jsonParseCode 0x1D8 = some (.branch .beq (19 : Fin 32) x0 0x28, 4) := by decide
-theorem pa_at_1dc : fetchRel jsonParseCode 0x1DC = some (.branch .beq (26 : Fin 32) x0 0xFFFFFFE0, 4) := by decide
-theorem pa_at_1e0 : fetchRel jsonParseCode 0x1E0 = some (.alu .add a2 x0 (9 : Fin 32), 2) := by decide
-theorem pa_at_1e2 : fetchRel jsonParseCode 0x1E2 = some (.branch .bltu (9 : Fin 32) (18 : Fin 32) 0x6, 4) := by decide
-theorem pa_at_1e6 : fetchRel jsonParseCode 0x1E6 = some (.alu .add a2 x0 (18 : Fin 32), 2) := by decide
-theorem pa_at_1e8 : fetchRel jsonParseCode 0x1E8 = some (.alu .add a0 x0 (26 : Fin 32), 2) := by decide
-theorem pa_at_1ea : fetchRel jsonParseCode 0x1EA = some (.alu .add a1 x0 (8 : Fin 32), 2) := by decide
-theorem pa_at_1ec : fetchRel jsonParseCode 0x1EC = some (.auipc ra 0xB000, 4) := by decide
-theorem pa_at_1f0 : fetchRel jsonParseCode 0x1F0 = some (.jalr ra ra 0xD8, 4) := by decide
-theorem pa_at_1f4 : fetchRel jsonParseCode 0x1F4 = some (.branch .bne a0 x0 0x6, 2) := by decide
-theorem pa_at_1f6 : fetchRel jsonParseCode 0x1F6 = some (.alu .sub a0 (9 : Fin 32) (18 : Fin 32), 4) := by decide
-theorem pa_at_1fa : fetchRel jsonParseCode 0x1FA = some (.branch .blt a0 x0 0xFFFFFFC2, 4) := by decide
-theorem pa_at_1fe : fetchRel jsonParseCode 0x1FE = some (.jal x0 0x12A, 2) := by decide
-theorem pa_at_200 : fetchRel jsonParseCode 0x200 = some (.load .lw a0 sp 0x90, 2) := by decide
-theorem pa_at_202 : fetchRel jsonParseCode 0x202 = some (.load .lw a1 sp 0x94, 2) := by decide
-theorem pa_at_204 : fetchRel jsonParseCode 0x204 = some (.load .lw a2 sp 0x98, 2) := by decide
-theorem pa_at_206 : fetchRel jsonParseCode 0x206 = some (.store .sw sp a0 0x9C, 2) := by decide
-theorem pa_at_208 : fetchRel jsonParseCode 0x208 = some (.store .sw sp a1 0xA0, 2) := by decide
-theorem pa_at_20a : fetchRel jsonParseCode 0x20A = some (.store .sw sp a2 0xA4, 2) := by decide
-theorem pa_at_20c : fetchRel jsonParseCode 0x20C = some (.aluImm .add (9 : Fin 32) x0 0x1, 2) := by decide
-theorem pa_at_20e : fetchRel jsonParseCode 0x20E = some (.aluImm .add a0 sp 0xA8, 2) := by decide
-theorem pa_at_210 : fetchRel jsonParseCode 0x210 = some (.aluImm .add a1 sp 0x9C, 2) := by decide
-theorem pa_at_212 : fetchRel jsonParseCode 0x212 = some (.auipc ra 0xFFFFE000, 4) := by decide
-theorem pa_at_216 : fetchRel jsonParseCode 0x216 = some (.jalr ra ra 0x598, 4) := by decide
-theorem pa_at_21a : fetchRel jsonParseCode 0x21A = some (.load .lbu a0 sp 0xA8, 4) := by decide
-theorem pa_at_21e : fetchRel jsonParseCode 0x21E = some (.branch .bne a0 x0 0x9E, 2) := by decide
-theorem pa_at_220 : fetchRel jsonParseCode 0x220 = some (.load .lw a0 sp 0xAC, 2) := by decide
-theorem pa_at_222 : fetchRel jsonParseCode 0x222 = some (.branch .beq a0 x0 0x14, 2) := by decide
-theorem pa_at_224 : fetchRel jsonParseCode 0x224 = some (.load .lw a1 sp 0xB0, 2) := by decide
-theorem pa_at_226 : fetchRel jsonParseCode 0x226 = some (.alu .add a2 x0 (8 : Fin 32), 2) := by decide
-theorem pa_at_228 : fetchRel jsonParseCode 0x228 = some (.alu .add a3 x0 (18 : Fin 32), 2) := by decide
-theorem pa_at_22a : fetchRel jsonParseCode 0x22A = some (.auipc ra 0x0, 4) := by decide
-theorem pa_at_22e : fetchRel jsonParseCode 0x22E = some (.jalr ra ra 0xFFFFFDC0, 4) := by decide
-theorem pa_at_232 : fetchRel jsonParseCode 0x232 = some (.alu .and (9 : Fin 32) (9 : Fin 32) a0, 2) := by decide
-theorem pa_at_234 : fetchRel jsonParseCode 0x234 = some (.jal x0 0xFFFFFFDA, 2) := by decide
-theorem pa_at_236 : fetchRel jsonParseCode 0x236 = some (.aluImm .and (9 : Fin 32) (9 : Fin 32) 0x1, 2) := by decide
-theorem pa_at_238 : fetchRel jsonParseCode 0x238 = some (.branch .bne (9 : Fin 32) x0 0xFFFFFF84, 2) := by decide
-theorem pa_at_23a : fetchRel jsonParseCode 0x23A = some (.jal x0 0xEE, 2) := by decide
-theorem pa_at_23c : fetchRel jsonParseCode 0x23C = some (.branch .bne (9 : Fin 32) x0 0xB2, 2) := by decide
-theorem pa_at_23e : fetchRel jsonParseCode 0x23E = some (.aluImm .add (25 : Fin 32) a0 0x1, 4) := by decide
-theorem pa_at_242 : fetchRel jsonParseCode 0x242 = some (.alu .add (8 : Fin 32) x0 (20 : Fin 32), 2) := by decide
-theorem pa_at_244 : fetchRel jsonParseCode 0x244 = some (.jal x0 0xFFFFFEE8, 2) := by decide
-theorem pa_at_246 : fetchRel jsonParseCode 0x246 = some (.aluImm .add a0 (18 : Fin 32) 0xFFFFFF01, 4) := by decide
-theorem pa_at_24a : fetchRel jsonParseCode 0x24A = some (.alu .add (8 : Fin 32) x0 (20 : Fin 32), 2) := by decide
-theorem pa_at_24c : fetchRel jsonParseCode 0x24C = some (.branch .beq a0 x0 0xFFFFFEE0, 4) := by decide
-theorem pa_at_250 : fetchRel jsonParseCode 0x250 = some (.jal x0 0x70, 2) := by decide
-theorem pa_at_252 : fetchRel jsonParseCode 0x252 = some (.alu .add (8 : Fin 32) x0 (20 : Fin 32), 2) := by decide
-theorem pa_at_254 : fetchRel jsonParseCode 0x254 = some (.load .lw (26 : Fin 32) sp 0x8, 2) := by decide
-theorem pa_at_256 : fetchRel jsonParseCode 0x256 = some (.jal x0 0xFFFFFED6, 2) := by decide
-theorem pa_at_258 : fetchRel jsonParseCode 0x258 = some (.branch .bgeu (25 : Fin 32) (24 : Fin 32) 0xFFFFFE04, 4) := by decide
-theorem pa_at_25c : fetchRel jsonParseCode 0x25C = some (.load .lbu a0 a0 0x0, 4) := by decide
-theorem pa_at_260 : fetchRel jsonParseCode 0x260 = some (.aluImm .add a0 a0 0xFFFFFFA3, 4) := by decide
-theorem pa_at_264 : fetchRel jsonParseCode 0x264 = some (.alu .add (22 : Fin 32) x0 (8 : Fin 32), 2) := by decide
-theorem pa_at_266 : fetchRel jsonParseCode 0x266 = some (.branch .bne a0 x0 0xFFFFFDF6, 4) := by decide
-theorem pa_at_26a : fetchRel jsonParseCode 0x26A = some (.jal x0 0xFFFFFEBC, 2) := by decide
-theorem pa_at_26c : fetchRel jsonParseCode 0x26C = some (.load .lw (18 : Fin 32) sp 0xC, 2) := by decide
-theorem pa_at_26e : fetchRel jsonParseCode 0x26E = some (.aluImm .add (20 : Fin 32) (24 : Fin 32) 0x1, 4) := by decide
-theorem pa_at_272 : fetchRel jsonParseCode 0x272 = some (.aluImm .add (21 : Fin 32) x0 0xF, 2) := by decide
-theorem pa_at_274 : fetchRel jsonParseCode 0x274 = some (.jal x0 0xFFFFFDE8, 2) := by decide
-theorem pa_at_276 : fetchRel jsonParseCode 0x276 = some (.aluImm .add a1 a2 0xFFFFFFD4, 4) := by decide
-theorem pa_at_27a : fetchRel jsonParseCode 0x27A = some (.branch .bne a1 x0 0x74, 2) := by decide
-theorem pa_at_27c : fetchRel jsonParseCode 0x27C = some (.aluImm .add (25 : Fin 32) a0 0x1, 4) := by decide
-theorem pa_at_280 : fetchRel jsonParseCode 0x280 = some (.branch .bne (19 : Fin 32) x0 0x14, 4) := by decide
-theorem pa_at_284 : fetchRel jsonParseCode 0x284 = some (.alu .add a0 x0 (23 : Fin 32), 2) := by decide
-theorem pa_at_286 : fetchRel jsonParseCode 0x286 = some (.alu .add a1 x0 (24 : Fin 32), 2) := by decide
-theorem pa_at_288 : fetchRel jsonParseCode 0x288 = some (.alu .add a2 x0 (25 : Fin 32), 2) := by decide
-theorem pa_at_28a : fetchRel jsonParseCode 0x28A = some (.auipc ra 0xFFFFF000, 4) := by decide
-theorem pa_at_28e : fetchRel jsonParseCode 0x28E = some (.jalr ra ra 0xFFFFF986, 4) := by decide
-theorem pa_at_292 : fetchRel jsonParseCode 0x292 = some (.alu .add (25 : Fin 32) x0 a0, 2) := by decide
-theorem pa_at_294 : fetchRel jsonParseCode 0x294 = some (.aluImm .add (20 : Fin 32) (24 : Fin 32) 0x1, 4) := by decide
-theorem pa_at_298 : fetchRel jsonParseCode 0x298 = some (.aluImm .add (21 : Fin 32) x0 0xF, 2) := by decide
-theorem pa_at_29a : fetchRel jsonParseCode 0x29A = some (.load .lw (18 : Fin 32) sp 0xC, 2) := by decide
-theorem pa_at_29c : fetchRel jsonParseCode 0x29C = some (.branch .beq (9 : Fin 32) x0 0xFFFFFDC0, 4) := by decide
-theorem pa_at_2a0 : fetchRel jsonParseCode 0x2A0 = some (.aluImm .add a0 sp 0xA8, 2) := by decide
-theorem pa_at_2a2 : fetchRel jsonParseCode 0x2A2 = some (.alu .add a1 x0 (23 : Fin 32), 2) := by decide
-theorem pa_at_2a4 : fetchRel jsonParseCode 0x2A4 = some (.alu .add a2 x0 (24 : Fin 32), 2) := by decide
-theorem pa_at_2a6 : fetchRel jsonParseCode 0x2A6 = some (.alu .add a3 x0 (25 : Fin 32), 2) := by decide
-theorem pa_at_2a8 : fetchRel jsonParseCode 0x2A8 = some (.alu .add a4 x0 (19 : Fin 32), 2) := by decide
-theorem pa_at_2aa : fetchRel jsonParseCode 0x2AA = some (.auipc ra 0xFFFFE000, 4) := by decide
-theorem pa_at_2ae : fetchRel jsonParseCode 0x2AE = some (.jalr ra ra 0x644, 4) := by decide
-theorem pa_at_2b2 : fetchRel jsonParseCode 0x2B2 = some (.load .lbu a0 sp 0xA8, 4) := by decide
-theorem pa_at_2b6 : fetchRel jsonParseCode 0x2B6 = some (.branch .bne a0 x0 0x48, 2) := by decide
-theorem pa_at_2b8 : fetchRel jsonParseCode 0x2B8 = some (.load .lw (25 : Fin 32) sp 0xAC, 2) := by decide
-theorem pa_at_2ba : fetchRel jsonParseCode 0x2BA = some (.jal x0 0xFFFFFDA2, 2) := by decide
-theorem pa_at_2bc : fetchRel jsonParseCode 0x2BC = some (.load .lbu (18 : Fin 32) sp 0xA9, 4) := by decide
-theorem pa_at_2c0 : fetchRel jsonParseCode 0x2C0 = some (.load .lw a0 sp 0xC, 2) := by decide
-theorem pa_at_2c2 : fetchRel jsonParseCode 0x2C2 = some (.store .sw a0 x0 0x0, 4) := by decide
-theorem pa_at_2c6 : fetchRel jsonParseCode 0x2C6 = some (.store .sb a0 (18 : Fin 32) 0x4, 4) := by decide
-theorem pa_at_2ca : fetchRel jsonParseCode 0x2CA = some (.jal x0 0x40, 2) := by decide
-theorem pa_at_2cc : fetchRel jsonParseCode 0x2CC = some (.aluImm .add a0 x0 0x20, 4) := by decide
-theorem pa_at_2d0 : fetchRel jsonParseCode 0x2D0 = some (.jal x0 0x32, 2) := by decide
-theorem pa_at_2d2 : fetchRel jsonParseCode 0x2D2 = some (.branch .bne a0 (24 : Fin 32) 0x1C, 4) := by decide
-theorem pa_at_2d6 : fetchRel jsonParseCode 0x2D6 = some (.load .lw a1 sp 0xC, 2) := by decide
-theorem pa_at_2d8 : fetchRel jsonParseCode 0x2D8 = some (.branch .bltu (25 : Fin 32) (26 : Fin 32) 0x56, 4) := by decide
-theorem pa_at_2dc : fetchRel jsonParseCode 0x2DC = some (.branch .bltu (24 : Fin 32) (25 : Fin 32) 0x52, 4) := by decide
-theorem pa_at_2e0 : fetchRel jsonParseCode 0x2E0 = some (.alu .add (23 : Fin 32) (23 : Fin 32) (26 : Fin 32), 2) := by decide
-theorem pa_at_2e2 : fetchRel jsonParseCode 0x2E2 = some (.alu .sub a0 (25 : Fin 32) (26 : Fin 32), 4) := by decide
-theorem pa_at_2e6 : fetchRel jsonParseCode 0x2E6 = some (.store .sw a1 (23 : Fin 32) 0x0, 4) := by decide
-theorem pa_at_2ea : fetchRel jsonParseCode 0x2EA = some (.store .sw a1 a0 0x4, 2) := by decide
-theorem pa_at_2ec : fetchRel jsonParseCode 0x2EC = some (.jal x0 0x1E, 2) := by decide
-theorem pa_at_2ee : fetchRel jsonParseCode 0x2EE = some (.aluImm .add a0 x0 0x20, 4) := by decide
-theorem pa_at_2f2 : fetchRel jsonParseCode 0x2F2 = some (.load .lw a1 sp 0xC, 2) := by decide
-theorem pa_at_2f4 : fetchRel jsonParseCode 0x2F4 = some (.store .sw a1 x0 0x0, 4) := by decide
-theorem pa_at_2f8 : fetchRel jsonParseCode 0x2F8 = some (.store .sb a1 a0 0x4, 4) := by decide
-theorem pa_at_2fc : fetchRel jsonParseCode 0x2FC = some (.jal x0 0xE, 2) := by decide
-theorem pa_at_2fe : fetchRel jsonParseCode 0x2FE = some (.load .lbu a0 sp 0xA9, 4) := by decide
-theorem pa_at_302 : fetchRel jsonParseCode 0x302 = some (.store .sw (18 : Fin 32) x0 0x0, 4) := by decide
-theorem pa_at_306 : fetchRel jsonParseCode 0x306 = some (.store .sb (18 : Fin 32) a0 0x4, 4) := by decide
-theorem pa_at_30a : fetchRel jsonParseCode 0x30A = some (.load .lw ra sp 0xEC, 2) := by decide
-theorem pa_at_30c : fetchRel jsonParseCode 0x30C = some (.load .lw (8 : Fin 32) sp 0xE8, 2) := by decide
-theorem pa_at_30e : fetchRel jsonParseCode 0x30E = some (.load .lw (9 : Fin 32) sp 0xE4, 2) := by decide
-theorem pa_at_310 : fetchRel jsonParseCode 0x310 = some (.load .lw (18 : Fin 32) sp 0xE0, 2) := by decide
-theorem pa_at_312 : fetchRel jsonParseCode 0x312 = some (.load .lw (19 : Fin 32) sp 0xDC, 2) := by decide
-theorem pa_at_314 : fetchRel jsonParseCode 0x314 = some (.load .lw (20 : Fin 32) sp 0xD8, 2) := by decide
-theorem pa_at_316 : fetchRel jsonParseCode 0x316 = some (.load .lw (21 : Fin 32) sp 0xD4, 2) := by decide
-theorem pa_at_318 : fetchRel jsonParseCode 0x318 = some (.load .lw (22 : Fin 32) sp 0xD0, 2) := by decide
-theorem pa_at_31a : fetchRel jsonParseCode 0x31A = some (.load .lw (23 : Fin 32) sp 0xCC, 2) := by decide
-theorem pa_at_31c : fetchRel jsonParseCode 0x31C = some (.load .lw (24 : Fin 32) sp 0xC8, 2) := by decide
-theorem pa_at_31e : fetchRel jsonParseCode 0x31E = some (.load .lw (25 : Fin 32) sp 0xC4, 2) := by decide
-theorem pa_at_320 : fetchRel jsonParseCode 0x320 = some (.load .lw (26 : Fin 32) sp 0xC0, 2) := by decide
-theorem pa_at_322 : fetchRel jsonParseCode 0x322 = some (.load .lw (27 : Fin 32) sp 0xBC, 2) := by decide
-theorem pa_at_324 : fetchRel jsonParseCode 0x324 = some (.aluImm .add sp sp 0xF0, 2) := by decide
-theorem pa_at_326 : fetchRel jsonParseCode 0x326 = some (.jalr x0 ra 0x0, 2) := by decide
-theorem pa_at_328 : fetchRel jsonParseCode 0x328 = some (.aluImm .add (18 : Fin 32) x0 0x20, 4) := by decide
-theorem pa_at_32c : fetchRel jsonParseCode 0x32C = some (.jal x0 0xFFFFFF94, 2) := by decide
-theorem pa_at_32e : fetchRel jsonParseCode 0x32E = some (.aluImm .add a0 x0 0x20, 4) := by decide
-theorem pa_at_332 : fetchRel jsonParseCode 0x332 = some (.jal x0 0xFFFFFFC2, 2) := by decide
+theorem jpa_at_0 : fetchRel jsonParseCode 0x0 = some (.aluImm .add sp sp 0xFFFFFF10, 2) := by decide
+theorem jpa_at_2 : fetchRel jsonParseCode 0x2 = some (.store .sw sp ra 0xEC, 2) := by decide
+theorem jpa_at_4 : fetchRel jsonParseCode 0x4 = some (.store .sw sp (8 : Fin 32) 0xE8, 2) := by decide
+theorem jpa_at_6 : fetchRel jsonParseCode 0x6 = some (.store .sw sp (9 : Fin 32) 0xE4, 2) := by decide
+theorem jpa_at_8 : fetchRel jsonParseCode 0x8 = some (.store .sw sp (18 : Fin 32) 0xE0, 2) := by decide
+theorem jpa_at_a : fetchRel jsonParseCode 0xA = some (.store .sw sp (19 : Fin 32) 0xDC, 2) := by decide
+theorem jpa_at_c : fetchRel jsonParseCode 0xC = some (.store .sw sp (20 : Fin 32) 0xD8, 2) := by decide
+theorem jpa_at_e : fetchRel jsonParseCode 0xE = some (.store .sw sp (21 : Fin 32) 0xD4, 2) := by decide
+theorem jpa_at_10 : fetchRel jsonParseCode 0x10 = some (.store .sw sp (22 : Fin 32) 0xD0, 2) := by decide
+theorem jpa_at_12 : fetchRel jsonParseCode 0x12 = some (.store .sw sp (23 : Fin 32) 0xCC, 2) := by decide
+theorem jpa_at_14 : fetchRel jsonParseCode 0x14 = some (.store .sw sp (24 : Fin 32) 0xC8, 2) := by decide
+theorem jpa_at_16 : fetchRel jsonParseCode 0x16 = some (.store .sw sp (25 : Fin 32) 0xC4, 2) := by decide
+theorem jpa_at_18 : fetchRel jsonParseCode 0x18 = some (.store .sw sp (26 : Fin 32) 0xC0, 2) := by decide
+theorem jpa_at_1a : fetchRel jsonParseCode 0x1A = some (.store .sw sp (27 : Fin 32) 0xBC, 2) := by decide
+theorem jpa_at_1c : fetchRel jsonParseCode 0x1C = some (.alu .add (19 : Fin 32) x0 a3, 2) := by decide
+theorem jpa_at_1e : fetchRel jsonParseCode 0x1E = some (.alu .add (24 : Fin 32) x0 a2, 2) := by decide
+theorem jpa_at_20 : fetchRel jsonParseCode 0x20 = some (.alu .add (23 : Fin 32) x0 a1, 2) := by decide
+theorem jpa_at_22 : fetchRel jsonParseCode 0x22 = some (.alu .add (18 : Fin 32) x0 a0, 2) := by decide
+theorem jpa_at_24 : fetchRel jsonParseCode 0x24 = some (.aluImm .add a0 x0 0x10, 2) := by decide
+theorem jpa_at_26 : fetchRel jsonParseCode 0x26 = some (.aluImm .add a1 sp 0x14, 2) := by decide
+theorem jpa_at_28 : fetchRel jsonParseCode 0x28 = some (.branch .beq a0 x0 0x10, 2) := by decide
+theorem jpa_at_2a : fetchRel jsonParseCode 0x2A = some (.store .sw a1 x0 0xFFFFFFFC, 4) := by decide
+theorem jpa_at_2e : fetchRel jsonParseCode 0x2E = some (.store .sb a1 x0 0x0, 4) := by decide
+theorem jpa_at_32 : fetchRel jsonParseCode 0x32 = some (.aluImm .add a1 a1 0x8, 2) := by decide
+theorem jpa_at_34 : fetchRel jsonParseCode 0x34 = some (.aluImm .add a0 a0 0xFFFFFFFF, 2) := by decide
+theorem jpa_at_36 : fetchRel jsonParseCode 0x36 = some (.branch .bne a0 x0 0xFFFFFFF4, 2) := by decide
+theorem jpa_at_38 : fetchRel jsonParseCode 0x38 = some (.branch .beq (19 : Fin 32) x0 0x8, 4) := by decide
+theorem jpa_at_3c : fetchRel jsonParseCode 0x3C = some (.aluImm .add (26 : Fin 32) x0 0x0, 2) := by decide
+theorem jpa_at_3e : fetchRel jsonParseCode 0x3E = some (.jal x0 0x12, 2) := by decide
+theorem jpa_at_40 : fetchRel jsonParseCode 0x40 = some (.alu .add a0 x0 (23 : Fin 32), 2) := by decide
+theorem jpa_at_42 : fetchRel jsonParseCode 0x42 = some (.alu .add a1 x0 (24 : Fin 32), 2) := by decide
+theorem jpa_at_44 : fetchRel jsonParseCode 0x44 = some (.aluImm .add a2 x0 0x0, 2) := by decide
+theorem jpa_at_46 : fetchRel jsonParseCode 0x46 = some (.auipc ra 0xFFFFF000, 4) := by decide
+theorem jpa_at_4a : fetchRel jsonParseCode 0x4A = some (.jalr ra ra 0xFFFFFBCA, 4) := by decide
+theorem jpa_at_4e : fetchRel jsonParseCode 0x4E = some (.alu .add (26 : Fin 32) x0 a0, 2) := by decide
+theorem jpa_at_50 : fetchRel jsonParseCode 0x50 = some (.aluImm .add (27 : Fin 32) x0 0x0, 2) := by decide
+theorem jpa_at_52 : fetchRel jsonParseCode 0x52 = some (.aluImm .add (8 : Fin 32) x0 0x0, 2) := by decide
+theorem jpa_at_54 : fetchRel jsonParseCode 0x54 = some (.aluImm .add (20 : Fin 32) (24 : Fin 32) 0x1, 4) := by decide
+theorem jpa_at_58 : fetchRel jsonParseCode 0x58 = some (.aluImm .add (21 : Fin 32) x0 0xF, 2) := by decide
+theorem jpa_at_5a : fetchRel jsonParseCode 0x5A = some (.alu .add (25 : Fin 32) x0 (26 : Fin 32), 2) := by decide
+theorem jpa_at_5c : fetchRel jsonParseCode 0x5C = some (.branch .beq (27 : Fin 32) (20 : Fin 32) 0x270, 4) := by decide
+theorem jpa_at_60 : fetchRel jsonParseCode 0x60 = some (.branch .bgeu (25 : Fin 32) (24 : Fin 32) 0x26C, 4) := by decide
+theorem jpa_at_64 : fetchRel jsonParseCode 0x64 = some (.alu .add a0 (23 : Fin 32) (25 : Fin 32), 4) := by decide
+theorem jpa_at_68 : fetchRel jsonParseCode 0x68 = some (.load .lbu a0 a0 0x0, 4) := by decide
+theorem jpa_at_6c : fetchRel jsonParseCode 0x6C = some (.aluImm .add a1 a0 0xFFFFFFDE, 4) := by decide
+theorem jpa_at_70 : fetchRel jsonParseCode 0x70 = some (.aluImm .add (27 : Fin 32) (27 : Fin 32) 0x1, 2) := by decide
+theorem jpa_at_72 : fetchRel jsonParseCode 0x72 = some (.branch .beq a1 x0 0x96, 2) := by decide
+theorem jpa_at_74 : fetchRel jsonParseCode 0x74 = some (.aluImm .add a1 a0 0xFFFFFFA5, 4) := by decide
+theorem jpa_at_78 : fetchRel jsonParseCode 0x78 = some (.aluImm .add (9 : Fin 32) a0 0xFFFFFF85, 4) := by decide
+theorem jpa_at_7c : fetchRel jsonParseCode 0x7C = some (.branch .beq a1 x0 0x16, 2) := by decide
+theorem jpa_at_7e : fetchRel jsonParseCode 0x7E = some (.aluImm .add a1 a0 0xFFFFFF9A, 4) := by decide
+theorem jpa_at_82 : fetchRel jsonParseCode 0x82 = some (.branch .beq a1 x0 0x58, 2) := by decide
+theorem jpa_at_84 : fetchRel jsonParseCode 0x84 = some (.aluImm .add a1 a0 0xFFFFFF92, 4) := by decide
+theorem jpa_at_88 : fetchRel jsonParseCode 0x88 = some (.branch .beq a1 x0 0x52, 2) := by decide
+theorem jpa_at_8a : fetchRel jsonParseCode 0x8A = some (.aluImm .add a1 a0 0xFFFFFF8C, 4) := by decide
+theorem jpa_at_8e : fetchRel jsonParseCode 0x8E = some (.branch .beq a1 x0 0x4C, 2) := by decide
+theorem jpa_at_90 : fetchRel jsonParseCode 0x90 = some (.branch .bne (9 : Fin 32) x0 0x5C, 2) := by decide
+theorem jpa_at_92 : fetchRel jsonParseCode 0x92 = some (.branch .bltu (21 : Fin 32) (8 : Fin 32) 0x23A, 4) := by decide
+theorem jpa_at_96 : fetchRel jsonParseCode 0x96 = some (.aluImm .sll a0 (8 : Fin 32) 0x3, 4) := by decide
+theorem jpa_at_9a : fetchRel jsonParseCode 0x9A = some (.aluImm .add a1 sp 0x10, 2) := by decide
+theorem jpa_at_9c : fetchRel jsonParseCode 0x9C = some (.alu .add a0 a0 a1, 2) := by decide
+theorem jpa_at_9e : fetchRel jsonParseCode 0x9E = some (.aluImm .sltu a1 (9 : Fin 32) 0x1, 4) := by decide
+theorem jpa_at_a2 : fetchRel jsonParseCode 0xA2 = some (.store .sw a0 (25 : Fin 32) 0x0, 4) := by decide
+theorem jpa_at_a6 : fetchRel jsonParseCode 0xA6 = some (.store .sb a0 a1 0x4, 4) := by decide
+theorem jpa_at_aa : fetchRel jsonParseCode 0xAA = some (.aluImm .add (25 : Fin 32) (25 : Fin 32) 0x1, 2) := by decide
+theorem jpa_at_ac : fetchRel jsonParseCode 0xAC = some (.branch .bne (19 : Fin 32) x0 0x14, 4) := by decide
+theorem jpa_at_b0 : fetchRel jsonParseCode 0xB0 = some (.alu .add a0 x0 (23 : Fin 32), 2) := by decide
+theorem jpa_at_b2 : fetchRel jsonParseCode 0xB2 = some (.alu .add a1 x0 (24 : Fin 32), 2) := by decide
+theorem jpa_at_b4 : fetchRel jsonParseCode 0xB4 = some (.alu .add a2 x0 (25 : Fin 32), 2) := by decide
+theorem jpa_at_b6 : fetchRel jsonParseCode 0xB6 = some (.auipc ra 0xFFFFF000, 4) := by decide
+theorem jpa_at_ba : fetchRel jsonParseCode 0xBA = some (.jalr ra ra 0xFFFFFB5A, 4) := by decide
+theorem jpa_at_be : fetchRel jsonParseCode 0xBE = some (.alu .add (25 : Fin 32) x0 a0, 2) := by decide
+theorem jpa_at_c0 : fetchRel jsonParseCode 0xC0 = some (.aluImm .add (8 : Fin 32) (8 : Fin 32) 0x1, 2) := by decide
+theorem jpa_at_c2 : fetchRel jsonParseCode 0xC2 = some (.alu .add a0 (23 : Fin 32) (25 : Fin 32), 4) := by decide
+theorem jpa_at_c6 : fetchRel jsonParseCode 0xC6 = some (.branch .bne (9 : Fin 32) x0 0x192, 4) := by decide
+theorem jpa_at_ca : fetchRel jsonParseCode 0xCA = some (.branch .bgeu (25 : Fin 32) (24 : Fin 32) 0x1D6, 4) := by decide
+theorem jpa_at_ce : fetchRel jsonParseCode 0xCE = some (.load .lbu a0 a0 0x0, 4) := by decide
+theorem jpa_at_d2 : fetchRel jsonParseCode 0xD2 = some (.aluImm .add a0 a0 0xFFFFFF83, 4) := by decide
+theorem jpa_at_d6 : fetchRel jsonParseCode 0xD6 = some (.branch .beq a0 x0 0x4E, 2) := by decide
+theorem jpa_at_d8 : fetchRel jsonParseCode 0xD8 = some (.jal x0 0x1C8, 2) := by decide
+theorem jpa_at_da : fetchRel jsonParseCode 0xDA = some (.aluImm .add a0 sp 0xA8, 2) := by decide
+theorem jpa_at_dc : fetchRel jsonParseCode 0xDC = some (.alu .add a1 x0 (23 : Fin 32), 2) := by decide
+theorem jpa_at_de : fetchRel jsonParseCode 0xDE = some (.alu .add a2 x0 (24 : Fin 32), 2) := by decide
+theorem jpa_at_e0 : fetchRel jsonParseCode 0xE0 = some (.alu .add a3 x0 (25 : Fin 32), 2) := by decide
+theorem jpa_at_e2 : fetchRel jsonParseCode 0xE2 = some (.auipc ra 0xFFFFF000, 4) := by decide
+theorem jpa_at_e6 : fetchRel jsonParseCode 0xE6 = some (.jalr ra ra 0xFFFFFA24, 4) := by decide
+theorem jpa_at_ea : fetchRel jsonParseCode 0xEA = some (.jal x0 0x30, 2) := by decide
+theorem jpa_at_ec : fetchRel jsonParseCode 0xEC = some (.aluImm .add a0 a0 0xFFFFFFD0, 4) := by decide
+theorem jpa_at_f0 : fetchRel jsonParseCode 0xF0 = some (.aluImm .add a1 x0 0xA, 2) := by decide
+theorem jpa_at_f2 : fetchRel jsonParseCode 0xF2 = some (.branch .bgeu a0 a1 0x1DA, 4) := by decide
+theorem jpa_at_f6 : fetchRel jsonParseCode 0xF6 = some (.aluImm .add a0 sp 0xA8, 2) := by decide
+theorem jpa_at_f8 : fetchRel jsonParseCode 0xF8 = some (.alu .add a1 x0 (23 : Fin 32), 2) := by decide
+theorem jpa_at_fa : fetchRel jsonParseCode 0xFA = some (.alu .add a2 x0 (24 : Fin 32), 2) := by decide
+theorem jpa_at_fc : fetchRel jsonParseCode 0xFC = some (.alu .add a3 x0 (25 : Fin 32), 2) := by decide
+theorem jpa_at_fe : fetchRel jsonParseCode 0xFE = some (.auipc ra 0xFFFFF000, 4) := by decide
+theorem jpa_at_102 : fetchRel jsonParseCode 0x102 = some (.jalr ra ra 0xFFFFFAA4, 4) := by decide
+theorem jpa_at_106 : fetchRel jsonParseCode 0x106 = some (.jal x0 0x14, 2) := by decide
+theorem jpa_at_108 : fetchRel jsonParseCode 0x108 = some (.aluImm .add a0 sp 0xA8, 2) := by decide
+theorem jpa_at_10a : fetchRel jsonParseCode 0x10A = some (.alu .add a1 x0 (23 : Fin 32), 2) := by decide
+theorem jpa_at_10c : fetchRel jsonParseCode 0x10C = some (.alu .add a2 x0 (24 : Fin 32), 2) := by decide
+theorem jpa_at_10e : fetchRel jsonParseCode 0x10E = some (.alu .add a3 x0 (25 : Fin 32), 2) := by decide
+theorem jpa_at_110 : fetchRel jsonParseCode 0x110 = some (.alu .add a4 x0 (19 : Fin 32), 2) := by decide
+theorem jpa_at_112 : fetchRel jsonParseCode 0x112 = some (.auipc ra 0xFFFFE000, 4) := by decide
+theorem jpa_at_116 : fetchRel jsonParseCode 0x116 = some (.jalr ra ra 0x782, 4) := by decide
+theorem jpa_at_11a : fetchRel jsonParseCode 0x11A = some (.load .lbu a0 sp 0xA8, 4) := by decide
+theorem jpa_at_11e : fetchRel jsonParseCode 0x11E = some (.branch .bne a0 x0 0x1E0, 4) := by decide
+theorem jpa_at_122 : fetchRel jsonParseCode 0x122 = some (.load .lw (25 : Fin 32) sp 0xAC, 2) := by decide
+theorem jpa_at_124 : fetchRel jsonParseCode 0x124 = some (.alu .add (22 : Fin 32) x0 (8 : Fin 32), 2) := by decide
+theorem jpa_at_126 : fetchRel jsonParseCode 0x126 = some (.store .sw sp (18 : Fin 32) 0xC, 2) := by decide
+theorem jpa_at_128 : fetchRel jsonParseCode 0x128 = some (.aluImm .add (21 : Fin 32) x0 0x0, 2) := by decide
+theorem jpa_at_12a : fetchRel jsonParseCode 0x12A = some (.alu .add (8 : Fin 32) x0 (22 : Fin 32), 2) := by decide
+theorem jpa_at_12c : fetchRel jsonParseCode 0x12C = some (.aluImm .add a0 x0 0x11, 2) := by decide
+theorem jpa_at_12e : fetchRel jsonParseCode 0x12E = some (.branch .beq (21 : Fin 32) a0 0x13E, 4) := by decide
+theorem jpa_at_132 : fetchRel jsonParseCode 0x132 = some (.alu .add a0 x0 (25 : Fin 32), 2) := by decide
+theorem jpa_at_134 : fetchRel jsonParseCode 0x134 = some (.branch .bne (19 : Fin 32) x0 0x12, 4) := by decide
+theorem jpa_at_138 : fetchRel jsonParseCode 0x138 = some (.alu .add a0 x0 (23 : Fin 32), 2) := by decide
+theorem jpa_at_13a : fetchRel jsonParseCode 0x13A = some (.alu .add a1 x0 (24 : Fin 32), 2) := by decide
+theorem jpa_at_13c : fetchRel jsonParseCode 0x13C = some (.alu .add a2 x0 (25 : Fin 32), 2) := by decide
+theorem jpa_at_13e : fetchRel jsonParseCode 0x13E = some (.auipc ra 0xFFFFF000, 4) := by decide
+theorem jpa_at_142 : fetchRel jsonParseCode 0x142 = some (.jalr ra ra 0xFFFFFAD2, 4) := by decide
+theorem jpa_at_146 : fetchRel jsonParseCode 0x146 = some (.branch .beq (8 : Fin 32) x0 0x18C, 4) := by decide
+theorem jpa_at_14a : fetchRel jsonParseCode 0x14A = some (.aluImm .add a1 x0 0x10, 2) := by decide
+theorem jpa_at_14c : fetchRel jsonParseCode 0x14C = some (.branch .bltu a1 (22 : Fin 32) 0x1A2, 4) := by decide
+theorem jpa_at_150 : fetchRel jsonParseCode 0x150 = some (.branch .bgeu a0 (24 : Fin 32) 0x19E, 4) := by decide
+theorem jpa_at_154 : fetchRel jsonParseCode 0x154 = some (.aluImm .add (20 : Fin 32) (8 : Fin 32) 0xFFFFFFFF, 4) := by decide
+theorem jpa_at_158 : fetchRel jsonParseCode 0x158 = some (.alu .add a1 (23 : Fin 32) a0, 4) := by decide
+theorem jpa_at_15c : fetchRel jsonParseCode 0x15C = some (.aluImm .sll a3 (20 : Fin 32) 0x3, 4) := by decide
+theorem jpa_at_160 : fetchRel jsonParseCode 0x160 = some (.load .lbu a2 a1 0x0, 4) := by decide
+theorem jpa_at_164 : fetchRel jsonParseCode 0x164 = some (.aluImm .add a1 sp 0x10, 2) := by decide
+theorem jpa_at_166 : fetchRel jsonParseCode 0x166 = some (.alu .add a1 a1 a3, 2) := by decide
+theorem jpa_at_168 : fetchRel jsonParseCode 0x168 = some (.load .lbu (9 : Fin 32) a1 0x4, 4) := by decide
+theorem jpa_at_16c : fetchRel jsonParseCode 0x16C = some (.aluImm .add a3 a2 0xFFFFFFA3, 4) := by decide
+theorem jpa_at_170 : fetchRel jsonParseCode 0x170 = some (.aluImm .add (21 : Fin 32) (21 : Fin 32) 0x1, 2) := by decide
+theorem jpa_at_172 : fetchRel jsonParseCode 0x172 = some (.branch .beq a3 x0 0xCA, 2) := by decide
+theorem jpa_at_174 : fetchRel jsonParseCode 0x174 = some (.aluImm .add a3 a2 0xFFFFFF83, 4) := by decide
+theorem jpa_at_178 : fetchRel jsonParseCode 0x178 = some (.branch .bne a3 x0 0xFE, 2) := by decide
+theorem jpa_at_17a : fetchRel jsonParseCode 0x17A = some (.branch .beq (9 : Fin 32) x0 0x174, 4) := by decide
+theorem jpa_at_17e : fetchRel jsonParseCode 0x17E = some (.load .lw a1 a1 0x0, 2) := by decide
+theorem jpa_at_180 : fetchRel jsonParseCode 0x180 = some (.aluImm .add (25 : Fin 32) a0 0x1, 4) := by decide
+theorem jpa_at_184 : fetchRel jsonParseCode 0x184 = some (.branch .bltu (25 : Fin 32) a1 0x16A, 4) := by decide
+theorem jpa_at_188 : fetchRel jsonParseCode 0x188 = some (.alu .sub a2 (25 : Fin 32) a1, 4) := by decide
+theorem jpa_at_18c : fetchRel jsonParseCode 0x18C = some (.alu .add a1 a1 (23 : Fin 32), 2) := by decide
+theorem jpa_at_18e : fetchRel jsonParseCode 0x18E = some (.aluImm .add a0 sp 0xA8, 2) := by decide
+theorem jpa_at_190 : fetchRel jsonParseCode 0x190 = some (.auipc ra 0xFFFFF000, 4) := by decide
+theorem jpa_at_194 : fetchRel jsonParseCode 0x194 = some (.jalr ra ra 0x288, 4) := by decide
+theorem jpa_at_198 : fetchRel jsonParseCode 0x198 = some (.load .lw (9 : Fin 32) sp 0xA8, 2) := by decide
+theorem jpa_at_19a : fetchRel jsonParseCode 0x19A = some (.load .lbu (18 : Fin 32) sp 0xAC, 4) := by decide
+theorem jpa_at_19e : fetchRel jsonParseCode 0x19E = some (.branch .beq (9 : Fin 32) x0 0xA8, 2) := by decide
+theorem jpa_at_1a0 : fetchRel jsonParseCode 0x1A0 = some (.store .sw sp (26 : Fin 32) 0x8, 2) := by decide
+theorem jpa_at_1a2 : fetchRel jsonParseCode 0x1A2 = some (.aluImm .add a2 x0 0x7, 2) := by decide
+theorem jpa_at_1a4 : fetchRel jsonParseCode 0x1A4 = some (.aluImm .add a0 sp 0x95, 4) := by decide
+theorem jpa_at_1a8 : fetchRel jsonParseCode 0x1A8 = some (.aluImm .add a1 sp 0xAD, 4) := by decide
+theorem jpa_at_1ac : fetchRel jsonParseCode 0x1AC = some (.auipc ra 0xB000, 4) := by decide
+theorem jpa_at_1b0 : fetchRel jsonParseCode 0x1B0 = some (.jalr ra ra 0x1A0, 4) := by decide
+theorem jpa_at_1b4 : fetchRel jsonParseCode 0x1B4 = some (.aluImm .add (8 : Fin 32) x0 0x0, 2) := by decide
+theorem jpa_at_1b6 : fetchRel jsonParseCode 0x1B6 = some (.store .sw sp (9 : Fin 32) 0x90, 2) := by decide
+theorem jpa_at_1b8 : fetchRel jsonParseCode 0x1B8 = some (.store .sb sp (18 : Fin 32) 0x94, 4) := by decide
+theorem jpa_at_1bc : fetchRel jsonParseCode 0x1BC = some (.alu .add (9 : Fin 32) x0 (18 : Fin 32), 2) := by decide
+theorem jpa_at_1be : fetchRel jsonParseCode 0x1BE = some (.alu .add (26 : Fin 32) x0 (8 : Fin 32), 2) := by decide
+theorem jpa_at_1c0 : fetchRel jsonParseCode 0x1C0 = some (.aluImm .add a0 sp 0xA8, 2) := by decide
+theorem jpa_at_1c2 : fetchRel jsonParseCode 0x1C2 = some (.aluImm .add a1 sp 0x90, 2) := by decide
+theorem jpa_at_1c4 : fetchRel jsonParseCode 0x1C4 = some (.auipc ra 0xFFFFE000, 4) := by decide
+theorem jpa_at_1c8 : fetchRel jsonParseCode 0x1C8 = some (.jalr ra ra 0x5E6, 4) := by decide
+theorem jpa_at_1cc : fetchRel jsonParseCode 0x1CC = some (.load .lbu a0 sp 0xA8, 4) := by decide
+theorem jpa_at_1d0 : fetchRel jsonParseCode 0x1D0 = some (.branch .bne a0 x0 0xEC, 2) := by decide
+theorem jpa_at_1d2 : fetchRel jsonParseCode 0x1D2 = some (.load .lw (8 : Fin 32) sp 0xAC, 2) := by decide
+theorem jpa_at_1d4 : fetchRel jsonParseCode 0x1D4 = some (.branch .beq (8 : Fin 32) x0 0x7E, 2) := by decide
+theorem jpa_at_1d6 : fetchRel jsonParseCode 0x1D6 = some (.load .lw (18 : Fin 32) sp 0xB0, 2) := by decide
+theorem jpa_at_1d8 : fetchRel jsonParseCode 0x1D8 = some (.branch .beq (19 : Fin 32) x0 0x28, 4) := by decide
+theorem jpa_at_1dc : fetchRel jsonParseCode 0x1DC = some (.branch .beq (26 : Fin 32) x0 0xFFFFFFE0, 4) := by decide
+theorem jpa_at_1e0 : fetchRel jsonParseCode 0x1E0 = some (.alu .add a2 x0 (9 : Fin 32), 2) := by decide
+theorem jpa_at_1e2 : fetchRel jsonParseCode 0x1E2 = some (.branch .bltu (9 : Fin 32) (18 : Fin 32) 0x6, 4) := by decide
+theorem jpa_at_1e6 : fetchRel jsonParseCode 0x1E6 = some (.alu .add a2 x0 (18 : Fin 32), 2) := by decide
+theorem jpa_at_1e8 : fetchRel jsonParseCode 0x1E8 = some (.alu .add a0 x0 (26 : Fin 32), 2) := by decide
+theorem jpa_at_1ea : fetchRel jsonParseCode 0x1EA = some (.alu .add a1 x0 (8 : Fin 32), 2) := by decide
+theorem jpa_at_1ec : fetchRel jsonParseCode 0x1EC = some (.auipc ra 0xB000, 4) := by decide
+theorem jpa_at_1f0 : fetchRel jsonParseCode 0x1F0 = some (.jalr ra ra 0xD8, 4) := by decide
+theorem jpa_at_1f4 : fetchRel jsonParseCode 0x1F4 = some (.branch .bne a0 x0 0x6, 2) := by decide
+theorem jpa_at_1f6 : fetchRel jsonParseCode 0x1F6 = some (.alu .sub a0 (9 : Fin 32) (18 : Fin 32), 4) := by decide
+theorem jpa_at_1fa : fetchRel jsonParseCode 0x1FA = some (.branch .blt a0 x0 0xFFFFFFC2, 4) := by decide
+theorem jpa_at_1fe : fetchRel jsonParseCode 0x1FE = some (.jal x0 0x12A, 2) := by decide
+theorem jpa_at_200 : fetchRel jsonParseCode 0x200 = some (.load .lw a0 sp 0x90, 2) := by decide
+theorem jpa_at_202 : fetchRel jsonParseCode 0x202 = some (.load .lw a1 sp 0x94, 2) := by decide
+theorem jpa_at_204 : fetchRel jsonParseCode 0x204 = some (.load .lw a2 sp 0x98, 2) := by decide
+theorem jpa_at_206 : fetchRel jsonParseCode 0x206 = some (.store .sw sp a0 0x9C, 2) := by decide
+theorem jpa_at_208 : fetchRel jsonParseCode 0x208 = some (.store .sw sp a1 0xA0, 2) := by decide
+theorem jpa_at_20a : fetchRel jsonParseCode 0x20A = some (.store .sw sp a2 0xA4, 2) := by decide
+theorem jpa_at_20c : fetchRel jsonParseCode 0x20C = some (.aluImm .add (9 : Fin 32) x0 0x1, 2) := by decide
+theorem jpa_at_20e : fetchRel jsonParseCode 0x20E = some (.aluImm .add a0 sp 0xA8, 2) := by decide
+theorem jpa_at_210 : fetchRel jsonParseCode 0x210 = some (.aluImm .add a1 sp 0x9C, 2) := by decide
+theorem jpa_at_212 : fetchRel jsonParseCode 0x212 = some (.auipc ra 0xFFFFE000, 4) := by decide
+theorem jpa_at_216 : fetchRel jsonParseCode 0x216 = some (.jalr ra ra 0x598, 4) := by decide
+theorem jpa_at_21a : fetchRel jsonParseCode 0x21A = some (.load .lbu a0 sp 0xA8, 4) := by decide
+theorem jpa_at_21e : fetchRel jsonParseCode 0x21E = some (.branch .bne a0 x0 0x9E, 2) := by decide
+theorem jpa_at_220 : fetchRel jsonParseCode 0x220 = some (.load .lw a0 sp 0xAC, 2) := by decide
+theorem jpa_at_222 : fetchRel jsonParseCode 0x222 = some (.branch .beq a0 x0 0x14, 2) := by decide
+theorem jpa_at_224 : fetchRel jsonParseCode 0x224 = some (.load .lw a1 sp 0xB0, 2) := by decide
+theorem jpa_at_226 : fetchRel jsonParseCode 0x226 = some (.alu .add a2 x0 (8 : Fin 32), 2) := by decide
+theorem jpa_at_228 : fetchRel jsonParseCode 0x228 = some (.alu .add a3 x0 (18 : Fin 32), 2) := by decide
+theorem jpa_at_22a : fetchRel jsonParseCode 0x22A = some (.auipc ra 0x0, 4) := by decide
+theorem jpa_at_22e : fetchRel jsonParseCode 0x22E = some (.jalr ra ra 0xFFFFFDC0, 4) := by decide
+theorem jpa_at_232 : fetchRel jsonParseCode 0x232 = some (.alu .and (9 : Fin 32) (9 : Fin 32) a0, 2) := by decide
+theorem jpa_at_234 : fetchRel jsonParseCode 0x234 = some (.jal x0 0xFFFFFFDA, 2) := by decide
+theorem jpa_at_236 : fetchRel jsonParseCode 0x236 = some (.aluImm .and (9 : Fin 32) (9 : Fin 32) 0x1, 2) := by decide
+theorem jpa_at_238 : fetchRel jsonParseCode 0x238 = some (.branch .bne (9 : Fin 32) x0 0xFFFFFF84, 2) := by decide
+theorem jpa_at_23a : fetchRel jsonParseCode 0x23A = some (.jal x0 0xEE, 2) := by decide
+theorem jpa_at_23c : fetchRel jsonParseCode 0x23C = some (.branch .bne (9 : Fin 32) x0 0xB2, 2) := by decide
+theorem jpa_at_23e : fetchRel jsonParseCode 0x23E = some (.aluImm .add (25 : Fin 32) a0 0x1, 4) := by decide
+theorem jpa_at_242 : fetchRel jsonParseCode 0x242 = some (.alu .add (8 : Fin 32) x0 (20 : Fin 32), 2) := by decide
+theorem jpa_at_244 : fetchRel jsonParseCode 0x244 = some (.jal x0 0xFFFFFEE8, 2) := by decide
+theorem jpa_at_246 : fetchRel jsonParseCode 0x246 = some (.aluImm .add a0 (18 : Fin 32) 0xFFFFFF01, 4) := by decide
+theorem jpa_at_24a : fetchRel jsonParseCode 0x24A = some (.alu .add (8 : Fin 32) x0 (20 : Fin 32), 2) := by decide
+theorem jpa_at_24c : fetchRel jsonParseCode 0x24C = some (.branch .beq a0 x0 0xFFFFFEE0, 4) := by decide
+theorem jpa_at_250 : fetchRel jsonParseCode 0x250 = some (.jal x0 0x70, 2) := by decide
+theorem jpa_at_252 : fetchRel jsonParseCode 0x252 = some (.alu .add (8 : Fin 32) x0 (20 : Fin 32), 2) := by decide
+theorem jpa_at_254 : fetchRel jsonParseCode 0x254 = some (.load .lw (26 : Fin 32) sp 0x8, 2) := by decide
+theorem jpa_at_256 : fetchRel jsonParseCode 0x256 = some (.jal x0 0xFFFFFED6, 2) := by decide
+theorem jpa_at_258 : fetchRel jsonParseCode 0x258 = some (.branch .bgeu (25 : Fin 32) (24 : Fin 32) 0xFFFFFE04, 4) := by decide
+theorem jpa_at_25c : fetchRel jsonParseCode 0x25C = some (.load .lbu a0 a0 0x0, 4) := by decide
+theorem jpa_at_260 : fetchRel jsonParseCode 0x260 = some (.aluImm .add a0 a0 0xFFFFFFA3, 4) := by decide
+theorem jpa_at_264 : fetchRel jsonParseCode 0x264 = some (.alu .add (22 : Fin 32) x0 (8 : Fin 32), 2) := by decide
+theorem jpa_at_266 : fetchRel jsonParseCode 0x266 = some (.branch .bne a0 x0 0xFFFFFDF6, 4) := by decide
+theorem jpa_at_26a : fetchRel jsonParseCode 0x26A = some (.jal x0 0xFFFFFEBC, 2) := by decide
+theorem jpa_at_26c : fetchRel jsonParseCode 0x26C = some (.load .lw (18 : Fin 32) sp 0xC, 2) := by decide
+theorem jpa_at_26e : fetchRel jsonParseCode 0x26E = some (.aluImm .add (20 : Fin 32) (24 : Fin 32) 0x1, 4) := by decide
+theorem jpa_at_272 : fetchRel jsonParseCode 0x272 = some (.aluImm .add (21 : Fin 32) x0 0xF, 2) := by decide
+theorem jpa_at_274 : fetchRel jsonParseCode 0x274 = some (.jal x0 0xFFFFFDE8, 2) := by decide
+theorem jpa_at_276 : fetchRel jsonParseCode 0x276 = some (.aluImm .add a1 a2 0xFFFFFFD4, 4) := by decide
+theorem jpa_at_27a : fetchRel jsonParseCode 0x27A = some (.branch .bne a1 x0 0x74, 2) := by decide
+theorem jpa_at_27c : fetchRel jsonParseCode 0x27C = some (.aluImm .add (25 : Fin 32) a0 0x1, 4) := by decide
+theorem jpa_at_280 : fetchRel jsonParseCode 0x280 = some (.branch .bne (19 : Fin 32) x0 0x14, 4) := by decide
+theorem jpa_at_284 : fetchRel jsonParseCode 0x284 = some (.alu .add a0 x0 (23 : Fin 32), 2) := by decide
+theorem jpa_at_286 : fetchRel jsonParseCode 0x286 = some (.alu .add a1 x0 (24 : Fin 32), 2) := by decide
+theorem jpa_at_288 : fetchRel jsonParseCode 0x288 = some (.alu .add a2 x0 (25 : Fin 32), 2) := by decide
+theorem jpa_at_28a : fetchRel jsonParseCode 0x28A = some (.auipc ra 0xFFFFF000, 4) := by decide
+theorem jpa_at_28e : fetchRel jsonParseCode 0x28E = some (.jalr ra ra 0xFFFFF986, 4) := by decide
+theorem jpa_at_292 : fetchRel jsonParseCode 0x292 = some (.alu .add (25 : Fin 32) x0 a0, 2) := by decide
+theorem jpa_at_294 : fetchRel jsonParseCode 0x294 = some (.aluImm .add (20 : Fin 32) (24 : Fin 32) 0x1, 4) := by decide
+theorem jpa_at_298 : fetchRel jsonParseCode 0x298 = some (.aluImm .add (21 : Fin 32) x0 0xF, 2) := by decide
+theorem jpa_at_29a : fetchRel jsonParseCode 0x29A = some (.load .lw (18 : Fin 32) sp 0xC, 2) := by decide
+theorem jpa_at_29c : fetchRel jsonParseCode 0x29C = some (.branch .beq (9 : Fin 32) x0 0xFFFFFDC0, 4) := by decide
+theorem jpa_at_2a0 : fetchRel jsonParseCode 0x2A0 = some (.aluImm .add a0 sp 0xA8, 2) := by decide
+theorem jpa_at_2a2 : fetchRel jsonParseCode 0x2A2 = some (.alu .add a1 x0 (23 : Fin 32), 2) := by decide
+theorem jpa_at_2a4 : fetchRel jsonParseCode 0x2A4 = some (.alu .add a2 x0 (24 : Fin 32), 2) := by decide
+theorem jpa_at_2a6 : fetchRel jsonParseCode 0x2A6 = some (.alu .add a3 x0 (25 : Fin 32), 2) := by decide
+theorem jpa_at_2a8 : fetchRel jsonParseCode 0x2A8 = some (.alu .add a4 x0 (19 : Fin 32), 2) := by decide
+theorem jpa_at_2aa : fetchRel jsonParseCode 0x2AA = some (.auipc ra 0xFFFFE000, 4) := by decide
+theorem jpa_at_2ae : fetchRel jsonParseCode 0x2AE = some (.jalr ra ra 0x644, 4) := by decide
+theorem jpa_at_2b2 : fetchRel jsonParseCode 0x2B2 = some (.load .lbu a0 sp 0xA8, 4) := by decide
+theorem jpa_at_2b6 : fetchRel jsonParseCode 0x2B6 = some (.branch .bne a0 x0 0x48, 2) := by decide
+theorem jpa_at_2b8 : fetchRel jsonParseCode 0x2B8 = some (.load .lw (25 : Fin 32) sp 0xAC, 2) := by decide
+theorem jpa_at_2ba : fetchRel jsonParseCode 0x2BA = some (.jal x0 0xFFFFFDA2, 2) := by decide
+theorem jpa_at_2bc : fetchRel jsonParseCode 0x2BC = some (.load .lbu (18 : Fin 32) sp 0xA9, 4) := by decide
+theorem jpa_at_2c0 : fetchRel jsonParseCode 0x2C0 = some (.load .lw a0 sp 0xC, 2) := by decide
+theorem jpa_at_2c2 : fetchRel jsonParseCode 0x2C2 = some (.store .sw a0 x0 0x0, 4) := by decide
+theorem jpa_at_2c6 : fetchRel jsonParseCode 0x2C6 = some (.store .sb a0 (18 : Fin 32) 0x4, 4) := by decide
+theorem jpa_at_2ca : fetchRel jsonParseCode 0x2CA = some (.jal x0 0x40, 2) := by decide
+theorem jpa_at_2cc : fetchRel jsonParseCode 0x2CC = some (.aluImm .add a0 x0 0x20, 4) := by decide
+theorem jpa_at_2d0 : fetchRel jsonParseCode 0x2D0 = some (.jal x0 0x32, 2) := by decide
+theorem jpa_at_2d2 : fetchRel jsonParseCode 0x2D2 = some (.branch .bne a0 (24 : Fin 32) 0x1C, 4) := by decide
+theorem jpa_at_2d6 : fetchRel jsonParseCode 0x2D6 = some (.load .lw a1 sp 0xC, 2) := by decide
+theorem jpa_at_2d8 : fetchRel jsonParseCode 0x2D8 = some (.branch .bltu (25 : Fin 32) (26 : Fin 32) 0x56, 4) := by decide
+theorem jpa_at_2dc : fetchRel jsonParseCode 0x2DC = some (.branch .bltu (24 : Fin 32) (25 : Fin 32) 0x52, 4) := by decide
+theorem jpa_at_2e0 : fetchRel jsonParseCode 0x2E0 = some (.alu .add (23 : Fin 32) (23 : Fin 32) (26 : Fin 32), 2) := by decide
+theorem jpa_at_2e2 : fetchRel jsonParseCode 0x2E2 = some (.alu .sub a0 (25 : Fin 32) (26 : Fin 32), 4) := by decide
+theorem jpa_at_2e6 : fetchRel jsonParseCode 0x2E6 = some (.store .sw a1 (23 : Fin 32) 0x0, 4) := by decide
+theorem jpa_at_2ea : fetchRel jsonParseCode 0x2EA = some (.store .sw a1 a0 0x4, 2) := by decide
+theorem jpa_at_2ec : fetchRel jsonParseCode 0x2EC = some (.jal x0 0x1E, 2) := by decide
+theorem jpa_at_2ee : fetchRel jsonParseCode 0x2EE = some (.aluImm .add a0 x0 0x20, 4) := by decide
+theorem jpa_at_2f2 : fetchRel jsonParseCode 0x2F2 = some (.load .lw a1 sp 0xC, 2) := by decide
+theorem jpa_at_2f4 : fetchRel jsonParseCode 0x2F4 = some (.store .sw a1 x0 0x0, 4) := by decide
+theorem jpa_at_2f8 : fetchRel jsonParseCode 0x2F8 = some (.store .sb a1 a0 0x4, 4) := by decide
+theorem jpa_at_2fc : fetchRel jsonParseCode 0x2FC = some (.jal x0 0xE, 2) := by decide
+theorem jpa_at_2fe : fetchRel jsonParseCode 0x2FE = some (.load .lbu a0 sp 0xA9, 4) := by decide
+theorem jpa_at_302 : fetchRel jsonParseCode 0x302 = some (.store .sw (18 : Fin 32) x0 0x0, 4) := by decide
+theorem jpa_at_306 : fetchRel jsonParseCode 0x306 = some (.store .sb (18 : Fin 32) a0 0x4, 4) := by decide
+theorem jpa_at_30a : fetchRel jsonParseCode 0x30A = some (.load .lw ra sp 0xEC, 2) := by decide
+theorem jpa_at_30c : fetchRel jsonParseCode 0x30C = some (.load .lw (8 : Fin 32) sp 0xE8, 2) := by decide
+theorem jpa_at_30e : fetchRel jsonParseCode 0x30E = some (.load .lw (9 : Fin 32) sp 0xE4, 2) := by decide
+theorem jpa_at_310 : fetchRel jsonParseCode 0x310 = some (.load .lw (18 : Fin 32) sp 0xE0, 2) := by decide
+theorem jpa_at_312 : fetchRel jsonParseCode 0x312 = some (.load .lw (19 : Fin 32) sp 0xDC, 2) := by decide
+theorem jpa_at_314 : fetchRel jsonParseCode 0x314 = some (.load .lw (20 : Fin 32) sp 0xD8, 2) := by decide
+theorem jpa_at_316 : fetchRel jsonParseCode 0x316 = some (.load .lw (21 : Fin 32) sp 0xD4, 2) := by decide
+theorem jpa_at_318 : fetchRel jsonParseCode 0x318 = some (.load .lw (22 : Fin 32) sp 0xD0, 2) := by decide
+theorem jpa_at_31a : fetchRel jsonParseCode 0x31A = some (.load .lw (23 : Fin 32) sp 0xCC, 2) := by decide
+theorem jpa_at_31c : fetchRel jsonParseCode 0x31C = some (.load .lw (24 : Fin 32) sp 0xC8, 2) := by decide
+theorem jpa_at_31e : fetchRel jsonParseCode 0x31E = some (.load .lw (25 : Fin 32) sp 0xC4, 2) := by decide
+theorem jpa_at_320 : fetchRel jsonParseCode 0x320 = some (.load .lw (26 : Fin 32) sp 0xC0, 2) := by decide
+theorem jpa_at_322 : fetchRel jsonParseCode 0x322 = some (.load .lw (27 : Fin 32) sp 0xBC, 2) := by decide
+theorem jpa_at_324 : fetchRel jsonParseCode 0x324 = some (.aluImm .add sp sp 0xF0, 2) := by decide
+theorem jpa_at_326 : fetchRel jsonParseCode 0x326 = some (.jalr x0 ra 0x0, 2) := by decide
+theorem jpa_at_328 : fetchRel jsonParseCode 0x328 = some (.aluImm .add (18 : Fin 32) x0 0x20, 4) := by decide
+theorem jpa_at_32c : fetchRel jsonParseCode 0x32C = some (.jal x0 0xFFFFFF94, 2) := by decide
+theorem jpa_at_32e : fetchRel jsonParseCode 0x32E = some (.aluImm .add a0 x0 0x20, 4) := by decide
+theorem jpa_at_332 : fetchRel jsonParseCode 0x332 = some (.jal x0 0xFFFFFFC2, 2) := by decide
 
 /-- `memcmp`'s result on the `n` bytes at `p` and `q`: 0 when they are
 equal, or the difference of the first two bytes that differ. -/
@@ -596,7 +596,7 @@ theorem pa_ld {M : Word → BitVec 8} {F v : Word} (c : Nat) (hc : c + 4 ≤ 240
       exact ih (fun d hd' => hd d (List.mem_cons_of_mem _ hd')) (fun d hd' => hds d (List.mem_cons_of_mem _ hd'))
         (ld_skip c d (hd d (List.mem_cons_self ..)) (by omega) (by have := hds d (List.mem_cons_self ..); omega) h) ws
 
-theorem pa_pro (M : Word → BitVec 8) (F : Word) (g0 : Fin 32 → Word) :
+theorem jpa_pro (M : Word → BitVec 8) (F : Word) (g0 : Fin 32 → Word) :
     Out M (paM1 M F g0) F 240 ∧ PaSaved F g0 (paM1 M F g0) := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact ((((((((((((((out_store32 _ _ _).widen (d := 0xEC) (by decide)).trans
@@ -641,7 +641,7 @@ theorem pa_pro (M : Word → BitVec 8) (F : Word) (g0 : Fin 32 → Word) :
 section
 variable {M1 Mf : Word → BitVec 8} {base F : Word} {f g0 : Fin 32 → Word}
 
-theorem pa_epi {R : (Word → BitVec 8) → Prop} (hsp : f sp = F)
+theorem jpa_epi {R : (Word → BitVec 8) → Prop} (hsp : f sp = F)
     (hS : Slots paCs F M1 Mf) (hv : PaSaved F g0 M1) (hsp0 : g0 sp = F + BitVec.ofNat 32 0xF0)
     (hret : g0 ra &&& ~~~1 = g0 ra) (hal : F.toNat % 4 = 0) (hz0 : g0 0 = 0)
     (hfr : ∀ x, x ∉ paE → f x = g0 x) (hR : R Mf) :
@@ -660,21 +660,21 @@ theorem pa_epi {R : (Word → BitVec 8) → Prop} (hsp : f sp = F)
   have e10 : memLoad32 Mf (F + 0xC4) = g0 25 := (hS 0xC4 (by decide)).trans v10
   have e11 : memLoad32 Mf (F + 0xC0) = g0 26 := (hS 0xC0 (by decide)).trans v11
   have e12 : memLoad32 Mf (F + 0xBC) = g0 27 := (hS 0xBC (by decide)).trans v12
-  refine WP.lw pa_at_30a (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xEC) (by decide)) ?_; wn
-  refine WP.lw pa_at_30c (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xE8) (by decide)) ?_; wn
-  refine WP.lw pa_at_30e (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xE4) (by decide)) ?_; wn
-  refine WP.lw pa_at_310 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xE0) (by decide)) ?_; wn
-  refine WP.lw pa_at_312 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xDC) (by decide)) ?_; wn
-  refine WP.lw pa_at_314 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xD8) (by decide)) ?_; wn
-  refine WP.lw pa_at_316 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xD4) (by decide)) ?_; wn
-  refine WP.lw pa_at_318 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xD0) (by decide)) ?_; wn
-  refine WP.lw pa_at_31a (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xCC) (by decide)) ?_; wn
-  refine WP.lw pa_at_31c (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xC8) (by decide)) ?_; wn
-  refine WP.lw pa_at_31e (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xC4) (by decide)) ?_; wn
-  refine WP.lw pa_at_320 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xC0) (by decide)) ?_; wn
-  refine WP.lw pa_at_322 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xBC) (by decide)) ?_; wn
-  refine WP.aluImm pa_at_324 ?_; wn
-  refine WP.ret pa_at_326 ⟨?_, hR, ?_⟩
+  refine WP.lw jpa_at_30a (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xEC) (by decide)) ?_; wn
+  refine WP.lw jpa_at_30c (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xE8) (by decide)) ?_; wn
+  refine WP.lw jpa_at_30e (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xE4) (by decide)) ?_; wn
+  refine WP.lw jpa_at_310 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xE0) (by decide)) ?_; wn
+  refine WP.lw jpa_at_312 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xDC) (by decide)) ?_; wn
+  refine WP.lw jpa_at_314 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xD8) (by decide)) ?_; wn
+  refine WP.lw jpa_at_316 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xD4) (by decide)) ?_; wn
+  refine WP.lw jpa_at_318 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xD0) (by decide)) ?_; wn
+  refine WP.lw jpa_at_31a (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xCC) (by decide)) ?_; wn
+  refine WP.lw jpa_at_31c (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xC8) (by decide)) ?_; wn
+  refine WP.lw jpa_at_31e (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xC4) (by decide)) ?_; wn
+  refine WP.lw jpa_at_320 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xC0) (by decide)) ?_; wn
+  refine WP.lw jpa_at_322 (by (try rsimp); rw [hsp]; exact aligned_add hal (k := 0xBC) (by decide)) ?_; wn
+  refine WP.aluImm jpa_at_324 ?_; wn
+  refine WP.ret jpa_at_326 ⟨?_, hR, ?_⟩
   · rsimp; rw [hsp, e0, add_lit_zero, hret]
   refine frame_of (L2 := [ra, sp, 8, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]) (by keepz hz0) fun x hx => ?_
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
@@ -772,11 +772,11 @@ theorem pa_302 {e : Nat} (E : PaEnv M0 base s p out n g0 Mp F) (hsp : f sp = F) 
     (hfr : ∀ x, x ∉ paE → f x = g0 x) :
     WP jsonParseCode base (PPost M0 s p out g0 (.error e)) Mf 0x302 f := by
   refine WP.zero fun hz => ?_
-  refine WP.sw pa_at_302 (by (try rsimp); rw [h18, add_lit_zero]; exact E.halo)
+  refine WP.sw jpa_at_302 (by (try rsimp); rw [h18, add_lit_zero]; exact E.halo)
     (by (try rsimp); rw [h18, add_lit_zero]; exact E.sc4) ?_; wn
-  refine WP.sb pa_at_306 (by (try rsimp); rw [h18]; exact E.sc.sub (c := 4) (l := 1) (by decide)) ?_; wn
+  refine WP.sb jpa_at_306 (by (try rsimp); rw [h18]; exact E.sc.sub (c := 4) (l := 1) (by decide)) ?_; wn
   rw [h18, add_lit_zero, hz]
-  exact pa_epi hsp ((hS.out (out_store32 _ _ _) E.slots_out0).out (out_store8 _ _ _)
+  exact jpa_epi hsp ((hS.out (out_store32 _ _ _) E.slots_out0).out (out_store8 _ _ _)
     (E.slots_out (c := 4) (l := 1) (by decide))) E.saved E.sp0 E.ret E.halF E.z0 hfr
     ⟨Mf, hO, pa_err_res Mf out _ e ha0⟩
 
@@ -786,12 +786,12 @@ theorem pa_2f4 {e : Nat} (E : PaEnv M0 base s p out n g0 Mp F) (hsp : f sp = F) 
     (hfr : ∀ x, x ∉ paE → f x = g0 x) :
     WP jsonParseCode base (PPost M0 s p out g0 (.error e)) Mf 0x2F4 f := by
   refine WP.zero fun hz => ?_
-  refine WP.sw pa_at_2f4 (by (try rsimp); rw [ha1, add_lit_zero]; exact E.halo)
+  refine WP.sw jpa_at_2f4 (by (try rsimp); rw [ha1, add_lit_zero]; exact E.halo)
     (by (try rsimp); rw [ha1, add_lit_zero]; exact E.sc4) ?_; wn
-  refine WP.sb pa_at_2f8 (by (try rsimp); rw [ha1]; exact E.sc.sub (c := 4) (l := 1) (by decide)) ?_; wn
-  refine WP.jal pa_at_2fc (by decide) ?_; wn
+  refine WP.sb jpa_at_2f8 (by (try rsimp); rw [ha1]; exact E.sc.sub (c := 4) (l := 1) (by decide)) ?_; wn
+  refine WP.jal jpa_at_2fc (by decide) ?_; wn
   rw [ha1, add_lit_zero, hz]
-  exact pa_epi hsp ((hS.out (out_store32 _ _ _) E.slots_out0).out (out_store8 _ _ _)
+  exact jpa_epi hsp ((hS.out (out_store32 _ _ _) E.slots_out0).out (out_store8 _ _ _)
     (E.slots_out (c := 4) (l := 1) (by decide))) E.saved E.sp0 E.ret E.halF E.z0 hfr
     ⟨Mf, hO, pa_err_res Mf out _ e ha0⟩
 
@@ -802,14 +802,14 @@ theorem pa_2c0 {e : Nat} (E : PaEnv M0 base s p out n g0 Mp F) (hsp : f sp = F)
     (hO : Out M0 Mf s 404) (hS : Slots paCs F Mp Mf) (hfr : ∀ x, x ∉ paE → f x = g0 x) :
     WP jsonParseCode base (PPost M0 s p out g0 (.error e)) Mf 0x2C0 f := by
   refine WP.zero fun hz => ?_
-  refine WP.lw pa_at_2c0 (by (try rsimp); rw [hsp]; exact aligned_add E.halF (k := 0xC) (by decide)) ?_; wn
+  refine WP.lw jpa_at_2c0 (by (try rsimp); rw [hsp]; exact aligned_add E.halF (k := 0xC) (by decide)) ?_; wn
   rw [hsp, hC]
-  refine WP.sw pa_at_2c2 (by (try rsimp); rw [add_lit_zero]; exact E.halo)
+  refine WP.sw jpa_at_2c2 (by (try rsimp); rw [add_lit_zero]; exact E.halo)
     (by (try rsimp); rw [add_lit_zero]; exact E.sc4) ?_; wn
-  refine WP.sb pa_at_2c6 (by (try rsimp); exact E.sc.sub (c := 4) (l := 1) (by decide)) ?_; wn
-  refine WP.jal pa_at_2ca (by decide) ?_; wn
+  refine WP.sb jpa_at_2c6 (by (try rsimp); exact E.sc.sub (c := 4) (l := 1) (by decide)) ?_; wn
+  refine WP.jal jpa_at_2ca (by decide) ?_; wn
   try rw [add_lit_zero]
-  exact pa_epi (by (try rsimp); exact hsp) ((hS.out (out_store32 _ _ _) E.slots_out0).out (out_store8 _ _ _)
+  exact jpa_epi (by (try rsimp); exact hsp) ((hS.out (out_store32 _ _ _) E.slots_out0).out (out_store8 _ _ _)
     (E.slots_out (c := 4) (l := 1) (by decide))) E.saved E.sp0 E.ret E.halF E.z0 (by keepz E.z0)
     ⟨Mf, hO, pa_err_res Mf out _ e (by (try rsimp); exact h18)⟩
 

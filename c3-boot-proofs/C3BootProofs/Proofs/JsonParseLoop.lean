@@ -96,16 +96,16 @@ theorem pa_ws132 {Q : Post} (E : PaEnv M0 base s p out n g0 Mp F) {c : Bool} {po
   have hd : memBytes M p n = memBytes M0 p n := hO.bytes E.sP
   have hc1 : ParseCode M base := E.code.out hO E.sep
   refine WP.zero fun hz => ?_
-  refine WP.alu pa_at_132 ?_; wn
-  refine WP.branch pa_at_134 (fun eb => ?_) (fun eb => ?_) <;> wn
+  refine WP.alu jpa_at_132 ?_; wn
+  refine WP.branch jpa_at_134 (fun eb => ?_) (fun eb => ?_) <;> wn
   · (try rsimp at eb); rw [hR.s3, br_mode] at eb; subst eb
     exact k _ (by (try rsimp); (try simp only [ev0, ev_mv hz]); rw [h25]; rfl) (by keepz hz)
   (try rsimp at eb); rw [hR.s3, br_mode] at eb; subst eb
-  refine WP.alu pa_at_138 ?_; wn
-  refine WP.alu pa_at_13a ?_; wn
-  refine WP.alu pa_at_13c ?_; wn
+  refine WP.alu jpa_at_138 ?_; wn
+  refine WP.alu jpa_at_13a ?_; wn
+  refine WP.alu jpa_at_13c ?_; wn
   refine WP.callSkipWs (tb := base + 0xFFFFF372 + 0xFFFFF616 + 0x288) (p := p) (n := n) (q := pos)
-    pa_at_13e pa_at_142 (by simp only [BitVec.add_assoc]; rfl)
+    jpa_at_13e jpa_at_142 (by simp only [BitVec.add_assoc]; rfl)
     (even_at _ (even_at _ (even_at base E.hb _ (by decide)) _ (by decide)) _ (by decide)) (by decide)
     hc1.get.ri.sw (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact hR.s7)
     (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact hR.s8)
@@ -122,20 +122,20 @@ theorem pa_ws280 {Q : Post} (E : PaEnv M0 base s p out n g0 Mp F) {c : Bool} {q 
   have hd : memBytes M p n = memBytes M0 p n := hO.bytes E.sP
   have hc1 : ParseCode M base := E.code.out hO E.sep
   refine WP.zero fun hz => ?_
-  refine WP.branch pa_at_280 (fun eb => ?_) (fun eb => ?_) <;> wn
+  refine WP.branch jpa_at_280 (fun eb => ?_) (fun eb => ?_) <;> wn
   · rw [hR.s3, show f x0 = 0 from hz, br_mode] at eb; subst eb
     exact k _ (by rw [h25]; rfl) (fun _ _ => rfl) hR
   rw [hR.s3, show f x0 = 0 from hz, br_mode] at eb; subst eb
-  refine WP.alu pa_at_284 ?_; wn
-  refine WP.alu pa_at_286 ?_; wn
-  refine WP.alu pa_at_288 ?_; wn
+  refine WP.alu jpa_at_284 ?_; wn
+  refine WP.alu jpa_at_286 ?_; wn
+  refine WP.alu jpa_at_288 ?_; wn
   refine WP.callSkipWs (tb := base + 0xFFFFF372 + 0xFFFFF616 + 0x288) (p := p) (n := n) (q := q)
-    pa_at_28a pa_at_28e (by simp only [BitVec.add_assoc]; rfl)
+    jpa_at_28a jpa_at_28e (by simp only [BitVec.add_assoc]; rfl)
     (even_at _ (even_at _ (even_at base E.hb _ (by decide)) _ (by decide)) _ (by decide)) (by decide)
     hc1.get.ri.sw (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact hR.s7)
     (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact hR.s8)
     (by (try rsimp); (try simp only [ev0, ev_mv hz]); exact h25) (by omega) (by omega) fun m2 h0 => ?_
-  refine WP.alu pa_at_292 ?_; wn
+  refine WP.alu jpa_at_292 ?_; wn
   exact (fun hg => k _ (by (try rsimp); (try simp only [ev0, ev_mv hz]); rw [h0, hd]; rfl) hg (hR.keep25 hg))
     (by keepz hz)
 
@@ -159,15 +159,15 @@ theorem pa_close (E : PaEnv M0 base s p out n g0 Mp F) {c : Bool} {start d6 : Na
     intro stk pos M f _ hpos hFI hC hR h21 h25 h8 h22 h26 h27
     have hfr := hR.fr
     refine WP.zero fun hz => ?_
-    refine WP.aluImm pa_at_12c ?_; wn
-    refine WP.branch pa_at_12e (fun _ => ?_) (fun eb => ?_) <;> wn
+    refine WP.aluImm jpa_at_12c ?_; wn
+    refine WP.branch jpa_at_12e (fun _ => ?_) (fun eb => ?_) <;> wn
     rotate_left
     · exfalso; (try rsimp at eb); rw [h21] at eb; (try simp only [ev_mv hz] at eb)
       exact absurd eb (by decide)
-    refine WP.lw pa_at_26c (by (try rsimp); rw [hR.sp]; exact E.alF (d := 0xC) (by decide)) ?_; wn
-    refine WP.aluImm pa_at_26e ?_; wn
-    refine WP.aluImm pa_at_272 ?_; wn
-    refine WP.jal pa_at_274 (by decide) ?_; wn
+    refine WP.lw jpa_at_26c (by (try rsimp); rw [hR.sp]; exact E.alF (d := 0xC) (by decide)) ?_; wn
+    refine WP.aluImm jpa_at_26e ?_; wn
+    refine WP.aluImm jpa_at_272 ?_; wn
+    refine WP.jal jpa_at_274 (by decide) ?_; wn
     exact hnext M _ stk pos hFI (by pregs hR, E.z0) (by (try rsimp); rw [hR.sp, hC])
       (by (try rsimp); rw [hR.s8, pc_inc]) (by (try rsimp); (try simp only [ev0, ev_mv hz]); try rfl)
       (by (try rsimp); exact h25) hpos (by (try rsimp); exact h8) (by (try rsimp); exact h26)
@@ -175,10 +175,10 @@ theorem pa_close (E : PaEnv M0 base s p out n g0 Mp F) {c : Bool} {start d6 : Na
   | succ j ih =>
     intro stk pos M f hj hpos hFI hC hR h21 h25 h8 h22 h26 h27
     refine WP.zero fun hz => ?_
-    refine WP.aluImm pa_at_12c ?_; wn
+    refine WP.aluImm jpa_at_12c ?_; wn
     have h17 : branchTaken .beq (BitVec.ofNat 32 (17 - (j + 1))) (BitVec.ofNat 32 17) = false := by
       rw [br_beq (by omega) (by omega)]; exact decide_eq_false (by omega)
-    refine WP.branch pa_at_12e (fun eb => ?_) (fun _ => ?_) <;> wn
+    refine WP.branch jpa_at_12e (fun eb => ?_) (fun _ => ?_) <;> wn
     · exfalso; (try rsimp at eb); rw [h21] at eb; (try simp only [ev_mv hz] at eb)
       exact absurd (h17.symm.trans eb) (by decide)
     have hR1 : PRegs (upd f a0 (aluEval .add (f x0) 17)) g0 F p n c := by pregs hR, E.z0
@@ -195,7 +195,7 @@ theorem pa_close (E : PaEnv M0 base s p out n g0 Mp F) {c : Bool} {start d6 : Na
     generalize hw : wsIn c (memBytes M0 p n) pos = w at ha0
     have hwn : w ≤ n := by rw [← hw]; have := wsIn_le c (memBytes M0 p n) pos; rw [hdl] at this; omega
     rcases list_concat_cases stk with rfl | ⟨init, ⟨ob, st'⟩, rfl⟩
-    · refine WP.branch pa_at_146 (fun _ => ?_) (fun eb => ?_) <;> wn
+    · refine WP.branch jpa_at_146 (fun _ => ?_) (fun eb => ?_) <;> wn
       rotate_left
       · exfalso; rw [g8, show g x0 = 0 from hgz] at eb
         exact absurd eb (by decide)
@@ -205,17 +205,17 @@ theorem pa_close (E : PaEnv M0 base s p out n g0 Mp F) {c : Bool} {start d6 : Na
       exact pa_top E hR' ha0 hwn g25 hpos g26 hst hC hFI.1 hFI.2.1
     obtain ⟨t1, t2, t3, t4⟩ := hFI.2.2.top
     rw [List.length_append, List.length_singleton] at g8
-    refine WP.branch pa_at_146 (fun eb => ?_) (fun _ => ?_) <;> wn
+    refine WP.branch jpa_at_146 (fun eb => ?_) (fun _ => ?_) <;> wn
     · exfalso; rw [g8, show g x0 = 0 from hgz, br_beq0 (by omega)] at eb
       exact absurd (of_decide_eq_true eb) (by omega)
     rw [pc_cl_snoc, hdl, hw]
-    refine WP.aluImm pa_at_14a ?_; wn
+    refine WP.aluImm jpa_at_14a ?_; wn
     have h16 : branchTaken .bltu (BitVec.ofNat 32 16) (BitVec.ofNat 32 d6) = false := by
       rw [br_bltu (by omega) (by omega)]; exact decide_eq_false (by omega)
-    refine WP.branch pa_at_14c (fun eb => ?_) (fun _ => ?_) <;> wn
+    refine WP.branch jpa_at_14c (fun eb => ?_) (fun _ => ?_) <;> wn
     · exfalso; (try rsimp at eb); rw [g22] at eb; (try simp only [ev_mv hgz] at eb)
       exact absurd (h16.symm.trans eb) (by decide)
-    refine WP.branch pa_at_150 (fun eb => ?_) (fun eb => ?_) <;> wn
+    refine WP.branch jpa_at_150 (fun eb => ?_) (fun eb => ?_) <;> wn
     · (try rsimp at eb); rw [ha0, hR'.s8, br_bgeu (by omega) (by omega)] at eb
       rw [ite_eq_left_of_eq_true _ _ (eq_true (by have := not_dec_true eb; omega))]
       exact pa_2ee E (by (try rsimp); exact hR'.sp) (by (try rsimp); exact hC) hFI.1 hFI.2.1 (by keepz E.z0)
@@ -224,15 +224,15 @@ theorem pa_close (E : PaEnv M0 base s p out n g0 Mp F) {c : Bool} {start d6 : Na
     rw [ite_eq_right_of_eq_false _ _ (eq_false (by omega))]
     have hbv : (memBytes M0 p n).getD w 0 = (M (p + BitVec.ofNat 32 w)).toNat := by
       rw [← hFI.1.bytes E.sP]; exact memBytes_getD hwlt
-    refine WP.aluImm pa_at_154 ?_; wn
-    refine WP.alu pa_at_158 ?_; wn
-    refine WP.aluImm pa_at_15c ?_; wn
-    refine WP.lbu pa_at_160 ?_; wn
-    refine WP.aluImm pa_at_164 ?_; wn
-    refine WP.alu pa_at_166 ?_; wn
-    refine WP.lbu pa_at_168 ?_; wn
-    refine WP.aluImm pa_at_16c ?_; wn
-    refine WP.aluImm pa_at_170 ?_; wn
+    refine WP.aluImm jpa_at_154 ?_; wn
+    refine WP.alu jpa_at_158 ?_; wn
+    refine WP.aluImm jpa_at_15c ?_; wn
+    refine WP.lbu jpa_at_160 ?_; wn
+    refine WP.aluImm jpa_at_164 ?_; wn
+    refine WP.alu jpa_at_166 ?_; wn
+    refine WP.lbu jpa_at_168 ?_; wn
+    refine WP.aluImm jpa_at_16c ?_; wn
+    refine WP.aluImm jpa_at_170 ?_; wn
     rw [hR'.s7, ha0, show aluEval .add p (BitVec.ofNat 32 w) + 0 = p + BitVec.ofNat 32 w by
       rw [ev_add, add_lit_zero], hR'.sp, g8, pc_dec, pa_slot' F (by omega : init.length < 17), pc_fa, t2, g21,
       hbv]
@@ -241,30 +241,30 @@ theorem pa_close (E : PaEnv M0 base s p out n g0 Mp F) {c : Bool} {start d6 : Na
     dsimp only at t2 t1 t3 ⊢
     have hw1 : aluEval .add (BitVec.ofNat 32 w) 1 = BitVec.ofNat 32 (w + 1) := pc_inc w
     have hFI' : FInv M0 Mp s F n init M := ⟨hFI.1, hFI.2.1, hFI.2.2.pop⟩
-    refine WP.branch pa_at_172 (fun eb => ?_) (fun eb => ?_) <;> wn
+    refine WP.branch jpa_at_172 (fun eb => ?_) (fun eb => ?_) <;> wn
     · (try rsimp at eb); (try rw [show g x0 = 0 from hgz] at eb); rw [pc_rb] at eb
       rw [ite_eq_left_of_eq_true _ _ (eq_true (beq_iff_eq.mp eb))]
-      refine WP.branch pa_at_23c (fun eb2 => ?_) (fun eb2 => ?_) <;> wn
+      refine WP.branch jpa_at_23c (fun eb2 => ?_) (fun eb2 => ?_) <;> wn
       · (try rsimp at eb2); (try rw [show g x0 = 0 from hgz] at eb2); rw [pc_fl'] at eb2; subst eb2
         rw [ite_eq_left_of_eq_true _ _ (eq_true rfl)]
         exact pa_2ee E (by (try rsimp); exact hR'.sp) hC hFI.1 hFI.2.1 (by keepz E.z0)
       (try rsimp at eb2); (try rw [show g x0 = 0 from hgz] at eb2); rw [pc_fl'] at eb2; subst eb2
       rw [ite_eq_right_of_eq_false _ _ (eq_false (by decide))]
-      refine WP.aluImm pa_at_23e ?_; wn
-      refine WP.alu pa_at_242 ?_; wn
-      refine WP.jal pa_at_244 (by decide) ?_; wn
+      refine WP.aluImm jpa_at_23e ?_; wn
+      refine WP.alu jpa_at_242 ?_; wn
+      refine WP.jal jpa_at_244 (by decide) ?_; wn
       exact ih init (w + 1) M _ (by omega) (by omega) hFI' hC (by pregs hR', E.z0)
         (by (try rsimp); try rfl)
         (by (try rsimp); rw [ha0, hw1]) (by (try rsimp); (try simp only [ev0]); try rfl)
         (by (try rsimp); exact g22) (by (try rsimp); exact g26) (by (try rsimp); exact g27)
     (try rsimp at eb); (try rw [show g x0 = 0 from hgz] at eb); rw [pc_rb] at eb
     rw [ite_eq_right_of_eq_false _ _ (eq_false (fun h => by rw [h] at eb; exact absurd eb (by decide)))]
-    refine WP.aluImm pa_at_174 ?_; wn
-    refine WP.branch pa_at_178 (fun eb => ?_) (fun eb => ?_) <;> wn
+    refine WP.aluImm jpa_at_174 ?_; wn
+    refine WP.branch jpa_at_178 (fun eb => ?_) (fun eb => ?_) <;> wn
     rotate_left
     · (try rsimp at eb); (try rw [show g x0 = 0 from hgz] at eb); rw [pc_cb] at eb
       rw [ite_eq_left_of_eq_true _ _ (eq_true (nbeq_false eb))]
-      refine WP.branch pa_at_17a (fun eb2 => ?_) (fun eb2 => ?_) <;> wn
+      refine WP.branch jpa_at_17a (fun eb2 => ?_) (fun eb2 => ?_) <;> wn
       · (try rsimp at eb2); (try rw [show g x0 = 0 from hgz] at eb2); rw [pc_fl] at eb2
         cases ob
         · rw [ite_eq_right_of_eq_false _ _ (eq_false (by decide))]
@@ -274,17 +274,17 @@ theorem pa_close (E : PaEnv M0 base s p out n g0 Mp F) {c : Bool} {start d6 : Na
       cases ob
       · exact absurd eb2 (by decide)
       rw [ite_eq_left_of_eq_true _ _ (eq_true rfl)]
-      refine WP.lw pa_at_17e (by (try rsimp); (try rw [add_lit_zero]); exact aligned_add E.halF (k := 16 + 8 * init.length) (by omega)) ?_; wn
+      refine WP.lw jpa_at_17e (by (try rsimp); (try rw [add_lit_zero]); exact aligned_add E.halF (k := 16 + 8 * init.length) (by omega)) ?_; wn
       rw [add_lit_zero, t1]
-      refine WP.aluImm pa_at_180 ?_; wn
-      refine WP.branch pa_at_184 (fun eb3 => ?_) (fun eb3 => ?_) <;> wn
+      refine WP.aluImm jpa_at_180 ?_; wn
+      refine WP.branch jpa_at_184 (fun eb3 => ?_) (fun eb3 => ?_) <;> wn
       · (try rsimp at eb3); rw [ha0, hw1, br_bltu (by omega) (by omega)] at eb3
         rw [ite_eq_left_of_eq_true _ _ (eq_true (of_decide_eq_true eb3))]
         exact pa_2ee E (by (try rsimp); exact hR'.sp) hC hFI.1 hFI.2.1 (by keepz E.z0)
       (try rsimp at eb3); rw [ha0, hw1, br_bltu (by omega) (by omega)] at eb3
       have hle : st' ≤ w + 1 := by have := of_decide_eq_false eb3; omega
       rw [ite_eq_right_of_eq_false _ _ (eq_false (by omega))]
-      refine WP.alu pa_at_188 ?_; wn
+      refine WP.alu jpa_at_188 ?_; wn
       rw [ha0, hw1, show aluEval .sub (BitVec.ofNat 32 (w + 1)) (BitVec.ofNat 32 st') = BitVec.ofNat 32 (w + 1 - st')
         from sub_ofNat_le hle (by omega), pc_ac_ck]
       refine pa_obj E (stk := init ++ [(true, st')]) (st := st') (l := w + 1 - st') (by omega)
@@ -292,9 +292,9 @@ theorem pa_close (E : PaEnv M0 base s p out n g0 Mp F) {c : Bool} {start d6 : Na
         (by (try rsimp); try rfl)
       have hfr2 := hR2.fr
       have hz2 : g2 0 = 0 := (hg2 0 (by decide)).trans (by (try rsimp); try exact hgz)
-      refine WP.alu pa_at_252 ?_; wn
-      refine WP.lw pa_at_254 (by (try rsimp); rw [hR2.sp]; exact E.alF (d := 8) (by decide)) ?_; wn
-      refine WP.jal pa_at_256 (by decide) ?_; wn
+      refine WP.alu jpa_at_252 ?_; wn
+      refine WP.lw jpa_at_254 (by (try rsimp); rw [hR2.sp]; exact E.alF (d := 8) (by decide)) ?_; wn
+      refine WP.jal jpa_at_256 (by decide) ?_; wn
       exact ih init (w + 1) M' _ (by omega) (by omega) ⟨hFI2.1, hFI2.2.1, hFI2.2.2.pop⟩ hC2 (by pregs hR2, E.z0)
         (by (try rsimp); rw [hg2 21 (by decide)]; (try rsimp); try rfl)
         (by (try rsimp); rw [hg2 25 (by decide)]; (try rsimp); try rfl)
@@ -304,14 +304,14 @@ theorem pa_close (E : PaEnv M0 base s p out n g0 Mp F) {c : Bool} {start d6 : Na
         (by (try rsimp); rw [hg2 27 (by decide)]; (try rsimp); exact g27)
     (try rsimp at eb); (try rw [show g x0 = 0 from hgz] at eb); rw [pc_cb] at eb
     rw [ite_eq_right_of_eq_false _ _ (eq_false (nbeq_true eb))]
-    refine WP.aluImm pa_at_276 ?_; wn
-    refine WP.branch pa_at_27a (fun eb => ?_) (fun eb => ?_) <;> wn
+    refine WP.aluImm jpa_at_276 ?_; wn
+    refine WP.branch jpa_at_27a (fun eb => ?_) (fun eb => ?_) <;> wn
     · (try rsimp at eb); (try rw [show g x0 = 0 from hgz] at eb); rw [pc_cm] at eb
       rw [ite_eq_right_of_eq_false _ _ (eq_false (nbeq_true eb))]
       exact pa_2ee E (by (try rsimp); exact hR'.sp) hC hFI.1 hFI.2.1 (by keepz E.z0)
     (try rsimp at eb); (try rw [show g x0 = 0 from hgz] at eb); rw [pc_cm] at eb
     rw [ite_eq_left_of_eq_true _ _ (eq_true (nbeq_false eb))]
-    refine WP.aluImm pa_at_27c ?_; wn
+    refine WP.aluImm jpa_at_27c ?_; wn
     refine pa_ws280 E hFI.1 (by pregs hR', E.z0) (by (try rsimp); rw [ha0]; exact hw1) (by omega) fun g3 h25' hg3 hR3 => ?_
     have hz3 : g3 0 = 0 := (hg3 0 (by decide)).trans (by (try rsimp); try exact hgz)
     have h93 : g3 9 = (flagB ob).zeroExtend 32 := (hg3 9 (by decide)).trans (by (try rsimp); try rfl)
@@ -319,10 +319,10 @@ theorem pa_close (E : PaEnv M0 base s p out n g0 Mp F) {c : Bool} {start d6 : Na
       rw [hg3 8 (by decide)]; (try rsimp); rw [g8, List.length_append]; rfl
     have hq : wsIn c (memBytes M0 p n) (w + 1) ≤ n := by
       have := wsIn_le c (memBytes M0 p n) (w + 1); rw [hdl] at this; omega
-    refine WP.aluImm pa_at_294 ?_; wn
-    refine WP.aluImm pa_at_298 ?_; wn
-    refine WP.lw pa_at_29a (by (try rsimp); rw [hR3.sp]; exact E.alF (d := 0xC) (by decide)) ?_; wn
-    refine WP.branch pa_at_29c (fun eb2 => ?_) (fun eb2 => ?_) <;> wn
+    refine WP.aluImm jpa_at_294 ?_; wn
+    refine WP.aluImm jpa_at_298 ?_; wn
+    refine WP.lw jpa_at_29a (by (try rsimp); rw [hR3.sp]; exact E.alF (d := 0xC) (by decide)) ?_; wn
+    refine WP.branch jpa_at_29c (fun eb2 => ?_) (fun eb2 => ?_) <;> wn
     · (try rsimp at eb2); (try rw [h93] at eb2); (try rw [show g3 x0 = 0 from hz3] at eb2); rw [pc_fl] at eb2
       cases ob
       · rw [ite_eq_right_of_eq_false _ _ (eq_false (by decide))]

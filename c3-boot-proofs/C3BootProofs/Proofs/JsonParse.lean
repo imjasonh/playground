@@ -1,0 +1,96 @@
+import C3BootProofs.Proofs.JsonParseOuter
+
+/-!
+# `json::parse` from its entry
+
+The prologue, the loop at `0x24` that clears the 16 stack entries, and
+the start position: `0` in canonical mode, or the position after leading
+whitespace. Then `pa_loop` runs with `d.length + 1` passes of fuel, which
+is `parseModel`.
+-/
+
+namespace C3.RV32
+
+open C3.Image C3.Json
+
+theorem pz_m4 (F : Word) (i : Nat) :
+    F + BitVec.ofNat 32 (0x14 + 8 * i) + 0xFFFFFFFC = F + BitVec.ofNat 32 (0x10 + 8 * i) := by
+  show F + BitVec.ofNat 32 (0x14 + 8 * i) + BitVec.ofNat 32 0xFFFFFFFC = _
+  rw [add_ofNat_assoc]
+  exact congrArg (F + ·) (BitVec.eq_of_toNat_eq (by rw [BitVec.toNat_ofNat, BitVec.toNat_ofNat]; omega))
+
+theorem pz_p8 (F : Word) (i : Nat) :
+    aluEval .add (F + BitVec.ofNat 32 (0x14 + 8 * i)) 0x8 = F + BitVec.ofNat 32 (0x14 + 8 * (i + 1)) := by
+  show F + BitVec.ofNat 32 (0x14 + 8 * i) + BitVec.ofNat 32 8 = _
+  rw [add_ofNat_assoc]; rfl
+
+theorem pz_mode (c : Bool) : branchTaken .beq (modeW c) 0 = !c := by cases c <;> rfl
+
+theorem pz_bne {j : Nat} (hj : j < 2 ^ 32) : branchTaken .bne (BitVec.ofNat 32 j) 0 = !decide (j = 0) :=
+  br_bne hj (by decide)
+
+section
+variable {M0 Mp : Word → BitVec 8} {base s p out F : Word} {n : Nat} {g0 f : Fin 32 → Word}
+
+theorem PaEnv.offF (E : PaEnv M0 base s p out n g0 Mp F) (d : Nat) :
+    s + BitVec.ofNat 32 (164 + d) = F + BitVec.ofNat 32 d := by
+  rw [← add_ofNat_assoc, E.hF]
+
+/-- The loop at `0x2A` with `a0 = j` entries left to clear: it keeps
+`FInv` with an empty stack and every register but `a0` and `a1`. -/
+theorem pa_zero {Q : Post} (E : PaEnv M0 base s p out n g0 Mp F) {fr : Fin 32 → Word}
+    (k : ∀ (M' : Word → BitVec 8) (g : Fin 32 → Word), FInv M0 Mp s F n [] M' →
+      (∀ x, x ≠ a0 → x ≠ a1 → g x = fr x) → WP jsonParseCode base Q M' 0x38 g) :
+    ∀ (j : Nat) (M : Word → BitVec 8) (f : Fin 32 → Word), j + 1 ≤ 16 → FInv M0 Mp s F n [] M →
+      f a0 = BitVec.ofNat 32 (j + 1) → f a1 = F + BitVec.ofNat 32 (0x14 + 8 * (15 - j)) →
+      (∀ x, x ≠ a0 → x ≠ a1 → f x = fr x) → WP jsonParseCode base Q M 0x2A f := by
+  intro j
+  induction j with
+  | zero =>
+    intro M f hj hFI h0 h1 hfr
+    refine WP.zero fun hz => ?_
+    refine WP.sw jpa_at_2a (by (try rsimp); rw [h1, pz_m4]; exact E.alF (by decide))
+      (by (try rsimp); rw [h1, pz_m4]; exact E.sepF E.sep.parse (by decide)) ?_; wn
+    refine WP.sb jpa_at_2e (by (try rsimp); rw [h1, add_lit_zero]; exact E.sepF E.sep.parse (by decide)) ?_; wn
+    refine WP.aluImm jpa_at_32 ?_; wn
+    refine WP.aluImm jpa_at_34 ?_; wn
+    have hA : FInv M0 Mp s F n [] (memStore32 M (F + BitVec.ofNat 32 (0x10 + 8 * (15 - 0))) (f x0)) := by
+      refine FInv.out0 E.hF (c := 164 + (0x10 + 8 * (15 - 0))) (k := 4) hFI ?_ (by decide)
+      rw [E.offF]; exact out_store32 _ _ _
+    have hFI2 : FInv M0 Mp s F n [] (memStore8 (memStore32 M (F + BitVec.ofNat 32 (0x10 + 8 * (15 - 0)))
+        (f x0)) (F + BitVec.ofNat 32 (0x14 + 8 * (15 - 0))) ((f x0).extractLsb' 0 8)) := by
+      refine FInv.out0 E.hF (c := 164 + (0x14 + 8 * (15 - 0))) (k := 1) hA ?_ (by decide)
+      rw [E.offF]; exact out_store8 _ _ _
+    refine WP.branch jpa_at_36 (fun eb => ?_) (fun _ => ?_) <;> wn
+    · (try rsimp at eb); (try rw [show f x0 = 0 from hz] at eb); rw [h0, pc_dec, pz_bne (by decide)] at eb
+      exact absurd eb (by decide)
+    rw [h1, pz_m4, add_lit_zero]
+    refine k _ _ hFI2 (fun x h0' h1' => ?_)
+    rw [upd_ne0 (G := upd f a1 _) (by rfl) h0', upd_ne0 hz h1']; exact hfr x h0' h1'
+  | succ j ih =>
+    intro M f hj hFI h0 h1 hfr
+    refine WP.zero fun hz => ?_
+    refine WP.sw jpa_at_2a (by (try rsimp); rw [h1, pz_m4]; exact E.alF (by omega))
+      (by (try rsimp); rw [h1, pz_m4]; exact E.sepF E.sep.parse (by omega)) ?_; wn
+    refine WP.sb jpa_at_2e (by (try rsimp); rw [h1, add_lit_zero]; exact E.sepF E.sep.parse (by omega)) ?_; wn
+    refine WP.aluImm jpa_at_32 ?_; wn
+    refine WP.aluImm jpa_at_34 ?_; wn
+    have hA : FInv M0 Mp s F n [] (memStore32 M (F + BitVec.ofNat 32 (0x10 + 8 * (15 - (j + 1)))) (f x0)) := by
+      refine FInv.out0 E.hF (c := 164 + (0x10 + 8 * (15 - (j + 1)))) (k := 4) hFI ?_ (by omega)
+      rw [E.offF]; exact out_store32 _ _ _
+    have hFI2 : FInv M0 Mp s F n [] (memStore8 (memStore32 M (F + BitVec.ofNat 32 (0x10 + 8 * (15 - (j + 1))))
+        (f x0)) (F + BitVec.ofNat 32 (0x14 + 8 * (15 - (j + 1)))) ((f x0).extractLsb' 0 8)) := by
+      refine FInv.out0 E.hF (c := 164 + (0x14 + 8 * (15 - (j + 1)))) (k := 1) hA ?_ (by omega)
+      rw [E.offF]; exact out_store8 _ _ _
+    refine WP.branch jpa_at_36 (fun eb => ?_) (fun eb => ?_) <;> wn
+    · rw [h1, pz_m4, add_lit_zero]
+      refine ih _ _ (by omega) hFI2 (by (try rsimp); rw [h0, pc_dec]) ?_ ?_
+      · (try rsimp); (try rw [h1]); rw [pz_p8, show 15 - (j + 1) + 1 = 15 - j by omega]
+      · intro x h0' h1'; rw [upd_ne0 (G := upd f a1 _) (by rfl) h0', upd_ne0 hz h1']; exact hfr x h0' h1'
+    · (try rsimp at eb); (try rw [show f x0 = 0 from hz] at eb); rw [h0, pc_dec, pz_bne (by omega),
+        show decide (j + 1 = 0) = false from decide_eq_false (Nat.succ_ne_zero j)] at eb
+      exact absurd eb (by decide)
+
+end
+
+end C3.RV32
