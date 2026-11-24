@@ -568,3 +568,11 @@ import C3BootProofs.Models.EcdsaDbl
 import C3BootProofs.Models.P256BarrettChain
 import C3BootProofs.Models.P256Barrett
 import C3BootProofs.Models.EcdsaModels
+import C3BootProofs.Models.WeierstrassRing
+import C3BootProofs.Models.WeierstrassClosed
+import C3BootProofs.Models.WeierstrassRcb
+import C3BootProofs.Models.WeierstrassAssocPoly
+import C3BootProofs.Models.WeierstrassAssoc
+import C3BootProofs.Models.WeierstrassFermat
+import C3BootProofs.Models.WeierstrassNoRoot
+import C3BootProofs.Models.WeierstrassNist
