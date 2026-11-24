@@ -91,6 +91,13 @@ class Gen(gsv.Gen):
         self.regs[2] = ("S", 0)
         return k
 
+    def zloop(self, c, N):
+        """The clearing loop at 0x908 over the `N` bytes at offset `c`."""
+        n = len(self.out)
+        super().zloop(c, N)
+        self.out[n:] = [ln.replace("ec_zloop", "p2v_zloop").replace("0x184E", "0x908").replace("0x1858", "0x912")
+                        for ln in self.out[n:]]
+
     def clone(self):
         c = super().clone()
         c.__class__ = Gen
@@ -584,9 +591,73 @@ def stage_ect(want):
     return parts[want]
 
 
+EW_BINDERS = "{B : Word} {U1 U2 rv sv zv : Nat} {P0 P1 : Pt2} {v : Nat → Word} {n0 : Machine}"
+
+
+def stage_ecw(want):
+    """From 0x862 to 0x998, in two parts `want`: the width-5 NAF digits of
+    `u₁` (part "2", to the loop's second pass at 0x89A) and of `u₂` (part
+    "3"), each in a 0x108-byte record with its length, at 0x10E4 and 0x11EC."""
+    g, _ = stage_ect("1b")
+    g.regs = {r: v for r, v in g.regs.items() if r in (2, 3, 4, 10, 26)}
+    g.acc = {d: (8, nm) for d, nm in ((0x180, "rv"), (0x1A0, "sv"), (0x1C0, "zv"), (0x260, "U1"), (0x2E0, "U2"))}
+    g.pt = {d: v for d, v in g.pt.items() if 0x300 <= d < 0x900}
+    g.words, g.bytes, g.ranges, g.mb = {}, {}, {}, {}
+    g.pt_lts = {}
+    g, params = restart(g, "EcW", ["(WN0 : P2vWnCode M0)"])
+    g.block(0x862, 0x874)
+    g.mc(0x874, 0xFE4, 0x200, 0x100)
+    g.block(0x87C, 0x896)
+    g.branch(0x896, False, f"by rw [g{g.k}_19, s{g.k}.zero]; decide")
+    for i in range(2):
+        g.block(0x89A, 0x8AA)
+        g.mc(0x8AA, 0xF80, 0x1044 + 0x80 * i, 0x20)
+        g.block(0x8B2, 0x8C2)
+        g.tbb8(0x8C2, 0x980, 0xF80)
+        g.block(0x8CA, 0x8D6)
+        g.rev(0x8D6, 0x980, 0x20)
+        g.block(0x8DE, 0x8F2)
+        g.mc(0x8F2, 0x900, 0x980, 0x20)
+        g.block(0x8FA, 0x906)
+        g.branch(0x906, False, f"by rw [g{g.k}_11, s{g.k}.zero]; decide")
+        g.zloop(0x980, 0x101)
+        g.block(0x912, 0x924)
+        g.mc(0x924, 0xC84, 0x980, 0x101)
+        g.block(0x92C, 0x942)
+        g.wf(0x942, 0xC84, 0x900)
+        g.store(0x94A, "sw")
+        g.block(0x94E, 0x962)
+        g.mc(0x962, 0x980, 0xC80, 0x108)
+        g.block(0x96A, 0x97C)
+        g.mc(0x97C, 0x10E4 + 0x108 * i, 0x980, 0x108)
+        g.block(0x984, 0x986)
+        g.branch(0x986, i == 0, f"by rw [g{g.k}_8, g{g.k}_19]; decide")
+        if i == 0:
+            stmt, proof = finish(g, 0x89A, sorted(g.regs), set(g.words), set(g.bytes))
+            info = {"name": "p2v_ecw2", "title": "the wNAF digits of `u₁`",
+                    "doc": "From 0x862 to the loop's second pass at 0x89A: `wnaf_form` writes the width-5 NAF digits "
+                    "of `u₁`, which end up in the record at 0x10E4 with their length.",
+                    "params": params, "stmt": stmt, "proof": proof, "binders": EW_BINDERS,
+                    "start": 0x862, "import": "C3BootProofs.Proofs.P2vEcW"}
+            if want == "2":
+                return g, info
+            g, params = restart(g, "EcW3", params)
+    g.load(0x98A, "lw")
+    g.block(0x98E, 0x996)
+    g.load(0x996, "lw")
+    stmt, proof = finish(g, 0x998, sorted(g.regs), set(g.words), set(g.bytes))
+    info = {"name": "p2v_ecw3", "title": "the wNAF digits of `u₂`",
+            "doc": "From the loop's second pass at 0x89A to 0x998: `wnaf_form` writes the width-5 NAF digits of "
+            "`u₂` into the record at 0x11EC, and both lengths are loaded.",
+            "params": params, "stmt": stmt, "proof": proof, "binders": EW_BINDERS,
+            "start": 0x89A, "import": "C3BootProofs.Proofs.P2vEcW2"}
+    return g, info
+
+
 def stages():
     return {"A1": stage_a1, "A2": stage_a2, "A3": stage_a3, "IvA": stage_iva, "IvB": stage_ivb, "IvE": stage_ive,
-            "EcD": stage_ecd, **{f"EcT{w}": (lambda w=w: stage_ect(w)) for w in ("0a", "0c", "0b", "1a", "1c", "1b")}}
+            "EcD": stage_ecd, **{f"EcT{w}": (lambda w=w: stage_ect(w)) for w in ("0a", "0c", "0b", "1a", "1c", "1b")},
+            "EcW2": lambda: stage_ecw("2"), "EcW3": lambda: stage_ecw("3")}
 
 
 HEADER = """import {imp}
