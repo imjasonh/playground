@@ -1,6 +1,9 @@
 import C3BootProofs.Proofs.SvGsSpec
 import C3BootProofs.Models.SafegcdP256
 import C3BootProofs.Models.SafegcdP384
+import C3BootProofs.Models.EcdsaModels
+import C3BootProofs.Models.P256Consts
+import C3BootProofs.Proofs.SvPvWitness
 
 /-!
 # `sigstore::verify` computes `sigstoreVerify`
@@ -86,7 +89,13 @@ theorem sv_verify_spec {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle
     (hiv : (s5Hv Me (BitVec.ofNat 32 0x3FCC4AF8)).toList = Sha512.h0)
     (RK0 : SvRkCode Me)
     (hOk : SvOutOk B (reg n a0))
-    (MP384 : SvP384Model Me) (MP256 : SvP256Model Me) (MEd : ∀ sg, SvEdModel (sigMem Me (B + 0x21A0 + BitVec.ofNat 32 0x420) sg))
+    (ND : CodeIn Me (BitVec.ofNat 32 b2sOrder256Address) b2sOrder256Data)
+    (UD : CodeIn Me (BitVec.ofNat 32 p256OneAddress) p256OneData)
+    (pr256 : C3.Models.IsPrime C3.p256.p) (cl256 : C3.Models.EC.AddClosed C3.p256)
+    (as256 : C3.Models.EC.AddAssoc C3.p256) (rcb256 : C3.Models.RcbAddOk C3.p256)
+    (pr384 : C3.Models.IsPrime C3.p384.p) (cl384 : C3.Models.EC.AddClosed C3.p384)
+    (as384 : C3.Models.EC.AddAssoc C3.p384) (rcb384 : C3.Models.RcbAddOk C3.p384)
+    (MEd : ∀ sg, SvEdModel (sigMem Me (B + 0x21A0 + BitVec.ofNat 32 0x420) sg))
     (RD : SvRekorData Me) :
     SvErrRet B (reg n a0) (fun k => reg n (savedReg k)) n ∨ Panics n ∨
     ∃ v, sigstoreVerify bundle root (memBytes Me (reg n a3) 32) = some v ∧
@@ -169,8 +178,12 @@ theorem sv_verify_spec {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle
       exact h0 e)
   have Ek := R.fulcio.2.1 k_4_1 hkf
   have hiss := c56.symm.trans Ek.name.2
-  have hp384 := MP384 _ _ _ _ _ _ _ _ _ c58 c59
-  rw [Ek.key] at hp384
+  have hsr43 := ecdsaSigOf_bytes c52
+  have hp384 := C3.Models.p384_model_rcb' pr384 cl384 as384 rcb384 _ _ _ _ _ _ _ _ _
+    (svPvAt_frame (e1 := 0x1020) (e2 := 0xD0) (e3 := 0x100) (off_of_sep Ek.keyIn.sep) (isrn_off RS)
+      (by rw [sha384_length]; rfl) (sha384_lt _) (by decide) (by decide) (by decide) (.inr (by decide))
+      (.inr (by decide)) (.inl (by decide))) c58 c59
+  rw [svBytes_self hsr43.1.1 hsr43.1.2, svBytes_self hsr43.2.1 hsr43.2.2, Ek.key] at hp384
   unfold sigstoreVerify
   rw [hleaf]
   simp only [Option.bind_eq_bind, Option.bind_some]
@@ -187,8 +200,11 @@ theorem sv_verify_spec {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle
   rw [Bd.imageSignature.2] at hsig
   rw [hsig]
   simp only [Option.bind_some]
-  have hp256 := MP256 _ _ _ _ ⟨c72, σd_2, σf_2, Dv_2, Fv_2, c73, c74, c75, c76, c77, stm_2, c78, τd_2, τf_2, Dz_2, Fz_2,
-    c79, c80, c81, c82, c83⟩
+  have hp256 := C3.Models.p256_model_rcb' pr256 cl256 as256 rcb256 (C3.Models.P256Consts.of D0 ND UD GD OD AD) _ _ _ _
+    ⟨c72, σd_2, σf_2, Dv_2, Fv_2, c73, c74, c75, c76, c77, stm_2, c78, τd_2, τf_2, Dz_2, Fz_2, c79, c80, c81, c82, c83⟩
+  have hr9 := derScalarOf_bytes memBytes_mem_lt c67
+  have hs16 := derScalarOf_bytes memBytes_mem_lt c69
+  rw [b32_self hr9.1 hr9.2, b32_self hs16.1 hs16.2] at hp256
   rw [c31, show (BitVec.ofNat 32 0x41).toNat = 65 from rfl, hp256, require_true]
   simp only [Option.bind_some]
   subst c138
@@ -230,8 +246,12 @@ theorem sv_verify_spec {Me : Word → BitVec 8} {n : Machine} {B : Word} {bundle
   simp only [Option.bind_some]
   have Et := R.tsas.2.1 k_5_3 hkt
   have hsid := c177.symm.trans Et.name.2
-  have hp384t := MP384 _ _ _ _ _ _ _ _ _ c182 c183
-  rw [Et.key] at hp384t
+  have hsr24 := ecdsaSigOf_bytes c146
+  have hp384t := C3.Models.p384_model_rcb' pr384 cl384 as384 rcb384 _ _ _ _ _ _ _ _ _
+    (svPvAt_frame (e1 := 0x420) (e2 := 0xA40) (e3 := 0xA70) (off_of_sep Et.keyIn.sep) (isrn_off RS)
+      (by rw [sha256_length]; rfl) (sha256_lt _) (by decide) (by decide) (by decide) (.inl (by decide))
+      (.inl (by decide)) (.inl (by decide))) c182 c183
+  rw [svBytes_self hsr24.1.1 hsr24.1.2, svBytes_self hsr24.2.1 hsr24.2.2, Et.key] at hp384t
   have hB45 := derTlv_mem_bound (derOptRes_tlv c125)
   have hk45 : 1 ≤ tl45_5_1_3.header + tl45_5_1_3.len := by have := derTlv_header (derOptRes_tlv c125); omega
   have hk45' : tl45_5_1_3.header + tl45_5_1_3.len < 2 ^ 32 := by

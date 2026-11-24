@@ -166,17 +166,18 @@ loop the code runs is restated as the spec's function by a lemma in the
 and others), and the constants in the image's data are the spec's
 (`SvConstsLink.lean`), as are the Rekor entry's pieces, which
 `BootloaderData6.lean` extracts (`SvRekorData`). It depends only on
-`propext` and `Quot.sound`. It assumes three facts about the models, stated
-in [`SvModels.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvModels.lean):
-that the P-384, P-256, and Ed25519 checks accept only signatures that
-`p384Verify`, `p256Verify`, and `ed25519Verify` accept. That a key the code
+`propext` and `Quot.sound`. It assumes one fact about the Ed25519 model,
+stated in [`SvModels.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvModels.lean):
+that the Ed25519 check accepts only signatures that `ed25519Verify`
+accepts. For the P-384 and P-256 checks it uses the corrected ECDSA models
+described below, so it takes their assumptions instead. That a key the code
 decodes is on P-256 is proved (`gsModel` in
 [`SvGsSpec.lean`](../c3-boot-proofs/C3BootProofs/Proofs/SvGsSpec.lean)):
 the code checks the curve equation in Montgomery form, and `2^256` is
 invertible modulo `p`.
 
-Left: those three model facts; the code and constants hypotheses from the
-image the ROM loads; and `boot_main`.
+Left: the Ed25519 model fact and the ECDSA models' assumptions; the code
+and constants hypotheses from the image the ROM loads; and `boot_main`.
 
 The model facts need polynomial identities modulo the curves' primes.
 `grind` depends on `Classical.choice`, so
@@ -194,16 +195,19 @@ invariants: the batch matrices' rows have `|u| + |v| ≤ 2^n`, and `d` and
 
 `Models/P256*.lean`, `Models/P384*.lean`, and the shared `Models/Ecdsa*.lean`
 prove corrected forms of the two ECDSA model facts (`p256_model_rcb` and
-`p384_model_rcb`). The facts as `SvModels.lean` states them can't be
-proved: `SvP256Facts` constrains only the first 32 bytes of `r` and `s`,
+`p384_model_rcb`). The facts as `SvModels.lean` first stated them couldn't
+be proved: `SvP256Facts` constrains only the first 32 bytes of `r` and `s`,
 so the corrected form concludes with `b32 r` and `b32 s`, and `SvPvRes`
 doesn't tie the P-384 prehash and scalars to memory, so the corrected form
-also takes `SvPvAt`. `sv_verify_spec` still takes the old facts until it is
-rewired to the corrected ones.
+also takes `SvPvAt`. `sv_verify_spec` uses the corrected forms through
+`p256_model_closed` and `p384_model_closed` (`Models/EcdsaClosed.lean`).
+For each P-384 call it builds the memory that `SvPvAt` asks for, the
+caller's memory with the prehash, `r`, and `s` written into their stack
+slots (`svPvAt_frame` in `SvPvWitness.lean`). The parsed scalars have 32 or
+48 bytes, so `b32` and `svBytes` leave them unchanged.
 
-The corrected models need no mathematical hypotheses: `p256_model_closed`
-and `p384_model_closed` in `Models/EcdsaClosed.lean`, with the image's
-P-256 constants as `P256Consts`. They combine:
+The closed models take no mathematical hypotheses, only the image's P-256
+constants as `P256Consts`. They combine:
 - `Models/Prime*.lean`: Pratt certificates, checked by the kernel with
   Lucas's test, that the P-256 and P-384 field primes and group orders and
   Ed25519's `p` and `L` are prime. `gen-prime-certs.py` writes them.
