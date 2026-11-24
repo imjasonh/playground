@@ -556,3 +556,11 @@ import C3BootProofs.Models.P384Model
 import C3BootProofs.Models.EcdsaRcb
 import C3BootProofs.Models.P256Rcb
 import C3BootProofs.Models.P384Rcb
+import C3BootProofs.Models.Ed25519Group
+import C3BootProofs.Models.Ed25519Field
+import C3BootProofs.Models.Ed25519Naf
+import C3BootProofs.Models.Ed25519Bytes
+import C3BootProofs.Models.Ed25519Ladder
+import C3BootProofs.Models.Ed25519Limbs
+import C3BootProofs.Models.Ed25519Model
+import C3BootProofs.Models.Ed25519SvModel
