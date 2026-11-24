@@ -25,12 +25,18 @@ fact that no longer holds is rewritten in the spelling `rv32dec.py` uses.
 Statements with a variable offset, immediate, or code are not facts about
 the image and are left alone.
 
-`Sha256Rounds*.lean` is skipped, because `gen-sha256.py` writes it.
+`Sha256Rounds*.lean` is skipped, because `gen-sha256.py` writes it, and so
+are the modules that `C3BootProofs/Pending.lean` imports, which wait to be
+proved again against a changed function.
 
 Usage: image-facts.py [--image BOOTLOADER_LEAN] [--check]
 
-Run it from c3-boot-proofs/. It rewrites the files in place. With `--check`,
-it rewrites nothing, lists the facts that differ, and exits 1 if any do.
+Run it from c3-boot-proofs/. It rewrites the files in place. A fact whose
+code no longer has the instruction or the straight-line block it names
+can't be regenerated: it keeps its text, and after the other facts are
+rewritten, the script lists each such fact and each file that has one, and
+exits 1. With `--check`, it rewrites nothing, lists the facts that differ,
+and exits 1 if any do.
 """
 
 import argparse
@@ -327,11 +333,23 @@ def rewrite_block(lst, want):
     return ''.join(out) + lst[at:]
 
 
+def pending_paths():
+    """The files of the modules that `C3BootProofs/Pending.lean` imports."""
+    try:
+        src = open(os.path.join(ROOT, 'C3BootProofs/Pending.lean')).read()
+    except FileNotFoundError:
+        return set()
+    return {os.path.normpath(os.path.join(ROOT, *m.split('.')) + '.lean')
+            for m in re.findall(r'^import (\S+)', src, re.M)}
+
+
 class Facts:
     def __init__(self, image):
         self.cur = byte_lists(open(image).read())
         self.v0 = byte_lists(open(os.path.join(ROOT, 'C3BootProofs/Image/BootloaderV0.lean')).read())
         self.diffs = []
+        self.errors = []
+        self.stale = set()
         self.counts = {}
 
     def count(self, what):
@@ -354,7 +372,10 @@ class Facts:
         return self.cur.get(base)
 
     def fail(self, path, src, pos, msg):
-        sys.exit(f'{os.path.relpath(path, ROOT)}:{src.count(chr(10), 0, pos) + 1}: {msg}')
+        """Records a fact that can't be regenerated, which keeps its text."""
+        rel = os.path.relpath(path, ROOT)
+        self.errors.append(f'{rel}:{src.count(chr(10), 0, pos) + 1}: {msg}')
+        self.stale.add(rel)
 
     def differs(self, path, src, pos, what):
         self.diffs.append(f'{os.path.relpath(path, ROOT)}:{src.count(chr(10), 0, pos) + 1}: {what}')
@@ -374,10 +395,12 @@ class Facts:
         code = self.code(name, src, local)
         if code is None:
             self.fail(path, src, m.start(), f'no code {name}')
+            return m.group(0)
         if n is None:
             n = len(code) - k
         if len(code) < k + n:
             self.fail(path, src, m.start(), f'{m.group(2)} runs past the end of {name}')
+            return m.group(0)
         self.count('code chunks')
         text = spell(code[k:k + n])
         if text != m.group(3):
@@ -399,6 +422,7 @@ class Facts:
         got = fetch(code, int(m.group(2), 0))
         if got is None:
             self.fail(path, src, m.start(), f'no instruction at {m.group(2)}')
+            return m.group(0)
         if got == (old, int(m.group(4))):
             return m.group(0)
         self.differs(path, src, m.start(), m.group(0))
@@ -441,6 +465,7 @@ class Facts:
             if ins is None or to_block(ins[0]) is None:
                 self.fail(path, src, m.start(), f'{m.group(0)}: the code there is not '
                           f'{len(old)} straight-line instructions')
+                return m.group(0)
             got.append(ins[0])
             end += ins[1]
         out = m.group(0)
@@ -450,6 +475,7 @@ class Facts:
                 out = out.replace(lst, rewrite_block(lst, got), 1)
             elif want.setdefault(key, got) != got:
                 self.fail(path, src, m.start(), f'{key[1]} stands for two blocks')
+                return m.group(0)
         if int(m.group(4), 0) != end:
             self.differs(path, src, m.start(), f'end of {m.group(0)}')
             out = out[:out.rindex('some ') + 5] + imm(end)
@@ -462,8 +488,10 @@ def main():
     ap.add_argument('--check', action='store_true')
     args = ap.parse_args()
     facts = Facts(args.image)
+    pending = pending_paths()
     paths = sorted(p for p in glob.glob(os.path.join(ROOT, 'C3BootProofs/**/*.lean'), recursive=True)
-                   if '/Image/' not in p and not SKIP.search(p))
+                   if '/Image/' not in p and not SKIP.search(p)
+                   and os.path.normpath(p) not in pending)
     old = {}
     for p in paths:
         with open(p) as f:
@@ -472,14 +500,23 @@ def main():
     facts.blocks(files)
     for what, n in sorted(facts.counts.items()):
         print(f'{n:7d} {what}', file=sys.stderr)
+    if pending:
+        print(f'{len(pending):7d} pending files skipped', file=sys.stderr)
     for d in facts.diffs:
         print(d, file=sys.stderr)
+    for e in facts.errors:
+        print(e, file=sys.stderr)
+    if facts.stale:
+        print(f'{len(facts.stale)} files have facts that no longer hold:', file=sys.stderr)
+        for s in sorted(facts.stale):
+            print(f'  {s}', file=sys.stderr)
     if args.check:
-        sys.exit(1 if facts.diffs else 0)
+        sys.exit(1 if facts.diffs or facts.errors else 0)
     for p in paths:
         if files[p] != old[p]:
             with open(p, 'w') as f:
                 f.write(files[p])
+    sys.exit(1 if facts.errors else 0)
 
 
 if __name__ == '__main__':

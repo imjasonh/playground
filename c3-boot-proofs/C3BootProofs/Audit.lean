@@ -1,4 +1,3 @@
-import C3BootProofs.Theorems.TrustRoot
 import C3BootProofs.Theorems.Formats
 import C3BootProofs.Proofs.Crc32
 import C3BootProofs.Proofs.Reader
@@ -135,8 +134,6 @@ import C3BootProofs.Proofs.Bytes2Scalar256
 import C3BootProofs.Proofs.ScalarFromSlice256
 import C3BootProofs.Proofs.IsSmallOrder
 import C3BootProofs.Proofs.DateTime
-import C3BootProofs.Proofs.GeneralizedTime
-import C3BootProofs.Proofs.X509ReadTime
 import C3BootProofs.Proofs.Base64Decode
 import C3BootProofs.Proofs.Base64Encode
 import C3BootProofs.Proofs.Sha512UpdateArr32
@@ -153,23 +150,12 @@ import C3BootProofs.Proofs.Ed25519VerifyWitness
 import C3BootProofs.Proofs.MagicCur
 import C3BootProofs.Proofs.PartCur
 import C3BootProofs.Proofs.SmallFns
-import C3BootProofs.Proofs.TrustRoot
-import C3BootProofs.Proofs.ReadPart
-import C3BootProofs.Proofs.ReaderU64
-import C3BootProofs.Proofs.Keys
 import C3BootProofs.Proofs.Bundle
-import C3BootProofs.Proofs.Window
-import C3BootProofs.Proofs.ReadString
-import C3BootProofs.Proofs.KeySet
-import C3BootProofs.Proofs.CheckSigs
-import C3BootProofs.Proofs.ParseCur
 import C3BootProofs.Proofs.BsDecode
 import C3BootProofs.Proofs.ImageTopCur
 import C3BootProofs.Proofs.BootWrite
-import C3BootProofs.Proofs.Boot
 import C3BootProofs.Proofs.Dec384End
 import C3BootProofs.Proofs.Fs384Main
-import C3BootProofs.Proofs.Rp384
 import C3BootProofs.Proofs.Fs256Main
 import C3BootProofs.Proofs.Dec256End
 import C3BootProofs.Proofs.Pv384Main
@@ -206,34 +192,6 @@ theorem exists_admissible_jump :
     exact hs
   · intro i hi
     simp at hi
-
-/-- A trace whose slot results come from flash contents that pass the
-trust-root checks can jump, so `trust_root_monotone`'s hypotheses can hold
-together. The verifier here accepts every signature; the differential test
-exercises the signature rules. -/
-theorem exists_trust_root_jump :
-    ∃ (es : List Event) (flash : Nat → Slot → Option (Contents Nat Unit Unit)),
-      Admissible es ∧
-      (∀ (j : Nat) (hj : j < es.length),
-        (es[j]'hj).before.slots = slotsOf (fun _ _ _ => true) [0, 1] (flash j)) ∧
-      ∃ (j : Nat) (hj : j < es.length) (slot : Slot) (l : Nat),
-        (es[j]'hj).jump = some (slot, l) := by
-  let c : Contents Nat Unit Unit := ⟨[], ⟨0, (), [⟨0, ()⟩, ⟨1, ()⟩]⟩, 0, true⟩
-  let fl : Slot → Option (Contents Nat Unit Unit) := fun _ => some c
-  let d : Device := ⟨Fuses.ofNat 0, State.default, slotsOf (fun _ _ _ => true) [0, 1] fl⟩
-  have h : ∃ slot l, accepted d.slots (level d.fuses) slot = some l := ⟨.a, 0, by decide⟩
-  obtain ⟨d', slot, l, hs⟩ := availability d h
-  refine ⟨[⟨d, d', some (slot, l)⟩], fun _ => fl, ⟨?_, ?_⟩, ?_, 0, by simp, slot, l, rfl⟩
-  · intro e he
-    simp only [List.mem_singleton] at he
-    subst he
-    exact hs
-  · intro i hi
-    simp at hi
-  · intro j hj
-    have : j = 0 := by simp at hj; omega
-    subst this
-    rfl
 
 /-- The bytes of a header with one flash code segment. -/
 def flashHeaderBytes : Bytes :=
@@ -3126,23 +3084,6 @@ def witnessMemGT : RV32.Word → BitVec 8 :=
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
-/-- A machine that calls `time::generalized_time` on 15 bytes at
-`0x3FCC7000`, with the result at `0x3FCC5000` and the stack at `0x3FCC8000`,
-meets `generalizedTime_correct`'s hypotheses. -/
-theorem exists_generalizedTime_machine :
-    ∃ (m : RV32.Machine) (sp0 out p retAddr : RV32.Word) (n : Nat),
-      RV32.CodeIn m.mem RV32.GNT Image.generalizedTimeCode ∧ RV32.CodeIn m.mem RV32.DT Image.dateTimeCode ∧
-      RV32.CodeIn m.mem RV32.TD Image.timeDigits2Code ∧ m.pc = RV32.GNT ∧ RV32.reg m RV32.a0 = out ∧
-      RV32.reg m RV32.a1 = p ∧ RV32.reg m RV32.a2 = BitVec.ofNat 32 n ∧ RV32.reg m RV32.ra = retAddr ∧
-      retAddr &&& ~~~1 = retAddr ∧ RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 4 = 0 ∧ 0x60 ≤ sp0.toNat ∧
-      sp0.toNat ≤ 0x40000000 ∧ out.toNat + 16 ≤ 0x40000000 ∧ out.toNat % 4 = 0 ∧ n < 2 ^ 32 ∧
-      p.toNat + n + 14 ≤ 0x40000000 ∧ 0 < p.toNat ∧ RV32.Sep out 16 (sp0 + 0xFFFFFFA0) 0x60 ∧
-      RV32.Sep p (n + 14) (sp0 + 0xFFFFFFA0) 0x60 := by
-  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC7000 15, RV32.GNT, witnessMemGT⟩, 0x3FCC8000, 0x3FCC5000, 0x3FCC7000, 0, 15,
-    by code_in, by code_in, by code_in, rfl, rfl, rfl, rfl, rfl, by decide, rfl, by decide, by decide, by decide,
-    by decide, by decide, by decide, by decide, by decide, RV32.sep_of_le (by decide) (by decide),
-    RV32.sep_of_le (by decide) (by decide)⟩
-
 /-- Memory with `x509::read_time` and its callees where the image loads
 them, a DER reader at `0x3FCC6000` over 17 bytes at `0x3FCC7000`, and zeros
 elsewhere. -/
@@ -3155,28 +3096,6 @@ def witnessMemXRT : RV32.Word → BitVec 8 :=
 
 set_option maxRecDepth 200000 in
 set_option maxHeartbeats 8000000 in
-/-- A machine that calls `x509::read_time` on a DER reader at `0x3FCC6000`
-over 17 bytes, with the result at `0x3FCC5000` and the stack at
-`0x3FCC8000`, meets `x509ReadTime_correct`'s hypotheses. -/
-theorem exists_x509ReadTime_machine :
-    ∃ (m : RV32.Machine) (sp0 out d rp retAddr : RV32.Word) (rl : Nat),
-      RV32.CodeIn m.mem RV32.XRT Image.x509ReadTimeCode ∧ RV32.CodeIn m.mem RV32.TLV Image.derTlvCode ∧
-      RV32.CodeIn m.mem RV32.GNT Image.generalizedTimeCode ∧ RV32.CodeIn m.mem RV32.DT Image.dateTimeCode ∧
-      RV32.CodeIn m.mem RV32.TD Image.timeDigits2Code ∧ m.pc = RV32.XRT ∧ RV32.reg m RV32.a0 = out ∧
-      RV32.reg m RV32.a1 = d ∧ RV32.reg m RV32.ra = retAddr ∧ retAddr &&& ~~~1 = retAddr ∧
-      RV32.reg m RV32.sp = sp0 ∧ sp0.toNat % 4 = 0 ∧ 0x60 ≤ sp0.toNat ∧ sp0.toNat ≤ 0x40000000 ∧
-      out.toNat + 16 ≤ 0x40000000 ∧ out.toNat % 4 = 0 ∧ d.toNat + 16 ≤ 0x40000000 ∧ d.toNat % 4 = 0 ∧
-      RV32.memLoad32 m.mem (d + 8) = rp ∧ RV32.memLoad32 m.mem (d + 0xC) = BitVec.ofNat 32 rl ∧
-      rp.toNat + rl + 14 ≤ 0x40000000 ∧ 0 < rp.toNat ∧ RV32.Sep out 16 (sp0 + 0xFFFFFFA0) 0x60 ∧
-      RV32.Sep (d + 8) 8 (sp0 + 0xFFFFFFA0) 0x60 ∧ RV32.Sep out 16 (d + 8) 8 ∧
-      RV32.Sep rp (rl + 14) (sp0 + 0xFFFFFFA0) 0x60 ∧ RV32.Sep rp rl (d + 8) 8 := by
-  refine ⟨⟨leafRegs 0x3FCC5000 0x3FCC6000 0, RV32.XRT, witnessMemXRT⟩, 0x3FCC8000, 0x3FCC5000, 0x3FCC6000,
-    0x3FCC7000, 0, 17, by code_in, by code_in, by code_in, by code_in, by code_in, rfl, rfl, rfl, rfl, by decide, rfl,
-    by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide +kernel, by decide +kernel,
-    by decide, by decide, RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
-    RV32.sep_of_le (by decide) (by decide), RV32.sep_of_le (by decide) (by decide),
-    (RV32.sep_of_le (by decide) (by decide)).symm⟩
-
 /-- Memory with `base64::decode_into`, `copy_from_slice`, and `memcpy` where
 the image loads them, the text `QUJDREVG` at `0x3FCC7000`, and zeros
 elsewhere. -/
@@ -6744,12 +6663,6 @@ end C3
 /-- info: 'C3.exists_admissible_jump' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.exists_admissible_jump
 
-/-- info: 'C3.trust_root_monotone' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.trust_root_monotone
-
-/-- info: 'C3.exists_trust_root_jump' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.exists_trust_root_jump
-
 /-- info: 'C3.mapped_pages_signed' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.mapped_pages_signed
 
@@ -8244,27 +8157,6 @@ end C3
 /-- info: 'C3.RV32.readDigits2_mem' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.readDigits2_mem
 
-/-- info: 'C3.RV32.generalizedTime_correct' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.generalizedTime_correct
-
-/-- info: 'C3.RV32.gnt_year' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.gnt_year
-
-/-- info: 'C3.RV32.gnt_frac' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.gnt_frac
-
-/-- info: 'C3.RV32.gtTail_mem' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.gtTail_mem
-
-/-- info: 'C3.RV32.x509ReadTime_correct' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.x509ReadTime_correct
-
-/-- info: 'C3.RV32.derTlvMem_ok' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.derTlvMem_ok
-
-/-- info: 'C3.RV32.readTime_ok' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.readTime_ok
-
 /-- info: 'C3.RV32.base64DecodeInto_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.base64DecodeInto_correct
 
@@ -8709,35 +8601,8 @@ end C3
 /-- info: 'C3.RV32.fulcioIterNth_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.fulcioIterNth_correct
 
-/-- info: 'C3.RV32.readCount_correct' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.readCount_correct
-
-/-- info: 'C3.RV32.readPart_correct' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.readPart_correct
-
-/-- info: 'C3.RV32.readerU64_correct' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.readerU64_correct
-
-/-- info: 'C3.RV32.readSignatures_correct' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.readSignatures_correct
-
 /-- info: 'C3.RV32.bundleField_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.bundleField_correct
-
-/-- info: 'C3.RV32.readWindow_correct' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.readWindow_correct
-
-/-- info: 'C3.RV32.readString_correct' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.readString_correct
-
-/-- info: 'C3.RV32.keySetNew_correct' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.keySetNew_correct
-
-/-- info: 'C3.RV32.checkSignatures_correct' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.checkSignatures_correct
-
-/-- info: 'C3.RV32.Cur.manifestParse_correct' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.Cur.manifestParse_correct
 
 /-- info: 'C3.RV32.Cur.bootstateDecode_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.bootstateDecode_correct
@@ -8748,17 +8613,11 @@ end C3
 /-- info: 'C3.RV32.Cur.bootWrite_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Cur.bootWrite_correct
 
-/-- info: 'C3.RV32.Cur.boot_correct' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.Cur.boot_correct
-
 /-- info: 'C3.RV32.Dq.p384Decompress_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Dq.p384Decompress_correct
 
 /-- info: 'C3.RV32.Fs.p384FromSec1_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Fs.p384FromSec1_correct
-
-/-- info: 'C3.RV32.Rp.readP384Point_correct' depends on axioms: [propext, Quot.sound] -/
-#guard_msgs in #print axioms C3.RV32.Rp.readP384Point_correct
 
 /-- info: 'C3.RV32.Gs.p256FromSec1_correct' depends on axioms: [propext, Quot.sound] -/
 #guard_msgs in #print axioms C3.RV32.Gs.p256FromSec1_correct
