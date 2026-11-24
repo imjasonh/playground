@@ -530,3 +530,7 @@ import C3BootProofs.Theorems.Trace
 import C3BootProofs.Spec.TrustRoot
 import C3BootProofs.Theorems.TrustRoot
 import C3BootProofs.Audit
+import C3BootProofs.Spec.Json
+import C3BootProofs.Spec.Tuf
+import C3BootProofs.Spec.TrustedRoot
+import C3BootProofs.Spec.Accept
