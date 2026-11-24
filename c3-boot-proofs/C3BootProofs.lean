@@ -328,3 +328,4 @@ import C3BootProofs.Proofs.JsonLiteralEnd
 import C3BootProofs.Proofs.JsonU64
 import C3BootProofs.Proofs.JsonReadItem
 import C3BootProofs.Proofs.JsonNextElement
+import C3BootProofs.Proofs.JsonNextMember
