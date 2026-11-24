@@ -186,6 +186,27 @@ identities, and `ring_mod` proves congruences, including ones that hold
 modulo curve-equation hypotheses with cofactors that
 [`ring-cofactors.py`](../c3-boot-proofs/scripts/ring-cofactors.py) computes.
 
+The inversions' side conditions (`hzi`, and `PvSide` for both P-384 calls)
+are proved in `Models/Safegcd*.lean`, so `sv_verify_spec` no longer takes
+them. They bound only the result's size, which follows from two
+invariants: the batch matrices' rows have `|u| + |v| ≤ 2^n`, and `d` and
+`e` stay below the modulus. No termination bound is needed.
+
+`Models/P256*.lean`, `Models/P384*.lean`, and the shared `Models/Ecdsa*.lean`
+prove corrected forms of the two ECDSA model facts (`p256_model_rcb` and
+`p384_model_rcb`). The facts as `SvModels.lean` states them can't be
+proved: `SvP256Facts` constrains only the first 32 bytes of `r` and `s`,
+so the corrected form concludes with `b32 r` and `b32 s`, and `SvPvRes`
+doesn't tie the P-384 prehash and scalars to memory, so the corrected form
+also takes `SvPvAt`. `sv_verify_spec` still takes the old facts until it is
+rewired to the corrected ones. The corrected models assume:
+- that `p` is prime, and that the affine group law is closed and
+  associative;
+- `RcbAddOk`: the complete addition formulas compute the group law, which
+  needs the completeness argument, not just a polynomial identity;
+- `RcbDblPoly`: the doubling formula's identity, a `ring_eq` job;
+- `P256PsmOk`: the compiled Barrett reduction modulo `n` is correct.
+
 `_start` and the clock and watchdog `setup` that runs before `boot_main`
 aren't among the extracted functions, so they are trusted.
 
