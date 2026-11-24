@@ -1,6 +1,6 @@
 name = "c3-boot-proofs"
 version = "0.1.0"
-defaultTargets = ["C3BootProofs", "spec-vectors", "trust-check", "decode-check", "sigstore-check", "rv-check", "rv-decode", "boot-sim"]
+defaultTargets = ["C3BootProofs", "spec-vectors", "trust-check", "decode-check", "sigstore-check", "tuf-check", "rv-check", "rv-decode", "boot-sim"]
 
 [[lean_lib]]
 name = "C3BootProofs"
@@ -20,6 +20,10 @@ root = "DecodeCheck"
 [[lean_exe]]
 name = "sigstore-check"
 root = "SigstoreCheck"
+
+[[lean_exe]]
+name = "tuf-check"
+root = "TufCheck"
 
 [[lean_exe]]
 name = "rv-check"

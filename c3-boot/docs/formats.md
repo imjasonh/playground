@@ -436,6 +436,104 @@ of printable ASCII.
 | 4 | Source Repository Owner Identifier, `1.3.6.1.4.1.57264.1.17` |
 | 5 | Build Trigger, `1.3.6.1.4.1.57264.1.20` |
 
+## TUF part
+
+The TUF part carries Sigstore's TUF metadata, which `c3-boot/TODO.md`
+plans to use in place of the key-set chain and the trust-root blob. The
+bootloader doesn't read it yet. `c3_verify::tuf_slot::accept_slot`, behind
+the `tuf` feature, checks a slot that has one, and `c3-ota tuf-package`
+builds one.
+
+| Offset | Size | Field | Rule |
+| --- | --- | --- | --- |
+| 0 | 4 | `magic` | ASCII `C3TU` |
+| 4 | 2 | `format_version` | 1 |
+| 6 | 2 | `root_count` | 0 through 32 |
+| 8 | Varies | Roots | `root_count` documents, oldest first |
+| Next | Varies | `targets.json` | One document |
+| Next | Varies | `trusted_root.json` | One document |
+
+Each document is a 4-byte length (1 through 65,536) followed by that many
+bytes. Integers are little endian. The part ends after `trusted_root.json`.
+
+### Root chain
+
+The device holds one pinned root. Each root in the part must have a version
+one more than the root before it, and must be signed by a threshold of the
+previous root's root keys and a threshold of its own. The last root is the
+final root. `targets.json` must be signed by a threshold of the final
+root's targets keys, and its `signed.targets` must list `trusted_root.json`
+with a `length` equal to the document's length and a `hashes.sha256` equal
+to the lowercase hex SHA-256 of its bytes.
+
+Root and targets documents are canonical JSON. A document is an object
+with exactly the members `signatures` and `signed`. `signed._type` is
+`root` or `targets`, and a root's `signed.version` is at least 1. Each
+signature has a string `keyid` and `sig`, and no key ID appears twice.
+Signatures cover the bytes of the `signed` value.
+
+A role lists at most 8 key IDs, and its threshold is at least 1. A listed
+key counts toward the threshold when it decodes, the document has a
+signature with its key ID, and the signature verifies. Two key IDs with
+the same key count once. A key decodes when it's one of these:
+
+| `keytype` | `scheme` | `keyval.public` | Signature |
+| --- | --- | --- | --- |
+| `ecdsa` or `ecdsa-sha2-nistp256` | `ecdsa-sha2-nistp256` | PEM P-256 `SubjectPublicKeyInfo` | Lowercase hex DER ECDSA over SHA-256 |
+| `ecdsa` or `ecdsa-sha2-nistp384` | `ecdsa-sha2-nistp384` | PEM P-384 `SubjectPublicKeyInfo` | Lowercase hex DER ECDSA over SHA-384 |
+| `ed25519` | `ed25519` | Lowercase hex, 32 bytes | Lowercase hex, 64 bytes |
+
+A PEM key is the header line `-----BEGIN PUBLIC KEY-----`, base64 with line
+feeds, and the footer line `-----END PUBLIC KEY-----` with a final line
+feed. Keys of other types don't count. Sigstore's roots 1 through 4 list
+hex ECDSA keys, so the earliest root a device can pin is root 5.
+
+The check ignores the snapshot and timestamp roles and doesn't compare a
+`targets.json` version with anything. The metadata expires at the earlier
+of the final root's and `targets.json`'s `expires` time, and the slot check
+requires the TSA's signed time to be at or before it.
+
+### JSON profiles
+
+Root and targets documents use canonical JSON: no whitespace outside
+strings, and object keys in strictly increasing byte order.
+`trusted_root.json` uses strict JSON: whitespace (space, tab, line feed,
+carriage return) between tokens, no control characters in strings, and no
+key twice in an object. Both profiles allow only these values, which
+Sigstore's metadata fits:
+
+- Strings without escape sequences.
+- Numbers that are non-negative integers of 1 through 19 digits with no
+  leading zero.
+- `true`, `false`, `null`, arrays, and objects, nested at most 16 deep.
+
+Times are RFC 3339 UTC in the form `YYYY-MM-DDTHH:MM:SSZ`, from 1970 on,
+optionally with a fraction of one or more digits before the `Z`. The
+fraction is dropped.
+
+### Keys from `trusted_root.json`
+
+`mediaType` must be
+`application/vnd.dev.sigstore.trustedroot+json;version=0.1`. The keys
+become the lists of a trust-root blob, with the compiled-in identity
+policy:
+
+- Each entry of `certificateAuthorities` whose first certificate has a
+  P-384 key becomes a Fulcio intermediate with that certificate's subject.
+- Each entry of `tlogs` whose `publicKey.keyDetails` is `PKIX_ED25519`
+  becomes a log key. The origin is `baseUrl` without `https://` and
+  trailing slashes.
+- Each entry of `timestampAuthorities` whose first certificate has a P-384
+  key becomes a TSA signer. The signer ID is the DER `SEQUENCE` of that
+  certificate's issuer and serial number.
+
+A certificate authority or timestamp authority entry has 1 through 4
+certificates in `certChain.certificates`, and its window is `validFor`
+intersected with every certificate's validity. A log key's window is its
+`publicKey.validFor`. A missing `end` means the window doesn't close. The
+lists have the same limits and distinctness rules as the trust-root blob's.
+Entries with other key types are skipped.
+
 ## Boot-state record
 
 Each copy is 32 bytes at the start of its sector. The rest of the sector is

@@ -70,6 +70,8 @@ dependencies = [
  "c3-verify",
  "ed25519-dalek",
  "object",
+ "p256",
+ "p384",
  "serde_json",
  "x509-cert",
 ]

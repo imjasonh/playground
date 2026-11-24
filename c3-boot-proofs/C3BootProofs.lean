@@ -536,3 +536,7 @@ import C3BootProofs.Ring.Test
 import C3BootProofs.Models.Safegcd
 import C3BootProofs.Models.SafegcdP384
 import C3BootProofs.Models.SafegcdP256
+import C3BootProofs.Spec.Json
+import C3BootProofs.Spec.Tuf
+import C3BootProofs.Spec.TrustedRoot
+import C3BootProofs.Spec.Accept

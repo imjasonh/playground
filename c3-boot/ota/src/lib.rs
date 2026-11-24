@@ -11,3 +11,5 @@ pub mod image;
 pub mod keys;
 pub mod slot;
 pub mod time;
+pub mod tuf;
+pub mod tuf_cases;

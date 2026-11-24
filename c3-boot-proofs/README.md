@@ -470,6 +470,24 @@ multiple of 32, or 64 or 65 hashes for a tree near 2^64 leaves. It prints
 each input with `c3-verify`'s or `c3-crypto`'s result, and
 `lake exe decode-check` must print the same results.
 
+Four files specify the TUF trust anchor that `c3-boot/TODO.md` plans to
+replace the genesis key set with. `Spec/Json.lean` parses strict JSON and
+the canonical form TUF signs, and re-encodes a value canonically.
+`Spec/Tuf.lean` decodes the C3TU container (`c3-boot/docs/formats.md`) and
+`verifyTuf` walks the root chain from a pinned root, checking each root
+against its predecessor's and its own threshold, then checks the targets
+under the last root and the length and SHA-256 of `trusted_root.json`.
+`Spec/TrustedRoot.lean` reads the Fulcio, Rekor, and timestamp authority
+keys from `trusted_root.json` into a `SigstoreRoot`, and `Spec/Accept.lean`
+composes them with the image header and `sigstoreVerify` as
+`acceptTufSlot`. `c3-boot/ota/examples/tuf_vectors.rs` prints 3,144 cases:
+Sigstore's real roots 5 to 16, targets, and `trusted_root.json` and edits
+of them, synthetic chains with real P-256, P-384, and Ed25519 signatures
+and one fault each, `trusted_root.json` files from the release and the
+conformance suite, slot checks with the release test image, and 3,000
+random JSON documents. `lake exe tuf-check` must print the same lines. No
+theorems cover these files yet.
+
 `c3-boot/qemu/rv-lockstep.sh` tests the RV32 model against Espressif's
 QEMU. `c3-ota`'s `rv_cases` example generates random sequences of 28
 instructions or groups each, mixing 16- and 32-bit encodings, with ALU and
@@ -517,6 +535,8 @@ lake exe decode-check < /tmp/rust-decode.txt | diff - /tmp/rust-decode.txt
   cargo run -q -p c3-crypto --example crypto_vectors &&
   cargo run -q -p c3-ota --example sigstore_e2e_vectors) > /tmp/rust-sigstore.txt
 lake exe sigstore-check < /tmp/rust-sigstore.txt | diff - /tmp/rust-sigstore.txt
+(cd ../c3-boot && cargo run -q -p c3-ota --example tuf_vectors) > /tmp/rust-tuf.txt
+lake exe tuf-check < /tmp/rust-tuf.txt | diff - /tmp/rust-tuf.txt
 (cd ../c3-boot && QEMU=/path/to/qemu-system-riscv32 bash qemu/rv-lockstep.sh)
 python3 scripts/decode-vs-llvm.py .lake/build/bin/rv-decode \
   "$(cd ../c3-boot && rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin"

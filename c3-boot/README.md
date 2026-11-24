@@ -12,10 +12,10 @@ Every byte the bootloader reads is defined in
 
 | Crate | Contents |
 | --- | --- |
-| `verify` (`c3-verify`) | Every slot check, composed by `accept::accept_slot`: the slot manifest, image header and segment rules, boot-state record, key-set chain, trust-root blob, security-level rules, bundle container, leaf certificate, timestamp token, checkpoint, Merkle inclusion proof, and Rekor entry. Pure `no_std` functions with no heap, no `unsafe`, and checked arithmetic and indexing |
+| `verify` (`c3-verify`) | Every slot check, composed by `accept::accept_slot`: the slot manifest, image header and segment rules, boot-state record, key-set chain, trust-root blob, security-level rules, bundle container, leaf certificate, timestamp token, checkpoint, Merkle inclusion proof, and Rekor entry. Pure `no_std` functions with no heap, no `unsafe`, and checked arithmetic and indexing. The `tuf` feature adds the checks that `TODO.md` plans to anchor trust with: strict and canonical JSON, Sigstore's TUF root chain and targets, the keys in `trusted_root.json`, and `tuf_slot::accept_slot`. The bootloader doesn't turn it on |
 | `crypto` (`c3-crypto`) | SHA-256, SHA-384, ECDSA P-256 and P-384 verification, and strict Ed25519 verification. The rules are enforced explicitly on top of provisional backends (`sha2`, `p256`, `p384`, `ed25519-dalek`), until phase 0 picks the implementation that phase 7 proves |
 | `bootloader` (`c3-bootloader`) | The second-stage bootloader for `riscv32imc-unknown-none-elf`: ROM flash and cache hooks, image hashing, boot-state writes, the security-level burn, RAM loading, MMU mapping, and the jump |
-| `ota` (`c3-ota`) | The host tool: packs images, converts Sigstore bundles, builds and signs chain links and blobs from a `trusted_root.json`, assembles slots and flash images, and checks a slot with `verify` |
+| `ota` (`c3-ota`) | The host tool: packs images, converts Sigstore bundles, builds and signs chain links and blobs from a `trusted_root.json`, assembles slots and flash images, and checks a slot with `verify`. `tuf-root`, `tuf-package`, `tuf-verify`, and `tuf-accept` pin a TUF root, package Sigstore's TUF metadata (`testdata/tuf/fetch.sh` downloads it), and check it with the device's code |
 | `demo-app` (`c3-demo-app`) | An untrusted demo application that prints its slot, reads a flash-mapped message, and confirms its slot |
 | `rvtest` (`c3-rvtest`) | Firmware for the lockstep test of the Lean RV32 model: runs generated instruction sequences in QEMU and prints the registers and memory they end with (`qemu/rv-lockstep.sh`) |
 
@@ -110,10 +110,11 @@ together with the pinned image digest.
 
 ## Fuzz
 
-`fuzz/` has four [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz)
+`fuzz/` has five [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz)
 targets: the format decoders, the key-set chain and trust-root blob, the
-Sigstore bundle checks against a fixed trust root, and whole slots through
-the bootloader's checks. Fuzz builds turn on overflow checks, so an
+Sigstore bundle checks against a fixed trust root, whole slots through
+the bootloader's checks, and the TUF checks (JSON, the TUF part from
+Sigstore's root 5, and `trusted_root.json`). Fuzz builds turn on overflow checks, so an
 arithmetic slip that the lints missed shows up as a crash. `fuzz/seed.sh`
 builds seed inputs from the mutation test's fixtures, and `fuzz/run.sh`
 fuzzes each target for `FUZZ_SECONDS` seconds (30 by default) with a pinned

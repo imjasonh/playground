@@ -14,7 +14,7 @@ cargo-fuzz = true
 [dependencies]
 c3-crypto = { path = "../crypto" }
 c3-ota = { path = "../ota" }
-c3-verify = { path = "../verify" }
+c3-verify = { path = "../verify", features = ["tuf"] }
 libfuzzer-sys = "0.4"
 
 [[bin]]
@@ -41,6 +41,13 @@ bench = false
 [[bin]]
 name = "slot"
 path = "fuzz_targets/slot.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tuf"
+path = "fuzz_targets/tuf.rs"
 test = false
 doc = false
 bench = false

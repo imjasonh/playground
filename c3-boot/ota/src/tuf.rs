@@ -1,0 +1,340 @@
+//! Packages Sigstore's TUF metadata for a slot, checks it with the device's
+//! code, and signs synthetic metadata for tests.
+//!
+//! Sigstore publishes its metadata pretty-printed. The device reads only
+//! canonical JSON, so [`package`] and [`pinned_root`] re-encode each
+//! document in the canonical form that TUF signs, which leaves every
+//! signature valid.
+
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
+use c3_verify::accept::Accepted;
+use c3_verify::trustroot::Policy;
+use c3_verify::tuf::TufParts;
+use c3_verify::tuf::Verified;
+use c3_verify::tuf_slot::TufSlotParts;
+use ed25519_dalek::Signer;
+use p256::ecdsa::signature::hazmat::PrehashSigner;
+use serde_json::Value;
+use serde_json::json;
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn encode(v: &Value, out: &mut Vec<u8>) -> Result<(), String> {
+    match v {
+        Value::Null => out.extend_from_slice(b"null"),
+        Value::Bool(b) => out.extend_from_slice(if *b { b"true" } else { b"false" }),
+        Value::Number(n) => {
+            let n = n
+                .as_u64()
+                .ok_or_else(|| format!("{n} isn't a natural number"))?;
+            out.extend_from_slice(n.to_string().as_bytes());
+        }
+        Value::String(s) => {
+            if s.contains(['"', '\\']) {
+                return Err(format!("string {s:?} holds a quote or backslash"));
+            }
+            out.push(b'"');
+            out.extend_from_slice(s.as_bytes());
+            out.push(b'"');
+        }
+        Value::Array(items) => {
+            out.push(b'[');
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(b',');
+                }
+                encode(item, out)?;
+            }
+            out.push(b']');
+        }
+        Value::Object(members) => {
+            let mut sorted: Vec<_> = members.iter().collect();
+            sorted.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+            out.push(b'{');
+            for (i, (k, v)) in sorted.into_iter().enumerate() {
+                if i > 0 {
+                    out.push(b',');
+                }
+                encode(&Value::String(k.clone()), out)?;
+                out.push(b':');
+                encode(v, out)?;
+            }
+            out.push(b'}');
+        }
+    }
+    Ok(())
+}
+
+/// The canonical JSON encoding of `v`, as TUF signs it: sorted keys, no
+/// whitespace, and natural numbers only. Strings that would need an escape
+/// are rejected, because the device can't read them.
+pub fn canonical_value(v: &Value) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    encode(v, &mut out)?;
+    Ok(out)
+}
+
+/// Re-encodes the JSON document `json` as canonical JSON.
+pub fn canonical(json: &[u8]) -> Result<Vec<u8>, String> {
+    let v: Value = serde_json::from_slice(json).map_err(|e| e.to_string())?;
+    canonical_value(&v)
+}
+
+/// The canonical form of a root to compile into the bootloader.
+pub fn pinned_root(json: &[u8]) -> Result<Vec<u8>, String> {
+    let root = canonical(json)?;
+    c3_verify::tuf::parse_root(&root).map_err(|e| format!("pinned root: {e:?}"))?;
+    Ok(root)
+}
+
+/// Builds the TUF part of a slot from documents already in their final
+/// form: the magic `C3TU`, version 1, the root count, then each root,
+/// `targets.json`, and `trusted_root.json`, each after its 4-byte length.
+pub fn container(roots: &[Vec<u8>], targets: &[u8], trusted_root: &[u8]) -> Vec<u8> {
+    let mut out = c3_verify::tuf::TUF_MAGIC.to_vec();
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&(roots.len() as u16).to_le_bytes());
+    for doc in roots
+        .iter()
+        .map(Vec::as_slice)
+        .chain([targets, trusted_root])
+    {
+        out.extend_from_slice(&(doc.len() as u32).to_le_bytes());
+        out.extend_from_slice(doc);
+    }
+    out
+}
+
+/// Builds the TUF part of a slot from metadata as Sigstore publishes it:
+/// the roots after the pinned one in version order, `targets.json`, and
+/// `trusted_root.json`, which is kept byte for byte because `targets.json`
+/// lists its digest.
+pub fn package(roots: &[Vec<u8>], targets: &[u8], trusted_root: &[u8]) -> Result<Vec<u8>, String> {
+    let roots = roots
+        .iter()
+        .map(|r| canonical(r))
+        .collect::<Result<Vec<_>, _>>()?;
+    let out = container(&roots, &canonical(targets)?, trusted_root);
+    c3_verify::tuf::parse_parts(&out).map_err(|e| format!("TUF part: {e:?}"))?;
+    Ok(out)
+}
+
+fn parts(tuf: &[u8]) -> Result<TufParts<'_>, String> {
+    c3_verify::tuf::parse_parts(tuf).map_err(|e| format!("TUF part: {e:?}"))
+}
+
+/// Checks the TUF part of a slot from `pinned` with the device's code.
+pub fn verify(pinned: &[u8], tuf: &[u8]) -> Result<Verified, String> {
+    c3_verify::tuf::verify(pinned, &parts(tuf)?).map_err(|e| format!("{e:?}"))
+}
+
+/// Checks a slot's image, bundle container, and TUF part with the device's
+/// code, from `pinned`, with the release identity `policy`: issuer, Build
+/// Signer URI, repository ID, owner ID, and trigger.
+pub fn accept(
+    image: &[u8],
+    bundle: &[u8],
+    tuf: &[u8],
+    pinned: &[u8],
+    policy: &[String; 5],
+    efuse_level: u8,
+) -> Result<Accepted, String> {
+    let p = parts(tuf)?;
+    let [issuer, build_signer_uri, repository_id, owner_id, trigger] = policy;
+    let policy = Policy {
+        issuer: issuer.as_bytes(),
+        build_signer_uri: build_signer_uri.as_bytes(),
+        repository_id: repository_id.as_bytes(),
+        owner_id: owner_id.as_bytes(),
+        trigger: trigger.as_bytes(),
+    };
+    let slot = TufSlotParts {
+        image_header: image,
+        image_length: u32::try_from(image.len()).map_err(|e| e.to_string())?,
+        image_digest: c3_crypto::sha256(image),
+        bundle,
+        tuf,
+    };
+    let mut buf = vec![0u8; c3_verify::trusted_root::buffer_len(p.trusted_root.len())];
+    c3_verify::tuf_slot::accept_slot(&slot, pinned, &policy, efuse_level, &mut buf)
+        .map_err(|e| format!("{e:?}"))
+}
+
+/// A key that signs synthetic TUF metadata in tests.
+pub enum TestKey {
+    /// An ECDSA P-256 key, `ecdsa-sha2-nistp256`.
+    P256(p256::ecdsa::SigningKey),
+    /// An ECDSA P-384 key, `ecdsa-sha2-nistp384`.
+    P384(p384::ecdsa::SigningKey),
+    /// An Ed25519 key.
+    Ed25519(ed25519_dalek::SigningKey),
+}
+
+fn pem(spki: &[u8]) -> String {
+    let text = STANDARD.encode(spki);
+    let mut out = String::from("-----BEGIN PUBLIC KEY-----\n");
+    for line in text.as_bytes().chunks(64) {
+        out.push_str(std::str::from_utf8(line).unwrap_or_default());
+        out.push('\n');
+    }
+    out.push_str("-----END PUBLIC KEY-----\n");
+    out
+}
+
+fn der_integer(bytes: &[u8]) -> Vec<u8> {
+    let start = bytes.iter().position(|&b| b != 0).unwrap_or(bytes.len());
+    let mut content = bytes[start..].to_vec();
+    if content.first().is_none_or(|&b| b & 0x80 != 0) {
+        content.insert(0, 0);
+    }
+    let mut out = vec![0x02, content.len() as u8];
+    out.extend(content);
+    out
+}
+
+fn der_signature(r: &[u8], s: &[u8]) -> Vec<u8> {
+    let body = [der_integer(r), der_integer(s)].concat();
+    let mut out = vec![0x30, body.len() as u8];
+    out.extend(body);
+    out
+}
+
+impl TestKey {
+    /// A P-256 key from `seed`, which must be a valid scalar.
+    pub fn p256(seed: u8) -> Self {
+        let key = p256::ecdsa::SigningKey::from_slice(&[seed; 32]).expect("valid P-256 scalar");
+        TestKey::P256(key)
+    }
+
+    /// A P-384 key from `seed`, which must be a valid scalar.
+    pub fn p384(seed: u8) -> Self {
+        let key = p384::ecdsa::SigningKey::from_slice(&[seed; 48]).expect("valid P-384 scalar");
+        TestKey::P384(key)
+    }
+
+    /// An Ed25519 key from `seed`.
+    pub fn ed25519(seed: u8) -> Self {
+        TestKey::Ed25519(ed25519_dalek::SigningKey::from_bytes(&[seed; 32]))
+    }
+
+    /// The key's TUF key object.
+    pub fn key_json(&self) -> Value {
+        let (keytype, scheme, public) = match self {
+            TestKey::P256(k) => {
+                let point = k.verifying_key().to_sec1_point(false);
+                let spki = [
+                    hex_bytes("3059301306072a8648ce3d020106082a8648ce3d030107034200"),
+                    point.as_bytes().to_vec(),
+                ]
+                .concat();
+                ("ecdsa", "ecdsa-sha2-nistp256", pem(&spki))
+            }
+            TestKey::P384(k) => {
+                let point = k.verifying_key().to_sec1_point(false);
+                let spki = [
+                    hex_bytes("3076301006072a8648ce3d020106052b81040022036200"),
+                    point.as_bytes().to_vec(),
+                ]
+                .concat();
+                ("ecdsa", "ecdsa-sha2-nistp384", pem(&spki))
+            }
+            TestKey::Ed25519(k) => ("ed25519", "ed25519", hex(&k.verifying_key().to_bytes())),
+        };
+        json!({"keytype": keytype, "scheme": scheme, "keyval": {"public": public}})
+    }
+
+    /// The key's ID: the SHA-256 digest of its canonical key object, in
+    /// lowercase hex.
+    pub fn keyid(&self) -> String {
+        let canonical = canonical_value(&self.key_json()).unwrap_or_default();
+        hex(&c3_crypto::sha256(&canonical))
+    }
+
+    /// The key's signature over `message`, in lowercase hex.
+    pub fn sign(&self, message: &[u8]) -> String {
+        match self {
+            TestKey::P256(k) => {
+                let sig: p256::ecdsa::Signature = k
+                    .sign_prehash(&c3_crypto::sha256(message))
+                    .expect("P-256 signs a digest");
+                let (r, s) = sig.split_bytes();
+                hex(&der_signature(&r, &s))
+            }
+            TestKey::P384(k) => {
+                let sig: p384::ecdsa::Signature = k
+                    .sign_prehash(&c3_crypto::sha384(message))
+                    .expect("P-384 signs a digest");
+                let (r, s) = sig.split_bytes();
+                hex(&der_signature(&r, &s))
+            }
+            TestKey::Ed25519(k) => hex(&k.sign(message).to_bytes()),
+        }
+    }
+}
+
+fn hex_bytes(text: &str) -> Vec<u8> {
+    (0..text.len() / 2)
+        .map(|i| u8::from_str_radix(&text[2 * i..2 * i + 2], 16).unwrap_or(0))
+        .collect()
+}
+
+/// The `signed` object of a synthetic root: version `version`, expiring at
+/// `expires`, with `root` signing roots and `targets` signing targets.
+/// The snapshot and timestamp roles reuse the targets keys.
+pub fn root_signed(
+    version: u64,
+    expires: &str,
+    root: (&[&TestKey], u64),
+    targets: (&[&TestKey], u64),
+) -> Value {
+    let mut keys = serde_json::Map::new();
+    for k in root.0.iter().chain(targets.0) {
+        keys.insert(k.keyid(), k.key_json());
+    }
+    let role = |(ks, threshold): (&[&TestKey], u64)| json!({"keyids": ks.iter().map(|k| k.keyid()).collect::<Vec<_>>(), "threshold": threshold});
+    json!({
+        "_type": "root",
+        "consistent_snapshot": true,
+        "expires": expires,
+        "keys": keys,
+        "roles": {
+            "root": role(root),
+            "snapshot": role(targets),
+            "targets": role(targets),
+            "timestamp": role(targets),
+        },
+        "spec_version": "1.0",
+        "version": version,
+    })
+}
+
+/// The `signed` object of a synthetic `targets.json` that lists
+/// `trusted_root`.
+pub fn targets_signed(version: u64, expires: &str, trusted_root: &[u8]) -> Value {
+    json!({
+        "_type": "targets",
+        "expires": expires,
+        "spec_version": "1.0",
+        "targets": {
+            "trusted_root.json": {
+                "hashes": {"sha256": hex(&c3_crypto::sha256(trusted_root))},
+                "length": trusted_root.len(),
+            },
+        },
+        "version": version,
+    })
+}
+
+/// A canonical metadata document: `signed` with each signer's signature
+/// over its canonical form.
+pub fn sign_metadata(signed: &Value, signers: &[&TestKey]) -> Result<Vec<u8>, String> {
+    let message = canonical_value(signed)?;
+    let signatures: Vec<Value> = signers
+        .iter()
+        .map(|k| json!({"keyid": k.keyid(), "sig": k.sign(&message)}))
+        .collect();
+    canonical_value(&json!({"signatures": signatures, "signed": signed}))
+}

@@ -12,7 +12,7 @@ fuzz="$(cd "$(dirname "$0")" && pwd)"
 seconds="${FUZZ_SECONDS:-30}"
 targets=("$@")
 if ((${#targets[@]} == 0)); then
-  targets=(formats trust sigstore slot)
+  targets=(formats trust sigstore slot tuf)
 fi
 
 bash "${fuzz}/seed.sh"
@@ -21,6 +21,8 @@ for t in "${targets[@]}"; do
   max_len=8192
   if [[ "${t}" == slot ]]; then
     max_len=262144
+  elif [[ "${t}" == tuf ]]; then
+    max_len=131072
   fi
   echo "--- fuzzing ${t} for ${seconds}s"
   cargo "+${FUZZ_TOOLCHAIN:-nightly-2026-11-09}" fuzz run "${t}" "corpus/${t}" -- \

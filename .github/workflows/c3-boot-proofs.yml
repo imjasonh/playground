@@ -1,8 +1,10 @@
 # Checks the Lean proofs in c3-boot-proofs/, re-checks them with leanchecker,
 # audits their axioms, and compares the Lean specification with the Rust
 # code in c3-boot/verify: the decision logic on a grid of inputs, the key-set
-# chain and trust-root rules on cases with real signatures, and the record,
-# manifest, and image-header decoders on valid and mutated inputs. It also
+# chain and trust-root rules on cases with real signatures, the record,
+# manifest, and image-header decoders on valid and mutated inputs, and the
+# JSON parser, TUF root chain, trusted_root.json reader, and TUF slot check
+# on Sigstore's real TUF metadata and synthetic negatives. It also
 # runs the RV32 model in lockstep with Espressif's QEMU on random
 # instruction sequences, compares the model's decoder with LLVM's on every
 # 16-bit encoding and a sample of 32-bit ones, boots the bootloader image on
@@ -94,6 +96,16 @@ jobs:
           (cd c3-boot-proofs && lake exe sigstore-check) \
             < "${RUNNER_TEMP}/rust-sigstore.txt" > "${RUNNER_TEMP}/lean-sigstore.txt"
           diff "${RUNNER_TEMP}/rust-sigstore.txt" "${RUNNER_TEMP}/lean-sigstore.txt"
+
+      - name: Compare the TUF specification with c3-verify
+        run: |
+          (cd c3-boot && cargo run --locked -q -p c3-ota --example tuf_vectors) \
+            > "${RUNNER_TEMP}/rust-tuf.txt"
+          (cd c3-boot-proofs && lake exe tuf-check) \
+            < "${RUNNER_TEMP}/rust-tuf.txt" > "${RUNNER_TEMP}/lean-tuf.txt"
+          awk -F' [|] ' '{split($1, f, " "); print f[2], $2 ~ /^ok/ ? "ok" : "err"}' \
+            "${RUNNER_TEMP}/rust-tuf.txt" | sort | uniq -c
+          diff "${RUNNER_TEMP}/rust-tuf.txt" "${RUNNER_TEMP}/lean-tuf.txt"
 
       - name: Check the generated Montgomery reduction proof
         working-directory: c3-boot-proofs
