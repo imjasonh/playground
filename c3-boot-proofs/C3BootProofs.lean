@@ -570,3 +570,4 @@ import C3BootProofs.Models.Ed25519FeArith
 import C3BootProofs.Models.Ed25519FormulasAlg
 import C3BootProofs.Models.Ed25519Formulas
 import C3BootProofs.Models.Ed25519RecoverX
+import C3BootProofs.Models.Ed25519SvModelPrime
